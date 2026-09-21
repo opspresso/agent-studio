@@ -774,7 +774,7 @@ describe("runAgent GenerateImage builtin", () => {
     ]);
     const generateImage = vi.fn(async (prompt: string) => {
       expect(prompt).toBe("a red fox");
-      return { b64: "aW1n", mimeType: "image/png", model: "openai/gpt-image-1" };
+      return { b64: "aW1n", mimeType: "image/png", model: "openai/gpt-image-1", usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } };
     });
     const deps: AgentDeps = { createToolSchemaValidator, channel, generateImage };
     const chunks = await collect(

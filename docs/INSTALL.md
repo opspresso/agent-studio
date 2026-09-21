@@ -247,6 +247,11 @@ v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQ
 
 ## 업그레이드
 
+모델은 `items`의 설정 행에 저장된 등록 목록만 사용한다. 기존 카탈로그·self-hosted 선언은
+자동 이관하지 않으므로, 모델 등록이 없는 설치는 관리 화면에서 연결과 사용할 모델을 등록하고
+기존 Agent의 모델 ID 및 기본·Embedding·Rerank·Workspace 선택을 확인한다. 등록 전에는 해당
+모델 실행이 거부된다. 테이블을 직접 수정할 필요는 없으며 [모델 등록과 사용](CONFIGURATION.md#모델-등록과-사용)을 따른다.
+
 Version 기반 설치에서 Agent 현재 설정으로 전환할 때는 [Agent 설정 데이터 이전](AGENT-MIGRATION.md)을
 먼저 수행한다. 이 작업은 부팅 시 자동 실행되지 않으며, 원본 보관·템플릿 처리·MCP 헤더 재암호화와
 승인 대기·Audio 작업 정리 절차를 포함한다. 이전 도구는 릴리스 앱 이미지에 포함되지 않으므로

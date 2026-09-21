@@ -857,7 +857,7 @@ export const en = {
     "Use a versioned release image, PostgreSQL with pgvector (the deployment baseline is PostgreSQL 18), and a reachable OpenAI-compatible LLM endpoint. Mirror the image into an internal registry before entering an isolated network. Add an S3-compatible object store if files must persist. The deployment owns service addresses, credentials, volumes, TLS, and routing.",
   "guide.install.environment": "2. Supply required configuration",
   "guide.install.environmentBody":
-    "Supply DATABASE_URL, LLM_BASE_URL, LLM_API_KEY, and AES_ENCRYPTION_KEY through the deployment's secret/configuration mechanism. AES_ENCRYPTION_KEY must encode 32 bytes in base64 and remain stable across restarts. Set STAGE explicitly (prod for production); alpha/prod also requires ADMIN_EMAILS and a sign-in method. Set BETTER_AUTH_SECRET to a stable session secret and BETTER_AUTH_URL and PUBLIC_BASE_URL to the user-facing application address in the deployment environment before configuring callbacks.",
+    "Supply DATABASE_URL and AES_ENCRYPTION_KEY through the deployment's secret/configuration mechanism. AES_ENCRYPTION_KEY must encode 32 bytes in base64 and remain stable across restarts. Model connections are registered after sign-in. Set STAGE explicitly (prod for production); alpha/prod also requires ADMIN_EMAILS and a sign-in method. Set BETTER_AUTH_SECRET to a stable session secret and BETTER_AUTH_URL and PUBLIC_BASE_URL to the user-facing application address in the deployment environment before configuring callbacks.",
   "guide.install.signin": "3. Configure sign-in",
   "guide.install.signinBody":
     "For offline operation, configure internal Keycloak, standard OIDC, or password sign-in. Keycloak needs KEYCLOAK_ISSUER (the realm URL), KEYCLOAK_CLIENT_ID, and KEYCLOAK_CLIENT_SECRET; register /api/auth/callback/keycloak with the client. Standard OIDC uses OIDC_ISSUER, OIDC_CLIENT_ID, and OIDC_CLIENT_SECRET with /api/auth/callback/oidc. Google can be enabled alongside either provider using GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET. Password bootstrap uses AUTH_PASSWORD=true, BOOTSTRAP_ADMIN_EMAIL, and BOOTSTRAP_ADMIN_PASSWORD; include that email in ADMIN_EMAILS. Changing the bootstrap password does not reset an existing password account.",
@@ -866,7 +866,7 @@ export const en = {
     "For persistent files, create a bucket and set S3_BUCKET_NAME. For a non-AWS store, also set S3_ENDPOINT, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY. AWS S3 can use the deployment's AWS credential or role configuration. Grant the storage identity read, write, and delete access to artifacts/* and source-files/* in that bucket, plus multipart upload permissions for private files. Keep non-AWS storage keys in the S3 fields rather than AWS_* variables used by other providers. Select the artifact access mode in Settings and verify downloads from the user's network.",
   "guide.install.verify": "5. Start and verify the full path",
   "guide.install.verifyBody":
-    "The application validates configuration and applies database schema migrations on startup. Check health and readiness, sign in as the administrator, test a model, and create and run a small project. If storage is configured, reopen a generated file. Test internal MCP and each enabled integration.",
+    "The application validates configuration and applies database schema migrations on startup. Check health and readiness, then sign in as the administrator. In Settings → Models, register a provider connection and the models to use, then choose the default model in Model usage. Create and run a small project. If storage is configured, reopen a generated file. Test internal MCP and each enabled integration.",
 
   "guide.operations.title": "Operate, retain, and upgrade",
   "guide.operations.body":
@@ -1048,7 +1048,7 @@ export const en = {
   "configuration.model": "Model",
   "configuration.selectModel": "Select a model…",
   "configuration.modelUnlisted":
-    "Model is unavailable for new selection. A hidden model keeps running; a removed model may be recorded with $0 cost.",
+    "This model is unavailable. Ask an administrator to check its registration and provider connection, or select another registered model. Unregistered models cannot run.",
   "configuration.fallbackModel": "Fallback model (optional)",
   "configuration.none": "None",
   "configuration.default": "Default",

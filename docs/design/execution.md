@@ -17,8 +17,8 @@ Project는 이름으로 호출하는 Agent다. 공개 범위·소유권·연동�
 
 - `configurationUseCases`가 접근·소유자 검사, 모델 capability와 참조 검증, 시크릿 병합을 소유한다.
   저장은 전체 설정 교체이며 `expectedUpdatedAt`과 Project의 `updatedAt`으로 동시 수정을 거절한다.
-- `model`은 도구 호출을 지원하는 텍스트 모델이다. `imageModel`은 이미지 도구의 모델이다.
-  카탈로그 모델의 capability 충돌은 거절하며 사용자 모델과 미등록 모델 정책은
+- `model`은 도구 호출을 지원하는 등록 텍스트 모델이다. `imageModel`은 이미지 도구의 모델이다.
+  등록 모델의 capability 충돌은 거절하며 모델 선택과 가격 미확인 정책은
   [모델 설정](../CONFIGURATION.md#모델-등록과-사용)을 따른다.
 - `mcpList`·`skillList`·`subagentList`의 중복과 새 참조를 검사한다. 기존 참조가 사라져도
   나머지 설정을 수정할 수 있다. MCP의 URL은 registry가 소유하고 Agent binding은 허용 도구와
@@ -191,6 +191,9 @@ SigV4 image 채널은 지원하지 않는다. 응답 크기·base64·MIME·이�
 
 `toImageUsageRecord`가 text input·image input·image output을 Usage의 형태로 변환한다.
 provider가 입력 종류를 구분하지 않으면 분할을 추측하지 않는다.
+생성·편집은 같은 결과 처리에서 사용량을 한 번 정산하고 `EngineChunk.usage`로 전달한다.
+응답·Chat의 사용량 합계에는 이미지 호출도 포함하며, Trace에는 호출한 이미지 모델의
+generation span을 도구 span 아래에 기록한다. 이미지 bytes는 별도의 `image` 축으로 전달한다.
 토큰 사용량이 없는 모델은 카탈로그의 장당 가격을 사용할 수 있으며, 이미지 비용은
 provider 청구액을 그대로 보관하는 텍스트 경로와 다르다.
 가격의 정본과 미등록 정책은 [CONFIGURATION](../CONFIGURATION.md#모델-등록과-사용)을 따른다.

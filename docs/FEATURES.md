@@ -190,51 +190,44 @@ Chat은 소유자 개인 대화이며 연결이 종료돼도 서버에서 실행
 
 ### 목록·탐색
 
-- 모델 ID·표시 이름·제작사·provider.
-- 모델 유형: Text, Image, Embedding, Rerank, Transcription.
+`/models`는 관리자가 등록한 모델의 읽기 전용 목록이다.
+
+- 전송 모델 ID·표시 이름·provider.
+- 모델 유형: Text, Image, Embedding, Rerank, Transcription, Decisions.
 - Tools·Structured output·Vision·Reasoning capability.
-- Context window.
+- Context window·출력 토큰 한도.
 - 입력·출력·캐시 등 유형별 가격.
-- 할인율·다른 provider 공급 경로.
-- 공급 채널 사용 가능 상태.
 - 이름·ID·제작사·provider 검색.
 - Provider·유형·capability 필터.
-- 이름·provider·가격 정렬.
-- 필터·정렬 상태 기억.
-- 개인 즐겨찾기.
+- 이름·가격 정렬.
+- 검색·필터·정렬·페이지 상태 기억.
 
 ### 관리자 관리
 
-- 모델 선택 목록에서 숨김·해제.
-- 전체 숨김 해제.
-- Text·Image·Rerank 연결 테스트.
-- 테스트 성공 여부·지연시간·오류 표시.
-- 카탈로그 즉시 새로고침.
-- 부팅·주기적 카탈로그 갱신.
-- 오프라인 스냅샷 사용.
-- JSON 카탈로그 업로드·설치·제거.
-- 설치자·설치 시각·모델 수·스킵 항목 확인.
+Settings → Models에서 연결·등록·사용 설정을 관리한다. Self-hosted도 같은 등록 흐름을 사용한다.
 
-### Self-hosted
+- 이름·종류·API base URL·키로 프로바이더 연결 등록.
+- 프로바이더의 전체 모델 목록 조회·필터·선택 등록과 직접 등록.
+- 선택된 모델만 보기와 삭제.
+- 등록 모델의 표시 이름·유형·문맥 크기·출력 토큰·capability·가격 수정.
+- 프로바이더 목록에 등록 모델이 있는지 상태 확인. 실제 추론 성공은 별도로 검증한다.
 
-- 서버가 제공하는 모델 발견.
-- 모델 선언 추가·편집·제거.
-- 표시 이름·유형·문맥 크기·출력 토큰·capability 설정.
-- 선언과 실제 serving 상태 불일치 표시.
+### 모델 사용 설정
 
-### 특수 목적 모델 설정
-
+- 새 Agent와 모델 선택기에 사용할 기본 모델.
 - Capability 검색용 Embedding 모델.
 - Embedding 변경 시 확인 후 재색인.
 - Rerank 모델·최소 점수.
 - Codex·Claude·OpenCode별 Workspace 모델.
 - Workspace 모델 선택 해제로 해당 runtime 비활성화.
 
-숨긴 모델을 사용하는 기존 Agent는 계속 실행한다. 관리자 모델 테스트는 프로젝트 실행·Usage
-기록과 별도로 처리한다.
+미등록 모델과 삭제된 모델을 사용하는 새 실행은 거부한다. `UNKNOWN_MODEL_POLICY`는 등록됐지만
+가격이 없는 모델의 실행 허용 여부만 제어한다. 공개 모델 메타데이터는 조회 결과의 누락된 facts를
+보완하며 모델을 자동 등록하지 않는다. 등록·삭제 제약과 오프라인 메타데이터 갱신은
+[모델 등록과 사용](CONFIGURATION.md#모델-등록과-사용)을 따른다.
 
 구현 근거: [Models 화면](../src/app/models/page.tsx),
-[모델 연결 테스트](../src/application/llm/testModel.ts),
+[모델 등록](../src/application/llm/modelRegistry.ts),
 [모델 선택](../src/application/llm/modelSelection.ts).
 
 ## 5. Plugins
@@ -753,9 +746,8 @@ provider·부서별, 프로젝트 Usage는 모델·provider별, Profile은 프�
 - 시각·행위·행위자·대상·상세 표시.
 - 시크릿 조회·발급/회전·폐기 기록.
 - 관리자 프로젝트 변경 기록.
-- 설정 변경.
+- 설정 변경·모델 등록·수정·삭제·기본값 변경.
 - 프로젝트 삭제.
-- 모델 카탈로그 설치·제거.
 - 공유 레지스트리 삭제·소유 출처 변경.
 - 타인 Artifact 삭제.
 - 사용자 tier 변경.
@@ -803,55 +795,24 @@ Profile에서 본인 정보와 사용량을 조회한다.
 
 ## 19. Settings
 
-현재 실제 섹션은 `General / Access / LLM / Plugins repo / A2A`다.
-
-### General
-
-- Public Base URL.
-- Artifact 접근 방식: Authenticated, Public, Proxied.
-
-### Access
-
-- 관리자 이메일 목록.
-- 허용 이메일 도메인.
-
-### LLM·Providers
-
-- 기본 LLM Base URL.
-- 기본 API Key.
-- 미등록 모델 허용·거부 정책.
-- Provider별 채널 추가·제거.
-- Provider 선택.
-- Base URL.
-- API Key.
-- Bearer / AWS SigV4 인증.
-- 모델 provider prefix 유지 여부.
-
-### Plugins repo
-
-- GitHub 저장소.
-- Branch.
-- GitHub Token.
-
-### A2A
-
-- 공유 API Key.
-- 생성·재발급·조회·숨기기·복사.
-- 이름 있는 Client Key 목록.
-- Client 이름·설명.
-- Client Key 생성·조회·폐기.
-- Client별 실행 귀속.
+| 탭 | 관리 항목 |
+|---|---|
+| General | Public Base URL, Artifact 접근 방식, 관리자 이메일·허용 도메인, 가격 미지정 등록 모델의 실행 정책 |
+| Plugins | Plugin GitHub 저장소·Branch |
+| Models | 프로바이더 연결, 모델 선택·등록 관리, 기본·Workspace·검색 모델 사용 설정 |
+| Keys | GitHub Token, 공유 A2A Key 생성·재발급·조회·복사, 이름 있는 A2A Client Key 생성·조회·폐기와 클라이언트별 실행 귀속 |
 
 ### 설정 공통
 
-- 현재 값의 출처 표시: override / env / default / unset.
-- 환경변수 대신 DB override 저장.
-- Override 해제 시 환경변수로 복귀.
+- 일반 설정 값의 출처 표시: override / env / default / unset.
+- 현재 탭에서 변경한 필드만 DB override로 저장.
+- 일반 설정의 override 해제 시 환경변수로 복귀. 모델 선택은 DB에서만 관리한다.
 - 시크릿 마스킹·암호화 보관.
 
-SSO·DB·스토리지·worker·retention은 배포 설정으로 관리한다.
+SSO·DB·스토리지·worker·retention은 배포 설정으로 관리한다. 필드와 적용 범위는
+[설정 화면](CONFIGURATION.md#설정-화면)을 따른다.
 
-구현 근거: [Settings 섹션 정의](../src/app/settings/page.tsx),
+구현 근거: [Settings 탭 정의](../src/app/settings/tabs.ts),
 [Settings API](../src/app/api/settings/route.ts), [설정 계약](CONFIGURATION.md).
 
 ## 20. 공통 화면·운영 기능

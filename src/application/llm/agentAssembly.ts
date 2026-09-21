@@ -3,7 +3,7 @@ import { DOCUMENT_FORMATS, DOCUMENT_PROFILES } from "@/domain/document/processor
 
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import { MAX_TOOLS_PER_REQUEST } from "@/domain/llm/toolLimits";
-import type { ChatMessageInput, McpToolResult } from "@/domain/llm/types";
+import type { ChatMessageInput, McpToolResult, UsageInfo } from "@/domain/llm/types";
 import { SAVABLE_TYPES } from "@/domain/artifact/types";
 import { AUDIO_TOOL_DEFS } from "@/application/audio/toolDefinitions";
 import { WORKSPACE_TOOL_DEF } from "./workspaceToolDefinition";
@@ -126,6 +126,14 @@ export interface McpServerInfo {
 /** Load full skill content for progressive disclosure. */
 export type SkillContentLoader = (skillName: string, filePath?: string) => Promise<string>;
 
+/** Image bytes and the usage already recorded by their execution capability. */
+export interface ImageToolResult {
+  b64: string;
+  mimeType: string;
+  model: string;
+  usage: UsageInfo;
+}
+
 /**
  * Generate an image for the builtin GenerateImage tool.
  *
@@ -139,7 +147,7 @@ export type ImageGenerator = (
   prompt: string,
   size?: string,
   quality?: string,
-) => Promise<{ b64: string; mimeType: string; model: string }>;
+) => Promise<ImageToolResult>;
 
 /**
  * Edit existing image bytes for the builtin EditImage tool. The engine owns the
@@ -150,7 +158,7 @@ export type ImageEditor = (params: {
   images: Array<{ b64: string; mimeType: string }>;
   size?: string;
   quality?: string;
-}) => Promise<{ b64: string; mimeType: string; model: string }>;
+}) => Promise<ImageToolResult>;
 
 /**
  * Read a URL the model named.

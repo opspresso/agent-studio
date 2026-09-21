@@ -39,7 +39,7 @@ pnpm install --frozen-lockfile
 test -f .env.local || cp .env.example .env.local
 ```
 
-`.env.local`에 `LLM_BASE_URL`, `LLM_API_KEY`, 32바이트 base64 `AES_ENCRYPTION_KEY`를 설정한다.
+`.env.local`에 32바이트 base64 `AES_ENCRYPTION_KEY`를 설정한다.
 `DATABASE_URL`과 S3 연결 값은 local Kubernetes의 서비스와 자격 증명에 맞춘다. 실제 로그인에는
 `BETTER_AUTH_SECRET`과 Keycloak·표준 OIDC·Google·비밀번호 중 사용할 수단도 설정한다.
 
@@ -58,6 +58,8 @@ pnpm dev
 `http://localhost:3000`에서 시작한다. 스키마는 앱 부팅 시 적용된다. LLM이나 신원 제공자가 없는
 개발 환경에는 [mock 모델과 개발 세션](docs/DEVELOPMENT.md#실제-자격-증명-없이-작업하기)을 사용한다.
 이미 설정 파일이 있다면 복사로 덮어쓰지 말고 필요한 항목을 추가한다.
+실행 전 관리자가 Settings → Models에서 프로바이더 연결과 사용할 모델을 등록하고 기본 모델을
+선택한다. 세부 절차는 [모델 등록과 사용](docs/CONFIGURATION.md#모델-등록과-사용)을 따른다.
 
 Compose는 local Kubernetes를 사용할 수 없거나 격리된 테스트에 필요한 경우의 대안이다.
 루트 Compose의 `agent-studio-local`은 전용 PostgreSQL·MinIO volume을 소유한다.

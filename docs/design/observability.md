@@ -117,7 +117,8 @@ TraceSpan { spanId, parentSpanId?, kind: 'model' | 'tool' | 'subagent' | 'guardr
 `runtime/tracing.ts`는 SDK 기본 exporter를 로컬 processor로 교체한다. Agent, 모델 generation,
 function tool, Handoff, MCP 도구 listing과 Guardrail의 native span ID·부모 ID를 보존한다.
 동시 위임도 SDK가 만든 계층에 남으며 text 자식마다 별도의 Studio Trace를 만들지 않는다.
-이미지 등 특화 실행은 자체 기록을 유지할 수 있다.
+이미지 생성·편집도 호출한 이미지 모델의 generation span을 해당 function tool 아래에 남기며,
+텍스트 모델과 같은 사용량 필드로 토큰·비용을 기록한다.
 
 모델/도구 입력·출력과 credential은 SDK trace 수집에서 제외한다. 이름, SDK 종류/trace ID,
 시간, 상태와 숫자형 사용량만 변환한다. 모델의 실제 비용과 cache/reasoning token을 보존한다.

@@ -23,8 +23,8 @@ function fullDeps(overrides: Partial<AgentDeps> = {}): AgentDeps {
     channel: {} as AgentDeps["channel"],
     loadSkillContent: async () => "body",
     canDelegate: true,
-    generateImage: async () => ({ b64: "", mimeType: "image/png", model: "openai/gpt-image-1" }),
-    editImage: async () => ({ b64: "", mimeType: "image/png", model: "openai/gpt-image-1" }),
+    generateImage: async () => ({ b64: "", mimeType: "image/png", model: "openai/gpt-image-1", usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } }),
+    editImage: async () => ({ b64: "", mimeType: "image/png", model: "openai/gpt-image-1", usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } }),
     ...overrides,
   };
 }

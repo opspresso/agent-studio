@@ -16,7 +16,7 @@ describe("durable native SDK Session", () => {
     const f = fixture();
     const image = { b64: "aGVsbG8=", mimeType: "image/png" };
     await f.run(new FakeChannel([[contentChunk("seen")]]), "", undefined, {}, { messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: `data:image/png;base64,${image.b64}` } }] }] });
-    const editImage = vi.fn(async () => ({ b64: "Ymx1ZQ==", mimeType: "image/png", model: "openai/gpt-image-2" }));
+    const editImage = vi.fn(async () => ({ b64: "Ymx1ZQ==", mimeType: "image/png", model: "openai/gpt-image-2", usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } }));
     const next = new FakeChannel([[toolCallChunk(0, "edit", "EditImage", '{"image_id":"img_1","prompt":"blue"}')], [contentChunk("edited")]]);
     const chunks = await f.run(next, "edit the prior image", undefined, { editImage });
     expect(chunks.some((chunk) => chunk.error)).toBe(false);
@@ -173,8 +173,8 @@ describe("durable native SDK Session", () => {
 
   it("restores generated image handles before resuming an approved edit", async () => {
     const f = fixture({ approvalTools: ["EditImage"] });
-    const edit = vi.fn(async () => ({ b64: "Ymx1ZQ==", mimeType: "image/png", model: "openai/gpt-image-2" }));
-    const deps = { generateImage: async () => ({ b64: "aGVsbG8=", mimeType: "image/png", model: "openai/gpt-image-2" }), editImage: edit };
+    const edit = vi.fn(async () => ({ b64: "Ymx1ZQ==", mimeType: "image/png", model: "openai/gpt-image-2", usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } }));
+    const deps = { generateImage: async () => ({ b64: "aGVsbG8=", mimeType: "image/png", model: "openai/gpt-image-2", usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } }), editImage: edit };
     const initial = new FakeChannel([
       [toolCallChunk(0, "generate", "GenerateImage", '{"prompt":"fox"}')],
       [toolCallChunk(0, "edit", "EditImage", '{"image_id":"img_1","prompt":"blue"}')],

@@ -18,11 +18,11 @@
 | 이미지 Model 의 세 가지 토큰 수를 usage 행 하나로 합치기 | `src/domain/llm/models.ts` | 구조 |
 | 한 런이 파일을 몇 개까지 쓸 수 있는가 | `src/application/runtime/tools.ts` 의 `MAX_SAVED_FILES_PER_RUN`. 이 플랫폼이 고른 루프 한도라 그것을 강제하는 루프 옆에 산다 | 구조 |
 | 한 호출의 인자를 얼마나 보관하고 되풀이하는가 (알려지는 쪽과 프로바이더로 돌아가는 쪽 둘 다) | `src/application/runtime/arguments.ts` 의 `MAX_TOOL_ARG_BYTES` / `boundToolArgsPair` / `boundArgumentText` | 구조 |
-| Embedding/Rerank 선택 모델의 endpoint·credential·wire ID 결정 | `src/lib/runtime-settings.ts`의 `getEmbeddingTarget` / `getRerankerTarget`. 공개 모델은 등록된 provider 채널을 우선하고 self-hosted는 전용 채널을 사용한다 | 구조 |
+| Embedding/Rerank 선택 모델의 endpoint·credential·wire ID 결정 | `src/lib/runtime-settings.ts`의 `getEmbeddingTarget` / `getRerankerTarget`. 등록 모델의 provider 연결을 사용한다 | 구조 |
 | provider 에 embedding 을 요청하기 | `src/infrastructure/llm/embeddings.ts` | 구조 |
 | 전사 모델의 endpoint·credential·wire ID·응답 형식 결정 | `src/lib/runtime-settings.ts`의 `getTranscriptionTarget` | 구조 |
 | 전사 사용량의 시간/토큰 단위 비용 계산 | `src/domain/llm/models.ts`의 `calculateTranscriptionCost`. 누락된 과금 단위는 unknown이다 | 구조 |
-| 배포 전역 Embedding/Rerank 모델 선택과 Embedding 변경 시 vector migration | `src/application/llm/modelSelection.ts`; env/DB 우선순위는 `src/lib/runtime-settings.ts` | 구조 |
+| 배포 전역 Embedding/Rerank 모델 선택과 Embedding 변경 시 vector migration | `src/application/llm/modelSelection.ts`; DB의 모델 선택·미설정 상태 해석은 `src/lib/runtime-settings.ts` | 구조 |
 | vector 후보를 2차 정렬하기 | 요청/응답 프로토콜은 `src/infrastructure/llm/reranker.ts`, 어느 후보·텍스트·과업 instruction을 보내고 상대 하한으로 자를지는 `src/application/catalog/searchCatalog.ts` | 구조 |
 | vector store 와 이야기하기. cosine 거리 `<=>`, 점수 = 1 − 거리 | `src/infrastructure/vector/pgVectorStore.ts` | 구조 |
 | capability 가 색인되는 키 | `src/domain/catalog/types.ts` 의 `capabilityKey` | 구조 |

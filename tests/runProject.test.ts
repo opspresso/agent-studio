@@ -327,6 +327,7 @@ describe("executeAgent GenerateImage opt-in", () => {
   it("uses the version's imageModel and records usage against it", async () => {
     const channel = new FakeChannel(imageCallScript);
     const { deps, recorded, imageModels } = executionDepsFixture(channel);
+    const traces = captureTraces(deps);
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
@@ -341,6 +342,14 @@ describe("executeAgent GenerateImage opt-in", () => {
     expect(imageModels).toEqual(["google/gemini-3-pro-image"]);
     expect(chunks.find((c) => c.image)?.image).toMatchObject({ b64: "aW1n", prompt: "a red fox" });
     expect(recorded.some((d) => d.model === "google/gemini-3-pro-image")).toBe(true);
+    const imageUsage = recorded.find((record) => record.model === "google/gemini-3-pro-image")!;
+    expect(chunks.filter((chunk) => chunk.usage?.model === imageUsage.model)).toEqual([
+      expect.objectContaining({ usage: { model: imageUsage.model, inputTokens: imageUsage.inputTokens, outputTokens: imageUsage.outputTokens, costUsd: imageUsage.costUsd } }),
+    ]);
+    expect(imageUsage.calls).toBe(1);
+    expect(traces[0]?.spans.filter((span) => span.kind === "model" && span.name === imageUsage.model)).toEqual([
+      expect.objectContaining({ parentSpanId: expect.any(String), input: { inputTokens: imageUsage.inputTokens }, output: expect.objectContaining({ outputTokens: imageUsage.outputTokens, costUsd: imageUsage.costUsd }) }),
+    ]);
   });
 
   it("falls back to the default image model when imageModel is unset", async () => {
@@ -354,6 +363,24 @@ describe("executeAgent GenerateImage opt-in", () => {
       }),
     );
     expect(imageModels).toEqual([DEFAULT_IMAGE_MODEL]);
+  });
+
+  it("marks a failed image request as an error span without inventing usage", async () => {
+    const { deps, recorded } = executionDepsFixture(new FakeChannel(imageCallScript));
+    const traces = captureTraces(deps);
+    deps.imageChannel.generateImage = async () => { throw new Error("image provider failed"); };
+    const chunks = await collect(executeAgent(deps, {
+      project: projectFixture(),
+      configuration: configurationFixture({ piiFiltering: false, imageGeneration: true }),
+      messages: [{ role: "user", content: "draw a fox" }],
+    }));
+    expect(recorded.some((record) => record.model === DEFAULT_IMAGE_MODEL)).toBe(false);
+    expect(chunks.some((chunk) => chunk.usage?.model === DEFAULT_IMAGE_MODEL)).toBe(false);
+    const imageTool = traces[0]!.spans.find((span) => span.kind === "tool" && span.name === "GenerateImage")!;
+    expect(imageTool.status).toBe("error");
+    const request = traces[0]!.spans.find((span) => span.kind === "model" && span.parentSpanId === imageTool.spanId)!;
+    expect(request.status).toBe("error");
+    expect(request.output).not.toHaveProperty("costUsd");
   });
 
   it("falls back to the default image model when the stored imageModel left the registry", async () => {
@@ -434,6 +461,7 @@ describe("executeAgent EditImage", () => {
   it("edits an attached image and records usage against the image model", async () => {
     const channel = new FakeChannel(editScript);
     const { deps, recorded, edits } = executionDepsFixture(channel);
+    const traces = captureTraces(deps);
 
     const chunks = await collect(
       executeAgent(deps, {
@@ -459,6 +487,13 @@ describe("executeAgent EditImage", () => {
     // 5 text + 20 image input tokens, 60 image output tokens — same accounting as generate.
     expect(editUsage?.inputTokens).toBe(25);
     expect(editUsage?.outputTokens).toBe(60);
+    expect(chunks.filter((chunk) => chunk.usage?.model === DEFAULT_IMAGE_MODEL)).toEqual([
+      expect.objectContaining({ usage: { model: DEFAULT_IMAGE_MODEL, inputTokens: 25, outputTokens: 60, costUsd: editUsage!.costUsd } }),
+    ]);
+    expect(editUsage?.calls).toBe(1);
+    expect(traces[0]?.spans.filter((span) => span.kind === "model" && span.name === DEFAULT_IMAGE_MODEL)).toEqual([
+      expect.objectContaining({ input: { inputTokens: 25 }, output: expect.objectContaining({ outputTokens: 60, costUsd: editUsage!.costUsd }) }),
+    ]);
   });
 
   it("lists the attached image in the system prompt so the model can name it", async () => {
@@ -945,6 +980,10 @@ describe("executeAgent nested transfer identity", () => {
     const imageChunk = chunks.find((c) => c.image);
     expect(imageChunk?.author).toBe("sample-agent");
     expect(imageChunk?.authorPath).toEqual(["sample-agent"]);
+    const imageUsage = chunks.find((chunk) => chunk.usage?.model === DEFAULT_IMAGE_MODEL);
+    expect(imageUsage?.author).toBe(imageChunk?.author);
+    expect(imageUsage?.authorPath).toEqual(imageChunk?.authorPath);
+    expect(imageUsage?.transferId).toBe(imageChunk?.transferId);
     // The middle hop still reports itself for its own output.
     const middle = chunks.find((c) => c.author === "sample-agent" && c.delta?.content);
     expect(middle?.authorPath).toEqual(["sample-agent"]);
@@ -966,6 +1005,9 @@ describe("executeAgent nested transfer identity", () => {
     const action = spans.find((span) => span.kind === "tool" && span.name === "GenerateImage");
     expect(child?.parentSpanId).toBeDefined();
     expect(action?.parentSpanId).toBeDefined();
+    const imageModel = spans.find((span) => span.kind === "model" && span.name === DEFAULT_IMAGE_MODEL);
+    expect(imageModel?.parentSpanId).toBe(action?.spanId);
+    expect(imageModel?.output?.outputTokens).toBe(100);
     const ancestors = new Set<string>();
     let current = action;
     while (current?.parentSpanId) {
@@ -1873,6 +1915,34 @@ describe("execution tracing policy", () => {
 });
 
 describe("executeProject non-streaming dispatch", () => {
+  it("collects image generation and editing usage exactly once with text usage", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "generate", "GenerateImage", '{"prompt":"a fox"}'), usageChunk(1, 2)],
+      [toolCallChunk(0, "edit", "EditImage", '{"image_id":"img_1","prompt":"at night"}'), usageChunk(3, 4)],
+      [contentChunk("done"), usageChunk(5, 6)],
+    ]);
+    const { deps, recorded } = executionDepsFixture(channel);
+    const traces = captureTraces(deps);
+    const run = await executeProject(deps, {
+      project: projectFixture(),
+      configuration: configurationFixture({ piiFiltering: false, imageGeneration: true }),
+      messages: [{ role: "user", content: "draw a fox and make it night" }],
+    });
+    const totals = recorded.reduce((total, record) => ({
+      inputTokens: total.inputTokens + record.inputTokens,
+      outputTokens: total.outputTokens + record.outputTokens,
+      costUsd: total.costUsd + record.costUsd,
+    }), { inputTokens: 0, outputTokens: 0, costUsd: 0 });
+    expect(run.images).toHaveLength(2);
+    expect(run.images.every((image) => !("usage" in image))).toBe(true);
+    expect(run.usage).toEqual(totals);
+    expect(run.usage.inputTokens).toBe(44);
+    expect(run.usage.outputTokens).toBe(172);
+    expect(recorded.find((record) => record.model === DEFAULT_IMAGE_MODEL)?.calls).toBe(2);
+    const modelSpans = traces[0]!.spans.filter((span) => span.kind === "model");
+    expect(modelSpans.reduce((cost, span) => cost + Number(span.output?.costUsd ?? 0), 0)).toBeCloseTo(totals.costUsd, 10);
+  });
+
   it("collects an agent run, images and usage included", async () => {
     const channel = new FakeChannel([[contentChunk("agent answer"), usageChunk(3, 5)]]);
     const { deps } = executionDepsFixture(channel);

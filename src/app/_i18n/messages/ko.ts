@@ -811,7 +811,7 @@ export const ko: Messages = {
     "버전이 지정된 릴리스 이미지, pgvector가 있는 PostgreSQL(배포 기준 PostgreSQL 18), 접근 가능한 OpenAI 호환 LLM 엔드포인트를 준비한다. 폐쇄망에는 진입 전에 이미지를 내부 registry로 반입한다. 파일 영속 보관이 필요하면 S3 호환 저장소를 추가한다. 서비스 주소·자격 증명·볼륨·TLS·라우팅은 배포 환경에서 구성한다.",
   "guide.install.environment": "2. 필수 설정 주입",
   "guide.install.environmentBody":
-    "배포 환경의 secret·설정 주입 방식으로 DATABASE_URL·LLM_BASE_URL·LLM_API_KEY·AES_ENCRYPTION_KEY를 제공한다. AES_ENCRYPTION_KEY는 32바이트의 base64 값이어야 하고 재시작 후에도 유지해야 한다. STAGE를 명시하며 운영 배포는 prod를 사용한다. alpha/prod는 ADMIN_EMAILS와 로그인 방식도 필요하다. 콜백 구성 전에 배포 환경의 BETTER_AUTH_SECRET에 유지할 세션 secret을, BETTER_AUTH_URL과 PUBLIC_BASE_URL에 사용자가 접속하는 앱 주소를 설정한다.",
+    "배포 환경의 secret·설정 주입 방식으로 DATABASE_URL·AES_ENCRYPTION_KEY를 제공한다. AES_ENCRYPTION_KEY는 32바이트의 base64 값이어야 하고 재시작 후에도 유지해야 한다. 모델 연결은 로그인 후 등록한다. STAGE를 명시하며 운영 배포는 prod를 사용한다. alpha/prod는 ADMIN_EMAILS와 로그인 방식도 필요하다. 콜백 구성 전에 배포 환경의 BETTER_AUTH_SECRET에 유지할 세션 secret을, BETTER_AUTH_URL과 PUBLIC_BASE_URL에 사용자가 접속하는 앱 주소를 설정한다.",
   "guide.install.signin": "3. 로그인 구성",
   "guide.install.signinBody":
     "폐쇄망에서는 사내 Keycloak·표준 OIDC·비밀번호 로그인을 구성한다. Keycloak은 KEYCLOAK_ISSUER(realm URL)·KEYCLOAK_CLIENT_ID·KEYCLOAK_CLIENT_SECRET을 설정하고 client에 /api/auth/callback/keycloak을 등록한다. 표준 OIDC는 OIDC_ISSUER·OIDC_CLIENT_ID·OIDC_CLIENT_SECRET과 /api/auth/callback/oidc를 사용한다. GOOGLE_CLIENT_ID·GOOGLE_CLIENT_SECRET을 설정하면 Google도 병행할 수 있다. 비밀번호 초기 관리자는 AUTH_PASSWORD=true·BOOTSTRAP_ADMIN_EMAIL·BOOTSTRAP_ADMIN_PASSWORD로 구성하고 해당 이메일을 ADMIN_EMAILS에도 포함한다. bootstrap 비밀번호 변경으로 기존 비밀번호 계정이 초기화되지는 않는다.",
@@ -820,7 +820,7 @@ export const ko: Messages = {
     "파일을 영속 보관하려면 bucket을 만들고 S3_BUCKET_NAME을 설정한다. AWS가 아닌 저장소는 S3_ENDPOINT·S3_ACCESS_KEY_ID·S3_SECRET_ACCESS_KEY도 설정한다. AWS S3는 배포의 AWS 자격 증명이나 역할 설정을 사용할 수 있다. 저장소 계정에는 해당 bucket의 artifacts/*·source-files/* 읽기·쓰기·삭제와 비공개 파일의 multipart 업로드 권한을 부여한다. 비 AWS 저장소의 키는 다른 공급자도 사용하는 AWS_* 대신 S3 전용 변수에 넣는다. Settings에서 Artifact 접근 방식을 정하고 사용자 네트워크에서 다운로드를 검증한다.",
   "guide.install.verify": "5. 기동과 전체 경로 확인",
   "guide.install.verifyBody":
-    "앱은 기동 시 설정을 검증하고 DB 스키마 migration을 적용한다. health·readiness를 확인하고 관리자로 로그인한 뒤 모델 Test와 작은 프로젝트 생성을 거쳐 실행한다. 저장소가 구성되었다면 생성 파일을 다시 연다. 내부 MCP와 활성화한 연동도 각각 시험한다.",
+    "앱은 기동 시 설정을 검증하고 DB 스키마 migration을 적용한다. health·readiness를 확인하고 관리자로 로그인한다. Settings → Models에서 프로바이더 연결과 사용할 모델을 등록하고 모델 사용 설정에서 기본 모델을 선택한 뒤 작은 프로젝트를 생성해 실행한다. 저장소가 구성되었다면 생성 파일을 다시 연다. 내부 MCP와 활성화한 연동도 각각 시험한다.",
 
   "guide.operations.title": "운영·보존·업그레이드",
   "guide.operations.body":
@@ -987,7 +987,7 @@ export const ko: Messages = {
   "configuration.model": "모델",
   "configuration.selectModel": "모델을 고르세요…",
   "configuration.modelUnlisted":
-    "새 선택에는 사용할 수 없는 모델입니다. 숨긴 모델은 계속 실행되며, 제거된 모델은 비용 $0 으로 기록될 수 있습니다.",
+    "사용할 수 없는 모델입니다. 모델 등록과 프로바이더 연결 상태를 관리자에게 문의하거나 다른 등록 모델을 선택하세요. 미등록 모델은 실행할 수 없습니다.",
   "configuration.fallbackModel": "대체 모델 (선택)",
   "configuration.none": "없음",
   "configuration.default": "기본값",
