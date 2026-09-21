@@ -13,6 +13,11 @@ PDF는 텍스트 레이어를 추출하고 HTML은 활성 내용을 제거하며
 Office 문서는 내부 `engine/read/`로 전달한다. DOCX, XLSX, PPTX, HWP 5.x, HWPX,
 ODT/ODS/ODP, RTF를 지원한다. 암호화 파일, HWP 3.0, 구형 DOC/XLS/PPT는 지원하지 않는다.
 
+RTF는 문서의 `ansicpg`로 연속 hex·원시 바이트를 해석한다. 기본값은 Windows-1252이며,
+866·874·932·936·949·950·1250–1258·10000·10007·65001을 지원한다. 미지원 선언과
+그룹·제어 경계에서 끊긴 바이트열은 오류로 거절한다. CP949는 번들에 포함한 decoder로
+확장 한글까지 읽으며 런타임 다운로드가 없다. 폰트별 `fcharset`·`cpg` 전환은 지원하지 않는다.
+
 Office 읽기는 Markdown으로 표현할 수 있는 내용과 구조를 추출한다. 원본 파일의
 보존 편집을 뜻하지 않는다. 내부 Office 읽기 결과의 `complete`, `omissions`, `counts`는
 추출 범위와 누락을 나타낸다. 외부 추출 포트는 `text`와 `note?`만 반환한다. 첨부는 `documentLimits.ts`의 더 작은 문자 예산을 적용한다.
