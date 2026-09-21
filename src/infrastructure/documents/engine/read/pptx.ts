@@ -21,8 +21,9 @@
 import { MAX_TEXT_CHARS } from "../limits";
 import type { Align, Run } from "../markdown";
 import { attributeOf, localName, walkXml, type XmlHandler } from "../xml";
-import { openZip, type ZipEntry } from "../zip";
+import { openZip } from "../zip";
 import { DocumentError } from "../errors";
+import { xmlElements } from "../edit/xmlElements";
 import { drawnMarker, type ReadBlock, type ReadCell, type ReadRow } from "./blocks";
 import { partOfTarget, relationshipsOf } from "./docx";
 import { collapseRuns } from "./lines";
@@ -30,7 +31,6 @@ import { blocksToMarkdown } from "./serialize";
 
 export class PptxError extends DocumentError {}
 
-const SLIDE = /^ppt\/slides\/slide(\d+)\.xml$/;
 const PRESENTATION = "ppt/presentation.xml";
 const PRESENTATION_RELS = "ppt/_rels/presentation.xml.rels";
 
@@ -41,46 +41,62 @@ export interface PptxBlocks {
   observed: string[];
 }
 
-/** Slide parts in file order, which is numeric and not lexical. */
-export function slidesOf(entries: readonly ZipEntry[]): string[] {
-  return entries
-    .map((entry) => ({ name: entry.name, index: Number(SLIDE.exec(entry.name)?.[1] ?? NaN) }))
-    .filter((entry) => Number.isInteger(entry.index))
-    .sort((a, b) => a.index - b.index)
-    .map((entry) => entry.name);
-}
-
 /**
- * The order `ppt/presentation.xml` states, which is the authoritative one.
- *
- * The filename number is *usually* the deck order and is not guaranteed to be:
- * a deck whose slides were reordered without being renamed keeps its old
- * numbers. When the two disagree the file's own list wins, because being wrong
- * here is wrong twice over — the reading order, and the "slide 7" a person
- * would go looking for.
- *
- * Returns nothing when the parts are missing or say nothing, and the filename
- * order stands.
+ * Only slides referenced by the presentation belong to the deck. Package
+ * filenames neither establish order nor make an unreferenced part a slide.
+ * An unresolved list is refused rather than replaced by a guessed reading.
  */
 export function deckOrder(
   presentation: string,
   rels: string,
   present: readonly string[],
 ): string[] {
-  const targets = relationshipsOf(rels);
-  const ordered: string[] = [];
-  for (const match of presentation.matchAll(/<p:sldId\b([^>]*)\/?>/g)) {
-    const attributes = match[1] ?? "";
-    const id = attributeOf(attributes, "r:id") ?? attributeOf(attributes, "id");
-    const target = id === undefined ? undefined : targets.get(id);
-    if (target === undefined) {
-      continue;
-    }
-    const name = partOfTarget("ppt", target);
-    if (present.includes(name)) {
-      ordered.push(name);
-    }
+  const elements = xmlElements(presentation, (name) =>
+    ["presentation", "sldIdLst", "sldId"].includes(localName(name)),
+  );
+  const root = elements.find((element) => element.depth === 0 && localName(element.name) === "presentation");
+  const lists = elements.filter((element) => element.depth === 1 && localName(element.name) === "sldIdLst");
+  if (!root || lists.length !== 1) {
+    throw new PptxError("the presentation must declare one slide list");
   }
+  const list = lists[0]!;
+  const targets = new Map<string, { target?: string; type?: string; external: boolean }>();
+  const relationships = xmlElements(rels, (name) => ["Relationships", "Relationship"].includes(localName(name)));
+  if (!relationships.some((element) => element.depth === 0 && localName(element.name) === "Relationships")) {
+    throw new PptxError("the presentation has no relationship document");
+  }
+  for (const element of relationships) {
+    if (element.depth !== 1 || localName(element.name) !== "Relationship") continue;
+    const id = attributeOf(element.attributes, "Id");
+    if (!id || targets.has(id)) {
+      throw new PptxError("the presentation has missing or duplicate relationship IDs");
+    }
+    targets.set(id, {
+      target: attributeOf(element.attributes, "Target"),
+      type: attributeOf(element.attributes, "Type"),
+      external: attributeOf(element.attributes, "TargetMode") === "External",
+    });
+  }
+  const available = new Set(present);
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const element of elements) {
+    if (element.depth !== 2 || localName(element.name) !== "sldId" ||
+      element.start < list.contentStart || element.end > list.contentEnd) continue;
+    const id = attributeOf(element.attributes, "r:id");
+    const relationship = id ? targets.get(id) : undefined;
+    if (!relationship?.target || relationship.external || !relationship.type?.endsWith("/slide")) {
+      throw new PptxError("the presentation references a missing or invalid slide relationship");
+    }
+    const name = partOfTarget("ppt", relationship.target);
+    if (!available.has(name) || name.startsWith("../") || name === "..") {
+      throw new PptxError(`the presentation references missing slide part ${JSON.stringify(name)}`);
+    }
+    if (seen.has(name)) throw new PptxError("the presentation references the same slide part more than once");
+    seen.add(name);
+    ordered.push(name);
+  }
+  if (ordered.length === 0) throw new PptxError("the presentation declares no slides");
   return ordered;
 }
 
@@ -511,40 +527,21 @@ const relsOf = (name: string): string => name.replace(/^(.*)\/([^/]+)$/, "$1/_re
 export function pptxToBlocks(bytes: Uint8Array): PptxBlocks {
   const { entries, read } = openZip(bytes);
   const names = entries.map((entry) => entry.name);
-  const byFilename = slidesOf(entries);
-  if (byFilename.length === 0) {
-    // A zip with no slides is not a deck. Saying so beats an empty success,
-    // which would read as "this presentation is blank".
-    throw new PptxError("it has no slides — the archive is not a PPTX presentation");
-  }
-  // One call: the slides, the deck's stated order, and every slide's rels. A
-  // second `read()` walks the whole archive again for a few kilobytes.
-  const parts = read([
-    ...byFilename,
-    ...byFilename.map(relsOf),
-    PRESENTATION,
-    PRESENTATION_RELS,
-  ]);
+  if (new Set(names).size !== names.length) throw new PptxError("the presentation package contains duplicate parts");
   const decoder = new TextDecoder();
-  const decode = (name: string): string | undefined => {
-    const found = parts.get(name);
-    return found === undefined ? undefined : decoder.decode(found);
-  };
-  const stated = deckOrder(decode(PRESENTATION) ?? "", decode(PRESENTATION_RELS) ?? "", names);
-  const order = stated.length === byFilename.length ? stated : byFilename;
+  const metadata = read([PRESENTATION, PRESENTATION_RELS]);
+  const presentation = metadata.get(PRESENTATION);
+  const relationships = metadata.get(PRESENTATION_RELS);
+  if (!presentation || !relationships) throw new PptxError("the presentation or its relationships are missing");
+  const order = deckOrder(decoder.decode(presentation), decoder.decode(relationships), names);
+  const parts = read([...order, ...order.map(relsOf)]);
   const blocks: ReadBlock[] = [];
   const observed = new Set<string>();
-  if (stated.length > 0 && stated.join(" ") !== byFilename.join(" ")) {
-    observed.add("the deck was reordered after its slides were named");
-  }
   let slides = 0;
   for (const name of order) {
-    const part = decode(name);
-    if (part === undefined) {
-      continue;
-    }
     slides += 1;
-    const rels = decode(relsOf(name)) ?? "";
+    const part = decoder.decode(parts.get(name)!);
+    const rels = decoder.decode(parts.get(relsOf(name)));
     const extractor = new Extractor(rels === "" ? new Map() : relationshipsOf(rels));
     walkXml(part, extractor);
     // Numbered, because a slide is how a person refers to a place in a deck —

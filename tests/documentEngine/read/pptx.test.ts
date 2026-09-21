@@ -1,37 +1,32 @@
 import { strict as assert } from "node:assert";
 import { test } from "vitest";
 import { buildZip } from "@/infrastructure/documents/engine/zip";
-import { deckOrder, pptxToText, PptxError, slideXmlToBlocks, slidesOf } from "@/infrastructure/documents/engine/read/pptx";
+import { deckOrder, pptxToText, PptxError, slideXmlToBlocks } from "@/infrastructure/documents/engine/read/pptx";
 
 const utf8 = (value: string) => new TextEncoder().encode(value);
 
-function deck(...slides: string[]): Uint8Array {
+const slideRelationship = (id: string, target: string, extra = "") =>
+  `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="${target}" ${extra}/>`;
+const presentation = (...ids: string[]) =>
+  `<p:presentation><p:sldIdLst>${ids.map((id) => `<p:sldId r:id="${id}"/>`).join("")}</p:sldIdLst></p:presentation>`;
+
+function deckParts(...slides: string[]): Record<string, Uint8Array> {
   const parts: Record<string, Uint8Array> = {
-    "ppt/presentation.xml": utf8("<p:presentation/>"),
+    "ppt/presentation.xml": utf8(presentation(...slides.map((_, index) => `rId${index + 1}`))),
+    "ppt/_rels/presentation.xml.rels": utf8(
+      `<Relationships>${slides.map((_, index) => slideRelationship(`rId${index + 1}`, `slides/slide${index + 1}.xml`)).join("")}</Relationships>`,
+    ),
   };
   slides.forEach((body, index) => {
     parts[`ppt/slides/slide${index + 1}.xml`] = utf8(
       `<?xml version="1.0"?><p:sld><p:cSld><p:spTree>${body}</p:spTree></p:cSld></p:sld>`,
     );
   });
-  return buildZip(parts);
+  return parts;
 }
 
+const deck = (...slides: string[]) => buildZip(deckParts(...slides));
 const para = (...runs: string[]) => `<a:p>${runs.map((r) => `<a:r><a:t>${r}</a:t></a:r>`).join("")}</a:p>`;
-
-test("slides come back in deck order, which is numeric and not lexical", () => {
-  const entries = [
-    "ppt/slides/slide10.xml",
-    "ppt/slides/slide2.xml",
-    "ppt/slides/slide1.xml",
-    "ppt/slides/_rels/slide1.xml.rels",
-  ].map((name) => ({ name, compressedSize: 0, originalSize: 0 }));
-  assert.deepEqual(slidesOf(entries), [
-    "ppt/slides/slide1.xml",
-    "ppt/slides/slide2.xml",
-    "ppt/slides/slide10.xml",
-  ]);
-});
 
 test("each slide is numbered, because that is how a person addresses one", () => {
   const { text, slides } = pptxToText(deck(para("Title"), para("Second")));
@@ -121,17 +116,69 @@ test("the deck's own order wins over the numbers its slides were named with", ()
   // A deck reordered without being renamed keeps its old numbers, and reading
   // those is wrong twice — the reading order, and the "slide 7" someone looks
   // for.
-  const presentation =
-    '<p:presentation><p:sldIdLst><p:sldId r:id="rA"/><p:sldId r:id="rB"/></p:sldIdLst></p:presentation>';
   const rels =
-    '<Relationships><Relationship Id="rA" Target="slides/slide2.xml"/>' +
-    '<Relationship Id="rB" Target="slides/slide1.xml"/></Relationships>';
-  assert.deepEqual(deckOrder(presentation, rels, ["ppt/slides/slide1.xml", "ppt/slides/slide2.xml"]), [
+    `<Relationships>${slideRelationship("rA", "slides/slide2.xml")}${slideRelationship("rB", "slides/slide1.xml")}</Relationships>`;
+  assert.deepEqual(deckOrder(presentation("rA", "rB"), rels, ["ppt/slides/slide1.xml", "ppt/slides/slide2.xml"]), [
     "ppt/slides/slide2.xml",
     "ppt/slides/slide1.xml",
   ]);
-  // Nothing stated: the filename order stands rather than a partial one.
-  assert.deepEqual(deckOrder("", "", ["ppt/slides/slide1.xml"]), []);
+});
+
+test("unreferenced slide parts cannot change the deck's contents or order", () => {
+  const parts = deckParts(para("First"), para("Removed content"), para("Third"));
+  parts["ppt/presentation.xml"] = utf8(presentation("rId3", "rId1"));
+  assert.deepEqual(pptxToText(buildZip(parts)), {
+    slides: 2,
+    text: "## Slide 1\n\nThird\n\n## Slide 2\n\nFirst",
+  });
+});
+
+test("slide references are actual XML children, including namespaced elements", () => {
+  const parts = deckParts(para("Kept"), para("Not in deck"));
+  parts["ppt/presentation.xml"] = utf8(
+    '<x:presentation><!-- <x:sldIdLst><x:sldId r:id="missing"/></x:sldIdLst> -->' +
+    '<x:sldIdLst><!-- <x:sldId r:id="rId2"/> --><x:sldId r:id="rId1"/></x:sldIdLst>' +
+    '<x:extLst><x:ext><x:sldId r:id="rId2"/></x:ext></x:extLst></x:presentation>',
+  );
+  parts["ppt/_rels/presentation.xml.rels"] = utf8(
+    '<x:Relationships><!-- <Relationship Id="rId1" Target="slides/slide2.xml"/> -->' +
+    slideRelationship("rId1", "slides/slide1.xml").replace("<Relationship", "<x:Relationship") +
+    '</x:Relationships>',
+  );
+  assert.deepEqual(pptxToText(buildZip(parts)), { slides: 1, text: "## Slide 1\n\nKept" });
+});
+
+test("declared slide relationships can name parts outside the conventional filename pattern", () => {
+  const parts = deckParts(para("Custom part"));
+  parts["slides/custom.xml"] = parts["ppt/slides/slide1.xml"]!;
+  delete parts["ppt/slides/slide1.xml"];
+  parts["ppt/_rels/presentation.xml.rels"] = utf8(
+    `<Relationships>${slideRelationship("rId1", "../slides/custom.xml")}</Relationships>`,
+  );
+  assert.deepEqual(pptxToText(buildZip(parts)), { slides: 1, text: "## Slide 1\n\nCustom part" });
+});
+
+test("missing or ambiguous slide declarations fail instead of guessing from archive filenames", () => {
+  const names = ["ppt/slides/slide1.xml"];
+  const relationship = slideRelationship("rId1", "slides/slide1.xml");
+  const rels = `<Relationships>${relationship}</Relationships>`;
+  for (const document of ["", "<p:presentation/>", presentation(), presentation("missing")]) {
+    assert.throws(() => deckOrder(document, rels, names), PptxError);
+  }
+  for (const links of [
+    "",
+    "<Relationships/>",
+    `<Relationships>${relationship}${relationship}</Relationships>`,
+    `<Relationships>${slideRelationship("rId1", "slides/missing.xml")}</Relationships>`,
+    `<Relationships>${slideRelationship("rId1", "slides/slide1.xml", 'TargetMode="External"')}</Relationships>`,
+    rels.replace("relationships/slide", "relationships/notesSlide"),
+  ]) {
+    assert.throws(() => deckOrder(presentation("rId1"), links, names), PptxError);
+  }
+  assert.throws(() => deckOrder(presentation("rId1", "rId1"), rels, names), PptxError);
+  const incomplete = deckParts(para("Do not guess"));
+  delete incomplete["ppt/_rels/presentation.xml.rels"];
+  assert.throws(() => pptxToText(buildZip(incomplete)), PptxError);
 });
 
 test("a picture on a slide leaves a mark", () => {
