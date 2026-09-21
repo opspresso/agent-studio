@@ -11,6 +11,8 @@ let discovered: DiscoveredModel[];
 let selected: RegisteredModel[];
 let saves: RegisteredModel[];
 let blockDeletion: boolean;
+let failDiscovery: boolean;
+let discoveryQueries: string[];
 
 test.beforeAll(async () => {
   discovered = await createProviderModelDiscovery(async () => Response.json({ data: [
@@ -20,7 +22,7 @@ test.beforeAll(async () => {
     { id: "vendor/alpha", name: "Alpha", architecture: { output_modalities: ["text"] }, pricing: { prompt: "0.000002", completion: "0.000004" } },
     { id: "~typesafe/jev-latest", name: "TypeSafe: Jev Latest", architecture: { input_modalities: ["text"], output_modalities: ["decisions"] },
       supported_parameters: [], context_length: 32000, top_provider: { max_completion_tokens: 28800 }, pricing: { prompt: "0.000000042", completion: "0" } },
-    { id: "unknown", name: "Unknown" },
+    { id: "constructor", name: "Unknown" },
   ] })).list({ name: "fixture", kind: "openrouter", baseUrl: "https://provider.test/v1", apiKey: "", auth: "bearer", keepModelPrefix: false });
   const bundle = await build({ entryPoints: ["browser-tests/fixtures/model-selection.tsx"], bundle: true, write: false,
     outdir: "/tmp/agent-studio-model-fixture", platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' } });
@@ -34,11 +36,14 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 test.beforeEach(async ({ page }) => {
-  selected = []; saves = []; blockDeletion = false;
+  selected = []; saves = []; blockDeletion = false; failDiscovery = false; discoveryQueries = [];
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
-    if (path === "/api/settings") return route.fulfill({ json: { llmProviders: { items: [{ name: "fixture", kind: "openrouter" }] } } });
-    if (path === "/api/models/discover") return route.fulfill({ json: { models: discovered } });
+    if (path === "/api/settings") return route.fulfill({ json: { llmProviders: { items: [{ name: "fixture", kind: "openrouter" }, { name: "other", kind: "openrouter" }] } } });
+    if (path === "/api/models/discover") {
+      discoveryQueries.push(new URL(route.request().url()).search);
+      return failDiscovery ? route.fulfill({ status: 502, json: { error: "Provider discovery failed" } }) : route.fulfill({ json: { models: discovered } });
+    }
     if (path === "/api/models/registry") {
       if (route.request().method() === "DELETE") {
         if (blockDeletion) return route.fulfill({ status: 409, json: { error: "Change model usage before deleting this model" } });
@@ -143,4 +148,49 @@ test("retains the selected model and surfaces the API's in-use deletion refusal"
 test("keeps model cards within a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("always queries the complete provider catalog even while selected-only is active", async ({ page }) => {
+  const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
+  await jev.getByRole("button", { name: "Add model" }).click();
+  await expect(jev).toContainText("Selected");
+  await page.getByRole("checkbox", { name: "Selected models only" }).check();
+  await page.getByRole("button", { name: "Discover models", exact: true }).click();
+  await expect.poll(() => discoveryQueries.length).toBe(2);
+  expect(discoveryQueries).toEqual(["?provider=fixture", "?provider=fixture"]);
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await page.getByRole("checkbox", { name: "Selected models only" }).uncheck();
+  await expect(page.getByRole("article")).toHaveCount(4);
+  failDiscovery = true;
+  await page.getByRole("checkbox", { name: "Selected models only" }).check();
+  await page.getByRole("button", { name: "Discover models", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Provider discovery failed");
+  await page.getByRole("checkbox", { name: "Selected models only" }).uncheck();
+  await expect(page.getByRole("article")).toHaveCount(4);
+});
+
+test("restores provider, query, type, capability filters, selected-only and sort from browser storage", async ({ page }) => {
+  await page.getByRole("combobox", { name: "Providers", exact: true }).click();
+  await page.getByRole("option", { name: "other (openrouter)", exact: true }).click();
+  await page.getByRole("button", { name: "Discover models", exact: true }).click();
+  const zeta = page.getByRole("article").filter({ hasText: "Zeta" });
+  await zeta.getByRole("button", { name: "Add model" }).click();
+  await expect(zeta).toContainText("Selected");
+  await page.getByRole("textbox", { name: "Search models" }).fill("Zeta");
+  await page.getByRole("combobox", { name: "Model type", exact: true }).click();
+  await page.getByRole("option", { name: "Text", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Tools", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Vision", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Selected models only" }).check();
+  await page.getByRole("button", { name: "Price", exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Providers", exact: true })).toHaveValue("other (openrouter)");
+  await expect(page.getByRole("textbox", { name: "Search models" })).toHaveValue("Zeta");
+  await expect(page.getByRole("combobox", { name: "Model type", exact: true })).toHaveValue("Text");
+  for (const name of ["Tools", "Vision", "Selected models only"]) await expect(page.getByRole("checkbox", { name, exact: true })).toBeChecked();
+  await expect(page.getByRole("button", { name: "Price ↑" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Discover models", exact: true }).click();
+  await expect(zeta).toContainText("Selected");
+  await page.getByRole("button", { name: "Reset filters" }).click();
+  await expect(page.getByRole("article")).toHaveCount(4);
 });

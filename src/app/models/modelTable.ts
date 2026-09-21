@@ -35,6 +35,44 @@ const CAPABILITIES = new Set<FilterCapability>([
 const MODEL_TYPES = new Set<ModelType>(ALL_MODEL_TYPES);
 const SORT_KEYS = new Set<ModelSortKey>(["provider", "name", "price"]);
 
+export const MODEL_BROWSER_KEYS = {
+  browse: "agent-studio-models:browse:v1",
+  discovery: "agent-studio-models:discovery:v1",
+  registered: "agent-studio-models:registered:v1",
+  activeProvider: "agent-studio-models:provider:v1",
+} as const;
+
+export interface ModelBrowserState extends ModelTableState {
+  query: string;
+  selectedOnly: boolean;
+  page: number;
+}
+
+export const DEFAULT_MODEL_BROWSER_STATE: ModelBrowserState = {
+  ...DEFAULT_MODEL_TABLE_STATE, sortKey: "name", query: "", selectedOnly: false, page: 1,
+};
+
+export function deserializeModelBrowserState(value: string | undefined): ModelBrowserState {
+  try {
+    const stored = JSON.parse(value ?? "null") as Partial<ModelBrowserState> | null;
+    if (!stored || typeof stored !== "object") return DEFAULT_MODEL_BROWSER_STATE;
+    return {
+      ...normalizeModelTableState(stored),
+      query: typeof stored.query === "string" ? stored.query.slice(0, 2000) : "",
+      selectedOnly: stored.selectedOnly === true,
+      sortKey: stored.sortKey === "price" ? "price" : "name",
+      page: Number.isSafeInteger(stored.page) && stored.page! > 0 ? stored.page! : 1,
+    };
+  } catch { return DEFAULT_MODEL_BROWSER_STATE; }
+}
+
+export function deserializeModelProvider(value: string | undefined): string | null {
+  try {
+    const parsed: unknown = JSON.parse(value ?? "null");
+    return typeof parsed === "string" && parsed.length <= 64 ? parsed : null;
+  } catch { return null; }
+}
+
 export function normalizeModelTableState(value: unknown): ModelTableState {
   if (!value || typeof value !== "object") return DEFAULT_MODEL_TABLE_STATE;
   const stored = value as Partial<Record<keyof ModelTableState, unknown>>;

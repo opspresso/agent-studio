@@ -9,6 +9,9 @@ import {
   visibleModelRows,
   sortModelRows,
   modelOutputTypes,
+  DEFAULT_MODEL_BROWSER_STATE,
+  deserializeModelBrowserState,
+  deserializeModelProvider,
 } from "@/app/models/modelTable";
 
 const model = (
@@ -45,6 +48,15 @@ const models = [
 ];
 
 describe("models table", () => {
+  it("restores browser filters and ordering while rejecting malformed saved preferences", () => {
+    expect(deserializeModelBrowserState(JSON.stringify({ query: "Jev", type: "decisions", selectedOnly: true, capabilities: ["tools", "invalid"], sortKey: "price", direction: "desc", page: 3 })))
+      .toMatchObject({ query: "Jev", type: "decisions", selectedOnly: true, capabilities: ["tools"], sortKey: "price", direction: "desc", page: 3 });
+    expect(deserializeModelBrowserState("invalid JSON")).toEqual(DEFAULT_MODEL_BROWSER_STATE);
+    expect(deserializeModelBrowserState(JSON.stringify({ page: -1, selectedOnly: "true", sortKey: "invalid", query: 4 })))
+      .toMatchObject({ page: 1, selectedOnly: false, sortKey: "name", query: "" });
+    expect(deserializeModelProvider('"company-openrouter"')).toBe("company-openrouter");
+    expect(deserializeModelProvider("{}")).toBeNull();
+  });
   it("retains overlapping output types for both badges and filtering", () => {
     expect(modelOutputTypes({ type: "image", outputModalities: ["text", "image"] })).toEqual(["image", "text"]);
     expect(modelOutputTypes({ type: "embedding", outputModalities: ["embeddings"] })).toEqual(["embedding"]);

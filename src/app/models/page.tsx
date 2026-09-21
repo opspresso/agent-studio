@@ -26,6 +26,6 @@ export default function ModelsPage() {
     <PageHeader title={t("nav.models")} description={t("modelAdmin.onlySelected")} Icon={IconCpu} />
     {error && <Alert color="red">{error}</Alert>}
     {!models && !error && <LoadingText />}
-    {models && <ModelCollection models={models} emptyText={t("models.empty")} />}
+    {models && <ModelCollection scope="browse" models={models} emptyText={t("models.empty")} />}
   </Stack>;
 }

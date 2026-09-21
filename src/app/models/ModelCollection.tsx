@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useLocalStorage } from "@mantine/hooks";
 import { Badge, Button, Card, Checkbox, Group, Pagination, Select, Stack, Text } from "@mantine/core";
 import { CardList } from "@/app/_components/CardGrid";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
@@ -9,55 +10,55 @@ import { formatModelPrice, modelPriceLabel } from "@/app/_components/modelOption
 import { useT } from "@/app/_i18n/provider";
 import { contextWindowLabel } from "@/domain/llm/models";
 import { REGISTRY_MODEL_TYPES, type DiscoveredModel } from "@/domain/llm/providerModels";
-import { modelOutputTypes, nextSort, sortModelRows, type FilterCapability, type ModelSortKey, type SortDirection } from "./modelTable";
+import { DEFAULT_MODEL_BROWSER_STATE, MODEL_BROWSER_KEYS, deserializeModelBrowserState, modelOutputTypes, nextSort, sortModelRows, type ModelBrowserState } from "./modelTable";
 
 const capabilities = ["tools", "imageInput", "reasoning", "structuredOutput"] as const;
 type ModelRow = DiscoveredModel & { id?: string; provider?: string };
 
 /** Discovery, selected models and administration share the same facts, filters and ordering. */
-export function ModelCollection<T extends ModelRow>({ models, provider, emptyText, renderActions, isSelected }: {
+export function ModelCollection<T extends ModelRow>({ models, provider, emptyText, renderActions, isSelected, scope }: {
   models: T[];
   provider?: string;
   emptyText: string;
   renderActions?: (model: T) => React.ReactNode;
   isSelected?: (model: T) => boolean;
+  scope: "browse" | "discovery" | "registered";
 }) {
   const t = useT();
-  const [query, setQuery] = useState("");
-  const [type, setType] = useState<string | null>(null);
-  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
-  const [flags, setFlags] = useState<FilterCapability[]>([]);
-  const [sort, setSort] = useState<{ sortKey: ModelSortKey; direction: SortDirection }>({ sortKey: "name", direction: "asc" });
-  const [page, setPage] = useState(1);
-  const [selectedOnly, setSelectedOnly] = useState(false);
+  const [preferences, setPreferences] = useLocalStorage<ModelBrowserState>({
+    key: MODEL_BROWSER_KEYS[scope], defaultValue: DEFAULT_MODEL_BROWSER_STATE, deserialize: deserializeModelBrowserState, sync: false,
+  });
+  const { query, type, capabilities: flags, sortKey, direction, page, selectedOnly } = preferences;
+  const selectedProvider = provider ? null : preferences.provider;
+  const update = (patch: Partial<ModelBrowserState>) => setPreferences(current => ({ ...current, page: 1, ...patch }));
   const providers = [...new Set(models.flatMap(model => model.provider ? [model.provider] : []))].sort();
   const filtered = useMemo(() => sortModelRows(models.filter(model =>
     (!type || modelOutputTypes(model).includes(type)) && (!selectedProvider || model.provider === selectedProvider) &&
-    (!selectedOnly || isSelected?.(model)) &&
+    (!isSelected || !selectedOnly || isSelected(model)) &&
     flags.every(flag => model.capabilities?.[flag] === true) && matchesFilter(query, model.displayName, model.wireId, model.provider, model.maker),
-  ), sort.sortKey, sort.direction), [models, type, selectedProvider, flags, query, sort, selectedOnly, isSelected]);
+  ), sortKey, direction), [models, type, selectedProvider, flags, query, sortKey, direction, selectedOnly, isSelected]);
   const pages = Math.max(1, Math.ceil(filtered.length / 24));
   const currentPage = Math.min(page, pages);
   return <Stack gap="md">
     <Group align="flex-start">
-      <CatalogSearch value={query} onChange={value => { setQuery(value); setPage(1); }} placeholder={t("modelAdmin.search")}
+      <CatalogSearch value={query} onChange={query => update({ query })} placeholder={t("modelAdmin.search")}
         resultCount={filtered.length} totalCount={models.length}
-        onReset={query || type || selectedProvider || flags.length || selectedOnly ? () => { setQuery(""); setType(null); setSelectedProvider(null); setFlags([]); setSelectedOnly(false); setPage(1); } : undefined} />
+        onReset={query || type || selectedProvider || flags.length || selectedOnly ? () => update({ query: "", type: null, provider: null, capabilities: [], selectedOnly: false }) : undefined} />
       <Select aria-label={t("models.type")} placeholder={t("models.type")} value={type} clearable
-        data={REGISTRY_MODEL_TYPES.map(value => ({ value, label: t(`models.type.${value}`) }))} onChange={value => { setType(value); setPage(1); }} />
+        data={REGISTRY_MODEL_TYPES.map(value => ({ value, label: t(`models.type.${value}`) }))} onChange={value => update({ type: value as ModelBrowserState["type"] })} />
       {providers.length > 1 && <Select aria-label={t("modelAdmin.providers")} placeholder={t("modelAdmin.providers")} value={selectedProvider} data={providers} clearable
-        onChange={value => { setSelectedProvider(value); setPage(1); }} />}
+        onChange={provider => update({ provider })} />}
     </Group>
     <Group justify="space-between" gap="md">
-      <Group gap="md">{isSelected && <Checkbox label={t("models.selectedOnly")} checked={selectedOnly} onChange={event => { setSelectedOnly(event.currentTarget.checked); setPage(1); }} />}
+      <Group gap="md">{isSelected && <Checkbox label={t("models.selectedOnly")} checked={selectedOnly} onChange={event => update({ selectedOnly: event.currentTarget.checked })} />}
         {capabilities.map(flag => <Checkbox key={flag} label={t(`models.capability.${flag}`)} checked={flags.includes(flag)} onChange={event => {
-        setFlags(event.currentTarget.checked ? [...flags, flag] : flags.filter(value => value !== flag)); setPage(1);
+        update({ capabilities: event.currentTarget.checked ? [...flags, flag] : flags.filter(value => value !== flag) });
       }} />)}</Group>
       <Group gap="xs" role="group" aria-label={t("models.sort")}>
-        {(["name", "price"] as const).map(key => <Button key={key} variant={sort.sortKey === key ? "light" : "default"} size="compact-sm"
-          aria-pressed={sort.sortKey === key} title={key === "price" ? t("models.sortPriceHint") : undefined}
-          onClick={() => { setSort(nextSort(sort.sortKey, sort.direction, key)); setPage(1); }}>
-          {t(`models.sort.${key}`)}{sort.sortKey === key ? sort.direction === "asc" ? " ↑" : " ↓" : ""}
+        {(["name", "price"] as const).map(key => <Button key={key} variant={sortKey === key ? "light" : "default"} size="compact-sm"
+          aria-pressed={sortKey === key} title={key === "price" ? t("models.sortPriceHint") : undefined}
+          onClick={() => update(nextSort(sortKey, direction, key))}>
+          {t(`models.sort.${key}`)}{sortKey === key ? direction === "asc" ? " ↑" : " ↓" : ""}
         </Button>)}
       </Group>
     </Group>
@@ -84,6 +85,6 @@ export function ModelCollection<T extends ModelRow>({ models, provider, emptyTex
         </Stack>
       </Card>)}
     </CardList>}
-    {pages > 1 && <Pagination total={pages} value={currentPage} onChange={setPage} />}
+    {pages > 1 && <Pagination total={pages} value={currentPage} onChange={page => update({ page })} />}
   </Stack>;
 }

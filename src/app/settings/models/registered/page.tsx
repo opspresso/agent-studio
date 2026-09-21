@@ -51,7 +51,7 @@ export default function RegisteredModelsPage() {
     {confirmModal}
     {error && <Alert color="red">{error}</Alert>}
     {!models && !error && <LoadingText />}
-    {models && <ModelCollection models={models} emptyText={t("modelAdmin.emptyModels")} renderActions={canEdit ? model => <>
+    {models && <ModelCollection scope="registered" models={models} emptyText={t("modelAdmin.emptyModels")} renderActions={canEdit ? model => <>
       {statuses[model.id] && <Text size="xs" role="status" w="100%">{statuses[model.id]}</Text>}
       <Button variant="default" disabled={!!busy} loading={busy === model.id} onClick={() => void check(model)}>{t("modelAdmin.check")}</Button>
       <Button variant="default" disabled={!!busy} onClick={() => setEditing(model)}>{t("modelAdmin.edit")}</Button>

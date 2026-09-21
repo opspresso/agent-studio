@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useLocalStorage } from "@mantine/hooks";
 import { Alert, Badge, Button, Card, Group, Select, Stack, Text, TextInput } from "@mantine/core";
 import { LoadingText, EmptyState } from "@/app/_components/PageState";
 import { SectionHeading } from "@/app/_components/SectionHeading";
@@ -8,6 +9,7 @@ import { useConfirm } from "@/app/_components/useConfirm";
 import { useT } from "@/app/_i18n/provider";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { ModelCollection } from "@/app/models/ModelCollection";
+import { MODEL_BROWSER_KEYS, deserializeModelProvider } from "@/app/models/modelTable";
 import { REGISTRY_MODEL_TYPES, registrationFromDiscovery, type DiscoveredModel, type RegisteredModel, type RegistryModelType } from "@/domain/llm/providerModels";
 import type { SettingsView } from "@/application/settings/settingsUseCases";
 import type { ModelRegistryResponse } from "@/app/api/models/registry/route";
@@ -16,10 +18,15 @@ import type { ModelDiscoveryResponse } from "@/app/api/models/discover/route";
 export default function ModelSelectionPage() {
   const t = useT();
   const [providers, setProviders] = useState<SettingsView["llmProviders"]["items"]>();
-  const [provider, setProvider] = useState<string | null>(null);
-  const [models, setModels] = useState<DiscoveredModel[]>();
+  const [savedProvider, setProvider] = useLocalStorage<string | null>({
+    key: MODEL_BROWSER_KEYS.activeProvider, defaultValue: null, deserialize: deserializeModelProvider, sync: false,
+  });
+  const provider = providers?.some(item => item.name === savedProvider) ? savedProvider : providers?.[0]?.name ?? null;
+  // Each entry is a complete provider response. UI filters never mutate this source.
+  const [catalogs, setCatalogs] = useState(() => new Map<string, DiscoveredModel[]>());
+  const models = provider ? catalogs.get(provider) : undefined;
   const [registered, setRegistered] = useState<RegisteredModel[]>([]);
-  const [chosenTypes, setChosenTypes] = useState<Record<string, RegistryModelType>>({});
+  const [chosenTypes, setChosenTypes] = useState(() => new Map<string, RegistryModelType>());
   const [manual, setManual] = useState(false);
   const [manualId, setManualId] = useState("");
   const [manualType, setManualType] = useState<RegistryModelType>("text");
@@ -37,17 +44,17 @@ export default function ModelSelectionPage() {
       fetch("/api/models/registry").then(response => readJson<ModelRegistryResponse>(response)),
     ]).then(([settings, selection]) => {
       if (!current) return;
-      setProviders(settings.llmProviders.items); setProvider(settings.llmProviders.items[0]?.name ?? null); setRegistered(selection.models);
+      setProviders(settings.llmProviders.items); setRegistered(selection.models);
     }).catch(error => { if (current) setError(error instanceof Error ? error.message : "Could not load models"); });
     return () => { current = false; generation.current++; };
   }, []);
   async function discover() {
     if (!provider || busy || pending) return;
     const request = ++generation.current;
-    setBusy(true); setError(undefined); setModels(undefined);
+    setBusy(true); setError(undefined);
     try {
       const result = await readJson<ModelDiscoveryResponse>(await fetch(`/api/models/discover?provider=${encodeURIComponent(provider)}`));
-      if (request === generation.current) setModels(result.models);
+      if (request === generation.current) setCatalogs(previous => new Map(previous).set(provider, result.models));
     } catch (error) { if (request === generation.current) setError(error instanceof Error ? error.message : "Could not discover models"); }
     finally { if (request === generation.current) setBusy(false); }
   }
@@ -89,7 +96,7 @@ export default function ModelSelectionPage() {
       <Group align="flex-end">
         <Select label={t("modelAdmin.providers")} value={provider} allowDeselect={false} disabled={pending}
           data={providers.map(item => ({ value: item.name, label: `${item.name} (${item.kind})` }))}
-          onChange={value => { generation.current++; setProvider(value); setModels(undefined); setBusy(false); setError(undefined); setChosenTypes({}); setManual(false); }} />
+          onChange={value => { generation.current++; setProvider(value); setBusy(false); setError(undefined); setChosenTypes(new Map()); setManual(false); }} />
         <Button onClick={() => void discover()} loading={busy} disabled={pending}>{t("modelAdmin.discover")}</Button>
         <Button variant="default" disabled={!provider || pending} onClick={() => setManual(!manual)}>{t("modelAdmin.manual")}</Button>
       </Group>
@@ -103,7 +110,7 @@ export default function ModelSelectionPage() {
       </form></Card>}
       <>
         <Text size="xs" c="dimmed">{t("modelAdmin.factsHint")}</Text>
-        <ModelCollection key={provider} models={catalogRows} provider={provider ?? undefined} emptyText={t(models ? "modelAdmin.discoveryEmpty" : "modelAdmin.discoverHint")}
+        <ModelCollection scope="discovery" models={catalogRows} provider={provider ?? undefined} emptyText={t(models ? "modelAdmin.discoveryEmpty" : "modelAdmin.discoverHint")}
           isSelected={model => selected.has(model.wireId)}
           renderActions={model => selected.has(model.wireId) ? <>
             <Badge color="teal">{t("modelAdmin.enabled")}</Badge>
@@ -111,10 +118,10 @@ export default function ModelSelectionPage() {
               onClick={() => { const item = selectedModels.find(item => item.wireId === model.wireId); if (item) void remove(item); }}>{t("modelAdmin.delete")}</Button>
           </> : <>
             {!model.type && !model.outputModalities?.length && <Select aria-label={`${model.displayName} ${t("models.type")}`} placeholder={t("modelAdmin.chooseType")}
-              value={chosenTypes[model.wireId] ?? null} data={types} disabled={pending} onChange={value => { if (value) setChosenTypes(previous => ({ ...previous, [model.wireId]: value as RegistryModelType })); }} />}
+              value={chosenTypes.get(model.wireId) ?? null} data={types} disabled={pending} onChange={value => { if (value) setChosenTypes(previous => new Map(previous).set(model.wireId, value as RegistryModelType)); }} />}
             {!model.type && !!model.outputModalities?.length ? <Text size="xs" c="dimmed">{t("modelAdmin.unsupportedType")}</Text> : <Button variant="light"
-              disabled={pending || !(model.type ?? chosenTypes[model.wireId])} loading={adding === model.wireId}
-              onClick={() => void register({ ...model, type: model.type ?? chosenTypes[model.wireId] })}>{t("modelAdmin.add")}</Button>}
+              disabled={pending || !(model.type ?? chosenTypes.get(model.wireId))} loading={adding === model.wireId}
+              onClick={() => void register({ ...model, type: model.type ?? chosenTypes.get(model.wireId) })}>{t("modelAdmin.add")}</Button>}
           </>} />
       </>
     </>}
