@@ -31,6 +31,7 @@ import { log } from "@/shared/logger";
 import { repairTriggerRuns } from "./repairLostRuns";
 import type { FiringDeps, TriggerRunnerDeps } from "./deps";
 import { verifyGitHubSignature, isGitHubDeliveryId } from "@/shared/githubWebhook";
+import { holdQueuedFiring, queueLeaseUntil } from "./queuedFiring";
 
 /** Bounded preview of a run's answer, kept on the firing row. */
 const MAX_RESULT_CHARS = 2_000;
@@ -46,6 +47,8 @@ export interface AdmittedFiring<T extends Trigger = Trigger> {
   configuration: AgentConfiguration;
   run: TriggerRun;
   release: () => Promise<void>;
+  /** Queued schedules fence their owner and record the real start before any effects. */
+  start?: () => Promise<boolean>;
 }
 
 /** The webhook case, which is what `executeDelivery` takes. */
@@ -206,6 +209,7 @@ export async function admitRun<T extends Trigger>(
   deps: FiringDeps,
   trigger: T,
   extra: FiringExtra,
+  queued = false,
 ): Promise<
   | AdmittedFiring<T>
   | { status: "not-configured" }
@@ -232,6 +236,7 @@ export async function admitRun<T extends Trigger>(
   }
 
   let release = async () => {};
+  let renewSlot = async () => true;
   if (!trigger.allowConcurrent && deps.runSlots) {
     const leaseUntil = Math.floor(Date.now() / 1000) + RUN_LEASE_SECONDS;
     const slot = await deps.runSlots.acquire(
@@ -249,6 +254,7 @@ export async function admitRun<T extends Trigger>(
       return { status: "busy" };
     }
     const slots = deps.runSlots;
+    renewSlot = () => slots.renew(overlapKey(trigger.projectName, trigger.triggerId), slot, Math.floor(Date.now() / 1000) + RUN_LEASE_SECONDS);
     release = async () => {
       try {
         await slots.release(overlapKey(trigger.projectName, trigger.triggerId), slot);
@@ -264,18 +270,21 @@ export async function admitRun<T extends Trigger>(
     projectName: trigger.projectName,
     triggerId: trigger.triggerId,
     runId: randomUUID(),
-    status: "running",
+    status: queued ? "queued" : "running",
     ...(extra.idempotencyKey ? { idempotencyKey: extra.idempotencyKey } : {}),
     ...(extra.scheduledFor ? { scheduledFor: extra.scheduledFor } : {}),
-    startedAt: new Date().toISOString(),
+    ...(queued ? { queuedAt: new Date().toISOString(), queueLeaseUntil: queueLeaseUntil() } : { startedAt: new Date().toISOString() }),
   };
   try {
     await deps.triggers.appendRun(run);
   } catch (error) {
+    if (queued) { await release(); throw error; }
     // History is a log; losing a row must not cost the firing.
     log.error("trigger", "could not record the start of a firing", error);
   }
-  return { status: "accepted", runId: run.runId, trigger, project, configuration, run, release };
+  const firing: AdmittedFiring<T> = { status: "accepted", runId: run.runId, trigger, project, configuration, run, release };
+  if (queued) holdQueuedFiring(deps, firing, renewSlot);
+  return firing;
 }
 
 /** A firing that never ran, recorded so the console can say why. */
@@ -347,6 +356,7 @@ export async function executeFiring(
   admitted: AdmittedFiring,
   input: { message?: string },
 ): Promise<void> {
+  if (admitted.start && !await admitted.start()) return;
   const { trigger, project, configuration, run } = admitted;
   let text = "";
   let error: string | undefined;

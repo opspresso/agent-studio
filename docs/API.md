@@ -1448,6 +1448,11 @@ POST /api/triggers/scan
 → 401 (wrong or missing token) | 503 (SCHEDULE_SCAN_TOKEN not configured)
 ```
 
+`fired`는 `queued`로 접수한 발생 수이며 모델 실행의 시작·완료 수가 아니다. Schedule 이력은
+접수 시 `queuedAt`·`queueLeaseUntil`을 가지며, 실제 실행 시작 시 `running`과 `startedAt`을
+기록하고 `queueLeaseUntil`을 제거한다. 시작하지 못한 `queued`·실패 이력에는 `startedAt`이
+없을 수 있다. `runId`와 `scheduledFor`는 상태 전이 중 유지한다.
+
 배포 환경의 ticker가 1분에 한 번 호출하는 것이다. ticker 는 상태를 쥐지 않는다: 어느 발생분이
 도래했는지와 각각을 누가 차지하는지는 조건부 쓰기로 발생분마다 서버 측에서 결정된다. 그래서 두 번
 ticking 하든, 여러 곳에서 하든, 늦게 하든 절대 이중 발화하지 않는다. admit 된 발화는 webhook 전달과

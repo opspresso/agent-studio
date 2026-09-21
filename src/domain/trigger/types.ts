@@ -93,6 +93,7 @@ export interface ScheduleTrigger extends TriggerBase {
 export type Trigger = WebhookTrigger | ScheduleTrigger;
 
 export type TriggerRunStatus =
+  | "queued"
   | "running"
   | "succeeded"
   | "failed"
@@ -108,7 +109,11 @@ export interface TriggerRun {
   idempotencyKey?: string;
   /** The UTC instant of the cron occurrence a schedule firing was claimed for. */
   scheduledFor?: string;
-  startedAt: string;
+  /** Admission time for a queued schedule; runId remains its identity after dispatch. */
+  queuedAt?: string;
+  /** Queue owner's renewable lease, present only before dispatch. */
+  queueLeaseUntil?: string;
+  startedAt?: string;
   endedAt?: string;
   /** Bounded preview of the answer — a run's whole output does not belong here. */
   result?: string;

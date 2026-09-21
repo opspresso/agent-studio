@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_CONCURRENT_SCHEDULE_SCANS,
   SCHEDULE_CATCHUP_WINDOW_MS,
@@ -13,7 +13,7 @@ import {
   REPAIR_PROJECT_CONCURRENCY,
   repairLostRuns,
 } from "@/application/trigger/repairLostRuns";
-import { executeFiring } from "@/application/trigger/runTrigger";
+import { admitRun, executeFiring } from "@/application/trigger/runTrigger";
 import { toRunInput } from "@/application/execution/deps";
 import type { FiringDeps } from "@/application/trigger/deps";
 import type { EngineChunk } from "@/domain/llm/types";
@@ -27,9 +27,12 @@ import type {
 } from "@/domain/trigger/types";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
+import { QUEUE_HEARTBEAT_MS } from "@/application/trigger/queuedFiring";
 
 /** Held still: 09:30 KST on a fixed day, one minute after the schedule below. */
 const AT = new Date("2026-08-01T00:30:30Z");
+beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(AT); });
+afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
 const project: Project = {
   name: "p",
@@ -88,17 +91,25 @@ function webhook(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
 }
 
 function memorySlots(): RunSlotRepository {
-  const held = new Map<string, number>();
+  const held = new Map<string, { until: number; token: string }>();
+  let serial = 0;
   return {
     async acquire(actor, _limit, leaseUntilSeconds) {
-      if (held.has(actor)) {
+      if ((held.get(actor)?.until ?? 0) > Date.now() / 1000) {
         return null;
       }
-      held.set(actor, leaseUntilSeconds);
-      return { index: 0, token: actor };
+      const token = String(++serial);
+      held.set(actor, { until: leaseUntilSeconds, token });
+      return { index: 0, token };
     },
-    async release(actor, _slot: RunSlot) {
-      held.delete(actor);
+    async renew(actor, slot, leaseUntilSeconds) {
+      const current = held.get(actor);
+      if (current?.token !== slot.token || current.until <= Date.now() / 1000) return false;
+      held.set(actor, { until: leaseUntilSeconds, token: slot.token });
+      return true;
+    },
+    async release(actor, slot: RunSlot) {
+      if (held.get(actor)?.token === slot.token) held.delete(actor);
     },
   };
 }
@@ -132,7 +143,10 @@ function fixture(
   const stored: Trigger[] = [...schedules, ...(opts.webhooks ?? [])];
   const triggers: TriggerRepository = {
     get: async () => null,
-    listByProject: async () => stored,
+    listByProject: async (projectName, limit, after) => stored
+      .filter((trigger) => trigger.projectName === projectName && (!after || trigger.triggerId > after))
+      .sort((left, right) => left.triggerId < right.triggerId ? -1 : left.triggerId > right.triggerId ? 1 : 0)
+      .slice(0, limit),
     listSchedules: async (limit, after) => {
       const start = after
         ? schedules.findIndex(
@@ -145,11 +159,12 @@ function fixture(
     create: async () => {},
     put: async () => {},
     delete: async () => {},
-    async claimIdempotencyKey(_p, _t, key) {
-      if (claimed.has(key)) {
+    async claimIdempotencyKey(projectName, triggerId, key) {
+      const scoped = JSON.stringify([projectName, triggerId, key]);
+      if (claimed.has(scoped)) {
         return false;
       }
-      claimed.add(key);
+      claimed.add(scoped);
       return true;
     },
     async appendRun(run) {
@@ -163,18 +178,27 @@ function fixture(
         rows.push(run);
       }
     },
+    async updateQueuedRun(previous, next) {
+      const index = rows.findIndex((row) => row.runId === previous.runId);
+      const current = rows[index];
+      if (current?.status !== "queued" || current.queueLeaseUntil !== previous.queueLeaseUntil) return false;
+      if ((next.status === "queued" || next.status === "running") && Date.parse(current.queueLeaseUntil ?? "") <= Date.now()) return false;
+      rows[index] = next;
+      return true;
+    },
     // Scoped to the trigger, as the real query is: the repair sweep visits every
     // trigger of the project and must not see another one's rows as its own.
     // Newest first, bounded by `limit` and by `startedBefore`, because the real
     // query answers all three from the sort key — a fake that ignored them could
     // not tell a window of old rows from a page of recent ones, which is exactly
     // the difference a busy trigger turns into a row that never gets repaired.
-    listRuns: async (_project, triggerId, limit, listOpts = {}) =>
+    listRuns: async (projectName, triggerId, limit, listOpts = {}) =>
       rows
-        .filter((r) => r.triggerId === triggerId)
-        .filter((r) => !listOpts.startedBefore || r.startedAt < listOpts.startedBefore)
+        .filter((r) => r.projectName === projectName && r.triggerId === triggerId)
+        .filter((r) => !listOpts.startedBefore || (r.startedAt ?? "") < listOpts.startedBefore)
+        .filter((r) => !listOpts.queueLeaseBefore || (r.queueLeaseUntil ?? "") < listOpts.queueLeaseBefore)
         .filter((r) => !listOpts.status || r.status === listOpts.status)
-        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .sort((a, b) => (b.startedAt ?? b.queuedAt ?? "").localeCompare(a.startedAt ?? a.queuedAt ?? ""))
         .slice(0, limit),
   };
   const slots = memorySlots();
@@ -221,6 +245,108 @@ async function scanAndExecute(f: Fixture, at = AT) {
 }
 
 describe("scanSchedules", () => {
+  it("admits separate schedules at the same instant and deduplicates each scoped occurrence", async () => {
+    const f = fixture({ schedules: [schedule(), schedule({ triggerId: "other" })] });
+    expect((await scanAndExecute(f)).summary.fired).toBe(2);
+    expect(f.runs).toHaveLength(2);
+    expect((await scanAndExecute(f)).summary).toMatchObject({ fired: 0, alreadyClaimed: 2 });
+  });
+
+  it("starts the execution lease after a backlog wait and keeps the waiting reservation alive", async () => {
+    const schedules = [schedule({ triggerId: "first" }), schedule({ triggerId: "second" }), schedule({ triggerId: "last" })];
+    const f = fixture({ schedules });
+    const { firings } = await scanSchedules(f.deps, AT);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let started!: () => void;
+    const lastStarted = new Promise<void>((resolve) => { started = resolve; });
+    let count = 0;
+    f.deps.run = async function* () {
+      if (++count < 3) await vi.advanceTimersByTimeAsync(9 * 60_000);
+      else { started(); await gate; }
+      yield { delta: { content: "done" } };
+    };
+    const driving = driveFirings(firings, 1, (firing) => executeFiring(f.deps, firing, scheduleInput(firing.trigger)));
+    await lastStarted;
+    try {
+      const running = f.rows.find((row) => row.triggerId === "last")!;
+      expect(running.startedAt).toBe(new Date(AT.getTime() + 18 * 60_000).toISOString());
+      expect(await admitRun(f.deps, schedules[2]!, {})).toMatchObject({ status: "busy" });
+      await vi.advanceTimersByTimeAsync(4 * 60_000);
+      await repairLostRuns(f.deps, new Date());
+      expect(f.rows.find((row) => row.runId === running.runId)?.status).toBe("running");
+    } finally { release(); await driving; }
+    expect(f.rows.filter((row) => row.status === "succeeded")).toHaveLength(3);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(["refused", "throws"])("closes an undispatched firing when heartbeat renewal %s", async (failure) => {
+    const f = fixture();
+    const { firings } = await scanSchedules(f.deps, AT);
+    f.deps.runSlots!.renew = async () => { if (failure === "throws") throw new Error("store unavailable"); return false; };
+    await vi.advanceTimersByTimeAsync(QUEUE_HEARTBEAT_MS);
+    await driveFirings(firings, 1, (firing) => executeFiring(f.deps, firing, {}));
+    expect(f.runs).toHaveLength(0);
+    expect(f.rows[0]).toMatchObject({ status: "failed" });
+    expect(f.rows[0]?.startedAt).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+    const replacement = await admitRun(f.deps, schedule(), {});
+    expect(replacement.status).toBe("accepted");
+    if (replacement.status === "accepted") await replacement.release();
+  });
+
+  it("repairs a lost queued owner without replaying it or releasing a replacement holder", async () => {
+    const f = fixture();
+    const { firings } = await scanSchedules(f.deps, AT);
+    vi.setSystemTime(new Date(AT.getTime() + (RUN_LEASE_SECONDS + 1) * 1000));
+    const replacement = await admitRun(f.deps, schedule(), {});
+    expect(replacement.status).toBe("accepted");
+    expect(await repairLostRuns(f.deps, new Date())).toMatchObject({ repaired: 1 });
+    await driveFirings(firings, 1, (firing) => executeFiring(f.deps, firing, {}));
+    expect(f.runs).toHaveLength(0);
+    expect(f.rows.find((row) => row.runId === firings[0]!.runId)?.error).toContain("queue lease expired");
+    expect(await admitRun(f.deps, schedule(), {})).toMatchObject({ status: "busy" });
+    expect(vi.getTimerCount()).toBe(0);
+    if (replacement.status === "accepted") await replacement.release();
+  });
+
+  it("releases queued admissions when a later schedule page cannot be read", async () => {
+    const f = fixture({ schedules: Array.from({ length: SCHEDULE_SCAN_PAGE_SIZE }, (_, index) => schedule({ triggerId: `schedule-${index}` })) });
+    const repairPages = vi.spyOn(f.deps.triggers, "listByProject");
+    const list = f.deps.triggers.listSchedules;
+    f.deps.triggers.listSchedules = async (limit, after) => { if (after) throw new Error("page failed"); return list(limit, after); };
+    await expect(scanSchedules(f.deps, AT)).rejects.toThrow("page failed");
+    expect(repairPages).toHaveBeenCalledTimes(2);
+    expect(repairPages.mock.calls[1]?.[2]).toBe("schedule-99");
+    expect(f.rows).toHaveLength(SCHEDULE_SCAN_PAGE_SIZE);
+    expect(f.rows.every((row) => row.status === "failed" && !row.startedAt)).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("cleans up a queued firing if its background driver throws", async () => {
+    const f = fixture();
+    const { firings } = await scanSchedules(f.deps, AT);
+    await driveFirings(firings, 1, async () => { throw new Error("driver failed"); });
+    expect(f.rows[0]?.status).toBe("failed");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("refuses model effects if the queued-to-running transition loses its CAS", async () => {
+    const f = fixture();
+    const { firings } = await scanSchedules(f.deps, AT);
+    const update = f.deps.triggers.updateQueuedRun;
+    let starts = 0;
+    f.deps.triggers.updateQueuedRun = async (previous, next) => {
+      if (next.status === "running") { starts += 1; return false; }
+      return update(previous, next);
+    };
+    await driveFirings(firings, 1, (firing) => executeFiring(f.deps, firing, {}));
+    expect(starts).toBe(1);
+    expect(f.runs).toHaveLength(0);
+    expect(f.rows[0]).toMatchObject({ status: "failed", error: "The queued firing was closed before dispatch." });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("carries an explicitly authorized owner email without changing the schedule actor", async () => {
     const f = fixture({ schedules: [schedule({ executionEmail: project.ownerEmail })] });
     f.deps.executionUserActive = async () => true;
@@ -257,7 +383,7 @@ describe("scanSchedules", () => {
     const f = fixture();
     const { summary } = await scanAndExecute(f);
     expect(summary).toMatchObject({ checked: 1, fired: 1, alreadyClaimed: 0, skipped: 0 });
-    expect(f.claimed).toEqual(new Set(["schedule:2026-08-01T00:30:00.000Z"]));
+    expect(f.claimed).toEqual(new Set([JSON.stringify(["p", "nightly", "schedule:2026-08-01T00:30:00.000Z"])]));
     expect(f.runs).toEqual([{ message: "Summarise yesterday.", actorKind: "schedule" }]);
     expect(f.rows).toHaveLength(1);
     expect(f.rows[0]).toMatchObject({
@@ -390,7 +516,7 @@ describe("scanSchedules", () => {
     });
     const { summary } = await scanAndExecute(f);
     expect(summary.fired).toBe(1);
-    expect(f.claimed).toEqual(new Set(["schedule:2026-08-01T00:30:00.000Z"]));
+    expect(f.claimed).toEqual(new Set([JSON.stringify(["p", "nightly", "schedule:2026-08-01T00:30:00.000Z"])]));
   });
 
   it("fences one trigger's failure off from the rest of the tick", async () => {
@@ -585,7 +711,7 @@ describe("scanSchedules", () => {
     // AT's minute is 30 — a repair tick; one minute later is not.
     await scanSchedules(f.deps, AT);
     await scanSchedules(f.deps, new Date(AT.getTime() + 60_000));
-    expect(reads).toBe(1);
+    expect(reads).toBe(2);
   });
 
   it("counts an unusable stored cron instead of killing the tick", async () => {
@@ -720,7 +846,7 @@ describe("driveFirings", () => {
     const driven: string[] = [];
     const firings = Array.from(
       { length: 5 },
-      (_, i) => ({ runId: `run-${i}` }) as unknown as ScheduleFiring,
+      (_, i) => ({ runId: `run-${i}`, release: async () => {} }) as unknown as ScheduleFiring,
     );
     await driveFirings(firings, 2, async (firing) => {
       active += 1;

@@ -215,6 +215,19 @@ describe("Project atomic writes", () => {
 });
 
 describe("runSlotRepository ownership", () => {
+  it("renews only a live matching holder and never revives or extends another acquisition", async () => {
+    const actor = "trigger-overlap:renew:daily";
+    const first = (await runSlotRepository.acquire(actor, 1, NOW_SECONDS + 60))!;
+    expect(await runSlotRepository.renew(actor, first, NOW_SECONDS + 120)).toBe(true);
+    expect(await store.getItem(keys.runSlot(actor, 0))).toMatchObject({ token: first.token, leaseUntil: NOW_SECONDS + 120, expiresAt: NOW_SECONDS + 120 });
+    await runSlotRepository.release(actor, first);
+    const second = (await runSlotRepository.acquire(actor, 1, NOW_SECONDS + 60))!;
+    expect(await runSlotRepository.renew(actor, first, NOW_SECONDS + 240)).toBe(false);
+    expect(await store.getItem(keys.runSlot(actor, 0))).toMatchObject({ token: second.token, leaseUntil: NOW_SECONDS + 60 });
+    await runSlotRepository.release(actor, second);
+    const expired = (await runSlotRepository.acquire(actor, 1, NOW_SECONDS - 1))!;
+    expect(await runSlotRepository.renew(actor, expired, NOW_SECONDS + 240)).toBe(false);
+  });
   it("bounds the live-slot scan to the supported limit", async () => {
     const actor = "user:bounded@example.com";
     const query = vi.spyOn(store, "queryItems");
@@ -262,6 +275,36 @@ describe("runSlotRepository ownership", () => {
 });
 
 describe("triggerRepository messaging destination round-trip", () => {
+  it("fences queue repair against renewal and atomically moves one run to its actual start time", async () => {
+    const projectName = "queued-round-trip";
+    seedProject(projectName);
+    const queued = { projectName, triggerId: "daily", runId: "queued", status: "queued" as const,
+      queuedAt: new Date(Date.parse(NOW) - 5000).toISOString(), queueLeaseUntil: new Date(Date.parse(NOW) + 60_000).toISOString() };
+    await triggerRepository.appendRun(queued);
+    const renewed = { ...queued, queueLeaseUntil: new Date(Date.parse(NOW) + 120_000).toISOString() };
+    expect(await triggerRepository.updateQueuedRun(queued, renewed)).toBe(true);
+    expect(await triggerRepository.updateQueuedRun(queued, { ...queued, status: "failed", endedAt: NOW })).toBe(false);
+    const started = { projectName, triggerId: "daily", runId: queued.runId, queuedAt: queued.queuedAt, status: "running" as const, startedAt: NOW };
+    expect(await triggerRepository.updateQueuedRun(renewed, started)).toBe(true);
+    expect(await triggerRepository.updateQueuedRun(renewed, started)).toBe(false);
+    expect(await triggerRepository.listRuns(projectName, "daily", 10)).toEqual([started]);
+    expect(await triggerRepository.listRuns(projectName, "daily", 10, { status: "queued" })).toEqual([]);
+    expect(await store.getItem(keys.triggerRun(projectName, "daily", queued.queuedAt, queued.runId))).toBeNull();
+    expect(await triggerRepository.listRuns(projectName, "daily", 1, { status: "running", startedBefore: new Date(Date.parse(NOW) - 1).toISOString() })).toEqual([]);
+  });
+
+  it("finds expired queue leases before the limit and prevents their late dispatch", async () => {
+    const projectName = "queued-repair";
+    seedProject(projectName);
+    const expired = { projectName, triggerId: "daily", runId: "lost", status: "queued" as const,
+      queuedAt: new Date(Date.parse(NOW) - 60_000).toISOString(), queueLeaseUntil: new Date(Date.parse(NOW) - 1).toISOString() };
+    await triggerRepository.appendRun(expired);
+    for (let index = 0; index < 3; index++) await triggerRepository.appendRun({ ...expired, runId: `live-${index}`, queueLeaseUntil: new Date(Date.parse(NOW) + 60_000).toISOString() });
+    expect(await triggerRepository.listRuns(projectName, "daily", 1, { status: "queued", queueLeaseBefore: NOW })).toEqual([expired]);
+    expect(await triggerRepository.updateQueuedRun(expired, { ...expired, status: "running", startedAt: NOW })).toBe(false);
+    expect(await triggerRepository.updateQueuedRun(expired, { ...expired, status: "failed", endedAt: NOW })).toBe(true);
+    expect(await triggerRepository.updateQueuedRun(expired, { ...expired, queueLeaseUntil: new Date(Date.parse(NOW) + 60_000).toISOString() })).toBe(false);
+  });
   it("preserves schedule destinations through put + get", async () => {
     seedProject("destination-round-trip");
     await triggerRepository.put({

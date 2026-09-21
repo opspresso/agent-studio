@@ -71,6 +71,17 @@ schedule 인덱스는 페이지로 순회하며 admission과 실제 발화에 �
 한 번의 DB 조회와 동시에 수행하는 작업을 제한하는 것이며, 전체 프로젝트·발생 수의 전역 cap은 아니다.
 구체적인 값은 [CONFIGURATION](../CONFIGURATION.md#코드에-고정된-제한)을 따른다.
 
+접수한 발생은 `queued` 이력에 `queuedAt`과 갱신 가능한 `queueLeaseUntil`을 기록한다.
+tick 응답의 `fired`는 접수한 수이며 실제 시작·완료 수가 아니다. 대기 중에도 겹침 금지 예약을
+유지하고 lease의 1/3 간격으로 소유 token을 확인해 갱신한다. 실행 worker가 자리를 얻으면
+예약을 다시 갱신하고 정확한 queued lease를 조건부로 `running`으로 바꾸며 `startedAt`을 기록한다.
+대기 시간은 실행 lease와 running 복구 시계에 포함하지 않는다. `runId`와 `scheduledFor`는
+접수부터 완료까지 같다. 저장 key는 실행 시작 시각으로 원자적으로 옮겨 이력 정렬과 running
+복구의 시각 범위를 유지한다. 아직 시작하지 않은 이력의 `startedAt`은 없으며 콘솔은 `—`로 표시한다.
+
+예약 갱신 실패·만료·소유권 유실은 발화를 실패로 마감하며 모델이나 도구를 실행하지 않는다.
+스캔 중단이나 background driver 오류도 남은 대기의 타이머와 예약을 정리한다.
+
 Slack·Telegram·Teams를 각각 하나의 delivery 대상으로 고를 수 있다.
 오류 없이 끝난 텍스트 응답을 독립적으로 전송하고 `sent`·`failed`를 `deliveryResults`에 남긴다.
 전송 실패는 모델 실행 성공을 실패로 바꾸지 않고 warning을 추가한다.
@@ -82,12 +93,15 @@ Teams serviceUrl을 사용자 입력으로 받지 않는다.
 Webhook·Schedule은 ACK 후 웹 프로세스에서 실행하므로 급사하면 running 이력이 남을 수 있다.
 `repairLostRuns.ts`는 실행 lease와 추가 여유가 지난 running 행을 failed로 마감한다.
 도구의 외부효과를 알 수 없으므로 작업을 재실행하지 않는다.
+queued 행은 별도 lease 만료 인덱스로 읽고 해당 lease가 여전히 같은 경우에만 failed로 바꾼다.
+정상 heartbeat나 실행 시작이 먼저 반영되면 오래된 복구 쓰기는 거절된다. 프로세스가 유실된
+대기 역시 자동 재실행하지 않는다.
 
 주기적 scan의 복구 tick은 모든 프로젝트의 Webhook·Schedule을 순회한다.
 Webhook 전달이 끝날 때도 자기 trigger의 과거 실행을 정리하므로 ticker가 없는 설치는
 다음 전달에서 정리할 수 있다. ticker도 다음 전달도 없으면 자동 정리가 진행되지 않는다.
 
-복구 query는 시작 시각·running 상태·만료 조건을 limit 전에 적용한다.
+복구 query는 running의 시작 시각 또는 queued의 lease 만료 시각·상태·보존 만료 조건을 limit 전에 적용한다.
 완료 행이 복구 대상의 자리를 차지하지 않으며 한 번에 읽을 행 수와 프로젝트 병렬 처리 수를 제한한다.
 비활성 trigger의 이전 실행도 확인하고 개별 파티션 오류는 다른 복구를 중단시키지 않는다.
 마감 기준·주기는 [고정 제한](../CONFIGURATION.md#코드에-고정된-제한)이 소유한다.

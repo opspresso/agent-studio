@@ -141,7 +141,7 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 | Project 의 MCP OAuth 연결 | `PROJECT#{name}` | `MCPCONN#{server}` | — | — |
 | 진행 중인 MCP OAuth 인가 | `MCPOAUTH#{state}` | `META` | — | — |
 | Trigger (webhook / schedule) | `PROJECT#{name}` | `TRIGGER#{triggerId}` | schedule 만: `TYPE#SCHEDULE` | schedule 만: `{name}#{triggerId}` |
-| Trigger 런 (delivery / firing) | `PROJECT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt}#{runId}` | — | — |
+| Trigger 런 (delivery / firing) | `PROJECT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt 또는 queuedAt}#{runId}` | queued만: `TRIGGERQUEUE#{name}#{triggerId}` | queued만: `{queueLeaseUntil}#{runId}` |
 | Trigger 중복 제거 claim (`Idempotency-Key` / `schedule:{instant}`) | `TRIGGERIDEM#{name}#{triggerId}#{key}` | `META` | — | — |
 | 오디오 작업 | `PROJECT#{name}` | `AUDIOJOB#{id}` | — | — |
 | 오디오 프로젝트 큐 | `PROJECT#{name}` | `AUDIOSLOTS` | 비어 있지 않을 때: `AUDIOJOBDUE` | `{headDueAt}#{name}#{headJobId}` |

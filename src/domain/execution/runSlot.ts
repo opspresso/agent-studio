@@ -37,6 +37,8 @@ export interface RunSlotRepository {
    * `leaseUntilSeconds` is when this hold stops counting.
    */
   acquire(actor: string, limit: number, leaseUntilSeconds: number): Promise<RunSlot | null>;
+  /** Extend only a still-live acquisition owned by this token; never revive an expired holder. */
+  renew(actor: string, slot: RunSlot, leaseUntilSeconds: number): Promise<boolean>;
   /** Release a slot. Best-effort — an unreleased slot expires with its lease. */
   release(actor: string, slot: RunSlot): Promise<void>;
 }

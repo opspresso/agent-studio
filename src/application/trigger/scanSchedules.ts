@@ -11,7 +11,7 @@
  * Crash policy: a claim is permanent — a firing whose instance died is *not*
  * re-executed, because a run is not idempotent (its tools have side effects)
  * and the next occurrence is the natural retry. What a lost instance leaves
- * behind is a row stuck in `running`; once its lease could no longer be live,
+ * behind is a row stuck in `queued` or `running`; once its lease could no longer be live,
  * the tick finishes it as `failed` so the ledger says what happened. That sweep
  * covers **both** kinds and lives in `repairLostRuns.ts` — a webhook delivery
  * strands a row for the same reason and has no occurrence of its own to be
@@ -65,13 +65,13 @@ const REPAIR_EVERY_MINUTES = 5;
 export interface ScheduleScanSummary {
   /** Schedule triggers walked, enabled or not. */
   checked: number;
-  /** Occurrences claimed and admitted; the caller drives each firing. */
+  /** Occurrences claimed and queued; the caller drives each firing. */
   fired: number;
   /** Occurrences another tick or instance had already claimed — expected noise. */
   alreadyClaimed: number;
   /** Occurrences claimed but refused (overlap, superseded, no Agent configuration); each is a row. */
   skipped: number;
-  /** Rows of **either** kind stuck in `running` past any live lease, finished as failed. */
+  /** Lost queued schedules or running rows of either kind, finished as failed. */
   repaired: number;
   /** Rows whose cron or timezone no longer parses; logged, never fatal. */
   invalid: number;
@@ -91,24 +91,30 @@ export function scheduleInput(trigger: ScheduleTrigger): { message?: string } {
   return trigger.message?.trim() ? { message: trigger.message } : {};
 }
 
-/** Drive firings through a bounded pool; `drive` must not throw (and does not). */
+/** Drive a bounded pool and close any admission its driver leaves undispatched. */
 export async function driveFirings(
   firings: ScheduleFiring[],
   limit: number,
   drive: (firing: ScheduleFiring) => Promise<void>,
 ): Promise<void> {
+  if (!Number.isInteger(limit) || limit < 1) {
+    await Promise.all(firings.map((firing) => firing.release()));
+    throw new Error("The firing pool requires a positive integer limit");
+  }
   const queue = [...firings];
   const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
     for (let firing = queue.shift(); firing; firing = queue.shift()) {
-      await drive(firing);
+      try { await drive(firing); }
+      catch (error) { log.error("trigger", "could not drive an admitted firing", error); }
+      finally { await firing.release(); }
     }
   });
   await Promise.all(workers);
 }
 
 /**
- * Scan at instant `at`. Pure with respect to time — the caller supplies the
- * clock, so a test can hold it still.
+ * The supplied instant fixes the occurrence window; admission and dispatch
+ * leases use the current clock independently of that window.
  */
 export async function scanSchedules(deps: FiringDeps, at: Date): Promise<ScheduleScanResult> {
   const summary: ScheduleScanSummary = {
@@ -132,7 +138,12 @@ export async function scanSchedules(deps: FiringDeps, at: Date): Promise<Schedul
   }
   let after: { projectName: string; triggerId: string } | undefined;
   for (;;) {
-    const triggers = await deps.triggers.listSchedules(SCHEDULE_SCAN_PAGE_SIZE, after);
+    let triggers: ScheduleTrigger[];
+    try { triggers = await deps.triggers.listSchedules(SCHEDULE_SCAN_PAGE_SIZE, after); }
+    catch (error) {
+      await Promise.all(firings.map((firing) => firing.release()));
+      throw error;
+    }
     const scans = await mapWithLimit(
       triggers,
       MAX_CONCURRENT_SCHEDULE_SCANS,
@@ -243,7 +254,7 @@ async function fireDueOccurrences(
         summary.skipped += 1;
         continue;
       }
-      const admitted = await admitRun(deps, trigger, { scheduledFor });
+      const admitted = await admitRun(deps, trigger, { scheduledFor }, true);
       if (admitted.status === "accepted") {
         summary.fired += 1;
         winner = true;

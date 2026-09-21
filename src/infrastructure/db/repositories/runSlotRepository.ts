@@ -90,4 +90,16 @@ export const runSlotRepository: RunSlotRepository = {
       }
     }
   },
+
+  async renew(actor, slot, leaseUntilSeconds) {
+    try {
+      await putItem({ ...keys.runSlot(actor, slot.index), entityType: "RunSlot", actor,
+        slotIndex: slot.index, token: slot.token, leaseUntil: leaseUntilSeconds, expiresAt: leaseUntilSeconds },
+      (row) => row?.token === slot.token && Number(row.leaseUntil) > Math.floor(Date.now() / 1000));
+      return true;
+    } catch (error) {
+      if (error instanceof Error && error.name === CONDITIONAL_WRITE_FAILED) return false;
+      throw error;
+    }
+  },
 };

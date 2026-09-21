@@ -33,6 +33,7 @@ const SUMMARY = {
 const FIRING = {
   status: "accepted",
   runId: "run-1",
+  release: async () => {},
   trigger: { kind: "schedule", projectName: "p", triggerId: "nightly", message: "go" },
 };
 

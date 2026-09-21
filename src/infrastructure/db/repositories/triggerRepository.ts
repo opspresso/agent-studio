@@ -15,8 +15,9 @@ import {
   getItem,
   queryItems,
   TRANSACTION_CANCELLED,
+  transact,
 } from "@/infrastructure/db/store";
-import { putProjectItem } from "@/infrastructure/db/projectLifecycle";
+import { projectIsLive, putProjectItem } from "@/infrastructure/db/projectLifecycle";
 import { expiresAtFromNow, expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
 import { boundedPageLimit } from "@/shared/pageLimit";
 import type { TriggerRepository } from "@/domain/trigger/repository";
@@ -83,7 +84,9 @@ function toRun(item: Record<string, unknown>): TriggerRun {
     status: item.status as TriggerRun["status"],
     ...(item.idempotencyKey ? { idempotencyKey: String(item.idempotencyKey) } : {}),
     ...(item.scheduledFor ? { scheduledFor: String(item.scheduledFor) } : {}),
-    startedAt: String(item.startedAt ?? ""),
+    ...(item.startedAt ? { startedAt: String(item.startedAt) } : {}),
+    ...(item.queuedAt ? { queuedAt: String(item.queuedAt) } : {}),
+    ...(item.queueLeaseUntil ? { queueLeaseUntil: String(item.queueLeaseUntil) } : {}),
     ...(item.endedAt ? { endedAt: String(item.endedAt) } : {}),
     ...(item.result ? { result: String(item.result) } : {}),
     ...(item.error ? { error: String(item.error) } : {}),
@@ -96,11 +99,14 @@ function toRun(item: Record<string, unknown>): TriggerRun {
 }
 
 function runItem(run: TriggerRun): Record<string, unknown> {
+  const at = run.startedAt ?? run.queuedAt;
+  if (!at) throw new Error("A trigger run requires an admission or start time");
   return {
-    ...keys.triggerRun(run.projectName, run.triggerId, run.startedAt, run.runId),
+    ...keys.triggerRun(run.projectName, run.triggerId, at, run.runId),
+    ...(run.status === "queued" && run.queueLeaseUntil ? keys.queuedTriggerRunIndex(run.projectName, run.triggerId, run.queueLeaseUntil, run.runId) : {}),
     ...run,
     entityType: TRIGGER_RUN_ENTITY,
-    expiresAt: expiresAtSeconds(run.startedAt, RETENTION.triggerRunDays),
+    expiresAt: expiresAtSeconds(at, RETENTION.triggerRunDays),
   };
 }
 
@@ -192,7 +198,34 @@ export const triggerRepository: TriggerRepository = {
     await putProjectItem(run.projectName, runItem(run));
   },
 
+  async updateQueuedRun(previous, next) {
+    const oldItem = runItem(previous);
+    const nextItem = runItem(next);
+    const condition = (row: Record<string, unknown> | null) => row?.status === "queued" && row.queueLeaseUntil === previous.queueLeaseUntil &&
+      (!(next.status === "queued" || next.status === "running") || Date.parse(String(row.queueLeaseUntil)) > Date.now());
+    try {
+      const oldKey = { PK: String(oldItem.PK), SK: String(oldItem.SK) };
+      await transact([
+        { kind: "check", key: keys.project(previous.projectName), condition: projectIsLive },
+        ...(oldItem.SK === nextItem.SK ? [{ kind: "put" as const, item: nextItem, condition }] : [
+          { kind: "delete" as const, key: oldKey, condition },
+          { kind: "put" as const, item: nextItem, condition: conditions.notExists },
+        ]),
+      ]);
+      return true;
+    } catch (error) {
+      if (error instanceof Error && [CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED].includes(error.name)) return false;
+      throw error;
+    }
+  },
+
   async listRuns(projectName, triggerId, limit, opts = {}) {
+    if (opts.status === "queued") {
+      const items = await queryItems({ index: "GSI1", pk: keys.queuedTriggerRunPartition(projectName, triggerId),
+        ...(opts.queueLeaseBefore ? { sk: { between: ["", opts.queueLeaseBefore] as [string, string] } } : {}),
+        limit, notExpiredAt: Math.floor(Date.now() / 1000) });
+      return items.map(toRun);
+    }
     // Bounded rather than whole: this is the newest N of a log that grows with
     // every delivery, and reading all of it to show ten rows would get worse
     // the more the trigger is used.

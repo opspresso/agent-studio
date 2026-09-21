@@ -1035,6 +1035,39 @@ async function main() {
     );
     pass("trigger run history: newest-first, startedBefore window, finish in place");
 
+    // ---------- queued schedule ownership and atomic dispatch ----------
+    const queueTrigger = `it-queue-${suffix}`;
+    const queueNow = Date.now();
+    const queuedRun = { projectName, triggerId: queueTrigger, runId: "queued", status: "queued" as const,
+      queuedAt: new Date(queueNow - 60_000).toISOString(), queueLeaseUntil: new Date(queueNow + 60_000).toISOString() };
+    await triggerRepository.appendRun(queuedRun);
+    const renewedQueue = { ...queuedRun, queueLeaseUntil: new Date(queueNow + 120_000).toISOString() };
+    assert.equal(await triggerRepository.updateQueuedRun(queuedRun, renewedQueue), true);
+    assert.equal(await triggerRepository.updateQueuedRun(queuedRun, { ...queuedRun, status: "failed", endedAt: now }), false,
+      "stale repair cannot close a renewed queue owner");
+    const { queueLeaseUntil: _queueLease, ...queueIdentity } = renewedQueue;
+    void _queueLease;
+    const runningQueue = { ...queueIdentity, status: "running" as const, startedAt: new Date().toISOString() };
+    const starts = await Promise.all([
+      triggerRepository.updateQueuedRun(renewedQueue, runningQueue),
+      triggerRepository.updateQueuedRun(renewedQueue, runningQueue),
+    ]);
+    assert.equal(starts.filter(Boolean).length, 1, "one queued-to-running transition wins");
+    assert.deepEqual(await triggerRepository.listRuns(projectName, queueTrigger, 10), [runningQueue]);
+    assert.equal(await getItem(dbKeys.triggerRun(projectName, queueTrigger, queuedRun.queuedAt, queuedRun.runId)), null,
+      "moving to the actual start key leaves no duplicate history");
+    assert.deepEqual(await triggerRepository.listRuns(projectName, queueTrigger, 10, { status: "queued" }), []);
+    const expiredQueue = { ...queuedRun, runId: "expired", queueLeaseUntil: new Date(queueNow - 1).toISOString() };
+    await triggerRepository.appendRun({ ...expiredQueue, runId: "past-retention", queuedAt: "1970-01-01T00:00:00.000Z", queueLeaseUntil: "1970-01-01T00:01:00.000Z" });
+    await triggerRepository.appendRun(expiredQueue);
+    await triggerRepository.appendRun({ ...queuedRun, runId: "live" });
+    assert.deepEqual(await triggerRepository.listRuns(projectName, queueTrigger, 1, {
+      status: "queued", queueLeaseBefore: new Date(queueNow).toISOString(),
+    }), [expiredQueue], "expiry and lease windows are applied before the queue repair limit");
+    assert.equal(await triggerRepository.updateQueuedRun(expiredQueue, { ...expiredQueue, status: "running", startedAt: now }), false);
+    assert.equal(await triggerRepository.updateQueuedRun(expiredQueue, { ...expiredQueue, status: "failed", endedAt: now }), true);
+    pass("schedule queue: renewal fencing, concurrent dispatch, atomic key move and bounded repair");
+
     // ---------- audit records (day partition, newest first) ----------
     const auditDay = today;
     const auditRows = [
@@ -1583,19 +1616,23 @@ async function main() {
       null,
       "the limit is exact",
     );
+    assert.equal(await runSlotRepository.renew(slotActor, firstSlot, nowSeconds + 900), true);
     await runSlotRepository.release(slotActor, firstSlot!);
+    assert.equal(await runSlotRepository.renew(slotActor, firstSlot, nowSeconds + 1200), false, "released holders cannot renew");
     assert.ok(
       await runSlotRepository.acquire(slotActor, 2, nowSeconds + 600),
       "a released slot is reusable",
     );
     // An instance that died holds a slot only until its lease runs out.
     const expiredActor = `user:expired-${suffix}@example.com`;
-    await runSlotRepository.acquire(expiredActor, 1, nowSeconds - 1);
+    const expiredSlot = await runSlotRepository.acquire(expiredActor, 1, nowSeconds - 1);
+    assert.ok(expiredSlot);
+    assert.equal(await runSlotRepository.renew(expiredActor, expiredSlot, nowSeconds + 600), false, "expired holders cannot renew");
     assert.ok(
       await runSlotRepository.acquire(expiredActor, 1, nowSeconds + 600),
       "an expired lease is reclaimable",
     );
-    pass("concurrency slots: exact limit, release, lease reclaim");
+    pass("concurrency slots: exact limit, owned renewal, release and lease reclaim");
 
     // ---------- Agent: collected completion ----------
     const runResult = await executeProject(executionDeps, {
