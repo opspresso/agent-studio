@@ -742,19 +742,26 @@ class Writer {
     const gap = captionHeight > 0 ? 8 : 0;
 
     this.space(PARAGRAPH_SPACE);
-    this.reserve(height + gap + captionHeight);
+    // Keep ordinary figures together. A caption longer than a page keeps its
+    // first line with the image and then uses the same page budget as prose.
+    const together = height + gap + captionHeight;
+    const keep = together <= PAGE_HEIGHT - 2 * MARGIN ? together : height + gap + lineHeight;
+    if (this.y - keep < MARGIN) this.newPage();
+    this.reserve(height);
     this.page.drawImage(embedded.image, {
       x: MARGIN + (CONTENT_WIDTH - width) / 2,
-      y: this.y + captionHeight + gap,
+      y: this.y,
       width,
       height,
     });
-    captionLines.forEach((line, index) => {
+    this.space(gap);
+    captionLines.forEach((line) => {
+      this.reserve(lineHeight);
       this.drawLine(
         line,
         MARGIN + (CONTENT_WIDTH - line.width) / 2,
         CAPTION_SIZE,
-        this.y + captionHeight - (index + 1) * lineHeight + lineHeight * 0.25,
+        this.y + lineHeight * 0.25,
         this.colours.muted,
       );
     });
