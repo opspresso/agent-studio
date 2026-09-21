@@ -76,10 +76,10 @@ function listLines(ordered: boolean, items: readonly ListItem[], start = 1): str
   // is what the document showed. The parser reads the marker's *kind*, not its
   // value, so this is for the person reading the Markdown.
   const counters: number[] = [];
-  return items.map((item) => {
+  return items.map((item, index) => {
     const depth = Math.max(0, item.depth);
     counters.length = depth + 1;
-    counters[depth] = (counters[depth] ?? (depth === 0 ? start - 1 : 0)) + 1;
+    counters[depth] = (counters[depth] ?? (index === 0 ? start - 1 : 0)) + 1;
     const marker = ordered ? `${counters[depth]}.` : "-";
     return `${"  ".repeat(depth)}${marker} ${oneLine(item.runs)}`;
   });

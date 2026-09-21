@@ -141,8 +141,11 @@ class Extractor implements XmlHandler {
   /** Set while `a:pPr` is open, read when the paragraph ends. */
   private level = 0;
   private bullet: boolean | undefined;
-  /** The number an ordered list's next item would have to carry to belong. */
-  private nextNumber = 0;
+  private numbering: { scheme: string; start?: number } | undefined;
+  /** DrawingML numbers each paragraph level within its text body. */
+  private readonly autoNumbers = new Map<number, { scheme: string; next: number }>();
+  /** Numbers expected by the current Markdown list, one counter per level. */
+  private nextNumbers: number[] = [];
   readonly observed = new Set<string>();
 
   constructor(private readonly rels: Map<string, string>) {}
@@ -203,9 +206,11 @@ class Extractor implements XmlHandler {
     this.runs = [];
     const level = this.level;
     const drawn = this.drawn(runs);
+    const numbering = this.numbering;
     const listed = drawn !== undefined || this.listed();
     this.level = 0;
     this.bullet = undefined;
+    this.numbering = undefined;
     if (runs.length === 0 || (runs.length === 1 && runs[0]!.text === "")) {
       return;
     }
@@ -217,30 +222,36 @@ class Extractor implements XmlHandler {
       return;
     }
     if (listed) {
-      const ordered = drawn?.ordered ?? false;
+      let start = drawn?.start;
+      if (numbering) {
+        const previous = this.autoNumbers.get(level);
+        start = numbering.start ?? (previous?.scheme === numbering.scheme ? previous.next : 1);
+        this.autoNumbers.set(level, { scheme: numbering.scheme, next: start + 1 });
+        for (const depth of this.autoNumbers.keys()) {
+          if (depth > level) this.autoNumbers.delete(depth);
+        }
+      }
+      const ordered = numbering !== undefined || drawn?.ordered === true;
       const last = this.blocks[this.blocks.length - 1];
       const item = { runs, depth: Math.min(level, 4) };
-      // A drawn number joins the list above it only when it is the next one.
-      // A deck that restarts at 1 for a nested run — which is what a numbered
-      // list inside a numbered list looks like once the markers are drawn
-      // rather than counted — starts a list of its own instead, and keeps the
-      // number it was drawn with. Renumbering it would say something the deck
-      // does not.
-      const continues =
-        drawn?.start === undefined || drawn.start === this.nextNumber;
+      // Markdown counts within each level. An explicit restart that differs
+      // from that counter starts a new block, preserving the stated number.
+      const continues = start === undefined || start === (this.nextNumbers[item.depth] ?? 1);
       if (last?.kind === "list" && last.ordered === ordered && continues) {
         last.items.push(item);
-        this.nextNumber = ordered ? this.nextNumber + 1 : 0;
+        this.nextNumbers.length = item.depth + 1;
+        this.nextNumbers[item.depth] = (start ?? this.nextNumbers[item.depth] ?? 1) + 1;
         return;
       }
-      this.nextNumber = drawn?.start === undefined ? 0 : drawn.start + 1;
+      this.nextNumbers = [];
+      this.nextNumbers[item.depth] = (start ?? 1) + 1;
       this.blocks.push({
         kind: "list",
         ordered,
         items: [item],
         // The number the deck drew, so a list continued on a second slide is
         // not renumbered into saying it started over.
-        ...(drawn?.start !== undefined && drawn.start !== 1 ? { marks: { start: drawn.start } } : {}),
+        ...(start !== undefined && start !== 1 ? { marks: { start } } : {}),
       });
       return;
     }
@@ -249,6 +260,9 @@ class Extractor implements XmlHandler {
 
   open(name: string, attributes: string, selfClosing: boolean): void {
     switch (localName(name)) {
+      case "txBody":
+        this.autoNumbers.clear();
+        return;
       case "t":
         if (!selfClosing) {
           this.textDepth += 1;
@@ -302,11 +316,21 @@ class Extractor implements XmlHandler {
       }
       case "buNone":
         this.bullet = false;
+        this.numbering = undefined;
         return;
       case "buChar":
-      case "buAutoNum":
         this.bullet = true;
+        this.numbering = undefined;
         return;
+      case "buAutoNum": {
+        this.bullet = true;
+        const start = Number(attributeOf(attributes, "startAt"));
+        this.numbering = {
+          scheme: attributeOf(attributes, "type") ?? "arabicPeriod",
+          ...(Number.isInteger(start) && start >= 1 && start <= 32767 ? { start } : {}),
+        };
+        return;
+      }
       case "rPr":
         this.emphasis = {
           ...(on(attributes, "b") ? { bold: true } : {}),
@@ -440,6 +464,7 @@ class Extractor implements XmlHandler {
           this.pending += " ";
           this.level = 0;
           this.bullet = undefined;
+          this.numbering = undefined;
           return;
         }
         this.endParagraph();

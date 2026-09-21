@@ -104,6 +104,33 @@ test("a bullet the slide turned off is not a list", () => {
   );
 });
 
+const numbered = (text: string, attributes = "", level = 0) =>
+  `<a:p><a:pPr lvl="${level}"><a:buAutoNum type="arabicPeriod" ${attributes}/></a:pPr>` +
+  `<a:r><a:t>${text}</a:t></a:r></a:p>`;
+
+test("native numbering preserves its start, continuation and explicit restart within a text body", () => {
+  const body = shape(numbered("five", 'startAt="5"') + numbered("six") + numbered("three", 'startAt="3"'));
+  const blocks = slideXmlToBlocks(body + shape(numbered("new shape")));
+  assert.deepEqual(blocks, [
+    { kind: "list", ordered: true, marks: { start: 5 }, items: [
+      { runs: [{ text: "five" }], depth: 0 }, { runs: [{ text: "six" }], depth: 0 },
+    ] },
+    { kind: "list", ordered: true, marks: { start: 3 }, items: [{ runs: [{ text: "three" }], depth: 0 }] },
+    { kind: "list", ordered: true, items: [{ runs: [{ text: "new shape" }], depth: 0 }] },
+  ]);
+  assert.match(pptxToText(deck(body)).text, /5\. five\n6\. six\n\n3\. three$/);
+});
+
+test("native numbering counts each level and preserves an explicit nested start", () => {
+  const body = shape(numbered("parent") + numbered("child", "", 1) + numbered("next parent") +
+    numbered("child seven", 'startAt="7"', 1) + numbered("child eight", "", 1));
+  assert.equal(pptxToText(deck(body)).text,
+    "## Slide 1\n\n1. parent\n  1. child\n2. next parent\n\n  7. child seven\n  8. child eight");
+  const nestedFirst = shape(numbered("child seven", 'startAt="7"', 1) + numbered("parent") + numbered("new child", "", 1));
+  assert.equal(pptxToText(deck(nestedFirst)).text,
+    "## Slide 1\n\n  7. child seven\n1. parent\n  1. new child");
+});
+
 test("a link on a slide keeps its target", () => {
   const rels = '<Relationships><Relationship Id="rId2" Target="https://example.com/a"/></Relationships>';
   const body = `<a:p><a:r><a:rPr><a:hlinkClick r:id="rId2"/></a:rPr><a:t>여기</a:t></a:r></a:p>`;
