@@ -34,26 +34,29 @@ async function sandboxFor(deps: WorkspaceWorkerDeps, workspace: Workspace): Prom
 export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState): Promise<Sandbox> {
   const { workspace, run } = await state.read();
   const previous = await sandboxFor(deps, workspace);
-  const status = previous ? await deps.provider.inspect(previous.externalId) : "missing";
+  const status = previous ? await state.effect(() => deps.provider.inspect(previous.externalId)) : "missing";
   if (previous && status === "ready" && previous.status === "ready") return previous;
   if (previous && run?.phase) throw new WorkspaceInterrupted("Sandbox was lost during execution; the run will not be replayed automatically");
-  if (previous && status !== "missing") await deps.provider.destroy(previous.externalId);
+  if (previous && status !== "missing") await state.effect(() => deps.provider.destroy(previous.externalId));
   await state.read();
-  const created = await deps.provider.ensure(workspace.id);
+  const created = await state.effect(() => deps.provider.ensure(workspace.id));
   const now = deps.now().toISOString();
   const sandbox: Sandbox = { id: deps.newId(), workspaceId: workspace.id, provider: deps.provider.kind,
     externalId: created.externalId, status: "provisioning", createdAt: now, updatedAt: now };
   await state.save({ sandboxId: sandbox.id }, undefined, [], { sandbox });
-  if (workspace.checkpointId) {
-    const checkpoint = await deps.checkpoints.get(workspace.id, workspace.checkpointId);
+  const checkpointId = workspace.checkpointId;
+  if (checkpointId) {
+    const checkpoint = await state.effect(() => deps.checkpoints.get(workspace.id, checkpointId));
     if (!checkpoint) throw new Error("Workspace recovery checkpoint has expired or is missing");
-    await deps.provider.restore(sandbox.externalId, checkpoint);
+    await state.effect(() => deps.provider.restore(sandbox.externalId, checkpoint));
     if (workspace.coding) await state.save({}, undefined, [{ kind: "warning", text: "Workspace restored; Git-ignored dependencies and build outputs must be regenerated" }]);
   }
   let coding = workspace.coding;
   if (coding) {
-    if (!deps.coding) throw new Error("Coding worktree adapter is not configured");
-    const prepared = await deps.coding.prepare(sandbox.externalId, coding);
+    const worktree = deps.coding;
+    if (!worktree) throw new Error("Coding worktree adapter is not configured");
+    const repository = coding;
+    const prepared = await state.effect(() => worktree.prepare(sandbox.externalId, repository));
     if (coding.headSha && coding.headSha !== prepared.headSha) await state.save({}, undefined, [{ kind: "warning", text: "Recovered Git head differs from the last recorded head; review the recovered changes before publishing" }]);
     coding = prepared;
   }
@@ -64,25 +67,26 @@ export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: W
 
 export async function saveWorkspaceCheckpoint(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, sandbox: Sandbox): Promise<void> {
   await state.save();
-  const bytes = await deps.provider.checkpoint(sandbox.externalId);
+  const bytes = await state.effect(() => deps.provider.checkpoint(sandbox.externalId));
   await state.read();
   const id = deps.newId();
-  await deps.checkpoints.put(state.id, id, bytes, deps.now().toISOString());
+  await state.effect(() => deps.checkpoints.put(state.id, id, bytes, deps.now().toISOString()));
   await state.save({ checkpointId: id });
 }
 
 async function cleanupWorkspace(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState): Promise<void> {
   let { workspace, run } = await state.read();
   const sandbox = await sandboxFor(deps, workspace);
-  const computeStatus = sandbox ? await deps.provider.inspect(sandbox.externalId) : "missing";
+  const computeStatus = sandbox ? await state.effect(() => deps.provider.inspect(sandbox.externalId)) : "missing";
   if (sandbox && computeStatus !== "missing") {
-    if (computeStatus === "ready" && run?.operationId) {
-      await deps.provider.cancel(sandbox.externalId, run.operationId);
+    const operationId = run?.operationId;
+    if (computeStatus === "ready" && operationId) {
+      await state.effect(() => deps.provider.cancel(sandbox.externalId, operationId));
       for (;;) {
         await state.read();
-        const operation = await deps.provider.operation(sandbox.externalId, run.operationId);
+        const operation = await state.effect(() => deps.provider.operation(sandbox.externalId, operationId));
         if (!["running", "starting"].includes(operation.status)) break;
-        await deps.provider.cancel(sandbox.externalId, run.operationId);
+        await state.effect(() => deps.provider.cancel(sandbox.externalId, operationId));
         await state.save();
         await deps.sleep(WORKSPACE_POLL_MS);
       }
@@ -90,10 +94,10 @@ async function cleanupWorkspace(deps: WorkspaceWorkerDeps, state: WorkspaceWorke
     ({ workspace, run } = await state.read());
     if (computeStatus === "ready" && !workspace.deleteRequestedAt && sandbox.status === "ready") await saveWorkspaceCheckpoint(deps, state, sandbox);
     await state.save({}, undefined, [], { sandbox: { ...sandbox, status: "deleting", updatedAt: deps.now().toISOString() } });
-    await deps.provider.destroy(sandbox.externalId);
+    await state.effect(() => deps.provider.destroy(sandbox.externalId));
   }
   ({ workspace, run } = await state.read());
-  if (workspace.deleteRequestedAt) await deps.checkpoints.delete(workspace.id);
+  if (workspace.deleteRequestedAt) await state.effect(() => deps.checkpoints.delete(workspace.id));
   const session = await deps.repository.session(workspace.id, workspace.sessionId);
   const status = workspace.status === "closing" ? "closed" : "suspended";
   await state.save({ status, sandboxId: undefined, activeRunId: undefined, leaseToken: undefined, leaseUntil: undefined,
@@ -131,9 +135,10 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     if (workspace.status === "closing") { await cleanupWorkspace(deps, state); return; }
     const remaining = deps.runTimeoutMs - (deps.now().getTime() - Date.parse(run.startedAt!));
     if (run.cancelRequestedAt || remaining <= 0) {
-      if (run.operationId) {
-        await deps.provider.cancel(sandbox.externalId, run.operationId);
-        const operation = await deps.provider.operation(sandbox.externalId, run.operationId);
+      const operationId = run.operationId;
+      if (operationId) {
+        await state.effect(() => deps.provider.cancel(sandbox.externalId, operationId));
+        const operation = await state.effect(() => deps.provider.operation(sandbox.externalId, operationId));
         if (["running", "starting"].includes(operation.status)) { await state.save(); await deps.sleep(WORKSPACE_POLL_MS, signal); continue; }
       }
       await saveWorkspaceCheckpoint(deps, state, sandbox);
@@ -150,7 +155,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     }
     if (run.phase === "checkpoint") {
       if (workspace.coding && deps.coding) {
-        const review = await deps.coding.review(sandbox.externalId);
+        const review = await state.effect(() => deps.coding!.review(sandbox.externalId));
         const diff = boundedWorkspaceText(review.diff, WORKSPACE_LIMITS.diffBytes);
         await state.save({}, { diff: diff.text, diffTruncated: review.truncated || diff.truncated },
           boundWorkspaceEvent({ kind: "diff", text: diff.text, truncated: review.truncated || diff.truncated }));
@@ -169,24 +174,25 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
       continue;
     }
     const operationId = run.operationId!;
-    let operation = await deps.provider.operation(sandbox.externalId, operationId);
+    let operation = await state.effect(() => deps.provider.operation(sandbox.externalId, operationId));
     if (operation.status === "not-started") {
       const command = check ? { argv: [...WORKSPACE_SHELL], stdin: check.command, timeoutMs: Math.max(1, Math.floor(remaining)) }
         : runtime.command(workspace, session, workspaceTaskInput(workspace, run.input), Math.max(1, Math.floor(remaining)));
       const current = await state.read();
       if (current.run?.id !== run.id) throw new WorkspaceLeaseLost();
       if (current.run.cancelRequestedAt || current.workspace.status === "closing") continue;
-      await deps.provider.start(sandbox.externalId, operationId, command);
-      operation = await deps.provider.operation(sandbox.externalId, operationId);
+      await state.effect(() => deps.provider.start(sandbox.externalId, operationId, command));
+      operation = await state.effect(() => deps.provider.operation(sandbox.externalId, operationId));
     }
     if (operation.status === "missing") {
-      await deps.provider.cancel(sandbox.externalId, operationId);
+      await state.effect(() => deps.provider.cancel(sandbox.externalId, operationId));
       await saveWorkspaceCheckpoint(deps, state, sandbox);
       await finishRun(deps, state, "interrupted", "Native operation handle was lost; execution was not replayed");
       return;
     }
     const terminal = operation.status === "succeeded" || operation.status === "failed";
-    const output = await deps.provider.output(sandbox.externalId, operationId, run.outputOffset ?? 0);
+    const outputOffset = run.outputOffset ?? 0;
+    const output = await state.effect(() => deps.provider.output(sandbox.externalId, operationId, outputOffset));
     const drained = terminal && output.frames.length === 0;
     const folded = foldWorkspaceOutput(runtime, run, output, drained);
     const events = [...folded.events];
@@ -195,7 +201,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
       ? { session: { ...session, nativeSessionId: folded.nativeSessionId, updatedAt: deps.now().toISOString() } } : {};
     let patch = folded.patch;
     if (workspace.coding && deps.coding && deps.now().getTime() >= nextReview) {
-      const review = await deps.coding.review(sandbox.externalId);
+      const review = await state.effect(() => deps.coding!.review(sandbox.externalId));
       const diff = boundedWorkspaceText(review.diff, WORKSPACE_LIMITS.diffBytes);
       patch = { ...patch, diff: diff.text, diffTruncated: review.truncated || diff.truncated };
       events.push(...boundWorkspaceEvent({ kind: "diff", text: diff.text, truncated: review.truncated || diff.truncated }));
@@ -231,6 +237,10 @@ async function finishRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState,
 export async function processWorkspace(deps: WorkspaceWorkerDeps, id: string, signal?: AbortSignal): Promise<boolean> {
   const state = await claimWorkspace(deps, id);
   if (!state) return false;
+  return state.withHeartbeat(() => processClaimedWorkspace(deps, state, signal), signal);
+}
+
+async function processClaimedWorkspace(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, signal?: AbortSignal): Promise<boolean> {
   try {
     let { workspace } = await state.read();
     if (workspace.activeActionId && !workspace.activeRunId) {
@@ -278,7 +288,8 @@ export async function processWorkspace(deps: WorkspaceWorkerDeps, id: string, si
       let terminal = !run.operationId;
       if (sandbox && run.operationId) {
         try {
-          const operation = await deps.provider.operation(sandbox.externalId, run.operationId);
+          const operationId = run.operationId;
+          const operation = await state.effect(() => deps.provider.operation(sandbox.externalId, operationId));
           terminal = ["succeeded", "failed", "not-started"].includes(operation.status);
         } catch { terminal = false; }
       }

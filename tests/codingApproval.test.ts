@@ -10,6 +10,7 @@ import { createCodingUseCases, type CodingDeps } from "@/application/coding/codi
 import { createWorkspaceRuntimeAdapter } from "@/infrastructure/workspace/runtimeAdapters";
 import { handleCodingWebhook } from "@/application/coding/webhook";
 import { processWorkspace } from "@/application/workspace/worker";
+import { claimWorkspace, WorkspaceLeaseLost, WORKSPACE_LEASE_MS } from "@/application/workspace/workerState";
 import type { WorktreeReview } from "@/domain/coding/worktree";
 import type { Workspace } from "@/domain/workspace/types";
 import type { PullRequestInfo } from "@/domain/coding/types";
@@ -49,9 +50,65 @@ beforeEach(async () => {
   await chats.create({ chatId: "chat-1", projectName: "demo", title: "Task", ownerEmail: owner, createdAt: at, updatedAt: at });
   workspace = await createWorkspaceUseCases(deps).create({ chatId: "chat-1", projectName: "demo", title: "Coding", runtime: "codex", repository: "company/repo", baseBranch: "main" }, owner);
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  try { expect(vi.getTimerCount()).toBe(0); }
+  finally { vi.useRealTimers(); }
+});
 
 describe("explicit coding action approvals", () => {
+  it.each(["review", "commit"] as const)("keeps the action lease during a slow %s without changing approval requirements", async phase => {
+    deps.now = () => new Date();
+    const api = createCodingUseCases(deps);
+    const action = { kind: "commit-and-push" as const, message: "Reviewed change" };
+    const delay = () => new Promise(resolve => setTimeout(resolve, WORKSPACE_LEASE_MS + 30_000));
+    let work;
+    if (phase === "review") {
+      vi.spyOn(deps.coding, "review").mockImplementationOnce(async () => { await delay(); return { ...review }; });
+      work = api.request(workspace.id, owner, action);
+    } else {
+      const pending = await api.request(workspace.id, owner, action);
+      vi.mocked(deps.coding.commit).mockImplementationOnce(async () => { await delay(); return "d".repeat(40); });
+      work = api.decide(workspace.id, owner, pending.id, true);
+    }
+    const outcome = work.catch(error => error as Error);
+    try {
+      await vi.advanceTimersByTimeAsync(WORKSPACE_LEASE_MS + 10_000);
+      expect(Boolean(await claimWorkspace(deps, workspace.id))).toBe(false);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await outcome).toMatchObject({ status: phase === "review" ? "pending" : "succeeded" });
+      expect(deps.coding.commit).toHaveBeenCalledTimes(phase === "review" ? 0 : 1);
+      expect(deps.coding.push).toHaveBeenCalledTimes(phase === "review" ? 0 : 1);
+      expect((await repository.get(workspace.id))?.leaseToken).toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      await vi.advanceTimersByTimeAsync(WORKSPACE_LEASE_MS);
+      await outcome;
+    }
+  });
+  it("does not create a PR after losing the lease during an approved push", async () => {
+    deps.now = () => new Date();
+    review.treeSha = review.headTreeSha;
+    const api = createCodingUseCases(deps);
+    const pending = await api.request(workspace.id, owner, { kind: "pull-request", title: "Reviewed change", body: "", draft: false });
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    vi.mocked(deps.coding.push).mockImplementationOnce(async () => { entered.resolve(); await resume.promise; });
+    const decision = api.decide(workspace.id, owner, pending.id, true).catch(error => error as Error);
+    try {
+      await entered.promise;
+      vi.setSystemTime(Date.now() + WORKSPACE_LEASE_MS + 1);
+      const replacement = await claimWorkspace(deps, workspace.id);
+      expect(replacement).not.toBeNull();
+      resume.resolve();
+      expect(await decision).toBeInstanceOf(WorkspaceLeaseLost);
+      expect(deps.coding.push).toHaveBeenCalledTimes(1);
+      expect(deps.forge.openPullRequest).not.toHaveBeenCalled();
+      expect((await repository.get(workspace.id))?.leaseToken).toBe(replacement!.token);
+      expect((await repository.approval(workspace.id, pending.id))?.status).toBe("executing");
+    } finally {
+      resume.resolve(); await decision;
+    }
+  });
   it("allows rejecting a pending review after tool or repository access was revoked, without Git effects", async () => {
     const api = createCodingUseCases(deps);
     const approval = await api.request(workspace.id, owner, { kind: "commit", message: "Reviewed change" });
