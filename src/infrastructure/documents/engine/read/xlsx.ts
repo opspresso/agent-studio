@@ -399,7 +399,7 @@ class Sheet implements XmlHandler {
     if (this.type === "b") {
       return this.buffer === "1" ? "TRUE" : this.buffer === "0" ? "FALSE" : this.buffer;
     }
-    if (this.type === "" && this.style !== undefined && this.dates.has(this.style)) {
+    if ((this.type === "" || this.type === "n") && this.style !== undefined && this.dates.has(this.style)) {
       return serialToIso(Number(this.buffer), this.epoch1904) ?? this.buffer;
     }
     return this.buffer;
