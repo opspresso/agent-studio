@@ -12,10 +12,12 @@
  * pod's own identity is the credential, so a `sigv4` channel is configured
  * with a base URL and nothing else.
  */
-export type ChannelAuth = "bearer" | "sigv4";
+import type { ChannelAuth } from "../llm/providerModels";
+export type { ChannelAuth, ProviderChannelConfig } from "../llm/providerModels";
 
 /** One per-provider LLM channel override (replaces the LLM_PROVIDER_* env set). */
 export interface LlmProviderSetting {
+  kind?: import("../llm/models").SupportedProvider;
   /** Lowercase provider key matching the model id prefix (e.g. "openai"). */
   name: string;
   baseUrl: string;
@@ -44,6 +46,8 @@ export type ArtifactAccessMode = "authenticated" | "public" | "proxied";
 export type SelfHostedModelSetting = import("../llm/selfHostedModels").SelfHostedModelDeclaration;
 
 export interface AppSettings {
+  registeredModels?: import("../llm/providerModels").RegisteredModel[];
+  defaultModel?: string;
   adminEmails?: string;
   allowedEmailDomains?: string;
   llmBaseUrl?: string;
@@ -87,15 +91,4 @@ export interface AppSettings {
    */
   selfHostedModels?: SelfHostedModelSetting[];
   updatedAt: string;
-}
-
-/** An LLM provider channel resolved from settings or the environment. */
-export interface ProviderChannelConfig {
-  /** Lowercase provider key matching the model id prefix (e.g. "openai"). */
-  name: string;
-  baseUrl: string;
-  /** Empty when `auth` is `sigv4`. */
-  apiKey: string;
-  keepModelPrefix: boolean;
-  auth: ChannelAuth;
 }

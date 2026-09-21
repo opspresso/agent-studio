@@ -29,6 +29,12 @@ describe("settingsRepository", () => {
     // declarations vanished within a tick and the next unrelated save deleted
     // the stored row's copy for good.
     const stored: Required<import("@/domain/settings/types").AppSettings> = {
+      registeredModels: [{
+        id: "openai/gpt-test", provider: "openai", wireId: "gpt-test", displayName: "Test", type: "text",
+        contextWindow: 10000, maxTokens: 2000,
+        capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: false },
+      }],
+      defaultModel: "openai/gpt-test",
       workspaceModels: { codex: "openai/gpt-test" },
       adminEmails: "admin@example.com",
       allowedEmailDomains: "example.com",

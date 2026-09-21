@@ -160,6 +160,15 @@ export interface ModelConfig {
 }
 
 export const MODEL_CATALOG_VERSION = 1;
+/** Zero represents a limit the provider did not publish. */
+export function modelTokenLimitsProblem(model: Pick<ModelConfig, "contextWindow" | "maxTokens">, retrieval: boolean): string | undefined {
+  for (const count of [model.contextWindow, model.maxTokens]) {
+    if (!Number.isSafeInteger(count) || count < 0) return "Model token limits must be nonnegative integers";
+  }
+  if (model.contextWindow > 0 && model.maxTokens > model.contextWindow) return "Output limit exceeds context window";
+  if (retrieval && model.maxTokens !== 0) return "Retrieval models have no output token limit";
+  return undefined;
+}
 /** Bounds the deployment-wide denylist stored in the single settings row. */
 export const MAX_HIDDEN_MODELS = 500;
 
