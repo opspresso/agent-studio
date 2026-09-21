@@ -1,10 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { parseJsonObject, parseConfigurationDraft } from "@/app/projects/[name]/_components/AgentConfigurationEditor";
-import type { AgentConfigurationInput } from "@/app/projects/lib/api";
+import { AgentConfigurationEditor, parseJsonObject, parseConfigurationDraft } from "@/app/projects/[name]/_components/AgentConfigurationEditor";
+import type { AgentConfigurationInput, SelectableModel } from "@/app/projects/lib/api";
+import { ViewerProvider } from "@/app/_lib/useViewer";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MantineProvider } from "@mantine/core";
 import { SubagentInput } from "@/app/projects/[name]/_components/inputs";
+
+describe("structured output model changes", () => {
+  it.each([
+    { supported: false, enabled: true, visible: true },
+    { supported: false, enabled: false, visible: false },
+    { supported: true, enabled: false, visible: true },
+  ])("keeps an enabled option removable after choosing an unsupported model: %j", ({ supported, enabled, visible }) => {
+    const model: SelectableModel = {
+      id: "internal/model", provider: "internal", family: "model", maker: "internal",
+      displayName: "Internal model", favorite: false, contextWindow: 8192, maxTokens: 1024,
+      pricing: { inputPer1M: 0, outputPer1M: 0 },
+      capabilities: { tools: true, structuredOutput: supported, imageInput: false, reasoning: false },
+    };
+    const value: AgentConfigurationInput = {
+      model: model.id, systemPrompt: "Answer the question", mcpList: [], skillList: [], subagentList: [],
+      parameters: { piiFiltering: false, structuredOutput: enabled },
+    };
+    const markup = renderToStaticMarkup(createElement(MantineProvider, {
+      children: createElement(ViewerProvider, {
+        viewer: null,
+        children: createElement(AgentConfigurationEditor, {
+          projectName: "project", models: [model], imageModels: [], value, onChange: () => {},
+          schemaText: "{}", onSchemaChange: () => {}, schemaError: null,
+          save: { run: () => {}, saving: false, disabled: false, error: null, saved: false, label: "Save" },
+        }),
+      }),
+    }));
+    expect(markup.includes("Structured output (JSON schema)")).toBe(visible);
+    if (enabled) expect(markup).toMatch(/type="checkbox"[^>]*checked=""/);
+  });
+});
 
 describe("subagent picker identity", () => {
   it("renders local and remote candidates with the same name", () => {

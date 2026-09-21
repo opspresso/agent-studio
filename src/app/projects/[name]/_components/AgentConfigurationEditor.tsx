@@ -346,7 +346,7 @@ export function AgentConfigurationEditor({
         onChange={(e) => patchParams({ callerContext: e.currentTarget.checked })}
       />
 
-      {(supportsStructured || schemaError !== null) && (
+      {(supportsStructured || value.parameters.structuredOutput || schemaError !== null) && (
         <Stack gap="xs">
           <Group gap={6} wrap="nowrap">
             <Checkbox
