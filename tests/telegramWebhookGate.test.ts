@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 const { handled, claim, settle, failNext } = vi.hoisted(() => ({
   handled: [] as Array<{ kind: string; text?: string }>,
-  claim: vi.fn(async () => true),
+  claim: vi.fn(async (): Promise<string | null> => "claim-token"),
   settle: vi.fn(async () => {}),
   failNext: { value: false },
 }));
@@ -78,7 +78,7 @@ beforeEach(() => {
   handled.length = 0;
   claim.mockClear();
   settle.mockClear();
-  claim.mockResolvedValue(true);
+  claim.mockResolvedValue("claim-token");
 });
 
 describe("the Telegram webhook", () => {
@@ -104,11 +104,11 @@ describe("the Telegram webhook", () => {
     expect(res.status).toBe(200);
     expect(claim).toHaveBeenCalledWith("10", expect.any(Number), expect.any(Number));
     expect(handled).toEqual([{ kind: "run", text: "hi" }]);
-    expect(settle).toHaveBeenCalledWith("10", "done");
+    expect(settle).toHaveBeenCalledWith("10", "claim-token", "done");
   });
 
   it("acks a duplicate delivery without handling it again", async () => {
-    claim.mockResolvedValueOnce(false);
+    claim.mockResolvedValueOnce(null);
     const res = await handleTelegramUpdateRequest(request(privateMessage("hi")), BINDING);
 
     expect(res.status).toBe(200);
@@ -147,6 +147,6 @@ describe("the Telegram webhook", () => {
 
     await handleTelegramUpdateRequest(request(privateMessage("hi")), BINDING);
 
-    expect(settle).toHaveBeenCalledWith("10", "failed");
+    expect(settle).toHaveBeenCalledWith("10", "claim-token", "failed");
   });
 });

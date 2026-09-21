@@ -61,7 +61,8 @@ Teams 는 아래의 transcript 저장소에 묻는다. 누가 묻고 있는지�
 
 **webhook 꼬리**도 같은 방식으로 공유된다 (`src/app/api/_lib/inboundEvent.ts`): 플랫폼 자신의
 검증과 gate 를 지나면 `admitInboundEvent` 가 이벤트를 claim 하고, 이벤트 자신의 correlation
-id 아래 백그라운드로 작업을 예약하며, claim 을 정산한다. 모든 플랫폼이 빠른 ack 를 요구하고
+id 아래 백그라운드로 작업을 예약하며, 획득한 token이 현재 claim과 같을 때만 정산한다.
+만료 후 다른 처리가 재획득한 claim은 이전 처리의 완료·실패로 바뀌지 않는다. 모든 플랫폼이 빠른 ack 를 요구하고
 없으면 재전달하므로 모양은 같다. 다른 것은 id 와 저장소와 작업뿐이다.
 
 ## 새 표면을 추가하기

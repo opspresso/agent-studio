@@ -1842,7 +1842,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // platform's events are. Slack's version was written before Telegram's; a
     // second copy of the lease condition is the seven spellings of the
     // conditional-write error name again.
-    what: "the claim-and-settle contract behind exactly-once inbound events",
+    what: "the claim-and-settle contract behind leased inbound events",
     pattern: /leaseExpiresAt \?\? 0\) < nowSeconds/,
     owner: "src/infrastructure/db/repositories/inboundClaimRepository.ts",
   },
@@ -1851,7 +1851,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // id, settle. Every platform requires the same shape and each writing its
     // own is how one of them forgets to settle.
     what: "the webhook tail every chat platform shares",
-    pattern: /\.settle\(eventId, outcome\)/,
+    pattern: /\.settle\(eventId, claimToken, outcome\)/,
     owner: "src/app/api/_lib/inboundEvent.ts",
   },
   {

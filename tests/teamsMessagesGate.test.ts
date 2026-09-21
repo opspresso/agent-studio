@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 const { handled, claim, settle, verdict } = vi.hoisted(() => ({
   handled: [] as Array<{ kind: string; text?: string }>,
-  claim: vi.fn(async () => true),
+  claim: vi.fn(async (): Promise<string | null> => "claim-token"),
   settle: vi.fn(async () => {}),
   verdict: { value: { ok: true } as { ok: true } | { ok: false; reason: string } },
 }));
@@ -64,7 +64,7 @@ beforeEach(() => {
   handled.length = 0;
   claim.mockClear();
   settle.mockClear();
-  claim.mockResolvedValue(true);
+  claim.mockResolvedValue("claim-token");
   verdict.value = { ok: true };
 });
 
@@ -89,11 +89,11 @@ describe("the Teams messaging endpoint", () => {
     // An activity id is unique only within its conversation.
     expect(claim).toHaveBeenCalledWith("a:1#act-9", expect.any(Number), expect.any(Number));
     expect(handled).toEqual([{ kind: "run", text: "hi" }]);
-    expect(settle).toHaveBeenCalledWith("a:1#act-9", "done");
+    expect(settle).toHaveBeenCalledWith("a:1#act-9", "claim-token", "done");
   });
 
   it("acks a duplicate delivery without handling it again", async () => {
-    claim.mockResolvedValueOnce(false);
+    claim.mockResolvedValueOnce(null);
     const res = await handleTeamsActivityRequest(request(personal("hi")), BINDING);
     expect(res.status).toBe(200);
     expect(handled).toEqual([]);

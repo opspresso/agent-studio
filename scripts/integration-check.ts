@@ -922,28 +922,48 @@ async function main() {
     // a working condition expression from one that always wins.
     const claims = telegramUpdateRepository.forBot(projectName, 42).updates;
     const claimNow = Math.floor(Date.now() / 1000);
-    assert.equal(await claims.claim("1001", claimNow, claimNow + 600), true, "first delivery claims");
+    const firstClaim = await claims.claim("1001", claimNow, claimNow + 600);
+    assert.ok(firstClaim, "first delivery claims");
     assert.equal(
       await claims.claim("1001", claimNow, claimNow + 600),
-      false,
+      null,
       "a redelivery under a live lease is refused",
     );
-    await claims.settle("1001", "failed");
-    assert.equal(
-      await claims.claim("1001", claimNow, claimNow + 600),
-      true,
-      "a failed attempt leaves the update reclaimable",
-    );
-    await claims.settle("1001", "done");
+    await claims.settle("1001", firstClaim, "failed");
+    const retriedClaim = await claims.claim("1001", claimNow, claimNow + 600);
+    assert.ok(retriedClaim, "a failed attempt leaves the update reclaimable");
+    assert.notEqual(retriedClaim, firstClaim, "a retry in the same second receives a new token");
+    await claims.settle("1001", firstClaim, "done");
+    await claims.settle("1001", retriedClaim, "failed");
+    const currentClaim = await claims.claim("1001", claimNow, claimNow + 600);
+    assert.ok(currentClaim, "the old holder cannot retire the retry");
+    await claims.settle("1001", currentClaim, "done");
+    await claims.settle("1001", currentClaim, "failed");
     assert.equal(
       await claims.claim("1001", claimNow + 1, claimNow + 601),
-      false,
+      null,
       "a settled update is never reclaimed",
     );
-    // An expired lease is reclaimable — the instance that held it is gone.
-    assert.equal(await claims.claim("1002", claimNow - 100, claimNow - 50), true, "claim with a past lease");
-    assert.equal(await claims.claim("1002", claimNow, claimNow + 600), true, "an expired lease is taken over");
-    pass("inbound event claim: lease, failed reclaim, settled never, expired taken over");
+    for (const outcome of ["done", "failed"] as const) {
+      const eventId = `expired-${outcome}`;
+      const expired = await claims.claim(eventId, claimNow - 100, claimNow - 50);
+      assert.ok(expired, "claim with a past lease");
+      // The row lock must allow only one replacement to win.
+      const candidates = await Promise.all([
+        claims.claim(eventId, claimNow, claimNow + 600),
+        claims.claim(eventId, claimNow, claimNow + 600),
+      ]);
+      const winners = candidates.filter((token): token is string => token !== null);
+      assert.equal(winners.length, 1, "one holder reclaims the expired lease");
+      const replacement = winners[0]!;
+      assert.notEqual(replacement, expired);
+      await claims.settle(eventId, expired, outcome);
+      await claims.settle(eventId, "wrong-token", outcome);
+      assert.equal(await claims.claim(eventId, claimNow, claimNow + 600), null, "late failure cannot release another holder's claim");
+      await claims.settle(eventId, replacement, "failed");
+      assert.ok(await claims.claim(eventId, claimNow, claimNow + 600), "late success cannot retire another holder's claim");
+    }
+    pass("inbound event claim: token ownership, concurrent reclaim, failed retry and terminal settlement");
 
     // ---------- conversation transcript (newest N, oldest first, per conversation) ----------
     const conversationKey = `telegram:${suffix}`;
