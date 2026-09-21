@@ -1,18 +1,12 @@
-import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import snapshot from "@/domain/llm/catalog.json";
+import { snapshot, loadTestCatalog } from "./modelFixtures";
 import {
-  MODEL_CATALOG_VERSION,
-  SELF_HOSTED_PROVIDERS,
-  SUPPORTED_PROVIDERS,
   applyModelConstraints,
   calculateCost,
   calculateImageCost,
   contextWindowLabel,
   getVisibleModels,
-  listModelMakers,
   listModels,
-  loadModelCatalog,
   modelType,
   offeredModels,
   resetUnknownModelMetrics,
@@ -20,245 +14,6 @@ import {
   wireModelId,
 } from "@/domain/llm/models";
 import { GET } from "@/app/api/metrics/route";
-
-/**
- * The registry is the catalog agent-models publishes, as the committed snapshot
- * holds it. The invariants dispatch and cost *rely on* — priced text models,
- * cached ≤ uncached, vendor-qualified router wire ids, one story per family —
- * are enforced by `loadModelCatalog` itself on every catalog
- * (`tests/modelCatalog.test.ts`); what this file adds are the publisher-side
- * conventions worth catching at sync time rather than trusting, checked
- * against the snapshot.
- */
-describe("model registry invariants", () => {
-  /**
-   * The one thing this file must never become again. A price, a window or a
-   * flag written here is a second copy of agent-models' registry — the copy
-   * that drifts — and the catalog loader would happily keep serving it until
-   * the first refresh replaced it, so nothing would say so at runtime.
-   */
-  it("states no model of its own — the numbers live in agent-models", () => {
-    const source = readFileSync("src/domain/llm/models.ts", "utf8");
-    expect(source).not.toMatch(/inputPer1M:\s*\d/);
-    expect(source).not.toMatch(/contextWindow:\s*\d/);
-    expect(source).not.toMatch(/MODEL_FAMILIES|MODEL_OFFERINGS/);
-  });
-
-  it("has no duplicate ids", () => {
-    const ids = listModels().map((model) => model.id);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  /**
-   * The prefix is not decoration: `resolveProviderTarget` routes on it and
-   * strips it before dispatch, so an id whose prefix disagrees with its
-   * `provider` field is dispatched to the wrong channel — or, for a prefix that
-   * is not a supported provider, silently never routed to a provider channel
-   * at all.
-   */
-  it("prefixes every id with its own supported provider", () => {
-    for (const model of listModels()) {
-      expect(
-        SUPPORTED_PROVIDERS as readonly string[],
-        `${model.id}: unsupported provider`,
-      ).toContain(model.provider);
-      expect(model.id, `${model.id}: prefix does not match provider`).toMatch(
-        new RegExp(`^${model.provider}/.+`),
-      );
-    }
-  });
-
-  it("names every model", () => {
-    for (const model of listModels()) {
-      expect(model.displayName.trim(), `${model.id}: empty displayName`).not.toBe("");
-    }
-  });
-
-  it("identifies the model maker independently of its route", () => {
-    // Data-driven on purpose: which ids the catalog carries is agent-models'
-    // decision now, so naming one here would fail this suite the day its
-    // retirement automation acts (`pnpm sync-models` before a release).
-    for (const model of listModels()) {
-      expect(listModelMakers()[model.maker], `${model.id}: unknown maker`).toBeTruthy();
-    }
-    const routed = listModels().filter((m) => m.provider === "bedrock" || m.provider === "openrouter");
-    expect(routed.length).toBeGreaterThan(0);
-    for (const model of routed) {
-      expect(["bedrock", "openrouter"], `${model.id}: maker is the route`).not.toContain(model.maker);
-    }
-  });
-
-  /**
-   * The point of the family/offering split: one model reached three ways is one
-   * name and one window, not three that drift. Derivation makes that true by
-   * construction — this fails only if an offering starts overriding the fields
-   * that identify *which model it is*, which is how the three-copies problem
-   * would come back wearing a different hat.
-   */
-  it("says the same thing about a model however it is reached", () => {
-    const byFamily = new Map<string, ReturnType<typeof listModels>>();
-    for (const model of listModels()) {
-      byFamily.set(model.family, [...(byFamily.get(model.family) ?? []), model]);
-    }
-    for (const [family, routes] of byFamily) {
-      if (routes.length < 2) {
-        continue;
-      }
-      const [first] = routes;
-      for (const route of routes) {
-        expect(route.displayName, `${family}: routes disagree on the name`).toBe(
-          first?.displayName,
-        );
-        expect(route.maker, `${family}: routes disagree on the maker`).toBe(first?.maker);
-        expect(route.contextWindow, `${family}: routes disagree on the window`).toBe(
-          first?.contextWindow,
-        );
-        expect(route.capabilities.imageGeneration ?? false, `${family}: routes disagree on kind`)
-          .toBe(first?.capabilities.imageGeneration ?? false);
-        expect(route.capabilities.embedding ?? false, `${family}: routes disagree on kind`)
-          .toBe(first?.capabilities.embedding ?? false);
-        expect(route.capabilities.rerank ?? false, `${family}: routes disagree on kind`)
-          .toBe(first?.capabilities.rerank ?? false);
-        expect(route.capabilities.transcription ?? false, `${family}: routes disagree on kind`)
-          .toBe(first?.capabilities.transcription ?? false);
-      }
-    }
-  });
-
-  /**
-   * A router names models `vendor/model`, and its wire id is the only place
-   * that vendor appears — the registry id says `openrouter`. One missing prefix
-   * dispatches `claude-opus-4.8`, which OpenRouter answers with a 404 for a
-   * model it very much serves.
-   */
-  it("gives every router route a vendor-qualified wire id", () => {
-    for (const model of listModels().filter((m) => m.provider === "openrouter")) {
-      expect(model.wireId, `${model.id}: router route needs a wireId`).toBeDefined();
-      expect(model.wireId, `${model.id}: wireId names no vendor`).toContain("/");
-    }
-  });
-
-  it("keeps the output cap within the context window", () => {
-    for (const model of listModels()) {
-      const minimum = modelType(model) === "text" ? 1 : 0;
-      expect(model.maxTokens, `${model.id}: invalid maxTokens`).toBeGreaterThanOrEqual(minimum);
-      expect(model.contextWindow, `${model.id}: maxTokens exceeds contextWindow`).toBeGreaterThanOrEqual(
-        model.maxTokens,
-      );
-    }
-  });
-
-  /**
-   * An unpriced entry is worse than a missing one: the model runs, and every
-   * call is booked at $0 with no warning, because the registry lookup succeeds.
-   */
-  it("prices every text model on both sides", () => {
-    // Self-hosted routes are exempt on purpose: zero is their true price
-    // (`SELF_HOSTED_PROVIDERS`), so a zero here is a statement, not a miss.
-    for (const model of listModels().filter(
-      (m) =>
-        !m.capabilities.imageGeneration &&
-        !m.capabilities.embedding &&
-        !m.capabilities.rerank &&
-        !m.capabilities.transcription &&
-        !(SELF_HOSTED_PROVIDERS as readonly string[]).includes(m.provider),
-    )) {
-      expect(model.pricing.inputPer1M, `${model.id}: no input price`).toBeGreaterThan(0);
-      expect(model.pricing.outputPer1M, `${model.id}: no output price`).toBeGreaterThan(0);
-    }
-  });
-
-  it("prices every embedding model on input only", () => {
-    const embeddingModels = listModels().filter((model) => modelType(model) === "embedding");
-    expect(embeddingModels.length).toBeGreaterThan(0);
-    for (const model of embeddingModels) {
-      expect(model.pricing.inputPer1M, `${model.id}: no input price`).toBeGreaterThan(0);
-      expect(model.pricing.outputPer1M, `${model.id}: output must be free`).toBe(0);
-      expect(model.maxTokens, `${model.id}: embedding models produce no tokens`).toBe(0);
-    }
-  });
-
-  it("prices every image model by token rate or per image", () => {
-    const imageModels = listModels().filter((m) => m.capabilities.imageGeneration);
-    // `defaultImageModel()` is the first visible one of these; with none,
-    // image generation has no default model to fall back to.
-    expect(imageModels.length).toBeGreaterThan(0);
-    for (const model of imageModels) {
-      const { imageOutputPer1M, perImage } = model.pricing;
-      expect(
-        (imageOutputPer1M ?? 0) > 0 || (perImage ?? 0) > 0,
-        `${model.id}: neither imageOutputPer1M nor perImage is priced`,
-      ).toBe(true);
-      expect(model.pricing.perInputImage ?? 0, `${model.id}: negative source image price`)
-        .toBeGreaterThanOrEqual(0);
-    }
-  });
-
-  it("never prices cached input above uncached input", () => {
-    for (const model of listModels()) {
-      const cached = model.pricing.cachedInputPer1M;
-      if (cached === undefined) {
-        continue;
-      }
-      expect(cached, `${model.id}: negative cached price`).toBeGreaterThanOrEqual(0);
-      expect(cached, `${model.id}: cached price above uncached`).toBeLessThanOrEqual(
-        model.pricing.inputPer1M,
-      );
-    }
-  });
-
-  /**
-   * A `wireId` exists only to name a model the way the route it belongs to
-   * does. One that equals the bare id is a copy of information already in `id` —
-   * the kind that drifts — and one that repeats its *own* provider prefix would
-   * arrive double-prefixed.
-   *
-   * A slash is not itself the problem; rejecting all slashes would be wrong. A router
-   * names models `vendor/model`, so `openrouter/claude-opus-4.8` reaches
-   * OpenRouter as `anthropic/claude-opus-4.8` and the prefix belongs to the
-   * vendor behind the route, not to the route.
-   */
-  it("only carries a wireId that says something the id does not", () => {
-    for (const model of listModels().filter((m) => m.wireId !== undefined)) {
-      const wireId = model.wireId as string;
-      expect(wireId.trim(), `${model.id}: empty wireId`).not.toBe("");
-      expect(
-        wireId.startsWith(`${model.provider}/`),
-        `${model.id}: wireId repeats its own provider prefix`,
-      ).toBe(false);
-      expect(wireId, `${model.id}: wireId repeats the bare id`).not.toBe(
-        model.id.slice(model.id.indexOf("/") + 1),
-      );
-    }
-  });
-
-  /**
-   * The invariant the 404 this file's `wireId` exists to fix came from.
-   *
-   * Anthropic names its models with hyphens and rejects the dotted form the
-   * registry and every stored version use, so a dotted `anthropic/` id is
-   * dispatchable only through a `wireId`. Without this, adding
-   * `anthropic/claude-opus-5.1` and forgetting the override ships the identical
-   * failure — silently, because `wireModelId` falls back to the bare id and the
-   * 404 only appears at dispatch.
-   */
-  it("gives every dotted Anthropic id the hyphenated name Anthropic serves", () => {
-    for (const model of listModels().filter(
-      (m) => m.provider === "anthropic" && m.id.includes("."),
-    )) {
-      const bare = model.id.slice(model.id.indexOf("/") + 1);
-      expect(model.wireId, `${model.id}: a dotted Anthropic id needs a wireId`).toBe(
-        bare.replaceAll(".", "-"),
-      );
-    }
-  });
-
-  it("exposes exactly the non-hidden models", () => {
-    expect(getVisibleModels().map((m) => m.id)).toEqual(
-      listModels().filter((m) => !m.hidden).map((m) => m.id),
-    );
-  });
-});
 
 /**
  * The other half of what a model is picked on, beside its price. The sizes are
@@ -319,11 +74,8 @@ describe("contextWindowLabel", () => {
 });
 
 describe("offeredModels", () => {
-  it("offers every visible execution model with no provider channels and no hidden override", () => {
-    expect(offeredModels([], undefined)).toEqual(
-      getVisibleModels().filter((model) => ["text", "image"].includes(modelType(model))),
-    );
-    expect(offeredModels([], undefined).every((model) => ["text", "image"].includes(modelType(model)))).toBe(true);
+  it("offers no models without registered provider connections", () => {
+    expect(offeredModels([], undefined)).toEqual([]);
   });
 
   it("narrows to the configured providers", () => {
@@ -333,10 +85,10 @@ describe("offeredModels", () => {
   });
 
   it("excludes the hidden denylist and ignores a stale id", () => {
-    const offered = offeredModels([], ["openai/gpt-5.4", "openai/retired-model"]);
+    const offered = offeredModels(["openai"], ["openai/gpt-5.4", "openai/retired-model"]);
     expect(offered.map((m) => m.id)).not.toContain("openai/gpt-5.4");
     expect(offered.length).toBe(
-      getVisibleModels().filter((model) => ["text", "image"].includes(modelType(model))).length - 1,
+      getVisibleModels().filter((model) => model.provider === "openai" && ["text", "image"].includes(modelType(model))).length - 1,
     );
   });
 
@@ -353,11 +105,9 @@ describe("offeredModels", () => {
    * out of the offering until their channel is configured (`providerOffered`).
    */
   it("offers a selfhosted model only behind its own channel", () => {
-    loadModelCatalog(
+    loadTestCatalog(
       {
-        version: MODEL_CATALOG_VERSION,
         updatedAt: "2026-08-20T00:00:00.000Z",
-        makers: { qwen: "Qwen" },
         models: [
           {
             id: "selfhosted/qwen3-8b",
@@ -372,7 +122,6 @@ describe("offeredModels", () => {
           },
         ],
       },
-      { maxDropFraction: 1 },
     );
     try {
       expect(offeredModels([], undefined)).toEqual([]);
@@ -380,7 +129,7 @@ describe("offeredModels", () => {
         "selfhosted/qwen3-8b",
       ]);
     } finally {
-      loadModelCatalog(snapshot, { maxDropFraction: 1 });
+      loadTestCatalog(snapshot);
     }
   });
 });

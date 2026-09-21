@@ -32,6 +32,14 @@
  * never one label at a time.
  */
 export const en = {
+  "modelAdmin.perMinute": "USD per audio minute",
+  "modelAdmin.reasoningWithTools": "Supports reasoning together with tool calling",
+  "modelAdmin.perImage": "USD per image",
+  "modelAdmin.perSearch": "USD per rerank request",
+  "modelAdmin.tools": "Tool calling",
+  "modelAdmin.structuredOutput": "Structured output",
+  "modelAdmin.imageInput": "Image input",
+  "modelAdmin.reasoning": "Reasoning",
   "modelAdmin.providers": "Providers",
   "modelAdmin.providerHint": "Register provider connections, including internal model servers.",
   "modelAdmin.selection": "Model selection",
@@ -1418,7 +1426,7 @@ export const en = {
   "models.type.transcription": "Transcription",
   "models.selection.title": "Active retrieval models",
   "models.selection.lede":
-    "Choose the registered model used for capability embedding and second-stage reranking. Environment variables remain the deployment defaults.",
+    "Choose the registered model used for capability embedding and second-stage reranking. Selections use the registered provider connection.",
   "models.selection.unconfigured": "Not configured",
   "models.selection.embeddingConfirmTitle": "Migrate capability vectors",
   "models.selection.embeddingConfirmMessage":

@@ -157,10 +157,7 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/models` | `GET` | session |
 | `/api/models/favorites` | `GET` `PUT` | session |
 | `/api/models/catalog` | `GET` | member |
-| `/api/models/catalog/document` | `GET` `PUT` `DELETE` | admin |
 | `/api/models/test` | `POST` | admin |
-| `/api/models/refresh` | `POST` | admin |
-| `/api/models/selfhosted` | `GET` | admin |
 | `/api/models/selection` | `PUT` | admin |
 | `/api/models/workspace` | `GET` `PUT` | member / admin |
 | `/api/me` | `GET` | session |
@@ -448,30 +445,13 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
   오버라이드가 없으면 env 값. 아무것도 설정돼 있지 않으면 `404` 다. 읽기인데도 POST 인 이유는
   project 토큰과 같다: 본문이 살아 있는 인증 정보다. 모든 reveal 은 감사 행과, 호출자를 밝히는
   서버 측 로그 한 줄을 남긴다.
-- PUT 의 `llmProviders` 는 전체 교체 목록이다 (프로바이더별 LLM 채널). 빈 배열은 오버라이드를
-  제거한다 (`LLM_PROVIDER_*` env 로 폴백). 마스킹된 `apiKey` 는 그 프로바이더 이름에 대해
-  endpoint 와 인증 방식이 그대로일 때만 지금 유효한 키를 유지한다. `baseUrl` 또는 `auth` 를
-  바꾸려면 새 API key 를 같은 요청에 평문으로 넣어야 한다. 기본 `LLM_BASE_URL` 도 바꾸려면
-  새 `LLM_API_KEY` 가 필요하며, 두 값을 함께 비우면 env 의 URL/key 쌍으로 돌아간다.
-  프로바이더 `name` 은
-  `openai | anthropic | google | xai | bedrock | openrouter | selfhosted` (`SUPPORTED_PROVIDERS`) 중
-  하나여야 하고, `auth` 는 `bearer` (기본) 또는 `sigv4` 이며, 목록은 최대 50개까지고, 같은
-  이름이 두 번 나오면 `400` 이다.
-- PUT 의 `hiddenModels` 도 전체 교체 목록이다. `/api/models` 에서 숨길 모델 id 들로,
-  정렬·중복 제거해 저장된다. 빈 배열은 오버라이드를 제거한다 (숨기는 모델이 없다. env 폴백은
-  없다). 최대 500개이고 레지스트리에 없는 id, 또는 `/api/models` 가 제공하는 모델
-  (provider 채널로 좁힌 뒤) 전부를 숨기는 목록은 `400` 이다.
-  denylist 이므로 카탈로그에 새로 들어온 모델은 기본적으로 보인다. 이것은 GET 설정 뷰에 자리가 없다. 다시 읽는 곳은
-  `/api/models/catalog` 다.
-- PUT 의 `selfHostedModels` 도 전체 교체 목록이다. 이 배포가 직접 서빙하는 모델의 선언
-  (`{ family, displayName, maker?, type, contextWindow, maxTokens, capabilities }`, 최대 50개)이다.
-  `type`은 `text | image | embedding | rerank | transcription` 중 하나다.
-  저장 시 레지스트리 로더의 검증을 그대로 지나 (통과 못 하면 `400` 에 이유가 담긴다) 이
-  프로세스의 오버레이에 즉시 설치되고, 다른 인스턴스는 카탈로그 refresh 틱에 따라온다. 빈
-  배열은 전부 제거. env 폴백은 없다. 선언은 설정이 아니라 데이터다. 다시 읽는 곳은
-  `GET /api/models/selfhosted` 의 `declarations` 이고, 관리 UI 는 `/models` 콘솔의
-  Self-hosted 섹션이다. 현재 Embedding 또는 Rerank 선택이 가리키는 self-hosted 선언은 먼저
-  다른 모델을 선택하기 전에는 제거할 수 없다.
+- PUT의 `llmProviders`는 최대 50개의 전체 교체 목록이다. 각 항목은
+  `{ name, kind?, baseUrl, apiKey, auth?, keepModelPrefix? }`다. `name`은 고유한 소문자 식별자,
+  `kind`는 지원 프로바이더 종류다. 빈 배열은 모든 연결을 비활성화한다.
+  마스크나 빈 키는 같은 endpoint·종류·인증 방식의 기존 키를 유지한다. Self-hosted 연결은
+  키를 생략할 수 있다. 등록된 모델이 남은 프로바이더를 삭제하는 요청은 거절한다.
+- 모델 등록과 사용 설정은 아래 [Models API](#models)를 사용한다. 일반 설정 API는
+  `registeredModels`·`defaultModel`·검색 모델 선택을 직접 변경하는 요청을 거절한다.
 - `source` 는 `override` (DB) | `env` | `default` | `unset` 이다. secret 값은 언제나 마스킹된다
   (길이 보존. 9–20자는 양끝 2자씩, 21자 이상은 4자씩 드러낸다). PUT 의 마스킹된 값은 저장된
   secret 을 유지하고, 빈 문자열은 오버라이드를 제거한다 (env 폴백). 호출자를 제외하는 목록으로
@@ -1606,97 +1586,29 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 
 ## Models
 
-`GET /api/models` → `{ "models": [ { id, provider, displayName, pricing, capabilities, favorite, … } ] }`
-(`src/domain/llm/models.ts` 의 레지스트리에서 실행 가능한 Text·Image 모델이며, Embedding과 숨김
-항목은 제외한다). 프로바이더별 LLM 채널이
-설정돼 있으면 (설정 오버라이드 또는 `LLM_PROVIDER_*` env) 그 프로바이더들의 모델만 나열되고,
-아무것도 설정돼 있지 않으면 모든 모델이 나열된다. 그다음 admin 이 `/models` 에서 관리하는
-`hiddenModels` 를 제외한다. 숨김은 선택 시점의 필터일 뿐이다: 이미 그 모델을 설정한 Agent는 계속
-실행된다. `favorite` 는 로그인한 사용자 자신의 값이고 picker 는 이 항목들을 `Favorites` 그룹으로
-맨 위에 놓는다.
+모델 등록·선택·기본값·상태 검사는 admin 전용이며 목록은 member부터 읽는다.
+`GET /api/models`는 로그인한 사용자에게 등록된 실행 모델(Text·Image·Decisions)을 제공한다.
+연결이 없는 모델은 제공하지 않으며 기본 모델을 먼저 정렬한다. 즐겨찾기는 사용자별이다.
 
-```
-GET  /api/models/catalog → 200 { providers: [ { name, available, dedicated } ],
-                                 models: [ { …model, type: "text" | "image" | "embedding" | "rerank" | "transcription",
-                                             selectionHidden, favorite } ],
-                                 selections: { embedding, rerank? },
-                                 rerankerMinScore: { value, source },
-                                 selectionAvailable: { embedding, rerank },
-                                 makers: { <makerId>: label },
-                                 updatedAt,
-                                 source: "override" | "default" }
-GET  /api/models/favorites → 200 { models: [ <modelId> ] }
-PUT  /api/models/favorites { models: [ <modelId> ] } → 200 { models: [ <modelId> ] } | 400
-POST /api/models/test    { "model": "<model id>" } → 200 { ok, latencyMs, error? } | 400
-POST /api/models/refresh → 200 { refreshed, updatedAt }
-GET  /api/models/selfhosted → 200 { served: [ { name, type, contextWindow?, vision? } ] | null,
-                                    servedError?,
-                                    declarations: [ <selfHostedModel> ],
-                                    installed: [ <id> ] } | 400
-PUT  /api/models/selection { type: "embedding" | "rerank", model, migrate?, rerankerMinScore? }
-                                 → 200 { settings, migration? } | 400 | 409 | 500
-GET    /api/models/catalog/document → 200 { stored: false }
-                                    | 200 { stored: true, uploadedBy, uploadedAt, updatedAt,
-                                            modelCount, skipped: [ "id — reason" ] }
-PUT    /api/models/catalog/document   <the catalog JSON, at most 4 MB>
-                                    → 200 { …the status above, refreshed } | 400 | 413
-DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
-```
+| API | 계약 |
+|---|---|
+| `GET /api/models/discover?provider=<name>` | 등록한 연결의 목록을 조회한다. `{ models: [{ wireId, displayName, type?, contextWindow?, maxTokens?, capabilities?, pricing? }] }`. 조회는 모델을 활성화하지 않는다 |
+| `GET /api/models/registry` | `{ models: RegisteredModel[] }`. 관리자가 선택하거나 직접 등록한 모델만 반환한다 |
+| `POST /api/models/registry` | `{ id, provider, wireId, displayName, type, contextWindow, maxTokens, capabilities, pricing? }`를 저장하고 갱신된 목록을 반환한다. 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decisions`다 |
+| `DELETE /api/models/registry?id=<id>` | 미사용 모델을 삭제한다. 성공 204, 현재 기본·검색·Workspace에서 사용하면 409 |
+| `GET /api/models/status?id=<id>` | 프로바이더 목록에 등록 모델이 있는지 `{ available }`로 반환한다. 통신 실패는 502이며 실제 추론 성공을 뜻하지 않는다 |
+| `GET /api/models/default` | `{ model: string | null }` |
+| `PUT /api/models/default` | `{ model }`. 도구 호출을 지원하는 등록 텍스트·Decisions 모델을 선택한다 |
+| `GET /api/models/catalog` | 등록 모델의 runtime facts, 현재 검색 선택, 검색 기능 활성 여부와 사용자 즐겨찾기를 반환한다 |
+| `PUT /api/models/selection` | `{ type: "embedding" | "rerank", model, migrate?, rerankerMinScore? }`. Embedding 변경은 `migrate: true`와 전체 재색인을 요구하며 Rerank는 probe 후 저장한다 |
+| `GET /api/models/workspace` | Runtime별 선택·호환 모델과 사용 가능한 Runtime 목록 |
+| `PUT /api/models/workspace` | `{ runtime, model: string | null }`. 등록된 호환 모델을 선택하거나 해제한다 |
+| `GET/PUT /api/models/favorites` | 사용자별 `{ models: string[] }` |
+| `POST /api/models/test` | `{ model }`로 Text·Decisions·Image·Rerank의 실제 호출을 수행하고 `{ ok, latencyMs, error? }`를 반환한다. 호출 비용이 발생할 수 있다 |
 
-- `catalog` 는 `member` 등급부터 읽을 수 있고 (`withMemberAuth`, Intelligence 섹션의 다른
-  레지스트리들과 같은 계단이다: 이 배포가 닿을 수 있는 것의 목록이다), `test`·`refresh`·
-  `selfhosted` 는 admin 전용이다.
-  `makers` 와 `updatedAt` 은 로드된 카탈로그의 것이다. maker 라벨과 카탈로그 내용이 마지막으로
-  바뀐 시각으로, 레지스트리가 런타임 로드로 바뀐 뒤 클라이언트가 상수에서 가져올 수 없게 된
-  값들이다. `catalog` 는 `/models` 뒤의 걸러지지 않은 그림이다: Text·Image·Embedding·Rerank·Transcription 다섯 타입의
-  보이는 모든 모델과 그 `selectionHidden` 플래그
-  (`/api/models` 가 숨기는 것을 정확히 나열한다, member 는 숨긴 모델을 볼 수는 있어도 고를 수는
-  없다), 그리고 프로바이더별로 이 배포가 거기로 dispatch 할 수 있는지다. `dedicated` 는
-  프로바이더별 채널이 설정돼 있다는 뜻이다. 하나도 없으면 모든 프로바이더가 기본 채널을 통해
-  `available` 이다. 숨김을 바꾸는 것(`PUT /api/settings` 의 `hiddenModels`)은 admin 의 일로 남는다.
-- `favorites` 는 로그인한 사용자의 Better Auth user id 로 분리한 개인 설정이다. PUT 은 전체 교체이고
-  최대 200개이며, 중복 제거·정렬해 저장한다. 다른 사용자의 id 를 받는 파라미터는 없다. 숨긴 모델의
-  즐겨찾기는 저장에 남지만 picker 에서는 숨김이 우선한다.
-- `test`는 Text 모델에 작은 completion 하나를 보낸다 (`maxTokens` 16, 15초 타임아웃).
-  Image는 실제 이미지 채널로 테스트 이미지를 생성한다 (120초 타임아웃). 이미지 생성 비용은
-  제공자에 발생하며 결과 이미지는 저장하지 않는다. Rerank는 전용 endpoint의 semantic probe를
-  사용한다. Embedding·Transcription은 이 진단을 지원하지 않으므로 `400`이며 Test 버튼도 없다.
-  프로바이더 해석, base URL, API 키, wire-id 치환까지 포함해서다. 실패한 프로브는 `5xx` 가 아니라
-  `200` 본문이다 (`ok: false` 와 상류 에러). 레지스트리에 없는 id도 `400` 이다. 프로브는 런
-  브래킷 밖에서 돌아가므로 사용량 행을 기록하지 않는다.
-- `refresh` 는 발행된 카탈로그를 시간별 틱을 기다리지 않고 지금 당겨온다. agent-models 가 방금
-  발행한 것을 콘솔에서 바로 보기 위한 것이다. `refreshed: false` 는 "이미 최신"과 "가져오기 실패"
-  둘 다를 덮는다 (이유는 서버 로그에 있고, 어느 쪽이든 레지스트리는 그대로다). `test` 처럼
-  설치한 것이 없는 갱신은 실패가 아니라 결과라서 `5xx` 를 돌려주지 않는다. boot refresh 와
-  겹치면 그 결과에 합류하지 않고 직렬화된 다음 읽기를 기다리므로, 방금 저장한 upload/delete 가
-  오래 걸리던 이전 읽기에 덮이지 않는다.
-- `selfhosted` 는 `/models` 콘솔 Self-hosted 섹션의 전체 그림이다: **저장된** 선언
-  (`declarations`, 편집의 기준이다: 레지스트리가 설치를 거부한 선언도 여기 보여야 다음
-  full-replace 저장이 그것을 조용히 지우지 않는다), 그중 설치된 id(`installed`), 그리고
-  채널이 *지금* 서빙하는 목록(`served`, Text·Embedding·Rerank 채널의 `/v1/models` 를 각
-  채널의 자격증명으로 읽고 type을 붙인다. 기본 LLM 또는 공개 provider 채널과 같은 URL인
-  retrieval fallback은 self-hosted 발행자가 아니므로 제외한다. LM Studio 네이티브 카탈로그가
-  있으면 컨텍스트 길이·vision·embedding type을 보강한다). `served` 는 best-effort 다. 채널이 답하지 않으면 뷰를 실패시키는 대신
-  `servedError` 로 실리고, 다른 채널이 답했다면 그 `served` 목록은 그대로 남는다: 서빙 스택 하나가
-  죽어 있어도 건강한 모델과 선언은 admin 이 볼 수 있어야 한다.
-  채널이 아예 설정돼 있지 않으면 `400`. 선언 자체는 `PUT /api/settings` 의
-  `selfHostedModels` 로 한다.
-- `selection` 은 배포 전역의 Embedding/Rerank 활성 모델을 레지스트리 id로 선택한다.
-  등록된 공개 모델의 provider 채널이 있으면 URL·credential·wire ID를 함께 전환한다.
-  Self-hosted 모델에는 provider의 text 채널을 적용하지 않고 기존 Embedding/Rerank endpoint 설정을 따른다.
-  Rerank는 타입과 endpoint 구성을 확인하고 실제 query/document pair를 시험한 뒤 바뀐다. Embedding은 `migrate: true`가 없으면
-  `400`이고, 승인된 요청은 전체 capability vector 재색인을 끝까지 기다린다. 실패하면 이전
-  선택을 복원하고 이전 모델로 다시 재색인한다. 같은 migration이 이미 진행 중이면 `409`다.
-- `catalog/document` 는 admin 이 **손으로 설치하는 카탈로그**. 발행된 카탈로그에 닿지
-  못하는 배포(`MODELS_CATALOG_URL` 미설정 또는 `none`)의 길이지만, 어느 배포에서든 업로드는
-  지울 때까지 네트워크보다 우선한다. `GET` 은 "설치된 것 없음" 을 실패가 아니라 상태로 답한다(콘솔이
-  그린다). `PUT` 은 refresh 가 검증하는 방식 그대로 먼저 검증해. 로더의 이유를 담은 400.
-  올린 사람의 주소와 시각과 함께 저장하고, 답하기 전에 레지스트리를 갱신한다. `stored: true`
-  옆의 `refreshed: false` 는 레지스트리가 이미 이 업로드를 들고 있었다는 뜻이다. `DELETE` 는
-  문서를 지우고 갱신한다. 읽을 발행 카탈로그가 있으면 그것을 따르고, 없으면 프로세스가
-  재시작해 스냅샷으로 돌아갈 때까지 마지막 설치본을 유지한다(레지스트리는 결코 비워지지
-  않는다). `GET /api/models/catalog` 에 동사를 더하는 대신 형제 주소인 이유: 그쪽은 *레지스트리*
-  의 member 등급 뷰이고, 이쪽은 레지스트리를 먹이는 *소스 하나* 에 대한 admin 의 뷰다.
+등록 모델은 최대 500개다. 가격 미제공은 `pricingKnown: false`로 표시하며 명시적 0과 구별한다.
+조회 실패나 프로바이더의 목록 변경은 저장된 선택을 자동 삭제하지 않는다. 모델 선택의 DB
+변경은 설정 캐시 TTL 이내에 다른 인스턴스에도 적용된다. 모델의 URL·키는 응답에 포함하지 않는다.
 
 ## A2A (인바운드)
 

@@ -7,12 +7,13 @@ export type { WorkspaceModelRuntime, WorkspaceRuntimeModels } from "./types";
 
 /** Native CLI protocol support, separate from the agent's chat model selection. */
 export function workspaceRuntimeModelCompatible(runtime: WorkspaceModelRuntime, model: ModelConfig): boolean {
-  if (modelType(model) !== "text" || !model.capabilities.tools) return false;
-  if (runtime === "claude") return model.provider === "anthropic";
-  if (runtime === "codex") return ["openai", "openrouter", "selfhosted"].includes(model.provider);
-  return ["openai", "openrouter", "selfhosted", "google", "xai"].includes(model.provider);
+  if (!["text", "decisions"].includes(modelType(model)) || !model.capabilities.tools) return false;
+  const kind = model.providerKind ?? model.provider;
+  if (runtime === "claude") return kind === "anthropic";
+  if (runtime === "codex") return ["openai", "openrouter", "selfhosted"].includes(kind);
+  return ["openai", "openrouter", "selfhosted", "google", "xai"].includes(kind);
 }
 
 export function workspaceModelChannel(model: ModelConfig, channels: readonly ProviderChannelConfig[]): ProviderChannelConfig | undefined {
-  return channels.find(channel => channel.name === model.provider && channel.auth === "bearer" && !!channel.apiKey);
+  return channels.find(channel => channel.name === model.provider && channel.auth === "bearer" && (!!channel.apiKey || (channel.kind ?? channel.name) === "selfhosted"));
 }

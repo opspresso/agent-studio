@@ -2,7 +2,6 @@ process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSettingsUseCases as createSettingsUseCasesImpl } from "@/application/settings/settingsUseCases";
-import { getVisibleModels, MAX_HIDDEN_MODELS } from "@/domain/llm/models";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 
@@ -10,9 +9,9 @@ import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 const createSettingsUseCases = (repo: Parameters<typeof createSettingsUseCasesImpl>[0]) =>
   createSettingsUseCasesImpl(repo, secretCipher, process.env, parseProviderConfigs);
 import { ValidationError } from "@/application/errors";
-import { getModelConfig, loadSelfHostedModels } from "@/domain/llm/models";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings } from "@/domain/settings/types";
+import { fixtureRegistrations } from "./modelFixtures";
 import { decryptSecret, encryptSecret, isEncrypted } from "@/infrastructure/crypto/secretEncryption";
 import {
   llmApiKeyContext,
@@ -173,20 +172,20 @@ describe("settingsUseCases.update", () => {
     });
   });
 
-  it("stores model selection overrides and clears them back to env", async () => {
+  it("stores selected models independently of legacy environment values", async () => {
     process.env.EMBEDDING_MODEL = "openrouter/qwen3-embedding-4b";
     process.env.RERANKER_MODEL = "selfhosted/env-reranker";
-    const { repo, current } = fakeRepo();
+    const { repo, current } = fakeRepo({ registeredModels: fixtureRegistrations(), updatedAt: "" });
     const useCases = createSettingsUseCases(repo);
     await useCases.update(
       {
-        embeddingModel: "selfhosted/Qwen/Qwen3-Embedding-4B",
-        rerankerModel: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+        embeddingModel: "openai/text-embedding-3-small",
+        rerankerModel: "openrouter/rerank-2.5",
       },
       ADMIN,
     );
-    expect(current()?.embeddingModel).toBe("selfhosted/Qwen/Qwen3-Embedding-4B");
-    expect(current()?.rerankerModel).toBe("selfhosted/Qwen/Qwen3-Reranker-0.6B");
+    expect(current()?.embeddingModel).toBe("openai/text-embedding-3-small");
+    expect(current()?.rerankerModel).toBe("openrouter/rerank-2.5");
 
     await useCases.update({ embeddingModel: "", rerankerModel: "" }, ADMIN);
     expect(current()?.embeddingModel).toBeUndefined();
@@ -507,106 +506,6 @@ describe("settingsUseCases.update", () => {
     ).rejects.toThrow(/Unsupported LLM provider/);
   });
 
-  it("stores hiddenModels sorted and deduplicated, and disables providers on an empty list", async () => {
-    const { repo, current } = fakeRepo();
-    const useCases = createSettingsUseCases(repo);
-
-    await useCases.update(
-      { hiddenModels: ["openai/gpt-5.4", "anthropic/claude-fable-5", "openai/gpt-5.4"] },
-      ADMIN,
-    );
-    expect(current()?.hiddenModels).toEqual(["anthropic/claude-fable-5", "openai/gpt-5.4"]);
-
-    await useCases.update({ hiddenModels: [] }, ADMIN);
-    expect(current()?.hiddenModels).toBeUndefined();
-  });
-
-  it("rejects hiddenModels ids the registry does not carry", async () => {
-    const { repo, current } = fakeRepo();
-
-    await expect(
-      createSettingsUseCases(repo).update(
-        { hiddenModels: ["openai/gpt-5.4", "openai/not-a-model"] },
-        ADMIN,
-      ),
-    ).rejects.toThrow(/Unknown model ids: openai\/not-a-model/);
-    expect(current()).toBeNull();
-  });
-
-  it("rejects an unbounded hidden model list", async () => {
-    const { repo } = fakeRepo();
-    await expect(
-      createSettingsUseCases(repo).update(
-        {
-          hiddenModels: Array.from(
-            { length: MAX_HIDDEN_MODELS + 1 },
-            (_, index) => `openai/model-${index}`,
-          ),
-        },
-        ADMIN,
-      ),
-    ).rejects.toThrow(`At most ${MAX_HIDDEN_MODELS}`);
-  });
-
-  it("refuses to hide every selectable model", async () => {
-    const { repo } = fakeRepo();
-    await expect(
-      createSettingsUseCases(repo).update(
-        { hiddenModels: getVisibleModels().map((model) => model.id) },
-        ADMIN,
-      ),
-    ).rejects.toThrow("At least one model must remain visible");
-  });
-
-  it.each(["embedding", "rerank"] as const)("does not count a %s declaration as a visible run model", async (type) => {
-    const { repo } = fakeRepo();
-    await expect(createSettingsUseCases(repo).update({
-      selfHostedModels: [{
-        family: `special-${type}`, displayName: "Specialized", type,
-        contextWindow: 32768, maxTokens: 0,
-        capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false },
-      }],
-      hiddenModels: getVisibleModels().map((model) => model.id),
-    }, ADMIN)).rejects.toThrow("At least one model must remain visible");
-  });
-
-  it("counts a newly declared text model only when its provider is offered", async () => {
-    const { repo } = fakeRepo();
-    const patch = {
-      selfHostedModels: [{
-        family: "chat-model", displayName: "Chat model", type: "text" as const,
-        contextWindow: 32768, maxTokens: 8192,
-        capabilities: { tools: true, structuredOutput: false, imageInput: false, reasoning: false },
-      }],
-      hiddenModels: getVisibleModels().map((model) => model.id),
-    };
-    await expect(createSettingsUseCases(repo).update(patch, ADMIN))
-      .rejects.toThrow("At least one model must remain visible");
-    await expect(createSettingsUseCases(repo).update({
-      ...patch,
-      llmProviders: [{ name: "selfhosted", baseUrl: "https://models.example/v1", apiKey: "key" }],
-    }, ADMIN)).resolves.toBeDefined();
-  });
-
-  it("refuses to hide everything the configured provider channels offer", async () => {
-    // Only anthropic is configured, so hiding every anthropic model empties
-    // /api/models even though other providers' models stay catalog-visible.
-    const { repo } = fakeRepo({
-      llmProviders: [
-        { name: "anthropic", baseUrl: "https://a.example.com/v1", apiKey: encryptSecret("sk-a") },
-      ],
-      updatedAt: "2026-01-01T00:00:00Z",
-    });
-    const anthropicIds = getVisibleModels()
-      .filter((model) => model.provider === "anthropic")
-      .map((model) => model.id);
-    await expect(
-      createSettingsUseCases(repo).update({ hiddenModels: anthropicIds }, ADMIN),
-    ).rejects.toThrow("At least one model must remain visible");
-
-    await createSettingsUseCases(repo).update({ hiddenModels: anthropicIds.slice(1) }, ADMIN);
-  });
-
   it("rejects an adminEmails override that would lock the caller out", async () => {
     const { repo, current } = fakeRepo();
     const useCases = createSettingsUseCases(repo);
@@ -627,203 +526,5 @@ describe("settingsUseCases.update", () => {
     await expect(
       createSettingsUseCases(repo).update({ adminEmails: "" }, ADMIN),
     ).rejects.toBeInstanceOf(ValidationError);
-  });
-});
-
-describe("settingsUseCases.update self-hosted declarations", () => {
-  afterEach(() => {
-    loadSelfHostedModels([]);
-  });
-
-  it("stores the full catalog-shaped entry, installs it, and clears on empty", async () => {
-    const { repo, current } = fakeRepo();
-    const useCases = createSettingsUseCases(repo);
-    await useCases.update(
-      {
-        selfHostedModels: [
-          {
-            family: "qwen/qwen3.8-27b",
-            displayName: "Qwen3.8 27B",
-            type: "text",
-            contextWindow: 262144,
-            maxTokens: 8192,
-            capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-          },
-        ],
-      },
-      ADMIN,
-    );
-    expect(current()?.selfHostedModels).toEqual([
-      {
-        id: "selfhosted/qwen/qwen3.8-27b",
-        provider: "selfhosted",
-        family: "qwen/qwen3.8-27b",
-        // Defaulted from the family's vendor segment.
-        maker: "qwen",
-        displayName: "Qwen3.8 27B",
-        pricing: { inputPer1M: 0, outputPer1M: 0 },
-        capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-        contextWindow: 262144,
-        maxTokens: 8192,
-      },
-    ]);
-    // Installed for this process the moment it is saved.
-    expect(getModelConfig("selfhosted/qwen/qwen3.8-27b")).toBeDefined();
-
-    await useCases.update({ selfHostedModels: [] }, ADMIN);
-    expect(current()?.selfHostedModels).toBeUndefined();
-    expect(getModelConfig("selfhosted/qwen/qwen3.8-27b")).toBeUndefined();
-  });
-
-  it("derives specialized registry types from the declaration type", async () => {
-    const { repo } = fakeRepo();
-    await createSettingsUseCases(repo).update(
-      {
-        selfHostedModels: [
-          {
-            family: "Qwen/Qwen3-Embedding-4B",
-            displayName: "Qwen3 Embedding 4B",
-            type: "embedding",
-            contextWindow: 32768,
-            maxTokens: 0,
-            capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-          },
-          {
-            family: "Qwen/Qwen3-Reranker-0.6B",
-            displayName: "Qwen3 Reranker 0.6B",
-            type: "rerank",
-            contextWindow: 32768,
-            maxTokens: 0,
-            capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-          },
-          {
-            family: "local-transcriber",
-            displayName: "Whisper Large V3",
-            type: "transcription",
-            contextWindow: 0,
-            maxTokens: 0,
-            capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-          },
-        ],
-      },
-      ADMIN,
-    );
-    expect(getModelConfig("selfhosted/Qwen/Qwen3-Embedding-4B")?.capabilities).toMatchObject({
-      tools: false,
-      embedding: true,
-    });
-    expect(getModelConfig("selfhosted/Qwen/Qwen3-Reranker-0.6B")?.capabilities).toMatchObject({
-      tools: false,
-      rerank: true,
-    });
-    expect(getModelConfig("selfhosted/local-transcriber")?.capabilities).toMatchObject({
-      tools: false,
-      transcription: true,
-    });
-  });
-
-  it("refuses to remove a selected self-hosted retrieval model", async () => {
-    process.env.EMBEDDING_MODEL = "selfhosted/Qwen/Qwen3-Embedding-4B";
-    const { repo } = fakeRepo();
-    const useCases = createSettingsUseCases(repo);
-    await useCases.update(
-      {
-        selfHostedModels: [
-          {
-            family: "Qwen/Qwen3-Embedding-4B",
-            displayName: "Qwen3 Embedding 4B",
-            type: "embedding",
-            contextWindow: 32768,
-            maxTokens: 0,
-            capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false },
-          },
-        ],
-      },
-      ADMIN,
-    );
-    await expect(useCases.update({ selfHostedModels: [] }, ADMIN)).rejects.toThrow(
-      "Selected self-hosted models must remain declared",
-    );
-  });
-
-  it("refuses to change the type of a selected self-hosted retrieval model", async () => {
-    process.env.RERANKER_MODEL = "selfhosted/Qwen/model";
-    const { repo } = fakeRepo();
-    const useCases = createSettingsUseCases(repo);
-    const declaration = {
-      family: "Qwen/model",
-      displayName: "Qwen model",
-      type: "rerank" as const,
-      contextWindow: 32768,
-      maxTokens: 0,
-      capabilities: {
-        tools: false,
-        structuredOutput: false,
-        imageInput: false,
-        reasoning: false,
-      },
-    };
-    await useCases.update({ selfHostedModels: [declaration] }, ADMIN);
-
-    await expect(
-      useCases.update(
-        { selfHostedModels: [{ ...declaration, type: "embedding" }] },
-        ADMIN,
-      ),
-    ).rejects.toThrow(
-      "Selected self-hosted model must remain rerank: selfhosted/Qwen/model",
-    );
-  });
-
-  it("lets one PUT declare and hide a model together", async () => {
-    const { repo, current } = fakeRepo();
-    await createSettingsUseCases(repo).update(
-      {
-        selfHostedModels: [
-          {
-            family: "gemma-4-e4b",
-            displayName: "Gemma 4 E4B",
-            type: "text",
-            contextWindow: 131072,
-            maxTokens: 8192,
-            capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-          },
-        ],
-        // The declaration installs only after the write, so the hidden check
-        // must count same-patch declarations rather than asking the registry.
-        hiddenModels: ["openai/gpt-5.4", "selfhosted/gemma-4-e4b"],
-      },
-      ADMIN,
-    );
-    expect(current()?.hiddenModels).toEqual(["openai/gpt-5.4", "selfhosted/gemma-4-e4b"]);
-
-    await createSettingsUseCases(repo).update({ selfHostedModels: [] }, ADMIN);
-    expect(current()?.hiddenModels).toEqual(["openai/gpt-5.4"]);
-  });
-
-  it("fails the save on a declaration the registry would refuse", async () => {
-    const { repo } = fakeRepo();
-    await expect(
-      createSettingsUseCases(repo).update(
-        {
-          selfHostedModels: [
-            {
-              family: "big",
-              displayName: "Big",
-              type: "text",
-              contextWindow: 100,
-              maxTokens: 200,
-              capabilities: {
-                tools: false,
-                structuredOutput: false,
-                imageInput: false,
-                reasoning: false,
-              },
-            },
-          ],
-        },
-        ADMIN,
-      ),
-    ).rejects.toThrow(/maxTokens exceeds contextWindow/);
   });
 });

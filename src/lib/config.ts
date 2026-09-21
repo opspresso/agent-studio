@@ -25,8 +25,6 @@ function required(name: string): string {
  */
 const BOOT_REQUIRED_ENV = [
   "DATABASE_URL",
-  "LLM_BASE_URL",
-  "LLM_API_KEY",
   "AES_ENCRYPTION_KEY",
 ] as const;
 
@@ -36,7 +34,6 @@ export function assertRequiredConfig(): void {
     throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
   }
   decodeAes256Key(config.aesEncryptionKey);
-  void config.reranker;
 }
 
 /**
@@ -213,9 +210,6 @@ export const config = {
     return optionalEnv(process.env.S3_BUCKET_NAME);
   },
   get transcription() {
-    const baseUrl = optionalEnv(process.env.TRANSCRIPTION_BASE_URL);
-    const apiKey = optionalEnv(process.env.TRANSCRIPTION_API_KEY);
-    if (apiKey && !baseUrl) throw new Error("TRANSCRIPTION_API_KEY requires TRANSCRIPTION_BASE_URL");
     const responseFormat = optionalEnv(process.env.TRANSCRIPTION_RESPONSE_FORMAT) ?? "json";
     if (responseFormat !== "json" && responseFormat !== "verbose_json" && responseFormat !== "diarized_json") {
       throw new Error("Invalid TRANSCRIPTION_RESPONSE_FORMAT");
@@ -223,7 +217,7 @@ export const config = {
     const chunkingStrategy = optionalEnv(process.env.TRANSCRIPTION_CHUNKING_STRATEGY);
     if (chunkingStrategy && chunkingStrategy !== "auto") throw new Error("Invalid TRANSCRIPTION_CHUNKING_STRATEGY");
     return {
-      baseUrl, apiKey, responseFormat,
+      responseFormat,
       ...(chunkingStrategy ? { chunkingStrategy: "auto" as const } : {}),
       maxInputBytes: positiveIntEnv("TRANSCRIPTION_MAX_INPUT_BYTES", 25 * 1024 * 1024),
       segmentSeconds: positiveIntEnv("TRANSCRIPTION_SEGMENT_SECONDS", 300),
@@ -550,29 +544,6 @@ export const config = {
    */
   get publicBaseUrl(): string | undefined {
     return optionalEnv(process.env.PUBLIC_BASE_URL) ?? optionalEnv(process.env.BETTER_AUTH_URL);
-  },
-  /**
-   * Where the model registry is published — agent-models' catalog. Fetched at
-   * boot and on `modelsCatalogRefreshMs`; the committed snapshot
-   * (`src/domain/llm/catalog.json`) serves until then and whenever the fetch
-   * fails.
-   *
-   * Unset or `none` (case-insensitive) turns the remote read off altogether
-   * and is answered as `undefined`: no fetch at boot, none on the interval,
-   * and no warning about a site that was never configured. The catalog is
-   * then the snapshot or the document an admin uploads
-   * (`PUT /api/models/catalog/document`). The interval itself stays on,
-   * since it is also how an upload on another instance and a self-hosted
-   * declaration reach this process; without a URL a tick reads the database
-   * and nothing else.
-   */
-  get modelsCatalogUrl(): string | undefined {
-    const value = optionalEnv(process.env.MODELS_CATALOG_URL);
-    return value === undefined || value.toLowerCase() === "none" ? undefined : value;
-  },
-  /** How often the catalog is re-read; 0 disables the interval (the boot read still happens). */
-  get modelsCatalogRefreshMs(): number {
-    return positiveIntEnv("MODELS_CATALOG_REFRESH_MS", 60 * 60 * 1000);
   },
   /** GitHub Agent Plugins source repo, e.g. "opspresso/agent-plugins". */
   get pluginsRepo(): string | undefined {

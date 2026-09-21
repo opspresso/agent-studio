@@ -116,8 +116,6 @@ pnpm test:workspace   # Docker + PostgreSQL *_test 실행·복구 검사
 pnpm test:workspace:git # 무통신 Git fixture와 승인·게시 검사
 pnpm worker:audio     # 환경변수가 주입된 별도 오디오 worker. 앱이 DB를 초기화한 뒤 실행
 pnpm db:migrate       # DATABASE_URL 의 데이터베이스를 현재 스키마로 (db:migrate:test 는 테스트 DB)
-pnpm check-models     # 카탈로그 스냅샷과 이 배포의 채널이 서빙하는 것의 차이
-pnpm sync-models --from path/to/models.json # 로컬 카탈로그로 갱신 (원격은 MODELS_CATALOG_URL 설정)
 ```
 
 로컬 `.env.local`을 읽어 worker를 실행하려면 `node --env-file=.env.local --import tsx scripts/audio-worker.ts`를 사용한다.
@@ -174,31 +172,7 @@ discovery·PKCE·콜백·세션 생성·재로그인을 확인한다. audience·
 | `scripts/integration-check.ts` | 저장소 왕복, 인증 마이그레이션, SDK 모델·도구 실행과 영속 Session 승인·재개를 검증한다. 아래 두 helper를 함께 호출한다. |
 | `scripts/auth-schema-check.ts` | 테스트 DB의 임시 스키마에서 계정 키 중복 거부, 기존 계정 보존, issuer 없는 신규 계정 및 기존·신규 비밀번호 로그인을 검증한다. |
 | `scripts/runtime-session-check.ts` | 실제 SQL Session 저장소의 소유자 범위, CAS 경쟁, 암호화 문맥, 만료와 삭제 후 늦은 쓰기 방지를 검증한다. |
-| `scripts/check-models.ts` | 카탈로그 스냅샷(`src/domain/llm/catalog.json`)을 *이 배포의* 채널들이 서빙하는 id 와 대조한다. agent-models 가 provider 의 공개 카탈로그는 스스로 보므로, 여기서 보는 것은 게이트웨이·Bedrock·키의 범위 같은 이 배포만의 차이다. |
-| `scripts/sync-models.ts` | 발행된 카탈로그로 스냅샷을 갱신한다 (`--check` 는 뒤처졌으면 1 로 종료, `--from <file>` 은 URL 대신 로컬 카탈로그 문서를 읽는다, `MODELS_CATALOG_URL` 이 없거나 `none` 인 환경에서는 이것이 필수다). 런타임은 카탈로그를 직접 읽으므로, 테스트가 새 모델을 봐야 하거나 릴리즈 전일 때 돌린다. |
 | `scripts/import-dynamodb-export.ts` | 일회성 이관: AWS CLI 로 내보낸 옛 DynamoDB 테이블(`aws dynamodb scan … --output json`)을 이 스키마로 들여온다. `AUTH#` 행은 Better Auth 의 테이블로, 유니크 락 행은 버리고, 나머지는 같은 키로 `items` 에 upsert 한다. 지원하지 않는 managed MCP host-file `envRefs` 와 저장소 종속 `artifactAccessMode` 는 제거하고, 같은 이메일로 먼저 생긴 사용자는 export 의 원래 id 를 보존하기 위해 교체한다. 절차는 [INSTALL.md](INSTALL.md#데이터-이관). |
-
-### `check-models`
-
-공개 모델 사실은 agent-models가 소유하고, 이 스크립트는 현재 배포의 채널이 실제로 나열하는
-모델과 로컬 카탈로그를 대조한다. 기본·provider 채널, 전용 Embedding·Rerank endpoint를 확인하며
-OpenRouter는 modality별 목록도 조회한다. 실제 모델 실행 성공을 보장하는 검사는 아니다.
-
-```bash
-pnpm check-models
-pnpm check-models --since=90d
-pnpm check-models --since=2026-01-01
-pnpm check-models --strict
-```
-
-`--strict`는 제공 대상 route가 사라졌거나 채널 확인에 실패하거나 비교할 ID가 없을 때 실패한다.
-채널이 설정되지 않은 provider와 이미 숨긴 route는 은퇴 판정에서 제외한다.
-채널이 제공하는 새 ID는 추가 후보로 보고하며 그것만으로 실패하지 않는다.
-`--since`는 새 ID 보고 범위만 좁히고 실패 판정을 바꾸지 않는다.
-
-배포와 같은 URL·provider prefix·credential 설정으로 실행하라. SigV4 채널은 AWS credential도
-필요하다. 별도 CLI의 `.env.local` 로딩은 명시해야 한다.
-실제 외부 API와 자격 증명을 사용하는 검사이며 현재 자동 실행 workflow는 없다.
 
 ## 통합 체크
 

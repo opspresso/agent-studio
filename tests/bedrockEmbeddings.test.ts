@@ -33,6 +33,7 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => ({
   },
 }));
 
+vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({ settingsRepository: { get: async () => ({ embeddingModel: "amazon.titan-embed-text-v2:0", updatedAt: "" }) } }));
 const { bedrockEmbeddings } = await import("@/infrastructure/llm/bedrockEmbeddings");
 
 afterEach(() => {

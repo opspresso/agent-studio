@@ -70,6 +70,13 @@ describe("provider model discovery", () => {
     expect(fetch.mock.calls[0]?.[1].headers).toEqual({ accept: "application/json" });
   });
 
+  it("preserves explicit provider types ahead of name-based hints", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ data: [
+      { id: "artist", type: "image" }, { id: "image-reader", type: "text" },
+    ] })));
+    expect((await createProviderModelDiscovery().list(provider("selfhosted"))).map(model => model.type)).toEqual(["image", "text"]);
+  });
+
   it.each(["https://user:secret@provider.test/v1", "https://provider.test/v1?key=secret", "file:///tmp/models", "https://provider.test/#secret"])("rejects unsafe configured URL %s before fetch", async (url) => {
     const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
     await expect(createProviderModelDiscovery().list(provider("openai", url))).rejects.toThrow("Provider URL");

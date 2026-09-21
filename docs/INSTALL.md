@@ -16,7 +16,7 @@ backup, rollout, ticker는 각 배포 저장소에서 관리한다.
 ## 필요한 런타임
 
 - PostgreSQL 18 + pgvector. 앱이 부팅할 때 스키마를 적용하고 `vector` 확장을 만든다.
-- OpenAI 호환 LLM endpoint.
+- 관리자가 등록한 OpenAI 호환 LLM endpoint. 로그인 후 프로바이더와 모델을 등록할 수 있으므로 부팅에는 모델 연결이 필요하지 않다.
 - 32-byte base64 `AES_ENCRYPTION_KEY`.
 - S3 호환 object store는 선택이다. 없으면 artifact 영속화와 `File` 도구가 꺼진다.
   첨부 문서의 텍스트 추출은 계속되지만 원본 보관·재열기·편집은 할 수 없다.
@@ -215,8 +215,8 @@ Release workflow는 새 tag를 `argocd-env-demo`에 전달한다. Kubernetes man
 ## 폐쇄망
 
 부팅·로그인·런·콘솔은 public internet 없이 동작한다. 이미지는 외부에서 빌드해 사내 registry로
-mirror하고, 모델은 사내 OpenAI 호환 LLM·embedding·reranker endpoint를 사용한다. 모델 catalog는 `/models`에서 문서를
-업로드할 수 있고, plugin은 `/plugins`에서 checkout archive를 업로드할 수 있다. 내부 URL과 MCP
+mirror하고, 모델은 `/settings/providers`에서 사내 endpoint를 등록한 뒤 `/settings/models`에서
+조회하거나 직접 등록한다. Plugin은 `/plugins`에서 checkout archive를 업로드할 수 있다. 내부 URL과 MCP
 주소는 각각 `URL_FETCH_INTERNAL_HOST_SUFFIXES`, `MCP_INTERNAL_HOST_SUFFIXES`에 선언한다.
 
 문서 파서·생성기와 PDF용 한글 폰트는 앱 이미지에 포함된다. 별도 문서 MCP 서버나

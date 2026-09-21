@@ -34,6 +34,7 @@ export interface CatalogSearchDeps {
   embeddings: EmbeddingPort;
   catalog: VectorStorePort;
   reranker?: RerankerPort;
+  rerankerEnabled?: () => Promise<boolean>;
   rerankerMinScore?: () => Promise<number> | number;
   /**
    * The relevance floor — see `DEFAULT_MIN_SCORE`. Injected because it belongs
@@ -356,7 +357,7 @@ async function rankQuery(
   options: CatalogSearchOptions,
 ): Promise<{ matches: RankedCandidate[][]; rerank: CatalogRerankReport }> {
   const floor = deps.minScore ?? DEFAULT_MIN_SCORE;
-  if (!deps.reranker) {
+  if (!deps.reranker || (deps.rerankerEnabled && !await deps.rerankerEnabled())) {
     return {
       matches: candidatesByRequest.map((candidates, index) =>
         vectorSurvivors(candidates, floor).slice(0, requests[index]?.limit ?? 0),

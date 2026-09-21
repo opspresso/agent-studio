@@ -1,5 +1,5 @@
-import type { ModelCapabilities, ModelPricing, ModelType, SupportedProvider } from "./models";
-import { modelTokenLimitsProblem } from "./models";
+import type { ModelCapabilities, ModelConfig, ModelPricing, ModelType, SupportedProvider } from "./models";
+import { modelTokenLimitsProblem, MODEL_TYPES as REGISTRY_MODEL_TYPES } from "./models";
 
 export type ChannelAuth = "bearer" | "sigv4";
 
@@ -13,8 +13,8 @@ export interface ProviderChannelConfig {
   auth: ChannelAuth;
 }
 
-export const REGISTRY_MODEL_TYPES = ["text", "image", "transcription", "embedding", "rerank", "decisions"] as const;
-export type RegistryModelType = ModelType | "decisions";
+export { REGISTRY_MODEL_TYPES };
+export type RegistryModelType = ModelType;
 /** Bounds the selected models persisted in the deployment settings item. */
 export const MAX_REGISTERED_MODELS = 500;
 
@@ -64,6 +64,26 @@ export function registeredModelId(provider: string, wireId: string): string {
   return `${provider}/${wireId}`;
 }
 
+/** Project the administrator's selected model into the facts runtime consumers share. */
+export function registeredModelConfig(model: RegisteredModel, kind: SupportedProvider): ModelConfig {
+  return {
+    id: model.id, provider: model.provider, providerKind: kind, family: model.wireId,
+    maker: kind, displayName: model.displayName, wireId: model.wireId,
+    contextWindow: model.contextWindow, maxTokens: model.maxTokens,
+    pricing: model.pricing ?? { inputPer1M: 0, outputPer1M: 0 }, pricingKnown: model.pricing !== undefined,
+    capabilities: {
+      tools: model.capabilities.tools, structuredOutput: model.capabilities.structuredOutput,
+      imageInput: model.capabilities.imageInput, reasoning: model.capabilities.reasoning,
+      ...(model.capabilities.reasoningWithTools !== undefined ? { reasoningWithTools: model.capabilities.reasoningWithTools } : {}),
+      ...(model.type === "image" ? { imageGeneration: true } : {}),
+      ...(model.type === "embedding" ? { embedding: true } : {}),
+      ...(model.type === "rerank" ? { rerank: true } : {}),
+      ...(model.type === "transcription" ? { transcription: true } : {}),
+      ...(model.type === "decisions" ? { decisions: true } : {}),
+    },
+  };
+}
+
 export function registeredModelProblem(model: RegisteredModel): string | undefined {
   if (!/^[a-z][a-z0-9_-]{0,63}$/.test(model.provider)) return "Invalid provider name";
   if (!model.wireId.trim() || model.wireId !== model.wireId.trim() || model.wireId.length > 200 || /[\x00-\x1f\x7f]/.test(model.wireId)) return "Invalid provider model ID";
@@ -75,6 +95,7 @@ export function registeredModelProblem(model: RegisteredModel): string | undefin
   for (const flag of ["tools", "structuredOutput", "imageInput", "reasoning"] as const) {
     if (typeof model.capabilities[flag] !== "boolean") return `Invalid capability: ${flag}`;
   }
+  if (model.capabilities.reasoningWithTools !== undefined && typeof model.capabilities.reasoningWithTools !== "boolean") return "Invalid capability: reasoningWithTools";
   if (model.pricing) {
     if (typeof model.pricing.inputPer1M !== "number" || typeof model.pricing.outputPer1M !== "number") return "Input and output prices are required";
     for (const rate of Object.values(model.pricing)) {

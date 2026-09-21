@@ -72,7 +72,7 @@ export function createModelRegistryUseCases(deps: ModelRegistryDeps) {
       const providers = await deps.providers();
       await deps.repository.update((stored) => {
         const model = stored?.registeredModels?.find((item) => item.id === id);
-        if (!model || model.type !== "text") throw new ValidationError("Select a registered text model as the default");
+        if (!model || !["text", "decisions"].includes(model.type) || !model.capabilities.tools) throw new ValidationError("Select a registered text model as the default");
         if (!(stored?.llmProviders ?? providers).some((item) => item.name === model.provider)) throw new ValidationError("Provider is not registered");
         return { ...stored, defaultModel: id, updatedAt: new Date().toISOString() };
       });

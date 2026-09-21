@@ -10,7 +10,7 @@ import { log } from "@/shared/logger";
  * Default image model: the first *visible* registry entry that can draw. A
  * function, not a constant — the registry is a catalog loaded at boot and
  * refreshed after — and "first" is a decision the catalog's publisher curates:
- * agent-models states its order deliberately (see `listModels`), so a retired
+ * The registry holds administrator-selected models (see `listModels`), so a removed
  * (hidden) model can never become the default by sitting early in the list.
  */
 export function defaultImageModel(): string | undefined {

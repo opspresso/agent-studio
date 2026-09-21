@@ -4,14 +4,15 @@ import type { AgentConfiguration, Project } from "@/domain/project/types";
 import type { AudioJobStatus } from "@/domain/audio/job";
 import { isAudioJobTerminal } from "@/domain/audio/job";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import { loadModelCatalog, loadSelfHostedModels } from "@/domain/llm/models";
+import { replaceModelRegistry } from "@/domain/llm/models";
+import { registeredModelConfig, registeredModelProblem, providerKind } from "@/domain/llm/providerModels";
 import { agentMcpHeadersContext, versionMcpHeadersContext } from "@/domain/security/secretContext";
 import { assertModelSupports, assertProjectModelType, assertUniqueReferences, assertValidImageModel } from "@/application/project/configurationPolicy";
 import { agentConfigurationInputSchema } from "@/app/api/projects/_lib/schemas";
 import { keys } from "@/infrastructure/db/keys";
 import { getItem, queryItems, transact, type Item, type QueryInput } from "@/infrastructure/db/store";
 import { projectIsLive } from "@/infrastructure/db/projectLifecycle";
-import { modelCatalogRepository } from "@/infrastructure/db/repositories/modelCatalogRepository";
+import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { toMcpBindings } from "@/infrastructure/db/projectConfiguration";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
@@ -28,13 +29,15 @@ export class AgentMigrationError extends Error {}
 
 /** Match the deployment's stored model facts without contacting a public publisher. */
 export async function loadMigrationModelRegistry(): Promise<void> {
-  const [upload, settings] = await Promise.all([modelCatalogRepository.get(), settingsRepository.get()]);
-  // An operator's installed catalog may intentionally be smaller than the snapshot.
-  const catalog = upload ? loadModelCatalog(upload.document, { maxDropFraction: 1 }) : undefined;
-  const local = loadSelfHostedModels(settings?.selfHostedModels ?? []);
-  if (catalog?.skipped.length || local.skipped.length) {
-    throw new AgentMigrationError("Stored model declarations are invalid; repair them before migrating");
-  }
+  const settings = await settingsRepository.get();
+  const providers = settings?.llmProviders ?? parseProviderConfigs(process.env);
+  const models = (settings?.registeredModels ?? []).map(model => {
+    const problem = registeredModelProblem(model);
+    const provider = providers.find(provider => provider.name === model.provider);
+    if (problem || !provider) throw new AgentMigrationError("Stored model selections are invalid; repair them before migrating");
+    return registeredModelConfig(model, providerKind(provider));
+  });
+  replaceModelRegistry(models, settings?.updatedAt);
 }
 
 export interface AgentMigrationPlan {

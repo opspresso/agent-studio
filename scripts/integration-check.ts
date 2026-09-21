@@ -32,9 +32,29 @@ process.env.LLM_BASE_URL = `http://127.0.0.1:${MOCK_PORT}/v1`;
 process.env.LLM_API_KEY = "test";
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 
+let restoreModelSettings: (() => Promise<unknown>) | undefined;
 async function main() {
   const { migrate } = await import("@/infrastructure/db/migrations");
   await migrate();
+  const { settingsRepository } = await import("@/infrastructure/db/repositories/settingsRepository");
+  const { registeredModelConfig } = await import("@/domain/llm/providerModels");
+  const { replaceModelRegistry } = await import("@/domain/llm/models");
+  const previousSettings = await settingsRepository.get();
+  restoreModelSettings = () => settingsRepository.update(() => previousSettings ?? { updatedAt: "" });
+  const registeredModels = ["openai/gpt-5-mini", "integration/model"].map(id => ({
+    id, provider: id.split("/")[0]!, wireId: id.split("/")[1]!, displayName: id, type: "text" as const,
+    contextWindow: 128000, maxTokens: 4000,
+    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: false },
+    pricing: { inputPer1M: 0, outputPer1M: 0 },
+  }));
+  const { encryptSecret: encryptProviderKey } = await import("@/infrastructure/crypto/secretEncryption");
+  const { llmProviderApiKeyContext } = await import("@/domain/security/secretContext");
+  const baseUrl = `http://127.0.0.1:${MOCK_PORT}/v1`;
+  await settingsRepository.update(current => ({ ...current, registeredModels,
+    llmProviders: ["openai", "integration"].map(name => ({ name, kind: "selfhosted" as const, baseUrl,
+      apiKey: encryptProviderKey("test", llmProviderApiKeyContext(name, baseUrl)) })), updatedAt: new Date().toISOString() }));
+  replaceModelRegistry(registeredModels.map(model => registeredModelConfig(model, "selfhosted")));
+
   const { checkAudioQueueMigration } = await import("./audio-queue-check");
   await checkAudioQueueMigration();
   const { checkRuntimeSessions } = await import("./runtime-session-check");
@@ -1683,6 +1703,8 @@ async function main() {
     await new Promise<void>((resolve, reject) => {
       mock.close((error) => (error ? reject(error) : resolve()));
     });
+    await restoreModelSettings?.();
+    restoreModelSettings = undefined;
     const { closePool } = await import("@/infrastructure/db/client");
     await closePool();
   }
@@ -1690,7 +1712,8 @@ async function main() {
   console.log(`\n${results.length} integration checks passed`);
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
+  await restoreModelSettings?.();
   console.error("INTEGRATION FAILURE:", error);
   process.exit(1);
 });

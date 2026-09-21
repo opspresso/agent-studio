@@ -12,6 +12,14 @@
 import type { Messages } from "./en";
 
 export const ko: Messages = {
+  "modelAdmin.perMinute": "오디오 1분당 USD",
+  "modelAdmin.reasoningWithTools": "추론과 도구 호출 동시 사용 지원",
+  "modelAdmin.perImage": "이미지 1개당 USD",
+  "modelAdmin.perSearch": "Rerank 요청당 USD",
+  "modelAdmin.tools": "도구 호출",
+  "modelAdmin.structuredOutput": "구조화 출력",
+  "modelAdmin.imageInput": "이미지 입력",
+  "modelAdmin.reasoning": "추론",
   "modelAdmin.providers": "프로바이더",
   "modelAdmin.providerHint": "프로바이더와 사내 Model 서버의 연결을 등록한다.",
   "modelAdmin.selection": "Model 선택",
@@ -1330,7 +1338,7 @@ export const ko: Messages = {
   "models.type.transcription": "Transcription",
   "models.selection.title": "활성 검색 모델",
   "models.selection.lede":
-    "케이퍼빌리티 embedding과 2차 reranking에 사용할 등록 모델을 선택합니다. 환경변수는 배포 기본값으로 유지됩니다.",
+    "케이퍼빌리티 embedding과 2차 reranking에 사용할 등록 Model을 선택한다. 선택한 Model의 프로바이더 연결을 사용한다.",
   "models.selection.unconfigured": "설정 안 됨",
   "models.selection.embeddingConfirmTitle": "케이퍼빌리티 벡터 마이그레이션",
   "models.selection.embeddingConfirmMessage":

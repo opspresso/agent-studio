@@ -116,7 +116,7 @@ export function ModelSelectionSection({
                 description={
                   selected
                     ? `${selected.provider} · ${modelPriceLabel(
-                        selected.pricing,
+                        selected.pricingKnown === false ? undefined : selected.pricing,
                         selected.type,
                       )} · ${selection?.source}`
                     : selection?.source

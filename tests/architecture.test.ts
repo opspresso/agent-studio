@@ -1612,10 +1612,9 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // serving stack reports. Transport of the value's origin, like models.ts.
     alsoAllowedUnder: [
       "src/domain/llm/models.ts",
-      "src/domain/llm/selfHostedModels.ts",
+      "src/domain/llm/providerModels.ts",
       "src/app/models/page.tsx",
       "src/app/models/ModelRegistrationForm.tsx",
-      "src/infrastructure/llm/selfHostedDiscovery.ts",
     ],
   },
   {

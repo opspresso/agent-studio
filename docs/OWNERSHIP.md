@@ -50,10 +50,9 @@
 | SDK native span의 로컬 수집과 안전한 메타데이터 변환 | `src/application/runtime/tracing.ts` | 코드 |
 | Agent의 입력 Guardrail과 Handoff 대상 검사 | `src/application/runtime/policy.ts`; 도구 정책은 SDK 도구 조립에 적용한다 | 코드 |
 | 스키마. `items`와 파생 컬럼·부분 인덱스, Better Auth 테이블, `catalog_vectors`, `runtime_sessions`, 적용된 버전 | `src/infrastructure/db/migrations.ts`. 추가만 하는 목록, advisory lock 아래에서 부팅마다 | 코드 |
-| Model 이 무엇이고, 어떤 route 가 그것을 서빙하는가 | **이 저장소 밖**. [opspresso/agent-models](https://github.com/opspresso/agent-models) 의 `models/` (family/offering), `https://models.opspresso.com/models.json` 으로 발행된다. 앱에서는 `src/domain/llm/models.ts` 의 `loadModelCatalog` 가 받아들이는 *유일한 입구* 이고, 숫자는 절대 여기 쓰지 않는다 (`tests/models.test.ts` 가 막는다) | 코드 |
-| 어떤 모델이 새 선택에 보이는가 | `src/domain/llm/models.ts` 의 `offeredModels`. catalog visibility 와 provider channel 에서 admin 의 `hiddenModels` denylist 를 뺀다. 기존 Agent의 실행 가능성은 바꾸지 않는다 | 코드 |
+| 선택된 모델의 facts와 실행 레지스트리 | 저장 형태·검증은 `src/domain/llm/providerModels.ts`, runtime facts·가격 계산은 `src/domain/llm/models.ts`, 선택·삭제는 `src/application/llm/modelRegistry.ts`가 소유한다 | 코드 |
+| 어떤 모델이 새 선택에 보이는가 | `src/domain/llm/models.ts`의 `offeredModels`. 관리자가 등록한 모델과 연결의 교집합이며 기본 모델을 우선한다 | 코드 |
 | 모델 즐겨찾기의 개인 범위와 상한 | `src/domain/llm/modelPreferences.ts` 의 `ModelPreferencesRepository` / `MAX_FAVORITE_MODELS`. user id 별 한 행이며 picker 그룹화는 `src/app/_components/modelOptions.tsx` 의 `modelSelectData` 가 소유한다 | 코드 |
-| admin 이 올린 모델 카탈로그 문서의 자리, 그리고 그것이 발행 카탈로그보다 우선한다는 규칙 | `src/infrastructure/db/keys.ts` 의 `modelCatalog` (행 `MODELCATALOG#doc`), 우선순위는 `src/application/llm/modelCatalogStoredSource.ts` 의 `createCompositeModelCatalogSource`. 부팅 refresher 와 콘솔의 refresh 버튼이 같은 조합을 쓴다 | 코드 |
 | 누가 project 에 접근할 수 있는가 (공개 범위·초대 목록의 판정) | `src/domain/project/access.ts` 의 `mayAccessProject`. admin 오버라이드를 합친 형태는 `projectUseCases.ts` 의 `assertProjectAccessible`/`userMayAccessProject` 뿐이고, 표면들은 그 둘을 지난다 ([SECURITY.md](SECURITY.md#인가-모델)) | 코드 |
 | 모델이 파일 ID로 읽거나 편집할 수 있는 범위 | `src/application/document/fileTool.ts`의 actor·시작 project 검사. ID 자체는 접근 권한이 아니다 | 코드 |
 

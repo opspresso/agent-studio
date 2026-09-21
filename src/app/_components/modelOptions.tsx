@@ -35,9 +35,10 @@ type ModelOption = ModelConfig & { favorite?: boolean };
  * (`ModelPricing.perImage` says which is which).
  */
 export function modelPriceLabel(
-  pricing: ModelConfig["pricing"],
+  pricing: ModelConfig["pricing"] | undefined,
   type: ModelType = "text",
 ): string {
+  if (!pricing) return "Price not provided";
   const {
     inputPer1M,
     outputPer1M,
@@ -81,7 +82,7 @@ export function modelOptionLabel(model: ModelConfig): string {
 
 /** Selected model in one line, for a Select's description. */
 export function modelSummary(model: ModelConfig): string {
-  return `${model.provider} · ${modelPriceLabel(model.pricing)}`;
+  return `${model.provider} · ${modelPriceLabel(model.pricingKnown === false ? undefined : model.pricing)}`;
 }
 
 /**
@@ -172,7 +173,7 @@ export function renderModelOption(models: ModelOption[]) {
             </Text>
           </div>
           <Text fz="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-            {modelPriceLabel(model.pricing)}
+            {modelPriceLabel(model.pricingKnown === false ? undefined : model.pricing)}
           </Text>
         </Group>
       </Group>

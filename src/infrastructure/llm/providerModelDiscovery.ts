@@ -1,6 +1,7 @@
 import type { ModelCapabilities, ModelPricing } from "@/domain/llm/models";
 import {
   providerBaseUrl, providerKind,
+  REGISTRY_MODEL_TYPES,
   type DiscoveredModel, type ProviderModelDiscovery, type RegistryModelType,
 } from "@/domain/llm/providerModels";
 import type { ProviderChannelConfig } from "@/domain/settings/types";
@@ -22,6 +23,7 @@ function typeOf(entry: RecordValue, wireId: string): RegistryModelType | undefin
   const outputs = strings(architecture.output_modalities ?? entry.output_modalities);
   const methods = strings(entry.supportedGenerationMethods);
   const explicit = label(entry.type);
+  if (explicit && REGISTRY_MODEL_TYPES.some(type => type === explicit)) return explicit as RegistryModelType;
   if (outputs.includes("embeddings") || methods.includes("embedContent") || /^(embedding|embeddings)$/.test(explicit ?? "") || /embed/i.test(wireId)) return "embedding";
   if (explicit === "rerank" || /rerank/i.test(wireId)) return "rerank";
   if (explicit === "transcription" || /whisper|transcrib/i.test(wireId)) return "transcription";

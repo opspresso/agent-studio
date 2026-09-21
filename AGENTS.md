@@ -82,8 +82,8 @@ setup starts with `docker compose up -d postgres minio minio-init`; its `agent-s
 project owns separate PostgreSQL and MinIO volumes. Never run `docker compose down -v` without
 explicit approval.
 
-Any real run requires `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, and a 32-byte base64
-`AES_ENCRYPTION_KEY`. Alpha/prod also requires `ADMIN_EMAILS` plus a sign-in method. Production
+Boot requires `DATABASE_URL` and a 32-byte base64 `AES_ENCRYPTION_KEY`. Runs additionally
+require an administrator-selected model and its registered provider connection. Alpha/prod also requires `ADMIN_EMAILS` plus a sign-in method. Production
 refuses to boot without an explicit `STAGE`. See [CONFIGURATION.md](docs/CONFIGURATION.md).
 
 ## Architecture contract
@@ -214,9 +214,10 @@ key, cap, formatter, error identity, or collapse rule, search
 
 ### Models, media, and artifacts
 
-- Published model facts come from `opspresso/agent-models`, not this repository. This repo owns
-  loader shape and `SUPPORTED_PROVIDERS`; `pnpm sync-models` refreshes the committed offline
-  snapshot. Self-hosted declarations are a deployment-owned overlay via `loadSelfHostedModels`.
+- Models are deployment-owned selections in Settings. Provider discovery never enables a model.
+  `providerModels.ts` owns registration shapes; `models.ts` owns runtime facts and pricing.
+  There is no external model catalog or production snapshot. Self-hosted connections use the same
+  registration flow and may have distinct names, endpoints and model types.
 - Image caps and data-URL rules live in `src/domain/llm/imageLimits.ts`; document caps live in
   `documentLimits.ts`. Never copy either locally.
 - Run output bytes are captured at `openRun`, never at an individual producer. Keep

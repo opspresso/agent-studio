@@ -49,7 +49,7 @@ export default function ModelUsagePage() {
     {!view && !error && <Loader />}
     {view && <>
       <Select label={t("modelAdmin.default")} placeholder={t("models.selection.unconfigured")} searchable disabled={busy} allowDeselect={false}
-        value={view.selected.model} data={view.registered.models.filter(model => model.type === "text").map(model => ({ value: model.id, label: `${model.displayName} (${model.provider})` }))} onChange={model => void select(model)} />
+        value={view.selected.model} data={view.registered.models.filter(model => ["text", "decisions"].includes(model.type) && model.capabilities.tools).map(model => ({ value: model.id, label: `${model.displayName} (${model.provider})` }))} onChange={model => void select(model)} />
       <WorkspaceModelsSection />
       <ModelSelectionSection models={view.catalog.models} selections={view.catalog.selections} rerankerMinScore={view.catalog.rerankerMinScore}
         available={view.catalog.selectionAvailable} onChanged={async () => setView(await load())} />

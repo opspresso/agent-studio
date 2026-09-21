@@ -73,10 +73,10 @@ describe("toUnknownModelPolicy", () => {
 });
 
 describe("assertModelsPriceable", () => {
-  it("allows anything under the default policy", () => {
+  it("refuses unselected models even when unknown pricing is allowed", () => {
     expect(() =>
       assertModelsPriceable("allow", { model: UNKNOWN, fallbackModel: UNKNOWN }),
-    ).not.toThrow();
+    ).toThrow(ValidationError);
   });
 
   it("refuses an unregistered primary", () => {
@@ -89,7 +89,7 @@ describe("assertModelsPriceable", () => {
     // rate-limited.
     expect(() =>
       assertModelsPriceable("refuse", { model: REGISTERED, fallbackModel: UNKNOWN }),
-    ).toThrow(/not in the registry/);
+    ).toThrow(/selected by an administrator/);
   });
 
   it("names every offending id, not just the first", () => {
@@ -131,18 +131,9 @@ describe("the run bracket enforces it", () => {
     expect(costReads).toBe(0);
   });
 
-  it("admits the same run when the policy is allow", async () => {
-    const bracket = await openRun(
-      { usage, unknownModelPolicy: async () => "allow" },
-      project,
-      configuration({ model: UNKNOWN }),
-    );
-
-    // Admitted means a usable bracket, not merely the absence of a throw: with
-    // no assertion at all this passed against a stub that never consulted the
-    // policy — and against one that never ran the guards either.
-    expect(bracket.runId).toMatch(/[0-9a-f-]{36}/);
-    await bracket.close();
+  it("refuses an unselected model even when unpriced selected models are allowed", async () => {
+    await expect(openRun({ usage, unknownModelPolicy: async () => "allow" }, project, configuration({ model: UNKNOWN })))
+      .rejects.toBeInstanceOf(ValidationError);
   });
 
   it("admits it when no policy is injected at all", async () => {
@@ -171,7 +162,7 @@ describe("the run bracket enforces it", () => {
         },
       },
       project,
-      configuration({ model: UNKNOWN }),
+      configuration(),
     );
 
     expect(bracket.runId).toBeTruthy();
@@ -191,7 +182,7 @@ describe("subagent preparation enforces model policy", () => {
     return prepareSubagent(deps, parent, "child", { message: "hi", images: [] }, async () => {}, { ancestry: ["parent"] });
   }
   it("refuses an unpriced child before model execution", async () => {
-    await expect(prepare("refuse", UNKNOWN)).rejects.toThrow("not in the registry");
+    await expect(prepare("refuse", UNKNOWN)).rejects.toThrow("selected by an administrator");
   });
   it("prepares a registered model", async () => {
     expect(await prepare("refuse", REGISTERED)).toMatchObject({ kind: "agent", input: { model: REGISTERED } });

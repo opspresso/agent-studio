@@ -114,16 +114,15 @@ describe("Agents SDK model provider", () => {
     expect(requests[1]?.headers.get("Authorization")).toBe("Bearer rotated-key");
   });
 
-  it("uses the same routing rules for OpenAI and the deployment's default gateway", async () => {
+  it("routes selected models and refuses an unselected gateway model", async () => {
     const requests = installTransport(() => Response.json(completion()));
     const provider = createAgentModelProvider(async (id) => resolveProviderTarget(id, [{
       name: "openai", baseUrl: "https://openai.example/v1", apiKey: "openai-test", auth: "bearer", keepModelPrefix: false,
-    }], { baseUrl: "http://gateway.internal/v1", apiKey: "gateway-test" }));
-    await getResponse(await provider.getModel("openai/gpt-test"));
-    await getResponse(await provider.getModel("other/model"));
+    }]));
+    await getResponse(await provider.getModel("openai/gpt-5-mini"));
+    await expect(getResponse(await provider.getModel("other/model"))).rejects.toThrow("Model is not selected");
     expect(requests.map(({ url, body }) => [url, body.model])).toEqual([
-      ["https://openai.example/v1/chat/completions", "gpt-test"],
-      ["http://gateway.internal/v1/chat/completions", "other/model"],
+      ["https://openai.example/v1/chat/completions", "gpt-5-mini"],
     ]);
   });
 

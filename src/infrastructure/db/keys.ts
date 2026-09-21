@@ -124,7 +124,6 @@ export const keys = {
   settings: () => ({ PK: "SETTINGS#app", SK: "META" }),
   modelPreferences: (userId: string) => ({ PK: `MODELPREFERENCES#${userId}`, SK: "META" }),
   /** The one catalog document an admin installed by hand (`domain/llm/catalogDocument.ts`). */
-  modelCatalog: () => ({ PK: "MODELCATALOG#doc", SK: "META" }),
   catalogReindexLock: () => ({ PK: "CATALOGREINDEX#global", SK: "LOCK" }),
 
   skill: (name: string) => ({ PK: `SKILL#${name}`, SK: "META" }),

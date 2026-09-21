@@ -6,19 +6,7 @@ import type {
   LlmProviderSetting,
   ProviderChannelConfig,
 } from "@/domain/settings/types";
-import {
-  getModelConfig,
-  loadSelfHostedModels,
-  MAX_HIDDEN_MODELS,
-  modelType,
-  offeredModels,
-  selfHostedModelRejectReason,
-  SUPPORTED_PROVIDERS,
-} from "@/domain/llm/models";
-import {
-  selfHostedModelFromInput,
-  type SelfHostedModelInput,
-} from "@/domain/llm/selfHostedModels";
+import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { DEFAULT_RERANKER_MIN_SCORE } from "@/domain/catalog/types";
 import { providerBaseUrl, providerKind } from "@/domain/llm/providerModels";
 import type { SupportedProvider } from "@/domain/llm/models";
@@ -37,7 +25,7 @@ export type ParseProviderConfigs = (env: NodeJS.ProcessEnv) => ProviderChannelCo
 
 export type SettingKey = Exclude<
   keyof AppSettings,
-  "updatedAt" | "llmProviders" | "hiddenModels" | "selfHostedModels" | "workspaceModels" | "registeredModels" | "defaultModel"
+  "updatedAt" | "llmProviders" | "workspaceModels" | "registeredModels" | "defaultModel"
 >;
 
 interface FieldSpec {
@@ -71,8 +59,8 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
   },
   { key: "llmBaseUrl", secret: false, env: () => optionalEnv(env.LLM_BASE_URL) },
   { key: "llmApiKey", secret: true, env: () => optionalEnv(env.LLM_API_KEY) },
-  { key: "embeddingModel", secret: false, env: () => optionalEnv(env.EMBEDDING_MODEL) },
-  { key: "rerankerModel", secret: false, env: () => optionalEnv(env.RERANKER_MODEL) },
+  { key: "embeddingModel", secret: false, env: () => undefined },
+  { key: "rerankerModel", secret: false, env: () => undefined },
   {
     key: "rerankerMinScore",
     secret: false,
@@ -145,15 +133,9 @@ export interface LlmProviderInput {
   auth?: ChannelAuth;
 }
 
-export type { SelfHostedModelInput };
-
 export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
   /** Full replacement list; empty array disables every provider. */
   llmProviders?: LlmProviderInput[];
-  /** Full replacement list; empty array removes the override (no models hidden). */
-  hiddenModels?: string[];
-  /** Full replacement list; empty array removes every declaration. */
-  selfHostedModels?: SelfHostedModelInput[];
 };
 
 /**
@@ -179,12 +161,6 @@ function changedKeys(specs: FieldSpec[], stored: AppSettings | null, next: AppSe
   // carries one, so identity would report a change for a resubmitted list.
   if (JSON.stringify(stored?.llmProviders) !== JSON.stringify(next.llmProviders)) {
     changed.push("llmProviders");
-  }
-  if (JSON.stringify(stored?.hiddenModels) !== JSON.stringify(next.hiddenModels)) {
-    changed.push("hiddenModels");
-  }
-  if (JSON.stringify(stored?.selfHostedModels) !== JSON.stringify(next.selfHostedModels)) {
-    changed.push("selfHostedModels");
   }
   return changed;
 }
@@ -339,7 +315,10 @@ function toProviderSetting(
       );
     }
     storedKey = existing
-      ? existing.apiKey
+      ? existing.baseUrl === baseUrl ? existing.apiKey : cipher.encrypt(
+          cipher.decrypt(existing.apiKey, llmProviderApiKeyContext(name, existing.baseUrl)),
+          llmProviderApiKeyContext(name, baseUrl),
+        )
       : cipher.encrypt(previous.apiKey, llmProviderApiKeyContext(name, baseUrl));
   }
   return {
@@ -414,6 +393,12 @@ export function createSettingsUseCases(
             continue;
           }
           const value = raw.trim();
+          if (value && (spec.key === "embeddingModel" || spec.key === "rerankerModel")) {
+            const type = spec.key === "embeddingModel" ? "embedding" : "rerank";
+            if (!stored?.registeredModels?.some(model => model.id === value && model.type === type)) {
+              throw new ValidationError(`The selected ${type} model is no longer registered`);
+            }
+          }
           if (spec.key === "rerankerMinScore" && value !== "") {
             const score = Number(value);
             if (!Number.isFinite(score) || score < 0 || score > 1) {
@@ -481,94 +466,6 @@ export function createSettingsUseCases(
           next.llmProviders = providers;
         }
 
-        if (patch.selfHostedModels !== undefined) {
-          if (patch.selfHostedModels.length === 0) {
-            delete next.selfHostedModels;
-          } else {
-            const declarations = patch.selfHostedModels.map(selfHostedModelFromInput);
-            // The same validation the install runs, surfaced as the save's
-            // error instead of a warning after it — a declaration that cannot
-            // install must fail the form, not silently vanish from the picker.
-            const problems = declarations
-              .map((entry) => {
-                const reason = selfHostedModelRejectReason(entry);
-                return reason === null ? null : `${entry.id} — ${reason}`;
-              })
-              .filter((problem): problem is string => problem !== null);
-            if (problems.length > 0) {
-              throw new ValidationError(`Invalid self-hosted model(s): ${problems.join("; ")}`);
-            }
-            const ids = new Set(declarations.map((entry) => entry.id));
-            if (ids.size !== declarations.length) {
-              throw new ValidationError("Self-hosted model families must be unique");
-            }
-            next.selfHostedModels = declarations;
-          }
-          const declarationsById = new Map(
-            (next.selfHostedModels ?? []).map((entry) => [entry.id, entry]),
-          );
-          for (const [selectionType, id] of [
-            ["embedding", next.embeddingModel ?? optionalEnv(env.EMBEDDING_MODEL)],
-            ["rerank", next.rerankerModel ?? optionalEnv(env.RERANKER_MODEL)],
-          ] as const) {
-            if (id?.startsWith("selfhosted/") !== true) continue;
-            const declaration = declarationsById.get(id);
-            if (!declaration) {
-              throw new ValidationError(`Selected self-hosted models must remain declared: ${id}`);
-            }
-            if (modelType(declaration) !== selectionType) {
-              throw new ValidationError(
-                `Selected self-hosted model must remain ${selectionType}: ${id}`,
-              );
-            }
-          }
-          const declaredIds = new Set(declarationsById.keys());
-          if (next.hiddenModels !== undefined) {
-            next.hiddenModels = next.hiddenModels.filter(
-              (id) => !id.startsWith("selfhosted/") || declaredIds.has(id),
-            );
-            if (next.hiddenModels.length === 0) delete next.hiddenModels;
-          }
-        }
-
-        if (patch.hiddenModels !== undefined) {
-          if (patch.hiddenModels.length > MAX_HIDDEN_MODELS) {
-            throw new ValidationError(`At most ${MAX_HIDDEN_MODELS} models may be hidden`);
-          }
-          if (patch.hiddenModels.length === 0) {
-            delete next.hiddenModels;
-          } else {
-            // Sorted and deduplicated so a resubmitted hidden list compares equal
-            // in `changedKeys` regardless of the order the toggles were flipped.
-            const ids = [...new Set(patch.hiddenModels.map((id) => id.trim()))].sort();
-            // A declaration in this same patch counts: it installs right after
-            // the write below, so one PUT may declare and hide it together.
-            const declaredNow = new Set((next.selfHostedModels ?? []).map((entry) => entry.id));
-            const unknown = ids.filter(
-              (id) => getModelConfig(id) === undefined && !declaredNow.has(id),
-            );
-            if (unknown.length > 0) {
-              throw new ValidationError(`Unknown model ids: ${unknown.join(", ")}`);
-            }
-            // Judged against what `/api/models` would actually offer — the same
-            // provider-channel narrowing (`offeredModels`, with this patch's
-            // provider override when it carries one) — so a deployment with one
-            // configured provider cannot hide that provider's whole list while
-            // models no channel dispatches keep the guard quiet.
-            const channelNames = (next.llmProviders ?? parseProviderConfigs(env)).map(
-              (provider) => provider.name,
-            );
-            const remaining = offeredModels(channelNames, ids).filter(
-              (model) => patch.selfHostedModels === undefined || model.provider !== "selfhosted",
-            );
-            const declaredVisible = offeredModels(channelNames, ids, next.selfHostedModels ?? []).length > 0;
-            if (remaining.length === 0 && !declaredVisible) {
-              throw new ValidationError("At least one model must remain visible");
-            }
-            next.hiddenModels = ids;
-          }
-        }
-
         /*
          * A stored access-control list that parses to nothing is never what the
          * operator meant, and it is *not* the same as clearing the field: an absent
@@ -607,10 +504,6 @@ export function createSettingsUseCases(
         return next;
       };
       const { after: next } = await repo.update(mutate);
-      // Install what was just persisted: this process offers the declared
-      // models immediately; other instances pick them up at their next
-      // catalog tick, which re-reads the declarations (`localModels`).
-      loadSelfHostedModels(next.selfHostedModels ?? []);
       // The row keeps only *which* keys were written, never their values: the
       // admin list is one of them and the LLM credential is another. Without
       // this the settings item held `updatedAt` and nothing about who moved it.

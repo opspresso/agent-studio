@@ -101,7 +101,6 @@ import { urlPolicy } from "@/infrastructure/net/urlPolicy";
 import { createHttpResourceReader } from "@/infrastructure/net/httpResource";
 import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
 import { config } from "./config";
-import { withTimeout } from "@/shared/withTimeout";
 import { oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
 import { oauthClient } from "@/infrastructure/mcp/oauthClient";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
@@ -151,17 +150,9 @@ import { createSettingsUseCases } from "@/application/settings/settingsUseCases"
 import { createTestModel } from "@/application/llm/testModel";
 import { createModelRegistryUseCases } from "@/application/llm/modelRegistry";
 import { createProviderModelDiscovery } from "@/infrastructure/llm/providerModelDiscovery";
-import {
-  createModelCatalogRefresher,
-  processModelCatalogRefreshCoordinator,
-} from "@/application/llm/modelCatalogRefresh";
-import { createCompositeModelCatalogSource } from "@/application/llm/modelCatalogStoredSource";
-import { createModelCatalogDocumentUseCases } from "@/application/llm/modelCatalogDocument";
 import { createModelPreferenceUseCases } from "@/application/llm/modelPreferences";
 import { createModelSelectionUseCases } from "@/application/llm/modelSelection";
 import { modelPreferencesRepository } from "@/infrastructure/db/repositories/modelPreferencesRepository";
-import { createHttpModelCatalogSource } from "@/infrastructure/llm/modelCatalogHttpSource";
-import { modelCatalogRepository } from "@/infrastructure/db/repositories/modelCatalogRepository";
 import { catalogReindexLock } from "@/infrastructure/db/repositories/catalogReindexLock";
 import { CATALOG_REINDEX_LEASE_MS } from "@/domain/catalog/reindexLock";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
@@ -174,8 +165,6 @@ import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import { cacheQueryEmbeddings } from "@/application/catalog/queryCache";
 import { probeCapabilityReranker } from "@/application/catalog/probeReranker";
 import { log } from "@/shared/logger";
-import { bedrockEmbeddings } from "@/infrastructure/llm/bedrockEmbeddings";
-import { cohereEmbeddings } from "@/infrastructure/llm/cohereEmbeddings";
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createReranker } from "@/infrastructure/llm/reranker";
 import { createPgVectorStore } from "@/infrastructure/vector/pgVectorStore";
@@ -218,16 +207,15 @@ import { createAuditUseCases } from "@/application/audit/auditUseCases";
 import { createMemberUseCases } from "@/application/member/memberUseCases";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import {
-  getHiddenModels,
   getArtifactAccessMode,
   getAdminEmails,
   getEmbeddingTarget,
+  getDefaultModel,
   getEmbeddingModel,
-  getLlmChannelConfig,
+  getEmbeddingModelSelection,
   getLlmProviderConfigs,
   getPluginsRepoConfig,
   getPublicBaseUrl,
-  getSelfHostedModels,
   getRerankerModel,
   getRerankerTarget,
   getRerankerModelSelection,
@@ -325,23 +313,13 @@ export const artifactUseCases = artifactStorage
  * this resolver instead of reaching into `lib/`. It runs per request, so a
  * settings change lands on the next cache refresh exactly as before.
  */
-const resolveTarget = async (modelId: string) => {
-  const [providers, defaultChannel] = await Promise.all([
-    getLlmProviderConfigs(),
-    getLlmChannelConfig(),
-  ]);
-  return resolveProviderTarget(modelId, providers, defaultChannel);
-};
+const resolveTarget = async (modelId: string) => resolveProviderTarget(modelId, await getLlmProviderConfigs());
 
 const agentModels = createAgentModelProvider(resolveTarget);
 export const runtimeSessions: RuntimeSessionServices = { repository: runtimeSessionRepository, cipher: secretCipher, retentionDays: RETENTION.chatDays };
 const imageChannel = createImageChannel(resolveTarget);
 
 async function testRerankerModel(model: string, signal?: AbortSignal): Promise<void> {
-  const reranker = config.reranker;
-  if (!reranker) {
-    throw new ValidationError("The reranker endpoint is not configured");
-  }
   await probeCapabilityReranker(
     createReranker(() => resolveReranker(model)),
     signal,
@@ -361,84 +339,13 @@ export const testModel = createTestModel(agentModels, {
   },
 });
 
-/**
- * "Pull the published catalog now", for the /models console's refresh button —
- * the moment right after agent-models publishes, when the hourly tick is up to
- * an hour away. This and the boot refresher share a process coordinator:
- * installs are serialized, and a request arriving during a read queues one
- * trailing read so an upload or deletion cannot be hidden by an older result.
- * intervalMs 0 keeps this instance tickless — the boot path owns the schedule.
- */
-export const refreshModelCatalog = createModelCatalogRefresher({
-  // The same precedence the boot path composes: an admin's uploaded document
-  // over the published catalog, and without `MODELS_CATALOG_URL` (or with
-  // `none`) the upload alone.
-  source: createCompositeModelCatalogSource({
-    stored: modelCatalogRepository,
-    remote:
-      config.modelsCatalogUrl === undefined
-        ? undefined
-        : createHttpModelCatalogSource(config.modelsCatalogUrl),
-  }),
-  intervalMs: 0,
-  coordinator: processModelCatalogRefreshCoordinator(),
-  // The same deadline the boot path gives this read — request-scoped here,
-  // but a hung settings table should time a refresh out, not hold it.
-  localModels: () => withTimeout(getSelfHostedModels(), 10_000),
-}).refresh;
-
-/**
- * The uploaded catalog document: install, inspect, remove — the /models
- * console's offline path. Refreshes through the same bound refresher above,
- * so an upload is in the registry before its request is answered.
- */
-export const modelCatalogDocumentUseCases = createModelCatalogDocumentUseCases(
-  modelCatalogRepository,
-  refreshModelCatalog,
-);
 export const modelPreferenceUseCases = createModelPreferenceUseCases(modelPreferencesRepository);
 export const modelRegistryUseCases = createModelRegistryUseCases({
   repository: settingsRepository,
   discovery: createProviderModelDiscovery(),
   providers: getLlmProviderConfigs,
-  changed: async () => { invalidateSettingsCache(); },
+  changed: async () => { invalidateSettingsCache(); await getLlmProviderConfigs(); },
 });
-
-/**
- * What the self-hosted text, embedding and rerank channels are serving right
- * now — the declaration aid on the /models console. Each channel's own
- * `/models` listing is the only party that knows; declaring is still the
- * admin's act through `PUT /api/settings`.
- */
-export const listSelfHostedServedModels = async () => {
-  const providers = await getLlmProviderConfigs();
-  const { listServedSelfHostedChannels, selfHostedDiscoveryChannels } = await import(
-    "@/infrastructure/llm/selfHostedDiscovery"
-  );
-  const channels = selfHostedDiscoveryChannels(providers, {
-    defaultBaseUrl: config.llmBaseUrl,
-    ...(config.embeddingProvider === "openai" && config.embeddingBaseUrl
-      ? {
-          embedding: {
-            baseUrl: config.embeddingBaseUrl,
-            apiKey: config.embeddingApiKey ?? "not-required",
-          },
-        }
-      : {}),
-    ...(RERANKER
-      ? {
-          reranker: {
-            baseUrl: RERANKER.baseUrl,
-            apiKey: RERANKER.apiKey ?? "",
-          },
-        }
-      : {}),
-  });
-  if (channels.length === 0) {
-    throw new ValidationError("No self-hosted provider channel is configured");
-  }
-  return listServedSelfHostedChannels(channels);
-};
 
 const remoteAgents: RemoteAgentDispatcher = {
   // Every argument through, `options` included: this wrapper is what a run's
@@ -563,20 +470,6 @@ export const mcpAuthUseCases = createMcpAuthUseCases({
 export const skillUseCases = createSkillUseCases(skillRepository);
 
 /**
- * Which adapter embeds is a deployment fact, not a per-call one: an index is
- * built for one model's dimension *and* its space, and vectors from another are
- * not comparable to what is already in it. Changing this means rebuilding the
- * index.
- */
-const EMBEDDINGS = {
-  cohere: cohereEmbeddings,
-  bedrock: bedrockEmbeddings,
-  openai: openAiEmbeddings,
-} as const;
-
-const RERANKER = config.reranker;
-
-/**
  * The capability catalog, when this deployment turned it on. Undefined where
  * it did not: the reindex endpoint answers 503 and a run resolves exactly the
  * bindings its configuration names — which is what every run did before the catalog
@@ -609,25 +502,17 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
       // settings — which an admin can repoint without restarting anything. Both
       // reads are already cached where they live, so this costs nothing per
       // call and makes a repoint a cache miss instead of a wrong answer.
-      embeddings: cacheQueryEmbeddings(
-        EMBEDDINGS[config.embeddingProvider],
-        config.embeddingProvider === "openai"
-          ? async () => {
-              const model = await getEmbeddingModel();
-              const target = await getEmbeddingTarget(model);
-              return `${target.baseUrl}|${model}|${target.model}`;
-            }
-          : getEmbeddingModel,
-      ),
+      embeddings: cacheQueryEmbeddings(openAiEmbeddings, async () => {
+        const model = await getEmbeddingModel();
+        const target = await getEmbeddingTarget(model);
+        return `${target.baseUrl}|${model}|${target.model}`;
+      }),
       catalog: createPgVectorStore("catalog_vectors"),
       reindexState: () => catalogReindexLock.state(),
       minScore: config.catalogMinScore,
-      ...(RERANKER
-        ? {
-            reranker: createReranker(async () => resolveReranker(await getRerankerModel())),
-            rerankerMinScore: getRerankerMinScore,
-          }
-        : {}),
+      reranker: createReranker(async () => resolveReranker(await getRerankerModel())),
+      rerankerEnabled: async () => !!(await getRerankerModelSelection()),
+      rerankerMinScore: getRerankerMinScore,
     }
   : undefined;
 
@@ -696,17 +581,13 @@ export const modelSelectionUseCases = createModelSelectionUseCases({
   settings: settingsUseCases,
   current: async (type) =>
     type === "embedding"
-      ? getEmbeddingModel()
+      ? (await getEmbeddingModelSelection()).model || undefined
       : (await getRerankerModelSelection())?.model,
   currentRerankerMinScore: getRerankerMinScore,
   available: (type) =>
     type === "embedding" ? catalogDeps !== undefined : catalogDeps?.reranker !== undefined,
-  hidden: getHiddenModels,
-  ...(RERANKER
-    ? {
-        testReranker: testRerankerModel,
-      }
-    : {}),
+  hidden: async () => undefined,
+  testReranker: testRerankerModel,
   invalidate: invalidateSettingsCache,
   ...(catalogDeps
     ? {
@@ -1028,11 +909,9 @@ export const createAgent = composeCreateAgent({
   // Which model fits which project type is the flow's policy; this only feeds
   // it the runtime settings the application layer may not read.
   offered: async () => {
-    const [providers, hidden] = await Promise.all([getLlmProviderConfigs(), getHiddenModels()]);
-    return offeredModels(
-      providers.map((provider) => provider.name),
-      hidden,
-    );
+    const providers = await getLlmProviderConfigs();
+    const preferred = await getDefaultModel();
+    return offeredModels(providers.map(provider => provider.name), undefined, undefined, preferred);
   },
 });
 
@@ -1057,7 +936,10 @@ export const traceUseCases = createTraceUseCases({
 
 /** Readiness snapshot for the /api/ready probe (database + LLM channel). */
 export const readinessReport = () =>
-  checkReadiness({ checkDb: dbReachable, checkLlm: () => llmReachable(getLlmChannelConfig) });
+  checkReadiness({ checkDb: dbReachable, checkLlm: async () => {
+    const model = await getDefaultModel();
+    if (model) await llmReachable(() => resolveTarget(model));
+  } });
 
 /**
  * Per-caller concurrency ceilings. Read once here rather than at each guard
@@ -1434,8 +1316,8 @@ export function getAudioRuntime() {
   return { files, references, jobs, authorize, configuration,
     async options(projectName: string, email: string) {
       await authorize(projectName, email);
-      const hidden = new Set(await getHiddenModels());
-      const candidates = getVisibleModels().filter((model) => model.capabilities.transcription && !hidden.has(model.id));
+      await getLlmProviderConfigs();
+      const candidates = getVisibleModels().filter(model => model.capabilities.transcription);
       const checked = await Promise.all(candidates.map(async (model) => {
         try { await getTranscriptionTarget(model.id); return { id: model.id, displayName: model.displayName }; }
         catch { return null; }
@@ -1465,7 +1347,7 @@ export async function runAudioWorkerService(signal: AbortSignal): Promise<void> 
     due: (limit) => audioJobRepository.due(new Date().toISOString(), limit),
     process: (project, id, signal) => runtime.process(project, id, signal),
     sweep: (signal) => runtime.files.sweep(undefined, signal),
-    refresh: refreshModelCatalog,
+    refresh: async () => { invalidateSettingsCache(); await getLlmProviderConfigs(); },
   }, signal);
 }
 

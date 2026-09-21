@@ -49,7 +49,6 @@ const channel = createImageChannel(async (modelId) =>
         auth: "bearer",
       },
     ],
-    { baseUrl: "https://router.example/v1", apiKey: "router-key" },
   ),
 );
 

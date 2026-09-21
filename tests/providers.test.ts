@@ -4,7 +4,6 @@ import {
   resolveProviderTarget,
 } from "@/infrastructure/llm/providers";
 
-const DEFAULT_CHANNEL = { baseUrl: "https://router.example/v1", apiKey: "default-key" };
 
 describe("parseProviderConfigs", () => {
   it("parses provider channels from env pairs", () => {
@@ -87,7 +86,7 @@ describe("resolveProviderTarget", () => {
   });
 
   it("routes a registered provider and strips the prefix by default", () => {
-    const target = resolveProviderTarget("openai/gpt-5-mini", providers, DEFAULT_CHANNEL);
+    const target = resolveProviderTarget("openai/gpt-5-mini", providers);
     expect(target).toMatchObject({
       providerName: "openai",
       baseUrl: "https://api.openai.com/v1",
@@ -99,19 +98,13 @@ describe("resolveProviderTarget", () => {
     const target = resolveProviderTarget(
       "google/gemini-3.1-flash-lite",
       providers,
-      DEFAULT_CHANNEL,
     );
     expect(target.model).toBe("google/gemini-3.1-flash-lite");
     expect(target.providerName).toBe("google");
   });
 
-  it("falls back to the default channel for unregistered providers", () => {
-    const target = resolveProviderTarget("anthropic/claude-sonnet-4.6", providers, DEFAULT_CHANNEL);
-    expect(target).toMatchObject({
-      providerName: null,
-      baseUrl: DEFAULT_CHANNEL.baseUrl,
-      model: "anthropic/claude-sonnet-4.6",
-    });
+  it("refuses an unregistered provider instead of falling back to an unrelated channel", () => {
+    expect(() => resolveProviderTarget("anthropic/claude-sonnet-5", providers)).toThrow("Provider is not registered");
   });
 
   /**
@@ -125,7 +118,7 @@ describe("resolveProviderTarget", () => {
       LLM_PROVIDER_ANTHROPIC_BASE_URL: "https://api.anthropic.com/v1",
       LLM_PROVIDER_ANTHROPIC_API_KEY: "sk-ant",
     });
-    const target = resolveProviderTarget("anthropic/claude-opus-4.8", anthropic, DEFAULT_CHANNEL);
+    const target = resolveProviderTarget("anthropic/claude-opus-4.8", anthropic);
     expect(target.providerName).toBe("anthropic");
     expect(target.model).toBe("claude-opus-4-8");
   });
@@ -136,22 +129,12 @@ describe("resolveProviderTarget", () => {
       LLM_PROVIDER_ANTHROPIC_API_KEY: "sk-ant",
       LLM_PROVIDER_ANTHROPIC_KEEP_MODEL_PREFIX: "true",
     });
-    const target = resolveProviderTarget("anthropic/claude-opus-4.8", anthropic, DEFAULT_CHANNEL);
+    const target = resolveProviderTarget("anthropic/claude-opus-4.8", anthropic);
     expect(target.model).toBe("anthropic/claude-opus-4.8");
   });
 
-  it("passes a model missing from the registry through as the bare id", () => {
-    const anthropic = parseProviderConfigs({
-      LLM_PROVIDER_ANTHROPIC_BASE_URL: "https://api.anthropic.com/v1",
-      LLM_PROVIDER_ANTHROPIC_API_KEY: "sk-ant",
-    });
-    const target = resolveProviderTarget("anthropic/claude-unreleased", anthropic, DEFAULT_CHANNEL);
-    expect(target.model).toBe("claude-unreleased");
-  });
-
-  it("falls back to the default channel for models without a prefix", () => {
-    const target = resolveProviderTarget("gemma4-31b", providers, DEFAULT_CHANNEL);
-    expect(target.providerName).toBeNull();
-    expect(target.model).toBe("gemma4-31b");
+  it("refuses models that an administrator has not selected", () => {
+    expect(() => resolveProviderTarget("openai/unselected", providers)).toThrow("Model is not selected");
+    expect(() => resolveProviderTarget("no-prefix", providers)).toThrow("Model is not selected");
   });
 });

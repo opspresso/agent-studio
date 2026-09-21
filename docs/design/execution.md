@@ -19,7 +19,7 @@ Project는 이름으로 호출하는 Agent다. 공개 범위·소유권·연동�
   저장은 전체 설정 교체이며 `expectedUpdatedAt`과 Project의 `updatedAt`으로 동시 수정을 거절한다.
 - `model`은 도구 호출을 지원하는 텍스트 모델이다. `imageModel`은 이미지 도구의 모델이다.
   카탈로그 모델의 capability 충돌은 거절하며 사용자 모델과 미등록 모델 정책은
-  [모델 설정](../CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그)을 따른다.
+  [모델 설정](../CONFIGURATION.md#모델-등록과-사용)을 따른다.
 - `mcpList`·`skillList`·`subagentList`의 중복과 새 참조를 검사한다. 기존 참조가 사라져도
   나머지 설정을 수정할 수 있다. MCP의 URL은 registry가 소유하고 Agent binding은 허용 도구와
   헤더를 설정한다. 헤더는 안정적인 Agent·서버 문맥으로 암호화하고 응답에서는 마스킹한다.
@@ -193,7 +193,7 @@ SigV4 image 채널은 지원하지 않는다. 응답 크기·base64·MIME·이�
 provider가 입력 종류를 구분하지 않으면 분할을 추측하지 않는다.
 토큰 사용량이 없는 모델은 카탈로그의 장당 가격을 사용할 수 있으며, 이미지 비용은
 provider 청구액을 그대로 보관하는 텍스트 경로와 다르다.
-가격의 정본과 미등록 정책은 [CONFIGURATION](../CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그)을 따른다.
+가격의 정본과 미등록 정책은 [CONFIGURATION](../CONFIGURATION.md#모델-등록과-사용)을 따른다.
 
 이미지는 공통 chunk로 표면에 전달된다. Chat은 저장 참조와 라이브 bytes를 사용하고,
 메신저는 플랫폼에 업로드하며, completion 응답은 `images` 확장을 사용한다.

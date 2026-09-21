@@ -341,7 +341,7 @@ end-to-end exactly-once를 보장하지 않는다. 플랫폼이 재전달하지 
 
 JSON 본문은 schema 검증 전에 bounded reader를 지난다. 관리·편집 요청은 Skill 전체 파일 한도에서
 파생한 editor 한도, 이미지·문서를 실을 수 있는 실행 요청은 attachment 한도에서 파생한 turn
-한도, model catalog 업로드는 catalog 한도를 쓴다. webhook 네 종류는 서명 검증에 필요한 raw
+한도를 쓴다. 모델 등록은 editor 한도를 사용한다. webhook 네 종류는 서명 검증에 필요한 raw
 본문을 공통 1MB 한도 아래에서 읽는다. 선언된 `Content-Length`가 한도를 넘으면 body를 읽지 않고
 413을 답하고, chunked body는 누적 바이트가 한도를 넘는 즉시 stream을 취소한다.
 256KiB prose allowance를 넘는 큰 실행 본문은 프로세스 단위의 **바이트 예산**에 과금된다.

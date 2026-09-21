@@ -19,6 +19,7 @@ vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
   settingsRepository: { get: vi.fn().mockResolvedValue(null), put: vi.fn() },
 }));
 
+import { fixtureRegistrations } from "./modelFixtures";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
@@ -57,8 +58,9 @@ beforeEach(() => {
   invalidateSettingsCache();
   address += 1;
   vi.mocked(settingsRepository.get).mockResolvedValue({
-    llmBaseUrl: `https://router-${address}.example/v1`,
-    llmApiKey: encryptSecret("router-key"),
+    registeredModels: fixtureRegistrations(),
+    embeddingModel: "openai/text-embedding-3-small",
+    llmProviders: [{ name: "openai", baseUrl: `https://router-${address}.example/v1`, apiKey: encryptSecret("router-key") }],
     updatedAt: "2026-01-01T00:00:00Z",
   });
 });
@@ -146,7 +148,7 @@ describe("openAiEmbeddings", () => {
     expect(sent).not.toHaveProperty("dimensions");
   });
 
-  it("uses a dedicated embedding channel without forwarding the LLM credential", async () => {
+  it("ignores legacy embedding endpoints and uses the selected provider", async () => {
     process.env.EMBEDDING_BASE_URL = `https://embedding-${address}.example/v1`;
     let request: { url?: string; authorization?: string | null } = {};
     vi.stubGlobal("fetch", async (url: string | URL | Request, init?: RequestInit) => {
@@ -160,8 +162,8 @@ describe("openAiEmbeddings", () => {
       );
     });
     await openAiEmbeddings.embed(["one"], "document");
-    expect(request.url).toBe(`https://embedding-${address}.example/v1/embeddings`);
-    expect(request.authorization).toBe("Bearer not-required");
+    expect(request.url).toBe(`https://router-${address}.example/v1/embeddings`);
+    expect(request.authorization).toBe("Bearer router-key");
   });
 
   it("makes no request at all for an empty batch", async () => {
@@ -174,6 +176,7 @@ describe("openAiEmbeddings", () => {
   it("routes a public model through its provider even with a self-hosted embedding endpoint", async () => {
     process.env.EMBEDDING_BASE_URL = "http://spark.test:8001/v1";
     vi.mocked(settingsRepository.get).mockResolvedValue({
+      registeredModels: fixtureRegistrations(),
       embeddingModel: "openrouter/text-embedding-3-small",
       llmProviders: [{
         name: "openrouter",

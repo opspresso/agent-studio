@@ -18,7 +18,7 @@ export function ModelRegistrationForm({ provider, candidate, onSaved, onCancel }
     wireId: candidate?.wireId ?? "", displayName: candidate?.displayName ?? "",
     type: candidate?.type ?? "text" as RegistryModelType,
     contextWindow: candidate?.contextWindow ?? 0, maxTokens: candidate?.maxTokens ?? 0,
-    capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false, ...candidate?.capabilities },
+    capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false, reasoningWithTools: true, ...candidate?.capabilities },
     pricing: candidate?.pricing ?? { inputPer1M: 0, outputPer1M: 0 },
   });
   const [priced, setPriced] = useState(candidate?.pricing !== undefined);
@@ -53,13 +53,22 @@ export function ModelRegistrationForm({ provider, candidate, onSaved, onCancel }
       <NumberInput label={t("modelAdmin.output")} value={form.maxTokens} min={0} allowDecimal={false} disabled={busy || form.type === "embedding" || form.type === "rerank"} onChange={value => setForm({ ...form, maxTokens: Number(value) })} />
     </SimpleGrid>
     <Text size="xs" c="dimmed">{t("modelAdmin.unknownLimits")}</Text>
-    <SimpleGrid cols={2}>{(["tools", "structuredOutput", "imageInput", "reasoning"] as const).map(key => <Checkbox key={key} label={key}
+    <SimpleGrid cols={2}>{(["tools", "structuredOutput", "imageInput", "reasoning"] as const).map(key => <Checkbox key={key} label={t(`modelAdmin.${key}`)}
       checked={form.capabilities[key]} disabled={busy} onChange={event => setForm({ ...form, capabilities: { ...form.capabilities, [key]: event.currentTarget.checked } })} />)}</SimpleGrid>
+    <Checkbox label={t("modelAdmin.reasoningWithTools")} checked={form.capabilities.reasoningWithTools} disabled={busy}
+      onChange={event => setForm({ ...form, capabilities: { ...form.capabilities, reasoningWithTools: event.currentTarget.checked } })} />
     <Checkbox label={t("modelAdmin.priced")} checked={priced} disabled={busy} onChange={event => setPriced(event.currentTarget.checked)} />
     {priced && <SimpleGrid cols={2}>
       <NumberInput label={t("modelAdmin.inputPrice")} description={t("modelAdmin.price")} value={form.pricing.inputPer1M} min={0} disabled={busy} onChange={value => setForm({ ...form, pricing: { ...form.pricing, inputPer1M: Number(value) } })} />
       <NumberInput label={t("modelAdmin.outputPrice")} description={t("modelAdmin.price")} value={form.pricing.outputPer1M} min={0} disabled={busy} onChange={value => setForm({ ...form, pricing: { ...form.pricing, outputPer1M: Number(value) } })} />
     </SimpleGrid>}
+    {priced && ([
+      ["transcription", "perAudioMinute", "modelAdmin.perMinute"],
+      ["image", "perImage", "modelAdmin.perImage"],
+      ["rerank", "perSearch", "modelAdmin.perSearch"],
+    ] as const).filter(([type]) => type === form.type).map(([, key, label]) => <NumberInput key={key}
+      label={t(label)} value={form.pricing[key] ?? ""} min={0} disabled={busy}
+      onChange={value => setForm({ ...form, pricing: { ...form.pricing, [key]: value === "" ? undefined : Number(value) } })} />)}
     <Group justify="flex-end"><Button variant="default" disabled={busy} onClick={onCancel}>{t("common.cancel")}</Button>
       <Button loading={busy} disabled={!form.wireId.trim() || !form.displayName.trim()} onClick={() => void save()}>{t("modelAdmin.save")}</Button></Group>
   </Stack>;

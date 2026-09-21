@@ -53,7 +53,7 @@ fail-open 이 될 수는 없다.
 
 | 검사 | 규칙 |
 |---|---|
-| `assertRequiredConfig` | `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` 가 모든 stage 에서 설정돼 있어야 한다. 암호화 키는 canonical base64 로 인코딩한 정확히 32바이트여야 한다. |
+| `assertRequiredConfig` | `DATABASE_URL`, `AES_ENCRYPTION_KEY` 가 모든 stage 에서 설정돼 있어야 한다. 암호화 키는 canonical base64 로 인코딩한 정확히 32바이트여야 한다. |
 | `assertAccessControlConfig` | `NODE_ENV=production` 은 명시적인 `STAGE` 를 요구한다. `STAGE=alpha` 또는 `prod` 는 추가로 `ADMIN_EMAILS` 와 **로그인 수단 하나 이상**(Keycloak, 표준 OIDC, Google의 필수 변수 묶음 또는 `AUTH_PASSWORD=true`)을 요구한다. 각 묶음은 [인증과 접근 제어](#인증과-접근-제어)를 따른다. 빈 `ALLOWED_EMAIL_DOMAINS` 는 모든 도메인을 허용하는 정상 설정이다. |
 
 두 검사 뒤에 부팅 경로는 스키마를 적용하고(`migrate`, advisory lock 아래에서, 인스턴스가
@@ -89,14 +89,9 @@ fail-open 이 될 수는 없다.
 | `S3_PUBLIC_BASE_URL` | 미설정 | — | `public` 모드에서 독자가 오브젝트에 닿는 base 가 앱이 업로드하는 엔드포인트와 다를 때 (리버스 프록시 뒤의 MinIO). 비어 있으면 `S3_ENDPOINT`/`<bucket>`, 그것도 없으면 AWS 의 virtual-host 형태. |
 | `ARTIFACT_ACCESS_MODE` | `authenticated` | **runtime** | 독자가 저장된 오브젝트에 어떻게 닿는가. **`proxied`**. 앱 자신의 주소 `PUBLIC_BASE_URL/api/objects/<key>?exp=&sig=[&dl=]` 를 건네고 앱이 바이트로 답한다(`PUBLIC_BASE_URL` 이 없으면 경로만, 콘솔은 같은 origin 이라 닿지만 Slack·A2A 같은 외부 독자에게는 주소가 아니다). 모델 입력 이미지는 URL이 아니라 저장소에서 읽은 bounded inline bytes로 전달된다. 스토어는 앱에게만 닿으면 되므로 설치형의 선택이다. 토큰이 증명하는 것과 수명은 [SECURITY.md](SECURITY.md#데이터-노출과-보존). **`authenticated`**. 유효 기간이 있는 스토어의 pre-signed URL. 브라우저가 스토어에 직접 닿을 수 있어야 한다. **`public`**. 영구적인 직접 URL. 버킷 정책이 `artifacts/*` 와 레거시 `images/*` 의 공개 읽기를 허용할 때만 동작한다. **다운로드 링크는 `public` 에서도 pre-signed 다**: 브라우저가 저장할 파일명이 요청 서명에 실려 가는데 S3 는 익명 GET 에서 `response-*` 오버라이드를 거부하기 때문이다. 그래서 `public` 모드에서 문서의 주소는 유효 기간이 있고 이미지의 주소는 영구로 남는다. public 모드는 갤러리 메타데이터와 삭제가 인증을 유지하더라도 URL 을 손에 넣은 누구에게나 오브젝트를 노출한다. 모르는 값은 `authenticated` 로 fail-closed 된다. |
 | `CATALOG_ENABLED` | `false` | — | `true` 면 이 배포가 capability 카탈로그를 갖는다. 벡터는 데이터베이스의 `catalog_vectors` 에 있고 따로 가리킬 것은 없다. 설정하지 않으면 `POST /api/catalog/reindex` 는 503 으로 답하고, 런은 자기 설정에 바인딩한 것만 제공한다. 그 503 에는 원인이 둘 있고 토큰 검사가 먼저 돌므로, `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우에도 메시지만 다른 같은 상태 코드가 나온다. 기본이 꺼짐인 이유: 카탈로그에는 배포의 채널이 서빙하는 임베딩 모델이 필요한데 부팅 때 그것을 확인할 길이 없다. 켜는 것은 그 모델이 있다는 선언이다. |
-| `EMBEDDING_PROVIDER` | `openai` | — | `openai` \| `cohere` \| `bedrock`. OpenAI 호환 경로는 아래 endpoint 해석 규칙을 사용한다. Cohere·Bedrock 경로는 AWS SDK credential과 `bedrock:InvokeModel`을 사용한다. 알 수 없는 값은 `openai`로 해석한다. |
-| `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` | 미설정 | — | OpenAI 호환 embedding 전용 채널. 등록된 공개 모델의 provider 채널이 있으면 그 URL·key·wire ID를 우선 사용한다. Self-hosted 모델은 이 전용 채널을 사용하며, base URL 이 없으면 기본 LLM 채널을 재사용한다. base URL 만 설정한 인증 없는 endpoint에는 비밀이 아닌 placeholder credential을 보내며 LLM key를 전달하지 않는다. 인증이 필요하면 API key도 설정하라. |
-| `EMBEDDING_MODEL` | provider 별로: `text-embedding-3-small`, `global.cohere.embed-v4:0`, `amazon.titan-embed-text-v2:0` | **models** | 배포 기본값. `/models`에서 Embedding 타입의 등록 모델을 선택하면 DB override가 우선한다. 선택 변경은 승인 뒤 전체 인덱스를 다시 만들며, 실패하면 이전 선택과 vector를 복원한다. 두 모델에서 나온 벡터는 비교할 수 없다. Cohere v4 는 **inference profile** 을 통해 도달한다. |
 | `EMBEDDING_DIM` | `1024` | — | provider 에 요청하는 폭. `native` 는 폭 파라미터를 생략해 모델의 native dimension을 쓴다. 테이블의 모든 행이 같은 폭이어야 pgvector 가 거리를 계산하므로 값을 바꾼 뒤 반드시 재색인하라. Cohere v4, Titan v2, OpenAI v3처럼 폭 선택을 지원하는 모델은 명시값을 사용하고, 폭 파라미터를 거부하는 모델은 `native` 를 사용한다. |
 | `CATALOG_MIN_SCORE` | `0.25` | — | vector 검색의 절대 하한. 유한한 숫자는 0–1로 clamp하고 그 밖에는 기본값을 사용하며 경고한다. query별 최고 점수의 상대 하한과 함께 적용한다. 모델·질의 언어가 바뀌면 [선택 절차](#임베딩-모델-선택)로 다시 확인한다. |
-| `RERANKER_BASE_URL` / `RERANKER_MODEL` | 미설정 | `RERANKER_MODEL`은 **models** | 둘을 함께 설정하면 query별로 모든 capability kind의 오버샘플 vector 후보를 한 `/rerank` 호출로 2차 정렬한다. endpoint 실패는 기존 cosine/name 순위로 격하되고, 사용자 취소는 즉시 전파된다. `RERANKER_MODEL`은 배포 기본값이고 `/models`의 Rerank 타입 선택이 DB override한다. 등록된 공개 모델의 provider 채널이 있으면 그 URL·key·wire ID로 probe와 검색을 수행한다. Self-hosted 모델은 reranker 전용 채널을 사용한다. 하나만 설정하면 부팅을 거부한다. 미설정이면 기존 cosine/name 순위를 그대로 쓴다. |
-| `RERANKER_API_KEY` | 미설정 | — | reranker의 선택형 Bearer credential. 인증 없는 사내 vLLM endpoint는 비워 둔다. |
-| `RERANKER_MIN_SCORE` | `0.01` | **models** | activation된 reranker relevance score의 noise floor. 각 query에서 최고 점수의 10%와 이 값 중 높은 쪽을 최종 하한으로 쓴다. 범위 밖 env 값은 `0`–`1`로 clamp한다. capability 설명은 답 자체가 아니라 답을 만들 도구이므로 adapter는 전용 instruction을 함께 보낸다. 모델을 바꾸면 다시 측정하고 `/models`에서 함께 저장하라. DB override가 env보다 우선하며 다음 검색부터 적용된다. |
+| `RERANKER_MIN_SCORE` | `0.01` | **models** | activation된 reranker relevance score의 noise floor. 각 query에서 최고 점수의 10%와 이 값 중 높은 쪽을 최종 하한으로 쓴다. 범위 밖 env 값은 `0`–`1`로 clamp한다. capability 설명은 답 자체가 아니라 답을 만들 도구이므로 adapter는 전용 instruction을 함께 보낸다. 모델을 바꾸면 다시 측정하고 `/settings/model-usage`에서 함께 저장하라. DB override가 env보다 우선하며 다음 검색부터 적용된다. |
 | `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`; 일반 URL 조립은 요청 origin, 없으면 `http://localhost:3000` | **runtime** | 바깥을 향하는 URL (A2A Agent Card, Slack 매니페스트, MCP OAuth 콜백, MCP client ID 메타데이터 문서)을 만들 때 쓰는 scheme + host. 리버스 프록시 뒤에서는 요청 URL 이 bind 주소를 반영하므로 이 값은 설정에서 와야 한다. 요청 origin 단계는 요청이 손에 있는 일반 URL 조립에서만 적용된다. A2A Agent Card 경로에는 요청이 없어서, 두 변수 모두 설정되지 않으면 카드가 `localhost` 를 광고한다. **거부된 사인인의 리디렉션(`/login?error=`)은 부팅 시 env 값으로 고정된다**: Better Auth 옵션은 한 번만 평가되므로 runtime 설정을 보지 못하고, env 가 비어 있으면 상대 경로가 되어 프록시 뒤에서 bind 주소 기준으로 해석될 수 있다. OIDC/Google 사인인을 쓰는 배포는 env 로도 설정하라. **MCP client ID 메타데이터 문서는 예외다**: 설정된 base 가 없으면 요청 origin 이나 localhost 를 추측하지 않고 503 으로 답한다. 그 URL 이 곧 OAuth `client_id` 이고 authorization server 가 가져가므로, loopback 이나 평문 http 값이면 흐름이 시작되기 전에 거부되고 provider 가 제공하는 경우 연결은 dynamic registration 으로 폴백한다. [SECURITY.md](SECURITY.md#mcp-oauth) 를 보라. |
 
 ### 임베딩 모델 선택
@@ -128,147 +123,52 @@ fail-open 이 될 수는 없다.
 
 ## LLM 채널
 
-기본 텍스트 생성 채널은 OpenAI Chat Completions 프로토콜로 말한다. 모델 id 는 `provider/model` 이다.
+관리자는 `/settings/providers`에서 프로바이더의 이름·종류·API base URL·키를 등록한다.
+이름은 소문자 영문으로 시작하는 영문·숫자·`_`·`-` 조합이며 최대 64자다. 종류는
+`openai`, `anthropic`, `google`, `xai`, `openrouter`, `bedrock`, `selfhosted`다.
+같은 종류를 여러 이름으로 등록할 수 있으므로 서로 다른 사내 서버도 별도 연결로 관리한다.
+URL에는 API 버전 경로를 포함한다. 예를 들어 OpenAI 호환 서버는 `/v1`, Google은
+`/v1beta/openai`를 사용한다. Discovery는 Google·Anthropic의 native 목록 계약을 해석한다.
 
-| 변수 | 기본값 | Runtime | 설명 |
-|---|---|---|---|
-| `LLM_BASE_URL` | — (필수) | **runtime** | 기본 채널. OpenRouter 나 LiteLLM 같은 라우터. provider 채널이 가져가지 않는 한 모든 모델 id 가 여기로 간다. |
-| `LLM_API_KEY` | — (필수) | **runtime** | 그 채널의 자격증명. |
-| `LLM_PROVIDER_<NAME>_BASE_URL` | 미설정 | **runtime** | provider 별 채널을 등록한다. `<NAME>` 은 모델 id 의 provider 접두사를 대문자로 쓴 것이다. 레지스트리의 provider 는 `OPENAI`, `ANTHROPIC`, `GOOGLE`, `XAI`, `BEDROCK`, `OPENROUTER`, `SELFHOSTED` 다. env 파서는 `[A-Z0-9_]+` 형태의 이름을 받아 사용자 정의 provider 접두사의 모델도 해당 채널로 보낸다. `/settings` 오버라이드는 지원 provider 목록으로 제한된다. |
-| `LLM_PROVIDER_<NAME>_API_KEY` | 미설정 | **runtime** | 그 채널의 자격증명. `_AUTH=sigv4` 가 아닌 한 필수다: 키가 없는 채널은 **조용히 건너뛰어지고**, 그 모델들은 기본 채널로 떨어진다. |
-| `LLM_PROVIDER_<NAME>_AUTH` | `bearer` | **runtime** | `bearer` \| `sigv4`. `sigv4` 는 프로세스의 AWS 자격증명(역할, 또는 `AWS_ACCESS_KEY_ID`/`AWS_PROFILE`, SDK 의 표준 해석 순서)으로 매 요청에 서명하고 API 키를 **받지 않는다**. 문자 그대로의 `sigv4` 가 아닌 값은 전부 `bearer` 로 읽히므로, 오타가 서명도 키도 없는 채널을 만들어 낼 수는 없다. |
-| `LLM_PROVIDER_<NAME>_KEEP_MODEL_PREFIX` | `false` | **runtime** | provider 채널은 맨 모델 이름(`provider/` 접두사를 벗긴 것)을 받는다. 그 채널 자체가 전체 id 를 기대하는 라우터일 때 이 값을 켜라. |
+키는 endpoint 문맥에 묶어 암호화하며 조회 응답은 마스킹한다. 빈 입력 또는 마스크는 같은
+주소·종류·인증 방식의 기존 키를 유지한다. 주소나 인증 대상을 바꾸면 새 키를 입력한다.
+Self-hosted는 키를 생략할 수 있다. 프로바이더 목록은 최대 50개이며 빈 배열 저장은 모든
+연결을 비활성화한다. 등록 모델이 남은 연결은 삭제할 수 없다.
 
-`/settings` 에서 기본 채널의 URL, 또는 provider 채널의 URL·인증 방식을 바꿀 때는 새 API key 를
-같이 입력해야 한다. 마스킹된 key 는 같은 endpoint 와 인증 방식에서만 보존되며 새 주소로 이동하지
-않는다. 기본 URL 과 key override 를 함께 비우면 두 값 모두 env 설정으로 돌아간다.
+초기 배포의 `LLM_PROVIDER_<NAME>_BASE_URL`·`_API_KEY`·`_AUTH`·`_KEEP_MODEL_PREFIX`는
+저장된 프로바이더 목록이 없을 때만 초기 연결로 읽힌다. 모델 선택 자체에는 환경변수나
+기본 모델 목록으로의 폴백이 없다. 기본 LLM 채널로 미등록 모델을 우회 실행하지 않는다.
 
-> base URL 에는 provider 가 서비스하는 API 버전 경로가 포함돼야 한다. 어댑터는 거기에
-> `/chat/completions` 와 `/images/generations` 를 글자 그대로 덧붙인다. `https://api.x.ai/v1`
-> 대신 `https://api.x.ai` 를 쓰면 그 provider 로 가는 **모든** 호출이 텍스트든 이미지든 404 가
-> 되고, 증상은 `The requested resource was not found` 라고 적힌 도구 결과다. `pnpm
-> check-models` 는 각 채널의 도달 가능성을 보고하며, 그것이 이 문제를 확인하는 가장 빠른
-> 방법이다.
+### 모델 등록과 사용
 
-provider 채널이 하나라도 설정돼 있으면 `GET /api/models` 는 그 provider 들의 모델만
-나열한다. 하나도 설정돼 있지 않으면 레지스트리에서 보이는(`hidden` 이 아닌) 모든 모델을
-나열한다. 단 `selfhosted/` 모델은 예외다: 그 접두사는 기본 채널의 라우터가 서빙하지
-않으므로, 전용 채널이 설정된 경우에만 나열된다 (`providerOffered`). 덕분에 selfhosted
-모델이 채널 없는 배포의 피커에 보증된 404 로 나타나는 일이 없다.
+1. `/settings/models`에서 등록한 프로바이더를 선택하고 **Model 조회**를 실행한다.
+2. 사용할 항목의 타입·한도·기능을 확인하고 저장한다. 직접 등록도 같은 검증을 거친다.
+3. `/settings/model-usage`에서 기본 모델, Workspace Runtime별 모델, 검색의 Embedding·Rerank를 선택한다.
+4. `/models`에서 선택된 목록을 검색·수정·삭제하고 프로바이더 목록에 모델이 있는지 확인한다.
 
-`/settings` 에 저장된 `llmProviders` 오버라이드는 `LLM_PROVIDER_*` env 집합과 병합되는 것이
-아니라 **그 집합 전체를 대체한다**. 부분 병합은 "이 provider 를 제거한다" 를 표현할 수 없는
-편집으로 만들어 버린다.
+타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decisions`다.
+`decisions`는 판단·분류용 텍스트 모델이며 Chat Completions 계약으로 실행한다.
+모델 ID는 `<등록한 프로바이더 이름>/<프로바이더의 모델 ID>`다. 프로바이더에 보내는 ID는
+별도로 보관하므로 OpenRouter와 self-hosted의 슬래시가 포함된 이름도 유지한다.
 
-**`selfhosted` 는 배포가 직접 운영하는 route 이고, 그 모델의 발행자는 배포 자신이다.**
-LM Studio 든 vLLM 이든, 운영자가 띄운 OpenAI 호환 서버를
-`LLM_PROVIDER_SELFHOSTED_BASE_URL` 이 가리킨다 (bearer 채널이라 키가 필수인데, LM Studio
-처럼 키를 무시하는 서버에는 아무 placeholder 값이나 준다). agent-models 는 **전역적으로
-참인** 사실만 담는다. 벤더의 가격은 어디서나 같다. 반면 어떤 모델이 selfhosted 채널에
-서빙되는지는 그 배포의 하드웨어에 대한 사실이라, 이 모델들은 카탈로그가 아니라 **배포의
-선언**(runtime settings 의 `selfHostedModels`, `/models` 콘솔의 Self-hosted 섹션)에서 온다.
-선언은 카탈로그 엔트리와 같은 모양이고 같은 로더 검증을 지나 레지스트리 **오버레이**에
-설치된다 (`loadSelfHostedModels`). 카탈로그 refresh 는 오버레이를 건드리지 않고, 매 틱마다
-선언을 다시 읽어 재설치하므로 다른 인스턴스의 설정 변경도 한 틱 안에 도달한다.
+조회는 관리자 요청에만 수행하며 선택을 바꾸지 않는다. 제공자가 알려주지 않은 타입은
+미확인으로 표시하고, 한도 0은 미제공을 뜻한다. 가격 미제공과 명시적인 무료 요율을 구별한다.
+모델 목록 조회 성공은 실제 생성 성공이나 모든 capability의 지원을 보장하지 않는다.
+선택한 모델은 Settings에 최대 500개까지 저장하며 부팅과 설정 캐시 갱신에서 읽힌다.
+인터넷이 끊겨도 저장된 모델과 사내 프로바이더로 실행할 수 있다. 새 설치는 빈 목록으로 시작한다.
 
-`family` 는 서빙 스택이 쓰는 모델 이름 *그대로*이고 슬래시도 그 일부다. LM Studio 의
-`qwen/qwen3.8-27b` 는 family 가 `qwen/qwen3.8-27b` 인 `selfhosted/qwen/qwen3.8-27b` 가 되고,
-디스패치는 접두사 하나만 벗겨 정확히 그 이름을 보낸다. 이름이 정확해야 하는 이유: LM Studio
-는 모르는 이름을 받으면 404 대신 **로드돼 있는 모델로 조용히 폴백**하므로, 근사한 이름은
-다른 모델의 답을 성공처럼 돌려준다. 콘솔 섹션은 채널의 `/v1/models` 목록(LM Studio 네이티브
-API 의 컨텍스트 길이·vlm 타입으로 보강, `GET /api/models/selfhosted`)에서 선언을 시작하게
-해 주고, 목록에 있다고 실행이 보장되는 것도 아니다. RAM 이 모자라 로드가 안 되는 모델은
-목록에 남는다. 최종 판정은 언제나 모델 카드의 Test 다.
+기본 모델은 새 Agent와 모델 선택기의 첫 선택에 적용한다. 이미 저장한 Agent 설정은 유지한다.
+기본·Workspace·Embedding·Rerank에 지정된 모델은 사용 설정을 먼저 변경해야 삭제할 수 있다.
+삭제된 모델을 사용하는 새 실행은 거부된다. 공개 API와 하위 Agent도 등록된 모델만 호출한다.
 
-### 모델 레지스트리: agent-models 의 카탈로그
+검색 모델 선택은 `CATALOG_ENABLED=true`인 배포에서 사용한다. Embedding 변경은 명시적인
+재색인 승인과 migration lock을 요구하며, 실패하면 이전 선택과 인덱스 복원을 시도한다.
+Rerank 변경은 실제 query/document probe가 성공한 뒤 저장한다. 검색·전사는 self-hosted를
+포함하여 선택한 모델의 프로바이더 URL·키·전송 ID를 함께 사용한다.
 
-공개 모델의 가격·컨텍스트·capability·provider route는
-[opspresso/agent-models](https://github.com/opspresso/agent-models)가 소유한다.
-Studio는 loader 형태와 `SUPPORTED_PROVIDERS`, 커밋된 오프라인 스냅샷을 소유한다.
-공개 모델의 추가·은퇴·가격 수정은 발행 저장소에서 하고 `pnpm sync-models`로 반영한다.
-자체 호스팅 모델은 배포의 `selfHostedModels` 선언을 별도 overlay로 설치한다.
-
-카탈로그의 항목은 이 앱의 `ModelConfig` 그대로다. 타입은 별도 필드가 아니라 capability 에서
-파생한다: `embedding: true` 는 Embedding, `rerank: true` 는 Rerank,
-`transcription: true` 는 Transcription, `imageGeneration: true` 는 Image, 모두 없으면 Text 다.
-네 플래그는 동시에 참일 수 없다. Embedding은 input token으로, Rerank는 input token 또는
-`perSearch`로, Transcription은 input/output token 또는 `perAudioMinute`로 가격을 표현한다.
-Embedding과 Rerank의 `outputPer1M`·`maxTokens`는 0이다. `/models` 카탈로그에는 다섯 타입을 모두 표시하지만 Agent 모델 선택기와 `/api/models` 는 실행
-가능한 Text·Image만 제공한다. id 는 `provider/family` 이고, 같은 모델의 세 경로는 같은
-이름·윈도·타입을 가진다. `wireId` 는 경로가 모델 이름을 다르게 쓸 때만 둔다. 카탈로그를 읽는 경로는 다음과 같다:
-
-- **스냅샷** `src/domain/llm/catalog.json`. 커밋된 사본. 모듈 평가 시 로드되어 단위 테스트와
-  `next build` 가 보는 것이고, 발행된 카탈로그를 못 가져온 부팅이 기대는 것이다.
-  `pnpm sync-models` 가 갱신하고(`--check` 는 뒤처졌으면 1 로 종료), 릴리즈 전이나 테스트가 새
-  모델을 봐야 할 때 돌린다. agent-models 가 바뀔 때마다는 아니다.
-- **발행된 카탈로그**. `MODELS_CATALOG_URL` 을 설정하면 부팅 때 읽어(`src/instrumentation.ts`, 첫 요청
-  전에 await, 소스 자체의 10초 데드라인), 이후 `MODELS_CATALOG_REFRESH_MS` 마다 다시 읽는다
-  (`application/llm/modelCatalogRefresh.ts`). 실패는 로그를 남기고 레지스트리를 그대로 둔다.
-  정적 사이트가 내려갔다고 부팅을 거부하는 것은 낡은 가격을 무서비스와 바꾸는 일이다.
-
-- **admin 이 업로드한 문서**. 발행된 카탈로그에 닿지 못하는 배포의 길이다. `/models` 콘솔에서
-  카탈로그 JSON 을 올리면 (`PUT /api/models/catalog/document`, 최대 4MB) refresh 가 검증하는
-  방식 그대로 먼저 검증해 거절하거나, 올린 사람과 시각과 함께 `MODELCATALOG#doc` 행에 저장하고
-  바로 레지스트리를 갱신한다. **업로드는 어느 배포에서든 네트워크보다 우선한다**. 문서가
-  있는 동안 refresher 는 그것만 읽고(`modelCatalogStoredSource.ts`), 지우면(`DELETE`) 다음
-  refresh 부터 발행 카탈로그를 다시 읽으며, 읽을 발행 카탈로그가 없으면 프로세스가 재시작해
-  스냅샷으로 돌아갈 때까지 마지막 설치본을 유지한다. 레지스트리는 결코 비워지지 않는다.
-  우선순위는 부팅 때 한 번이 아니라 **읽을 때마다** 결정되므로, 다른 인스턴스의 업로드도 한
-  틱 안에 도달한다. 같은 프로세스의 boot 틱과 console refresh 는 하나의 coordinator 로
-  직렬화되고, 진행 중인 읽기 사이에 업로드나 삭제가 오면 뒤따르는 읽기를 한 번 더 수행한다.
-  로컬 스냅샷을 그 문서로 맞추려면 `pnpm sync-models --from <file>`.
-
-`loadModelCatalog` (`src/domain/llm/models.ts`) 가 유일한 입구다: 버전을 확인하고, 항목마다 런이
-읽는 필드(가격이 숫자인지, 윈도가 양의 정수인지, `provider` 가 이 앱이 가진 채널인지.
-`SUPPORTED_PROVIDERS` 는 카탈로그가 아니라 코드다)를 검증해 맞지 않는 것은 이유와 함께 건너뛰고,
-레지스트리를 **원자적으로** 바꾼다. Text 모델은 양쪽 모두 0보다 큰 가격을 요구하고, Image는
-image output token 또는 장당 가격을 요구하며, Embedding은 input 가격과 0인 output 가격을
-요구한다. Rerank는 input 가격 또는 `perSearch`, Transcription은 양쪽 token 가격 또는
-`perAudioMinute`를 요구한다. self-hosted
-provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하는 모델은 0 이 참값이라서
-명시적 0 은 통과하고, 가격 필드의 *부재*는 다른 provider 와 똑같이 거부된다. 진행 중인 런은 이미 해석한 config 를 그대로 쓴다. 쓸 수 있는
-항목이 하나도 없는 카탈로그는 거부되고 이전 상태가 남는다. 빈 레지스트리는 낡은 것보다 나쁜 유일한
-결과다.
-
-| 변수 | 기본값 | Runtime | 설명 |
-|---|---|---|---|
-| `MODELS_CATALOG_URL` | — (원격 읽기 꺼짐) | boot | 발행된 카탈로그의 주소. 명시한 배포만 부팅과 간격마다 읽는다. 구성값이지 사용자가 친 주소가 아니라서 SSRF 가드를 지나지 않는다. 미설정 또는 **`none`**(대소문자 무관)이면 fetch 가 없고, 카탈로그는 스냅샷과 admin 의 업로드뿐이다. 간격 자체는 켜져 있다: 다른 인스턴스의 업로드와 self-hosted 선언이 이 프로세스에 닿는 길이므로, URL 없는 틱은 데이터베이스만 읽는다. |
-| `MODELS_CATALOG_REFRESH_MS` | `3600000` (1시간) | boot | 다시 읽는 간격. `0` 이면 간격을 끄고 부팅 때만 읽는다. |
-
-모델 목록 조회 성공은 선택한 프로토콜로 실제 생성할 수 있다는 보장이 아니다.
-특히 Bedrock의 OpenAI 호환 채널과 native Bedrock 임베딩은 다른 경로다.
-SigV4 서명자는 endpoint URL에서 대상 region을 해석한다. 도입할 모델은 실제 채널의 Test로
-확인하고 provider의 전송 모델명을 사용한다.
-
-텍스트 경로는 provider가 반환한 실제 `usage.cost`가 있으면 우선하며, 없으면 카탈로그 요율로
-계산한다. 이미지 경로의 `ImageGenerationResult.usage`는 보고된 금액을 담지 않아 카탈로그
-요율을 사용한다. 추정값과 실제 청구액의 일치를 고정 비율로 보장하지 않는다.
-
-미등록 모델은 기본 정책에서 실행할 수 있다. 텍스트 provider가 유효한 `usage.cost` 또는
-`cost_usd`를 보고하면 그 값을 사용하지만, 카탈로그 계산으로 fallback하면 요율이 없어 $0이다.
-후자의 계산은 `[cost] unknown model id` 경고와 `agent_studio_unknown_model_calls_total`로
-드러난다. 이 지표는 모든 미등록 모델 호출의 완전한 목록이 아니라 가격 계산 누락 신호다.
-`pnpm check-models` 는 레지스트리를 설정된 채널들이 실제로 제공하는 것과 비교한다.
-[DEVELOPMENT.md](DEVELOPMENT.md#스크립트) 를 보라.
-
-| 변수 | 기본값 | Runtime | 설명 |
-|---|---|---|---|
-| `UNKNOWN_MODEL_POLICY` | `allow` | **runtime** | `allow` \| `refuse`. 레지스트리가 값을 매길 수 없는 모델을 런이 실행해도 되는지. 그 밖의 값은 전부 `allow` 로 읽히므로, 잘못된 형식의 값이 배포가 멈추는 이유가 되는 일은 없다. |
-
-`refuse` 는 **런 브래킷**에서 검사한다. 네 개의 admit 함수가 모두 지나가는 한 지점이며,
-Agent의 `model` 뿐 아니라 `fallbackModel` 까지 함께 다룬다. 폴백은 주 모델이 rate limit 에
-걸릴 때마다 런 전체를 떠맡으므로, 값이 매겨지지 않은 폴백은 정확히 같은 만큼 새어 나가되
-간헐적으로 그럴 뿐이다. dispatch 전에 throw 하므로, 호출자는 열렸다가 실패하는 스트림이 아니라
-`400` 을 받는다.
-
-**subagent transfer** 도 자식의 설정이 해석되는 자리에서 검사한다. 그것은 브래킷을 열지
-않지만. top-level run 이 아니다. dispatch 하고 usage 를 기록하는 것은 똑같으며, 부모의
-모델은 자식의 모델에 대해 아무것도 말해 주지 않는다. 거기서 거부는 런이 아니라 transfer 를
-실패시킨다: 부모는 이유를 전달받고 그 자식 없이 답할 수 있다.
-
-**Agent 설정 저장은 건드리지 않는다**: 레지스트리가 아직 따라잡지 못한 id 를 저장하는 것이야말로
-새 모델을 도입하는 방식이고, 그 경로는 자기 경고를 유지한다. 이 설정이 한계를 두는 것은
-무엇으로도 값을 매길 수 없는 id 아래에서 돈을 쓰는 일이다.
+`UNKNOWN_MODEL_POLICY=allow|refuse`는 선택한 모델의 가격 미확인을 허용할지 정한다.
+기본값은 `allow`다. 미등록 모델의 실행은 이 값과 무관하게 거부된다. 제공자가 실제 비용을
+반환하면 우선 사용하고, 가격을 계산할 수 없으면 비용 누락 경고·지표를 남긴다.
 
 ## 실행 제한
 
@@ -384,7 +284,7 @@ Workspace 도구 사용 여부는 Agent 설정의 `parameters.workspaceTools`로
 켜면 프로젝트에 **워크스페이스 도구** 탭이 나타난다. 프로젝트 소유자·관리자는 그 탭에서 저장소 목록,
 접근 모드, 기본 Runtime, 유휴 시간, 검사 명령과 배포 workflow를 관리한다. 기본 저장소는 없다.
 기본 접근 모드는 `new`(등록 + 신규), 기본 Runtime은 모델 없이 실행하는 `command`다.
-Codex·Claude·OpenCode의 모델은 **Models → 워크스페이스 런타임 모델**에서 관리자가 선택한다.
+Codex·Claude·OpenCode의 모델은 **Model 사용 설정 → 워크스페이스 런타임 모델**에서 관리자가 선택한다.
 선택 모델은 DB에 저장되며 환경변수의 모델 선언으로 대체하지 않는다. API 키와 URL은 기존 LLM
 채널에서 실행 직전에 읽는다. Workspace 설정이나 모델 선택 응답에 자격증명을 복사하지 않는다.
 
@@ -498,7 +398,6 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | `/view` 가 CSV 에서 그리는 행 수 | `2,000` | `src/app/api/artifacts/[artifactId]/view/_lib/viewPage.tsx` |
 | `SaveFile` 생성 및 `File` 평문 편집의 바이트(중간 결과 포함) | `1 MiB` | `src/domain/artifact/types.ts` |
 | `/api/objects` 가 proxied 주소 하나에 대해 메모리로 읽어 들이는 오브젝트. 고른 숫자가 아니라 저장될 수 있는 것의 최대(첨부 · 문서 · 저장 파일 상한 중 큰 쪽) | `10 MiB` | `src/infrastructure/storage/artifactAccess.ts` 의 `MAX_PROXIED_OBJECT_BYTES` |
-| admin 이 올리는 모델 카탈로그 문서 | `4 MiB` | `src/app/api/_lib/body.ts` |
 | 올리는 plugins 아카이브. 전송 크기 / 풀었을 때 / 엔트리 수 (헤더 기준, 파일·디렉터리·확장 레코드 모두) | `32 MiB` / `64 MiB` / `20,000` | `src/app/api/plugins/sync/upload/route.ts`, `src/infrastructure/archive/tar.ts` |
 | 한 틱의 retention sweep 이 지우는 행 수 (나머지는 다음 틱) | `items` 최대 `5,000` + Better Auth session 최대 `5,000` + SDK Session 최대 `1,000` | `store.deleteExpired`, `memberRepository.deleteExpiredSessions`, `runtimeSessionRepository.sweepExpired` |
 | Chat 재접속 로그와 Session 삭제 tombstone의 보존 | 행을 쓴 시각부터 실행 lease + `15분` | `src/infrastructure/db/ttl.ts`의 `RUN_LOG_TTL_SECONDS` |
@@ -618,8 +517,6 @@ worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것
 
 | 변수 | 기본값 | 역할 |
 | --- | --- | --- |
-| `TRANSCRIPTION_BASE_URL` | 미설정 | `/audio/transcriptions` 앞의 ASR base URL. 없으면 선택 모델의 명시적 provider 채널을 요구한다 |
-| `TRANSCRIPTION_API_KEY` | 미설정 | 전용 ASR key. base URL 없이 설정하면 거절하며 다른 LLM key를 가져오지 않는다 |
 | `TRANSCRIPTION_RESPONSE_FORMAT` | `json` | `json`, `verbose_json`, `diarized_json` 중 provider가 지원하는 형식 |
 | `TRANSCRIPTION_CHUNKING_STRATEGY` | 미설정 | provider가 지원할 때만 `auto` 사용 |
 | `TRANSCRIPTION_MAX_INPUT_BYTES` | `26214400` | 변환된 구간 하나의 provider 전송 상한. 원본 파일 상한과 별개 |

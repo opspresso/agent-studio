@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { offeredModels } from "@/domain/llm/models";
 
-const { getLlmProviderConfigs, getHiddenModels, modelPreferenceUseCases } = vi.hoisted(() => ({
+const { getLlmProviderConfigs, getDefaultModel, modelPreferenceUseCases } = vi.hoisted(() => ({
   getLlmProviderConfigs: vi.fn(),
-  getHiddenModels: vi.fn(),
+  getDefaultModel: vi.fn(),
   modelPreferenceUseCases: { list: vi.fn() },
 }));
 
@@ -13,7 +13,7 @@ vi.mock("@/lib/session", () => ({
     (...args: unknown[]) =>
       handler({ id: "u1", email: "user@example.com", name: "U", image: null }, ...args),
 }));
-vi.mock("@/lib/runtime-settings", () => ({ getLlmProviderConfigs, getHiddenModels }));
+vi.mock("@/lib/runtime-settings", () => ({ getLlmProviderConfigs, getDefaultModel }));
 vi.mock("@/lib/container", () => ({ modelPreferenceUseCases }));
 
 const { GET } = await import("@/app/api/models/route");
@@ -38,7 +38,7 @@ async function listedModels(): Promise<Array<{ id: string; favorite: boolean }>>
 beforeEach(() => {
   vi.clearAllMocks();
   getLlmProviderConfigs.mockResolvedValue([]);
-  getHiddenModels.mockResolvedValue(undefined);
+  getDefaultModel.mockResolvedValue(undefined);
   modelPreferenceUseCases.list.mockResolvedValue([]);
 });
 
@@ -47,25 +47,16 @@ describe("GET /api/models", () => {
     expect(await listedIds()).toEqual(offeredModels([], undefined).map((model) => model.id));
   });
 
-  it("excludes a hidden model", async () => {
-    getHiddenModels.mockResolvedValue(["openai/gpt-5.4"]);
-    expect(await listedIds()).not.toContain("openai/gpt-5.4");
-  });
-
-  it("intersects the provider filter with the hidden denylist", async () => {
-    getLlmProviderConfigs.mockResolvedValue([provider("anthropic")]);
-    getHiddenModels.mockResolvedValue(["anthropic/claude-fable-5"]);
+  it("orders the selected default first and narrows to registered connections", async () => {
+    getLlmProviderConfigs.mockResolvedValue([provider("openai")]);
+    getDefaultModel.mockResolvedValue("openai/gpt-5.4");
     const ids = await listedIds();
-    expect(ids.every((id) => id.startsWith("anthropic/"))).toBe(true);
-    expect(ids).not.toContain("anthropic/claude-fable-5");
-  });
-
-  it("ignores a stale hidden id the registry no longer carries", async () => {
-    getHiddenModels.mockResolvedValue(["openai/retired-model"]);
-    expect(await listedIds()).toEqual(offeredModels([], undefined).map((model) => model.id));
+    expect(ids[0]).toBe("openai/gpt-5.4");
+    expect(ids.every(id => id.startsWith("openai/"))).toBe(true);
   });
 
   it("marks only this user's favorite models", async () => {
+    getLlmProviderConfigs.mockResolvedValue([provider("openai")]);
     modelPreferenceUseCases.list.mockResolvedValue(["openai/gpt-5.4"]);
     const models = await listedModels();
     expect(models.find((model) => model.id === "openai/gpt-5.4")?.favorite).toBe(true);

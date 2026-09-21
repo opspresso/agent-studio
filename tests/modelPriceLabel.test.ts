@@ -13,6 +13,10 @@ import { getModelConfig, listModels, modelType } from "@/domain/llm/models";
  * per 1M image tokens and the picker said its output was free.
  */
 describe("modelPriceLabel", () => {
+  it("distinguishes unpublished pricing from an explicitly free model", () => {
+    expect(modelPriceLabel(undefined)).toBe("Price not provided");
+    expect(modelPriceLabel({ inputPer1M: 0, outputPer1M: 0 })).toBe("Free");
+  });
   it("prices a text model on both token sides", () => {
     expect(modelPriceLabel({ inputPer1M: 2.5, outputPer1M: 15 })).toBe(
       "$2.50 in · $15.00 out per 1M",

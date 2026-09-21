@@ -21,7 +21,7 @@ Agent Studio의 계층, 저장 구조, 실행 경로와 스트림 계약을 설�
 | 모델 실행 | 사내 OpenAI 호환 모델 endpoint |
 | 콘솔 | 앱이 제공하는 페이지·정적 자산 |
 
-S3 호환 저장소, capability 검색, MCP, 메신저, 원격 모델·Plugin 카탈로그, 오디오·Workspace는
+S3 호환 저장소, capability 검색, MCP, 메신저, 외부 모델 프로바이더·Plugin 카탈로그, 오디오·Workspace는
 각각 활성화 조건을 갖는다. [설치 문서](INSTALL.md)는 필요한 서비스와 오프라인 구성을 설명한다.
 선택 기능의 실패로 실행 중 일부 능력이나 결과가 사라지면 warning으로 알린다.
 
@@ -182,7 +182,6 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 | 앱 설정 (환경변수 오버라이드) | `SETTINGS#app` | `META` | — | — |
 | Capability catalog reindex lease + 영구 generation (in-place rebuild와 겹친 검색은 결과를 버린다) | `CATALOGREINDEX#global` | `LOCK` | — | — |
 | 사용자별 모델 즐겨찾기 | `MODELPREFERENCES#{userId}` | `META` | — | — |
-| admin 이 업로드한 모델 카탈로그 문서 (배포당 하나, 발행 카탈로그보다 우선) | `MODELCATALOG#doc` | `META` | — | — |
 
 두 번째 인덱스는 다음 목록을 담당한다:
 
