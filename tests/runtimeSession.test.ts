@@ -12,6 +12,173 @@ beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new 
 afterEach(() => { vi.useRealTimers(); });
 
 describe("durable native SDK Session", () => {
+  const imageResult = (text: string) => ({ b64: Buffer.from(text).toString("base64"), mimeType: "image/png", model: "openai/gpt-image-2", usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } });
+
+  it("keeps retained image IDs after eviction and allocates distinct IDs to new attachments and edits", async () => {
+    const f = fixture();
+    const generateImage = vi.fn(async (prompt: string) => imageResult(prompt));
+    const editImage = vi.fn(async (_input: { prompt: string }) => imageResult("edited"));
+    await f.run(new FakeChannel([
+      ...Array.from({ length: 5 }, (_, index) => [toolCallChunk(0, `generate-${index}`, "GenerateImage", JSON.stringify({ prompt: `image-${index + 1}` }))]),
+      [contentChunk("drawn")],
+    ]), "draw five", undefined, { generateImage, editImage }, { maxTurn: 7 });
+    const next = new FakeChannel([
+      [toolCallChunk(0, "old", "EditImage", '{"image_id":"img_2","prompt":"edit retained"}')],
+      [toolCallChunk(0, "new", "EditImage", '{"image_id":"img_6","prompt":"edit attachment"}')],
+      [toolCallChunk(0, "gone", "EditImage", '{"image_id":"img_1","prompt":"edit evicted"}')],
+      [contentChunk("done")],
+    ]);
+    const chunks = await f.run(next, "", undefined, { editImage }, { messages: [{ role: "user", content: [
+      { type: "image_url", image_url: { url: `data:image/png;base64,${imageResult("attachment").b64}` } },
+    ] }] });
+    expect(chunks.filter((chunk) => chunk.error)).toEqual([]);
+    expect(editImage).toHaveBeenCalledTimes(2);
+    expect(editImage.mock.calls[0]?.[0]).toMatchObject({ images: [{ b64: imageResult("image-2").b64 }] });
+    expect(editImage.mock.calls[1]?.[0]).toMatchObject({ images: [{ b64: imageResult("attachment").b64 }] });
+    const prompt = String(next.seenParams[0]?.messages.find((message) => message.role === "system")?.content);
+    expect(prompt).toContain("img_2");
+    expect(prompt).toContain("img_5");
+    expect(prompt).toContain("img_6");
+    expect(prompt).not.toContain("img_1");
+    expect(chunks.some((chunk) => chunk.toolResult?.content.includes("image id: img_7"))).toBe(true);
+    expect(chunks.some((chunk) => chunk.toolResult?.content.includes("image id: img_8"))).toBe(true);
+    expect(chunks.some((chunk) => chunk.toolResult?.content.includes("no image with id 'img_1'"))).toBe(true);
+  });
+
+  it("builds the resumed image prompt from the checkpoint and keeps allocating after its IDs", async () => {
+    const f = fixture({ approvalTools: ["EditImage"] });
+    const editImage = vi.fn(async (_input: { prompt: string }) => imageResult("edited"));
+    const deps = { generateImage: async (prompt: string) => imageResult(prompt), editImage };
+    await f.run(new FakeChannel([
+      [toolCallChunk(0, "generate", "GenerateImage", '{"prompt":"original"}')],
+      [toolCallChunk(0, "edit", "EditImage", '{"image_id":"img_1","prompt":"blue"}')],
+    ]), "draw and edit", undefined, deps);
+    const pending = (await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail))!;
+    const next = new FakeChannel([
+      [toolCallChunk(0, "another", "GenerateImage", '{"prompt":"another"}')],
+      [contentChunk("done")],
+    ]);
+    const chunks = await f.run(next, "", { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] }, deps);
+    expect(chunks.filter((chunk) => chunk.error)).toEqual([]);
+    expect(editImage).toHaveBeenCalledWith(expect.objectContaining({ images: [expect.objectContaining({ b64: imageResult("original").b64 })] }));
+    expect(String(next.seenParams[0]?.messages.find((message) => message.role === "system")?.content)).toContain("img_1");
+    expect(chunks.some((chunk) => chunk.toolResult?.content.includes("image id: img_2"))).toBe(true);
+    expect(chunks.some((chunk) => chunk.toolResult?.content.includes("image id: img_3"))).toBe(true);
+  });
+
+  it("does not resurrect evicted handles from older inline history when image tools are disabled", async () => {
+    const f = fixture();
+    const generateImage = async (prompt: string) => imageResult(prompt);
+    await f.run(new FakeChannel([
+      ...Array.from({ length: 5 }, (_, index) => [toolCallChunk(0, `generate-${index}`, "GenerateImage", JSON.stringify({ prompt: `generated-${index}` }))]),
+      [contentChunk("drawn")],
+    ]), "", undefined, { generateImage }, { maxTurn: 7, messages: [{ role: "user", content: [
+      { type: "image_url", image_url: { url: `data:image/png;base64,${imageResult("attachment").b64}` } },
+    ] }] });
+    const retainedIds = async () => (await readRuntimeSession(f.services, "chat-1", f.scope.ownerEmail))!.document.images!.map((image) => image.id);
+    expect(await retainedIds()).toEqual(["img_3", "img_4", "img_5", "img_6"]);
+    await f.run(new FakeChannel([[contentChunk("remembered")]]), "remember");
+    expect(await retainedIds()).toEqual(["img_3", "img_4", "img_5", "img_6"]);
+    const chunks = await f.run(new FakeChannel([[toolCallChunk(0, "next", "GenerateImage", '{"prompt":"new"}')], [contentChunk("done")]]), "draw another", undefined, { generateImage });
+    expect(chunks.some((chunk) => chunk.toolResult?.content.includes("image id: img_7"))).toBe(true);
+  });
+
+  it("restores pre-approval handles on discard without reusing the abandoned run's IDs", async () => {
+    const f = fixture({ approvalTools: ["EditImage"] });
+    const deps = { generateImage: async (prompt: string) => imageResult(prompt), editImage: vi.fn(async (_input: { prompt: string }) => imageResult("edited")) };
+    await f.run(new FakeChannel([[toolCallChunk(0, "prior", "GenerateImage", '{"prompt":"prior"}')], [contentChunk("done")]]), "draw prior", undefined, deps);
+    await f.run(new FakeChannel([
+      [toolCallChunk(0, "abandoned", "GenerateImage", '{"prompt":"abandoned"}')],
+      [toolCallChunk(0, "pending", "EditImage", '{"image_id":"img_2","prompt":"edit abandoned"}')],
+    ]), "draw and edit", undefined, deps);
+    const pending = (await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail))!;
+    await discardRuntimeCheckpoint(f.services, "chat-1", f.scope.ownerEmail, pending.revision);
+    const saved = (await readRuntimeSession(f.services, "chat-1", f.scope.ownerEmail))!.document;
+    expect(saved.images).toEqual([expect.objectContaining({ id: "img_1", b64: imageResult("prior").b64 })]);
+    const channel = new FakeChannel([[toolCallChunk(0, "new", "GenerateImage", '{"prompt":"new"}')], [contentChunk("done")]]);
+    const chunks = await f.run(channel, "new drawing", undefined, deps);
+    const prompt = String(channel.seenParams[0]?.messages.find((message) => message.role === "system")?.content);
+    expect(prompt).toContain("img_1");
+    expect(prompt).not.toContain("img_2");
+    expect(chunks.some((chunk) => chunk.toolResult?.content.includes("image id: img_3"))).toBe(true);
+    expect(deps.editImage).not.toHaveBeenCalled();
+  });
+
+  it.each(["delegate", "handoff"] as const)("keeps %s image IDs unique while exposing only selected handles to the child", async (mode) => {
+    const f = fixture();
+    const childChannel = new FakeChannel([
+      [toolCallChunk(0, "edit", "EditImage", '{"image_id":"img_2","prompt":"child edit"}')],
+      [contentChunk("child done")],
+    ]);
+    const editImage = vi.fn(async (_input: { prompt: string }) => imageResult("child image"));
+    const loadAgent: NonNullable<AgentDeps["loadAgent"]> = async (name, task) => ({
+      kind: "agent", warnings: [], close: async () => {}, deps: { createToolSchemaValidator, channel: childChannel, editImage },
+      input: { projectName: name, model: f.configuration.model, messages: [{ role: "user", content: [
+        { type: "text", text: task.message }, ...task.images.map((image) => ({ type: "image_url" as const, image_url: { url: `data:${image.mimeType};base64,${image.b64}` } })),
+      ] }] },
+    });
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "first", "GenerateImage", '{"prompt":"first"}')],
+      [toolCallChunk(0, "second", "GenerateImage", '{"prompt":"second"}')],
+      [toolCallChunk(0, "transfer", `${mode}_child`, '{"input":"edit selected","image_ids":["img_2"]}')],
+      [contentChunk("parent done")],
+    ]);
+    const chunks = await f.run(channel, "draw and transfer", undefined, { generateImage: async (prompt: string) => imageResult(prompt), loadAgent }, {
+      maxTurn: 8, canDispatch: true, subagents: [{ name: "child", type: "local", description: "child" }],
+    });
+    expect(chunks.filter((chunk) => chunk.error)).toEqual([]);
+    expect(editImage).toHaveBeenCalledWith(expect.objectContaining({ images: [expect.objectContaining({ b64: imageResult("second").b64 })] }));
+    const prompt = String(childChannel.seenParams[0]?.messages.find((message) => message.role === "system")?.content);
+    expect(prompt).toContain("img_2");
+    expect(prompt).not.toContain("img_1");
+    expect(chunks.some((chunk) => chunk.toolResult?.content.includes("image id: img_3"))).toBe(true);
+    const saved = (await readRuntimeSession(f.services, "chat-1", f.scope.ownerEmail))!.document.images!;
+    expect(saved.map((image) => image.id)).toEqual(["img_1", "img_2", "img_3"]);
+    const nextEdit = vi.fn(async (_input: { prompt: string }) => imageResult("next edit"));
+    const next = await f.run(new FakeChannel([[toolCallChunk(0, "next", "EditImage", '{"image_id":"img_3","prompt":"edit child output"}')], [contentChunk("done")]]), "edit child output", undefined, { editImage: nextEdit });
+    expect(nextEdit).toHaveBeenCalledWith(expect.objectContaining({ images: [expect.objectContaining({ b64: imageResult("child image").b64 })] }));
+    expect(next.some((chunk) => chunk.toolResult?.content.includes("image id: img_4"))).toBe(true);
+  });
+
+  it("keeps concurrent delegated image outputs distinct across a shared approval checkpoint", async () => {
+    const f = fixture();
+    let resuming = false;
+    const edits = vi.fn(async (input: { prompt: string }) => imageResult(input.prompt));
+    const childChannels: FakeChannel[] = [];
+    const loadAgent: NonNullable<AgentDeps["loadAgent"]> = async (name, task) => {
+      const channel = new FakeChannel(resuming ? [[contentChunk("child done")]] : [
+        [toolCallChunk(0, "generate", "GenerateImage", JSON.stringify({ prompt: task.message }))],
+        [toolCallChunk(0, "edit", "EditImage", JSON.stringify({ image_id: task.message === "first" ? "img_1" : "img_2", prompt: `edited ${task.message}` }))],
+      ]);
+      childChannels.push(channel);
+      return { kind: "agent", warnings: [], close: async () => {}, deps: { createToolSchemaValidator, channel, generateImage: async (prompt: string) => imageResult(prompt), editImage: edits },
+        input: { projectName: name, model: f.configuration.model, parameters: { policy: { approvalTools: ["EditImage"] } }, messages: [{ role: "user", content: task.message }] } };
+    };
+    const input = { canDispatch: true, subagents: [{ name: "child", type: "local" as const, description: "child" }] };
+    const initial = await f.run(new FakeChannel([[
+      toolCallChunk(0, "first", "delegate_child", '{"input":"first","image_ids":[]}'),
+      toolCallChunk(1, "second", "delegate_child", '{"input":"second","image_ids":[]}'),
+    ]]), "draw two", undefined, { loadAgent }, input);
+    expect(initial.filter((chunk) => chunk.error)).toEqual([]);
+    expect(initial.filter((chunk) => chunk.toolResult?.name === "GenerateImage").map((chunk) => chunk.toolResult!.content).join(" ")).toContain("img_2");
+    const pending = (await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail))!;
+    expect(pending.approvals).toHaveLength(2);
+    expect(edits).not.toHaveBeenCalled();
+    resuming = true;
+    const chunks = await f.run(new FakeChannel([[contentChunk("parent done")]]), "", { revision: pending.revision, decisions: pending.approvals.map((approval) => ({ id: approval.id, approve: true })) }, { loadAgent }, input);
+    expect(chunks.filter((chunk) => chunk.error)).toEqual([]);
+    expect(edits).toHaveBeenCalledWith(expect.objectContaining({ prompt: "edited first", images: [expect.objectContaining({ b64: imageResult("first").b64 })] }));
+    expect(edits).toHaveBeenCalledWith(expect.objectContaining({ prompt: "edited second", images: [expect.objectContaining({ b64: imageResult("second").b64 })] }));
+    const resumedPrompts = childChannels.slice(2).map((channel) => String(channel.seenParams[0]?.messages.find((message) => message.role === "system")?.content));
+    expect(resumedPrompts[0]).toContain("img_1");
+    expect(resumedPrompts[0]).not.toContain("img_2");
+    expect(resumedPrompts[1]).toContain("img_2");
+    expect(resumedPrompts[1]).not.toContain("img_1");
+    const saved = (await readRuntimeSession(f.services, "chat-1", f.scope.ownerEmail))!.document.images!;
+    expect(saved.map((image) => image.id)).toEqual(["img_1", "img_2", "img_3", "img_4"]);
+    expect(saved.map((image) => image.b64)).toEqual(expect.arrayContaining([imageResult("first").b64, imageResult("second").b64, imageResult("edited first").b64, imageResult("edited second").b64]));
+  });
+
   it("keeps a preceding user image editable after a version enables image tools", async () => {
     const f = fixture();
     const image = { b64: "aGVsbG8=", mimeType: "image/png" };

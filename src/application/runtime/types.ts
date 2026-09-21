@@ -113,6 +113,7 @@ export interface RuntimeAgentSnapshot {
 }
 
 export interface RuntimeGraphSnapshot {
+  nextImageId?: number;
   delegations?: Array<{ scope: string; source: string; tool: string; id: string; args: string }>;
   agents: Record<string, RuntimeAgentSnapshot>;
   handoffs: Record<string, Array<{ source: string; tool: string; args: string }>>;
@@ -120,6 +121,7 @@ export interface RuntimeGraphSnapshot {
 }
 
 export interface RuntimeCheckpoint {
+  previousImageIds?: string[];
   graph: RuntimeGraphSnapshot;
   status: "pending" | "running";
   state: string;
@@ -132,6 +134,7 @@ export interface RuntimeCheckpoint {
 }
 
 export interface RuntimeTurnPersistence {
+  nextImageId?: number;
   session: Session;
   filter?: PiiFilter;
   checkpoint?: RuntimeCheckpoint;

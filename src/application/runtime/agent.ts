@@ -1,7 +1,7 @@
 import { Agent, Handoff, RunInputItem, RunContext, getCurrentSpan, tool, type AgentOutputType, type JsonSchemaDefinition, type AgentInputItem } from "@openai/agents";
 import { randomUUID } from "node:crypto";
 import { ValidationError } from "@/application/errors";
-import { assembleAgentRun, AGENT_TASK_SCHEMA } from "@/application/llm/agentAssembly";
+import { assembleAgentRun, AGENT_TASK_SCHEMA, type ImageHandle, type ImageSequence } from "@/application/llm/agentAssembly";
 import { createToolResultBudget, MAX_TOOL_RESULT_CHARS_PER_TURN } from "@/application/llm/toolResultBudget";
 import { PiiFilter } from "@/application/llm/pii";
 import { hasImageParts, type EngineChunk } from "@/domain/llm/types";
@@ -17,13 +17,13 @@ import { BoundAgent } from "./boundAgent";
 import { createSdkOutput } from "./events";
 import { restoreRunContextBudget } from "@/application/llm/contextBudget";
 import type { RuntimeGraphSnapshot, RuntimeAgentSnapshot } from "./session";
-import { imageDataUrl } from "@/domain/llm/types";
 import { inputGuardrails, checkHandoffInput, toolInputGuardrail } from "./policy";
 
 type SdkAgent = Agent<unknown, AgentOutputType>;
 
 /** Owns connections opened while the SDK changes agents within one invocation. */
 export interface AgentGraph {
+  imageSequence?: ImageSequence;
   history?: AgentInputItem[];
   persistent?: boolean;
   activeTurn?: RuntimeTurn;
@@ -40,6 +40,7 @@ export interface AgentGraph {
 
 export function snapshotGraph(graph: AgentGraph): RuntimeGraphSnapshot {
   return {
+    nextImageId: graph.imageSequence?.next,
     agents: Object.fromEntries(Object.entries(graph.capture ?? {}).map(([key, read]) => [key, read()])),
     handoffs: graph.handoffs ?? {},
     identifiers: Object.fromEntries(Object.entries(graph.ids ?? {}).map(([key, ids]) => [key, { prefix: ids.prefix, used: [...ids.used] }])),
@@ -66,7 +67,7 @@ export async function restoreHandoffGraph(root: SdkAgent, graph: AgentGraph): Pr
 
 export function compileAgent(
   deps: AgentDeps, input: RunAgentInput, destination: RuntimeEmitter, graph: AgentGraph,
-  inheritedFilter?: PiiFilter,
+  inheritedFilter?: PiiFilter, transferredImages?: readonly ImageHandle[],
 ) {
   if (input.messages.some(hasImageParts)) {
     const refusal = describeImageInputReject(input.model);
@@ -80,11 +81,13 @@ export function compileAgent(
   const saved = graph.saved?.agents[key];
   const filter = inheritedFilter ?? (saved?.pii ? PiiFilter.restoreSnapshot(saved.pii) : input.parameters?.piiFiltering ? new PiiFilter() : undefined);
   const previousImages = scope === "root" && !saved ? input.runtime?.images ?? [] : [];
+  graph.imageSequence ??= { next: graph.saved?.nextImageId ?? input.runtime?.nextImageId ?? 1 };
   const assembly = assembleAgentRun({ ...deps, canDelegate: Boolean(deps.loadAgent) }, {
-    ...input, blockedTools: input.parameters?.policy?.blockedTools, messages: [...(previousImages.length ? [{ role: "user" as const, content: previousImages.map((image) => ({ type: "image_url" as const, image_url: { url: imageDataUrl(image) } })) }] : []), ...input.messages],
+    ...input, blockedTools: input.parameters?.policy?.blockedTools,
+    images: saved?.images ?? transferredImages ?? previousImages, imageSequence: graph.imageSequence, retainInputImages: graph.persistent,
+    messages: saved ? undefined : input.messages,
   });
   if (!graph.persistent && input.parameters?.policy?.approvalTools?.some((name) => assembly.tools.some((entry) => entry.function.name === name))) throw new ValidationError("This Agent's approval policy requires a persisted chat session");
-  if (saved) assembly.images.restore(saved.images);
   for (const warning of assembly.warnings) emit({ warning });
   const turn: RuntimeTurn = {
     conversation: graph.history ? [...conversationMessages(graph.history), ...(input.runtime?.checkpoint ? [] : input.messages)] : input.messages,
@@ -126,7 +129,7 @@ export function compileAgent(
   graph.activeTurn = turn;
 
   const validateTask = assembly.delegations.length ? schemas!.compile(AGENT_TASK_SCHEMA) : undefined;
-  const task = (raw: string, signal = input.signal): AgentTask => {
+  const task = (raw: string, signal = input.signal): AgentTask & { images: ImageHandle[] } => {
     const args: unknown = JSON.parse(raw);
     validateTask?.(args);
     if (!args || typeof args !== "object" || !("input" in args) || typeof args.input !== "string" || !args.input.trim()) throw new ValidationError("An agent task requires non-empty input");
@@ -135,7 +138,7 @@ export function compileAgent(
     const images = ids.map((id: string) => {
       const image = assembly.images.get(id);
       if (!image) throw new ValidationError(`Unknown image '${id}'. Available images: ${assembly.images.list().map((item) => item.id).join(", ")}`);
-      return { b64: image.b64, mimeType: image.mimeType };
+      return { ...image };
     });
     return { message: filter?.mask(args.input) ?? args.input, images, signal, maxTurns: Math.max(1, turn.maxTurns - turn.number) };
   };
@@ -146,12 +149,13 @@ export function compileAgent(
     if (binding.mode === "handoff") {
       let nextInput: RunAgentInput | undefined;
       const transfer = new Handoff<unknown, AgentOutputType>(prototype, async (context, args) => {
-        const prepared = await deps.loadAgent!(binding.agentName, { ...task(args), invocationId: `${input.projectName}/${binding.name}` });
+        const request = task(args);
+        const prepared = await deps.loadAgent!(binding.agentName, { ...request, invocationId: `${input.projectName}/${binding.name}` });
         if (prepared.kind !== "agent") throw new ValidationError("A handoff target must be a text agent");
         graph.close.push(prepared.close);
         for (const warning of prepared.warnings) emit({ warning });
         nextInput = prepared.input;
-        const compiled = compileAgent(prepared.deps, prepared.input, emit, graph, filter);
+        const compiled = compileAgent(prepared.deps, prepared.input, emit, graph, filter, request.images);
         await checkHandoffInput(compiled.agent, prepared.input.messages, context);
         transfer.agent = compiled.agent;
         const records = graph.handoffs![scope] ??= [];
@@ -203,9 +207,10 @@ export function compileAgent(
     const restoredChildren = new Map<string, { prepared: Extract<PreparedAgent, { kind: "agent" }>; child: ReturnType<typeof compileAgent>; close: () => Promise<void> }>();
     if (binding.mode === "delegate") graph.restoreDelegations.set(`${scope}/${input.projectName}/${binding.name}`, async (id, args) => {
       const childScope = `tool/${id}`;
-      const prepared = await deps.loadAgent!(binding.agentName, { ...task(args), invocationId: id });
+      const request = task(args);
+      const prepared = await deps.loadAgent!(binding.agentName, { ...request, invocationId: id });
       if (prepared.kind !== "agent") throw new ValidationError("A saved delegated agent changed its type");
-      const restoredGraph: AgentGraph = { close: [], persistent: graph.persistent, scope: childScope, saved: graph.saved, capture: graph.capture, handoffs: graph.handoffs, ids: graph.ids, delegations: graph.delegations, restoreDelegations: graph.restoreDelegations };
+      const restoredGraph: AgentGraph = { close: [], persistent: graph.persistent, imageSequence: graph.imageSequence, scope: childScope, saved: graph.saved, capture: graph.capture, handoffs: graph.handoffs, ids: graph.ids, delegations: graph.delegations, restoreDelegations: graph.restoreDelegations };
       let closed = false;
       const close = async () => {
         if (closed) return;
@@ -213,7 +218,7 @@ export function compileAgent(
         await Promise.all([prepared.close(), ...restoredGraph.close.map((release) => release())]);
       };
       try {
-        const child = compileAgent(prepared.deps, prepared.input, childOutput(id), restoredGraph, filter);
+        const child = compileAgent(prepared.deps, prepared.input, childOutput(id), restoredGraph, filter, request.images);
         await restoreHandoffGraph(child.agent, restoredGraph);
         prototype.bindDeclarations(child.agent);
         restoredChildren.set(id, { prepared, child, close });
@@ -226,7 +231,7 @@ export function compileAgent(
       const restoredChild = restoredChildren.get(id);
       const childScope = `tool/${id}`;
       const childIds = graph.saved?.identifiers[childScope];
-      const childGraph: AgentGraph = { close: [], persistent: graph.persistent, scope: childScope, saved: graph.saved, capture: graph.capture, handoffs: graph.handoffs, ids: graph.ids, delegations: graph.delegations, restoreDelegations: graph.restoreDelegations,
+      const childGraph: AgentGraph = { close: [], persistent: graph.persistent, imageSequence: graph.imageSequence, scope: childScope, saved: graph.saved, capture: graph.capture, handoffs: graph.handoffs, ids: graph.ids, delegations: graph.delegations, restoreDelegations: graph.restoreDelegations,
         identifiers: { prefix: childIds?.prefix ?? randomUUID().replaceAll("-", ""), used: new Set(childIds?.used ?? []) } };
       const childEmit = childOutput(id);
       let paused = false;
@@ -244,7 +249,7 @@ export function compileAgent(
           if (!graph.delegations!.some((entry) => entry.scope === scope && entry.id === id)) graph.delegations!.push({ scope, source: input.projectName, tool: binding.name, id, args });
           if (!restoredChild) childGraph.close.push(prepared.close);
           for (const warning of prepared.warnings) childEmit({ warning });
-          const child = restoredChild?.child ?? compileAgent(prepared.deps, prepared.input, childEmit, childGraph, filter);
+          const child = restoredChild?.child ?? compileAgent(prepared.deps, prepared.input, childEmit, childGraph, filter, request.images);
           if (details?.resumeState && !restoredChild) await restoreHandoffGraph(child.agent, childGraph);
           runOptions.maxTurns = child.turn.maxTurns;
           text = await prototype.withInvocation(child.agent, prepared.input, async () => {
