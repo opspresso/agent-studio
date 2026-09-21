@@ -278,14 +278,60 @@ test("a picture leaves a mark saying it was there, and what it was called", () =
 });
 
 test("a fallback copy of the same picture is one picture", () => {
-  // `mc:AlternateContent` carries the drawing twice. Emitting the fallback too
-  // puts every figure in the document in twice.
+  // Choice and Fallback are siblings, not drawings nested inside one another.
   const xml =
-    "<w:p><w:r><w:drawing><wp:inline><wp:docPr descr=\"그림\"/></wp:inline>" +
-    "<w:pict><v:shape><v:imagedata r:id=\"rId1\"/></v:shape></w:pict>" +
-    "</w:drawing></w:r></w:p>";
+    '<w:p><w:r><mc:AlternateContent><mc:Choice Requires="a">' +
+    '<w:drawing><wp:inline><wp:docPr descr="그림"/></wp:inline></w:drawing></mc:Choice>' +
+    '<mc:Fallback><w:pict><v:shape><v:imagedata r:id="rId1"/></v:shape></w:pict></mc:Fallback>' +
+    '</mc:AlternateContent></w:r></w:p>';
   const images = documentXmlToBlocks(xml).blocks.filter((block) => block.kind === "image");
   assert.equal(images.length, 1);
+  assert.equal(images[0]?.alt, "그림");
+});
+
+test("alternate content selects the first supported choice and otherwise its fallback", () => {
+  const drawing = (alt: string) => `<w:drawing><wp:docPr descr="${alt}"/></w:drawing>`;
+  const xml = '<w:p><w:r><mc:AlternateContent>' +
+    `<mc:Choice Requires="future">${drawing("unsupported")}</mc:Choice>` +
+    `<mc:Choice Requires="a">${drawing("first")}</mc:Choice>` +
+    `<mc:Choice Requires="a">${drawing("second")}</mc:Choice>` +
+    `<mc:Fallback>${drawing("fallback")}</mc:Fallback></mc:AlternateContent>` +
+    '<mc:AlternateContent><mc:Choice Requires="future">' + drawing("unsupported") +
+    `</mc:Choice><mc:Fallback>${drawing("fallback")}</mc:Fallback></mc:AlternateContent>` +
+    '</w:r></w:p>' + paragraph("after");
+  const blocks = documentXmlToBlocks(xml).blocks;
+  assert.deepEqual(blocks.filter(block => block.kind === "image").map(block => block.alt), ["first", "fallback"]);
+  assert.equal(blocks.at(-1)?.kind, "paragraph");
+  assert.match(documentXmlToText(xml).text, /after$/);
+});
+
+test("choice requirements resolve in their namespace scope and skipped branches cannot change state", () => {
+  const drawing = (alt: string) => `<w:drawing><wp:docPr descr="${alt}"/></w:drawing>`;
+  const xml = '<w:document xmlns:draw="http://schemas.openxmlformats.org/drawingml/2006/main"><w:body>' +
+    '<mc:AlternateContent><mc:Choice Requires="draw"><w:p><w:r>' + drawing("selected") +
+    '</w:r></w:p></mc:Choice><mc:Fallback><w:tbl><w:tr><w:tc><w:p><w:r><w:b/>' +
+    '<w:t>ignored</w:t></w:r></w:p></w:tc></w:tr></w:tbl></mc:Fallback></mc:AlternateContent>' +
+    '<mc:AlternateContent xmlns:draw="urn:unsupported"><mc:Choice Requires="draw"><w:p/>' +
+    '</mc:Choice><mc:Fallback>' + paragraph("fallback text") + '</mc:Fallback></mc:AlternateContent>' +
+    paragraph("plain") + '</w:body></w:document>';
+  const result = documentXmlToBlocks(xml);
+  assert.deepEqual(result.blocks, [
+    { kind: "image", alt: "selected" },
+    { kind: "paragraph", runs: [{ text: "fallback text" }] },
+    { kind: "paragraph", runs: [{ text: "plain" }] },
+  ]);
+  assert.deepEqual(result.observed, []);
+});
+
+test("nested alternates and self-closing branches leave later content readable", () => {
+  const xml = '<mc:AlternateContent><mc:Choice Requires="future"/>' +
+    '<mc:Fallback><mc:AlternateContent><mc:Choice Requires="w">' + paragraph("nested") +
+    '</mc:Choice><mc:Fallback>' + paragraph("duplicate") + '</mc:Fallback></mc:AlternateContent>' +
+    '</mc:Fallback></mc:AlternateContent><mc:AlternateContent/>' + paragraph("after") +
+    '<mc:AlternateContent><mc:Choice Requires="future">' + paragraph("unsupported") + '</mc:Choice></mc:AlternateContent>';
+  const result = documentXmlToBlocks(xml);
+  assert.equal(documentXmlToText(xml).text, "nested\n\nafter");
+  assert.deepEqual(result.observed, ["unsupported alternate content"]);
 });
 
 test("a list written as literal markers with a hanging indent is still a list", () => {

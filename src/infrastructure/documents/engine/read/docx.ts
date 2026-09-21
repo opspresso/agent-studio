@@ -48,6 +48,17 @@ const RELS_PART = "word/_rels/document.xml.rels";
 /** `w:basedOn` cycles exist in the wild, and a walk that trusts them hangs. */
 const MAX_STYLE_HOPS = 10;
 
+const COMPATIBILITY_NAMESPACE = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+/** Only namespaces interpreted by this reader qualify an alternate Choice. */
+const CORE_NAMESPACES = new Map([
+  ["w", "http://schemas.openxmlformats.org/wordprocessingml/2006/main"],
+  ["wp", "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"],
+  ["a", "http://schemas.openxmlformats.org/drawingml/2006/main"],
+  ["pic", "http://schemas.openxmlformats.org/drawingml/2006/picture"],
+  ["v", "urn:schemas-microsoft-com:vml"],
+]);
+const CHOICE_NAMESPACES = new Set(CORE_NAMESPACES.values());
+
 export class DocxError extends DocumentError {}
 
 export interface DocxBlocks {
@@ -330,6 +341,9 @@ function toggled(attributes: string): boolean {
 }
 
 class Extractor implements XmlHandler {
+  private readonly namespaceScopes = [new Map([...CORE_NAMESPACES, ["mc", COMPATIBILITY_NAMESPACE]])];
+  private readonly alternatives: Array<{ selected: boolean }> = [];
+  private alternateSkipDepth = 0;
   private readonly blocks: ReadBlock[] = [];
   private runs: Run[] = [];
   private pending = "";
@@ -373,7 +387,7 @@ class Extractor implements XmlHandler {
   private revised = false;
 
   text(value: string): void {
-    if (this.textDepth > 0) {
+    if (this.textDepth > 0 && this.alternateSkipDepth === 0) {
       this.pending += value;
       if (this.inserted > 0) {
         this.revised = true;
@@ -512,6 +526,34 @@ class Extractor implements XmlHandler {
   }
 
   open(name: string, attributes: string, selfClosing: boolean): void {
+    let namespaces = this.namespaceScopes.at(-1)!;
+    const declared = [...attributes.matchAll(/(?:^|\s)xmlns:([\w.-]+)\s*=\s*(["'])(.*?)\2/g)];
+    if (declared.length) {
+      namespaces = new Map(namespaces);
+      for (const match of declared) namespaces.set(match[1]!, match[3]!);
+    }
+    if (!selfClosing) this.namespaceScopes.push(namespaces);
+    if (this.alternateSkipDepth > 0) {
+      if (!selfClosing) this.alternateSkipDepth += 1;
+      return;
+    }
+    const compatibility = this.compatibilityName(name, namespaces);
+    if (compatibility === "AlternateContent") {
+      if (!selfClosing) this.alternatives.push({ selected: false });
+      return;
+    }
+    if (compatibility === "Choice" || compatibility === "Fallback") {
+      const alternative = this.alternatives.at(-1);
+      const required = (attributeOf(attributes, "Requires") ?? "").trim().split(/\s+/).filter(Boolean);
+      const supported = compatibility === "Fallback" || required.length > 0 &&
+        required.every(prefix => CHOICE_NAMESPACES.has(namespaces.get(prefix) ?? ""));
+      if (!alternative || alternative.selected || !supported) {
+        if (!selfClosing) this.alternateSkipDepth = 1;
+      } else {
+        alternative.selected = true;
+      }
+      return;
+    }
     switch (name) {
       case "w:t":
         // Not self-closing `<w:t/>`, which holds nothing and would leave the
@@ -633,9 +675,7 @@ class Extractor implements XmlHandler {
       }
       case "w:drawing":
       case "w:pict":
-        // Same reason: a raised depth here reads as "still inside a drawing",
-        // so every later picture is taken for an `mc:AlternateContent`
-        // duplicate of it and none of them is reported.
+        // Self-closing drawings must not keep later pictures inside their depth.
         if (!selfClosing) {
           this.drawing += 1;
         }
@@ -717,6 +757,16 @@ class Extractor implements XmlHandler {
   }
 
   close(name: string): void {
+    const compatibility = this.compatibilityName(name, this.namespaceScopes.at(-1)!);
+    this.namespaceScopes.pop();
+    if (this.alternateSkipDepth > 0) {
+      this.alternateSkipDepth -= 1;
+      return;
+    }
+    if (compatibility === "AlternateContent") {
+      if (this.alternatives.pop()?.selected === false) this.observed.add("unsupported alternate content");
+      return;
+    }
     switch (name) {
       case "w:t":
         this.textDepth = Math.max(0, this.textDepth - 1);
@@ -735,7 +785,7 @@ class Extractor implements XmlHandler {
       case "w:pict": {
         this.drawing = Math.max(0, this.drawing - 1);
         if (this.drawing > 0) {
-          // A fallback copy of the same picture inside `mc:AlternateContent`.
+          // Nested drawing wrappers still represent one drawing.
           return;
         }
         const alt = this.imageAlt;
@@ -835,6 +885,12 @@ class Extractor implements XmlHandler {
       default:
         return;
     }
+  }
+
+  private compatibilityName(name: string, namespaces: ReadonlyMap<string, string>): string | undefined {
+    const colon = name.indexOf(":");
+    return colon >= 0 && namespaces.get(name.slice(0, colon)) === COMPATIBILITY_NAMESPACE
+      ? name.slice(colon + 1) : undefined;
   }
 
   private finishTable(): void {
