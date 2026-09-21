@@ -13,7 +13,7 @@
  * to whichever terminal transition lands first and never regresses.
  */
 
-import { TaskState, type ListTasksRequest, type ListTasksResponse, type Message, type Part, type Task } from "@a2a-js/sdk";
+import { TaskState, type ListTasksRequest, type ListTasksResponse, type Part, type Task } from "@a2a-js/sdk";
 import type { ServerCallContext, TaskStore } from "@a2a-js/sdk/server";
 import { RequestMalformedError } from "@a2a-js/sdk/errors";
 import { keys } from "@/infrastructure/db/keys";
@@ -39,28 +39,13 @@ import { A2A_TERMINAL_STATES as TERMINAL_STATES } from "@/domain/a2a/task";
  */
 const MAX_ITEM_BYTES = 350_000;
 
-function stripPartBytes(parts: Part[] | undefined): Part[] | undefined {
-  return parts?.map((part) =>
+/** Blank inline file bytes (e.g. a generated image already streamed to the client). */
+function stripFileBytes(task: Task): Task {
+  return mapParts(task, (part) =>
     part.content?.$case === "raw" && part.content.value.byteLength > 0
       ? { ...part, content: { $case: "raw" as const, value: Buffer.alloc(0) } }
       : part,
   );
-}
-
-/** Blank inline file bytes (e.g. a generated image already streamed to the client). */
-function stripFileBytes(task: Task): Task {
-  const stripMessage = (message: Message): Message => ({
-    ...message,
-    parts: stripPartBytes(message.parts) ?? message.parts,
-  });
-  return {
-    ...task,
-    artifacts: task.artifacts?.map((artifact) => ({
-      ...artifact,
-      parts: stripPartBytes(artifact.parts) ?? artifact.parts,
-    })),
-    history: task.history?.map(stripMessage),
-  };
 }
 
 /**
@@ -74,6 +59,9 @@ function stripFileBytes(task: Task): Task {
 function mapParts(task: Task, map: (part: Part) => Part): Task {
   return {
     ...task,
+    ...(task.status?.message ? {
+      status: { ...task.status, message: { ...task.status.message, parts: task.status.message.parts.map(map) } },
+    } : {}),
     artifacts: task.artifacts?.map((artifact) => ({
       ...artifact,
       parts: artifact.parts?.map(map),
@@ -122,7 +110,7 @@ function dropBulkParts(task: Task): Task {
  */
 function fitTask(task: Task, wrapper: Record<string, unknown>): Task {
   const fits = (candidate: Task) =>
-    Buffer.byteLength(JSON.stringify({ ...wrapper, task: candidate }), "utf8") <= MAX_ITEM_BYTES;
+    Buffer.byteLength(JSON.stringify({ ...wrapper, task: toStoredTask(candidate) }), "utf8") <= MAX_ITEM_BYTES;
   if (fits(task)) {
     return task;
   }
@@ -134,7 +122,7 @@ function fitTask(task: Task, wrapper: Record<string, unknown>): Task {
   if (fits(withoutHistory)) {
     return withoutHistory;
   }
-  return dropBulkParts(task);
+  return dropBulkParts(withoutBytes);
 }
 
 /** A database-backed {@link TaskStore} scoped to a single project. */

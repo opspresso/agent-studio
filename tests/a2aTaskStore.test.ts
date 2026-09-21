@@ -1,6 +1,6 @@
 import { TaskState, type Task } from "@a2a-js/sdk";
 import { ServerCallContext } from "@a2a-js/sdk/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FakeStore } from "./fakeStore";
 import { agentMessage, artifact, rawPart, taskStatus, textPart } from "@/domain/a2a/protocol";
 import { keys } from "@/infrastructure/db/keys";
@@ -31,8 +31,12 @@ function makeTask(id: string, state: TaskState): Task {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-09-21T00:00:00.000Z"));
   store.rows.clear();
 });
+
+afterEach(() => vi.useRealTimers());
 
 describe("createA2aTaskStore", () => {
   it("round-trips a saved task", async () => {
@@ -114,6 +118,42 @@ describe("createA2aTaskStore", () => {
     expect(part?.content?.$case === "raw" ? Buffer.from(part.content.value).toString("base64") : "").toBe(
       "AAAA",
     );
+  });
+
+  it.each([0, 255])("measures raw parts after JSON encoding and round-trips every task message (byte=%s)", async (fill) => {
+    const tasks = createA2aTaskStore("proj-a");
+    const bytes = Buffer.alloc(100_000, fill);
+    const image = { ...rawPart("", "image/png"), content: { $case: "raw" as const, value: bytes } };
+    const task = makeTask("t1", TaskState.TASK_STATE_WORKING);
+    task.artifacts = [artifact("image", [image])];
+    task.status = { ...task.status!, message: { ...agentMessage("status", "ctx-1", "t1", ""), parts: [image] } };
+    task.history = [{ ...agentMessage("history", "ctx-1", "t1", ""), parts: [rawPart("AQID", "image/png")] }];
+    await tasks.save(task, ALICE);
+    const loaded = await tasks.load("t1", ALICE);
+    for (const part of [loaded?.artifacts[0]?.parts[0], loaded?.status?.message?.parts[0]]) {
+      expect(part?.content?.$case).toBe("raw");
+      if (part?.content?.$case !== "raw") throw new Error("Missing raw image");
+      expect(part.content.value).toBeInstanceOf(Uint8Array);
+      expect(Buffer.from(part.content.value)).toEqual(Buffer.from(bytes));
+    }
+    expect(loaded?.history[0]?.parts[0]?.content).toEqual({ $case: "raw", value: Buffer.from([1, 2, 3]) });
+    expect(Buffer.byteLength(JSON.stringify([...store.rows.values()][0]))).toBeLessThan(350_000);
+    await tasks.save(loaded!, ALICE);
+    expect(await tasks.load("t1", ALICE)).toEqual(loaded);
+    expect(bytes.byteLength).toBe(100_000);
+  });
+
+  it("does not restore oversized status bytes when dropping bulky artifacts", async () => {
+    const tasks = createA2aTaskStore("proj-a");
+    const task = makeTask("t1", TaskState.TASK_STATE_COMPLETED);
+    task.status = { ...task.status!, message: { ...agentMessage("status", "ctx-1", "t1", ""),
+      parts: [rawPart("A".repeat(400_000), "image/png")] } };
+    task.artifacts = [artifact("large", [textPart("x".repeat(400_000))])];
+    await tasks.save(task, ALICE);
+    const loaded = await tasks.load("t1", ALICE);
+    expect(loaded?.artifacts).toEqual([]);
+    expect(loaded?.status?.message?.parts[0]?.content).toEqual({ $case: "raw", value: Buffer.alloc(0) });
+    expect(Buffer.byteLength(JSON.stringify([...store.rows.values()][0]))).toBeLessThan(350_000);
   });
 
   it("drops oversized raw bytes before dropping task state", async () => {
