@@ -102,6 +102,7 @@ export function modelType(model: Pick<ModelConfig, "capabilities">): ModelType {
 
 /** Token counts as a reader compares them: 1,048,576 → `1.05M`, 131,072 → `131K`. */
 function roundTokens(tokens: number): string {
+  if (tokens === 0) return "—";
   // 999,500 up rounds to the M form, so nothing ever reads "1000K".
   if (tokens >= 999_500) {
     const millions = Math.round(tokens / 10_000) / 100;

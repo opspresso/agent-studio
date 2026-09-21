@@ -66,8 +66,8 @@ describe("contextWindowLabel", () => {
         continue;
       }
       const allowsZero = model.capabilities.imageGeneration || model.capabilities.transcription;
-      const count = allowsZero && model.contextWindow === 0 ? "0" : "\\d[\\d.]*[KM]";
-      const max = allowsZero && model.maxTokens === 0 ? "0" : "\\d[\\d.]*[KM]";
+      const count = allowsZero && model.contextWindow === 0 ? "—" : "\\d[\\d.]*[KM]";
+      const max = allowsZero && model.maxTokens === 0 ? "—" : "\\d[\\d.]*[KM]";
       expect(contextWindowLabel(model), model.id).toMatch(new RegExp(`^Context ${count} · max out ${max}$`));
     }
   });

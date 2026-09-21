@@ -1595,9 +1595,9 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 
 | API | 계약 |
 |---|---|
-| `GET /api/models/discover?provider=<name>` | 등록한 연결의 목록을 조회한다. `{ models: [{ wireId, displayName, type?, contextWindow?, maxTokens?, capabilities?, pricing? }] }`. 조회는 모델을 활성화하지 않는다 |
+| `GET /api/models/discover?provider=<name>` | 등록한 연결의 목록을 조회한다. `{ models: [{ wireId, displayName, maker?, type?, inputModalities?, outputModalities?, contextWindow?, maxTokens?, capabilities?, pricing? }] }`. 조회는 모델을 활성화하지 않는다 |
 | `GET /api/models/registry` | `{ models: RegisteredModel[] }`. 관리자가 선택하거나 직접 등록한 모델만 반환한다 |
-| `POST /api/models/registry` | `{ id, provider, wireId, displayName, type, contextWindow, maxTokens, capabilities, pricing? }`를 저장하고 갱신된 목록을 반환한다. 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decisions`다 |
+| `POST /api/models/registry` | `{ id, provider, wireId, displayName, maker?, type, inputModalities?, outputModalities?, contextWindow, maxTokens, capabilities, pricing? }`를 저장하고 갱신된 목록을 반환한다. 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decisions`다 |
 | `DELETE /api/models/registry?id=<id>` | 미사용 모델을 삭제한다. 성공 204, 현재 기본·검색·Workspace에서 사용하면 409 |
 | `GET /api/models/status?id=<id>` | 프로바이더 목록에 등록 모델이 있는지 `{ available }`로 반환한다. 통신 실패는 502이며 실제 추론 성공을 뜻하지 않는다 |
 | `GET /api/models/default` | `{ model: string | null }` |
@@ -1610,6 +1610,13 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 | `POST /api/models/test` | `{ model }`로 Text·Decisions·Image·Rerank의 실제 호출을 수행하고 `{ ok, latencyMs, error? }`를 반환한다. 호출 비용이 발생할 수 있다 |
 
 등록 모델은 최대 500개다. 가격 미제공은 `pricingKnown: false`로 표시하며 명시적 0과 구별한다.
+조회 시 Provider의 명시적 유형·출력 modality를 이름 추정보다 우선한다. `decisions`·
+`transcription`·`rerank`도 출력 modality에서 판정한다. 입력 modality와 지원 parameter는
+Tools·Vision·Reasoning·구조화 출력의 독립적인 capability로 보존한다.
+Provider 응답에 없는 정보는 제공자·전송 ID가 일치하는 내장 공개 모델 facts로 보완한다.
+공개 facts는 조회 결과에 모델을 추가하지 않으며 실행 레지스트리도 자동 변경하지 않는다.
+UI의 추가 버튼은 조회한 facts를 즉시 저장한다. 유형 정보 자체가 없으면 행 안에서 유형을
+선택해야 하며, 지원하지 않는 출력 프로토콜을 Text로 변환해 등록하지 않는다.
 조회 실패나 프로바이더의 목록 변경은 저장된 선택을 자동 삭제하지 않는다. 모델 선택의 DB
 변경은 설정 캐시 TTL 이내에 다른 인스턴스에도 적용된다. 모델의 URL·키는 응답에 포함하지 않는다.
 

@@ -5,7 +5,7 @@ import { Checkbox, NumberInput, Select, SimpleGrid, Text, TextInput } from "@man
 import { FormModal } from "@/app/_components/FormModal";
 import { useT } from "@/app/_i18n/provider";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
-import { REGISTRY_MODEL_TYPES, registeredModelId, type DiscoveredModel, type RegisteredModel, type RegistryModelType } from "@/domain/llm/providerModels";
+import { REGISTRY_MODEL_TYPES, registeredModelId, registrationFromDiscovery, type DiscoveredModel, type RegisteredModel, type RegistryModelType } from "@/domain/llm/providerModels";
 import type { ModelRegistryResponse } from "@/app/api/models/registry/route";
 
 export function ModelRegistrationForm({ provider, candidate, onSaved, onCancel }: {
@@ -19,7 +19,7 @@ export function ModelRegistrationForm({ provider, candidate, onSaved, onCancel }
     wireId: candidate?.wireId ?? "", displayName: candidate?.displayName ?? "",
     type: candidate?.type ?? "text" as RegistryModelType,
     contextWindow: candidate?.contextWindow ?? 0, maxTokens: candidate?.maxTokens ?? 0,
-    capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false, reasoningWithTools: true, ...candidate?.capabilities },
+    capabilities: registrationFromDiscovery(provider, { wireId: "", displayName: "", ...candidate, type: candidate?.type ?? "text" }).capabilities,
     pricing: candidate?.pricing ?? { inputPer1M: 0, outputPer1M: 0 },
   });
   const [priced, setPriced] = useState(candidate?.pricing !== undefined);
@@ -34,6 +34,9 @@ export function ModelRegistrationForm({ provider, candidate, onSaved, onCancel }
         ...fields, provider, id: registeredModelId(provider, form.wireId.trim()),
         wireId: form.wireId.trim(), displayName: form.displayName.trim(),
         maxTokens: form.type === "embedding" || form.type === "rerank" ? 0 : form.maxTokens,
+        ...(candidate?.maker ? { maker: candidate.maker } : {}),
+        ...(candidate?.inputModalities ? { inputModalities: candidate.inputModalities } : {}),
+        ...(candidate?.outputModalities ? { outputModalities: candidate.outputModalities } : {}),
         ...(priced ? { pricing } : {}),
       };
       const saved = await readJson<ModelRegistryResponse>(await fetch("/api/models/registry", { method: "POST", headers: jsonHeaders, body: JSON.stringify(model) }));

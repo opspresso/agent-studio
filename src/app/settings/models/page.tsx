@@ -1,18 +1,17 @@
 "use client";
 
-import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
-import { DataTable } from "@/app/_components/DataTable";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Badge, Button, Card, Group, Select, Stack, Text, TextInput } from "@mantine/core";
 import { LoadingText, EmptyState } from "@/app/_components/PageState";
 import { SectionHeading } from "@/app/_components/SectionHeading";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Badge, Button, Group, Pagination, Select, Stack, Table, Text } from "@mantine/core";
+import { useConfirm } from "@/app/_components/useConfirm";
 import { useT } from "@/app/_i18n/provider";
-import { readJson } from "@/app/_lib/httpClient";
-import { REGISTRY_MODEL_TYPES, type DiscoveredModel, type RegisteredModel } from "@/domain/llm/providerModels";
+import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
+import { ModelCollection } from "@/app/models/ModelCollection";
+import { REGISTRY_MODEL_TYPES, registrationFromDiscovery, type DiscoveredModel, type RegisteredModel, type RegistryModelType } from "@/domain/llm/providerModels";
 import type { SettingsView } from "@/application/settings/settingsUseCases";
 import type { ModelRegistryResponse } from "@/app/api/models/registry/route";
 import type { ModelDiscoveryResponse } from "@/app/api/models/discover/route";
-import { ModelRegistrationForm } from "@/app/models/ModelRegistrationForm";
 
 export default function ModelSelectionPage() {
   const t = useT();
@@ -20,12 +19,16 @@ export default function ModelSelectionPage() {
   const [provider, setProvider] = useState<string | null>(null);
   const [models, setModels] = useState<DiscoveredModel[]>();
   const [registered, setRegistered] = useState<RegisteredModel[]>([]);
-  const [editing, setEditing] = useState<{ candidate?: DiscoveredModel }>();
-  const [query, setQuery] = useState("");
-  const [type, setType] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
+  const [chosenTypes, setChosenTypes] = useState<Record<string, RegistryModelType>>({});
+  const [manual, setManual] = useState(false);
+  const [manualId, setManualId] = useState("");
+  const [manualType, setManualType] = useState<RegistryModelType>("text");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState<string>();
+  const [removing, setRemoving] = useState<string>();
+  const pending = !!adding || !!removing;
+  const { confirm, confirmModal } = useConfirm();
   const generation = useRef(0);
   useEffect(() => {
     let current = true;
@@ -39,43 +42,81 @@ export default function ModelSelectionPage() {
     return () => { current = false; generation.current++; };
   }, []);
   async function discover() {
-    if (!provider || busy) return;
+    if (!provider || busy || pending) return;
     const request = ++generation.current;
     setBusy(true); setError(undefined); setModels(undefined);
     try {
       const result = await readJson<ModelDiscoveryResponse>(await fetch(`/api/models/discover?provider=${encodeURIComponent(provider)}`));
-      if (request === generation.current) { setModels(result.models); setPage(1); }
+      if (request === generation.current) setModels(result.models);
     } catch (error) { if (request === generation.current) setError(error instanceof Error ? error.message : "Could not discover models"); }
     finally { if (request === generation.current) setBusy(false); }
   }
-  const filtered = useMemo(() => (models ?? []).filter(model => (!type || model.type === type) && matchesFilter(query, model.wireId, model.displayName)), [models, query, type]);
-  const selected = new Set(registered.filter(model => model.provider === provider).map(model => model.wireId));
-  const totalPages = Math.max(1, Math.ceil(filtered.length / 30));
+  async function register(model: DiscoveredModel) {
+    if (!provider || pending) return;
+    setAdding(model.wireId); setError(undefined);
+    try {
+      const result = await readJson<ModelRegistryResponse>(await fetch("/api/models/registry", {
+        method: "POST", headers: jsonHeaders, body: JSON.stringify(registrationFromDiscovery(provider, model)),
+      }));
+      setRegistered(result.models); setManual(false); setManualId("");
+    } catch (error) { setError(error instanceof Error ? error.message : "Could not register model"); }
+    finally { setAdding(undefined); }
+  }
+  async function remove(model: RegisteredModel) {
+    if (pending || !await confirm({ title: t("modelAdmin.deleteModel"), message: t("modelAdmin.deleteModelHint"), confirmLabel: t("modelAdmin.delete") })) return;
+    setRemoving(model.wireId); setError(undefined);
+    try {
+      await assertOk(await fetch(`/api/models/registry?id=${encodeURIComponent(model.id)}`, { method: "DELETE" }));
+      setRegistered(previous => previous.filter(item => item.id !== model.id));
+    } catch (error) { setError(error instanceof Error ? error.message : "Could not delete model"); }
+    finally { setRemoving(undefined); }
+  }
+  const selectedModels = registered.filter(model => model.provider === provider);
+  const selectedById = new Map(selectedModels.map(model => [model.wireId, model]));
+  const selected = new Set(selectedById.keys());
+  const catalogRows: DiscoveredModel[] = [
+    ...(models ?? []).map(model => selectedById.get(model.wireId) ?? model),
+    ...selectedModels.filter(model => !models?.some(item => item.wireId === model.wireId)),
+  ];
+  const types = REGISTRY_MODEL_TYPES.map(value => ({ value, label: t(`models.type.${value}`) }));
   return <Stack gap="lg">
+    {confirmModal}
     <SectionHeading title={t("modelAdmin.selection")} description={t("modelAdmin.selectionHint")} />
     {error && <Alert color="red">{error}</Alert>}
     {!providers && !error && <LoadingText />}
     {providers && !providers.length && <EmptyState>{t("modelAdmin.emptyProviders")}</EmptyState>}
     {!!providers?.length && <>
-      <Group align="flex-end"><Select label={t("modelAdmin.providers")} value={provider} allowDeselect={false} data={providers.map(item => ({ value: item.name, label: `${item.name} (${item.kind})` }))}
-        onChange={value => { generation.current++; setProvider(value); setModels(undefined); setBusy(false); setError(undefined); setPage(1); }} />
-        <Button onClick={() => void discover()} loading={busy}>{t("modelAdmin.discover")}</Button>
-        <Button variant="default" disabled={!provider} onClick={() => setEditing({})}>{t("modelAdmin.manual")}</Button></Group>
-      {models && <>
-        <Group align="flex-start"><CatalogSearch placeholder={t("modelAdmin.search")} value={query} onChange={value => { setQuery(value); setPage(1); }} resultCount={filtered.length} totalCount={models?.length ?? 0} />
-          <Select aria-label={t("models.type")} placeholder={t("models.type")} value={type} clearable data={REGISTRY_MODEL_TYPES.map(value => ({ value, label: t(`models.type.${value}`) }))} onChange={value => { setType(value); setPage(1); }} /></Group>
-        {!models.length && <EmptyState>{t("modelAdmin.discoveryEmpty")}</EmptyState>}
-        {models.length > 0 && !filtered.length && <EmptyState>{t("settings.noResults")}</EmptyState>}
-        {!!filtered.length && <DataTable minWidth={560}><Table.Thead><Table.Tr><Table.Th>{t("modelAdmin.name")}</Table.Th><Table.Th>{t("models.type")}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
-          <Table.Tbody>{filtered.slice((Math.min(page, totalPages) - 1) * 30, Math.min(page, totalPages) * 30).map(model => <Table.Tr key={model.wireId}>
-            <Table.Td><Text fw={500}>{model.displayName}</Text><Text size="xs" c="dimmed">{model.wireId}</Text></Table.Td>
-            <Table.Td>{model.type ? t(`models.type.${model.type}`) : t("modelAdmin.unknownType")}</Table.Td>
-            <Table.Td>{selected.has(model.wireId) ? <Badge>{t("modelAdmin.enabled")}</Badge> : <Button variant="light" onClick={() => setEditing({ candidate: model })}>{t("modelAdmin.select")}</Button>}</Table.Td>
-          </Table.Tr>)}</Table.Tbody></DataTable>}
-        {totalPages > 1 && <Pagination total={totalPages} value={Math.min(page, totalPages)} onChange={setPage} />}
-      </>}
+      <Group align="flex-end">
+        <Select label={t("modelAdmin.providers")} value={provider} allowDeselect={false} disabled={pending}
+          data={providers.map(item => ({ value: item.name, label: `${item.name} (${item.kind})` }))}
+          onChange={value => { generation.current++; setProvider(value); setModels(undefined); setBusy(false); setError(undefined); setChosenTypes({}); setManual(false); }} />
+        <Button onClick={() => void discover()} loading={busy} disabled={pending}>{t("modelAdmin.discover")}</Button>
+        <Button variant="default" disabled={!provider || pending} onClick={() => setManual(!manual)}>{t("modelAdmin.manual")}</Button>
+      </Group>
+      {manual && <Card><form onSubmit={event => { event.preventDefault(); void register({ wireId: manualId.trim(), displayName: manualId.trim(), type: manualType }); }}>
+        <Stack gap="md"><TextInput label={t("modelAdmin.wireId")} value={manualId} required onChange={event => setManualId(event.currentTarget.value)} disabled={!!adding} />
+          <Select label={t("models.type")} value={manualType} data={types} allowDeselect={false} onChange={value => { if (value) setManualType(value as RegistryModelType); }} disabled={!!adding} />
+          <Text size="sm" c="dimmed">{t("modelAdmin.manualHint")}</Text>
+          <Group><Button type="submit" loading={!!adding} disabled={!manualId.trim()}>{t("modelAdmin.add")}</Button>
+            <Button variant="default" disabled={!!adding} onClick={() => setManual(false)}>{t("common.cancel")}</Button></Group>
+        </Stack>
+      </form></Card>}
+      <>
+        <Text size="xs" c="dimmed">{t("modelAdmin.factsHint")}</Text>
+        <ModelCollection key={provider} models={catalogRows} provider={provider ?? undefined} emptyText={t(models ? "modelAdmin.discoveryEmpty" : "modelAdmin.discoverHint")}
+          isSelected={model => selected.has(model.wireId)}
+          renderActions={model => selected.has(model.wireId) ? <>
+            <Badge color="teal">{t("modelAdmin.enabled")}</Badge>
+            <Button color="red" variant="subtle" disabled={pending} loading={removing === model.wireId}
+              onClick={() => { const item = selectedModels.find(item => item.wireId === model.wireId); if (item) void remove(item); }}>{t("modelAdmin.delete")}</Button>
+          </> : <>
+            {!model.type && !model.outputModalities?.length && <Select aria-label={`${model.displayName} ${t("models.type")}`} placeholder={t("modelAdmin.chooseType")}
+              value={chosenTypes[model.wireId] ?? null} data={types} disabled={pending} onChange={value => { if (value) setChosenTypes(previous => ({ ...previous, [model.wireId]: value as RegistryModelType })); }} />}
+            {!model.type && !!model.outputModalities?.length ? <Text size="xs" c="dimmed">{t("modelAdmin.unsupportedType")}</Text> : <Button variant="light"
+              disabled={pending || !(model.type ?? chosenTypes[model.wireId])} loading={adding === model.wireId}
+              onClick={() => void register({ ...model, type: model.type ?? chosenTypes[model.wireId] })}>{t("modelAdmin.add")}</Button>}
+          </>} />
+      </>
     </>}
-      {editing && provider && <ModelRegistrationForm key={`${provider}/${editing.candidate?.wireId ?? "new"}`} provider={provider} candidate={editing.candidate}
-        onSaved={models => { setRegistered(models); setEditing(undefined); }} onCancel={() => setEditing(undefined)} />}
   </Stack>;
 }

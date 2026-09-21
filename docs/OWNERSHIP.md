@@ -51,6 +51,9 @@
 | Agent의 입력 Guardrail과 Handoff 대상 검사 | `src/application/runtime/policy.ts`; 도구 정책은 SDK 도구 조립에 적용한다 | 코드 |
 | 스키마. `items`와 파생 컬럼·부분 인덱스, Better Auth 테이블, `catalog_vectors`, `runtime_sessions`, 적용된 버전 | `src/infrastructure/db/migrations.ts`. 추가만 하는 목록, advisory lock 아래에서 부팅마다 | 코드 |
 | 선택된 모델의 facts와 실행 레지스트리 | 저장 형태·검증은 `src/domain/llm/providerModels.ts`, runtime facts·가격 계산은 `src/domain/llm/models.ts`, 선택·삭제는 `src/application/llm/modelRegistry.ts`가 소유한다 | 코드 |
+| Provider의 모델 유형·modality·기능 해석 | `src/infrastructure/llm/providerModelDiscovery.ts`; 공식 Provider 메타데이터를 이름 추정보다 우선한다 | 코드 |
+| 공개 모델 facts의 로컬 보완·정확한 ID 매칭 | `src/infrastructure/llm/publishedModelFacts.ts`; `scripts/sync-models.ts`가 `opspresso/agent-models` 스냅샷을 갱신한다 | 코드 |
+| 모델 카드·다중 기능 배지·검색·정렬 | `src/app/models/ModelCollection.tsx`, `modelTable.ts`; 단가 표시는 `src/app/_components/modelOptions.tsx` | 코드 |
 | 어떤 모델이 새 선택에 보이는가 | `src/domain/llm/models.ts`의 `offeredModels`. 관리자가 등록한 모델과 연결의 교집합이며 기본 모델을 우선한다 | 코드 |
 | 모델 즐겨찾기의 개인 범위와 상한 | `src/domain/llm/modelPreferences.ts` 의 `ModelPreferencesRepository` / `MAX_FAVORITE_MODELS`. user id 별 한 행이며 picker 그룹화는 `src/app/_components/modelOptions.tsx` 의 `modelSelectData` 가 소유한다 | 코드 |
 | 누가 project 에 접근할 수 있는가 (공개 범위·초대 목록의 판정) | `src/domain/project/access.ts` 의 `mayAccessProject`. admin 오버라이드를 합친 형태는 `projectUseCases.ts` 의 `assertProjectAccessible`/`userMayAccessProject` 뿐이고, 표면들은 그 둘을 지난다 ([SECURITY.md](SECURITY.md#인가-모델)) | 코드 |

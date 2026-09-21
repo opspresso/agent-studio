@@ -22,6 +22,9 @@ export const MAX_REGISTERED_MODELS = 500;
 export interface DiscoveredModel {
   wireId: string;
   displayName: string;
+  maker?: string;
+  inputModalities?: string[];
+  outputModalities?: string[];
   type?: RegistryModelType;
   contextWindow?: number;
   maxTokens?: number;
@@ -35,6 +38,9 @@ export interface RegisteredModel {
   provider: string;
   wireId: string;
   displayName: string;
+  maker?: string;
+  inputModalities?: string[];
+  outputModalities?: string[];
   type: RegistryModelType;
   contextWindow: number;
   maxTokens: number;
@@ -64,11 +70,27 @@ export function registeredModelId(provider: string, wireId: string): string {
   return `${provider}/${wireId}`;
 }
 
+/** Selection carries facts intact; an absent classification requires an explicit choice. */
+export function registrationFromDiscovery(provider: string, model: DiscoveredModel): RegisteredModel {
+  if (!model.type) throw new Error("Choose a model type before registration");
+  const type = model.type;
+  return {
+    id: registeredModelId(provider, model.wireId), provider, wireId: model.wireId,
+    displayName: model.displayName, ...(model.maker ? { maker: model.maker } : {}), type,
+    ...(model.inputModalities ? { inputModalities: model.inputModalities } : {}),
+    ...(model.outputModalities ? { outputModalities: model.outputModalities } : {}),
+    contextWindow: model.contextWindow ?? 0,
+    maxTokens: type === "embedding" || type === "rerank" ? 0 : model.maxTokens ?? 0,
+    capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false, reasoningWithTools: true, ...model.capabilities },
+    ...(model.pricing ? { pricing: model.pricing } : {}),
+  };
+}
+
 /** Project the administrator's selected model into the facts runtime consumers share. */
 export function registeredModelConfig(model: RegisteredModel, kind: SupportedProvider): ModelConfig {
   return {
     id: model.id, provider: model.provider, providerKind: kind, family: model.wireId,
-    maker: kind, displayName: model.displayName, wireId: model.wireId,
+    maker: model.maker ?? kind, displayName: model.displayName, wireId: model.wireId,
     contextWindow: model.contextWindow, maxTokens: model.maxTokens,
     pricing: model.pricing ?? { inputPer1M: 0, outputPer1M: 0 }, pricingKnown: model.pricing !== undefined,
     capabilities: {

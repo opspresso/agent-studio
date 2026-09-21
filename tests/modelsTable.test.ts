@@ -7,6 +7,8 @@ import {
   normalizeModelTableState,
   selectableRetrievalModels,
   visibleModelRows,
+  sortModelRows,
+  modelOutputTypes,
 } from "@/app/models/modelTable";
 
 const model = (
@@ -43,6 +45,22 @@ const models = [
 ];
 
 describe("models table", () => {
+  it("retains overlapping output types for both badges and filtering", () => {
+    expect(modelOutputTypes({ type: "image", outputModalities: ["text", "image"] })).toEqual(["image", "text"]);
+    expect(modelOutputTypes({ type: "embedding", outputModalities: ["embeddings"] })).toEqual(["embedding"]);
+    expect(modelOutputTypes({ outputModalities: ["speech"] })).toEqual(["speech"]);
+  });
+  it("sorts zero prices as known values and keeps missing prices last in either direction", () => {
+    const rows = [
+      { displayName: "Unknown" },
+      { displayName: "Paid", type: "text" as const, pricing: { inputPer1M: 1, outputPer1M: 2 } },
+      { displayName: "Free", type: "text" as const, pricing: { inputPer1M: 0, outputPer1M: 0 } },
+      { displayName: "Jev", type: "decisions" as const, pricing: { inputPer1M: 0.042, outputPer1M: 0 } },
+    ];
+    expect(sortModelRows(rows, "price", "asc").map(model => model.displayName)).toEqual(["Free", "Jev", "Paid", "Unknown"]);
+    expect(sortModelRows(rows, "price", "desc").map(model => model.displayName)).toEqual(["Paid", "Jev", "Free", "Unknown"]);
+    expect(rows[0]?.displayName).toBe("Unknown");
+  });
   it("offers visible retrieval models independently of LLM provider routes", () => {
     const rows = models.map((item) => ({ ...item, selectionHidden: item.id === "openrouter/e" }));
 

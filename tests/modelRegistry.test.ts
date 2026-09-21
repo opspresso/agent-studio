@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createModelRegistryUseCases } from "@/application/llm/modelRegistry";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
-import { registeredModelProblem, type RegisteredModel } from "@/domain/llm/providerModels";
+import { registeredModelConfig, registeredModelProblem, registrationFromDiscovery, type RegisteredModel } from "@/domain/llm/providerModels";
+import { modelType } from "@/domain/llm/models";
 import type { FakeStore } from "./fakeStore";
 
 const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
@@ -84,5 +85,27 @@ describe("deployment model registry", () => {
     expect(registeredModelProblem({ ...model, id: "openai/other" })).toContain("Invalid registered model ID");
     expect(registeredModelProblem({ ...model, type: "embedding", maxTokens: 100 })).toContain("Retrieval models");
     expect(registeredModelProblem({ ...model, type: "decisions" })).toBeUndefined();
+  });
+
+  it("carries decisions and all capabilities through selection, storage and runtime projection", async () => {
+    const selected = registrationFromDiscovery("openai", {
+      wireId: "~typesafe/jev-latest", displayName: "TypeSafe: Jev Latest", type: "decisions",
+      inputModalities: ["text"], outputModalities: ["decisions"], contextWindow: 32000, maxTokens: 28800,
+      capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false },
+      pricing: { inputPer1M: 0.042, outputPer1M: 0 },
+    });
+    const { useCases } = setup();
+    await useCases.save(selected, "admin@example.test");
+    const [stored] = await useCases.list();
+    expect(stored).toEqual(selected);
+    const runtime = registeredModelConfig(stored!, "openrouter");
+    expect(modelType(runtime)).toBe("decisions");
+    expect(runtime.wireId).toBe("~typesafe/jev-latest");
+    expect(runtime.pricing.inputPer1M).toBe(0.042);
+    expect(runtime.capabilities.tools).toBe(false);
+  });
+
+  it("requires classification instead of silently enrolling an unknown model as text", () => {
+    expect(() => registrationFromDiscovery("openai", { wireId: "unknown", displayName: "Unknown" })).toThrow("Choose a model type");
   });
 });

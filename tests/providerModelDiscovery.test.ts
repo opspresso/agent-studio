@@ -33,6 +33,7 @@ describe("provider model discovery", () => {
     vi.stubGlobal("fetch", fetch);
     expect(await createProviderModelDiscovery().list(provider("openrouter"))).toEqual([{
       wireId: "vendor/example", displayName: "Example", type: "text", contextWindow: 10000, maxTokens: 2000,
+      inputModalities: ["text", "image"], outputModalities: ["text"],
       capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
       pricing: { inputPer1M: 1, outputPer1M: 2, cachedInputPer1M: expect.closeTo(0.1) },
     }]);
@@ -48,6 +49,85 @@ describe("provider model discovery", () => {
     expect(result.map((model) => [model.wireId, model.type])).toEqual([["a", "text"], ["b", "embedding"]]);
     expect(fetch.mock.calls[1]?.[0]).toBe("https://provider.test/v1beta/models?pageSize=1000&pageToken=page+two");
     expect(fetch.mock.calls[0]?.[1].headers).toEqual({ accept: "application/json", "x-goog-api-key": "test-key" });
+  });
+
+  it("classifies Jev Latest from decisions output and keeps its wire alias, price and limits", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ data: [{
+      id: "~typesafe/jev-latest", name: "TypeSafe: Jev Latest",
+      architecture: { modality: "text->decisions", input_modalities: ["text"], output_modalities: ["decisions"] },
+      context_length: 32000, top_provider: { max_completion_tokens: 28800 },
+      supported_parameters: [], pricing: { prompt: "0.000000042", completion: "0" },
+    }] })));
+    const [model] = await createProviderModelDiscovery().list(provider("openrouter"));
+    expect(model).toEqual({
+      wireId: "~typesafe/jev-latest", displayName: "TypeSafe: Jev Latest", type: "decisions",
+      inputModalities: ["text"], outputModalities: ["decisions"], contextWindow: 32000, maxTokens: 28800,
+      pricing: { inputPer1M: expect.closeTo(0.042), outputPer1M: 0 },
+      capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false },
+    });
+  });
+
+  it("uses declared modalities before model-name guesses for every supported output", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ data: [
+      ...["decisions", "transcription", "rerank", "embeddings", "image", "text"].map(output => ({ id: `gpt-whisper-${output}`, architecture: { output_modalities: [output] } })),
+      { id: "gpt-speech", architecture: { output_modalities: ["speech"] } },
+      { id: "gpt-video", architecture: { output_modalities: ["video"] } },
+      { id: "opaque-model", architecture: { modality: "text->decisions" } },
+    ] })));
+    const models = await createProviderModelDiscovery().list(provider("openrouter"));
+    expect(models.map(model => model.type)).toEqual(["decisions", "transcription", "rerank", "embedding", "image", "text", undefined, undefined, "decisions"]);
+    expect(models[6]?.outputModalities).toEqual(["speech"]);
+  });
+
+  it("retains simultaneous text/image outputs and independent tool, vision and reasoning capabilities", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ data: [{
+      id: "opaque-model", architecture: { input_modalities: ["text", "image"], output_modalities: ["text", "image"] },
+      supported_parameters: ["tools", "structured_outputs", "reasoning"],
+    }] })));
+    const [model] = await createProviderModelDiscovery().list(provider("openrouter"));
+    expect(model).toMatchObject({ type: "image", outputModalities: ["text", "image"], capabilities: { tools: true, imageInput: true, reasoning: true, structuredOutput: true } });
+  });
+
+  it("fills missing native-provider facts from exact published wire IDs without enrolling extra models", async () => {
+    const fetch = vi.fn().mockResolvedValue(Response.json({ data: [{ id: "gpt-5.6-sol" }] }));
+    vi.stubGlobal("fetch", fetch);
+    const result = await createProviderModelDiscovery().list({ ...provider("company"), kind: "openai" });
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ wireId: "gpt-5.6-sol", type: "text", capabilities: { tools: true, imageInput: true, reasoning: true } });
+    expect(result[0]?.pricing?.inputPer1M).toBeGreaterThan(0);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("never lets published facts override explicit provider capabilities or prices", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ data: [{
+      id: "openai/gpt-5.6-sol", name: "Internal allocation", context_length: 2000,
+      supported_parameters: [], architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+      pricing: { prompt: "0.00001", completion: "0.00002" },
+    }] })));
+    const [model] = await createProviderModelDiscovery().list(provider("openrouter"));
+    expect(model).toMatchObject({ displayName: "Internal allocation", contextWindow: 2000, maxTokens: 2000, pricing: { inputPer1M: 10, outputPer1M: 20 }, capabilities: { tools: false, imageInput: false, reasoning: false, structuredOutput: false } });
+  });
+
+  it("drops an inherited cached rate that exceeds the provider's current input price", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ data: [{
+      id: "openai/gpt-5.6-sol", architecture: { output_modalities: ["text"] },
+      pricing: { prompt: "0", completion: "0" },
+    }] })));
+    const [model] = await createProviderModelDiscovery().list(provider("openrouter"));
+    expect(model?.pricing?.inputPer1M).toBe(0);
+    expect(model?.pricing?.cachedInputPer1M).toBeUndefined();
+  });
+
+  it("preserves image output token rates and does not price unsupported outputs as free", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ data: [
+      { id: "vendor/picture", architecture: { output_modalities: ["image"] }, pricing: { prompt: "0", completion: "0", image_output: "0.00003" } },
+      { id: "vendor/movie", architecture: { output_modalities: ["video"] }, pricing: { prompt: "0", completion: "0" } },
+      { id: "vendor/ranker", architecture: { output_modalities: ["rerank"] }, pricing: { prompt: "0", completion: "0" } },
+    ] })));
+    const models = await createProviderModelDiscovery().list(provider("openrouter"));
+    expect(models[0]?.pricing).toEqual({ inputPer1M: 0, outputPer1M: 0, imageOutputPer1M: 30 });
+    expect(models[1]?.pricing).toBeUndefined();
+    expect(models[2]?.pricing).toBeUndefined();
   });
 
   it("uses native Anthropic pagination and a provider kind distinct from its registration name", async () => {

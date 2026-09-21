@@ -9,10 +9,13 @@ const rate = z.number().finite().nonnegative();
 const schema = z.object({
   id: z.string().min(1).max(200), provider: z.string().min(1).max(64),
   wireId: z.string().min(1).max(200), displayName: z.string().min(1).max(200),
+  maker: z.string().min(1).max(100).optional(),
+  inputModalities: z.array(z.string().min(1).max(40)).max(16).optional(),
+  outputModalities: z.array(z.string().min(1).max(40)).max(16).optional(),
   type: z.enum(REGISTRY_MODEL_TYPES),
   contextWindow: z.number().int().nonnegative(), maxTokens: z.number().int().nonnegative(),
   capabilities: z.object({ tools: z.boolean(), structuredOutput: z.boolean(), imageInput: z.boolean(), reasoning: z.boolean(), reasoningWithTools: z.boolean().optional() }),
-  pricing: z.object({ inputPer1M: rate, outputPer1M: rate, cachedInputPer1M: rate.optional(), imageInputPer1M: rate.optional(), imageOutputPer1M: rate.optional(), perImage: rate.optional(), perInputImage: rate.optional(), perSearch: rate.optional(), perAudioMinute: rate.optional() }).optional(),
+  pricing: z.object({ inputPer1M: rate, outputPer1M: rate, cachedInputPer1M: rate.optional(), imageInputPer1M: rate.optional(), imageOutputPer1M: rate.optional(), perImage: rate.optional(), perInputImage: rate.optional(), perSearch: rate.optional(), perAudioMinute: rate.optional(), discount: rate.optional() }).optional(),
 });
 
 export interface ModelRegistryResponse { models: RegisteredModel[] }

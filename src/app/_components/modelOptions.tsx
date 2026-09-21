@@ -20,6 +20,12 @@ import { formatUsd } from "@/app/_lib/formatUsd";
 
 type ModelOption = ModelConfig & { favorite?: boolean };
 
+/** Unit rates retain significant decimals (for example Jev's $0.042 per 1M). */
+export function formatModelPrice(value: number): string {
+  const precision = value.toFixed(10).replace(/0+$/, "").split(".")[1]?.length ?? 0;
+  return formatUsd(value, Math.max(value !== 0 && Math.abs(value) < 0.01 ? 4 : 2, precision));
+}
+
 /**
  * What a model costs, in the terms it is actually billed in.
  *
@@ -48,12 +54,12 @@ export function modelPriceLabel(
     perAudioMinute,
   } = pricing;
   if (type === "embedding") {
-    return `${formatUsd(inputPer1M)} in per 1M`;
+    return `${formatModelPrice(inputPer1M)} in per 1M`;
   }
-  if (type === "rerank" && perSearch !== undefined) return `${formatUsd(perSearch)} / search`;
-  if (type === "rerank") return `${formatUsd(inputPer1M)} in per 1M`;
+  if (type === "rerank" && perSearch !== undefined) return `${formatModelPrice(perSearch)} / search`;
+  if (type === "rerank") return `${formatModelPrice(inputPer1M)} in per 1M`;
   if (type === "transcription" && perAudioMinute !== undefined) {
-    return `${formatUsd(perAudioMinute)} / audio minute`;
+    return `${formatModelPrice(perAudioMinute)} / audio minute`;
   }
   if (imageOutputPer1M === undefined && perImage === undefined) {
     // Zero on both sides is a self-hosted model's stated price — the registry
@@ -62,13 +68,13 @@ export function modelPriceLabel(
     if (inputPer1M === 0 && outputPer1M === 0) {
       return "Free";
     }
-    return `${formatUsd(inputPer1M)} in · ${formatUsd(outputPer1M)} out per 1M`;
+    return `${formatModelPrice(inputPer1M)} in · ${formatModelPrice(outputPer1M)} out per 1M`;
   }
   const image =
     perImage !== undefined
-      ? `${imageOutputPer1M ? "≈" : ""}${formatUsd(perImage)} / image`
-      : `${formatUsd(imageOutputPer1M ?? 0)} image out per 1M`;
-  return inputPer1M > 0 ? `${image} · ${formatUsd(inputPer1M)} in per 1M` : image;
+      ? `${imageOutputPer1M ? "≈" : ""}${formatModelPrice(perImage)} / image`
+      : `${formatModelPrice(imageOutputPer1M ?? 0)} image out per 1M`;
+  return inputPer1M > 0 ? `${image} · ${formatModelPrice(inputPer1M)} in per 1M` : image;
 }
 
 /**

@@ -4,8 +4,7 @@
  * misconfiguration fails fast at boot rather than as a 500 on the first request
  * that touches the missing value, and arms graceful-shutdown signal handling.
  *
- * It also loads the published model catalog over the committed snapshot and
- * keeps it refreshed, and repairs managed MCP servers, because a new process
+ * It also loads administrator-selected models and repairs managed MCP servers, because a new process
  * is exactly the event that breaks them: their containers join this app's
  * network namespace, and replacing this app strands them in the old one.
  *

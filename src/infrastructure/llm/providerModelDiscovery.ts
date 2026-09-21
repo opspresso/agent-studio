@@ -6,6 +6,7 @@ import {
 } from "@/domain/llm/providerModels";
 import type { ProviderChannelConfig } from "@/domain/settings/types";
 import { readBodyBytes } from "@/shared/httpBody";
+import { withPublishedModelFacts } from "./publishedModelFacts";
 
 const MAX_PAGES = 20;
 const MAX_MODELS = 5_000;
@@ -18,12 +19,27 @@ const strings = (value: unknown): string[] => Array.isArray(value) ? value.filte
 const count = (value: unknown): number | undefined => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 const label = (value: unknown): string | undefined => typeof value === "string" && value.trim() ? value : undefined;
 
-function typeOf(entry: RecordValue, wireId: string): RegistryModelType | undefined {
+function modalities(entry: RecordValue, axis: "input" | "output"): string[] {
   const architecture = record(entry.architecture);
-  const outputs = strings(architecture.output_modalities ?? entry.output_modalities);
+  const values = architecture[`${axis}_modalities`] ?? entry[`${axis}_modalities`];
+  if (Array.isArray(values)) return strings(values);
+  const modality = label(architecture.modality)?.split("->");
+  return modality?.length === 2 ? modality[axis === "input" ? 0 : 1]!.split("+") : [];
+}
+
+function typeOf(entry: RecordValue, wireId: string): RegistryModelType | undefined {
+  const outputs = modalities(entry, "output");
   const methods = strings(entry.supportedGenerationMethods);
   const explicit = label(entry.type);
   if (explicit && REGISTRY_MODEL_TYPES.some(type => type === explicit)) return explicit as RegistryModelType;
+  // Structured output modalities are authoritative, including opaque and latest-alias IDs.
+  if (outputs.includes("decisions")) return "decisions";
+  if (outputs.includes("embeddings") || outputs.includes("embedding")) return "embedding";
+  if (outputs.includes("rerank")) return "rerank";
+  if (outputs.includes("transcription")) return "transcription";
+  if (outputs.includes("image")) return "image";
+  if (outputs.includes("text")) return "text";
+  if (outputs.length) return undefined;
   if (outputs.includes("embeddings") || methods.includes("embedContent") || /^(embedding|embeddings)$/.test(explicit ?? "") || /embed/i.test(wireId)) return "embedding";
   if (explicit === "rerank" || /rerank/i.test(wireId)) return "rerank";
   if (explicit === "transcription" || /whisper|transcrib/i.test(wireId)) return "transcription";
@@ -35,7 +51,8 @@ function typeOf(entry: RecordValue, wireId: string): RegistryModelType | undefin
   return undefined;
 }
 
-function openRouterPricing(entry: RecordValue): ModelPricing | undefined {
+function openRouterPricing(entry: RecordValue, type: RegistryModelType | undefined): ModelPricing | undefined {
+  if (!type) return undefined;
   const prices = record(entry.pricing);
   const rate = (value: unknown): number | undefined => {
     if ((typeof value !== "string" && typeof value !== "number") || value === "") return undefined;
@@ -46,7 +63,15 @@ function openRouterPricing(entry: RecordValue): ModelPricing | undefined {
   const output = rate(prices.completion);
   if (input === undefined || output === undefined) return undefined;
   const cached = rate(prices.input_cache_read);
-  return { inputPer1M: input, outputPer1M: output, ...(cached !== undefined && cached <= input ? { cachedInputPer1M: cached } : {}) };
+  const imageOutput = rate(prices.image_output);
+  // Zero text-token placeholders do not establish the price of a non-token
+  // operation. Published metadata may supply its per-request or per-image rate.
+  if (["image", "rerank", "transcription"].includes(type) && input === 0 && output === 0 && imageOutput === undefined) return undefined;
+  return {
+    inputPer1M: input, outputPer1M: output,
+    ...(cached !== undefined && cached <= input ? { cachedInputPer1M: cached } : {}),
+    ...(imageOutput !== undefined ? { imageOutputPer1M: imageOutput } : {}),
+  };
 }
 
 function toModel(value: unknown, kind: string): DiscoveredModel | undefined {
@@ -56,19 +81,24 @@ function toModel(value: unknown, kind: string): DiscoveredModel | undefined {
   const wireId = kind === "google" ? rawId.replace(/^models\//, "") : rawId;
   if (wireId.length > 200 || /[\x00-\x1f\x7f]/.test(wireId)) return undefined;
   const type = typeOf(entry, wireId);
-  const architecture = record(entry.architecture);
-  const parameters = strings(entry.supported_parameters);
+  const parameters = Array.isArray(entry.supported_parameters) ? strings(entry.supported_parameters) : Object.keys(record(entry.supported_parameters));
   const nativeCapabilities = record(entry.capabilities);
   const capabilities: Partial<ModelCapabilities> = {};
-  if (Array.isArray(entry.supported_parameters)) {
+  if (entry.supported_parameters !== undefined) {
     capabilities.tools = parameters.includes("tools");
     capabilities.structuredOutput = parameters.includes("structured_outputs") || parameters.includes("response_format");
     capabilities.reasoning = parameters.includes("reasoning") || parameters.includes("reasoning_effort");
   }
-  const inputs = architecture.input_modalities ?? entry.input_modalities;
-  if (Array.isArray(inputs)) capabilities.imageInput = strings(inputs).includes("image");
+  const inputs = modalities(entry, "input");
+  const outputs = modalities(entry, "output");
+  if (inputs.length) capabilities.imageInput = inputs.includes("image");
+  for (const flag of ["tools", "structuredOutput", "imageInput", "reasoning", "reasoningWithTools"] as const) {
+    const value = nativeCapabilities[flag];
+    const supported = typeof value === "boolean" ? value : record(value).supported;
+    if (typeof supported === "boolean") capabilities[flag] = supported;
+  }
   if (kind === "anthropic") {
-    capabilities.tools = true;
+    capabilities.tools ??= true;
     for (const [source, target] of [["structured_outputs", "structuredOutput"], ["thinking", "reasoning"], ["image_input", "imageInput"]] as const) {
       const supported = record(nativeCapabilities[source]).supported;
       if (typeof supported === "boolean") capabilities[target] = supported;
@@ -76,10 +106,12 @@ function toModel(value: unknown, kind: string): DiscoveredModel | undefined {
   }
   const contextWindow = count(entry.context_length ?? entry.inputTokenLimit ?? entry.max_input_tokens ?? entry.max_model_len);
   const maxTokens = count(entry.outputTokenLimit ?? entry.max_tokens ?? record(entry.top_provider).max_completion_tokens);
-  const pricing = kind === "openrouter" ? openRouterPricing(entry) : undefined;
+  const pricing = kind === "openrouter" ? openRouterPricing(entry, type) : undefined;
   return {
     wireId, displayName: label(entry.display_name) ?? label(entry.displayName) ?? (entry.id ? label(entry.name) : undefined) ?? wireId,
     ...(type ? { type } : {}),
+    ...(inputs.length ? { inputModalities: inputs } : {}),
+    ...(outputs.length ? { outputModalities: outputs } : {}),
     ...(contextWindow !== undefined ? { contextWindow } : {}),
     ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(Object.keys(capabilities).length ? { capabilities } : {}),
@@ -131,7 +163,7 @@ export function createProviderModelDiscovery(fetchFn: typeof fetch = fetch): Pro
         if (entries.length + models.size > MAX_MODELS) throw new Error("Provider model discovery exceeds the model limit");
         for (const entry of entries) {
           const model = toModel(entry, kind);
-          if (model) models.set(model.wireId, model);
+          if (model) models.set(model.wireId, withPublishedModelFacts(kind, model));
         }
         cursor = kind === "google" ? label(body.nextPageToken) : body.has_more === true ? label(body.last_id) : undefined;
         if (!cursor) {

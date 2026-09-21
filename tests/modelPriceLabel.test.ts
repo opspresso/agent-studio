@@ -13,6 +13,9 @@ import { getModelConfig, listModels, modelType } from "@/domain/llm/models";
  * per 1M image tokens and the picker said its output was free.
  */
 describe("modelPriceLabel", () => {
+  it("preserves published fractional-cent unit rates instead of rounding them away", () => {
+    expect(modelPriceLabel({ inputPer1M: 0.042, outputPer1M: 0 }, "decisions")).toBe("$0.042 in · $0.00 out per 1M");
+  });
   it("distinguishes unpublished pricing from an explicitly free model", () => {
     expect(modelPriceLabel(undefined)).toBe("Price not provided");
     expect(modelPriceLabel({ inputPer1M: 0, outputPer1M: 0 })).toBe("Free");
@@ -66,7 +69,7 @@ describe("modelPriceLabel", () => {
   it("marks a per-image figure as approximate when the model bills by token", () => {
     expect(
       modelPriceLabel({ inputPer1M: 2, outputPer1M: 12, imageOutputPer1M: 120, perImage: 0.134 }),
-    ).toBe("≈$0.13 / image · $2.00 in per 1M");
+    ).toBe("≈$0.134 / image · $2.00 in per 1M");
   });
 
   it("states a flat per-image price without qualification", () => {

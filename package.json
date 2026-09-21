@@ -25,6 +25,7 @@
     "worker:audio": "tsx scripts/audio-worker.ts",
     "build:audio": "node scripts/build-audio-worker.mjs",
     "test:watch": "vitest",
+    "sync-models": "tsx scripts/sync-models.ts",
     "test:html-preview": "playwright test --config playwright.preview.config.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:migrate:test": "DATABASE_URL=postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test tsx scripts/db-migrate.ts",
