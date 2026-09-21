@@ -22,6 +22,8 @@ import type {
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import type { AuditEvent } from "@/domain/audit/types";
+import { findRegistryBindings } from "@/application/plugin/bindingIndex";
+import type { Project } from "@/domain/project/types";
 
 const REPO = "opspresso/agent-plugins";
 const NOW = "2026-02-02T00:00:00.000Z";
@@ -1152,8 +1154,8 @@ describe("syncPluginsFromSnapshot", () => {
       {
         ...deps,
         findBindings: async (skillNames) => ({
-          skills: Object.fromEntries(skillNames.map((name) => [name, ["bot/v1", "bot/v2"]])),
-          mcpServers: {},
+          skills: new Map(skillNames.map((name) => [name, ["bot/v1", "bot/v2"]])),
+          mcpServers: new Map(),
         }),
       },
       snapshot([repoPlugin("devops")]),
@@ -1162,6 +1164,42 @@ describe("syncPluginsFromSnapshot", () => {
     expect(section(result, "devops").skills.orphaned).toEqual([
       { name: "kept", boundTo: ["bot/v1", "bot/v2"] },
     ]);
+  });
+
+  it("annotates constructor-named skills and servers with their current projects", async () => {
+    const { deps } = makeDeps({
+      skills: [storedSkill("constructor")],
+      servers: [storedServer("constructor")],
+    });
+    const project: Project = {
+      name: "bot", displayName: "Bot", description: "", projectType: "agent", ownerEmail: ACTOR,
+      createdAt: NOW, updatedAt: NOW,
+      configuration: {
+        projectName: "bot", model: "openai/gpt-4o", systemPrompt: "",
+        skillList: ["constructor"], mcpList: [{ name: "constructor" }], subagentList: [],
+        parameters: { piiFiltering: false },
+      },
+    };
+    const result = await syncPluginsFromSnapshot({
+      ...deps,
+      findBindings: (skills, servers) => findRegistryBindings({ projects: {
+        list: async () => [project],
+      } }, skills, servers),
+    }, snapshot([repoPlugin("devops")]), ACTOR);
+    const report = section(result, "devops");
+    expect(report.skills.orphaned).toEqual([{ name: "constructor", boundTo: ["bot"] }]);
+    expect(report.mcpServers.orphaned).toEqual([{ name: "constructor", boundTo: ["bot"] }]);
+  });
+
+  it("reports no bindings for constructor-named orphans when no lookup is configured", async () => {
+    const { deps } = makeDeps({
+      skills: [storedSkill("constructor")],
+      servers: [storedServer("constructor")],
+    });
+    const result = await syncPluginsFromSnapshot(deps, snapshot([repoPlugin("devops")]), ACTOR);
+    const report = section(result, "devops");
+    expect(report.skills.orphaned).toEqual([{ name: "constructor", boundTo: [] }]);
+    expect(report.mcpServers.orphaned).toEqual([{ name: "constructor", boundTo: [] }]);
   });
 
   it("records an adoption in the audit trail", async () => {
