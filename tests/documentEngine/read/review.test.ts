@@ -9,7 +9,7 @@
  */
 
 import { strict as assert } from "node:assert";
-import { test } from "vitest";
+import { test, vi } from "vitest";
 import { parseInline, parseMarkdown, plainTextOf } from "@/infrastructure/documents/engine/markdown";
 import { documentXmlToBlocks, documentXmlToText } from "@/infrastructure/documents/engine/read/docx";
 import { contentXmlToBlocks } from "@/infrastructure/documents/engine/read/odf";
@@ -237,11 +237,43 @@ test("`\\ucN` and the Windows-1252 high range are read as written", () => {
 });
 
 test("a bracket run does not cost a walk per bracket", () => {
-  // `MAX_MARKDOWN_CHARS` of `[` held the event loop for minutes: each one tried
-  // a link pattern that backtracked across the whole remainder.
-  const started = performance.now();
-  parseMarkdown("[".repeat(64_000));
-  assert.ok(performance.now() - started < 500, "a link needs a `](` to be worth trying");
+  // Count the text offered to native searches instead of timing a loaded CI
+  // worker. Both a missing closer and an invalid target must avoid rescanning
+  // the same label at every opening bracket.
+  for (const suffix of ["", "](broken", "](https://example.com)"]) {
+    const source = "[".repeat(64_000) + suffix;
+    let searched = 0;
+    const indexOf = String.prototype.indexOf;
+    const exec = RegExp.prototype.exec;
+    const stringSearch = vi.spyOn(String.prototype, "indexOf").mockImplementation(function (
+      this: string, needle: string, position?: number,
+    ) {
+      const found = indexOf.call(this, needle, position);
+      searched += Math.max(0, (found < 0 ? this.length : found + needle.length) - (position ?? 0));
+      return found;
+    });
+    const regexSearch = vi.spyOn(RegExp.prototype, "exec").mockImplementation(function (
+      this: RegExp, input: string,
+    ) {
+      const from = this.sticky || this.global ? this.lastIndex : 0;
+      const found = exec.call(this, input);
+      searched += Math.max(0, (found ? found.index + found[0].length : input.length) - from);
+      return found;
+    });
+    let parsed;
+    try {
+      parsed = parseMarkdown(source);
+    } finally {
+      stringSearch.mockRestore();
+      regexSearch.mockRestore();
+    }
+    assert.ok(searched < source.length * 30, `repeated label search: ${searched} characters`);
+    const first = parsed.blocks[0];
+    assert.equal(first?.kind, "paragraph");
+    if (first?.kind === "paragraph") {
+      assert.equal(plainTextOf(first.runs), suffix.endsWith(")") ? "[".repeat(63_999) : source);
+    }
+  }
 });
 
 test("a tracked insertion says it is one", () => {
