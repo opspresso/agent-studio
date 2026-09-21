@@ -28,7 +28,9 @@ S3 호환 저장소가 필요하다. 오디오·Workspace는 각각 별도 worke
 
 ## 로컬에서 시작하기
 
-Node.js 24, 프로젝트가 고정한 pnpm 11, Docker를 준비한다.
+로컬 개발은 **local Kubernetes를 우선**한다. OrbStack 또는 Docker Desktop의 Kubernetes에
+PostgreSQL·MinIO·Neo4j·MCP를 배포하고, Agent Studio는 호스트에서 `pnpm dev`로 실행한다.
+Node.js 24와 프로젝트가 고정한 pnpm 11을 준비한다.
 
 ```bash
 corepack enable
@@ -38,11 +40,18 @@ test -f .env.local || cp .env.example .env.local
 ```
 
 `.env.local`에 `LLM_BASE_URL`, `LLM_API_KEY`, 32바이트 base64 `AES_ENCRYPTION_KEY`를 설정한다.
-템플릿의 `DATABASE_URL`은 아래 로컬 PostgreSQL을 가리킨다. 실제 로그인에는
+`DATABASE_URL`과 S3 연결 값은 local Kubernetes의 서비스와 자격 증명에 맞춘다. 실제 로그인에는
 `BETTER_AUTH_SECRET`과 Keycloak·표준 OIDC·Google·비밀번호 중 사용할 수단도 설정한다.
 
 ```bash
-docker compose up -d postgres minio minio-init
+# 별도 터미널에서 local Kubernetes 연결을 유지한다.
+python3 ../argocd-env-addons/install/local/connect.py --context orbstack
+```
+
+Docker Desktop은 `--context docker-desktop`을 사용한다. 설치와 자격 증명 준비는
+[localdev](docs/INSTALL.md#localdev)를 따른다. 연결을 유지한 채 앱 터미널에서 실행한다.
+
+```bash
 pnpm dev
 ```
 
@@ -50,6 +59,7 @@ pnpm dev
 개발 환경에는 [mock 모델과 개발 세션](docs/DEVELOPMENT.md#실제-자격-증명-없이-작업하기)을 사용한다.
 이미 설정 파일이 있다면 복사로 덮어쓰지 말고 필요한 항목을 추가한다.
 
+Compose는 local Kubernetes를 사용할 수 없거나 격리된 테스트에 필요한 경우의 대안이다.
 루트 Compose의 `agent-studio-local`은 전용 PostgreSQL·MinIO volume을 소유한다.
 `docker compose down -v`는 개발 데이터를 삭제한다.
 로컬 MCP, 별도 worker와 환경파일 로딩 방법은 [개발 문서](docs/DEVELOPMENT.md)를 따른다.
