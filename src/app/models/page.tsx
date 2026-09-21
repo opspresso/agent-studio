@@ -46,10 +46,7 @@ import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { LoadingText } from "@/app/_components/PageState";
 import { BADGE } from "@/app/_components/badgeColors";
 import {
-  modelSelectData,
   modelPriceLabel,
-  renderModelOption,
-  selectOnFocus,
 } from "@/app/_components/modelOptions";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { createLatestOnly } from "@/app/_lib/latestOnly";
@@ -57,7 +54,6 @@ import { useViewer } from "@/app/_lib/useViewer";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import {
   nextSort,
-  selectableRetrievalModels,
   deserializeModelTableState,
   DEFAULT_MODEL_TABLE_STATE,
   visibleModelRows,
@@ -67,7 +63,8 @@ import {
 } from "./modelTable";
 import { reportError } from "@/app/_lib/reportError";
 import type { ModelsCatalogResponse } from "@/app/api/models/catalog/route";
-import { useConfirm } from "@/app/_components/useConfirm";
+import { ModelSelectionSection } from "./ModelSelectionSection";
+import { ModelSettingsNav } from "@/app/settings/ModelSettingsNav";
 import { makerLogoPath } from "./makerLogo";
 
 type CatalogProvider = ModelsCatalogResponse["providers"][number];
@@ -502,162 +499,7 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
   );
 }
 
-type GlobalModelType = "embedding" | "rerank";
 
-function ModelSelectionSection({
-  models,
-  selections,
-  rerankerMinScore,
-  available,
-  onChanged,
-}: {
-  models: CatalogModel[];
-  selections: Catalog["selections"];
-  rerankerMinScore: Catalog["rerankerMinScore"];
-  available: Catalog["selectionAvailable"];
-  onChanged: () => Promise<void>;
-}) {
-  const t = useT();
-  const { confirm, confirmModal } = useConfirm();
-  const [busy, setBusy] = useState<GlobalModelType | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<string | null>(null);
-  const [scoreFloor, setScoreFloor] = useState(rerankerMinScore.value);
-
-  useEffect(() => {
-    setScoreFloor(rerankerMinScore.value);
-  }, [rerankerMinScore.value]);
-  const scoreFloorValid =
-    Number.isFinite(scoreFloor) && scoreFloor >= 0 && scoreFloor <= 1;
-
-  async function select(type: GlobalModelType, model: string | null, nextScore?: number) {
-    const scoreChanged = type === "rerank" && nextScore !== rerankerMinScore.value;
-    if (!model || (model === selections[type]?.model && !scoreChanged)) return;
-    if (
-      type === "embedding" &&
-      !(await confirm({
-        title: t("models.selection.embeddingConfirmTitle"),
-        message: t("models.selection.embeddingConfirmMessage"),
-        confirmLabel: t("models.selection.migrate"),
-        requireText: "MIGRATE",
-        color: "orange",
-      }))
-    ) {
-      return;
-    }
-    setBusy(type);
-    setError(null);
-    setResult(null);
-    try {
-      const response = await fetch("/api/models/selection", {
-        method: "PUT",
-        headers: jsonHeaders,
-        body: JSON.stringify({
-          type,
-          model,
-          migrate: type === "embedding",
-          ...(type === "rerank" ? { rerankerMinScore: nextScore } : {}),
-        }),
-      });
-      const body = await readJson<{ migration?: { indexed: number } }>(response);
-      setResult(
-        body.migration
-          ? t("models.selection.migrated", { count: body.migration.indexed })
-          : t("models.selection.saved"),
-      );
-      await onChanged();
-    } catch (selectionError) {
-      setError(reportError(selectionError, t("models.selection.failed")));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  return (
-    <CollapsibleSection title={t("models.selection.title")}>
-      {confirmModal}
-      <Stack gap="sm">
-        <div>
-          <Text fz="sm" c="dimmed">
-            {t("models.selection.lede")}
-          </Text>
-        </div>
-        {error && <Alert color="red">{error}</Alert>}
-        {result && <Alert color="green">{result}</Alert>}
-        {(["embedding", "rerank"] as const).map((type) => {
-          const selection = selections[type];
-          const options = selectableRetrievalModels(models, type);
-          const selected = options.find((model) => model.id === selection?.model);
-          return (
-            <Stack key={type} gap="xs">
-              <Select
-                label={t(`models.type.${type}`)}
-                value={selection?.model ?? null}
-                placeholder={t("models.selection.unconfigured")}
-                data={modelSelectData(
-                  options,
-                  selection?.model && !selected
-                    ? [{ value: selection.model, label: selection.model }]
-                    : [],
-                  t("models.favorites"),
-                )}
-                renderOption={renderModelOption(options)}
-                description={
-                  selected
-                    ? `${selected.provider} · ${modelPriceLabel(
-                        selected.pricing,
-                        selected.type,
-                      )} · ${selection?.source}`
-                    : selection?.source
-                }
-                disabled={
-                  !available[type] ||
-                  options.length === 0 ||
-                  busy !== null ||
-                  (type === "rerank" && !scoreFloorValid)
-                }
-                searchable
-                {...selectOnFocus}
-                onChange={(model) =>
-                  void select(type, model, type === "rerank" ? scoreFloor : undefined)
-                }
-              />
-              {type === "rerank" && (
-                <Group gap="sm" align="flex-end">
-                  <NumberInput
-                    label={t("models.selection.rerankerMinScore")}
-                    description={`${rerankerMinScore.source} · ${t("models.selection.rerankerMinScoreHint")}`}
-                    value={scoreFloor}
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    decimalScale={4}
-                    onChange={(value) => setScoreFloor(Number(value))}
-                    disabled={!available.rerank || busy !== null}
-                    w={360}
-                  />
-                  <Button
-                    variant="default"
-                    disabled={
-                      !available.rerank ||
-                      !selection?.model ||
-                      !scoreFloorValid ||
-                      scoreFloor === rerankerMinScore.value ||
-                      busy !== null
-                    }
-                    onClick={() => void select("rerank", selection?.model ?? null, scoreFloor)}
-                  >
-                    {t("models.selection.saveScore")}
-                  </Button>
-                </Group>
-              )}
-            </Stack>
-          );
-        })}
-      </Stack>
-    </CollapsibleSection>
-  );
-}
 
 /**
  * The catalog document an admin installs by hand (`/api/models/catalog/document`)
@@ -1013,6 +855,7 @@ export default function ModelsPage() {
           </Group>
         )}
       </CatalogHeader>
+      {canEdit && <ModelSettingsNav />}
 
       {canEdit && <CatalogDocumentSection onChanged={loadCatalog} />}
 

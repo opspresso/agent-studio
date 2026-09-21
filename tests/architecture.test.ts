@@ -614,7 +614,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(108);
+    expect(entries.length).toBe(114);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/chats/_components/PendingApproval.tsx",
       "src/app/chats/_components/NewChatEntry.tsx",
@@ -626,6 +626,12 @@ describe("the client bundle", () => {
       "src/app/projects/[name]/workspace/page.tsx",
       "src/app/projects/[name]/_components/ProjectWorkspaceContext.tsx",
       "src/app/models/WorkspaceModelsSection.tsx",
+      "src/app/models/ModelRegistrationForm.tsx",
+      "src/app/models/ModelSelectionSection.tsx",
+      "src/app/settings/ModelSettingsNav.tsx",
+      "src/app/settings/providers/page.tsx",
+      "src/app/settings/models/page.tsx",
+      "src/app/settings/model-usage/page.tsx",
       "src/app/workspaces/_lib/useWorkspace.ts",
       "src/app/projects/[name]/_components/RuntimePolicyEditor.tsx",
       "src/app/projects/[name]/audio/page.tsx",
@@ -1608,6 +1614,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
       "src/domain/llm/models.ts",
       "src/domain/llm/selfHostedModels.ts",
       "src/app/models/page.tsx",
+      "src/app/models/ModelRegistrationForm.tsx",
       "src/infrastructure/llm/selfHostedDiscovery.ts",
     ],
   },

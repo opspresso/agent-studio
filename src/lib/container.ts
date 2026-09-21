@@ -149,6 +149,8 @@ import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
 import type { TriggerRunnerDeps } from "@/application/trigger/deps";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { createTestModel } from "@/application/llm/testModel";
+import { createModelRegistryUseCases } from "@/application/llm/modelRegistry";
+import { createProviderModelDiscovery } from "@/infrastructure/llm/providerModelDiscovery";
 import {
   createModelCatalogRefresher,
   processModelCatalogRefreshCoordinator,
@@ -395,6 +397,12 @@ export const modelCatalogDocumentUseCases = createModelCatalogDocumentUseCases(
   refreshModelCatalog,
 );
 export const modelPreferenceUseCases = createModelPreferenceUseCases(modelPreferencesRepository);
+export const modelRegistryUseCases = createModelRegistryUseCases({
+  repository: settingsRepository,
+  discovery: createProviderModelDiscovery(),
+  providers: getLlmProviderConfigs,
+  changed: async () => { invalidateSettingsCache(); },
+});
 
 /**
  * What the self-hosted text, embedding and rerank channels are serving right

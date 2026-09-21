@@ -14,7 +14,8 @@ const updateSchema = z.object({
   llmProviders: z
     .array(
       z.object({
-        name: z.enum(SUPPORTED_PROVIDERS),
+        name: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+        kind: z.enum(SUPPORTED_PROVIDERS).optional(),
         baseUrl: z.string().max(4000),
         apiKey: z.string().max(4000),
         keepModelPrefix: z.boolean().optional(),

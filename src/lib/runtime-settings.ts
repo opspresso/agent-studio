@@ -80,6 +80,10 @@ export function invalidateSettingsCache(): void {
   cache = undefined;
 }
 
+export async function getDefaultModel(): Promise<string | undefined> {
+  return (await loadSettings())?.defaultModel;
+}
+
 export async function getAdminEmails(): Promise<string[]> {
   const stored = (await loadSettings())?.adminEmails;
   return stored !== undefined ? parseList(stored) : config.adminEmails;
@@ -260,6 +264,7 @@ export async function getLlmProviderConfigs(): Promise<ProviderChannelConfig[]> 
   if (stored !== undefined) {
     return stored.map((provider) => ({
       name: provider.name,
+      ...(provider.kind ? { kind: provider.kind } : {}),
       baseUrl: provider.baseUrl,
       // A `sigv4` row stores an empty key, which is not ciphertext — decrypting
       // it would be asking the cipher to answer a question it was never given.

@@ -305,7 +305,7 @@ describe("settingsUseCases.update", () => {
     expect(current()?.pluginsRepo).toBeUndefined();
   });
 
-  it("stores an LLM provider override, resolving masked keys from env, and clears on empty list", async () => {
+  it("stores an LLM provider override, resolving masked keys from env, and disables providers on an empty list", async () => {
     process.env.LLM_PROVIDER_OPENAI_BASE_URL = "https://api.openai.com/v1";
     process.env.LLM_PROVIDER_OPENAI_API_KEY = "sk-env-openai";
     const { repo, current } = fakeRepo();
@@ -341,7 +341,7 @@ describe("settingsUseCases.update", () => {
     expect(view.llmProviders.items[1]?.apiKey).toBe("*".repeat("sk-new".length));
 
     await useCases.update({ llmProviders: [] }, ADMIN);
-    expect(current()?.llmProviders).toBeUndefined();
+    expect(current()?.llmProviders).toEqual([]);
   });
 
   it("rejects a masked provider key with no stored or env value to keep", async () => {
@@ -352,6 +352,33 @@ describe("settingsUseCases.update", () => {
         ADMIN,
       ),
     ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("registers multiple self-hosted connections without requiring API keys", async () => {
+    const { repo, current } = fakeRepo();
+    const view = await createSettingsUseCases(repo).update({ llmProviders: [
+      { name: "local-text", kind: "selfhosted", baseUrl: "http://localhost:8000/v1/", apiKey: "" },
+      { name: "local-embedding", kind: "selfhosted", baseUrl: "http://localhost:8001/v1", apiKey: "" },
+    ] }, ADMIN);
+    expect(view.llmProviders.items.map(provider => provider.kind)).toEqual(["selfhosted", "selfhosted"]);
+    expect(current()?.llmProviders?.[0]).toMatchObject({ name: "local-text", baseUrl: "http://localhost:8000/v1", apiKey: "" });
+  });
+
+  it("preserves an existing key on blank input but refuses to carry it to a different provider kind", async () => {
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    const provider = { name: "office", kind: "openai" as const, baseUrl: "https://provider.example/v1", apiKey: "secret-key" };
+    await useCases.update({ llmProviders: [provider] }, ADMIN);
+    const key = current()?.llmProviders?.[0]?.apiKey;
+    await useCases.update({ llmProviders: [{ ...provider, apiKey: "" }] }, ADMIN);
+    expect(current()?.llmProviders?.[0]?.apiKey).toBe(key);
+    await expect(useCases.update({ llmProviders: [{ ...provider, kind: "anthropic", apiKey: "" }] }, ADMIN)).rejects.toThrow("requires a new API key");
+  });
+
+  it("rejects provider URLs containing inline credentials before storing anything", async () => {
+    const { repo, current } = fakeRepo();
+    await expect(createSettingsUseCases(repo).update({ llmProviders: [{ name: "openai", baseUrl: "https://provider.example/v1?key=secret", apiKey: "new-key" }] }, ADMIN)).rejects.toThrow("Provider URL");
+    expect(current()).toBeNull();
   });
 
   it("keeps an existing provider key only while its endpoint and auth stay the same", async () => {
@@ -480,7 +507,7 @@ describe("settingsUseCases.update", () => {
     ).rejects.toThrow(/Unsupported LLM provider/);
   });
 
-  it("stores hiddenModels sorted and deduplicated, and clears on empty list", async () => {
+  it("stores hiddenModels sorted and deduplicated, and disables providers on an empty list", async () => {
     const { repo, current } = fakeRepo();
     const useCases = createSettingsUseCases(repo);
 

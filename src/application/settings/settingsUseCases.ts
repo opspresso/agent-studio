@@ -20,6 +20,8 @@ import {
   type SelfHostedModelInput,
 } from "@/domain/llm/selfHostedModels";
 import { DEFAULT_RERANKER_MIN_SCORE } from "@/domain/catalog/types";
+import { providerBaseUrl, providerKind } from "@/domain/llm/providerModels";
+import type { SupportedProvider } from "@/domain/llm/models";
 import { parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
@@ -117,6 +119,7 @@ export interface SettingFieldView {
 
 export interface LlmProviderView {
   name: string;
+  kind: SupportedProvider;
   baseUrl: string;
   /** Masked (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4). */
   apiKey: string;
@@ -133,6 +136,7 @@ export interface SettingsView {
 
 export interface LlmProviderInput {
   name: string;
+  kind?: SupportedProvider;
   baseUrl: string;
   /** Masked keeps the currently effective key for this provider name. */
   apiKey: string;
@@ -144,7 +148,7 @@ export interface LlmProviderInput {
 export type { SelfHostedModelInput };
 
 export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
-  /** Full replacement list; empty array removes the override (env fallback). */
+  /** Full replacement list; empty array disables every provider. */
   llmProviders?: LlmProviderInput[];
   /** Full replacement list; empty array removes the override (no models hidden). */
   hiddenModels?: string[];
@@ -215,6 +219,7 @@ function toProviderViews(
       source: "override",
       items: stored.map((provider) => ({
         name: provider.name,
+        kind: providerKind(provider),
         baseUrl: provider.baseUrl,
         apiKey: cipher.mask(
           provider.apiKey,
@@ -229,6 +234,7 @@ function toProviderViews(
     source: "env",
     items: parseProviderConfigs(env).map((provider) => ({
       name: provider.name,
+      kind: providerKind(provider),
       baseUrl: provider.baseUrl,
       apiKey: cipher.mask(provider.apiKey),
       keepModelPrefix: provider.keepModelPrefix,
@@ -288,11 +294,15 @@ function toProviderSetting(
   stored: LlmProviderSetting[] | undefined,
 ): LlmProviderSetting {
   const name = input.name.trim().toLowerCase();
-  const baseUrl = input.baseUrl.trim();
+  let baseUrl: string;
+  try { baseUrl = providerBaseUrl(input.baseUrl.trim()); }
+  catch { throw new ValidationError("Provider URL must be HTTP(S) without credentials, query parameters or fragments"); }
   if (!name || !baseUrl) {
     throw new ValidationError("Each LLM provider needs a name and a base URL");
   }
-  if (!(SUPPORTED_PROVIDERS as readonly string[]).includes(name)) {
+  const kind = providerKind({ name, kind: input.kind });
+  if (!/^[a-z][a-z0-9_-]{0,63}$/.test(name)) throw new ValidationError("Invalid provider name");
+  if (!(SUPPORTED_PROVIDERS as readonly string[]).includes(kind)) {
     throw new ValidationError(
       `Unsupported LLM provider "${name}" — supported: ${SUPPORTED_PROVIDERS.join(", ")}`,
     );
@@ -303,6 +313,7 @@ function toProviderSetting(
   if (input.auth === "sigv4") {
     return {
       name,
+      kind,
       baseUrl,
       apiKey: "",
       auth: "sigv4",
@@ -311,19 +322,18 @@ function toProviderSetting(
   }
   const apiKey = input.apiKey.trim();
   let storedKey: string;
-  if (!cipher.isMasked(apiKey)) {
-    if (!apiKey) {
-      throw new ValidationError(`LLM provider "${name}" needs an API key`);
-    }
+  const existing = stored?.find((provider) => provider.name === name);
+  const fromEnv = parseProviderConfigs(env).find((provider) => provider.name === name);
+  const previous = existing ?? fromEnv;
+  if (!apiKey && kind === "selfhosted" && !previous?.apiKey) {
+    storedKey = "";
+  } else if (apiKey && !cipher.isMasked(apiKey)) {
     storedKey = cipher.encrypt(apiKey, llmProviderApiKeyContext(name, baseUrl));
   } else {
-    const existing = stored?.find((provider) => provider.name === name);
-    const fromEnv = parseProviderConfigs(env).find((provider) => provider.name === name);
-    const previous = existing ?? fromEnv;
     if (!previous?.apiKey) {
       throw new ValidationError(`LLM provider "${name}" needs an API key (no stored value to keep)`);
     }
-    if ((previous.auth ?? "bearer") !== "bearer" || previous.baseUrl !== baseUrl) {
+    if ((previous.auth ?? "bearer") !== "bearer" || providerBaseUrl(previous.baseUrl) !== baseUrl || providerKind(previous) !== kind) {
       throw new ValidationError(
         `Changing LLM provider "${name}" endpoint or auth requires a new API key`,
       );
@@ -334,6 +344,7 @@ function toProviderSetting(
   }
   return {
     name,
+    kind,
     baseUrl,
     apiKey: storedKey,
     ...(input.keepModelPrefix ? { keepModelPrefix: true } : {}),
@@ -458,18 +469,16 @@ export function createSettingsUseCases(
         }
 
         if (patch.llmProviders !== undefined) {
-          if (patch.llmProviders.length === 0) {
-            delete next.llmProviders;
-          } else {
-            const providers = patch.llmProviders.map((input) =>
-              toProviderSetting(cipher, env, parseProviderConfigs, input, stored?.llmProviders),
-            );
-            const names = new Set(providers.map((provider) => provider.name));
-            if (names.size !== providers.length) {
-              throw new ValidationError("LLM provider names must be unique");
-            }
-            next.llmProviders = providers;
+          const providers = patch.llmProviders.map((input) =>
+            toProviderSetting(cipher, env, parseProviderConfigs, input, stored?.llmProviders),
+          );
+          const names = new Set(providers.map((provider) => provider.name));
+          if (names.size !== providers.length) {
+            throw new ValidationError("LLM provider names must be unique");
           }
+          const orphaned = (stored?.registeredModels ?? []).filter((model) => !names.has(model.provider));
+          if (orphaned.length) throw new ValidationError("Delete this provider's registered models before removing the provider");
+          next.llmProviders = providers;
         }
 
         if (patch.selfHostedModels !== undefined) {
