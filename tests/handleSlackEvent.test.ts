@@ -722,40 +722,6 @@ describe("handleSlackEvent", () => {
     expect(calls).toEqual(["addReaction", "startStream", "stopStream"]);
   });
 
-  it("still ignores bot messages and bookkeeping subtypes", async () => {
-    const { slack, posted } = makeSlackFake();
-    const deps = makeDeps([], slack);
-
-    await handleSlackEvent(deps, { ...EVENT, event: { ...EVENT.event, bot_id: "B9" } }, BINDING);
-    await handleSlackEvent(
-      deps,
-      { ...EVENT, event: { ...EVENT.event, subtype: "message_changed" } },
-      BINDING,
-    );
-
-    expect(posted).toEqual([]);
-  });
-
-  it("ignores its own file share, which carries no bot_id", async () => {
-    // A file the bot uploads through the external flow is attributed to the bot
-    // *user* and arrives as an allowed `file_share` subtype, so `bot_id` alone
-    // would let the bot answer its own picture and loop.
-    const { slack, posted } = makeSlackFake();
-    const deps = makeDeps([], slack);
-
-    await handleSlackEvent(
-      deps,
-      {
-        ...EVENT,
-        authorizations: [{ user_id: "UBOT", is_bot: true }],
-        event: { ...EVENT.event, subtype: "file_share", user: "UBOT" },
-      },
-      BINDING,
-    );
-
-    expect(posted).toEqual([]);
-  });
-
   it("answers without history when the thread read fails", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});

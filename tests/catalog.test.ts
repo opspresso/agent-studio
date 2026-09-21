@@ -606,10 +606,12 @@ describe("searchCapabilities", () => {
 
   it("propagates cancellation instead of falling back", async () => {
     const controller = new AbortController();
+    const started = Promise.withResolvers<AbortSignal | undefined>();
     const rerank = vi.fn(
       async (_query: string, _documents: readonly string[], _instruction?: string, signal?: AbortSignal) =>
         await new Promise<ReturnType<typeof reranked>>((_, reject) => {
           signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+          started.resolve(signal);
         }),
     );
     const pending = searchCapabilities(
@@ -621,9 +623,28 @@ describe("searchCapabilities", () => {
       { kind: "skill", limit: 5 },
       { signal: controller.signal },
     );
-    controller.abort(new Error("Stop pressed"));
+    const signal = await Promise.race([
+      started.promise,
+      pending.then(() => { throw new Error("Search completed before entering the reranker"); }),
+    ]);
+    expect(signal).toBe(controller.signal);
+    expect(controller.signal.aborted).toBe(false);
+    expect(rerank).toHaveBeenCalledTimes(1);
+    const reason = new Error("Stop pressed");
+    const cancelled = expect(pending).rejects.toBe(reason);
+    controller.abort(reason);
+    await cancelled;
+  });
 
-    await expect(pending).rejects.toThrow("Stop pressed");
+  it("rejects an already cancelled search before embedding or reranking", async () => {
+    const deps = searchDeps([[match("skill#a", 0.9, { name: "a", description: "" })]]);
+    const embed = vi.spyOn(deps.embeddings, "embed");
+    const rerank = vi.fn(async () => reranked([1]));
+    const reason = new Error("Stopped before search");
+    const signal = AbortSignal.abort(reason);
+    await expect(searchCapabilities({ ...deps, reranker: { rerank } }, ["request"], { kind: "skill", limit: 5 }, { signal })).rejects.toBe(reason);
+    expect(embed).not.toHaveBeenCalled();
+    expect(rerank).not.toHaveBeenCalled();
   });
 
   it("keeps a low absolute reranker score when it clearly identifies an AWS capability", async () => {

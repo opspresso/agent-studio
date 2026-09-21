@@ -181,7 +181,7 @@ describe("withTurnBody", () => {
   });
 
   it("releases a detached-work charge when retained work rejects", async () => {
-    budgetForTwoLargeBodies();
+    setTurnBodyBudgetBytes(largeTurnBody().length);
     let rejectWork = (_error: Error): void => {};
     const work = new Promise<void>((_resolve, reject) => {
       rejectWork = reject;
@@ -190,6 +190,9 @@ describe("withTurnBody", () => {
       admission.retainUntil(work);
       return Response.json({ accepted: true });
     });
+
+    const refused = await parseTurn(post(largeTurnBody()));
+    expect((refused as Response).status).toBe(429);
 
     rejectWork(new Error("detached run failed"));
     await Promise.resolve();

@@ -273,9 +273,10 @@ describe("talking to the Bot Framework", () => {
   });
 
   it("accepts an upper-case App ID against the service's lower-case audience", async () => {
+    const appId = "abcdef01-2345-6789-abcd-ef0123456789";
     stubFetch();
-    const verdict = await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, {
-      appId: APP.toUpperCase(),
+    const verdict = await teamsClient.verifyRequest(`Bearer ${sign({ ...goodClaims(), aud: appId })}`, {
+      appId: appId.toUpperCase(),
       serviceUrl: SERVICE,
     });
     expect(verdict).toEqual({ ok: true });

@@ -153,6 +153,19 @@ describe("which Slack events reach a handler", () => {
     expect(claim).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { type: "message", channel_type: "im", bot_id: "OTHER_APP" },
+    { type: "app_mention", subtype: "message_changed" },
+    { type: "message", subtype: "file_share", user: "U0BOT" },
+  ])("rejects loops and bookkeeping before claiming or dispatching: %j", async (event) => {
+    const response = await deliver(channelMessage({ text: "deploy", ...event }), ["deploy"]);
+    expect(response.status).toBe(200);
+    expect(handled).toEqual([]);
+    expect(claim).not.toHaveBeenCalled();
+    expect(settle).not.toHaveBeenCalled();
+    expect(isEngaged).not.toHaveBeenCalled();
+  });
+
   /**
    * The bot is subscribed to `message.channels`, so it receives every message
    * in every channel it belongs to. What matters as much as *whether* each one
