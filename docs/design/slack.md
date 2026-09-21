@@ -1,7 +1,7 @@
 # Slack
 
 agent Project마다 Slack bot과 signing secret을 연결한다.
-`/api/slack/events/[project]`는 해당 프로젝트의 이벤트만 받으며 발행된 Version을 실행한다.
+`/api/slack/events/[project]`는 해당 프로젝트의 이벤트만 받으며 현재 Agent 설정을 실행한다.
 인증·설정 API는 [API](../API.md#레지스트리연동-오퍼레이션),
 공통 실행·첨부·종료는 [메시징 파이프라인](messaging.md)이 소유한다.
 
@@ -74,7 +74,7 @@ DM의 상태 줄은 자식의 진행도 표시한다. 종료 시 남은 진행 �
 mute는 thread 참여를 비활성화하고 직접 mention 이후 답변은 참여를 다시 켠다.
 최상위 메시지의 mute에는 사용 위치를, DM에는 DM 동작을 안내한다.
 
-명령은 실행 Version 조회 전에 처리하지만 private 프로젝트의 접근 검사는 유지한다.
+명령은 현재 설정 조회 전에 처리하지만 private 프로젝트의 접근 검사는 유지한다.
 프로젝트 정보를 읽지 못하면 명령도 권한을 열지 않는다.
 
 ## private project 는 묻는 사람을 이메일로 확인한다
@@ -104,7 +104,7 @@ private 프로젝트 접근은 접수 리액션·상태 표시 전에 검사한�
 thread의 최근 턴을 읽으며 자기 bot의 메시지만 assistant, 다른 앱의 알림은 user 문맥으로 처리한다.
 `slackMessageText`는 키워드 판정·현재 입력·히스토리에서 같은 내용을 추출한다.
 
-`callerContext`를 켠 Version은 확인한 표시 이름·시간대·아바타 URL을 전달한다.
+`callerContext`를 켠 Agent는 확인한 표시 이름·시간대·아바타 URL을 전달한다.
 여러 사람이 있는 thread에는 최신 턴을 포함한 화자 라벨을 붙이고 다른 앱은 항상 앱 이름으로 구분한다.
 프로필 조회는 상태 표시 이후 살아남은 history 범위에 대해 제한된 동시성으로 수행하고,
 workspace별 한정된 캐시를 사용한다. actor는 Slack 사용자 ID로 유지한다.

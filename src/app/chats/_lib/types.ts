@@ -111,7 +111,7 @@ export interface LiveFile {
 export interface LiveTurn {
   text: string;
   /**
-   * The run's thinking so far — empty unless the version opted into recording
+   * The run's thinking so far — empty unless the Agent opted into recording
    * it, since the engine emits nothing otherwise.
    */
   reasoning: string;

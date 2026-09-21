@@ -33,20 +33,20 @@ export function A2aSection({ projectName }: { projectName: string }) {
     ) : null;
   }
 
-  const ready = view.enabled && view.published;
+  const ready = view.enabled && view.configured;
 
   return (
     <CollapsibleSection
       title={t("pset.a2a")}
       badge={
         <Badge color={stateColor(ready)} radius="xl">
-          {ready ? "exposed" : view.enabled ? "not published" : "disabled"}
+          {ready ? "exposed" : view.enabled ? "not configured" : "disabled"}
         </Badge>
       }
     >
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>
-          The published version is exposed as an A2A agent. Share the Agent Card URL with external
+          The current Agent configuration is exposed over A2A. Share the Agent Card URL with external
           systems; callers authenticate with the <Code>X-A2A-Key</Code> header.
         </Text>
 
@@ -55,9 +55,9 @@ export function A2aSection({ projectName }: { projectName: string }) {
             Set <Code>A2A_API_KEY</Code> on the server to enable A2A endpoints.
           </Text>
         )}
-        {view.enabled && !view.published && (
+        {view.enabled && !view.configured && (
           <Text fz="sm" c="dimmed">
-            Publish a version to expose this project over A2A.
+            Save the Agent settings to expose this project over A2A.
           </Text>
         )}
 

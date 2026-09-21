@@ -10,7 +10,7 @@ Agent Studio의 계층, 저장 구조, 실행 경로와 스트림 계약을 설�
 
 ## 무엇을 위한 시스템인가
 
-한 설치가 한 기업인 설치형 AgentOps 플랫폼이다. Studio는 프로젝트·버전·권한·도구·비용·기록을
+한 설치가 한 기업인 설치형 AgentOps 플랫폼이다. Studio는 Agent 설정·권한·도구·비용·기록을
 관리하고 OpenAI Agents SDK는 기본 Agent Runtime을 제공한다. 공개 인터넷이 없는 환경에서도
 필수 경로가 동작하도록 외부 연결은 배포가 선택하는 어댑터로 둔다.
 
@@ -61,8 +61,8 @@ Session 계약을 직접 사용하고, 배포별 저장·모델·자격 증명�
 
 | 관심사 | 코드 |
 |---|---|
-| 프로젝트·버전과 접근 | `application/project/`, `domain/project/` |
-| 유형별 실행·바인딩·Memory·미리보기 | `application/execution/` |
+| 프로젝트·현재 설정과 접근 | `application/project/`, `domain/project/` |
+| Agent 실행 준비·바인딩·Memory·미리보기 | `application/execution/` |
 | SDK Agent·Runner·도구·Session·승인 | `application/runtime/` |
 | 프롬프트 조립·PII·문맥 예산·모델 카탈로그 | `application/llm/` |
 | 공통 실행 정책·Trace 수명 | `application/run/` |
@@ -130,7 +130,7 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 |---|---|---|---|---|
 | Project | `PROJECT#{name}` | `META` | `TYPE#PROJECT` | `{name}` |
 | 삭제된 Project 이름 tombstone | `PROJECT#{name}` | `META` | — | — |
-| Project version | `PROJECT#{name}` | `VERSION#{versionName}` | — | — |
+| 이전 설정 원본 보관 (실행에 사용하지 않음) | `PROJECT#{name}` | `LEGACYCONFIGURATION`, `VERSION#{versionName}` | — | — |
 | Project API 토큰 | `PROJECT#{name}` | `APITOKEN` | — | — |
 | Workspace 정책 / 저장소 생성 receipt | `PROJECT#{name}` | `WORKSPACEPOLICY` / `REPOSITORYCREATE#{repository lowercased}` | — | — |
 | Workspace | `WORKSPACE#{id}` | `META` | `WORKSPACEOWNER#{email}` | `{createdAt}#{id}` |
@@ -206,8 +206,8 @@ Chat의 SDK `runtime_sessions`와 수명을 공유하지 않는다.
   전용 인증·벡터·SDK Session 테이블과 `skillRepository.describe`의 projection은 별도 SQL 경로다.
 - 무한히 늘어나는 목록에는 `limit`을 주고, 만료·조건 필터는 `LIMIT` 전에 적용한다.
   `queryItems`에 넘기는 `notExpiredAt`·`filter`가 그 경계다.
-- 이름 기반 registry의 공통 CRUD는 `createKeyedRepository`를 사용한다. Project의 publish는
-  `META.publishedVersion`, Chat 메시지 번호는 `META.nextSeq`가 소유한다.
+- 이름 기반 registry의 공통 CRUD는 `createKeyedRepository`를 사용한다. Project 현재 설정은
+  `META.configuration`, Chat 메시지 번호는 `META.nextSeq`가 소유한다.
 - Project 삭제는 먼저 `deletingAt`으로 자식 쓰기를 차단하고 관련 행을 정리한 뒤
   소유권을 제거한 tombstone을 남긴다. 중단된 cascade는 같은 owner/admin이 다시 DELETE하여
   이어간다. Chat·Artifact처럼 더 오래 남는 참조가 있어 프로젝트 이름을 재사용하지 않는다.
@@ -224,33 +224,32 @@ Chat의 SDK `runtime_sessions`와 수명을 공유하지 않는다.
 
 | 파사드 | 계약 |
 |---|---|
-| `streamProjectRun` | 모든 project type을 chunk로 반환한다. image는 `generateImageStream`으로 연결한다 |
-| `executeProjectStream` / `executeProject` | agent의 도구 실행 또는 llm의 단발 completion을 반환한다. image는 거절한다 |
-| `executeAgent` | agent Project만 실행하고 바인딩·SDK Runtime·정산을 조율한다 |
-| `executeWorkspaceTask` | 모델 Version 없이 Workspace 작업의 공통 정책을 연다 |
+| `streamProjectRun` | 현재 Agent 설정으로 같은 도구 루프를 실행하고 모든 출력 축을 chunk로 반환한다 |
+| `executeProjectStream` / `executeProject` | 같은 Agent 실행을 스트림 또는 수집한 결과로 반환한다 |
+| `executeAgent` | Agent 바인딩·SDK Runtime·정산을 조율한다 |
+| `executeWorkspaceTask` | Workspace 작업의 공통 정책을 연다. 일반 명령에는 모델 설정이 없다 |
 
-단발 실행의 `executeVersion`/`executeVersionStream`을 외부 표면에서 직접 호출하지 않는다.
-Predict와 A2A는 이미지 전용 응답을 만들기 위해 `generateImage`를 직접 호출하는 지정된 예외다.
-새 chunk 소비자는 `streamProjectRun`을 사용한다.
+이미지는 Agent의 GenerateImage·EditImage 도구로 실행한다. 새 chunk 소비자는
+`streamProjectRun`을 사용하며 이미지·파일 축을 함께 처리한다.
 
 | 진입점 | 호출자 | 사용하는 파사드 |
 |---|---|---|
-| Predict | `POST …/predict` | `executeProjectStream`(스트림) / `executeProject`(논스트림). 그래서 agent project 도 여기서 툴 루프를 돌고, (프롬프트 템플릿만 소비하는) `variables` 는 그 경우 무시된다. image project 는 → `generateImage`, 요청에 source `images` 가 오면 편집하고 아니면 생성한다 |
-| OpenAI 호환 | `POST …/chat/completions` | `executeProjectStream`(스트림) / `executeProject`(논스트림). image project 는 400 으로 거절된다. 이미지에는 chat completion 이 없다 |
+| Predict | `POST …/predict` | `executeProjectStream`(스트림) / `executeProject`(수집형). 입력은 `messages`다 |
+| OpenAI 호환 | `POST …/chat/completions` | `executeProjectStream` / `executeProject` 결과를 OpenAI 응답으로 변환한다 |
 | Agent SSE | `POST …/agent` | `executeAgent` |
 | Chat | 생성·메시지 전송·SDK 승인 재개 API, Workspace 승인·CI 결과의 후속 실행 | `executeAgent` (`ChatDeps.runAgent` 로 바인딩) |
 | Slack | `/api/slack/events/[project]` → `handleSlackEvent` → `handleTurn` | `executeAgent` (`SlackEventDeps` 경유) |
 | Telegram | `/api/telegram/webhook/[project]` → `handleTelegramUpdate` → `handleTurn` | `executeAgent` (`TelegramEventDeps` 경유). Slack 과 같은 공유 파이프라인 ([design/messaging.md](design/messaging.md)) |
 | Teams | `/api/teams/messages/[project]` → `handleTeamsActivity` → `handleTurn` | `executeAgent` (`TeamsEventDeps` 경유). 같은 파이프라인 |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
-| AG-UI | `POST /api/agui/[name]` → `streamAguiRun` | `streamProjectRun`. 채팅 패널은 어느 타입이든 그릴 수 있으므로 image project 도 거절하지 않는다. 청크는 `src/application/agui/events.ts` 가 프로토콜의 이벤트로 바꾼다 ([design/agui.md](design/agui.md)) |
-| Webhook trigger | `POST /api/webhook/[project]` → `executeDelivery` | `streamProjectRun` (`container.ts` 에서 `triggerRunnerDeps.run` 으로 바인딩). AG-UI 와 함께, image project 를 거절하지 않고 스트리밍하는 dispatch 다. firing 의 행은 텍스트를 담으므로, 그림을 그렸다는 사실을 기록한다 |
+| AG-UI | `POST /api/agui/[name]` → `streamAguiRun` | `streamProjectRun`. `application/agui/events.ts`가 모든 출력 축을 프로토콜 이벤트로 바꾼다 |
+| Webhook trigger | `POST /api/webhook/[project]` → `executeDelivery` | `streamProjectRun` (`triggerRunnerDeps.run`). JSON payload를 사용자 메시지로 전달한다 |
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (같은 `triggerRunnerDeps.run`) |
-| Audio 후처리 | audio worker가 고정한 project/version으로 실행 | `streamProjectRun` + `collectRun` (`backgroundTask: true`) |
-| Workspace | 별도 worker가 DB 큐와 native operation을 이어받는다 | `executeWorkspaceTask` + 공통 `openTaskRun`. 일반 명령과 외부 CLI runtime은 모델 Version 없이 실행한다 |
+| Audio 후처리 | audio worker가 고정한 Project와 현재 설정으로 실행 | `streamProjectRun` + `collectRun` (`backgroundTask: true`) |
+| Workspace | 별도 worker가 DB 큐와 native operation을 이어받는다 | `executeWorkspaceTask` + 공통 `openTaskRun`. 일반 명령과 외부 CLI runtime은 Studio 모델 설정 없이 실행한다 |
 
 오디오 전사 호출은 worker가 `openModelCall`로 모델 정책·비용·동시성을 적용하고,
-후처리는 표의 프로젝트 실행 경로를 사용한다. 같은 Version이라도 사용자·token·메신저·자동화가
+후처리는 표의 프로젝트 실행 경로를 사용한다. 같은 Agent 설정이라도 사용자·token·메신저·자동화가
 갖는 Session·도구·승인은 다르다. [실행 창구별 계약](design/workspaces.md#실행-창구별-계약)을 보라.
 
 ### 런 브래킷
@@ -260,10 +259,10 @@ Predict와 A2A는 이미지 전용 응답을 만들기 위해 `generateImage`를
 1. 로그 correlation ID를 만들고 모델 실행이면 primary·fallback의 미등록 모델 정책을 검사한다.
 2. 프로젝트 일간·월간 비용과 해당 user actor의 멤버 월간 상한을 검사한다.
 3. 호출자별 DB lease 슬롯을 획득하고 in-flight 메트릭을 연다.
-4. `openRun`은 여기에 프로젝트·버전·실행 주체가 묶인 Artifact recorder를 추가한다.
+4. `openRun`은 여기에 프로젝트·실행 주체가 묶인 Artifact recorder를 추가한다.
 5. 실행 경로가 사용량을 저장한 뒤 `close`가 메트릭을 닫고 슬롯을 해제하며 비용 임계값을 정산한다.
 
-`executeVersion`, `executeVersionStream`, `executeAgent`, `generateImage`가 `openRun`을 사용한다.
+프로젝트 실행 파사드는 `executeAgent`를 통해 `openRun`을 사용한다.
 오디오 전사는 `openModelCall`, Workspace 작업은 모델 없는 `openTaskRun`을 사용한다.
 Workspace native CLI의 사용량은 Studio SDK 모델 Usage와 별개다.
 
@@ -272,7 +271,7 @@ fail-open, 동시성 저장소 장애는 fail-closed다. user tier는 개인 예
 서비스 credential인 project-token에는 개인 예산을 청구하지 않는다.
 
 슬롯은 획득 토큰과 만료가 있는 DB 행이다. 해제도 토큰을 검사해 만료된 실행이 새 실행의 슬롯을
-지우지 못한다. 하위 Agent는 부모 브래킷 안에서 실행하되 대상의 발행 버전·순환·깊이·모델·
+지우지 못한다. 하위 Agent는 부모 브래킷 안에서 실행하되 대상의 현재 설정·순환·깊이·모델·
 프로젝트 비용과 남은 턴을 검사한다. 사용량 flush 후 비용을 쓴 하위 프로젝트도 정산한다.
 상한과 튜닝은 [CONFIGURATION](CONFIGURATION.md#실행-제한),
 실패 정책은 [OPERATIONS](OPERATIONS.md#지출-가드와-부하-가드)에 있다.
@@ -283,8 +282,7 @@ fail-open, 동시성 저장소 장애는 fail-closed다. user tier는 개인 예
 위임·이미지 지침은 실행 시 결정되므로 preview도 같은 MCP 준비 경로를 사용한다.
 캐시 상태에 따라 실제 서버를 조회할 수 있으며 준비한 세션은 반환 전에 정리한다.
 요청을 주면 명시적 Memory recall과 capability 검색을 반영하고, 요청이 없으면 빠진 문맥을 경고한다.
-image Project는 `composeImagePrompt`로 style과 템플릿을 합친다.
-preview는 PII 치환 전 원문이며 필터를 켠 Version에는 이를 경고한다.
+preview는 PII 치환 전 원문이며 필터를 켠 Agent에는 이를 경고한다.
 
 ### SSE 응답은 답하기 전에 첫 chunk 를 당겨온다
 
@@ -315,7 +313,7 @@ Chat의 연결 분리 wrapper는 이 계층 바깥에 있다. 브라우저 연�
 | `done` / `finishReason` | 전송 구간 종료와 턴·출력 한도. `runTermination`이 최상위 종료만 판정한다. 취소는 소비자의 signal/return으로 판정한다 |
 | `approval` | `{ pending: true }`면 영속 Chat의 승인 항목을 조회한다. 이 경우 전송이 끝나도 작업이 완료된 것은 아니다 |
 | `author` / `authorPath` | 자식 출력의 이름과 위임 경로. Handoff는 같은 Runner의 담당 Agent를 바꾸므로 별도 작성 경로를 만들지 않는다 |
-| `transferId` / `authorDone` | 동시 위임 호출의 식별자와 해당 자식 실행 종료. Trace 샘플링과 독립적이다 |
+| `transferId` / `authorDone` | 동시 위임 호출의 식별자와 해당 자식 실행 종료. Trace 저장과 별개로 스트림에 전달한다 |
 | `traceId` | Studio Trace 식별자. text 자식은 최상위 Trace의 SDK span 계층을 사용하며 특화 자식은 별도 Trace를 가질 수 있다 |
 
 이미지와 파일을 소비하는 표면은 두 축을 모두 다룬다. raw chunk route는 `withAddressedFiles`로
@@ -339,7 +337,7 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 
 | 문서 | 소유하는 설명 |
 |---|---|
-| [execution](design/execution.md) | Project·Version, SDK Runtime, 이미지와 Artifacts |
+| [execution](design/execution.md) | Project·현재 설정, SDK Runtime, 이미지와 Artifacts |
 | [sdk-capabilities](design/sdk-capabilities.md) | SDK 기능별 제품 적용 범위·미지원 경계·검증 근거 |
 | [chat](design/chat.md) | 화면 기록·SDK Session·승인·연결 분리·재연결 |
 | [capabilities](design/capabilities.md) | Skill·Plugin sync·벡터 검색·Memory recall |
@@ -366,7 +364,7 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 |---|---|
 | `/`, `/login`, `/guide` | 로그인 상태별 개요·랜딩, 로그인, 사용자 가이드. `/dashboard`는 `/`로 redirect |
 | `/projects`, `/projects/[name]` | 카탈로그·생성·Playground |
-| 프로젝트 하위 `versions`·`compare`·`usage`·`traces`·`artifacts` | 버전·비교·비용·실행 기록·산출물 |
+| 프로젝트 하위 Playground·`usage`·`traces`·`artifacts` | 현재 설정·비용·실행 기록·산출물 |
 | 프로젝트 하위 `api-reference`·`integrations`·`settings`·`audio`·`workspace` | 호출 예제·연동·설정·선택적 비동기 작업 |
 | `/chats`, `/chats/[chatId]`, `/artifacts` | 개인 대화·작업·파일 |
 | `/skills`·`/tools`·`/agents`·`/plugins`와 각 상세 | 공유 capability registry |
@@ -380,13 +378,13 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 Mantine 테마의 소유자는 `app/theme.ts`다. 공통 검색은 `CatalogSearch`, IME Enter 전송은
 `isSubmitEnter`, Chat 스크롤은 `use-stick-to-bottom`이 담당한다.
 시스템 테마는 hydration 전후 기본값을 일치시키고, 답변·추론의 고빈도 출력은
-`createTextPacer`로 묶는다. API Reference 예제는 프로젝트·버전에 맞춰 만들고 credential은
+`createTextPacer`로 묶는다. API Reference 예제는 프로젝트 주소에 맞춰 만들고 credential은
 자리표시자로만 표시한다.
 
 ## 용어
 
 개념의 기본 정의는 [시스템 개요](AGENT_STUDIO.md#skilltoolmcpagentmemory)를 따른다.
-코드의 `agent project`는 다중 턴 프로젝트, `subagent`는 버전의 실행 대상 참조,
+코드의 `agent project`는 다중 턴 프로젝트, `subagent`는 Agent 설정의 실행 대상 참조,
 `ExternalAgent`는 원격 registry 항목이다. `McpServer`는 콘솔의 Tools에 등록한 서버를 뜻한다.
 
 `RunActor`는 실행 귀속, `RunCaller`는 선택적 사용자 표시 문맥, `RunConversation`은 표면별

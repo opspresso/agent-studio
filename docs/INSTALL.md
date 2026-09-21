@@ -5,7 +5,8 @@ Agent Studio 는 기업이 자기 네트워크 안에 설치해 운영하는 플
 
 | 환경 | 소유 위치 | 이 저장소가 제공하는 것 |
 |---|---|---|
-| localdev | 이 저장소의 `compose.yaml`, `deploy/local/` | 독립 `agent-studio-local` PostgreSQL 18·MinIO와 로컬 MCP 서버 |
+| localdev (Kubernetes) | `../argocd-env-addons`, `../argocd-env-demo` | Mac에서 `pnpm dev`로 실행하는 앱 |
+| localdev (Compose 대안) | 이 저장소의 `compose.yaml`, `deploy/local/` | 독립 `agent-studio-local` PostgreSQL 18·MinIO와 로컬 MCP 서버 |
 | IDC | `../dockpad` | 릴리즈된 Agent Studio 이미지 |
 | EKS/Kubernetes | `../argocd-env-demo` | 릴리즈된 Agent Studio 이미지 |
 
@@ -90,16 +91,16 @@ ffmpeg는 runtime 이미지에 포함돼 있다. 동시에 두 작업을 처리�
 맞는 메모리와 scratch volume을 할당한다. worker 중단 시 작업 lease가 만료된 후 다른 worker가 재개한다.
 `SIGTERM`은 현재 작업을 중단하고 checkpoint를 남긴다. 필수 chat·sign-in 경로는 worker와 무관하다.
 
-버전의 `parameters.audioProcessing=true`로 Agent 도구를 켠다. 저장소와 실행 사용자 문맥이 있어야
+Agent 설정의 `parameters.audioProcessing=true`로 Agent 도구를 켠다. 저장소와 실행 사용자 문맥이 있어야
 도구가 제공된다. 같은 Agent와 plugin skill로 수집·후처리·요청한 기록을 구성할 수 있다.
-후처리는 `published` 또는 고정 버전을 선택하고 작업 접수 시 snapshot으로 고정한다. 기본 결과는
+후처리는 선택한 Agent의 현재 설정을 작업 접수 시 snapshot으로 고정한다. 기본 결과는
 비공개 Artifacts이며 외부 기록은 명시적으로 요청하거나 선택한 경우에만 수행한다. Memory delivery에는 수신 서버의
 문서 수집·멱등 저장 도구가 필요하다. 오디오 처리 화면에서 작업 설정과 한도를 revision으로 저장한다.
 
 ## Workspace worker
 
 Workspace는 선택 기능이다. `sandbox/Dockerfile`로 별도 실행 이미지를 만들고, 아래처럼
-실행 이미지와 네트워크를 연결한다. Agent Version에서 워크스페이스 도구를 켜고 프로젝트 전용 탭에서
+실행 이미지와 네트워크를 연결한다. Agent 설정에서 워크스페이스 도구를 켜고 프로젝트 전용 탭에서
 설정한다. 네이티브 Runtime 모델은 Models에서 선택한다. 일반 작업에는 저장소가 필요하지 않다.
 
 ```bash
@@ -153,6 +154,23 @@ bare Git 저장소와 bundle을 주고받고 저장소 코드를 실행하지 �
 승인 Commit·복원을 검증한다. GitHub App API와 승인 경합·webhook 중복은 단위 테스트로 검증한다.
 
 ## localdev
+
+로컬 개발은 local Kubernetes를 우선한다. 실행 제품은 OrbStack 또는 Docker Desktop이며,
+배포 환경 이름은 `local`이다. Compose는 Kubernetes를 사용할 수 없거나 격리된 테스트에 필요한 경우의 대안이다.
+`argocd-env-addons`가 `argocd`와
+External Secrets 연결을 관리하고, `argocd-env-demo`가 PostgreSQL·MinIO·Neo4j·MCP를 배포한다.
+Agent Studio는 Kubernetes에 배포하지 않고 Mac에서 `pnpm dev`로 실행한다.
+설치·자격 증명 준비는 [로컬 운영 문서](https://github.com/opspresso/argocd-env-addons/blob/main/install/local/README.md)를 따른다.
+
+두 실행 제품의 공통 접속 방법은 addons 저장소의 `python3 install/local/connect.py`다.
+`--context orbstack` 또는 `--context docker-desktop`으로 포워딩을 유지한 뒤 `.env.local`의
+`DATABASE_URL`은 `localhost:5432/agent_studio`, `S3_ENDPOINT`는 `http://localhost:9000`으로
+설정한다. 자격 증명은 `local` namespace의 `local-credentials` Secret 값과 맞추고 기존 암호화 키와
+모델 설정은 유지한다. MCP별 localhost 포트는 로컬 운영 문서를 따르고
+`MCP_INTERNAL_HOST_SUFFIXES`에 `localhost`를 포함한다. OrbStack의 Service DNS 직접 연결은
+선택적으로 사용할 수 있다.
+
+### Compose 대안
 
 Node 24와 pnpm 11을 설치하고:
 
@@ -228,6 +246,11 @@ v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQ
 위해 그 행을 교체한다. 실행 결과가 제거·교체 건수를 출력하므로 이관 뒤 반드시 확인하라.
 
 ## 업그레이드
+
+Version 기반 설치에서 Agent 현재 설정으로 전환할 때는 [Agent 설정 데이터 이전](AGENT-MIGRATION.md)을
+먼저 수행한다. 이 작업은 부팅 시 자동 실행되지 않으며, 원본 보관·템플릿 처리·MCP 헤더 재암호화와
+승인 대기·Audio 작업 정리 절차를 포함한다. 이전 도구는 릴리스 앱 이미지에 포함되지 않으므로
+대상 릴리스의 소스와 개발 의존성을 별도로 준비한다.
 
 새 image tag의 앱은 부팅 시 advisory lock 아래에서 schema migration을 적용한다.
 개발 중인 프로젝트라 API·설정·저장 형식의 하위 호환을 보장하지 않으며 자동 down migration도 없다.

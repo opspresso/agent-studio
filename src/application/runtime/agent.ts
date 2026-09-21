@@ -83,7 +83,7 @@ export function compileAgent(
   const assembly = assembleAgentRun({ ...deps, canDelegate: Boolean(deps.loadAgent) }, {
     ...input, blockedTools: input.parameters?.policy?.blockedTools, messages: [...(previousImages.length ? [{ role: "user" as const, content: previousImages.map((image) => ({ type: "image_url" as const, image_url: { url: imageDataUrl(image) } })) }] : []), ...input.messages],
   });
-  if (!graph.persistent && input.parameters?.policy?.approvalTools?.some((name) => assembly.tools.some((entry) => entry.function.name === name))) throw new ValidationError("This version's approval policy requires a persisted chat session");
+  if (!graph.persistent && input.parameters?.policy?.approvalTools?.some((name) => assembly.tools.some((entry) => entry.function.name === name))) throw new ValidationError("This Agent's approval policy requires a persisted chat session");
   if (saved) assembly.images.restore(saved.images);
   for (const warning of assembly.warnings) emit({ warning });
   const turn: RuntimeTurn = {
@@ -171,7 +171,7 @@ export function compileAgent(
 
     const metadata = { toolName: binding.name, toolDescription: assembly.tools.find((entry) => entry.function.name === binding.name)?.function.description ?? binding.agentName, parameters: AGENT_TASK_SCHEMA, inputGuardrails: [toolInputGuardrail(validateTask!, filter)], needsApproval: input.parameters?.policy?.approvalTools?.includes(binding.name) ?? false };
     // The SDK's source-agent metadata and nested RunState remain attached to this
-    // actual Agent-as-Tool. Only resolving the deployment-owned version is lazy.
+    // actual Agent-as-Tool. Only resolving the local Agent's current settings is lazy.
     const runOptions = { maxTurns: turn.maxTurns, signal: input.signal };
     const delegate = binding.mode === "delegate"
       ? prototype.asTool({

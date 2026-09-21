@@ -6,7 +6,7 @@ import { editorBody } from "@/app/api/_lib/body";
 
 /**
  * Named inbound-A2A client keys. Admin-only, like the shared key beside them:
- * both credentials open every published project, so issuing one is an
+ * both credentials open every configured Agent, so issuing one is an
  * app-level act, not a project setting.
  */
 

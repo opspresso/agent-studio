@@ -1,5 +1,5 @@
 /**
- * Execution use cases — the composition point that resolves a version's skills,
+ * Execution use cases — the composition point that resolves an Agent's skills,
  * MCP tools and subagents from repositories, runs the LLM engine, and records
  * usage. Surfaces dispatch through `executeProjectStream` / `executeProject`
  * rather than picking an executor themselves; keep these signatures stable.
@@ -8,7 +8,7 @@
  * exposes an optional `channel` so tests can inject a fake.
  */
 
-import { collectedWarning, isTopLevelChunk, messageText, parseImageDataUrl, runTermination } from "@/domain/llm/types";
+import { collectedWarning, isTopLevelChunk, messageText, runTermination } from "@/domain/llm/types";
 import type {
   ChatMessageInput,
   EngineChunk,
@@ -16,25 +16,23 @@ import type {
   RunTerminationReason,
   UsageInfo,
 } from "@/domain/llm/types";
-import { generateImageStream } from "@/application/image/generateImage";
 import { UpstreamError, ValidationError } from "@/application/errors";
 import { settleCostLimit } from "@/application/usage/costGuard";
-import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
+import { createUsageAggregator } from "@/application/usage/recordUsage";
 import * as engine from "@/application/runtime";
 import { runDeadlineExceeded, withRunDeadline } from "@/shared/runDeadline";
 import { runEnding } from "@/application/run/runDeadline";
 import { log } from "@/shared/logger";
 import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor";
-import type { Project } from "@/domain/project/types";
 import { openRun } from "@/application/run/runBracket";
 import { captureRunArtifacts } from "@/application/artifact/runArtifacts";
 import { fileRefOf, type ProducedFileRef } from "@/application/artifact/producedFiles";
-import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
+import type { ExecuteAgentInput, ExecuteProjectInput, ExecutionDeps } from "./deps";
 import { discoveryQueries, recentUserQueries, resolveRunTools, toolsPrepared } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./agentBindings";
-import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "@/application/run/traceLifecycle";
-import { callerFor, runClock, runStrategyFor, toEngineParameters, toRunInput } from "./deps";
+import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
+import { callerFor, runClock, toEngineParameters, toRunInput } from "./deps";
 import { memoryPrepared, prepareMemoryForRun } from "./memoryRecall";
 import { openRuntimeSession, runtimeFingerprint } from "@/application/runtime/session";
 
@@ -42,240 +40,17 @@ export type {
   ExecutionDeps,
   ExecuteAgentInput,
   ExecuteProjectInput,
-  ExecuteVersionInput,
 };
 export type { PromptPreview, PromptPreviewMessage } from "./deps";
 export { previewPrompt } from "./promptPreview";
-export { runStrategyFor, type RunStrategy } from "./deps";
 export { executeWorkspaceTask } from "./workspaceRun";
 
-function bindUsage(deps: ExecutionDeps, actor: string | undefined): engine.RecordUsageFn {
-  return (record) => recordUsage(deps.usage, { ...record, ...(actor ? { actor } : {}) });
+/** Every execution surface uses the Agent tool loop. */
+export function streamProjectRun(deps: ExecutionDeps, input: ExecuteProjectInput): AsyncGenerator<EngineChunk> {
+  return executeAgent(deps, toRunInput(input));
 }
 
-// --- Single-shot version execution -----------------------------------------
-
-export async function executeVersion(
-  deps: ExecutionDeps,
-  input: ExecuteVersionInput,
-): Promise<RunResult> {
-  const channel = deps.channel;
-  const actorKey = input.actor ? toActorKey(input.actor) : undefined;
-  // Before the recorder: a run refused by the cost guard leaves no trace, no
-  // metric and no usage — it never started.
-  const bracket = await openRun(deps, input.project, input.version, input.actor);
-  const recorder = sampledTraceRecorder(deps, input);
-  recorder?.useSdkRuntime();
-  // Held rather than built inline: the catch has to be able to ask which of the
-  // two signals stopped the run.
-  const runSignal = withRunDeadline(input.signal);
-  let failed = false;
-  try {
-    const result = await engine.runPrompt(
-      { channel, recordUsage: bindUsage(deps, actorKey), onSdkSpan: recorder ? (span) => recorder.observeSdkSpan(span) : undefined },
-      {
-        projectName: input.project.name,
-        model: input.version.model,
-        fallbackModel: input.version.fallbackModel,
-        systemPrompt: input.version.systemPrompt,
-        userPromptTemplate: input.version.userPromptTemplate,
-        variables: input.variables,
-        extraMessages: input.extraMessages ?? input.messages,
-        parameters: toEngineParameters(input.version),
-        now: runClock(deps),
-        ...callerFor(input),
-        signal: runSignal,
-      },
-    );
-    recorder?.observeResult(result);
-    await finishTrace(recorder);
-    return result;
-  } catch (caught) {
-    // A caller that hung up is a cancellation, not a failure of the run — but
-    // the deadline is this platform stopping it, and that is a failure whether
-    // or not the caller was still there to hear about it. One question, one
-    // answer: the same latch decides the ending, the metric and the trace.
-    const error = runEnding(caught, runSignal);
-    const cancelled = !runDeadlineExceeded(runSignal) && input.signal?.aborted === true;
-    failed = !cancelled;
-    await finishTrace(recorder, error, cancelled);
-    throw error;
-  } finally {
-    // `runPrompt` awaits its own usage recording, so the settle inside `close`
-    // already sees this run's spend.
-    await bracket.close({ failed });
-  }
-}
-
-export async function* executeVersionStream(
-  deps: ExecutionDeps,
-  input: ExecuteVersionInput,
-): AsyncGenerator<EngineChunk> {
-  const channel = deps.channel;
-  const actorKey = input.actor ? toActorKey(input.actor) : undefined;
-  const bracket = await openRun(deps, input.project, input.version, input.actor);
-  const recorder = sampledTraceRecorder(deps, input);
-  recorder?.useSdkRuntime();
-  const runSignal = withRunDeadline(input.signal);
-  let failure: unknown;
-  let completed = false;
-  try {
-    for await (const chunk of engine.runPromptStream(
-      { channel, recordUsage: bindUsage(deps, actorKey), onSdkSpan: recorder ? (span) => recorder.observeSdkSpan(span) : undefined },
-      {
-        projectName: input.project.name,
-        model: input.version.model,
-        fallbackModel: input.version.fallbackModel,
-        systemPrompt: input.version.systemPrompt,
-        userPromptTemplate: input.version.userPromptTemplate,
-        variables: input.variables,
-        extraMessages: input.extraMessages ?? input.messages,
-        parameters: toEngineParameters(input.version),
-        now: runClock(deps),
-        ...callerFor(input),
-        signal: runSignal,
-      },
-    )) {
-      recorder?.observe(chunk);
-      if (runTermination(chunk) === "error") {
-        failure = chunk.error;
-      }
-      yield recorder && isTopLevelChunk(chunk)
-        ? { ...chunk, traceId: recorder.traceId }
-        : chunk;
-    }
-    completed = true;
-  } catch (caught) {
-    const error = runEnding(caught, runSignal);
-    if (runDeadlineExceeded(runSignal) || !input.signal?.aborted) {
-      failure = error;
-    }
-    throw error;
-  } finally {
-    await bracket.close({ failed: failure !== undefined });
-    await finishTrace(recorder, failure, !completed && failure === undefined);
-  }
-}
-
-/**
- * An image project draws through the dedicated generateImage use case, and each
- * surface serialises that answer for itself. Refusing here is what keeps a
- * completion surface from silently sending it down the single-shot text path —
- * which is exactly how the two route copies of this dispatch had diverged.
- */
-function imageRunRefusal(projectName: string): ValidationError {
-  return new ValidationError(
-    `Project "${projectName}" is an image project; it generates through its image surface, not a completion`,
-  );
-}
-
-/**
- * Client tools are calls the agent loop ends on, and a run with no loop has
- * nothing to end: a single-shot answer cannot stop for the application, and an
- * image model is offered no tools at all. Offered silently they would be
- * tools the client waits on forever, so the facade refuses them for those
- * types — a surface that means to declare them checks the strategy first, as
- * the AG-UI one does, and strips them with a warning.
- */
-function clientToolsRefusal(project: Project): ValidationError {
-  return new ValidationError(
-    `Project "${project.name}" is a ${project.projectType} project; application tools can only be offered to an agent project's tool loop`,
-  );
-}
-
-/**
- * The tool loop runs agent projects, and every other type reaching it is a
- * misdispatch rather than a degraded run.
- *
- * A prompt project's behaviour is its `userPromptTemplate`, and the loop has
- * nowhere to put one: it answers from a bare system prompt and **succeeds**,
- * which is worse than failing, because nothing about the answer says the
- * project's own configuration was skipped. An image project is the refusal
- * {@link imageRunRefusal} already makes — its model must never reach
- * chat/completions.
- *
- * The check lives here rather than at each entry point because three of the four
- * callers already had one and the fourth did not: chats
- * (`createChat`) and all three Slack paths refuse a non-agent project, while
- * `/api/projects/{name}/versions/{version}/agent` ran the loop on whatever it
- * was given. `executeProjectStream` reaches this only for agent projects, so a
- * correct dispatch never pays for it.
- */
-function agentRunRefusal(project: Project): ValidationError {
-  return new ValidationError(
-    `Project "${project.name}" is a ${project.projectType} project; the agent tool loop runs agent projects only`,
-  );
-}
-
-/**
- * Every project type as a chunk stream, image included — for a surface that
- * consumes a run generically rather than answering with a completion.
- *
- * The pair with {@link executeProjectStream} is two contracts, not a flag: which
- * function a surface calls is that surface saying whether an image project is
- * something it can run at all. `/chat/completions` calls the refusing one
- * because an image has no chat completion — there is no answer to send. The
- * webhook runner calls this one because there is: the picture is billed,
- * traced, and recorded on the firing's row, even though a row carries text and
- * the bytes stop here. A boolean deciding whether a project type is refused
- * would be the shape of the bug the refusal prevents — a name is not.
- *
- * It exists because the composition root was answering this. `triggerRunnerDeps`
- * re-encoded the strategy dispatch and mapped the input fields itself, in the
- * one file whose job is wiring; the convention it broke — "a new execution entry
- * point calls the facade rather than re-encoding the dispatch" — was already
- * written down, and the facade simply did not offer the shape a chunk consumer
- * needed. Assembling image chunks there is also how the ending went missing once.
- *
- * `ExecutionDeps` already carries everything `ImageGenerationDeps` asks for, so
- * one bag serves both branches and a caller does not choose between two.
- */
-export async function* streamProjectRun(
-  deps: ExecutionDeps,
-  input: ExecuteProjectInput,
-): AsyncGenerator<EngineChunk> {
-  if (runStrategyFor(input.project) === "image") {
-    if (input.clientTools && input.clientTools.length > 0) {
-      throw clientToolsRefusal(input.project);
-    }
-    // An image run's prompt is one string. A chunk consumer's history is the
-    // conversation, and only its last user turn can be the thing to draw.
-    const prompt = latestUserText(input.messages);
-    const content = input.messages.findLast((message) => message.role === "user")?.content;
-    const images = Array.isArray(content) ? content.flatMap((part) => {
-      if (part.type !== "image_url") {
-        return [];
-      }
-      const image = parseImageDataUrl(part.image_url.url);
-      if (!image) {
-        throw new ValidationError("Image edit sources must be supported inline image data URLs");
-      }
-      return [image];
-    }) : [];
-    yield* generateImageStream(deps, {
-      project: input.project,
-      version: input.version,
-      ...(input.variables ? { variables: input.variables } : {}),
-      ...(prompt ? { prompt } : {}),
-      ...(images.length > 0 ? { images } : {}),
-      ...(input.actor ? { actor: input.actor } : {}),
-      ...(input.conversation ? { conversation: input.conversation } : {}),
-      ...(input.signal ? { signal: input.signal } : {}),
-    });
-    return;
-  }
-  yield* executeProjectStream(deps, input);
-}
-
-/**
- * The newest user turn as plain text, or nothing when there is none.
- *
- * Two callers want it for different reasons and the same way. An image run
- * draws this — the version's own template is the fallback when a conversation
- * has no user turn yet — and capability discovery searches the catalog with it.
- * Text only: an image project's model is given a prompt rather than a
- * conversation, and a search query is a query.
- */
+/** The latest user request supplies capability discovery queries. */
 function latestUserText(messages: ChatMessageInput[]): string | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -287,28 +62,9 @@ function latestUserText(messages: ChatMessageInput[]): string | undefined {
   return undefined;
 }
 
-/**
- * Single streaming dispatch point: how a projectType runs is decided here, not
- * in each entry point. `agent` projects run the multi-turn tool loop; anything
- * else streams a single-shot completion. `image` projects are refused — they
- * generate through the dedicated generateImage use case, not a chunk stream —
- * and every image-capable surface (predict, A2A) branches to it before asking
- * here. A surface that can render one calls {@link streamProjectRun} instead.
- */
-export function executeProjectStream(
-  deps: ExecutionDeps,
-  input: ExecuteProjectInput,
-): AsyncGenerator<EngineChunk> {
-  if (runStrategyFor(input.project) === "image") {
-    throw imageRunRefusal(input.project.name);
-  }
-  if (runStrategyFor(input.project) === "agent") {
-    return executeAgent(deps, toRunInput(input));
-  }
-  if (input.clientTools && input.clientTools.length > 0) {
-    throw clientToolsRefusal(input.project);
-  }
-  return executeVersionStream(deps, { ...toRunInput(input), variables: input.variables });
+/** Completion streams retain the same Agent execution and output axes. */
+export function executeProjectStream(deps: ExecutionDeps, input: ExecuteProjectInput): AsyncGenerator<EngineChunk> {
+  return streamProjectRun(deps, input);
 }
 
 /**
@@ -482,26 +238,7 @@ export async function executeProject(
   deps: ExecutionDeps,
   input: ExecuteProjectInput,
 ): Promise<CollectedRun> {
-  if (runStrategyFor(input.project) === "image") {
-    throw imageRunRefusal(input.project.name);
-  }
-  if (runStrategyFor(input.project) === "agent") {
-    return collectRun(executeAgent(deps, toRunInput(input)), input.version.model);
-  }
-  if (input.clientTools && input.clientTools.length > 0) {
-    throw clientToolsRefusal(input.project);
-  }
-  const result = await executeVersion(deps, {
-    ...toRunInput(input),
-    variables: input.variables,
-  });
-  // The termination is the engine's: `runPrompt` reads the provider's
-  // finish_reason, so a response cut at the output cap is not stamped
-  // "completed" here — that stamp is what once erased the difference.
-  // A single-shot run accumulates nothing and resolves no bindings, so it has
-  // nothing to have lost and no tool to have produced anything; the empty
-  // arrays keep one shape for both branches.
-  return { ...result, images: [], files: [], warnings: [] };
+  return collectRun(streamProjectRun(deps, input), input.configuration.model);
 }
 
 // --- Agent execution --------------------------------------------------------
@@ -510,11 +247,6 @@ export async function* executeAgent(
   deps: ExecutionDeps,
   input: ExecuteAgentInput,
 ): AsyncGenerator<EngineChunk> {
-  // Before the bracket, like every other refusal that says the request was
-  // wrong rather than that the platform is busy: nothing is counted or recorded.
-  if (runStrategyFor(input.project) !== "agent") {
-    throw agentRunRefusal(input.project);
-  }
   // A multi-turn agent run makes many LLM calls; accumulate their usage and
   // flush once (per project/date/model) when the run ends, even on error.
   // The actor is the run's, not the turn's: every model call this loop makes —
@@ -526,7 +258,7 @@ export async function* executeAgent(
     ...(input.actor ? { actor: input.actor } : {}),
     ...(input.ownerEmail ? { userEmail: input.ownerEmail } : {}),
     // Carried unconditionally, like the actor: a child is answering the same
-    // person as its parent. Whether a *prompt* names them stays a per-version
+    // person as its parent. Whether a *prompt* names them stays a per-Agent
     // question that `callerFor` answers at each engine-input boundary — this
     // run's own opt-in decides nothing for the project it transfers to.
     ...(input.caller ? { caller: input.caller } : {}),
@@ -536,11 +268,11 @@ export async function* executeAgent(
     ...(input.conversation ? { conversation: input.conversation } : {}),
   };
   const usage = createUsageAggregator(deps.usage, input.actor && toActorKey(input.actor));
-  const bracket = await openRun(deps, input.project, input.version, input.actor, {
+  const bracket = await openRun(deps, input.project, input.configuration, input.actor, {
     ...(input.ownerEmail ? { ownerEmail: input.ownerEmail } : {}),
   });
   const recorder = deps.traces
-    ? createTraceRecorder(deps.traces, input.project, input.version, input.messages.length, origin)
+    ? createTraceRecorder(deps.traces, input.project, input.configuration, input.messages.length, origin)
     : undefined;
   let failure: unknown;
   let completed = false;
@@ -556,7 +288,7 @@ export async function* executeAgent(
     // on different dates across a midnight boundary is the exact confusion the
     // clock exists to remove. The pinned deps travel down the transfer chain.
     const runtime = deps.runtimeSessions && input.conversation?.surface === "chat" && input.actor?.kind === "user"
-      ? await openRuntimeSession(deps.runtimeSessions, { sessionId: input.conversation.id, ownerEmail: input.actor.id, projectName: input.project.name, version: input.version }, input.resumeApproval)
+      ? await openRuntimeSession(deps.runtimeSessions, { sessionId: input.conversation.id, ownerEmail: input.actor.id, projectName: input.project.name, configuration: input.configuration }, input.resumeApproval)
       : undefined;
     if (input.resumeApproval && !runtime) throw new ValidationError("Approval resumption requires a persisted chat session");
     const messages = runtime?.checkpoint?.input.messages ?? input.messages;
@@ -565,17 +297,17 @@ export async function* executeAgent(
     // Recall explicit bindings before discovery, so remembered associations can
     // help find the sources needed to answer the request.
     const recallStartedAt = new Date();
-    // Only when the version asked: a run that recalls nothing spent no time
+    // Only when the Agent asked: a run that recalls nothing spent no time
     // here, and a zero-length span on every trace would say less than none.
     const recordRecall = (
       detail: { status?: "ok" | "error"; output?: Record<string, unknown> },
     ): void => {
-      if (input.version.parameters.memoryRecall) {
+      if (input.configuration.parameters.memoryRecall) {
         recorder?.observePrepare("memory", recallStartedAt, detail);
       }
     };
     const memory = await (runtime?.checkpoint ? Promise.resolve({ input: { remembered: runtime.checkpoint.input.remembered }, warnings: [], asked: 0, failed: 0 }) : prepareMemoryForRun(deps, {
-      version: input.version,
+      configuration: input.configuration,
       origin,
       query: latestUserText(messages) ?? "",
       signal: runSignal,
@@ -594,11 +326,11 @@ export async function* executeAgent(
     // patched afterwards.
     //
     // The queries are built here because this is where the request is: the
-    // newest user turns are what the run is being asked for, and the version's
+    // newest user turns are what the run is being asked for, and the Agent's
     // system prompt is what it is generally for. `resolveRunTools` ignores them
-    // unless the version opted in.
+    // unless the Agent opted in.
     // Timed, because this is the run's other network stage: every bound MCP
-    // server is opened and listed here, and a version with discovery on embeds
+    // server is opened and listed here, and an Agent with discovery on embeds
     // its queries and searches the catalog. The recorder bills it to a
     // `prepare` span instead of to the model that has not been called yet.
     const resolveStartedAt = new Date();
@@ -607,9 +339,9 @@ export async function* executeAgent(
     const prepared = await (async () => {
       const resolved = await resolveRunTools(
         deps,
-        input.version,
+        input.configuration,
         runSignal,
-        discoveryQueries(input.version, recentUserQueries(messages), memory.input.remembered),
+        discoveryQueries(input.configuration, recentUserQueries(messages), memory.input.remembered),
         origin,
         usage.record,
       );
@@ -623,7 +355,7 @@ export async function* executeAgent(
         // What the resolve actually read, which discovery may have widened: the
         // original would offer a discovered agent and then refuse to transfer
         // to it.
-        resolved.version,
+        resolved.configuration,
         input.project.name,
         usage.record,
         origin,
@@ -669,11 +401,11 @@ export async function* executeAgent(
     for await (const chunk of captureRunArtifacts(bracket.artifacts, engine.runAgent(agentDeps, {
       projectName: input.project.name,
       ...(runtime ? { runtime } : {}),
-      model: input.version.model,
-      fallbackModel: input.version.fallbackModel,
-      systemPrompt: input.version.systemPrompt,
+      model: input.configuration.model,
+      fallbackModel: input.configuration.fallbackModel,
+      systemPrompt: input.configuration.systemPrompt,
       messages,
-      parameters: toEngineParameters(input.version),
+      parameters: toEngineParameters(input.configuration),
       now: startedAt,
       ...callerFor(input),
       ...memory.input,
@@ -682,7 +414,7 @@ export async function* executeAgent(
       // subagent run does not pass through the run bracket — so nothing but this
       // asymmetry keeps those children inside a bound.
       canDispatch: true,
-      maxTurn: input.version.maxTurn,
+      maxTurn: input.configuration.maxTurn,
       skills,
       subagents,
       mcpTools: mcp.mcpTools,

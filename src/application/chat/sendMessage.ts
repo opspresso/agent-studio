@@ -5,7 +5,6 @@ import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError, ChatConflictError } from "./errors";
 import { userMayAccessProject } from "@/application/project/projectUseCases";
 import {
-  resolveVersion,
   runAndPersist,
   readMessageDocuments,
   storeAttachedImages,
@@ -23,7 +22,7 @@ export interface SendMessageInput {
   images?: AttachedImage[];
   documents?: AttachedDocumentInput[];
   userEmail: string;
-  /** The owner in words, for a version that opted into `callerContext`. */
+  /** The owner in words, for an Agent that opted into `callerContext`. */
   caller?: RunCaller;
   signal?: AbortSignal;
 }
@@ -81,9 +80,9 @@ export async function sendMessage(
   if (!(await userMayAccessProject(project, input.userEmail))) {
     throw new ChatForbiddenError(`project "${project.name}" is private`);
   }
-  const version = await resolveVersion(deps, project);
-  if (!version) {
-    throw new ChatValidationError("project has no runnable version");
+  const configuration = project.configuration;
+  if (!configuration) {
+    throw new ChatValidationError("project has no Agent configuration");
   }
 
   const savedRuntime = deps.runtimeSessions ? await readRuntimeSession(deps.runtimeSessions, input.chatId, input.userEmail) : undefined;
@@ -97,12 +96,12 @@ export async function sendMessage(
     const attachments = input.images ?? [];
     const uploaded = await storeAttachedImages(
       deps,
-      { projectName: project.name, versionName: version.versionName, actor: { kind: "user", id: input.userEmail } },
+      { projectName: project.name, actor: { kind: "user", id: input.userEmail } },
       attachments,
     );
     const documentInput = input.documents ?? [];
     const read = await readMessageDocuments(deps, {
-      projectName: project.name, versionName: version.versionName,
+      projectName: project.name,
       actor: { kind: "user", id: input.userEmail },
     }, documentInput);
     const userMessage: ChatMessage = {
@@ -118,7 +117,7 @@ export async function sendMessage(
 
     const source = deps.runAgent({
       project,
-      version,
+      configuration,
       // The SDK Session supplies prior turns; this input contains only the new turn.
       messages: [
         { role: "user", content: userTurnContent(input.content, attachments, read.stored) },

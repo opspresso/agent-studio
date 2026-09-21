@@ -2,7 +2,7 @@
 
 /**
  * The one modal a picture opens in — from the artifacts gallery, a chat
- * message, a project's run panel or its compare view.
+ * message or a project's run panel.
  *
  * **The frame is the screen.** The dialog is full-screen over a dark ground and
  * everything that is not the picture floats on top of it: no header row, no

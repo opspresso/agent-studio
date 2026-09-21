@@ -81,7 +81,7 @@ Teams 는 메시지의 HTML 렌더링을 `text/html` 첨부로도 함께 보내�
 Bot Framework 도 봇에게 각 activity 를 한 번 주고 히스토리는 주지 않는다. 그래서 Telegram 과
 같은 `ConversationTranscriptRepository` 를 같은 규칙으로 쓴다
 ([telegram.md#히스토리](telegram.md#히스토리) — 최신 50턴·100,000자 예산, 텍스트 없는 턴은
-그것이 실은 것으로 기록, 이름은 `callerContext` 옵트인 버전만 쓰고 읽음). 도우미는
+그것이 실은 것으로 기록, 이름은 `callerContext`를 켠 Agent만 쓰고 읽음). 도우미는
 `src/application/messaging/transcriptHistory.ts` 하나다.
 
 **conversation** 은 Teams 가 부르는 그것이다: `teams:{conversation.id}`. Teams 가 이미 이
@@ -90,7 +90,7 @@ Bot Framework 도 봇에게 각 activity 를 한 번 주고 히스토리는 주�
 연다), 그룹 채팅은 그 안의 모두에게 하나. 아무것도 유도할 필요가 없고 `conversationOf` 가 id
 를 안전하게 나른다.
 
-**누가 묻고 있는지**는 버전이 옵트인했을 때만, activity 가 나르는 만큼만: 보낸 사람의 표시
+**누가 묻고 있는지**는 Agent가 옵트인했을 때만, activity 가 나르는 만큼만: 보낸 사람의 표시
 이름이다(`callerFrom` 이 프롬프트에 안전하게 만든다). Teams 는 봇에게 email 을 주지 않으므로
 Teams 런은 artifact 를 project 만으로 분류한다. actor 는 사람의 Entra(Azure AD) object id 다 —
 대화마다 달라지는 `from.id` 와 달리 사람을 가로질러 같다.

@@ -4,7 +4,7 @@ import type { WorkspaceContinuation } from "@/domain/workspace/continuation";
 import { isTerminalCodingApproval, type PullRequestInfo } from "@/domain/coding/types";
 import { chatConversation } from "@/domain/chat/conversation";
 import { claimChatRun } from "./runLease";
-import { runAndPersist, resolveVersion } from "./run";
+import { runAndPersist } from "./run";
 import { teeToRunLog } from "./runLog";
 import { watchChatCancel } from "./cancelRun";
 import { ChatConflictError } from "./errors";
@@ -95,8 +95,8 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     try { pullRequest = await deps.pullRequest(workspace.id, item.ownerEmail); }
     catch { pullRequest = workspace.pullRequest; }
   }
-  const version = await resolveVersion(deps.chat, project);
-  if (!version) { await save({ status: "failed", error: "The source project has no runnable version." }); return; }
+  const configuration = project.configuration;
+  if (!configuration) { await save({ status: "failed", error: "The source project has no Agent configuration." }); return; }
   let runId: string;
   try { runId = await claimChatRun(deps.chat.chats, chat.chatId); }
   catch (error) {
@@ -139,7 +139,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     const controller = new AbortController();
     const runSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     stopCancel = watchChatCancel(deps.chat.chats, chat.chatId, runId, controller);
-    const source = deps.chat.runAgent({ project, version, actor: { kind: "user", id: item.ownerEmail },
+    const source = deps.chat.runAgent({ project, configuration, actor: { kind: "user", id: item.ownerEmail },
       conversation: chatConversation(chat.chatId), signal: runSignal,
       messages: [{ role: "system", content: CONTINUATION_INSTRUCTION }, { role: "user", content: JSON.stringify(event) }] });
     const tee = teeToRunLog(deps.chat, chat.chatId, runId, runAndPersist(deps.chat, chat, source, runSignal));

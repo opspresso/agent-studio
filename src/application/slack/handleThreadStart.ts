@@ -65,7 +65,7 @@ export async function handleThreadStart(
   const project = await deps.projects.get(binding.projectName);
   // Silent, unlike a mention: nobody asked anything, so an error message here
   // would be an unprompted complaint in a thread the user just opened.
-  if (!project || project.projectType !== "agent") {
+  if (!project) {
     return;
   }
   // The same gate as a run, and silent on the same reasoning as above: the

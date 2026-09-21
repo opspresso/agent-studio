@@ -8,9 +8,9 @@ function fixture(text = "Fact one.") {
     source: { kind: "file", fileId: "source" }, sourceKey: "source", transcriptRef: "transcript",
     retention: { unit: "months", value: 3, timezone: "Asia/Seoul" }, status: "running", stage: "postprocessing",
     revision: 1, createdAt: "2026-09-09T00:00:00Z", updatedAt: "2026-09-09T00:00:00Z", dueAt: "2026-09-09T00:02:00Z",
-    failures: 0, attempt: 1, receipts: {}, postprocess: { projectName: "writer", versionName: "1", version: {
-      projectName: "writer", versionName: "1", model: "text-model", systemPrompt: "Summarize", userPromptTemplate: "",
-      parameters: { piiFiltering: false }, skillList: [], mcpList: [], subagentList: [], createdAt: "2026-09-09T00:00:00Z",
+    failures: 0, attempt: 1, receipts: {}, postprocess: { projectName: "writer", configuration: {
+      projectName: "writer", model: "text-model", systemPrompt: "Summarize",
+      parameters: { piiFiltering: false }, skillList: [], mcpList: [], subagentList: [] ,
     } } };
   const saved = new Map<string, Uint8Array>([["transcript", new TextEncoder().encode(JSON.stringify({ text, model: "asr", segments: [], warnings: ["source warning"] }))]]);
   const metadata: SourceFile = { id: "file", projectName: job.projectName, userEmail: job.userEmail, filename: "file.json",
@@ -125,7 +125,7 @@ describe("durable Agent postprocessing", () => {
   });
   it("detects a changed snapshot instead of reusing mismatched checkpoints", async () => {
     const f = fixture(); await f.run(f.job, f.context);
-    f.job.postprocess!.version!.systemPrompt = "Changed";
+    f.job.postprocess!.configuration!.systemPrompt = "Changed";
     await expect(f.run(f.job, f.context)).rejects.toThrow("postprocess_checkpoint_mismatch");
     expect(f.deps.run).toHaveBeenCalledTimes(1);
   });

@@ -1,5 +1,5 @@
 /**
- * Encoding between a version's MCP header overrides and the editable rows the
+ * Encoding between an Agent's MCP header overrides and the editable rows the
  * binding editor renders. Kept free of React so the mapping — the one place a
  * UI bug could silently turn a removal into an empty header, or drop an
  * override entirely — is directly testable.

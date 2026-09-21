@@ -58,7 +58,7 @@ export const ko: Messages = {
   "workspace.list": "Workspaces",
   "workspace.delete": "Workspace 삭제",
   "workspace.intro": "작업이 이어져도 파일과 Agent 문맥을 유지합니다.",
-  "workspace.notConfigured": "에이전트 버전에서 워크스페이스 도구를 활성화하면 작업을 시작할 수 있습니다.",
+  "workspace.notConfigured": "Agent 설정에서 Workspace 도구를 켜면 작업을 시작할 수 있습니다.",
   "workspace.repository": "저장소",
   "workspace.runtime": "Runtime",
   "workspace.command": "명령 / 스크립트",
@@ -150,11 +150,9 @@ export const ko: Messages = {
   "audio.months": "개월",
   "audio.timezone": "시간대",
   "audio.writer": "후처리 Agent (선택)",
-  "audio.writerVersion": "Agent 버전",
-  "audio.followPublished": "배포 버전 따라가기",
-  "audio.writerVersionHint": "작업 접수 시 버전을 고정합니다. 이후 배포는 새 작업에만 적용됩니다.",
+
   "audio.destination": "Memory 저장 대상 (선택)",
-  "audio.destinationHint": "이 프로젝트의 published 버전에 연결된 MCP 서버를 선택하세요.",
+  "audio.destinationHint": "Agent의 현재 설정에 연결된 MCP 서버를 선택하세요.",
   "audio.saveDocuments": "문서 저장",
   "audio.saveMemories": "근거가 있는 Memory 저장",
   "audio.personalOnly": "원본과 결과는 비공개 Artifacts에 보관됩니다. 접수된 작업은 화면을 나가도 계속됩니다.",
@@ -165,7 +163,7 @@ export const ko: Messages = {
   "audio.original": "원본 파일",
   "audio.transcript": "전사문",
   "audio.dialogue": "대화 내용",
-  "audio.toolsRequired": "이 페이지를 사용하려면 배포된 버전에서 오디오 처리 도구를 켜세요. 아직 배포하지 않았다면 최신 저장 버전을 기준으로 합니다.",
+  "audio.toolsRequired": "Agent 설정에서 오디오 처리 도구를 켜면 이 페이지를 사용할 수 있습니다.",
   "audio.result": "처리 결과",
   "audio.delete": "작업 삭제",
   "audio.deleteTitle": "처리 작업을 삭제하시겠습니까?",
@@ -220,7 +218,7 @@ export const ko: Messages = {
   "audio.runAsOwnerHint": "확인된 본인 email로 개인 MCP 데이터를 사용합니다. 프로젝트 소유자만 켤 수 있습니다.",
   "audio.mappingTitle": "파일 응답 매핑",
   "audio.mappingDefaults": "plugin에 기본 매핑이 있으면 자동 적용됩니다. 해당 서버는 직접 입력하지 않아도 됩니다.",
-  "audio.mappingOverride": "이 버전의 설정이 plugin 기본값보다 우선합니다. 빈 설정은 파일 매핑을 끕니다.",
+  "audio.mappingOverride": "이 Agent의 설정이 plugin 기본값보다 우선합니다. 빈 설정은 파일 매핑을 끕니다.",
   "audio.useMappingDefaults": "plugin 기본 매핑 사용",
   "audio.mappingHint": "도구의 JSON 필드를 비공개 파일 참조로 변환합니다. 중첩 필드는 점으로 구분하고 계정마다 다른 namespace를 사용하세요.",
   "audio.mappingTool": "도구 이름",
@@ -285,18 +283,18 @@ export const ko: Messages = {
   "home.flow.title": "아이디어에서 실행까지",
   "home.flow.build": "프로젝트 구성",
   "home.flow.buildBody": "모델과 지침을 정하고, 에이전트에 필요한 스킬과 도구를 연결하세요.",
-  "home.flow.run": "배포하고 실행",
-  "home.flow.runBody": "버전을 배포한 뒤 콘솔, API 또는 연결한 메신저에서 실행하세요.",
+  "home.flow.run": "저장하고 실행",
+  "home.flow.runBody": "Agent 설정을 저장한 뒤 콘솔, API 또는 연결한 메신저에서 실행하세요.",
   "home.flow.review": "결과 확인",
   "home.flow.reviewBody": "채팅·Workspace 검토·Artifact로 돌아와 결과를 확인하고 트레이스와 사용량을 함께 살펴보세요.",
-  "home.eyebrow": "프로젝트 · 버전 · 배포",
+  "home.eyebrow": "Agent · 도구 · 실행",
   "home.headline": "AI 에이전트를 만들고",
   "home.headlineAccent": " 다양한 작업에 활용하세요.",
   "home.lede":
-    "Agent Studio는 모델, 스킬, 도구를 하나로 연결하는 에이전트 플랫폼입니다. 프롬프트, 에이전트, 이미지 작업을 프로젝트로 만들고 대화, API, 메신저에서 활용하세요.",
+    "Agent Studio는 모델·Skill·도구를 연결하는 에이전트 플랫폼입니다. Agent의 지시문과 도구를 구성하고 대화·API·메신저·자동화에서 활용하세요.",
   "home.signInHint": "허용된 도메인의 계정으로 로그인하세요.",
   "home.proof.network": "아이디어를 에이전트로",
-  "home.proof.networkNote": "한 플랫폼에서 생성·검증·배포",
+  "home.proof.networkNote": "한 플랫폼에서 생성·검증·실행",
   "home.proof.engine": "모델을 하나의 방식으로 연결",
   "home.proof.engineNote": "작업에 맞는 모델을 자유롭게 선택",
   "home.proof.cost": "실행별 비용과 트레이스",
@@ -305,15 +303,15 @@ export const ko: Messages = {
   "home.streamCaption": "agent run · text/event-stream",
   "home.streamLive": "예시",
   "home.coverage": "Agent Studio의 주요 기능",
-  "home.domain.projects": "프로젝트와 버전",
+  "home.domain.projects": "Agent와 설정",
   "home.domain.projectsBody":
-    "프롬프트, 에이전트, 이미지 작업을 프로젝트로 관리합니다. 설정은 이름 있는 버전으로 저장하며, 호출자가 버전을 지정하지 않으면 배포된 버전을 사용합니다.",
+    "각 프로젝트는 하나의 현재 설정을 가진 Agent입니다. 모델·지시문·역량·한도를 저장하면 다음 실행부터 적용됩니다.",
   "home.domain.agent": "에이전트 루프",
   "home.domain.agentBody":
     "에이전트는 Skill을 불러오고 MCP 도구를 호출하며, 서브에이전트에 작업을 맡기거나 URL을 읽을 수 있습니다. 턴 수와 컨텍스트 한도로 실행 범위를 제한합니다.",
   "home.domain.mcp": "MCP 도구",
   "home.domain.mcpBody":
-    "서버를 한 번 등록한 뒤 필요한 버전에 연결합니다. 연결할 도구를 제한하거나 요청 헤더를 덮어쓸 수 있습니다. 프로젝트별 OAuth를 지원하며 시크릿은 암호화해 저장합니다.",
+    "서버를 한 번 등록한 뒤 필요한 Agent에 연결합니다. 연결할 도구를 제한하거나 요청 헤더를 덮어쓸 수 있습니다. 프로젝트별 OAuth를 지원하며 시크릿은 암호화해 저장합니다.",
   "home.domain.skills": "Skills",
   "home.domain.skillsBody":
     "Markdown으로 작성한 재사용 가능한 작업 지침입니다. 모델은 이름과 설명을 먼저 확인하고, 필요할 때 전체 내용을 불러옵니다.",
@@ -322,13 +320,13 @@ export const ko: Messages = {
     "플러그인 저장소나 압축 파일에서 재사용 가능한 Skill과 MCP 도구를 가져와 프로젝트에 연결합니다.",
   "home.domain.catalog": "케이퍼빌리티 카탈로그",
   "home.domain.catalogBody":
-    "Skill, MCP 도구, 에이전트를 한곳에서 검색합니다. 이 기능을 켠 버전은 현재 요청에 맞는 기능을 실행 중에만 추가하며, 저장된 설정은 바꾸지 않습니다.",
+    "Skill, MCP 도구, 에이전트를 한곳에서 검색합니다. 이 기능을 켠 Agent는 현재 요청에 맞는 기능을 실행 중에만 추가하며, 저장된 설정은 바꾸지 않습니다.",
   "home.domain.chats": "Chats",
   "home.domain.chatsBody":
     "콘솔에서 에이전트와 대화합니다. 별도 문서 MCP 서버 없이 PDF·텍스트·Office 첨부를 읽고, 답변과 도구 호출을 확인합니다. 탭을 닫아도 실행은 계속됩니다.",
   "home.domain.images": "이미지",
   "home.domain.imagesBody":
-    "이미지 프로젝트, 에이전트의 기본 도구, 이미지 서브에이전트로 이미지를 만들거나 편집합니다. 첨부한 이미지와 현재 실행에서 만든 이미지를 다시 편집할 수 있습니다.",
+    "Agent 설정에서 이미지 도구를 켜면 지정한 이미지 모델로 이미지를 만들거나 편집합니다. 첨부한 이미지와 현재 실행에서 만든 이미지를 다시 편집할 수 있습니다.",
   "home.domain.audio": "오디오 전사·요약",
   "home.domain.audioBody": "업로드하거나 연결 도구에서 가져온 오디오를 지정 모델로 전사하고 백그라운드에서 요약합니다. 원본과 결과는 비공개 Artifacts에 보관하며, 개인 기록은 요청했을 때 저장합니다.",
   "home.domain.artifacts": "문서와 결과 파일",
@@ -352,7 +350,6 @@ export const ko: Messages = {
   "catalog.resultCount": "전체 {total}개 중 {count}개",
   "catalog.noResults": "조건에 맞는 결과가 없습니다. 검색어를 바꾸거나 필터를 초기화해 보세요.",
   "projects.filter": "프로젝트 검색…",
-  "projects.allTypes": "모든 프로젝트 유형",
   "common.loading": "불러오는 중…",
   "common.cancel": "취소",
   "common.copy": "복사",
@@ -426,7 +423,7 @@ export const ko: Messages = {
   "overview.welcome": "{name}님, 다시 오셨네요",
   "overview.welcomeAnon": "다시 오셨네요",
   "overview.lede":
-    "프롬프트·에이전트·이미지 프로젝트를 만들고 콘솔에서 테스트한 뒤 필요한 버전을 배포하세요. 문서 작업과 백그라운드 오디오 처리도 Agent 도구로 구성할 수 있습니다.",
+    "Agent를 설정하고 콘솔에서 요청을 테스트한 뒤 필요한 시스템에 연결하세요. 이미지·문서 작업과 백그라운드 오디오 처리도 Agent 도구로 구성할 수 있습니다.",
   "overview.newProject": "새 프로젝트",
   "overview.newChat": "새 대화",
   "overview.recentProjects": "최근 프로젝트",
@@ -441,7 +438,7 @@ export const ko: Messages = {
   "overview.noChats": "아직 대화가 없습니다.",
   "overview.getStarted": "프로젝트로 시작하기",
   "overview.getStartedBody":
-    "프로젝트를 만들고 Playground에서 첫 버전을 설정한 뒤 실행해 보세요. 에이전트 프로젝트에는 Skill과 MCP 도구를 연결할 수 있고, 배포한 에이전트는 Chats에서도 사용할 수 있습니다.",
+    "프로젝트를 만들고 Playground에서 Agent 설정을 저장한 뒤 실행해 보세요. 필요한 Skill과 MCP 도구를 연결하고 Chats에서 대화를 이어갈 수 있습니다.",
   "overview.browseSkills": "Skills 둘러보기",
 
   "guide.title": "가이드",
@@ -449,69 +446,57 @@ export const ko: Messages = {
   "guide.contents": "목차",
 
   "guide.start.title": "처음 시작하기",
-  "guide.start.body":
-    "Agent Studio는 프롬프트·에이전트·이미지 프로젝트를 위한 플랫폼이다. 이 가이드는 로그인 없이 읽을 수 있다. 대화를 시작하려면 로그인 후 Chats에서 기존 에이전트를 선택하고, 직접 만들려면 아래 순서로 진행한다.",
+  "guide.start.body": "Agent Studio는 요청에 답하고 도구를 사용하는 Agent를 관리하는 플랫폼이다. 이 가이드는 로그인 없이 읽을 수 있다. 대화를 시작하려면 로그인 후 Chats에서 Agent를 선택하고, 직접 만들려면 아래 순서로 진행한다.",
   "guide.start.account": "1. 로그인과 권한 확인",
   "guide.start.accountBody":
     "조직에서 받은 접속 주소를 열고 화면에 표시된 방식으로 로그인한다. Profile에서 내 등급·사용량·한도를 확인한다. 새 계정은 보통 guest로 시작하므로 프로젝트 생성이 불가능하면 관리자에게 Members에서 등급 변경을 요청한다.",
   "guide.start.create": "2. 첫 프로젝트 만들기",
-  "guide.start.createBody":
-    "Projects에서 New project를 선택하고 식별자·표시 이름·유형을 입력한다. 프롬프트 템플릿을 시험하려면 llm, 대화형 도우미를 만들려면 agent를 선택한다. 도구를 연결하기 전에 답변의 적절성을 판단할 수 있는 짧은 작업부터 시작한다.",
+  "guide.start.createBody": "Projects에서 New project를 선택하고 식별자와 표시 이름을 입력한다. 도구를 연결하기 전에 답변의 적절성을 판단할 수 있는 짧은 작업부터 시작한다.",
   "guide.start.test": "3. 저장한 뒤 실행하고 확인하기",
   "guide.start.testBody":
-    "Playground에서 사용 가능한 모델과 지시문을 설정한다. 버전을 저장한 뒤 시험 입력을 넣고 실행한다. 답변·경고·사용량·도구 활동을 확인한다. 실행은 저장된 버전을 사용하므로 편집만 하고 저장하지 않으면 이전 설정을 시험하게 된다.",
-  "guide.start.publish": "4. 배포하고 연결하기",
-  "guide.start.publishBody":
-    "Versions에서 검증한 버전을 Publish한다. HTTP로 호출하려면 Integrations에서 프로젝트 토큰을 발급하고 API Reference의 예제를 따른다. Publish는 기본 버전을 지정하는 동작이며 별도 애플리케이션을 만들거나 설정을 고정하지 않는다.",
+    "Playground에서 모델과 지시문을 설정하고 저장한 뒤 짧은 요청을 실행한다. 답변·경고·사용량·도구 활동을 확인한다. Run 패널은 저장한 설정을 사용한다.",
+  "guide.start.connect": "4. 호출 경로 연결하기",
+  "guide.start.connectBody":
+    "저장한 Agent 설정은 Chat과 구성된 연동에서 바로 사용한다. HTTP로 호출하려면 Integrations에서 프로젝트 토큰을 발급하고 API Reference의 예제를 따른다.",
 
-  "guide.projects.title": "프로젝트 유형 선택",
-  "guide.projects.body":
-    "프로젝트는 하나의 식별자 아래 버전·공개 범위·연동·사용량을 묶는다. 버전에는 모델·프롬프트·사용 기능·실행 한도를 저장한다. 필요한 결과물과 작업 방식에 맞춰 유형을 선택한다.",
-  "guide.projects.llm": "llm: 프롬프트 템플릿",
-  "guide.projects.llmBody":
-    "요약·분류·문장 수정처럼 모델 응답 한 번으로 처리하는 작업에 사용한다. 사용자 프롬프트 템플릿에 {{topic}} 같은 변수를 넣고 실행할 때 값을 입력한다. 시스템 프롬프트에는 공통 지시를 작성한다. 도구를 호출하거나 도구 결과를 받아 반복 실행하지 않는다.",
-  "guide.projects.agent": "agent: 대화와 도구 실행",
+  "guide.projects.title": "Agent로 작업하기",
+  "guide.projects.body": "모든 프로젝트는 Agent다. 현재 설정에는 모델·시스템 프롬프트·역량·실행 한도를 저장하고, 공개 범위·연동·사용량은 프로젝트에서 관리한다.",
+  "guide.projects.agent": "대화와 도구 실행",
   "guide.projects.agentBody":
     "대화·검색·도구 호출·다른 에이전트에 대한 위임이 필요한 작업에 사용한다. 시스템 프롬프트에 역할·작업 범위·결과 형식을 쓰고 메시지로 작업을 전달한다. 모델이 제공된 도구의 사용 여부를 판단하므로 도구를 연결했다고 반드시 호출하는 것은 아니다.",
-  "guide.projects.image": "image: 이미지 생성과 편집",
-  "guide.projects.imageBody":
-    "이미지 생성 모델을 선택하고 원하는 그림을 설명한다. 원본 이미지를 첨부하면 편집하고, 첨부하지 않으면 새로 생성한다. 시스템 프롬프트로 공통 스타일을 지정할 수 있다. Playground나 Compare에서 시험하고 predict API로 연동한다. Chats와 chat completions는 image 프로젝트를 실행하지 않는다.",
+  "guide.projects.image": "이미지 생성·편집 도구",
+  "guide.projects.imageBody": "이미지 도구를 켜고 이미지 모델을 선택한다. Agent에게 이미지를 생성하도록 요청하거나 원본을 첨부하고 편집을 요청한다. Playground·Chat·실행 API에서 같은 Agent를 사용한다.",
 
-  "guide.versions.title": "버전 설정·비교·배포",
-  "guide.versions.body":
-    "버전은 이름이 붙은 수정 가능한 설정이다. 시험용 버전은 Playground의 버전 선택에서 + New version을 고르면 현재 편집 내용이 복사되고 Save로 생성된다. 다른 호출자가 사용 중인 설정을 시험할 때 이 방식으로 별도 버전을 만든다.",
-  "guide.versions.model": "모델과 대체 모델",
-  "guide.versions.modelBody":
-    "agent 프로젝트에는 tool calling, 그림을 읽는 작업에는 image input, image 프로젝트에는 image generation을 지원하는 모델을 선택한다. llm과 agent 프로젝트는 필요하면 대체 모델을 지정한다. 대체 모델도 요청에 필요한 기능을 지원해야 하며 이미지 입력을 지원하지 않는 모델로 그림을 읽게 할 수는 없다.",
-  "guide.versions.prompt": "프롬프트 미리보기와 저장 구분",
-  "guide.versions.promptBody":
-    "Prompt preview에서 현재 편집 내용으로 조립한 프롬프트를 확인한다. 답변은 생성하지 않지만 요청을 입력하면 memory recall, MCP 서버 조회와 동적 검색의 embedding/rerank 서비스에 실제 요청을 보낼 수 있다. 실행 패널은 저장된 버전을 실행하므로 먼저 저장한다. agent는 사용자 메시지를 직접 받으며 llm의 템플릿 변수 방식으로 입력을 전달하지 않는다.",
-  "guide.versions.limits": "실행 범위와 한도 설정",
-  "guide.versions.limitsBody": "작업에 맞게 최대 출력 토큰과 Agent 턴 수를 설정한다. 반복 억제는 선택한 모델이 지원할 때 쓰는 선택적 설정이다. 턴·출력 한도에 도달하면 일부 답변만 남을 수 있고 설치의 실행 시간 제한은 오류로 종료할 수 있다. 종료 이유와 경고를 확인한다. 추론 과정 기록은 표시 여부를 바꾸며 모델의 추론 자체를 켜거나 끄지는 않는다.",
-  "guide.versions.compare": "같은 입력으로 버전 비교",
-  "guide.versions.compareBody":
-    "후보 버전을 저장한 뒤 Compare에서 저장된 두 버전을 선택하고 같은 입력으로 실행한다. 답변 품질·경고·소요 시간·사용량을 비교한다. 양쪽 모두 실제 호출이므로 사용량과 동시 실행 한도에 포함되며 무료 미리보기가 아니다.",
-  "guide.versions.publish": "Publish 이후 바뀌는 대상 확인",
-  "guide.versions.publishBody":
-    "Versions의 Publish는 프로젝트 기본값을 선택한 버전으로 바꾼다. published로 호출하면 이 기본값을 따르고, 버전 이름을 직접 지정하면 해당 버전을 계속 사용한다. 배포 중인 버전을 수정해 저장하면 다음 실행부터 즉시 반영된다. 기본값을 되돌리려면 검증된 다른 버전을 Publish하고, 버전 이름을 지정한 호출자는 별도로 변경한다.",
+  "guide.configuration.title": "Agent 설정",
+  "guide.configuration.body":
+    "Playground에서 Agent의 현재 설정을 편집하고 저장한다. 독립적으로 실험하려면 프로젝트를 복제해 복제본을 설정한다.",
+  "guide.configuration.model": "모델과 대체 모델",
+  "guide.configuration.modelBody": "도구 호출을 지원하는 텍스트 모델을 선택한다. 그림을 읽는 작업에는 이미지 입력 지원도 필요하다. 필요하면 호환되는 대체 모델을 지정한다. 이미지 생성·편집은 별도로 설정한 이미지 도구 모델을 사용한다.",
+  "guide.configuration.prompt": "프롬프트 미리보기와 저장 구분",
+  "guide.configuration.promptBody": "Prompt preview는 현재 초안의 프롬프트를 조립한다. 답변을 생성하지 않지만 Memory 회상과 역량 검색은 설정된 서비스에 요청할 수 있다. Run 패널은 저장된 설정을 사용하므로 실행 전에 저장한다.",
+  "guide.configuration.limits": "실행 범위와 한도 설정",
+  "guide.configuration.limitsBody": "작업에 맞게 최대 출력 토큰과 Agent 턴 수를 설정한다. 반복 억제는 선택한 모델이 지원할 때 쓰는 선택적 설정이다. 턴·출력 한도에 도달하면 일부 답변만 남을 수 있고 설치의 실행 시간 제한은 오류로 종료할 수 있다. 종료 이유와 경고를 확인한다. 추론 과정 기록은 표시 여부를 바꾸며 모델의 추론 자체를 켜거나 끄지는 않는다.",
+  "guide.configuration.apply": "저장한 설정의 적용 시점",
+  "guide.configuration.applyBody":
+    "다음 실행부터 저장한 설정을 사용한다. 각 Agent는 준비 시점의 설정을 유지하며 로컬 하위 Agent는 호출될 때 자기 설정을 읽는다. 접수된 Audio 작업은 당시 설정을 유지한다. 승인 대기 중 설정·연결이 바뀌면 재개를 거절한다. 동시 편집 충돌이 발생하면 새로 불러온 뒤 저장한다.",
 
   "guide.capabilities.title": "스킬·도구·에이전트 확장",
   "guide.capabilities.body":
-    "관리자가 Skills·Tools·Agents·Plugins에 기능을 등록한다. 프로젝트 소유자는 사용 가능한 항목을 버전에 연결하고 저장한 다음, 그 기능이 필요한 작업으로 시험한다. 등록만으로 모든 실행에 모든 기능이 제공되지는 않는다.",
+    "관리자가 Skills·Tools·Agents·Plugins에 기능을 등록한다. 프로젝트 소유자는 사용 가능한 항목을 Agent에 연결하고 저장한 다음, 그 기능이 필요한 작업으로 시험한다. 등록만으로 모든 실행에 모든 기능이 제공되지는 않는다.",
   "guide.capabilities.skills": "Skills: 재사용할 지시문",
   "guide.capabilities.skillsBody":
-    "관리자가 Skills에서 용도를 명확하게 설명한 스킬을 등록하면 버전 편집기에서 연결한다. 모델은 처음에 이름과 설명을 보고 필요할 때 전체 지시문을 읽는다. 반복 절차나 업무 지식을 담는 데 사용하며, 실제 작업에서 의도한 스킬을 읽는지 확인한다.",
+    "관리자가 Skills에서 용도를 명확하게 설명한 스킬을 등록하면 Agent 설정 편집기에서 연결한다. 모델은 처음에 이름과 설명을 보고 필요할 때 전체 지시문을 읽는다. 반복 절차나 업무 지식을 담는 데 사용하며, 실제 작업에서 의도한 스킬을 읽는지 확인한다.",
   "guide.capabilities.tools": "MCP: 도구 검색과 선택",
   "guide.capabilities.toolsBody":
-    "관리자가 Tools에서 서버를 등록하고 discovery 결과에 필요한 도구가 나타나는지 확인한다. 버전에 서버를 연결하고 제공할 도구를 선택한 뒤 버전을 저장한다. 호출이 실패하면 서버 상태·필수 헤더·실행 경고를 확인한다. 서버에 접속할 수 있어도 사용할 도구가 없거나 별도 인증이 필요할 수 있다.",
+    "관리자가 Tools에서 서버를 등록하고 discovery 결과에 필요한 도구가 나타나는지 확인한다. Agent에 서버를 연결하고 제공할 도구를 선택한 뒤 설정을 저장한다. 호출이 실패하면 서버 상태·필수 헤더·실행 경고를 확인한다. 서버에 접속할 수 있어도 사용할 도구가 없거나 별도 인증이 필요할 수 있다.",
   "guide.capabilities.oauth": "MCP 설정의 저장 범위",
   "guide.capabilities.oauthBody":
-    "도구 선택과 헤더 오버라이드는 버전에 속하며 Save가 필요하다. 헤더를 바꾼 뒤 도구 목록을 새로고침한다. 부분 수정에서 생략한 저장 헤더는 보존하며 명시적으로 모두 지우면 제거된다. 관리자는 Tools에서 OAuth 앱을 설정하고 소유자는 계정을 연결한다. 버전들은 프로젝트 연결을 공유하며 도구 발견 성공이 저장소 접근까지 증명하지는 않는다.",
+    "도구 선택과 헤더 오버라이드는 Agent 설정에 속하며 Save가 필요하다. 헤더를 바꾼 뒤 도구 목록을 새로 조회한다. 마스킹된 값은 기존 시크릿을 유지하며 빈 맵은 오버라이드를 지운다. 관리자는 Tools에서 OAuth 앱을 구성하고 소유자는 프로젝트 계정을 연결한다. 도구에 연결됐다고 그 자원에 접근할 수 있는 것은 아니다.",
   "guide.capabilities.agents": "다른 에이전트에 작업 위임",
-  "guide.capabilities.agentsBody": "별도 전문 역할이 필요한 작업에 위임을 사용한다. 반복적인 절차는 Agent 하나와 skill로 구성할 수 있다. 배포된 로컬 프로젝트나 등록된 외부 OpenAI 호환·A2A Agent를 연결하고 역할을 명확히 설명한다. 위임된 활동은 작성 Agent 이름으로 구분하며 사용량은 원래 실행의 집계에 포함된다.",
+  "guide.capabilities.agentsBody": "전문 역할 분리가 필요한 작업에는 설정된 로컬 Agent나 등록된 외부 Agent를 연결한다. 각 하위 Agent가 받을 요청과 결과를 설명한다. 하위 활동에는 실행 주체가 표시되며 사용량은 원래 실행에 귀속된다.",
   "guide.capabilities.plugins": "Plugins 가져오기와 동기화",
   "guide.capabilities.pluginsBody":
-    "관리자가 Plugins에서 설정된 저장소나 업로드한 checkout archive의 스킬·MCP 정의를 가져온다. 저장소에 접근할 수 없으면 archive 업로드를 사용한다. 건너뜀·유효하지 않은 항목을 확인하고 가져온 기능을 버전에 연결한다. 가져온 스킬 본문과 MCP URL·설명은 원본에서 수정한 뒤 다시 동기화한다. MCP 헤더는 가져오지 않으므로 자격 증명은 콘솔에서 별도로 설정한다. 고아 항목은 동기화가 자동 삭제하지 않으며 결과 화면에서 검토 후 명시적으로 삭제한다.",
+    "관리자가 Plugins에서 설정된 저장소나 업로드한 checkout archive의 스킬·MCP 정의를 가져온다. 저장소에 접근할 수 없으면 archive 업로드를 사용한다. 건너뜀·유효하지 않은 항목을 확인하고 가져온 기능을 Agent에 연결한다. 가져온 스킬 본문과 MCP URL·설명은 원본에서 수정한 뒤 다시 동기화한다. MCP 헤더는 가져오지 않으므로 자격 증명은 콘솔에서 별도로 설정한다. 고아 항목은 동기화가 자동 삭제하지 않으며 결과 화면에서 검토 후 명시적으로 삭제한다.",
   "guide.capabilities.discovery": "동적 검색과 메모리",
   "guide.capabilities.discoveryBody":
     "동적 검색은 시스템 프롬프트와 현재 요청을 기능 이름·설명에 매칭해 관련 Skill·MCP 서버/도구·외부 에이전트를 저장된 연결 위에 추가한다. 설명이 라우팅 신호이므로 언제 사용하고 무엇을 돌려주는지 정확히 써야 한다. capability catalog와 임베딩 설정이 동작해야 하며 검색 결과가 없으면 관리자에게 확인한다. 메모리 recall은 별개이며 recall 도구를 제공하는 MCP 서버가 연결되어야 한다.",
@@ -521,9 +506,9 @@ export const ko: Messages = {
   "guide.chat.title": "대화와 첨부파일",
   "guide.chat.body":
     "Chats는 agent 프로젝트와의 대화를 보관한다. 설정 시험에는 Playground를, 여러 메시지에 걸쳐 이어가는 작업에는 Chats를 사용한다.",
-  "guide.chat.version": "대화할 에이전트와 실행 버전",
-  "guide.chat.versionBody":
-    "새 대화를 만들고 접근 가능한 agent 프로젝트를 선택한다. 배포 버전이 있으면 그 버전을, 없으면 최신 저장 버전을 사용한다. llm과 image 프로젝트는 선택 대상이 아니다. 따라서 버전 배포나 수정으로 기존 대화의 후속 답변 동작도 달라질 수 있다.",
+  "guide.chat.configuration": "대화할 Agent 선택",
+  "guide.chat.configurationBody":
+    "Chats에서 접근 가능한 설정된 Agent를 선택해 대화를 시작한다. 각 새 턴은 현재 저장된 설정을 사용하므로 설정 변경은 기존 대화의 이후 턴에도 적용된다.",
   "guide.chat.context": "대화 맥락의 한계",
   "guide.chat.contextBody":
     "화면 메시지와 모델의 암호화된 SDK Session은 별개다. Session은 제한된 이전 턴·도구 결과·최근 이미지를 제공하고 Memory는 선택적인 장기 자료다. 이력이 생략되면 경고하며 Session이 만료된 경우 보이는 메시지로 모델 이력을 다시 만들지 않는다. 새 문맥으로 시작할 때 필요한 제약을 다시 전달한다.",
@@ -541,11 +526,11 @@ export const ko: Messages = {
     "중단하려면 대화의 정지 버튼을 사용한다. 다른 화면으로 이동하거나 브라우저 탭을 닫으면 화면 연결만 끊기므로, 해당 대화를 다시 열어 저장된 결과를 확인한다. 중단 요청으로 이미 완료한 도구 작업이 되돌아가지는 않는다. 서버 자체가 중단되면 진행 중인 실행이 완료되지 못할 수 있다.",
 
   "guide.chat.approvals": "도구 승인과 채팅 재개",
-  "guide.chat.approvalsBody": "버전은 선택한 도구를 실행하기 전에 승인을 요구할 수 있다. 채팅에서 Agent·도구·인자를 확인하고 승인하거나 거절한다. SDK 승인 대기 중에는 새 메시지 대신 승인 또는 폐기를 먼저 처리한다. 버전·연결이 바뀌면 대기 중 체크포인트를 재개할 수 없을 수 있다. Workspace Git 검토는 별도 절차이며, 해당 Workspace에서 정확한 Git 동작을 승인하면 원래 채팅이 결과를 받아 재개된다.",
+  "guide.chat.approvalsBody": "Agent는 선택한 도구를 실행하기 전에 승인을 요구할 수 있다. 채팅에서 Agent·도구·인자를 확인하고 승인하거나 거절한다. SDK 승인 대기 중에는 새 메시지 대신 승인 또는 폐기를 먼저 처리한다. 설정·연결이 바뀌면 대기 중 체크포인트를 재개할 수 없을 수 있다. Workspace Git 검토는 별도 절차이며, 해당 Workspace에서 정확한 Git 동작을 승인하면 원래 채팅이 결과를 받아 재개된다.",
   "guide.workspaces.title": "Workspace와 격리 실행",
   "guide.workspaces.body": "Workspace는 파일과 실행 Session을 유지하고 Sandbox는 이를 실행하는 일시적 컴퓨팅 자원이다. Agent 채팅은 요청을 조율하고, 별도 Workspace 화면은 출력·Diff·검사·Git 검토를 보여 준다.",
   "guide.workspaces.setup": "1. 실행 기능 확인",
-  "guide.workspaces.setupBody": "활성 에이전트 버전에서 워크스페이스 도구를 켠다. 생성된 전용 탭에서 저장소·접근 모드·기본 런타임을 관리하고 Models에서 네이티브 런타임 모델을 선택한다. 운영자는 Sandbox 실행 서버와 worker를 연결한다. Skill·GitHub 연결만으로 도구가 켜지지는 않는다. 로그인한 member 이상이 Agent 또는 Chats의 Workspace 선택으로 작업한다.",
+  "guide.workspaces.setupBody": "Agent 설정에서 워크스페이스 도구를 켠다. 생성된 전용 탭에서 저장소·접근 모드·기본 런타임을 관리하고 Models에서 네이티브 런타임 모델을 선택한다. 운영자는 Sandbox 실행 서버와 worker를 연결한다. Skill·GitHub 연결만으로 도구가 켜지지는 않는다. 로그인한 member 이상이 Agent 또는 Chats의 Workspace 선택으로 작업한다.",
   "guide.workspaces.tasks": "2. 작업에 맞는 절차 선택",
   "guide.workspaces.tasksBody": "PR 리뷰, Issue 수정, 기능 구현, 리팩토링, 의존성 업그레이드, CI 조사, 보안 수정과 프로젝트 생성에 맞는 Skill을 사용한다. 파일 변환·데이터 분석·스크립트 자동화도 Workspace에서 수행할 수 있다. 원격 조회만 필요하면 MCP를 사용하고 실행 공간을 만들지 않는다. Skill은 절차를 제공하며 실행 가능 범위는 실제 도구와 배포 설정이 결정한다.",
   "guide.workspaces.reuse": "3. 선택한 Workspace 재사용",
@@ -561,7 +546,7 @@ export const ko: Messages = {
   "guide.workspaces.lifecycle": "8. 중지·종료·복구",
   "guide.workspaces.lifecycleBody": "Cancel은 현재 작업을 중지한다. Close는 선택한 Workspace와 체크포인트를 유지하면서 컴퓨팅을 종료하며, 후속 작업으로 복원할 수 있다. 비활성 정리는 파일과 Session을 저장한 뒤 Sandbox를 제거한다. 체크포인트 한도를 넘으면 정리가 완료되지 않을 수 있다. Workspace 채팅을 삭제하면 정리를 요청하고 해당 공간을 되살리지 않는다. Workspace 개수와 worker 동시 실행 수는 다르며 자원·보존·설정 한도가 실행 범위를 결정한다.",
   "guide.surfaces.title": "실행 창구마다 가능한 기능이 다르다",
-  "guide.surfaces.body": "Publish는 실행할 버전을 정하며 모든 창구에 같은 권한을 부여하지 않는다. 인증, 대화 이력, 개인 문맥, Workspace 접근과 승인 화면은 각각의 규칙을 따른다.",
+  "guide.surfaces.body": "실행 창구는 같은 Agent 설정을 사용한다. 인증·대화 이력·개인 문맥·Workspace 접근·승인 화면은 각 창구의 규칙을 따른다.",
   "guide.surfaces.chat": "Chats: 영속 이력과 승인 결과",
   "guide.surfaces.chatBody": "로그인한 채팅 소유자는 영속 SDK Session과 도구 승인 화면을 사용한다. 활성화된 Workspace의 승인 결과와 CI 갱신은 원래 채팅으로 돌아온다. Workspace Runtime의 Session과 파일은 별도이며 상위 Agent의 모든 Skill·계정 연결을 자동 상속하지 않는다.",
   "guide.surfaces.api": "Playground와 API: 저장된 설정과 호출자 이력",
@@ -574,11 +559,11 @@ export const ko: Messages = {
   "guide.audio.title": "오디오 처리와 개인 기록",
   "guide.audio.body": "Agent 하나가 재사용 가능한 skill을 읽고 수집·전사·요약·요청한 기록을 수행할 수 있다. 긴 작업은 별도 worker가 이어가므로 Agent 응답이 끝나거나 화면을 닫아도 계속된다.",
   "guide.audio.setup": "오디오 도구 켜기",
-  "guide.audio.setupBody": "관리자가 비공개 파일 저장소·전사 서비스·오디오 worker를 구성한 뒤 Agent 버전에서 오디오 처리 도구를 켠다. 배포 버전에 도구가 켜져 있으면 프로젝트 소유자에게 오디오 처리 탭이 표시된다. 첫 배포 전에는 최신 저장 버전을 기준으로 한다.",
+  "guide.audio.setupBody": "관리자가 비공개 파일 저장소·전사 서비스·오디오 worker를 구성한 뒤 Agent 설정에서 오디오 처리 도구를 켠다. 프로젝트 소유자는 오디오 처리 탭을 사용할 수 있다.",
   "guide.audio.skills": "Agent 하나와 재사용 skill로 구성하기",
   "guide.audio.skillsBody": "workspace plugin을 사용한다면 처리 절차는 audio-processing, 회의록은 meeting-minutes, 요청한 Document·Memory 기록은 personal-records를 연결한다. 시스템 프롬프트는 짧게 유지하고 녹음 출처의 도구와 인증도 이 Agent에 연결한다. 다운로드·전사·기록용 Agent를 각각 만들 필요는 없다.",
-  "guide.audio.version": "처리 설정 선택하기",
-  "guide.audio.versionBody": "오디오 처리에서 전사 모델·언어·보존 기간과 선택적인 후처리 Agent를 고르고 프로젝트 설정을 저장한다. 같은 Agent가 후처리도 할 수 있다. 배포 버전 따라가기는 작업을 접수할 때 실제 버전을 고정한다. 활성 설정에서 고정 버전을 지정했다면 그 버전을 삭제하기 전에 후처리 설정부터 바꿔야 한다.",
+  "guide.audio.configuration": "처리 설정 선택하기",
+  "guide.audio.configurationBody": "전사 모델·언어·보존 기간과 선택적인 후처리 Agent를 고른 뒤 저장한다. 각 작업은 접수 시점의 후처리·전달 대상 설정을 보관한다. 이후 변경은 새 작업에만 적용된다.",
   "guide.audio.run": "작업 시작과 정기 수집",
   "guide.audio.runBody": "프로젝트 화면에서 오디오를 업로드하거나 Agent에 연결 도구로 녹음을 가져오도록 요청한다. 정기 수집은 schedule에 수집 범위와 신규 녹음 수 제한을 지정하고, 소유자가 내 개인 문맥으로 실행을 켠다. worker와 schedule ticker가 실행 중이어야 하며 오디오 도구를 켜는 것만으로 정기 작업이 생기지는 않는다.",
   "guide.audio.results": "비공개 Artifacts에서 결과 확인하기",
@@ -592,29 +577,29 @@ export const ko: Messages = {
 
   "guide.api.title": "HTTP API 호출",
   "guide.api.body":
-    "각 프로젝트의 API Reference는 해당 프로젝트 주소와 배포 버전을 채워 보여 준다. 요청 필드·응답 형식·오류 코드·curl 또는 SDK 예제가 포함되어 있다. 아래 절차와 함께 사용하며 소스 checkout은 필요하지 않다.",
+    "각 프로젝트의 API Reference는 해당 프로젝트 주소를 채워 보여 준다. 요청 필드·응답 형식·오류 코드·curl 또는 SDK 예제가 포함되어 있다. 아래 절차와 함께 사용하며 소스 checkout은 필요하지 않다.",
   "guide.api.token": "프로젝트와 인증 정보 준비",
   "guide.api.tokenBody":
-    "검증한 버전을 Publish하고 Integrations에서 프로젝트 토큰을 발급한다. 소유자 tier가 API 토큰을 허용해야 한다. Authorization: Bearer <token>으로 보내며 해당 프로젝트 실행으로 범위가 제한된다. 서비스 actor로 실행하고 연결된 MCP 서버에는 소유자 이메일을 전달하므로 해당 도구에 접근하는 자격 증명으로 취급한다. 브라우저 로그인이나 Workspace 도구를 얻는 수단은 아니다.",
-  "guide.api.version": "특정 버전과 published 선택",
-  "guide.api.versionBody":
-    "실행 URL은 /api/projects/{name}/versions/{version}/ 뒤에 엔드포인트를 붙인다. 자동 생성 예제는 현재 배포된 버전의 이름을 사용한다. 그 버전을 지정하려면 이름을 유지하고, 이후 Publish 변경을 따라가려면 published를 사용한다. 호스트는 호출 시스템에서 접근 가능한 Agent Studio 주소인지 확인한다.",
-  "guide.api.input": "유형에 맞는 입력 보내기",
+    "검증한 Agent 설정을 저장하고 Integrations에서 프로젝트 토큰을 발급한다. 소유자 tier가 API 토큰을 허용해야 한다. Authorization: Bearer <token>으로 보내며 해당 프로젝트 실행으로 범위가 제한된다. 서비스 actor로 실행하고 연결된 MCP 서버에는 소유자 이메일을 전달하므로 해당 도구에 접근하는 자격 증명으로 취급한다. 브라우저 로그인이나 Workspace 도구를 얻는 수단은 아니다.",
+  "guide.api.address": "Agent 주소 사용하기",
+  "guide.api.addressBody":
+    "실행 URL은 /api/projects/{name}/으로 시작하며 Agent의 현재 저장된 설정을 사용한다. 작업은 messages로 보낸다. 호출 시스템에서 접근 가능한 Agent Studio 주소를 사용한다.",
+  "guide.api.input": "작업을 메시지로 보내기",
   "guide.api.inputBody":
-    "llm의 predict에는 사용자 프롬프트 템플릿에 맞는 variables를 보낸다. 예: {\"variables\":{\"topic\":\"회의록\"},\"stream\":false}. agent의 predict에는 {\"messages\":[{\"role\":\"user\",\"content\":\"회의록을 요약하라\"}],\"stream\":false}처럼 messages를 보내며 variables는 무시된다. image의 predict에는 prompt를 보내고 편집 시 원본 images를 추가한다. 먼저 비스트리밍 요청으로 응답을 확인한다.",
+    "predict에 {\"messages\":[{\"role\":\"user\",\"content\":\"이 메모를 요약해 줘\"}],\"stream\":false}를 보낸다. 필요하면 지원되는 인라인 이미지 part를 추가한다. 이미지 생성·편집은 Agent의 이미지 도구가 수행한다. 요청 하나로 답변·경고·사용량을 먼저 확인한다.",
   "guide.api.sdk": "OpenAI 호환 클라이언트",
   "guide.api.sdkBody":
-    "llm과 agent 프로젝트에는 chat/completions를 사용할 수 있으며 API Reference의 Python 또는 JavaScript 예제를 복사한다. SDK의 base URL은 예제에 나온 버전 URL로, API key는 프로젝트 토큰으로 설정한다. 모델과 샘플링 파라미터는 저장된 버전이 결정하므로 model·temperature·max_tokens를 보내도 덮어쓰지 않는다. image 프로젝트는 predict를 사용한다.",
+    "API Reference의 Python 또는 JavaScript 예제로 chat/completions를 호출한다. SDK base URL은 프로젝트 주소, API key는 프로젝트 토큰으로 설정한다. 모델과 샘플링 파라미터는 저장한 Agent 설정이 결정하며 model·temperature·max_tokens로 덮어쓰지 않는다. 예제를 실행하기 전에 호출 프로세스의 환경변수 PROJECT_API_TOKEN과 CONVERSATION_ID를 설정한다.",
   "guide.api.stream": "스트리밍과 대화 이력",
   "guide.api.streamBody":
     "텍스트 predict나 chat/completions에 stream:true를 보내면 SSE로 응답하며 agent에는 텍스트와 도구 활동을 스트리밍하는 전용 엔드포인트도 있다. 연결을 유지하고 경고·오류·종료 이벤트까지 처리한다. HTTP 200만으로 실행 성공을 판단할 수는 없다. HTTP 호출자는 이전 메시지를 직접 보내야 한다. X-Conversation-Id는 하위 MCP/A2A의 대화 식별을 이어 주지만 과거 메시지를 자동으로 불러오지는 않는다.",
   "guide.api.result": "결과 확인과 토큰 관리",
   "guide.api.resultBody":
-    "답변뿐 아니라 usage·warnings·종료 사유도 확인한다. predict의 turn-limit·output-limit는 부분 결과를 뜻하며 chat completions의 한도 종료는 length로 표시된다. 파일 결과는 링크가 만료되기 전에 내려받는다. 토큰은 호출 서버의 비밀 저장소에 보관한다. 재발급하거나 폐기하면 기존 토큰이 즉시 무효가 되므로 모든 호출자를 함께 갱신한다.",
+    "답변뿐 아니라 usage·warnings·종료 사유도 확인한다. predict의 turn-limit·output-limit는 부분 결과를 뜻하며 chat completions의 한도 종료는 length로 표시된다. 파일 결과는 링크가 만료되기 전에 내려받는다. 토큰은 호출 서버의 비밀 저장소에 보관한다. 재발급하거나 폐기하면 기존 토큰이 즉시 무효가 되므로 모든 호출자를 함께 갱신한다. OpenAI 호출의 토큰 합계는 완료형 응답이나 Studio 사용량 화면에서 확인한다.",
 
   "guide.integrations.title": "봇·프로토콜·자동화 연동",
   "guide.integrations.body":
-    "프로젝트 소유자와 관리자가 연동을 설정한다. 먼저 버전을 배포하고 설정 후 실제 호출 한 번으로 검증한다. 외부 플랫폼은 별도 자격 증명과 네트워크 연결이 필요하며 폐쇄망 설치의 필수 기능은 아니다.",
+    "프로젝트 소유자와 관리자가 연동을 설정한다. 먼저 Agent 설정을 저장하고 설정 후 실제 호출 한 번으로 검증한다. 외부 플랫폼은 별도 자격 증명과 네트워크 연결이 필요하며 폐쇄망 설치의 필수 기능은 아니다.",
   "guide.integrations.slack": "Slack",
   "guide.integrations.slackBody":
     "agent 프로젝트의 Integrations에서 app manifest를 복사해 전용 Slack 앱을 생성·설치하고 bot token과 signing secret을 저장한다. 이벤트를 활성화하고 표시된 events URL을 확인한 뒤 Test connection을 실행한다. 대상 채널에 봇을 초대하고 멘션으로 시험한다. 자격 증명 검사가 성공해도 Slack에서 앱으로 이벤트가 전달되는지 별도 확인해야 한다.",
@@ -623,13 +608,13 @@ export const ko: Messages = {
     "agent 프로젝트의 Integrations에서 Telegram bot token을 저장하고 활성화하면 webhook이 등록된다. 앱 주소가 바뀌면 Register webhook으로 다시 등록한다. Teams는 Azure Bot의 Teams 채널을 활성화하고 application ID·client secret, 단일 tenant 앱이면 tenant ID를 저장한 뒤 표시된 URL을 messaging endpoint로 설정한다. 그룹 멘션을 시험하기 전에 다이렉트 대화에서 확인한다.",
   "guide.integrations.a2a": "A2A와 AG-UI",
   "guide.integrations.a2aBody":
-    "A2A는 Publish된 public 프로젝트의 Card를 공개하며 설정된 공용 키나 이름 있는 키는 계약에 따라 private 프로젝트의 지정 endpoint도 호출할 수 있다. AG-UI는 프로젝트 토큰으로 Publish된 실행을 자체 화면에 연결한다. 클라이언트가 메시지 이력과 프로토콜 이벤트 표시를 관리하며 두 프로토콜이 브라우저 Chat이나 Workspace 승인 화면을 만들지는 않는다.",
+    "A2A는 설정된 public 프로젝트의 Card를 공개하며 설정된 공용 키나 이름 있는 키는 계약에 따라 private 프로젝트의 지정 endpoint도 호출할 수 있다. AG-UI는 프로젝트 토큰으로 Agent 실행을 자체 화면에 연결한다. 클라이언트가 메시지 이력과 프로토콜 이벤트 표시를 관리하며 두 프로토콜이 브라우저 Chat이나 Workspace 승인 화면을 만들지는 않는다.",
   "guide.integrations.webhook": "웹훅으로 실행하기",
   "guide.integrations.webhookBody":
-    "프로젝트 Settings에서 webhook을 설정·활성화하고 URL을 복사한 뒤 X-Trigger-Secret 헤더로 비밀값을 보낸다. GitHub에서는 application/json을 선택하고 같은 값을 Secret에 입력하면 X-Hub-Signature-256으로 서명한다. agent 메시지에는 message 모드, 템플릿 필드에는 variables 모드를 선택한다. HTTP 202는 전달 접수이며 답변 완료가 아니다. 트리거 실행 이력에서 성공·결과·건너뜀·실패를 확인한다. 동시 실행을 허용하지 않으면 실행 중 들어온 전달은 건너뛴다.",
+    "Settings에서 프로젝트 webhook을 활성화한다. 일반 발신자는 X-Trigger-Secret을 보내고 GitHub는 같은 Secret으로 X-Hub-Signature-256 서명을 만든다. JSON 본문은 사용자 메시지로 전달된다. HTTP 202는 접수 응답이므로 Trigger 이력에서 실행·건너뜀 결과를 확인한다. 동시 실행을 허용하지 않으면 실행 중 들어온 전달은 건너뛴다.",
   "guide.integrations.schedule": "반복 작업 예약하기",
   "guide.integrations.scheduleBody":
-    "프로젝트 Settings에서 다섯 필드 cron 식, Asia/Seoul 같은 IANA 시간대, 실행할 메시지나 변수를 지정해 스케줄을 추가한다. 필요하면 전송 목적지를 선택하고 활성화한다. 스케줄은 배포 버전을 사용하며 배포 환경의 외부 티커가 필요하다. 답변 생성은 성공해도 봇 전송이 실패할 수 있으므로 실행 상태와 전달 결과를 함께 확인한다.",
+    "프로젝트 Settings에서 다섯 필드 cron 식, Asia/Seoul 같은 IANA 시간대, 실행할 메시지를 지정해 스케줄을 추가한다. 필요하면 전송 목적지를 선택하고 활성화한다. 스케줄은 현재 Agent 설정을 사용하며 배포 환경의 외부 티커가 필요하다. 답변 생성은 성공해도 봇 전송이 실패할 수 있으므로 실행 상태와 전달 결과를 함께 확인한다.",
 
   "guide.records.title": "결과물·사용량·한도",
   "guide.records.artifacts": "원본과 생성 파일 찾기",
@@ -642,20 +627,20 @@ export const ko: Messages = {
     "프로젝트 Settings에서 일간·월간 알림 기준과 차단 기준을 따로 설정한다. 알림은 목적지가 설정되어야 전달되며, 차단은 알림 설정이 없어도 UTC 기준 날짜나 월이 바뀔 때까지 새 실행을 거절한다. 호출 방식에 따라 개인 등급 한도와 호출자 동시 실행 한도도 적용된다. 비용은 실행 완료 후 반영될 수 있어 기준값이 초과 지출을 완전히 막는 선불 잔액은 아니다.",
   "guide.records.traces": "Traces로 실행 조사하기",
   "guide.records.tracesBody":
-    "소유자와 관리자는 프로젝트 Traces에서 준비 단계·모델 호출·도구·위임·소요 시간·사용량·경고를 확인한다. Trace는 진단 기록이며 프롬프트와 도구 결과 원문 전체를 보관하는 문서가 아니다. agent는 실행을 추적하고 llm·image는 표본 추적일 수 있다. Trace가 없으면 실행 시작 전에 요청이 거절된 경우도 확인한다.",
+    "소유자와 관리자는 프로젝트 Traces에서 준비 단계·모델 호출·도구·위임·소요 시간·사용량·경고를 확인한다. 모든 Agent 실행을 추적하지만 프롬프트와 도구 결과 원문 전체를 저장하지는 않는다. Trace가 없으면 실행 전 거절이나 기록 저장 실패 여부를 확인한다.",
 
   "guide.security.title": "접근 권한과 민감정보",
   "guide.security.body":
     "프로젝트를 공유하거나 데이터 소스를 연결하기 전에 접근 범위를 정한다. 콘솔·모델 공급자·도구·파일 저장소는 각각 정보가 처리될 수 있는 위치다.",
   "guide.security.visibility": "공개 범위와 편집 권한",
   "guide.security.visibilityBody":
-    "public 프로젝트는 이 설치에 로그인한 사용자가 접근할 수 있다는 뜻이며 모든 API를 익명 공개하는 의미는 아니다. private 프로젝트는 소유자·초대 이메일·관리자로 접근을 제한한다. 초대는 조회·실행 권한이며 편집 권한이 아니다. 소유자와 관리자가 버전·설정·연동·Trace·프로젝트 전체 Artifact를 관리한다. 기계 호출의 자격 증명에는 별도 접근 규칙이 적용된다.",
+    "public 프로젝트는 이 설치에 로그인한 사용자가 접근할 수 있다는 뜻이며 모든 API를 익명 공개하는 의미는 아니다. private 프로젝트는 소유자·초대 이메일·관리자로 접근을 제한한다. 초대는 조회·실행 권한이며 편집 권한이 아니다. 소유자와 관리자가 Agent 설정·연동·Trace·프로젝트 전체 Artifact를 관리한다. 기계 호출의 자격 증명에는 별도 접근 규칙이 적용된다.",
   "guide.security.credentials": "비밀값과 공유 링크",
   "guide.security.credentialsBody":
     "API 키를 프롬프트·스킬 본문·브라우저 코드·화면 캡처·지원 요청에 넣지 않고 전용 자격 증명 필드에 저장한다. 마스킹된 값은 표시용이며 복사해서 사용할 키가 아니다. 서명된 Artifact 링크도 자격 증명으로 취급한다. 링크를 가진 사람이 만료 전 파일에 접근할 수 있다. 토큰이 노출되면 폐기하거나 재발급하고 호출자를 갱신한다.",
   "guide.security.pii": "PII 필터의 적용 범위",
   "guide.security.piiBody":
-    "버전의 PII filtering은 모델에 보낼 텍스트에서 인식한 패턴을 치환하고 사용자에게 보여 줄 결과에서 복원한다. 완전한 익명화는 아니며 도구 인자·저장된 답변·추론·파일에 복원된 정보가 포함될 수 있다. 동적 검색의 embedding/rerank 질의와 memory recall 질의는 이 필터 밖이다. 민감한 작업에는 승인된 모델과 도구 서비스를 사용한다.",
+    "Agent의 PII filtering은 모델에 보낼 텍스트에서 인식한 패턴을 치환하고 사용자에게 보여 줄 결과에서 복원한다. 완전한 익명화는 아니며 도구 인자·저장된 답변·추론·파일에 복원된 정보가 포함될 수 있다. 동적 검색의 embedding/rerank 질의와 memory recall 질의는 이 필터 밖이다. 민감한 작업에는 승인된 모델과 도구 서비스를 사용한다.",
   "guide.security.network": "내부 서비스의 접근 허용",
   "guide.security.networkBody":
     "정상적인 내부 서비스가 차단되면 배포 담당자에게 해당 내부 DNS suffix 허용을 요청한다. MCP 서버는 MCP_INTERNAL_HOST_SUFFIXES, URL 읽기는 URL_FETCH_INTERNAL_HOST_SUFFIXES를 사용하며 서로 다른 설정이다. 허용된 호스트도 실제 통신과 인증이 가능해야 하며 허용 목록 등록이 자격 증명을 제공하거나 방화벽을 여는 것은 아니다.",
@@ -665,13 +650,13 @@ export const ko: Messages = {
     "Members·Settings·Models·Audit는 역할이 다르다. 여기서 변경한 값은 여러 프로젝트에 영향을 줄 수 있으므로 저장 후 해당 기능을 시험한다. 기능 레지스트리 화면은 member 이상이 열람하며 항목 생성·관리는 관리자 작업이다.",
   "guide.admin.members": "사용자 등급 관리",
   "guide.admin.membersBody":
-    "Members에서 사용자를 찾아 프로젝트 생성이나 API 토큰 사용에 필요한 등급으로 변경한다. 적용된 한도는 사용자가 Profile에서 확인한다. ADMIN_EMAILS에 지정된 사용자는 admin으로 고정되며 목록에서 제거해도 저장된 등급이 자동 강등되지는 않는다. Members는 계정 생성이나 비밀번호 재설정 화면이 아니다.",
+    "Members에서 사용자를 찾아 프로젝트 생성이나 API 토큰 사용에 필요한 등급으로 변경한다. 적용된 한도는 사용자가 Profile에서 확인한다. ADMIN_EMAILS에 지정된 사용자는 admin으로 고정되며 목록에서 제거해도 저장된 등급이 자동 강등되지는 않는다.",
   "guide.admin.settings": "Settings 재정의와 배포 설정",
   "guide.admin.settingsBody":
     "Settings에서 공개 base URL·Artifact 접근 방식·접근 목록·LLM 채널·플러그인 저장소·A2A 자격 증명을 관리한다. 저장값이 배포 환경변수보다 우선하고 그다음 기본값을 사용한다. 빈 필드 저장은 재정의를 제거하고 환경변수로 돌아가는 동작이므로 비밀값을 비워도 해당 서비스가 꺼진다고 단정할 수 없다. DB·암호화·로그인 공급자·저장소 연결·보존 기간·내부 호스트 설정은 배포 설정에서 관리한다.",
   "guide.admin.models": "모델 연결과 검증",
   "guide.admin.modelsBody":
-    "Settings에서 기본 LLM 또는 공급자 채널의 URL과 자격 증명을 설정하고 엔드포인트가 요구하는 API base 경로를 포함한다. URL을 바꿀 때는 해당 키도 함께 입력하며 기존 마스킹 키를 새 목적지에 재사용할 수 없다. Models에서 기능과 제공 상태를 확인하고 Test 후 짧은 프로젝트를 실행한다. 카탈로그 등록은 모델의 설명이며 모델을 설치하거나 서빙하는 작업이 아니다.",
+    "Settings에서 기본 LLM 또는 공급자 채널의 URL과 자격 증명을 설정하고 엔드포인트가 요구하는 API base 경로를 포함한다. URL을 바꿀 때는 해당 키도 함께 입력하며 기존 마스킹 키를 새 목적지에 재사용할 수 없다. Models에서 기능과 제공 상태를 확인하고 Test 후 짧은 프로젝트를 실행한다. 카탈로그에는 연결한 엔드포인트에서 제공하는 모델의 정보를 등록한다.",
   "guide.admin.offline": "폐쇄망의 카탈로그와 검색 모델",
   "guide.admin.offlineBody":
     "원격 동기화가 불가능하면 Models에서 모델 카탈로그 문서를 업로드한다. 내부 엔드포인트가 실제 제공하는 모델은 Self-hosted에서 선언한다. 기능 검색에는 배포의 CATALOG_ENABLED=true와 동작하는 embedding 설정이 필요하며 rerank는 선택 사항이다. embedding을 바꾸면 색인을 다시 만든다. 알 수 없는 모델 ID는 배포의 허용·거부 정책을 따르며 비용 추정치가 없을 수 있다.",
@@ -682,9 +667,9 @@ export const ko: Messages = {
   "guide.admin.auditBody":
     "Audit에서 기간을 선택해 작업자·동작·대상·상세를 확인한다. 자격 증명 원문 조회도 기록된다. 설정 변경이나 발급된 비밀값 조회를 조사할 때 이 기록을 사용하고 실행 진단에는 프로젝트 Traces를 사용한다. 두 기록 모두 보존 기간의 영향을 받는다.",
 
-  "guide.install.title": "소스 없이 설치하기",
+  "guide.install.title": "Agent Studio 설치하기",
   "guide.install.body":
-    "배포 담당자를 위한 절차다. 일반 콘솔 사용자는 앱 주소와 계정만 있으면 된다. 패키지 공급자로부터 릴리스 이미지와 해당 환경의 실행·secret·ingress·backup 설정을 받는다. 이미지 사용에 소스 파일이나 개발 명령은 필요하지 않다.",
+    "배포 담당자를 위한 절차다. 콘솔 사용자는 앱 주소와 계정으로 접속한다. 패키지 공급자로부터 릴리스 이미지와 해당 환경의 실행·secret·ingress·backup 설정을 받는다.",
   "guide.install.prepare": "1. 서비스와 이미지 준비",
   "guide.install.prepareBody":
     "버전이 지정된 릴리스 이미지, pgvector가 있는 PostgreSQL(배포 기준 PostgreSQL 18), 접근 가능한 OpenAI 호환 LLM 엔드포인트를 준비한다. 폐쇄망에는 진입 전에 이미지를 내부 registry로 반입한다. 파일 영속 보관이 필요하면 S3 호환 저장소를 추가한다. 서비스 주소·자격 증명·볼륨·TLS·라우팅은 배포 환경에서 구성한다.",
@@ -699,7 +684,7 @@ export const ko: Messages = {
     "파일을 영속 보관하려면 bucket을 만들고 S3_BUCKET_NAME을 설정한다. AWS가 아닌 저장소는 S3_ENDPOINT·S3_ACCESS_KEY_ID·S3_SECRET_ACCESS_KEY도 설정한다. AWS S3는 배포의 AWS 자격 증명이나 역할 설정을 사용할 수 있다. 저장소 계정에는 해당 bucket의 artifacts/*·source-files/* 읽기·쓰기·삭제와 비공개 파일의 multipart 업로드 권한을 부여한다. 비 AWS 저장소의 키는 다른 공급자도 사용하는 AWS_* 대신 S3 전용 변수에 넣는다. Settings에서 Artifact 접근 방식을 정하고 사용자 네트워크에서 다운로드를 검증한다.",
   "guide.install.verify": "5. 기동과 전체 경로 확인",
   "guide.install.verifyBody":
-    "앱은 기동 시 설정을 검증하고 DB migration을 적용한다. health·readiness를 확인하고 관리자로 로그인한 뒤 모델 Test와 작은 프로젝트 생성을 거쳐 실행한다. 저장소가 구성되었다면 생성 파일을 다시 연다. 내부 MCP와 활성화한 연동도 각각 시험하며 콘솔에 접속된다는 사실만으로 모두 정상이라고 판단하지 않는다.",
+    "앱은 기동 시 설정을 검증하고 DB 스키마 migration을 적용한다. health·readiness를 확인하고 관리자로 로그인한 뒤 모델 Test와 작은 프로젝트 생성을 거쳐 실행한다. 저장소가 구성되었다면 생성 파일을 다시 연다. 내부 MCP와 활성화한 연동도 각각 시험한다.",
 
   "guide.operations.title": "운영·보존·업그레이드",
   "guide.operations.body":
@@ -720,7 +705,7 @@ export const ko: Messages = {
     "PostgreSQL·저장된 object·배포 설정·암호화 및 세션 secret을 접근 제한된 위치에 백업한다. 별도 환경에 함께 복구하고 로그인·자격 증명 복호화·프로젝트 실행·파일 접근을 검증한다. AES_ENCRYPTION_KEY를 잃거나 임의 교체하면 저장된 자격 증명을 읽을 수 없다. 앱 이미지는 데이터 백업이 아니다.",
   "guide.operations.upgrade": "복구 절차를 준비한 업그레이드",
   "guide.operations.upgradeBody":
-    "배포 전 앱과 worker 이미지 버전 및 백업을 확인한다. HTTP 앱·오디오 worker·Workspace worker의 스키마와 설정을 맞추고 대응되는 Sandbox 이미지를 준비한다. 로그인·실행·파일·승인 재개를 다시 검사한다. 이미지 롤백은 DB 스키마를 되돌리지 않는다. 현재·복구용 이미지는 보존하고 디스크가 부족하면 미사용 캐시만 정리한다.",
+    "배포 전 앱과 worker 이미지 버전 및 백업을 확인한다. 대상 릴리스에 필요한 데이터 이전 절차를 준비하고 앱과 worker를 멈춘 상태에서 적용한다. HTTP 앱·오디오 worker·Workspace worker의 스키마와 설정을 맞추고 대응되는 Sandbox 이미지를 준비한다. 로그인·실행·파일·승인 재개를 다시 검사한다. 복구에는 호환되는 이미지와 DB 백업을 사용한다. 현재·복구용 이미지는 보존하고 디스크가 부족하면 미사용 캐시를 정리한다.",
 
   "guide.trouble.title": "문제 해결",
   "guide.trouble.body":
@@ -730,22 +715,22 @@ export const ko: Messages = {
     "관리자와 로그인 방식·허용 이메일 도메인·계정을 확인한다. 생성·편집 버튼이 없으면 등급이나 소유권 제한일 수 있다. API 401은 토큰과 프로젝트 이름을, 403은 현재 소유자 등급과 권한을 확인한다. private 또는 접근 불가 프로젝트는 404일 수 있으므로 URL만 잘못되었다고 단정하지 않는다.",
   "guide.trouble.model": "모델이 없거나 호출 실패",
   "guide.trouble.modelBody":
-    "Models에서 숨김·제공 상태를 확인하고 Test를 실행한다. 관리자와 공급자 URL·base 경로·자격 증명·모델 ID를 확인한 뒤 원하는 모델을 프로젝트 버전에 저장한다. 400은 요청 필드와 이미지·도구 요구사항을 API Reference와 대조한다. 502 같은 공급자 오류는 표시된 상위 서비스 오류를 확인하며 잘못된 모델이나 URL은 같은 요청을 반복해도 해결되지 않는다.",
+    "Models에서 숨김·제공 상태를 확인하고 Test를 실행한다. 관리자와 공급자 URL·base 경로·자격 증명·모델 ID를 확인한 뒤 원하는 모델을 프로젝트 Agent 설정에 저장한다. 400은 요청 필드와 이미지·도구 요구사항을 API Reference와 대조한다. 502 같은 공급자 오류는 표시된 상위 서비스 오류를 확인하며 잘못된 모델이나 URL은 같은 요청을 반복해도 해결되지 않는다.",
   "guide.trouble.limits": "429·시간 초과·부분 답변",
   "guide.trouble.limitsBody":
-    "429는 동시 실행·프로젝트 일간 및 월간 차단·개인 등급 사용량을 확인하고 API 응답의 Retry-After를 따른다. 시간 초과나 스트림 오류는 공급자·느린 도구·배포 실행 시간 한도를 확인한다. turn-limit·output-limit·length는 작업을 좁히거나 저장된 버전의 해당 한도를 조정한다. 도구가 이미 외부 데이터를 바꿨을 수 있으므로 확인 없이 재시도를 반복하지 않는다.",
+    "429는 동시 실행·프로젝트 일간 및 월간 차단·개인 등급 사용량을 확인하고 API 응답의 Retry-After를 따른다. 시간 초과나 스트림 오류는 공급자·느린 도구·배포 실행 시간 한도를 확인한다. turn-limit·output-limit·length는 작업을 좁히거나 저장된 설정의 해당 한도를 조정한다. 도구가 이미 외부 데이터를 바꿨을 수 있으므로 확인 없이 재시도를 반복하지 않는다.",
   "guide.trouble.tools": "도구·메모리를 사용하지 않음",
   "guide.trouble.toolsBody":
-    "저장된 버전에 기능이 연결되어 있고 Prompt preview에 표시되는지 확인한다. 도구 선택·discovery·OAuth 연결·실행 경고를 점검하고 실제로 해당 도구가 필요한 질문으로 시험한다. 내부 호스트 차단은 배포 담당자에게 확인하고 메모리는 연결 서버에 recall이 있는지 확인한다. 문서 읽기 도구는 검색 가능 상태만으로 부족하며 명시적으로 연결해야 한다.",
+    "저장된 설정에 기능이 연결되어 있고 Prompt preview에 표시되는지 확인한다. 도구 선택·discovery·OAuth 연결·실행 경고를 점검하고 실제로 해당 도구가 필요한 질문으로 시험한다. 내부 호스트 차단은 배포 담당자에게 확인하고 메모리는 연결 서버에 recall이 있는지 확인한다. 문서 읽기 도구는 검색 가능 상태만으로 부족하며 명시적으로 연결해야 한다.",
   "guide.trouble.automation": "봇·스케줄이 응답하지 않음",
   "guide.trouble.automationBody":
-    "Webhook 202는 accepted·duplicate·disabled·busy·배포 버전 없음·ping일 수 있으므로 응답과 Trigger 이력을 확인한다. GitHub는 Secret으로 X-Hub-Signature-256을 만들고 일반 발신자는 X-Trigger-Secret을 사용한다. 전달 성공은 Workspace 실행 권한이 아니다. 스케줄은 ticker, Workspace 승인·CI 재개는 해당 worker가 필요하다. 각 결과가 기록되는 창구에서 상태를 확인한다.",
+    "Webhook 202는 accepted·duplicate·disabled·busy·Agent 설정 없음·ping일 수 있으므로 응답과 Trigger 이력을 확인한다. GitHub는 Secret으로 X-Hub-Signature-256을 만들고 일반 발신자는 X-Trigger-Secret을 사용한다. 전달 성공은 Workspace 실행 권한이 아니다. 스케줄은 ticker, Workspace 승인·CI 재개는 해당 worker가 필요하다. 각 결과가 기록되는 창구에서 상태를 확인한다.",
   "guide.trouble.files": "첨부·다운로드 실패",
   "guide.trouble.filesBody":
     "파일 형식과 첨부 한도를 먼저 확인한다. 이미지는 이미지 입력 모델이 필요하고 Office 읽기는 내장 엔진이 처리한다. 암호화 파일, OCR이 필요한 스캔본, 지원되지 않는 편집은 다른 작업 방식이 필요하다. File 도구가 없거나 원본이 보관되지 않았다면 관리자에게 저장소 구성을 확인한다. 다운로드 실패는 Artifacts를 다시 열고 저장 경고·접근 모드·공개 주소·연결·보존 기간을 점검한다.",
   "guide.trouble.support": "지원 요청에 포함할 정보",
   "guide.trouble.supportBody":
-    "앱 버전·프로젝트와 저장 버전 이름·호출 화면 또는 방식·시각과 시간대·오류 및 상태 코드·가능한 Trace ID·최소 재현 입력을 정리한다. 기대한 결과와 Playground에서도 실패하는지 함께 적는다. 토큰·쿠키·비공개 파일 링크·민감한 본문은 제거한다. 설치 환경별 기동·복구 문제는 배포 담당자나 패키지 공급자에게 전달한다.",
+    "앱 버전·프로젝트·호출 방식·시각과 시간대·오류 및 상태 코드·Trace ID·최소 재현 요청을 정리한다. 기대한 결과와 Playground에서도 실패하는지 적는다. 토큰·쿠키·비공개 파일 링크·민감한 본문은 제거한다.",
 
   "chat.more": "이전 항목 더 보기",
   "chat.answerReady": "답변 완료",
@@ -765,11 +750,11 @@ export const ko: Messages = {
   "chat.reject": "거절",
   "chat.discardApproval": "대기 중인 실행 취소",
   "chat.discardApprovalHint": "화면의 채팅 기록은 보존하며, 미완료 실행은 이후 모델 문맥에서 제외합니다.",
-  "version.runtimePolicy": "실행 정책",
-  "version.maxInputChars": "입력 텍스트 최대 문자 수",
-  "version.blockedTools": "차단할 도구 이름",
-  "version.approvalTools": "승인이 필요한 도구 이름",
-  "version.approvalToolsHint": "프롬프트 미리보기의 이름을 사용하세요. 승인은 Chat에서 지원합니다. 승인할 위임에는 handoff 대신 delegate 도구를 사용하세요.",
+  "configuration.runtimePolicy": "실행 정책",
+  "configuration.maxInputChars": "입력 텍스트 최대 문자 수",
+  "configuration.blockedTools": "차단할 도구 이름",
+  "configuration.approvalTools": "승인이 필요한 도구 이름",
+  "configuration.approvalToolsHint": "프롬프트 미리보기의 이름을 사용하세요. 승인은 Chat에서 지원합니다. 승인할 위임에는 handoff 대신 delegate 도구를 사용하세요.",
   "chat.send": "보내기",
   "chat.stop": "중지",
   "chat.placeholder": "메시지를 입력하세요…",
@@ -792,13 +777,12 @@ export const ko: Messages = {
   "chat.generatedImage": "생성된 이미지",
   "chat.documentRead": "{note} 읽음",
 
-  "projects.lede":
-    "프롬프트·에이전트·이미지 프로젝트를 버전으로 다듬고, 하나를 배포해 호출자에게 제공합니다.",
+  "projects.lede": "Agent를 설정하고 도구를 연결해 요청을 실행한다.",
   "projects.new": "새 프로젝트",
   "projects.empty": "아직 프로젝트가 없습니다. 첫 프로젝트를 만들어 보세요.",
   "projects.loadFailed": "프로젝트를 불러오지 못했습니다",
   "projects.createFailed": "프로젝트를 만들지 못했습니다",
-  "projects.published": "배포됨: v{version}",
+
   "projects.create": "만들기",
   "projects.name": "이름",
   "projects.namePlaceholder": "my-project",
@@ -807,13 +791,9 @@ export const ko: Messages = {
   "projects.displayNamePlaceholder": "My Project",
   "projects.description": "설명",
   "projects.descriptionHint":
-    "공개된 프로젝트가 로컬 서브에이전트로 바인딩될 때 상위 에이전트에게 표시되고 A2A Agent Card에도 실립니다. 어떤 요청을 받고 어떤 결과를 돌려주는지 쓰세요.",
+    "이 프로젝트를 연결한 상위 Agent와 A2A Agent Card에 표시합니다. 받을 요청과 반환할 결과를 설명하세요.",
   "projects.departmentCode": "부서 코드",
   "projects.departmentHint": "프로젝트 소유와 비용을 묶는 선택 코드입니다.",
-  "projects.type": "타입",
-  "projects.type.llm": "llm — 단발 프롬프트",
-  "projects.type.agent": "agent — 멀티턴 도구 루프",
-  "projects.type.image": "image — 이미지 생성·편집",
   "projects.privateBadge": "비공개",
   "projects.cloneFailed": "프로젝트 복제에 실패했습니다",
 
@@ -823,32 +803,31 @@ export const ko: Messages = {
   "project.clone": "복제",
   "project.cloneTitle": "{name} 복제",
   "project.tab.playground": "Playground",
-  "project.tab.versions": "버전",
-  "project.tab.compare": "비교",
+
   "project.tab.usage": "사용량",
   "project.tab.artifacts": "Artifacts",
   "project.tab.traces": "트레이스",
   "trace.inConversation": "대화",
   "project.tab.apiReference": "API 레퍼런스",
+  "apiReference.intro": "이 프로젝트 주소는 현재 저장된 Agent 설정을 실행합니다. 연동 → API 토큰에서 프로젝트 토큰을 발급하세요.",
+  "apiReference.environmentHint": "호출 프로세스에 PROJECT_API_TOKEN과 CONVERSATION_ID 환경변수를 설정하세요. curl은 $…를 치환하고 Python·Node.js는 환경변수를 읽습니다. 자격 증명은 호출 서버에 보관하세요.",
+  "apiReference.configureFirst": "Playground에서 Agent 설정을 저장하면 실행 API를 사용할 수 있습니다.",
   "project.tab.integrations": "연동",
   "project.tab.settings": "설정",
 
   "playground.loadFailed": "프로젝트를 불러오지 못했습니다",
-  "playground.saveFailed": "버전을 저장하지 못했습니다",
-  "playground.publishFailed": "버전을 배포하지 못했습니다",
+  "playground.saveFailed": "Agent 설정을 저장하지 못했습니다.",
+
   "playground.notFound": "프로젝트를 찾을 수 없습니다",
-  "playground.newVersion": "+ 새 버전",
-  "playground.version": "v{version}",
-  "playground.versionPublished": "v{version} (배포됨)",
+
   "playground.unsaved": "저장 안 됨",
-  "playground.saved": "v{version} 저장됨",
-  "playground.createVersion": "버전 만들기",
+
+  "configuration.title": "Agent 현재 설정",
+  "configuration.saved": "저장됨",
+  "configuration.saveToRun": "Agent 설정을 저장한 뒤 실행하라.",
   "playground.save": "저장",
   "playground.readOnly": "읽기 전용 — 소유자나 관리자만 수정할 수 있습니다",
-  "playground.publishTitle": "이 프로젝트를 배포할까요?",
-  "playground.publishBody":
-    "“{project}” 은 아직 배포되지 않았습니다. v{version} 을 배포하면 API·A2A·트리거·Slack, 그리고 다른 프로젝트의 서브에이전트가 호출할 수 있습니다.",
-  "playground.publishConfirm": "v{version} 배포",
+
   "playground.preview": "미리보기",
   "playground.run": "실행",
 
@@ -867,47 +846,40 @@ export const ko: Messages = {
   "bindings.addHeaderOverride": "+ 헤더 재정의 추가",
   "bindings.noOverridesNoDefaults":
     "재정의가 없고, 이 서버의 레지스트리 항목에도 헤더가 없습니다.",
-  "bindings.noOverrides": "재정의가 없습니다 — 이 버전은 위 헤더를 그대로 씁니다.",
+  "bindings.noOverrides": "오버라이드가 없습니다. 위의 레지스트리 헤더를 사용합니다.",
 
-  "version.invalidJson": "JSON 객체를 입력하세요",
-  "version.model": "모델",
-  "version.selectModel": "모델을 고르세요…",
-  "version.modelUnlisted":
+  "configuration.invalidJson": "JSON 객체를 입력하세요",
+  "configuration.model": "모델",
+  "configuration.selectModel": "모델을 고르세요…",
+  "configuration.modelUnlisted":
     "새 선택에는 사용할 수 없는 모델입니다. 숨긴 모델은 계속 실행되며, 제거된 모델은 비용 $0 으로 기록될 수 있습니다.",
-  "version.fallbackModel": "대체 모델 (선택)",
-  "version.none": "없음",
-  "version.default": "기본값",
-  "version.systemPrompt": "시스템 프롬프트",
-  "version.systemPromptImagePlaceholder": "수채화 스타일, 부드러운 파스텔 톤, 글자 없음.",
-  "version.systemPromptPlaceholder": "당신은 도움이 되는 어시스턴트입니다.",
-  "version.systemPromptImageHint": "모든 이미지 프롬프트 앞에 붙는, 이 버전의 고정 스타일입니다.",
-  "version.userPromptTemplate": "사용자 프롬프트 템플릿",
-  "version.userPromptPlaceholder": "요약: {{input}}",
-  "version.userPromptHint": "{{variable}} 자리표시자를 쓰면 실행 시점에 서버에서 채웁니다.",
-  "version.userPromptAgentHint":
-    "에이전트 실행은 이 템플릿을 쓰지 않습니다 — 사용자 턴은 대화가 채웁니다. 비우면 이 필드가 사라집니다.",
-  "version.temperature": "Temperature",
-  "version.presencePenalty": "반복 억제 (Presence penalty)",
-  "version.maxTokens": "최대 토큰",
-  "version.defaultPlaceholder": "기본값",
-  "version.reasoningTrace": "추론 과정 기록",
-  "version.reasoningTraceHint":
-    "답하기 전에 모델이 무엇을 생각했는지 남겨 채팅과 플레이그라운드에서 다시 읽습니다. 기본은 꺼짐 — 추론은 요청을 모델 자신의 말로 되풀이하고, 이 project 의 API 토큰을 가진 쪽에도 함께 전달됩니다. 보여 주기만 하고 다음 턴의 히스토리로 되돌리지 않습니다.",
-  "version.reasoningEffort": "추론 강도",
-  "version.maxTurns": "최대 턴",
-  "version.piiFiltering": "PII 필터링",
-  "version.piiImageHint":
-    "이미지 실행에는 적용되지 않습니다 — 프롬프트가 마스킹 없이 프로바이더에 전달됩니다. 체크를 해제하면 이 옵션이 사라집니다.",
-  "version.piiHint":
+  "configuration.fallbackModel": "대체 모델 (선택)",
+  "configuration.none": "없음",
+  "configuration.default": "기본값",
+  "configuration.systemPrompt": "시스템 프롬프트",
+
+  "configuration.systemPromptPlaceholder": "당신은 도움이 되는 어시스턴트입니다.",
+
+  "configuration.temperature": "Temperature",
+  "configuration.presencePenalty": "반복 억제 (Presence penalty)",
+  "configuration.maxTokens": "최대 토큰",
+  "configuration.defaultPlaceholder": "기본값",
+  "configuration.reasoningTrace": "추론 과정 기록",
+  "configuration.reasoningTraceHint":
+    "추론 과정을 Chat·Playground와 실행 스트림에 표시합니다. 기본은 꺼짐이며 추론에 민감한 요청 내용이 포함될 수 있습니다. 표시 여부만 바꾸며 모델이 이전 추론을 참고하는 이력은 유지합니다.",
+  "configuration.reasoningEffort": "추론 강도",
+  "configuration.maxTurns": "최대 턴",
+  "configuration.piiFiltering": "PII 필터링",
+
+  "configuration.piiHint":
     "이메일·전화번호·주민등록번호·카드번호를 되돌릴 수 있는 토큰으로 가린 뒤 전송합니다. MCP 도구가 받는 값은 가려지지 않습니다.",
-  "version.callerContext": "누가 요청했는지 실행에 알려주기 (이름, 타임존)",
-  "version.callerImageHint":
-    "이미지 실행에는 적용되지 않습니다 — 프롬프트에 호출자 블록이 없습니다. 체크를 해제하면 이 옵션이 사라집니다.",
-  "version.callerHint":
+  "configuration.callerContext": "누가 요청했는지 실행에 알려주기 (이름, 타임존)",
+
+  "configuration.callerHint":
     "사람이 직접 실행하는 모든 경로 — 대화, Playground, 로그인 상태의 API 호출, Slack — 에 적용됩니다. API 토큰·트리거·인바운드 A2A 는 호출자를 담지 않습니다. PII 필터링은 이름을 가리지 않습니다.",
-  "version.structuredOutput": "구조화 출력 (JSON 스키마)",
-  "version.aboutStructuredOutput": "구조화 출력 안내",
-  "version.structuredOutputTitle": "구조화 출력",
+  "configuration.structuredOutput": "구조화 출력 (JSON 스키마)",
+  "configuration.aboutStructuredOutput": "구조화 출력 안내",
+  "configuration.structuredOutputTitle": "구조화 출력",
 
   "structured.intro1":
     "체크박스를 켜고 스키마를 채우면 모델의 응답은 그 스키마에 맞는 JSON 문서 하나가 됩니다. 전송은 ",
@@ -924,48 +896,44 @@ export const ko: Messages = {
   "structured.empty2": " 이 전송되지 않고 응답은 평문으로 남습니다.",
   "structured.sampleSchema": "예시 스키마",
   "structured.whatReturns": "모델이 돌려주는 값",
-  "version.imageTools": "이미지 (GenerateImage + EditImage 도구)",
-  "version.imageToolsHint":
+  "configuration.imageTools": "이미지 (GenerateImage + EditImage 도구)",
+  "configuration.imageToolsHint":
     "에이전트가 그림을 그리고, 사용자가 첨부했거나 앞서 그린 이미지를 고칠 수 있게 합니다.",
-  "version.imageModel": "이미지 모델",
-  "version.fetchUrl": "URL 읽기 (FetchUrl 도구)",
-  "version.fetchUrlHint":
+  "configuration.imageModel": "이미지 모델",
+  "configuration.fetchUrl": "URL 읽기 (FetchUrl 도구)",
+  "configuration.fetchUrlHint":
     "에이전트가 스스로 지정한 주소 — 웹 페이지·PDF·데이터 파일·이미지 — 를 읽게 합니다. 기본은 꺼짐입니다. 다른 모든 외부 요청은 운영자가 등록한 곳으로만 가지만, 이것은 모델이 정한 곳으로 갑니다.",
-  "version.slackWorkspace": "Slack 읽기 (SlackHistory, SlackThread, SlackUser, SlackChannels)",
-  "version.slackWorkspaceHint":
+  "configuration.slackWorkspace": "Slack 읽기 (SlackHistory, SlackThread, SlackUser, SlackChannels)",
+  "configuration.slackWorkspaceHint":
     "이 프로젝트의 봇이 설치된 Slack 워크스페이스를 에이전트가 읽게 합니다 — 채널 히스토리, 스레드, 사용자 id 조회. 읽기 전용이라 글을 쓸 수는 없습니다. 기본은 꺼짐이고, 프로젝트에 활성화된 Slack 봇이 없으면 켜도 동작하지 않습니다. 프로젝트는 공유 카탈로그이므로, 이 프로젝트를 실행할 수 있는 사람은 봇이 읽을 수 있는 것을 모두 읽을 수 있습니다.",
-  "version.bindingsInertImage":
-    "“image” 프로젝트는 프롬프트로 그림을 그릴 뿐 도구를 제공하지 않습니다 — 아래 바인딩은 저장되지만 쓰이지 않습니다. 여기서 지울 수는 있고, 새로 추가할 수는 없습니다.",
-  "version.bindingsInertLlm":
-    "“llm” 프로젝트는 단발 completion 을 실행할 뿐 도구를 제공하지 않습니다 — 아래 바인딩은 저장되지만 쓰이지 않습니다. 여기서 지울 수는 있고, 새로 추가할 수는 없습니다.",
-  "version.skills": "Skills",
-  "version.searchSkills": "등록된 Skill 검색",
-  "version.dynamicCapabilities": "요청마다 필요한 기능 찾기",
-  "version.dynamicCapabilitiesHint":
-    "이 버전의 시스템 프롬프트와 들어온 요청으로 기능 이름과 설명을 검색해, 일치하는 Skill·MCP 서버/도구·외부 에이전트를 위 바인딩에 더해 제공합니다. 설명의 첫 500자가 색인되므로 구현 세부보다 어떤 요청을 처리하는지 먼저 쓰세요. 바인딩은 언제나 전부 제공되며, 자체 로그인이 필요한 MCP 서버는 이 프로젝트가 연결한 뒤에만 제공됩니다.",
 
-  "version.memoryRecall": "런마다 먼저 메모리 회상",
-  "version.memoryRecallHint":
+  "configuration.skills": "Skills",
+  "configuration.searchSkills": "등록된 Skill 검색",
+  "configuration.dynamicCapabilities": "요청마다 필요한 기능 찾기",
+  "configuration.dynamicCapabilitiesHint":
+    "이 Agent의 시스템 프롬프트와 들어온 요청으로 기능 이름과 설명을 검색해, 일치하는 Skill·MCP 서버/도구·외부 에이전트를 위 바인딩에 더해 제공합니다. 설명의 첫 500자가 색인되므로 구현 세부보다 어떤 요청을 처리하는지 먼저 쓰세요. 바인딩은 언제나 전부 제공되며, 자체 로그인이 필요한 MCP 서버는 이 프로젝트가 연결한 뒤에만 제공됩니다.",
+
+  "configuration.memoryRecall": "런마다 먼저 메모리 회상",
+  "configuration.memoryRecallHint":
     "첫 토큰 전에, “recall” 도구를 제공하는 바인딩된 MCP 서버(mcp-memory)마다 들어온 요청을 물어 기억하는 내용을 시스템 프롬프트에 넣습니다 — 모델이 물어볼 생각을 해야 하는 대신 프로젝트가 이미 아는 것에서 시작합니다. recall 도구는 그대로 제공됩니다. 런당 호출 한 번이 들고, 제공하는 서버가 없으면 경고와 함께 아무 일도 하지 않습니다.",
-  "version.memoryRecallUnbound":
-    "회상을 켰지만 이 버전의 MCP 바인딩 중 “recall” 도구를 제공할 수 있는 것이 없습니다 — 바인딩이 없거나, 모든 바인딩의 도구 선택에서 빠져 있습니다. 메모리 서버(mcp-memory)를 바인딩하거나 회상을 끄세요. 그때까지 모든 런은 메모리 없이 시작하며 매번 경고합니다.",
+  "configuration.memoryRecallUnbound":
+    "회상을 켰지만 이 Agent의 MCP 바인딩 중 “recall” 도구를 제공할 수 있는 것이 없습니다 — 바인딩이 없거나, 모든 바인딩의 도구 선택에서 빠져 있습니다. 메모리 서버(mcp-memory)를 바인딩하거나 회상을 끄세요. 그때까지 모든 런은 메모리 없이 시작하며 매번 경고합니다.",
 
   "mcpSettings.tools": "도구",
   "mcpSettings.toolsNote":
-    "이 버전이 모델에게 제공할 서버 도구를 고릅니다. 버전과 함께 저장됩니다.",
+    "이 Agent가 모델에게 제공할 서버 도구를 고릅니다. Agent 설정과 함께 저장됩니다.",
   "mcpSettings.overrides": "헤더 재정의",
   "mcpSettings.overridesNote":
-    "이 버전에 한해 레지스트리 항목의 헤더 위에 덮어씁니다. 버전과 함께 저장됩니다.",
+    "이 Agent에 한해 레지스트리 항목의 헤더 위에 덮어씁니다. Agent 설정과 함께 저장됩니다.",
   "mcpSettings.connection": "연결",
   "mcpSettings.connectionNote":
-    "관리자가 설정한 OAuth 클라이언트로 이 프로젝트의 사용자 계정을 인증합니다. 버전과 별개로 즉시 저장됩니다.",
+    "관리자가 설정한 OAuth 클라이언트로 이 프로젝트의 사용자 계정을 인증합니다. Agent 설정과 별개로 즉시 저장됩니다.",
   "mcpSettings.title": "{server} 설정",
-  "mcpSettings.savesWholeVersion": "이 서버만이 아니라 버전 전체를 저장합니다.",
+  "mcpSettings.savesConfiguration": "현재 Agent 설정 전체를 저장합니다.",
   "mcpSettings.close": "닫기",
 
   "run.failed": "실행에 실패했습니다",
   "run.variables": "변수",
-  "run.noVariables": "템플릿 변수가 없습니다.",
   "run.messageLabel": "메시지",
   "run.editLabel": "편집 지시",
   "run.imagePromptLabel": "이미지 프롬프트",
@@ -1000,7 +968,7 @@ export const ko: Messages = {
   "preview.tools": "· 도구 {count} 개",
   "preview.stale": "· 오래됨",
   "preview.discovered": "이 미리보기에서 바인딩 외에 추가로 찾은 것: {names}",
-  "preview.noPrompt": "이 버전은 자체 프롬프트를 보내지 않습니다. 모든 내용은 대화가 채웁니다.",
+  "preview.noPrompt": "미리 볼 시스템 지시문이나 역량이 없습니다. 작업은 메시지로 전달하세요.",
   "preview.toolsOffered": "제공하는 도구 ({count})",
   "preview.blurb":
     "실행과 같은 방식으로 시스템 프롬프트를 만든다 — 회상한 문맥, Skill 표, 연결된 MCP 서버와 도구 이름, 전환 지시 — 이를 위해 설정된 서비스에 필요할 때 실제로 접속한다.",
@@ -1061,7 +1029,7 @@ export const ko: Messages = {
   "skills.noContent": "본문이 없습니다.",
 
   "agents.lede":
-    "프로젝트 버전이 원격 서브에이전트로 바인딩할 수 있는 외부 OpenAI 호환·A2A 엔드포인트입니다.",
+    "Agent에 원격 하위 Agent로 연결할 수 있는 외부 OpenAI 호환·A2A 엔드포인트입니다.",
   "agents.descriptionRole":
     "외부 에이전트 설명은 동적 검색에 쓰이며 모델의 Available Agents 표에 표시되어 전환 대상을 고르게 합니다. 첫 500자가 색인됩니다. 워크스페이스 프로젝트 설명은 동적으로 검색되지 않지만 로컬 에이전트로 바인딩될 때와 공개 A2A Agent Card에 표시됩니다.",
   "agents.descriptionHint":
@@ -1075,10 +1043,13 @@ export const ko: Messages = {
   "agents.namePlaceholder": "my-agent",
   "agents.protocol": "프로토콜",
   "agents.cardUrl": "Agent Card URL",
+  "agents.studioTitle": "Studio Agent (A2A)",
+  "agents.studioEnabled": "설정을 저장한 Agent를 A2A로 호출합니다. 공개 Agent는 Agent Card URL도 제공합니다.",
+  "agents.studioDisabled": "설정을 저장한 Agent 목록입니다. Settings에서 A2A 키를 발급하면 A2A 호출을 활성화합니다.",
   "agents.sendPlaceholder": "에이전트에게 메시지 하나를 보내보세요…",
 
   "tools.lede":
-    "streamable HTTP 로 에이전트에게 도구를 제공하는 MCP 서버입니다. 한 번 등록하면 버전마다 바인딩합니다.",
+    "streamable HTTP로 도구를 제공하는 MCP 서버입니다. 한 번 등록한 뒤 필요한 Agent에 연결합니다.",
   "tools.descriptionRole":
     "서버 이름과 설명의 첫 500자는 동적 검색에 색인되고 모델의 Connected MCP Servers 표에 표시됩니다. 각 도구의 설명도 별도로 색인되고 입력 스키마와 함께 모델에 전달되므로 실제 동작 선택에는 도구 설명이 주로 쓰입니다. 본문은 운영자 전용 메모입니다.",
   "tools.descriptionHint":
@@ -1191,11 +1162,13 @@ export const ko: Messages = {
     "다른 시스템이 이 프로젝트에 닿는 방법입니다 — API 호출자가 내는 토큰, 봇이 이 프로젝트를 실행하는 채팅 플랫폼, A2A·AG-UI 노출. 프로젝트 자체·비용 한도·트리거는 설정 탭에 있습니다.",
   "pint.ownerOnly": "프로젝트 소유자({owner})나 admin 만 이 연동을 바꿀 수 있습니다.",
   "pint.aguiLede":
-    "published 된 version 이 이 주소에서 AG-UI 런에 답합니다 — 애플리케이션이 RunAgentInput 을 보내고 이벤트 스트림을 읽습니다. 보내는 thread id 가 런의 대화가 되고, 선언한 tool 은 런에 제공되어 애플리케이션 쪽에서 실행됩니다. 토큰은 서버 자격 증명이므로 브라우저가 아닌 자체 서버에서 호출하고, 다음 헤더로 제시합니다:",
-  "pint.aguiPublish": "version 을 publish 하면 이 프로젝트가 AG-UI 로 노출됩니다.",
+    "Agent의 현재 설정이 이 주소에서 AG-UI 런에 답합니다 — 애플리케이션이 RunAgentInput 을 보내고 이벤트 스트림을 읽습니다. 보내는 thread id 가 런의 대화가 되고, 선언한 tool 은 런에 제공되어 애플리케이션 쪽에서 실행됩니다. 토큰은 서버 자격 증명이므로 브라우저가 아닌 자체 서버에서 호출하고, 다음 헤더로 제시합니다:",
+  "pint.aguiConfigure": "Agent 설정을 저장하면 AG-UI로 실행할 수 있습니다.",
   "pint.aguiCopy": "예시 복사",
 
   "pset.dangerZone": "위험 구역",
+  "pset.deleteConfirm": "\"{name}\"의 설정·연동·Trace·사용량 기록을 삭제합니다. 되돌릴 수 없으며 프로젝트 이름을 다시 사용할 수 없습니다.",
+  "pset.deleteHint": "프로젝트를 삭제하면 설정과 프로젝트 소유 기록을 제거합니다. Chat과 Artifact는 각각의 보존 규칙을 따르며 프로젝트 이름은 재사용할 수 없습니다.",
   "pset.visibility": "공개 범위",
   "pset.visibilityPublic": "공개",
   "pset.visibilityPublicHint": "로그인한 모든 멤버가 이 프로젝트를 보고, 실행하고, 복제할 수 있습니다.",
@@ -1248,12 +1221,12 @@ export const ko: Messages = {
 
   "webhook.section": "Webhook",
   "webhook.githubHint": "GitHub에서는 이 주소를 Payload URL로, Content type을 application/json으로 설정하고 프로젝트 Webhook 시크릿을 Secret에 입력합니다. GitHub가 X-Hub-Signature-256 서명을 보내므로 별도 헤더는 필요 없습니다. 처리할 이벤트만 선택하세요. 서명된 ping은 에이전트를 실행하지 않고 연결만 확인합니다.",
-  "webhook.secretHint": "일반 발신자는 X-Trigger-Secret 헤더로 전송합니다. GitHub에서는 같은 값을 Secret에 입력해 전달에 서명합니다. 이 값을 가진 쪽은 프로젝트의 published 버전을 실행할 수 있습니다.",
+  "webhook.secretHint": "일반 발신자는 X-Trigger-Secret 헤더로 전송합니다. GitHub에서는 같은 값을 Secret에 입력해 전달에 서명합니다. 이 값을 가진 쪽은 Agent의 현재 설정을 실행할 수 있습니다.",
   "webhook.intro":
-    "프로젝트마다 주소 하나가 있고, 켜기 전까지는 꺼져 있습니다. 외부 시스템은 X-Trigger-Secret 또는 GitHub HMAC-SHA256 서명으로 인증한 JSON을 POST해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 아래 이력에 남습니다. Webhook 은 항상 프로젝트의 published 버전을 실행합니다.",
+    "프로젝트마다 주소 하나가 있고, 켜기 전까지는 꺼져 있습니다. 외부 시스템은 X-Trigger-Secret 또는 GitHub HMAC-SHA256 서명으로 인증한 JSON을 POST해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 아래 이력에 남습니다. Webhook 은 항상 Agent의 현재 설정을 실행합니다.",
   "schedule.section": "스케줄",
   "schedule.intro":
-    "타임존과 함께 지정한 cron 식으로 스스로 발화합니다. 스케줄도 항상 프로젝트의 published 버전을 실행하며, 결과는 각 스케줄 아래에 표시됩니다.",
+    "타임존과 함께 지정한 cron 식으로 스스로 발화합니다. 스케줄도 항상 Agent의 현재 설정을 실행하며, 결과는 각 스케줄 아래에 표시됩니다.",
   "trigger.newId": "새 스케줄 ID",
   "trigger.newIdPlaceholder": "nightly-report",
   "trigger.cron": "Cron",
@@ -1265,7 +1238,7 @@ export const ko: Messages = {
   "trigger.messagePlaceholder": "매 발화가 프로젝트에 물을 내용",
   "trigger.enabled": "활성",
   "trigger.allowOverlap": "겹쳐 실행 허용",
-  "trigger.payload": "페이로드",
+
   "trigger.destinations": "보고서 목적지",
   "trigger.destinationType": "목적지",
   "trigger.addDestination": "Add destination",
@@ -1404,10 +1377,5 @@ export const ko: Messages = {
   "projectUsage.perCallerRange": "선택한 기간의 호출자별 합계",
   "projectUsage.topCallersRange": "선택한 기간에 비용을 많이 쓴 호출자 {count}명",
   "projectUsage.caller": "호출자",
-  "versions.empty": "아직 버전이 없습니다. Playground 탭에서 하나 만드세요.",
-  "versions.published": "배포됨",
-  "versions.publish": "배포",
-  "versions.delete": "삭제",
-  "versions.deleteTitle": "버전 삭제",
-  "versions.deleteBody": "버전 v{name}을 삭제할까요? 삭제한 버전은 복구할 수 없습니다.",
+
 };

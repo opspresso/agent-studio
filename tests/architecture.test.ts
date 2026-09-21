@@ -614,7 +614,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(110);
+    expect(entries.length).toBe(108);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/chats/_components/PendingApproval.tsx",
       "src/app/chats/_components/NewChatEntry.tsx",
@@ -759,9 +759,7 @@ describe("response shapes", () => {
  * stays the whole set rather than half of it.
  */
 const RUN_ENDING_SITES = [
-  "src/application/execution/imageTool.ts",
   "src/application/execution/runProject.ts",
-  "src/application/image/generateImage.ts",
 ];
 
 describe("a run's ending", () => {
@@ -814,7 +812,6 @@ describe("a run's ending", () => {
  */
 const REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE = [
   "projectRepository",
-  "versionRepository",
   "traceRepository",
   "usageRepository",
   "secretCipher",
@@ -1000,9 +997,8 @@ describe("execution deps wiring", () => {
       const block = blockPattern.exec(stripComments(file?.text ?? ""))?.[1] ?? "";
       return [...block.matchAll(/^\s{2,4}(\w+)\?:/gm)].map((match) => match[1]!);
     });
-    // The two test seams: a production root must never pin the clock or the
-    // sampling draw, so their absence from container.ts is the correct state.
-    const seams = new Set(["now", "sample"]);
+    // The test clock is not pinned in production.
+    const seams = new Set(["now"]);
     // A regression in either interface regex would empty `optional` and read as
     // a clean pass; the fields this exists for anchor it.
     expect(optional).toContain("catalog");
@@ -1658,17 +1654,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     what: "what wraps a top-level run",
     pattern: /^\s*(?:const\s+\w+\s*=\s*)?beginRun\([^)]*\);/m,
     owner: "src/application/run/runBracket.ts",
-  },
-  {
-    // The version path and the image path each derived this, with opposite
-    // comparison operators — one rejected on `>= rate`, the other accepted on
-    // `< rate`. The pattern matches the rate fallback, which is where a copy
-    // starts.
-    what: "whether a run's trace is sampled",
-    pattern: /traceSampleRate \?\?/,
-    owner: "src/application/run/traceLifecycle.ts",
-  },
-  {
+  },  {
     // "When does this schedule fire" is a wall-clock question, and reading a
     // wall clock in an arbitrary timezone goes through `Intl`'s part formatter.
     // A second reader would be a second cron semantics — the DST and dom/dow
@@ -1687,21 +1673,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // comment, and only one may *build* it.
     pattern: /`\/api\/webhook\/\$\{/,
     owner: "src/domain/trigger/types.ts",
-  },
-  {
-    // Three call sites would ask this for themselves, so a new project type
-    // meant finding all three. They now ask the facade and only decide how to
-    // serialise its answer.
-    what: "which project type runs which way",
-    pattern: /projectType === "image"/,
-    owner: "src/application/execution/deps.ts",
-    // The console decides which panels and docs a project type gets, which is a
-    // separate question from how it runs. Scoped to the console pages rather
-    // than the whole `app` layer: one of the copies this owner replaced lived in
-    // an API route handler, which a layer-wide exemption would let back in.
-    alsoAllowedUnder: ["src/app/projects/"],
-  },
-  {
+  },  {
     // Two transports answer the same question — stream, or post and edit — and
     // a new Slack entry point that picks one for itself is a second copy of the
     // fallback, the pacing and the delta bookkeeping. The pattern matches the
@@ -1766,20 +1738,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     what: "which Slack messages are a fixed command rather than a question",
     pattern: /export function parseSlackCommand/,
     owner: "src/application/slack/engagement.ts",
-  },
-  {
-    // The agent half of the same dispatch, which cannot be checked tree-wide:
-    // `projectType !== "agent"` is also how several use cases validate what a
-    // project supports (a Slack bot, a chat, a tools capability), and that is a
-    // different question from how a run is dispatched. Inside the execution
-    // facade there is no second question, so the check is scoped to it — three
-    // modules there would answer it for themselves.
-    what: "how the execution facade dispatches an agent project",
-    pattern: /projectType [!=]== "agent"/,
-    owner: "src/application/execution/deps.ts",
-    within: "src/application/execution/",
-  },
-  {
+  },  {
     // What a tool result has to do, and the order it has to happen in: mask,
     // charge, show the restored text, store the masked one. Eleven branches of
     // the dispatch loop spelled it out and five of them skipped the charge. A
@@ -2083,39 +2042,17 @@ describe("a dollar amount is never written by hand", () => {
   });
 });
 
-/**
- * Who may start an image run.
- *
- * The image use case is the one execution path the facade deliberately does not
- * absorb — `/chat/completions` depends on an image project being *refused*, and
- * a flag deciding whether a project type is refused is the bug that refusal
- * prevents. The cost of that decision is that more than one surface reaches the
- * use case directly, and each brings its own serialisation: JSON with the
- * model and usage, an A2A file artifact, a chunk stream.
- *
- * So the list is bounded rather than owned. Three entries, each because it
- * answers in a shape no other one can, and a fourth has to be added here on
- * purpose — which is the check the four-copy version of this dispatch never had.
- * A surface that only needs chunks belongs behind `streamProjectRun`; that is
- * what the composition root's own copy became.
- */
-const IMAGE_RUN_ENTRY_POINTS = [
-  // Answers with chunks, for every consumer that reads a run generically.
-  "src/application/execution/runProject.ts",
-  // Answers with `{ imageBase64, model, usage }`, which no chunk stream carries.
-  "src/app/api/projects/[name]/versions/[version]/predict/route.ts",
-  // Answers with an `image` artifact — an id A2A clients already read.
-  "src/application/a2a/executor.ts",
+/** Image calls belong to Agent capabilities or the administrator's model probe. */
+const IMAGE_CHANNEL_CALL_SITES = [
+  "src/application/execution/imageTool.ts",
+  "src/lib/container.ts",
 ];
 
-describe("image runs", () => {
-  it("start at the entry points that declare themselves here", () => {
-    const callers = SOURCE_FILES.filter((file) =>
-      parseImports(file.text).some(
-        (i) => resolveSpec(i.spec, file.path) === "@/application/image/generateImage" && !i.typeOnly,
-      ),
-    ).map((file) => file.path);
-    expect(callers.sort()).toEqual([...IMAGE_RUN_ENTRY_POINTS].sort());
+describe("image calls", () => {
+  it("remain behind the Agent tools and the configured model probe", () => {
+    const callers = SOURCE_FILES.filter(file => /\bimageChannel\.(generateImage|editImage)\(/.test(stripComments(file.text)))
+      .map(file => file.path);
+    expect(callers.sort()).toEqual([...IMAGE_CHANNEL_CALL_SITES].sort());
   });
 });
 
@@ -2220,7 +2157,7 @@ describe("run artifacts", () => {
     );
     // Anchors the check: an `openRun` that stopped matching would empty this and
     // read as a clean pass.
-    expect(openers.length).toBeGreaterThanOrEqual(2);
+    expect(openers.map(file => file.path)).toEqual(["src/application/execution/runProject.ts"]);
     const missing = openers
       .filter((file) => !/bracket\.artifacts|captureRunArtifacts\(/.test(stripComments(file.text)))
       .map((file) => file.path);
@@ -2252,7 +2189,6 @@ describe("run artifacts", () => {
  */
 const ONE_AXIS_ON_PURPOSE = [
   // The image use case and its channel: an image project's whole output.
-  "src/application/image/generateImage.ts",
   // Reads a turn's *attached* images, which have no file counterpart — a
   // document a person attaches becomes text before it reaches a turn.
   "src/application/llm/imageParts.ts",
@@ -2278,8 +2214,8 @@ const ONE_AXIS_ON_PURPOSE = [
  * be spent on a reader who may not be attached.
  */
 const RAW_CHUNK_STREAM_ROUTES = [
-  "src/app/api/projects/[name]/versions/[version]/agent/route.ts",
-  "src/app/api/projects/[name]/versions/[version]/predict/route.ts",
+  "src/app/api/projects/[name]/agent/route.ts",
+  "src/app/api/projects/[name]/predict/route.ts",
 ];
 
 describe("what a run produced", () => {
@@ -2322,22 +2258,13 @@ describe("what a run produced", () => {
  * am not reading it" — which is how it reached nowhere at all for as long as it
  * did, emitted by the engine and consumed by no one.
  *
- * Four surfaces fold it now, and each pairs the same three decisions: keep only
- * what `isTopLevelChunk` allows (a child's thinking is its own run's), pace the
- * commit (it arrives a token at a time and the string only grows), and carry
- * the token count beside the text (the common OpenAI shape reports a count and
- * streams nothing). `SideResult` had already dropped the third before this list
- * existed. A fifth surface is added here on purpose.
- *
- * The chat's two are one fold each on either side of the wire — what the store
- * shows and what the run persists — and the console's two hold it in component
- * state, which is why they are the pair that needs `textPacer`.
+ * Each consumer keeps top-level reasoning and its token count. The Playground
+ * paces component state updates; the chat store paces its own notifications.
  */
 const REASONING_FOLD_SITES = [
   "src/application/chat/run.ts",
   "src/app/chats/_lib/stream.ts",
   "src/app/projects/[name]/_components/RunPanel.tsx",
-  "src/app/projects/[name]/compare/page.tsx",
   // Forwards it as the protocol's REASONING_* events rather than folding it,
   // but the same two of the three decisions apply: top level only, and the
   // token count beside it (on RUN_FINISHED's usage).
@@ -2426,7 +2353,7 @@ describe("folding a run's reasoning", () => {
  */
 const AGENT_RUN_ENTRY_POINTS = [
   // Answers with SSE chunks, for a caller driving one version directly.
-  "src/app/api/projects/[name]/versions/[version]/agent/route.ts",
+  "src/app/api/projects/[name]/agent/route.ts",
   // Binds `ChatDeps.runAgent`; the chat use cases never see the facade.
   "src/lib/container.ts",
   // Binds `SlackEventDeps.runAgent`, the same way.

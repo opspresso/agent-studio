@@ -192,7 +192,7 @@ export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): Mode
     );
     if (report.removed.length > 0) {
       // agent-models retires by hiding; an id that vanished outright now
-      // books any stored version's usage at $0, which deserves more than the
+      // books any saved Agent's usage at $0, which deserves more than the
       // info line above.
       log.warn(
         "models",

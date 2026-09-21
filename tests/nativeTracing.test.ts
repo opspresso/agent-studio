@@ -1,6 +1,6 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runAgent, runPrompt } from "@/application/runtime";
+import { runAgent } from "@/application/runtime";
 import { TraceRecorder } from "@/application/trace/recorder";
 import type { Trace } from "@/domain/trace/types";
 import type { TraceRepository } from "@/domain/trace/repository";
@@ -13,7 +13,7 @@ function recorder() {
   vi.setSystemTime(new Date("2026-09-13T00:00:00Z"));
   const saved: Trace[] = [];
   const recorder = new TraceRecorder({ put: async (trace) => { saved.push(trace); } } as TraceRepository,
-    { projectName: "project", versionName: "v1", projectType: "agent", model: "openai/gpt-5-mini", messageCount: 1 });
+    { projectName: "project", projectType: "agent", model: "openai/gpt-5-mini", messageCount: 1 });
   recorder.useSdkRuntime();
   return { recorder, saved };
 }
@@ -60,10 +60,9 @@ describe("local SDK tracing", () => {
 
   it("keeps completion usage on the native model span", async () => {
     const f = recorder();
-    const result = await runPrompt({ channel: new FakeChannel([[contentChunk("done"), usageChunk(10, 3, 0, 0.2)]]), onSdkSpan: (span) => f.recorder.observeSdkSpan(span) }, {
-      projectName: "project", model: "openai/gpt-5-mini", userPromptTemplate: "hello",
-    });
-    f.recorder.observeResult(result);
+    for await (const chunk of runAgent({ channel: new FakeChannel([[contentChunk("done"), usageChunk(10, 3, 0, 0.2)]]), onSdkSpan: (span) => f.recorder.observeSdkSpan(span) }, {
+      projectName: "project", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "hello" }],
+    })) f.recorder.observe(chunk);
     await f.recorder.finish();
     expect(f.saved[0]?.spans.find((span) => span.kind === "model")?.output?.costUsd).toBe(0.2);
   });

@@ -1,8 +1,7 @@
-import { runStrategyFor } from "./deps";
 import { runtimeFingerprint } from "@/application/runtime/session";
-/** Resolving a version's skills, subagents and MCP tools for one run. */
+/** Resolving an Agent's skills, subagents and MCP tools for one run. */
 
-import type { McpBinding, SubagentRef, Version } from "@/domain/project/types";
+import type { McpBinding, SubagentRef, AgentConfiguration } from "@/domain/project/types";
 import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput } from "@/domain/llm/types";
 import type { RunOrigin } from "@/domain/execution/actor";
@@ -70,8 +69,8 @@ export async function resolveSkills(
   const described = new Map(
     (await deps.skills.describe(names)).map((entry) => [entry.name, entry.description]),
   );
-  // Walked in the version's own order, so what a run reports about its bindings
-  // reads in the order the version lists them.
+  // Walked in the Agent's own order, so what a run reports about its bindings
+  // reads in the order the Agent lists them.
   const skills: engine.SkillInfo[] = [];
   const warnings: string[] = [];
   for (const name of names) {
@@ -88,7 +87,7 @@ export async function resolveSkills(
 
 /** Same for subagents: an unresolvable target is not offered as a transfer. */
 export async function resolveSubagents(
-  deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "versions">,
+  deps: Pick<ExecutionDeps, "externalAgents" | "projects">,
   subagentList: SubagentRef[] | undefined,
 ): Promise<{ subagents: engine.SubagentInfo[]; warnings: string[] }> {
   const resolved = await Promise.all(
@@ -107,11 +106,11 @@ export async function resolveSubagents(
             warning: `${ref.type === "remote" ? "Remote agent" : "Agent project"} '${ref.name}' no longer exists; a transfer to it was not offered.`,
           };
         }
-        const version = "projectType" in target && target.publishedVersion ? await deps.versions.get(target.name, target.publishedVersion) : undefined;
+        const configuration = "projectType" in target ? target.configuration : undefined;
         return {
           subagent: { name: ref.name, description: target.description ?? "", type: ref.type,
-            signature: runtimeFingerprint("url" in target ? [target.name, target.url, target.protocol] : [target.name, target.projectType, version]),
-            kind: ref.type === "remote" || ("projectType" in target && runStrategyFor(target) === "image") ? "action" : "agent" },
+            signature: runtimeFingerprint("url" in target ? [target.name, target.url, target.protocol] : [target.name, target.projectType, configuration]),
+            kind: ref.type === "remote" ? "action" : "agent" },
         };
       },
     ),
@@ -208,7 +207,7 @@ export function recentUserQueries(messages: readonly ChatMessageInput[]): string
  * vector-store queries for an answer the first copy already gives.
  */
 export function discoveryQueries(
-  version: Version,
+  configuration: AgentConfiguration,
   requests: readonly string[] = [],
   remembered?: string,
 ): string[] {
@@ -222,7 +221,7 @@ export function discoveryQueries(
   return [
     ...new Set(
       [
-        version.systemPrompt.slice(0, PROMPT_QUERY_CHARS),
+        configuration.systemPrompt.slice(0, PROMPT_QUERY_CHARS),
         ...requests.map((request) => request.slice(0, PROMPT_QUERY_CHARS)),
         ...(contextualQuery ? [contextualQuery] : []),
       ].filter((query) => query.trim() !== ""),
@@ -231,10 +230,10 @@ export function discoveryQueries(
 }
 
 /**
- * Capabilities to offer beyond what the version bound.
+ * Capabilities to offer beyond what the Agent bound.
  *
  * Everything here is *additive*: it returns names to append, and the caller
- * appends them after the bindings. A version's own list is never reordered,
+ * appends them after the bindings. An Agent's own list is never reordered,
  * filtered or truncated by this — which is the whole reason a project can turn
  * discovery on without auditing what it already relies on.
  *
@@ -249,7 +248,7 @@ export function discoveryQueries(
  * A connection that has gone stale since — a revoked grant, a rotated client —
  * is not this function's problem: `buildMcpTools` resolves it for real at
  * dispatch and reports a server that cannot authenticate, exactly as it does
- * for one the version bound by hand.
+ * for one the Agent bound by hand.
  */
 async function discoverCapabilities(
   deps: {
@@ -257,7 +256,7 @@ async function discoverCapabilities(
     mcps: Pick<ExecutionDeps["mcps"], "get">;
     mcpConnections?: ExecutionDeps["mcpConnections"];
   },
-  version: Version,
+  configuration: AgentConfiguration,
   queries: readonly string[],
   signal?: AbortSignal,
   recordUsage?: engine.RecordUsageFn,
@@ -268,9 +267,9 @@ async function discoverCapabilities(
   notes: string[];
   rerank: CatalogRerankReport;
 }> {
-  const boundSkills = new Set(version.skillList ?? []);
-  const boundAgents = new Set((version.subagentList ?? []).map((ref) => ref.name));
-  const boundServers = new Set((version.mcpList ?? []).map((binding) => binding.name));
+  const boundSkills = new Set(configuration.skillList ?? []);
+  const boundAgents = new Set((configuration.subagentList ?? []).map((ref) => ref.name));
+  const boundServers = new Set((configuration.mcpList ?? []).map((binding) => binding.name));
 
   // One embedding pass for all four: the vector is the query, and only the
   // filter differs. Asking per kind meant four identical embeddings per run.
@@ -305,7 +304,7 @@ async function discoverCapabilities(
     await Promise.all(
       search.rerank.usage.map((usage) =>
         recordUsage({
-          projectName: version.projectName,
+          projectName: configuration.projectName,
           model: usage.model,
           inputTokens: usage.inputTokens,
           outputTokens: 0,
@@ -317,8 +316,7 @@ async function discoverCapabilities(
 
   const skillList = skills.map((match) => match.name).filter((name) => !boundSkills.has(name));
   // Every catalogued agent is an external one: a project is reachable as a
-  // subagent, but only through a binding someone made, and its published
-  // version is what decides whether it can run at all.
+  // subagent through an explicit local binding and must have current settings.
   const subagentList: SubagentRef[] = agents
     .filter((match) => !boundAgents.has(match.name))
     .map((match) => ({ name: match.name, type: "remote" as const }));
@@ -327,7 +325,7 @@ async function discoverCapabilities(
   // `needs_reauth` are connections in name only — the console shows both as
   // something a person still has to finish — so only `connected` counts.
   const connections = deps.mcpConnections
-    ? await listProjectMcpConnections(deps.mcpConnections, version.projectName)
+    ? await listProjectMcpConnections(deps.mcpConnections, configuration.projectName)
     : [];
   const connected = new Set<string>(
     connections
@@ -414,7 +412,7 @@ async function discoverCapabilities(
  * One owner because two run levels record it — the top-level run and an agent
  * child — and a field added to one copy is a field the other silently stops
  * carrying. The counts answer what a slow or thin resolve raises: was it slow,
- * and did it come back with what the version declares. Discovery's additions
+ * and did it come back with what the Agent declares. Discovery's additions
  * are **named** rather than counted, because they are the one part of a run's
  * plan that changes per request; bounded like every other accumulator on a
  * trace, with the count beside the list saying how many were found in all (so a
@@ -463,22 +461,22 @@ export function toolsPrepared(resolved: {
 }
 
 /**
- * Resolve a version's skills, subagents and MCP tools together.
+ * Resolve an Agent's skills, subagents and MCP tools together.
  *
  * The MCP promise is handled separately so a *sibling's* failure still releases
  * the sessions that opened: awaiting all three as a plain `Promise.all` drops
  * the tool manager on the floor, and every session it opened stays alive
  * server-side until that server times it out.
  *
- * When the version opted into discovery and this deployment has a catalog, the
- * search runs *first* and its results are appended to the version's own lists —
+ * When the Agent opted into discovery and this deployment has a catalog, the
+ * search runs *first* and its results are appended to the Agent's own lists —
  * the resolution below then treats bound and discovered alike, which is what
  * keeps every later stage (the prompt tables, the tool enums, the reachability
  * checks) from needing to know the difference.
  */
 export async function resolveRunTools(
-  deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "versions" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
-  version: Version,
+  deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
+  configuration: AgentConfiguration,
   signal?: AbortSignal,
   queries?: readonly string[],
   /**
@@ -492,13 +490,13 @@ export async function resolveRunTools(
   skills: engine.SkillInfo[];
   subagents: engine.SubagentInfo[];
   mcp: ResolvedMcp;
-  /** Everything the run lost while resolving, in version-list order. */
+  /** Everything the run lost while resolving, in binding order. */
   warnings: string[];
   /**
-   * What a search added beyond the version's own bindings — a **gain**, which is
+   * What a search added beyond the Agent's own bindings — a **gain**, which is
    * why it is not in `warnings`.
    *
-   * It was, and every healthy run of a discovery-enabled version therefore
+   * It was, and every healthy run of a discovery-enabled Agent therefore
    * reported a warning: a yellow alert on every chat turn, a non-empty
    * `warnings` array in every `/predict` answer, and anything keying on "did
    * this run report a loss" firing on all of them. `collectedWarning` owns what
@@ -509,42 +507,42 @@ export async function resolveRunTools(
   discovered: string[];
   rerank: CatalogRerankReport;
   /**
-   * The version as this resolve read it — the caller's own where nothing was
+   * The Agent as this resolve read it — the caller's own where nothing was
    * discovered, and widened by the search where something was.
    *
    * Returned because **the resolved lists are not the whole story**. `subagents`
    * above is what the model is *told* about, while what it can actually reach is
    * decided separately by `buildSubagentRunner`, from a `subagentList`. Handing
-   * the caller the widened version is what keeps those two reading the same
+   * the caller the widened Agent is what keeps those two reading the same
    * list: passing the original meant a discovered agent appeared in the transfer
    * enum and the prompt's table, and answered `Unknown agent` when the model
    * used it.
    */
-  version: Version;
+  configuration: AgentConfiguration;
 }> {
   // Background postprocessing consumes source data; the worker owns every external effect.
   if (origin?.backgroundTask) {
-    version = { ...version, mcpList: [], subagentList: [], parameters: {
-      ...version.parameters, dynamicCapabilities: false, memoryRecall: false,
+    configuration = { ...configuration, mcpList: [], subagentList: [], parameters: {
+      ...configuration.parameters, dynamicCapabilities: false, memoryRecall: false,
     } };
   }
   const discoveryNotes: string[] = [];
   const discovered: string[] = [];
   let rerank: CatalogRerankReport = { calls: 0, candidates: 0, failed: 0, usage: [] };
-  // A version that asked for discovery and did not get it says so, on the same
+  // An Agent that asked for discovery and did not get it says so, on the same
   // channel a failed search uses. Nothing else can tell the author: the checkbox
   // stays ticked, the bindings still resolve, the run answers normally, and the
   // preview shows the same prompt — the feature reads as on and is inert. That
   // is the shape of the defect this branch was itself found to have, one call
   // site up, so it is not left to be discovered the same way twice.
-  if (version.parameters.dynamicCapabilities) {
+  if (configuration.parameters.dynamicCapabilities) {
     if (!deps.catalog) {
       discoveryNotes.push(
-        "This version is set to find capabilities for each request, but this deployment has no capability catalog; only its own bindings were offered.",
+        "This Agent is set to find capabilities for each request, but this deployment has no capability catalog; only its own bindings were offered.",
       );
     } else if (!queries || queries.length === 0) {
       discoveryNotes.push(
-        "This version is set to find capabilities for each request, but there was nothing to search with — no system prompt and no request text; only its own bindings were offered.",
+        "This Agent is set to find capabilities for each request, but there was nothing to search with — no system prompt and no request text; only its own bindings were offered.",
       );
     } else {
       try {
@@ -554,16 +552,16 @@ export async function resolveRunTools(
             mcps: deps.mcps,
             ...(deps.mcpConnections ? { mcpConnections: deps.mcpConnections } : {}),
           },
-          version,
+          configuration,
           queries,
           signal,
           recordRerankUsage,
         );
-        version = {
-          ...version,
-          skillList: [...(version.skillList ?? []), ...found.skillList],
-          subagentList: [...(version.subagentList ?? []), ...found.subagentList],
-          mcpList: [...(version.mcpList ?? []), ...found.mcpList],
+        configuration = {
+          ...configuration,
+          skillList: [...(configuration.skillList ?? []), ...found.skillList],
+          subagentList: [...(configuration.subagentList ?? []), ...found.subagentList],
+          mcpList: [...(configuration.mcpList ?? []), ...found.mcpList],
         };
         rerank = found.rerank;
         if (rerank.failed > 0) {
@@ -582,18 +580,18 @@ export async function resolveRunTools(
         // outage. Falling back here would keep resolving tools after Stop.
         signal?.throwIfAborted();
         // A catalog that is unreachable, unindexed, or refusing embeddings must
-        // not take the run with it: the version's own bindings are still exactly
+        // not take the run with it: the Agent's own bindings are still exactly
         // what it asked for, and running with them is the behaviour discovery was
         // added on top of.
         log.warn("catalog", "capability discovery failed; running with bindings only", error);
         discoveryNotes.push(
-          "Capability discovery failed; only this version's own bindings were offered.",
+          "Capability discovery failed; only this Agent's own bindings were offered.",
         );
       }
     }
   }
 
-  const mcpPending = buildMcpTools(deps, version, signal, origin);
+  const mcpPending = buildMcpTools(deps, configuration, signal, origin);
   // Claim the rejection now: a sibling that rejects first would otherwise let
   // this one surface as an unhandled rejection before the catch below runs.
   const mcpSettled = mcpPending.then(
@@ -602,8 +600,8 @@ export async function resolveRunTools(
   );
   try {
     const [skills, subagents, settled] = await Promise.all([
-      resolveSkills(deps, version.skillList),
-      resolveSubagents(deps, version.subagentList),
+      resolveSkills(deps, configuration.skillList),
+      resolveSubagents(deps, configuration.subagentList),
       mcpSettled,
     ]);
     if ("error" in settled) {
@@ -613,7 +611,7 @@ export async function resolveRunTools(
       skills: skills.skills,
       subagents: subagents.subagents,
       mcp: settled.mcp,
-      version,
+      configuration,
       discovered,
       rerank,
       // Discovery's losses lead — a search that could not run, or a server it

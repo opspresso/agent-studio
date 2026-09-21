@@ -9,7 +9,7 @@ import classes from "./CollapsibleRow.module.css";
 /**
  * A run's own thinking, in a row that opens.
  *
- * Only a version that asked for it (`parameters.reasoningTrace`) produces any,
+ * Only an Agent that asked for it (`parameters.reasoningTrace`) produces any,
  * so a row rendered at all is one the author opted into. Shared by the chat and
  * the playground for the reason `ToolRow` is: the same wire text grown twice is
  * two renderings that drift.
@@ -40,7 +40,7 @@ export function ReasoningRow({
   const [open, setOpen] = useState(false);
   const shown = touched ? open : streaming === true;
   if (!text) {
-    // Nothing is drawn from a count alone. A version that did not opt in still
+    // Nothing is drawn from a count alone. An Agent that did not opt in still
     // produces one — `toUsageInfo` reports whatever the provider says, and only
     // the *yield* is gated — so this branch cannot tell that run from one whose
     // provider reports a count and streams no thinking. The engine can, and

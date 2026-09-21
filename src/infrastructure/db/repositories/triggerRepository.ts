@@ -20,7 +20,7 @@ import { putProjectItem } from "@/infrastructure/db/projectLifecycle";
 import { expiresAtFromNow, expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
 import { boundedPageLimit } from "@/shared/pageLimit";
 import type { TriggerRepository } from "@/domain/trigger/repository";
-import type { ScheduleTrigger, Trigger, TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
+import type { ScheduleTrigger, Trigger, TriggerRun } from "@/domain/trigger/types";
 
 const TRIGGER_ENTITY = "Trigger";
 const TRIGGER_RUN_ENTITY = "TriggerRun";
@@ -38,7 +38,6 @@ function toTrigger(item: Record<string, unknown>): Trigger {
     triggerId: String(item.triggerId ?? ""),
     description: String(item.description ?? ""),
     enabled: Boolean(item.enabled),
-    ...(item.variables ? { variables: item.variables as Record<string, string> } : {}),
     allowConcurrent: Boolean(item.allowConcurrent),
     createdAt: String(item.createdAt ?? ""),
     updatedAt: String(item.updatedAt ?? ""),
@@ -61,7 +60,6 @@ function toTrigger(item: Record<string, unknown>): Trigger {
     ...base,
     kind: "webhook",
     secret: String(item.secret ?? ""),
-    payloadMode: (item.payloadMode as WebhookTrigger["payloadMode"]) ?? "message",
   };
 }
 

@@ -37,8 +37,8 @@ DB·기존 `S3_BUCKET_NAME`의 비공개 Artifacts 저장소·암호화 키·전
 [환경변수·고정 한계](CONFIGURATION.md#오디오-전사-설정)를 따른다. worker만 켜면 접수된 작업을 처리하며,
 신규 녹음의 정기 탐색에는 Agent schedule과 [ticker](#schedule-티커)가 별도로 필요하다.
 
-기본 운영 구성은 Agent 하나와 plugin skill이다. 후처리 대상을 자기 Agent의 `published`로 두면
-작업 접수 시 실제 버전이 고정된다. 새 배포는 이미 접수된 작업을 바꾸지 않는다. 자동 수집의
+기본 운영 구성은 Agent 하나와 plugin skill이다. 후처리 대상 Agent의 현재 설정은 작업 접수 시
+복사해 고정한다. 이후 설정 저장은 이미 접수된 작업을 바꾸지 않는다. 자동 수집의
 외부 저장 대상은 비워두고, 개인 Memory·Document 기록은 요청한 Artifact에 대해서만 수행한다.
 
 작업의 status와 stage를 구분한다. completed의 stage가 cleaning이어도 완료 상태다. waiting은
@@ -80,7 +80,7 @@ Workspace 체크포인트·DB·오브젝트 volume을 이미지 캐시와 함께
 
 ## 릴리스 파이프라인
 
-[`.github/workflows/release.yml`](../.github/workflows/release.yml)은 PR과 `v*` tag push에서 실행하며
+[`.github/workflows/release.yml`](../.github/workflows/release.yml)은 `v*` tag push에서 실행하며
 모든 job은 GitHub-hosted `ubuntu-24.04`를 사용한다. 수동 dispatch는 없다.
 
 | Job | 선행·동작 |
@@ -90,9 +90,8 @@ Workspace 체크포인트·DB·오브젝트 volume을 이미지 캐시와 함께
 | `release` | verify 이후 Dockerfile로 빌드하고 ECR·GHCR에 앱 `{tag}`·`latest`, Sandbox `workspace-{tag}`를 게시한다 |
 | `gitops` | 이미지 게시 이후 `v*` tag에서만 `argocd-env-demo`에 배포 이벤트를 전달한다 |
 
-`github-release`와 `release`는 서로 기다리지 않는다. 현재 두 job에 tag 전용 조건이 없어
-PR에서도 실행을 시도하는 제약이 있다. 해결 조건은
-[MILESTONES](MILESTONES.md#release-event-gating)에 기록한다.
+`github-release`와 `release`는 서로 기다리지 않는다.
+PR은 별도의 [pr.yml](../.github/workflows/pr.yml)에서 검증만 수행하며 게시 작업은 실행하지 않는다.
 
 ECR은 workflow의 OIDC role, GHCR은 `GITHUB_TOKEN`, GitOps 전달은 `GHP_TOKEN`을 사용한다.
 체크인된 [AWS trust policy](../.github/aws-role/trust-policy.json)는 `v*` tag subject와
@@ -207,7 +206,7 @@ provider 보고 비용을 사용하는 텍스트 호출은 이 계산을 거치�
 
 ## 로깅
 
-`src/shared/logger.ts`가 로그 형식과 실행 문맥을 소유한다. 공통 run bracket은 Trace 샘플링과
+`src/shared/logger.ts`가 로그 형식과 실행 문맥을 소유한다. 공통 run bracket은 Trace 저장과
 독립적인 correlation ID를 만들며 Trace가 있으면 함께 기록한다.
 
 ```text
@@ -225,8 +224,7 @@ domain의 제한된 경고와 브라우저 오류 경계 등 예외는 구조 �
 
 ## 트레이싱
 
-Agent 런은 **항상** 트레이싱된다. 비-agent 런과 이미지 predict 런은 `TRACE_SAMPLE_RATE` 로
-샘플링된다.
+Agent 런은 **항상** 트레이싱되며 이미지 도구도 같은 실행 Trace에 포함된다.
 
 트레이스는 프로젝트 소유자와 관리자(`assertProjectWritable` 기준)에게 보인다. SDK span은 이름·종류·상태·시간,
 native ID와 부모 ID, 모델 토큰·비용을 저장한다. `prepare`에는 skill·Agent·MCP·도구의 수와
@@ -239,7 +237,8 @@ native ID와 부모 ID, 모델 토큰·비용을 저장한다. `prepare`에는 s
 Studio 런을 root로 만들고 저장된 `parentSpanId` 관계를 따라 span 계층을 내보낸다. 자식이 먼저
 완료되어 저장됐어도 부모부터 생성하며, 생략된 부모는 root에 연결한다. 타임스탬프·이름·상태와
 `app.span_id`·`app.parent_span_id`·`app.span.kind`·`app.span.author`, root의
-`app.trace_id`·프로젝트·버전·호출자·대화 속성을 전송한다. OTLP 자체 ID는 새로 생성하며
+`app.trace_id`·프로젝트·호출자·대화 속성을 전송한다. 이전 Trace에 남아 있는 `versionName`만
+`app.version`으로 보낸다. OTLP 자체 ID는 새로 생성하며
 원래 SDK ID는 위 속성으로 대응한다. 세부 사용량과 원문을 제외한 native 메타데이터는 DB Trace에서 조회한다.
 
 기록의 정본은 DB 행이다. collector 장애는 `[otel]` 로그로 보고하고 실행을 실패시키지 않는다.
@@ -251,7 +250,7 @@ SDK의 기본 공개 exporter는 사용하지 않는다. `runtime/tracing.ts`가
 ### 승인 대기 실행
 
 Chat 소유자가 도구별 인자를 확인하고 승인·거절한다. 재개는 정확한 revision을 원자적으로
-선점하며, 중복 재개와 변경된 버전/바인딩을 거부한다. 승인 후 인스턴스가 종료되어 체크포인트가
+선점하며, 중복 재개와 변경된 Agent 설정·연결·바인딩을 거부한다. 승인 후 인스턴스가 종료되어 체크포인트가
 `running`으로 남으면 자동 재실행하지 않는다. 도구 효과를 확인한 뒤 실행 잠금이 만료되었거나
 해제된 상태에서 폐기한다. 폐기는 화면 기록을 남기고 미완료 실행을 모델 문맥에서 제외한다.
 
@@ -399,7 +398,7 @@ sweep도 이 틱에 얹혀 있다**. 1분마다 이미 도는 유일한 것이�
 - 503 에는 두 가지 원인이 있고 이 순서로 확인된다: `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우.
   엔드포인트에 티커를 인증할 자격 증명이 없다는 뜻이므로 누가 요청하든 스캔을 거부한다.
   그다음 `CATALOG_ENABLED` 가 설정되지 않은 경우(`CATALOG_ENABLED is not set`)인데, 이는 결함이
-  아니라 카탈로그가 없는 배포다. 그러면 런은 자기 버전이 묶어 둔 것만 정확히 제공한다. 어느
+  아니라 카탈로그가 없는 배포다. 그러면 런은 Agent에 명시적으로 연결한 역량을 사용한다. 어느
   쪽인지는 응답 body 가 이름을 밝힌다. 인덱스는 같은 데이터베이스의 `catalog_vectors` 에 있으므로
   백업과 복원에 따라오고, 옮겨 갈 때는 옮기지 않고 재색인 한 번으로 다시 만든다.
 - **완료된 plugins sync 도 재색인한다**, 두 경로(콘솔과 분 단위 틱) 모두에서. 그래서 plugins
@@ -422,7 +421,7 @@ sweep도 이 틱에 얹혀 있다**. 1분마다 이미 도는 유일한 것이�
   뒤이고, warn 레벨로 `sync tick did not run` 을 남긴다. 결함이 아니라 흔한 겹침이다. 콘솔
   경로는 같은 거부를 `409` 로 드러낸다.
 - **틱은 결코 삭제하지 않는다.** 저장소가 더는 담고 있지 않은 것은 orphaned 로 *보고*되며,
-  매달린 채로 남게 될 버전 바인딩도 함께 보고된다; 삭제 대상 선택은 콘솔에만 있다. 따라서
+  매달린 채로 남게 될 Agent 바인딩도 함께 보고된다; 삭제 대상 선택은 콘솔에만 있다. 따라서
   플러그인을 없앤 머지가 레지스트리 행을 아무도 지켜보지 않는 채로 함께 가져갈 수는 없다.
   그것이 토큰 자체에 대해 무엇을 뜻하는지는
   [SECURITY.md](SECURITY.md#머신-호출자의-요청-인증) 를 보라.

@@ -93,7 +93,7 @@ export function bodyTooLarge(error: BodyTooLargeError): Response {
 const EDITOR_ALLOWANCE = MAX_SKILL_TOTAL_BYTES + PROSE_ALLOWANCE;
 
 /**
- * The body of a registry or version edit, or the response that refuses it.
+ * The body of a registry or Agent settings edit, or the response that refuses it.
  *
  * Separate from {@link withTurnBody} because the two bound different things
  * and the gap between them is three orders of magnitude: a turn may carry four

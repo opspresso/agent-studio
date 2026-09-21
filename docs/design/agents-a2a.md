@@ -1,7 +1,7 @@
 # 외부 Agent 와 A2A
 
 이 배포 바깥의 엔드포인트를 가리키는 registry 항목, 그리고 양방향 모두가 제공되는
-프로토콜. inbound 는 published 된 Project 가 남이 호출하는 agent 가 되는 쪽이고, outbound 는
+프로토콜. inbound 는 설정된 Agent 가 남이 호출하는 agent 가 되는 쪽이고, outbound 는
 transfer 가 그런 agent 에 도달하는 쪽이다.
 
 호출자가 inbound 표면에 어떻게 인증하는지는
@@ -22,7 +22,7 @@ MCP 와 마찬가지로 SSRF 가드를 거친다. headers 는 등록된 주소�
 ## A2A
 
 **Inbound**: 표면이 켜져 있는 배포에서는(공유 `A2A_API_KEY` 또는 이름 붙은 클라이언트 키가
-하나 이상 — 아니면 두 라우트 모두 503 으로 답한다) published 된 Version 을 가진 Project 가
+하나 이상 — 아니면 두 라우트 모두 503 으로 답한다) 현재 설정을 가진 Agent 가
 JSON-RPC 엔드포인트를 제공한다. 공개 Agent Card 는 public Project 만 제공하며, private Project 는
 무인증 card 요청을 `404`로 숨긴다. 키를 가진 JSON-RPC 호출은 visibility 와 무관하게 허용된다.
 카드는 엔드포인트가 요구하는

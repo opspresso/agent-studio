@@ -2,9 +2,9 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import { createTextPacer } from "@/app/_lib/textPacer";
 
 /**
- * The Playground and Compare hold a streamed axis in component state, so a
+ * The Playground holds a streamed axis in component state, so a
  * commit per token re-renders the whole page over a string that only grows —
- * quadratic over a long think, with two sides doing it at once on Compare.
+ * quadratic over a long think.
  */
 describe("createTextPacer", () => {
   afterEach(() => {

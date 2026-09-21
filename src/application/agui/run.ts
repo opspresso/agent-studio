@@ -1,53 +1,39 @@
 import { prepareDocumentAttachments } from "@/application/document/attachments";
-/**
- * A published project run over AG-UI.
- *
- * The surface's whole job is two decisions the protocol leaves to the agent:
- * which version answers — the published one, and only that, because an
- * application embedding this project is an external surface like A2A and a
- * draft must not leak through it — and how the engine's chunks become the
- * protocol's events (`events.ts`). The run itself is the facade's:
- * `streamProjectRun`, so an agent project loops over its tools, a prompt
- * project answers once, and an image project draws — a chat panel can show
- * any of the three.
- */
+/** Resolve current Agent settings and adapt facade output to AG-UI events. */
 
 import type { AguiEvent, AguiRunInput, AguiTool } from "@/domain/agui/types";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { Project, Version } from "@/domain/project/types";
+import type { ProjectRepository } from "@/domain/project/repository";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import {
-  runStrategyFor,
   streamProjectRun,
   type ExecutionDeps,
 } from "@/application/execution/runProject";
-import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { toAguiEvents } from "./events";
 import { toEngineMessages } from "./input";
 
 export interface AguiDeps {
   projects: ProjectRepository;
-  versions: VersionRepository;
   execution: ExecutionDeps;
 }
 
-/** The project and the version an AG-UI call runs, or null when there is none to run. */
+/** The Project and current settings an AG-UI call runs, or null when there is none to run. */
 export async function resolveAguiProject(
   deps: AguiDeps,
   name: string,
-): Promise<{ project: Project; version: Version } | null> {
+): Promise<{ project: Project; configuration: AgentConfiguration } | null> {
   const project = await deps.projects.get(name);
   if (!project) {
     return null;
   }
-  const version = await resolveRunnableVersion(deps.versions, project);
-  return version ? { project, version } : null;
+  const configuration = project.configuration;
+  return configuration ? { project, configuration } : null;
 }
 
 export interface AguiRunRequest {
   project: Project;
-  version: Version;
+  configuration: AgentConfiguration;
   input: AguiRunInput;
   actor: RunActor;
   caller?: RunCaller;
@@ -71,20 +57,14 @@ export async function* streamAguiRun(
   request: AguiRunRequest,
 ): AsyncGenerator<AguiEvent> {
   const clientTools = request.input.tools.map(toChannelTool);
-  const toolsApply = runStrategyFor(request.project) === "agent";
-  const warnings =
-    !toolsApply && clientTools.length > 0
-      ? [
-          `${clientTools.length} application tool(s) were not offered: only an agent project can call tools, and "${request.project.name}" is a ${request.project.projectType} project.`,
-        ]
-      : [];
+  const warnings: string[] = [];
   // Documents are read here, before the run opens: an unreadable attachment
   // is a warning beside the answer, reported with the surface's own.
   const messages = await toEngineMessages(request.input.messages, request.input.context, request.input.state, {
     documents: deps.execution.documents,
     prepareDocuments: async (documents) => {
       const result = await prepareDocumentAttachments(deps.execution.documents, deps.execution.artifacts, {
-        projectName: request.project.name, versionName: request.version.versionName, actor: request.actor,
+        projectName: request.project.name, actor: request.actor,
       }, documents);
       warnings.push(...result.warnings);
       return result.stored;
@@ -93,12 +73,12 @@ export async function* streamAguiRun(
   });
   const source = streamProjectRun(deps.execution, {
     project: request.project,
-    version: request.version,
+    configuration: request.configuration,
     messages,
     actor: request.actor,
     ...(request.caller ? { caller: request.caller } : {}),
     ...(request.conversation ? { conversation: request.conversation } : {}),
-    ...(toolsApply && clientTools.length > 0 ? { clientTools } : {}),
+    ...(clientTools.length > 0 ? { clientTools } : {}),
     ...(request.signal ? { signal: request.signal } : {}),
   });
   yield* toAguiEvents(

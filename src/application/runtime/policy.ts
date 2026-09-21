@@ -9,7 +9,7 @@ export function inputGuardrails(messages: ChatMessageInput[], policy?: RuntimePo
   if (!limit) return [];
   return [{ name: "input-size", runInParallel: false, execute: async () => ({
     tripwireTriggered: messages.reduce((size, message) => size + (filter?.restore(messageText(message)) ?? messageText(message)).length, 0) > limit,
-    outputInfo: { reason: "Input exceeds the version's policy limit" },
+    outputInfo: { reason: "Input exceeds the Agent's policy limit" },
   }) }];
 }
 

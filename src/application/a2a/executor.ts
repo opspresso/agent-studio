@@ -14,15 +14,13 @@ import {
   type RequestContext,
   type TaskStore,
 } from "@a2a-js/sdk/server";
-import type { Project, Version } from "@/domain/project/types";
-import { collectedWarning, isTopLevelChunk, messageText } from "@/domain/llm/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
+import { collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import {
   executeProjectStream,
-  runStrategyFor,
   type ExecutionDeps,
 } from "@/application/execution/runProject";
-import { generateImage } from "@/application/image/generateImage";
 import { fileRefOf, resolveProducedFile } from "@/application/artifact/producedFiles";
 import { RECORD_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
@@ -39,7 +37,6 @@ import { agentMessage, artifact, partText, rawPart, taskStatus, textPart, urlPar
 const A2A_ACTOR: RunActor = { kind: "a2a", id: A2A_ACTOR_ID };
 
 const RESULT_ARTIFACT_ID = "result";
-const IMAGE_ARTIFACT_ID = "image";
 /** How often the background watcher re-reads the store to honor a cross-request/instance cancel. */
 const CANCEL_POLL_MS = 2000;
 import { isTerminalTaskState } from "@/domain/a2a/task";
@@ -73,24 +70,11 @@ function userMessageContent(message: Message): ChatMessageInput["content"] {
   return [...(text ? [{ type: "text" as const, text }] : []), ...images];
 }
 
-/**
- * The pictures an image project is handed to edit. The image use case takes
- * source bytes, and the request handler refuses URL parts for every project so
- * a model provider never dereferences caller-controlled input.
- */
-function sourceImages(message: Message): Array<{ b64: string; mimeType: string }> {
-  return message.parts.flatMap((part) =>
-    part.content?.$case === "raw" && part.mediaType.startsWith("image/")
-      ? [{ b64: Buffer.from(part.content.value).toString("base64"), mimeType: part.mediaType }]
-      : [],
-  );
-}
-
 export class ProjectA2aExecutor implements AgentExecutor {
   constructor(
     private readonly deps: ExecutionDeps,
     private readonly project: Project,
-    private readonly version: Version,
+    private readonly configuration: AgentConfiguration,
     private readonly store: TaskStore,
     private readonly actor: RunActor = A2A_ACTOR,
     private readonly callContext: ServerCallContext = new ServerCallContext(),
@@ -123,38 +107,11 @@ export class ProjectA2aExecutor implements AgentExecutor {
     // The caller's `contextId` is its conversation for every project type.
     const conversation = a2aConversation(this.actor, contextId);
     try {
-      if (runStrategyFor(this.project) === "image") {
-        // A picture sent with the prompt is the one to edit: source bytes
-        // decide edit versus generate, as they do on every image surface.
-        const sources = sourceImages(userMessage);
-        const image = await generateImage(this.deps, {
-          project: this.project,
-          version: this.version,
-          prompt: messages[0] ? messageText(messages[0]) : "",
-          ...(sources.length > 0 ? { images: sources } : {}),
-          actor: this.actor,
-          ...(conversation ? { conversation } : {}),
-          signal: controller.signal,
-        });
-        eventBus.publish(AgentEvent.artifactUpdate({
-          taskId,
-          contextId,
-          artifact: artifact(IMAGE_ARTIFACT_ID, [
-            rawPart(image.imageBase64, image.mimeType, `generated.${this.imageExtension(image.mimeType)}`),
-          ]),
-          append: false,
-          lastChunk: true,
-          metadata: undefined,
-        }));
-        await this.publishTerminal(eventBus, taskId, contextId, controller, requestContext.context, image.warning);
-        return;
-      }
-
       // The caller's `contextId` is its conversation: a second message in it
       // reaches an MCP server and any onward transfer as the same one.
       const source = executeProjectStream(this.deps, {
         project: this.project,
-        version: this.version,
+        configuration: this.configuration,
         messages,
         actor: this.actor,
         ...(conversation ? { conversation } : {}),

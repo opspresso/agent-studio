@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { buildAgentSystemPrompt, buildPromptMessages } from "@/application/runtime";
+import { buildAgentSystemPrompt } from "@/application/runtime";
 import type { RunCaller } from "@/domain/execution/actor";
 
 const NOW = new Date("2026-07-30T06:12:00Z");
@@ -88,26 +88,5 @@ describe("the caller block in an agent prompt", () => {
     );
     // One break for everything the engine appends, not one per block.
     expect(prompt.match(/^---$/gm)).toHaveLength(1);
-  });
-});
-
-describe("the caller block in a single-shot prompt", () => {
-  const base = { model: "openai/gpt-5.4", userPromptTemplate: "Summarize this." };
-
-  it("uses the same boundary the agent prompt does", () => {
-    const messages = buildPromptMessages({
-      ...base,
-      systemPrompt: "You summarize.",
-      caller: { displayName: "Bruce" },
-    });
-
-    expect(messages[0]).toEqual({
-      role: "system",
-      content: "You summarize.\n\n---\n\nYou are answering Bruce.",
-    });
-  });
-
-  it("sends no system message with neither a prompt, a clock nor a caller", () => {
-    expect(buildPromptMessages(base).some((message) => message.role === "system")).toBe(false);
   });
 });

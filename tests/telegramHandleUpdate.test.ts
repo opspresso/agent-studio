@@ -7,8 +7,8 @@ import type { TranscriptTurn } from "@/domain/messaging/transcript";
 import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { ExecuteAgentInput } from "@/application/execution/deps";
-import type { Project, Version } from "@/domain/project/types";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { ProjectRepository } from "@/domain/project/repository";
 
 const NOW = 1_750_000_000_000;
 
@@ -19,24 +19,23 @@ function projectFixture(): Project {
     description: "a bot that paints",
     projectType: "agent",
     ownerEmail: "owner@x.com",
-    publishedVersion: "1",
+
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
-function versionFixture(callerContext = false): Version {
+function configurationFixture(callerContext = false): AgentConfiguration {
   return {
     projectName: "painter",
-    versionName: "1",
+
     systemPrompt: "",
-    userPromptTemplate: "",
+
     model: "openai/gpt-5-mini",
     parameters: { piiFiltering: false, ...(callerContext ? { callerContext: true } : {}) },
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
@@ -92,12 +91,7 @@ function makeDeps(chunks: EngineChunk[], telegram: TelegramClientPort, options: 
         yield chunk;
       }
     },
-    projects: { get: async () => projectFixture() } as unknown as ProjectRepository,
-    versions: {
-      get: async (_project: string, name: string) =>
-        name === projectFixture().publishedVersion ? versionFixture(options.callerContext) : null,
-      list: async () => [],
-    } as unknown as VersionRepository,
+    projects: { get: async () => ({ ...projectFixture(), configuration: configurationFixture(options.callerContext) }) } as unknown as ProjectRepository,
     documents: { extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }) },
     telegram,
     transcripts: {

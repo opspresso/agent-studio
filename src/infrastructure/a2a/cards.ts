@@ -5,25 +5,11 @@
  */
 
 import { A2A_PROTOCOL_VERSION, type AgentCard } from "@a2a-js/sdk";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project } from "@/domain/project/types";
 import { buildPublicUrl } from "@/lib/public-url";
 
 const IMAGE_MODES = ["image/png", "image/jpeg", "image/webp"];
-const OUTPUT_MODES: Record<Project["projectType"], string[]> = {
-  llm: ["text/plain"],
-  image: IMAGE_MODES,
-  agent: ["text/plain", ...IMAGE_MODES],
-};
-/**
- * What a message to this agent may carry. A text or agent project runs a
- * model that may read a picture; an image project takes a prompt and,
- * beside it, the picture to edit.
- */
-const INPUT_MODES: Record<Project["projectType"], string[]> = {
-  llm: ["text/plain", ...IMAGE_MODES],
-  image: ["text/plain", ...IMAGE_MODES],
-  agent: ["text/plain", ...IMAGE_MODES],
-};
+const MODES = ["text/plain", ...IMAGE_MODES];
 /**
  * The credential the endpoint requires, declared where a client looks for
  * it. A client that attaches credentials from `securityRequirements` sent nothing
@@ -39,7 +25,7 @@ export async function buildProjectAgentCardUrl(projectName: string): Promise<str
   return `${await buildProjectA2aRpcUrl(projectName)}/.well-known/agent-card.json`;
 }
 
-export async function buildAgentCard(project: Project, version: Version): Promise<AgentCard> {
+export async function buildAgentCard(project: Project): Promise<AgentCard> {
   const rpcUrl = await buildProjectA2aRpcUrl(project.name);
   const securityRequirements = [{ schemes: { [SECURITY_SCHEME]: { list: [] } } }];
   return {
@@ -49,10 +35,10 @@ export async function buildAgentCard(project: Project, version: Version): Promis
       { url: rpcUrl, protocolBinding: "JSONRPC", tenant: "", protocolVersion: A2A_PROTOCOL_VERSION },
     ],
     provider: undefined,
-    version: version.versionName,
+    version: project.updatedAt,
     capabilities: { streaming: true, pushNotifications: false, extensions: [] },
-    defaultInputModes: INPUT_MODES[project.projectType],
-    defaultOutputModes: OUTPUT_MODES[project.projectType],
+    defaultInputModes: MODES,
+    defaultOutputModes: MODES,
     securitySchemes: {
       [SECURITY_SCHEME]: {
         scheme: {
@@ -69,8 +55,8 @@ export async function buildAgentCard(project: Project, version: Version): Promis
         description: project.description,
         tags: ["agent-studio", project.projectType],
         examples: [],
-        inputModes: INPUT_MODES[project.projectType],
-        outputModes: OUTPUT_MODES[project.projectType],
+        inputModes: MODES,
+        outputModes: MODES,
         securityRequirements,
       },
     ],

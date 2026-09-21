@@ -16,7 +16,7 @@ export interface SkillRepository {
    * must not fetch whole skill bodies or attachments merely to render that line.
    *
    * Each entry's `name` is the one that was **asked for**, so a caller can look
-   * its answer up by the name its version bound. Names absent from the answer
+   * its answer up by the name its Agent bound. Names absent from the answer
    * are absent from the registry; the run reports each one and does not offer
    * it.
    */

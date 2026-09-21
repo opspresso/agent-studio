@@ -53,9 +53,7 @@ export function NewChatPanel() {
 
     async function loadProjects() {
       try {
-        const agents = (await readJson<AgentProject[]>(await fetch("/api/projects"))).filter(
-          (project) => project.projectType === "agent",
-        );
+        const agents = await readJson<AgentProject[]>(await fetch("/api/projects"));
         if (cancelled) return;
         setProjects(agents);
         if (agents.length > 0) {

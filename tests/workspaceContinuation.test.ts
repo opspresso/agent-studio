@@ -1,3 +1,4 @@
+import { withConfigurations } from "./projectConfigurations";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeStore } from "./fakeStore";
 import * as store from "@/infrastructure/db/store";
@@ -23,7 +24,7 @@ afterEach(() => vi.useRealTimers());
 
 async function fixture() {
   const f = runtimeSessionFixture();
-  f.version.parameters.piiFiltering = false;
+  f.configuration.parameters.piiFiltering = false;
   const owner = f.scope.ownerEmail;
   const at = new Date().toISOString();
   fake.seed([{ ...keys.project("project"), entityType: "PROJECT", name: "project", displayName: "Project", description: "",
@@ -64,7 +65,7 @@ async function fixture() {
     for (const chunk of await f.run(channel, "", undefined, { workspaceTool }, { messages: input.messages })) yield chunk;
   });
   const deps: WorkspaceContinuationDeps = { workspaces: repository, authorize: vi.fn(async () => {}), pullRequest: vi.fn(git.pullRequest), now: () => new Date(), sleep: async () => {},
-    chat: { chats, projects, versions: { get: async () => f.version } as unknown as ChatDeps["versions"], runtimeSessions: f.services, runAgent,
+    chat: { chats, projects: withConfigurations(projects, ({ get: async () => f.configuration }).get),  runtimeSessions: f.services, runAgent,
       runLog: { append: vi.fn(async () => {}), read: async () => [] }, documents: { extract: async () => ({ text: "" }) } } };
   const approval = await git.request(workspace.id, owner, { kind: "commit-and-push", message: "feat: implement" }, f.scope.sessionId);
   const drain = async () => {

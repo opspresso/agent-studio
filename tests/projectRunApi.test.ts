@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { predictImage, streamAgent, streamPredict } from "@/app/projects/lib/api";
+import { streamAgent, streamPredict } from "@/app/projects/lib/api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -13,25 +13,24 @@ describe("project run API", () => {
     vi.stubGlobal("fetch", fetchMock);
     const controller = new AbortController();
 
-    await streamPredict("demo", "v1", {}, controller.signal);
-    await streamAgent("demo", "v1", [], controller.signal);
-    await predictImage("demo", "v1", { prompt: "draw" }, controller.signal);
+    await streamPredict("demo", { messages: [] }, controller.signal);
+    await streamAgent("demo", [], controller.signal);
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     for (const call of fetchMock.mock.calls) {
       expect(call[1]).toMatchObject({ signal: controller.signal });
     }
   });
 
-  it("sends playground documents on agent and prompt runs", async () => {
+  it("sends playground documents on both Agent endpoints", async () => {
     const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
       Response.json({}),
     );
     vi.stubGlobal("fetch", fetchMock);
     const document = { b64: "AQID", mimeType: "application/octet-stream", name: "report.docx" };
 
-    await streamPredict("demo", "v1", { documents: [document] });
-    await streamAgent("demo", "v1", [{ role: "user", content: "read it" }], undefined, [document]);
+    await streamPredict("demo", { messages: [{ role: "user", content: "read it" }], documents: [document] });
+    await streamAgent("demo", [{ role: "user", content: "read it" }], undefined, [document]);
 
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       documents: [document],

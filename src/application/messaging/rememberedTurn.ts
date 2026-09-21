@@ -1,11 +1,10 @@
-import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { turnContent } from "@/application/llm/documentParts";
 import { messageText } from "@/domain/llm/types";
 import { conversationKey, type RunActor, type RunCaller, type RunConversation } from "@/domain/execution/actor";
 import type { InboundAttachment } from "@/domain/messaging/inbound";
 import type { ReplyChannel } from "@/domain/messaging/reply";
 import type { ConversationTranscriptRepository } from "@/domain/messaging/transcript";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { LogScope } from "@/shared/logger";
 import { handleTurn, type MessagingDeps, type TurnOutcome } from "./handleTurn";
 import {
@@ -33,7 +32,7 @@ export type RememberedTurnDeps = MessagingDeps & { transcripts?: ConversationTra
 
 export interface RememberedTurnInput {
   project: Project;
-  version: Version;
+  configuration: AgentConfiguration;
   reply: ReplyChannel;
   conversation: RunConversation;
   /** What the person wrote, mention markup already removed; empty when only files came. */
@@ -43,7 +42,7 @@ export interface RememberedTurnInput {
   /** The platform's id for the person, for the transcript and the speaker labels. */
   userId?: string;
   /**
-   * Who is asking, resolved only when the version asked to know: the opt-in
+   * Who is asking, resolved only when the Agent asked to know: the opt-in
    * gates the lookup, the prompt, and what is written down.
    */
   callerOf: () => RunCaller | undefined;
@@ -58,42 +57,38 @@ export interface RememberedTurnInput {
   scope: LogScope;
 }
 
-/**
- * The project a bot is bound to, if it can run: exists, is an agent project,
- * has a published version — drafts never leak to an external surface. When
- * it cannot, the reply says so and nothing runs.
- */
+/** Resolve the Agent and its current settings before accepting a messaging turn. */
 export async function resolveAgentProject(
   deps: MessagingDeps,
   projectName: string,
   reply: ReplyChannel,
-): Promise<{ project: Project; version: Version } | null> {
+): Promise<{ project: Project; configuration: AgentConfiguration } | null> {
   const project = await deps.projects.get(projectName);
-  const version = project ? await resolveRunnableVersion(deps.versions, project) : null;
-  if (!project || project.projectType !== "agent" || !version) {
+  const configuration = project ? project.configuration : null;
+  if (!project || !configuration) {
     await reply.say(
-      `Agent project not available: ${projectName} (must exist, be an agent project, and have a published version)`,
+      `Agent project not available: ${projectName} (must exist and have current Agent settings)`,
     );
     return null;
   }
-  return { project, version };
+  return { project, configuration };
 }
 
 export async function runRememberedTurn(
   deps: RememberedTurnDeps,
   input: RememberedTurnInput,
 ): Promise<TurnOutcome> {
-  const { project, version, reply, conversation, warnings, scope } = input;
+  const { project, configuration, reply, conversation, warnings, scope } = input;
   const key = conversationKey(conversation);
   // Read before anything is written, like the Slack thread: the reply must
   // not come back as an assistant turn in this run's own context.
   const remembered = await loadTranscriptHistory(deps.transcripts, project.name, key, warnings, scope);
   await reply.status("is thinking…");
 
-  // The version's opt-in gates whether a name reaches the model, and so
+  // The Agent's opt-in gates whether a name reaches the model, and so
   // whether one is written down beside the turn at all — and whether one an
-  // earlier version wrote down is read back.
-  const namesAllowed = version.parameters.callerContext === true;
+  // earlier run wrote down is read back.
+  const namesAllowed = configuration.parameters.callerContext === true;
   const named = namesAllowed ? input.callerOf() : undefined;
   const { history, label } = withSpeakerLabels(remembered, input.userId, namesAllowed);
   // Labelled only when there is text to label: a name on its own is not a
@@ -105,7 +100,7 @@ export async function runRememberedTurn(
     deps,
     {
       project,
-      version,
+      configuration,
       text: askText,
       attachments: input.attachments,
       history,

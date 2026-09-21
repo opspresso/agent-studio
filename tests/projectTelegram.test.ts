@@ -195,11 +195,9 @@ describe("updateProjectTelegram", () => {
     expect(result.warnings?.[0]).toContain("Telegram did not accept the webhook");
   });
 
-  it("refuses to enable without a token, and refuses a non-agent project and a non-owner", async () => {
+  it("refuses to enable without a token and refuses a non-owner", async () => {
     const { repo } = fakeRepo(makeProject());
     await expect(update(repo, { enabled: true }, OWNER)).rejects.toThrow(ValidationError);
-    const llm = fakeRepo(makeProject({ projectType: "llm" }));
-    await expect(update(llm.repo, { botToken: "42:x" }, OWNER)).rejects.toThrow(ValidationError);
     await expect(update(repo, { botToken: "42:x" }, OTHER)).rejects.toThrow(ForbiddenError);
   });
 

@@ -1,6 +1,6 @@
 # 트리거
 
-Webhook 전달과 Schedule 발화는 발행된 Project Version을 백그라운드 실행한다.
+Webhook 전달과 Schedule 발화는 현재 Agent 설정을 백그라운드 실행한다.
 HTTP 요청·응답은 [API](../API.md#triggers), ticker·보존·알림은
 [OPERATIONS](../OPERATIONS.md#schedule-티커)를 따른다.
 
@@ -11,7 +11,7 @@ Webhook 주소는 `projectWebhookPath`가 만드는 `/api/webhook/{project}`다.
 다른 ID의 Webhook이나 `webhook`이라는 Schedule 생성은 거절한다.
 
 trigger와 실행 이력은 프로젝트 파티션에 저장하고 실행 이력에 보존 기간을 적용한다.
-모델 실행은 `resolveRunnableVersion`으로 발행 버전만 선택한다.
+모델 실행은 Project와 함께 읽은 현재 Agent 설정을 고정한다.
 
 | 경계 | 동작 |
 |---|---|
@@ -19,11 +19,11 @@ trigger와 실행 이력은 프로젝트 파티션에 저장하고 실행 이력
 | GitHub | 원본 body의 HMAC과 event·delivery header를 검사한다. GitHub 헤더가 있으면 일반 secret 방식으로 후퇴하지 않는다 |
 | 중복 | `Idempotency-Key`, GitHub의 경우 delivery ID를 조건부 claim한다 |
 | 겹침 | 기본 `allowConcurrent: false`; DB 실행 슬롯으로 같은 trigger의 겹침을 거절한다 |
-| 입력 | message 모드는 JSON을 사용자 턴으로 직렬화하고 variables 모드는 최상위 scalar만 고정 변수 위에 덮는다 |
+| 입력 | JSON payload를 사용자 메시지로 직렬화한다 |
 | 실행 | 202 접수 후 `after()`에서 실행한다. 202는 성공적인 처리 완료가 아니다 |
 
 인증 실패·미설정·비활성·중복·서명된 ping은 새 실행 이력을 만들지 않는다.
-admission에서 Project·발행 버전이 없거나 겹침·실행 사용자 정책에 거절된 경우에는
+admission에서 Project·현재 설정이 없거나 겹침·실행 사용자 정책에 거절된 경우에는
 skipped 이력을 남긴다. 시작한 실행은 running에서 succeeded 또는 failed로 마감한다.
 한도나 capability 손실은 succeeded에서도 warning으로 남을 수 있다.
 
@@ -66,7 +66,7 @@ DB 행을 영구 보관한다는 뜻은 아니다. 정상 catch-up 창은 claim 
 Webhook의 같은 멱등 키는 만료 시각이 지났어도 행이 실제 sweep되기 전까지 중복으로 거절한다.
 scan이 없는 배포에서는 같은 키가 계속 남을 수 있으므로 새 이벤트에는 새 키를 사용한다.
 
-Schedule은 고정 variables·message를 사용하고 자기 secret이나 외부 payload를 요구하지 않는다.
+Schedule은 저장한 message를 사용하고 자기 secret이나 외부 payload를 요구하지 않는다.
 schedule 인덱스는 페이지로 순회하며 admission과 실제 발화에 각각 동시성 상한을 적용한다.
 한 번의 DB 조회와 동시에 수행하는 작업을 제한하는 것이며, 전체 프로젝트·발생 수의 전역 cap은 아니다.
 구체적인 값은 [CONFIGURATION](../CONFIGURATION.md#코드에-고정된-제한)을 따른다.

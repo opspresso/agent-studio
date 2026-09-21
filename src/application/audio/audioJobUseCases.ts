@@ -45,7 +45,7 @@ export type AudioJobView = Pick<AudioJob, "id" | "task" | "sourceIdentity" | "st
 
 function view(job: AudioJob): AudioJobView {
   return { id: job.id, task: job.task ?? "process", sourceIdentity: job.sourceIdentity, status: job.status, stage: job.stage,
-    model: job.task === "postprocess" ? job.postprocess?.version?.model ?? "" : job.model, createdAt: job.createdAt,
+    model: job.task === "postprocess" ? job.postprocess?.configuration?.model ?? "" : job.model, createdAt: job.createdAt,
     transcriptProjectName: job.task === "postprocess" ? audioSourceProject(job) : job.projectName,
     artifacts: { source: job.fileId, transcript: job.transcriptRef, processed: job.summaryRef ?? job.draftRef, structured: job.draftRef, dialogue: job.dialogueRef },
     updatedAt: job.updatedAt, dueAt: job.dueAt, attempt: job.attempt, failures: job.failures,

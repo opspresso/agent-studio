@@ -11,8 +11,8 @@ import {
   testProjectTelegram,
   updateProjectTelegram,
 } from "../../lib/api";
-import type { ProjectTelegramResponse, ProjectType } from "../../lib/api";
-import { Alert, Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
+import type { ProjectTelegramResponse } from "../../lib/api";
+import { Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
 import { stateColor } from "@/app/_components/badgeColors";
 import { useT } from "@/app/_i18n/provider";
@@ -20,10 +20,8 @@ import { reportError } from "@/app/_lib/reportError";
 
 export function TelegramSection({
   projectName,
-  projectType,
 }: {
   projectName: string;
-  projectType: ProjectType;
 }) {
   const t = useT();
   const [view, setView] = useState<ProjectTelegramResponse | null>(null);
@@ -133,12 +131,6 @@ export function TelegramSection({
     }
   }
 
-  // A Telegram message runs the agent loop, which refuses every other project
-  // type — nothing to configure, so nothing to show. A leftover bot stays
-  // visible below so its credentials can still be disconnected.
-  if (projectType !== "agent" && !view.configured) {
-    return null;
-  }
 
   return (
     <CollapsibleSection
@@ -150,12 +142,6 @@ export function TelegramSection({
       }
     >
       <Stack gap="sm">
-        {projectType !== "agent" && (
-          <Alert color="yellow" variant="light" fz="xs">
-            Telegram messages run the agent loop, and a &quot;{projectType}&quot; project refuses
-            them — this bot answers nothing. Disconnect to clear the stored credentials.
-          </Alert>
-        )}
         <Text fz="xs" c="dimmed" lh={1.6}>
           {t("pset.telegramIntro")}
         </Text>

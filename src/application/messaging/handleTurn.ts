@@ -11,8 +11,8 @@ import { collectedWarning, isTopLevelChunk, toolCallKey } from "@/domain/llm/typ
 import type { ChatMessageInput, ContentPart, EngineChunk } from "@/domain/llm/types";
 import type { HistoryTurn, InboundAttachment } from "@/domain/messaging/inbound";
 import type { ReplyChannel, ReplyImage } from "@/domain/messaging/reply";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { Project, Version } from "@/domain/project/types";
+import type { ProjectRepository } from "@/domain/project/repository";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import {
   fileRefOf,
   resolveProducedFiles,
@@ -53,7 +53,6 @@ export interface MessagingDeps {
   /** Bound wrapper over `executeAgent(executionDeps, params)`. */
   runAgent: (params: ExecuteAgentInput) => AsyncGenerator<EngineChunk>;
   projects: ProjectRepository;
-  versions: VersionRepository;
   /**
    * Reads an attached document into the text a turn carries. Required rather
    * than optional: a deployment that forgot to wire it would drop every attached
@@ -76,7 +75,7 @@ export interface MessagingDeps {
 /** One inbound turn, normalised by its adapter. */
 export interface TurnInput {
   project: Project;
-  version: Version;
+  configuration: AgentConfiguration;
   /**
    * What the person wrote, as the model should read it — the surface has
    * already stripped its own mention markup and, where it labels speakers,
@@ -87,7 +86,7 @@ export interface TurnInput {
   /** Earlier turns, oldest first, already cut to what this surface carries. */
   history: HistoryTurn[];
   actor?: RunActor;
-  /** Who is asking, when the surface resolved it. The facade gates it on the version. */
+  /** Who is asking, when the surface resolved it. The facade gates it on the Agent settings. */
   caller?: RunCaller;
   conversation: RunConversation;
   /** The user's gallery and MCP identity, when the surface knows an email address. */
@@ -126,7 +125,7 @@ export async function handleTurn(
   input: TurnInput,
   reply: ReplyChannel,
 ): Promise<TurnOutcome> {
-  const { project, version, warnings } = input;
+  const { project, configuration, warnings } = input;
   let text = "";
   // `fetched` rides along: what the run read is delivered only when it is all
   // the run has to show (see below).
@@ -160,7 +159,7 @@ export async function handleTurn(
     const documentCandidates = [...attached, ...historyTurns.flatMap((turn) => turn.message.role === "user" ? turn.attachments : [])];
     if (documentCandidates.some((attachment) => documentKind(attachment.mimeType, attachment.name) !== null)) {
       const persistence = { storage: deps.artifacts, context: {
-        projectName: project.name, versionName: version.versionName, actor: input.actor, ownerEmail: input.ownerEmail,
+        projectName: project.name, actor: input.actor, ownerEmail: input.ownerEmail,
       } };
       readDocuments = await collectDocuments(deps.documents, attached, warnings, persistence);
       historyTurns = await withHistoryDocuments(deps.documents, historyTurns, attached, readDocuments, warnings, persistence);
@@ -187,7 +186,7 @@ export async function handleTurn(
     const messages: ChatMessageInput[] = [...history, ...(fileHistory ? [{ role: "user" as const, content: fileHistory }] : []), { role: "user", content: userContent }];
     for await (const chunk of deps.runAgent({
       project,
-      version,
+      configuration,
       messages,
       ...(input.actor ? { actor: input.actor } : {}),
       ...(input.caller ? { caller: input.caller } : {}),

@@ -187,7 +187,7 @@ export function decryptHeadersForOutbound(
 }
 
 // --- Header overrides -------------------------------------------------------
-// A version may redefine a registry server's headers. Overrides carry the same
+// An Agent may redefine a registry server's headers. Overrides carry the same
 // encryption/masking lifecycle as the registry's own headers, plus one extra
 // value: `null` marks "remove this registry default", so it must survive
 // encryption, masking, and update-merging untouched.
@@ -259,7 +259,7 @@ export function mergeHeaderOverrideUpdate(
 
 /**
  * Final outbound headers for one MCP dispatch: the registry server's headers
- * with a version's overrides layered on. HTTP header names are case-insensitive,
+ * with an Agent's overrides layered on. HTTP header names are case-insensitive,
  * so an override displaces a registry default that differs only by case —
  * otherwise both would be sent and the server would pick arbitrarily.
  *
@@ -267,8 +267,8 @@ export function mergeHeaderOverrideUpdate(
  *
  * A masked override is dropped rather than sent, and that is a safety net for a
  * caller that failed to resolve one — see the note on the skip below. Callers
- * that take a version from a form must still resolve masks against the stored
- * version first ({@link mergeHeaderOverrideUpdate}); this only bounds the damage
+ * that take an Agent from a form must still resolve masks against the stored
+ * Agent first ({@link mergeHeaderOverrideUpdate}); this only bounds the damage
  * when one does not, because the alternative is silent and expensive.
  */
 export function mergeOutboundHeaders(

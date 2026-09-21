@@ -5,7 +5,7 @@
  * does not.
  *
  * The places this is for — a tool call's arguments, what the tool answered, the
- * schema list a version offers — carry text nobody here wrote: a provider's
+ * schema list an Agent offers — carry text nobody here wrote: a provider's
  * argument object, an MCP server's reply, which is JSON most of the time and a
  * sentence or a stack trace the rest of it. So the decision is made by parsing
  * rather than by guessing from the caller, and a string that does not parse is

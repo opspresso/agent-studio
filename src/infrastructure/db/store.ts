@@ -93,7 +93,7 @@ function rowData(rows: { data: Item }[]): Item | null {
  * `shared` is for a key a transaction only *reads a condition off* — the
  * `check` op, which asserts a project or chat is still live while writing
  * somewhere else. Two of those have nothing to say to each other, and the
- * exclusive form made every usage row, trace and version write in a project
+ * exclusive form made every usage row, trace and configuration write in a project
  * queue on that project's one META row. A shared holder still blocks, and is
  * blocked by, an exclusive one, so the delete the check guards against is
  * still serialised against it.

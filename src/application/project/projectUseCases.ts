@@ -1,5 +1,5 @@
 import type { ProjectRepository } from "@/domain/project/repository";
-import type { CostLimits, Project, ProjectType, ProjectVisibility } from "@/domain/project/types";
+import type { AgentConfiguration, CostLimits, Project, ProjectType, ProjectVisibility } from "@/domain/project/types";
 import { mayAccessProject, normalizeMemberEmails } from "@/domain/project/access";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
@@ -40,7 +40,8 @@ export interface CreateProjectInput {
   name: string;
   displayName: string;
   description: string;
-  projectType: ProjectType;
+  projectType?: ProjectType;
+  configuration?: Omit<AgentConfiguration, "projectName">;
   ownerEmail: string;
   departmentCode?: string;
   /**
@@ -272,7 +273,8 @@ export async function createProject(
     name: input.name,
     displayName: input.displayName,
     description: input.description,
-    projectType: input.projectType,
+    projectType: "agent",
+    ...(input.configuration ? { configuration: { ...structuredClone(input.configuration), projectName: input.name } } : {}),
     ownerEmail: input.ownerEmail,
     departmentCode: input.departmentCode,
     ...(input.visibility ? { visibility: input.visibility } : {}),
@@ -328,7 +330,7 @@ export async function updateProject(
  */
 export type BeforeProjectDelete = (project: Project) => Promise<void>;
 
-/** Delete a project. The repository cascades version and usage cleanup. */
+/** Delete a project. The repository removes project-owned rows and reserves its name. */
 export async function deleteProject(
   repo: ProjectRepository,
   name: string,
@@ -373,13 +375,8 @@ export async function deleteProject(
  * same layer is ordinary, and handing those three a second object holding the
  * repository they were injected with would be the indirection, not the fix.
  *
- * What was not ordinary is that the *presentation* layer supplied it. Twenty
- * route handlers imported `projectRepository` from the composition root to hand
- * it back to a use case, which made each of them a wiring site — while
- * `tests/architecture.test.ts` declares exactly four and the mcp, skill, agent
- * and trigger slices had none of this. `tests/architecture.test.ts` now keeps
- * `projectRepository` and `versionRepository` out of `src/app` entirely, so the
- * split above is enforced rather than remembered.
+ * `tests/architecture.test.ts` keeps projectRepository out of route handlers
+ * and limits composition to the declared wiring sites.
  */
 export interface ProjectUseCases {
   list(): Promise<Project[]>;

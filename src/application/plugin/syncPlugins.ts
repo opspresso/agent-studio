@@ -129,7 +129,7 @@ export interface SyncPluginsDeps {
    */
   managedMcps?: Pick<ManagedMcpUseCases, "remove">;
   /**
-   * Which versions bind the names about to be offered for deletion — the
+   * Which Agents bind the names about to be offered for deletion — the
    * blast radius next to the delete checkbox. Optional because it needs the
    * project store; without it orphans report with no binding info.
    */
@@ -164,7 +164,7 @@ export interface SyncPluginsDeps {
  * sync continues. The next sync converges on whatever this one missed.
  *
  * **A person owns deletion.** What the repository no longer carries is only
- * reported, per plugin and with the versions that bind it, and deleted when
+ * reported, per plugin and with the Agents that bind it, and deleted when
  * the selection names it — an MCP entry holds credentials, and a file
  * disappearing from a branch is not reason enough to destroy them.
  */
@@ -652,7 +652,7 @@ export async function syncPluginsFromSnapshot(
     }
   }
 
-  // The delete checkbox gets its blast radius: which versions bind each
+  // The delete checkbox gets its blast radius: which Agents bind each
   // orphan. One batched lookup, only when there is an orphan to annotate.
   let bindings: OrphanBindings = { skills: {}, mcpServers: {} };
   if (deps.findBindings && (orphanSkills.length > 0 || orphanServers.length > 0)) {

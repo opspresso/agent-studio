@@ -1,23 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { findTemplateVariables } from "@/shared/template";
+import { useEffect, useRef, useState } from "react";
 import {
   previewPrompt,
-  type ProjectType,
   type PromptPreview,
-  type VersionInput,
+  type AgentConfigurationInput,
 } from "../../lib/api";
 import {
   Alert,
   Button,
   Code,
   Group,
-  Input,
   Spoiler,
   Stack,
   Text,
-  TextInput,
   Textarea,
 } from "@mantine/core";
 import { useLocale, useT } from "@/app/_i18n/provider";
@@ -41,40 +37,21 @@ function charCount(preview: PromptPreview): number {
 }
 
 /**
- * What this version would actually send.
- *
- * The editor shows the version's own text, but an agent run's system prompt is
- * assembled at dispatch — the skill table, the connected MCP servers and their
- * tool names, the transfer instructions — and a prompt project's template is
- * rendered with its variables. This panel asks the server to perform that same
- * assembly and shows the result.
- *
- * Fetched only on demand: it may recall memory, contact MCP servers for their
- * real tool names, and search the capability catalog. A draft edited after the
- * last fetch is marked stale rather than refetched.
+ * Assemble the current draft on demand using the run's capability preparation.
+ * MCP discovery, catalog search and memory recall can perform real reads.
+ * Editing the draft marks the previous result stale and cancels an active preview.
  */
 export function PromptPreview({
   projectName,
-  projectType,
   draft,
   validationError,
-  versionName,
 }: {
   projectName: string;
-  projectType: ProjectType;
-  draft: VersionInput;
+  draft: AgentConfigurationInput;
   validationError: string | null;
-  /**
-   * The saved version the draft started from, or null for one never saved. The
-   * server resolves masked header overrides against it — without it a bound MCP
-   * server is dialled with the wrong headers, and the preview would describe a
-   * request no run makes.
-   */
-  versionName: string | null;
 }) {
   const [preview, setPreview] = useState<PromptPreview | null>(null);
   const [previewOf, setPreviewOf] = useState<string>("");
-  const [variables, setVariables] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,27 +69,14 @@ export function PromptPreview({
     };
   }, [latestOnly]);
 
-  // Only the user prompt template is rendered with variables — a {{var}} in
-  // the system prompt reaches the model as literal text, and an agent run
-  // never sends the template at all — so only a rendered template gets fields.
-  const varNames = useMemo(
-    () =>
-      projectType === "agent" ? [] : [...findTemplateVariables(draft.userPromptTemplate)],
-    [projectType, draft.userPromptTemplate],
-  );
   // Discovery and memory recall both depend on the request. Without either,
   // the box would suggest the assembled prompt varies when it does not.
   const usesRequest =
-    projectType === "agent" &&
     (draft.parameters.dynamicCapabilities === true || draft.parameters.memoryRecall === true);
-  // The saved version identifies the stored header overrides a masked draft is
-  // resolved against. Two versions can render the same fields but decrypt to
-  // different credentials, so that identity is part of preview freshness too.
+  // Project identity scopes masked overrides; draft and request changes invalidate the result.
   const current = JSON.stringify({
     projectName,
-    versionName,
     draft,
-    variables,
     ...(usesRequest ? { message } : {}),
   });
   const stale = preview !== null && (validationError !== null || previewOf !== current);
@@ -146,8 +110,6 @@ export function PromptPreview({
         projectName,
         {
           ...draft,
-          ...(versionName ? { versionName } : {}),
-          variables,
           ...(usesRequest && message.trim() ? { message } : {}),
         },
         controller.signal,
@@ -212,32 +174,6 @@ export function PromptPreview({
         </Group>
       </Group>
 
-      {varNames.length > 0 && (
-        <Input.Wrapper label={t("run.variables")} labelElement="div">
-          <Stack gap="xs" mt={4}>
-            {varNames.map((name) => (
-              <TextInput
-                key={name}
-                value={variables[name] ?? ""}
-                onChange={(e) => {
-                  // Captured here: React nulls `currentTarget` when the handler
-                  // returns, and the updater below runs on the next render.
-                  const value = e.currentTarget.value;
-                  setVariables((prev) => ({ ...prev, [name]: value }));
-                }}
-                leftSectionWidth={132}
-                leftSectionPointerEvents="none"
-                leftSection={
-                  <Text fz="xs" ff="monospace" c="dimmed" truncate px="xs">
-                    {name}
-                  </Text>
-                }
-              />
-            ))}
-          </Stack>
-        </Input.Wrapper>
-      )}
-
       {usesRequest && (
         <Textarea
           label={t("preview.request")}
@@ -260,7 +196,7 @@ export function PromptPreview({
 
       {preview && preview.discovered.length > 0 && (
         // Blue, not yellow: these were *found*, and the prompt above already
-        // includes them without saying which rows the version never bound.
+        // includes them without saying which rows the Agent never bound.
         <Alert color="blue" variant="light" fz="xs">
           {t("preview.discovered", { names: preview.discovered.join(", ") })}
         </Alert>

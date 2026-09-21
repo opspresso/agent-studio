@@ -27,7 +27,7 @@ export function createAudioConfigUseCases(deps: {
       if (input.enabled) await deps.validate(input, project, email);
       const config: AudioJobConfig = { enabled: input.enabled, model: input.model, language: input.language,
         retention: input.retention, maxActive: input.maxActive, maxPerOccurrence: input.maxPerOccurrence,
-        ...(input.postprocess ? { postprocess: { projectName: input.postprocess.projectName, versionName: input.postprocess.versionName } } : {}),
+        ...(input.postprocess ? { postprocess: { projectName: input.postprocess.projectName } } : {}),
         ...(input.destination ? { destination: { serverName: input.destination.serverName,
           documents: input.destination.documents, memories: input.destination.memories } } : {}),
         projectName: project, userEmail: email, revision: revision + 1, updatedAt: now };

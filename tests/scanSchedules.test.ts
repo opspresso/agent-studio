@@ -17,7 +17,7 @@ import { executeFiring } from "@/application/trigger/runTrigger";
 import { toRunInput } from "@/application/execution/deps";
 import type { FiringDeps } from "@/application/trigger/deps";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import type {
   ScheduleTrigger,
@@ -37,22 +37,21 @@ const project: Project = {
   description: "",
   projectType: "agent",
   ownerEmail: "owner@example.com",
-  publishedVersion: "v1",
+
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
 };
 
-const version: Version = {
+const configuration: AgentConfiguration = {
   projectName: "p",
-  versionName: "v1",
+
   systemPrompt: "",
-  userPromptTemplate: "",
+
   model: "openai/gpt-5-mini",
   parameters: { piiFiltering: false },
   mcpList: [],
   skillList: [],
   subagentList: [],
-  createdAt: "2026-01-01T00:00:00Z",
 };
 
 function schedule(overrides: Partial<ScheduleTrigger> = {}): ScheduleTrigger {
@@ -81,7 +80,6 @@ function webhook(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
     description: "",
     enabled: true,
     secret: "enc:v1:whatever",
-    payloadMode: "message",
     allowConcurrent: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -109,7 +107,7 @@ interface Fixture {
   deps: FiringDeps;
   rows: TriggerRun[];
   claimed: Set<string>;
-  runs: Array<{ variables?: Record<string, string>; message?: string; actorKind: string }>;
+  runs: Array<{ message?: string; actorKind: string }>;
 }
 
 function fixture(
@@ -118,7 +116,7 @@ function fixture(
     /** Non-schedule rows the project holds; the repair sweep sees these too. */
     webhooks?: WebhookTrigger[];
     seededRows?: TriggerRun[];
-    published?: Version | null;
+    published?: AgentConfiguration | null;
     projectMissing?: boolean;
     chunks?: EngineChunk[];
     runThrows?: Error;
@@ -190,23 +188,16 @@ function fixture(
     deps: {
       triggers,
       projects: {
-        get: async () => (opts.projectMissing ? null : project),
+        get: async () => (opts.projectMissing ? null : { ...project, configuration: opts.published === undefined ? configuration : opts.published ?? undefined }),
         // The repair sweep enumerates by project, since webhook rows carry no
         // cross-project index.
         list: async () => (opts.projectMissing ? [] : [project]),
         put: async () => {},
         delete: async () => {},
       } as never,
-      versions: {
-        get: async () => (opts.published === undefined ? version : opts.published),
-        list: async () => (opts.published === undefined ? [version] : []),
-        put: async () => {},
-        delete: async () => {},
-      } as never,
       runSlots: slots,
       async *run(input) {
         runs.push({
-          ...(input.variables ? { variables: input.variables } : {}),
           ...(input.message ? { message: input.message } : {}),
           actorKind: input.actor.kind,
         });
@@ -240,7 +231,7 @@ describe("scanSchedules", () => {
     expect(result.summary.fired).toBe(1);
     expect(email).toBe(project.ownerEmail);
     expect(f.runs[0]?.actorKind).toBe("schedule");
-    expect(toRunInput({ project, version, messages: [], ownerEmail: email }).ownerEmail).toBe(email);
+    expect(toRunInput({ project, configuration, messages: [], ownerEmail: email }).ownerEmail).toBe(email);
   });
 
   it("does not admit a schedule whose delegated user is inactive", async () => {
@@ -451,7 +442,7 @@ describe("scanSchedules", () => {
     expect(f.rows[0]).toMatchObject({
       status: "skipped",
       scheduledFor: "2026-08-01T00:30:00.000Z",
-      error: "No published version.",
+      error: "Agent is not configured.",
     });
   });
 
@@ -669,9 +660,8 @@ describe("scanSchedules", () => {
 });
 
 describe("scheduleInput", () => {
-  it("carries the fixed variables and configured message", () => {
-    expect(scheduleInput(schedule({ variables: { env: "prod" } }))).toEqual({
-      variables: { env: "prod" },
+  it("carries the configured message", () => {
+    expect(scheduleInput(schedule())).toEqual({
       message: "Summarise yesterday.",
     });
   });

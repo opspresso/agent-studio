@@ -46,7 +46,7 @@ function chunks(text: string): string[] {
 
 export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
   return async (job: AudioJob, context: AudioJobStepContext): Promise<{ draftRef: string; summaryRef: string; dialogueRef: string }> => {
-    if (!job.postprocess?.version || !job.transcriptRef) throw new AudioJobStepError("postprocess_configuration_missing", false);
+    if (!job.postprocess?.configuration || !job.transcriptRef) throw new AudioJobStepError("postprocess_configuration_missing", false);
     const file = await deps.files.read(job.task === "postprocess" ? audioSourceProject(job) : job.projectName,
       job.transcriptRef, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
     const transcript = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes)) as AudioTranscript;
@@ -56,7 +56,7 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
     const execute = async (text: string, round: number, index: number): Promise<AudioPostprocessOutput> => {
       if (++calls > MAX_CALLS) throw new AudioJobStepError("postprocess_call_limit", false);
       const mode = round === 0 ? "extract" : "reduce";
-      const digest = createHash("sha256").update(JSON.stringify([job.postprocess!.version, text, mode])).digest("hex");
+      const digest = createHash("sha256").update(JSON.stringify([job.postprocess!.configuration, text, mode])).digest("hex");
       const id = `${job.id}-post-${round}-${index}`;
       await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
         filename: "postprocess.json", mimeType: "application/json", retention: job.retention, retainUntil: file.file.retireAt,
@@ -119,14 +119,14 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
     const id = `${job.id}-draft`;
     await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
       filename: "result.json", mimeType: "application/json", retention: job.retention, retainUntil: file.file.retireAt,
-      derivedFrom: job.transcriptRef, model: job.postprocess.version.model, producedBy: job.postprocess.projectName,
+      derivedFrom: job.transcriptRef, model: job.postprocess.configuration.model, producedBy: job.postprocess.projectName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield bytes; })(), context.signal);
     await record("saving", 0, 1, 3);
     const summaryRef = `${job.id}-summary`;
     await deps.files.import({ id: summaryRef, projectName: job.projectName, userEmail: job.userEmail,
       filename: "summary.md", mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
-      derivedFrom: job.transcriptRef, model: job.postprocess.version.model, producedBy: job.postprocess.projectName,
+      derivedFrom: job.transcriptRef, model: job.postprocess.configuration.model, producedBy: job.postprocess.projectName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield new TextEncoder().encode(final.text); })(), context.signal);
     await record("saving", 0, 2, 3);

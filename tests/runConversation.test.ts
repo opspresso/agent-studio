@@ -29,7 +29,7 @@ import { ValidationError } from "@/application/errors";
 import { createTraceRecorder } from "@/application/run/traceLifecycle";
 import type { Trace } from "@/domain/trace/types";
 import type { TraceRepository } from "@/domain/trace/repository";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 
 describe("conversationOf", () => {
   it("keeps a plain id as it is, under its surface", () => {
@@ -300,13 +300,13 @@ describe("a trace records the conversation key", () => {
       },
     } as unknown as TraceRepository;
     const project = { name: "p", projectType: "agent" } as Project;
-    const version = { versionName: "v1", model: "openai/gpt-4o" } as Version;
+    const configuration = { projectName: "p", model: "openai/gpt-4o", systemPrompt: "", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] } satisfies AgentConfiguration;
 
-    await createTraceRecorder(traces, project, version, 1, {
+    await createTraceRecorder(traces, project, configuration, 1, {
       ancestry: ["p"],
       conversation: { surface: "chat", id: "c-1" },
     }).finish();
-    await createTraceRecorder(traces, project, version, 1, { ancestry: ["p"] }).finish();
+    await createTraceRecorder(traces, project, configuration, 1, { ancestry: ["p"] }).finish();
 
     expect(written[0]?.conversation).toBe("chat:c-1");
     expect(written[1]).not.toHaveProperty("conversation");

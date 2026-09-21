@@ -39,6 +39,17 @@ before editing its subsystem.
 | Chat persistence and replay | `src/application/chat/AGENTS.md`, then [design/chat.md](docs/design/chat.md) |
 | Persistent Workspace, Sandbox and coding jobs | [design/workspaces.md](docs/design/workspaces.md) |
 
+## Local development
+
+Local Kubernetes is the default and first choice for local development. The environment is
+named `local`, with OrbStack or Docker Desktop as the runtime. Argo CD uses the `argocd`
+namespace and Helm release. `argocd-env-addons` and `argocd-env-demo` own the backing services;
+Agent Studio runs on the host with `pnpm dev`.
+
+Check the existing local Kubernetes services and connection settings before starting local
+infrastructure. Compose is an alternative when local Kubernetes is unavailable or an isolated
+test needs it. Follow [INSTALL.md#localdev](docs/INSTALL.md#localdev) for setup and connections.
+
 ## Commands
 
 ```bash
@@ -56,18 +67,20 @@ image-release job builds through Dockerfile. Run build locally when required bel
 and pnpm 11 are required (`packageManager` is pinned). See `docs/DEVELOPMENT.md` for CI scope.
 
 ```bash
-docker compose up -d postgres minio minio-init
+python3 ../argocd-env-addons/install/local/connect.py --context orbstack
+# Use --context docker-desktop for Docker Desktop; keep forwarding in a separate terminal.
 pnpm db:migrate
-pnpm test:integration
+pnpm test:integration # separate *_test database and test credentials; see DEVELOPMENT.md
 
 pnpm tsx scripts/mock-llm.ts
 pnpm tsx --env-file=.env.local scripts/dev-session.ts
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ```
 
-The local Compose project is pinned to `agent-studio-local` and owns its PostgreSQL and MinIO
-volumes. Never run `docker compose down -v` without explicit approval. Integration checks may
-use only a database whose name ends in `_test`.
+Integration checks may use only a database whose name ends in `_test`. The alternative Compose
+setup starts with `docker compose up -d postgres minio minio-init`; its `agent-studio-local`
+project owns separate PostgreSQL and MinIO volumes. Never run `docker compose down -v` without
+explicit approval.
 
 Any real run requires `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, and a 32-byte base64
 `AES_ENCRYPTION_KEY`. Alpha/prod also requires `ADMIN_EMAILS` plus a sign-in method. Production
@@ -156,13 +169,12 @@ key, cap, formatter, error identity, or collapse rule, search
 
 - Every new execution entry uses the facade and opens the run bracket. Use `streamProjectRun` for
   chunk consumers, including image; `executeProjectStream`/`executeProject` for completion
-  consumers, which refuse image projects. Direct `executeAgent` entry points refuse non-agent
-  projects. See `AGENT_RUN_ENTRY_POINTS` in the architecture test.
+  consumers. All Project executions use the same Agent loop, including image tools. See `AGENT_RUN_ENTRY_POINTS` in the architecture test.
 - Workspace jobs use `executeWorkspaceTask` and the shared `openTaskRun` bracket. Ordinary commands
-  have no model Version; native CLI history stays in the Workspace checkpoint. Workspace polling
+  have no Studio model configuration; native CLI history stays in the Workspace checkpoint. Workspace polling
   must distinguish a missing operation from a transport failure and never replay uncertain work.
-- A surface needing only chunks stays behind `streamProjectRun`. Direct callers of
-  `application/image/generateImage` are a deliberately bounded list.
+- A surface needing only chunks stays behind `streamProjectRun`. Image generation and editing
+  run through `application/execution/imageTool.ts` inside the same Agent bracket.
 - `resolveRunTools` receives `discoveryQueries`; omitting them silently disables dynamic discovery.
   Keep `TOOL_RESOLUTION_SITES` accurate.
 - The facade forwards `caller` through `toRunInput`; `callerFor` is the only prompt gate.

@@ -12,7 +12,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentExecutionEvent, ExecutionEventBus } from "@a2a-js/sdk/server";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import {
   artifactEvents,
@@ -41,22 +41,21 @@ const project: Project = {
   description: "",
   projectType: "agent",
   ownerEmail: "owner@x.com",
-  publishedVersion: "1",
+
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-const version: Version = {
+const configuration: AgentConfiguration = {
   projectName: "reporter",
-  versionName: "1",
+
   systemPrompt: "",
-  userPromptTemplate: "",
+
   model: "openai/gpt-5-mini",
   parameters: { piiFiltering: false },
   mcpList: [],
   skillList: [],
   subagentList: [],
-  createdAt: "2026-01-01T00:00:00.000Z",
 };
 
 const rendered: EngineChunk = {
@@ -97,7 +96,7 @@ function depsWith(artifacts: unknown): ExecutionDeps {
 const store = fakeTaskStore();
 
 async function run(deps: ExecutionDeps): Promise<CollectingBus> {
-  const executor = new ProjectA2aExecutor(deps, project, version, store);
+  const executor = new ProjectA2aExecutor(deps, project, configuration, store);
   const bus = new CollectingBus();
   await executor.execute(requestContext(messageFixture("write the report")), bus);
   return bus;

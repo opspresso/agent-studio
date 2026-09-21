@@ -88,7 +88,7 @@ fail-open 이 될 수는 없다.
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | 미설정 | — | 오브젝트 스토어의 키 쌍. `AWS_*` 에 넣지 않는다. 그 쌍은 프로세스의 다른 모든 AWS 클라이언트(Bedrock 채널·Cohere 임베딩)가 읽으므로, MinIO 의 키를 거기 두면 AWS 에 MinIO 키로 서명하게 된다. 비어 있으면 SDK 기본 체인을 따른다. |
 | `S3_PUBLIC_BASE_URL` | 미설정 | — | `public` 모드에서 독자가 오브젝트에 닿는 base 가 앱이 업로드하는 엔드포인트와 다를 때 (리버스 프록시 뒤의 MinIO). 비어 있으면 `S3_ENDPOINT`/`<bucket>`, 그것도 없으면 AWS 의 virtual-host 형태. |
 | `ARTIFACT_ACCESS_MODE` | `authenticated` | **runtime** | 독자가 저장된 오브젝트에 어떻게 닿는가. **`proxied`**. 앱 자신의 주소 `PUBLIC_BASE_URL/api/objects/<key>?exp=&sig=[&dl=]` 를 건네고 앱이 바이트로 답한다(`PUBLIC_BASE_URL` 이 없으면 경로만, 콘솔은 같은 origin 이라 닿지만 Slack·A2A 같은 외부 독자에게는 주소가 아니다). 모델 입력 이미지는 URL이 아니라 저장소에서 읽은 bounded inline bytes로 전달된다. 스토어는 앱에게만 닿으면 되므로 설치형의 선택이다. 토큰이 증명하는 것과 수명은 [SECURITY.md](SECURITY.md#데이터-노출과-보존). **`authenticated`**. 유효 기간이 있는 스토어의 pre-signed URL. 브라우저가 스토어에 직접 닿을 수 있어야 한다. **`public`**. 영구적인 직접 URL. 버킷 정책이 `artifacts/*` 와 레거시 `images/*` 의 공개 읽기를 허용할 때만 동작한다. **다운로드 링크는 `public` 에서도 pre-signed 다**: 브라우저가 저장할 파일명이 요청 서명에 실려 가는데 S3 는 익명 GET 에서 `response-*` 오버라이드를 거부하기 때문이다. 그래서 `public` 모드에서 문서의 주소는 유효 기간이 있고 이미지의 주소는 영구로 남는다. public 모드는 갤러리 메타데이터와 삭제가 인증을 유지하더라도 URL 을 손에 넣은 누구에게나 오브젝트를 노출한다. 모르는 값은 `authenticated` 로 fail-closed 된다. |
-| `CATALOG_ENABLED` | `false` | — | `true` 면 이 배포가 capability 카탈로그를 갖는다. 벡터는 데이터베이스의 `catalog_vectors` 에 있고 따로 가리킬 것은 없다. 설정하지 않으면 `POST /api/catalog/reindex` 는 503 으로 답하고, 런은 자기 버전이 바인딩한 것만 제공한다. 그 503 에는 원인이 둘 있고 토큰 검사가 먼저 돌므로, `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우에도 메시지만 다른 같은 상태 코드가 나온다. 기본이 꺼짐인 이유: 카탈로그에는 배포의 채널이 서빙하는 임베딩 모델이 필요한데 부팅 때 그것을 확인할 길이 없다. 켜는 것은 그 모델이 있다는 선언이다. |
+| `CATALOG_ENABLED` | `false` | — | `true` 면 이 배포가 capability 카탈로그를 갖는다. 벡터는 데이터베이스의 `catalog_vectors` 에 있고 따로 가리킬 것은 없다. 설정하지 않으면 `POST /api/catalog/reindex` 는 503 으로 답하고, 런은 자기 설정에 바인딩한 것만 제공한다. 그 503 에는 원인이 둘 있고 토큰 검사가 먼저 돌므로, `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우에도 메시지만 다른 같은 상태 코드가 나온다. 기본이 꺼짐인 이유: 카탈로그에는 배포의 채널이 서빙하는 임베딩 모델이 필요한데 부팅 때 그것을 확인할 길이 없다. 켜는 것은 그 모델이 있다는 선언이다. |
 | `EMBEDDING_PROVIDER` | `openai` | — | `openai` \| `cohere` \| `bedrock`. OpenAI 호환 경로는 아래 endpoint 해석 규칙을 사용한다. Cohere·Bedrock 경로는 AWS SDK credential과 `bedrock:InvokeModel`을 사용한다. 알 수 없는 값은 `openai`로 해석한다. |
 | `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` | 미설정 | — | OpenAI 호환 embedding 전용 채널. 등록된 공개 모델의 provider 채널이 있으면 그 URL·key·wire ID를 우선 사용한다. Self-hosted 모델은 이 전용 채널을 사용하며, base URL 이 없으면 기본 LLM 채널을 재사용한다. base URL 만 설정한 인증 없는 endpoint에는 비밀이 아닌 placeholder credential을 보내며 LLM key를 전달하지 않는다. 인증이 필요하면 API key도 설정하라. |
 | `EMBEDDING_MODEL` | provider 별로: `text-embedding-3-small`, `global.cohere.embed-v4:0`, `amazon.titan-embed-text-v2:0` | **models** | 배포 기본값. `/models`에서 Embedding 타입의 등록 모델을 선택하면 DB override가 우선한다. 선택 변경은 승인 뒤 전체 인덱스를 다시 만들며, 실패하면 이전 선택과 vector를 복원한다. 두 모델에서 나온 벡터는 비교할 수 없다. Cohere v4 는 **inference profile** 을 통해 도달한다. |
@@ -193,7 +193,7 @@ Studio는 loader 형태와 `SUPPORTED_PROVIDERS`, 커밋된 오프라인 스냅�
 `transcription: true` 는 Transcription, `imageGeneration: true` 는 Image, 모두 없으면 Text 다.
 네 플래그는 동시에 참일 수 없다. Embedding은 input token으로, Rerank는 input token 또는
 `perSearch`로, Transcription은 input/output token 또는 `perAudioMinute`로 가격을 표현한다.
-Embedding과 Rerank의 `outputPer1M`·`maxTokens`는 0이다. `/models` 카탈로그에는 다섯 타입을 모두 표시하지만 version picker와 `/api/models` 는 실행
+Embedding과 Rerank의 `outputPer1M`·`maxTokens`는 0이다. `/models` 카탈로그에는 다섯 타입을 모두 표시하지만 Agent 모델 선택기와 `/api/models` 는 실행
 가능한 Text·Image만 제공한다. id 는 `provider/family` 이고, 같은 모델의 세 경로는 같은
 이름·윈도·타입을 가진다. `wireId` 는 경로가 모델 이름을 다르게 쓸 때만 둔다. 카탈로그를 읽는 경로는 다음과 같다:
 
@@ -256,17 +256,17 @@ SigV4 서명자는 endpoint URL에서 대상 region을 해석한다. 도입할 �
 | `UNKNOWN_MODEL_POLICY` | `allow` | **runtime** | `allow` \| `refuse`. 레지스트리가 값을 매길 수 없는 모델을 런이 실행해도 되는지. 그 밖의 값은 전부 `allow` 로 읽히므로, 잘못된 형식의 값이 배포가 멈추는 이유가 되는 일은 없다. |
 
 `refuse` 는 **런 브래킷**에서 검사한다. 네 개의 admit 함수가 모두 지나가는 한 지점이며,
-버전의 `model` 뿐 아니라 `fallbackModel` 까지 함께 다룬다. 폴백은 주 모델이 rate limit 에
+Agent의 `model` 뿐 아니라 `fallbackModel` 까지 함께 다룬다. 폴백은 주 모델이 rate limit 에
 걸릴 때마다 런 전체를 떠맡으므로, 값이 매겨지지 않은 폴백은 정확히 같은 만큼 새어 나가되
 간헐적으로 그럴 뿐이다. dispatch 전에 throw 하므로, 호출자는 열렸다가 실패하는 스트림이 아니라
 `400` 을 받는다.
 
-**subagent transfer** 도 자식의 버전이 해석되는 자리에서 검사한다. 그것은 브래킷을 열지
+**subagent transfer** 도 자식의 설정이 해석되는 자리에서 검사한다. 그것은 브래킷을 열지
 않지만. top-level run 이 아니다. dispatch 하고 usage 를 기록하는 것은 똑같으며, 부모의
 모델은 자식의 모델에 대해 아무것도 말해 주지 않는다. 거기서 거부는 런이 아니라 transfer 를
 실패시킨다: 부모는 이유를 전달받고 그 자식 없이 답할 수 있다.
 
-**버전 저장은 건드리지 않는다**: 레지스트리가 아직 따라잡지 못한 id 를 저장하는 것이야말로
+**Agent 설정 저장은 건드리지 않는다**: 레지스트리가 아직 따라잡지 못한 id 를 저장하는 것이야말로
 새 모델을 도입하는 방식이고, 그 경로는 자기 경고를 유지한다. 이 설정이 한계를 두는 것은
 무엇으로도 값을 매길 수 없는 id 아래에서 돈을 쓰는 일이다.
 
@@ -284,7 +284,7 @@ SigV4 서명자는 endpoint URL에서 대상 region을 해석한다. 도입할 �
 
 **이 문서의 거의 모든 숫자 설정이 그렇게 동작한다**: 이들은 `positiveIntEnv` 를 지나가며,
 파싱과 경고까지 `src/lib/config.ts` 가 그것을 소유한다. 그 바깥에 있는 설정이 두 종류 있고
-각각 자기 행에서 그렇게 말한다: `0`–`1` 값들(`TRACE_SAMPLE_RATE`, `CATALOG_MIN_SCORE`, `RERANKER_MIN_SCORE`)은
+각각 자기 행에서 그렇게 말한다: `0`–`1` 값들(`CATALOG_MIN_SCORE`, `RERANKER_MIN_SCORE`)은
 폴백하는 대신 **clamp** 하고, `MAX_RUN_DURATION_MS` 는 `src/shared/runDeadline.ts` 에서 스스로
 파싱한다. `application` 이 그 데드라인을 필요로 하는데 `lib` 를 import 할 수 없기 때문이다.
 `AbortSignal.timeout` 의 정의역에 대해 값을 검증하고 같은 경고와 함께 기본값으로 떨어진다.
@@ -345,8 +345,8 @@ sync는 선언된 이름의 항목을 갱신하고 사라진 항목은 orphan으
 | `SLACK_LOADING_INDICATOR` | `:hourglass_flowing_sand:` | — | Slack 답변이 아직 쓰이고 있는 동안 뒤에 붙였다가 마지막 편집에서 떼어 내는 표시. **edit-in-place 폴백에서만 그렇다**. 스트리밍되는 답변은 Slack 자신이 아직 도착 중이라고 표시해 준다. 자기 spinner 이모지를 가진 워크스페이스는 여기에 그 이름을 적는다. 기본값이 내장돼 있는 이유는, 워크스페이스가 정의하지 않은 커스텀 이름은 글자 그대로 렌더링되기 때문이다. |
 
 프로젝트별 Slack 설정. 봇 토큰, signing secret, 추천 프롬프트, 그리고 멘션 없이 봇을 깨우는
-**채널 키워드**. 는 환경이 아니라 프로젝트에 산다 (`/projects/{name}/settings`). 어떤 버전의
-런이 워크스페이스를 *읽어도* 되는지는 버전 파라미터(`slackWorkspace`)이고 기본은 꺼짐이다.
+**채널 키워드**. 는 환경이 아니라 프로젝트에 산다 (`/projects/{name}/settings`). Agent의
+런이 워크스페이스를 *읽어도* 되는지는 Agent 파라미터(`slackWorkspace`)이고 기본은 꺼짐이다.
 
 **생성되는 매니페스트는 릴리즈와 함께 바뀐다.** 이제 `message.channels` 와
 `message.groups` 를 구독하고 `channels:read` 를 요청한다. 그 이전에 설치된 앱은 설치 당시의 scope 와 이벤트를
@@ -380,7 +380,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 
 ## Workspace 실행
 
-Workspace 도구 사용 여부는 Agent Version의 `parameters.workspaceTools`로 선택한다. 활성 버전에서
+Workspace 도구 사용 여부는 Agent 설정의 `parameters.workspaceTools`로 선택한다. 현재 설정에서
 켜면 프로젝트에 **워크스페이스 도구** 탭이 나타난다. 프로젝트 소유자·관리자는 그 탭에서 저장소 목록,
 접근 모드, 기본 Runtime, 유휴 시간, 검사 명령과 배포 workflow를 관리한다. 기본 저장소는 없다.
 기본 접근 모드는 `new`(등록 + 신규), 기본 Runtime은 모델 없이 실행하는 `command`다.
@@ -412,7 +412,7 @@ Studio에서 선택한 모델을 전달한다. provider/model의 전송용 이�
 CLI에 제공하지 않는다. 모델을 해제하면 새 native 작업은 거절하지만 이미 시작한 operation의 조회·복구는
 유지한다. 일반 명령에는 모델이 필요 없다. Git·클라우드·운영 환경변수는 Sandbox에 상속하지 않는다.
 Workspace 실행 시간은 `MAX_RUN_DURATION_MS`를 사용하며 재시작해도 최초 시작 시각에서 계산한다.
-일반 명령은 모델 Version 없이 공통 비용·동시성·메트릭 bracket을 사용한다. CLI 모델 사용량은
+일반 명령은 Studio 모델 설정 없이 공통 비용·동시성·메트릭 bracket을 사용한다. CLI 모델 사용량은
 Studio의 SDK 모델 usage와 별개이며 CLI/provider의 사용량 기록을 따른다.
 
 Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐·TTL·승인 결과 전달과 CI 대기가
@@ -445,7 +445,6 @@ Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 �
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
-| `TRACE_SAMPLE_RATE` | `0.1` | — | `0`–`1`, top-level predict 런과 이미지 런에 적용된다. agent 런은 항상 trace 된다. 위의 제한들과 달리, 범위를 벗어난 값은 폴백하는 대신 범위 안으로 **clamp** 된다. `2` 라는 비율은 "가능한 한 많이" 를 뜻한다. 반면 숫자가 아닌 값은 기본값을 쓴다. 둘 다 로그에 그렇게 남긴다: 조용히 다른 값이 돼 버린 샘플링 비율은 배포가 기록한 적도 없는 trace 로부터 추론하게 만드는 방식이다. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | 미설정 | — | OTLP HTTP base 엔드포인트 (없으면 `/v1/traces` 를 덧붙인다). 설정되면 플랫폼이 영속화하는 모든 trace 가 데이터베이스 쓰기 이후에 OTEL span 으로도 내보내진다. export 실패는 `[otel]` 로그 라인으로 드러날 뿐, 결코 런으로 드러나지 않는다. 설정하지 않으면 export 자체가 없고 OTEL SDK 는 로드되지도 않는다. |
 | `OTEL_EXPORTER_OTLP_HEADERS` | 미설정 | — | 표준 `key=value,key2=value2` 형식이며 모든 OTLP 요청에 실려 간다. 대소문자를 보존한다: 값들이 collector 자격증명이고, 정규화된 bearer 토큰은 다른 토큰, 즉 틀린 토큰이 되기 때문이다. |
 | `SETTINGS_CACHE_TTL_MS` | `5000` | — | settings 행의 인메모리 TTL. 모든 runtime 오버라이드의 인스턴스 간 낡음에 한계를 둔다. [해석 순서](#해석-순서) 를 보라. 하한이 `1` 이라 `0` 은 캐시를 끄는 대신 기본값으로 떨어진다. |
@@ -481,7 +480,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 
 | 제한 | 값 | 소유자 |
 |---|---|---|
-| agent 런당 턴 수 (버전 `maxTurn` 기본값) | `50` | `src/application/runtime/execute.ts` |
+| agent 런당 턴 수 (Agent 설정 `maxTurn` 기본값) | `50` | `src/application/runtime/execute.ts` |
 | 멤버 tier 제한. 멤버당 동시 런 수 / 월 USD 상한 (`admin` —/—, `member` —/`20`, `guest` `1`/`2`. "—" 는 env 제한을 물려받거나 상한이 없다는 뜻). `guest` 는 추가로 프로젝트를 만들 수 없고 프로젝트 API 토큰도 쓸 수 없다 | `TIER_LIMITS` | `src/domain/member/tiers.ts` |
 | SDK function tool 동시 실행 수 | `5` | `src/application/runtime/runner.ts` |
 | 턴당 도구 결과 텍스트 | `200,000` 자 | `src/application/llm/toolResultBudget.ts` |
@@ -552,7 +551,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | 턴을 나르는 요청 본문 (첨부 상한에서 파생) | `84,148,240 bytes` (약 `80.25 MiB`) | `src/app/api/_lib/body.ts` |
 | 프로세스가 동시에 보유하는 attachment-scale turn 본문 바이트 (`256KiB` 초과분만 과금, 상한은 최대 turn 본문의 2배) | `168,296,480 bytes` (약 `160.5 MiB`) | `src/app/api/_lib/body.ts` |
 | Skill 첨부. 파일당 바이트 / skill 당 파일 수 / skill 당 바이트 (어느 하나라도 넘는 파일은 sync 에서 건너뛰고 이유를 보고한다) | `64 KiB` / `20` / `200 KiB` | `src/domain/skill/files.ts` |
-| 레지스트리 또는 버전 편집의 요청 본문 (skill 파일 상한에서 파생) | `456 KiB` | `src/app/api/_lib/body.ts` |
+| 레지스트리 또는 Agent 설정 편집의 요청 본문 (skill 파일 상한에서 파생) | `456 KiB` | `src/app/api/_lib/body.ts` |
 | 턴이 넘칠 때 유지하는 transfer transcript 한 줄 | 최소 `500` 자 | `src/application/runtime/transcript.ts` |
 | 컨텍스트 예산 추정 (ASCII / 그 외 / 이미지 part / 여유분) | 토큰당 `3` 자 / 자당 `1.5` 토큰 / `2,500` 토큰 / `2,000` 토큰 | `src/application/llm/contextBudget.ts` |
 | 런의 컨텍스트 예산이 잘라 낼 때 유지하는 도구 결과 | 최소 `500` 자 | `src/application/llm/toolResultBudget.ts` |
@@ -560,7 +559,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | chat 메시지 하나가 보관하는 추론. 답변 **뒤에**, 같은 아이템 예산에서 | `40,000` 바이트 | `src/application/chat/run.ts` |
 | SDK Session 이력 | `256` items / 이미지 bytes를 제외한 JSON `150,000`자; 최신 완전한 턴은 보존 | `src/application/runtime/session.ts` |
 | SDK Session/checkpoint 저장 원문 | `64MiB`; 압축 후 인증 암호화 | `src/application/runtime/session.ts` |
-| 버전 정책의 입력 문자 상한 설정 범위 / 각 도구 정책 목록 | `1`–`1,000,000` / 최대 `128`개, 이름당 `1`–`64`자 | `src/app/api/projects/_lib/schemas.ts`의 `versionParametersSchema` |
+| Agent 정책의 입력 문자 상한 설정 범위 / 각 도구 정책 목록 | `1`–`1,000,000` / 최대 `128`개, 이름당 `1`–`64`자 | `src/app/api/projects/_lib/schemas.ts`의 `agentParametersSchema` |
 | 승인 재개 요청의 결정 수 / 승인 항목 ID | `1`–`128`개 / SHA-256 hex `64`자 | `src/app/api/chats/[chatId]/approval/route.ts`, `src/application/runtime/session.ts` |
 | 다음 턴의 SDK Session 이미지 | 최신 `4`개 | `src/application/runtime/historyImages.ts`, `src/domain/llm/imageLimits.ts` |
 | 인바운드 webhook / Slack 이벤트 / Telegram update / Teams activity 본문 | 넷이 함께 `1MB` | `src/app/api/_lib/inboundEvent.ts` 의 `MAX_INBOUND_EVENT_BYTES` |
@@ -602,13 +601,13 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 
 `contextBudget.ts`는 agent의 입력·도구 정의·출력·도구 결과·위임 응답이 함께 쓰는 문맥을 추정한다.
 모델별 입력 용량은 `contextWindow − 출력 예약 − 프로토콜 여유`이고, fallback이 있으면
-두 모델의 용량 중 작은 쪽을 쓴다. 출력 예약은 Version의 `maxTokens`, 없으면 각 모델의
+두 모델의 용량 중 작은 쪽을 쓴다. 출력 예약은 Agent 설정의 `maxTokens`, 없으면 각 모델의
 카탈로그 출력 상한이다.
 
 토큰은 위 표의 문자·이미지 추정값으로 계산한다. 결과가 남은 예산을 넘으면 표시 문자열까지
 포함해 자르고 warning으로 알린다. 미등록 모델처럼 윈도를 모르거나 입력·도구만으로 양의 예산을
 확보하지 못하면 문맥 예산을 강제할 수 없다. 이 경우의 경고를 확인해야 하며 provider가
-요청을 수락한다고 보장하지 않는다. 단발 `llm` 경로는 반복 누적 예산을 적용하지 않는다.
+요청을 수락한다고 보장하지 않는다.
 
 ## 오디오 전사 설정
 

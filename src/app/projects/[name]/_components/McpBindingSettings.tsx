@@ -4,7 +4,7 @@
  * Everything configurable about one bound MCP server, in one place.
  *
  * The three sections do not save the same way, and saying so is the point of
- * splitting them: tools and header overrides are part of the version and land
+ * splitting them: tools and header overrides are part of the Agent settings and land
  * with its Save — the footer button, which is the page's own — while the
  * connection belongs to the project and is written the moment its own buttons
  * are pressed. One "Save" over all three would have to lie about one of them,
@@ -16,11 +16,11 @@ import { useT } from "@/app/_i18n/provider";
 import { McpConnectionCard } from "./McpConnectionCard";
 
 /**
- * The page's own version save, handed down so the two version-owned sections
+ * The page's own configuration save, handed down so the two configuration sections
  * can be committed from here. Without it the dialog covers the only button that
  * would store what it just edited.
  */
-export interface VersionSave {
+export interface ConfigurationSave {
   run: () => void;
   /** True while the write is in flight. */
   saving: boolean;
@@ -32,9 +32,9 @@ export interface VersionSave {
    * Save that did nothing.
    */
   error: string | null;
-  /** Version the last save wrote, or null once the draft is edited again. */
-  savedName: string | null;
-  /** "Save" or "Create version" — the page owns which, so the two agree. */
+  /** True after a successful save while the draft remains unchanged. */
+  saved: boolean;
+  /** Localized save label supplied by the owning page. */
   label: string;
 }
 
@@ -51,7 +51,7 @@ export function McpBindingSettings({
   projectName: string;
   serverName: string;
   onClose: () => void;
-  save: VersionSave;
+  save: ConfigurationSave;
   /**
    * Forwarded to the connection card. The tool list above it is what a changed
    * connection invalidates, and the caller owns that list — this dialog only
@@ -101,13 +101,13 @@ export function McpBindingSettings({
             <Text fz="xs" c="red" mr="auto">
               {save.error}
             </Text>
-          ) : save.savedName ? (
+          ) : save.saved ? (
             <Text fz="xs" c="teal" mr="auto">
-              {t("playground.saved", { version: save.savedName })}
+              {t("configuration.saved")}
             </Text>
           ) : (
             <Text fz="xs" c="dimmed" mr="auto">
-              {t("mcpSettings.savesWholeVersion")}
+              {t("mcpSettings.savesConfiguration")}
             </Text>
           )}
           <Button variant="subtle" color="gray" onClick={onClose}>

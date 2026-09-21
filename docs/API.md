@@ -7,7 +7,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 [ARCHITECTURE.md](ARCHITECTURE.md) 에 있고, 인가(authorization) 모델은
 [SECURITY.md](SECURITY.md) 에 정리돼 있다.
 
-빠른 찾기: [라우트 색인](#라우트-색인) · [프로젝트와 버전](#version-과-publish) ·
+빠른 찾기: [라우트 색인](#라우트-색인) · [Agent 설정](#agent-현재-설정) ·
 [실행](#실행) · [Chat](#chats) · [Workspace](#workspaces) · [MCP OAuth](#mcp-oauth) ·
 [Trigger](#triggers) · [Artifacts](#artifacts) · [Models](#models) ·
 [오디오](#오디오-작업과-원본-파일).
@@ -38,7 +38,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 - **Authorization**: project 는 공개 범위를 갖는 공유 카탈로그다. `public`(기본값) 은
   로그인한 누구나 읽고 실행하고, `private` 은 소유자·초대 멤버·admin 만이다
   ([SECURITY.md](SECURITY.md#인가-모델), 그 외에는 `403 { "error": "Project \"…\" is private" }`).
-  변경(수정/삭제/publish, version 생성/수정, Slack·Telegram 설정)은 공개 범위와 무관하게
+  변경(수정/삭제, Agent 설정 저장, Slack·Telegram 설정)은 공개 범위와 무관하게
   소유자와 effective admin(저장된 `admin` tier 또는 설정된 admin) 만 할 수 있고, 그 외에는
   `403 { "error": "You do not have permission to modify project \"…\"" }` 이다.
   다른 사용자의 런타임 데이터나 마스킹된 secret 을 드러내는 project 하위 리소스. 트레이스,
@@ -90,13 +90,11 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/projects` | `GET` `POST` | session / session + project 를 만들 수 있는 tier |
 | `/api/projects/{name}` | `GET` `PUT` `DELETE` | session / owner |
 | `/api/projects/{name}/clone` | `POST` | session + project 를 만들 수 있는 tier |
-| `/api/projects/{name}/versions` | `GET` `POST` | session / owner |
-| `/api/projects/{name}/versions/{version}` | `GET` `PUT` `DELETE` | session / owner |
-| `/api/projects/{name}/publish` | `POST` | owner |
+| `/api/projects/{name}/configuration` | `GET` `PUT` | session / owner |
 | `/api/projects/{name}/preview` | `POST` | member |
-| `/api/projects/{name}/versions/{version}/predict` | `POST` | session 또는 project 토큰 |
-| `/api/projects/{name}/versions/{version}/chat/completions` | `POST` | session 또는 project 토큰 |
-| `/api/projects/{name}/versions/{version}/agent` | `POST` | session 또는 project 토큰 |
+| `/api/projects/{name}/predict` | `POST` | session 또는 project 토큰 |
+| `/api/projects/{name}/chat/completions` | `POST` | session 또는 project 토큰 |
+| `/api/projects/{name}/agent` | `POST` | session 또는 project 토큰 |
 | `/api/projects/{name}/token` | `GET` `POST` `DELETE` | owner |
 | `/api/projects/{name}/token/reveal` | `POST` | owner |
 | `/api/projects/{name}/artifacts` | `GET` | owner |
@@ -247,11 +245,10 @@ DELETE /api/skills/{name}     → 204                     | 404
   "projectType": "agent", "departmentCode": "OPT-optional" }
 ```
 
-  생성은 project 의 초기 version `"1"` 도 함께 쓴다. 빈 프롬프트, 그 project 타입에 맞는
-  배포의 첫 제공 모델. 그래서 chat 과 playground 가 첫 순간부터 동작한다. 초기 version 은
-  **publish 되지 않는다**: publish 는 의도적인 행위로 남는다 (project 가 publish 되지 않은
-  동안 콘솔이 저장 후에 그것을 제안한다). 맞는 제공 모델이 하나도 없으면 project 는 version
-  없이 생성되며, 이는 이전과 정확히 같다.
+생성 시 배포가 제공하는 첫 번째 호환 텍스트 모델로 초기 Agent 설정을 같은 Project 행에
+저장한다. 호환 모델이 없으면 미설정 Agent로 생성한다. `projectType`은 생략하거나 `agent`로
+보내며 `llm`·`image`는 거절한다. 일반 Project 응답은 시크릿을 포함한 설정 원문을 싣지 않고
+`configured`로 설정 유무를 알린다.
 
 #### 공개 범위와 복제
 
@@ -273,14 +270,10 @@ POST /api/projects/{name}/clone    { "name": "my-copy", "displayName": "My Copy"
 ```
 
 접근 가능한 project 를 호출자 소유의 새 project 로 복제한다. tier 게이트는 생성과 같다.
-복사되는 것은 설명·타입·부서 코드·**공개 범위**(private 원본의 복제본은 private 으로
-시작한다. 초대받은 사람이 클릭 한 번으로 private 프롬프트를 전사에 재공개하는 일을 막는다)
-와 version 하나. 원본이 실제로 실행하는 것, 즉 `resolveRunnableVersion` 이 답하는 published
-또는 최신 draft. 다. MCP 바인딩의 header 오버라이드(원 소유자의 시크릿), bot 연동, 비용
-한도, API token, 초대 목록, published 포인터는 복사되지 않는다. 복제본의 version 은 publish
-되지 않은 `"1"` 로 시작한다. version 을 복사할 수 없었던 경우(복제자가 접근할 수 없는
-subagent 참조, 카탈로그를 떠난 모델) project 는 만들어지고 `warning` 이 무엇을 잃었는지
-말한다.
+설명·부서 코드·공개 범위와 현재 Agent 설정을 복사한다. private 원본은 private으로 시작하며
+초대 목록은 복사하지 않는다. MCP 헤더 오버라이드·endpoint fingerprint·bot 연동·비용 한도·
+API token도 복사하지 않는다. 설정을 복사할 수 없으면 프로젝트는 미설정 상태로 만들어지고
+`warning`이 이유를 알린다. 복제본의 설정도 저장되는 즉시 다음 실행에 적용된다.
 
 #### 비용 한도
 
@@ -310,39 +303,39 @@ alert 는 혼자서는 절대 발화하지 못하는데, block 이 거기 도달
 목적지나 연동이 없어도 임계값은 여전히 차단한다. 가드가 무엇을 한계 지우고 무엇은 그러지
 못하는지는 [OPERATIONS.md](OPERATIONS.md#비용-가드-fail-open) 를 보라.
 
-### Version 과 publish
+### Agent 현재 설정
 
+```text
+GET /api/projects/{name}/configuration
+  → { configuration: AgentConfiguration | null, updatedAt }
+PUT /api/projects/{name}/configuration
+  { expectedUpdatedAt, systemPrompt, model, fallbackModel?, parameters,
+    mcpList, skillList, subagentList, maxTurn? }
+  → { configuration: AgentConfiguration, updatedAt }
 ```
-GET|POST /api/projects/{name}/versions
-GET|PUT|DELETE /api/projects/{name}/versions/{version} ({version} = a name or "published")
-POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the published pointer
-```
 
-Version 본문: `systemPrompt`, `userPromptTemplate`, `model` (필수, `provider/model`),
-`fallbackModel?`, `parameters { temperature?, presencePenalty?, maxTokens?, reasoningEffort?, piiFiltering,
-structuredOutput?, jsonSchema?, imageGeneration?, imageModel?, callerContext?, urlFetch?,
-slackWorkspace?, audioProcessing?, workspaceTools?, dynamicCapabilities?, memoryRecall?, reasoningTrace?, policy? }`,
-`mcpList[{ name, headers?, tools?, sourceOutputs? }]`, `skillList[]`,
-`subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. 이미지 능력이 없는 레지스트리
-모델을 `imageModel` 로 주면 400 으로 거절되고, 그 version 이 필요로 하는 능력이 없는 카탈로그
-`model` 도 마찬가지다. `agent` project 에는 `tools`, 그 파라미터에는 `structuredOutput` 과
-`reasoningTrace`(모델의 `reasoning`)가 필요하다 (카탈로그에 없는 id 는 거절이 아니라 경고
-대상이다).
-생성 시 `versionName`을 생략하면 다음 숫자 이름을 정한다. `published`는 예약어다.
-PUT은 생략한 최상위 필드를 보존하지만 `parameters`를 보내면 그 객체를 교체한다.
-`mcpList`·`skillList`·`subagentList`도 전달한 목록으로 대체한다.
-`fallbackModel: null`과 `maxTurn: null`은 해당 값을 해제한다.
+읽기는 프로젝트 접근 권한을, 쓰기는 소유자 또는 effective configured admin 권한을 요구한다.
+PUT은 현재 설정 전체를 대체한다. GET의 `updatedAt`을 `expectedUpdatedAt`으로 보내야 하며,
+Project 메타데이터나 설정의 동시 수정이 먼저 저장되면 409를 반환한다. 저장 결과의 `updatedAt`을
+다음 수정에 사용한다. 저장한 설정은 다음 실행부터 적용한다.
 
-`policy`의 입력 크기·차단 도구·승인 도구 설정은 [Chat 승인과 재개](#chat-승인과-재개)를 따른다.
-현재 배포 버전이나 활성 오디오 설정에서 후처리 대상으로 지정한 고정 버전의 삭제는 409로 거절한다.
-후처리 설정에서 `versionName: "published"`를 사용하면 새 작업이 접수될 때 배포 버전을 고정한다.
-`mcpList`/`skillList`/`subagentList` 항목은 등록된 MCP 서버·skill·agent·project 로 해석돼야
-한다. 대롱거리는 참조는 400 으로 거절된다. 그리고 애초에 `agent` project 만 이들을 가질 수
-있다. 업데이트에서는 *새로 추가된* 항목만 검사하므로, 이미 참조하던 레지스트리 항목이
-삭제된 뒤에도 version 은 계속 수정 가능하다. 한 목록에서 같은 서버·skill·agent 를 **두 번**
-지정하는 것은 저장된 목록을 그대로 다시 제출하는 업데이트를 포함해 모든 쓰기에서 400 으로
-거절된다: 중복 바인딩은 그 서버의 세션을 두 번 열고, 런이 이름으로 키를 잡는 모든 곳에서 둘째
-행이 첫째를 조용히 덮어쓴다.
+`model`은 필수이며 Agent 도구 호출을 지원하는 텍스트 모델을 사용한다. `parameters`는
+`temperature?`, `presencePenalty?`, `maxTokens?`, `reasoningEffort?`, `piiFiltering`,
+`structuredOutput?`, `jsonSchema?`, `imageGeneration?`, `imageModel?`, `callerContext?`,
+`urlFetch?`, `slackWorkspace?`, `audioProcessing?`, `workspaceTools?`, `dynamicCapabilities?`,
+`memoryRecall?`, `reasoningTrace?`, `policy?`를 갖는다. 카탈로그에 있는 모델의 능력과
+설정이 충돌하면 400이다. 카탈로그에 없는 사용자 모델은 경고 대상으로 둔다.
+`imageModel`은 이미지 생성 능력이 있는 카탈로그 모델이어야 한다.
+
+`mcpList[{name, headers?, tools?, sourceOutputs?}]`, `skillList[]`,
+`subagentList[{name, type: "local"|"remote"}]`는 전체 목록을 저장한다.
+새 참조는 존재·접근 권한을 검사하며, 이미 연결한 항목이 사라져도 다른 설정을 수정할 수 있다.
+동일한 MCP·Skill·Agent 이름의 중복은 거절한다. 선택 필드 `fallbackModel`·`maxTurn`은 생략해
+해제하며 `null`을 받지 않는다. 응답의 MCP 헤더는 마스킹하고 내부 endpoint fingerprint는 숨긴다.
+
+새 실행은 저장한 설정을 사용한다. 시작한 실행과 제출한 Audio 작업은 당시 설정을 보존한다.
+승인 대기 중 설정·연결이 바뀌면 재개를 거절한다. `policy`의 입력 크기·차단·승인 규칙은
+[Chat 승인과 재개](#chat-승인과-재개)를 따른다. 기존 데이터는 [이전 절차](AGENT-MIGRATION.md)를 따른다.
 
 실행 옵션은 다음 경계를 가진다.
 
@@ -360,9 +353,9 @@ Agent preview의 사용자 턴으로 삽입되지는 않는다.
 자세한 준비 순서는 [Capabilities](design/capabilities.md),
 PII 필터 이전의 전송 범위는 [SECURITY](SECURITY.md#pii-필터링-그리고-그것이-멈추는-곳)를 따른다.
 
-#### MCP 바인딩과 version 별 헤더 오버라이드
+#### MCP 바인딩과 Agent 헤더 오버라이드
 
-각 `mcpList` 항목은 그 version 을 레지스트리의 MCP 서버에 바인딩한다. URL 은 언제나
+각 `mcpList` 항목은 Agent를 레지스트리의 MCP 서버에 바인딩한다. URL 은 언제나
 레지스트리의 것이고 헤더만 재정의할 수 있다. 그래서 같은 서버를 두 번 등록하지 않고도 서로 다른
 project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 그 서버의 도구 중 런이 제공할
 것을 좁힌다 (없거나 비어 있으면 = 전부).
@@ -375,7 +368,7 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
 ] }
 ```
 
-- 문자열 값은 레지스트리 기본값을 대체하거나 새 헤더를 더한다. `null` 은 이 version 에 한해
+- 문자열 값은 레지스트리 기본값을 대체하거나 새 헤더를 더한다. `null` 은 이 Agent에 한해
   레지스트리 기본값을 제거한다. HTTP 헤더 이름이 그렇듯 매칭은 대소문자를 가리지 않는다.
 - `X-Tenant-Id`, `X-User-Email`, `X-Conversation-Id` 는 **예약돼 있다**. 세 header 의 모든
   표기가 병합 후에 버려진다. 첫째 자리에는 호출하는 project 의 이름이 찍힌다. 둘째 자리에는
@@ -386,7 +379,7 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
   [SECURITY.md](SECURITY.md#mcp-서버가-호출자에-대해-듣는-것) 를 보라.
 - 새 바인딩에서 `headers`를 생략하면 레지스트리 헤더를 쓴다. 기존 바인딩을 수정할 때 생략하면
   저장된 오버라이드를 보존한다. `{}`를 명시하면 오버라이드를 지우고 레지스트리 헤더를 쓴다.
-  버전 도구 조회도 `versionName`으로 마스킹된 값을 같은 저장 바인딩에 연결하며, 저장한 credential을 사용한다. 다만 이 probe는 런의 tenant header를 보내지 않으므로
+  도구 조회는 마스킹된 값을 현재 Agent의 같은 서버 바인딩에 연결하며, 저장한 credential을 사용한다. 다만 이 probe는 런의 tenant header를 보내지 않으므로
   tenant별 도구 목록을 제공하는 서버에서는 결과가 다를 수 있다.
 - 벌거벗은 문자열 항목. `"mcpList": ["shared-mcp"]`, 오버라이드가 생기기 전의 형태. 도
   여전히 받아들여지고 `{ "name": "shared-mcp" }` 로 정규화된다.
@@ -396,7 +389,7 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
 - 문자열 오버라이드는 저장 당시 registry URL 의 내부 fingerprint 에 묶인다. 같은 이름의 서버가
   다른 URL 로 옮겨지면 옛 값은 전송하지 않고 warning 을 내며, 현재 endpoint 용 값을 다시
   입력해야 한다. fingerprint 는 API 응답과 입력에 노출하지 않는다.
-- 오버라이드 편집은 다른 모든 version 쓰기와 마찬가지로 소유자와 admin 으로 제한된다.
+- 오버라이드 편집은 다른 모든 Agent 설정 쓰기와 마찬가지로 소유자와 admin 으로 제한된다.
 
 도구 준비·최종 선언 상한은 [CONFIGURATION](CONFIGURATION.md#코드에-고정된-제한)을 따른다.
 제외한 도구는 warning으로 알린다. 파일 응답용 `sourceOutputs`는 [오디오 계약](#오디오-작업과-원본-파일)에 있다.
@@ -405,14 +398,13 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
 
 ```
 POST /api/projects/{name}/preview
-  { …an unsaved version body…,
-    "variables": { "topic": "otters" }?,
+  { …an unsaved Agent configuration…,
     "message": "request to preview"? }
 → 200 { messages: [ { role, content } ], … }
 ```
 
 에디터 안의 초안이 **보냈을** 것을 조립한다. 시스템 프롬프트, skill 표, 연결된 MCP 서버 표,
-렌더링된 템플릿. 답변 모델은 호출하지 않는다. `message`가 있으면 설정에 따라 read-only memory
+도구 선언을 포함한다. 답변 모델은 호출하지 않는다. `message`가 있으면 설정에 따라 read-only memory
 recall과 capability discovery를 실제로 수행하므로 MCP와 embedding·rerank 서비스에는 요청할 수 있다.
 
 소유자 게이트가 아니라 member 게이트다 (`withMemberAuth`): 조립된 텍스트는 해석된 skill 과
@@ -603,7 +595,7 @@ DELETE /api/chats/{chatId}/runs/{runId}      → { cancelled }
 나오더라도 클라이언트는 언제나 `chatId`/`runId` 를 알게 되고, 런 자신이 일으킨 거절(일일 비용
 가드, 동시성 가드)은 `429` 가 아니라 그 스트림의 `{error}` 프레임으로 도착한다. 그 밖에는
 스트림은 표준 SSE framing 을 쓰고 사용자·어시스턴트·도구·이미지 표시 데이터를 저장한다.
-publish 된 version 도 실행 가능한 초안도 없는 project 는 `400` 으로 거절된다.
+현재 Agent 설정이 없는 project는 `400` 으로 거절된다.
 
 **런은 자신을 시작한 연결보다 오래 산다.** 끊는 것은 읽는 사람이 떠났다는 뜻이지 멈추라는 뜻이
 아니다: 어느 쪽이든 런은 끝까지 가고 저장된다. `GET /api/chats/{chatId}` 는 런이 진행 중인
@@ -634,7 +626,7 @@ publish 된 version 도 실행 가능한 초안도 없는 project 는 `400` 으�
 
 `documents` 는 보는 것이 아니라 읽는 파일이다. `[ { b64, mimeType, name } ]`, 턴당 최대 4개,
 각각 10MB이며 `b64` 형식도 검증한다: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML,
-HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 내장 문서 엔진이 읽으며 MCP 등록이나 version binding을 요구하지 않는다.
+HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 내장 문서 엔진이 읽으며 MCP 등록이나 Agent binding을 요구하지 않는다.
 파싱이 실패하면 추출 실패 warning을 돌려준다. 저장된 원본의 참조는 유지한다. `name` 은 필수이고,
 `mimeType` 이 `application/octet-stream` 일 때. 업로드는 흔히 이렇게 도착한다. 판단을 떠맡는다.
 읽을 수 없는 타입은 `400` 으로 거절된다. 서버는 **텍스트**를 추출하고. PDF 의 텍스트 레이어,
@@ -650,7 +642,7 @@ HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 내�
 싣는 모든 라우트. chat 라우트 둘, `predict`, `agent`, `chat/completions`, A2A. 는 요청 본문을
 정당한 턴이 가질 수 있는 최대치(모든 첨부가 각자의 한도에 산문이 들어갈 여유를 더한 것)로
 제한하고 그것을 넘으면 `413` 으로 답한다. 본문이 메모리에 올라온 뒤가 아니라 선언된 길이로 미리
-검사한다. 레지스트리와 version 편집은 skill 의 전체 파일 묶음 무게에 맞춰 훨씬 더 빡빡하게
+검사한다. 레지스트리와 Agent 설정 편집은 skill 의 전체 파일 묶음 무게에 맞춰 훨씬 더 빡빡하게
 제한된다.
 
 chat 읽기(`GET /api/chats/{chatId}`)는 각 문서의 `name`, `note`와 다운로드용 `file?`을 돌려주고 `text`는 비운다:
@@ -659,7 +651,7 @@ chat 읽기(`GET /api/chats/{chatId}`)는 각 문서의 `name`, `note`와 다운
 
 ### Chat 승인과 재개
 
-버전의 `parameters.policy`에는 `maxInputChars`(1–1,000,000), `blockedTools`,
+Agent의 `parameters.policy`에는 `maxInputChars`(1–1,000,000), `blockedTools`,
 `approvalTools`를 지정할 수 있다. 도구 이름은 Prompt preview의 공개 이름이며 각 목록은
 최대 128개다. Handoff 이름은 `approvalTools`에 넣을 수 없고, 승인할 위임은
 `delegate_<name>`을 사용한다. 승인 정책은 영속 Chat 실행에서 지원한다.
@@ -688,7 +680,7 @@ chat 읽기(`GET /api/chats/{chatId}`)는 각 문서의 `name`, `note`와 다운
 `approve: false`는 도구 실행을 거절하고 SDK가 그 결과로 답을 이어가게 한다.
 승인 전에 도구는 실행되지 않는다. 다른 소유자는 `404`, 부정확하거나 중복된 항목은 `400`,
 이미 소비된 revision이나 대기하지 않는 실행은 `409`다. 실행 시작 이후의 오류는 SSE의
-`error` 프레임으로 전달될 수 있다. 프로젝트 접근 권한과 현재 버전·바인딩도 다시 확인한다.
+`error` 프레임으로 전달될 수 있다. 프로젝트 접근 권한과 현재 설정·바인딩도 다시 확인한다.
 
 `DELETE /api/chats/{chatId}/approval`에 `{ "revision": 2 }`를 보내면 미완료 실행을
 폐기하고 `204`로 응답한다. 실행 잠금이 살아 있으면 `409`다. 화면 기록은 유지하고 미완료
@@ -817,11 +809,10 @@ POST /api/agents/{name}/message   { "message": "hello" }
 → { text } | 502 (remote failure)
 
 GET /api/projects/{name}/a2a
-→ { enabled, published, cardUrl, card }
+→ { enabled, configured, cardUrl, card }
 ```
 
-`card` 는 그 project 가 publish 하는 Agent Card 이고, publish 된 version 이 없는 동안에는
-`null` 이다.
+`card`는 현재 설정으로 실행 가능한 Agent의 Card이며, Agent가 미설정 상태이면 `null`이다.
 
 sync 엔드포인트는 `GET` 은 member 에게 답하고 `POST` 는 admin 권한을 요구한다. 레지스트리 테스트
 오퍼레이션은 `member` tier 를 요구하고, 등록과 dispatch 때 쓰는 것과 같은 SSRF 가드를 적용한다.
@@ -861,7 +852,7 @@ POST /api/plugins/sync  { "remove"?: { "skills"?: ["name"], "mcpServers"?: ["nam
   기본 포트의 표기 차이는 변경으로 보지 않는다. 경로의 끝 `/` 차이는 변경이다.
 - **orphaned**. 이 저장소의 sync 가 만들었고 그 안의 어떤 plugin 도 더 이상 선언하지 않는 것.
   자기 source 가 지목하는 plugin 에 귀속되며 (완전히 사라진 plugin 을 위해서는 섹션이
-  합성된다), `boundTo` 는 대롱거리게 될 `project/version` 바인딩을 나열한다. 이름이 대응하는
+  합성된다), `boundTo` 는 대롱거리게 될 `project` 바인딩을 나열한다. 이름이 대응하는
   `remove` 목록에 있지 않는 한 **아무것도 삭제되지 않는다**. MCP 항목은 인증 정보를 쥐고 있고,
   파일이 브랜치에서 사라졌다는 것은 그것을 파괴할 충분한 이유가 아니다. 읽을 수 없는
   `plugin.json`/`mcp.json` 은 아무것도 orphan 으로 만들지 않는다: 그 plugin 은 파일이 다시
@@ -1097,7 +1088,7 @@ POST   /api/projects/{name}/mcp-connections/{server}/authorize
 → 200 { authorizeUrl: "https://provider/authorize?…" }
 
 POST   /api/projects/{name}/mcp-connections/{server}/tools
-       { versionName?: "1", headerOverrides?: { "X-Tenant": "acme", "X-Shared": null } }
+       { headerOverrides?: { "X-Tenant": "acme", "X-Shared": null } }
 → 200 { tools } | 502 { error }
 ```
 
@@ -1122,7 +1113,7 @@ POST   /api/projects/{name}/mcp-connections/{server}/tools
   구별된다. 그쪽은 항목의 정적 헤더와 요청 사용자 email 만 싣기 때문에 OAuth 서버에 대해서는
   401 밖에 낼 수 없다.
   두 probe 모두 요청한 사용자의 email을 보호된 `X-User-Email`로 추가한다.
-  `versionName`은 마스킹된 override를 해당 저장 버전에 연결한다. 두 probe는 tenant header를
+  마스킹된 override는 현재 Agent 설정의 같은 서버 바인딩에서 해석한다. 두 probe는 tenant header를
   보내지 않으므로 tenant별 도구 목록은 실제 런과 다를 수 있다.
   소유자 게이트인 이유도 같다: 그 project 의 연결을 소비한다. 그 `502` 는 서버에 아예 닿지 않는
   두 거절도 포함한다. 아웃바운드 가드가 막는 URL, 그리고 인증 정보를 해석할 수 없는 연결이다.
@@ -1192,10 +1183,14 @@ DELETE /api/projects/{name}/token          → 204
 
 ## 실행
 
-발행된 Agent의 최소 호출 예제다. 로컬 서버의 실제 프로젝트 이름과 발급한 token을 사용한다.
+설정된 Agent의 최소 호출 예제다. 로컬 서버의 실제 프로젝트 이름과 발급한 token을 사용한다.
+
+화면 API Reference의 curl·SDK 예제는 호출 프로세스의 `PROJECT_API_TOKEN` 환경변수를 사용한다.
+대화 식별 예제에는 `CONVERSATION_ID`도 설정한다. curl의 인증 헤더는 큰따옴표로 감싸 환경변수가
+치환되며 Python은 `os.environ`, Node.js는 `process.env`로 읽는다. 값은 호출 서버에 보관한다.
 
 ```bash
-curl --fail-with-body http://localhost:3000/api/projects/my-agent/versions/published/predict \
+curl --fail-with-body http://localhost:3000/api/projects/my-agent/predict \
   -H "Authorization: Bearer $PROJECT_API_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"messages":[{"role":"user","content":"안녕하세요"}],"stream":false}'
@@ -1235,19 +1230,15 @@ UUID 나 평범한 키에 대해서는 아무것도 바꾸지 않으면서 서�
 Slack 답글은 `slack:{channel}:{threadTs}`, 인바운드 A2A 메시지는 `a2a:{client}:{contextId}` 다.
 [design/observability.md](design/observability.md#사용량과-비용-귀속) 를 보라.
 
-### `POST /api/projects/{name}/versions/{version}/predict`
+### `POST /api/projects/{name}/predict`
 
-그 version 을 실행한다. `{version}` 은 `published` 여도 된다.
-
-이 엔드포인트는 `chat/completions` 처럼 `projectType` 에 따라 dispatch 한다: `llm` project 는
-서버 측 `{{var}}` 템플릿 렌더링과 함께 completion 하나를 실행하고, **`agent` project 는 그
-version 의 MCP 도구·skill·subagent 로 멀티턴 도구 루프를 실행한다**. 그래서 agent project 에서는
-`variables` 가 무시된다. agent 런에는 렌더링할 프롬프트 템플릿이 없다.
+현재 Agent 설정의 MCP 도구·Skill·Subagent로 멀티턴 실행을 수행한다.
+`messages`는 비어 있지 않은 배열이다. `documents` 첨부와 `stream`을 선택할 수 있다.
+`variables`·`prompt`·`size`·`quality`·최상위 `images` 등 이전 전용 입력은 400으로 거절한다.
+이미지는 메시지의 인라인 image part로 전달하고 생성·편집은 Agent 도구로 수행한다.
 
 ```text
-// request (llm project)
-{ "variables": { "topic": "otters" }, "messages": [ … ]?, "stream": false }
-// request (agent project)
+// request
 { "messages": [ { "role": "user", "content": "hi" } ], "stream": false }
 // response
 { "result": "…assistant text…", "model": "openai/gpt-5-mini",
@@ -1274,38 +1265,20 @@ raw-chunk 표면은 대신 자기 프레임에 파일을 인라인으로 실어 
 돌아온 subagent. 스트리밍된 런은 이런 것들을 그때그때 `warning` 프레임으로 말한다. 모아서 주는
 본문에는 나중의 프레임이 없으므로 이것들이 답과 함께 이동한다. 없으면 잃은 것이 없다는 뜻이다.
 
-`image` project 에는 `{ "prompt?", "variables?", "size?", "quality?", "images?" }` 를 보내면 →
-`{ imageBase64, mimeType, model, usage, warning?, traceId? }` 를 받는다. `warning` 은 그림은 그렸는데
-보관하지 못했다는 것. 스트리밍 표면이 `warning` 프레임으로 말하는 것과 같은 손실이다. `prompt` 는 그 version 의
-`userPromptTemplate` 을 덮어쓴다. 생략하면 `variables` 로 렌더링한 템플릿이 프롬프트가 되고,
-어느 쪽이든 결과가 비면 400 이다. `images` 는 인라인 바이트로 담은 원본 그림이다
-(`[ { b64, mimeType } ]`, chat 첨부와 같은 상한). 하나라도 있으면 프롬프트는 그것을 **편집**하고,
-없으면 처음부터 그린다. 그 version 의 시스템 프롬프트는 설정돼 있으면 version 의 지속적인 스타일로서
-프롬프트 앞에 붙는다. `stream` 은 image project 에 적용되지 않고. 그림 하나에 본문 하나다.
-거기서는 무시된다.
+`stream: true`이면 JSON 본문 대신 SSE `EngineChunk` 프레임으로 답한다.
+파일 프레임의 주소·손실 보고는 `/agent`와 같다. 수집형 응답에서 실행이 실패하면 모델과
+upstream 이유를 포함한 502를 반환한다. 응답 전 호출자가 연결을 닫으면 실행을 취소한다.
 
-그 밖의 모든 project 타입에서 `"stream": true` 는 위의 JSON 본문 대신 SSE `EngineChunk` 프레임으로
-답한다 (아래 `/agent` 가 문서화하는 것과 같은 계약이고, file 프레임도 같은 방식으로 주소가 붙는다).
+### `POST /api/projects/{name}/chat/completions`
 
-이 엔드포인트가 끝내지 못한 런은 프로바이더가 뭐라고 했는지와 어느 모델에 요청한 것인지를 담아
-`502` 로 답한다. `Image generation failed for xai/grok-imagine-image: 404 The requested
-resource was not found.` 모아서 주는 본문은 그것을 실어 나를 `error` 프레임이 없는 유일한 실행
-표면이라, 이렇게 명시하기 전에는 같은 실패가 `500 Internal server error` 로 도착했고 프로바이더가
-서빙하지 않는 모델을 지목한 version 은 크래시와 구별되지 않았다. 답이 나오기 전에 연결을 닫은
-호출자는 아무것도 받지 못하고 그것은 `502` 가 아니다: 런은 취소되고, 로그는 프로바이더가 실패했다고가
-아니라 호출자가 떠났다고 말한다. 기다림을 감안하라. xAI 에서 이미지 하나는 1분쯤 걸린다.
-
-### `POST /api/projects/{name}/versions/{version}/chat/completions`
-
-OpenAI Chat Completions 호환이다. `agent` project 는 멀티턴 도구 루프를 실행하고, `llm`
-project 는 completion 하나를 한다. `image` project 는 `400` 으로 거절된다. 이미지에는 chat
-completion 이 없다. 그것은 `/predict` 로 실행하라.
+OpenAI Chat Completions 호환 형태로 같은 Agent 도구 루프를 실행한다.
+모델은 현재 Agent 설정이 결정한다.
 
 ```text
 // request
-{ "model": "ignored-routes-by-version", "messages": [ { "role": "user", "content": "hi" } ],
-  "variables": {}?, "stream": false }
-// `temperature`/`max_tokens` 는 받지만 무시한다 — 샘플링은 version 에 저장된
+{ "model": "ignored-uses-agent-settings", "messages": [ { "role": "user", "content": "hi" } ],
+  "stream": false }
+// `temperature`/`max_tokens` 는 받지만 무시한다 — 샘플링은 Agent 설정에 저장된
 // `parameters` 에서 온다.
 // 응답: OpenAI chat.completion 객체 (stream=true 면 chat.completion.chunk SSE)
 ```
@@ -1314,7 +1287,7 @@ completion 이 없다. 그것은 `/predict` 로 실행하라.
 `data:image/…;base64,…` URL 로 인라인 이동한다. PNG, JPEG, GIF, WebP만 받고 디코딩 크기는
 하나당 5MB로 제한하며 base64 형식도 검증한다. 원격 URL은 받지 않는다. 호출자가 고른 주소를
 모델 제공자에게 넘기면
-이 배포의 SSRF 정책을 적용할 수 없기 때문이다. 그 version의 모델은 `imageInput` 능력을 가져야
+이 배포의 SSRF 정책을 적용할 수 없기 때문이다. Agent 설정의 모델은 `imageInput` 능력을 가져야
 한다. 아니면 `400`이며, 이미지를 읽을 수 없는 `fallbackModel`은 그 요청에서 건너뛴다.
 
 ```json
@@ -1338,7 +1311,10 @@ byteSize?, url } ]` 와 스트림의 `choices[0].delta.files` 프레임이다. �
 `choices[0].delta.warnings` 프레임이다. 런이 진행하면서 보고하는 손실이며 (위 `/predict` 참조),
 이것이 없으면 이 표면에서는 성능이 깎인 런과 깨끗한 런이 같은 응답이 된다.
 
-### `POST /api/projects/{name}/versions/{version}/agent`
+OpenAI 완료형 응답에는 `usage`가 포함되지만 스트리밍 응답에는 usage 프레임이 없다.
+스트림의 토큰 합계는 Studio 사용량·Trace에서 확인한다. raw Agent 스트림은 `usage` 축을 제공한다.
+
+### `POST /api/projects/{name}/agent`
 
 Agent SSE 스트림이다. 본문은 `{ "messages": [ … ] }`. `EngineChunk` 프레임을 내보낸다
 (`delta.content`, `toolResult`, `warning`, `image`, `file`, subagent 턴에는 `author`,
@@ -1351,9 +1327,7 @@ artifact id 대신 다운로드용 서명 `url`과 후속 `File` 도구 호출�
 저장소 키는 외부에 노출하지 않으며 `fileId` 자체는 접근 권한이 아니다. 서명할 수 없었던 파일은, 아무것도 가져올 수 없는 문서를
 지목하는 `file` 프레임 대신 `warning` 프레임으로 도착한다.
 
-**agent project 만**. 그 밖의 타입은 400 이다. 도구 루프에는 `llm` project 의
-`userPromptTemplate` 을 놓을 자리가 없고, `image` project 의 모델은 completion 을 서빙하지
-않는다. 둘 다 `/predict` 를 쓰라.
+모든 프로젝트는 Agent이며 이 경로는 현재 저장된 설정을 사용한다.
 
 이미 현재 transfer 사슬에 있는 project 로의 transfer, 또는 5단계 중첩을 넘는 transfer 는 재귀하는
 대신 author 가 붙은 error chunk 로 거절된다.
@@ -1427,10 +1401,9 @@ POST   /api/projects/{name}/triggers/{trigger}/reveal    → 200 { secret, creat
 GET    /api/projects/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ … ] }   (1–100)
 ```
 
-생성 본문: `{ triggerId (slug), kind?, description?, enabled?, variables?, payloadMode?,
-allowConcurrent?, cron?, timezone?, message?, deliveries?, runAsOwner? }`. `kind` 의 기본값은 `webhook` 이다. `schedule` 은
+생성 본문: `{ triggerId (slug), kind?, description?, enabled?, allowConcurrent?, cron?, timezone?, message?, deliveries?, runAsOwner? }`. `kind` 의 기본값은 `webhook` 이다. `schedule` 은
 `cron` (다섯 필드) 과 `timezone` (IANA) 을 요구하고, 각 kind 는 상대의 필드를 무시하는 대신 400
-으로 거절한다. `rotateSecret`/`payloadMode` 는 webhook 의 것이고,
+으로 거절한다. `rotateSecret`은 webhook의 것이고,
 `cron`/`timezone`/`message`/`deliveries` 는 schedule 의 것이다. `deliveries` 는 최대 3개이고
 플랫폼을 중복할 수 없는 tagged union 이다: `{ kind: "slack", channelId }`,
 `{ kind: "telegram", chatId, threadId? }`, `{ kind: "teams", conversationId }`. `triggerId` 는 project 이름과 같은 규칙
@@ -1456,7 +1429,7 @@ POST /api/webhook/{project}
   Idempotency-Key: <optional>
   { "any": "json payload" }
 → 202 { ok: true, status: "accepted", runId }
-→ 202 { ok: true, status: "duplicate" | "disabled" | "busy" | "no-published-version" }
+→ 202 { ok: true, status: "duplicate" | "disabled" | "busy" | "no-configuration" }
 → 401 (wrong or missing secret/signature) | 404 (no webhook on this project) | 400 (bad JSON or GitHub metadata) | 413 (>1MB)
 ```
 
@@ -1472,18 +1445,16 @@ Workspace PR 메타데이터 전용 `/api/workspaces/github/webhook`과는 목�
 이것이 **유일한** 전달 주소다. `admitDelivery` 는 project 이름 자체에서 그 행을 해석하고 trigger
 id 를 받지 않으므로, 바깥의 무엇도 전달이 어느 webhook 에 떨어질지 지목할 수 없다.
 
-런을 시작하는 것은 `accepted`뿐이다. `busy`·`no-published-version`은 skipped 이력을 남기고,
+런을 시작하는 것은 `accepted`뿐이다. `busy`·`no-configuration`은 skipped 이력을 남기고,
 비활성·중복·ping은 새 실행 이력을 만들지 않는다. 202는 처리 완료를 뜻하지 않는다.
 
 이 엔드포인트는 즉시 답하고 배경에서 실행한다. 런은 10분까지 갈 수 있고 그만큼 기다리는 webhook
 발신자는 없으므로, 결과는 응답이 아니라 그 전달의 이력 행에 있다. trigger 는 언제나 그 project 의
-**publish 된** version 을 실행한다. `succeeded` 행도 `warning` 을 실을 수 있다. 런이 실패하지
+현재 Agent 설정을 실행한다. `succeeded` 행도 `warning` 을 실을 수 있다. 런이 실패하지
 않고 보고한 것(부딪힌 턴·예산 한계, 쓸 수 없었던 바인딩)이다: 발화는 지켜보는 사람이 없고, 그
 행이 그것을 위한 유일한 통로다.
 
-`payloadMode: "message"` (기본값) 는 페이로드를 사용자 턴으로 직렬화한다. agent project 가 읽는
-것이다. `"variables"` 는 프롬프트 템플릿을 위해 페이로드의 최상위 스칼라 필드를 trigger 의 고정
-`variables` 위에 펼친다. 스칼라가 아닌 필드는 `[object Object]` 로 렌더링되는 대신 버려진다.
+Webhook JSON 본문은 사용자 메시지로 직렬화한다. 예약 실행은 저장한 `message`를 사용한다.
 
 `allowConcurrent` 의 기본값은 false 다: 하나가 아직 돌고 있는 동안 온 두 번째 전달은 런을 쌓아
 올리는 대신 `skipped` 로 기록된다.
@@ -1588,7 +1559,7 @@ GET /api/objects/{...key}?exp=<unix>&sig=<hmac>[&dl=<filename>]
 10 MB 다.
 
 각 행은 `artifactId`, `kind`, `source`, `key` (object key), `mimeType`,
-`byteSize`, `filename?`, `derivedFrom?` (수정본의 원본 artifact ID), `projectName`, `versionName`, `actor?`, `ownerEmail?` (Slack 런의
+`byteSize`, `filename?`, `derivedFrom?` (수정본의 원본 artifact ID), `projectName`, `versionName?`(이전 기록만), `actor?`, `ownerEmail?` (Slack 런의
 출력이 누구 앞으로 정리되는지. 물어본 사람에서 해석한다), `ancestry?` (transfer 사슬. 바깥쪽이
 먼저), `producedBy?`, `model?` (그린 모델. 이름을 댈 수 있는 생산자만. MCP 도구·원격 A2A 의
 그림, 렌더링된 문서, 첨부는 비어 있다), `runId?`, `prompt?`, `createdAt`, 그리고 서명된 `url` (15분. 문서의 것은
@@ -1622,7 +1593,7 @@ GET /api/projects/{name}/traces/{traceId}
 다른 project 에 속한 `traceId` 는 남의 트레이스가 아니라 `404` 다.
 
 두 엔드포인트 모두 소유자와 effective admin으로 제한된다(그 외에는 403). agent 런은 항상
-기록하며, 나머지는 `TRACE_SAMPLE_RATE`(기본 `0.1`)로 샘플링한다. SDK 실행은 Agent·모델·도구·
+기록한다. SDK 실행은 Agent·모델·도구·
 Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`, 종류·이름·상태·시간과
 모델 사용량을 보존하고 text 자식은 같은 Studio Trace의 native 계층에 들어간다.
 `prepare`에는 준비한 capability 수와 발견한 이름 최대 20개를 기록한다.
@@ -1640,7 +1611,7 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 항목은 제외한다). 프로바이더별 LLM 채널이
 설정돼 있으면 (설정 오버라이드 또는 `LLM_PROVIDER_*` env) 그 프로바이더들의 모델만 나열되고,
 아무것도 설정돼 있지 않으면 모든 모델이 나열된다. 그다음 admin 이 `/models` 에서 관리하는
-`hiddenModels` 를 제외한다. 숨김은 선택 시점의 필터일 뿐이다: 이미 그 모델을 쥔 version 은 계속
+`hiddenModels` 를 제외한다. 숨김은 선택 시점의 필터일 뿐이다: 이미 그 모델을 설정한 Agent는 계속
 실행된다. `favorite` 는 로그인한 사용자 자신의 값이고 picker 는 이 항목들을 `Favorites` 그룹으로
 맨 위에 놓는다.
 
@@ -1730,7 +1701,7 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
 ## A2A (인바운드)
 
 `A2A_API_KEY` 로 켜지거나, 공유 키가 아예 없어도 이름 붙은 클라이언트 키가 하나 이상 있으면
-켜진다. 그러면 publish 된 version 을 가진 project 가 JSON-RPC 엔드포인트를 서빙하고, public
+켜진다. 그러면 현재 설정을 가진 Agent 가 JSON-RPC 엔드포인트를 서빙하고, public
 project 만 무인증 Agent Card 를 공개한다. private project 의 card 는 존재 여부를 숨기는 `404` 다.
 
 ```
@@ -1741,11 +1712,12 @@ POST /api/a2a/{project}     X-A2A-Key: <key>            (A2A 1.0 JSON-RPC: SendM
                                                          CancelTask, ResubscribeTask, ListTasks)
 ```
 
-`GET /api/a2a` 는 A2A 로 노출된 publish 된 project 들을 나열한다: `enabled` 는 그 표면이 켜져
-있는지를 알려 주고. 공유 `A2A_API_KEY` 또는 이름 붙은 클라이언트 키 하나 이상. 각 project
-항목은 `{ name, displayName, description, cardUrl }` 을 싣는다.
+`GET /api/a2a`는 현재 설정이 있고 로그인한 사용자가 읽을 수 있는 Agent를 나열한다.
+`enabled`는 공유 `A2A_API_KEY` 또는 이름 붙은 클라이언트 키가 하나 이상 있어 표면이 켜져
+있는지를 나타낸다. 목록은 표면이 꺼져 있어도 반환되며, private Agent의 공개 Card는 제공하지
+않는다. 각 항목은 `{ name, displayName, description, cardUrl }`을 싣는다.
 
-Agent Card GET 은 표면이 꺼져 있으면 `503`, project 가 private 이거나 publish 되지 않았으면
+Agent Card GET 은 표면이 꺼져 있으면 `503`, project 가 없거나 private이거나 현재 설정이 없으면
 `404`, 요청의 선택적인 `A2A-Version` 이 `1.0` 이 아니면 `400` 으로 답한다.
 
 `503` (설정되지 않음) 은 표면이 완전히 꺼져 있을 때만 답한다: 공유 키도 없고 **그리고** 클라이언트
@@ -1791,16 +1763,16 @@ TTL(`A2A_TASK_RETENTION_DAYS`, 기본 1일)로 만료된다. `ListTasks` 는 sta
 
 ## AG-UI (인바운드)
 
-사용자를 마주하는 앱이 published 된 project 를 임베드하는 표면
-([design/agui.md](design/agui.md)). 설정할 것은 없다. published version 이 있는 모든
-project 가 답한다.
+사용자를 마주하는 앱이 현재 설정을 가진 Agent를 임베드하는 표면이다
+([design/agui.md](design/agui.md)). 별도 활성화 설정은 없으며 프로젝트 token 또는 접근 가능한
+사용자 session으로 실행한다.
 
 ```
 POST /api/agui/{project}    Authorization: Bearer <project token>  (또는 session)
                             body: RunAgentInput
                             → 200 text/event-stream  (AG-UI 이벤트, data: 프레임 하나에 하나, [DONE] 없음)
                             | 400 (본문 형태, 모델에 넘길 수 없는 content part, 프로바이더가 거절할 tool 이름, 너무 긴 threadId)
-                            | 401 | 404 (project 없음 또는 published version 없음) | 429 (Retry-After)
+                            | 401 | 404 (project 없음 또는 Agent 설정 없음) | 429 (Retry-After)
 ```
 
 요청은 프로토콜의 `RunAgentInput` 이다: `threadId`, `runId`, `parentRunId?`, `messages` (비어
@@ -1876,7 +1848,7 @@ project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 �
 | POST | `/api/projects/{name}/source-files?unit=months&value=3&timezone=Asia%2FSeoul` | raw 파일 body, Content-Type과 percent-encoded `X-Filename` → 201 SourceFile metadata |
 | GET | `/api/projects/{name}/source-files/{file}` | 개인 파일 다운로드. 만료되면 거절하며 항상 attachment·no-store로 반환한다 |
 | GET | `/api/artifacts/{artifactId}/download` | 비공개 원본·결과 Artifact 다운로드. 소유자 session을 확인하며 공개 서명 URL로 전환하지 않는다 |
-| GET | `/api/projects/{name}/audio-options` | 설정된 전사 모델의 `{id, displayName}` 목록과 published 버전에 바인딩된 MCP 이름 목록. 실제 저장 기능은 제출 시 검증한다 |
+| GET | `/api/projects/{name}/audio-options` | 설정된 전사 모델의 `{id, displayName}` 목록과 Agent 현재 설정에 바인딩된 MCP 이름 목록. 실제 저장 기능은 제출 시 검증한다 |
 | GET | `/api/projects/{name}/audio-config` | 현재 프로젝트 작업 설정 또는 null. 소유자만 읽는다 |
 | PUT | `/api/projects/{name}/audio-config` | `{revision, enabled, model, language?, retention, postprocess?, destination?, maxActive, maxPerOccurrence}` → 다음 revision. 최초 revision은 0, 충돌은 409 |
 | POST | `/api/projects/{name}/audio-jobs` | 작업 제출 → 202 accepted/duplicate, 접수 한도 초과·경합은 409 busy |
@@ -1894,7 +1866,7 @@ file은 해당 프로젝트의 업로드·보관 파일이다. 원본 URL과 외
 `task`는 `import | transcribe | postprocess | process`이며 기본은 `process`다.
 
 - import는 보관만, transcribe는 전사까지 수행한다. transcribe와 process에는 등록된 Transcription model이 필요하다.
-- postprocess는 전사 Artifact와 `{projectName, versionName}` 후처리 대상을 받아 ASR 없이 처리한다.
+- postprocess는 전사 Artifact와 `{projectName}` 후처리 대상을 받아 ASR 없이 처리한다.
   model·language·destination·configRevision을 함께 보낼 수 없다.
 
 retention은 `{unit:"days"|"months", value:양의 정수, timezone:IANA 시간대}`다.
@@ -1902,16 +1874,16 @@ language는 전사에 사용하는 선택적 2–3자 언어 코드다. 같은 �
 task·processingRevision은 duplicate로 기존 작업을 반환한다. 명시적인 새 processingRevision은
 같은 원본의 재처리를 요청하며 설정 변경만으로 기존 작업을 다시 처리하지 않는다.
 
-postprocess의 versionName은 고정 이름 또는 `published`다. 접수할 때 실제 버전과 내용을 고정한다.
-활성 설정이 고정 참조하는 버전은 설정을 바꾸기 전 삭제할 수 없다. configRevision을 지정하면
+postprocess는 현재 Agent 설정을 접수 시점에 고정한다. 재시도 중 모델·지시문·전달 설정을 다시 선택하지 않는다.
+configRevision을 지정하면
 서버가 해당 revision의 model·language·retention·postprocess·destination을 읽는다. source와
 명시적 processingRevision 외의 처리 override는 섞지 않으며 task는 생략하거나 process여야 한다.
 revision 충돌은 409다. enabled=false는 신규 제출·수동 재시도를 막으며 기존 작업 snapshot은 바꾸지 않는다.
 프로젝트의 admission 한도는 요청별 설정에도 적용한다. 설정 소유자가 바뀌면 현재 소유자가 다시
-저장하기 전까지 제출·재시도를 거절한다. 설정 행에는 credential이나 Agent version 본문을 저장하지 않는다.
+저장하기 전까지 제출·재시도를 거절한다. 설정 행에는 credential이나 Agent 설정 본문을 저장하지 않는다.
 
 `destination: {serverName, documents, memories}`는 명시적으로 선택한 외부 복사 경로다.
-해당 MCP는 원래 프로젝트의 published 버전에 연결되어 있고 멱등 수집 도구를 제공해야 한다.
+해당 MCP는 원래 프로젝트의 현재 설정에 연결되어 있고 멱등 수집 도구를 제공해야 한다.
 기본 Artifact 처리에는 destination이 필요하지 않다. 사용자 요청에 따른 `personal-records` skill의
 직접 기록도 사용할 수 있으며 무인 수집 기본 설정에는 외부 저장 대상을 지정하지 않는다.
 
@@ -1947,7 +1919,7 @@ stage가 importing이나 cleaning이어도 끝난 작업이다. movedTo는 외�
 포함 최대 5회이며 수동 재시도는 새 24시간 실행 구간을 시작한다. 생성 시각·완료 단계·파일 보존 만료는
 유지한다. 202나 제출 성공만으로 처리 완료를 보고하지 않는다.
 
-Agent 버전의 `parameters.audioProcessing=true`는 ImportFile·TranscribeAudio·AudioJob을 제공한다.
+Agent 설정의 `parameters.audioProcessing=true`는 ImportFile·TranscribeAudio·AudioJob을 제공한다.
 AudioJob 도구 인수는 `{request:{operation,...}}`이며 operation별 입력은 분리된다.
 config는 operation만, list는 cursor·limit, status는 job_id, read는 job_id·cursor·limit·result_kind를 받는다.
 submit은 source `{kind:"artifact"|"file"|"source",id}`·config_revision·processing_revision만 받는다.

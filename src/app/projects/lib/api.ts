@@ -1,4 +1,4 @@
-import { notifyVersionChange } from "./versionEvents";
+import { notifyConfigurationChange } from "./configurationEvents";
 import type {
   CostLimits,
   McpBinding,
@@ -6,8 +6,8 @@ import type {
   ProjectType,
   ProjectVisibility,
   SubagentRef,
-  Version,
-  VersionParameters,
+  AgentConfiguration,
+  AgentParameters,
 } from "@/domain/project/types";
 import type { ModelConfig } from "@/domain/llm/models";
 import type { McpTool } from "@/domain/mcp/types";
@@ -32,19 +32,18 @@ import type { ProjectSlackResponse } from "@/app/api/projects/[name]/slack/route
 import type { ProjectTelegramResponse } from "@/app/api/projects/[name]/telegram/route";
 import type { ProjectTeamsResponse } from "@/app/api/projects/[name]/teams/route";
 import type { PromptPreview } from "@/application/execution/deps";
-import type { GenerateImageOutput } from "@/application/image/generateImage";
 import type { ApiTokenStatus } from "@/application/project/apiTokenUseCases";
 import type {
-  CreateVersionInput,
-  UpdateVersionInput,
-  VersionInput,
-} from "@/application/project/versionUseCases";
+  AgentConfigurationView,
+  AgentConfigurationInput,
+  PutAgentConfigurationInput,
+} from "@/application/project/configurationUseCases";
 import type { TelegramDestination } from "@/domain/telegram/destination";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { testMcpConnection } from "@/app/tools/api";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
 
-export type { CostLimits, McpBinding, Project, ProjectType, ProjectVisibility, SubagentRef, Version, VersionParameters };
+export type { CostLimits, McpBinding, Project, ProjectType, ProjectVisibility, SubagentRef, AgentConfiguration, AgentParameters };
 export type { ModelConfig, EngineChunk, UsageRow, Trace, SlackChannelInfo, SlackSuggestedPrompt };
 export type SelectableModel = ModelsResponse["models"][number];
 
@@ -134,81 +133,25 @@ export function getTrace(name: string, traceId: string): Promise<Trace> {
   return fetch(`/api/projects/${name}/traces/${traceId}`).then((r) => readJson<Trace>(r));
 }
 
-// --- Versions -------------------------------------------------------------
+// --- Current Agent settings ------------------------------------------------
 
-export type { UpdateVersionInput, VersionInput };
+export type { AgentConfigurationInput, AgentConfigurationView, PutAgentConfigurationInput, PromptPreview };
 
-export function listVersions(name: string): Promise<Version[]> {
-  return fetch(`/api/projects/${name}/versions`).then((r) => readJson<Version[]>(r));
+export function getConfiguration(name: string): Promise<AgentConfigurationView> {
+  return fetch(`/api/projects/${name}/configuration`).then(r => readJson<AgentConfigurationView>(r));
 }
 
-export function getVersion(name: string, version: string): Promise<Version> {
-  return fetch(`/api/projects/${name}/versions/${version}`).then((r) => readJson<Version>(r));
+export function putConfiguration(name: string, input: PutAgentConfigurationInput): Promise<AgentConfigurationView> {
+  return fetch(`/api/projects/${name}/configuration`, { method: "PUT", headers: jsonHeaders,
+    body: JSON.stringify(input) }).then(r => readJson<AgentConfigurationView>(r)).then(saved => {
+      notifyConfigurationChange(name);
+      return saved;
+    });
 }
 
-export function createVersion(
-  name: string,
-  input: CreateVersionInput,
-): Promise<Version> {
-  return fetch(`/api/projects/${name}/versions`, {
-    method: "POST",
-    headers: jsonHeaders,
-    body: JSON.stringify(input),
-  }).then((r) => readJson<Version>(r)).then((saved) => { notifyVersionChange(name); return saved; });
-}
-
-export function updateVersion(
-  name: string,
-  version: string,
-  input: UpdateVersionInput,
-): Promise<Version> {
-  return fetch(`/api/projects/${name}/versions/${version}`, {
-    method: "PUT",
-    headers: jsonHeaders,
-    body: JSON.stringify(input),
-  }).then((r) => readJson<Version>(r)).then((saved) => { notifyVersionChange(name); return saved; });
-}
-
-export type { PromptPreview };
-
-/**
- * Assemble what the draft in the editor would send. Member-gated, and it contacts
- * the bound MCP servers, so the panel calls it on demand rather than as the
- * editor changes.
- *
- * `versionName` names the saved version the draft started from, not the draft
- * itself. The editor reads header overrides masked and hands them back that
- * way, so the server needs it to resolve them into the secrets a run would
- * actually send; omit it for a version that has never been saved.
- */
-export function previewPrompt(
-  name: string,
-  input: VersionInput & {
-    versionName?: string;
-    variables?: Record<string, string>;
-    /** A request to preview against; capability discovery and memory recall read it. */
-    message?: string;
-  },
-  signal?: AbortSignal,
-): Promise<PromptPreview> {
-  return fetch(`/api/projects/${name}/preview`, {
-    method: "POST",
-    headers: jsonHeaders,
-    body: JSON.stringify(input),
-    signal,
-  }).then((r) => readJson<PromptPreview>(r));
-}
-
-export function deleteVersion(name: string, version: string): Promise<void> {
-  return fetch(`/api/projects/${name}/versions/${version}`, { method: "DELETE" }).then(assertOk).then(() => notifyVersionChange(name));
-}
-
-export function publishVersion(name: string, versionName: string): Promise<SanitizedProject> {
-  return fetch(`/api/projects/${name}/publish`, {
-    method: "POST",
-    headers: jsonHeaders,
-    body: JSON.stringify({ versionName }),
-  }).then((r) => readJson<SanitizedProject>(r)).then((saved) => { notifyVersionChange(name); return saved; });
+export function previewPrompt(name: string, input: AgentConfigurationInput & { message?: string }, signal?: AbortSignal): Promise<PromptPreview> {
+  return fetch(`/api/projects/${name}/preview`, { method: "POST", headers: jsonHeaders, body: JSON.stringify(input), signal })
+    .then(r => readJson<PromptPreview>(r));
 }
 
 // --- Models ---------------------------------------------------------------
@@ -247,11 +190,10 @@ export function readSse(response: Response): AsyncGenerator<EngineChunk> {
 
 export async function streamPredict(
   name: string,
-  version: string,
-  body: { variables?: Record<string, string>; messages?: unknown[]; documents?: unknown[] },
+  body: { messages: unknown[]; documents?: unknown[] },
   signal?: AbortSignal,
 ): Promise<Response> {
-  const res = await fetch(`/api/projects/${name}/versions/${version}/predict`, {
+  const res = await fetch(`/api/projects/${name}/predict`, {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify({ ...body, stream: true }),
@@ -263,12 +205,11 @@ export async function streamPredict(
 
 export async function streamAgent(
   name: string,
-  version: string,
   messages: unknown[],
   signal?: AbortSignal,
   documents?: unknown[],
 ): Promise<Response> {
-  const res = await fetch(`/api/projects/${name}/versions/${version}/agent`, {
+  const res = await fetch(`/api/projects/${name}/agent`, {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify({ messages, documents }),
@@ -276,30 +217,6 @@ export async function streamAgent(
   });
   await assertOk(res);
   return res;
-}
-
-/** What `POST /predict` answers with for an image project, as the use case built it. */
-export type ImageResult = GenerateImageOutput;
-
-export async function predictImage(
-  name: string,
-  version: string,
-  body: {
-    prompt: string;
-    size?: string;
-    quality?: string;
-    /** Source images to edit; omit to generate from the prompt alone. */
-    images?: Array<{ b64: string; mimeType: string }>;
-  },
-  signal?: AbortSignal,
-): Promise<ImageResult> {
-  const res = await fetch(`/api/projects/${name}/versions/${version}/predict`, {
-    method: "POST",
-    headers: jsonHeaders,
-    body: JSON.stringify(body),
-    signal,
-  });
-  return readJson<ImageResult>(res);
 }
 
 export type { ActorUsageView };
@@ -532,12 +449,11 @@ export async function listProjectMcpTools(
   name: string,
   server: string,
   headerOverrides?: Record<string, string | null>,
-  versionName?: string,
 ): Promise<McpTool[]> {
   const response = await fetch(`/api/projects/${name}/mcp-connections/${server}/tools`, {
     method: "POST",
     headers: jsonHeaders,
-    body: JSON.stringify({ headerOverrides, versionName }),
+    body: JSON.stringify({ headerOverrides }),
   });
   if (response.status === 403) {
     return testMcpConnection(server);

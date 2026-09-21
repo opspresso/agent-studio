@@ -104,11 +104,11 @@ export async function rememberTurn(
 
 /**
  * Prefix each human turn with who wrote it, when more than one human is in
- * the conversation *and this version asked to know who is asking*. A private
+ * the conversation *and this Agent asked to know who is asking*. A private
  * chat needs no labels; a group with three people reaches the model as one
  * person's monologue without them — but a name is what `callerContext` gates,
- * on the way in and on the way out: a version that turned the opt-in off must
- * not go on reading names an earlier version wrote down.
+ * on the way in and on the way out: an Agent that turned the opt-in off must
+ * not go on reading names an earlier run wrote down.
  */
 export function withSpeakerLabels(
   turns: TranscriptTurn[],

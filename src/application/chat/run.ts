@@ -1,5 +1,3 @@
-import type { Project, Version } from "@/domain/project/types";
-import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import type {
   Chat,
   ChatMessageDocument,
@@ -19,17 +17,6 @@ import { endNoticeFor } from "./cancelRun";
 import { log } from "@/shared/logger";
 import { cutUtf8Bytes } from "@/shared/utf8Text";
 import { prepareDocumentAttachments } from "@/application/document/attachments";
-
-/**
- * Chat is an interactive surface, so it may fall back to the newest draft
- * when nothing is published (see resolveRunnableVersion for the policy).
- */
-export async function resolveVersion(
-  deps: ChatDeps,
-  project: Project,
-): Promise<Version | null> {
-  return resolveRunnableVersion(deps.versions, project, { allowDraftFallback: true });
-}
 
 /**
  * The engine body for a user turn. Attachments travel as inline data URLs, so
@@ -304,7 +291,7 @@ export async function* runAndPersist(
   // Why the run came out the shape it did — a binding it could not use, history
   // it could not carry. Persisted so reloading the chat still explains it.
   const warnings: string[] = [];
-  // The top-level run's own thinking, when the version asked for it to be kept.
+  // The top-level run's own thinking, when the Agent asked for it to be kept.
   // Subagent reasoning is dropped for the reason its content is: four children
   // dispatched at once interleave on the wire with nothing saying whose is whose.
   let reasoning = "";
@@ -384,7 +371,7 @@ export async function* runAndPersist(
         ...(persistedReasoning ? { reasoning: persistedReasoning } : {}),
         // Only ever beside the text it counts. `toUsageInfo` reports whatever
         // the provider says — the *yield* is what `reasoningTrace` gates — so a
-        // count stored on its own would land on every turn of every version
+        // count stored on its own would land on every turn of every Agent
         // that never opted in, where nothing renders it. A provider that
         // reports the size and withholds the thinking is the engine's warning
         // to give, not a number for this message to carry alone.

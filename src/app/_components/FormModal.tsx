@@ -11,7 +11,7 @@ import { useT } from "@/app/_i18n/provider";
  * long form does not have to be scrolled to learn why nothing happened.
  *
  * `McpBindingSettings` is deliberately not a caller: it has no form — its
- * footer button runs the page's own version save — and its footer slot
+ * footer button runs the page's own configuration save — and its footer slot
  * rotates between hint, error, and saved state.
  */
 export function FormModal({

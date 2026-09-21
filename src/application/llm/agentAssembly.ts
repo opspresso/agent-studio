@@ -130,7 +130,7 @@ export type SkillContentLoader = (skillName: string, filePath?: string) => Promi
  * Generate an image for the builtin GenerateImage tool.
  *
  * `model` is returned rather than assumed by the loop: the builtins draw with
- * the image model the version resolved, which is not the model this run is
+ * the image model the Agent resolved, which is not the model this run is
  * talking to, and the artifact row is written from the chunk. Required so an
  * implementation cannot leave it out and have the picture filed under no model
  * at all.
@@ -224,7 +224,7 @@ function joinClauses(items: string[], conjunction: string): string {
 }
 
 /**
- * The boundary between the version's own prompt and what the engine appends.
+ * The boundary between the Agent's own prompt and what the engine appends.
  *
  * The sections below are generated per run and use `##` headings, which are
  * indistinguishable from headings the prompt author wrote — so the split is
@@ -424,7 +424,7 @@ function imageSystemPromptAddition(
 }
 
 /**
- * The version's own text, then everything the engine appends, behind one `---`.
+ * The Agent's own text, then everything the engine appends, behind one `---`.
  *
  * Single owner of that boundary. Both prompt assemblies — the agent's and the
  * single-shot one — append to an author's text, and a second copy of the rule
@@ -459,7 +459,7 @@ export function runClockBlock(now: Date): string {
 }
 
 /**
- * Who this run is answering, when the surface knows and the version asked for it.
+ * Who this run is answering, when the surface knows and the Agent asked for it.
  *
  * A fact about the run in the same sense the clock is: the model is told, it
  * cannot go looking. Without it a Slack thread reaches the model as anonymous
@@ -496,7 +496,7 @@ export function callerBlock(caller: RunCaller, canFetchUrl = false): string {
 
 export interface AgentSystemPromptInput {
   agentToolNames?: readonly string[];
-  /** The version's own system prompt; the engine's blocks are appended to it. */
+  /** The Agent's own system prompt; the engine's blocks are appended to it. */
   base?: string;
   /** The application's own tools, as offered — the prompt says how a call to one ends. */
   clientTools?: ChannelToolDef[];
@@ -548,12 +548,12 @@ export function rememberedBlock(remembered: string): string {
 }
 
 /**
- * The system prompt an agent run actually sends: the version's own text, then a
+ * The system prompt an agent run actually sends: the Agent's own text, then a
  * marked block of the sections the engine appends for what this run can reach.
  * Exported for the Playground preview — the assembled prompt is what a reader
  * needs to see, and a second implementation of it would drift.
  *
- * A run that reaches nothing gets the version's text unchanged: framing an
+ * A run that reaches nothing gets the Agent's text unchanged: framing an
  * empty capability block would announce a boundary with nothing behind it.
  */
 export function buildAgentSystemPrompt(input: AgentSystemPromptInput): string {
@@ -1057,7 +1057,7 @@ export function buildAgentTools(input: AgentToolsInput): {
 /**
  * What a run can do with an image, which is what decides whether the system
  * prompt carries an `## Available Images` section and whether the image tools
- * are offered. Derived from the deps rather than the version, so the preview
+ * are offered. Derived from the deps rather than the Agent, so the preview
  * and the run cannot disagree about a section's presence.
  */
 export function imagePromptUses(
@@ -1097,7 +1097,7 @@ export interface AgentRunAssembly {
 
 export interface AssembleAgentRunInput {
   blockedTools?: readonly string[];
-  /** The version's own system prompt. */
+  /** The Agent's own system prompt. */
   systemPrompt?: string;
   /** See {@link AgentToolsInput.clientTools}. */
   clientTools?: ChannelToolDef[];
@@ -1121,13 +1121,13 @@ export interface AssembleAgentRunInput {
  * The two builders below have always had one owner each; what did not was the
  * *argument assembly*. `runAgent` and the Playground preview each spelled out
  * eight and seven positional arguments, and they had already drifted: the
- * preview omitted the eighth, so a version that opted into `callerContext`
+ * preview omitted the eighth, so an Agent that opted into `callerContext`
  * previewed a prompt without the caller block every real run carries. A field
  * added to either builder is now a type error at both sites rather than a
  * silently-missing positional.
  *
  * Which builtins are offered is derived from the **deps**, never from the
- * version: a capability the run cannot actually perform must not be advertised,
+ * Agent: a capability the run cannot actually perform must not be advertised,
  * and the preview and the run have to agree about that without asking twice.
  */
 export function assembleAgentRun(
@@ -1153,7 +1153,7 @@ export function assembleAgentRun(
   if ((canEdit || canTransfer) && input.messages) {
     registerInputImages(images, input.messages);
   }
-  // From the deps, never from the version: a run is told it can do a thing
+  // From the deps, never from the Agent: a run is told it can do a thing
   // exactly when the thing was injected, so the preview and the run agree.
   const withUrlTool = Boolean(deps.fetchUrl);
   const withSlackTools = Boolean(deps.readSlack);

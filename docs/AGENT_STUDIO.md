@@ -8,7 +8,7 @@ tags: [agent-studio, control-plane, rag, mcp, workspace, offline]
 # Agent Studio 시스템 개요
 
 Agent Studio는 기업 내부에 설치하는 AI Agent Control Plane이다. 사용자는 Project를 만들고
-Version에 모델·프롬프트·도구를 구성한 뒤 여러 실행 창구에서 호출한다. Studio는 접근 권한,
+현재 Agent 설정에 모델·프롬프트·도구를 구성한 뒤 여러 실행 창구에서 호출한다. Studio는 접근 권한,
 자격 증명, 예산과 기록을 관리하고 OpenAI Agents SDK는 모델 턴과 도구 실행을 관리한다.
 
 이 문서는 프로젝트 전체를 이해하거나 검색·RAG 문맥으로 읽는 통합 지도다. 세부 필드·수치·절차는
@@ -29,20 +29,19 @@ Version에 모델·프롬프트·도구를 구성한 뒤 여러 실행 창구에
 소유한다. 개발 중이므로 API·설정·저장 형식의 하위 호환은 보장하지 않는다.
 설치와 업그레이드는 [INSTALL](INSTALL.md), 실제 변수는 [CONFIGURATION](CONFIGURATION.md)을 따른다.
 
-## Project와 Version
+## Project와 현재 설정
 
-Project는 이름으로 호출하는 제품 단위다. `llm`은 단발 프롬프트, `agent`는 도구를 사용하는
-다중 턴 실행, `image`는 이미지 생성·편집이다. Version은 모델·fallback·프롬프트·생성 설정,
-Skill·MCP·하위 Agent binding과 실행 정책을 묶는다.
+Project는 이름으로 호출하는 Agent다. 현재 설정에 모델·fallback·시스템 프롬프트·생성 설정,
+Skill·MCP·하위 Agent binding과 실행 정책을 저장한다. 이미지 생성·편집도 Agent의 도구로 제공한다.
 
-Version은 이름이 있는 수정 가능한 구성이다. publish는 Project의 `publishedVersion` 포인터를
-바꾸며 별도의 불변 사본을 만들지 않는다. URL에 버전을 지정하는 API는 그 버전을 실행한다.
-자동 선택에서는 발행 버전이 우선하며 Chat은 발행 버전을 찾지 못하면 최신 draft를 허용한다.
-메신저·Trigger·A2A·하위 Agent는 발행 버전을 요구한다.
+설정 저장은 Project의 `updatedAt`으로 동시 수정을 검사한다. 저장한 설정은 다음 실행부터
+적용된다. 각 Agent는 준비 시점의 설정을 유지하며 로컬 하위 Agent는 호출될 때 자기 설정을 읽는다.
+접수된 Audio 작업은 접수 시점의 설정을 유지한다. 실행에는 현재 설정이 필요하며,
+승인 대기 중 설정·연결 변경은 재개를 막는다.
 
-[실행 설계](design/execution.md#project--version)는 편집·검증·선택 계약을,
-[API](API.md#version-과-publish)는 요청 형태를 설명한다. 선택 규칙은
-[`resolveRunnableVersion.ts`](../src/application/project/resolveRunnableVersion.ts)가 소유한다.
+[실행 설계](design/execution.md#project와-현재-설정)와 [설정 API](API.md#agent-현재-설정)가
+계약을 설명하며 [`configurationUseCases.ts`](../src/application/project/configurationUseCases.ts)가
+설정 접근·저장·마스킹을 소유한다. 기존 데이터는 [이전 절차](AGENT-MIGRATION.md)로 보존한다.
 
 ## Skill·Tool·MCP·Agent·Memory
 
@@ -60,7 +59,7 @@ Skill 본문은 시스템 프롬프트에 모두 넣지 않는다. 이름·설�
 본문과 참고 파일을 읽는다. Plugin 저장소 또는 업로드 아카이브는 Skill·MCP를 동기화한다.
 sync는 사라진 항목을 보고하지만 삭제는 별도의 명시적 작업으로 남긴다.
 
-MCP registry는 서버 주소를 소유하고 Version binding은 도구 목록과 헤더를 좁히거나 덮어쓴다.
+MCP registry는 서버 주소를 소유하고 Agent binding은 도구 목록과 헤더를 좁히거나 덮어쓴다.
 프로젝트별 OAuth 연결과 선택적인 Docker 관리형 서버도 지원한다. 등록·dispatch 경계에서
 주소와 자격 증명을 검사한다. [MCP](design/mcp.md)와 [보안](SECURITY.md#mcp-oauth)을 보라.
 
@@ -72,15 +71,15 @@ Studio 자체의 장기 Memory DB는 없다. [Capabilities](design/capabilities.
 ## 요청이 실행되는 방식
 
 ```text
-실행 창구 → 인증·프로젝트 접근·입력 검증 → Version 선택
+실행 창구 → 인증·프로젝트 접근·입력 검증 → 현재 Agent 설정 읽기
   → 실행 파사드 → 공통 실행 가드 → capability 준비 → SDK Runtime
   → EngineChunk → 창구별 응답·저장 → 사용량 정산·자원 해제
 ```
 
-[`runProject.ts`](../src/application/execution/runProject.ts)는 프로젝트 유형별 실행을 선택한다.
-chunk를 소비하는 `streamProjectRun`은 이미지를 포함하고, completion을 만드는
-`executeProjectStream`/`executeProject`는 image Project를 거절한다. `executeAgent`는 agent만
-실행한다. Predict와 A2A의 이미지 응답은 전용 이미지 유스케이스를 사용한다.
+[`runProject.ts`](../src/application/execution/runProject.ts)는 모든 Project를 같은 Agent 루프로
+실행한다. `streamProjectRun`은 chunk 소비자, `executeProjectStream`/`executeProject`는
+스트림·수집형 응답을 위한 파사드다. 모두 `executeAgent`에서 설정·도구·SDK Runtime을 조립한다.
+이미지 생성·편집도 Agent 도구를 통해 같은 실행과 출력 축에 포함된다.
 
 최상위 실행은 [런 브래킷](ARCHITECTURE.md#런-브래킷)을 통과한다. 모델 정책, 프로젝트·멤버 비용,
 호출자 동시성을 검사하고 메트릭과 결과 저장 범위를 연다. 비용 조회 장애는 실행을 허용하고,
@@ -108,7 +107,7 @@ warning으로 전달한다. reasoning 표시 옵션은 원래 모델 턴의 prov
 
 `actor`는 비용·동시성에 쓰는 안정적인 실행 주체다. user와 project-token은 이메일,
 Slack과 Telegram은 사용자 ID, Teams는 발신자 Entra object ID를 사용한다. 메신저 workspace나
-bot ID와 혼동하지 않는다. `caller`는 Version이 허용한 표시 이름·시간대 등의 모델 문맥이며
+bot ID와 혼동하지 않는다. `caller`는 Agent 설정이 허용한 표시 이름·시간대 등의 모델 문맥이며
 이메일 필드가 없다. `ownerEmail`은 파일의 개인 귀속, `conversation`은 대화의 연속성을 나타낸다.
 정의는 [actor.ts](../src/domain/execution/actor.ts), 귀속은 [관측성 설계](design/observability.md)에 있다.
 
@@ -143,7 +142,7 @@ Artifact metadata는 DB에, bytes는 S3 호환 저장소에 둔다. URL 발급�
 ## 오디오와 Workspace
 
 오디오는 파일 가져오기·전사·후처리를 영속 job으로 접수한다. 별도 worker가 DB 큐를 선점하고
-체크포인트를 남겨 완료한 단계를 재사용한다. 후처리 Version은 접수 시 고정하고, 재귀 작업과
+체크포인트를 남겨 완료한 단계를 재사용한다. 후처리 설정은 접수 시 고정하고, 재귀 작업과
 임의 외부효과 도구를 제한한다. 결과는 비공개 Artifacts에 보관하고 개인 Memory·Document 기록은
 요청한 작업으로 수행한다. 실시간 음성 통화 기능은 아니다.
 [오디오 설계](design/audio-processing-spec.md)와 [운영](OPERATIONS.md#오디오-작업-운영)을 따른다.
@@ -167,7 +166,7 @@ Slack·Telegram·Teams는 프로젝트별 bot으로 같은 메시징 파이프�
 Telegram·Teams는 Studio가 한정된 transcript를 보관한다. 중복 delivery를 막지만 실행 중 급사한
 비멱등 작업을 자동 재생하지 않는다. [메시징 설계](design/messaging.md)를 보라.
 
-Webhook은 인증한 이벤트를 접수하고 발행 버전을 백그라운드 실행한다. Schedule은 외부 ticker가
+Webhook은 인증한 이벤트를 접수하고 현재 Agent 설정을 백그라운드 실행한다. Schedule은 외부 ticker가
 scan API를 호출해야 진행된다. A2A는 에이전트 간 task 프로토콜, AG-UI는 앱의 화면 이벤트와
 frontend tool 프로토콜이다. 각 표면의 권한·이력은 서로 독립적이다.
 정확한 요청·상태·응답은 [API](API.md), 자동화 동작은 [Trigger 설계](design/triggers.md)에 있다.

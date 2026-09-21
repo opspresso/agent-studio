@@ -171,7 +171,7 @@ export interface ModelCatalogLoadReport {
   /**
    * Ids the registry held before this load and the new catalog no longer
    * carries. agent-models retires by hiding, so anything here is worth a
-   * warning: a stored version naming one of these now books usage at $0.
+   * warning: a saved Agent naming one of these now books usage at $0.
    */
   removed: string[];
   updatedAt: string;
@@ -751,7 +751,7 @@ export function providerOffered(name: string, dedicated: ReadonlySet<string>): b
  * dispatches every id — self-hosted providers excepted, see `providerOffered`),
  * then by the hidden-model denylist (absent = no restriction; a stale id
  * simply matches nothing). One owner because the /api/models list and the
- * model a fresh project's initial version starts with must answer identically.
+ * model a fresh project's initial Agent settings use must answer identically.
  */
 export function offeredModels(
   providerNames: string[],

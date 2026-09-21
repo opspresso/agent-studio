@@ -1,9 +1,10 @@
+import { withConfigurations } from "./projectConfigurations";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleTurn, type MessagingDeps, type TurnInput } from "@/application/messaging/handleTurn";
 import type { ReplyChannel } from "@/domain/messaging/reply";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { ProjectRepository } from "@/domain/project/repository";
 
 const NOW = 1_750_000_000_000;
 
@@ -14,24 +15,23 @@ function projectFixture(): Project {
     description: "",
     projectType: "agent",
     ownerEmail: "owner@x.com",
-    publishedVersion: "1",
+
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
-function versionFixture(): Version {
+function configurationFixture(): AgentConfiguration {
   return {
     projectName: "painter",
-    versionName: "1",
+
     systemPrompt: "",
-    userPromptTemplate: "",
+
     model: "openai/gpt-5-mini",
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
@@ -107,8 +107,8 @@ function makeDeps(chunks: EngineChunk[]): MessagingDeps & { seen: () => TurnInpu
         yield chunk;
       }
     },
-    projects: { get: async () => projectFixture() } as unknown as ProjectRepository,
-    versions: { get: async () => versionFixture(), list: async () => [] } as unknown as VersionRepository,
+    projects: withConfigurations({ get: async () => projectFixture() } as unknown as ProjectRepository, ({ get: async () => configurationFixture(), list: async () => [] }).get),
+
     documents: { extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }) },
     seen: () => seen,
   };
@@ -117,7 +117,7 @@ function makeDeps(chunks: EngineChunk[]): MessagingDeps & { seen: () => TurnInpu
 function turn(overrides: Partial<TurnInput> = {}): TurnInput {
   return {
     project: projectFixture(),
-    version: versionFixture(),
+    configuration: configurationFixture(),
     text: "hello",
     attachments: [],
     history: [],

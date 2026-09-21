@@ -22,7 +22,7 @@ import type { McpBinding, SubagentRef } from "../../lib/api";
 import { listProjectMcpTools } from "../../lib/api";
 import { getMcp } from "@/app/tools/api";
 import { overridesToRows, rowsToOverrides, type OverrideRow } from "./mcpOverrides";
-import { McpBindingSettings, type VersionSave } from "./McpBindingSettings";
+import { McpBindingSettings, type ConfigurationSave } from "./McpBindingSettings";
 import { SourceMappings } from "./SourceMappings";
 import { HeaderRowsEditor } from "@/app/_components/HeaderRows";
 
@@ -280,7 +280,7 @@ export function SearchSelectInput({
 }
 
 /**
- * Pick which of a server's tools this version offers. The list is fetched from
+ * Pick which of a server's tools this Agent offers. The list is fetched from
  * the server itself (the same probe the registry's "Test connection" uses), so
  * the choices are what the model would actually be given. No selection means
  * every tool, which is what a binding meant before it could be narrowed.
@@ -405,7 +405,7 @@ function ToolSelector({
 /**
  * Per-binding header overrides. A value replaces or adds a header on top of the
  * MCP server's registry headers; "remove" drops a registry default for this
- * version only. Values are stored encrypted, so existing ones arrive masked —
+ * Agent only. Values are stored encrypted, so existing ones arrive masked —
  * leaving a masked value keeps the stored secret.
  */
 function OverrideEditor({
@@ -415,7 +415,7 @@ function OverrideEditor({
 }: {
   rows: OverrideRow[];
   onChange: (rows: OverrideRow[]) => void;
-  /** The registry entry's own headers, masked, that this version layers over. */
+  /** The registry entry's own headers, masked, that this Agent layers over. */
   inherited: Record<string, string>;
 }) {
   const t = useT();
@@ -487,23 +487,21 @@ function OverrideEditor({
 
 /**
  * MCP server picker. Each bound server may redefine the registry's headers for
- * this version only; the URL always stays the registry's.
+ * this Agent only; the URL always stays the registry's.
  */
 export function McpBindingInput({
   projectName,
-  versionName,
   values,
   onChange,
   options,
   save,
 }: {
   projectName: string;
-  versionName?: string;
   values: McpBinding[];
   onChange: (values: McpBinding[]) => void;
   options: PickerOption[];
-  /** The page's version save, for the settings dialog's footer. */
-  save: VersionSave;
+  /** The page's Agent save, for the settings dialog's footer. */
+  save: ConfigurationSave;
 }) {
   const t = useT();
   /** Which binding's settings modal is open; one at a time. */
@@ -650,8 +648,7 @@ export function McpBindingInput({
                       projectName,
                       settingsFor,
                       values.find((v) => v.name === settingsFor)?.headers,
-                      versionName,
-                    )
+                                        )
                   }
                 />
               </Stack>

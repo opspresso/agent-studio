@@ -2,7 +2,6 @@ import type { Project } from "@/domain/project/types";
 import type { SlackMessage } from "@/domain/slack/types";
 import { slackConversation } from "@/domain/slack/conversation";
 import { slackMessageText } from "@/domain/slack/messageText";
-import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { isProjectPrivate } from "@/domain/project/access";
 import { userMayAccessProject } from "@/application/project/projectUseCases";
 import { createReplySink, type ReplyTarget } from "@/application/slack/replyStream";
@@ -345,8 +344,8 @@ export async function handleSlackEvent(
   // mention has neither, and streaming into one needs the recipient named.
   const isAssistantThread = event.channel_type === "im";
 
-  // Ahead of the *version* lookup, because a command is answered whether or
-  // not this project has a runnable version — `!mute` in particular has to
+  // Ahead of the current-settings lookup, because a command is answered whether or
+  // not this project has current Agent settings — `!mute` in particular has to
   // work on a bot that is currently failing, which is exactly when someone
   // reaches for it. Not ahead of the visibility gate: a command writes the
   // project's engagement state, so an uninvited user muting a private
@@ -382,8 +381,8 @@ export async function handleSlackEvent(
   }
 
   const project = await deps.projects.get(projectName);
-  // External surface: published-only, drafts never leak (resolveRunnableVersion policy).
-  const version = project ? await resolveRunnableVersion(deps.versions, project) : null;
+  // Pin current settings alongside the Project for this messaging turn.
+  const configuration = project ? project.configuration : null;
   const target: ReplyTarget = {
     channel: event.channel,
     threadTs,
@@ -393,9 +392,9 @@ export async function handleSlackEvent(
       : {}),
   };
   const reply = slackReplyChannel(deps, token, target);
-  if (!project || project.projectType !== "agent" || !version) {
+  if (!project || !configuration) {
     await reply.say(
-      `Agent project not available: ${projectName} (must exist, be an agent project, and have a published version)`,
+      `Agent project not available: ${projectName} (must exist and have current Agent settings)`,
     );
     return;
   }
@@ -454,16 +453,16 @@ export async function handleSlackEvent(
   }
   await reply.status(THINKING_MESSAGES[0] ?? "is thinking…", THINKING_MESSAGES);
 
-  // The version's opt-in gates the *lookup*, not just the prompt: a project that
+  // The Agent's opt-in gates the *lookup*, not just the prompt: a project that
   // did not ask to know who is asking should not be sending anyone's id to
   // Slack's profile API either.
-  const named = version.parameters.callerContext
+  const named = configuration.parameters.callerContext
     ? await resolveSpeakers(deps, token, rawTurns, event.user)
     : { caller: undefined, nameByUser: undefined };
   // Whose gallery this run's output belongs in. Not gated on `callerContext`,
   // which decides what the *model* is told: this address reaches no prompt and
   // no tool result, and a person's own pictures going missing from their own
-  // gallery is not something a version parameter should be able to cause.
+  // gallery is not something an Agent parameter should be able to cause.
   //
   // Best effort in both directions — a workspace that does not share addresses,
   // or a bot without the scope, files by project exactly as before.
@@ -509,7 +508,7 @@ export async function handleSlackEvent(
     deps,
     {
       project,
-      version,
+      configuration,
       text: askText,
       attachments: (event.files ?? []).map((file) => toAttachment(deps, token, file)),
       history: turns.map((turn) => toHistoryTurn(deps, token, turn)),

@@ -1,3 +1,4 @@
+import { withConfigurations } from "./projectConfigurations";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getChatApproval, resumeChatApproval, discardChatApproval } from "@/application/chat/approval";
 import { sendMessage } from "@/application/chat/sendMessage";
@@ -16,7 +17,7 @@ async function fixture() {
   const tools = [{ type: "function" as const, function: { name: "lookup", parameters: {} } }];
   await f.run(new FakeChannel([[toolCallChunk(0, "call", "lookup", "{}")]]), "lookup", undefined, { callMcpTool: effect }, { mcpTools: tools });
   const chat: Chat = { chatId: f.scope.sessionId, ownerEmail: f.scope.ownerEmail, projectName: f.scope.projectName, title: "Chat", createdAt: "2026-09-12T00:00:00Z", updatedAt: "2026-09-12T00:00:00Z" };
-  const project: Project = { name: f.scope.projectName, ownerEmail: f.scope.ownerEmail, projectType: "agent", displayName: "Project", description: "", publishedVersion: "v1", createdAt: chat.createdAt, updatedAt: chat.updatedAt };
+  const project: Project = { name: f.scope.projectName, ownerEmail: f.scope.ownerEmail, projectType: "agent", displayName: "Project", description: "",  createdAt: chat.createdAt, updatedAt: chat.updatedAt };
   const messages: ChatMessage[] = [];
   const order: string[] = [];
   let active: ActiveChatRun | null = null;
@@ -32,7 +33,7 @@ async function fixture() {
   };
   const deps = {
     chats, runtimeSessions: f.services,
-    projects: { get: async () => project }, versions: { get: async () => f.version },
+    projects: withConfigurations({ get: async () => project }, ({ get: async () => f.configuration }).get),
     runLog: { append: async (_chat: string, _run: string, entries: Array<{ terminal?: boolean }>) => { if (entries.some((entry) => entry.terminal)) order.push("terminal"); }, read: async () => [] },
     documents: { extract: async () => ({ text: "" }) },
     runAgent: async function* (input: Parameters<ChatDeps["runAgent"]>[0]) {

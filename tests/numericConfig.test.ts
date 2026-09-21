@@ -15,7 +15,6 @@ import { getCachedTools, setCachedTools } from "@/infrastructure/mcp/discoveryCa
 
 const TOUCHED = [
   "PROBE_NUMBER",
-  "TRACE_SAMPLE_RATE",
   "USAGE_RETENTION_DAYS",
   "MCP_DISCOVERY_CACHE_TTL_MS",
   "MCP_MAX_SERVER_TTL_MS",
@@ -133,13 +132,6 @@ describe("settings with shared numeric parsing", () => {
     set("MAX_CONCURRENT_RUNS_A2A", "1001");
     expect(config.maxConcurrentRunsPerActor).toBe(10);
     expect(config.maxConcurrentRunsA2a).toBe(50);
-  });
-
-  it("reads the trace sample rate through config, clamped", () => {
-    set("TRACE_SAMPLE_RATE", "5");
-    expect(config.traceSampleRate).toBe(1);
-    set("TRACE_SAMPLE_RATE", undefined);
-    expect(config.traceSampleRate).toBe(0.1);
   });
 
   it("warns once on a retention window it had to ignore, not once per row", () => {

@@ -255,7 +255,7 @@ export function createRunModel(
             if ((turn.finalTurn || !event.response.output.some((item) => item.type === "function_call")) && !saidContent && saidReasoning) {
               emit({ warning: traceReasoning
                 ? "This model answered inside its reasoning, so the reply is empty and the answer is in the recorded reasoning."
-                : "This model answered inside its reasoning, which this version does not record, so the reply is empty. Recording the reasoning is what keeps it." });
+                : "This model answered inside its reasoning, which this Agent does not record, so the reply is empty. Recording the reasoning is what keeps it." });
             }
             yield { ...event, response: { ...event.response, output: output(event.response.output) } };
           } else yield event;

@@ -57,7 +57,7 @@ function SkipLine({ skip }: { skip: SyncSkip }) {
  * created and overwritten are records, not proposals — so what this shows is
  * what happened (by name, with the fields that moved; `source` among them is
  * an adoption) and the one decision left: deletion, with each orphan's
- * version bindings next to the checkbox, because a name a version still binds
+ * Agent bindings next to the checkbox, because a name an Agent still binds
  * does not stop being bound by being deleted.
  */
 export function PluginSyncSummary({
@@ -163,7 +163,7 @@ export function PluginSyncSummary({
           <>
             <Text fz="xs" c="dimmed">
               These {label} came from this plugin and are no longer in it — ticked entries are
-              deleted on Apply. A version still binding one keeps a dangling name.
+              deleted on Apply. An Agent still binding one keeps a dangling name.
             </Text>
             {report.orphaned.map((orphan: SyncOrphan) => (
               <Checkbox

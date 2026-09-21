@@ -22,7 +22,7 @@ export const audioJobSchema = z.object({
   model: z.string().min(1).max(256).optional(), language: z.string().regex(/^[a-z]{2,3}$/i).optional(),
   processingRevision: z.string().min(1).max(128).optional(), retention: fileRetentionSchema.optional(),
   configRevision: z.number().int().positive().optional(),
-  postprocess: z.object({ projectName: z.string().min(1).max(128), versionName: z.string().min(1).max(128) }).strict().optional(),
+  postprocess: z.object({ projectName: z.string().min(1).max(128).max(128) }).strict().optional(),
   destination: z.object({ serverName: z.string().min(1).max(128), documents: z.boolean(), memories: z.boolean() }).strict().optional(),
 }).strict();
 

@@ -27,7 +27,6 @@ describe("console accessibility", () => {
       "src/app/chats/_components/parts.tsx",
       "src/app/artifacts/_components/ArtifactGallery.tsx",
       "src/app/projects/[name]/_components/RunPanel.tsx",
-      "src/app/projects/[name]/compare/page.tsx",
     ].map(source);
 
     for (const preview of previews) {

@@ -25,8 +25,8 @@ import type { McpServer } from "@/domain/mcp/types";
 import type { TokenRequestTarget, TokenSet } from "@/domain/mcp/oauth";
 import type { ListToolsResult } from "@/domain/mcp/toolProbe";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
-import { mcpOAuthStateContext, versionMcpHeadersContext } from "@/domain/security/secretContext";
-import type { Version } from "@/domain/project/types";
+import { mcpOAuthStateContext, agentMcpHeadersContext } from "@/domain/security/secretContext";
+import type { AgentConfiguration } from "@/domain/project/types";
 import { mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 
@@ -77,6 +77,7 @@ const cipher: McpAuthUseCasesDeps["cipher"] = {
     registryHeaders: Record<string, string>,
     overrides: Record<string, string | null> | undefined,
     _registryContext: string,
+    overrideContext: string,
   ) => {
     const merged = Object.fromEntries(
       Object.entries(registryHeaders).map(([name, value]) => [name, decryptFake(value)]),
@@ -85,7 +86,7 @@ const cipher: McpAuthUseCasesDeps["cipher"] = {
       if (value === null) {
         delete merged[name];
       } else {
-        merged[name] = decryptFake(value);
+        merged[name] = value.startsWith("enc:v2:") ? secretCipher.decryptHeadersForOutbound({ [name]: value }, overrideContext)[name]! : decryptFake(value);
       }
     }
     return merged;
@@ -1089,25 +1090,24 @@ describe("saveClientCredentials", () => {
 describe("listing a server's tools as the project", () => {
   it("resolves a saved masked toolset for discovery and fences moved endpoints", async () => {
     const h = harness({ connection: {} });
-    const context = versionMcpHeadersContext("p", "1", "slack");
+    const context = agentMcpHeadersContext("p", "slack");
     const headers = secretCipher.mergeHeaderOverrideUpdate({}, { "X-MCP-Toolsets": "context,repos,actions" }, context);
-    const version = { projectName: "p", versionName: "1", mcpList: [
+    const configuration = { projectName: "p", model: "test", systemPrompt: "", parameters: { piiFiltering: false }, skillList: [], subagentList: [], mcpList: [
       { name: "slack", headers, headerTarget: mcpHeaderTarget(SERVER.url) },
-    ] } as Version;
-    const versions = { get: vi.fn(async () => version) };
-    const uc = createMcpAuthUseCases({ ...h.deps, versions, cipher: secretCipher });
-    await uc.listTools("p", "slack", OWNER, secretCipher.maskHeaderOverrides(headers, context), "1");
+    ] } as AgentConfiguration;
+    const getProject = h.deps.projects.get;
+    h.deps.projects.get = async name => { const project = await getProject(name); return project ? { ...project, configuration } : null; };
+    const uc = createMcpAuthUseCases({ ...h.deps, cipher: secretCipher });
+    await uc.listTools("p", "slack", OWNER, secretCipher.maskHeaderOverrides(headers, context));
     expect(h.probes[0]?.headers["X-MCP-Toolsets"]).toBe("context,repos,actions");
     expect(h.probes[0]?.headers.Authorization).toBe("Bearer at");
-    expect(versions.get).toHaveBeenCalledWith("p", "1");
-    await uc.listTools("p", "slack", OWNER, {}, "1");
+    await uc.listTools("p", "slack", OWNER, {});
     expect(h.probes[1]?.headers["X-MCP-Toolsets"]).toBeUndefined();
-    version.mcpList[0]!.headerTarget = mcpHeaderTarget("https://old.example.test/mcp");
-    await uc.listTools("p", "slack", OWNER, secretCipher.maskHeaderOverrides(headers, context), "1");
+    configuration.mcpList[0]!.headerTarget = mcpHeaderTarget("https://old.example.test/mcp");
+    await uc.listTools("p", "slack", OWNER, secretCipher.maskHeaderOverrides(headers, context));
     expect(h.probes[2]?.headers["X-MCP-Toolsets"]).toBeUndefined();
-    versions.get.mockClear();
-    await expect(uc.listTools("p", "slack", "outsider@example.test", undefined, "1")).rejects.toThrow(ForbiddenError);
-    expect(versions.get).not.toHaveBeenCalled();
+    await expect(uc.listTools("p", "slack", "outsider@example.test")).rejects.toThrow(ForbiddenError);
+    expect(h.probes).toHaveLength(3);
   });
 
   it("sends the project's token, not just the registry entry's headers", async () => {

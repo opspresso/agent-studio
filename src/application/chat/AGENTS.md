@@ -6,7 +6,7 @@ there are no framework, adapter or composition-root imports here. Read
 
 ## Ownership
 
-- `run.ts` resolves the runnable version, folds display output and persists it.
+- `run.ts` folds display output and persists it. Admission reads the Project’s current configuration.
 - `runLease.ts` claims one active run per chat; `runLog.ts` owns terminal logging and release.
 - `replayRunLog.ts` replays/follows a detached run; `cancelRun.ts` persists and polls cancellation.
 - `workspaceContinuation.ts` consumes durable Workspace action results once, claims the source chat lease,
@@ -56,7 +56,7 @@ there are no framework, adapter or composition-root imports here. Read
 - Keep Session history/image/storage budgets in `application/runtime`, separate from bounded
   sidebar/thread reads and the short-lived reconnect log. Every context omission is reported.
 - A pending approval disables new sends. Resume checks the exact revision and decision IDs;
-  the runtime claims the checkpoint before any effect. A changed version or binding is refused.
+  the runtime claims the checkpoint before any effect. A changed configuration or binding is refused.
   A crashed approved run has an uncertain outcome and is never automatically replayed.
 - Discard refuses a live lease, keeps display records and removes the unfinished run from model
   context. Reads and mutations treat every non-owner as 404. Resume rechecks project access.

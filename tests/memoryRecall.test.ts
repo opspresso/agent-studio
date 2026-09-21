@@ -1,3 +1,4 @@
+import { withConfigurations } from "./projectConfigurations";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 /**
  * Memory recall before the first token — `parameters.memoryRecall`.
@@ -32,7 +33,7 @@ import { encryptHeaders } from "@/infrastructure/crypto/secretEncryption";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { UsageDelta } from "@/domain/usage/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
@@ -72,7 +73,7 @@ describe("recallMemories", () => {
   it("asks every bound server offering recall, and folds the answers into one block", async () => {
     const calls: Array<{ alias: string; args: Record<string, unknown> }> = [];
     const result = await recallMemories({
-      version: bound("memory", "docs", "notes"),
+      configuration: bound("memory", "docs", "notes"),
       mcp: {
         mcpServers: [server("memory", ["recall", "remember"]), server("docs", ["search"]), server("notes", ["recall_1"])],
         aliasFor: (serverName, tool) =>
@@ -95,7 +96,7 @@ describe("recallMemories", () => {
 
   it("names the loss when no bound server offers recall", async () => {
     const result = await recallMemories({
-      version: bound("docs"),
+      configuration: bound("docs"),
       mcp: {
         mcpServers: [server("docs", ["search"])],
         aliasFor: () => undefined,
@@ -114,7 +115,7 @@ describe("recallMemories", () => {
     // A picture-only turn: the version says it recalls, and nothing did.
     const callMcpTool = vi.fn(async () => ({ text: "x" }));
     const result = await recallMemories({
-      version: bound("memory"),
+      configuration: bound("memory"),
       mcp: { mcpServers: [server("memory", ["recall"])], aliasFor: () => "recall", callMcpTool },
       query: "   ",
     });
@@ -127,7 +128,7 @@ describe("recallMemories", () => {
   it("a run cancelled mid-recall propagates the cancellation, not a server failure", async () => {
     const controller = new AbortController();
     const pending = recallMemories({
-      version: bound("memory"),
+      configuration: bound("memory"),
       mcp: {
         mcpServers: [server("memory", ["recall"])],
         aliasFor: () => "recall",
@@ -145,7 +146,7 @@ describe("recallMemories", () => {
     controller.abort();
     await expect(
       recallMemories({
-        version: bound("memory"),
+        configuration: bound("memory"),
         mcp: {
           mcpServers: [server("memory", ["recall"])],
           aliasFor: () => "recall",
@@ -159,7 +160,7 @@ describe("recallMemories", () => {
 
   it("a server that fails, or answers Error:, is a warning — never the end of the run", async () => {
     const result = await recallMemories({
-      version: bound("a", "b", "c"),
+      configuration: bound("a", "b", "c"),
       mcp: {
         mcpServers: [server("a", ["recall"]), server("b", ["recall_1"]), server("c", ["recall_2"])],
         aliasFor: (serverName) => ({ a: "recall", b: "recall_1", c: "recall_2" })[serverName],
@@ -190,7 +191,7 @@ describe("recallMemories", () => {
     // call; what it does not get is every request handed to it unasked.
     const calls: string[] = [];
     const result = await recallMemories({
-      version: bound("memory"),
+      configuration: bound("memory"),
       mcp: {
         mcpServers: [server("memory", ["recall"]), server("found", ["recall_1"])],
         aliasFor: (serverName) => ({ memory: "recall", found: "recall_1" })[serverName],
@@ -208,7 +209,7 @@ describe("recallMemories", () => {
   it("never cuts through a character, in the query or in the answer", async () => {
     let seenQuery = "";
     const result = await recallMemories({
-      version: bound("memory"),
+      configuration: bound("memory"),
       mcp: {
         mcpServers: [server("memory", ["recall"])],
         aliasFor: () => "recall",
@@ -226,7 +227,7 @@ describe("recallMemories", () => {
 
   it("bounds what enters the prompt, and says it did", async () => {
     const result = await recallMemories({
-      version: bound("memory"),
+      configuration: bound("memory"),
       mcp: {
         mcpServers: [server("memory", ["recall"])],
         aliasFor: () => "recall",
@@ -306,18 +307,17 @@ function projectFixture(): Project {
   };
 }
 
-function versionFixture(memoryRecall: boolean): Version {
+function configurationFixture(memoryRecall: boolean): AgentConfiguration {
   return {
     projectName: "recaller",
-    versionName: "v1",
+
     systemPrompt: "You are the team's assistant.",
-    userPromptTemplate: "",
+
     model: "gpt-test",
     parameters: { piiFiltering: false, ...(memoryRecall ? { memoryRecall: true } : {}) },
     mcpList: [{ name: "memory" }],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
@@ -393,7 +393,7 @@ describe("a version that opted in recalls before the first token", () => {
     const chunks: EngineChunk[] = [];
     for await (const chunk of executeAgent(depsFixture(channel), {
       project: projectFixture(),
-      version: versionFixture(memoryRecall),
+      configuration: configurationFixture(memoryRecall),
       messages: [
         { role: "user", content: "earlier question" },
         { role: "assistant", content: "earlier answer" },
@@ -423,7 +423,7 @@ describe("a version that opted in recalls before the first token", () => {
     };
 
     const result = await prepareMemoryForRun(deps, {
-      version: versionFixture(true),
+      configuration: configurationFixture(true),
       query: "how do we deploy?",
     });
 
@@ -482,17 +482,17 @@ describe("a version that opted in recalls before the first token", () => {
           } }] : [],
       },
     };
-    const version = versionFixture(true);
-    version.parameters = { ...version.parameters, dynamicCapabilities: true };
-    const project = { ...projectFixture(), publishedVersion: version.versionName };
+    const configuration = configurationFixture(true);
+    configuration.parameters = { ...configuration.parameters, dynamicCapabilities: true };
+    const project = { ...projectFixture() };
     deps.projects.get = async () => project;
-    deps.versions.get = async () => version;
+    deps.projects = withConfigurations(deps.projects, async () => configuration) as typeof deps.projects;
     const actor = { kind: "user" as const, id: "reader@example.com" };
     const query = "유정열을 검색해서 정리해";
     const stream = surface === "root"
-      ? executeAgent(deps, { project, version, actor, messages: [{ role: "user", content: query }] })
+      ? executeAgent(deps, { project, configuration, actor, messages: [{ role: "user", content: query }] })
       : (async function* () {
-          const prepared = await prepareSubagent(deps, { ...version, projectName: "parent", subagentList: [{ name: project.name, type: "local" }] }, project.name,
+          const prepared = await prepareSubagent(deps, { ...configuration, projectName: "parent", subagentList: [{ name: project.name, type: "local" }] }, project.name,
             { message: query, images: [], maxTurns: 8 }, async () => {}, { actor, ancestry: ["parent"] });
           if (prepared.kind !== "agent") throw new Error("Expected a native agent");
           try { yield* runAgent(prepared.deps, prepared.input); } finally { await prepared.close(); }
@@ -547,7 +547,7 @@ describe("a version that opted in recalls before the first token", () => {
     const chunks: EngineChunk[] = [];
     for await (const chunk of executeAgent(deps, {
       project: projectFixture(),
-      version: { ...versionFixture(true), mcpList: [{ name: "memory" }, { name: "docs" }] },
+      configuration: { ...configurationFixture(true), mcpList: [{ name: "memory" }, { name: "docs" }] },
       messages: [{ role: "user", content: "how do we deploy?" }],
     })) chunks.push(chunk);
     expect(chunks.filter((chunk) => chunk.warning || chunk.error)).toEqual([]);
@@ -558,7 +558,7 @@ describe("a version that opted in recalls before the first token", () => {
     const seen = stubMemoryServer();
     const preview = await previewPrompt(depsFixture(new FakeChannel([])), {
       project: projectFixture(),
-      version: versionFixture(true),
+      configuration: configurationFixture(true),
     });
     expect(preview.warnings.some((w) => w.startsWith("Memory recall is on"))).toBe(true);
     expect(preview.messages[0]?.content).not.toContain("## What you remember");
@@ -572,7 +572,7 @@ describe("a version that opted in recalls before the first token", () => {
     const seen = stubMemoryServer();
     const preview = await previewPrompt(depsFixture(new FakeChannel([])), {
       project: projectFixture(),
-      version: versionFixture(true),
+      configuration: configurationFixture(true),
       message: "how do we deploy?",
       actor: { kind: "user", id: "reader@example.com" },
     });
@@ -591,7 +591,7 @@ describe("a version that opted in recalls before the first token", () => {
     stubMemoryServer();
     const preview = await previewPrompt(depsFixture(new FakeChannel([])), {
       project: projectFixture(),
-      version: { ...versionFixture(true), mcpList: [] },
+      configuration: { ...configurationFixture(true), mcpList: [] },
     });
     expect(preview.warnings.some((w) => w.includes("no bound MCP server offers a 'recall' tool"))).toBe(
       true,

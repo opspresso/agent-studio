@@ -41,8 +41,8 @@ function prepareDetail(span: Trace["spans"][number]): string | null {
     if (Array.isArray(value)) {
       return value.length > 0 ? [`${key}: ${value.join(", ")}`] : [];
     }
-    // Zeroes are dropped: "skills 0 · subagents 0" on every trace of a version
-    // that binds neither says nothing the version does not already say.
+    // Zeroes are dropped: "skills 0 · subagents 0" on every trace of an Agent
+    // that binds neither says nothing the Agent does not already say.
     return typeof value === "number" && value > 0 ? [`${key} ${value}`] : [];
   });
   return parts.length > 0 ? parts.join(" · ") : null;

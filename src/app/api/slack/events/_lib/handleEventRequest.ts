@@ -7,7 +7,6 @@ import {
   signArtifactUrl,
   executionDeps,
   projectRepository,
-  versionRepository,
 } from "@/lib/container";
 import { executeAgent } from "@/application/execution/runProject";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
@@ -22,7 +21,6 @@ import { log } from "@/shared/logger";
 const slackEventDeps: SlackEventDeps = {
   runAgent: (params) => executeAgent(executionDeps, params),
   projects: projectRepository,
-  versions: versionRepository,
   slack: slackClient,
   threads: slackThreadRepository,
   documents: executionDeps.documents,

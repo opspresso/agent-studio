@@ -11,7 +11,7 @@ const retention = object({ unit: { type: "string", enum: ["days", "months"] }, v
 const processingRevision = optional({ ...text, description: "Only for explicit reprocessing. Reuse this value for retries of the same request." });
 const source = object({ kind: { type: "string", enum: ["artifact", "file", "source"] },
   id: { ...text, description: "The returned Artifact ID, stored file ID or opaque source_ref matching kind. Never a URL or external recording ID." } });
-const postprocess = object({ projectName: text, versionName: { ...text, description: "Use published to select the deployed version." } });
+const postprocess = object({ projectName: text });
 const destination = object({ serverName: text, documents: { type: "boolean" }, memories: { type: "boolean" } });
 
 /** A nested union keeps query, configured submission and explicit processing inputs separate. */

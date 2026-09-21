@@ -38,7 +38,7 @@ export function rowsToRecord(rows: HeaderRow[]): Record<string, string> {
  * masked keeps the stored secret, while typing a new value replaces it.
  *
  * The one owner of that contract. A second copy of this editor grew inside the
- * version binding form and had already drifted in styling; the only real
+ * Agent binding form and had already drifted in styling; the only real
  * difference was `allowRemove`, so that is a prop rather than another component.
  */
 export function HeaderRowsEditor({

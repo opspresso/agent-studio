@@ -7,7 +7,6 @@ import {
   signArtifactUrl,
   executionDeps,
   projectRepository,
-  versionRepository,
 } from "@/lib/container";
 import { executeAgent } from "@/application/execution/runProject";
 import { botIdFromToken, classifyTelegramUpdate } from "@/application/telegram/engagement";
@@ -20,7 +19,6 @@ import { log } from "@/shared/logger";
 const telegramEventDeps: TelegramEventDeps = {
   runAgent: (params) => executeAgent(executionDeps, params),
   projects: projectRepository,
-  versions: versionRepository,
   telegram: telegramClient,
   destinations: telegramDestinationRepository,
   documents: executionDeps.documents,

@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import type { RuntimeSessionRepository, RuntimeSessionRow, RuntimeApproval, RuntimeApprovalDecision } from "@/domain/execution/runtimeSession";
 import { CONTEXT_ENCRYPTED_PREFIX, type SecretCipher } from "@/domain/security/secretCipher";
 import { runtimeSessionContext } from "@/domain/security/secretContext";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 import { ConflictError, ValidationError } from "@/application/errors";
 import { PiiFilter } from "@/application/llm/pii";
 import { maskValues, restoreValues } from "./messages";
@@ -104,7 +104,7 @@ function boundedHistory(items: AgentInputItem[]): { items: AgentInputItem[]; dro
 
 export async function openRuntimeSession(
   services: RuntimeSessionServices,
-  scope: { sessionId: string; ownerEmail: string; projectName: string; version: Version },
+  scope: { sessionId: string; ownerEmail: string; projectName: string; configuration: AgentConfiguration },
   resume?: { revision: number; decisions: RuntimeApprovalDecision[] },
 ): Promise<RuntimeTurnPersistence> {
   const saved = await readRuntimeSession(services, scope.sessionId, scope.ownerEmail);
@@ -114,9 +114,10 @@ export async function openRuntimeSession(
   const checkpoint = document.checkpoint;
   if (checkpoint && !resume) throw new ConflictError("This chat is waiting for an approval decision");
   if (resume && (!checkpoint || checkpoint.status !== "pending" || resume.revision !== revision)) throw new ConflictError("This approval is no longer pending");
-  if (checkpoint && runtimeFingerprint(checkpoint.version) !== runtimeFingerprint(scope.version)) throw new ConflictError("The project version changed while approval was pending; discard this run and start again");
+  if (checkpoint && !checkpoint.configuration) throw new ConflictError("This pending run uses retired Version settings; discard it before starting a new run");
+  if (checkpoint && runtimeFingerprint(checkpoint.configuration) !== runtimeFingerprint(scope.configuration)) throw new ConflictError("The Agent configuration changed while approval was pending; discard this run and start again");
   if (resume && (!resume.decisions.length || new Set(resume.decisions.map((entry) => entry.id)).size !== resume.decisions.length || resume.decisions.some((entry) => !checkpoint?.approvals.some((approval) => approval.id === entry.id)))) throw new ValidationError("Unknown or duplicate approval decision");
-  const filter = checkpoint ? (checkpoint.input.parameters?.piiFiltering || checkpoint.pii.length ? PiiFilter.restoreSnapshot(checkpoint.pii) : undefined) : scope.version.parameters.piiFiltering ? new PiiFilter() : undefined;
+  const filter = checkpoint ? (checkpoint.input.parameters?.piiFiltering || checkpoint.pii.length ? PiiFilter.restoreSnapshot(checkpoint.pii) : undefined) : scope.configuration.parameters.piiFiltering ? new PiiFilter() : undefined;
   const history = checkpoint ? { items: document.items, dropped: false } : boundedHistory(document.items);
   const media = checkpoint ? { items: history.items, images: [], dropped: 0 } : historyImages(history.items);
   const session = new StudioSession(scope.sessionId, filter ? maskValues(filter, media.items) as AgentInputItem[] : structuredClone(media.items));
@@ -136,7 +137,7 @@ export async function openRuntimeSession(
     warnings: [...(history.dropped ? ["Earlier SDK Session turns were omitted from this run's context."] : []), ...(media.dropped ? [`${media.dropped} earlier image(s) were omitted from this run's SDK Session context.`] : [])],
     images: document.images?.length ? document.images : media.images.map((image, index) => ({ ...image, id: `img_${index + 1}`, origin: "from the conversation" })),
     checkBinding(key, fingerprint) {
-      if (checkpoint && key in bindings && bindings[key] !== fingerprint) throw new ConflictError("An agent version or connection changed while approval was pending");
+      if (checkpoint && key in bindings && bindings[key] !== fingerprint) throw new ConflictError("An Agent configuration or connection changed while approval was pending");
       bindings[key] = fingerprint;
     },
     async commit(input, state, items, graph) {
@@ -156,7 +157,7 @@ export async function openRuntimeSession(
       const restoredItems = filter ? restoreValues(filter, items) as AgentInputItem[] : items;
       const images = [...historyImages(restoredItems).images.map((image, index) => ({ ...image, id: `img_${index + 1}`, origin: "from the conversation" })), ...Object.values(graph.agents).flatMap((entry) => [...entry.images])].filter((image, index, all) => all.findLastIndex((other) => other.b64 === image.b64 && other.mimeType === image.mimeType) === index).slice(-MAX_IMAGES_PER_TURN);
       await write({ format: 1, items: restoredItems, images, ...(approvals.length ? {
-        checkpoint: { status: "pending", state: state.toString(), approvals, input: { ...rest, ...(now ? { now: now.toISOString() } : {}) }, version: scope.version, pii: filter?.snapshot() ?? [], bindings, previousItemCount, graph },
+        checkpoint: { status: "pending", state: state.toString(), approvals, input: { ...rest, ...(now ? { now: now.toISOString() } : {}) }, configuration: scope.configuration, pii: filter?.snapshot() ?? [], bindings, previousItemCount, graph },
       } : {}) });
       session.items = items;
       return approvals;

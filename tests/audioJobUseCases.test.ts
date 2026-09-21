@@ -47,7 +47,7 @@ describe("audio job use cases", () => {
       derived: { kind: "transcript", jobId: "original" }, retireAt: "2026-12-09T00:00:00.000Z" } as import("@/domain/artifact/sourceFile").SourceFile;
     f.deps.resolveArtifact = async () => file; f.deps.files.get = async () => file;
     const input: SubmitAudioJobInput = { task: "postprocess", source: { kind: "artifact", artifactId: "transcript" }, retention: f.input.retention,
-      postprocess: { projectName: "writer", versionName: "1" } };
+      postprocess: { projectName: "writer" } };
     expect((await f.api.submit("audio", file.userEmail, input, { occurrence: "summary" })).status).toBe("accepted");
     expect(f.deps.validateModel).not.toHaveBeenCalled();
     await expect(f.api.submit("audio", file.userEmail, {
@@ -87,7 +87,7 @@ describe("audio job use cases", () => {
   });
   it("retains a private source replay recipe when admitting a temporary reference", async () => {
     const f = fixture();
-    const refresh = { serverName: "files", versionName: "1", identity: "epoch", mapping: {
+    const refresh = { serverName: "files", identity: "epoch", mapping: {
       tool: "read_file", namespace: "account", urlPath: ["url"], idPath: ["id"], mimeType: "audio/mpeg", refreshArgument: "id",
     } };
     f.deps.sourceIdentity = async () => ({ namespace: "account", itemId: "item", refresh });

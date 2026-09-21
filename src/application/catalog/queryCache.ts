@@ -1,8 +1,8 @@
 /**
  * Remembering the vector for a query text this process has already embedded.
  *
- * Every run searches with two queries, and one of them is the version's system
- * prompt — the same text, run after run, for the life of a version. Embedding
+ * Discovery searches with the Agent's system prompt and the request. The system
+ * prompt stays the same across runs until the Agent is edited. Embedding
  * it each time is a provider round trip and a token charge on the critical path
  * before the first token, for an answer that cannot have changed.
  *
@@ -38,11 +38,10 @@ export type EmbeddingSpace = () => Promise<string> | string;
 /**
  * How many query texts to keep.
  *
- * Sized for system prompts: a deployment runs a bounded number of published
- * agent versions, and this only has to outlive the churn of user requests
+ * Sized to retain frequently reused system prompts through the churn of user requests
  * flowing past — those miss by nature and evict on the way out. Eviction is
  * least-recently-*used*, which is what {@link cacheQueryEmbeddings} arranges
- * and why: a system prompt is read on every run but written once, so evicting
+ * and why: a system prompt is reused across runs until edited, so evicting
  * by insertion order would drop exactly the entry this exists for.
  */
 const MAX_ENTRIES = 128;
@@ -128,7 +127,7 @@ export function cacheQueryEmbeddings(
           // use a zero-length vector and cannot see that it got one — the store
           // either rejects it for the index's dimension or ranks every entry
           // identically. A throw reaches `resolveRunTools`, which reports the
-          // search as failed and runs on the version's own bindings.
+          // search as failed and runs on the Agent's own bindings.
           throw new Error(`No embedding was produced for a query of ${text.length} characters`);
         }
         return vector;

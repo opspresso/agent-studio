@@ -6,11 +6,11 @@ import { withAuth } from "@/lib/session";
 export interface A2aProjectListResponse {
   /** The inbound surface is on: a shared key or at least one client key. */
   enabled: boolean;
-  /** Published projects, each exposed as an A2A agent when enabled. */
+  /** Accessible Agents with current settings, even when the surface is disabled. */
   projects: A2aProjectListItem[];
 }
 
-/** Published projects exposed over A2A (derived — no registration involved). */
+/** Configured Agents available to this viewer; no separate registration. */
 export const GET = withAuth(async (user) => {
   const enabled = await a2aSurfaceEnabled();
   // The same visibility filter as the projects list: an exposed card carries

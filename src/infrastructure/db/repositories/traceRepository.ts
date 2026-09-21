@@ -12,7 +12,7 @@ function fromItem(item: Record<string, unknown>): Trace {
   return {
     traceId: String(item.traceId ?? ""),
     projectName: String(item.projectName ?? ""),
-    versionName: String(item.versionName ?? ""),
+    ...(typeof item.versionName === "string" ? { versionName: item.versionName } : {}),
     projectType: String(item.projectType ?? ""),
     ...(Array.isArray(item.ancestry) ? { ancestry: item.ancestry as string[] } : {}),
     ...(item.actor ? { actor: item.actor as Trace["actor"] } : {}),

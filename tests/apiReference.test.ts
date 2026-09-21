@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { agentSchema, chatCompletionsSchema, predictSchema } from "@/app/api/projects/_lib/schemas";
 import {
   buildApiReference,
   PLACEHOLDERS,
@@ -12,7 +13,7 @@ function ctx(overrides: Partial<ApiReferenceContext> = {}): ApiReferenceContext 
   return {
     projectName: "my-bot",
     projectType: "agent",
-    publishedVersion: "3",
+    configured: true,
     origin: ORIGIN,
     a2a: null,
     slack: null,
@@ -36,45 +37,49 @@ describe("buildApiReference — endpoint selection by project type", () => {
     expect(ids({ projectType: "agent" })).toEqual(["predict", "chat-completions", "agent", "agui"]);
   });
 
-  it("llm project exposes predict and chat/completions only (no agent/chat)", () => {
-    expect(ids({ projectType: "llm" })).toEqual(["predict", "chat-completions", "agui"]);
-  });
 
-  it("image project exposes only the image predict endpoint", () => {
-    const endpoints = buildApiReference(ctx({ projectType: "image" }));
-    expect(endpoints.map((e) => e.id)).toEqual(["predict-image", "agui"]);
-    expect(endpoints[0]?.requestFields?.some((f) => f.name === "prompt")).toBe(true);
-    expect(endpoints[0]?.responseFields?.some((f) => f.name === "imageBase64")).toBe(true);
-  });
 });
 
-describe("buildApiReference — published version gating", () => {
-  it("hides all execution endpoints when there is no published version", () => {
-    expect(ids({ publishedVersion: null })).toEqual([]);
+describe("buildApiReference — current configuration gating", () => {
+  it("hides all execution endpoints when there is no current configuration", () => {
+    expect(ids({ configured: false })).toEqual([]);
   });
 
-  it("fills the published version name into execution paths", () => {
-    const predict = buildApiReference(ctx({ publishedVersion: "7" })).find(
+  it("uses project names for execution paths", () => {
+    const predict = buildApiReference(ctx({ configured: true })).find(
       (e) => e.id === "predict",
     );
-    expect(predict?.path).toBe("/api/projects/my-bot/versions/7/predict");
-    expect(codeOf(predict!, "bash")).toContain(`${ORIGIN}/api/projects/my-bot/versions/7/predict`);
+    expect(predict?.path).toBe("/api/projects/my-bot/predict");
+    expect(codeOf(predict!, "bash")).toContain(`${ORIGIN}/api/projects/my-bot/predict`);
   });
 });
 
 describe("buildApiReference — request/response field specs", () => {
   it("documents predict request and response fields", () => {
-    const predict = buildApiReference(ctx({ projectType: "llm" })).find((e) => e.id === "predict");
-    expect(predict?.requestFields?.map((f) => f.name)).toEqual(["variables", "messages", "stream"]);
+    const predict = buildApiReference(ctx({ projectType: "agent" })).find((e) => e.id === "predict");
+    expect(predict?.requestFields?.map((f) => f.name)).toEqual(["messages", "stream", "documents"]);
     expect(predict?.responseFields?.map((f) => f.name)).toEqual([
       "result",
       "model",
       "usage",
       "finishReason",
       "warnings",
+      "images",
+      "files",
     ]);
     // usage carries nested children.
     expect(predict?.responseFields?.find((f) => f.name === "usage")?.children).toBeDefined();
+  });
+
+  it.each([
+    ["predict", predictSchema], ["chat-completions", chatCompletionsSchema], ["agent", agentSchema],
+  ] as const)("keeps %s request fields and its curl body aligned with the route schema", (id, schema) => {
+    const endpoint = buildApiReference(ctx()).find(item => item.id === id)!;
+    expect(endpoint.requestFields!.map(field => field.name).sort()).toEqual(Object.keys(schema.shape).sort());
+    const required = Object.entries(schema.shape).filter(([, field]) => !field.isOptional()).map(([name]) => name);
+    expect(endpoint.requestFields!.filter(field => field.required).map(field => field.name)).toEqual(required);
+    const body = JSON.parse(/-d '([^']+)'$/.exec(codeOf(endpoint, "bash")!)![1]!);
+    expect(schema.parse(body)).toEqual(body);
   });
 
   it("marks chat/completions messages as required", () => {
@@ -110,7 +115,7 @@ describe("buildApiReference — code examples (curl + Python + Node.js)", () => 
     expect(py).toContain("stream=True");
     expect(node).toContain("stream: true");
     // Same base URL as the non-streaming SDK samples — no separate endpoint.
-    expect(py).toContain(`${ORIGIN}/api/projects/my-bot/versions/3`);
+    expect(py).toContain(`${ORIGIN}/api/projects/my-bot`);
   });
 
   it("non-OpenAI endpoints carry a curl sample only", () => {
@@ -118,27 +123,27 @@ describe("buildApiReference — code examples (curl + Python + Node.js)", () => 
     expect(predict?.codeExamples.map((c) => c.language)).toEqual(["bash"]);
   });
 
-  it("SDK samples point base_url at the version root (SDK appends /chat/completions)", () => {
-    const cc = buildApiReference(ctx({ publishedVersion: "3" })).find(
+  it("SDK samples point base_url at the project root (SDK appends /chat/completions)", () => {
+    const cc = buildApiReference(ctx({ configured: true })).find(
       (e) => e.id === "chat-completions",
     );
-    const base = `${ORIGIN}/api/projects/my-bot/versions/3`;
+    const base = `${ORIGIN}/api/projects/my-bot`;
     expect(codeOf(cc!, "python")).toContain(`base_url="${base}"`);
     expect(codeOf(cc!, "javascript")).toContain(`baseURL: "${base}"`);
   });
 });
 
 describe("buildApiReference — A2A endpoints", () => {
-  it("shows A2A endpoints only when enabled and published", () => {
-    expect(ids({ a2a: { enabled: true, published: true } })).toContain("a2a-card");
-    expect(ids({ a2a: { enabled: true, published: true } })).toContain("a2a-rpc");
-    expect(ids({ a2a: { enabled: true, published: false } })).not.toContain("a2a-rpc");
-    expect(ids({ a2a: { enabled: false, published: true } })).not.toContain("a2a-rpc");
+  it("shows A2A endpoints only when enabled and configured", () => {
+    expect(ids({ a2a: { enabled: true, configured: true } })).toContain("a2a-card");
+    expect(ids({ a2a: { enabled: true, configured: true } })).toContain("a2a-rpc");
+    expect(ids({ a2a: { enabled: true, configured: false } })).not.toContain("a2a-rpc");
+    expect(ids({ a2a: { enabled: false, configured: true } })).not.toContain("a2a-rpc");
     expect(ids({ a2a: null })).not.toContain("a2a-rpc");
   });
 
   it("marks the Agent Card as public and the JSON-RPC as X-A2A-Key authed", () => {
-    const endpoints = buildApiReference(ctx({ a2a: { enabled: true, published: true } }));
+    const endpoints = buildApiReference(ctx({ a2a: { enabled: true, configured: true } }));
     expect(endpoints.find((e) => e.id === "a2a-card")?.auth).toBe("public");
     expect(endpoints.find((e) => e.id === "a2a-rpc")?.auth).toBe("a2a-key");
   });
@@ -164,17 +169,17 @@ describe("buildApiReference — project webhook", () => {
     expect(codeOf(endpoint!, "bash")).toContain("Idempotency-Key");
   });
 
-  it("stays listed with no published version, because the address is live either way", () => {
+  it("stays listed with no current configuration, because the address is live either way", () => {
     // The other endpoints are hidden without one; this one answers
-    // `no-published-version` at 202, which is the thing worth documenting.
-    expect(ids({ publishedVersion: null, webhook: { enabled: true } })).toEqual(["webhook"]);
+    // `no-configuration` at 202, which is the thing worth documenting.
+    expect(ids({ configured: false, webhook: { enabled: true } })).toEqual(["webhook"]);
   });
 
   it("documents every status a 202 can carry", () => {
     const status = buildApiReference(ctx({ webhook: { enabled: true } }))
       .find((e) => e.id === "webhook")
       ?.responseFields?.find((f) => f.name === "status");
-    for (const value of ["accepted", "disabled", "duplicate", "busy", "no-published-version"]) {
+    for (const value of ["accepted", "disabled", "duplicate", "busy", "no-configuration"]) {
       expect(status?.description).toContain(value);
     }
   });
@@ -209,7 +214,7 @@ describe("buildApiReference — no real secrets leak into examples", () => {
   function allStrings(): string[] {
     const endpoints = buildApiReference(
       ctx({
-        a2a: { enabled: true, published: true },
+        a2a: { enabled: true, configured: true },
         slack: { configured: true },
         webhook: { enabled: true },
       }),
@@ -239,7 +244,7 @@ describe("buildApiReference — no real secrets leak into examples", () => {
   it("authenticated samples carry their credential placeholder", () => {
     const endpoints = buildApiReference(
       ctx({
-        a2a: { enabled: true, published: true },
+        a2a: { enabled: true, configured: true },
         slack: { configured: true },
         telegram: { configured: true },
         teams: { configured: true },
@@ -250,8 +255,8 @@ describe("buildApiReference — no real secrets leak into examples", () => {
 
     expect(codeOf(byId("predict"), "bash")).toContain(PLACEHOLDERS.token);
     expect(codeOf(byId("predict"), "bash")).toContain("Authorization: Bearer");
-    expect(codeOf(byId("chat-completions"), "python")).toContain(PLACEHOLDERS.token);
-    expect(codeOf(byId("chat-completions"), "javascript")).toContain(PLACEHOLDERS.token);
+    expect(codeOf(byId("chat-completions"), "python")).toContain('os.environ["PROJECT_API_TOKEN"]');
+    expect(codeOf(byId("chat-completions"), "javascript")).toContain("process.env.PROJECT_API_TOKEN");
     expect(codeOf(byId("a2a-rpc"), "bash")).toContain(PLACEHOLDERS.a2aKey);
     expect(codeOf(byId("slack-events"), "bash")).toContain(PLACEHOLDERS.slackSignature);
     expect(codeOf(byId("telegram-webhook"), "bash")).toContain(PLACEHOLDERS.telegramSecret);

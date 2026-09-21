@@ -5,7 +5,7 @@
  * write hook would have to decide what a successful save with a failed
  * indexing means — and the honest answer is "nothing an operator should see a
  * 500 for", since the catalog only affects which capabilities a run *discovers*
- * and never what a version explicitly bound. Freshness in seconds buys nothing
+ * and never what an Agent explicitly bound. Freshness in seconds buys nothing
  * here; a tick that runs and reports is worth more than a write path that can
  * fail in a new way.
  *
@@ -117,7 +117,7 @@ async function collectEntries(
   );
   for (const { server, tools } of probed) {
     // Always present, whether or not its tools could be listed: this is the
-    // entry a version binds, and a server that needs OAuth still has to be
+    // entry an Agent binds, and a server that needs OAuth still has to be
     // findable by whoever would connect it.
     entries.push({ kind: "mcpServer", name: server.name, description: server.description ?? "" });
     if (!tools) {

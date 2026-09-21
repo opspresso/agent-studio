@@ -3,7 +3,7 @@ import {
   TRIGGER_LIST_PAGE_SIZE,
   createTriggerUseCases,
 } from "@/application/trigger/triggerUseCases";
-import { createTriggerSchema } from "@/app/api/projects/_lib/schemas";
+import { createTriggerSchema, updateTriggerSchema } from "@/app/api/projects/_lib/schemas";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { toSlug } from "@/domain/naming";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
@@ -382,13 +382,15 @@ describe("schedule triggers", () => {
         "owner@example.com",
       ),
     ).rejects.toBeInstanceOf(ValidationError);
-    await expect(
-      useCases.create(
-        "p",
-        { ...schedule, payloadMode: "message" as const },
-        "owner@example.com",
-      ),
-    ).rejects.toBeInstanceOf(ValidationError);
     expect(stored.size).toBe(0);
   });
+});
+
+describe("Agent trigger input schema", () => {
+  it.each([{ variables: { topic: "test" } }, { payloadMode: "variables" }, { payloadMode: "message" }])(
+    "refuses retired template fields instead of ignoring them: %j", fields => {
+      expect(createTriggerSchema.safeParse({ triggerId: PROJECT_WEBHOOK_ID, ...fields }).success).toBe(false);
+      expect(updateTriggerSchema.safeParse(fields).success).toBe(false);
+    },
+  );
 });

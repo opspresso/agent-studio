@@ -1,32 +1,12 @@
 /**
- * What wraps every top-level run, in one place.
- *
- * Four functions admit a top-level run — `executeVersion`,
- * `executeVersionStream`, `executeAgent` and `generateImage` — and each one used
- * to open and close the in-flight metric for itself. That was already the seam
- * every cross-cutting run policy wants, so it is now a named one: a policy added
- * here reaches all four, and a fifth entry point that forgets to open a bracket
- * is missing its metric as loudly as it is missing its guards.
- *
- * The image path is why this is not simply "the execution facade": `generateImage`
- * lives in its own module and is called directly by the predict route and the A2A
- * executor, never through `runProject`.
- *
- * Order matters at every step. The guards run *before* the metric opens, so a
- * refused run is never counted as one that ran. The model policy runs before
- * both, being the one refusal that costs nothing to decide and says the version
- * is misconfigured rather than that the platform is busy. Concurrency is taken
- * after cost:
- * a project that is over budget should be told so rather than made to queue for
- * a slot it will be refused on anyway. `close()` runs *after* the caller has
- * flushed its usage, so the settle step sees the spend of the run it is
- * settling — an agent run buffers usage until the end, and a settle before the
- * flush would always be reading the previous run's total.
+ * Common admission, accounting and artifact scope for Agent executions.
+ * Model and cost policies run before acquiring a slot. Call close only after
+ * usage is flushed so settlement includes this run, including delegated work.
  */
 
 import type { RunActor } from "@/domain/execution/actor";
 import type { MemberTier } from "@/domain/member/tiers";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import { beginRun, endRun } from "@/lib/runMetrics";
 import { enterRunContext } from "@/shared/runContext";
 import { assertWithinCostLimit, settleCostLimit, type CostGuardDeps } from "@/application/usage/costGuard";
@@ -75,7 +55,7 @@ export interface RunBracket {
   readonly runId: string;
   /**
    * Where this run's output goes, with the run's own identity already bound —
-   * project, version, actor, transfer chain, correlation id.
+   * project, Agent, actor, transfer chain, correlation id.
    *
    * It is built here for the same reason the guards are: four entry points admit
    * a top-level run, and every one of them produces bytes. Binding the context
@@ -88,7 +68,7 @@ export interface RunBracket {
 /**
  * Admit a top-level run, or refuse it.
  *
- * Throws `ValidationError` when the version names a model this deployment
+ * Throws `ValidationError` when the Agent names a model this deployment
  * refuses to price, `CostLimitExceededError` when the project is over its daily
  * block threshold, `MemberCostLimitExceededError` when the member behind the
  * actor has spent their tier's monthly cap, or `ConcurrencyLimitError` when the
@@ -96,13 +76,13 @@ export interface RunBracket {
  * `Retry-After`; nothing has been counted or recorded when any of them is
  * thrown.
  *
- * Model entry points require a Version through openModelCall/openRun. Workspace
+ * Model entry points require Agent model settings through openModelCall/openRun. Workspace
  * tasks use openTaskRun and share the remaining guards without inventing a model.
  */
 async function openExecutionBracket(
   deps: RunBracketDeps,
   project: Project,
-  version: Pick<Version, "model" | "fallbackModel"> | undefined,
+  configuration: Pick<AgentConfiguration, "model" | "fallbackModel"> | undefined,
   actor?: RunActor,
 ): Promise<Omit<RunBracket, "artifacts">> {
   // Before the first `await`, and therefore before this function leaves the
@@ -118,7 +98,7 @@ async function openExecutionBracket(
   // wrong rather than that the platform is busy. Costing nothing to check, it
   // should not be reached by way of a queue for a slot the run would be refused
   // on regardless.
-  if (version && deps.unknownModelPolicy) {
+  if (configuration && deps.unknownModelPolicy) {
     // Fail open on the *read*, exactly like the cost guard below — and for the
     // reason it states: the guard exists to bound something, not to be a second
     // way for a storage blip to take the platform down. This read is a database
@@ -136,8 +116,8 @@ async function openExecutionBracket(
       log.error("cost-guard", "could not read the unknown-model policy; allowing the run", error);
     }
     assertModelsPriceable(policy, {
-      model: version.model,
-      ...(version.fallbackModel ? { fallbackModel: version.fallbackModel } : {}),
+      model: configuration.model,
+      ...(configuration.fallbackModel ? { fallbackModel: configuration.fallbackModel } : {}),
     });
   }
   await assertWithinCostLimit(deps, project);
@@ -180,13 +160,13 @@ async function openExecutionBracket(
 export function openModelCall(
   deps: RunBracketDeps,
   project: Project,
-  version: Pick<Version, "model" | "fallbackModel">,
+  configuration: Pick<AgentConfiguration, "model" | "fallbackModel">,
   actor?: RunActor,
 ): Promise<Omit<RunBracket, "artifacts">> {
-  return openExecutionBracket(deps, project, version, actor);
+  return openExecutionBracket(deps, project, configuration, actor);
 }
 
-/** Non-model workspace jobs share cost, concurrency and metrics without inventing a Version/model. */
+/** Non-model workspace jobs share cost, concurrency and metrics without inventing a model. */
 export function openTaskRun(
   deps: RunBracketDeps,
   project: Project,
@@ -199,15 +179,15 @@ export function openTaskRun(
 export async function openRun(
   deps: RunBracketDeps,
   project: Project,
-  version: Version,
+  configuration: AgentConfiguration,
   actor?: RunActor,
   opts: { ownerEmail?: string } = {},
 ): Promise<RunBracket> {
-  const bracket = await openModelCall(deps, project, version, actor);
+  const bracket = await openModelCall(deps, project, configuration, actor);
   return {
     ...bracket,
     ...(deps.artifacts ? { artifacts: createArtifactRecorder(deps.artifacts, {
-      projectName: project.name, versionName: version.versionName,
+      projectName: project.name,
       ...(actor ? { actor } : {}), ...(opts.ownerEmail ? { ownerEmail: opts.ownerEmail } : {}),
       ancestry: [project.name], runId: bracket.runId,
     }) } : {}),

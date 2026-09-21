@@ -23,23 +23,23 @@ import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import type { CapabilityKind } from "@/domain/catalog/types";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import type { McpServer } from "@/domain/mcp/types";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 import type { VectorMatch } from "@/domain/vector/types";
 
 const TIME = "2026-01-01T00:00:00Z";
 
-function version(overrides: Partial<Version> = {}): Version {
+function configuration(overrides: Partial<AgentConfiguration> = {}): AgentConfiguration {
   return {
     projectName: "proj",
-    versionName: "v1",
+
     systemPrompt: "You review pull requests.",
-    userPromptTemplate: "",
+
     model: "gpt-5.2",
     parameters: { piiFiltering: false, dynamicCapabilities: true },
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: TIME,
+
     ...overrides,
   };
 }
@@ -146,36 +146,36 @@ const QUERIES = ["You review pull requests.", "open a PR for this"];
 describe("capability discovery", () => {
   it("adds bounded request-plus-memory context without replacing the original queries", () => {
     const request = "Find and summarize this person";
-    const queries = discoveryQueries(version(), ["Earlier request", request], "They belong to an organization");
-    expect(queries.slice(0, 3)).toEqual([version().systemPrompt, "Earlier request", request]);
+    const queries = discoveryQueries(configuration(), ["Earlier request", request], "They belong to an organization");
+    expect(queries.slice(0, 3)).toEqual([configuration().systemPrompt, "Earlier request", request]);
     expect(queries[3]).toContain(request);
     expect(queries[3]).toContain("They belong to an organization");
-    const bounded = discoveryQueries(version(), ["r".repeat(3000)], "m".repeat(5000));
+    const bounded = discoveryQueries(configuration(), ["r".repeat(3000)], "m".repeat(5000));
     expect(bounded.every((query) => query.length <= 2000)).toBe(true);
     expect(bounded.at(-1)).toContain("m".repeat(100));
-    expect(discoveryQueries(version(), [request], "")).toEqual(discoveryQueries(version(), [request]));
-    expect(discoveryQueries(version(), [], "unrelated memory")).toEqual(discoveryQueries(version()));
+    expect(discoveryQueries(configuration(), [request], "")).toEqual(discoveryQueries(configuration(), [request]));
+    expect(discoveryQueries(configuration(), [], "unrelated memory")).toEqual(discoveryQueries(configuration()));
   });
 
   it("offers nothing beyond the bindings when the version did not opt in", async () => {
     const { deps } = harness({ catalog: fakeCatalog({ skill: [found("discovered")] }) });
     const resolved = await resolveRunTools(
       deps,
-      version({ parameters: { piiFiltering: false }, skillList: ["bound"] }),
+      configuration({ parameters: { piiFiltering: false }, skillList: ["bound"] }),
       undefined,
       QUERIES,
     );
     expect(resolved.skills.map((skill) => skill.name)).toEqual(["bound"]);
   });
 
-  it("says so when the version asked for discovery and the deployment has no catalog", async () => {
+  it("says so when the Agent asked for discovery and the deployment has no catalog", async () => {
     // Nothing else can tell the author: the checkbox stays ticked, the bindings
     // resolve, the run answers normally and the preview shows the same prompt.
     const { deps } = harness();
-    const resolved = await resolveRunTools(deps, version({ skillList: ["bound"] }), undefined, QUERIES);
+    const resolved = await resolveRunTools(deps, configuration({ skillList: ["bound"] }), undefined, QUERIES);
     expect(resolved.skills.map((skill) => skill.name)).toEqual(["bound"]);
     expect(resolved.warnings).toEqual([
-      "This version is set to find capabilities for each request, but this deployment has no capability catalog; only its own bindings were offered.",
+      "This Agent is set to find capabilities for each request, but this deployment has no capability catalog; only its own bindings were offered.",
     ]);
   });
 
@@ -183,7 +183,7 @@ describe("capability discovery", () => {
     const { deps } = harness();
     const resolved = await resolveRunTools(
       deps,
-      version({ parameters: { piiFiltering: false }, skillList: ["bound"] }),
+      configuration({ parameters: { piiFiltering: false }, skillList: ["bound"] }),
       undefined,
       QUERIES,
     );
@@ -192,7 +192,7 @@ describe("capability discovery", () => {
 
   it("says so when there is nothing to search with", async () => {
     const { deps } = harness({ catalog: fakeCatalog({ skill: [found("discovered")] }) });
-    const resolved = await resolveRunTools(deps, version({ systemPrompt: "" }), undefined, []);
+    const resolved = await resolveRunTools(deps, configuration({ systemPrompt: "" }), undefined, []);
     expect(resolved.warnings.some((line) => line.includes("nothing to search with"))).toBe(true);
     expect(resolved.skills).toEqual([]);
   });
@@ -201,7 +201,7 @@ describe("capability discovery", () => {
     const { deps } = harness({ catalog: fakeCatalog({ skill: [found("discovered")] }) });
     const resolved = await resolveRunTools(
       deps,
-      version({ skillList: ["bound-a", "bound-b"] }),
+      configuration({ skillList: ["bound-a", "bound-b"] }),
       undefined,
       QUERIES,
     );
@@ -214,7 +214,7 @@ describe("capability discovery", () => {
 
   it("does not offer a capability twice when the search finds one already bound", async () => {
     const { deps } = harness({ catalog: fakeCatalog({ skill: [found("bound")] }) });
-    const resolved = await resolveRunTools(deps, version({ skillList: ["bound"] }), undefined, QUERIES);
+    const resolved = await resolveRunTools(deps, configuration({ skillList: ["bound"] }), undefined, QUERIES);
     expect(resolved.skills.map((skill) => skill.name)).toEqual(["bound"]);
   });
 
@@ -227,7 +227,7 @@ describe("capability discovery", () => {
       }),
       servers: [server("github")],
     });
-    await resolveRunTools(deps, version(), undefined, QUERIES);
+    await resolveRunTools(deps, configuration(), undefined, QUERIES);
     expect(opened[0]).toEqual([
       expect.objectContaining({ name: "github", tools: ["create_pr", "add_comment"] }),
     ]);
@@ -242,7 +242,7 @@ describe("capability discovery", () => {
       catalog: fakeCatalog({ mcpServer: [found("github")] }),
       servers: [server("github")],
     });
-    await resolveRunTools(deps, version(), undefined, QUERIES);
+    await resolveRunTools(deps, configuration(), undefined, QUERIES);
     expect(opened[0]).toEqual([expect.objectContaining({ name: "github" })]);
     expect(opened[0]?.[0]).not.toHaveProperty("tools");
   });
@@ -255,7 +255,7 @@ describe("capability discovery", () => {
       }),
       servers: [server("github")],
     });
-    await resolveRunTools(deps, version(), undefined, QUERIES);
+    await resolveRunTools(deps, configuration(), undefined, QUERIES);
     expect(opened[0]).toEqual([
       expect.objectContaining({ name: "github", tools: ["list_repos"] }),
     ]);
@@ -266,7 +266,7 @@ describe("capability discovery", () => {
       catalog: fakeCatalog({ mcpTool: [found("slack", "post")] }),
       servers: [server("slack", OAUTH)],
     });
-    const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
+    const resolved = await resolveRunTools(deps, configuration(), undefined, QUERIES);
     expect(opened).toEqual([]);
     expect(resolved.warnings.some((line) => line.includes("has not connected it"))).toBe(true);
   });
@@ -281,7 +281,7 @@ describe("capability discovery", () => {
       servers: [server("slack", OAUTH)],
       connections: [{ serverName: "slack", status: "connected" }],
     });
-    const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
+    const resolved = await resolveRunTools(deps, configuration(), undefined, QUERIES);
     expect(opened[0]).toEqual([expect.objectContaining({ name: "slack", tools: ["post"] })]);
     expect(resolved.warnings.some((line) => line.includes("has not connected it"))).toBe(false);
   });
@@ -293,7 +293,7 @@ describe("capability discovery", () => {
       servers: [server("slack", OAUTH)],
       connections: [{ serverName: "slack", status: "needs_reauth" }],
     });
-    await resolveRunTools(deps, version(), undefined, QUERIES);
+    await resolveRunTools(deps, configuration(), undefined, QUERIES);
     expect(opened).toEqual([]);
   });
 
@@ -304,16 +304,16 @@ describe("capability discovery", () => {
     // caller's own version, every discovered agent answered `Unknown agent` the
     // moment the model used it — advertised, in the transfer enum, unreachable.
     const { deps } = harness({ catalog: fakeCatalog({ agent: [found("docs-bot")] }) });
-    const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
+    const resolved = await resolveRunTools(deps, configuration(), undefined, QUERIES);
     expect(resolved.subagents.map((entry) => entry.name)).toEqual(["docs-bot"]);
-    expect(resolved.version.subagentList).toEqual([{ name: "docs-bot", type: "remote" }]);
+    expect(resolved.configuration.subagentList).toEqual([{ name: "docs-bot", type: "remote" }]);
   });
 
   it("leaves the version untouched when nothing was discovered", async () => {
     const { deps } = harness();
-    const bound = version({ skillList: ["bound"] });
+    const bound = configuration({ skillList: ["bound"] });
     const resolved = await resolveRunTools(deps, bound, undefined, QUERIES);
-    expect(resolved.version).toBe(bound);
+    expect(resolved.configuration).toBe(bound);
   });
 
   it("reports what it added as a gain, not as a warning", async () => {
@@ -325,7 +325,7 @@ describe("capability discovery", () => {
     const { deps } = harness({
       catalog: fakeCatalog({ skill: [found("a-skill")], agent: [found("an-agent")] }),
     });
-    const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
+    const resolved = await resolveRunTools(deps, configuration(), undefined, QUERIES);
     expect(resolved.discovered).toEqual(["a-skill", "an-agent"]);
     expect(resolved.warnings).toEqual([]);
   });
@@ -336,7 +336,7 @@ describe("capability discovery", () => {
     const { deps } = harness({
       catalog: fakeCatalog({}, new Error("index unavailable")),
     });
-    const resolved = await resolveRunTools(deps, version({ skillList: ["bound"] }), undefined, QUERIES);
+    const resolved = await resolveRunTools(deps, configuration({ skillList: ["bound"] }), undefined, QUERIES);
     expect(resolved.skills.map((skill) => skill.name)).toEqual(["bound"]);
     expect(resolved.warnings.some((line) => line.includes("discovery failed"))).toBe(true);
   });
@@ -351,7 +351,7 @@ describe("capability discovery", () => {
     await expect(
       resolveRunTools(
         deps,
-        version({ skillList: ["bound"] }),
+        configuration({ skillList: ["bound"] }),
         controller.signal,
         QUERIES,
       ),
@@ -364,7 +364,7 @@ describe("capability discovery", () => {
     catalog.reranker = { rerank: async () => { throw new Error("reranker unavailable"); } };
     const { deps } = harness({ catalog });
 
-    const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
+    const resolved = await resolveRunTools(deps, configuration(), undefined, QUERIES);
 
     expect(resolved.skills.map((skill) => skill.name)).toEqual(["aws-knowledge"]);
     expect(resolved.discovered).toEqual(["aws-knowledge"]);
@@ -387,7 +387,7 @@ describe("capability discovery", () => {
 
     const resolved = await resolveRunTools(
       deps,
-      version(),
+      configuration(),
       undefined,
       ["aws docs"],
       undefined,
@@ -427,7 +427,7 @@ describe("capability discovery", () => {
       }),
       servers: [server("docs"), server("argocd"), server("kubernetes"), server("grafana")],
     });
-    await resolveRunTools(deps, version(), undefined, QUERIES);
+    await resolveRunTools(deps, configuration(), undefined, QUERIES);
     expect(opened[0]?.map((entry) => entry.name).sort()).toEqual([
       "argocd",
       "grafana",
@@ -449,7 +449,7 @@ describe("capability discovery", () => {
       }),
       servers: [server("slack", OAUTH), server("argocd"), server("kubernetes"), server("grafana")],
     });
-    const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
+    const resolved = await resolveRunTools(deps, configuration(), undefined, QUERIES);
     expect(opened[0]?.map((entry) => entry.name).sort()).toEqual([
       "argocd",
       "grafana",
@@ -467,7 +467,7 @@ describe("capability discovery", () => {
         skill: [found("zeta", undefined, 0.9), found("alpha", undefined, 0.85)],
       }),
     });
-    const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
+    const resolved = await resolveRunTools(deps, configuration(), undefined, QUERIES);
     expect(resolved.skills.map((skill) => skill.name)).toEqual(["alpha", "zeta"]);
   });
 });
@@ -482,7 +482,7 @@ describe("discovery queries", () => {
       { role: "assistant" as const, content: "done" },
       { role: "user" as const, content: "now review the first one" },
     ];
-    expect(discoveryQueries(version(), recentUserQueries(messages))).toEqual([
+    expect(discoveryQueries(configuration(), recentUserQueries(messages))).toEqual([
       "You review pull requests.",
       "open a PR on the github repo",
       "now review the first one",
@@ -501,6 +501,6 @@ describe("discovery queries", () => {
   });
 
   it("deduplicates repeated query texts", () => {
-    expect(discoveryQueries(version({ systemPrompt: "same" }), ["same", "same"])).toEqual(["same"]);
+    expect(discoveryQueries(configuration({ systemPrompt: "same" }), ["same", "same"])).toEqual(["same"]);
   });
 });

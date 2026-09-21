@@ -7,11 +7,9 @@ import type { TokenEndpointAuthMethod } from "./types";
  * (`McpServerAuth`), including an optional shared OAuth app. A connection is per
  * project and holds the user's grant; a shared app's secret stays in the registry.
  *
- * Why its own item rather than the version's `McpBinding` or the project item:
- * a version is a snapshot of configuration history while an access token turns
- * over on the provider's schedule, and the project item's `updatedAt` guards
- * publish/update with optimistic concurrency — refreshing a token there would
- * make refreshes and publishes fight.
+ * Connections have their own rows and revisions because provider-driven token
+ * rotation is independent of editing Agent settings. Refreshing a token must
+ * not conflict with the Project's optimistic configuration updates.
  */
 
 /** Where a connection is in its lifecycle; drives what the console offers. */

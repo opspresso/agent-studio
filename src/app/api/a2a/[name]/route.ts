@@ -77,9 +77,9 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
   const { name } = await ctx.params;
   const exposed = await resolveExposedProject(a2aExposureDeps, name);
   if (!exposed) {
-    return Response.json({ error: "Project not found or has no published version" }, { status: 404 });
+    return Response.json({ error: "Project not found or has no Agent configuration" }, { status: 404 });
   }
-  const { project, version, card } = exposed;
+  const { project, configuration, card } = exposed;
 
   return withTurnBodyText(request, async (rawBody) => {
     const body = parseJsonRpcEnvelope(rawBody);
@@ -112,7 +112,7 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
       { signal: abortController.signal },
       card,
       store,
-      new ProjectA2aExecutor(executionDeps, project, version, store, actor, callContext),
+      new ProjectA2aExecutor(executionDeps, project, configuration, store, actor, callContext),
     );
     const transport = new JsonRpcTransportHandler(requestHandler);
 

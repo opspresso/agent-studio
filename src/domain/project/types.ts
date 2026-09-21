@@ -3,7 +3,7 @@ import type { MessageDestination } from "@/domain/messaging/destination";
 import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
 import type { RuntimePolicy } from "@/domain/execution/runtimeSession";
 
-export type ProjectType = "llm" | "agent" | "image";
+export type ProjectType = "agent";
 
 /**
  * Who may see and run a project. `public` is the shared catalog: any signed-in
@@ -157,7 +157,8 @@ export interface Project {
    */
   memberEmails?: string[];
   departmentCode?: string;
-  publishedVersion?: string;
+  /** Current Agent settings, read as one snapshot with the project. */
+  configuration?: AgentConfiguration;
   slack?: SlackIntegration;
   telegram?: TelegramIntegration;
   teams?: TeamsIntegration;
@@ -166,7 +167,7 @@ export interface Project {
   updatedAt: string;
 }
 
-export interface VersionParameters {
+export interface AgentParameters {
   policy?: RuntimePolicy;
   temperature?: number;
   presencePenalty?: number;
@@ -184,7 +185,7 @@ export interface VersionParameters {
   imageGeneration?: boolean;
   imageModel?: string;
   /**
-   * Whether this version's runs may read an address the model names.
+   * Whether this Agent's runs may read an address the model names.
    *
    * Off by default. Every other outbound request goes to a URL an operator
    * registered; this one goes wherever the model says, and a model is talked
@@ -196,7 +197,7 @@ export interface VersionParameters {
   /** Opt into project-managed persistent Workspaces and isolated Sandbox tools. */
   workspaceTools?: boolean;
   /**
-   * Whether this version's runs may read the Slack workspace its project's bot
+   * Whether this Agent's runs may read the Slack workspace its project's bot
    * is installed in — channel history, threads, who a user id is.
    *
    * Off by default, and opt-in for the same reason `urlFetch` is: it widens
@@ -210,14 +211,13 @@ export interface VersionParameters {
    */
   slackWorkspace?: boolean;
   /**
-   * Whether a run may reach capabilities this version did not bind, found by
-   * searching the global catalog with this version's system prompt and the
+   * Whether a run may reach capabilities this Agent did not bind, found by
+   * searching the global catalog with this Agent's system prompt and the
    * request being answered.
    *
-   * Opt-in, and off for everything written before it existed, because it is the
-   * one parameter that changes what a run *can do* rather than how it does it.
-   * A version is a snapshot of configuration; silently widening what an existing
-   * one reaches would make its past traces describe a different agent.
+   * Opt-in because it permits capabilities beyond the saved bindings. Each
+   * run uses a prepared configuration snapshot; discovery widens only that
+   * run's capabilities and never changes the saved configuration.
    *
    * What it adds is strictly additive: bindings are resolved first and in full,
    * and nothing found by search can displace or truncate them.
@@ -245,7 +245,7 @@ export interface VersionParameters {
    * A reasoning model bills for tokens it spends before the first visible word,
    * and until this is on those tokens leave nothing behind: the engine emits
    * them and every consumer drops them. With it on, the console renders the
-   * thinking — the chat thread, the Playground, Compare — and a chat run keeps
+   * thinking — the chat thread and the Playground — and a chat run keeps
    * it on the assistant message beside the answer.
    *
    * The console is where it is *rendered*, not the boundary it stops at: the
@@ -265,7 +265,7 @@ export interface VersionParameters {
    * changes who can read the thinking rather than what the run can do: reasoning
    * restates the request in the model's own words, so it lands in storage and on
    * a reader's screen with whatever the request carried. Inert on a model with
-   * no reasoning, and the version editor offers it only where the model has it.
+   * no reasoning, and the Agent editor offers it only where the model has it.
    *
    * It does not change what the *model* is sent: a turn's thinking goes back to
    * the provider attached to that turn either way.
@@ -279,8 +279,8 @@ export interface SubagentRef {
 }
 
 /**
- * A version's binding to a registry MCP server. The URL always comes from the
- * registry; only headers may be redefined per version.
+ * An Agent's binding to a registry MCP server. The URL always comes from the
+ * registry; only headers may be redefined per Agent.
  *
  * `headers` layers over the registry server's own headers at dispatch:
  * a string value replaces a registry default or adds a new header, and `null`
@@ -295,7 +295,7 @@ export interface McpBinding {
   /** Internal fingerprint of the registry URL that encrypted header values belong to. */
   headerTarget?: string;
   /**
-   * Which of the server's tools this version offers the model. Absent means all
+   * Which of the server's tools this Agent offers the model. Absent means all
    * of them — the shape every binding had before, and the right default for a
    * small server. A large server is worth narrowing: every tool costs prompt
    * budget and dilutes the model's choice.
@@ -303,18 +303,15 @@ export interface McpBinding {
   tools?: string[];
 }
 
-export interface Version {
+/** Mutable current settings; execution retains the snapshot it admitted. */
+export interface AgentConfiguration {
   projectName: string;
-  versionName: string;
   systemPrompt: string;
-  userPromptTemplate: string;
   model: string;
   fallbackModel?: string;
-  parameters: VersionParameters;
-  /** Bound MCP servers. Legacy rows stored plain names; reads normalize them. */
+  parameters: AgentParameters;
   mcpList: McpBinding[];
   skillList: string[];
   subagentList: SubagentRef[];
   maxTurn?: number;
-  createdAt: string;
 }

@@ -221,7 +221,7 @@ export async function handleTelegramUpdate(
     { ...(deps.sleep ? { sleep: deps.sleep } : {}) },
   );
 
-  // A command is answered whether or not the project has a runnable version:
+  // A command is answered whether or not the project has a runnable configuration:
   // `/start` on a bot that is currently failing should still say what it is.
   if (disposition.kind === "command") {
     const project = await deps.projects.get(binding.projectName);
@@ -236,7 +236,7 @@ export async function handleTelegramUpdate(
   if (!runnable) {
     return;
   }
-  const { project, version } = runnable;
+  const { project, configuration } = runnable;
 
   if (!(await claimsAlbum(deps, binding, message, disposition.text))) {
     log.info("telegram", `album member skipped project=${project.name} chat=${message.chat.id}`);
@@ -255,7 +255,7 @@ export async function handleTelegramUpdate(
   const userId = message.from ? String(message.from.id) : undefined;
   await runRememberedTurn(deps, {
     project,
-    version,
+    configuration,
     reply,
     conversation: telegramConversation(message.chat.id, threadId),
     text: disposition.text,

@@ -10,7 +10,8 @@ Agent Studio 를 로컬에서 셋업하고, 실행하고, 검증하는 방법.
 
 - **Node.js 24+** (`engines: >=24`)
 - **pnpm 11.24.0**, `packageManager` 로 고정 (정확한 pin 은 package.json 이 정본). 전역 설치 대신 corepack 을 쓴다
-- **Docker** (PostgreSQL(pgvector) 용, artifact 를 시험한다면 MinIO 도)
+- **local Kubernetes** (기본): OrbStack 또는 Docker Desktop의 Kubernetes와 `kubectl`
+- **Docker 엔진**: Workspace·Sandbox, Compose 대안과 격리된 Docker 검사에 사용한다
 
 ```bash
 corepack enable && corepack prepare pnpm@11.24.0 --activate
@@ -31,7 +32,18 @@ test -f .env.local || cp .env.example .env.local
 
 전체 목록은 [CONFIGURATION.md](CONFIGURATION.md) 를 보라.
 
-## 로컬 PostgreSQL
+## 로컬 서비스 (Kubernetes)
+
+로컬 개발 환경은 local Kubernetes를 우선한다. 기존 서비스와 연결 설정부터 확인하고,
+Kubernetes를 사용할 수 없거나 격리된 테스트에 필요한 경우에 Compose 대안을 사용한다.
+
+PostgreSQL·MinIO·Neo4j·MCP는 형제 GitOps 저장소의 `local` 환경으로 배포한다.
+Kubernetes 실행 제품은 OrbStack 또는 Docker Desktop을 선택한다.
+Argo CD namespace와 Helm release는 EKS·k3s와 동일하게 `argocd`를 사용한다. 설치와 Mac의 접속 주소는
+[localdev](INSTALL.md#localdev)를 따른다. 포워딩을 유지하고 `.env.local`에 localhost 주소와 로컬 자격 증명을
+설정한 뒤 이 저장소에서 `pnpm dev`를 실행한다. 앱은 부팅 시 PostgreSQL 스키마를 초기화한다.
+
+## 로컬 PostgreSQL (Compose 대안)
 
 ```bash
 docker compose up -d postgres minio minio-init # PostgreSQL 18 + MinIO + bucket
@@ -55,7 +67,7 @@ Agent Memory는 별도 project와 포트를 사용하므로 서로 독립적으�
 `.env.example` 의 기본 object-store 설정은 Agent Studio MinIO(:9000, console :9001)를 가리킨다.
 `minio-init`이 `agent-studio` bucket을 멱등하게 만든다.
 
-## 로컬 MCP (deploy/local)
+## 로컬 MCP (Compose 대안: deploy/local)
 
 MCP는 선택 기능이다. 공개 원격 서버는 해당 서비스의 연결·인증으로 사용하고, 사설 DNS의 서버는
 배포가 허용한 내부 suffix와 실제 네트워크 도달성이 있어야 한다. [deploy/local/](../deploy/local/README.md)은
@@ -155,6 +167,7 @@ discovery·PKCE·콜백·세션 생성·재로그인을 확인한다. audience·
 | 스크립트 | 용도 |
 |---|---|
 | `scripts/db-migrate.ts` | `DATABASE_URL` 의 데이터베이스를 현재 스키마로 올린다. 앱이 부팅 때 하는 것과 같은 마이그레이션이고, CI 나 첫 부팅 전에 앱 없이 돌리는 형태다. |
+| `scripts/migrate-agent-configuration.ts` | Version 기반 데이터를 원본 보관 후 현재 Agent 설정으로 옮기는 수동 계획·적용 도구다. [이전 절차](AGENT-MIGRATION.md)를 따른다. |
 | `scripts/dev-session.ts` | 개발용 사용자와 세션을 Better Auth 의 테이블에 바로 써 넣고 서명된 세션 쿠키를 출력한다. 신원 제공자 왕복 없이 인증이 필요한 라우트를 시험한다. 로컬이 아닌 `DATABASE_URL` 은 거부한다. |
 | `scripts/mock-llm.ts` | `127.0.0.1:8002` (`MOCK_LLM_PORT`) 에서 도는 독립 실행형 OpenAI 호환 mock 서버. 스트리밍과 비스트리밍을 모두 지원하고, 도구가 제공되고 *동시에* 메시지가 `skill named "<slug>"` 를 언급할 때 `Skill` 도구 호출을 한 번 요청한다. `MOCK_LLM_CHUNKS` 와 `MOCK_LLM_DELAY_MS` 는 답변을 부풀리고 늦춰 긴 스트리밍 응답으로 만든다. 답이 도착하는 동안 chat 창이 무엇을 하는지 볼 수 있는 유일한 방법이다. 기본값은 통합 체크가 기대하는 한 줄 답변을 유지한다. |
 | `scripts/seed-skills.ts` | 샘플 Skill 을 멱등하게 시드한다. |
@@ -205,8 +218,9 @@ pnpm test:integration
 
 ## CI
 
-현재 workflow는 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 하나다.
-`pull_request`와 `v*` tag push에 반응하며 `verify`는 GitHub-hosted `ubuntu-24.04`에서 실행한다.
+[`.github/workflows/pr.yml`](../.github/workflows/pr.yml)은 `pull_request`에서 검증만 수행한다.
+[`.github/workflows/release.yml`](../.github/workflows/release.yml)은 `v*` tag push에서 실행한다.
+두 workflow의 `verify`는 GitHub-hosted `ubuntu-24.04`에서 다음 검사를 수행한다.
 
 ```text
 pnpm install --frozen-lockfile → typecheck → test → test:integration
@@ -217,11 +231,10 @@ pnpm install --frozen-lockfile → typecheck → test → test:integration
 검사가 없다. 로컬에서 필요한 범위를 따로 실행해야 하며 `main` push나 모델 드리프트의
 독립적인 정기 검사 workflow도 없다.
 
-`github-release`와 `release`는 `verify` 뒤에 실행되고, 이미지 빌드에서 Dockerfile의
-`pnpm build`가 수행된다. 다만 두 job에 tag 전용 조건이 없어 PR에서도 실행을 시도하는
-현재 제약이 있다. tag 조건이 있는 job은 `gitops`뿐이다.
-릴리스 권한과 완료 확인은 [OPERATIONS](OPERATIONS.md#릴리스-파이프라인),
-해결할 조건은 [MILESTONES](MILESTONES.md#release-event-gating)를 따른다.
+tag workflow의 `github-release`와 `release`는 `verify` 뒤에 실행되고, 이미지 빌드에서
+Dockerfile의 `pnpm build`가 수행된다. 이미지 게시가 끝나면 `gitops`가 배포 이벤트를 전달한다.
+PR workflow에는 Release 생성·registry 게시·GitOps 전달 job이 없다.
+릴리스 권한과 완료 확인은 [OPERATIONS](OPERATIONS.md#릴리스-파이프라인)를 따른다.
 
 ## 테스트
 
@@ -298,10 +311,9 @@ pnpm install --frozen-lockfile → typecheck → test → test:integration
       `notExpiredAt` 을 넘긴다. 필터가 `LIMIT` 보다 먼저 돌게.
 - [ ] 한없이 늘어나는 새 행은 `src/infrastructure/db/ttl.ts` 에서 온 `expiresAt` 을 갖는다.
       그래야 틱의 sweep 이 지운다.
-- [ ] 새 실행 진입점은 projectType 디스패치를 다시 구현하는 대신 파사드를 호출하고, 런 브래킷을
+- [ ] 새 실행 진입점은 파사드로 같은 Agent 도구 루프를 호출하고, 런 브래킷을
       연다. 런을 chunk 로 받는 소비자(이미지 포함)에게는 `streamProjectRun`, completion 으로
-      답하는 소비자에게는 `executeProjectStream`/`executeProject` 이고, 후자는 이미지 project 를
-      거부한다.
+      답하는 소비자에게는 `executeProjectStream`/`executeProject`을 사용한다. 이미지도 Agent 도구의 출력으로 처리한다.
 - [ ] 이제 두 곳에 존재하게 된 결정은 단일 소유자와 `SINGLE_OWNERS` 항목을 갖는다.
 - [ ] `pnpm typecheck && pnpm test && pnpm build` 가 통과한다.
 

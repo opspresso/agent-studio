@@ -12,9 +12,9 @@ import { aguiClientExample } from "../api-reference/endpoints";
  * How an application embeds this project through AG-UI: the endpoint, what
  * it authenticates with, and the shortest client that talks to it. Nothing
  * is fetched — the address is a function of the name, and whether it answers
- * is a function of the published pointer the page already holds.
+ * is a function of the configured pointer the page already holds.
  */
-export function AguiSection({ projectName, published }: { projectName: string; published: boolean }) {
+export function AguiSection({ projectName, configured }: { projectName: string; configured: boolean }) {
   const t = useT();
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   const url = `${origin}/api/agui/${projectName}`;
@@ -23,8 +23,8 @@ export function AguiSection({ projectName, published }: { projectName: string; p
     <CollapsibleSection
       title={t("pset.agui")}
       badge={
-        <Badge color={stateColor(published)} radius="xl">
-          {published ? "exposed" : "not published"}
+        <Badge color={stateColor(configured)} radius="xl">
+          {configured ? "exposed" : "not configured"}
         </Badge>
       }
     >
@@ -32,9 +32,9 @@ export function AguiSection({ projectName, published }: { projectName: string; p
         <Text fz="xs" c="dimmed" lh={1.6}>
           {t("pint.aguiLede")} <Code>Authorization: Bearer</Code>
         </Text>
-        {!published && (
+        {!configured && (
           <Text fz="sm" c="dimmed">
-            {t("pint.aguiPublish")}
+            {t("pint.aguiConfigure")}
           </Text>
         )}
         <CopyableUrl url={url} />

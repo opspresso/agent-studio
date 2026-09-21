@@ -142,11 +142,11 @@ conversation 이고, 평범한 그룹은 그 안의 모두에게 하나의 conve
 눈에도 그렇게 보인다. MCP 서버에 전달되는 키도, 바깥으로 나가는 A2A transfer 가 이어받는
 키도 같은 키다 ([agents-a2a.md](agents-a2a.md) 참고).
 
-**누가 묻고 있는지**는 Version 이 옵트인했을 때만(`parameters.callerContext`), 그리고
+**누가 묻고 있는지**는 Agent 설정이 옵트인했을 때만(`parameters.callerContext`), 그리고
 update 가 나르는 만큼만 모델에 닿는다: 보낸 사람의 이름이고, `callerFrom` 이 프롬프트에
 안전하도록 만든다. Telegram 은 timezone 도 email 도 넘겨주지 않으므로, Telegram 런은 자기
 artifact 를 project 만으로 분류한다. 이 옵트인은 *적어 두는 것* 도, *다시 읽는 것* 도 통제한다 — 턴의 화자 이름은 그것을 알고자
-한 Version 에 대해서만 transcript 에 들어가고, 옵트인을 끈 Version 은 이전 Version 이 적어
+한 Agent 설정에 대해서만 transcript 에 들어가고, 옵트인을 끈 Agent는 이전 실행이 적어
 둔 이름도 읽지 않는다 — 그리고 옵트인한 그룹 conversation 에 사람이 둘 이상 있으면 모든 사람
 턴에, 가장 최근 턴을 포함해, 화자 라벨이 붙는다. 세 사람의 대화가 한 사람의 독백으로 모델에 닿지 않게 하기 위해서다. 이전 턴의
 이미지는 나르지 않는다: transcript 는 텍스트만 지킨다. 문서에서 추출한 텍스트는 파일 경계와

@@ -259,7 +259,7 @@ export const config = {
    * Whether this deployment keeps a capability catalog (`CATALOG_ENABLED`).
    *
    * Off means indexing refuses and a run resolves exactly the bindings its
-   * version names, which is what every run did before. Off by default because
+   * Agent settings name. Off by default because
    * the catalog needs an embedding model the deployment's channel can serve
    * — a self-hosted router without one would index nothing and say so only
    * in a log line — so turning it on is a statement that there is one. The
@@ -440,13 +440,6 @@ export const config = {
   },
   get maxConcurrentRunsA2a(): number {
     return positiveIntEnv("MAX_CONCURRENT_RUNS_A2A", 50, 0, MAX_RUN_SLOTS);
-  },
-  /**
-   * The share of predict and image runs that record a trace. Agent runs are
-   * always traced — that is a decision in `traceLifecycle`, not a rate.
-   */
-  get traceSampleRate(): number {
-    return fractionEnv("TRACE_SAMPLE_RATE", 0.1);
   },
   /**
    * How long a discovered MCP tool list may be reused, and the most a server's

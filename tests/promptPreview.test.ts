@@ -19,7 +19,7 @@ import type { ExecutionDeps } from "@/application/execution/runProject";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
 import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
@@ -38,25 +38,24 @@ function projectFixture(): Project {
   };
 }
 
-function versionFixture(): Version {
+function configurationFixture(): AgentConfiguration {
   return {
     projectName: "helper",
-    versionName: "v1",
+
     systemPrompt: "You are helpful.",
-    userPromptTemplate: "",
+
     model: "gpt-test",
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
 /** A version bound to a skill, an MCP server and a subagent. */
-function boundVersion(): Version {
+function boundVersion(): AgentConfiguration {
   return {
-    ...versionFixture(),
+    ...configurationFixture(),
     skillList: ["greeting"],
     mcpList: [{ name: "crm" }],
     subagentList: [{ name: "painter", type: "local" }],
@@ -188,8 +187,8 @@ describe("previewPrompt", () => {
     };
     const preview = await previewPrompt(deps, {
       project: projectFixture(),
-      version: {
-        ...versionFixture(),
+      configuration: {
+        ...configurationFixture(),
         mcpList: [{ name: "memory" }],
         parameters: {
           piiFiltering: false,
@@ -215,13 +214,13 @@ describe("previewPrompt", () => {
     const deps = executionDepsFixture(channel);
     wireRegistry(deps);
     stubMcpServer(["query", "update"]);
-    const version = boundVersion();
+    const configuration = boundVersion();
 
-    const preview = await previewPrompt(deps, { project: projectFixture(), version });
+    const preview = await previewPrompt(deps, { project: projectFixture(), configuration });
     await drain(
       executeAgent(deps, {
         project: projectFixture(),
-        version,
+        configuration,
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -248,7 +247,7 @@ describe("previewPrompt", () => {
 
     const preview = await previewPrompt(deps, {
       project: projectFixture(),
-      version: boundVersion(),
+      configuration: boundVersion(),
     });
 
     // `dispatch_agents` rides along with the transfer tool: a preview stands for
@@ -274,7 +273,7 @@ describe("previewPrompt", () => {
     wireRegistry(deps);
     const server = stubMcpServer(["query"]);
 
-    await previewPrompt(deps, { project: projectFixture(), version: boundVersion() });
+    await previewPrompt(deps, { project: projectFixture(), configuration: boundVersion() });
 
     expect(server.verbs).not.toContain("DELETE");
     expect(server.verbs.every((verb) => verb === "POST")).toBe(true);
@@ -290,7 +289,7 @@ describe("previewPrompt", () => {
 
       const preview = await previewPrompt(deps, {
         project: projectFixture(),
-        version: boundVersion(),
+        configuration: boundVersion(),
       });
 
       expect(preview.warnings.some((w) => w.includes("greeting"))).toBe(true);
@@ -300,105 +299,12 @@ describe("previewPrompt", () => {
     }
   });
 
-  it("tells an agent project that its user prompt template is never sent", async () => {
-    const deps = executionDepsFixture(new FakeChannel([]));
-    wireRegistry(deps);
-    stubMcpServer(["query"]);
-
-    const preview = await previewPrompt(deps, {
-      project: projectFixture(),
-      version: { ...boundVersion(), userPromptTemplate: "Answer {{topic}}." },
-    });
-
-    expect(preview.warnings.some((w) => w.includes("user prompt template"))).toBe(true);
-  });
-
-  it("renders a prompt project's template with its variables", async () => {
-    const deps = executionDepsFixture(new FakeChannel([]));
-
-    const preview = await previewPrompt(deps, {
-      project: { ...projectFixture(), projectType: "llm" },
-      version: {
-        ...versionFixture(),
-        systemPrompt: "You summarize.",
-        userPromptTemplate: "Summarize {{topic}} in one line.",
-      },
-      variables: { topic: "otters" },
-    });
-
-    expect(preview.messages).toEqual([
-      { role: "system", content: `You summarize.\n\n---\n\n${CLOCK_LINE}` },
-      { role: "user", content: "Summarize otters in one line." },
-    ]);
-    expect(preview.toolNames).toEqual([]);
-  });
-
-  it("names the caller in a prompt project's preview, on the version's opt-in", async () => {
-    // The agent branch went through `assembleAgentRun` and carried the block;
-    // this one built its messages itself and never asked, so a prompt project
-    // that opted into `callerContext` previewed anonymously while a run of the
-    // same version named the person.
-    const deps = executionDepsFixture(new FakeChannel([]));
-    const version: Version = {
-      ...versionFixture(),
-      systemPrompt: "You summarize.",
-      userPromptTemplate: "Summarize.",
-    };
-
-    const withOptIn = await previewPrompt(deps, {
-      project: { ...projectFixture(), projectType: "llm" },
-      version: { ...version, parameters: { piiFiltering: false, callerContext: true } },
-      caller: { displayName: "Bruce" },
-    });
-    const without = await previewPrompt(deps, {
-      project: { ...projectFixture(), projectType: "llm" },
-      version,
-      caller: { displayName: "Bruce" },
-    });
-
-    expect(withOptIn.messages[0]?.content).toContain("You are answering Bruce.");
-    // The gate is the version's, not the surface's: a caller resolved by a page
-    // must not reach a version that never asked for one.
-    expect(without.messages[0]?.content).not.toContain("Bruce");
-  });
-
-  it("previews an image project's rendered prompt, which is all it sends", async () => {
-    const deps = executionDepsFixture(new FakeChannel([]));
-
-    const preview = await previewPrompt(deps, {
-      project: { ...projectFixture(), projectType: "image" },
-      version: { ...versionFixture(), userPromptTemplate: "A {{animal}} in watercolour" },
-      variables: { animal: "otter" },
-    });
-
-    expect(preview.messages).toEqual([
-      { role: "user", content: "You are helpful.\n\nA otter in watercolour" },
-    ]);
-  });
-
-  it("says PII filtering does not apply to an image run, instead of claiming it does", async () => {
-    const deps = executionDepsFixture(new FakeChannel([]));
-
-    const preview = await previewPrompt(deps, {
-      project: { ...projectFixture(), projectType: "image" },
-      version: {
-        ...versionFixture(),
-        userPromptTemplate: "A heron",
-        parameters: { piiFiltering: true },
-      },
-    });
-
-    expect(preview.warnings).toEqual([
-      "PII filtering does not apply to an image run — the prompt reaches the provider unmasked.",
-    ]);
-  });
-
   it("says so when PII filtering will rewrite what is sent", async () => {
     const deps = executionDepsFixture(new FakeChannel([]));
 
     const preview = await previewPrompt(deps, {
-      project: { ...projectFixture(), projectType: "llm" },
-      version: { ...versionFixture(), parameters: { piiFiltering: true } },
+      project: { ...projectFixture(), projectType: "agent" },
+      configuration: { ...configurationFixture(), parameters: { piiFiltering: true } },
     });
 
     expect(preview.warnings.some((w) => w.includes("PII"))).toBe(true);
@@ -440,8 +346,8 @@ describe("previewPrompt", () => {
 
       const preview = await previewPrompt(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture(),
+        configuration: {
+          ...configurationFixture(),
           parameters: { piiFiltering: false, dynamicCapabilities: true },
         },
         message: "say hello to the customer",
@@ -466,8 +372,8 @@ describe("previewPrompt", () => {
 
       await previewPrompt(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture(),
+        configuration: {
+          ...configurationFixture(),
           parameters: { piiFiltering: false, dynamicCapabilities: true },
         },
         message: "say hello to the customer",
@@ -484,8 +390,8 @@ describe("previewPrompt", () => {
 
       const preview = await previewPrompt(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture(),
+        configuration: {
+          ...configurationFixture(),
           parameters: { piiFiltering: false, dynamicCapabilities: true },
         },
       });
@@ -502,7 +408,7 @@ describe("previewPrompt", () => {
 
       const preview = await previewPrompt(deps, {
         project: projectFixture(),
-        version: versionFixture(),
+        configuration: configurationFixture(),
         message: "say hello to the customer",
       });
 

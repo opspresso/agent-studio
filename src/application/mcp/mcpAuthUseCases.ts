@@ -24,18 +24,18 @@ import type {
   McpConnectionRepository,
   McpOAuthStateRepository,
 } from "@/domain/mcp/connection";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+import type { ProjectRepository } from "@/domain/project/repository";
 import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCipher";
 import {
   mcpConnectionSecretContext,
   mcpHeadersContext,
-  versionMcpHeadersContext,
+  agentMcpHeadersContext,
   mcpOAuthClientSecretContext,
   mcpOAuthStateContext,
 } from "@/domain/security/secretContext";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
-import { resolveDraftMcpBindings } from "@/application/project/versionUseCases";
+import { resolveMcpBindings } from "@/application/project/mcpBindingSettings";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { applyMcpUserEmail, stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
 import { listProjectMcpConnections } from "./listConnections";
@@ -320,7 +320,6 @@ export interface McpAuthUseCasesDeps {
   lifecycleClaims?: Set<string>;
   mcps: McpRepository;
   projects: ProjectRepository;
-  versions?: Pick<VersionRepository, "get">;
   connections: McpConnectionRepository;
   states: McpOAuthStateRepository;
   metadata: OAuthMetadataClient;
@@ -409,7 +408,6 @@ export interface McpAuthUseCases {
     serverName: string,
     userEmail: string,
     headerOverrides?: HeaderOverrides,
-    versionName?: string,
   ): Promise<ListToolsResult>;
 }
 
@@ -1040,8 +1038,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       await deps.connections.delete(projectName, serverName);
     },
 
-    async listTools(projectName, serverName, userEmail, headerOverrides, versionName) {
-      await assertProjectWritable(deps.projects, projectName, userEmail);
+    async listTools(projectName, serverName, userEmail, headerOverrides) {
+      const project = await assertProjectWritable(deps.projects, projectName, userEmail);
       const server = await requireServer(serverName);
       const loopback = skipsUrlGuard(server, deps.internalHostSuffixes);
       if (!loopback) {
@@ -1056,23 +1054,19 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           return { ok: false, error: error instanceof BlockedUrlError ? error.message : "Blocked URL" };
         }
       }
-      let resolvedOverrides = headerOverrides;
-      if (versionName) {
-        if (!deps.versions) throw new ValidationError("Version tool discovery is not configured");
-        // Resolve against the same endpoint snapshot that the probe will use.
-        const [binding] = await resolveDraftMcpBindings(deps.versions, { get: async () => server }, deps.cipher,
-          projectName, versionName, [{ name: serverName, ...(headerOverrides === undefined ? {} : { headers: headerOverrides }) }]);
-        resolvedOverrides = binding?.headers;
-      }
+      const [binding] = await resolveMcpBindings(deps.cipher, { get: async () => server },
+        [{ name: serverName, ...(headerOverrides === undefined ? {} : { headers: headerOverrides }) }],
+        project.configuration?.mcpList ?? [], name => agentMcpHeadersContext(projectName, name));
+      const resolvedOverrides = binding?.headers;
       // Assembled exactly as a run assembles it (see execution/mcpTools) — the
       // binding's overrides layered over the entry, then the project's
-      // Authorization last so a version cannot substitute its own. A list built
+      // Authorization last so an Agent cannot substitute its own. A list built
       // any other way would be answering a question nobody asked.
       const headers = deps.cipher.mergeOutboundHeaders(
         server.headers,
         resolvedOverrides,
         mcpHeadersContext(server.name),
-        versionName ? versionMcpHeadersContext(projectName, "draft", serverName) : undefined,
+        agentMcpHeadersContext(projectName, serverName),
       );
       // Before the availability check below, exactly as a run strips them: a
       // stored spelling of a reserved metadata header is not "a way to

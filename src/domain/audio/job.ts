@@ -1,6 +1,6 @@
 import type { FileRetention } from "@/domain/artifact/retention";
 import type { RunActor } from "@/domain/execution/actor";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 import type { SourceRefresh } from "@/domain/artifact/sourceReference";
 
 export type AudioJobStage = "importing" | "transcribing" | "postprocessing" | "storing" | "cleaning";
@@ -31,8 +31,8 @@ export interface AudioJobInput {
   configRevision?: number;
   language?: string;
   retention: FileRetention;
-  postprocess?: { projectName: string; versionName: string; version?: Version };
-  destination?: { serverName: string; documents: boolean; memories: boolean; version?: Version };
+  postprocess?: { projectName: string; configuration?: AgentConfiguration };
+  destination?: { serverName: string; documents: boolean; memories: boolean; configuration?: AgentConfiguration };
 }
 
 export interface AudioJob extends AudioJobInput {

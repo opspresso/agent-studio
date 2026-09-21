@@ -147,7 +147,7 @@ export function skipsUrlGuard(
 }
 
 export interface McpServer {
-  /** Plugin-provided file response mappings. A version may override or disable them. */
+  /** Plugin-provided file response mappings. An Agent may override or disable them. */
   sourceOutputs?: McpSourceMapping[];
   name: string;
   url: string;

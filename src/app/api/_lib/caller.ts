@@ -7,7 +7,7 @@ import type { SessionUser } from "@/lib/session";
  *
  * One helper rather than a `callerFrom` call in each route, for the reason the
  * feature needed fixing at all: it reached exactly one surface. Slack resolved a
- * caller and nothing else did, so a version that opted into `callerContext`
+ * caller and nothing else did, so an Agent that opted into `callerContext`
  * behaved differently depending on where it was run — and the Playground, the
  * one place an author checks their prompt, was among the surfaces that showed
  * nothing.
