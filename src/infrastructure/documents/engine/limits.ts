@@ -45,17 +45,8 @@ export const MAX_INSPECTED_CELLS = 10_000;
 export const MAX_SPREADSHEET_COLUMNS = 16_384;
 export const MAX_SPREADSHEET_ROW_INDEX = 1_048_576;
 
-/**
- * Columns one ODF repeat run may stand for.
- *
- * `table:number-columns-repeated` is how ODF stores a run of identical cells,
- * and every ODS row ends with one padding it to the sheet's full width —
- * `16384`, and `1048576` for the rows. The count has to be honoured or the
- * values after it land in the wrong columns, and it cannot be honoured
- * literally. This is the ceiling; past it a run is a sheet's padding rather
- * than a table anyone wrote.
- */
-export const MAX_REPEATED_COLUMNS = 256;
+/** ODF merged-cell geometry bound; repeated content uses the spreadsheet budgets above. */
+export const MAX_ODF_CELL_SPAN = 256;
 
 /**
  * Blocks one `inspect_document` call may describe, and how much of each block's

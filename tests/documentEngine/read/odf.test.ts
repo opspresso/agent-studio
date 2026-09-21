@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "vitest";
 import { buildZip, stored } from "@/infrastructure/documents/engine/zip";
 import { contentXmlToBlocks, odfKindOf, odfToText, OdfError } from "@/infrastructure/documents/engine/read/odf";
+import { MAX_SPREADSHEET_COLUMNS, MAX_SPREADSHEET_ROWS } from "@/infrastructure/documents/engine/limits";
 
 const utf8 = (value: string) => new TextEncoder().encode(value);
 
@@ -100,6 +101,43 @@ test("the repeat that pads a row to the sheet's width costs nothing", () => {
     `<table:table-cell table:number-columns-repeated="16384"/></table:table-row>`;
   const bytes = odf(MIME.spreadsheet, `<table:table table:name="Data">${row}</table:table>`);
   assert.equal(odfToText(bytes).text, "## Data\n\n| A |\n| --- |");
+});
+
+test("repeated data rows and intermediate blank rows preserve their positions", () => {
+  const cell = '<table:table-cell><text:p>data</text:p></table:table-cell>';
+  const xml = '<office:body><table:table table:name="Data">' +
+    `<table:table-row table:number-rows-repeated="3">${cell}</table:table-row>` +
+    '<table:table-row table:number-rows-repeated="2"/>' +
+    `<table:table-row>${cell}</table:table-row>` +
+    '<table:table-row table:number-rows-repeated="1048576"><table:table-cell table:number-columns-repeated="16384"/></table:table-row>' +
+    '</table:table></office:body>';
+  const table = contentXmlToBlocks(xml, "spreadsheet").blocks.find(block => block.kind === "table");
+  assert.ok(table?.kind === "table");
+  assert.equal(table.totalRows, 6);
+  assert.deepEqual(table.rows.map(row => row.cells[0]?.runs[0]?.text ?? ""), ["data", "data", "data", "", "", "data"]);
+});
+
+test("repeated nonempty columns are data even beyond a padding heuristic", () => {
+  const xml = '<office:body><table:table><table:table-row>' +
+    '<table:table-cell table:number-columns-repeated="300"><text:p>x</text:p></table:table-cell>' +
+    '</table:table-row></table:table></office:body>';
+  const table = contentXmlToBlocks(xml, "spreadsheet").blocks.find(block => block.kind === "table");
+  assert.ok(table?.kind === "table");
+  assert.equal(table.columns, 300);
+  assert.equal(table.rows[0]?.cells.length, 300);
+});
+
+test("repeat expansion obeys row and cell budgets without treating data as padding", () => {
+  const table = (rows: string) => `<office:body><table:table>${rows}</table:table></office:body>`;
+  const cell = (count: number) => `<table:table-cell table:number-columns-repeated="${count}"><text:p>x</text:p></table:table-cell>`;
+  for (const rows of [
+    `<table:table-row table:number-rows-repeated="${MAX_SPREADSHEET_ROWS + 1}">${cell(1)}</table:table-row>`,
+    `<table:table-row table:number-rows-repeated="${MAX_SPREADSHEET_ROWS + 1}"/><table:table-row>${cell(1)}</table:table-row>`,
+    `<table:table-row>${cell(MAX_SPREADSHEET_COLUMNS + 1)}</table:table-row>`,
+    `<table:table-row table:number-rows-repeated="1000">${cell(1001)}</table:table-row>`,
+    `<table:table-row table:number-rows-repeated="30000"/><table:table-row>${cell(300)}</table:table-row>`,
+    `<table:table-row table:number-rows-repeated="1000"><table:table-cell><text:p>${"x".repeat(30000)}</text:p></table:table-cell></table:table-row>`,
+  ]) assert.throws(() => contentXmlToBlocks(table(rows), "spreadsheet"), OdfError);
 });
 
 test("a cell covered by a merge still holds its column", () => {

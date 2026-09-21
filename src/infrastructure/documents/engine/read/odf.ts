@@ -19,7 +19,7 @@
  * least.
  */
 
-import { MAX_REPEATED_COLUMNS, MAX_TEXT_CHARS } from "../limits";
+import { MAX_ODF_CELL_SPAN, MAX_SPREADSHEET_CELLS, MAX_SPREADSHEET_COLUMNS, MAX_SPREADSHEET_ROWS, MAX_TEXT_CHARS, MAX_ZIP_ENTRY_BYTES } from "../limits";
 import type { Align, Run } from "../markdown";
 import { attributeOf, localName, walkXml, type XmlHandler } from "../xml";
 import { openZip } from "../zip";
@@ -72,18 +72,18 @@ export function odfKindOf(mimetype: string): OdfKind | undefined {
  */
 const SKIPPED = new Set(["tracked-changes", "annotation", "annotation-end", "note", "notes"]);
 
-/** A cell's `table:number-columns-repeated`, bounded and never zero. */
-function repeatOf(attributes: string): number {
-  const count = Number(attributeOf(attributes, "table:number-columns-repeated") ?? "1");
-  if (!Number.isInteger(count) || count < 1) {
-    return 1;
+/** A repeat is a content count; expansion is bounded when the content is retained. */
+function repeatOf(attributes: string, name = "table:number-columns-repeated"): number {
+  const count = Number(attributeOf(attributes, name) ?? "1");
+  if (!Number.isSafeInteger(count) || count < 1) {
+    throw new OdfError("a table repeat count must be a positive safe integer");
   }
-  return Math.min(count, MAX_REPEATED_COLUMNS);
+  return count;
 }
 
 function spanOf(attributes: string, name: string): number {
   const count = Number(attributeOf(attributes, name) ?? "1");
-  return Number.isInteger(count) && count > 1 ? Math.min(count, MAX_REPEATED_COLUMNS) : 1;
+  return Number.isInteger(count) && count > 1 ? Math.min(count, MAX_ODF_CELL_SPAN) : 1;
 }
 
 /** A table being built, one per open `table:table` so a nested one nests. */
@@ -94,6 +94,10 @@ interface Building {
   merged: boolean;
   /** Empty columns a repeat run owes, paid when a later cell needs them. */
   owed: number;
+  rowRepeat: number;
+  rowBytes: number;
+  /** Empty rows are retained only when data follows them. */
+  owedRows: number;
   /** Depth inside `table:table-header-rows`, which the document marked itself. */
   headerDepth: number;
 }
@@ -121,6 +125,8 @@ class Extractor implements XmlHandler {
   private cellDepth = 0;
   private headingLevel: number | undefined;
   private frameLabel: string | undefined;
+  private expandedCells = 0;
+  private expandedBytes = 0;
   readonly observed = new Set<string>();
   parts = 0;
 
@@ -363,9 +369,15 @@ class Extractor implements XmlHandler {
         if (this.cellDepth > 0) {
           this.observed.add("a table nested inside a cell");
         }
-        this.tables.push({ rows: [], cells: [], columns: 0, merged: false, owed: 0, headerDepth: 0 });
+        this.tables.push({ rows: [], cells: [], columns: 0, merged: false, owed: 0, rowRepeat: 1, rowBytes: 0, owedRows: 0, headerDepth: 0 });
         return;
       }
+      case "table-row":
+        if (this.table) {
+          this.table.rowRepeat = repeatOf(attributes, "table:number-rows-repeated");
+          if (selfClosing) this.endRow();
+        }
+        return;
       case "table-header-rows":
         if (this.table && this.skipDepth === 0) {
           this.table.headerDepth += 1;
@@ -401,7 +413,7 @@ class Extractor implements XmlHandler {
         }
         const repeat = repeatOf(attributes);
         if (selfClosing) {
-          table.owed += repeat;
+          table.owed = Math.min(MAX_SPREADSHEET_COLUMNS + 1, table.owed + repeat);
           return;
         }
         if (this.cellDepth === 0) {
@@ -494,6 +506,12 @@ class Extractor implements XmlHandler {
           table.merged = true;
           this.observed.add("merged table cells");
         }
+        const bytes = runs.reduce((total, run) => total + Buffer.byteLength(run.text), 0) * span.repeat;
+        this.assertCellRoom(table, span.repeat);
+        if (this.expandedBytes + table.rowBytes + bytes > MAX_ZIP_ENTRY_BYTES) {
+          throw new OdfError("expanded table text exceeds the document part budget");
+        }
+        table.rowBytes += bytes;
         for (let copy = 0; copy < span.repeat; copy += 1) {
           table.cells.push({
             runs: copy === 0 ? runs : runs.map((run) => ({ ...run })),
@@ -504,20 +522,7 @@ class Extractor implements XmlHandler {
         return;
       }
       case "table-row": {
-        const table = this.table;
-        if (!table || this.skipDepth > 0) {
-          return;
-        }
-        // Columns owed at the end of a row are the padding every ODS row
-        // carries. Nothing sits to their right, so nobody is waiting on them.
-        table.owed = 0;
-        const width = table.cells.reduce((total, cell) => total + (cell.colspan ?? 1), 0);
-        table.columns = Math.max(table.columns, width);
-        table.rows.push({
-          cells: table.cells,
-          ...(table.headerDepth > 0 ? { header: true } : {}),
-        });
-        table.cells = [];
+        this.endRow();
         return;
       }
       case "table":
@@ -530,6 +535,53 @@ class Extractor implements XmlHandler {
         return;
       default:
         return;
+    }
+  }
+
+  private assertCellRoom(table: Building, extra: number): void {
+    if (table.cells.length + extra > MAX_SPREADSHEET_COLUMNS ||
+      this.expandedCells + table.cells.length + extra > MAX_SPREADSHEET_CELLS) {
+      throw new OdfError("expanded table cells exceed the spreadsheet budget");
+    }
+  }
+
+  private endRow(): void {
+    const table = this.table;
+    if (!table) return;
+    const repeat = table.rowRepeat;
+    const cells = table.cells;
+    const bytes = table.rowBytes * repeat;
+    table.cells = [];
+    table.owed = 0;
+    table.rowRepeat = 1;
+    table.rowBytes = 0;
+    if (!cells.some(cell => cell.runs.length > 0 || cell.colspan || cell.rowspan)) {
+      table.owedRows = Math.min(MAX_SPREADSHEET_ROWS + 1, table.owedRows + repeat);
+      return;
+    }
+    if (table.rows.length + table.owedRows + repeat > MAX_SPREADSHEET_ROWS) {
+      throw new OdfError("expanded table rows exceed the spreadsheet budget");
+    }
+    const cellCount = cells.length * repeat;
+    if (this.expandedCells + cellCount > MAX_SPREADSHEET_CELLS) {
+      throw new OdfError("expanded table cells exceed the spreadsheet budget");
+    }
+    const width = cells.reduce((total, cell) => total + (cell.colspan ?? 1), 0);
+    if (width > MAX_SPREADSHEET_COLUMNS) throw new OdfError("expanded table columns exceed the spreadsheet budget");
+    if (Math.max(table.columns, width) * (table.rows.length + table.owedRows + repeat) > MAX_SPREADSHEET_CELLS) {
+      throw new OdfError("expanded table grid exceeds the spreadsheet budget");
+    }
+    if (this.expandedBytes + bytes > MAX_ZIP_ENTRY_BYTES) {
+      throw new OdfError("expanded table text exceeds the document part budget");
+    }
+    this.expandedCells += cellCount;
+    this.expandedBytes += bytes;
+    table.columns = Math.max(table.columns, width);
+    for (let row = 0; row < table.owedRows; row += 1) table.rows.push({ cells: [] });
+    table.owedRows = 0;
+    // Parsed cells are immutable from this point; repeated rows can share their runs.
+    for (let row = 0; row < repeat; row += 1) {
+      table.rows.push({ cells, ...(table.headerDepth > 0 ? { header: true } : {}) });
     }
   }
 
@@ -553,6 +605,7 @@ class Extractor implements XmlHandler {
 
   /** Pay for the repeat run standing between the last cell and this one. */
   private settle(table: Building): void {
+    this.assertCellRoom(table, table.owed);
     for (let column = 0; column < table.owed; column += 1) {
       table.cells.push({ runs: [] });
     }
