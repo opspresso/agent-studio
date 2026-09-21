@@ -98,7 +98,7 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
 ];
 
 export interface SettingFieldView {
-  /** Masked for secrets (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4) —
+  /** Masked for secrets (length-preserving; four visible characters at each end above eight characters) —
    * never the full plaintext or the ciphertext. */
   value: string;
   source: "override" | "env" | "default" | "unset";
@@ -109,7 +109,7 @@ export interface LlmProviderView {
   name: string;
   kind: SupportedProvider;
   baseUrl: string;
-  /** Masked (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4). */
+  /** Masked (length-preserving; four visible characters at each end above eight characters). */
   apiKey: string;
   keepModelPrefix: boolean;
   auth: ChannelAuth;

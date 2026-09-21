@@ -1,5 +1,6 @@
 "use client";
 
+import { SectionHeading } from "@/app/_components/SectionHeading";
 import { Fragment, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
@@ -256,9 +257,7 @@ export default function ApiReferencePage() {
 
   return (
     <Stack gap="md">
-      <Text fz="sm" c="dimmed">
-        {t("apiReference.intro")}
-      </Text>
+      <SectionHeading title={t("project.tab.apiReference")} description={t("apiReference.intro")} />
       <Text fz="sm" c="dimmed">
         {t("apiReference.environmentHint")}
       </Text>

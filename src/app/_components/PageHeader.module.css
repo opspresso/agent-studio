@@ -1,0 +1,24 @@
+.header {
+  padding-block: 4px var(--mantine-spacing-lg);
+  border-bottom: 1px solid var(--studio-border);
+}
+
+.identity {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.content { min-width: 0; }
+.title {
+  font-size: clamp(26px, 2.1vw, 30px);
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+.description { word-break: keep-all; overflow-wrap: anywhere; }
+.details { margin-top: var(--mantine-spacing-xs); overflow-wrap: anywhere; }
+.actions { flex-shrink: 0; }
+
+@media (max-width: $mantine-breakpoint-xs) {
+  .actions { width: 100%; }
+}

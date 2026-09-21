@@ -24,7 +24,7 @@ import { CardGrid } from "@/app/_components/CardGrid";
 import { ManagedMcpModal } from "./_components/ManagedMcpModal";
 import { CredentialBadges } from "./_components/CredentialBadges";
 import { MCP_RUNTIME_COLOR, PLUGIN_COLOR } from "@/app/_components/badgeColors";
-import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { PageHeader } from "@/app/_components/PageHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { parsePluginSource } from "@/domain/plugin/types";
 import { useViewer } from "@/app/_lib/useViewer";
@@ -67,7 +67,7 @@ export default function ToolsPage() {
 
   return (
     <Stack gap="lg">
-      <CatalogHeader
+      <PageHeader
         title={t("nav.tools")}
         description={t("tools.lede")}
         Icon={IconTool}
@@ -78,7 +78,7 @@ export default function ToolsPage() {
           </Button>
           <Button onClick={register.open}>{t("tools.register")}</Button>
         </Group>}
-      </CatalogHeader>
+      </PageHeader>
 
       <Alert color="blue" variant="light" title={t("capabilities.descriptionTitle")}>
         {t("tools.descriptionRole")}

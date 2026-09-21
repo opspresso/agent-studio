@@ -26,7 +26,7 @@ import { OwnerLine } from "@/app/_components/OwnerLine";
 import { createProject, listProjects, type SanitizedProject } from "./lib/api";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
-import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { PageHeader } from "@/app/_components/PageHeader";
 import { reportError } from "@/app/_lib/reportError";
 import { createLatestOnly } from "@/app/_lib/latestOnly";
 
@@ -76,7 +76,7 @@ export default function ProjectsPage() {
 
   return (
     <Stack gap="lg">
-      <CatalogHeader
+      <PageHeader
         title={t("nav.projects")}
         description={t("projects.lede")}
         Icon={IconFolder}
@@ -84,7 +84,7 @@ export default function ProjectsPage() {
         {mayCreate && (
           <Button onClick={open}>{t("projects.new")}</Button>
         )}
-      </CatalogHeader>
+      </PageHeader>
 
       {error && (
         <Alert color="red" variant="light">

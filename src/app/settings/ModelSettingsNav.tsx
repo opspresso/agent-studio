@@ -1,9 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Button, Group } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
+import { PageTabs } from "@/app/_components/PageTabs";
 
 export function ModelSettingsNav() {
   const t = useT();
@@ -14,6 +13,5 @@ export function ModelSettingsNav() {
     ["/settings/model-usage", "modelAdmin.usage"],
     ["/settings/models/registered", "settings.models.registered"],
   ] as const;
-  return <Group gap="xs">{links.map(([href, label]) => <Button component={Link} href={href} key={href}
-    variant={path === href ? "light" : "subtle"} aria-current={path === href ? "page" : undefined}>{t(label)}</Button>)}</Group>;
+  return <PageTabs value={path} label={t("settings.tab.models")} variant="pills" items={links.map(([href, label]) => ({ href, label: t(label) }))} />;
 }

@@ -1,8 +1,9 @@
 "use client";
 
+import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { Alert, Badge, Button, Checkbox, FileInput, Group, NumberInput, Paper, Progress, Select, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Badge, Button, Checkbox, FileInput, Group, NumberInput, Paper, Progress, Select, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
 import { useConfirm } from "@/app/_components/useConfirm";
@@ -158,7 +159,7 @@ function AudioWorkspace({ name }: { name: string }) {
 
   return <Stack gap="lg">
     {confirmModal}
-    <div><Title order={2}>{t("audio.title")}</Title><Text c="dimmed" size="sm">{t("audio.pageHint")}</Text></div>
+    <SectionHeading title={t("audio.title")} description={t("audio.pageHint")} />
     {error && <Alert color="red">{error}</Alert>}
     {optionsLoaded && !options.models.length && <Alert>{t("audio.noModels")}</Alert>}
     <Paper withBorder p="lg"><Stack>
@@ -209,7 +210,7 @@ function AudioWorkspace({ name }: { name: string }) {
         <Button onClick={saveConfiguration} loading={busy} disabled={!validProcessing || !Number.isInteger(maxActive) || !Number.isInteger(maxPerOccurrence)}>{t("audio.saveConfig")}</Button>
       </Stack></details>
     </Stack></Paper>
-    <Group justify="space-between"><Title order={3}>{t("audio.jobs")}</Title><Button variant="default" loading={loadingJobs} onClick={() => refresh().catch((error) => setError(error.message))}>{t("audio.refresh")}</Button></Group>
+    <SectionHeading title={t("audio.jobs")}><Button variant="default" loading={loadingJobs} onClick={() => refresh().catch((error) => setError(error.message))}>{t("audio.refresh")}</Button></SectionHeading>
     {jobs.some((job) => !isAudioJobTerminal(job.status)) && <Text size="xs" c="dimmed">{t("audio.pollingHint")}</Text>}
     {!loadingJobs && !jobs.length && <Text c="dimmed">{t("audio.noJobs")}</Text>}
     {jobs.map((job) => <Paper key={job.id} withBorder p="md"><Stack gap="xs">

@@ -86,8 +86,8 @@ describe("settingsUseCases.getView", () => {
     const view = await createSettingsUseCases(repo).getView();
 
     expect(view.fields.githubToken).toEqual({
-      // 13 chars → two revealed at each end.
-      value: `gh${"•".repeat(9)}en`,
+      // 13 chars → four revealed at each end.
+      value: `ghp_${"•".repeat(5)}oken`,
       source: "env",
       secret: true,
     });

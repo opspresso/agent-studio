@@ -1,8 +1,9 @@
 "use client";
 
+import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Alert, Badge, Card, Group, Stack, Text, Title } from "@mantine/core";
+import { Alert, Badge, Card, Group, Stack, Text } from "@mantine/core";
 import { BackLink } from "@/app/_components/BackLink";
 import { LoadingText } from "@/app/_components/PageState";
 import { getTrace, type Trace } from "../../../lib/api";
@@ -34,16 +35,12 @@ export default function TraceDetailPage() {
         <LoadingText />
       ) : (
         <>
-          <Group justify="space-between" align="flex-start" wrap="wrap">
-            <div>
-              <Title order={2} fz="h3">Trace {trace.traceId}</Title>
-              <Text c="dimmed" fz="sm">{formatDateTime(trace.createdAt, locale)}</Text>
-            </div>
+          <SectionHeading title={`Trace ${trace.traceId}`} description={formatDateTime(trace.createdAt, locale)}>
             <Group gap="md">
               <Badge color={trace.status === "completed" ? "teal" : trace.status === "awaiting-approval" || trace.status === "turn-limit" || trace.status === "output-limit" ? "yellow" : "red"}>{trace.status}</Badge>
               <Text c="dimmed" fz="sm">{trace.durationMs} ms</Text>
             </Group>
-          </Group>
+          </SectionHeading>
           {trace.ancestry && trace.ancestry.length > 1 && (
             <Text fz="sm" c="dimmed">called via <Text component="span" ff="monospace">{trace.ancestry.join(" → ")}</Text></Text>
           )}

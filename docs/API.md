@@ -212,7 +212,7 @@ DELETE /api/skills/{name}     → 204                     | 404
 
 - 이름은 slug (`^[a-z0-9-]+$`) 다.
 - `mcps`/`agents` 는 `headers` 를 AES 로 암호화해 저장하고 마스킹해서 돌려준다 (길이 보존.
-  9–20자는 양끝 2자씩, 21자 이상은 4자씩 드러낸다). 업데이트 때 마스킹된 값이나 빈 값은
+  9자 이상은 양끝 4자씩 드러낸다). 업데이트 때 마스킹된 값이나 빈 값은
   저장된 secret 을 보존한다. 이들의 `url` 은 SSRF 가드를 받는다.
   private/loopback/link-local/metadata 대상(또는 http(s) 가 아닌 scheme)은 `400` 으로 거절된다.
 - `mcps` 는 선택적인 `content` (markdown 운영자 노트) 도 받는다. `description` 은 agent 런의
@@ -453,7 +453,7 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
 - 모델 등록과 사용 설정은 아래 [Models API](#models)를 사용한다. 일반 설정 API는
   `registeredModels`·`defaultModel`·검색 모델 선택을 직접 변경하는 요청을 거절한다.
 - `source` 는 `override` (DB) | `env` | `default` | `unset` 이다. secret 값은 언제나 마스킹된다
-  (길이 보존. 9–20자는 양끝 2자씩, 21자 이상은 4자씩 드러낸다). PUT 의 마스킹된 값은 저장된
+  (길이 보존. 9자 이상은 양끝 4자씩 드러낸다). PUT 의 마스킹된 값은 저장된
   secret 을 유지하고, 빈 문자열은 오버라이드를 제거한다 (env 폴백). 호출자를 제외하는 목록으로
   `adminEmails` 를 설정하는 것은 `400` 으로 거절된다. 비어 있지는 않은데 파싱하면 항목이 하나도
   없는 `adminEmails`·`allowedEmailDomains` 값(`","`)도 마찬가지다: 오버라이드 제거는 빈 문자열이

@@ -1,7 +1,9 @@
 "use client";
 
+import { LoadingText } from "@/app/_components/PageState";
+import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Loader, Select, Stack, Text, Title } from "@mantine/core";
+import { Alert, Select, Stack  } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
 import { ModelSelectionSection } from "@/app/models/ModelSelectionSection";
@@ -40,9 +42,9 @@ export default function ModelUsagePage() {
     finally { setBusy(false); }
   }
   return <Stack gap="lg">
-    <div><Title order={2} size="h3">{t("modelAdmin.usage")}</Title><Text c="dimmed" size="sm" mt={4}>{t("modelAdmin.usageHint")}</Text></div>
+    <SectionHeading title={t("modelAdmin.usage")} description={t("modelAdmin.usageHint")} />
     {error && <Alert color="red">{error}</Alert>}
-    {!view && !error && <Loader />}
+    {!view && !error && <LoadingText />}
     {view && <>
       <Select label={t("modelAdmin.default")} placeholder={t("models.selection.unconfigured")} searchable disabled={busy} allowDeselect={false}
         value={view.selected.model} data={view.registered.models.filter(model => ["text", "decisions"].includes(model.type) && model.capabilities.tools).map(model => ({ value: model.id, label: `${model.displayName} (${model.provider})` }))} onChange={model => void select(model)} />

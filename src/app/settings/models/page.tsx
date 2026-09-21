@@ -1,7 +1,11 @@
 "use client";
 
+import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
+import { DataTable } from "@/app/_components/DataTable";
+import { LoadingText, EmptyState } from "@/app/_components/PageState";
+import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Badge, Button, Group, Loader, Modal, Pagination, Select, Stack, Table, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Badge, Button, Group, Pagination, Select, Stack, Table, Text } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { readJson } from "@/app/_lib/httpClient";
 import { REGISTRY_MODEL_TYPES, type DiscoveredModel, type RegisteredModel } from "@/domain/llm/providerModels";
@@ -44,35 +48,34 @@ export default function ModelSelectionPage() {
     } catch (error) { if (request === generation.current) setError(error instanceof Error ? error.message : "Could not discover models"); }
     finally { if (request === generation.current) setBusy(false); }
   }
-  const filtered = useMemo(() => (models ?? []).filter(model => (!type || model.type === type) && `${model.wireId} ${model.displayName}`.toLowerCase().includes(query.toLowerCase())), [models, query, type]);
+  const filtered = useMemo(() => (models ?? []).filter(model => (!type || model.type === type) && matchesFilter(query, model.wireId, model.displayName)), [models, query, type]);
   const selected = new Set(registered.filter(model => model.provider === provider).map(model => model.wireId));
   const totalPages = Math.max(1, Math.ceil(filtered.length / 30));
   return <Stack gap="lg">
-    <div><Title order={2} size="h3">{t("modelAdmin.selection")}</Title><Text c="dimmed" size="sm" mt={4}>{t("modelAdmin.selectionHint")}</Text></div>
+    <SectionHeading title={t("modelAdmin.selection")} description={t("modelAdmin.selectionHint")} />
     {error && <Alert color="red">{error}</Alert>}
-    {!providers && !error && <Loader />}
-    {providers && !providers.length && <Text c="dimmed">{t("modelAdmin.emptyProviders")}</Text>}
+    {!providers && !error && <LoadingText />}
+    {providers && !providers.length && <EmptyState>{t("modelAdmin.emptyProviders")}</EmptyState>}
     {!!providers?.length && <>
       <Group align="flex-end"><Select label={t("modelAdmin.providers")} value={provider} allowDeselect={false} data={providers.map(item => ({ value: item.name, label: `${item.name} (${item.kind})` }))}
         onChange={value => { generation.current++; setProvider(value); setModels(undefined); setBusy(false); setError(undefined); setPage(1); }} />
         <Button onClick={() => void discover()} loading={busy}>{t("modelAdmin.discover")}</Button>
         <Button variant="default" disabled={!provider} onClick={() => setEditing({})}>{t("modelAdmin.manual")}</Button></Group>
       {models && <>
-        <Group><TextInput aria-label={t("modelAdmin.search")} placeholder={t("modelAdmin.search")} value={query} onChange={event => { setQuery(event.currentTarget.value); setPage(1); }} style={{ flex: 1 }} />
+        <Group align="flex-start"><CatalogSearch placeholder={t("modelAdmin.search")} value={query} onChange={value => { setQuery(value); setPage(1); }} resultCount={filtered.length} totalCount={models?.length ?? 0} />
           <Select aria-label={t("models.type")} placeholder={t("models.type")} value={type} clearable data={REGISTRY_MODEL_TYPES.map(value => ({ value, label: t(`models.type.${value}`) }))} onChange={value => { setType(value); setPage(1); }} /></Group>
-        {!models.length && <Text c="dimmed">{t("modelAdmin.discoveryEmpty")}</Text>}
-        <Table.ScrollContainer minWidth={560}><Table verticalSpacing="sm"><Table.Thead><Table.Tr><Table.Th>{t("modelAdmin.name")}</Table.Th><Table.Th>{t("models.type")}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
+        {!models.length && <EmptyState>{t("modelAdmin.discoveryEmpty")}</EmptyState>}
+        {models.length > 0 && !filtered.length && <EmptyState>{t("settings.noResults")}</EmptyState>}
+        {!!filtered.length && <DataTable minWidth={560}><Table.Thead><Table.Tr><Table.Th>{t("modelAdmin.name")}</Table.Th><Table.Th>{t("models.type")}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
           <Table.Tbody>{filtered.slice((Math.min(page, totalPages) - 1) * 30, Math.min(page, totalPages) * 30).map(model => <Table.Tr key={model.wireId}>
             <Table.Td><Text fw={500}>{model.displayName}</Text><Text size="xs" c="dimmed">{model.wireId}</Text></Table.Td>
             <Table.Td>{model.type ? t(`models.type.${model.type}`) : t("modelAdmin.unknownType")}</Table.Td>
             <Table.Td>{selected.has(model.wireId) ? <Badge>{t("modelAdmin.enabled")}</Badge> : <Button variant="light" onClick={() => setEditing({ candidate: model })}>{t("modelAdmin.select")}</Button>}</Table.Td>
-          </Table.Tr>)}</Table.Tbody></Table></Table.ScrollContainer>
+          </Table.Tr>)}</Table.Tbody></DataTable>}
         {totalPages > 1 && <Pagination total={totalPages} value={Math.min(page, totalPages)} onChange={setPage} />}
       </>}
     </>}
-    <Modal opened={!!editing} onClose={() => setEditing(undefined)} title={t("modelAdmin.confirmModel")} size="lg">
       {editing && provider && <ModelRegistrationForm key={`${provider}/${editing.candidate?.wireId ?? "new"}`} provider={provider} candidate={editing.candidate}
         onSaved={models => { setRegistered(models); setEditing(undefined); }} onCancel={() => setEditing(undefined)} />}
-    </Modal>
   </Stack>;
 }

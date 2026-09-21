@@ -374,7 +374,18 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 서버의 `resolveViewer`가 shell의 권한을 해석하며, 클라이언트 조회도 같은 viewer 계약을 쓴다.
 로그아웃 상태에서는 내비게이션 내용을 렌더하지 않는다.
 
-Mantine 테마의 소유자는 `app/theme.ts`다. 공통 검색은 `CatalogSearch`, IME Enter 전송은
+Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액션은 `PageHeader`, 하위 섹션은
+`SectionHeading`, 경로 기반 탭은 `PageTabs`를 사용한다. 목록·빈 상태·폼 모달은
+`DataTable`/`CardGrid`, `PageState`, `FormModal`이 공통 표현을 소유한다.
+외부에서 발급받는 키는 `SecretInput`으로 입력한다. 저장된 마스킹 값과 교체 초안을 분리하고,
+저장된 키는 앞뒤 4자를 드러낸 서버 마스크로 표시한다(8자 이하는 전부 숨긴다).
+교체를 눌러 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다.
+설정 override 삭제는 별도 동작으로 제공한다.
+Studio가 발급하는 프로젝트 토큰·Webhook·A2A 키는 `SecretControl`로 표시·복사·생성·재생성·폐기한다.
+지원하는 동작은 각 API의 기능과 권한에 따른다. 원문을 표시한 동안에만 복사할 수 있고,
+재생성·교체·폐기는 공통 확인창을 거친다. 평문은 브라우저 저장소에 기록하지 않는다.
+Settings는 General·Plugins·Models·Keys 탭으로 관리하고, `/models`는 등록된 모델 조회·검색만 제공한다.
+공통 검색은 `CatalogSearch`, IME Enter 전송은
 `isSubmitEnter`, Chat 스크롤은 `use-stick-to-bottom`이 담당한다.
 시스템 테마는 hydration 전후 기본값을 일치시키고, 답변·추론의 고빈도 출력은
 `createTextPacer`로 묶는다. API Reference 예제는 프로젝트 주소에 맞춰 만들고 credential은

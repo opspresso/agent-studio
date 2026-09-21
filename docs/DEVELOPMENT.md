@@ -106,6 +106,7 @@ pnpm test:documents   # 실제 자식 프로세스로 생성·추출·검사·�
 pnpm test:watch       # vitest watch
 pnpm exec playwright install chromium # HTML 실행 미리보기 테스트용 브라우저
 pnpm test:html-preview # 로컬 HTTP fixture에서 실제 Chromium 기능·격리 검사
+pnpm exec playwright test --config playwright.preview.config.ts browser-tests/credentials.spec.ts # 합성 키로 공통 입력·표시·교체·폐기 UI 검사
 pnpm test:integration # 로컬 PostgreSQL(agent_studio_test), 인증 스키마와 SDK 실행·Session 검사
 pnpm test:storage     # 로컬 MinIO 임시 bucket의 원본 파일 streaming·조건부 저장·삭제 검사
 pnpm test:audio       # ffmpeg로 실제 MP3 분할·WAV 크기·시간 범위·임시 파일 정리 검사

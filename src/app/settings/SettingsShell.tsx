@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Alert, Stack, Tabs } from "@mantine/core";
+import { Alert, Stack } from "@mantine/core";
 import { IconSettings } from "@tabler/icons-react";
 import { PageHeader } from "@/app/_components/PageHeader";
+import { PageTabs } from "@/app/_components/PageTabs";
 import { useT } from "@/app/_i18n/provider";
 import { useViewer } from "@/app/_lib/useViewer";
 import { ModelSettingsNav } from "./ModelSettingsNav";
@@ -17,10 +17,8 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
   return <Stack gap="lg">
     <PageHeader title={t("nav.settings")} description={t("settings.overview")} Icon={IconSettings} />
     {viewer?.isAdmin ? <>
-      <Tabs value={tab}>
-        <Tabs.List aria-label={t("nav.settings")}>{SETTINGS_TABS.map(value => <Tabs.Tab key={value} value={value}
-          renderRoot={props => <Link {...props} href={SETTINGS_TAB_PATHS[value]} />}>{t(`settings.tab.${value}`)}</Tabs.Tab>)}</Tabs.List>
-      </Tabs>
+      <PageTabs value={SETTINGS_TAB_PATHS[tab]} label={t("nav.settings")}
+        items={SETTINGS_TABS.map(value => ({ href: SETTINGS_TAB_PATHS[value], label: t(`settings.tab.${value}`) }))} />
       {tab === "models" && <ModelSettingsNav />}
       {children}
     </> : <Alert color="gray">{t("settings.adminOnly")}</Alert>}

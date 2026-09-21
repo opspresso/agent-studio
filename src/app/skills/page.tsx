@@ -21,7 +21,7 @@ import { FormModal } from "@/app/_components/FormModal";
 import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid } from "@/app/_components/CardGrid";
-import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { PageHeader } from "@/app/_components/PageHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { PLUGIN_COLOR } from "@/app/_components/badgeColors";
 import { useViewer } from "@/app/_lib/useViewer";
@@ -63,13 +63,13 @@ export default function SkillsPage() {
 
   return (
     <Stack gap="lg">
-      <CatalogHeader
+      <PageHeader
         title={t("nav.skills")}
         description={t("skills.lede")}
         Icon={IconBook2}
       >
         {viewer?.isAdmin && <Button onClick={open}>{t("skills.new")}</Button>}
-      </CatalogHeader>
+      </PageHeader>
 
       <Alert color="blue" variant="light" title={t("capabilities.descriptionTitle")}>
         {t("skills.descriptionRole")}

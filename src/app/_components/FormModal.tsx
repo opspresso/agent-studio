@@ -41,11 +41,11 @@ export function FormModal({
 }) {
   const t = useT();
   return (
-    <Modal opened={opened} onClose={onClose} title={title} size="lg" closeOnClickOutside={false}>
+    <Modal opened={opened} onClose={() => { if (!submitting) onClose(); }} title={title} size="lg" closeOnClickOutside={false} closeOnEscape={!submitting} withCloseButton={!submitting}>
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          onSubmit();
+          if (!submitting && !submitDisabled) onSubmit();
         }}
       >
         <Stack gap="md">
@@ -68,7 +68,7 @@ export function FormModal({
                 {hint}
               </Text>
             )}
-            <Button variant="default" onClick={onClose}>
+            <Button variant="default" onClick={onClose} disabled={submitting}>
               {t("common.cancel")}
             </Button>
             <Button type="submit" loading={submitting} disabled={submitDisabled}>

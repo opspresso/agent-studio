@@ -7,7 +7,7 @@ import {
 describe("MCP override row encoding", () => {
   it("shows a null marker as a removal row with no value", () => {
     expect(overridesToRows({ Authorization: "Bearer x", "X-Gone": null })).toEqual([
-      { key: "Authorization", value: "Bearer x", remove: false },
+      { key: "Authorization", value: "Bearer x", storedValue: "Bearer x", remove: false },
       { key: "X-Gone", value: "", remove: true },
     ]);
   });

@@ -195,7 +195,7 @@ export interface McpServer {
    * only for an entry registered by hand whose name no plugin declares.
    */
   source?: string;
-  /** Values encrypted at rest (enc:v1: prefix); masked on client reads (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4). */
+  /** Values encrypted at rest (enc:v1: prefix); masked on client reads (length-preserving; four visible characters at each end above eight characters). */
   headers: Record<string, string>;
   createdAt: string;
   updatedAt: string;

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Alert, Button, Checkbox, Group, NumberInput, Select, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
+import { Checkbox, NumberInput, Select, SimpleGrid, Text, TextInput } from "@mantine/core";
+import { FormModal } from "@/app/_components/FormModal";
 import { useT } from "@/app/_i18n/provider";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { REGISTRY_MODEL_TYPES, registeredModelId, type DiscoveredModel, type RegisteredModel, type RegistryModelType } from "@/domain/llm/providerModels";
@@ -40,8 +41,8 @@ export function ModelRegistrationForm({ provider, candidate, onSaved, onCancel }
     } catch (error) { setError(error instanceof Error ? error.message : "Could not register model"); }
     finally { setBusy(false); }
   }
-  return <Stack>
-    {error && <Alert color="red">{error}</Alert>}
+  return <FormModal opened onClose={onCancel} title={t("modelAdmin.confirmModel")} error={error ?? null}
+    submitting={busy} submitLabel={t("modelAdmin.save")} submitDisabled={!form.wireId.trim() || !form.displayName.trim()} onSubmit={() => void save()}>
     <Text size="sm" c="dimmed">{provider}</Text>
     <TextInput label={t("modelAdmin.wireId")} value={form.wireId} disabled={busy || !!candidate} required onChange={event => setForm({ ...form, wireId: event.currentTarget.value })} />
     <TextInput label={t("modelAdmin.name")} value={form.displayName} disabled={busy} required onChange={event => setForm({ ...form, displayName: event.currentTarget.value })} />
@@ -69,7 +70,5 @@ export function ModelRegistrationForm({ provider, candidate, onSaved, onCancel }
     ] as const).filter(([type]) => type === form.type).map(([, key, label]) => <NumberInput key={key}
       label={t(label)} value={form.pricing[key] ?? ""} min={0} disabled={busy}
       onChange={value => setForm({ ...form, pricing: { ...form.pricing, [key]: value === "" ? undefined : Number(value) } })} />)}
-    <Group justify="flex-end"><Button variant="default" disabled={busy} onClick={onCancel}>{t("common.cancel")}</Button>
-      <Button loading={busy} disabled={!form.wireId.trim() || !form.displayName.trim()} onClick={() => void save()}>{t("modelAdmin.save")}</Button></Group>
-  </Stack>;
+  </FormModal>;
 }

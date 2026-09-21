@@ -248,6 +248,9 @@
 | usage 행의 키가 되는 UTC 날짜 | `src/shared/date.ts` 의 `utcDay` | 코드 |
 | repo sync 가 무엇을 했고, 무엇을 사람에게 남겼는가 | `src/domain/sync/types.ts` | 코드 |
 | 브랜드 팔레트와 컴포넌트 기본값 | `src/app/theme.ts` | 코드 |
+| 페이지·섹션 제목과 경로 탭 | `src/app/_components/PageHeader.tsx`, `SectionHeading.tsx`, `PageTabs.tsx` | 코드 |
+| 외부 키의 교체 초안과 저장된 마스크 구분 | `src/app/_components/SecretInput.tsx` | 코드 |
+| Studio 발급 키의 표시·숨기기·복사와 변경 확인 | `src/app/_components/SecretControl.tsx`; API 기능·권한은 각 호출자가 제공한다 | 코드 |
 | tool 호출을 그에 답한 결과와 짝짓기 | `src/app/_lib/toolPairs.ts` | 코드 |
 | 한 tool 의 트래픽을 한 행으로 그리기 | `src/app/_components/ToolRow.tsx` | 코드 |
 | 런의 추론을 한 블록으로 그리기 | `src/app/_components/ReasoningRow.tsx` | 코드 |

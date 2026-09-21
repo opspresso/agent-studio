@@ -6,7 +6,7 @@ import { Alert, Badge, Button, Card, FileButton, Group, Stack, Text } from "@man
 import { IconPackage } from "@tabler/icons-react";
 import { PluginSyncSummary } from "@/app/_components/PluginSyncSummary";
 import { CardGrid } from "@/app/_components/CardGrid";
-import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { PageHeader } from "@/app/_components/PageHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useLocale, useT } from "@/app/_i18n/provider";
@@ -91,7 +91,7 @@ export default function PluginsPage() {
 
   return (
     <Stack gap="lg">
-      <CatalogHeader
+      <PageHeader
         title={t("nav.plugins")}
         description={t("plugins.lede")}
         Icon={IconPackage}
@@ -130,7 +130,7 @@ export default function PluginsPage() {
             </Button>
           </Group>
         )}
-      </CatalogHeader>
+      </PageHeader>
 
       <Alert color="blue" variant="light" title={t("plugins.descriptionTitle")}>
         {t("plugins.descriptionRole")}

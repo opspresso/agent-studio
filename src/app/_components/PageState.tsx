@@ -26,8 +26,8 @@ export function LoadingText() {
 /** A bordered card standing in for a list with nothing to show. */
 export function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <Card py="xl">
-      <Text fz="sm" c="dimmed">
+    <Card py={40} px="lg" role="status">
+      <Text fz="sm" c="dimmed" ta="center">
         {children}
       </Text>
     </Card>

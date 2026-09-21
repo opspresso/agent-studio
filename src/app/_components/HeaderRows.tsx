@@ -3,11 +3,14 @@
 import { ActionIcon, Anchor, Badge, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
+import { SecretInput } from "./SecretInput";
 import { BADGE } from "./badgeColors";
 
 export interface HeaderRow {
   key: string;
   value: string;
+  /** Saved, masked baseline; serializers deliberately omit this editor metadata. */
+  storedValue?: string;
   /**
    * Only meaningful where the rows layer over defaults (see `allowRemove`):
    * drop the inherited header rather than replace it. Registry headers have
@@ -17,7 +20,7 @@ export interface HeaderRow {
 }
 
 export function recordToRows(record: Record<string, string>): HeaderRow[] {
-  return Object.entries(record).map(([key, value]) => ({ key, value }));
+  return Object.entries(record).map(([key, value]) => ({ key, value, storedValue: value }));
 }
 
 export function rowsToRecord(rows: HeaderRow[]): Record<string, string> {
@@ -33,13 +36,8 @@ export function rowsToRecord(rows: HeaderRow[]): Record<string, string> {
 
 /**
  * Editable secret key/value rows. Every value is stored encrypted at rest, so
- * each row is flagged as a secret. On edit, existing values arrive
- * masked (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4); leaving a value
- * masked keeps the stored secret, while typing a new value replaces it.
- *
- * The one owner of that contract. A second copy of this editor grew inside the
- * Agent binding form and had already drifted in styling; the only real
- * difference was `allowRemove`, so that is a prop rather than another component.
+ * each row uses SecretInput. A saved baseline keeps the stored credential until
+ * a replacement is entered. `allowRemove` drops an inherited header explicitly.
  */
 export function HeaderRowsEditor({
   rows,
@@ -96,13 +94,20 @@ export function HeaderRowsEditor({
         <Group key={index} gap="xs" wrap="nowrap" align="center">
           <TextInput
             value={row.key}
-            onChange={(event) => update(index, { key: event.currentTarget.value })}
+            aria-label={keyPlaceholder ?? t("headers.keyPlaceholder")}
+            onChange={(event) => update(index, {
+              key: event.currentTarget.value,
+              value: row.value === row.storedValue ? "" : row.value,
+              storedValue: undefined,
+            })}
             placeholder={keyPlaceholder ?? t("headers.keyPlaceholder")}
             w="40%"
           />
-          <TextInput
+          <SecretInput
+            aria-label={row.key || (valuePlaceholder ?? t("headers.valuePlaceholder"))}
             value={row.remove ? "" : row.value}
-            onChange={(event) => update(index, { value: event.currentTarget.value })}
+            storedValue={row.remove ? undefined : row.storedValue}
+            onChange={(value) => update(index, { value })}
             disabled={row.remove === true}
             placeholder={
               row.remove ? t("headers.removed") : (valuePlaceholder ?? t("headers.valuePlaceholder"))

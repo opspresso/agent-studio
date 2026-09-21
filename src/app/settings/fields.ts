@@ -22,7 +22,6 @@ export const SETTINGS_FIELDS: Record<SettingsSection, SettingField[]> = {
   ],
   keys: [
     { key: "githubToken", label: "settings.field.githubToken", hint: "settings.hint.githubToken", type: "secret" },
-    { key: "a2aApiKey", label: "settings.field.a2aKey", hint: "settings.hint.a2aKey", type: "secret" },
   ],
 };
 

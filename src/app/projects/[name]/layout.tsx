@@ -2,15 +2,12 @@
 
 import { projectHasWorkspaceTools } from "@/domain/project/workspaceAccess";
 import { ProjectWorkspaceContext } from "./_components/ProjectWorkspaceContext";
-
-import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ActionIcon, Badge, Group, Stack, Tabs, Text, ThemeIcon, Title } from "@mantine/core";
+import { Badge, Stack, Text } from "@mantine/core";
 import {
   IconAdjustments,
   IconApi,
-  IconArrowLeft,
   IconChartBar,
   IconPlayerPlay,
   IconPhoto,
@@ -27,7 +24,9 @@ import { ProjectAudioContext } from "./_components/ProjectAudioContext";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { tierMayCreateProjects } from "@/domain/member/tiers";
 import { CloneProjectButton } from "./_components/CloneProjectButton";
-import classes from "./ProjectLayout.module.css";
+import { PageHeader } from "@/app/_components/PageHeader";
+import { PageTabs } from "@/app/_components/PageTabs";
+import { BackLink } from "@/app/_components/BackLink";
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
   const params = useParams<{ name: string }>();
@@ -105,73 +104,14 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
 
   return (
     <Stack gap="lg">
-      <div className={classes.workspaceHeader}>
-        <Group justify="space-between" align="flex-start" gap="lg" wrap="wrap">
-          <Group gap="md" wrap="nowrap" style={{ minWidth: 0, flex: "1 1 280px" }}>
-            <ActionIcon
-              component={Link}
-              href="/projects"
-              variant="default"
-              size="lg"
-              aria-label={t("nav.projects")}
-            >
-              <IconArrowLeft size={17} />
-            </ActionIcon>
-            <ThemeIcon
-              size={40}
-              radius="md"
-              variant="light"
-            >
-              <IconSparkles size={22} />
-            </ThemeIcon>
-            <div style={{ minWidth: 0 }}>
-              <Group gap="xs">
-                <Title order={1} fz="h3" lts="-0.025em" style={{ overflowWrap: "anywhere" }}>
-                  {currentProject?.displayName || name}
-                </Title>
-                <Badge variant="light" color="brand" radius="xl">
-                  {t("project.badge")}
-                </Badge>
-              </Group>
-              <Text fz="xs" ff="monospace" c="dimmed" mt={4} style={{ overflowWrap: "anywhere" }}>
-                {name}
-              </Text>
-            </div>
-          </Group>
-          <Group gap="md">
-            {ownerEmail && (
-              <OwnerLine
-                ownerEmail={ownerEmail}
-                isMine={viewer?.email === ownerEmail}
-                prefix={t("project.ownedBy")}
-              />
-            )}
-            {viewer !== null && tierMayCreateProjects(viewer.tier) && (
-              <CloneProjectButton sourceName={name} />
-            )}
-          </Group>
-        </Group>
-      </div>
-
-      {/*
-       * `value` is the pathname rather than tab state: navigation is what
-       * changes the tab, so deriving it keeps the highlight correct on a
-       * direct load or a back button.
-       */}
-      <Tabs value={pathname} variant="none" classNames={{ list: classes.tabs, tab: classes.tab }}>
-        <Tabs.List aria-label={t("project.badge")}>
-          {tabs.map(({ Icon, ...tab }) => (
-            <Tabs.Tab
-              key={tab.href}
-              value={tab.href}
-              renderRoot={(props) => <Link href={tab.href} {...props} />}
-            >
-              <Icon size={15} stroke={1.8} />
-              {tab.label}
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
-      </Tabs>
+      <BackLink href="/projects" label={t("nav.projects")} />
+      <PageHeader title={currentProject?.displayName || name} Icon={IconSparkles}
+        badges={<Badge color="brand">{t("project.badge")}</Badge>}
+        details={<Text fz="xs" ff="monospace" c="dimmed">{name}</Text>}>
+        {ownerEmail && <OwnerLine ownerEmail={ownerEmail} isMine={viewer?.email === ownerEmail} prefix={t("project.ownedBy")} />}
+        {viewer !== null && tierMayCreateProjects(viewer.tier) && <CloneProjectButton sourceName={name} />}
+      </PageHeader>
+      <PageTabs value={pathname} items={tabs} label={t("project.badge")} />
 
       <ProjectAudioContext.Provider value={audio?.name === name ? { enabled: audio.enabled, error: audio.error } : {}}>
         <ProjectWorkspaceContext.Provider value={audio?.name === name ? { enabled: audio.workspace, error: audio.error } : {}}>

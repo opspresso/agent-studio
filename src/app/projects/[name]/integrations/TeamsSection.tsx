@@ -1,5 +1,6 @@
 "use client";
 
+import { SecretInput } from "@/app/_components/SecretInput";
 import { useEffect, useState } from "react";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { useConfirm } from "@/app/_components/useConfirm";
@@ -141,11 +142,11 @@ export function TeamsSection({
           placeholder="00000000-0000-0000-0000-000000000000"
           styles={monoInput}
         />
-        <TextInput
+        <SecretInput
           label={t("pset.teamsAppPassword")}
           value={appPassword}
-          onChange={(e) => setAppPassword(e.currentTarget.value)}
-          styles={monoInput}
+          storedValue={view.appPassword}
+          onChange={setAppPassword}
         />
         <TextInput
           label={t("pset.teamsTenantId")}

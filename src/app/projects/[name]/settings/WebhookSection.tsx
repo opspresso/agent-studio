@@ -1,11 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Badge, Button, Code, Group, Stack, Switch, Text } from "@mantine/core";
+import { Alert, Badge, Group, Stack, Switch, Text } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
-import { CopyButton } from "@/app/_components/CopyButton";
-import { useConfirm } from "@/app/_components/useConfirm";
+import { SecretControl } from "@/app/_components/SecretControl";
 import { stateColor } from "@/app/_components/badgeColors";
 import { PROJECT_WEBHOOK_ID, projectWebhookPath } from "@/domain/trigger/types";
 import { useT } from "@/app/_i18n/provider";
@@ -28,9 +27,8 @@ import { reportError } from "@/app/_lib/reportError";
  * panel is a switch, and the row it stands for is created the first time the
  * switch goes on. Everything below the switch is what a sender needs to use it:
  * the URL, the secret, how the payload reaches the run, and what recent
- * deliveries did. The secret is shown in the clear exactly once — on the first
- * enable and on rotation — so the panel keeps it in state until the page is
- * left.
+ * deliveries did. SecretControl owns reveal, copy, hide and rotation; plaintext
+ * is held only in component state until hidden or the page is left.
  */
 export function WebhookSection({ projectName }: { projectName: string }) {
   const t = useT();
@@ -40,7 +38,6 @@ export function WebhookSection({ projectName }: { projectName: string }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { confirm, confirmModal } = useConfirm();
 
   const reload = useCallback(async () => {
     const { triggers } = await listTriggers(projectName);
@@ -104,6 +101,12 @@ export function WebhookSection({ projectName }: { projectName: string }) {
     });
   }
 
+  async function secretAction(action: () => Promise<string>): Promise<string> {
+    setBusy(true); setError(null);
+    try { return await action(); }
+    finally { setBusy(false); }
+  }
+
   const url =
     typeof window === "undefined"
       ? projectWebhookPath(projectName)
@@ -123,7 +126,6 @@ export function WebhookSection({ projectName }: { projectName: string }) {
       }
     >
       <Stack gap="md">
-        {confirmModal}
         <Text fz="sm" c="dimmed">
           {t("webhook.intro")}
         </Text>
@@ -144,38 +146,14 @@ export function WebhookSection({ projectName }: { projectName: string }) {
           <>
             <CopyableUrl url={url} />
             <Text fz="sm" c="dimmed">{t("webhook.githubHint")}</Text>
-            {revealed ? (
-              <Alert color="yellow" variant="light" p="sm">
-                <Group gap="xs" wrap="nowrap">
-                  <Code style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{revealed}</Code>
-                  <CopyButton text={revealed} />
-                  <Button variant="default" size="compact-xs" onClick={() => setRevealed(null)}>
-                    Hide
-                  </Button>
-                </Group>
-                <Text fz="xs" mt={4}>
-                  {t("webhook.secretHint")}
-                </Text>
-              </Alert>
-            ) : (
-              <Group gap="xs" wrap="nowrap">
-                <Code style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
-                  {webhook.secretMasked}
-                </Code>
-                <Button
-                  variant="default"
-                  size="compact-xs"
-                  disabled={busy}
-                  onClick={() =>
-                    act(async () => {
-                      setRevealed(await revealTriggerSecret(projectName, PROJECT_WEBHOOK_ID));
-                    })
-                  }
-                >
-                  Reveal
-                </Button>
-              </Group>
-            )}
+            <SecretControl key={projectName} label={t("webhook.section")} configured masked={webhook.secretMasked} initialValue={revealed ?? undefined}
+              description={t("webhook.secretHint")} disabled={busy}
+              onReveal={() => secretAction(() => revealTriggerSecret(projectName, PROJECT_WEBHOOK_ID))}
+              onGenerate={() => secretAction(async () => {
+                const next = await updateTrigger(projectName, PROJECT_WEBHOOK_ID, { rotateSecret: true });
+                if (!next.secret) throw new Error("No webhook secret was returned");
+                await reload(); return next.secret;
+              })} />
 
             <Group gap="md" align="flex-end">
               <Switch
@@ -191,36 +169,6 @@ export function WebhookSection({ projectName }: { projectName: string }) {
                   })
                 }
               />
-            </Group>
-
-            <Group gap="sm">
-              <Button
-                variant="default"
-                size="xs"
-                disabled={busy}
-                onClick={async () => {
-                  if (
-                    !(await confirm({
-                      title: "Regenerate secret",
-                      message:
-                        "Regenerate this project's webhook secret? The current secret stops working immediately.",
-                      confirmLabel: "Regenerate",
-                    }))
-                  ) {
-                    return;
-                  }
-                  void act(async () => {
-                    const rotated = await updateTrigger(projectName, PROJECT_WEBHOOK_ID, {
-                      rotateSecret: true,
-                    });
-                    if (rotated.secret) {
-                      setRevealed(rotated.secret);
-                    }
-                  });
-                }}
-              >
-                Regenerate secret
-              </Button>
             </Group>
 
             <TriggerRuns runs={runs} />

@@ -1,5 +1,7 @@
 "use client";
 
+import { PageHeader } from "@/app/_components/PageHeader";
+import { IconRobot } from "@tabler/icons-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -26,7 +28,6 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title,
 } from "@mantine/core";
 import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL } from "@/app/_components/badgeColors";
 import { useViewer } from "@/app/_lib/useViewer";
@@ -115,26 +116,18 @@ export default function AgentDetailPage() {
       {confirmModal}
       <BackLink href="/agents" label={t("nav.agents")} />
 
-      <Group justify="space-between" align="flex-start" gap="md">
-        <div>
-          <Group gap="xs">
-            <Title order={1} fz="h2">
-              {agent.name}
-            </Title>
+      <PageHeader title={agent.name} Icon={IconRobot} description={agent.description}
+        badges={<>
             <Badge color={AGENT_PROTOCOL_COLOR[agent.protocol ?? "openai"]}>
               {AGENT_PROTOCOL_LABEL[agent.protocol ?? "openai"]}
             </Badge>
             <Badge color="blue" variant="light">
               {t("registry.discoveryPromptBadge")}
             </Badge>
-          </Group>
-          <Text fz="sm" c="dimmed" mt={4}>
-            {agent.description}
-          </Text>
-          <Text fz="xs" c="dimmed" mt={4}>
+          </>}
+        details={<><Text fz="xs" c="dimmed" mt={4}>
             {agent.url}
-          </Text>
-        </div>
+          </Text></>}>
         {!editing && viewer?.isAdmin && (
           <Group gap="xs" wrap="nowrap">
             <Button variant="default" onClick={() => setEditing(true)}>
@@ -145,7 +138,7 @@ export default function AgentDetailPage() {
             </Button>
           </Group>
         )}
-      </Group>
+      </PageHeader>
 
       {error && (
         <Alert color="red" variant="light">

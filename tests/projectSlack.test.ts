@@ -74,8 +74,8 @@ describe("updateProjectSlack", () => {
       { botToken: "xoxb-secret", signingSecret: "shhh", enabled: true },
       OWNER,
     );
-    // 11 chars → two revealed at each end; 4 chars → nothing revealed.
-    expect(view.botToken).toBe(`xo${"•".repeat(7)}et`);
+    // 11 chars → four revealed at each end; 4 chars → nothing revealed.
+    expect(view.botToken).toBe(`xoxb${"•".repeat(3)}cret`);
     expect(view.signingSecret).toBe("*".repeat("shhh".length));
     expect(view.enabled).toBe(true);
     const stored = current().slack;
