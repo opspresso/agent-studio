@@ -24,7 +24,7 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["studio.nyala-blenny.ts.net"],
+  allowedDevOrigins: ["localhost:3000"],
   reactStrictMode: true,
   output: "standalone",
   // `next dev` run from an AI coding agent otherwise appends its own
