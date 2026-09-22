@@ -378,6 +378,7 @@ export function rtfToBlocks(bytes: Uint8Array): RtfBlocks {
   const savedCodePages: number[] = [];
   const decoders = new Map<number, ByteDecoder>([[codePage, codePageDecoder(codePage)]]);
   let pendingBytes = "";
+  let expectsTrail = false;
 
   const setCodePage = (page: number): void => {
     if (!decoders.has(page)) {
@@ -387,6 +388,7 @@ export function rtfToBlocks(bytes: Uint8Array): RtfBlocks {
   };
 
   const flushBytes = (): void => {
+    expectsTrail = false;
     if (pendingBytes === "") {
       return;
     }
@@ -400,16 +402,17 @@ export function rtfToBlocks(bytes: Uint8Array): RtfBlocks {
     reader.emit(decoded);
   };
 
-  const emitByte = (value: string): void => {
-    if (skipDepth !== -1) {
-      return;
-    }
-    if (skipUnits > 0) {
+  const emitByte = (value: string): boolean => {
+    if (skipDepth === -1 && skipUnits > 0) {
       // \uc counts fallback bytes, not decoded multi-byte characters.
       skipUnits -= 1;
-      return;
+      return false;
     }
-    pendingBytes += value;
+    // Escaped and raw bytes share character boundaries, including in skipped
+    // destinations where a raw trail must not close the surrounding group.
+    expectsTrail = !expectsTrail && isLeadByte(codePage, value.charCodeAt(0));
+    if (skipDepth === -1) pendingBytes += value;
+    return expectsTrail;
   };
 
   const emit = (value: string): void => {
@@ -453,9 +456,7 @@ export function rtfToBlocks(bytes: Uint8Array): RtfBlocks {
         // Source line breaks are formatting of the file, not of the document.
         continue;
       }
-      const skippingFallback = skipUnits > 0;
-      emitByte(character);
-      if (!skippingFallback && isLeadByte(codePage, character.charCodeAt(0))) {
+      if (emitByte(character)) {
         // RTF-J raw/raw pairs may contain a trail equal to '\\', '{' or '}'.
         const trail = source[index + 1];
         if (trail === undefined) {

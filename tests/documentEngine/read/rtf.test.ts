@@ -72,6 +72,17 @@ test("an escaped lead byte may be followed by raw ASCII or an escaped byte", () 
   assert.equal(rtfToText(rtf("\\ansicpg932 \\'83\\\\")).text, "ソ");
 });
 
+test.each([
+  [932, "93fa", "日"],
+  [936, "d6d0", "中"],
+  [949, "c7d1", "한"],
+  [950, "a4a4", "中"],
+] as const)("an escaped lead and raw high trail keep following RTF syntax in code page %i", (page, hex, expected) => {
+  const mixed = `\\'${hex.slice(0, 2)}${Buffer.from(hex.slice(2), "hex").toString("latin1")}`;
+  const source = `{\\rtf1\\ansi\\ansicpg${page} ${mixed}\\par{\\b ${mixed}}{\\*\\unknown ${mixed}}tail}`;
+  assert.equal(rtfToText(latin1(source)).text, `${expected}\n\n**${expected}**tail`);
+});
+
 test("raw double-byte trails do not become RTF control or group delimiters", () => {
   const raw = Buffer.from("835c837b837d", "hex").toString("latin1");
   assert.equal(rtfToText(latin1(`{\\rtf1\\ansi\\ansicpg932 ${raw}\\par tail}`)).text, "ソボマ\n\ntail");
