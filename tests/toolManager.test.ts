@@ -1978,6 +1978,49 @@ describe("ToolManager result content blocks", () => {
 });
 
 describe("ToolManager structured content", () => {
+  it.each([{ texts: [] }, { texts: [""] }, { texts: [" ", "\n"] }])("preserves structured empty-search results when text blocks are blank: %j", async ({ texts }) => {
+    const payload = { remembered: "", hits: [], count: 0 };
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "recall" }],
+        callContent: texts.map(text => ({ type: "text", text })),
+        callStructuredContent: payload,
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+    expect((await manager.callTool("recall", {})).text).toBe(JSON.stringify(payload));
+  });
+
+  it("keeps a meaningful compact text result instead of expanding its structured payload", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "recall" }],
+        callContent: [{ type: "text", text: "A compact memory excerpt" }],
+        callStructuredContent: { hits: [{ content: "A much longer full memory" }], count: 1 },
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+    expect((await manager.callTool("recall", {})).text).toBe("A compact memory excerpt");
+  });
+
+  it("preserves an explicit error verdict when its details are only structured", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "recall" }],
+        callContent: [{ type: "text", text: "" }],
+        callStructuredContent: { code: "search_unavailable" },
+        callIsError: true,
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+    const result = await manager.callTool("recall", {});
+    expect(result.text).toMatch(/^Error:/);
+    expect(result.text).toContain("search_unavailable");
+  });
+
   it("reads structuredContent when the server sent no text block", async () => {
     stubMcpFetch({
       "https://a.test/mcp": {

@@ -79,7 +79,7 @@ throw 동작과 `SdkErrorCode` 매핑을 확인한다.
 | 그 밖의 resource blob | UTF-8이면 텍스트, 그렇지 않으면 크기 한도 내 파일 출력 |
 | resource link | URI와 설명을 포인터로 제공하며 자동으로 내려받지 않는다 |
 | audio | 존재를 알리는 설명. 일반 모델 턴에 오디오 bytes를 넣지 않는다 |
-| content 없는 structuredContent | JSON 텍스트로 전달한다. content가 있으면 그것이 우선한다 |
+| structuredContent | content가 비었거나 공백 text뿐이면 JSON 텍스트로 전달한다. 비어 있지 않은 text나 미디어가 있으면 content가 우선한다 |
 | 빈 content | 빈 성공과 `isError` 실패를 구분한다 |
 | schema를 어긴 결과 | 해당 응답을 거절하고 오류를 설명한다 |
 

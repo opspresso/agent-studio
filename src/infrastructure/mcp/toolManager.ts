@@ -417,7 +417,15 @@ export class ToolManager {
             `the call did not complete.`,
         };
       }
-      if (result && Array.isArray(result.content) && result.content.length > 0) {
+      // Compact recall text can be blank while structuredContent still states
+      // a successful search with zero hits. Preserve that result instead of
+      // turning an empty text block into the ambiguous "No result" placeholder.
+      const hasContent = Array.isArray(result?.content) && result.content.some(block => {
+        const value = block as { type?: unknown; text?: unknown } | null;
+        return value?.type !== "text" || typeof value.text !== "string" || value.text.trim() !== "";
+      });
+      if (result && Array.isArray(result.content) && result.content.length > 0 &&
+        (hasContent || result.structuredContent === undefined)) {
         const output = formatToolResult(result.content);
         // A failed call's images are dropped: the text is the diagnosis, and
         // attaching a picture to a failure only spends context.
