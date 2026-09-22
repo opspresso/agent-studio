@@ -41,14 +41,12 @@ before editing its subsystem.
 
 ## Local development
 
-Local Kubernetes is the default and first choice for local development. The environment is
-named `local`, with OrbStack or Docker Desktop as the runtime. Argo CD uses the `argocd`
-namespace and Helm release. `argocd-env-addons` and `argocd-env-demo` own the backing services;
-Agent Studio runs on the host with `pnpm dev`.
+Docker Compose is the local development environment. The root `compose.yaml` owns PostgreSQL
+and MinIO; optional local MCP services live in `deploy/local/`. Use OrbStack or Docker Desktop
+as the Docker runtime, and run Agent Studio on the host with `pnpm dev`.
 
-Check the existing local Kubernetes services and connection settings before starting local
-infrastructure. Compose is an alternative when local Kubernetes is unavailable or an isolated
-test needs it. Follow [INSTALL.md#localdev](docs/INSTALL.md#localdev) for setup and connections.
+Use `.env.example` for the local service connection settings. Follow
+[INSTALL.md#localdev](docs/INSTALL.md#localdev) for setup and connections.
 
 ## Commands
 
@@ -67,8 +65,7 @@ image-release job builds through Dockerfile. Run build locally when required bel
 and pnpm 11 are required (`packageManager` is pinned). See `docs/DEVELOPMENT.md` for CI scope.
 
 ```bash
-python3 ../argocd-env-addons/install/local/connect.py --context orbstack
-# Use --context docker-desktop for Docker Desktop; keep forwarding in a separate terminal.
+docker compose up -d postgres minio minio-init
 pnpm db:migrate
 pnpm test:integration # separate *_test database and test credentials; see DEVELOPMENT.md
 
@@ -77,10 +74,9 @@ pnpm tsx --env-file=.env.local scripts/dev-session.ts
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ```
 
-Integration checks may use only a database whose name ends in `_test`. The alternative Compose
-setup starts with `docker compose up -d postgres minio minio-init`; its `agent-studio-local`
-project owns separate PostgreSQL and MinIO volumes. Never run `docker compose down -v` without
-explicit approval.
+Integration checks may use only a database whose name ends in `_test`. The `agent-studio-local`
+Compose project owns separate PostgreSQL and MinIO volumes. Never run `docker compose down -v`
+without explicit approval.
 
 Boot requires `DATABASE_URL` and a 32-byte base64 `AES_ENCRYPTION_KEY`. Runs additionally
 require an administrator-selected model and its registered provider connection. Alpha/prod also requires `ADMIN_EMAILS` plus a sign-in method. Production

@@ -5,8 +5,7 @@ Agent Studio 는 기업이 자기 네트워크 안에 설치해 운영하는 플
 
 | 환경 | 소유 위치 | 이 저장소가 제공하는 것 |
 |---|---|---|
-| localdev (Kubernetes) | `../argocd-env-addons`, `../argocd-env-demo` | Mac에서 `pnpm dev`로 실행하는 앱 |
-| localdev (Compose 대안) | 이 저장소의 `compose.yaml`, `deploy/local/` | 독립 `agent-studio-local` PostgreSQL 18·MinIO와 로컬 MCP 서버 |
+| localdev (Docker Compose) | 이 저장소의 `compose.yaml`, `deploy/local/` | 호스트에서 `pnpm dev`로 실행하는 앱, 독립 `agent-studio-local` PostgreSQL 18·MinIO와 로컬 MCP 서버 |
 | IDC | `../dockpad` | 릴리즈된 Agent Studio 이미지 |
 | EKS/Kubernetes | `../argocd-env-demo` | 릴리즈된 Agent Studio 이미지 |
 
@@ -155,32 +154,25 @@ bare Git 저장소와 bundle을 주고받고 저장소 코드를 실행하지 �
 
 ## localdev
 
-로컬 개발은 local Kubernetes를 우선한다. 실행 제품은 OrbStack 또는 Docker Desktop이며,
-배포 환경 이름은 `local`이다. Compose는 Kubernetes를 사용할 수 없거나 격리된 테스트에 필요한 경우의 대안이다.
-`argocd-env-addons`가 `argocd`와
-External Secrets 연결을 관리하고, `argocd-env-demo`가 PostgreSQL·MinIO·Neo4j·MCP를 배포한다.
-Agent Studio는 Kubernetes에 배포하지 않고 Mac에서 `pnpm dev`로 실행한다.
-설치·자격 증명 준비는 [로컬 운영 문서](https://github.com/opspresso/argocd-env-addons/blob/main/install/local/README.md)를 따른다.
-
-두 실행 제품의 공통 접속 방법은 addons 저장소의 `python3 install/local/connect.py`다.
-`--context orbstack` 또는 `--context docker-desktop`으로 포워딩을 유지한 뒤 `.env.local`의
-`DATABASE_URL`은 `localhost:5432/agent_studio`, `S3_ENDPOINT`는 `http://localhost:9000`으로
-설정한다. 자격 증명은 `local` namespace의 `local-credentials` Secret 값과 맞추고 기존 암호화 키와
-모델 설정은 유지한다. MCP별 localhost 포트는 로컬 운영 문서를 따르고
-`MCP_INTERNAL_HOST_SUFFIXES`에 `localhost`를 포함한다. OrbStack의 Service DNS 직접 연결은
-선택적으로 사용할 수 있다.
-
-### Compose 대안
-
-Node 24와 pnpm 11을 설치하고:
+로컬 개발은 Docker Compose를 사용한다. OrbStack 또는 Docker Desktop의 Docker 엔진에서
+루트 `compose.yaml`로 PostgreSQL·MinIO를 실행하고, Agent Studio는 호스트에서 `pnpm dev`로
+실행한다. Node 24와 pnpm 11을 설치하고:
 
 ```bash
 test -f .env.local || cp .env.example .env.local
-# LLM 채널·암호화 키·로그인 값을 먼저 채운다.
+# 암호화 키와 사용할 로그인 값을 먼저 채운다.
 docker compose up -d postgres minio minio-init
 pnpm install --frozen-lockfile
 pnpm dev
 ```
+
+`.env.local`의 `DATABASE_URL`과 S3 연결 값은 `.env.example`의 Compose 기본값을 사용한다.
+앱은 `localhost:5432`의 PostgreSQL과 `http://localhost:9000`의 MinIO에 연결하며,
+`minio-init`이 `agent-studio` bucket을 만든다. 실행에 사용할 프로바이더 연결과 모델은
+로그인 후 Settings에서 등록한다.
+
+MinIO 서버와 초기화용 `mc` 이미지는 Quay의 `minio` 저장소에서 받는다.
+고정 릴리스 태그는 루트 `compose.yaml`이 정본이다.
 
 루트 compose project 이름은 `agent-studio-local`로 고정되어 있다. PostgreSQL 18과 MinIO volume은
 Agent Studio 전용이다. `docker compose down -v`는 이 로컬 데이터를 삭제하므로 주의한다.
