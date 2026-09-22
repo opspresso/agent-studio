@@ -44,6 +44,9 @@ status timestamp 내림차순의 GSI 와 opaque cursor 로 페이지를 잇는�
 행만 읽어 다음 페이지 유무를 판정하고, 정확한 `totalSize` 는 task 를 적재하지 않는 별도 count 로
 계산한다. context·status·timestamp·만료 조건은 모두 SQL 의 `LIMIT` 전에 적용된다.
 
+라우트는 선택적인 `tenant`가 문자열인지 검증하고, SDK transport가 요청의 `ServerCallContext`에
+한 번만 설정한다. executor도 같은 context를 공유하므로 취소를 포함한 저장소 접근의 범위가 일치한다.
+
 실행 중 cancel 은 공유 task store 를 순차 폴링한다. 한 읽기가 끝난 뒤 다음 간격을 시작하므로
 저장소가 느려져도 같은 task 의 조회가 중첩되지 않고, 실행이 끝난 뒤 돌아온 읽기는 상태를
 바꾸지 않는다.

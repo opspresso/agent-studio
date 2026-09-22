@@ -8,6 +8,7 @@ import {
 import {
   AgentEvent,
   JsonRpcTransportHandler,
+  ServerCallContext,
   type AgentExecutor,
   type ExecutionEventBus,
   type RequestContext,
@@ -81,6 +82,10 @@ function request(parts = [textPart("hi")], taskId = ""): SendMessageRequest {
 describe("ProjectRequestHandler — what it admits", () => {
   it("round-trips native A2A 1.0 JSON-RPC through the SDK transport", async () => {
     const transport = new JsonRpcTransportHandler(handler(storeWith({})));
+    const context = new ServerCallContext({
+      requestedVersion: TEST_CALL_CONTEXT.requestedVersion,
+      user: TEST_CALL_CONTEXT.user,
+    });
     const response = await transport.handle(
       JSON.stringify({
         jsonrpc: "2.0",
@@ -88,7 +93,7 @@ describe("ProjectRequestHandler — what it admits", () => {
         method: "SendMessage",
         params: SendMessageRequestCodec.toJSON(request()),
       }),
-      TEST_CALL_CONTEXT,
+      context,
     );
     expect(response).toMatchObject({
       jsonrpc: "2.0",
@@ -99,6 +104,7 @@ describe("ProjectRequestHandler — what it admits", () => {
         },
       },
     });
+    expect(context.tenant).toBe("test");
 
     const legacy = await transport.handle(
       JSON.stringify({ jsonrpc: "2.0", id: 2, method: "message/send", params: {} }),

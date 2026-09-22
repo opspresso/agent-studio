@@ -10,8 +10,8 @@ Agent Studio 를 로컬에서 셋업하고, 실행하고, 검증하는 방법.
 
 - **Node.js 24+** (`engines: >=24`)
 - **pnpm 11.24.0**, `packageManager` 로 고정 (정확한 pin 은 package.json 이 정본). 전역 설치 대신 corepack 을 쓴다
-- **local Kubernetes** (기본): OrbStack 또는 Docker Desktop의 Kubernetes와 `kubectl`
-- **Docker 엔진**: Workspace·Sandbox, Compose 대안과 격리된 Docker 검사에 사용한다
+- **Docker 엔진과 Docker Compose**: OrbStack 또는 Docker Desktop. 로컬 PostgreSQL·MinIO·MCP,
+  Workspace·Sandbox와 격리된 Docker 검사에 사용한다
 
 ```bash
 corepack enable && corepack prepare pnpm@11.24.0 --activate
@@ -33,18 +33,10 @@ test -f .env.local || cp .env.example .env.local
 
 전체 목록은 [CONFIGURATION.md](CONFIGURATION.md) 를 보라.
 
-## 로컬 서비스 (Kubernetes)
+## 로컬 서비스 (Docker Compose)
 
-로컬 개발 환경은 local Kubernetes를 우선한다. 기존 서비스와 연결 설정부터 확인하고,
-Kubernetes를 사용할 수 없거나 격리된 테스트에 필요한 경우에 Compose 대안을 사용한다.
-
-PostgreSQL·MinIO·Neo4j·MCP는 형제 GitOps 저장소의 `local` 환경으로 배포한다.
-Kubernetes 실행 제품은 OrbStack 또는 Docker Desktop을 선택한다.
-Argo CD namespace와 Helm release는 EKS·k3s와 동일하게 `argocd`를 사용한다. 설치와 Mac의 접속 주소는
-[localdev](INSTALL.md#localdev)를 따른다. 포워딩을 유지하고 `.env.local`에 localhost 주소와 로컬 자격 증명을
-설정한 뒤 이 저장소에서 `pnpm dev`를 실행한다. 앱은 부팅 시 PostgreSQL 스키마를 초기화한다.
-
-## 로컬 PostgreSQL (Compose 대안)
+루트 `compose.yaml`로 PostgreSQL·MinIO를 실행하고, Agent Studio는 호스트에서 `pnpm dev`로
+실행한다. `.env.local`의 DB·object-store 연결 값은 `.env.example`의 Compose 기본값을 사용한다.
 
 ```bash
 docker compose up -d postgres minio minio-init # PostgreSQL 18 + MinIO + bucket
@@ -68,7 +60,7 @@ Agent Memory는 별도 project와 포트를 사용하므로 서로 독립적으�
 `.env.example` 의 기본 object-store 설정은 Agent Studio MinIO(:9000, console :9001)를 가리킨다.
 `minio-init`이 `agent-studio` bucket을 멱등하게 만든다.
 
-## 로컬 MCP (Compose 대안: deploy/local)
+## 로컬 MCP (Docker Compose: deploy/local)
 
 MCP는 선택 기능이다. 공개 원격 서버는 해당 서비스의 연결·인증으로 사용하고, 사설 DNS의 서버는
 배포가 허용한 내부 suffix와 실제 네트워크 도달성이 있어야 한다. [deploy/local/](../deploy/local/README.md)은

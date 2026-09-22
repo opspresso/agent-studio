@@ -1,3 +1,5 @@
+import { RequestMalformedError } from "@a2a-js/sdk/errors";
+
 /**
  * Restore scalar defaults that A2A 1.0 requires on the JSON wire but the
  * protobuf JSON codec omits. The SDK's `ListTasksResponse.toJSON` drops an
@@ -26,13 +28,15 @@ export function a2aJsonParseError(): Record<string, unknown> {
   };
 }
 
-/** Keep the executor and transport on the same task-store partition. */
-export function tenantFromA2aJsonRpcRequest(request: unknown): string | undefined {
+/** The SDK binds the raw tenant to its context without validating its type. */
+export function validateA2aJsonRpcTenant(request: unknown): void {
   if (!isObject(request) || !isObject(request.params)) {
-    return undefined;
+    return;
   }
   const tenant = request.params.tenant;
-  return typeof tenant === "string" && tenant !== "" ? tenant : undefined;
+  if (tenant !== undefined && typeof tenant !== "string") {
+    throw new RequestMalformedError("tenant must be a string.");
+  }
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
