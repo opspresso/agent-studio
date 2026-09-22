@@ -32,6 +32,20 @@ it("keeps the title, once", () => {
   );
 });
 
+it("recognizes complete tag names and ignores titles inside comments", () => {
+  expectEqual(htmlToText("<!-- <title>hidden</title> --><p>body</p>"), "body");
+  expectEqual(htmlToText("<title-extra>visible</title-extra><p>body</p>"), "visible\n\nbody");
+});
+
+it("drops raw element contents even when attributes are long or contain angle brackets", () => {
+  const attribute = "x".repeat(3000);
+  expectEqual(htmlToText(`<p>before</p><script data-value="${attribute}">private code</script><p>after</p>`), "before\n\nafter");
+  expectEqual(htmlToText('<p>before</p><script data-value="a>b">private code</script><p>after</p>'), "before\n\nafter");
+  expectEqual(htmlToText('<p title="a>b">visible</p>'), "visible");
+  expectEqual(htmlToText('<script>const code = "<unfinished";</script><p>after</p>'), "after");
+  expectEqual(htmlToText('<script>const code = "<title>hidden</title>";</script><p>after</p>'), "after");
+});
+
 it("separates blocks by a blank line and <br> by one newline", () => {
   expectEqual(htmlToText("<p>one</p><p>two</p>"), "one\n\ntwo");
   expectEqual(htmlToText("a<br>b<br/>c"), "a\nb\nc");
@@ -136,18 +150,14 @@ it("caps a very long page without splitting a character", () => {
 });
 });
 
-/**
- * The source cap bounds how much markup is read; it does not bound the work of
- * reading it. `[^>]*` after an element name re-reads the rest of the input from
- * every position that name appears at, so a page of unterminated tags — well
- * inside the cap — can block the event loop, health probes and every other
- * request on the instance. That is the exact failure the cap prevents.
- */
+/** Tag and element scans must also handle malformed input within the source cap. */
 describe("markup that is nothing but openings", () => {
+  it("handles repeated complete title/head openings without a closing element", () => {
+    expectEqual(htmlToText("<title>".repeat(20_000)), "");
+    expectEqual(htmlToText("<head>".repeat(20_000) + "<p>visible</p>"), "visible");
+  });
   it("drops pathological unterminated openings without leaking markup", () => {
-    // Each input is far beyond the 1,024-character attribute scan bound. The
-    // result, rather than machine speed, proves the bounded path hands the rest
-    // to the linear tag stripper without leaking markup.
+    // An unfinished tag consumes the remaining markup without exposing it as prose.
     expectEqual(htmlToText("<script".repeat(2_000)), "");
     expectEqual(htmlToText("<svg".repeat(2_000)), "");
     expectEqual(htmlToText("<p".repeat(2_000)), "");
@@ -156,10 +166,7 @@ describe("markup that is nothing but openings", () => {
     expectEqual(htmlToText(`${"<script".repeat(2_000)}>`), "");
   });
 
-  it("still takes a tag longer than the attribute bound off", () => {
-    // A saved page inlines an image as a `data:` URI, which runs past any bound
-    // worth putting on an attribute run — so the tag stripper scans rather than
-    // bounding, and this is what says so.
+  it("removes long quoted data URL tags", () => {
     const page = `<p>before</p><img src="data:image/png;base64,${"A".repeat(200_000)}"><p>after</p>`;
     expectEqual(htmlToText(page), "before\n\nafter");
   });

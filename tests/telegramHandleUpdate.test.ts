@@ -367,9 +367,10 @@ describe("handleTelegramUpdate", () => {
     const { telegram, finalText, sent } = makeTelegramFake();
     const { deps, runs } = makeDeps([{ delta: { content: "two cats" } }, { done: true }], telegram);
     const claimed = new Set<string>();
+    const settle = vi.fn(async () => {});
     deps.albums = () => ({
-      claim: async (id) => (claimed.has(id) ? false : (claimed.add(id), true)),
-      settle: async () => {},
+      claim: async (id) => (claimed.has(id) ? null : (claimed.add(id), "album-token")),
+      settle,
     });
     const photo = (id: string) => [{ file_id: id, file_unique_id: id, width: 1, height: 1, file_size: 10 }];
 
@@ -387,6 +388,7 @@ describe("handleTelegramUpdate", () => {
     expect(runs).toHaveLength(1);
     expect(sent.filter((m) => m.text.includes("two cats"))).toHaveLength(1);
     expect(finalText()).toContain("part of an album");
+    expect(settle).toHaveBeenCalledExactlyOnceWith("g1", "album-token", "done");
   });
 
   it("answers /start and /help without a run", async () => {

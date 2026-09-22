@@ -257,6 +257,7 @@ describe("webhook trigger secrets", () => {
       claimIdempotencyKey: async () => true,
       appendRun: async () => {},
       finishRun: async () => {},
+      updateQueuedRun: async () => { throw new Error("CRUD does not dispatch queued runs"); },
       listRuns: async () => [],
     };
     return createTriggerUseCases({ triggers, projects: projects(), cipher });

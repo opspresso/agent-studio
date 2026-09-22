@@ -33,11 +33,10 @@ flowchart TB
   lib --> shared
 ```
 
-## 2. 요청 흐름과 이미지 예외
+## 2. 요청 흐름과 이미지 도구
 
-chunk 소비자는 `src/application/execution/runProject.ts` 로 모인다. 완성된 이미지 응답을 직접
-만드는 predict 와 A2A 는 `generateImage` 로 갈라지고, 그 밖의 표면은 *어떻게 들어오는지*
-(HTTP 형태, 인증, 응답 모양)만 결정한다
+모든 Project 실행은 `src/application/execution/runProject.ts`의 같은 Agent 루프로 모인다.
+이미지 생성·편집도 이 루프의 도구로 실행한다. 각 표면은 HTTP 형태, 인증, 응답 모양을 결정한다
 ([ARCHITECTURE.md#요청-흐름](ARCHITECTURE.md#요청-흐름)).
 
 ```mermaid
@@ -187,13 +186,13 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  container["src/lib/container.ts<br/>리포지토리 · 도메인 포트 · 레지스트리 슬라이스 · projectSlack/Telegram/TeamsUseCases<br/>executionDeps · imageDeps · triggerRunnerDeps · chatDeps"]
+  container["src/lib/container.ts<br/>리포지토리 · 도메인 포트 · 레지스트리 슬라이스 · projectSlack/Telegram/TeamsUseCases<br/>executionDeps · triggerRunnerDeps · chatDeps"]
   chatdeps["src/app/api/chats/_deps.ts<br/>container의 공통 ChatDeps 재노출"]
   slackdeps["src/app/api/slack/events/_lib/<br/>SlackEventDeps"]
   tgdeps["src/app/api/telegram/webhook/_lib/<br/>TelegramEventDeps"]
   teamsdeps["src/app/api/teams/messages/_lib/<br/>TeamsEventDeps"]
   a2aroute["src/app/api/a2a/[name]/route.ts<br/>요청별 A2A SDK 핸들러 조립"]
-  boot["src/instrumentation.ts<br/>부트: 설정 검증 · 스키마 마이그레이션 · 부트스트랩 관리자 · 감사 싱크 · 모델 카탈로그 refresher · managed MCP 재개"]
+  boot["src/instrumentation.ts<br/>부트: 설정 검증 · 스키마 마이그레이션 · 부트스트랩 관리자 · 감사 싱크 · 저장된 모델 연결 설정 · managed MCP 재개"]
 
   container --> chatdeps
   container --> slackdeps

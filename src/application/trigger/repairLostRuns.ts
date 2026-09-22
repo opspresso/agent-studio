@@ -36,9 +36,9 @@ import { listProjectTriggers } from "./triggerUseCases";
 
 /**
  * How far past a run's lease a `running` row must sit before it is declared
- * lost. `startedAt` is stamped when the firing is *admitted*, not when the
- * backgrounded run starts, so the margin has to cover the distance between
- * those two on top of the lease itself. Repairing late is cosmetic; repairing a
+ * lost. Schedule `startedAt` is stamped at dispatch. Webhook acknowledgement
+ * still precedes background execution, so the margin covers that delay.
+ * Repairing late is cosmetic; repairing a
  * live run brands a healthy instance as lost.
  */
 export const REPAIR_MARGIN_SECONDS = 10 * 60;
@@ -65,7 +65,7 @@ export const LOST_RUN_ERROR =
   "The instance running this firing was lost; its lease expired without a result.";
 
 export interface RepairSummary {
-  /** Rows stuck in `running` past any live lease, finished as failed. */
+  /** Queued or running rows past their owner's lifetime, finished as failed. */
   repaired: number;
   /** Repository throws fenced off from the rest of the sweep; each is logged. */
   errors: number;
@@ -133,6 +133,22 @@ export async function repairTriggerRuns(
 ): Promise<RepairSummary> {
   const summary: RepairSummary = { repaired: 0, errors: 0 };
   const cutoff = at.getTime() - REPAIR_AFTER_SECONDS * 1000;
+  if (trigger.kind === "schedule") {
+    try {
+      const queued = await deps.triggers.listRuns(trigger.projectName, trigger.triggerId, REPAIR_SCAN_LIMIT, {
+        status: "queued", queueLeaseBefore: at.toISOString(),
+      });
+      for (const row of queued) {
+        if (row.status !== "queued" || Date.parse(row.queueLeaseUntil ?? "") > at.getTime()) continue;
+        const { queueLeaseUntil: _lease, ...run } = row;
+        void _lease;
+        if (await deps.triggers.updateQueuedRun(row, { ...run, status: "failed", endedAt: at.toISOString(), error: "The instance waiting to dispatch this firing was lost; its queue lease expired." })) summary.repaired += 1;
+      }
+    } catch (error) {
+      log.warn("trigger", "could not repair queued firings", error);
+      summary.errors += 1;
+    }
+  }
   let rows: TriggerRun[];
   try {
     rows = await deps.triggers.listRuns(trigger.projectName, trigger.triggerId, REPAIR_SCAN_LIMIT, {
@@ -143,13 +159,13 @@ export async function repairTriggerRuns(
     });
   } catch (error) {
     log.warn("trigger", `could not read runs of '${trigger.triggerId}' for repair`, error);
-    return { repaired: 0, errors: 1 };
+    return { repaired: summary.repaired, errors: summary.errors + 1 };
   }
   for (const row of rows) {
     // The bound is on the stored `startedAt` string, and a row whose value does
     // not parse cannot prove the run is fresh — so it repairs too. If the run is
     // somehow still alive, its own finish overwrites this.
-    if (row.status !== "running" || Date.parse(row.startedAt) > cutoff) {
+    if (row.status !== "running" || Date.parse(row.startedAt ?? "") > cutoff) {
       continue;
     }
     try {

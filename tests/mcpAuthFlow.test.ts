@@ -896,28 +896,6 @@ describe("client credentials bound to their issuer", () => {
     expect(h.connections.get("p/slack")?.clientId).toBe("client-at-a");
   });
 
-  it("treats a row written before issuer binding as belonging to the current server", async () => {
-    // Those credentials were already being used against this entry; inventing a
-    // mismatch would break every existing connection on deploy.
-    const h = harness({ server: AT_A, connection: { clientId: "legacy" } });
-    const uc = createMcpAuthUseCases(h.deps);
-
-    await uc.beginAuthorization("p", "slack", OWNER);
-
-    expect(h.connections.get("p/slack")?.clientId).toBe("legacy");
-  });
-
-  it("stamps the issuer on a row that predates binding when it is next authorized", async () => {
-    const h = harness({ server: AT_A, connection: { clientId: "legacy" } });
-    const uc = createMcpAuthUseCases(h.deps);
-    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
-    const state = new URL(authorizeUrl).searchParams.get("state") as string;
-
-    await uc.completeAuthorization({ state, code: "c", userEmail: OWNER });
-
-    expect(h.connections.get("p/slack")?.issuer).toBe("https://auth-a.example.com");
-  });
-
   it("records the resource the tokens were minted for", async () => {
     // The other axis: `issuer` says who issued the client, `resource` says which
     // server the tokens may be presented at. An entry moved to a different

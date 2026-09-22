@@ -7,7 +7,7 @@ import { chatRepository as chats } from "@/infrastructure/db/repositories/chatRe
 import { projectRepository as projects } from "@/infrastructure/db/repositories/projectRepository";
 import { createWorkspaceUseCases } from "@/application/workspace/workspaceUseCases";
 import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
-import { WORKSPACE_LEASE_MS, WORKSPACE_RETRY_MS } from "@/application/workspace/workerState";
+import { claimWorkspace, WORKSPACE_HEARTBEAT_MS, WORKSPACE_LEASE_MS, WORKSPACE_RETRY_MS } from "@/application/workspace/workerState";
 import { createWorkspaceRuntimeAdapter } from "@/infrastructure/workspace/runtimeAdapters";
 import type { SandboxOperation, SandboxProvider, SandboxCommand } from "@/domain/workspace/ports";
 import type { WorkspaceProjectPolicy } from "@/domain/workspace/policy";
@@ -67,7 +67,10 @@ beforeEach(async () => {
     visibility: "public", projectType: "agent", createdAt: at, updatedAt: at }]);
   await chats.create({ chatId: "chat-1", projectName: "demo", ownerEmail: owner, title: "Task", createdAt: at, updatedAt: at });
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  try { expect(vi.getTimerCount()).toBe(0); }
+  finally { vi.useRealTimers(); }
+});
 
 async function start(runtime: "command" | "codex" = "command") {
   const api = createWorkspaceUseCases(deps);
@@ -259,6 +262,126 @@ describe("durable workspace worker", () => {
     const results = await Promise.all([processWorkspace(deps, workspace.id), processWorkspace(deps, workspace.id)]);
     expect(results.filter(Boolean)).toHaveLength(1);
     expect(provider.start).toHaveBeenCalledTimes(1);
+  });
+  it.each(["ensure", "checkpoint"] as const)("keeps a live worker's lease while %s exceeds one lease interval", async operation => {
+    const { workspace, run } = await start();
+    deps.now = () => new Date();
+    deps.runTimeoutMs = WORKSPACE_LEASE_MS * 3;
+    deps.sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const delay = () => new Promise(resolve => setTimeout(resolve, WORKSPACE_LEASE_MS + 30_000));
+    if (operation === "ensure") {
+      const ensure = vi.mocked(provider.ensure).getMockImplementation()!;
+      vi.mocked(provider.ensure).mockImplementationOnce(async workspaceId => { await delay(); return ensure(workspaceId); });
+    } else {
+      const checkpoint = vi.mocked(provider.checkpoint).getMockImplementation()!;
+      vi.mocked(provider.checkpoint).mockImplementationOnce(async externalId => { await delay(); return checkpoint(externalId); });
+    }
+    const work = processWorkspace(deps, workspace.id);
+    try {
+      await vi.advanceTimersByTimeAsync(WORKSPACE_LEASE_MS + 10_000);
+      expect(provider.ensure).toHaveBeenCalledTimes(1);
+      const competingWorker = await claimWorkspace(deps, workspace.id);
+      expect(Boolean(competingWorker)).toBe(false);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(work).resolves.toBe(true);
+      expect((await repository.run(workspace.id, run.id))?.status).toBe("succeeded");
+      expect(provider.start).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      await vi.advanceTimersByTimeAsync(WORKSPACE_LEASE_MS);
+      await work;
+    }
+  });
+  it("serializes an in-flight renewal with release and never revives the released lease", async () => {
+    const { workspace } = await start();
+    deps.now = () => new Date();
+    const state = (await claimWorkspace(deps, workspace.id))!;
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const done = Promise.withResolvers<void>();
+    const write = repository.write.bind(repository);
+    const writes = vi.spyOn(repository, "write").mockImplementationOnce(async change => {
+      entered.resolve();
+      await resume.promise;
+      await write(change);
+    });
+    const scope = state.withHeartbeat(() => done.promise);
+    try {
+      await vi.advanceTimersByTimeAsync(WORKSPACE_HEARTBEAT_MS);
+      await entered.promise;
+      const release = state.save({ activeRunId: undefined, leaseToken: undefined, leaseUntil: undefined });
+      await Promise.resolve();
+      expect(writes).toHaveBeenCalledTimes(1);
+      resume.resolve();
+      await release;
+      expect((await repository.get(workspace.id))?.leaseToken).toBeUndefined();
+      const count = writes.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(WORKSPACE_LEASE_MS * 2);
+      expect(writes).toHaveBeenCalledTimes(count);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      resume.resolve(); done.resolve(); await scope;
+    }
+  });
+  it("retries a heartbeat CAS conflict without erasing the owner's cancellation", async () => {
+    const { api, workspace, run } = await start();
+    deps.now = () => new Date();
+    const state = (await claimWorkspace(deps, workspace.id))!;
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const done = Promise.withResolvers<void>();
+    const write = repository.write.bind(repository);
+    const writes = vi.spyOn(repository, "write").mockImplementationOnce(async change => {
+      entered.resolve(); await resume.promise; await write(change);
+    });
+    const scope = state.withHeartbeat(() => done.promise);
+    try {
+      await vi.advanceTimersByTimeAsync(WORKSPACE_HEARTBEAT_MS);
+      await entered.promise;
+      await api.cancel(workspace.id, owner);
+      resume.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(writes).toHaveBeenCalledTimes(3);
+      expect((await repository.run(workspace.id, run.id))?.cancelRequestedAt).toBeDefined();
+      expect((await repository.get(workspace.id))?.leaseToken).toBe(state.token);
+    } finally {
+      resume.resolve(); done.resolve(); await scope;
+    }
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it.each(["reclaimed", "renewal-failed", "shutdown"] as const)("starts no further sandbox effects after %s during inspection", async reason => {
+    const { api, workspace } = await start();
+    await processWorkspace(deps, workspace.id);
+    const run = await api.enqueue(workspace.id, owner, { kind: "command", script: "next" }, "request-0002");
+    deps.now = () => new Date();
+    deps.runTimeoutMs = WORKSPACE_LEASE_MS * 3;
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const shutdown = new AbortController();
+    vi.mocked(provider.inspect).mockImplementationOnce(async () => { entered.resolve(); await resume.promise; return "stopped"; });
+    vi.mocked(provider.ensure).mockClear();
+    vi.mocked(provider.start).mockClear();
+    const work = processWorkspace(deps, workspace.id, shutdown.signal);
+    await entered.promise;
+    let replacementToken: string | undefined;
+    if (reason === "reclaimed") {
+      // A paused process runs no timers; another worker may legitimately claim.
+      vi.setSystemTime(Date.now() + WORKSPACE_LEASE_MS + 1);
+      replacementToken = (await claimWorkspace(deps, workspace.id))?.token;
+      expect(replacementToken).toBeDefined();
+    } else if (reason === "renewal-failed") {
+      vi.spyOn(repository, "write").mockRejectedValueOnce(new Error("Database unavailable"));
+      await vi.advanceTimersByTimeAsync(WORKSPACE_HEARTBEAT_MS);
+    } else shutdown.abort();
+    resume.resolve();
+    await expect(work).resolves.toBe(true);
+    expect(provider.destroy).not.toHaveBeenCalled();
+    expect(provider.ensure).not.toHaveBeenCalled();
+    expect(provider.start).not.toHaveBeenCalled();
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("running");
+    if (reason === "reclaimed") expect((await repository.get(workspace.id))?.leaseToken).toBe(replacementToken);
+    if (reason === "shutdown") expect((await repository.get(workspace.id))?.leaseToken).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
   });
   it("uses a persisted stop request while no model output is arriving", async () => {
     const { api, workspace, run } = await start();

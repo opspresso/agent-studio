@@ -92,8 +92,8 @@ export interface PluginKindReport {
 
 /** Which Agents bind the names a sync is about to offer for deletion. */
 export interface OrphanBindings {
-  skills: Record<string, string[]>;
-  mcpServers: Record<string, string[]>;
+  skills: Map<string, string[]>;
+  mcpServers: Map<string, string[]>;
 }
 
 /**

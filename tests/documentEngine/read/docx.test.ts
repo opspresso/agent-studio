@@ -278,14 +278,128 @@ test("a picture leaves a mark saying it was there, and what it was called", () =
 });
 
 test("a fallback copy of the same picture is one picture", () => {
-  // `mc:AlternateContent` carries the drawing twice. Emitting the fallback too
-  // puts every figure in the document in twice.
+  // Choice and Fallback are siblings, not drawings nested inside one another.
   const xml =
-    "<w:p><w:r><w:drawing><wp:inline><wp:docPr descr=\"그림\"/></wp:inline>" +
-    "<w:pict><v:shape><v:imagedata r:id=\"rId1\"/></v:shape></w:pict>" +
-    "</w:drawing></w:r></w:p>";
+    '<w:p><w:r><mc:AlternateContent><mc:Choice Requires="a">' +
+    '<w:drawing><wp:inline><wp:docPr descr="그림"/></wp:inline></w:drawing></mc:Choice>' +
+    '<mc:Fallback><w:pict><v:shape><v:imagedata r:id="rId1"/></v:shape></w:pict></mc:Fallback>' +
+    '</mc:AlternateContent></w:r></w:p>';
   const images = documentXmlToBlocks(xml).blocks.filter((block) => block.kind === "image");
   assert.equal(images.length, 1);
+  assert.equal(images[0]?.alt, "그림");
+});
+
+test("alternate content selects the first supported choice and otherwise its fallback", () => {
+  const drawing = (alt: string) => `<w:drawing><wp:docPr descr="${alt}"/></w:drawing>`;
+  const xml = '<w:p><w:r><mc:AlternateContent>' +
+    `<mc:Choice Requires="future">${drawing("unsupported")}</mc:Choice>` +
+    `<mc:Choice Requires="a">${drawing("first")}</mc:Choice>` +
+    `<mc:Choice Requires="a">${drawing("second")}</mc:Choice>` +
+    `<mc:Fallback>${drawing("fallback")}</mc:Fallback></mc:AlternateContent>` +
+    '<mc:AlternateContent><mc:Choice Requires="future">' + drawing("unsupported") +
+    `</mc:Choice><mc:Fallback>${drawing("fallback")}</mc:Fallback></mc:AlternateContent>` +
+    '</w:r></w:p>' + paragraph("after");
+  const blocks = documentXmlToBlocks(xml).blocks;
+  assert.deepEqual(blocks.filter(block => block.kind === "image").map(block => block.alt), ["first", "fallback"]);
+  assert.equal(blocks.at(-1)?.kind, "paragraph");
+  assert.match(documentXmlToText(xml).text, /after$/);
+});
+
+test("choice requirements resolve in their namespace scope and skipped branches cannot change state", () => {
+  const drawing = (alt: string) => `<w:drawing><wp:docPr descr="${alt}"/></w:drawing>`;
+  const xml = '<w:document xmlns:draw="http://schemas.openxmlformats.org/drawingml/2006/main"><w:body>' +
+    '<mc:AlternateContent><mc:Choice Requires="draw"><w:p><w:r>' + drawing("selected") +
+    '</w:r></w:p></mc:Choice><mc:Fallback><w:tbl><w:tr><w:tc><w:p><w:r><w:b/>' +
+    '<w:t>ignored</w:t></w:r></w:p></w:tc></w:tr></w:tbl></mc:Fallback></mc:AlternateContent>' +
+    '<mc:AlternateContent xmlns:draw="urn:unsupported"><mc:Choice Requires="draw"><w:p/>' +
+    '</mc:Choice><mc:Fallback>' + paragraph("fallback text") + '</mc:Fallback></mc:AlternateContent>' +
+    paragraph("plain") + '</w:body></w:document>';
+  const result = documentXmlToBlocks(xml);
+  assert.deepEqual(result.blocks, [
+    { kind: "image", alt: "selected" },
+    { kind: "paragraph", runs: [{ text: "fallback text" }] },
+    { kind: "paragraph", runs: [{ text: "plain" }] },
+  ]);
+  assert.deepEqual(result.observed, []);
+});
+
+test("nested alternates and self-closing branches leave later content readable", () => {
+  const xml = '<mc:AlternateContent><mc:Choice Requires="future"/>' +
+    '<mc:Fallback><mc:AlternateContent><mc:Choice Requires="w">' + paragraph("nested") +
+    '</mc:Choice><mc:Fallback>' + paragraph("duplicate") + '</mc:Fallback></mc:AlternateContent>' +
+    '</mc:Fallback></mc:AlternateContent><mc:AlternateContent/>' + paragraph("after") +
+    '<mc:AlternateContent><mc:Choice Requires="future">' + paragraph("unsupported") + '</mc:Choice></mc:AlternateContent>';
+  const result = documentXmlToBlocks(xml);
+  assert.equal(documentXmlToText(xml).text, "nested\n\nafter");
+  assert.deepEqual(result.observed, ["unsupported alternate content"]);
+});
+
+const WORD_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const DRAWING_NAMESPACE = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const RELATIONSHIP_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+test.each(["w", "word"])("Strict OOXML keeps readable %s text and drawing namespaces", (prefix) => {
+  const xml = `<${prefix}:document xmlns:${prefix}="http://purl.oclc.org/ooxml/wordprocessingml/main" ` +
+    'xmlns:wp="http://purl.oclc.org/ooxml/drawingml/wordprocessingDrawing" xmlns:a="http://purl.oclc.org/ooxml/drawingml/main" xmlns:r="http://purl.oclc.org/ooxml/officeDocument/relationships">' +
+    `<${prefix}:body><${prefix}:p><${prefix}:r><${prefix}:i ${prefix}:val="1"/><${prefix}:t>Strict text</${prefix}:t></${prefix}:r></${prefix}:p>` +
+    `<${prefix}:p><${prefix}:r><${prefix}:drawing><wp:docPr descr="Strict picture"/><a:blip r:embed="image"/>` +
+    `</${prefix}:drawing></${prefix}:r></${prefix}:p></${prefix}:body></${prefix}:document>`;
+  assert.deepEqual(documentXmlToBlocks(xml, { rels: '<Relationships><Relationship Id="image" Target="media/strict.png"/></Relationships>' }).blocks, [
+    { kind: "paragraph", runs: [{ text: "Strict text", italic: true }] },
+    { kind: "image", alt: "Strict picture", target: "word/media/strict.png" },
+  ]);
+});
+
+test("a selected alternate reads aliased Word elements and attributes rather than discarding its fallback", () => {
+  const xml = `<w:document xmlns:word="${WORD_NAMESPACE}" xmlns:rel="${RELATIONSHIP_NAMESPACE}"><w:body>` +
+    '<mc:AlternateContent><mc:Choice Requires="word">' +
+    '<word:p><word:pPr><word:outlineLvl word:val="1"/></word:pPr><word:r><word:t>Selected heading</word:t></word:r></word:p>' +
+    '<word:p><word:hyperlink rel:id="rId1"><word:r><word:rPr><word:b word:val="0"/><word:i word:val="1"/></word:rPr><word:t>linked text</word:t></word:r></word:hyperlink></word:p>' +
+    `</mc:Choice><mc:Fallback>${paragraph("fallback")}</mc:Fallback></mc:AlternateContent>${paragraph("after")}</w:body></w:document>`;
+  const result = documentXmlToBlocks(xml, { rels: '<Relationships><Relationship Id="rId1" Target="https://example.test/source"/></Relationships>' });
+  assert.deepEqual(result.blocks, [
+    { kind: "heading", level: 2, runs: [{ text: "Selected heading" }] },
+    { kind: "paragraph", runs: [{ text: "linked text", italic: true, href: "https://example.test/source" }] },
+    { kind: "paragraph", runs: [{ text: "after" }] },
+  ]);
+  assert.deepEqual(result.observed, []);
+});
+
+test("aliased image choices and fallbacks preserve relationship attributes and literal attribute values", () => {
+  const alt = "literal word:val='0' xmlns:word='urn:fake' & picture";
+  const xml = `<w:document xmlns:word="${WORD_NAMESPACE}" xmlns:draw="${DRAWING_NAMESPACE}" ` +
+    `xmlns:position="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:rel="${RELATIONSHIP_NAMESPACE}" xmlns:old="urn:schemas-microsoft-com:vml"><w:body>` +
+    '<mc:AlternateContent><mc:Choice Requires="word draw"><word:p><word:r><word:drawing>' +
+    `<position:docPr descr="${alt.replace("&", "&amp;")}"/><draw:blip rel:embed="selected"/>` +
+    '<draw:t>DrawingML text is not body prose</draw:t></word:drawing></word:r></word:p></mc:Choice>' +
+    '<mc:Fallback><w:p><w:r><w:drawing><wp:docPr descr="duplicate"/></w:drawing></w:r></w:p></mc:Fallback></mc:AlternateContent>' +
+    '<mc:AlternateContent><mc:Choice Requires="future"/><mc:Fallback><word:p><word:r><word:pict><old:imagedata rel:id="fallback"/></word:pict></word:r></word:p></mc:Fallback></mc:AlternateContent>' +
+    '</w:body></w:document>';
+  const rels = '<Relationships><Relationship Id="selected" Target="media/selected.png"/><Relationship Id="fallback" Target="media/fallback.png"/></Relationships>';
+  assert.deepEqual(documentXmlToBlocks(xml, { rels }).blocks, [
+    { kind: "image", alt, target: "word/media/selected.png" },
+    { kind: "image", alt: "image", target: "word/media/fallback.png" },
+  ]);
+});
+
+test("namespace rebinding and self-closing aliases stay scoped without interpreting declarations inside quoted values", () => {
+  const xml = `<w:document xmlns:word="${WORD_NAMESPACE}" xmlns:draw="${DRAWING_NAMESPACE}"><w:body>` +
+    '<mc:AlternateContent><mc:Choice Requires="word">' +
+    '<word:p note="xmlns:word=\'urn:fake\' word:val=\'0\'"><word:pPr xmlns:word="urn:unsupported"/>' +
+    '<word:r><word:b/><word:t>bold</word:t></word:r></word:p>' +
+    '<w:p xmlns:w="urn:unsupported"><w:r><w:t>foreign text</w:t></w:r></w:p>' +
+    `<p xmlns="${WORD_NAMESPACE}"><r><t>default namespace</t></r></p>` +
+    '<word:p><word:r><word:t/></word:r></word:p>' +
+    '<mc:AlternateContent xmlns:word="urn:unsupported"><mc:Choice Requires="word"><word:p/></mc:Choice>' +
+    `<mc:Fallback>${paragraph("fallback")}</mc:Fallback></mc:AlternateContent>` +
+    '</mc:Choice><mc:Fallback>' + paragraph("duplicate") + '</mc:Fallback></mc:AlternateContent>' +
+    '<word:p><word:r><word:t>after</word:t></word:r></word:p></w:body></w:document>';
+  assert.deepEqual(documentXmlToBlocks(xml).blocks, [
+    { kind: "paragraph", runs: [{ text: "bold", bold: true }] },
+    { kind: "paragraph", runs: [{ text: "default namespace" }] },
+    { kind: "paragraph", runs: [{ text: "fallback" }] },
+    { kind: "paragraph", runs: [{ text: "after" }] },
+  ]);
 });
 
 test("a list written as literal markers with a hanging indent is still a list", () => {

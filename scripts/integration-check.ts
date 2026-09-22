@@ -922,28 +922,48 @@ async function main() {
     // a working condition expression from one that always wins.
     const claims = telegramUpdateRepository.forBot(projectName, 42).updates;
     const claimNow = Math.floor(Date.now() / 1000);
-    assert.equal(await claims.claim("1001", claimNow, claimNow + 600), true, "first delivery claims");
+    const firstClaim = await claims.claim("1001", claimNow, claimNow + 600);
+    assert.ok(firstClaim, "first delivery claims");
     assert.equal(
       await claims.claim("1001", claimNow, claimNow + 600),
-      false,
+      null,
       "a redelivery under a live lease is refused",
     );
-    await claims.settle("1001", "failed");
-    assert.equal(
-      await claims.claim("1001", claimNow, claimNow + 600),
-      true,
-      "a failed attempt leaves the update reclaimable",
-    );
-    await claims.settle("1001", "done");
+    await claims.settle("1001", firstClaim, "failed");
+    const retriedClaim = await claims.claim("1001", claimNow, claimNow + 600);
+    assert.ok(retriedClaim, "a failed attempt leaves the update reclaimable");
+    assert.notEqual(retriedClaim, firstClaim, "a retry in the same second receives a new token");
+    await claims.settle("1001", firstClaim, "done");
+    await claims.settle("1001", retriedClaim, "failed");
+    const currentClaim = await claims.claim("1001", claimNow, claimNow + 600);
+    assert.ok(currentClaim, "the old holder cannot retire the retry");
+    await claims.settle("1001", currentClaim, "done");
+    await claims.settle("1001", currentClaim, "failed");
     assert.equal(
       await claims.claim("1001", claimNow + 1, claimNow + 601),
-      false,
+      null,
       "a settled update is never reclaimed",
     );
-    // An expired lease is reclaimable — the instance that held it is gone.
-    assert.equal(await claims.claim("1002", claimNow - 100, claimNow - 50), true, "claim with a past lease");
-    assert.equal(await claims.claim("1002", claimNow, claimNow + 600), true, "an expired lease is taken over");
-    pass("inbound event claim: lease, failed reclaim, settled never, expired taken over");
+    for (const outcome of ["done", "failed"] as const) {
+      const eventId = `expired-${outcome}`;
+      const expired = await claims.claim(eventId, claimNow - 100, claimNow - 50);
+      assert.ok(expired, "claim with a past lease");
+      // The row lock must allow only one replacement to win.
+      const candidates = await Promise.all([
+        claims.claim(eventId, claimNow, claimNow + 600),
+        claims.claim(eventId, claimNow, claimNow + 600),
+      ]);
+      const winners = candidates.filter((token): token is string => token !== null);
+      assert.equal(winners.length, 1, "one holder reclaims the expired lease");
+      const replacement = winners[0]!;
+      assert.notEqual(replacement, expired);
+      await claims.settle(eventId, expired, outcome);
+      await claims.settle(eventId, "wrong-token", outcome);
+      assert.equal(await claims.claim(eventId, claimNow, claimNow + 600), null, "late failure cannot release another holder's claim");
+      await claims.settle(eventId, replacement, "failed");
+      assert.ok(await claims.claim(eventId, claimNow, claimNow + 600), "late success cannot retire another holder's claim");
+    }
+    pass("inbound event claim: token ownership, concurrent reclaim, failed retry and terminal settlement");
 
     // ---------- conversation transcript (newest N, oldest first, per conversation) ----------
     const conversationKey = `telegram:${suffix}`;
@@ -1014,6 +1034,39 @@ async function main() {
       "a repaired row is finished in place",
     );
     pass("trigger run history: newest-first, startedBefore window, finish in place");
+
+    // ---------- queued schedule ownership and atomic dispatch ----------
+    const queueTrigger = `it-queue-${suffix}`;
+    const queueNow = Date.now();
+    const queuedRun = { projectName, triggerId: queueTrigger, runId: "queued", status: "queued" as const,
+      queuedAt: new Date(queueNow - 60_000).toISOString(), queueLeaseUntil: new Date(queueNow + 60_000).toISOString() };
+    await triggerRepository.appendRun(queuedRun);
+    const renewedQueue = { ...queuedRun, queueLeaseUntil: new Date(queueNow + 120_000).toISOString() };
+    assert.equal(await triggerRepository.updateQueuedRun(queuedRun, renewedQueue), true);
+    assert.equal(await triggerRepository.updateQueuedRun(queuedRun, { ...queuedRun, status: "failed", endedAt: now }), false,
+      "stale repair cannot close a renewed queue owner");
+    const { queueLeaseUntil: _queueLease, ...queueIdentity } = renewedQueue;
+    void _queueLease;
+    const runningQueue = { ...queueIdentity, status: "running" as const, startedAt: new Date().toISOString() };
+    const starts = await Promise.all([
+      triggerRepository.updateQueuedRun(renewedQueue, runningQueue),
+      triggerRepository.updateQueuedRun(renewedQueue, runningQueue),
+    ]);
+    assert.equal(starts.filter(Boolean).length, 1, "one queued-to-running transition wins");
+    assert.deepEqual(await triggerRepository.listRuns(projectName, queueTrigger, 10), [runningQueue]);
+    assert.equal(await getItem(dbKeys.triggerRun(projectName, queueTrigger, queuedRun.queuedAt, queuedRun.runId)), null,
+      "moving to the actual start key leaves no duplicate history");
+    assert.deepEqual(await triggerRepository.listRuns(projectName, queueTrigger, 10, { status: "queued" }), []);
+    const expiredQueue = { ...queuedRun, runId: "expired", queueLeaseUntil: new Date(queueNow - 1).toISOString() };
+    await triggerRepository.appendRun({ ...expiredQueue, runId: "past-retention", queuedAt: "1970-01-01T00:00:00.000Z", queueLeaseUntil: "1970-01-01T00:01:00.000Z" });
+    await triggerRepository.appendRun(expiredQueue);
+    await triggerRepository.appendRun({ ...queuedRun, runId: "live" });
+    assert.deepEqual(await triggerRepository.listRuns(projectName, queueTrigger, 1, {
+      status: "queued", queueLeaseBefore: new Date(queueNow).toISOString(),
+    }), [expiredQueue], "expiry and lease windows are applied before the queue repair limit");
+    assert.equal(await triggerRepository.updateQueuedRun(expiredQueue, { ...expiredQueue, status: "running", startedAt: now }), false);
+    assert.equal(await triggerRepository.updateQueuedRun(expiredQueue, { ...expiredQueue, status: "failed", endedAt: now }), true);
+    pass("schedule queue: renewal fencing, concurrent dispatch, atomic key move and bounded repair");
 
     // ---------- audit records (day partition, newest first) ----------
     const auditDay = today;
@@ -1563,19 +1616,23 @@ async function main() {
       null,
       "the limit is exact",
     );
+    assert.equal(await runSlotRepository.renew(slotActor, firstSlot, nowSeconds + 900), true);
     await runSlotRepository.release(slotActor, firstSlot!);
+    assert.equal(await runSlotRepository.renew(slotActor, firstSlot, nowSeconds + 1200), false, "released holders cannot renew");
     assert.ok(
       await runSlotRepository.acquire(slotActor, 2, nowSeconds + 600),
       "a released slot is reusable",
     );
     // An instance that died holds a slot only until its lease runs out.
     const expiredActor = `user:expired-${suffix}@example.com`;
-    await runSlotRepository.acquire(expiredActor, 1, nowSeconds - 1);
+    const expiredSlot = await runSlotRepository.acquire(expiredActor, 1, nowSeconds - 1);
+    assert.ok(expiredSlot);
+    assert.equal(await runSlotRepository.renew(expiredActor, expiredSlot, nowSeconds + 600), false, "expired holders cannot renew");
     assert.ok(
       await runSlotRepository.acquire(expiredActor, 1, nowSeconds + 600),
       "an expired lease is reclaimable",
     );
-    pass("concurrency slots: exact limit, release, lease reclaim");
+    pass("concurrency slots: exact limit, owned renewal, release and lease reclaim");
 
     // ---------- Agent: collected completion ----------
     const runResult = await executeProject(executionDeps, {

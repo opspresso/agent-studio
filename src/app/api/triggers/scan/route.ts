@@ -41,6 +41,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const { summary, firings } = await scanSchedules(triggerRunnerDeps, new Date());
+  // `fired` counts admitted queue reservations, not completed or started model runs.
   // The summary an operator alerts on lives in the log stream, not only in a
   // response body nobody keeps.
   log.info(

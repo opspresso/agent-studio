@@ -11,7 +11,7 @@ import { PiiFilter } from "@/application/llm/pii";
 import { maskValues, restoreValues } from "./messages";
 import type { RuntimeCheckpoint, RuntimeTurnPersistence } from "./types";
 export type { RuntimeGraphSnapshot, RuntimeAgentSnapshot, RuntimeCheckpoint, RuntimeTurnPersistence } from "./types";
-import type { ImageHandle } from "@/application/llm/agentAssembly";
+import { ImageRegistry, type ImageHandle } from "@/application/llm/agentAssembly";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { MS_PER_DAY } from "@/shared/date";
 import { historyImages } from "./historyImages";
@@ -33,6 +33,7 @@ interface SessionDocument {
   items: AgentInputItem[];
   checkpoint?: RuntimeCheckpoint;
   images?: ImageHandle[];
+  nextImageId?: number;
 }
 
 /** Buffered SDK Session: history and a pending RunState commit in one database CAS. */
@@ -123,6 +124,9 @@ export async function openRuntimeSession(
   const session = new StudioSession(scope.sessionId, filter ? maskValues(filter, media.items) as AgentInputItem[] : structuredClone(media.items));
   const bindings = Object.assign(Object.create(null) as Record<string, string>, checkpoint?.bindings ?? {});
   const previousItemCount = checkpoint?.previousItemCount ?? session.items.length;
+  const images = new ImageRegistry({ next: document.nextImageId ?? 1 });
+  images.restore(document.images ?? []);
+  if (!document.images) for (const image of media.images) images.add(image, "from the conversation");
   const write = async (next: SessionDocument) => {
     const payload = await encode(next, services, scope.sessionId, scope.ownerEmail);
     const nextRevision = await services.repository.save({ sessionId: scope.sessionId, ownerEmail: scope.ownerEmail, projectName: scope.projectName, payload, expiresAt: new Date(Date.now() + services.retentionDays * MS_PER_DAY).toISOString() }, revision);
@@ -135,7 +139,7 @@ export async function openRuntimeSession(
   return {
     session, filter, ...(checkpoint ? { checkpoint } : {}), ...(resume ? { decisions: resume.decisions } : {}),
     warnings: [...(history.dropped ? ["Earlier SDK Session turns were omitted from this run's context."] : []), ...(media.dropped ? [`${media.dropped} earlier image(s) were omitted from this run's SDK Session context.`] : [])],
-    images: document.images?.length ? document.images : media.images.map((image, index) => ({ ...image, id: `img_${index + 1}`, origin: "from the conversation" })),
+    images: [...images.list()], nextImageId: images.nextId,
     checkBinding(key, fingerprint) {
       if (checkpoint && key in bindings && bindings[key] !== fingerprint) throw new ConflictError("An Agent configuration or connection changed while approval was pending");
       bindings[key] = fingerprint;
@@ -155,9 +159,10 @@ export async function openRuntimeSession(
       const { signal: _signal, runtime: _runtime, now, ...rest } = input;
       void _signal; void _runtime;
       const restoredItems = filter ? restoreValues(filter, items) as AgentInputItem[] : items;
-      const images = [...historyImages(restoredItems).images.map((image, index) => ({ ...image, id: `img_${index + 1}`, origin: "from the conversation" })), ...Object.values(graph.agents).flatMap((entry) => [...entry.images])].filter((image, index, all) => all.findLastIndex((other) => other.b64 === image.b64 && other.mimeType === image.mimeType) === index).slice(-MAX_IMAGES_PER_TURN);
-      await write({ format: 1, items: restoredItems, images, ...(approvals.length ? {
-        checkpoint: { status: "pending", state: state.toString(), approvals, input: { ...rest, ...(now ? { now: now.toISOString() } : {}) }, configuration: scope.configuration, pii: filter?.snapshot() ?? [], bindings, previousItemCount, graph },
+      const retained = new ImageRegistry({ next: Math.max(images.nextId, graph.nextImageId ?? 1) });
+      retained.restore([...images.list(), ...Object.values(graph.agents).flatMap((entry) => [...entry.images])]);
+      await write({ format: 1, items: restoredItems, images: retained.list().slice(-MAX_IMAGES_PER_TURN), nextImageId: retained.nextId, ...(approvals.length ? {
+        checkpoint: { status: "pending", state: state.toString(), approvals, input: { ...rest, ...(now ? { now: now.toISOString() } : {}) }, configuration: scope.configuration, pii: filter?.snapshot() ?? [], bindings, previousItemCount, previousImageIds: checkpoint?.previousImageIds ?? images.list().map((image) => image.id), graph },
       } : {}) });
       session.items = items;
       return approvals;
@@ -168,7 +173,9 @@ export async function openRuntimeSession(
 export async function discardRuntimeCheckpoint(services: RuntimeSessionServices, sessionId: string, ownerEmail: string, revision: number): Promise<void> {
   const saved = await readRuntimeSession(services, sessionId, ownerEmail);
   if (!saved || saved.row.revision !== revision || !saved.document.checkpoint) throw new ConflictError("This approval is no longer pending");
-  const next: SessionDocument = { format: 1, items: saved.document.items.slice(0, saved.document.checkpoint.previousItemCount) };
+  const checkpoint = saved.document.checkpoint;
+  const images = checkpoint.graph.agents[`root/${saved.row.projectName}`]?.images.filter((image) => checkpoint.previousImageIds?.includes(image.id));
+  const next: SessionDocument = { format: 1, items: saved.document.items.slice(0, checkpoint.previousItemCount), images, nextImageId: saved.document.nextImageId };
   const { payload: _old, revision: _revision, ...row } = saved.row;
   void _old; void _revision;
   if (await services.repository.save({ ...row, payload: await encode(next, services, sessionId, ownerEmail) }, revision) === null) throw new ConflictError("Runtime session was changed by another run");

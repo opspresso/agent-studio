@@ -158,6 +158,11 @@ export const keys = {
     SK: `TRIGGERRUN#${triggerId}#${startedAt}#${runId}`,
   }),
   triggerRunPrefix: (triggerId: string) => `TRIGGERRUN#${triggerId}#`,
+  queuedTriggerRunPartition: (projectName: string, triggerId: string) => `TRIGGERQUEUE#${projectName}#${triggerId}`,
+  queuedTriggerRunIndex: (projectName: string, triggerId: string, leaseUntil: string, runId: string) => ({
+    GSI1PK: keys.queuedTriggerRunPartition(projectName, triggerId),
+    GSI1SK: `${leaseUntil}#${runId}`,
+  }),
   /**
    * A delivery's idempotency claim. Its own partition because the key is an
    * arbitrary caller-supplied string, which has no business in the project

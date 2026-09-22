@@ -41,6 +41,7 @@ import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
 import { createLatestOnly } from "@/app/_lib/latestOnly";
+import { getProjectA2a, type ProjectA2aResponse } from "@/app/projects/lib/api";
 
 export default function AgentsPage() {
   const t = useT();
@@ -201,7 +202,7 @@ function AgentCardModal({
   project: A2aProjectListItem | null;
   onClose: () => void;
 }) {
-  const [card, setCard] = useState<string | null>(null);
+  const [view, setView] = useState<ProjectA2aResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -209,16 +210,13 @@ function AgentCardModal({
       return;
     }
     let cancelled = false;
-    setCard(null);
+    setView(null);
     setError(null);
-    fetch(project.cardUrl)
-      .then(async (res) => {
-        if (!res.ok) {
-          throw new Error(`Request failed (${res.status})`);
-        }
-        return res.json();
+    getProjectA2a(project.name)
+      .then((data) => {
+        if (!data.card) throw new Error("No Agent Card is available for this project");
+        if (!cancelled) setView(data);
       })
-      .then((data) => !cancelled && setCard(JSON.stringify(data, null, 2)))
       .catch(
         (e) =>
           !cancelled && setError(e instanceof Error ? e.message : "Failed to load the Agent Card"),
@@ -237,13 +235,13 @@ function AgentCardModal({
     >
       {project && (
         <Stack gap="sm">
-          <CopyableUrl url={project.cardUrl} />
+          {view?.cardUrl && <CopyableUrl url={view.cardUrl} />}
           {error ? (
             <Alert color="red" variant="light">
               {error}
             </Alert>
-          ) : card ? (
-            <CodeBlock language="json" code={card} />
+          ) : view?.card ? (
+            <CodeBlock language="json" code={JSON.stringify(view.card, null, 2)} />
           ) : (
             <LoadingText />
           )}

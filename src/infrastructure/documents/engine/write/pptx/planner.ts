@@ -26,12 +26,13 @@
  * **Blocks are flattened to lines before anything is packed.** A list becomes one
  * piece per item with its marker already resolved, which is what lets a numbered
  * list be split across two slides and still count 4, 5, 6 rather than starting
- * again at 1. Only a table stays whole, and it splits by row with its header
- * repeated.
+ * again at 1. Oversized text splits at code-point boundaries without losing
+ * inline styles; tables split by row with their header repeated.
  */
 
 import type { Block, MarkdownDocument, Run } from "../../markdown";
 import { plainTextOf } from "../../markdown";
+import { DocumentError } from "../../errors";
 import { designFor, type DesignProfile } from "../theme";
 import { figureOf, forceSemantic, recognise, type Semantic } from "../semantics";
 import {
@@ -43,6 +44,7 @@ import {
   ROW_HEIGHT,
   SUBHEADING_SIZES,
   linesOf,
+  textLines,
 } from "./layout";
 import type { Piece, Presentation, Slide, Style } from "./types";
 
@@ -154,6 +156,32 @@ function splitTable(
   };
 }
 
+/** Split only oversized paragraphs; normal paragraphs keep their original run boundaries. */
+function splitText(piece: Extract<Piece, { kind: "text" }>, budget: number): Piece[] {
+  const lines = textLines(piece);
+  if (lines.length + (piece.style.before ? 1 : 0) <= budget) return [piece];
+  const result: Piece[] = [];
+  let start = 0;
+  let style = piece.style;
+  while (start < lines.length) {
+    let count = Math.min(lines.length - start, budget - (style.before ? 1 : 0));
+    const fragment = (): Extract<Piece, { kind: "text" }> => ({
+      ...piece, runs: lines.slice(start, start + count).flat(), style,
+      ...(start ? { opens: false } : {}),
+    });
+    // A preserved trailing hard break also creates a blank line in its own box.
+    // Leave space for it instead of deleting the authored newline at a page edge.
+    if (linesOf(fragment()) > budget) count -= 1;
+    if (count < 1) throw new DocumentError("A presentation text line cannot fit within its slide body");
+    result.push(fragment());
+    start += count;
+    const { before: _before, marker: _marker, ...continued } = style;
+    void _before; void _marker;
+    style = continued;
+  }
+  return result;
+}
+
 /** Fill slides with pieces, greedily, `budget` lines to a slide. */
 function pack(pieces: readonly Piece[], budget: number): Piece[][] {
   const slides: Piece[][] = [];
@@ -168,7 +196,7 @@ function pack(pieces: readonly Piece[], budget: number): Piece[][] {
     }
   };
 
-  for (const piece of pieces) {
+  for (const piece of pieces.flatMap((piece) => piece.kind === "text" ? splitText(piece, budget) : [piece])) {
     let pending: Piece | undefined = piece;
     while (pending) {
       const room = budget - used;
@@ -182,7 +210,7 @@ function pack(pieces: readonly Piece[], budget: number): Piece[][] {
       if (room > 0 && pending.kind === "table") {
         // A table is the one piece worth cutting mid-way: its rows are
         // independent, and moving the whole thing leaves a slide half empty.
-        const rows = Math.max(1, Math.floor((room * LINE_HEIGHT) / ROW_HEIGHT) - 1);
+        const rows = Math.floor((room * LINE_HEIGHT) / ROW_HEIGHT) - 1;
         const split = splitTable(pending, rows);
         if (split) {
           current.push(split.head);
@@ -192,8 +220,8 @@ function pack(pieces: readonly Piece[], budget: number): Piece[][] {
         }
       }
       if (current.length === 0) {
-        // Nothing to move it past: a single piece taller than a slide goes on
-        // one anyway, and PowerPoint's autofit shrinks what is left over.
+        // Text was split to fit before packing. A table with one indivisible
+        // row still has no smaller unit this packer can move to another slide.
         current.push(pending);
         flush();
         pending = undefined;

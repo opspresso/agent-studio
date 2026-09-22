@@ -15,10 +15,12 @@
 import { strict as assert } from "node:assert";
 import { test } from "vitest";
 import { detect } from "@/infrastructure/documents/engine/detect";
-import { parseMarkdown } from "@/infrastructure/documents/engine/markdown";
+import { parseMarkdown, type Run } from "@/infrastructure/documents/engine/markdown";
 import { pptxToText } from "@/infrastructure/documents/engine/read/pptx";
 import { listEntries, readEntries } from "@/infrastructure/documents/engine/zip";
 import { renderPptx } from "@/infrastructure/documents/engine/write/pptx/index";
+import { BODY_BOX, BODY_SIZE, SLIDE_HEIGHT } from "@/infrastructure/documents/engine/write/pptx/layout";
+import { decodeXmlEntities } from "@/infrastructure/documents/engine/xml";
 
 const CREATED = "2026-08-13T00:00:00Z";
 
@@ -46,6 +48,122 @@ function partOf(bytes: Uint8Array, name: string): string {
   assert.ok(part, `expected the archive to hold ${name}`);
   return new TextDecoder().decode(part);
 }
+
+function bodyShapes(bytes: Uint8Array, slides: number): Array<{ xml: string; slide: number }> {
+  return Array.from({ length: slides }, (_, index) => {
+    const xml = partOf(bytes, `ppt/slides/slide${index + 1}.xml`);
+    return [...xml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)]
+      .filter(([shape]) => /name="Body \d+"/.test(shape))
+      .map(([shape]) => ({ xml: shape, slide: index + 1 }));
+  }).flat();
+}
+
+function assertBodyBounds(shapes: Array<{ xml: string; slide: number }>): void {
+  assert.ok(shapes.length > 0, "the deck must contain body text boxes");
+  for (const { xml, slide } of shapes) {
+    const y = Number(/<a:off[^>]* y="(\d+)"/.exec(xml)?.[1]);
+    const height = Number(/<a:ext[^>]* cy="(\d+)"/.exec(xml)?.[1]);
+    assert.ok(y + height <= SLIDE_HEIGHT, `slide ${slide}: body ends at ${y + height}, outside ${SLIDE_HEIGHT}`);
+    assert.ok(y >= BODY_BOX.y && y + height <= BODY_BOX.y + BODY_BOX.height, `slide ${slide}: text leaves the body area`);
+  }
+}
+
+function bodyText(shapes: Array<{ xml: string }>): string {
+  return shapes.flatMap(({ xml }) => [...xml.matchAll(/<a:t>([\s\S]*?)<\/a:t>|<a:br\b[^>]*>/g)]
+    .map((match) => match[1] === undefined ? "\n" : decodeXmlEntities(match[1]))).join("");
+}
+
+test("a long single paragraph continues within real slide and body bounds without losing text", () => {
+  const paragraph = "x".repeat(2000);
+  const rendered = renderPptx(parseMarkdown(`## Long paragraph\n\n${paragraph}`), { title: "t", created: CREATED });
+  const shapes = bodyShapes(rendered.bytes, rendered.slides);
+  assertBodyBounds(shapes);
+  assert.ok(rendered.slides > 1);
+  assert.equal(rendered.continuations, rendered.slides - 1);
+  assert.equal(bodyText(shapes), paragraph);
+});
+
+test("splitting a styled paragraph preserves every code point, run property and hyperlink", () => {
+  const runs: Run[] = [
+    { text: "가😀".repeat(1000), bold: true, href: "https://example.test/source" },
+    { text: "乙🚀".repeat(1000), italic: true, code: true },
+    { text: " & <end> " },
+  ];
+  const rendered = renderPptx({ blocks: [{ kind: "heading", level: 2, runs: [{ text: "Styled" }] }, { kind: "paragraph", runs }] }, { title: "t", created: CREATED });
+  const shapes = bodyShapes(rendered.bytes, rendered.slides);
+  assertBodyBounds(shapes);
+  assert.ok(rendered.slides > 1);
+  assert.equal(bodyText(shapes), runs.map((run) => run.text).join(""));
+  const restored: Run[] = [];
+  for (const { xml, slide } of shapes) {
+    for (const match of xml.matchAll(/<a:r><a:rPr([^>]*)>([\s\S]*?)<\/a:rPr><a:t>([\s\S]*?)<\/a:t><\/a:r>/g)) {
+      assert.match(match[1]!, new RegExp(`sz="${BODY_SIZE}"`), "body text must not shrink");
+      const text = decodeXmlEntities(match[3]!);
+      assert.ok(text.isWellFormed(), "a slide boundary must not split a surrogate pair");
+      const linkId = /<a:hlinkClick[^>]* r:id="([^"]+)"/.exec(match[2]!)?.[1];
+      const href = linkId ? new RegExp(`Id="${linkId}"[^>]*Target="([^"]+)"`).exec(partOf(rendered.bytes, `ppt/slides/_rels/slide${slide}.xml.rels`))?.[1] : undefined;
+      if (linkId) assert.ok(href, "every continued hyperlink must resolve on its own slide");
+      const run: Run = { text, ...(/ b="1"/.test(match[1]!) ? { bold: true } : {}), ...(/ i="1"/.test(match[1]!) ? { italic: true } : {}),
+        ...(match[2]!.includes('typeface="Consolas"') ? { code: true } : {}), ...(href ? { href } : {}) };
+      const previous = restored.at(-1);
+      if (previous && previous.bold === run.bold && previous.italic === run.italic && previous.code === run.code && previous.href === run.href) previous.text += run.text;
+      else restored.push(run);
+    }
+  }
+  assert.deepEqual(restored, runs);
+});
+
+test("explicit line breaks in a paragraph survive continuation and count toward the slide budget", () => {
+  const text = Array.from({ length: 45 }, (_, index) => `line ${index}`).join("\n");
+  const rendered = renderPptx({ blocks: [{ kind: "paragraph", runs: [{ text }] }] }, { title: "t", created: CREATED });
+  const shapes = bodyShapes(rendered.bytes, rendered.slides);
+  assert.ok(rendered.slides > 1, "hard line breaks take vertical space even when text is narrow");
+  assertBodyBounds(shapes);
+  assert.equal(bodyText(shapes), text);
+});
+
+test("a split paragraph keeps the paragraphs before and after it separate", () => {
+  const long = "body ".repeat(500);
+  const rendered = renderPptx({ blocks: [
+    { kind: "heading", level: 2, runs: [{ text: "Paragraphs" }] },
+    ...["before", long, "after"].map((text) => ({ kind: "paragraph" as const, runs: [{ text }] })),
+  ] }, { title: "t", created: CREATED });
+  const shapes = bodyShapes(rendered.bytes, rendered.slides);
+  assertBodyBounds(shapes);
+  const paragraphs = shapes.flatMap(({ xml }) => [...xml.matchAll(/<a:p>[\s\S]*?<\/a:p>/g)]).map(([xml]) => bodyText([{ xml }]));
+  assert.equal(paragraphs[0], "before");
+  assert.equal(paragraphs.at(-1), "after");
+  assert.equal(paragraphs.slice(1, -1).join(""), long);
+});
+
+test("a long list item keeps one marker and does not recolour its continued text as a marker", () => {
+  const item = "항목 ".repeat(700);
+  const rendered = renderPptx({ blocks: [
+    { kind: "heading", level: 2, runs: [{ text: "List" }] },
+    { kind: "list", ordered: true, items: [{ depth: 0, runs: [{ text: item }] }, { depth: 0, runs: [{ text: "next" }] }] },
+  ] }, { title: "t", created: CREATED });
+  const shapes = bodyShapes(rendered.bytes, rendered.slides);
+  assertBodyBounds(shapes);
+  assert.equal(bodyText(shapes), `1. ${item}2. next`);
+  assert.ok(shapes.length > 2, "the test must inspect a continued middle fragment");
+  const markerColour = /<a:srgbClr val="([^"]+)"/.exec(shapes[0]!.xml)?.[1];
+  assert.ok(markerColour);
+  for (const { xml } of shapes.slice(1, -1)) {
+    assert.equal(xml.includes(`<a:srgbClr val="${markerColour}"`), false, "continued item text keeps its body colour");
+  }
+});
+
+test("an oversized closing paragraph uses ordinary continuation slides instead of shrinking", () => {
+  const text = "문의 내용 ".repeat(500);
+  const rendered = renderPptx(parseMarkdown(`## 감사합니다\n\n${text}`), { title: "t", created: CREATED });
+  assert.ok(rendered.slides > 1);
+  const shapes = bodyShapes(rendered.bytes, rendered.slides);
+  assertBodyBounds(shapes);
+  assert.equal(bodyText(shapes), text.trimEnd());
+  for (let slide = 1; slide <= rendered.slides; slide++) {
+    assert.ok(partOf(rendered.bytes, `ppt/slides/_rels/slide${slide}.xml.rels`).includes("slideLayout2.xml"));
+  }
+});
 
 test("a deck has the scaffolding its content types declare", () => {
   const bytes = build("# Title\n\nbody");
@@ -300,6 +418,19 @@ test("a table too tall for one slide splits by row, with its header repeated", (
     "each slide repeats the header",
   );
   assert.ok(text.includes("행 20"), "no row is lost in the split");
+});
+
+test("a table moves to the next slide when its header and first row exceed the remaining room", () => {
+  const paragraphs = Array.from({ length: 13 }, (_, index) => `paragraph ${index}`).join("\n\n");
+  const rendered = renderPptx(parseMarkdown(`${paragraphs}\n\n| Header |\n|---|\n| first |\n| second |`), { title: "t", created: CREATED });
+  assertBodyBounds(bodyShapes(rendered.bytes, rendered.slides));
+  const tables = Array.from({ length: rendered.slides }, (_, index) =>
+    [...partOf(rendered.bytes, `ppt/slides/slide${index + 1}.xml`).matchAll(/<p:graphicFrame>[\s\S]*?<\/p:graphicFrame>/g)]
+      .map(([xml]) => ({ xml, slide: index + 1 }))).flat();
+  assertBodyBounds(tables);
+  assert.equal(tables.length, 1, "a small table should stay together on the following slide");
+  assert.equal(tables[0]?.slide, 2);
+  assert.equal(bodyText(tables), "Headerfirstsecond");
 });
 
 test("a code block keeps its lines", () => {

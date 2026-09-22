@@ -213,6 +213,31 @@ test("a standalone asset image is embedded and a missing one is refused", async 
   );
 });
 
+test("an oversized image caption flows across pages without blank pages or off-page text", async () => {
+  const words = Array.from({ length: 1800 }, (_, i) => `caption${String(i).padStart(4, "0")}`);
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==", "base64");
+  const { bytes, pages } = await renderPdf(parseMarkdown(`![${words.join(" ")}](asset://figure.png)`), {
+    title: "Caption", created: CREATED, assets: { "figure.png": { mimeType: "image/png", bytes: png } },
+  });
+  assert.ok(pages > 1);
+  const { getDocumentProxy } = await import("unpdf");
+  const pdf = await getDocumentProxy(new Uint8Array(bytes));
+  try {
+    const recovered: string[] = [];
+    for (let n = 1; n <= pages; n++) {
+      const content = await (await pdf.getPage(n)).getTextContent();
+      const items = content.items.filter((item) => "str" in item && item.str.includes("caption"));
+      assert.ok(items.length > 0, "every page contains caption text");
+      for (const item of items) {
+        if (!("str" in item)) continue;
+        assert.ok(item.transform[5] >= 54 && item.transform[5] < 790, "caption stays inside page margins");
+        recovered.push(...Array.from(item.str.matchAll(/caption\d{4}/g), match => match[0]));
+      }
+    }
+    assert.deepEqual(recovered, words);
+  } finally { await pdf.loadingTask.destroy(); }
+});
+
 test("a word wider than the page gets its own line rather than an endless loop", async () => {
   const text = await roundTrip(`start ${"x".repeat(400)} end`);
   assert.match(text, /start/);

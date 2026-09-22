@@ -925,6 +925,7 @@ export const en = {
   "chat.none": "No chats yet.",
   "chat.delete": "Delete chat",
   "chat.notFound": "Chat not found.",
+  "chat.loadFailed": "The conversation could not be loaded.",
   "chat.reloadFailed": "This reply is saved, but the conversation could not be reloaded.",
   "chat.jumpToLatest": "Jump to the latest message",
   "chat.approvalTitle": "Approval required",

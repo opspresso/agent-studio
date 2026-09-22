@@ -79,6 +79,20 @@ test("links keep their target on every run they cover", () => {
   ]);
 });
 
+test("link boundaries advance past escaped brackets and malformed destinations", () => {
+  assert.deepEqual(parseInline('[a\\]b](<https://x/a b> "title") [bad](x y) [next](z)'), [
+    { text: "a]b", href: "https://x/a b" },
+    { text: " [bad](x y) " },
+    { text: "next", href: "z" },
+  ]);
+  assert.deepEqual(parseInline('![a\\]b](x) [plain] [last](y)'), [
+    { text: "a]b", href: "x" },
+    { text: " [plain] " },
+    { text: "last", href: "y" },
+  ]);
+  assert.deepEqual(parseInline('[empty]( "title with spaces")'), [{ text: "empty", href: "" }]);
+});
+
 test("a backslash escapes the punctuation Markdown gives meaning to", () => {
   assert.deepEqual(parseInline("2 \\* 3 \\*\\* 4"), [{ text: "2 * 3 ** 4" }]);
 });

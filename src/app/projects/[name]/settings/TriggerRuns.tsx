@@ -6,6 +6,7 @@ import { useLocale } from "@/app/_i18n/provider";
 import type { TriggerRun } from "../../lib/api";
 
 const STATUS_COLOR: Record<TriggerRun["status"], string> = {
+  queued: "yellow",
   running: "blue",
   succeeded: "teal",
   failed: "red",
@@ -50,7 +51,7 @@ export function TriggerRuns({ runs }: { runs: TriggerRun[] }) {
                   status badge into "SUCCEE…" — a status column you cannot read
                   defeats the table. */}
               <Table.Td style={{ whiteSpace: "nowrap" }}>
-                {formatDateTime(run.startedAt, locale)}
+                {run.startedAt ? formatDateTime(run.startedAt, locale) : "—"}
               </Table.Td>
               <Table.Td style={{ whiteSpace: "nowrap" }}>
                 {/* Badge clamps its own label independently of the cell, so the

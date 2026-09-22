@@ -78,6 +78,11 @@ function memorySlots() {
     async release(actor, _slot: RunSlot) {
       held.delete(actor);
     },
+    async renew(actor, slot, leaseUntilSeconds) {
+      if (slot.token !== `${actor}:0` || (held.get(actor) ?? 0) <= Date.now() / 1000) return false;
+      held.set(actor, leaseUntilSeconds);
+      return true;
+    },
   };
   return repo;
 }
@@ -117,6 +122,7 @@ function fixture(
     async appendRun(run) {
       rows.push(run);
     },
+    updateQueuedRun: async () => { throw new Error("Webhook deliveries do not queue"); },
     async finishRun(run) {
       const index = rows.findIndex((r) => r.runId === run.runId);
       if (index >= 0) {
@@ -130,8 +136,8 @@ function fixture(
     listRuns: async (_project, triggerId, limit, listOpts = {}) =>
       rows
         .filter((r) => r.triggerId === triggerId)
-        .filter((r) => !listOpts.startedBefore || r.startedAt < listOpts.startedBefore)
-        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .filter((r) => !listOpts.startedBefore || (r.startedAt ?? "") < listOpts.startedBefore)
+        .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""))
         .slice(0, limit),
   };
   return {

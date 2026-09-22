@@ -168,8 +168,99 @@ export function underscoreOpensEmphasis(source: string, index: number): boolean 
   return before === undefined || before === "" || !/[\p{L}\p{N}_]/u.test(before);
 }
 
+/** Index delimiter positions once; malformed destinations cannot rescan a suffix. */
+function inlineDestinationReader(source: string) {
+  const next = (pattern: RegExp) => {
+    let positions: number[] | undefined;
+    return (from: number): number => {
+      if (!positions) {
+        positions = [];
+        for (const match of source.matchAll(pattern)) {
+          positions.push(match.index);
+        }
+      }
+      let low = 0;
+      let high = positions.length;
+      while (low < high) {
+        const middle = (low + high) >>> 1;
+        if (positions[middle]! < from) {
+          low = middle + 1;
+        } else {
+          high = middle;
+        }
+      }
+      return positions[low] ?? source.length;
+    };
+  };
+  const nonSpace = next(/\S/g);
+  const tokenEnd = next(/[)\s]/g);
+  const angleEnd = next(/>/g);
+  const quoteEnd = next(/"/g);
+  const finish = (from: number): number | undefined => {
+    let end = nonSpace(from);
+    if (end > from && source[end] === '"') {
+      const quote = quoteEnd(end + 1);
+      if (quote === source.length) {
+        return undefined;
+      }
+      end = nonSpace(quote + 1);
+    }
+    return source[end] === ")" ? end + 1 : undefined;
+  };
+
+  return (from: number): { href: string; end: number } | undefined => {
+    const start = nonSpace(from);
+    if (source[start] === "<") {
+      const close = angleEnd(start + 1);
+      const end = close < source.length ? finish(close + 1) : undefined;
+      if (end !== undefined) {
+        return { href: source.slice(start + 1, close), end };
+      }
+    }
+    const close = tokenEnd(start);
+    const end = finish(close);
+    if (end !== undefined) {
+      return { href: source.slice(start, close).replace(/^<|>$/g, ""), end };
+    }
+    // The destination can be empty and followed by a whitespace-separated title.
+    const emptyEnd = finish(from);
+    return emptyEnd === undefined ? undefined : { href: "", end: emptyEnd };
+  };
+}
+
+/** Read each label boundary and its destination once as the parser advances. */
+function inlineLinkReader(source: string) {
+  let labelEnd = -1;
+  let scanned = 0;
+  let target: { href: string; end: number } | undefined;
+  const destination = inlineDestinationReader(source);
+
+  return (labelStart: number) => {
+    if (labelEnd < labelStart && scanned < source.length) {
+      scanned = Math.max(scanned, labelStart);
+      target = undefined;
+      labelEnd = -1;
+      while (scanned < source.length) {
+        const character = source[scanned];
+        scanned += 1;
+        if (character === "\\") {
+          scanned += 1;
+        } else if (character === "]") {
+          labelEnd = scanned - 1;
+          if (source[scanned] === "(") {
+            target = destination(scanned + 1);
+          }
+          break;
+        }
+      }
+    }
+    return labelEnd >= labelStart && target ? { ...target, labelEnd } : undefined;
+  };
+}
+
 export function parseInline(source: string, style: Style = {}, depth = 0): Run[] {
   const runs: Run[] = [];
+  const readLink = inlineLinkReader(source);
   let plain = "";
   const flush = (): void => {
     if (plain !== "") {
@@ -201,40 +292,31 @@ export function parseInline(source: string, style: Style = {}, depth = 0): Run[]
       }
     }
 
-    // A link and an image both need a `](` somewhere after the bracket, and the
-    // patterns below backtrack across the whole remainder when there is none.
-    // 500,000 brackets — `MAX_MARKDOWN_CHARS` exactly — held the event loop for
-    // over two minutes on a single-threaded server; this is what makes the cost
-    // of *not* being a link a single scan rather than a walk per bracket.
-    const closes = here === "[" || (here === "!" && rest[1] === "[") ? rest.indexOf("](") : -1;
-
-    if (here === "!" && rest[1] === "[" && closes !== -1) {
+    if (here === "!" && rest[1] === "[") {
       // Nothing here fetches or embeds pictures, so an image becomes a link to
       // where the picture is. Its label is not parsed as inline markup: alt
       // text is a description, and `*` in it is an asterisk.
-      const image = /^!\[((?:\\.|[^\]\\])*)\]\(\s*(<[^>]*>|[^)\s]*)(?:\s+"[^"]*")?\s*\)/.exec(rest);
+      const image = readLink(index + 2);
       if (image) {
-        const href = image[2]!.replace(/^<|>$/g, "");
         flush();
         // The same escapes a label resolves, and no others: `\\(.)` stripped a
         // backslash that was never an escape, so `![C:\\dir](x)` lost the `d`.
-        const alt = image[1]!.replace(/\\([\s\S])/g, (whole, char: string) =>
+        const alt = source.slice(index + 2, image.labelEnd).replace(/\\([\s\S])/g, (whole, char: string) =>
           ESCAPABLE.test(char) ? char : whole,
         );
-        runs.push(styled(alt || "image", { ...style, href }));
-        index += image[0].length;
+        runs.push(styled(alt || "image", { ...style, href: image.href }));
+        index = image.end;
         continue;
       }
     }
 
-    if (here === "[" && closes !== -1) {
-      const link = /^\[((?:\\.|[^\]\\])*)\]\(\s*(<[^>]*>|[^)\s]*)(?:\s+"[^"]*")?\s*\)/.exec(rest);
+    if (here === "[") {
+      const link = readLink(index + 1);
       if (link) {
-        const href = link[2]!.replace(/^<|>$/g, "");
-        const label = link[1] === "" ? href : link[1]!;
+        const label = source.slice(index + 1, link.labelEnd) || link.href;
         flush();
-        runs.push(...parseInline(label, { ...style, href }, depth + 1));
-        index += link[0].length;
+        runs.push(...parseInline(label, { ...style, href: link.href }, depth + 1));
+        index = link.end;
         continue;
       }
     }

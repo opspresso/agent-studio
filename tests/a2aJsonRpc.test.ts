@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   a2aJsonParseError,
-  tenantFromA2aJsonRpcRequest,
   withRequiredA2aDefaults,
 } from "@/app/api/a2a/_lib/jsonRpc";
 
@@ -33,11 +32,5 @@ describe("A2A JSON-RPC wire defaults", () => {
       id: null,
       error: { code: -32700, message: "Invalid JSON payload" },
     });
-  });
-
-  it("binds the executor to the request tenant without coercing invalid values", () => {
-    expect(tenantFromA2aJsonRpcRequest({ params: { tenant: "tenant-a" } })).toBe("tenant-a");
-    expect(tenantFromA2aJsonRpcRequest({ params: { tenant: 7 } })).toBeUndefined();
-    expect(tenantFromA2aJsonRpcRequest({ params: {} })).toBeUndefined();
   });
 });

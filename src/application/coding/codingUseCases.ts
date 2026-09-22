@@ -109,18 +109,20 @@ export function createCodingUseCases(deps: CodingDeps) {
         return workspaceView(existing);
       }
       const state = await reserve(deps, id, ownerEmail, undefined, false, name);
-      try {
-        await checkWorkspaceRepository(deps, name, baseBranch);
-        const sandbox = await ensureWorkspaceSandbox(deps, state);
-        const { workspace } = await state.read();
-        if (workspace.status !== "active" || workspace.deleteRequestedAt) throw new ConflictError("Workspace closed before repository attachment");
-        const coding = await deps.coding.prepare(sandbox.externalId, { repository: name, baseBranch, branch: `agent/${id}` });
-        // Persist the prepared Git bytes before claiming that the saved Workspace owns them.
-        await saveWorkspaceCheckpoint(deps, state, sandbox);
-        await state.save({ coding });
-        await release(deps, state);
-        return workspaceView(await ownedWorkspace(deps, id, ownerEmail));
-      } catch (error) { await release(deps, state); throw error; }
+      return state.withHeartbeat(async () => {
+        try {
+          await checkWorkspaceRepository(deps, name, baseBranch);
+          const sandbox = await ensureWorkspaceSandbox(deps, state);
+          const { workspace } = await state.read();
+          if (workspace.status !== "active" || workspace.deleteRequestedAt) throw new ConflictError("Workspace closed before repository attachment");
+          const coding = await state.effect(() => deps.coding.prepare(sandbox.externalId, { repository: name, baseBranch, branch: `agent/${id}` }));
+          // Persist the prepared Git bytes before claiming that the saved Workspace owns them.
+          await saveWorkspaceCheckpoint(deps, state, sandbox);
+          await state.save({ coding });
+          await release(deps, state);
+          return workspaceView(await ownedWorkspace(deps, id, ownerEmail));
+        } catch (error) { await release(deps, state); throw error; }
+      });
     },
     async request(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string): Promise<CodingApproval> {
       if (sourceChatId) {
@@ -131,23 +133,25 @@ export function createCodingUseCases(deps: CodingDeps) {
       }
       const approvalId = `${deps.now().getTime()}-${deps.newId()}`;
       const state = await reserve(deps, id, ownerEmail, approvalId);
-      try {
-        const sandbox = await ensureWorkspaceSandbox(deps, state);
-        const { workspace } = await state.read();
-        const review = await deps.coding.review(sandbox.externalId);
-        const { pullRequest, main } = await validateAction(deps, workspace, action, review);
-        const approval: CodingApproval = { id: approvalId, workspaceId: id, requestedBy: ownerEmail,
-          ...(sourceChatId ? { sourceChatId } : {}),
-          requestedAt: deps.now().toISOString(), action, fingerprint: review.fingerprint, status: "pending",
-          review: { headSha: review.headSha, treeSha: review.treeSha, diff: review.diff, truncated: review.truncated,
-            ...(main ? { mainHeadSha: main.baseSha, ci: main.ci } : pullRequest ? { ci: pullRequest.ci } : {}) } };
-        await release(deps, state, approval, true, pullRequest ? { pullRequest } : {});
-        return approval;
-      } catch (error) {
-        await release(deps, state);
-        if (error instanceof CodingMutationRejectedError) throw new ConflictError(error.message);
-        throw error;
-      }
+      return state.withHeartbeat(async () => {
+        try {
+          const sandbox = await ensureWorkspaceSandbox(deps, state);
+          const { workspace } = await state.read();
+          const review = await state.effect(() => deps.coding.review(sandbox.externalId));
+          const { pullRequest, main } = await state.effect(() => validateAction(deps, workspace, action, review));
+          const approval: CodingApproval = { id: approvalId, workspaceId: id, requestedBy: ownerEmail,
+            ...(sourceChatId ? { sourceChatId } : {}),
+            requestedAt: deps.now().toISOString(), action, fingerprint: review.fingerprint, status: "pending",
+            review: { headSha: review.headSha, treeSha: review.treeSha, diff: review.diff, truncated: review.truncated,
+              ...(main ? { mainHeadSha: main.baseSha, ci: main.ci } : pullRequest ? { ci: pullRequest.ci } : {}) } };
+          await release(deps, state, approval, true, pullRequest ? { pullRequest } : {});
+          return approval;
+        } catch (error) {
+          await release(deps, state);
+          if (error instanceof CodingMutationRejectedError) throw new ConflictError(error.message);
+          throw error;
+        }
+      });
     },
 
     async decide(id: string, ownerEmail: string, approvalId: string, approve: boolean): Promise<CodingApproval> {
@@ -156,63 +160,65 @@ export function createCodingUseCases(deps: CodingDeps) {
       if (!previous || previous.requestedBy !== ownerEmail) throw new NotFoundError("Coding approval not found");
       if (previous.status !== "pending") return previous;
       const state = await reserve(deps, id, ownerEmail, approvalId, true, undefined, approve);
-      const decision = { ...previous, decidedBy: ownerEmail, decidedAt: deps.now().toISOString() };
-      if (!approve) {
-        const rejected: CodingApproval = { ...decision, status: "rejected" };
-        await release(deps, state, rejected);
-        return rejected;
-      }
-      let executing = false;
-      try {
-        const currentApproval = await deps.repository.approval(id, approvalId);
-        if (currentApproval?.status !== "pending") throw new ConflictError("Approval was already consumed");
-        const sandbox = await ensureWorkspaceSandbox(deps, state);
-        const { workspace } = await state.read();
-        const repo = repository(workspace);
-        const review = await deps.coding.review(sandbox.externalId);
-        if (review.fingerprint !== previous.fingerprint) throw new ConflictError("Workspace changed since the action was reviewed");
-        const checked = await validateAction(deps, workspace, previous.action, review);
-        if (previous.action.kind === "push-main" && checked.main?.baseSha !== previous.review.mainHeadSha) throw new ConflictError("Main changed since review; prepare a new approval");
-        await state.save({}, undefined, [], { approval: { ...decision, status: "executing", operationId: approvalId } });
-        executing = true;
-        let result: string;
-        const patch: Partial<Workspace> = {};
-        const action = previous.action;
-        if (action.kind === "commit" || action.kind === "commit-and-push") {
-          const sha = await deps.coding.commit(sandbox.externalId, { operationId: approvalId, fingerprint: previous.fingerprint,
-            message: action.message, ownerEmail, createdAt: previous.requestedAt });
-          patch.coding = { ...repo, headSha: sha };
-          await state.save(patch);
-          await saveWorkspaceCheckpoint(deps, state, sandbox);
-          if (action.kind === "commit-and-push") await deps.coding.push(sandbox.externalId, patch.coding);
-          result = sha;
-        } else if (action.kind === "push") {
-          await deps.coding.push(sandbox.externalId, { ...repo, headSha: review.headSha });
-          result = review.headSha;
-        } else if (action.kind === "pull-request") {
-          await deps.coding.push(sandbox.externalId, { ...repo, headSha: review.headSha });
-          const pullRequest = await deps.forge.openPullRequest({ ...repo, headSha: review.headSha }, action);
-          patch.pullRequest = pullRequest;
-          result = pullRequest.url;
-        } else if (action.kind === "merge") {
-          result = await deps.forge.merge(repo, action.pullRequestNumber, action.headSha);
-          patch.pullRequest = { ...checked.pullRequest!, state: "merged" };
-        } else if (action.kind === "push-main") {
-          result = await deps.forge.pushMain(repo, review.headSha, previous.review.mainHeadSha!);
-        } else {
-          const dispatched = await deps.forge.dispatch(repo.repository, action.workflow, action.ref, action.inputs);
-          result = dispatched.url ?? (dispatched.runId ? `Workflow run ${dispatched.runId}` : "Workflow dispatch accepted");
+      return state.withHeartbeat(async () => {
+        const decision = { ...previous, decidedBy: ownerEmail, decidedAt: deps.now().toISOString() };
+        if (!approve) {
+          const rejected: CodingApproval = { ...decision, status: "rejected" };
+          await release(deps, state, rejected);
+          return rejected;
         }
-        const completed: CodingApproval = { ...decision, operationId: approvalId, status: "succeeded", result };
-        await release(deps, state, completed, false, patch);
-        return completed;
-      } catch (error) {
-        const uncertain = executing && !(error instanceof CodingMutationRejectedError && ["merge", "push-main"].includes(previous.action.kind));
-        const failed: CodingApproval = { ...decision, status: uncertain ? "uncertain" : "failed",
-          result: boundedWorkspaceText(error instanceof Error ? error.message : "Coding action failed", WORKSPACE_LIMITS.errorBytes).text };
-        await release(deps, state, failed, uncertain);
-        return failed;
-      }
+        let executing = false;
+        try {
+          const currentApproval = await deps.repository.approval(id, approvalId);
+          if (currentApproval?.status !== "pending") throw new ConflictError("Approval was already consumed");
+          const sandbox = await ensureWorkspaceSandbox(deps, state);
+          const { workspace } = await state.read();
+          const repo = repository(workspace);
+          const review = await state.effect(() => deps.coding.review(sandbox.externalId));
+          if (review.fingerprint !== previous.fingerprint) throw new ConflictError("Workspace changed since the action was reviewed");
+          const checked = await state.effect(() => validateAction(deps, workspace, previous.action, review));
+          if (previous.action.kind === "push-main" && checked.main?.baseSha !== previous.review.mainHeadSha) throw new ConflictError("Main changed since review; prepare a new approval");
+          await state.save({}, undefined, [], { approval: { ...decision, status: "executing", operationId: approvalId } });
+          executing = true;
+          let result: string;
+          const patch: Partial<Workspace> = {};
+          const action = previous.action;
+          if (action.kind === "commit" || action.kind === "commit-and-push") {
+            const sha = await state.effect(() => deps.coding.commit(sandbox.externalId, { operationId: approvalId, fingerprint: previous.fingerprint,
+              message: action.message, ownerEmail, createdAt: previous.requestedAt }));
+            patch.coding = { ...repo, headSha: sha };
+            await state.save(patch);
+            await saveWorkspaceCheckpoint(deps, state, sandbox);
+            if (action.kind === "commit-and-push") await state.effect(() => deps.coding.push(sandbox.externalId, { ...repo, headSha: sha }));
+            result = sha;
+          } else if (action.kind === "push") {
+            await state.effect(() => deps.coding.push(sandbox.externalId, { ...repo, headSha: review.headSha }));
+            result = review.headSha;
+          } else if (action.kind === "pull-request") {
+            await state.effect(() => deps.coding.push(sandbox.externalId, { ...repo, headSha: review.headSha }));
+            const pullRequest = await state.effect(() => deps.forge.openPullRequest({ ...repo, headSha: review.headSha }, action));
+            patch.pullRequest = pullRequest;
+            result = pullRequest.url;
+          } else if (action.kind === "merge") {
+            result = await state.effect(() => deps.forge.merge(repo, action.pullRequestNumber, action.headSha));
+            patch.pullRequest = { ...checked.pullRequest!, state: "merged" };
+          } else if (action.kind === "push-main") {
+            result = await state.effect(() => deps.forge.pushMain(repo, review.headSha, previous.review.mainHeadSha!));
+          } else {
+            const dispatched = await state.effect(() => deps.forge.dispatch(repo.repository, action.workflow, action.ref, action.inputs));
+            result = dispatched.url ?? (dispatched.runId ? `Workflow run ${dispatched.runId}` : "Workflow dispatch accepted");
+          }
+          const completed: CodingApproval = { ...decision, operationId: approvalId, status: "succeeded", result };
+          await release(deps, state, completed, false, patch);
+          return completed;
+        } catch (error) {
+          const uncertain = executing && !(error instanceof CodingMutationRejectedError && ["merge", "push-main"].includes(previous.action.kind));
+          const failed: CodingApproval = { ...decision, status: uncertain ? "uncertain" : "failed",
+            result: boundedWorkspaceText(error instanceof Error ? error.message : "Coding action failed", WORKSPACE_LIMITS.errorBytes).text };
+          await release(deps, state, failed, uncertain);
+          return failed;
+        }
+      });
     },
   };
 }

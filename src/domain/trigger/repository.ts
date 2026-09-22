@@ -27,8 +27,10 @@ export interface TriggerRepository {
   appendRun(run: TriggerRun): Promise<void>;
   /** Finish a run in place — the row was written when it started. */
   finishRun(run: TriggerRun): Promise<void>;
+  /** Atomically renew, start or close this exact queued lease; a stale owner cannot dispatch. */
+  updateQueuedRun(previous: TriggerRun, next: TriggerRun): Promise<boolean>;
   /**
-   * Most recent runs first.
+   * Most recent history first. Queued repair reads use queue-lease order instead.
    *
    * `startedBefore` narrows the window to rows that started before that instant.
    * The console wants the newest N; a repair sweep wants the newest N *that are
@@ -36,11 +38,12 @@ export interface TriggerRepository {
    * cannot hide stranded ones. On a trigger taking ten deliveries a minute
    * those are not the same rows — a firing stranded twenty minutes ago sits
    * under two hundred newer ones and would never appear in an unbounded page.
+   * `queueLeaseBefore` applies to the queued lease index before its limit.
    */
   listRuns(
     projectName: string,
     triggerId: string,
     limit: number,
-    opts?: { startedBefore?: string; status?: TriggerRun["status"] },
+    opts?: { startedBefore?: string; queueLeaseBefore?: string; status?: TriggerRun["status"] },
   ): Promise<TriggerRun[]>;
 }

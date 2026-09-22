@@ -41,6 +41,7 @@ function fixture() {
     claimIdempotencyKey: async () => true,
     appendRun: async () => {},
     finishRun: async () => {},
+    updateQueuedRun: async () => { throw new Error("CRUD does not dispatch queued runs"); },
     listRuns: async () => [],
   };
   const projects = { get: async () => project } as unknown as ProjectRepository;

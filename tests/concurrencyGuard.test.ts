@@ -78,6 +78,12 @@ function memorySlots(now = () => Math.floor(Date.now() / 1000)) {
         slots.delete(slot.index);
       }
     },
+    async renew(actor, slot, leaseUntilSeconds) {
+      const current = held.get(actor)?.get(slot.index);
+      if (current?.token !== slot.token || current.leaseUntil <= now()) return false;
+      current.leaseUntil = leaseUntilSeconds;
+      return true;
+    },
   };
   return { repo, held };
 }
@@ -209,6 +215,7 @@ describe("acquireRunSlot", () => {
     const d: ConcurrencyGuardDeps = {
       limits: LIMITS,
       runSlots: {
+        renew: async () => false,
         acquire: async () => {
           throw new Error("dynamo down");
         },
@@ -224,6 +231,7 @@ describe("acquireRunSlot", () => {
     const d: ConcurrencyGuardDeps = {
       limits: LIMITS,
       runSlots: {
+        renew: async () => false,
         acquire: async () => ({ index: 0, token: "run-1" }),
         release: async () => {
           throw new Error("delete failed");

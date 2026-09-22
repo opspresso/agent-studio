@@ -2,6 +2,7 @@ import { withConfigurations } from "./projectConfigurations";
 import { describe, expect, it, vi } from "vitest";
 import { openRun } from "@/application/run/runBracket";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
+import { assertWithinCostLimit } from "@/application/usage/costGuard";
 import {
   toUnknownModelPolicy,
   type UnknownModelPolicy,
@@ -121,10 +122,15 @@ describe("the run bracket enforces it", () => {
         return null;
       },
     } as unknown as UsageRepository;
+    const limitedProject = { ...project, costLimits: { blockThresholdUsd: 1 } };
+    // Prove this budget fixture reads usage when the cost guard is reached.
+    await assertWithinCostLimit({ usage: counting }, limitedProject, new Date("2026-09-21T00:00:00Z"));
+    expect(costReads).toBe(1);
+    costReads = 0;
     await expect(
       openRun(
         { usage: counting, unknownModelPolicy: async () => "refuse" },
-        project,
+        limitedProject,
         configuration({ model: UNKNOWN }),
       ),
     ).rejects.toBeInstanceOf(ValidationError);

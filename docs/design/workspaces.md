@@ -65,6 +65,11 @@ native Session 이력과 SQLite 상태는 보관한다. Codex의 자동 plugin·
 worker 중단은 실행 중단으로 기록하지 않는다. 다시 시작하면 같은 operation ID를 관찰하며,
 전송 오류에는 Run을 유지하고 실제 핸들 소실에는 `interrupted`를 기록한다.
 
+Worker와 Git 작업은 adapter를 기다리는 동안에도 3분 lease를 1분마다 갱신한다. 갱신과 진행
+저장은 같은 큐에서 revision CAS를 수행하며, lease 해제 시 갱신을 멈추고 진행 중인 갱신을
+정리한다. 갱신 실패·소유권 상실 뒤에는 후속 adapter 호출을 시작하지 않는다. 이미 시작한
+adapter 호출은 결과를 기다리며, 불확실한 효과를 자동으로 재실행하지 않는다.
+
 실행은 `executeWorkspaceTask` facade와 공통 `openTaskRun` bracket을 지난다. 일반 명령에는
 Studio 모델 설정이 없으므로 모델을 임의로 만들지 않는다. 기존 프로젝트의 비용·멤버 상한,
 동시성 슬롯과 메트릭은 유지한다. Native CLI의 토큰·비용은 SDK 모델 usage와 별개다.

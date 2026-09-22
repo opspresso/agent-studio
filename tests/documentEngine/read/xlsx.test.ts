@@ -272,6 +272,31 @@ test("a date is a date, not the serial number it is stored as", () => {
   assert.equal(read(bytes).text, "## Sheet1\n2023-07-16 | 45123");
 });
 
+test("explicit and implicit numeric date cells use the workbook epoch", () => {
+  for (const epoch1904 of [false, true]) {
+    const expected = epoch1904 ? "1904-01-02" : "1900-01-01";
+    const bytes = buildZip({
+      "xl/workbook.xml": utf8(workbook("Sheet1").replace(
+        "<workbook>", `<workbook><workbookPr date1904="${epoch1904 ? "1" : "0"}"/>`,
+      )),
+      "xl/_rels/workbook.xml.rels": utf8(RELS),
+      "xl/styles.xml": utf8('<styleSheet><cellXfs><xf numFmtId="14"/></cellXfs></styleSheet>'),
+      "xl/worksheets/sheet1.xml": utf8(sheet('<row>' +
+        '<c s="0"><v>1</v></c><c t="n" s="0"><f>1</f><v>1</v></c>' +
+        '<c t="str" s="0"><v>1</v></c><c t="b" s="0"><v>1</v></c>' +
+        '<c t="d" s="0"><v>2026-09-21</v></c></row>')),
+    });
+    assert.equal(read(bytes).text, `## Sheet1\n${expected} | ${expected} | 1 | TRUE | 2026-09-21`);
+    assert.deepEqual(inspectXlsx(bytes).sheets[0]?.cells, [
+      { address: "A1", value: expected },
+      { address: "B1", value: expected, formula: "1" },
+      { address: "C1", value: "1" },
+      { address: "D1", value: "TRUE" },
+      { address: "E1", value: "2026-09-21" },
+    ]);
+  }
+});
+
 test("the 1900 leap-year bug and the 1904 epoch are both accounted for", () => {
   // Serial 60 is the 1900-02-29 Excel believes in and the calendar does not,
   // so every serial past it is one day ahead of a naive epoch.

@@ -27,6 +27,7 @@
  * needs a stack rather than a flag.
  */
 
+import iconv from "iconv-lite";
 import { MAX_TEXT_CHARS } from "../limits";
 import type { Align, Run } from "../markdown";
 import { DocumentError } from "../errors";
@@ -97,13 +98,63 @@ const LITERALS: Record<string, string> = {
   _: "-",
 };
 
-/** The sixteen places Windows-1252 differs from latin1. */
-const CP1252_HIGH = "\u20ac\u0081\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u008d\u017d\u008f\u0090\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u009d\u017e\u0178";
+/** RTF code-page numbers mapped to explicit decoder labels. */
+const CODE_PAGES: Readonly<Record<number, string>> = {
+  866: "ibm866",
+  874: "windows-874",
+  932: "shift_jis",
+  936: "gbk",
+  949: "cp949",
+  950: "big5",
+  1250: "windows-1250",
+  1251: "windows-1251",
+  1252: "windows-1252",
+  1253: "windows-1253",
+  1254: "windows-1254",
+  1255: "windows-1255",
+  1256: "windows-1256",
+  1257: "windows-1257",
+  1258: "windows-1258",
+  10000: "macintosh",
+  10007: "x-mac-cyrillic",
+  65001: "utf-8",
+};
 
-function cp1252(code: number): string {
-  return code >= 0x80 && code <= 0x9f
-    ? (CP1252_HIGH[code - 0x80] ?? "")
-    : Buffer.from([code]).toString("latin1");
+interface ByteDecoder {
+  decode(bytes: Uint8Array): string;
+}
+
+function codePageDecoder(page: number): ByteDecoder {
+  const label = CODE_PAGES[page];
+  if (label === undefined) {
+    throw new RtfError(`unsupported RTF code page ${Number.isNaN(page) ? "(missing)" : page}`);
+  }
+  if (page === 949) {
+    // Node's ICU-backed euc-kr decoder omits Unified Hangul extension pairs.
+    // CP949 has no U+FFFD mapping; iconv's replacement therefore means loss.
+    return {
+      decode(bytes) {
+        const text = iconv.decode(Buffer.from(bytes), label, { stripBOM: false });
+        if (text.includes("\ufffd")) {
+          throw new RtfError(`invalid byte sequence for RTF code page ${page}`);
+        }
+        return text;
+      },
+    };
+  }
+  try {
+    return new TextDecoder(label, { fatal: true, ignoreBOM: true });
+  } catch {
+    throw new RtfError(`unsupported RTF code page ${page} in this runtime`);
+  }
+}
+
+/** A raw DBCS lead consumes its raw trail before RTF syntax is considered. */
+function isLeadByte(page: number, byte: number): boolean {
+  if (page === 932) {
+    return (byte >= 0x81 && byte <= 0x9f) || (byte >= 0xe0 && byte <= 0xfc);
+  }
+  return (page === 936 || page === 949 || page === 950) && byte >= 0x81 && byte <= 0xfe;
 }
 
 interface Emphasis {
@@ -300,9 +351,9 @@ class Reader {
 }
 
 export function rtfToBlocks(bytes: Uint8Array): RtfBlocks {
-  // Latin-1, not UTF-8: RTF is 7-bit ASCII with everything else escaped, and a
-  // stray high byte in a `\'hh` sequence must not become U+FFFD before it is
-  // read. Non-ASCII is resolved through the escapes below.
+  // Preserve the bytes while reading RTF syntax. Raw text and hex escapes are
+  // decoded together using the declared code page, after Unicode fallbacks
+  // and skipped destinations have been removed.
   const source = Buffer.from(bytes).toString("latin1");
   if (!source.trimStart().startsWith("{\\rtf")) {
     throw new RtfError("it does not begin with an RTF header");
@@ -323,6 +374,46 @@ export function rtfToBlocks(bytes: Uint8Array): RtfBlocks {
    */
   let fallbackUnits = 1;
   const savedFallback: number[] = [];
+  let codePage = 1252;
+  const savedCodePages: number[] = [];
+  const decoders = new Map<number, ByteDecoder>([[codePage, codePageDecoder(codePage)]]);
+  let pendingBytes = "";
+  let expectsTrail = false;
+
+  const setCodePage = (page: number): void => {
+    if (!decoders.has(page)) {
+      decoders.set(page, codePageDecoder(page));
+    }
+    codePage = page;
+  };
+
+  const flushBytes = (): void => {
+    expectsTrail = false;
+    if (pendingBytes === "") {
+      return;
+    }
+    let decoded: string;
+    try {
+      decoded = decoders.get(codePage)!.decode(Buffer.from(pendingBytes, "latin1"));
+    } catch {
+      throw new RtfError(`invalid byte sequence for RTF code page ${codePage}`);
+    }
+    pendingBytes = "";
+    reader.emit(decoded);
+  };
+
+  const emitByte = (value: string): boolean => {
+    if (skipDepth === -1 && skipUnits > 0) {
+      // \uc counts fallback bytes, not decoded multi-byte characters.
+      skipUnits -= 1;
+      return false;
+    }
+    // Escaped and raw bytes share character boundaries, including in skipped
+    // destinations where a raw trail must not close the surrounding group.
+    expectsTrail = !expectsTrail && isLeadByte(codePage, value.charCodeAt(0));
+    if (skipDepth === -1) pendingBytes += value;
+    return expectsTrail;
+  };
 
   const emit = (value: string): void => {
     if (skipDepth !== -1) {
@@ -340,15 +431,19 @@ export function rtfToBlocks(bytes: Uint8Array): RtfBlocks {
     const character = source[index]!;
 
     if (character === "{") {
+      flushBytes();
       skipUnits = 0;
       savedFallback.push(fallbackUnits);
+      savedCodePages.push(codePage);
       depth += 1;
       reader.save();
       continue;
     }
     if (character === "}") {
+      flushBytes();
       skipUnits = 0;
       fallbackUnits = savedFallback.pop() ?? 1;
+      setCodePage(savedCodePages.pop() ?? 1252);
       if (skipDepth !== -1 && depth <= skipDepth) {
         skipDepth = -1;
       }
@@ -361,7 +456,15 @@ export function rtfToBlocks(bytes: Uint8Array): RtfBlocks {
         // Source line breaks are formatting of the file, not of the document.
         continue;
       }
-      emit(character);
+      if (emitByte(character)) {
+        // RTF-J raw/raw pairs may contain a trail equal to '\\', '{' or '}'.
+        const trail = source[index + 1];
+        if (trail === undefined) {
+          throw new RtfError(`invalid byte sequence for RTF code page ${codePage}`);
+        }
+        emitByte(trail);
+        index += 1;
+      }
       continue;
     }
 
@@ -371,21 +474,27 @@ export function rtfToBlocks(bytes: Uint8Array): RtfBlocks {
       break;
     }
     if (next === "\\" || next === "{" || next === "}") {
-      emit(next);
+      emitByte(next);
       index += 1;
       continue;
     }
     if (next === "'") {
       const hex = source.slice(index + 2, index + 4);
-      const code = Number.parseInt(hex, 16);
-      // Windows-1252 is what `\ansi` means in practice, and it is what every
-      // writer that emits these actually used — which latin1 is not: 0x80-0x9F
-      // are C1 control characters there, so `don\'92t` lost its apostrophe to
-      // an invisible one instead of gaining a `’`.
-      emit(Number.isNaN(code) ? "" : cp1252(code));
+      if (!/^[0-9a-f]{2}$/i.test(hex)) {
+        if (skipDepth === -1) {
+          throw new RtfError("invalid hexadecimal byte escape in RTF");
+        }
+        // Ignored content is not decoded, but its braces still delimit groups.
+        index += 1;
+        continue;
+      }
+      emitByte(String.fromCharCode(Number.parseInt(hex, 16)));
       index += 3;
       continue;
     }
+    // A control or group changes text/formatting state. Incomplete byte
+    // sequences must fail here rather than borrow bytes from the next run.
+    flushBytes();
     if (next === "*") {
       if (skipDepth === -1 && skipUnits > 0) {
         skipUnits -= 1;
@@ -437,6 +546,14 @@ export function rtfToBlocks(bytes: Uint8Array): RtfBlocks {
     }
     if (skipUnits > 0) {
       skipUnits -= 1;
+      continue;
+    }
+    if (word === "ansicpg") {
+      setCodePage(Number(parameter));
+      continue;
+    }
+    if (word === "ansi" || word === "mac" || word === "pc" || word === "pca") {
+      setCodePage(word === "ansi" ? 1252 : word === "mac" ? 10000 : word === "pc" ? 437 : 850);
       continue;
     }
     if (word === "uc" && parameter !== undefined) {
@@ -507,6 +624,7 @@ export function rtfToBlocks(bytes: Uint8Array): RtfBlocks {
     }
   }
 
+  flushBytes();
   const blocks = reader.finish();
   if (blocks.length === 0) {
     throw new RtfError("it has no readable text");

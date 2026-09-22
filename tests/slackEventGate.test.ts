@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 const { handled, claim, settle, isEngaged } = vi.hoisted(() => ({
   handled: [] as Array<{ handler: "run" | "threadStart"; type?: string }>,
-  claim: vi.fn(async () => true),
+  claim: vi.fn(async (): Promise<string | null> => "claim-token"),
   settle: vi.fn(async () => {}),
   isEngaged: vi.fn(async () => false),
 }));
@@ -95,7 +95,7 @@ const channelMessage = (over: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   handled.length = 0;
   vi.clearAllMocks();
-  claim.mockResolvedValue(true);
+  claim.mockResolvedValue("claim-token");
   isEngaged.mockResolvedValue(false);
 });
 
@@ -151,6 +151,19 @@ describe("which Slack events reach a handler", () => {
     expect(handled).toEqual([]);
     // An ignored event is never claimed — the dedup table is for work that ran.
     expect(claim).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { type: "message", channel_type: "im", bot_id: "OTHER_APP" },
+    { type: "app_mention", subtype: "message_changed" },
+    { type: "message", subtype: "file_share", user: "U0BOT" },
+  ])("rejects loops and bookkeeping before claiming or dispatching: %j", async (event) => {
+    const response = await deliver(channelMessage({ text: "deploy", ...event }), ["deploy"]);
+    expect(response.status).toBe(200);
+    expect(handled).toEqual([]);
+    expect(claim).not.toHaveBeenCalled();
+    expect(settle).not.toHaveBeenCalled();
+    expect(isEngaged).not.toHaveBeenCalled();
   });
 
   /**
@@ -214,7 +227,7 @@ describe("which Slack events reach a handler", () => {
   });
 
   it("drops a redelivery the dedup claim refuses", async () => {
-    claim.mockResolvedValue(false);
+    claim.mockResolvedValue(null);
 
     const res = await deliver({
       type: "event_callback",

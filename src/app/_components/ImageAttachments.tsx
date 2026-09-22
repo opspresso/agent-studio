@@ -47,34 +47,28 @@ export function createAttachmentReadEpoch(): {
  * run panel so every surface enforces one set of limits and reports rejections
  * the same way.
  *
- * Pass `documents: true` where a turn can carry files as well as pictures. The
- * run panel does not: its attachments are the source images an `image` project
- * edits, which is a different thing that happens to use the same picker.
+ * Pass `documents: true` where a turn can carry files as well as pictures.
  */
 export function useAttachments({ documents: allowDocuments = false } = {}) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [documents, setDocuments] = useState<DocumentAttachment[]>([]);
-  const [attachError, setAttachError] = useState<string | null>(null);
+  const [attachErrors, setAttachErrors] = useState<string[]>([]);
   const [pendingReads, setPendingReads] = useState(0);
   const t = useT();
   const readEpoch = useRef(createAttachmentReadEpoch());
-  useEffect(
-    () => () => {
-      readEpoch.current.invalidate();
-    },
-    [],
-  );
+  const activeReads = useRef(new Set<AbortController>());
+  const cancelReads = useCallback(() => {
+    readEpoch.current.invalidate();
+    for (const controller of activeReads.current) controller.abort();
+    activeReads.current.clear();
+  }, []);
+  useEffect(() => cancelReads, [cancelReads]);
   /**
-   * How many slots are already spoken for, counted as they are claimed rather
-   * than as React commits them.
-   *
-   * There are three ways in now — the paperclip, a paste and a drop — and two
-   * of them can land inside the same `await` of reading a file. Both calls
-   * would then read the same `attachments.length`, both would decide they fit,
-   * and the updater would silently drop the second batch past the cap with no
-   * `attachError` to say so. Claiming against a ref closes that window.
+   * Staged files plus reservations for pending reads. Claim before reading
+   * bytes, so overlapping picker, paste and drop gestures share the same cap.
    */
   const claimed = useRef({ images: 0, documents: 0 });
+  const staged = useRef({ images: [] as Attachment[], documents: [] as DocumentAttachment[] });
 
   const addFiles = useCallback(
     async (files: File[]) => {
@@ -82,26 +76,41 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
         return;
       }
       const isCurrent = readEpoch.current.capture();
+      // Clearing replaces the claim object. An old read's release must never
+      // return a slot reserved by the next draft.
+      const claims = claimed.current;
+      const controller = new AbortController();
+      if (activeReads.current.size === 0) setAttachErrors([]);
+      activeReads.current.add(controller);
       setPendingReads((current) => current + 1);
-      setAttachError(null);
       const added: Attachment[] = [];
       const addedDocuments: DocumentAttachment[] = [];
-      const failures: string[] = [];
+      const failures = new Set<string>();
+      let committed = false;
       try {
         for (const file of files) {
+          if (!isCurrent()) return;
+          // Routed by what the file is, before claiming that type's slot.
+          const document = allowDocuments && isDocumentFile(file);
+          const kind = document ? "documents" : "images";
+          const limit = document ? MAX_DOCUMENTS : MAX_IMAGES_PER_TURN;
+          if (claims[kind] >= limit) {
+            failures.add(t(document ? "attach.tooManyDocuments" : "attach.tooManyImages", { count: limit }));
+            continue;
+          }
+          claims[kind] += 1;
           try {
-            // Routed by what the file is, so one paperclip takes both and neither
-            // path has to explain itself to the person picking.
-            if (allowDocuments && isDocumentFile(file)) {
-              addedDocuments.push(await readDocumentAttachment(file));
+            if (document) {
+              addedDocuments.push(await readDocumentAttachment(file, controller.signal));
             } else {
-              added.push(await readAttachment(file));
+              added.push(await readAttachment(file, controller.signal));
             }
           } catch (error) {
+            claims[kind] -= 1;
             // A thrown `Error` carries the reader's own message (a size or type
             // refusal) and stays as written; the fallback is the only part this
             // component words itself.
-            failures.push(
+            failures.add(
               error instanceof Error ? error.message : t("attach.unreadable", { name: file.name }),
             );
           }
@@ -109,32 +118,24 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
         if (!isCurrent()) {
           return;
         }
-        // Reported from here, not from inside the updater: the updater runs after
-        // the checks below, so a message pushed there would never be shown — what
-        // is over the cap would just disappear.
-        //
-        // Counted against the claim rather than the rendered length, so two
-        // gestures resolving in the same tick cannot both spend the last slot.
-        const imageRoom = Math.max(MAX_IMAGES_PER_TURN - claimed.current.images, 0);
-        const documentRoom = Math.max(MAX_DOCUMENTS - claimed.current.documents, 0);
-        if (added.length > imageRoom) {
-          failures.push(t("attach.tooManyImages", { count: MAX_IMAGES_PER_TURN }));
+        if (added.length > 0) {
+          staged.current.images = [...staged.current.images, ...added];
+          setAttachments(staged.current.images);
         }
-        if (addedDocuments.length > documentRoom) {
-          failures.push(t("attach.tooManyDocuments", { count: MAX_DOCUMENTS }));
+        if (addedDocuments.length > 0) {
+          staged.current.documents = [...staged.current.documents, ...addedDocuments];
+          setDocuments(staged.current.documents);
         }
-        const takenImages = added.slice(0, imageRoom);
-        const takenDocuments = addedDocuments.slice(0, documentRoom);
-        claimed.current = {
-          images: claimed.current.images + takenImages.length,
-          documents: claimed.current.documents + takenDocuments.length,
-        };
-        setAttachments((prev) => [...prev, ...takenImages]);
-        setDocuments((prev) => [...prev, ...takenDocuments]);
-        if (failures.length > 0) {
-          setAttachError(failures.join(" · "));
+        committed = true;
+        if (failures.size > 0) {
+          setAttachErrors((current) => [...new Set([...current, ...failures])]);
         }
       } finally {
+        if (!committed) {
+          claims.images -= added.length;
+          claims.documents -= addedDocuments.length;
+        }
+        activeReads.current.delete(controller);
         if (isCurrent()) {
           setPendingReads((current) => Math.max(current - 1, 0));
         }
@@ -147,28 +148,33 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
   );
 
   const removeAt = useCallback((index: number) => {
-    claimed.current.images = Math.max(claimed.current.images - 1, 0);
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
+    if (!staged.current.images[index]) return;
+    claimed.current.images -= 1;
+    staged.current.images = staged.current.images.filter((_, i) => i !== index);
+    setAttachments(staged.current.images);
   }, []);
 
   const removeDocumentAt = useCallback((index: number) => {
-    claimed.current.documents = Math.max(claimed.current.documents - 1, 0);
-    setDocuments((prev) => prev.filter((_, i) => i !== index));
+    if (!staged.current.documents[index]) return;
+    claimed.current.documents -= 1;
+    staged.current.documents = staged.current.documents.filter((_, i) => i !== index);
+    setDocuments(staged.current.documents);
   }, []);
 
   const clear = useCallback(() => {
-    readEpoch.current.invalidate();
+    cancelReads();
     claimed.current = { images: 0, documents: 0 };
+    staged.current = { images: [], documents: [] };
     setPendingReads(0);
     setAttachments([]);
     setDocuments([]);
-    setAttachError(null);
-  }, []);
+    setAttachErrors([]);
+  }, [cancelReads]);
 
   return {
     attachments,
     documents,
-    attachError,
+    attachError: attachErrors.length > 0 ? attachErrors.join(" · ") : null,
     reading: pendingReads > 0,
     addFiles,
     removeAt,

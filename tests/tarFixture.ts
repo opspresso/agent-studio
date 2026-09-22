@@ -29,7 +29,7 @@ function octal(value: number, width: number): Buffer {
 
 export function tarHeader(name: string, size: number, type: string): Buffer {
   const header = Buffer.alloc(BLOCK);
-  header.write(name.slice(0, 100), 0, "utf8");
+  header.write(name, 0, 100, "utf8");
   octal(0o644, 8).copy(header, 100);
   octal(0, 8).copy(header, 108);
   octal(0, 8).copy(header, 116);
@@ -52,36 +52,33 @@ function padded(data: Buffer): Buffer {
   return rest === 0 ? data : Buffer.concat([data, Buffer.alloc(BLOCK - rest)]);
 }
 
+function paxRecord(record: string): Buffer {
+  const text = ` ${record}\n`;
+  const bytes = Buffer.byteLength(text, "utf8");
+  let length = bytes + 1;
+  for (;;) {
+    const counted = bytes + String(length).length;
+    if (counted === length) return Buffer.from(`${length}${text}`, "utf8");
+    length = counted;
+  }
+}
+
 export function writeTar(entries: TarFixtureEntry[]): Buffer {
   const parts: Buffer[] = [];
   for (const entry of entries) {
     const type = entry.type ?? "file";
     const data = Buffer.from(entry.content ?? "", "utf8");
     if (entry.paxRecords) {
-      const body = Buffer.concat(
-        entry.paxRecords.records.map((record) => {
-          const text = ` ${record}\n`;
-          const bytes = Buffer.byteLength(text, "utf8");
-          // The length counts its own digits; two passes settle them.
-          const length = String(bytes + 1).length + bytes;
-          return Buffer.from(`${length}${text}`, "utf8");
-        }),
-      );
+      const body = Buffer.concat(entry.paxRecords.records.map(paxRecord));
       parts.push(
         tarHeader("PaxHeader/x", body.byteLength, entry.paxRecords.scope),
         padded(body),
       );
     }
     let name = entry.path;
-    if (name.length > 100) {
+    if (Buffer.byteLength(name, "utf8") > 100) {
       if (entry.longName === "pax") {
-        const record = ` path=${name}\n`;
-        // The length counts itself; two passes settle the digit count.
-        // Bytes, not characters — a Korean name is three bytes a syllable.
-        const recordBytes = Buffer.byteLength(record, "utf8");
-        let length = recordBytes + 1;
-        length = String(length).length + recordBytes;
-        const pax = Buffer.from(`${length}${record}`, "utf8");
+        const pax = paxRecord(`path=${name}`);
         parts.push(tarHeader("PaxHeader/x", pax.byteLength, "x"), padded(pax));
       } else {
         const long = Buffer.from(`${name}\0`, "utf8");

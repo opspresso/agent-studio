@@ -108,7 +108,10 @@ describe("TraceRecorder", () => {
     }
   });
 
-  it("records model, tool, and subagent spans without storing full message content", async () => {
+  it("records tool and subagent metadata without storing tool inputs or outputs", async () => {
+    const inputMarker = "TRACE_PRIVATE_TOOL_ARGUMENT_8fa290";
+    const outputMarker = "TRACE_PRIVATE_TOOL_RESULT_01bd75";
+    const argumentsText = JSON.stringify({ q: inputMarker });
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "parent",
@@ -120,12 +123,12 @@ describe("TraceRecorder", () => {
     recorder.observe({
       delta: {
         toolCalls: [
-          { id: "call-1", function: { name: "search", arguments: JSON.stringify({ q: "otters" }) } },
+          { id: "call-1", function: { name: "search", arguments: argumentsText } },
         ],
       },
     });
     recorder.observe({
-      toolResult: { toolCallId: "call-1", name: "search", content: "result" },
+      toolResult: { toolCallId: "call-1", name: "search", content: outputMarker },
     });
     recorder.observe({
       author: "child",
@@ -149,7 +152,13 @@ describe("TraceRecorder", () => {
       outputTokens: 5,
       costUsd: 0.001,
     });
-    expect(JSON.stringify(traces[0])).not.toContain("full message");
+    expect(traces[0]?.spans.find((span) => span.kind === "tool")).toMatchObject({
+      input: { argumentChars: argumentsText.length },
+      output: { contentChars: outputMarker.length },
+    });
+    const stored = JSON.stringify(traces[0]);
+    expect(stored).not.toContain(inputMarker);
+    expect(stored).not.toContain(outputMarker);
   });
 
   it("marks a tool span failed from the shared Error: prefix", async () => {

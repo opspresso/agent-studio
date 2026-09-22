@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import type { InboundEventClaims } from "@/domain/messaging/inboundClaims";
-import { CONDITIONAL_WRITE_FAILED, conditions, putItem, updateItem } from "../store";
+import { CONDITIONAL_WRITE_FAILED, putItem, updateItem } from "../store";
 
 function lostCondition(error: unknown): boolean {
   return error instanceof Error && error.name === CONDITIONAL_WRITE_FAILED;
@@ -37,12 +38,14 @@ export function createInboundClaimRepository(shape: {
      * processed, and treating it as reclaimable would replay it.
      */
     async claim(eventId, nowSeconds, leaseExpiresAtSeconds) {
+      const token = randomUUID();
       try {
         await putItem(
           {
             ...shape.key(eventId),
             entityType: shape.entityType,
             state: "claimed",
+            token,
             claimedAt: new Date().toISOString(),
             leaseExpiresAt: leaseExpiresAtSeconds,
             expiresAt: nowSeconds + 60 * 60 * 24,
@@ -52,16 +55,16 @@ export function createInboundClaimRepository(shape: {
             row.state === "failed" ||
             (row.state === "claimed" && Number(row.leaseExpiresAt ?? 0) < nowSeconds),
         );
-        return true;
+        return token;
       } catch (error) {
         if (lostCondition(error)) {
-          return false;
+          return null;
         }
         throw error;
       }
     },
 
-    async settle(eventId, outcome) {
+    async settle(eventId, token, outcome) {
       try {
         await updateItem(
           shape.key(eventId),
@@ -73,11 +76,11 @@ export function createInboundClaimRepository(shape: {
             // its state no longer matches the claim condition.
             leaseExpiresAt: 0,
           }),
-          conditions.exists,
+          (row) => row !== null && row.state === "claimed" && row.token === token,
         );
       } catch (error) {
-        // The row is gone (swept); there is nothing left to settle, and
-        // nothing worth failing an already-delivered response over.
+        // A missing, replaced or settled claim no longer belongs to this
+        // attempt. Its late completion must not change the current holder.
         if (!lostCondition(error)) {
           throw error;
         }

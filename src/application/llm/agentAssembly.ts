@@ -55,20 +55,30 @@ export interface ImageHandle {
   origin: string;
 }
 
+/** Shared by an execution graph; each Agent keeps its own reachable handles. */
+export interface ImageSequence { next: number }
+
 /**
  * The images EditImage can reach in one run: the user's inline attachments plus
- * everything the run has drawn so far. Ids are stable for the run and travel to
+ * everything the run has drawn so far. Ids survive Session retention and travel to
  * the model through the system prompt and the image tool results.
  */
 export class ImageRegistry {
   private readonly handles: ImageHandle[] = [];
 
+  constructor(private readonly sequence: ImageSequence = { next: 1 }) {}
+
+  get nextId(): number { return this.sequence.next; }
+
   restore(handles: readonly ImageHandle[]): void {
-    this.handles.splice(0, this.handles.length, ...handles.map((handle) => ({ ...handle })));
+    const unique = new Map(handles.map((handle) => [handle.id, { ...handle }]));
+    const ordered = [...unique.values()].sort((left, right) => Number(left.id.slice(4)) - Number(right.id.slice(4)));
+    this.handles.splice(0, this.handles.length, ...ordered);
+    for (const handle of ordered) this.sequence.next = Math.max(this.sequence.next, Number(handle.id.slice(4)) + 1);
   }
 
   add(image: { b64: string; mimeType: string }, origin: string): ImageHandle {
-    const handle: ImageHandle = { id: `img_${this.handles.length + 1}`, ...image, origin };
+    const handle: ImageHandle = { ...image, id: `img_${this.sequence.next++}`, origin };
     this.handles.push(handle);
     return handle;
   }
@@ -96,7 +106,7 @@ function registerInputImages(registry: ImageRegistry, messages: ChatMessageInput
         continue;
       }
       const bytes = parseImageDataUrl(part.image_url.url);
-      if (bytes) {
+      if (bytes && !registry.list().some((image) => image.b64 === bytes.b64 && image.mimeType === bytes.mimeType)) {
         registry.add(bytes, "from the conversation");
       }
     }
@@ -1104,6 +1114,11 @@ export interface AgentRunAssembly {
 }
 
 export interface AssembleAgentRunInput {
+  /** Previously issued handles, restored before the Available Images prompt is built. */
+  images?: readonly ImageHandle[];
+  imageSequence?: ImageSequence;
+  /** A Session retains attachments even when this Agent cannot currently edit them. */
+  retainInputImages?: boolean;
   blockedTools?: readonly string[];
   /** The Agent's own system prompt. */
   systemPrompt?: string;
@@ -1155,10 +1170,10 @@ export function assembleAgentRun(
   // Fan-out additionally needs the facade to have admitted this as a top-level
   // run: a child that could dispatch would multiply the run count by depth.
   const canDispatch = Boolean(input.canDispatch && deps.canDelegate);
-  // Handles are worth keeping when something can act on them: this run can edit
-  // an image, or it can hand one to another agent that will.
-  const images = new ImageRegistry();
-  if ((canEdit || canTransfer) && input.messages) {
+  // A persisted run also retains handles for later turns with image tools enabled.
+  const images = new ImageRegistry(input.imageSequence);
+  images.restore(input.images ?? []);
+  if ((canEdit || canTransfer || input.retainInputImages) && input.messages) {
     registerInputImages(images, input.messages);
   }
   // From the deps, never from the Agent: a run is told it can do a thing

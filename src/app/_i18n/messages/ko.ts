@@ -876,6 +876,7 @@ export const ko: Messages = {
   "chat.none": "아직 대화가 없습니다.",
   "chat.delete": "대화 삭제",
   "chat.notFound": "대화를 찾을 수 없습니다.",
+  "chat.loadFailed": "대화를 불러오지 못했습니다.",
   "chat.reloadFailed": "답변은 저장됐지만 대화를 다시 불러오지 못했습니다.",
   "chat.jumpToLatest": "최신 메시지로 이동",
   "chat.approvalTitle": "승인이 필요합니다",

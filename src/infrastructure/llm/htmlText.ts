@@ -22,35 +22,14 @@
 
 import { cutCodePoints } from "@/shared/utf8Text";
 
-/**
- * Elements whose *contents* are markup, code, or metadata — never body prose.
- *
- * `title` is here even though it is kept: `titleOf` reads it off the raw input
- * before this runs, and dropping it afterwards is what stops it appearing twice
- * in a document that has no `<head>` for the removal below to catch.
- */
-/**
- * How far a tag's attributes may run before this stops reading it as a tag.
- *
- * The bound is on the *work*, not on the markup: `[^>]*` after an element name
- * scans to the end of the input at every position the name appears, so a page
- * of `<svg` with no `>` anywhere costs one full pass per occurrence — quadratic,
- * and measured at 24 seconds of blocked event loop for a document inside the
- * source cap below. That is the failure the cap was supposed to prevent, and a
- * cap on length cannot: the work is what has to be bounded. A kilobyte covers
- * every tag a page really writes (a `style`, a `srcset`, a `data-` payload) and
- * takes the pathological case from quadratic to linear-with-a-constant.
- *
- * A tag whose attributes run past it is left alone here and removed by
- * `stripTags`, which scans rather than backtracks and has no bound at all.
- */
-const MAX_TAG_CHARS = 1024;
-
-const DROPPED_ELEMENTS = ["script", "style", "noscript", "svg", "template", "iframe", "title"];
+/** Elements whose contents are code or metadata rather than body prose. */
+const DROPPED_ELEMENTS = ["script", "style", "noscript", "svg", "template", "iframe"];
 
 /** Blocks that read as paragraphs: one blank line between them. */
-const PARAGRAPH_ELEMENTS =
-  "p|div|section|article|header|footer|main|aside|blockquote|pre|h[1-6]|ul|ol|dl|table|form|figure|figcaption";
+const PARAGRAPH_ELEMENTS = new Set([
+  "p", "div", "section", "article", "header", "footer", "main", "aside", "blockquote", "pre",
+  "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "dl", "table", "form", "figure", "figcaption",
+]);
 
 /**
  * Named entities worth handling without a table of all 2,231 of them. `&amp;`
@@ -111,28 +90,87 @@ function collapseSource(value: string): string {
   return value.replace(/\s+/g, " ");
 }
 
-/** Also drops a trailing unterminated tag, which has no `>` to match. */
-function stripTags(value: string): string {
-  // A scan rather than `/<[^>]*>/g`: that pattern re-reads the rest of the
-  // input from every `<` that has no `>` after it, which is the same quadratic
-  // the tag bound above exists to stop — and this is the pass that has to take
-  // a tag of any length, because a page inlines a `data:` image as one. Two
-  // cursors and `indexOf` read each character once, and answer exactly what the
-  // pattern answered: a tag removed, a trailing unterminated one dropped.
+interface HtmlTag {
+  start: number;
+  end: number;
+  name: string;
+  closing: boolean;
+  selfClosing: boolean;
+  terminated: boolean;
+}
+
+/** One forward pass, including quoted attributes and a trailing unfinished tag. */
+function* tags(value: string, at = 0): Generator<HtmlTag> {
+  while (at < value.length) {
+    const open = value.indexOf("<", at);
+    if (open < 0) return;
+    let close = open + 1;
+    let quote = "";
+    for (; close < value.length; close += 1) {
+      const character = value[close];
+      if (quote) {
+        if (character === quote) quote = "";
+      } else if (character === '"' || character === "'") {
+        quote = character;
+      } else if (character === ">") {
+        break;
+      }
+    }
+    const content = value.slice(open + 1, close);
+    const name = /^\/?([a-z][a-z0-9:_-]*)(?=[\s/]|$)/i.exec(content)?.[1]?.toLowerCase() ?? "";
+    at = Math.min(close + 1, value.length);
+    yield { start: open, end: at, name, closing: content.startsWith("/"),
+      selfClosing: content.trimEnd().endsWith("/"), terminated: close < value.length };
+  }
+}
+
+/** Match element contents without retrying every nested opener on a missing closer. */
+function* elements(value: string, name: string) {
+  const closing = new RegExp(`<\\/${name}\\s*>`, "gi");
+  let at = 0;
+  while (at < value.length) {
+    let opening: HtmlTag | undefined;
+    for (const tag of tags(value, at)) {
+      if (tag.name === name && tag.terminated && !tag.closing && !tag.selfClosing) {
+        opening = tag;
+        break;
+      }
+    }
+    if (!opening) return;
+    // Raw contents may contain strings that resemble unfinished HTML tags.
+    closing.lastIndex = opening.end;
+    const close = closing.exec(value);
+    const end = close ? closing.lastIndex : value.length;
+    yield { start: opening.start, contentStart: opening.end, contentEnd: close?.index ?? value.length,
+      end, closed: close !== null };
+    at = end;
+  }
+}
+
+function dropElement(value: string, name: string, dropUnclosed = true): string {
   let out = "";
   let at = 0;
-  for (;;) {
-    const open = value.indexOf("<", at);
-    if (open < 0) {
-      return out + value.slice(at);
-    }
-    out += value.slice(at, open);
-    const close = value.indexOf(">", open + 1);
-    if (close < 0) {
-      return out;
-    }
-    at = close + 1;
+  for (const element of elements(value, name)) {
+    if (!element.closed && !dropUnclosed) break;
+    out += `${value.slice(at, element.start)} `;
+    at = element.end;
   }
+  return out + value.slice(at);
+}
+
+function stripTags(value: string, boundaries = false): string {
+  let out = "";
+  let at = 0;
+  for (const tag of tags(value)) {
+    out += value.slice(at, tag.start);
+    at = tag.end;
+    if (!boundaries || !tag.terminated) continue;
+    if (PARAGRAPH_ELEMENTS.has(tag.name)) out += "\n\n";
+    else if (tag.name === "br" || tag.closing && ["tr", "dt", "dd"].includes(tag.name)) out += "\n";
+    else if (tag.name === "li" && !tag.closing) out += "\n- ";
+    else if (tag.closing && ["td", "th"].includes(tag.name)) out += " | ";
+  }
+  return out + value.slice(at);
 }
 
 /**
@@ -140,73 +178,44 @@ function stripTags(value: string): string {
  * the only statement of what the document *is*.
  */
 function titleOf(html: string): string | undefined {
-  const match = new RegExp(`<title[^>]{0,${MAX_TAG_CHARS}}>([\\s\\S]*?)<\\/title>`, "i").exec(html);
-  const title = match?.[1] ? decodeEntities(stripTags(collapseSource(match[1]))).trim() : "";
-  return title || undefined;
+  for (const element of elements(html, "title")) {
+    if (!element.closed) return undefined;
+    return decodeEntities(stripTags(collapseSource(html.slice(element.contentStart, element.contentEnd)))).trim() || undefined;
+  }
+  return undefined;
 }
 
 /**
  * How much markup is worth reading through.
  *
- * Our cap, beside the regex chain that spends it — and lower than the standalone
- * server's, deliberately. There this ran in its own pod, where a long synchronous
- * pass blocked only that pod and horizontal scaling absorbed it; here it shares
- * an event loop with every other request this instance is serving, health probes
- * included. Half a megabyte of markup is generous for the 90,000 characters of
- * text that can come out of it.
+ * A linear scan budget inside the document worker. Half a megabyte of markup is
+ * generous for the extracted text returned to the caller.
  */
 export const MAX_HTML_SOURCE_CHARS = 500_000;
 
 export function htmlToText(source: string): string {
   // Cut before the passes rather than after: the work below is linear in what it
   // is given, and the tail of a very long page contributes nothing once the text
-  // budget is spent anyway. The element regexes below already tolerate input cut
-  // mid-element — that is what their `|$` alternatives are for. Not through a
+  // budget is spent anyway. Element scans tolerate input cut mid-element. Not through a
   // character, though: what comes out of here is what a model reads, and a cut
   // between the halves of a non-BMP character goes on the wire as a lone
   // surrogate escape that a provider may refuse the whole request over.
   const html = cutCodePoints(source, MAX_HTML_SOURCE_CHARS);
-  const title = titleOf(html);
 
   let text = html
     // Comments first: one can contain anything, including a `<script>` that the
     // element pass below would otherwise try to match across.
     .replace(/<!--[\s\S]*?(?:-->|$)/g, " ");
 
-  // `|$` rather than requiring the close tag. The source reaching this function
-  // may have been cut mid-element — `MAX_HTML_CHARS` does exactly that — and an
-  // opening tag whose closer was cut off would otherwise match nothing, leaving
-  // `stripTags` to remove the tag and hand the model the script source it
-  // wrapped, labelled as the document's prose. Consuming to the end of the input
-  // is also what a parser does with an unterminated raw-text element.
-  //
-  // `(?<!/)` is what keeps that from eating a document whole: `<script src="a"/>`
-  // is a self-closing tag, ordinary in the XHTML this server also accepts, and it
-  // has no contents and no closer to look for. Without the lookbehind it opened
-  // an element that ran to the end of the page.
+  // Truncated raw elements consume their remaining contents; self-closing
+  // XHTML elements do not. Titles inside these elements are not page titles.
   for (const element of DROPPED_ELEMENTS) {
-    text = text.replace(
-      new RegExp(`<${element}\\b[^>]{0,${MAX_TAG_CHARS}}(?<!/)>[\\s\\S]*?(?:<\\/${element}\\s*>|$)`, "gi"),
-      " ",
-    );
+    text = dropElement(text, element);
   }
-
-  text = collapseSource(text.replace(new RegExp(`<head\\b[^>]{0,${MAX_TAG_CHARS}}>[\\s\\S]*?<\\/head\\s*>`, "gi"), " "));
-
-  text = text
-    // Single-newline boundaries: these group rather than separate.
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(tr|dt|dd)\s*>/gi, "\n")
-    .replace(new RegExp(`<li\\b[^>]{0,${MAX_TAG_CHARS}}>`, "gi"), "\n- ")
-    // Cell boundaries carry meaning in a table — a row of values run together
-    // is not readable as a row.
-    .replace(/<\/t[dh]\s*>/gi, " | ")
-    // Paragraph boundaries, both ends: a block is separated from its neighbour
-    // whether the markup closed the previous one or not.
-    .replace(new RegExp(`<\\/(${PARAGRAPH_ELEMENTS})\\s*>`, "gi"), "\n\n")
-    .replace(new RegExp(`<(${PARAGRAPH_ELEMENTS})\\b[^>]{0,${MAX_TAG_CHARS}}>`, "gi"), "\n\n");
-
-  const body = normalize(decodeEntities(stripTags(text)));
+  const title = titleOf(text);
+  text = dropElement(text, "title");
+  text = collapseSource(dropElement(text, "head", false));
+  const body = normalize(decodeEntities(stripTags(text, true)));
 
   // The title is prepended rather than merged: it came from `<head>`, so it is
   // not part of the body's own flow and should not read as its first sentence.

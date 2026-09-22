@@ -172,12 +172,12 @@ async function claimsAlbum(
   const nowSeconds = Math.floor(Date.now() / 1000);
   const claims = deps.albums(binding.projectName, botIdFromToken(binding.botToken) ?? "unknown");
   try {
-    const won = await claims.claim(message.media_group_id, nowSeconds, nowSeconds + RUN_LEASE_SECONDS);
-    if (won) {
+    const token = await claims.claim(message.media_group_id, nowSeconds, nowSeconds + RUN_LEASE_SECONDS);
+    if (token !== null) {
       // Never reclaimed: an album answered once is answered.
-      await claims.settle(message.media_group_id, "done");
+      await claims.settle(message.media_group_id, token, "done");
     }
-    return won;
+    return token !== null;
   } catch (error) {
     // The store failing must not silence the bot; the cost is a duplicate reply.
     log.error("telegram", "album claim failed; answering anyway", error);

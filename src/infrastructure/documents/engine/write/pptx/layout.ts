@@ -167,8 +167,37 @@ export function widthOf(text: string): number {
   return width;
 }
 
-export function textOf(runs: readonly Run[]): string {
-  return runs.map((run) => run.text).join("");
+/** Estimated visual lines, keeping every character and its original run properties. */
+export function textLines(piece: Extract<Piece, { kind: "text" }>): Run[][] {
+  const columns = Math.max(1, COLUMNS - piece.style.indent * INDENT_COLUMNS);
+  const lines: Run[][] = [[]];
+  let used = 0;
+  for (const run of piece.runs) {
+    let fragment = "";
+    const append = () => {
+      if (fragment) lines[lines.length - 1]!.push({ ...run, text: fragment });
+      fragment = "";
+    };
+    for (const character of run.text) {
+      if (character === "\n") {
+        fragment += character;
+        append();
+        lines.push([]);
+        used = 0;
+        continue;
+      }
+      const width = widthOf(character);
+      if (used + width > columns) {
+        append();
+        lines.push([]);
+        used = 0;
+      }
+      fragment += character;
+      used += width;
+    }
+    append();
+  }
+  return lines;
 }
 
 /** How many body lines a piece takes, which is the currency slides are filled in. */
@@ -176,7 +205,5 @@ export function linesOf(piece: Piece): number {
   if (piece.kind === "table") {
     return Math.ceil(((piece.rows.length + 1) * ROW_HEIGHT) / LINE_HEIGHT);
   }
-  const width = Math.max(1, COLUMNS - piece.style.indent * INDENT_COLUMNS);
-  const wrapped = Math.max(1, Math.ceil(widthOf(textOf(piece.runs)) / width));
-  return wrapped + (piece.style.before ? 1 : 0);
+  return textLines(piece).length + (piece.style.before ? 1 : 0);
 }

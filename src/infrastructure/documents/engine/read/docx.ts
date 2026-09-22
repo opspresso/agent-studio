@@ -24,7 +24,7 @@
  * the reader exactly where it was, never guessing. `undefined` means "a flat
  * paragraph", not "level 1".
  *
- * **The `w:` prefix is matched literally, and that is load-bearing.**
+ * **WordprocessingML is distinguished by namespace, not just local tag names.**
  * `word/document.xml` can carry DrawingML inside `mc:AlternateContent`, where
  * `a:t` is a shape's text; matching the local name `t` would leak WordArt and
  * fallback graphics into the body.
@@ -33,7 +33,7 @@
 import { posix } from "node:path";
 import { MAX_TEXT_CHARS } from "../limits";
 import type { Align, Run } from "../markdown";
-import { attributeOf, localName, walkXml, type XmlHandler } from "../xml";
+import { attributeOf, attributesOf, localName, walkXml, type XmlHandler } from "../xml";
 import { openZip } from "../zip";
 import { DocumentError } from "../errors";
 import { drawnMarker, type ReadBlock, type ReadCell, type ReadRow } from "./blocks";
@@ -47,6 +47,36 @@ const RELS_PART = "word/_rels/document.xml.rels";
 
 /** `w:basedOn` cycles exist in the wild, and a walk that trusts them hangs. */
 const MAX_STYLE_HOPS = 10;
+
+const COMPATIBILITY_NAMESPACE = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+/** Only namespaces interpreted by this reader qualify an alternate Choice. */
+const CORE_NAMESPACES = new Map([
+  ["w", "http://schemas.openxmlformats.org/wordprocessingml/2006/main"],
+  ["wp", "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"],
+  ["a", "http://schemas.openxmlformats.org/drawingml/2006/main"],
+  ["pic", "http://schemas.openxmlformats.org/drawingml/2006/picture"],
+  ["v", "urn:schemas-microsoft-com:vml"],
+  ["r", "http://schemas.openxmlformats.org/officeDocument/2006/relationships"],
+]);
+/** Equivalent Strict OOXML names must remain readable when prefixes are resolved. */
+const STRICT_NAMESPACES = new Map([
+  ["w", "http://purl.oclc.org/ooxml/wordprocessingml/main"],
+  ["wp", "http://purl.oclc.org/ooxml/drawingml/wordprocessingDrawing"],
+  ["a", "http://purl.oclc.org/ooxml/drawingml/main"],
+  ["pic", "http://purl.oclc.org/ooxml/drawingml/picture"],
+  ["r", "http://purl.oclc.org/ooxml/officeDocument/relationships"],
+]);
+const CHOICE_NAMESPACES = new Set([...CORE_NAMESPACES.values(), ...STRICT_NAMESPACES.values()]);
+const CANONICAL_PREFIXES = new Map([...CORE_NAMESPACES, ...STRICT_NAMESPACES, ["mc", COMPATIBILITY_NAMESPACE]].map(([prefix, uri]) => [uri, prefix]));
+
+function canonicalName(name: string, namespaces: ReadonlyMap<string, string>, attribute = false): string | undefined {
+  const colon = name.indexOf(":");
+  // Default namespaces apply to elements, never to unprefixed attributes.
+  if (colon < 0 && (attribute || !namespaces.get(""))) return name;
+  const uri = namespaces.get(colon < 0 ? "" : name.slice(0, colon));
+  const prefix = uri === undefined ? undefined : CANONICAL_PREFIXES.get(uri);
+  return prefix === undefined ? undefined : `${prefix}:${name.slice(colon + 1)}`;
+}
 
 export class DocxError extends DocumentError {}
 
@@ -324,12 +354,14 @@ function columnAlignment(rows: ReadonlyArray<ReadonlyArray<Align | undefined>>, 
 }
 
 /** `<w:b/>` is on; `<w:b w:val="0"/>` is off, and reading it as on is silent. */
-function toggled(attributes: string): boolean {
-  const value = attributeOf(attributes, "w:val");
+function toggled(value: string | undefined): boolean {
   return value !== "0" && value !== "false" && value !== "off";
 }
 
 class Extractor implements XmlHandler {
+  private readonly namespaceScopes = [new Map([...CORE_NAMESPACES, ["mc", COMPATIBILITY_NAMESPACE]])];
+  private readonly alternatives: Array<{ selected: boolean }> = [];
+  private alternateSkipDepth = 0;
   private readonly blocks: ReadBlock[] = [];
   private runs: Run[] = [];
   private pending = "";
@@ -373,7 +405,7 @@ class Extractor implements XmlHandler {
   private revised = false;
 
   text(value: string): void {
-    if (this.textDepth > 0) {
+    if (this.textDepth > 0 && this.alternateSkipDepth === 0) {
       this.pending += value;
       if (this.inserted > 0) {
         this.revised = true;
@@ -512,6 +544,40 @@ class Extractor implements XmlHandler {
   }
 
   open(name: string, attributes: string, selfClosing: boolean): void {
+    let namespaces = this.namespaceScopes.at(-1)!;
+    const parsed = attributesOf(attributes);
+    const declared = [...parsed].filter(([key]) => key === "xmlns" || key.startsWith("xmlns:"));
+    if (declared.length) {
+      namespaces = new Map(namespaces);
+      for (const [key, uri] of declared) namespaces.set(key === "xmlns" ? "" : key.slice(6), uri);
+    }
+    if (!selfClosing) this.namespaceScopes.push(namespaces);
+    if (this.alternateSkipDepth > 0) {
+      if (!selfClosing) this.alternateSkipDepth += 1;
+      return;
+    }
+    name = canonicalName(name, namespaces) ?? "";
+    const values = new Map<string, string>();
+    for (const [key, value] of parsed) {
+      const canonical = canonicalName(key, namespaces, true);
+      if (canonical !== undefined && !values.has(canonical)) values.set(canonical, value);
+    }
+    if (name === "mc:AlternateContent") {
+      if (!selfClosing) this.alternatives.push({ selected: false });
+      return;
+    }
+    if (name === "mc:Choice" || name === "mc:Fallback") {
+      const alternative = this.alternatives.at(-1);
+      const required = (values.get("Requires") ?? "").trim().split(/\s+/).filter(Boolean);
+      const supported = name === "mc:Fallback" || required.length > 0 &&
+        required.every(prefix => CHOICE_NAMESPACES.has(namespaces.get(prefix) ?? ""));
+      if (!alternative || alternative.selected || !supported) {
+        if (!selfClosing) this.alternateSkipDepth = 1;
+      } else {
+        alternative.selected = true;
+      }
+      return;
+    }
     switch (name) {
       case "w:t":
         // Not self-closing `<w:t/>`, which holds nothing and would leave the
@@ -547,14 +613,14 @@ class Extractor implements XmlHandler {
         return;
       case "w:pStyle":
         if (this.properties > 0) {
-          this.styleId = attributeOf(attributes, "w:val");
+          this.styleId = values.get("w:val");
         }
         return;
       case "w:outlineLvl": {
         if (this.properties === 0) {
           return;
         }
-        const declared = Number(attributeOf(attributes, "w:val") ?? "");
+        const declared = Number(values.get("w:val") ?? "");
         if (Number.isInteger(declared)) {
           this.outline = declared;
         }
@@ -564,7 +630,7 @@ class Extractor implements XmlHandler {
         if (this.properties === 0 || this.cellDepth === 0) {
           return;
         }
-        const set = attributeOf(attributes, "w:val");
+        const set = values.get("w:val");
         if (set === "right" || set === "end") {
           this.cellAlign = "right";
         } else if (set === "center") {
@@ -578,21 +644,21 @@ class Extractor implements XmlHandler {
         this.numbered = true;
         return;
       case "w:ilvl": {
-        const declared = Number(attributeOf(attributes, "w:val") ?? "");
+        const declared = Number(values.get("w:val") ?? "");
         if (Number.isInteger(declared) && declared >= 0) {
           this.level = declared;
         }
         return;
       }
       case "w:numId":
-        this.numId = attributeOf(attributes, "w:val");
+        this.numId = values.get("w:val");
         return;
       case "w:ind": {
         if (this.properties === 0) {
           return;
         }
-        const left = Number(attributeOf(attributes, "w:left") ?? "0");
-        const hanging = Number(attributeOf(attributes, "w:hanging") ?? "0");
+        const left = Number(values.get("w:left") ?? "0");
+        const hanging = Number(values.get("w:hanging") ?? "0");
         this.indentLeft = Number.isFinite(left) ? left : 0;
         this.indentHanging = Number.isFinite(hanging) ? hanging : 0;
         return;
@@ -610,12 +676,12 @@ class Extractor implements XmlHandler {
         // Inside `w:pPr` this is the paragraph mark's own formatting, not the
         // text's. Style-derived emphasis is left alone on purpose: a heading
         // style is bold, and inheriting it wraps every heading in `**`.
-        if (this.properties === 0 && toggled(attributes)) {
+        if (this.properties === 0 && toggled(values.get("w:val"))) {
           this.emphasis.bold = true;
         }
         return;
       case "w:i":
-        if (this.properties === 0 && toggled(attributes)) {
+        if (this.properties === 0 && toggled(values.get("w:val"))) {
           this.emphasis.italic = true;
         }
         return;
@@ -623,7 +689,7 @@ class Extractor implements XmlHandler {
         if (selfClosing) {
           return;
         }
-        const id = attributeOf(attributes, "r:id");
+        const id = values.get("r:id");
         const target = id === undefined ? undefined : this.rels.get(id);
         if (target) {
           this.cut();
@@ -633,23 +699,21 @@ class Extractor implements XmlHandler {
       }
       case "w:drawing":
       case "w:pict":
-        // Same reason: a raised depth here reads as "still inside a drawing",
-        // so every later picture is taken for an `mc:AlternateContent`
-        // duplicate of it and none of them is reported.
+        // Self-closing drawings must not keep later pictures inside their depth.
         if (!selfClosing) {
           this.drawing += 1;
         }
         return;
       case "wp:docPr":
         if (this.drawing > 0) {
-          this.imageAlt = attributeOf(attributes, "descr") ?? attributeOf(attributes, "name");
+          this.imageAlt = values.get("descr") ?? values.get("name");
         }
         return;
       case "a:blip": {
         if (this.drawing === 0 || this.imageTarget !== undefined) {
           return;
         }
-        const id = attributeOf(attributes, "r:embed");
+        const id = values.get("r:embed");
         this.imageTarget = id === undefined ? undefined : this.rels.get(id);
         return;
       }
@@ -658,7 +722,7 @@ class Extractor implements XmlHandler {
         if (this.drawing === 0 || this.imageTarget !== undefined) {
           return;
         }
-        const id = attributeOf(attributes, "r:id");
+        const id = values.get("r:id");
         this.imageTarget = id === undefined ? undefined : this.rels.get(id);
         return;
       }
@@ -687,12 +751,12 @@ class Extractor implements XmlHandler {
         });
         return;
       case "w:tblHeader":
-        if (this.table && toggled(attributes)) {
+        if (this.table && toggled(values.get("w:val"))) {
           this.table.header = true;
         }
         return;
       case "w:gridSpan": {
-        const declared = Number(attributeOf(attributes, "w:val") ?? "");
+        const declared = Number(values.get("w:val") ?? "");
         if (this.table && Number.isInteger(declared) && declared > 1) {
           this.table.span = declared;
         }
@@ -703,7 +767,7 @@ class Extractor implements XmlHandler {
         // vertically merged cell means this row continues the one above it, so
         // reading the absence as "not merged" inverts what the document said.
         if (this.table) {
-          this.table.continues = attributeOf(attributes, "w:val") !== "restart";
+          this.table.continues = values.get("w:val") !== "restart";
           this.table.merged = true;
           this.observed.add("merged table cells");
         }
@@ -717,6 +781,16 @@ class Extractor implements XmlHandler {
   }
 
   close(name: string): void {
+    name = canonicalName(name, this.namespaceScopes.at(-1)!) ?? "";
+    this.namespaceScopes.pop();
+    if (this.alternateSkipDepth > 0) {
+      this.alternateSkipDepth -= 1;
+      return;
+    }
+    if (name === "mc:AlternateContent") {
+      if (this.alternatives.pop()?.selected === false) this.observed.add("unsupported alternate content");
+      return;
+    }
     switch (name) {
       case "w:t":
         this.textDepth = Math.max(0, this.textDepth - 1);
@@ -735,7 +809,7 @@ class Extractor implements XmlHandler {
       case "w:pict": {
         this.drawing = Math.max(0, this.drawing - 1);
         if (this.drawing > 0) {
-          // A fallback copy of the same picture inside `mc:AlternateContent`.
+          // Nested drawing wrappers still represent one drawing.
           return;
         }
         const alt = this.imageAlt;

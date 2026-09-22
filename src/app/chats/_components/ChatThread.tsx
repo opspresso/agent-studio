@@ -19,6 +19,7 @@ import {
   Alert,
   Badge,
   Box,
+  Button,
   Flex,
   Group,
   ScrollArea,
@@ -94,7 +95,8 @@ export function ChatThread({ chatId }: { chatId: string }) {
    * ceiling.
    */
   const lastFullRead = useRef(0);
-  const [status, setStatus] = useState<"loading" | "ready" | "not-found">("loading");
+  const [status, setStatus] = useState<"loading" | "load-error" | "ready" | "not-found">("loading");
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
   /**
    * The last turn this view has finished showing. Retiring a turn by id rather
@@ -160,6 +162,15 @@ export function ChatThread({ chatId }: { chatId: string }) {
   const syncFromServer = useCallback(
     async ({ tail = false } = {}): Promise<Fetched | null> => {
       const ticket = ++syncSeq.current;
+      const failed = () => {
+        if (ticket === syncSeq.current) {
+          // A failed first read needs an explicit recovery action. Once history
+          // is available, tail failures keep it visible and use the retire or
+          // workspace poll's existing retries instead.
+          setStatus((current) => current === "loading" ? "load-error" : current);
+        }
+        return null;
+      };
       // The tail read asks only for what was written after the newest row this
       // view holds. Read from a ref rather than from `messages` on purpose: as
       // a dependency it would give this callback a new identity on every
@@ -176,9 +187,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
           since === undefined ? `/api/chats/${chatId}` : `/api/chats/${chatId}?sinceSeq=${since}`,
         );
       } catch {
-        // Match a transient non-ok response: the retire path retries it, while
-        // an initial read stays mounted for a later run transition to refresh.
-        return null;
+        return failed();
       }
       if (ticket !== syncSeq.current) {
         return null;
@@ -188,18 +197,13 @@ export function ChatThread({ chatId }: { chatId: string }) {
         return null;
       }
       if (!res.ok) {
-        return null;
+        return failed();
       }
-      let data: {
-        chat?: Chat;
-        messages?: ChatMessage[];
-        activeRun?: { runId: string };
-        pendingApproval?: ChatWithMessages["pendingApproval"];
-      };
+      let data: ChatWithMessages;
       try {
         data = (await res.json()) as typeof data;
       } catch {
-        return null;
+        return failed();
       }
       // Checked again, after the body: the first check only proves no fresher
       // request had *started* when the headers arrived. A mount's full read
@@ -210,11 +214,14 @@ export function ChatThread({ chatId }: { chatId: string }) {
       if (ticket !== syncSeq.current) {
         return null;
       }
-      const fetched = data.messages ?? [];
+      if (!data?.chat || !Array.isArray(data.messages)) {
+        return failed();
+      }
+      const fetched = data.messages;
       if (since === undefined) {
         lastFullRead.current = Date.now();
       }
-      setChat(data.chat ?? null);
+      setChat(data.chat);
       setApprovalState({ chatId, pending: data.pendingApproval ?? null });
       setMessages((prev) => (since === undefined ? fetched : mergeMessages(prev, fetched)));
       // Outside the updater, which React may run twice and which must stay
@@ -293,7 +300,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
     return () => {
       dropped = true;
     };
-  }, [syncFromServer, attachIfRunning]);
+  }, [syncFromServer, attachIfRunning, loadAttempt]);
 
   const hasWorkspace = Object.keys(chat?.linkedWorkspaces ?? {}).length > 0;
   useEffect(() => {
@@ -401,6 +408,9 @@ export function ChatThread({ chatId }: { chatId: string }) {
     attachments: Attachment[],
     documents: DocumentAttachment[],
   ): boolean {
+    if (status !== "ready" || pendingApproval) {
+      return false;
+    }
     if (runStore.startTurn(chatId, { content, attachments, documents }) === null) {
       // A run got in between the render that enabled the composer and the
       // press. The reply now streaming is on screen; the composer keeps the
@@ -467,6 +477,19 @@ export function ChatThread({ chatId }: { chatId: string }) {
                 <Text fz="sm" c="dimmed">
                   {t("common.loading")}
                 </Text>
+              )}
+              {status === "load-error" && (
+                <Alert color="red" variant="light">
+                  <Stack gap="xs" align="flex-start">
+                    <Text fz="sm">{t("chat.loadFailed")}</Text>
+                    <Button size="xs" variant="light" color="red" onClick={() => {
+                      setStatus("loading");
+                      setLoadAttempt((attempt) => attempt + 1);
+                    }}>
+                      {t("error.retry")}
+                    </Button>
+                  </Stack>
+                </Alert>
               )}
               {drawn.map((message) => (
                 <MessageView
@@ -547,7 +570,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
           )}
           <Composer
             onSend={handleSend}
-            disabled={streaming || Boolean(pendingApproval)}
+            disabled={status !== "ready" || streaming || Boolean(pendingApproval)}
             busy={streaming}
             status={<RunningAgents paths={live?.authorPaths ?? []} />}
             {...(streaming && shown.runId ? { onStop: () => runStore.cancelRun(chatId) } : {})}

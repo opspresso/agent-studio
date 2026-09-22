@@ -331,6 +331,11 @@ function createWriter(deps: ChatDeps, chatId: string, runId: string) {
     for (;;) {
       await write(writeBuffered);
       if (ended) {
+        // The source can finish while append is awaiting storage. Drain the
+        // frames recorded during that write before publishing the terminal row.
+        if (buffered.length > 0) {
+          continue;
+        }
         const { error } = ended;
         await write(() => writeTerminal(error));
         return;

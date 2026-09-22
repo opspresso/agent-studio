@@ -12,7 +12,7 @@ import { resolveExposedProject } from "@/application/a2a/exposure";
 import { authenticateA2a } from "@/app/api/a2a/_lib/auth";
 import {
   a2aJsonParseError,
-  tenantFromA2aJsonRpcRequest,
+  validateA2aJsonRpcTenant,
   withRequiredA2aDefaults,
 } from "@/app/api/a2a/_lib/jsonRpc";
 import { withTurnBodyText } from "@/app/api/_lib/body";
@@ -101,7 +101,6 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
     };
     const callContext = new ServerCallContext({
       user,
-      tenant: tenantFromA2aJsonRpcRequest(body),
       requestedVersion: request.headers.get(A2A_VERSION_HEADER) ?? undefined,
     });
     // The reader leaving ends a resubscribe's polling; a run itself is not
@@ -117,10 +116,12 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
     const transport = new JsonRpcTransportHandler(requestHandler);
 
     try {
+      validateA2aJsonRpcTenant(body);
       // A2A 1.0 requires version negotiation through the service parameter.
       // Missing means 0.3 in the SDK context and is rejected because this
       // unopened service intentionally exposes only the native 1.0 contract.
       validateVersion(callContext.requestedVersion, card, "JSONRPC");
+      // The transport binds tenant once on this same context, shared with the executor.
       const result = await transport.handle(rawBody, callContext);
       if (isAsyncGenerator(result)) {
         // A refusal on the first pull is a JSON-RPC error; one after the stream

@@ -73,9 +73,11 @@ export async function admitInboundEvent(opts: {
   work: () => Promise<void>;
 }): Promise<"accepted" | "duplicate"> {
   const { eventId } = opts;
+  let claimToken: string | null = null;
   if (eventId) {
     const nowSeconds = Math.floor(Date.now() / 1000);
-    if (!(await opts.claims.claim(eventId, nowSeconds, nowSeconds + RUN_LEASE_SECONDS))) {
+    claimToken = await opts.claims.claim(eventId, nowSeconds, nowSeconds + RUN_LEASE_SECONDS);
+    if (claimToken === null) {
       return "duplicate";
     }
   }
@@ -88,11 +90,11 @@ export async function admitInboundEvent(opts: {
         outcome = "failed";
         log.error(opts.scope, `${opts.logLabel} event handling failed`, error);
       }
-      if (!eventId) {
+      if (!eventId || claimToken === null) {
         return;
       }
       try {
-        await opts.claims.settle(eventId, outcome);
+        await opts.claims.settle(eventId, claimToken, outcome);
       } catch (error) {
         log.error(opts.scope, `${opts.logLabel} event settle failed`, error);
       }

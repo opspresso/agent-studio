@@ -654,7 +654,7 @@ export async function syncPluginsFromSnapshot(
 
   // The delete checkbox gets its blast radius: which Agents bind each
   // orphan. One batched lookup, only when there is an orphan to annotate.
-  let bindings: OrphanBindings = { skills: {}, mcpServers: {} };
+  let bindings: OrphanBindings = { skills: new Map(), mcpServers: new Map() };
   if (deps.findBindings && (orphanSkills.length > 0 || orphanServers.length > 0)) {
     try {
       bindings = await deps.findBindings(
@@ -667,10 +667,10 @@ export async function syncPluginsFromSnapshot(
     }
   }
   for (const { skill, report } of orphanSkills) {
-    report.orphaned.push({ name: skill.name, boundTo: bindings.skills[skill.name] ?? [] });
+    report.orphaned.push({ name: skill.name, boundTo: bindings.skills.get(skill.name) ?? [] });
   }
   for (const { server, report } of orphanServers) {
-    report.orphaned.push({ name: server.name, boundTo: bindings.mcpServers[server.name] ?? [] });
+    report.orphaned.push({ name: server.name, boundTo: bindings.mcpServers.get(server.name) ?? [] });
   }
 
   // Plugin rows the snapshot no longer carries. Removing one does not cascade:

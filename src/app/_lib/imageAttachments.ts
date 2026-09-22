@@ -1,4 +1,5 @@
 import { imageDataUrl } from "@/domain/llm/types";
+import { readAttachmentDataUrl } from "./readAttachmentDataUrl";
 import {
   MAX_IMAGE_BYTES,
   MAX_IMAGE_SIZE_LABEL,
@@ -19,19 +20,14 @@ export const ACCEPTED_IMAGE_TYPES: readonly string[] = SUPPORTED_IMAGE_TYPES;
  * Read a picked file into an attachment. Rejecting here (rather than on submit)
  * is what lets the composer explain the problem next to the file that caused it.
  */
-export async function readAttachment(file: File): Promise<Attachment> {
+export async function readAttachment(file: File, signal?: AbortSignal): Promise<Attachment> {
   if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
     throw new Error(`${file.name}: only PNG, JPEG, GIF and WebP images are supported`);
   }
   if (file.size > MAX_IMAGE_BYTES) {
     throw new Error(`${file.name}: larger than ${MAX_IMAGE_SIZE_LABEL}`);
   }
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error(`${file.name}: could not be read`));
-    reader.readAsDataURL(file);
-  });
+  const dataUrl = await readAttachmentDataUrl(file, signal);
   const b64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
   return { b64, mimeType: file.type, name: file.name };
 }
