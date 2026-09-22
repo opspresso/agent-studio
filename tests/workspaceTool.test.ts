@@ -13,7 +13,7 @@ import { WORKSPACE_TOOL_DEF } from "@/application/llm/workspaceToolDefinition";
 import { assembleAgentRun } from "@/application/llm/agentAssembly";
 import { runAgent } from "@/application/runtime";
 import { FakeChannel, contentChunk, toolCallChunk } from "./fakeChannel";
-import type { CodingApproval, CodingGitAction, PullRequestInfo } from "@/domain/coding/types";
+import type { CodingApproval, CodingAction, PullRequestInfo } from "@/domain/coding/types";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
@@ -163,11 +163,12 @@ describe("Workspace Agent capability", () => {
     expect(assembleAgentRun({}, {}).tools.some(tool => tool.function.name === "Workspace")).toBe(false);
     expect(assembleAgentRun({ workspaceTool: makeTool() }, {}).tools.some(tool => tool.function.name === "Workspace")).toBe(true);
   });
-  it.each<CodingGitAction>([
+  it.each<CodingAction>([
     { kind: "commit-and-push", message: "feat: change" },
     { kind: "pull-request", title: "Change", body: "Reviewed work", draft: false },
     { kind: "merge", pullRequestNumber: 7, headSha: "a".repeat(40) },
     { kind: "push-main" },
+    { kind: "deploy", workflow: "deploy.yml", ref: "main", inputs: { environment: "preview" } },
   ])("prepares $kind through the actual tool schema and reuses its pending review without native tasks", async action => {
     const workspace = await useCases.create({ projectName: "demo", chatId: "review-chat", createChat: true,
       title: "Review", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
@@ -176,14 +177,15 @@ describe("Workspace Agent capability", () => {
       review: { headSha: "a".repeat(40), treeSha: "b".repeat(40), diff: "+change", truncated: false } };
     requestGit.mockImplementationOnce(async () => {
       // PostgreSQL jsonb does not preserve the caller's object key order.
-      const stored = { ...approval, action: Object.fromEntries(Object.entries(action).reverse()) as CodingGitAction };
+      const stored = { ...approval, action: Object.fromEntries(Object.entries(action).reverse()) as CodingAction };
       await repository.write({ expectedRevision: workspace.revision,
         workspace: { ...workspace, activeActionId: approval.id, revision: workspace.revision + 1 } });
       await repository.write({ expectedRevision: workspace.revision + 1,
         workspace: { ...workspace, activeActionId: approval.id, revision: workspace.revision + 2 }, approval: stored });
       return approval;
     });
-    const request = { operation: "prepare_git", workspace_id: workspace.id, action };
+    const request = { operation: "prepare_git", workspace_id: workspace.id, action: action.kind === "deploy"
+      ? { ...action, inputs: Object.entries(action.inputs).map(([name, value]) => ({ name, value })) } : action };
     expect(() => createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!)({ request })).not.toThrow();
     const result = await invoke(request, "git-call");
     expect(result).toMatchObject({ status: "pending", approval_id: approval.id, approval_path: "/chats/review-chat#actions", approval_url: "https://studio.example.test/chats/review-chat#actions" });
@@ -193,6 +195,32 @@ describe("Workspace Agent capability", () => {
     await expect(makeTool("foreign")({ request }, "git-call")).rejects.toMatchObject({ status: 404 });
     await expect(makeTool("demo", "foreign@example.com")({ request }, "git-call")).rejects.toMatchObject({ status: 404 });
     expect(requestGit).toHaveBeenCalledTimes(1);
+  });
+  it("exposes current deployment choices without creating a workspace", async () => {
+    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest,
+      workdir: WORKSPACE_DIRECTORY, policy: () => ({ ...policy, deploymentWorkflows: ["deploy.yml"] }) },
+    { projectName: "demo", ownerEmail: owner, occurrence: "options" });
+    expect(JSON.parse((await tool({ request: { operation: "options" } }, "options")).text).deployment_workflows).toEqual(["deploy.yml"]);
+    expect(await repository.list(owner, 20)).toHaveLength(0);
+    expect(requestGit).not.toHaveBeenCalled();
+  });
+  it("rejects ambiguous deployment inputs and preserves approval-policy failures", async () => {
+    const workspace = await useCases.create({ projectName: "demo", chatId: "deploy-chat", createChat: true,
+      title: "Deploy", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
+    const action = { kind: "deploy", workflow: "deploy.yml", ref: "main", inputs: [] };
+    const request = { operation: "prepare_git", workspace_id: workspace.id, action };
+    const validate = createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!);
+    expect(() => validate({ request })).not.toThrow();
+    expect(() => validate({ request: { ...request, action: { ...action, ref: "feature" } } })).toThrow();
+    for (const inputs of [{}, [{ name: "target", value: 1 }], [{ name: "target", value: "a" }, { name: "target", value: "b" }]]) {
+      await expect(invoke({ ...request, action: { ...action, inputs } })).rejects.toThrow();
+    }
+    expect(requestGit).not.toHaveBeenCalled();
+    requestGit.mockRejectedValueOnce(new Error("Deployment must use an allowed workflow on main"));
+    await expect(invoke(request)).rejects.toThrow("allowed workflow");
+    expect(requestGit).toHaveBeenCalledExactlyOnceWith(workspace.id, owner,
+      { kind: "deploy", workflow: "deploy.yml", ref: "main", inputs: {} }, undefined);
+    expect(await repository.runs(workspace.id, 10)).toHaveLength(0);
   });
   it("reports PR publication and refreshes its current head/CI even without a native run", async () => {
     const workspace = await useCases.create({ projectName: "demo", chatId: "pr-chat", createChat: true,

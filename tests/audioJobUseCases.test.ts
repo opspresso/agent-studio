@@ -19,6 +19,23 @@ function fixture() {
   return { deps, input, api: createAudioJobUseCases(deps) };
 }
 describe("audio job use cases", () => {
+  it("checks the saved transcription channel before offering a configuration for new work", async () => {
+    const f = fixture();
+    const config = { projectName: "audio", userEmail: "owner@example.test", revision: 1, enabled: true,
+      updatedAt: "2026-09-09T00:00:00Z", model: "openai/whisper-1",
+      retention: { unit: "months" as const, value: 3, timezone: "Asia/Seoul" }, maxActive: 1, maxPerOccurrence: 1 };
+    f.deps.configs = { get: async () => config };
+    expect(await f.api.configuration("audio", config.userEmail)).toMatchObject({ revision: 1, model: config.model });
+    expect(f.deps.validateModel).toHaveBeenCalledExactlyOnceWith(config.model);
+    const missingModel = new Error("The selected model is not a registered transcription model");
+    vi.mocked(f.deps.validateModel).mockRejectedValue(missingModel);
+    await expect(f.api.configuration("audio", config.userEmail)).rejects.toBe(missingModel);
+    expect(f.deps.sourceIdentity).not.toHaveBeenCalled();
+    config.enabled = false;
+    vi.mocked(f.deps.validateModel).mockClear();
+    expect(await f.api.configuration("audio", config.userEmail)).toMatchObject({ enabled: false });
+    expect(f.deps.validateModel).not.toHaveBeenCalled();
+  });
   it("allows only the owner to delete terminal history and keeps source files intact", async () => {
     const f = fixture();
     await f.api.submit("audio", "owner@example.test", f.input, { occurrence: "deletion" });

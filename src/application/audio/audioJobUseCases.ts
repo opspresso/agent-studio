@@ -67,6 +67,7 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       const config = await deps.configs?.get(project);
       if (!config) return null;
       if (config.userEmail !== email) throw new ConflictError("Audio configuration requires owner confirmation");
+      if (config.enabled) await deps.validateModel(config.model);
       const { userEmail: _email, projectName: _project, ...view } = config;
       return view;
     },
