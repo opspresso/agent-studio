@@ -201,7 +201,8 @@ pnpm install --frozen-lockfile → typecheck → test → test:integration
 독립적인 정기 검사 workflow도 없다.
 
 tag workflow의 `github-release`와 `release`는 `verify` 뒤에 실행되고, 이미지 빌드에서
-Dockerfile의 `pnpm build`가 수행된다. 이미지 게시가 끝나면 `gitops`가 배포 이벤트를 전달한다.
+Dockerfile의 `pnpm build`가 수행된다. 이미지 게시가 끝나면 `gitops`가 alpha 이벤트를 자동 전달한다.
+`gitops-prod`는 alpha 전달 성공 후 `prod` Environment의 사용자 승인을 받아 prod 이벤트를 전달한다.
 PR workflow에는 Release 생성·registry 게시·GitOps 전달 job이 없다.
 릴리스 권한과 완료 확인은 [OPERATIONS](OPERATIONS.md#릴리스-파이프라인)를 따른다.
 

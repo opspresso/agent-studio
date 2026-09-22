@@ -147,3 +147,28 @@ jobs:
             -f client_payload[container]=app \
             -f client_payload[phase]=alpha \
             -f client_payload[type]=helm
+
+  gitops-prod:
+    name: Promote ${{ github.ref_name }} to prod
+    needs: gitops
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment:
+      name: prod
+      url: https://studio.opspresso.com
+    permissions:
+      contents: read
+    steps:
+      - name: Trigger prod GitOps
+        env:
+          GH_TOKEN: ${{ secrets.GHP_TOKEN }}
+        run: |
+          gh api repos/opspresso/argocd-env-demo/dispatches \
+            -f event_type=gitops \
+            -f client_payload[username]=opspresso \
+            -f client_payload[project]=agent-studio \
+            -f client_payload[version]="${GITHUB_REF_NAME}" \
+            -f client_payload[container]=app \
+            -f client_payload[phase]=prod \
+            -f client_payload[type]=helm
