@@ -489,14 +489,17 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
    * question — an https URL at a publicly routable address. `undefined` sends
    * the caller to the next way of getting a client, which is what the fallback
    * order exists for: a provider offering registration as well is not out of
-   * options just because this deployment cannot host a document.
+   * options just because this deployment cannot host a document. A failed
+   * policy lookup is not a verdict about that address and must not create a
+   * different client through registration.
    */
   async function servableMetadataUrl(projectName: string): Promise<string | undefined> {
     const url = clientMetadataUrl(await publicBase(), projectName);
     try {
       await assertAuthEndpoint(deps.urlPolicy, url, "Client ID metadata document");
       return url;
-    } catch {
+    } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
       return undefined;
     }
   }

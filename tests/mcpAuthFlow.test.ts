@@ -396,6 +396,27 @@ describe("beginAuthorization", () => {
     expect(connection?.clientFromMetadataDocument).toBeUndefined();
   });
 
+  it("does not register a new client when checking the metadata URL fails", async () => {
+    const h = harness({
+      server: {
+        ...SERVER,
+        auth: {
+          ...SERVER.auth!,
+          clientIdMetadataDocumentSupported: true,
+          registrationEndpoint: "https://auth.example.com/register",
+        },
+      },
+    });
+    const failure = new Error("resolver unavailable");
+    h.deps.urlPolicy.assertAllowed = async () => { throw failure; };
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toBe(failure);
+    expect(h.registrations).toHaveLength(0);
+    expect(h.connections.size).toBe(0);
+    expect(h.states.size).toBe(0);
+  });
+
   it("rebuilds a stored document client whose address this deployment no longer serves", async () => {
     // Without this the mistake is permanent rather than transient: the row still
     // has a `clientId`, so the next attempt sails past every branch and presents
