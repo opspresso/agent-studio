@@ -255,9 +255,9 @@ export async function disconnectProjectSlack(name: string): Promise<void> {
 
 export async function testProjectSlack(
   name: string,
-): Promise<{ ok?: boolean; team?: string; botUser?: string; error?: string }> {
+): Promise<{ ok: true; team?: string; botUser?: string }> {
   const res = await fetch(`/api/projects/${name}/slack/test`, { method: "POST" });
-  return (await res.json()) as { ok?: boolean; team?: string; botUser?: string; error?: string };
+  return readJson<{ ok: true; team?: string; botUser?: string }>(res);
 }
 
 export async function listProjectSlackChannels(
