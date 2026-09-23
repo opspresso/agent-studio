@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useStickToBottom } from "use-stick-to-bottom";
+import { useLatestScroll } from "@/app/_lib/useLatestScroll";
 import { Alert, Anchor, Badge, Box, Button, Code, Group, Loader, ScrollArea, Select, Stack, Tabs, Text, Textarea, Title } from "@mantine/core";
 import { IconArrowDown, IconPlayerStop, IconSend } from "@tabler/icons-react";
 import { useLocale, useT } from "@/app/_i18n/provider";
@@ -25,8 +25,8 @@ export function WorkspacePanel({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [options, setOptions] = useState<WorkspaceOptionsResponse | null>(null);
   const request = useRef<{ body: string; key: string } | null>(null);
-  const { detail, events, error: loadError, refresh, runId } = useWorkspace(id, selected);
-  const { scrollRef, contentRef, isNearBottom, scrollToBottom } = useStickToBottom({ resize: "smooth", initial: "instant" });
+  const { detail, events, loadedEventsRunId, error: loadError, refresh, runId } = useWorkspace(id, selected);
+  const { scrollRef, contentRef, isNearBottom, scrollToBottom } = useLatestScroll(!!detail && (!runId || loadedEventsRunId === runId), `${id}:${runId ?? ""}`);
   const output = useMemo(() => events.flatMap(event => {
     const data = event.data;
     if (data.kind === "output" || data.kind === "message") return [data.text];
@@ -87,7 +87,7 @@ export function WorkspacePanel({ id }: { id: string }) {
     <Tabs value={tab} onChange={setTab} style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <Tabs.List><Tabs.Tab value="output">{t("workspace.output")}</Tabs.Tab><Tabs.Tab value="diff">Diff</Tabs.Tab><Tabs.Tab value="checks">{t("workspace.checks")}</Tabs.Tab>{workspace.coding && <Tabs.Tab value="actions">{t("workspace.actions")}</Tabs.Tab>}</Tabs.List>
       <Box style={{ position: "relative", flex: 1, minHeight: 0 }}>
-        <ScrollArea h="100%" viewportRef={scrollRef}>
+        <ScrollArea h="100%" viewportRef={scrollRef} data-testid="workspace-scroll-area">
           <div ref={contentRef}><Box p="sm">
             <Tabs.Panel value="output"><Stack gap="sm">
               {run && <Box p="sm" bg="var(--mantine-color-default-hover)"><Text size="xs" c="dimmed">{t("workspace.request")}</Text><Text size="sm" style={{ whiteSpace: "pre-wrap" }}>{run.input.kind === "task" ? run.input.prompt : run.input.script}</Text></Box>}

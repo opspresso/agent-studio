@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useStickToBottom } from "use-stick-to-bottom";
+import { useLatestScroll } from "@/app/_lib/useLatestScroll";
 import { attachmentSrc, type Attachment } from "@/app/_lib/imageAttachments";
 import { useT } from "@/app/_i18n/provider";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
@@ -119,10 +119,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
    * it lands at the bottom rather than scrolling the whole history past the
    * reader to get there.
    */
-  const { scrollRef, contentRef, isNearBottom, scrollToBottom } = useStickToBottom({
-    resize: "instant",
-    initial: "instant",
-  });
+  const { scrollRef, contentRef, isNearBottom, scrollToBottom } = useLatestScroll(status === "ready", chatId);
   const syncSeq = useRef(0);
   const consuming = useRef<number | null>(null);
   /** The run this view last picked up, and how many times — see `MAX_ATTACHES`. */
@@ -383,25 +380,6 @@ export function ChatThread({ chatId }: { chatId: string }) {
       runStore.release(chatId, consumedId);
     }
   }, [chatId, consumedId]);
-
-  /**
-   * Land at the bottom the first time the thread has anything to show.
-   *
-   * `initial` covers a container that already holds its content on mount, and
-   * this one never does: the list is empty until a fetch comes back, and the
-   * hook sees that arrival as an ordinary resize — which it correctly refuses to
-   * scroll on, because a reader who is not at the bottom should not be dragged
-   * there. On first paint that leaves the reader at the top of the history
-   * rather than at the end of it, which is where they opened the chat to be.
-   */
-  const landed = useRef(false);
-  useEffect(() => {
-    if (status !== "ready" || landed.current) {
-      return;
-    }
-    landed.current = true;
-    void scrollToBottom({ animation: "instant" });
-  }, [status, scrollToBottom]);
 
   function handleSend(
     content: string,

@@ -95,8 +95,9 @@ lease 해제는 source 바깥의 `runLog.ts`가 맡는다. 준비 단계 실패�
 
 ### 스크롤과 입력
 
-`ChatThread`의 `use-stick-to-bottom`이 viewport를 소유한다. 아래를 읽을 때 답변을 따라가고,
-위로 이동한 사용자는 최신으로 이동하는 버튼으로 돌아온다. 메시지 전송은 다시 답변을 따라가는 행동이다.
+`ChatThread`의 `useLatestScroll`이 viewport를 소유한다. 기록을 읽은 뒤 즉시 마지막으로 이동하고,
+아래에 머무는 동안 새 답변을 따라간다. 위로 이동한 사용자는 최신으로 이동하는 버튼으로 돌아온다.
+메시지 전송은 다시 답변을 따라가는 행동이다.
 버튼은 `isNearBottom`을 사용하고 스레드 자식이 양 축을 모두 스크롤해 wheel 이벤트를 가로채지 않게 한다.
 Enter 전송은 IME 조합을 보존하는 공통 `isSubmitEnter`를 사용한다.
 

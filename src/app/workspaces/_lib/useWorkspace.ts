@@ -16,6 +16,7 @@ function mergeRows<T extends { id: string }>(previous: T[], latest: T[]): T[] {
 export function useWorkspace(id: string, selectedRun: string | null) {
   const [detail, setDetail] = useState<WorkspaceDetailResponse | null>(null);
   const [events, setEvents] = useState<WorkspaceEvent[]>([]);
+  const [loadedEventsRunId, setLoadedEventsRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const loaded = useRef(false);
   const revision = useRef(-1);
@@ -49,24 +50,30 @@ export function useWorkspace(id: string, selectedRun: string | null) {
   const runId = selectedRun ?? detail?.runs[0]?.id;
   useEffect(() => {
     setEvents([]);
+    setLoadedEventsRunId(null);
     if (!runId) return;
+    const eventRunId: string = runId;
     let stopped = false;
-    let after = Math.max(0, (detailRef.current?.runs.find(run => run.id === runId)?.lastEventSeq ?? 0) - 2000);
+    let after = Math.max(0, (detailRef.current?.runs.find(run => run.id === eventRunId)?.lastEventSeq ?? 0) - 2000);
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       let more = false;
       try {
-        const data = await readJson<WorkspaceEventsResponse>(await fetch(`/api/workspaces/${id}/events?run=${encodeURIComponent(runId!)}&after=${after}`));
+        const data = await readJson<WorkspaceEventsResponse>(await fetch(`/api/workspaces/${id}/events?run=${encodeURIComponent(eventRunId)}&after=${after}`));
         if (stopped) return;
         after = data.nextSeq; more = data.hasMore;
         if (data.events.length) setEvents(previous => [...previous, ...data.events].slice(-2000));
+        setLoadedEventsRunId(eventRunId);
       } catch (error) { if (!stopped) setError(error instanceof Error ? error.message : "Workspace output could not be read"); }
-      const run = detailRef.current?.runs.find(run => run.id === runId);
+      const run = detailRef.current?.runs.find(run => run.id === eventRunId);
       const finished = run && run.status !== "queued" && run.status !== "running" && after >= run.lastEventSeq;
       if (!stopped && !finished) timer = setTimeout(poll, more ? 0 : 700);
     }
     void poll();
     return () => { stopped = true; clearTimeout(timer); };
   }, [id, runId]);
-  return { detail, events, error, refresh, runId };
+  // A run switch renders before its effect clears the previous page of events.
+  // Never draw that previous run's output under the newly selected run's header.
+  const visibleEvents = events[0] && events[0].runId !== runId ? [] : events;
+  return { detail, events: visibleEvents, loadedEventsRunId, error, refresh, runId };
 }

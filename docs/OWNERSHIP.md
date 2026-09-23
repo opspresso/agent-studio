@@ -86,7 +86,7 @@
 | Chat 메시지를 꼬리부터 읽는 정렬 키 범위 | `src/infrastructure/db/keys.ts` 의 `chatMessageRange`. 하한 클램프까지 포함해서 | 코드 |
 | 꼬리로 읽어 온 메시지를 화면의 것과 어떻게 합치는가 | `src/app/chats/_lib/mergeMessages.ts` | 코드 |
 | chat 런이 브라우저에 어떻게 닿는가 | `src/app/api/chats/_lib/detachedRun.ts` | 코드 |
-| 답변이 스트리밍되는 동안 chat 뷰포트를 누가 소유하는가 | `src/app/chats/_components/ChatThread.tsx` 의 `useStickToBottom` | 코드 |
+| 답변이 스트리밍되는 동안 chat 뷰포트를 누가 소유하는가 | `src/app/chats/_components/ChatThread.tsx` 의 `useLatestScroll`; 첫 진입과 하단 추적 규칙은 `src/app/_lib/useLatestScroll.ts` | 코드 |
 | 플랫폼이 히스토리를 남기지 않을 때 chat-bot 표면이 conversation 에 대해 무엇을 기억하는가 | `src/domain/messaging/transcript.ts` 의 `ConversationTranscriptRepository`. Telegram 과 Teams 핸들러가 `transcriptHistory.ts` 를 통해 쓰고 읽는다 | 코드 |
 
 ## 파일·문서·오디오

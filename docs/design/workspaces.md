@@ -251,6 +251,7 @@ Chats의 Workspace 선택에서 프로젝트, Runtime, 선택적 저장소·기�
 입력한다. 기존 Chat 실행과 Workspace 실행은 같은 채팅 화면의 별도 경로를 사용한다.
 목록은 `workspaceId`로 Workspaces와 대화를 나누어 탭으로 표시하고, 선택한 탭은 브라우저에 보관한다.
 Workspace 화면은 유형 배지와 실행 출력·Diff·검사 결과, 명시적 Git·배포 승인을 보여 준다.
+출력은 첫 조회와 실행 전환 뒤 마지막 행을 즉시 보여 주고, 사용자가 위로 이동하면 새 출력을 따라가지 않는다.
 승인 링크의 `#actions`는 Git·배포 탭을 바로 연다. 새 요청은
 동일한 Workspace와 native Session에서 이어지며 페이지를 떠나도 서버 작업은 계속된다.
 
