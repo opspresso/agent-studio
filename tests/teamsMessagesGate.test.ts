@@ -82,6 +82,18 @@ describe("the Teams messaging endpoint", () => {
     expect(res.status).toBe(400);
   });
 
+  it.each([
+    null,
+    [],
+    personal("hi", { serviceUrl: 42 }),
+    personal("hi", { entities: "not entities" }),
+    personal("hi", { attachments: "not attachments" }),
+  ])("refuses a malformed activity before claiming it: %j", async (payload) => {
+    const res = await handleTeamsActivityRequest(request(payload), BINDING);
+    expect(res.status).toBe(400);
+    expect(claim).not.toHaveBeenCalled();
+  });
+
   it("claims and handles a personal message, keyed by conversation and activity id, and acks with 202", async () => {
     const res = await handleTeamsActivityRequest(request(personal("hi")), BINDING);
     expect(res.status).toBe(202);
