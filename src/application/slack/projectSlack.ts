@@ -17,6 +17,7 @@ import {
   MIN_KEYWORD_LENGTH,
 } from "@/domain/slack/types";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
+import { DEFAULT_SERVICE_NAME } from "@/shared/branding";
 import { slackSecretContext } from "@/domain/security/secretContext";
 
 export interface ProjectSlackView {
@@ -238,16 +239,17 @@ export function resolveProjectSlackRuntime(
   };
 }
 
-function defaultAgentDescription(project: Project): string {
-  return `Agent Studio bot for the ${project.name} project`;
+function defaultAgentDescription(project: Project, serviceName: string): string {
+  return `${serviceName} bot for the ${project.name} project`;
 }
 
 /** Slack app manifest for this project's dedicated bot. */
 export function buildProjectSlackManifest(
   project: Project,
   baseUrl: string,
+  serviceName = DEFAULT_SERVICE_NAME,
 ): Record<string, unknown> {
-  const description = project.description.trim() || defaultAgentDescription(project);
+  const description = project.description.trim() || defaultAgentDescription(project, serviceName);
   return {
     display_information: {
       name: project.displayName.slice(0, 35),

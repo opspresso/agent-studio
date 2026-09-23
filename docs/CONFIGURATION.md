@@ -1,6 +1,6 @@
 # 설정
 
-Agent Studio 가 환경에서 읽는 모든 값, 그리고 코드에 고정돼 있어 *설정할 수 없는* 제한들.
+이 앱이 환경에서 읽는 모든 값, 그리고 코드에 고정돼 있어 *설정할 수 없는* 제한들.
 `.env.example` 은 복사해 쓰는 템플릿이고, 이 문서는 각 값이 무엇을 하는지와 값이 잘못됐을
 때 무슨 일이 일어나는지를 설명하는 레퍼런스다.
 
@@ -79,6 +79,8 @@ fail-open 이 될 수는 없다.
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
 | `STAGE` | production 밖에서는 `local` | — | `local` \| `alpha` \| `prod`. 그 밖의 값은 부팅 시 throw 하며, 프로덕션 프로세스는 이 값을 명시적으로 설정해야 한다. 위의 접근 제어 검사를 게이트한다. |
+| `SERVICE_NAME` | `Agent Studio` | — | 화면·브라우저 제목·안내 문구, MCP OAuth 클라이언트 이름, Slack 매니페스트의 기본 설명에 표시할 이름. 앞뒤 공백을 제거한 한 줄, 최대 80자. `SERVICE_LOGO`와 독립적으로 설정한다. |
+| `SERVICE_LOGO` | `agent-studio` | — | `public/brands/<값>/` 자산 폴더 선택자. 내장 폴더는 `agent-studio`, `agentops`다. 소문자·숫자·하이픈만 허용하며 `logo.png`, `favicon.ico`, `favicon-32.png`, `icon-192.png`, `apple-touch-icon.png`가 모두 없으면 부팅을 거부한다. 새 브랜드도 같은 파일을 추가해 선택한다. 예: `SERVICE_NAME=AgentOps`, `SERVICE_LOGO=agentops`. |
 | `DATABASE_URL` | — (필수) | — | PostgreSQL 접속 문자열 (`postgres://user:pass@host:5432/db`). 이 앱의 모든 행. 아이템 테이블, Better Auth 의 테이블, capability 카탈로그의 벡터. 이 여기 있다. 서버에 `pgvector` 확장을 *만들 수 있어야* 한다 (`CREATE EXTENSION IF NOT EXISTS vector` 를 부팅 때 앱이 실행한다). 스키마는 부팅 때 마이그레이션된다. |
 | `DATABASE_POOL_SIZE` | `10` | — | 프로세스 하나의 최대 DB connection 수, 하한 1. 웹 replica와 worker별 pool을 합산해 DB의 접속 한도 안에 배치한다. 모델 응답을 기다리는 동안 DB connection을 계속 점유하지 않는다. |
 | `AWS_REGION` | `ap-northeast-2` | — | AWS 를 쓰는 기능. Bedrock 임베딩, `S3_ENDPOINT` 없이 AWS S3 자체를 쓸 때의 클라이언트. 이 쓰는 리전. 그 밖에는 읽히지 않는다. |
@@ -317,13 +319,13 @@ Codex·Claude·OpenCode의 모델은 **Model 사용 설정 → 워크스페이�
 Codex는 Responses 호환 채널, Claude는 Anthropic 채널, OpenCode는 지원하는 OpenAI 호환 채널을
 사용한다. OpenCode의 OpenAI 채널은 기본 Responses loader를 쓰고, 다른 호환 채널은 별도 provider와
 번들된 `@ai-sdk/openai-compatible`로 Chat Completions를 사용한다. 외부 모델 카탈로그 자동 조회는 끄고
-Studio에서 선택한 모델을 전달한다. provider/model의 전송용 이름은 유지한다.
+앱에서 선택한 모델을 전달한다. provider/model의 전송용 이름은 유지한다.
 선택 가능한 모델은 text·tools 지원과 API 키 채널 연결이 필요하다. `sigv4`는 네이티브
 CLI에 제공하지 않는다. 모델을 해제하면 새 native 작업은 거절하지만 이미 시작한 operation의 조회·복구는
 유지한다. 일반 명령에는 모델이 필요 없다. Git·클라우드·운영 환경변수는 Sandbox에 상속하지 않는다.
 Workspace 실행 시간은 `MAX_RUN_DURATION_MS`를 사용하며 재시작해도 최초 시작 시각에서 계산한다.
-일반 명령은 Studio 모델 설정 없이 공통 비용·동시성·메트릭 bracket을 사용한다. CLI 모델 사용량은
-Studio의 SDK 모델 usage와 별개이며 CLI/provider의 사용량 기록을 따른다.
+일반 명령은 앱 모델 설정 없이 공통 비용·동시성·메트릭 bracket을 사용한다. CLI 모델 사용량은
+앱의 SDK 모델 usage와 별개이며 CLI/provider의 사용량 기록을 따른다.
 
 Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐·TTL·승인 결과 전달과 CI 대기가
 진행되지 않는다. Workspace task와 채팅 후속 실행은 각각 workerConcurrency 상한을 적용하는 별도 큐다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.

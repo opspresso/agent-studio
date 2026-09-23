@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { resolvePublicBaseUrl } from "@/lib/public-url";
 import { withAuth } from "@/lib/session";
+import { config } from "@/lib/config";
 import { projectSlackUseCases } from "@/lib/container";
 import {
   buildProjectSlackManifest,
@@ -54,7 +55,7 @@ async function slackResponse({ project, view }: ProjectSlackResult, baseUrl: str
   return Response.json({
     ...view,
     eventsUrl: `${baseUrl}${view.eventsPath}`,
-    manifest: buildProjectSlackManifest(project, baseUrl),
+    manifest: buildProjectSlackManifest(project, baseUrl, config.branding.name),
   } satisfies ProjectSlackResponse);
 }
 

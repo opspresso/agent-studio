@@ -138,6 +138,7 @@ function harness(
   }
 
   const deps: McpAuthUseCasesDeps = {
+    serviceName: "Agent Studio",
     mcps: { get: async (name: string) => (name === server.name ? server : null) } as never,
     projects: {
       get: async (name: string) =>
@@ -257,7 +258,7 @@ describe("beginAuthorization", () => {
     await uc.beginAuthorization("p", "slack", OWNER);
 
     expect(h.registrations).toHaveLength(1);
-    expect(h.registrations[0]).toMatchObject({ redirectUri: CALLBACK });
+    expect(h.registrations[0]).toMatchObject({ redirectUri: CALLBACK, clientName: "Agent Studio — p" });
     const connection = h.connections.get("p/slack");
     expect(connection?.clientId).toBe("dcr-client");
     expect(connection?.clientRegistered).toBe(true);

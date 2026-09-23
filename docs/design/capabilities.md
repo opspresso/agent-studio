@@ -118,7 +118,7 @@ background 후처리는 discovery·MCP·subagent를 제공하지 않는다.
 
 ## 메모리
 
-장기 지식은 연결된 MCP 서버가 보관한다. Studio는 서버의 `recall`·`remember` 등의 도구를
+장기 지식은 연결된 MCP 서버가 보관한다. 앱은 서버의 `recall`·`remember` 등의 도구를
 사용하며 저장 범위·ACL·보존은 서버가 결정한다. Chat의 SDK Session은 해당 대화의 모델 이력으로
 장기 Memory와 별개다.
 

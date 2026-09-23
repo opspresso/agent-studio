@@ -69,6 +69,7 @@ function harness() {
     }),
   };
   const uc = createMcpAuthUseCases({
+    serviceName: "Agent Studio",
     mcps: mcpRepository, connections: mcpConnectionRepository, states: mcpOAuthStateRepository,
     projects: { get: async (name: string) => ({ name, ownerEmail: OWNER }) } as never,
     oauth, cipher: secretCipher, metadata, urlPolicy: policy, probe, authProvider: provider,

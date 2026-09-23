@@ -71,7 +71,7 @@ Worker와 Git 작업은 adapter를 기다리는 동안에도 3분 lease를 1분�
 adapter 호출은 결과를 기다리며, 불확실한 효과를 자동으로 재실행하지 않는다.
 
 실행은 `executeWorkspaceTask` facade와 공통 `openTaskRun` bracket을 지난다. 일반 명령에는
-Studio 모델 설정이 없으므로 모델을 임의로 만들지 않는다. 기존 프로젝트의 비용·멤버 상한,
+앱 모델 설정이 없으므로 모델을 임의로 만들지 않는다. 기존 프로젝트의 비용·멤버 상한,
 동시성 슬롯과 메트릭은 유지한다. Native CLI의 토큰·비용은 SDK 모델 usage와 별개다.
 
 비활성 Workspace는 `suspending`으로 바꿔 새 접수를 막은 뒤 체크포인트 저장 → Sandbox 삭제 →

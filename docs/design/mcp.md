@@ -74,7 +74,7 @@ throw 동작과 `SdkErrorCode` 매핑을 확인한다.
 
 `toolManager.ts`는 검증된 결과를 모델용 텍스트·이미지·파일로 나눈다.
 
-| MCP 결과 | Studio 처리 |
+| MCP 결과 | 앱 처리 |
 |---|---|
 | text | 도구 결과 예산 내 텍스트 |
 | image 또는 image resource blob | 제한된 bytes를 사용자에게 전달하고 이미지 지원 모델의 문맥에도 연결 |

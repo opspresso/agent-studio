@@ -1,5 +1,6 @@
 import { clientMetadataDocument } from "@/application/mcp/mcpAuthUseCases";
 import { getPublicBaseUrl } from "@/lib/runtime-settings";
+import { config } from "@/lib/config";
 import { isSlug } from "@/domain/naming";
 
 type RouteContext = { params: Promise<{ project: string }> };
@@ -39,7 +40,7 @@ export async function GET(_request: Request, ctx: RouteContext): Promise<Respons
     // redirect to whatever host asked for it.
     return new Response("A public base URL is not configured", { status: 503 });
   }
-  return Response.json(clientMetadataDocument(base, project), {
+  return Response.json(clientMetadataDocument(base, project, config.branding.name), {
     headers: {
       // Servers are told to cache these by HTTP headers. Short, because the
       // document changes when the deployment's own address does, and an

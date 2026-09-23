@@ -36,6 +36,7 @@ import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useT } from "@/app/_i18n/provider";
 import { tierAtLeast } from "@/domain/member/tiers";
 import type { Viewer } from "@/lib/viewer";
+import type { Branding } from "@/shared/branding";
 import type { SignInProviders } from "./SignInButton";
 import { LocaleToggle } from "./LocaleToggle";
 import { ThemeToggle } from "./ThemeToggle";
@@ -141,12 +142,14 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 export function AppLayout({
+  branding,
   version,
   viewer,
   userImage,
   signInProviders,
   children,
 }: {
+  branding: Branding;
   version: string;
   /** Resolved by the root layout; `null` when nobody is signed in. */
   viewer: Viewer | null;
@@ -269,11 +272,11 @@ export function AppLayout({
             )}
             <UnstyledButton component={Link} href="/" className={classes.brand}>
               <span className={classes.logoWrap}>
-                <Image src="/logo.png" alt="" width={28} height={28} priority />
+                <Image src={branding.logoUrl} alt="" width={28} height={28} priority />
               </span>
               <div className={classes.brandText}>
                 <Text fw={650} fz="md" lh={1.1}>
-                  Agent Studio
+                  {branding.name}
                 </Text>
                 <Text fz={10} c="dimmed" tt="uppercase" lts="0.12em" visibleFrom="xs">
                   {t("chrome.tagline")}

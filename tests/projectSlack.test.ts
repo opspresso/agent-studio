@@ -200,6 +200,11 @@ describe("schedule channel choices", () => {
 });
 
 describe("buildProjectSlackManifest", () => {
+  it("uses the selected service name for a generated description", () => {
+    const manifest = buildProjectSlackManifest(makeProject(), "https://studio.example.com", "AgentOps");
+    expect((manifest.display_information as { description: string }).description).toBe("AgentOps bot for the bot-proj project");
+  });
+
   it("points the events URL at the per-project path", () => {
     const manifest = buildProjectSlackManifest(makeProject(), "https://studio.example.com");
     const settings = manifest.settings as {

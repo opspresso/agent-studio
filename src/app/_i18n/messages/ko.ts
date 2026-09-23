@@ -116,7 +116,7 @@ export const ko: Messages = {
   "models.selectedOnly": "선택된 모델만 보기",
   "modelAdmin.chooseType": "모델 유형 선택",
   "modelAdmin.manualHint": "모델 ID를 바로 등록한다. 한도·기능·가격은 등록 모델 관리에서 수정할 수 있다.",
-  "modelAdmin.unsupportedType": "Studio에서 지원하지 않는 출력 유형이다.",
+  "modelAdmin.unsupportedType": "지원하지 않는 출력 유형입니다.",
   "modelAdmin.factsHint": "Provider 메타데이터를 우선 사용한다. 누락된 정보는 내장된 공개 모델 카탈로그로 보완하며, 확인되지 않은 한도와 가격은 미지정 상태로 둔다.",
   "models.capability.tools": "Tools",
   "models.capability.imageInput": "Vision",
@@ -405,7 +405,7 @@ export const ko: Messages = {
   "auth.signOut": "로그아웃",
   "auth.account": "계정",
   "login.title": "로그인이 필요합니다",
-  "login.product": "Agent Studio, AI 에이전트를 만들고 활용하는 플랫폼입니다.",
+  "login.product": "{serviceName}에서 AI 에이전트를 만들고 활용하세요.",
   "login.domains": "이 배포가 허용한 도메인의 계정으로 로그인하세요.",
 
   "home.domain.workspaces": "Workspace와 Sandbox",
@@ -421,7 +421,7 @@ export const ko: Messages = {
   "home.headline": "AI 에이전트를 만들고",
   "home.headlineAccent": " 다양한 작업에 활용하세요.",
   "home.lede":
-    "Agent Studio는 모델·Skill·도구를 연결하는 에이전트 플랫폼입니다. Agent의 지시문과 도구를 구성하고 대화·API·메신저·자동화에서 활용하세요.",
+    "{serviceName}에서 모델·Skill·도구를 연결합니다. Agent의 지시문과 도구를 구성하고 대화·API·메신저·자동화에서 활용하세요.",
   "home.signInHint": "허용된 도메인의 계정으로 로그인하세요.",
   "home.proof.network": "아이디어를 에이전트로",
   "home.proof.networkNote": "한 플랫폼에서 생성·검증·실행",
@@ -432,7 +432,7 @@ export const ko: Messages = {
   "home.streamLabel": "에이전트 실행 스트림 예시",
   "home.streamCaption": "agent run · text/event-stream",
   "home.streamLive": "예시",
-  "home.coverage": "Agent Studio의 주요 기능",
+  "home.coverage": "{serviceName} 주요 기능",
   "home.domain.projects": "Agent와 설정",
   "home.domain.projectsBody":
     "각 Agent는 하나의 현재 설정을 가진 Agent입니다. 모델·지시문·역량·한도를 저장하면 다음 실행부터 적용됩니다.",
@@ -467,11 +467,11 @@ export const ko: Messages = {
     "Agent를 메신저·API·Webhook·스케줄로 호출합니다. 창구마다 식별자·이력·승인 규칙이 다르며 Workspace 지원 범위도 다릅니다.",
   "home.domain.cost": "비용과 한도",
   "home.domain.costBody":
-    "Studio 모델 호출 비용을 Agent·호출자·날짜별로 기록합니다. 설정한 임계값으로 알리거나 새 실행을 차단하며, 외부 Workspace CLI 사용량은 해당 제공자 기록에서 별도로 확인합니다.",
+    "모델 호출 비용을 Agent·호출자·날짜별로 기록합니다. 설정한 임계값으로 알리거나 새 실행을 차단하며, 외부 Workspace CLI 사용량은 해당 제공자 기록에서 별도로 확인합니다.",
   "home.domain.traces": "트레이스와 감사 로그",
   "home.domain.tracesBody":
     "기록된 모델 실행·도구 활동·사용량을 확인합니다. 트레이스와 감사는 범위·보존 기간이 다르며 관리자 변경과 발급된 시크릿 접근을 감사 기록에 남깁니다.",
-  "home.guide.title": "Agent Studio 시작하기",
+  "home.guide.title": "{serviceName} 시작하기",
   "home.guide.body": "Agent 설정, 도구 연결, Workspace 사용과 승인 결과 확인을 안내합니다. 실행 창구마다 지원하는 기능을 확인할 수 있으며 로그인 없이 읽을 수 있습니다.",
   "home.product": "AI 에이전트 플랫폼입니다.",
 
@@ -576,7 +576,7 @@ export const ko: Messages = {
   "guide.contents": "목차",
 
   "guide.start.title": "처음 시작하기",
-  "guide.start.body": "Agent Studio는 요청에 답하고 도구를 사용하는 Agent를 관리하는 플랫폼이다. 이 가이드는 로그인 없이 읽을 수 있다. 대화를 시작하려면 로그인 후 Chats에서 Agent를 선택하고, 직접 만들려면 아래 순서로 진행한다.",
+  "guide.start.body": "요청에 답하고 도구를 사용하는 Agent를 {serviceName}에서 관리한다. 이 가이드는 로그인 없이 읽을 수 있다. 대화를 시작하려면 로그인 후 Chats에서 Agent를 선택하고, 직접 만들려면 아래 순서로 진행한다.",
   "guide.start.account": "1. 로그인과 권한 확인",
   "guide.start.accountBody":
     "조직에서 받은 접속 주소를 열고 화면에 표시된 방식으로 로그인한다. Profile에서 내 등급·사용량·한도를 확인한다. 새 계정은 보통 guest로 시작하므로 Agent 생성이 불가능하면 관리자에게 Members에서 등급 변경을 요청한다.",
@@ -713,7 +713,7 @@ export const ko: Messages = {
     "검증한 Agent 설정을 저장하고 Integrations에서 Agent 토큰을 발급한다. 소유자 tier가 API 토큰을 허용해야 한다. Authorization: Bearer <token>으로 보내며 해당 Agent 실행으로 범위가 제한된다. 서비스 actor로 실행하고 연결된 MCP 서버에는 소유자 이메일을 전달하므로 해당 도구에 접근하는 자격 증명으로 취급한다. 브라우저 로그인이나 Workspace 도구를 얻는 수단은 아니다.",
   "guide.api.address": "Agent 주소 사용하기",
   "guide.api.addressBody":
-    "실행 URL은 /api/projects/{name}/으로 시작하며 Agent의 현재 저장된 설정을 사용한다. 작업은 messages로 보낸다. 호출 시스템에서 접근 가능한 Agent Studio 주소를 사용한다.",
+    "실행 URL은 /api/projects/{name}/으로 시작하며 Agent의 현재 저장된 설정을 사용한다. 작업은 messages로 보낸다. 호출 시스템에서 접근 가능한 {serviceName} 주소를 사용한다.",
   "guide.api.input": "작업을 메시지로 보내기",
   "guide.api.inputBody":
     "predict에 {\"messages\":[{\"role\":\"user\",\"content\":\"이 메모를 요약해 줘\"}],\"stream\":false}를 보낸다. 필요하면 지원되는 인라인 이미지 part를 추가한다. 이미지 생성·편집은 Agent의 이미지 도구가 수행한다. 요청 하나로 답변·경고·사용량을 먼저 확인한다.",
@@ -725,7 +725,7 @@ export const ko: Messages = {
     "텍스트 predict나 chat/completions에 stream:true를 보내면 SSE로 응답하며 agent에는 텍스트와 도구 활동을 스트리밍하는 전용 엔드포인트도 있다. 연결을 유지하고 경고·오류·종료 이벤트까지 처리한다. HTTP 200만으로 실행 성공을 판단할 수는 없다. HTTP 호출자는 이전 메시지를 직접 보내야 한다. X-Conversation-Id는 하위 MCP의 대화 식별을 이어 주지만 과거 메시지를 자동으로 불러오지는 않는다.",
   "guide.api.result": "결과 확인과 토큰 관리",
   "guide.api.resultBody":
-    "답변뿐 아니라 usage·warnings·종료 사유도 확인한다. predict의 turn-limit·output-limit는 부분 결과를 뜻하며 chat completions의 한도 종료는 length로 표시된다. 파일 결과는 링크가 만료되기 전에 내려받는다. 토큰은 호출 서버의 비밀 저장소에 보관한다. 재발급하거나 폐기하면 기존 토큰이 즉시 무효가 되므로 모든 호출자를 함께 갱신한다. OpenAI 호출의 토큰 합계는 완료형 응답이나 Studio 사용량 화면에서 확인한다.",
+    "답변뿐 아니라 usage·warnings·종료 사유도 확인한다. predict의 turn-limit·output-limit는 부분 결과를 뜻하며 chat completions의 한도 종료는 length로 표시된다. 파일 결과는 링크가 만료되기 전에 내려받는다. 토큰은 호출 서버의 비밀 저장소에 보관한다. 재발급하거나 폐기하면 기존 토큰이 즉시 무효가 되므로 모든 호출자를 함께 갱신한다. OpenAI 호출의 토큰 합계는 완료형 응답이나 사용량 화면에서 확인한다.",
 
   "guide.integrations.title": "봇·자동화 연동",
   "guide.integrations.body":
@@ -763,7 +763,7 @@ export const ko: Messages = {
   "guide.security.visibilityBody":
     "public Agent는 이 설치에 로그인한 사용자가 접근할 수 있다는 뜻이며 모든 API를 익명 공개하는 의미는 아니다. private Agent는 소유자·초대 이메일·관리자로 접근을 제한한다. 초대는 조회·실행 권한이며 편집 권한이 아니다. 소유자와 관리자가 Agent 설정·연동·Trace·Agent 전체 Artifact를 관리한다. 기계 호출의 자격 증명에는 별도 접근 규칙이 적용된다.",
   "guide.security.credentials": "비밀값과 공유 링크",
-  "guide.security.credentialsBody": "저장된 키는 앞뒤 4자를 표시하고 8자 이하는 전부 숨긴다. 교체를 누르면 별도 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다. 환경변수로 복원은 설정 재정의를 명시적으로 제거한다. Studio 발급 Agent·Webhook 키는 보기·숨기기·복사와 지원되는 생성·폐기 동작을 공통으로 사용한다. 원문을 표시한 동안에만 복사하며 교체·폐기는 확인을 거친다. 브라우저 조회 조건에는 자격 증명을 저장하지 않는다. 서명된 Artifact URL도 자격 증명으로 취급한다.",
+  "guide.security.credentialsBody": "저장된 키는 앞뒤 4자를 표시하고 8자 이하는 전부 숨긴다. 교체를 누르면 별도 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다. 환경변수로 복원은 설정 재정의를 명시적으로 제거한다. 이 서비스에서 발급한 Agent·Webhook 키는 보기·숨기기·복사와 지원되는 생성·폐기 동작을 공통으로 사용한다. 원문을 표시한 동안에만 복사하며 교체·폐기는 확인을 거친다. 브라우저 조회 조건에는 자격 증명을 저장하지 않는다. 서명된 Artifact URL도 자격 증명으로 취급한다.",
   "guide.security.pii": "PII 필터의 적용 범위",
   "guide.security.piiBody":
     "Agent의 PII filtering은 모델에 보낼 텍스트에서 인식한 패턴을 치환하고 사용자에게 보여 줄 결과에서 복원한다. 완전한 익명화는 아니며 도구 인자·저장된 답변·추론·파일에 복원된 정보가 포함될 수 있다. 동적 검색의 embedding/rerank 질의와 memory recall 질의는 이 필터 밖이다. 민감한 작업에는 승인된 모델과 도구 서비스를 사용한다.",
@@ -792,7 +792,7 @@ export const ko: Messages = {
   "guide.admin.auditBody":
     "Audit에서 기간을 선택해 작업자·동작·대상·상세를 확인한다. 자격 증명 원문 조회도 기록된다. 설정 변경이나 발급된 비밀값 조회를 조사할 때 이 기록을 사용하고 실행 진단에는 Agent Traces를 사용한다. 두 기록 모두 보존 기간의 영향을 받는다.",
 
-  "guide.install.title": "Agent Studio 설치하기",
+  "guide.install.title": "{serviceName} 설치하기",
   "guide.install.body":
     "배포 담당자를 위한 절차다. 콘솔 사용자는 앱 주소와 계정으로 접속한다. 패키지 공급자로부터 릴리스 이미지와 해당 환경의 실행·secret·ingress·backup 설정을 받는다.",
   "guide.install.prepare": "1. 서비스와 이미지 준비",

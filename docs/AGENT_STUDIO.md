@@ -1,14 +1,14 @@
 ---
-title: Agent Studio 시스템 개요
+title: 시스템 개요
 description: 제품 경계와 주요 개념을 연결하고 상세 계약과 코드로 안내하는 검색·RAG용 지도
 audience: 개발자, 운영자, 신규 기여자, 개발 에이전트
 tags: [agent-studio, control-plane, rag, mcp, workspace, offline]
 ---
 
-# Agent Studio 시스템 개요
+# 시스템 개요
 
-Agent Studio는 기업 내부에 설치하는 AI Agent Control Plane이다. 사용자는 Project를 만들고
-현재 Agent 설정에 모델·프롬프트·도구를 구성한 뒤 여러 실행 창구에서 호출한다. Studio는 접근 권한,
+이 앱은 기업 내부에 설치하는 AI Agent Control Plane이다. 사용자는 Agent를 만들고
+현재 Agent 설정에 모델·프롬프트·도구를 구성한 뒤 여러 실행 창구에서 호출한다. 앱은 접근 권한,
 자격 증명, 예산과 기록을 관리하고 OpenAI Agents SDK는 모델 턴과 도구 실행을 관리한다.
 
 이 문서는 프로젝트 전체를 이해하거나 검색·RAG 문맥으로 읽는 통합 지도다. 세부 필드·수치·절차는
@@ -67,7 +67,7 @@ MCP registry는 서버 주소를 소유하고 Agent binding은 도구 목록과 
 선택적 capability 검색은 전역 `catalog_vectors`에서 현재 요청에 맞는 Skill·MCP 서버·도구를 찾는다.
 명시적 binding을 유지하면서 capability를 추가하며, 실제 사용 전에 정책과 연결 권한을 적용한다.
 별도의 Memory recall은 명시적으로 연결한 MCP의 `recall`을 호출해 장기 지식을 실행 문맥에 넣는다.
-Studio 자체의 장기 Memory DB는 없다. [Capabilities](design/capabilities.md)가 두 경로를 설명한다.
+앱 자체의 장기 Memory DB는 없다. [Capabilities](design/capabilities.md)가 두 경로를 설명한다.
 
 ## 요청이 실행되는 방식
 
@@ -88,7 +88,7 @@ Studio 자체의 장기 Memory DB는 없다. [Capabilities](design/capabilities.
 이미 진행 중인 실행의 미정산 비용까지 예약하지 않으므로 비용 한도는 절대적인 청구 상한이 아니다.
 
 SDK Runtime은 모델 턴, 도구, Handoff와 Agent-as-Tool을 담당한다. Handoff는 같은 Runner의
-담당 Agent를 바꾸고, Agent-as-Tool은 자식 결과를 부모에게 돌려준다. Studio는 모델 endpoint,
+담당 Agent를 바꾸고, Agent-as-Tool은 자식 결과를 부모에게 돌려준다. 앱은 모델 endpoint,
 credential, schema 검증, PII 치환, 예산과 로컬 Trace를 연결한다. 기본 공개 Trace exporter는
 사용하지 않는다. [실행 설계](design/execution.md#native-agent-runtime)와
 [SDK 적용 범위](design/sdk-capabilities.md)는 구현된 기능과 제한을 구분한다.
@@ -163,7 +163,7 @@ Predict·OpenAI 호환 Chat Completions·Agent SSE는 프로젝트 실행 API다
 
 Slack·Telegram·Teams는 프로젝트별 bot으로 같은 메시징 파이프라인을 사용한다. 인증과 참여 판단,
 첨부 수신·응답 렌더링은 플랫폼별 adapter가 담당한다. Slack은 플랫폼 thread를 읽고,
-Telegram·Teams는 Studio가 한정된 transcript를 보관한다. 중복 delivery를 막지만 실행 중 급사한
+Telegram·Teams는 앱이 한정된 transcript를 보관한다. 중복 delivery를 막지만 실행 중 급사한
 비멱등 작업을 자동 재생하지 않는다. [메시징 설계](design/messaging.md)를 보라.
 
 Webhook은 인증한 이벤트를 접수하고 현재 Agent 설정을 백그라운드 실행한다. Schedule은 외부 ticker가

@@ -1,6 +1,6 @@
 # 아키텍처
 
-Agent Studio의 계층, 저장 구조, 실행 경로와 스트림 계약을 설명한다.
+이 앱의 계층, 저장 구조, 실행 경로와 스트림 계약을 설명한다.
 제품 개념은 [시스템 개요](AGENT_STUDIO.md), 실제 요청 형태는 [API](API.md),
 설정값은 [CONFIGURATION](CONFIGURATION.md), 시각적 흐름은 [DIAGRAMS](DIAGRAMS.md)를 보라.
 
@@ -10,7 +10,7 @@ Agent Studio의 계층, 저장 구조, 실행 경로와 스트림 계약을 설�
 
 ## 무엇을 위한 시스템인가
 
-한 설치가 한 기업인 설치형 AgentOps 플랫폼이다. Studio는 Agent 설정·권한·도구·비용·기록을
+한 설치가 한 기업인 설치형 AgentOps 플랫폼이다. 앱은 Agent 설정·권한·도구·비용·기록을
 관리하고 OpenAI Agents SDK는 기본 Agent Runtime을 제공한다. 공개 인터넷이 없는 환경에서도
 필수 경로가 동작하도록 외부 연결은 배포가 선택하는 어댑터로 둔다.
 
@@ -236,7 +236,7 @@ Chat의 SDK `runtime_sessions`와 수명을 공유하지 않는다.
 | Webhook trigger | `POST /api/webhook/[project]` → `executeDelivery` | `streamProjectRun` (`triggerRunnerDeps.run`). JSON payload를 사용자 메시지로 전달한다 |
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (같은 `triggerRunnerDeps.run`) |
 | Audio 후처리 | audio worker가 고정한 Project와 현재 설정으로 실행 | `streamProjectRun` + `collectRun` (`backgroundTask: true`) |
-| Workspace | 별도 worker가 DB 큐와 native operation을 이어받는다 | `executeWorkspaceTask` + 공통 `openTaskRun`. 일반 명령과 외부 CLI runtime은 Studio 모델 설정 없이 실행한다 |
+| Workspace | 별도 worker가 DB 큐와 native operation을 이어받는다 | `executeWorkspaceTask` + 공통 `openTaskRun`. 일반 명령과 외부 CLI runtime은 앱 모델 설정 없이 실행한다 |
 
 오디오 전사 호출은 worker가 `openModelCall`로 모델 정책·비용·동시성을 적용하고,
 후처리는 표의 프로젝트 실행 경로를 사용한다. 같은 Agent 설정이라도 사용자·token·메신저·자동화가
@@ -254,7 +254,7 @@ Chat의 SDK `runtime_sessions`와 수명을 공유하지 않는다.
 
 프로젝트 실행 파사드는 `executeAgent`를 통해 `openRun`을 사용한다.
 오디오 전사는 `openModelCall`, Workspace 작업은 모델 없는 `openTaskRun`을 사용한다.
-Workspace native CLI의 사용량은 Studio SDK 모델 Usage와 별개다.
+Workspace native CLI의 사용량은 앱 SDK 모델 Usage와 별개다.
 
 거절된 실행은 실행 메트릭·Usage·Trace를 만들지 않는다. 비용·모델 정책의 설정 조회 장애는
 fail-open, 동시성 저장소 장애는 fail-closed다. user tier는 개인 예산과 동시성에 적용하고
@@ -304,7 +304,7 @@ Chat의 연결 분리 wrapper는 이 계층 바깥에 있다. 브라우저 연�
 | `approval` | `{ pending: true }`면 영속 Chat의 승인 항목을 조회한다. 이 경우 전송이 끝나도 작업이 완료된 것은 아니다 |
 | `author` / `authorPath` | 자식 출력의 이름과 위임 경로. Handoff는 같은 Runner의 담당 Agent를 바꾸므로 별도 작성 경로를 만들지 않는다 |
 | `transferId` / `authorDone` | 동시 위임 호출의 식별자와 해당 자식 실행 종료. Trace 저장과 별개로 스트림에 전달한다 |
-| `traceId` | Studio Trace 식별자. text 자식은 최상위 Trace의 SDK span 계층을 사용하며 특화 자식은 별도 Trace를 가질 수 있다 |
+| `traceId` | 앱 Trace 식별자. text 자식은 최상위 Trace의 SDK span 계층을 사용하며 특화 자식은 별도 Trace를 가질 수 있다 |
 
 이미지와 파일을 소비하는 표면은 두 축을 모두 다룬다. raw chunk route는 `withAddressedFiles`로
 파일 참조를 URL로 바꾸고, completion API·메신저·Trigger는 자기 응답 형태에 맞게
@@ -370,7 +370,7 @@ Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액�
 저장된 키는 앞뒤 4자를 드러낸 서버 마스크로 표시한다(8자 이하는 전부 숨긴다).
 교체를 눌러 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다.
 설정 override 삭제는 별도 동작으로 제공한다.
-Studio가 발급하는 프로젝트 토큰·Webhook 키는 `SecretControl`로 표시·복사·생성·재생성·폐기한다.
+앱이 발급하는 프로젝트 토큰·Webhook 키는 `SecretControl`로 표시·복사·생성·재생성·폐기한다.
 지원하는 동작은 각 API의 기능과 권한에 따른다. 원문을 표시한 동안에만 복사할 수 있고,
 재생성·교체·폐기는 공통 확인창을 거친다. 평문은 브라우저 저장소에 기록하지 않는다.
 Settings는 General·Plugins·Models·Keys 탭으로 관리하고, `/models`는 등록된 모델 조회·검색만 제공한다.

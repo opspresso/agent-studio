@@ -1,6 +1,6 @@
 # OpenAI Agents SDK 기능 적용 범위
 
-Agent Studio는 `package.json`에 고정한 `@openai/agents`를 실행 런타임으로 사용한다.
+이 앱은 `package.json`에 고정한 `@openai/agents`를 실행 런타임으로 사용한다.
 SDK에 포함된 기능과 제품에서 연결·운영하는 기능은 구분한다. required path는 폐쇄망에서
 동작하며 SDK의 기본 공개 exporter나 OpenAI가 관리하는 Session을 전제로 하지 않는다.
 실행 계약의 정본은 [execution.md](execution.md)와
@@ -10,14 +10,14 @@ SDK에 포함된 기능과 제품에서 연결·운영하는 기능은 구분한
 
 | 기능 | 제품의 적용 범위 | 구현과 검증 근거 |
 |---|---|---|
-| 에이전트 루프 | SDK `Agent`·`Runner`가 모델/도구 반복, 스트리밍과 종료를 소유한다. Studio는 턴·비용·문맥 한도와 취소를 적용한다 | `runtime/execute.ts`, `model.ts`; `engine.test.ts`, `engineParallelTools.test.ts`, `agentModels.test.ts` |
-| Workspace·Sandbox 실행 | Studio의 영속 Workspace와 격리 Docker Sandbox를 제공한다. command·Codex·Claude·OpenCode 작업, 검사·체크포인트·재개와 별도 Git 승인을 지원한다. SDK `SandboxAgent`를 사용하는 구현은 아니다 | `application/workspace/`, `infrastructure/workspace/`, `sandbox/`; `workspaceContinuation.test.ts`, `workspaceWorker.test.ts`, `scripts/workspace-check.ts`. [Workspace 계약](workspaces.md)을 따른다 |
+| 에이전트 루프 | SDK `Agent`·`Runner`가 모델/도구 반복, 스트리밍과 종료를 소유한다. 앱은 턴·비용·문맥 한도와 취소를 적용한다 | `runtime/execute.ts`, `model.ts`; `engine.test.ts`, `engineParallelTools.test.ts`, `agentModels.test.ts` |
+| Workspace·Sandbox 실행 | 앱의 영속 Workspace와 격리 Docker Sandbox를 제공한다. command·Codex·Claude·OpenCode 작업, 검사·체크포인트·재개와 별도 Git 승인을 지원한다. SDK `SandboxAgent`를 사용하는 구현은 아니다 | `application/workspace/`, `infrastructure/workspace/`, `sandbox/`; `workspaceContinuation.test.ts`, `workspaceWorker.test.ts`, `scripts/workspace-check.ts`. [Workspace 계약](workspaces.md)을 따른다 |
 | 음성 에이전트 | 파일 기반 전사·후처리·내보내기를 제공한다. SDK `RealtimeAgent`·`RealtimeSession`, 양방향 실시간 음성, VAD와 발화 인터럽션은 미제공이다 | `application/audio/`, `infrastructure/llm/audioSegmenter.ts`; `audioJobProcessor.test.ts`, `audioPostprocess.test.ts`, `audioBuiltin.test.ts` |
 | TypeScript 우선 | SDK의 Agent·ModelProvider·Session·RunState 계약을 직접 사용하고 domain port로 배포 자원을 주입한다 | `runtime/types.ts`, `boundAgent.ts`; `architecture.test.ts`, `pnpm typecheck` |
 | Agents as tools·Handoff | text agent는 `Agent.asTool` 또는 같은 Runner의 Handoff로 연결한다. 로컬 Agent 설정, 깊이·순환·남은 턴 제한을 적용한다. 원격 대상은 function tool이다 | `runtime/agent.ts`, `execution/agentBindings.ts`; `nativeDelegation.test.ts`, `agentBindings.test.ts`, `runtimeSession.test.ts` |
 | 가드레일 | Agent 설정의 `maxInputChars`를 blocking 입력 Guardrail로 검사한다. Handoff 대상도 검사하며 스트리밍/완료형 모두 PII 치환 전 길이를 사용한다. `blockedTools`·`approvalTools`는 도구 조립 정책이다 | `runtime/policy.ts`; `runtimeValidation.test.ts`, `nativeTracing.test.ts`. 의미 기반 유해성 분류와 사용자 정의 출력 Guardrail은 제공하지 않는다 |
 | 함수 도구 | builtin·MCP·위임 도구를 SDK에 연결한다. 선언된 JSON Schema를 SDK 입력 Guardrail에서 승인 요청 전에 검사하며 서버 도구는 실제 dispatch 전에도 검증한다. 실패는 오류 도구 결과로 반환한다 | `runtime/tools.ts`, `domain/llm/toolSchema.ts`, `infrastructure/llm/toolSchema.ts`; `toolSchema.test.ts`, `runtimeValidation.test.ts` |
-| MCP | Studio가 승인한 연결·도구 alias 스냅샷을 SDK `MCPServer`로 제공한다. OAuth·SSRF·사용자 헤더·연결 정리는 기존 adapter가 담당한다 | `runtime/mcp.ts`, `infrastructure/mcp/session.ts`; `mcpBindings.test.ts`, `mcpAuthDispatch.test.ts`, `nativeTracing.test.ts` |
+| MCP | 앱이 승인한 연결·도구 alias 스냅샷을 SDK `MCPServer`로 제공한다. OAuth·SSRF·사용자 헤더·연결 정리는 기존 adapter가 담당한다 | `runtime/mcp.ts`, `infrastructure/mcp/session.ts`; `mcpBindings.test.ts`, `mcpAuthDispatch.test.ts`, `nativeTracing.test.ts` |
 | Session | Chat의 정확한 native 모델/도구 이력을 PostgreSQL에 암호화해 저장한다. owner/revision CAS, 보존 기간, 문맥/이미지 상한과 삭제 tombstone을 적용한다 | `runtime/session.ts`, `db/repositories/runtimeSessionRepository.ts`; `runtimeSession.test.ts`, `scripts/runtime-session-check.ts` |
 | HITL | Chat 소유자가 도구별 승인·거절을 결정한다. 직렬화한 RunState와 자식 Agent identity를 복원하고 실행 전에 체크포인트를 선점한다 | `application/chat/approval.ts`, `runtime/execute.ts`; `chatApproval.test.ts`, `chatApprovalRoute.test.ts`, `runtimeSession.test.ts`, PostgreSQL 통합 검사 |
 | 트레이싱 | SDK native span을 로컬 Trace와 콘솔에 제공한다. 선택적 OTLP 전송은 부모 관계를 보존한다. OpenAI의 호스팅 평가·파인튜닝·증류에 데이터를 자동 전송하지 않는다 | `runtime/tracing.ts`, `telemetry/otelTraceExport.ts`; `nativeTracing.test.ts`, `otelTraceHierarchy.test.ts` |
@@ -29,7 +29,7 @@ SDK에 포함된 기능과 제품에서 연결·운영하는 기능은 구분한
 
 **도구 스키마는 실행 계약이다.** TypeScript 타입은 실행 시 사라지므로 함수 시그니처만으로
 검증하지 않는다. SDK에 Zod/Standard Schema를 전달하는 방식과 일반 JSON Schema를 전달하는
-방식은 다르다. Studio는 기존 builtin 선언과 MCP가 제공하는 JSON Schema를 유지하고 주입된
+방식은 다르다. 앱은 기존 builtin 선언과 MCP가 제공하는 JSON Schema를 유지하고 주입된
 검증기로 검사한다. `required`, `enum`, 중첩 배열/union, `additionalProperties`, 지원하는
 `format`과 로컬 `$ref`가 적용된다. 값의 강제 변환·누락 필드 자동 채움·추가 필드 삭제는 하지
 않는다. 스키마 ID 공간은 도구마다 독립적이며 외부 참조 다운로드와 비동기 검증은 허용하지 않는다.
@@ -51,7 +51,7 @@ SDK에 포함된 기능과 제품에서 연결·운영하는 기능은 구분한
 
 ## 선택적 실행 환경의 도입 조건
 
-**Workspace와 Sandbox**는 Studio가 소유한다. 상위 Agent는 제공된 Workspace 빌트인으로 작업을
+**Workspace와 Sandbox**는 앱이 소유한다. 상위 Agent는 제공된 Workspace 빌트인으로 작업을
 조율하고, 별도 worker가 격리된 Docker에서 CLI 또는 명령을 실행한다. Chat SDK Session과
 Workspace의 native Session·파일 체크포인트는 서로 다른 저장 계약이다. 문서 worker와 관리형
 MCP 컨테이너도 이 실행 공간과 구분한다. SDK 자체 Sandbox API를 사용하지 않는 것이 제품의

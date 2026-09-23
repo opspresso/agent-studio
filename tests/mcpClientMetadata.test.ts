@@ -7,7 +7,7 @@
  * authorization server, so the route must answer without a session.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { publicBaseUrl } = vi.hoisted(() => ({
   publicBaseUrl: { value: "https://studio.example.com" as string | undefined },
@@ -29,6 +29,7 @@ function get(project: string): Promise<Response> {
 beforeEach(() => {
   publicBaseUrl.value = "https://studio.example.com";
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe("a project's client ID metadata document", () => {
   it("states a client_id equal to the URL it is served at", async () => {
@@ -51,6 +52,13 @@ describe("a project's client ID metadata document", () => {
     ]);
     // Public by construction: a self-hosted client_id has no secret to prove.
     expect(document.token_endpoint_auth_method).toBe("none");
+  });
+
+  it("uses the configured service name without changing the client ID", async () => {
+    vi.stubEnv("SERVICE_NAME", "AgentOps");
+    const document = (await (await get("helper")).json()) as Record<string, unknown>;
+    expect(document.client_name).toBe("AgentOps — helper");
+    expect(document.client_id).toBe(clientMetadataUrl("https://studio.example.com", "helper"));
   });
 
   it("names the project, so a person approving the connection can tell which is asking", async () => {

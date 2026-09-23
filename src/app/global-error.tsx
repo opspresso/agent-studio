@@ -73,7 +73,7 @@ export default function GlobalError({
         }}
       >
         <main style={{ maxWidth: 420, padding: 24, textAlign: "center" }}>
-          <h1 style={{ fontSize: 18, margin: "0 0 8px" }}>Agent Studio could not start</h1>
+          <h1 style={{ fontSize: 18, margin: "0 0 8px" }}>The service could not start</h1>
           <p style={{ fontSize: 14, lineHeight: 1.6, color: "var(--muted)", margin: "0 0 16px" }}>
             Something failed before the console could render. Reloading usually clears it; if it
             does not, the digest below identifies the failure in the server log.
