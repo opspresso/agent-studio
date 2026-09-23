@@ -25,6 +25,7 @@ import { isTopLevelChunk } from "@/domain/llm/types";
 import { unrefTimer } from "@/shared/unrefTimer";
 import { toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
 import { commitDelayFor } from "@/app/_lib/textPacer";
+import { redirectApiUnauthorized } from "@/app/_lib/authRedirect";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { readSse } from "./sseClient";
 import { reduceChunk } from "./stream";
@@ -400,6 +401,7 @@ export function createRunStore(): RunStore {
   ): Promise<boolean | undefined> {
     const res = await fetch(`/api/chats/${chatId}/runs/${runId}`, { signal });
     if (!res.ok) {
+      redirectApiUnauthorized(res);
       return undefined;
     }
     const data = (await res.json()) as { active?: boolean };
@@ -449,6 +451,7 @@ export function createRunStore(): RunStore {
             return;
           }
           if (!res.ok) {
+            redirectApiUnauthorized(res);
             const body = (await res.json().catch(() => ({}))) as { error?: string };
             if (!isCurrent()) {
               return;

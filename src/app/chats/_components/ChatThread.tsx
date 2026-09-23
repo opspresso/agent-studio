@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLatestScroll } from "@/app/_lib/useLatestScroll";
+import { redirectApiUnauthorized } from "@/app/_lib/authRedirect";
 import { attachmentSrc, type Attachment } from "@/app/_lib/imageAttachments";
 import { useT } from "@/app/_i18n/provider";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
@@ -194,6 +195,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
         return null;
       }
       if (!res.ok) {
+        redirectApiUnauthorized(res);
         return failed();
       }
       let data: ChatWithMessages;

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useT } from "@/app/_i18n/provider";
 import type { ChatWithMessages } from "@/application/chat/getChat";
 import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession";
+import { assertOk } from "@/app/_lib/httpClient";
 
 export function PendingApproval({ chatId, pending, disabled, onDecision, onDiscarded }: {
   chatId: string;
@@ -21,7 +22,7 @@ export function PendingApproval({ chatId, pending, disabled, onDecision, onDisca
     setError(null);
     try {
       const response = await fetch(`/api/chats/${chatId}/approval`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision: pending.revision }) });
-      if (!response.ok) { const body = await response.json() as { error?: string }; throw new Error(body.error ?? "Approval could not be discarded"); }
+      await assertOk(response);
       onDiscarded();
     } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); }
     finally { setBusy(false); }

@@ -97,6 +97,21 @@ afterEach(() => {
 });
 
 describe("runStore", () => {
+  it("redirects an expired session during a run request", async () => {
+    const replace = vi.fn();
+    vi.stubGlobal("window", { location: {
+      origin: "https://studio.example.com", pathname: "/chats/c1",
+      search: "", hash: "", replace,
+    } });
+    stubFetch([() => Response.json({ error: "Unauthorized" }, { status: 401 })]);
+    const store = fresh();
+
+    store.startTurn("c1", PENDING);
+    await settle();
+
+    expect(replace).toHaveBeenCalledWith("/login?next=%2Fchats%2Fc1");
+  });
+
   it("resumes an approval with the exact revision and no phantom user message", async () => {
     const fetch = vi.fn(async () => sse([{ runId: "resume-1" }, { delta: { content: "approved" } }, { ended: true }]));
     vi.stubGlobal("fetch", fetch);

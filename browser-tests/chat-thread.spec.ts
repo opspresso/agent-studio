@@ -103,6 +103,13 @@ test("retains not-found behavior for an initial 404", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Try again", exact: true })).toHaveCount(0);
 });
 
+test("redirects an expired session during the initial thread read", async ({ page }) => {
+  await page.route("**/api/chats/chat-1**", route =>
+    route.fulfill({ status: 401, json: { error: "Unauthorized" } }));
+  await page.goto(`${base}/chats/chat-1`);
+  await expect(page).toHaveURL(/\/login\?next=%2Fchats%2Fchat-1/);
+});
+
 test("opens a long Chat at the latest message and keeps manual scroll control", async ({ page }) => {
   const messages = Array.from({ length: 80 }, (_, seq) => ({
     chatId: CHAT.chatId, seq, role: seq % 2 ? "assistant" as const : "user" as const,
