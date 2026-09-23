@@ -148,6 +148,22 @@ describe("createTestModel", () => {
     expect(result).toMatchObject({ ok: false, error: "semantic probe failed" });
   });
 
+  it("tests a decisions model through its typed Choice endpoint", async () => {
+    const channel = new FakeChannel([[]]);
+    const testDecision = vi.fn(async () => {});
+    addTestModels([{
+      id: "router/~typesafe/jev-latest", provider: "router", providerKind: "openrouter",
+      family: "jev-latest", maker: "typesafe", displayName: "Jev Latest",
+      pricing: { inputPer1M: 0.042, outputPer1M: 0 },
+      capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false, decisions: true },
+      contextWindow: 32000, maxTokens: 0,
+    }]);
+    expect(await createTestModel(channel, { testDecision })("router/~typesafe/jev-latest"))
+      .toMatchObject({ ok: true });
+    expect(testDecision).toHaveBeenCalledWith("router/~typesafe/jev-latest", expect.any(AbortSignal));
+    expect(channel.seenParams).toHaveLength(0);
+  });
+
   it("does not send a transcription model to chat completion", async () => {
     const channel = new FakeChannel([[]]);
     addTestModels([

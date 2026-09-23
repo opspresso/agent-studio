@@ -6,6 +6,7 @@ const {
   getHiddenModels,
   getEmbeddingModelSelection,
   getRerankerModelSelection,
+  getDecisionModelSelection,
   getRerankerMinScoreSelection,
   modelPreferenceUseCases,
   config,
@@ -14,6 +15,7 @@ const {
   getHiddenModels: vi.fn(),
   getEmbeddingModelSelection: vi.fn(),
   getRerankerModelSelection: vi.fn(),
+  getDecisionModelSelection: vi.fn(),
   getRerankerMinScoreSelection: vi.fn(),
   modelPreferenceUseCases: { listOptional: vi.fn() },
   config: {
@@ -33,6 +35,7 @@ vi.mock("@/lib/runtime-settings", () => ({
   getHiddenModels,
   getEmbeddingModelSelection,
   getRerankerModelSelection,
+  getDecisionModelSelection,
   getRerankerMinScoreSelection,
 }));
 vi.mock("@/lib/container", () => ({ modelPreferenceUseCases }));
@@ -70,6 +73,7 @@ beforeEach(() => {
   modelPreferenceUseCases.listOptional.mockResolvedValue([]);
   getEmbeddingModelSelection.mockResolvedValue({ model: "openrouter/qwen3-embedding-4b", source: "env" });
   getRerankerModelSelection.mockResolvedValue(undefined);
+  getDecisionModelSelection.mockResolvedValue(undefined);
   getRerankerMinScoreSelection.mockResolvedValue({ value: 0.01, source: "default" });
   config.catalogEnabled = false;
   config.reranker = undefined;

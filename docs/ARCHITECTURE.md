@@ -330,6 +330,7 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 | [execution](design/execution.md) | Project·현재 설정, SDK Runtime, 이미지와 Artifacts |
 | [sdk-capabilities](design/sdk-capabilities.md) | SDK 기능별 제품 적용 범위·미지원 경계·검증 근거 |
 | [chat](design/chat.md) | 화면 기록·SDK Session·승인·연결 분리·재연결 |
+| [agent-recommendation](design/agent-recommendation.md) | Jev 결정 모델의 Agent 추천·선택 경계·provider 계약 |
 | [capabilities](design/capabilities.md) | Skill·Plugin sync·벡터 검색·Memory recall |
 | [mcp](design/mcp.md) | binding·transport·세션·캐시·managed 서버·OAuth |
 | [documents](design/documents.md) | 형식별 읽기·생성·편집, worker, 파일 참조·HTML 미리보기 |

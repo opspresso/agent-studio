@@ -328,6 +328,9 @@ async function resolveReranker(id: string) {
 /** One-shot model probe for the /models console — the same channel a run uses. */
 export const testModel = createTestModel(agentModels, {
   testReranker: testRerankerModel,
+  testDecision: async (model, signal) => {
+    await decisionClient.choose({ model, state: "ping", instructions: "Which option says ping?", criteria: { ping: "ping", pong: "pong" }, signal });
+  },
   testImage: async (model, signal) => {
     await imageChannel.generateImage({ model, prompt: "A small white square on a plain background.", signal });
   },

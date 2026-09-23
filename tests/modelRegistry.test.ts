@@ -113,6 +113,7 @@ describe("deployment model registry", () => {
     });
     await settingsRepository.update(() => ({ registeredModels: [model, decision], updatedAt: "" }));
     await expect(useCases.selectDecision(model.id, "admin@example.test")).rejects.toThrow("registered decisions model");
+    await expect(useCases.selectDefault(decision.id, "admin@example.test")).rejects.toThrow("registered text model");
     await useCases.selectDecision(decision.id, "admin@example.test");
     expect((await settingsRepository.get())?.decisionModel).toBe(decision.id);
     await expect(useCases.remove(decision.id, "admin@example.test")).rejects.toThrow("decision");

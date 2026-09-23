@@ -85,6 +85,7 @@ export const ko: Messages = {
   "modelAdmin.usage": "Model 사용 설정",
   "modelAdmin.usageHint": "기본 Model, 결정 Model, Workspace 런타임 Model과 활성 검색 Model을 선택한다.",
   "modelAdmin.decision": "Agent 추천용 결정 Model",
+  "modelAdmin.clearDecision": "결정 Model 선택 해제",
   "agentSuggestion.label": "추천 Agent",
   "agentSuggestion.apply": "Agent 선택",
   "agentSuggestion.failed": "Agent 추천을 사용할 수 없습니다. Agent를 직접 선택할 수 있습니다.",

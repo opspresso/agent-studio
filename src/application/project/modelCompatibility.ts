@@ -6,7 +6,7 @@ export type ModelCompatibilityRejectReason = "type" | "tools";
 export function agentModelRejectReason(
   model: ModelConfig,
 ): ModelCompatibilityRejectReason | null {
-  if (!["text", "decisions"].includes(modelType(model))) return "type";
+  if (modelType(model) !== "text") return "type";
   if (!model.capabilities.tools) return "tools";
   return null;
 }

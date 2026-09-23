@@ -45,7 +45,7 @@ describe("Agent recommendation", () => {
     const all = Array.from({ length: 300 }, (_, n) => ({ name: `agent-${n}`, displayName: `Agent ${n}`, description: "Handles requests" }));
     const useCases = createAgentRecommendationUseCases({ decision: { choose }, selectedModel: async () => "router/jev", candidates: async () => all });
     expect(await useCases.recommend("workspace", "person@example.test", "Handle this task")).toEqual({ name: "agent-0", confidence: 0.6 });
-    expect(choose).toHaveBeenCalledTimes(3);
-    expect(Object.keys(choose.mock.calls[0]![0].criteria)).toHaveLength(255);
+    expect(choose).toHaveBeenCalledTimes(6);
+    expect(Object.keys(choose.mock.calls[0]![0].criteria)).toHaveLength(65);
   });
 });

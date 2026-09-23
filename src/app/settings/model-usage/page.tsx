@@ -60,7 +60,7 @@ export default function ModelUsagePage() {
     finally { setDecisionBusy(false); }
   }
   const defaultOptions = view?.catalog.models.filter(model =>
-    ["text", "decisions"].includes(model.type) && model.capabilities.tools && !model.selectionHidden,
+    model.type === "text" && model.capabilities.tools && !model.selectionHidden,
   ) ?? [];
   const decisionOptions = view?.catalog.models.filter(model =>
     model.type === "decisions" && (model.providerKind === "openrouter" || model.providerKind === "selfhosted") && !model.selectionHidden,
@@ -76,6 +76,7 @@ export default function ModelUsagePage() {
           ? [{ value: view.selected.model, label: view.selected.model }] : []}
         onChange={model => void select(model)} />
       <ModelSelect label={t("modelAdmin.decision")} placeholder={t("models.selection.unconfigured")} searchable clearable disabled={decisionBusy}
+        clearButtonProps={{ "aria-label": t("modelAdmin.clearDecision"), "aria-hidden": false, tabIndex: 0 }}
         value={view.catalog.selections.decision?.model ?? null} models={decisionOptions}
         leading={view.catalog.selections.decision?.model && !decisionOptions.some(model => model.id === view.catalog.selections.decision?.model)
           ? [{ value: view.catalog.selections.decision.model, label: view.catalog.selections.decision.model }] : []}

@@ -17,7 +17,7 @@ function endpoint(baseUrl: string, provider: string | null): string {
 function choiceAnswer(value: unknown, criteria: Record<string, string>): ChoiceDecision {
   const answer = value && typeof value === "object" ? value as Record<string, unknown> : null;
   const probabilities = answer?.probabilities;
-  if (answer?.type !== "choice" || typeof answer.choice !== "string" || !(answer.choice in criteria) ||
+  if (answer?.type !== "choice" || typeof answer.choice !== "string" || !Object.hasOwn(criteria, answer.choice) ||
       typeof answer.confidence !== "number" || !Number.isFinite(answer.confidence) || answer.confidence < 0 || answer.confidence > 1 ||
       !probabilities || typeof probabilities !== "object" || Array.isArray(probabilities)) {
     throw new Error("Decision provider returned an invalid Choice answer");
@@ -32,7 +32,7 @@ function choiceAnswer(value: unknown, criteria: Record<string, string>): ChoiceD
 
 export function createDecisionClient(resolveTarget: TargetResolver): DecisionModel {
   return {
-    async choose({ model, state, instructions, criteria }) {
+    async choose({ model, state, instructions, criteria, signal }) {
       const target = await resolveTarget(model);
       if (target.auth !== "bearer") throw new Error("Decision provider requires bearer authentication");
       let response: Response;
@@ -40,8 +40,8 @@ export function createDecisionClient(resolveTarget: TargetResolver): DecisionMod
         response = await fetch(endpoint(target.baseUrl, target.providerName), {
           method: "POST",
           headers: { Authorization: `Bearer ${target.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: target.model, state, questions: { agent: { type: "choice", instructions, criteria } } }),
-          signal: AbortSignal.timeout(10_000),
+          body: JSON.stringify({ model: target.model, state, questions: { selection: { type: "choice", instructions, criteria } } }),
+          signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
         });
       } catch {
         throw new Error("Decision provider could not be reached");
@@ -51,7 +51,7 @@ export function createDecisionClient(resolveTarget: TargetResolver): DecisionMod
       try { body = await response.json(); }
       catch { throw new Error("Decision provider returned invalid JSON"); }
       const answers = body && typeof body === "object" ? (body as Record<string, unknown>).answers : null;
-      return choiceAnswer(answers && typeof answers === "object" ? (answers as Record<string, unknown>).agent : null, criteria);
+      return choiceAnswer(answers && typeof answers === "object" ? (answers as Record<string, unknown>).selection : null, criteria);
     },
   };
 }

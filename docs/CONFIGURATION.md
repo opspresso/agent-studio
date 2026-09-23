@@ -153,11 +153,15 @@ Self-hosted는 키를 생략할 수 있다. 프로바이더 목록은 최대 50�
 
 1. `/settings/models`에서 등록한 프로바이더를 선택하고 **Model 조회**를 실행한다.
 2. 사용할 항목의 유형·기능·한도·가격을 비교하고 **모델 추가**를 누르면 즉시 등록된다. 이름순·가격순 정렬과 기능 필터를 제공한다. 직접 등록은 화면 안의 입력 폼을 사용한다.
-3. `/settings/model-usage`에서 기본 모델, Workspace Runtime별 모델, 검색의 Embedding·Rerank를 선택한다.
+3. `/settings/model-usage`에서 기본 모델, Agent 추천용 결정 모델, Workspace Runtime별 모델, 검색의 Embedding·Rerank를 선택한다.
 4. 선택 화면의 **선택된 모델만 보기**로 저장된 모델을 모아 보고 바로 삭제할 수 있다. Provider를 조회하지 않아도 저장된 선택을 표시한다. 등록 모델 관리에서는 수정·삭제·상태 확인을 수행한다. `/models`는 선택·등록된 모델의 조회와 검색만 제공한다.
 
 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decisions`다.
-`decisions`는 판단·분류용 텍스트 모델이며 Chat Completions 계약으로 실행한다.
+`decisions`는 판단·분류용 텍스트 모델이며 Agent 실행 모델로 사용하지 않는다. Agent 추천에는
+[TypeSafe Choice](https://docs.typesafe.ai/primitives/choice)의 구조화된 결정 계약을 사용한다.
+등록된 OpenRouter 연결은 Decisions API(`/api/alpha/decisions`)로, System One 호환
+self-hosted 연결은 설정된 API 주소의 `/v1/systemone`으로 호출한다. 결정 모델을 선택하지
+않으면 추천 요청은 외부 호출 없이 빈 결과를 반환하며 Chat과 Workspace 입력·실행은 계속 가능하다.
 모델 ID는 `<등록한 프로바이더 이름>/<프로바이더의 모델 ID>`다. 프로바이더에 보내는 ID는
 별도로 보관하므로 OpenRouter와 self-hosted의 슬래시가 포함된 이름도 유지한다.
 

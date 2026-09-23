@@ -104,6 +104,7 @@ export const en = {
   "modelAdmin.usage": "Model usage",
   "modelAdmin.usageHint": "Choose the default model, decision model, Workspace runtime models and active search models.",
   "modelAdmin.decision": "Decision model for Agent suggestions",
+  "modelAdmin.clearDecision": "Clear decision model",
   "agentSuggestion.label": "Suggested Agent",
   "agentSuggestion.apply": "Use Agent",
   "agentSuggestion.failed": "Agent suggestion is unavailable. You can still choose an Agent yourself.",

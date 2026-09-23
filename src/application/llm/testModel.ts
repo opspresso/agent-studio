@@ -28,6 +28,7 @@ export type TestModel = (modelId: string) => Promise<ModelTestResult>;
 export interface TestModelDeps {
   testImage?: (modelId: string, signal: AbortSignal) => Promise<void>;
   testReranker?: (modelId: string, signal: AbortSignal) => Promise<void>;
+  testDecision?: (modelId: string, signal: AbortSignal) => Promise<void>;
 }
 
 const TEST_TIMEOUT_MS = 15_000;
@@ -54,6 +55,9 @@ export function createTestModel(models: ModelProvider, deps: TestModelDeps = {})
     if (type === "image" && !deps.testImage) {
       throw new ValidationError(`The image endpoint is not configured: ${modelId}`);
     }
+    if (type === "decisions" && !deps.testDecision) {
+      throw new ValidationError(`The decision endpoint is not configured: ${modelId}`);
+    }
     const startedAt = Date.now();
     try {
       const signal = AbortSignal.timeout(type === "image" ? IMAGE_TEST_TIMEOUT_MS : TEST_TIMEOUT_MS);
@@ -61,6 +65,8 @@ export function createTestModel(models: ModelProvider, deps: TestModelDeps = {})
         await deps.testReranker!(modelId, signal);
       } else if (type === "image") {
         await deps.testImage!(modelId, signal);
+      } else if (type === "decisions") {
+        await deps.testDecision!(modelId, signal);
       } else {
         await withTrace(new NoopTrace(), async () => (await models.getModel(modelId)).getResponse({
           input: "ping", modelSettings: { maxTokens: 16, store: false },

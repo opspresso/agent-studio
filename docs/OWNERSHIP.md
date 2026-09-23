@@ -212,6 +212,8 @@
 
 | 결정 | 소유자 | 확인 |
 |---|---|---|
+| 새 Chat·Workspace의 요청에 어떤 Agent를 추천하는가 | `src/application/llm/agentRecommendation.ts`의 Choice 구성·후보 분할·선택 매핑. 접근 가능한 후보 목록은 `src/lib/container.ts`가 각 기존 목록 유스케이스에 바인딩한다 | 코드 |
+| 결정 모델 호출의 provider별 URL·응답 해석 | `src/infrastructure/llm/decisionClient.ts`. 결정 모델의 등록·삭제 가드는 `src/application/llm/modelRegistry.ts` | 코드 |
 | 배포의 표시 이름과 로고 폴더·자산 URL | `src/shared/branding.ts`; 환경 읽기와 부팅 시 자산 검사는 `src/lib/config.ts` | 코드 |
 | 어떤 스토리지 에러가 조건부 쓰기의 실패를 뜻하는가 | `src/application/errors.ts` | 구조 |
 | audit 행을 어떻게 쓰는가 | `src/application/audit/recordAudit.ts` | 구조 |
