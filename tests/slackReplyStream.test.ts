@@ -198,6 +198,19 @@ function makeChannelFake(opts: { refuseOver?: number; refusePost?: number } = {}
 }
 
 describe("progress in a channel thread that cannot stream", () => {
+  it.each(["edit", "unopened"])("discards buffered text when a cancelled reply is %s", async (mode) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { slack, posted, updates } = makeChannelFake(mode === "unopened" ? { refusePost: 1 } : {});
+    const sink = createReplySink(slack, "tok", DM);
+    if (mode === "edit") await sink.push("visible");
+    await sink.push("visible buffered");
+    await sink.finish("visible buffered", "Stopped by user.", "cancelled");
+    expect(updates.at(-1)?.text ?? posted.at(-1)).not.toContain("buffered");
+    expect(updates.at(-1)?.text ?? posted.at(-1)).toContain("Stopped by user.");
+  });
   it("posts the first progress and edits that message after it", async () => {
     let clock = NOW;
     vi.spyOn(Date, "now").mockImplementation(() => clock);
@@ -408,6 +421,16 @@ function makeStreamingChannelFake() {
  * channel run off streaming altogether.
  */
 describe("progress on a channel stream's task axis", () => {
+  it("does not write or clear status after losing ownership of the thread", async () => {
+    const { slack, statuses, posted, appended } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", { ...DM, canWrite: () => false });
+    await sink.status("is thinking…");
+    await sink.push("stale answer");
+    await sink.finish("stale answer", "", "failed");
+    expect(statuses).toEqual([]);
+    expect(posted).toEqual([]);
+    expect(appended).toEqual([]);
+  });
   it("keeps a failed tool visible even when another call in the same row succeeds", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);

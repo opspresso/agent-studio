@@ -15,6 +15,9 @@ export interface SlackRunTarget {
 
 /** A stop affects messages sent before it, including delayed deliveries, across replicas. */
 export interface SlackRunControlRepository {
+  acquire(target: SlackRunTarget): Promise<string | null>;
+  renew(target: SlackRunTarget, token: string): Promise<boolean>;
+  release(target: SlackRunTarget, token: string): Promise<void>;
   requestStop(target: SlackRunTarget, eventTs: string): Promise<void>;
   stoppedAfter(target: SlackRunTarget, messageTs: string): Promise<boolean>;
 }

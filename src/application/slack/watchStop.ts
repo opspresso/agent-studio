@@ -9,14 +9,19 @@ export async function watchSlackStop(
   repository: SlackRunControlRepository,
   target: SlackRunTarget,
   messageTs: string,
-): Promise<{ signal: AbortSignal; dispose(): void }> {
+  leaseToken?: string,
+): Promise<{ signal: AbortSignal; check(): Promise<void>; canWrite(): boolean; dispose(): void }> {
   const controller = new AbortController();
   let disposed = false;
-  let pending = false;
-  async function check() {
-    if (disposed || pending || controller.signal.aborted) return;
-    pending = true;
+  let ownsLease = true;
+  let pending: Promise<void> | undefined;
+  async function poll() {
     try {
+      if (leaseToken && !(await repository.renew(target, leaseToken))) {
+        ownsLease = false;
+        controller.abort(new Error("Run stopped because its thread lease was lost."));
+        return;
+      }
       if (await repository.stoppedAfter(target, messageTs)) {
         controller.abort(new DOMException("Stopped by user", "AbortError"));
       }
@@ -24,12 +29,17 @@ export async function watchSlackStop(
       log.error("slack", "stop state lookup failed", error);
       // Continuing when stop delivery cannot be checked would silently ignore the user.
       controller.abort(new Error("Run stopped because its cancellation state could not be checked."));
-    } finally {
-      pending = false;
     }
+  }
+  async function check() {
+    if (disposed) return;
+    // Await an in-flight poll: a final delivery check cannot return on stale state.
+    pending ??= poll().finally(() => { pending = undefined; });
+    await pending;
   }
   await check();
   const timer = setInterval(() => { void check(); }, STOP_POLL_MS);
   unrefTimer(timer);
-  return { signal: controller.signal, dispose() { disposed = true; clearInterval(timer); } };
+  return { signal: controller.signal, check, canWrite: () => ownsLease,
+    dispose() { disposed = true; clearInterval(timer); } };
 }

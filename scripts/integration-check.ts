@@ -974,6 +974,17 @@ async function main() {
     assert.equal(await slackControl.stoppedAfter({ ...slackRunTarget, channel: "C2" }, "2.7"), false);
     await assert.rejects(slackControl.requestStop({ ...slackRunTarget, projectName: `missing-${suffix}` }, "2.8"));
     pass("Slack stop delivery: concurrent watermark, subsequent-message isolation and project fence");
+    const slackLeases = await Promise.all([slackControl.acquire(slackRunTarget), slackControl.acquire(slackRunTarget)]);
+    const leaseWinners = slackLeases.filter((token): token is string => token !== null);
+    assert.equal(leaseWinners.length, 1);
+    assert.equal(await slackControl.renew(slackRunTarget, leaseWinners[0]!), true);
+    await slackControl.release(slackRunTarget, "stale-owner");
+    assert.equal(await slackControl.acquire(slackRunTarget), null);
+    await slackControl.release(slackRunTarget, leaseWinners[0]!);
+    const nextSlackLease = await slackControl.acquire(slackRunTarget);
+    assert.ok(nextSlackLease);
+    await slackControl.release(slackRunTarget, nextSlackLease);
+    pass("Slack thread lease: concurrent admission, renewal and owner-scoped release");
 
     // ---------- conversation transcript (newest N, oldest first, per conversation) ----------
     const conversationKey = `telegram:${suffix}`;

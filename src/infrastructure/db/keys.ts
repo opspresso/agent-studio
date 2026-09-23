@@ -318,6 +318,10 @@ export const keys = {
     PK: `PROJECT#${projectName}`,
     SK: `SLACKSTOP#${channel}#${threadTs}`,
   }),
+  slackRunLease: (projectName: string, channel: string, threadTs: string) => ({
+    PK: `PROJECT#${projectName}`,
+    SK: `SLACKRUN#${channel}#${threadTs}`,
+  }),
 
   a2aTask: (projectName: string, ownerScope: string, taskId: string) => ({
     PK: `A2ATASK#${projectName}#${encodeURIComponent(ownerScope)}`,

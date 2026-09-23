@@ -123,6 +123,8 @@ export const DEFAULT_LOADING_INDICATOR = ":hourglass_flowing_sand:";
 
 /** Where a reply goes, and what that surface supports. */
 export interface ReplyTarget {
+  /** A stale lease holder must not write into a newer run's session. */
+  canWrite?: () => boolean;
   channel: string;
   threadTs: string;
   /**
@@ -505,6 +507,7 @@ export function createReplySink(
     /** What the text-note fallback writes instead, when a row's wording is not a sentence. */
     prose = text,
   ): Promise<void> {
+    if (target.canWrite?.() === false) return;
     const chunk = { type: "task_update" as const, id, title: text, status };
     if (mode === "stream") {
       await slack
@@ -613,6 +616,7 @@ export function createReplySink(
   }
 
   async function sendStatus(text: string, loadingMessages?: string[]): Promise<void> {
+    if (target.canWrite?.() === false) return;
     if (!target.assistantThread) {
       // The same report, rendered the way this surface renders one. Skipped when
       // there is nothing to say or the answer has taken the message over — a
@@ -752,6 +756,7 @@ export function createReplySink(
     },
 
     async push(fullText) {
+      if (target.canWrite?.() === false) return;
       if (fullText.length <= flushed) {
         return;
       }
@@ -811,6 +816,7 @@ export function createReplySink(
     },
 
     async finish(fullText, suffix, state = "completed") {
+      if (target.canWrite?.() === false) return;
       // Built before the writes below, because two of the three branches never
       // reach the stream close: the checklist is only a channel's, and only a
       // streamed one's.
@@ -839,15 +845,19 @@ export function createReplySink(
       // Warnings ride out with the answer rather than replacing it: a late
       // failure (image upload, timeout, mid-stream error) must not discard text
       // that already reached the user.
-      if (state === "cancelled" && mode === "stream") {
+      if (state === "cancelled") {
         try {
           // Slack may already have stopped this stream when the native stop button was clicked.
           // Do not replay buffered output through the normal delivery fallback after a stop.
-          await slack.stopStream(token, {
-            channel: messageChannel, ts: messageTs,
-            ...(payload === "chunks" && closingChunks.length > 0 ? { chunks: closingChunks } : {}),
-          }).catch((error) => log.warn("slack", "cancelled stream close failed", error));
-          if (suffix) await slack.postMessage(token, {
+          if (mode === "stream") {
+            await slack.stopStream(token, {
+              channel: messageChannel, ts: messageTs,
+              ...(payload === "chunks" && closingChunks.length > 0 ? { chunks: closingChunks } : {}),
+            }).catch((error) => log.warn("slack", "cancelled stream close failed", error));
+          }
+          if (mode === "edit") {
+            await writeEdited(withSuffix(fullText.slice(0, flushed), suffix), true);
+          } else if (suffix) await slack.postMessage(token, {
             channel: target.channel, thread_ts: target.threadTs, text: suffix,
           });
         } catch (error) {

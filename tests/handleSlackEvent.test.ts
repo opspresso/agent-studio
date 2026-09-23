@@ -282,8 +282,14 @@ const engagements: Array<{ project: string; channel: string; threadTs: string }>
 const mutes: Array<{ threadTs: string; muted: boolean }> = [];
 
 function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps {
+  let held = false;
   return {
-    stops: { requestStop: async () => {}, stoppedAfter: async () => false },
+    stops: {
+      acquire: async () => { if (held) return null; held = true; return "lease"; },
+      renew: async () => held,
+      release: async () => { held = false; },
+      requestStop: async () => {}, stoppedAfter: async () => false,
+    },
     threads: {
       markEngaged: async (project, channel, threadTs) => {
         engagements.push({ project, channel, threadTs });
@@ -332,6 +338,47 @@ const BINDING = { projectName: "painter", botToken: "tok" };
 const deps0 = (slack: SlackClientPort) => makeDeps([{ done: true }], slack);
 
 describe("stopping Slack runs", () => {
+  it("checks a stop recorded just before model completion without waiting for a poll tick", async () => {
+    const { slack, uploads, finalText } = makeSlackFake();
+    const deps = deps0(slack);
+    let requested = false;
+    deps.stops.stoppedAfter = async () => requested;
+    deps.runAgent = async function* () {
+      requested = true;
+      yield { image: { b64: "aW1hZ2U=", mimeType: "image/png" } };
+    };
+    await handleSlackEvent(deps, DM_EVENT, BINDING);
+    expect(uploads).toEqual([]);
+    expect(finalText()).toContain("Stopped by user");
+  });
+
+  it("does not let overlapping runs in one thread clear each other's session status", async () => {
+    const { slack, calls, posted } = makeSlackFake();
+    const deps = deps0(slack);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => { started = resolve; });
+    let runs = 0;
+    deps.runAgent = async function* () {
+      runs += 1;
+      if (runs === 1) { started(); await held; }
+      yield { delta: { content: "done" } };
+    };
+    const first = handleSlackEvent(deps, DM_EVENT, BINDING);
+    await ready;
+    try {
+      await handleSlackEvent(deps, { ...DM_EVENT, event_id: "EvNext", event: {
+        ...DM_EVENT.event, ts: "2.0", thread_ts: "1.0",
+      } }, BINDING);
+      expect(runs).toBe(1);
+      expect(calls).not.toContain("session:active");
+      expect(posted.at(-1)?.text).toContain("already working");
+    } finally {
+      release();
+      await first;
+    }
+  });
   const stopEvent: SlackEventBody = { type: "event_callback", event: {
     type: "agent_session_stopped", channel: "D1", thread_ts: "1.0", event_ts: "2.0", user: "U1",
   } };

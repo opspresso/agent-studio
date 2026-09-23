@@ -99,6 +99,8 @@ export interface TurnInput {
   warnings: string[];
   /** User stop requests are composed with the interactive deadline. */
   signal?: AbortSignal;
+  /** Refresh distributed cancellation before dispatch or delivery; updates `signal`. */
+  checkCancellation?: () => Promise<void>;
 }
 
 /** What the run left on the surface, for the adapter's log and bookkeeping. */
@@ -148,6 +150,18 @@ export async function handleTurn(
   const deadline = AbortSignal.timeout(INTERACTIVE_RUN_TIMEOUT_MS);
   const signal = input.signal ? AbortSignal.any([deadline, input.signal]) : deadline;
   let endState: ReplyEndState = "completed";
+  async function refreshCancellation(): Promise<ReplyEndState> {
+    await input.checkCancellation?.();
+    if (!signal.aborted) return endState;
+    if (signal.reason?.name === "AbortError") {
+      return "cancelled";
+    } else {
+      const reason = signal.reason?.name === "TimeoutError" ? "Agent run timed out"
+        : signal.reason instanceof Error ? signal.reason.message : "Agent run stopped";
+      if (!warnings.includes(reason)) warnings.push(reason);
+      return "failed";
+    }
+  }
   // The heartbeat starts *before* the attachments are fetched, not before the
   // run: a 10MB document, or the history's pictures re-downloaded, is a stretch
   // of round trips during which nothing else says the bot is working — and on
@@ -158,6 +172,7 @@ export async function handleTurn(
   let readDocuments: ReadDocument[] = [];
   let history: ChatMessageInput[] = [];
   try {
+    endState = await refreshCancellation();
     signal.throwIfAborted();
     const attached = input.attachments;
     const imageParts = attached.length > 0 ? await collectImageParts(attached, warnings) : [];
@@ -191,6 +206,8 @@ export async function handleTurn(
     }
     const fileHistory = await loadFileHistory(deps.fileHistory, project.name, input.conversation, input.actor, warnings);
     const messages: ChatMessageInput[] = [...history, ...(fileHistory ? [{ role: "user" as const, content: fileHistory }] : []), { role: "user", content: userContent }];
+    endState = await refreshCancellation();
+    signal.throwIfAborted();
     for await (const chunk of deps.runAgent({
       project,
       configuration,
@@ -269,14 +286,11 @@ export async function handleTurn(
     signal.throwIfAborted();
   } catch (error) {
     if (!(error instanceof EmptyTurnError)) {
-      if (signal.aborted && signal.reason?.name === "AbortError") {
-        endState = "cancelled";
+      if (signal.aborted) {
+        endState = await refreshCancellation();
       } else {
         endState = "failed";
-        warnings.push(signal.aborted && signal.reason?.name === "TimeoutError"
-          ? "Agent run timed out"
-          : signal.aborted && signal.reason instanceof Error ? signal.reason.message
-          : error instanceof Error ? error.message : "agent run failed");
+        warnings.push(error instanceof Error ? error.message : "agent run failed");
       }
     }
   } finally {
@@ -292,7 +306,8 @@ export async function handleTurn(
   // is its own message and its own notification, while a chat renders inline in
   // a conversation already flowing past.
   const drawn = images.filter((image) => !image.fetched);
-  const uploads = endState === "cancelled" ? [] : drawn.length > 0 ? drawn : images;
+  endState = await refreshCancellation();
+  const uploads = signal.aborted ? [] : drawn.length > 0 ? drawn : images;
 
   log.info(
     "messaging",
@@ -300,7 +315,8 @@ export async function handleTurn(
   );
   let imagesDelivered = 0;
   for (const [index, image] of uploads.entries()) {
-    if (input.signal?.aborted) break;
+    endState = await refreshCancellation();
+    if (signal.aborted) break;
     try {
       await reply.sendImage(image, index);
       imagesDelivered += 1;
@@ -312,8 +328,8 @@ export async function handleTurn(
   // Signed here, one step before the message goes out, and for a window that
   // suits a record rather than an open page: a conversation is read minutes
   // later by the person who asked and days later by whoever searches it.
-  if (signal.aborted && signal.reason?.name === "AbortError") endState = "cancelled";
-  const produced = await resolveProducedFiles(endState === "cancelled" ? [] : producedRefs, deps.signFile, RECORD_URL_TTL_SECONDS);
+  endState = await refreshCancellation();
+  const produced = await resolveProducedFiles(signal.aborted ? [] : producedRefs, deps.signFile, RECORD_URL_TTL_SECONDS);
   for (const warning of produced.warnings) {
     if (!warnings.includes(warning)) {
       warnings.push(warning);
@@ -331,8 +347,8 @@ export async function handleTurn(
   // order.
   await rememberFiles(deps.fileHistory, project.name, input.conversation, input.actor, producedRefs.filter((file) => file.key), warnings);
   // A stop can arrive while file URLs or history are being saved, after the model finished.
-  if (signal.aborted && signal.reason?.name === "AbortError") endState = "cancelled";
-  const filesToDeliver = endState === "cancelled" ? [] : produced.files;
+  endState = await refreshCancellation();
+  const filesToDeliver = signal.aborted ? [] : produced.files;
   const suffix = [
     // `resolveProducedFiles` hands back only files it could address; the guard
     // is what the type still leaves open, not a case that occurs.

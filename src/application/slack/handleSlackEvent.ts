@@ -202,6 +202,7 @@ function slackReplyChannel(
   return {
     ...createReplySink(deps.slack, token, target, deps.loadingIndicator),
     async say(text) {
+      if (target.canWrite?.() === false) return;
       await deps.slack.postMessage(token, {
         channel: target.channel,
         thread_ts: target.threadTs,
@@ -209,6 +210,7 @@ function slackReplyChannel(
       });
     },
     async sendImage(image, index) {
+      if (target.canWrite?.() === false) return;
       const ext = image.mimeType === "image/png" ? "png" : "jpg";
       await deps.slack.uploadImage(token, {
         channel: target.channel,
@@ -390,7 +392,9 @@ export async function handleSlackEvent(
   const project = await deps.projects.get(projectName);
   // Pin current settings alongside the Project for this messaging turn.
   const configuration = project ? project.configuration : null;
+  let canWrite = () => true;
   const target: ReplyTarget = {
+    canWrite: () => canWrite(),
     channel: event.channel,
     threadTs,
     assistantThread: isAssistantThread,
@@ -421,7 +425,14 @@ export async function handleSlackEvent(
 
   log.info("slack", `run start project=${projectName} channel=${event.channel} ts=${event.ts}`);
 
-  const stop = await watchSlackStop(deps.stops, { projectName, channel: event.channel, threadTs }, event.ts);
+  const runTarget = { projectName, channel: event.channel, threadTs };
+  const lease = await deps.stops.acquire(runTarget);
+  if (!lease) {
+    await reply.say("I am already working in this thread. Please wait, or use !stop before sending another request.");
+    return;
+  }
+  const stop = await watchSlackStop(deps.stops, runTarget, event.ts, lease);
+  canWrite = stop.canWrite;
   let started = false;
   try {
     if (stop.signal.aborted) {
@@ -459,6 +470,12 @@ export async function handleSlackEvent(
       warnings.push(`Thread history limited to the most recent ${MAX_THREAD_HISTORY_MESSAGES} messages.`);
     }
     const rawTurns = historyTurns.slice(-MAX_THREAD_HISTORY_MESSAGES);
+
+    await stop.check();
+    if (stop.signal.aborted) {
+      await reply.finish("", stop.signal.reason.message, "cancelled");
+      return;
+    }
 
     // Ahead of every lookup below. Profile resolution is several round trips on a
     // cold cache, and making the user wait for them before anything acknowledges
@@ -533,6 +550,7 @@ export async function handleSlackEvent(
         ...(ownerEmail ? { ownerEmail } : {}),
         warnings,
         signal: stop.signal,
+        checkCancellation: stop.check,
       },
       reply,
     );
@@ -553,10 +571,16 @@ export async function handleSlackEvent(
         .catch((error) => log.error("slack", "thread engagement could not be recorded", error));
     }
   } finally {
-    stop.dispose();
-    if (started) await deps.slack.setSessionStatus(token, {
-      channel_id: event.channel, thread_ts: threadTs, status: "active",
-    }).catch((error) => log.error("slack", "session finish failed", error));
+    try {
+      if (started && await deps.stops.renew(runTarget, lease)) {
+        await deps.slack.setSessionStatus(token, {
+          channel_id: event.channel, thread_ts: threadTs, status: "active",
+        }).catch((error) => log.error("slack", "session finish failed", error));
+      }
+    } finally {
+      stop.dispose();
+      await deps.stops.release(runTarget, lease);
+    }
   }
 }
 

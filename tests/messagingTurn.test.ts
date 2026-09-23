@@ -133,6 +133,16 @@ afterEach(() => {
 });
 
 describe("handleTurn", () => {
+  it("reports cancellation-state failures during delivery and withholds pending files", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const deps = makeDeps([{ file: { name: "report.txt", mimeType: "text/plain", source: "File", key: "report" } }]);
+    deps.signFile = async () => { controller.abort(new Error("Cancellation state unavailable")); return "https://files.test/report"; };
+    const reply = makeReply();
+    const result = await handleTurn(deps, turn({ signal: controller.signal }), reply.reply);
+    expect(result.filesDelivered).toBe(0);
+    expect(reply.finished()?.suffix).toContain("Cancellation state unavailable");
+  });
   it("honors a stop received after generation while signing a produced file", async () => {
     vi.useFakeTimers();
     const controller = new AbortController();

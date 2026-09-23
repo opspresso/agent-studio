@@ -493,6 +493,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | Slack 앱의 짧은 설명 | `140` 자 | `src/domain/slack/types.ts` |
 | Slack 중단 요청 확인 주기 | `1` 초 | `src/application/slack/watchStop.ts` |
 | Slack thread 중단 기록 보존 | `24h` | `src/infrastructure/db/ttl.ts` |
+| Slack thread 실행 lease | `90` 초, 남은 시간이 절반 이하일 때 갱신 | `src/infrastructure/db/ttl.ts`, `slackRunControlRepository.ts` |
 | 프로젝트당 Slack 채널 키워드 수 / 각 길이 | `20` / `2`–`50` 자 | `src/domain/slack/types.ts` |
 | 봇이 답한 채널 스레드에서 참여 상태로 머무는 시간 (답할 때마다 갱신) | `24h` | `src/infrastructure/db/ttl.ts` |
 | 채널 체크리스트가 나열할 수 있는 서로 다른 도구 수, 그 뒤의 것들은 한 행을 함께 쓴다 | `25` | `src/application/slack/replyStream.ts` |
