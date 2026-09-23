@@ -31,6 +31,33 @@ const STATUS_COLOR: Record<McpConnectionView["status"], string> = {
   needs_reauth: "orange",
 };
 
+interface AuthorizationPopup {
+  location: { href: string };
+  closed: boolean;
+  close(): void;
+}
+
+/** Open during the click; waiting for a network response can exhaust popup activation. */
+export async function openMcpAuthorizationPopup(
+  authorize: () => Promise<string>,
+  openWindow: (url: string, target: string, features: string) => AuthorizationPopup | null,
+): Promise<void> {
+  const popup = openWindow("about:blank", "mcp-oauth", "width=600,height=760");
+  if (!popup) {
+    throw new Error("Browser blocked the authorization popup");
+  }
+  try {
+    const url = await authorize();
+    if (popup.closed) {
+      throw new Error("Authorization popup was closed");
+    }
+    popup.location.href = url;
+  } catch (error) {
+    popup.close();
+    throw error;
+  }
+}
+
 export function McpConnectionCard({
   projectName,
   serverName,
@@ -214,10 +241,12 @@ export function McpConnectionCard({
           disabled={busy || missingClient}
           onClick={() =>
             run(async () => {
-              const url = await beginMcpAuthorization(projectName, serverName);
               // A popup rather than a redirect: the editor keeps its unsaved
               // state, and the callback page reports back to this window.
-              window.open(url, "mcp-oauth", "width=600,height=760");
+              await openMcpAuthorizationPopup(
+                () => beginMcpAuthorization(projectName, serverName),
+                (url, target, features) => window.open(url, target, features),
+              );
             })
           }
         >
