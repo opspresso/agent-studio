@@ -137,6 +137,15 @@ describe("handleTeamsActivity", () => {
     expect(sent[0]?.serviceUrl).toBe("https://smba.trafficmanager.net/emea/");
   });
 
+  it("uses the conversation sender id when the Entra id is empty", async () => {
+    const { teams } = makeTeamsFake();
+    const { deps, runs } = makeDeps([{ done: true }], teams);
+
+    await handleTeamsActivity(deps, dispositionOf(activity({ from: { id: "29:user", aadObjectId: "" } })), BINDING);
+
+    expect(runs[0]?.actor).toEqual({ kind: "teams", id: "29:user" });
+  });
+
   it("keeps a channel thread as its own conversation", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
