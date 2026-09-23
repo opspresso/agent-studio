@@ -18,7 +18,6 @@ vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 vi.mock("@/lib/container", () => ({
   executionDeps: {},
   projectRepository: {},
-  versionRepository: {},
   // No object storage in this deployment, which the wiring site names rather
   // than leaves undecided.
   signArtifactUrl: undefined,
