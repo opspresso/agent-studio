@@ -738,7 +738,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         status: "needs_auth",
         updatedAt: new Date().toISOString(),
       };
-      await deps.connections.put(next);
+      if (!await deps.connections.putIfCurrent(next, existing)) {
+        throw new ConflictError(`The connection to "${serverName}" changed while its credentials were being saved. Reload and retry.`);
+      }
       return toConnectionView(deps.cipher, next);
     },
 
@@ -878,7 +880,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
             `MCP server "${serverName}" supports neither client ID metadata documents nor dynamic client registration. Register an app with the provider and have an administrator save its client ID and secret in Tools > OAuth.`,
           );
         }
-        await deps.connections.put(fresh);
+        if (!await deps.connections.putIfCurrent(fresh, connection)) {
+          throw new ConflictError(`The connection to "${serverName}" changed while authorization was starting. Connect again.`);
+        }
         connection = fresh;
       }
 
@@ -981,7 +985,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         ...credentials
       } = connection;
       void _accessToken, _refreshToken, _expiresAt;
-      await deps.connections.put({
+      const completed: McpConnection = {
         ...credentials,
         // Stamped here too, so a row that predates the binding acquires both
         // halves the first time it is authorized rather than staying unbound
@@ -1019,7 +1023,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         connectedAt: now.toISOString(),
         authorizationEpoch: createHash("sha256").update(pending.state).digest("hex"),
         updatedAt: now.toISOString(),
-      });
+      };
+      if (!await deps.connections.putIfCurrent(completed, connection)) {
+        throw new ConflictError(`The connection to "${pending.serverName}" changed while authorization was completing. Connect again.`);
+      }
       return { projectName: pending.projectName, serverName: pending.serverName };
     },
 
@@ -1039,8 +1046,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
 
     async disconnect(projectName, serverName, userEmail) {
       await assertProjectWritable(deps.projects, projectName, userEmail);
-      await requireConnection(projectName, serverName);
-      await deps.connections.delete(projectName, serverName);
+      const connection = await requireConnection(projectName, serverName);
+      if (!await deps.connections.deleteIfCurrent(connection)) {
+        throw new ConflictError(`The connection to "${serverName}" changed while it was being disconnected. Reload and retry.`);
+      }
     },
 
     async listTools(projectName, serverName, userEmail, headerOverrides) {

@@ -136,6 +136,8 @@ dynamic registration 순서다. 프로젝트별 공개 metadata URL은 설정한
 
 refresh는 남은 실행 시간을 고려한 여유 구간에서 수행한다.
 갱신은 revision CAS로 저장하고 경쟁에서 진 호출은 동일 issuer·resource의 유효한 승자 grant만 사용한다.
+자격 증명 저장·인증 시작 중 새 연결 저장·콜백 완료·연결 해제도 읽은 연결 revision을 조건으로 쓴다.
+그 사이 다른 연결이 저장되거나 삭제되면 충돌을 반환하며 이전 grant를 되살리거나 덮지 않는다.
 일시 5xx·timeout은 grant를 폐기하지 않으며 실제 인증 거절은 재연결이 필요한 상태로 바꾼다.
 
 OAuth는 credential을 공급한다. 유효한 token이 있으면 정적·binding Authorization보다 우선하고,

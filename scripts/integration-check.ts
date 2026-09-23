@@ -535,6 +535,15 @@ async function main() {
     const revoked = await mcpConnectionRepository.get(projectName, serverName);
     assert.equal(revoked?.refreshToken, undefined, "cleared refresh token is absent, not null");
     assert.equal(revoked?.status, "needs_reauth", "status recorded");
+    assert.ok(revoked, "revoked connection remains available for a conditional replacement");
+    assert.equal(await mcpConnectionRepository.putIfCurrent({ ...conn, clientId: "stale" }, conn),
+      false, "a stale authorization cannot replace the current grant");
+    assert.equal(await mcpConnectionRepository.putIfCurrent({ ...revoked, clientId: "replacement" }, revoked),
+      true, "the current grant may be replaced");
+    assert.equal(await mcpConnectionRepository.deleteIfCurrent(revoked),
+      false, "a stale disconnect cannot remove a replacement grant");
+    assert.equal((await mcpConnectionRepository.get(projectName, serverName))?.clientId,
+      "replacement", "the replacement grant survives the stale disconnect");
 
     const oauthState = `it-state-${suffix}`;
     await mcpOAuthStateRepository.put(
