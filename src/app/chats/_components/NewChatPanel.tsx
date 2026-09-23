@@ -17,6 +17,7 @@ import { Alert, Box, Button, Flex, Group, Loader, ScrollArea, Select, Stack, Tex
 import { IconMessageCircle, IconArrowRight } from "@tabler/icons-react";
 import { useLocalStorage } from "@mantine/hooks";
 import classes from "./ChatThread.module.css";
+import { AgentSuggestion } from "@/app/_components/AgentSuggestion";
 
 const PROJECT_KEY = "agent-studio-chat-project";
 
@@ -25,6 +26,7 @@ export function NewChatPanel() {
   const [projects, setProjects] = useState<AgentProject[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
   // The project a new chat runs against, remembered per browser so the next one
   // opens on the last pick. Not synced across tabs: a pick made in another tab
   // must not swap the project under a message being typed here.
@@ -96,6 +98,7 @@ export function NewChatPanel() {
         // The composer owns the draft and its attachments; remounting it under a
         // new key is what clears them.
         setComposerKey((n) => n + 1);
+        setDraft("");
       }),
     [],
   );
@@ -249,6 +252,9 @@ export function NewChatPanel() {
           <Composer
             key={composerKey}
             onSend={start}
+            onDraftChange={setDraft}
+            suggestion={<AgentSuggestion surface="chat" request={draft} candidates={projects} selected={projectName}
+              onSelect={setProjectName} disabled={starting} />}
             disabled={starting || !selectedProject}
             placeholder={t("chat.firstPlaceholder")}
             status={<RunningAgents paths={entry?.live.authorPaths ?? []} />}

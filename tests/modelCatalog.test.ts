@@ -21,6 +21,12 @@ describe("selected model runtime registry", () => {
       expect(registeredModelConfig({ ...selected, type }, "openai").capabilities[capability]).toBe(true);
     }
   });
+  it("keeps a decisions model available for recommendations but out of Agent execution choices", () => {
+    const decision = registeredModelConfig({ ...selected, type: "decisions", capabilities: { ...selected.capabilities, tools: false } }, "openrouter");
+    replaceModelRegistry([decision]);
+    expect(getModelConfig(selected.id)?.capabilities.decisions).toBe(true);
+    expect(offeredModels(["office"], undefined)).toEqual([]);
+  });
   it("reports unknown pricing rather than silently treating a selected model as free", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     replaceModelRegistry([registeredModelConfig(selected, "openai")]);

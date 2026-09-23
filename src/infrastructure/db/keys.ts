@@ -235,6 +235,10 @@ export const keys = {
     SK: `SLOT#${String(index).padStart(3, "0")}`,
   }),
   runSlotPartition: (actor: string) => `RUNSLOT#${actor}`,
+  agentRecommendationQuota: (email: string, date: string) => ({
+    PK: `AGENTRECOMMENDATION#${email.toLowerCase()}`,
+    SK: `DATE#${date}`,
+  }),
 
   slackEvent: (eventId: string) => ({ PK: `SLACKEVENT#${eventId}`, SK: "META" }),
 

@@ -56,7 +56,7 @@ describe("deployment model registry", () => {
     await expect(setup().useCases.save(model, "admin@example.test")).rejects.toThrow("Provider is not registered");
   });
 
-  it.each(["defaultModel", "embeddingModel", "rerankerModel"] as const)("protects a model referenced by %s", async (field) => {
+  it.each(["defaultModel", "embeddingModel", "rerankerModel", "decisionModel"] as const)("protects a model referenced by %s", async (field) => {
     await settingsRepository.update(() => ({ registeredModels: [model], [field]: model.id, updatedAt: "" }));
     await expect(setup().useCases.remove(model.id, "admin@example.test")).rejects.toThrow("Change model usage");
     expect(await setup().useCases.list()).toHaveLength(1);
@@ -103,6 +103,22 @@ describe("deployment model registry", () => {
     expect(runtime.wireId).toBe("~typesafe/jev-latest");
     expect(runtime.pricing.inputPer1M).toBe(0.042);
     expect(runtime.capabilities.tools).toBe(false);
+  });
+
+  it("selects and clears only a registered decision model on a supported provider", async () => {
+    const decision = { ...model, id: "router/~typesafe/jev-latest", provider: "router", wireId: "~typesafe/jev-latest", type: "decisions" as const };
+    const useCases = createModelRegistryUseCases({
+      repository: settingsRepository, discovery: { list: async () => [] }, changed: async () => {},
+      providers: async () => [{ name: "router", kind: "openrouter", baseUrl: "https://router.test/api/v1", apiKey: "secret", auth: "bearer", keepModelPrefix: false }],
+    });
+    await settingsRepository.update(() => ({ registeredModels: [model, decision], updatedAt: "" }));
+    await expect(useCases.selectDecision(model.id, "admin@example.test")).rejects.toThrow("registered decisions model");
+    await expect(useCases.selectDefault(decision.id, "admin@example.test")).rejects.toThrow("registered text model");
+    await useCases.selectDecision(decision.id, "admin@example.test");
+    expect((await settingsRepository.get())?.decisionModel).toBe(decision.id);
+    await expect(useCases.remove(decision.id, "admin@example.test")).rejects.toThrow("decision");
+    await useCases.selectDecision(null, "admin@example.test");
+    expect((await settingsRepository.get())?.decisionModel).toBeUndefined();
   });
 
   it("requires classification instead of silently enrolling an unknown model as text", () => {

@@ -20,6 +20,7 @@ function usage(settings: AppSettings, id: string): string[] {
     ...(settings.defaultModel === id ? ["default"] : []),
     ...(settings.embeddingModel === id ? ["embedding"] : []),
     ...(settings.rerankerModel === id ? ["rerank"] : []),
+    ...(settings.decisionModel === id ? ["decision"] : []),
     ...Object.entries(settings.workspaceModels ?? {}).filter(([, model]) => model === id).map(([runtime]) => runtime),
   ];
 }
@@ -72,11 +73,29 @@ export function createModelRegistryUseCases(deps: ModelRegistryDeps) {
       const providers = await deps.providers();
       await deps.repository.update((stored) => {
         const model = stored?.registeredModels?.find((item) => item.id === id);
-        if (!model || !["text", "decisions"].includes(model.type) || !model.capabilities.tools) throw new ValidationError("Select a registered text model as the default");
+        if (!model || model.type !== "text" || !model.capabilities.tools) throw new ValidationError("Select a registered text model as the default");
         if (!(stored?.llmProviders ?? providers).some((item) => item.name === model.provider)) throw new ValidationError("Provider is not registered");
         return { ...stored, defaultModel: id, updatedAt: new Date().toISOString() };
       });
       await committed(actorEmail, "defaultModel");
+    },
+    async selectDecision(id: string | null, actorEmail: string): Promise<void> {
+      const providers = await deps.providers();
+      await deps.repository.update((stored) => {
+        if (!stored) throw new ValidationError("Register a decision model before selecting one");
+        if (id === null) {
+          const { decisionModel: _, ...remaining } = stored;
+          return { ...remaining, updatedAt: new Date().toISOString() };
+        }
+        const model = stored.registeredModels?.find((item) => item.id === id);
+        if (!model || model.type !== "decisions") throw new ValidationError("Select a registered decisions model");
+        const provider = (stored.llmProviders ?? providers).find((item) => item.name === model.provider);
+        if (!provider || !["openrouter", "selfhosted"].includes(provider.kind ?? provider.name) || (provider.auth ?? "bearer") !== "bearer") {
+          throw new ValidationError("The decision model needs an OpenRouter or System One provider with bearer authentication");
+        }
+        return { ...stored, decisionModel: id, updatedAt: new Date().toISOString() };
+      });
+      await committed(actorEmail, "decisionModel");
     },
   };
 }

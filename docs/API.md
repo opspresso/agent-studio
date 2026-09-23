@@ -156,6 +156,8 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/models/catalog` | `GET` | member |
 | `/api/models/test` | `POST` | admin |
 | `/api/models/selection` | `PUT` | admin |
+| `/api/models/decision` | `GET` `PUT` | admin |
+| `/api/agent-recommendations` | `POST` | Chat: session / Workspace: member |
 | `/api/models/workspace` | `GET` `PUT` | member / admin |
 | `/api/me` | `GET` | session |
 | `/api/me/profile` | `GET` | session |
@@ -1567,7 +1569,7 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 모델 사용 설정은 Settings → Models에서 관리한다.
 
 모델 등록·선택·기본값·상태 검사는 admin 전용이며 목록은 member부터 읽는다.
-`GET /api/models`는 로그인한 사용자에게 등록된 실행 모델(Text·Image·Decisions)을 제공한다.
+`GET /api/models`는 로그인한 사용자에게 등록된 실행 모델(Text·Image)을 제공한다.
 연결이 없는 모델은 제공하지 않으며 기본 모델을 먼저 정렬한다. 즐겨찾기는 사용자별이다.
 
 | API | 계약 |
@@ -1575,17 +1577,27 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 | `GET /api/models/discover?provider=<name>` | 등록한 연결의 목록을 조회한다. `{ models: [{ wireId, displayName, maker?, type?, inputModalities?, outputModalities?, contextWindow?, maxTokens?, capabilities?, pricing? }] }`. 조회는 모델을 활성화하지 않는다 |
 | `GET /api/models/registry` | `{ models: RegisteredModel[] }`. 관리자가 선택하거나 직접 등록한 모델만 반환한다 |
 | `POST /api/models/registry` | `{ id, provider, wireId, displayName, maker?, type, inputModalities?, outputModalities?, contextWindow, maxTokens, capabilities, pricing? }`를 저장하고 갱신된 목록을 반환한다. 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decisions`다 |
-| `DELETE /api/models/registry?id=<id>` | 미사용 모델을 삭제한다. 성공 204, 현재 기본·검색·Workspace에서 사용하면 409 |
+| `DELETE /api/models/registry?id=<id>` | 미사용 모델을 삭제한다. 성공 204, 현재 기본·결정·검색·Workspace에서 사용하면 409 |
 | `GET /api/models/status?id=<id>` | 프로바이더 목록에 등록 모델이 있는지 `{ available }`로 반환한다. 통신 실패는 502이며 실제 추론 성공을 뜻하지 않는다 |
 | `GET /api/models/default` | `{ model: string | null }` |
-| `PUT /api/models/default` | `{ model }`. 도구 호출을 지원하는 등록 텍스트·Decisions 모델을 선택한다 |
+| `PUT /api/models/default` | `{ model }`. 도구 호출을 지원하는 등록 Text 모델을 선택한다 |
+| `GET /api/models/decision` | `{ model: string | null }`. Agent 추천에 쓰는 전역 결정 모델 선택 |
+| `PUT /api/models/decision` | `{ model: string | null }`. OpenRouter 또는 System One 호환 연결의 등록된 Decisions 모델을 선택하거나 해제한다 |
 | `GET /api/models/catalog` | 등록 모델의 runtime facts, 현재 검색 선택, 검색 기능 활성 여부와 사용자 즐겨찾기를 반환한다 |
 | `PUT /api/models/selection` | `{ type: "embedding" | "rerank", model, migrate?, rerankerMinScore? }`. Embedding 변경은 `migrate: true`와 전체 재색인을 요구하며 Rerank는 probe 후 저장한다 |
 | `GET /api/models/workspace` | Runtime별 선택·호환 모델의 runtime facts·사용자 즐겨찾기와 사용 가능한 Runtime 목록 |
 | `PUT /api/models/workspace` | `{ runtime, model: string | null }`. 등록된 호환 모델을 선택하거나 해제한다 |
 | `GET/PUT /api/models/favorites` | 사용자별 `{ models: string[] }` 조회·전체 교체 |
 | `PATCH /api/models/favorites` | `{ model, favorite: boolean }`으로 개인 즐겨찾기 한 개를 원자적으로 추가·제거하고 `{ models: string[] }` 반환 |
-| `POST /api/models/test` | `{ model }`로 Text·Decisions·Image·Rerank의 실제 호출을 수행하고 `{ ok, latencyMs, error? }`를 반환한다. 호출 비용이 발생할 수 있다 |
+| `POST /api/models/test` | `{ model }`로 Text·Decisions·Image·Rerank의 실제 호출을 수행하고 `{ ok, latencyMs, error? }`를 반환한다. Decisions는 Choice 엔드포인트를 사용한다. 호출 비용이 발생할 수 있다 |
+
+`POST /api/agent-recommendations`는 `{ surface: "chat" | "workspace", request: string }`을 받고
+`{ recommendation: { name, confidence } | null }`을 반환한다. 입력은 1–4,000자다. 서버가
+로그인 사용자의 접근 가능한 Agent만 조회하며 Workspace는 도구 정책이 활성화된 Agent로
+좁힌다. 미설정·적합한 Agent 없음은 `null`이고 모델 호출 실패는 502다. 사용자별 분당 30회,
+UTC 하루 300회를 넘으면 `Retry-After`가 포함된 429를 반환한다. 추천은 실행 대상이나
+Agent의 모델 설정을 자동 변경하지 않는다. 입력 중인 요청과 후보 설명은 공통 PII 필터를
+거쳐 선택한 provider로 전달된다.
 
 등록 모델은 최대 500개다. 가격 미제공은 `pricingKnown: false`로 표시하며 명시적 0과 구별한다.
 모델 선택기는 표시 이름·등록 ID·provider·유형별 가격을 공통으로 보여준다. 개인 즐겨찾기는

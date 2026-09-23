@@ -725,6 +725,7 @@ SDK tracing은 로컬 processor가 이름·시간·상태·사용량만 수집�
 | 경계 | 전달·보관하는 내용 |
 |---|---|
 | 텍스트 모델 요청·모델에 돌아가는 도구 결과 | 탐지한 PII를 치환한다 |
+| 새 Chat·Workspace의 Agent 추천 | Agent 선택 전에도 요청 텍스트와 후보 설명의 탐지한 PII를 치환해 결정 모델에 보낸다. 호출은 사용자별 분·일 상한을 받는다 |
 | MCP·FetchUrl·파일 생성/편집·Workspace 등 실제 도구 dispatch | 복원한 인자를 사용한다. 수신 시스템은 그 값을 본다 |
 | Agent의 GenerateImage·EditImage prompt | 치환된 인자를 이미지 모델에 전달한다. 사용자에게 보이는 prompt는 복원한다 |
 | 하위 Agent 요청 | 치환된 메시지와 필요한 매핑을 전달한다 |

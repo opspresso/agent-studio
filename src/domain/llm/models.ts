@@ -154,7 +154,7 @@ export function offeredModels(
   const hidden = new Set(hiddenIds ?? []);
   return candidates.filter(
     (model) =>
-      (["text", "image", "decisions"].includes(modelType(model))) &&
+      (["text", "image"].includes(modelType(model))) &&
       providerOffered(model.provider, providers) &&
       !hidden.has(model.id),
   ).sort((a, b) => Number(b.id === defaultModel) - Number(a.id === defaultModel));

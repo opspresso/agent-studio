@@ -4,6 +4,9 @@ Workspace는 채팅과 독립적으로 파일과 실행 상태를 유지하는 �
 Workspace를 실행하는 일시적 컴퓨팅 자원이다. 저장소를 다루지 않는 일반 명령·스크립트 작업과
 Codex·Claude·OpenCode를 사용하는 코딩 작업이 같은 생명주기와 저장소 계약을 사용한다.
 기존 OpenAI Agents SDK의 대화 이력은 Workspace의 Runtime Session과 분리한다.
+새 Workspace의 작업 입력에 대한 Agent 추천은 실행 가능한 Workspace 정책을 가진 Agent만
+후보로 삼는다. 추천 적용 시 그 Agent의 기본 Runtime을 선택하고 저장소 선택을 초기화하며,
+실제 작업 접수는 기존 권한·정책 검증을 다시 거친다.
 
 ## 경계와 운영 조건
 

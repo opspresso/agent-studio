@@ -30,6 +30,8 @@ export function Composer({
   placeholder,
   leading,
   status,
+  onDraftChange,
+  suggestion,
 }: {
   /**
    * Returns whether the send was accepted. `false` keeps the draft — text and
@@ -60,6 +62,8 @@ export function Composer({
    * the reply around while the reader is trying to read it.
    */
   status?: React.ReactNode;
+  onDraftChange?: (value: string) => void;
+  suggestion?: React.ReactNode;
 }) {
   const [value, setValue] = useState("");
   const t = useT();
@@ -92,6 +96,7 @@ export function Composer({
       return;
     }
     setValue("");
+    onDraftChange?.("");
     clear();
   }
 
@@ -107,6 +112,7 @@ export function Composer({
       {dragging && <DropHint />}
       <Stack gap="xs">
         {leading}
+        {suggestion}
         {status}
         <AttachmentBar
           attachments={attachments}
@@ -120,7 +126,7 @@ export function Composer({
           <Textarea
             aria-label={t("chat.messageLabel")}
             value={value}
-            onChange={(event) => setValue(event.currentTarget.value)}
+            onChange={(event) => { setValue(event.currentTarget.value); onDraftChange?.(event.currentTarget.value); }}
             onPaste={onPaste}
             onKeyDown={(event) => {
               if (isSubmitEnter(event) && !event.shiftKey) {

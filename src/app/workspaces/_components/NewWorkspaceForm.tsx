@@ -14,6 +14,7 @@ import type { WorkspaceBranchesResponse } from "@/app/api/workspaces/branches/ro
 import type { StartWorkspaceResponse } from "@/app/api/workspaces/route";
 import type { WorkspaceRuntime } from "@/domain/workspace/types";
 import { workspaceAllowsRepository } from "@/domain/workspace/policy";
+import { AgentSuggestion } from "@/app/_components/AgentSuggestion";
 
 export function NewWorkspaceForm() {
   const t = useT();
@@ -78,13 +79,20 @@ export function NewWorkspaceForm() {
     finally { setBusy(false); }
   }
 
+  function selectProject(value: string | null) {
+    setProject(value); setRepository(null); setCoding(false); setBranch("main");
+    setRuntime(options?.projects.find(option => option.projectName === value)?.defaultRuntime ?? "command");
+  }
+
   return <Stack gap="md" maw={640} mx="auto" p={{ base: "sm", sm: "lg" }} h="100%" style={{ overflowY: "auto" }} onKeyDown={onModEnter(() => { void start(); })}>
     <Group><ThemeIcon size={44} variant="light"><IconTerminal2 /></ThemeIcon><div><Title order={2}>{t("workspace.new")}</Title><Text size="sm" c="dimmed">{t("workspace.intro")}</Text></div></Group>
     {error && <Alert color="red">{error}</Alert>}
     {!options && !error && <Loader size="sm" />}
     {options && !options.projects.length && <Alert>{t("workspace.notConfigured")}</Alert>}
     <Select label={t("chat.project")} searchable value={project} data={(options?.projects ?? []).map(option => ({ value: option.projectName, label: option.displayName }))}
-      onChange={value => { setProject(value); setRepository(null); setCoding(false); setBranch("main"); setRuntime(options?.projects.find(option => option.projectName === value)?.defaultRuntime ?? "command"); }} disabled={busy} />
+      onChange={selectProject} disabled={busy} />
+    <AgentSuggestion surface="workspace" request={task} candidates={(options?.projects ?? []).map(option => ({ name: option.projectName, displayName: option.displayName }))}
+      selected={project} onSelect={selectProject} disabled={busy} />
     {selected?.description && <Text size="sm" c="dimmed">{selected.description}</Text>}
     <Select label={t("workspace.runtime")} value={runtime} allowDeselect={false} onChange={value => setRuntime(value as WorkspaceRuntime)} disabled={busy}
       error={selected && !selected.runtimes.includes(runtime) ? t("workspace.modelUnavailable") : undefined}

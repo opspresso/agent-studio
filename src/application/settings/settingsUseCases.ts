@@ -25,7 +25,7 @@ export type ParseProviderConfigs = (env: NodeJS.ProcessEnv) => ProviderChannelCo
 
 export type SettingKey = Exclude<
   keyof AppSettings,
-  "updatedAt" | "llmProviders" | "workspaceModels" | "registeredModels" | "defaultModel"
+  "updatedAt" | "llmProviders" | "workspaceModels" | "registeredModels" | "defaultModel" | "decisionModel"
 >;
 
 interface FieldSpec {
