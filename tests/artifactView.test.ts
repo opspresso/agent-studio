@@ -36,7 +36,6 @@ function artifact(over: Partial<Artifact> = {}): Artifact {
     mimeType: "text/html",
     byteSize: 120,
     projectName: "report-bot",
-    versionName: "1",
     actor: { kind: "user", id: OWNER },
     createdAt: "2026-08-22T00:00:00.000Z",
     ...over,

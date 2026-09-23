@@ -8,7 +8,6 @@ import { editorBody } from "@/app/api/_lib/body";
 const createSchema = z.object({
   name: z.string().refine(isSlug, `name ${SLUG_RULE}`),
   url: z.url(),
-  protocol: z.enum(["openai", "a2a"]).default("openai"),
   description: z.string().min(1),
   headers: z.record(z.string(), z.string()).default({}),
 });

@@ -31,7 +31,6 @@ function artifact(over: Partial<Artifact> = {}): Artifact {
     mimeType: "image/png",
     byteSize: 100,
     projectName: "poster-bot",
-    versionName: "1",
     actor: { kind: "user", id: OWNER },
     createdAt: "2026-08-01T00:00:00.000Z",
     ...over,

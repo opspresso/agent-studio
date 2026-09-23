@@ -51,7 +51,7 @@ export const ko: Messages = {
   "settings.models.registeredHint": "선택한 Model을 수정하고 프로바이더 상태를 확인하거나 사용하지 않는 Model을 삭제한다.",
   "settings.section.general": "서비스 주소, Artifact 접근 방식, 관리자와 허용 이메일 도메인을 설정한다.",
   "settings.section.plugins": "Plugin 동기화에 사용할 저장소와 브랜치를 설정한다. GitHub 토큰은 Keys에서 관리한다.",
-  "settings.section.keys": "GitHub 토큰과 인바운드 A2A 키를 관리한다. Model 프로바이더 키는 Models의 연결 설정에서 함께 관리한다.",
+  "settings.section.keys": "GitHub 토큰을 관리한다. Model 프로바이더 키는 Models의 연결 설정에서 함께 관리한다.",
   "settings.field.publicUrl": "서비스 공개 주소",
   "settings.hint.publicUrl": "사용자와 연동 서비스가 이 설치에 접근할 때 사용하는 HTTPS 주소다.",
   "settings.field.artifactAccess": "Artifact 접근 방식",
@@ -65,19 +65,11 @@ export const ko: Messages = {
   "settings.field.pluginBranch": "저장소 브랜치",
   "settings.field.githubToken": "GitHub 토큰",
   "settings.hint.githubToken": "Plugin 동기화와 설정된 GitHub 작업에 사용한다. 교체하려면 새 토큰을 입력한다.",
-  "settings.field.a2aKey": "공유 A2A 키",
-  "settings.hint.a2aKey": "인바운드 A2A 요청을 인증한다. 키를 입력하거나 아래에서 생성한다.",
   "settings.source.override": "저장 설정",
   "settings.source.env": "환경변수",
   "settings.source.default": "기본값",
   "settings.source.unset": "미설정",
   "settings.overrideHint": "변경한 항목만 저장한다. 저장값을 비우면 환경변수 값을 사용한다. 변경하지 않은 마스킹된 키는 유지한다.",
-  "settings.clientKeys": "클라이언트 키",
-  "settings.clientKeysHint": "A2A 클라이언트마다 별도 키를 발급해 호출자를 식별하고 개별적으로 폐기한다.",
-  "settings.issueKey": "키 발급",
-  "settings.revokeKey": "폐기",
-  "settings.revokeTitle": "클라이언트 키를 폐기할까요?",
-  "settings.revokeHint": "{name} 키를 사용하는 요청을 더 이상 인증하지 않는다.",
   "modelAdmin.perMinute": "오디오 1분당 USD",
   "modelAdmin.reasoningWithTools": "추론과 도구 호출 동시 사용 지원",
   "modelAdmin.perImage": "이미지 1개당 USD",
@@ -471,7 +463,7 @@ export const ko: Messages = {
   "home.domain.artifacts": "문서와 결과 파일",
   "home.domain.artifactsBody":
     "보고서·발표자료·스프레드시트를 만들고, 지원되는 첨부 문서를 원본을 유지한 채 새 파일로 수정합니다. 저장소를 구성하면 원본과 결과를 보관하고 내려받을 수 있습니다.",
-  "home.domain.surfaces": "Slack · A2A · 웹훅",
+  "home.domain.surfaces": "Slack · 웹훅",
   "home.domain.surfacesBody":
     "프로젝트를 메신저·API·Webhook·스케줄로 호출합니다. 창구마다 식별자·이력·승인 규칙이 다르며 Workspace 지원 범위도 다릅니다.",
   "home.domain.cost": "비용과 한도",
@@ -731,7 +723,7 @@ export const ko: Messages = {
     "API Reference의 Python 또는 JavaScript 예제로 chat/completions를 호출한다. SDK base URL은 프로젝트 주소, API key는 프로젝트 토큰으로 설정한다. 모델과 샘플링 파라미터는 저장한 Agent 설정이 결정하며 model·temperature·max_tokens로 덮어쓰지 않는다. 예제를 실행하기 전에 호출 프로세스의 환경변수 PROJECT_API_TOKEN과 CONVERSATION_ID를 설정한다.",
   "guide.api.stream": "스트리밍과 대화 이력",
   "guide.api.streamBody":
-    "텍스트 predict나 chat/completions에 stream:true를 보내면 SSE로 응답하며 agent에는 텍스트와 도구 활동을 스트리밍하는 전용 엔드포인트도 있다. 연결을 유지하고 경고·오류·종료 이벤트까지 처리한다. HTTP 200만으로 실행 성공을 판단할 수는 없다. HTTP 호출자는 이전 메시지를 직접 보내야 한다. X-Conversation-Id는 하위 MCP/A2A의 대화 식별을 이어 주지만 과거 메시지를 자동으로 불러오지는 않는다.",
+    "텍스트 predict나 chat/completions에 stream:true를 보내면 SSE로 응답하며 agent에는 텍스트와 도구 활동을 스트리밍하는 전용 엔드포인트도 있다. 연결을 유지하고 경고·오류·종료 이벤트까지 처리한다. HTTP 200만으로 실행 성공을 판단할 수는 없다. HTTP 호출자는 이전 메시지를 직접 보내야 한다. X-Conversation-Id는 하위 MCP의 대화 식별을 이어 주지만 과거 메시지를 자동으로 불러오지는 않는다.",
   "guide.api.result": "결과 확인과 토큰 관리",
   "guide.api.resultBody":
     "답변뿐 아니라 usage·warnings·종료 사유도 확인한다. predict의 turn-limit·output-limit는 부분 결과를 뜻하며 chat completions의 한도 종료는 length로 표시된다. 파일 결과는 링크가 만료되기 전에 내려받는다. 토큰은 호출 서버의 비밀 저장소에 보관한다. 재발급하거나 폐기하면 기존 토큰이 즉시 무효가 되므로 모든 호출자를 함께 갱신한다. OpenAI 호출의 토큰 합계는 완료형 응답이나 Studio 사용량 화면에서 확인한다.",
@@ -745,9 +737,6 @@ export const ko: Messages = {
   "guide.integrations.messengers": "Telegram과 Teams",
   "guide.integrations.messengersBody":
     "agent 프로젝트의 Integrations에서 Telegram bot token을 저장하고 활성화하면 webhook이 등록된다. 앱 주소가 바뀌면 Register webhook으로 다시 등록한다. Teams는 Azure Bot의 Teams 채널을 활성화하고 application ID·client secret, 단일 tenant 앱이면 tenant ID를 저장한 뒤 표시된 URL을 messaging endpoint로 설정한다. 그룹 멘션을 시험하기 전에 다이렉트 대화에서 확인한다.",
-  "guide.integrations.a2a": "A2A와 AG-UI",
-  "guide.integrations.a2aBody":
-    "A2A는 설정된 public 프로젝트의 Card를 공개하며 설정된 공용 키나 이름 있는 키는 계약에 따라 private 프로젝트의 지정 endpoint도 호출할 수 있다. AG-UI는 프로젝트 토큰으로 Agent 실행을 자체 화면에 연결한다. 클라이언트가 메시지 이력과 프로토콜 이벤트 표시를 관리하며 두 프로토콜이 브라우저 Chat이나 Workspace 승인 화면을 만들지는 않는다.",
   "guide.integrations.webhook": "웹훅으로 실행하기",
   "guide.integrations.webhookBody":
     "Settings에서 프로젝트 webhook을 활성화한다. 일반 발신자는 X-Trigger-Secret을 보내고 GitHub는 같은 Secret으로 X-Hub-Signature-256 서명을 만든다. JSON 본문은 사용자 메시지로 전달된다. HTTP 202는 접수 응답이므로 Trigger 이력에서 실행·건너뜀 결과를 확인한다. 동시 실행을 허용하지 않으면 실행 중 들어온 전달은 건너뛴다.",
@@ -775,7 +764,7 @@ export const ko: Messages = {
   "guide.security.visibilityBody":
     "public 프로젝트는 이 설치에 로그인한 사용자가 접근할 수 있다는 뜻이며 모든 API를 익명 공개하는 의미는 아니다. private 프로젝트는 소유자·초대 이메일·관리자로 접근을 제한한다. 초대는 조회·실행 권한이며 편집 권한이 아니다. 소유자와 관리자가 Agent 설정·연동·Trace·프로젝트 전체 Artifact를 관리한다. 기계 호출의 자격 증명에는 별도 접근 규칙이 적용된다.",
   "guide.security.credentials": "비밀값과 공유 링크",
-  "guide.security.credentialsBody": "저장된 키는 앞뒤 4자를 표시하고 8자 이하는 전부 숨긴다. 교체를 누르면 별도 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다. 환경변수로 복원은 설정 재정의를 명시적으로 제거한다. Studio 발급 프로젝트·Webhook·A2A 키는 보기·숨기기·복사와 지원되는 생성·폐기 동작을 공통으로 사용한다. 원문을 표시한 동안에만 복사하며 교체·폐기는 확인을 거친다. 브라우저 조회 조건에는 자격 증명을 저장하지 않는다. 서명된 Artifact URL도 자격 증명으로 취급한다.",
+  "guide.security.credentialsBody": "저장된 키는 앞뒤 4자를 표시하고 8자 이하는 전부 숨긴다. 교체를 누르면 별도 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다. 환경변수로 복원은 설정 재정의를 명시적으로 제거한다. Studio 발급 프로젝트·Webhook 키는 보기·숨기기·복사와 지원되는 생성·폐기 동작을 공통으로 사용한다. 원문을 표시한 동안에만 복사하며 교체·폐기는 확인을 거친다. 브라우저 조회 조건에는 자격 증명을 저장하지 않는다. 서명된 Artifact URL도 자격 증명으로 취급한다.",
   "guide.security.pii": "PII 필터의 적용 범위",
   "guide.security.piiBody":
     "Agent의 PII filtering은 모델에 보낼 텍스트에서 인식한 패턴을 치환하고 사용자에게 보여 줄 결과에서 복원한다. 완전한 익명화는 아니며 도구 인자·저장된 답변·추론·파일에 복원된 정보가 포함될 수 있다. 동적 검색의 embedding/rerank 질의와 memory recall 질의는 이 필터 밖이다. 민감한 작업에는 승인된 모델과 도구 서비스를 사용한다.",
@@ -790,7 +779,7 @@ export const ko: Messages = {
   "guide.admin.membersBody":
     "Members에서 사용자를 찾아 프로젝트 생성이나 API 토큰 사용에 필요한 등급으로 변경한다. 적용된 한도는 사용자가 Profile에서 확인한다. ADMIN_EMAILS에 지정된 사용자는 admin으로 고정되며 목록에서 제거해도 저장된 등급이 자동 강등되지는 않는다.",
   "guide.admin.settings": "Settings 재정의와 배포 설정",
-  "guide.admin.settingsBody": "Settings는 General·Plugins·Models·Keys 탭으로 나눈다. General에서 공개 접근·Artifact 접근 방식·가격 미지정 모델의 실행 정책을 관리한다. Plugins는 저장소, Models는 프로바이더 연결과 선택 모델, Keys는 GitHub·A2A 자격 증명을 관리한다. 변경한 항목만 저장한다. DB·암호화·로그인 공급자·스토리지·보존 기간은 배포 설정에서 관리한다.",
+  "guide.admin.settingsBody": "Settings는 General·Plugins·Models·Keys 탭으로 나눈다. General에서 공개 접근·Artifact 접근 방식·가격 미지정 모델의 실행 정책을 관리한다. Plugins는 저장소, Models는 프로바이더 연결과 선택 모델, Keys는 GitHub 자격 증명을 관리한다. 변경한 항목만 저장한다. DB·암호화·로그인 공급자·스토리지·보존 기간은 배포 설정에서 관리한다.",
   "guide.admin.models": "모델 연결과 검증",
   "guide.admin.modelsBody": "Settings → Models → 프로바이더에서 종류·고유 연결 이름·API base URL·키를 등록한다. Self-hosted도 같은 흐름을 사용하며 키를 생략할 수 있다. 인증 대상 주소를 바꾸면 새 키가 필요하다. 모델 사용 설정에서는 등록된 호환 모델 중 기본·Workspace·검색 모델을 선택한다.",
   "guide.admin.modelSelection": "모델 조회·선택·관리",
@@ -836,7 +825,7 @@ export const ko: Messages = {
   "guide.operations.catalogBody":
     "기능 검색을 켠 배포에서는 같은 X-Scan-Token 자격 증명으로 POST /api/catalog/reindex를 매시간 별도 호출하도록 구성한다. 스케줄 scan이 이 재색인까지 수행하지는 않는다. 성공 응답은 백그라운드 색인 시작을 뜻하므로 서버 로그에서 indexed·removed·undiscovered 결과를 확인하고 새로 등록한 기능이 검색되어야 하는 질문으로 시험한다.",
   "guide.operations.retention": "DB 보존과 파일 수명 관리",
-  "guide.operations.retentionBody": "DB 보존 설정은 트레이스·사용량·대화·Artifact·트리거·A2A·감사 행에 적용된다. 일반 Artifact 보존은 대화 보존 이상으로 두고 오브젝트 수명주기도 맞춘다. 비공개 오디오 파일은 별도의 일·달력 월 만료를 사용하며 파생 결과가 이를 상속하고 오디오 worker가 삭제한다. 같은 Artifacts bucket의 source-files/ 경로에는 삭제 표식을 유지해야 하므로 일괄 만료를 적용하지 않는다. 오디오 Artifact 삭제·만료는 작업 이력과 중복 방지 기록을 지우지 않는다.",
+  "guide.operations.retentionBody": "DB 보존 설정은 트레이스·사용량·대화·Artifact·트리거·감사 행에 적용된다. 일반 Artifact 보존은 대화 보존 이상으로 두고 오브젝트 수명주기도 맞춘다. 비공개 오디오 파일은 별도의 일·달력 월 만료를 사용하며 파생 결과가 이를 상속하고 오디오 worker가 삭제한다. 같은 Artifacts bucket의 source-files/ 경로에는 삭제 표식을 유지해야 하므로 일괄 만료를 적용하지 않는다. 오디오 Artifact 삭제·만료는 작업 이력과 중복 방지 기록을 지우지 않는다.",
   "guide.operations.backup": "데이터와 복구 키 백업",
   "guide.operations.backupBody":
     "PostgreSQL·저장된 object·배포 설정·암호화 및 세션 secret을 접근 제한된 위치에 백업한다. 별도 환경에 함께 복구하고 로그인·자격 증명 복호화·프로젝트 실행·파일 접근을 검증한다. AES_ENCRYPTION_KEY를 잃거나 임의 교체하면 저장된 자격 증명을 읽을 수 없다. 앱 이미지는 데이터 백업이 아니다.",
@@ -928,7 +917,7 @@ export const ko: Messages = {
   "projects.displayNamePlaceholder": "My Project",
   "projects.description": "설명",
   "projects.descriptionHint":
-    "이 프로젝트를 연결한 상위 Agent와 A2A Agent Card에 표시합니다. 받을 요청과 반환할 결과를 설명하세요.",
+    "이 프로젝트를 연결한 상위 Agent에 표시합니다. 받을 요청과 반환할 결과를 설명하세요.",
   "projects.departmentCode": "부서 코드",
   "projects.departmentHint": "프로젝트 소유와 비용을 묶는 선택 코드입니다.",
   "projects.privateBadge": "비공개",
@@ -1013,7 +1002,7 @@ export const ko: Messages = {
   "configuration.callerContext": "누가 요청했는지 실행에 알려주기 (이름, 타임존)",
 
   "configuration.callerHint":
-    "사람이 직접 실행하는 모든 경로 — 대화, Playground, 로그인 상태의 API 호출, Slack — 에 적용됩니다. API 토큰·트리거·인바운드 A2A 는 호출자를 담지 않습니다. PII 필터링은 이름을 가리지 않습니다.",
+    "사람이 직접 실행하는 모든 경로 — 대화, Playground, 로그인 상태의 API 호출, Slack — 에 적용됩니다. API 토큰·트리거는 호출자를 담지 않습니다. PII 필터링은 이름을 가리지 않습니다.",
   "configuration.structuredOutput": "구조화 출력 (JSON 스키마)",
   "configuration.aboutStructuredOutput": "구조화 출력 안내",
   "configuration.structuredOutputTitle": "구조화 출력",
@@ -1166,9 +1155,9 @@ export const ko: Messages = {
   "skills.noContent": "본문이 없습니다.",
 
   "agents.lede":
-    "Agent에 원격 하위 Agent로 연결할 수 있는 외부 OpenAI 호환·A2A 엔드포인트입니다.",
+    "Agent에 원격 하위 Agent로 연결할 수 있는 외부 OpenAI 호환 엔드포인트입니다.",
   "agents.descriptionRole":
-    "외부 에이전트 설명은 동적 검색에 쓰이며 모델의 Available Agents 표에 표시되어 전환 대상을 고르게 합니다. 첫 500자가 색인됩니다. 워크스페이스 프로젝트 설명은 동적으로 검색되지 않지만 로컬 에이전트로 바인딩될 때와 공개 A2A Agent Card에 표시됩니다.",
+    "외부 에이전트 설명은 동적 검색에 쓰이며 모델의 Available Agents 표에 표시되어 전환 대상을 고르게 합니다. 첫 500자가 색인됩니다. 워크스페이스 프로젝트 설명은 동적으로 검색되지 않지만 로컬 에이전트로 바인딩될 때 표시됩니다.",
   "agents.descriptionHint":
     "동적 검색과 전환 대상 선택에 쓰입니다. 이 에이전트가 처리할 요청과 돌려주는 결과를 쓰세요.",
   "agents.descriptionPlaceholder": "Kubernetes 장애를 조사하고 근거가 있는 복구 절차를 반환합니다",
@@ -1176,13 +1165,8 @@ export const ko: Messages = {
   "agents.registerTitle": "외부 에이전트 등록",
   "agents.filter": "에이전트 검색…",
   "agents.empty":
-    "아직 외부 에이전트가 없습니다. OpenAI 호환 또는 A2A 엔드포인트를 등록하면 원격 서브에이전트로 쓸 수 있습니다.",
+    "아직 외부 에이전트가 없습니다. OpenAI 호환 엔드포인트를 등록하면 원격 서브에이전트로 쓸 수 있습니다.",
   "agents.namePlaceholder": "my-agent",
-  "agents.protocol": "프로토콜",
-  "agents.cardUrl": "Agent Card URL",
-  "agents.studioTitle": "Studio Agent (A2A)",
-  "agents.studioEnabled": "설정을 저장한 Agent를 A2A로 호출합니다. 공개 Agent는 Agent Card URL도 제공합니다.",
-  "agents.studioDisabled": "설정을 저장한 Agent 목록입니다. Settings에서 A2A 키를 발급하면 A2A 호출을 활성화합니다.",
   "agents.sendPlaceholder": "에이전트에게 메시지 하나를 보내보세요…",
 
   "tools.lede":
@@ -1242,7 +1226,7 @@ export const ko: Messages = {
   "artifacts.preview.noScript": "미리보기를 실행하려면 브라우저의 JavaScript를 활성화해 주세요.",
 
   "artifacts.lede":
-    "보관된 첨부 원본과 실행이 생성·수정한 파일입니다. Slack·트리거·A2A의 파일도 권한에 따라 프로젝트의 Artifacts에서 확인할 수 있습니다.",
+    "보관된 첨부 원본과 실행이 생성·수정한 파일입니다. Slack·트리거의 파일도 권한에 따라 프로젝트의 Artifacts에서 확인할 수 있습니다.",
   "artifacts.empty": "아직 보관된 파일이 없습니다. 첨부 원본과 생성 파일이 여기에 표시됩니다.",
   "artifacts.filter": "검색…",
   "artifacts.delete": "삭제",
@@ -1296,12 +1280,8 @@ export const ko: Messages = {
 
   // 프로젝트의 연동 탭: 다른 시스템이 이 프로젝트에 닿는 방법.
   "pint.lede":
-    "다른 시스템이 이 프로젝트에 닿는 방법입니다 — API 호출자가 내는 토큰, 봇이 이 프로젝트를 실행하는 채팅 플랫폼, A2A·AG-UI 노출. 프로젝트 자체·비용 한도·트리거는 설정 탭에 있습니다.",
+    "다른 시스템이 이 프로젝트에 닿는 방법입니다 — API 토큰과 봇이 프로젝트를 실행하는 채팅 플랫폼을 관리합니다. 프로젝트 설정·비용 한도·트리거는 설정 탭에 있습니다.",
   "pint.ownerOnly": "프로젝트 소유자({owner})나 admin 만 이 연동을 바꿀 수 있습니다.",
-  "pint.aguiLede":
-    "Agent의 현재 설정이 이 주소에서 AG-UI 런에 답합니다 — 애플리케이션이 RunAgentInput 을 보내고 이벤트 스트림을 읽습니다. 보내는 thread id 가 런의 대화가 되고, 선언한 tool 은 런에 제공되어 애플리케이션 쪽에서 실행됩니다. 토큰은 서버 자격 증명이므로 브라우저가 아닌 자체 서버에서 호출하고, 다음 헤더로 제시합니다:",
-  "pint.aguiConfigure": "Agent 설정을 저장하면 AG-UI로 실행할 수 있습니다.",
-  "pint.aguiCopy": "예시 복사",
 
   "pset.dangerZone": "위험 구역",
   "pset.deleteConfirm": "\"{name}\"의 설정·연동·Trace·사용량 기록을 삭제합니다. 되돌릴 수 없으며 프로젝트 이름을 다시 사용할 수 없습니다.",
@@ -1314,9 +1294,6 @@ export const ko: Messages = {
   "pset.invitedMembers": "초대된 멤버",
   "pset.invitedMembersHint": "이메일 주소를 태그로 입력합니다. Enter, 쉼표, 공백으로 추가합니다.",
   "pset.visibilitySave": "공개 범위 저장",
-  "pset.a2a": "A2A",
-  "pset.agui": "AG-UI",
-  "pset.agentCard": "Agent Card",
   "pset.apiToken": "API 토큰",
   "pset.costLimits": "비용 한도",
   "pset.alertThreshold": "경고 기준 (USD)",

@@ -92,7 +92,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
       ? [{ href: `${base}/traces`, label: t("project.tab.traces"), Icon: IconRoute }]
       : []),
     { href: `${base}/api-reference`, label: t("project.tab.apiReference"), Icon: IconApi },
-    // How other systems reach the project — bots, A2A, the API token. Owner
+    // How other systems reach the project — bots and the API token. Owner
     // gated like Settings, which is where these lived until the bots outgrew it.
     ...(canManage
       ? [{ href: `${base}/integrations`, label: t("project.tab.integrations"), Icon: IconPlugConnected }]

@@ -69,9 +69,7 @@ describe("current Agent configuration", () => {
     const stored = await projectRepository.get(project.name);
     expect(stored?.configuration).toEqual({ projectName: project.name, ...input() });
     expect(saved.updatedAt).not.toBe(NOW);
-    expect(stored).not.toHaveProperty("publishedVersion");
     expect([...store.rows.values()].some(row => row.entityType === "VERSION")).toBe(false);
-    expect(saved.configuration).not.toHaveProperty("versionName");
     expect(saved.configuration).not.toHaveProperty("createdAt");
     expect(saved.configuration).not.toHaveProperty("userPromptTemplate");
   });
@@ -172,11 +170,9 @@ describe("current Agent configuration", () => {
     await expect(projectRepository.get(project.name)).rejects.toThrow("belongs to another Project");
   });
 
-  it("requires the editor revision and rejects retired Version fields at the HTTP boundary", () => {
+  it("requires the editor revision at the HTTP boundary", () => {
     expect(putAgentConfigurationSchema.safeParse(input()).success).toBe(false);
-    for (const retired of [{ versionName: "2" }, { userPromptTemplate: "{{task}}" }, { publishedVersion: "2" }]) {
-      expect(putAgentConfigurationSchema.safeParse({ ...input(), expectedUpdatedAt: NOW, ...retired }).success).toBe(false);
-    }
     expect(putAgentConfigurationSchema.safeParse({ ...input(), expectedUpdatedAt: NOW }).success).toBe(true);
   });
+
 });

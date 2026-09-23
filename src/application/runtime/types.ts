@@ -91,15 +91,6 @@ export interface RunAgentInput {
   mcpTools?: ChannelToolDef[];
   /** Per-server grouping of the MCP tools, for the system prompt overview. */
   mcpServers?: McpServerInfo[];
-  /**
-   * Tools the application the person is using executes on its side (AG-UI's
-   * frontend tools). A turn that calls one is the run's last: the calls are
-   * announced, the run's own calls in that turn still run and report, and the
-   * loop then ends with `done` so the application can answer its own — the
-   * results come back as `tool` messages in the next run's history. Never
-   * handed to a subagent: a child cannot end the run the person is waiting on.
-   */
-  clientTools?: ChannelToolDef[];
   signal?: AbortSignal;
 }
 

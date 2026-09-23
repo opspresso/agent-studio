@@ -10,7 +10,6 @@ import { CodeBlock } from "@/app/_components/CodeBlock";
 import { Badge, Card, Code, Group, SegmentedControl, Stack, Table, Text } from "@mantine/core";
 import {
   getProject,
-  getProjectA2a,
   getProjectSlack,
   getProjectTeams,
   getProjectTelegram,
@@ -202,8 +201,7 @@ export default function ApiReferencePage() {
         const project = await getProject(name);
         const isOwner = canEditProject(viewer, project.ownerEmail);
 
-        const [a2a, slack, telegram, teams, triggers] = await Promise.all([
-          getProjectA2a(name).catch(() => null),
+        const [slack, telegram, teams, triggers] = await Promise.all([
           isOwner ? getProjectSlack(name).catch(() => null) : Promise.resolve(null),
           isOwner ? getProjectTelegram(name).catch(() => null) : Promise.resolve(null),
           isOwner ? getProjectTeams(name).catch(() => null) : Promise.resolve(null),
@@ -221,7 +219,6 @@ export default function ApiReferencePage() {
           projectType: project.projectType,
           configured: project.configured ?? null,
           origin: typeof window === "undefined" ? "" : window.location.origin,
-          a2a: a2a ? { enabled: a2a.enabled, configured: a2a.configured } : null,
           slack: slack ? { configured: slack.configured } : null,
           telegram: telegram ? { configured: telegram.configured } : null,
           teams: teams ? { configured: teams.configured } : null,

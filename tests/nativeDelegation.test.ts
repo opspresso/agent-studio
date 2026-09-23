@@ -1,10 +1,7 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RunState } from "@openai/agents";
 import { createAgentModelProvider } from "@/infrastructure/llm/agentModels";
 import { runAgent } from "@/application/runtime";
-import { compileAgent } from "@/application/runtime/agent";
-import { createStudioRunner } from "@/application/runtime/runner";
 import type { AgentDeps, RunAgentInput } from "@/application/runtime/types";
 import type { EngineChunk } from "@/domain/llm/types";
 
@@ -85,35 +82,6 @@ describe("native SDK delegation", () => {
     expect(f.requests.filter((body) => body.model === CHILD)).toHaveLength(2);
   });
 
-  it("propagates a child's SDK approval and resumes through serialized nested RunState", async () => {
-    const f = fixture((body, index) => {
-      if (index === 0) return calls({ name: "delegate_child", input: "write after approval" });
-      if (index === 1) return calls({ name: "confirm" });
-      return answer(body.model === CHILD ? "child resumed" : "parent resumed");
-    });
-    f.loadAgent.mockImplementation(async (name, task) => ({
-      kind: "agent", deps: { createToolSchemaValidator, channel: f.models }, warnings: [], close: f.closed,
-      input: { projectName: name, model: CHILD, maxTurn: 4, messages: [{ role: "user", content: task.message }], clientTools: [{ type: "function", function: { name: "confirm", parameters: { type: "object", properties: {} } } }] },
-    }));
-    const graph = { close: [] };
-    const compiled = compileAgent(f.deps, f.input, () => {}, graph);
-    const runner = createStudioRunner(f.models);
-    const paused = await runner.run(compiled.agent, "help", { stream: true });
-    for await (const event of paused) void event;
-    await paused.completed;
-    expect(paused.interruptions).toHaveLength(1);
-    expect(paused.interruptions[0]?.rawItem).toMatchObject({ name: "confirm" });
-    const restoredAgent = compileAgent(f.deps, f.input, () => {}, { close: [] }).agent;
-    const state = await RunState.fromString(restoredAgent, paused.state.toString());
-    state.reject(state.getInterruptions()[0]!);
-    const resumed = await runner.run(restoredAgent, state, { stream: true });
-    for await (const event of resumed) void event;
-    await resumed.completed;
-    expect(resumed.interruptions).toEqual([]);
-    expect(resumed.finalOutput).toBe("parent resumed");
-    expect(f.requests.filter((body) => body.model === CHILD)).toHaveLength(2);
-  });
-
   it("preserves a reserved hyphenated project tool name and invokes its external capability", async () => {
     const f = fixture((_body, index) => index === 0 ? calls({ name: "delegate_image-agent", input: "draw" }) : answer("delivered"));
     f.input.subagents = [{ name: "image-agent", type: "local", kind: "action", description: "Draw images" }];
@@ -157,26 +125,5 @@ describe("native SDK delegation", () => {
     expect(chunks.filter((chunk) => chunk.author === "child").map((chunk) => chunk.delta?.content ?? "").join("")).toContain("email@example.com");
   });
 
-  it("keeps approvals distinct when concurrent invocations reuse provider tool-call ids", async () => {
-    const f = fixture((_body, index) => index === 0 ? calls({ name: "delegate_child", input: "first" }, { name: "delegate_child", input: "second" }) : index < 3 ? calls({ name: "confirm" }) : answer("child completed"));
-    f.loadAgent.mockImplementation(async (name, task) => ({
-      kind: "agent", deps: { createToolSchemaValidator, channel: f.models }, warnings: [], close: f.closed,
-      input: { projectName: name, model: CHILD, maxTurn: 4, messages: [{ role: "user", content: task.message }], clientTools: [{ type: "function", function: { name: "confirm", parameters: { type: "object", properties: {} } } }] },
-    }));
-    const compiled = compileAgent(f.deps, f.input, () => {}, { close: [] });
-    const paused = await createStudioRunner(f.models).run(compiled.agent, "help", { stream: true });
-    for await (const event of paused) void event;
-    await paused.completed;
-    const approvals = paused.interruptions;
-    expect(approvals).toHaveLength(2);
-    expect(new Set(approvals.map((item) => "callId" in item.rawItem ? item.rawItem.callId : ""))).toHaveLength(2);
-    const state = await RunState.fromString(compiled.agent, paused.state.toString());
-    const restored = state.getInterruptions();
-    state.reject(restored[0]!);
-    const resumed = await createStudioRunner(f.models).run(compiled.agent, state, { stream: true });
-    for await (const event of resumed) void event;
-    await resumed.completed;
-    expect(resumed.interruptions).toHaveLength(1);
-    expect(resumed.interruptions[0]?.rawItem).toEqual(restored[1]?.rawItem);
-  });
+
 });

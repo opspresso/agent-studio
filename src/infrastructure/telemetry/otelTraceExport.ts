@@ -87,7 +87,6 @@ export function createOtelTraceExport(config: OtelExportConfig): OtelTraceExport
       attributes: {
         "app.trace_id": trace.traceId,
         "app.project": trace.projectName,
-        "app.version": trace.versionName,
         "app.project_type": trace.projectType,
         "app.status": trace.status,
         ...(trace.actor ? { "app.actor": `${trace.actor.kind}:${trace.actor.id}` } : {}),

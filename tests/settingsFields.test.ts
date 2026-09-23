@@ -6,7 +6,7 @@ const current = {
   publicBaseUrl: "https://studio.example.test", artifactAccessMode: "proxied", unknownModelPolicy: "allow",
   adminEmails: "admin@example.test", allowedEmailDomains: "example.test",
   pluginsRepo: "org/plugins", pluginsRepoBranch: "main",
-  githubToken: "****************", a2aApiKey: "****************",
+  githubToken: "****************",
 };
 const view: SettingsView = {
   fields: Object.fromEntries(Object.values(SETTINGS_FIELDS).flat().map(({ key, type }) => [key,

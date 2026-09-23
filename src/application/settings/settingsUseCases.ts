@@ -75,7 +75,6 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
     defaultValue: "main",
   },
   { key: "githubToken", secret: true, env: () => optionalEnv(env.GITHUB_TOKEN) },
-  { key: "a2aApiKey", secret: true, env: () => optionalEnv(env.A2A_API_KEY) },
   {
     key: "publicBaseUrl",
     secret: false,
@@ -171,8 +170,6 @@ function fieldSecretContext(
       return llmApiKeyContext(settings?.llmBaseUrl ?? optionalEnv(env.LLM_BASE_URL) ?? "");
     case "githubToken":
       return settingsSecretContext("github-token");
-    case "a2aApiKey":
-      return settingsSecretContext("a2a-api-key");
     default:
       throw new Error(`No encryption context is defined for secret setting "${key}"`);
   }

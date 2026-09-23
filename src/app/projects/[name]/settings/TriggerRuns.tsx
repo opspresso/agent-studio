@@ -19,7 +19,7 @@ const STATUS_COLOR: Record<TriggerRun["status"], string> = {
  * to "what does `skipped` look like".
  *
  * The history scrolls in place. The endpoint returns up to twenty, and a project
- * with several triggers pushed everything below it — Slack, A2A, the danger
+ * with several triggers pushed everything below it — Slack, the danger
  * zone — off the screen, so the section that reads "what happened recently"
  * buried the ones that configure what happens next. The header stays put while
  * it scrolls, because a status column whose label has scrolled away is the same

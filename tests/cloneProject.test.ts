@@ -95,7 +95,6 @@ describe("cloneProject", () => {
       ownerEmail: CLONER,
       departmentCode: "eng",
     });
-    expect(project).not.toHaveProperty("publishedVersion");
     const copied = [repos.projectsByName.get("copy")!.configuration];
     expect(copied).toHaveLength(1);
     expect(copied[0]).toMatchObject({

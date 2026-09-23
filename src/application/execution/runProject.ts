@@ -172,7 +172,7 @@ export async function collectRun(
     }
     // What the run lost, kept alongside the answer rather than dropped. A
     // collected surface has no later frame to say it in, and every other
-    // consumer of this stream — chat, Slack, A2A, the console — reports these;
+    // consumer of this stream — chat, Slack, the console — reports these;
     // dropping them here is what made a run that silently lost half its tools
     // indistinguishable from one that had them. `collectedWarning` owns which
     // ones count.
@@ -419,7 +419,6 @@ export async function* executeAgent(
       subagents,
       mcpTools: mcp.mcpTools,
       mcpServers: mcp.mcpServers,
-      ...(input.clientTools ? { clientTools: input.clientTools } : {}),
       signal: runSignal,
     }))) {
       recorder?.observe(chunk);

@@ -3,16 +3,8 @@
  *
  * `captureRunArtifacts` strips a file's payload the moment it is stored, so
  * every surface downstream of the bracket sees a reference and not a document.
- * What it can offer is therefore always the same three things — the name to
- * save it as, the size worth knowing before fetching it, and an address — and
- * five surfaces were about to work that out for themselves.
- *
- * They had not worked it out at all, which is why this exists. `EngineChunk.file`
- * was added with the chat view in mind and reached nowhere else: `/predict`,
- * both OpenAI shapes, A2A, Slack and a trigger's history row each read
- * `chunk.image` and dropped `chunk.file` on the floor. The document was stored,
- * the caller was never told it existed, and because every one of those surfaces
- * *does* answer with images, nothing about them said files were different.
+ * It offers the name, byte size and signed address to callers that return
+ * a file reference. All chunk consumers inspect both file and image output.
  *
  * The chat surface does not resolve here — it stores keys on the message and
  * signs them at read time, a turn later — but it shares {@link filesNotKeptWarning},

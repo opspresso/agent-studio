@@ -417,23 +417,15 @@ export const config = {
     return optionalEnv(process.env.SCHEDULE_SCAN_TOKEN);
   },
   /**
-   * How many runs one caller may have in flight at once, and the separate
-   * ceiling for inbound A2A.
+   * How many runs one caller may have in flight at once.
    *
-   * A2A needs its own because its actor id is a constant — the inbound key is
-   * shared, so one identity stands for every machine caller and the per-caller
-   * limit would become a cap on the whole A2A surface.
-   *
-   * Both are on by default. The default is generous enough that a person with
+   * The limit is on by default. The default is generous enough that a person with
    * several chats open never meets it, while still bounding a loop; `0` turns
    * the limit off, which is a choice a deployment has to make explicitly rather
    * than inherit from an unset variable.
    */
   get maxConcurrentRunsPerActor(): number {
     return positiveIntEnv("MAX_CONCURRENT_RUNS_PER_ACTOR", 10, 0, MAX_RUN_SLOTS);
-  },
-  get maxConcurrentRunsA2a(): number {
-    return positiveIntEnv("MAX_CONCURRENT_RUNS_A2A", 50, 0, MAX_RUN_SLOTS);
   },
   /**
    * How long a discovered MCP tool list may be reused, and the most a server's
@@ -515,10 +507,6 @@ export const config = {
    */
   get slackLoadingIndicator(): string | undefined {
     return optionalEnv(process.env.SLACK_LOADING_INDICATOR);
-  },
-  /** Shared key for inbound A2A requests (X-A2A-Key). Unset disables the A2A endpoints. */
-  get a2aApiKey(): string | undefined {
-    return optionalEnv(process.env.A2A_API_KEY);
   },
   /**
    * OTLP HTTP endpoint finished traces are exported to, standard OTEL name.

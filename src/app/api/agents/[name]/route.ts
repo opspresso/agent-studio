@@ -8,7 +8,6 @@ type RouteContext = { params: Promise<{ name: string }> };
 
 const updateSchema = z.object({
   url: z.url().optional(),
-  protocol: z.enum(["openai", "a2a"]).optional(),
   description: z.string().min(1).optional(),
   headers: z.record(z.string(), z.string()).optional(),
 });

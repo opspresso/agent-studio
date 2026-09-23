@@ -1012,7 +1012,7 @@ describe("saveClientCredentials", () => {
   });
 
   it("never exposes a secret or a token in the view", async () => {
-    // There is no reveal path for either of these, unlike the A2A key and the
+    // There is no reveal path for either of these, unlike the
     // project API token — so the view is the only thing that could leak them.
     const h = harness({
       connection: {

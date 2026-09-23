@@ -7,12 +7,11 @@ import { MAX_DOCUMENTS, MAX_DOCUMENT_SIZE_LABEL } from "@/domain/llm/documentLim
  * context (name, saved settings, integration flags). This module is
  * intentionally pure — it takes **no** secrets, so every rendered example and
  * code sample can only ever contain the placeholder tokens below, never a real
- * session cookie, A2A key, or Slack secret.
+ * session cookie or Slack secret.
  */
 
 export type AuthKind =
   | "token"
-  | "a2a-key"
   | "trigger-secret"
   | "slack-signature"
   | "telegram-secret"
@@ -21,7 +20,6 @@ export type AuthKind =
 
 export const AUTH_LABEL: Record<AuthKind, string> = {
   token: "Bearer token",
-  "a2a-key": "X-A2A-Key header",
   "trigger-secret": "X-Trigger-Secret or GitHub X-Hub-Signature-256",
   "slack-signature": "Slack signature",
   "telegram-secret": "Telegram secret token",
@@ -32,7 +30,6 @@ export const AUTH_LABEL: Record<AuthKind, string> = {
 /** Placeholder tokens — the only credential-shaped strings any example may contain. */
 export const PLACEHOLDERS = {
   token: "$PROJECT_API_TOKEN",
-  a2aKey: "$A2A_API_KEY",
   webhookSecret: "$WEBHOOK_SECRET",
   slackSignature: "$SLACK_SIGNATURE",
   slackTimestamp: "$SLACK_TIMESTAMP",
@@ -41,32 +38,12 @@ export const PLACEHOLDERS = {
 } as const;
 
 /**
- * The optional conversation header reaches MCP and remote A2A calls.
+ * The optional conversation header reaches MCP calls.
  * It does not persist the calling client's model history.
  */
 const CONVERSATION_HEADER = { "X-Conversation-Id": "$CONVERSATION_ID" } as const;
 const CONVERSATION_NOTE =
-  " Send the same X-Conversation-Id on the follow-up questions of one conversation: the run then carries it — an A2A subagent it transfers to continues the remote conversation the first question opened, and every MCP server it calls is told which conversation is asking. Optional; without it each request is its own conversation.";
-
-/**
- * The shortest `@ag-ui/client` program that talks to a project — shown on the
- * API Reference and on the Integrations tab, from one place so the two cannot
- * drift. A placeholder stands for the token, never a value.
- */
-export function aguiClientExample(url: string): string {
-  return [
-    'import { HttpAgent } from "@ag-ui/client";',
-    "",
-    "const agent = new HttpAgent({",
-    `  url: "${url}",`,
-    '  headers: { Authorization: `Bearer ${process.env.PROJECT_API_TOKEN}` },',
-    '  initialMessages: [{ id: crypto.randomUUID(), role: "user", content: "Hello" }],',
-    "});",
-    "",
-    "const result = await agent.runAgent();",
-    "console.log(result.newMessages);",
-  ].join("\n");
-}
+  " Send the same X-Conversation-Id on follow-up questions so MCP servers know which conversation is asking. Optional; without it each request is its own conversation.";
 
 /** A request/response field row. `type` is a display string, not a real TS type. */
 export interface FieldSpec {
@@ -107,8 +84,6 @@ export interface ApiReferenceContext {
   configured: boolean;
   /** Absolute origin for example URLs (e.g. window.location.origin); "" is tolerated. */
   origin: string;
-  /** A2A exposure status, or null when unknown. */
-  a2a: { enabled: boolean; configured: boolean } | null;
   /**
    * The project webhook's switch, or null when not visible to the viewer — the
    * secret it is authenticated with is owner-readable, so a viewer who cannot
@@ -143,9 +118,6 @@ function curlExample(opts: {
   switch (opts.auth) {
     case "token":
       lines.push(`  -H "Authorization: Bearer ${PLACEHOLDERS.token}"`);
-      break;
-    case "a2a-key":
-      lines.push(`  -H "X-A2A-Key: ${PLACEHOLDERS.a2aKey}"`);
       break;
     case "trigger-secret":
       lines.push(`  -H "X-Trigger-Secret: ${PLACEHOLDERS.webhookSecret}"`);
@@ -268,7 +240,7 @@ const OUTPUT_FIELDS: FieldSpec[] = [
 ];
 
 export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
-  const { projectName, configured, origin, a2a, slack, telegram, teams, webhook } = ctx;
+  const { projectName, configured, origin, slack, telegram, teams, webhook } = ctx;
   const abs = (path: string): string => `${origin}${path}`;
   const endpoints: ApiEndpoint[] = [];
 
@@ -443,44 +415,6 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
     }
   }
 
-  // AG-UI adapts the same configured Agent run to protocol events.
-  if (configured) {
-    const aguiPath = `/api/agui/${projectName}`;
-    const aguiBody = {
-      threadId: "thread-1",
-      runId: "run-1",
-      messages: [{ id: "m1", role: "user", content: "hi" }],
-      tools: [],
-      context: [],
-    };
-    endpoints.push({
-      id: "agui",
-      method: "POST",
-      path: aguiPath,
-      title: "AG-UI run",
-      description:
-        "Runs the current Agent configuration for an AG-UI client (CopilotKit, @ag-ui/client) and streams the protocol's events: RUN_STARTED, TEXT_MESSAGE_*, TOOL_CALL_* with TOOL_CALL_RESULT, REASONING_* when the Agent records its thinking, STEP_* for subagents, ACTIVITY_SNAPSHOT (activityType agent-studio.image / agent-studio.file) for a picture or a file the run produced, CUSTOM agent-studio.warning for what the run lost, and RUN_FINISHED carrying usage and result.termination, or RUN_ERROR. " +
-        "threadId is the run's conversation — send the same one on every run of a thread. Tools the client declares are offered to an agent project and executed by the client: a turn that calls one ends the run, and the results come back as tool messages in the next run's history. A user turn may carry text, image and document parts; context and a non-empty state reach the model as a read-only system turn. " +
-        "Call it from your own server (a CopilotKit runtime, a backend): the token is a server credential and the endpoint sends no CORS headers. The stream closes after the terminal event, with no [DONE] frame.",
-      auth: "token",
-      streaming: true,
-      requestFields: [
-        { name: "threadId", type: "string", required: true, description: "The client's conversation id; the run's conversation." },
-        { name: "runId", type: "string", required: true, description: "The client's id for this run; echoed on RUN_STARTED and RUN_FINISHED." },
-        { name: "messages", type: "array[object]", required: true, description: "AG-UI messages (developer, system, user, assistant, tool, reasoning). A user turn may carry text, image and document parts; may be empty." },
-        { name: "tools", type: "array[object]", description: "Tools the client executes: { name, description, parameters }. Offered to agent projects only." },
-        { name: "context", type: "array[object]", description: "{ description, value } facts the application holds; placed ahead of the history as a system turn." },
-        { name: "state", type: "any", description: "Shared with the model read-only, as JSON in the system turn. Never updated: no STATE_SNAPSHOT is sent back." },
-        { name: "forwardedProps", type: "any", description: "Accepted and ignored." },
-      ],
-      errorCodes: [400, 401, 403, 404, 413, 429, 500, 503],
-      codeExamples: [
-        curlExample({ method: "POST", url: abs(aguiPath), auth: "token", body: aguiBody, streaming: true }),
-        { language: "javascript", label: "@ag-ui/client", code: aguiClientExample(abs(aguiPath)) },
-      ],
-    });
-  }
-
   // The project webhook: shown once it is switched on, and deliberately not
   // gated on saved Agent settings — the address is live either way, and what it
   // answers without one is the `no-configuration` status documented below.
@@ -521,78 +455,6 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           auth: "trigger-secret",
           extraHeaders: { "Idempotency-Key": "$DELIVERY_ID" },
           body: webhookBody,
-        }),
-      ],
-    });
-  }
-
-  // A2A endpoints appear only when the key is configured and the Agent has settings.
-  if (a2a && a2a.enabled && a2a.configured) {
-    const cardPath = `/api/a2a/${projectName}/.well-known/agent-card.json`;
-    endpoints.push({
-      id: "a2a-card",
-      method: "GET",
-      path: cardPath,
-      title: "A2A Agent Card",
-      description: "Public Agent Card describing this project as an A2A agent.",
-      auth: "public",
-      streaming: false,
-      responseExample: pretty({
-        name: projectName,
-        description: "…",
-        supportedInterfaces: [
-          {
-            url: abs(`/api/a2a/${projectName}`),
-            protocolBinding: "JSONRPC",
-            protocolVersion: "1.0",
-          },
-        ],
-      }),
-      errorCodes: [404],
-      codeExamples: [curlExample({ method: "GET", url: abs(cardPath), auth: "public" })],
-    });
-
-    const rpcPath = `/api/a2a/${projectName}`;
-    const rpcBody = {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "SendMessage",
-      params: {
-        message: {
-          messageId: "message-1",
-          role: "ROLE_USER",
-          parts: [{ text: "hi", mediaType: "text/plain" }],
-        },
-      },
-    };
-    endpoints.push({
-      id: "a2a-rpc",
-      method: "POST",
-      path: rpcPath,
-      title: "A2A JSON-RPC",
-      description:
-        "A2A 1.0 JSON-RPC endpoint, authenticated with X-A2A-Key and negotiated with A2A-Version: 1.0.",
-      auth: "a2a-key",
-      streaming: false,
-      requestFields: [
-        { name: "jsonrpc", type: "string", required: true, description: 'Must be "2.0".' },
-        {
-          name: "method",
-          type: "string",
-          required: true,
-          description:
-            "SendMessage | SendStreamingMessage | GetTask | CancelTask | ResubscribeTask | ListTasks.",
-        },
-        { name: "params", type: "object", required: true, description: "Method params (e.g. the A2A message)." },
-      ],
-      errorCodes: [401, 503],
-      codeExamples: [
-        curlExample({
-          method: "POST",
-          url: abs(rpcPath),
-          auth: "a2a-key",
-          body: rpcBody,
-          extraHeaders: { "A2A-Version": "1.0" },
         }),
       ],
     });

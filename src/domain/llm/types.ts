@@ -301,8 +301,7 @@ export function chunkTermination(
  * The termination this chunk announces *for the run* — {@link isTopLevelChunk}
  * and {@link chunkTermination} composed, because every consumer that asked the
  * two questions separately was one forgotten gate away from reading a child's
- * ending as the stream's (which is exactly how an authored error once failed a
- * whole A2A task).
+ * ending as the stream's.
  */
 export function runTermination(
   chunk: Pick<EngineChunk, "author" | "done" | "finishReason" | "error">,

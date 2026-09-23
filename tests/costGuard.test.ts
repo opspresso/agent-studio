@@ -416,7 +416,7 @@ describe("settleCostLimit", () => {
 describe("every top-level entry point is guarded", () => {
   /**
    * The six route-level entry points (predict, chat/completions, agent, chat,
-   * Slack, A2A) all reach one of these four functions, and image generation is
+   * Slack) all reach one of these four functions, and image generation is
    * the fifth. Every other dependency rejects, so a run that got past the guard
    * fails loudly rather than quietly succeeding on a fake.
    */

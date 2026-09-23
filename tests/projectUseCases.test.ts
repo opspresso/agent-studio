@@ -477,7 +477,7 @@ describe("MCP binding header overrides", () => {
 });
 
 describe("imageModel validation", () => {
-  it("createVersion rejects an imageModel without the imageGeneration capability", async () => {
+  it("rejects an imageModel without the imageGeneration capability", async () => {
     await expect(
       writeSettings(
         settingsFixture(),
@@ -492,7 +492,7 @@ describe("imageModel validation", () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it("createVersion rejects an unknown imageModel", async () => {
+  it("rejects an unknown imageModel", async () => {
     await expect(
       writeSettings(
         settingsFixture(),
@@ -507,7 +507,7 @@ describe("imageModel validation", () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it("createVersion accepts an image-capable imageModel", async () => {
+  it("accepts an image-capable imageModel", async () => {
     const created = await writeSettings(
       settingsFixture(),
       makeProjectRepo([projectFixture("p")]),
@@ -525,7 +525,7 @@ describe("imageModel validation", () => {
     expect(created.parameters.imageModel).toBe("openai/gpt-image-2");
   });
 
-  it("updateVersion rejects parameters carrying an invalid imageModel", async () => {
+  it("rejects an invalid imageModel in a configuration update", async () => {
     await expect(
       patchSettings(
         settingsFixture([configurationFixture("p")]),
@@ -667,8 +667,7 @@ describe("projectRepository.list paging", () => {
   it("fills a page rather than letting a dropped row end the walk", async () => {
     // `listProjects` stops on a short page, so a page filtered down to fewer
     // rows than were asked for reads as the end of the catalogue — and every
-    // project after it disappears from the console, the A2A listing and the
-    // repair sweep at once.
+    // project after it disappears from the console and repair sweep at once.
     store.rows.clear();
     const live = (name: string) => ({
       PK: `PROJECT#${name}`,
@@ -700,8 +699,8 @@ describe("projectRepository.delete cascade", () => {
     store.rows.clear();
     store.seed([
       row("PROJECT#p", "META"),
-      row("PROJECT#p", "VERSION#1"),
-      row("PROJECT#p", "VERSION#2"),
+      row("PROJECT#p", "APITOKEN"),
+      row("PROJECT#p", "WORKSPACEPOLICY"),
       row("USAGE#p", "DATE#2026-01-01"),
       row("USAGE#p", "DATE#2026-01-02"),
       // An unrelated project must survive the cascade.
@@ -725,12 +724,12 @@ describe("projectRepository.delete cascade", () => {
     store.rows.clear();
     store.seed([
       { ...row("PROJECT#p", "META"), GSI1PK: "TYPE#PROJECT", GSI1SK: "p" },
-      row("PROJECT#p", "VERSION#1"),
+      row("PROJECT#p", "APITOKEN"),
     ]);
     vi.spyOn(store, "deletePartition").mockRejectedValueOnce(new Error("connection reset"));
 
     await expect(projectRepository.delete("p")).rejects.toThrow(/connection reset/);
-    expect(keysOf()).toEqual([row("PROJECT#p", "META"), row("PROJECT#p", "VERSION#1")]);
+    expect(keysOf()).toEqual([row("PROJECT#p", "APITOKEN"), row("PROJECT#p", "META")]);
     const marked = await store.getItem(row("PROJECT#p", "META"));
     expect(marked?.deletingAt).toEqual(expect.any(String));
     expect(marked).not.toHaveProperty("GSI1PK");
@@ -750,7 +749,7 @@ describe("projectRepository.delete cascade", () => {
         GSI1PK: "TYPE#PROJECT",
         GSI1SK: project.name,
       },
-      row("PROJECT#recover-delete", "VERSION#1"),
+      row("PROJECT#recover-delete", "APITOKEN"),
     ]);
     vi.spyOn(store, "deletePartition").mockRejectedValueOnce(new Error("connection reset"));
 
@@ -919,17 +918,7 @@ describe("costLimitsSchema notification destinations", () => {
   });
 });
 
-describe("updateVersionSchema", () => {
-
-
-  it("still accepts the pre-override mcpList shape and normalizes it to bindings", () => {
-    // Clients written before per-version header overrides send plain names.
-    const parsed = configurationSchema.safeParse({ mcpList: ["alpha", "beta"] });
-
-    expect(parsed.success).toBe(true);
-    expect(parsed.data?.mcpList).toEqual([{ name: "alpha" }, { name: "beta" }]);
-  });
-
+describe("configurationSchema", () => {
   it("accepts a binding with header overrides, including a null removal", () => {
     const parsed = configurationSchema.safeParse({
       mcpList: [{ name: "alpha", headers: { Authorization: "Bearer x", "X-Gone": null } }],

@@ -1,11 +1,11 @@
 /**
  * Wall-clock backstop for a single run. Composes the caller's abort signal
- * (client disconnect, A2A cancel) with a hard deadline so a hung provider/tool
+ * (for example, a client disconnect) with a hard deadline so a hung provider/tool
  * call can never run — or bill — unbounded. Generous by default: only stuck or
  * runaway runs hit it, not legitimately long multi-turn / reasoning runs.
  *
  * Shared by the execution facade (agent / single-shot) and the image use case
- * so every run path — chat, Slack, A2A, predict, image — is bounded the same way.
+ * so every run path — chat, Slack, predict, image — is bounded the same way.
  *
  * **The one env read below `lib`, and deliberate.** `src/lib/config.ts` owns
  * configuration, but `application` may not import `lib` and this bound is a

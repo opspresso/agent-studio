@@ -250,10 +250,6 @@ const APP_WIRING_SITES = [
   "src/app/api/telegram/webhook/_lib/",
   // And the Teams messaging endpoint's, over the same shape.
   "src/app/api/teams/messages/_lib/",
-  // Assembles the A2A SDK handler over `executionDeps` per request —
-  // AGENTS.md's fourth wiring site (the composition root being the first).
-  // Absent from this list it passed only because no banned name crossed it yet.
-  "src/app/api/a2a/[name]/route.ts",
   // The boot path: validates config, then composes the startup audit row and
   // the managed-MCP resume directly — a wiring site by construction, since the
   // composition root itself is not loaded until this file decides the runtime
@@ -267,7 +263,7 @@ const APP_WIRING_SITES = [
  * those contracts as ports would recreate the agent runtime being replaced.
  * Network clients and credential resolution still live in infrastructure.
  */
-const PROTOCOL_SDKS = ["@a2a-js/", "@openai/agents"];
+const PROTOCOL_SDKS = ["@openai/agents"];
 
 const RULES: Rule[] = [
   {
@@ -284,7 +280,7 @@ const RULES: Rule[] = [
     // better-auth`), which left `zod`, `openai`, the MCP SDK and every other
     // package legal in the one layer whose doctrine is pure TS. The same
     // reverse rule as application's below, minus the protocol exception —
-    // domain does not even get the A2A SDK.
+    // domain cannot depend on SDK contracts.
     name: "domain imports only the domain and the standard library",
     from: "domain",
     banned: (spec) =>
@@ -307,13 +303,8 @@ const RULES: Rule[] = [
     // a client, a parser or a framework is an adapter that has not admitted it
     // yet, and it arrives as a `import type` nobody reads twice.
     //
-    // Protocol SDKs are the one exception, named rather than allowlisted.
-    // `a2a/executor.ts` implements the SDK's
-    // `AgentExecutor` and `a2a/exposure.ts` returns its `AgentCard`, so A2A's
-    // shape does reach the use case. A port there would restate the protocol's
-    // task lifecycle in our own types to gain nothing — there is one
-    // implementation of A2A and there will be one. The same ownership applies
-    // to the Agents SDK: Runner owns tool turns, approvals and handoffs. Studio
+    // The Agents SDK is the runtime exception: Runner owns tool turns,
+    // approvals and handoffs. Studio
     // owns admission, capabilities and persistence around that native runtime.
     name: "application imports only the domain and the standard library",
     from: "application",
@@ -614,7 +605,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(120);
+    expect(entries.length).toBe(116);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/chats/_components/PendingApproval.tsx",
       "src/app/chats/_components/NewChatEntry.tsx",
@@ -635,7 +626,6 @@ describe("the client bundle", () => {
       "src/app/_components/PageTabs.tsx",
       "src/app/_components/SecretInput.tsx",
       "src/app/_components/SecretControl.tsx",
-      "src/app/settings/SharedA2aKeySection.tsx",
       "src/app/settings/models/registered/page.tsx",
       "src/app/settings/providers/page.tsx",
       "src/app/settings/models/page.tsx",
@@ -1262,7 +1252,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
   {
     // Every optional env read spelled this `|| undefined`, and whitespace went
     // through all of them: a secret mounted from a file carries a trailing
-    // newline, so `A2A_API_KEY=" "` passed the boot guard, showed as
+    // newline, so a whitespace-only secret appeared configured,
     // `source: "env"` on the settings page, and 401'd every request. A second
     // copy is how the page and the runtime end up disagreeing about whether a
     // variable is set — which is the direction the bug already ran, since an
@@ -1384,7 +1374,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
   {
     // How a conversation is built from a surface's id and spelled as a key.
     // Every surface has its own builder (`chatConversation`,
-    // `slackConversation`, `telegramConversation`, `a2aConversation`,
+    // `slackConversation` and `telegramConversation`,
     // `requestConversation`), and each goes through these two — a surface normalising or spelling its own would
     // present a memory server with a key nothing else can match.
     what: "how a run's conversation is built and keyed",
@@ -1495,17 +1485,6 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // the type out too. It merges nothing; the shared token is generator
     // plumbing, not a second copy of the merge.
     alsoAllowedUnder: ["src/shared/detachOnReturn.ts"],
-  },
-  {
-    // The protocol's lifecycle — a run opened, closed or failed — is emitted by
-    // the one translator that also knows what is still open when it ends (a
-    // text message, a reasoning block, a subagent's step). A second emitter
-    // would close none of those, and a client rejects a run that finishes
-    // with a message still open. The domain declares the shapes with a
-    // semicolon; this matches the object literal a producer writes.
-    what: "emitting an AG-UI run's lifecycle events",
-    pattern: /type: "RUN_(STARTED|FINISHED|ERROR)",/,
-    owner: "src/application/agui/events.ts",
   },
   {
     // Two consumers derived this identically, and they would have drifted the
@@ -2187,15 +2166,14 @@ describe("run artifacts", () => {
  * consumers know `chunk.image` and would have uploaded one to Slack as one. But
  * being its own axis is exactly how it went missing: the field was added with
  * the chat view in mind and reached nowhere else, so `/predict`, both OpenAI
- * shapes, A2A, Slack and a trigger's history row each read the image beside it
+ * shapes, Slack and a trigger's history row each read the image beside it
  * and dropped the file on the floor. The document was stored as an artifact and
  * the caller was never told it existed — and because every one of those surfaces
  * *does* answer with images, nothing about them said files were different.
  *
  * So the rule is a pairing rather than a list: a module that reads one output
  * axis reads the other. What it then does with them is its own business —
- * Slack links a file and uploads a picture, A2A addresses one by uri and inlines
- * the other's bytes — and none of those differences is what this catches. What
+ * Slack links a file and uploads a picture; none of those differences is what this catches. What
  * it catches is a seventh surface reading only `chunk.image`, which is the exact
  * shape of every one of the six.
  *
@@ -2280,10 +2258,6 @@ const REASONING_FOLD_SITES = [
   "src/application/chat/run.ts",
   "src/app/chats/_lib/stream.ts",
   "src/app/projects/[name]/_components/RunPanel.tsx",
-  // Forwards it as the protocol's REASONING_* events rather than folding it,
-  // but the same two of the three decisions apply: top level only, and the
-  // token count beside it (on RUN_FINISHED's usage).
-  "src/application/agui/events.ts",
 ];
 
 describe("folding a run's reasoning", () => {
@@ -2294,8 +2268,7 @@ describe("folding a run's reasoning", () => {
       (file) =>
         file.path.startsWith("src/app/") ||
         file.path.startsWith("src/application/chat/") ||
-        file.path.startsWith("src/application/messaging/") ||
-        file.path.startsWith("src/application/agui/"),
+        file.path.startsWith("src/application/messaging/"),
     )
       .filter((file) => folds(stripComments(file.text)))
       .map((file) => file.path)
@@ -2327,8 +2300,6 @@ describe("folding a run's reasoning", () => {
     const PACED_BY_SOMETHING_ELSE = [
       "src/application/chat/run.ts",
       "src/app/chats/_lib/stream.ts",
-      // A wire translator holds nothing in component state.
-      "src/application/agui/events.ts",
     ];
     const unpaced = REASONING_FOLD_SITES.filter(
       (path) => !PACED_BY_SOMETHING_ELSE.includes(path),
@@ -2786,14 +2757,14 @@ describe("scanner", () => {
 
   it("lets application reach the domain and the standard library, and nothing else", () => {
     // The rule passes today because `application` imports `node:crypto` and the
-    // A2A SDK. Asserted directly so "it passes" cannot come to mean "it stopped
+    // Agents SDK. Asserted directly so "it passes" cannot come to mean "it stopped
     // matching" — a package name is the thing it has to keep recognising.
     const rule = RULES.find(
       (r) => r.name === "application imports only the domain and the standard library",
     )!;
     expect(rule.banned("@/domain/llm/types")).toBe(false);
     expect(rule.banned("node:crypto")).toBe(false);
-    expect(rule.banned("@a2a-js/sdk/server")).toBe(false);
+    expect(rule.banned("@openai/agents")).toBe(false);
     // The shapes it exists to stop: an SDK, a client, a parser, the framework.
     expect(rule.banned("@aws-sdk/client-dynamodb")).toBe(true);
     expect(rule.banned("openai")).toBe(true);

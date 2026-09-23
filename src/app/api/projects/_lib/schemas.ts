@@ -163,12 +163,9 @@ export const subagentRefSchema = z.object({
 });
 
 /**
- * An MCP binding. A bare server name normalizes to a binding without overrides.
- * In the object form, a `null` header value removes a registry default.
+ * An MCP binding. A `null` header value removes a registry default.
  */
-export const mcpBindingSchema: z.ZodType<McpBinding> = z.union([
-  z.string().min(1).transform((name): McpBinding => ({ name })),
-  z.object({
+export const mcpBindingSchema: z.ZodType<McpBinding> = z.object({
     name: z.string().min(1),
     headers: z.record(z.string().min(1), z.string().nullable()).optional(),
     /** Omitted or empty means "every tool this server offers". */
@@ -181,8 +178,7 @@ export const mcpBindingSchema: z.ZodType<McpBinding> = z.union([
       namePath: z.array(z.string().min(1).max(128)).min(1).max(8).optional(),
       mimeType: z.string().regex(/^[a-z]+\/[a-z0-9.+-]+$/i),
     }).strict().refine(isMcpSourceMapping, "Invalid source mapping")).max(MAX_MCP_SOURCE_MAPPINGS).refine((items) => new Set(items.map((item) => item.tool)).size === items.length, "Duplicate source tool mapping").optional(),
-  }),
-]);
+  });
 
 export const agentConfigurationInputSchema = z.object({
   systemPrompt: z.string().default(""),

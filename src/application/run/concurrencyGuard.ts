@@ -12,7 +12,7 @@
  * mean nothing on a horizontally scaled deployment.
  */
 
-import { A2A_ACTOR_ID, actorKey, type RunActor } from "@/domain/execution/actor";
+import { actorKey, type RunActor } from "@/domain/execution/actor";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import { TIER_LIMITS, type MemberTier } from "@/domain/member/tiers";
 import { RateLimitedError } from "@/application/errors";
@@ -22,15 +22,6 @@ import { log } from "@/shared/logger";
 export interface ConcurrencyLimits {
   /** Per identified caller — a person, or a project token acting for one. */
   perActor: number;
-  /**
-   * For `a2a`, whose id is a constant because the inbound key is shared. One
-   * identity therefore stands for every machine caller, so a per-caller limit
-   * degenerates into a cap on the whole A2A surface. That is still worth
-   * having — it is the one entry point with no caller identity at all — but it
-   * has to be its own number, or a handful of integrations would sit inside a
-   * budget meant for one person.
-   */
-  a2a: number;
 }
 
 export interface ConcurrencyGuardDeps {
@@ -58,11 +49,8 @@ export class ConcurrencyLimitError extends RateLimitedError {
  */
 const RETRY_AFTER_SECONDS = 15;
 
-export function limitFor(limits: ConcurrencyLimits, actor: RunActor): number {
-  // Only the *shared* A2A key gets the surface-wide ceiling: its one identity
-  // stands for every machine caller at once. A named client key is one caller,
-  // and gets the same per-actor limit a person does.
-  return actor.kind === "a2a" && actor.id === A2A_ACTOR_ID ? limits.a2a : limits.perActor;
+export function limitFor(limits: ConcurrencyLimits, _actor: RunActor): number {
+  return limits.perActor;
 }
 
 export interface AcquiredSlot {
@@ -97,8 +85,7 @@ export async function acquireRunSlot(
   // A tier's own ceiling wins over the deployment-wide number; a tier without
   // one inherits it. Only a `user` actor ever arrives with a tier — the
   // bracket's resolver answers `undefined` for machine callers and project
-  // tokens alike, so the A2A surface keeps its own limit and a token stays a
-  // service credential bounded by the env number.
+  // tokens alike, so a token stays a service credential bounded by the env number.
   const limit = (tier ? TIER_LIMITS[tier].maxConcurrentRuns : undefined) ?? limitFor(deps.limits, actor);
   if (limit <= 0) {
     return UNLIMITED;

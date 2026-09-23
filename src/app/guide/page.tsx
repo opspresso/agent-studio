@@ -184,7 +184,6 @@ const SECTIONS: readonly GuideSection[] = [
     entries: [
       { title: "guide.integrations.slack", body: "guide.integrations.slackBody" },
       { title: "guide.integrations.messengers", body: "guide.integrations.messengersBody" },
-      { title: "guide.integrations.a2a", body: "guide.integrations.a2aBody" },
       { title: "guide.integrations.webhook", body: "guide.integrations.webhookBody" },
       { title: "guide.integrations.schedule", body: "guide.integrations.scheduleBody" },
     ],

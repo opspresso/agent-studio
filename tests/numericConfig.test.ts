@@ -19,7 +19,6 @@ const TOUCHED = [
   "MCP_DISCOVERY_CACHE_TTL_MS",
   "MCP_MAX_SERVER_TTL_MS",
   "MAX_CONCURRENT_RUNS_PER_ACTOR",
-  "MAX_CONCURRENT_RUNS_A2A",
   "EMBEDDING_DIM",
   "RERANKER_MIN_SCORE",
 ] as const;
@@ -124,14 +123,10 @@ describe("settings with shared numeric parsing", () => {
 
   it("keeps concurrency settings inside the stored slot-key range", () => {
     set("MAX_CONCURRENT_RUNS_PER_ACTOR", "1000");
-    set("MAX_CONCURRENT_RUNS_A2A", "1000");
     expect(config.maxConcurrentRunsPerActor).toBe(1000);
-    expect(config.maxConcurrentRunsA2a).toBe(1000);
 
     set("MAX_CONCURRENT_RUNS_PER_ACTOR", "1001");
-    set("MAX_CONCURRENT_RUNS_A2A", "1001");
     expect(config.maxConcurrentRunsPerActor).toBe(10);
-    expect(config.maxConcurrentRunsA2a).toBe(50);
   });
 
   it("warns once on a retention window it had to ignore, not once per row", () => {

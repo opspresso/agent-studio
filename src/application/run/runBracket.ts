@@ -35,7 +35,7 @@ export type RunBracketDeps = CostGuardDeps &
     artifacts?: ArtifactStorage;
     /**
      * The tier of the member behind this actor, or `undefined` for the kinds
-     * no member backs (slack, a2a, webhook, schedule) — those keep the
+     * no member backs (slack, webhook, schedule) — those keep the
      * deployment-wide limits. Injected rather than read, like every other
      * runtime lookup here; absent means no tier policy at all.
      */

@@ -129,7 +129,6 @@ describe("storeArtifact", () => {
       mimeType: "image/png",
       producedBy: "image-child",
     });
-    expect(artifact).not.toHaveProperty("versionName");
     expect(artifact).toMatchObject({
       projectName: "poster-bot",
       actor: { kind: "user", id: "bruce@daangn.com" },

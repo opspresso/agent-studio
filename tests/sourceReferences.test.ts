@@ -34,7 +34,7 @@ describe("encrypted source references", () => {
   });
   it("refreshes an admitted source after its temporary reference row has expired", async () => {
     const f = fixture();
-    const refresh = { serverName: "files", versionName: "1", identity: "connection-1", mapping: {
+    const refresh = { serverName: "files", identity: "connection-1", mapping: {
       tool: "get_file", namespace: "account", urlPath: ["url"], idPath: ["id"], mimeType: "audio/mpeg", refreshArgument: "file_id",
     } };
     await f.api.register({ ...f.input, refresh });

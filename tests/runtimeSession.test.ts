@@ -1,5 +1,3 @@
-import { brotliCompressSync } from "node:zlib";
-import { runtimeSessionContext } from "@/domain/security/secretContext";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { runtimeSessionFixture as fixture } from "./runtimeSessionFixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -290,32 +288,6 @@ describe("durable native SDK Session", () => {
     expect(await pendingRuntimeApproval(f.services, "chat-1", "someone@example.com")).toBeNull();
     await discardRuntimeCheckpoint(f.services, "chat-1", f.scope.ownerEmail, pending.revision);
     expect(await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail)).toBeNull();
-  });
-
-  it("refuses retired Version checkpoints without replay and permits owner-scoped discard", async () => {
-    const f = fixture({ approvalTools: ["lookup"] });
-    const effect = vi.fn(async () => ({ text: "done" }));
-    await f.run(new FakeChannel([[contentChunk("earlier answer")]]), "earlier turn");
-    const before = (await readRuntimeSession(f.services, "chat-1", f.scope.ownerEmail))!.document.items;
-    await f.run(new FakeChannel([[toolCallChunk(0, "call", "lookup", "{}")]]), "lookup", undefined,
-      { callMcpTool: effect }, { mcpTools: [{ type: "function", function: { name: "lookup", parameters: {} } }] });
-    const saved = (await readRuntimeSession(f.services, "chat-1", f.scope.ownerEmail))!;
-    const { configuration, ...checkpoint } = saved.document.checkpoint!;
-    const legacy = { ...saved.document, checkpoint: { ...checkpoint, version: { ...configuration, versionName: "1" } } };
-    const payload = f.services.cipher.encrypt(brotliCompressSync(Buffer.from(JSON.stringify(legacy))).toString("base64"),
-      runtimeSessionContext("chat-1", f.scope.ownerEmail));
-    f.rows.set("chat-1", { ...saved.row, payload });
-    const pending = (await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail))!;
-    const channel = new FakeChannel([]);
-    await expect(f.run(channel, "", { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] },
-      { callMcpTool: effect })).rejects.toThrow("retired Version settings");
-    expect(channel.calls).toBe(0);
-    expect(effect).not.toHaveBeenCalled();
-    await expect(discardRuntimeCheckpoint(f.services, "chat-1", "other@example.com", pending.revision)).rejects.toThrow();
-    expect(await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail)).not.toBeNull();
-    await discardRuntimeCheckpoint(f.services, "chat-1", f.scope.ownerEmail, pending.revision);
-    expect(await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail)).toBeNull();
-    expect((await readRuntimeSession(f.services, "chat-1", f.scope.ownerEmail))!.document.items).toEqual(before);
   });
 
   it("runs the SDK input guardrail before a model call", async () => {

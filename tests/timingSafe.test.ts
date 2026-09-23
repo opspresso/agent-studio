@@ -3,11 +3,11 @@ import { timingSafeEqualString } from "@/shared/timingSafe";
 
 describe("timingSafeEqualString", () => {
   it("returns true for identical strings", () => {
-    expect(timingSafeEqualString("a2a-secret-key", "a2a-secret-key")).toBe(true);
+    expect(timingSafeEqualString("token-secret-key", "token-secret-key")).toBe(true);
   });
 
   it("returns false for different strings of equal length", () => {
-    expect(timingSafeEqualString("a2a-secret-key", "a2a-secret-XXX")).toBe(false);
+    expect(timingSafeEqualString("token-secret-key", "token-secret-XXX")).toBe(false);
   });
 
   it("returns false for different lengths without throwing", () => {

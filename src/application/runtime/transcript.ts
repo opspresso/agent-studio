@@ -42,7 +42,7 @@ function transcriptLine(content: ChatMessageInput["content"]): string {
  * own system prompt: handed the parent's `assistant` turns it reads them as its
  * own ("as I already said"), and the parent's `tool_calls` would arrive naming
  * tools the child never declared. A labelled block inside the child's single
- * user turn has neither problem, and it is the one form a remote/A2A child —
+ * user turn has neither problem, and it is the one form a remote child —
  * which can only be sent text — can receive too.
  *
  * Spent newest-first, because a follow-up is usually about the turn just before

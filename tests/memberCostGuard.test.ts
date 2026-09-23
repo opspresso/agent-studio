@@ -95,7 +95,6 @@ describe("assertWithinMemberCostLimit", () => {
     const usage = usageWith([day("2026-08-13", guestCap * 10)], read);
     for (const actor of [
       { kind: "slack", id: "U1" },
-      { kind: "a2a", id: "shared-key" },
       { kind: "webhook", id: "p:t" },
       { kind: "schedule", id: "p:t" },
       // A token spends against its project, not its owner; the tier gate on

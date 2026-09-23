@@ -18,7 +18,7 @@ function span(spanId: string, parentSpanId?: string): TraceSpan {
   return { spanId, parentSpanId, name: spanId, kind: "tool", status: "ok", startedAt: "2026-09-13T00:00:00Z", endedAt: "2026-09-13T00:00:01Z", durationMs: 1000 };
 }
 async function send(spans: TraceSpan[]) {
-  const trace: Trace = { traceId: "studio-run", projectName: "project", versionName: "v1", projectType: "agent", status: "completed",
+  const trace: Trace = { traceId: "studio-run", projectName: "project", projectType: "agent", status: "completed",
     startedAt: "2026-09-13T00:00:00Z", endedAt: "2026-09-13T00:00:02Z", createdAt: "2026-09-13T00:00:02Z", durationMs: 2000, spans };
   const exporter = createOtelTraceExport({ endpoint: "http://collector.test", serviceName: "test" });
   exporter.exportTrace(trace);

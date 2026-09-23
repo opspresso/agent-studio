@@ -236,7 +236,7 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
         <Text fz="sm" c="dimmed">
           Spend is measured per UTC day and per UTC month across every model this project runs.
           Leave a field empty for no limit. A blocked project refuses every run — API, chat,
-          Slack and A2A alike — until the window rolls over: 00:00 UTC for the day, the first
+          Slack and triggers alike — until the window rolls over: 00:00 UTC for the day, the first
           of the next month for the month.
         </Text>
         {error && (

@@ -28,7 +28,7 @@ async function fixture() {
   const owner = f.scope.ownerEmail;
   const at = new Date().toISOString();
   fake.seed([{ ...keys.project("project"), entityType: "PROJECT", name: "project", displayName: "Project", description: "",
-    ownerEmail: owner, publishedVersion: "v1", projectType: "agent", createdAt: at, updatedAt: at }]);
+    ownerEmail: owner, projectType: "agent", createdAt: at, updatedAt: at }]);
   await chats.create({ chatId: f.scope.sessionId, projectName: "project", title: "Implement, create PR and merge", ownerEmail: owner, createdAt: at, updatedAt: at });
   await f.run(new FakeChannel([[contentChunk("Waiting for the commit approval")]]), "Commit and push, create a PR, then merge it to main");
   let serial = 0;

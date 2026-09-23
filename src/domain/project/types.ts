@@ -251,7 +251,7 @@ export interface AgentParameters {
    * The console is where it is *rendered*, not the boundary it stops at: the
    * two raw-chunk routes (`/agent` and streaming `/predict`) forward engine
    * chunks verbatim, so anyone holding a project API token receives the
-   * reasoning frames too. Nothing else republishes it — the OpenAI shapes, A2A,
+   * reasoning frames too. Nothing else republishes it — the OpenAI shapes,
    * the messaging bots and the trace recorder all read the answer beside it,
    * and the trace keeps the token count without the words.
    *

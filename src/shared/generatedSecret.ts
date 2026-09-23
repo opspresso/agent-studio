@@ -9,8 +9,6 @@ import { timingSafeEqualString } from "./timingSafe";
  * product and to what it opens, the way `ghp_`/`gho_` do for GitHub: two
  * characters for agent-studio, then one for the kind.
  *
- *   asa_…   A2A API key       (app-wide, admin-managed)
- *   asc_…   A2A client key    (per client, admin-managed)
  *   ast_…   project API token (per project, owner-managed)
  *   asw_…   webhook trigger secret (per trigger, owner-managed)
  *   asg_…   Telegram webhook secret (per project; minted here, handed only to Telegram)
@@ -23,15 +21,11 @@ import { timingSafeEqualString } from "./timingSafe";
 const VENDOR = "as";
 
 export type GeneratedSecretKind =
-  | "a2aApiKey"
-  | "a2aClientKey"
   | "projectApiToken"
   | "triggerSecret"
   | "telegramWebhookSecret";
 
 const KIND_CHAR: Record<GeneratedSecretKind, string> = {
-  a2aApiKey: "a",
-  a2aClientKey: "c",
   projectApiToken: "t",
   triggerSecret: "w",
   telegramWebhookSecret: "g",

@@ -516,11 +516,10 @@ describe("mcpRepository round-trip", () => {
 });
 
 describe("externalAgentRepository round-trip", () => {
-  it("preserves headers and protocol through put + get", async () => {
+  it("preserves headers through put + get", async () => {
     await externalAgentRepository.put({
       name: "a",
       url: "https://agent.example/v1",
-      protocol: "a2a",
       description: "desc",
       headers: { "X-Api-Key": "enc:v1:ciphertext" },
       createdAt: NOW,
@@ -529,7 +528,6 @@ describe("externalAgentRepository round-trip", () => {
     const loaded = await externalAgentRepository.get("a");
     expect(loaded).toMatchObject({
       name: "a",
-      protocol: "a2a",
       headers: { "X-Api-Key": "enc:v1:ciphertext" },
     });
   });
@@ -686,7 +684,6 @@ describe("artifactRepository round-trip", () => {
       filename: "chart.png",
       byteSize: 1234,
       projectName: "p1",
-      versionName: "v1",
       actor: { kind: "slack" as const, id: "U0ABCDEF" },
       // A Slack run looks the asker's address up so their pictures land in
       // their own gallery; the actor stays the Slack id.
@@ -797,7 +794,6 @@ describe("traceRepository round-trip", () => {
     const trace = {
       traceId: "trace-1",
       projectName: "p",
-      versionName: "2",
       projectType: "agent",
       status: "completed" as const,
       spans: [],

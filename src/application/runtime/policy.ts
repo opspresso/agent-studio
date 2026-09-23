@@ -13,7 +13,7 @@ export function inputGuardrails(messages: ChatMessageInput[], policy?: RuntimePo
   }) }];
 }
 
-/** Native validation also runs before approval, including frontend tool interruptions. */
+/** Native validation runs before an approval request. */
 export function toolInputGuardrail(validate: (input: unknown) => void, filter?: PiiFilter) {
   return defineToolInputGuardrail({ name: "tool-schema", run: async ({ toolCall }) => {
     try {

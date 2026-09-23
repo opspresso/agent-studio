@@ -17,7 +17,6 @@ import { currentRunContext } from "./runContext";
 
 /** Subsystem the line belongs to. Free-form, but reuse an existing one. */
 export type LogScope =
-  | "a2a"
   | "api"
   | "artifact"
   | "audio-worker"

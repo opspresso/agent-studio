@@ -1,5 +1,5 @@
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
-import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
+import type { ExternalAgent } from "@/domain/agent/types";
 import { NotFoundError } from "@/application/errors";
 import {
   assertAllowedUrl,
@@ -17,14 +17,12 @@ import { externalAgentHeadersContext } from "@/domain/security/secretContext";
 export interface CreateAgentInput {
   name: string;
   url: string;
-  protocol?: AgentProtocol;
   description: string;
   headers: Record<string, string>;
 }
 
 export interface UpdateAgentInput {
   url?: string;
-  protocol?: AgentProtocol;
   description?: string;
   headers?: Record<string, string>;
 }
@@ -61,7 +59,6 @@ export function createAgentUseCases(
       return {
         name: input.name,
         url: input.url,
-        ...(input.protocol ? { protocol: input.protocol } : {}),
         description: input.description,
         headers: cipher.encryptHeaders(input.headers, externalAgentHeadersContext(input.name)),
         createdAt: now,
@@ -84,7 +81,6 @@ export function createAgentUseCases(
       return {
         ...existing,
         url: patchedUrl ?? existing.url,
-        protocol: patch.protocol ?? existing.protocol,
         description: patch.description ?? existing.description,
         headers: movedAddress
           ? cipher.mergeHeaderUpdate(
@@ -120,7 +116,6 @@ export function createAgentUseCases(
       return dispatcher.probe(
         {
           url: existing.url,
-          protocol: existing.protocol,
           headers: cipher.decryptHeadersForOutbound(
             existing.headers,
             externalAgentHeadersContext(existing.name),

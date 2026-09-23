@@ -23,7 +23,6 @@ describe("createAgent", () => {
       parameters: { piiFiltering: false }, skillList: [], mcpList: [], subagentList: [] });
     expect(f.projects.create).toHaveBeenCalledTimes(1);
     expect(f.rows.get(INPUT.name)).toEqual(project);
-    expect(project).not.toHaveProperty("publishedVersion");
   });
   it("creates an unconfigured Agent when the deployment offers no suitable model", async () => {
     const f = fixture(["openai/gpt-image-2"]);

@@ -2,57 +2,43 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { toSlug } from "@/domain/naming";
 import {
   createAgent,
-  listA2aProjects,
   listAgents,
-  type A2aProjectListItem,
-  type A2aProjectListResponse,
-  type AgentProtocol,
   type ExternalAgent,
 } from "./api";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import {
   Alert,
-  Anchor,
   Badge,
   Button,
   Card,
   Group,
-  Modal,
-  Select,
   Stack,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
 import { IconRobot } from "@tabler/icons-react";
-import { CodeBlock } from "@/app/_components/CodeBlock";
 import { FormModal } from "@/app/_components/FormModal";
-import { LoadingText } from "@/app/_components/PageState";
 import { useDisclosure } from "@mantine/hooks";
-import { CardGrid, CardList } from "@/app/_components/CardGrid";
-import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL, BADGE } from "@/app/_components/badgeColors";
+import { CardGrid } from "@/app/_components/CardGrid";
+import { BADGE } from "@/app/_components/badgeColors";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
 import { createLatestOnly } from "@/app/_lib/latestOnly";
-import { getProjectA2a, type ProjectA2aResponse } from "@/app/projects/lib/api";
 
 export default function AgentsPage() {
   const t = useT();
   const viewer = useViewer();
   const [agents, setAgents] = useState<ExternalAgent[]>([]);
-  const [a2aProjects, setA2aProjects] = useState<A2aProjectListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
   const [filter, setFilter] = useState("");
-  const [cardProject, setCardProject] = useState<A2aProjectListItem | null>(null);
   const latestOnly = useRef(createLatestOnly()).current;
 
   async function refresh() {
@@ -60,10 +46,9 @@ export default function AgentsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [agentList, projectList] = await Promise.all([listAgents(), listA2aProjects()]);
+      const agentList = await listAgents();
       if (isCurrent()) {
         setAgents(agentList);
-        setA2aProjects(projectList);
       }
     } catch (e) {
       if (isCurrent()) setError(e instanceof Error ? e.message : "Failed to load agents");
@@ -122,9 +107,6 @@ export default function AgentsPage() {
             <Card key={agent.name} component={Link} href={`/agents/${agent.name}`} h="100%">
               <Group gap="xs">
                 <Text fw={500}>{agent.name}</Text>
-                <Badge color={AGENT_PROTOCOL_COLOR[agent.protocol ?? "openai"]}>
-                  {AGENT_PROTOCOL_LABEL[agent.protocol ?? "openai"]}
-                </Badge>
                 {headerCount > 0 && (
                   <Badge color={BADGE.on}>
                     {headerCount} header{headerCount === 1 ? "" : "s"}
@@ -142,45 +124,6 @@ export default function AgentsPage() {
         })}
       </CardGrid>
 
-      {!loading && a2aProjects && a2aProjects.projects.length > 0 && (
-        <Stack component="section" gap="sm">
-          <div>
-            <Title order={2} fz="h4">
-              {t("agents.studioTitle")}
-            </Title>
-            <Text fz="sm" c="dimmed" mt={4}>
-              {a2aProjects.enabled
-                ? t("agents.studioEnabled")
-                : t("agents.studioDisabled")}
-            </Text>
-          </div>
-          <CardList>
-            {a2aProjects.projects.map((project) => (
-              <Card
-                key={project.name}
-                component="button"
-                type="button"
-                onClick={() => setCardProject(project)}
-                h="100%"
-              >
-                <Group gap="xs">
-                  <Text fw={500}>{project.displayName || project.name}</Text>
-                  <Badge color={AGENT_PROTOCOL_COLOR.a2a}>{AGENT_PROTOCOL_LABEL.a2a}</Badge>
-                </Group>
-                <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
-                  {project.description}
-                </Text>
-                {a2aProjects.enabled && (
-                  <Text fz="xs" c="dimmed" mt="xs" truncate>
-                    {project.cardUrl}
-                  </Text>
-                )}
-              </Card>
-            ))}
-          </CardList>
-        </Stack>
-      )}
-
       <RegisterAgentModal
         opened={opened}
         onClose={close}
@@ -190,67 +133,7 @@ export default function AgentsPage() {
         }}
       />
 
-      <AgentCardModal project={cardProject} onClose={() => setCardProject(null)} />
     </Stack>
-  );
-}
-
-function AgentCardModal({
-  project,
-  onClose,
-}: {
-  project: A2aProjectListItem | null;
-  onClose: () => void;
-}) {
-  const [view, setView] = useState<ProjectA2aResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!project) {
-      return;
-    }
-    let cancelled = false;
-    setView(null);
-    setError(null);
-    getProjectA2a(project.name)
-      .then((data) => {
-        if (!data.card) throw new Error("No Agent Card is available for this project");
-        if (!cancelled) setView(data);
-      })
-      .catch(
-        (e) =>
-          !cancelled && setError(e instanceof Error ? e.message : "Failed to load the Agent Card"),
-      );
-    return () => {
-      cancelled = true;
-    };
-  }, [project]);
-
-  return (
-    <Modal
-      opened={project !== null}
-      onClose={onClose}
-      title={project ? `Agent Card — ${project.displayName || project.name}` : ""}
-      size="lg"
-    >
-      {project && (
-        <Stack gap="sm">
-          {view?.cardUrl && <CopyableUrl url={view.cardUrl} />}
-          {error ? (
-            <Alert color="red" variant="light">
-              {error}
-            </Alert>
-          ) : view?.card ? (
-            <CodeBlock language="json" code={JSON.stringify(view.card, null, 2)} />
-          ) : (
-            <LoadingText />
-          )}
-          <Anchor component={Link} href={`/projects/${project.name}`} fz="sm">
-            Open project →
-          </Anchor>
-        </Stack>
-      )}
-    </Modal>
   );
 }
 
@@ -266,7 +149,6 @@ function RegisterAgentModal({
   const t = useT();
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
-  const [protocol, setProtocol] = useState<AgentProtocol>("openai");
   const [description, setDescription] = useState("");
   const [rows, setRows] = useState<HeaderRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -280,7 +162,6 @@ function RegisterAgentModal({
   function reset() {
     setName("");
     setUrl("");
-    setProtocol("openai");
     setDescription("");
     setRows([]);
   }
@@ -289,7 +170,7 @@ function RegisterAgentModal({
     setSubmitting(true);
     setError(null);
     try {
-      await createAgent({ name, url, protocol, description, headers: rowsToRecord(rows) });
+      await createAgent({ name, url, description, headers: rowsToRecord(rows) });
       reset();
       onCreated();
     } catch (err) {
@@ -319,25 +200,11 @@ function RegisterAgentModal({
         description={t("registry.nameHint")}
         inputWrapperOrder={["label", "input", "description", "error"]}
       />
-      <Select
-        label={t("agents.protocol")}
-        value={protocol}
-        onChange={(value) => setProtocol((value ?? "openai") as AgentProtocol)}
-        allowDeselect={false}
-        data={[
-          { value: "openai", label: "OpenAI-compatible" },
-          { value: "a2a", label: "A2A" },
-        ]}
-      />
       <TextInput
-        label={protocol === "a2a" ? t("agents.cardUrl") : t("registry.url")}
+        label={t("registry.url")}
         value={url}
         onChange={(e) => setUrl(e.currentTarget.value)}
-        placeholder={
-          protocol === "a2a"
-            ? "https://example.com/.well-known/agent-card.json"
-            : "https://example.com/v1/chat/completions"
-        }
+        placeholder="https://example.com/v1/chat/completions"
         type="url"
         required
       />

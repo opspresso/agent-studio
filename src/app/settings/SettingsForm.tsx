@@ -5,12 +5,10 @@ import { useEffect, useState } from "react";
 import { Alert, Badge, Button, Card, Group, Select, Stack, TagsInput, Text, TextInput } from "@mantine/core";
 import type { SettingKey, SettingsView } from "@/application/settings/settingsUseCases";
 import { SecretInput } from "@/app/_components/SecretInput";
-import { SharedA2aKeySection } from "./SharedA2aKeySection";
 import { LoadingText } from "@/app/_components/PageState";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
 import { parseList } from "@/shared/parseList";
-import { A2aClientKeysSection } from "./A2aClientKeysSection";
 import { SETTINGS_FIELDS, settingsPatch, type SettingsSection } from "./fields";
 
 export function SettingsForm({ section }: { section: SettingsSection }) {
@@ -128,11 +126,5 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
       </Stack>
     </form>
     <Text size="xs" c="dimmed" mt="md">{t("settings.overrideHint")}</Text></Card>
-    {section === "keys" && view && <>
-      <SharedA2aKeySection field={view.fields.a2aApiKey} disabled={saving} onChanged={next => {
-        setView(current => current ? { ...current, fields: { ...current.fields, a2aApiKey: next.fields.a2aApiKey }, updatedAt: next.updatedAt } : next);
-      }} />
-      <Card><A2aClientKeysSection /></Card>
-    </>}
   </Stack>;
 }

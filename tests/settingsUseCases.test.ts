@@ -31,7 +31,6 @@ const ENV_KEYS = [
   "PLUGINS_REPO",
   "PLUGINS_REPO_BRANCH",
   "GITHUB_TOKEN",
-  "A2A_API_KEY",
   "PUBLIC_BASE_URL",
   "ARTIFACT_ACCESS_MODE",
   "EMBEDDING_MODEL",
@@ -275,32 +274,32 @@ describe("settingsUseCases.update", () => {
   });
 
   it("does not store a secret the environment already provides", async () => {
-    process.env.A2A_API_KEY = "a2a-from-env";
+    process.env.GITHUB_TOKEN = "github-from-env";
     const { repo, current } = fakeRepo();
     const useCases = createSettingsUseCases(repo);
 
-    const view = await useCases.update({ a2aApiKey: "a2a-from-env" }, ADMIN);
+    const view = await useCases.update({ githubToken: "github-from-env" }, ADMIN);
 
-    expect(current()?.a2aApiKey).toBeUndefined();
-    expect(view.fields.a2aApiKey?.source).toBe("env");
+    expect(current()?.githubToken).toBeUndefined();
+    expect(view.fields.githubToken?.source).toBe("env");
   });
 
   it("encrypts new secrets, keeps masked ones, and removes cleared overrides", async () => {
     const { repo, current } = fakeRepo();
     const useCases = createSettingsUseCases(repo);
 
-    await useCases.update({ a2aApiKey: "a2a-secret", pluginsRepo: "org/repo" }, ADMIN);
-    const storedKey = current()?.a2aApiKey;
+    await useCases.update({ githubToken: "github-secret", pluginsRepo: "org/repo" }, ADMIN);
+    const storedKey = current()?.githubToken;
     expect(isEncrypted(storedKey ?? "")).toBe(true);
-    expect(decryptSecret(storedKey ?? "", settingsSecretContext("a2a-api-key"))).toBe(
-      "a2a-secret",
+    expect(decryptSecret(storedKey ?? "", settingsSecretContext("github-token"))).toBe(
+      "github-secret",
     );
 
-    await useCases.update({ a2aApiKey: "*".repeat("a2a-secret".length) }, ADMIN);
-    expect(current()?.a2aApiKey).toBe(storedKey);
+    await useCases.update({ githubToken: "*".repeat("github-secret".length) }, ADMIN);
+    expect(current()?.githubToken).toBe(storedKey);
 
-    await useCases.update({ a2aApiKey: "", pluginsRepo: "" }, ADMIN);
-    expect(current()?.a2aApiKey).toBeUndefined();
+    await useCases.update({ githubToken: "", pluginsRepo: "" }, ADMIN);
+    expect(current()?.githubToken).toBeUndefined();
     expect(current()?.pluginsRepo).toBeUndefined();
   });
 

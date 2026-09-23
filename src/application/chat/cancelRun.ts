@@ -7,8 +7,7 @@
  *
  * The request is persisted rather than kept in memory because the instance
  * serving the stop is not necessarily the one running the answer. That is the
- * same reason the A2A executor polls its task store
- * (`src/application/a2a/executor.ts`) instead of holding a flag.
+ * reason the running instance polls durable cancellation state.
  */
 
 import type { ChatRepository } from "@/domain/chat/repository";

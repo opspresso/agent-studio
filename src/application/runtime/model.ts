@@ -23,7 +23,6 @@ export interface RuntimeTurn {
   model: string;
   contextBudget?: RunContextBudget;
   results: ToolResultBudget;
-  clientTools: Set<string>;
   handoffTools?: Set<string>;
   toolOrder?: Map<string, { previous: Promise<void>; finished: Promise<void>; complete: () => void }>;
 }
@@ -158,13 +157,11 @@ export function createRunModel(
       const display = filter?.restore(args) ?? args;
       let shown = display;
       let recorded = args;
-      if (!turn.clientTools.has(item.name)) {
-        try {
-          const bounded = boundToolArgsPair(JSON.parse(args) as Record<string, unknown>, JSON.parse(display) as Record<string, unknown>);
-          shown = JSON.stringify(bounded.display);
-          recorded = JSON.stringify(bounded.wire);
-        } catch { shown = boundArgumentText(display); recorded = boundArgumentText(args); }
-      }
+      try {
+        const bounded = boundToolArgsPair(JSON.parse(args) as Record<string, unknown>, JSON.parse(display) as Record<string, unknown>);
+        shown = JSON.stringify(bounded.display);
+        recorded = JSON.stringify(bounded.wire);
+      } catch { shown = boundArgumentText(display); recorded = boundArgumentText(args); }
       turn.contextBudget?.chargeText(JSON.stringify({ ...item, callId, arguments: recorded }));
       if (!turn.finalTurn) emit({ delta: { toolCalls: [{ id: callId, type: "function", function: { name: item.name, arguments: shown } }] } });
       return { ...item, callId, arguments: args };

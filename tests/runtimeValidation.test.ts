@@ -97,14 +97,13 @@ describe("SDK runtime validation boundaries", () => {
     expect(effect).toHaveBeenCalledExactlyOnceWith("lookup", { email: "person@example.com" });
   });
 
-  it.each(["frontend", "delegate"])("rejects invalid %s calls before returning an approval", async (kind) => {
-    const name = kind === "frontend" ? "confirm" : "delegate_child";
+  it("rejects an invalid delegation before returning an approval", async () => {
+    const name = "delegate_child";
     const f = runtimeSessionFixture({ approvalTools: [name] });
     const channel = new FakeChannel([[toolCallChunk(0, "invalid", name, '{"input":42,"image_ids":[]}')], [contentChunk("recovered")]]);
     const loadAgent = vi.fn();
-    const chunks = await f.run(channel, "help", undefined, { loadAgent }, kind === "frontend" ? {
-      clientTools: [{ type: "function", function: { name, parameters: { type: "object", properties: { input: { type: "string" } }, required: ["input"] } } }],
-    } : { canDispatch: true, subagents: [{ name: "child", type: "local", kind: "agent", description: "child" }] });
+    const chunks = await f.run(channel, "help", undefined, { loadAgent },
+      { canDispatch: true, subagents: [{ name: "child", type: "local", kind: "agent", description: "child" }] });
     expect(loadAgent).not.toHaveBeenCalled();
     expect(await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail)).toBeNull();
     expect(chunks.filter((chunk) => chunk.toolResult?.toolCallId === "invalid")).toHaveLength(1);

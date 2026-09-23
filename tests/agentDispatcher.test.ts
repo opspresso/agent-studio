@@ -15,11 +15,6 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
 }));
 
-const sendA2aMessageMock = vi.hoisted(() =>
-  vi.fn(async () => ({ ok: true as const, text: "a2a answer", images: [] })),
-);
-vi.mock("@/infrastructure/a2a/client", () => ({ sendA2aMessage: sendA2aMessageMock }));
-
 import { remoteAgentDispatcher } from "@/infrastructure/agent/dispatcher";
 
 const TARGET = { url: "https://agent.example.com/v1/chat/completions", headers: {} };
@@ -32,7 +27,6 @@ function stubFetch(body: string, init?: ResponseInit) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  sendA2aMessageMock.mockClear();
 });
 
 describe("remoteAgentDispatcher.send", () => {
@@ -42,7 +36,6 @@ describe("remoteAgentDispatcher.send", () => {
     expect(await remoteAgentDispatcher.send(TARGET, "do the thing")).toEqual({
       ok: true,
       text: "from the child",
-      images: [],
     });
   });
 
@@ -93,16 +86,5 @@ describe("remoteAgentDispatcher.send", () => {
     );
   });
 
-  it("routes an a2a target to the a2a client", async () => {
-    const fetchMock = stubFetch("{}");
 
-    const reply = await remoteAgentDispatcher.send(
-      { ...TARGET, protocol: "a2a" as const },
-      "hello",
-    );
-
-    expect(reply).toEqual({ ok: true, text: "a2a answer", images: [] });
-    expect(sendA2aMessageMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
 });

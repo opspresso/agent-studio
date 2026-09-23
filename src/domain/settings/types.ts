@@ -47,7 +47,6 @@ export interface AppSettings {
   /** Secret. */
   githubToken?: string;
   /** Secret. */
-  a2aApiKey?: string;
   publicBaseUrl?: string;
   /** An {@link ArtifactAccessMode} (`authenticated` by default); controls how stored artifact URLs are resolved. */
   artifactAccessMode?: string;

@@ -109,7 +109,7 @@ export async function resolveSubagents(
         const configuration = "projectType" in target ? target.configuration : undefined;
         return {
           subagent: { name: ref.name, description: target.description ?? "", type: ref.type,
-            signature: runtimeFingerprint("url" in target ? [target.name, target.url, target.protocol] : [target.name, target.projectType, configuration]),
+            signature: runtimeFingerprint("url" in target ? [target.name, target.url] : [target.name, target.projectType, configuration]),
             kind: ref.type === "remote" ? "action" : "agent" },
         };
       },

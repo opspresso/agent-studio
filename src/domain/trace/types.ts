@@ -32,7 +32,6 @@ export interface TraceSpan {
 export interface Trace {
   traceId: string;
   projectName: string;
-  versionName?: string;
   projectType: string;
   /**
    * Who caused the run. A subagent's trace carries the actor of the top-level
@@ -48,7 +47,7 @@ export interface Trace {
   ancestry?: string[];
   /**
    * The conversation the run belonged to, as `conversationKey` spells it —
-   * `chat:{id}`, `slack:{channel}:{thread}`, `a2a:{client}:{contextId}`,
+   * `chat:{id}`, `slack:{channel}:{thread}`,
    * `api:{caller}:{id}`. Absent for a firing, and on traces written before
    * conversations existed. What lets the runs of one thread be found together.
    */

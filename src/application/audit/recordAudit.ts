@@ -11,11 +11,8 @@
  * leave exactly one act unrecorded, and an unrecorded act looks identical to one
  * that never happened.
  *
- * Two places push it, and both are needed. `src/instrumentation.ts` wires it on
- * the awaited boot path, because a recording route need not import the
- * composition root at all — the A2A-key reveal needs nothing from it — and a
- * request served before that import resolved would reveal a credential and
- * record nothing. `src/lib/container.ts` wires it as well, for the processes
+ * `src/instrumentation.ts` wires it on the awaited boot path, before a
+ * recording route can serve a request. `src/lib/container.ts` wires it for processes
  * that have no instrumentation hook: the scripts and the integration check
  * compose the container directly.
  *

@@ -71,7 +71,7 @@ export const en = {
   "settings.models.registeredHint": "Edit selected models, check provider availability or remove unused models.",
   "settings.section.general": "Configure the public address, artifact access and allowed administrators and email domains.",
   "settings.section.plugins": "Configure the repository and branch used for Plugin synchronization. Manage its GitHub token in Keys.",
-  "settings.section.keys": "Manage the GitHub token and inbound A2A keys. Model provider keys stay with their connections in Models.",
+  "settings.section.keys": "Manage the GitHub token. Model provider keys stay with their connections in Models.",
   "settings.field.publicUrl": "Public URL",
   "settings.hint.publicUrl": "The HTTPS address used by people and integrations to reach this installation.",
   "settings.field.artifactAccess": "Artifact access",
@@ -85,19 +85,11 @@ export const en = {
   "settings.field.pluginBranch": "Repository branch",
   "settings.field.githubToken": "GitHub token",
   "settings.hint.githubToken": "Used for Plugin synchronization and configured GitHub operations. Enter a new token to replace it.",
-  "settings.field.a2aKey": "Shared A2A key",
-  "settings.hint.a2aKey": "Authenticates inbound A2A requests. Enter a key or generate one below.",
   "settings.source.override": "Saved",
   "settings.source.env": "Environment",
   "settings.source.default": "Default",
   "settings.source.unset": "Not set",
   "settings.overrideHint": "Only changed fields are saved. Clearing an override restores its environment value. Unchanged masked secrets are preserved.",
-  "settings.clientKeys": "Client keys",
-  "settings.clientKeysHint": "Issue a separate key for each A2A client so you can identify or revoke it independently.",
-  "settings.issueKey": "Issue key",
-  "settings.revokeKey": "Revoke",
-  "settings.revokeTitle": "Revoke client key?",
-  "settings.revokeHint": "Requests using {name} will no longer be authenticated.",
   "modelAdmin.perMinute": "USD per audio minute",
   "modelAdmin.reasoningWithTools": "Supports reasoning together with tool calling",
   "modelAdmin.perImage": "USD per image",
@@ -497,7 +489,7 @@ export const en = {
   "home.domain.artifacts": "Documents & artifacts",
   "home.domain.artifactsBody":
     "Create reports, presentations, and spreadsheets. Edit supported attachments into new files while keeping the originals. Configured storage keeps originals and results available for download.",
-  "home.domain.surfaces": "Slack, A2A & webhooks",
+  "home.domain.surfaces": "Slack & webhooks",
   "home.domain.surfacesBody":
     "Connect projects to messengers, APIs, webhooks and schedules. Identity, history, approval rules and Workspace availability differ by entry point.",
   "home.domain.cost": "Cost & guards",
@@ -776,7 +768,7 @@ export const en = {
     "Use chat/completions and the Python or JavaScript examples in API Reference. Set the SDK base URL to the project address and the API key to its token. Saved Agent settings determine the model and sampling parameters; model, temperature, and max_tokens do not override them. Set PROJECT_API_TOKEN and CONVERSATION_ID in the calling process environment before running the examples.",
   "guide.api.stream": "Streaming and conversation history",
   "guide.api.streamBody":
-    "For text predict or chat/completions, stream:true returns SSE; agent also provides an endpoint for streaming text and tool activity. Keep the connection open and handle warning, error, and completion events, because HTTP 200 alone does not prove the run succeeded. HTTP callers send their own message history. X-Conversation-Id can preserve downstream MCP/A2A conversation identity, but does not load past messages for you.",
+    "For text predict or chat/completions, stream:true returns SSE; agent also provides an endpoint for streaming text and tool activity. Keep the connection open and handle warning, error, and completion events, because HTTP 200 alone does not prove the run succeeded. HTTP callers send their own message history. X-Conversation-Id can preserve downstream MCP conversation identity, but does not load past messages for you.",
   "guide.api.result": "Check the result and protect the token",
   "guide.api.resultBody":
     "Inspect usage, warnings, and the completion reason as well as the answer. turn-limit or output-limit on predict means a partial result; chat completions reports length for limit stops. Download file results before their links expire. Keep tokens in the calling server's secret storage. Regenerating or revoking a project token invalidates the old token immediately, so update every caller. Inspect token totals in collected OpenAI responses or the Studio Usage page.",
@@ -790,9 +782,6 @@ export const en = {
   "guide.integrations.messengers": "Telegram and Teams",
   "guide.integrations.messengersBody":
     "In an agent project's Integrations, save and enable the Telegram bot token; enabling registers its webhook. Use Register webhook again after an application URL change. For Teams, enable the Azure Bot's Teams channel, save its application ID and client secret (plus tenant ID for a single-tenant app), and set its messaging endpoint to the displayed URL. Test in a direct conversation before trying group mentions.",
-  "guide.integrations.a2a": "A2A and AG-UI",
-  "guide.integrations.a2aBody":
-    "A2A exposes cards for configured public projects; a configured shared or named key can call the addressed project, including private projects under the key’s contract. AG-UI embeds Agent runs in your interface using its project token. Supply the message history and render protocol events in that client; neither protocol creates a browser Chat or Workspace approval UI.",
   "guide.integrations.webhook": "Receive a webhook",
   "guide.integrations.webhookBody":
     "Enable the project webhook in Settings. Generic callers send X-Trigger-Secret; GitHub uses the same secret to sign X-Hub-Signature-256. The JSON payload becomes a user message. HTTP 202 acknowledges delivery; check Trigger history for execution and skipped runs. With overlap disabled, deliveries arriving during a run are skipped.",
@@ -821,7 +810,7 @@ export const en = {
   "guide.security.visibilityBody":
     "A public project is accessible to signed-in users of this installation; it is not anonymous access to every API. Private projects limit access to the owner, invited emails, and administrators. Invitations allow viewing and running, not editing. Owners and administrators manage Agent settings, integrations, traces, and project-wide artifacts. Machine credentials have their own access rules.",
   "guide.security.credentials": "Secrets and shared links",
-  "guide.security.credentialsBody": "Saved keys display four characters at each end; values of eight characters or fewer remain hidden. Replace opens a separate draft, and clearing or cancelling the draft keeps the saved key. Reset to environment explicitly removes a settings override. Studio-issued project, Webhook and A2A credentials share Show, Hide, Copy and supported generation or revocation controls. Copy appears only while plaintext is shown; replacement and revocation require confirmation. Browser preferences do not store credentials. Treat signed artifact URLs as credentials too.",
+  "guide.security.credentialsBody": "Saved keys display four characters at each end; values of eight characters or fewer remain hidden. Replace opens a separate draft, and clearing or cancelling the draft keeps the saved key. Reset to environment explicitly removes a settings override. Studio-issued project and Webhook credentials share Show, Hide, Copy and supported generation or revocation controls. Copy appears only while plaintext is shown; replacement and revocation require confirmation. Browser preferences do not store credentials. Treat signed artifact URLs as credentials too.",
   "guide.security.pii": "PII filtering is a limited protection",
   "guide.security.piiBody":
     "The Agent’s PII filtering replaces recognized patterns before sending model text and restores them in user-facing output. It is not complete anonymization: restored information can appear in tool arguments, saved answers, reasoning, and files. Discovery embedding/rerank queries and memory recall queries are outside this filter. Use approved model and tool services for sensitive work.",
@@ -836,7 +825,7 @@ export const en = {
   "guide.admin.membersBody":
     "In Members, find the user and change the tier when they need project creation or API-token access. Profile is where the user checks their resulting limits. Administrators listed in ADMIN_EMAILS have a fixed admin tier; removing an email from the list does not automatically demote its stored tier.",
   "guide.admin.settings": "Settings overrides and deployment values",
-  "guide.admin.settingsBody": "Settings groups General, Plugins, Models and Keys. General manages public access, artifact access and execution with unpriced registered models. Plugins manages the repository; Models manages provider connections and selected models; Keys manages GitHub and A2A credentials. Only changed fields are saved. Deployment settings still own the database, encryption, sign-in providers, storage and retention.",
+  "guide.admin.settingsBody": "Settings groups General, Plugins, Models and Keys. General manages public access, artifact access and execution with unpriced registered models. Plugins manages the repository; Models manages provider connections and selected models; Keys manages GitHub credentials. Only changed fields are saved. Deployment settings still own the database, encryption, sign-in providers, storage and retention.",
   "guide.admin.models": "Connect and verify models",
   "guide.admin.modelsBody": "In Settings → Models → Providers, register the provider type, a unique connection name, its API base URL and key. Self-hosted connections use the same flow and may omit a key. A changed credential destination requires a matching new key. In Model usage, choose the default, Workspace and search models from registered compatible models.",
   "guide.admin.modelSelection": "Browse, select and maintain models",
@@ -883,7 +872,7 @@ export const en = {
     "If capability discovery is enabled, configure a separate hourly POST /api/catalog/reindex with the same X-Scan-Token credential. The schedule scan does not perform this reindex. A successful response starts background indexing; inspect the server log for indexed, removed, or undiscovered entries, then test a question that should discover a newly registered capability.",
   "guide.operations.retention": "Database retention and file lifecycle",
   "guide.operations.retentionBody":
-    "Database retention settings control trace, usage, chat, artifact, trigger, A2A, and audit rows. Keep ordinary artifact retention at least as long as chat retention and configure matching object lifecycle rules. Private audio files use their own day or calendar-month expiry, inherited by derived outputs and enforced by the audio worker. Do not apply blanket object expiration to source-files/ in the shared Artifacts bucket: deletion barriers must remain. Deleting or expiring audio Artifacts does not clear job history or duplicate-prevention records.",
+    "Database retention settings control trace, usage, chat, artifact, trigger and audit rows. Keep ordinary artifact retention at least as long as chat retention and configure matching object lifecycle rules. Private audio files use their own day or calendar-month expiry, inherited by derived outputs and enforced by the audio worker. Do not apply blanket object expiration to source-files/ in the shared Artifacts bucket: deletion barriers must remain. Deleting or expiring audio Artifacts does not clear job history or duplicate-prevention records.",
   "guide.operations.backup": "Back up data and recovery keys",
   "guide.operations.backupBody":
     "Back up PostgreSQL, stored objects, deployment configuration, and the encryption/session secrets under restricted access. Restore them together in a separate environment and verify sign-in, credential decryption, project runs, and file access. Losing or arbitrarily replacing AES_ENCRYPTION_KEY makes stored credentials unreadable. An application image is not a data backup.",
@@ -983,7 +972,7 @@ export const en = {
   "projects.displayNamePlaceholder": "My Project",
   "projects.description": "Description",
   "projects.descriptionHint":
-    "Shown to parent Agents that bind this project and in its A2A Agent Card. Describe the requests it should receive and the results it returns.",
+    "Shown to parent Agents that bind this project. Describe the requests it should receive and the results it returns.",
   "projects.departmentCode": "Department code",
   "projects.departmentHint": "Optional code for grouping project ownership and costs.",
   "projects.privateBadge": "Private",
@@ -1074,7 +1063,7 @@ export const en = {
   "configuration.callerContext": "Tell the run who is asking (name, timezone)",
 
   "configuration.callerHint":
-    "Anywhere a person runs it — chat, Playground, a signed-in API call, Slack. An API token, a trigger and inbound A2A carry no caller. PII filtering does not mask a name.",
+    "Anywhere a person runs it — chat, Playground, a signed-in API call, Slack. An API token and a trigger carry no caller. PII filtering does not mask a name.",
   "configuration.structuredOutput": "Structured output (JSON schema)",
   "configuration.aboutStructuredOutput": "About structured output",
   "configuration.structuredOutputTitle": "Structured output",
@@ -1242,9 +1231,9 @@ export const en = {
 
   // External agents.
   "agents.lede":
-    "External OpenAI-compatible and A2A endpoints an Agent can bind as remote subagents.",
+    "External OpenAI-compatible endpoints an Agent can bind as remote subagents.",
   "agents.descriptionRole":
-    "External agent descriptions drive dynamic discovery and are shown in the model’s Available Agents table for transfer decisions. The opening 500 characters are indexed. Workspace project descriptions are not dynamically discovered, but they appear when bound as local agents and in A2A Agent Cards.",
+    "External agent descriptions drive dynamic discovery and are shown in the model’s Available Agents table for transfer decisions. The opening 500 characters are indexed. Workspace project descriptions are not dynamically discovered, but they appear when bound as local agents.",
   "agents.descriptionHint":
     "Used for dynamic discovery and transfer selection. State which requests this agent should handle and what result it returns.",
   "agents.descriptionPlaceholder": "Investigates Kubernetes incidents and returns evidence-backed remediation steps",
@@ -1252,13 +1241,8 @@ export const en = {
   "agents.registerTitle": "Register external agent",
   "agents.filter": "Filter agents…",
   "agents.empty":
-    "No external agents yet. Register an OpenAI-compatible or A2A endpoint to use it as a remote subagent.",
+    "No external agents yet. Register an OpenAI-compatible endpoint to use it as a remote subagent.",
   "agents.namePlaceholder": "my-agent",
-  "agents.protocol": "Protocol",
-  "agents.cardUrl": "Agent Card URL",
-  "agents.studioTitle": "Studio Agents (A2A)",
-  "agents.studioEnabled": "Agents with saved settings are callable over A2A. Public Agents also expose an Agent Card URL.",
-  "agents.studioDisabled": "Agents with saved settings. Generate an A2A key in Settings to enable A2A calls.",
   "agents.sendPlaceholder": "Send one message to the agent…",
 
   // MCP servers.
@@ -1321,7 +1305,7 @@ export const en = {
   "artifacts.preview.noScript": "Enable JavaScript in your browser to run this preview.",
 
   "artifacts.lede":
-    "Stored attachment originals and files created or edited by your runs. Files from Slack, triggers, and A2A are also available to authorized readers on the project’s artifact page.",
+    "Stored attachment originals and files created or edited by your runs. Files from Slack and triggers are also available to authorized readers on the project’s artifact page.",
   "artifacts.empty": "Nothing kept yet. Stored attachment originals and generated files appear here.",
   "artifacts.filter": "Filter…",
   "artifacts.delete": "Delete",
@@ -1380,12 +1364,8 @@ export const en = {
 
   // The project's Integrations tab: how other systems reach it.
   "pint.lede":
-    "How other systems reach this project — the token an API caller presents, the chat platforms whose bots run it, and its A2A and AG-UI exposure. What the project itself is, its cost limits and its triggers stay under Settings.",
+    "How other systems reach this project — its API token and the chat platforms whose bots run it. Project settings, cost limits and triggers stay under Settings.",
   "pint.ownerOnly": "Only the project owner ({owner}) or an admin can change these integrations.",
-  "pint.aguiLede":
-    "The Agent’s current settings answers AG-UI runs at this address — an application sends a RunAgentInput and reads an event stream. The thread id it sends is the run’s conversation, and any tools it declares are offered to the run and executed on its side. Call it from a server of your own — the token is a server credential — presenting it in",
-  "pint.aguiConfigure": "Save the Agent settings to expose this project over AG-UI.",
-  "pint.aguiCopy": "Copy example",
 
   // A project's settings tab: the sections and their forms.
   "pset.dangerZone": "Danger zone",
@@ -1399,9 +1379,6 @@ export const en = {
   "pset.invitedMembers": "Invited members",
   "pset.invitedMembersHint": "Email addresses, one per tag. Press Enter, comma or space to add.",
   "pset.visibilitySave": "Save visibility",
-  "pset.a2a": "A2A",
-  "pset.agui": "AG-UI",
-  "pset.agentCard": "Agent Card",
   "pset.apiToken": "API token",
   "pset.costLimits": "Cost limits",
   "pset.alertThreshold": "Alert threshold (USD)",

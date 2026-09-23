@@ -1,6 +1,6 @@
 /**
- * {@link RemoteAgentDispatcher} over the A2A client and the OpenAI-compatible
- * client. `send` is the mid-run subagent transfer: a 120s bound, a size-bounded
+ * {@link RemoteAgentDispatcher} over the OpenAI-compatible client.
+ * `send` is the mid-run subagent transfer: a 120s bound, a size-bounded
  * body read, and an error status reported as a failed reply — never as a
  * successful one that happens to carry no text.
  */
@@ -10,7 +10,6 @@ import type {
   RemoteAgentReply,
   RemoteAgentTarget,
 } from "@/domain/agent/dispatcher";
-import { sendA2aMessage } from "@/infrastructure/a2a/client";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { readBodyText } from "@/shared/httpBody";
 import { parseAgentReply, sendAgentMessage } from "./agentClient";
@@ -40,45 +39,15 @@ async function transferOpenAi(
     return { ok: false, error: `HTTP ${response.status}${detail ? `: ${detail}` : ""}` };
   }
   const parsed = parseAgentReply(body);
-  return parsed.ok ? { ...parsed, images: [] } : parsed;
+  return parsed;
 }
 
 export const remoteAgentDispatcher: RemoteAgentDispatcher = {
-  async send(target, message, signal, options) {
-    if (target.protocol === "a2a") {
-      // The options travel only when there is one to send: without a
-      // conversation the call is exactly the call it always was.
-      const result = await sendA2aMessage(
-        target.url,
-        target.headers,
-        message,
-        signal,
-        ...(options?.contextId
-          ? [{ contextId: options.contextId, ...(options.taskId ? { taskId: options.taskId } : {}) }]
-          : []),
-      );
-      return result.ok
-        ? {
-            ok: true,
-            text: result.text,
-            images: result.images,
-            ...(result.contextId ? { contextId: result.contextId } : {}),
-          }
-        : {
-            ok: false,
-            error: result.error,
-            ...(result.continuation ? { continuation: result.continuation } : {}),
-          };
-    }
-    // The OpenAI-shaped protocol has no conversation to continue; a
-    // `contextId` handed here has nowhere to go and is not pretended into one.
+  async send(target, message, signal) {
     return transferOpenAi(target, message, signal);
   },
 
   async probe(target, message) {
-    if ((target.protocol ?? "openai") === "a2a") {
-      return sendA2aMessage(target.url, target.headers, message);
-    }
     return sendAgentMessage(target.url, target.headers, message);
   },
 };

@@ -3,11 +3,9 @@
  *
  * One inventory row per stored object, reachable by the project that produced
  * it and by the person who asked for it. Keeping inventory independent from a
- * chat message lets trigger and A2A runs retain outputs too, and makes every
+ * chat message lets trigger runs retain outputs too, and makes every
  * object listable and removable.
  *
- * Not to be confused with an A2A artifact, which is a protocol message part. The
- * `a2a` slice never imports this type.
  */
 
 import type { RunActor } from "@/domain/execution/actor";
@@ -34,7 +32,6 @@ export interface Artifact {
   byteSize: number;
   /** The project whose run bracket admitted this. Always present. */
   projectName: string;
-  versionName?: string;
   /**
    * Who caused the run, reusing the run's own attribution rather than restating
    * it: a usage row and an artifact row must not name the same run differently.
@@ -70,8 +67,7 @@ export interface Artifact {
    * model instead of substituting the root Agent's model.
    *
    * Absent whenever nothing can honestly name one — an attachment somebody
-   * brought, a document a tool rendered, a picture an MCP tool or a remote A2A
-   * agent handed back. Empty is the true answer there, not a guess.
+   * brought, a document a tool rendered, a picture an MCP tool or a remote agent handed back. Empty is the true answer there, not a guess.
    */
   model?: string;
   /** The bracket's correlation id — the one key that joins this to the logs. */

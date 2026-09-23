@@ -24,7 +24,6 @@ import type { Trace } from "@/domain/trace/types";
  */
 import type { McpConnectionView } from "@/application/mcp/mcpAuthUseCases";
 import type { ActorUsageView, ProjectActorUsage } from "@/application/usage/listActors";
-import type { ProjectA2aResponse } from "@/app/api/projects/[name]/a2a/route";
 import type { CloneProjectResponse } from "@/app/api/projects/[name]/clone/route";
 import type { ModelsResponse } from "@/app/api/models/route";
 import type { SanitizedProject } from "@/app/api/projects/_lib/http";
@@ -390,11 +389,6 @@ export async function revokeProjectToken(name: string): Promise<void> {
   await assertOk(await fetch(`/api/projects/${name}/token`, { method: "DELETE" }));
 }
 
-export type { ProjectA2aResponse };
-
-export async function getProjectA2a(name: string): Promise<ProjectA2aResponse> {
-  return readJson<ProjectA2aResponse>(await fetch(`/api/projects/${name}/a2a`));
-}
 
 // --- MCP OAuth connections -------------------------------------------------
 

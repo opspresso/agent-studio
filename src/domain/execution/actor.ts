@@ -19,8 +19,6 @@ export type RunActorKind =
   | "telegram"
   /** A Microsoft Teams message to a project's bot, identified by the sender's Entra object id. */
   | "teams"
-  /** An inbound A2A call, authenticated by the shared app key. */
-  | "a2a"
   /** A webhook trigger delivery, identified by `{project}:{triggerId}`. */
   | "webhook"
   /** A schedule trigger occurrence, identified the same way. */
@@ -32,14 +30,10 @@ export interface RunActor {
    * Stable within the kind. An email for `user` and `project-token` (a token
    * runs on its owner's behalf, and the kind is what keeps the two apart), a
    * Slack user id for `slack`, a Telegram user id for `telegram`, an Entra
-   * object id for `teams`. A2A uses the shared-key identity or a named client
-   * key identity; it does not imply a person.
+   * object id for `teams`.
    */
   id: string;
 }
-
-/** The `id` an A2A run carries: the key is shared, so there is nobody to name. */
-export const A2A_ACTOR_ID = "shared-key";
 
 /**
  * What a run may tell the model about the person asking.
@@ -161,7 +155,7 @@ export interface RunOrigin {
 /**
  * The surface a conversation lives on. Each names its conversations differently
  * — a chat by its id, Slack by channel and thread, Telegram by chat and topic,
- * Teams by its own conversation id, A2A by the client's `contextId`, an API caller by whatever it put in
+ * Teams by its own conversation id, an API caller by whatever it put in
  * `X-Conversation-Id` — and the surface is what keeps those namespaces apart in
  * one key.
  *
@@ -169,14 +163,12 @@ export interface RunOrigin {
  * schedule occurrence are one-shot. Nobody asks a follow-up question in a
  * firing, so a firing has no conversation rather than a conversation of one.
  */
-export type RunSurface = "chat" | "slack" | "telegram" | "teams" | "a2a" | "agui" | "api";
+export type RunSurface = "chat" | "slack" | "telegram" | "teams" | "api";
 
 /**
  * Where a run's conversation is: the surface, and that surface's own id for it.
  *
- * This is the key two things had been missing. An outbound A2A transfer needs
- * a `contextId` to continue a remote conversation rather than start one per
- * question, and an MCP server that keeps state — a memory server — needs to
+ * An MCP server that keeps state — a memory server — needs to
  * know which conversation is asking. Neither the actor (a person is in many
  * conversations) nor the ancestry (a chain of projects, not of turns) can
  * stand in for it, which is why it is its own field rather than a spelling of
@@ -193,8 +185,7 @@ export interface RunConversation {
 }
 
 /**
- * Longest id kept, after encoding. Generous — a Slack thread address, an A2A
- * `contextId` a remote client minted, an API caller's own key all fit many
+ * Longest id kept, after encoding. Generous — a Slack thread address and an API caller's own key fit many
  * times over — but a bound all the same, because the value travels in a header
  * and a storage key. Past it there is no conversation rather than a shortened
  * one: a shortened id would make two long ids one conversation.
@@ -206,7 +197,7 @@ export const MAX_CONVERSATION_ID_LENGTH = 512;
  * {@link RunConversation} is created, and therefore the single place its id is
  * made safe to carry.
  *
- * An A2A `contextId` and an API caller's header are chosen by somebody else,
+ * An API caller's header is chosen by somebody else,
  * so the id is **encoded rather than trusted, and encoded injectively**:
  * anything outside printable ASCII, whitespace and control characters — none of
  * which a header can carry, and all of which a key would carry invisibly — and
@@ -234,8 +225,7 @@ const SAFE_ID_CHAR = /^[\x21-\x24\x26-\x7e]$/;
 /**
  * Percent-encode everything outside {@link SAFE_ID_CHAR}, `%` included so the
  * result decodes uniquely. `encodeURIComponent` is the same idea with a
- * different unreserved set — one that would rewrite the `:` every Slack and
- * A2A key already carries.
+ * different unreserved set — one that would rewrite the `:` every Slack key carries.
  */
 function encodeConversationId(raw: string): string {
   let out = "";
@@ -253,9 +243,9 @@ function encodeConversationId(raw: string): string {
 
 /**
  * The conversation's one string form: `surface:id`. What an MCP server is
- * told, what a remote-context row is keyed by, what a trace records. Qualified
+ * told and what a trace records. Qualified
  * by surface for the same reason {@link actorKey} is by kind — a chat id and an
- * A2A `contextId` that happen to spell the same must not become one
+ * API id that happen to spell the same must not become one
  * conversation.
  */
 export function conversationKey(conversation: RunConversation): string {

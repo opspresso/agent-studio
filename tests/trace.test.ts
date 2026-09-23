@@ -138,7 +138,6 @@ describe("TraceRecorder", () => {
     await recorder.finish();
 
     expect(traces).toHaveLength(1);
-    expect(traces[0]).not.toHaveProperty("versionName");
     expect(traces[0]).toMatchObject({
       projectName: "parent",
       status: "completed",

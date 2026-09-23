@@ -14,7 +14,6 @@ import { assertLocalDatabase } from "./local-database";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
-import type { Task } from "@a2a-js/sdk";
 
 process.env.STAGE ??= "local";
 process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test";
@@ -59,8 +58,6 @@ async function main() {
   await checkAudioQueueMigration();
   const { checkRuntimeSessions } = await import("./runtime-session-check");
   await checkRuntimeSessions();
-  const { checkAgentConfiguration } = await import("./agent-configuration-check");
-  await checkAgentConfiguration();
   const { checkWorkspaces } = await import("./workspace-check");
   await checkWorkspaces();
   const { checkAuthSchema } = await import("./auth-schema-check");
@@ -117,9 +114,6 @@ async function main() {
     mcpOAuthStateContext,
   } = await import("@/domain/security/secretContext");
   const { keys: dbKeys } = await import("@/infrastructure/db/keys");
-  const { createA2aTaskStore } = await import("@/infrastructure/a2a/taskStore");
-  const { TaskState } = await import("@a2a-js/sdk");
-  const { ServerCallContext } = await import("@a2a-js/sdk/server");
 
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
@@ -198,7 +192,6 @@ async function main() {
 
   const suffix = Date.now().toString(36);
   const projectName = `it-proj-${suffix}`;
-  const a2aOwnerScope = `tenant-${suffix}:client-${suffix}`;
   const legacyDestinationProject = `it-telegram-migration-${suffix}`;
   const legacyDestinationKey = dbKeys.telegramDestination(legacyDestinationProject, 42, 1);
   const integrationMemberId = `it-member-${suffix}`;
@@ -1150,7 +1143,6 @@ async function main() {
         mimeType: "image/png",
         byteSize: 2048,
         projectName,
-        versionName: "1",
         actor: { kind: "user" as const, id: "it@example.com" },
         prompt: "a poster",
         createdAt: now,
@@ -1164,7 +1156,6 @@ async function main() {
         filename: "보고서.docx",
         byteSize: 40960,
         projectName,
-        versionName: "1",
         actor: { kind: "user" as const, id: "it@example.com" },
         createdAt: new Date(Date.parse(now) + 1000).toISOString(),
       },
@@ -1176,7 +1167,6 @@ async function main() {
         mimeType: "image/png",
         byteSize: 512,
         projectName,
-        versionName: "1",
         actor: { kind: "slack" as const, id: "U-integration" },
         createdAt: new Date(Date.parse(now) + 2000).toISOString(),
       },
@@ -1250,7 +1240,6 @@ async function main() {
         mimeType: "image/png",
         byteSize: 128,
         projectName: filterProject,
-        versionName: "1",
         actor: { kind: "user" as const, id: "it@example.com" },
         createdAt: new Date(filterBase + 1000 + i * 1000).toISOString(),
       });
@@ -1265,7 +1254,6 @@ async function main() {
       mimeType: "application/pdf",
       byteSize: 1024,
       projectName: filterProject,
-      versionName: "1",
       actor: { kind: "user" as const, id: "it@example.com" },
       createdAt: new Date(filterBase).toISOString(),
     });
@@ -1332,97 +1320,9 @@ async function main() {
     await artifactRepository.delete(artifactIds[0]!);
     pass("artifacts: project + owner indexes, sparse owner index, kind filter, idempotent delete");
 
-    // ---------- A2A client keys (transactional pair + hash lookup) ----------
-    const { a2aClientKeyRepository } = await import(
-      "@/infrastructure/db/repositories/a2aClientKeyRepository"
-    );
-    const { listA2aClientKeys } = await import("@/application/a2a/clientKeyUseCases");
-    const clientKeyName = `client-${suffix}`;
-    const clientKey = {
-      name: clientKeyName,
-      token: "enc:v1:asc_integration",
-      tokenHash: "hash-" + suffix,
-      masked: "asc_••••",
-      createdAt: new Date().toISOString(),
-    };
-    await a2aClientKeyRepository.create(clientKey);
-    assert.equal(
-      (await a2aClientKeyRepository.findNameByHash(clientKey.tokenHash)),
-      clientKeyName,
-      "hash row resolves to the client name",
-    );
-    await assert.rejects(
-      () => a2aClientKeyRepository.create(clientKey),
-      "a duplicate name is refused by the conditional pair",
-    );
-    assert.ok(
-      (await listA2aClientKeys(a2aClientKeyRepository)).some((k) => k.name === clientKeyName),
-      "key listed from the TYPE partition",
-    );
-    await a2aClientKeyRepository.delete(clientKeyName);
-    assert.equal(
-      await a2aClientKeyRepository.findNameByHash(clientKey.tokenHash),
-      null,
-      "deletion removes the hash row too",
-    );
-    pass("A2A client key: transactional pair, hash lookup, full deletion");
-
-    // ---------- inbound A2A task listing (GSI page + exact count) ----------
-    const taskContext = new ServerCallContext({
-      tenant: `tenant-${suffix}`,
-      user: { isAuthenticated: true, userName: `client-${suffix}` },
-    });
-    const taskStore = createA2aTaskStore(projectName);
-    const makeTask = (id: string, timestamp: string): Task => ({
-      id,
-      contextId: `ctx-${suffix}`,
-      status: { state: TaskState.TASK_STATE_COMPLETED, message: undefined, timestamp },
-      artifacts: [],
-      history: [],
-      metadata: undefined,
-    });
-    await taskStore.save(makeTask("task-1", "2026-01-01T00:00:00.000Z"), taskContext);
-    await taskStore.save(makeTask("task-2", "2026-01-02T00:00:00.000Z"), taskContext);
-    await taskStore.save(makeTask("task-3", "2026-01-03T00:00:00.000Z"), taskContext);
-    const taskPage = await taskStore.list(
-      {
-        tenant: `tenant-${suffix}`,
-        contextId: `ctx-${suffix}`,
-        status: TaskState.TASK_STATE_COMPLETED,
-        pageSize: 2,
-        pageToken: "",
-        historyLength: 0,
-        statusTimestampAfter: undefined,
-        includeArtifacts: false,
-      },
-      taskContext,
-    );
-    assert.equal(taskPage.totalSize, 3, "task count covers the filtered partition");
-    assert.deepEqual(
-      taskPage.tasks.map((task) => task.id),
-      ["task-3", "task-2"],
-      "task page follows the status timestamp index",
-    );
-    assert.notEqual(taskPage.nextPageToken, "", "a bounded page reports its continuation");
-    const taskTail = await taskStore.list(
-      {
-        tenant: `tenant-${suffix}`,
-        contextId: `ctx-${suffix}`,
-        status: TaskState.TASK_STATE_COMPLETED,
-        pageSize: 2,
-        pageToken: taskPage.nextPageToken,
-        historyLength: 0,
-        statusTimestampAfter: undefined,
-        includeArtifacts: false,
-      },
-      taskContext,
-    );
-    assert.deepEqual(taskTail.tasks.map((task) => task.id), ["task-1"], "task cursor is exclusive");
-    pass("A2A task list: bounded GSI page, exact count, exclusive cursor");
-
     // ---------- transact lock modes (a checked key does not serialise) ----------
     // A `check` op asserts something elsewhere is still live; the exclusive
-    // lock it used to take made every usage row, trace and version write in a
+    // lock it used to take made every usage row, trace and project write in a
     // project queue on that project's one META row. The two directions that
     // matter: a shared holder must not block a checker, and an exclusive one
     // must still block it — that is the delete the check exists to catch.
@@ -1762,16 +1662,6 @@ async function main() {
           await client.query(`DROP TABLE IF EXISTS ${vectorTable}`);
           await client.query(`DELETE FROM "user" WHERE "id" = $1`, [integrationMemberId]);
         }),
-      )
-      .catch(() => {});
-    // The A2A block deletes its own key on the happy path; an assert between
-    // create and delete would otherwise leak the pair into the shared table.
-    await import("@/infrastructure/db/repositories/a2aClientKeyRepository")
-      .then(({ a2aClientKeyRepository }) => a2aClientKeyRepository.delete(`client-${suffix}`))
-      .catch(() => {});
-    await import("@/infrastructure/db/store")
-      .then(({ deletePartition }) =>
-        deletePartition(dbKeys.a2aTask(projectName, a2aOwnerScope, "").PK),
       )
       .catch(() => {});
     for (const artifactId of artifactFixtures) {

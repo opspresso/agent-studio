@@ -19,18 +19,9 @@ const sendAgentMessageMock = vi.hoisted(() =>
 
 vi.mock("@/infrastructure/agent/agentClient", () => ({ sendAgentMessage: sendAgentMessageMock }));
 
-const sendA2aMessageMock = vi.hoisted(() =>
-  vi.fn(async (_url: string, _headers: Record<string, string>, _message: string) => ({
-    ok: true as const,
-    text: "hi",
-  })),
-);
-vi.mock("@/infrastructure/a2a/client", () => ({ sendA2aMessage: sendA2aMessageMock }));
-
 beforeEach(() => {
   listMcpToolsMock.mockClear();
   sendAgentMessageMock.mockClear();
-  sendA2aMessageMock.mockClear();
 });
 
 import { createAgentUseCases as createAgentUseCasesImpl } from "@/application/agent/agentUseCases";
@@ -619,7 +610,6 @@ describe("external agent registry secret contract", () => {
     const result = await useCases.sendMessage("evil", "hello");
     expect(result).toMatchObject({ ok: false });
     expect(sendAgentMessageMock).not.toHaveBeenCalled();
-    expect(sendA2aMessageMock).not.toHaveBeenCalled();
   });
 
   it("rejects a missing agent with NotFoundError (404)", async () => {

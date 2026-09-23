@@ -9,7 +9,6 @@ import {
   getAgent,
   sendAgentMessage,
   updateAgent,
-  type AgentProtocol,
   type ExternalAgent,
 } from "../api";
 import { BackLink } from "@/app/_components/BackLink";
@@ -23,13 +22,11 @@ import {
   Button,
   Card,
   Group,
-  Select,
   Stack,
   Text,
   Textarea,
   TextInput,
 } from "@mantine/core";
-import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL } from "@/app/_components/badgeColors";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
@@ -118,9 +115,6 @@ export default function AgentDetailPage() {
 
       <PageHeader title={agent.name} Icon={IconRobot} description={agent.description}
         badges={<>
-            <Badge color={AGENT_PROTOCOL_COLOR[agent.protocol ?? "openai"]}>
-              {AGENT_PROTOCOL_LABEL[agent.protocol ?? "openai"]}
-            </Badge>
             <Badge color="blue" variant="light">
               {t("registry.discoveryPromptBadge")}
             </Badge>
@@ -279,7 +273,6 @@ function EditAgentForm({
 }) {
   const t = useT();
   const [url, setUrl] = useState(agent.url);
-  const [protocol, setProtocol] = useState<AgentProtocol>(agent.protocol ?? "openai");
   const [description, setDescription] = useState(agent.description);
   const [rows, setRows] = useState<HeaderRow[]>(recordToRows(agent.headers));
   const [submitting, setSubmitting] = useState(false);
@@ -290,7 +283,7 @@ function EditAgentForm({
     setSubmitting(true);
     setError(null);
     try {
-      await updateAgent(agent.name, { url, protocol, description, headers: rowsToRecord(rows) });
+      await updateAgent(agent.name, { url, description, headers: rowsToRecord(rows) });
       onSaved();
     } catch (err) {
       setError(reportError(err, "Failed to save"));
@@ -302,18 +295,8 @@ function EditAgentForm({
   return (
     <form onSubmit={submit}>
       <Stack gap="md">
-        <Select
-          label={t("agents.protocol")}
-          value={protocol}
-          onChange={(value) => setProtocol((value ?? "openai") as AgentProtocol)}
-          allowDeselect={false}
-          data={[
-            { value: "openai", label: "OpenAI-compatible" },
-            { value: "a2a", label: "A2A" },
-          ]}
-        />
         <TextInput
-          label={protocol === "a2a" ? "Agent Card URL" : "URL"}
+          label="URL"
           value={url}
           onChange={(e) => setUrl(e.currentTarget.value)}
           type="url"

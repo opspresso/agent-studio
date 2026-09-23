@@ -47,11 +47,6 @@ export const RETENTION = {
   get triggerRunDays(): number {
     return retentionDays("TRIGGER_RUN_RETENTION_DAYS", 30);
   },
-  /** Inbound A2A task state — ephemeral job state, kept just long enough for
-   * `GetTask`/`CancelTask` after `SendMessage`. */
-  get a2aTaskDays(): number {
-    return retentionDays("A2A_TASK_RETENTION_DAYS", 1);
-  },
   /**
    * Artifact rows — the inventory of what runs produced.
    *

@@ -7,8 +7,6 @@ import { Alert, Stack } from "@mantine/core";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { getProject } from "../../lib/api";
 import { LoadingText } from "@/app/_components/PageState";
-import { A2aSection } from "./A2aSection";
-import { AguiSection } from "./AguiSection";
 import { SlackSection } from "./SlackSection";
 import { TeamsSection } from "./TeamsSection";
 import { TelegramSection } from "./TelegramSection";
@@ -17,7 +15,7 @@ import { useT } from "@/app/_i18n/provider";
 
 /**
  * How other systems reach this project: the API token an outside caller
- * presents, the chat platforms whose bots run it, and its A2A exposure.
+ * presents and the chat platforms whose bots run it.
  * Split out of Settings once the bots outnumbered everything else on that
  * page — what the project *is* stays there; what connects to it is here.
  */
@@ -27,7 +25,6 @@ export default function IntegrationsPage() {
   const name = params.name;
   const viewer = useViewer();
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
-  const [configured, setConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +34,6 @@ export default function IntegrationsPage() {
       .then((project) => {
         if (!cancelled) {
           setOwnerEmail(project.ownerEmail);
-          setConfigured(Boolean(project.configured));
         }
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Failed to load project"))
@@ -79,9 +75,6 @@ export default function IntegrationsPage() {
 
       <TeamsSection projectName={name} />
 
-      <A2aSection projectName={name} />
-
-      <AguiSection projectName={name} configured={configured} />
     </Stack>
   );
 }

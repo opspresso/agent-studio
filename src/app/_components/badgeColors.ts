@@ -1,4 +1,3 @@
-import type { AgentProtocol } from "@/domain/agent/types";
 import type { MemberTier } from "@/domain/member/tiers";
 import type { McpRuntime } from "@/domain/mcp/types";
 import type { ProjectType } from "@/domain/project/types";
@@ -9,7 +8,7 @@ import type { ProjectType } from "@/domain/project/types";
  * Colour is the only thing separating a badge that says "this is on" from one
  * that says "this needs attention", and the theme gives every badge a gray
  * default — so a badge nobody coloured silently joins the "off" vocabulary. Half
- * of them had: `managed`, `OAuth`, `2 headers`, `no credential`, `A2A`, `SSE`
+ * of them had: `managed`, `OAuth`, `2 headers`, `no credential`, `SSE`
  * all rendered identically to `disabled`, and the three sections that *did*
  * colour their state each spelled `on ? "teal" : "gray"` out again locally.
  *
@@ -46,23 +45,6 @@ export function stateColor(on: boolean): string {
 /** What a project runs: a single prompt, a tool loop, or an image model. */
 export const PROJECT_TYPE_COLOR: Record<ProjectType, string> = {
   agent: "violet",
-};
-
-/** How an external agent is spoken to. */
-export const AGENT_PROTOCOL_COLOR: Record<AgentProtocol, string> = {
-  a2a: "indigo",
-  openai: "cyan",
-};
-
-/**
- * The label beside {@link AGENT_PROTOCOL_COLOR}. Here rather than at the call
- * sites because the ternary spelling it out had already been copied to three of
- * them, and a protocol that renders as `A2A` on the list and `a2a` on the detail
- * page reads as two different things.
- */
-export const AGENT_PROTOCOL_LABEL: Record<AgentProtocol, string> = {
-  a2a: "A2A",
-  openai: "OpenAI",
 };
 
 /** Whether this studio runs the MCP server itself. `remote` is the unmarked case. */

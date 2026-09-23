@@ -33,7 +33,6 @@
     "test:documents": "pnpm build:documents && tsx scripts/document-worker-check.ts"
   },
   "dependencies": {
-    "@a2a-js/sdk": "^1.0.1",
     "@aws-sdk/client-bedrock-runtime": "^3.1106.0",
     "@aws-sdk/client-s3": "^3.1091.0",
     "@aws-sdk/s3-request-presigner": "^3.1101.0",

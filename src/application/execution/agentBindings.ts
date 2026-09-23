@@ -56,9 +56,9 @@ export async function prepareSubagent(
   if (ref.type === "remote") {
     if (task.images.length) throw new ValidationError(`Remote agent '${name}' accepts text only`);
     const target = await deps.externalAgents.get(name);
-    runtime?.checkBinding(task.invocationId ?? name, runtimeFingerprint(target ? [target.name, target.url, target.protocol] : null));
+    runtime?.checkBinding(task.invocationId ?? name, runtimeFingerprint(target ? [target.name, target.url] : null));
     const message = task.transcript ? `Conversation context:\n${task.transcript}\n\nRequest:\n${task.message}` : task.message;
-    return { kind: "action", run: () => runRemoteSubagent(deps, name, message, task.signal, parentOrigin) };
+    return { kind: "action", run: () => runRemoteSubagent(deps, name, message, task.signal) };
   }
   if (parentOrigin.ancestry.includes(name)) throw new ValidationError(`Delegating to '${name}' would create a cycle`);
   if (parentOrigin.ancestry.length >= MAX_SUBAGENT_DEPTH) throw new ValidationError(`Subagent depth limit (${MAX_SUBAGENT_DEPTH}) reached`);

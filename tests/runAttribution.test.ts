@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actorKey, descend, A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
+import { actorKey, descend, type RunActor } from "@/domain/execution/actor";
 import { principalActor } from "@/app/api/projects/_lib/executionAuth";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import { TraceRecorder } from "@/application/trace/recorder";
@@ -150,9 +150,5 @@ describe("trace attribution", () => {
     expect(await recordedTrace()).not.toHaveProperty("actor");
   });
 
-  it("names the A2A caller by its kind, since the key is shared", () => {
-    // There is no person behind an A2A call; pretending to one would be worse
-    // than saying so.
-    expect(actorKey({ kind: "a2a", id: A2A_ACTOR_ID })).toBe("a2a:shared-key");
-  });
+
 });
