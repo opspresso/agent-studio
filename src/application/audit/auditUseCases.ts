@@ -7,6 +7,7 @@ import { ValidationError } from "@/application/errors";
 import type { AuditRepository } from "@/domain/audit/repository";
 import type { AuditEvent } from "@/domain/audit/types";
 import { daySpan, daysBetween, isUtcDay } from "@/shared/date";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 /**
  * How many days one query may span. A range is read a partition at a time, so
@@ -14,20 +15,33 @@ import { daySpan, daysBetween, isUtcDay } from "@/shared/date";
  * actually asks about ("last week", "that Tuesday") fits inside it comfortably.
  */
 export const MAX_AUDIT_RANGE_DAYS = 31;
-export const AUDIT_DAY_PAGE_SIZE = 100;
+/** Leave one repository slot to probe for another event without buffering a full day. */
+export const AUDIT_PAGE_SIZE = 50;
 
-export async function listAuditDay(repo: AuditRepository, day: string): Promise<AuditEvent[]> {
-  const events: AuditEvent[] = [];
-  let after: { createdAt: string; eventId: string } | undefined;
-  for (;;) {
-    const page = await repo.listByDay(day, AUDIT_DAY_PAGE_SIZE, after);
-    events.push(...page);
-    if (page.length < AUDIT_DAY_PAGE_SIZE) {
-      return events;
-    }
-    const last = page.at(-1)!;
-    after = { createdAt: last.createdAt, eventId: last.eventId };
-  }
+interface AuditCursor {
+  day: string;
+  createdAt: string;
+  eventId: string;
+}
+
+function encodeCursor(day: string, event: AuditEvent): string {
+  return Buffer.from(JSON.stringify([day, event.createdAt, event.eventId])).toString("base64url");
+}
+
+function decodeCursor(raw: string): AuditCursor {
+  const invalid = (): never => { throw new ValidationError("Invalid audit cursor"); };
+  if (!/^[A-Za-z0-9_-]{1,512}$/.test(raw)) invalid();
+  let value: unknown;
+  try { value = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")); }
+  catch { invalid(); }
+  if (!Array.isArray(value) || value.length !== 3 || value.some((part) => typeof part !== "string") ||
+      Buffer.from(JSON.stringify(value)).toString("base64url") !== raw) invalid();
+  const [day, createdAt, eventId] = value as [string, string, string];
+  const instant = Date.parse(createdAt);
+  if (!day || !createdAt || !eventId || !isUtcDay(day) || eventId.length > 128 ||
+      !createdAt.startsWith(`${day}T`) || !Number.isFinite(instant) ||
+      new Date(instant).toISOString() !== createdAt) invalid();
+  return { day, createdAt, eventId };
 }
 
 export interface AuditQuery {
@@ -35,6 +49,14 @@ export interface AuditQuery {
   from: string;
   /** Inclusive UTC day, `YYYY-MM-DD`. Defaults to `from`. */
   to?: string;
+  /** Opaque position returned by the previous page of this date range. */
+  cursor?: string;
+  limit?: number;
+}
+
+export interface AuditPage {
+  events: AuditEvent[];
+  nextCursor: string | null;
 }
 
 /**
@@ -49,7 +71,7 @@ export function daysInRange(from: string, to: string): string[] {
 }
 
 export interface AuditUseCases {
-  list(query: AuditQuery): Promise<AuditEvent[]>;
+  list(query: AuditQuery): Promise<AuditPage>;
 }
 
 export function createAuditUseCases(repo: AuditRepository): AuditUseCases {
@@ -84,14 +106,26 @@ export function createAuditUseCases(repo: AuditRepository): AuditUseCases {
         );
       }
       const days = daysInRange(from, to);
-      // Sequential rather than concurrent: this is an admin screen nobody loads
-      // in a loop, and a month of partitions fanned out at once is a burst the
-      // table sees for no gain in a page a person reads.
-      const events: AuditEvent[] = [];
-      for (const day of days) {
-        events.push(...(await listAuditDay(repo, day)));
+      const cursor = query.cursor === undefined ? undefined : decodeCursor(query.cursor);
+      const firstDay = cursor ? days.indexOf(cursor.day) : 0;
+      if (firstDay < 0) throw new ValidationError("Audit cursor is outside the requested date range");
+      const limit = boundedPageLimit(query.limit ?? AUDIT_PAGE_SIZE, AUDIT_PAGE_SIZE);
+      const collected: Array<{ day: string; event: AuditEvent }> = [];
+      // A page needs at most one extra event to prove there is more. Read days
+      // sequentially and stop as soon as that probe succeeds.
+      for (const day of days.slice(firstDay)) {
+        const after = cursor && day === cursor.day
+          ? { createdAt: cursor.createdAt, eventId: cursor.eventId } : undefined;
+        const page = await repo.listByDay(day, limit + 1 - collected.length, after);
+        collected.push(...page.map((event) => ({ day, event })));
+        if (collected.length > limit) break;
       }
-      return events;
+      const entries = collected.slice(0, limit);
+      const last = entries.at(-1);
+      return {
+        events: entries.map(({ event }) => event),
+        nextCursor: collected.length > limit && last ? encodeCursor(last.day, last.event) : null,
+      };
     },
   };
 }

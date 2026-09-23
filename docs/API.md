@@ -434,8 +434,8 @@ PUT /api/settings → 200 {…same shape…} | 400
 ## 감사 기록
 
 ```
-GET /api/audit?from=2026-08-01&to=2026-08-03
-  → 200 { events: [ { eventId, actorEmail, action, target, detail?, createdAt } ] }
+GET /api/audit?from=2026-08-01&to=2026-08-03&limit=50&cursor=<opaque>
+  → 200 { events: [ { eventId, actorEmail, action, target, detail?, createdAt } ], nextCursor: string | null }
 ```
 
 - admin 전용이다: 행들이 사람의 이름을 담는다. `from` 의 기본값은 오늘, `to` 의 기본값은
@@ -443,7 +443,10 @@ GET /api/audit?from=2026-08-01&to=2026-08-03
   하나로 저장되고 같은 방식으로 읽히므로, 폭이 곧 쿼리 수다. 잘못된 형식의 날짜, 달력에 없는
   날짜(`2026-02-31`, `2026-13-01`), 뒤집힌 범위, 또는 그보다 넓은 범위는 `400` 이다. 폭은
   범위를 열거해서가 아니라 날짜에서 바로 거절하므로, 터무니없는 폭도 다른 거절과 같은 비용이다.
-- 최신순이다. `action` 은 `secret.reveal` | `secret.rotate` | `secret.revoke` |
+- 결과는 최신순으로 한 번에 최대 50건이다. `limit`의 기본값과 상한은 50이다.
+  `nextCursor`가 있으면 같은 날짜 범위와 함께 다음 요청의 `cursor`로 전달한다.
+  cursor가 잘못됐거나 요청 범위 밖이면 `400`이다. 날짜가 바뀌면 cursor 없이 첫 페이지부터 읽는다.
+  `action` 은 `secret.reveal` | `secret.rotate` | `secret.revoke` |
   `project.admin-override` | `settings.update` | `project.delete` | `catalog.install` |
   `catalog.remove` | `registry.delete` |
   `registry.adopt` (plugins sync 가 다른 출처가 만든 항목을 넘겨받는 것) |

@@ -1382,6 +1382,7 @@ export const ko: Messages = {
   "models.memberOnly": "Models 는 member 등급부터 볼 수 있습니다.",
   "audit.lede": "민감한 관리 작업을 최신순으로 보여줍니다.",
   "audit.empty": "이 기간에는 감사 기록이 없습니다.",
+  "audit.loadMore": "더 보기",
   "audit.time": "시간",
   "audit.action": "작업",
   "audit.actor": "실행자",

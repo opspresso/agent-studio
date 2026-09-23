@@ -1467,6 +1467,7 @@ export const en = {
   "models.memberOnly": "Models are available from the member tier up.",
   "audit.lede": "Sensitive administrative actions, newest first.",
   "audit.empty": "No audit events in this range.",
+  "audit.loadMore": "Load more",
   "audit.time": "Time",
   "audit.action": "Action",
   "audit.actor": "Actor",
