@@ -236,7 +236,7 @@ domain의 제한된 경고와 브라우저 오류 경계 등 예외는 구조 �
 
 Agent 런은 **항상** 트레이싱되며 이미지 도구도 같은 실행 Trace에 포함된다.
 
-트레이스는 프로젝트 소유자와 관리자(`assertProjectWritable` 기준)에게 보인다. SDK span은 이름·종류·상태·시간,
+트레이스는 프로젝트 소유자와 관리자(`assertProjectOwnerOrAdminReadable` 기준)에게 보인다. SDK span은 이름·종류·상태·시간,
 native ID와 부모 ID, 모델 토큰·비용을 저장한다. `prepare`에는 skill·Agent·MCP·도구의 수와
 발견한 capability 이름 최대 20개를 기록한다. 원본 프롬프트와 도구 결과는 span에 저장하지 않는다.
 다만 Trace의 `error`와 `warnings`는 원문 오류를 최대 1,000자로 보관하므로 민감 정보가 포함될
