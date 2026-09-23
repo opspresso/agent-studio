@@ -7,6 +7,7 @@ import {
   IconLifebuoy,
   IconMicrophone,
   IconPlugConnected,
+  IconRobot,
   IconRoute,
   IconVocabulary,
   IconTerminal2,
@@ -45,10 +46,10 @@ const SECTIONS: readonly GuideSection[] = [
     ],
   },
   {
-    id: "projects",
+    id: "agents",
     title: "guide.agents.title",
     body: "guide.agents.body",
-    Icon: IconBook2,
+    Icon: IconRobot,
     entries: [
       { title: "guide.agents.agent", body: "guide.agents.agentBody" },
       { title: "guide.agents.image", body: "guide.agents.imageBody" },

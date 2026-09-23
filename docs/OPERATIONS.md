@@ -322,7 +322,7 @@ actor 에 대해 프로젝트의 비용 가드 다음, 슬롯 이전에 검사�
 
 ### 비용 가드: fail-open
 
-**Project Settings → Cost limits** 아래에서 설정하는, 두 개의 UTC 윈도우에 걸친 프로젝트별
+**Agent Settings → Cost limits** 아래에서 설정하는, 두 개의 UTC 윈도우에 걸친 Agent별
 임계값:
 
 - `alertThresholdUsd` / `monthlyAlertThresholdUsd`. 알림을 한 번 올리고 계속 실행한다.
@@ -334,7 +334,7 @@ actor 에 대해 프로젝트의 비용 가드 다음, 슬롯 이전에 검사�
   ([CONFIGURATION.md](CONFIGURATION.md#관측성과-보존-기간) 참고); 달 중간에 행이
   만료되면 그 윈도우를 조용히 과소 계산하게 된다.
 
-알림은 `alertDestinations` 에 선택한 프로젝트 자신의 Slack·Telegram·Teams 연동으로 가며,
+알림은 `alertDestinations` 에 선택한 Agent 자신의 Slack·Telegram·Teams 연동으로 가며,
 윈도우당 임계값당 한 번씩 간다 (조건부 쓰기다, 일간은 그날의 usage 행에, 월간은
 `MONTHCLAIM#{yyyy-MM}` 행에. 그래서 두 인스턴스가 동시에 넘어서도 게시는 한 번이다).
 목적지는 플랫폼마다 하나씩 선택하며 각 전송은 독립적으로 시도한다. **목적지나 연동이 설정돼

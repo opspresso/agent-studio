@@ -1,6 +1,6 @@
 # Agent Studio
 
-기업이 자기 네트워크 안에 설치해 운영하는 AI 에이전트 플랫폼이다. Project를 Agent로 만들고, 현재 모델·프롬프트·도구 설정을 저장해 콘솔·API·메신저·자동화에서
+기업이 자기 네트워크 안에 설치해 운영하는 AI 에이전트 플랫폼이다. Agent를 만들고 현재 모델·프롬프트·도구 설정을 저장해 콘솔·API·메신저·자동화에서
 호출한다. Studio가 권한·자격 증명·비용·기록을 관리하고 OpenAI Agents SDK가 모델 턴과 도구 실행을 담당한다.
 
 한 설치가 한 기업의 경계다. 사내 PostgreSQL, 모델 엔드포인트와 로그인 수단으로 구성하면
@@ -20,7 +20,7 @@
 | 오디오 | 원본 가져오기·업로드, 비동기 전사·Agent 후처리, 비공개 결과와 요청한 개인 기록 | [오디오](docs/design/audio-processing-spec.md) |
 | Workspace·Sandbox | 영속 파일·Git·native CLI Session, command·Codex·Claude·OpenCode 실행, Git 검토·승인, 원래 Chat으로 결과 전달 | [Workspace](docs/design/workspaces.md) |
 | 실행 연동 | Predict, OpenAI 호환 Chat Completions, Agent SSE, Slack·Telegram·Teams, Webhook·Schedule | [API](docs/API.md), [메시징](docs/design/messaging.md) |
-| 운영·보안 | 프로젝트·호출자 비용, 동시 실행·시간 제한, Trace·Audit·메트릭, 접근 제어·시크릿 암호화·SSRF 방어·선택적 PII 필터 | [운영](docs/OPERATIONS.md), [보안](docs/SECURITY.md) |
+| 운영·보안 | Agent·호출자 비용, 동시 실행·시간 제한, Trace·Audit·메트릭, 접근 제어·시크릿 암호화·SSRF 방어·선택적 PII 필터 | [운영](docs/OPERATIONS.md), [보안](docs/SECURITY.md) |
 
 각 기능의 활성화 조건은 다르다. 기본 실행에는 PostgreSQL과 LLM 채널이 필요하고, 파일 보관에는
 S3 호환 저장소가 필요하다. 오디오·Workspace는 각각 별도 worker를 실행해야 한다.
@@ -58,18 +58,18 @@ pnpm dev
 `docker compose down -v`는 개발 데이터를 삭제한다.
 로컬 MCP, 별도 worker와 환경파일 로딩 방법은 [개발 문서](docs/DEVELOPMENT.md)를 따른다.
 
-## 첫 프로젝트와 외부 호출
+## 첫 Agent와 외부 호출
 
-1. member 이상 계정으로 Projects에서 Agent 프로젝트를 만든다.
+1. member 이상 계정으로 Agents에서 Agent를 만든다.
 2. Playground에서 모델·시스템 프롬프트를 설정하고 필요한 Skill·MCP·하위 Agent를 연결한다.
 3. 현재 설정을 저장하고 요청을 실행한다. 저장한 내용은 다음 실행부터 적용된다.
-4. 영속 대화는 Chat에서, 외부 실행 예제는 프로젝트의 API Reference 탭에서 확인한다.
+4. 영속 대화는 Chats에서, 외부 실행 예제는 Agent의 API Reference 탭에서 확인한다.
 
-Project → Integrations에서 발급한 API token은 해당 프로젝트 실행에 쓰는 Bearer credential이다.
-사용자 로그인 세션과 승인 화면을 만들지는 않는다. 로그인한 사용자, 프로젝트 토큰, 메신저와
+Agent → Integrations에서 발급한 API token은 해당 Agent 실행에 쓰는 Bearer credential이다.
+사용자 로그인 세션과 승인 화면을 만들지는 않는다. 로그인한 사용자, Agent 토큰, 메신저와
 자동화는 같은 Agent 설정을 사용해도 권한·이력·승인 경로가 다르다.
 [실행 API](docs/API.md#실행)와 [실행 창구별 계약](docs/design/workspaces.md#실행-창구별-계약)을 확인하라.
-콘솔의 `/guide`는 첫 프로젝트부터 파일·오디오·Workspace 사용까지 안내한다.
+콘솔의 `/guide`는 첫 Agent부터 파일·오디오·Workspace 사용까지 안내한다.
 
 ## 문서 읽기
 

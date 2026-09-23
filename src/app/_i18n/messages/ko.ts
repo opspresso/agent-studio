@@ -727,7 +727,7 @@ export const ko: Messages = {
   "guide.api.resultBody":
     "답변뿐 아니라 usage·warnings·종료 사유도 확인한다. predict의 turn-limit·output-limit는 부분 결과를 뜻하며 chat completions의 한도 종료는 length로 표시된다. 파일 결과는 링크가 만료되기 전에 내려받는다. 토큰은 호출 서버의 비밀 저장소에 보관한다. 재발급하거나 폐기하면 기존 토큰이 즉시 무효가 되므로 모든 호출자를 함께 갱신한다. OpenAI 호출의 토큰 합계는 완료형 응답이나 Studio 사용량 화면에서 확인한다.",
 
-  "guide.integrations.title": "봇·프로토콜·자동화 연동",
+  "guide.integrations.title": "봇·자동화 연동",
   "guide.integrations.body":
     "Agent 소유자와 관리자가 연동을 설정한다. 먼저 Agent 설정을 저장하고 설정 후 실제 호출 한 번으로 검증한다. 외부 플랫폼은 별도 자격 증명과 네트워크 연결이 필요하며 폐쇄망 설치의 필수 기능은 아니다.",
   "guide.integrations.slack": "Slack",

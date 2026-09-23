@@ -771,7 +771,7 @@ export const en = {
   "guide.api.resultBody":
     "Inspect usage, warnings, and the completion reason as well as the answer. turn-limit or output-limit on predict means a partial result; chat completions reports length for limit stops. Download file results before their links expire. Keep tokens in the calling server's secret storage. Regenerating or revoking an Agent token invalidates the old token immediately, so update every caller. Inspect token totals in collected OpenAI responses or the Studio Usage page.",
 
-  "guide.integrations.title": "Bots, protocols, and automation",
+  "guide.integrations.title": "Bots and automation",
   "guide.integrations.body":
     "Agent owners and administrators configure integrations. Save the Agent settings first and verify one real call after setup. External platforms need their own credentials and network connectivity; they are optional in an offline installation.",
   "guide.integrations.slack": "Slack",

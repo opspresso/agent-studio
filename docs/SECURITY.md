@@ -252,7 +252,7 @@ Agent별 MCP 문자열 오버라이드는 저장 당시 registry URL 의 fingerp
 
 | 시크릿 | 엔드포인트 | 누가 |
 |---|---|---|
-| Project API token | `POST /api/projects/{name}/token/reveal` | 소유자 또는 admin |
+| Agent API token | `POST /api/projects/{name}/token/reveal` | 소유자 또는 admin |
 | Webhook trigger 시크릿 | `POST /api/projects/{name}/triggers/{trigger}/reveal` | 소유자 또는 admin |
 
 둘 모두 **읽는데도 POST** 다. 응답 본문이 살아 있는 자격 증명이므로 캐시, 브라우저 기록,

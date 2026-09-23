@@ -45,7 +45,7 @@ Agent의 GenerateImage·EditImage 도구로 제공한다.
 - 하나의 현재 설정 조회·전체 저장.
 - 저장하지 않은 변경 표시와 Prompt preview.
 - 조회 권한이 있는 사용자의 읽기 전용 조회.
-- Project 메타데이터·설정의 동시 저장 충돌 검사.
+- Agent 메타데이터·설정의 동시 저장 충돌 검사.
 - 새 실행에 저장 내용 적용, 진행 중 실행·Audio 작업의 설정 snapshot 유지.
 - 승인 대기 중 설정·연결 변경 검사와 중복 재개 방지.
 
@@ -80,8 +80,8 @@ Fallback은 첫 출력 전 429·5xx 오류에서 한 번 전환한다.
 - 서버별 사용할 도구 선택.
 - Agent별 MCP 헤더 추가·교체·제거.
 - MCP 결과의 원본 파일 매핑 설정.
-- 프로젝트별 MCP OAuth 연결·재인증·해제.
-- 로컬 프로젝트를 하위 Agent로 연결.
+- Agent별 MCP OAuth 연결·재인증·해제.
+- 로컬 Agent를 하위 Agent로 연결.
 - Handoff.
 - Agent-as-Tool 위임.
 - 이미지 도구를 가진 Agent 위임.
@@ -106,7 +106,7 @@ Fallback은 첫 출력 전 429·5xx 오류에서 한 번 전환한다.
 - 검색된 역량·준비 경고 표시.
 
 장기 Memory는 외부 MCP에서 관리하며 Chat 이력과 별도 문맥으로 사용한다.
-로컬 Project는 명시적 하위 Agent 연결로 사용한다.
+하위 Agent는 명시적으로 연결한 로컬 Agent다.
 
 ### 내장 도구
 
@@ -121,7 +121,7 @@ Fallback은 첫 출력 전 429·5xx 오류에서 한 번 전환한다.
 
 도구마다 Agent 설정·저장소·연동·호출자 권한 등의 활성 조건이 있다.
 
-구현 근거: [Project·AgentConfiguration 정의](../src/domain/project/types.ts),
+구현 근거: [Agent 저장 형태](../src/domain/project/types.ts),
 [Agent 설정 편집기](../src/app/agents/[name]/_components/AgentConfigurationEditor.tsx),
 [내장 도구 목록](../src/domain/llm/toolNames.ts).
 
@@ -150,11 +150,11 @@ Prompt preview는 모델 답변을 생성하지 않지만 검색·MCP 조회·Me
 
 ## 3. Chats
 
-개편 후에도 Agent의 기본 실행 경로로 유지한다.
+Chat은 Agent를 선택해 대화를 이어가는 실행 화면이다.
 
-- 접근 가능한 Agent 프로젝트 선택·검색.
+- 접근 가능한 Agent 선택·검색.
 - 새 대화 생성.
-- 마지막 선택 프로젝트 기억.
+- 마지막 선택 Agent 기억.
 - 첫 메시지 기반 제목 자동 생성.
 - 본인 대화 목록·최근 활동순 표시.
 - 일반 Chat과 Workspace 대화 구분.
@@ -244,7 +244,7 @@ Settings → Models에서 연결·등록·사용 설정을 관리한다. Self-ho
 - 변경·생성·스킵·실패 보고서.
 - 변경된 필드·스킵 이유 표시.
 - 원본에서 사라진 항목 감지.
-- 해당 항목을 사용하는 프로젝트 표시.
+- 해당 항목을 사용하는 Agent 표시.
 - 사라진 Plugin·Skill·MCP의 명시적 선택 삭제.
 - 최근 동기화 보고서 보관.
 - 외부 ticker 기반 자동 동기화.
@@ -268,7 +268,7 @@ MCP header credential은 Studio의 자격 증명 설정에서 관리한다.
 - 본문 조회.
 - 참고 파일 경로·내용 조회.
 - 소유 Plugin으로 이동.
-- 프로젝트에 명시적으로 연결.
+- Agent에 명시적으로 연결.
 - 자동 capability 검색으로 발견.
 - 실행 중 필요한 지침·참고 파일만 읽기.
 
@@ -290,7 +290,7 @@ Plugin 소유 Skill과 참고 파일은 원본 동기화로 관리한다. Agent�
 - 연결 테스트.
 - 제공 도구 이름·설명·개수 조회.
 - 연결 오류 표시.
-- 프로젝트에서 사용할 도구 선택.
+- Agent에서 사용할 도구 선택.
 
 연결 테스트로 MCP 도구를 발견하고 이름·설명·연결 상태를 확인한다.
 
@@ -302,7 +302,7 @@ Plugin 소유 Skill과 참고 파일은 원본 동기화로 관리한다. Agent�
 - Client 등록 방식 확인.
 - 공유 Client ID·Client Secret·Redirect URI 설정.
 - OAuth 설정 제거.
-- 프로젝트별 연결·재인증·해제.
+- Agent별 연결·재인증·해제.
 - Token 갱신·재인증 필요 상태 처리.
 
 ### Managed MCP — 조건부
@@ -323,9 +323,9 @@ Docker와 Managed MCP 설정이 필요하다. Kubernetes 관리형 runtime은 �
 
 ## 8. Integrations·API Reference
 
-Integrations에서 프로젝트 인증과 외부 연동을 설정하고 API Reference에서 호출 계약과 예제를 확인한다.
+Integrations에서 Agent 인증과 외부 연동을 설정하고 API Reference에서 호출 계약과 예제를 확인한다.
 
-### 프로젝트 API Token
+### Agent API Token
 
 - 생성.
 - 상태·마스킹 값·발급 시각 조회.
@@ -334,7 +334,7 @@ Integrations에서 프로젝트 인증과 외부 연동을 설정하고 API Refe
 - 폐기.
 - 소유자 tier에 따른 발급·사용 제한.
 
-현재 프로젝트당 Token 하나다.
+현재 Agent당 Token 하나다.
 
 ### 실행 API·Reference
 
@@ -349,7 +349,7 @@ Integrations에서 프로젝트 인증과 외부 연동을 설정하고 API Refe
 - curl·Python·Node.js 예제.
 - 예제 복사.
 
-API Reference는 프로젝트 주소로 현재 Agent 설정을 호출하는 예제를 제공한다.
+API Reference는 `/api/projects/{name}` 주소로 현재 Agent 설정을 호출하는 예제를 제공한다.
 
 ### Slack
 
@@ -365,7 +365,7 @@ API Reference는 프로젝트 주소로 현재 Agent 설정을 호출하는 예�
 - 스트리밍 답변·진행 표시.
 - Thread 문맥·이미지·문서 읽기.
 - 생성 이미지·파일 전달.
-- Private 프로젝트의 사용자 접근 검사.
+- 비공개 Agent의 사용자 접근 검사.
 - Schedule·비용 알림 목적지.
 
 ### Telegram
@@ -401,12 +401,12 @@ API Reference는 프로젝트 주소로 현재 Agent 설정을 호출하는 예�
 
 ## 9. Webhook·Schedules
 
-개편 시 Webhook과 Cron(Schedules)을 선택적 어댑터로 분리한다. 예약·이벤트 자동화 기능은
-유지하되 Agent 실행 코어와 분리하며, 다른 어댑터도 같은 계약으로 추가할 수 있어야 한다.
+Webhook과 Schedules는 Agent 실행을 호출하는 선택적 어댑터다. 접수·중복 방지·이력은
+Trigger 계층에서 처리하고 실행은 공통 Agent 경로를 사용한다.
 
 ### Webhook
 
-- 프로젝트별 Webhook 설정.
+- Agent별 Webhook 설정.
 - 호출 주소 복사.
 - 활성화.
 - Secret 생성·확인·회전.
@@ -448,7 +448,7 @@ API Reference는 프로젝트 주소로 현재 Agent 설정을 호출하는 예�
 ### 작업 실행
 
 - Chat / Workspace 실행 방식 선택.
-- 프로젝트 선택.
+- Agent 선택.
 - Runtime 선택: Command, Codex, Claude, OpenCode.
 - Script 또는 자연어 코딩 작업 접수.
 - 저장소·기준 브랜치 선택.
@@ -470,13 +470,13 @@ API Reference는 프로젝트 주소로 현재 Agent 설정을 호출하는 예�
 - Worker 재시작 후 작업 관찰·이어받기.
 - 결과가 불명확한 외부 작업의 자동 재실행 방지.
 
-### 프로젝트 정책
+### Agent 정책
 
 - Workspace 도구 활성화.
 - 기본 Runtime.
 - 저장소·허용 owner 목록.
 - 저장소 접근 범위: 지정 저장소, 지정 owner, 서버 계정이 접근 가능한 전체,
-  프로젝트가 만든 신규 저장소 자동 허용.
+  Agent가 만든 신규 저장소 자동 허용.
 - 유휴 TTL.
 - Test·Lint·Build 명령.
 - 배포 허용 workflow.
@@ -506,7 +506,7 @@ API Reference는 프로젝트 주소로 현재 Agent 설정을 호출하는 예�
 
 Docker·별도 worker·runtime 모델 설정이 필요하다. Command 실행은 모델을 사용하지 않는다.
 작업을 제출하고 출력·Diff·검사 결과를 확인하는 화면을 제공한다.
-Agent의 Workspace 도구는 로그인한 member 이상 사용자의 실행에서 제공하며, 프로젝트 Token이나
+Agent의 Workspace 도구는 로그인한 member 이상 사용자의 실행에서 제공하며, Agent API Token이나
 메신저·예약 실행이 같은 권한을 자동으로 얻지는 않는다.
 
 구현 근거: [Workspace 화면](../src/app/workspaces/_components/WorkspacePanel.tsx),
@@ -591,7 +591,7 @@ Agent의 Workspace 도구는 로그인한 member 이상 사용자의 실행에�
 - 원본·파생 파일 만료 정리.
 - Agent가 `AudioJob`으로 작업 제출·조회·읽기.
 
-저장소·전사 채널·별도 worker를 구성해 프로젝트 소유자인 member 이상의 개인 오디오 파일을 처리한다.
+저장소·전사 채널·별도 worker를 구성해 Agent 소유자인 member 이상의 개인 오디오 파일을 처리한다.
 외부 Documents·Memory 저장에는 수신 MCP의 도구와 계약이 필요하다.
 
 구현 근거: [Audio 화면](../src/app/agents/[name]/audio/page.tsx),
@@ -600,9 +600,9 @@ Agent의 Workspace 도구는 로그인한 member 이상 사용자의 실행에�
 ## 13. Artifacts
 
 - 개인 갤러리.
-- 프로젝트별 갤러리.
+- Agent별 갤러리.
 - 이미지·문서·오디오 필터.
-- 불러온 목록에서 파일명·프롬프트·프로젝트·Agent·모델 검색.
+- 불러온 목록에서 파일명·프롬프트·Agent·모델 검색.
 - 목록 더 보기.
 - 이미지 썸네일·확대.
 - 원본 첨부와 생성 파일 구분.
@@ -615,7 +615,7 @@ Agent의 Workspace 도구는 로그인한 member 이상 사용자의 실행에�
 - 실행·사용자·하위 Agent·원본 관계 보관.
 - API·자동화 등 다른 실행 표면의 출력 수집.
 
-산출물은 파일별 접근 권한으로 보호하며 사용자·프로젝트별 갤러리에서 조회한다.
+산출물은 파일별 접근 권한으로 보호하며 사용자·Agent별 갤러리에서 조회한다.
 Office·PDF 원본은 다운로드해 확인한다. 개인 Audio 원본·파생 파일은 소유권과 만료 조건으로
 접근을 검사한다.
 
@@ -631,22 +631,22 @@ Office·PDF 원본은 다운로드해 확인한다. 개인 Audio 원본·파생 
 - 모델 호출 수.
 - 평균 호출 비용.
 - 일별 비용 차트.
-- 프로젝트별 집계.
+- Agent별 집계.
 - 모델별 집계.
 - Provider별 집계.
 - 부서별 집계.
 - 캐시 사용 비율.
-- 프로젝트별 호출자 수.
+- Agent별 호출자 수.
 - 호출자별 호출 수·비용.
 - 개인 사용량.
 - 개인 월 예산 사용률.
 - API·저장 데이터의 입력·출력·캐시 토큰과 비용.
 
-위치는 전체 Overview, 프로젝트 Usage, 개인 Profile로 나뉜다. 전체 Overview는 프로젝트·모델·
-provider·부서별, 프로젝트 Usage는 모델·provider별, Profile은 프로젝트·모델·provider별 집계를
+위치는 전체 Overview, Agent Usage, 개인 Profile로 나뉜다. 전체 Overview는 Agent·모델·
+provider·부서별, Agent Usage는 모델·provider별, Profile은 Agent·모델·provider별 집계를
 제공한다. 호출자별 상세는 소유자·관리자 전용이다.
 
-### 프로젝트 비용 정책
+### Agent 비용 정책
 
 - 일별 경고 한도.
 - 일별 차단 한도.
@@ -662,8 +662,8 @@ provider·부서별, 프로젝트 Usage는 모델·provider별, Profile은 프�
 
 - Guest·Member·Admin별 월 비용 정책.
 - 등급별 동시 실행 정책.
-- 프로젝트 생성 가능 여부.
-- 프로젝트 API Token 사용 가능 여부.
+- Agent 생성 가능 여부.
+- Agent API Token 사용 가능 여부.
 
 등급별 한도는 코드 정책으로 관리한다. 비용 가드는 기록된 사용량을 기준으로 새 실행을 제어한다.
 
@@ -673,7 +673,7 @@ provider·부서별, 프로젝트 Usage는 모델·provider별, Profile은 프�
 
 ## 15. Traces
 
-- 프로젝트별 기간 조회.
+- Agent별 기간 조회.
 - Trace 상세.
 - 실행 시간·상태.
 - 완료·실패·취소·승인 대기·턴/출력 제한 구분.
@@ -699,9 +699,9 @@ provider·부서별, 프로젝트 Usage는 모델·provider별, Profile은 프�
 - 기간 필터.
 - 시각·행위·행위자·대상·상세 표시.
 - 시크릿 조회·발급/회전·폐기 기록.
-- 관리자 프로젝트 변경 기록.
+- 관리자 Agent 변경 기록.
 - 설정 변경·모델 등록·수정·삭제·기본값 변경.
-- 프로젝트 삭제.
+- Agent 삭제.
 - 공유 레지스트리 삭제·소유 출처 변경.
 - 타인 Artifact 삭제.
 - 사용자 tier 변경.
@@ -740,7 +740,7 @@ provider·부서별, 프로젝트 Usage는 모델·provider별, Profile은 프�
 - 동시 실행·월 예산 정책.
 - 이번 달 지출·한도 사용률.
 - 기간별 개인 사용량.
-- 프로젝트·모델·provider별 개인 비용.
+- Agent·모델·provider별 개인 비용.
 
 Profile에서 본인 정보와 사용량을 조회한다.
 
@@ -775,8 +775,8 @@ SSO·DB·스토리지·worker·retention은 배포 설정으로 관리한다. �
 
 - 공개 소개 화면.
 - 로그인 후 Overview.
-- 최근 프로젝트·대화.
-- 새 프로젝트·Chat 바로가기.
+- 최근 Agent·대화.
+- 새 Agent·Chat 바로가기.
 - 카탈로그 수·비용 요약.
 - 최초 사용 안내.
 - 사용 가이드.

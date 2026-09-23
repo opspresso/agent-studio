@@ -23,9 +23,9 @@ Agent Studio 의 HTTP 계약: 안내 대상 라우트, 각각이 어떻게 인�
   중 배포가 켠 수단으로 로그인한다. 로컬 개발에서는 `scripts/dev-session.ts` 가 하나 출력해 준다). 세션이 없거나 유효하지 않으면 →
   `401 { "error": "Unauthorized" }`. 로그인 플로우 자체는 `/api/auth/*` 아래에 있다
   (Better Auth catch-all). 실행 엔드포인트 셋(`predict`, `chat/completions`,
-  `agent`)은 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 오는 **project 별 API 토큰**도
-  받는다. 토큰은 project 소유자를 대신해 동작하며 그 project 범위로 한정된다
-  (참고: [Project API 토큰](#project-api-토큰)). 기계 표면은 게이트가 다르다:
+  `agent`)은 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 오는 **Agent별 API 토큰**도
+  받는다. 토큰은 Agent 소유자를 대신해 동작하며 해당 Agent 범위로 한정된다
+  (참고: [Agent API 토큰](#agent-api-토큰)). 기계 표면은 게이트가 다르다:
   `/api/slack/events/*` 는 Slack signing secret,
   `/api/telegram/webhook/*` 는 Telegram 이 되돌려 주는 secret token, `/api/teams/messages/*` 는 Bot
   Framework 가 서명한 토큰, `/api/webhook/{project}` 는
@@ -82,18 +82,18 @@ Agent Studio 의 HTTP 계약: 안내 대상 라우트, 각각이 어떻게 인�
 admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 project 의 소유자, 저장된
 `admin` tier, 또는 설정된 admin.
 
-### Projects
+### Agents (`/api/projects`)
 
 | 라우트 | 메서드 | 권한 |
 |---|---|---|
-| `/api/projects` | `GET` `POST` | session / session + project 를 만들 수 있는 tier |
+| `/api/projects` | `GET` `POST` | session / session + Agent를 만들 수 있는 tier |
 | `/api/projects/{name}` | `GET` `PUT` `DELETE` | session / owner |
-| `/api/projects/{name}/clone` | `POST` | session + project 를 만들 수 있는 tier |
+| `/api/projects/{name}/clone` | `POST` | session + Agent를 만들 수 있는 tier |
 | `/api/projects/{name}/configuration` | `GET` `PUT` | session / owner |
 | `/api/projects/{name}/preview` | `POST` | member |
-| `/api/projects/{name}/predict` | `POST` | session 또는 project 토큰 |
-| `/api/projects/{name}/chat/completions` | `POST` | session 또는 project 토큰 |
-| `/api/projects/{name}/agent` | `POST` | session 또는 project 토큰 |
+| `/api/projects/{name}/predict` | `POST` | session 또는 Agent 토큰 |
+| `/api/projects/{name}/chat/completions` | `POST` | session 또는 Agent 토큰 |
+| `/api/projects/{name}/agent` | `POST` | session 또는 Agent 토큰 |
 | `/api/projects/{name}/token` | `GET` `POST` `DELETE` | owner |
 | `/api/projects/{name}/token/reveal` | `POST` | owner |
 | `/api/projects/{name}/artifacts` | `GET` | owner |
@@ -1090,9 +1090,9 @@ GET /api/mcps/oauth/client-metadata/{project}          (public)
 배포의 이름과, 받아들이는 단 하나의 redirect URI 뿐이다. slug 가 아닌 이름은 `404`, 공개 base
 URL 이 설정되지 않았으면 `503`, 그리고 `Cache-Control: public, max-age=300` 이다.
 
-## Project API 토큰
+## Agent API 토큰
 
-project 별 토큰은 외부 호출자가 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 실행
+Agent별 토큰은 외부 호출자가 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 실행
 엔드포인트에 닿게 해 준다. 토큰은 해시가 아니라 AES-256-GCM 으로 암호화해 저장되므로, 소유자가
 요청하면 다시 읽어 볼 수 있다.
 
@@ -1166,8 +1166,8 @@ secret 으로 키잉해 만든 16자리 hex 다이제스트다. `1` 을 보내�
 곳에서 퍼센트 인코딩된다 (공백, 제어 문자, 출력 가능한 ASCII 밖의 모든 것, 그리고 `%`). 이는
 UUID 나 평범한 키에 대해서는 아무것도 바꾸지 않으면서 서로 다른 두 값을 두 개의 대화로 유지한다.
 인코딩 후 최대 495자이고, 그보다 긴 헤더는 자기가 선언한 대화 없이 조용히 실행되는 대신 `400` 으로
-답한다. 없으면 각 요청이 저마다의 대화이며, 이는 이 헤더가 생기기 전 모든 요청이 그랬던 것과
-같다. 표면이 스레드를 *가진* 곳에서는 플랫폼이 직접 이름을 붙인다: chat 은 `chat:{chatId}`,
+답한다. 없으면 각 요청이 별도의 대화로 처리된다. 표면이 스레드를 *가진* 곳에서는
+플랫폼이 직접 이름을 붙인다: chat 은 `chat:{chatId}`,
 Slack 답글은 `slack:{channel}:{threadTs}`다.
 [design/observability.md](design/observability.md#사용량과-비용-귀속) 를 보라.
 
@@ -1175,7 +1175,7 @@ Slack 답글은 `slack:{channel}:{threadTs}`다.
 
 현재 Agent 설정의 MCP 도구·Skill·Subagent로 멀티턴 실행을 수행한다.
 `messages`는 비어 있지 않은 배열이다. `documents` 첨부와 `stream`을 선택할 수 있다.
-`variables`·`prompt`·`size`·`quality`·최상위 `images` 등 이전 전용 입력은 400으로 거절한다.
+`variables`·`prompt`·`size`·`quality`·최상위 `images` 등 지원하지 않는 입력은 400으로 거절한다.
 이미지는 메시지의 인라인 image part로 전달하고 생성·편집은 Agent 도구로 수행한다.
 
 ```text
