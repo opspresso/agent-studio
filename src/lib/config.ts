@@ -19,6 +19,19 @@ function required(name: string): string {
   return value;
 }
 
+/** Identity-provider discovery must never interpret credentials or URL suffixes as part of an issuer. */
+function authIssuer(name: "KEYCLOAK_ISSUER" | "OIDC_ISSUER", issuer: string): string {
+  try {
+    const url = new URL(issuer);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+      throw new Error("invalid issuer");
+    }
+  } catch {
+    throw new Error(`${name} must be an HTTP(S) issuer URL without credentials, query, or fragment`);
+  }
+  return issuer.replace(/\/+$/, "");
+}
+
 /**
  * Environment variables required for any real operation (LLM dispatch + secret
  * encryption). Validated once at boot (see instrumentation.ts) so a misconfig
@@ -617,15 +630,7 @@ export const config = {
     if (!issuer || !clientId || !clientSecret) {
       return undefined;
     }
-    try {
-      const url = new URL(issuer);
-      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-        throw new Error("invalid issuer");
-      }
-    } catch {
-      throw new Error("KEYCLOAK_ISSUER must be an HTTP(S) realm URL without credentials, query, or fragment");
-    }
-    return { issuer: issuer.replace(/\/+$/, ""), clientId, clientSecret };
+    return { issuer: authIssuer("KEYCLOAK_ISSUER", issuer), clientId, clientSecret };
   },
   get oidc():
     | { issuer: string; clientId: string; clientSecret: string; displayName: string; scopes: string[] }
@@ -637,7 +642,7 @@ export const config = {
       return undefined;
     }
     return {
-      issuer: issuer.replace(/\/+$/, ""),
+      issuer: authIssuer("OIDC_ISSUER", issuer),
       clientId,
       clientSecret,
       displayName: optionalEnv(process.env.OIDC_DISPLAY_NAME) ?? "SSO",
