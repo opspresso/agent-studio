@@ -23,7 +23,8 @@ import type { Chat } from "../_lib/types";
 import { useRunningKeys } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
 import { ChatSidebarItems, type SidebarTab } from "./ChatSidebarItems";
-import { readJson } from "@/app/_lib/httpClient";
+import { assertOk, readJson } from "@/app/_lib/httpClient";
+import { reportError } from "@/app/_lib/reportError";
 import classes from "./ChatSidebar.module.css";
 
 const NEW_CHAT_EVENT = "chats:new";
@@ -61,6 +62,7 @@ export function ChatSidebar() {
     sync: false,
   });
   const [drawerOpen, drawer] = useDisclosure(false);
+  const [deleteError, setDeleteError] = useState<{ tab: SidebarTab; message: string } | null>(null);
   /** A stale read may only replace rows from the same tab. */
   const loadSeq = useRef<Record<SidebarTab, number>>({ chats: 0, workspaces: 0 });
   // Keys, not chat ids: a chat still being created counts under its placeholder,
@@ -132,14 +134,18 @@ export function ChatSidebar() {
   const currentTitle = activeChat ? t("chat.currentItem", { title: activeChat.title }) : undefined;
 
   async function handleDelete(chatId: string) {
-    const res = await fetch(`/api/chats/${chatId}`, { method: "DELETE" });
-    if (res.ok) {
+    const deletingFrom = tab;
+    setDeleteError(null);
+    try {
+      await assertOk(await fetch(`/api/chats/${chatId}`, { method: "DELETE" }));
       // Otherwise its stream keeps reading rows that no longer exist.
       runStore.abort(chatId);
       await load(tab, limit);
       if (activeId === chatId) {
         router.push("/chats");
       }
+    } catch (error) {
+      setDeleteError({ tab: deletingFrom, message: reportError(error, "Failed to delete conversation") });
     }
   }
 
@@ -158,6 +164,7 @@ export function ChatSidebar() {
   const listFor = (kind: SidebarTab) => (
     <ScrollArea h="100%" scrollbarSize={6} pr={4}>
       <Stack gap={2}>
+        {deleteError?.tab === kind && <Alert color="red" variant="light" p="xs">{deleteError.message}</Alert>}
         {pages[kind].error && <Alert color="red" variant="light" p="xs">
           <Stack gap="xs">
             <Text fz="xs">{pages[kind].error}</Text>
