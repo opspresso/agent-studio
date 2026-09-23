@@ -42,10 +42,6 @@ export function managedMcpEnvironmentContext(name: string): string {
   return JSON.stringify(["mcp", name, "environment"]);
 }
 
-export function externalAgentHeadersContext(name: string): string {
-  return JSON.stringify(["external-agent", name, "headers"]);
-}
-
 /** Agent settings retain the same credential identity across ordinary edits. */
 export function agentMcpHeadersContext(projectName: string, serverName: string): string {
   return JSON.stringify(["project", projectName, "agent", "mcp", serverName]);

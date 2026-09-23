@@ -1,4 +1,3 @@
-import type { ProjectType } from "@/domain/project/types";
 import { projectWebhookPath } from "@/domain/trigger/types";
 import { MAX_DOCUMENTS, MAX_DOCUMENT_SIZE_LABEL } from "@/domain/llm/documentLimits";
 
@@ -79,7 +78,6 @@ export interface ApiEndpoint {
 
 export interface ApiReferenceContext {
   projectName: string;
-  projectType: ProjectType;
   /** Whether the Agent has saved settings that can be executed. */
   configured: boolean;
   /** Absolute origin for example URLs (e.g. window.location.origin); "" is tolerated. */

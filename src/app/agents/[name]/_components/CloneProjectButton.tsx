@@ -43,9 +43,9 @@ export function CloneProjectButton({ sourceName }: { sourceName: string }) {
         return;
       }
       close();
-      router.push(`/projects/${project.name}`);
+      router.push(`/agents/${project.name}`);
     } catch (err) {
-      setError(reportError(err, t("projects.cloneFailed")));
+      setError(reportError(err, t("agents.cloneFailed")));
     } finally {
       setSubmitting(false);
     }
@@ -66,20 +66,20 @@ export function CloneProjectButton({ sourceName }: { sourceName: string }) {
         submitting={submitting}
       >
         <TextInput
-          label={t("projects.name")}
+          label={t("agents.name")}
           value={name}
           onChange={(e) => setName(e.currentTarget.value)}
           onBlur={() => setName(toSlug(name))}
           placeholder={`${sourceName}-copy`}
           required
-          description={t("projects.nameHint")}
+          description={t("agents.nameHint")}
           inputWrapperOrder={["label", "input", "description", "error"]}
         />
         <TextInput
-          label={t("projects.displayName")}
+          label={t("agents.displayName")}
           value={displayName}
           onChange={(e) => setDisplayName(e.currentTarget.value)}
-          placeholder={t("projects.displayNamePlaceholder")}
+          placeholder={t("agents.displayNamePlaceholder")}
         />
       </FormModal>
     </>

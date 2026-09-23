@@ -3,7 +3,6 @@ import type {
   CostLimits,
   McpBinding,
   Project,
-  ProjectType,
   ProjectVisibility,
   SubagentRef,
   AgentConfiguration,
@@ -42,7 +41,7 @@ import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { testMcpConnection } from "@/app/tools/api";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
 
-export type { CostLimits, McpBinding, Project, ProjectType, ProjectVisibility, SubagentRef, AgentConfiguration, AgentParameters };
+export type { CostLimits, McpBinding, Project, ProjectVisibility, SubagentRef, AgentConfiguration, AgentParameters };
 export type { ModelConfig, EngineChunk, UsageRow, Trace, SlackChannelInfo, SlackSuggestedPrompt };
 export type SelectableModel = ModelsResponse["models"][number];
 
@@ -52,7 +51,6 @@ export interface CreateProjectInput {
   name: string;
   displayName: string;
   description: string;
-  projectType: ProjectType;
   departmentCode?: string;
 }
 

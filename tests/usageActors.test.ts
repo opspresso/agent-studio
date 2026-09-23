@@ -22,7 +22,6 @@ function makeProject(withSlack: boolean): Project {
     name: "painter",
     displayName: "Painter",
     description: "",
-    projectType: "agent",
     ownerEmail: "owner@x.com",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",

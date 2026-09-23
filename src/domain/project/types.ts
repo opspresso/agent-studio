@@ -3,7 +3,6 @@ import type { MessageDestination } from "@/domain/messaging/destination";
 import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
 import type { RuntimePolicy } from "@/domain/execution/runtimeSession";
 
-export type ProjectType = "agent";
 
 /**
  * Who may see and run a project. `public` is the shared catalog: any signed-in
@@ -146,7 +145,6 @@ export interface Project {
   name: string;
   displayName: string;
   description: string;
-  projectType: ProjectType;
   ownerEmail: string;
   /** Absent means `public` — the shape every project had before visibility. */
   visibility?: ProjectVisibility;
@@ -275,7 +273,6 @@ export interface AgentParameters {
 
 export interface SubagentRef {
   name: string;
-  type: "local" | "remote";
 }
 
 /**

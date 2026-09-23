@@ -115,7 +115,6 @@ function harness(
         describe: async (names: readonly string[]) =>
           names.map((name) => ({ name, description: `about ${name}` })),
       },
-      externalAgents: { get: async (name: string) => ({ name, description: `agent ${name}` }) },
       projects: { get: async () => null },
       mcps: { get: async (name: string) => registry.get(name) ?? null },
       mcpConnections: { listByProject: async () => options.connections ?? [] },
@@ -311,18 +310,6 @@ describe("capability discovery", () => {
     expect(opened).toEqual([]);
   });
 
-  it("hands back the widened version, so a discovered agent can be transferred to", async () => {
-    // Offering an agent and being able to reach it are decided by two different
-    // lists: `subagents` is what the model is told, while `buildSubagentRunner`
-    // builds the dispatch map from a version's `subagentList`. Given the
-    // caller's own version, every discovered agent answered `Unknown agent` the
-    // moment the model used it — advertised, in the transfer enum, unreachable.
-    const { deps } = harness({ catalog: fakeCatalog({ agent: [found("docs-bot")] }) });
-    const resolved = await resolveRunTools(deps, configuration(), undefined, QUERIES);
-    expect(resolved.subagents.map((entry) => entry.name)).toEqual(["docs-bot"]);
-    expect(resolved.configuration.subagentList).toEqual([{ name: "docs-bot", type: "remote" }]);
-  });
-
   it("leaves the version untouched when nothing was discovered", async () => {
     const { deps } = harness();
     const bound = configuration({ skillList: ["bound"] });
@@ -337,10 +324,10 @@ describe("capability discovery", () => {
     // yellow alert on every chat turn and a non-empty `warnings` in every
     // answer.
     const { deps } = harness({
-      catalog: fakeCatalog({ skill: [found("a-skill")], agent: [found("an-agent")] }),
+      catalog: fakeCatalog({ skill: [found("a-skill")] }),
     });
     const resolved = await resolveRunTools(deps, configuration(), undefined, QUERIES);
-    expect(resolved.discovered).toEqual(["a-skill", "an-agent"]);
+    expect(resolved.discovered).toEqual(["a-skill"]);
     expect(resolved.warnings).toEqual([]);
   });
 

@@ -66,7 +66,7 @@ export function NewChatPanel() {
       } catch (error) {
         if (!cancelled) {
           setProjectsError(
-            error instanceof Error ? error.message : t("projects.loadFailed"),
+            error instanceof Error ? error.message : t("agents.loadFailed"),
           );
         }
       } finally {
@@ -162,8 +162,8 @@ export function NewChatPanel() {
                 {t("chat.noAgentProjectsBody")}
               </Text>
               <Group justify="center" mt="sm">
-                <Button component={Link} href="/projects" rightSection={<IconArrowRight size={16} />}>
-                  {t("chrome.openProjects")}
+                <Button component={Link} href="/agents" rightSection={<IconArrowRight size={16} />}>
+                  {t("chrome.openAgents")}
                 </Button>
                 <Button component={Link} href="/guide" variant="default">{t("nav.guide")}</Button>
               </Group>

@@ -30,7 +30,7 @@ beforeEach(async () => {
   checkRepository.mockReset();
   fake.rows.clear();
   fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner,
-    visibility: "public", projectType: "agent", createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
+    visibility: "public", createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
   await chats.create({ chatId: "chat-1", title: "Task", ownerEmail: owner, projectName: "demo",
     createdAt: now.toISOString(), updatedAt: now.toISOString() });
 });

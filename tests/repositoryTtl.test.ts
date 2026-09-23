@@ -37,7 +37,6 @@ afterEach(() => {
 const trace = (over: Record<string, unknown> = {}) => ({
   traceId: "t1",
   projectName: "p",
-  projectType: "agent" as const,
   status: "completed" as const,
   spans: [],
   startedAt: "2026-06-30T00:00:00Z",

@@ -73,7 +73,7 @@ export function VisibilitySection({ projectName }: { projectName: string }) {
         !loading ? (
           visibility === "private" ? (
             <Badge variant="light" color="gray">
-              {t("projects.privateBadge")}
+              {t("agents.privateBadge")}
             </Badge>
           ) : (
             <Badge variant="light" color="teal">

@@ -216,7 +216,6 @@ export default function ApiReferencePage() {
 
         const ctx: ApiReferenceContext = {
           projectName: project.name,
-          projectType: project.projectType,
           configured: project.configured ?? null,
           origin: typeof window === "undefined" ? "" : window.location.origin,
           slack: slack ? { configured: slack.configured } : null,

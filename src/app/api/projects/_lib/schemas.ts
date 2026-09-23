@@ -25,9 +25,8 @@ export const createProjectSchema = z.object({
   name: projectNameSchema,
   displayName: z.string().min(1),
   description: z.string().default(""),
-  projectType: z.literal("agent").default("agent"),
   departmentCode: z.string().max(64).optional(),
-});
+}).strict();
 
 const messageDestinationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("slack"), channelId: z.string().trim().min(1) }),
@@ -159,8 +158,7 @@ export const agentParametersSchema = z.object({
 
 export const subagentRefSchema = z.object({
   name: z.string().min(1),
-  type: z.enum(["local", "remote"]),
-});
+}).strict();
 
 /**
  * An MCP binding. A `null` header value removes a registry default.

@@ -7,7 +7,7 @@ const owner = "owner@example.test";
 const configuration = (): AgentConfiguration => ({ projectName: "writer",
   model: listModels().find(m => m.capabilities.tools && m.capabilities.structuredOutput)!.id,
   parameters: { piiFiltering: false }, systemPrompt: "Summarize", mcpList: [], skillList: [], subagentList: [] });
-const project: Project = { name: "writer", displayName: "Writer", description: "", projectType: "agent", ownerEmail: owner,
+const project: Project = { name: "writer", displayName: "Writer", description: "", ownerEmail: owner,
   createdAt: "2026-01-01", updatedAt: "2026-01-02" };
 
 describe("postprocessing configuration resolution", () => {

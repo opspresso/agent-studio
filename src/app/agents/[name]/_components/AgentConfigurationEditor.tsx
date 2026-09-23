@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { listAgents } from "@/app/agents/api";
 import { listSkills } from "@/app/skills/api";
 import { listMcps } from "@/app/tools/api";
 import {
@@ -44,7 +43,6 @@ import {
 import type { PickerOption } from "./inputs";
 import type { ConfigurationSave } from "./McpBindingSettings";
 import { bindingsMayOfferRecall } from "@/domain/project/memoryRecall";
-import { SUBAGENT_KIND_COLOR } from "@/app/_components/badgeColors";
 import { PRESENCE_PENALTY_RANGE } from "@/domain/llm/channel";
 
 /** Parse the JSON object the API accepts, without using a type assertion as validation. */
@@ -66,8 +64,6 @@ export function parseConfigurationDraft(value: AgentConfigurationInput, schemaTe
   }
   return { ...value, parameters: { ...value.parameters, jsonSchema } };
 }
-
-type SubagentOption = PickerOption & { type: "local" | "remote" };
 
 export function AgentConfigurationEditor({
   projectName,
@@ -94,7 +90,7 @@ export function AgentConfigurationEditor({
   const t = useT();
   const [mcpOptions, setMcpOptions] = useState<PickerOption[]>([]);
   const [skillOptions, setSkillOptions] = useState<PickerOption[]>([]);
-  const [subagentOptions, setSubagentOptions] = useState<SubagentOption[]>([]);
+  const [subagentOptions, setSubagentOptions] = useState<PickerOption[]>([]);
   // The capability registries are `member`-gated server-side (`withMemberAuth`),
   // so a guest's picker requests are guaranteed 403s — the same predicate
   // decides here whether to ask at all. Projects stay: every tier may list them.
@@ -113,9 +109,8 @@ export function AgentConfigurationEditor({
       mayReadRegistries ? listMcps() : Promise.resolve(none),
       mayReadRegistries ? listSkills() : Promise.resolve(none),
       listProjects(),
-      mayReadRegistries ? listAgents() : Promise.resolve(none),
     ]).then(
-      ([mcps, skills, projects, agents]) => {
+      ([mcps, skills, projects]) => {
         if (cancelled) {
           return;
         }
@@ -129,29 +124,16 @@ export function AgentConfigurationEditor({
             skills.value.map((s) => ({ value: s.name, description: s.description })),
           );
         }
-        const locals: SubagentOption[] =
+        const locals: PickerOption[] =
           projects.status === "fulfilled"
             ? projects.value
                 .filter((p) => p.configured && p.name !== projectName)
                 .map((p) => ({
                   value: p.name,
                   description: p.description,
-                  badge: "local",
-                  badgeColor: SUBAGENT_KIND_COLOR.local,
-                  type: "local" as const,
                 }))
             : [];
-        const remotes: SubagentOption[] =
-          agents.status === "fulfilled"
-            ? agents.value.map((a) => ({
-                value: a.name,
-                description: a.description,
-                badge: "remote",
-                badgeColor: SUBAGENT_KIND_COLOR.remote,
-                type: "remote" as const,
-              }))
-            : [];
-        setSubagentOptions([...locals, ...remotes]);
+        setSubagentOptions(locals);
       },
     );
     return () => {

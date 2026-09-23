@@ -19,7 +19,7 @@ async function consoleHeaderPattern(): Promise<RegExp> {
 describe("which responses get the console's security headers", () => {
   it("covers the console, including pages nobody has written yet", async () => {
     const pattern = await consoleHeaderPattern();
-    for (const path of ["/", "/artifacts", "/projects/p/versions", "/api/chats", "/whatever/next"]) {
+    for (const path of ["/", "/artifacts", "/agents/p/versions", "/api/chats", "/whatever/next"]) {
       expect(pattern.test(path)).toBe(true);
     }
   });

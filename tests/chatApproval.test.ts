@@ -17,7 +17,7 @@ async function fixture() {
   const tools = [{ type: "function" as const, function: { name: "lookup", parameters: {} } }];
   await f.run(new FakeChannel([[toolCallChunk(0, "call", "lookup", "{}")]]), "lookup", undefined, { callMcpTool: effect }, { mcpTools: tools });
   const chat: Chat = { chatId: f.scope.sessionId, ownerEmail: f.scope.ownerEmail, projectName: f.scope.projectName, title: "Chat", createdAt: "2026-09-12T00:00:00Z", updatedAt: "2026-09-12T00:00:00Z" };
-  const project: Project = { name: f.scope.projectName, ownerEmail: f.scope.ownerEmail, projectType: "agent", displayName: "Project", description: "",  createdAt: chat.createdAt, updatedAt: chat.updatedAt };
+  const project: Project = { name: f.scope.projectName, ownerEmail: f.scope.ownerEmail, displayName: "Project", description: "",  createdAt: chat.createdAt, updatedAt: chat.updatedAt };
   const messages: ChatMessage[] = [];
   const order: string[] = [];
   let active: ActiveChatRun | null = null;

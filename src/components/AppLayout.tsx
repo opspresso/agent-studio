@@ -22,11 +22,10 @@ import {
   IconChevronRight,
   IconCompass,
   IconCpu,
-  IconFolder,
+  IconRobot,
   IconMessageCircle,
   IconPhoto,
   IconPackage,
-  IconRobot,
   IconSettings,
   IconShieldCheck,
   IconTool,
@@ -61,7 +60,7 @@ const NAV_GROUPS = [
     label: "nav.group.workspace",
     items: [
       { href: "/", label: "nav.overview", Icon: IconChartBar },
-      { href: "/projects", label: "nav.projects", Icon: IconFolder },
+      { href: "/agents", label: "nav.agents", Icon: IconRobot },
       { href: "/chats", label: "nav.chats", Icon: IconMessageCircle },
       { href: "/artifacts", label: "nav.artifacts", Icon: IconPhoto },
     ],
@@ -75,7 +74,6 @@ const NAV_GROUPS = [
       { href: "/plugins", label: "nav.plugins", Icon: IconPackage },
       { href: "/skills", label: "nav.skills", Icon: IconBook2 },
       { href: "/tools", label: "nav.tools", Icon: IconTool },
-      { href: "/agents", label: "nav.agents", Icon: IconRobot },
       { href: "/models", label: "nav.models", Icon: IconCpu },
     ],
   },
@@ -309,14 +307,14 @@ export function AppLayout({
           </Text>
           <ActionIcon
             component={Link}
-            href="/projects"
+            href="/agents"
             variant="light"
             color="brand"
             size="sm"
-            aria-label={t("chrome.openProjects")}
+            aria-label={t("chrome.openAgents")}
             onClick={close}
           >
-            <IconFolder size={16} />
+            <IconRobot size={16} />
           </ActionIcon>
         </Group>
         <ScrollArea viewportRef={navViewport} style={{ flex: 1 }} scrollbarSize={6} type="always">

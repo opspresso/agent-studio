@@ -31,7 +31,6 @@ function projectFixture(): Project {
     name: "helper",
     displayName: "Helper",
     description: "",
-    projectType: "agent",
     ownerEmail: "owner@example.com",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -58,7 +57,7 @@ function boundVersion(): AgentConfiguration {
     ...configurationFixture(),
     skillList: ["greeting"],
     mcpList: [{ name: "crm" }],
-    subagentList: [{ name: "painter", type: "local" }],
+    subagentList: [{ name: "painter" }],
   };
 }
 
@@ -83,7 +82,6 @@ function executionDepsFixture(channel: FakeChannel) {
     versions: { get: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: reject },
-    externalAgents: { get: reject },
     usage: { record: async () => {} },
     createToolSchemaValidator,
     channel,
@@ -303,7 +301,7 @@ describe("previewPrompt", () => {
     const deps = executionDepsFixture(new FakeChannel([]));
 
     const preview = await previewPrompt(deps, {
-      project: { ...projectFixture(), projectType: "agent" },
+      project: { ...projectFixture() },
       configuration: { ...configurationFixture(), parameters: { piiFiltering: true } },
     });
 

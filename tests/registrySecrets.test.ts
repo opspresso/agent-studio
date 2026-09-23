@@ -7,27 +7,12 @@ const listMcpToolsMock = vi.hoisted(() =>
   vi.fn(async (_url: string, _headers: Record<string, string>) => ({ ok: true as const, tools: [] })),
 );
 
-// Mocked at the infrastructure boundary so the real dispatcher's protocol
-// routing is what runs. A fake dispatcher here would only assert its own copy
-// of the branch it is meant to be testing.
-const sendAgentMessageMock = vi.hoisted(() =>
-  vi.fn(async (_url: string, _headers: Record<string, string>, _message: string) => ({
-    ok: true as const,
-    text: "hi",
-  })),
-);
-
-vi.mock("@/infrastructure/agent/agentClient", () => ({ sendAgentMessage: sendAgentMessageMock }));
-
 beforeEach(() => {
   listMcpToolsMock.mockClear();
-  sendAgentMessageMock.mockClear();
 });
 
-import { createAgentUseCases as createAgentUseCasesImpl } from "@/application/agent/agentUseCases";
 import { createMcpUseCases as createMcpUseCasesImpl } from "@/application/mcp/mcpUseCases";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
-import { remoteAgentDispatcher } from "@/infrastructure/agent/dispatcher";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 
 // Deterministic SSRF verdicts: block `.internal` hosts without real DNS lookups.
@@ -40,17 +25,12 @@ const testPolicy: UrlPolicy = {
   },
 };
 
-// Ports the use cases take; only the MCP probe is a stand-in, because there is
-// no real MCP server to reach. The agent dispatcher is the production one.
+// The MCP probe stands in for a server at the network boundary.
 const createMcpUseCases = (repo: Parameters<typeof createMcpUseCasesImpl>[0]) =>
   createMcpUseCasesImpl(repo, secretCipher, testPolicy, {
     listTools: listMcpToolsMock,
     invalidateDiscovery: () => {},
   });
-const createAgentUseCases = (repo: Parameters<typeof createAgentUseCasesImpl>[0]) =>
-  createAgentUseCasesImpl(repo, secretCipher, testPolicy, remoteAgentDispatcher);
-import type { ExternalAgentRepository } from "@/domain/agent/repository";
-import type { ExternalAgent } from "@/domain/agent/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer } from "@/domain/mcp/types";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
@@ -65,7 +45,6 @@ import {
   isMasked,
 } from "@/infrastructure/crypto/secretEncryption";
 import {
-  externalAgentHeadersContext,
   mcpHeadersContext,
 } from "@/domain/security/secretContext";
 
@@ -114,31 +93,6 @@ function makeMcpRepo(initial: McpServer[] = []) {
     },
     async update(server) {
       store.set(server.name, server);
-    },
-    async delete(name) {
-      store.delete(name);
-    },
-  };
-  return { repo, store };
-}
-
-function makeAgentRepo(initial: ExternalAgent[] = []) {
-  const store = new Map(initial.map((agent) => [agent.name, agent]));
-  const repo: ExternalAgentRepository = {
-    async get(name) {
-      return store.get(name) ?? null;
-    },
-    async list() {
-      return [...store.values()];
-    },
-    async put(agent) {
-      store.set(agent.name, agent);
-    },
-    async create(agent) {
-      store.set(agent.name, agent);
-    },
-    async update(agent) {
-      store.set(agent.name, agent);
     },
     async delete(name) {
       store.delete(name);
@@ -463,157 +417,5 @@ describe("registry conditional write errors", () => {
     };
 
     await expect(createMcpUseCases(repo).remove("m", "admin@example.com")).rejects.toBeInstanceOf(NotFoundError);
-  });
-});
-
-describe("external agent registry secret contract", () => {
-  it("rejects URL fragments and redacts legacy query credentials from member views", async () => {
-    const { repo } = makeAgentRepo([
-      {
-        name: "legacy",
-        url: "https://agent.example/v1?token=secret#fragment",
-        description: "",
-        headers: {},
-        createdAt: NOW,
-        updatedAt: NOW,
-      },
-    ]);
-    const useCases = createAgentUseCases(repo);
-
-    await expect(
-      useCases.create({
-        name: "unsafe",
-        url: "https://agent.example/v1#token",
-        description: "",
-        headers: {},
-      }),
-    ).rejects.toBeInstanceOf(ValidationError);
-    await expect(useCases.list()).resolves.toMatchObject([
-      { url: "https://agent.example/v1" },
-    ]);
-  });
-
-  it("keeps a legacy address when the console echoes back its redacted view", async () => {
-    const legacyUrl = "https://agent.example/v1?tenant=acme";
-    const { repo, store } = makeAgentRepo([
-      {
-        name: "legacy",
-        url: legacyUrl,
-        description: "",
-        headers: encryptHeaders({ Authorization: "Bearer stored" }),
-        createdAt: NOW,
-        updatedAt: NOW,
-      },
-    ]);
-    const useCases = createAgentUseCases(repo);
-
-    const view = await useCases.get("legacy");
-    await useCases.update("legacy", {
-      url: view.url,
-      description: "edited elsewhere",
-      headers: { Authorization: "********" },
-    });
-
-    const stored = store.get("legacy")!;
-    expect(stored.url).toBe(legacyUrl);
-    expect(stored.description).toBe("edited elsewhere");
-    expect(decryptHeadersForOutbound(stored.headers)).toEqual({ Authorization: "Bearer stored" });
-  });
-
-  it("returns masked headers on create/get/list and stores ciphertext", async () => {
-    const { repo, store } = makeAgentRepo();
-    const useCases = createAgentUseCases(repo);
-
-    const created = await useCases.create({
-      name: "a",
-      url: "https://agent.example/v1",
-      description: "",
-      headers: { "X-Api-Key": "plain-key" },
-    });
-    expectMasked(created?.headers["X-Api-Key"]);
-    expect(isEncrypted(store.get("a")!.headers["X-Api-Key"]!)).toBe(true);
-    expect(store.get("a")!.headers["X-Api-Key"]?.startsWith("enc:v2:")).toBe(true);
-    expect(
-      decryptHeadersForOutbound(store.get("a")!.headers, externalAgentHeadersContext("a")),
-    ).toEqual({ "X-Api-Key": "plain-key" });
-
-    const got = await useCases.get("a");
-    const listed = await useCases.list();
-    expectMasked(got?.headers["X-Api-Key"]);
-    expectMasked(listed[0]?.headers["X-Api-Key"]);
-    for (const value of [created, got, ...listed].map((a) => a?.headers["X-Api-Key"] ?? "")) {
-      expect(value).not.toContain("enc:v1:");
-      expect(value).not.toContain("plain-key");
-    }
-  });
-
-  it("preserves the stored secret when an update echoes the mask back", async () => {
-    const { repo, store } = makeAgentRepo();
-    const useCases = createAgentUseCases(repo);
-    await useCases.create({
-      name: "a",
-      url: "https://agent.example/v1",
-      description: "",
-      headers: { "X-Api-Key": "plain-key" },
-    });
-    const storedBefore = store.get("a")!.headers["X-Api-Key"];
-
-    await useCases.update("a", { headers: { "X-Api-Key": "*********" } });
-    expect(store.get("a")!.headers["X-Api-Key"]).toBe(storedBefore);
-  });
-
-  it("does not carry stored headers to a new agent address", async () => {
-    const { repo, store } = makeAgentRepo();
-    const useCases = createAgentUseCases(repo);
-    await useCases.create({
-      name: "a",
-      url: "https://agent.example/v1",
-      description: "",
-      headers: { Authorization: "Bearer old-token" },
-    });
-
-    await useCases.update("a", {
-      url: "https://other.example/v1",
-      headers: { Authorization: "********" },
-    });
-    expect(store.get("a")?.headers).toEqual({});
-
-    await useCases.sendMessage("a", "hello");
-    expect(sendAgentMessageMock).toHaveBeenLastCalledWith(
-      "https://other.example/v1",
-      {},
-      "hello",
-    );
-
-    await useCases.update("a", {
-      url: "https://third.example/v1",
-      headers: { Authorization: "Bearer new-token" },
-    });
-    expect(isEncrypted(store.get("a")!.headers.Authorization!)).toBe(true);
-    expect(store.get("a")!.headers.Authorization).not.toContain("old-token");
-    sendAgentMessageMock.mockClear();
-  });
-
-  it("returns { ok: false } when the dispatch-time SSRF check rejects the URL", async () => {
-    const { repo } = makeAgentRepo([
-      {
-        name: "evil",
-        url: "http://agent.internal/v1",
-        description: "",
-        headers: {},
-        createdAt: NOW,
-        updatedAt: NOW,
-      },
-    ]);
-    const useCases = createAgentUseCases(repo);
-
-    const result = await useCases.sendMessage("evil", "hello");
-    expect(result).toMatchObject({ ok: false });
-    expect(sendAgentMessageMock).not.toHaveBeenCalled();
-  });
-
-  it("rejects a missing agent with NotFoundError (404)", async () => {
-    const useCases = createAgentUseCases(makeAgentRepo().repo);
-    await expect(useCases.sendMessage("nope", "hello")).rejects.toBeInstanceOf(NotFoundError);
   });
 });

@@ -122,7 +122,6 @@ export const keys = {
 
   skill: (name: string) => ({ PK: `SKILL#${name}`, SK: "META" }),
   mcp: (name: string) => ({ PK: `MCP#${name}`, SK: "META" }),
-  externalAgent: (name: string) => ({ PK: `AGENT#${name}`, SK: "META" }),
   /** An installed Agent Plugins package. The name may contain periods — inert in a key. */
   plugin: (name: string) => ({ PK: `PLUGIN#${name}`, SK: "META" }),
   /** The last plugins-sync report for one source repo, and the sync's lease. */
@@ -349,6 +348,6 @@ export const keys = {
   traceProjectPartition: (projectName: string) => `TRACEPROJECT#${projectName}`,
 
   typePartition: (
-    entityType: "PROJECT" | "SKILL" | "MCP" | "AGENT" | "PLUGIN" | "SCHEDULE",
+    entityType: "PROJECT" | "SKILL" | "MCP" | "PLUGIN" | "SCHEDULE",
   ) => `TYPE#${entityType}`,
 } as const;

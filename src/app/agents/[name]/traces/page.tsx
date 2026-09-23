@@ -72,7 +72,7 @@ export default function TracesPage() {
                   <div>
                     <Anchor
                       component={Link}
-                      href={`/projects/${name}/traces/${trace.traceId}`}
+                      href={`/agents/${name}/traces/${trace.traceId}`}
                       ff="monospace"
                       fz="sm"
                     >{trace.traceId.slice(0, 8)}</Anchor>

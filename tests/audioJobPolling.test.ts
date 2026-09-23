@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AudioJobView } from "@/application/audio/audioJobUseCases";
-import { loadActiveAudioJobs, MAX_CONCURRENT_AUDIO_JOB_READS, mergeAudioJobUpdates } from "@/app/projects/[name]/audio/jobPolling";
+import { loadActiveAudioJobs, MAX_CONCURRENT_AUDIO_JOB_READS, mergeAudioJobUpdates } from "@/app/agents/[name]/audio/jobPolling";
 
 const job = (id: string, status: AudioJobView["status"] = "running", revision = 1) =>
   ({ id, status, revision, updatedAt: "2026-09-09T00:00:00Z" }) as AudioJobView;

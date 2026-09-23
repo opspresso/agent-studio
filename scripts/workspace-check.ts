@@ -26,7 +26,7 @@ export async function checkWorkspaces(): Promise<void> {
     idleTtlSeconds: 3600, policy: () => ({ projectName, runtimes: ["command"], checks: [], deploymentWorkflows: [] }) });
   try {
     await projects.create({ name: projectName, displayName: "Workspace integration", description: "",
-      ownerEmail: owner, projectType: "agent", createdAt: now, updatedAt: now });
+      ownerEmail: owner, createdAt: now, updatedAt: now });
     await chats.create({ chatId, projectName, title: "Workspace integration", ownerEmail: owner, createdAt: now, updatedAt: now });
     await chats.create({ chatId: sourceChatId, projectName, title: "Agent source", ownerEmail: owner, createdAt: now, updatedAt: now });
     const starts = await Promise.allSettled(Array.from({ length: 8 }, (_, index) => useCases.startForChat({ projectName, runtime: "command",

@@ -96,7 +96,7 @@ export function TraceContent({ trace }: { trace: Trace }) {
                     {nested && (
                       <Anchor
                         component={Link}
-                        href={`/projects/${nested.agent}/traces/${nested.traceId}`}
+                        href={`/agents/${nested.agent}/traces/${nested.traceId}`}
                         fz="xs"
                         ml="xs"
                       >

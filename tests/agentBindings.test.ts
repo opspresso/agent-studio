@@ -8,9 +8,9 @@ import { FakeChannel } from "./fakeChannel";
 
 function fixture(projectOverrides: Partial<Project> = {}, versionOverrides: Partial<AgentConfiguration> = {}) {
   const now = "2026-09-12T00:00:00Z";
-  const project: Project = { name: "child", displayName: "Child", description: "Specialist", projectType: "agent", ownerEmail: "owner@example.com",  createdAt: now, updatedAt: now, ...projectOverrides };
+  const project: Project = { name: "child", displayName: "Child", description: "Specialist", ownerEmail: "owner@example.com",  createdAt: now, updatedAt: now, ...projectOverrides };
   const configuration: AgentConfiguration = { projectName: "child",  systemPrompt: "Child instructions",  model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [],  ...versionOverrides };
-  const parent: AgentConfiguration = { ...configuration, projectName: "parent", subagentList: [{ name: "child", type: "local" }] };
+  const parent: AgentConfiguration = { ...configuration, projectName: "parent", subagentList: [{ name: "child" }] };
   project.configuration = configuration;
   if ("configuration" in projectOverrides) project.configuration = projectOverrides.configuration;
   const projects = { get: vi.fn(async () => project) };
@@ -18,7 +18,6 @@ function fixture(projectOverrides: Partial<Project> = {}, versionOverrides: Part
     createToolSchemaValidator,
     channel: new FakeChannel([]), projects,
     skills: { get: async () => null, describe: async () => [], list: async () => [] },
-    externalAgents: { get: async () => null },
     now: () => new Date(now),
   } as unknown as ExecutionDeps;
   const origin: RunOrigin = { ancestry: ["parent"], actor: { kind: "user", id: "reader@example.com" }, caller: { displayName: "Reader" } };
@@ -88,7 +87,7 @@ describe("Studio prepares native SDK agent bindings", () => {
   });
 
   it("clamps a specialist's SDK turn limit to its caller's remaining allowance", async () => {
-    const f = fixture({ projectType: "agent" }, { maxTurn: 30 });
+    const f = fixture({ }, { maxTurn: 30 });
     const prepared = await f.prepare();
     expect(prepared).toMatchObject({ kind: "agent", input: { maxTurn: 7, canDispatch: false } });
     if (prepared.kind === "agent") await prepared.close();

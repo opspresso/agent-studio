@@ -57,7 +57,6 @@ function projectFixture(name: string): Project {
     name,
     displayName: name,
     description: "",
-    projectType: "agent",
     ownerEmail: "owner@example.com",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -95,7 +94,6 @@ function depsFixture(
     versions: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => server, list: reject, put: reject, delete: reject },
-    externalAgents: { get: reject, list: reject, put: reject, delete: reject },
     usage: {
       record: async (_delta: UsageDelta) => {},
       getDay: async () => null,

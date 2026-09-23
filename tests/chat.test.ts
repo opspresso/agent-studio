@@ -809,7 +809,6 @@ describe("chat access to a private project", () => {
         name: "p1",
         displayName: "P1",
         description: "",
-        projectType: "agent",
         ownerEmail: "someone-else@x.com",
         visibility: "private",
         memberEmails: ["invited@x.com"],
@@ -868,7 +867,6 @@ describe("chat image attachments", () => {
         name: "p1",
         displayName: "P1",
         description: "",
-        projectType: "agent",
         ownerEmail: "owner@x.com",
 
         createdAt: "2026-01-01T00:00:00.000Z",
@@ -1371,7 +1369,6 @@ describe("attached documents", () => {
         name: "agent",
         displayName: "Agent",
         description: "",
-        projectType: "agent",
         ownerEmail: "owner@x.com",
 
         createdAt: "2026-01-01T00:00:00.000Z",

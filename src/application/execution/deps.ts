@@ -8,8 +8,6 @@ import type { FileToolDeps } from "@/application/document/fileTool";
  */
 
 import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
-import type { ExternalAgentRepository } from "@/domain/agent/repository";
-import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import type { ModelProvider } from "@openai/agents";
 import type { ToolSchemaValidator } from "@/domain/llm/toolSchema";
 import type { ChatMessageInput, EngineParameters, McpToolResult } from "@/domain/llm/types";
@@ -46,7 +44,6 @@ export interface ExecutionDeps extends RunBracketDeps {
   projects: ProjectRepository;
   skills: SkillRepository;
   mcps: McpRepository;
-  externalAgents: ExternalAgentRepository;
   usage: UsageRepository;
   /** LLM channel — wired by the composition root; tests inject a fake. */
   channel: ModelProvider;
@@ -87,8 +84,6 @@ export interface ExecutionDeps extends RunBracketDeps {
    * same way, for the same reason.
    */
   slackWorkspace: (project: Project) => SlackWorkspaceReader | null;
-  /** External-agent dispatch — wired by the composition root; tests inject a fake. */
-  remoteAgents: RemoteAgentDispatcher;
   /** MCP tool sessions — wired by the composition root; tests inject a fake. */
   mcpSessions: McpSessionFactory;
   /** Per-project OAuth for registry servers that require it. */

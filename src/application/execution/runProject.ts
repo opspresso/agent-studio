@@ -263,7 +263,7 @@ export async function* executeAgent(
     // run's own opt-in decides nothing for the project it transfers to.
     ...(input.caller ? { caller: input.caller } : {}),
     // And the conversation, for the same reason: a child is answering in the
-    // same thread as its parent, and a remote agent it hands off to continues
+    // same thread as its parent, and a child Agent it hands off to continues
     // that thread's context rather than opening one per hop.
     ...(input.conversation ? { conversation: input.conversation } : {}),
   };

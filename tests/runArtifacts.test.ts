@@ -261,7 +261,7 @@ describe("captureRunArtifacts", () => {
   });
 
   it("leaves the model out when the producer could not name one", async () => {
-    // An MCP tool's picture and a remote agent's arrive with no model at all.
+    // An MCP tool's picture can arrive with no model attribution.
     // Empty is the true answer; a fallback would be a guess presented as a fact.
     const storage = fakeStorage();
     const recorder = createArtifactRecorder(storage, CONTEXT);

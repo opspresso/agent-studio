@@ -20,7 +20,7 @@ const getWorkspaceProjectPolicy = api.getPolicy;
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(now); fake.rows.clear();
   configuration.parameters.workspaceTools = true;
-  fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", projectType: "agent", ownerEmail: owner,
+  fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", ownerEmail: owner,
     configuration, visibility: "public", createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });

@@ -2,7 +2,7 @@
  * What the capability catalog holds, and how an entry is addressed and read.
  *
  * The catalog is one global index over everything a run could reach — every
- * skill, every MCP server and the tools it offers, every external agent. It is
+ * skill and every MCP server and the tools it offers. It is
  * not per project: which of them a given run may use is decided at dispatch,
  * from the Agent's bindings and this deployment's connections, and an index
  * that had already made that decision would have to be rebuilt whenever a
@@ -15,7 +15,7 @@
  * description and nowhere else — while `mcpServer` is what an Agent can
  * actually bind, and the only entry a server that refused discovery gets.
  */
-export type CapabilityKind = "skill" | "mcpServer" | "mcpTool" | "agent";
+export type CapabilityKind = "skill" | "mcpServer" | "mcpTool";
 
 /**
  * The similarity below which nothing is relevant, whatever the rest of the

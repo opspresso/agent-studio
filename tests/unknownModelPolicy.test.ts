@@ -27,7 +27,6 @@ const project: Project = {
   name: "p",
   displayName: "P",
   description: "",
-  projectType: "agent",
   ownerEmail: "owner@example.com",
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
@@ -178,8 +177,8 @@ describe("the run bracket enforces it", () => {
 });
 
 describe("subagent preparation enforces model policy", () => {
-  const child: Project = { ...project, name: "child", projectType: "agent" };
-  const parent = configuration({ projectName: "parent", subagentList: [{ name: "child", type: "local" }] });
+  const child: Project = { ...project, name: "child" };
+  const parent = configuration({ projectName: "parent", subagentList: [{ name: "child" }] });
   function prepare(policy: UnknownModelPolicy | undefined, model: string) {
     const deps = {
       projects: withConfigurations({ get: async () => child }, ({ get: async () => configuration({ projectName: "child", model }) }).get),

@@ -95,7 +95,7 @@ export default function SettingsPage() {
     setError(null);
     try {
       await deleteProject(name);
-      router.push("/projects");
+      router.push("/agents");
     } catch (err) {
       setError(reportError(err, "Failed to delete"));
       setDeleting(false);
@@ -141,7 +141,7 @@ export default function SettingsPage() {
             </Alert>
           )}
           <TextInput
-            label={t("projects.displayName")}
+            label={t("agents.displayName")}
             value={displayName}
             onChange={(e) => setDisplayName(e.currentTarget.value)}
           />
@@ -152,14 +152,14 @@ export default function SettingsPage() {
             autosize
             minRows={4}
             maxRows={20}
-            description={t("projects.descriptionHint")}
+            description={t("agents.descriptionHint")}
             inputWrapperOrder={["label", "input", "description", "error"]}
           />
           <TextInput
-            label={t("projects.departmentCode")}
+            label={t("agents.departmentCode")}
             value={departmentCode}
             onChange={(e) => setDepartmentCode(e.currentTarget.value)}
-            description={t("projects.departmentHint")}
+            description={t("agents.departmentHint")}
           />
           <Group gap="sm">
             <Button type="submit" loading={saving}>

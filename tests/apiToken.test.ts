@@ -45,7 +45,6 @@ function project(): Project {
     name: "my-bot",
     displayName: "My Bot",
     description: "",
-    projectType: "agent",
     ownerEmail: OWNER,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",

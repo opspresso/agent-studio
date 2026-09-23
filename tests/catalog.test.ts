@@ -77,7 +77,6 @@ function indexDeps(overrides: Partial<CatalogIndexDeps> = {}): CatalogIndexDeps 
   return {
     skills: { list: async () => [] },
     mcps: { list: async () => [] },
-    externalAgents: { list: async () => [] },
     probeMcpTools: async () => [],
     embeddings: countingEmbeddings,
     catalog: fakeStore().store,
@@ -199,7 +198,7 @@ describe("reindexCatalog", () => {
     expect(report).toEqual({ indexed: 0, removed: 1, undiscovered: [] });
   });
 
-  it.each(["skills", "mcps", "externalAgents"] as const)(
+  it.each(["skills", "mcps"] as const)(
     "preserves the index when the %s registry cannot be read",
     async (registry) => {
       const recorded = fakeStore(["skill#last"]);
@@ -523,12 +522,12 @@ describe("searchCapabilities", () => {
     const rerank = vi.fn(async () => reranked([0.8, 0.9]));
     const deps = searchDeps([
       [match("skill#review", 0.8, { name: "review", description: "Review code" })],
-      [match("agent#release", 0.7, { name: "release", description: "Release software" })],
+      [match("mcpServer#release", 0.7, { name: "release", description: "Release software" })],
     ]);
     const result = await searchCapabilitiesByKind(
       { ...deps, reranker: { rerank } },
       ["review and release"],
-      [{ kind: "skill", limit: 5 }, { kind: "agent", limit: 3 }],
+      [{ kind: "skill", limit: 5 }, { kind: "mcpServer", limit: 3 }],
     );
 
     expect(rerank).toHaveBeenCalledOnce();

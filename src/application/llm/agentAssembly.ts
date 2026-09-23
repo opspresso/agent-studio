@@ -122,7 +122,6 @@ export interface SubagentInfo {
   signature?: string;
   name: string;
   description: string;
-  type: "local" | "remote";
   kind?: "agent" | "action";
 }
 
@@ -332,7 +331,7 @@ function mcpSystemPromptAddition(servers: McpServerInfo[]): string {
  */
 function subagentSystemPromptAddition(subagents: SubagentInfo[], withDispatch: boolean, offeredNames?: readonly string[]): string {
   const rows = subagents.map((agent) => {
-    const action = agent.type === "remote" || agent.kind === "action";
+    const action = agent.kind === "action";
     const tools = [
       ...(!action ? [agentToolName(agent.name, "handoff")] : []),
       ...(action || withDispatch ? [agentToolName(agent.name, "delegate")] : []),
@@ -376,7 +375,7 @@ function skillToolDef(skills: SkillInfo[]): ChannelToolDef {
 export interface DelegationTool {
   name: string;
   agentName: string;
-  mode: "handoff" | "delegate" | "external";
+  mode: "handoff" | "delegate";
 }
 
 export const AGENT_TASK_SCHEMA = {
@@ -391,8 +390,8 @@ export const AGENT_TASK_SCHEMA = {
 
 function delegationDefinitions(subagents: SubagentInfo[], canDispatch: boolean): DelegationTool[] {
   return subagents.flatMap((agent) => {
-    const action = agent.type === "remote" || agent.kind === "action";
-    const modes: DelegationTool["mode"][] = action ? ["external"] : canDispatch ? ["handoff", "delegate"] : ["handoff"];
+    const action = agent.kind === "action";
+    const modes: DelegationTool["mode"][] = action ? ["delegate"] : canDispatch ? ["handoff", "delegate"] : ["handoff"];
     return modes.map((mode) => ({ name: agentToolName(agent.name, mode), agentName: agent.name, mode }));
   });
 }
@@ -431,7 +430,7 @@ function imageSystemPromptAddition(
   }
   if (uses.canTransfer) {
     howTo.push(
-      "Pass ids in image_ids on a delegate or handoff tool to include the real picture. Remote agents accept text only.",
+      "Pass ids in image_ids on a delegate or handoff tool to include the real picture.",
     );
   }
   return ["## Available Images", "", ...howTo.flatMap((line) => [line, ""]), ...table].join("\n");
@@ -1014,7 +1013,7 @@ export function imagePromptUses(
 ): { canEdit: boolean; canTransfer: boolean } {
   return {
     canEdit: Boolean(deps.editImage),
-    canTransfer: subagents.some((agent) => agent.type === "local") && Boolean(deps.canDelegate),
+    canTransfer: subagents.length > 0 && Boolean(deps.canDelegate),
   };
 }
 
@@ -1129,7 +1128,7 @@ export function assembleAgentRun(
   const availableAgents = subagents.filter((agent) => offeredDelegations.some((entry) => entry.agentName === agent.name));
   const visibleServers = (input.mcpServers ?? []).map((server) => ({ ...server, toolNames: server.toolNames.filter((name) => offeredNames.has(name)) })).filter((server) => server.toolNames.length > 0);
   const availableEdit = canEdit && builtinNames.has(EDIT_IMAGE_TOOL_NAME);
-  const availableTransfer = canTransfer && availableAgents.some((agent) => agent.type === "local");
+  const availableTransfer = canTransfer && availableAgents.length > 0;
   const systemPrompt = buildAgentSystemPrompt({
     ...(input.systemPrompt !== undefined ? { base: input.systemPrompt } : {}),
     skills: builtinNames.has(SKILL_TOOL_NAME) ? skills : [],

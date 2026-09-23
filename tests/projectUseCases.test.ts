@@ -26,7 +26,7 @@ setAdminCheck(adminListCheck);
 beforeEach(() => { admins.emails = []; });
 
 function projectFixture(name: string, overrides: Partial<Project> = {}): Project {
-  return { name, displayName: name, description: "", projectType: "agent", ownerEmail: OWNER,
+  return { name, displayName: name, description: "", ownerEmail: OWNER,
     createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", ...overrides };
 }
 function configurationInput(): AgentConfigurationInput {
@@ -53,12 +53,11 @@ const settingsFixture = (initial: AgentConfiguration[] = []): SettingsFixture =>
 const ALL_REFS_EXIST: ConfigurationRefRepos = {
   skills: { get: async name => ({ name }) as never },
   mcps: { get: async name => ({ name, url: `https://${name}.example/mcp` }) as never },
-  externalAgents: { get: async name => ({ name }) as never },
   projects: { get: async name => ({ name }) as never },
 };
 const NO_REFS_EXIST: ConfigurationRefRepos = {
   skills: { get: async () => null }, mcps: { get: async () => null },
-  externalAgents: { get: async () => null }, projects: { get: async () => null },
+  projects: { get: async () => null },
 };
 
 async function writeSettings(settings: SettingsFixture, projects: ProjectRepository, name: string,
@@ -110,7 +109,7 @@ describe("model type validation", () => {
         { ...configurationInput(), model: embedding },
         OWNER,
       ),
-    ).rejects.toThrow(/Model type does not support agent projects/);
+    ).rejects.toThrow(/Model type does not support Agents/);
   });
 
   it("rejects an embedding model as the fallback model", async () => {
@@ -122,14 +121,14 @@ describe("model type validation", () => {
         { ...configurationInput(), fallbackModel: embedding },
         OWNER,
       ),
-    ).rejects.toThrow(/Model type does not support agent projects/);
+    ).rejects.toThrow(/Model type does not support Agents/);
   });
 
   it("reports a text model without tools as an agent capability mismatch", async () => {
     await expect(
       writeSettings(
         settingsFixture(),
-        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        makeProjectRepo([projectFixture("p", { })]),
         "p",
         { ...configurationInput(), model: "openai/o1-pro" },
         OWNER,
@@ -139,17 +138,17 @@ describe("model type validation", () => {
 });
 
 describe("configuration reference validation", () => {
-  it("rejects local and remote agents with the same model-visible name", async () => {
+  it("rejects duplicate subagent names", async () => {
     await expect(
       writeSettings(
         settingsFixture(),
-        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        makeProjectRepo([projectFixture("p", { })]),
         "p",
         {
           ...configurationInput(),
           subagentList: [
-            { name: "shared", type: "local" },
-            { name: "shared", type: "remote" },
+            { name: "shared" },
+            { name: "shared" },
           ],
         },
         OWNER,
@@ -164,7 +163,7 @@ describe("configuration reference validation", () => {
     await expect(
       writeSettings(
         settingsFixture(),
-        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        makeProjectRepo([projectFixture("p", { })]),
         "p",
         { ...configurationInput(), mcpList: [{ name: "github" }, { name: "github" }] },
         OWNER,
@@ -176,7 +175,7 @@ describe("configuration reference validation", () => {
     await expect(
       writeSettings(
         settingsFixture(),
-        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        makeProjectRepo([projectFixture("p", { })]),
         "p",
         { ...configurationInput(), skillList: ["review", "review"] },
         OWNER,
@@ -188,7 +187,7 @@ describe("configuration reference validation", () => {
     await expect(
       writeSettings(
         settingsFixture(),
-        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        makeProjectRepo([projectFixture("p", { })]),
         "p",
         { ...configurationInput(), mcpList: [{ name: "ghost-mcp" }] },
         OWNER,
@@ -199,7 +198,7 @@ describe("configuration reference validation", () => {
     await expect(
       writeSettings(
         settingsFixture(),
-        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        makeProjectRepo([projectFixture("p", { })]),
         "p",
         { ...configurationInput(), skillList: ["ghost-skill"] },
         OWNER,
@@ -210,9 +209,9 @@ describe("configuration reference validation", () => {
     await expect(
       writeSettings(
         settingsFixture(),
-        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        makeProjectRepo([projectFixture("p", { })]),
         "p",
-        { ...configurationInput(), subagentList: [{ name: "ghost-agent", type: "remote" }] },
+        { ...configurationInput(), subagentList: [{ name: "ghost-agent" }] },
         OWNER,
         NO_REFS_EXIST,
       ),
@@ -223,7 +222,7 @@ describe("configuration reference validation", () => {
     await expect(
       writeSettings(
         settingsFixture(),
-        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        makeProjectRepo([projectFixture("p", { })]),
         "p",
         { ...configurationInput(), mcpList: [{ name: "m1" }], skillList: ["s1"] },
         OWNER,
@@ -238,7 +237,7 @@ describe("configuration reference validation", () => {
     const existing = { ...configurationFixture("p"), mcpList: [{ name: "deleted-mcp" }] };
     const updated = await patchSettings(
       settingsFixture([existing]),
-      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+      makeProjectRepo([projectFixture("p", { })]),
       "p",
       { systemPrompt: "edited" },
       OWNER,
@@ -253,7 +252,7 @@ describe("configuration reference validation", () => {
     await expect(
       patchSettings(
         settingsFixture([existing]),
-        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        makeProjectRepo([projectFixture("p", { })]),
         "p",
         { mcpList: [{ name: "deleted-mcp" }, { name: "ghost-mcp" }] },
         OWNER,
@@ -265,13 +264,13 @@ describe("configuration reference validation", () => {
   it("accepts references that resolve", async () => {
     const created = await writeSettings(
       settingsFixture(),
-      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+      makeProjectRepo([projectFixture("p", { })]),
       "p",
       {
         ...configurationInput(),
         mcpList: [{ name: "real-mcp" }],
         skillList: ["real-skill"],
-        subagentList: [{ name: "real-project", type: "local" }],
+        subagentList: [{ name: "real-project" }],
       },
       OWNER,
     );
@@ -285,7 +284,7 @@ describe("MCP binding header overrides", () => {
   ];
 
   it("preserves endpoint headers when updating only a model and tool selection, and clears them explicitly", async () => {
-    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    const projects = makeProjectRepo([projectFixture("p", { })]);
     const settings = settingsFixture();
     const created = await writeSettings(settings, projects, "p", {
       ...configurationInput(), mcpList: bindingWith({ "X-MCP-Toolsets": "repos,actions" }),
@@ -307,7 +306,7 @@ describe("MCP binding header overrides", () => {
   it("encrypts override values at rest and never stores plaintext", async () => {
     const created = await writeSettings(
       settingsFixture(),
-      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+      makeProjectRepo([projectFixture("p", { })]),
       "p",
       { ...configurationInput(), mcpList: bindingWith({ Authorization: "Bearer project-secret" }) },
       OWNER,
@@ -328,7 +327,7 @@ describe("MCP binding header overrides", () => {
   it("masks override values on the API view but keeps removals visible", async () => {
     const created = await writeSettings(
       settingsFixture(),
-      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+      makeProjectRepo([projectFixture("p", { })]),
       "p",
       {
         ...configurationInput(),
@@ -349,7 +348,7 @@ describe("MCP binding header overrides", () => {
   });
 
   it("keeps the stored secret when the masked view is submitted back", async () => {
-    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    const projects = makeProjectRepo([projectFixture("p", { })]);
     const settings = settingsFixture();
     const created = await writeSettings(
       settings,
@@ -373,7 +372,7 @@ describe("MCP binding header overrides", () => {
   });
 
   it("keeps the stable Agent credential context for preview", async () => {
-    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    const projects = makeProjectRepo([projectFixture("p", { })]);
     const settings = settingsFixture();
     const created = await writeSettings(
       settings,
@@ -408,7 +407,7 @@ describe("MCP binding header overrides", () => {
 
 
   it("drops preserved secrets when the registry endpoint moved", async () => {
-    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    const projects = makeProjectRepo([projectFixture("p", { })]);
     const settings = settingsFixture();
     const created = await writeSettings(
       settings,
@@ -444,7 +443,7 @@ describe("MCP binding header overrides", () => {
   it("drops a masked value under a header with no stored counterpart", async () => {
     const created = await writeSettings(
       settingsFixture(),
-      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+      makeProjectRepo([projectFixture("p", { })]),
       "p",
       { ...configurationInput(), mcpList: bindingWith({ "X-New": "******" }) },
       OWNER,
@@ -456,7 +455,7 @@ describe("MCP binding header overrides", () => {
   it("stores no headers field when a binding has no overrides", async () => {
     const created = await writeSettings(
       settingsFixture(),
-      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+      makeProjectRepo([projectFixture("p", { })]),
       "p",
       { ...configurationInput(), mcpList: [{ name: "shared-mcp" }] },
       OWNER,
@@ -465,7 +464,7 @@ describe("MCP binding header overrides", () => {
   });
 
   it("refuses a non-owner editing another project's overrides", async () => {
-    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    const projects = makeProjectRepo([projectFixture("p", { })]);
     const settings = settingsFixture([configurationFixture("p")]);
 
     await expect(
@@ -780,7 +779,6 @@ describe("createProject race", () => {
         name: "p",
         displayName: "P",
         description: "",
-        projectType: "agent",
         ownerEmail: OWNER,
       }),
     ).rejects.toBeInstanceOf(ConflictError);
@@ -794,7 +792,7 @@ describe("model capability validation", () => {
     await expect(
       writeSettings(
         settingsFixture(),
-        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        makeProjectRepo([projectFixture("p", { })]),
         "p",
         { ...configurationInput(), model: "xai/grok-imagine-image" },
         OWNER,
@@ -855,7 +853,7 @@ describe("model capability validation", () => {
     try {
       const created = await writeSettings(
         settingsFixture(),
-        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        makeProjectRepo([projectFixture("p", { })]),
         "p",
         { ...configurationInput(), model: "custom/next-gen" },
         OWNER,
@@ -1036,7 +1034,7 @@ describe("an Agent's MCP tool narrowing survives a round trip", () => {
 
   it("is stored by create and comes back on the view", async () => {
     const settings = settingsFixture();
-    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    const projects = makeProjectRepo([projectFixture("p", { })]);
 
     const created = await writeSettings(
       settings,
@@ -1052,7 +1050,7 @@ describe("an Agent's MCP tool narrowing survives a round trip", () => {
 
   it("is kept by update", async () => {
     const settings = settingsFixture();
-    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    const projects = makeProjectRepo([projectFixture("p", { })]);
     await writeSettings(
       settings,
       projects,
@@ -1074,7 +1072,7 @@ describe("an Agent's MCP tool narrowing survives a round trip", () => {
 
   it("survives alongside a header override, and masking does not eat it", async () => {
     const settings = settingsFixture();
-    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    const projects = makeProjectRepo([projectFixture("p", { })]);
 
     const created = await writeSettings(
       settings,

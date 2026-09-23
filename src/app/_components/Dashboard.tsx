@@ -9,7 +9,7 @@ import {
   IconCoins,
   IconLayersIntersect,
 } from "@tabler/icons-react";
-import type { SanitizedProject } from "@/app/projects/lib/api";
+import type { SanitizedProject } from "@/app/agents/lib/api";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { SectionHeading } from "./SectionHeading";
 import { CardHeading } from "./CardHeading";

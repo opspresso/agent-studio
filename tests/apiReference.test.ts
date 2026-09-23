@@ -5,14 +5,13 @@ import {
   PLACEHOLDERS,
   type ApiEndpoint,
   type ApiReferenceContext,
-} from "@/app/projects/[name]/api-reference/endpoints";
+} from "@/app/agents/[name]/api-reference/endpoints";
 
 const ORIGIN = "https://studio.example.com";
 
 function ctx(overrides: Partial<ApiReferenceContext> = {}): ApiReferenceContext {
   return {
     projectName: "my-bot",
-    projectType: "agent",
     configured: true,
     origin: ORIGIN,
     slack: null,
@@ -33,7 +32,7 @@ function codeOf(endpoint: ApiEndpoint, language: string): string | undefined {
 
 describe("buildApiReference — endpoint selection by project type", () => {
   it("agent project exposes predict, chat/completions, and agent", () => {
-    expect(ids({ projectType: "agent" })).toEqual(["predict", "chat-completions", "agent"]);
+    expect(ids({ })).toEqual(["predict", "chat-completions", "agent"]);
   });
 
 
@@ -55,7 +54,7 @@ describe("buildApiReference — current configuration gating", () => {
 
 describe("buildApiReference — request/response field specs", () => {
   it("documents predict request and response fields", () => {
-    const predict = buildApiReference(ctx({ projectType: "agent" })).find((e) => e.id === "predict");
+    const predict = buildApiReference(ctx({ })).find((e) => e.id === "predict");
     expect(predict?.requestFields?.map((f) => f.name)).toEqual(["messages", "stream", "documents"]);
     expect(predict?.responseFields?.map((f) => f.name)).toEqual([
       "result",

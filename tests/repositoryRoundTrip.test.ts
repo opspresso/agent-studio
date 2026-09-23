@@ -10,7 +10,6 @@ const store = (await import("@/infrastructure/db/store")) as unknown as FakeStor
 import type { ChatMessage } from "@/domain/chat/types";
 import { keys } from "@/infrastructure/db/keys";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
-import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
@@ -38,7 +37,6 @@ function seedProject(name: string, over: Record<string, unknown> = {}): void {
       name,
       displayName: name,
       description: "",
-      projectType: "agent",
       ownerEmail: "owner@example.com",
       createdAt: NOW,
       updatedAt: NOW,
@@ -147,7 +145,6 @@ describe("Project atomic writes", () => {
     name: "atomic",
     displayName: "Atomic",
     description: "",
-    projectType: "agent" as const,
     ownerEmail: "owner@example.com",
     createdAt: NOW,
     updatedAt: "2026-01-01T00:00:01.000Z",
@@ -177,7 +174,6 @@ describe("Project atomic writes", () => {
         name: "corrupt-visibility",
         displayName: "Corrupt",
         description: "",
-        projectType: "agent",
         ownerEmail: "owner@example.com",
         visibility: "privte",
         createdAt: NOW,
@@ -370,7 +366,7 @@ describe("current configuration MCP normalization", () => {
   function writeRaw(mcpList: unknown): void {
     store.seed([
       {
-        ...legacyKey, entityType: "PROJECT", name: "legacy", displayName: "Legacy", projectType: "agent", ownerEmail: "owner@example.test",
+        ...legacyKey, entityType: "PROJECT", name: "legacy", displayName: "Legacy", ownerEmail: "owner@example.test",
         configuration: {
           projectName: "legacy", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false },
           mcpList, skillList: [], subagentList: [],
@@ -512,24 +508,6 @@ describe("mcpRepository round-trip", () => {
     ]);
     const loaded = await mcpRepository.get("legacy");
     expect(loaded?.headers).toEqual({});
-  });
-});
-
-describe("externalAgentRepository round-trip", () => {
-  it("preserves headers through put + get", async () => {
-    await externalAgentRepository.put({
-      name: "a",
-      url: "https://agent.example/v1",
-      description: "desc",
-      headers: { "X-Api-Key": "enc:v1:ciphertext" },
-      createdAt: NOW,
-      updatedAt: NOW,
-    });
-    const loaded = await externalAgentRepository.get("a");
-    expect(loaded).toMatchObject({
-      name: "a",
-      headers: { "X-Api-Key": "enc:v1:ciphertext" },
-    });
   });
 });
 
@@ -794,7 +772,6 @@ describe("traceRepository round-trip", () => {
     const trace = {
       traceId: "trace-1",
       projectName: "p",
-      projectType: "agent",
       status: "completed" as const,
       spans: [],
       startedAt: NOW,

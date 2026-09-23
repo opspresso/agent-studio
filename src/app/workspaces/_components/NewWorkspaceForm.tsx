@@ -91,7 +91,7 @@ export function NewWorkspaceForm() {
       data={[...new Set([...(selected?.runtimes ?? []), runtime])].map(value => ({ value, disabled: !selected?.runtimes.includes(value), label: value === "command" ? t("workspace.command") : value === "codex" ? "Codex" : value === "claude" ? "Claude" : "OpenCode" }))} />
     <Switch label={t("workspace.useRepository")} checked={coding} onChange={event => setCoding(event.currentTarget.checked)} disabled={busy || !selected ||
       (!selected.repositories.length && selected.mode !== "all" && selected.mode !== "new" && !(selected.mode === "owners" && selected.repositoryOwners.length)) || !options?.gitEnabled} />
-    {project && <Anchor size="sm" href={`/projects/${encodeURIComponent(project)}/workspace`} target="_blank" rel="noreferrer">{t("workspace.policy.manage")}</Anchor>}
+    {project && <Anchor size="sm" href={`/agents/${encodeURIComponent(project)}/workspace`} target="_blank" rel="noreferrer">{t("workspace.policy.manage")}</Anchor>}
     {coding && <>
       {selected?.mode === "new" && <Text size="sm" c="dimmed">{t("workspace.policy.modeHint.new")}</Text>}
       {selected?.mode === "owners" && !!selected.repositoryOwners.length && <Text size="sm" c="dimmed">{t("workspace.allowedOwners", { owners: selected.repositoryOwners.join(", ") })}</Text>}

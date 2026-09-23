@@ -71,9 +71,6 @@ async function main() {
   const { listProjects } = await import("@/application/project/projectUseCases");
   const { skillRepository } = await import("@/infrastructure/db/repositories/skillRepository");
   const { mcpRepository } = await import("@/infrastructure/db/repositories/mcpRepository");
-  const { externalAgentRepository } = await import(
-    "@/infrastructure/db/repositories/externalAgentRepository"
-  );
   const { chatRepository } = await import("@/infrastructure/db/repositories/chatRepository");
   const { chatRunLogRepository } = await import(
     "@/infrastructure/db/repositories/chatRunLogRepository"
@@ -108,7 +105,6 @@ async function main() {
     "@/infrastructure/crypto/secretEncryption"
   );
   const {
-    externalAgentHeadersContext,
     mcpConnectionSecretContext,
     mcpHeadersContext,
     mcpOAuthStateContext,
@@ -258,7 +254,6 @@ async function main() {
       name: projectName,
       displayName: "Integration Project",
       description: "integration test",
-      projectType: "agent",
       ownerEmail: "it@example.com",
       createdAt: now,
       updatedAt: now,
@@ -392,9 +387,8 @@ async function main() {
     assert.equal(tierChange?.member.tier, "member");
     pass("member get/list/atomic tier update");
 
-    // ---------- mcp + external agent (encrypted headers) ----------
+    // ---------- MCP encrypted headers ----------
     const serverName = `it-mcp-${suffix}`;
-    const agentName = `it-agent-${suffix}`;
     const mcpHeaders = encryptHeaders(
       { Authorization: "Bearer secret-token" },
       mcpHeadersContext(serverName),
@@ -413,25 +407,7 @@ async function main() {
       "Bearer secret-token",
       "mcp header encryption round-trip",
     );
-    await externalAgentRepository.put({
-      name: agentName,
-      url: "http://localhost:9999/v1/chat/completions",
-      description: "external",
-      headers: encryptHeaders(
-        { Authorization: "Bearer secret-token" },
-        externalAgentHeadersContext(agentName),
-      ),
-      createdAt: now,
-      updatedAt: now,
-    });
-    const agent = await externalAgentRepository.get(agentName);
-    assert.ok(agent, "external agent get");
-    assert.equal(
-      decryptHeadersForOutbound(agent.headers, externalAgentHeadersContext(agentName)).Authorization,
-      "Bearer secret-token",
-      "external agent header encryption round-trip",
-    );
-    pass("mcp + external agent with encrypted headers");
+    pass("MCP encrypted headers");
 
     const discoveredAuth = {
       type: "oauth2" as const,
@@ -1650,7 +1626,6 @@ async function main() {
     // cleanup non-cascading fixtures
     await skillRepository.delete("integration-skill").catch(() => {});
     await mcpRepository.delete(`it-mcp-${suffix}`).catch(() => {});
-    await externalAgentRepository.delete(`it-agent-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-swept-${suffix}`).catch(() => {});
     await import("@/infrastructure/db/store")

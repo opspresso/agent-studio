@@ -21,22 +21,20 @@ import {
 import {
   IconArrowRight,
   IconBook2,
-  IconFolder,
+  IconRobot,
   IconMessageCircle,
   IconPlus,
-  IconRobot,
   IconSparkles,
   IconTool,
 } from "@tabler/icons-react";
 import { readJson } from "@/app/_lib/httpClient";
 import { recentProjects } from "@/app/_lib/overview";
 import type { Chat } from "@/domain/chat/types";
-import { listProjects, type SanitizedProject } from "@/app/projects/lib/api";
+import { listProjects, type SanitizedProject } from "@/app/agents/lib/api";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { tierAtLeast, tierMayCreateProjects, type MemberTier } from "@/domain/member/tiers";
 import { formatDate } from "@/shared/date";
-import { PROJECT_TYPE_COLOR } from "./badgeColors";
 import { OwnerLine } from "./OwnerLine";
 import { PageHeader } from "./PageHeader";
 import { Dashboard } from "./Dashboard";
@@ -56,7 +54,6 @@ const RECENT_CHATS = 7;
 const CATALOGS = [
   { key: "skills", href: "/skills", label: "nav.skills", url: "/api/skills", Icon: IconBook2 },
   { key: "tools", href: "/tools", label: "nav.tools", url: "/api/mcps", Icon: IconTool },
-  { key: "agents", href: "/agents", label: "nav.agents", url: "/api/agents", Icon: IconRobot },
 ] as const satisfies ReadonlyArray<{
   key: string;
   href: string;
@@ -188,7 +185,7 @@ export function Overview({
   return (
     <Stack gap={32}>
       <PageHeader title={firstName ? t("overview.welcome", { name: firstName }) : t("overview.welcomeAnon")} description={t("overview.lede")} Icon={IconSparkles}>
-          <Button component={Link} href={canCreateProjects ? "/projects?create=1" : "/projects"} leftSection={canCreateProjects ? <IconPlus size={16} /> : <IconFolder size={16} />}>
+          <Button component={Link} href={canCreateProjects ? "/agents?create=1" : "/agents"} leftSection={canCreateProjects ? <IconPlus size={16} /> : <IconRobot size={16} />}>
             {t(canCreateProjects ? "overview.newProject" : "overview.allProjects")}
           </Button>
           <Button
@@ -208,7 +205,7 @@ export function Overview({
           <Section
             title={t("overview.recentProjects")}
             description={t("overview.recentProjectsNote")}
-            href="/projects"
+            href="/agents"
             linkLabel={t("overview.allProjects")}
           >
             {!projectsLoaded && <RowSkeleton rows={3} />}
@@ -222,17 +219,11 @@ export function Overview({
             )}
             <Stack gap="sm">
               {recent.map((project) => (
-                <Card key={project.name} component={Link} href={`/projects/${project.name}`} padding="sm" className={classes.projectRow}>
+                <Card key={project.name} component={Link} href={`/agents/${project.name}`} padding="sm" className={classes.projectRow}>
                   <Group justify="space-between" gap="xs" wrap="nowrap">
                     <Text fw={500} truncate>
                       {project.displayName || project.name}
                     </Text>
-                    <Group gap={6} wrap="nowrap">
-
-                      <Badge color={PROJECT_TYPE_COLOR[project.projectType]}>
-                        {project.projectType}
-                      </Badge>
-                    </Group>
                   </Group>
                   <Text ff="monospace" fz="xs" c="dimmed" mt={2}>
                     {project.name}
@@ -281,10 +272,10 @@ export function Overview({
 
       <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
         <CountTile
-          href="/projects"
-          label={t("nav.projects")}
+          href="/agents"
+          label={t("nav.agents")}
           count={projects?.length}
-          Icon={IconFolder}
+          Icon={IconRobot}
         />
         {showCatalogs &&
           CATALOGS.map(({ key, href, label, Icon }) => (
@@ -307,7 +298,7 @@ function CountTile({
   label: string;
   /** Absent while loading, and after a failed read. */
   count?: number;
-  Icon: typeof IconFolder;
+  Icon: typeof IconRobot;
 }) {
   return (
     <Card component={Link} href={href} padding="md">
@@ -400,7 +391,7 @@ function GetStarted({ showCatalogs, canCreateProjects }: { showCatalogs: boolean
             {t("overview.getStartedBody")}
           </Text>
           <Group gap="xs" mt={4}>
-            <Button component={Link} href={canCreateProjects ? "/projects?create=1" : "/projects"} leftSection={canCreateProjects ? <IconPlus size={16} /> : <IconFolder size={16} />}>
+            <Button component={Link} href={canCreateProjects ? "/agents?create=1" : "/agents"} leftSection={canCreateProjects ? <IconPlus size={16} /> : <IconRobot size={16} />}>
               {t(canCreateProjects ? "overview.newProject" : "overview.allProjects")}
             </Button>
             {showCatalogs && (

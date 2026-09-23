@@ -74,10 +74,10 @@ describe("environment-selected sign-in providers", () => {
     vi.stubEnv("GOOGLE_CLIENT_SECRET", "google-secret");
     const html = renderToStaticMarkup(createElement(MantineProvider, {
       children: createElement(SignInButton, {
-        providers: config.authProviders, compact: true, callbackURL: "/projects?tab=mine",
+        providers: config.authProviders, compact: true, callbackURL: "/agents?tab=mine",
       }),
     }));
-    expect(html).toContain('href="/login?next=%2Fprojects%3Ftab%3Dmine"');
+    expect(html).toContain('href="/login?next=%2Fagents%3Ftab%3Dmine"');
     expect(html).not.toContain("Keycloak");
     expect(html).not.toContain("Google");
   });
@@ -93,11 +93,11 @@ describe("OIDC browser sign-in transport", () => {
     const fetch = vi.fn().mockResolvedValue(Response.json({ url: "https://sso.test/authorize", redirect: true }));
     vi.stubGlobal("fetch", fetch);
     const { signInWithOidc } = await import("@/lib/auth-client");
-    await signInWithOidc(provider, "/projects?tab=mine");
+    await signInWithOidc(provider, "/agents?tab=mine");
     expect(fetch).toHaveBeenCalledOnce();
     const [url, init] = fetch.mock.calls[0]!;
     expect(String(url)).toMatch(/\/api\/auth\/sign-in\/social$/);
-    expect(JSON.parse(init.body)).toEqual({ provider, callbackURL: "/projects?tab=mine" });
+    expect(JSON.parse(init.body)).toEqual({ provider, callbackURL: "/agents?tab=mine" });
   });
 
   it("reports a refused sign-in so the button can be retried", async () => {

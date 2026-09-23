@@ -8,7 +8,7 @@ import { assertProjectAccessible, assertProjectWritable } from "./projectUseCase
 import { persistProjectUpdate } from "./projectUpdate";
 import { resolveMcpBindings } from "./mcpBindingSettings";
 import {
-  assertModelSupports, assertProjectModelType, assertReferencesExist,
+  assertModelSupports, assertAgentModelType, assertReferencesExist,
   assertSubagentProjectsAccessible, assertUniqueReferences, assertValidImageModel,
   warnUnknownCatalogModel, type AgentConfigurationInput, type ConfigurationRefRepos,
 } from "./configurationPolicy";
@@ -67,8 +67,8 @@ export async function putAgentConfiguration(
     throw new ConflictError(`Project "${name}" was modified by another request`);
   }
   assertValidImageModel(input.parameters);
-  assertModelSupports(project, input.model, input.parameters);
-  if (input.fallbackModel) assertProjectModelType(project, input.fallbackModel);
+  assertModelSupports(input.model, input.parameters);
+  if (input.fallbackModel) assertAgentModelType(input.fallbackModel);
   warnUnknownCatalogModel(name, input.model);
   assertUniqueReferences(input);
   await assertReferencesExist(deps.refs, input, project.configuration);

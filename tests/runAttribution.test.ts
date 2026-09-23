@@ -131,7 +131,6 @@ describe("trace attribution", () => {
       { put: async (t: Trace) => void traces.push(t) } as never,
       {
         projectName: "p",
-        projectType: "agent",
         model: "m",
         messageCount: 1,
         ...(actor ? { actor } : {}),

@@ -15,7 +15,7 @@ import type { RunCaller } from "@/domain/execution/actor";
 
 const CALLER: RunCaller = { displayName: "Bruce", timezone: "Asia/Seoul" };
 const SKILLS = [{ name: "greeting", description: "How to greet" }];
-const SUBAGENTS: SubagentInfo[] = [{ name: "child", description: "A child", type: "local" }];
+const SUBAGENTS: SubagentInfo[] = [{ name: "child", description: "A child" }];
 
 /** A dep bag that can do everything, so a capability's absence is never the reason. */
 function fullDeps(overrides: Partial<AgentDeps> = {}): AgentDeps {

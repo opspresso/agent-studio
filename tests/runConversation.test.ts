@@ -127,7 +127,7 @@ describe("a trace records the conversation key", () => {
         written.push(trace);
       },
     } as unknown as TraceRepository;
-    const project = { name: "p", projectType: "agent" } as Project;
+    const project = { name: "p" } as Project;
     const configuration = { projectName: "p", model: "openai/gpt-4o", systemPrompt: "", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] } satisfies AgentConfiguration;
 
     await createTraceRecorder(traces, project, configuration, 1, {

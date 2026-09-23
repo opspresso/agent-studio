@@ -46,7 +46,7 @@ beforeEach(async () => {
       openPullRequest: vi.fn(async () => ({ ...pull })), merge: vi.fn(async () => "merged-sha"), dispatch: vi.fn(async () => ({ runId: 99 })) },
   };
   const at = now.toISOString();
-  fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", ownerEmail: owner, projectType: "agent", createdAt: at, updatedAt: at }]);
+  fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", ownerEmail: owner, createdAt: at, updatedAt: at }]);
   await chats.create({ chatId: "chat-1", projectName: "demo", title: "Task", ownerEmail: owner, createdAt: at, updatedAt: at });
   workspace = await createWorkspaceUseCases(deps).create({ chatId: "chat-1", projectName: "demo", title: "Coding", runtime: "codex", repository: "company/repo", baseBranch: "main" }, owner);
 });

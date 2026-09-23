@@ -1,6 +1,6 @@
 export const SKILL_TOOL_NAME = "Skill";
 /** Stable SDK function names, including projects whose names reach the 64-character cap. */
-export function agentToolName(name: string, mode: "handoff" | "delegate" | "external"): string {
+export function agentToolName(name: string, mode: "handoff" | "delegate"): string {
   const prefix = mode === "handoff" ? "handoff_" : "delegate_";
   const full = prefix + name;
   if (full.length <= 64) return full;

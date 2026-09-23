@@ -676,7 +676,7 @@ export function McpBindingInput({
   );
 }
 
-/** Subagent picker over registered sources: projects (local) and external agents (remote). */
+/** Subagent picker over configured Agents. */
 export function SubagentInput({
   values,
   onChange,
@@ -684,12 +684,12 @@ export function SubagentInput({
 }: {
   values: SubagentRef[];
   onChange: (values: SubagentRef[]) => void;
-  options: Array<PickerOption & { type: "local" | "remote" }>;
+  options: PickerOption[];
 }) {
   const t = useT();
   const available = options
     .filter((option) => !values.some((v) => v.name === option.value))
-    .map((option) => ({ ...option, id: `${option.type}:${option.value}` }));
+    .map((option) => ({ ...option, id: option.value }));
 
   return (
     <Field label={t("bindings.subagents")}>
@@ -698,11 +698,6 @@ export function SubagentInput({
           <PickedChip
             key={ref.name}
             label={ref.name}
-            suffix={
-              <Text component="span" c="dimmed" fz="xs">
-                {` (${ref.type})`}
-              </Text>
-            }
             onRemove={() => onChange(values.filter((v) => v.name !== ref.name))}
           />
         ))}
@@ -712,7 +707,7 @@ export function SubagentInput({
         placeholder={t("bindings.searchSubagents")}
         onPick={(option) => {
           if (!values.some((v) => v.name === option.value)) {
-            onChange([...values, { name: option.value, type: option.type }]);
+            onChange([...values, { name: option.value }]);
           }
         }}
       />

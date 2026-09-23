@@ -15,7 +15,7 @@ export function readAgentConfiguration(raw: unknown, projectName: string): Agent
     !("piiFiltering" in parameters) || typeof parameters.piiFiltering !== "boolean" ||
     !Array.isArray(value.skillList) || !value.skillList.every(name => typeof name === "string") ||
     !Array.isArray(value.subagentList) || !value.subagentList.every(ref => ref && typeof ref === "object" &&
-      typeof ref.name === "string" && (ref.type === "local" || ref.type === "remote"))) {
+      typeof ref.name === "string" && Object.keys(ref).length === 1)) {
     throw new Error("Stored Agent configuration is invalid or belongs to another Project");
   }
   return {

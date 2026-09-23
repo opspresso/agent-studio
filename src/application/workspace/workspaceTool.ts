@@ -34,7 +34,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     ? { kind: "command", script: task } : { kind: "task", prompt: task };
   const reply = (value: unknown, failed = false): McpToolResult => ({ text: `${failed ? "Error: " : ""}${JSON.stringify(value)}` });
   const url = (path: string) => deps.publicBaseUrl ? new URL(path, deps.publicBaseUrl).href : path;
-  const repositoryPolicyUrl = url(`/projects/${encodeURIComponent(context.projectName)}/workspace`);
+  const repositoryPolicyUrl = url(`/agents/${encodeURIComponent(context.projectName)}/workspace`);
   const location = (workspace: WorkspaceView) => ({ workspace_id: workspace.id, workspace_path: `/chats/${workspace.chatId}`,
     workspace_url: url(`/chats/${workspace.chatId}`),
     workdir: deps.workdir, runtime: workspace.runtime, repository: workspace.coding?.repository ?? null,

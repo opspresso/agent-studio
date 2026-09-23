@@ -3,9 +3,9 @@ import { safeNextPath } from "@/shared/safeNextPath";
 
 describe("safeNextPath", () => {
   it("keeps a path, its query and its fragment", () => {
-    expect(safeNextPath("/projects")).toBe("/projects");
-    expect(safeNextPath("/projects/my-bot/usage?from=2026-01-01")).toBe(
-      "/projects/my-bot/usage?from=2026-01-01",
+    expect(safeNextPath("/agents")).toBe("/agents");
+    expect(safeNextPath("/agents/my-bot/usage?from=2026-01-01")).toBe(
+      "/agents/my-bot/usage?from=2026-01-01",
     );
     expect(safeNextPath("/chats#latest")).toBe("/chats#latest");
   });
@@ -14,7 +14,7 @@ describe("safeNextPath", () => {
     expect(safeNextPath(undefined)).toBe("/");
     expect(safeNextPath(null)).toBe("/");
     expect(safeNextPath("")).toBe("/");
-    expect(safeNextPath("/projects", "/dashboard")).toBe("/projects");
+    expect(safeNextPath("/agents", "/dashboard")).toBe("/agents");
     expect(safeNextPath("", "/dashboard")).toBe("/dashboard");
   });
 
@@ -30,8 +30,8 @@ describe("safeNextPath", () => {
   });
 
   it("refuses control characters that could split the redirect header", () => {
-    expect(safeNextPath("/projects\r\nSet-Cookie: a=b")).toBe("/");
-    expect(safeNextPath("/projects\n")).toBe("/");
-    expect(safeNextPath("/projects\u0000")).toBe("/");
+    expect(safeNextPath("/agents\r\nSet-Cookie: a=b")).toBe("/");
+    expect(safeNextPath("/agents\n")).toBe("/");
+    expect(safeNextPath("/agents\u0000")).toBe("/");
   });
 });

@@ -67,7 +67,7 @@ export interface Artifact {
    * model instead of substituting the root Agent's model.
    *
    * Absent whenever nothing can honestly name one — an attachment somebody
-   * brought, a document a tool rendered, a picture an MCP tool or a remote agent handed back. Empty is the true answer there, not a guess.
+   * brought, a document a tool rendered, a picture an MCP tool handed back. Empty is the true answer there, not a guess.
    */
   model?: string;
   /** The bracket's correlation id — the one key that joins this to the logs. */

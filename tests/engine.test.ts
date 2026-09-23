@@ -833,7 +833,7 @@ describe("runAgent separates the version's prompt from what the engine appends",
     // headings the prompt author wrote, and "your own instructions" — which the
     // routing rule is anchored to — has no referent.
     const content = await systemPromptFor({
-      subagents: [{ name: "painter", description: "draws pictures", type: "local" }],
+      subagents: [{ name: "painter", description: "draws pictures" }],
     });
     expect(content).toContain("You are the front desk.\n\n---\n\n# Runtime capabilities");
     expect(content.indexOf("# Runtime capabilities")).toBeLessThan(
@@ -843,7 +843,7 @@ describe("runAgent separates the version's prompt from what the engine appends",
 
   it("states when to use a capability exactly once, naming only what the run has", async () => {
     const content = await systemPromptFor({
-      subagents: [{ name: "painter", description: "draws pictures", type: "local" }],
+      subagents: [{ name: "painter", description: "draws pictures" }],
     });
     // One routing sentence, in the framing — not one per section.
     expect(content).toContain(
@@ -857,7 +857,7 @@ describe("runAgent separates the version's prompt from what the engine appends",
   it("ranks every capability the run does have in that one sentence", async () => {
     const content = await systemPromptFor({
       skills: [{ name: "writing", description: "how to write" }],
-      subagents: [{ name: "painter", description: "draws pictures", type: "local" }],
+      subagents: [{ name: "painter", description: "draws pictures" }],
       mcpTools: ["search_repos", "get_pr", "search_docs"].map((name) => ({ type: "function", function: { name, parameters: {} } })),
       mcpServers: [{ name: "github", description: "repos", toolNames: ["search_repos"] }],
     });

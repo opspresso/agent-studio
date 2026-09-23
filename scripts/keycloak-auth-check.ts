@@ -94,7 +94,7 @@ async function main(): Promise<void> {
     async function login(email: string, overrides: { audience?: string; nonce?: string; state?: string } = {}) {
       const start = await auth.handler(new Request(`${baseURL}/api/auth/sign-in/social`, {
         method: "POST", headers: { "content-type": "application/json", origin: baseURL },
-        body: JSON.stringify({ provider: "keycloak", callbackURL: "/projects?tab=mine" }),
+        body: JSON.stringify({ provider: "keycloak", callbackURL: "/agents?tab=mine" }),
       }));
       assert.equal(start.status, 200);
       const authorization = new URL((await start.json()).url);
@@ -116,7 +116,7 @@ async function main(): Promise<void> {
 
     const first = await login("member@example.test");
     assert.equal(first.status, 302);
-    assert.equal(first.headers.get("location"), "/projects?tab=mine");
+    assert.equal(first.headers.get("location"), "/agents?tab=mine");
     const session = await auth.api.getSession({ headers: new Headers({ cookie: cookieHeader(first) }) });
     assert.equal(session?.user.email, "member@example.test");
     assert.equal(session?.user.tier, "guest");

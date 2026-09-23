@@ -41,7 +41,6 @@ const project = {
   description: "Does the thing",
   // A Slack bot only attaches to an agent project, so a fixture without a type
   // is one the write path refuses.
-  projectType: "agent",
   ownerEmail: "owner@example.com",
   updatedAt: "2026-01-01T00:00:00.000Z",
   slack: { enabled: true, botToken: BOT_TOKEN, signingSecret: SIGNING_SECRET },

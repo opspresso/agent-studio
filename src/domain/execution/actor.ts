@@ -144,7 +144,7 @@ export interface RunOrigin {
   /**
    * Which conversation the run belongs to, when the surface has one. Travels the
    * chain like the two above: a child transferred to from a Slack thread is
-   * still answering in that thread, and a remote agent it hands off to should
+   * still answering in that thread, and a child Agent it hands off to should
    * be able to tell the second question in it from a first.
    */
   conversation?: RunConversation;

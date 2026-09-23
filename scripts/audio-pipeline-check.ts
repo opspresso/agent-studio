@@ -115,11 +115,11 @@ async function main() {
       [id, "Audio Pipeline Test", email, now]); });
     userCreated = true;
     await projectRepository.create({ name: projectName, ownerEmail: email, displayName: "Audio Pipeline Test",
-      description: "", projectType: "agent", visibility: "private", createdAt: now, updatedAt: now,
+      description: "", visibility: "private", createdAt: now, updatedAt: now,
       configuration: { projectName, model: "openai/gpt-5-mini",
       systemPrompt: "Summarize the source.", parameters: { piiFiltering: false, audioProcessing: true,
         dynamicCapabilities: true, memoryRecall: true, urlFetch: true, imageGeneration: true, slackWorkspace: true },
-      skillList: [], mcpList: [{ name: "must-not-resolve" }], subagentList: [{ name: "must-not-run", type: "remote" }] } });
+      skillList: [], mcpList: [{ name: "must-not-resolve" }], subagentList: [{ name: "must-not-run" }] } });
     projectCreated = true;
     if (memoryUrl) {
       await mcpUseCases.create({ name: memoryName, url: memoryUrl.href, headers: { Authorization: `Bearer ${memoryToken}` } });

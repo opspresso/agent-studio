@@ -4,7 +4,7 @@ import { projectHasWorkspaceTools } from "@/domain/project/workspaceAccess";
 import { ProjectWorkspaceContext } from "./_components/ProjectWorkspaceContext";
 import { useParams, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Badge, Stack, Text } from "@mantine/core";
+import { Stack, Text } from "@mantine/core";
 import {
   IconAdjustments,
   IconApi,
@@ -32,7 +32,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const params = useParams<{ name: string }>();
   const pathname = usePathname();
   const name = params.name;
-  const base = `/projects/${name}`;
+  const base = `/agents/${name}`;
 
   // One source for "who is looking at this": `canEditProject` below reads the
   // same viewer, and a second hook answering it is a second round trip and a
@@ -104,9 +104,8 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
 
   return (
     <Stack gap="lg">
-      <BackLink href="/projects" label={t("nav.projects")} />
+      <BackLink href="/agents" label={t("nav.agents")} />
       <PageHeader title={currentProject?.displayName || name} Icon={IconSparkles}
-        badges={<Badge color="brand">{t("project.badge")}</Badge>}
         details={<Text fz="xs" ff="monospace" c="dimmed">{name}</Text>}>
         {ownerEmail && <OwnerLine ownerEmail={ownerEmail} isMine={viewer?.email === ownerEmail} prefix={t("project.ownedBy")} />}
         {viewer !== null && tierMayCreateProjects(viewer.tier) && <CloneProjectButton sourceName={name} />}

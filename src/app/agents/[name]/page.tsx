@@ -1,340 +1,140 @@
 "use client";
 
-import { PageHeader } from "@/app/_components/PageHeader";
-import { IconRobot } from "@tabler/icons-react";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import {
-  deleteAgent,
-  getAgent,
-  sendAgentMessage,
-  updateAgent,
-  type ExternalAgent,
-} from "../api";
-import { BackLink } from "@/app/_components/BackLink";
-import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
-import { LoadingText } from "@/app/_components/PageState";
-import { useConfirm } from "@/app/_components/useConfirm";
-import { createLatestOnly } from "@/app/_lib/latestOnly";
-import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  Group,
-  Stack,
-  Text,
-  Textarea,
-  TextInput,
-} from "@mantine/core";
-import { useViewer } from "@/app/_lib/useViewer";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams } from "next/navigation";
+import { Alert, Button, Grid, Group, Stack, Text } from "@mantine/core";
+import { getConfiguration, getProject, listModels, putConfiguration,
+  type AgentConfiguration, type AgentConfigurationInput, type SelectableModel, type SanitizedProject } from "../lib/api";
 import { useT } from "@/app/_i18n/provider";
-import { reportError } from "@/app/_lib/reportError";
+import { canEditProject, useViewer } from "@/app/_lib/useViewer";
+import { tierAtLeast } from "@/domain/member/tiers";
+import { modelType } from "@/domain/llm/models";
+import { LoadingText } from "@/app/_components/PageState";
+import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { AgentConfigurationEditor, parseConfigurationDraft } from "./_components/AgentConfigurationEditor";
+import { PromptPreview } from "./_components/PromptPreview";
+import { RunPanel } from "./_components/RunPanel";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
+import classes from "./Playground.module.css";
 
-export default function AgentDetailPage() {
+function editable(configuration: AgentConfiguration): AgentConfigurationInput {
+  const { projectName: _project, ...settings } = configuration;
+  return settings;
+}
+function emptyInput(models: SelectableModel[] = []): AgentConfigurationInput {
+  return { systemPrompt: "", model: models.find(model => ["text", "decisions"].includes(modelType(model)) && model.capabilities.tools)?.id ?? "",
+    parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] };
+}
+
+export default function PlaygroundPage() {
+  const { name } = useParams<{ name: string }>();
   const t = useT();
-  const params = useParams<{ name: string }>();
-  const name = params.name;
-  const router = useRouter();
   const viewer = useViewer();
-
-  const [agent, setAgent] = useState<ExternalAgent | null>(null);
+  const [project, setProject] = useState<SanitizedProject | null>(null);
+  const [models, setModels] = useState<SelectableModel[]>([]);
+  const [configuration, setConfiguration] = useState<AgentConfiguration | null>(null);
+  const [updatedAt, setUpdatedAt] = useState("");
+  const [draft, setDraft] = useState<AgentConfigurationInput>(emptyInput());
+  const [snapshot, setSnapshot] = useState("");
+  const [schemaText, setSchemaText] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
-
-  // `refresh` is called from the effect below *and* by hand after an edit, so
-  // the answer that arrives is not necessarily the one still being waited for.
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const latestOnly = useRef(createLatestOnly()).current;
 
-  async function refresh() {
+  useEffect(() => {
     const isCurrent = latestOnly();
+    setSaving(false);
     setLoading(true);
     setError(null);
+    setSaved(false);
+    setSaveError(null);
+    void Promise.all([getProject(name), getConfiguration(name), listModels()]).then(([project, view, models]) => {
+      if (!isCurrent()) return;
+      const next = view.configuration ? editable(view.configuration) : emptyInput(models);
+      setProject(project);
+      setModels(models);
+      setConfiguration(view.configuration);
+      setUpdatedAt(view.updatedAt);
+      setDraft(next);
+      setSnapshot(JSON.stringify(next));
+      setSchemaText(null);
+    }).catch(error => {
+      if (isCurrent()) setError(error instanceof Error ? error.message : t("playground.loadFailed"));
+    }).finally(() => { if (isCurrent()) setLoading(false); });
+    return () => { latestOnly(); };
+  }, [name, latestOnly]);
+
+  const currentSchema = schemaText ?? (draft.parameters.jsonSchema ? JSON.stringify(draft.parameters.jsonSchema, null, 2) : "");
+  const parsed = useMemo(() => parseConfigurationDraft(draft, currentSchema), [draft, currentSchema]);
+  const schemaError = parsed === null ? t("configuration.invalidJson") : null;
+  const dirty = parsed === null || JSON.stringify(parsed) !== snapshot;
+
+  async function save() {
+    if (!parsed || saving) return;
+    const isCurrent = latestOnly();
+    setSaving(true);
+    setSaveError(null);
+    setSaved(false);
     try {
-      const loaded = await getAgent(name);
-      if (isCurrent()) setAgent(loaded);
-    } catch (e) {
-      if (isCurrent()) setError(e instanceof Error ? e.message : "Failed to load agent");
-    } finally {
-      if (isCurrent()) setLoading(false);
-    }
+      const result = await putConfiguration(name, { ...parsed, expectedUpdatedAt: updatedAt });
+      if (!isCurrent()) return;
+      const next = editable(result.configuration!);
+      setConfiguration(result.configuration);
+      setUpdatedAt(result.updatedAt);
+      setDraft(next);
+      setSnapshot(JSON.stringify(next));
+      setSchemaText(null);
+      setSaved(true);
+    } catch (error) {
+      if (isCurrent()) setSaveError(error instanceof Error ? error.message : t("playground.saveFailed"));
+    } finally { if (isCurrent()) setSaving(false); }
   }
 
-  // `refresh` is deliberately not a dependency: it is rebuilt every render, and
-  // the name is the only thing the answer depends on.
-  useEffect(() => {
-    void refresh();
-  }, [name]);
-
-  const { confirm, confirmModal } = useConfirm();
-
-  async function onDelete() {
-    if (
-      !(await confirm({
-        title: "Delete agent",
-        message: `Delete agent "${name}"? This cannot be undone.`,
-        confirmLabel: "Delete",
-      }))
-    ) {
-      return;
-    }
-    try {
-      await deleteAgent(name);
-      router.push("/agents");
-    } catch (e) {
-      setError(reportError(e, "Failed to delete agent"));
-    }
-  }
-
-  if (loading) {
-    return <LoadingText />;
-  }
-
-  if (error && !agent) {
-    return (
-      <Stack gap="md">
-        <BackLink href="/agents" label={t("nav.agents")} />
-        <Alert color="red" variant="light">
-          {error}
-        </Alert>
-      </Stack>
-    );
-  }
-
-  if (!agent) {
-    return null;
-  }
-
-  const headerEntries = Object.entries(agent.headers);
+  if (loading || viewer === null) return <LoadingText />;
+  if (error || !project || project.name !== name) return <Alert color="red">{error ?? t("playground.notFound")}</Alert>;
+  const canEdit = canEditProject(viewer, project.ownerEmail);
+  const canPreview = tierAtLeast(viewer.tier, "member");
+  const runModel = models.find(model => model.id === configuration?.model);
+  const saveState = { run: save, saving, disabled: !draft.model || schemaError !== null,
+    error: schemaError ?? saveError, saved: saved && !dirty, label: t("playground.save") };
 
   return (
-    <Stack gap="lg">
-      {confirmModal}
-      <BackLink href="/agents" label={t("nav.agents")} />
-
-      <PageHeader title={agent.name} Icon={IconRobot} description={agent.description}
-        badges={<>
-            <Badge color="blue" variant="light">
-              {t("registry.discoveryPromptBadge")}
-            </Badge>
-          </>}
-        details={<><Text fz="xs" c="dimmed" mt={4}>
-            {agent.url}
-          </Text></>}>
-        {!editing && viewer?.isAdmin && (
-          <Group gap="xs" wrap="nowrap">
-            <Button variant="default" onClick={() => setEditing(true)}>
-              Edit
-            </Button>
-            <Button variant="default" color="red" onClick={onDelete}>
-              Delete
-            </Button>
+    <Grid gap="lg">
+      <Grid.Col span={{ base: 12, lg: 6 }}>
+        <Stack gap="md">
+          <Group justify="space-between">
+            <Text fw={600}>{t("configuration.title")}</Text>
+            {canEdit ? <Group gap="xs">
+              {dirty ? <Text fz="xs" c="orange">{t("playground.unsaved")}</Text>
+                : saved ? <Text fz="xs" c="teal">{t("configuration.saved")}</Text> : null}
+              <Button onClick={save} loading={saving} disabled={saveState.disabled}>{t("playground.save")}</Button>
+            </Group> : <Text fz="xs" c="dimmed">{t("playground.readOnly")}</Text>}
           </Group>
-        )}
-      </PageHeader>
-
-      {error && (
-        <Alert color="red" variant="light">
-          {error}
-        </Alert>
-      )}
-
-      {editing ? (
-        <EditAgentForm
-          agent={agent}
-          onCancel={() => setEditing(false)}
-          onSaved={() => {
-            setEditing(false);
-            void refresh();
-          }}
-        />
-      ) : (
-        <>
-          <section>
-            <Text fz="sm" fw={500} c="dimmed" mb="xs">
-              Headers
-            </Text>
-            {headerEntries.length === 0 ? (
-              <Text fz="sm" c="dimmed">
-                None.
-              </Text>
-            ) : (
-              <Card padding={0}>
-                {headerEntries.map(([key, value], index) => (
-                  <Group
-                    key={key}
-                    justify="space-between"
-                    px="md"
-                    py="xs"
-                    wrap="nowrap"
-                    style={
-                      index > 0
-                        ? { borderTop: "1px solid var(--mantine-color-default-border)" }
-                        : undefined
-                    }
-                  >
-                    <Text ff="monospace" fz="sm">
-                      {key}
-                    </Text>
-                    <Text ff="monospace" fz="sm" c="dimmed" truncate>
-                      {value}
-                    </Text>
-                  </Group>
-                ))}
-              </Card>
-            )}
-          </section>
-
-          <MessageTester name={agent.name} />
-        </>
-      )}
-    </Stack>
-  );
-}
-function MessageTester({ name }: { name: string }) {
-  const t = useT();
-  const [message, setMessage] = useState("");
-  const [reply, setReply] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setSending(true);
-    setError(null);
-    setReply(null);
-    try {
-      setReply(await sendAgentMessage(name, message));
-    } catch (err) {
-      setError(reportError(err, "Request failed"));
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <section>
-      <Text fz="sm" fw={500} c="dimmed" mb="xs">
-        Test message
-      </Text>
-      <form onSubmit={submit}>
-        <Stack gap="sm" align="flex-start">
-          <Textarea
-            value={message}
-            onChange={(e) => setMessage(e.currentTarget.value)}
-            autosize
-            minRows={3}
-            maxRows={12}
-            required
-            placeholder={t("agents.sendPlaceholder")}
-            w="100%"
-          />
-          <Button type="submit" variant="default" loading={sending}>
-            Send
-          </Button>
+          {saveError && <Alert color="red">{saveError}</Alert>}
+          <fieldset disabled={!canEdit || saving} className={canEdit ? undefined : classes.readonlyEditor}
+            style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+            <AgentConfigurationEditor key={name} projectName={name}
+              models={models.filter(model => ["text", "decisions"].includes(modelType(model)))}
+              imageModels={models.filter(model => modelType(model) === "image")}
+              value={draft} onChange={setDraft} schemaText={currentSchema} onSchemaChange={setSchemaText}
+              schemaError={schemaError} save={saveState} />
+          </fieldset>
         </Stack>
-      </form>
-
-      {error && (
-        <Alert color="red" variant="light" mt="sm">
-          {error}
-        </Alert>
-      )}
-
-      {reply !== null && (
-        <div style={{ marginTop: "var(--mantine-spacing-sm)" }}>
-          <Text fz="xs" fw={500} c="dimmed" mb={4}>
-            Assistant reply
-          </Text>
-          <Card>
-            <Text fz="sm" style={{ whiteSpace: "pre-wrap" }}>
-              {reply || (
-                <Text component="span" c="dimmed">
-                  Empty response.
-                </Text>
-              )}
-            </Text>
-          </Card>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function EditAgentForm({
-  agent,
-  onCancel,
-  onSaved,
-}: {
-  agent: ExternalAgent;
-  onCancel: () => void;
-  onSaved: () => void;
-}) {
-  const t = useT();
-  const [url, setUrl] = useState(agent.url);
-  const [description, setDescription] = useState(agent.description);
-  const [rows, setRows] = useState<HeaderRow[]>(recordToRows(agent.headers));
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    try {
-      await updateAgent(agent.name, { url, description, headers: rowsToRecord(rows) });
-      onSaved();
-    } catch (err) {
-      setError(reportError(err, "Failed to save"));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <form onSubmit={submit}>
-      <Stack gap="md">
-        <TextInput
-          label="URL"
-          value={url}
-          onChange={(e) => setUrl(e.currentTarget.value)}
-          type="url"
-          required
-        />
-        <TextInput
-          label={t("registry.description")}
-          value={description}
-          onChange={(e) => setDescription(e.currentTarget.value)}
-          required
-          description={t("agents.descriptionHint")}
-          inputWrapperOrder={["label", "input", "description", "error"]}
-        />
-
-        <HeaderRowsEditor
-          rows={rows}
-          onChange={setRows}
-          emptyHint={t("registry.headersEmpty")}
-        />
-        <Text fz="xs" c="dimmed">
-          Masked values keep the stored secret. Type a new value to replace it.
-        </Text>
-
-        {error && (
-          <Alert color="red" variant="light">
-            {error}
-          </Alert>
-        )}
-
-        <Group justify="flex-end" gap="xs">
-          <Button variant="default" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button type="submit" loading={submitting}>
-            Save
-          </Button>
-        </Group>
-      </Stack>
-    </form>
+      </Grid.Col>
+      <Grid.Col span={{ base: 12, lg: 6 }}>
+        <Stack gap="md">
+          {canPreview && <CollapsibleSection title={t("playground.preview")}>
+            <PromptPreview projectName={name} draft={parsed ?? draft} validationError={schemaError} />
+          </CollapsibleSection>}
+          <CollapsibleSection title={t("playground.run")} defaultOpen>
+            <RunPanel key={name} projectName={name} configured={configuration !== null}
+              modelAcceptsImages={runModel?.capabilities.imageInput} />
+          </CollapsibleSection>
+        </Stack>
+      </Grid.Col>
+    </Grid>
   );
 }

@@ -42,7 +42,7 @@ describe("SDK runtime validation boundaries", () => {
         kind: "agent", deps: { channel: child }, warnings: [], close,
         input: { projectName: name, model: f.configuration.model, messages: [{ role: "user", content: task.message }], parameters: { policy: { maxInputChars: 2 } } },
       }),
-    }, { subagents: [{ name: "child", type: "local", kind: "agent", description: "child" }] });
+    }, { subagents: [{ name: "child", kind: "agent", description: "child" }] });
     expect(child.calls).toBe(0);
     expect(chunks.some((chunk) => chunk.error?.includes("input-size"))).toBe(true);
     expect(close).toHaveBeenCalledTimes(1);
@@ -103,7 +103,7 @@ describe("SDK runtime validation boundaries", () => {
     const channel = new FakeChannel([[toolCallChunk(0, "invalid", name, '{"input":42,"image_ids":[]}')], [contentChunk("recovered")]]);
     const loadAgent = vi.fn();
     const chunks = await f.run(channel, "help", undefined, { loadAgent },
-      { canDispatch: true, subagents: [{ name: "child", type: "local", kind: "agent", description: "child" }] });
+      { canDispatch: true, subagents: [{ name: "child", kind: "agent", description: "child" }] });
     expect(loadAgent).not.toHaveBeenCalled();
     expect(await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail)).toBeNull();
     expect(chunks.filter((chunk) => chunk.toolResult?.toolCallId === "invalid")).toHaveLength(1);

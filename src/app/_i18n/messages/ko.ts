@@ -39,7 +39,7 @@ export const ko: Messages = {
   "secrets.revokeHint": "이 키를 사용하는 요청을 더 이상 인증하지 않는다.",
   "secrets.legacyHint": "이전 방식으로 저장된 토큰은 다시 볼 수 없다. 재생성하면 조회 가능한 토큰으로 바뀐다.",
   "secrets.createdAt": "생성일 {date}",
-  "secrets.projectTokenHint": "이 Project의 API로 들어오는 외부 요청을 인증한다. 사용량은 이 토큰과 Project에 기록한다.",
+  "secrets.projectTokenHint": "이 Agent의 API로 들어오는 외부 요청을 인증한다. 사용량은 이 토큰과 Agent에 기록한다.",
   "settings.overview": "애플리케이션 설정, Plugins, Models와 접근 키를 관리한다.",
   "settings.adminOnly": "관리자만 애플리케이션 설정을 관리할 수 있다.",
   "settings.noResults": "검색 조건에 맞는 Model이 없다.",
@@ -148,7 +148,7 @@ export const ko: Messages = {
   "workspace.returnToChat": "요청한 채팅으로 돌아가기",
   "workspace.waitingCi": "PR 검사 결과를 기다리고 있습니다. 검사가 끝나거나 30분 대기 시간이 지나면 채팅이 재개됩니다.",
   "workspace.enableTools": "워크스페이스 도구",
-  "workspace.enableToolsHint": "지속형 워크스페이스와 격리 실행을 활성화합니다. 프로젝트의 워크스페이스 도구 탭에서 저장소와 기본 런타임을 관리하세요.",
+  "workspace.enableToolsHint": "지속형 워크스페이스와 격리 실행을 활성화합니다. Agent의 워크스페이스 도구 탭에서 저장소와 기본 런타임을 관리하세요.",
   "workspace.toolsTitle": "워크스페이스 도구",
   "workspace.backendUnavailable": "Sandbox 실행 서버가 연결되지 않았습니다. 설정은 저장할 수 있으며 실행하려면 운영자가 서버를 연결해야 합니다.",
   "workspace.defaultRuntime": "기본 런타임",
@@ -168,10 +168,10 @@ export const ko: Messages = {
   "workspace.policy.modeHint.selected": "등록한 저장소만 허용합니다. 목록을 비우면 Git 접근이 차단됩니다.",
   "workspace.policy.modeHint.owners": "등록한 저장소와 지정한 계정·조직이 소유한 모든 저장소를 허용합니다.",
   "workspace.policy.modeHint.all": "Workspace GitHub 계정이 접근할 수 있는 모든 저장소를 허용합니다. 등록 목록은 빠른 선택용이며 접근을 제한하지 않습니다.",
-  "workspace.policy.modeHint.new": "등록된 저장소를 유지하고 이 프로젝트의 Workspace create_repository 도구로 만든 신규 저장소를 자동 등록합니다. 이미 존재하는 미등록 저장소는 차단합니다. 새 저장소는 파일 작업 전에 Agent에게 생성을 요청하세요.",
+  "workspace.policy.modeHint.new": "등록된 저장소를 유지하고 이 Agent의 Workspace create_repository 도구로 만든 신규 저장소를 자동 등록합니다. 이미 존재하는 미등록 저장소는 차단합니다. 새 저장소는 파일 작업 전에 Agent에게 생성을 요청하세요.",
   "workspace.policy.title": "Workspace 저장소 접근",
-  "workspace.policy.description": "프로젝트 소유자 또는 관리자가 워크스페이스 설정을 관리합니다. 저장한 설정은 재배포 없이 새 작업과 Git 승인에 적용됩니다.",
-  "workspace.policy.adminOnly": "프로젝트 소유자 또는 관리자만 설정을 변경할 수 있습니다.",
+  "workspace.policy.description": "Agent 소유자 또는 관리자가 워크스페이스 설정을 관리합니다. 저장한 설정은 재배포 없이 새 작업과 Git 승인에 적용됩니다.",
+  "workspace.policy.adminOnly": "Agent 소유자 또는 관리자만 설정을 변경할 수 있습니다.",
   "workspace.policy.repositories": "등록한 저장소",
   "workspace.policy.repositoriesHint": "owner/repository를 입력하고 Enter로 저장소를 추가하세요.",
   "workspace.policy.owners": "허용할 저장소 소유자",
@@ -209,7 +209,7 @@ export const ko: Messages = {
   "workspace.outputWindow": "제한된 범위의 출력을 표시합니다. 이전 출력은 생략될 수 있습니다.",
   "workspace.noOutput": "출력을 기다리고 있습니다.",
   "workspace.noDiff": "이 실행에 미커밋 변경이 없습니다.",
-  "workspace.noChecks": "이 프로젝트에 test, lint, build 명령이 설정되지 않았습니다.",
+  "workspace.noChecks": "이 Agent에 test, lint, build 명령이 설정되지 않았습니다.",
   "workspace.diffTruncated": "Diff 미리보기가 잘렸습니다. 승인은 전체 파일 트리에 연결됩니다.",
   "workspace.exitCode": "종료 코드",
   "workspace.latest": "최신으로",
@@ -259,14 +259,14 @@ export const ko: Messages = {
   "workspace.status.uncertain": "결과 확인 필요",
   "audio.uploadedFile": "업로드된 원본",
   "audio.title": "오디오 처리",
-  "audio.useSaved": "저장된 프로젝트 설정 사용",
+  "audio.useSaved": "저장된 Agent 설정 사용",
   "audio.configRevision": "설정 revision",
-  "audio.configDisabled": "새 작업이 비활성화돼 있습니다. 프로젝트 설정을 활성화하고 저장하면 제출을 재개할 수 있습니다.",
-  "audio.projectConfig": "프로젝트 작업 설정",
+  "audio.configDisabled": "새 작업이 비활성화돼 있습니다. Agent 설정을 활성화하고 저장하면 제출을 재개할 수 있습니다.",
+  "audio.projectConfig": "Agent 작업 설정",
   "audio.configEnabled": "신규 작업과 재시도 허용",
   "audio.maxActive": "최대 대기·진행 작업 수",
   "audio.maxPerOccurrence": "실행당 최대 신규 작업 수",
-  "audio.saveConfig": "프로젝트 설정 저장",
+  "audio.saveConfig": "Agent 설정 저장",
   "audio.saveConfigHint": "선택한 처리 옵션과 한도를 이후 작업에 사용하도록 저장합니다. 기존 작업은 제출 당시 설정을 유지합니다.",
   "audio.pageHint": "오디오를 업로드하고 백그라운드 전사·후처리 상태를 확인하세요. 결과는 비공개 Artifacts에서 다시 열 수 있습니다.",
   "audio.file": "오디오 파일",
@@ -346,7 +346,7 @@ export const ko: Messages = {
   "audio.enableTools": "오디오 처리 도구",
   "audio.enableToolsHint": "이 Agent에서 파일 가져오기, 오디오 전사와 백그라운드 작업 조회를 사용합니다.",
   "audio.runAsOwner": "내 개인 문맥으로 실행",
-  "audio.runAsOwnerHint": "확인된 본인 email로 개인 MCP 데이터를 사용합니다. 프로젝트 소유자만 켤 수 있습니다.",
+  "audio.runAsOwnerHint": "확인된 본인 email로 개인 MCP 데이터를 사용합니다. Agent 소유자만 켤 수 있습니다.",
   "audio.mappingTitle": "파일 응답 매핑",
   "audio.mappingDefaults": "plugin에 기본 매핑이 있으면 자동 적용됩니다. 해당 서버는 직접 입력하지 않아도 됩니다.",
   "audio.mappingOverride": "이 Agent의 설정이 plugin 기본값보다 우선합니다. 빈 설정은 파일 매핑을 끕니다.",
@@ -375,13 +375,12 @@ export const ko: Messages = {
   "chrome.openNavigation": "내비게이션 열기",
   "chrome.skipToContent": "본문으로 바로가기",
   "chrome.closeNavigation": "내비게이션 닫기",
-  "chrome.openProjects": "Projects 열기",
+  "chrome.openAgents": "Agents 열기",
   "chrome.status": "버전 {version}",
   "nav.group.workspace": "워크스페이스",
   "nav.group.intelligence": "레지스트리",
   "nav.group.system": "시스템",
   "nav.overview": "개요",
-  "nav.projects": "Projects",
   "nav.chats": "Chats",
   "nav.artifacts": "Artifacts",
   "nav.profile": "프로필",
@@ -412,7 +411,7 @@ export const ko: Messages = {
   "home.domain.workspaces": "Workspace와 Sandbox",
   "home.domain.workspacesBody": "에이전트에서 워크스페이스 도구를 켜고 코드·파일·실행 이력을 유지합니다. 격리된 Sandbox에서 실행하고 Git 변경을 검토하며 승인 결과는 요청한 채팅으로 돌아옵니다.",
   "home.flow.title": "아이디어에서 실행까지",
-  "home.flow.build": "프로젝트 구성",
+  "home.flow.build": "Agent 구성",
   "home.flow.buildBody": "모델과 지침을 정하고, 에이전트에 필요한 스킬과 도구를 연결하세요.",
   "home.flow.run": "저장하고 실행",
   "home.flow.runBody": "Agent 설정을 저장한 뒤 콘솔, API 또는 연결한 메신저에서 실행하세요.",
@@ -436,19 +435,19 @@ export const ko: Messages = {
   "home.coverage": "Agent Studio의 주요 기능",
   "home.domain.projects": "Agent와 설정",
   "home.domain.projectsBody":
-    "각 프로젝트는 하나의 현재 설정을 가진 Agent입니다. 모델·지시문·역량·한도를 저장하면 다음 실행부터 적용됩니다.",
+    "각 Agent는 하나의 현재 설정을 가진 Agent입니다. 모델·지시문·역량·한도를 저장하면 다음 실행부터 적용됩니다.",
   "home.domain.agent": "에이전트 루프",
   "home.domain.agentBody":
     "에이전트는 Skill을 불러오고 MCP 도구를 호출하며, 서브에이전트에 작업을 맡기거나 URL을 읽을 수 있습니다. 턴 수와 컨텍스트 한도로 실행 범위를 제한합니다.",
   "home.domain.mcp": "MCP 도구",
   "home.domain.mcpBody":
-    "서버를 한 번 등록한 뒤 필요한 Agent에 연결합니다. 연결할 도구를 제한하거나 요청 헤더를 덮어쓸 수 있습니다. 프로젝트별 OAuth를 지원하며 시크릿은 암호화해 저장합니다.",
+    "서버를 한 번 등록한 뒤 필요한 Agent에 연결합니다. 연결할 도구를 제한하거나 요청 헤더를 덮어쓸 수 있습니다. Agent별 OAuth를 지원하며 시크릿은 암호화해 저장합니다.",
   "home.domain.skills": "Skills",
   "home.domain.skillsBody":
     "Markdown으로 작성한 재사용 가능한 작업 지침입니다. 모델은 이름과 설명을 먼저 확인하고, 필요할 때 전체 내용을 불러옵니다.",
   "home.domain.plugins": "Agent Plugins",
   "home.domain.pluginsBody":
-    "플러그인 저장소나 압축 파일에서 재사용 가능한 Skill과 MCP 도구를 가져와 프로젝트에 연결합니다.",
+    "플러그인 저장소나 압축 파일에서 재사용 가능한 Skill과 MCP 도구를 가져와 Agent에 연결합니다.",
   "home.domain.catalog": "케이퍼빌리티 카탈로그",
   "home.domain.catalogBody":
     "Skill, MCP 도구, 에이전트를 한곳에서 검색합니다. 이 기능을 켠 Agent는 현재 요청에 맞는 기능을 실행 중에만 추가하며, 저장된 설정은 바꾸지 않습니다.",
@@ -465,22 +464,22 @@ export const ko: Messages = {
     "보고서·발표자료·스프레드시트를 만들고, 지원되는 첨부 문서를 원본을 유지한 채 새 파일로 수정합니다. 저장소를 구성하면 원본과 결과를 보관하고 내려받을 수 있습니다.",
   "home.domain.surfaces": "Slack · 웹훅",
   "home.domain.surfacesBody":
-    "프로젝트를 메신저·API·Webhook·스케줄로 호출합니다. 창구마다 식별자·이력·승인 규칙이 다르며 Workspace 지원 범위도 다릅니다.",
+    "Agent를 메신저·API·Webhook·스케줄로 호출합니다. 창구마다 식별자·이력·승인 규칙이 다르며 Workspace 지원 범위도 다릅니다.",
   "home.domain.cost": "비용과 한도",
   "home.domain.costBody":
-    "Studio 모델 호출 비용을 프로젝트·호출자·날짜별로 기록합니다. 설정한 임계값으로 알리거나 새 실행을 차단하며, 외부 Workspace CLI 사용량은 해당 제공자 기록에서 별도로 확인합니다.",
+    "Studio 모델 호출 비용을 Agent·호출자·날짜별로 기록합니다. 설정한 임계값으로 알리거나 새 실행을 차단하며, 외부 Workspace CLI 사용량은 해당 제공자 기록에서 별도로 확인합니다.",
   "home.domain.traces": "트레이스와 감사 로그",
   "home.domain.tracesBody":
     "기록된 모델 실행·도구 활동·사용량을 확인합니다. 트레이스와 감사는 범위·보존 기간이 다르며 관리자 변경과 발급된 시크릿 접근을 감사 기록에 남깁니다.",
   "home.guide.title": "Agent Studio 시작하기",
-  "home.guide.body": "프로젝트 설정, 도구 연결, Workspace 사용과 승인 결과 확인을 안내합니다. 실행 창구마다 지원하는 기능을 확인할 수 있으며 로그인 없이 읽을 수 있습니다.",
+  "home.guide.body": "Agent 설정, 도구 연결, Workspace 사용과 승인 결과 확인을 안내합니다. 실행 창구마다 지원하는 기능을 확인할 수 있으며 로그인 없이 읽을 수 있습니다.",
   "home.product": "AI 에이전트 플랫폼입니다.",
 
   "catalog.clearSearch": "검색어 지우기",
   "catalog.resetFilters": "필터 초기화",
   "catalog.resultCount": "전체 {total}개 중 {count}개",
   "catalog.noResults": "조건에 맞는 결과가 없습니다. 검색어를 바꾸거나 필터를 초기화해 보세요.",
-  "projects.filter": "프로젝트 검색…",
+  "agents.filter": "Agent 검색…",
   "common.loading": "불러오는 중…",
   "common.cancel": "취소",
   "common.copy": "복사",
@@ -515,7 +514,7 @@ export const ko: Messages = {
   "usage.cached": "캐시",
   "usage.cost": "비용",
   "usage.none": "이 기간에는 사용량이 없습니다.",
-  "usage.groupBy.project": "프로젝트",
+  "usage.groupBy.project": "Agent",
   "usage.groupBy.model": "모델",
   "usage.groupBy.provider": "프로바이더",
   "usage.groupBy.department": "부서",
@@ -524,9 +523,9 @@ export const ko: Messages = {
 
   "cost.title": "비용",
   "cost.lede":
-    "각 프로젝트가 얼마를 쓰는지 모델 레지스트리 단가로 호출마다 계산합니다. 일간·월간 한도에 닿으면 경고하고, 넘으면 거절합니다.",
+    "각 Agent가 얼마를 쓰는지 모델 레지스트리 단가로 호출마다 계산합니다. 일간·월간 한도에 닿으면 경고하고, 넘으면 거절합니다.",
   "cost.departmentsFailed":
-    "프로젝트 부서 정보를 불러오지 못해 모든 프로젝트를 “(none)” 으로 묶었습니다. 새로고침하면 다시 귀속됩니다.",
+    "Agent 부서 정보를 불러오지 못해 모든 Agent를 “(none)” 으로 묶었습니다. 새로고침하면 다시 귀속됩니다.",
   "cost.totalCost": "총 비용",
   "cost.selectedPeriod": "선택한 기간",
   "cost.totalCalls": "총 호출",
@@ -555,21 +554,21 @@ export const ko: Messages = {
   "overview.welcomeAnon": "다시 오셨네요",
   "overview.lede":
     "Agent를 설정하고 콘솔에서 요청을 테스트한 뒤 필요한 시스템에 연결하세요. 이미지·문서 작업과 백그라운드 오디오 처리도 Agent 도구로 구성할 수 있습니다.",
-  "overview.newProject": "새 프로젝트",
+  "overview.newProject": "새 Agent",
   "overview.newChat": "새 대화",
-  "overview.recentProjects": "최근 프로젝트",
-  "overview.recentProjectsNote": "내 프로젝트를 먼저, 다른 프로젝트는 최근 수정된 순서로 보여 줍니다.",
+  "overview.recentProjects": "최근 Agent",
+  "overview.recentProjectsNote": "내 Agent를 먼저, 다른 Agent는 최근 수정된 순서로 보여 줍니다.",
   "overview.allProjects": "전체 보기",
-  "overview.projectsFailed": "프로젝트를 불러오지 못했습니다.",
-  "overview.noProjects": "아직 프로젝트가 없습니다.",
+  "overview.projectsFailed": "Agent를 불러오지 못했습니다.",
+  "overview.noProjects": "아직 Agent가 없습니다.",
   "overview.chatsFailed": "최근 채팅과 Workspace를 불러오지 못했습니다. 새로고침해 다시 확인하세요.",
   "overview.recentChats": "최근 채팅과 Workspace",
   "overview.recentChatsNote": "유형을 확인하고 대화 또는 파일 작업을 이어가세요.",
   "overview.allChats": "전체 보기",
   "overview.noChats": "아직 대화가 없습니다.",
-  "overview.getStarted": "프로젝트로 시작하기",
+  "overview.getStarted": "Agent로 시작하기",
   "overview.getStartedBody":
-    "프로젝트를 만들고 Playground에서 Agent 설정을 저장한 뒤 실행해 보세요. 필요한 Skill과 MCP 도구를 연결하고 Chats에서 대화를 이어갈 수 있습니다.",
+    "Agent를 만들고 Playground에서 Agent 설정을 저장한 뒤 실행해 보세요. 필요한 Skill과 MCP 도구를 연결하고 Chats에서 대화를 이어갈 수 있습니다.",
   "overview.browseSkills": "Skills 둘러보기",
 
   "guide.title": "가이드",
@@ -580,27 +579,27 @@ export const ko: Messages = {
   "guide.start.body": "Agent Studio는 요청에 답하고 도구를 사용하는 Agent를 관리하는 플랫폼이다. 이 가이드는 로그인 없이 읽을 수 있다. 대화를 시작하려면 로그인 후 Chats에서 Agent를 선택하고, 직접 만들려면 아래 순서로 진행한다.",
   "guide.start.account": "1. 로그인과 권한 확인",
   "guide.start.accountBody":
-    "조직에서 받은 접속 주소를 열고 화면에 표시된 방식으로 로그인한다. Profile에서 내 등급·사용량·한도를 확인한다. 새 계정은 보통 guest로 시작하므로 프로젝트 생성이 불가능하면 관리자에게 Members에서 등급 변경을 요청한다.",
-  "guide.start.create": "2. 첫 프로젝트 만들기",
-  "guide.start.createBody": "Projects에서 New project를 선택하고 식별자와 표시 이름을 입력한다. 도구를 연결하기 전에 답변의 적절성을 판단할 수 있는 짧은 작업부터 시작한다.",
+    "조직에서 받은 접속 주소를 열고 화면에 표시된 방식으로 로그인한다. Profile에서 내 등급·사용량·한도를 확인한다. 새 계정은 보통 guest로 시작하므로 Agent 생성이 불가능하면 관리자에게 Members에서 등급 변경을 요청한다.",
+  "guide.start.create": "2. 첫 Agent 만들기",
+  "guide.start.createBody": "Agents에서 새 Agent를 선택하고 식별자와 표시 이름을 입력한다. 도구를 연결하기 전에 답변의 적절성을 판단할 수 있는 짧은 작업부터 시작한다.",
   "guide.start.test": "3. 저장한 뒤 실행하고 확인하기",
   "guide.start.testBody":
     "Playground에서 모델과 지시문을 설정하고 저장한 뒤 짧은 요청을 실행한다. 답변·경고·사용량·도구 활동을 확인한다. Run 패널은 저장한 설정을 사용한다.",
   "guide.start.connect": "4. 호출 경로 연결하기",
   "guide.start.connectBody":
-    "저장한 Agent 설정은 Chat과 구성된 연동에서 바로 사용한다. HTTP로 호출하려면 Integrations에서 프로젝트 토큰을 발급하고 API Reference의 예제를 따른다.",
+    "저장한 Agent 설정은 Chat과 구성된 연동에서 바로 사용한다. HTTP로 호출하려면 Integrations에서 Agent 토큰을 발급하고 API Reference의 예제를 따른다.",
 
-  "guide.projects.title": "Agent로 작업하기",
-  "guide.projects.body": "모든 프로젝트는 Agent다. 현재 설정에는 모델·시스템 프롬프트·역량·실행 한도를 저장하고, 공개 범위·연동·사용량은 프로젝트에서 관리한다.",
-  "guide.projects.agent": "대화와 도구 실행",
-  "guide.projects.agentBody":
+  "guide.agents.title": "Agent로 작업하기",
+  "guide.agents.body": "각 Agent에는 하나의 현재 설정이 있다. 현재 설정에는 모델·시스템 프롬프트·역량·실행 한도를 저장하고, 공개 범위·연동·사용량은 Agent에서 관리한다.",
+  "guide.agents.agent": "대화와 도구 실행",
+  "guide.agents.agentBody":
     "대화·검색·도구 호출·다른 에이전트에 대한 위임이 필요한 작업에 사용한다. 시스템 프롬프트에 역할·작업 범위·결과 형식을 쓰고 메시지로 작업을 전달한다. 모델이 제공된 도구의 사용 여부를 판단하므로 도구를 연결했다고 반드시 호출하는 것은 아니다.",
-  "guide.projects.image": "이미지 생성·편집 도구",
-  "guide.projects.imageBody": "이미지 도구를 켜고 이미지 모델을 선택한다. Agent에게 이미지를 생성하도록 요청하거나 원본을 첨부하고 편집을 요청한다. Playground·Chat·실행 API에서 같은 Agent를 사용한다.",
+  "guide.agents.image": "이미지 생성·편집 도구",
+  "guide.agents.imageBody": "이미지 도구를 켜고 이미지 모델을 선택한다. Agent에게 이미지를 생성하도록 요청하거나 원본을 첨부하고 편집을 요청한다. Playground·Chat·실행 API에서 같은 Agent를 사용한다.",
 
   "guide.configuration.title": "Agent 설정",
   "guide.configuration.body":
-    "Playground에서 Agent의 현재 설정을 편집하고 저장한다. 독립적으로 실험하려면 프로젝트를 복제해 복제본을 설정한다.",
+    "Playground에서 Agent의 현재 설정을 편집하고 저장한다. 독립적으로 실험하려면 Agent를 복제해 복제본을 설정한다.",
   "guide.configuration.model": "모델과 대체 모델",
   "guide.configuration.modelBody": "도구 호출을 지원하는 텍스트 모델을 선택한다. 그림을 읽는 작업에는 이미지 입력 지원도 필요하다. 필요하면 호환되는 대체 모델을 지정한다. 이미지 생성·편집은 별도로 설정한 이미지 도구 모델을 사용한다.",
   "guide.configuration.prompt": "프롬프트 미리보기와 저장 구분",
@@ -613,7 +612,7 @@ export const ko: Messages = {
 
   "guide.capabilities.title": "스킬·도구·에이전트 확장",
   "guide.capabilities.body":
-    "관리자가 Skills·Tools·Agents·Plugins에 기능을 등록한다. 프로젝트 소유자는 사용 가능한 항목을 Agent에 연결하고 저장한 다음, 그 기능이 필요한 작업으로 시험한다. 등록만으로 모든 실행에 모든 기능이 제공되지는 않는다.",
+    "관리자가 Skills·Tools·Agents·Plugins에 기능을 등록한다. Agent 소유자는 사용 가능한 항목을 Agent에 연결하고 저장한 다음, 그 기능이 필요한 작업으로 시험한다. 등록만으로 모든 실행에 모든 기능이 제공되지는 않는다.",
   "guide.capabilities.skills": "Skills: 재사용할 지시문",
   "guide.capabilities.skillsBody":
     "관리자가 Skills에서 용도를 명확하게 설명한 스킬을 등록하면 Agent 설정 편집기에서 연결한다. 모델은 처음에 이름과 설명을 보고 필요할 때 전체 지시문을 읽는다. 반복 절차나 업무 지식을 담는 데 사용하며, 실제 작업에서 의도한 스킬을 읽는지 확인한다.",
@@ -622,21 +621,21 @@ export const ko: Messages = {
     "관리자가 Tools에서 서버를 등록하고 discovery 결과에 필요한 도구가 나타나는지 확인한다. Agent에 서버를 연결하고 제공할 도구를 선택한 뒤 설정을 저장한다. 호출이 실패하면 서버 상태·필수 헤더·실행 경고를 확인한다. 서버에 접속할 수 있어도 사용할 도구가 없거나 별도 인증이 필요할 수 있다.",
   "guide.capabilities.oauth": "MCP 설정의 저장 범위",
   "guide.capabilities.oauthBody":
-    "도구 선택과 헤더 오버라이드는 Agent 설정에 속하며 Save가 필요하다. 헤더를 바꾼 뒤 도구 목록을 새로 조회한다. 마스킹된 값은 기존 시크릿을 유지하며 빈 맵은 오버라이드를 지운다. 관리자는 Tools에서 OAuth 앱을 구성하고 소유자는 프로젝트 계정을 연결한다. 도구에 연결됐다고 그 자원에 접근할 수 있는 것은 아니다.",
+    "도구 선택과 헤더 오버라이드는 Agent 설정에 속하며 Save가 필요하다. 헤더를 바꾼 뒤 도구 목록을 새로 조회한다. 마스킹된 값은 기존 시크릿을 유지하며 빈 맵은 오버라이드를 지운다. 관리자는 Tools에서 OAuth 앱을 구성하고 소유자는 Agent 계정을 연결한다. 도구에 연결됐다고 그 자원에 접근할 수 있는 것은 아니다.",
   "guide.capabilities.agents": "다른 에이전트에 작업 위임",
-  "guide.capabilities.agentsBody": "전문 역할 분리가 필요한 작업에는 설정된 로컬 Agent나 등록된 외부 Agent를 연결한다. 각 하위 Agent가 받을 요청과 결과를 설명한다. 하위 활동에는 실행 주체가 표시되며 사용량은 원래 실행에 귀속된다.",
+  "guide.capabilities.agentsBody": "전문 역할 분리가 필요한 작업에는 설정된 다른 Agent를 연결한다. 각 하위 Agent가 받을 요청과 결과를 설명한다. 하위 활동에는 실행 주체가 표시되며 사용량은 원래 실행에 귀속된다.",
   "guide.capabilities.plugins": "Plugins 가져오기와 동기화",
   "guide.capabilities.pluginsBody":
     "관리자가 Plugins에서 설정된 저장소나 업로드한 checkout archive의 스킬·MCP 정의를 가져온다. 저장소에 접근할 수 없으면 archive 업로드를 사용한다. 건너뜀·유효하지 않은 항목을 확인하고 가져온 기능을 Agent에 연결한다. 가져온 스킬 본문과 MCP URL·설명은 원본에서 수정한 뒤 다시 동기화한다. MCP 헤더는 가져오지 않으므로 자격 증명은 콘솔에서 별도로 설정한다. 고아 항목은 동기화가 자동 삭제하지 않으며 결과 화면에서 검토 후 명시적으로 삭제한다.",
   "guide.capabilities.discovery": "동적 검색과 메모리",
   "guide.capabilities.discoveryBody":
-    "동적 검색은 최근 사용자 요청을 기능 이름·설명에 매칭하고 요청이 없을 때만 시스템 프롬프트를 사용해 관련 Skill·MCP 서버/도구·외부 에이전트를 저장된 연결 위에 추가한다. 설명이 라우팅 신호이므로 언제 사용하고 무엇을 돌려주는지 정확히 써야 한다. capability catalog와 임베딩 설정이 동작해야 하며 검색 결과가 없으면 관리자에게 확인한다. 메모리 recall은 별개이며 recall 도구를 제공하는 MCP 서버가 연결되어야 한다.",
+    "동적 검색은 최근 사용자 요청을 기능 이름·설명에 매칭하고 요청이 없을 때만 시스템 프롬프트를 사용해 관련 Skill·MCP 서버/도구를 저장된 연결 위에 추가한다. 설명이 라우팅 신호이므로 언제 사용하고 무엇을 돌려주는지 정확히 써야 한다. capability catalog와 임베딩 설정이 동작해야 하며 검색 결과가 없으면 관리자에게 확인한다. 메모리 recall은 별개이며 recall 도구를 제공하는 MCP 서버가 연결되어야 한다.",
   "guide.capabilities.builtins": "이미지·오디오·URL·파일 도구",
   "guide.capabilities.builtinsBody": "필요한 이미지 생성·오디오 처리·URL 읽기·Slack 기록 기능을 켜고 해당 서비스를 구성한다. 파일 저장소가 있으면 File로 지원 문서를 읽고 생성·편집하며, 텍스트 파일은 SaveFile로 만든다. 오디오에는 비공개 원본 저장소와 별도 worker가 필요하다. 문서 처리는 기본 제공하며 별도 MCP 연결이 필요하지 않는다.",
 
   "guide.chat.title": "대화와 첨부파일",
   "guide.chat.body":
-    "Chats는 agent 프로젝트와의 대화를 보관한다. 설정 시험에는 Playground를, 여러 메시지에 걸쳐 이어가는 작업에는 Chats를 사용한다.",
+    "Chats는 Agent와의 대화를 보관한다. 설정 시험에는 Playground를, 여러 메시지에 걸쳐 이어가는 작업에는 Chats를 사용한다.",
   "guide.chat.configuration": "대화할 Agent 선택",
   "guide.chat.configurationBody":
     "Chats에서 접근 가능한 설정된 Agent를 선택해 대화를 시작한다. 각 새 턴은 현재 저장된 설정을 사용하므로 설정 변경은 기존 대화의 이후 턴에도 적용된다.",
@@ -663,13 +662,13 @@ export const ko: Messages = {
   "guide.workspaces.setup": "1. 실행 기능 확인",
   "guide.workspaces.setupBody": "Agent 설정에서 워크스페이스 도구를 켠다. 생성된 전용 탭에서 저장소·접근 모드·기본 런타임을 관리하고 Settings → Models → 모델 사용 설정에서 네이티브 런타임 모델을 선택한다. 운영자는 Sandbox 실행 서버와 worker를 연결한다. Skill·GitHub 연결만으로 도구가 켜지지는 않는다. 로그인한 member 이상이 Agent 또는 Chats의 Workspace 선택으로 작업한다.",
   "guide.workspaces.tasks": "2. 작업에 맞는 절차 선택",
-  "guide.workspaces.tasksBody": "PR 리뷰, Issue 수정, 기능 구현, 리팩토링, 의존성 업그레이드, CI 조사, 보안 수정과 프로젝트 생성에 맞는 Skill을 사용한다. 파일 변환·데이터 분석·스크립트 자동화도 Workspace에서 수행할 수 있다. 원격 조회만 필요하면 MCP를 사용하고 실행 공간을 만들지 않는다. Skill은 절차를 제공하며 실행 가능 범위는 실제 도구와 배포 설정이 결정한다.",
+  "guide.workspaces.tasksBody": "PR 리뷰, Issue 수정, 기능 구현, 리팩토링, 의존성 업그레이드, CI 조사, 보안 수정과 Agent 생성에 맞는 Skill을 사용한다. 파일 변환·데이터 분석·스크립트 자동화도 Workspace에서 수행할 수 있다. 원격 조회만 필요하면 MCP를 사용하고 실행 공간을 만들지 않는다. Skill은 절차를 제공하며 실행 가능 범위는 실제 도구와 배포 설정이 결정한다.",
   "guide.workspaces.reuse": "3. 선택한 Workspace 재사용",
-  "guide.workspaces.reuseBody": "Agent 채팅은 프로젝트마다 선택한 Workspace 하나를 유지한다. Start는 최초 생성이며 반복하면 새 작업 없이 기존 선택만 반환한다. 후속 작업은 Run으로 이어가고, 다른 공간으로 옮길 때만 소유한 기존 Workspace를 선택한다. Workspace 링크는 웹 페이지 주소이고 파일 경로는 workdir 안에 있다. 홈페이지와 사이드바에서 Chat과 Workspace 유형을 구분해 표시한다.",
+  "guide.workspaces.reuseBody": "Agent 채팅은 Agent마다 선택한 Workspace 하나를 유지한다. Start는 최초 생성이며 반복하면 새 작업 없이 기존 선택만 반환한다. 후속 작업은 Run으로 이어가고, 다른 공간으로 옮길 때만 소유한 기존 Workspace를 선택한다. Workspace 링크는 웹 페이지 주소이고 파일 경로는 workdir 안에 있다. 홈페이지와 사이드바에서 Chat과 Workspace 유형을 구분해 표시한다.",
   "guide.workspaces.runtime": "4. 코딩 Runtime과 명령 실행 구분",
   "guide.workspaces.runtimeBody": "설정된 Codex·Claude·OpenCode에는 자연어 작업과 검증 방법을 전달한다. Command는 정확한 비대화형 셸 스크립트를 실행하므로 설명 문장이나 번호 목록을 명령으로 보내지 않는다. Run으로 현재 Runtime을 바꿀 수는 없다. 보고서·파일 처리·실험 등 Git 없는 작업도 가능하다.",
   "guide.workspaces.repository": "5. clone 전에 저장소 준비",
-  "guide.workspaces.repositoryBody": "기존 저장소는 프로젝트의 워크스페이스 도구 탭에 등록한다. 기본 저장소는 없다. 기본 모드는 등록 + 신규이며 Workspace create_repository가 실제로 만든 저장소를 자동 등록한다. 소유자·관리자는 저장소 고정·소유자 지정·모든 저장소 모드도 선택할 수 있다. 반환된 기준 브랜치를 검사하고 Git 작업에는 저장소와 브랜치를 함께 지정한다.",
+  "guide.workspaces.repositoryBody": "기존 저장소는 Agent의 워크스페이스 도구 탭에 등록한다. 기본 저장소는 없다. 기본 모드는 등록 + 신규이며 Workspace create_repository가 실제로 만든 저장소를 자동 등록한다. 소유자·관리자는 저장소 고정·소유자 지정·모든 저장소 모드도 선택할 수 있다. 반환된 기준 브랜치를 검사하고 Git 작업에는 저장소와 브랜치를 함께 지정한다.",
   "guide.workspaces.approvals": "6. 게시 단계를 각각 검토",
   "guide.workspaces.approvalsBody": "Commit, commit-and-push, PR 생성, 병합과 main 직접 푸시는 서로 다른 검토다. 각 승인은 검토한 동작과 정확한 변경에만 적용된다. 결과가 원래 채팅으로 돌아오면 다음에 요청한 검토를 준비한다. PR의 CI 대기가 등록되면 해당 HEAD의 검사를 최대 30분 관찰하고 결과에 따라 채팅을 재개한다. 검사 실패·HEAD 변경·결과 불명은 게시 권한이 아니다. main 직접 푸시는 fast-forward만 가능하며 브랜치 보호 규칙을 따른다.",
   "guide.workspaces.results": "7. 실행·검사·산출물 구분",
@@ -681,7 +680,7 @@ export const ko: Messages = {
   "guide.surfaces.chat": "Chats: 영속 이력과 승인 결과",
   "guide.surfaces.chatBody": "로그인한 채팅 소유자는 영속 SDK Session과 도구 승인 화면을 사용한다. 활성화된 Workspace의 승인 결과와 CI 갱신은 원래 채팅으로 돌아온다. Workspace Runtime의 Session과 파일은 별도이며 상위 Agent의 모든 Skill·계정 연결을 자동 상속하지 않는다.",
   "guide.surfaces.api": "Playground와 API: 저장된 설정과 호출자 이력",
-  "guide.surfaces.apiBody": "Playground는 저장한 설정을 실행한다. 로그인한 member는 활성화된 Workspace 도구를 사용할 수 있지만 원래 Chat이 없으면 승인 후 자동 재개를 받지 못한다. HTTP 클라이언트는 자신의 이력을 전달한다. 프로젝트 API 토큰은 서비스 actor를 사용하고 소유자 이메일을 MCP에 전달하지만 브라우저 세션은 아니며 Workspace 도구나 영속 Chat 승인 화면을 활성화하지 않는다.",
+  "guide.surfaces.apiBody": "Playground는 저장한 설정을 실행한다. 로그인한 member는 활성화된 Workspace 도구를 사용할 수 있지만 원래 Chat이 없으면 승인 후 자동 재개를 받지 못한다. HTTP 클라이언트는 자신의 이력을 전달한다. Agent API 토큰은 서비스 actor를 사용하고 소유자 이메일을 MCP에 전달하지만 브라우저 세션은 아니며 Workspace 도구나 영속 Chat 승인 화면을 활성화하지 않는다.",
   "guide.surfaces.bots": "메신저: 플랫폼 식별자와 응답",
   "guide.surfaces.botsBody": "Slack·Telegram·Teams는 각 플랫폼의 actor 식별자로 실행하고 그곳에 답한다. 개인 MCP 문맥은 해당 창구가 검증한 이메일을 해석할 수 있을 때만 제공한다. 봇 호출에는 user 전용 Workspace 빌트인이나 브라우저 Chat 승인 화면이 제공되지 않는다. 봇 자격 증명 검사와 실제 이벤트 전달을 별도로 확인한다.",
   "guide.surfaces.automation": "Webhook과 스케줄: 기계 호출자",
@@ -690,13 +689,13 @@ export const ko: Messages = {
   "guide.audio.title": "오디오 처리와 개인 기록",
   "guide.audio.body": "Agent 하나가 재사용 가능한 skill을 읽고 수집·전사·요약·요청한 기록을 수행할 수 있다. 긴 작업은 별도 worker가 이어가므로 Agent 응답이 끝나거나 화면을 닫아도 계속된다.",
   "guide.audio.setup": "오디오 도구 켜기",
-  "guide.audio.setupBody": "관리자가 비공개 파일 저장소·전사 서비스·오디오 worker를 구성한 뒤 Agent 설정에서 오디오 처리 도구를 켠다. 프로젝트 소유자는 오디오 처리 탭을 사용할 수 있다.",
+  "guide.audio.setupBody": "관리자가 비공개 파일 저장소·전사 서비스·오디오 worker를 구성한 뒤 Agent 설정에서 오디오 처리 도구를 켠다. Agent 소유자는 오디오 처리 탭을 사용할 수 있다.",
   "guide.audio.skills": "Agent 하나와 재사용 skill로 구성하기",
   "guide.audio.skillsBody": "workspace plugin을 사용한다면 처리 절차는 audio-processing, 회의록은 meeting-minutes, 요청한 Document·Memory 기록은 personal-records를 연결한다. 시스템 프롬프트는 짧게 유지하고 녹음 출처의 도구와 인증도 이 Agent에 연결한다. 다운로드·전사·기록용 Agent를 각각 만들 필요는 없다.",
   "guide.audio.configuration": "처리 설정 선택하기",
   "guide.audio.configurationBody": "전사 모델·언어·보존 기간과 선택적인 후처리 Agent를 고른 뒤 저장한다. 각 작업은 접수 시점의 후처리·전달 대상 설정을 보관한다. 이후 변경은 새 작업에만 적용된다.",
   "guide.audio.run": "작업 시작과 정기 수집",
-  "guide.audio.runBody": "프로젝트 화면에서 오디오를 업로드하거나 Agent에 연결 도구로 녹음을 가져오도록 요청한다. 정기 수집은 schedule에 수집 범위와 신규 녹음 수 제한을 지정하고, 소유자가 내 개인 문맥으로 실행을 켠다. worker와 schedule ticker가 실행 중이어야 하며 오디오 도구를 켜는 것만으로 정기 작업이 생기지는 않는다.",
+  "guide.audio.runBody": "Agent 화면에서 오디오를 업로드하거나 Agent에 연결 도구로 녹음을 가져오도록 요청한다. 정기 수집은 schedule에 수집 범위와 신규 녹음 수 제한을 지정하고, 소유자가 내 개인 문맥으로 실행을 켠다. worker와 schedule ticker가 실행 중이어야 하며 오디오 도구를 켜는 것만으로 정기 작업이 생기지는 않는다.",
   "guide.audio.results": "비공개 Artifacts에서 결과 확인하기",
   "guide.audio.resultsBody": "선택한 단계가 끝나면 원본 오디오·전사 JSON·Markdown 요약·화자 대화·구조화 결과가 만들어진다. 작업 항목이나 Artifacts에서 연다. 접수 또는 중복 응답과 실제 작업 상태는 다르므로 완료 상태를 확인한다. 마지막 단계가 중간 파일 정리여도 상태가 완료이면 끝난 작업이다. 인명·수치·누락 구간·화자 미상 표시는 원문과 대조한다.",
   "guide.audio.records": "요청한 경우에만 Memory·Document에 기록하기",
@@ -708,10 +707,10 @@ export const ko: Messages = {
 
   "guide.api.title": "HTTP API 호출",
   "guide.api.body":
-    "각 프로젝트의 API Reference는 해당 프로젝트 주소를 채워 보여 준다. 요청 필드·응답 형식·오류 코드·curl 또는 SDK 예제가 포함되어 있다. 아래 절차와 함께 사용하며 소스 checkout은 필요하지 않다.",
-  "guide.api.token": "프로젝트와 인증 정보 준비",
+    "각 Agent의 API Reference는 해당 Agent 주소를 채워 보여 준다. 요청 필드·응답 형식·오류 코드·curl 또는 SDK 예제가 포함되어 있다. 아래 절차와 함께 사용하며 소스 checkout은 필요하지 않다.",
+  "guide.api.token": "Agent와 인증 정보 준비",
   "guide.api.tokenBody":
-    "검증한 Agent 설정을 저장하고 Integrations에서 프로젝트 토큰을 발급한다. 소유자 tier가 API 토큰을 허용해야 한다. Authorization: Bearer <token>으로 보내며 해당 프로젝트 실행으로 범위가 제한된다. 서비스 actor로 실행하고 연결된 MCP 서버에는 소유자 이메일을 전달하므로 해당 도구에 접근하는 자격 증명으로 취급한다. 브라우저 로그인이나 Workspace 도구를 얻는 수단은 아니다.",
+    "검증한 Agent 설정을 저장하고 Integrations에서 Agent 토큰을 발급한다. 소유자 tier가 API 토큰을 허용해야 한다. Authorization: Bearer <token>으로 보내며 해당 Agent 실행으로 범위가 제한된다. 서비스 actor로 실행하고 연결된 MCP 서버에는 소유자 이메일을 전달하므로 해당 도구에 접근하는 자격 증명으로 취급한다. 브라우저 로그인이나 Workspace 도구를 얻는 수단은 아니다.",
   "guide.api.address": "Agent 주소 사용하기",
   "guide.api.addressBody":
     "실행 URL은 /api/projects/{name}/으로 시작하며 Agent의 현재 저장된 설정을 사용한다. 작업은 messages로 보낸다. 호출 시스템에서 접근 가능한 Agent Studio 주소를 사용한다.",
@@ -720,7 +719,7 @@ export const ko: Messages = {
     "predict에 {\"messages\":[{\"role\":\"user\",\"content\":\"이 메모를 요약해 줘\"}],\"stream\":false}를 보낸다. 필요하면 지원되는 인라인 이미지 part를 추가한다. 이미지 생성·편집은 Agent의 이미지 도구가 수행한다. 요청 하나로 답변·경고·사용량을 먼저 확인한다.",
   "guide.api.sdk": "OpenAI 호환 클라이언트",
   "guide.api.sdkBody":
-    "API Reference의 Python 또는 JavaScript 예제로 chat/completions를 호출한다. SDK base URL은 프로젝트 주소, API key는 프로젝트 토큰으로 설정한다. 모델과 샘플링 파라미터는 저장한 Agent 설정이 결정하며 model·temperature·max_tokens로 덮어쓰지 않는다. 예제를 실행하기 전에 호출 프로세스의 환경변수 PROJECT_API_TOKEN과 CONVERSATION_ID를 설정한다.",
+    "API Reference의 Python 또는 JavaScript 예제로 chat/completions를 호출한다. SDK base URL은 Agent 주소, API key는 Agent 토큰으로 설정한다. 모델과 샘플링 파라미터는 저장한 Agent 설정이 결정하며 model·temperature·max_tokens로 덮어쓰지 않는다. 예제를 실행하기 전에 호출 프로세스의 환경변수 PROJECT_API_TOKEN과 CONVERSATION_ID를 설정한다.",
   "guide.api.stream": "스트리밍과 대화 이력",
   "guide.api.streamBody":
     "텍스트 predict나 chat/completions에 stream:true를 보내면 SSE로 응답하며 agent에는 텍스트와 도구 활동을 스트리밍하는 전용 엔드포인트도 있다. 연결을 유지하고 경고·오류·종료 이벤트까지 처리한다. HTTP 200만으로 실행 성공을 판단할 수는 없다. HTTP 호출자는 이전 메시지를 직접 보내야 한다. X-Conversation-Id는 하위 MCP의 대화 식별을 이어 주지만 과거 메시지를 자동으로 불러오지는 않는다.",
@@ -730,41 +729,41 @@ export const ko: Messages = {
 
   "guide.integrations.title": "봇·프로토콜·자동화 연동",
   "guide.integrations.body":
-    "프로젝트 소유자와 관리자가 연동을 설정한다. 먼저 Agent 설정을 저장하고 설정 후 실제 호출 한 번으로 검증한다. 외부 플랫폼은 별도 자격 증명과 네트워크 연결이 필요하며 폐쇄망 설치의 필수 기능은 아니다.",
+    "Agent 소유자와 관리자가 연동을 설정한다. 먼저 Agent 설정을 저장하고 설정 후 실제 호출 한 번으로 검증한다. 외부 플랫폼은 별도 자격 증명과 네트워크 연결이 필요하며 폐쇄망 설치의 필수 기능은 아니다.",
   "guide.integrations.slack": "Slack",
   "guide.integrations.slackBody":
-    "agent 프로젝트의 Integrations에서 app manifest를 복사해 전용 Slack 앱을 생성·설치하고 bot token과 signing secret을 저장한다. 이벤트를 활성화하고 표시된 events URL을 확인한 뒤 Test connection을 실행한다. 대상 채널에 봇을 초대하고 멘션으로 시험한다. 자격 증명 검사가 성공해도 Slack에서 앱으로 이벤트가 전달되는지 별도 확인해야 한다.",
+    "Agent의 Integrations에서 app manifest를 복사해 전용 Slack 앱을 생성·설치하고 bot token과 signing secret을 저장한다. 이벤트를 활성화하고 표시된 events URL을 확인한 뒤 Test connection을 실행한다. 대상 채널에 봇을 초대하고 멘션으로 시험한다. 자격 증명 검사가 성공해도 Slack에서 앱으로 이벤트가 전달되는지 별도 확인해야 한다.",
   "guide.integrations.messengers": "Telegram과 Teams",
   "guide.integrations.messengersBody":
-    "agent 프로젝트의 Integrations에서 Telegram bot token을 저장하고 활성화하면 webhook이 등록된다. 앱 주소가 바뀌면 Register webhook으로 다시 등록한다. Teams는 Azure Bot의 Teams 채널을 활성화하고 application ID·client secret, 단일 tenant 앱이면 tenant ID를 저장한 뒤 표시된 URL을 messaging endpoint로 설정한다. 그룹 멘션을 시험하기 전에 다이렉트 대화에서 확인한다.",
+    "Agent의 Integrations에서 Telegram bot token을 저장하고 활성화하면 webhook이 등록된다. 앱 주소가 바뀌면 Register webhook으로 다시 등록한다. Teams는 Azure Bot의 Teams 채널을 활성화하고 application ID·client secret, 단일 tenant 앱이면 tenant ID를 저장한 뒤 표시된 URL을 messaging endpoint로 설정한다. 그룹 멘션을 시험하기 전에 다이렉트 대화에서 확인한다.",
   "guide.integrations.webhook": "웹훅으로 실행하기",
   "guide.integrations.webhookBody":
-    "Settings에서 프로젝트 webhook을 활성화한다. 일반 발신자는 X-Trigger-Secret을 보내고 GitHub는 같은 Secret으로 X-Hub-Signature-256 서명을 만든다. JSON 본문은 사용자 메시지로 전달된다. HTTP 202는 접수 응답이므로 Trigger 이력에서 실행·건너뜀 결과를 확인한다. 동시 실행을 허용하지 않으면 실행 중 들어온 전달은 건너뛴다.",
+    "Settings에서 Agent webhook을 활성화한다. 일반 발신자는 X-Trigger-Secret을 보내고 GitHub는 같은 Secret으로 X-Hub-Signature-256 서명을 만든다. JSON 본문은 사용자 메시지로 전달된다. HTTP 202는 접수 응답이므로 Trigger 이력에서 실행·건너뜀 결과를 확인한다. 동시 실행을 허용하지 않으면 실행 중 들어온 전달은 건너뛴다.",
   "guide.integrations.schedule": "반복 작업 예약하기",
   "guide.integrations.scheduleBody":
-    "프로젝트 Settings에서 다섯 필드 cron 식, Asia/Seoul 같은 IANA 시간대, 실행할 메시지를 지정해 스케줄을 추가한다. 필요하면 전송 목적지를 선택하고 활성화한다. 스케줄은 현재 Agent 설정을 사용하며 배포 환경의 외부 티커가 필요하다. 답변 생성은 성공해도 봇 전송이 실패할 수 있으므로 실행 상태와 전달 결과를 함께 확인한다.",
+    "Agent Settings에서 다섯 필드 cron 식, Asia/Seoul 같은 IANA 시간대, 실행할 메시지를 지정해 스케줄을 추가한다. 필요하면 전송 목적지를 선택하고 활성화한다. 스케줄은 현재 Agent 설정을 사용하며 배포 환경의 외부 티커가 필요하다. 답변 생성은 성공해도 봇 전송이 실패할 수 있으므로 실행 상태와 전달 결과를 함께 확인한다.",
 
   "guide.records.title": "결과물·사용량·한도",
   "guide.records.artifacts": "원본과 생성 파일 찾기",
-  "guide.records.artifactsBody": "개인 Artifacts에는 본인 email에 귀속된 파일과 개인 문맥의 자동화 산출물이 표시된다. 프로젝트 Artifacts에는 개인 소유자가 없는 실행 결과도 포함된다. 비공개 오디오 원본·결과의 읽기와 삭제는 소유자만 할 수 있다. 일반 파일의 서명 링크만 만료됐다면 Artifacts에서 다시 열어 갱신한다. 이미 만료되거나 삭제된 파일은 복원되지 않는다. 보존 기간 이후에도 필요한 파일은 내려받는다. 대화를 삭제해도 Artifacts는 삭제되지 않는다.",
+  "guide.records.artifactsBody": "개인 Artifacts에는 본인 email에 귀속된 파일과 개인 문맥의 자동화 산출물이 표시된다. Agent Artifacts에는 개인 소유자가 없는 실행 결과도 포함된다. 비공개 오디오 원본·결과의 읽기와 삭제는 소유자만 할 수 있다. 일반 파일의 서명 링크만 만료됐다면 Artifacts에서 다시 열어 갱신한다. 이미 만료되거나 삭제된 파일은 복원되지 않는다. 보존 기간 이후에도 필요한 파일은 내려받는다. 대화를 삭제해도 Artifacts는 삭제되지 않는다.",
   "guide.records.usage": "사용량과 비용 귀속 이해",
   "guide.records.usageBody":
-    "프로젝트 Usage에서 기간별 내역과 모델·공급자별 집계를 보고, 소유자와 관리자는 호출자별 상세를 확인한다. 개인 사용량은 Profile에서 확인한다. 프로젝트 토큰 호출은 소유자의 개인 예산이 아닌 프로젝트에 집계된다. 비용은 공급자 보고값이나 카탈로그 단가를 사용하므로 추정치가 0이라고 공급자 과금도 없다고 판단하지 않는다.",
+    "Agent Usage에서 기간별 내역과 모델·공급자별 집계를 보고, 소유자와 관리자는 호출자별 상세를 확인한다. 개인 사용량은 Profile에서 확인한다. Agent 토큰 호출은 소유자의 개인 예산이 아닌 Agent에 집계된다. 비용은 공급자 보고값이나 카탈로그 단가를 사용하므로 추정치가 0이라고 공급자 과금도 없다고 판단하지 않는다.",
   "guide.records.budgets": "알림·차단·동시 실행 한도",
   "guide.records.budgetsBody":
-    "프로젝트 Settings에서 일간·월간 알림 기준과 차단 기준을 따로 설정한다. 알림은 목적지가 설정되어야 전달되며, 차단은 알림 설정이 없어도 UTC 기준 날짜나 월이 바뀔 때까지 새 실행을 거절한다. 호출 방식에 따라 개인 등급 한도와 호출자 동시 실행 한도도 적용된다. 비용은 실행 완료 후 반영될 수 있어 기준값이 초과 지출을 완전히 막는 선불 잔액은 아니다.",
+    "Agent Settings에서 일간·월간 알림 기준과 차단 기준을 따로 설정한다. 알림은 목적지가 설정되어야 전달되며, 차단은 알림 설정이 없어도 UTC 기준 날짜나 월이 바뀔 때까지 새 실행을 거절한다. 호출 방식에 따라 개인 등급 한도와 호출자 동시 실행 한도도 적용된다. 비용은 실행 완료 후 반영될 수 있어 기준값이 초과 지출을 완전히 막는 선불 잔액은 아니다.",
   "guide.records.traces": "Traces로 실행 조사하기",
   "guide.records.tracesBody":
-    "소유자와 관리자는 프로젝트 Traces에서 준비 단계·모델 호출·도구·위임·소요 시간·사용량·경고를 확인한다. 모든 Agent 실행을 추적하지만 프롬프트와 도구 결과 원문 전체를 저장하지는 않는다. Trace가 없으면 실행 전 거절이나 기록 저장 실패 여부를 확인한다.",
+    "소유자와 관리자는 Agent Traces에서 준비 단계·모델 호출·도구·위임·소요 시간·사용량·경고를 확인한다. 모든 Agent 실행을 추적하지만 프롬프트와 도구 결과 원문 전체를 저장하지는 않는다. Trace가 없으면 실행 전 거절이나 기록 저장 실패 여부를 확인한다.",
 
   "guide.security.title": "접근 권한과 민감정보",
   "guide.security.body":
-    "프로젝트를 공유하거나 데이터 소스를 연결하기 전에 접근 범위를 정한다. 콘솔·모델 공급자·도구·파일 저장소는 각각 정보가 처리될 수 있는 위치다.",
+    "Agent를 공유하거나 데이터 소스를 연결하기 전에 접근 범위를 정한다. 콘솔·모델 공급자·도구·파일 저장소는 각각 정보가 처리될 수 있는 위치다.",
   "guide.security.visibility": "공개 범위와 편집 권한",
   "guide.security.visibilityBody":
-    "public 프로젝트는 이 설치에 로그인한 사용자가 접근할 수 있다는 뜻이며 모든 API를 익명 공개하는 의미는 아니다. private 프로젝트는 소유자·초대 이메일·관리자로 접근을 제한한다. 초대는 조회·실행 권한이며 편집 권한이 아니다. 소유자와 관리자가 Agent 설정·연동·Trace·프로젝트 전체 Artifact를 관리한다. 기계 호출의 자격 증명에는 별도 접근 규칙이 적용된다.",
+    "public Agent는 이 설치에 로그인한 사용자가 접근할 수 있다는 뜻이며 모든 API를 익명 공개하는 의미는 아니다. private Agent는 소유자·초대 이메일·관리자로 접근을 제한한다. 초대는 조회·실행 권한이며 편집 권한이 아니다. 소유자와 관리자가 Agent 설정·연동·Trace·Agent 전체 Artifact를 관리한다. 기계 호출의 자격 증명에는 별도 접근 규칙이 적용된다.",
   "guide.security.credentials": "비밀값과 공유 링크",
-  "guide.security.credentialsBody": "저장된 키는 앞뒤 4자를 표시하고 8자 이하는 전부 숨긴다. 교체를 누르면 별도 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다. 환경변수로 복원은 설정 재정의를 명시적으로 제거한다. Studio 발급 프로젝트·Webhook 키는 보기·숨기기·복사와 지원되는 생성·폐기 동작을 공통으로 사용한다. 원문을 표시한 동안에만 복사하며 교체·폐기는 확인을 거친다. 브라우저 조회 조건에는 자격 증명을 저장하지 않는다. 서명된 Artifact URL도 자격 증명으로 취급한다.",
+  "guide.security.credentialsBody": "저장된 키는 앞뒤 4자를 표시하고 8자 이하는 전부 숨긴다. 교체를 누르면 별도 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다. 환경변수로 복원은 설정 재정의를 명시적으로 제거한다. Studio 발급 Agent·Webhook 키는 보기·숨기기·복사와 지원되는 생성·폐기 동작을 공통으로 사용한다. 원문을 표시한 동안에만 복사하며 교체·폐기는 확인을 거친다. 브라우저 조회 조건에는 자격 증명을 저장하지 않는다. 서명된 Artifact URL도 자격 증명으로 취급한다.",
   "guide.security.pii": "PII 필터의 적용 범위",
   "guide.security.piiBody":
     "Agent의 PII filtering은 모델에 보낼 텍스트에서 인식한 패턴을 치환하고 사용자에게 보여 줄 결과에서 복원한다. 완전한 익명화는 아니며 도구 인자·저장된 답변·추론·파일에 복원된 정보가 포함될 수 있다. 동적 검색의 embedding/rerank 질의와 memory recall 질의는 이 필터 밖이다. 민감한 작업에는 승인된 모델과 도구 서비스를 사용한다.",
@@ -774,16 +773,16 @@ export const ko: Messages = {
 
   "guide.admin.title": "관리자 설정",
   "guide.admin.body":
-    "Members·Settings·Models·Audit는 역할이 다르다. 여기서 변경한 값은 여러 프로젝트에 영향을 줄 수 있으므로 저장 후 해당 기능을 시험한다. 기능 레지스트리 화면은 member 이상이 열람하며 항목 생성·관리는 관리자 작업이다.",
+    "Members·Settings·Models·Audit는 역할이 다르다. 여기서 변경한 값은 여러 Agent에 영향을 줄 수 있으므로 저장 후 해당 기능을 시험한다. 기능 레지스트리 화면은 member 이상이 열람하며 항목 생성·관리는 관리자 작업이다.",
   "guide.admin.members": "사용자 등급 관리",
   "guide.admin.membersBody":
-    "Members에서 사용자를 찾아 프로젝트 생성이나 API 토큰 사용에 필요한 등급으로 변경한다. 적용된 한도는 사용자가 Profile에서 확인한다. ADMIN_EMAILS에 지정된 사용자는 admin으로 고정되며 목록에서 제거해도 저장된 등급이 자동 강등되지는 않는다.",
+    "Members에서 사용자를 찾아 Agent 생성이나 API 토큰 사용에 필요한 등급으로 변경한다. 적용된 한도는 사용자가 Profile에서 확인한다. ADMIN_EMAILS에 지정된 사용자는 admin으로 고정되며 목록에서 제거해도 저장된 등급이 자동 강등되지는 않는다.",
   "guide.admin.settings": "Settings 재정의와 배포 설정",
   "guide.admin.settingsBody": "Settings는 General·Plugins·Models·Keys 탭으로 나눈다. General에서 공개 접근·Artifact 접근 방식·가격 미지정 모델의 실행 정책을 관리한다. Plugins는 저장소, Models는 프로바이더 연결과 선택 모델, Keys는 GitHub 자격 증명을 관리한다. 변경한 항목만 저장한다. DB·암호화·로그인 공급자·스토리지·보존 기간은 배포 설정에서 관리한다.",
   "guide.admin.models": "모델 연결과 검증",
   "guide.admin.modelsBody": "Settings → Models → 프로바이더에서 종류·고유 연결 이름·API base URL·키를 등록한다. Self-hosted도 같은 흐름을 사용하며 키를 생략할 수 있다. 인증 대상 주소를 바꾸면 새 키가 필요하다. 모델 사용 설정에서는 등록된 호환 모델 중 기본·Workspace·검색 모델을 선택한다.",
   "guide.admin.modelSelection": "모델 조회·선택·관리",
-  "guide.admin.modelSelectionBody": "Model 선택은 항상 Provider의 전체 목록을 조회한다. 출력 유형과 독립적인 Tools·Vision·Reasoning 배지, 컨텍스트 한도와 가격을 비교하고 이름순·가격순으로 정렬한다. 모델 추가는 즉시 등록한다. 선택된 모델만 보기로 목록을 좁히고 삭제하며, 등록 모델 관리에서 수정·제공 상태를 확인한다. Provider·검색어·필터·정렬은 이 브라우저에 저장한다. Models는 저장된 선택의 읽기 전용 목록이다. 목록 조회 성공이 추론 성공을 뜻하지 않으므로 짧은 프로젝트 실행으로 확인한다.",
+  "guide.admin.modelSelectionBody": "Model 선택은 항상 Provider의 전체 목록을 조회한다. 출력 유형과 독립적인 Tools·Vision·Reasoning 배지, 컨텍스트 한도와 가격을 비교하고 이름순·가격순으로 정렬한다. 모델 추가는 즉시 등록한다. 선택된 모델만 보기로 목록을 좁히고 삭제하며, 등록 모델 관리에서 수정·제공 상태를 확인한다. Provider·검색어·필터·정렬은 이 브라우저에 저장한다. Models는 저장된 선택의 읽기 전용 목록이다. 목록 조회 성공이 추론 성공을 뜻하지 않으므로 짧은 Agent 실행으로 확인한다.",
   "guide.admin.offline": "폐쇄망의 카탈로그와 검색 모델",
   "guide.admin.offlineBody": "저장된 모델과 내부 프로바이더 연결은 공개 인터넷 없이 사용한다. 내장 공개 메타데이터는 누락된 정보만 보완하며 모델을 등록하지 않는다. 운영자는 로컬 카탈로그 파일로 이 정보를 갱신할 수 있다. 기능 검색은 검색 기능을 켜고 등록된 Embedding 모델을 지정해야 하며 Rerank는 선택 사항이다. Embedding을 바꾸면 색인을 다시 만든다. 미등록 모델은 항상 거부하며, 가격 미지정 등록 모델의 실행 허용 여부는 General에서 정한다.",
   "guide.admin.artifacts": "사용자의 Artifact 접근 방식",
@@ -791,7 +790,7 @@ export const ko: Messages = {
     "PUBLIC_BASE_URL에 사용자가 접속하는 앱 주소를 설정한다. Settings의 proxied 방식은 앱이 파일을 전달하므로 브라우저가 저장소에 직접 접근하지 못하는 환경에 적합하다. authenticated는 만료되는 저장소 URL을 반환하므로 브라우저의 직접 접근이 필요하다. public은 공개 읽기 저장소 정책이 필요하며 URL을 가진 누구나 읽을 수 있다. 사용자 네트워크에서 파일 생성·다시 열기·다운로드로 검증한다.",
   "guide.admin.audit": "관리 작업 이력 확인",
   "guide.admin.auditBody":
-    "Audit에서 기간을 선택해 작업자·동작·대상·상세를 확인한다. 자격 증명 원문 조회도 기록된다. 설정 변경이나 발급된 비밀값 조회를 조사할 때 이 기록을 사용하고 실행 진단에는 프로젝트 Traces를 사용한다. 두 기록 모두 보존 기간의 영향을 받는다.",
+    "Audit에서 기간을 선택해 작업자·동작·대상·상세를 확인한다. 자격 증명 원문 조회도 기록된다. 설정 변경이나 발급된 비밀값 조회를 조사할 때 이 기록을 사용하고 실행 진단에는 Agent Traces를 사용한다. 두 기록 모두 보존 기간의 영향을 받는다.",
 
   "guide.install.title": "Agent Studio 설치하기",
   "guide.install.body":
@@ -810,14 +809,14 @@ export const ko: Messages = {
     "파일을 영속 보관하려면 bucket을 만들고 S3_BUCKET_NAME을 설정한다. AWS가 아닌 저장소는 S3_ENDPOINT·S3_ACCESS_KEY_ID·S3_SECRET_ACCESS_KEY도 설정한다. AWS S3는 배포의 AWS 자격 증명이나 역할 설정을 사용할 수 있다. 저장소 계정에는 해당 bucket의 artifacts/*·source-files/* 읽기·쓰기·삭제와 비공개 파일의 multipart 업로드 권한을 부여한다. 비 AWS 저장소의 키는 다른 공급자도 사용하는 AWS_* 대신 S3 전용 변수에 넣는다. Settings에서 Artifact 접근 방식을 정하고 사용자 네트워크에서 다운로드를 검증한다.",
   "guide.install.verify": "5. 기동과 전체 경로 확인",
   "guide.install.verifyBody":
-    "앱은 기동 시 설정을 검증하고 DB 스키마 migration을 적용한다. health·readiness를 확인하고 관리자로 로그인한다. Settings → Models에서 프로바이더 연결과 사용할 모델을 등록하고 모델 사용 설정에서 기본 모델을 선택한 뒤 작은 프로젝트를 생성해 실행한다. 저장소가 구성되었다면 생성 파일을 다시 연다. 내부 MCP와 활성화한 연동도 각각 시험한다.",
+    "앱은 기동 시 설정을 검증하고 DB 스키마 migration을 적용한다. health·readiness를 확인하고 관리자로 로그인한다. Settings → Models에서 프로바이더 연결과 사용할 모델을 등록하고 모델 사용 설정에서 기본 모델을 선택한 뒤 작은 Agent를 생성해 실행한다. 저장소가 구성되었다면 생성 파일을 다시 연다. 내부 MCP와 활성화한 연동도 각각 시험한다.",
 
   "guide.operations.title": "운영·보존·업그레이드",
   "guide.operations.body":
     "배포 담당자가 모니터링·주기 호출·백업·rollout을 구성한다. 콘솔 설정을 저장하면 외부 인프라까지 자동으로 시작된다고 가정하지 않는다.",
   "guide.operations.health": "상태 점검과 모델 실행 구분",
   "guide.operations.healthBody":
-    "GET /api/health는 프로세스 생존을 확인한다. GET /api/ready는 DB와 기본 LLM의 도달 가능성을 확인하며 연결 불가나 draining 중에는 503을 반환한다. LLM 도달 검사는 HTTP 응답 여부를 보므로 models 엔드포인트의 401·404도 통과할 수 있다. 자격 증명과 모델 지원은 Models의 Test와 실제 프로젝트 실행으로 검증한다.",
+    "GET /api/health는 프로세스 생존을 확인한다. GET /api/ready는 DB와 기본 LLM의 도달 가능성을 확인하며 연결 불가나 draining 중에는 503을 반환한다. LLM 도달 검사는 HTTP 응답 여부를 보므로 models 엔드포인트의 401·404도 통과할 수 있다. 자격 증명과 모델 지원은 Models의 Test와 실제 Agent 실행으로 검증한다.",
   "guide.operations.ticker": "외부 티커 구성",
   "guide.operations.tickerBody":
     "SCHEDULE_SCAN_TOKEN을 설정하고 외부 스케줄러가 최소 매분 한 번 X-Scan-Token 헤더로 POST /api/triggers/scan을 호출하도록 구성한다. 토큰 설정만으로 주기 작업이 시작되지는 않는다. 이 호출이 스케줄과 만료 DB 행 정리를 수행한다. 배포 토큰 미설정은 503, 요청 토큰 누락·불일치는 401이다. 활성화 후 scan 결과와 트리거 이력을 확인하며 장시간 중단 시 놓친 모든 발생분이 재실행되지는 않는다.",
@@ -828,7 +827,7 @@ export const ko: Messages = {
   "guide.operations.retentionBody": "DB 보존 설정은 트레이스·사용량·대화·Artifact·트리거·감사 행에 적용된다. 일반 Artifact 보존은 대화 보존 이상으로 두고 오브젝트 수명주기도 맞춘다. 비공개 오디오 파일은 별도의 일·달력 월 만료를 사용하며 파생 결과가 이를 상속하고 오디오 worker가 삭제한다. 같은 Artifacts bucket의 source-files/ 경로에는 삭제 표식을 유지해야 하므로 일괄 만료를 적용하지 않는다. 오디오 Artifact 삭제·만료는 작업 이력과 중복 방지 기록을 지우지 않는다.",
   "guide.operations.backup": "데이터와 복구 키 백업",
   "guide.operations.backupBody":
-    "PostgreSQL·저장된 object·배포 설정·암호화 및 세션 secret을 접근 제한된 위치에 백업한다. 별도 환경에 함께 복구하고 로그인·자격 증명 복호화·프로젝트 실행·파일 접근을 검증한다. AES_ENCRYPTION_KEY를 잃거나 임의 교체하면 저장된 자격 증명을 읽을 수 없다. 앱 이미지는 데이터 백업이 아니다.",
+    "PostgreSQL·저장된 object·배포 설정·암호화 및 세션 secret을 접근 제한된 위치에 백업한다. 별도 환경에 함께 복구하고 로그인·자격 증명 복호화·Agent 실행·파일 접근을 검증한다. AES_ENCRYPTION_KEY를 잃거나 임의 교체하면 저장된 자격 증명을 읽을 수 없다. 앱 이미지는 데이터 백업이 아니다.",
   "guide.operations.upgrade": "복구 절차를 준비한 업그레이드",
   "guide.operations.upgradeBody":
     "배포 전 앱과 worker 이미지 버전 및 백업을 확인한다. 대상 릴리스에 필요한 데이터 이전 절차를 준비하고 앱과 worker를 멈춘 상태에서 적용한다. HTTP 앱·오디오 worker·Workspace worker의 스키마와 설정을 맞추고 대응되는 Sandbox 이미지를 준비한다. 로그인·실행·파일·승인 재개를 다시 검사한다. 복구에는 호환되는 이미지와 DB 백업을 사용한다. 현재·복구용 이미지는 보존하고 디스크가 부족하면 미사용 캐시를 정리한다.",
@@ -838,12 +837,12 @@ export const ko: Messages = {
     "실패한 화면·정확한 오류·실행 시작 여부부터 확인한다. 관련 설정을 하나씩 바꾸고 문제를 확인할 수 있는 가장 작은 요청으로 다시 시험한다.",
   "guide.trouble.access": "로그인 실패 또는 사용할 수 없는 버튼",
   "guide.trouble.accessBody":
-    "관리자와 로그인 방식·허용 이메일 도메인·계정을 확인한다. 생성·편집 버튼이 없으면 등급이나 소유권 제한일 수 있다. API 401은 토큰과 프로젝트 이름을, 403은 현재 소유자 등급과 권한을 확인한다. private 또는 접근 불가 프로젝트는 404일 수 있으므로 URL만 잘못되었다고 단정하지 않는다.",
+    "관리자와 로그인 방식·허용 이메일 도메인·계정을 확인한다. 생성·편집 버튼이 없으면 등급이나 소유권 제한일 수 있다. API 401은 토큰과 Agent 이름을, 403은 현재 소유자 등급과 권한을 확인한다. private 또는 접근 불가 Agent는 404일 수 있으므로 URL만 잘못되었다고 단정하지 않는다.",
   "guide.trouble.model": "모델이 없거나 호출 실패",
   "guide.trouble.modelBody": "Models에서 선택된 모델을 확인한다. Settings → Models에서 필터를 초기화하고 Provider 전체 목록을 조회하며, 등록 모델 관리에서 수정하거나 제공 상태를 확인한다. Provider URL·base 경로·키·정확한 모델 ID를 확인한 뒤 Agent 설정을 저장한다. 400은 요청과 이미지·도구 요구사항을 API Reference와 대조한다. 502 같은 상위 서비스 오류는 표시된 오류를 확인하며 잘못된 모델이나 URL은 반복 요청으로 해결되지 않는다.",
   "guide.trouble.limits": "429·시간 초과·부분 답변",
   "guide.trouble.limitsBody":
-    "429는 동시 실행·프로젝트 일간 및 월간 차단·개인 등급 사용량을 확인하고 API 응답의 Retry-After를 따른다. 시간 초과나 스트림 오류는 공급자·느린 도구·배포 실행 시간 한도를 확인한다. turn-limit·output-limit·length는 작업을 좁히거나 저장된 설정의 해당 한도를 조정한다. 도구가 이미 외부 데이터를 바꿨을 수 있으므로 확인 없이 재시도를 반복하지 않는다.",
+    "429는 동시 실행·Agent 일간 및 월간 차단·개인 등급 사용량을 확인하고 API 응답의 Retry-After를 따른다. 시간 초과나 스트림 오류는 공급자·느린 도구·배포 실행 시간 한도를 확인한다. turn-limit·output-limit·length는 작업을 좁히거나 저장된 설정의 해당 한도를 조정한다. 도구가 이미 외부 데이터를 바꿨을 수 있으므로 확인 없이 재시도를 반복하지 않는다.",
   "guide.trouble.tools": "도구·메모리를 사용하지 않음",
   "guide.trouble.toolsBody":
     "저장된 설정에 기능이 연결되어 있고 Prompt preview에 표시되는지 확인한다. 도구 선택·discovery·OAuth 연결·실행 경고를 점검하고 실제로 해당 도구가 필요한 질문으로 시험한다. 내부 호스트 차단은 배포 담당자에게 확인하고 메모리는 연결 서버에 recall이 있는지 확인한다. 문서 읽기 도구는 검색 가능 상태만으로 부족하며 명시적으로 연결해야 한다.",
@@ -855,7 +854,7 @@ export const ko: Messages = {
     "파일 형식과 첨부 한도를 먼저 확인한다. 이미지는 이미지 입력 모델이 필요하고 Office 읽기는 내장 엔진이 처리한다. 암호화 파일, OCR이 필요한 스캔본, 지원되지 않는 편집은 다른 작업 방식이 필요하다. File 도구가 없거나 원본이 보관되지 않았다면 관리자에게 저장소 구성을 확인한다. 다운로드 실패는 Artifacts를 다시 열고 저장 경고·접근 모드·공개 주소·연결·보존 기간을 점검한다.",
   "guide.trouble.support": "지원 요청에 포함할 정보",
   "guide.trouble.supportBody":
-    "앱 버전·프로젝트·호출 방식·시각과 시간대·오류 및 상태 코드·Trace ID·최소 재현 요청을 정리한다. 기대한 결과와 Playground에서도 실패하는지 적는다. 토큰·쿠키·비공개 파일 링크·민감한 본문은 제거한다.",
+    "앱 버전·Agent·호출 방식·시각과 시간대·오류 및 상태 코드·Trace ID·최소 재현 요청을 정리한다. 기대한 결과와 Playground에서도 실패하는지 적는다. 토큰·쿠키·비공개 파일 링크·민감한 본문은 제거한다.",
 
   "chat.more": "이전 항목 더 보기",
   "chat.answerReady": "답변 완료",
@@ -885,15 +884,15 @@ export const ko: Messages = {
   "chat.stop": "중지",
   "chat.placeholder": "메시지를 입력하세요…",
   "chat.firstPlaceholder": "첫 메시지를 입력하세요…",
-  "chat.pickProject": "에이전트 프로젝트를 고르고 첫 메시지를 보내세요.",
+  "chat.pickProject": "Agent를 고르고 첫 메시지를 보내세요.",
   "chat.welcomeTitle": "어떤 작업을 도와드릴까요?",
-  "chat.welcomeHint": "대화는 선택한 프로젝트와 이어집니다. 다른 프로젝트를 사용하려면 새 대화를 시작하세요.",
+  "chat.welcomeHint": "대화는 선택한 Agent와 이어집니다. 다른 Agent를 사용하려면 새 대화를 시작하세요.",
   "chat.messageLabel": "메시지",
   "chat.inputHint": "Enter로 전송 · Shift + Enter로 줄바꿈",
-  "chat.project": "프로젝트",
-  "chat.noAgentProjects": "에이전트 프로젝트가 없습니다",
+  "chat.project": "Agent",
+  "chat.noAgentProjects": "Agent가 없습니다",
   "chat.noAgentProjectsBody":
-    "대화는 agent 프로젝트에서 실행됩니다. Projects 에서 하나 만들면 대화를 시작할 수 있습니다.",
+    "대화는 Agent에서 실행됩니다. Agents 에서 하나 만들면 대화를 시작할 수 있습니다.",
   "chat.running": "실행 중",
   "chat.answeredIn": "답변에 {duration} 걸렸습니다",
   "chat.via": "{path} 경유",
@@ -903,28 +902,28 @@ export const ko: Messages = {
   "chat.generatedImage": "생성된 이미지",
   "chat.documentRead": "{note} 읽음",
 
-  "projects.lede": "Agent를 설정하고 도구를 연결해 요청을 실행한다.",
-  "projects.new": "새 프로젝트",
-  "projects.empty": "아직 프로젝트가 없습니다. 첫 프로젝트를 만들어 보세요.",
-  "projects.loadFailed": "프로젝트를 불러오지 못했습니다",
-  "projects.createFailed": "프로젝트를 만들지 못했습니다",
+  "agents.lede": "Agent를 설정하고 도구를 연결해 요청을 실행한다.",
+  "agents.new": "새 Agent",
+  "agents.empty": "아직 Agent가 없습니다. 첫 Agent를 만들어 보세요.",
+  "agents.loadFailed": "Agent를 불러오지 못했습니다",
+  "agents.createFailed": "Agent를 만들지 못했습니다",
 
-  "projects.create": "만들기",
-  "projects.name": "이름",
-  "projects.namePlaceholder": "my-project",
-  "projects.nameHint": "소문자·숫자·하이픈만 쓸 수 있습니다. 한 번 정하면 바꿀 수 없습니다.",
-  "projects.displayName": "표시 이름",
-  "projects.displayNamePlaceholder": "My Project",
-  "projects.description": "설명",
-  "projects.descriptionHint":
-    "이 프로젝트를 연결한 상위 Agent에 표시합니다. 받을 요청과 반환할 결과를 설명하세요.",
-  "projects.departmentCode": "부서 코드",
-  "projects.departmentHint": "프로젝트 소유와 비용을 묶는 선택 코드입니다.",
-  "projects.privateBadge": "비공개",
-  "projects.cloneFailed": "프로젝트 복제에 실패했습니다",
+  "agents.create": "만들기",
+  "agents.name": "이름",
+  "agents.namePlaceholder": "my-project",
+  "agents.nameHint": "소문자·숫자·하이픈만 쓸 수 있습니다. 한 번 정하면 바꿀 수 없습니다.",
+  "agents.displayName": "표시 이름",
+  "agents.displayNamePlaceholder": "My Agent",
+  "agents.description": "설명",
+  "agents.descriptionHint":
+    "이 Agent를 연결한 상위 Agent에 표시합니다. 받을 요청과 반환할 결과를 설명하세요.",
+  "agents.departmentCode": "부서 코드",
+  "agents.departmentHint": "Agent 소유와 비용을 묶는 선택 코드입니다.",
+  "agents.privateBadge": "비공개",
+  "agents.cloneFailed": "Agent 복제에 실패했습니다",
 
-  "project.badge": "AI 프로젝트",
-  "project.lede": "이 프로젝트를 한 워크스페이스에서 설계하고, 시험하고, 관찰합니다.",
+  "project.badge": "AI Agent",
+  "project.lede": "이 Agent를 한 워크스페이스에서 설계하고, 시험하고, 관찰합니다.",
   "project.ownedBy": "소유자: ",
   "project.clone": "복제",
   "project.cloneTitle": "{name} 복제",
@@ -935,16 +934,16 @@ export const ko: Messages = {
   "project.tab.traces": "트레이스",
   "trace.inConversation": "대화",
   "project.tab.apiReference": "API 레퍼런스",
-  "apiReference.intro": "이 프로젝트 주소는 현재 저장된 Agent 설정을 실행합니다. 연동 → API 토큰에서 프로젝트 토큰을 발급하세요.",
+  "apiReference.intro": "이 Agent 주소는 현재 저장된 Agent 설정을 실행합니다. 연동 → API 토큰에서 Agent 토큰을 발급하세요.",
   "apiReference.environmentHint": "호출 프로세스에 PROJECT_API_TOKEN과 CONVERSATION_ID 환경변수를 설정하세요. curl은 $…를 치환하고 Python·Node.js는 환경변수를 읽습니다. 자격 증명은 호출 서버에 보관하세요.",
   "apiReference.configureFirst": "Playground에서 Agent 설정을 저장하면 실행 API를 사용할 수 있습니다.",
   "project.tab.integrations": "연동",
   "project.tab.settings": "설정",
 
-  "playground.loadFailed": "프로젝트를 불러오지 못했습니다",
+  "playground.loadFailed": "Agent를 불러오지 못했습니다",
   "playground.saveFailed": "Agent 설정을 저장하지 못했습니다.",
 
-  "playground.notFound": "프로젝트를 찾을 수 없습니다",
+  "playground.notFound": "Agent를 찾을 수 없습니다",
 
   "playground.unsaved": "저장 안 됨",
 
@@ -960,7 +959,7 @@ export const ko: Messages = {
   "bindings.mcpServers": "MCP 서버",
   "bindings.searchServers": "등록된 MCP 서버 검색",
   "bindings.subagents": "서브에이전트",
-  "bindings.searchSubagents": "프로젝트와 외부 에이전트 검색",
+  "bindings.searchSubagents": "Agent 검색",
   "bindings.serverUnreachable": "이 서버에 연결하지 못했습니다",
   "bindings.serverUnreachableSuffix": " — 서버가 응답하기 전까지 실행은 이 서버의 도구를 하나도 쓰지 않습니다.",
   "bindings.refreshTools": "도구 새로고침",
@@ -1031,17 +1030,17 @@ export const ko: Messages = {
     "에이전트가 스스로 지정한 주소 — 웹 페이지·PDF·데이터 파일·이미지 — 를 읽게 합니다. 기본은 꺼짐입니다. 다른 모든 외부 요청은 운영자가 등록한 곳으로만 가지만, 이것은 모델이 정한 곳으로 갑니다.",
   "configuration.slackWorkspace": "Slack 읽기 (SlackHistory, SlackThread, SlackUser, SlackChannels)",
   "configuration.slackWorkspaceHint":
-    "이 프로젝트의 봇이 설치된 Slack 워크스페이스를 에이전트가 읽게 합니다 — 채널 히스토리, 스레드, 사용자 id 조회. 읽기 전용이라 글을 쓸 수는 없습니다. 기본은 꺼짐이고, 프로젝트에 활성화된 Slack 봇이 없으면 켜도 동작하지 않습니다. 프로젝트는 공유 카탈로그이므로, 이 프로젝트를 실행할 수 있는 사람은 봇이 읽을 수 있는 것을 모두 읽을 수 있습니다.",
+    "이 Agent의 봇이 설치된 Slack 워크스페이스를 에이전트가 읽게 합니다 — 채널 히스토리, 스레드, 사용자 id 조회. 읽기 전용이라 글을 쓸 수는 없습니다. 기본은 꺼짐이고, Agent에 활성화된 Slack 봇이 없으면 켜도 동작하지 않습니다. Agent는 공유 카탈로그이므로, 이 Agent를 실행할 수 있는 사람은 봇이 읽을 수 있는 것을 모두 읽을 수 있습니다.",
 
   "configuration.skills": "Skills",
   "configuration.searchSkills": "등록된 Skill 검색",
   "configuration.dynamicCapabilities": "요청마다 필요한 기능 찾기",
   "configuration.dynamicCapabilitiesHint":
-    "최근 사용자 요청으로 기능 이름과 설명을 검색해(요청 없는 미리보기는 시스템 프롬프트 사용), 일치하는 Skill·MCP 서버/도구·외부 에이전트를 위 바인딩에 더해 제공합니다. 설명의 첫 500자가 색인되므로 구현 세부보다 어떤 요청을 처리하는지 먼저 쓰세요. 바인딩은 언제나 전부 제공되며, 자체 로그인이 필요한 MCP 서버는 이 프로젝트가 연결한 뒤에만 제공됩니다.",
+    "최근 사용자 요청으로 기능 이름과 설명을 검색해(요청 없는 미리보기는 시스템 프롬프트 사용), 일치하는 Skill·MCP 서버/도구를 위 바인딩에 더해 제공합니다. 설명의 첫 500자가 색인되므로 구현 세부보다 어떤 요청을 처리하는지 먼저 쓰세요. 바인딩은 언제나 전부 제공되며, 자체 로그인이 필요한 MCP 서버는 이 Agent가 연결한 뒤에만 제공됩니다.",
 
   "configuration.memoryRecall": "런마다 먼저 메모리 회상",
   "configuration.memoryRecallHint":
-    "첫 토큰 전에, “recall” 도구를 제공하는 바인딩된 MCP 서버(mcp-memory)마다 들어온 요청을 물어 기억하는 내용을 시스템 프롬프트에 넣습니다 — 모델이 물어볼 생각을 해야 하는 대신 프로젝트가 이미 아는 것에서 시작합니다. recall 도구는 그대로 제공됩니다. 런당 호출 한 번이 들고, 제공하는 서버가 없으면 경고와 함께 아무 일도 하지 않습니다.",
+    "첫 토큰 전에, “recall” 도구를 제공하는 바인딩된 MCP 서버(mcp-memory)마다 들어온 요청을 물어 기억하는 내용을 시스템 프롬프트에 넣습니다 — 모델이 물어볼 생각을 해야 하는 대신 Agent가 이미 아는 것에서 시작합니다. recall 도구는 그대로 제공됩니다. 런당 호출 한 번이 들고, 제공하는 서버가 없으면 경고와 함께 아무 일도 하지 않습니다.",
   "configuration.memoryRecallUnbound":
     "회상을 켰지만 이 Agent의 MCP 바인딩 중 “recall” 도구를 제공할 수 있는 것이 없습니다 — 바인딩이 없거나, 모든 바인딩의 도구 선택에서 빠져 있습니다. 메모리 서버(mcp-memory)를 바인딩하거나 회상을 끄세요. 그때까지 모든 런은 메모리 없이 시작하며 매번 경고합니다.",
 
@@ -1053,7 +1052,7 @@ export const ko: Messages = {
     "이 Agent에 한해 레지스트리 항목의 헤더 위에 덮어씁니다. Agent 설정과 함께 저장됩니다.",
   "mcpSettings.connection": "연결",
   "mcpSettings.connectionNote":
-    "관리자가 설정한 OAuth 클라이언트로 이 프로젝트의 사용자 계정을 인증합니다. Agent 설정과 별개로 즉시 저장됩니다.",
+    "관리자가 설정한 OAuth 클라이언트로 이 Agent의 사용자 계정을 인증합니다. Agent 설정과 별개로 즉시 저장됩니다.",
   "mcpSettings.title": "{server} 설정",
   "mcpSettings.savesConfiguration": "현재 Agent 설정 전체를 저장합니다.",
   "mcpSettings.close": "닫기",
@@ -1110,13 +1109,13 @@ export const ko: Messages = {
   "mcpConn.noAuthNeeded":
     "이 서버는 인증이 필요 없습니다. 필요한 자격 증명은 레지스트리 항목의 헤더와 위의 재정의에서 옵니다.",
   "mcpConn.noClientDocument":
-    "이 프로바이더는 OAuth 앱 수동 등록이 필요합니다. 관리자가 Tools의 MCP OAuth 설정에 Client ID와 Secret을 저장해야 프로젝트를 연결할 수 있습니다.",
+    "이 프로바이더는 OAuth 앱 수동 등록이 필요합니다. 관리자가 Tools의 MCP OAuth 설정에 Client ID와 Secret을 저장해야 Agent를 연결할 수 있습니다.",
   "mcpConn.authorizedBy": "{who} 님이 {when} 에 인증함",
   "mcpConn.saveCredentials": "자격 증명 저장",
   "mcpConn.disconnect": "연결 해제",
-  "mcpOAuth.automatic": "OAuth 앱을 직접 등록하지 않고 프로젝트를 연결할 수 있습니다. 접근 가능한 클라이언트 메타데이터 문서를 우선 사용하고, 제공되는 경우 동적 등록을 사용합니다.",
+  "mcpOAuth.automatic": "OAuth 앱을 직접 등록하지 않고 Agent를 연결할 수 있습니다. 접근 가능한 클라이언트 메타데이터 문서를 우선 사용하고, 제공되는 경우 동적 등록을 사용합니다.",
   "mcpOAuth.manual": "수동 OAuth 앱 설정",
-  "mcpOAuth.sharedHint": "이 MCP를 사용하는 프로젝트가 공유합니다. Client ID를 비우면 수동 앱을 제거하며, 제공자가 지원하는 경우에만 자동 등록을 사용합니다.",
+  "mcpOAuth.sharedHint": "이 MCP를 사용하는 Agent가 공유합니다. Client ID를 비우면 수동 앱을 제거하며, 제공자가 지원하는 경우에만 자동 등록을 사용합니다.",
   "mcpOAuth.secretHint": "비워 두면 기존 Secret을 유지합니다. Client ID를 변경하면 제공자가 요구하는 새 Secret도 입력하세요.",
   "mcpOAuth.redirectHint": "배포의 공개 주소로 자동 입력됩니다. OAuth 제공자에 이 콜백을 정확히 등록하세요.",
   "mcpOAuth.save": "OAuth 클라이언트 저장",
@@ -1153,21 +1152,6 @@ export const ko: Messages = {
   "skills.namePlaceholder": "my-skill",
   "skills.contentPlaceholder": "# 지침…",
   "skills.noContent": "본문이 없습니다.",
-
-  "agents.lede":
-    "Agent에 원격 하위 Agent로 연결할 수 있는 외부 OpenAI 호환 엔드포인트입니다.",
-  "agents.descriptionRole":
-    "외부 에이전트 설명은 동적 검색에 쓰이며 모델의 Available Agents 표에 표시되어 전환 대상을 고르게 합니다. 첫 500자가 색인됩니다. 워크스페이스 프로젝트 설명은 동적으로 검색되지 않지만 로컬 에이전트로 바인딩될 때 표시됩니다.",
-  "agents.descriptionHint":
-    "동적 검색과 전환 대상 선택에 쓰입니다. 이 에이전트가 처리할 요청과 돌려주는 결과를 쓰세요.",
-  "agents.descriptionPlaceholder": "Kubernetes 장애를 조사하고 근거가 있는 복구 절차를 반환합니다",
-  "agents.register": "에이전트 등록",
-  "agents.registerTitle": "외부 에이전트 등록",
-  "agents.filter": "에이전트 검색…",
-  "agents.empty":
-    "아직 외부 에이전트가 없습니다. OpenAI 호환 엔드포인트를 등록하면 원격 서브에이전트로 쓸 수 있습니다.",
-  "agents.namePlaceholder": "my-agent",
-  "agents.sendPlaceholder": "에이전트에게 메시지 하나를 보내보세요…",
 
   "tools.lede":
     "streamable HTTP로 도구를 제공하는 MCP 서버입니다. 한 번 등록한 뒤 필요한 Agent에 연결합니다.",
@@ -1226,7 +1210,7 @@ export const ko: Messages = {
   "artifacts.preview.noScript": "미리보기를 실행하려면 브라우저의 JavaScript를 활성화해 주세요.",
 
   "artifacts.lede":
-    "보관된 첨부 원본과 실행이 생성·수정한 파일입니다. Slack·트리거의 파일도 권한에 따라 프로젝트의 Artifacts에서 확인할 수 있습니다.",
+    "보관된 첨부 원본과 실행이 생성·수정한 파일입니다. Slack·트리거의 파일도 권한에 따라 Agent의 Artifacts에서 확인할 수 있습니다.",
   "artifacts.empty": "아직 보관된 파일이 없습니다. 첨부 원본과 생성 파일이 여기에 표시됩니다.",
   "artifacts.filter": "검색…",
   "artifacts.delete": "삭제",
@@ -1280,15 +1264,15 @@ export const ko: Messages = {
 
   // 프로젝트의 연동 탭: 다른 시스템이 이 프로젝트에 닿는 방법.
   "pint.lede":
-    "다른 시스템이 이 프로젝트에 닿는 방법입니다 — API 토큰과 봇이 프로젝트를 실행하는 채팅 플랫폼을 관리합니다. 프로젝트 설정·비용 한도·트리거는 설정 탭에 있습니다.",
-  "pint.ownerOnly": "프로젝트 소유자({owner})나 admin 만 이 연동을 바꿀 수 있습니다.",
+    "다른 시스템이 이 Agent에 닿는 방법입니다 — API 토큰과 봇이 Agent를 실행하는 채팅 플랫폼을 관리합니다. Agent 설정·비용 한도·트리거는 설정 탭에 있습니다.",
+  "pint.ownerOnly": "Agent 소유자({owner})나 admin 만 이 연동을 바꿀 수 있습니다.",
 
   "pset.dangerZone": "위험 구역",
-  "pset.deleteConfirm": "\"{name}\"의 설정·연동·Trace·사용량 기록을 삭제합니다. 되돌릴 수 없으며 프로젝트 이름을 다시 사용할 수 없습니다.",
-  "pset.deleteHint": "프로젝트를 삭제하면 설정과 프로젝트 소유 기록을 제거합니다. Chat과 Artifact는 각각의 보존 규칙을 따르며 프로젝트 이름은 재사용할 수 없습니다.",
+  "pset.deleteConfirm": "\"{name}\"의 설정·연동·Trace·사용량 기록을 삭제합니다. 되돌릴 수 없으며 Agent 이름을 다시 사용할 수 없습니다.",
+  "pset.deleteHint": "Agent를 삭제하면 설정과 Agent 소유 기록을 제거합니다. Chat과 Artifact는 각각의 보존 규칙을 따르며 Agent 이름은 재사용할 수 없습니다.",
   "pset.visibility": "공개 범위",
   "pset.visibilityPublic": "공개",
-  "pset.visibilityPublicHint": "로그인한 모든 멤버가 이 프로젝트를 보고, 실행하고, 복제할 수 있습니다.",
+  "pset.visibilityPublicHint": "로그인한 모든 멤버가 이 Agent를 보고, 실행하고, 복제할 수 있습니다.",
   "pset.visibilityPrivate": "비공개",
   "pset.visibilityPrivateHint": "소유자와 아래에 초대된 멤버만 보고, 실행하고, 복제할 수 있습니다.",
   "pset.invitedMembers": "초대된 멤버",
@@ -1305,13 +1289,13 @@ export const ko: Messages = {
   "pset.monthlyBlock": "월간 차단 기준 (USD)",
   "pset.monthlyBlockHint": "그달 남은 실행을 거절합니다",
   "pset.slackChannel": "Slack 채널",
-  "pset.slackChannelUnavailable": "프로젝트 봇을 활성화하고 채널에 먼저 초대하세요",
+  "pset.slackChannelUnavailable": "Agent 봇을 활성화하고 채널에 먼저 초대하세요",
   "pset.notificationDestinations": "알림 목적지",
   "pset.notificationDestinationsHint":
     "활성화된 연동을 선택하면 비용 경고 목적지 입력란이 바로 표시됩니다.",
   "pset.slackBot": "Slack 봇",
   "pset.slackSetupHint":
-    "아래 매니페스트로 프로젝트 전용 Slack 앱을 만들고(api.slack.com/apps → Create New App → From a manifest) 설치한 다음, 봇 토큰과 signing secret을 여기에 저장하고 이벤트 수신을 켜세요.",
+    "아래 매니페스트로 Agent 전용 Slack 앱을 만들고(api.slack.com/apps → Create New App → From a manifest) 설치한 다음, 봇 토큰과 signing secret을 여기에 저장하고 이벤트 수신을 켜세요.",
   "pset.slackManifestHint":
     "Slack에서 아래 HTTPS 이벤트 URL에 접근할 수 있어야 합니다. Socket Mode는 꺼 두세요. 기존 앱은 Slack의 App Manifest 설정에 매니페스트를 적용하고, 권한이 변경되면 앱을 다시 설치하세요.",
   "pset.slackOrgDeployHint":
@@ -1342,7 +1326,7 @@ export const ko: Messages = {
   "pset.teamsEnable": "이 endpoint 에서 메시지 처리 활성화",
 
   "webhook.section": "Webhook",
-  "webhook.githubHint": "GitHub에서는 이 주소를 Payload URL로, Content type을 application/json으로 설정하고 프로젝트 Webhook 시크릿을 Secret에 입력합니다. GitHub가 X-Hub-Signature-256 서명을 보내므로 별도 헤더는 필요 없습니다. 처리할 이벤트만 선택하세요. 서명된 ping은 에이전트를 실행하지 않고 연결만 확인합니다.",
+  "webhook.githubHint": "GitHub에서는 이 주소를 Payload URL로, Content type을 application/json으로 설정하고 Agent Webhook 시크릿을 Secret에 입력합니다. GitHub가 X-Hub-Signature-256 서명을 보내므로 별도 헤더는 필요 없습니다. 처리할 이벤트만 선택하세요. 서명된 ping은 에이전트를 실행하지 않고 연결만 확인합니다.",
   "webhook.reviewMode": "Webhook 동작",
   "webhook.generic": "Payload로 Agent 실행",
   "webhook.reviewAccessible": "접근 가능한 GitHub 저장소의 PR 리뷰",
@@ -1353,7 +1337,7 @@ export const ko: Messages = {
   "webhook.refreshRuns": "전달 이력 새로고침",
   "webhook.secretHint": "일반 발신자는 X-Trigger-Secret 헤더로 전송합니다. GitHub에서는 같은 값을 Secret에 입력해 전달에 서명합니다. 이 값을 가진 쪽은 Agent의 현재 설정을 실행할 수 있습니다.",
   "webhook.intro":
-    "프로젝트마다 주소 하나가 있고, 켜기 전까지는 꺼져 있습니다. 외부 시스템은 X-Trigger-Secret 또는 GitHub HMAC-SHA256 서명으로 인증한 JSON을 POST해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 아래 이력에 남습니다. Webhook 은 항상 Agent의 현재 설정을 실행합니다.",
+    "Agent마다 주소 하나가 있고, 켜기 전까지는 꺼져 있습니다. 외부 시스템은 X-Trigger-Secret 또는 GitHub HMAC-SHA256 서명으로 인증한 JSON을 POST해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 아래 이력에 남습니다. Webhook 은 항상 Agent의 현재 설정을 실행합니다.",
   "schedule.section": "스케줄",
   "schedule.intro":
     "타임존과 함께 지정한 cron 식으로 스스로 발화합니다. 스케줄도 항상 Agent의 현재 설정을 실행하며, 결과는 각 스케줄 아래에 표시됩니다.",
@@ -1365,7 +1349,7 @@ export const ko: Messages = {
   "trigger.timezone": "타임존",
   "trigger.timezonePlaceholder": "Asia/Seoul",
   "trigger.message": "메시지",
-  "trigger.messagePlaceholder": "매 발화가 프로젝트에 물을 내용",
+  "trigger.messagePlaceholder": "매 발화가 Agent에 물을 내용",
   "trigger.enabled": "활성",
   "trigger.allowOverlap": "겹쳐 실행 허용",
 
@@ -1374,7 +1358,7 @@ export const ko: Messages = {
   "trigger.addDestination": "Add destination",
   "trigger.removeDestination": "Remove",
   "trigger.slackChannel": "Slack 채널",
-  "trigger.slackUnavailable": "Slack 채널을 불러오지 못했습니다. 프로젝트 bot을 먼저 설정하고 활성화하세요.",
+  "trigger.slackUnavailable": "Slack 채널을 불러오지 못했습니다. Agent bot을 먼저 설정하고 활성화하세요.",
   "trigger.telegramChatId": "Telegram chat id",
   "trigger.telegramChatIdHint": "chat id를 직접 입력할 수도 있습니다.",
   "trigger.telegramThreadId": "Telegram topic id (선택)",
@@ -1442,7 +1426,7 @@ export const ko: Messages = {
     "tools 와 함께는 불가: provider 가 그 조합을 거부해, agent 런은 effort 를 none 으로 강제합니다",
   "models.cached": "캐시",
   "models.empty": "등록된 model 이 없습니다.",
-  "profile.lede": "내 계정 정보와 모든 프로젝트에서 발생한 내 사용량을 확인합니다.",
+  "profile.lede": "내 계정 정보와 모든 Agent에서 발생한 내 사용량을 확인합니다.",
   "profile.tierLimits": "등급별 한도",
   "profile.monthlyCap": "월간 비용 한도",
   "profile.joined": "가입일",
@@ -1465,7 +1449,7 @@ export const ko: Messages = {
   "settings.optional": "선택",
   "apiRef.request": "요청",
   "apiRef.response": "응답",
-  "projectArtifacts.empty": "이 프로젝트는 아직 만들어 낸 것이 없습니다.",
+  "projectArtifacts.empty": "이 Agent는 아직 만들어 낸 것이 없습니다.",
   "projectUsage.empty": "이 기간에는 기록된 사용량이 없습니다.",
   "projectUsage.callers": "호출자",
   "projectUsage.whoSpent": "호출자별 사용량",

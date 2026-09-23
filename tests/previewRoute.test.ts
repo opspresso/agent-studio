@@ -78,7 +78,6 @@ beforeEach(() => {
   projectRepo.get.mockResolvedValue({
     name: "proj",
     displayName: "Proj",
-    projectType: "agent",
     ownerEmail: "owner@example.com",
   });
 });

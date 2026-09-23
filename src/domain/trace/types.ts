@@ -32,7 +32,6 @@ export interface TraceSpan {
 export interface Trace {
   traceId: string;
   projectName: string;
-  projectType: string;
   /**
    * Who caused the run. A subagent's trace carries the actor of the top-level
    * run that reached it — the transfer was not a second person's decision.

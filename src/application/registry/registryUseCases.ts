@@ -1,5 +1,5 @@
 /**
- * Shared CRUD core for the registry slices (MCP servers, external agents,
+ * Shared CRUD core for the registry slices (MCP servers,
  * skills). Owns the name-keyed lifecycle and its error semantics — missing →
  * NotFoundError, duplicate create → ConflictError — so routes map everything
  * through `apiError`. Slice-specific dispatch methods (testConnection,

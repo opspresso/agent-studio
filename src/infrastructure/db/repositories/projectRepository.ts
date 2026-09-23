@@ -38,13 +38,6 @@ function requiredString(item: Record<string, unknown>, field: string): string {
   return value;
 }
 
-function projectType(value: unknown): Project["projectType"] {
-  if (value === "agent") {
-    return value;
-  }
-  throw new Error("Project requires migration to an Agent before use");
-}
-
 function visibility(value: unknown): Project["visibility"] {
   if (value === undefined || value === "public" || value === "private") {
     return value;
@@ -67,7 +60,6 @@ function fromItem(item: Record<string, unknown>): Project {
     name: requiredString(item, "name"),
     displayName: requiredString(item, "displayName"),
     description: typeof item.description === "string" ? item.description : "",
-    projectType: projectType(item.projectType),
     ownerEmail: requiredString(item, "ownerEmail"),
     visibility: visibility(item.visibility),
     memberEmails: memberEmails(item.memberEmails),

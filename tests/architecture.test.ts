@@ -565,7 +565,7 @@ const CLIENT_SAFE_LIB = ["@/lib/auth-client"];
  * The directive marks an entry, not the boundary. A module with no directive of
  * its own is compiled into the client bundle as soon as a client component
  * imports it, and one already sits in exactly that position:
- * `src/app/projects/lib/api.ts` is imported by ~19 client components and imports
+ * `src/app/agents/lib/api.ts` is imported by ~19 client components and imports
  * `@/application/trigger/triggerUseCases` — type-only today, therefore erased,
  * and one word away from not being. Checking only the marked files would have
  * called that clean.
@@ -605,7 +605,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(116);
+    expect(entries.length).toBe(114);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/chats/_components/PendingApproval.tsx",
       "src/app/chats/_components/NewChatEntry.tsx",
@@ -614,8 +614,8 @@ describe("the client bundle", () => {
       "src/app/workspaces/_components/WorkspacePanel.tsx",
       "src/app/workspaces/_components/WorkspaceActions.tsx",
       "src/app/workspaces/_components/WorkspaceRepositoryPolicySection.tsx",
-      "src/app/projects/[name]/workspace/page.tsx",
-      "src/app/projects/[name]/_components/ProjectWorkspaceContext.tsx",
+      "src/app/agents/[name]/workspace/page.tsx",
+      "src/app/agents/[name]/_components/ProjectWorkspaceContext.tsx",
       "src/app/models/WorkspaceModelsSection.tsx",
       "src/app/models/ModelEditor.tsx",
       "src/app/models/ModelCollection.tsx",
@@ -631,16 +631,16 @@ describe("the client bundle", () => {
       "src/app/settings/models/page.tsx",
       "src/app/settings/model-usage/page.tsx",
       "src/app/workspaces/_lib/useWorkspace.ts",
-      "src/app/projects/[name]/_components/RuntimePolicyEditor.tsx",
-      "src/app/projects/[name]/audio/page.tsx",
-      "src/app/projects/[name]/_components/SourceMappings.tsx",
-      "src/app/projects/[name]/_components/ProjectAudioContext.tsx",
+      "src/app/agents/[name]/_components/RuntimePolicyEditor.tsx",
+      "src/app/agents/[name]/audio/page.tsx",
+      "src/app/agents/[name]/_components/SourceMappings.tsx",
+      "src/app/agents/[name]/_components/ProjectAudioContext.tsx",
     ]));
     expect(entries.map((file) => file.path)).toContain(
-      "src/app/projects/[name]/_components/PromptPreview.tsx",
+      "src/app/agents/[name]/_components/PromptPreview.tsx",
     );
     // The directive-less module the reachability walk exists for.
-    expect(reachable.map((file) => file.path)).toContain("src/app/projects/lib/api.ts");
+    expect(reachable.map((file) => file.path)).toContain("src/app/agents/lib/api.ts");
   });
 
   it("reaches no application, infrastructure or server-side lib module", () => {
@@ -739,7 +739,7 @@ describe("response shapes", () => {
     // decides which files are the browser's.
     expect(producerNames.has("SkillSummary")).toBe(true);
     expect(producerNames.has("ArtifactPage")).toBe(true);
-    expect(reachable.map((file) => file.path)).toContain("src/app/projects/lib/api.ts");
+    expect(reachable.map((file) => file.path)).toContain("src/app/agents/lib/api.ts");
     expect(declaredTypes('export interface X {\n  a: string;\n}')).toEqual(["X"]);
     // An alias names a type rather than restating it, and is not a declaration.
     expect(declaredTypes("export type ImageResult = GenerateImageOutput;")).toEqual([]);
@@ -1350,7 +1350,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // client module and cannot import the route helper that owns it.
     alsoAllowedUnder: [
       "src/app/api/projects/_lib/conversation.ts",
-      "src/app/projects/[name]/api-reference/endpoints.ts",
+      "src/app/agents/[name]/api-reference/endpoints.ts",
     ],
   },
   {
@@ -1627,7 +1627,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
       // The API-reference page ships a Node.js SDK sample *containing* a
       // `console.log` call. It is text shown to a user, not a call this app
       // makes.
-      "src/app/projects/[name]/api-reference/",
+      "src/app/agents/[name]/api-reference/",
       // The error boundaries, for the same reason `domain` is exempt: they
       // cannot reach the owner. `logger.ts` imports `node:async_hooks` for the
       // run correlation id, which no browser has — and a boundary that caught
@@ -2257,7 +2257,7 @@ describe("what a run produced", () => {
 const REASONING_FOLD_SITES = [
   "src/application/chat/run.ts",
   "src/app/chats/_lib/stream.ts",
-  "src/app/projects/[name]/_components/RunPanel.tsx",
+  "src/app/agents/[name]/_components/RunPanel.tsx",
 ];
 
 describe("folding a run's reasoning", () => {
@@ -2277,8 +2277,8 @@ describe("folding a run's reasoning", () => {
     // shape declares it, the run log substitutes a note for it, and the API
     // reference lists it among the frames `/agent` sends.
     expect(found).toEqual([
+      "src/app/agents/[name]/api-reference/endpoints.ts",
       "src/app/chats/_lib/types.ts",
-      "src/app/projects/[name]/api-reference/endpoints.ts",
       "src/application/chat/runLog.ts",
     ]);
   });

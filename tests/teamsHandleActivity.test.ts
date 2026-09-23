@@ -17,7 +17,6 @@ function projectFixture(): Project {
     name: "painter",
     displayName: "Painter",
     description: "a bot that paints",
-    projectType: "agent",
     ownerEmail: "owner@x.com",
 
     createdAt: "2026-01-01T00:00:00.000Z",

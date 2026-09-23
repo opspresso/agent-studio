@@ -10,7 +10,7 @@ import {
 import { readJson } from "@/app/_lib/httpClient";
 import { isPublicPagePath } from "@/shared/pageAccess";
 
-function location(pathname = "/projects/sample") {
+function location(pathname = "/agents/sample") {
   const replace = vi.fn<(url: string) => void>();
   return {
     origin: "https://studio.example.com",
@@ -28,11 +28,11 @@ afterEach(() => {
 describe("expired session redirect", () => {
   it("uses only Studio's session cookie, including its secure variant", () => {
     for (const name of ["agent-studio.session_token", "__Secure-agent-studio.session_token"]) {
-      const response = proxy(new NextRequest("https://studio.example.com/projects", { headers: { cookie: `${name}=studio-session` } }));
+      const response = proxy(new NextRequest("https://studio.example.com/agents", { headers: { cookie: `${name}=studio-session` } }));
       expect(response.headers.get("x-middleware-next")).toBe("1");
     }
     for (const name of ["agent-memory.session_token", "better-auth.session_token", "__Secure-agent-memory.session_token"]) {
-      const response = proxy(new NextRequest("https://studio.example.com/projects", { headers: { cookie: `${name}=other-session` } }));
+      const response = proxy(new NextRequest("https://studio.example.com/agents", { headers: { cookie: `${name}=other-session` } }));
       expect(response.status).toBe(307);
     }
   });
@@ -41,7 +41,7 @@ describe("expired session redirect", () => {
     expect(guide.headers.get("x-middleware-next")).toBe("1");
     expect(guide.headers.get("location")).toBeNull();
 
-    for (const path of ["/projects", "/settings", "/guide/private"]) {
+    for (const path of ["/agents", "/settings", "/guide/private"]) {
       const response = proxy(new NextRequest(`https://studio.example.com${path}`));
       expect(response.status).toBe(307);
       const redirect = new URL(response.headers.get("location")!);
@@ -52,7 +52,7 @@ describe("expired session redirect", () => {
 
   it("preserves the current path, query, and fragment as the post-login destination", () => {
     expect(loginHref(location())).toBe(
-      "/login?next=%2Fprojects%2Fsample%3Ftab%3Dusage%23daily",
+      "/login?next=%2Fagents%2Fsample%3Ftab%3Dusage%23daily",
     );
   });
 
@@ -60,7 +60,7 @@ describe("expired session redirect", () => {
     const protectedLocation = location();
     expect(redirectToLogin(protectedLocation)).toBe(true);
     expect(protectedLocation.replace).toHaveBeenCalledWith(
-      "/login?next=%2Fprojects%2Fsample%3Ftab%3Dusage%23daily",
+      "/login?next=%2Fagents%2Fsample%3Ftab%3Dusage%23daily",
     );
 
     expect(isPublicPagePath("/")).toBe(true);
@@ -68,7 +68,7 @@ describe("expired session redirect", () => {
     expect(isPublicPagePath("/guide")).toBe(true);
     expect(isPublicPagePath("/guide/private")).toBe(false);
     expect(isPublicPagePath("/settings")).toBe(false);
-    expect(isPublicPagePath("/projects")).toBe(false);
+    expect(isPublicPagePath("/agents")).toBe(false);
     expect(redirectToLogin(location("/login"))).toBe(false);
     const guideLocation = location("/guide");
     expect(redirectToLogin(guideLocation)).toBe(false);

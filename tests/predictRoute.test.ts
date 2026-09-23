@@ -71,7 +71,6 @@ describe("POST /predict dispatches on project type", () => {
     projectRepo.get.mockResolvedValue({
       name: "proj",
       ownerEmail: "owner@example.com",
-      projectType: "agent",
       configuration: { projectName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
     });
 
@@ -86,7 +85,6 @@ describe("POST /predict dispatches on project type", () => {
     projectRepo.get.mockResolvedValue({
       name: "proj",
       ownerEmail: "owner@example.com",
-      projectType: "agent",
       configuration: { projectName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
     });
 
@@ -100,7 +98,6 @@ describe("POST /predict dispatches on project type", () => {
     projectRepo.get.mockResolvedValue({
       name: "proj",
       ownerEmail: "owner@example.com",
-      projectType: "agent",
       configuration: { projectName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
     });
 

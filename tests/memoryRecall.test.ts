@@ -300,7 +300,6 @@ function projectFixture(): Project {
     name: "recaller",
     displayName: "recaller",
     description: "",
-    projectType: "agent",
     ownerEmail: "owner@example.com",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -329,7 +328,6 @@ function depsFixture(channel: FakeChannel): ExecutionDeps {
     versions: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => registryServer, list: reject, put: reject, delete: reject },
-    externalAgents: { get: reject, list: reject, put: reject, delete: reject },
     usage: {
       record: async (_delta: UsageDelta) => {},
       getDay: async () => null,
@@ -492,7 +490,7 @@ describe("a version that opted in recalls before the first token", () => {
     const stream = surface === "root"
       ? executeAgent(deps, { project, configuration, actor, messages: [{ role: "user", content: query }] })
       : (async function* () {
-          const prepared = await prepareSubagent(deps, { ...configuration, projectName: "parent", subagentList: [{ name: project.name, type: "local" }] }, project.name,
+          const prepared = await prepareSubagent(deps, { ...configuration, projectName: "parent", subagentList: [{ name: project.name }] }, project.name,
             { message: query, images: [], maxTurns: 8 }, async () => {}, { actor, ancestry: ["parent"] });
           if (prepared.kind !== "agent") throw new Error("Expected a native agent");
           try { yield* runAgent(prepared.deps, prepared.input); } finally { await prepared.close(); }

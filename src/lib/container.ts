@@ -81,7 +81,6 @@ import { skillRepository } from "@/infrastructure/db/repositories/skillRepositor
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { mcpConnectionRepository } from "@/infrastructure/db/repositories/mcpConnectionRepository";
 import { mcpOAuthStateRepository } from "@/infrastructure/db/repositories/mcpOAuthStateRepository";
-import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { createAgentModelProvider } from "@/infrastructure/llm/agentModels";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
@@ -102,7 +101,6 @@ import { config } from "./config";
 import { oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
 import { oauthClient } from "@/infrastructure/mcp/oauthClient";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
-import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { artifactRepository } from "@/infrastructure/db/repositories/artifactRepository";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
@@ -124,7 +122,6 @@ import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepos
 import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
 import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
 import { checkReadiness } from "@/application/health/readiness";
-import { createAgentUseCases } from "@/application/agent/agentUseCases";
 import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
 import { createManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
 import { createDockerProvisioner } from "@/infrastructure/mcp/dockerProvisioner";
@@ -340,20 +337,6 @@ export const modelRegistryUseCases = createModelRegistryUseCases({
   changed: async () => { invalidateSettingsCache(); await getLlmProviderConfigs(); },
 });
 
-const remoteAgents: RemoteAgentDispatcher = {
-  send: async (target, message, signal) =>
-    (await import("@/infrastructure/agent/dispatcher")).remoteAgentDispatcher.send(
-      target,
-      message,
-      signal,
-    ),
-  probe: async (target, message) =>
-    (await import("@/infrastructure/agent/dispatcher")).remoteAgentDispatcher.probe(
-      target,
-      message,
-    ),
-};
-
 const mcpSessions: McpSessionFactory = {
   open: async (servers, reservedNames, signal) =>
     (await import("@/infrastructure/mcp/sessionFactory")).mcpSessionFactory.open(
@@ -404,7 +387,6 @@ export { projectRepository };
  * factory; the instance is composed here so a repository or port implementation
  * has exactly one wiring site.
  */
-export const agentUseCases = createAgentUseCases(externalAgentRepository, secretCipher, urlPolicy, remoteAgents);
 export const mcpUseCases = createMcpUseCases(
   mcpRepository,
   secretCipher,
@@ -474,7 +456,6 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
   ? {
       skills: skillRepository,
       mcps: mcpRepository,
-      externalAgents: externalAgentRepository,
       // The console's "test connection" probe, which already answers exactly
       // this question. A server that refuses is not an error here — it is
       // indexed at server level and reported as undiscovered.
@@ -872,7 +853,6 @@ export const usageUseCases = createUsageUseCases({
 const configurationRefRepos = {
   skills: skillRepository,
   mcps: mcpRepository,
-  externalAgents: externalAgentRepository,
   projects: projectRepository,
 };
 
@@ -1015,7 +995,6 @@ export const executionDeps: ExecutionDeps = {
 
   skills: skillRepository,
   mcps: mcpRepository,
-  externalAgents: externalAgentRepository,
   usage: usageRepository,
   channel: agentModels,
   imageChannel,
@@ -1075,7 +1054,6 @@ export const executionDeps: ExecutionDeps = {
     const runtime = resolveProjectSlackRuntime(secretCipher, project);
     return runtime ? createSlackWorkspaceReader(slackReader, runtime.botToken) : null;
   },
-  remoteAgents,
   mcpSessions,
   mcpAuth: mcpAuthProvider,
   mcpConnections: mcpConnectionRepository,

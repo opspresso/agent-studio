@@ -142,7 +142,7 @@ function harness(
     projects: {
       get: async (name: string) =>
         name === "p"
-          ? { name: "p", ownerEmail: overrides.owner ?? OWNER, projectType: "agent" }
+          ? { name: "p", ownerEmail: overrides.owner ?? OWNER }
           : null,
     } as never,
     connections: {
@@ -606,7 +606,6 @@ describe("completeAuthorization", () => {
     h.deps.projects.get = (async () => ({
       name: "p",
       ownerEmail: "new-owner@example.com",
-      projectType: "agent",
     })) as never;
 
     await expect(uc.completeAuthorization({ state, code: "c", userEmail: OWNER })).rejects.toThrow(

@@ -40,7 +40,7 @@ function fixture(reply: (body: Record<string, unknown>, index: number) => unknow
     input: { projectName: name, model: CHILD, maxTurn: 4, messages: [{ role: "user", content: task.message }], signal: task.signal },
   }));
   const deps: AgentDeps = { createToolSchemaValidator, channel: models, canDelegate: true, loadAgent };
-  const input: RunAgentInput = { projectName: "root", model: ROOT, maxTurn: 8, canDispatch: true, messages: [{ role: "user", content: "help me" }], subagents: [{ name: "child", type: "local", kind: "agent", description: "Specialist" }] };
+  const input: RunAgentInput = { projectName: "root", model: ROOT, maxTurn: 8, canDispatch: true, messages: [{ role: "user", content: "help me" }], subagents: [{ name: "child", kind: "agent", description: "Specialist" }] };
   return { deps, input, requests, closed, loadAgent, models };
 }
 
@@ -84,7 +84,7 @@ describe("native SDK delegation", () => {
 
   it("preserves a reserved hyphenated project tool name and invokes its external capability", async () => {
     const f = fixture((_body, index) => index === 0 ? calls({ name: "delegate_image-agent", input: "draw" }) : answer("delivered"));
-    f.input.subagents = [{ name: "image-agent", type: "local", kind: "action", description: "Draw images" }];
+    f.input.subagents = [{ name: "image-agent", kind: "action", description: "Draw images" }];
     const invoked = vi.fn();
     f.loadAgent.mockResolvedValue({ kind: "action", run: async function* () {
       invoked();

@@ -19,7 +19,6 @@ import { capabilityKey, capabilityText, catalogDescription } from "@/domain/cata
 import type { McpTool } from "@/domain/mcp/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { SkillRepository } from "@/domain/skill/repository";
-import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { EmbeddingPort, VectorRecord, VectorStorePort } from "@/domain/vector/types";
 import { log } from "@/shared/logger";
 import { listRegistry } from "@/application/registry/registryUseCases";
@@ -36,7 +35,6 @@ export type ProbeMcpTools = (serverName: string) => Promise<readonly McpTool[] |
 export interface CatalogIndexDeps {
   skills: Pick<SkillRepository, "list">;
   mcps: Pick<McpRepository, "list">;
-  externalAgents: Pick<ExternalAgentRepository, "list">;
   probeMcpTools: ProbeMcpTools;
   embeddings: EmbeddingPort;
   catalog: VectorStorePort;
@@ -61,17 +59,13 @@ export const MAX_CONCURRENT_CATALOG_PROBES = 8;
 async function collectEntries(
   deps: CatalogIndexDeps,
 ): Promise<{ entries: CapabilityEntry[]; undiscovered: string[] }> {
-  const [skills, servers, agents] = await Promise.all([
+  const [skills, servers] = await Promise.all([
     listRegistry(deps.skills),
     listRegistry(deps.mcps),
-    listRegistry(deps.externalAgents),
   ]);
   const entries: CapabilityEntry[] = [];
   for (const skill of skills) {
     entries.push({ kind: "skill", name: skill.name, description: skill.description });
-  }
-  for (const agent of agents) {
-    entries.push({ kind: "agent", name: agent.name, description: agent.description });
   }
 
   // Probed concurrently: each is a round trip to someone else's server, and a

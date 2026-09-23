@@ -175,7 +175,7 @@ export interface EngineChunk {
      * The model that drew it, named by the producer that used it — the image
      * project's own model, the one `resolveImageModel` gave the builtins, an
      * image subagent's. Absent when nothing here can name one: a picture an MCP
-     * tool or a remote agent handed back, or one `FetchUrl` merely read.
+     * tool handed back, or one `FetchUrl` merely read.
      *
      * The run's model is *not* the fallback. A run and the thing that drew for
      * it are routinely different models, so filling this in from the Agent settings

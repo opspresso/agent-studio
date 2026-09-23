@@ -64,7 +64,7 @@ beforeEach(async () => {
       get: vi.fn(async (_workspaceId, checkpointId) => checkpointRows.get(checkpointId) ?? null), delete: vi.fn(async () => { checkpointRows.clear(); }) } };
   const at = new Date(time).toISOString();
   fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner,
-    visibility: "public", projectType: "agent", createdAt: at, updatedAt: at }]);
+    visibility: "public", createdAt: at, updatedAt: at }]);
   await chats.create({ chatId: "chat-1", projectName: "demo", ownerEmail: owner, title: "Task", createdAt: at, updatedAt: at });
 });
 afterEach(() => {

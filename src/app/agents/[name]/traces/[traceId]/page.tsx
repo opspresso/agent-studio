@@ -28,7 +28,7 @@ export default function TraceDetailPage() {
 
   return (
     <Stack gap="md">
-      <BackLink href={`/projects/${name}/traces`} label={t("project.tab.traces")} />
+      <BackLink href={`/agents/${name}/traces`} label={t("project.tab.traces")} />
       {error ? (
         <Alert color="red" variant="light">{error}</Alert>
       ) : !trace ? (

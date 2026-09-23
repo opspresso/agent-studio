@@ -1,6 +1,5 @@
 import type { MemberTier } from "@/domain/member/tiers";
 import type { McpRuntime } from "@/domain/mcp/types";
-import type { ProjectType } from "@/domain/project/types";
 
 /**
  * What a badge's colour means.
@@ -42,11 +41,6 @@ export function stateColor(on: boolean): string {
   return on ? BADGE.on : BADGE.neutral;
 }
 
-/** What a project runs: a single prompt, a tool loop, or an image model. */
-export const PROJECT_TYPE_COLOR: Record<ProjectType, string> = {
-  agent: "violet",
-};
-
 /** Whether this studio runs the MCP server itself. `remote` is the unmarked case. */
 export const MCP_RUNTIME_COLOR: Record<McpRuntime, string> = {
   managed: "grape",
@@ -65,12 +59,6 @@ export const MEMBER_TIER_COLOR: Record<MemberTier, string> = {
   admin: "grape",
   member: "blue",
   guest: "cyan",
-};
-
-/** Local project vs. registered external agent, in the subagent picker. */
-export const SUBAGENT_KIND_COLOR: Record<"local" | "remote", string> = {
-  local: "violet",
-  remote: "indigo",
 };
 
 /** Green reads "safe to call", blue "writes something" — the usual convention. */
