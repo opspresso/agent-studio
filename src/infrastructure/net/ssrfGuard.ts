@@ -210,7 +210,7 @@ export async function resolvePublicUrl(
   if (isIP(bare)) {
     addresses = [bare];
   } else {
-    const resolved = await dnsLookup(bare).catch(() => []);
+    const resolved = await dnsLookup(bare);
     if (resolved.length === 0) {
       throw new SsrfError(`Cannot resolve host: ${host}`);
     }

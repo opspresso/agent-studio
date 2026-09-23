@@ -85,7 +85,8 @@ export async function assertAllowedUrl(policy: UrlPolicy, url: string): Promise<
   try {
     await policy.assertAllowed(url);
   } catch (error) {
-    throw new ValidationError(error instanceof BlockedUrlError ? error.message : "Blocked URL");
+    if (error instanceof BlockedUrlError) throw new ValidationError(error.message);
+    throw error;
   }
 }
 

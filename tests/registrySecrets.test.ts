@@ -34,7 +34,7 @@ const createMcpUseCases = (repo: Parameters<typeof createMcpUseCasesImpl>[0]) =>
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer } from "@/domain/mcp/types";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
-import { resolveRegistryUrlPatch } from "@/application/registry/registryUseCases";
+import { assertAllowedUrl, resolveRegistryUrlPatch } from "@/application/registry/registryUseCases";
 // The store module is the in-memory fake (tests/setup.ts), which raises the
 // same error the real one does for a lost precondition.
 import { ConditionalWriteError } from "@/infrastructure/db/store";
@@ -70,6 +70,17 @@ describe("resolveRegistryUrlPatch", () => {
     "not a URL",
   ])("preserves a different or invalid patch for validation: %s", (patch) => {
     expect(resolveRegistryUrlPatch("https://mcp.example/mcp", patch)).toBe(patch);
+  });
+});
+
+describe("registry URL policy failures", () => {
+  it("maps a refused URL to invalid input but propagates a policy service failure", async () => {
+    const url = "https://mcp.example/mcp";
+    await expect(assertAllowedUrl({ assertAllowed: async () => {
+      throw new BlockedUrlError("private host");
+    } }, url)).rejects.toMatchObject({ status: 400, message: "private host" });
+    const unavailable = new Error("DNS resolver unavailable");
+    await expect(assertAllowedUrl({ assertAllowed: async () => { throw unavailable; } }, url)).rejects.toBe(unavailable);
   });
 });
 
