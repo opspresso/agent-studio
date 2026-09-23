@@ -46,7 +46,6 @@ reasoning 수치는 UsageInfo·Trace에 쓰고 일일 Usage의 독립 과금 축
 | `slack` | Slack user id | Slack 은 이메일을 넘겨주지 않고, 매핑을 추측하면 엉뚱한 사람에게 비용을 물린다 |
 | `telegram` | Telegram user id | 같은 이유다. Telegram 은 이름과 username 을 넘겨주는데 둘 다 주소가 아니다 |
 | `teams` | 보낸 사람의 Entra(Azure AD) object id | 대화마다 달라지는 `from.id` 와 달리 사람을 가로질러 같다. Teams 는 봇에게 email 을 주지 않는다 |
-| `a2a` | 상수 `shared-key`, 또는 client key 의 이름 | 공유 키는 아무도 지목하지 못한다. 이름 붙은 client key 는 그 보유자를 지목하므로, 그쪽 런은 client 단위로 귀속되고 한도가 매겨진다 |
 | `webhook` | `{project}:{triggerId}` | — |
 | `schedule` | `{project}:{triggerId}` | — |
 
@@ -84,14 +83,10 @@ subagent transfer 가 다른 project 에서 하는 호출도 여전히 런을 �
 | Slack | `slack:{channel}:{threadTs}` — 루트 메시지를 포함한 그 스레드 | `slackConversation` (`src/domain/slack/conversation.ts`) |
 | Telegram | `telegram:{chatId}` 또는 `telegram:{chatId}:{threadId}` — 개인·그룹 chat 과 선택적인 topic | `telegramConversation` (`src/domain/telegram/conversation.ts`) |
 | Teams | `teams:{conversationId}` | `teamsConversation` (`src/domain/teams/conversation.ts`) |
-| inbound A2A | `a2a:{clientActorId}:{contextId}` — 호출자 아래에 놓인, 호출자의 묶음 | `a2aConversation` (`src/domain/a2a/conversation.ts`) |
-| AG-UI | `agui:{callerDigest}:{threadId}` | `aguiConversation` (`src/app/api/projects/_lib/conversation.ts`) |
 | `predict` / `chat/completions` / `agent` | `api:{callerDigest}:{X-Conversation-Id}` — opt-in 이며, 이메일을 담지 않고 호출자 범위로 한정된다 | `requestConversation` (`src/app/api/projects/_lib/conversation.ts`) |
 | webhook / schedule | — | firing 은 후속 질문을 받지 않으므로, 한 번짜리 대화조차 아니다 |
 
-런 중에 이것을 읽는 소비자는 둘이다: 첫 질문이 연 원격 대화를 이어 가는 outbound A2A transfer
-([A2A](agents-a2a.md#a2a)), 그리고 상태를 갖는 서버에 어느 대화가 묻고 있는지 알려 주는 MCP
-헤더 ([MCP](mcp.md)). actor(한 사람은 여러 대화에 있다)도 ancestry(턴의 사슬이 아니라 project
+런은 [MCP](mcp.md) 헤더로 상태를 갖는 서버에 어느 대화가 묻고 있는지 알려 준다. actor(한 사람은 여러 대화에 있다)도 ancestry(턴의 사슬이 아니라 project
 의 사슬이다)도 이것을 대신할 수 없고, 그래서 자기 필드로 존재한다. 런 바깥에서는 trace 도 이
 키를 기록한다
 — trace 하나를 읽을 때 상관 짓기 위해서다. 아직 이것으로 인덱싱하거나 필터링하는 것은 없으니,
@@ -107,7 +102,7 @@ Agent 런은 항상 기록한다. Studio Trace는 준비 단계,
 SDK native span과 최상위 종료 상태를 한정된 행으로 저장한다.
 
 ```ts
-Trace { traceId, projectName, versionName? (이전 기록만), projectType, actor?, ancestry?, conversation?,
+Trace { traceId, projectName, actor?, ancestry?, conversation?,
         status: 'completed' | 'awaiting-approval' | 'turn-limit' | 'output-limit' | 'failed' | 'cancelled',
         spans, spansDropped?, warnings?, startedAt, endedAt, durationMs, error?, createdAt }
 TraceSpan { spanId, parentSpanId?, kind: 'model' | 'tool' | 'subagent' | 'guardrail' | 'prepare',

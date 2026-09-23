@@ -98,9 +98,9 @@ id 아래 백그라운드로 작업을 예약하며, 획득한 token이 현재 c
 
 ## 의도적으로 밖에 남겨 둔 것
 
-Chat 과 A2A 와 trigger 도 각각 엔진의 스트림을 소비하며, 각자 자기 루프를 유지한다. 그것은
+Chat 과 trigger 도 각각 엔진의 스트림을 소비하며, 각자 자기 루프를 유지한다. 그것은
 이 파일이 언젠가 자라서 덮게 될 누락이 아니다: Chat은 화면 기록과 SDK Session을 따로 영속화하며,
-A2A task 에는 lifecycle 이 있고, 발화(firing) 에는 이력 행이 있다 — 이들의 출력 계약은
+발화(firing) 에는 이력 행이 있다 — 이들의 출력 계약은
 챗봇의 것과도, 서로의 것과도 다르며, 파사드는 이들에게 필요한 두 계약을 이미 제공한다
 (chunk 소비자에게는 `streamProjectRun`, completion 에는 `executeProjectStream` /
 `executeProject`). 이들 전부를 묶는 것은 공유된 루프가 아니라 `tests/architecture.test.ts`

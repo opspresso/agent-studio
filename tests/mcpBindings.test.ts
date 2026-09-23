@@ -57,7 +57,6 @@ function projectFixture(name: string): Project {
     name,
     displayName: name,
     description: "",
-    projectType: "agent",
     ownerEmail: "owner@example.com",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -92,10 +91,8 @@ function depsFixture(
   return {
     ...(overrides.mcpAuth ? { mcpAuth: overrides.mcpAuth } : {}),
     projects: { get: reject, list: reject, put: reject, delete: reject },
-    versions: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => server, list: reject, put: reject, delete: reject },
-    externalAgents: { get: reject, list: reject, put: reject, delete: reject },
     usage: {
       record: async (_delta: UsageDelta) => {},
       getDay: async () => null,
@@ -177,7 +174,7 @@ beforeEach(() => {
 });
 
 describe("per-project MCP header overrides at dispatch", () => {
-  it("decrypts context-bound registry and version headers together", async () => {
+  it("decrypts context-bound registry and Agent binding headers together", async () => {
     const server = {
       ...registryServer,
       headers: encryptHeaders(
@@ -452,7 +449,7 @@ describe("per-project MCP header overrides at dispatch", () => {
     expect(headers["x-shared"]).toBeUndefined();
   });
 
-  it("does not send version credentials after the registry endpoint moves", async () => {
+  it("does not send Agent binding credentials after the registry endpoint moves", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const movedServer = {
       ...registryServer,

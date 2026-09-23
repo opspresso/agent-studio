@@ -88,7 +88,7 @@ native Session의 활동·보존 기한을 갱신한다. 완료 시 미결 승�
 
 ### 저장소 정책 관리
 
-Agent 설정에서 `parameters.workspaceTools`를 켜면 `/projects/{name}/workspace`에 전용 도구 탭이 나타난다.
+Agent 설정에서 `parameters.workspaceTools`를 켜면 `/agents/{name}/workspace`에 전용 도구 탭이 나타난다.
 탭과 실행 모두 현재 Agent 설정의 개별 opt-in을 확인한다.
 프로젝트 소유자·관리자가 저장소, 접근 모드, 기본 Runtime, 유휴 시간, 검사 명령과 배포 workflow를 관리한다.
 기본 저장소는 없으며 Git 작업은 저장소와 기준 브랜치를 명시한다. 모델이 필요한 Runtime은 Settings → Models → 모델 사용 설정의

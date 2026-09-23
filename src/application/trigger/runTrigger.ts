@@ -403,11 +403,8 @@ export async function executeFiring(
   // than as an error: the delivery did run, and a partial answer is not a
   // failure — but the row must say why it is partial.
   const warnings: string[] = [];
-  // Pictures a firing produced. A trigger's row carries text, so the bytes have
-  // nowhere to go — but a run that drew something and reported nothing wrote a
-  // green `succeeded` row with an empty result, which reads exactly like a run
-  // that produced nothing at all. An image project on a schedule is the whole
-  // case: the picture is the answer, and the row was the only record of it.
+  // A trigger's history row is text; count generated images there so a run
+  // whose only output is a picture still reports what it produced.
   let images = 0;
   // Files a tool rendered. Named rather than counted, because unlike a picture
   // a file is usually the whole point of the firing — "the nightly report ran"

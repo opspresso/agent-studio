@@ -87,30 +87,25 @@ export async function resolveSkills(
 
 /** Same for subagents: an unresolvable target is not offered as a transfer. */
 export async function resolveSubagents(
-  deps: Pick<ExecutionDeps, "externalAgents" | "projects">,
+  deps: Pick<ExecutionDeps, "projects">,
   subagentList: SubagentRef[] | undefined,
 ): Promise<{ subagents: engine.SubagentInfo[]; warnings: string[] }> {
   const resolved = await Promise.all(
     (subagentList ?? []).map(
       async (ref): Promise<{ subagent?: engine.SubagentInfo; warning?: string }> => {
-        const target =
-          ref.type === "remote"
-            ? await deps.externalAgents.get(ref.name)
-            : await deps.projects.get(ref.name);
+        const target = await deps.projects.get(ref.name);
         if (!target) {
           log.warn(
             "run",
-            `${ref.type} agent '${ref.name}' no longer exists; not offering it this run`,
+            `Agent '${ref.name}' no longer exists; not offering it this run`,
           );
           return {
-            warning: `${ref.type === "remote" ? "Remote agent" : "Agent project"} '${ref.name}' no longer exists; a transfer to it was not offered.`,
+            warning: `Agent '${ref.name}' no longer exists; a transfer to it was not offered.`,
           };
         }
-        const configuration = "projectType" in target ? target.configuration : undefined;
         return {
-          subagent: { name: ref.name, description: target.description ?? "", type: ref.type,
-            signature: runtimeFingerprint("url" in target ? [target.name, target.url, target.protocol] : [target.name, target.projectType, configuration]),
-            kind: ref.type === "remote" ? "action" : "agent" },
+          subagent: { name: ref.name, description: target.description ?? "",
+            signature: runtimeFingerprint([target.name, target.configuration]) },
         };
       },
     ),
@@ -146,7 +141,7 @@ export function buildSkillLoader(
  * token** plus every one of its tools competing for the per-run tool cap. The
  * server limit is low for that reason, not out of caution about relevance.
  */
-const DISCOVERY_LIMITS = { skill: 5, agent: 3, mcpServer: 3 } as const;
+const DISCOVERY_LIMITS = { skill: 5, mcpServer: 3 } as const;
 
 /**
  * How much of each discovery query is embedded. A pasted document must not
@@ -262,23 +257,19 @@ async function discoverCapabilities(
   recordUsage?: engine.RecordUsageFn,
 ): Promise<{
   skillList: string[];
-  subagentList: SubagentRef[];
   mcpList: McpBinding[];
   notes: string[];
   rerank: CatalogRerankReport;
 }> {
   const boundSkills = new Set(configuration.skillList ?? []);
-  const boundAgents = new Set((configuration.subagentList ?? []).map((ref) => ref.name));
   const boundServers = new Set((configuration.mcpList ?? []).map((binding) => binding.name));
 
-  // One embedding pass for all four: the vector is the query, and only the
-  // filter differs. Asking per kind meant four identical embeddings per run.
+  // One embedding pass across skills and MCP entries.
   const search = await searchCapabilitiesByKind(
     deps.catalog,
     queries,
     [
       { kind: "skill", limit: DISCOVERY_LIMITS.skill },
-      { kind: "agent", limit: DISCOVERY_LIMITS.agent },
       // Tools are what a request matches, but a server is what a run can bind —
       // so the tool index answers "which server", and the binding is the server.
       { kind: "mcpTool", limit: DISCOVERY_LIMITS.mcpServer * 4 },
@@ -299,7 +290,7 @@ async function discoverCapabilities(
     ],
     signal ? { signal } : {},
   );
-  const [skills = [], agents = [], toolHits = [], serverHits = []] = search.matches;
+  const [skills = [], toolHits = [], serverHits = []] = search.matches;
   if (recordUsage && search.rerank.usage.length > 0) {
     await Promise.all(
       search.rerank.usage.map((usage) =>
@@ -315,12 +306,6 @@ async function discoverCapabilities(
   }
 
   const skillList = skills.map((match) => match.name).filter((name) => !boundSkills.has(name));
-  // Every catalogued agent is an external one: a project is reachable as a
-  // subagent through an explicit local binding and must have current settings.
-  const subagentList: SubagentRef[] = agents
-    .filter((match) => !boundAgents.has(match.name))
-    .map((match) => ({ name: match.name, type: "remote" as const }));
-
   // One read for the whole run, not one per candidate. `needs_auth` and
   // `needs_reauth` are connections in name only — the console shows both as
   // something a person still has to finish — so only `connected` counts.
@@ -401,9 +386,8 @@ async function discoverCapabilities(
   const byName = (a: { name: string }, b: { name: string }) =>
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
   skillList.sort();
-  subagentList.sort(byName);
   mcpList.sort(byName);
-  return { skillList, subagentList, mcpList, notes, rerank: search.rerank };
+  return { skillList, mcpList, notes, rerank: search.rerank };
 }
 
 /**
@@ -475,7 +459,7 @@ export function toolsPrepared(resolved: {
  * checks) from needing to know the difference.
  */
 export async function resolveRunTools(
-  deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
+  deps: Pick<ExecutionDeps, "projects" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
   configuration: AgentConfiguration,
   signal?: AbortSignal,
   queries?: readonly string[],
@@ -560,7 +544,6 @@ export async function resolveRunTools(
         configuration = {
           ...configuration,
           skillList: [...(configuration.skillList ?? []), ...found.skillList],
-          subagentList: [...(configuration.subagentList ?? []), ...found.subagentList],
           mcpList: [...(configuration.mcpList ?? []), ...found.mcpList],
         };
         rerank = found.rerank;
@@ -572,7 +555,6 @@ export async function resolveRunTools(
         discoveryNotes.push(...found.notes);
         discovered.push(
           ...found.skillList,
-          ...found.subagentList.map((ref) => ref.name),
           ...found.mcpList.map((binding) => binding.name),
         );
       } catch (error) {

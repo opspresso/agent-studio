@@ -57,8 +57,7 @@ export function NewChatPanel() {
         if (cancelled) return;
         setProjects(agents);
         if (agents.length > 0) {
-          // The remembered project may have been deleted, renamed, or turned
-          // into another project type since it was stored — the list decides.
+          // The remembered Agent may have been deleted or renamed.
           setProjectName((current) =>
             agents.some((project) => project.name === current) ? current : agents[0]!.name,
           );
@@ -66,7 +65,7 @@ export function NewChatPanel() {
       } catch (error) {
         if (!cancelled) {
           setProjectsError(
-            error instanceof Error ? error.message : t("projects.loadFailed"),
+            error instanceof Error ? error.message : t("agents.loadFailed"),
           );
         }
       } finally {
@@ -162,8 +161,8 @@ export function NewChatPanel() {
                 {t("chat.noAgentProjectsBody")}
               </Text>
               <Group justify="center" mt="sm">
-                <Button component={Link} href="/projects" rightSection={<IconArrowRight size={16} />}>
-                  {t("chrome.openProjects")}
+                <Button component={Link} href="/agents" rightSection={<IconArrowRight size={16} />}>
+                  {t("chrome.openAgents")}
                 </Button>
                 <Button component={Link} href="/guide" variant="default">{t("nav.guide")}</Button>
               </Group>

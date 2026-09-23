@@ -31,7 +31,6 @@ Project는 이름으로 호출하는 Agent다. 공개 범위·소유권·연동�
   시점에 전체 하위 그래프가 고정되는 것은 아니다. 승인 대기에는 설정·연결 fingerprint를
   보존해 변경된 상태의 재개를 거절한다.
 - 입력은 사용자 메시지이며 저장한 시스템 프롬프트와 함께 실행한다.
-  기존 행·시크릿·승인 대기의 보존과 전환은 [데이터 이전](../AGENT-MIGRATION.md)을 따른다.
 
 전체 HTTP 형태와 마스킹 규칙은 [Agent 설정 API](../API.md#agent-현재-설정),
 Project의 비용 정책은 [지출 가드](../OPERATIONS.md#지출-가드와-부하-가드)가 소유한다.
@@ -84,11 +83,11 @@ flowchart TB
 동시에 강제한다. 제공되지 않은 도구와 잘못된 인자는 SDK의 오류 결과/실패 계약을 따른다.
 
 일반 JSON Schema를 SDK `tool()`에 전달하면 JSON 파싱만 제공하므로 별도의 실행 전 검증을
-적용한다. `ToolSchemaValidator` 포트를 통해 기존 MCP 패키지의 검증기를 주입하며 builtin·MCP·위임·frontend
+적용한다. `ToolSchemaValidator` 포트를 통해 MCP 패키지의 검증기를 주입하며 builtin·MCP·위임
 도구의 선언을 그대로 검사한다. 필수 필드·타입·enum·중첩 구조·추가 필드 제한을 보존하고 값을
 강제 변환하거나 삭제하지 않는다. PII 인자는 복원한 실제 dispatch 값을 검사한다. SDK 도구 입력
 Guardrail은 승인 요청 전에 검사하며, 실패는 오류 도구 결과로 돌아가고 실행 슬롯과 부작용을
-만들지 않는다. 잘못된 frontend 호출도 같은 경로로 모델에 돌아간다. 승인된 호출도 실행 전
+만들지 않는다. 승인된 호출도 실행 전
 검증한다. 검증기가 없는 도구 실행, 해석할 수 없는 스키마와 외부 `$ref`는 거부한다.
 
 `agentModels.ts`의 SDK `OpenAIChatCompletionsModel`은 배포가 지정한 endpoint로만 요청한다.
@@ -115,11 +114,11 @@ SDK function tool 동시성은 5다. 실제 실행에 진입한 도구만 결과
 `delegate_<name>`으로 specialist의 결과를 받은 뒤 계속 답할 수 있다. 인자는
 `{ input: string, image_ids: string[] }`다. Handoff는 같은 Runner의 모델/도구 이력을 이어받고,
 Agent-as-Tool은 SDK가 별도 실행을 관리한다. 후자의 요청에는 최신 SDK Session 이력에서
-만든 한정된 배경 문맥을 전달한다. 원격 Agent는 별도 기능을 수행하는 SDK function tool로 연결한다.
+만든 한정된 배경 문맥을 전달한다.
 
 Studio는 요청된 대상의 현재 설정을 준비하고 순환, 깊이 5, 모델/비용 정책을 검사한다.
 자식은 부모에게 남은 턴 수 이하로 제한되며 추가 Agent-as-Tool 병렬 위임을 제공하지 않는다.
-필요한 로컬 Handoff와 원격/이미지 도구는 자식에도 제공할 수 있다. 자식 실패는 부모의 오류
+필요한 로컬 Handoff와 이미지 도구는 자식에도 제공할 수 있다. 자식 실패는 부모의 오류
 도구 결과와 경고가 되고, 부모는 남은 정보로 답할 수 있다.
 
 `BoundAgent`는 SDK identity를 유지하면서 동시 호출의 모델·도구·Guardrail 자원을 분리한다.
@@ -221,10 +220,10 @@ recorder가 없는 배포에서는 캡처 wrapper가 원래 chunk를 통과시�
 
 내장 File·SaveFile은 저장할 ID를 미리 예약하고 recorder가 같은 ID를 사용한다.
 편집본의 `derivedFrom`은 원본을 지목하며 덮어쓰지 않는다. 다른 표면도 `fileId`로 파일을
-참조할 수 있고 A2A는 URL part의 metadata에 전달한다.
+참조할 수 있다.
 읽기·편집 권한은 [문서 설계](documents.md#채널-간-파일-참조)를 따른다.
 
-Artifact는 project·actor·run ID·위임 경로를 기록한다. 이전 기록의 versionName은 읽기용으로만 보존한다.
+Artifact는 project·actor·run ID·위임 경로를 기록한다.
 `model`은 실제 생성자가 명시한 이미지 모델만 사용하고 부모 Agent 설정에서 추측하지 않는다.
 MCP가 준 bytes나 첨부처럼 모델을 확정할 수 없는 경우에는 비운다.
 저장 실패는 원래 응답을 실패로 바꾸지 않고 손실 건수와 제한된 원인 분류를 경고한다.

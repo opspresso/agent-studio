@@ -47,11 +47,6 @@ export const RETENTION = {
   get triggerRunDays(): number {
     return retentionDays("TRIGGER_RUN_RETENTION_DAYS", 30);
   },
-  /** Inbound A2A task state — ephemeral job state, kept just long enough for
-   * `GetTask`/`CancelTask` after `SendMessage`. */
-  get a2aTaskDays(): number {
-    return retentionDays("A2A_TASK_RETENTION_DAYS", 1);
-  },
   /**
    * Artifact rows — the inventory of what runs produced.
    *
@@ -108,23 +103,10 @@ export const SLACK_STOP_TTL_SECONDS = SECONDS_PER_DAY;
 export const SLACK_RUN_LEASE_SECONDS = 90;
 
 /**
- * How long a remote agent's `contextId` is kept for one of our conversations.
- *
- * Not retention either — past it, the next transfer from that conversation
- * starts the remote conversation over, which is what every transfer did before
- * the row existed. A week rather than the engagement day above: a chat is
- * picked back up days later where a Slack thread rarely is, and the cost of a
- * stale hint is one cold start, not a wrong answer. Refreshed on every
- * transfer, so a live conversation never expires mid-life.
- */
-export const REMOTE_CONVERSATION_TTL_SECONDS = 7 * SECONDS_PER_DAY;
-
-/**
  * How long a conversation transcript's turns are kept, for a surface whose
  * platform hands back no history (Telegram).
  *
- * The same week as the remote-conversation hint above, for the same reason: a
- * Telegram chat is picked back up days later, and past a week a follow-up that
+ * A Telegram chat is picked back up days later, and past a week a follow-up that
  * has lost its context costs one restatement of the question, not a wrong
  * answer. Per turn rather than per conversation, so a live conversation keeps
  * its recent turns while its old ones expire underneath.

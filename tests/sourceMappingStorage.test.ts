@@ -19,12 +19,12 @@ describe("source mapping persistence", () => {
     await expect(mcpRepository.get("files")).rejects.toThrow("source mappings are invalid");
   });
   it("preserves Agent-owned mappings on repository reads", async () => {
-    fake.seed([{ ...keys.project("audio"), name: "audio", displayName: "Audio", entityType: "PROJECT", createdAt: "2026-01-01", updatedAt: "2026-01-01", projectType: "agent", ownerEmail: "owner@example.test",
+    fake.seed([{ ...keys.project("audio"), name: "audio", displayName: "Audio", entityType: "PROJECT", createdAt: "2026-01-01", updatedAt: "2026-01-01", ownerEmail: "owner@example.test",
       configuration: { projectName: "audio", systemPrompt: "", model: "test", parameters: { piiFiltering: false }, skillList: [], subagentList: [], mcpList: [{ name: "files", sourceOutputs: [mapping] }] } }]);
     expect((await projectRepository.get("audio"))?.configuration?.mcpList[0]?.sourceOutputs).toEqual([mapping]);
   });
   it("rejects malformed stored mappings instead of falling back to raw output", async () => {
-    fake.seed([{ ...keys.project("audio"), name: "audio", displayName: "Audio", entityType: "PROJECT", createdAt: "2026-01-01", updatedAt: "2026-01-01", projectType: "agent", ownerEmail: "owner@example.test",
+    fake.seed([{ ...keys.project("audio"), name: "audio", displayName: "Audio", entityType: "PROJECT", createdAt: "2026-01-01", updatedAt: "2026-01-01", ownerEmail: "owner@example.test",
       configuration: { projectName: "audio", systemPrompt: "", model: "test", parameters: { piiFiltering: false }, skillList: [], subagentList: [], mcpList: [{ name: "files", sourceOutputs: "broken" }] } }]);
     await expect(projectRepository.get("audio")).rejects.toThrow("source mappings are invalid");
   });

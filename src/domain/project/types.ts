@@ -3,7 +3,6 @@ import type { MessageDestination } from "@/domain/messaging/destination";
 import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
 import type { RuntimePolicy } from "@/domain/execution/runtimeSession";
 
-export type ProjectType = "agent";
 
 /**
  * Who may see and run a project. `public` is the shared catalog: any signed-in
@@ -146,7 +145,6 @@ export interface Project {
   name: string;
   displayName: string;
   description: string;
-  projectType: ProjectType;
   ownerEmail: string;
   /** Absent means `public` — the shape every project had before visibility. */
   visibility?: ProjectVisibility;
@@ -251,7 +249,7 @@ export interface AgentParameters {
    * The console is where it is *rendered*, not the boundary it stops at: the
    * two raw-chunk routes (`/agent` and streaming `/predict`) forward engine
    * chunks verbatim, so anyone holding a project API token receives the
-   * reasoning frames too. Nothing else republishes it — the OpenAI shapes, A2A,
+   * reasoning frames too. Nothing else republishes it — the OpenAI shapes,
    * the messaging bots and the trace recorder all read the answer beside it,
    * and the trace keeps the token count without the words.
    *
@@ -275,7 +273,6 @@ export interface AgentParameters {
 
 export interface SubagentRef {
   name: string;
-  type: "local" | "remote";
 }
 
 /**

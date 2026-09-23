@@ -10,7 +10,6 @@ const store = (await import("@/infrastructure/db/store")) as unknown as FakeStor
 import type { ChatMessage } from "@/domain/chat/types";
 import { keys } from "@/infrastructure/db/keys";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
-import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
@@ -29,7 +28,7 @@ beforeEach(() => {
   store.rows.clear();
 });
 
-/** A live project row a version, usage or trace write may land in. */
+/** A live project row a configuration, usage or trace write may land in. */
 function seedProject(name: string, over: Record<string, unknown> = {}): void {
   store.seed([
     {
@@ -38,7 +37,6 @@ function seedProject(name: string, over: Record<string, unknown> = {}): void {
       name,
       displayName: name,
       description: "",
-      projectType: "agent",
       ownerEmail: "owner@example.com",
       createdAt: NOW,
       updatedAt: NOW,
@@ -147,7 +145,6 @@ describe("Project atomic writes", () => {
     name: "atomic",
     displayName: "Atomic",
     description: "",
-    projectType: "agent" as const,
     ownerEmail: "owner@example.com",
     createdAt: NOW,
     updatedAt: "2026-01-01T00:00:01.000Z",
@@ -177,7 +174,6 @@ describe("Project atomic writes", () => {
         name: "corrupt-visibility",
         displayName: "Corrupt",
         description: "",
-        projectType: "agent",
         ownerEmail: "owner@example.com",
         visibility: "privte",
         createdAt: NOW,
@@ -364,15 +360,15 @@ describe("triggerRepository messaging destination round-trip", () => {
   });
 });
 
-describe("current configuration MCP normalization", () => {
-  const legacyKey = keys.project("legacy");
+describe("stored Agent MCP bindings", () => {
+  const projectKey = keys.project("bindings");
 
   function writeRaw(mcpList: unknown): void {
     store.seed([
       {
-        ...legacyKey, entityType: "PROJECT", name: "legacy", displayName: "Legacy", projectType: "agent", ownerEmail: "owner@example.test",
+        ...projectKey, entityType: "PROJECT", name: "bindings", displayName: "Bindings", ownerEmail: "owner@example.test",
         configuration: {
-          projectName: "legacy", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false },
+          projectName: "bindings", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false },
           mcpList, skillList: [], subagentList: [],
         },
         createdAt: NOW, updatedAt: NOW,
@@ -380,34 +376,25 @@ describe("current configuration MCP normalization", () => {
     ]);
   }
 
-  it("reads a row written before overrides existed as bindings with none", async () => {
-    // Legacy rows carry a plain string[]; they are still valid bindings.
-    writeRaw(["alpha", "beta"]);
+  it("keeps header overrides on stored bindings", async () => {
+    writeRaw([{ name: "alpha", headers: { Authorization: "enc:v2:x", "X-Gone": null } }]);
 
-    const version = (await projectRepository.get("legacy"))?.configuration;
+    const configuration = (await projectRepository.get("bindings"))?.configuration;
 
-    expect(version?.mcpList).toEqual([{ name: "alpha" }, { name: "beta" }]);
-  });
-
-  it("keeps overrides on rows written in the binding shape", async () => {
-    writeRaw([{ name: "alpha", headers: { Authorization: "enc:v1:x", "X-Gone": null } }]);
-
-    const version = (await projectRepository.get("legacy"))?.configuration;
-
-    expect(version?.mcpList).toEqual([
-      { name: "alpha", headers: { Authorization: "enc:v1:x", "X-Gone": null } },
+    expect(configuration?.mcpList).toEqual([
+      { name: "alpha", headers: { Authorization: "enc:v2:x", "X-Gone": null } },
     ]);
   });
 
   it("keeps a narrowed tool list", async () => {
     // This is read back by the run itself, so dropping it here does not fail —
     // it silently offers every tool the server has, which is the opposite of
-    // what the version asked for.
+    // what the Agent configuration selected.
     writeRaw([{ name: "alpha", tools: ["search", "fetch"] }]);
 
-    const version = (await projectRepository.get("legacy"))?.configuration;
+    const configuration = (await projectRepository.get("bindings"))?.configuration;
 
-    expect(version?.mcpList).toEqual([{ name: "alpha", tools: ["search", "fetch"] }]);
+    expect(configuration?.mcpList).toEqual([{ name: "alpha", tools: ["search", "fetch"] }]);
   });
 
   it("carries a narrowing and an override together", async () => {
@@ -420,9 +407,9 @@ describe("current configuration MCP normalization", () => {
       },
     ]);
 
-    const version = (await projectRepository.get("legacy"))?.configuration;
+    const configuration = (await projectRepository.get("bindings"))?.configuration;
 
-    expect(version?.mcpList).toEqual([
+    expect(configuration?.mcpList).toEqual([
       {
         name: "alpha",
         headers: { "X-Tenant": "acme" },
@@ -432,22 +419,26 @@ describe("current configuration MCP normalization", () => {
     ]);
   });
 
-  it("treats an empty or malformed tool list as no narrowing", async () => {
+  it("treats an empty tool list as no narrowing", async () => {
     // Absent and empty mean the same thing — every tool — so an empty array must
     // not be stored as a narrowing that would offer none.
-    writeRaw([{ name: "alpha", tools: [] }, { name: "beta", tools: "search" }]);
+    writeRaw([{ name: "alpha", tools: [] }]);
 
-    const version = (await projectRepository.get("legacy"))?.configuration;
+    const configuration = (await projectRepository.get("bindings"))?.configuration;
 
-    expect(version?.mcpList).toEqual([{ name: "alpha" }, { name: "beta" }]);
+    expect(configuration?.mcpList).toEqual([{ name: "alpha" }]);
   });
 
-  it("drops entries with no usable name instead of failing the read", async () => {
-    writeRaw(["ok", "", { headers: {} }, null, 42]);
-
-    const version = (await projectRepository.get("legacy"))?.configuration;
-
-    expect(version?.mcpList).toEqual([{ name: "ok" }]);
+  it.each([
+    ["missing list", undefined],
+    ["bare name", ["alpha"]],
+    ["missing name", [{ headers: {} }]],
+    ["invalid tools", [{ name: "alpha", tools: "search" }]],
+    ["invalid headers", [{ name: "alpha", headers: { Authorization: 42 } }]],
+    ["unknown field", [{ name: "alpha", url: "https://example.test" }]],
+  ])("rejects a %s instead of silently dropping a binding", async (_name, bindings) => {
+    writeRaw(bindings);
+    await expect(projectRepository.get("bindings")).rejects.toThrow(/Stored Agent MCP binding/);
   });
 });
 
@@ -512,26 +503,6 @@ describe("mcpRepository round-trip", () => {
     ]);
     const loaded = await mcpRepository.get("legacy");
     expect(loaded?.headers).toEqual({});
-  });
-});
-
-describe("externalAgentRepository round-trip", () => {
-  it("preserves headers and protocol through put + get", async () => {
-    await externalAgentRepository.put({
-      name: "a",
-      url: "https://agent.example/v1",
-      protocol: "a2a",
-      description: "desc",
-      headers: { "X-Api-Key": "enc:v1:ciphertext" },
-      createdAt: NOW,
-      updatedAt: NOW,
-    });
-    const loaded = await externalAgentRepository.get("a");
-    expect(loaded).toMatchObject({
-      name: "a",
-      protocol: "a2a",
-      headers: { "X-Api-Key": "enc:v1:ciphertext" },
-    });
   });
 });
 
@@ -686,7 +657,6 @@ describe("artifactRepository round-trip", () => {
       filename: "chart.png",
       byteSize: 1234,
       projectName: "p1",
-      versionName: "v1",
       actor: { kind: "slack" as const, id: "U0ABCDEF" },
       // A Slack run looks the asker's address up so their pictures land in
       // their own gallery; the actor stays the Slack id.
@@ -797,8 +767,6 @@ describe("traceRepository round-trip", () => {
     const trace = {
       traceId: "trace-1",
       projectName: "p",
-      versionName: "2",
-      projectType: "agent",
       status: "completed" as const,
       spans: [],
       startedAt: NOW,

@@ -47,7 +47,7 @@ async function main() {
   const api = createWorkspaceUseCases(deps);
   try {
     await projects.create({ name: projectName, displayName: "Workspace worker check", description: "", ownerEmail,
-      projectType: "agent", createdAt: at, updatedAt: at });
+      createdAt: at, updatedAt: at });
     await chats.create({ chatId, projectName, title: "Workspace worker check", ownerEmail, createdAt: at, updatedAt: at });
     const workspace = await api.create({ chatId, projectName, title: "General work", runtime: "command" }, ownerEmail);
     workspaceId = workspace.id;

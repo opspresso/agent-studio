@@ -33,7 +33,6 @@ function project(costLimits?: CostLimits, slackEnabled = false): Project {
     name: "proj",
     displayName: "Proj",
     description: "",
-    projectType: "agent",
     ownerEmail: "owner@example.com",
     ...(costLimits ? { costLimits } : {}),
     ...(slackEnabled
@@ -416,7 +415,7 @@ describe("settleCostLimit", () => {
 describe("every top-level entry point is guarded", () => {
   /**
    * The six route-level entry points (predict, chat/completions, agent, chat,
-   * Slack, A2A) all reach one of these four functions, and image generation is
+   * Slack) all reach one of these four functions, and image generation is
    * the fifth. Every other dependency rejects, so a run that got past the guard
    * fails loudly rather than quietly succeeding on a fake.
    */
@@ -429,7 +428,6 @@ describe("every top-level entry point is guarded", () => {
 
       skills: fakeSkillRepository(reject),
       mcps: { get: reject, list: reject, put: reject, delete: reject },
-      externalAgents: { get: reject, list: reject, put: reject, delete: reject },
       channel: { stream: reject },
       imageChannel: { generateImage: reject, editImage: reject },
     } as unknown as ExecutionDeps;
@@ -493,7 +491,7 @@ describe("a subagent transfer is guarded too", () => {
    * threshold ran anyway on the strength of its parent's admission.
    */
   const child = project({ blockThresholdUsd: 10 });
-  const childVersion: AgentConfiguration = {
+  const childConfiguration: AgentConfiguration = {
     projectName: "proj",
 
     systemPrompt: "",
@@ -509,7 +507,7 @@ describe("a subagent transfer is guarded too", () => {
     const f = fixture({ day: row({ m: spentUsd }) });
     return {
       ...f.deps,
-      projects: withConfigurations({ get: async () => ({ ...child, projectType: "agent" }) }, ({ get: async () => childVersion }).get),
+      projects: withConfigurations({ get: async () => ({ ...child }) }, ({ get: async () => childConfiguration }).get),
 
       channel: {
         stream: () => {
@@ -520,18 +518,18 @@ describe("a subagent transfer is guarded too", () => {
   }
 
   function prepareChild(spentUsd: number) {
-    return prepareSubagent(deps(spentUsd), { ...childVersion, projectName: "parent", subagentList: [{ name: "proj", type: "local" }] }, "proj", { message: "hi", images: [] }, async () => {}, { ancestry: ["parent"] });
+    return prepareSubagent(deps(spentUsd), { ...childConfiguration, projectName: "parent", subagentList: [{ name: "proj" }] }, "proj", { message: "hi", images: [] }, async () => {}, { ancestry: ["parent"] });
   }
   it("refuses a child over its own project spending limit", async () => {
     await expect(prepareChild(100)).rejects.toThrow(/daily|limit|spend/i);
   });
   it("prepares a child under its project spending limit", async () => {
-    expect(await prepareChild(1)).toMatchObject({ kind: "agent", input: { model: childVersion.model } });
+    expect(await prepareChild(1)).toMatchObject({ input: { model: childConfiguration.model } });
   });
 });
 
 describe("openRun", () => {
-  /** Minimal version; the bracket reads only its model ids. */
+  /** Minimal configuration; the bracket reads only its model ids. */
   const configuration: AgentConfiguration = {
     projectName: "proj",
 

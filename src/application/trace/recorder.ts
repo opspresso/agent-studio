@@ -20,7 +20,6 @@ export const MAX_TRACED_DISCOVERED = 20;
 
 export interface TraceContext {
   projectName: string;
-  projectType: string;
   model: string;
   messageCount: number;
   /** Transfer chain that reached this run, outermost first. */
@@ -328,7 +327,6 @@ export class TraceRecorder {
     const trace: Trace = {
       traceId: this.traceId,
       projectName: this.context.projectName,
-      projectType: this.context.projectType,
       ...(this.context.ancestry && this.context.ancestry.length > 1
         ? { ancestry: this.context.ancestry }
         : {}),

@@ -115,7 +115,7 @@ export async function openRuntimeSession(
   const checkpoint = document.checkpoint;
   if (checkpoint && !resume) throw new ConflictError("This chat is waiting for an approval decision");
   if (resume && (!checkpoint || checkpoint.status !== "pending" || resume.revision !== revision)) throw new ConflictError("This approval is no longer pending");
-  if (checkpoint && !checkpoint.configuration) throw new ConflictError("This pending run uses retired Version settings; discard it before starting a new run");
+  if (checkpoint && !checkpoint.configuration) throw new ConflictError("This pending run has no Agent configuration; discard it before starting a new run");
   if (checkpoint && runtimeFingerprint(checkpoint.configuration) !== runtimeFingerprint(scope.configuration)) throw new ConflictError("The Agent configuration changed while approval was pending; discard this run and start again");
   if (resume && (!resume.decisions.length || new Set(resume.decisions.map((entry) => entry.id)).size !== resume.decisions.length || resume.decisions.some((entry) => !checkpoint?.approvals.some((approval) => approval.id === entry.id)))) throw new ValidationError("Unknown or duplicate approval decision");
   const filter = checkpoint ? (checkpoint.input.parameters?.piiFiltering || checkpoint.pii.length ? PiiFilter.restoreSnapshot(checkpoint.pii) : undefined) : scope.configuration.parameters.piiFiltering ? new PiiFilter() : undefined;

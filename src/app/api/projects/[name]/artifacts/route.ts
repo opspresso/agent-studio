@@ -2,7 +2,7 @@
  * A project's output.
  *
  * Not an alternative view of the personal gallery but the only route that
- * reaches some of these rows at all: a Slack, A2A or trigger run names no
+ * reaches some of these rows at all: a Slack or trigger run names no
  * mailbox, so its artifacts are invisible to the owner index and this is where
  * they are listed — and therefore the only place they can be deleted from.
  */

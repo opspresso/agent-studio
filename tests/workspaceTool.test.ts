@@ -33,7 +33,7 @@ const invoke = async (request: Record<string, unknown>, callId = "call-start") =
 const start = { operation: "start", runtime: "command", repository: null, base_branch: null, task: "printf report > report.txt" };
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(now); vi.clearAllMocks(); serial = 0; fake.rows.clear();
-  fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner, projectType: "agent", visibility: "public", createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
+  fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner, visibility: "public", createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
 });
 afterEach(() => vi.useRealTimers());
 
@@ -57,11 +57,11 @@ describe("Workspace Agent capability", () => {
   it("checks policy before repository creation and returns a real management link without creating compute", async () => {
     const request = { operation: "check_repository_access", repository: "org/new-repo" };
     expect(() => createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!)({ request })).not.toThrow();
-    expect(await invoke(request)).toMatchObject({ allowed: false, repository_policy_url: "https://studio.example.test/projects/demo/workspace" });
+    expect(await invoke(request)).toMatchObject({ allowed: false, repository_policy_url: "https://studio.example.test/agents/demo/workspace" });
     expect(await invoke({ ...request, repository: "org/repo" })).toMatchObject({ allowed: true });
     expect(await repository.list(owner, 20)).toHaveLength(0);
     expect(attachRepository).not.toHaveBeenCalled();
-    await expect(invoke({ operation: "check_repository", repository: "org/new-repo", base_branch: "main" })).rejects.toThrow("https://studio.example.test/projects/demo/workspace");
+    await expect(invoke({ operation: "check_repository", repository: "org/new-repo", base_branch: "main" })).rejects.toThrow("https://studio.example.test/agents/demo/workspace");
   });
   it("checks repository readiness without creating compute or a chat", async () => {
     const request = { operation: "check_repository", repository: "org/repo", base_branch: "main" };

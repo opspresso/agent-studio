@@ -98,8 +98,7 @@ function checkedImageBytes(
  * answers `image/jpeg`, and this value is not cosmetic: it becomes the S3
  * object's extension and `Content-Type` under an immutable cache header, the
  * `data:` prefix on bytes handed back to a *second* model, the Slack upload's
- * filename and the A2A artifact's type. Calling a JPEG a PNG is wrong in all
- * five places at once.
+ * filename. Calling a JPEG a PNG gives every consumer incorrect metadata.
  */
 function toImageResult(payload: unknown, what: string): ImageGenerationResult {
   const response = payload as ImagesApiResponse;

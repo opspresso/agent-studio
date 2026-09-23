@@ -49,7 +49,7 @@ sync로 서버 URL이 바뀌면 이전 주소의 header·OAuth를 새 주소로 
 
 ## 케이퍼빌리티 카탈로그
 
-`catalog_vectors`는 설치 전역의 Skill·MCP 서버·MCP 도구·외부 Agent를 색인한다.
+`catalog_vectors`는 설치 전역의 Skill·MCP 서버·MCP 도구를 색인한다.
 로컬 Project는 자동 검색 대상이 아니며 명시적 하위 Agent binding으로 연결한다.
 카탈로그는 실행 권한을 부여하지 않는다. 실제 연결과 정책은 dispatch에서 확인한다.
 

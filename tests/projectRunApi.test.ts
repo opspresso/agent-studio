@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { streamAgent, streamPredict } from "@/app/projects/lib/api";
+import { streamAgent, streamPredict } from "@/app/agents/lib/api";
 
 afterEach(() => {
   vi.unstubAllGlobals();

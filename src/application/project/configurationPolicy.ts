@@ -1,8 +1,7 @@
-import type { AgentConfiguration, AgentParameters, McpBinding, Project, SubagentRef } from "@/domain/project/types";
+import type { AgentConfiguration, AgentParameters, McpBinding, SubagentRef } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { McpRepository } from "@/domain/mcp/repository";
-import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import { getModelConfig } from "@/domain/llm/models";
 import { ValidationError } from "@/application/errors";
 import { userMayAccessProject } from "./projectUseCases";
@@ -20,7 +19,6 @@ export type AgentConfigurationInput = Omit<AgentConfiguration, "projectName">;
 export interface ConfigurationRefRepos {
   skills: Pick<SkillRepository, "get">;
   mcps: Pick<McpRepository, "get">;
-  externalAgents: Pick<ExternalAgentRepository, "get">;
   /** Local subagents are other projects. */
   projects: Pick<ProjectRepository, "get">;
 }
@@ -32,7 +30,7 @@ interface ConfigurationRefs {
   subagentList?: SubagentRef[];
 }
 
-const subagentKey = (ref: SubagentRef): string => `${ref.type}:${ref.name}`;
+const subagentKey = (ref: SubagentRef): string => ref.name;
 
 /**
  * What the Agent already referenced. Both checks below look only at what an
@@ -115,11 +113,7 @@ export async function assertReferencesExist(
     ...(next.subagentList ?? [])
       .filter((ref) => !knownSubagents.has(subagentKey(ref)))
       .map(async (ref) => {
-        const found =
-          ref.type === "remote"
-            ? await refs.externalAgents.get(ref.name)
-            : await refs.projects.get(ref.name);
-        return found ? null : `${ref.type === "remote" ? "Agent" : "Project"} "${ref.name}" does not exist`;
+        return (await refs.projects.get(ref.name)) ? null : `Agent "${ref.name}" does not exist`;
       }),
   ];
 
@@ -147,7 +141,7 @@ export async function assertSubagentProjectsAccessible(
 ): Promise<void> {
   const known = alreadyReferenced(existing).subagents;
   for (const ref of next.subagentList ?? []) {
-    if (ref.type !== "local" || known.has(subagentKey(ref))) {
+    if (known.has(subagentKey(ref))) {
       continue;
     }
     const project = await refs.projects.get(ref.name);
@@ -181,7 +175,7 @@ export function warnUnknownCatalogModel(projectName: string, model: string): voi
  * the warn-only path — a mismatch on a KNOWN model is a misconfiguration, not
  * a catalog lag.
  */
-export function assertProjectModelType(project: Project, model: string): void {
+export function assertAgentModelType(model: string): void {
   const cfg = getModelConfig(model);
   if (!cfg) {
     return;
@@ -194,17 +188,17 @@ export function assertProjectModelType(project: Project, model: string): void {
   }
   if (reason === "type") {
     throw new ValidationError(
-      `Model type does not support ${project.projectType} projects: ${model}`,
+      `Model type does not support Agents: ${model}`,
     );
   }
 }
 
-export function assertModelSupports(project: Project, model: string, parameters: AgentParameters): void {
+export function assertModelSupports(model: string, parameters: AgentParameters): void {
   const cfg = getModelConfig(model);
   if (!cfg) {
     return;
   }
-  assertProjectModelType(project, model);
+  assertAgentModelType(model);
   if (parameters.structuredOutput && !cfg.capabilities.structuredOutput) {
     throw new ValidationError(`Model does not support structured output: ${model}`);
   }

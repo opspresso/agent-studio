@@ -445,7 +445,6 @@ function projectFixture(): Project {
     name: "p",
     displayName: "p",
     description: "",
-    projectType: "agent",
     ownerEmail: "owner@example.com",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -473,10 +472,8 @@ function runDeps(
   const reject = () => Promise.reject(new Error("not used in this test"));
   return {
     projects: { get: reject },
-    versions: { get: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => OAUTH_SERVER },
-    externalAgents: { get: reject },
     usage: { record: async () => {} },
     createToolSchemaValidator,
     channel,

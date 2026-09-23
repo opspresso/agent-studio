@@ -45,11 +45,11 @@ describe("catalog search", () => {
     const html = render(createElement(CardGrid, {
       loading: false,
       empty: visible.length === 0,
-      emptyText: t(items.length === 0 ? "projects.empty" : "catalog.noResults"),
+      emptyText: t(items.length === 0 ? "agents.empty" : "catalog.noResults"),
       children: visible.map((item) => createElement("article", { key: item.name }, item.name)),
     }));
     expect(html).toContain(t("catalog.noResults"));
-    expect(html).not.toContain(t("projects.empty"));
+    expect(html).not.toContain(t("agents.empty"));
     expect(html).not.toContain("<article");
   });
 });

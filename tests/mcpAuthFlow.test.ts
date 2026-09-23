@@ -142,7 +142,7 @@ function harness(
     projects: {
       get: async (name: string) =>
         name === "p"
-          ? { name: "p", ownerEmail: overrides.owner ?? OWNER, projectType: "agent" }
+          ? { name: "p", ownerEmail: overrides.owner ?? OWNER }
           : null,
     } as never,
     connections: {
@@ -606,7 +606,6 @@ describe("completeAuthorization", () => {
     h.deps.projects.get = (async () => ({
       name: "p",
       ownerEmail: "new-owner@example.com",
-      projectType: "agent",
     })) as never;
 
     await expect(uc.completeAuthorization({ state, code: "c", userEmail: OWNER })).rejects.toThrow(
@@ -1012,7 +1011,7 @@ describe("saveClientCredentials", () => {
   });
 
   it("never exposes a secret or a token in the view", async () => {
-    // There is no reveal path for either of these, unlike the A2A key and the
+    // There is no reveal path for either of these, unlike the
     // project API token — so the view is the only thing that could leak them.
     const h = harness({
       connection: {
@@ -1136,8 +1135,8 @@ describe("listing a server's tools as the project", () => {
   it("layers the binding's header overrides the way a run does", async () => {
     // The override editor and this list sit in the same dialog. A list assembled
     // from the registry entry alone would answer a question nobody asked — and
-    // the project's Authorization still goes on last, so a version cannot
-    // substitute its own.
+    // the project's Authorization still goes on last, so an Agent binding
+    // cannot substitute its own.
     const h = harness({
       connection: {},
       server: { ...SERVER, headers: { "X-Tenant": "enc:default", "X-Drop": "enc:gone" } },
@@ -1150,7 +1149,7 @@ describe("listing a server's tools as the project", () => {
       "X-Tenant-Id": "forged-project",
       "X-Conversation-Id": "chat:forged",
       "X-User-Email": "forged@example.com",
-      Authorization: "Bearer version-token",
+      Authorization: "Bearer binding-token",
     });
 
     expect(h.probes[0]?.headers["X-Tenant"]).toBe("override");

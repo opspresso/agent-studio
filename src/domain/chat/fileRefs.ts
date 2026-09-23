@@ -23,7 +23,7 @@ import type { ChatMessageFile } from "./types";
  * callers drop the file rather than offer a link that goes nowhere.
  *
  * Named for the row it was written against, used by every surface that answers
- * with a file — an API response, an A2A artifact, a Slack reply. Those hold a
+ * with a file — an API response or a Slack reply. Those hold a
  * reference off the run's stream rather than a chat row, and it is the same two
  * fields either way; reaching the one owner beats each of them signing a key
  * for itself.

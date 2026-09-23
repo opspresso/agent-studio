@@ -58,7 +58,7 @@ describe("MCP source projection", () => {
     const value = input(); const renewable = { ...mapping, refreshArgument: "file_id" };
     expect((await mapMcpSource({ ...value, mapping: renewable })).text).toMatch(/^Error:/);
     expect(value.register).not.toHaveBeenCalled();
-    const refresh = { serverName: "files", versionName: "1", mapping: renewable, identity: "connection-generation" };
+    const refresh = { serverName: "files", mapping: renewable, identity: "connection-generation" };
     const result = await mapMcpSource({ ...value, mapping: renewable, refresh });
     expect(value.register).toHaveBeenCalledWith(expect.objectContaining({ refresh }));
     expect(result.text).not.toContain("connection-generation");

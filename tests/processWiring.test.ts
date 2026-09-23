@@ -33,7 +33,6 @@ describe("process-wide application wiring", () => {
       name: "private-project",
       displayName: "Private project",
       description: "",
-      projectType: "agent" as const,
       visibility: "private" as const,
       memberEmails: [],
       ownerEmail: "owner@example.com",

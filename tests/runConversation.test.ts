@@ -1,29 +1,20 @@
 /**
  * `RunOrigin.conversation` — the key that lets a run say which thread it is in.
  *
- * Two consumers were waiting on it: an outbound A2A transfer, which continues
- * a remote conversation by `contextId`, and the MCP header that tells a
- * stateful server (a memory server) which conversation is asking. Both read
- * the same key, built by one function per surface, normalised in one place.
+ * An MCP header tells a stateful server which conversation is asking.
+ * Each surface builds the same kind of key, normalised in one place.
  */
 
 // The API surface keys its caller digest with the deployment's own secret.
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   conversationKey,
   conversationOf,
-  type RunOrigin,
 } from "@/domain/execution/actor";
 import { chatConversation } from "@/domain/chat/conversation";
 import { slackConversation } from "@/domain/slack/conversation";
-import { a2aConversation } from "@/domain/a2a/conversation";
-import { runRemoteSubagent } from "@/application/execution/remoteAgent";
-import type { ExecutionDeps } from "@/application/execution/deps";
-import type { RemoteAgentDispatcher, RemoteAgentReply } from "@/domain/agent/dispatcher";
-import type { RemoteConversationRepository } from "@/domain/agent/remoteConversation";
-import type { EngineChunk } from "@/domain/llm/types";
 import { requestConversation } from "@/app/api/projects/_lib/conversation";
 import { ValidationError } from "@/application/errors";
 import { createTraceRecorder } from "@/application/run/traceLifecycle";
@@ -41,8 +32,8 @@ describe("conversationOf", () => {
     // Whitespace and control characters cannot travel in a header and would sit
     // invisibly in a storage key; anything past printable ASCII likewise. Each
     // becomes its bytes, so the encoding reads back to exactly one id.
-    expect(conversationOf("a2a", "ctx 1\r\nX-Injected: yes")).toEqual({
-      surface: "a2a",
+    expect(conversationOf("api", "ctx 1\r\nX-Injected: yes")).toEqual({
+      surface: "api",
       id: "ctx%201%0D%0AX-Injected:%20yes",
     });
     expect(conversationOf("api", "회의-1")?.id).toBe("%ED%9A%8C%EC%9D%98-1");
@@ -75,19 +66,12 @@ describe("the surfaces' own spellings", () => {
     expect(conversationKey(slackConversation("C01", "1723.45"))).toBe("slack:C01:1723.45");
   });
 
-  it("an inbound A2A conversation is the contextId under the caller", () => {
-    expect(conversationKey(a2aConversation({ kind: "a2a", id: "shared-key" }, "ctx-9")!)).toBe(
-      "a2a:shared-key:ctx-9",
-    );
-    expect(conversationKey(a2aConversation({ kind: "a2a", id: "billing-bot" }, "ctx-9")!)).toBe(
-      "a2a:billing-bot:ctx-9",
-    );
-  });
+
 });
 
 describe("requestConversation", () => {
   const request = (value?: string) =>
-    new Request("https://x.test/api/projects/p/versions/v/agent", {
+    new Request("https://x.test/api/projects/p/agent", {
       headers: value === undefined ? {} : { "X-Conversation-Id": value },
     });
 
@@ -135,162 +119,6 @@ describe("requestConversation", () => {
   });
 });
 
-describe("a remote A2A transfer continues the conversation", () => {
-  const origin: RunOrigin = {
-    ancestry: ["front-desk"],
-    conversation: { surface: "slack", id: "C1:1723.45" },
-  };
-
-  function fixture(replies: RemoteAgentReply[]) {
-    const sent: Array<{ message: string; contextId?: string; taskId?: string }> = [];
-    const rows = new Map<string, string>();
-    const hints = new Map<string, { contextId: string; taskId?: string }>();
-    const remoteAgents: RemoteAgentDispatcher = {
-      async send(_target, message, _signal, options) {
-        sent.push({
-          message,
-          ...(options?.contextId ? { contextId: options.contextId } : {}),
-          ...(options?.taskId ? { taskId: options.taskId } : {}),
-        });
-        return replies.shift() ?? { ok: false, error: "no scripted reply" };
-      },
-      probe: async () => ({ ok: true, text: "" }),
-    };
-    const remoteConversations: RemoteConversationRepository = {
-      async get(projectName, agentName, key) {
-        return hints.get(`${projectName}|${agentName}|${key}`) ?? null;
-      },
-      async put(projectName, agentName, key, hint) {
-        hints.set(`${projectName}|${agentName}|${key}`, hint);
-        rows.set(`${projectName}|${agentName}|${key}`, hint.contextId);
-      },
-      async forget(projectName, agentName, key) {
-        hints.delete(`${projectName}|${agentName}|${key}`);
-        rows.delete(`${projectName}|${agentName}|${key}`);
-      },
-    };
-    const deps = {
-      externalAgents: {
-        get: async (name: string) =>
-          name === "helper"
-            ? {
-                name,
-                url: "https://helper.test",
-                protocol: "a2a" as const,
-                description: "",
-                headers: {},
-                createdAt: "",
-                updatedAt: "",
-              }
-            : null,
-      },
-      urlPolicy: { async assertAllowed() {} },
-      cipher: { decryptHeadersForOutbound: () => ({}) },
-      remoteAgents,
-      remoteConversations,
-    } as unknown as Pick<
-      ExecutionDeps,
-      "externalAgents" | "urlPolicy" | "cipher" | "remoteAgents" | "remoteConversations"
-    >;
-    return { deps, sent, rows, hints };
-  }
-
-  async function drain(source: AsyncGenerator<EngineChunk, string>) {
-    let step = await source.next();
-    while (!step.done) {
-      step = await source.next();
-    }
-    return step.value;
-  }
-
-  it("opens cold, remembers the remote contextId, and sends it back next time", async () => {
-    const { deps, sent, rows } = fixture([
-      { ok: true, text: "first", images: [], contextId: "remote-ctx-1" },
-      { ok: true, text: "second", images: [], contextId: "remote-ctx-1" },
-    ]);
-
-    await drain(runRemoteSubagent(deps, "helper", "hello", undefined, origin));
-    await drain(runRemoteSubagent(deps, "helper", "and then?", undefined, origin));
-
-    expect(sent).toEqual([
-      { message: "hello" },
-      { message: "and then?", contextId: "remote-ctx-1" },
-    ]);
-    // Keyed by the transferring project, the agent and our own conversation.
-    expect(rows.get("front-desk|helper|slack:C1:1723.45")).toBe("remote-ctx-1");
-  });
-
-  it("does not remember across conversations, and starts cold without one", async () => {
-    const { deps, sent } = fixture([
-      { ok: true, text: "a", images: [], contextId: "ctx-a" },
-      { ok: true, text: "b", images: [], contextId: "ctx-b" },
-      { ok: true, text: "c", images: [] },
-    ]);
-
-    await drain(runRemoteSubagent(deps, "helper", "one", undefined, origin));
-    await drain(
-      runRemoteSubagent(deps, "helper", "two", undefined, {
-        ...origin,
-        conversation: { surface: "chat", id: "elsewhere" },
-      }),
-    );
-    await drain(runRemoteSubagent(deps, "helper", "three", undefined, { ancestry: ["front-desk"] }));
-
-    expect(sent.map((s) => s.contextId)).toEqual([undefined, undefined, undefined]);
-  });
-
-  it("a continuation that failed drops its hint, so the next transfer starts cold", async () => {
-    const { deps, sent, rows } = fixture([
-      { ok: true, text: "first", images: [], contextId: "ctx-old" },
-      { ok: false, error: "context ctx-old is unknown" },
-      { ok: true, text: "fresh", images: [], contextId: "ctx-new" },
-    ]);
-
-    await drain(runRemoteSubagent(deps, "helper", "one", undefined, origin));
-    await drain(runRemoteSubagent(deps, "helper", "two", undefined, origin));
-    await drain(runRemoteSubagent(deps, "helper", "three", undefined, origin));
-
-    // Sent the hint once, lost it on the failure, and did not resend it — the
-    // failed transfer itself is not retried, since the remote may be working.
-    expect(sent.map((s) => s.contextId)).toEqual([undefined, "ctx-old", undefined]);
-    expect(rows.get("front-desk|helper|slack:C1:1723.45")).toBe("ctx-new");
-  });
-
-  it("parks on a task the remote stopped to ask about, and answers that task next", async () => {
-    const { deps, sent, hints } = fixture([
-      { ok: false, error: "Remote agent needs input before it can continue: which year?", continuation: { contextId: "c1", taskId: "t9" } },
-      { ok: true, text: "2025 sales: up", images: [], contextId: "c1" },
-    ]);
-
-    const first = await drain(runRemoteSubagent(deps, "helper", "sales?", undefined, origin));
-    expect(first).toBe("");
-    expect(hints.get("front-desk|helper|slack:C1:1723.45")).toEqual({ contextId: "c1", taskId: "t9" });
-
-    const second = await drain(runRemoteSubagent(deps, "helper", "2025", undefined, origin));
-    expect(second).toBe("2025 sales: up");
-    expect(sent).toEqual([{ message: "sales?" }, { message: "2025", contextId: "c1", taskId: "t9" }]);
-    // Answered: the conversation goes on, the task does not.
-    expect(hints.get("front-desk|helper|slack:C1:1723.45")).toEqual({ contextId: "c1" });
-  });
-
-  it("a lookup that fails costs a cold start, never the transfer", async () => {
-    const { deps, sent } = fixture([{ ok: true, text: "fine", images: [] }]);
-    const failing = {
-      ...deps,
-      remoteConversations: {
-        get: vi.fn().mockRejectedValue(new Error("table offline")),
-        put: vi.fn().mockRejectedValue(new Error("table offline")),
-        forget: vi.fn().mockRejectedValue(new Error("table offline")),
-      },
-    };
-
-    const text = await drain(runRemoteSubagent(failing, "helper", "hello", undefined, origin));
-
-    expect(text).toBe("fine");
-    expect(sent).toEqual([{ message: "hello" }]);
-  });
-});
-
 describe("a trace records the conversation key", () => {
   it("as the surface spelled it, absent when there is none", async () => {
     const written: Trace[] = [];
@@ -299,7 +127,7 @@ describe("a trace records the conversation key", () => {
         written.push(trace);
       },
     } as unknown as TraceRepository;
-    const project = { name: "p", projectType: "agent" } as Project;
+    const project = { name: "p" } as Project;
     const configuration = { projectName: "p", model: "openai/gpt-4o", systemPrompt: "", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] } satisfies AgentConfiguration;
 
     await createTraceRecorder(traces, project, configuration, 1, {

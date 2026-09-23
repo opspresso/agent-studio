@@ -2,6 +2,7 @@
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
 import { describe, expect, it } from "vitest";
+import { agentMcpHeadersContext } from "@/domain/security/secretContext";
 import {
   decryptHeadersForOutbound,
   decryptSecret,
@@ -223,9 +224,9 @@ describe("MCP header overrides", () => {
     );
   });
 
-  it("re-encrypts a preserved override when its containing version changes", () => {
-    const sourceContext = "project:p:version:1:mcp:m";
-    const targetContext = "project:p:version:draft:mcp:m";
+  it("re-encrypts a preserved override when its Agent context changes", () => {
+    const sourceContext = agentMcpHeadersContext("p", "m");
+    const targetContext = agentMcpHeadersContext("copy", "m");
     const stored = encryptHeaderOverrides(
       { Authorization: "Bearer saved" },
       sourceContext,

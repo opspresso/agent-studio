@@ -24,7 +24,6 @@ function projectFixture(): Project {
     name: "painter",
     displayName: "Painter",
     description: "",
-    projectType: "agent",
     ownerEmail: "owner@x.com",
 
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -1442,7 +1441,7 @@ describe("streaming a Slack reply", () => {
  * thread be named. A channel mention has neither.
  */
 /**
- * Who the run is answering. Opt-in per version, because a real person's name in
+ * Who the run is answering. Opt-in per Agent, because a real person's name in
  * the prompt is not something PII filtering masks.
  */
 describe("telling the run who is asking", () => {
@@ -1453,7 +1452,7 @@ describe("telling the run who is asking", () => {
       }));
   }
 
-  it("looks up nobody when the version did not ask", async () => {
+  it("looks up nobody when the Agent did not ask", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     const { slack, profileLookups } = makeSlackFake();

@@ -7,11 +7,6 @@ export function sourceReferenceContext(projectName: string, id: string): string 
   return JSON.stringify(["project", projectName, "source-reference", id, "url"]);
 }
 
-/** AES-GCM context for one named inbound A2A client key. */
-export function a2aClientKeyContext(name: string): string {
-  return JSON.stringify(["a2a-client", name, "token"]);
-}
-
 /** AES-GCM context for one project's webhook trigger secret. */
 export function triggerSecretContext(projectName: string, triggerId: string): string {
   return JSON.stringify(["project", projectName, "trigger", triggerId, "secret"]);
@@ -47,18 +42,6 @@ export function managedMcpEnvironmentContext(name: string): string {
   return JSON.stringify(["mcp", name, "environment"]);
 }
 
-export function externalAgentHeadersContext(name: string): string {
-  return JSON.stringify(["external-agent", name, "headers"]);
-}
-
-export function versionMcpHeadersContext(
-  projectName: string,
-  versionName: string,
-  serverName: string,
-): string {
-  return JSON.stringify(["project", projectName, "version", versionName, "mcp", serverName]);
-}
-
 /** Agent settings retain the same credential identity across ordinary edits. */
 export function agentMcpHeadersContext(projectName: string, serverName: string): string {
   return JSON.stringify(["project", projectName, "agent", "mcp", serverName]);
@@ -84,7 +67,7 @@ export function llmProviderApiKeyContext(name: string, baseUrl: string): string 
   return JSON.stringify(["settings", "llm-provider", name, baseUrl, "api-key"]);
 }
 
-export function settingsSecretContext(field: "github-token" | "a2a-api-key"): string {
+export function settingsSecretContext(field: "github-token"): string {
   return JSON.stringify(["settings", field]);
 }
 

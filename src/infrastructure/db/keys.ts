@@ -32,16 +32,10 @@ export const keys = {
     PK: `WORKSPACESTATE#${id}`, SK: `${checkpointId}#${String(index).padStart(6, "0")}`,
   }),
   project: (name: string) => ({ PK: `PROJECT#${name}`, SK: "META" }),
-  legacyProjectConfiguration: (name: string) => ({ PK: `PROJECT#${name}`, SK: "LEGACYCONFIGURATION" }),
   projectPartition: (name: string) => `PROJECT#${name}`,
   projectApiToken: (name: string) => ({ PK: `PROJECT#${name}`, SK: "APITOKEN" }),
   workspacePolicy: (name: string) => ({ PK: `PROJECT#${name}`, SK: "WORKSPACEPOLICY" }),
   workspaceRepositoryCreation: (project: string, repository: string) => ({ PK: `PROJECT#${project}`, SK: `REPOSITORYCREATE#${repository.toLowerCase()}` }),
-  version: (projectName: string, versionName: string) => ({
-    PK: `PROJECT#${projectName}`,
-    SK: `VERSION#${versionName}`,
-  }),
-  versionPrefix: () => "VERSION#",
 
   audioJob: (projectName: string, id: string) => ({ PK: `PROJECT#${projectName}`, SK: `AUDIOJOB#${id}` }),
   audioJobConfig: (projectName: string) => ({ PK: `PROJECT#${projectName}`, SK: "AUDIOCONFIG" }),
@@ -128,7 +122,6 @@ export const keys = {
 
   skill: (name: string) => ({ PK: `SKILL#${name}`, SK: "META" }),
   mcp: (name: string) => ({ PK: `MCP#${name}`, SK: "META" }),
-  externalAgent: (name: string) => ({ PK: `AGENT#${name}`, SK: "META" }),
   /** An installed Agent Plugins package. The name may contain periods — inert in a key. */
   plugin: (name: string) => ({ PK: `PLUGIN#${name}`, SK: "META" }),
   /** The last plugins-sync report for one source repo, and the sync's lease. */
@@ -323,32 +316,6 @@ export const keys = {
     SK: `SLACKRUN#${channel}#${threadTs}`,
   }),
 
-  a2aTask: (projectName: string, ownerScope: string, taskId: string) => ({
-    PK: `A2ATASK#${projectName}#${encodeURIComponent(ownerScope)}`,
-    SK: `TASK#${taskId}`,
-  }),
-  a2aTaskListPartition: (projectName: string, ownerScope: string) =>
-    `A2ATASKLIST#${projectName}#${encodeURIComponent(ownerScope)}`,
-  a2aTaskList: (
-    projectName: string,
-    ownerScope: string,
-    statusTimestamp: string,
-    taskId: string,
-  ) => ({
-    GSI1PK: keys.a2aTaskListPartition(projectName, ownerScope),
-    GSI1SK: `${statusTimestamp}#${taskId}`,
-  }),
-
-  /**
-   * The remote `contextId` an external agent holds for one of this project's
-   * conversations. In the project partition so the cascade delete takes it;
-   * point-read only, so the whole triple is the sort key.
-   */
-  remoteConversation: (projectName: string, agentName: string, conversationKey: string) => ({
-    PK: `PROJECT#${projectName}`,
-    SK: `REMOTECTX#${agentName}#${conversationKey}`,
-  }),
-
   /**
    * Audit records, partitioned by the UTC day they happened on. A day at a time
    * is how they are read, and it keeps every sensitive act of the deployment's
@@ -363,7 +330,7 @@ export const keys = {
 
   /**
    * What a run produced. Two indexes, because each reaches rows the other
-   * cannot: a Slack, A2A or trigger run names no email, so the project index is
+   * cannot: a Slack or trigger run names no email, so the project index is
    * the only way those are ever listed or deleted; and projects are a shared
    * catalog, so the owner index is the only way a person finds their own work
    * without reading someone else's project.
@@ -380,16 +347,7 @@ export const keys = {
   }),
   traceProjectPartition: (projectName: string) => `TRACEPROJECT#${projectName}`,
 
-  /** A named inbound-A2A client key. */
-  a2aClientKey: (name: string) => ({ PK: `A2ACLIENT#${name}`, SK: "META" }),
-  /**
-   * The verification row: the key value's SHA-256 → the client name. Its own
-   * item so the hot path (every inbound A2A request) is one GetItem rather
-   * than a list-and-compare over every registered client.
-   */
-  a2aClientKeyHash: (tokenHash: string) => ({ PK: `A2AKEYHASH#${tokenHash}`, SK: "META" }),
-
   typePartition: (
-    entityType: "PROJECT" | "SKILL" | "MCP" | "AGENT" | "PLUGIN" | "SCHEDULE" | "A2ACLIENT",
+    entityType: "PROJECT" | "SKILL" | "MCP" | "PLUGIN" | "SCHEDULE",
   ) => `TYPE#${entityType}`,
 } as const;

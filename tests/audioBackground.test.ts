@@ -29,13 +29,13 @@ describe("background audio recursion guard", () => {
     expect(audioTools).toHaveBeenCalledTimes(1);
   });
 
-  it("does not resolve external bindings or discover capabilities for source postprocessing", async () => {
-    const denied = vi.fn(async () => { throw new Error("External capability must not be resolved"); });
-    const deps = { mcps: { get: denied }, projects: { get: denied }, externalAgents: { get: denied },
+  it("does not resolve bindings or discover capabilities for source postprocessing", async () => {
+    const denied = vi.fn(async () => { throw new Error("Capability must not be resolved"); });
+    const deps = { mcps: { get: denied }, projects: { get: denied },
       catalog: { search: denied }, skills: { describe: vi.fn(async () => [{ name: "writer", description: "Writing guidance" }]) } } as unknown as ExecutionDeps;
     const configuration: AgentConfiguration = { projectName: "writer",  model: "openai/gpt-5-mini",
       systemPrompt: "",  parameters: { piiFiltering: false, dynamicCapabilities: true, memoryRecall: true },
-      skillList: ["writer"], mcpList: [{ name: "remote" }], subagentList: [{ name: "remote-agent", type: "remote" }] };
+      skillList: ["writer"], mcpList: [{ name: "server" }], subagentList: [{ name: "child" }] };
     const resolved = await resolveRunTools(deps, configuration, undefined, ["source"], { backgroundTask: true });
     expect(denied).not.toHaveBeenCalled();
     expect(resolved.skills).toHaveLength(1);
@@ -43,7 +43,7 @@ describe("background audio recursion guard", () => {
     expect(resolved.mcp.mcpTools).toEqual([]);
     expect(resolved.configuration.parameters.memoryRecall).toBe(false);
     expect(resolved.configuration.parameters.dynamicCapabilities).toBe(false);
-    expect(configuration.mcpList).toEqual([{ name: "remote" }]);
+    expect(configuration.mcpList).toEqual([{ name: "server" }]);
     expect(await prepareMemoryForRun(deps, { configuration, query: "private source", origin: { backgroundTask: true } }))
       .toEqual({ input: {}, warnings: [], asked: 0, failed: 0 });
     expect(denied).not.toHaveBeenCalled();

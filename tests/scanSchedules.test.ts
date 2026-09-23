@@ -38,7 +38,6 @@ const project: Project = {
   name: "p",
   displayName: "P",
   description: "",
-  projectType: "agent",
   ownerEmail: "owner@example.com",
 
   createdAt: "2026-01-01T00:00:00Z",
@@ -127,7 +126,7 @@ function fixture(
     /** Non-schedule rows the project holds; the repair sweep sees these too. */
     webhooks?: WebhookTrigger[];
     seededRows?: TriggerRun[];
-    published?: AgentConfiguration | null;
+    configuration?: AgentConfiguration | null;
     projectMissing?: boolean;
     chunks?: EngineChunk[];
     runThrows?: Error;
@@ -212,7 +211,7 @@ function fixture(
     deps: {
       triggers,
       projects: {
-        get: async () => (opts.projectMissing ? null : { ...project, configuration: opts.published === undefined ? configuration : opts.published ?? undefined }),
+        get: async () => (opts.projectMissing ? null : { ...project, configuration: opts.configuration === undefined ? configuration : opts.configuration ?? undefined }),
         // The repair sweep enumerates by project, since webhook rows carry no
         // cross-project index.
         list: async () => (opts.projectMissing ? [] : [project]),
@@ -562,7 +561,7 @@ describe("scanSchedules", () => {
   });
 
   it("records a claimed occurrence it cannot run as a skipped row", async () => {
-    const f = fixture({ published: null });
+    const f = fixture({ configuration: null });
     const { summary } = await scanAndExecute(f);
     expect(summary).toMatchObject({ fired: 0, skipped: 1 });
     expect(f.rows[0]).toMatchObject({
@@ -793,9 +792,7 @@ describe("scheduleInput", () => {
   });
 
   it("invents no synthetic turn when no message is configured", () => {
-    // A prompt project runs its rendered template and an image project its own
-    // prompt; a made-up sentence would reach both with nothing in the trigger
-    // configuration explaining it.
+    // An unset message must not add an unexplained user turn to the Agent run.
     expect(scheduleInput(schedule({ message: undefined }))).toEqual({});
     expect(scheduleInput(schedule({ message: "  " }))).toEqual({});
   });

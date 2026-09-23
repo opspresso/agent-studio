@@ -112,7 +112,7 @@ export function isAdmin(user: SessionUser): Promise<boolean> {
  * The middle rung of the three wrappers, one per tier: {@link withAuth} asks
  * only for a session, this asks for `member`, {@link withAdminAuth} asks for
  * `admin`. It gates the capability registries the console's Intelligence
- * section reads — skills, MCP tools, external agents, plugins, and the model
+ * section reads — skills, MCP tools, plugins, and the model
  * catalogue — which are a catalogue of what this deployment can reach rather
  * than anything a guest's own work needs. A guest still *runs* projects bound to those capabilities:
  * resolution happens server-side and never consults the reader's tier.
@@ -138,7 +138,7 @@ export function withMemberAuth<T extends unknown[]>(
 
 /**
  * Like {@link withAuth}, but additionally 403s non-admins. Used for mutations
- * on shared registries (MCP servers, external agents, skills).
+ * on shared registries (MCP servers and skills).
  *
  * Not built on {@link withMemberAuth}, though the ladder would suggest it:
  * "admin" here is `isEffectiveAdmin`, which reads an empty `ADMIN_EMAILS` as no

@@ -1,6 +1,6 @@
 /**
  * Public URL composition shared by every feature that advertises an absolute
- * URL of this deployment (A2A agent cards, Slack event endpoints, ...).
+ * URL of this deployment (Slack event endpoints and webhook URLs).
  * Resolution order: PUBLIC_BASE_URL runtime setting → caller-provided fallback
  * origin (e.g. the current request's origin) → local dev default.
  */

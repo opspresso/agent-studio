@@ -1,6 +1,6 @@
 # API 레퍼런스
 
-Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는지, 그리고 자명하지 않은
+Agent Studio 의 HTTP 계약: 안내 대상 라우트, 각각이 어떻게 인증하는지, 그리고 자명하지 않은
 것들의 요청 / 응답 형태와 에러 케이스.
 
 어떤 표면이 *왜* 이런 모습인지에 대한 설계 근거는
@@ -23,11 +23,10 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
   중 배포가 켠 수단으로 로그인한다. 로컬 개발에서는 `scripts/dev-session.ts` 가 하나 출력해 준다). 세션이 없거나 유효하지 않으면 →
   `401 { "error": "Unauthorized" }`. 로그인 플로우 자체는 `/api/auth/*` 아래에 있다
   (Better Auth catch-all). 실행 엔드포인트 셋(`predict`, `chat/completions`,
-  `agent`)은 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 오는 **project 별 API 토큰**도
-  받는다. 토큰은 project 소유자를 대신해 동작하며 그 project 범위로 한정된다
-  (참고: [Project API 토큰](#project-api-토큰)). AG-UI 엔드포인트(`/api/agui/{project}`)도
-  같은 게이트다. 기계 표면은 게이트가 다르다:
-  `/api/a2a/*` 는 `X-A2A-Key`, `/api/slack/events/*` 는 Slack signing secret,
+  `agent`)은 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 오는 **Agent별 API 토큰**도
+  받는다. 토큰은 Agent 소유자를 대신해 동작하며 해당 Agent 범위로 한정된다
+  (참고: [Agent API 토큰](#agent-api-토큰)). 기계 표면은 게이트가 다르다:
+  `/api/slack/events/*` 는 Slack signing secret,
   `/api/telegram/webhook/*` 는 Telegram 이 되돌려 주는 secret token, `/api/teams/messages/*` 는 Bot
   Framework 가 서명한 토큰, `/api/webhook/{project}` 는
   그 webhook 자신의 secret, `/api/triggers/scan` 은 배포의 `SCHEDULE_SCAN_TOKEN` 이다. `/api/health`, `/api/ready`, `/api/metrics` 는 열려 있다.
@@ -44,7 +43,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
   다른 사용자의 런타임 데이터나 마스킹된 secret 을 드러내는 project 하위 리소스. 트레이스,
   Slack·Telegram 설정, API 토큰, trigger, 호출자별 사용량, MCP 연결. 은
   *읽기*도 소유자와 admin 으로 제한된다. Chat 은 소유자에게만 비공개다 (소유자가 아닌 읽기·변경은
-  모두 404 를 돌려준다 — 403 은 chatId 의 존재를 알려 주는 답이다). MCP/agent/skill/plugin 레지스트리와 모델 카탈로그(`/api/models/catalog`)는
+  모두 404 를 돌려준다 — 403 은 chatId 의 존재를 알려 주는 답이다). MCP/skill/plugin 레지스트리와 모델 카탈로그(`/api/models/catalog`)는
   **`member` tier 이상**에게 읽기가 공유된다. 모든 가입자가 시작하는 tier 인 `guest` 는
   `403 { "error": "This resource is not available to your account" }` 을 받는다 (`withMemberAuth`).
   변경은 저장된 `admin` tier 이거나 `ADMIN_EMAILS` 목록에 속해야 한다. 목록이 설정되지 않았으면
@@ -60,7 +59,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 - **Retry-After**: `429` 는 항상 이 헤더를 초 단위로 실어 보낸다. 그 거절은 언제 더 이상
   참이 아니게 되는지를 안다. 일일 비용 차단은 00:00 UTC 까지 지속된다. 그래서 호출자가
   짐작해서 같은 벽에 다시 부딪히게 두지 않고 알려 준다.
-- **List responses**: 리소스 컬렉션(`projects`, `skills`, `mcps`, `agents`)은 벌거벗은
+- **List responses**: 리소스 컬렉션(`projects`, `skills`, `mcps`)은 벌거벗은
   배열을 돌려준다. `chats`, `models`, `usages/summary`, `triggers`, `connections` 는 각자의
   것을 객체로 감싼다 (`{ chats }`, `{ models }`, `{ items }`, `{ triggers }`, `{ connections }`).
 - **Names** 는 일반적으로 slug (`^[a-z0-9-]+$`) 이며 생성·변경 입력은 `parseName` 또는 같은
@@ -68,7 +67,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
   GET/PUT 은 찾지 못한 이름을 `404` 로 답하고 DELETE 는 잘못된 형식을 `400` 으로 거절한다.
   Plugin 이름은 별도의 Agent Plugins 규칙을 따른다.
 - **SSE framing**: 일반 스트림은 `data: {json}\n\n`이며 정상 종료에는 `data: [DONE]\n\n`을 쓴다.
-  A2A·AG-UI는 자체 종단 이벤트와 연결 종료를 사용한다. 예외로 끝난 스트림은 오류 프레임으로
+  예외로 끝난 스트림은 오류 프레임으로
   종료될 수 있으므로 `[DONE]`이나 정상 completion을 가정하지 않는다.
 - **스트림 시작**: 첫 generator read를 최대 25초 기다려 초기 거절을 HTTP 상태로 응답할 수 있게 한다.
   이후 오류는 이미 보낸 상태를 바꾸지 못하고 프레임으로 전달한다. Chat은 즉시 head를 보내므로
@@ -83,18 +82,18 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 project 의 소유자, 저장된
 `admin` tier, 또는 설정된 admin.
 
-### Projects
+### Agents (`/api/projects`)
 
 | 라우트 | 메서드 | 권한 |
 |---|---|---|
-| `/api/projects` | `GET` `POST` | session / session + project 를 만들 수 있는 tier |
+| `/api/projects` | `GET` `POST` | session / session + Agent를 만들 수 있는 tier |
 | `/api/projects/{name}` | `GET` `PUT` `DELETE` | session / owner |
-| `/api/projects/{name}/clone` | `POST` | session + project 를 만들 수 있는 tier |
+| `/api/projects/{name}/clone` | `POST` | session + Agent를 만들 수 있는 tier |
 | `/api/projects/{name}/configuration` | `GET` `PUT` | session / owner |
 | `/api/projects/{name}/preview` | `POST` | member |
-| `/api/projects/{name}/predict` | `POST` | session 또는 project 토큰 |
-| `/api/projects/{name}/chat/completions` | `POST` | session 또는 project 토큰 |
-| `/api/projects/{name}/agent` | `POST` | session 또는 project 토큰 |
+| `/api/projects/{name}/predict` | `POST` | session 또는 Agent 토큰 |
+| `/api/projects/{name}/chat/completions` | `POST` | session 또는 Agent 토큰 |
+| `/api/projects/{name}/agent` | `POST` | session 또는 Agent 토큰 |
 | `/api/projects/{name}/token` | `GET` `POST` `DELETE` | owner |
 | `/api/projects/{name}/token/reveal` | `POST` | owner |
 | `/api/projects/{name}/artifacts` | `GET` | owner |
@@ -114,7 +113,6 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/projects/{name}/telegram/webhook` | `POST` | owner |
 | `/api/projects/{name}/teams` | `GET` `PUT` `DELETE` | owner |
 | `/api/projects/{name}/teams/test` | `POST` | owner |
-| `/api/projects/{name}/a2a` | `GET` | session |
 | `/api/projects/{name}/mcp-connections` | `GET` | owner |
 | `/api/projects/{name}/mcp-connections/{server}` | `PUT` `DELETE` | owner |
 | `/api/projects/{name}/mcp-connections/{server}/authorize` | `POST` | owner |
@@ -124,8 +122,8 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 
 | 라우트 | 메서드 | 권한 |
 |---|---|---|
-| `/api/skills`, `/api/mcps`, `/api/agents` | `GET` `POST` | member / admin |
-| `/api/skills/{name}`, `/api/mcps/{name}`, `/api/agents/{name}` | `GET` `PUT` `DELETE` | member / admin |
+| `/api/skills`, `/api/mcps` | `GET` `POST` | member / admin |
+| `/api/skills/{name}`, `/api/mcps/{name}` | `GET` `PUT` `DELETE` | member / admin |
 | `/api/plugins` | `GET` | member |
 | `/api/plugins/{name}` | `GET` | member |
 | `/api/plugins/sync` | `GET` `POST` | member / admin |
@@ -137,7 +135,6 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/mcps/managed/{name}/restart` | `POST` | admin |
 | `/api/mcps/oauth/callback` | `GET` | session |
 | `/api/mcps/oauth/client-metadata/{project}` | `GET` | **공개** |
-| `/api/agents/{name}/message` | `POST` | member |
 
 ### Chat·사용량·플랫폼
 
@@ -166,11 +163,6 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/members` | `GET` | admin |
 | `/api/members/{id}/tier` | `PUT` | admin |
 | `/api/settings` | `GET` `PUT` | admin |
-| `/api/settings/a2a-key` | `POST` | admin |
-| `/api/settings/a2a-key/reveal` | `POST` | admin |
-| `/api/settings/a2a-keys` | `GET` `POST` | admin |
-| `/api/settings/a2a-keys/{name}` | `DELETE` | admin |
-| `/api/settings/a2a-keys/{name}/reveal` | `POST` | admin |
 | `/api/audit` | `GET` | admin |
 
 ### 비인증 / 기계 표면
@@ -178,10 +170,6 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | 라우트 | 메서드 | 게이트 |
 |---|---|---|
 | `/api/auth/{...all}` | `GET` `POST` | Better Auth 로그인 플로우 자신 |
-| `/api/a2a` | `GET` | session |
-| `/api/a2a/{project}/.well-known/agent-card.json` | `GET` | 공개(public project 만) |
-| `/api/a2a/{project}` | `POST` | `X-A2A-Key` |
-| `/api/agui/{project}` | `POST` | project 토큰 또는 session |
 | `/api/slack/events/{project}` | `POST` | Slack signing secret |
 | `/api/telegram/webhook/{project}` | `POST` | `X-Telegram-Bot-Api-Secret-Token` |
 | `/api/teams/messages/{project}` | `POST` | Bot Framework bearer 토큰 |
@@ -198,9 +186,9 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 Workspace 경로는 [Workspaces 표](#workspaces), 프로젝트별 오디오·원본 파일 경로는
 [오디오 표](#오디오-작업과-원본-파일)에 모았다.
 
-## 리소스 CRUD: projects, skills, mcps, agents
+## Agent와 Skill·MCP CRUD
 
-넷 다 같은 형태를 따른다. 예 (skills):
+Skill과 MCP 레지스트리는 이름 기반 CRUD를 제공한다. 예 (skills):
 
 ```
 GET    /api/skills            → 200 [ { name, description, source?, files, updatedAt }, … ]
@@ -211,16 +199,12 @@ DELETE /api/skills/{name}     → 204                     | 404
 ```
 
 - 이름은 slug (`^[a-z0-9-]+$`) 다.
-- `mcps`/`agents` 는 `headers` 를 AES 로 암호화해 저장하고 마스킹해서 돌려준다 (길이 보존.
+- `mcps` 는 `headers` 를 AES 로 암호화해 저장하고 마스킹해서 돌려준다 (길이 보존.
   9자 이상은 양끝 4자씩 드러낸다). 업데이트 때 마스킹된 값이나 빈 값은
   저장된 secret 을 보존한다. 이들의 `url` 은 SSRF 가드를 받는다.
   private/loopback/link-local/metadata 대상(또는 http(s) 가 아닌 scheme)은 `400` 으로 거절된다.
 - `mcps` 는 선택적인 `content` (markdown 운영자 노트) 도 받는다. `description` 은 agent 런의
   서버 표에서 모델이 보는 한 줄 요약이고, `content` 는 콘솔 전용이라 모델에 절대 닿지 않는다.
-- `agents` 는 `protocol` (`openai` | `a2a`, 기본값 `openai`) 을 갖는데, 이것이
-  `POST /api/agents/{name}/message` 와 아웃바운드 transfer 가 원격을 어떻게 호출할지를 정한다.
-  URL 을 다른 주소로 바꾸면 저장된 headers 는 버린다. 같은 요청에서 새로 입력한 값만 새 주소에
-  저장한다.
 - **managed** MCP 항목은 그것을 소유하지 않은 공유 레지스트리 라우트에서 거절된다:
   `DELETE /api/mcps/{name}` 은 `400` 이고 (`/api/mcps/managed/{name}` 을 통해 지워야 컨테이너가
   행과 함께 멈춘다), `url` 을 옮기는 `PUT` 도 `400` 이다. 그 주소는 프로비저너가 준다.
@@ -239,12 +223,11 @@ DELETE /api/skills/{name}     → 204                     | 404
 
 ```json
 { "name": "my-bot", "displayName": "My Bot", "description": "",
-  "projectType": "agent", "departmentCode": "OPT-optional" }
+  "departmentCode": "OPT-optional" }
 ```
 
 생성 시 배포가 제공하는 첫 번째 호환 텍스트 모델로 초기 Agent 설정을 같은 Project 행에
-저장한다. 호환 모델이 없으면 미설정 Agent로 생성한다. `projectType`은 생략하거나 `agent`로
-보내며 `llm`·`image`는 거절한다. 일반 Project 응답은 시크릿을 포함한 설정 원문을 싣지 않고
+저장한다. 호환 모델이 없으면 미설정 Agent로 생성한다. 일반 Project 응답은 시크릿을 포함한 설정 원문을 싣지 않고
 `configured`로 설정 유무를 알린다.
 
 #### 공개 범위와 복제
@@ -332,7 +315,7 @@ Project 메타데이터나 설정의 동시 수정이 먼저 저장되면 409를
 
 새 실행은 저장한 설정을 사용한다. 시작한 실행과 제출한 Audio 작업은 당시 설정을 보존한다.
 승인 대기 중 설정·연결이 바뀌면 재개를 거절한다. `policy`의 입력 크기·차단·승인 규칙은
-[Chat 승인과 재개](#chat-승인과-재개)를 따른다. 기존 데이터는 [이전 절차](AGENT-MIGRATION.md)를 따른다.
+[Chat 승인과 재개](#chat-승인과-재개)를 따른다.
 
 실행 옵션은 다음 경계를 가진다.
 
@@ -378,8 +361,8 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
   저장된 오버라이드를 보존한다. `{}`를 명시하면 오버라이드를 지우고 레지스트리 헤더를 쓴다.
   도구 조회는 마스킹된 값을 현재 Agent의 같은 서버 바인딩에 연결하며, 저장한 credential을 사용한다. 다만 이 probe는 런의 tenant header를 보내지 않으므로
   tenant별 도구 목록을 제공하는 서버에서는 결과가 다를 수 있다.
-- 벌거벗은 문자열 항목. `"mcpList": ["shared-mcp"]`, 오버라이드가 생기기 전의 형태. 도
-  여전히 받아들여지고 `{ "name": "shared-mcp" }` 로 정규화된다.
+- `mcpList` 항목은 `{ "name": "shared-mcp" }` 형태의 객체다. 서버 이름 문자열만
+  보내면 설정 검증에서 거절한다.
 - 오버라이드 값은 저장 시 AES 로 암호화되고 마스킹돼 돌아온다 (레지스트리 헤더와 같은 규칙).
   업데이트 때 마스킹된 값이나 빈 값은 저장된 secret 을 보존하고, 저장된 짝이 없는 헤더 아래의
   마스킹된 값은 버려진다. `null` 표식은 그대로 돌아온다. 제거는 secret 이 아니다.
@@ -424,7 +407,7 @@ PUT /api/settings → 200 {…same shape…} | 400
 
 - 두 동사 모두 admin 전용이다. GET 의 `fields` 키는 `adminEmails`, `allowedEmailDomains`,
   `llmBaseUrl`, `llmApiKey`, `embeddingModel`, `rerankerModel`, `rerankerMinScore`, `pluginsRepo`,
-  `pluginsRepoBranch`, `githubToken`, `a2aApiKey`, `publicBaseUrl`, `artifactAccessMode`,
+  `pluginsRepoBranch`, `githubToken`, `publicBaseUrl`, `artifactAccessMode`,
   `unknownModelPolicy`다. 이 중 Embedding/Rerank 선택 세 필드는 읽기 전용이며
   `PUT /api/models/selection` 으로 변경한다. PUT 이 받는 `artifactAccessMode`
   (`authenticated` | `proxied` | `public` | `""`)와 `unknownModelPolicy`
@@ -432,19 +415,6 @@ PUT /api/settings → 200 {…same shape…} | 400
   `pluginsRepo` 는 자기만의 형태를 가진 나머지 하나의 키다. `owner/repo`, 또는 비우면
   지운다. 나머지는 길이가 제한된 문자열이다.
 
-```
-POST /api/settings/a2a-key        → 200 { key, view }   (raw key)
-POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
-```
-
-- admin 전용. 앱 전역 A2A 키(`asa_` + 랜덤 32바이트)를 새로 발급해 설정 오버라이드로 저장하고,
-  갱신된 (마스킹된) 설정 뷰와 함께 돌려준다. 재발급은 저장 값을 교체하며 다른 인스턴스에는 설정 캐시 TTL까지 이전 값이 남을 수 있다.
-  `PUT /api/settings` 로 손수 붙여 넣은 키도 여전히 동작한다. 이 엔드포인트는 키를 지어내는
-  수고를 덜어 줄 뿐이다.
-- `/reveal` 은 *유효한* 키를 평문으로 돌려준다. 저장된 오버라이드를 복호화한 것, 또는
-  오버라이드가 없으면 env 값. 아무것도 설정돼 있지 않으면 `404` 다. 읽기인데도 POST 인 이유는
-  project 토큰과 같다: 본문이 살아 있는 인증 정보다. 모든 reveal 은 감사 행과, 호출자를 밝히는
-  서버 측 로그 한 줄을 남긴다.
 - PUT의 `llmProviders`는 최대 50개의 전체 교체 목록이다. 각 항목은
   `{ name, kind?, baseUrl, apiKey, auth?, keepModelPrefix? }`다. `name`은 고유한 소문자 식별자,
   `kind`는 지원 프로바이더 종류다. 빈 배열은 모든 연결을 비활성화한다.
@@ -619,7 +589,7 @@ HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 내�
 암호로 보호된 PDF)도 마찬가지다.
 
 한 턴에는 텍스트나 두 종류 중 하나의 첨부가 최소 하나는 있어야 한다 (전부 비면 → `400`). 턴을
-싣는 모든 라우트. chat 라우트 둘, `predict`, `agent`, `chat/completions`, A2A. 는 요청 본문을
+싣는 모든 라우트(chat 라우트 둘, `predict`, `agent`, `chat/completions`)는 요청 본문을
 정당한 턴이 가질 수 있는 최대치(모든 첨부가 각자의 한도에 산문이 들어갈 여유를 더한 것)로
 제한하고 그것을 넘으면 `413` 으로 답한다. 본문이 메모리에 올라온 뒤가 아니라 선언된 길이로 미리
 검사한다. 레지스트리와 Agent 설정 편집은 skill 의 전체 파일 묶음 무게에 맞춰 훨씬 더 빡빡하게
@@ -785,16 +755,7 @@ plugin 행의 `branch` 는 `archive`, `commitSha` 는 아카이브의 sha256 이
 POST /api/mcps/{name}/tools
 → { tools } | 502 (connection failure)
 
-POST /api/agents/{name}/message   { "message": "hello" }
-→ { text } | 502 (remote failure)
-
-GET /api/projects/{name}/a2a
-→ { enabled, configured, cardUrl, card }
 ```
-
-`card`는 현재 설정으로 실행 가능한 Agent의 Card이며, Agent가 미설정 상태이면 `null`이다.
-인증된 미리보기는 private 프로젝트나 A2A 비활성 상태에서도 접근 가능한 사용자에게 제공한다.
-`cardUrl`은 공개 Card를 제공할 수 있을 때만 반환하며 private·비활성·미설정 상태에서는 `null`이다.
 
 sync 엔드포인트는 `GET` 은 member 에게 답하고 `POST` 는 admin 권한을 요구한다. 레지스트리 테스트
 오퍼레이션은 `member` tier 를 요구하고, 등록과 dispatch 때 쓰는 것과 같은 SSRF 가드를 적용한다.
@@ -1076,8 +1037,7 @@ POST   /api/projects/{name}/mcp-connections/{server}/tools
 
 - `status` 는 `needs_auth` | `connected` | `needs_reauth` 다. 연결을 `needs_reauth` 로 옮기는
   것은 **거부된 grant** 뿐이다. 5xx 나 타임아웃은 그대로 둔다.
-- `clientSecret` 은 읽을 때 마스킹되고 **토큰은 절대 돌려주지 않는다**. A2A 키나 project API
-  토큰과 달리 reveal 경로가 없는데, 토큰은 표시될 이유가 없기 때문이다. 쓰기에서 생략되거나
+- `clientSecret` 은 읽을 때 마스킹되고 **토큰은 절대 돌려주지 않는다**. project API 토큰과 달리 reveal 경로가 없는데, 토큰은 표시될 이유가 없기 때문이다. 쓰기에서 생략되거나
   마스킹된 값은 저장된 것을 유지한다. **빈** 값은 그것을 지우며, 이것이 confidential 클라이언트에서
   public 클라이언트로 돌아가는 유일한 길이다.
 - `clientRegistered` 는 인증 정보가 손으로 입력된 것이 아니라 RFC 7591 동적 등록에서 왔을 때
@@ -1130,9 +1090,9 @@ GET /api/mcps/oauth/client-metadata/{project}          (public)
 배포의 이름과, 받아들이는 단 하나의 redirect URI 뿐이다. slug 가 아닌 이름은 `404`, 공개 base
 URL 이 설정되지 않았으면 `503`, 그리고 `Cache-Control: public, max-age=300` 이다.
 
-## Project API 토큰
+## Agent API 토큰
 
-project 별 토큰은 외부 호출자가 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 실행
+Agent별 토큰은 외부 호출자가 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 실행
 엔드포인트에 닿게 해 준다. 토큰은 해시가 아니라 AES-256-GCM 으로 암호화해 저장되므로, 소유자가
 요청하면 다시 읽어 볼 수 있다.
 
@@ -1199,24 +1159,23 @@ API별 요청·응답 형태는 아래 절을 따른다.
 
 **`X-Conversation-Id`** (선택, 셋 모두) 는 그 요청이 속한 대화를 지목한다. 이 세 엔드포인트는
 자기 스레드가 없으므로 연속성은 호출자가 선언할 몫이다: 한 대화의 후속 질문들에 같은 값을 보내면
-런은 그것을 `RunOrigin.conversation` 으로 싣는다. 그 런이 transfer 하는 A2A subagent 는 첫
-질문이 연 원격 대화를 이어 가고, 그 런이 호출하는 모든 MCP 서버는 그 키를 전달받는다
+런은 그것을 `RunOrigin.conversation` 으로 싣고, 호출하는 모든 MCP 서버에 그 키를 전달한다
 (`X-Conversation-Id: api:{caller}:{value}`). `{caller}` 는 호출하는 actor 를 이 배포 자신의
 secret 으로 키잉해 만든 16자리 hex 다이제스트다. `1` 을 보내는 두 호출자는 두 개의 대화에 있고,
 이메일은 전혀 이동하지 않으며, 그 다이제스트는 이 배포 밖에서는 아무 의미가 없다. 값은 필요한
 곳에서 퍼센트 인코딩된다 (공백, 제어 문자, 출력 가능한 ASCII 밖의 모든 것, 그리고 `%`). 이는
 UUID 나 평범한 키에 대해서는 아무것도 바꾸지 않으면서 서로 다른 두 값을 두 개의 대화로 유지한다.
 인코딩 후 최대 495자이고, 그보다 긴 헤더는 자기가 선언한 대화 없이 조용히 실행되는 대신 `400` 으로
-답한다. 없으면 각 요청이 저마다의 대화이며, 이는 이 헤더가 생기기 전 모든 요청이 그랬던 것과
-같다. 표면이 스레드를 *가진* 곳에서는 플랫폼이 직접 이름을 붙인다: chat 은 `chat:{chatId}`,
-Slack 답글은 `slack:{channel}:{threadTs}`, 인바운드 A2A 메시지는 `a2a:{client}:{contextId}` 다.
+답한다. 없으면 각 요청이 별도의 대화로 처리된다. 표면이 스레드를 *가진* 곳에서는
+플랫폼이 직접 이름을 붙인다: chat 은 `chat:{chatId}`,
+Slack 답글은 `slack:{channel}:{threadTs}`다.
 [design/observability.md](design/observability.md#사용량과-비용-귀속) 를 보라.
 
 ### `POST /api/projects/{name}/predict`
 
 현재 Agent 설정의 MCP 도구·Skill·Subagent로 멀티턴 실행을 수행한다.
 `messages`는 비어 있지 않은 배열이다. `documents` 첨부와 `stream`을 선택할 수 있다.
-`variables`·`prompt`·`size`·`quality`·최상위 `images` 등 이전 전용 입력은 400으로 거절한다.
+`variables`·`prompt`·`size`·`quality`·최상위 `images` 등 지원하지 않는 입력은 400으로 거절한다.
 이미지는 메시지의 인라인 image part로 전달하고 생성·편집은 Agent 도구로 수행한다.
 
 ```text
@@ -1236,8 +1195,8 @@ Slack 답글은 `slack:{channel}:{threadTs}`, 인바운드 A2A 메시지는 `a2a
 
 `files` 는 도구가 만들어 낸 문서다. 바이트는 artifact 로 보관되고 런의 스트림에서 제거되므로,
 여기 실리는 것은 파일이 아니라 **서명된 다운로드 주소**다. 서명은 수명이 짧다 (API 응답에는 15분,
-링크가 지속되는 기록으로 들어가는 곳. Slack 스레드, 저장된 A2A task. 에는 7일). artifact 자체는
-그 project 의 갤러리에 남는다. 오브젝트 스토리지가 없는 배포에서는 바이트를 떼어내지 않으므로,
+메시징 답변처럼 링크가 지속되는 기록에는 7일). artifact 자체는
+그 Agent의 갤러리에 남는다. 오브젝트 스토리지가 없는 배포에서는 바이트를 떼어내지 않으므로,
 raw-chunk 표면은 대신 자기 프레임에 파일을 인라인으로 실어 보낸다. 이 배포가 보관하지 못했거나
 서명하지 못한 파일은 나열되는 대신 `warnings` 로 보고된다. 런이 만들어 냈는데 호출자에게 존재조차
 알려 주지 않은 문서는 플랫폼이 그것을 잃어버린 것으로 읽히기 때문이다.
@@ -1341,7 +1300,7 @@ GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
 `actor` 는 `{kind}:{id}` 다. `user:a@example.com`, `project-token:owner@example.com` (토큰은
 자기 소유자로서 인증하므로, 기계의 지출을 그 사람 자신의 런과 갈라 두는 것이 kind 다. 그리고
 개인 tier 예산에 계산되는 것은 `user:` 행뿐이다),
-`slack:U123`, `telegram:123456`, `teams:{Entra object id}`, `a2a:shared-key`, 그리고 trigger 발화에는
+`slack:U123`, `telegram:123456`, `teams:{Entra object id}`, 그리고 trigger 발화에는
 `webhook:{project}:{triggerId}` 또는 `schedule:{project}:{triggerId}` 다. 지표 필드는 위 요약과
 정확히 같이 모델별 맵이다.
 
@@ -1485,8 +1444,8 @@ POST /api/catalog/reindex
        deployment missing it gets this rather than a 401) | 503 ("CATALOG_ENABLED is not set")
 ```
 
-전역 capability 인덱스를 레지스트리에서 다시 만든다. 모든 skill, 모든 MCP 서버와 그것이 제공하는
-도구, 모든 외부 agent. 그리고 이제 그들에게 없는 것은 지운다. 작업은 배경에서 돌아가므로 결과는
+전역 capability 인덱스를 레지스트리에서 다시 만든다. 모든 Skill과 MCP 서버·도구를 색인하고
+레지스트리에서 사라진 항목은 지운다. 작업은 배경에서 돌아가므로 결과는
 응답 본문이 아니라 로그 한 줄(`indexed`, `removed`, `undiscovered`)이다. 두 번 ticking 해도
 안전하다: 키가 항목에서 유도되므로 두 번째 패스는 같은 레코드를 쓴다. 시간당 한 번이면 충분하다.
 더 빠른 tick 은 모든 MCP 서버를 더 자주 찔러 볼 뿐이다.
@@ -1555,9 +1514,9 @@ GET /api/objects/{...key}?exp=<unix>&sig=<hmac>[&dl=<filename>]
 10 MB 다.
 
 각 행은 `artifactId`, `kind`, `source`, `key` (object key), `mimeType`,
-`byteSize`, `filename?`, `derivedFrom?` (수정본의 원본 artifact ID), `projectName`, `versionName?`(이전 기록만), `actor?`, `ownerEmail?` (Slack 런의
+`byteSize`, `filename?`, `derivedFrom?` (수정본의 원본 artifact ID), `projectName`, `actor?`, `ownerEmail?` (Slack 런의
 출력이 누구 앞으로 정리되는지. 물어본 사람에서 해석한다), `ancestry?` (transfer 사슬. 바깥쪽이
-먼저), `producedBy?`, `model?` (그린 모델. 이름을 댈 수 있는 생산자만. MCP 도구·원격 A2A 의
+먼저), `producedBy?`, `model?` (그린 모델. 이름을 댈 수 있는 생산자만. MCP 도구의
 그림, 렌더링된 문서, 첨부는 비어 있다), `runId?`, `prompt?`, `createdAt`, 그리고 서명된 `url` (15분. 문서의 것은
 자기 이름으로 내려받도록 서명된다) 을 싣는다. URL 은 타일마다 가져오는 대신 인라인으로 들어간다.
 사전 서명은 로컬 서명이라 한 페이지치가 비용이 들지 않는 반면, 각각 왕복하면 갤러리가 N+1 이 된다.
@@ -1566,7 +1525,7 @@ GET /api/objects/{...key}?exp=<unix>&sig=<hmac>[&dl=<filename>]
 **두 목록은 한 집합의 두 가지 뷰가 아니다.** `/api/artifacts` 는 소유자 인덱스를 읽는데, 여기에는
 actor 가 이메일을 지목하거나 표면이 소유자 이메일을 해석한 행만 들어 있다. Slack 런은 질문한
 사람의 이메일을 해석할 수 있으면 이 목록에도 들어가고, 조회가 실패하면 project 에만 남는다.
-개인 이메일 문맥이 없는 A2A·Webhook·Schedule 결과는 Project 목록에서 관리한다.
+개인 이메일 문맥이 없는 Webhook·Schedule 결과는 Project 목록에서 관리한다.
 소유자가 개인 문맥을 설정한 Schedule 결과는 개인 목록에도 귀속될 수 있다. `from`/`to` 는 실재하는 날짜로 검증되는 UTC 일이고, `before` 는 이전 페이지의
 `nextBefore` 다.
 
@@ -1635,118 +1594,6 @@ UI의 추가 버튼은 조회한 facts를 즉시 저장한다. 유형 정보 자
 선택해야 하며, 지원하지 않는 출력 프로토콜을 Text로 변환해 등록하지 않는다.
 조회 실패나 프로바이더의 목록 변경은 저장된 선택을 자동 삭제하지 않는다. 모델 선택의 DB
 변경은 설정 캐시 TTL 이내에 다른 인스턴스에도 적용된다. 모델의 URL·키는 응답에 포함하지 않는다.
-
-## A2A (인바운드)
-
-`A2A_API_KEY` 로 켜지거나, 공유 키가 아예 없어도 이름 붙은 클라이언트 키가 하나 이상 있으면
-켜진다. 그러면 현재 설정을 가진 Agent 가 JSON-RPC 엔드포인트를 서빙하고, public
-project 만 무인증 Agent Card 를 공개한다. private project 의 card 는 존재 여부를 숨기는 `404` 다.
-
-```
-GET  /api/a2a                                           (session) → { enabled, projects }
-GET  /api/a2a/{project}/.well-known/agent-card.json     (public)
-POST /api/a2a/{project}     X-A2A-Key: <key>            (A2A 1.0 JSON-RPC: SendMessage,
-                            A2A-Version: 1.0             SendStreamingMessage, GetTask,
-                                                         CancelTask, ResubscribeTask, ListTasks)
-```
-
-`GET /api/a2a`는 현재 설정이 있고 로그인한 사용자가 읽을 수 있는 Agent를 나열한다.
-`enabled`는 공유 `A2A_API_KEY` 또는 이름 붙은 클라이언트 키가 하나 이상 있어 표면이 켜져
-있는지를 나타낸다. 목록은 표면이 꺼져 있어도 반환되며, private Agent의 공개 Card는 제공하지
-않는다. 각 항목은 `{ name, displayName, description, cardUrl }`을 싣는다.
-
-Agent Card GET 은 표면이 꺼져 있으면 `503`, project 가 없거나 private이거나 현재 설정이 없으면
-`404`, 요청의 선택적인 `A2A-Version` 이 `1.0` 이 아니면 `400` 으로 답한다.
-
-`503` (설정되지 않음) 은 표면이 완전히 꺼져 있을 때만 답한다: 공유 키도 없고 **그리고** 클라이언트
-키도 없을 때다. 켜져 있는 표면에서 키가 틀리거나 없으면 `401` 이다. 공유 키는 상수 시간으로
-비교하고, 클라이언트 키는 해시로 primary row 를 찾은 뒤 client 이름에 결합된 token 을 다시
-확인한다. 그 401 은 `WWW-Authenticate: ApiKey realm="a2a",
-header="X-A2A-Key"` 를 싣고, Agent Card 는 같은 스킴을
-`securitySchemes`/`securityRequirements` 로 선언한다. 표준 클라이언트가 이 요구사항을 읽어
-자격 증명을 고른다.
-
-메시지는 A2A 1.0 `Part`의 `text`, 또는 지원하는 `image/*`의 `raw` 바이트를 실을 수 있다.
-`url`, `data`, 다른 media type은 `ContentTypeNotSupported` (`-32005`)로 거절된다. 호출자가 고른
-이미지 URL을 모델 제공자에게 넘겨 이 배포의 SSRF 경계를 우회하지 않기 위한 계약이다. `taskId`로 아직 working인 task를 이어 가는
-메시지는 `-32602` 로 거절된다: 이 agent 는 메시지마다 자기 task 를 돌리고 `input-required` 에
-들어가지 않으므로, 대화를 잇는 것은 `contextId` 다. `SendStreamingMessage` 와 `ResubscribeTask` 가
-첫 이벤트 전에 거절되면 JSON-RPC 에러 객체(200)로 답하고, 스트림 도중의 실패는 JSON-RPC 에러
-프레임이다. `ResubscribeTask` 는 저장된 task 를 따라간다. 스냅샷, 그 뒤 도착하는 artifact,
-종단 status. 런을 돌리는 인스턴스가 달라도 동작한다. `result` artifact 의 마지막 조각은
-비어 있지 않은 실제 artifact 이고 `lastChunk: true` 다. A2A 1.0은 빈 Artifact 를 허용하지 않는다.
-
-제시된 키는 공유 `A2A_API_KEY` (런은 `a2a:shared-key` 에 귀속) 이거나 **이름 붙은 클라이언트
-키** (`asc_…`, 런은 `a2a:{client}` 에 귀속, 클라이언트별 귀속과 동시성 한도) 일 수 있다.
-클라이언트 키는 admin 이 관리한다:
-
-```
-GET    /api/settings/a2a-keys                  (admin) → { items: [{ name, description?, masked, createdAt }] }
-POST   /api/settings/a2a-keys                  (admin) { name, description? } → { key, view }   raw key; reveal supported
-DELETE /api/settings/a2a-keys/{name}           (admin) → { ok: true } | 404                     revoke
-POST   /api/settings/a2a-keys/{name}/reveal    (admin) → { key, createdAt }                     audited
-```
-
-클라이언트 키의 `name` 은 최대 64자의 slug 이고 `shared-key` 는 앱 전역 키를 위해 예약돼 있다.
-각각 어기면 `400` 이다. 이미 발급된 이름은 `409` 다.
-
-Agent Card URL 은 `PUBLIC_BASE_URL` 로 만들어진다. Task 상태(`SendMessage` →
-`GetTask`/`CancelTask`/`ListTasks`)는 project·tenant·인증된 client 별로 데이터베이스에 격리되어
-저장되므로 재배포를 넘어 살아남고 인스턴스 간에 공유된다. 종단 상태를 지키는 조건부 쓰기가,
-동시에 일어난 complete/cancel 이 끝난 task 를 되돌리는 것을 막는다. 행은
-TTL(`A2A_TASK_RETENTION_DAYS`, 기본 1일)로 만료된다. `ListTasks` 는 status timestamp 내림차순이고
-같은 timestamp 에서는 task id 로 순서를 고정하며, opaque cursor 를 써서 페이지 사이에 새 task 가
-생겨도 앞 페이지의 항목이 중복되지 않는다. 한 요청은 `pageSize + 1` 개의 task 만 적재하고,
-`totalSize` 는 payload 를 읽지 않는 별도 count 로 계산한다.
-
-## AG-UI (인바운드)
-
-사용자를 마주하는 앱이 현재 설정을 가진 Agent를 임베드하는 표면이다
-([design/agui.md](design/agui.md)). 별도 활성화 설정은 없으며 프로젝트 token 또는 접근 가능한
-사용자 session으로 실행한다.
-
-```
-POST /api/agui/{project}    Authorization: Bearer <project token>  (또는 session)
-                            body: RunAgentInput
-                            → 200 text/event-stream  (AG-UI 이벤트, data: 프레임 하나에 하나, [DONE] 없음)
-                            | 400 (본문 형태, 모델에 넘길 수 없는 content part, 프로바이더가 거절할 tool 이름, 너무 긴 threadId)
-                            | 401 | 404 (project 없음 또는 Agent 설정 없음) | 429 (Retry-After)
-```
-
-요청은 프로토콜의 `RunAgentInput` 이다: `threadId`, `runId`, `parentRunId?`, `messages` (비어
-있어도 된다. `developer` / `system` / `user` / `assistant` / `tool`; `reasoning` 은 뒤따르는
-assistant 턴의 `reasoning_content` 가 되고, `activity` 는 받되 버린다), `tools`
-(`{ name, description, parameters? }`), `context` (`{ description, value }`), `state` (비어 있지
-않으면 읽기 전용 JSON 으로 context 와 함께 system 턴에 실린다. 갱신은 되지 않고
-`STATE_SNAPSHOT` 도 나가지 않는다), 그리고 받아만 두는 `forwardedProps`. `user` 턴의 parts 는
-`text`, `image` (`data` 소스만, 유효한 base64, 메시지당 `MAX_IMAGES_PER_TURN`개), `document`
-(`data` 소스만, 유효한 base64, `metadata.name`/`filename` 이 이름, 메시지당 `MAX_DOCUMENTS` 개, chat 첨부와
-같은 추출기로 텍스트가 된다) 이고, audio·video 와 URL 로 온 document 는 400 이다.
-interrupt 상태를 이어 가는 구현은 아직 없으므로 `resume` 이 있으면 400 이다. 값을 무시하고 새
-런으로 실행하지 않는다.
-
-응답 스트림: `RUN_STARTED` → (`TEXT_MESSAGE_*` | `REASONING_*` | `TOOL_CALL_START/ARGS/END` +
-`TOOL_CALL_RESULT` | `STEP_STARTED/FINISHED` | `ACTIVITY_SNAPSHOT` | `CUSTOM`)* → `RUN_FINISHED`
-또는 `RUN_ERROR`. 한 턴의 모든 `TOOL_CALL_START` 는 그 턴의 assistant 메시지 id 를
-`parentMessageId` 로 싣는다(턴이 말을 하지 않았어도). `RUN_FINISHED` 는
-`outcome: { type: "success" }`, `result: { termination, warnings }` (`termination` 은 `completed` /
-`turn-limit` / `output-limit`), `usage: [{ inputTokens, outputTokens, totalTokens,
-reasoningTokens?, cachedInputTokens? }]` 를 싣는다. usage 는 fallback·subagent 를 포함한 모든
-모델 호출의 합계다. 개별 usage chunk에는 실제 모델이 있어도 합계를 단일 모델로
-귀속하지 않도록 응답의 집계에 `model`을 붙이지 않는다. `RUN_ERROR` 의 `code` 는 타입이 있는 실패의
-클래스명(`RateLimitedError`, `UpstreamError` 등)이다. 런이 만든 그림과 파일은
-`ACTIVITY_SNAPSHOT`. `activityType` 이 `agent-studio.image` (`content: { mimeType, dataUrl,
-prompt?, model?, artifactId? }`) 또는 `agent-studio.file` (`content: { fileId?, name, mimeType, url,
-byteSize? }`. 15분 서명 URL). 로 스레드의 메시지가 되고, 클라이언트가 다음 런 입력에서
-제거하므로 바이트는 모델로 돌아가지 않는다. `CUSTOM` 은 `agent-studio.warning` (`{ message }`)
-하나다.
-
-토큰은 서버 자격 증명이다. 브라우저가 아니라 자체 서버(CopilotKit runtime 등)에서 호출한다;
-엔드포인트는 CORS 헤더를 보내지 않는다.
-
-`threadId` 는 런의 conversation(`agui:{caller}:{threadId}`)이다. 한 스레드의 모든 런에 같은
-값을 보낸다. `tools` 는 agent project 에 제공되고 클라이언트가 실행한다: 하나를 부른 턴이 런의
-마지막이고, 결과는 다음 런의 `messages` 에 `tool` 메시지로 돌아온다.
 
 ## 플랫폼 엔드포인트
 

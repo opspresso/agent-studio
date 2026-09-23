@@ -138,7 +138,6 @@ export interface AgentProject {
   name: string;
   displayName: string;
   description?: string;
-  projectType: string;
 }
 
 export const EMPTY_TURN: LiveTurn = {

@@ -31,7 +31,7 @@ export type AuditAction =
    */
   | "catalog.install"
   | "catalog.remove"
-  /** A shared registry entry (skill, MCP server, external agent) was deleted. */
+  /** A shared registry entry (skill or MCP server) was deleted. */
   | "registry.delete"
   /**
    * A sync rewrote an entry's provenance to the repository's — the entry

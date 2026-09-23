@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Route-handler tests for the two endpoints that return a live credential.
+// Route-handler tests for the project token reveal endpoint.
 // `withAuth`/`withAdminAuth` are stubbed so the caller and their admin status
 // are drivable from `state`; the real *owner* gate runs inside the use case.
 // These guard the blast radius: a reveal endpoint that answers the wrong caller
 // hands over a working key.
 const { state, projectRepo } = vi.hoisted(() => ({
-  state: { email: "owner@example.com", admin: true, a2aKey: undefined as string | undefined },
+  state: { email: "owner@example.com", admin: true },
   projectRepo: { get: vi.fn(), getApiToken: vi.fn() },
 }));
 
@@ -38,7 +38,6 @@ vi.mock("@/lib/container", async () => ({
   ).createApiTokenUseCases(projectRepo as never, cipher as never),
 }));
 vi.mock("@/lib/runtime-settings", () => ({
-  getA2aApiKey: async () => state.a2aKey,
   // The project token route is owner-gated; no admin list is configured here,
   // so the owner check stands on its own. `isAdminEmail` is deliberately absent:
   // `withAdminAuth` is stubbed above, so nothing reaches it, and a stub of it
@@ -52,7 +51,6 @@ vi.mock("@/infrastructure/crypto/secretEncryption", () => ({
   maskSecret: () => "ast_••••wxyz",
 }));
 
-const { POST: revealA2aKey } = await import("@/app/api/settings/a2a-key/reveal/route");
 const { POST: revealToken } = await import("@/app/api/projects/[name]/token/reveal/route");
 
 const ctx = () => ({ params: Promise.resolve({ name: "proj" }) });
@@ -65,28 +63,6 @@ beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   state.email = "owner@example.com";
   state.admin = true;
-  state.a2aKey = "asa_realkey";
-});
-
-describe("POST /api/settings/a2a-key/reveal", () => {
-  it("returns the effective key to an admin", async () => {
-    const res = await revealA2aKey();
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ key: "asa_realkey" });
-  });
-
-  it("refuses a non-admin without returning the key", async () => {
-    state.admin = false;
-    const res = await revealA2aKey();
-    expect(res.status).toBe(403);
-    expect(JSON.stringify(await res.json())).not.toContain("asa_realkey");
-  });
-
-  it("reports 404 when no key is configured", async () => {
-    state.a2aKey = undefined;
-    const res = await revealA2aKey();
-    expect(res.status).toBe(404);
-  });
 });
 
 describe("POST /api/projects/[name]/token/reveal", () => {

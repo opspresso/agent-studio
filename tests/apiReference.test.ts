@@ -5,17 +5,15 @@ import {
   PLACEHOLDERS,
   type ApiEndpoint,
   type ApiReferenceContext,
-} from "@/app/projects/[name]/api-reference/endpoints";
+} from "@/app/agents/[name]/api-reference/endpoints";
 
 const ORIGIN = "https://studio.example.com";
 
 function ctx(overrides: Partial<ApiReferenceContext> = {}): ApiReferenceContext {
   return {
     projectName: "my-bot",
-    projectType: "agent",
     configured: true,
     origin: ORIGIN,
-    a2a: null,
     slack: null,
     telegram: null,
     teams: null,
@@ -32,12 +30,10 @@ function codeOf(endpoint: ApiEndpoint, language: string): string | undefined {
   return endpoint.codeExamples.find((c) => c.language === language)?.code;
 }
 
-describe("buildApiReference — endpoint selection by project type", () => {
-  it("agent project exposes predict, chat/completions, and agent", () => {
-    expect(ids({ projectType: "agent" })).toEqual(["predict", "chat-completions", "agent", "agui"]);
+describe("buildApiReference — Agent execution endpoints", () => {
+  it("exposes predict, chat/completions, and agent", () => {
+    expect(ids()).toEqual(["predict", "chat-completions", "agent"]);
   });
-
-
 });
 
 describe("buildApiReference — current configuration gating", () => {
@@ -56,7 +52,7 @@ describe("buildApiReference — current configuration gating", () => {
 
 describe("buildApiReference — request/response field specs", () => {
   it("documents predict request and response fields", () => {
-    const predict = buildApiReference(ctx({ projectType: "agent" })).find((e) => e.id === "predict");
+    const predict = buildApiReference(ctx({ })).find((e) => e.id === "predict");
     expect(predict?.requestFields?.map((f) => f.name)).toEqual(["messages", "stream", "documents"]);
     expect(predict?.responseFields?.map((f) => f.name)).toEqual([
       "result",
@@ -89,14 +85,6 @@ describe("buildApiReference — request/response field specs", () => {
 });
 
 describe("buildApiReference — code examples (curl + Python + Node.js)", () => {
-  it("AG-UI sample starts from a user message", () => {
-    const agui = buildApiReference(ctx()).find((e) => e.id === "agui");
-    const code = codeOf(agui!, "javascript") ?? "";
-    expect(code).toContain("initialMessages");
-    expect(code).toContain('role: "user"');
-    expect(code).toContain("await agent.runAgent()");
-  });
-
   it("chat/completions offers curl, Python, Node.js, and their streaming variants", () => {
     const cc = buildApiReference(ctx()).find((e) => e.id === "chat-completions");
     expect(cc?.codeExamples.map((c) => c.label)).toEqual([
@@ -130,22 +118,6 @@ describe("buildApiReference — code examples (curl + Python + Node.js)", () => 
     const base = `${ORIGIN}/api/projects/my-bot`;
     expect(codeOf(cc!, "python")).toContain(`base_url="${base}"`);
     expect(codeOf(cc!, "javascript")).toContain(`baseURL: "${base}"`);
-  });
-});
-
-describe("buildApiReference — A2A endpoints", () => {
-  it("shows A2A endpoints only when enabled and configured", () => {
-    expect(ids({ a2a: { enabled: true, configured: true } })).toContain("a2a-card");
-    expect(ids({ a2a: { enabled: true, configured: true } })).toContain("a2a-rpc");
-    expect(ids({ a2a: { enabled: true, configured: false } })).not.toContain("a2a-rpc");
-    expect(ids({ a2a: { enabled: false, configured: true } })).not.toContain("a2a-rpc");
-    expect(ids({ a2a: null })).not.toContain("a2a-rpc");
-  });
-
-  it("marks the Agent Card as public and the JSON-RPC as X-A2A-Key authed", () => {
-    const endpoints = buildApiReference(ctx({ a2a: { enabled: true, configured: true } }));
-    expect(endpoints.find((e) => e.id === "a2a-card")?.auth).toBe("public");
-    expect(endpoints.find((e) => e.id === "a2a-rpc")?.auth).toBe("a2a-key");
   });
 });
 
@@ -214,7 +186,6 @@ describe("buildApiReference — no real secrets leak into examples", () => {
   function allStrings(): string[] {
     const endpoints = buildApiReference(
       ctx({
-        a2a: { enabled: true, configured: true },
         slack: { configured: true },
         webhook: { enabled: true },
       }),
@@ -244,7 +215,6 @@ describe("buildApiReference — no real secrets leak into examples", () => {
   it("authenticated samples carry their credential placeholder", () => {
     const endpoints = buildApiReference(
       ctx({
-        a2a: { enabled: true, configured: true },
         slack: { configured: true },
         telegram: { configured: true },
         teams: { configured: true },
@@ -257,13 +227,9 @@ describe("buildApiReference — no real secrets leak into examples", () => {
     expect(codeOf(byId("predict"), "bash")).toContain("Authorization: Bearer");
     expect(codeOf(byId("chat-completions"), "python")).toContain('os.environ["PROJECT_API_TOKEN"]');
     expect(codeOf(byId("chat-completions"), "javascript")).toContain("process.env.PROJECT_API_TOKEN");
-    expect(codeOf(byId("a2a-rpc"), "bash")).toContain(PLACEHOLDERS.a2aKey);
     expect(codeOf(byId("slack-events"), "bash")).toContain(PLACEHOLDERS.slackSignature);
     expect(codeOf(byId("telegram-webhook"), "bash")).toContain(PLACEHOLDERS.telegramSecret);
     expect(codeOf(byId("teams-messages"), "bash")).toContain(PLACEHOLDERS.teamsToken);
     expect(codeOf(byId("webhook"), "bash")).toContain(PLACEHOLDERS.webhookSecret);
-    // The public Agent Card carries no credential.
-    expect(codeOf(byId("a2a-card"), "bash")).not.toContain(PLACEHOLDERS.token);
-    expect(codeOf(byId("a2a-card"), "bash")).not.toContain(PLACEHOLDERS.a2aKey);
   });
 });

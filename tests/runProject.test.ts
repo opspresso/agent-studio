@@ -1,15 +1,7 @@
 import { withConfigurations } from "./projectConfigurations";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const { sendA2aMessageMock } = vi.hoisted(() => ({
-  sendA2aMessageMock: vi.fn(),
-}));
-
-vi.mock("@/infrastructure/a2a/client", () => ({
-  sendA2aMessage: sendA2aMessageMock,
-}));
+import { describe, expect, it, vi } from "vitest";
 
 import {
   collectRun,
@@ -20,7 +12,6 @@ import {
 } from "@/application/execution/runProject";
 import { statusForError } from "@/application/errors";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
-import { remoteAgentDispatcher } from "@/infrastructure/agent/dispatcher";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 
@@ -53,7 +44,6 @@ function projectFixture(): Project {
     name: "painter",
     displayName: "Painter",
     description: "",
-    projectType: "agent",
     ownerEmail: "owner@example.com",
 
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -110,7 +100,6 @@ function executionDepsFixture(channel: LlmChannel) {
 
     skills: fakeSkillRepository(reject),
     mcps: { get: reject, list: reject, put: reject, delete: reject },
-    externalAgents: { get: reject, list: reject, put: reject, delete: reject },
     usage: {
       record: async (delta: UsageDelta) => {
         recorded.push(delta);
@@ -126,7 +115,6 @@ function executionDepsFixture(channel: LlmChannel) {
     imageChannel,
     cipher: secretCipher,
     urlPolicy: testUrlPolicy,
-    remoteAgents: remoteAgentDispatcher,
     mcpSessions: mcpSessionFactory,
   } as unknown as ExecutionDeps;
   return { deps, recorded, imageModels, edits };
@@ -161,8 +149,8 @@ function offersImageTool(channel: FakeChannel): boolean {
   return channel.seenParams[0]?.tools?.some((t) => t.function.name === "GenerateImage") ?? false;
 }
 
-describe("version sampling parameters", () => {
-  it.each(["agent"] as const)("forwards presence penalties through the %s execution facade", async (projectType) => {
+describe("sampling parameters", () => {
+  it("forwards presence penalties through the execution facade", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(TEST_NOW);
     try {
@@ -170,7 +158,7 @@ describe("version sampling parameters", () => {
         const channel = new FakeChannel([[contentChunk("Done"), usageChunk(1, 1)]]);
         const { deps } = executionDepsFixture(channel);
         await executeProject(deps, {
-          project: { ...projectFixture(), projectType },
+          project: projectFixture(),
           configuration: configurationFixture({ piiFiltering: false, presencePenalty }),
           messages: [{ role: "user", content: "Answer briefly" }],
         });
@@ -201,9 +189,7 @@ describe("withRunDeadline", () => {
 });
 
 describe("execution cancellation", () => {
-  it.each([
-    ["agent", false], ["agent", true],
-  ] as const)("records a streamed %s failure even when collected=%s", async (projectType, collected) => {
+  it.each([false, true])("records a streamed failure even when collected=%s", async (collected) => {
     resetRunMetrics();
     const channel = new FakeChannel([]);
     channel.chatCompletionStream = async function* () {
@@ -214,7 +200,7 @@ describe("execution cancellation", () => {
     const traces = captureTraces(deps);
 
     const stream = executeProjectStream(deps, {
-      project: { ...projectFixture(), projectType },
+      project: projectFixture(),
       configuration: configurationFixture({ piiFiltering: false }),
       messages: [{ role: "user", content: "hello" }],
     });
@@ -268,7 +254,7 @@ describe("execution cancellation", () => {
     await expect(
       executeProject(deps, {
       messages: [{ role: "user", content: "hello" }],
-        project: { ...projectFixture(), projectType: "agent" },
+        project: { ...projectFixture() },
         configuration: configurationFixture({ piiFiltering: false }),
         signal: controller.signal,
       }),
@@ -285,7 +271,7 @@ const imageCallScript = [
 ];
 
 describe("executeAgent GenerateImage opt-in", () => {
-  it("offers the tool when the version sets imageGeneration: true", async () => {
+  it("offers the tool when the configuration sets imageGeneration: true", async () => {
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
     await collect(
@@ -324,7 +310,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     expect(offersImageTool(channel)).toBe(false);
   });
 
-  it("uses the version's imageModel and records usage against it", async () => {
+  it("uses the configuration's imageModel and records usage against it", async () => {
     const channel = new FakeChannel(imageCallScript);
     const { deps, recorded, imageModels } = executionDepsFixture(channel);
     const traces = captureTraces(deps);
@@ -442,7 +428,7 @@ describe("executeAgent GenerateImage opt-in", () => {
 describe("executeAgent EditImage", () => {
   const ATTACHED = "data:image/png;base64,YXR0YWNoZWQ=";
   /** A vision-capable model: an image-bearing run is gated on the registry. */
-  const visionVersion = (parameters: AgentParameters): AgentConfiguration => ({
+  const visionConfiguration = (parameters: AgentParameters): AgentConfiguration => ({
     ...configurationFixture(parameters),
     model: "google/gemini-2.5-flash",
   });
@@ -466,7 +452,7 @@ describe("executeAgent EditImage", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        configuration: visionVersion({ piiFiltering: false, imageGeneration: true }),
+        configuration: visionConfiguration({ piiFiltering: false, imageGeneration: true }),
         messages: [
           {
             role: "user",
@@ -503,7 +489,7 @@ describe("executeAgent EditImage", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        configuration: visionVersion({ piiFiltering: false, imageGeneration: true }),
+        configuration: visionConfiguration({ piiFiltering: false, imageGeneration: true }),
         messages: [
           { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
         ],
@@ -528,7 +514,7 @@ describe("executeAgent EditImage", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        configuration: visionVersion({ piiFiltering: false, imageGeneration: true }),
+        configuration: visionConfiguration({ piiFiltering: false, imageGeneration: true }),
         messages: [
           { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
         ],
@@ -541,14 +527,14 @@ describe("executeAgent EditImage", () => {
     expect(result?.content).toContain("img_1");
   });
 
-  it("is not offered when the version has not opted into image generation", async () => {
+  it("is not offered when the configuration has not opted into image generation", async () => {
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
 
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        configuration: visionVersion({ piiFiltering: false, imageGeneration: false }),
+        configuration: visionConfiguration({ piiFiltering: false, imageGeneration: false }),
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -570,7 +556,7 @@ describe("executeAgent EditImage", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        configuration: visionVersion({ piiFiltering: false, imageGeneration: true }),
+        configuration: visionConfiguration({ piiFiltering: false, imageGeneration: true }),
         messages: [{ role: "user", content: "draw a fox, then make it night" }],
       }),
     );
@@ -598,9 +584,8 @@ describe("executeAgent image transfer to a subagent", () => {
     const child: Project = {
       ...projectFixture(),
       name: "simple-image",
-      projectType: "agent",
     };
-    const childVersion: AgentConfiguration = {
+    const childConfiguration: AgentConfiguration = {
       ...configurationFixture({ piiFiltering: false }),
       projectName: "simple-image",
       model: "google/gemini-2.5-flash",
@@ -609,8 +594,8 @@ describe("executeAgent image transfer to a subagent", () => {
     const deps = {
       ...fixture.deps,
       projects: withConfigurations({ get: async (name: string) => (name === "simple-image" ? child : parent) }, ({
-        get: async (project: string) => (project === "simple-image" ? childVersion : null),
-        list: async () => [childVersion],
+        get: async (project: string) => (project === "simple-image" ? childConfiguration : null),
+        list: async () => [childConfiguration],
       }).get),
 
     } as unknown as ExecutionDeps;
@@ -697,7 +682,7 @@ describe("executeAgent image transfer to a subagent", () => {
     await collect(
       executeAgent(guarded, {
         project: fixture.parent,
-        configuration: parentVersion(),
+        configuration: parentConfiguration(),
         messages: [{ role: "user", content: "draw a fox" }],
       }),
     );
@@ -705,11 +690,11 @@ describe("executeAgent image transfer to a subagent", () => {
     expect(claims).toEqual([{ project: "simple-image", kind: "alert" }]);
   });
 
-  function parentVersion(): AgentConfiguration {
+  function parentConfiguration(): AgentConfiguration {
     return {
       ...configurationFixture({ piiFiltering: false }),
       model: "google/gemini-2.5-flash",
-      subagentList: [{ name: "simple-image", type: "local" }],
+      subagentList: [{ name: "simple-image" }],
     };
   }
 
@@ -724,7 +709,7 @@ describe("executeAgent image transfer to a subagent", () => {
     });
     fixture.deps.imageChannel.generateImage = generate;
     await expect(collect(executeAgent(fixture.deps, {
-      project: fixture.parent, configuration: parentVersion(), signal: controller.signal,
+      project: fixture.parent, configuration: parentConfiguration(), signal: controller.signal,
       messages: [{ role: "user", content: "draw a fox" }],
     }))).rejects.toThrow();
     expect(generate).toHaveBeenCalledTimes(1);
@@ -740,7 +725,7 @@ describe("executeAgent image transfer to a subagent", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: parent,
-        configuration: parentVersion(),
+        configuration: parentConfiguration(),
         messages: [
           {
             role: "user",
@@ -773,7 +758,7 @@ describe("executeAgent image transfer to a subagent", () => {
     await collect(
       executeAgent(deps, {
         project: parent,
-        configuration: parentVersion(),
+        configuration: parentConfiguration(),
         messages: [{ role: "user", content: "draw a fox" }],
       }),
     );
@@ -791,7 +776,7 @@ describe("executeAgent image transfer to a subagent", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: parent,
-        configuration: parentVersion(),
+        configuration: parentConfiguration(),
         messages: [
           { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
         ],
@@ -813,7 +798,7 @@ describe("executeAgent image transfer to a subagent", () => {
       transferScript('{"agent_name":"text-child","message":"look","image_ids":["img_1"]}'),
     );
     const fixture = executionDepsFixture(channel);
-    const childVersion: AgentConfiguration = {
+    const childConfiguration: AgentConfiguration = {
       ...configurationFixture({ piiFiltering: false }),
       projectName: "text-child",
       // Not in the model registry, so image input is rejected.
@@ -821,14 +806,14 @@ describe("executeAgent image transfer to a subagent", () => {
     };
     const deps = {
       ...fixture.deps,
-      projects: withConfigurations({ get: async (name: string) => ({ ...projectFixture(), name }) }, ({ get: async () => childVersion, list: async () => [childVersion] }).get),
+      projects: withConfigurations({ get: async (name: string) => ({ ...projectFixture(), name }) }, ({ get: async () => childConfiguration, list: async () => [childConfiguration] }).get),
 
     } as unknown as ExecutionDeps;
 
     const chunks = await collect(
       executeAgent(deps, {
         project: { ...projectFixture(), name: "sample-agent" },
-        configuration: { ...parentVersion(), subagentList: [{ name: "text-child", type: "local" }] },
+        configuration: { ...parentConfiguration(), subagentList: [{ name: "text-child" }] },
         messages: [
           { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
         ],
@@ -850,7 +835,7 @@ describe("executeAgent image transfer to a subagent", () => {
     await collect(
       executeAgent(deps, {
         project: parent,
-        configuration: parentVersion(),
+        configuration: parentConfiguration(),
         messages: [
           { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
         ],
@@ -878,14 +863,14 @@ describe("executeAgent image transfer to a subagent", () => {
     await collect(
       executeAgent(deps, {
         project: parent,
-        configuration: parentVersion(),
+        configuration: parentConfiguration(),
         messages: [{ role: "user", content: "draw me a cat" }],
       }),
     );
 
     const systemPrompt = String(channel.seenParams[0]?.messages[0]?.content);
     expect(systemPrompt).toContain("## Available Images");
-    // This version has no image tools of its own AND no MCP tools, so the only
+    // This configuration has no image tools of its own AND no MCP tools, so the only
     // way an id can appear is the user attaching a picture. Naming either of the
     // other two routes would promise the model something this run cannot do.
     expect(systemPrompt).toContain("Ids appear here as images arrive — from what the user sends.");
@@ -893,14 +878,14 @@ describe("executeAgent image transfer to a subagent", () => {
     expect(systemPrompt).not.toContain("a tool returns");
   });
 
-  it("promises generated ids only to a version that can generate", async () => {
+  it("promises generated ids only to a configuration that can generate", async () => {
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const { deps, parent } = imageProjectDeps(channel);
 
     await collect(
       executeAgent(deps, {
         project: parent,
-        configuration: { ...parentVersion(), parameters: { piiFiltering: false, imageGeneration: true } },
+        configuration: { ...parentConfiguration(), parameters: { piiFiltering: false, imageGeneration: true } },
         messages: [{ role: "user", content: "draw me a cat" }],
       }),
     );
@@ -920,21 +905,20 @@ describe("executeAgent nested transfer identity", () => {
       "simple-image": {
         ...projectFixture(),
         name: "simple-image",
-        projectType: "agent",
       },
     };
-    const versions: Record<string, AgentConfiguration> = {
+    const configurations: Record<string, AgentConfiguration> = {
       "bruce-bot": {
         ...configurationFixture({ piiFiltering: false }),
         projectName: "bruce-bot",
         model: "google/gemini-2.5-flash",
-        subagentList: [{ name: "sample-agent", type: "local" }],
+        subagentList: [{ name: "sample-agent" }],
       },
       "sample-agent": {
         ...configurationFixture({ piiFiltering: false }),
         projectName: "sample-agent",
         model: "google/gemini-2.5-flash",
-        subagentList: [{ name: "simple-image", type: "local" }],
+        subagentList: [{ name: "simple-image" }],
       },
       "simple-image": {
         ...configurationFixture({ piiFiltering: false }),
@@ -946,11 +930,11 @@ describe("executeAgent nested transfer identity", () => {
     const traces: Trace[] = [];
     const deps = {
       ...fixture.deps,
-      projects: withConfigurations({ get: async (name: string) => projects[name] ?? null }, ({ get: async (project: string) => versions[project] ?? null, list: async () => [] }).get),
+      projects: withConfigurations({ get: async (name: string) => projects[name] ?? null }, ({ get: async (project: string) => configurations[project] ?? null, list: async () => [] }).get),
 
       traces: { put: async (trace: Trace) => void traces.push(trace) },
     } as unknown as ExecutionDeps;
-    return { deps, traces, top: projects["bruce-bot"] as Project, configuration: versions["bruce-bot"] as AgentConfiguration };
+    return { deps, traces, top: projects["bruce-bot"] as Project, configuration: configurations["bruce-bot"] as AgentConfiguration };
   }
 
   const chainScript = [
@@ -1118,8 +1102,8 @@ describe("executeAgent registry bindings that no longer resolve", () => {
         configuration: {
           ...configurationFixture({ piiFiltering: false }),
           subagentList: [
-            { name: "alive-agent", type: "local" },
-            { name: "deleted-agent", type: "local" },
+            { name: "alive-agent" },
+            { name: "deleted-agent" },
           ],
         },
         messages: [{ role: "user", content: "hi" }],
@@ -1150,7 +1134,7 @@ describe("executeAgent reports the bindings it could not use", () => {
         configuration: {
           ...configurationFixture({ piiFiltering: false }),
           skillList: ["gone-skill"],
-          subagentList: [{ name: "gone-agent", type: "local" }],
+          subagentList: [{ name: "gone-agent" }],
         },
         messages: [{ role: "user", content: "hi" }],
       }),
@@ -1283,7 +1267,7 @@ describe("executeAgent MCP dispatch SSRF re-check", () => {
   });
 });
 
-describe("executeAgent local subagent projectType dispatch", () => {
+describe("executeAgent local subagent dispatch", () => {
 
   it("pins the clock for the whole run, so a child cannot say a different now", async () => {
     const channel = new FakeChannel([
@@ -1309,7 +1293,7 @@ describe("executeAgent local subagent projectType dispatch", () => {
     deps.now = () => instants[Math.min(reads++, instants.length - 1)] as Date;
     deps.projects.get = (async (name: string) =>
       name === "summarizer"
-        ? { ...projectFixture(), name: "summarizer", projectType: "agent" }
+        ? { ...projectFixture(), name: "summarizer" }
         : null) as ExecutionDeps["projects"]["get"];
     deps.projects = withConfigurations(deps.projects, async (projectName: string) =>
       projectName === "summarizer"
@@ -1326,7 +1310,7 @@ describe("executeAgent local subagent projectType dispatch", () => {
         project: projectFixture(),
         configuration: {
           ...configurationFixture({ piiFiltering: false }),
-          subagentList: [{ name: "summarizer", type: "local" }],
+          subagentList: [{ name: "summarizer" }],
         },
         messages: [{ role: "user", content: "summarize this" }],
       }),
@@ -1362,10 +1346,10 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     [contentChunk("Passed on."), usageChunk(1, 1)],
   ];
 
-  function parentVersion() {
+  function parentConfiguration() {
     return {
       ...configurationFixture({ piiFiltering: false }),
-      subagentList: [{ name: "child", type: "local" as const }],
+      subagentList: [{ name: "child" }],
     };
   }
 
@@ -1377,7 +1361,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        configuration: parentVersion(),
+        configuration: parentConfiguration(),
         messages: [
           { role: "user", content: "draw a cat" },
           { role: "assistant", content: "Here is an orange cat." },
@@ -1419,7 +1403,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        configuration: parentVersion(),
+        configuration: parentConfiguration(),
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -1437,7 +1421,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        configuration: parentVersion(),
+        configuration: parentConfiguration(),
         messages: [{ role: "user", content: "draw a cat" }],
       }),
     );
@@ -1471,7 +1455,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
         ? {
             ...configurationFixture({ piiFiltering: false }),
             projectName: "child",
-            subagentList: [{ name: "child2", type: "local" as const }],
+            subagentList: [{ name: "child2" }],
           }
         : projectName === "child2"
           ? { ...configurationFixture({ piiFiltering: false }), projectName: "child2" }
@@ -1480,7 +1464,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        configuration: parentVersion(),
+        configuration: parentConfiguration(),
         messages: [
           { role: "user", content: "draw a cat" },
           { role: "assistant", content: "Here is an orange cat." },
@@ -1501,7 +1485,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
 
 describe("executeAgent subagent turn budget", () => {
   it("clamps a child's maxTurn to the parent's ceiling", async () => {
-    // The child continues the parent's turn counter, so a child version with a
+    // The child continues the parent's turn counter, so a child configuration with a
     // larger maxTurn would raise the limit the whole run started under.
     const childCall = (id: string) => toolCallChunk(0, id, "GenerateImage", '{"prompt":"fox"}');
     const channel = new FakeChannel([
@@ -1534,7 +1518,7 @@ describe("executeAgent subagent turn budget", () => {
         project: projectFixture(),
         configuration: {
           ...configurationFixture({ piiFiltering: false }),
-          subagentList: [{ name: "child", type: "local" }],
+          subagentList: [{ name: "child" }],
           maxTurn: 3,
         },
         messages: [{ role: "user", content: "delegate" }],
@@ -1560,7 +1544,7 @@ describe("executeAgent subagent recursion guards", () => {
     deps.projects = withConfigurations(deps.projects, async (projectName: string) => ({
       ...configurationFixture({ piiFiltering: false }),
       projectName,
-      subagentList: [{ name: target(projectName), type: "local" as const }],
+      subagentList: [{ name: target(projectName) }],
       maxTurn: 50,
     })) as ExecutionDeps["projects"];
     return { deps, recorded };
@@ -1594,7 +1578,7 @@ describe("executeAgent subagent recursion guards", () => {
         project: projectFixture(),
         configuration: {
           ...configurationFixture({ piiFiltering: false }),
-          subagentList: [{ name: "child", type: "local" }],
+          subagentList: [{ name: "child" }],
         },
         messages: [{ role: "user", content: "start" }],
       }),
@@ -1635,7 +1619,7 @@ describe("executeAgent subagent recursion guards", () => {
       return {
         ...configurationFixture({ piiFiltering: false }),
         projectName,
-        subagentList: [{ name: `a${depth + 1}`, type: "local" as const }],
+        subagentList: [{ name: `a${depth + 1}` }],
         maxTurn: 50,
       };
     }) as ExecutionDeps["projects"];
@@ -1645,166 +1629,13 @@ describe("executeAgent subagent recursion guards", () => {
         project: projectFixture(),
         configuration: {
           ...configurationFixture({ piiFiltering: false }),
-          subagentList: [{ name: "a1", type: "local" }],
+          subagentList: [{ name: "a1" }],
         },
         messages: [{ role: "user", content: "start" }],
       }),
     );
 
     expect(chunks.some((c) => c.warning?.includes("depth limit"))).toBe(true);
-  });
-});
-
-describe("executeAgent remote A2A image subagent", () => {
-  it("forwards returned image artifacts as authored image chunks", async () => {
-    sendA2aMessageMock.mockResolvedValueOnce({
-      ok: true,
-      text: "",
-      images: [{ b64: "aW1n", mimeType: "image/png", name: "generated.png" }],
-    });
-    const channel = new FakeChannel([
-      [
-        toolCallChunk(
-          0,
-          "call_t",
-          "delegate_painter-a2a",
-          "{\"input\":\"a watercolor cat\",\"image_ids\":[]}",
-        ),
-        usageChunk(1, 1),
-      ],
-      [contentChunk("Here you go."), usageChunk(1, 1)],
-    ]);
-    const { deps } = executionDepsFixture(channel);
-    deps.externalAgents.get = (async (name: string) =>
-      name === "painter-a2a"
-        ? {
-            name,
-            url: "https://agents.example.com/painter",
-            protocol: "a2a",
-            description: "Generates images",
-            headers: {},
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-          }
-        : null) as ExecutionDeps["externalAgents"]["get"];
-
-    const chunks = await collect(
-      executeAgent(deps, {
-        project: projectFixture(),
-        configuration: {
-          ...configurationFixture({ piiFiltering: false }),
-          subagentList: [{ name: "painter-a2a", type: "remote" }],
-        },
-        messages: [{ role: "user", content: "고양이를 그려줘" }],
-      }),
-    );
-
-    expect(sendA2aMessageMock).toHaveBeenCalledWith(
-      "https://agents.example.com/painter",
-      {},
-      "a watercolor cat",
-      // The run's deadline-composed signal now propagates to remote subagents.
-      expect.any(AbortSignal),
-    );
-    expect(chunks.find((chunk) => chunk.image)).toMatchObject({
-      author: "painter-a2a",
-      image: {
-        b64: "aW1n",
-        mimeType: "image/png",
-      },
-    });
-    expect(chunks.find((chunk) => chunk.image)?.image).not.toHaveProperty("prompt");
-    expect(chunks.some((chunk) => chunk.error)).toBe(false);
-  });
-});
-
-describe("executeAgent remote A2A conversation continuity", () => {
-  beforeEach(() => sendA2aMessageMock.mockReset());
-  function painterDeps(channel: FakeChannel, rows: Map<string, string>) {
-    const { deps } = executionDepsFixture(channel);
-    deps.externalAgents.get = (async (name: string) =>
-      name === "painter-a2a"
-        ? {
-            name,
-            url: "https://agents.example.com/painter",
-            protocol: "a2a",
-            description: "Generates images",
-            headers: {},
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-          }
-        : null) as ExecutionDeps["externalAgents"]["get"];
-    deps.remoteConversations = {
-      get: async (project, agent, key) => {
-        const contextId = rows.get(`${project}|${agent}|${key}`);
-        return contextId ? { contextId } : null;
-      },
-      put: async (project, agent, key, hint) => {
-        rows.set(`${project}|${agent}|${key}`, hint.contextId);
-      },
-      forget: async (project, agent, key) => {
-        rows.delete(`${project}|${agent}|${key}`);
-      },
-    };
-    return deps;
-  }
-  const transferTurn = () => [
-    [
-      toolCallChunk(0, "call_t", "delegate_painter-a2a", "{\"input\":\"draw a cat\",\"image_ids\":[]}"),
-      usageChunk(1, 1),
-    ],
-    [contentChunk("Done."), usageChunk(1, 1)],
-  ];
-
-  it("sends the remote contextId back on the next run from the same conversation, through the real dispatcher", async () => {
-    // The whole path a run takes: executeAgent → the subagent runner → the
-    // remote transfer → `remoteAgentDispatcher` → the A2A client. A wrapper
-    // dropping the option anywhere along it would pass every unit test and
-    // still send every question cold.
-    const rows = new Map<string, string>();
-    const conversation = { surface: "slack" as const, id: "C1:1723.45" };
-    sendA2aMessageMock
-      .mockResolvedValueOnce({ ok: true, text: "a cat", images: [], contextId: "remote-ctx" })
-      .mockResolvedValueOnce({ ok: true, text: "a cat again", images: [], contextId: "remote-ctx" });
-
-    await collect(
-      executeAgent(painterDeps(new FakeChannel(transferTurn()), rows), {
-        project: projectFixture(),
-        configuration: { ...configurationFixture({ piiFiltering: false }), subagentList: [{ name: "painter-a2a", type: "remote" }] },
-        messages: [{ role: "user", content: "고양이를 그려줘" }],
-        conversation,
-      }),
-    );
-    await collect(
-      executeAgent(painterDeps(new FakeChannel(transferTurn()), rows), {
-        project: projectFixture(),
-        configuration: { ...configurationFixture({ piiFiltering: false }), subagentList: [{ name: "painter-a2a", type: "remote" }] },
-        messages: [{ role: "user", content: "한 마리 더" }],
-        conversation,
-      }),
-    );
-
-    // First from this conversation: cold, four arguments exactly as before.
-    expect(sendA2aMessageMock.mock.calls[0]).toHaveLength(4);
-    // Second: the contextId the first reply named, keyed by project × agent × conversation.
-    expect(sendA2aMessageMock.mock.calls[1]?.[4]).toEqual({ contextId: "remote-ctx" });
-    expect(rows.get(`${projectFixture().name}|painter-a2a|slack:C1:1723.45`)).toBe("remote-ctx");
-  });
-
-  it("transfers cold, and remembers nothing, for a run with no conversation", async () => {
-    const rows = new Map<string, string>();
-    sendA2aMessageMock.mockResolvedValueOnce({ ok: true, text: "a cat", images: [], contextId: "remote-ctx" });
-
-    await collect(
-      executeAgent(painterDeps(new FakeChannel(transferTurn()), rows), {
-        project: projectFixture(),
-        configuration: { ...configurationFixture({ piiFiltering: false }), subagentList: [{ name: "painter-a2a", type: "remote" }] },
-        messages: [{ role: "user", content: "고양이를 그려줘" }],
-      }),
-    );
-
-    expect(sendA2aMessageMock.mock.calls[0]).toHaveLength(4);
-    expect(rows.size).toBe(0);
   });
 });
 
@@ -1858,7 +1689,7 @@ describe("execution tracing policy", () => {
 
     const chunks = await collect(
       executeProjectStream(deps, {
-        project: { ...projectFixture(), projectType: "agent" },
+        project: { ...projectFixture() },
         configuration: configurationFixture({ piiFiltering: false }),
         messages: [{ role: "user", content: "hi" }],
       }),
@@ -1890,7 +1721,7 @@ describe("execution tracing policy", () => {
     expect(prepare[0]?.output).toMatchObject({ skills: 0, subagents: 0, mcpServers: 0, mcpTools: 0 });
   });
 
-  it("records the memory stage only for a version that asked for one", async () => {
+  it("records the memory stage only for a configuration that asked for one", async () => {
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
     const traces = captureTraces(deps);
@@ -1905,7 +1736,7 @@ describe("execution tracing policy", () => {
 
     const memory = traces[0]?.spans.find((span) => span.name === "memory");
     expect(memory?.kind).toBe("prepare");
-    // No bound server offers `recall`, which is a misconfiguration this version
+    // No bound server offers `recall`, which is a misconfiguration this configuration
     // will warn about on every run it makes — not a stage that failed, and the
     // difference is what keeps a red span meaning something.
     expect(memory?.status).toBe("ok");
@@ -1977,7 +1808,7 @@ describe("executeProject non-streaming dispatch", () => {
       configuration: {
         ...configurationFixture({ piiFiltering: false }),
         skillList: ["gone-skill"],
-        subagentList: [{ name: "gone-agent", type: "local" }],
+        subagentList: [{ name: "gone-agent" }],
       },
       messages: [{ role: "user", content: "hi" }],
     });
@@ -2027,13 +1858,7 @@ describe("executeProject non-streaming dispatch", () => {
     expect(run.content).toBe("answer");
   });
 
-  /**
-   * `/predict` answers from here for an agent project and from `toUsageInfo`
-   * for an `llm` one. Built field by field, this accumulator dropped both
-   * subset fields, so the same endpoint reported them for one project type and
-   * not the other — indistinguishable, to a caller, from a provider that never
-   * reported them at all.
-   */
+  /** Collected runs retain the cached and reasoning subsets of token usage. */
   it("carries the usage fields that are subsets of the two totals", async () => {
     async function* source(): AsyncGenerator<EngineChunk> {
       yield {
@@ -2085,14 +1910,9 @@ describe("executeProject non-streaming dispatch", () => {
   });
 });
 
-/**
- * The other half of the same dispatch. `executeProjectStream` sends only agent
- * projects here, but three surfaces call `executeAgent` directly and one of them
- * — `/api/projects/{name}/versions/{version}/agent` — had no check of its own,
- * so it ran the tool loop on whatever project type it was handed.
- */
-describe("executeAgent project type", () => {
-  it("runs an agent project", async () => {
+/** Direct execution uses the Agent loop. */
+describe("executeAgent", () => {
+  it("runs a configured Agent", async () => {
     const channel = new FakeChannel([[contentChunk("answer"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
 
@@ -2194,14 +2014,14 @@ describe("executeProject dispatch carries the caller", () => {
     return String(channel.seenParams[0]?.messages[0]?.content ?? "");
   }
 
-  it.each(["agent"] as const)("through the streaming path of a %s project", async (projectType) => {
+  it("through the streaming path", async () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
 
     const prompt = await systemPromptOf(channel, () =>
       collect(
         executeProjectStream(deps, {
-          project: { ...projectFixture(), projectType },
+          project: projectFixture(),
           configuration: configurationFixture({ piiFiltering: false, callerContext: true }),
           messages: [{ role: "user", content: "hi" }],
           caller: CALLER,
@@ -2212,13 +2032,13 @@ describe("executeProject dispatch carries the caller", () => {
     expect(prompt).toContain("You are answering Bruce.");
   });
 
-  it.each(["agent"] as const)("through the collected path of a %s project", async (projectType) => {
+  it("through the collected path", async () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
 
     const prompt = await systemPromptOf(channel, () =>
       executeProject(deps, {
-        project: { ...projectFixture(), projectType },
+        project: projectFixture(),
         configuration: configurationFixture({ piiFiltering: false, callerContext: true }),
         messages: [{ role: "user", content: "hi" }],
         caller: CALLER,
@@ -2228,7 +2048,7 @@ describe("executeProject dispatch carries the caller", () => {
     expect(prompt).toContain("You are answering Bruce.");
   });
 
-  it("still lets the version's opt-in decide, not the surface", async () => {
+  it("still lets the configuration's opt-in decide, not the surface", async () => {
     // The gate belongs to `callerFor` at the engine-input boundary. Forwarding
     // the caller unconditionally is what makes that the *only* gate; a second
     // one on the way there could only ever disagree with it.
@@ -2253,23 +2073,21 @@ describe("executeProject dispatch carries the caller", () => {
 /**
  * A transfer is not a second person's request — `RunOrigin` has said the caller
  * travels the chain since it was written. Nothing populated or read the field,
- * so a child version that had asked to be told who is asking ran anonymously:
+ * so a child configuration that had asked to be told who is asking ran anonymously:
  * the checkbox on, the block missing, and nothing anywhere saying so.
  */
 describe("a transfer carries who is asking", () => {
   const CALLER = { displayName: "Bruce", timezone: "Asia/Seoul" };
 
-  /** A parent that transfers to `child`, whose version this test decides. */
+  /** A parent that transfers to `child`, whose configuration this test decides. */
   function transferDeps(
     channel: FakeChannel,
     childParameters: AgentParameters,
-    childType: "agent" | "llm" = "agent",
   ) {
     const { deps } = executionDepsFixture(channel);
     deps.projects.get = (async (name: string) => ({
       ...projectFixture(),
       name,
-      ...(name === "child" ? { projectType: childType } : {}),
     })) as ExecutionDeps["projects"]["get"];
     deps.projects = withConfigurations(deps.projects, async (projectName: string) =>
       projectName === "child"
@@ -2298,7 +2116,7 @@ describe("a transfer carries who is asking", () => {
         project: projectFixture(),
         configuration: {
           ...configurationFixture({ piiFiltering: false, callerContext: parentOptedIn }),
-          subagentList: [{ name: "child", type: "local" }],
+          subagentList: [{ name: "child" }],
           maxTurn: 50,
         },
         messages: [{ role: "user", content: "delegate" }],
@@ -2329,7 +2147,7 @@ describe("a transfer carries who is asking", () => {
   });
 
   it("lets the child's own opt-in decide, not its parent's", async () => {
-    // Each version's `callerContext` governs its own prompt. A parent that does
+    // Each configuration's `callerContext` governs its own prompt. A parent that does
     // not name the caller is not a statement about the project it transfers to.
     const channel = script();
     const deps = transferDeps(channel, { piiFiltering: false, callerContext: true });

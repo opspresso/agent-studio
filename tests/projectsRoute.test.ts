@@ -29,7 +29,7 @@ const postRequest = (body: unknown) =>
     body: JSON.stringify(body),
   });
 
-const body = { name: "my-bot", displayName: "My Bot", projectType: "agent" };
+const body = { name: "my-bot", displayName: "My Bot" };
 
 const signedInAs = (tier: MemberTier) => {
   sessionTier.value = tier;
@@ -46,7 +46,6 @@ describe("POST /api/projects", () => {
       name: "my-bot",
       displayName: "My Bot",
       description: "",
-      projectType: "agent",
       ownerEmail: "u@x.com",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -63,8 +62,8 @@ describe("POST /api/projects", () => {
     });
   });
 
-  it.each(["llm", "image"])("rejects the removed %s type before creating a project", async (projectType) => {
-    const response = await POST(postRequest({ ...body, projectType }));
+  it("rejects a type selector", async () => {
+    const response = await POST(postRequest({ ...body, projectType: "agent" }));
     expect(response.status).toBe(400);
     expect(createAgent).not.toHaveBeenCalled();
   });
@@ -72,7 +71,7 @@ describe("POST /api/projects", () => {
   it("creates an Agent when the request has no type selector", async () => {
     createAgent.mockResolvedValue({ ...body, ownerEmail: "u@x.com" });
     expect((await POST(postRequest({ name: body.name, displayName: body.displayName }))).status).toBe(201);
-    expect(createAgent).toHaveBeenCalledWith(expect.objectContaining({ projectType: "agent" }));
+    expect(createAgent).toHaveBeenCalledWith(expect.objectContaining({ }));
   });
 
   it("403s a guest before parsing the body", async () => {

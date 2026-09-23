@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MantineProvider } from "@mantine/core";
 import { describe, expect, it } from "vitest";
-import { CostLimitsSection, costLimitsForSave } from "@/app/projects/[name]/settings/CostLimitsSection";
+import { CostLimitsSection, costLimitsForSave } from "@/app/agents/[name]/settings/CostLimitsSection";
 
 describe("costLimitsForSave", () => {
   it("keeps notification destinations before a threshold is configured", () => {

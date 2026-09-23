@@ -172,7 +172,7 @@ export async function collectRun(
     }
     // What the run lost, kept alongside the answer rather than dropped. A
     // collected surface has no later frame to say it in, and every other
-    // consumer of this stream — chat, Slack, A2A, the console — reports these;
+    // consumer of this stream — chat, Slack, the console — reports these;
     // dropping them here is what made a run that silently lost half its tools
     // indistinguishable from one that had them. `collectedWarning` owns which
     // ones count.
@@ -263,7 +263,7 @@ export async function* executeAgent(
     // run's own opt-in decides nothing for the project it transfers to.
     ...(input.caller ? { caller: input.caller } : {}),
     // And the conversation, for the same reason: a child is answering in the
-    // same thread as its parent, and a remote agent it hands off to continues
+    // same thread as its parent, and a child Agent it hands off to continues
     // that thread's context rather than opening one per hop.
     ...(input.conversation ? { conversation: input.conversation } : {}),
   };
@@ -419,7 +419,6 @@ export async function* executeAgent(
       subagents,
       mcpTools: mcp.mcpTools,
       mcpServers: mcp.mcpServers,
-      ...(input.clientTools ? { clientTools: input.clientTools } : {}),
       signal: runSignal,
     }))) {
       recorder?.observe(chunk);

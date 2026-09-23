@@ -17,7 +17,6 @@ function projectFixture(overrides: Partial<Project> = {}): Project {
     name: "painter",
     displayName: "Painter",
     description: "Draws things on request.",
-    projectType: "agent",
     ownerEmail: "owner@x.com",
 
     slack: { botToken: "enc", signingSecret: "enc", enabled: true, suggestedPrompts: PROMPTS },

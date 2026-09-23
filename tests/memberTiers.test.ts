@@ -48,7 +48,6 @@ describe("memberEmailFromActorKey", () => {
 
   it("returns null for machine kinds and empty ids", () => {
     expect(memberEmailFromActorKey("slack:U123")).toBeNull();
-    expect(memberEmailFromActorKey("a2a:shared-key")).toBeNull();
     expect(memberEmailFromActorKey("webhook:p:t")).toBeNull();
     expect(memberEmailFromActorKey("user:")).toBeNull();
   });

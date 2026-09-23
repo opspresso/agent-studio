@@ -1172,7 +1172,7 @@ describe("syncPluginsFromSnapshot", () => {
       servers: [storedServer("constructor")],
     });
     const project: Project = {
-      name: "bot", displayName: "Bot", description: "", projectType: "agent", ownerEmail: ACTOR,
+      name: "bot", displayName: "Bot", description: "", ownerEmail: ACTOR,
       createdAt: NOW, updatedAt: NOW,
       configuration: {
         projectName: "bot", model: "openai/gpt-4o", systemPrompt: "",

@@ -232,7 +232,7 @@ export function clientMetadataDocument(
  * The client secret is masked the way every other stored secret in this codebase
  * is — length-preserving, edges revealed in proportion to length — so an owner
  * can recognise which credential is stored without it being readable. Tokens are
- * absent entirely: unlike the A2A key and the project API token there is no
+ * absent entirely: unlike the project API token there is no
  * reveal path here, and a token has no reason to be displayed at all.
  */
 export interface McpConnectionView {

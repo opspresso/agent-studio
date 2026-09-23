@@ -39,7 +39,6 @@ function project(overrides: Partial<Project> = {}): Project {
     name: "proj",
     displayName: "Proj",
     description: "",
-    projectType: "agent",
     ownerEmail: OWNER,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -224,7 +223,6 @@ describe("binding a private project as a local subagent", () => {
     return {
       skills: { get: async () => null },
       mcps: { get: async () => null },
-      externalAgents: { get: async () => null },
       projects: { get: async () => subagent },
     } as unknown as ConfigurationRefRepos;
   }
@@ -236,7 +234,7 @@ describe("binding a private project as a local subagent", () => {
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
-    subagentList: [{ name: "secret", type: "local" as const }],
+    subagentList: [{ name: "secret" }],
   };
 
   async function cipher() {
@@ -244,7 +242,7 @@ describe("binding a private project as a local subagent", () => {
   }
 
   it("refuses an editor the subagent project keeps out", async () => {
-    const repo = fakeRepo([project({ name: "mine", projectType: "agent", ownerEmail: EDITOR })]);
+    const repo = fakeRepo([project({ name: "mine", ownerEmail: EDITOR })]);
     const secret = project({ name: "secret", visibility: "private" });
     await expect(
       putAgentConfiguration({ projects: repo, refs: accessRefs(secret), cipher: await cipher() }, "mine", { ...input, expectedUpdatedAt: (await repo.get("mine"))!.updatedAt }, EDITOR),
@@ -252,14 +250,14 @@ describe("binding a private project as a local subagent", () => {
   });
 
   it("lets an invited editor bind it", async () => {
-    const repo = fakeRepo([project({ name: "mine", projectType: "agent", ownerEmail: EDITOR })]);
+    const repo = fakeRepo([project({ name: "mine", ownerEmail: EDITOR })]);
     const secret = project({ name: "secret", visibility: "private", memberEmails: [EDITOR] });
     await putAgentConfiguration({ projects: repo, refs: accessRefs(secret), cipher: await cipher() }, "mine", { ...input, expectedUpdatedAt: (await repo.get("mine"))!.updatedAt }, EDITOR);
-    expect((await repo.get("mine"))?.configuration?.subagentList).toEqual([{ name: "secret", type: "local" }]);
+    expect((await repo.get("mine"))?.configuration?.subagentList).toEqual([{ name: "secret" }]);
   });
 
   it("keeps current settings editable after a bound project went private", async () => {
-    const repo = fakeRepo([project({ name: "mine", projectType: "agent", ownerEmail: EDITOR })]);
+    const repo = fakeRepo([project({ name: "mine", ownerEmail: EDITOR })]);
     const secret = project({ name: "secret", visibility: "private" });
     const existing = (await repo.get("mine"))!;
     const configuration: AgentConfiguration = { ...input, projectName: "mine" };

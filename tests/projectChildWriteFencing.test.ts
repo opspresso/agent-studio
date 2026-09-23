@@ -20,9 +20,6 @@ const { telegramDestinationRepository } = await import(
 const { transcriptRepository } = await import(
   "@/infrastructure/db/repositories/transcriptRepository"
 );
-const { remoteConversationRepository } = await import(
-  "@/infrastructure/db/repositories/remoteConversationRepository"
-);
 
 const NOW = "2026-01-01T00:00:00.000Z";
 const trigger = {
@@ -110,10 +107,6 @@ describe("project child write fencing", () => {
     [
       "conversation transcript",
       () => transcriptRepository.append("p", "conversation", { role: "user", content: "hi", createdAt: NOW }),
-    ],
-    [
-      "remote conversation",
-      () => remoteConversationRepository.put("p", "agent", "conversation", { contextId: "ctx" }),
     ],
   ])("rejects a %s write after project deletion starts", async (_name, write) => {
     await expect(write()).rejects.toMatchObject({ name: store.TRANSACTION_CANCELLED });

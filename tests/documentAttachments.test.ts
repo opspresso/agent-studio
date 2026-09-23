@@ -11,7 +11,7 @@ vi.mock("node:crypto", async (original) => ({
   ...await original<typeof import("node:crypto")>(),
   randomUUID: () => `00000000-0000-4000-8000-${String(++ids.next).padStart(12, "0")}`,
 }));
-const context = { projectName: "project", versionName: "1", actor: { kind: "user" as const, id: "owner@example.com" } };
+const context = { projectName: "project", actor: { kind: "user" as const, id: "owner@example.com" } };
 const document = () => ({ name: "report.txt", mimeType: "text/plain", bytes: Buffer.from("original bytes") });
 const extractor = { extract: vi.fn(async () => ({ text: "extracted text" })) };
 

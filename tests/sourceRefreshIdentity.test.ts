@@ -9,7 +9,7 @@ const binding = { name: "files" };
 const connection = { projectName: "audio", serverName: "files", clientId: "client", issuer: "https://auth.example.test",
   resource: "https://files.example.test/mcp", status: "connected", connectedAt: "2026-09-09T00:00:00Z", connectedBy: "owner@example.test", updatedAt: "before" } as McpConnection;
 describe("source refresh identity", () => {
-  it("fences changed defaults but ignores defaults under an explicit version override", () => {
+  it("fences changed defaults but ignores defaults under an explicit Agent binding override", () => {
     const defaults = [{ tool: "read", namespace: "files", idPath: ["id"], urlPath: ["url"], mimeType: "audio/mpeg" }];
     const next = { ...server, sourceOutputs: defaults };
     expect(sourceRefreshFingerprint(next, binding, connection)).not.toBe(sourceRefreshFingerprint(server, binding, connection));

@@ -15,6 +15,8 @@ Agent 설정의 `mcpList`는 서버 이름, `tools`, `headers`, 선택적 `sourc
 URL은 registry에서 온다. 기존 binding의 header 생략은 보존, `{}`는 제거,
 문자열은 추가·교체, `null`은 registry 기본값 제거다.
 마스킹과 endpoint fingerprint 계약은 [API 바인딩](../API.md#mcp-바인딩과-agent-헤더-오버라이드)을 따른다.
+저장된 바인딩의 이름·헤더·도구 제한·파일 매핑이 유효하지 않으면 Agent 설정 읽기를 거절한다.
+잘못된 항목을 건너뛰어 도구를 조용히 잃지 않는다.
 
 Plugin sync는 streamable-HTTP 서버만 가져오며 header를 가져오지 않는다.
 모델용 설명과 운영 노트는 Plugin의 `org.opspresso.agent-studio/mcp/<server>.md`를 사용한다.

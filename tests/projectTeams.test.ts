@@ -23,7 +23,6 @@ function makeProject(overrides: Partial<Project> = {}): Project {
     name: "bot-proj",
     displayName: "Bot Project",
     description: "",
-    projectType: "agent",
     ownerEmail: OWNER,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",

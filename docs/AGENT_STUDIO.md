@@ -21,7 +21,7 @@ Agent Studio는 기업 내부에 설치하는 AI Agent Control Plane이다. 사�
 모델 채널을 구성하면 필수 부팅·로그인·실행·콘솔 경로를 공개 인터넷 없이 운영할 수 있다.
 
 파일 보관에는 S3 호환 저장소, 오디오와 Workspace에는 별도 worker가 필요하다. 외부 모델,
-Plugin sync, Slack·Telegram·Teams·GitHub·A2A는 배포가 선택하는 연결이다.
+Plugin sync, Slack·Telegram·Teams·GitHub는 배포가 선택하는 연결이다.
 문서 worker, 오디오 worker, Workspace Sandbox와 관리형 MCP는 서로 다른 실행 자원이다.
 
 애플리케이션은 Next.js App Router 기반의 단일 풀스택 앱이다. 이 저장소는 앱과 이미지,
@@ -29,9 +29,10 @@ Plugin sync, Slack·Telegram·Teams·GitHub·A2A는 배포가 선택하는 연�
 소유한다. 개발 중이므로 API·설정·저장 형식의 하위 호환은 보장하지 않는다.
 설치와 업그레이드는 [INSTALL](INSTALL.md), 실제 변수는 [CONFIGURATION](CONFIGURATION.md)을 따른다.
 
-## Project와 현재 설정
+## Agents와 현재 설정
 
-Project는 이름으로 호출하는 Agent다. 현재 설정에 모델·fallback·시스템 프롬프트·생성 설정,
+콘솔에서는 Agent를 `/agents`에서 만들고 관리한다. 저장소와 `/api/projects`의 `Project`는
+같은 Agent를 가리키는 내부 계약이다. 현재 설정에 모델·fallback·시스템 프롬프트·생성 설정,
 Skill·MCP·하위 Agent binding과 실행 정책을 저장한다. 이미지 생성·편집도 Agent의 도구로 제공한다.
 
 설정 저장은 Project의 `updatedAt`으로 동시 수정을 검사한다. 저장한 설정은 다음 실행부터
@@ -41,7 +42,7 @@ Skill·MCP·하위 Agent binding과 실행 정책을 저장한다. 이미지 생
 
 [실행 설계](design/execution.md#project와-현재-설정)와 [설정 API](API.md#agent-현재-설정)가
 계약을 설명하며 [`configurationUseCases.ts`](../src/application/project/configurationUseCases.ts)가
-설정 접근·저장·마스킹을 소유한다. 기존 데이터는 [이전 절차](AGENT-MIGRATION.md)로 보존한다.
+설정 접근·저장·마스킹을 소유한다.
 
 ## Skill·Tool·MCP·Agent·Memory
 
@@ -50,7 +51,7 @@ Skill·MCP·하위 Agent binding과 실행 정책을 저장한다. 이미지 생
 | Skill | 모델이 필요할 때 읽는 Markdown 지침과 참고 파일 |
 | Tool | 입력 schema를 받아 실제 기능을 수행하는 함수 |
 | MCP | 외부 Tool·리소스와 자격 증명을 연결하는 프로토콜 |
-| 하위 Agent | 로컬 Project 또는 외부 OpenAI 호환/A2A 실행 대상 |
+| 하위 Agent | 로컬 Project 또는 외부 OpenAI 호환 실행 대상 |
 | Memory | 연결된 MCP 서버가 보관하는 장기 지식 |
 | SDK Session | 특정 Chat에서 재생할 정확한 모델·도구 이력 |
 | Workspace checkpoint | 파일·Git·native CLI Session의 복구 상태 |
@@ -63,7 +64,7 @@ MCP registry는 서버 주소를 소유하고 Agent binding은 도구 목록과 
 프로젝트별 OAuth 연결과 선택적인 Docker 관리형 서버도 지원한다. 등록·dispatch 경계에서
 주소와 자격 증명을 검사한다. [MCP](design/mcp.md)와 [보안](SECURITY.md#mcp-oauth)을 보라.
 
-선택적 capability 검색은 전역 `catalog_vectors`에서 현재 요청에 맞는 Skill·MCP·Agent를 찾는다.
+선택적 capability 검색은 전역 `catalog_vectors`에서 현재 요청에 맞는 Skill·MCP 서버·도구를 찾는다.
 명시적 binding을 유지하면서 capability를 추가하며, 실제 사용 전에 정책과 연결 권한을 적용한다.
 별도의 Memory recall은 명시적으로 연결한 MCP의 `recall`을 호출해 장기 지식을 실행 문맥에 넣는다.
 Studio 자체의 장기 Memory DB는 없다. [Capabilities](design/capabilities.md)가 두 경로를 설명한다.
@@ -166,8 +167,7 @@ Telegram·Teams는 Studio가 한정된 transcript를 보관한다. 중복 delive
 비멱등 작업을 자동 재생하지 않는다. [메시징 설계](design/messaging.md)를 보라.
 
 Webhook은 인증한 이벤트를 접수하고 현재 Agent 설정을 백그라운드 실행한다. Schedule은 외부 ticker가
-scan API를 호출해야 진행된다. A2A는 에이전트 간 task 프로토콜, AG-UI는 앱의 화면 이벤트와
-frontend tool 프로토콜이다. 각 표면의 권한·이력은 서로 독립적이다.
+scan API를 호출해야 진행된다. 각 표면의 권한·이력은 서로 독립적이다.
 정확한 요청·상태·응답은 [API](API.md), 자동화 동작은 [Trigger 설계](design/triggers.md)에 있다.
 
 ## 저장·보안·운영

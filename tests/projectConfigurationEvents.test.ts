@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { notifyConfigurationChange, onConfigurationChange } from "@/app/projects/lib/configurationEvents";
+import { notifyConfigurationChange, onConfigurationChange } from "@/app/agents/lib/configurationEvents";
 
 afterEach(() => vi.unstubAllGlobals());
 describe("saved configuration notifications", () => {

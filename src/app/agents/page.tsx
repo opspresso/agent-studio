@@ -1,58 +1,48 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { CopyableUrl } from "@/app/_components/CopyableUrl";
-import { toSlug } from "@/domain/naming";
-import {
-  createAgent,
-  listA2aProjects,
-  listAgents,
-  type A2aProjectListItem,
-  type A2aProjectListResponse,
-  type AgentProtocol,
-  type ExternalAgent,
-} from "./api";
-import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import {
   Alert,
-  Anchor,
   Badge,
   Button,
   Card,
   Group,
-  Modal,
-  Select,
   Stack,
   Text,
+  Textarea,
   TextInput,
-  Title,
 } from "@mantine/core";
 import { IconRobot } from "@tabler/icons-react";
-import { CodeBlock } from "@/app/_components/CodeBlock";
 import { FormModal } from "@/app/_components/FormModal";
-import { LoadingText } from "@/app/_components/PageState";
 import { useDisclosure } from "@mantine/hooks";
-import { CardGrid, CardList } from "@/app/_components/CardGrid";
-import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL, BADGE } from "@/app/_components/badgeColors";
-import { PageHeader } from "@/app/_components/PageHeader";
-import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
+import { useSession } from "@/lib/auth-client";
+import { tierMayCreateProjects } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
+import { toSlug } from "@/domain/naming";
 import { useT } from "@/app/_i18n/provider";
+import { OwnerLine } from "@/app/_components/OwnerLine";
+import { createProject, listProjects, type SanitizedProject } from "./lib/api";
+import { CardGrid } from "@/app/_components/CardGrid";
+import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
+import { PageHeader } from "@/app/_components/PageHeader";
 import { reportError } from "@/app/_lib/reportError";
 import { createLatestOnly } from "@/app/_lib/latestOnly";
-import { getProjectA2a, type ProjectA2aResponse } from "@/app/projects/lib/api";
 
 export default function AgentsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const t = useT();
+  const { data: session } = useSession();
   const viewer = useViewer();
-  const [agents, setAgents] = useState<ExternalAgent[]>([]);
-  const [a2aProjects, setA2aProjects] = useState<A2aProjectListResponse | null>(null);
+  const mayCreate = viewer !== null && tierMayCreateProjects(viewer.tier);
+  const createRequested = searchParams.get("create") === "1";
+  const [projects, setProjects] = useState<SanitizedProject[]>([]);
+  const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
-  const [filter, setFilter] = useState("");
-  const [cardProject, setCardProject] = useState<A2aProjectListItem | null>(null);
   const latestOnly = useRef(createLatestOnly()).current;
 
   async function refresh() {
@@ -60,13 +50,10 @@ export default function AgentsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [agentList, projectList] = await Promise.all([listAgents(), listA2aProjects()]);
-      if (isCurrent()) {
-        setAgents(agentList);
-        setA2aProjects(projectList);
-      }
+      const loaded = await listProjects();
+      if (isCurrent()) setProjects(loaded);
     } catch (e) {
-      if (isCurrent()) setError(e instanceof Error ? e.message : "Failed to load agents");
+      if (isCurrent()) setError(e instanceof Error ? e.message : t("agents.loadFailed"));
     } finally {
       if (isCurrent()) setLoading(false);
     }
@@ -76,8 +63,15 @@ export default function AgentsPage() {
     void refresh();
   }, []);
 
-  const visibleItems = agents.filter((agent) =>
-    matchesFilter(filter, agent.name, agent.description),
+  useEffect(() => {
+    if (createRequested && mayCreate) {
+      open();
+      router.replace("/agents", { scroll: false });
+    }
+  }, [createRequested, mayCreate, open, router]);
+
+  const visibleProjects = projects.filter((project) =>
+    matchesFilter(filter, project.displayName, project.name, project.description),
   );
 
   return (
@@ -87,12 +81,10 @@ export default function AgentsPage() {
         description={t("agents.lede")}
         Icon={IconRobot}
       >
-        {viewer?.isAdmin && <Button onClick={open}>{t("agents.register")}</Button>}
+        {mayCreate && (
+          <Button onClick={open}>{t("agents.new")}</Button>
+        )}
       </PageHeader>
-
-      <Alert color="blue" variant="light" title={t("capabilities.descriptionTitle")}>
-        {t("agents.descriptionRole")}
-      </Alert>
 
       {error && (
         <Alert color="red" variant="light">
@@ -100,200 +92,113 @@ export default function AgentsPage() {
         </Alert>
       )}
 
-      {agents.length > 0 && (
-        <CatalogSearch
-          value={filter}
-          onChange={setFilter}
-          placeholder={t("agents.filter")}
-          resultCount={visibleItems.length}
-          totalCount={agents.length}
-          onReset={filter ? () => setFilter("") : undefined}
-        />
+      {projects.length > 0 && (
+        <Group align="flex-start" gap="md">
+          <CatalogSearch
+            value={filter}
+            onChange={setFilter}
+            placeholder={t("agents.filter")}
+            resultCount={visibleProjects.length}
+            totalCount={projects.length}
+            onReset={filter ? () => setFilter("") : undefined}
+          />
+        </Group>
       )}
 
       <CardGrid
         loading={loading}
-        empty={visibleItems.length === 0}
-        emptyText={t(agents.length === 0 ? "agents.empty" : "catalog.noResults")}
+        empty={visibleProjects.length === 0}
+        emptyText={t(projects.length === 0 ? "agents.empty" : "catalog.noResults")}
       >
-        {visibleItems.map((agent) => {
-          const headerCount = Object.keys(agent.headers).length;
-          return (
-            <Card key={agent.name} component={Link} href={`/agents/${agent.name}`} h="100%">
-              <Group gap="xs">
-                <Text fw={500}>{agent.name}</Text>
-                <Badge color={AGENT_PROTOCOL_COLOR[agent.protocol ?? "openai"]}>
-                  {AGENT_PROTOCOL_LABEL[agent.protocol ?? "openai"]}
-                </Badge>
-                {headerCount > 0 && (
-                  <Badge color={BADGE.on}>
-                    {headerCount} header{headerCount === 1 ? "" : "s"}
+        {visibleProjects.map((project) => (
+          <Card
+            key={project.name}
+            component={Link}
+            href={`/agents/${project.name}`}
+            h="100%"
+          >
+            <Group justify="space-between" gap="xs" wrap="nowrap">
+              <Text fw={500} truncate>
+                {project.displayName || project.name}
+              </Text>
+              <Group gap={6} wrap="nowrap">
+                {project.visibility === "private" && (
+                  <Badge variant="light" color="gray">
+                    {t("agents.privateBadge")}
                   </Badge>
                 )}
               </Group>
-              <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
-                {agent.description}
-              </Text>
-              <Text fz="xs" c="dimmed" mt="xs" truncate>
-                {agent.url}
-              </Text>
-            </Card>
-          );
-        })}
+            </Group>
+            <Text ff="monospace" fz="xs" c="dimmed" mt={2}>
+              {project.name}
+            </Text>
+            <OwnerLine
+              ownerEmail={project.ownerEmail}
+              isMine={session?.user.email === project.ownerEmail}
+              mt={4}
+            />
+            <Text fz="sm" c="dimmed" mt="xs" lineClamp={3}>
+              {project.description}
+            </Text>
+          </Card>
+        ))}
       </CardGrid>
 
-      {!loading && a2aProjects && a2aProjects.projects.length > 0 && (
-        <Stack component="section" gap="sm">
-          <div>
-            <Title order={2} fz="h4">
-              {t("agents.studioTitle")}
-            </Title>
-            <Text fz="sm" c="dimmed" mt={4}>
-              {a2aProjects.enabled
-                ? t("agents.studioEnabled")
-                : t("agents.studioDisabled")}
-            </Text>
-          </div>
-          <CardList>
-            {a2aProjects.projects.map((project) => (
-              <Card
-                key={project.name}
-                component="button"
-                type="button"
-                onClick={() => setCardProject(project)}
-                h="100%"
-              >
-                <Group gap="xs">
-                  <Text fw={500}>{project.displayName || project.name}</Text>
-                  <Badge color={AGENT_PROTOCOL_COLOR.a2a}>{AGENT_PROTOCOL_LABEL.a2a}</Badge>
-                </Group>
-                <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
-                  {project.description}
-                </Text>
-                {a2aProjects.enabled && (
-                  <Text fz="xs" c="dimmed" mt="xs" truncate>
-                    {project.cardUrl}
-                  </Text>
-                )}
-              </Card>
-            ))}
-          </CardList>
-        </Stack>
-      )}
-
-      <RegisterAgentModal
+      <CreateAgentModal
         opened={opened}
         onClose={close}
-        onCreated={() => {
+        onCreated={(createdName) => {
           close();
-          void refresh();
+          // Initial Agent settings are available when a model fits; open the Playground.
+          router.push(`/agents/${createdName}`);
         }}
       />
-
-      <AgentCardModal project={cardProject} onClose={() => setCardProject(null)} />
     </Stack>
   );
 }
 
-function AgentCardModal({
-  project,
-  onClose,
-}: {
-  project: A2aProjectListItem | null;
-  onClose: () => void;
-}) {
-  const [view, setView] = useState<ProjectA2aResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!project) {
-      return;
-    }
-    let cancelled = false;
-    setView(null);
-    setError(null);
-    getProjectA2a(project.name)
-      .then((data) => {
-        if (!data.card) throw new Error("No Agent Card is available for this project");
-        if (!cancelled) setView(data);
-      })
-      .catch(
-        (e) =>
-          !cancelled && setError(e instanceof Error ? e.message : "Failed to load the Agent Card"),
-      );
-    return () => {
-      cancelled = true;
-    };
-  }, [project]);
-
-  return (
-    <Modal
-      opened={project !== null}
-      onClose={onClose}
-      title={project ? `Agent Card — ${project.displayName || project.name}` : ""}
-      size="lg"
-    >
-      {project && (
-        <Stack gap="sm">
-          {view?.cardUrl && <CopyableUrl url={view.cardUrl} />}
-          {error ? (
-            <Alert color="red" variant="light">
-              {error}
-            </Alert>
-          ) : view?.card ? (
-            <CodeBlock language="json" code={JSON.stringify(view.card, null, 2)} />
-          ) : (
-            <LoadingText />
-          )}
-          <Anchor component={Link} href={`/projects/${project.name}`} fz="sm">
-            Open project →
-          </Anchor>
-        </Stack>
-      )}
-    </Modal>
-  );
-}
-
-function RegisterAgentModal({
+function CreateAgentModal({
   opened,
   onClose,
   onCreated,
 }: {
   opened: boolean;
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (name: string) => void;
 }) {
-  const t = useT();
   const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
-  const [protocol, setProtocol] = useState<AgentProtocol>("openai");
+  const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
-  const [rows, setRows] = useState<HeaderRow[]>([]);
+  const [departmentCode, setDepartmentCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const t = useT();
 
   /**
    * The modal is mounted for the life of the page — `opened` is a prop, not a
-   * mount — so the draft that just became an agent is still here when the next
-   * "Register agent" opens, headers and all.
+   * mount — so reset the draft after creating an Agent.
    */
   function reset() {
     setName("");
-    setUrl("");
-    setProtocol("openai");
+    setDisplayName("");
     setDescription("");
-    setRows([]);
+    setDepartmentCode("");
   }
 
   async function submit() {
     setSubmitting(true);
     setError(null);
     try {
-      await createAgent({ name, url, protocol, description, headers: rowsToRecord(rows) });
+      const project = await createProject({
+        name,
+        displayName: displayName || name,
+        description,
+        departmentCode: departmentCode || undefined,
+      });
       reset();
-      onCreated();
+      onCreated(project.name);
     } catch (err) {
-      setError(reportError(err, "Failed to register agent"));
+      setError(reportError(err, t("agents.createFailed")));
     } finally {
       setSubmitting(false);
     }
@@ -303,58 +208,44 @@ function RegisterAgentModal({
     <FormModal
       opened={opened}
       onClose={onClose}
-      title={t("agents.registerTitle")}
+      title={t("agents.new")}
       error={error}
       onSubmit={submit}
-      submitLabel={t("registry.register")}
+      submitLabel={t("agents.create")}
       submitting={submitting}
     >
       <TextInput
-        label={t("registry.nameLabel")}
+        label={t("agents.name")}
         value={name}
         onChange={(e) => setName(e.currentTarget.value)}
         onBlur={() => setName(toSlug(name))}
         placeholder={t("agents.namePlaceholder")}
         required
-        description={t("registry.nameHint")}
+        description={t("agents.nameHint")}
         inputWrapperOrder={["label", "input", "description", "error"]}
       />
-      <Select
-        label={t("agents.protocol")}
-        value={protocol}
-        onChange={(value) => setProtocol((value ?? "openai") as AgentProtocol)}
-        allowDeselect={false}
-        data={[
-          { value: "openai", label: "OpenAI-compatible" },
-          { value: "a2a", label: "A2A" },
-        ]}
-      />
       <TextInput
-        label={protocol === "a2a" ? t("agents.cardUrl") : t("registry.url")}
-        value={url}
-        onChange={(e) => setUrl(e.currentTarget.value)}
-        placeholder={
-          protocol === "a2a"
-            ? "https://example.com/.well-known/agent-card.json"
-            : "https://example.com/v1/chat/completions"
-        }
-        type="url"
-        required
+        label={t("agents.displayName")}
+        value={displayName}
+        onChange={(e) => setDisplayName(e.currentTarget.value)}
+        placeholder={t("agents.displayNamePlaceholder")}
       />
-      <TextInput
-        label={t("registry.description")}
+      <Textarea
+        label={t("agents.description")}
         value={description}
         onChange={(e) => setDescription(e.currentTarget.value)}
-        required
-        placeholder={t("agents.descriptionPlaceholder")}
+        autosize
+        minRows={3}
+        maxRows={12}
         description={t("agents.descriptionHint")}
         inputWrapperOrder={["label", "input", "description", "error"]}
       />
-
-      <HeaderRowsEditor
-        rows={rows}
-        onChange={setRows}
-        emptyHint={t("registry.headersEmpty")}
+      <TextInput
+        label={t("agents.departmentCode")}
+        value={departmentCode}
+        onChange={(e) => setDepartmentCode(e.currentTarget.value)}
+        placeholder="ENG"
+        description={t("agents.departmentHint")}
       />
     </FormModal>
   );

@@ -25,7 +25,6 @@ function artifact(over: Partial<Artifact> = {}): Artifact {
     mimeType: "image/png",
     byteSize: 1024,
     projectName: "poster-bot",
-    versionName: "v3",
     actor: { kind: "user", id: "bruce@daangn.com" },
     createdAt: CREATED,
     ...over,
@@ -143,7 +142,7 @@ describe("artifactOwnerEmail", () => {
     );
   });
 
-  it.each(["slack", "a2a", "webhook", "schedule"] as const)(
+  it.each(["slack", "webhook", "schedule"] as const)(
     "names nobody for a %s run — its id is a channel or a trigger, not a mailbox",
     (kind) => {
       expect(artifactOwnerEmail({ kind, id: "U123" })).toBeUndefined();

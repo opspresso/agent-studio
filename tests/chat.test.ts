@@ -629,7 +629,7 @@ describe("runAndPersist keeps the run's reasoning", () => {
   it("keeps the token count only beside the text it counts", async () => {
     // `toUsageInfo` reports whatever the provider says — only the *yield* is
     // gated — so a count stored on its own would land on every turn of every
-    // version that never opted in, where nothing renders it. A provider that
+    // configuration that never opted in, where nothing renders it. A provider that
     // reports the size and withholds the thinking is the engine's warning.
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     async function* source(): AsyncGenerator<EngineChunk> {
@@ -809,7 +809,6 @@ describe("chat access to a private project", () => {
         name: "p1",
         displayName: "P1",
         description: "",
-        projectType: "agent",
         ownerEmail: "someone-else@x.com",
         visibility: "private",
         memberEmails: ["invited@x.com"],
@@ -846,7 +845,7 @@ describe("chat access to a private project", () => {
 
   it("lets an invited member chat with a private project", async () => {
     const { repo } = makeChatRepo(chatFixture("invited@x.com"));
-    // Access passes; the missing version is the next check in line, which is
+    // Access passes; the missing configuration is the next check in line, which is
     // proof the visibility gate is what let the turn through.
     await expect(
       sendMessage(makeDeps(repo, { projects: privateProjects }), {
@@ -868,7 +867,6 @@ describe("chat image attachments", () => {
         name: "p1",
         displayName: "P1",
         description: "",
-        projectType: "agent",
         ownerEmail: "owner@x.com",
 
         createdAt: "2026-01-01T00:00:00.000Z",
@@ -1371,7 +1369,6 @@ describe("attached documents", () => {
         name: "agent",
         displayName: "Agent",
         description: "",
-        projectType: "agent",
         ownerEmail: "owner@x.com",
 
         createdAt: "2026-01-01T00:00:00.000Z",

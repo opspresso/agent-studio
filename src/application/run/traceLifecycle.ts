@@ -16,7 +16,6 @@ export function createTraceRecorder(
 ): TraceRecorder {
   return new TraceRecorder(traces, {
     projectName: project.name,
-    projectType: project.projectType,
     model: configuration.model,
     messageCount,
     ancestry: [...origin.ancestry],

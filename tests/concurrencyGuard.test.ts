@@ -2,32 +2,30 @@ import { describe, expect, it, vi } from "vitest";
 import {
   acquireRunSlot,
   ConcurrencyLimitError,
-  limitFor,
   type ConcurrencyGuardDeps,
   type ConcurrencyLimits,
 } from "@/application/run/concurrencyGuard";
 import { openRun, openTaskRun } from "@/application/run/runBracket";
 import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
-import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
+import { type RunActor } from "@/domain/execution/actor";
 import { TIER_LIMITS } from "@/domain/member/tiers";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 
-const LIMITS: ConcurrencyLimits = { perActor: 2, a2a: 5 };
+const LIMITS: ConcurrencyLimits = { perActor: 2 };
 
 const project: Project = {
   name: "p",
   displayName: "P",
   description: "",
-  projectType: "agent",
   ownerEmail: "owner@example.com",
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
 };
 
-/** Minimal version; the bracket reads only its model ids. */
+/** Minimal Agent configuration; the bracket reads only its model ids. */
 const configuration: AgentConfiguration = {
   projectName: "p",
 
@@ -94,18 +92,6 @@ function deps(overrides: Partial<ConcurrencyGuardDeps> = {}): ConcurrencyGuardDe
 
 const user: RunActor = { kind: "user", id: "a@example.com" };
 
-describe("limitFor", () => {
-  it("uses the per-actor limit for identified callers", () => {
-    expect(limitFor(LIMITS, user)).toBe(2);
-    expect(limitFor(LIMITS, { kind: "slack", id: "U1" })).toBe(2);
-    expect(limitFor(LIMITS, { kind: "project-token", id: "a@example.com" })).toBe(2);
-  });
-
-  it("gives A2A its own, because one identity stands for every caller", () => {
-    expect(limitFor(LIMITS, { kind: "a2a", id: A2A_ACTOR_ID })).toBe(5);
-  });
-});
-
 describe("acquireRunSlot", () => {
   it("admits runs up to the limit and refuses the next", async () => {
     const d = deps();
@@ -147,7 +133,7 @@ describe("acquireRunSlot", () => {
     // derived from `Date.now()` — a fake scale would never reach it.
     let clock = Math.floor(Date.now() / 1000);
     const slots = memorySlots(() => clock);
-    const d = { runSlots: slots.repo, limits: { perActor: 1, a2a: 1 } };
+    const d = { runSlots: slots.repo, limits: { perActor: 1 } };
     await acquireRunSlot(d, user);
     await expect(acquireRunSlot(d, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
     clock += RUN_LEASE_SECONDS + 1;
@@ -158,7 +144,7 @@ describe("acquireRunSlot", () => {
     let clock = Math.floor(Date.now() / 1000);
     const now = vi.spyOn(Date, "now").mockImplementation(() => clock * 1000);
     const slots = memorySlots(() => clock);
-    const d = { runSlots: slots.repo, limits: { perActor: 1, a2a: 1 } };
+    const d = { runSlots: slots.repo, limits: { perActor: 1 } };
     try {
       const expired = await acquireRunSlot(d, user);
       clock += RUN_LEASE_SECONDS + 1;
@@ -172,7 +158,7 @@ describe("acquireRunSlot", () => {
   });
 
   it("carries a 429 and a Retry-After shorter than the lease", async () => {
-    const d = { runSlots: memorySlots().repo, limits: { perActor: 1, a2a: 1 } };
+    const d = { runSlots: memorySlots().repo, limits: { perActor: 1 } };
     await acquireRunSlot(d, user);
     const thrown = await acquireRunSlot(d, user).then(
       () => null,
@@ -204,7 +190,7 @@ describe("acquireRunSlot", () => {
   });
 
   it("treats a zero limit as off rather than as a total block", async () => {
-    const d = { runSlots: memorySlots().repo, limits: { perActor: 0, a2a: 0 } };
+    const d = { runSlots: memorySlots().repo, limits: { perActor: 0 } };
     await expect(acquireRunSlot(d, user)).resolves.toBeDefined();
   });
 
@@ -245,7 +231,7 @@ describe("acquireRunSlot", () => {
 });
 
 describe("acquireRunSlot with a member tier", () => {
-  const roomy = () => ({ runSlots: memorySlots().repo, limits: { perActor: 10, a2a: 10 } });
+  const roomy = () => ({ runSlots: memorySlots().repo, limits: { perActor: 10 } });
   // Derived, not restated: the number is TIER_LIMITS's to change.
   const guestCeiling = TIER_LIMITS.guest.maxConcurrentRuns!;
 
@@ -270,7 +256,7 @@ describe("openRun with a tier resolver", () => {
     const d = {
       usage,
       runSlots: memorySlots().repo,
-      limits: { perActor: 10, a2a: 10 },
+      limits: { perActor: 10 },
       resolveActorTier: async () => "guest" as const,
     };
     const admitted = [];
@@ -288,7 +274,7 @@ describe("openRun with a tier resolver", () => {
     const d = {
       usage,
       runSlots: memorySlots().repo,
-      limits: { perActor: 10, a2a: 10 },
+      limits: { perActor: 10 },
       resolveActorTier: async () => {
         throw new Error("member store down");
       },
@@ -304,11 +290,11 @@ describe("openRun with a tier resolver", () => {
 });
 
 describe("openRun with a concurrency limit", () => {
-  it("shares slots with Workspace tasks that have no model Version", async () => {
+  it("shares slots with Workspace tasks that have no Agent model", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-14T00:00:00Z"));
     try {
-      const d = { usage, runSlots: memorySlots().repo, limits: { perActor: 1, a2a: 1 } };
+      const d = { usage, runSlots: memorySlots().repo, limits: { perActor: 1 } };
       const task = await openTaskRun(d, project, user);
       await expect(openRun(d, project, configuration, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
       await task.close({ failed: true });

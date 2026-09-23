@@ -70,7 +70,6 @@ beforeEach(() => {
   projectGet.mockResolvedValue({
     name: "proj",
     ownerEmail: "owner@example.com",
-    projectType: "agent",
     configuration: {
     projectName: "proj",
     systemPrompt: "",

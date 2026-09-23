@@ -11,11 +11,10 @@ import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 const OWNER = "owner@x.com";
 const CLONER = "cloner@x.com";
 
-// Every reference a copied version names resolves; existence is not under test.
+// Every reference in the copied Agent configuration resolves; existence is not under test.
 const RESOLVING_REFS = {
   skills: { get: async () => ({}) },
   mcps: { get: async () => ({}) },
-  externalAgents: { get: async () => ({}) },
   projects: { get: async () => ({}) },
 } as unknown as ConfigurationRefRepos;
 
@@ -24,7 +23,6 @@ function sourceProject(overrides: Partial<Project> = {}): Project {
     name: "source",
     displayName: "Source",
     description: "the original",
-    projectType: "agent",
     ownerEmail: OWNER,
     departmentCode: "eng",
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -50,7 +48,7 @@ function sourceConfiguration(overrides: Partial<AgentConfiguration> = {}): Agent
       },
     ],
     skillList: ["summarize"],
-    subagentList: [{ name: "helper", type: "local" }],
+    subagentList: [{ name: "helper" }],
     maxTurn: 5,
 
     ...overrides,
@@ -91,11 +89,9 @@ describe("cloneProject", () => {
       name: "copy",
       displayName: "Copy",
       description: "the original",
-      projectType: "agent",
       ownerEmail: CLONER,
       departmentCode: "eng",
     });
-    expect(project).not.toHaveProperty("publishedVersion");
     const copied = [repos.projectsByName.get("copy")!.configuration];
     expect(copied).toHaveLength(1);
     expect(copied[0]).toMatchObject({
@@ -103,7 +99,7 @@ describe("cloneProject", () => {
       systemPrompt: "be helpful",
       model: "openai/gpt-5-mini",
       skillList: ["summarize"],
-      subagentList: [{ name: "helper", type: "local" }],
+      subagentList: [{ name: "helper" }],
       maxTurn: 5,
     });
   });
@@ -129,11 +125,10 @@ describe("cloneProject", () => {
     const repos = makeRepos([sourceProject()], [sourceConfiguration()]);
     const clone = composeCloneProject({
       projects: repos.projectRepo,
-        // Every reference the copied version names fails to resolve.
+      // Every reference in the source Agent configuration fails to resolve.
       refs: {
         skills: { get: async () => null },
         mcps: { get: async () => null },
-        externalAgents: { get: async () => null },
         projects: { get: async () => null },
       } as unknown as ConfigurationRefRepos,
       cipher: secretCipher,

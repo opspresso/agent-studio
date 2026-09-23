@@ -250,10 +250,6 @@ const APP_WIRING_SITES = [
   "src/app/api/telegram/webhook/_lib/",
   // And the Teams messaging endpoint's, over the same shape.
   "src/app/api/teams/messages/_lib/",
-  // Assembles the A2A SDK handler over `executionDeps` per request —
-  // AGENTS.md's fourth wiring site (the composition root being the first).
-  // Absent from this list it passed only because no banned name crossed it yet.
-  "src/app/api/a2a/[name]/route.ts",
   // The boot path: validates config, then composes the startup audit row and
   // the managed-MCP resume directly — a wiring site by construction, since the
   // composition root itself is not loaded until this file decides the runtime
@@ -267,7 +263,7 @@ const APP_WIRING_SITES = [
  * those contracts as ports would recreate the agent runtime being replaced.
  * Network clients and credential resolution still live in infrastructure.
  */
-const PROTOCOL_SDKS = ["@a2a-js/", "@openai/agents"];
+const PROTOCOL_SDKS = ["@openai/agents"];
 
 const RULES: Rule[] = [
   {
@@ -284,7 +280,7 @@ const RULES: Rule[] = [
     // better-auth`), which left `zod`, `openai`, the MCP SDK and every other
     // package legal in the one layer whose doctrine is pure TS. The same
     // reverse rule as application's below, minus the protocol exception —
-    // domain does not even get the A2A SDK.
+    // domain cannot depend on SDK contracts.
     name: "domain imports only the domain and the standard library",
     from: "domain",
     banned: (spec) =>
@@ -307,13 +303,8 @@ const RULES: Rule[] = [
     // a client, a parser or a framework is an adapter that has not admitted it
     // yet, and it arrives as a `import type` nobody reads twice.
     //
-    // Protocol SDKs are the one exception, named rather than allowlisted.
-    // `a2a/executor.ts` implements the SDK's
-    // `AgentExecutor` and `a2a/exposure.ts` returns its `AgentCard`, so A2A's
-    // shape does reach the use case. A port there would restate the protocol's
-    // task lifecycle in our own types to gain nothing — there is one
-    // implementation of A2A and there will be one. The same ownership applies
-    // to the Agents SDK: Runner owns tool turns, approvals and handoffs. Studio
+    // The Agents SDK is the runtime exception: Runner owns tool turns,
+    // approvals and handoffs. Studio
     // owns admission, capabilities and persistence around that native runtime.
     name: "application imports only the domain and the standard library",
     from: "application",
@@ -574,7 +565,7 @@ const CLIENT_SAFE_LIB = ["@/lib/auth-client"];
  * The directive marks an entry, not the boundary. A module with no directive of
  * its own is compiled into the client bundle as soon as a client component
  * imports it, and one already sits in exactly that position:
- * `src/app/projects/lib/api.ts` is imported by ~19 client components and imports
+ * `src/app/agents/lib/api.ts` is imported by ~19 client components and imports
  * `@/application/trigger/triggerUseCases` — type-only today, therefore erased,
  * and one word away from not being. Checking only the marked files would have
  * called that clean.
@@ -614,7 +605,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(120);
+    expect(entries.length).toBe(114);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/chats/_components/PendingApproval.tsx",
       "src/app/chats/_components/NewChatEntry.tsx",
@@ -623,8 +614,8 @@ describe("the client bundle", () => {
       "src/app/workspaces/_components/WorkspacePanel.tsx",
       "src/app/workspaces/_components/WorkspaceActions.tsx",
       "src/app/workspaces/_components/WorkspaceRepositoryPolicySection.tsx",
-      "src/app/projects/[name]/workspace/page.tsx",
-      "src/app/projects/[name]/_components/ProjectWorkspaceContext.tsx",
+      "src/app/agents/[name]/workspace/page.tsx",
+      "src/app/agents/[name]/_components/ProjectWorkspaceContext.tsx",
       "src/app/models/WorkspaceModelsSection.tsx",
       "src/app/models/ModelEditor.tsx",
       "src/app/models/ModelCollection.tsx",
@@ -635,22 +626,21 @@ describe("the client bundle", () => {
       "src/app/_components/PageTabs.tsx",
       "src/app/_components/SecretInput.tsx",
       "src/app/_components/SecretControl.tsx",
-      "src/app/settings/SharedA2aKeySection.tsx",
       "src/app/settings/models/registered/page.tsx",
       "src/app/settings/providers/page.tsx",
       "src/app/settings/models/page.tsx",
       "src/app/settings/model-usage/page.tsx",
       "src/app/workspaces/_lib/useWorkspace.ts",
-      "src/app/projects/[name]/_components/RuntimePolicyEditor.tsx",
-      "src/app/projects/[name]/audio/page.tsx",
-      "src/app/projects/[name]/_components/SourceMappings.tsx",
-      "src/app/projects/[name]/_components/ProjectAudioContext.tsx",
+      "src/app/agents/[name]/_components/RuntimePolicyEditor.tsx",
+      "src/app/agents/[name]/audio/page.tsx",
+      "src/app/agents/[name]/_components/SourceMappings.tsx",
+      "src/app/agents/[name]/_components/ProjectAudioContext.tsx",
     ]));
     expect(entries.map((file) => file.path)).toContain(
-      "src/app/projects/[name]/_components/PromptPreview.tsx",
+      "src/app/agents/[name]/_components/PromptPreview.tsx",
     );
     // The directive-less module the reachability walk exists for.
-    expect(reachable.map((file) => file.path)).toContain("src/app/projects/lib/api.ts");
+    expect(reachable.map((file) => file.path)).toContain("src/app/agents/lib/api.ts");
   });
 
   it("reaches no application, infrastructure or server-side lib module", () => {
@@ -749,7 +739,7 @@ describe("response shapes", () => {
     // decides which files are the browser's.
     expect(producerNames.has("SkillSummary")).toBe(true);
     expect(producerNames.has("ArtifactPage")).toBe(true);
-    expect(reachable.map((file) => file.path)).toContain("src/app/projects/lib/api.ts");
+    expect(reachable.map((file) => file.path)).toContain("src/app/agents/lib/api.ts");
     expect(declaredTypes('export interface X {\n  a: string;\n}')).toEqual(["X"]);
     // An alias names a type rather than restating it, and is not a declaration.
     expect(declaredTypes("export type ImageResult = GenerateImageOutput;")).toEqual([]);
@@ -801,47 +791,20 @@ describe("a run's ending", () => {
   });
 });
 
-/**
- * Repositories the presentation layer no longer composes.
- *
- * The `app` layer is barred from `infrastructure`, so a route reached for a
- * repository through the composition root instead — and twenty of them did,
- * importing `projectRepository` only to hand it straight back to
- * `getProject(projectRepository, name)`. Legal under every rule above, and
- * still a route handler making a composition decision: which repository, which
- * cipher, which registry lookups a version's references are validated against.
- * `refs` is what stops a version storing a dangling skill reference, and nothing
- * but convention had each caller passing it.
- *
- * The mcp, skill, agent, member and trigger slices never had this — they export
- * a `createXUseCases` factory that the composition root calls once. The project,
- * version, API-token and project-Slack slices now do too, and the free functions
- * they wrap stay exported for the application modules that already hold a
- * repository of their own.
- *
- * A name is added to this list when its slice is converted, not before: a
- * blanket ban would fail on `traceRepository` and `usageRepository`, whose
- * slices have not been through this yet, and a rule that cannot be satisfied is
- * a rule that gets deleted.
- */
-const REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE = [
+/** Routes receive bound use cases; these dependencies are selected at wiring sites. */
+const ROUTE_BOUND_DEPENDENCIES = [
   "projectRepository",
   "traceRepository",
   "usageRepository",
   "secretCipher",
-  // Not a repository but the same decision: eight routes reached into
-  // `artifactStorage.objects.sign` to pick the signer that addresses a file,
-  // two of them right after guarding on `artifactUseCases` — re-deriving from
-  // the store what the use case they had just called was built from. The root
-  // exports `signArtifactUrl`; the store itself stays where a wiring site needs
-  // the pair (the composition root supplies both halves to shared chat deps).
+  // Routes use the composition root's signer for artifact addresses.
   "artifactStorage",
 ];
 
 describe("composition in the app layer", () => {
   const wiringSite = (path: string) => APP_WIRING_SITES.some((site) => path.startsWith(site));
 
-  it.each(REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE)("%s reaches no route handler", (name) => {
+  it.each(ROUTE_BOUND_DEPENDENCIES)("%s reaches no route handler", (name) => {
     const found = SOURCE_FILES.filter(
       (file) =>
         layerOf(file.path) === "app" &&
@@ -851,7 +814,7 @@ describe("composition in the app layer", () => {
     expect(found.sort()).toEqual([]);
   });
 
-  it.each(REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE)(
+  it.each(ROUTE_BOUND_DEPENDENCIES)(
     "%s still reaches a wiring site or the composition root",
     (name) => {
       // Otherwise a rename would empty the rule above and read as a clean pass —
@@ -977,23 +940,9 @@ describe("application slice graph", () => {
 });
 
 /**
- * An optional field on `ExecutionDeps` is how a feature is off — and how a
- * forgotten wire looks exactly like a feature that is off. That shape has bitten
- * before: `resolveRunTools` took its discovery queries as an optional argument,
- * two call sites omitted them, and a version's `dynamicCapabilities` read as on
- * while the search never ran (`TOOL_RESOLUTION_SITES` is the patch over that
- * instance). `mcpConnections` is the same shape today — absent, discovery
- * treats every OAuth server as unconnected, silently.
- *
- * The composition root is the only production builder of the bag, so the rule
- * is checkable there: every optional field must be *named* in `container.ts` —
- * a conditional spread (`...(x ? { catalog: … } : {})`) still names it, which
- * is exactly the distinction wanted. "This deployment turned it off" appears in
- * the source; "nobody thought about it" does not.
- *
- * Only `ExecutionDeps`' own declaration block is parsed; fields inherited from
- * `RunBracketDeps` arrive through an intersection this regex cannot see, and
- * each of those is exercised by the run-bracket tests instead.
+ * Every optional execution dependency is explicitly named by the composition root.
+ * A missing wire otherwise looks like a disabled capability. Inherited
+ * `RunBracketDeps` fields are covered by the run-bracket tests.
  */
 describe("execution deps wiring", () => {
   it("the composition root decides every optional field by name", () => {
@@ -1262,7 +1211,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
   {
     // Every optional env read spelled this `|| undefined`, and whitespace went
     // through all of them: a secret mounted from a file carries a trailing
-    // newline, so `A2A_API_KEY=" "` passed the boot guard, showed as
+    // newline, so a whitespace-only secret appeared configured,
     // `source: "env"` on the settings page, and 401'd every request. A second
     // copy is how the page and the runtime end up disagreeing about whether a
     // variable is set — which is the direction the bug already ran, since an
@@ -1360,7 +1309,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // client module and cannot import the route helper that owns it.
     alsoAllowedUnder: [
       "src/app/api/projects/_lib/conversation.ts",
-      "src/app/projects/[name]/api-reference/endpoints.ts",
+      "src/app/agents/[name]/api-reference/endpoints.ts",
     ],
   },
   {
@@ -1384,7 +1333,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
   {
     // How a conversation is built from a surface's id and spelled as a key.
     // Every surface has its own builder (`chatConversation`,
-    // `slackConversation`, `telegramConversation`, `a2aConversation`,
+    // `slackConversation` and `telegramConversation`,
     // `requestConversation`), and each goes through these two — a surface normalising or spelling its own would
     // present a memory server with a key nothing else can match.
     what: "how a run's conversation is built and keyed",
@@ -1497,17 +1446,6 @@ const SINGLE_OWNERS: SingleOwner[] = [
     alsoAllowedUnder: ["src/shared/detachOnReturn.ts"],
   },
   {
-    // The protocol's lifecycle — a run opened, closed or failed — is emitted by
-    // the one translator that also knows what is still open when it ends (a
-    // text message, a reasoning block, a subagent's step). A second emitter
-    // would close none of those, and a client rejects a run that finishes
-    // with a message still open. The domain declares the shapes with a
-    // semicolon; this matches the object literal a producer writes.
-    what: "emitting an AG-UI run's lifecycle events",
-    pattern: /type: "RUN_(STARTED|FINISHED|ERROR)",/,
-    owner: "src/application/agui/events.ts",
-  },
-  {
     // Two consumers derived this identically, and they would have drifted the
     // moment one of them had to track more than one chain at a time — which is
     // exactly what dispatching several agents at once made necessary.
@@ -1559,12 +1497,8 @@ const SINGLE_OWNERS: SingleOwner[] = [
     ],
   },
   {
-    // The builders each had one owner; the *arguments* did not. `runAgent` and
-    // the Playground preview spelled out eight and seven positional arguments
-    // apiece, and had already drifted — the preview omitted the eighth, so a
-    // version that opted into `callerContext` previewed a prompt one block
-    // short of what every real run sends. `assembleAgentRun` is the one caller
-    // now, and a second one fails here.
+    // Runtime execution and Playground preview use the same assembly for
+    // their prompt and offered tools.
     what: "how an agent run's prompt and tool set are assembled",
     pattern: /build(?:AgentSystemPrompt|AgentTools)\(\{/,
     owner: "src/application/llm/agentAssembly.ts",
@@ -1648,7 +1582,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
       // The API-reference page ships a Node.js SDK sample *containing* a
       // `console.log` call. It is text shown to a user, not a call this app
       // makes.
-      "src/app/projects/[name]/api-reference/",
+      "src/app/agents/[name]/api-reference/",
       // The error boundaries, for the same reason `domain` is exempt: they
       // cannot reach the owner. `logger.ts` imports `node:async_hooks` for the
       // run correlation id, which no browser has — and a boundary that caught
@@ -1767,13 +1701,8 @@ const SINGLE_OWNERS: SingleOwner[] = [
     within: "src/application/runtime/",
   },
   {
-    // Whether a run's prompt may name the person asking. Three modules answered
-    // it — the two runners and the Playground preview — and the preview's copy
-    // ran on one of its two branches, so a prompt project previewed anonymously
-    // however its version was configured. The pattern matches the conjunction,
-    // which is what a copy of the gate looks like; Slack's separate
-    // `parameters.callerContext ? …` is a different question (whether to make
-    // the profile lookup at all) and is deliberately not matched.
+    // `callerFor` is the sole gate for putting caller identity in a prompt.
+    // A surface's decision to look up a profile is separate.
     what: "whether a run's prompt may name its caller",
     pattern: /callerContext && /,
     owner: "src/application/execution/deps.ts",
@@ -1908,7 +1837,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
   },
   {
     // What a surface with no platform history remembers of a conversation:
-    // read within a budget, written bounded, names read only for a version
+    // read within a budget, written bounded, names read only for an Agent
     // still opted in. Two surfaces need it identically; the drop sentence is
     // the pattern because it is the half a copy would spell differently.
     what: "how a chat bot with no platform history reads and writes its transcript",
@@ -2074,27 +2003,15 @@ describe("image calls", () => {
 /**
  * Who keeps what a run produced.
  *
- * Four functions admit a top-level run and every one of them can produce bytes,
- * so the recorder is built by the bracket they all open — the same seam the cost
- * and concurrency guards use, and for the same reason. Attaching it to
- * `generateImage` instead would have covered a quarter of the cases: an image
- * reaches the stream from four producers (an image project, the
- * GenerateImage/EditImage builtins, an image subagent, an MCP tool that returned
- * one) and only the first is that use case.
- *
- * The second assertion is the load-bearing one. A fifth entry point that opens a
- * bracket and never captures would drop its output silently — the run works, the
- * gallery is simply missing it — which is exactly the failure that made the
- * original chat-only storage invisible for years.
+ * The run bracket owns the recorder for every top-level run. Agent tools,
+ * delegated Agents and MCP tools can all produce bytes, so each bracket
+ * opener must capture the shared stream's output.
  */
 const ARTIFACT_CAPTURE_SITES = [
   // Builds the recorder, with the run's identity bound once.
   "src/application/run/runBracket.ts",
   // Wraps the agent stream, where every producer's bytes converge.
   "src/application/execution/runProject.ts",
-  // `generateImage.ts` is deliberately absent: it records the single result an
-  // image project answers with, but reaches it through `bracket.artifacts`
-  // rather than importing the module. The bracket check below is what holds it.
 ];
 
 /**
@@ -2183,27 +2100,10 @@ describe("run artifacts", () => {
 /**
  * The two output axes travel together.
  *
- * `EngineChunk.file` is its own axis because a DOCX is not a picture — ten
- * consumers know `chunk.image` and would have uploaded one to Slack as one. But
- * being its own axis is exactly how it went missing: the field was added with
- * the chat view in mind and reached nowhere else, so `/predict`, both OpenAI
- * shapes, A2A, Slack and a trigger's history row each read the image beside it
- * and dropped the file on the floor. The document was stored as an artifact and
- * the caller was never told it existed — and because every one of those surfaces
- * *does* answer with images, nothing about them said files were different.
- *
- * So the rule is a pairing rather than a list: a module that reads one output
- * axis reads the other. What it then does with them is its own business —
- * Slack links a file and uploads a picture, A2A addresses one by uri and inlines
- * the other's bytes — and none of those differences is what this catches. What
- * it catches is a seventh surface reading only `chunk.image`, which is the exact
- * shape of every one of the six.
- *
- * The exemptions are the places whose subject really is one axis: the image
- * pipeline itself, and the client-side wire shapes that mirror one field.
+ * Every consumer of `EngineChunk.image` also handles `EngineChunk.file`.
+ * The exemptions only read one axis by design.
  */
 const ONE_AXIS_ON_PURPOSE = [
-  // The image use case and its channel: an image project's whole output.
   // Reads a turn's *attached* images, which have no file counterpart — a
   // document a person attaches becomes text before it reaches a turn.
   "src/application/llm/imageParts.ts",
@@ -2268,22 +2168,15 @@ describe("what a run produced", () => {
 /**
  * Who folds a run's thinking.
  *
- * `delta.reasoningContent` is the one axis a version can switch off, so unlike
- * the answer beside it a surface cannot tell "this run did not think" from "I
- * am not reading it" — which is how it reached nowhere at all for as long as it
- * did, emitted by the engine and consumed by no one.
+ * `delta.reasoningContent` is opt-in display output. Each consumer keeps
+ * top-level reasoning and its token count.
  *
- * Each consumer keeps top-level reasoning and its token count. The Playground
- * paces component state updates; the chat store paces its own notifications.
+ * The Playground paces component state updates; the chat store paces its own notifications.
  */
 const REASONING_FOLD_SITES = [
   "src/application/chat/run.ts",
   "src/app/chats/_lib/stream.ts",
-  "src/app/projects/[name]/_components/RunPanel.tsx",
-  // Forwards it as the protocol's REASONING_* events rather than folding it,
-  // but the same two of the three decisions apply: top level only, and the
-  // token count beside it (on RUN_FINISHED's usage).
-  "src/application/agui/events.ts",
+  "src/app/agents/[name]/_components/RunPanel.tsx",
 ];
 
 describe("folding a run's reasoning", () => {
@@ -2294,8 +2187,7 @@ describe("folding a run's reasoning", () => {
       (file) =>
         file.path.startsWith("src/app/") ||
         file.path.startsWith("src/application/chat/") ||
-        file.path.startsWith("src/application/messaging/") ||
-        file.path.startsWith("src/application/agui/"),
+        file.path.startsWith("src/application/messaging/"),
     )
       .filter((file) => folds(stripComments(file.text)))
       .map((file) => file.path)
@@ -2304,8 +2196,8 @@ describe("folding a run's reasoning", () => {
     // shape declares it, the run log substitutes a note for it, and the API
     // reference lists it among the frames `/agent` sends.
     expect(found).toEqual([
+      "src/app/agents/[name]/api-reference/endpoints.ts",
       "src/app/chats/_lib/types.ts",
-      "src/app/projects/[name]/api-reference/endpoints.ts",
       "src/application/chat/runLog.ts",
     ]);
   });
@@ -2327,8 +2219,6 @@ describe("folding a run's reasoning", () => {
     const PACED_BY_SOMETHING_ELSE = [
       "src/application/chat/run.ts",
       "src/app/chats/_lib/stream.ts",
-      // A wire translator holds nothing in component state.
-      "src/application/agui/events.ts",
     ];
     const unpaced = REASONING_FOLD_SITES.filter(
       (path) => !PACED_BY_SOMETHING_ELSE.includes(path),
@@ -2341,33 +2231,11 @@ describe("folding a run's reasoning", () => {
 });
 
 /**
- * Who may start an agent run.
- *
- * The same shape as the image list above, for the other half of the facade.
- * `executeAgent` is safe to call directly — it refuses a non-agent project
- * itself, which is the check `/agent` was the one caller to lack — so five
- * surfaces do: the `/agent` route, and the four `runAgent` bindings that let a
- * chat, a Slack thread, a Telegram chat and a Teams conversation inject the
- * facade at their own wiring site.
- *
- * What that costs is that "how a run is entered" has more than one place, while
- * "which project type runs which way" has exactly one (`runStrategyFor`). A
- * policy that belongs at the entry — a per-surface input cap, a rate limit —
- * therefore has five homes and nothing saying where they are. This is that
- * statement, and it is why a sixth is added here on purpose.
- *
- * Keyed on the import rather than on the text: `chat/deps.ts` and `slack/types.ts`
- * both name `executeAgent` in a doc comment describing what their injected
- * `runAgent` is bound to. Those are descriptions of the boundary, not crossings
- * of it, and a list that included them would come to mean "files that mention
- * it".
- *
- * A surface that can render any project type calls `streamProjectRun`; one that
- * answers with a completion calls `executeProject`/`executeProjectStream`. Both
- * reach the agent loop through `runStrategyFor` and neither belongs here.
+ * Direct `executeAgent` entry points. Chunk and completion consumers use the
+ * execution facade; every entry opens the shared run bracket.
  */
 const AGENT_RUN_ENTRY_POINTS = [
-  // Answers with SSE chunks, for a caller driving one version directly.
+  // Answers with SSE chunks for one Agent.
   "src/app/api/projects/[name]/agent/route.ts",
   // Binds `ChatDeps.runAgent`; the chat use cases never see the facade.
   "src/lib/container.ts",
@@ -2379,20 +2247,7 @@ const AGENT_RUN_ENTRY_POINTS = [
   "src/app/api/teams/messages/_lib/handleActivityRequest.ts",
 ];
 
-/**
- * Everywhere a version's tools are resolved, and what each one has to remember.
- *
- * `resolveRunTools` takes its search queries as an *optional* fourth argument,
- * and a caller that omits it gets a run with capability discovery silently
- * switched off — the version's `dynamicCapabilities` still reads as on, the
- * bindings still resolve, and nothing anywhere says the search never happened.
- * That is not a hypothetical: two of these three shipped without it. The
- * subagent path ran every transferred-to child on its bindings alone, and the
- * preview showed a prompt smaller than the run it claims to describe.
- *
- * So the callers are a bounded list, like the agent-run entry points above, and
- * a fourth is added here on purpose — with `discoveryQueries` in hand.
- */
+/** Every tool-resolution caller passes discovery queries so opted-in search runs. */
 const TOOL_RESOLUTION_SITES = [
   // The top-level agent run; queries come from the newest user turn.
   "src/application/execution/runProject.ts",
@@ -2786,14 +2641,14 @@ describe("scanner", () => {
 
   it("lets application reach the domain and the standard library, and nothing else", () => {
     // The rule passes today because `application` imports `node:crypto` and the
-    // A2A SDK. Asserted directly so "it passes" cannot come to mean "it stopped
+    // Agents SDK. Asserted directly so "it passes" cannot come to mean "it stopped
     // matching" — a package name is the thing it has to keep recognising.
     const rule = RULES.find(
       (r) => r.name === "application imports only the domain and the standard library",
     )!;
     expect(rule.banned("@/domain/llm/types")).toBe(false);
     expect(rule.banned("node:crypto")).toBe(false);
-    expect(rule.banned("@a2a-js/sdk/server")).toBe(false);
+    expect(rule.banned("@openai/agents")).toBe(false);
     // The shapes it exists to stop: an SDK, a client, a parser, the framework.
     expect(rule.banned("@aws-sdk/client-dynamodb")).toBe(true);
     expect(rule.banned("openai")).toBe(true);

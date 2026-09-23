@@ -27,7 +27,6 @@ const project: Project = {
   name: "p",
   displayName: "P",
   description: "",
-  projectType: "agent",
   ownerEmail: "owner@example.com",
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
@@ -103,7 +102,7 @@ describe("assertModelsPriceable", () => {
     }
   });
 
-  it("passes a version whose models are both registered", () => {
+  it("passes an Agent whose models are both registered", () => {
     expect(() =>
       assertModelsPriceable("refuse", { model: REGISTERED, fallbackModel: REGISTERED }),
     ).not.toThrow();
@@ -112,7 +111,7 @@ describe("assertModelsPriceable", () => {
 
 describe("the run bracket enforces it", () => {
   it("refuses before the cost guard is consulted", async () => {
-    // The guard order is the point: a misconfigured version should not be told
+    // The guard order is the point: a misconfigured Agent should not be told
     // it is over budget, and should not queue for a slot it would lose anyway.
     let costReads = 0;
     const counting: UsageRepository = {
@@ -178,8 +177,8 @@ describe("the run bracket enforces it", () => {
 });
 
 describe("subagent preparation enforces model policy", () => {
-  const child: Project = { ...project, name: "child", projectType: "agent" };
-  const parent = configuration({ projectName: "parent", subagentList: [{ name: "child", type: "local" }] });
+  const child: Project = { ...project, name: "child" };
+  const parent = configuration({ projectName: "parent", subagentList: [{ name: "child" }] });
   function prepare(policy: UnknownModelPolicy | undefined, model: string) {
     const deps = {
       projects: withConfigurations({ get: async () => child }, ({ get: async () => configuration({ projectName: "child", model }) }).get),
@@ -191,9 +190,9 @@ describe("subagent preparation enforces model policy", () => {
     await expect(prepare("refuse", UNKNOWN)).rejects.toThrow("selected by an administrator");
   });
   it("prepares a registered model", async () => {
-    expect(await prepare("refuse", REGISTERED)).toMatchObject({ kind: "agent", input: { model: REGISTERED } });
+    expect(await prepare("refuse", REGISTERED)).toMatchObject({ input: { model: REGISTERED } });
   });
   it("allows unpriced models when no refusal policy is configured", async () => {
-    expect(await prepare(undefined, UNKNOWN)).toMatchObject({ kind: "agent", input: { model: UNKNOWN } });
+    expect(await prepare(undefined, UNKNOWN)).toMatchObject({ input: { model: UNKNOWN } });
   });
 });

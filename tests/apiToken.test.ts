@@ -45,7 +45,6 @@ function project(): Project {
     name: "my-bot",
     displayName: "My Bot",
     description: "",
-    projectType: "agent",
     ownerEmail: OWNER,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -89,17 +88,16 @@ describe("generated secret helpers", () => {
   });
 
   it("gives each kind a two-char vendor prefix plus one kind character", () => {
-    expect(secretPrefix("a2aApiKey")).toBe("asa_");
     expect(secretPrefix("projectApiToken")).toBe("ast_");
     // The kinds must stay distinguishable from the string alone.
-    expect(secretPrefix("a2aApiKey")).not.toBe(secretPrefix("projectApiToken"));
+    expect(secretPrefix("triggerSecret")).not.toBe(secretPrefix("projectApiToken"));
   });
 
   it("keeps full entropy after the prefix", () => {
-    const value = generateSecretValue("a2aApiKey");
+    const value = generateSecretValue("projectApiToken");
     // 32 random bytes as base64url = 43 chars, regardless of the prefix.
-    expect(value.slice("asa_".length)).toHaveLength(43);
-    expect(value).toMatch(/^asa_[A-Za-z0-9_-]{43}$/);
+    expect(value.slice("ast_".length)).toHaveLength(43);
+    expect(value).toMatch(/^ast_[A-Za-z0-9_-]{43}$/);
   });
 
   it("hashes deterministically and compares in constant time", () => {

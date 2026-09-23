@@ -31,7 +31,6 @@ const updateSchema = z.object({
     .optional(),
   pluginsRepoBranch: z.string().max(200).optional(),
   githubToken: z.string().max(4000).optional(),
-  a2aApiKey: z.string().max(4000).optional(),
   publicBaseUrl: z.string().max(4000).optional(),
   artifactAccessMode: z.enum(["authenticated", "public", "proxied", ""]).optional(),
   // An enum rather than a bounded string: the two values are the whole domain,

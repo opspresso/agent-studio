@@ -55,15 +55,12 @@ export const POST = withMemberAuth(async (user, request: Request, ctx: RouteCont
         // against the stored Agent, exactly as the save path does.
         mcpList: await configurationUseCases.resolveDraftBindings(name, draft.mcpList, user.email),
         projectName: name,
-        // The draft may not be saved yet, so it has no name or timestamp of its
-        // own; neither reaches the assembled prompt.
+        // The draft's Project identity is bound to the requested Agent.
       },
       // What memory recall and capability discovery search with.
       ...(message ? { message } : {}),
       actor: { kind: "user", id: user.email },
-      // The person looking at the preview is the one a run started from this
-      // page would name. Without it the Playground showed a prompt one block
-      // short of what the Agent actually sends.
+      // Preview uses the same caller identity as a run started from this page.
       ...(caller ? { caller } : {}),
     });
     return Response.json(preview);

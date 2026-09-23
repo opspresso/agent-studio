@@ -26,7 +26,7 @@ describe("agent prompt clock", () => {
     );
   });
 
-  it("carries the clock when the version has no prompt of its own", () => {
+  it("carries the clock when the Agent has no prompt of its own", () => {
     expect(buildAgentSystemPrompt({ ...NO_BINDINGS, now: NOW })).toBe(CLOCK_LINE);
   });
 

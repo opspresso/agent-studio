@@ -1,18 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * `GET /api/me` is the console's only source of truth about the caller, and the
- * two admin questions it answers are not the same question.
- *
- * It sent one flag once, and the console's project edit gate read it. On a
- * deployment with no `ADMIN_EMAILS` that flag is true for everybody — `isAdminEmail`
- * means "no restriction" — while `assertProjectWritable` gates on `isConfiguredAdmin`,
- * which is false for everybody. Every signed-in user was handed an editable settings
- * form, a Create-version button and an owner-gated Slack fetch for every project,
- * and every one of them 403'd. These cases pin the divergence.
- *
- * The list is steered through `ADMIN_EMAILS` so the real rule runs; the settings
- * row is unreachable here because `tests/setup.ts` stubs the DynamoDB client.
+ * `GET /api/me` reports both registry administration and the configured
+ * administrator role. With no `ADMIN_EMAILS`, registry access is unrestricted,
+ * while ownership overrides remain unavailable. The console uses both flags
+ * for the Agent settings gate.
  */
 const { authMock } = vi.hoisted(() => ({ authMock: { getSession: vi.fn() } }));
 

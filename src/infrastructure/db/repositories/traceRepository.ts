@@ -12,8 +12,6 @@ function fromItem(item: Record<string, unknown>): Trace {
   return {
     traceId: String(item.traceId ?? ""),
     projectName: String(item.projectName ?? ""),
-    ...(typeof item.versionName === "string" ? { versionName: item.versionName } : {}),
-    projectType: String(item.projectType ?? ""),
     ...(Array.isArray(item.ancestry) ? { ancestry: item.ancestry as string[] } : {}),
     ...(item.actor ? { actor: item.actor as Trace["actor"] } : {}),
     ...(typeof item.conversation === "string" ? { conversation: item.conversation } : {}),

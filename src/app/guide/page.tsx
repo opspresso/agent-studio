@@ -7,6 +7,7 @@ import {
   IconLifebuoy,
   IconMicrophone,
   IconPlugConnected,
+  IconRobot,
   IconRoute,
   IconVocabulary,
   IconTerminal2,
@@ -40,21 +41,21 @@ const SECTIONS: readonly GuideSection[] = [
     ],
     links: [
       { href: "/chats", label: "nav.chats" },
-      { href: "/projects", label: "nav.projects" },
+      { href: "/agents", label: "nav.agents" },
       { href: "/profile", label: "nav.profile" },
     ],
   },
   {
-    id: "projects",
-    title: "guide.projects.title",
-    body: "guide.projects.body",
-    Icon: IconBook2,
+    id: "agents",
+    title: "guide.agents.title",
+    body: "guide.agents.body",
+    Icon: IconRobot,
     entries: [
-      { title: "guide.projects.agent", body: "guide.projects.agentBody" },
-      { title: "guide.projects.image", body: "guide.projects.imageBody" },
+      { title: "guide.agents.agent", body: "guide.agents.agentBody" },
+      { title: "guide.agents.image", body: "guide.agents.imageBody" },
     ],
     links: [
-      { href: "/projects", label: "nav.projects" },
+      { href: "/agents", label: "nav.agents" },
     ],
   },
   {
@@ -86,7 +87,6 @@ const SECTIONS: readonly GuideSection[] = [
     links: [
       { href: "/skills", label: "nav.skills" },
       { href: "/tools", label: "nav.tools" },
-      { href: "/agents", label: "nav.agents" },
       { href: "/plugins", label: "nav.plugins" },
     ],
   },
@@ -125,7 +125,7 @@ const SECTIONS: readonly GuideSection[] = [
       { title: "guide.workspaces.results", body: "guide.workspaces.resultsBody" },
       { title: "guide.workspaces.lifecycle", body: "guide.workspaces.lifecycleBody" },
     ],
-    links: [{ href: "/chats", label: "nav.chats" }, { href: "/projects", label: "nav.projects" }],
+    links: [{ href: "/chats", label: "nav.chats" }, { href: "/agents", label: "nav.agents" }],
   },
   {
     id: "execution-surfaces",
@@ -155,7 +155,7 @@ const SECTIONS: readonly GuideSection[] = [
       { title: "guide.audio.reset", body: "guide.audio.resetBody" },
     ],
     links: [
-      { href: "/projects", label: "nav.projects" },
+      { href: "/agents", label: "nav.agents" },
       { href: "/artifacts", label: "nav.artifacts" },
     ],
   },
@@ -173,7 +173,7 @@ const SECTIONS: readonly GuideSection[] = [
       { title: "guide.api.result", body: "guide.api.resultBody" },
     ],
     links: [
-      { href: "/projects", label: "nav.projects" },
+      { href: "/agents", label: "nav.agents" },
     ],
   },
   {
@@ -184,7 +184,6 @@ const SECTIONS: readonly GuideSection[] = [
     entries: [
       { title: "guide.integrations.slack", body: "guide.integrations.slackBody" },
       { title: "guide.integrations.messengers", body: "guide.integrations.messengersBody" },
-      { title: "guide.integrations.a2a", body: "guide.integrations.a2aBody" },
       { title: "guide.integrations.webhook", body: "guide.integrations.webhookBody" },
       { title: "guide.integrations.schedule", body: "guide.integrations.scheduleBody" },
     ],
@@ -202,7 +201,7 @@ const SECTIONS: readonly GuideSection[] = [
     links: [
       { href: "/artifacts", label: "nav.artifacts" },
       { href: "/profile", label: "nav.profile" },
-      { href: "/projects", label: "nav.projects" },
+      { href: "/agents", label: "nav.agents" },
     ],
   },
   {

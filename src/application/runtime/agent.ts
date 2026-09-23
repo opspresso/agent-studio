@@ -1,14 +1,14 @@
-import { Agent, Handoff, RunInputItem, RunContext, getCurrentSpan, tool, type AgentOutputType, type JsonSchemaDefinition, type AgentInputItem } from "@openai/agents";
+import { Agent, Handoff, RunInputItem, RunContext, getCurrentSpan, type AgentOutputType, type JsonSchemaDefinition, type AgentInputItem } from "@openai/agents";
 import { randomUUID } from "node:crypto";
 import { ValidationError } from "@/application/errors";
 import { assembleAgentRun, AGENT_TASK_SCHEMA, type ImageHandle, type ImageSequence } from "@/application/llm/agentAssembly";
 import { createToolResultBudget, MAX_TOOL_RESULT_CHARS_PER_TURN } from "@/application/llm/toolResultBudget";
 import { PiiFilter } from "@/application/llm/pii";
-import { hasImageParts, type EngineChunk } from "@/domain/llm/types";
+import { hasImageParts } from "@/domain/llm/types";
 import { describeImageInputReject } from "@/domain/llm/models";
 import { createRunModel, type RuntimeTurn, type RuntimeCallIds } from "./model";
 import { createRuntimeTools, claimToolSlot, waitForSlot } from "./tools";
-import { toAgentInput, restoreValues, conversationMessages } from "./messages";
+import { toAgentInput, conversationMessages } from "./messages";
 import { buildTransferTranscript } from "./transcript";
 import { studioRunConfig } from "./runner";
 import { writeToolResult, type RuntimeEmitter } from "./output";
@@ -75,7 +75,7 @@ export function compileAgent(
   }
   const output = createSdkOutput(destination);
   const emit = output.emit;
-  if (input.parameters?.policy?.approvalTools?.some((name) => name.startsWith("handoff_"))) throw new ValidationError("Require approval for delegate tools or actions, not handoffs");
+  if (input.parameters?.policy?.approvalTools?.some((name) => name.startsWith("handoff_"))) throw new ValidationError("Require approval for delegate tools, not handoffs");
   const scope = graph.scope ?? "root";
   const key = `${scope}/${input.projectName}`;
   const saved = graph.saved?.agents[key];
@@ -94,7 +94,6 @@ export function compileAgent(
     number: saved?.turn ?? 0, maxTurns: input.maxTurn ?? 50, finalTurn: false, outputCut: false,
     model: input.model, results: createToolResultBudget(saved?.resultChars ?? MAX_TOOL_RESULT_CHARS_PER_TURN),
     resources: saved?.resources,
-    clientTools: assembly.clientToolNames,
     handoffTools: new Set(assembly.delegations.filter((entry) => entry.mode === "handoff").map((entry) => entry.name)),
   };
   if (saved?.context) {
@@ -151,7 +150,6 @@ export function compileAgent(
       const transfer = new Handoff<unknown, AgentOutputType>(prototype, async (context, args) => {
         const request = task(args);
         const prepared = await deps.loadAgent!(binding.agentName, { ...request, invocationId: `${input.projectName}/${binding.name}` });
-        if (prepared.kind !== "agent") throw new ValidationError("A handoff target must be a text agent");
         graph.close.push(prepared.close);
         for (const warning of prepared.warnings) emit({ warning });
         nextInput = prepared.input;
@@ -177,22 +175,20 @@ export function compileAgent(
     // The SDK's source-agent metadata and nested RunState remain attached to this
     // actual Agent-as-Tool. Only resolving the local Agent's current settings is lazy.
     const runOptions = { maxTurns: turn.maxTurns, signal: input.signal };
-    const delegate = binding.mode === "delegate"
-      ? prototype.asTool({
-        ...metadata,
-        inputBuilder: () => toAgentInput(prototype.current().input.messages),
-        runConfig: studioRunConfig(deps.channel),
-        runOptions,
-        onStream: ({ event }) => prototype.current().observe?.(event),
-        customOutputExtractor: (result) => {
-          prototype.current().completed = true;
-          prototype.current().paused = result.interruptions.length > 0;
-          if (result.interruptions.length) return "";
-          const text = typeof result.finalOutput === "string" ? result.finalOutput : JSON.stringify(result.finalOutput ?? "");
-          return prototype.current().filter?.restore(text) ?? text;
-        },
-      })
-      : tool({ name: binding.name, description: metadata.toolDescription, parameters: AGENT_TASK_SCHEMA, inputGuardrails: metadata.inputGuardrails, needsApproval: metadata.needsApproval, execute: async () => "" });
+    const delegate = prototype.asTool({
+      ...metadata,
+      inputBuilder: () => toAgentInput(prototype.current().input.messages),
+      runConfig: studioRunConfig(deps.channel),
+      runOptions,
+      onStream: ({ event }) => prototype.current().observe?.(event),
+      customOutputExtractor: (result) => {
+        prototype.current().completed = true;
+        prototype.current().paused = result.interruptions.length > 0;
+        if (result.interruptions.length) return "";
+        const text = typeof result.finalOutput === "string" ? result.finalOutput : JSON.stringify(result.finalOutput ?? "");
+        return prototype.current().filter?.restore(text) ?? text;
+      },
+    });
     // Registry aliases are already valid and reserved. Preserve hyphens that
     // the SDK's convenience name normalizer would otherwise replace.
     delegate.name = binding.name;
@@ -204,12 +200,11 @@ export function compileAgent(
       childEmit.ready = emit.ready;
       return childEmit;
     };
-    const restoredChildren = new Map<string, { prepared: Extract<PreparedAgent, { kind: "agent" }>; child: ReturnType<typeof compileAgent>; close: () => Promise<void> }>();
-    if (binding.mode === "delegate") graph.restoreDelegations.set(`${scope}/${input.projectName}/${binding.name}`, async (id, args) => {
+    const restoredChildren = new Map<string, { prepared: PreparedAgent; child: ReturnType<typeof compileAgent>; close: () => Promise<void> }>();
+    graph.restoreDelegations.set(`${scope}/${input.projectName}/${binding.name}`, async (id, args) => {
       const childScope = `tool/${id}`;
       const request = task(args);
       const prepared = await deps.loadAgent!(binding.agentName, { ...request, invocationId: id });
-      if (prepared.kind !== "agent") throw new ValidationError("A saved delegated agent changed its type");
       const restoredGraph: AgentGraph = { close: [], persistent: graph.persistent, imageSequence: graph.imageSequence, scope: childScope, saved: graph.saved, capture: graph.capture, handoffs: graph.handoffs, ids: graph.ids, delegations: graph.delegations, restoreDelegations: graph.restoreDelegations };
       let closed = false;
       const close = async () => {
@@ -243,23 +238,19 @@ export function compileAgent(
         if (transcript.dropped) emit({ warning: "Earlier conversation was omitted from the delegated task's bounded context." });
         request.transcript = filter?.mask(transcript.text) ?? transcript.text;
         const prepared = restoredChild?.prepared ?? await deps.loadAgent!(binding.agentName, request);
-        if (prepared.kind === "action") {
-          text = await collectAction(prepared.run(), childEmit, filter);
-        } else {
-          if (!graph.delegations!.some((entry) => entry.scope === scope && entry.id === id)) graph.delegations!.push({ scope, source: input.projectName, tool: binding.name, id, args });
-          if (!restoredChild) childGraph.close.push(prepared.close);
-          for (const warning of prepared.warnings) childEmit({ warning });
-          const child = restoredChild?.child ?? compileAgent(prepared.deps, prepared.input, childEmit, childGraph, filter, request.images);
-          if (details?.resumeState && !restoredChild) await restoreHandoffGraph(child.agent, childGraph);
-          runOptions.maxTurns = child.turn.maxTurns;
-          text = await prototype.withInvocation(child.agent, prepared.input, async () => {
-            const result = String(await nativeInvoke(context, args, details));
-            if (!prototype.current().completed) throw new ValidationError(result);
-            paused = prototype.current().paused;
-            if (!paused && child.turn.finalTurn) childEmit({ warning: `Agent '${binding.agentName}' reached its turn limit (${child.turn.maxTurns} turns); the parent continues with its partial result.` });
-            return result;
-          }, child.observe, child.filter);
-        }
+        if (!graph.delegations!.some((entry) => entry.scope === scope && entry.id === id)) graph.delegations!.push({ scope, source: input.projectName, tool: binding.name, id, args });
+        if (!restoredChild) childGraph.close.push(prepared.close);
+        for (const warning of prepared.warnings) childEmit({ warning });
+        const child = restoredChild?.child ?? compileAgent(prepared.deps, prepared.input, childEmit, childGraph, filter, request.images);
+        if (details?.resumeState && !restoredChild) await restoreHandoffGraph(child.agent, childGraph);
+        runOptions.maxTurns = child.turn.maxTurns;
+        text = await prototype.withInvocation(child.agent, prepared.input, async () => {
+          const result = String(await nativeInvoke(context, args, details));
+          if (!prototype.current().completed) throw new ValidationError(result);
+          paused = prototype.current().paused;
+          if (!paused && child.turn.finalTurn) childEmit({ warning: `Agent '${binding.agentName}' reached its turn limit (${child.turn.maxTurns} turns); the parent continues with its partial result.` });
+          return result;
+        }, child.observe, child.filter);
       } catch (error) {
         (details?.signal ?? input.signal)?.throwIfAborted();
         text = `Error: Agent '${binding.agentName}' failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -282,25 +273,4 @@ export function compileAgent(
     agent.tools.push(delegate);
   }
   return { agent, turn, filter, observe: output.observe };
-}
-
-async function collectAction(source: AsyncGenerator<EngineChunk, string>, emit: RuntimeEmitter, filter?: PiiFilter): Promise<string> {
-  const restorer = filter?.createStreamRestorer();
-  let completed = false;
-  let failure: string | undefined;
-  try {
-    while (true) {
-      const step = await source.next();
-      if (step.done) { completed = true; return step.value || `Error: ${failure ?? "the agent returned no answer"}`; }
-      if (step.value.error) failure = step.value.error;
-      const chunk = filter ? restoreValues(filter, step.value) as EngineChunk : step.value;
-      if (step.value.delta?.content) chunk.delta = { ...chunk.delta, content: restorer?.push(step.value.delta.content) ?? step.value.delta.content };
-      emit(chunk);
-      await emit.ready?.();
-    }
-  } finally {
-    if (!completed) await source.return("");
-    const content = restorer?.flush();
-    if (content) emit({ delta: { content } });
-  }
 }

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { AgentConfigurationEditor, parseJsonObject, parseConfigurationDraft } from "@/app/projects/[name]/_components/AgentConfigurationEditor";
-import type { AgentConfigurationInput, SelectableModel } from "@/app/projects/lib/api";
+import { AgentConfigurationEditor, parseJsonObject, parseConfigurationDraft } from "@/app/agents/[name]/_components/AgentConfigurationEditor";
+import type { AgentConfigurationInput, SelectableModel } from "@/app/agents/lib/api";
 import { ViewerProvider } from "@/app/_lib/useViewer";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MantineProvider } from "@mantine/core";
-import { SubagentInput } from "@/app/projects/[name]/_components/inputs";
+import { SubagentInput } from "@/app/agents/[name]/_components/inputs";
 
 describe("structured output model changes", () => {
   it.each([
@@ -38,15 +38,14 @@ describe("structured output model changes", () => {
   });
 });
 
-describe("subagent picker identity", () => {
-  it("renders local and remote candidates with the same name", () => {
+describe("subagent picker", () => {
+  it("renders a configured Agent candidate", () => {
     const render = () => renderToStaticMarkup(createElement(MantineProvider, {
       children: createElement(SubagentInput, {
         values: [],
         onChange: () => {},
         options: [
-          { value: "helper", type: "local", description: "Local helper" },
-          { value: "helper", type: "remote", description: "Remote helper" },
+          { value: "helper", description: "Local helper" },
         ],
       }),
     }));

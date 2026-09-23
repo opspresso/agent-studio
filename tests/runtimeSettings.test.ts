@@ -11,7 +11,6 @@ vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import {
   getArtifactAccessMode,
-  getA2aApiKey,
   getAdminEmails,
   getEmbeddingModelSelection,
   getEmbeddingTarget,
@@ -45,7 +44,6 @@ const ENV_KEYS = [
   "LLM_PROVIDER_OPENAI_BASE_URL",
   "LLM_PROVIDER_OPENAI_API_KEY",
   "GITHUB_TOKEN",
-  "A2A_API_KEY",
   "ARTIFACT_ACCESS_MODE",
   "EMBEDDING_MODEL",
   "EMBEDDING_BASE_URL",
@@ -179,11 +177,10 @@ describe("runtime settings precedence", () => {
     ]);
   });
 
-  it("decrypts fixed-field GitHub and shared A2A settings", async () => {
+  it("decrypts the stored GitHub setting", async () => {
     stub({
       pluginsRepo: "org/plugins",
       githubToken: encryptSecret("gh-secret", settingsSecretContext("github-token")),
-      a2aApiKey: encryptSecret("a2a-secret", settingsSecretContext("a2a-api-key")),
       updatedAt: "2026-01-01T00:00:00Z",
     });
 
@@ -191,7 +188,6 @@ describe("runtime settings precedence", () => {
       repo: "org/plugins",
       token: "gh-secret",
     });
-    await expect(getA2aApiKey()).resolves.toBe("a2a-secret");
   });
 
   it("routes public retrieval models with their provider URL, scoped credential and wire id", async () => {

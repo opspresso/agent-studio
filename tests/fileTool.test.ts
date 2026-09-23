@@ -47,7 +47,7 @@ describe("private Artifact inputs", () => {
     const f = setup();
     f.rows.set("summary", { artifactId: "summary", privateFileId: "private-summary", kind: "document", source: "generated",
       key: "source-files/private-summary", mimeType: "text/markdown", filename: "summary.md", byteSize: 7,
-      projectName: "other-agent", versionName: "1", ownerEmail: actor.id, createdAt: now.toISOString() });
+      projectName: "other-agent", ownerEmail: actor.id, createdAt: now.toISOString() });
     const readPrivateArtifact = vi.fn(async () => ({ bytes: new TextEncoder().encode("Summary") }));
     const call = buildFileTool({ ...f.deps, readPrivateArtifact }, "recorder", { actor, ancestry: ["recorder"] })!;
     expect((await call({ operation: "read", file_id: "summary" })).text).toContain("Summary");

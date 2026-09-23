@@ -71,7 +71,7 @@ export async function register(): Promise<void> {
     await ensureBootstrapAdmin();
     // Awaited, unlike the composition root below. The sink is what makes
     // `recordAudit` write anything, and the root wires it only as a side effect
-    // of being imported — which the A2A-key reveal route never does, since it
+    // of being imported — a route may not import it when it
     // needs nothing from it. A request served before that floating import
     // resolves would reveal a credential and record no row, and an unrecorded
     // act is indistinguishable from one that never happened. Two AWS SDK

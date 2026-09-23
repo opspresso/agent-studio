@@ -5,7 +5,7 @@ import {
   previewPrompt,
   streamAgent,
   updateProjectSlack,
-} from "@/app/projects/lib/api";
+} from "@/app/agents/lib/api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -47,7 +47,7 @@ describe("project API client failures", () => {
     vi.stubGlobal("window", {
       location: {
         origin: "https://studio.example.com",
-        pathname: "/projects/demo/integrations",
+        pathname: "/agents/demo/integrations",
         search: "",
         hash: "",
         replace,
@@ -60,7 +60,7 @@ describe("project API client failures", () => {
 
     await expect(getProjectSlack("demo")).rejects.toThrow("Authentication required");
     expect(replace).toHaveBeenCalledWith(
-      "/login?next=%2Fprojects%2Fdemo%2Fintegrations",
+      "/login?next=%2Fagents%2Fdemo%2Fintegrations",
     );
   });
 
@@ -93,7 +93,7 @@ describe("project API client failures", () => {
     );
 
     await expect(generateProjectToken("demo")).rejects.toThrow(
-      "Project API token response did not include a token",
+      "Agent API token response did not include a token",
     );
   });
 });

@@ -7,8 +7,6 @@ function traceFixture(): Trace {
   return {
     traceId: "t-1",
     projectName: "demo",
-    versionName: "1",
-    projectType: "agent",
     status: "completed",
     spans: [],
     startedAt: "2026-08-09T00:00:00.000Z",

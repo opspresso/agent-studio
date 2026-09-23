@@ -33,7 +33,7 @@ beforeEach(async () => {
   vi.useFakeTimers(); vi.setSystemTime(now); fake.rows.clear();
   createRepository.mockReset().mockImplementation(async request => created(request));
   deployment = { projectName: "demo", mode: "new", repositories: ["company/existing"], runtimes: ["codex"], checks: [], deploymentWorkflows: [] };
-  fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", projectType: "agent", displayName: "Demo", description: "", ownerEmail: owner, createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
+  fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner, createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
   await saveSettings();
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });

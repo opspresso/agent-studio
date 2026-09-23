@@ -6,11 +6,11 @@ import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { RunOrigin } from "@/domain/execution/actor";
 import { FakeChannel } from "./fakeChannel";
 
-function fixture(projectOverrides: Partial<Project> = {}, versionOverrides: Partial<AgentConfiguration> = {}) {
+function fixture(projectOverrides: Partial<Project> = {}, configurationOverrides: Partial<AgentConfiguration> = {}) {
   const now = "2026-09-12T00:00:00Z";
-  const project: Project = { name: "child", displayName: "Child", description: "Specialist", projectType: "agent", ownerEmail: "owner@example.com",  createdAt: now, updatedAt: now, ...projectOverrides };
-  const configuration: AgentConfiguration = { projectName: "child",  systemPrompt: "Child instructions",  model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [],  ...versionOverrides };
-  const parent: AgentConfiguration = { ...configuration, projectName: "parent", subagentList: [{ name: "child", type: "local" }] };
+  const project: Project = { name: "child", displayName: "Child", description: "Specialist", ownerEmail: "owner@example.com",  createdAt: now, updatedAt: now, ...projectOverrides };
+  const configuration: AgentConfiguration = { projectName: "child",  systemPrompt: "Child instructions",  model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [],  ...configurationOverrides };
+  const parent: AgentConfiguration = { ...configuration, projectName: "parent", subagentList: [{ name: "child" }] };
   project.configuration = configuration;
   if ("configuration" in projectOverrides) project.configuration = projectOverrides.configuration;
   const projects = { get: vi.fn(async () => project) };
@@ -18,7 +18,6 @@ function fixture(projectOverrides: Partial<Project> = {}, versionOverrides: Part
     createToolSchemaValidator,
     channel: new FakeChannel([]), projects,
     skills: { get: async () => null, describe: async () => [], list: async () => [] },
-    externalAgents: { get: async () => null },
     now: () => new Date(now),
   } as unknown as ExecutionDeps;
   const origin: RunOrigin = { ancestry: ["parent"], actor: { kind: "user", id: "reader@example.com" }, caller: { displayName: "Reader" } };
@@ -39,7 +38,7 @@ describe("Studio prepares native SDK agent bindings", () => {
     expect(background.workspaceTool).toBeUndefined();
     expect(f.deps.workspaceTool).toHaveBeenCalledTimes(1);
   });
-  it("does not bind Workspace unless the executing version opted in", async () => {
+  it("does not bind Workspace unless the executing configuration opted in", async () => {
     const f = fixture();
     f.deps.workspaceTool = vi.fn();
     expect((await buildAgentDeps(f.deps, f.parent, "parent", async () => {}, f.origin)).workspaceTool).toBeUndefined();
@@ -48,7 +47,7 @@ describe("Studio prepares native SDK agent bindings", () => {
   it("loads the current configuration from the Project", async () => {
     const f = fixture();
     const prepared = await f.prepare();
-    expect(prepared.kind).toBe("agent");
+    expect(prepared.input.projectName).toBe("child");
     expect(f.projects.get).toHaveBeenCalledWith("child");
   });
 
@@ -78,7 +77,6 @@ describe("Studio prepares native SDK agent bindings", () => {
   it("prepares the Agent's task and its own caller opt-in", async () => {
     const f = fixture({}, { parameters: { piiFiltering: false, callerContext: true } });
     const prepared = await f.prepare();
-    if (prepared.kind !== "agent") throw new Error("Expected a text agent");
     expect(prepared.input.messages).toEqual(expect.arrayContaining([
       { role: "user", content: "task" },
     ]));
@@ -88,10 +86,10 @@ describe("Studio prepares native SDK agent bindings", () => {
   });
 
   it("clamps a specialist's SDK turn limit to its caller's remaining allowance", async () => {
-    const f = fixture({ projectType: "agent" }, { maxTurn: 30 });
+    const f = fixture({ }, { maxTurn: 30 });
     const prepared = await f.prepare();
-    expect(prepared).toMatchObject({ kind: "agent", input: { maxTurn: 7, canDispatch: false } });
-    if (prepared.kind === "agent") await prepared.close();
+    expect(prepared).toMatchObject({ input: { maxTurn: 7, canDispatch: false } });
+    await prepared.close();
   });
 
   it("honors cancellation before any binding read", async () => {

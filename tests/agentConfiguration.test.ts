@@ -7,7 +7,6 @@ import { setAdminCheck, updateProject } from "@/application/project/projectUseCa
 import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { skillRepository } from "@/infrastructure/db/repositories/skillRepository";
-import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { keys } from "@/infrastructure/db/keys";
 import { putAgentConfigurationSchema } from "@/app/api/projects/_lib/schemas";
@@ -26,7 +25,7 @@ const ADMIN = "admin@example.test";
 const NOW = "2026-09-19T12:00:00.000Z";
 const SECRET = "Bearer synthetic-configuration-credential";
 const project: Project = {
-  name: "agent", displayName: "Agent", description: "", projectType: "agent",
+  name: "agent", displayName: "Agent", description: "",
   ownerEmail: OWNER, createdAt: NOW, updatedAt: NOW,
 };
 const input = (overrides: Partial<AgentConfigurationInput> = {}): AgentConfigurationInput => ({
@@ -36,7 +35,7 @@ const input = (overrides: Partial<AgentConfigurationInput> = {}): AgentConfigura
 const useCases = createConfigurationUseCases({
   projects: projectRepository, cipher: secretCipher,
   refs: { projects: projectRepository, mcps: mcpRepository,
-    skills: skillRepository, externalAgents: externalAgentRepository },
+    skills: skillRepository },
 });
 
 async function save(overrides: Partial<AgentConfigurationInput> = {}, expectedUpdatedAt = NOW, email = OWNER) {
@@ -63,15 +62,13 @@ afterEach(() => {
 });
 
 describe("current Agent configuration", () => {
-  it("stores one configuration with the Project without creating or publishing a Version", async () => {
+  it("stores one current configuration on the Agent's Project row", async () => {
     expect(await useCases.getView(project.name, READER)).toEqual({ configuration: null, updatedAt: NOW });
     const saved = await save();
     const stored = await projectRepository.get(project.name);
     expect(stored?.configuration).toEqual({ projectName: project.name, ...input() });
     expect(saved.updatedAt).not.toBe(NOW);
-    expect(stored).not.toHaveProperty("publishedVersion");
     expect([...store.rows.values()].some(row => row.entityType === "VERSION")).toBe(false);
-    expect(saved.configuration).not.toHaveProperty("versionName");
     expect(saved.configuration).not.toHaveProperty("createdAt");
     expect(saved.configuration).not.toHaveProperty("userPromptTemplate");
   });
@@ -154,7 +151,7 @@ describe("current Agent configuration", () => {
     await expect(save({ skillList: ["missing"] })).rejects.toThrow("does not exist");
     await expect(save({ mcpList: [{ name: "tools" }, { name: "tools" }] })).rejects.toThrow("more than once");
     await projectRepository.create({ ...project, name: "private-child", ownerEmail: READER, visibility: "private" });
-    await expect(save({ subagentList: [{ name: "private-child", type: "local" }] })).rejects.toThrow("private");
+    await expect(save({ subagentList: [{ name: "private-child" }] })).rejects.toThrow("private");
     expect((await projectRepository.get(project.name))!.configuration).toBeUndefined();
   });
 
@@ -172,11 +169,9 @@ describe("current Agent configuration", () => {
     await expect(projectRepository.get(project.name)).rejects.toThrow("belongs to another Project");
   });
 
-  it("requires the editor revision and rejects retired Version fields at the HTTP boundary", () => {
+  it("requires the editor revision at the HTTP boundary", () => {
     expect(putAgentConfigurationSchema.safeParse(input()).success).toBe(false);
-    for (const retired of [{ versionName: "2" }, { userPromptTemplate: "{{task}}" }, { publishedVersion: "2" }]) {
-      expect(putAgentConfigurationSchema.safeParse({ ...input(), expectedUpdatedAt: NOW, ...retired }).success).toBe(false);
-    }
     expect(putAgentConfigurationSchema.safeParse({ ...input(), expectedUpdatedAt: NOW }).success).toBe(true);
   });
+
 });

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 
-// Route-handler test: the container repos and the execution facade are mocked
-// so the assertion is purely "which execution path did this project type take".
+// Route-handler test: the container repos and execution facade are mocked to
+// verify the response contract and the selected streaming mode.
 const { projectRepo, calls } = vi.hoisted(() => ({
   projectRepo: { get: vi.fn() },
   calls: [] as string[],
@@ -66,12 +66,11 @@ beforeEach(() => {
 
 });
 
-describe("POST /predict dispatches on project type", () => {
-  it("hands an agent project to the non-streaming facade", async () => {
+describe("POST /predict", () => {
+  it("hands a non-streaming request to the execution facade", async () => {
     projectRepo.get.mockResolvedValue({
       name: "proj",
       ownerEmail: "owner@example.com",
-      projectType: "agent",
       configuration: { projectName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
     });
 
@@ -82,11 +81,10 @@ describe("POST /predict dispatches on project type", () => {
     expect(calls).toEqual(["executeProject"]);
   });
 
-  it("rejects retired template inputs before starting execution", async () => {
+  it("rejects unsupported inputs before starting execution", async () => {
     projectRepo.get.mockResolvedValue({
       name: "proj",
       ownerEmail: "owner@example.com",
-      projectType: "agent",
       configuration: { projectName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
     });
 
@@ -100,7 +98,6 @@ describe("POST /predict dispatches on project type", () => {
     projectRepo.get.mockResolvedValue({
       name: "proj",
       ownerEmail: "owner@example.com",
-      projectType: "agent",
       configuration: { projectName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
     });
 

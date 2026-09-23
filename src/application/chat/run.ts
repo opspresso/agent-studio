@@ -128,7 +128,7 @@ export function collectGeneratedFiles(
   const missing = files.length - stored.length;
   if (missing > 0 && !storageConfigured) {
     // The sentence is shared with every other surface that answers with a file:
-    // an API caller, an A2A task and a Slack thread all reach the same state,
+    // an API caller and a Slack thread all reach the same state,
     // and six spellings of it is how one of them ends up saying something
     // subtly different about the same deployment.
     return { stored, warnings: [filesNotKeptWarning(missing)] };

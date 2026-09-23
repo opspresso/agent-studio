@@ -283,7 +283,7 @@ describe("authored error chunks", () => {
     const frames: Record<string, unknown>[] = [];
     for await (const frame of toChatCompletionChunks(
       stream([
-        { author: "child", error: "remote agent cannot take images" },
+        { author: "child", error: "child Agent could not use the image" },
         { delta: { content: "did it locally" } },
         { done: true },
       ]),

@@ -95,11 +95,11 @@ responsibilities and abstractions.
 - `src/domain/` owns entities, value rules, and repository ports. It is pure TypeScript and
   imports no framework, AWS, infrastructure, or `shared` module.
 - `src/application/` owns use cases and orchestration. It imports domain, dependency-free shared
-  helpers, and the standard library only. `@a2a-js/sdk` and `@openai/agents` are the explicit
-  protocol/runtime exceptions; their native contracts are not redefined as domain ports. The pure `runMetrics` leaf is
+  helpers, and the standard library only. `@openai/agents` is the runtime exception;
+  its native contracts are not redefined as domain ports. The pure `runMetrics` leaf is
   the only current `lib` import. It never imports `container.ts`; dependencies are injected.
 - `src/infrastructure/` owns adapters: PostgreSQL/item store, vectors, object store, LLM, MCP,
-  messaging, A2A, GitHub, network, and crypto.
+  messaging, GitHub, network, and crypto.
 - `src/app/` owns App Router presentation. It does not import infrastructure directly; routes
   receive bound use cases or dependencies from a wiring site.
 - A `"use client"` file may not import application or infrastructure values. Type-only imports
@@ -121,8 +121,7 @@ Composition is limited to these wiring sites:
 3. `src/app/api/slack/events/_lib/`
 4. `src/app/api/telegram/webhook/_lib/`
 5. `src/app/api/teams/messages/_lib/`
-6. `src/app/api/a2a/[name]/route.ts`
-7. `src/instrumentation.ts`
+6. `src/instrumentation.ts`
 
 Only `auth.ts`, `runtime-settings.ts`, and `memberAccess.ts` are additional `lib` adapter-facing
 wiring modules. A use-case slice exports `createXUseCases`; the composition root binds it once,

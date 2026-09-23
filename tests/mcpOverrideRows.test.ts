@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   overridesToRows,
   rowsToOverrides,
-} from "@/app/projects/[name]/_components/mcpOverrides";
+} from "@/app/agents/[name]/_components/mcpOverrides";
 
 describe("MCP override row encoding", () => {
   it("shows a null marker as a removal row with no value", () => {

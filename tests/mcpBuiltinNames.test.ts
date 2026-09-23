@@ -42,7 +42,6 @@ function projectFixture(): Project {
     name: "painter",
     displayName: "painter",
     description: "",
-    projectType: "agent",
     ownerEmail: "owner@example.com",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -79,10 +78,8 @@ function depsFixture(channel: FakeChannel) {
   } as unknown as ImageChannel;
   return {
     projects: { get: reject, list: reject, put: reject, delete: reject },
-    versions: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => registryServer, list: reject, put: reject, delete: reject },
-    externalAgents: { get: reject, list: reject, put: reject, delete: reject },
     usage: {
       record: async () => {},
       getDay: async () => null,

@@ -61,16 +61,16 @@ Google도 필요하면 `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`을 함께 �
 
 ## Slack 연동
 
-Slack은 선택 연동이다. 프로젝트 Integrations의 Slack bot에서 생성한 매니페스트로
-프로젝트 전용 앱을 만들고 워크스페이스에 설치한다. Bot token과 Basic Information의 signing secret을
+Slack은 선택 연동이다. Agent Integrations의 Slack bot에서 생성한 매니페스트로
+Agent 전용 앱을 만들고 워크스페이스에 설치한다. Bot token과 Basic Information의 signing secret을
 Studio에 저장하고 이벤트 수신을 켠 뒤, Slack Event Subscriptions에서 생성된 Request URL의 검증을 확인한다.
 채널에서 사용하려면 봇을 해당 채널에 초대한다.
 Slack 기본 중단 버튼은 매니페스트의 `agent_session_stopped` 구독이 있어야 표시된다.
 기존 앱에도 해당 구독을 적용해야 하며, thread 안의 `!stop` 명령으로도 실행을 중단할 수 있다.
 
-Slack에서 프로젝트의 HTTPS 이벤트 URL에 접근할 수 있어야 하며, Studio는 Slack Web API에
+Slack에서 Agent의 HTTPS 이벤트 URL에 접근할 수 있어야 하며, Studio는 Slack Web API에
 접근할 수 있어야 한다. Socket Mode는 꺼 둔다. 공개 인터넷이 차단된 배포에서는 Slack 연동을 끄고
-Studio의 Chat·프로젝트 실행을 사용한다.
+Studio의 Chat·Agent 실행을 사용한다.
 
 기존 앱 설정은 Studio 저장만으로 바뀌지 않는다. 생성된 매니페스트를 Slack의 App Manifest 설정에
 다시 적용하고 권한이 바뀌면 앱을 재설치한다. 생성 매니페스트의 기능·권한 범위는
@@ -120,7 +120,7 @@ Agent 설정의 `parameters.audioProcessing=true`로 Agent 도구를 켠다. 저
 ## Workspace worker
 
 Workspace는 선택 기능이다. `sandbox/Dockerfile`로 별도 실행 이미지를 만들고, 아래처럼
-실행 이미지와 네트워크를 연결한다. Agent 설정에서 워크스페이스 도구를 켜고 프로젝트 전용 탭에서
+실행 이미지와 네트워크를 연결한다. Agent 설정에서 워크스페이스 도구를 켜고 Agent의 전용 탭에서
 설정한다. 네이티브 Runtime 모델은 Settings → Models → 모델 사용 설정에서 선택한다. 일반 작업에는 저장소가 필요하지 않다.
 
 ```bash
@@ -145,10 +145,10 @@ Docker CLI도 포함한다. 실행 worker와 Git 승인 API가 있는 앱 서버
 `none` 네트워크는 일반 스크립트의 무통신 실행에 사용한다. 모델·저장소 접속이 필요한 작업은
 운영자가 egress 정책을 적용한 별도 Docker 네트워크를 지정한다. host/default bridge는 거절한다.
 폐쇄망에서는 완성된 이미지와 의존성을 반입하고 내부 모델·저장소만 허용한다.
-필수 부팅·로그인·기존 프로젝트 실행은 이 설정과 worker에 의존하지 않는다.
+필수 부팅·로그인·Agent 실행은 이 설정과 worker에 의존하지 않는다.
 
 worker는 실행 핸들, 출력 cursor, native Session, 검사 단계와 체크포인트를 저장한다.
-저장소 접근은 관리자가 Project Settings → Workspace 저장소 접근에서 배포 기본값을 덮어쓸 수 있다.
+저장소 접근은 관리자가 Agent의 Workspace 도구 탭에서 배포 기본값을 덮어쓸 수 있다.
 고정 목록·소유자 지정·모든 저장소·신규 자동 허용을 선택하며, 정책 변경에 앱·worker 재배포는 필요하지 않다.
 신규 모드는 Agent의 Workspace 생성 도구가 성공한 저장소를 자동 등록한다.
 별도 큐가 Git 승인 결과와 CI 상태를 원래 Chat에 전달하고 SDK 이력으로 후속 실행을 시작한다. 중단된
@@ -160,7 +160,8 @@ worker는 동일 핸들을 이어서 관찰하며 불확실한 작업을 자동�
 `WORKSPACE_SANDBOX_IMAGE`로 검사 이미지를 지정할 수 있고 `WORKSPACE_TEST_AGENTS=true`는
 세 CLI의 비특권 실행도 확인한다. 실제 모델 요청은 이 검사에서 보내지 않는다.
 
-코딩을 켜려면 같은 설정의 프로젝트에 `repository: "owner/repo"`를 추가하고 GitHub App 또는
+코딩을 켜려면 Agent의 Workspace 저장소 접근 정책에 저장소를 등록하고 작업 요청에
+`repository: "owner/repo"`를 지정한다. GitHub App 또는
 `WORKSPACE_GITHUB_AUTH=token`과 서버의 GitHub 계정 토큰을 설정한다. 계정 토큰 모드는 서버에서
 bare Git 저장소와 bundle을 주고받고 저장소 코드를 실행하지 않는다. 배포 이미지에는 Git을
 포함한다. App 설치 범위는 작업할 저장소로 한정한다. webhook URL은
@@ -178,12 +179,12 @@ fine-grained 토큰·GitHub App의 Workflows 쓰기 권한도 필요하다. 저�
 
 ## GitHub PR 자동 리뷰
 
-관리자가 프로젝트 설정의 Webhook을 켜고 PR 리뷰 동작을 선택한다. 위의 서버 GitHub 연결을
+관리자가 Agent 설정의 Webhook을 켜고 PR 리뷰 동작을 선택한다. 위의 서버 GitHub 연결을
 재사용하며 Workspace worker는 필요하지 않다. App 인증은 대상 저장소의 Contents 읽기와
 Pull requests 읽기·쓰기 권한이 필요하다. 계정 토큰은 같은 저장소를 읽고 리뷰 댓글을 작성할 수
 있어야 한다. 자격 증명이나 GitHub 연결이 없으면 리뷰 게시를 활성화할 수 없다.
 
-GitHub 저장소 Webhook에 `/api/webhook/{project}` URL, `application/json`, 해당 프로젝트의
+GitHub 저장소 Webhook에 `/api/webhook/{project}` URL, `application/json`, 해당 Agent의
 Webhook Secret과 Pull requests 이벤트를 설정한다. Workspace 메타데이터 Webhook과 URL·Secret이
 다르다. 접근 가능한 모든 저장소 또는 정확한 저장소 목록 중 하나를 선택하며 기본은 일반 Webhook이다.
 새 PR과 새 커밋, 다시 열린 PR, draft 해제를 처리하고 완료 이력에서 실제 리뷰 링크를 확인한다.
@@ -282,11 +283,6 @@ v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQ
 자동 이관하지 않으므로, 모델 등록이 없는 설치는 관리 화면에서 연결과 사용할 모델을 등록하고
 기존 Agent의 모델 ID 및 기본·Embedding·Rerank·Workspace 선택을 확인한다. 등록 전에는 해당
 모델 실행이 거부된다. 테이블을 직접 수정할 필요는 없으며 [모델 등록과 사용](CONFIGURATION.md#모델-등록과-사용)을 따른다.
-
-Version 기반 설치에서 Agent 현재 설정으로 전환할 때는 [Agent 설정 데이터 이전](AGENT-MIGRATION.md)을
-먼저 수행한다. 이 작업은 부팅 시 자동 실행되지 않으며, 원본 보관·템플릿 처리·MCP 헤더 재암호화와
-승인 대기·Audio 작업 정리 절차를 포함한다. 이전 도구는 릴리스 앱 이미지에 포함되지 않으므로
-대상 릴리스의 소스와 개발 의존성을 별도로 준비한다.
 
 새 image tag의 앱은 부팅 시 advisory lock 아래에서 schema migration을 적용한다.
 개발 중인 프로젝트라 API·설정·저장 형식의 하위 호환을 보장하지 않으며 자동 down migration도 없다.

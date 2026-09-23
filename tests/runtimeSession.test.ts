@@ -1,5 +1,3 @@
-import { brotliCompressSync } from "node:zlib";
-import { runtimeSessionContext } from "@/domain/security/secretContext";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { runtimeSessionFixture as fixture } from "./runtimeSessionFixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -112,7 +110,7 @@ describe("durable native SDK Session", () => {
     ]);
     const editImage = vi.fn(async (_input: { prompt: string }) => imageResult("child image"));
     const loadAgent: NonNullable<AgentDeps["loadAgent"]> = async (name, task) => ({
-      kind: "agent", warnings: [], close: async () => {}, deps: { createToolSchemaValidator, channel: childChannel, editImage },
+      warnings: [], close: async () => {}, deps: { createToolSchemaValidator, channel: childChannel, editImage },
       input: { projectName: name, model: f.configuration.model, messages: [{ role: "user", content: [
         { type: "text", text: task.message }, ...task.images.map((image) => ({ type: "image_url" as const, image_url: { url: `data:${image.mimeType};base64,${image.b64}` } })),
       ] }] },
@@ -124,7 +122,7 @@ describe("durable native SDK Session", () => {
       [contentChunk("parent done")],
     ]);
     const chunks = await f.run(channel, "draw and transfer", undefined, { generateImage: async (prompt: string) => imageResult(prompt), loadAgent }, {
-      maxTurn: 8, canDispatch: true, subagents: [{ name: "child", type: "local", description: "child" }],
+      maxTurn: 8, canDispatch: true, subagents: [{ name: "child", description: "child" }],
     });
     expect(chunks.filter((chunk) => chunk.error)).toEqual([]);
     expect(editImage).toHaveBeenCalledWith(expect.objectContaining({ images: [expect.objectContaining({ b64: imageResult("second").b64 })] }));
@@ -151,10 +149,10 @@ describe("durable native SDK Session", () => {
         [toolCallChunk(0, "edit", "EditImage", JSON.stringify({ image_id: task.message === "first" ? "img_1" : "img_2", prompt: `edited ${task.message}` }))],
       ]);
       childChannels.push(channel);
-      return { kind: "agent", warnings: [], close: async () => {}, deps: { createToolSchemaValidator, channel, generateImage: async (prompt: string) => imageResult(prompt), editImage: edits },
+      return { warnings: [], close: async () => {}, deps: { createToolSchemaValidator, channel, generateImage: async (prompt: string) => imageResult(prompt), editImage: edits },
         input: { projectName: name, model: f.configuration.model, parameters: { policy: { approvalTools: ["EditImage"] } }, messages: [{ role: "user", content: task.message }] } };
     };
-    const input = { canDispatch: true, subagents: [{ name: "child", type: "local" as const, description: "child" }] };
+    const input = { canDispatch: true, subagents: [{ name: "child", description: "child" }] };
     const initial = await f.run(new FakeChannel([[
       toolCallChunk(0, "first", "delegate_child", '{"input":"first","image_ids":[]}'),
       toolCallChunk(1, "second", "delegate_child", '{"input":"second","image_ids":[]}'),
@@ -179,7 +177,7 @@ describe("durable native SDK Session", () => {
     expect(saved.map((image) => image.b64)).toEqual(expect.arrayContaining([imageResult("first").b64, imageResult("second").b64, imageResult("edited first").b64, imageResult("edited second").b64]));
   });
 
-  it("keeps a preceding user image editable after a version enables image tools", async () => {
+  it("keeps a preceding user image editable after a configuration enables image tools", async () => {
     const f = fixture();
     const image = { b64: "aGVsbG8=", mimeType: "image/png" };
     await f.run(new FakeChannel([[contentChunk("seen")]]), "", undefined, {}, { messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: `data:image/png;base64,${image.b64}` } }] }] });
@@ -210,8 +208,8 @@ describe("durable native SDK Session", () => {
     const f = fixture();
     await f.run(new FakeChannel([[contentChunk("an orange cat")]]), "draw a cat");
     const channel = new FakeChannel([[toolCallChunk(0, "delegate", "delegate_child", '{"input":"make it bigger","image_ids":[]}')], [contentChunk("larger cat")], [contentChunk("done")]]);
-    const loadAgent = vi.fn<NonNullable<AgentDeps["loadAgent"]>>(async (name, task) => ({ kind: "agent", deps: { createToolSchemaValidator, channel }, warnings: [], close: async () => {}, input: { projectName: name, model: f.configuration.model, messages: [{ role: "user", content: task.message }] } }));
-    await f.run(channel, "make it bigger", undefined, { loadAgent }, { canDispatch: true, subagents: [{ name: "child", type: "local", description: "child" }] });
+    const loadAgent = vi.fn<NonNullable<AgentDeps["loadAgent"]>>(async (name, task) => ({ deps: { createToolSchemaValidator, channel }, warnings: [], close: async () => {}, input: { projectName: name, model: f.configuration.model, messages: [{ role: "user", content: task.message }] } }));
+    await f.run(channel, "make it bigger", undefined, { loadAgent }, { canDispatch: true, subagents: [{ name: "child", description: "child" }] });
     expect(loadAgent.mock.calls[0]?.[1].transcript).toContain("User: draw a cat");
     expect(loadAgent.mock.calls[0]?.[1].transcript).toContain("project: an orange cat");
     expect(loadAgent.mock.calls[0]?.[1].transcript).not.toContain("make it bigger");
@@ -292,32 +290,6 @@ describe("durable native SDK Session", () => {
     expect(await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail)).toBeNull();
   });
 
-  it("refuses retired Version checkpoints without replay and permits owner-scoped discard", async () => {
-    const f = fixture({ approvalTools: ["lookup"] });
-    const effect = vi.fn(async () => ({ text: "done" }));
-    await f.run(new FakeChannel([[contentChunk("earlier answer")]]), "earlier turn");
-    const before = (await readRuntimeSession(f.services, "chat-1", f.scope.ownerEmail))!.document.items;
-    await f.run(new FakeChannel([[toolCallChunk(0, "call", "lookup", "{}")]]), "lookup", undefined,
-      { callMcpTool: effect }, { mcpTools: [{ type: "function", function: { name: "lookup", parameters: {} } }] });
-    const saved = (await readRuntimeSession(f.services, "chat-1", f.scope.ownerEmail))!;
-    const { configuration, ...checkpoint } = saved.document.checkpoint!;
-    const legacy = { ...saved.document, checkpoint: { ...checkpoint, version: { ...configuration, versionName: "1" } } };
-    const payload = f.services.cipher.encrypt(brotliCompressSync(Buffer.from(JSON.stringify(legacy))).toString("base64"),
-      runtimeSessionContext("chat-1", f.scope.ownerEmail));
-    f.rows.set("chat-1", { ...saved.row, payload });
-    const pending = (await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail))!;
-    const channel = new FakeChannel([]);
-    await expect(f.run(channel, "", { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] },
-      { callMcpTool: effect })).rejects.toThrow("retired Version settings");
-    expect(channel.calls).toBe(0);
-    expect(effect).not.toHaveBeenCalled();
-    await expect(discardRuntimeCheckpoint(f.services, "chat-1", "other@example.com", pending.revision)).rejects.toThrow();
-    expect(await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail)).not.toBeNull();
-    await discardRuntimeCheckpoint(f.services, "chat-1", f.scope.ownerEmail, pending.revision);
-    expect(await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail)).toBeNull();
-    expect((await readRuntimeSession(f.services, "chat-1", f.scope.ownerEmail))!.document.items).toEqual(before);
-  });
-
   it("runs the SDK input guardrail before a model call", async () => {
     const f = fixture({ maxInputChars: 3 });
     const channel = new FakeChannel([]);
@@ -375,11 +347,11 @@ describe("durable native SDK Session", () => {
       [toolCallChunk(0, "handoff", "handoff_child", '{"input":"lookup","image_ids":[]}')],
       [toolCallChunk(0, "lookup", "lookup", "{}")],
     ]);
-    const loadAgent: AgentDeps["loadAgent"] = async (name) => ({ kind: "agent", deps: { createToolSchemaValidator, channel: model, callMcpTool: effect }, warnings: [], close: async () => {}, input: {
+    const loadAgent: AgentDeps["loadAgent"] = async (name) => ({ deps: { createToolSchemaValidator, channel: model, callMcpTool: effect }, warnings: [], close: async () => {}, input: {
       projectName: name, model: f.configuration.model, parameters: { piiFiltering: true, policy: { approvalTools: ["lookup"] } }, messages: [{ role: "user", content: "lookup" }], maxTurn: 4,
       mcpTools: [{ type: "function", function: { name: "lookup", parameters: {} } }],
     } });
-    const input = { subagents: [{ name: "child", type: "local" as const, description: "child" }] };
+    const input = { subagents: [{ name: "child", description: "child" }] };
     await f.run(model, "handoff", undefined, { loadAgent }, input);
     const pending = (await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail))!;
     expect(pending.approvals[0]?.agent).toBe("child");
@@ -400,13 +372,13 @@ describe("durable native SDK Session", () => {
       [toolCallChunk(0, "lookup", "lookup", '{"query":"private@example.com"}')],
     ]);
     const loadAgent: NonNullable<AgentDeps["loadAgent"]> = async (name, task) => ({
-      kind: "agent", deps: { createToolSchemaValidator, channel, loadAgent, callMcpTool: effect }, warnings: [], close: async () => {},
+      deps: { createToolSchemaValidator, channel, loadAgent, callMcpTool: effect }, warnings: [], close: async () => {},
       input: { projectName: name, model: f.configuration.model, messages: [{ role: "user", content: task.message }], maxTurn: 4,
         parameters: { piiFiltering: true, ...(name === "specialist" ? { policy: { approvalTools: ["lookup"] } } : {}) },
-        ...(name === "child" ? { subagents: [{ name: "specialist", type: "local" as const, description: "specialist" }] } : { mcpTools: [{ type: "function" as const, function: { name: "lookup", parameters: {} } }] }),
+        ...(name === "child" ? { subagents: [{ name: "specialist", description: "specialist" }] } : { mcpTools: [{ type: "function" as const, function: { name: "lookup", parameters: {} } }] }),
       },
     });
-    const input = { canDispatch: true, subagents: [{ name: "child", type: "local" as const, description: "child" }] };
+    const input = { canDispatch: true, subagents: [{ name: "child", description: "child" }] };
     const initial = await f.run(channel, "delegate", undefined, { loadAgent }, input);
     expect(initial.filter((chunk) => chunk.error)).toEqual([]);
     const pending = (await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail))!;
@@ -421,12 +393,12 @@ describe("durable native SDK Session", () => {
     expect(await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail)).toBeNull();
   });
 
-  it("applies a delegated version's SDK input guardrail before its model runs", async () => {
+  it("applies a delegated configuration's SDK input guardrail before its model runs", async () => {
     const f = fixture();
     const channel = new FakeChannel([[toolCallChunk(0, "delegate", "delegate_child", '{"input":"too long","image_ids":[]}')], [contentChunk("parent recovered")]]);
     const child = new FakeChannel([]);
-    const loadAgent: AgentDeps["loadAgent"] = async (name, task) => ({ kind: "agent", deps: { createToolSchemaValidator, channel: child }, warnings: [], close: async () => {}, input: { projectName: name, model: f.configuration.model, messages: [{ role: "user", content: task.message }], parameters: { policy: { maxInputChars: 2 } } } });
-    const chunks = await f.run(channel, "delegate", undefined, { loadAgent }, { canDispatch: true, subagents: [{ name: "child", type: "local", description: "child" }] });
+    const loadAgent: AgentDeps["loadAgent"] = async (name, task) => ({ deps: { createToolSchemaValidator, channel: child }, warnings: [], close: async () => {}, input: { projectName: name, model: f.configuration.model, messages: [{ role: "user", content: task.message }], parameters: { policy: { maxInputChars: 2 } } } });
+    const chunks = await f.run(channel, "delegate", undefined, { loadAgent }, { canDispatch: true, subagents: [{ name: "child", description: "child" }] });
     expect(child.calls).toBe(0);
     expect(chunks.some((chunk) => chunk.warning?.includes("guardrail"))).toBe(true);
   });
@@ -436,16 +408,16 @@ describe("durable native SDK Session", () => {
     let resuming = false;
     const effect = vi.fn(async (_name: string, args: Record<string, unknown>) => ({ text: String(args.value) }));
     const loadAgent: NonNullable<AgentDeps["loadAgent"]> = async (name, task) => ({
-      kind: "agent", warnings: [], close: async () => {},
+      warnings: [], close: async () => {},
       deps: { createToolSchemaValidator, channel: new FakeChannel(resuming ? [] : [[toolCallChunk(0, "handoff", "handoff_specialist", JSON.stringify({ input: task.message, image_ids: [] }))]]),
-        loadAgent: async (target, handoffTask) => ({ kind: "agent", warnings: [], close: async () => {},
+        loadAgent: async (target, handoffTask) => ({ warnings: [], close: async () => {},
           deps: { createToolSchemaValidator, channel: new FakeChannel(resuming ? [[contentChunk("specialist done")]] : [[toolCallChunk(0, "lookup", "lookup", JSON.stringify({ value: handoffTask.message }))]]), callMcpTool: effect },
           input: { projectName: target, model: f.configuration.model, messages: [{ role: "user", content: handoffTask.message }], parameters: { policy: { approvalTools: ["lookup"] } }, mcpTools: [{ type: "function", function: { name: "lookup", parameters: {} } }] },
         }),
       },
-      input: { projectName: name, model: f.configuration.model, messages: [{ role: "user", content: task.message }], subagents: [{ name: "specialist", type: "local", description: "specialist" }] },
+      input: { projectName: name, model: f.configuration.model, messages: [{ role: "user", content: task.message }], subagents: [{ name: "specialist", description: "specialist" }] },
     });
-    const input = { canDispatch: true, subagents: [{ name: "child", type: "local" as const, description: "child" }] };
+    const input = { canDispatch: true, subagents: [{ name: "child", description: "child" }] };
     await f.run(new FakeChannel([[toolCallChunk(0, "first", "delegate_child", '{"input":"first","image_ids":[]}'), toolCallChunk(1, "second", "delegate_child", '{"input":"second","image_ids":[]}')]]), "delegate", undefined, { loadAgent }, input);
     const pending = (await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail))!;
     expect(pending.approvals).toHaveLength(2);

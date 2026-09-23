@@ -121,7 +121,7 @@ describe("runAgent tool loop", () => {
 
   /**
    * An MCP tool's name is the server's own — `aws___search_documentation` — and
-   * says nothing about which connection answered it once a version has several
+   * says nothing about which connection answered it once a configuration has several
    * attached. It rides on the display name, the way a skill's and a transfer's
    * target already do, and never on what the context receives.
    */
@@ -439,7 +439,7 @@ describe("recording the run's reasoning", () => {
     ]);
   }
 
-  it("emits nothing unless the version asked for it", async () => {
+  it("emits nothing unless the configuration asked for it", async () => {
     const channel = thinkingRun();
     const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
 
@@ -688,7 +688,7 @@ describe("recording the run's reasoning", () => {
 
   it("says when the provider reports the size of its thinking and withholds it", async () => {
     // The common OpenAI shape. Nothing downstream can tell this run from one
-    // whose version simply did not opt in — both are a count with no text — so
+    // whose configuration simply did not opt in — both are a count with no text — so
     // the engine, which holds the flag, is the only place that can say it.
     const channel = new FakeChannel([
       [contentChunk("answered"), usageChunk(3, 4010, undefined, undefined, 4000)],
@@ -709,8 +709,8 @@ describe("recording the run's reasoning", () => {
     expect(chunks.filter((c) => c.warning?.includes("does not return the thinking itself"))).toHaveLength(1);
   });
 
-  it("stays quiet about the withheld text when the version never asked for it", async () => {
-    // Every version written before this feature is this run: a reasoning model,
+  it("stays quiet about the withheld text when the configuration never asked for it", async () => {
+    // Every configuration written before this feature is this run: a reasoning model,
     // the checkbox off, a provider reporting the count anyway.
     const channel = new FakeChannel([
       [contentChunk("answered"), usageChunk(3, 4010, undefined, undefined, 4000)],
@@ -785,7 +785,7 @@ describe("runAgent GenerateImage builtin", () => {
       }),
     );
     const imageChunk = chunks.find((c) => c.image);
-    // The model rides on the chunk: the builtin draws with the version's image
+    // The model rides on the chunk: the builtin draws with the configuration's image
     // model, which is not the model this run is talking to, and the artifact row
     // is written from what the chunk says.
     expect(imageChunk?.image).toMatchObject({
@@ -810,7 +810,7 @@ describe("runAgent GenerateImage builtin", () => {
   });
 });
 
-describe("runAgent separates the version's prompt from what the engine appends", () => {
+describe("runAgent separates the configuration's prompt from what the engine appends", () => {
   async function systemPromptFor(input: Partial<Parameters<typeof runAgent>[1]>): Promise<string> {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     await collect(
@@ -828,12 +828,12 @@ describe("runAgent separates the version's prompt from what the engine appends",
     return String(channel.seenParams[0]?.messages[0]?.content);
   }
 
-  it("marks where the version's prompt ends and the generated block begins", async () => {
+  it("marks where the configuration's prompt ends and the generated block begins", async () => {
     // Without the break the generated `##` sections are indistinguishable from
     // headings the prompt author wrote, and "your own instructions" — which the
     // routing rule is anchored to — has no referent.
     const content = await systemPromptFor({
-      subagents: [{ name: "painter", description: "draws pictures", type: "local" }],
+      subagents: [{ name: "painter", description: "draws pictures" }],
     });
     expect(content).toContain("You are the front desk.\n\n---\n\n# Runtime capabilities");
     expect(content.indexOf("# Runtime capabilities")).toBeLessThan(
@@ -843,7 +843,7 @@ describe("runAgent separates the version's prompt from what the engine appends",
 
   it("states when to use a capability exactly once, naming only what the run has", async () => {
     const content = await systemPromptFor({
-      subagents: [{ name: "painter", description: "draws pictures", type: "local" }],
+      subagents: [{ name: "painter", description: "draws pictures" }],
     });
     // One routing sentence, in the framing — not one per section.
     expect(content).toContain(
@@ -857,7 +857,7 @@ describe("runAgent separates the version's prompt from what the engine appends",
   it("ranks every capability the run does have in that one sentence", async () => {
     const content = await systemPromptFor({
       skills: [{ name: "writing", description: "how to write" }],
-      subagents: [{ name: "painter", description: "draws pictures", type: "local" }],
+      subagents: [{ name: "painter", description: "draws pictures" }],
       mcpTools: ["search_repos", "get_pr", "search_docs"].map((name) => ({ type: "function", function: { name, parameters: {} } })),
       mcpServers: [{ name: "github", description: "repos", toolNames: ["search_repos"] }],
     });
@@ -866,7 +866,7 @@ describe("runAgent separates the version's prompt from what the engine appends",
     );
   });
 
-  it("leaves a version that reaches nothing exactly as its author wrote it", async () => {
+  it("leaves a configuration that reaches nothing exactly as its author wrote it", async () => {
     // No capabilities means no block, so there is no boundary to announce and
     // the prompt the author sees in the editor is the prompt that is sent.
     expect(await systemPromptFor({})).toBe("You are the front desk.");

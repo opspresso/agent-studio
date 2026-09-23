@@ -47,7 +47,6 @@ describe("settingsRepository", () => {
       pluginsRepo: "opspresso/agent-plugins",
       pluginsRepoBranch: "main",
       githubToken: "enc:v1:token",
-      a2aApiKey: "enc:v1:a2a",
       publicBaseUrl: "https://studio.example.com",
       artifactAccessMode: "public",
       unknownModelPolicy: "refuse",

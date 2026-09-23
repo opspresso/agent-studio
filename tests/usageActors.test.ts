@@ -22,7 +22,6 @@ function makeProject(withSlack: boolean): Project {
     name: "painter",
     displayName: "Painter",
     description: "",
-    projectType: "agent",
     ownerEmail: "owner@x.com",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -110,7 +109,7 @@ describe("listProjectActors", () => {
     const resolve = vi.fn(async () => ({ displayName: "Bruce" }));
 
     const result = await listProjectActors(
-      makeDeps([row("user:someone@example.com"), row("a2a:shared-key")], resolve),
+      makeDeps([row("user:someone@example.com"), row("webhook:project:trigger")], resolve),
       makeProject(true),
       "2026-07-01",
       "2026-07-31",

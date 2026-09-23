@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sseResponse, sseResponseRaw } from "@/app/api/_lib/sse";
+import { sseResponse } from "@/app/api/_lib/sse";
 import { apiError } from "@/app/api/_lib/http";
 import { RateLimitedError } from "@/application/errors";
 import { detachOnReturn } from "@/shared/detachOnReturn";
@@ -153,7 +153,7 @@ describe("sseResponse keepalive", () => {
    * The keepalive cannot start until the response exists, so a generator whose
    * *first* chunk is far away would spend the whole 60s idle budget in
    * silence and be cut mid-run. Two runs do exactly that: an image, whose bytes
-   * arrive in one chunk at the end, and a reasoning model on a version that is
+   * arrive in one chunk at the end, and a reasoning model on a configuration that is
    * not recording its thinking — that stream's first chunk is the end-of-turn
    * usage.
    */
@@ -267,21 +267,5 @@ describe("sseResponse cancellation", () => {
     release();
     await drained;
     expect(finalized).toBe(true);
-  });
-});
-
-describe("sseResponseRaw error framing", () => {
-  it("lets a protocol say a mid-stream failure in its own frame", async () => {
-    async function* failing(): AsyncGenerator<unknown> {
-      yield { type: "RUN_STARTED" };
-      throw new Error("provider went away");
-    }
-    const response = await sseResponseRaw(failing(), undefined, {
-      errorFrame: (message) => ({ type: "RUN_ERROR", message }),
-    });
-    await expect(collectSse(response, { requireDone: false })).resolves.toEqual([
-      { type: "RUN_STARTED" },
-      { type: "RUN_ERROR", message: "provider went away" },
-    ]);
   });
 });

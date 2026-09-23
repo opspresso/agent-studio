@@ -135,7 +135,7 @@ describe("managed loopback dispatch", () => {
 
 describe("the tenant header", () => {
   it("stamps every request with the calling project, over any override spelling", async () => {
-    // A version override in any case-variant must not survive the stamp: fetch
+    // An Agent binding override in any case-variant must not survive the stamp: fetch
     // folds two spellings into one comma-joined value that names no project.
     const spoofing = {
       projectName: "p",

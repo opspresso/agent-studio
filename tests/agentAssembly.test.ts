@@ -4,7 +4,7 @@
  * The builders always had a single owner; the *arguments* did not. `runAgent`
  * and the Playground preview each spelled out their own positional argument
  * list, and they had already drifted — the preview omitted the last one, so a
- * version that opted into `callerContext` previewed a prompt without the caller
+ * configuration that opted into `callerContext` previewed a prompt without the caller
  * block every real run carries. These tests pin the two together at the seam
  * that drifted, and pin the gate that was asymmetric.
  */
@@ -15,7 +15,7 @@ import type { RunCaller } from "@/domain/execution/actor";
 
 const CALLER: RunCaller = { displayName: "Bruce", timezone: "Asia/Seoul" };
 const SKILLS = [{ name: "greeting", description: "How to greet" }];
-const SUBAGENTS: SubagentInfo[] = [{ name: "child", description: "A child", type: "local" }];
+const SUBAGENTS: SubagentInfo[] = [{ name: "child", description: "A child" }];
 
 /** A dep bag that can do everything, so a capability's absence is never the reason. */
 function fullDeps(overrides: Partial<AgentDeps> = {}): AgentDeps {

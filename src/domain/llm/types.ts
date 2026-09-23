@@ -143,9 +143,8 @@ export interface EngineChunk {
     toolCalls?: ChannelToolCall[];
   };
   /**
-   * Emitted when a run produced an image — the builtin GenerateImage/EditImage
-   * tools, an image subagent, an image project, or an MCP tool that returned
-   * one.
+   * Emitted when a run produced an image through an Agent tool, a delegated
+   * Agent, or an MCP tool.
    *
    * `artifactId`/`key` are added once the bytes have been stored, and the bytes
    * stay: a live view renders them as it always did, and only a consumer that
@@ -175,7 +174,7 @@ export interface EngineChunk {
      * The model that drew it, named by the producer that used it — the image
      * project's own model, the one `resolveImageModel` gave the builtins, an
      * image subagent's. Absent when nothing here can name one: a picture an MCP
-     * tool or a remote agent handed back, or one `FetchUrl` merely read.
+     * tool handed back, or one `FetchUrl` merely read.
      *
      * The run's model is *not* the fallback. A run and the thing that drew for
      * it are routinely different models, so filling this in from the Agent settings
@@ -301,8 +300,7 @@ export function chunkTermination(
  * The termination this chunk announces *for the run* — {@link isTopLevelChunk}
  * and {@link chunkTermination} composed, because every consumer that asked the
  * two questions separately was one forgotten gate away from reading a child's
- * ending as the stream's (which is exactly how an authored error once failed a
- * whole A2A task).
+ * ending as the stream's.
  */
 export function runTermination(
   chunk: Pick<EngineChunk, "author" | "done" | "finishReason" | "error">,

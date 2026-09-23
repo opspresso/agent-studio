@@ -7,8 +7,7 @@ process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 5).toString("base64");
  * already meant "not set" — and whitespace, which carries the same intent, did
  * not. A secret mounted from a file arrives with a trailing newline; one typed
  * with a stray space arrives with that. Without normalization both survive as values:
- * `A2A_API_KEY=" "` passed the boot guard, read as `source: "env"` on the
- * settings page, and then 401'd every request that presented it.
+ * an empty credential would otherwise appear configured on the settings page.
  *
  * The asymmetry that made it worst lived inside the settings page, which asks
  * the blank question twice: an override is stored trimmed (`update` does it),
@@ -24,7 +23,6 @@ import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import type { SettingsRepository } from "@/domain/settings/repository";
 
 const TOUCHED = [
-  "A2A_API_KEY",
   "GITHUB_TOKEN",
   "GITHUB_API_URL",
   "GITHUB_WEB_URL",
@@ -76,10 +74,10 @@ describe("optional config", () => {
   });
 
   it.each(BLANK)("reads %o as unset", (raw) => {
-    set("A2A_API_KEY", raw);
+    set("GITHUB_TOKEN", raw);
     set("S3_BUCKET_NAME", raw);
     set("PLUGINS_REPO", raw);
-    expect(config.a2aApiKey).toBeUndefined();
+    expect(config.githubToken).toBeUndefined();
     expect(config.objectBucketName).toBeUndefined();
     expect(config.pluginsRepo).toBeUndefined();
   });

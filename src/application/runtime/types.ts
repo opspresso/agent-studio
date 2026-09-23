@@ -1,7 +1,7 @@
 import type { ModelProvider, Session, AgentInputItem, RunState, Agent, AgentOutputType } from "@openai/agents";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { RunCaller } from "@/domain/execution/actor";
-import type { ChatMessageInput, EngineChunk, EngineParameters, McpToolResult } from "@/domain/llm/types";
+import type { ChatMessageInput, EngineParameters, McpToolResult } from "@/domain/llm/types";
 import type { AgentCapabilityDeps, SkillInfo, SubagentInfo, McpServerInfo } from "@/application/llm/agentAssembly";
 import type { RuntimeApproval, RuntimeApprovalDecision } from "@/domain/execution/runtimeSession";
 import type { AgentConfiguration } from "@/domain/project/types";
@@ -49,16 +49,12 @@ export interface AgentTask {
   invocationId?: string;
 }
 
-export type PreparedAgent = {
-  kind: "agent";
+export interface PreparedAgent {
   input: RunAgentInput;
   deps: AgentDeps;
   warnings: string[];
   close: () => Promise<void>;
-} | {
-  kind: "action";
-  run: () => AsyncGenerator<EngineChunk, string>;
-};
+}
 
 export interface RunAgentInput {
   runtime?: RuntimeTurnPersistence;
@@ -91,15 +87,6 @@ export interface RunAgentInput {
   mcpTools?: ChannelToolDef[];
   /** Per-server grouping of the MCP tools, for the system prompt overview. */
   mcpServers?: McpServerInfo[];
-  /**
-   * Tools the application the person is using executes on its side (AG-UI's
-   * frontend tools). A turn that calls one is the run's last: the calls are
-   * announced, the run's own calls in that turn still run and report, and the
-   * loop then ends with `done` so the application can answer its own — the
-   * results come back as `tool` messages in the next run's history. Never
-   * handed to a subagent: a child cannot end the run the person is waiting on.
-   */
-  clientTools?: ChannelToolDef[];
   signal?: AbortSignal;
 }
 

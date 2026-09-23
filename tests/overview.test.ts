@@ -7,7 +7,6 @@ function project(name: string, ownerEmail: string, updatedAt: string): Project {
     name,
     displayName: name,
     description: "",
-    projectType: "agent",
     ownerEmail,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt,

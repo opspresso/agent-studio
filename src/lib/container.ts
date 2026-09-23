@@ -68,8 +68,7 @@ import { utcDay } from "@/shared/date";
  * Adapters that pull a heavy SDK are reached through `import()` rather than a
  * top-level import. Anything named at module scope is retained for every
  * consumer of this file, so a route that wanted one repository was also loading
- * the Slack client, the GitHub client, the A2A card renderer, and — through the
- * remote-agent dispatcher — the `@a2a-js/sdk` client.
+ * the Slack client and the GitHub client.
  * Each of those is already awaited at its call site, so deferring costs nothing.
  * The one that stays eager is `mcpToolProbe`: its `invalidateDiscovery` is
  * synchronous, and making it async would let a later read win the race against
@@ -82,8 +81,6 @@ import { skillRepository } from "@/infrastructure/db/repositories/skillRepositor
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { mcpConnectionRepository } from "@/infrastructure/db/repositories/mcpConnectionRepository";
 import { mcpOAuthStateRepository } from "@/infrastructure/db/repositories/mcpOAuthStateRepository";
-import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
-import { remoteConversationRepository } from "@/infrastructure/db/repositories/remoteConversationRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { createAgentModelProvider } from "@/infrastructure/llm/agentModels";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
@@ -104,7 +101,6 @@ import { config } from "./config";
 import { oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
 import { oauthClient } from "@/infrastructure/mcp/oauthClient";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
-import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { artifactRepository } from "@/infrastructure/db/repositories/artifactRepository";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
@@ -124,10 +120,8 @@ import {
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
 import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
-import { createA2aTaskStore } from "@/infrastructure/a2a/taskStore";
 import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
 import { checkReadiness } from "@/application/health/readiness";
-import { createAgentUseCases } from "@/application/agent/agentUseCases";
 import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
 import { createManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
 import { createDockerProvisioner } from "@/infrastructure/mcp/dockerProvisioner";
@@ -155,8 +149,6 @@ import { createModelSelectionUseCases } from "@/application/llm/modelSelection";
 import { modelPreferencesRepository } from "@/infrastructure/db/repositories/modelPreferencesRepository";
 import { catalogReindexLock } from "@/infrastructure/db/repositories/catalogReindexLock";
 import { CATALOG_REINDEX_LEASE_MS } from "@/domain/catalog/reindexLock";
-import type { A2aExposureDeps } from "@/application/a2a/exposure";
-import type { AguiDeps } from "@/application/agui/run";
 import type { PostCostAlert } from "@/application/usage/costGuard";
 import type { ConcurrencyLimits } from "@/application/run/concurrencyGuard";
 import type { ExecutionDeps } from "@/application/execution/deps";
@@ -174,8 +166,6 @@ import { createTraceUseCases } from "@/application/trace/traceUseCases";
 import { createUsageUseCases } from "@/application/usage/usageUseCases";
 import { createConfigurationUseCases } from "@/application/project/configurationUseCases";
 import { createApiTokenUseCases } from "@/application/project/apiTokenUseCases";
-import { createA2aClientKeyUseCases } from "@/application/a2a/clientKeyUseCases";
-import { a2aClientKeyRepository } from "@/infrastructure/db/repositories/a2aClientKeyRepository";
 import { createProjectSlackUseCases, resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
 import {
   createProjectTelegramUseCases,
@@ -347,24 +337,6 @@ export const modelRegistryUseCases = createModelRegistryUseCases({
   changed: async () => { invalidateSettingsCache(); await getLlmProviderConfigs(); },
 });
 
-const remoteAgents: RemoteAgentDispatcher = {
-  // Every argument through, `options` included: this wrapper is what a run's
-  // transfer actually calls, and a `contextId` it swallowed would leave the
-  // continuity the tests prove on the adapter never reaching the wire.
-  send: async (target, message, signal, options) =>
-    (await import("@/infrastructure/agent/dispatcher")).remoteAgentDispatcher.send(
-      target,
-      message,
-      signal,
-      options,
-    ),
-  probe: async (target, message) =>
-    (await import("@/infrastructure/agent/dispatcher")).remoteAgentDispatcher.probe(
-      target,
-      message,
-    ),
-};
-
 const mcpSessions: McpSessionFactory = {
   open: async (servers, reservedNames, signal) =>
     (await import("@/infrastructure/mcp/sessionFactory")).mcpSessionFactory.open(
@@ -405,17 +377,16 @@ const runTraceRepository = otelEndpoint
   : traceRepository;
 
 // The narrow raw surface: the Slack event wiring site takes the two
-// repositories, the A2A route takes its per-request task store. Everything
+// repositories. Everything
 // else leaves this file already composed — a singleton nothing imports is a
 // door with nothing behind it, and five of them stood open here.
-export { projectRepository, createA2aTaskStore };
+export { projectRepository };
 
 /**
  * Registry slice singletons. Each slice exports only its `createXUseCases`
  * factory; the instance is composed here so a repository or port implementation
  * has exactly one wiring site.
  */
-export const agentUseCases = createAgentUseCases(externalAgentRepository, secretCipher, urlPolicy, remoteAgents);
 export const mcpUseCases = createMcpUseCases(
   mcpRepository,
   secretCipher,
@@ -485,7 +456,6 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
   ? {
       skills: skillRepository,
       mcps: mcpRepository,
-      externalAgents: externalAgentRepository,
       // The console's "test connection" probe, which already answers exactly
       // this question. A server that refuses is not an error here — it is
       // indexed at server level and reported as undiscovered.
@@ -565,10 +535,6 @@ export const projectUseCases = createProjectUseCases(projectRepository, {
 // for an owner whose tier allows one, and the same resolver answers the
 // authentication-time check in `executionAuth.ts`.
 export const apiTokenUseCases = createApiTokenUseCases(projectRepository, secretCipher, getMemberTier);
-export const a2aClientKeyUseCases = createA2aClientKeyUseCases(
-  a2aClientKeyRepository,
-  secretCipher,
-);
 export const triggerUseCases = createTriggerUseCases({
   triggers: triggerRepository,
   projects: projectRepository,
@@ -776,16 +742,6 @@ export const pluginsRepoHeadSha = async (
   return fetchRepoHeadSha(repoConfig);
 };
 
-/** A2A exposure: repositories plus the card renderer. */
-export const a2aExposureDeps: A2aExposureDeps = {
-  projects: projectRepository,
-
-  buildCard: async (project) =>
-    (await import("@/infrastructure/a2a/cards")).buildAgentCard(project),
-  cardUrlFor: async (projectName) =>
-    (await import("@/infrastructure/a2a/cards")).buildProjectAgentCardUrl(projectName),
-};
-
 /**
  * Slack Web API access for the per-project bot test. Module-local for the same
  * reason as `configurationRefRepos`: `projectSlackUseCases` below is the only
@@ -897,7 +853,6 @@ export const usageUseCases = createUsageUseCases({
 const configurationRefRepos = {
   skills: skillRepository,
   mcps: mcpRepository,
-  externalAgents: externalAgentRepository,
   projects: projectRepository,
 };
 
@@ -910,8 +865,7 @@ export const configurationUseCases = createConfigurationUseCases({
 export const createAgent = composeCreateAgent({
 
   projects: projectRepository,
-  // Which model fits which project type is the flow's policy; this only feeds
-  // it the runtime settings the application layer may not read.
+  // Model selection is the flow's policy; this supplies deployment settings.
   offered: async () => {
     const providers = await getLlmProviderConfigs();
     const preferred = await getDefaultModel();
@@ -952,7 +906,6 @@ export const readinessReport = () =>
  */
 const concurrencyLimits: ConcurrencyLimits = {
   perActor: config.maxConcurrentRunsPerActor,
-  a2a: config.maxConcurrentRunsA2a,
 };
 
 /**
@@ -1033,7 +986,7 @@ const deliverProjectMessage: PostCostAlert = async (project, destination, text) 
   );
 };
 
-/** Repository + channel bundle passed to the execution facade (executeVersion/Stream/Agent). */
+/** Repository and channel dependencies for the execution facade. */
 export const executionDeps: ExecutionDeps = {
   createToolSchemaValidator,
   runtimeSessions: runtimeSessions,
@@ -1041,7 +994,6 @@ export const executionDeps: ExecutionDeps = {
 
   skills: skillRepository,
   mcps: mcpRepository,
-  externalAgents: externalAgentRepository,
   usage: usageRepository,
   channel: agentModels,
   imageChannel,
@@ -1101,11 +1053,6 @@ export const executionDeps: ExecutionDeps = {
     const runtime = resolveProjectSlackRuntime(secretCipher, project);
     return runtime ? createSlackWorkspaceReader(slackReader, runtime.botToken) : null;
   },
-  remoteAgents,
-  // The remote `contextId` a transfer continues, per project × agent ×
-  // conversation. Wired here so a second question from one Slack thread or
-  // chat reaches an A2A agent in the conversation the first one opened.
-  remoteConversations: remoteConversationRepository,
   mcpSessions,
   mcpAuth: mcpAuthProvider,
   mcpConnections: mcpConnectionRepository,
@@ -1122,10 +1069,8 @@ export const executionDeps: ExecutionDeps = {
 };
 
 /**
- * The webhook delivery path. `run` binds the facade's chunk-stream entry point
- * and nothing else: which project type runs which way, and what an image run's
- * chunks look like, are both decided there. This wiring site must not make its
- * own dispatch decision or assemble image chunks.
+ * The webhook delivery path binds the facade's chunk-stream entry point.
+ * Agent execution and image output use that shared path.
  */
 export const triggerRunnerDeps: TriggerRunnerDeps = {
   reviewForge: () => {
@@ -1154,13 +1099,6 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       ...(input.userEmail ? { ownerEmail: input.userEmail } : {}),
     });
   },
-};
-
-/** AG-UI reads the current Agent configuration and runs through `executionDeps`. */
-export const aguiDeps: AguiDeps = {
-  projects: projectRepository,
-
-  execution: executionDeps,
 };
 
 async function sourceRefreshIdentity(input: Parameters<NonNullable<ExecutionDeps["sourceRefreshIdentity"]>>[0]) {

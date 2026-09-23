@@ -21,7 +21,6 @@ const FIELDS = [
   "pluginsRepo",
   "pluginsRepoBranch",
   "githubToken",
-  "a2aApiKey",
   "publicBaseUrl",
   "unknownModelPolicy",
 ] as const;

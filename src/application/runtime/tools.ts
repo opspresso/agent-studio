@@ -106,7 +106,7 @@ export function createRuntimeTools(
       strict: false as const,
       parameters,
       inputGuardrails: [toolInputGuardrail(validate, filter)],
-      needsApproval: assembly.clientToolNames.has(name) || input.parameters?.policy?.approvalTools?.includes(name),
+      needsApproval: input.parameters?.policy?.approvalTools?.includes(name),
       errorFunction: async (_context: RunContext<unknown>, error: unknown, details?: ToolCallDetails) => {
         const id = details?.toolCall?.callId ?? "";
         const slot = turn.toolOrder?.get(id);
@@ -154,7 +154,7 @@ export function createRuntimeTools(
         } finally { slot?.complete(); displayNames.delete(callId); }
       },
     };
-    if (!assembly.builtinNames.has(name) && !assembly.clientToolNames.has(name)) {
+    if (!assembly.builtinNames.has(name)) {
       mcp.push({ definition, parameters, server: serverByTool.get(name) ?? "MCP", needsApproval: Boolean(options.needsApproval), inputGuardrails: options.inputGuardrails, execute: options.execute, error: options.errorFunction });
     } else {
       const native = tool(options);

@@ -1,5 +1,5 @@
 import type { AgentConfiguration, McpBinding } from "@/domain/project/types";
-import { isMcpSourceMapping, MAX_MCP_SOURCE_MAPPINGS } from "@/domain/mcp/sourceMapping";
+import { isMcpSourceMappings } from "@/domain/mcp/sourceMapping";
 
 /** Decode current settings without letting a stored identity escape its Project. */
 export function readAgentConfiguration(raw: unknown, projectName: string): AgentConfiguration | undefined {
@@ -15,7 +15,7 @@ export function readAgentConfiguration(raw: unknown, projectName: string): Agent
     !("piiFiltering" in parameters) || typeof parameters.piiFiltering !== "boolean" ||
     !Array.isArray(value.skillList) || !value.skillList.every(name => typeof name === "string") ||
     !Array.isArray(value.subagentList) || !value.subagentList.every(ref => ref && typeof ref === "object" &&
-      typeof ref.name === "string" && (ref.type === "local" || ref.type === "remote"))) {
+      typeof ref.name === "string" && Object.keys(ref).length === 1)) {
     throw new Error("Stored Agent configuration is invalid or belongs to another Project");
   }
   return {
@@ -31,53 +31,33 @@ export function readAgentConfiguration(raw: unknown, projectName: string): Agent
   };
 }
 
-/**
- * Normalize bare server names to bindings without overrides. Object bindings
- * are rebuilt field by field so stored data cannot introduce unknown fields.
- * Every persisted McpBinding field must be decoded here or reads will drop it.
- */
-export function toMcpBindings(raw: unknown): McpBinding[] {
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  return raw.flatMap((entry) => {
-    if (typeof entry === "string") {
-      return entry ? [{ name: entry }] : [];
+/** Decode the current binding shape; a malformed row must not silently lose tools or credentials. */
+function toMcpBindings(raw: unknown): McpBinding[] {
+  if (!Array.isArray(raw)) throw new Error("Stored Agent MCP bindings are invalid");
+  return raw.map((entry): McpBinding => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("Stored Agent MCP binding is invalid");
     }
-    if (entry && typeof entry === "object") {
-      const binding = entry as {
-        name?: unknown;
-        headers?: unknown;
-        headerTarget?: unknown;
-        tools?: unknown;
-        sourceOutputs?: unknown;
-      };
-      if (typeof binding.name === "string" && binding.name) {
-        if (binding.sourceOutputs !== undefined && (!Array.isArray(binding.sourceOutputs) ||
-          binding.sourceOutputs.length > MAX_MCP_SOURCE_MAPPINGS || !binding.sourceOutputs.every(isMcpSourceMapping) ||
-          new Set(binding.sourceOutputs.map((item) => item.tool)).size !== binding.sourceOutputs.length)) {
-          throw new Error("Stored MCP source mappings are invalid");
-        }
-        // An empty list means the same as no list — every tool — so it is
-        // dropped rather than stored as a narrowing that offers nothing.
-        const tools = Array.isArray(binding.tools)
-          ? binding.tools.filter((tool): tool is string => typeof tool === "string" && tool !== "")
-          : [];
-        return [
-          {
-            name: binding.name,
-            ...(binding.sourceOutputs ? { sourceOutputs: binding.sourceOutputs as McpBinding["sourceOutputs"] } : {}),
-            ...(binding.headers && typeof binding.headers === "object"
-              ? { headers: binding.headers as McpBinding["headers"] }
-              : {}),
-            ...(typeof binding.headerTarget === "string"
-              ? { headerTarget: binding.headerTarget }
-              : {}),
-            ...(tools.length > 0 ? { tools } : {}),
-          },
-        ];
-      }
+    const binding = entry as Record<string, unknown>;
+    if (typeof binding.name !== "string" || !binding.name ||
+      Object.keys(binding).some((key) => !["name", "headers", "headerTarget", "tools", "sourceOutputs"].includes(key)) ||
+      (binding.headers !== undefined && (!binding.headers || typeof binding.headers !== "object" || Array.isArray(binding.headers) ||
+        Object.entries(binding.headers).some(([name, value]) => !name || (typeof value !== "string" && value !== null)))) ||
+      (binding.headerTarget !== undefined && (typeof binding.headerTarget !== "string" || !binding.headerTarget)) ||
+      (binding.tools !== undefined && (!Array.isArray(binding.tools) ||
+        !binding.tools.every((tool) => typeof tool === "string" && tool.length > 0)))) {
+      throw new Error("Stored Agent MCP binding is invalid");
     }
-    return [];
+    if (binding.sourceOutputs !== undefined && !isMcpSourceMappings(binding.sourceOutputs)) {
+      throw new Error("Stored MCP source mappings are invalid");
+    }
+    const tools = binding.tools as string[] | undefined;
+    return {
+      name: binding.name,
+      ...(binding.headers !== undefined ? { headers: binding.headers as McpBinding["headers"] } : {}),
+      ...(binding.headerTarget !== undefined ? { headerTarget: binding.headerTarget as string } : {}),
+      ...(tools?.length ? { tools } : {}),
+      ...(binding.sourceOutputs !== undefined ? { sourceOutputs: binding.sourceOutputs as McpBinding["sourceOutputs"] } : {}),
+    };
   });
 }

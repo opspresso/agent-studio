@@ -5,7 +5,7 @@
  *
  * The DB read is cached in memory and invalidated on write, but the invalidation
  * is process-local. On a horizontally-scaled deployment a change made on one
- * instance (rotating the A2A key, demoting an admin, tightening the allowed
+ * instance (demoting an admin, tightening the allowed
  * sign-in domains) is observed by other instances only once their own cache
  * entry expires, so the TTL is the bound on how long a revoked credential keeps
  * working somewhere in the fleet. It is short by default for that reason: the
@@ -282,13 +282,6 @@ export async function getGitHubToken(): Promise<string | undefined> {
   const stored = await loadSettings();
   return stored?.githubToken !== undefined
     ? decryptSecret(stored.githubToken, settingsSecretContext("github-token")) : config.githubToken;
-}
-
-export async function getA2aApiKey(): Promise<string | undefined> {
-  const stored = (await loadSettings())?.a2aApiKey;
-  return stored !== undefined
-    ? decryptSecret(stored, settingsSecretContext("a2a-api-key"))
-    : config.a2aApiKey;
 }
 
 export async function getPublicBaseUrl(): Promise<string | undefined> {

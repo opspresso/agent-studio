@@ -17,7 +17,6 @@ vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 vi.mock("@/lib/container", () => ({
   executionDeps: {},
   projectRepository: {},
-  versionRepository: {},
   signArtifactUrl: undefined,
 }));
 vi.mock("@/infrastructure/telegram/client", () => ({ telegramClient: {} }));
