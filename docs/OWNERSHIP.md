@@ -49,6 +49,7 @@
 | 모델 이력·승인 체크포인트·revision과 저장 예산 | `src/application/runtime/session.ts`; 저장 CAS와 tombstone은 `src/infrastructure/db/repositories/runtimeSessionRepository.ts` | 코드 |
 | SDK native span의 로컬 수집과 안전한 메타데이터 변환 | `src/application/runtime/tracing.ts` | 코드 |
 | Agent의 입력 Guardrail과 Handoff 대상 검사 | `src/application/runtime/policy.ts`; 도구 정책은 SDK 도구 조립에 적용한다 | 코드 |
+| 선택적 실행 도구의 권한 거부와 권한 조회 실패 구분 | `src/application/execution/optionalToolAccess.ts`; Workspace·오디오 조립은 같은 판정을 사용한다 | 코드 |
 | 스키마. `items`와 파생 컬럼·부분 인덱스, Better Auth 테이블, `catalog_vectors`, `runtime_sessions`, 적용된 버전 | `src/infrastructure/db/migrations.ts`. 추가만 하는 목록, advisory lock 아래에서 부팅마다 | 코드 |
 | 선택된 모델의 facts와 실행 레지스트리 | 저장 형태·검증은 `src/domain/llm/providerModels.ts`, runtime facts·가격 계산은 `src/domain/llm/models.ts`, 선택·삭제는 `src/application/llm/modelRegistry.ts`가 소유한다 | 코드 |
 | Provider의 모델 유형·modality·기능 해석 | `src/infrastructure/llm/providerModelDiscovery.ts`; 공식 Provider 메타데이터를 이름 추정보다 우선한다 | 코드 |

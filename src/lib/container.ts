@@ -1,5 +1,6 @@
 import { createWorkspaceRuntimeModelUseCases } from "@/application/workspace/runtimeModels";
 import { createWorkspaceOptionsUseCase } from "@/application/workspace/workspaceOptions";
+import { optionalToolAccessible } from "@/application/execution/optionalToolAccess";
 import { workerDocumentRenderer, workerDocumentEditor, workerDocumentExtractor } from "@/infrastructure/documents/workerAdapters";
 import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as workspaceSleep } from "node:timers/promises";
@@ -1025,7 +1026,7 @@ export const executionDeps: ExecutionDeps = {
     if (origin.actor?.kind !== "user" || !getWorkspaceConfig() || !await workspaceRepositoryPolicyUseCases.enabled(projectName)) return undefined;
     const email = origin.actor.id;
     const authorize = () => authorizeWorkspaceTools(email, projectName);
-    try { await authorize(); } catch { return undefined; }
+    if (!await optionalToolAccessible(authorize)) return undefined;
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
       ...(getWorkspaceGitHubConfig() ? { createRepository: workspaceRepositoryCreationUseCases.create } : {}),
       requestGit: (id, ownerEmail, action, sourceChatId) => getCodingUseCases().request(id, ownerEmail, action, sourceChatId),
@@ -1048,7 +1049,7 @@ export const executionDeps: ExecutionDeps = {
     if (!email) return undefined;
     const project = origin.ancestry[0] ?? projectName;
     const runtime = getAudioRuntime();
-    try { await runtime.authorize(project, email); } catch { return undefined; }
+    if (!await optionalToolAccessible(() => runtime.authorize(project, email))) return undefined;
     return createAudioTool({ jobs: runtime.jobs, files: { read: async (sourceProject, id, user, maxBytes) => {
       await runtime.authorize(sourceProject, user);
       return runtime.files.read(sourceProject, id, user, maxBytes);
