@@ -71,10 +71,11 @@ function parseField(
     const slash = body.indexOf("/");
     if (slash >= 0) {
       const stepRaw = body.slice(slash + 1);
-      if (!/^\d+$/.test(stepRaw) || Number(stepRaw) < 1) {
+      const parsedStep = Number(stepRaw);
+      if (!/^\d+$/.test(stepRaw) || !Number.isSafeInteger(parsedStep) || parsedStep < 1) {
         return null;
       }
-      step = Number(stepRaw);
+      step = parsedStep;
       body = body.slice(0, slash);
     }
     let from: number;
