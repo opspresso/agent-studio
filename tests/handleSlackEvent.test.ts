@@ -1,6 +1,6 @@
 import { withConfigurations } from "./projectConfigurations";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { handleSlackEvent, handleSlackStop } from "@/application/slack/handleSlackEvent";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import type {
   SlackChunk,
@@ -17,6 +17,7 @@ import type { ProjectRepository } from "@/domain/project/repository";
 import { MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS } from "@/domain/slack/reader";
 
 const NOW = 1_750_000_000_000;
+beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
 
 function projectFixture(): Project {
   return {
@@ -132,6 +133,10 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
   /** Slack id → address, for the artifact owner the run files its output under. */
   const emails = new Map<string, string>();
   const slack: SlackClientPort = {
+    async setSessionStatus(_token, args) {
+      calls.push(`session:${args.status}`);
+      if (args.title) titles.push({ channel_id: args.channel_id, thread_ts: args.thread_ts, title: args.title });
+    },
     async downloadFile(_token, url) {
       downloads.push(url);
       return Buffer.from("png-bytes");
@@ -176,7 +181,7 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
         ...replies,
         ...posted.map((message, index) => ({
           ts: `100.${index + 1}`,
-          bot_id: "B0",
+          bot_id: "B0", user: "U0",
           text: message.text,
         })),
       ];
@@ -215,10 +220,6 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
       statuses.push(args.status);
     },
     async setSuggestedPrompts() {},
-    async setTitle(_token, args) {
-      calls.push("setTitle");
-      titles.push(args);
-    },
     async userProfile(_token, userId) {
       calls.push("userProfile");
       profileLookups.push(userId);
@@ -281,7 +282,14 @@ const engagements: Array<{ project: string; channel: string; threadTs: string }>
 const mutes: Array<{ threadTs: string; muted: boolean }> = [];
 
 function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps {
+  let held = false;
   return {
+    stops: {
+      acquire: async () => { if (held) return null; held = true; return "lease"; },
+      renew: async () => held,
+      release: async () => { held = false; },
+      requestStop: async () => {}, stoppedAfter: async () => false,
+    },
     threads: {
       markEngaged: async (project, channel, threadTs) => {
         engagements.push({ project, channel, threadTs });
@@ -313,6 +321,7 @@ function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps
 
 const EVENT: SlackEventBody = {
   event_id: "Ev1",
+  authorizations: [{ user_id: "U0", is_bot: true }],
   event: { type: "app_mention", channel: "C1", ts: "1.0", text: "<@U0> hello" },
 };
 
@@ -327,6 +336,98 @@ const BINDING = { projectName: "painter", botToken: "tok" };
 
 /** A run that yields nothing but `done`. */
 const deps0 = (slack: SlackClientPort) => makeDeps([{ done: true }], slack);
+
+describe("stopping Slack runs", () => {
+  it("checks a stop recorded just before model completion without waiting for a poll tick", async () => {
+    const { slack, uploads, finalText } = makeSlackFake();
+    const deps = deps0(slack);
+    let requested = false;
+    deps.stops.stoppedAfter = async () => requested;
+    deps.runAgent = async function* () {
+      requested = true;
+      yield { image: { b64: "aW1hZ2U=", mimeType: "image/png" } };
+    };
+    await handleSlackEvent(deps, DM_EVENT, BINDING);
+    expect(uploads).toEqual([]);
+    expect(finalText()).toContain("Stopped by user");
+  });
+
+  it("does not let overlapping runs in one thread clear each other's session status", async () => {
+    const { slack, calls, posted } = makeSlackFake();
+    const deps = deps0(slack);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => { started = resolve; });
+    let runs = 0;
+    deps.runAgent = async function* () {
+      runs += 1;
+      if (runs === 1) { started(); await held; }
+      yield { delta: { content: "done" } };
+    };
+    const first = handleSlackEvent(deps, DM_EVENT, BINDING);
+    await ready;
+    try {
+      await handleSlackEvent(deps, { ...DM_EVENT, event_id: "EvNext", event: {
+        ...DM_EVENT.event, ts: "2.0", thread_ts: "1.0",
+      } }, BINDING);
+      expect(runs).toBe(1);
+      expect(calls).not.toContain("session:active");
+      expect(posted.at(-1)?.text).toContain("already working");
+    } finally {
+      release();
+      await first;
+    }
+  });
+  const stopEvent: SlackEventBody = { type: "event_callback", event: {
+    type: "agent_session_stopped", channel: "D1", thread_ts: "1.0", event_ts: "2.0", user: "U1",
+  } };
+
+  it("records a native stop without a model call", async () => {
+    const { slack } = makeSlackFake();
+    const deps = deps0(slack);
+    const requestStop = vi.spyOn(deps.stops, "requestStop");
+    const run = vi.spyOn(deps, "runAgent");
+    await handleSlackStop(deps, stopEvent, BINDING);
+    expect(requestStop).toHaveBeenCalledWith({ projectName: "painter", channel: "D1", threadTs: "1.0" }, "2.0");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("applies the private-project access gate before recording native and command stops", async () => {
+    const { slack, emails } = makeSlackFake();
+    emails.set("U1", "outsider@example.com");
+    const deps = deps0(slack);
+    deps.projects.get = async () => ({ ...projectFixture(), visibility: "private" });
+    const requestStop = vi.spyOn(deps.stops, "requestStop");
+    await handleSlackStop(deps, stopEvent, BINDING);
+    await handleSlackEvent(deps, { ...DM_EVENT, event: { ...DM_EVENT.event, thread_ts: "1.0", ts: "2.0", user: "U1", text: "!stop" } }, BINDING);
+    expect(requestStop).not.toHaveBeenCalled();
+  });
+
+  it("handles !stop in a DM thread without running a model", async () => {
+    const { slack, posted } = makeSlackFake();
+    const deps = deps0(slack);
+    const requestStop = vi.spyOn(deps.stops, "requestStop");
+    const run = vi.spyOn(deps, "runAgent");
+    await handleSlackEvent(deps, { ...DM_EVENT, event: { ...DM_EVENT.event, user: "U1", thread_ts: "1.0", ts: "2.0", text: "!stop" } }, BINDING);
+    expect(requestStop).toHaveBeenCalledOnce();
+    expect(run).not.toHaveBeenCalled();
+    expect(posted.at(-1)?.text).toContain("Stop requested");
+  });
+
+  it("does not dispatch delayed stopped work or reset a newer session's status", async () => {
+    const { slack, calls, posted } = makeSlackFake();
+    const deps = deps0(slack);
+    deps.stops.stoppedAfter = async () => true;
+    const run = vi.spyOn(deps, "runAgent");
+    await handleSlackEvent(deps, DM_EVENT, BINDING);
+    expect(run).not.toHaveBeenCalled();
+    expect(calls).not.toContain("session:active");
+    expect(calls).not.toContain("session:processing");
+    expect(posted.at(-1)?.text).toContain("Stopped by user");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -586,7 +687,7 @@ describe("handleSlackEvent", () => {
     const { slack, calls, replies } = makeSlackFake();
     replies.push(
       { ts: "0.9", user: "U1", text: "<@U0> earlier question" },
-      { ts: "0.95", bot_id: "B0", text: "earlier answer" },
+      { ts: "0.95", bot_id: "B0", user: "U0", text: "earlier answer" },
     );
     const deps = makeDeps([], slack);
     let seen: ChatMessageInput[] = [];
@@ -607,7 +708,7 @@ describe("handleSlackEvent", () => {
     // the history this run was assembled from.
     // One close, carrying the unfinished rows and the last of the answer
     // together — both are chunks on a channel, so they fit in one call.
-    expect(calls).toEqual(["threadReplies", "addReaction", "startStream", "stopStream"]);
+    expect(calls).toEqual(["session:processing", "threadReplies", "addReaction", "startStream", "stopStream", "session:active"]);
     expect(seen.map((m) => m.content)).toEqual([
       "earlier question",
       "earlier answer",
@@ -719,7 +820,7 @@ describe("handleSlackEvent", () => {
     ]);
     // Picked up and answered like any channel message: the reaction lands on
     // the alert, and the reply streams into a thread under it.
-    expect(calls).toEqual(["addReaction", "startStream", "stopStream"]);
+    expect(calls).toEqual(["session:processing", "addReaction", "startStream", "stopStream", "session:active"]);
   });
 
   it("answers without history when the thread read fails", async () => {
@@ -907,7 +1008,7 @@ describe("handleSlackEvent", () => {
         text: "<@U0> here is the picture",
         files: [{ id: "F1", mimetype: "image/png", url_private_download: "https://files.slack.com/f/F1" }],
       },
-      { ts: "0.95", bot_id: "B0", text: "nice picture" },
+      { ts: "0.95", bot_id: "B0", user: "U0", text: "nice picture" },
     );
     const deps = makeDeps([], slack);
     let seen: ChatMessageInput[] = [];
@@ -947,7 +1048,7 @@ describe("handleSlackEvent", () => {
     // only carry text — image parts on it are rejected by the provider.
     replies.push({
       ts: "0.95",
-      bot_id: "B0",
+      bot_id: "B0", user: "U0",
       text: "",
       files: [{ id: "OWN", mimetype: "image/png", url_private_download: "https://files.slack.com/f/OWN" }],
     });
@@ -1411,7 +1512,7 @@ describe("telling the run who is asking", () => {
     profiles.set("U2", { displayName: "Dana" });
     replies.push(
       { ts: "0.9", user: "U1", text: "what does this cost?" },
-      { ts: "0.92", bot_id: "B0", text: "about ten dollars" },
+      { ts: "0.92", bot_id: "B0", user: "U0", text: "about ten dollars" },
       { ts: "0.94", user: "U2", text: "per day or per month?" },
     );
     const deps = makeDeps([{ done: true }], slack);
@@ -1515,7 +1616,7 @@ describe("telling the run who is asking", () => {
     profiles.set("U1", { displayName: "Bruce" });
     replies.push(
       { ts: "0.9", user: "U1", text: "what does this cost?" },
-      { ts: "0.92", bot_id: "B0", text: "about ten dollars" },
+      { ts: "0.92", bot_id: "B0", user: "U0", text: "about ten dollars" },
     );
     const deps = makeDeps([{ done: true }], slack);
     withCallerContext(deps, true);
@@ -1663,14 +1764,14 @@ describe("the native agent affordances", () => {
     expect(titles).toEqual([]);
   });
 
-  it("does not name a channel thread", async () => {
+  it("names new channel sessions as well as DMs", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     const { slack, titles } = makeSlackFake();
 
     await handleSlackEvent(makeDeps([{ done: true }], slack), EVENT, BINDING);
 
-    expect(titles).toEqual([]);
+    expect(titles).toEqual([{ channel_id: "C1", thread_ts: "1.0", title: "hello" }]);
   });
 });
 
@@ -2201,6 +2302,7 @@ describe("private project visibility gate", () => {
   });
   const withUser = (user: string): SlackEventBody => ({
     event_id: "Ev9",
+      authorizations: [{ user_id: "U0", is_bot: true }],
     event: { type: "app_mention", channel: "C1", ts: "1.0", text: "<@U0> hello", user },
   });
   const privateDeps = (slack: SlackClientPort) => {
@@ -2233,6 +2335,7 @@ describe("private project visibility gate", () => {
     const { slack, posted, reactions } = makeSlackFake();
     const event: SlackEventBody = {
       event_id: "Ev9",
+      authorizations: [{ user_id: "U0", is_bot: true }],
       event: { type: "app_mention", channel: "C1", ts: "1.0", text: "<@U0> hello", bot_id: "B9" },
     };
 
@@ -2246,6 +2349,7 @@ describe("private project visibility gate", () => {
     const { slack, posted } = makeSlackFake();
     const event: SlackEventBody = {
       event_id: "Ev9",
+      authorizations: [{ user_id: "U0", is_bot: true }],
       event: { type: "app_mention", channel: "C1", ts: "1.0", text: "<@U0> hello" },
     };
 
@@ -2259,6 +2363,7 @@ describe("private project visibility gate", () => {
     emails.set("U2", "stranger@x.com");
     const event: SlackEventBody = {
       event_id: "Ev9",
+      authorizations: [{ user_id: "U0", is_bot: true }],
       event: {
         type: "app_mention",
         channel: "C1",
@@ -2280,6 +2385,7 @@ describe("private project visibility gate", () => {
     emails.set("U2", "invited@x.com");
     const event: SlackEventBody = {
       event_id: "Ev9",
+      authorizations: [{ user_id: "U0", is_bot: true }],
       event: {
         type: "app_mention",
         channel: "C1",
@@ -2305,6 +2411,7 @@ describe("private project visibility gate", () => {
     } as unknown as ProjectRepository;
     const event: SlackEventBody = {
       event_id: "Ev9",
+      authorizations: [{ user_id: "U0", is_bot: true }],
       event: {
         type: "app_mention",
         channel: "C1",

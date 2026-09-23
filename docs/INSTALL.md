@@ -59,6 +59,27 @@ Google도 필요하면 `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`을 함께 �
 설정 항목의 의미는 [Keycloak OIDC 문서](https://www.keycloak.org/securing-apps/oidc-layers)와
 [client 설정 문서](https://www.keycloak.org/docs/latest/server_admin/index.html#_oidc_clients)를 참고한다.
 
+## Slack 연동
+
+Slack은 선택 연동이다. 프로젝트 Integrations의 Slack bot에서 생성한 매니페스트로
+프로젝트 전용 앱을 만들고 워크스페이스에 설치한다. Bot token과 Basic Information의 signing secret을
+Studio에 저장하고 이벤트 수신을 켠 뒤, Slack Event Subscriptions에서 생성된 Request URL의 검증을 확인한다.
+채널에서 사용하려면 봇을 해당 채널에 초대한다.
+Slack 기본 중단 버튼은 매니페스트의 `agent_session_stopped` 구독이 있어야 표시된다.
+기존 앱에도 해당 구독을 적용해야 하며, thread 안의 `!stop` 명령으로도 실행을 중단할 수 있다.
+
+Slack에서 프로젝트의 HTTPS 이벤트 URL에 접근할 수 있어야 하며, Studio는 Slack Web API에
+접근할 수 있어야 한다. Socket Mode는 꺼 둔다. 공개 인터넷이 차단된 배포에서는 Slack 연동을 끄고
+Studio의 Chat·프로젝트 실행을 사용한다.
+
+기존 앱 설정은 Studio 저장만으로 바뀌지 않는다. 생성된 매니페스트를 Slack의 App Manifest 설정에
+다시 적용하고 권한이 바뀌면 앱을 재설치한다. 생성 매니페스트의 기능·권한 범위는
+[Slack 설계](design/slack.md#앱-매니페스트)를 따른다.
+
+조직 배포를 이미 켠 앱은 `settings.org_deploy_enabled: true`를 유지해야 한다.
+생성 매니페스트는 이 필드를 생략하므로 Slack의 기존 값을 복사해 넣은 뒤 적용한다.
+필드를 생략하거나 `false`로 바꾸는 것을 조직 배포를 끄는 방법으로 사용하지 않는다.
+
 ## 오디오 worker
 
 오디오 전사는 선택 기능이다. HTTP 앱과 같은 이미지의 `node build/audio-worker.cjs`를 별도 process로

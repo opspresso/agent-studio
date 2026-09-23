@@ -965,6 +965,27 @@ async function main() {
     }
     pass("inbound event claim: token ownership, concurrent reclaim, failed retry and terminal settlement");
 
+    // Stop events can reach a different replica, and may be delivered out of order.
+    const { slackRunControlRepository: slackControl } = await import("@/infrastructure/db/repositories/slackRunControlRepository");
+    const slackRunTarget = { projectName, channel: "C1", threadTs: "1.0" };
+    await Promise.all(["2.8", "2.3", "2.7"].map((ts) => slackControl.requestStop(slackRunTarget, ts)));
+    assert.equal(await slackControl.stoppedAfter(slackRunTarget, "2.7"), true);
+    assert.equal(await slackControl.stoppedAfter(slackRunTarget, "2.9"), false);
+    assert.equal(await slackControl.stoppedAfter({ ...slackRunTarget, channel: "C2" }, "2.7"), false);
+    await assert.rejects(slackControl.requestStop({ ...slackRunTarget, projectName: `missing-${suffix}` }, "2.8"));
+    pass("Slack stop delivery: concurrent watermark, subsequent-message isolation and project fence");
+    const slackLeases = await Promise.all([slackControl.acquire(slackRunTarget), slackControl.acquire(slackRunTarget)]);
+    const leaseWinners = slackLeases.filter((token): token is string => token !== null);
+    assert.equal(leaseWinners.length, 1);
+    assert.equal(await slackControl.renew(slackRunTarget, leaseWinners[0]!), true);
+    await slackControl.release(slackRunTarget, "stale-owner");
+    assert.equal(await slackControl.acquire(slackRunTarget), null);
+    await slackControl.release(slackRunTarget, leaseWinners[0]!);
+    const nextSlackLease = await slackControl.acquire(slackRunTarget);
+    assert.ok(nextSlackLease);
+    await slackControl.release(slackRunTarget, nextSlackLease);
+    pass("Slack thread lease: concurrent admission, renewal and owner-scoped release");
+
     // ---------- conversation transcript (newest N, oldest first, per conversation) ----------
     const conversationKey = `telegram:${suffix}`;
     for (const [index, content] of ["one", "two", "three"].entries()) {

@@ -1,5 +1,6 @@
 import type { SlackEventBody } from "@/application/slack/types";
-import { slackMessageText } from "@/domain/slack/messageText";
+import { slackInputText, slackMessageText } from "@/domain/slack/messageText";
+import { slackTimestampValue } from "@/domain/slack/runControl";
 
 /**
  * Which delivered Slack events cause a run — the single owner of that decision.
@@ -64,6 +65,7 @@ export type SlackEventDisposition =
   | { kind: "run"; trigger: "mention" | "dm" | "thread" | "keyword" }
   /** Greet rather than answer: someone opened the agent. */
   | { kind: "threadStart" }
+  | { kind: "stop" }
   /**
    * A channel thread's follow-up, if the bot is still engaged in that thread.
    * The only branch that needs a lookup, so it is returned rather than decided
@@ -74,6 +76,19 @@ export type SlackEventDisposition =
   | { kind: "ignore"; because: string };
 
 const ignore = (because: string): SlackEventDisposition => ({ kind: "ignore", because });
+
+/** Validate the native control event before either admitting it or changing run state. */
+export function slackStopEvent(body: SlackEventBody) {
+  const event = body.event;
+  if (event?.type !== "agent_session_stopped" || event.bot_id ||
+      typeof event.channel !== "string" || !event.channel ||
+      typeof event.user !== "string" || !event.user ||
+      typeof event.thread_ts !== "string" || slackTimestampValue(event.thread_ts) === null ||
+      typeof event.event_ts !== "string" || slackTimestampValue(event.event_ts) === null) {
+    return null;
+  }
+  return { channel: event.channel, userId: event.user, threadTs: event.thread_ts, eventTs: event.event_ts };
+}
 
 /**
  * Whether this event is the bot talking to itself.
@@ -161,9 +176,9 @@ function matchesKeyword(text: string, keywords: readonly string[] | undefined): 
  * again, and guessing at that from a sentence is how it stops answering
  * somebody who never asked it to.
  */
-export type SlackCommand = "help" | "mute" | "unmute";
+export type SlackCommand = "help" | "mute" | "unmute" | "stop";
 
-const COMMANDS = new Set<SlackCommand>(["help", "mute", "unmute"]);
+const COMMANDS = new Set<SlackCommand>(["help", "mute", "unmute", "stop"]);
 
 /**
  * The command a message *is*, or null for one that merely mentions a word.
@@ -192,6 +207,9 @@ export function classifySlackEvent(
   const event = body.event;
   if (!event?.type) {
     return ignore("no event type");
+  }
+  if (event.type === "agent_session_stopped") {
+    return slackStopEvent(body) ? { kind: "stop" } : ignore("invalid stop event");
   }
 
   // A user opening the agent. The agent messaging experience announces it with
@@ -244,6 +262,10 @@ export function classifySlackEvent(
   // A follow-up in a thread the bot may still be part of. Only a *reply* can be
   // one, so ordinary channel traffic never reaches the lookup.
   if (event.thread_ts) {
+    // A first run has not written engagement yet, but the user must still be able to stop it.
+    if (!fromAnotherApp && event.user && parseSlackCommand(slackInputText(event, selfUserId(body))) === "stop") {
+      return { kind: "run", trigger: "thread" };
+    }
     return fromAnotherApp
       ? ignore("another app's thread reply")
       : { kind: "engagedThread", channel: event.channel, threadTs: event.thread_ts };

@@ -12,8 +12,19 @@ export const MAX_SUGGESTED_PROMPTS = 4;
 /** Per-field cap. Slack does not document one; these keep a chip readable. */
 export const MAX_PROMPT_TITLE_LENGTH = 80;
 export const MAX_PROMPT_MESSAGE_LENGTH = 500;
+/** Slack's cap on the app's short description. */
+export const MAX_APP_DESCRIPTION_LENGTH = 140;
 /** Slack's cap on the agent overview shown above the Messages tab. */
 export const MAX_AGENT_DESCRIPTION_LENGTH = 300;
+
+/** Native Agent session lifecycle; title and initiator apply only when creating the session. */
+export interface SlackSessionStatusInput {
+  channel_id: string;
+  thread_ts: string;
+  status: "processing" | "active";
+  title?: string;
+  initiator_user_id?: string;
+}
 
 /**
  * Caps on the words a project may be woken by in a channel.

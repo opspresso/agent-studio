@@ -8,6 +8,7 @@ import type { ProjectRepository } from "@/domain/project/repository";
 import type { SlackChannelInfo, SlackSuggestedPrompt } from "@/domain/slack/types";
 import {
   MAX_AGENT_DESCRIPTION_LENGTH,
+  MAX_APP_DESCRIPTION_LENGTH,
   MAX_CHANNEL_KEYWORDS,
   MAX_KEYWORD_LENGTH,
   MAX_PROMPT_MESSAGE_LENGTH,
@@ -246,15 +247,17 @@ export function buildProjectSlackManifest(
   project: Project,
   baseUrl: string,
 ): Record<string, unknown> {
+  const description = project.description.trim() || defaultAgentDescription(project);
   return {
     display_information: {
       name: project.displayName.slice(0, 35),
-      description: defaultAgentDescription(project),
+      description: description.slice(0, MAX_APP_DESCRIPTION_LENGTH),
       background_color: "#2b5cd9",
     },
     features: {
       app_home: {
-        home_tab_enabled: true,
+        // Only the Messages tab is rendered; no Home view is published.
+        home_tab_enabled: false,
         messages_tab_enabled: true,
         messages_tab_read_only_enabled: false,
       },
@@ -263,10 +266,7 @@ export function buildProjectSlackManifest(
       // this key is present, and it is the only text a user sees before asking
       // anything — an empty view reads as a bot that is not running.
       agent_view: {
-        agent_description: (project.description.trim() || defaultAgentDescription(project)).slice(
-          0,
-          MAX_AGENT_DESCRIPTION_LENGTH,
-        ),
+        agent_description: description.slice(0, MAX_AGENT_DESCRIPTION_LENGTH),
         suggested_prompts: (project.slack?.suggestedPrompts ?? []).slice(0, MAX_SUGGESTED_PROMPTS),
       },
     },
@@ -277,10 +277,8 @@ export function buildProjectSlackManifest(
           "app_mentions:read",
           "assistant:write",
           "channels:history",
-          "channels:join",
           "channels:read",
           "chat:write",
-          "emoji:read",
           "files:read",
           "files:write",
           "groups:history",
@@ -291,7 +289,6 @@ export function buildProjectSlackManifest(
           "reactions:write",
           "users:read.email",
           "users:read",
-          "users.profile:read",
         ],
       },
       pkce_enabled: false,
@@ -317,12 +314,15 @@ export function buildProjectSlackManifest(
         bot_events: [
           "app_mention",
           "app_home_opened",
+          "agent_session_stopped",
           "message.channels",
           "message.groups",
           "message.im",
         ],
       },
-      org_deploy_enabled: false,
+      // The event endpoint accepts JSON events, not interactive form payloads.
+      interactivity: { is_enabled: false },
+      // Org deployment is managed in Slack; retain an existing true value when reapplying.
       socket_mode_enabled: false,
       token_rotation_enabled: false,
       is_mcp_enabled: true,

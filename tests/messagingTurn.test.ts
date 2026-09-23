@@ -133,6 +133,75 @@ afterEach(() => {
 });
 
 describe("handleTurn", () => {
+  it("reports cancellation-state failures during delivery and withholds pending files", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const deps = makeDeps([{ file: { name: "report.txt", mimeType: "text/plain", source: "File", key: "report" } }]);
+    deps.signFile = async () => { controller.abort(new Error("Cancellation state unavailable")); return "https://files.test/report"; };
+    const reply = makeReply();
+    const result = await handleTurn(deps, turn({ signal: controller.signal }), reply.reply);
+    expect(result.filesDelivered).toBe(0);
+    expect(reply.finished()?.suffix).toContain("Cancellation state unavailable");
+  });
+  it("honors a stop received after generation while signing a produced file", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const deps = makeDeps([{ file: { name: "report.txt", mimeType: "text/plain", source: "File", key: "report" } }]);
+    deps.signFile = async () => { controller.abort(); return "https://files.test/report"; };
+    const reply = makeReply();
+    const result = await handleTurn(deps, turn({ signal: controller.signal }), reply.reply);
+    expect(result.filesDelivered).toBe(0);
+    expect(reply.finished()?.suffix).toBe("Stopped by user.");
+  });
+  it("reports a tool error to the progress sink without preventing a recovered answer", async () => {
+    vi.useFakeTimers();
+    const deps = makeDeps([
+      { toolResult: { toolCallId: "call-1", name: "Search", content: "Error: source unavailable" } },
+      { delta: { content: "Here is what I could verify." } },
+    ]);
+    const reply = makeReply();
+    const done = vi.spyOn(reply.reply, "stepDone");
+    await handleTurn(deps, turn(), reply.reply);
+    expect(done).toHaveBeenCalledWith(expect.any(String), "Search", { failed: true });
+    expect(reply.finished()?.text).toBe("Here is what I could verify.");
+  });
+  it("passes user cancellation to a silent model and preserves partial text without a timeout warning", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const controller = new AbortController();
+    const deps = makeDeps([]);
+    let ready!: () => void;
+    const started = new Promise<void>((resolve) => { ready = resolve; });
+    deps.runAgent = async function* ({ signal }) {
+      yield { delta: { content: "Partial answer" } };
+      yield { image: { b64: "aW1hZ2U=", mimeType: "image/png" } };
+      ready();
+      await new Promise<void>((resolve) => { signal!.addEventListener("abort", () => resolve(), { once: true }); });
+      // The facade can finish quietly on cancellation.
+    };
+    const reply = makeReply();
+    const pending = handleTurn(deps, turn({ signal: controller.signal }), reply.reply);
+    await started;
+    controller.abort();
+    await pending;
+    expect(reply.finished()).toEqual({ text: "Partial answer", suffix: "Stopped by user." });
+    expect(reply.images).toEqual([]);
+    expect(reply.heartbeat()).toEqual({ started: 1, stopped: 1 });
+  });
+
+  it("does not download or dispatch a turn already cancelled", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const deps = makeDeps([]);
+    const run = vi.spyOn(deps, "runAgent");
+    const download = vi.fn();
+    const reply = makeReply();
+    await handleTurn(deps, turn({ signal: controller.signal, attachments: [{ name: "photo.png", mimeType: "image/png", download }] }), reply.reply);
+    expect(download).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    expect(reply.finished()?.suffix).toBe("Stopped by user.");
+  });
+
   it("restores and retains file IDs without putting signed URLs in model history", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);

@@ -141,9 +141,10 @@
 | 진행 상황을 포함해 Slack 답변이 어떻게 전달되는가 | `src/application/slack/replyStream.ts`. 보고는 하나이고, 그것을 렌더하는 것은 표면이 가진 메커니즘이다: DM 의 상태 줄이거나 채널 스트림의 `task_update` 축이다. 어느 쪽도 다른 쪽의 정의가 아니다 | 구조 |
 | Slack 출력에서 어떤 mrkdwn token이 알림 권한을 갖는가 | `src/domain/slack/outboundText.ts`의 `neutralizeSlackMentions`. 실제 Slack Web API 어댑터가 post, update, stream의 모든 텍스트 축에 적용한다 | 구조 |
 | 전달된 Slack 이벤트 중 어떤 것이 봇에게 온 것인가, loop guard 포함 | `src/application/slack/engagement.ts` | 구조 |
+| Slack 실행의 replica 간 중단 전달과 지연 이벤트 범위 | `domain/slack/runControl.ts`의 timestamp·repository 계약, `application/slack/watchStop.ts`의 확인 주기, `infrastructure/db/repositories/slackRunControlRepository.ts`의 최신 시각 원자적 저장 | 코드 |
 | Slack 메시지가 무엇을 *말하는가*. `text`·attachment·prose block 을 한 텍스트로 | `src/domain/slack/messageText.ts` 의 `slackMessageText`. 키워드 매칭, 런이 답하는 턴, 스레드 히스토리 셋이 이것을 읽는다. 경보 앱은 제목과 본문을 attachment 에 두므로 `text` 만 읽는 쪽은 헤드라인만 받는다 | 구조 |
 | 어떤 메시지가 질문이 아니라 고정된 명령인가 | `src/application/slack/engagement.ts` 의 `parseSlackCommand`. 의도적으로 엄격하다: 명령은 봇이 다시 말할지 여부를 바꾸고, 매칭이 느슨하면 아무도 침묵시켜 달라 하지 않은 스레드를 침묵시킨다 | 구조 |
-| 런이 사용하는 Slack Web API 표면 | `src/application/slack/types.ts` 의 `SlackClientPort`. 그것이 넘기는 스트리밍 chunk 형태는 `src/domain/slack/types.ts` 의 `SlackChunk` 이고, 어댑터도 거기서 그것들에 닿을 수 있다 | 구조 |
+| 런이 사용하는 Slack Web API 표면 | `src/application/slack/types.ts` 의 `SlackClientPort`. 스트리밍 chunk와 세션 상태 요청 형태는 `src/domain/slack/types.ts`의 `SlackChunk`·`SlackSessionStatusInput`이며 어댑터도 이를 사용한다 | 구조 |
 | 편집으로 답을 전달하는 표면의 장부. 페이싱, 메시지가 넘칠 때 다음으로 잇기, 거부된 쓰기의 재시도 간격, 마감이 독자에게 빚진 것 | `src/application/messaging/editInPlaceReply.ts` 의 `createEditInPlaceReply`. Telegram 과 Teams 는 호출·상한·렌더링(`EditInPlaceTransport`)만 건넨다 | 구조 |
 | 답이 메시지 하나를 넘칠 때 *어디서* 끊는가. 문단 → 줄 → 문장 → 공백 → 서러게이트 쌍을 쪼개지 않는 하드 컷, 그리고 잘린 코드 펜스를 한쪽에서 닫고 다음 쪽에서 다시 여는 것 | `src/shared/messageCut.ts` 의 `cutPoint` / `splitMessages`. 세 표면이 상한만 다르게 건넨다. 끊긴 자리는 독자가 보는 것이고, 사본 둘은 "문장 중간에서 멈추는가" 에 대한 답 둘이다 | 구조 |
 | 플랫폼 히스토리가 없는 표면이 대화를 어떻게 읽고 적는가. 턴 수·문자 예산, 턴 하나의 상한, 텍스트 없는 턴과 답 없는 런의 기록, 화자 라벨의 옵트인 | `src/application/messaging/transcriptHistory.ts` | 구조 |

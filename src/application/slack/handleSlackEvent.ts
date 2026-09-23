@@ -1,11 +1,13 @@
 import type { Project } from "@/domain/project/types";
 import type { SlackMessage } from "@/domain/slack/types";
 import { slackConversation } from "@/domain/slack/conversation";
-import { slackMessageText } from "@/domain/slack/messageText";
+import { slackInputText } from "@/domain/slack/messageText";
+import { slackTimestampValue } from "@/domain/slack/runControl";
+import { watchSlackStop } from "./watchStop";
 import { isProjectPrivate } from "@/domain/project/access";
 import { userMayAccessProject } from "@/application/project/projectUseCases";
 import { createReplySink, type ReplyTarget } from "@/application/slack/replyStream";
-import { parseSlackCommand, selfUserId } from "@/application/slack/engagement";
+import { parseSlackCommand, selfUserId, slackStopEvent } from "@/application/slack/engagement";
 import { handleSlackCommand } from "@/application/slack/handleCommand";
 import { handleTurn } from "@/application/messaging/handleTurn";
 import type { SlackEventBody, SlackEventDeps, SlackEventFile } from "@/application/slack/types";
@@ -117,8 +119,12 @@ export function threadToTurns(
   const isOurs = (m: SlackMessage): boolean =>
     selfUserId ? m.user === selfUserId : Boolean(m.bot_id);
   return replies
-    .map((m) => ({ m, text: slackMessageText(m).replace(/<@[A-Z0-9]+>/g, "").trim() }))
-    .filter(({ m, text }) => m.ts !== currentTs && (text !== "" || (m.files ?? []).length > 0))
+    .map((m) => ({ m, text: slackInputText(m, selfUserId) }))
+    .filter(({ m, text }) => {
+      const ts = slackTimestampValue(m.ts);
+      const cutoff = slackTimestampValue(currentTs);
+      return ts !== null && cutoff !== null && ts < cutoff && (text !== "" || (m.files ?? []).length > 0);
+    })
     .map(({ m, text }) => {
       const ours = isOurs(m);
       const appName = !ours && m.bot_id ? appNameOf(m) : undefined;
@@ -196,6 +202,7 @@ function slackReplyChannel(
   return {
     ...createReplySink(deps.slack, token, target, deps.loadingIndicator),
     async say(text) {
+      if (target.canWrite?.() === false) return;
       await deps.slack.postMessage(token, {
         channel: target.channel,
         thread_ts: target.threadTs,
@@ -203,6 +210,7 @@ function slackReplyChannel(
       });
     },
     async sendImage(image, index) {
+      if (target.canWrite?.() === false) return;
       const ext = image.mimeType === "image/png" ? "png" : "jpg";
       await deps.slack.uploadImage(token, {
         channel: target.channel,
@@ -337,11 +345,10 @@ export async function handleSlackEvent(
 
   // Everything the message says: an app's alert keeps its body in an
   // attachment, and `text` alone would hand the run the headline.
-  const message = slackMessageText(event).replace(/<@[A-Z0-9]+>/g, "").trim();
+  const message = slackInputText(event, selfUserId(body));
   const projectName = binding.projectName;
   const threadTs = event.thread_ts ?? event.ts;
-  // A DM is an agent thread: it has a native status line and a title. A channel
-  // mention has neither, and streaming into one needs the recipient named.
+  // DM progress uses a status line; channel progress uses tasks and needs a stream recipient.
   const isAssistantThread = event.channel_type === "im";
 
   // Ahead of the current-settings lookup, because a command is answered whether or
@@ -354,6 +361,7 @@ export async function handleSlackEvent(
   // successful lookup may distinguish a public or missing project.
   const command = parseSlackCommand(message);
   if (command) {
+    if (command === "stop" && (!event.user || event.bot_id)) return;
     const commandProject = await deps.projects.get(projectName);
     if (
       commandProject &&
@@ -374,6 +382,7 @@ export async function handleSlackEvent(
       botToken: token,
       channel: event.channel,
       threadTs,
+      eventTs: event.ts,
       inThread: event.thread_ts !== undefined,
       assistantThread: isAssistantThread,
     });
@@ -383,7 +392,9 @@ export async function handleSlackEvent(
   const project = await deps.projects.get(projectName);
   // Pin current settings alongside the Project for this messaging turn.
   const configuration = project ? project.configuration : null;
+  let canWrite = () => true;
   const target: ReplyTarget = {
+    canWrite: () => canWrite(),
     channel: event.channel,
     threadTs,
     assistantThread: isAssistantThread,
@@ -414,130 +425,170 @@ export async function handleSlackEvent(
 
   log.info("slack", `run start project=${projectName} channel=${event.channel} ts=${event.ts}`);
 
-  const warnings: string[] = [];
-  // Read the thread *before* the run writes anything of its own — otherwise the
-  // reply comes back as an assistant turn in this run's own context.
-  let replies: SlackMessage[] = [];
-  if (event.thread_ts !== undefined) {
+  const runTarget = { projectName, channel: event.channel, threadTs };
+  const lease = await deps.stops.acquire(runTarget);
+  if (!lease) {
+    await reply.say("I am already working in this thread. Please wait, or use !stop before sending another request.");
+    return;
+  }
+  const stop = await watchSlackStop(deps.stops, runTarget, event.ts, lease);
+  canWrite = stop.canWrite;
+  let started = false;
+  try {
+    if (stop.signal.aborted) {
+      await reply.finish("", stop.signal.reason.message, "cancelled");
+      return;
+    }
+    started = true;
+    await deps.slack.setSessionStatus(token, {
+      channel_id: event.channel, thread_ts: threadTs, status: "processing",
+      ...(!event.thread_ts && message ? { title: message.slice(0, MAX_THREAD_TITLE_LENGTH) } : {}),
+      ...(event.user ? { initiator_user_id: event.user } : {}),
+    }).catch((error) => log.error("slack", "session start failed", error));
+
+    const warnings: string[] = [];
+    // Read the thread *before* the run writes anything of its own — otherwise the
+    // reply comes back as an assistant turn in this run's own context.
+    let replies: SlackMessage[] = [];
+    if (event.thread_ts !== undefined) {
+      try {
+        replies = await deps.slack.threadReplies(token, {
+          channel: event.channel,
+          ts: event.thread_ts,
+        });
+      } catch (error) {
+        log.error("slack", "thread history failed", error);
+        warnings.push("Thread history unavailable; answered without prior context.");
+      }
+    }
+
+    // The newest turns, not the oldest: a long thread's most recent exchange is
+    // what a follow-up is about, and dropping the head costs less than dropping
+    // the question being answered.
+    const historyTurns = threadToTurns(replies, event.ts, selfUserId(body));
+    if (historyTurns.length > MAX_THREAD_HISTORY_MESSAGES) {
+      warnings.push(`Thread history limited to the most recent ${MAX_THREAD_HISTORY_MESSAGES} messages.`);
+    }
+    const rawTurns = historyTurns.slice(-MAX_THREAD_HISTORY_MESSAGES);
+
+    await stop.check();
+    if (stop.signal.aborted) {
+      await reply.finish("", stop.signal.reason.message, "cancelled");
+      return;
+    }
+
+    // Ahead of every lookup below. Profile resolution is several round trips on a
+    // cold cache, and making the user wait for them before anything acknowledges
+    // the message is the one thing the status line exists to prevent.
+    //
+    // The reaction goes first because it is the cheaper of the two and it lands
+    // where the person is already looking. A DM gets none: every message there is
+    // for the bot, and the thread's own status line says it was picked up.
+    if (!isAssistantThread) {
+      await deps.slack
+        .addReaction(token, { channel: event.channel, ts: event.ts, name: PICKED_UP_REACTION })
+        // Never fatal, and not even a warning in the reply: the run is about to
+        // answer, which is a louder acknowledgement than the one that failed.
+        .catch((error) => log.error("slack", "pickup reaction failed", error));
+    }
+    await reply.status(THINKING_MESSAGES[0] ?? "is thinking…", THINKING_MESSAGES);
+
+    // The Agent's opt-in gates the *lookup*, not just the prompt: a project that
+    // did not ask to know who is asking should not be sending anyone's id to
+    // Slack's profile API either.
+    const named = configuration.parameters.callerContext
+      ? await resolveSpeakers(deps, token, rawTurns, event.user)
+      : { caller: undefined, nameByUser: undefined };
+    // Whose gallery this run's output belongs in. Not gated on `callerContext`,
+    // which decides what the *model* is told: this address reaches no prompt and
+    // no tool result, and a person's own pictures going missing from their own
+    // gallery is not something an Agent parameter should be able to cause.
+    //
+    // Best effort in both directions — a workspace that does not share addresses,
+    // or a bot without the scope, files by project exactly as before.
+    const ownerEmail = event.user
+      ? await deps.slack
+          .userEmail(token, event.user)
+          .catch((error) => {
+            log.warn("slack", "owner lookup failed; filing by project alone", error);
+            return null;
+          })
+      : null;
+    const turns = withSpeakerLabels(rawTurns, named.nameByUser);
+
+    // Labelled on the same terms as the history: leaving the newest turn bare
+    // while every older one is named invites the model to attribute the question
+    // to whoever spoke last.
+    // An app that woke the bot — a keyword in an alert, a workflow's mention — is
+    // named the way its thread turns are, so the model knows an alerting app
+    // said this and not a person.
+    const currentSpeaker = event.user
+      ? named.nameByUser?.get(event.user)
+      : event.bot_id
+        ? appNameOf(event)
+        : undefined;
+    const askText = currentSpeaker && message ? `${currentSpeaker}: ${message}` : message;
+
+    // From here the turn is the same as any other chat bot's: attachments,
+    // the run, and what the reply carries beside the answer are the shared
+    // pipeline's, and only the thread's own bookkeeping below is Slack's.
+    await handleTurn(
+      deps,
+      {
+        project,
+        configuration,
+        text: askText,
+        attachments: (event.files ?? []).map((file) => toAttachment(deps, token, file)),
+        history: turns.map((turn) => toHistoryTurn(deps, token, turn)),
+        // The Slack user id, not an email: Slack does not hand one over, and
+        // guessing at a mapping would attribute spend to the wrong person.
+        ...(event.user ? { actor: { kind: "slack" as const, id: event.user } } : {}),
+        ...(named.caller ? { caller: named.caller } : {}),
+        // The thread is the conversation — the same address the engagement row and
+        // the reply itself use, so a follow-up here is one for every consumer.
+        conversation: slackConversation(event.channel, threadTs),
+        ...(ownerEmail ? { ownerEmail } : {}),
+        warnings,
+        signal: stop.signal,
+        checkCancellation: stop.check,
+      },
+      reply,
+    );
+
+    // The bot has now spoken here, so the next message in this thread is a
+    // follow-up rather than channel noise — recorded after the reply, because
+    // that is what makes it true. A DM needs no record: every message in one is
+    // addressed to the bot already.
+    //
+    // Recorded even when the reply was only warnings. That is still the bot
+    // holding the floor, and "it failed — try without the attachment" is exactly
+    // the turn someone answers without stopping to re-address it.
+    if (!isAssistantThread) {
+      await deps.threads
+        .markEngaged(projectName, event.channel, threadTs)
+        // A lost record costs the next follow-up its mention-free reply. Not
+        // worth failing a run that already answered.
+        .catch((error) => log.error("slack", "thread engagement could not be recorded", error));
+    }
+  } finally {
     try {
-      replies = await deps.slack.threadReplies(token, {
-        channel: event.channel,
-        ts: event.thread_ts,
-      });
-    } catch (error) {
-      log.error("slack", "thread history failed", error);
-      warnings.push("Thread history unavailable; answered without prior context.");
+      if (started && await deps.stops.renew(runTarget, lease)) {
+        await deps.slack.setSessionStatus(token, {
+          channel_id: event.channel, thread_ts: threadTs, status: "active",
+        }).catch((error) => log.error("slack", "session finish failed", error));
+      }
+    } finally {
+      stop.dispose();
+      await deps.stops.release(runTarget, lease);
     }
   }
+}
 
-  // The newest turns, not the oldest: a long thread's most recent exchange is
-  // what a follow-up is about, and dropping the head costs less than dropping
-  // the question being answered.
-  const rawTurns = threadToTurns(replies, event.ts, selfUserId(body)).slice(
-    -MAX_THREAD_HISTORY_MESSAGES,
-  );
-
-  // Ahead of every lookup below. Profile resolution is several round trips on a
-  // cold cache, and making the user wait for them before anything acknowledges
-  // the message is the one thing the status line exists to prevent.
-  //
-  // The reaction goes first because it is the cheaper of the two and it lands
-  // where the person is already looking. A DM gets none: every message there is
-  // for the bot, and the thread's own status line says it was picked up.
-  if (!isAssistantThread) {
-    await deps.slack
-      .addReaction(token, { channel: event.channel, ts: event.ts, name: PICKED_UP_REACTION })
-      // Never fatal, and not even a warning in the reply: the run is about to
-      // answer, which is a louder acknowledgement than the one that failed.
-      .catch((error) => log.error("slack", "pickup reaction failed", error));
-  }
-  await reply.status(THINKING_MESSAGES[0] ?? "is thinking…", THINKING_MESSAGES);
-
-  // The Agent's opt-in gates the *lookup*, not just the prompt: a project that
-  // did not ask to know who is asking should not be sending anyone's id to
-  // Slack's profile API either.
-  const named = configuration.parameters.callerContext
-    ? await resolveSpeakers(deps, token, rawTurns, event.user)
-    : { caller: undefined, nameByUser: undefined };
-  // Whose gallery this run's output belongs in. Not gated on `callerContext`,
-  // which decides what the *model* is told: this address reaches no prompt and
-  // no tool result, and a person's own pictures going missing from their own
-  // gallery is not something an Agent parameter should be able to cause.
-  //
-  // Best effort in both directions — a workspace that does not share addresses,
-  // or a bot without the scope, files by project exactly as before.
-  const ownerEmail = event.user
-    ? await deps.slack
-        .userEmail(token, event.user)
-        .catch((error) => {
-          log.warn("slack", "owner lookup failed; filing by project alone", error);
-          return null;
-        })
-    : null;
-  const turns = withSpeakerLabels(rawTurns, named.nameByUser);
-  // Name the thread from the question that opened it, so the agent's history
-  // reads as a list of topics rather than of timestamps. Only the opening turn:
-  // a later message would rename the thread out from under the user.
-  if (isAssistantThread && turns.length === 0 && message) {
-    await deps.slack
-      .setTitle(token, {
-        channel_id: event.channel,
-        thread_ts: threadTs,
-        title: message.slice(0, MAX_THREAD_TITLE_LENGTH),
-      })
-      .catch(() => {});
-  }
-
-  // Labelled on the same terms as the history: leaving the newest turn bare
-  // while every older one is named invites the model to attribute the question
-  // to whoever spoke last.
-  // An app that woke the bot — a keyword in an alert, a workflow's mention — is
-  // named the way its thread turns are, so the model knows an alerting app
-  // said this and not a person.
-  const currentSpeaker = event.user
-    ? named.nameByUser?.get(event.user)
-    : event.bot_id
-      ? appNameOf(event)
-      : undefined;
-  const askText = currentSpeaker && message ? `${currentSpeaker}: ${message}` : message;
-
-  // From here the turn is the same as any other chat bot's: attachments,
-  // the run, and what the reply carries beside the answer are the shared
-  // pipeline's, and only the thread's own bookkeeping below is Slack's.
-  await handleTurn(
-    deps,
-    {
-      project,
-      configuration,
-      text: askText,
-      attachments: (event.files ?? []).map((file) => toAttachment(deps, token, file)),
-      history: turns.map((turn) => toHistoryTurn(deps, token, turn)),
-      // The Slack user id, not an email: Slack does not hand one over, and
-      // guessing at a mapping would attribute spend to the wrong person.
-      ...(event.user ? { actor: { kind: "slack" as const, id: event.user } } : {}),
-      ...(named.caller ? { caller: named.caller } : {}),
-      // The thread is the conversation — the same address the engagement row and
-      // the reply itself use, so a follow-up here is one for every consumer.
-      conversation: slackConversation(event.channel, threadTs),
-      ...(ownerEmail ? { ownerEmail } : {}),
-      warnings,
-    },
-    reply,
-  );
-
-  // The bot has now spoken here, so the next message in this thread is a
-  // follow-up rather than channel noise — recorded after the reply, because
-  // that is what makes it true. A DM needs no record: every message in one is
-  // addressed to the bot already.
-  //
-  // Recorded even when the reply was only warnings. That is still the bot
-  // holding the floor, and "it failed — try without the attachment" is exactly
-  // the turn someone answers without stopping to re-address it.
-  if (!isAssistantThread) {
-    await deps.threads
-      .markEngaged(projectName, event.channel, threadTs)
-      // A lost record costs the next follow-up its mention-free reply. Not
-      // worth failing a run that already answered.
-      .catch((error) => log.error("slack", "thread engagement could not be recorded", error));
-  }
+/** Signed native stop events use the same project access gate as messages. */
+export async function handleSlackStop(deps: SlackEventDeps, body: SlackEventBody, binding: SlackBotBinding): Promise<void> {
+  const event = slackStopEvent(body);
+  if (!event) return;
+  const project = await deps.projects.get(binding.projectName);
+  if (!project || !(await slackSenderMayAccess(deps, binding.botToken, project, { user: event.userId }))) return;
+  await deps.stops.requestStop({ projectName: binding.projectName, channel: event.channel, threadTs: event.threadTs }, event.eventTs);
 }

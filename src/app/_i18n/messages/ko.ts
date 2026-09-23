@@ -1332,6 +1332,14 @@ export const ko: Messages = {
   "pset.notificationDestinationsHint":
     "활성화된 연동을 선택하면 비용 경고 목적지 입력란이 바로 표시됩니다.",
   "pset.slackBot": "Slack 봇",
+  "pset.slackSetupHint":
+    "아래 매니페스트로 프로젝트 전용 Slack 앱을 만들고(api.slack.com/apps → Create New App → From a manifest) 설치한 다음, 봇 토큰과 signing secret을 여기에 저장하고 이벤트 수신을 켜세요.",
+  "pset.slackManifestHint":
+    "Slack에서 아래 HTTPS 이벤트 URL에 접근할 수 있어야 합니다. Socket Mode는 꺼 두세요. 기존 앱은 Slack의 App Manifest 설정에 매니페스트를 적용하고, 권한이 변경되면 앱을 다시 설치하세요.",
+  "pset.slackOrgDeployHint":
+    "이미 조직 배포를 켠 앱은 매니페스트 적용 시 settings.org_deploy_enabled: true를 유지해야 합니다. 이 설정은 다시 끌 수 없습니다. 생성된 매니페스트에서는 생략하므로 저장 전에 Slack의 기존 값을 복사해 유지하세요.",
+  "pset.slackPromptsHint":
+    "Slack 앱의 Messages 탭 상단에 표시됩니다. 최대 {max}개이며 빈 행은 무시합니다. 저장하면 위 매니페스트도 갱신됩니다. 기본 프롬프트를 바꾸려면 Slack 앱에도 매니페스트를 다시 적용하세요.",
   "pset.appManifest": "앱 매니페스트",
   "pset.botToken": "봇 토큰",
   "pset.signingSecret": "Signing secret",

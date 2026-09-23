@@ -5,7 +5,36 @@ agent Project마다 Slack bot과 signing secret을 연결한다.
 인증·설정 API는 [API](../API.md#레지스트리연동-오퍼레이션),
 공통 실행·첨부·종료는 [메시징 파이프라인](messaging.md)이 소유한다.
 
+## 앱 매니페스트
+
+`buildProjectSlackManifest`는 프로젝트별 앱 설정을 생성한다.
+[Slack Agent messaging](https://docs.slack.dev/ai/migrating-to-agent-messaging/)에 맞춰
+`agent_view`와 입력 가능한 Messages 탭을 사용하며, 별도 뷰를 게시하지 않는 Home 탭은 끈다.
+프로젝트 설명은 앱의 짧은 설명과 Agent 소개에 쓰고, 비어 있으면 프로젝트 이름으로 만든다.
+두 설명의 [Slack 길이 한도](https://docs.slack.dev/reference/app-manifest/)는 `domain/slack/types.ts`가 소유한다.
+
+이벤트는 서명 검증을 거치는 HTTP Request URL로 받으므로 Socket Mode는 끈다.
+Interactivity payload 처리기와 토큰 갱신 흐름이 없어 해당 설정도 끈다.
+`org_deploy_enabled`는 생성 매니페스트에서 생략하고 Slack 앱 설정에서 관리한다.
+이미 조직 배포를 켠 앱은 다시 끌 수 있으리라 가정하지 않으며, 재적용할 매니페스트의
+`settings.org_deploy_enabled`에 기존 `true`를 명시적으로 유지한다.
+필드 생략을 기존 값의 자동 보존으로 취급하지 않는다. Studio의 연동은 프로젝트별
+워크스페이스 봇 토큰을 사용하며, 이 설정만으로 조직 단위 설치 흐름을 제공하지 않는다.
+봇 권한은 메시지·파일·리액션·채널 조회·사용자 확인에 사용한다. 채널 자동 가입,
+이모지 목록 조회와 사용자 custom profile 조회 권한은 요청하지 않는다.
+사용자 확인에는 `users:read`와 `users:read.email`을 사용하며, user token scope는 추가하지 않는다.
+
+`is_mcp_enabled`와 MCP OAuth callback은 같은 앱을 별도 MCP 연결에 사용할 수 있도록 유지한다.
+이 설정만으로 사용자 OAuth 연결이나 검색 권한이 생기지는 않는다. MCP 사용은 MCP 설정의 별도 인가를 따른다.
+설치·재적용 절차와 네트워크 요구사항은 [설치 문서](../INSTALL.md#slack-연동)를 따른다.
+
 ## 답변과 진행 표시
+
+메시지를 허용하면 이력 조회 전에 `agents.sessions.setStatus(processing)`으로 작업 시작을 표시한다.
+DM과 채널 모두 세션을 만들며, `title`·`initiator_user_id`는 Slack이 세션 생성 시에만 적용한다.
+이후 질문이나 이력 조회 실패가 사용자가 바꾼 제목을 덮어쓰지 않는다.
+답변 마감·실패·중단 뒤에는 `active`로 돌아간다.
+[Slack 세션 계약](https://docs.slack.dev/ai/agent-sessions/)을 따른다.
 
 `application/slack/replyStream.ts`는 native stream을 우선하고 지원되지 않는 경우
 `chat.postMessage`·`chat.update`로 답변을 편집한다.
@@ -29,7 +58,10 @@ stream append와 편집에는 각각 pacing이 있고, 상태 heartbeat는 chunk
 
 채널의 진행 행은 도구별로 묶는다. 반복 호출은 횟수로, 자식 작업은 부모의 위임 도구 행으로 표시한다.
 호출 ID와 결과가 완료 경계이며 status 문구가 바뀌었다는 이유로 체크하지 않는다.
-DM의 상태 줄은 자식의 진행도 표시한다. 종료 시 남은 진행 행과 텍스트를 닫고,
+DM의 세부 진행 문구는 `assistant.threads.setStatus`의 호환 경로를 사용한다.
+상태 줄은 자식의 진행도 표시한다. 도구의 `Error:` 결과는 공통 `isToolErrorText`로 판정하며,
+같은 도구 행에 성공·실패가 섞이면 실패를 유지한다. 실행 실패·중단 시 미완료 행은 성공으로 표시하지 않는다.
+종료 시 남은 진행 행과 텍스트를 닫고,
 텍스트 없이 그림·파일만 전달한 경우 중간 캡션 메시지를 회수한다.
 
 답변은 새 알림 권한을 얻지 않는다. 모델·도구·경고의 mention token은 Web API 전송 직전에
@@ -45,6 +77,7 @@ DM의 상태 줄은 자식의 진행도 표시한다. 종료 시 남은 진행 �
 | 입력 | 판정 |
 |---|---|
 | Messages 탭의 `app_home_opened`, `assistant_thread_started` | thread-start 처리; 모델 실행 없이 제안 프롬프트·소개 |
+| `agent_session_stopped` | 서명·사용자·타임스탬프 검증 후 중단 기록; 모델 실행 없음 |
 | 봇 자신의 메시지, 지원하지 않는 subtype | 무시 |
 | `app_mention` | 실행 |
 | 사람의 DM | 실행 |
@@ -69,13 +102,34 @@ DM의 상태 줄은 자식의 진행도 표시한다. 종료 시 남은 진행 �
 
 ## 명령, 그리고 멈추라는 말을 들었을 때
 
-`!help`·`!mute`·`!unmute`는 단독 명령일 때 모델 없이 처리한다.
+`!help`·`!stop`·`!mute`·`!unmute`는 단독 명령일 때 모델 없이 처리한다.
 `!mute this thread please`는 명령으로 추측하지 않는다.
 mute는 thread 참여를 비활성화하고 직접 mention 이후 답변은 참여를 다시 켠다.
 최상위 메시지의 mute에는 사용 위치를, DM에는 DM 동작을 안내한다.
 
 명령은 현재 설정 조회 전에 처리하지만 private 프로젝트의 접근 검사는 유지한다.
 프로젝트 정보를 읽지 못하면 명령도 권한을 열지 않는다.
+
+`agent_session_stopped` 구독으로 Slack 기본 중단 버튼을 제공한다. `!stop`은 DM·채널의
+대상 thread 안에서 보낸다. 첫 답변 전에 참여 기록이 없어도 사람의 `!stop`은 접수하며,
+private 프로젝트의 접근 판정은 중단에도 적용한다.
+
+`SlackRunControlRepository`는 프로젝트·채널·thread별 최신 중단 시각을 DB에 원자적으로 기록한다.
+같은 thread는 갱신 가능한 실행 lease로 한 번에 하나의 요청만 실행한다. 실행 중 추가 요청에는
+대기 또는 `!stop` 사용을 안내한다. lease는 상태 정리까지 보유하고 소유 token으로 갱신·해제한다.
+프로세스가 종료되면 lease가 만료되며, 소유권을 잃은 실행은 새 답변이나 상태 정리를 쓰지 않는다.
+실행 서버는 `watchSlackStop`으로 이를 확인하므로 중단 이벤트와 실행이 다른 replica에 도착해도
+같은 요청을 본다. 중단 이전 메시지만 취소하며 늦거나 순서가 뒤바뀐 중단 이벤트가 이후 질문을
+취소하지 않는다. 지연 접수된 메시지도 모델 실행 전에 검사한다. 조회 실패 시 확인할 수 없는
+실행을 계속하지 않고 이유를 알린다. 기록은 만료되며 프로젝트 삭제 fence·cascade를 따른다.
+모델 호출 전과 이미지·파일·최종 응답 전송 전에도 중단 상태를 갱신한다. 진행 중인 조회가 있으면
+같은 완료를 기다려 다음 정기 확인 전에 끝나는 짧은 실행도 이미 기록된 중단을 반영한다.
+
+중단 signal은 공통 실행의 deadline과 합쳐 모델·도구에 전달한다. 이미 보인 답은 남기고,
+중단 뒤 대기 중이던 이미지·파일 링크 전송은 생략한다. Slack이 먼저 stream을 닫았어도 미전송
+텍스트를 일반 응답 fallback으로 재전송하지 않는다. 편집·미개봉 경로도 이미 전달된 텍스트와
+중단 안내만 남긴다. 이미 실행된 외부 도구의 효과는 되돌리지 않는다.
+진행 중인 준비 I/O는 각 호출의 timeout·취소 지원 범위를 따르며, 이후 모델 실행은 중단된다.
 
 ## private project 는 묻는 사람을 이메일로 확인한다
 
@@ -103,6 +157,9 @@ private 프로젝트 접근은 접수 리액션·상태 표시 전에 검사한�
 
 thread의 최근 턴을 읽으며 자기 bot의 메시지만 assistant, 다른 앱의 알림은 user 문맥으로 처리한다.
 `slackMessageText`는 키워드 판정·현재 입력·히스토리에서 같은 내용을 추출한다.
+`slackInputText`는 자기 봇 멘션만 제거하고 다른 사용자·채널 참조를 보존한다.
+현재 메시지보다 앞선 타임스탬프만 이력으로 읽어 지연 처리 중 도착한 미래 질문·답변을 섞지 않는다.
+최근 이력 상한으로 이전 턴을 생략하면 사용자에게 알린다.
 
 `callerContext`를 켠 Agent는 확인한 표시 이름·시간대·아바타 URL을 전달한다.
 여러 사람이 있는 thread에는 최신 턴을 포함한 화자 라벨을 붙이고 다른 앱은 항상 앱 이름으로 구분한다.

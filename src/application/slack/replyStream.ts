@@ -123,6 +123,8 @@ export const DEFAULT_LOADING_INDICATOR = ":hourglass_flowing_sand:";
 
 /** Where a reply goes, and what that surface supports. */
 export interface ReplyTarget {
+  /** A stale lease holder must not write into a newer run's session. */
+  canWrite?: () => boolean;
   channel: string;
   threadTs: string;
   /**
@@ -257,7 +259,7 @@ export function createReplySink(
    * shown when one call is under the row: with five, which skill each one loaded
    * is detail the count is standing in for.
    */
-  const rows = new Map<string, { label: string; detail?: string; total: number; open: number }>();
+  const rows = new Map<string, { label: string; detail?: string; total: number; open: number; failed?: boolean }>();
   /** Which row a given call id belongs to, so its result can tick the right one. */
   const rowByCall = new Map<string, string>();
   /**
@@ -501,10 +503,11 @@ export function createReplySink(
   async function showTask(
     id: string,
     text: string,
-    status: "in_progress" | "complete",
+    status: "in_progress" | "complete" | "error",
     /** What the text-note fallback writes instead, when a row's wording is not a sentence. */
     prose = text,
   ): Promise<void> {
+    if (target.canWrite?.() === false) return;
     const chunk = { type: "task_update" as const, id, title: text, status };
     if (mode === "stream") {
       await slack
@@ -613,6 +616,7 @@ export function createReplySink(
   }
 
   async function sendStatus(text: string, loadingMessages?: string[]): Promise<void> {
+    if (target.canWrite?.() === false) return;
     if (!target.assistantThread) {
       // The same report, rendered the way this surface renders one. Skipped when
       // there is nothing to say or the answer has taken the message over — a
@@ -714,7 +718,7 @@ export function createReplySink(
       await showTask(key, rowTitle(key), "in_progress", usingPhrase(title));
     },
 
-    async stepDone(id, title) {
+    async stepDone(id, title, opts) {
       if (target.assistantThread) {
         // Nothing to mark: the next step takes the line, and `finish` clears it.
         return;
@@ -731,11 +735,12 @@ export function createReplySink(
       rows.set(key, {
         ...row,
         open: row.open - 1,
+        failed: row.failed || opts?.failed,
         // Only meaningful while the row stands for one call; past that the count
         // is what the row says and a single result's detail would misdescribe it.
         ...(row.total === 1 && title ? { detail: title } : {}),
       });
-      await showTask(key, rowTitle(key), row.open === 1 ? "complete" : "in_progress");
+      await showTask(key, rowTitle(key), row.open > 1 ? "in_progress" : row.failed || opts?.failed ? "error" : "complete");
     },
 
     keepStatusAlive() {
@@ -751,6 +756,7 @@ export function createReplySink(
     },
 
     async push(fullText) {
+      if (target.canWrite?.() === false) return;
       if (fullText.length <= flushed) {
         return;
       }
@@ -809,7 +815,8 @@ export function createReplySink(
       await writeEdited(fullText, false).catch(editFailed);
     },
 
-    async finish(fullText, suffix) {
+    async finish(fullText, suffix, state = "completed") {
+      if (target.canWrite?.() === false) return;
       // Built before the writes below, because two of the three branches never
       // reach the stream close: the checklist is only a channel's, and only a
       // streamed one's.
@@ -823,21 +830,43 @@ export function createReplySink(
                     type: "task_update" as const,
                     id: AMBIENT_TASK_ID,
                     title: lastStatus,
-                    status: "complete" as const,
+                    status: state === "completed" ? "complete" as const : "error" as const,
                   },
                 ]),
             ...[...rows.entries()]
               .filter(([, row]) => row.open > 0)
-              .map(([key]) => ({
+              .map(([key, row]) => ({
                 type: "task_update" as const,
                 id: key,
                 title: rowTitle(key),
-                status: "complete" as const,
+                status: state === "completed" && !row.failed ? "complete" as const : "error" as const,
               })),
           ];
       // Warnings ride out with the answer rather than replacing it: a late
       // failure (image upload, timeout, mid-stream error) must not discard text
       // that already reached the user.
+      if (state === "cancelled") {
+        try {
+          // Slack may already have stopped this stream when the native stop button was clicked.
+          // Do not replay buffered output through the normal delivery fallback after a stop.
+          if (mode === "stream") {
+            await slack.stopStream(token, {
+              channel: messageChannel, ts: messageTs,
+              ...(payload === "chunks" && closingChunks.length > 0 ? { chunks: closingChunks } : {}),
+            }).catch((error) => log.warn("slack", "cancelled stream close failed", error));
+          }
+          if (mode === "edit") {
+            await writeEdited(withSuffix(fullText.slice(0, flushed), suffix), true);
+          } else if (suffix) await slack.postMessage(token, {
+            channel: target.channel, thread_ts: target.threadTs, text: suffix,
+          });
+        } catch (error) {
+          log.error("slack", "stop confirmation failed", error);
+        } finally {
+          await sendStatus("");
+        }
+        return;
+      }
       try {
         if (mode === "unopened") {
           const text = withSuffix(fullText, suffix);
