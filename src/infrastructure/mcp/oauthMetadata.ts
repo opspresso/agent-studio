@@ -21,7 +21,9 @@ import { extractWWWAuthenticateParams } from "@modelcontextprotocol/client";
 import { LEGACY_PROTOCOL_VERSION, MCP_CLIENT_INFO } from "./session";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { fetchSameOrigin } from "@/infrastructure/net/redirectPolicy";
+import { SsrfError } from "@/infrastructure/net/ssrfGuard";
 import { readBodyText } from "@/shared/httpBody";
+import { urlWithoutUserinfoQueryOrFragment } from "@/shared/url";
 
 const METADATA_TIMEOUT_MS = 10_000;
 const MAX_METADATA_BYTES = 256_000;
@@ -164,18 +166,22 @@ async function firstUsable<T>(
 ): Promise<T> {
   const failures: string[] = [];
   for (const url of candidates) {
+    const displayUrl = urlWithoutUserinfoQueryOrFragment(url);
     let doc: Record<string, unknown> | null = null;
     try {
       doc = await fetchJson(url, loopback);
     } catch (error) {
-      failures.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
+      // Both a legacy URL query and a transport error may contain credentials.
+      // The guard's verdict names only origins/hosts and can still explain a
+      // refusal; arbitrary transport text does not belong in the console.
+      failures.push(`${displayUrl}: ${error instanceof SsrfError ? error.message : "request failed"}`);
       continue;
     }
     const parsed = doc ? parse(doc, url) : null;
     if (parsed) {
       return parsed;
     }
-    failures.push(`${url}: no usable ${what}`);
+    failures.push(`${displayUrl}: no usable ${what}`);
   }
   // Typed, not bare: every reason collected above is about the server or the
   // network, and the caller needs to be able to say so with a status.

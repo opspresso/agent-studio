@@ -450,6 +450,40 @@ describe("well-known URL candidates", () => {
 });
 
 describe("reading a metadata document", () => {
+  it("does not expose a legacy URL query secret in a discovery failure", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 404 })));
+    try {
+      const { oauthMetadataClient } = await import("@/infrastructure/mcp/oauthMetadata");
+      const error = await oauthMetadataClient.fetchProtectedResource(
+        "https://mcp.example.com/mcp?token=private-value",
+      ).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(McpMetadataError);
+      expect((error as Error).message).toContain("oauth-protected-resource");
+      expect((error as Error).message).not.toContain("private-value");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("does not relay transport error text from metadata requests", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") return new Response(null, { status: 404 });
+      throw new Error("network failure with token=private-value");
+    }));
+    try {
+      const { oauthMetadataClient } = await import("@/infrastructure/mcp/oauthMetadata");
+      const error = await oauthMetadataClient.fetchProtectedResource("https://mcp.example.com/mcp")
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(McpMetadataError);
+      expect((error as Error).message).toContain("request failed");
+      expect((error as Error).message).not.toContain("private-value");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("falls through to the next candidate when one returns a non-JSON 200", async () => {
     // A login page served with a 200 is not metadata. Failing there would make
     // discovery depend on which candidate a proxy happens to intercept.

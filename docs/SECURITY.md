@@ -593,6 +593,7 @@ protected-resource 문서는 MCP 주소의 401 challenge가 지정한 URL을 우
 challenge가 없으면 well-known 후보를 읽는다. resource 문서는 그 MCP 항목의 내부 호스트
 예외를 사용할 수 있지만, 문서가 지목한 authorization server까지 같은 예외를 주지는 않는다.
 authorization·token·registration endpoint는 HTTPS와 URL 정책으로 검사한다.
+메타데이터 조회 실패 메시지에는 후보 주소의 userinfo·query·fragment와 전송 오류 원문을 싣지 않는다.
 
 resource identifier는 문서를 찾은 대상과 일치해야 한다. 제한된 예외는
 `https://mcp.slack.com/mcp`가 공식 well-known 문서를 지목할 때
