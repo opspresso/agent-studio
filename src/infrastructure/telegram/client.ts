@@ -21,8 +21,19 @@ interface TelegramEnvelope<T> {
   parameters?: { retry_after?: number };
 }
 
-function telegramFetch(url: string, init: RequestInit = {}, timeoutMs = TELEGRAM_TIMEOUT_MS) {
-  return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+async function telegramFetch(
+  url: string,
+  method: string,
+  init: RequestInit = {},
+  timeoutMs = TELEGRAM_TIMEOUT_MS,
+) {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (error) {
+    // Fetch failures can quote the URL, which contains the bot token.
+    const reason = error instanceof Error && error.name === "TimeoutError" ? "timed out" : "transport failed";
+    throw new Error(`Telegram ${method} ${reason}`);
+  }
 }
 
 /**
@@ -33,7 +44,7 @@ function telegramFetch(url: string, init: RequestInit = {}, timeoutMs = TELEGRAM
  * rate limit arrives as 429 with `retry_after` in the JSON body, and that
  * number is the whole content of the answer, so it is quoted.
  */
-async function telegramResult<T>(res: Response, method: string): Promise<T> {
+async function telegramResult<T>(res: Response, method: string, token: string): Promise<T> {
   let data: TelegramEnvelope<T> | undefined;
   try {
     data = (await res.json()) as TelegramEnvelope<T>;
@@ -43,10 +54,13 @@ async function telegramResult<T>(res: Response, method: string): Promise<T> {
   }
   if (!res.ok || !data.ok) {
     const retryAfter = data.parameters?.retry_after;
+    const safeRetryAfter =
+      typeof retryAfter === "number" && Number.isFinite(retryAfter) ? retryAfter : undefined;
+    const description = token ? data.description?.replaceAll(token, "[redacted]") : data.description;
     throw new Error(
-      res.status === 429 || retryAfter !== undefined
-        ? `Telegram ${method} rate limited; Telegram asked for ${retryAfter ?? "?"}s`
-        : `Telegram ${method} failed: ${data.description ?? `HTTP ${res.status}`}`,
+      res.status === 429 || safeRetryAfter !== undefined
+        ? `Telegram ${method} rate limited; Telegram asked for ${safeRetryAfter ?? "?"}s`
+        : `Telegram ${method} failed: ${description ?? `HTTP ${res.status}`}`,
     );
   }
   return data.result as T;
@@ -57,12 +71,12 @@ async function telegramApi<T>(
   method: string,
   payload: Record<string, unknown>,
 ): Promise<T> {
-  const res = await telegramFetch(`https://api.telegram.org/bot${token}/${method}`, {
+  const res = await telegramFetch(`https://api.telegram.org/bot${token}/${method}`, method, {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8" },
     body: JSON.stringify(payload),
   });
-  return telegramResult<T>(res, method);
+  return telegramResult<T>(res, method, token);
 }
 
 /**
@@ -154,10 +168,11 @@ export const telegramClient: TelegramClientPort = {
     form.set("photo", new Blob([new Uint8Array(args.photo)]), args.filename);
     const res = await telegramFetch(
       `https://api.telegram.org/bot${token}/sendPhoto`,
+      "sendPhoto",
       { method: "POST", body: form },
       TELEGRAM_TRANSFER_TIMEOUT_MS,
     );
-    await telegramResult<unknown>(res, "sendPhoto");
+    await telegramResult<unknown>(res, "sendPhoto", token);
   },
 
   /**
@@ -179,6 +194,7 @@ export const telegramClient: TelegramClientPort = {
     }
     const res = await telegramFetch(
       `https://api.telegram.org/file/bot${token}/${file.file_path}`,
+      "downloadFile",
       {},
       TELEGRAM_TRANSFER_TIMEOUT_MS,
     );
