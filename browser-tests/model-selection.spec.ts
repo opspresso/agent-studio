@@ -13,6 +13,8 @@ let saves: RegisteredModel[];
 let blockDeletion: boolean;
 let failDiscovery: boolean;
 let discoveryQueries: string[];
+let favorites: string[];
+let failFavorites: boolean;
 
 test.beforeAll(async () => {
   discovered = await createProviderModelDiscovery(async () => Response.json({ data: [
@@ -36,13 +38,21 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 test.beforeEach(async ({ page }) => {
-  selected = []; saves = []; blockDeletion = false; failDiscovery = false; discoveryQueries = [];
+  selected = []; saves = []; blockDeletion = false; failDiscovery = false; failFavorites = false; discoveryQueries = []; favorites = [];
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/settings") return route.fulfill({ json: { llmProviders: { items: [{ name: "fixture", kind: "openrouter" }, { name: "other", kind: "openrouter" }] } } });
     if (path === "/api/models/discover") {
       discoveryQueries.push(new URL(route.request().url()).search);
       return failDiscovery ? route.fulfill({ status: 502, json: { error: "Provider discovery failed" } }) : route.fulfill({ json: { models: discovered } });
+    }
+    if (path === "/api/models/favorites") {
+      if (failFavorites && route.request().method() === "GET") return route.fulfill({ status: 503, json: { error: "Favorites unavailable" } });
+      if (route.request().method() === "PATCH") {
+        const { model, favorite } = route.request().postDataJSON() as { model: string; favorite: boolean };
+        favorites = favorite ? [...new Set([...favorites, model])].sort() : favorites.filter(id => id !== model);
+      }
+      return route.fulfill({ json: { models: favorites } });
     }
     if (path === "/api/models/registry") {
       if (route.request().method() === "DELETE") {
@@ -78,6 +88,12 @@ test("shows multiple capability badges, limits and prices and supports name/pric
   await page.getByRole("checkbox", { name: "Vision", exact: true }).check();
   await expect(cards).toHaveCount(1);
   await expect(cards.first()).toContainText("Zeta");
+});
+
+test("finds a discovered model by its future provider-qualified ID", async ({ page }) => {
+  await page.getByRole("textbox", { name: "Search models" }).fill("fixture/vendor/zeta");
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(page.getByRole("article")).toContainText("Zeta");
 });
 
 test("adds Jev immediately without a dialog and retains decisions after reload and in selected models", async ({ page }) => {
@@ -133,6 +149,32 @@ test("shows saved selections before discovery and deletes from the selected-only
   await expect(page.getByRole("article")).toHaveCount(0);
 });
 
+test("saves personal favorites from selected models and restores them after reload", async ({ page }) => {
+  const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
+  await jev.getByRole("button", { name: "Add model" }).click();
+  await page.goto(`${base}/selected`);
+  const selectedCard = page.getByRole("article").filter({ hasText: "fixture/~typesafe/jev-latest" });
+  await page.getByRole("textbox", { name: "Search models" }).fill("fixture/~typesafe/jev-latest");
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await selectedCard.getByRole("button", { name: "Add to favorites" }).click();
+  await expect(selectedCard.getByRole("button", { name: "Remove from favorites" })).toHaveAttribute("aria-pressed", "true");
+  expect(favorites).toEqual(["fixture/~typesafe/jev-latest"]);
+  await page.reload();
+  await expect(selectedCard.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
+  await selectedCard.getByRole("button", { name: "Remove from favorites" }).click();
+  expect(favorites).toEqual([]);
+});
+
+test("keeps registered models visible when favorites cannot be loaded", async ({ page }) => {
+  const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
+  await jev.getByRole("button", { name: "Add model" }).click();
+  failFavorites = true;
+  await page.goto(`${base}/selected`);
+  await expect(page.getByRole("article")).toContainText("Jev Latest");
+  await expect(page.getByRole("alert")).toContainText("Favorites unavailable");
+  await expect(page.getByRole("button", { name: "Add to favorites" })).toHaveCount(0);
+});
+
 test("retains the selected model and surfaces the API's in-use deletion refusal", async ({ page }) => {
   const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
   await jev.getByRole("button", { name: "Add model" }).click();
@@ -148,6 +190,25 @@ test("retains the selected model and surfaces the API's in-use deletion refusal"
 test("keeps model cards within a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("shared model picker shows the selected identity, favorite group and per-model prices on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${base}/picker`);
+  const picker = page.getByRole("combobox", { name: "Model" });
+  await expect(picker).toHaveValue("Office model (office/long-model-name-with-many-segments-and-a-provider-route)");
+  await expect(page.getByText("office · $2.00 in · $8.00 out per 1M")).toBeVisible();
+  await picker.click();
+  await expect(page.getByText("Favorites", { exact: true })).toBeVisible();
+  const favorite = page.getByRole("option", { name: /Jev Latest/ });
+  await expect(favorite).toContainText("router/vendor/jev-latest");
+  await expect(favorite).toContainText("$0.042 in");
+  const longOption = page.getByRole("option", { name: /Office model/ });
+  expect(await longOption.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await favorite.click();
+  await expect(picker).toHaveValue("Jev Latest (router/vendor/jev-latest)");
+  await expect(page.getByText("router · $0.042 in · $0.00 out per 1M")).toBeVisible();
 });
 
 test("always queries the complete provider catalog even while selected-only is active", async ({ page }) => {

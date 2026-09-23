@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ submit: vi.fn(), list: vi.fn(), get: vi.fn(), cancel: vi.fn(), delete: vi.fn(), retry: vi.fn(), register: vi.fn(), options: vi.fn(), getConfig: vi.fn(), saveConfig: vi.fn() }));
-vi.mock("@/lib/session", () => ({ withMemberAuth: (handler: (user: { email: string }, request: Request, context: unknown) => Promise<Response>) =>
-  (request: Request, context: unknown) => handler({ email: "owner@example.test" }, request, context) }));
-vi.mock("@/lib/container", () => ({ getAudioRuntime: () => ({ jobs: mocks, options: mocks.options, references: { register: mocks.register }, configuration: { get: mocks.getConfig, save: mocks.saveConfig } }) }));
+const mocks = vi.hoisted(() => ({ submit: vi.fn(), list: vi.fn(), get: vi.fn(), cancel: vi.fn(), delete: vi.fn(), retry: vi.fn(), register: vi.fn(), options: vi.fn(), favorites: vi.fn(), getConfig: vi.fn(), saveConfig: vi.fn() }));
+vi.mock("@/lib/session", () => ({ withMemberAuth: (handler: (user: { id: string; email: string }, request: Request, context: unknown) => Promise<Response>) =>
+  (request: Request, context: unknown) => handler({ id: "owner-1", email: "owner@example.test" }, request, context) }));
+vi.mock("@/lib/container", () => ({ getAudioRuntime: () => ({ jobs: mocks, options: mocks.options, references: { register: mocks.register }, configuration: { get: mocks.getConfig, save: mocks.saveConfig } }), modelPreferenceUseCases: { listOptional: mocks.favorites } }));
 vi.mock("node:crypto", async (original) => ({ ...await original<typeof import("node:crypto")>(), randomUUID: () => "occurrence-1" }));
 import { POST, GET } from "@/app/api/projects/[name]/audio-jobs/route";
 import { POST as action } from "@/app/api/projects/[name]/audio-jobs/[job]/route";
@@ -17,7 +17,7 @@ const input = { source: { kind: "file", fileId: "file-1" }, task: "transcribe", 
 function request(body: unknown) { return new Request("https://studio.test/api/projects/audio/audio-jobs", {
   method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
 }); }
-beforeEach(() => { vi.clearAllMocks(); mocks.submit.mockResolvedValue({ status: "accepted", job: { id: "job-1" } }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.submit.mockResolvedValue({ status: "accepted", job: { id: "job-1" } }); mocks.favorites.mockResolvedValue([]); });
 
 describe("audio job HTTP contracts", () => {
   it("validates deletion and binds the owner and revision", async () => {
@@ -43,9 +43,18 @@ describe("audio job HTTP contracts", () => {
   it("reads configured options with the authenticated identity", async () => {
     const data = { models: [{ id: "openai/whisper-1", displayName: "Whisper 1" }], destinations: ["memory"] };
     mocks.options.mockResolvedValue(data);
+    mocks.favorites.mockResolvedValue(["openai/whisper-1"]);
     const response = await options(new Request("https://studio.test/api?email=another@example.test"), context);
-    expect(await response.json()).toEqual(data);
+    expect(await response.json()).toEqual({ ...data, models: [{ ...data.models[0], favorite: true }] });
     expect(mocks.options).toHaveBeenCalledWith("audio", "owner@example.test");
+    expect(mocks.favorites).toHaveBeenCalledWith("owner-1");
+  });
+  it("keeps audio model options available without optional favorites", async () => {
+    const data = { models: [{ id: "openai/whisper-1" }], destinations: [] };
+    mocks.options.mockResolvedValue(data);
+    const response = await options(new Request("https://studio.test/api/projects/audio/audio-options"), context);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ...data, models: [{ ...data.models[0], favorite: false }] });
   });
   it("binds submitted work to the authenticated email and server occurrence", async () => {
     const response = await POST(request(input), context);

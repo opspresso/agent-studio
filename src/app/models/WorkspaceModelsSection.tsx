@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Loader, Select, Stack, Text } from "@mantine/core";
+import { Alert, Loader, Stack, Text } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { ModelSelect } from "@/app/_components/modelOptions";
 import { useT } from "@/app/_i18n/provider";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { WORKSPACE_MODEL_RUNTIMES, type WorkspaceModelRuntime } from "@/domain/workspace/runtimeModels";
@@ -34,9 +35,10 @@ export function WorkspaceModelsSection() {
       {view && WORKSPACE_MODEL_RUNTIMES.map(runtime => {
         const selected = view.selections[runtime];
         const options = view.options[runtime];
-        return <Select key={runtime} label={runtime === "codex" ? "Codex" : runtime === "claude" ? "Claude" : "OpenCode"}
+        return <ModelSelect key={runtime} label={runtime === "codex" ? "Codex" : runtime === "claude" ? "Claude" : "OpenCode"}
           value={selected ?? null} placeholder={t("workspace.modelDisabled")} searchable clearable disabled={busy}
-          data={selected && !options.some(option => option.value === selected) ? [{ value: selected, label: selected }, ...options] : options}
+          models={options}
+          leading={selected && !options.some(option => option.id === selected) ? [{ value: selected, label: selected }] : []}
           error={selected && !view.available.includes(runtime) ? t("workspace.modelUnavailable") : undefined}
           onChange={model => { void select(runtime, model); }} />;
       })}

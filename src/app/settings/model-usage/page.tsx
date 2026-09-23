@@ -3,8 +3,9 @@
 import { LoadingText } from "@/app/_components/PageState";
 import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Select, Stack } from "@mantine/core";
+import { Alert, Stack } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
+import { ModelSelect } from "@/app/_components/modelOptions";
 import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
 import { ModelSelectionSection } from "@/app/models/ModelSelectionSection";
 import { WorkspaceModelsSection } from "@/app/models/WorkspaceModelsSection";
@@ -39,13 +40,19 @@ export default function ModelUsagePage() {
     } catch (error) { setError(error instanceof Error ? error.message : "Could not save default model"); }
     finally { setBusy(false); }
   }
+  const defaultOptions = view?.catalog.models.filter(model =>
+    ["text", "decisions"].includes(model.type) && model.capabilities.tools && !model.selectionHidden,
+  ) ?? [];
   return <Stack gap="lg">
     <SectionHeading title={t("modelAdmin.usage")} description={t("modelAdmin.usageHint")} />
     {error && <Alert color="red">{error}</Alert>}
     {!view && !error && <LoadingText />}
     {view && <>
-      <Select label={t("modelAdmin.default")} placeholder={t("models.selection.unconfigured")} searchable disabled={busy} allowDeselect={false}
-        value={view.selected.model} data={view.catalog.models.filter(model => ["text", "decisions"].includes(model.type) && model.capabilities.tools).map(model => ({ value: model.id, label: `${model.displayName} (${model.provider})` }))} onChange={model => void select(model)} />
+      <ModelSelect label={t("modelAdmin.default")} placeholder={t("models.selection.unconfigured")} searchable disabled={busy} allowDeselect={false}
+        value={view.selected.model} models={defaultOptions}
+        leading={view.selected.model && !defaultOptions.some(model => model.id === view.selected.model)
+          ? [{ value: view.selected.model, label: view.selected.model }] : []}
+        onChange={model => void select(model)} />
       <WorkspaceModelsSection />
       <ModelSelectionSection models={view.catalog.models} selections={view.catalog.selections} rerankerMinScore={view.catalog.rerankerMinScore}
         available={view.catalog.selectionAvailable} onChanged={async () => setView(await load())} />

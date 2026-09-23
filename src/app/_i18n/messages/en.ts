@@ -1500,6 +1500,7 @@ export const en = {
   "models.favorite": "Add to favorites",
   "models.unfavorite": "Remove from favorites",
   "models.favoriteSaveFailed": "Failed to save favorites",
+  "models.favoriteLoadFailed": "Failed to load favorites",
   "models.hidden": "Hidden",
   "models.hideModel": "Hide {model}",
   "models.hiddenCount": "{count} hidden",

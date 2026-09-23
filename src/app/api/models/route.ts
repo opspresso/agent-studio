@@ -13,7 +13,7 @@ export interface ModelsResponse {
 export const GET = withAuth(async (user) => {
   const [providerConfigs, favoriteModels, defaultModel] = await Promise.all([
     getLlmProviderConfigs(),
-    modelPreferenceUseCases.list(user.id),
+    modelPreferenceUseCases.listOptional(user.id),
     getDefaultModel(),
   ]);
   const favorites = new Set(favoriteModels);

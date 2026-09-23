@@ -30,8 +30,8 @@ export function ModelCollection<T extends ModelRow>({ models, provider, emptyTex
   const selectedProvider = provider ? null : activeModelProvider(models, preferences.provider);
   const update = (patch: Partial<ModelBrowserState>) => setPreferences(current => ({ ...current, page: 1, ...patch }));
   const providers = [...new Set(models.flatMap(model => model.provider ? [model.provider] : []))].sort();
-  const filtered = useMemo(() => filterModelRows(models, { ...preferences, provider: selectedProvider }, isSelected),
-    [models, preferences, selectedProvider, isSelected]);
+  const filtered = useMemo(() => filterModelRows(models, { ...preferences, provider: selectedProvider }, isSelected, provider),
+    [models, preferences, selectedProvider, isSelected, provider]);
   const pages = Math.max(1, Math.ceil(filtered.length / 24));
   const currentPage = Math.min(page, pages);
   return <Stack gap="md">
@@ -61,7 +61,7 @@ export function ModelCollection<T extends ModelRow>({ models, provider, emptyTex
       {filtered.slice((currentPage - 1) * 24, currentPage * 24).map(model => <Card key={model.id ?? `${provider}/${model.wireId}`} component="article">
         <Stack gap="sm" h="100%">
           <div><Text fw={600} style={{ overflowWrap: "anywhere" }}>{model.displayName}</Text>
-            <Text size="xs" ff="monospace" c="dimmed" style={{ overflowWrap: "anywhere" }}>{model.wireId}</Text></div>
+            <Text size="xs" ff="monospace" c="dimmed" style={{ overflowWrap: "anywhere" }}>{model.id ?? model.wireId}</Text></div>
           <Group gap={5}>
             {(model.provider || provider) && <Badge color="brand">{model.provider || provider}</Badge>}
             {modelOutputTypes(model).length ? modelOutputTypes(model).map(type => <Badge key={type}>
@@ -70,7 +70,7 @@ export function ModelCollection<T extends ModelRow>({ models, provider, emptyTex
             {MODEL_FILTER_CAPABILITIES.filter(flag => model.capabilities?.[flag] === true).map(flag => <Badge key={flag} variant="outline" color="gray">{t(`models.capability.${flag}`)}</Badge>)}
           </Group>
           <div>
-            <Text size="sm" fw={500}>{modelPriceLabel(model.pricing, model.type)}</Text>
+            <Text size="sm" fw={500}>{modelPriceLabel("pricingKnown" in model && model.pricingKnown === false ? undefined : model.pricing, model.type)}</Text>
             <Text size="xs" c="dimmed" mt={4}>{contextWindowLabel({ contextWindow: model.contextWindow ?? 0, maxTokens: model.maxTokens ?? 0,
               capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false, embedding: model.type === "embedding", rerank: model.type === "rerank" } })}</Text>
             {model.pricing?.cachedInputPer1M !== undefined && <Text size="xs" c="dimmed">{t("models.cached")} {formatModelPrice(model.pricing.cachedInputPer1M)} / 1M</Text>}

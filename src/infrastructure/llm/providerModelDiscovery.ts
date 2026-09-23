@@ -81,7 +81,11 @@ function toModel(value: unknown, kind: string): DiscoveredModel | undefined {
   const wireId = kind === "google" ? rawId.replace(/^models\//, "") : rawId;
   if (wireId.length > 200 || /[\x00-\x1f\x7f]/.test(wireId)) return undefined;
   const type = typeOf(entry, wireId);
-  const parameters = Array.isArray(entry.supported_parameters) ? strings(entry.supported_parameters) : Object.keys(record(entry.supported_parameters));
+  const parameters = Array.isArray(entry.supported_parameters)
+    ? strings(entry.supported_parameters)
+    : Object.entries(record(entry.supported_parameters))
+      .filter(([, value]) => value === true || record(value).supported === true)
+      .map(([name]) => name);
   const nativeCapabilities = record(entry.capabilities);
   const capabilities: Partial<ModelCapabilities> = {};
   if (entry.supported_parameters !== undefined) {

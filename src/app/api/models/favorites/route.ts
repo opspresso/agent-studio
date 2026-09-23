@@ -8,6 +8,7 @@ import { withAuth } from "@/lib/session";
 const updateSchema = z.object({
   models: z.array(z.string().min(1).max(200)).max(MAX_FAVORITE_MODELS),
 });
+const changeSchema = z.object({ model: z.string().min(1).max(200), favorite: z.boolean() }).strict();
 
 export interface ModelFavoritesResponse {
   models: string[];
@@ -27,6 +28,20 @@ export const PUT = withAuth(async (user, request: Request) => {
   try {
     return Response.json({
       models: await modelPreferenceUseCases.replace(user.id, parsed.data.models),
+    } satisfies ModelFavoritesResponse);
+  } catch (error) {
+    return apiError(error);
+  }
+});
+
+export const PATCH = withAuth(async (user, request: Request) => {
+  const body = await editorBody(request);
+  if (body instanceof Response) return body;
+  const parsed = changeSchema.safeParse(body);
+  if (!parsed.success) return invalidRequest(parsed.error);
+  try {
+    return Response.json({
+      models: await modelPreferenceUseCases.setFavorite(user.id, parsed.data.model, parsed.data.favorite),
     } satisfies ModelFavoritesResponse);
   } catch (error) {
     return apiError(error);

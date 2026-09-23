@@ -26,6 +26,13 @@ describe("modelPriceLabel", () => {
     );
   });
 
+  it("shows separate image-input charges, including image edits", () => {
+    expect(modelPriceLabel({ inputPer1M: 0, outputPer1M: 0, perImage: 0.05, perInputImage: 0.01 }, "image"))
+      .toBe("$0.05 / image · $0.01 / input image");
+    expect(modelPriceLabel({ inputPer1M: 0, outputPer1M: 0, imageInputPer1M: 8 }, "image"))
+      .toBe("$8.00 image in per 1M");
+  });
+
   /**
    * Zero on both sides is a self-hosted model's stated price — the registry
    * refuses it for every other provider — and `$0.00 in · $0.00 out` reads
@@ -39,7 +46,7 @@ describe("modelPriceLabel", () => {
     const gptImage = getModelConfig("openai/gpt-image-2");
     expect(gptImage?.pricing.outputPer1M).toBe(0);
     expect(modelPriceLabel(gptImage?.pricing ?? { inputPer1M: 0, outputPer1M: 0 })).toBe(
-      "$30.00 image out per 1M · $5.00 in per 1M",
+      "$30.00 image out per 1M · $5.00 in per 1M · $8.00 image in per 1M",
     );
   });
 
@@ -87,7 +94,9 @@ describe("modelPriceLabel", () => {
         model.pricing.inputPer1M > 0 ||
         model.pricing.outputPer1M > 0 ||
         (model.pricing.imageOutputPer1M ?? 0) > 0 ||
+        (model.pricing.imageInputPer1M ?? 0) > 0 ||
         (model.pricing.perImage ?? 0) > 0 ||
+        (model.pricing.perInputImage ?? 0) > 0 ||
         (model.pricing.perSearch ?? 0) > 0 ||
         (model.pricing.perAudioMinute ?? 0) > 0;
       if (!priced) {

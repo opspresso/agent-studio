@@ -40,6 +40,16 @@ describe("provider model discovery", () => {
     expect(fetch.mock.calls[0]?.[0]).toContain("output_modalities=all");
   });
 
+  it("does not treat false values in a parameter map as supported capabilities", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ data: [{
+      id: "local-model", supported_parameters: {
+        tools: false, structured_outputs: { supported: true }, reasoning: { supported: false },
+      },
+    }] })));
+    const [model] = await createProviderModelDiscovery().list(provider("selfhosted"));
+    expect(model?.capabilities).toEqual({ tools: false, structuredOutput: true, reasoning: false });
+  });
+
   it("uses Google native listing and consumes every page without putting the key in the URL", async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(Response.json({ models: [{ name: "models/a", displayName: "A", supportedGenerationMethods: ["generateContent"], inputTokenLimit: 5000, outputTokenLimit: 1000 }], nextPageToken: "page two" }))

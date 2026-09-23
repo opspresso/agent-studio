@@ -96,13 +96,14 @@ export function activeModelProvider(models: readonly ModelRow[], provider: strin
   return provider && models.some(model => model.provider === provider) ? provider : null;
 }
 
-export function filterModelRows<T extends ModelRow>(models: T[], state: ModelBrowserState, isSelected?: (model: T) => boolean): T[] {
+export function filterModelRows<T extends ModelRow>(models: T[], state: ModelBrowserState, isSelected?: (model: T) => boolean, providerName?: string): T[] {
   const provider = activeModelProvider(models, state.provider);
   return sortModelRows(models.filter(model =>
     (!state.type || modelOutputTypes(model).includes(state.type)) && (!provider || model.provider === provider) &&
     (!isSelected || !state.selectedOnly || isSelected(model)) &&
     state.capabilities.every(flag => model.capabilities?.[flag] === true) &&
-    matchesFilter(state.query, model.displayName, model.wireId, model.provider, model.maker),
+    matchesFilter(state.query, model.displayName, model.id, model.wireId, model.provider,
+      providerName && `${providerName}/${model.wireId}`, model.maker),
   ), state.sortKey, state.direction);
 }
 
