@@ -7,6 +7,7 @@ import type { SettingKey, SettingsView } from "@/application/settings/settingsUs
 import { SecretInput } from "@/app/_components/SecretInput";
 import { LoadingText } from "@/app/_components/PageState";
 import { useT } from "@/app/_i18n/provider";
+import { readJson } from "@/app/_lib/httpClient";
 import { reportError } from "@/app/_lib/reportError";
 import { parseList } from "@/shared/parseList";
 import { SETTINGS_FIELDS, settingsPatch, type SettingsSection } from "./fields";
@@ -36,10 +37,7 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
           }
           return;
         }
-        if (!res.ok) {
-          throw new Error(`Request failed (${res.status})`);
-        }
-        const data = (await res.json()) as SettingsView;
+        const data = await readJson<SettingsView>(res);
         if (!cancelled) {
           applyView(data);
         }
@@ -73,10 +71,7 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settingsPatch(section, values, view)),
       });
-      const data = (await res.json().catch(() => ({}))) as SettingsView & { error?: string };
-      if (!res.ok) {
-        throw new Error(data.error ?? `Request failed (${res.status})`);
-      }
+      const data = await readJson<SettingsView>(res);
       applyView(data);
       setSaved(true);
     } catch (err) {
