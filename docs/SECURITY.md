@@ -399,9 +399,9 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
 앱의 아웃바운드 경계로 바이트를 가져와 같은 inline 형식으로 돌려준다.
 
 공개 URL 이면 무엇이든 허용된다. 신뢰하는 엔드포인트만 등록하라. Registry endpoint URL 은
-query parameter 와 fragment 를 받지 않는다. 둘은 멤버가 읽는 registry view 와 운영 로그에서
+userinfo, query parameter 와 fragment 를 받지 않는다. 이 값들은 멤버가 읽는 registry view 와 운영 로그에서
 자격 증명을 노출하기 쉬우므로, 인증 정보는 encrypted header 또는 OAuth 연결에 둔다. 이전 행에
-남은 query 와 fragment 는 dispatch 에만 쓰이고 reader-facing view 에서는 제거한다. 이 규칙은
+남은 userinfo, query 와 fragment 는 저장된 주소에만 남고 reader-facing view 에서는 제거한다. 이 규칙은
 **주소가 실제로 바뀔 때만** 적용한다. 저장된 주소를 그대로, 또는 콘솔이 보여 준 redacted 형태로
 되돌려 보내는 저장은 이동이 아니므로 거절하지도, 저장된 credential 을 버리지도 않는다
 (`resolveRegistryUrlPatch`). 그러지 않으면 편집 폼이 자기가 읽은 값을 되돌려 보내는 것만으로

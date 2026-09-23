@@ -102,11 +102,11 @@ function makeMcpRepo(initial: McpServer[] = []) {
 }
 
 describe("MCP registry secret contract", () => {
-  it("rejects query credentials and redacts them from legacy member views", async () => {
+  it("rejects URL credentials and redacts them from legacy member views", async () => {
     const { repo } = makeMcpRepo([
       {
         name: "legacy",
-        url: "https://mcp.example/mcp?api_key=secret#fragment",
+        url: "https://user:password@mcp.example/mcp?api_key=secret#fragment",
         headers: {},
         createdAt: NOW,
         updatedAt: NOW,
@@ -121,13 +121,21 @@ describe("MCP registry secret contract", () => {
         headers: {},
       }),
     ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      useCases.create({
+        name: "unsafe-userinfo",
+        url: "https://user:password@mcp.example/mcp",
+        headers: {},
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
     await expect(useCases.get("legacy")).resolves.toMatchObject({
       url: "https://mcp.example/mcp",
     });
+    expect((await useCases.list())[0]?.url).toBe("https://mcp.example/mcp");
   });
 
   it("keeps a legacy address when the console echoes back its redacted view", async () => {
-    const legacyUrl = "https://mcp.example/mcp?tenant=acme";
+    const legacyUrl = "https://user:password@mcp.example/mcp?tenant=acme";
     const { repo, store } = makeMcpRepo([
       {
         name: "legacy",
@@ -142,6 +150,7 @@ describe("MCP registry secret contract", () => {
     // What the edit form holds: the url it was seeded with from the masked
     // view, sent back beside the field the operator actually changed.
     const view = await useCases.get("legacy");
+    expect(view.url).toBe("https://mcp.example/mcp");
     await useCases.update("legacy", {
       url: view.url,
       description: "edited elsewhere",
@@ -157,6 +166,9 @@ describe("MCP registry secret contract", () => {
     // drops what the old address was trusted with.
     await expect(
       useCases.update("legacy", { url: "https://other.example/mcp?api_key=secret" }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      useCases.update("legacy", { url: "https://user:password@other.example/mcp" }),
     ).rejects.toBeInstanceOf(ValidationError);
     await useCases.update("legacy", { url: "https://other.example/mcp" });
     expect(store.get("legacy")!.headers).toEqual({});

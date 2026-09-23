@@ -1,7 +1,9 @@
-/** Remove URL components that commonly carry credentials before returning a stored URL to a reader. */
-export function urlWithoutQueryOrFragment(rawUrl: string): string {
+/** Remove URL components that can carry credentials before returning a stored URL to a reader. */
+export function urlWithoutUserinfoQueryOrFragment(rawUrl: string): string {
   try {
     const url = new URL(rawUrl);
+    url.username = "";
+    url.password = "";
     url.search = "";
     url.hash = "";
     return url.toString();

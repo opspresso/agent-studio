@@ -1,7 +1,7 @@
 import type { McpServer, McpServerAuth } from "@/domain/mcp/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { managedMcpEnvironmentContext, mcpHeadersContext, mcpOAuthClientSecretContext } from "@/domain/security/secretContext";
-import { urlWithoutQueryOrFragment } from "@/shared/url";
+import { urlWithoutUserinfoQueryOrFragment } from "@/shared/url";
 
 export function maskedMcpAuth(cipher: SecretCipher, name: string, auth: McpServerAuth): McpServerAuth {
   return {
@@ -16,7 +16,7 @@ export function maskedMcpAuth(cipher: SecretCipher, name: string, auth: McpServe
 export function maskedMcpServer(cipher: SecretCipher, server: McpServer): McpServer {
   return {
     ...server,
-    url: urlWithoutQueryOrFragment(server.url),
+    url: urlWithoutUserinfoQueryOrFragment(server.url),
     headers: cipher.maskHeaders(server.headers, mcpHeadersContext(server.name)),
     ...(server.environment
       ? { environment: cipher.maskHeaders(server.environment, managedMcpEnvironmentContext(server.name)) }
