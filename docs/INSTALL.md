@@ -169,6 +169,9 @@ bare Git 저장소와 bundle을 주고받고 저장소 코드를 실행하지 �
 배포할 workflow는 `workflow_dispatch`를 지원해야 하며 `deploymentWorkflows`에 파일명을
 명시한다. 예를 들어 `"deploymentWorkflows":["deploy.yml"]`이다. 배포 자격증명은 해당 workflow의
 보호된 환경이 소유한다. Sandbox에는 전달하지 않는다.
+`.github/workflows/*`를 새로 만들거나 바꾸는 push에는 classic 토큰의 `workflow` scope 또는
+fine-grained 토큰·GitHub App의 Workflows 쓰기 권한도 필요하다. 저장소 생성·조회 성공만으로
+이 권한을 확인할 수 없다. 거절된 push는 원격 브랜치 상태를 확인한 뒤 권한 수정과 새 검토를 거친다.
 
 `pnpm test:workspace:git`는 무통신 Docker 안에 일회용 Git HTTP 저장소를 만들어 clone·권한·Diff·
 승인 Commit·복원을 검증한다. GitHub App API와 승인 경합·webhook 중복은 단위 테스트로 검증한다.
