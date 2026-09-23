@@ -153,7 +153,6 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 | Chat 런 로그 (리플레이 버퍼, 짧은 TTL) | `CHAT#{chatId}` | `RUNLOG#{runId}#{seq zero-padded 6}` | — | — |
 | Skill | `SKILL#{name}` | `META` | `TYPE#SKILL` | `{name}` |
 | MCP 서버 | `MCP#{name}` | `META` | `TYPE#MCP` | `{name}` |
-| 외부 Agent (registry) | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
 | Plugin | `PLUGIN#{name}` | `META` | `TYPE#PLUGIN` | `{name}` |
 | Plugins-sync 리포트 (소스 repo 별) | `PLUGINSYNC#{repo}` | `REPORT` | — | — |
 | Plugins-sync 리스 | `PLUGINSYNC#{repo}` | `LOCK` | — | — |
@@ -332,7 +331,6 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 | [sdk-capabilities](design/sdk-capabilities.md) | SDK 기능별 제품 적용 범위·미지원 경계·검증 근거 |
 | [chat](design/chat.md) | 화면 기록·SDK Session·승인·연결 분리·재연결 |
 | [capabilities](design/capabilities.md) | Skill·Plugin sync·벡터 검색·Memory recall |
-| [agents](design/agents.md) | 외부 OpenAI 호환 Agent registry·위임 |
 | [mcp](design/mcp.md) | binding·transport·세션·캐시·managed 서버·OAuth |
 | [documents](design/documents.md) | 형식별 읽기·생성·편집, worker, 파일 참조·HTML 미리보기 |
 | [audio](design/audio-processing-spec.md) | 원본·비동기 전사·후처리·delivery·보존 |
@@ -353,11 +351,11 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 | 화면 | 역할 |
 |---|---|
 | `/`, `/login`, `/guide` | 로그인 상태별 개요·랜딩, 로그인, 사용자 가이드. `/dashboard`는 `/`로 redirect |
-| `/projects`, `/projects/[name]` | 카탈로그·생성·Playground |
-| 프로젝트 하위 Playground·`usage`·`traces`·`artifacts` | 현재 설정·비용·실행 기록·산출물 |
-| 프로젝트 하위 `api-reference`·`integrations`·`settings`·`audio`·`workspace` | 호출 예제·연동·설정·선택적 비동기 작업 |
+| `/agents`, `/agents/[name]` | 카탈로그·생성·Playground |
+| Agent 하위 Playground·`usage`·`traces`·`artifacts` | 현재 설정·비용·실행 기록·산출물 |
+| Agent 하위 `api-reference`·`integrations`·`settings`·`audio`·`workspace` | 호출 예제·연동·설정·선택적 비동기 작업 |
 | `/chats`, `/chats/[chatId]`, `/artifacts` | 개인 대화·작업·파일 |
-| `/skills`·`/tools`·`/agents`·`/plugins`와 각 상세 | 공유 capability registry |
+| `/skills`·`/tools`·`/plugins`와 각 상세 | 공유 capability registry |
 | `/models`, `/profile`, `/members`, `/audit`, `/settings` | 모델·개인 한도·관리 화면. 실제 접근은 서버 권한 검사로 제한 |
 
 콘솔 언어는 route가 아닌 locale cookie로 정한다. `en.ts`가 번역 key의 정본이고 `ko.ts`는
@@ -385,8 +383,8 @@ Settings는 General·Plugins·Models·Keys 탭으로 관리하고, `/models`는 
 ## 용어
 
 개념의 기본 정의는 [시스템 개요](AGENT_STUDIO.md#skilltoolmcpagentmemory)를 따른다.
-코드의 `agent project`는 다중 턴 프로젝트, `subagent`는 Agent 설정의 실행 대상 참조,
-`ExternalAgent`는 원격 registry 항목이다. `McpServer`는 콘솔의 Tools에 등록한 서버를 뜻한다.
+코드의 `Project`는 콘솔의 Agent를 저장하는 단위이고, `subagent`는 다른 Agent 설정의
+실행 대상 참조다. `McpServer`는 콘솔의 Tools에 등록한 서버를 뜻한다.
 
 `RunActor`는 실행 귀속, `RunCaller`는 선택적 사용자 표시 문맥, `RunConversation`은 표면별
 대화 주소다. route의 predict, 파사드의 execute, Runtime의 run은 같은 요청의 서로 다른 계층이다.

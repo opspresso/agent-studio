@@ -113,7 +113,7 @@
 | plugin 기본 파일 응답 매핑 선언·검증 | `src/domain/plugin/types.ts`의 `STUDIO_PLUGIN_EXTENSION`, `src/domain/mcp/sourceMapping.ts`의 `isMcpSourceMappings` | 구조 |
 | 오디오 도구의 작업별 입력 shape | `src/application/audio/toolDefinitions.ts`; `AudioJob.request`의 operation별 union | 구조 |
 | 오디오 프로젝트 큐의 접수 순서·due 인덱스·직렬 claim | `src/infrastructure/db/repositories/audioJobRepository.ts`; 큐 첫 작업만 실행하고 작업 전이와 큐 갱신을 transaction으로 묶는다 | 구조 |
-| 오디오 작업 화면의 동시 상태 조회 수와 갱신 병합 | `src/app/projects/[name]/audio/jobPolling.ts`의 `MAX_CONCURRENT_AUDIO_JOB_READS`와 `mergeAudioJobUpdates` | 구조 |
+| 오디오 작업 화면의 동시 상태 조회 수와 갱신 병합 | `src/app/agents/[name]/audio/jobPolling.ts`의 `MAX_CONCURRENT_AUDIO_JOB_READS`와 `mergeAudioJobUpdates` | 구조 |
 | 아웃바운드 MCP 요청의 예약 metadata 헤더 — 철자, 저장된 표기 제거, actor→email 판정 | `src/application/mcpMetadataHeaders.ts` 의 `TENANT_ID_HEADER` / `USER_EMAIL_HEADER` / `CONVERSATION_ID_HEADER` / `stripMcpMetadataHeaders` / `mcpUserEmail` / `applyMcpUserEmail`. API 레이어는 `src/app/api/projects/_lib/conversation.ts` 에서 conversation 철자를 *인바운드* 로 읽고, API Reference 탭(`endpoints.ts`)이 그것을 호출자에게 보여준다. 그 두 파일뿐이다 | 구조 |
 | 프로젝트 변경 시각의 단조 증가 | `src/shared/nextUpdatedAt.ts`. 프로젝트 수정과 오디오 후처리 참조의 삭제 방지 transaction이 함께 사용한다 | 구조 |
 | 사람이 읽을 저장 오브젝트의 크기 | `src/app/_lib/formatBytes.ts` 의 `formatBytes` | 구조 |
@@ -194,7 +194,7 @@
 | `AES_ENCRYPTION_KEY` 의 base64 해석과 32바이트 검증 | `src/shared/aesKey.ts` 의 `decodeAes256Key` | 구조 |
 | 쉼표로 구분된 설정 목록의 파싱 | `src/shared/parseList.ts` | 구조 |
 | 설정된 값이 비어 있는지 여부 | `src/shared/env.ts` | 구조 |
-| schedule 설정 화면이 동시에 읽을 최근 실행 목록 수 | `src/app/projects/[name]/settings/scheduleRuns.ts` 의 `MAX_CONCURRENT_SCHEDULE_RUN_READS` | 구조 |
+| schedule 설정 화면이 동시에 읽을 최근 실행 목록 수 | `src/app/agents/[name]/settings/scheduleRuns.ts` 의 `MAX_CONCURRENT_SCHEDULE_RUN_READS` | 구조 |
 | 각 member tier 가 쓸 수 있는 금액 | `src/domain/member/tiers.ts` 의 `TIER_LIMITS` | 구조 |
 | `undici` 에 직접 닿기 | `src/infrastructure/net/publicFetch.ts`. dispatcher와 fetch는 같은 undici 구현을 사용한다 | 구조 |
 | chunk 가 거쳐 온 transfer 사슬을 도출하기 | `src/domain/llm/types.ts` 의 `chunkAuthorPath` | 구조 |

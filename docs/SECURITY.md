@@ -122,7 +122,7 @@ visibility 이전처럼 열려 있다: 이름과 지출 집계는 카탈로그 �
 | Project API token, trigger, MCP 연결 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
 | 호출자별 usage (`usage/actors`) | 소유자 또는 설정된 admin | — |
 | Project usage 합계 | 로그인한 모든 사용자 | — |
-| Skill / MCP 서버 / 외부 agent / plugin | `member` tier 이상 (`withMemberAuth`; `guest` 는 403) | admin (`withAdminAuth`) |
+| Skill / MCP 서버 / plugin | `member` tier 이상 (`withMemberAuth`; `guest` 는 403) | admin (`withAdminAuth`) |
 | 앱 설정 | admin | admin |
 | 모델 즐겨찾기 | 로그인한 사용자 본인 | 로그인한 사용자 본인 |
 | 멤버 디렉터리 | admin | admin (tier 변경, `member.set-tier` 로 감사) |
@@ -200,7 +200,7 @@ admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘�
 
 ## 저장된 시크릿
 
-저장되는 모든 자격 증명. MCP 서버 헤더, 외부 agent 헤더, Agent별 헤더 오버라이드, MCP OAuth 의
+저장되는 모든 자격 증명. MCP 서버 헤더, Agent별 헤더 오버라이드, MCP OAuth 의
 access/refresh token·client secret·인가 중인 PKCE verifier, Slack 봇 token 과 서명 시크릿,
 Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿, project API token, webhook trigger 시크릿, 그리고 시크릿인 앱
 설정(LLM API 키와 plugins 저장소의 GitHub token)은 `AES_ENCRYPTION_KEY` 로 AES-256-GCM
@@ -211,7 +211,7 @@ v2 는 row 와 field 정체성을 AES-GCM AAD 로 묶으므로 암호문만 다�
 Project API token 과 webhook trigger secret 은 각각 project 이름과
 `project + triggerId` 에 묶인다. Slack 의 bot token·signing secret, Telegram 의 bot
 token·webhook secret, Teams 의 app password 는 `project + integration + field` 를 쓴다.
-MCP·external agent 의 registry header 는 항목 이름과 header 이름에, managed MCP 의 environment 는
+MCP registry header 는 항목 이름과 header 이름에, managed MCP 의 environment 는
 항목 이름과 변수 이름에 묶인다. HTTP header의 override 병합만 이름의 대소문자를 무시하고,
 AAD 는 environment와 같은 공통 map 규칙에 따라 저장된 키 철자를 그대로 쓴다.
 
@@ -364,7 +364,7 @@ Cookie session으로 인증하는 `POST`·`PUT`·`PATCH`·`DELETE`는 `Origin`�
 
 ## 아웃바운드 요청 (SSRF)
 
-운영자가 등록한 URL. MCP 서버와 외부 agent. 은 `src/infrastructure/net/ssrfGuard.ts` 가
+운영자가 등록한 MCP 서버 URL은 `src/infrastructure/net/ssrfGuard.ts`가
 **등록 시점과 디스패치 시점 모두** 에서 검증한다. 거부되는 것: `http(s)` 가 아닌 스킴,
 userinfo 를 실은 URL(`https://user:pass@host`, 주소 안의 자격 증명은 여기서 무언가를 인증하는
 방식이 아니고, 호스트를 다른 것처럼 읽히게 만드는 상투적 수단이다), 그리고

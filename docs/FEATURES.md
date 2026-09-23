@@ -11,34 +11,33 @@
 
 | 현재 명칭 | 실제 역할 |
 |---|---|
-| Projects | Agent를 관리하는 로컬 실행 단위 |
-| Agents | 다른 시스템의 원격 Agent를 등록하는 레지스트리 |
+| Agents | 현재 설정을 저장하고 실행하는 단위 |
 | Tools | MCP 서버 등록·연결·운영 기능 |
 | Plugins | Skills와 MCP 서버를 가져오는 동기화 묶음 |
 
 Agent는 기본 모델·fallback 모델·이미지 도구 모델을 사용한다.
 Reasoning은 모델의 capability와 실행 설정으로 제어한다.
 
-## 1. Projects — 내부 Agent
+## 1. Agents
 
 ### 기본 관리
 
-- 프로젝트 목록과 검색: 이름·표시 이름·설명.
+- Agent 목록과 검색: 이름·표시 이름·설명.
 - 고유 이름, 표시 이름, 설명, 소유자, 부서 코드.
-- 프로젝트 생성.
+- Agent 생성.
 - 표시 이름·설명·부서 코드 수정.
-- 프로젝트 복제.
-- 프로젝트 삭제.
+- Agent 복제.
+- Agent 삭제.
 - 공개 범위 표시.
 - 조직 공개 / 비공개 설정.
-- 비공개 프로젝트의 사용자 이메일 초대.
+- 비공개 Agent의 사용자 이메일 초대.
 
 현재 공개는 로그인한 조직 사용자에게 공개한다는 의미다. 초대 사용자는 조회·실행·복제가
 가능하지만 편집자는 소유자·관리자다.
 
-### 프로젝트 실행
+### Agent 실행
 
-모든 프로젝트는 Agent이며 같은 도구 실행 경로를 사용한다. 이미지 생성·편집은
+모든 Agent는 같은 도구 실행 경로를 사용한다. 이미지 생성·편집은
 Agent의 GenerateImage·EditImage 도구로 제공한다.
 
 ### 현재 Agent 설정
@@ -50,7 +49,7 @@ Agent의 GenerateImage·EditImage 도구로 제공한다.
 - 새 실행에 저장 내용 적용, 진행 중 실행·Audio 작업의 설정 snapshot 유지.
 - 승인 대기 중 설정·연결 변경 검사와 중복 재개 방지.
 
-실험을 분리하려면 프로젝트를 복제한다.
+실험을 분리하려면 Agent를 복제한다.
 
 ### 모델과 프롬프트
 
@@ -83,7 +82,6 @@ Fallback은 첫 출력 전 429·5xx 오류에서 한 번 전환한다.
 - MCP 결과의 원본 파일 매핑 설정.
 - 프로젝트별 MCP OAuth 연결·재인증·해제.
 - 로컬 프로젝트를 하위 Agent로 연결.
-- 외부 Agent 연결.
 - Handoff.
 - Agent-as-Tool 위임.
 - 이미지 도구를 가진 Agent 위임.
@@ -102,7 +100,7 @@ Fallback은 첫 출력 전 429·5xx 오류에서 한 번 전환한다.
 - 조회한 기억을 모델 문맥에 추가.
 - MCP가 제공하는 기억 저장 도구 사용.
 - Dynamic capabilities 활성화.
-- Skill·MCP 서버·MCP 도구·외부 Agent의 의미 기반 검색.
+- Skill·MCP 서버·MCP 도구의 의미 기반 검색.
 - Embedding 검색과 선택적 Rerank.
 - 명시적으로 연결한 역량에 검색 결과 추가.
 - 검색된 역량·준비 경고 표시.
@@ -124,7 +122,7 @@ Fallback은 첫 출력 전 429·5xx 오류에서 한 번 전환한다.
 도구마다 Agent 설정·저장소·연동·호출자 권한 등의 활성 조건이 있다.
 
 구현 근거: [Project·AgentConfiguration 정의](../src/domain/project/types.ts),
-[Agent 설정 편집기](../src/app/projects/[name]/_components/AgentConfigurationEditor.tsx),
+[Agent 설정 편집기](../src/app/agents/[name]/_components/AgentConfigurationEditor.tsx),
 [내장 도구 목록](../src/domain/llm/toolNames.ts).
 
 ## 2. Playground
@@ -147,8 +145,8 @@ Fallback은 첫 출력 전 429·5xx 오류에서 한 번 전환한다.
 Prompt preview는 모델 답변을 생성하지 않지만 검색·MCP 조회·Memory recall은 실제 수행할 수
 있다. 실제 Run은 저장한 Agent 설정을 실행한다.
 
-구현 근거: [Prompt preview](../src/app/projects/[name]/_components/PromptPreview.tsx),
-[실행 패널](../src/app/projects/[name]/_components/RunPanel.tsx).
+구현 근거: [Prompt preview](../src/app/agents/[name]/_components/PromptPreview.tsx),
+[실행 패널](../src/app/agents/[name]/_components/RunPanel.tsx).
 
 ## 3. Chats
 
@@ -323,22 +321,7 @@ Docker와 Managed MCP 설정이 필요하다. Kubernetes 관리형 runtime은 �
 구현 근거: [MCP 관리 화면](../src/app/tools/[name]/page.tsx),
 [Managed MCP 생성](../src/app/tools/_components/ManagedMcpModal.tsx), [MCP 설계](design/mcp.md).
 
-## 8. Agents — 외부 Agent
-
-- 외부 Agent 목록·검색.
-- 이름·설명.
-- OpenAI-compatible 실행 endpoint.
-- HTTP 헤더·자격 증명.
-- 등록·편집·삭제.
-- 테스트 메시지 전송.
-- 응답·오류 확인.
-- 프로젝트 하위 Agent로 연결.
-- 자동 capability 검색 대상으로 사용.
-
-구현 근거: [외부 Agent 목록](../src/app/agents/page.tsx),
-[외부 Agent 상세](../src/app/agents/[name]/page.tsx), [외부 Agent 설계](design/agents.md).
-
-## 9. Integrations·API Reference
+## 8. Integrations·API Reference
 
 Integrations에서 프로젝트 인증과 외부 연동을 설정하고 API Reference에서 호출 계약과 예제를 확인한다.
 
@@ -412,11 +395,11 @@ API Reference는 프로젝트 주소로 현재 Agent 설정을 호출하는 예�
 
 배포 담당자가 준비한 Azure Bot·Teams App의 자격 증명을 연결한다.
 
-구현 근거: [연동 화면](../src/app/projects/[name]/integrations/page.tsx),
-[API Reference](../src/app/projects/[name]/api-reference/endpoints.ts),
+구현 근거: [연동 화면](../src/app/agents/[name]/integrations/page.tsx),
+[API Reference](../src/app/agents/[name]/api-reference/endpoints.ts),
 [메시징 설계](design/messaging.md).
 
-## 10. Webhook·Schedules
+## 9. Webhook·Schedules
 
 개편 시 Webhook과 Cron(Schedules)을 선택적 어댑터로 분리한다. 예약·이벤트 자동화 기능은
 유지하되 Agent 실행 코어와 분리하며, 다른 어댑터도 같은 계약으로 추가할 수 있어야 한다.
@@ -457,10 +440,10 @@ API Reference는 프로젝트 주소로 현재 Agent 설정을 호출하는 예�
 
 예약 실행은 외부 ticker가 호출한다.
 
-구현 근거: [Webhook 설정](../src/app/projects/[name]/settings/WebhookSection.tsx),
-[Schedule 설정](../src/app/projects/[name]/settings/SchedulesSection.tsx), [Trigger 설계](design/triggers.md).
+구현 근거: [Webhook 설정](../src/app/agents/[name]/settings/WebhookSection.tsx),
+[Schedule 설정](../src/app/agents/[name]/settings/SchedulesSection.tsx), [Trigger 설계](design/triggers.md).
 
-## 11. Workspace·Sandbox·Coding
+## 10. Workspace·Sandbox·Coding
 
 ### 작업 실행
 
@@ -529,7 +512,7 @@ Agent의 Workspace 도구는 로그인한 member 이상 사용자의 실행에�
 구현 근거: [Workspace 화면](../src/app/workspaces/_components/WorkspacePanel.tsx),
 [Workspace 도구](../src/application/workspace/workspaceTool.ts), [Workspace 설계](design/workspaces.md).
 
-## 12. Documents·파일 생성·편집
+## 11. Documents·파일 생성·편집
 
 ### 읽기·추출
 
@@ -582,7 +565,7 @@ Agent의 Workspace 도구는 로그인한 member 이상 사용자의 실행에�
 구현 근거: [문서 처리 계약](../src/domain/document/processor.ts),
 [File 도구](../src/application/document/fileTool.ts), [문서 설계](design/documents.md).
 
-## 13. Audio Processing
+## 12. Audio Processing
 
 - MP3·WAV·FLAC·Ogg 업로드.
 - 원본 파일 가져오기.
@@ -611,10 +594,10 @@ Agent의 Workspace 도구는 로그인한 member 이상 사용자의 실행에�
 저장소·전사 채널·별도 worker를 구성해 프로젝트 소유자인 member 이상의 개인 오디오 파일을 처리한다.
 외부 Documents·Memory 저장에는 수신 MCP의 도구와 계약이 필요하다.
 
-구현 근거: [Audio 화면](../src/app/projects/[name]/audio/page.tsx),
+구현 근거: [Audio 화면](../src/app/agents/[name]/audio/page.tsx),
 [Audio 도구](../src/application/audio/toolDefinitions.ts), [오디오 설계](design/audio-processing-spec.md).
 
-## 14. Artifacts
+## 13. Artifacts
 
 - 개인 갤러리.
 - 프로젝트별 갤러리.
@@ -639,7 +622,7 @@ Office·PDF 원본은 다운로드해 확인한다. 개인 Audio 원본·파생 
 구현 근거: [Artifact 갤러리](../src/app/artifacts/_components/ArtifactGallery.tsx),
 [산출물 권한](../src/application/artifact/artifactUseCases.ts).
 
-## 15. Usage·비용 한도
+## 14. Usage·비용 한도
 
 ### 사용량 조회
 
@@ -688,7 +671,7 @@ provider·부서별, 프로젝트 Usage는 모델·provider별, Profile은 프�
 [사용량 조회·권한](../src/application/usage/usageUseCases.ts),
 [등급 정책](../src/domain/member/tiers.ts), [비용·기록 설계](design/observability.md).
 
-## 16. Traces
+## 15. Traces
 
 - 프로젝트별 기간 조회.
 - Trace 상세.
@@ -707,10 +690,10 @@ provider·부서별, 프로젝트 Usage는 모델·provider별, Profile은 프�
 
 소유자·관리자가 span 표에서 실행 상태·시간·사용량을 확인한다.
 
-구현 근거: [Trace 목록](../src/app/projects/[name]/traces/page.tsx),
-[Span 표시](../src/app/projects/[name]/traces/TraceContent.tsx), [Trace 설계](design/observability.md#trace).
+구현 근거: [Trace 목록](../src/app/agents/[name]/traces/page.tsx),
+[Span 표시](../src/app/agents/[name]/traces/TraceContent.tsx), [Trace 설계](design/observability.md#trace).
 
-## 17. Audit
+## 16. Audit
 
 - 관리자 감사 기록 조회.
 - 기간 필터.
@@ -728,7 +711,7 @@ provider·부서별, 프로젝트 Usage는 모델·provider별, Profile은 프�
 
 구현 근거: [감사 화면](../src/app/audit/page.tsx), [감사 대상 행위](../src/domain/audit/types.ts).
 
-## 18. 인증·Members·Profile
+## 17. 인증·Members·Profile
 
 ### 인증
 
@@ -764,7 +747,7 @@ Profile에서 본인 정보와 사용량을 조회한다.
 구현 근거: [인증 구성](../src/lib/auth.ts), [Members 화면](../src/app/members/page.tsx),
 [Profile 화면](../src/app/profile/page.tsx), [인증·인가 계약](SECURITY.md).
 
-## 19. Settings
+## 18. Settings
 
 | 탭 | 관리 항목 |
 |---|---|
@@ -786,7 +769,7 @@ SSO·DB·스토리지·worker·retention은 배포 설정으로 관리한다. �
 구현 근거: [Settings 탭 정의](../src/app/settings/tabs.ts),
 [Settings API](../src/app/api/settings/route.ts), [설정 계약](CONFIGURATION.md).
 
-## 20. 공통 화면·운영 기능
+## 19. 공통 화면·운영 기능
 
 ### 공통 화면
 

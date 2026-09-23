@@ -122,8 +122,8 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 
 | 라우트 | 메서드 | 권한 |
 |---|---|---|
-| `/api/skills`, `/api/mcps`, `/api/agents` | `GET` `POST` | member / admin |
-| `/api/skills/{name}`, `/api/mcps/{name}`, `/api/agents/{name}` | `GET` `PUT` `DELETE` | member / admin |
+| `/api/skills`, `/api/mcps` | `GET` `POST` | member / admin |
+| `/api/skills/{name}`, `/api/mcps/{name}` | `GET` `PUT` `DELETE` | member / admin |
 | `/api/plugins` | `GET` | member |
 | `/api/plugins/{name}` | `GET` | member |
 | `/api/plugins/sync` | `GET` `POST` | member / admin |
@@ -135,7 +135,6 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/mcps/managed/{name}/restart` | `POST` | admin |
 | `/api/mcps/oauth/callback` | `GET` | session |
 | `/api/mcps/oauth/client-metadata/{project}` | `GET` | **공개** |
-| `/api/agents/{name}/message` | `POST` | member |
 
 ### Chat·사용량·플랫폼
 
@@ -200,16 +199,12 @@ DELETE /api/skills/{name}     → 204                     | 404
 ```
 
 - 이름은 slug (`^[a-z0-9-]+$`) 다.
-- `mcps`/`agents` 는 `headers` 를 AES 로 암호화해 저장하고 마스킹해서 돌려준다 (길이 보존.
+- `mcps` 는 `headers` 를 AES 로 암호화해 저장하고 마스킹해서 돌려준다 (길이 보존.
   9자 이상은 양끝 4자씩 드러낸다). 업데이트 때 마스킹된 값이나 빈 값은
   저장된 secret 을 보존한다. 이들의 `url` 은 SSRF 가드를 받는다.
   private/loopback/link-local/metadata 대상(또는 http(s) 가 아닌 scheme)은 `400` 으로 거절된다.
 - `mcps` 는 선택적인 `content` (markdown 운영자 노트) 도 받는다. `description` 은 agent 런의
   서버 표에서 모델이 보는 한 줄 요약이고, `content` 는 콘솔 전용이라 모델에 절대 닿지 않는다.
-- 외부 `agents`의 URL은 OpenAI 호환 `chat/completions` 엔드포인트다.
-  `POST /api/agents/{name}/message`와 아웃바운드 transfer가 이 주소를 호출한다.
-  URL 을 다른 주소로 바꾸면 저장된 headers 는 버린다. 같은 요청에서 새로 입력한 값만 새 주소에
-  저장한다.
 - **managed** MCP 항목은 그것을 소유하지 않은 공유 레지스트리 라우트에서 거절된다:
   `DELETE /api/mcps/{name}` 은 `400` 이고 (`/api/mcps/managed/{name}` 을 통해 지워야 컨테이너가
   행과 함께 멈춘다), `url` 을 옮기는 `PUT` 도 `400` 이다. 그 주소는 프로비저너가 준다.
@@ -228,12 +223,11 @@ DELETE /api/skills/{name}     → 204                     | 404
 
 ```json
 { "name": "my-bot", "displayName": "My Bot", "description": "",
-  "projectType": "agent", "departmentCode": "OPT-optional" }
+  "departmentCode": "OPT-optional" }
 ```
 
 생성 시 배포가 제공하는 첫 번째 호환 텍스트 모델로 초기 Agent 설정을 같은 Project 행에
-저장한다. 호환 모델이 없으면 미설정 Agent로 생성한다. `projectType`은 생략하거나 `agent`로
-보내며 `llm`·`image`는 거절한다. 일반 Project 응답은 시크릿을 포함한 설정 원문을 싣지 않고
+저장한다. 호환 모델이 없으면 미설정 Agent로 생성한다. 일반 Project 응답은 시크릿을 포함한 설정 원문을 싣지 않고
 `configured`로 설정 유무를 알린다.
 
 #### 공개 범위와 복제
@@ -761,8 +755,6 @@ plugin 행의 `branch` 는 `archive`, `commitSha` 는 아카이브의 sha256 이
 POST /api/mcps/{name}/tools
 → { tools } | 502 (connection failure)
 
-POST /api/agents/{name}/message   { "message": "hello" }
-→ { text } | 502 (remote failure)
 ```
 
 sync 엔드포인트는 `GET` 은 member 에게 답하고 `POST` 는 admin 권한을 요구한다. 레지스트리 테스트
@@ -1452,8 +1444,8 @@ POST /api/catalog/reindex
        deployment missing it gets this rather than a 401) | 503 ("CATALOG_ENABLED is not set")
 ```
 
-전역 capability 인덱스를 레지스트리에서 다시 만든다. 모든 skill, 모든 MCP 서버와 그것이 제공하는
-도구, 모든 외부 agent. 그리고 이제 그들에게 없는 것은 지운다. 작업은 배경에서 돌아가므로 결과는
+전역 capability 인덱스를 레지스트리에서 다시 만든다. 모든 Skill과 MCP 서버·도구를 색인하고
+레지스트리에서 사라진 항목은 지운다. 작업은 배경에서 돌아가므로 결과는
 응답 본문이 아니라 로그 한 줄(`indexed`, `removed`, `undiscovered`)이다. 두 번 ticking 해도
 안전하다: 키가 항목에서 유도되므로 두 번째 패스는 같은 레코드를 쓴다. 시간당 한 번이면 충분하다.
 더 빠른 tick 은 모든 MCP 서버를 더 자주 찔러 볼 뿐이다.

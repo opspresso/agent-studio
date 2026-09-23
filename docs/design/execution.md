@@ -114,11 +114,11 @@ SDK function tool 동시성은 5다. 실제 실행에 진입한 도구만 결과
 `delegate_<name>`으로 specialist의 결과를 받은 뒤 계속 답할 수 있다. 인자는
 `{ input: string, image_ids: string[] }`다. Handoff는 같은 Runner의 모델/도구 이력을 이어받고,
 Agent-as-Tool은 SDK가 별도 실행을 관리한다. 후자의 요청에는 최신 SDK Session 이력에서
-만든 한정된 배경 문맥을 전달한다. 원격 Agent는 별도 기능을 수행하는 SDK function tool로 연결한다.
+만든 한정된 배경 문맥을 전달한다.
 
 Studio는 요청된 대상의 현재 설정을 준비하고 순환, 깊이 5, 모델/비용 정책을 검사한다.
 자식은 부모에게 남은 턴 수 이하로 제한되며 추가 Agent-as-Tool 병렬 위임을 제공하지 않는다.
-필요한 로컬 Handoff와 원격/이미지 도구는 자식에도 제공할 수 있다. 자식 실패는 부모의 오류
+필요한 로컬 Handoff와 이미지 도구는 자식에도 제공할 수 있다. 자식 실패는 부모의 오류
 도구 결과와 경고가 되고, 부모는 남은 정보로 답할 수 있다.
 
 `BoundAgent`는 SDK identity를 유지하면서 동시 호출의 모델·도구·Guardrail 자원을 분리한다.

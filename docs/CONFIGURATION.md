@@ -263,7 +263,7 @@ sync는 선언된 이름의 항목을 갱신하고 사라진 항목은 orphan으
 | `SLACK_LOADING_INDICATOR` | `:hourglass_flowing_sand:` | — | Slack 답변이 아직 쓰이고 있는 동안 뒤에 붙였다가 마지막 편집에서 떼어 내는 표시. **edit-in-place 폴백에서만 그렇다**. 스트리밍되는 답변은 Slack 자신이 아직 도착 중이라고 표시해 준다. 자기 spinner 이모지를 가진 워크스페이스는 여기에 그 이름을 적는다. 기본값이 내장돼 있는 이유는, 워크스페이스가 정의하지 않은 커스텀 이름은 글자 그대로 렌더링되기 때문이다. |
 
 프로젝트별 Slack 설정. 봇 토큰, signing secret, 추천 프롬프트, 그리고 멘션 없이 봇을 깨우는
-**채널 키워드**. 는 환경이 아니라 프로젝트에 산다 (`/projects/{name}/settings`). Agent의
+**채널 키워드**. 는 환경이 아니라 프로젝트에 산다 (`/agents/{name}/settings`). Agent의
 런이 워크스페이스를 *읽어도* 되는지는 Agent 파라미터(`slackWorkspace`)이고 기본은 꺼짐이다.
 
 **생성되는 매니페스트는 릴리즈와 함께 바뀐다.** 이제 `message.channels` 와
@@ -274,7 +274,7 @@ sync는 선언된 이름의 항목을 갱신하고 사라진 항목은 orphan으
 ## Telegram
 
 환경에는 아무것도 없다. 프로젝트별 설정. 봇 토큰과 봇이 켜져 있는지 여부. 는 프로젝트에
-산다 (`/projects/{name}/integrations`). webhook 시크릿은 거기서 발급되고, 봇을 켜면
+산다 (`/agents/{name}/integrations`). webhook 시크릿은 거기서 발급되고, 봇을 켜면
 `PUBLIC_BASE_URL/api/telegram/webhook/{project}` 에 webhook 이 등록되며 끄면 삭제된다 (*Register
 webhook* 은 주소가 바뀐 뒤 다시 가리키는 용도다). 그래서 `PUBLIC_BASE_URL` 은 Telegram 이
 도달할 수 있는 주소여야 한다. BotFather 의 *privacy mode* 는 켜 둔 채로 둬도 된다: 어차피 봇은
@@ -284,7 +284,7 @@ webhook* 은 주소가 바뀐 뒤 다시 가리키는 용도다). 그래서 `PUB
 
 환경에는 아무것도 없다. 프로젝트별 설정. Azure Bot 의 Microsoft App ID, 클라이언트 시크릿,
 (단일 테넌트 앱이면) 테넌트 id, 켜져 있는지 여부. 는 프로젝트에 산다
-(`/projects/{name}/integrations`). Azure 에는 endpoint 를 가리키는 호출이 없으므로 콘솔은
+(`/agents/{name}/integrations`). Azure 에는 endpoint 를 가리키는 호출이 없으므로 콘솔은
 `PUBLIC_BASE_URL/api/teams/messages/{project}` 를 보여 주고 운영자가 Azure Bot 의 messaging
 endpoint 에 붙여 넣는다 ([design/teams.md](design/teams.md)).
 
@@ -412,26 +412,22 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | Chat 재접속 로그와 Session 삭제 tombstone의 보존 | 행을 쓴 시각부터 실행 lease + `15분` | `src/infrastructure/db/ttl.ts`의 `RUN_LOG_TTL_SECONDS` |
 | Webhook·Schedule의 멱등 claim / 메신저 delivery claim 행 TTL | 생성부터 `24시간`; 실제 삭제는 sweep | `src/infrastructure/db/repositories/triggerRepository.ts`, `inboundClaimRepository.ts` |
 | 한 런의 파일 쓰기 시도 수 (`SaveFile`과 `File` 생성·편집 공유) | `10` | `src/application/runtime/tools.ts` |
-| 카탈로그 검색 하나가 런에 더할 수 있는 capability 수 (skill / 외부 agent / MCP 서버) | `5` / `3` / `3` | `src/application/execution/bindings.ts` |
+| 카탈로그 검색 하나가 런에 더할 수 있는 capability 수 (Skill / MCP 서버) | `5` / `3` | `src/application/execution/bindings.ts` |
 | 각 MCP 인덱스에 요청하는 카탈로그 매치 수. 그 상한을 넘겨 oversampling 한다. 여러 도구 행이 한 서버로 합쳐지고, 런이 바인딩할 수 없는 후보가 슬롯을 잡아먹어서는 안 되기 때문이다 | MCP 서버 상한의 `4×`(tool 인덱스) / `3×`(server 인덱스) | `src/application/execution/bindings.ts` |
 | 카탈로그 검색어 (요청 없을 때의 시스템 프롬프트 / 최근 사용자 턴 / 최신 요청 + 관련 기억) | `2,000` 자 / `3` 턴 / `2,000` 자(각 절반 최대 `1,000` 자) | `src/application/execution/bindings.ts` |
 | 메모리 recall (`memoryRecall`): 보내는 질의 / 프롬프트에 유지하는 텍스트 / 첫 토큰이 그것을 기다리는 시간 | `2,000` 자 / `4,000` 자 / `10s` | `src/application/execution/memoryRecall.ts` |
 | 인코딩된 대화 id (그것을 넘으면 대화가 없고, API 헤더는 400 으로 답한다) | `512` 자 | `src/domain/execution/actor.ts` 의 `MAX_CONVERSATION_ID_LENGTH` |
-| 원격 agent 의 `contextId` 를 우리 쪽 대화 하나에 대해 유지하는 기간 | `7` 일, 사용 시 갱신 | `src/infrastructure/db/ttl.ts` |
-| 런당 MCP 도구 준비 상한 (= 128 − 예약 builtin 16개) | `112`; 최종 도구 집합은 위임·클라이언트 도구까지 포함해 `128`개 이하 | `src/domain/llm/toolLimits.ts` |
+| 런당 MCP 도구 준비 상한 (= 128 − 예약 builtin 16개) | `112`; 최종 도구 집합은 위임을 포함해 `128`개 이하 | `src/domain/llm/toolLimits.ts` |
 | MCP 도구 결과 하나 | `100,000` 자 | `src/infrastructure/mcp/toolManager.ts` |
 | MCP 서버의 HTTP 응답 | `14.5MB` | `src/infrastructure/mcp/session.ts` |
 | MCP 서버 하나에서 읽는 `tools/list` 페이지 수 (상한에 닿으면 그 discovery 는 실패한다, SDK 는 부분 카탈로그를 남기지 않는다) | `64` | `src/infrastructure/mcp/session.ts` |
 | MCP OAuth 메타데이터 / 토큰 응답 | 각 `256,000 bytes` | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
 | MCP discovery 캐시 항목 수 | `200` | `src/infrastructure/mcp/discoveryCache.ts` |
 | 호스트당 managed MCP 서버 수 / 컨테이너당 메모리·swap·CPU·PID·writable tmpfs | `8` / `512MiB`·`512MiB`·`1`·`256`·`64MiB` | `src/application/mcp/managedMcpUseCases.ts`, `src/infrastructure/mcp/dockerProvisioner.ts` |
-| 원격 Agent 응답 (OpenAI 호환) | `2,000,000 bytes` | `src/infrastructure/agent/dispatcher.ts`, `agentClient.ts` |
 | MCP 도구 호출 하나, 모델에 타임아웃 에러가 건네지기 전까지 (도구가 정당하게 몇 분씩 걸릴 수도 있다) | `120s` | `src/infrastructure/mcp/session.ts` |
 | MCP discovery. 모든 런의 첫 토큰이 지나는 크리티컬 패스 위에 있어서, 빠르게 실패하고 그 서버의 도구만 잃는다. **요청당**: 연결과 `tools/list` 가 각각 이 값을 받는다 (그래서 느린 서버 하나에 최대 ~20초). 캐시로 제공된 세션의 첫 도구 호출에서 일어나는 지연 연결도 이 값을 받는다 | `10s` | `src/infrastructure/mcp/session.ts` |
 | 런이 끝날 때 MCP 세션을 해제하기. 단계별로: 레거시 세션이 보내는 `DELETE`, 그다음 close | 각 `5s` | `src/infrastructure/mcp/session.ts` |
 | MCP OAuth well-known 문서 / 토큰 엔드포인트와 RFC 7591 등록 (상수 하나) | `10s` / `15s` | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
-| OpenAI 형태의 원격 agent 로 가는 transfer | `120s` | `src/infrastructure/agent/dispatcher.ts` |
-| 레지스트리가 외부 OpenAI 호환 agent에 보내는 "test message" | `60s` | `src/infrastructure/agent/agentClient.ts` |
 | Slack Web API 호출 하나 / Slack 파일 전송 하나 | `30s` / `120s` | `src/infrastructure/slack/client.ts` |
 | Telegram Bot API 호출 하나 / Telegram 파일 전송 하나 | `30s` / `120s` | `src/infrastructure/telegram/client.ts` |
 | Bot Framework(Teams) 호출 하나 / 첨부 전송 하나 | `30s` / `120s` | `src/infrastructure/teams/client.ts` |

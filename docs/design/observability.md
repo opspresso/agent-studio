@@ -102,7 +102,7 @@ Agent 런은 항상 기록한다. Studio Trace는 준비 단계,
 SDK native span과 최상위 종료 상태를 한정된 행으로 저장한다.
 
 ```ts
-Trace { traceId, projectName, projectType, actor?, ancestry?, conversation?,
+Trace { traceId, projectName, actor?, ancestry?, conversation?,
         status: 'completed' | 'awaiting-approval' | 'turn-limit' | 'output-limit' | 'failed' | 'cancelled',
         spans, spansDropped?, warnings?, startedAt, endedAt, durationMs, error?, createdAt }
 TraceSpan { spanId, parentSpanId?, kind: 'model' | 'tool' | 'subagent' | 'guardrail' | 'prepare',

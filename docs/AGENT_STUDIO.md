@@ -29,9 +29,10 @@ Plugin sync, Slack·Telegram·Teams·GitHub는 배포가 선택하는 연결이�
 소유한다. 개발 중이므로 API·설정·저장 형식의 하위 호환은 보장하지 않는다.
 설치와 업그레이드는 [INSTALL](INSTALL.md), 실제 변수는 [CONFIGURATION](CONFIGURATION.md)을 따른다.
 
-## Project와 현재 설정
+## Agents와 현재 설정
 
-Project는 이름으로 호출하는 Agent다. 현재 설정에 모델·fallback·시스템 프롬프트·생성 설정,
+콘솔에서는 Agent를 `/agents`에서 만들고 관리한다. 저장소와 `/api/projects`의 `Project`는
+같은 Agent를 가리키는 내부 계약이다. 현재 설정에 모델·fallback·시스템 프롬프트·생성 설정,
 Skill·MCP·하위 Agent binding과 실행 정책을 저장한다. 이미지 생성·편집도 Agent의 도구로 제공한다.
 
 설정 저장은 Project의 `updatedAt`으로 동시 수정을 검사한다. 저장한 설정은 다음 실행부터
