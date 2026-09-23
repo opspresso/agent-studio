@@ -45,9 +45,9 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
   const [runs, setRuns] = useState<Record<string, TriggerRun[]>>({});
   const [newId, setNewId] = useState("");
   const [newCron, setNewCron] = useState("");
-  const [newTimezone, setNewTimezone] = useState(
-    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
-  );
+  // The server and browser may have different zones; keep hydration stable,
+  // then offer the browser's zone once its clock is available.
+  const [newTimezone, setNewTimezone] = useState("UTC");
   const [newMessage, setNewMessage] = useState("");
   const [slackChannels, setSlackChannels] = useState<SlackChannelInfo[]>([]);
   const [telegramChats, setTelegramChats] = useState<TelegramDestination[]>([]);
@@ -61,6 +61,10 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNewTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+  }, []);
 
   const reload = useCallback(async () => {
     const { triggers } = await listTriggers(projectName);
