@@ -143,9 +143,8 @@ export interface EngineChunk {
     toolCalls?: ChannelToolCall[];
   };
   /**
-   * Emitted when a run produced an image — the builtin GenerateImage/EditImage
-   * tools, an image subagent, an image project, or an MCP tool that returned
-   * one.
+   * Emitted when a run produced an image through an Agent tool, a delegated
+   * Agent, or an MCP tool.
    *
    * `artifactId`/`key` are added once the bytes have been stored, and the bytes
    * stay: a live view renders them as it always did, and only a consumer that

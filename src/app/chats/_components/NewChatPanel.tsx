@@ -57,8 +57,7 @@ export function NewChatPanel() {
         if (cancelled) return;
         setProjects(agents);
         if (agents.length > 0) {
-          // The remembered project may have been deleted, renamed, or turned
-          // into another project type since it was stored — the list decides.
+          // The remembered Agent may have been deleted or renamed.
           setProjectName((current) =>
             agents.some((project) => project.name === current) ? current : agents[0]!.name,
           );

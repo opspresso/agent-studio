@@ -327,8 +327,8 @@ describe("what a run is offered", () => {
 
   it("claims the names even when the tools are off", () => {
     // An MCP server that happens to expose a tool called `SlackUser` must be
-    // aliased whether or not this run has the builtin, or the alias table would
-    // change shape with a version parameter.
+    // aliased whether or not this run has the builtin, so aliases remain stable
+    // across Agent settings.
     const { builtinNames } = buildAgentTools({
       skills: [],
       subagents: [],
@@ -367,7 +367,7 @@ describe("dispatching a Slack tool", () => {
   }
 
   it("is not offered when no reader was injected", async () => {
-    // Capability comes from the deps, never from the version, so the Playground
+    // Capability comes from the deps, so the Playground
     // preview and the run cannot disagree about what this run can reach.
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
 

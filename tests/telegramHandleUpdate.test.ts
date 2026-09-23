@@ -440,7 +440,7 @@ describe("handleTelegramUpdate", () => {
       ["telegram:100", "user", "the sky"],
       ["telegram:100", "assistant", "blue"],
     ]);
-    // Names are not written down when the version never asked to know them.
+    // Names are not written down when the Agent did not request caller context.
     expect(remembered[0]?.turn.speaker).toBeUndefined();
   });
 
@@ -477,7 +477,7 @@ describe("handleTelegramUpdate", () => {
     expect(finalText()).toContain("Conversation history unavailable");
   });
 
-  it("names the caller and labels speakers only when the version asked, and only past one human", async () => {
+  it("names the caller and labels speakers only when the Agent requests it and multiple people are present", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
     const { telegram } = makeTelegramFake();
@@ -500,7 +500,7 @@ describe("handleTelegramUpdate", () => {
     expect(runs[0]?.caller).toEqual({ displayName: "Bruce Lee" });
     expect(runs[0]?.messages.map((turn: ChatMessageInput) => messageText(turn))).toEqual(["Ann: earlier", "Bruce Lee: now"]);
     // The turn is written down unlabelled — the label is applied when read —
-    // and with its speaker, since the version asked to know.
+    // and with its speaker, since the Agent requested caller context.
     expect(remembered[0]?.turn).toMatchObject({ content: "now", speaker: "Bruce Lee", userId: "1" });
   });
 

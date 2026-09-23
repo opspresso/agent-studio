@@ -28,8 +28,7 @@ vi.mock("@/lib/container", async () => ({
   projectUseCases: (
     await import("@/application/project/projectUseCases")
   ).createProjectUseCases(projectRepo as never),
-  // `versions` is read by the draft-mask resolution the route delegates to;
-  // a draft with no masked overrides never reaches it.
+  // Draft mask resolution uses this bound configuration use case.
   configurationUseCases: (
     await import("@/application/project/configurationUseCases")
   ).createConfigurationUseCases({
@@ -83,7 +82,7 @@ beforeEach(() => {
 });
 
 describe("POST /api/projects/[name]/preview", () => {
-  it("assembles the draft in the body, not a saved version", async () => {
+  it("assembles the request draft", async () => {
     const res = await POST(body({ systemPrompt: "You are helpful." }), ctx());
 
     expect(res.status).toBe(200);
@@ -125,7 +124,7 @@ describe("POST /api/projects/[name]/preview", () => {
     expect(calls).toEqual([]);
   });
 
-  it("rejects a body that is not a version", async () => {
+  it("rejects an invalid configuration body", async () => {
     const res = await POST(
       new Request("https://studio.example.com/api/projects/proj/preview", {
         method: "POST",

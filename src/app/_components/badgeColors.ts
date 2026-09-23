@@ -4,24 +4,10 @@ import type { McpRuntime } from "@/domain/mcp/types";
 /**
  * What a badge's colour means.
  *
- * Colour is the only thing separating a badge that says "this is on" from one
- * that says "this needs attention", and the theme gives every badge a gray
- * default — so a badge nobody coloured silently joins the "off" vocabulary. Half
- * of them had: `managed`, `OAuth`, `2 headers`, `no credential`, `SSE`
- * all rendered identically to `disabled`, and the three sections that *did*
- * colour their state each spelled `on ? "teal" : "gray"` out again locally.
- *
- * Two vocabularies, and the split is the point:
- *
- * `BADGE` is **state** — how the thing is doing. Five colours, no more, so a
- * reader can learn them once.
- *
- * The `*_COLOR` maps are **kind** — what the thing is. They draw from the
- * colours `BADGE` does not use, because a reader who has learned that teal means
- * "on" must not meet a teal badge that only means "llm". The two exceptions
- * below name themselves: a kind may borrow `BADGE.neutral` for its unmarked
- * case, and `GET` borrows `BADGE.on` because "safe to call" is the reading.
- * Kinds may reuse a colour across pages; they may not collide within one.
+ * `BADGE` colours describe state: enabled, neutral, attention, broken, owned.
+ * The `*_COLOR` maps describe kinds and avoid state colours where the same
+ * page could confuse type with status. `GET` uses the enabled colour to signal
+ * a read-only method; unmarked kinds may use neutral.
  */
 export const BADGE = {
   /** On, connected, healthy — and, for an HTTP method, safe to call. */
@@ -36,7 +22,7 @@ export const BADGE = {
   owned: "brand",
 } as const;
 
-/** The state pair, for the enabled/disabled badges that were each writing it out. */
+/** The shared enabled/disabled state pair. */
 export function stateColor(on: boolean): string {
   return on ? BADGE.on : BADGE.neutral;
 }

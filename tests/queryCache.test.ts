@@ -1,10 +1,8 @@
 /**
  * The query-embedding cache.
  *
- * Every run searches with its version's system prompt, which does not change
- * for the life of that version — so the same text is embedded on every run of
- * it, on the critical path before the first token. What this must never do in
- * exchange is hand back a vector belonging to a different text.
+ * Repeated Agent system prompts are embedded once per model space, while each
+ * distinct request keeps its own vector.
  */
 
 import { describe, expect, it, vi } from "vitest";

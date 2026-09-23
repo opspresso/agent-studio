@@ -102,7 +102,7 @@ describe("assertModelsPriceable", () => {
     }
   });
 
-  it("passes a version whose models are both registered", () => {
+  it("passes an Agent whose models are both registered", () => {
     expect(() =>
       assertModelsPriceable("refuse", { model: REGISTERED, fallbackModel: REGISTERED }),
     ).not.toThrow();
@@ -111,7 +111,7 @@ describe("assertModelsPriceable", () => {
 
 describe("the run bracket enforces it", () => {
   it("refuses before the cost guard is consulted", async () => {
-    // The guard order is the point: a misconfigured version should not be told
+    // The guard order is the point: a misconfigured Agent should not be told
     // it is over budget, and should not queue for a slot it would lose anyway.
     let costReads = 0;
     const counting: UsageRepository = {

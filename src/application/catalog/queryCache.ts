@@ -1,26 +1,18 @@
 /**
  * Remembering the vector for a query text this process has already embedded.
  *
- * Discovery searches with the Agent's system prompt and the request. The system
- * prompt stays the same across runs until the Agent is edited. Embedding
- * it each time is a provider round trip and a token charge on the critical path
- * before the first token, for an answer that cannot have changed.
+ * Discovery searches with the Agent's system prompt and the request. Repeated
+ * text reuses its vector within the same embedding space, avoiding a provider
+ * round trip before the first token.
  *
  * **Queries only.** A reindex embeds documents, every one of them different and
  * seen once; caching those would evict the queries that repeat and hold the
  * whole catalog in memory to do it. The purpose the port already carries is
  * what tells the two apart.
  *
- * Correctness rests on one thing: a vector belongs to a text *under a model*,
- * so a hit is only exact while the model is the one that produced it. That was
- * assumed rather than checked, on the reasoning that changing models means a
- * redeploy — true for the Bedrock adapters, whose model id comes from the
- * environment, and **false for the OpenAI-compatible one**, which resolves its
- * endpoint from runtime settings on every call. An admin repointing the channel
- * and rebuilding the index leaves this process answering new-space queries with
- * old-space vectors, indefinitely and without a symptom. So the caller states
- * which space it is embedding in, and an entry from another one is simply not a
- * hit — no invalidation to remember, and the LRU evicts what no longer matches.
+ * A hit requires exact text and the current embedding space. The caller
+ * resolves that space per call so model or endpoint changes cannot reuse an
+ * incompatible vector. LRU eviction bounds memory without a separate reset.
  */
 
 import type { EmbeddingPort, EmbeddingPurpose } from "@/domain/vector/types";

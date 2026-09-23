@@ -96,7 +96,7 @@ interface Fixture {
 function fixture(
   opts: {
     stored?: WebhookTrigger | null;
-    published?: AgentConfiguration | null;
+    configuration?: AgentConfiguration | null;
     chunks?: EngineChunk[];
     runThrows?: Error;
   } = {},
@@ -145,7 +145,7 @@ function fixture(
     runs,
     deps: {
       triggers,
-      projects: { get: async () => ({ ...project, configuration: opts.published === undefined ? configuration : opts.published ?? undefined }), list: async () => [], put: async () => {}, delete: async () => {} } as never,
+      projects: { get: async () => ({ ...project, configuration: opts.configuration === undefined ? configuration : opts.configuration ?? undefined }), list: async () => [], put: async () => {}, delete: async () => {} } as never,
       cipher: secretCipher,
       runSlots: memorySlots(),
       async *run(input) {
@@ -298,8 +298,8 @@ describe("admitDelivery", () => {
     );
   });
 
-  it("records a skip when the project has no published version", async () => {
-    const f = fixture({ published: null });
+  it("records a skip when the Agent has no configuration", async () => {
+    const f = fixture({ configuration: null });
     const result = await admitDelivery(f.deps, "p", SECRET, null);
     expect(result.status).toBe("no-configuration");
     // A skip is a row: "it never fired" must be distinguishable in the console
@@ -449,11 +449,8 @@ describe("executeDelivery", () => {
     expect(f.rows.find((r) => r.runId === admitted.runId)?.status).toBe("succeeded");
   });
 
-  it("says a run drew, when drawing was the whole answer", async () => {
-    // An image project on a trigger produces a picture, a usage row and a
-    // trace — and the history row carries text, so it would close as
-    // `succeeded` with an empty result, which is what a run that produced
-    // nothing looks like. The bytes still stop here; the record of them does not.
+  it("records an image when it is the run's only output", async () => {
+    // The text history row records the image count without storing its bytes.
     const f = fixture({
       chunks: [{ image: { b64: "aW1n", mimeType: "image/png" } }, { done: true }],
     });

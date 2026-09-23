@@ -30,12 +30,10 @@ function codeOf(endpoint: ApiEndpoint, language: string): string | undefined {
   return endpoint.codeExamples.find((c) => c.language === language)?.code;
 }
 
-describe("buildApiReference — endpoint selection by project type", () => {
-  it("agent project exposes predict, chat/completions, and agent", () => {
-    expect(ids({ })).toEqual(["predict", "chat-completions", "agent"]);
+describe("buildApiReference — Agent execution endpoints", () => {
+  it("exposes predict, chat/completions, and agent", () => {
+    expect(ids()).toEqual(["predict", "chat-completions", "agent"]);
   });
-
-
 });
 
 describe("buildApiReference — current configuration gating", () => {

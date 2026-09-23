@@ -1,4 +1,4 @@
-import { Agent, Handoff, RunInputItem, RunContext, getCurrentSpan, tool, type AgentOutputType, type JsonSchemaDefinition, type AgentInputItem } from "@openai/agents";
+import { Agent, Handoff, RunInputItem, RunContext, getCurrentSpan, type AgentOutputType, type JsonSchemaDefinition, type AgentInputItem } from "@openai/agents";
 import { randomUUID } from "node:crypto";
 import { ValidationError } from "@/application/errors";
 import { assembleAgentRun, AGENT_TASK_SCHEMA, type ImageHandle, type ImageSequence } from "@/application/llm/agentAssembly";
@@ -75,7 +75,7 @@ export function compileAgent(
   }
   const output = createSdkOutput(destination);
   const emit = output.emit;
-  if (input.parameters?.policy?.approvalTools?.some((name) => name.startsWith("handoff_"))) throw new ValidationError("Require approval for delegate tools or actions, not handoffs");
+  if (input.parameters?.policy?.approvalTools?.some((name) => name.startsWith("handoff_"))) throw new ValidationError("Require approval for delegate tools, not handoffs");
   const scope = graph.scope ?? "root";
   const key = `${scope}/${input.projectName}`;
   const saved = graph.saved?.agents[key];
@@ -175,22 +175,20 @@ export function compileAgent(
     // The SDK's source-agent metadata and nested RunState remain attached to this
     // actual Agent-as-Tool. Only resolving the local Agent's current settings is lazy.
     const runOptions = { maxTurns: turn.maxTurns, signal: input.signal };
-    const delegate = binding.mode === "delegate"
-      ? prototype.asTool({
-        ...metadata,
-        inputBuilder: () => toAgentInput(prototype.current().input.messages),
-        runConfig: studioRunConfig(deps.channel),
-        runOptions,
-        onStream: ({ event }) => prototype.current().observe?.(event),
-        customOutputExtractor: (result) => {
-          prototype.current().completed = true;
-          prototype.current().paused = result.interruptions.length > 0;
-          if (result.interruptions.length) return "";
-          const text = typeof result.finalOutput === "string" ? result.finalOutput : JSON.stringify(result.finalOutput ?? "");
-          return prototype.current().filter?.restore(text) ?? text;
-        },
-      })
-      : tool({ name: binding.name, description: metadata.toolDescription, parameters: AGENT_TASK_SCHEMA, inputGuardrails: metadata.inputGuardrails, needsApproval: metadata.needsApproval, execute: async () => "" });
+    const delegate = prototype.asTool({
+      ...metadata,
+      inputBuilder: () => toAgentInput(prototype.current().input.messages),
+      runConfig: studioRunConfig(deps.channel),
+      runOptions,
+      onStream: ({ event }) => prototype.current().observe?.(event),
+      customOutputExtractor: (result) => {
+        prototype.current().completed = true;
+        prototype.current().paused = result.interruptions.length > 0;
+        if (result.interruptions.length) return "";
+        const text = typeof result.finalOutput === "string" ? result.finalOutput : JSON.stringify(result.finalOutput ?? "");
+        return prototype.current().filter?.restore(text) ?? text;
+      },
+    });
     // Registry aliases are already valid and reserved. Preserve hyphens that
     // the SDK's convenience name normalizer would otherwise replace.
     delegate.name = binding.name;
@@ -203,7 +201,7 @@ export function compileAgent(
       return childEmit;
     };
     const restoredChildren = new Map<string, { prepared: PreparedAgent; child: ReturnType<typeof compileAgent>; close: () => Promise<void> }>();
-    if (binding.mode === "delegate") graph.restoreDelegations.set(`${scope}/${input.projectName}/${binding.name}`, async (id, args) => {
+    graph.restoreDelegations.set(`${scope}/${input.projectName}/${binding.name}`, async (id, args) => {
       const childScope = `tool/${id}`;
       const request = task(args);
       const prepared = await deps.loadAgent!(binding.agentName, { ...request, invocationId: id });

@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   acquireRunSlot,
   ConcurrencyLimitError,
-  limitFor,
   type ConcurrencyGuardDeps,
   type ConcurrencyLimits,
 } from "@/application/run/concurrencyGuard";
@@ -26,7 +25,7 @@ const project: Project = {
   updatedAt: "2026-01-01T00:00:00Z",
 };
 
-/** Minimal version; the bracket reads only its model ids. */
+/** Minimal Agent configuration; the bracket reads only its model ids. */
 const configuration: AgentConfiguration = {
   projectName: "p",
 
@@ -92,15 +91,6 @@ function deps(overrides: Partial<ConcurrencyGuardDeps> = {}): ConcurrencyGuardDe
 }
 
 const user: RunActor = { kind: "user", id: "a@example.com" };
-
-describe("limitFor", () => {
-  it("uses the per-actor limit for identified callers", () => {
-    expect(limitFor(LIMITS, user)).toBe(2);
-    expect(limitFor(LIMITS, { kind: "slack", id: "U1" })).toBe(2);
-    expect(limitFor(LIMITS, { kind: "project-token", id: "a@example.com" })).toBe(2);
-  });
-
-});
 
 describe("acquireRunSlot", () => {
   it("admits runs up to the limit and refuses the next", async () => {
@@ -300,7 +290,7 @@ describe("openRun with a tier resolver", () => {
 });
 
 describe("openRun with a concurrency limit", () => {
-  it("shares slots with Workspace tasks that have no model Version", async () => {
+  it("shares slots with Workspace tasks that have no Agent model", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-14T00:00:00Z"));
     try {

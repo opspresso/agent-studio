@@ -125,7 +125,7 @@ describe("cloneProject", () => {
     const repos = makeRepos([sourceProject()], [sourceConfiguration()]);
     const clone = composeCloneProject({
       projects: repos.projectRepo,
-        // Every reference the copied version names fails to resolve.
+      // Every reference in the source Agent configuration fails to resolve.
       refs: {
         skills: { get: async () => null },
         mcps: { get: async () => null },

@@ -62,7 +62,7 @@ afterEach(() => {
 });
 
 describe("current Agent configuration", () => {
-  it("stores one configuration with the Project without creating or publishing a Version", async () => {
+  it("stores one current configuration on the Agent's Project row", async () => {
     expect(await useCases.getView(project.name, READER)).toEqual({ configuration: null, updatedAt: NOW });
     const saved = await save();
     const stored = await projectRepository.get(project.name);

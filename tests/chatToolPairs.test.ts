@@ -237,7 +237,7 @@ describe("describeTool", () => {
   /**
    * The half in front of the colon is the MCP server, which the tool's own name
    * never says — `aws___search_documentation` is what the *server* calls it, and
-   * a version with several servers attached gives no way to tell them apart.
+   * an Agent with several servers attached needs that source to distinguish them.
    */
   it("reads an unknown prefix as the server that served the tool", () => {
     expect(describeTool("aws-knowledge: aws___search_documentation")).toEqual({

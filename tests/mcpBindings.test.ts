@@ -174,7 +174,7 @@ beforeEach(() => {
 });
 
 describe("per-project MCP header overrides at dispatch", () => {
-  it("decrypts context-bound registry and version headers together", async () => {
+  it("decrypts context-bound registry and Agent binding headers together", async () => {
     const server = {
       ...registryServer,
       headers: encryptHeaders(
@@ -449,7 +449,7 @@ describe("per-project MCP header overrides at dispatch", () => {
     expect(headers["x-shared"]).toBeUndefined();
   });
 
-  it("does not send version credentials after the registry endpoint moves", async () => {
+  it("does not send Agent binding credentials after the registry endpoint moves", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const movedServer = {
       ...registryServer,

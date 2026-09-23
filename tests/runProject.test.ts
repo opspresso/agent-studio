@@ -1858,13 +1858,7 @@ describe("executeProject non-streaming dispatch", () => {
     expect(run.content).toBe("answer");
   });
 
-  /**
-   * `/predict` answers from here for an agent project and from `toUsageInfo`
-   * for an `llm` one. Built field by field, this accumulator dropped both
-   * subset fields, so the same endpoint reported them for one project type and
-   * not the other — indistinguishable, to a caller, from a provider that never
-   * reported them at all.
-   */
+  /** Collected runs retain the cached and reasoning subsets of token usage. */
   it("carries the usage fields that are subsets of the two totals", async () => {
     async function* source(): AsyncGenerator<EngineChunk> {
       yield {

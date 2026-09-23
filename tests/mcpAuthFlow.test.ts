@@ -1135,8 +1135,8 @@ describe("listing a server's tools as the project", () => {
   it("layers the binding's header overrides the way a run does", async () => {
     // The override editor and this list sit in the same dialog. A list assembled
     // from the registry entry alone would answer a question nobody asked — and
-    // the project's Authorization still goes on last, so a version cannot
-    // substitute its own.
+    // the project's Authorization still goes on last, so an Agent binding
+    // cannot substitute its own.
     const h = harness({
       connection: {},
       server: { ...SERVER, headers: { "X-Tenant": "enc:default", "X-Drop": "enc:gone" } },
@@ -1149,7 +1149,7 @@ describe("listing a server's tools as the project", () => {
       "X-Tenant-Id": "forged-project",
       "X-Conversation-Id": "chat:forged",
       "X-User-Email": "forged@example.com",
-      Authorization: "Bearer version-token",
+      Authorization: "Bearer binding-token",
     });
 
     expect(h.probes[0]?.headers["X-Tenant"]).toBe("override");

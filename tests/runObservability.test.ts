@@ -22,7 +22,7 @@ const project: Project = {
   updatedAt: "2026-01-01T00:00:00Z",
 };
 
-/** Minimal version; the bracket reads only its model ids. */
+/** Minimal Agent configuration; the bracket reads only its model ids. */
 const configuration: AgentConfiguration = {
   projectName: "p",
 

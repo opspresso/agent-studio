@@ -49,10 +49,6 @@ export class ConcurrencyLimitError extends RateLimitedError {
  */
 const RETRY_AFTER_SECONDS = 15;
 
-export function limitFor(limits: ConcurrencyLimits, _actor: RunActor): number {
-  return limits.perActor;
-}
-
 export interface AcquiredSlot {
   release(): Promise<void>;
 }
@@ -86,7 +82,7 @@ export async function acquireRunSlot(
   // one inherits it. Only a `user` actor ever arrives with a tier — the
   // bracket's resolver answers `undefined` for machine callers and project
   // tokens alike, so a token stays a service credential bounded by the env number.
-  const limit = (tier ? TIER_LIMITS[tier].maxConcurrentRuns : undefined) ?? limitFor(deps.limits, actor);
+  const limit = (tier ? TIER_LIMITS[tier].maxConcurrentRuns : undefined) ?? deps.limits.perActor;
   if (limit <= 0) {
     return UNLIMITED;
   }

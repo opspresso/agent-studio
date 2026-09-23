@@ -865,8 +865,7 @@ export const configurationUseCases = createConfigurationUseCases({
 export const createAgent = composeCreateAgent({
 
   projects: projectRepository,
-  // Which model fits which project type is the flow's policy; this only feeds
-  // it the runtime settings the application layer may not read.
+  // Model selection is the flow's policy; this supplies deployment settings.
   offered: async () => {
     const providers = await getLlmProviderConfigs();
     const preferred = await getDefaultModel();
@@ -987,7 +986,7 @@ const deliverProjectMessage: PostCostAlert = async (project, destination, text) 
   );
 };
 
-/** Repository + channel bundle passed to the execution facade (executeVersion/Stream/Agent). */
+/** Repository and channel dependencies for the execution facade. */
 export const executionDeps: ExecutionDeps = {
   createToolSchemaValidator,
   runtimeSessions: runtimeSessions,
@@ -1070,10 +1069,8 @@ export const executionDeps: ExecutionDeps = {
 };
 
 /**
- * The webhook delivery path. `run` binds the facade's chunk-stream entry point
- * and nothing else: which project type runs which way, and what an image run's
- * chunks look like, are both decided there. This wiring site must not make its
- * own dispatch decision or assemble image chunks.
+ * The webhook delivery path binds the facade's chunk-stream entry point.
+ * Agent execution and image output use that shared path.
  */
 export const triggerRunnerDeps: TriggerRunnerDeps = {
   reviewForge: () => {
