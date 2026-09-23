@@ -8,6 +8,7 @@ import { getVisibleModels } from "@/domain/llm/models";
 import type { ProviderChannelConfig } from "@/domain/settings/types";
 import { getWorkspaceRuntimeConfig, invalidateSettingsCache } from "@/lib/runtime-settings";
 import { projectHasWorkspaceTools } from "@/domain/project/workspaceAccess";
+import { workspaceRuntimeModelCompatible } from "@/domain/workspace/runtimeModels";
 import type { AgentConfiguration } from "@/domain/project/types";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
@@ -25,6 +26,12 @@ beforeEach(async () => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks(); invalidateSettingsCache(); });
 
 describe("Workspace runtime model selection", () => {
+  it("excludes decision models from native CLI runtime choices even if tools is set", () => {
+    const decision = { ...openai, id: "openrouter/jev", provider: "openrouter", providerKind: "openrouter" as const,
+      capabilities: { ...openai.capabilities, decisions: true, tools: true } };
+    expect(workspaceRuntimeModelCompatible("codex", decision)).toBe(false);
+    expect(workspaceRuntimeModelCompatible("opencode", decision)).toBe(false);
+  });
   it.each(["sigv4", "missing-key"])("rechecks a provider changed to %s before committing the selection", async change => {
     let reads = 0;
     const selecting = createWorkspaceRuntimeModelUseCases({ repository: settingsRepository, invalidate: invalidateSettingsCache, now: () => now,
