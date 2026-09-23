@@ -10,20 +10,22 @@ import {
   Group,
   ScrollArea,
   Stack,
+  Tabs,
   Text,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
-import { IconMessages, IconPlus } from "@tabler/icons-react";
+import { useDisclosure, useLocalStorage } from "@mantine/hooks";
+import { IconMessages, IconPlus, IconTerminal2 } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
 import { CHAT_PAGE } from "@/domain/chat/repository";
 import type { ChatListResponse } from "@/app/api/chats/route";
 import type { Chat } from "../_lib/types";
 import { useRunningKeys } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
-import { ChatSidebarItems } from "./ChatSidebarItems";
+import { ChatSidebarItems, type SidebarTab } from "./ChatSidebarItems";
 import classes from "./ChatSidebar.module.css";
 
 const NEW_CHAT_EVENT = "chats:new";
+const SIDEBAR_TAB_KEY = "agent-studio-chat-sidebar-tab";
 
 /** Subscribe to the "New chat" press. The button routes to /chats, but a panel
  * that swapped the URL to /chats/<id> without a route change is already that
@@ -52,6 +54,12 @@ export function ChatSidebar() {
    */
   const [limit, setLimit] = useState(CHAT_PAGE);
   const [hasMore, setHasMore] = useState(false);
+  const [tab, setTab] = useLocalStorage<SidebarTab>({
+    key: SIDEBAR_TAB_KEY,
+    defaultValue: "chats",
+    deserialize: value => value === '"workspaces"' ? "workspaces" : "chats",
+    sync: false,
+  });
   const [drawerOpen, drawer] = useDisclosure(false);
   /** Which read is the current one; an older one that lands late is dropped. */
   const loadSeq = useRef(0);
@@ -144,27 +152,33 @@ export function ChatSidebar() {
     </Button>
   );
 
-  const list = (
-    <ScrollArea style={{ flex: 1, minHeight: 0 }} scrollbarSize={6} pr={4}>
+  const listFor = (kind: SidebarTab) => (
+    <ScrollArea h="100%" scrollbarSize={6} pr={4}>
       <Stack gap={2}>
-        {loaded && chats.length === 0 && (
+        {loaded && !hasMore && !chats.some(chat => Boolean(chat.workspaceId) === (kind === "workspaces")) && (
           <Text fz="xs" c="dimmed" px="xs" py="md">
-            {t("chat.none")}
+            {t(kind === "workspaces" ? "workspace.none" : "chat.none")}
           </Text>
         )}
-        <ChatSidebarItems chats={chats} activeId={activeId} running={running} onDelete={chatId => void handleDelete(chatId)} />
+        <ChatSidebarItems chats={chats} tab={kind} activeId={activeId} running={running} onDelete={chatId => void handleDelete(chatId)} />
         {hasMore && (
-          <Button
-            variant="subtle"
-            size="compact-xs"
-            mt="xs"
-            onClick={() => setLimit((current) => current + CHAT_PAGE)}
-          >
+          <Button variant="subtle" size="compact-xs" mt="xs" onClick={() => setLimit(current => current + CHAT_PAGE)}>
             {t("chat.more")}
           </Button>
         )}
       </Stack>
     </ScrollArea>
+  );
+  const list = (
+    <Tabs value={tab} onChange={value => { if (value === "chats" || value === "workspaces") setTab(value); }}
+      style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      <Tabs.List grow>
+        <Tabs.Tab value="chats" leftSection={<IconMessages size={15} />}>{t("chat.list")}</Tabs.Tab>
+        <Tabs.Tab value="workspaces" leftSection={<IconTerminal2 size={15} />}>{t("workspace.list")}</Tabs.Tab>
+      </Tabs.List>
+      <Tabs.Panel value="chats" pt="xs" style={{ flex: 1, minHeight: 0 }}>{listFor("chats")}</Tabs.Panel>
+      <Tabs.Panel value="workspaces" pt="xs" style={{ flex: 1, minHeight: 0 }}>{listFor("workspaces")}</Tabs.Panel>
+    </Tabs>
   );
 
   return (

@@ -185,7 +185,8 @@ export const ko: Messages = {
 
   "workspace.new": "새 Workspace",
   "workspace.kind": "Workspace",
-  "workspace.list": "Workspaces",
+  "workspace.list": "워크스페이스",
+  "workspace.none": "아직 워크스페이스가 없습니다.",
   "workspace.delete": "Workspace 삭제",
   "workspace.intro": "작업이 이어져도 파일과 Agent 문맥을 유지합니다.",
   "workspace.notConfigured": "Agent 설정에서 Workspace 도구를 켜면 작업을 시작할 수 있습니다.",

@@ -205,6 +205,7 @@ export const en = {
   "workspace.new": "New Workspace",
   "workspace.kind": "Workspace",
   "workspace.list": "Workspaces",
+  "workspace.none": "No workspaces yet.",
   "workspace.delete": "Delete Workspace",
   "workspace.intro": "Keep files and agent context across tasks.",
   "workspace.notConfigured": "Enable Workspace tools in the Agent settings to start work.",

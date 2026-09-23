@@ -8,34 +8,6 @@
   overflow: hidden;
 }
 
-.section + .section {
-  margin-top: var(--mantine-spacing-sm);
-}
-
-.sectionTitle {
-  display: flex;
-  align-items: center;
-  gap: var(--mantine-spacing-xs);
-  padding: var(--mantine-spacing-xs);
-  color: var(--mantine-color-dimmed);
-  font-size: var(--mantine-font-size-xs);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.sectionTitle::after {
-  content: "+";
-  margin-left: auto;
-}
-
-.section[open] > .sectionTitle::after {
-  content: "−";
-}
-
-.sectionTitle::-webkit-details-marker {
-  display: none;
-}
-
 .row {
   display: flex;
   align-items: center;
