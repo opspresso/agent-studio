@@ -246,11 +246,12 @@ function AudioWorkspace({ name }: { name: string }) {
             </Text>)}
         </Stack>
       </details>}
+      {job.unavailableArtifacts && <Text size="sm" c="dimmed">{t("audio.unavailableArtifacts")}</Text>}
       <Group gap="xs">
-        {job.artifacts.source && <Button component="a" href={`/api/artifacts/${encodeURIComponent(job.artifacts.source)}/download`} variant="light" size="xs">{t("audio.original")}</Button>}
-        {job.artifacts.transcript && <Button component="a" href={`/api/artifacts/${encodeURIComponent(job.artifacts.transcript)}/view`} variant="light" size="xs">{t("audio.transcript")}</Button>}
-        {job.artifacts.processed && <Button component="a" href={`/api/artifacts/${encodeURIComponent(job.artifacts.processed)}/view`} variant="light" size="xs">{t("audio.result")}</Button>}
-        {job.artifacts.dialogue && <Button component="a" href={`/api/artifacts/${encodeURIComponent(job.artifacts.dialogue)}/view`} variant="light" size="xs">{t("audio.dialogue")}</Button>}
+        {job.artifactLinks.source && <Button component="a" href={job.artifactLinks.source} variant="light" size="xs">{t("audio.original")}</Button>}
+        {job.artifactLinks.transcript && <Button component="a" href={job.artifactLinks.transcript} variant="light" size="xs">{t("audio.transcript")}</Button>}
+        {job.artifactLinks.processed && <Button component="a" href={job.artifactLinks.processed} variant="light" size="xs">{t("audio.result")}</Button>}
+        {job.artifactLinks.dialogue && <Button component="a" href={job.artifactLinks.dialogue} variant="light" size="xs">{t("audio.dialogue")}</Button>}
         {(job.status === "failed" || job.status === "blocked") && <Button size="xs" variant="default" disabled={busy} onClick={() => act(job, "retry")}>{t("audio.retry")}</Button>}
         {isAudioJobTerminal(job.status) && <Button size="xs" variant="subtle" color="red" disabled={busy} onClick={() => act(job, "delete")}>{t("audio.delete")}</Button>}
         {["queued", "running", "waiting"].includes(job.status) && <Button size="xs" variant="subtle" color="red" disabled={busy} onClick={() => act(job, "cancel")}>{t("audio.cancel")}</Button>}

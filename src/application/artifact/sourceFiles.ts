@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SourceFile, SourceFileRepository } from "@/domain/artifact/sourceFile";
-import { sourceFileObjectKey } from "@/domain/artifact/sourceFile";
+import { sourceFileAvailability, sourceFileObjectKey } from "@/domain/artifact/sourceFile";
 import { savedFileName } from "@/domain/artifact/types";
 import { SourceObjectExistsError, type SourceObjectStore } from "@/domain/artifact/sourceObjectStore";
 import type { SourceByteStream } from "@/domain/artifact/sourceReference";
@@ -21,7 +21,7 @@ export interface SourceFileDeps {
 
 function assertReadable(file: SourceFile | null, userEmail: string, now: string): asserts file is SourceFile {
   if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
-  if (file.status !== "ready" || file.retireAt <= now) throw new ConflictError("Source file is unavailable or expired");
+  if (sourceFileAvailability(file, userEmail, now) !== "ready") throw new ConflictError("Source file is unavailable or expired");
 }
 
 export async function removeExpiredSourceFile(deps: SourceFileDeps, file: SourceFile, now: string): Promise<boolean> {

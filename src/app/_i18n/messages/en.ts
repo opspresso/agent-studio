@@ -319,6 +319,7 @@ export const en = {
   "audio.refresh": "Refresh",
   "audio.noJobs": "No audio jobs yet.",
   "audio.original": "Original file",
+  "audio.unavailableArtifacts": "Some result files are unavailable, deleted, or expired. Completed job history does not extend file retention.",
   "audio.transcript": "Transcript",
   "audio.dialogue": "Dialogue",
   "audio.toolsRequired": "Enable audio processing tools in the Agent settings to use this page.",

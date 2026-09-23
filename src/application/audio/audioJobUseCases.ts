@@ -3,6 +3,8 @@ import type { AudioJob, AudioJobRepository, AudioJobTask, AudioSource } from "@/
 import { AUDIO_JOB_TASKS, audioSourceProject } from "@/domain/audio/job";
 import type { FileRetention } from "@/domain/artifact/retention";
 import type { SourceFile, SourceFileRepository } from "@/domain/artifact/sourceFile";
+import { sourceFileAvailability, type SourceFileAvailability } from "@/domain/artifact/sourceFile";
+import { artifactPath } from "@/domain/artifact/paths";
 import type { RunActor } from "@/domain/execution/actor";
 import type { AudioJobConfigRepository } from "@/domain/audio/config";
 import { getModelConfig } from "@/domain/llm/models";
@@ -40,14 +42,44 @@ export interface AudioJobUseCaseDeps {
 export type AudioJobView = Pick<AudioJob, "id" | "task" | "sourceIdentity" | "status" | "stage" | "model" | "createdAt" | "updatedAt" |
   "dueAt" | "attempt" | "failures" | "fileId" | "fileInfo" | "transcriptionProgress" | "postprocessProgress" | "movedTo" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "revision" | "configRevision"> & {
     artifacts: { source?: string; transcript?: string; processed?: string; structured?: string; dialogue?: string };
+    artifactLinks: Partial<Record<AudioArtifactKind, string>>;
+    unavailableArtifacts?: Partial<Record<AudioArtifactKind, Exclude<SourceFileAvailability, "ready">>>;
     transcriptProjectName: string;
   };
 
-function view(job: AudioJob): AudioJobView {
+type AudioArtifactKind = keyof AudioJobView["artifacts"];
+
+async function view(job: AudioJob, deps: Pick<AudioJobUseCaseDeps, "files" | "now">): Promise<AudioJobView> {
+  const transcriptProjectName = job.task === "postprocess" ? audioSourceProject(job) : job.projectName;
+  const references: AudioJobView["artifacts"] = {
+    source: job.fileId, transcript: job.transcriptRef, processed: job.summaryRef ?? job.draftRef,
+    structured: job.draftRef, dialogue: job.dialogueRef,
+  };
+  const artifacts: AudioJobView["artifacts"] = {};
+  const artifactLinks: AudioJobView["artifactLinks"] = {};
+  const unavailableArtifacts: NonNullable<AudioJobView["unavailableArtifacts"]> = {};
+  const now = deps.now().toISOString();
+  const reads = new Map<string, Promise<SourceFile | null>>();
+  // At most five output reads per job; shared draft/summary refs read once.
+  await Promise.all((Object.entries(references) as [AudioArtifactKind, string | undefined][]).map(async ([kind, id]) => {
+    if (!id) return;
+    const projectName = kind === "source" ? audioSourceProject(job)
+      : kind === "transcript" ? transcriptProjectName : job.projectName;
+    const key = `${projectName}:${id}`;
+    let read = reads.get(key);
+    if (!read) { read = deps.files.get(projectName, id); reads.set(key, read); }
+    const availability = sourceFileAvailability(await read, job.userEmail, now);
+    if (availability === "ready") {
+      artifacts[kind] = id;
+      artifactLinks[kind] = artifactPath(id, kind === "source" ? "download" : "view");
+    } else {
+      unavailableArtifacts[kind] = availability;
+    }
+  }));
   return { id: job.id, task: job.task ?? "process", sourceIdentity: job.sourceIdentity, status: job.status, stage: job.stage,
     model: job.task === "postprocess" ? job.postprocess?.configuration?.model ?? "" : job.model, createdAt: job.createdAt,
-    transcriptProjectName: job.task === "postprocess" ? audioSourceProject(job) : job.projectName,
-    artifacts: { source: job.fileId, transcript: job.transcriptRef, processed: job.summaryRef ?? job.draftRef, structured: job.draftRef, dialogue: job.dialogueRef },
+    transcriptProjectName, artifacts, artifactLinks,
+    ...(Object.keys(unavailableArtifacts).length ? { unavailableArtifacts } : {}),
     updatedAt: job.updatedAt, dueAt: job.dueAt, attempt: job.attempt, failures: job.failures,
     fileId: job.fileId, transcriptRef: job.transcriptRef, draftRef: job.draftRef,
     fileInfo: job.fileInfo, transcriptionProgress: job.transcriptionProgress, postprocessProgress: job.postprocessProgress, movedTo: job.movedTo,
@@ -113,7 +145,7 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
         await deps.authorize(sourceProject, userEmail);
         const file = await deps.files.get(sourceProject, input.source.fileId);
         if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
-        if (file.status !== "ready" || file.retireAt <= now) throw new ConflictError("Source file is unavailable or expired");
+        if (sourceFileAvailability(file, userEmail, now) !== "ready") throw new ConflictError("Source file is unavailable or expired");
         if ((task === "transcribe" || task === "process") && file.derived?.kind === "transcript") {
           throw new ValidationError("This Artifact is already a transcript, not audio. To summarize it, use an AudioJob postprocess request with artifact_id, postprocess and retention; omit config_revision, model, language and destination.");
         }
@@ -134,19 +166,21 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
         model: input.model ?? "", task, language: input.language,
         retention: input.retention, configRevision: input.configRevision, ...outputs },
       { id: deps.id(), now, occurrence: origin.occurrence, ...limits });
-      return result.status === "busy" ? result : { status: result.status, job: view(result.job) };
+      return result.status === "busy" ? result : { status: result.status, job: await view(result.job, deps) };
     },
-    async get(project: string, id: string, email: string) { return view(await owned(project, id, email)); },
+    async get(project: string, id: string, email: string) { return view(await owned(project, id, email), deps); },
     async list(project: string, email: string, limit: number, after?: string) {
       await deps.authorize(project, email);
-      return (await deps.jobs.list(project, limit, after, email)).map(view);
+      const result: AudioJobView[] = [];
+      for (const job of await deps.jobs.list(project, limit, after, email)) result.push(await view(job, deps));
+      return result;
     },
     async cancel(project: string, id: string, email: string, revision: number) {
       await owned(project, id, email);
       if (!await deps.jobs.cancel(project, id, revision, deps.now().toISOString())) throw new ConflictError("Audio job changed or is already terminal");
       const job = await deps.jobs.get(project, id);
       if (!job) throw new NotFoundError("Audio job not found");
-      return view(job);
+      return view(job, deps);
     },
     async delete(project: string, id: string, email: string, revision: number) {
       await owned(project, id, email);
@@ -160,7 +194,7 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       const limits = config ? { maxActive: config.maxActive } : await deps.limits(project);
       const job = await deps.jobs.retry(project, id, revision, deps.now().toISOString(), limits.maxActive);
       if (!job) throw new ConflictError("Audio job changed or cannot be retried");
-      return view(job);
+      return view(job, deps);
     },
   };
 }

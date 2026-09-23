@@ -25,6 +25,15 @@ export interface SourceFile {
   deletedAt?: string;
 }
 
+export type SourceFileAvailability = "ready" | "missing" | "expired" | "pending" | "deleting" | "deleted";
+
+/** File lifetime is independent of a completed job's retained history. */
+export function sourceFileAvailability(file: SourceFile | null, userEmail: string, now: string): SourceFileAvailability {
+  if (!file || file.userEmail !== userEmail) return "missing";
+  if (file.status !== "ready") return file.status;
+  return file.retireAt <= now ? "expired" : "ready";
+}
+
 const SOURCE_FILE_PREFIX = "source-files/";
 export function sourceFileObjectKey(id: string): string {
   return `${SOURCE_FILE_PREFIX}${encodeURIComponent(id)}`;

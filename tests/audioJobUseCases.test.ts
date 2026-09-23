@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeStore } from "./fakeStore";
 import { keys } from "@/infrastructure/db/keys";
 import { createAudioJobUseCases, type AudioJobUseCaseDeps, type SubmitAudioJobInput } from "@/application/audio/audioJobUseCases";
+import type { SourceFile } from "@/domain/artifact/sourceFile";
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 import * as store from "@/infrastructure/db/store";
 import { audioJobRepository as jobs } from "@/infrastructure/db/repositories/audioJobRepository";
@@ -19,6 +20,43 @@ function fixture() {
   return { deps, input, api: createAudioJobUseCases(deps) };
 }
 describe("audio job use cases", () => {
+  it("keeps completed history but withdraws deleted or expired output links, including duplicate submissions", async () => {
+    const f = fixture();
+    const email = "owner@example.test";
+    const now = f.deps.now().toISOString();
+    await f.api.submit("audio", email, f.input, { occurrence: "first" });
+    const claimed = await jobs.claim("audio", "job-1", now, "worker", "2026-09-09T00:02:00Z");
+    await jobs.checkpoint(claimed!, { status: "completed", stage: "cleaning", dueAt: now,
+      fileId: "original", transcriptRef: "transcript", summaryRef: "summary" }, now);
+    const file: SourceFile = { id: "original", projectName: "audio", userEmail: email, filename: "recording.mp3",
+      mimeType: "audio/mpeg", status: "ready", revision: 1, createdAt: now,
+      retireAt: "2026-12-09T00:00:00Z", retention: f.input.retention! };
+    const transcript = { ...file, id: "transcript" };
+    const summary = { ...file, id: "summary" };
+    const files = new Map([file, transcript, summary].map(value => [value.id, value]));
+    f.deps.files.get = async (_project, id) => files.get(id) ?? null;
+    const available = await f.api.get("audio", "job-1", email);
+    expect(available.artifactLinks.transcript).toBe("/api/artifacts/transcript/view");
+    expect(available.artifacts)
+      .toEqual({ source: "original", transcript: "transcript", processed: "summary" });
+    file.status = "deleted";
+    transcript.retireAt = now;
+    files.delete("summary");
+    const expected = { status: "completed", artifacts: {}, unavailableArtifacts: {
+      source: "deleted", transcript: "expired", processed: "missing",
+    } };
+    const unavailable = await f.api.get("audio", "job-1", email);
+    expect(unavailable).toMatchObject(expected);
+    expect(unavailable.artifacts).toEqual({});
+    expect(unavailable.artifactLinks).toEqual({});
+    expect(await f.api.list("audio", email, 20)).toEqual([expect.objectContaining(expected)]);
+    expect(await f.api.submit("audio", email, f.input, { occurrence: "again" }))
+      .toMatchObject({ status: "duplicate", job: expected });
+    expect(await jobs.get("audio", "job-1")).toMatchObject({ status: "completed", transcriptRef: "transcript" });
+    f.deps.files.get = async () => { throw new Error("file store unavailable"); };
+    await expect(f.api.get("audio", "job-1", email)).rejects.toThrow("file store unavailable");
+  });
+
   it("checks the saved transcription channel before offering a configuration for new work", async () => {
     const f = fixture();
     const config = { projectName: "audio", userEmail: "owner@example.test", revision: 1, enabled: true,
@@ -35,6 +73,27 @@ describe("audio job use cases", () => {
     vi.mocked(f.deps.validateModel).mockClear();
     expect(await f.api.configuration("audio", config.userEmail)).toMatchObject({ enabled: false });
     expect(f.deps.validateModel).not.toHaveBeenCalled();
+  });
+  it("checks reused source and transcript files in their original project and hides foreign-owned outputs", async () => {
+    const f = fixture();
+    const email = "owner@example.test";
+    const now = f.deps.now().toISOString();
+    const transcript: SourceFile = { id: "transcript", projectName: "transcriber", userEmail: email,
+      filename: "transcript.json", mimeType: "application/json", status: "ready", revision: 1,
+      createdAt: now, retireAt: "2026-12-09T00:00:00Z", retention: f.input.retention!,
+      derived: { kind: "transcript", jobId: "prior" } };
+    const draft = { ...transcript, id: "draft", projectName: "audio", userEmail: "someone-else@example.test" };
+    f.deps.files.get = vi.fn(async (project, id) =>
+      project === transcript.projectName && id === transcript.id ? transcript : project === "audio" && id === "draft" ? draft : null);
+    await f.api.submit("audio", email, { task: "postprocess", source: { kind: "file", projectName: "transcriber", fileId: "transcript" },
+      postprocess: { projectName: "writer" }, retention: f.input.retention }, { occurrence: "summary" });
+    const claimed = await jobs.claim("audio", "job-1", now, "worker", "2026-09-09T00:02:00Z");
+    await jobs.checkpoint(claimed!, { status: "completed", stage: "cleaning", dueAt: now,
+      fileId: "transcript", transcriptRef: "transcript", draftRef: "draft" }, now);
+    const result = await f.api.get("audio", "job-1", email);
+    expect(result.artifacts).toEqual({ source: "transcript", transcript: "transcript" });
+    expect(result.unavailableArtifacts).toEqual({ processed: "missing", structured: "missing" });
+    expect(result.artifactLinks).toEqual({ source: "/api/artifacts/transcript/download", transcript: "/api/artifacts/transcript/view" });
   });
   it("allows only the owner to delete terminal history and keeps source files intact", async () => {
     const f = fixture();

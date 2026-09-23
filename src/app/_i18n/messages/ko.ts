@@ -299,6 +299,7 @@ export const ko: Messages = {
   "audio.refresh": "새로고침",
   "audio.noJobs": "아직 오디오 작업이 없습니다.",
   "audio.original": "원본 파일",
+  "audio.unavailableArtifacts": "일부 결과 파일이 아직 준비되지 않았거나 삭제·만료되었습니다. 완료된 작업 이력이 파일 보존 기간을 연장하지는 않습니다.",
   "audio.transcript": "전사문",
   "audio.dialogue": "대화 내용",
   "audio.toolsRequired": "Agent 설정에서 오디오 처리 도구를 켜면 이 페이지를 사용할 수 있습니다.",

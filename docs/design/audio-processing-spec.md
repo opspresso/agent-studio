@@ -56,6 +56,10 @@ schedule 메시지에 둔다. 시스템 프롬프트에는 skill 선택과 사�
 한 건씩 실행한다. pending 작업은 완료로 보고하지 않으며 다음 실행에서 같은 job ID를 확인한다.
 완료된 단계를 다시 실행하거나 만료된 원본을 자동 재다운로드하지 않는다.
 이미 보관된 전사 Artifact로 후처리만 다시 수행할 수 있으며, 명시적인 재처리는 processing_revision을 구분한다.
+작업 완료 이력과 파일 수명은 별개다. status/list/submit 응답의 `artifacts`와 `artifactLinks`는
+현재 소유자가 읽을 수 있는 ready·미만료 파일만 담고, 삭제·만료·미준비·누락 파일은
+`unavailableArtifacts`로 구분한다. 원래 작업의 완료 시각과 참조는 이력으로 유지한다.
+사용 가능한 결과가 없으면 완료 이력을 재사용 가능한 결과로 안내하거나 링크를 만들지 않는다.
 `ImportFile`·`TranscribeAudio`·`AudioJob submit`은 같은 processing_revision을 재시도에 재사용한다.
 연결 도구의 source_ref는 가져오기에 사용할 참조이며 다운로드 완료를 뜻하지 않는다. 원본 URL은 의도적으로
 숨기므로 URL 부재를 처리 완료나 파일 만료의 근거로 삼지 않는다. 기존 sourceIdentity와 job 상태로 판단한다.
