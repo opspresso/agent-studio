@@ -1594,8 +1594,10 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 `POST /api/agent-recommendations`는 `{ surface: "chat" | "workspace", request: string }`을 받고
 `{ recommendation: { name, confidence } | null }`을 반환한다. 입력은 1–4,000자다. 서버가
 로그인 사용자의 접근 가능한 Agent만 조회하며 Workspace는 도구 정책이 활성화된 Agent로
-좁힌다. 미설정·적합한 Agent 없음은 `null`이고 모델 호출 실패는 502다. 추천은 실행 대상이나
-Agent의 모델 설정을 자동 변경하지 않는다. 입력 중인 요청은 선택한 provider로 전달된다.
+좁힌다. 미설정·적합한 Agent 없음은 `null`이고 모델 호출 실패는 502다. 사용자별 분당 30회,
+UTC 하루 300회를 넘으면 `Retry-After`가 포함된 429를 반환한다. 추천은 실행 대상이나
+Agent의 모델 설정을 자동 변경하지 않는다. 입력 중인 요청과 후보 설명은 공통 PII 필터를
+거쳐 선택한 provider로 전달된다.
 
 등록 모델은 최대 500개다. 가격 미제공은 `pricingKnown: false`로 표시하며 명시적 0과 구별한다.
 모델 선택기는 표시 이름·등록 ID·provider·유형별 가격을 공통으로 보여준다. 개인 즐겨찾기는

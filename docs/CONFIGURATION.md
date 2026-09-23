@@ -456,6 +456,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | File 읽기·검사 텍스트 / 한 번의 편집 수 | `90,000` 자 / `100` | `src/domain/document/processor.ts` |
 | XLSX 생성 시트 JSON 입력(UTF-8) | `10 MiB` | `src/infrastructure/documents/workerPool.ts` |
 | 턴당 문서 수 / 각 바이트 | `4` / `10 MiB` | `src/domain/llm/documentLimits.ts` |
+| Agent 추천 입력 / 사용자별 추천 요청 | `4,000` 자 / 분당 `30`, UTC 하루 `300`회 | `src/application/llm/agentRecommendation.ts`, `src/infrastructure/db/repositories/agentRecommendationQuota.ts` |
 | 유지하는 추출 텍스트, 문서당 / 턴당 | `20,000` / `40,000` 자 | `src/domain/llm/documentLimits.ts` |
 | 턴을 나르는 요청 본문 (첨부 상한에서 파생) | `84,148,240 bytes` (약 `80.25 MiB`) | `src/app/api/_lib/body.ts` |
 | 프로세스가 동시에 보유하는 attachment-scale turn 본문 바이트 (`256KiB` 초과분만 과금, 상한은 최대 turn 본문의 2배) | `168,296,480 bytes` (약 `160.5 MiB`) | `src/app/api/_lib/body.ts` |

@@ -145,6 +145,7 @@ import { createTestModel } from "@/application/llm/testModel";
 import { createModelRegistryUseCases } from "@/application/llm/modelRegistry";
 import { createAgentRecommendationUseCases } from "@/application/llm/agentRecommendation";
 import { createDecisionClient } from "@/infrastructure/llm/decisionClient";
+import { agentRecommendationQuota } from "@/infrastructure/db/repositories/agentRecommendationQuota";
 import { createProviderModelDiscovery } from "@/infrastructure/llm/providerModelDiscovery";
 import { createModelPreferenceUseCases } from "@/application/llm/modelPreferences";
 import { createModelSelectionUseCases } from "@/application/llm/modelSelection";
@@ -1435,6 +1436,7 @@ export async function workspaceOptions(ownerEmail: string) {
 
 export const agentRecommendationUseCases = createAgentRecommendationUseCases({
   decision: decisionClient,
+  quota: agentRecommendationQuota,
   selectedModel: async () => (await getDecisionModelSelection())?.model,
   candidates: async (surface, userEmail) => surface === "chat"
     ? (await projectUseCases.listAccessible(userEmail)).map(({ name, displayName, description }) => ({ name, displayName, description }))

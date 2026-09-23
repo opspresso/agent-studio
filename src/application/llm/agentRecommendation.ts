@@ -1,5 +1,6 @@
-import { UpstreamError, ValidationError } from "@/application/errors";
-import { MAX_CHOICE_OPTIONS, type ChoiceDecision, type DecisionModel } from "@/domain/llm/decision";
+import { RateLimitedError, UpstreamError, ValidationError } from "@/application/errors";
+import { MAX_CHOICE_OPTIONS, type AgentRecommendationQuota, type ChoiceDecision, type DecisionModel } from "@/domain/llm/decision";
+import { PiiFilter } from "@/application/llm/pii";
 
 export type RecommendationSurface = "chat" | "workspace";
 export interface AgentCandidate {
@@ -23,6 +24,7 @@ const MAX_DISPLAY_NAME_LENGTH = 100;
 
 export interface AgentRecommendationDeps {
   decision: DecisionModel;
+  quota: AgentRecommendationQuota;
   selectedModel(): Promise<string | undefined>;
   candidates(surface: RecommendationSurface, userEmail: string): Promise<AgentCandidate[]>;
 }
@@ -37,11 +39,12 @@ async function chooseFrom(
   model: string,
   request: string,
   candidates: AgentCandidate[],
+  pii: PiiFilter,
   signal?: AbortSignal,
 ): Promise<{ candidate: AgentCandidate; confidence: number } | undefined> {
   const options = new Map(candidates.map((candidate, index) => [`agent_${index}`, candidate]));
   const criteria = Object.fromEntries([
-    ...[...options].map(([key, candidate]) => [key, candidateDescription(candidate)]),
+    ...[...options].map(([key, candidate]) => [key, pii.mask(candidateDescription(candidate))]),
     ["none", "None of these Agents is suitable for this request"],
   ]);
   let answer: ChoiceDecision;
@@ -72,13 +75,22 @@ export function createAgentRecommendationUseCases(deps: AgentRecommendationDeps)
       if (!model) return null;
       const candidates = await deps.candidates(surface, userEmail);
       if (candidates.length === 0) return null;
+      const retryAfterSeconds = await deps.quota.admit(userEmail);
+      if (retryAfterSeconds !== undefined) {
+        throw new RateLimitedError("Too many Agent recommendation requests", retryAfterSeconds);
+      }
+      // No Agent has been chosen yet, so no Agent-specific piiFiltering setting
+      // can guard this call. Mask the request and candidate descriptions before
+      // sending either to the configured decision provider.
+      const pii = new PiiFilter();
+      const maskedRequest = pii.mask(text);
       // Each round reduces a complete roster to its batch winners. Repeating
       // the same rule also bounds an installation larger than one final batch.
       let round = candidates;
       for (;;) {
         const winners: Array<{ candidate: AgentCandidate; confidence: number }> = [];
         for (let start = 0; start < round.length; start += MAX_AGENTS_PER_CHOICE) {
-          const result = await chooseFrom(deps.decision, model, text, round.slice(start, start + MAX_AGENTS_PER_CHOICE), signal);
+          const result = await chooseFrom(deps.decision, model, maskedRequest, round.slice(start, start + MAX_AGENTS_PER_CHOICE), pii, signal);
           if (result) winners.push(result);
         }
         if (winners.length === 0) return null;

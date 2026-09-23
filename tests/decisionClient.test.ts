@@ -12,7 +12,7 @@ describe("decision provider adapter", () => {
   it("calls the OpenRouter Decisions endpoint with a native Choice request", async () => {
     const fetch = vi.fn().mockResolvedValue(Response.json({ answers: { selection: { type: "choice", choice: "agent_0", confidence: 0.9, probabilities: { agent_0: 0.9, none: 0.1 } } } }));
     vi.stubGlobal("fetch", fetch);
-    const client = createDecisionClient(async () => target);
+    const client = createDecisionClient(async () => ({ ...target, baseUrl: "https://router.test/api/v1/" }));
     expect(await client.choose(input)).toMatchObject({ choice: "agent_0", confidence: 0.9 });
     const [url, options] = fetch.mock.calls[0]!;
     expect(url).toBe("https://router.test/api/alpha/decisions");
@@ -23,7 +23,7 @@ describe("decision provider adapter", () => {
   it("uses a configured System One endpoint and refuses malformed output", async () => {
     const fetch = vi.fn().mockResolvedValue(Response.json({ answers: { selection: { type: "choice", choice: "unknown", confidence: 1, probabilities: {} } } }));
     vi.stubGlobal("fetch", fetch);
-    const client = createDecisionClient(async () => ({ ...target, providerName: "selfhosted", baseUrl: "https://inside.test/v1", model: "jev-latest" }));
+    const client = createDecisionClient(async () => ({ ...target, providerName: "selfhosted", baseUrl: "https://inside.test/v1/", model: "jev-latest" }));
     await expect(client.choose(input)).rejects.toThrow("invalid Choice answer");
     expect(fetch.mock.calls[0]![0]).toBe("https://inside.test/v1/systemone");
   });

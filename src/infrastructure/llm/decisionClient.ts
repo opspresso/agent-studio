@@ -3,11 +3,12 @@ import type { TargetResolver } from "./providers";
 
 function endpoint(baseUrl: string, provider: string | null): string {
   const url = new URL(baseUrl);
+  const path = url.pathname.replace(/\/+$/, "");
   if (provider === "openrouter") {
-    const prefix = url.pathname.replace(/\/(?:v1)?\/?$/, "");
+    const prefix = path.replace(/\/v1$/, "");
     url.pathname = `${prefix}/alpha/decisions`;
   } else if (provider === "selfhosted") {
-    url.pathname = `${url.pathname.replace(/\/$/, "")}${url.pathname.endsWith("/v1") ? "" : "/v1"}/systemone`;
+    url.pathname = `${path}${path.endsWith("/v1") ? "" : "/v1"}/systemone`;
   } else {
     throw new Error("The selected decision model provider does not support decisions");
   }

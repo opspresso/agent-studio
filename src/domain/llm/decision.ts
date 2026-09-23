@@ -16,3 +16,9 @@ export interface DecisionModel {
     signal?: AbortSignal;
   }): Promise<ChoiceDecision>;
 }
+
+/** Shared admission for paid Agent suggestions across application instances. */
+export interface AgentRecommendationQuota {
+  /** `undefined` admits; a positive number is Retry-After in seconds. */
+  admit(userEmail: string): Promise<number | undefined>;
+}

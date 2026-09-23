@@ -1528,7 +1528,28 @@ async function main() {
         assert.ok(await jobs.checkpoint(claimed[0]!, { status: "completed", stage: "cleaning", dueAt: now }, now));
       }
       assert.deepEqual((await getItem(dbKeys.audioJobSlots(projectName)))!.jobIds, []);
-      pass("audio jobs: concurrent queue admission and serial FIFO processing across workers");
+    pass("audio jobs: concurrent queue admission and serial FIFO processing across workers");
+    }
+
+    // ---------- Agent recommendation admission across concurrent callers ----------
+    {
+      const { createAgentRecommendationQuota, MAX_AGENT_RECOMMENDATIONS_PER_MINUTE } =
+        await import("@/infrastructure/db/repositories/agentRecommendationQuota");
+      const { deleteItem } = await import("@/infrastructure/db/store");
+      const email = `recommend-${suffix}@example.com`;
+      const quota = createAgentRecommendationQuota(() => new Date(now));
+      try {
+        const admissions = await Promise.all(Array.from(
+          { length: MAX_AGENT_RECOMMENDATIONS_PER_MINUTE + 1 },
+          () => quota.admit(email),
+        ));
+        assert.equal(admissions.filter(value => value === undefined).length, MAX_AGENT_RECOMMENDATIONS_PER_MINUTE);
+        assert.equal(admissions.filter(value => value !== undefined).length, 1);
+        assert.equal((await getItem(dbKeys.agentRecommendationQuota(email, today)))?.dayCount, MAX_AGENT_RECOMMENDATIONS_PER_MINUTE);
+        pass("Agent recommendation quota: concurrent admission is exact");
+      } finally {
+        await deleteItem(dbKeys.agentRecommendationQuota(email, today));
+      }
     }
 
     // ---------- concurrency slots (conditional claim + lease reclaim) ----------

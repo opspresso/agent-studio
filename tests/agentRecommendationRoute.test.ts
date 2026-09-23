@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { RateLimitedError } from "@/application/errors";
 
 const { useCases, auth } = vi.hoisted(() => ({
   useCases: { recommend: vi.fn() }, auth: { signedIn: true, tier: "member" as "member" | "guest" },
@@ -32,5 +33,11 @@ describe("POST /api/agent-recommendations", () => {
     expect((await post({ surface: "workspace", request: "fix code" })).status).toBe(403);
     useCases.recommend.mockResolvedValue(null);
     expect((await post({ surface: "chat", request: "fix code" })).status).toBe(200);
+  });
+  it("returns a bounded retry interval when recommendation quota is exhausted", async () => {
+    useCases.recommend.mockRejectedValue(new RateLimitedError("Too many Agent recommendation requests", 17));
+    const response = await post({ surface: "chat", request: "fix code" });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("17");
   });
 });

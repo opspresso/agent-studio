@@ -212,7 +212,7 @@ pnpm dev
 로그인 후 Settings에서 등록한다.
 Chat·Workspace 입력의 Agent 추천을 사용하려면 OpenRouter 또는 System One 호환 내부
 provider에서 Decisions 모델을 등록하고 Settings → Models → 모델 사용 설정에서 결정 모델로
-선택한다. 선택하지 않으면 추천만 비활성화된다. 요청 텍스트는 선택한 provider에 전달되므로
+선택한다. 선택하지 않으면 추천만 비활성화된다. 요청 텍스트는 PII 필터를 거쳐 선택한 provider에 전달되므로
 폐쇄망 설치에서는 내부 endpoint를 사용한다.
 
 MinIO 서버와 초기화용 `mc` 이미지는 Quay의 `minio` 저장소에서 받는다.

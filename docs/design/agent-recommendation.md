@@ -20,7 +20,10 @@ TypeSafe Jev는 텍스트 `state`와 닫힌 선택지의 `Choice` 질문을 받�
 
 [TypeSafe의 Jev 한계 문서](https://docs.typesafe.ai/model-jaggedness/jev-1.13)는 큰 무관한
 입력과 적대적 내용이 판단을 흐릴 수 있다고 설명한다. 그래서 후보의 설명만 전달하고,
-Agent의 system prompt·도구 자격증명·첨부 내용은 보내지 않는다. `confidence`는 응답에
+Agent의 system prompt·도구 자격증명·첨부 내용은 보내지 않는다. Agent가 선택되기 전에도
+요청과 후보 설명은 공통 PII 필터를 지나므로 인식 가능한 이메일·전화번호·카드 번호 등을
+치환한다. 필터가 인식하지 못하는 이름이나 임의 식별자는 원문으로 전달될 수 있다.
+`confidence`는 응답에
 보존하지만 자동 선택 기준으로 사용하지 않는다. 배포별 정답 데이터로 임계값을 검증하지
 않은 상태에서 수치를 정답 보장으로 취급하지 않기 위해서다.
 
@@ -32,12 +35,16 @@ Agent의 system prompt·도구 자격증명·첨부 내용은 보내지 않는�
 | 접근 가능한 후보와 Choice 구성·후보 분할 | `application/llm/agentRecommendation.ts` |
 | 인증된 사용자에 대한 Chat·Workspace 후보 목록 바인딩 | `lib/container.ts` |
 | OpenRouter Decisions API 또는 설정된 System One 호환 endpoint 호출·응답 검증 | `infrastructure/llm/decisionClient.ts` |
+| 사용자별 추천 요청 수의 분·일 단위 제한 | `infrastructure/db/repositories/agentRecommendationQuota.ts` |
 | 입력 변경 debounce·이전 응답 취소·수동 적용 | `app/_components/AgentSuggestion.tsx` |
 
 Chat 후보는 사용자가 접근 가능한 Agent이고 Workspace 후보는 그 사용자에게 Workspace
 정책이 활성화된 Agent다. 추천 응답의 이름은 해당 목록에 있는 값만 인정한다. 모델이
 설정되지 않았거나 적합한 후보가 없으면 빈 결과를 반환한다. 호출 실패는 입력이나 실행을
 막지 않고 추천 오류로 표시한다. 이 기능이 꺼져 있을 때 필수 경로에 외부 네트워크 의존성은 없다.
+등록된 결정 모델 호출은 사용자별 분당 30회·UTC 하루 300회로 제한한다. 카운터는
+PostgreSQL item 행에서 원자적으로 증가하므로 앱 인스턴스를 늘려도 같은 상한을 적용한다.
+한도 초과는 `Retry-After`를 포함한 429이고, 추천 실패는 Chat·Workspace 실행을 막지 않는다.
 
 `domain/llm/decision.ts`는 특정 Agent에 묶이지 않은 Choice 포트다. 다른 닫힌 선택지
 결정에도 같은 provider adapter를 사용할 수 있으며, Agent 실행 모델을 사용자 요청에 따라
