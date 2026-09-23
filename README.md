@@ -19,7 +19,7 @@
 | 문서·이미지·Artifacts | 첨부 추출, 문서 생성·검사·편집, 이미지 생성·편집, 결과 보관·다운로드·격리된 HTML 미리보기 | [문서](docs/design/documents.md), [Artifacts](docs/design/execution.md#artifacts) |
 | 오디오 | 원본 가져오기·업로드, 비동기 전사·Agent 후처리, 비공개 결과와 요청한 개인 기록 | [오디오](docs/design/audio-processing-spec.md) |
 | Workspace·Sandbox | 영속 파일·Git·native CLI Session, command·Codex·Claude·OpenCode 실행, Git 검토·승인, 원래 Chat으로 결과 전달 | [Workspace](docs/design/workspaces.md) |
-| 실행 연동 | Predict, OpenAI 호환 Chat Completions, Agent SSE, Slack·Telegram·Teams, Webhook·Schedule, 양방향 A2A, AG-UI | [API](docs/API.md), [메시징](docs/design/messaging.md) |
+| 실행 연동 | Predict, OpenAI 호환 Chat Completions, Agent SSE, Slack·Telegram·Teams, Webhook·Schedule | [API](docs/API.md), [메시징](docs/design/messaging.md) |
 | 운영·보안 | 프로젝트·호출자 비용, 동시 실행·시간 제한, Trace·Audit·메트릭, 접근 제어·시크릿 암호화·SSRF 방어·선택적 PII 필터 | [운영](docs/OPERATIONS.md), [보안](docs/SECURITY.md) |
 
 각 기능의 활성화 조건은 다르다. 기본 실행에는 PostgreSQL과 LLM 채널이 필요하고, 파일 보관에는

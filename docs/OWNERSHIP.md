@@ -34,7 +34,7 @@
 | MCP 기본 파일 매핑 선택과 연결별 namespace | `src/application/execution/mcpTools.ts`; Agent 설정이 없을 때만 레지스트리 기본값을 사용한다 | 구조 |
 | 매핑된 MCP 도구의 모델용 응답 계약 | `src/application/audio/mapMcpSource.ts`의 `MCP_SOURCE_RESULT_DESCRIPTION`; 실행 바인딩이 해당 alias의 설명에만 덧붙인다 | 구조 |
 | 호출자별 동시 실행 slot 수의 저장 상한 | `src/domain/execution/runSlot.ts` 의 `MAX_RUN_SLOTS` / `boundedRunSlotLimit`. 저장 키의 세 자리 index가 표현하는 `0..999`이며 config와 repository가 함께 적용한다 | 구조 |
-| 런의 conversation 을 어떻게 만들고 무엇으로 키를 삼는가 | `src/domain/execution/actor.ts` 의 `conversationOf` / `conversationKey`. 각 표면의 철자는 저마다 자기 빌더(`chatConversation`, `slackConversation`, `telegramConversation`, `a2aConversation`, `aguiConversation`, `requestConversation`)를 갖지만, 그 전부가 이 둘을 지난다 | 구조 |
+| 런의 conversation 을 어떻게 만들고 무엇으로 키를 삼는가 | `src/domain/execution/actor.ts` 의 `conversationOf` / `conversationKey`. 각 표면의 철자는 저마다 자기 빌더(`chatConversation`, `slackConversation`, `telegramConversation`, `requestConversation`)를 갖지만, 그 전부가 이 둘을 지난다 | 구조 |
 | SDK function tool 동시 실행 수 | `src/application/runtime/runner.ts`의 `MAX_FUNCTION_TOOL_CONCURRENCY` | 구조 |
 | Agent 런의 프롬프트와 tool 집합을 어떻게 조립하는가 | `src/application/llm/agentAssembly.ts` 의 `assembleAgentRun` | 구조 |
 | Model 의 window 로부터 런의 컨텍스트 예산을 도출하기 | `src/application/llm/contextBudget.ts` | 구조 |
@@ -126,9 +126,8 @@
 | 모든 행 키 문자열. 아이템 테이블의 `PK`/`SK`/GSI 주소 (파티션 키 전부, 그리고 어댑터 밖으로 나가지 않는 정렬 키. 아티팩트 목록의 정렬 키만 예외, 위 `artifactCursor`) | `src/infrastructure/db/keys.ts` | 코드 |
 | tool 의 파일이 실려 다니는 이름과 media type | `src/infrastructure/mcp/toolManager.ts` 의 `safeFileName`/`baseMediaType` | 코드 |
 | 저장소 트리 하나를 plugins 스냅샷으로. 어느 디렉터리가 plugin·skill·확장 문서인가 | `src/infrastructure/plugin/snapshot.ts` 의 `collectRepoPlugins`. GitHub 클라이언트와 업로드 아카이브는 파일을 어떻게 나열하고 읽는지만 건넨다 | 코드 |
-| AG-UI 의 와이어 형태. 받는 `RunAgentInput` 과 내보내는 이벤트 | `src/domain/agui/types.ts` (SDK 대신 직접 선언한 이유가 파일 머리에 있다); 입력 검증은 `src/app/api/agui/_lib/schema.ts` | 코드 |
 | 사용자 이미지의 상한 | `src/domain/llm/imageLimits.ts` | 코드 |
-| inline payload의 base64 문법과 decoded byte 길이 계산 | `src/domain/llm/base64.ts`. 이미지 data URL, 일반 첨부, AG-UI가 같은 판정을 읽는다 | 코드 |
+| inline payload의 base64 문법과 decoded byte 길이 계산 | `src/domain/llm/base64.ts`. 이미지 data URL과 일반 첨부가 같은 판정을 읽는다 | 코드 |
 | `data:` 이미지 인코딩 | `src/domain/llm/imageLimits.ts`의 `imageDataUrl` / `parseImageDataUrl`; `types.ts`가 재노출한다 | 코드 |
 | 런이 만들어 낸 파일을 읽는 사람에게 내주기 | `src/application/artifact/producedFiles.ts`. 테스트가 강제하는 것은 *짝*(출력 축 하나를 읽는 모듈은 다른 축도 읽는다)이고, 이 파일은 이름으로 면제한다. 이 파일의 주제 자체가 그 축이기 때문이다 | 코드 |
 | AWS 로 나가는 요청에 서명하기 | `src/infrastructure/llm/awsSigner.ts`. 대신 `tests/awsSigner.test.ts` 가 못박는다. 이 파일이 만들어 내는 서명을 고정해 두는 테스트다 | 코드 |
@@ -174,21 +173,16 @@
 | 마크다운 frontmatter 블록의 파싱 | `src/domain/plugin/frontmatter.ts` | 구조 |
 | repo 소유 컴포넌트의 provenance 문자열(`github:<repo>#<plugin>`) | `src/domain/plugin/types.ts` 의 `pluginSourcePrefix`(sync 가 `startsWith`/`slice` 로 기대는 쪽)·`pluginSource`·`parsePluginSource` | 구조 |
 | catalog 재색인 중 동시에 probe할 MCP 서버 수 | `src/application/catalog/reindexCatalog.ts` 의 `MAX_CONCURRENT_CATALOG_PROBES` | 구조 |
-| A2A 노출 목록이 동시에 확인할 Agent Card URL 작업 수 | `src/application/a2a/exposure.ts` 의 `MAX_CONCURRENT_A2A_EXPOSURE_READS` | 구조 |
 | builtin 도구의 wire 이름과 예약 집합 | `src/domain/llm/toolNames.ts` — 엔진, MCP alias 할당, 클라이언트 표시가 함께 사용한다 | 구조 |
 | 런당 MCP tool 상한 | `src/domain/llm/toolLimits.ts` | 구조 |
 | MCP 서버가 보낸 401 이 뜻하는 것 | `src/infrastructure/mcp/session.ts` | 구조 |
 | provider 가 MCP tool 이름으로 받아들이는 이름 | `src/infrastructure/mcp/toolManager.ts` | 구조 |
 | managed workload의 image·환경 키·값·argv·endpoint path 문법 | `src/domain/mcp/provisioner.ts`. API가 400으로 거절하는 문법과 lifecycle/Docker 경계가 실행 직전에 방어하는 문법이 같다 | 구조 |
 | plugin 상세의 repository·commit 링크가 향하는 GitHub web base | `src/lib/config.ts`의 `githubWebUrl`. public GitHub와 표준 GHES API 경로에서 도출하고, 그 밖에는 `GITHUB_WEB_URL`이 정한다. 브라우저는 상세 API가 만든 `repositoryUrl`만 읽는다 | 구조 |
-| AG-UI 런의 라이프사이클 이벤트(`RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR`)를 내보내기. 끝낼 때 무엇이 아직 열려 있는지를 아는 유일한 곳 | `src/application/agui/events.ts` | 구조 |
 | 업로드 아카이브로 sync 된 행의 provenance. 설정된 저장소, 없으면 `archive` | `src/domain/plugin/sync.ts` 의 `archiveSyncRepo` / `ARCHIVE_SYNC_REPO`; 브랜치 `archive` 와 commit = sha256 은 `src/infrastructure/plugin/archiveSnapshot.ts` | 코드 |
 | tar 아카이브 읽기. gzip 여부, GNU/pax 긴 이름, 트리를 벗어나는 경로의 거부, 크기·엔트리 상한 | `src/infrastructure/archive/tar.ts` 의 `readTarArchive` | 코드 |
 | 심볼릭 링크의 git 모드. 첨부 수집기가 거부하는 한 가지 엔트리 타입 | `src/domain/skill/files.ts` 의 `SYMLINK_MODE`. GitHub 트리와 아카이브가 같은 값으로 보고한다 | 코드 |
-| AG-UI 메시지와 `context`·`state` 가 엔진 메시지가 되는 방식 | `src/application/agui/input.ts` | 코드 |
 | OAuth authorization 서버 메타데이터를 찾는 주소와 순서 | `src/infrastructure/mcp/oauthMetadata.ts` 의 `authorizationServerCandidates` | 코드 |
-| A2A task 의 종단·실패·대기 상태가 무엇인가 | `src/domain/a2a/task.ts`. 프로토콜이 정한 사실이라 domain 에 있고, executor·taskStore·client·requestHandler 가 전부 여기를 읽는다 | 코드 |
-| 인바운드 A2A 메시지가 실을 수 있는 part | `src/application/a2a/requestHandler.ts` 의 `unsupportedPart`. card 의 `defaultInputModes` 와 같은 답이어야 한다 | 코드 |
 
 ## 보안·설정
 

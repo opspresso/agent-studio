@@ -97,7 +97,7 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 판정을 만들지 않는다.
 
 **세 부류의 표면이 세 가지로 다르게 게이트된다.** 사람이 세션으로 들어오는 콘솔·chat 은
-`assertProjectAccessible` 로 막는다. API token, trigger, webhook, A2A 클라이언트 키, 그리고
+`assertProjectAccessible` 로 막는다. API token, trigger, webhook, 그리고
 소유자가 직접 연결한 Telegram·Teams bot 은 *자격 증명 자체가 접근권* 이라 visibility 를 묻지
 않는다. token 은 소유자로서 행동하고, bot 배선은 소유자의 선택이다. Slack bot 만 그 중간에
 있다: workspace 의 누구나 말을 걸 수 있으므로, private project 의 bot 은 `users.info` 의
@@ -106,9 +106,7 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 게이트를 지난다). 앱이 서명한 메시지(키워드로 깨운 알림 등)는 통과한다: 그 키워드는
 소유자 자신의 설정이라 trigger 와 같은 소유자-배선 자동화다. 조회된 주소는 판정에만
 쓰이고 프롬프트에는 닿지 않는다. 초대 목록 자체(`memberEmails`)는 제3자 주소의 명부이므로
-응답에서도 소유자·admin 에게만 나간다 (`sanitizeProject`). 무인증 A2A Agent Card
-(`/.well-known/agent-card.json`)는 자격 증명이 전혀 없는 경로이므로 private project 를
-404 로 감춘다.
+응답에서도 소유자·admin 에게만 나간다 (`sanitizeProject`).
 
 private project 를 local subagent 로 *바인딩* 하는 것도 읽기다: 편집자가 접근할 수 없는
 project 는 Agent 설정 저장 시점에 거절된다 (`assertSubagentProjectsAccessible`). 이미 바인딩된
@@ -175,7 +173,7 @@ tier 변경을 처리한 인스턴스에서 무효화된다. 각 tier 가 동시
 
 월 상한은 멤버 자신의 일별 행을 UTC 월 1일부터 합산한다. 프로필 페이지가 읽는 것과 같은 창,
 같은 행이다. 집계가 하나뿐이므로 페이지가 가드와 어긋나는 합계를 보고할 수 없다. 사람 모양의
-한도는 `user` actor 에만 적용된다. 기계 호출자(Slack, A2A, webhook, schedule)에는 멤버가 없다.
+한도는 `user` actor 에만 적용된다. 기계 호출자(Slack, webhook, schedule)에는 멤버가 없다.
 **project token** 은 소유자의 email 을 싣지만 의도적으로 소유자의 개인 예산이 아니라 *자기
 project* 의 한도에서 지출한다. token 은 서비스 자격 증명이다. 그것이 우회가 되지 않게 하는
 것은 token 게이트다. API token 권한이 없는 tier 는 token 을 발급할 수도 없고(소유자 범위,
@@ -204,15 +202,14 @@ admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘�
 
 저장되는 모든 자격 증명. MCP 서버 헤더, 외부 agent 헤더, Agent별 헤더 오버라이드, MCP OAuth 의
 access/refresh token·client secret·인가 중인 PKCE verifier, Slack 봇 token 과 서명 시크릿,
-Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿, 앱 전역 A2A 키와
-이름 있는 A2A 클라이언트 키, project API token, webhook trigger 시크릿, 그리고 시크릿인 앱
+Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿, project API token, webhook trigger 시크릿, 그리고 시크릿인 앱
 설정(LLM API 키와 plugins 저장소의 GitHub token)은 `AES_ENCRYPTION_KEY` 로 AES-256-GCM
 암호화된다(`src/infrastructure/crypto/secretEncryption.ts`). 새 값은 모두 `enc:v2:` 로 쓴다.
 v2 는 row 와 field 정체성을 AES-GCM AAD 로 묶으므로 암호문만 다른 위치로 옮기면 인증에
 실패한다. 기존 `enc:v1:` 값은 다시 저장하거나 재발급하기 전까지 그대로 읽는다.
 
-Project API token, 이름 있는 A2A client key, webhook trigger secret 은 각각 project 이름,
-client 이름, `project + triggerId` 에 묶인다. Slack 의 bot token·signing secret, Telegram 의 bot
+Project API token 과 webhook trigger secret 은 각각 project 이름과
+`project + triggerId` 에 묶인다. Slack 의 bot token·signing secret, Telegram 의 bot
 token·webhook secret, Teams 의 app password 는 `project + integration + field` 를 쓴다.
 MCP·external agent 의 registry header 는 항목 이름과 header 이름에, managed MCP 의 environment 는
 항목 이름과 변수 이름에 묶인다. HTTP header의 override 병합만 이름의 대소문자를 무시하고,
@@ -220,7 +217,7 @@ AAD 는 environment와 같은 공통 map 규칙에 따라 저장된 키 철자�
 
 Agent의 MCP header override는 `project + agent + server + header`에 묶인다. 현재 설정을
 같은 Agent에서 수정해도 암호화 문맥은 유지되며 다른 Agent로 복제할 때는 시크릿을 복사하지
-않는다. 기존 Version 문맥의 암호문은 [데이터 이전](AGENT-MIGRATION.md)에서 복호화·재암호화한다.
+않는다.
 
 ### 읽을 때의 마스킹
 
@@ -251,21 +248,19 @@ Agent별 MCP 문자열 오버라이드는 저장 당시 registry URL 의 fingerp
 
 ### reveal 엔드포인트
 
-이 앱이 발급하는 시크릿 중 넷은 평문으로 되읽을 수 있다:
+이 앱이 발급하는 시크릿 중 둘은 평문으로 되읽을 수 있다:
 
 | 시크릿 | 엔드포인트 | 누가 |
 |---|---|---|
-| 앱 전역 A2A 키 | `POST /api/settings/a2a-key/reveal` | admin |
-| 이름 있는 A2A 클라이언트 키 | `POST /api/settings/a2a-keys/{name}/reveal` | admin |
 | Project API token | `POST /api/projects/{name}/token/reveal` | 소유자 또는 admin |
 | Webhook trigger 시크릿 | `POST /api/projects/{name}/triggers/{trigger}/reveal` | 소유자 또는 admin |
 
-넷 모두 **읽는데도 POST** 다. 응답 본문이 살아 있는 자격 증명이므로 캐시, 브라우저 기록,
+둘 모두 **읽는데도 POST** 다. 응답 본문이 살아 있는 자격 증명이므로 캐시, 브라우저 기록,
 프리페치 바깥에 머물러야 한다. 모든 reveal 은 호출자의 email 과 함께 **감사 행** 을 남기고, 그
 옆에 서버 측 로그 라인도 남긴다. 행은 나중의 질문이 조회하는 것이고, 라인은 감사 저장소 자체가
 불가용할 때 살아남는 것이다.
 
-따라서 이 넷은 해시가 아니라 **암호화해서** 저장되며, 이는 의도된 트레이드오프다. 데이터스토어만으로는
+따라서 둘은 해시가 아니라 **암호화해서** 저장되며, 이는 의도된 트레이드오프다. 데이터스토어만으로는
 하나도 쓸 수 없지만, 데이터스토어 *더하기* `AES_ENCRYPTION_KEY` 면 쓸 수 있다. **그 키를 테이블
 덤프와 살아 있는 project 자격 증명 사이에 서 있는 것으로 다뤄라.** reveal 이 생기기 전에 발급된
 project token 은 대신 SHA-256 해시로 저장돼 있다. 검증은 되지만 다시 보여 줄 수는 없으므로
@@ -278,8 +273,6 @@ Agent Studio 가 발급하는 시크릿은 GitHub 의 `ghp_`/`gho_` 처럼 제�
 
 | 접두사 | 시크릿 |
 |---|---|
-| `asa_` | 앱 전역 A2A 키 (admin 관리) |
-| `asc_` | 이름 있는 A2A 클라이언트 키 (admin 관리) |
 | `ast_` | Project API token (소유자 관리) |
 | `asw_` | Webhook trigger 시크릿 (소유자 관리) |
 | `asg_` | Telegram webhook 시크릿 (project 마다 발행. Telegram 에게만 건네고 결코 reveal 하지 않는다) |
@@ -298,11 +291,10 @@ project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 �
 
 | 표면 | 자격 증명 | 검증 |
 |---|---|---|
-| 실행 엔드포인트 (`predict`, `chat/completions`, `agent`) 와 AG-UI (`/api/agui/{project}`) | `Authorization: Bearer ast_…` | 복호화 후 상수 시간 비교(레거시 token 은 해시 비교), 경로의 `{name}` 으로 범위 제한. **project 소유자로서** 실행된다 (`authenticateExecution`) |
+| 실행 엔드포인트 (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer ast_…` | 복호화 후 상수 시간 비교(레거시 token 은 해시 비교), 경로의 `{name}` 으로 범위 제한. **project 소유자로서** 실행된다 (`authenticateExecution`) |
 | Slack 이벤트 | Slack 서명 시크릿 | HMAC + `timingSafeEqualString`, 5분 리플레이 윈도, project 별 시크릿 |
 | Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | 이 플랫폼이 webhook 을 등록할 때 쓴 project 별 시크릿(`asg_…`)과 `timingSafeEqualString` 비교. Telegram 이 배달마다 그대로 되돌려주며, 그 밖에 확인할 서명은 없다 |
 | Teams messaging endpoint | Bot Framework bearer 토큰 (JWT) | RS256 서명을 서비스가 공개한 JWKS(`login.botframework.com`) 로 검증하고, 발급자 `https://api.botframework.com`, audience = 그 봇의 App ID, `exp`/`nbf`(5분 skew), 그리고 **`serviceurl` 클레임 = activity 의 `serviceUrl`** 을 요구한다. 답은 그 주소로 이 앱의 토큰을 붙여 나가므로. Emulator 토큰은 받지 않는다 (`src/infrastructure/teams/client.ts`) |
-| 인바운드 A2A | `X-A2A-Key` | 공유 `A2A_API_KEY` 와 상수 시간 비교(actor `a2a:shared-key`), 아니면 admin 이 발급한 **이름 있는 클라이언트 키** 에 대한 해시 조회 후 primary row 의 컨텍스트 결합 token 을 상수 시간으로 재확인(actor `a2a:{client}`, 클라이언트별로 attribution 되고 rate limit 된다). 둘 다 설정돼 있지 않으면 엔드포인트는 꺼져 있다 |
 | Webhook trigger | `X-Trigger-Secret` 또는 GitHub `X-Hub-Signature-256` | 프로젝트 시크릿의 `cipher.decryptEquals` 또는 원본 UTF-8 body의 HMAC-SHA256 상수 시간 비교. GitHub 헤더가 있으면 서명 검증을 강제하고 일반 시크릿으로 폴백하지 않는다. 서명된 ping은 실행하지 않으며 GitHub delivery ID로 중복을 차단한다 |
 | Workspace GitHub webhook | `X-Hub-Signature-256`과 `X-GitHub-Delivery` | 별도 배포 시크릿으로 검증하고 PR/CI 메타데이터만 갱신한다. Git 실행 승인이 아니다 |
 | CronJob 틱. schedule 스캔(`/api/triggers/scan`), 카탈로그 재색인(`/api/catalog/reindex`), plugins sync(`/api/plugins/sync/scan`) | `X-Scan-Token` | `SCHEDULE_SCAN_TOKEN` 과 `timingSafeEqualString` 비교. 설정돼 있지 않으면 503 으로 답하고, 거부된 token 은 셋 모두에서 경고를 로그에 남긴다 |
@@ -311,16 +303,6 @@ project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 �
 도래했는지 물을 수 있게 해 주는 그 문자열이 plugins sync 도 실행하고, 그 sync 는 두 레지스트리
 skill 과 MCP 서버. 를 모두 쓴다. 저장소가 선언한 이름을 채택하고 provenance 를 그것으로 다시
 쓴다. 그것은 프로브가 아니라 쓰기 자격 증명으로 범위를 잡고 회전시켜라.
-
-A2A 의 401 은 `WWW-Authenticate: ApiKey realm="a2a", header="X-A2A-Key"` 를 싣고 카드가 같은
-스킴을 선언하므로, 표준 클라이언트는 무엇을 제시할지 카드에서 읽는다.
-
-형제 중 하나는 자격 증명을 아예 지니지 않는다. public project 의 A2A **Agent Card**
-(`/.well-known/agent-card.json`)는 표면이 켜져 있기만 하면. 공유 `A2A_API_KEY` 또는 최소 하나의
-이름 있는 클라이언트 키. 누구에게나 제공된다. 그것이 agent 를 발견 가능하게 만드는 것이고, A2A
-핸드셰이크는 카드에서 시작하기 때문이다. 카드는 project 의 이름, 설명, skill 을 노출하므로
-private project는 현재 설정이 있어도 같은 `404`로 숨긴다. JSON-RPC endpoint 는 키 자체가
-project 의 자격 증명이므로 private project 도 호출할 수 있다.
 
 trigger 시크릿은 활성화 플래그를 읽기 **전에** 비교된다. 비활성 trigger 가 틀린 시크릿에 활성
 trigger 와 다르게 답할 수 없게 하기 위해서다. 그 차이는 어떤 trigger 가 존재하는지에 대한
@@ -347,7 +329,7 @@ JSON 본문은 schema 검증 전에 bounded reader를 지난다. 관리·편집 
 예산은 최대 turn 본문 두 개 분량이고, 요청은 자기가 실제로 읽은 바이트만큼만 쓴다. 과금은
 파싱부터 run 또는 stream이 입력을 놓을 때까지 유지되고, 연결에서 분리되어 계속 도는 chat은
 내부 drain 완료까지 유지한다. 일반 text turn은 아무것도 쓰지 않는다. 예산이 모자라면 body를
-취소한 뒤 `Retry-After`를 포함한 429를 답한다. A2A raw JSON 경로도 같은 게이트를 지난다.
+취소한 뒤 `Retry-After`를 포함한 429를 답한다.
 
 예산은 요청 수가 아니라 메모리에 유지하는 큰 본문의 바이트를 센다.
 정확한 상한과 소유 파일은 [고정 제한](CONFIGURATION.md#코드에-고정된-제한)을 따른다.
@@ -362,7 +344,7 @@ Cookie session으로 인증하는 `POST`·`PUT`·`PATCH`·`DELETE`는 `Origin`�
 설정된 `PUBLIC_BASE_URL` origin과 정확히 같아야 한다. Origin이 없거나 `null`이거나 URL로
 해석되지 않으면 403이다. 세 session wrapper가 일반 console API를 한 번에 보호하고, project
 실행 API는 bearer project token을 먼저 검증한 뒤 cookie session으로 fallback할 때 같은 검사를
-적용한다. bearer token, webhook signature, A2A key처럼 cookie를 쓰지 않는 머신 호출에는 CSRF
+적용한다. bearer token, webhook signature처럼 cookie를 쓰지 않는 머신 호출에는 CSRF
 검사를 적용하지 않는다.
 
 리버스 프록시 밖의 origin과 앱이 보는 request origin이 다르면 `PUBLIC_BASE_URL`을 반드시
@@ -409,7 +391,7 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
   호스트는 풀링된 디스패처에 닿기 전에 거부되고, 다른 곳으로 해석되는 호스트는 다른 키를
   받는다.
 
-**모델 입력의 이미지는 URL로 가져가지 않는다.** OpenAI 호환 실행, AG-UI, A2A는 지원하는 이미지
+**모델 입력의 이미지는 URL로 가져가지 않는다.** 실행 API는 지원하는 이미지
 바이트를 요청 안에 인라인으로 받으며, LLM 채널은 모든 `image_url`이 bounded `data:` URL인지
 마지막으로 다시 확인한다. `https://`만 검사한 뒤 원격 URL을 제공자에게 그대로 넘기면 요청은 이
 앱이 아니라 제공자 네트워크에서 발생한다. 그 경로에는 `fetchPublicUrl`의 DNS·주소·redirect
@@ -427,8 +409,6 @@ query parameter 와 fragment 를 받지 않는다. 둘은 멤버가 읽는 regis
 LLM 채널도 endpoint 와 credential 을 한 보안 단위로 취급한다. 기본 채널의 URL 또는 provider
 채널의 URL·인증 방식을 바꾸면 마스킹된 기존 key 를 새 주소로 옮기지 않고 새 key 입력을 요구한다.
 기본 URL override 와 key override 를 함께 비우는 것은 둘 다 env 쌍으로 되돌리는 명시적 예외다.
-외부 A2A Agent Card 의 실패 메시지는 origin 만 남긴다. query string 을 비롯한 전체 URL 자체가
-자격 증명일 수 있으므로 authored error, chat, trace 에 등록 주소를 복사하지 않는다.
 
 MCP 클라이언트는 `@modelcontextprotocol/client` 위에서 돌고, 가드는 그 옆에 놓이는 대신 그 안으로
 **주입된다**. 트랜스포트에 `fetch` 로 주어지는 것이
@@ -545,9 +525,9 @@ registry Test와 프로젝트 도구 조회는 요청 사용자 email을 전송�
 프로젝트 도구 조회는 OAuth와 override를 사용하지만 tenant header는 보내지 않는 현재 차이가 있다.
 따라서 tenant마다 도구 목록이 다른 서버에서는 probe와 런의 목록이 다를 수 있다.
 
-API·AG-UI 대화 주소의 caller 부분은 배포 키로 만든 digest다.
+API 대화 주소의 caller 부분은 배포 키로 만든 digest다.
 이메일의 평문 hash가 아니지만 동일 사용자를 연결할 수 있는 가명이지 익명화는 아니다.
-메신저·Chat·A2A의 주소 형식은 [관측성 설계](design/observability.md#사용량과-비용-귀속)를 따른다.
+메신저·Chat의 주소 형식은 [관측성 설계](design/observability.md#사용량과-비용-귀속)를 따른다.
 firing이나 대화 ID 없는 요청은 대화 header를 보내지 않는다.
 
 ### 모델이 고른 URL
@@ -888,7 +868,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
 - `/api/metrics` 는 project, 사용자, model 을 지목하지 않는다. 메트릭 라벨은 히스토그램의
   `le` 와 build 정보의 유한한 `version`·`stage`뿐이다.
 - 로그 라인은 런의 correlation id 를 실을 뿐, 프롬프트 내용은 결코 싣지 않는다.
-- Trace, usage 행, chat, trigger 배달, 인바운드 A2A 태스크는 모두 `expiresAt` 을 지니고
+- Trace, usage 행, chat, trigger 배달 행은 모두 `expiresAt` 을 지니고
   schedule-scan 틱의 sweep 이 지운다. scan 호출이 없는 배포에서는 이 DB sweep이 실행되지 않는다.
   [OPERATIONS.md](OPERATIONS.md#행-보존) 참고.
 - **메시징 파일 참조 기록**은 Slack·Telegram·Teams에서 대화·actor별로 생성 파일 ID와
@@ -903,7 +883,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   지워진다.
 - **생성된 이미지** 는 `S3_BUCKET_NAME` 이 설정돼 있으면 추측할 수 없는 UUID 키 아래 저장되고,
   chat 행은 주소가 아니라 **오브젝트 키** 를 보관한다. 읽기 시점에 키가 주소가 되며, 수명은
-  독자에 맞춰 고른다. chat 뷰에는 15분, Slack 스레드나 저장된 A2A 태스크처럼 지속되는
+  독자에 맞춰 고른다. chat 뷰에는 15분, Slack 스레드처럼 지속되는
   무언가에 쓰이는 링크에는 7일(SigV4
   pre-sign 의 상한이고, proxied 토큰도 같은 값을 쓴다). 그 링크는 그것이 함께 온 답을 이미 읽을
   수 있던 청중이 쥔다(`src/shared/artifactUrlTtl.ts`). 주소의 *모양* 은
@@ -911,7 +891,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   - **`proxied`**. 스토어는 앱에게만 닿고 독자는 앱의 주소
     `PUBLIC_BASE_URL/api/objects/<key>?exp=<unix>&sig=<hmac>[&dl=<filename>]` 를 받는다
     (`src/infrastructure/storage/objectUrlToken.ts`). **그 라우트는 세션을 요구하지 않으며
-    그것이 계약이다**: 주소를 쥐는 것은 `<img>` 태그, Slack 메시지, 저장된 A2A task라 쿠키를
+    그것이 계약이다**: 주소를 쥐는 것은 `<img>` 태그와 Slack 메시지라 쿠키를
     낼 수 없다. 토큰이 자격 증명이다. 키·만료·파일명을 함께 덮는 HMAC-SHA256
     이고, 서명 키는 `AES_ENCRYPTION_KEY` 에서 HKDF(`agent-studio/object-url/v1`)로 파생되어 그
     바이트가 저장된 토큰을 암호화하는 바이트와 결코 같지 않다. 증명하는 것은 *이 배포가 이
@@ -986,10 +966,10 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
 
 ## 운영 노트
 
-- **고쳐 쓰지 말고 회전시켜라.** 유출된 A2A 키, project token, trigger 시크릿은 콘솔에서
-  회전시킨다(`POST …/a2a-key`, `POST …/token`, `rotateSecret: true` 를 실은
+- **고쳐 쓰지 말고 회전시켜라.** 유출된 project token과 trigger 시크릿은 콘솔에서
+  회전시킨다(`POST …/token`, `rotateSecret: true` 를 실은
   `PUT …/triggers/{id}`). 이전 값의 무효화 시점은 아래의 캐시 전파 범위를 따른다.
-- **설정 전파는 즉시가 아니다.** 강등된 admin 이나 회전된 A2A 키는 그 쓰기를 처리하지 않은
+- **설정 전파는 즉시가 아니다.** 강등된 admin의 권한 변경는 그 쓰기를 처리하지 않은
   인스턴스에서 설정 캐시가 만료될 때까지 계속 동작한다(`SETTINGS_CACHE_TTL_MS`, 기본 5초).
   인스턴스 간 즉시 취소에는 공유 무효화 신호가 필요한데, 아직 없다. 쓰기를 처리한 인스턴스는
   캐시 세대를 쓰므로, 이미 진행 중이던 읽기가 무효화된 항목을 다시 채울 수 없다.

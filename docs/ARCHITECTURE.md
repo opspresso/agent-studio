@@ -52,7 +52,7 @@ Clean Architecture를 적용해 도메인 규칙과 유스케이스를 UI·저�
 | `src/shared/` | 날짜·본문 제한·로깅·타임아웃 등 의존성 없는 헬퍼. `@/` import를 두지 않는다 |
 | `src/components/` | 헤더·앱 shell 등 공통 화면 요소 |
 
-application에서 `@a2a-js/sdk`와 `@openai/agents`는 명시적 예외다. SDK의 프로토콜·Agent·Runner·
+application에서 `@openai/agents`는 명시적 예외다. SDK의 Agent·Runner·
 Session 계약을 직접 사용하고, 배포별 저장·모델·자격 증명은 포트로 주입한다.
 어댑터와 유스케이스는 환경변수를 직접 읽지 않으며 `lib/config.ts`와 주입된 설정을 사용한다.
 `"use client"` 모듈은 application·infrastructure의 runtime 값을 가져오지 않는다.
@@ -70,7 +70,7 @@ Session 계약을 직접 사용하고, 배포별 저장·모델·자격 증명�
 | 메신저 공통 턴·첨부·응답 | `application/messaging/`; 플랫폼별 `slack/`, `telegram/`, `teams/` |
 | 문서·Artifacts·오디오 | `application/document/`, `artifact/`, `audio/`; `infrastructure/documents/` |
 | Workspace·Sandbox·Git 승인 | `application/workspace/`, `infrastructure/workspace/`, `sandbox/` |
-| 카탈로그·Plugin·자동화·원격 프로토콜 | `application/catalog/`, `plugin/`, `trigger/`, `a2a/`, `agui/` |
+| 카탈로그·Plugin·자동화 | `application/catalog/`, `plugin/`, `trigger/` |
 | DB와 네트워크 경계 | `infrastructure/db/`, `net/`, `storage/`, `crypto/` |
 | 콘솔 공통 UI·클라이언트 헬퍼·번역 | `app/_components/`, `app/_lib/`, `app/_i18n/` |
 
@@ -96,7 +96,6 @@ Session 계약을 직접 사용하고, 배포별 저장·모델·자격 증명�
 | `src/app/api/slack/events/_lib/` | Slack 이벤트의 실행·클라이언트 deps |
 | `src/app/api/telegram/webhook/_lib/` | Telegram 실행·클라이언트·transcript deps |
 | `src/app/api/teams/messages/_lib/` | Teams 실행·클라이언트·transcript deps |
-| `src/app/api/a2a/[name]/route.ts` | 프로젝트 카드와 실행 deps 위의 요청별 SDK handler |
 | `src/instrumentation.ts` | 설정 검증·migration·관리자 bootstrap·감사 sink·선택 모델 로드·managed MCP 복구 |
 
 추가로 `lib/auth.ts`, `runtime-settings.ts`, `memberAccess.ts`만 어댑터에 직접 닿는
@@ -130,7 +129,6 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 |---|---|---|---|---|
 | Project | `PROJECT#{name}` | `META` | `TYPE#PROJECT` | `{name}` |
 | 삭제된 Project 이름 tombstone | `PROJECT#{name}` | `META` | — | — |
-| 이전 설정 원본 보관 (실행에 사용하지 않음) | `PROJECT#{name}` | `LEGACYCONFIGURATION`, `VERSION#{versionName}` | — | — |
 | Project API 토큰 | `PROJECT#{name}` | `APITOKEN` | — | — |
 | Workspace 정책 / 저장소 생성 receipt | `PROJECT#{name}` | `WORKSPACEPOLICY` / `REPOSITORYCREATE#{repository lowercased}` | — | — |
 | Workspace | `WORKSPACE#{id}` | `META` | `WORKSPACEOWNER#{email}` | `{createdAt}#{id}` |
@@ -172,10 +170,6 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 | Teams activity 중복 제거 (App ID 로 한정; activity id 는 대화 안에서만 유일하므로 대화 id 를 앞에 붙인다) | `PROJECT#{name}` | `TEAMSACTIVITY#{appId}#{conversationId}#{activityId}` | — | — |
 | 대화 transcript 턴 (플랫폼 히스토리가 없는 chat-bot 표면, Telegram, Teams; project 파티션에 있어 cascade 가 지운다) | `PROJECT#{name}` | `TRANSCRIPT#{conversationKey}#TURN#{createdAt ISO}#{seq}` | — | — |
 | Artifact (첨부 원본과 런 출력) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
-| A2A 태스크 (수신) | `A2ATASK#{projectName}#{urlencode(tenant:client)}` | `TASK#{taskId}` | `A2ATASKLIST#{projectName}#{urlencode(tenant:client)}` | `{statusTimestamp ISO}#{taskId}` |
-| 원격 대화 (송신 A2A `contextId`) | `PROJECT#{name}` | `REMOTECTX#{agentName}#{conversationKey}` | — | — |
-| A2A 클라이언트 키 | `A2ACLIENT#{name}` | `META` | `TYPE#A2ACLIENT` | `{name}` |
-| A2A 클라이언트 키 해시 (검증용. 인증은 이 행이 지목한 primary 의 동일 hash 와 client-name 컨텍스트로 복호화한 token 도 확인한다) | `A2AKEYHASH#{sha256}` | `META` | — | — |
 | Trace | `TRACE#{traceId}` | `META` | `TRACEPROJECT#{projectName}` | `{createdAt ISO}#{traceId}` |
 | Trace 삭제 참조 | `PROJECT#{name}` | `TRACE#{createdAt}#{traceId}` | — | — |
 | 감사 기록 | `AUDIT#{yyyy-MM-dd}` | `{createdAt ISO}#{eventId}` | — | — |
@@ -240,8 +234,6 @@ Chat의 SDK `runtime_sessions`와 수명을 공유하지 않는다.
 | Slack | `/api/slack/events/[project]` → `handleSlackEvent` → `handleTurn` | `executeAgent` (`SlackEventDeps` 경유) |
 | Telegram | `/api/telegram/webhook/[project]` → `handleTelegramUpdate` → `handleTurn` | `executeAgent` (`TelegramEventDeps` 경유). Slack 과 같은 공유 파이프라인 ([design/messaging.md](design/messaging.md)) |
 | Teams | `/api/teams/messages/[project]` → `handleTeamsActivity` → `handleTurn` | `executeAgent` (`TeamsEventDeps` 경유). 같은 파이프라인 |
-| A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
-| AG-UI | `POST /api/agui/[name]` → `streamAguiRun` | `streamProjectRun`. `application/agui/events.ts`가 모든 출력 축을 프로토콜 이벤트로 바꾼다 |
 | Webhook trigger | `POST /api/webhook/[project]` → `executeDelivery` | `streamProjectRun` (`triggerRunnerDeps.run`). JSON payload를 사용자 메시지로 전달한다 |
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (같은 `triggerRunnerDeps.run`) |
 | Audio 후처리 | audio worker가 고정한 Project와 현재 설정으로 실행 | `streamProjectRun` + `collectRun` (`backgroundTask: true`) |
@@ -290,7 +282,7 @@ preview는 PII 치환 전 원문이며 필터를 켠 Agent에는 이를 경고�
 기한 안에 출력이 없으면 같은 pending read를 유지한 채 응답을 열어 15초 간격 keepalive를 보낸다.
 이후 실패는 이미 보낸 HTTP 상태를 바꾸지 못하고 스트림의 오류 프레임으로 전달한다.
 
-일반 SSE의 정상 전송은 `data: [DONE]`으로 끝나며 A2A·AG-UI는 자체 종료 계약을 사용한다.
+일반 SSE의 정상 전송은 `data: [DONE]`으로 끝난다.
 Chat의 연결 분리 wrapper는 이 계층 바깥에 있다. 브라우저 연결 종료와 실제 실행 취소를
 구분하는 방법은 [Chat 설계](design/chat.md#런은-자기-연결보다-오래-산다)를 따른다.
 
@@ -316,7 +308,7 @@ Chat의 연결 분리 wrapper는 이 계층 바깥에 있다. 브라우저 연�
 | `traceId` | Studio Trace 식별자. text 자식은 최상위 Trace의 SDK span 계층을 사용하며 특화 자식은 별도 Trace를 가질 수 있다 |
 
 이미지와 파일을 소비하는 표면은 두 축을 모두 다룬다. raw chunk route는 `withAddressedFiles`로
-파일 참조를 URL로 바꾸고, completion API·A2A·AG-UI·메신저·Trigger는 자기 응답 형태에 맞게
+파일 참조를 URL로 바꾸고, completion API·메신저·Trigger는 자기 응답 형태에 맞게
 변환한다. 도구가 새 capability를 발견한 사실은 손실이 아니므로 warning으로 만들지 않는다.
 reasoning fold·Artifact capture·raw stream의 호출 범위는 구조 테스트로 검사한다.
 
@@ -340,6 +332,7 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 | [sdk-capabilities](design/sdk-capabilities.md) | SDK 기능별 제품 적용 범위·미지원 경계·검증 근거 |
 | [chat](design/chat.md) | 화면 기록·SDK Session·승인·연결 분리·재연결 |
 | [capabilities](design/capabilities.md) | Skill·Plugin sync·벡터 검색·Memory recall |
+| [agents](design/agents.md) | 외부 OpenAI 호환 Agent registry·위임 |
 | [mcp](design/mcp.md) | binding·transport·세션·캐시·managed 서버·OAuth |
 | [documents](design/documents.md) | 형식별 읽기·생성·편집, worker, 파일 참조·HTML 미리보기 |
 | [audio](design/audio-processing-spec.md) | 원본·비동기 전사·후처리·delivery·보존 |
@@ -348,8 +341,6 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 | [slack](design/slack.md) / [telegram](design/telegram.md) / [teams](design/teams.md) | 플랫폼별 인증·참여 판단·렌더링·대화 문맥 |
 | [triggers](design/triggers.md) | Webhook·Schedule·중복 방지·유실 실행 정리 |
 | [observability](design/observability.md) | Audit·Usage·Trace의 기록·귀속 |
-| [agents-a2a](design/agents-a2a.md) | 외부 Agent registry·양방향 A2A |
-| [agui](design/agui.md) | 입력과 이벤트 변환·frontend tool |
 
 로컬 작업 지침은
 [`runtime/AGENTS.md`](../src/application/runtime/AGENTS.md),
@@ -381,7 +372,7 @@ Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액�
 저장된 키는 앞뒤 4자를 드러낸 서버 마스크로 표시한다(8자 이하는 전부 숨긴다).
 교체를 눌러 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다.
 설정 override 삭제는 별도 동작으로 제공한다.
-Studio가 발급하는 프로젝트 토큰·Webhook·A2A 키는 `SecretControl`로 표시·복사·생성·재생성·폐기한다.
+Studio가 발급하는 프로젝트 토큰·Webhook 키는 `SecretControl`로 표시·복사·생성·재생성·폐기한다.
 지원하는 동작은 각 API의 기능과 권한에 따른다. 원문을 표시한 동안에만 복사할 수 있고,
 재생성·교체·폐기는 공통 확인창을 거친다. 평문은 브라우저 저장소에 기록하지 않는다.
 Settings는 General·Plugins·Models·Keys 탭으로 관리하고, `/models`는 등록된 모델 조회·검색만 제공한다.

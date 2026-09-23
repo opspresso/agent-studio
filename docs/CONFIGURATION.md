@@ -27,14 +27,14 @@ DB를 읽기 전 필요한 키·DB 주소·로그인 설정과 Sandbox 인프라
 멤버 tier의 email 조회는 별도 30초 캐시이며 자세한 권한 전파는 [SECURITY](SECURITY.md#인가-모델)를 따른다.
 
 settings 쓰기는 최신 `SETTINGS#app` 행을 row lock 아래에서 읽고 patch를 합친 뒤 같은 transaction
-에서 저장한다. 일반 설정 저장, A2A key 회전, Embedding/Rerank 선택이 동시에 도착해도 한 요청의
+에서 저장한다. 일반 설정 저장과 Embedding/Rerank 선택이 동시에 도착해도 한 요청의
 오래된 full-row snapshot이 다른 요청의 필드를 되돌리지 않는다. Embedding migration 동안의
 vector/query model 일치는 별도의 reindex lease generation이 지킨다. 검색은 시작 전·vector 조회
 후·반환 직전에 generation을 비교하고, migration과 겹쳤으면 결과를 버린다.
 
 오버라이드와 환경변수는 *"설정돼 있는가?"* 에 같은 방식으로 답한다: 비어 있거나 공백뿐인
 값은 **설정되지 않음**으로 치고, 유효 값이 되는 대신 다음 계층으로 떨어진다.
-`/settings` 에서 빈 칸을 저장하면 오버라이드가 제거되고, `A2A_API_KEY=" "` 는 키가 아니다. 부팅
+`/settings` 에서 빈 칸을 저장하면 오버라이드가 제거되고, 공백뿐인 시크릿은 키가 아니다. 부팅
 시점도 포함해서이며, 거기서는 없는 것으로 보고된다. 이것이 가장 중요한 곳은 파일에서
 마운트된 시크릿이다. 헤더가 나를 수 없는 개행이 끝에 붙어 오기 때문이다. 규칙은
 `src/shared/env.ts` 가 소유하고, 거기서 돌려주는 값은 trim 돼 있다. `STAGE` 와
@@ -87,12 +87,12 @@ fail-open 이 될 수는 없다.
 | `S3_ENDPOINT` | 미설정 | — | AWS 가 아닌 스토어의 주소 (`http://minio:9000`). 설정되면 path-style 로 주소를 만든다. 자체 호스팅 엔드포인트는 버킷 서브도메인을 해석하지 못하는 것이 보통이다. 비어 있으면 SDK 자신의 리전·자격증명 해석으로 AWS S3 에 간다. |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | 미설정 | — | 오브젝트 스토어의 키 쌍. `AWS_*` 에 넣지 않는다. 그 쌍은 프로세스의 다른 모든 AWS 클라이언트(Bedrock 채널·Cohere 임베딩)가 읽으므로, MinIO 의 키를 거기 두면 AWS 에 MinIO 키로 서명하게 된다. 비어 있으면 SDK 기본 체인을 따른다. |
 | `S3_PUBLIC_BASE_URL` | 미설정 | — | `public` 모드에서 독자가 오브젝트에 닿는 base 가 앱이 업로드하는 엔드포인트와 다를 때 (리버스 프록시 뒤의 MinIO). 비어 있으면 `S3_ENDPOINT`/`<bucket>`, 그것도 없으면 AWS 의 virtual-host 형태. |
-| `ARTIFACT_ACCESS_MODE` | `authenticated` | **runtime** | 독자가 저장된 오브젝트에 어떻게 닿는가. **`proxied`**. 앱 자신의 주소 `PUBLIC_BASE_URL/api/objects/<key>?exp=&sig=[&dl=]` 를 건네고 앱이 바이트로 답한다(`PUBLIC_BASE_URL` 이 없으면 경로만, 콘솔은 같은 origin 이라 닿지만 Slack·A2A 같은 외부 독자에게는 주소가 아니다). 모델 입력 이미지는 URL이 아니라 저장소에서 읽은 bounded inline bytes로 전달된다. 스토어는 앱에게만 닿으면 되므로 설치형의 선택이다. 토큰이 증명하는 것과 수명은 [SECURITY.md](SECURITY.md#데이터-노출과-보존). **`authenticated`**. 유효 기간이 있는 스토어의 pre-signed URL. 브라우저가 스토어에 직접 닿을 수 있어야 한다. **`public`**. 영구적인 직접 URL. 버킷 정책이 `artifacts/*` 와 레거시 `images/*` 의 공개 읽기를 허용할 때만 동작한다. **다운로드 링크는 `public` 에서도 pre-signed 다**: 브라우저가 저장할 파일명이 요청 서명에 실려 가는데 S3 는 익명 GET 에서 `response-*` 오버라이드를 거부하기 때문이다. 그래서 `public` 모드에서 문서의 주소는 유효 기간이 있고 이미지의 주소는 영구로 남는다. public 모드는 갤러리 메타데이터와 삭제가 인증을 유지하더라도 URL 을 손에 넣은 누구에게나 오브젝트를 노출한다. 모르는 값은 `authenticated` 로 fail-closed 된다. |
+| `ARTIFACT_ACCESS_MODE` | `authenticated` | **runtime** | 독자가 저장된 오브젝트에 어떻게 닿는가. **`proxied`**. 앱 자신의 주소 `PUBLIC_BASE_URL/api/objects/<key>?exp=&sig=[&dl=]` 를 건네고 앱이 바이트로 답한다(`PUBLIC_BASE_URL` 이 없으면 경로만, 콘솔은 같은 origin 이라 닿지만 Slack 같은 외부 독자에게는 주소가 아니다). 모델 입력 이미지는 URL이 아니라 저장소에서 읽은 bounded inline bytes로 전달된다. 스토어는 앱에게만 닿으면 되므로 설치형의 선택이다. 토큰이 증명하는 것과 수명은 [SECURITY.md](SECURITY.md#데이터-노출과-보존). **`authenticated`**. 유효 기간이 있는 스토어의 pre-signed URL. 브라우저가 스토어에 직접 닿을 수 있어야 한다. **`public`**. 영구적인 직접 URL. 버킷 정책이 `artifacts/*` 와 레거시 `images/*` 의 공개 읽기를 허용할 때만 동작한다. **다운로드 링크는 `public` 에서도 pre-signed 다**: 브라우저가 저장할 파일명이 요청 서명에 실려 가는데 S3 는 익명 GET 에서 `response-*` 오버라이드를 거부하기 때문이다. 그래서 `public` 모드에서 문서의 주소는 유효 기간이 있고 이미지의 주소는 영구로 남는다. public 모드는 갤러리 메타데이터와 삭제가 인증을 유지하더라도 URL 을 손에 넣은 누구에게나 오브젝트를 노출한다. 모르는 값은 `authenticated` 로 fail-closed 된다. |
 | `CATALOG_ENABLED` | `false` | — | `true` 면 이 배포가 capability 카탈로그를 갖는다. 벡터는 데이터베이스의 `catalog_vectors` 에 있고 따로 가리킬 것은 없다. 설정하지 않으면 `POST /api/catalog/reindex` 는 503 으로 답하고, 런은 자기 설정에 바인딩한 것만 제공한다. 그 503 에는 원인이 둘 있고 토큰 검사가 먼저 돌므로, `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우에도 메시지만 다른 같은 상태 코드가 나온다. 기본이 꺼짐인 이유: 카탈로그에는 배포의 채널이 서빙하는 임베딩 모델이 필요한데 부팅 때 그것을 확인할 길이 없다. 켜는 것은 그 모델이 있다는 선언이다. |
 | `EMBEDDING_DIM` | `1024` | — | provider 에 요청하는 폭. `native` 는 폭 파라미터를 생략해 모델의 native dimension을 쓴다. 테이블의 모든 행이 같은 폭이어야 pgvector 가 거리를 계산하므로 값을 바꾼 뒤 반드시 재색인하라. Cohere v4, Titan v2, OpenAI v3처럼 폭 선택을 지원하는 모델은 명시값을 사용하고, 폭 파라미터를 거부하는 모델은 `native` 를 사용한다. |
 | `CATALOG_MIN_SCORE` | `0.25` | — | vector 검색의 절대 하한. 유한한 숫자는 0–1로 clamp하고 그 밖에는 기본값을 사용하며 경고한다. query별 최고 점수의 상대 하한과 함께 적용한다. 모델·질의 언어가 바뀌면 [선택 절차](#임베딩-모델-선택)로 다시 확인한다. |
 | `RERANKER_MIN_SCORE` | `0.01` | **models** | activation된 reranker relevance score의 noise floor. 각 query에서 최고 점수의 10%와 이 값 중 높은 쪽을 최종 하한으로 쓴다. 범위 밖 env 값은 `0`–`1`로 clamp한다. capability 설명은 답 자체가 아니라 답을 만들 도구이므로 adapter는 전용 instruction을 함께 보낸다. 모델을 바꾸면 다시 측정하고 `/settings/model-usage`에서 함께 저장하라. DB override가 env보다 우선하며 다음 검색부터 적용된다. |
-| `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`; 일반 URL 조립은 요청 origin, 없으면 `http://localhost:3000` | **runtime** | 바깥을 향하는 URL (A2A Agent Card, Slack 매니페스트, MCP OAuth 콜백, MCP client ID 메타데이터 문서)을 만들 때 쓰는 scheme + host. 리버스 프록시 뒤에서는 요청 URL 이 bind 주소를 반영하므로 이 값은 설정에서 와야 한다. 요청 origin 단계는 요청이 손에 있는 일반 URL 조립에서만 적용된다. A2A Agent Card 경로에는 요청이 없어서, 두 변수 모두 설정되지 않으면 카드가 `localhost` 를 광고한다. **거부된 사인인의 리디렉션(`/login?error=`)은 부팅 시 env 값으로 고정된다**: Better Auth 옵션은 한 번만 평가되므로 runtime 설정을 보지 못하고, env 가 비어 있으면 상대 경로가 되어 프록시 뒤에서 bind 주소 기준으로 해석될 수 있다. OIDC/Google 사인인을 쓰는 배포는 env 로도 설정하라. **MCP client ID 메타데이터 문서는 예외다**: 설정된 base 가 없으면 요청 origin 이나 localhost 를 추측하지 않고 503 으로 답한다. 그 URL 이 곧 OAuth `client_id` 이고 authorization server 가 가져가므로, loopback 이나 평문 http 값이면 흐름이 시작되기 전에 거부되고 provider 가 제공하는 경우 연결은 dynamic registration 으로 폴백한다. [SECURITY.md](SECURITY.md#mcp-oauth) 를 보라. |
+| `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`; 일반 URL 조립은 요청 origin, 없으면 `http://localhost:3000` | **runtime** | 바깥을 향하는 URL (Slack 매니페스트, MCP OAuth 콜백, MCP client ID 메타데이터 문서)을 만들 때 쓰는 scheme + host. 리버스 프록시 뒤에서는 요청 URL 이 bind 주소를 반영하므로 이 값은 설정에서 와야 한다. 요청 origin 단계는 요청이 손에 있는 일반 URL 조립에서만 적용된다. **거부된 사인인의 리디렉션(`/login?error=`)은 부팅 시 env 값으로 고정된다**: Better Auth 옵션은 한 번만 평가되므로 runtime 설정을 보지 못하고, env 가 비어 있으면 상대 경로가 되어 프록시 뒤에서 bind 주소 기준으로 해석될 수 있다. OIDC/Google 사인인을 쓰는 배포는 env 로도 설정하라. **MCP client ID 메타데이터 문서는 예외다**: 설정된 base 가 없으면 요청 origin 이나 localhost 를 추측하지 않고 503 으로 답한다. 그 URL 이 곧 OAuth `client_id` 이고 authorization server 가 가져가므로, loopback 이나 평문 http 값이면 흐름이 시작되기 전에 거부되고 provider 가 제공하는 경우 연결은 dynamic registration 으로 폴백한다. [SECURITY.md](SECURITY.md#mcp-oauth) 를 보라. |
 
 ### 임베딩 모델 선택
 
@@ -124,8 +124,7 @@ fail-open 이 될 수는 없다.
 ## 설정 화면
 
 `/settings`는 General·Plugins·Models·Keys 탭으로 구성한다. General은 서비스 URL·Artifact
-접근 방식·관리자와 허용 도메인, Plugins는 저장소와 브랜치, Keys는 GitHub 토큰·공유 및
-클라이언트 A2A 키를 관리한다. Models에는 프로바이더 연결·모델 선택·사용 설정·등록 모델
+접근 방식·관리자와 허용 도메인, Plugins는 저장소와 브랜치, Keys는 GitHub 토큰을 관리한다. Models에는 프로바이더 연결·모델 선택·사용 설정·등록 모델
 관리를 둔다. 프로바이더 키는 주소와 함께 Models의 연결 설정에서 관리한다.
 URL·목록·비밀값·선택값은 각각 주소 입력·태그 입력·비밀번호 입력·선택 컨트롤을 사용한다.
 저장은 현재 탭에서 변경한 필드만 전송하며 변경하지 않은 마스크나 다른 탭의 값은 전송하지 않는다.
@@ -196,7 +195,6 @@ Settings → General의 **가격 정보가 없는 모델**에서 이 정책을 �
 |---|---|---|---|
 | `MAX_RUN_DURATION_MS` | `600000` (10분) | — | 모든 진입점에 걸리는, 단일 런의 실제 경과 시간 상한. 멈춰 버린 provider 나 도구 호출이 무한정 돌거나 무한정 청구할 수 없다. 유효하지 않은 값은 경고와 함께 무시된다. Slack·Telegram·Teams 경로는 공용 메시징 파이프라인에서 추가로 고정된 3분 인터랙티브 데드라인(아래)을 적용하는데, 그것은 런을 짧게 만들 수만 있다. 런 슬롯 lease 는 이 값 + 60초, MCP OAuth 토큰 갱신 여유는 이 값 + 5분이다. 서명 URL 수명은 런 길이와 독립적으로 뷰 15분·지속되는 기록 7일이며 `src/shared/artifactUrlTtl.ts` 가 소유한다. |
 | `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | — | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 자기 `maxConcurrentRuns` 를 가진 멤버 tier(*코드에 고정된 제한* 참고)는 그 멤버 자신의 런에 대해 이 값을 덮어쓴다. 기본 `guest` tier 가 그런 값을 하나 들고 있다. `admin`/`member`, 프로젝트 토큰, 그리고 모든 기계 호출자는 이 값을 물려받는다. |
-| `MAX_CONCURRENT_RUNS_A2A` | `50` | — | **공유** A2A 키로 이뤄진 호출을 위한 별도 상한(최대 `1000`). 그 actor id 는 상수라서, 하나의 정체성이 거기의 모든 기계 호출자를 대표한다. 그러지 않으면 호출자별 제한이 A2A 표면 전체에 상한을 씌우게 된다. 이름이 붙은 클라이언트 키는 호출자 하나이며 사람과 마찬가지로 `MAX_CONCURRENT_RUNS_PER_ACTOR` 아래에 놓인다. |
 | `SCHEDULE_SCAN_TOKEN` | 미설정 | — | 모든 ticker 가 제시하는 단 하나의 자격증명(`X-Scan-Token`)이며, CronJob 이 POST 하는 세 엔드포인트가 공유한다: `/api/triggers/scan`(schedule), `/api/plugins/sync/scan`(plugins 저장소), `/api/catalog/reindex`(capability 카탈로그). 설정하지 않으면 이 배포에 ticker 가 없다는 뜻이다: 셋 다 503 으로 답하고 schedule 트리거는 결코 발화하지 않는다. 열리는 대신 꺼진다. |
 
 유효하지 않은 값(정수가 아니거나 음수, 또는 위 동시성 상한 초과)은 `0` 이 아니라 경고와 함께 기본값으로 떨어진다.
@@ -290,14 +288,6 @@ webhook* 은 주소가 바뀐 뒤 다시 가리키는 용도다). 그래서 `PUB
 `PUBLIC_BASE_URL/api/teams/messages/{project}` 를 보여 주고 운영자가 Azure Bot 의 messaging
 endpoint 에 붙여 넣는다 ([design/teams.md](design/teams.md)).
 
-## A2A
-
-| 변수 | 기본값 | Runtime | 설명 |
-|---|---|---|---|
-| `A2A_API_KEY` | 미설정 | **runtime** | 인바운드 A2A JSON-RPC 를 위한 공유 키 (`X-A2A-Key`). 이 표면은 이 값이 설정되지 않고 **그리고** 이름이 붙은 클라이언트 키도 하나도 없을 때만 꺼진다 (Settings → Keys → 클라이언트 키). 값을 지어내지 말고 `/settings` 에서 발급하라. |
-
-Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
-
 ## Workspace 실행
 
 Workspace 도구 사용 여부는 Agent 설정의 `parameters.workspaceTools`로 선택한다. 현재 설정에서
@@ -373,7 +363,6 @@ Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 �
 | `CHAT_RETENTION_DAYS` | `180` | — | Chat META는 마지막 활동, 화면 메시지는 각 `createdAt`, SDK Session은 저장 시점 기준이다. |
 | `WORKSPACE_RETENTION_DAYS` | `180` | — | Workspace 실행·승인·이벤트·암호화된 체크포인트 보존 기간이다. Sandbox가 정리된 Workspace의 META도 이 기간을 따른다. 실행·정리 중인 META는 컴퓨팅 자원 정리 전에 sweep되지 않는다. |
 | `TRIGGER_RUN_RETENTION_DAYS` | `30` | — | 실행한 이력의 `startedAt`, 아직 시작하지 않은 이력의 `queuedAt` 기준이다. |
-| `A2A_TASK_RETENTION_DAYS` | `1` | — | 일시적인 작업 상태로, `SendMessage` 이후 `GetTask`/`CancelTask` 가 가능할 만큼만 유지한다. |
 | `ARTIFACT_RETENTION_DAYS` | `180` | — | 런이 만들어 낸 것의 이름을 담는 행. 기본값은 `CHAT_RETENTION_DAYS` 에 맞췄다. 그것이 이미 생성된 이미지의 실효 수명이기 때문이다. **`CHAT_RETENTION_DAYS` 이상으로 유지하라**: 더 짧으면 대화에서 아직 보이는 그림이 자기 갤러리에서 먼저 사라진다. 이 창과 버킷의 lifecycle 규칙은 서로 독립된 두 설정이다. [OPERATIONS.md](OPERATIONS.md#행-보존) 를 보라. |
 | `AUDIT_RETENTION_DAYS` | `400` | — | 감사 행위의 `createdAt` 기준이다. |
 
@@ -436,14 +425,13 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | MCP OAuth 메타데이터 / 토큰 응답 | 각 `256,000 bytes` | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
 | MCP discovery 캐시 항목 수 | `200` | `src/infrastructure/mcp/discoveryCache.ts` |
 | 호스트당 managed MCP 서버 수 / 컨테이너당 메모리·swap·CPU·PID·writable tmpfs | `8` / `512MiB`·`512MiB`·`1`·`256`·`64MiB` | `src/application/mcp/managedMcpUseCases.ts`, `src/infrastructure/mcp/dockerProvisioner.ts` |
-| 원격 Agent 응답 (OpenAI 호환 / A2A) | `2,000,000 bytes` / `2 MiB` | `src/infrastructure/agent/dispatcher.ts`, `agentClient.ts`, `src/infrastructure/a2a/client.ts` |
+| 원격 Agent 응답 (OpenAI 호환) | `2,000,000 bytes` | `src/infrastructure/agent/dispatcher.ts`, `agentClient.ts` |
 | MCP 도구 호출 하나, 모델에 타임아웃 에러가 건네지기 전까지 (도구가 정당하게 몇 분씩 걸릴 수도 있다) | `120s` | `src/infrastructure/mcp/session.ts` |
 | MCP discovery. 모든 런의 첫 토큰이 지나는 크리티컬 패스 위에 있어서, 빠르게 실패하고 그 서버의 도구만 잃는다. **요청당**: 연결과 `tools/list` 가 각각 이 값을 받는다 (그래서 느린 서버 하나에 최대 ~20초). 캐시로 제공된 세션의 첫 도구 호출에서 일어나는 지연 연결도 이 값을 받는다 | `10s` | `src/infrastructure/mcp/session.ts` |
 | 런이 끝날 때 MCP 세션을 해제하기. 단계별로: 레거시 세션이 보내는 `DELETE`, 그다음 close | 각 `5s` | `src/infrastructure/mcp/session.ts` |
 | MCP OAuth well-known 문서 / 토큰 엔드포인트와 RFC 7591 등록 (상수 하나) | `10s` / `15s` | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
 | OpenAI 형태의 원격 agent 로 가는 transfer | `120s` | `src/infrastructure/agent/dispatcher.ts` |
-| A2A 원격 agent 로 가는 transfer. `capabilities.streaming` 을 광고하는 카드에서 이 값은 교환 전체가 아니라 **침묵**에 한계를 둔다. 타이머는 스트리밍되는 이벤트마다 리셋되고 총량은 런 데드라인이 제한한다. 광고하지 않는 카드에서는 블로킹 `SendMessage` 에 타이머를 리셋할 이벤트가 없으므로 같은 숫자가 요청 전체의 상한이 된다 | `120s` | `src/infrastructure/a2a/client.ts` |
-| 레지스트리가 외부 agent 에 보내는 "test message". OpenAI 형태다. `a2a` 항목의 테스트는 위의 A2A 클라이언트를 지나 그 `120s` idle 상한 아래 놓이고 뒤에 런 데드라인도 없으므로, 스트리밍 카드는 침묵으로만 제한된다 | `60s` | `src/infrastructure/agent/agentClient.ts` |
+| 레지스트리가 외부 OpenAI 호환 agent에 보내는 "test message" | `60s` | `src/infrastructure/agent/agentClient.ts` |
 | Slack Web API 호출 하나 / Slack 파일 전송 하나 | `30s` / `120s` | `src/infrastructure/slack/client.ts` |
 | Telegram Bot API 호출 하나 / Telegram 파일 전송 하나 | `30s` / `120s` | `src/infrastructure/telegram/client.ts` |
 | Bot Framework(Teams) 호출 하나 / 첨부 전송 하나 | `30s` / `120s` | `src/infrastructure/teams/client.ts` |
@@ -452,7 +440,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | 프로젝트 설정에 표시하는 최근 Telegram destination | `100` | `src/application/telegram/projectTelegram.ts` |
 | GitHub API 요청 하나 (plugins sync) | `15s` | `src/infrastructure/github/client.ts` |
 | 인터랙티브(Slack, Telegram, Teams) 런 데드라인 | `3` 분 | `src/shared/runDeadline.ts` |
-| 턴당 입력 이미지 수 / 이미지당 바이트(입력·생성·MCP·원격 A2A) | `4` / `5 MiB` | `src/domain/llm/imageLimits.ts` |
+| 턴당 입력 이미지 수 / 이미지당 바이트(입력·생성·MCP) | `4` / `5 MiB` | `src/domain/llm/imageLimits.ts` |
 | PDF에 삽입하는 PNG의 총 디코딩 픽셀 | `16,777,216` | `src/domain/llm/imageLimits.ts`의 `MAX_PDF_IMAGE_PIXELS` |
 | 앱 프로세스당 문서 워커 동시 실행 / 대기 작업 | `2` / `8` | `src/infrastructure/documents/workerPool.ts` |
 | 문서 작업 기한 (대기 포함) / 자식 V8 old-space | `30s` / `256MiB` | `src/infrastructure/documents/workerPool.ts` |

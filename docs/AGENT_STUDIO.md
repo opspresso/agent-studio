@@ -21,7 +21,7 @@ Agent Studio는 기업 내부에 설치하는 AI Agent Control Plane이다. 사�
 모델 채널을 구성하면 필수 부팅·로그인·실행·콘솔 경로를 공개 인터넷 없이 운영할 수 있다.
 
 파일 보관에는 S3 호환 저장소, 오디오와 Workspace에는 별도 worker가 필요하다. 외부 모델,
-Plugin sync, Slack·Telegram·Teams·GitHub·A2A는 배포가 선택하는 연결이다.
+Plugin sync, Slack·Telegram·Teams·GitHub는 배포가 선택하는 연결이다.
 문서 worker, 오디오 worker, Workspace Sandbox와 관리형 MCP는 서로 다른 실행 자원이다.
 
 애플리케이션은 Next.js App Router 기반의 단일 풀스택 앱이다. 이 저장소는 앱과 이미지,
@@ -41,7 +41,7 @@ Skill·MCP·하위 Agent binding과 실행 정책을 저장한다. 이미지 생
 
 [실행 설계](design/execution.md#project와-현재-설정)와 [설정 API](API.md#agent-현재-설정)가
 계약을 설명하며 [`configurationUseCases.ts`](../src/application/project/configurationUseCases.ts)가
-설정 접근·저장·마스킹을 소유한다. 기존 데이터는 [이전 절차](AGENT-MIGRATION.md)로 보존한다.
+설정 접근·저장·마스킹을 소유한다.
 
 ## Skill·Tool·MCP·Agent·Memory
 
@@ -50,7 +50,7 @@ Skill·MCP·하위 Agent binding과 실행 정책을 저장한다. 이미지 생
 | Skill | 모델이 필요할 때 읽는 Markdown 지침과 참고 파일 |
 | Tool | 입력 schema를 받아 실제 기능을 수행하는 함수 |
 | MCP | 외부 Tool·리소스와 자격 증명을 연결하는 프로토콜 |
-| 하위 Agent | 로컬 Project 또는 외부 OpenAI 호환/A2A 실행 대상 |
+| 하위 Agent | 로컬 Project 또는 외부 OpenAI 호환 실행 대상 |
 | Memory | 연결된 MCP 서버가 보관하는 장기 지식 |
 | SDK Session | 특정 Chat에서 재생할 정확한 모델·도구 이력 |
 | Workspace checkpoint | 파일·Git·native CLI Session의 복구 상태 |
@@ -166,8 +166,7 @@ Telegram·Teams는 Studio가 한정된 transcript를 보관한다. 중복 delive
 비멱등 작업을 자동 재생하지 않는다. [메시징 설계](design/messaging.md)를 보라.
 
 Webhook은 인증한 이벤트를 접수하고 현재 Agent 설정을 백그라운드 실행한다. Schedule은 외부 ticker가
-scan API를 호출해야 진행된다. A2A는 에이전트 간 task 프로토콜, AG-UI는 앱의 화면 이벤트와
-frontend tool 프로토콜이다. 각 표면의 권한·이력은 서로 독립적이다.
+scan API를 호출해야 진행된다. 각 표면의 권한·이력은 서로 독립적이다.
 정확한 요청·상태·응답은 [API](API.md), 자동화 동작은 [Trigger 설계](design/triggers.md)에 있다.
 
 ## 저장·보안·운영

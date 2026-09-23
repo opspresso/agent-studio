@@ -31,7 +31,6 @@ Project는 이름으로 호출하는 Agent다. 공개 범위·소유권·연동�
   시점에 전체 하위 그래프가 고정되는 것은 아니다. 승인 대기에는 설정·연결 fingerprint를
   보존해 변경된 상태의 재개를 거절한다.
 - 입력은 사용자 메시지이며 저장한 시스템 프롬프트와 함께 실행한다.
-  기존 행·시크릿·승인 대기의 보존과 전환은 [데이터 이전](../AGENT-MIGRATION.md)을 따른다.
 
 전체 HTTP 형태와 마스킹 규칙은 [Agent 설정 API](../API.md#agent-현재-설정),
 Project의 비용 정책은 [지출 가드](../OPERATIONS.md#지출-가드와-부하-가드)가 소유한다.
@@ -221,10 +220,10 @@ recorder가 없는 배포에서는 캡처 wrapper가 원래 chunk를 통과시�
 
 내장 File·SaveFile은 저장할 ID를 미리 예약하고 recorder가 같은 ID를 사용한다.
 편집본의 `derivedFrom`은 원본을 지목하며 덮어쓰지 않는다. 다른 표면도 `fileId`로 파일을
-참조할 수 있고 A2A는 URL part의 metadata에 전달한다.
+참조할 수 있다.
 읽기·편집 권한은 [문서 설계](documents.md#채널-간-파일-참조)를 따른다.
 
-Artifact는 project·actor·run ID·위임 경로를 기록한다. 이전 기록의 versionName은 읽기용으로만 보존한다.
+Artifact는 project·actor·run ID·위임 경로를 기록한다.
 `model`은 실제 생성자가 명시한 이미지 모델만 사용하고 부모 Agent 설정에서 추측하지 않는다.
 MCP가 준 bytes나 첨부처럼 모델을 확정할 수 없는 경우에는 비운다.
 저장 실패는 원래 응답을 실패로 바꾸지 않고 손실 건수와 제한된 원인 분류를 경고한다.

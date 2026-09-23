@@ -247,8 +247,7 @@ native ID와 부모 ID, 모델 토큰·비용을 저장한다. `prepare`에는 s
 Studio 런을 root로 만들고 저장된 `parentSpanId` 관계를 따라 span 계층을 내보낸다. 자식이 먼저
 완료되어 저장됐어도 부모부터 생성하며, 생략된 부모는 root에 연결한다. 타임스탬프·이름·상태와
 `app.span_id`·`app.parent_span_id`·`app.span.kind`·`app.span.author`, root의
-`app.trace_id`·프로젝트·호출자·대화 속성을 전송한다. 이전 Trace에 남아 있는 `versionName`만
-`app.version`으로 보낸다. OTLP 자체 ID는 새로 생성하며
+`app.trace_id`·프로젝트·호출자·대화 속성을 전송한다. OTLP 자체 ID는 새로 생성하며
 원래 SDK ID는 위 속성으로 대응한다. 세부 사용량과 원문을 제외한 native 메타데이터는 DB Trace에서 조회한다.
 
 기록의 정본은 DB 행이다. collector 장애는 `[otel]` 로그로 보고하고 실행을 실패시키지 않는다.
@@ -284,7 +283,7 @@ schedule scan이 없으면 위 DB sweep이 실행되지 않는다. 읽기는 만
 호출 주기와 backlog에 달려 있다. sweep 실패는 로그에 남고 다음 호출에서 다시 처리한다.
 
 고정 수명의 보조 상태에는 webhook 중복 claim, 메신저 delivery·참여·transcript,
-MCP OAuth state, 원격 A2A 대화와 동시성 슬롯이 있다. 수명은 기능 계약의 일부이며
+MCP OAuth state와 동시성 슬롯이 있다. 수명은 기능 계약의 일부이며
 [고정 제한](CONFIGURATION.md#코드에-고정된-제한)과 해당 설계 문서에서 확인한다.
 Chat replay log는 장기 이력이 아니라 실행 lease보다 오래 남는 재접속 버퍼다.
 
@@ -351,10 +350,9 @@ actor 에 대해 프로젝트의 비용 가드 다음, 슬롯 이전에 검사�
 
 ### 동시성 가드: fail-closed
 
-caller 당 `MAX_CONCURRENT_RUNS_PER_ACTOR` (기본 10); 인바운드 A2A 는 actor id 가 상수이므로
-자체의 `MAX_CONCURRENT_RUNS_A2A` (기본 50)를 쓴다. `0` 은 그 한도를 끈다. 한도를 넘으면 런은
+caller 당 `MAX_CONCURRENT_RUNS_PER_ACTOR` (기본 10)을 적용한다. `0` 은 그 한도를 끈다. 한도를 넘으면 런은
 `429` 와 짧은 `Retry-After` 로 거부되는데, **시작되기 전에** 거부되므로 usage 도 트레이스도
-남기지 않는다. 두 설정의 최대값은 저장 slot index가 표현하는 1000이다.
+남기지 않는다. 상한의 최대값은 저장 slot index가 표현하는 1000이다.
 
 운영상 중요한 성질이 둘이다. 슬롯은 프로세스 메모리가 아니라 **데이터베이스의 리스된 행**이므로
 한도가 정확하고 인스턴스 수만큼 **곱해지지 않으며**, 런 도중에 죽은 인스턴스는 그 점유를
@@ -464,7 +462,7 @@ sweep도 이 틱에 얹혀 있다**. 1분마다 이미 도는 유일한 것이�
 
 | 동작 | 무엇에 묶이는가 | 결과 |
 |---|---|---|
-| 런타임 설정 전파 | `SETTINGS_CACHE_TTL_MS` (5s) | 관리자 설정이나 회전된 A2A 키는 설정 캐시가 만료될 때까지 다른 곳에서 이전 값으로 동작할 수 있다. email 기반 member tier의 캐시는 별도 30초이며 쓰기 시 무효화는 프로세스 안에서만 일어난다. |
+| 런타임 설정 전파 | `SETTINGS_CACHE_TTL_MS` (5s) | 관리자 설정은 설정 캐시가 만료될 때까지 다른 곳에서 이전 값으로 동작할 수 있다. email 기반 member tier의 캐시는 별도 30초이며 쓰기 시 무효화는 프로세스 안에서만 일어난다. |
 | MCP 레지스트리 편집 | `MCP_DISCOVERY_CACHE_TTL_MS` / `MCP_MAX_SERVER_TTL_MS` | 한 인스턴스에서 한 편집이 그 구간만큼 다른 인스턴스들에게 보이지 않는다. |
 | 관리형 MCP | — | **호스트당 앱 인스턴스 하나.** 관리형 컨테이너가 게시하는 호스트 루프백 포트를 앱이 공유한다. |
 | 메트릭 카운터 | — | 프로세스 단위. 인스턴스들 사이의 집계는 스크레이프 계층에서 하라. |

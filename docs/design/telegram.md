@@ -139,8 +139,7 @@ context"), 쓰기가 실패하면 로그에 남는다. 턴은 쓰인 지 7일 �
 그렇다고 할 때만 토픽을 뜻한다 — 평범한 그룹에서는 답장 사슬의 뿌리를 뜻하고, 봇에게 단
 답장은 그룹 conversation 안의 후속이지 새 conversation 이 아니다. 개인 chat 은 그것이 존재하는 내내 하나의
 conversation 이고, 평범한 그룹은 그 안의 모두에게 하나의 conversation 이다 — 구성원들
-눈에도 그렇게 보인다. MCP 서버에 전달되는 키도, 바깥으로 나가는 A2A transfer 가 이어받는
-키도 같은 키다 ([agents-a2a.md](agents-a2a.md) 참고).
+눈에도 그렇게 보인다. MCP 서버에도 같은 대화 키를 전달한다 ([MCP](mcp.md) 참고).
 
 **누가 묻고 있는지**는 Agent 설정이 옵트인했을 때만(`parameters.callerContext`), 그리고
 update 가 나르는 만큼만 모델에 닿는다: 보낸 사람의 이름이고, `callerFrom` 이 프롬프트에

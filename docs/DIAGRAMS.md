@@ -1,5 +1,8 @@
 # 아키텍처 다이어그램
 
+유지하는 실행 경로를 표시한다. 제거 예정 연동과 이전 데이터 보관 형식은
+[아키텍처의 범위 안내](ARCHITECTURE.md)를 따른다.
+
 Agent Studio의 계층·요청·실행 정책·메시징·저장·worker 흐름을 요약한다.
 세부 계약은 각 그림 옆에 연결한 문서가 소유한다.
 
@@ -11,9 +14,9 @@ Agent Studio의 계층·요청·실행 정책·메시징·저장·worker 흐름�
 ```mermaid
 flowchart TB
   app["<b>app</b><br/>페이지 · API 라우트 핸들러 · 콘솔 컴포넌트"]
-  application["<b>application</b><br/>유스케이스 · LLM 엔진 · 실행 파사드 · 표면(chat/slack/telegram/a2a/trigger) · messaging"]
+  application["<b>application</b><br/>유스케이스 · LLM 엔진 · 실행 파사드 · 표면(chat/slack/telegram/teams/trigger) · messaging"]
   domain["<b>domain</b><br/>엔티티 · 리포지토리 포트 · 한계값 — 순수 TS"]
-  infrastructure["<b>infrastructure</b><br/>PostgreSQL · pgvector · S3 호환 오브젝트 스토어 · LLM 채널 · MCP · Slack · Telegram · Teams · A2A · net · crypto"]
+  infrastructure["<b>infrastructure</b><br/>PostgreSQL · pgvector · S3 호환 오브젝트 스토어 · LLM 채널 · MCP · Slack · Telegram · Teams · net · crypto"]
   lib["<b>lib</b><br/>composition root(container.ts) · auth/session · runtime settings · config"]
   shared["<b>shared</b><br/>의존성 없는 헬퍼 — @/ 를 import 하지 않는다"]
 
@@ -50,8 +53,6 @@ flowchart LR
     slack["POST /api/slack/events/{project}"]
     telegram["POST /api/telegram/webhook/{project}"]
     teams["POST /api/teams/messages/{project}"]
-    a2a["POST /api/a2a/{name} (JSON-RPC)"]
-    agui["POST /api/agui/{name} (AG-UI SSE)"]
     webhook["POST /api/webhook/{project}"]
     schedule["POST /api/triggers/scan"]
     audio["Audio worker 후처리"]
@@ -82,8 +83,6 @@ flowchart LR
   slack -->|"handleTurn → runAgent"| facade
   telegram -->|"handleTurn → runAgent"| facade
   teams -->|"handleTurn → runAgent"| facade
-  a2a --> facade
-  agui -->|"streamAguiRun"| facade
   webhook -->|"triggerRunnerDeps.run"| facade
   schedule -->|"triggerRunnerDeps.run"| facade
   audio -->|"backgroundTask"| facade
@@ -100,8 +99,8 @@ flowchart LR
 ```
 
 응답 모양은 표면마다 다르다: `predict`·`chat/completions` 는 완성 응답(또는 SSE), `agent` 는
-원시 청크 SSE, chat 은 자체 프레임 + 재생 로그, Slack·Telegram·Teams 는 플랫폼 메시지, A2A 는 태스크
-이벤트, AG-UI 는 프로토콜의 이벤트 스트림, 트리거는 이력 행. 청크의 계약은
+원시 청크 SSE, chat 은 자체 프레임 + 재생 로그, Slack·Telegram·Teams 는 플랫폼 메시지,
+트리거는 이력 행. 청크의 계약은
 [ARCHITECTURE.md#enginechunk-계약](ARCHITECTURE.md#enginechunk-계약).
 
 ## 3. 런 브래킷: 최상위 런을 감싸는 한 곳
@@ -191,14 +190,12 @@ flowchart TB
   slackdeps["src/app/api/slack/events/_lib/<br/>SlackEventDeps"]
   tgdeps["src/app/api/telegram/webhook/_lib/<br/>TelegramEventDeps"]
   teamsdeps["src/app/api/teams/messages/_lib/<br/>TeamsEventDeps"]
-  a2aroute["src/app/api/a2a/[name]/route.ts<br/>요청별 A2A SDK 핸들러 조립"]
   boot["src/instrumentation.ts<br/>부트: 설정 검증 · 스키마 마이그레이션 · 부트스트랩 관리자 · 감사 싱크 · 저장된 모델 연결 설정 · managed MCP 재개"]
 
   container --> chatdeps
   container --> slackdeps
   container --> tgdeps
   container --> teamsdeps
-  container --> a2aroute
   boot -.->|"런타임이 Node 서버일 때만 로드"| container
 ```
 
@@ -230,10 +227,9 @@ flowchart LR
 flowchart LR
   subgraph project["PROJECT#{name} 파티션"]
     meta["META (Project + 현재 configuration)"]
-    ver["LEGACYCONFIGURATION · VERSION#…<br/>이전 원본 보관, 실행에서 미사용"]
     tok["APITOKEN"]
     trig["TRIGGER#{id} · TRIGGERRUN#…"]
-    conn["MCPCONN#{server} · REMOTECTX#…"]
+    conn["MCPCONN#{server}"]
     jobs["AUDIOJOB#… · AUDIOSLOTS · AUDIOCONFIG"]
     policy["WORKSPACEPOLICY · REPOSITORYCREATE#…"]
   end
@@ -258,7 +254,6 @@ flowchart LR
     sev["SLACKEVENT#{eventId}"]
     sthread["SLACKTHREAD#{project}#{channel}#{ts}"]
     transcript["PROJECT 파티션 안: TELEGRAMUPDATE#… · TELEGRAMALBUM#… · TEAMSACTIVITY#… · TRANSCRIPT#{conversation}#TURN#…"]
-    a2atask["A2ATASK#{project}#{tenant:client}<br/>TASK#{taskId}"]
   end
   subgraph workspace["Workspace 영속 상태"]
     ws["WORKSPACE#{id}<br/>META · SESSION · SANDBOX · RUN · EVENT · APPROVAL · CONTINUATION"]

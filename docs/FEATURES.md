@@ -327,19 +327,16 @@ Docker와 Managed MCP 설정이 필요하다. Kubernetes 관리형 runtime은 �
 
 - 외부 Agent 목록·검색.
 - 이름·설명.
-- 프로토콜 선택: OpenAI-compatible / A2A.
-- 실행 endpoint 또는 Agent Card URL.
+- OpenAI-compatible 실행 endpoint.
 - HTTP 헤더·자격 증명.
 - 등록·편집·삭제.
 - 테스트 메시지 전송.
 - 응답·오류 확인.
 - 프로젝트 하위 Agent로 연결.
 - 자동 capability 검색 대상으로 사용.
-- 설정된 로컬 Agent의 A2A 목록 조회.
-- Agent Card URL 복사·JSON 조회.
 
 구현 근거: [외부 Agent 목록](../src/app/agents/page.tsx),
-[외부 Agent 상세](../src/app/agents/[name]/page.tsx), [A2A 설계](design/agents-a2a.md).
+[외부 Agent 상세](../src/app/agents/[name]/page.tsx), [외부 Agent 설계](design/agents.md).
 
 ## 9. Integrations·API Reference
 
@@ -366,7 +363,7 @@ Integrations에서 프로젝트 인증과 외부 연동을 설정하고 API Refe
 - 모델·사용량·비용·경고·종료 이유·출력 파일 반환.
 - 선택적 대화 ID 전달.
 - Endpoint·인증·요청/응답·오류 문서.
-- curl·Python·Node.js·AG-UI 예제.
+- curl·Python·Node.js 예제.
 - 예제 복사.
 
 API Reference는 프로젝트 주소로 현재 Agent 설정을 호출하는 예제를 제공한다.
@@ -415,35 +412,9 @@ API Reference는 프로젝트 주소로 현재 Agent 설정을 호출하는 예�
 
 배포 담당자가 준비한 Azure Bot·Teams App의 자격 증명을 연결한다.
 
-### A2A
-
-- Agent Card 조회·복사.
-- 공유 키·이름 있는 Client Key 인증.
-- 메시지 전송·스트리밍.
-- Task 조회·목록·취소·재구독.
-- 상태·문맥·시각 필터와 페이지 조회.
-- Task 결과 저장.
-- 텍스트·inline image 입력.
-- 텍스트·이미지·파일 출력.
-- 설정된 Agent 노출.
-
-호출자는 대화 메시지를 전달하고 Task 조회·재구독으로 실행 상태와 결과를 확인한다.
-
-### AG-UI
-
-- 외부 UI에서 설정된 Agent 실행.
-- 실행·텍스트·Reasoning·도구·하위 Agent 이벤트.
-- 이미지·파일·사용량·경고 이벤트.
-- Thread·Run ID.
-- 텍스트·이미지·문서 입력.
-- 클라이언트 context·state 전달.
-- Frontend tool 호출과 후속 요청으로 결과 전달.
-
-클라이언트가 전달한 state는 읽기 전용 문맥으로 사용한다.
-
 구현 근거: [연동 화면](../src/app/projects/[name]/integrations/page.tsx),
 [API Reference](../src/app/projects/[name]/api-reference/endpoints.ts),
-[메시징 설계](design/messaging.md), [A2A](design/agents-a2a.md), [AG-UI](design/agui.md).
+[메시징 설계](design/messaging.md).
 
 ## 10. Webhook·Schedules
 
@@ -800,7 +771,7 @@ Profile에서 본인 정보와 사용량을 조회한다.
 | General | Public Base URL, Artifact 접근 방식, 관리자 이메일·허용 도메인, 가격 미지정 등록 모델의 실행 정책 |
 | Plugins | Plugin GitHub 저장소·Branch |
 | Models | 프로바이더 연결, 모델 선택·등록 관리, 기본·Workspace·검색 모델 사용 설정 |
-| Keys | GitHub Token, 공유 A2A Key 생성·재발급·조회·복사, 이름 있는 A2A Client Key 생성·조회·폐기와 클라이언트별 실행 귀속 |
+| Keys | GitHub Token |
 
 ### 설정 공통
 
