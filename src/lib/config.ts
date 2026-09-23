@@ -1,5 +1,8 @@
 import { DEFAULT_MIN_SCORE, DEFAULT_RERANKER_MIN_SCORE } from "@/domain/catalog/types";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { MAX_RUN_SLOTS } from "@/domain/execution/runSlot";
+import { BRAND_ASSET_FILES, resolveBranding } from "@/shared/branding";
 import { parseKeyValueList, parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
 import { log } from "@/shared/logger";
@@ -34,6 +37,13 @@ export function assertRequiredConfig(): void {
     throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
   }
   decodeAes256Key(config.aesEncryptionKey);
+  const branding = config.branding;
+  for (const file of BRAND_ASSET_FILES) {
+    const path = join(process.cwd(), "public", "brands", branding.logo, file);
+    if (!existsSync(path)) {
+      throw new Error(`SERVICE_LOGO=${branding.logo} requires public/brands/${branding.logo}/${file}`);
+    }
+  }
 }
 
 /**
@@ -145,6 +155,9 @@ export function fractionEnv(name: string, fallback: number): number {
 }
 
 export const config = {
+  get branding() {
+    return resolveBranding(optionalEnv(process.env.SERVICE_NAME), optionalEnv(process.env.SERVICE_LOGO));
+  },
   get workspace() { return parseWorkspaceConfig(process.env); },
   get workspaceGitHub() {
     const auth = optionalEnv(process.env.WORKSPACE_GITHUB_AUTH);

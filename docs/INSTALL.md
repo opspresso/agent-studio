@@ -1,13 +1,13 @@
 # 설치와 배포 소유권
 
-Agent Studio 는 기업이 자기 네트워크 안에 설치해 운영하는 플랫폼이다. 이 저장소는 애플리케이션
+이 앱은 기업이 자기 네트워크 안에 설치해 운영하는 플랫폼이다. 이 저장소는 애플리케이션
 이미지와 로컬 개발 환경만 소유한다. 실제 배포 정의는 배포 환경의 저장소가 소유한다.
 
 | 환경 | 소유 위치 | 이 저장소가 제공하는 것 |
 |---|---|---|
 | localdev (Docker Compose) | 이 저장소의 `compose.yaml`, `deploy/local/` | 호스트에서 `pnpm dev`로 실행하는 앱, 독립 `agent-studio-local` PostgreSQL 18·MinIO와 로컬 MCP 서버 |
-| IDC | `../dockpad` | 릴리즈된 Agent Studio 이미지 |
-| EKS/Kubernetes | `../argocd-env-demo` | 릴리즈된 Agent Studio 이미지 |
+| IDC | `../dockpad` | `agent-studio` 릴리즈 이미지 |
+| EKS/Kubernetes | `../argocd-env-demo` | `agent-studio` 릴리즈 이미지 |
 
 IDC Compose나 Kubernetes manifest를 이 저장소에 복사하지 않는다. 배포 설정, ingress, secret,
 backup, rollout, ticker는 각 배포 저장소에서 관리한다.
@@ -53,7 +53,7 @@ Google도 필요하면 `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`을 함께 �
 
 기존 `OIDC_*`로 Keycloak을 연결한 설치는 그 설정을 유지할 수 있다. `oidc`와 `keycloak`은 서로
 다른 provider ID와 콜백을 사용하므로 같은 realm을 중복 등록하지 않는다. 공급자 전환 시 기존
-계정 키를 자동 이관하지 않는다. 앱 로그아웃은 Studio 세션만 종료하며 Keycloak SSO 세션은
+계정 키를 자동 이관하지 않는다. 이 서비스에서 로그아웃하면 앱 세션만 종료하며 Keycloak SSO 세션은
 유지한다. 토큰 검증과 접근 제한은 [SECURITY.md](SECURITY.md#인증)를 따른다.
 
 설정 항목의 의미는 [Keycloak OIDC 문서](https://www.keycloak.org/securing-apps/oidc-layers)와
@@ -63,16 +63,16 @@ Google도 필요하면 `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`을 함께 �
 
 Slack은 선택 연동이다. Agent Integrations의 Slack bot에서 생성한 매니페스트로
 Agent 전용 앱을 만들고 워크스페이스에 설치한다. Bot token과 Basic Information의 signing secret을
-Studio에 저장하고 이벤트 수신을 켠 뒤, Slack Event Subscriptions에서 생성된 Request URL의 검증을 확인한다.
+앱에 저장하고 이벤트 수신을 켠 뒤, Slack Event Subscriptions에서 생성된 Request URL의 검증을 확인한다.
 채널에서 사용하려면 봇을 해당 채널에 초대한다.
 Slack 기본 중단 버튼은 매니페스트의 `agent_session_stopped` 구독이 있어야 표시된다.
 기존 앱에도 해당 구독을 적용해야 하며, thread 안의 `!stop` 명령으로도 실행을 중단할 수 있다.
 
-Slack에서 Agent의 HTTPS 이벤트 URL에 접근할 수 있어야 하며, Studio는 Slack Web API에
+Slack에서 Agent의 HTTPS 이벤트 URL에 접근할 수 있어야 하며, 앱은 Slack Web API에
 접근할 수 있어야 한다. Socket Mode는 꺼 둔다. 공개 인터넷이 차단된 배포에서는 Slack 연동을 끄고
-Studio의 Chat·Agent 실행을 사용한다.
+앱의 Chat·Agent 실행을 사용한다.
 
-기존 앱 설정은 Studio 저장만으로 바뀌지 않는다. 생성된 매니페스트를 Slack의 App Manifest 설정에
+기존 Slack 앱 설정은 이 서비스에 저장만 해서는 바뀌지 않는다. 생성된 매니페스트를 Slack의 App Manifest 설정에
 다시 적용하고 권한이 바뀌면 앱을 재설치한다. 생성 매니페스트의 기능·권한 범위는
 [Slack 설계](design/slack.md#앱-매니페스트)를 따른다.
 
@@ -195,7 +195,7 @@ Webhook Secret과 Pull requests 이벤트를 설정한다. Workspace 메타데�
 ## localdev
 
 로컬 개발은 Docker Compose를 사용한다. OrbStack 또는 Docker Desktop의 Docker 엔진에서
-루트 `compose.yaml`로 PostgreSQL·MinIO를 실행하고, Agent Studio는 호스트에서 `pnpm dev`로
+루트 `compose.yaml`로 PostgreSQL·MinIO를 실행하고, 이 앱은 호스트에서 `pnpm dev`로
 실행한다. Node 24와 pnpm 11을 설치하고:
 
 ```bash
@@ -215,7 +215,7 @@ MinIO 서버와 초기화용 `mc` 이미지는 Quay의 `minio` 저장소에서 �
 고정 릴리스 태그는 루트 `compose.yaml`이 정본이다.
 
 루트 compose project 이름은 `agent-studio-local`로 고정되어 있다. PostgreSQL 18과 MinIO volume은
-Agent Studio 전용이다. `docker compose down -v`는 이 로컬 데이터를 삭제하므로 주의한다.
+이 앱 전용이다. `docker compose down -v`는 이 로컬 데이터를 삭제하므로 주의한다.
 
 Agent Plugins가 등록하는 사설 DNS 이름 그대로 MCP를 시험하려면 OrbStack에서:
 

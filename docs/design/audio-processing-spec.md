@@ -6,11 +6,11 @@
 개인 실행은 기존 MCP 인증과 검증된 email 문맥을 사용한다.
 
 Agent Memory 수신 측은 문서 수집·멱등 저장 계약을 제공해야 한다. MCP 결과의 source reference
-변환과 기본 설정·작업 UI를 제공한다. Studio의 delivery는 수신 서버가 필요한 도구와 idempotencyKey를
+변환과 기본 설정·작업 UI를 제공한다. 앱의 delivery는 수신 서버가 필요한 도구와 idempotencyKey를
 노출해야 활성화된다. 실행과 설치 조건은 [개발 안내](../DEVELOPMENT.md)와
 [설치 안내](../INSTALL.md#오디오-worker)를 따른다. 운영 Agent 생성·OAuth·스케줄 활성화는 별도 운영 작업이다.
 
-이 문서는 현재 Studio 구현의 계약이다. Agent Memory·출처 Plugin의 설명은 연동에 필요한
+이 문서는 현재 앱 구현의 계약이다. Agent Memory·출처 Plugin의 설명은 연동에 필요한
 상대 시스템의 계약이며, 해당 배포가 그 기능을 제공하거나 설정됐다는 뜻은 아니다.
 
 ## 목표와 설계 원칙
@@ -74,11 +74,11 @@ schedule은 검증된 owner email 문맥을 사용하고, cron 기본 요청에�
 
 | 소유자 | 재사용 | 오디오 처리에서 담당하는 기능 |
 | --- | --- | --- |
-| Studio `application/trigger/` | cron, 발생 claim, 동시 런 방지 | 선택적 실행 사용자 문맥 전달 |
-| Studio MCP | 프로젝트 연결·OAuth refresh·schema discovery | 결과 파일 참조와 재조회 계약 |
-| Studio 모델 카탈로그·runtime settings | Transcription 타입, provider·wire ID·가격 | 전사 포트·어댑터·사용량 집계 |
-| Studio object store | S3 호환 storage·제한된 읽기·삭제 | streaming import, 파일별 retention |
-| Studio 실행 facade | run bracket·Agent 실행·비용·trace | worker의 후처리 실행과 작업별 접근 범위 |
+| 앱 `application/trigger/` | cron, 발생 claim, 동시 런 방지 | 선택적 실행 사용자 문맥 전달 |
+| 앱 MCP | 프로젝트 연결·OAuth refresh·schema discovery | 결과 파일 참조와 재조회 계약 |
+| 앱 모델 카탈로그·runtime settings | Transcription 타입, provider·wire ID·가격 | 전사 포트·어댑터·사용량 집계 |
+| 앱 object store | S3 호환 storage·제한된 읽기·삭제 | streaming import, 파일별 retention |
+| 앱 실행 facade | run bracket·Agent 실행·비용·trace | worker의 후처리 실행과 작업별 접근 범위 |
 | Agent Memory | 기존 Bearer + email, 개인 ACL, `remember`, 문서 worker | 문서 수집 MCP와 수신 측 멱등 저장 |
 | agent-plugins | 출처별 도구 안내, 업무별 skill | 구현된 범용 도구를 조합하는 사용 지침 |
 
@@ -92,7 +92,7 @@ Agent Memory의 현재 인증·ACL·API 계약은 형제 저장소의 `docs/api.
 
 ## 책임과 실행 구조
 
-Studio는 파일·전사·Agent 실행·작업 상태를 소유한다. Agent Memory는 문서 처리·검색·Memory·ACL을
+앱은 파일·전사·Agent 실행·작업 상태를 소유한다. Agent Memory는 문서 처리·검색·Memory·ACL을
 소유한다. Plugin은 출처별 탐색 방법과 업무별 작성 지침을 소유한다. worker·MinIO 운영은 설치 환경이
 소유한다. 특정 출처의 목록 필드·도구 이름·계정 정보를 범용 worker에 하드코딩하지 않는다.
 
@@ -100,7 +100,7 @@ Studio는 파일·전사·Agent 실행·작업 상태를 소유한다. Agent Mem
 flowchart TD
   S[수동 또는 schedule Agent] --> Q[AudioJob submit]
   Q --> J[(영속 작업 상태)]
-  W[Studio worker] --> J
+  W[앱 worker] --> J
   W --> I[ImportFile 또는 기존 file ID]
   I --> O[(비공개 object storage)]
   O --> A[TranscriptionPort]
@@ -116,7 +116,7 @@ Agent는 source를 선택해 작업을 제출하고 실제 작업은 worker가 �
 스캔하지 않는다. 목록 탐색은 source 도구의 cursor와 설정한 페이지 한도를 따른다. 별도의 source 탐색 cursor를 영속화하는 기능은 제공하지 않는다.
 조회 실패·불완전 탐색을 `empty`로 표시하지 않는다.
 
-같은 Studio 이미지의 전용 worker 모드가 PostgreSQL `items` 작업을 bounded polling·claim한다.
+같은 앱 이미지의 전용 worker 모드가 PostgreSQL `items` 작업을 bounded polling·claim한다.
 새 queue 서비스를 필수로 도입하지 않고 `after()`나 문서 변환용 30초 process pool에 장기 전사를
 맡기지 않는다. Agent 런의 기본 10분 제한과 작업의 수명은 별개다.
 
@@ -336,11 +336,11 @@ unknown usage를 0으로 표시하지 않는다. 각 구간 전에 잔여 예산
 | `document_ingest_retry` | document ID·idempotencyKey·관측한 expectedAttempts → 기존 ID와 상태. 기존 문서 write 권한 필요 |
 | `remember` | 기존 입력 + 선택적 idempotencyKey → 기존 Memory ID·version |
 
-Studio는 도구 discovery에서 필요한 도구와 멱등 인자를 확인하고 저장된 결과를 직접 전달한다.
+앱은 도구 discovery에서 필요한 도구와 멱등 인자를 확인하고 저장된 결과를 직접 전달한다.
 문서 본문을 LLM에게 다시 쓰게 하지 않는다. 수신 서버의 본문·chunk·quota 제한은 그 서버의
-계약이며 Studio의 일반 문서 한도와 동일하다고 가정하지 않는다. 초과를 잘라 성공으로 표시하지 않는다.
+계약이며 앱의 일반 문서 한도와 동일하다고 가정하지 않는다. 초과를 잘라 성공으로 표시하지 않는다.
 
-수신 측은 `(설치 조직, 위임 user ID, operation, idempotencyKey)` 범위의 멱등성을 제공해야 한다. key에는 Studio가
+수신 측은 `(설치 조직, 위임 user ID, operation, idempotencyKey)` 범위의 멱등성을 제공해야 한다. key에는 앱이
 발급한 job UUID·산출물 종류·ordinal을 넣어 다른 출처와 구분한다. 같은 키·같은 payload hash는
 같은 ID를, 같은 키·다른 payload는 conflict를 반환한다. Bearer 교체로 identity를 바꾸지 않는다.
 기존 receipt 반환에도 현재 email 권한을 검사한다. claim·resource·receipt는 하나의 DB transaction,
@@ -413,13 +413,13 @@ checkpoint에 기록해 표시한다. 진행 막대는 각 단계 기준이며 �
 개인 파일·본문·후처리 run output·trace는 실행 사용자와 원래 project 범위로 제한하며 공개 project 갤러리에 노출하지 않는다.
 owner 변경·삭제 시 worker를 중단하고 object 정리를 완료/예약한다. 외부 sink 자료는 자동 삭제하지 않는다.
 목록은 cursor·limit으로 제한한다. 일반 로그에는 job·stage·safe error·model·크기·시간·attempt만
-기록하며 파일 URL·token·본문은 제외한다. 외부 source 장애가 Studio의 필수 offline 경로를 막지 않는다.
+기록하며 파일 URL·token·본문은 제외한다. 외부 source 장애가 앱의 필수 offline 경로를 막지 않는다.
 
 ## 최초 활용 설정: Plaud 녹음으로 회의록 작성
 
 이 절은 운영 시 구성할 사례이며 공통 코드의 필수 조건이 아니다.
 
-- 설치별 Studio 주소에 Agent를 구성하고 로컬에서 검증한 뒤 같은 설정을 운영 설치에 적용한다.
+- 설치별 앱 주소에 Agent를 구성하고 로컬에서 검증한 뒤 같은 설정을 운영 설치에 적용한다.
 - 출처는 기존 Plaud MCP와 프로젝트 OAuth를 연결한다. 목록 탐색·조회 방법은 plugin이 소유한다.
   `list_files`·`get_file`과 실제 schema를 사용하고 임시 오디오 URL을 범용 source ref로 변환한다.
   출처별 pagination 제약은 해당 skill과 실제 도구 schema를 따른다.
@@ -452,7 +452,7 @@ owner 변경·삭제 시 worker를 중단하고 object 정리를 완료/예약�
 
 domain/application/infrastructure 경계, row key의 `keys.ts` 소유, 기존 wiring site를 유지한다.
 새 도구 예약명·run entry point·단일 정책 소유는 architecture test와 OWNERSHIP에 반영한다.
-Unit은 경계에서 network·clock·random을 mock한다. Studio는 typecheck·unit·integration·build,
+Unit은 경계에서 network·clock·random을 mock한다. 앱은 typecheck·unit·integration·build,
 Memory는 해당 저장소 verify·integration, 사용자 문맥·UI 변경은 E2E를 수행한다.
-Studio integration DB는 `_test` 이름만 사용한다. 자원·retry 기본값과 소유 코드는
+앱 integration DB는 `_test` 이름만 사용한다. 자원·retry 기본값과 소유 코드는
 [CONFIGURATION.md](../CONFIGURATION.md#오디오-전사-설정)를 따른다.

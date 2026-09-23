@@ -135,7 +135,7 @@ export const en = {
   "models.selectedOnly": "Selected models only",
   "modelAdmin.chooseType": "Choose model type",
   "modelAdmin.manualHint": "Register the model ID directly. Edit limits, capabilities and pricing in Registered models.",
-  "modelAdmin.unsupportedType": "This output type is not supported by Studio.",
+  "modelAdmin.unsupportedType": "This output type is not supported here.",
   "modelAdmin.factsHint": "Provider metadata takes precedence. Missing facts are supplemented by the bundled published model catalog; unavailable limits and prices stay unspecified.",
   "models.capability.tools": "Tools",
   "models.capability.imageInput": "Vision",
@@ -429,7 +429,7 @@ export const en = {
   "auth.signOut": "Sign out",
   "auth.account": "Account",
   "login.title": "Sign in to continue",
-  "login.product": "Agent Studio, a platform for building and using AI agents.",
+  "login.product": "{serviceName}, a platform for building and using AI agents.",
   "login.domains": "Use an account on one of this deployment’s allowed domains.",
 
   // The signed-out landing page.
@@ -446,7 +446,7 @@ export const en = {
   "home.headline": "Build AI agents",
   "home.headlineAccent": " and put them to work.",
   "home.lede":
-    "Agent Studio connects models, skills, and tools in one platform. Configure an Agent and use it in conversations, APIs, messaging, and automation.",
+    "{serviceName} connects models, skills, and tools in one platform. Configure an Agent and use it in conversations, APIs, messaging, and automation.",
   "home.signInHint": "Sign in with an account from an allowed domain.",
   "home.proof.network": "From ideas to agents",
   "home.proof.networkNote": "Create, test, and run in one platform",
@@ -457,7 +457,7 @@ export const en = {
   "home.streamLabel": "Example of an agent run stream",
   "home.streamCaption": "agent run · text/event-stream",
   "home.streamLive": "example",
-  "home.coverage": "What Agent Studio covers",
+  "home.coverage": "What {serviceName} covers",
   "home.domain.projects": "Agents and settings",
   "home.domain.projectsBody":
     "Each Agent has one current configuration: its model, instructions, capabilities, and limits. Saved settings apply to the next run.",
@@ -492,11 +492,11 @@ export const en = {
     "Connect Agents to messengers, APIs, webhooks and schedules. Identity, history, approval rules and Workspace availability differ by entry point.",
   "home.domain.cost": "Cost & guards",
   "home.domain.costBody":
-    "Record Studio model-call cost by Agent, caller and day. Configured thresholds can alert or block new runs; external Workspace CLI usage is tracked separately by its provider.",
+    "Record model-call cost by Agent, caller and day. Configured thresholds can alert or block new runs; external Workspace CLI usage is tracked separately by its provider.",
   "home.domain.traces": "Traces & audit",
   "home.domain.tracesBody":
     "Inspect recorded model runs, tool activity and usage. Tracing and audit have separate scopes and retention; administrative changes and issued-secret access are audited.",
-  "home.guide.title": "Get started with Agent Studio",
+  "home.guide.title": "Get started with {serviceName}",
   "home.guide.body": "Learn to configure Agents, connect tools, use Workspaces and follow approval results. Check which capabilities each execution surface supports. The guide is readable without signing in.",
   "home.product": "An AI agent platform.",
 
@@ -617,7 +617,7 @@ export const en = {
   "guide.contents": "Contents",
 
   "guide.start.title": "Start here",
-  "guide.start.body": "Agent Studio manages Agents that answer requests and use tools. Read this guide without signing in. To start a conversation, sign in and choose an Agent in Chats; to build your own, follow the steps below.",
+  "guide.start.body": "{serviceName} manages Agents that answer requests and use tools. Read this guide without signing in. To start a conversation, sign in and choose an Agent in Chats; to build your own, follow the steps below.",
   "guide.start.account": "1. Sign in and check your access",
   "guide.start.accountBody":
     "Open the address provided by your organization and use the sign-in method shown. Profile shows your tier, usage, and limits. New accounts normally start as guest; if Agent creation is unavailable, ask an administrator to change your tier in Members.",
@@ -757,7 +757,7 @@ export const en = {
     "Save the tested Agent settings and issue an Agent token in Integrations; the owner’s tier must allow API tokens. Send it as Authorization: Bearer <token>. It is scoped to that Agent’s execution, uses a service actor and passes the owner’s email to bound MCP servers. Treat it as access to those configured tools, not as a browser login or a way to obtain Workspace tools.",
   "guide.api.address": "Use the Agent address",
   "guide.api.addressBody":
-    "Execution URLs start with /api/projects/{name}/ and use the Agent’s current saved settings. Send the task in messages. Use the Agent Studio host reachable from the calling system.",
+    "Execution URLs start with /api/projects/{name}/ and use the Agent’s current saved settings. Send the task in messages. Use the {serviceName} host reachable from the calling system.",
   "guide.api.input": "Send the task as messages",
   "guide.api.inputBody":
     "Send {\"messages\":[{\"role\":\"user\",\"content\":\"Summarize these notes\"}],\"stream\":false} to predict. Include supported inline image parts when needed. Images are generated or edited by the Agent’s image tools. Begin with one request and inspect its answer, warnings, and usage.",
@@ -769,7 +769,7 @@ export const en = {
     "For text predict or chat/completions, stream:true returns SSE; agent also provides an endpoint for streaming text and tool activity. Keep the connection open and handle warning, error, and completion events, because HTTP 200 alone does not prove the run succeeded. HTTP callers send their own message history. X-Conversation-Id can preserve downstream MCP conversation identity, but does not load past messages for you.",
   "guide.api.result": "Check the result and protect the token",
   "guide.api.resultBody":
-    "Inspect usage, warnings, and the completion reason as well as the answer. turn-limit or output-limit on predict means a partial result; chat completions reports length for limit stops. Download file results before their links expire. Keep tokens in the calling server's secret storage. Regenerating or revoking an Agent token invalidates the old token immediately, so update every caller. Inspect token totals in collected OpenAI responses or the Studio Usage page.",
+    "Inspect usage, warnings, and the completion reason as well as the answer. turn-limit or output-limit on predict means a partial result; chat completions reports length for limit stops. Download file results before their links expire. Keep tokens in the calling server's secret storage. Regenerating or revoking an Agent token invalidates the old token immediately, so update every caller. Inspect token totals in collected OpenAI responses or the Usage page.",
 
   "guide.integrations.title": "Bots and automation",
   "guide.integrations.body":
@@ -808,7 +808,7 @@ export const en = {
   "guide.security.visibilityBody":
     "A public Agent is accessible to signed-in users of this installation; it is not anonymous access to every API. Private Agents limit access to the owner, invited emails, and administrators. Invitations allow viewing and running, not editing. Owners and administrators manage Agent settings, integrations, traces, and Agent-wide artifacts. Machine credentials have their own access rules.",
   "guide.security.credentials": "Secrets and shared links",
-  "guide.security.credentialsBody": "Saved keys display four characters at each end; values of eight characters or fewer remain hidden. Replace opens a separate draft, and clearing or cancelling the draft keeps the saved key. Reset to environment explicitly removes a settings override. Studio-issued Agent and Webhook credentials share Show, Hide, Copy and supported generation or revocation controls. Copy appears only while plaintext is shown; replacement and revocation require confirmation. Browser preferences do not store credentials. Treat signed artifact URLs as credentials too.",
+  "guide.security.credentialsBody": "Saved keys display four characters at each end; values of eight characters or fewer remain hidden. Replace opens a separate draft, and clearing or cancelling the draft keeps the saved key. Agent and Webhook credentials issued by this service share Show, Hide, Copy and supported generation or revocation controls. Copy appears only while plaintext is shown; replacement and revocation require confirmation. Browser preferences do not store credentials. Treat signed artifact URLs as credentials too.",
   "guide.security.pii": "PII filtering is a limited protection",
   "guide.security.piiBody":
     "The Agent’s PII filtering replaces recognized patterns before sending model text and restores them in user-facing output. It is not complete anonymization: restored information can appear in tool arguments, saved answers, reasoning, and files. Discovery embedding/rerank queries and memory recall queries are outside this filter. Use approved model and tool services for sensitive work.",
@@ -837,7 +837,7 @@ export const en = {
   "guide.admin.auditBody":
     "Use Audit to inspect the selected date range, actor, action, target, and details. Credential reveal operations are recorded as well. Use these records to identify who changed configuration or accessed an issued secret, and use Agent Traces for execution diagnostics. Retention limits apply to both kinds of record.",
 
-  "guide.install.title": "Install Agent Studio",
+  "guide.install.title": "Install {serviceName}",
   "guide.install.body":
     "This section is for the deployment operator. Console users need the application address and an account. Obtain the release image and the deployment-specific launch, secret, ingress, and backup settings from the package provider.",
   "guide.install.prepare": "1. Prepare the services and image",

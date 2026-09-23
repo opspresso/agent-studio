@@ -244,7 +244,7 @@ native ID와 부모 ID, 모델 토큰·비용을 저장한다. `prepare`에는 s
 
 `OTEL_EXPORTER_OTLP_ENDPOINT`를 설정하면 저장된 Trace를 OTLP로 내보낸다.
 [설정](CONFIGURATION.md#관측성과-보존-기간)에 따라 endpoint와 headers를 주입한다. exporter는
-Studio 런을 root로 만들고 저장된 `parentSpanId` 관계를 따라 span 계층을 내보낸다. 자식이 먼저
+앱 런을 root로 만들고 저장된 `parentSpanId` 관계를 따라 span 계층을 내보낸다. 자식이 먼저
 완료되어 저장됐어도 부모부터 생성하며, 생략된 부모는 root에 연결한다. 타임스탬프·이름·상태와
 `app.span_id`·`app.parent_span_id`·`app.span.kind`·`app.span.author`, root의
 `app.trace_id`·프로젝트·호출자·대화 속성을 전송한다. OTLP 자체 ID는 새로 생성하며

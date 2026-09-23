@@ -12,6 +12,7 @@
  * boundary on every navigation, and this console has two languages, not twenty.
  */
 import type { Locale } from "./locale";
+import { DEFAULT_SERVICE_NAME } from "@/shared/branding";
 import { en, type MessageKey, type Messages } from "./messages/en";
 import { ko } from "./messages/ko";
 
@@ -45,7 +46,7 @@ export type Translate = (key: MessageKey, vars?: MessageVars) => string;
  * which only matters for a catalogue edited by hand between releases — the
  * types make it unreachable through the compiler.
  */
-export function translator(locale: Locale): Translate {
+export function translator(locale: Locale, serviceName = DEFAULT_SERVICE_NAME): Translate {
   const catalogue = CATALOGUES[locale];
-  return (key, vars) => interpolate(catalogue[key] ?? en[key], vars);
+  return (key, vars) => interpolate(catalogue[key] ?? en[key], { serviceName, ...vars });
 }

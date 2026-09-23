@@ -1,11 +1,10 @@
 "use client";
 
 /**
- * The active language, handed to the client tree by the root layout.
+ * The active language and service name, handed to the client tree by the root layout.
  *
- * Only the locale crosses the boundary — the catalogues are imported on both
- * sides (`translate.ts` says why), so this provider carries a two-character
- * string rather than 500 messages.
+ * Catalogues are imported on both sides (`translate.ts` says why); only the
+ * locale and deployment name cross the server/client boundary.
  *
  * There is no loading state and no mismatch to avoid: the server resolved the
  * cookie before rendering, so the first client render already agrees with the
@@ -14,23 +13,26 @@
  */
 import { createContext, useContext, useMemo } from "react";
 import { DEFAULT_LOCALE, type Locale } from "./locale";
+import { DEFAULT_SERVICE_NAME } from "@/shared/branding";
 import { translator, type Translate } from "./translate";
 
-const LocaleContext = createContext<Locale>(DEFAULT_LOCALE);
+const I18nContext = createContext({ locale: DEFAULT_LOCALE as Locale, serviceName: DEFAULT_SERVICE_NAME });
 
 export function I18nProvider({
   locale,
+  serviceName = DEFAULT_SERVICE_NAME,
   children,
 }: {
   locale: Locale;
+  serviceName?: string;
   children: React.ReactNode;
 }) {
-  return <LocaleContext.Provider value={locale}>{children}</LocaleContext.Provider>;
+  return <I18nContext.Provider value={{ locale, serviceName }}>{children}</I18nContext.Provider>;
 }
 
 /** The active language — for the toggle, and for date and number formatting. */
 export function useLocale(): Locale {
-  return useContext(LocaleContext);
+  return useContext(I18nContext).locale;
 }
 
 /**
@@ -40,6 +42,6 @@ export function useLocale(): Locale {
  * does not re-run its effect on every render.
  */
 export function useT(): Translate {
-  const locale = useLocale();
-  return useMemo(() => translator(locale), [locale]);
+  const { locale, serviceName } = useContext(I18nContext);
+  return useMemo(() => translator(locale, serviceName), [locale, serviceName]);
 }

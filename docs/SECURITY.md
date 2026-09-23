@@ -13,7 +13,7 @@ Better Auth의 `advanced.cookiePrefix`는 `agent-studio`다. 기본 세션 쿠�
 접두어를 사용한다. Agent Memory의 `agent-memory` 쿠키와 분리하며 이전 `better-auth` 쿠키는
 읽지 않는다. 접두어 변경을 배포하면 기존 브라우저 세션은 다시 로그인해야 한다.
 
-Better Auth 1.7 이 이 앱의 커넥션 풀 위에서 라이브러리 자신의 Postgres 어댑터로 돈다.
+Better Auth 1.7은 앱의 커넥션 풀 위에서 라이브러리 자신의 Postgres 어댑터로 돈다.
 `user`, `session`, `account`, `verification` 은 그것이 소유하는 테이블이고(`migrations.ts` 가
 만든다), email·token 의 유일성은 테이블의 유니크 제약이다.
 
@@ -36,8 +36,8 @@ issuer·JWKS가 있어야 등록하며 ID 토큰의 서명·issuer·audience와 
 검증한다. 로그인 버튼은 설정의 존재를 나타내므로 discovery 실패 시에도 표시되지만 인증은
 실패한다. 제공자 복구 뒤 앱을 재시작해 discovery를 다시 읽는다. Keycloak issuer는 배포 운영자가
 환경 변수로 지정하며 사내 주소를 허용한다. 브라우저와 서버 모두 그 주소에 접근할 수 있어야 한다.
-Keycloak role을 Studio tier로 매핑하지 않는다. 기존 관리자 설정과 멤버 tier 정책을 적용한다.
-Keycloak으로 로그인한 사용자의 앱 로그아웃은 Studio 세션만 종료하며 Keycloak SSO 세션은 유지한다.
+Keycloak role을 앱 tier로 매핑하지 않는다. 기존 관리자 설정과 멤버 tier 정책을 적용한다.
+Keycloak으로 로그인한 사용자의 앱 로그아웃은 앱 세션만 종료하며 Keycloak SSO 세션은 유지한다.
 
 `STAGE=alpha|prod`는 로그인 수단이 하나도 없으면 부팅을 거부한다(`assertAccessControlConfig`);
 `local` 은 `scripts/dev-session.ts` 가 세션을 만들어 주므로 없어도 된다. 로그인은 수단과
@@ -268,7 +268,7 @@ project token 은 대신 SHA-256 해시로 저장돼 있다. 검증은 되지만
 
 ### 발급한 시크릿의 접두사
 
-Agent Studio 가 발급하는 시크릿은 GitHub 의 `ghp_`/`gho_` 처럼 제품과 종류를 밝히는 접두사를
+이 앱이 발급하는 시크릿은 GitHub 의 `ghp_`/`gho_` 처럼 제품과 종류를 밝히는 접두사를
 지녀(`src/shared/generatedSecret.ts`), 유출된 문자열이 무엇을 여는지 추적할 수 있다:
 
 | 접두사 | 시크릿 |

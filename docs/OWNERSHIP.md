@@ -44,7 +44,7 @@
 | Agent 실행과 완료 응답 수집 | `src/application/execution/runProject.ts` | 코드 |
 | 런의 프롬프트가 자기 caller 를 이름으로 불러도 되는가 | `src/application/execution/deps.ts` 의 `callerFor` | 구조 |
 | tool 결과가 무엇을, 어떤 순서로 해야 하는가 | `src/application/runtime/output.ts` 의 `writeToolResult` | 구조 |
-| SDK Agent·Handoff·Agent-as-Tool 조립과 동시 호출의 identity | `src/application/runtime/agent.ts`, `boundAgent.ts`; SDK가 실행을 소유하고 Studio가 호출별 자원을 연결한다 | 코드 |
+| SDK Agent·Handoff·Agent-as-Tool 조립과 동시 호출의 identity | `src/application/runtime/agent.ts`, `boundAgent.ts`; SDK가 실행을 소유하고 앱이 호출별 자원을 연결한다 | 코드 |
 | Workspace Runtime 모델 선택·호환성 | `domain/workspace/runtimeModels.ts`; 저장은 `application/workspace/runtimeModels.ts`, 실행 자격증명은 `lib/runtime-settings.ts` | 코드 |
 | 모델 이력·승인 체크포인트·revision과 저장 예산 | `src/application/runtime/session.ts`; 저장 CAS와 tombstone은 `src/infrastructure/db/repositories/runtimeSessionRepository.ts` | 코드 |
 | SDK native span의 로컬 수집과 안전한 메타데이터 변환 | `src/application/runtime/tracing.ts` | 코드 |
@@ -205,13 +205,14 @@
 | 만료 행을 지우는 틱 | `src/lib/container.ts`의 `sweepExpiredRows`: items, Better Auth session, runtime_sessions를 정리한다. 호출은 `src/app/api/triggers/scan/route.ts`가 담당한다 | 코드 |
 | Better Auth 의 `user` 행을 멤버로 읽기. 스토어가 소유하지 않는 테이블에 대한 plain SQL | `src/infrastructure/db/repositories/memberRepository.ts` | 코드 |
 | 어떤 로그인 수단이 켜져 있는가 | `src/lib/config.ts` 의 `authProviders`. `auth.ts` 가 그대로 조립하고 로그인 페이지가 그대로 그린다 | 코드 |
-| Studio 인증 쿠키의 접두어 | `src/shared/authCookies.ts` 의 `AUTH_COOKIE_PREFIX`. Better Auth 설정과 페이지 게이트가 함께 사용하며 개발 세션은 Better Auth context의 쿠키 이름을 사용한다 | 코드 |
+| 앱 인증 쿠키의 접두어 | `src/shared/authCookies.ts` 의 `AUTH_COOKIE_PREFIX`. Better Auth 설정과 페이지 게이트가 함께 사용하며 개발 세션은 Better Auth context의 쿠키 이름을 사용한다 | 코드 |
 | 어떤 페이지가 공개인가 | `src/shared/pageAccess.ts` 의 `isPublicPagePath` | 코드 |
 
 ## 저장·공통·화면
 
 | 결정 | 소유자 | 확인 |
 |---|---|---|
+| 배포의 표시 이름과 로고 폴더·자산 URL | `src/shared/branding.ts`; 환경 읽기와 부팅 시 자산 검사는 `src/lib/config.ts` | 코드 |
 | 어떤 스토리지 에러가 조건부 쓰기의 실패를 뜻하는가 | `src/application/errors.ts` | 구조 |
 | audit 행을 어떻게 쓰는가 | `src/application/audit/recordAudit.ts` | 구조 |
 | 프로젝트 산출물을 읽을 수 있는 사람. 쓰기와 같은 규칙, 기록만 하지 않는다 | `src/application/project/projectUseCases.ts` 의 `assertProjectOutputReadable` | 구조 |
@@ -248,7 +249,7 @@
 | 브랜드 팔레트와 컴포넌트 기본값 | `src/app/theme.ts` | 코드 |
 | 페이지·섹션 제목과 경로 탭 | `src/app/_components/PageHeader.tsx`, `SectionHeading.tsx`, `PageTabs.tsx` | 코드 |
 | 외부 키의 교체 초안과 저장된 마스크 구분 | `src/app/_components/SecretInput.tsx` | 코드 |
-| Studio 발급 키의 표시·숨기기·복사와 변경 확인 | `src/app/_components/SecretControl.tsx`; API 기능·권한은 각 호출자가 제공한다 | 코드 |
+| 앱 발급 키의 표시·숨기기·복사와 변경 확인 | `src/app/_components/SecretControl.tsx`; API 기능·권한은 각 호출자가 제공한다 | 코드 |
 | tool 호출을 그에 답한 결과와 짝짓기 | `src/app/_lib/toolPairs.ts` | 코드 |
 | 한 tool 의 트래픽을 한 행으로 그리기 | `src/app/_components/ToolRow.tsx` | 코드 |
 | 런의 추론을 한 블록으로 그리기 | `src/app/_components/ReasoningRow.tsx` | 코드 |

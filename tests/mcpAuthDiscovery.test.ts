@@ -48,6 +48,7 @@ function useCases(
   let server = opts.server ?? SERVER;
   const stored: McpServer[] = [];
   const deps = {
+    serviceName: "Agent Studio",
     lifecycleClaims: opts.lifecycleClaims ?? new Set<string>(),
     mcps: opts.repository ?? {
       get: async (name: string) => (name === server.name ? { ...server } : null),

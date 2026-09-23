@@ -251,7 +251,7 @@ Settings → Models에서 연결·등록·사용 설정을 관리한다. Self-ho
 - 동기화 후 capability 재색인.
 
 Plugin은 원본 동기화로 관리한다. 항목 삭제는 사용자가 명시적으로 선택한다.
-MCP header credential은 Studio의 자격 증명 설정에서 관리한다.
+MCP header credential은 앱의 자격 증명 설정에서 관리한다.
 
 구현 근거: [Plugin 목록](../src/app/plugins/page.tsx),
 [동기화 보고서](../src/app/_components/PluginSyncSummary.tsx),

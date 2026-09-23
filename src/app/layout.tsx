@@ -19,21 +19,23 @@ import "@mantine/notifications/styles.css";
 import "@mantine/charts/styles.css";
 import "./globals.css";
 
-/*
- * `template` is what names the tab, and it is the reason every route segment
- * carries a `layout.tsx` that renders nothing but its children: 24 of the 29
- * pages are `"use client"`, and a client component cannot export `metadata`.
- * The segment layout is the only place left to say what the page is called, so
- * a bare one there is deliberate — deleting it as an empty file puts the tab
- * back to reading `Agent Studio` like every other one.
- *
- * A page that names itself gets `<name> · Agent Studio`; anything under it that
- * does not — every project sub-tab — inherits the nearest ancestor that did.
- */
-export const metadata: Metadata = {
-  title: { default: "Agent Studio", template: "%s · Agent Studio" },
-  description: "Build and operate production AI agents.",
-};
+/** Page titles and icons use the deployment's runtime branding. */
+export function generateMetadata(): Metadata {
+  const branding = config.branding;
+  return {
+    title: { default: branding.name, template: `%s · ${branding.name}` },
+    applicationName: branding.name,
+    description: "Build and operate production AI agents.",
+    icons: {
+      icon: [
+        { url: branding.faviconUrl, sizes: "any", type: "image/x-icon" },
+        { url: branding.favicon32Url, sizes: "32x32", type: "image/png" },
+        { url: branding.icon192Url, sizes: "192x192", type: "image/png" },
+      ],
+      apple: [{ url: branding.appleTouchUrl, sizes: "180x180", type: "image/png" }],
+    },
+  };
+}
 
 /*
  * The two faces, self-hosted at build time so nothing is fetched from a font
@@ -71,6 +73,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
    * line-breaking rules to apply to Hangul.
    */
   const locale = await resolveLocale();
+  const branding = config.branding;
 
   return (
     <html
@@ -87,11 +90,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body>
         <MantineProvider theme={theme} defaultColorScheme="auto">
-          <I18nProvider locale={locale}>
+          <I18nProvider locale={locale} serviceName={branding.name}>
             <Notifications position="top-right" />
             <ViewerProvider viewer={viewer}>
               <ImageViewerProvider>
                 <AppLayout
+                  branding={branding}
                   version={version}
                   viewer={viewer}
                   userImage={user?.image ?? null}

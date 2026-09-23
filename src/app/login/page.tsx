@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
+import Image from "next/image";
 import { Alert, Anchor, Card, Center, Stack, Text, ThemeIcon, Title } from "@mantine/core";
-import { IconRobot } from "@tabler/icons-react";
 import { SignInButton } from "@/components/SignInButton";
 import { config } from "@/lib/config";
 import { getSessionUser } from "@/lib/session";
@@ -36,7 +36,8 @@ export default async function LoginPage({
 
   // The refusal itself stays in English: it is an `AppError`-shaped string from
   // `shared/signInError.ts`, which the console does not translate.
-  const error = signInErrorMessage(params.error);
+  const branding = config.branding;
+  const error = signInErrorMessage(params.error, branding.name);
   const t = await getT();
 
   return (
@@ -44,7 +45,7 @@ export default async function LoginPage({
       <Card maw={460} w="100%" padding="xl">
         <Stack gap="lg" align="center" ta="center">
           <ThemeIcon size={52} variant="light" color="brand" radius="lg">
-            <IconRobot size={28} stroke={1.6} />
+            <Image src={branding.logoUrl} alt="" width={32} height={32} priority />
           </ThemeIcon>
           {error ? (
             <Alert color="red" variant="light" w="100%" ta="left">

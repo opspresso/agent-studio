@@ -19,6 +19,10 @@ describe("signInErrorMessage", () => {
     expect(message).toContain("administrator");
   });
 
+  it("names the selected service in a domain refusal", () => {
+    expect(signInErrorMessage(EMAIL_DOMAIN_NOT_ALLOWED, "AgentOps")).toContain("AgentOps");
+  });
+
   it("survives Better Auth's underscore mangling", () => {
     // The code crosses the wire as the thrown error's message, which the OAuth
     // callback rewrites with `split(" ").join("_")`. A code with a space in it

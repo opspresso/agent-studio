@@ -13,6 +13,7 @@
 import { cookies, headers } from "next/headers";
 import { isLocale, negotiateLocale, LOCALE_COOKIE, type Locale } from "./locale";
 import { translator, type Translate } from "./translate";
+import { config } from "@/lib/config";
 
 /**
  * The cookie if it names a language we speak, otherwise what the browser asked
@@ -32,5 +33,5 @@ export async function resolveLocale(): Promise<Locale> {
 
 /** `const t = await getT()` — the translator, for a server component. */
 export async function getT(): Promise<Translate> {
-  return translator(await resolveLocale());
+  return translator(await resolveLocale(), config.branding.name);
 }

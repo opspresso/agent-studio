@@ -10,11 +10,13 @@
  * So the wire carries a code with no spaces in it, and the words a person reads
  * are chosen here instead of sent.
  */
+import { DEFAULT_SERVICE_NAME } from "./branding";
+
 export const EMAIL_DOMAIN_NOT_ALLOWED = "EMAIL_DOMAIN_NOT_ALLOWED";
 
 const MESSAGES: Record<string, string> = {
   [EMAIL_DOMAIN_NOT_ALLOWED]:
-    "Your account isn't allowed to access Agent Studio. Contact your administrator if you think this is a mistake.",
+    "Your account isn't allowed to access {serviceName}. Contact your administrator if you think this is a mistake.",
 };
 
 /**
@@ -41,12 +43,13 @@ export const KEYCLOAK_PROVIDER_ID = "keycloak";
  * this mapping existed can still send a whole sentence naming its domains —
  * rendering it back is the disclosure the code above exists to prevent.
  */
-export function signInErrorMessage(code: string | undefined): string | undefined {
+export function signInErrorMessage(code: string | undefined, serviceName = DEFAULT_SERVICE_NAME): string | undefined {
   if (!code) {
     return undefined;
   }
   // Own keys only: `?error=constructor` would otherwise find
   // `Object.prototype.constructor` and print a function's source where the
   // generic line belongs — the address bar is where this value comes from.
-  return (Object.hasOwn(MESSAGES, code) ? MESSAGES[code] : undefined) ?? GENERIC;
+  const message = Object.hasOwn(MESSAGES, code) ? MESSAGES[code] : undefined;
+  return message?.replace("{serviceName}", serviceName) ?? GENERIC;
 }

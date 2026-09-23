@@ -1,6 +1,6 @@
 # 개발
 
-Agent Studio 를 로컬에서 셋업하고, 실행하고, 검증하는 방법.
+이 앱을 로컬에서 셋업하고, 실행하고, 검증하는 방법.
 
 관련 문서: 모든 변수는 [CONFIGURATION.md](CONFIGURATION.md), 테스트가 강제하는 레이어 규칙은
 [ARCHITECTURE.md](ARCHITECTURE.md), 변경이 지켜야 하는 관례는
@@ -35,7 +35,7 @@ test -f .env.local || cp .env.example .env.local
 
 ## 로컬 서비스 (Docker Compose)
 
-루트 `compose.yaml`로 PostgreSQL·MinIO를 실행하고, Agent Studio는 호스트에서 `pnpm dev`로
+루트 `compose.yaml`로 PostgreSQL·MinIO를 실행하고, 이 앱은 호스트에서 `pnpm dev`로
 실행한다. `.env.local`의 DB·object-store 연결 값은 `.env.example`의 Compose 기본값을 사용한다.
 
 ```bash
@@ -55,9 +55,9 @@ Next.js는 `.env.local`을 읽지만 별도 CLI 스크립트는 자동으로 읽
 
 `compose.yaml`은 `agent-studio-local` project에 PostgreSQL 18과 MinIO 전용 volume을 만든다.
 Agent Memory는 별도 project와 포트를 사용하므로 서로 독립적으로 시작하고 종료할 수 있다.
-`docker compose down -v`는 Agent Studio의 로컬 데이터를 삭제하므로 명시적 확인 없이 실행하지 마라.
+`docker compose down -v`는 이 앱의 로컬 데이터를 삭제하므로 명시적 확인 없이 실행하지 마라.
 
-`.env.example` 의 기본 object-store 설정은 Agent Studio MinIO(:9000, console :9001)를 가리킨다.
+`.env.example` 의 기본 object-store 설정은 이 앱의 MinIO(:9000, console :9001)를 가리킨다.
 `minio-init`이 `agent-studio` bucket을 멱등하게 만든다.
 
 ## 로컬 MCP (Docker Compose: deploy/local)
@@ -131,7 +131,7 @@ Memory 설치를 `localhost`에 띄우고 문서 worker를 켠다. 합성 사용
 `localhost` MCP 연결을 허용한다. ASR·후처리 모델은 계속 로컬 mock을 사용한다.
 
 이 모드는 실제 MCP schema discovery·email 전달·문서 ready 대기·Memory receipt를 확인한다.
-Studio 측 fixture는 정리하지만 수신 측에는 합성 문서 2건과 Memory 1건이 남으므로 검증 후
+앱 측 fixture는 정리하지만 수신 측에는 합성 문서 2건과 Memory 1건이 남으므로 검증 후
 전용 Memory DB·버킷을 폐기한다. 기존 사용자 데이터가 있는 Memory 설치에 연결하지 않는다.
 
 ```bash

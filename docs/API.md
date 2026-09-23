@@ -1,6 +1,6 @@
 # API 레퍼런스
 
-Agent Studio 의 HTTP 계약: 안내 대상 라우트, 각각이 어떻게 인증하는지, 그리고 자명하지 않은
+이 앱의 HTTP 계약: 안내 대상 라우트, 각각이 어떻게 인증하는지, 그리고 자명하지 않은
 것들의 요청 / 응답 형태와 에러 케이스.
 
 어떤 표면이 *왜* 이런 모습인지에 대한 설계 근거는
@@ -1253,7 +1253,7 @@ byteSize?, url } ]` 와 스트림의 `choices[0].delta.files` 프레임이다. �
 이것이 없으면 이 표면에서는 성능이 깎인 런과 깨끗한 런이 같은 응답이 된다.
 
 OpenAI 완료형 응답에는 `usage`가 포함되지만 스트리밍 응답에는 usage 프레임이 없다.
-스트림의 토큰 합계는 Studio 사용량·Trace에서 확인한다. raw Agent 스트림은 `usage` 축을 제공한다.
+스트림의 토큰 합계는 앱 사용량·Trace에서 확인한다. raw Agent 스트림은 `usage` 축을 제공한다.
 
 ### `POST /api/projects/{name}/agent`
 
@@ -1550,7 +1550,7 @@ GET /api/projects/{name}/traces/{traceId}
 두 엔드포인트 모두 소유자와 effective admin으로 제한된다(그 외에는 403). agent 런은 항상
 기록한다. SDK 실행은 Agent·모델·도구·
 Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`, 종류·이름·상태·시간과
-모델 사용량을 보존하고 text 자식은 같은 Studio Trace의 native 계층에 들어간다.
+모델 사용량을 보존하고 text 자식은 같은 앱 Trace의 native 계층에 들어간다.
 `prepare`에는 준비한 capability 수와 발견한 이름 최대 20개를 기록한다.
 
 원본 프롬프트와 도구 결과는 span에 저장하지 않는다. 실행 오류·경고에는 잘린 원문 오류가

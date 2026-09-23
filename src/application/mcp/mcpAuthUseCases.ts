@@ -44,6 +44,7 @@ import { assertAllowedUrl } from "@/application/registry/registryUseCases";
 import { skipsUrlGuard } from "@/domain/mcp/types";
 import { createOAuthState, createPkcePair } from "@/shared/pkce";
 import { log } from "@/shared/logger";
+import { DEFAULT_SERVICE_NAME } from "@/shared/branding";
 import { maskedMcpAuth } from "./mcpViews";
 import { mcpTokenTarget, registryClientMismatch } from "./mcpOAuthClient";
 
@@ -173,9 +174,8 @@ export const MCP_OAUTH_CALLBACK_PATH = "/api/mcps/oauth/callback";
  *
  * One document per project rather than one for the deployment, because the
  * document is what an authorization server shows the person approving the
- * connection: a single one would ask them to grant access to "Agent Studio" with no
- * way to tell which project is asking, where dynamic registration named the
- * project in every client it created.
+ * connection. Its client name includes this deployment's display name and the
+ * Agent name so the reader can identify both.
  */
 export const MCP_CLIENT_METADATA_PATH = "/api/mcps/oauth/client-metadata";
 
@@ -213,11 +213,12 @@ export function clientMetadataUrl(baseUrl: string, projectName: string): string 
 export function clientMetadataDocument(
   baseUrl: string,
   projectName: string,
+  serviceName = DEFAULT_SERVICE_NAME,
 ): Record<string, unknown> {
   const base = trimBase(baseUrl);
   return {
     client_id: clientMetadataUrl(base, projectName),
-    client_name: `Agent Studio — ${projectName}`,
+    client_name: `${serviceName} — ${projectName}`,
     client_uri: base,
     redirect_uris: [`${base}${MCP_OAUTH_CALLBACK_PATH}`],
     grant_types: ["authorization_code", "refresh_token"],
@@ -317,6 +318,7 @@ function parseGrantedScopes(scope: string): string[] {
 }
 
 export interface McpAuthUseCasesDeps {
+  serviceName: string;
   lifecycleClaims?: Set<string>;
   mcps: McpRepository;
   projects: ProjectRepository;
@@ -834,7 +836,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         } else if (server.auth.registrationEndpoint) {
           const registered = await deps.oauth.register({
             registrationEndpoint: server.auth.registrationEndpoint,
-            clientName: `Agent Studio — ${projectName}`,
+            clientName: `${deps.serviceName} — ${projectName}`,
             redirectUri: callback,
             scopes,
             // The method the token requests will prove themselves with: a

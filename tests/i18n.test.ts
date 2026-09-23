@@ -91,6 +91,11 @@ describe("the catalogues", () => {
 });
 
 describe("translator", () => {
+  it("uses the deployment name in branded copy", () => {
+    expect(translator("en", "AgentOps")("home.coverage")).toBe("What AgentOps covers");
+    expect(translator("ko", "AgentOps")("login.product")).toBe("AgentOps에서 AI 에이전트를 만들고 활용하세요.");
+  });
+
   it("answers from the catalogue of the locale it was built for", () => {
     expect(translator("en")("locale.label")).toBe(en["locale.label"]);
     expect(translator("ko")("locale.label")).toBe(ko["locale.label"]);

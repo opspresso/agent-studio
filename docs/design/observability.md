@@ -98,7 +98,7 @@ subagent transfer 가 다른 project 에서 하는 호출도 여전히 런을 �
 
 ## Trace
 
-Agent 런은 항상 기록한다. Studio Trace는 준비 단계,
+Agent 런은 항상 기록한다. 앱 Trace는 준비 단계,
 SDK native span과 최상위 종료 상태를 한정된 행으로 저장한다.
 
 ```ts
@@ -111,7 +111,7 @@ TraceSpan { spanId, parentSpanId?, kind: 'model' | 'tool' | 'subagent' | 'guardr
 
 `runtime/tracing.ts`는 SDK 기본 exporter를 로컬 processor로 교체한다. Agent, 모델 generation,
 function tool, Handoff, MCP 도구 listing과 Guardrail의 native span ID·부모 ID를 보존한다.
-동시 위임도 SDK가 만든 계층에 남으며 text 자식마다 별도의 Studio Trace를 만들지 않는다.
+동시 위임도 SDK가 만든 계층에 남으며 text 자식마다 별도의 앱 Trace를 만들지 않는다.
 이미지 생성·편집도 호출한 이미지 모델의 generation span을 해당 function tool 아래에 남기며,
 텍스트 모델과 같은 사용량 필드로 토큰·비용을 기록한다.
 
@@ -119,7 +119,7 @@ function tool, Handoff, MCP 도구 listing과 Guardrail의 native span ID·부�
 시간, 상태와 숫자형 사용량만 변환한다. 모델의 실제 비용과 cache/reasoning token을 보존한다.
 `TraceRecorder`는 native 모드에서 청크를 보고 같은 model/tool span을 다시 만들지 않는다.
 
-SDK 실행 전 `memory`와 `tools` 준비는 Studio `prepare` span이다. 바인딩·발견한 capability
+SDK 실행 전 `memory`와 `tools` 준비는 앱 `prepare` span이다. 바인딩·발견한 capability
 개수와 최대 20개의 이름, 손실과 준비 오류를 기록하며 원문 query/description은 기록하지 않는다.
 MCP 준비 실패가 기록되어도 실행이 계속된 경우 Trace 전체를 실패로 처리하지 않는다.
 

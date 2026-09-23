@@ -46,12 +46,10 @@ export const config = {
    * answer a programmatic caller with a 401, never a redirect to an HTML page —
    * and the static asset paths, which have no session to speak of.
    *
-   * `icon.png` is the app-directory icon convention (`src/app/icon.png`), so it
-   * is a route like any other and the matcher reaches it: without the exclusion
-   * the browser tab on `/login` asks for the favicon, gets a redirect back to
-   * `/login`, and renders HTML where an image should be.
+   * Branding assets must load on public pages such as `/login` as well as in
+   * the authenticated console.
    */
   matcher: [
-    "/((?!api/|_next/|apple-touch-icon.png|favicon-32.png|favicon.ico|icon-192.png|icon.png|logo.png).*)",
+    "/((?!api/|_next/|brands/|favicon\\.ico$).*)",
   ],
 };

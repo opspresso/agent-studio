@@ -1,7 +1,10 @@
-# Agent Studio
+# agent-studio
 
 기업이 자기 네트워크 안에 설치해 운영하는 AI 에이전트 플랫폼이다. Agent를 만들고 현재 모델·프롬프트·도구 설정을 저장해 콘솔·API·메신저·자동화에서
-호출한다. Studio가 권한·자격 증명·비용·기록을 관리하고 OpenAI Agents SDK가 모델 턴과 도구 실행을 담당한다.
+호출한다. 앱이 권한·자격 증명·비용·기록을 관리하고 OpenAI Agents SDK가 모델 턴과 도구 실행을 담당한다.
+
+배포 화면의 이름과 로고는 `SERVICE_NAME`·`SERVICE_LOGO`로 선택한다. 기본값은 Agent Studio이며
+AgentOps 자산도 포함한다. API 경로와 저장 키의 `agent-studio` 식별자는 표시 이름과 별개다.
 
 한 설치가 한 기업의 경계다. 사내 PostgreSQL, 모델 엔드포인트와 로그인 수단으로 구성하면
 공개 인터넷 없이 부팅·로그인·실행·콘솔을 사용할 수 있다. 외부 모델과 SaaS 연동은 선택 사항이다.
@@ -29,7 +32,7 @@ S3 호환 저장소가 필요하다. 오디오·Workspace는 각각 별도 worke
 ## 로컬에서 시작하기
 
 로컬 개발은 **Docker Compose**를 사용한다. OrbStack 또는 Docker Desktop의 Docker 엔진에서
-PostgreSQL·MinIO를 실행하고, Agent Studio는 호스트에서 `pnpm dev`로 실행한다.
+PostgreSQL·MinIO를 실행하고, 앱은 호스트에서 `pnpm dev`로 실행한다.
 Node.js 24와 프로젝트가 고정한 pnpm 11을 준비한다.
 
 ```bash

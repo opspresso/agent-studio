@@ -37,8 +37,8 @@ Project의 비용 정책은 [지출 가드](../OPERATIONS.md#지출-가드와-�
 
 ## Native Agent Runtime
 
-Agent Studio는 AgentOps / Control Plane이며 OpenAI Agents SDK가 기본 Agent Runtime이다.
-Studio는 현재 설정·바인딩·권한·자격 증명·한도·저장을 준비하고, SDK의 `Agent`와 `Runner`가
+이 앱은 Agent 운영 Control Plane이며 OpenAI Agents SDK가 기본 Agent Runtime이다.
+앱은 현재 설정·바인딩·권한·자격 증명·한도·저장을 준비하고, SDK의 `Agent`와 `Runner`가
 모델 턴·도구 실행·Handoff·Agent-as-Tool·Guardrail·승인 중단과 재개를 수행한다.
 `src/application/runtime/`가 SDK 계약을 직접 사용한다. 자체 모델/도구 루프는 두지 않는다.
 SDK의 각 기능을 어디까지 제공하는지와 선택적 실행 환경의 도입 조건은
@@ -46,7 +46,7 @@ SDK의 각 기능을 어디까지 제공하는지와 선택적 실행 환경의 
 
 ```mermaid
 flowchart TB
-  surface["Chat · API · 메시징 · Trigger"] --> control["Studio Control Plane<br/>현재 설정 · 권한 · 비용/동시성 가드 · 바인딩"]
+  surface["Chat · API · 메시징 · Trigger"] --> control["앱 Control Plane<br/>현재 설정 · 권한 · 비용/동시성 가드 · 바인딩"]
   control --> runtime["SDK Agent + Runner"]
   runtime --> model["SDK ModelProvider<br/>OpenAI / 호환 gateway / vLLM"]
   runtime --> capabilities["SDK Tool · MCPServer"]
@@ -64,21 +64,21 @@ flowchart TB
 |---|---|
 | Skill | 읽을 수 있는 지식과 지침. `Skill` 도구로 필요한 본문/파일을 점진적으로 읽는다 |
 | Tool | 실행 가능한 기능. SDK가 호출·결과를 관리하며 주입된 JSON Schema 검증기가 실행 전 인자를 검사한다 |
-| MCP | 외부 도구 프로토콜. Studio가 검증한 연결과 alias 스냅샷을 SDK `MCPServer`로 제공한다 |
+| MCP | 외부 도구 프로토콜. 앱이 검증한 연결과 alias 스냅샷을 SDK `MCPServer`로 제공한다 |
 | Memory | Agent가 선택한 장기 지식/문맥. MCP recall 결과는 discovery와 프롬프트 준비에 사용한다 |
 | Session | 특정 대화의 정확한 모델/도구 이력. Memory와 별도 저장·수명주기를 가진다 |
 | Policy | 입력 Guardrail, 차단 도구, 승인이 필요한 도구 및 플랫폼 실행 한도 |
-| Credential | Studio가 endpoint별로 해석하는 비밀. 모델 요청 시점과 도구 dispatch 경계에서 주입한다 |
+| Credential | 앱이 endpoint별로 해석하는 비밀. 모델 요청 시점과 도구 dispatch 경계에서 주입한다 |
 
 `agentAssembly.ts`는 실제 실행과 Prompt preview의 도구·지침을 함께 조립한다. 실행할 수 없는
 기능과 정책으로 차단한 기능은 모델에게 제공하지 않는다. MCP 연결의 SSRF 검증, OAuth,
-사용자/대화 헤더와 연결 정리는 기존 Studio 경계가 소유하며 SDK의 전역 이름 기반 도구
+사용자/대화 헤더와 연결 정리는 앱의 연결 경계가 소유하며 SDK의 전역 이름 기반 도구
 캐시는 사용하지 않는다. 한 사용자에게 준비한 도구 목록을 다른 자격 증명으로 재사용하지 않는다.
 
 ### 모델과 실행
 
 `runAgent`의 모델·도구 반복은 SDK가
-수행하며, Studio 모델 wrapper는 모델별 설정·PII·사용량·컨텍스트 예산과 마지막 턴 정책을 적용한다.
+수행하며, 앱 모델 wrapper는 모델별 설정·PII·사용량·컨텍스트 예산과 마지막 턴 정책을 적용한다.
 마지막 허용 턴에는 도구를 제공하지 않고 현재 정보로 답하도록 지시한다. SDK의 `maxTurns`도
 동시에 강제한다. 제공되지 않은 도구와 잘못된 인자는 SDK의 오류 결과/실패 계약을 따른다.
 
@@ -116,7 +116,7 @@ SDK function tool 동시성은 5다. 실제 실행에 진입한 도구만 결과
 Agent-as-Tool은 SDK가 별도 실행을 관리한다. 후자의 요청에는 최신 SDK Session 이력에서
 만든 한정된 배경 문맥을 전달한다.
 
-Studio는 요청된 대상의 현재 설정을 준비하고 순환, 깊이 5, 모델/비용 정책을 검사한다.
+앱은 요청된 대상의 현재 설정을 준비하고 순환, 깊이 5, 모델/비용 정책을 검사한다.
 자식은 부모에게 남은 턴 수 이하로 제한되며 추가 Agent-as-Tool 병렬 위임을 제공하지 않는다.
 필요한 로컬 Handoff와 이미지 도구는 자식에도 제공할 수 있다. 자식 실패는 부모의 오류
 도구 결과와 경고가 되고, 부모는 남은 정보로 답할 수 있다.
@@ -155,7 +155,7 @@ Chat 삭제는 tombstone으로 늦게 끝난 실행의 이력 재생성을 막�
 
 ### 로컬 Tracing
 
-SDK의 기본 공개 exporter는 로컬 `TracingProcessor`로 교체한다. 각 Agent의 Studio Trace에
+SDK의 기본 공개 exporter는 로컬 `TracingProcessor`로 교체한다. 각 Agent의 앱 Trace에
 native Agent·generation·function·MCP listing·Guardrail·Handoff span을 연결하며 native
 span ID와 부모 ID를 보존한다. 모델 입력·출력, 도구 인자와 credential은 수집하지 않는다.
 승인 대기 실행은 `awaiting-approval` 상태다. 선택적인 운영 OTLP 전송은 배포가 구성한
