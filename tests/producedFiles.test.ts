@@ -165,6 +165,23 @@ describe("withAddressedFiles", () => {
     expect(out[0]).toMatchObject({ author: "writer" });
   });
 
+  it("keeps a nested file's transfer and trace identity when signing fails", async () => {
+    const authored: EngineChunk = {
+      author: "writer", authorPath: ["planner", "writer"], transferId: "transfer-1", traceId: "trace-1",
+      delta: { content: "the other output remains" },
+      file: stored.file,
+    };
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const out = await drain([authored], async () => { throw new Error("signer unavailable"); });
+    logged.mockRestore();
+    expect(out[0]).toMatchObject({
+      author: "writer", authorPath: ["planner", "writer"], transferId: "transfer-1", traceId: "trace-1",
+      delta: { content: "the other output remains" },
+      warning: expect.stringContaining("could not be offered for download"),
+    });
+    expect(out[0]).not.toHaveProperty("file");
+  });
+
   it("passes every other chunk through untouched", async () => {
     const others: EngineChunk[] = [{ delta: { content: "hi" } }, { done: true }];
     expect(await drain(others, sign)).toEqual(others);

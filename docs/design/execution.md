@@ -219,6 +219,7 @@ producer마다 저장 로직을 두지 않아 이미지 builtin·하위 Agent·M
 recorder가 없는 배포에서는 캡처 wrapper가 원래 chunk를 통과시킨다.
 파일 소비자는 `producedFiles.ts`로 저장 참조·URL·손실을 처리하며, bytes가 있다는 이유만으로
 영속 다운로드를 제공했다고 보지 않는다. 파일 bytes는 모델 문맥에 들어가지 않는다.
+파일 주소를 만들 수 없으면 해당 축만 경고로 바꾸고, 같은 chunk의 위임 출처와 다른 출력 축은 유지한다.
 
 내장 File·SaveFile은 저장할 ID를 미리 예약하고 recorder가 같은 ID를 사용한다.
 편집본의 `derivedFrom`은 원본을 지목하며 덮어쓰지 않는다. 다른 표면도 `fileId`로 파일을

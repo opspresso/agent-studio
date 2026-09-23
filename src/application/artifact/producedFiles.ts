@@ -173,7 +173,8 @@ export async function* withAddressedFiles(
       continue;
     }
     if (outcome.warning) {
-      yield { ...(chunk.author ? { author: chunk.author } : {}), warning: outcome.warning };
+      const { file: _unaddressable, ...otherAxes } = chunk;
+      yield { ...otherAxes, warning: outcome.warning };
     }
   }
 }
