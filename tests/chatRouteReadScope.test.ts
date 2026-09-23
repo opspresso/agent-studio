@@ -58,6 +58,17 @@ describe("GET /api/chats", () => {
     expect(chats.listByOwner).toHaveBeenLastCalledWith("owner@x.com", { limit: 500 });
   });
 
+  it("narrows each tab before paging and rejects unknown kinds", async () => {
+    chats.listByOwner.mockClear();
+    await listGet(new Request("http://x/api/chats?kind=chat&limit=7"));
+    expect(chats.listByOwner).toHaveBeenLastCalledWith("owner@x.com", { kind: "chat", limit: 7 });
+    await listGet(new Request("http://x/api/chats?kind=workspace&limit=7"));
+    expect(chats.listByOwner).toHaveBeenLastCalledWith("owner@x.com", { kind: "workspace", limit: 7 });
+    const invalid = await listGet(new Request("http://x/api/chats?kind=unknown"));
+    expect(invalid.status).toBe(400);
+    expect(chats.listByOwner).toHaveBeenCalledTimes(2);
+  });
+
   it("falls back to the default rather than reading nonsense as a page size", async () => {
     chats.listByOwner.mockClear();
     await listGet(new Request("http://x/api/chats?limit="));

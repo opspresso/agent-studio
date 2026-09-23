@@ -247,10 +247,14 @@ Chat이 없는 Playground·직접 Workspace 화면 요청에는 원래 채팅을
 플러그인의 `workspace-task`, `sandbox-task`는 이 기능을 사용하는 공용 작업 지침이다.
 Agent의 설명·시스템 프롬프트에는 역할을 쓰고, 계정·저장소·변경사항은 사용자 요청에 둔다.
 
-Chats의 Workspace 선택에서 프로젝트, Runtime, 선택적 저장소·기준 브랜치와 작업 내용을
-입력한다. 기존 Chat 실행과 Workspace 실행은 같은 채팅 화면의 별도 경로를 사용한다.
-목록은 `workspaceId`로 Workspaces와 대화를 나눠 표시하고, 각 그룹은 접을 수 있다.
+Chats 페이지의 Workspace 선택에서 프로젝트, Runtime, 선택적 저장소·기준 브랜치와 작업 내용을
+입력한다. 기존 Chat 실행과 Workspace 실행은 같은 화면의 별도 경로를 사용한다.
+목록은 `workspaceId`의 유무로 Chats와 Workspaces를 조회 단계에서 나누어 탭으로 표시하고,
+선택한 탭은 브라우저에 보관한다.
+현재 열린 항목은 목록의 강조 표시와 해당 탭의 표식으로 확인한다.
 Workspace 화면은 유형 배지와 실행 출력·Diff·검사 결과, 명시적 Git·배포 승인을 보여 준다.
+출력은 표시할 첫 출력 이벤트 또는 종료된 빈 로그를 읽은 뒤 마지막 행을 즉시 보여 주고,
+사용자가 위로 이동하면 새 출력을 따라가지 않는다.
 승인 링크의 `#actions`는 Git·배포 탭을 바로 연다. 새 요청은
 동일한 Workspace와 native Session에서 이어지며 페이지를 떠나도 서버 작업은 계속된다.
 

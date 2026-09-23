@@ -136,6 +136,7 @@ export const chatRepository: ChatRepository = {
       forward: false,
       limit: boundedPageLimit(options.limit ?? CHAT_PAGE, MAX_CHAT_PAGE),
       notExpiredAt: Math.floor(Date.now() / 1000),
+      ...(options.kind ? { attributePresence: { attribute: "workspaceId", exists: options.kind === "workspace" } } : {}),
     });
     return items.map(fromChatItem);
   },

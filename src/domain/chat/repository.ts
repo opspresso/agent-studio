@@ -12,7 +12,12 @@ import type { ActiveChatRun, Chat, ChatMessage } from "./types";
  */
 export interface ChatListOptions {
   limit?: number;
+  kind?: ChatListKind;
 }
+
+/** Workspace-owned chats have a stored workspaceId; ordinary Chats do not. */
+export const CHAT_LIST_KINDS = ["chat", "workspace"] as const;
+export type ChatListKind = (typeof CHAT_LIST_KINDS)[number];
 
 /**
  * How many chats a listing hands back when nobody says, and the most it will.
@@ -35,9 +40,8 @@ export interface ChatRepository {
   /**
    * A person's chats, newest first.
    *
-   * `limit` is a ceiling, not a hint: the sidebar reads this list again every
-   * time a run starts or ends, and an unbounded read there paginated every
-   * chat the person had ever opened on each of those.
+   * `kind` narrows the owner partition before `limit` counts. `limit` is a
+   * ceiling, not a hint: the sidebar reads this list again when runs change.
    */
   listByOwner(ownerEmail: string, options?: ChatListOptions): Promise<Chat[]>;
   create(chat: Chat): Promise<void>;

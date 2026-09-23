@@ -91,6 +91,26 @@ describe("the catalogues", () => {
 });
 
 describe("translator", () => {
+  it.each(["en", "ko"] as const)("uses plural collection names and singular item names in %s", locale => {
+    const t = translator(locale);
+    expect(t("nav.chats")).toBe("Chats");
+    expect(t("chat.list")).toBe("Chats");
+    expect(t("chat.kind")).toBe("Chat");
+    expect(t("workspace.list")).toBe("Workspaces");
+    expect(t("workspace.kind")).toBe("Workspace");
+    expect(t("chat.history")).toBe("Chats & Workspaces");
+    for (const [key, label] of [
+      ["nav.agents", "Agents"], ["nav.artifacts", "Artifacts"], ["nav.plugins", "Plugins"],
+      ["nav.skills", "Skills"], ["nav.tools", "Tools"], ["nav.models", "Models"],
+      ["nav.members", "Members"],
+    ] as const) expect(t(key)).toBe(label);
+    for (const [key, noun] of [
+      ["agents.new", "Agent"], ["skills.new", "Skill"],
+      ["artifacts.deleteTitle", "Artifact"], ["modelAdmin.add", "Model"],
+      ["members.member", "Member"],
+    ] as const) expect(t(key)).toContain(noun);
+  });
+
   it("uses the deployment name in branded copy", () => {
     expect(translator("en", "AgentOps")("home.coverage")).toBe("What AgentOps covers");
     expect(translator("ko", "AgentOps")("login.product")).toBe("AgentOps에서 AI 에이전트를 만들고 활용하세요.");

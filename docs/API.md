@@ -519,7 +519,7 @@ admin 전용이다. 멤버는 이 워크스페이스에 로그인한 적이 있�
 Chat 은 소유자에게만 비공개이고, agent project 에 대해서만 실행된다.
 
 ```
-GET    /api/chats?limit=                     → { chats, hasMore }
+GET    /api/chats?kind=chat|workspace&limit= → { chats, hasMore }
 POST   /api/chats                            { projectName, firstMessage, images?, documents? } → SSE
 GET    /api/chats/{chatId}?sinceSeq=         → { chat, messages, activeRun?, pendingApproval? }
 DELETE /api/chats/{chatId}                   → 204
@@ -533,6 +533,8 @@ DELETE /api/chats/{chatId}/runs/{runId}      → { cancelled }
 최신 순으로 몇 개인지이며 기본값과 상한은 `CHAT_PAGE` / `MAX_CHAT_PAGE`
 (`src/domain/chat/repository.ts`) 가 정한다. `hasMore` 가 참이면 더 큰 `limit` 으로 다시
 묻고, 상한에 닿으면 거짓이 되어 멈춘다(커서가 아닌 이유는 [design/chat.md](design/chat.md#사이드바와-스레드가-읽는-범위)).
+`kind` 는 선택 사항이다. `chat`은 `workspaceId`가 없는 Chat, `workspace`는 그 필드가 있는 Chat을
+조회하며 종류 필터는 `limit` 전에 적용된다. 사이드바는 탭별로 `limit`과 `hasMore`를 관리한다.
 `sinceSeq` 는 그 시퀀스 *다음* 부터의 메시지만 돌려준다. 런이 끝났을 때 스레드가 묻는 것이고,
 없으면 전체 기록을 읽고 그 안의 이미지·파일 주소를 매번 다시 서명한다. `sinceSeq=0` 은 "없음"이
 아니라 유효한 경계다(첫 메시지의 시퀀스가 0 이다).

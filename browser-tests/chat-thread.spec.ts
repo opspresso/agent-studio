@@ -16,7 +16,7 @@ const THREAD: ChatWithMessages = {
   chat: CHAT,
   messages: [{ chatId: CHAT.chatId, seq: 0, role: "user", content: "Existing message", createdAt: CHAT.createdAt }],
 };
-const LOAD_ERROR = "The conversation could not be loaded.";
+const LOAD_ERROR = "The Chat could not be loaded.";
 
 test.beforeAll(async () => {
   const bundle = await build({ entryPoints: ["browser-tests/fixtures/chat-thread.tsx"], bundle: true, write: false,
@@ -61,6 +61,7 @@ for (const [failure, fail] of Object.entries(failures)) {
     expect(sends).toBe(0);
     await page.getByRole("button", { name: "Try again", exact: true }).click();
     await expect(page.getByText("Existing message", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Conversation" })).toBeVisible();
     await expect(page.getByRole("alert")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Try again", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
@@ -100,6 +101,21 @@ test("retains not-found behavior for an initial 404", async ({ page }) => {
   await expect(page.getByText("Chat not found.", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Try again", exact: true })).toHaveCount(0);
+});
+
+test("opens a long Chat at the latest message and keeps manual scroll control", async ({ page }) => {
+  const messages = Array.from({ length: 80 }, (_, seq) => ({
+    chatId: CHAT.chatId, seq, role: seq % 2 ? "assistant" as const : "user" as const,
+    content: `History ${seq}`, createdAt: CHAT.createdAt,
+  }));
+  await page.route("**/api/chats/chat-1**", route => route.fulfill({ json: { chat: CHAT, messages } satisfies ChatWithMessages }));
+  await page.goto(base);
+  const viewport = page.locator(".mantine-ScrollArea-viewport");
+  await expect(page.getByText("History 79", { exact: true })).toBeAttached();
+  await expect.poll(() => viewport.evaluate(element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop))).toBeLessThan(3);
+  await viewport.hover();
+  await page.mouse.wheel(0, -2000);
+  await expect(page.getByRole("button", { name: "Jump to the latest message" })).toBeVisible();
 });
 
 test("retains streamed content and its error while a failed tail read retries", async ({ page }) => {

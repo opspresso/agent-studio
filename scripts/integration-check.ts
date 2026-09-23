@@ -603,6 +603,23 @@ async function main() {
       1,
       "the sidebar's page size bounds the read",
     );
+    const listOwner = `it-chat-list-${suffix}@example.com`;
+    const ordinaryListChatId = `it-chat-list-ordinary-${suffix}`;
+    const workspaceListChatId = `it-chat-list-workspace-${suffix}`;
+    await chatRepository.create({ chatId: workspaceListChatId, title: "Workspace list item", ownerEmail: listOwner,
+      workspaceId: `it-workspace-${suffix}`, createdAt: now, updatedAt: new Date(Date.parse(now) - 1000).toISOString() });
+    await chatRepository.create({ chatId: ordinaryListChatId, title: "Chat list item", ownerEmail: listOwner,
+      createdAt: now, updatedAt: now });
+    assert.deepEqual(
+      (await chatRepository.listByOwner(listOwner, { kind: "workspace", limit: 1 })).map(item => item.chatId),
+      [workspaceListChatId],
+      "workspace membership is filtered before the page limit",
+    );
+    assert.deepEqual(
+      (await chatRepository.listByOwner(listOwner, { kind: "chat", limit: 1 })).map(item => item.chatId),
+      [ordinaryListChatId],
+      "ordinary Chats exclude Workspace-owned rows before the page limit",
+    );
     pass("chat meta/messages/owner listing");
 
     // ---------- chat run lease + cancel ----------
@@ -1627,6 +1644,8 @@ async function main() {
     await skillRepository.delete("integration-skill").catch(() => {});
     await mcpRepository.delete(`it-mcp-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-${suffix}`).catch(() => {});
+    await chatRepository.delete(`it-chat-list-ordinary-${suffix}`).catch(() => {});
+    await chatRepository.delete(`it-chat-list-workspace-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-swept-${suffix}`).catch(() => {});
     await import("@/infrastructure/db/store")
       .then(({ deleteItem }) => deleteItem(legacyDestinationKey))
