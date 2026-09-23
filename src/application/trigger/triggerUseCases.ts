@@ -24,7 +24,7 @@ import {
   ValidationError,
   isConditionalWriteFailure,
 } from "@/application/errors";
-import { assertProjectWritable } from "@/application/project/projectUseCases";
+import { assertProjectOwnerOrAdminReadable, assertProjectWritable } from "@/application/project/projectUseCases";
 import { generateSecretValue } from "@/shared/generatedSecret";
 import { log } from "@/shared/logger";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
@@ -204,7 +204,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
 
   return {
     async list(projectName: string, userEmail: string): Promise<TriggerView[]> {
-      await assertProjectWritable(deps.projects, projectName, userEmail);
+      await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
       const triggers = await listProjectTriggers(deps.triggers, projectName);
       return triggers.map((trigger) => toView(trigger, deps.cipher));
     },
@@ -437,7 +437,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       userEmail: string,
     ): Promise<TriggerRun[]> {
       // Owner/admin like traces: a delivery's result preview is runtime output.
-      await assertProjectWritable(deps.projects, projectName, userEmail);
+      await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
       return deps.triggers.listRuns(projectName, triggerId, limit);
     },
   };

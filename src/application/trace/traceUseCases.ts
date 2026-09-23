@@ -2,7 +2,7 @@ import type { ProjectRepository } from "@/domain/project/repository";
 import type { ListTracesOptions, TraceRepository } from "@/domain/trace/repository";
 import type { Trace } from "@/domain/trace/types";
 import { NotFoundError } from "@/application/errors";
-import { assertProjectWritable } from "@/application/project/projectUseCases";
+import { assertProjectOwnerOrAdminReadable } from "@/application/project/projectUseCases";
 
 export interface TraceReadDeps {
   traces: TraceRepository;
@@ -20,7 +20,7 @@ export async function listProjectTraces(
   userEmail: string,
   options?: ListTracesOptions,
 ): Promise<Trace[]> {
-  await assertProjectWritable(deps.projects, projectName, userEmail);
+  await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
   return deps.traces.listByProject(projectName, options);
 }
 
@@ -36,7 +36,7 @@ export async function getProjectTrace(
   traceId: string,
   userEmail: string,
 ): Promise<Trace> {
-  await assertProjectWritable(deps.projects, projectName, userEmail);
+  await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
   const trace = await deps.traces.get(traceId);
   if (!trace || trace.projectName !== projectName) {
     throw new NotFoundError("Trace not found");

@@ -36,7 +36,7 @@ import {
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { resolveMcpBindings } from "@/application/project/mcpBindingSettings";
-import { assertProjectWritable } from "@/application/project/projectUseCases";
+import { assertProjectOwnerOrAdminReadable, assertProjectWritable } from "@/application/project/projectUseCases";
 import { applyMcpUserEmail, stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
 import { listProjectMcpConnections } from "./listConnections";
 import { processManagedMcpLifecycleClaims } from "./managedMcpUseCases";
@@ -676,7 +676,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
     },
 
     async listConnections(projectName, userEmail) {
-      await assertProjectWritable(deps.projects, projectName, userEmail);
+      await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
       return (await listProjectMcpConnections(deps.connections, projectName)).map((connection) =>
         toConnectionView(deps.cipher, connection),
       );
@@ -1041,7 +1041,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
     },
 
     async listTools(projectName, serverName, userEmail, headerOverrides) {
-      const project = await assertProjectWritable(deps.projects, projectName, userEmail);
+      const project = await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
       const server = await requireServer(serverName);
       const loopback = skipsUrlGuard(server, deps.internalHostSuffixes);
       if (!loopback) {

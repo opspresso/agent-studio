@@ -1,6 +1,6 @@
 import { ValidationError } from "@/application/errors";
 import { persistProjectUpdate } from "@/application/project/projectUpdate";
-import { assertProjectWritable } from "@/application/project/projectUseCases";
+import { assertProjectOwnerOrAdminReadable, assertProjectWritable } from "@/application/project/projectUseCases";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import { botIdFromToken } from "@/application/telegram/engagement";
 import type { SecretCipher } from "@/domain/security/secretCipher";
@@ -88,7 +88,7 @@ export async function getProjectTelegram(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<ProjectTelegramResult> {
-  const project = await assertProjectWritable(repo, name, userEmail);
+  const project = await assertProjectOwnerOrAdminReadable(repo, name, userEmail);
   return { project, view: maskedView(cipher, project) };
 }
 
@@ -100,7 +100,7 @@ export async function listProjectTelegramDestinations(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<TelegramDestination[]> {
-  const project = await assertProjectWritable(repo, name, userEmail);
+  const project = await assertProjectOwnerOrAdminReadable(repo, name, userEmail);
   const runtime = resolveProjectTelegramCredentials(cipher, project);
   const botId = runtime ? botIdFromToken(runtime.botToken) : undefined;
   return botId === undefined
@@ -298,7 +298,7 @@ export async function testProjectTelegram(
   cipher: SecretCipher,
   getMe: (botToken: string) => Promise<TelegramBotIdentity>,
 ): Promise<{ ok: true; botId: number; botUsername?: string } | { ok: false }> {
-  const project = await assertProjectWritable(repo, name, userEmail);
+  const project = await assertProjectOwnerOrAdminReadable(repo, name, userEmail);
   const runtime = resolveProjectTelegramRuntime(cipher, project);
   if (!runtime) {
     return { ok: false };

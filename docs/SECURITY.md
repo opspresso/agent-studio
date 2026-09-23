@@ -192,11 +192,14 @@ admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘�
 오버라이드의 두 가지 귀결은 없는 셈 치지 않고 처리한다:
 
 - **기록된다**. `project.admin-override` 감사 행과
-  `[authz] admin … is acting on project …` 라인. 그 쓰기가 누가 했는지를 알려 줬을 행 자체를
+  `[authz] admin … is acting on project …` 라인. 프로젝트 삭제는 수행자를 알려 줬을 행을
   파괴할 수 있고, project 의 API token 은 *그 소유자로서* 인증하므로 admin 의 reveal 은 그 둘에
   더해 `secret.reveal` 행을 남긴다.
 - 그것이 필요로 하는 설정 읽기는 **fail-closed** 다. 설정 저장소 장애는 소유자가 아닌 사람의
   결정적인 403 을 500 으로 바꾸는 대신 오버라이드를 거부한다.
+
+Trace·호출자별 Usage·프로젝트 Artifact 목록과 마스킹된 연동 설정·실행 이력은 같은
+소유자/admin 판정으로 읽지만, 읽기만으로 `project.admin-override` 쓰기 감사 행을 남기지 않는다.
 
 ## 저장된 시크릿
 
