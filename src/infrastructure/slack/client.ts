@@ -96,6 +96,26 @@ const PAGE_SIZE = 200;
  * is untrusted input: only Slack's own file hosts are fetched with the bot token.
  */
 const FILE_HOSTS = new Set(["files.slack.com", "slack.com", "www.slack.com"]);
+
+/** Slack returns an upload target on its file host, never an arbitrary URL. */
+function checkedUploadUrl(raw: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error("Slack returned an unexpected file upload URL");
+  }
+  if (
+    parsed.origin !== "https://files.slack.com" ||
+    parsed.username ||
+    parsed.password ||
+    !parsed.pathname.startsWith("/upload/v1/") ||
+    parsed.pathname === "/upload/v1/"
+  ) {
+    throw new Error("Slack returned an unexpected file upload URL");
+  }
+  return parsed.href;
+}
 /** Page cap so a pathological thread cannot loop unbounded. */
 const MAX_THREAD_PAGES = 10;
 
@@ -253,12 +273,13 @@ export const slackClient = {
       "files.getUploadURLExternal",
       params,
     );
-    if (!urlData.upload_url || !urlData.file_id) {
+    if (typeof urlData.upload_url !== "string" || !urlData.file_id) {
       throw new Error("Slack files.getUploadURLExternal returned no upload target");
     }
+    const uploadUrl = checkedUploadUrl(urlData.upload_url);
     const putRes = await slackFetch(
-      urlData.upload_url,
-      { method: "POST", body: args.data as never },
+      uploadUrl,
+      { method: "POST", body: args.data as never, redirect: "error" },
       SLACK_TRANSFER_TIMEOUT_MS,
     );
     if (!putRes.ok) {

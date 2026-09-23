@@ -396,6 +396,9 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
   호스트는 풀링된 디스패처에 닿기 전에 거부되고, 다른 곳으로 해석되는 호스트는 다른 키를
   받는다.
 
+Slack 이미지 업로드의 `files.getUploadURLExternal` 응답은 HTTPS `files.slack.com/upload/v1/`
+주소인지 확인한 뒤 바이트를 보내며, 업로드 요청의 redirect는 따르지 않는다.
+
 **모델 입력의 이미지는 URL로 가져가지 않는다.** 실행 API는 지원하는 이미지
 바이트를 요청 안에 인라인으로 받으며, LLM 채널은 모든 `image_url`이 bounded `data:` URL인지
 마지막으로 다시 확인한다. `https://`만 검사한 뒤 원격 URL을 제공자에게 그대로 넘기면 요청은 이
