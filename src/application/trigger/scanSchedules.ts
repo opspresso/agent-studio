@@ -91,6 +91,14 @@ export function scheduleInput(trigger: ScheduleTrigger): { message?: string } {
   return trigger.message?.trim() ? { message: trigger.message } : {};
 }
 
+/** Wait for every queued admission to release even when one release fails. */
+async function releaseFirings(firings: readonly ScheduleFiring[]): Promise<void> {
+  const released = await Promise.allSettled(firings.map((firing) => Promise.resolve().then(() => firing.release())));
+  for (const result of released) {
+    if (result.status === "rejected") log.error("trigger", "could not release an admitted firing", result.reason);
+  }
+}
+
 /** Drive a bounded pool and close any admission its driver leaves undispatched. */
 export async function driveFirings(
   firings: ScheduleFiring[],
@@ -98,7 +106,7 @@ export async function driveFirings(
   drive: (firing: ScheduleFiring) => Promise<void>,
 ): Promise<void> {
   if (!Number.isInteger(limit) || limit < 1) {
-    await Promise.all(firings.map((firing) => firing.release()));
+    await releaseFirings(firings);
     throw new Error("The firing pool requires a positive integer limit");
   }
   const queue = [...firings];
@@ -106,7 +114,10 @@ export async function driveFirings(
     for (let firing = queue.shift(); firing; firing = queue.shift()) {
       try { await drive(firing); }
       catch (error) { log.error("trigger", "could not drive an admitted firing", error); }
-      finally { await firing.release(); }
+      finally {
+        try { await firing.release(); }
+        catch (error) { log.error("trigger", "could not release an admitted firing", error); }
+      }
     }
   });
   await Promise.all(workers);
@@ -141,7 +152,7 @@ export async function scanSchedules(deps: FiringDeps, at: Date): Promise<Schedul
     let triggers: ScheduleTrigger[];
     try { triggers = await deps.triggers.listSchedules(SCHEDULE_SCAN_PAGE_SIZE, after); }
     catch (error) {
-      await Promise.all(firings.map((firing) => firing.release()));
+      await releaseFirings(firings);
       throw error;
     }
     const scans = await mapWithLimit(
