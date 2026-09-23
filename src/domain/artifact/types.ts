@@ -229,6 +229,9 @@ const EXTENSIONS: Record<string, string> = {
   "application/zip": "zip",
 };
 
+// Windows resolves these as devices even when an extension follows the name.
+const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i;
+
 /**
  * The name a saved file is stored and downloaded under.
  *
@@ -236,7 +239,8 @@ const EXTENSIONS: Record<string, string> = {
  * it may carry a path, a control character, or nothing at all. What comes back
  * is a single segment — the last one, so `../../etc/passwd` is `passwd` — with
  * the extension its type implies, because the reader's machine opens a file by
- * its extension and a report called `report` opens in nothing.
+ * its extension and a report called `report` opens in nothing. Windows device
+ * names and trailing periods are rewritten so the download can be saved there.
  *
  * The name is not the identity: {@link artifactObjectKey} still derives the key
  * from the row id, so two files called the same thing are two objects. This only
@@ -260,8 +264,9 @@ export function savedFileName(name: string, mimeType: string): string {
   // here rather than a second copy of `cutCodePoints`: this layer imports
   // nothing, `shared` included, and a name is short enough that iterating it is
   // the simplest thing that cannot split a character.
-  const cleaned = [...stripped].slice(0, 80).join("").trim();
-  const safe = cleaned === "" ? "file" : cleaned;
+  const cleaned = [...stripped].slice(0, 80).join("").trim().replace(/[. ]+$/g, "").trim();
+  const base = cleaned === "" ? "file" : cleaned;
+  const safe = WINDOWS_DEVICE_NAME.test(base) ? `_${base}` : base;
   const extension = own(EXTENSIONS, baseMimeType(mimeType));
   if (!extension) {
     return safe;

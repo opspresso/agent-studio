@@ -102,6 +102,15 @@ describe("what a saved file is called", () => {
     expect(savedFileName("...", "text/html")).toBe("file.html");
   });
 
+  it("makes Windows device names and trailing periods saveable", () => {
+    expect(savedFileName("CON", "text/plain")).toBe("_CON.txt");
+    expect(savedFileName("nul.tar.gz", "application/octet-stream")).toBe("_nul.tar.gz");
+    expect(savedFileName("COM¹", "text/plain")).toBe("_COM¹.txt");
+    expect(savedFileName("LPT9.notes", "text/plain")).toBe("_LPT9.notes.txt");
+    expect(savedFileName("COM10", "text/plain")).toBe("COM10.txt");
+    expect(savedFileName("report. ", "application/octet-stream")).toBe("report");
+  });
+
   it("strips the dots even when whitespace came first", () => {
     // `^` sees the spaces, so stripping before trimming was a no-op and the
     // trim then exposed the dots — a hidden file, which is what the strip is
