@@ -66,6 +66,21 @@ describe("signed PR review firing", () => {
     expect((await admitDelivery(f.deps, "review", f.credential({ ...payload, action: "closed" }), null)).status).toBe("ignored");
     expect(f.claimed.size).toBe(0); expect(f.rows).toEqual([]); expect(f.load).not.toHaveBeenCalled();
   });
+  it("repairs past webhook runs when PR preparation skips this delivery", async () => {
+    const f = fixture();
+    const listRuns = vi.spyOn(f.deps.triggers, "listRuns");
+    f.deps.reviewForge = () => ({
+      load: async () => ({ status: "skipped", reason: "Pull request closed." }),
+      reply: f.reply,
+    });
+    const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
+    if (admitted.status !== "accepted") throw new Error("not admitted");
+
+    await executeDelivery(f.deps, admitted, payload);
+
+    expect(f.rows[0]).toMatchObject({ status: "skipped" });
+    expect(listRuns).toHaveBeenCalled();
+  });
   it.each([
     [{ delta: { content: "partial" } }],
     [{ delta: { content: "partial" } }, { finishReason: "turn-limit" }],

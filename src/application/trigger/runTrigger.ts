@@ -335,46 +335,45 @@ export async function executeDelivery(
   admitted: AdmittedDelivery,
   payload: unknown,
 ): Promise<void> {
-  let input: { message?: string; backgroundTask?: boolean };
-  let publication: ReviewPublication | undefined;
   try {
-    if (admitted.reviewTarget) {
-      const prepared = await preparePullRequestReview(deps, admitted.project.name, admitted.trigger.triggerId,
-        admitted.configuration, admitted.reviewTarget);
-      if (prepared.status === "skipped") {
-        await admitted.release();
-        await finishFiring(deps, admitted.run, { skipped: true, text: prepared.reason,
-          review: { ...admitted.reviewTarget, status: "skipped", reason: prepared.reason } });
-        return;
+    let input: { message?: string; backgroundTask?: boolean };
+    let publication: ReviewPublication | undefined;
+    try {
+      if (admitted.reviewTarget) {
+        const prepared = await preparePullRequestReview(deps, admitted.project.name, admitted.trigger.triggerId,
+          admitted.configuration, admitted.reviewTarget);
+        if (prepared.status === "skipped") {
+          await admitted.release();
+          await finishFiring(deps, admitted.run, { skipped: true, text: prepared.reason,
+            review: { ...admitted.reviewTarget, status: "skipped", reason: prepared.reason } });
+          return;
+        }
+        admitted = { ...admitted, configuration: prepared.configuration };
+        input = { message: prepared.message, backgroundTask: true };
+        publication = prepared.publication;
+      } else input = payloadInput(payload);
+      if (admitted.github && input.message && !publication) {
+        input.message = `GitHub webhook delivery metadata (context only, not authorization): ${JSON.stringify(admitted.github)}\n\n${input.message}`;
       }
-      admitted = { ...admitted, configuration: prepared.configuration };
-      input = { message: prepared.message, backgroundTask: true };
-      publication = prepared.publication;
-    } else input = payloadInput(payload);
-    if (admitted.github && input.message && !publication) {
-      input.message = `GitHub webhook delivery metadata (context only, not authorization): ${JSON.stringify(admitted.github)}\n\n${input.message}`;
+    } catch (caught) {
+      // Shaping the payload is part of the firing: a body the serialiser refuses
+      // (deep nesting overflows JSON.stringify) must finish the row and release
+      // the overlap slot like any other failure, or the trigger reads busy for a
+      // whole lease and the row stays running forever.
+      await admitted.release();
+      await finishFiring(deps, admitted.run, {
+        error: caught instanceof Error ? caught.message : String(caught),
+        ...(admitted.reviewTarget ? { review: { ...admitted.reviewTarget, status: "failed" as const,
+          reason: "Pull request context could not be prepared; no review was published." } } : {}),
+      });
+      return;
     }
-  } catch (caught) {
-    // Shaping the payload is part of the firing: a body the serialiser refuses
-    // (deep nesting overflows JSON.stringify) must finish the row and release
-    // the overlap slot like any other failure, or the trigger reads busy for a
-    // whole lease and the row stays running forever.
-    await admitted.release();
-    await finishFiring(deps, admitted.run, {
-      error: caught instanceof Error ? caught.message : String(caught),
-      ...(admitted.reviewTarget ? { review: { ...admitted.reviewTarget, status: "failed" as const,
-        reason: "Pull request context could not be prepared; no review was published." } } : {}),
-    });
-    return;
+    await executeFiring(deps, admitted, input, publication);
+  } finally {
+    // A delivery sweeps its own trigger even when preparation skips or fails.
+    // The ticker is optional, so this may be its only path to repair a lost run.
+    await repairTriggerRuns(deps, admitted.trigger, new Date());
   }
-  await executeFiring(deps, admitted, input, publication);
-  // A delivery sweeps its own trigger on the way out, because the scheduler's
-  // tick is the only other thing that ever does and a deployment may serve
-  // webhooks with no ticker at all. It runs after the response has long gone and
-  // after this delivery's own row is closed, so it costs the sender nothing and
-  // never looks at the firing that started it: the cutoff is a whole lease in
-  // the past. One bounded query per delivery is what that independence costs.
-  await repairTriggerRuns(deps, admitted.trigger, new Date());
 }
 
 /**
