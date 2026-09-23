@@ -24,15 +24,13 @@ export function overridesToRows(headers: McpBinding["headers"]): OverrideRow[] {
 /**
  * Collapse rows back into an override map. Rows with a blank header name are
  * dropped (they are half-typed), and a binding with nothing left returns
- * `undefined` so it is stored without a `headers` field at all.
+ * `undefined` so it is stored without a `headers` field at all. `fromEntries`
+ * preserves own keys such as `__proto__` in the request JSON.
  */
 export function rowsToOverrides(rows: OverrideRow[]): McpBinding["headers"] {
-  const headers: Record<string, string | null> = {};
-  for (const row of rows) {
+  const entries = rows.flatMap((row) => {
     const key = row.key.trim();
-    if (key) {
-      headers[key] = row.remove === true ? null : row.value;
-    }
-  }
-  return Object.keys(headers).length > 0 ? headers : undefined;
+    return key ? [[key, row.remove === true ? null : row.value] as const] : [];
+  });
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }

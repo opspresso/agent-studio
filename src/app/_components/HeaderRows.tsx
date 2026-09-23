@@ -23,15 +23,12 @@ export function recordToRows(record: Record<string, string>): HeaderRow[] {
   return Object.entries(record).map(([key, value]) => ({ key, value, storedValue: value }));
 }
 
+/** `fromEntries` preserves own keys such as `__proto__` in the request JSON. */
 export function rowsToRecord(rows: HeaderRow[]): Record<string, string> {
-  const record: Record<string, string> = {};
-  for (const { key, value } of rows) {
+  return Object.fromEntries(rows.flatMap(({ key, value }) => {
     const trimmed = key.trim();
-    if (trimmed) {
-      record[trimmed] = value;
-    }
-  }
-  return record;
+    return trimmed ? [[trimmed, value]] : [];
+  }));
 }
 
 /**
