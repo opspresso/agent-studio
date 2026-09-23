@@ -332,6 +332,8 @@ export interface QueryInput {
    * put anything of its own into the statement.
    */
   filter?: Record<string, string>;
+  /** Test a top-level JSONB attribute's presence before `limit` counts. */
+  attributePresence?: { attribute: string; exists: boolean };
 }
 
 const INDEX_COLUMNS = {
@@ -377,6 +379,10 @@ function queryWhere(input: QueryInput): {
     // `jsonb ->> integer`, and an untyped bind parameter leaves PostgreSQL
     // unable to choose between them.
     where.push(`data ->> ${bind(attribute)}::text = ${bind(value)}`);
+  }
+  if (input.attributePresence) {
+    const { attribute, exists } = input.attributePresence;
+    where.push(`${exists ? "" : "NOT "}(data ? ${bind(attribute)}::text)`);
   }
   return { columns, where, params };
 }

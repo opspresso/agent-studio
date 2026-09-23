@@ -26,6 +26,7 @@ import classes from "./ChatSidebar.module.css";
 
 const NEW_CHAT_EVENT = "chats:new";
 const SIDEBAR_TAB_KEY = "agent-studio-chat-sidebar-tab";
+type SidebarPage = { chats: Chat[]; loaded: boolean; hasMore: boolean; limit: number };
 
 /** Subscribe to the "New chat" press. The button routes to /chats, but a panel
  * that swapped the URL to /chats/<id> without a route change is already that
@@ -40,20 +41,17 @@ export function ChatSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const t = useT();
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [loaded, setLoaded] = useState(false);
   /**
-   * How many rows this sidebar is asking for.
+   * Each tab pages its own owner partition subset. "Show more" raises that
+   * tab's limit and rereads its rows because updatedAt alone is not a cursor.
    *
-   * The endpoint is bounded, and "show more" raises this by a page rather
-   * than carrying a cursor: the chat partition sorts on `updatedAt` alone, which
-   * does not identify a row, so a cursor built from it would skip or repeat a
-   * chat touched in the same millisecond as its neighbour. Re-reading the rows
-   * it already had is the cheaper wrong thing, and it happens only when a
-   * person presses the button.
+   * A single global limit followed by client filtering could hide every
+   * Workspace behind newer Chats, even at the endpoint's maximum page size.
    */
-  const [limit, setLimit] = useState(CHAT_PAGE);
-  const [hasMore, setHasMore] = useState(false);
+  const [pages, setPages] = useState<Record<SidebarTab, SidebarPage>>({
+    chats: { chats: [], loaded: false, hasMore: false, limit: CHAT_PAGE },
+    workspaces: { chats: [], loaded: false, hasMore: false, limit: CHAT_PAGE },
+  });
   const [tab, setTab] = useLocalStorage<SidebarTab>({
     key: SIDEBAR_TAB_KEY,
     defaultValue: "chats",
@@ -61,42 +59,41 @@ export function ChatSidebar() {
     sync: false,
   });
   const [drawerOpen, drawer] = useDisclosure(false);
-  /** Which read is the current one; an older one that lands late is dropped. */
-  const loadSeq = useRef(0);
+  /** A stale read may only replace rows from the same tab. */
+  const loadSeq = useRef<Record<SidebarTab, number>>({ chats: 0, workspaces: 0 });
   // Keys, not chat ids: a chat still being created counts under its placeholder,
   // so a first message refused before it learned its id still reloads this list
   // — the chat and its user turn are already on the server by then. Matching
   // chat ids below ignores the placeholders on its own.
   const running = useRunningKeys();
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (kind: SidebarTab, limit: number) => {
     // Ticketed like the thread's own sync. Two reads are in flight whenever
     // "show more" is pressed while a run start is reloading the list, and the
     // smaller one landing last would put the list back to a page the reader
     // has already grown past — while `limit` stayed raised, so the next press
     // would skip a page rather than repeat one.
-    const ticket = ++loadSeq.current;
+    const ticket = ++loadSeq.current[kind];
     try {
-      const res = await fetch(`/api/chats?limit=${limit}`);
-      if (ticket !== loadSeq.current) {
+      const res = await fetch(`/api/chats?kind=${kind === "chats" ? "chat" : "workspace"}&limit=${limit}`);
+      if (ticket !== loadSeq.current[kind]) {
         return;
       }
       if (res.ok) {
         const data = (await res.json()) as ChatListResponse;
-        if (ticket !== loadSeq.current) {
+        if (ticket !== loadSeq.current[kind]) {
           return;
         }
-        setChats(data.chats ?? []);
-        setHasMore(data.hasMore ?? false);
+        setPages(current => current[kind].limit !== limit ? current : {
+          ...current,
+          [kind]: { ...current[kind], chats: data.chats ?? [], hasMore: data.hasMore ?? false, loaded: true },
+        });
       }
     } catch {
       // A navigation or a transient network loss can reject fetch itself.
       // Keep the last good list; the next run transition retries this read.
     }
-    if (ticket === loadSeq.current) {
-      setLoaded(true);
-    }
-  }, [limit]);
+  }, []);
 
   // Reloads when a run starts or ends, because the running set only changes
   // then. The sidebar is mounted for the whole `/chats` segment, which is why it
@@ -108,14 +105,15 @@ export function ChatSidebar() {
   // the server anything — and a chat that appears while reading is a chat whose
   // run started, which the running set already reports. Reloading on every
   // navigation meant a third full read of the list per turn.
+  const limit = pages[tab].limit;
   useEffect(() => {
-    void load();
-  }, [load, running]);
+    void load(tab, limit);
+  }, [load, tab, limit, running]);
   useEffect(() => {
-    const refresh = () => { void load(); };
+    const refresh = () => { void load(tab, limit); };
     window.addEventListener(WORKSPACE_ACTIVITY_EVENT, refresh);
     return () => window.removeEventListener(WORKSPACE_ACTIVITY_EVENT, refresh);
-  }, [load]);
+  }, [load, tab, limit]);
 
   // A tap that opens a chat has done what the drawer was opened for. Depend on
   // the stable `close` callback, not the handlers object — useDisclosure
@@ -127,7 +125,8 @@ export function ChatSidebar() {
   }, [pathname, closeDrawer]);
 
   const activeId = pathname.startsWith("/chats/") ? pathname.split("/")[2] : undefined;
-  const activeChat = chats.find(chat => chat.chatId === activeId);
+  const activeChat = pages.chats.chats.find(chat => chat.chatId === activeId) ??
+    pages.workspaces.chats.find(chat => chat.chatId === activeId);
   const activeTab: SidebarTab | undefined = activeChat ? activeChat.workspaceId ? "workspaces" : "chats" : undefined;
   const currentTitle = activeChat ? t("chat.currentItem", { title: activeChat.title }) : undefined;
 
@@ -136,7 +135,7 @@ export function ChatSidebar() {
     if (res.ok) {
       // Otherwise its stream keeps reading rows that no longer exist.
       runStore.abort(chatId);
-      await load();
+      await load(tab, limit);
       if (activeId === chatId) {
         router.push("/chats");
       }
@@ -158,14 +157,16 @@ export function ChatSidebar() {
   const listFor = (kind: SidebarTab) => (
     <ScrollArea h="100%" scrollbarSize={6} pr={4}>
       <Stack gap={2}>
-        {loaded && !hasMore && !chats.some(chat => Boolean(chat.workspaceId) === (kind === "workspaces")) && (
+        {pages[kind].loaded && !pages[kind].hasMore && pages[kind].chats.length === 0 && (
           <Text fz="xs" c="dimmed" px="xs" py="md">
             {t(kind === "workspaces" ? "workspace.none" : "chat.none")}
           </Text>
         )}
-        <ChatSidebarItems chats={chats} tab={kind} activeId={activeId} running={running} onDelete={chatId => void handleDelete(chatId)} />
-        {hasMore && (
-          <Button variant="subtle" size="compact-xs" mt="xs" onClick={() => setLimit(current => current + CHAT_PAGE)}>
+        <ChatSidebarItems chats={pages[kind].chats} tab={kind} activeId={activeId} running={running} onDelete={chatId => void handleDelete(chatId)} />
+        {pages[kind].hasMore && (
+          <Button variant="subtle" size="compact-xs" mt="xs" onClick={() => setPages(current => ({
+            ...current, [kind]: { ...current[kind], limit: current[kind].limit + CHAT_PAGE },
+          }))}>
             {t("chat.more")}
           </Button>
         )}

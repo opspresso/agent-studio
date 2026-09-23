@@ -37,7 +37,10 @@ test("separates chats and workspaces in a tab and restores the selected tab afte
     { chatId: "chat-1", ownerEmail: "reader@example.test", title: "General discussion", createdAt: "", updatedAt: "" },
     { chatId: "chat-2", ownerEmail: "reader@example.test", title: "Coding workspace", workspaceId: "workspace-1", createdAt: "", updatedAt: "" },
   ], hasMore: false };
-  await page.route("**/api/chats?**", route => route.fulfill({ json: chats }));
+  await page.route("**/api/chats?**", route => {
+    const kind = new URL(route.request().url()).searchParams.get("kind");
+    return route.fulfill({ json: { chats: kind === "workspace" ? [chats.chats[1]] : [chats.chats[0]], hasMore: false } });
+  });
   await page.goto(base);
   const sidebar = page.locator("aside");
   await expect(sidebar.getByRole("tab", { name: "Chats" })).toHaveAttribute("aria-selected", "true");
@@ -53,9 +56,9 @@ test("separates chats and workspaces in a tab and restores the selected tab afte
 
 test("uses the same saved selection in the narrow history drawer", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 700 });
-  await page.route("**/api/chats?**", route => route.fulfill({ json: { chats: [
+  await page.route("**/api/chats?**", route => route.fulfill({ json: { chats: new URL(route.request().url()).searchParams.get("kind") === "workspace" ? [
     { chatId: "chat-2", ownerEmail: "reader@example.test", title: "Coding workspace", workspaceId: "workspace-1", createdAt: "", updatedAt: "" },
-  ], hasMore: false } satisfies ChatListResponse }));
+  ] : [], hasMore: false } satisfies ChatListResponse }));
   await page.goto(base);
   await page.getByRole("button", { name: "Chats & Workspaces" }).click();
   const drawer = page.getByRole("dialog", { name: "Chats & Workspaces" });
@@ -67,10 +70,40 @@ test("uses the same saved selection in the narrow history drawer", async ({ page
     .toHaveAttribute("aria-selected", "true");
 });
 
+test("loads and pages each tab independently", async ({ page }) => {
+  const requests: string[] = [];
+  const baseChat = { ownerEmail: "reader@example.test", createdAt: "", updatedAt: "" };
+  await page.route("**/api/chats?**", route => {
+    const params = new URL(route.request().url()).searchParams;
+    const kind = params.get("kind");
+    const limit = params.get("limit");
+    requests.push(`${kind}:${limit}`);
+    if (kind === "workspace") return route.fulfill({ json: { chats: [
+      { ...baseChat, chatId: "workspace-chat", title: "Older workspace", workspaceId: "workspace-1" },
+    ], hasMore: false } satisfies ChatListResponse });
+    return route.fulfill({ json: { chats: [
+      { ...baseChat, chatId: "chat-1", title: "Recent Chat" },
+      ...(limit === "100" ? [{ ...baseChat, chatId: "chat-2", title: "Older Chat" }] : []),
+    ], hasMore: limit === "50" } satisfies ChatListResponse });
+  });
+  await page.goto(base);
+  const sidebar = page.locator("aside");
+  await expect(sidebar.getByRole("link", { name: "Recent Chat" })).toBeVisible();
+  await sidebar.getByRole("button", { name: "Show older entries" }).click();
+  await expect(sidebar.getByRole("link", { name: "Older Chat" })).toBeVisible();
+  await sidebar.getByRole("tab", { name: "Workspaces" }).click();
+  await expect(sidebar.getByRole("link", { name: "Older workspace" })).toBeVisible();
+  expect(requests).toContain("chat:50");
+  expect(requests).toContain("chat:100");
+  expect(requests).toContain("workspace:50");
+  expect(requests).not.toContain("workspace:100");
+});
+
 test("marks the open Chat or Workspace in the sidebar", async ({ page }) => {
-  await page.route("**/api/chats?**", route => route.fulfill({ json: { chats: [
-    { chatId: "chat-1", ownerEmail: "reader@example.test", title: "General discussion", createdAt: "", updatedAt: "" },
+  await page.route("**/api/chats?**", route => route.fulfill({ json: { chats: new URL(route.request().url()).searchParams.get("kind") === "workspace" ? [
     { chatId: "chat-2", ownerEmail: "reader@example.test", title: "Coding workspace", workspaceId: "workspace-1", createdAt: "", updatedAt: "" },
+  ] : [
+    { chatId: "chat-1", ownerEmail: "reader@example.test", title: "General discussion", createdAt: "", updatedAt: "" },
   ], hasMore: false } satisfies ChatListResponse }));
   await page.goto(`${base}/chats/chat-1`);
   const sidebar = page.locator("aside");

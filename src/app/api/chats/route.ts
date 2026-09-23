@@ -1,6 +1,7 @@
 import { withAuth } from "@/lib/session";
+import { z } from "zod";
 import type { Chat } from "@/domain/chat/types";
-import { CHAT_PAGE, MAX_CHAT_PAGE } from "@/domain/chat/repository";
+import { CHAT_LIST_KINDS, CHAT_PAGE, MAX_CHAT_PAGE } from "@/domain/chat/repository";
 import { sessionCaller } from "@/app/api/_lib/caller";
 import { withTurnBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -33,11 +34,14 @@ export interface ChatListResponse {
 }
 
 export const GET = withAuth(async (user, request: Request) => {
-  const { wanted, limit } = parsePageLimit(new URL(request.url).searchParams.get("limit"), {
+  const params = new URL(request.url).searchParams;
+  const kind = z.enum(CHAT_LIST_KINDS).optional().safeParse(params.get("kind") ?? undefined);
+  if (!kind.success) return invalidRequest(kind.error);
+  const { wanted, limit } = parsePageLimit(params.get("limit"), {
     fallback: CHAT_PAGE,
     max: MAX_CHAT_PAGE,
   });
-  const chats = await listChats(chatDeps, user.email, limit);
+  const chats = await listChats(chatDeps, user.email, { limit, ...(kind.data ? { kind: kind.data } : {}) });
   // A full page is indistinguishable from a full page that happens to be the
   // last one, so this is a guess by design — "show more" may come back with
   // the same list. That is a cheaper wrong answer than a count query on every

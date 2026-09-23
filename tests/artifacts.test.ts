@@ -391,4 +391,17 @@ describe("the store filter the listing rides on", () => {
     const found = await store.queryItems({ pk: "F#3", limit: 1, filter: { kind: "document" } });
     expect(found.map((row) => row.SK)).toEqual(["c"]);
   });
+
+  it("tests attribute presence before the limit, including a stored null", async () => {
+    store.seed([
+      { PK: "F#4", SK: "a", workspaceId: "w1" },
+      { PK: "F#4", SK: "b", workspaceId: "w2" },
+      { PK: "F#4", SK: "c" },
+      { PK: "F#4", SK: "d", workspaceId: null },
+    ]);
+    const absent = await store.queryItems({ pk: "F#4", limit: 1, attributePresence: { attribute: "workspaceId", exists: false } });
+    expect(absent.map(row => row.SK)).toEqual(["c"]);
+    const present = await store.queryItems({ pk: "F#4", limit: 1, forward: false, attributePresence: { attribute: "workspaceId", exists: true } });
+    expect(present.map(row => row.SK)).toEqual(["d"]);
+  });
 });

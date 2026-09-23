@@ -1,5 +1,5 @@
 import type { Chat } from "@/domain/chat/types";
-import { CHAT_PAGE } from "@/domain/chat/repository";
+import { CHAT_PAGE, type ChatListOptions } from "@/domain/chat/repository";
 import type { ChatDeps } from "./deps";
 
 /**
@@ -14,7 +14,7 @@ import type { ChatDeps } from "./deps";
 export async function listChats(
   deps: ChatDeps,
   userEmail: string,
-  limit: number = CHAT_PAGE,
+  options: ChatListOptions = {},
 ): Promise<Chat[]> {
-  return deps.chats.listByOwner(userEmail, { limit });
+  return deps.chats.listByOwner(userEmail, { ...options, limit: options.limit ?? CHAT_PAGE });
 }

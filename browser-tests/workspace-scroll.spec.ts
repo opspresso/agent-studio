@@ -39,6 +39,7 @@ test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.
 
 test("opens at the latest output without animated history traversal and respects manual scrolling", async ({ page }) => {
   let append = false;
+  let emptyFirstPoll = true;
   await page.addInitScript(() => {
     document.addEventListener("DOMContentLoaded", () => {
       const observer = new MutationObserver(() => {
@@ -57,6 +58,10 @@ test("opens at the latest output without animated history traversal and respects
   await page.route("**/api/workspaces/workspace-1**", route => route.fulfill({ json: detail }));
   await page.route("**/api/workspaces/workspace-1/events?**", route => {
     const after = Number(new URL(route.request().url()).searchParams.get("after"));
+    if (after === 0 && emptyFirstPoll) {
+      emptyFirstPoll = false;
+      return route.fulfill({ json: { events: [], nextSeq: 0, hasMore: false } satisfies WorkspaceEventsResponse });
+    }
     if (after === 0) return route.fulfill({ json: events });
     if (append && after === 1) return route.fulfill({ json: { events: [{ workspaceId: "workspace-1", runId: "run-1",
       seq: 2, createdAt: now, data: { kind: "output", stream: "stdout", text: "\nappended output" } }], nextSeq: 2, hasMore: false } satisfies WorkspaceEventsResponse });

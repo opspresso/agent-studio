@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
-import type { ChatRepository } from "@/domain/chat/repository";
+import type { ChatListOptions, ChatRepository } from "@/domain/chat/repository";
 import type { ChatDeps } from "@/application/chat/deps";
 import { getChat } from "@/application/chat/getChat";
 import { CHAT_MESSAGE_PAGE_SIZE } from "@/application/chat/messageList";
@@ -36,13 +36,13 @@ function chat(): Chat {
 
 /** A repository that records what the use case asked it for. */
 function recordingRepo(messages: ChatMessage[]) {
-  const asked: { sinceSeq?: number; limit?: number }[] = [];
+  const asked: { sinceSeq?: number; limit?: number; kind?: ChatListOptions["kind"] }[] = [];
   const repo = {
     async get() {
       return chat();
     },
-    async listByOwner(_ownerEmail: string, options: { limit?: number } = {}) {
-      asked.push({ ...(options.limit === undefined ? {} : { limit: options.limit }) });
+    async listByOwner(_ownerEmail: string, options: ChatListOptions = {}) {
+      asked.push(options);
       return options.limit === undefined ? [chat()] : [chat()].slice(0, options.limit);
     },
     async listMessages(_chatId: string, options: { sinceSeq?: number; limit?: number } = {}) {
@@ -152,8 +152,14 @@ describe("listChats", () => {
 
   it("passes the caller's page size through", async () => {
     const { repo, asked } = recordingRepo([]);
-    await listChats({ chats: repo } as unknown as ChatDeps, "owner@x.com", 7);
+    await listChats({ chats: repo } as unknown as ChatDeps, "owner@x.com", { limit: 7 });
     expect(asked).toEqual([{ limit: 7 }]);
+  });
+
+  it("passes the list kind to the repository before its page limit", async () => {
+    const { repo, asked } = recordingRepo([]);
+    await listChats({ chats: repo } as unknown as ChatDeps, "owner@x.com", { kind: "workspace", limit: 7 });
+    expect(asked).toEqual([{ kind: "workspace", limit: 7 }]);
   });
 });
 

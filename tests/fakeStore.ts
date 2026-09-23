@@ -232,6 +232,10 @@ export function createFakeStore(): FakeStore {
           return (typeof held === "object" ? JSON.stringify(held) : String(held)) === value;
         });
       }
+      if (input.attributePresence) {
+        const { attribute, exists } = input.attributePresence;
+        matches = matches.filter((row) => Object.hasOwn(row, attribute) === exists);
+      }
       matches.sort(
         (a, b) =>
           compareBytes(String(a[skAttr] ?? ""), String(b[skAttr] ?? "")) ||

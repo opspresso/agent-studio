@@ -103,6 +103,21 @@ test("retains not-found behavior for an initial 404", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Try again", exact: true })).toHaveCount(0);
 });
 
+test("opens a long Chat at the latest message and keeps manual scroll control", async ({ page }) => {
+  const messages = Array.from({ length: 80 }, (_, seq) => ({
+    chatId: CHAT.chatId, seq, role: seq % 2 ? "assistant" as const : "user" as const,
+    content: `History ${seq}`, createdAt: CHAT.createdAt,
+  }));
+  await page.route("**/api/chats/chat-1**", route => route.fulfill({ json: { chat: CHAT, messages } satisfies ChatWithMessages }));
+  await page.goto(base);
+  const viewport = page.locator(".mantine-ScrollArea-viewport");
+  await expect(page.getByText("History 79", { exact: true })).toBeAttached();
+  await expect.poll(() => viewport.evaluate(element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop))).toBeLessThan(3);
+  await viewport.hover();
+  await page.mouse.wheel(0, -2000);
+  await expect(page.getByRole("button", { name: "Jump to the latest message" })).toBeVisible();
+});
+
 test("retains streamed content and its error while a failed tail read retries", async ({ page }) => {
   const reads: string[] = [];
   await page.route("**/api/chats/chat-1**", async route => {

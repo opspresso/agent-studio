@@ -9,6 +9,7 @@ import { formatDateTime } from "@/shared/date";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { isSubmitEnter } from "@/app/_lib/modEnter";
 import { useWorkspace } from "../_lib/useWorkspace";
+import { workspaceOutputText } from "../_lib/output";
 import { notifyWorkspaceActivity } from "../_lib/activity";
 import { WorkspaceActions } from "./WorkspaceActions";
 import type { WorkspaceRunResponse } from "@/app/api/workspaces/[id]/runs/route";
@@ -25,14 +26,9 @@ export function WorkspacePanel({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [options, setOptions] = useState<WorkspaceOptionsResponse | null>(null);
   const request = useRef<{ body: string; key: string } | null>(null);
-  const { detail, events, loadedEventsRunId, error: loadError, refresh, runId } = useWorkspace(id, selected);
-  const { scrollRef, contentRef, isNearBottom, scrollToBottom } = useLatestScroll(!!detail && (!runId || loadedEventsRunId === runId), `${id}:${runId ?? ""}`);
-  const output = useMemo(() => events.flatMap(event => {
-    const data = event.data;
-    if (data.kind === "output" || data.kind === "message") return [data.text];
-    if (data.kind === "warning") return [`\n⚠ ${data.text}\n`];
-    return [];
-  }).join(""), [events]);
+  const { detail, events, readyOutputRunId, error: loadError, refresh, runId } = useWorkspace(id, selected);
+  const { scrollRef, contentRef, isNearBottom, scrollToBottom } = useLatestScroll(!!detail && (!runId || readyOutputRunId === runId), `${id}:${runId ?? ""}`);
+  const output = useMemo(() => events.map(workspaceOutputText).join(""), [events]);
 
   useEffect(() => {
     const openActions = () => { if (window.location.hash === "#actions") setTab("actions"); };

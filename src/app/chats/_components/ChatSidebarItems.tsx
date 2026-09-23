@@ -19,7 +19,7 @@ export function ChatSidebarItems({ chats, tab, activeId, running, onDelete }: {
   const t = useT();
   const workspace = tab === "workspaces";
   return <Stack gap={2}>
-    {chats.filter(chat => Boolean(chat.workspaceId) === workspace).map(chat =>
+    {chats.map(chat =>
       <div key={chat.chatId} className={classes.row} data-active={chat.chatId === activeId || undefined}>
         <UnstyledButton component={Link} href={`/chats/${chat.chatId}`} fz="sm" className={classes.title}
           title={chat.title} aria-current={chat.chatId === activeId ? "page" : undefined}>
