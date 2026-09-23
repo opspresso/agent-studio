@@ -127,7 +127,8 @@ jobs:
             ${{ env.ECR_REPOSITORY }}:workspace-${{ github.ref_name }}
             ghcr.io/${{ github.repository }}:workspace-${{ github.ref_name }}
 
-  gitops:
+  alpha:
+    name: Deploy ${{ github.ref_name }} to alpha
     needs: release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
@@ -135,7 +136,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Trigger GitOps 🚀
+      - name: Trigger alpha GitOps 🚀
         env:
           GH_TOKEN: ${{ secrets.GHP_TOKEN }}
         run: |
@@ -148,9 +149,9 @@ jobs:
             -f client_payload[phase]=alpha \
             -f client_payload[type]=helm
 
-  gitops-prod:
-    name: Promote ${{ github.ref_name }} to prod
-    needs: gitops
+  prod:
+    name: Deploy ${{ github.ref_name }} to prod
+    needs: alpha
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
