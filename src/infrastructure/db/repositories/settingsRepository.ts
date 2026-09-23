@@ -13,8 +13,6 @@ const FIELDS = [
   "defaultModel",
   "adminEmails",
   "allowedEmailDomains",
-  "llmBaseUrl",
-  "llmApiKey",
   "embeddingModel",
   "rerankerModel",
   "decisionModel",

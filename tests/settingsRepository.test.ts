@@ -38,8 +38,6 @@ describe("settingsRepository", () => {
       workspaceModels: { codex: "openai/gpt-test" },
       adminEmails: "admin@example.com",
       allowedEmailDomains: "example.com",
-      llmBaseUrl: "https://llm.example.com/v1",
-      llmApiKey: "enc:v1:key",
       llmProviders: [{ name: "openai", baseUrl: "https://llm.example.com/v1", apiKey: "enc:v1:x" }],
       embeddingModel: "selfhosted/Qwen/Qwen3-Embedding-4B",
       rerankerModel: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
@@ -64,6 +62,15 @@ describe("settingsRepository", () => {
 
   it("returns null when no settings item exists", async () => {
     await expect(settingsRepository.get()).resolves.toBeNull();
+  });
+
+  it("drops retired default channel fields when reading and rewriting an old row", async () => {
+    await store.putItem({ PK: "SETTINGS#app", SK: "META", entityType: "SETTINGS",
+      updatedAt: "2026-01-01T00:00:00Z", llmBaseUrl: "https://unused.example/v1", llmApiKey: "enc:v1:old" });
+    await expect(settingsRepository.get()).resolves.toEqual({ updatedAt: "2026-01-01T00:00:00Z" });
+    await settingsRepository.update((current) => ({ ...current!, pluginsRepo: "org/plugins" }));
+    expect(store.all()[0]).not.toHaveProperty("llmBaseUrl");
+    expect(store.all()[0]).not.toHaveProperty("llmApiKey");
   });
 
   it("merges concurrent mutations against the latest stored row", async () => {

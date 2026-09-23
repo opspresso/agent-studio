@@ -324,16 +324,6 @@ export const config = {
     }
   },
   /**
-   * A dedicated OpenAI-compatible embedding channel. When absent, the default
-   * LLM channel remains the endpoint and credential source.
-   */
-  get embeddingBaseUrl(): string | undefined {
-    return optionalEnv(process.env.EMBEDDING_BASE_URL);
-  },
-  get embeddingApiKey(): string | undefined {
-    return optionalEnv(process.env.EMBEDDING_API_KEY);
-  },
-  /**
    * How many dimensions to ask the model for, or undefined for its native width.
    *
    * Providers that serve several widths need an explicit value — `text-
@@ -395,12 +385,6 @@ export const config = {
   },
   get managedMcpRegistry(): string | undefined {
     return optionalEnv(process.env.MANAGED_MCP_REGISTRY);
-  },
-  get llmBaseUrl(): string {
-    return required("LLM_BASE_URL");
-  },
-  get llmApiKey(): string {
-    return required("LLM_API_KEY");
   },
   get aesEncryptionKey(): string {
     return required("AES_ENCRYPTION_KEY");

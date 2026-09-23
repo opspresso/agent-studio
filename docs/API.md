@@ -408,7 +408,7 @@ PUT /api/settings → 200 {…same shape…} | 400
 ```
 
 - 두 동사 모두 admin 전용이다. GET 의 `fields` 키는 `adminEmails`, `allowedEmailDomains`,
-  `llmBaseUrl`, `llmApiKey`, `embeddingModel`, `rerankerModel`, `rerankerMinScore`, `pluginsRepo`,
+  `embeddingModel`, `rerankerModel`, `rerankerMinScore`, `pluginsRepo`,
   `pluginsRepoBranch`, `githubToken`, `publicBaseUrl`, `artifactAccessMode`,
   `unknownModelPolicy`다. 이 중 Embedding/Rerank 선택 세 필드는 읽기 전용이며
   `PUT /api/models/selection` 으로 변경한다. PUT 이 받는 `artifactAccessMode`

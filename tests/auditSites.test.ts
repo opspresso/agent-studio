@@ -184,17 +184,17 @@ describe("app settings", () => {
   }
 
   it("records which keys were written, and never their values", async () => {
-    await useCases().update({ llmApiKey: "sk-live-secret", pluginsRepo: "org/plugins" }, ADMIN);
+    await useCases().update({ githubToken: "gh-live-secret", pluginsRepo: "org/plugins" }, ADMIN);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       actorEmail: ADMIN,
       action: "settings.update",
       target: "settings:app",
     });
-    expect(rows[0]?.detail).toContain("llmApiKey");
+    expect(rows[0]?.detail).toContain("githubToken");
     expect(rows[0]?.detail).toContain("pluginsRepo");
     // The row is the record of who moved a credential, not a copy of it.
-    expect(JSON.stringify(rows[0])).not.toContain("sk-live-secret");
+    expect(JSON.stringify(rows[0])).not.toContain("gh-live-secret");
   });
 
   it("records a rejected write not at all", async () => {
@@ -225,9 +225,9 @@ describe("app settings", () => {
     // A mask can only confirm a secret. The write keeps the stored value, so the
     // row must not claim the credential moved.
     const cases = useCases();
-    await cases.update({ llmApiKey: "sk-live" }, ADMIN);
+    await cases.update({ githubToken: "gh-live" }, ADMIN);
     rows = [];
-    await cases.update({ llmApiKey: "****", pluginsRepo: "org/plugins" }, ADMIN);
+    await cases.update({ githubToken: "****", pluginsRepo: "org/plugins" }, ADMIN);
     expect(rows[0]?.detail).toBe("pluginsRepo");
   });
 });

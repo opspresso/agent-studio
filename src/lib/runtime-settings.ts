@@ -33,7 +33,6 @@ import { optionalEnv } from "@/shared/env";
 import { parseList } from "@/shared/parseList";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 import {
-  llmApiKeyContext,
   llmProviderApiKeyContext,
   settingsSecretContext,
 } from "@/domain/security/secretContext";
@@ -132,33 +131,6 @@ export async function isAdminEmail(email: string): Promise<boolean> {
 export async function getAllowedEmailDomains(): Promise<string[]> {
   const stored = (await loadSettings())?.allowedEmailDomains;
   return stored !== undefined ? parseList(stored) : config.allowedEmailDomains;
-}
-
-export async function getLlmChannelConfig(): Promise<{ baseUrl: string; apiKey: string }> {
-  const stored = await loadSettings();
-  if (stored?.llmBaseUrl !== undefined && stored.llmApiKey === undefined) {
-    throw new Error("Stored LLM_BASE_URL has no matching LLM_API_KEY");
-  }
-  const baseUrl = stored?.llmBaseUrl ?? config.llmBaseUrl;
-  return {
-    baseUrl,
-    apiKey:
-      stored?.llmApiKey !== undefined
-        ? decryptSecret(stored.llmApiKey, llmApiKeyContext(baseUrl))
-        : config.llmApiKey,
-  };
-}
-
-export async function getEmbeddingChannelConfig(): Promise<{ baseUrl: string; apiKey: string }> {
-  if (config.embeddingBaseUrl) {
-    return {
-      baseUrl: config.embeddingBaseUrl,
-      // The OpenAI SDK requires a key even when a local endpoint does not.
-      // Never reuse the LLM secret for a separately addressed service.
-      apiKey: config.embeddingApiKey ?? "not-required",
-    };
-  }
-  return getLlmChannelConfig();
 }
 
 async function selectedTarget(model: string, type?: "embedding" | "rerank") {

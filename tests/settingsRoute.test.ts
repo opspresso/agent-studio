@@ -92,6 +92,12 @@ describe("PUT /api/settings", () => {
     expect(useCases.update).not.toHaveBeenCalled();
   });
 
+  it("rejects retired default LLM channel settings", async () => {
+    const res = await put({ llmBaseUrl: "https://unused.example/v1", llmApiKey: "unused-key" });
+    expect(res.status).toBe(400);
+    expect(useCases.update).not.toHaveBeenCalled();
+  });
+
   it("rejects direct model usage changes outside the selection use case", async () => {
     const res = await put({ embeddingModel: "local/embedding", rerankerModel: "local/reranker" });
     expect(res.status).toBe(400);

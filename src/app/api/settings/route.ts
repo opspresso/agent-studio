@@ -9,8 +9,6 @@ import { editorBody } from "@/app/api/_lib/body";
 const updateSchema = z.object({
   adminEmails: z.string().max(4000).optional(),
   allowedEmailDomains: z.string().max(4000).optional(),
-  llmBaseUrl: z.string().max(4000).optional(),
-  llmApiKey: z.string().max(4000).optional(),
   llmProviders: z
     .array(
       z.object({
