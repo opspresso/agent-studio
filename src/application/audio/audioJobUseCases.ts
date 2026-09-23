@@ -49,6 +49,10 @@ export type AudioJobView = Pick<AudioJob, "id" | "task" | "sourceIdentity" | "st
 
 type AudioArtifactKind = keyof AudioJobView["artifacts"];
 
+// Each view can read up to five files. Bound page enrichment independently of
+// the page size so one list cannot send hundreds of reads to the item store.
+const MAX_CONCURRENT_AUDIO_JOB_VIEWS = 4;
+
 async function view(job: AudioJob, deps: Pick<AudioJobUseCaseDeps, "files" | "now">): Promise<AudioJobView> {
   const transcriptProjectName = job.task === "postprocess" ? audioSourceProject(job) : job.projectName;
   const references: AudioJobView["artifacts"] = {
@@ -171,8 +175,12 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
     async get(project: string, id: string, email: string) { return view(await owned(project, id, email), deps); },
     async list(project: string, email: string, limit: number, after?: string) {
       await deps.authorize(project, email);
+      const jobs = await deps.jobs.list(project, limit, after, email);
       const result: AudioJobView[] = [];
-      for (const job of await deps.jobs.list(project, limit, after, email)) result.push(await view(job, deps));
+      for (let start = 0; start < jobs.length; start += MAX_CONCURRENT_AUDIO_JOB_VIEWS) {
+        result.push(...await Promise.all(jobs.slice(start, start + MAX_CONCURRENT_AUDIO_JOB_VIEWS)
+          .map((job) => view(job, deps))));
+      }
       return result;
     },
     async cancel(project: string, id: string, email: string, revision: number) {
