@@ -30,8 +30,8 @@ export function ModelCollection<T extends ModelRow>({ models, provider, emptyTex
   const selectedProvider = provider ? null : activeModelProvider(models, preferences.provider);
   const update = (patch: Partial<ModelBrowserState>) => setPreferences(current => ({ ...current, page: 1, ...patch }));
   const providers = [...new Set(models.flatMap(model => model.provider ? [model.provider] : []))].sort();
-  const filtered = useMemo(() => filterModelRows(models, { ...preferences, provider: selectedProvider }, isSelected),
-    [models, preferences, selectedProvider, isSelected]);
+  const filtered = useMemo(() => filterModelRows(models, { ...preferences, provider: selectedProvider }, isSelected, provider),
+    [models, preferences, selectedProvider, isSelected, provider]);
   const pages = Math.max(1, Math.ceil(filtered.length / 24));
   const currentPage = Math.min(page, pages);
   return <Stack gap="md">

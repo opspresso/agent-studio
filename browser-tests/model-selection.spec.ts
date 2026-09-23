@@ -88,6 +88,12 @@ test("shows multiple capability badges, limits and prices and supports name/pric
   await expect(cards.first()).toContainText("Zeta");
 });
 
+test("finds a discovered model by its future provider-qualified ID", async ({ page }) => {
+  await page.getByRole("textbox", { name: "Search models" }).fill("fixture/vendor/zeta");
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(page.getByRole("article")).toContainText("Zeta");
+});
+
 test("adds Jev immediately without a dialog and retains decisions after reload and in selected models", async ({ page }) => {
   const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
   await expect(jev).toContainText("Decisions");
@@ -172,6 +178,25 @@ test("retains the selected model and surfaces the API's in-use deletion refusal"
 test("keeps model cards within a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("shared model picker shows the selected identity, favorite group and per-model prices on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${base}/picker`);
+  const picker = page.getByRole("combobox", { name: "Model" });
+  await expect(picker).toHaveValue("Office model (office/long-model-name-with-many-segments-and-a-provider-route)");
+  await expect(page.getByText("office · $2.00 in · $8.00 out per 1M")).toBeVisible();
+  await picker.click();
+  await expect(page.getByText("Favorites", { exact: true })).toBeVisible();
+  const favorite = page.getByRole("option", { name: /Jev Latest/ });
+  await expect(favorite).toContainText("router/vendor/jev-latest");
+  await expect(favorite).toContainText("$0.042 in");
+  const longOption = page.getByRole("option", { name: /Office model/ });
+  expect(await longOption.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await favorite.click();
+  await expect(picker).toHaveValue("Jev Latest (router/vendor/jev-latest)");
+  await expect(page.getByText("router · $0.042 in · $0.00 out per 1M")).toBeVisible();
 });
 
 test("always queries the complete provider catalog even while selected-only is active", async ({ page }) => {

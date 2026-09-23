@@ -105,6 +105,12 @@ describe("models table", () => {
     expect(visible(models, { query: "openrouter/e" }).map(item => item.id)).toEqual(["openrouter/e"]);
   });
 
+  it("finds discovered models by provider-qualified ID before registration", () => {
+    const discovered = [{ wireId: "vendor/example", displayName: "Example" }];
+    expect(filterModelRows(discovered, { ...DEFAULT_MODEL_BROWSER_STATE, query: "office/vendor/example" }, undefined, "office"))
+      .toEqual(discovered);
+  });
+
   it("sorts by name and output price", () => {
     expect(visible(models, {
       provider: null,
