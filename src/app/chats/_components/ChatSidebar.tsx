@@ -127,6 +127,9 @@ export function ChatSidebar() {
   }, [pathname, closeDrawer]);
 
   const activeId = pathname.startsWith("/chats/") ? pathname.split("/")[2] : undefined;
+  const activeChat = chats.find(chat => chat.chatId === activeId);
+  const activeTab: SidebarTab | undefined = activeChat ? activeChat.workspaceId ? "workspaces" : "chats" : undefined;
+  const currentTitle = activeChat ? t("chat.currentItem", { title: activeChat.title }) : undefined;
 
   async function handleDelete(chatId: string) {
     const res = await fetch(`/api/chats/${chatId}`, { method: "DELETE" });
@@ -173,8 +176,12 @@ export function ChatSidebar() {
     <Tabs value={tab} onChange={value => { if (value === "chats" || value === "workspaces") setTab(value); }}
       style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <Tabs.List grow>
-        <Tabs.Tab value="chats" leftSection={<IconMessages size={15} />}>{t("chat.list")}</Tabs.Tab>
-        <Tabs.Tab value="workspaces" leftSection={<IconTerminal2 size={15} />}>{t("workspace.list")}</Tabs.Tab>
+        <Tabs.Tab value="chats" leftSection={<IconMessages size={15} />} className={classes.tab}
+          data-current={activeTab === "chats" || undefined} title={activeTab === "chats" ? currentTitle : undefined}
+          aria-description={activeTab === "chats" ? currentTitle : undefined}>{t("chat.list")}</Tabs.Tab>
+        <Tabs.Tab value="workspaces" leftSection={<IconTerminal2 size={15} />} className={classes.tab}
+          data-current={activeTab === "workspaces" || undefined} title={activeTab === "workspaces" ? currentTitle : undefined}
+          aria-description={activeTab === "workspaces" ? currentTitle : undefined}>{t("workspace.list")}</Tabs.Tab>
       </Tabs.List>
       <Tabs.Panel value="chats" pt="xs" style={{ flex: 1, minHeight: 0 }}>{listFor("chats")}</Tabs.Panel>
       <Tabs.Panel value="workspaces" pt="xs" style={{ flex: 1, minHeight: 0 }}>{listFor("workspaces")}</Tabs.Panel>

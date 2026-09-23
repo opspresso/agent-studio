@@ -14,7 +14,7 @@ const nextStubs: Plugin = { name: "next-stubs", setup(build) {
     loader: "js", resolveDir: process.cwd(),
   }));
   build.onLoad({ filter: /^next\/navigation$/, namespace: "next-stubs" }, () => ({
-    contents: 'export const usePathname = () => "/chats"; export const useRouter = () => ({ push() {} });', loader: "js",
+    contents: 'export const usePathname = () => window.location.pathname; export const useRouter = () => ({ push() {} });', loader: "js",
   }));
 } };
 
@@ -65,4 +65,29 @@ test("uses the same saved selection in the narrow history drawer", async ({ page
   await page.getByRole("button", { name: "Chats & Workspaces" }).click();
   await expect(page.getByRole("dialog", { name: "Chats & Workspaces" }).getByRole("tab", { name: "Workspaces" }))
     .toHaveAttribute("aria-selected", "true");
+});
+
+test("marks the open Chat or Workspace in the sidebar", async ({ page }) => {
+  await page.route("**/api/chats?**", route => route.fulfill({ json: { chats: [
+    { chatId: "chat-1", ownerEmail: "reader@example.test", title: "General discussion", createdAt: "", updatedAt: "" },
+    { chatId: "chat-2", ownerEmail: "reader@example.test", title: "Coding workspace", workspaceId: "workspace-1", createdAt: "", updatedAt: "" },
+  ], hasMore: false } satisfies ChatListResponse }));
+  await page.goto(`${base}/chats/chat-1`);
+  const sidebar = page.locator("aside");
+  const chat = sidebar.getByRole("link", { name: "General discussion" });
+  await expect(chat).toHaveAttribute("aria-current", "page");
+  await expect(chat.locator("..")).toHaveAttribute("data-active", "true");
+  expect(await chat.evaluate(element => getComputedStyle(element).fontWeight)).toBe("700");
+  await expect(sidebar.getByRole("tab", { name: "Chats" })).toHaveAttribute("data-current", "true");
+  await expect(sidebar.getByRole("tab", { name: "Chats" })).toHaveAttribute("title", "Open: General discussion");
+  expect(await sidebar.getByRole("tab", { name: "Chats" }).evaluate(element => getComputedStyle(element, "::after").width)).toBe("6px");
+
+  await sidebar.getByRole("tab", { name: "Workspaces" }).click();
+  await expect(sidebar.getByRole("tab", { name: "Chats" })).toHaveAttribute("data-current", "true");
+  await sidebar.getByRole("link", { name: "Coding workspace" }).click();
+  const workspace = sidebar.getByRole("link", { name: "Coding workspace" });
+  await expect(workspace).toHaveAttribute("aria-current", "page");
+  await expect(workspace.locator("..")).toHaveAttribute("data-active", "true");
+  await expect(sidebar.getByRole("tab", { name: "Workspaces" })).toHaveAttribute("data-current", "true");
+  await expect(sidebar.getByRole("tab", { name: "Workspaces" })).toHaveAttribute("title", "Open: Coding workspace");
 });

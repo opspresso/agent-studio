@@ -375,7 +375,7 @@ Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액�
 재생성·교체·폐기는 공통 확인창을 거친다. 평문은 브라우저 저장소에 기록하지 않는다.
 Settings는 General·Plugins·Models·Keys 탭으로 관리하고, `/models`는 등록된 모델 조회·검색만 제공한다.
 공통 검색은 `CatalogSearch`, IME Enter 전송은
-`isSubmitEnter`, Chat 스크롤은 `use-stick-to-bottom`이 담당한다.
+`isSubmitEnter`, Chat·Workspace 스크롤은 `useLatestScroll`이 담당한다.
 시스템 테마는 hydration 전후 기본값을 일치시키고, 답변·추론의 고빈도 출력은
 `createTextPacer`로 묶는다. API Reference 예제는 프로젝트 주소에 맞춰 만들고 credential은
 자리표시자로만 표시한다.
@@ -383,6 +383,10 @@ Settings는 General·Plugins·Models·Keys 탭으로 관리하고, `/models`는 
 ## 용어
 
 개념의 기본 정의는 [시스템 개요](AGENT_STUDIO.md#skilltoolmcpagentmemory)를 따른다.
+콘솔의 화면·유형 이름은 언어와 관계없이 영어로 표시한다. 메뉴·목록·컬렉션은 `Chats`, `Workspaces`,
+`Agents`, `Artifacts`, `Plugins`, `Skills`, `Tools`, `Models`, `Members`처럼 복수형을 쓰고,
+개별 유형·생성·삭제는 `Chat`, `Workspace`, `Agent`, `Artifact`, `Plugin`, `Skill`, `Tool`,
+`Model`, `Member`처럼 단수형을 쓴다.
 코드의 `Project`는 콘솔의 Agent를 저장하는 단위이고, `subagent`는 다른 Agent 설정의
 실행 대상 참조다. `McpServer`는 콘솔의 Tools에 등록한 서버를 뜻한다.
 

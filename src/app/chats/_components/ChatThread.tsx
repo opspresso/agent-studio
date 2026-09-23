@@ -431,18 +431,19 @@ export function ChatThread({ chatId }: { chatId: string }) {
 
   return (
     <Flex direction="column" h="100%">
-      {chat?.projectName && (
+      {chat && (
         <Box
           pb="xs"
           mb="sm"
           style={{ borderBottom: "1px solid var(--studio-border)" }}
         >
-          <Group gap="xs" className={classes.column}>
-            <Badge variant="outline" color="gray">{t("chat.kind")}</Badge>
-            <Badge color={BADGE.owned} radius="xl">
-              {chat.projectName}
-            </Badge>
-          </Group>
+          <Stack gap={4} className={classes.column}>
+            <Text component="h2" fz="sm" fw={700} m={0} truncate="end" title={chat.title}>{chat.title}</Text>
+            <Group gap="xs">
+              <Badge variant="outline" color="gray">{t("chat.kind")}</Badge>
+              {chat.projectName && <Badge color={BADGE.owned} radius="xl">{chat.projectName}</Badge>}
+            </Group>
+          </Stack>
         </Box>
       )}
       <Box style={{ position: "relative", flex: 1, minHeight: 0 }}>

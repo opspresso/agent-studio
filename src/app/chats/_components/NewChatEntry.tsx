@@ -11,7 +11,7 @@ export function NewChatEntry({ workspacesEnabled }: { workspacesEnabled: boolean
   const [mode, setMode] = useState("chat");
   if (!workspacesEnabled) return <NewChatPanel />;
   return <Stack h="100%" gap="sm">
-    <SegmentedControl value={mode} onChange={setMode} data={[{ value: "chat", label: t("nav.chats") }, { value: "workspace", label: "Workspace" }]} />
+    <SegmentedControl value={mode} onChange={setMode} data={[{ value: "chat", label: t("chat.kind") }, { value: "workspace", label: t("workspace.kind") }]} />
     <Box style={{ flex: 1, minHeight: 0 }}>{mode === "workspace" ? <NewWorkspaceForm /> : <NewChatPanel />}</Box>
   </Stack>;
 }

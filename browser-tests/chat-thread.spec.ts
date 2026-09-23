@@ -16,7 +16,7 @@ const THREAD: ChatWithMessages = {
   chat: CHAT,
   messages: [{ chatId: CHAT.chatId, seq: 0, role: "user", content: "Existing message", createdAt: CHAT.createdAt }],
 };
-const LOAD_ERROR = "The conversation could not be loaded.";
+const LOAD_ERROR = "The Chat could not be loaded.";
 
 test.beforeAll(async () => {
   const bundle = await build({ entryPoints: ["browser-tests/fixtures/chat-thread.tsx"], bundle: true, write: false,
@@ -61,6 +61,7 @@ for (const [failure, fail] of Object.entries(failures)) {
     expect(sends).toBe(0);
     await page.getByRole("button", { name: "Try again", exact: true }).click();
     await expect(page.getByText("Existing message", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Conversation" })).toBeVisible();
     await expect(page.getByRole("alert")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Try again", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();

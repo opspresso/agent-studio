@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MantineProvider } from "@mantine/core";
 import { describe, expect, it, vi } from "vitest";
 import { NewChatPanel } from "@/app/chats/_components/NewChatPanel";
+import { NewChatEntry } from "@/app/chats/_components/NewChatEntry";
 import { Composer } from "@/app/chats/_components/Composer";
 import { translator } from "@/app/_i18n/translate";
 import { useT } from "@/app/_i18n/provider";
@@ -23,6 +24,13 @@ function render(children: React.ReactNode) {
 }
 
 describe("chat startup and composer accessibility", () => {
+  it.each(["en", "ko"] as const)("uses the shared Chat and Workspace labels for creation in %s", locale => {
+    vi.mocked(useT).mockReturnValue(translator(locale));
+    const html = render(createElement(NewChatEntry, { workspacesEnabled: true }));
+    expect(html).toContain(">Chat<");
+    expect(html).toContain(">Workspace<");
+  });
+
   it.each(["en", "ko"] as const)("announces project loading without offering a premature send in %s", (locale) => {
     const t = translator(locale);
     vi.mocked(useT).mockReturnValue(t);
