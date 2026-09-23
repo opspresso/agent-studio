@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createSourceReferenceUseCases, type SourceReferenceDeps } from "@/application/audio/sourceReferences";
 import type { SourceReference } from "@/domain/artifact/sourceReference";
 import { sourceReferenceContext } from "@/domain/security/secretContext";
+import { BlockedUrlError } from "@/domain/security/urlPolicy";
 import type { AudioJob } from "@/domain/audio/job";
 import { NotFoundError } from "@/application/errors";
 
@@ -58,6 +59,15 @@ describe("encrypted source references", () => {
     vi.mocked(f.deps.refresh).mockResolvedValue({ ...f.input, itemId: "another-item" });
     await expect(f.api.importFile(job, context)).rejects.toThrow("source_identity_changed");
     expect(f.deps.downloader.open).toHaveBeenCalledTimes(1);
+
+    vi.mocked(f.deps.refresh).mockResolvedValue({ ...f.input, url: "https://files.example.test/new?sig=fresh" });
+    f.deps.urlPolicy.assertAllowed = async () => { throw new BlockedUrlError("private host"); };
+    await expect(f.api.importFile(job, context)).rejects.toMatchObject({ code: "source_url_refused", retryable: false });
+
+    const outage = new Error("resolver unavailable");
+    f.deps.urlPolicy.assertAllowed = async () => { throw outage; };
+    await expect(f.api.importFile(job, context)).rejects.toBe(outage);
+    expect(f.deps.downloader.open).toHaveBeenCalledTimes(1);
   });
   it("returns an opaque reference and encrypts the URL with its project-bound context", async () => {
     const f = fixture();
@@ -76,8 +86,16 @@ describe("encrypted source references", () => {
     await expect(f.api.identity("audio", "ref-1", f.input.userEmail)).rejects.toThrow("source_reference_expired");
   });
   it("does not persist a URL refused by the outbound policy", async () => {
-    const f = fixture(); f.deps.urlPolicy.assertAllowed = async () => { throw new Error("private DNS details"); };
+    const f = fixture(); f.deps.urlPolicy.assertAllowed = async () => { throw new BlockedUrlError("private DNS details"); };
     await expect(f.api.register(f.input)).rejects.toThrow("Source URL is not permitted");
+    expect(f.rows.size).toBe(0);
+  });
+  it("does not mistake a resolver outage for an invalid source URL", async () => {
+    const f = fixture();
+    const failure = new Error("resolver unavailable");
+    f.deps.urlPolicy.assertAllowed = async () => { throw failure; };
+
+    await expect(f.api.register(f.input)).rejects.toBe(failure);
     expect(f.rows.size).toBe(0);
   });
   it("reuses an imported file even after the temporary source reference expires", async () => {

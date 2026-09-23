@@ -215,7 +215,8 @@ export function createMcpUseCases(
         try {
           await policy.assertAllowed(existing.url);
         } catch (error) {
-          return { ok: false, error: error instanceof BlockedUrlError ? error.message : "Blocked URL" };
+          if (!(error instanceof BlockedUrlError)) throw error;
+          return { ok: false, error: error.message };
         }
       }
       const headers = cipher.decryptHeadersForOutbound(

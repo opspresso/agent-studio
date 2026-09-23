@@ -112,6 +112,17 @@ describe("managed loopback dispatch", () => {
     expect(resolved.warnings[0]).toContain("was blocked");
   });
 
+  it("reports a URL policy outage without calling it a blocked address", async () => {
+    const failure = new Error("resolver connection details");
+    const policy: UrlPolicy = { assertAllowed: async () => { throw failure; } };
+
+    const resolved = await buildMcpTools(depsFor(entry({ runtime: "remote" }), policy), configuration);
+
+    expect(resolved.mcpTools).toEqual([]);
+    expect(resolved.warnings).toEqual(["MCP server 'srv' could not be checked for a safe address; its tools were not offered."]);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it("still guards a row written before managed servers existed", async () => {
     const policy = strictPolicy();
     const resolved = await buildMcpTools(depsFor(entry({}), policy), configuration);

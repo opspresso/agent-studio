@@ -333,6 +333,19 @@ describe("MCP registry secret contract", () => {
     expect(listMcpToolsMock).not.toHaveBeenCalled();
   });
 
+  it("propagates a URL policy service failure during a connection test", async () => {
+    const { repo } = makeMcpRepo([
+      { name: "m", url: "https://mcp.example/mcp", headers: {}, createdAt: NOW, updatedAt: NOW },
+    ]);
+    const failure = new Error("DNS resolver unavailable");
+    const useCases = createMcpUseCasesImpl(repo, secretCipher, {
+      assertAllowed: async () => { throw failure; },
+    }, { listTools: listMcpToolsMock, invalidateDiscovery: () => {} });
+
+    await expect(useCases.testConnection("m")).rejects.toBe(failure);
+    expect(listMcpToolsMock).not.toHaveBeenCalled();
+  });
+
   it("checks a moved URL even when the previous address was declared internal", async () => {
     const original = "http://mcp.approved.internal/mcp";
     const { repo, store } = makeMcpRepo([
