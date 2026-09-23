@@ -25,7 +25,7 @@ vi.mock("@/lib/session", () => ({
 const { authenticateExecution } = await import("@/app/api/projects/_lib/executionAuth");
 
 const request = (bearer?: string) =>
-  new Request("http://test/api/projects/p/versions/1/predict", {
+  new Request("http://test/api/projects/p/predict", {
     method: "POST",
     headers: bearer ? { authorization: `Bearer ${bearer}` } : {},
   });

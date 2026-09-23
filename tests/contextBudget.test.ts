@@ -243,7 +243,7 @@ describe("runAgent context budget", () => {
     }, {
       projectName: "p", model: SMALL_WINDOW_MODEL, parameters: SMALL_BUDGET_PARAMS,
       messages: [{ role: "user", content: "go" }], mcpTools: TOOL,
-      subagents: [{ name: "specialist", kind: "agent", description: "Detailed expertise. ".repeat(250) }],
+      subagents: [{ name: "specialist", description: "Detailed expertise. ".repeat(250) }],
     }));
     expect(chunks.at(-1)).toMatchObject({ done: true });
     const next = channel.seenParams[1]!;

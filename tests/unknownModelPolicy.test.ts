@@ -190,9 +190,9 @@ describe("subagent preparation enforces model policy", () => {
     await expect(prepare("refuse", UNKNOWN)).rejects.toThrow("selected by an administrator");
   });
   it("prepares a registered model", async () => {
-    expect(await prepare("refuse", REGISTERED)).toMatchObject({ kind: "agent", input: { model: REGISTERED } });
+    expect(await prepare("refuse", REGISTERED)).toMatchObject({ input: { model: REGISTERED } });
   });
   it("allows unpriced models when no refusal policy is configured", async () => {
-    expect(await prepare(undefined, UNKNOWN)).toMatchObject({ kind: "agent", input: { model: UNKNOWN } });
+    expect(await prepare(undefined, UNKNOWN)).toMatchObject({ input: { model: UNKNOWN } });
   });
 });

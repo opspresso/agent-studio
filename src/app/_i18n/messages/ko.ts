@@ -450,7 +450,7 @@ export const ko: Messages = {
     "플러그인 저장소나 압축 파일에서 재사용 가능한 Skill과 MCP 도구를 가져와 Agent에 연결합니다.",
   "home.domain.catalog": "케이퍼빌리티 카탈로그",
   "home.domain.catalogBody":
-    "Skill, MCP 도구, 에이전트를 한곳에서 검색합니다. 이 기능을 켠 Agent는 현재 요청에 맞는 기능을 실행 중에만 추가하며, 저장된 설정은 바꾸지 않습니다.",
+    "Skill과 MCP 서버·도구를 한곳에서 검색합니다. 이 기능을 켠 Agent는 현재 요청에 맞는 기능을 실행 중에만 추가하며, 저장된 설정은 바꾸지 않습니다.",
   "home.domain.chats": "Chats",
   "home.domain.chatsBody":
     "콘솔에서 에이전트와 대화합니다. 별도 문서 MCP 서버 없이 PDF·텍스트·Office 첨부를 읽고, 답변과 도구 호출을 확인합니다. 탭을 닫아도 실행은 계속됩니다.",
@@ -612,7 +612,7 @@ export const ko: Messages = {
 
   "guide.capabilities.title": "스킬·도구·에이전트 확장",
   "guide.capabilities.body":
-    "관리자가 Skills·Tools·Agents·Plugins에 기능을 등록한다. Agent 소유자는 사용 가능한 항목을 Agent에 연결하고 저장한 다음, 그 기능이 필요한 작업으로 시험한다. 등록만으로 모든 실행에 모든 기능이 제공되지는 않는다.",
+    "관리자가 Skills·Tools·Plugins에 기능을 등록한다. Agent 소유자는 사용 가능한 항목을 Agent에 연결하고 저장한 다음, 그 기능이 필요한 작업으로 시험한다. 등록만으로 모든 실행에 모든 기능이 제공되지는 않는다.",
   "guide.capabilities.skills": "Skills: 재사용할 지시문",
   "guide.capabilities.skillsBody":
     "관리자가 Skills에서 용도를 명확하게 설명한 스킬을 등록하면 Agent 설정 편집기에서 연결한다. 모델은 처음에 이름과 설명을 보고 필요할 때 전체 지시문을 읽는다. 반복 절차나 업무 지식을 담는 데 사용하며, 실제 작업에서 의도한 스킬을 읽는지 확인한다.",

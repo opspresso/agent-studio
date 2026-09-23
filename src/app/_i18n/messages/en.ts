@@ -475,7 +475,7 @@ export const en = {
     "Bring reusable skills and MCP tools into your Agents from plugin repositories or uploaded archives.",
   "home.domain.catalog": "Capability catalog",
   "home.domain.catalogBody":
-    "Search skills, MCP tools, and agents in one catalog. An opted-in Agent adds relevant capabilities for the current run without changing its saved bindings.",
+    "Search skills and MCP servers or tools in one catalog. An opted-in Agent adds relevant capabilities for the current run without changing its saved bindings.",
   "home.domain.chats": "Chats",
   "home.domain.chatsBody":
     "Talk to an agent in the console. Read PDF, text, and Office attachments without a document MCP server, and follow replies and tool calls. Closing the tab does not stop the run.",
@@ -1191,8 +1191,7 @@ export const en = {
   "mcpOAuth.redirectHint": "Filled from the deployment’s public URL. Register this exact callback with the OAuth provider.",
   "mcpOAuth.save": "Save OAuth client",
 
-  // Wording the four registry catalogs (skills, tools, agents, plugins) share.
-  // Each page had its own copy of these; a reader meets them on all four.
+  // Wording shared by the skill, tool and plugin registries.
   "registry.nameLabel": "Name",
   "registry.nameHint": "Lowercase letters, digits, and hyphens only.",
   "registry.description": "Description",

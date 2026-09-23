@@ -122,7 +122,6 @@ export interface SubagentInfo {
   signature?: string;
   name: string;
   description: string;
-  kind?: "agent" | "action";
 }
 
 /** Connected MCP server overview; tool names are the aliased names the model sees. */
@@ -331,10 +330,9 @@ function mcpSystemPromptAddition(servers: McpServerInfo[]): string {
  */
 function subagentSystemPromptAddition(subagents: SubagentInfo[], withDispatch: boolean, offeredNames?: readonly string[]): string {
   const rows = subagents.map((agent) => {
-    const action = agent.kind === "action";
     const tools = [
-      ...(!action ? [agentToolName(agent.name, "handoff")] : []),
-      ...(action || withDispatch ? [agentToolName(agent.name, "delegate")] : []),
+      agentToolName(agent.name, "handoff"),
+      ...(withDispatch ? [agentToolName(agent.name, "delegate")] : []),
     ].filter((name) => !offeredNames || offeredNames.includes(name));
     return `| ${agent.name} | ${tools.join(", ")} | ${tableCell(agent.description) || "No description"} |`;
   });
@@ -390,8 +388,7 @@ export const AGENT_TASK_SCHEMA = {
 
 function delegationDefinitions(subagents: SubagentInfo[], canDispatch: boolean): DelegationTool[] {
   return subagents.flatMap((agent) => {
-    const action = agent.kind === "action";
-    const modes: DelegationTool["mode"][] = action ? ["delegate"] : canDispatch ? ["handoff", "delegate"] : ["handoff"];
+    const modes: DelegationTool["mode"][] = canDispatch ? ["handoff", "delegate"] : ["handoff"];
     return modes.map((mode) => ({ name: agentToolName(agent.name, mode), agentName: agent.name, mode }));
   });
 }

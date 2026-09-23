@@ -524,7 +524,7 @@ describe("a subagent transfer is guarded too", () => {
     await expect(prepareChild(100)).rejects.toThrow(/daily|limit|spend/i);
   });
   it("prepares a child under its project spending limit", async () => {
-    expect(await prepareChild(1)).toMatchObject({ kind: "agent", input: { model: childVersion.model } });
+    expect(await prepareChild(1)).toMatchObject({ input: { model: childVersion.model } });
   });
 });
 

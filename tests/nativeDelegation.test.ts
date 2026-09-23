@@ -36,11 +36,11 @@ function fixture(reply: (body: Record<string, unknown>, index: number) => unknow
   const models = createAgentModelProvider(async (model) => ({ providerName: null, baseUrl: `http://delegation-${testId}.test/v1`, apiKey: "test", auth: "bearer", model }));
   const closed = vi.fn(async () => {});
   const loadAgent = vi.fn<NonNullable<AgentDeps["loadAgent"]>>(async (name, task) => ({
-    kind: "agent", deps: { createToolSchemaValidator, channel: models }, close: closed, warnings: [],
+    deps: { createToolSchemaValidator, channel: models }, close: closed, warnings: [],
     input: { projectName: name, model: CHILD, maxTurn: 4, messages: [{ role: "user", content: task.message }], signal: task.signal },
   }));
   const deps: AgentDeps = { createToolSchemaValidator, channel: models, canDelegate: true, loadAgent };
-  const input: RunAgentInput = { projectName: "root", model: ROOT, maxTurn: 8, canDispatch: true, messages: [{ role: "user", content: "help me" }], subagents: [{ name: "child", kind: "agent", description: "Specialist" }] };
+  const input: RunAgentInput = { projectName: "root", model: ROOT, maxTurn: 8, canDispatch: true, messages: [{ role: "user", content: "help me" }], subagents: [{ name: "child", description: "Specialist" }] };
   return { deps, input, requests, closed, loadAgent, models };
 }
 
@@ -82,19 +82,15 @@ describe("native SDK delegation", () => {
     expect(f.requests.filter((body) => body.model === CHILD)).toHaveLength(2);
   });
 
-  it("preserves a reserved hyphenated project tool name and invokes its external capability", async () => {
-    const f = fixture((_body, index) => index === 0 ? calls({ name: "delegate_image-agent", input: "draw" }) : answer("delivered"));
-    f.input.subagents = [{ name: "image-agent", kind: "action", description: "Draw images" }];
-    const invoked = vi.fn();
-    f.loadAgent.mockResolvedValue({ kind: "action", run: async function* () {
-      invoked();
-      yield { image: { b64: "aGVsbG8=", mimeType: "image/png" } };
-      return "image delivered";
-    } });
+  it("preserves a hyphenated local Agent tool name", async () => {
+    const f = fixture((body, index) => index === 0
+      ? calls({ name: "delegate_image-agent", input: "draw" })
+      : body.model === CHILD ? answer("image delivered") : answer("delivered"));
+    f.input.subagents = [{ name: "image-agent", description: "Draw images" }];
     const chunks = await collect(runAgent(f.deps, f.input));
-    expect(invoked).toHaveBeenCalledTimes(1);
+    expect(f.loadAgent).toHaveBeenCalledTimes(1);
     expect(f.requests[0]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ function: expect.objectContaining({ name: "delegate_image-agent" }) })]));
-    expect(chunks.some((chunk) => chunk.image && chunk.author === "image-agent")).toBe(true);
+    expect(chunks.some((chunk) => chunk.delta?.content === "image delivered" && chunk.author === "image-agent")).toBe(true);
     expect(chunks.at(-1)).toMatchObject({ done: true });
   });
 

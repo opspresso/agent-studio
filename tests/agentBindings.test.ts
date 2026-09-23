@@ -47,7 +47,7 @@ describe("Studio prepares native SDK agent bindings", () => {
   it("loads the current configuration from the Project", async () => {
     const f = fixture();
     const prepared = await f.prepare();
-    expect(prepared.kind).toBe("agent");
+    expect(prepared.input.projectName).toBe("child");
     expect(f.projects.get).toHaveBeenCalledWith("child");
   });
 
@@ -77,7 +77,6 @@ describe("Studio prepares native SDK agent bindings", () => {
   it("prepares the Agent's task and its own caller opt-in", async () => {
     const f = fixture({}, { parameters: { piiFiltering: false, callerContext: true } });
     const prepared = await f.prepare();
-    if (prepared.kind !== "agent") throw new Error("Expected a text agent");
     expect(prepared.input.messages).toEqual(expect.arrayContaining([
       { role: "user", content: "task" },
     ]));
@@ -89,8 +88,8 @@ describe("Studio prepares native SDK agent bindings", () => {
   it("clamps a specialist's SDK turn limit to its caller's remaining allowance", async () => {
     const f = fixture({ }, { maxTurn: 30 });
     const prepared = await f.prepare();
-    expect(prepared).toMatchObject({ kind: "agent", input: { maxTurn: 7, canDispatch: false } });
-    if (prepared.kind === "agent") await prepared.close();
+    expect(prepared).toMatchObject({ input: { maxTurn: 7, canDispatch: false } });
+    await prepared.close();
   });
 
   it("honors cancellation before any binding read", async () => {

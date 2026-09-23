@@ -1916,14 +1916,9 @@ describe("executeProject non-streaming dispatch", () => {
   });
 });
 
-/**
- * The other half of the same dispatch. `executeProjectStream` sends only agent
- * projects here, but three surfaces call `executeAgent` directly and one of them
- * — `/api/projects/{name}/versions/{version}/agent` — had no check of its own,
- * so it ran the tool loop on whatever project type it was handed.
- */
-describe("executeAgent project type", () => {
-  it("runs an agent project", async () => {
+/** Direct execution uses the Agent loop. */
+describe("executeAgent", () => {
+  it("runs a configured Agent", async () => {
     const channel = new FakeChannel([[contentChunk("answer"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
 

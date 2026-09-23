@@ -80,7 +80,7 @@ export async function prepareSubagent(
     runtime?.checkBinding(`${task.invocationId ?? name}/tools`, runtimeFingerprint([resolved.mcp.signature, resolved.subagents, resolved.skills]));
     const childDeps = await buildAgentDeps(deps, resolved.configuration, name, recordUsage, origin, task.signal, resolved.mcp.callMcpTool, runtime);
     return {
-      kind: "agent", deps: childDeps,
+      deps: childDeps,
       input: { ...baseInput, ...memory.input, skills: resolved.skills, subagents: resolved.subagents, mcpTools: resolved.mcp.mcpTools, mcpServers: resolved.mcp.mcpServers, canDispatch: false },
       warnings: [...resolved.warnings, ...memory.warnings],
       close: () => closeMcp(resolved.mcp.close),

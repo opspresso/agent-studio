@@ -105,8 +105,7 @@ export async function resolveSubagents(
         }
         return {
           subagent: { name: ref.name, description: target.description ?? "",
-            signature: runtimeFingerprint([target.name, target.configuration]),
-            kind: "agent" },
+            signature: runtimeFingerprint([target.name, target.configuration]) },
         };
       },
     ),

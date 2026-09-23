@@ -492,7 +492,6 @@ describe("a version that opted in recalls before the first token", () => {
       : (async function* () {
           const prepared = await prepareSubagent(deps, { ...configuration, projectName: "parent", subagentList: [{ name: project.name }] }, project.name,
             { message: query, images: [], maxTurns: 8 }, async () => {}, { actor, ancestry: ["parent"] });
-          if (prepared.kind !== "agent") throw new Error("Expected a native agent");
           try { yield* runAgent(prepared.deps, prepared.input); } finally { await prepared.close(); }
         })();
     const chunks: EngineChunk[] = [];

@@ -83,11 +83,11 @@ flowchart TB
 동시에 강제한다. 제공되지 않은 도구와 잘못된 인자는 SDK의 오류 결과/실패 계약을 따른다.
 
 일반 JSON Schema를 SDK `tool()`에 전달하면 JSON 파싱만 제공하므로 별도의 실행 전 검증을
-적용한다. `ToolSchemaValidator` 포트를 통해 기존 MCP 패키지의 검증기를 주입하며 builtin·MCP·위임·frontend
+적용한다. `ToolSchemaValidator` 포트를 통해 MCP 패키지의 검증기를 주입하며 builtin·MCP·위임
 도구의 선언을 그대로 검사한다. 필수 필드·타입·enum·중첩 구조·추가 필드 제한을 보존하고 값을
 강제 변환하거나 삭제하지 않는다. PII 인자는 복원한 실제 dispatch 값을 검사한다. SDK 도구 입력
 Guardrail은 승인 요청 전에 검사하며, 실패는 오류 도구 결과로 돌아가고 실행 슬롯과 부작용을
-만들지 않는다. 잘못된 frontend 호출도 같은 경로로 모델에 돌아간다. 승인된 호출도 실행 전
+만들지 않는다. 승인된 호출도 실행 전
 검증한다. 검증기가 없는 도구 실행, 해석할 수 없는 스키마와 외부 `$ref`는 거부한다.
 
 `agentModels.ts`의 SDK `OpenAIChatCompletionsModel`은 배포가 지정한 endpoint로만 요청한다.
