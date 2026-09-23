@@ -69,6 +69,7 @@ export function Dashboard({ projects }: { projects: SanitizedProject[] | null })
     async function run() {
       setLoading(true);
       setError(null);
+      setItems([]);
       try {
         const data = await readJson<{ items?: UsageRow[] }>(
           await fetch(`/api/usages/summary?from=${from}&to=${to}`),
