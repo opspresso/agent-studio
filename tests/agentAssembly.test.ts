@@ -4,7 +4,7 @@
  * The builders always had a single owner; the *arguments* did not. `runAgent`
  * and the Playground preview each spelled out their own positional argument
  * list, and they had already drifted — the preview omitted the last one, so a
- * version that opted into `callerContext` previewed a prompt without the caller
+ * configuration that opted into `callerContext` previewed a prompt without the caller
  * block every real run carries. These tests pin the two together at the seam
  * that drifted, and pin the gate that was asymmetric.
  */

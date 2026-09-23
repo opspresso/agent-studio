@@ -177,7 +177,7 @@ describe("durable native SDK Session", () => {
     expect(saved.map((image) => image.b64)).toEqual(expect.arrayContaining([imageResult("first").b64, imageResult("second").b64, imageResult("edited first").b64, imageResult("edited second").b64]));
   });
 
-  it("keeps a preceding user image editable after a version enables image tools", async () => {
+  it("keeps a preceding user image editable after a configuration enables image tools", async () => {
     const f = fixture();
     const image = { b64: "aGVsbG8=", mimeType: "image/png" };
     await f.run(new FakeChannel([[contentChunk("seen")]]), "", undefined, {}, { messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: `data:image/png;base64,${image.b64}` } }] }] });
@@ -393,7 +393,7 @@ describe("durable native SDK Session", () => {
     expect(await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail)).toBeNull();
   });
 
-  it("applies a delegated version's SDK input guardrail before its model runs", async () => {
+  it("applies a delegated configuration's SDK input guardrail before its model runs", async () => {
     const f = fixture();
     const channel = new FakeChannel([[toolCallChunk(0, "delegate", "delegate_child", '{"input":"too long","image_ids":[]}')], [contentChunk("parent recovered")]]);
     const child = new FakeChannel([]);

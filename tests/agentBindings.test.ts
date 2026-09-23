@@ -6,10 +6,10 @@ import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { RunOrigin } from "@/domain/execution/actor";
 import { FakeChannel } from "./fakeChannel";
 
-function fixture(projectOverrides: Partial<Project> = {}, versionOverrides: Partial<AgentConfiguration> = {}) {
+function fixture(projectOverrides: Partial<Project> = {}, configurationOverrides: Partial<AgentConfiguration> = {}) {
   const now = "2026-09-12T00:00:00Z";
   const project: Project = { name: "child", displayName: "Child", description: "Specialist", ownerEmail: "owner@example.com",  createdAt: now, updatedAt: now, ...projectOverrides };
-  const configuration: AgentConfiguration = { projectName: "child",  systemPrompt: "Child instructions",  model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [],  ...versionOverrides };
+  const configuration: AgentConfiguration = { projectName: "child",  systemPrompt: "Child instructions",  model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [],  ...configurationOverrides };
   const parent: AgentConfiguration = { ...configuration, projectName: "parent", subagentList: [{ name: "child" }] };
   project.configuration = configuration;
   if ("configuration" in projectOverrides) project.configuration = projectOverrides.configuration;
@@ -38,7 +38,7 @@ describe("Studio prepares native SDK agent bindings", () => {
     expect(background.workspaceTool).toBeUndefined();
     expect(f.deps.workspaceTool).toHaveBeenCalledTimes(1);
   });
-  it("does not bind Workspace unless the executing version opted in", async () => {
+  it("does not bind Workspace unless the executing configuration opted in", async () => {
     const f = fixture();
     f.deps.workspaceTool = vi.fn();
     expect((await buildAgentDeps(f.deps, f.parent, "parent", async () => {}, f.origin)).workspaceTool).toBeUndefined();

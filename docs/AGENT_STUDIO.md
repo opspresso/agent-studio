@@ -64,7 +64,7 @@ MCP registry는 서버 주소를 소유하고 Agent binding은 도구 목록과 
 프로젝트별 OAuth 연결과 선택적인 Docker 관리형 서버도 지원한다. 등록·dispatch 경계에서
 주소와 자격 증명을 검사한다. [MCP](design/mcp.md)와 [보안](SECURITY.md#mcp-oauth)을 보라.
 
-선택적 capability 검색은 전역 `catalog_vectors`에서 현재 요청에 맞는 Skill·MCP·Agent를 찾는다.
+선택적 capability 검색은 전역 `catalog_vectors`에서 현재 요청에 맞는 Skill·MCP 서버·도구를 찾는다.
 명시적 binding을 유지하면서 capability를 추가하며, 실제 사용 전에 정책과 연결 권한을 적용한다.
 별도의 Memory recall은 명시적으로 연결한 MCP의 `recall`을 호출해 장기 지식을 실행 문맥에 넣는다.
 Studio 자체의 장기 Memory DB는 없다. [Capabilities](design/capabilities.md)가 두 경로를 설명한다.

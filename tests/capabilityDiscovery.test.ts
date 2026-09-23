@@ -1,7 +1,7 @@
 /**
- * What a run is offered when its version opted into discovery.
+ * What a run is offered when its configuration opted into discovery.
  *
- * The load-bearing property is that discovery is *additive*: a version's own
+ * The load-bearing property is that discovery is *additive*: a configuration's own
  * bindings are resolved in full and in order, and nothing a search finds can
  * displace, reorder or truncate them. A project turning this on has to be able
  * to do so without re-auditing what it already relies on — so that is what most
@@ -170,7 +170,7 @@ describe("capability discovery", () => {
     expect(discoveryQueries(configuration(), [], "unrelated memory")).toEqual(discoveryQueries(configuration()));
   });
 
-  it("offers nothing beyond the bindings when the version did not opt in", async () => {
+  it("offers nothing beyond the bindings when the configuration did not opt in", async () => {
     const { deps } = harness({ catalog: fakeCatalog({ skill: [found("discovered")] }) });
     const resolved = await resolveRunTools(
       deps,
@@ -192,7 +192,7 @@ describe("capability discovery", () => {
     ]);
   });
 
-  it("stays silent for a version that never asked for discovery", async () => {
+  it("stays silent for a configuration that never asked for discovery", async () => {
     const { deps } = harness();
     const resolved = await resolveRunTools(
       deps,
@@ -310,7 +310,7 @@ describe("capability discovery", () => {
     expect(opened).toEqual([]);
   });
 
-  it("leaves the version untouched when nothing was discovered", async () => {
+  it("leaves the configuration untouched when nothing was discovered", async () => {
     const { deps } = harness();
     const bound = configuration({ skillList: ["bound"] });
     const resolved = await resolveRunTools(deps, bound, undefined, QUERIES);
@@ -320,7 +320,7 @@ describe("capability discovery", () => {
   it("reports what it added as a gain, not as a warning", async () => {
     // Reported through `discovered` rather than `warnings`: a capability found
     // is the opposite of a loss, and routing it through the loss channel made
-    // every healthy run of a discovery-enabled version report a warning — a
+    // every healthy run of a discovery-enabled configuration report a warning — a
     // yellow alert on every chat turn and a non-empty `warnings` in every
     // answer.
     const { deps } = harness({
@@ -332,7 +332,7 @@ describe("capability discovery", () => {
   });
 
   it("keeps running on the bindings when the catalog fails", async () => {
-    // An unreachable catalog must not take the run with it: the version's own
+    // An unreachable catalog must not take the run with it: the configuration's own
     // bindings are still exactly what it asked for.
     const { deps } = harness({
       catalog: fakeCatalog({}, new Error("index unavailable")),

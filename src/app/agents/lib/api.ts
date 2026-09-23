@@ -364,7 +364,7 @@ export async function generateProjectToken(
     createdAt?: string;
   }>(await fetch(`/api/projects/${name}/token`, { method: "POST" }));
   if (!data.token) {
-    throw new Error("Project API token response did not include a token");
+    throw new Error("Agent API token response did not include a token");
   }
   return { token: data.token, masked: data.masked ?? "", createdAt: data.createdAt ?? "" };
 }
@@ -378,7 +378,7 @@ export async function revealProjectToken(name: string): Promise<string> {
     await fetch(`/api/projects/${name}/token/reveal`, { method: "POST" }),
   );
   if (!data.token) {
-    throw new Error("Project API token response did not include a token");
+    throw new Error("Agent API token response did not include a token");
   }
   return data.token;
 }

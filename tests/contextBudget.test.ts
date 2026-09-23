@@ -63,7 +63,7 @@ describe("createRunContextBudget", () => {
     );
   });
 
-  it("reserves the version's maxTokens for the response", () => {
+  it("reserves the configuration's maxTokens for the response", () => {
     const tight = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 190_000);
     const loose = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 1_000);
     expect(tight!.remaining()).toBeLessThan(loose!.remaining());
@@ -260,7 +260,7 @@ describe("runAgent context budget", () => {
   it("stops budgeting a run that had no room from the start, and says so", async () => {
     // Two configurations reach this: an input that fills the window on its own,
     // and a model whose own `maxTokens` leaves almost none of its window — the
-    // registry has some at a few thousand tokens, which is less than a version's
+    // registry has some at a few thousand tokens, which is less than a configuration's
     // tool declarations alone. Kept, the budget answers every tool call "budget
     // exhausted" from turn 0 and blames a budget the run never got to fill,
     // while the overflow it exists to prevent is already in the request.

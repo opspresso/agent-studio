@@ -46,7 +46,7 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 describe("bindingsMayOfferRecall", () => {
   // The editor's inline warning reads this: certain about what the bindings
   // alone rule out, silent about what only discovery can say.
-  it("rules out a version that binds nothing", () => {
+  it("rules out a configuration that binds nothing", () => {
     expect(bindingsMayOfferRecall([])).toBe(false);
   });
 
@@ -67,7 +67,7 @@ describe("bindingsMayOfferRecall", () => {
 
 describe("recallMemories", () => {
   const server = (name: string, tools: string[]) => ({ name, description: "", toolNames: tools });
-  /** A version that bound every named server. */
+  /** A configuration that bound every named server. */
   const bound = (...names: string[]) => ({ mcpList: names.map((name) => ({ name })) });
 
   it("asks every bound server offering recall, and folds the answers into one block", async () => {
@@ -106,13 +106,13 @@ describe("recallMemories", () => {
     });
     expect(result.remembered).toBeUndefined();
     expect(result.warnings[0]).toMatch(/no bound MCP server offers a 'recall' tool/);
-    // Nothing was asked, so nothing failed: this is a version that will warn on
+    // Nothing was asked, so nothing failed: this is a configuration that will warn on
     // every run it ever makes, and the trace must not flag a red stage for it.
     expect({ asked: result.asked, failed: result.failed }).toEqual({ asked: 0, failed: 0 });
   });
 
   it("asks nothing when there is nothing to ask with, and says so", async () => {
-    // A picture-only turn: the version says it recalls, and nothing did.
+    // A picture-only turn: the configuration says it recalls, and nothing did.
     const callMcpTool = vi.fn(async () => ({ text: "x" }));
     const result = await recallMemories({
       configuration: bound("memory"),
@@ -186,7 +186,7 @@ describe("recallMemories", () => {
     expect({ asked: result.asked, failed: result.failed }).toEqual({ asked: 3, failed: 2 });
   });
 
-  it("asks only the servers the version bound, not ones a search added", async () => {
+  it("asks only the servers the configuration bound, not ones a search added", async () => {
     // A discovered memory server keeps its `recall` as a tool the model may
     // call; what it does not get is every request handed to it unasked.
     const calls: string[] = [];
@@ -325,7 +325,6 @@ function depsFixture(channel: FakeChannel): ExecutionDeps {
   const imageChannel = { generateImage: reject } as unknown as ImageChannel;
   return {
     projects: { get: reject, list: reject, put: reject, delete: reject },
-    versions: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => registryServer, list: reject, put: reject, delete: reject },
     usage: {
@@ -381,7 +380,7 @@ function stubMemoryServer(toolNames: (url: string) => string[] = () => ["recall"
   return seen;
 }
 
-describe("a version that opted in recalls before the first token", () => {
+describe("a configuration that opted in recalls before the first token", () => {
   beforeEach(() => clearMcpDiscoveryCache());
   afterEach(() => vi.unstubAllGlobals());
 
@@ -528,7 +527,7 @@ describe("a version that opted in recalls before the first token", () => {
     expect(chunks.some((c) => c.warning)).toBe(false);
   });
 
-  it("does nothing for a version that did not opt in", async () => {
+  it("does nothing for a configuration that did not opt in", async () => {
     const { seen, channel } = await run(false);
 
     expect(seen.some((s) => s.method === "tools/call")).toBe(false);
@@ -584,7 +583,7 @@ describe("a version that opted in recalls before the first token", () => {
     );
   });
 
-  it("the preview names a version with recall on and no server to recall from", async () => {
+  it("the preview names a configuration with recall on and no server to recall from", async () => {
     stubMemoryServer();
     const preview = await previewPrompt(depsFixture(new FakeChannel([])), {
       project: projectFixture(),

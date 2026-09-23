@@ -28,7 +28,7 @@ beforeEach(() => {
   store.rows.clear();
 });
 
-/** A live project row a version, usage or trace write may land in. */
+/** A live project row a configuration, usage or trace write may land in. */
 function seedProject(name: string, over: Record<string, unknown> = {}): void {
   store.seed([
     {
@@ -360,15 +360,15 @@ describe("triggerRepository messaging destination round-trip", () => {
   });
 });
 
-describe("current configuration MCP normalization", () => {
-  const legacyKey = keys.project("legacy");
+describe("stored Agent MCP bindings", () => {
+  const projectKey = keys.project("bindings");
 
   function writeRaw(mcpList: unknown): void {
     store.seed([
       {
-        ...legacyKey, entityType: "PROJECT", name: "legacy", displayName: "Legacy", ownerEmail: "owner@example.test",
+        ...projectKey, entityType: "PROJECT", name: "bindings", displayName: "Bindings", ownerEmail: "owner@example.test",
         configuration: {
-          projectName: "legacy", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false },
+          projectName: "bindings", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false },
           mcpList, skillList: [], subagentList: [],
         },
         createdAt: NOW, updatedAt: NOW,
@@ -376,34 +376,25 @@ describe("current configuration MCP normalization", () => {
     ]);
   }
 
-  it("reads a row written before overrides existed as bindings with none", async () => {
-    // Legacy rows carry a plain string[]; they are still valid bindings.
-    writeRaw(["alpha", "beta"]);
+  it("keeps header overrides on stored bindings", async () => {
+    writeRaw([{ name: "alpha", headers: { Authorization: "enc:v2:x", "X-Gone": null } }]);
 
-    const version = (await projectRepository.get("legacy"))?.configuration;
+    const configuration = (await projectRepository.get("bindings"))?.configuration;
 
-    expect(version?.mcpList).toEqual([{ name: "alpha" }, { name: "beta" }]);
-  });
-
-  it("keeps overrides on rows written in the binding shape", async () => {
-    writeRaw([{ name: "alpha", headers: { Authorization: "enc:v1:x", "X-Gone": null } }]);
-
-    const version = (await projectRepository.get("legacy"))?.configuration;
-
-    expect(version?.mcpList).toEqual([
-      { name: "alpha", headers: { Authorization: "enc:v1:x", "X-Gone": null } },
+    expect(configuration?.mcpList).toEqual([
+      { name: "alpha", headers: { Authorization: "enc:v2:x", "X-Gone": null } },
     ]);
   });
 
   it("keeps a narrowed tool list", async () => {
     // This is read back by the run itself, so dropping it here does not fail —
     // it silently offers every tool the server has, which is the opposite of
-    // what the version asked for.
+    // what the Agent configuration selected.
     writeRaw([{ name: "alpha", tools: ["search", "fetch"] }]);
 
-    const version = (await projectRepository.get("legacy"))?.configuration;
+    const configuration = (await projectRepository.get("bindings"))?.configuration;
 
-    expect(version?.mcpList).toEqual([{ name: "alpha", tools: ["search", "fetch"] }]);
+    expect(configuration?.mcpList).toEqual([{ name: "alpha", tools: ["search", "fetch"] }]);
   });
 
   it("carries a narrowing and an override together", async () => {
@@ -416,9 +407,9 @@ describe("current configuration MCP normalization", () => {
       },
     ]);
 
-    const version = (await projectRepository.get("legacy"))?.configuration;
+    const configuration = (await projectRepository.get("bindings"))?.configuration;
 
-    expect(version?.mcpList).toEqual([
+    expect(configuration?.mcpList).toEqual([
       {
         name: "alpha",
         headers: { "X-Tenant": "acme" },
@@ -428,22 +419,26 @@ describe("current configuration MCP normalization", () => {
     ]);
   });
 
-  it("treats an empty or malformed tool list as no narrowing", async () => {
+  it("treats an empty tool list as no narrowing", async () => {
     // Absent and empty mean the same thing — every tool — so an empty array must
     // not be stored as a narrowing that would offer none.
-    writeRaw([{ name: "alpha", tools: [] }, { name: "beta", tools: "search" }]);
+    writeRaw([{ name: "alpha", tools: [] }]);
 
-    const version = (await projectRepository.get("legacy"))?.configuration;
+    const configuration = (await projectRepository.get("bindings"))?.configuration;
 
-    expect(version?.mcpList).toEqual([{ name: "alpha" }, { name: "beta" }]);
+    expect(configuration?.mcpList).toEqual([{ name: "alpha" }]);
   });
 
-  it("drops entries with no usable name instead of failing the read", async () => {
-    writeRaw(["ok", "", { headers: {} }, null, 42]);
-
-    const version = (await projectRepository.get("legacy"))?.configuration;
-
-    expect(version?.mcpList).toEqual([{ name: "ok" }]);
+  it.each([
+    ["missing list", undefined],
+    ["bare name", ["alpha"]],
+    ["missing name", [{ headers: {} }]],
+    ["invalid tools", [{ name: "alpha", tools: "search" }]],
+    ["invalid headers", [{ name: "alpha", headers: { Authorization: 42 } }]],
+    ["unknown field", [{ name: "alpha", url: "https://example.test" }]],
+  ])("rejects a %s instead of silently dropping a binding", async (_name, bindings) => {
+    writeRaw(bindings);
+    await expect(projectRepository.get("bindings")).rejects.toThrow(/Stored Agent MCP binding/);
   });
 });
 

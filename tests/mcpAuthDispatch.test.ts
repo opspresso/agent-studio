@@ -472,7 +472,6 @@ function runDeps(
   const reject = () => Promise.reject(new Error("not used in this test"));
   return {
     projects: { get: reject },
-    versions: { get: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => OAUTH_SERVER },
     usage: { record: async () => {} },

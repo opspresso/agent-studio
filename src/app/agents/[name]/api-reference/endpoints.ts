@@ -2,7 +2,7 @@ import { projectWebhookPath } from "@/domain/trigger/types";
 import { MAX_DOCUMENTS, MAX_DOCUMENT_SIZE_LABEL } from "@/domain/llm/documentLimits";
 
 /**
- * Builds the API Reference tab's endpoint descriptors from a project's public
+ * Builds the API Reference tab's endpoint descriptors from an Agent's public
  * context (name, saved settings, integration flags). This module is
  * intentionally pure — it takes **no** secrets, so every rendered example and
  * code sample can only ever contain the placeholder tokens below, never a real
@@ -83,7 +83,7 @@ export interface ApiReferenceContext {
   /** Absolute origin for example URLs (e.g. window.location.origin); "" is tolerated. */
   origin: string;
   /**
-   * The project webhook's switch, or null when not visible to the viewer — the
+   * The Agent webhook's switch, or null when not visible to the viewer — the
    * secret it is authenticated with is owner-readable, so a viewer who cannot
    * see the switch has nothing to call this endpoint with.
    */
@@ -143,7 +143,7 @@ function curlExample(opts: {
 }
 
 /**
- * OpenAI Python SDK sample for the OpenAI-compatible endpoint. The project API
+ * OpenAI Python SDK sample for the OpenAI-compatible endpoint. The Agent API
  * token is passed as `api_key`; the SDK sends it as `Authorization: Bearer`, so
  * the credential is read from the calling process's environment.
  */
@@ -179,7 +179,7 @@ ${call}`;
   return { language: "python", label: opts.stream ? "Python (stream)" : "Python", code };
 }
 
-/** Node.js OpenAI SDK sample — passes the project token as apiKey. */
+/** Node.js OpenAI SDK sample — passes the Agent token as apiKey. */
 function nodeSdkExample(opts: {
   baseUrl: string;
   messages: unknown;
@@ -413,7 +413,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
     }
   }
 
-  // The project webhook: shown once it is switched on, and deliberately not
+  // The Agent webhook: shown once it is switched on, and deliberately not
   // gated on saved Agent settings — the address is live either way, and what it
   // answers without one is the `no-configuration` status documented below.
   if (webhook && webhook.enabled) {
@@ -423,7 +423,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       id: "webhook",
       method: "POST",
       path: webhookPath,
-      title: "Project webhook",
+      title: "Agent webhook",
       description:
         "Starts a run of the current Agent configuration from outside. Generic senders use X-Trigger-Secret. GitHub uses the same secret in its Secret setting to sign X-Hub-Signature-256, with X-GitHub-Delivery and X-GitHub-Event headers; the JSON body (up to 1MB) becomes the run's input — serialised into the user message. " +
         "It answers 202 immediately and runs in the background, because a run can take minutes and no sender waits that long: the answer lands on the delivery's history row under Settings → Webhook, not in this response. " +
@@ -467,7 +467,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: eventsPath,
       title: "Slack events webhook",
       description:
-        "Slack delivers app_mention, message.im and message.channels/message.groups events here. Requests are verified with this project's Slack signing secret (HMAC) — it is not called manually. Most channel messages are answered with ok and nothing else: only a mention, a DM, a follow-up in a thread the bot answered in, or a project keyword starts a run.",
+        "Slack delivers app_mention, message.im and message.channels/message.groups events here. Requests are verified with this Agent's Slack signing secret (HMAC) — it is not called manually. Most channel messages are answered with ok and nothing else: only a mention, a DM, a follow-up in a thread the bot answered in, or an Agent keyword starts a run.",
       auth: "slack-signature",
       streaming: false,
       errorCodes: [401],

@@ -51,8 +51,8 @@ function configurationFixture(): AgentConfiguration {
   };
 }
 
-/** A version bound to a skill, an MCP server and a subagent. */
-function boundVersion(): AgentConfiguration {
+/** A configuration bound to a skill, an MCP server and a subagent. */
+function boundConfiguration(): AgentConfiguration {
   return {
     ...configurationFixture(),
     skillList: ["greeting"],
@@ -79,7 +79,6 @@ function executionDepsFixture(channel: FakeChannel) {
   } as unknown as ImageChannel;
   return {
     projects: { get: reject },
-    versions: { get: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: reject },
     usage: { record: async () => {} },
@@ -212,7 +211,7 @@ describe("previewPrompt", () => {
     const deps = executionDepsFixture(channel);
     wireRegistry(deps);
     stubMcpServer(["query", "update"]);
-    const configuration = boundVersion();
+    const configuration = boundConfiguration();
 
     const preview = await previewPrompt(deps, { project: projectFixture(), configuration });
     await drain(
@@ -226,7 +225,7 @@ describe("previewPrompt", () => {
     const sent = channel.seenParams[0]?.messages[0];
     expect(sent?.role).toBe("system");
     expect(preview.messages).toEqual([{ role: "system", content: sent?.content }]);
-    // And it is the assembled prompt, not the version's own text.
+    // And it is the assembled prompt, not the configuration's own text.
     const content = String(preview.messages[0]?.content);
     expect(content).toContain("## Available Skills");
     expect(content).toContain("Sales CRM");
@@ -245,7 +244,7 @@ describe("previewPrompt", () => {
 
     const preview = await previewPrompt(deps, {
       project: projectFixture(),
-      configuration: boundVersion(),
+      configuration: boundConfiguration(),
     });
 
     // `dispatch_agents` rides along with the transfer tool: a preview stands for
@@ -271,7 +270,7 @@ describe("previewPrompt", () => {
     wireRegistry(deps);
     const server = stubMcpServer(["query"]);
 
-    await previewPrompt(deps, { project: projectFixture(), configuration: boundVersion() });
+    await previewPrompt(deps, { project: projectFixture(), configuration: boundConfiguration() });
 
     expect(server.verbs).not.toContain("DELETE");
     expect(server.verbs.every((verb) => verb === "POST")).toBe(true);
@@ -287,7 +286,7 @@ describe("previewPrompt", () => {
 
       const preview = await previewPrompt(deps, {
         project: projectFixture(),
-        configuration: boundVersion(),
+        configuration: boundConfiguration(),
       });
 
       expect(preview.warnings.some((w) => w.includes("greeting"))).toBe(true);
@@ -309,9 +308,9 @@ describe("previewPrompt", () => {
   });
 
   /**
-   * A version with discovery on sends a prompt its author never typed, and this
+   * A configuration with discovery on sends a prompt its author never typed, and this
    * panel is the only place they can read it before a run happens. A preview
-   * that skipped the search would describe a smaller prompt than the version
+   * that skipped the search would describe a smaller prompt than the configuration
    * actually sends — the same drift the caller block once had, and silent.
    */
   describe("with capability discovery on", () => {
@@ -336,7 +335,7 @@ describe("previewPrompt", () => {
       };
     }
 
-    it("shows a capability the search found, not just what the version bound", async () => {
+    it("shows a capability the search found, not just what the configuration bound", async () => {
       const queries: string[][] = [];
       const deps = executionDepsFixture(new FakeChannel([]));
       wireRegistry(deps);
@@ -354,7 +353,7 @@ describe("previewPrompt", () => {
       const system = preview.messages.find((m) => m.role === "system")?.content ?? "";
       expect(system).toContain("greeting");
       // Reported as a gain rather than a warning: the panel is the only place an
-      // author can see which rows the version never bound, and the whole point
+      // author can see which rows the configuration never bound, and the whole point
       // is that nothing went wrong.
       expect(preview.discovered).toEqual(["greeting"]);
       expect(preview.warnings).toEqual([]);
@@ -398,7 +397,7 @@ describe("previewPrompt", () => {
       expect(preview.messages.find((m) => m.role === "system")?.content).toContain("greeting");
     });
 
-    it("leaves a version that did not opt in exactly as it was", async () => {
+    it("leaves a configuration that did not opt in exactly as it was", async () => {
       const queries: string[][] = [];
       const deps = executionDepsFixture(new FakeChannel([]));
       wireRegistry(deps);

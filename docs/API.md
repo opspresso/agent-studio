@@ -43,7 +43,7 @@ Agent Studio 의 HTTP 계약: 안내 대상 라우트, 각각이 어떻게 인�
   다른 사용자의 런타임 데이터나 마스킹된 secret 을 드러내는 project 하위 리소스. 트레이스,
   Slack·Telegram 설정, API 토큰, trigger, 호출자별 사용량, MCP 연결. 은
   *읽기*도 소유자와 admin 으로 제한된다. Chat 은 소유자에게만 비공개다 (소유자가 아닌 읽기·변경은
-  모두 404 를 돌려준다 — 403 은 chatId 의 존재를 알려 주는 답이다). MCP/agent/skill/plugin 레지스트리와 모델 카탈로그(`/api/models/catalog`)는
+  모두 404 를 돌려준다 — 403 은 chatId 의 존재를 알려 주는 답이다). MCP/skill/plugin 레지스트리와 모델 카탈로그(`/api/models/catalog`)는
   **`member` tier 이상**에게 읽기가 공유된다. 모든 가입자가 시작하는 tier 인 `guest` 는
   `403 { "error": "This resource is not available to your account" }` 을 받는다 (`withMemberAuth`).
   변경은 저장된 `admin` tier 이거나 `ADMIN_EMAILS` 목록에 속해야 한다. 목록이 설정되지 않았으면
@@ -59,7 +59,7 @@ Agent Studio 의 HTTP 계약: 안내 대상 라우트, 각각이 어떻게 인�
 - **Retry-After**: `429` 는 항상 이 헤더를 초 단위로 실어 보낸다. 그 거절은 언제 더 이상
   참이 아니게 되는지를 안다. 일일 비용 차단은 00:00 UTC 까지 지속된다. 그래서 호출자가
   짐작해서 같은 벽에 다시 부딪히게 두지 않고 알려 준다.
-- **List responses**: 리소스 컬렉션(`projects`, `skills`, `mcps`, `agents`)은 벌거벗은
+- **List responses**: 리소스 컬렉션(`projects`, `skills`, `mcps`)은 벌거벗은
   배열을 돌려준다. `chats`, `models`, `usages/summary`, `triggers`, `connections` 는 각자의
   것을 객체로 감싼다 (`{ chats }`, `{ models }`, `{ items }`, `{ triggers }`, `{ connections }`).
 - **Names** 는 일반적으로 slug (`^[a-z0-9-]+$`) 이며 생성·변경 입력은 `parseName` 또는 같은
@@ -186,9 +186,9 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 Workspace 경로는 [Workspaces 표](#workspaces), 프로젝트별 오디오·원본 파일 경로는
 [오디오 표](#오디오-작업과-원본-파일)에 모았다.
 
-## 리소스 CRUD: projects, skills, mcps, agents
+## Agent와 Skill·MCP CRUD
 
-넷 다 같은 형태를 따른다. 예 (skills):
+Skill과 MCP 레지스트리는 이름 기반 CRUD를 제공한다. 예 (skills):
 
 ```
 GET    /api/skills            → 200 [ { name, description, source?, files, updatedAt }, … ]
@@ -361,8 +361,8 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
   저장된 오버라이드를 보존한다. `{}`를 명시하면 오버라이드를 지우고 레지스트리 헤더를 쓴다.
   도구 조회는 마스킹된 값을 현재 Agent의 같은 서버 바인딩에 연결하며, 저장한 credential을 사용한다. 다만 이 probe는 런의 tenant header를 보내지 않으므로
   tenant별 도구 목록을 제공하는 서버에서는 결과가 다를 수 있다.
-- 벌거벗은 문자열 항목. `"mcpList": ["shared-mcp"]`, 오버라이드가 생기기 전의 형태. 도
-  여전히 받아들여지고 `{ "name": "shared-mcp" }` 로 정규화된다.
+- `mcpList` 항목은 `{ "name": "shared-mcp" }` 형태의 객체다. 서버 이름 문자열만
+  보내면 설정 검증에서 거절한다.
 - 오버라이드 값은 저장 시 AES 로 암호화되고 마스킹돼 돌아온다 (레지스트리 헤더와 같은 규칙).
   업데이트 때 마스킹된 값이나 빈 값은 저장된 secret 을 보존하고, 저장된 짝이 없는 헤더 아래의
   마스킹된 값은 버려진다. `null` 표식은 그대로 돌아온다. 제거는 secret 이 아니다.

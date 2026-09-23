@@ -93,7 +93,7 @@ describe("project API client failures", () => {
     );
 
     await expect(generateProjectToken("demo")).rejects.toThrow(
-      "Project API token response did not include a token",
+      "Agent API token response did not include a token",
     );
   });
 });

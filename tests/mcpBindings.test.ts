@@ -91,7 +91,6 @@ function depsFixture(
   return {
     ...(overrides.mcpAuth ? { mcpAuth: overrides.mcpAuth } : {}),
     projects: { get: reject, list: reject, put: reject, delete: reject },
-    versions: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => server, list: reject, put: reject, delete: reject },
     usage: {

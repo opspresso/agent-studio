@@ -11,8 +11,8 @@
 import { BUILTIN_TOOL_NAMES } from "./toolNames";
 
 /**
- * Tool definitions one request may carry in all — the provider's own 128,
- * which {@link MAX_MCP_TOOLS_PER_RUN} leaves room under for the builtins. A
+ * Tool definitions one request may carry in all — the provider's own 128.
+ * {@link MAX_MCP_TOOLS_PER_RUN} reserves room for builtins.
  */
 export const MAX_TOOLS_PER_REQUEST = 128;
 

@@ -339,7 +339,7 @@ describe("TraceRecorder", () => {
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     try {
       const { repository, traces } = memoryRepository();
-      // Constructed before the version's tools resolve, on purpose: a resolve
+      // Constructed before the configuration's tools resolve, on purpose: a resolve
       // that throws must still leave a trace.
       const recorder = new TraceRecorder(repository, {
         projectName: "parent",
@@ -351,7 +351,7 @@ describe("TraceRecorder", () => {
       const resolveStartedAt = new Date();
       vi.setSystemTime(new Date("2026-01-01T00:00:08.000Z"));
       recorder.observePrepare("tools", resolveStartedAt, { output: { mcpServers: 2, mcpTools: 30 } });
-      // Then two on memory, which this version asked for.
+      // Then two on memory, which this configuration asked for.
       const recallStartedAt = new Date();
       vi.setSystemTime(new Date("2026-01-01T00:00:10.000Z"));
       recorder.observePrepare("memory", recallStartedAt, { output: { remembered: 512 } });

@@ -78,7 +78,6 @@ function depsFixture(channel: FakeChannel) {
   } as unknown as ImageChannel;
   return {
     projects: { get: reject, list: reject, put: reject, delete: reject },
-    versions: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => registryServer, list: reject, put: reject, delete: reject },
     usage: {

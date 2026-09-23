@@ -231,8 +231,8 @@ describe("configuration reference validation", () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it("keeps a version editable when a reference it already had was deleted", async () => {
-    // Deleting an MCP server must not strand every version that ever used it:
+  it("keeps a configuration editable when a reference it already had was deleted", async () => {
+    // Deleting an MCP server must not strand every configuration that ever used it:
     // only newly added references are checked.
     const existing = { ...configurationFixture("p"), mcpList: [{ name: "deleted-mcp" }] };
     const updated = await patchSettings(

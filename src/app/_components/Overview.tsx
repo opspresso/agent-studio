@@ -270,7 +270,7 @@ export function Overview({
         </SimpleGrid>
       )}
 
-      <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
+      <SimpleGrid cols={{ base: 1, sm: 2, md: showCatalogs ? 3 : 1 }} spacing="md">
         <CountTile
           href="/agents"
           label={t("nav.agents")}
