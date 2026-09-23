@@ -54,6 +54,16 @@ describe("classifyTelegramUpdate", () => {
     expect(classifyTelegramUpdate(own, BOT)).toMatchObject({ kind: "ignore", because: "from a bot" });
   });
 
+  it("does not run an unattributed message, while still answering fixed commands", () => {
+    expect(classifyTelegramUpdate(update({ message: message({ from: undefined }) }), BOT))
+      .toMatchObject({ kind: "ignore", because: "no sender to attribute the run to" });
+    expect(classifyTelegramUpdate(update({ message: message({
+      from: undefined,
+      text: "/help",
+      entities: [{ type: "bot_command", offset: 0, length: 5 }],
+    }) }), BOT)).toMatchObject({ kind: "command", command: "help" });
+  });
+
   it("answers a group message that mentions the bot, with the mention taken out", () => {
     const text = "hey @Painter_Bot what's up";
     const group = update({

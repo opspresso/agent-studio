@@ -18,10 +18,11 @@ import type { TelegramMessage, TelegramUpdate } from "@/application/telegram/typ
  * 2. a bot's message, this bot's own included — nothing, because everything
  *    below can start a run and a run that answers itself never stops;
  * 3. a **command** this bot understands — answered without a run;
- * 4. a private chat — every message in one is for the bot;
- * 5. a group message that mentions the bot, addresses it by name in a command
+ * 4. no sender id — there is no actor to attribute a run to;
+ * 5. a private chat — every message in one is for the bot;
+ * 6. a group message that mentions the bot, addresses it by name in a command
  *    it does not know (`/ask@this_bot …`), or replies to it — answered;
- * 6. otherwise nothing.
+ * 7. otherwise nothing.
  *
  * Nothing here costs a read: a group has no engagement row, because a follow-up
  * there is a reply, and Telegram already tells the bot what a message replies
@@ -41,7 +42,7 @@ export type TelegramCommand = "start" | "help";
 
 export type TelegramUpdateDisposition =
   /** Answer it. `text` is the message with the bot's own mention taken out. */
-  | { kind: "run"; trigger: "private" | "mention" | "reply"; message: TelegramMessage; text: string }
+  | { kind: "run"; trigger: "private" | "mention" | "reply"; message: TelegramMessage; text: string; userId: string }
   /** Answer with a constant rather than a run. */
   | { kind: "command"; command: TelegramCommand; message: TelegramMessage }
   /** Nothing to do. `because` is for tests and diagnosis, not for a reply. */
@@ -191,24 +192,29 @@ export function classifyTelegramUpdate(
   if (command && command.command !== "other") {
     return { kind: "command", command: command.command, message };
   }
+  const senderId = message.from?.id;
+  if (typeof senderId !== "number" || !Number.isSafeInteger(senderId) || senderId <= 0) {
+    return { kind: "ignore", because: "no sender to attribute the run to" };
+  }
+  const userId = String(senderId);
   const text = stripBotMention(message, identity.botUsername);
   if (!text && !hasAttachment(message)) {
     return { kind: "ignore", because: "nothing to read" };
   }
   if (message.chat.type === "private") {
-    return { kind: "run", trigger: "private", message, text };
+    return { kind: "run", trigger: "private", message, text, userId };
   }
   // A mention, or a command this bot does not know but that was addressed to
   // it by name — `/ask@painter_bot …` names the bot as surely as `@painter_bot`.
   if (mentionsBot(message, identity) || command?.addressed) {
-    return { kind: "run", trigger: "mention", message, text };
+    return { kind: "run", trigger: "mention", message, text, userId };
   }
   if (
     identity.botId !== undefined &&
     message.reply_to_message?.from?.is_bot &&
     message.reply_to_message.from.id === identity.botId
   ) {
-    return { kind: "run", trigger: "reply", message, text };
+    return { kind: "run", trigger: "reply", message, text, userId };
   }
   return { kind: "ignore", because: "not addressed to the bot" };
 }

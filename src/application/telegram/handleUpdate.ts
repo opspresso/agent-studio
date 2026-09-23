@@ -252,7 +252,7 @@ export async function handleTelegramUpdate(
   if (message.media_group_id) {
     warnings.push("This message was part of an album; only the picture it arrived with was read.");
   }
-  const userId = message.from ? String(message.from.id) : undefined;
+  const userId = disposition.userId;
   await runRememberedTurn(deps, {
     project,
     configuration,
@@ -261,7 +261,8 @@ export async function handleTelegramUpdate(
     text: disposition.text,
     attachments: attachmentsOf(deps, token, message),
     // The Telegram user id, not an email: Telegram has none to hand over.
-    ...(userId ? { actor: { kind: "telegram" as const, id: userId }, userId } : {}),
+    actor: { kind: "telegram", id: userId },
+    userId,
     callerOf: () => callerOf(message.from),
     // Telegram stamps the message with when it was sent, to the second.
     arrivedAt: new Date(message.date * 1000),
