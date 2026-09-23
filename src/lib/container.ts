@@ -143,6 +143,8 @@ import type { TriggerRunnerDeps } from "@/application/trigger/deps";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { createTestModel } from "@/application/llm/testModel";
 import { createModelRegistryUseCases } from "@/application/llm/modelRegistry";
+import { createAgentRecommendationUseCases } from "@/application/llm/agentRecommendation";
+import { createDecisionClient } from "@/infrastructure/llm/decisionClient";
 import { createProviderModelDiscovery } from "@/infrastructure/llm/providerModelDiscovery";
 import { createModelPreferenceUseCases } from "@/application/llm/modelPreferences";
 import { createModelSelectionUseCases } from "@/application/llm/modelSelection";
@@ -201,6 +203,7 @@ import {
   getAdminEmails,
   getEmbeddingTarget,
   getDefaultModel,
+  getDecisionModelSelection,
   getEmbeddingModel,
   getEmbeddingModelSelection,
   getLlmProviderConfigs,
@@ -304,6 +307,7 @@ export const artifactUseCases = artifactStorage
  * settings change lands on the next cache refresh exactly as before.
  */
 const resolveTarget = async (modelId: string) => resolveProviderTarget(modelId, await getLlmProviderConfigs());
+const decisionClient = createDecisionClient(resolveTarget);
 
 const agentModels = createAgentModelProvider(resolveTarget);
 export const runtimeSessions: RuntimeSessionServices = { repository: runtimeSessionRepository, cipher: secretCipher, retentionDays: RETENTION.chatDays };
@@ -1425,6 +1429,16 @@ export async function workspaceOptions(ownerEmail: string) {
   }
   return { enabled: !!settings, gitEnabled: !!getWorkspaceGitHubConfig(), projects: available };
 }
+
+export const agentRecommendationUseCases = createAgentRecommendationUseCases({
+  decision: decisionClient,
+  selectedModel: async () => (await getDecisionModelSelection())?.model,
+  candidates: async (surface, userEmail) => surface === "chat"
+    ? (await projectUseCases.listAccessible(userEmail)).map(({ name, displayName, description }) => ({ name, displayName, description }))
+    : (await workspaceOptions(userEmail)).projects.map(({ projectName, displayName, description }) => ({
+        name: projectName, displayName, description,
+      })),
+});
 
 export async function workspaceBranches(projectName: string, ownerEmail: string, requestedRepository?: string) {
   await authorizeWorkspaceTools(ownerEmail, projectName);

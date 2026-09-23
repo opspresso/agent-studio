@@ -11,6 +11,7 @@ import {
   getEmbeddingModelSelection,
   getLlmProviderConfigs,
   getRerankerModelSelection,
+  getDecisionModelSelection,
   getRerankerMinScoreSelection,
   type ModelSelection,
   type ScoreSelection,
@@ -24,7 +25,7 @@ export interface ModelsCatalogResponse {
   makers: Record<string, string>;
   updatedAt: string;
   source: "override" | "default";
-  selections: { embedding: ModelSelection; rerank?: ModelSelection };
+  selections: { embedding: ModelSelection; rerank?: ModelSelection; decision?: ModelSelection };
   rerankerMinScore: ScoreSelection;
   selectionAvailable: { embedding: boolean; rerank: boolean };
 }
@@ -36,12 +37,14 @@ export const GET = withMemberAuth(async (user) => {
     favoriteModels,
     embedding,
     rerank,
+    decision,
     rerankerMinScore,
   ] = await Promise.all([
     getLlmProviderConfigs(),
     modelPreferenceUseCases.listOptional(user.id),
     getEmbeddingModelSelection(),
     getRerankerModelSelection(),
+    getDecisionModelSelection(),
     getRerankerMinScoreSelection(),
   ]);
   const dedicated = new Set(providerConfigs.map((provider) => provider.name));
@@ -61,7 +64,7 @@ export const GET = withMemberAuth(async (user) => {
     makers: listModelMakers(),
     updatedAt: modelCatalogUpdatedAt(),
     source: "override",
-    selections: { embedding, ...(rerank ? { rerank } : {}) },
+    selections: { embedding, ...(rerank ? { rerank } : {}), ...(decision ? { decision } : {}) },
     rerankerMinScore,
     selectionAvailable: {
       embedding: config.catalogEnabled,

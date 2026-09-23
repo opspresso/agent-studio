@@ -91,6 +91,11 @@ export async function getDefaultModel(): Promise<string | undefined> {
   return (await loadSettings())?.defaultModel;
 }
 
+export async function getDecisionModelSelection(): Promise<ModelSelection | undefined> {
+  const model = (await loadSettings())?.decisionModel;
+  return model ? { model, source: "override" } : undefined;
+}
+
 export async function getAdminEmails(): Promise<string[]> {
   const stored = (await loadSettings())?.adminEmails;
   return stored !== undefined ? parseList(stored) : config.adminEmails;
