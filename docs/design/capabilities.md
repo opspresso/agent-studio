@@ -61,6 +61,8 @@ sync로 서버 URL이 바뀌면 이전 주소의 header·OAuth를 새 주소로 
 재색인 문서는 캐시하지 않고 embedding space와 query를 함께 key로 사용한다.
 OpenAI 호환 경로는 선택 모델·실제 endpoint·wire ID를, Bedrock 경로는 모델을 space로 구분해
 모델 또는 채널 전환 후 이전 query 벡터를 재사용하지 않는다.
+Embedding 응답의 벡터 수가 맞지 않거나 빈 벡터가 있으면 캐시하지 않고 검색 실패로 보고한다.
+같은 유료 요청을 자동으로 다시 보내지 않는다.
 
 ### 색인과 모델 전환
 
