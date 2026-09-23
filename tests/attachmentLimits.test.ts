@@ -50,5 +50,16 @@ describe("inbound attachment limits", () => {
         name: "notes.txt",
       }).success,
     ).toBe(false);
+    for (const b64 of ["Zh==", "Zh", "Zm9="]) {
+      expect(attachedImageSchema.safeParse({ b64, mimeType: "image/png" }).success).toBe(false);
+      expect(attachedDocumentSchema.safeParse({ b64, mimeType: "text/plain", name: "notes.txt" }).success).toBe(false);
+    }
+  });
+
+  it("accepts canonical base64 with or without padding", () => {
+    for (const b64 of ["Zg==", "Zg", "Zm8=", "Zm8"]) {
+      expect(attachedImageSchema.safeParse({ b64, mimeType: "image/png" }).success).toBe(true);
+      expect(attachedDocumentSchema.safeParse({ b64, mimeType: "text/plain", name: "notes.txt" }).success).toBe(true);
+    }
   });
 });

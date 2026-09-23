@@ -572,14 +572,15 @@ DELETE /api/chats/{chatId}/runs/{runId}      → { cancelled }
 사람은 `error` 가 아니라 `warning` 프레임을 받는다.
 
 `images` 는 사용자의 첨부를 인라인 바이트로 담은 것이다. `[ { b64, mimeType } ]`, 턴당 최대
-4개, 각각 5MB, `image/png|jpeg|gif|webp`. `b64`는 유효한 padded 또는 unpadded base64여야 한다.
+4개, 각각 5MB, `image/png|jpeg|gif|webp`. `b64`는 padding을 붙이거나 생략한 canonical base64여야 한다.
+마지막 문자에서 사용하지 않는 비트는 0이어야 한다.
 모델에는 content part 로 닿고, (오브젝트 스토리지가
 설정돼 있으면) 사용자 메시지에 **object key** 로 저장된다. 읽기는 그 응답을 위해 서명된 URL 로
 답하며, 그 뒤로도 계속 동작하는 URL 은 절대 아니다. 주소를 만들 수 없는 이미지는 깨진 채로
 돌아오는 대신 메시지에서 빠진다.
 
 `documents` 는 보는 것이 아니라 읽는 파일이다. `[ { b64, mimeType, name } ]`, 턴당 최대 4개,
-각각 10MB이며 `b64` 형식도 검증한다: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML,
+각각 10MB이며 `b64`는 이미지와 같은 형식으로 검증한다: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML,
 HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 내장 문서 엔진이 읽으며 MCP 등록이나 Agent binding을 요구하지 않는다.
 파싱이 실패하면 추출 실패 warning을 돌려준다. 저장된 원본의 참조는 유지한다. `name` 은 필수이고,
 `mimeType` 이 `application/octet-stream` 일 때. 업로드는 흔히 이렇게 도착한다. 판단을 떠맡는다.
