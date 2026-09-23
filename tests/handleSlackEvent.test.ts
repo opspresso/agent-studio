@@ -1503,6 +1503,21 @@ describe("telling the run who is asking", () => {
     expect(finalText()).toBe("answer");
   });
 
+  it("answers anyway when the profile lookup fails", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { slack, finalText } = makeSlackFake();
+    slack.userProfile = async () => {
+      throw new Error("users.info unavailable");
+    };
+    const deps = makeDeps([{ delta: { content: "answer" } }, { done: true }], slack);
+    withCallerContext(deps, true);
+
+    await handleSlackEvent(deps, { ...DM_EVENT, event: { ...DM_EVENT.event, user: "U9" } }, BINDING);
+
+    expect(finalText()).toBe("answer");
+  });
+
   it("labels speakers once a second human joins the thread", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(Date, "now").mockReturnValue(NOW);
