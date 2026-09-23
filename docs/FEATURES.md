@@ -195,7 +195,7 @@ Chat은 소유자 개인 대화이며 연결이 종료돼도 서버에서 실행
 - Tools·Structured output·Vision·Reasoning capability.
 - Context window·출력 토큰 한도.
 - 입력·출력·캐시 등 유형별 가격.
-- 이름·ID·제작사·provider 검색.
+- 이름·전체 등록 ID·전송 ID·제작사·provider 검색.
 - Provider·유형·capability 필터.
 - 이름·가격 정렬.
 - 검색·필터·정렬·페이지 상태 기억.

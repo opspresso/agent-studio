@@ -101,6 +101,10 @@ describe("models table", () => {
     ]);
   });
 
+  it("finds a registered model by its complete provider-qualified ID", () => {
+    expect(visible(models, { query: "openrouter/e" }).map(item => item.id)).toEqual(["openrouter/e"]);
+  });
+
   it("sorts by name and output price", () => {
     expect(visible(models, {
       provider: null,

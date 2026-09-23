@@ -36,9 +36,8 @@ export default function ModelsPage() {
     setSaving(id);
     setError(undefined);
     try {
-      const next = favorites.includes(id) ? favorites.filter(value => value !== id) : [...favorites, id];
       const result = await readJson<ModelFavoritesResponse>(await fetch("/api/models/favorites", {
-        method: "PUT", headers: jsonHeaders, body: JSON.stringify({ models: next }),
+        method: "PATCH", headers: jsonHeaders, body: JSON.stringify({ model: id, favorite: !favorites.includes(id) }),
       }));
       setFavorites(result.models);
     } catch (error) {

@@ -5,4 +5,5 @@ export const MAX_FAVORITE_MODELS = 200;
 export interface ModelPreferencesRepository {
   getFavoriteModels(userId: string): Promise<string[]>;
   replaceFavoriteModels(userId: string, modelIds: string[]): Promise<void>;
+  changeFavoriteModels(userId: string, change: (modelIds: string[]) => string[]): Promise<string[]>;
 }

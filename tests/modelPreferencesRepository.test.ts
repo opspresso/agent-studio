@@ -44,4 +44,21 @@ describe("modelPreferencesRepository", () => {
     await expect(modelPreferencesRepository.getFavoriteModels("user-1")).resolves.toEqual([]);
     expect(store.all()).toEqual([]);
   });
+
+  it("applies a change to the latest stored list", async () => {
+    await modelPreferencesRepository.replaceFavoriteModels("user-1", ["openai/gpt-5.4"]);
+    await expect(modelPreferencesRepository.changeFavoriteModels("user-1", ids => [...ids, "anthropic/claude-fable-5"]))
+      .resolves.toEqual(["openai/gpt-5.4", "anthropic/claude-fable-5"]);
+    await expect(modelPreferencesRepository.changeFavoriteModels("user-1", ids => ids.filter(id => id !== "openai/gpt-5.4")))
+      .resolves.toEqual(["anthropic/claude-fable-5"]);
+  });
+
+  it("keeps both additions made from separate clients", async () => {
+    await Promise.all([
+      modelPreferencesRepository.changeFavoriteModels("user-1", ids => [...ids, "openai/gpt-5.4"]),
+      modelPreferencesRepository.changeFavoriteModels("user-1", ids => [...ids, "anthropic/claude-fable-5"]),
+    ]);
+    await expect(modelPreferencesRepository.getFavoriteModels("user-1"))
+      .resolves.toEqual(["openai/gpt-5.4", "anthropic/claude-fable-5"]);
+  });
 });

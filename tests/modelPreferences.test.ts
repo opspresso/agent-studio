@@ -6,6 +6,7 @@ function fixture() {
   const repository = {
     getFavoriteModels: vi.fn(async () => ["openai/gpt-5.4"]),
     replaceFavoriteModels: vi.fn(async () => undefined),
+    changeFavoriteModels: vi.fn(async (_userId: string, change: (ids: string[]) => string[]) => change(["openai/gpt-5.4"])),
   };
   return { repository, useCases: createModelPreferenceUseCases(repository) };
 }
@@ -44,5 +45,14 @@ describe("model preference use cases", () => {
       ),
     ).rejects.toThrow(`At most ${MAX_FAVORITE_MODELS}`);
     expect(repository.replaceFavoriteModels).not.toHaveBeenCalled();
+  });
+
+  it("changes one model against the stored list and permits removing a retired ID", async () => {
+    const { repository, useCases } = fixture();
+    await expect(useCases.setFavorite("user-1", "anthropic/claude-fable-5", true))
+      .resolves.toEqual(["anthropic/claude-fable-5", "openai/gpt-5.4"]);
+    await expect(useCases.setFavorite("user-1", "openai/gpt-5.4", false)).resolves.toEqual([]);
+    await expect(useCases.setFavorite("user-1", "openai/not-a-model", true)).rejects.toThrow(/Unknown or retired/);
+    expect(repository.changeFavoriteModels).toHaveBeenCalledTimes(2);
   });
 });

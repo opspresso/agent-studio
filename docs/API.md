@@ -152,7 +152,7 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/artifacts/{artifactId}/download` | `GET` | 비공개 파일 소유자(member), 현재 project 소유 권한 필요 |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
-| `/api/models/favorites` | `GET` `PUT` | session |
+| `/api/models/favorites` | `GET` `PUT` `PATCH` | session |
 | `/api/models/catalog` | `GET` | member |
 | `/api/models/test` | `POST` | admin |
 | `/api/models/selection` | `PUT` | admin |
@@ -1581,7 +1581,8 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 | `PUT /api/models/selection` | `{ type: "embedding" | "rerank", model, migrate?, rerankerMinScore? }`. Embedding 변경은 `migrate: true`와 전체 재색인을 요구하며 Rerank는 probe 후 저장한다 |
 | `GET /api/models/workspace` | Runtime별 선택·호환 모델의 runtime facts·사용자 즐겨찾기와 사용 가능한 Runtime 목록 |
 | `PUT /api/models/workspace` | `{ runtime, model: string | null }`. 등록된 호환 모델을 선택하거나 해제한다 |
-| `GET/PUT /api/models/favorites` | 사용자별 `{ models: string[] }` |
+| `GET/PUT /api/models/favorites` | 사용자별 `{ models: string[] }` 조회·전체 교체 |
+| `PATCH /api/models/favorites` | `{ model, favorite: boolean }`으로 개인 즐겨찾기 한 개를 원자적으로 추가·제거하고 `{ models: string[] }` 반환 |
 | `POST /api/models/test` | `{ model }`로 Text·Decisions·Image·Rerank의 실제 호출을 수행하고 `{ ok, latencyMs, error? }`를 반환한다. 호출 비용이 발생할 수 있다 |
 
 등록 모델은 최대 500개다. 가격 미제공은 `pricingKnown: false`로 표시하며 명시적 0과 구별한다.
@@ -1589,7 +1590,8 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 `/models`에서 변경하며, 선택기에서는 provider 그룹보다 먼저 표시한다.
 조회 시 Provider의 명시적 유형·출력 modality를 이름 추정보다 우선한다. `decisions`·
 `transcription`·`rerank`도 출력 modality에서 판정한다. 입력 modality와 지원 parameter는
-Tools·Vision·Reasoning·구조화 출력의 독립적인 capability로 보존한다.
+Tools·Vision·Reasoning·구조화 출력의 독립적인 capability로 보존한다. 지원 parameter가
+객체로 오면 명시적으로 `true`인 항목만 지원 기능으로 취급한다.
 Provider 응답에 없는 정보는 제공자·전송 ID가 일치하는 내장 공개 모델 facts로 보완한다.
 공개 facts는 조회 결과에 모델을 추가하지 않으며 실행 레지스트리도 자동 변경하지 않는다.
 UI의 추가 버튼은 조회한 facts를 즉시 저장한다. 유형 정보 자체가 없으면 행 안에서 유형을

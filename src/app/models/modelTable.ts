@@ -102,7 +102,7 @@ export function filterModelRows<T extends ModelRow>(models: T[], state: ModelBro
     (!state.type || modelOutputTypes(model).includes(state.type)) && (!provider || model.provider === provider) &&
     (!isSelected || !state.selectedOnly || isSelected(model)) &&
     state.capabilities.every(flag => model.capabilities?.[flag] === true) &&
-    matchesFilter(state.query, model.displayName, model.wireId, model.provider, model.maker),
+    matchesFilter(state.query, model.displayName, model.id, model.wireId, model.provider, model.maker),
   ), state.sortKey, state.direction);
 }
 

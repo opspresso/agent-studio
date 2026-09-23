@@ -8,6 +8,7 @@ import {
 export interface ModelPreferenceUseCases {
   list(userId: string): Promise<string[]>;
   replace(userId: string, modelIds: string[]): Promise<string[]>;
+  setFavorite(userId: string, modelId: string, favorite: boolean): Promise<string[]>;
 }
 
 export function createModelPreferenceUseCases(
@@ -32,6 +33,22 @@ export function createModelPreferenceUseCases(
       }
       await repository.replaceFavoriteModels(userId, ids);
       return ids;
+    },
+
+    async setFavorite(userId, modelId, favorite) {
+      const id = modelId.trim();
+      const model = getModelConfig(id);
+      if (favorite && (model === undefined || model.hidden === true)) {
+        throw new ValidationError(`Unknown or retired model id: ${id}`);
+      }
+      return repository.changeFavoriteModels(userId, current => {
+        const ids = new Set(current);
+        if (favorite) ids.add(id); else ids.delete(id);
+        if (ids.size > MAX_FAVORITE_MODELS) {
+          throw new ValidationError(`At most ${MAX_FAVORITE_MODELS} models may be favorited`);
+        }
+        return [...ids].sort();
+      });
     },
   };
 }

@@ -46,7 +46,10 @@ test.beforeEach(async ({ page }) => {
       return failDiscovery ? route.fulfill({ status: 502, json: { error: "Provider discovery failed" } }) : route.fulfill({ json: { models: discovered } });
     }
     if (path === "/api/models/favorites") {
-      if (route.request().method() === "PUT") favorites = (route.request().postDataJSON() as { models: string[] }).models;
+      if (route.request().method() === "PATCH") {
+        const { model, favorite } = route.request().postDataJSON() as { model: string; favorite: boolean };
+        favorites = favorite ? [...new Set([...favorites, model])].sort() : favorites.filter(id => id !== model);
+      }
       return route.fulfill({ json: { models: favorites } });
     }
     if (path === "/api/models/registry") {
@@ -143,6 +146,8 @@ test("saves personal favorites from selected models and restores them after relo
   await jev.getByRole("button", { name: "Add model" }).click();
   await page.goto(`${base}/selected`);
   const selectedCard = page.getByRole("article").filter({ hasText: "fixture/~typesafe/jev-latest" });
+  await page.getByRole("textbox", { name: "Search models" }).fill("fixture/~typesafe/jev-latest");
+  await expect(page.getByRole("article")).toHaveCount(1);
   await selectedCard.getByRole("button", { name: "Add to favorites" }).click();
   await expect(selectedCard.getByRole("button", { name: "Remove from favorites" })).toHaveAttribute("aria-pressed", "true");
   expect(favorites).toEqual(["fixture/~typesafe/jev-latest"]);
