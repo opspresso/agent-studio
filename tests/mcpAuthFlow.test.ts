@@ -1066,6 +1066,21 @@ describe("saveClientCredentials", () => {
 });
 
 describe("listing a server's tools as the project", () => {
+  it("distinguishes a rejected URL from a resolver failure", async () => {
+    const h = harness({ connection: {} });
+    const uc = createMcpAuthUseCases(h.deps);
+    const blocked = new BlockedUrlError("Private address");
+    h.deps.urlPolicy.assertAllowed = async () => { throw blocked; };
+
+    await expect(uc.listTools("p", "slack", OWNER)).resolves.toEqual({ ok: false, error: blocked.message });
+
+    const resolverFailure = new Error("DNS lookup failed");
+    h.deps.urlPolicy.assertAllowed = async () => { throw resolverFailure; };
+
+    await expect(uc.listTools("p", "slack", OWNER)).rejects.toBe(resolverFailure);
+    expect(h.probes).toHaveLength(0);
+  });
+
   it("resolves a saved masked toolset for discovery and fences moved endpoints", async () => {
     const h = harness({ connection: {} });
     const context = agentMcpHeadersContext("p", "slack");

@@ -1050,10 +1050,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           // edited to a blocked host since it was stored.
           await deps.urlPolicy.assertAllowed(server.url);
         } catch (error) {
-          // Narrowed to the policy's own verdict, like every other surface of
-          // this check: `instanceof Error` relayed a DNS or socket failure's
-          // internals to the console as though the policy had said them.
-          return { ok: false, error: error instanceof BlockedUrlError ? error.message : "Blocked URL" };
+          if (!(error instanceof BlockedUrlError)) throw error;
+          return { ok: false, error: error.message };
         }
       }
       const [binding] = await resolveMcpBindings(deps.cipher, { get: async () => server },
