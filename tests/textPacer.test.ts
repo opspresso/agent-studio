@@ -4,7 +4,7 @@ import { createTextPacer } from "@/app/_lib/textPacer";
 /**
  * The Playground holds a streamed axis in component state, so a
  * commit per token re-renders the whole page over a string that only grows —
- * quadratic over a long think.
+ * quadratic over a long answer or think.
  */
 describe("createTextPacer", () => {
   afterEach(() => {

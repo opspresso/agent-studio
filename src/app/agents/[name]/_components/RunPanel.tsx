@@ -150,6 +150,11 @@ export function RunPanel({
         setReasoning((prev) => prev + batch);
       }
     });
+    const answerPacer = createTextPacer((batch) => {
+      if (isCurrent()) {
+        setText((prev) => prev + batch);
+      }
+    });
     setText("");
     setReasoning("");
     setReasoningTokens(0);
@@ -218,7 +223,7 @@ export function RunPanel({
         }
         const content = chunk.delta?.content;
         if (content && isTopLevelChunk(chunk)) {
-          setText((prev) => prev + content);
+          answerPacer.push(content);
         }
         // Only an Agent with `reasoningTrace` on produces any; top-level for
         // the reason the answer is — a child's thinking is its own run's.
@@ -271,7 +276,8 @@ export function RunPanel({
       }
     } finally {
       // Whatever the last batch was holding, on every exit path: a run that
-      // ends mid-interval would otherwise leave its last thought unshown.
+      // ends mid-interval would otherwise leave its last answer or thought unshown.
+      answerPacer.flush();
       reasoningPacer.flush();
       if (isCurrent()) {
         activeRequest.current = null;
