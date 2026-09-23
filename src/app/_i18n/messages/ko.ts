@@ -948,6 +948,7 @@ export const ko: Messages = {
   "project.tab.settings": "설정",
 
   "playground.loadFailed": "Agent를 불러오지 못했습니다",
+  "playground.modelRegistryWarning": "Model 선택 목록을 불러오지 못했습니다. Agent 설정은 계속 표시되지만 Model 목록을 사용할 수 없습니다: {error}",
   "playground.saveFailed": "Agent 설정을 저장하지 못했습니다.",
 
   "playground.notFound": "Agent를 찾을 수 없습니다",

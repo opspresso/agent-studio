@@ -1004,6 +1004,7 @@ export const en = {
 
   // The Playground edits one current Agent configuration.
   "playground.loadFailed": "Failed to load Agent",
+  "playground.modelRegistryWarning": "Model choices could not be loaded. Agent settings remain visible, but the model list is unavailable: {error}",
   "playground.saveFailed": "Failed to save Agent settings",
 
   "playground.notFound": "Agent not found",
