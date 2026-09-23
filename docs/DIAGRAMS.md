@@ -241,7 +241,6 @@ flowchart LR
   subgraph registry["레지스트리 (GSI1 TYPE#…)"]
     skill["SKILL#{name}"]
     mcp["MCP#{name}"]
-    agent["AGENT#{name}"]
     plugin["PLUGIN#{name}"]
   end
   subgraph runs["런의 흔적"]
