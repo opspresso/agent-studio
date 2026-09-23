@@ -2150,11 +2150,11 @@ describe("executeAgent retrieval usage", () => {
       projectName: "painter",
       date: expect.any(String),
       model: "openrouter/rerank-v3.5",
-      calls: 2,
-      inputTokens: 42,
+      calls: 1,
+      inputTokens: 21,
       outputTokens: 0,
       cachedTokens: 0,
-      costUsd: 0.002,
+      costUsd: 0.001,
     });
   });
 });

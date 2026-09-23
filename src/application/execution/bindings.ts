@@ -149,13 +149,8 @@ export function buildSkillLoader(
 const DISCOVERY_LIMITS = { skill: 5, agent: 3, mcpServer: 3 } as const;
 
 /**
- * How much of a system prompt is used as a query.
- *
- * The opening of a system prompt says what the agent is; the rest is rules,
- * formatting and examples, which describe *how* it answers and drag the query
- * toward whatever those examples happen to mention. Embedding models also bound
- * their input, and a long prompt would spend that budget on the least
- * discriminating part.
+ * How much of each discovery query is embedded. A pasted document must not
+ * exhaust the embedding provider's input budget.
  */
 const PROMPT_QUERY_CHARS = 2000;
 
@@ -211,7 +206,8 @@ export function discoveryQueries(
   requests: readonly string[] = [],
   remembered?: string,
 ): string[] {
-  const request = requests.findLast((text) => text.trim());
+  const usable = requests.filter(text => text.trim());
+  const request = usable.at(-1);
   // Keep the original request queries: a recalled association adds a route to
   // investigate, but cannot replace what the person asked us to accomplish.
   const contextualQuery = request && remembered?.trim()
@@ -221,8 +217,12 @@ export function discoveryQueries(
   return [
     ...new Set(
       [
-        configuration.systemPrompt.slice(0, PROMPT_QUERY_CHARS),
-        ...requests.map((request) => request.slice(0, PROMPT_QUERY_CHARS)),
+        // Persona instructions describe how to act, not this turn's task.
+        // Their high-scoring generic matches can otherwise displace the actual
+        // request's skills under the discovery cap. A request-free preview can
+        // still search the role; explicit bindings always remain available.
+        ...(usable.length ? usable : [configuration.systemPrompt])
+          .map((query) => query.slice(0, PROMPT_QUERY_CHARS)),
         ...(contextualQuery ? [contextualQuery] : []),
       ].filter((query) => query.trim() !== ""),
     ),

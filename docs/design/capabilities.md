@@ -80,8 +80,8 @@ Rerank는 저장 벡터를 바꾸지 않으므로 semantic probe 후 선택만 �
 
 ### 검색과 순위
 
-`searchCatalog.ts`는 여러 query를 독립적으로 처리한다. 실행 query는 시스템 프롬프트와
-최근 사용자 턴이며, recall이 있으면 최신 요청과 제한된 기억을 합친 query도 추가한다.
+`searchCatalog.ts`는 여러 query를 독립적으로 처리한다. 실행 query는 최근 사용자 턴이며 요청 없는 미리보기에서만 시스템 프롬프트를 사용한다.
+일반 행동 지침이 현재 요청의 기능을 밀어내지 않도록 분리하며, recall이 있으면 최신 요청과 제한된 기억을 합친 query도 추가한다.
 각 capability는 query별 생존 결과의 최고 점수로 합쳐진다.
 
 | 단계 | 계약 |

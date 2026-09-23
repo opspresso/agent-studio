@@ -1,12 +1,10 @@
 /**
  * Finding capabilities for a request.
  *
- * Takes several queries rather than one because a run has two different things
- * to say about what it needs: the Agent's system prompt describes what this
- * agent is generally for, and the user's message describes what it is being
- * asked for right now. Concatenating them would average the two into a point
- * that is neither; searching separately and keeping each entry's best score lets
- * a capability qualify on either.
+ * Takes separate queries for recent user turns and optional recalled context.
+ * Keeping each entry's best score preserves capabilities needed for follow-up
+ * requests without averaging unrelated text into one embedding. Query selection
+ * belongs to execution/bindings; a request-free preview can use the Agent role.
  *
  * One kind per call. The caller wants a bounded number of each — skills and
  * agents are cheap to add, an MCP server costs a discovery round trip — so a

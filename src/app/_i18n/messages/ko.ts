@@ -637,7 +637,7 @@ export const ko: Messages = {
     "관리자가 Plugins에서 설정된 저장소나 업로드한 checkout archive의 스킬·MCP 정의를 가져온다. 저장소에 접근할 수 없으면 archive 업로드를 사용한다. 건너뜀·유효하지 않은 항목을 확인하고 가져온 기능을 Agent에 연결한다. 가져온 스킬 본문과 MCP URL·설명은 원본에서 수정한 뒤 다시 동기화한다. MCP 헤더는 가져오지 않으므로 자격 증명은 콘솔에서 별도로 설정한다. 고아 항목은 동기화가 자동 삭제하지 않으며 결과 화면에서 검토 후 명시적으로 삭제한다.",
   "guide.capabilities.discovery": "동적 검색과 메모리",
   "guide.capabilities.discoveryBody":
-    "동적 검색은 시스템 프롬프트와 현재 요청을 기능 이름·설명에 매칭해 관련 Skill·MCP 서버/도구·외부 에이전트를 저장된 연결 위에 추가한다. 설명이 라우팅 신호이므로 언제 사용하고 무엇을 돌려주는지 정확히 써야 한다. capability catalog와 임베딩 설정이 동작해야 하며 검색 결과가 없으면 관리자에게 확인한다. 메모리 recall은 별개이며 recall 도구를 제공하는 MCP 서버가 연결되어야 한다.",
+    "동적 검색은 최근 사용자 요청을 기능 이름·설명에 매칭하고 요청이 없을 때만 시스템 프롬프트를 사용해 관련 Skill·MCP 서버/도구·외부 에이전트를 저장된 연결 위에 추가한다. 설명이 라우팅 신호이므로 언제 사용하고 무엇을 돌려주는지 정확히 써야 한다. capability catalog와 임베딩 설정이 동작해야 하며 검색 결과가 없으면 관리자에게 확인한다. 메모리 recall은 별개이며 recall 도구를 제공하는 MCP 서버가 연결되어야 한다.",
   "guide.capabilities.builtins": "이미지·오디오·URL·파일 도구",
   "guide.capabilities.builtinsBody": "필요한 이미지 생성·오디오 처리·URL 읽기·Slack 기록 기능을 켜고 해당 서비스를 구성한다. 파일 저장소가 있으면 File로 지원 문서를 읽고 생성·편집하며, 텍스트 파일은 SaveFile로 만든다. 오디오에는 비공개 원본 저장소와 별도 worker가 필요하다. 문서 처리는 기본 제공하며 별도 MCP 연결이 필요하지 않는다.",
 
@@ -1047,7 +1047,7 @@ export const ko: Messages = {
   "configuration.searchSkills": "등록된 Skill 검색",
   "configuration.dynamicCapabilities": "요청마다 필요한 기능 찾기",
   "configuration.dynamicCapabilitiesHint":
-    "이 Agent의 시스템 프롬프트와 들어온 요청으로 기능 이름과 설명을 검색해, 일치하는 Skill·MCP 서버/도구·외부 에이전트를 위 바인딩에 더해 제공합니다. 설명의 첫 500자가 색인되므로 구현 세부보다 어떤 요청을 처리하는지 먼저 쓰세요. 바인딩은 언제나 전부 제공되며, 자체 로그인이 필요한 MCP 서버는 이 프로젝트가 연결한 뒤에만 제공됩니다.",
+    "최근 사용자 요청으로 기능 이름과 설명을 검색해(요청 없는 미리보기는 시스템 프롬프트 사용), 일치하는 Skill·MCP 서버/도구·외부 에이전트를 위 바인딩에 더해 제공합니다. 설명의 첫 500자가 색인되므로 구현 세부보다 어떤 요청을 처리하는지 먼저 쓰세요. 바인딩은 언제나 전부 제공되며, 자체 로그인이 필요한 MCP 서버는 이 프로젝트가 연결한 뒤에만 제공됩니다.",
 
   "configuration.memoryRecall": "런마다 먼저 메모리 회상",
   "configuration.memoryRecallHint":

@@ -144,12 +144,26 @@ function harness(
 const QUERIES = ["You review pull requests.", "open a PR for this"];
 
 describe("capability discovery", () => {
+  it("selects skills for the request without letting persona instructions fill the discovery cap", async () => {
+    const request = "회의 메모를 결정 사항과 담당자별 할 일로 정리해 주세요";
+    const catalog = fakeCatalog({});
+    catalog.embeddings.embed = async (texts) => texts.map(text => [text === request ? 1 : 0]);
+    catalog.catalog.query = async (vector, _topK, filter) => filter?.kind !== "skill" ? [] : vector[0] === 1
+      ? [found("meeting-minutes", undefined, 0.4)]
+      : ["prompt-writer", "skill-writer", "workspace-search", "personal-records", "simple-orchestration"]
+        .map(name => found(name, undefined, 0.95));
+    const { deps } = harness({ catalog });
+    const settings = configuration({ systemPrompt: "Choose suitable skills and tools. Follow Slack delivery instructions.", skillList: ["bound"] });
+    const resolved = await resolveRunTools(deps, settings, undefined, discoveryQueries(settings, [request]));
+    expect(resolved.skills.map(skill => skill.name)).toEqual(["bound", "meeting-minutes"]);
+  });
+
   it("adds bounded request-plus-memory context without replacing the original queries", () => {
     const request = "Find and summarize this person";
     const queries = discoveryQueries(configuration(), ["Earlier request", request], "They belong to an organization");
-    expect(queries.slice(0, 3)).toEqual([configuration().systemPrompt, "Earlier request", request]);
-    expect(queries[3]).toContain(request);
-    expect(queries[3]).toContain("They belong to an organization");
+    expect(queries.slice(0, 2)).toEqual(["Earlier request", request]);
+    expect(queries[2]).toContain(request);
+    expect(queries[2]).toContain("They belong to an organization");
     const bounded = discoveryQueries(configuration(), ["r".repeat(3000)], "m".repeat(5000));
     expect(bounded.every((query) => query.length <= 2000)).toBe(true);
     expect(bounded.at(-1)).toContain("m".repeat(100));
@@ -483,7 +497,6 @@ describe("discovery queries", () => {
       { role: "user" as const, content: "now review the first one" },
     ];
     expect(discoveryQueries(configuration(), recentUserQueries(messages))).toEqual([
-      "You review pull requests.",
       "open a PR on the github repo",
       "now review the first one",
     ]);
@@ -502,5 +515,10 @@ describe("discovery queries", () => {
 
   it("deduplicates repeated query texts", () => {
     expect(discoveryQueries(configuration({ systemPrompt: "same" }), ["same", "same"])).toEqual(["same"]);
+  });
+
+  it("uses the configured role for a preview with no usable request", () => {
+    expect(discoveryQueries(configuration(), ["", "   "])).toEqual([configuration().systemPrompt]);
+    expect(discoveryQueries(configuration({ systemPrompt: "" }), [" "])).toEqual([]);
   });
 });

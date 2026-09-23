@@ -718,7 +718,7 @@ const SAVE_FILE_TOOL_DEF: ChannelToolDef = {
       "Keep text you wrote as a file the person receives — a report, a page, a dataset, a note. " +
       "Use it when the answer *is* a document rather than a reply: a long HTML report, a CSV of results, " +
       "a Markdown write-up somebody will file or send on. The file is delivered on its own; " +
-      "say what you made and do not repeat its contents in the answer. " +
+      "say what you made and do not repeat its contents in the answer. Refer to the attached file card; do not invent a download URL or a sandbox:/mnt/data path. " +
       "HTML previews run immediately in an isolated iframe and support inline CSS, JavaScript, buttons, inputs, SVG and canvas. " +
       "Make HTML self-contained: no CDN, external scripts, imports, eval, fetch, storage, workers, form submissions or page navigation. " +
       "Use DOM updates for tabs and steps, keep all content reachable, and use border-box sizing, responsive layouts and a viewport meta tag for mobile. " +

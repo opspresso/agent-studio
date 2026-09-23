@@ -681,7 +681,7 @@ export const en = {
     "An administrator imports skills and MCP definitions from a configured repository or an uploaded checkout archive in Plugins. Use archive upload when the repository is unreachable. Inspect skipped/invalid entries and bind imported capabilities to your Agent. Imported skill content and MCP URLs/descriptions are maintained at the source and synchronized again; configure credentials separately in the console, because MCP headers are not imported. Sync does not delete orphaned entries automatically; review and remove them explicitly from its results.",
   "guide.capabilities.discovery": "Dynamic discovery and memory",
   "guide.capabilities.discoveryBody":
-    "Dynamic discovery matches the system prompt and current request against capability names and descriptions, then adds relevant skills, MCP servers/tools, and external agents without changing saved bindings. A precise description is the routing signal: say when the capability should be used and what it returns. It needs a working capability catalog and embedding setup; ask an administrator if results are missing. Memory recall is separate and needs a bound MCP server offering recall.",
+    "Dynamic discovery matches recent user requests against capability names and descriptions (using the system prompt only when no request is available), then adds relevant skills, MCP servers/tools, and external agents without changing saved bindings. A precise description is the routing signal: say when the capability should be used and what it returns. It needs a working capability catalog and embedding setup; ask an administrator if results are missing. Memory recall is separate and needs a bound MCP server offering recall.",
   "guide.capabilities.builtins": "Image, audio, URL, and file tools",
   "guide.capabilities.builtinsBody":
     "Enable image generation, audio processing, URL reading, or Slack history when needed and configure the corresponding services. With file storage configured, File reads, creates, and edits supported documents, while SaveFile creates text files. Audio uses a private source store and a separate worker. Document processing itself is built in and needs no MCP binding.",
@@ -1114,7 +1114,7 @@ export const en = {
   "configuration.searchSkills": "Search registered skills",
   "configuration.dynamicCapabilities": "Find capabilities for each request",
   "configuration.dynamicCapabilitiesHint":
-    "Searches capability names and descriptions with this Agent’s system prompt and the incoming request, then offers the matching skills, MCP servers/tools, and external agents on top of the bindings above. The opening 500 characters of each description are indexed, so say what request the capability handles before implementation details. Bindings are always offered in full. An MCP server that needs its own sign-in is offered only after this project connects it.",
+    "Searches capability names and descriptions with recent user requests (or the system prompt in a request-free preview), then offers the matching skills, MCP servers/tools, and external agents on top of the bindings above. The opening 500 characters of each description are indexed, so say what request the capability handles before implementation details. Bindings are always offered in full. An MCP server that needs its own sign-in is offered only after this project connects it.",
 
   "configuration.memoryRecall": "Recall memory before each run",
   "configuration.memoryRecallHint":

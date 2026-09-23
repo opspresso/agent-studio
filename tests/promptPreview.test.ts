@@ -362,7 +362,7 @@ describe("previewPrompt", () => {
       expect(preview.warnings).toEqual([]);
     });
 
-    it("searches on the request as well as the system prompt", async () => {
+    it("searches on the preview request instead of generic persona instructions", async () => {
       // Which capabilities a run finds depends on what it is being asked, so a
       // preview that ignored the request could only ever show the floor.
       const queries: string[][] = [];
@@ -379,7 +379,7 @@ describe("previewPrompt", () => {
         message: "say hello to the customer",
       });
 
-      expect(queries[0]).toEqual(["You are helpful.", "say hello to the customer"]);
+      expect(queries[0]).toEqual(["say hello to the customer"]);
     });
 
     it("previews the floor every run starts from when no request is given", async () => {
