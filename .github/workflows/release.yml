@@ -172,4 +172,5 @@ jobs:
             -f client_payload[version]="${GITHUB_REF_NAME}" \
             -f client_payload[container]=app \
             -f client_payload[phase]=prod \
-            -f client_payload[type]=helm
+            -f client_payload[type]=helm \
+            -f client_payload[auto_merge]=true
