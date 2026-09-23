@@ -6,6 +6,7 @@ import type {
   SlackChunk,
   SlackMessage,
   SlackReaction,
+  SlackSessionStatusInput,
   SlackTaskDisplayMode,
   SlackUserDetail,
 } from "@/domain/slack/types";
@@ -232,6 +233,9 @@ async function fetchProfile(token: string, userId: string): Promise<CachedSlackP
 }
 
 export const slackClient = {
+  setSessionStatus(token: string, args: SlackSessionStatusInput): Promise<void> {
+    return slackApi(token, "agents.sessions.setStatus", { ...args }).then(() => undefined);
+  },
   /**
    * Upload an image via the external upload flow:
    * files.getUploadURLExternal (form) → POST bytes → files.completeUploadExternal.
@@ -539,13 +543,6 @@ export const slackClient = {
     },
   ): Promise<void> {
     return slackApi(token, "assistant.threads.setSuggestedPrompts", args).then(() => undefined);
-  },
-  /** Name a thread so the agent's history is readable at a glance. */
-  setTitle(
-    token: string,
-    args: { channel_id: string; thread_ts: string; title: string },
-  ): Promise<void> {
-    return slackApi(token, "assistant.threads.setTitle", args).then(() => undefined);
   },
   /**
    * Every reply in a thread, oldest first. Slack paginates this endpoint and

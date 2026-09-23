@@ -1417,6 +1417,14 @@ export const en = {
   "pset.notificationDestinationsHint":
     "Select an enabled integration to configure where it receives cost alerts.",
   "pset.slackBot": "Slack bot",
+  "pset.slackSetupHint":
+    "Create a dedicated Slack app for this project from the manifest below (api.slack.com/apps → Create New App → From a manifest), install it, then save its bot token and signing secret here and enable events.",
+  "pset.slackManifestHint":
+    "Slack must be able to reach the HTTPS event URL below. Keep Socket Mode off. For an existing app, apply the manifest in Slack's App Manifest settings; reinstall the app when permissions change.",
+  "pset.slackOrgDeployHint":
+    "If org-wide deployment is already enabled, retain settings.org_deploy_enabled: true when applying this manifest. It cannot be turned off. This generated manifest omits the setting; copy its existing value from Slack before saving.",
+  "pset.slackPromptsHint":
+    "Shown at the top of the app's Messages tab in Slack. Up to {max} prompts; blank rows are ignored. Saving also updates the manifest above. Reapply it to the Slack app to update its default prompts.",
   "pset.appManifest": "App manifest",
   "pset.botToken": "Bot token",
   "pset.signingSecret": "Signing secret",

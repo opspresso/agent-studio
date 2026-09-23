@@ -6,7 +6,7 @@ import { log } from "@/shared/logger";
  * The fixed actions a message can be, instead of a question for the agent.
  *
  * They are answered here rather than by a run for two reasons. A run costs a
- * model call and the answer is a constant. And two of the three change *whether
+ * model call and the answer is a constant. The mute commands change *whether
  * the bot speaks again*, which no amount of prompting makes reliable — a person
  * silencing a thread has to be obeyed, not interpreted.
  */
@@ -18,6 +18,7 @@ export interface CommandContext {
   channel: string;
   /** The thread the reply goes in — the message's own ts when it started one. */
   threadTs: string;
+  eventTs: string;
   /**
    * Whether the message was written *inside* a thread.
    *
@@ -38,6 +39,7 @@ export interface CommandContext {
 const HELP = [
   "*Commands*",
   "`!help` — this list",
+  "`!stop` — stop the current run in this thread",
   "`!mute` — stop replying in this thread without a mention",
   "`!unmute` — start again",
   "",
@@ -76,6 +78,21 @@ export async function handleSlackCommand(
 
   if (command === "help") {
     await say(HELP);
+    return;
+  }
+  if (command === "stop") {
+    if (!ctx.inThread) {
+      await say("Reply `!stop` inside the thread you want to stop, or use its stop button.");
+      return;
+    }
+    try {
+      await deps.stops.requestStop(ctx, ctx.eventTs);
+    } catch (error) {
+      log.error("slack", "stop request could not be recorded", error);
+      await say(":warning: I could not stop this run. Please try again.");
+      return;
+    }
+    await say("Stop requested for this thread.");
     return;
   }
   if (ctx.assistantThread) {

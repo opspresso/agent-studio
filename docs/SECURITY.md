@@ -102,7 +102,7 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 않는다. token 은 소유자로서 행동하고, bot 배선은 소유자의 선택이다. Slack bot 만 그 중간에
 있다: workspace 의 누구나 말을 걸 수 있으므로, private project 의 bot 은 `users.info` 의
 이메일로 묻는 사람을 식별해 초대 여부를 확인하고, 이메일을 공유하지 않는 workspace 의
-사용자는 거절한다 (`slackSenderMayAccess`, 런, `!mute` 명령, thread-start 인사가 같은
+사용자는 거절한다 (`slackSenderMayAccess`, 런, `!mute`·`!stop` 명령, native 중단 이벤트, thread-start 인사가 같은
 게이트를 지난다). 앱이 서명한 메시지(키워드로 깨운 알림 등)는 통과한다: 그 키워드는
 소유자 자신의 설정이라 trigger 와 같은 소유자-배선 자동화다. 조회된 주소는 판정에만
 쓰이고 프롬프트에는 닿지 않는다. 초대 목록 자체(`memberEmails`)는 제3자 주소의 명부이므로

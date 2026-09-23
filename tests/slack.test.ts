@@ -148,12 +148,12 @@ describe("slackClient agent methods", () => {
       channel_id: "D1",
       prompts: [{ title: "Draw", message: "Draw me a cat" }],
     });
-    await slackClient.setTitle("tok", { channel_id: "D1", thread_ts: "1.0", title: "Cats" });
+    await slackClient.setSessionStatus("tok", { channel_id: "D1", thread_ts: "1.0", status: "processing", title: "Cats", initiator_user_id: "U1" });
 
     expect(calls.map((call) => call.url)).toEqual([
       "https://slack.com/api/assistant.threads.setStatus",
       "https://slack.com/api/assistant.threads.setSuggestedPrompts",
-      "https://slack.com/api/assistant.threads.setTitle",
+      "https://slack.com/api/agents.sessions.setStatus",
     ]);
     expect(calls[1]?.body).toEqual({
       channel_id: "D1",
@@ -319,15 +319,24 @@ describe("slackClient.downloadFile", () => {
 });
 
 describe("threadToTurns", () => {
+  it("preserves other people's mentions and excludes current and future replies", () => {
+    const turns = threadToTurns([
+      { ts: "9.9", user: "U1", text: "<@UBOT> ask <@U2> about <#C1|deploy>" },
+      { ts: "10.0", user: "U1", text: "current" },
+      { ts: "10.000001", user: "U2", text: "future" },
+    ], "10.0", "UBOT");
+    expect(turns.map((turn) => turn.message.content)).toEqual(["ask <@U2> about <#C1|deploy>"]);
+  });
   it("maps bot turns to assistant, humans to user, and drops the current event", () => {
     const turns = threadToTurns(
       [
         { ts: "1", user: "U1", text: "<@UBOT> first question" },
-        { ts: "2", bot_id: "B1", text: "first answer" },
+        { ts: "2", user: "UBOT", bot_id: "B1", text: "first answer" },
         { ts: "3", user: "U1", text: "" },
         { ts: "4", user: "U1", text: "follow-up" },
       ],
       "4",
+      "UBOT",
     );
     expect(turns.map((t) => t.message)).toEqual([
       { role: "user", content: "first question" },

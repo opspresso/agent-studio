@@ -102,6 +102,9 @@ export const RUN_LOG_TTL_SECONDS = RUN_LEASE_SECONDS + 15 * 60;
  */
 export const SLACK_ENGAGEMENT_TTL_SECONDS = SECONDS_PER_DAY;
 
+/** Covers Slack redelivery of a message that was stopped before its handler began. */
+export const SLACK_STOP_TTL_SECONDS = SECONDS_PER_DAY;
+
 /**
  * How long a remote agent's `contextId` is kept for one of our conversations.
  *

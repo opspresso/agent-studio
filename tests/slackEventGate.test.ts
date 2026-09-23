@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * what is under test is the routing, not what they do.
  */
 const { handled, claim, settle, isEngaged } = vi.hoisted(() => ({
-  handled: [] as Array<{ handler: "run" | "threadStart"; type?: string }>,
+  handled: [] as Array<{ handler: "run" | "threadStart" | "stop"; type?: string }>,
   claim: vi.fn(async (): Promise<string | null> => "claim-token"),
   settle: vi.fn(async () => {}),
   isEngaged: vi.fn(async () => false),
@@ -33,6 +33,9 @@ vi.mock("@/infrastructure/db/repositories/slackThreadRepository", () => ({
   slackThreadRepository: { isEngaged, markEngaged: vi.fn(async () => {}) },
 }));
 vi.mock("@/application/slack/handleSlackEvent", () => ({
+  handleSlackStop: async (_deps: unknown, body: { event?: { type?: string } }) => {
+    handled.push({ handler: "stop", type: body.event?.type });
+  },
   handleSlackEvent: async (_deps: unknown, body: { event?: { type?: string } }) => {
     handled.push({ handler: "run", type: body.event?.type });
   },
@@ -100,6 +103,27 @@ beforeEach(() => {
 });
 
 describe("which Slack events reach a handler", () => {
+  it("routes a native stop without launching a model or reading engagement", async () => {
+    await deliver({ type: "event_callback", event_id: "EvStop", event: {
+      type: "agent_session_stopped", channel: "C1", thread_ts: "1.0", event_ts: "2.0", user: "U1",
+    } });
+    expect(handled).toEqual([{ handler: "stop", type: "agent_session_stopped" }]);
+    expect(isEngaged).not.toHaveBeenCalled();
+    expect(claim).toHaveBeenCalledOnce();
+  });
+
+  it("admits an unmentioned stop before a first reply establishes engagement", async () => {
+    await deliver(channelMessage({ thread_ts: "1.0", text: "!stop" }));
+    expect(handled).toEqual([{ handler: "run", type: "message" }]);
+    expect(isEngaged).not.toHaveBeenCalled();
+  });
+
+  it("ignores malformed native stops before claiming an event", async () => {
+    await deliver({ type: "event_callback", event_id: "EvStop", event: {
+      type: "agent_session_stopped", channel: "C1", thread_ts: "1.0", event_ts: "bad", user: "U1",
+    } });
+    expect(claim).not.toHaveBeenCalled();
+  });
   it("runs the agent for a mention and a DM", async () => {
     await deliver({
       type: "event_callback",

@@ -1,5 +1,11 @@
 import type { SlackBlock, SlackMessageContent } from "./types";
 
+/** Remove only the addressed bot; other user and channel references remain usable context. */
+export function slackInputText(message: SlackMessageContent, botUserId?: string): string {
+  const text = slackMessageText(message);
+  return (botUserId ? text.split(`<@${botUserId}>`).join("") : text).trim();
+}
+
 /**
  * Everything a Slack message says, as one text — the single owner of how a
  * message's `text`, its attachments and its blocks are read together.

@@ -314,6 +314,11 @@ export const keys = {
     SK: "META",
   }),
 
+  slackRunControl: (projectName: string, channel: string, threadTs: string) => ({
+    PK: `PROJECT#${projectName}`,
+    SK: `SLACKSTOP#${channel}#${threadTs}`,
+  }),
+
   a2aTask: (projectName: string, ownerScope: string, taskId: string) => ({
     PK: `A2ATASK#${projectName}#${encodeURIComponent(ownerScope)}`,
     SK: `TASK#${taskId}`,

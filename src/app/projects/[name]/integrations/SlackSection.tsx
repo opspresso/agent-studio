@@ -168,9 +168,13 @@ export function SlackSection({
     >
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>
-          Create a dedicated Slack app for this project from the manifest below (api.slack.com/apps
-          → Create New App → From a manifest), install it, then paste the bot token and signing
-          secret here.
+          {t("pset.slackSetupHint")}
+        </Text>
+        <Text fz="xs" c="dimmed" lh={1.6}>
+          {t("pset.slackManifestHint")}
+        </Text>
+        <Text fz="xs" c="dimmed" lh={1.6}>
+          {t("pset.slackOrgDeployHint")}
         </Text>
 
         <CollapsibleCode
@@ -209,10 +213,7 @@ export function SlackSection({
             Suggested prompts
           </Text>
           <Text fz="xs" c="dimmed" lh={1.6}>
-            Shown when someone opens this app&apos;s assistant pane in Slack. Slack takes up to{" "}
-            {MAX_SUGGESTED_PROMPTS}; blank rows are ignored. Changing these also changes the
-            manifest above, so re-apply it to the Slack app if you want the new prompts before the
-            first event arrives.
+            {t("pset.slackPromptsHint", { max: MAX_SUGGESTED_PROMPTS })}
           </Text>
           {prompts.map((prompt, index) => (
             <Group key={index} gap="xs" wrap="nowrap" align="flex-start">

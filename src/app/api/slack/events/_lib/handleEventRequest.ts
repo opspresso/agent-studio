@@ -3,13 +3,14 @@ import { verifySlackSignature } from "@/infrastructure/slack/verify";
 import { slackClient } from "@/infrastructure/slack/client";
 import { slackEventRepository } from "@/infrastructure/db/repositories/slackEventRepository";
 import { slackThreadRepository } from "@/infrastructure/db/repositories/slackThreadRepository";
+import { slackRunControlRepository } from "@/infrastructure/db/repositories/slackRunControlRepository";
 import {
   signArtifactUrl,
   executionDeps,
   projectRepository,
 } from "@/lib/container";
 import { executeAgent } from "@/application/execution/runProject";
-import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
+import { handleSlackEvent, handleSlackStop } from "@/application/slack/handleSlackEvent";
 import { handleThreadStart } from "@/application/slack/handleThreadStart";
 import { classifySlackEvent, type EngagementPolicy } from "@/application/slack/engagement";
 import { admitInboundEvent, readEventBody } from "@/app/api/_lib/inboundEvent";
@@ -23,6 +24,7 @@ const slackEventDeps: SlackEventDeps = {
   projects: projectRepository,
   slack: slackClient,
   threads: slackThreadRepository,
+  stops: slackRunControlRepository,
   documents: executionDeps.documents,
   artifacts: executionDeps.artifacts,
   fileHistory: transcriptRepository,
@@ -130,7 +132,9 @@ export async function handleSlackEventRequest(
     work: () =>
       isThreadStart
         ? handleThreadStart(slackEventDeps, payload, opts.binding)
-        : handleSlackEvent(slackEventDeps, payload, opts.binding),
+        : disposition.kind === "stop"
+          ? handleSlackStop(slackEventDeps, payload, opts.binding)
+          : handleSlackEvent(slackEventDeps, payload, opts.binding),
   });
   if (admitted === "duplicate") {
     return Response.json({ ok: true, duplicate: true });

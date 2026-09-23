@@ -14,6 +14,8 @@
  * the other.
  */
 
+export type ReplyEndState = "completed" | "cancelled" | "failed";
+
 export interface ReplySink {
   /**
    * What the run is doing now. Throttled and never fatal.
@@ -48,8 +50,9 @@ export interface ReplySink {
    * line changing does not mean the last thing it said is *finished*, and a
    * checklist that ticked items off on that basis would claim the run completed
    * things it merely stopped mentioning.
+   * `failed` distinguishes a tool error from successful completion.
    */
-  stepDone(id: string, title?: string): Promise<void>;
+  stepDone(id: string, title?: string, opts?: { failed?: boolean }): Promise<void>;
   /**
    * Keep the current status from expiring while a run is in flight. Returns the
    * stopper; call it in a `finally` so a failed run does not leave a timer.
@@ -57,8 +60,8 @@ export interface ReplySink {
   keepStatusAlive(): () => void;
   /** The answer *so far*. The sink works out what still needs sending. */
   push(fullText: string): Promise<void>;
-  /** Deliver whatever is left, plus the tail, and clear the status. */
-  finish(fullText: string, suffix: string): Promise<void>;
+  /** Deliver the final answer and tail, closing progress according to the actual outcome. */
+  finish(fullText: string, suffix: string, state?: ReplyEndState): Promise<void>;
 }
 
 /** A picture a run produced or read, as the pipeline hands it to a surface. */

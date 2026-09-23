@@ -239,7 +239,7 @@ describe("buildProjectSlackManifest", () => {
     const prompts = [{ title: "Draw", message: "Draw me a cat" }];
     const manifest = buildProjectSlackManifest(
       makeProject({
-        description: "Paints pictures on request.",
+        description: "  Paints pictures on request.  ",
         slack: { botToken: "e", signingSecret: "e", enabled: true, suggestedPrompts: prompts },
       }),
       "https://studio.example.com",
@@ -252,13 +252,22 @@ describe("buildProjectSlackManifest", () => {
     // only text a user sees before asking anything.
     expect(features.agent_view.agent_description).toBe("Paints pictures on request.");
     expect(features.agent_view.suggested_prompts).toEqual(prompts);
+    expect(manifest.display_information).toMatchObject({
+      description: "Paints pictures on request.",
+    });
   });
 
   it("falls back to a generated description when the project has none", () => {
-    const manifest = buildProjectSlackManifest(makeProject(), "https://studio.example.com");
+    const manifest = buildProjectSlackManifest(
+      makeProject({ description: "   " }),
+      "https://studio.example.com",
+    );
     const features = manifest.features as { agent_view: { agent_description: string } };
 
     expect(features.agent_view.agent_description).toContain("bot-proj");
+    expect(manifest.display_information).toMatchObject({
+      description: features.agent_view.agent_description,
+    });
   });
 
   it("truncates a description Slack would reject", () => {
@@ -269,6 +278,7 @@ describe("buildProjectSlackManifest", () => {
     const features = manifest.features as { agent_view: { agent_description: string } };
 
     expect(features.agent_view.agent_description).toHaveLength(300);
+    expect(manifest.display_information).toMatchObject({ description: "x".repeat(140) });
   });
 });
 

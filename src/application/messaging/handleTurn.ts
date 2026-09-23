@@ -10,7 +10,7 @@ import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { collectedWarning, isTopLevelChunk, toolCallKey } from "@/domain/llm/types";
 import type { ChatMessageInput, ContentPart, EngineChunk } from "@/domain/llm/types";
 import type { HistoryTurn, InboundAttachment } from "@/domain/messaging/inbound";
-import type { ReplyChannel, ReplyImage } from "@/domain/messaging/reply";
+import type { ReplyChannel, ReplyEndState, ReplyImage } from "@/domain/messaging/reply";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, AgentConfiguration } from "@/domain/project/types";
 import {
@@ -21,6 +21,7 @@ import {
 import { RECORD_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { turnContent, type ReadDocument } from "@/application/llm/documentParts";
 import { log } from "@/shared/logger";
+import { isToolErrorText } from "@/shared/toolResultStatus";
 import { INTERACTIVE_RUN_TIMEOUT_MS } from "@/shared/runDeadline";
 import {
   collectDocuments,
@@ -96,6 +97,8 @@ export interface TurnInput {
    * pipeline appends its own and every one rides out with the answer.
    */
   warnings: string[];
+  /** User stop requests are composed with the interactive deadline. */
+  signal?: AbortSignal;
 }
 
 /** What the run left on the surface, for the adapter's log and bookkeeping. */
@@ -143,6 +146,8 @@ export async function handleTurn(
   // (hung provider or tool) still ends and reports a timeout instead of
   // leaving the status up forever.
   const deadline = AbortSignal.timeout(INTERACTIVE_RUN_TIMEOUT_MS);
+  const signal = input.signal ? AbortSignal.any([deadline, input.signal]) : deadline;
+  let endState: ReplyEndState = "completed";
   // The heartbeat starts *before* the attachments are fetched, not before the
   // run: a 10MB document, or the history's pictures re-downloaded, is a stretch
   // of round trips during which nothing else says the bot is working — and on
@@ -153,6 +158,7 @@ export async function handleTurn(
   let readDocuments: ReadDocument[] = [];
   let history: ChatMessageInput[] = [];
   try {
+    signal.throwIfAborted();
     const attached = input.attachments;
     const imageParts = attached.length > 0 ? await collectImageParts(attached, warnings) : [];
     let historyTurns = input.history;
@@ -174,6 +180,7 @@ export async function handleTurn(
       MAX_IMAGES_PER_TURN - imageParts.length,
       warnings,
     );
+    signal.throwIfAborted();
     // Nothing survived to ask about. A file-only message whose every attachment
     // failed — a scanned PDF is the ordinary case — would otherwise dispatch a
     // user turn with empty content, which providers reject or answer with
@@ -192,14 +199,16 @@ export async function handleTurn(
       ...(input.caller ? { caller: input.caller } : {}),
       conversation: input.conversation,
       ...(input.ownerEmail ? { ownerEmail: input.ownerEmail } : {}),
-      signal: deadline,
+      signal,
     })) {
+      signal.throwIfAborted();
       if (chunk.error) {
         warnings.push(chunk.error);
         // A subagent's failure reaches the parent as a tool error and the parent
         // often answers anyway (a refused transfer, an unusable child model), so
         // only a top-level failure ends the run.
         if (isTopLevelChunk(chunk)) {
+          endState = "failed";
           break;
         }
         continue;
@@ -242,6 +251,7 @@ export async function handleTurn(
           // The result names what the call acted on — the skill it loaded, the
           // server an MCP tool came from — which the call's own name never does.
           chunk.author ? `${chunk.author}: ${chunk.toolResult.name}` : chunk.toolResult.name,
+          { failed: isToolErrorText(chunk.toolResult.content) },
         );
       }
       if (chunk.image) {
@@ -256,15 +266,18 @@ export async function handleTurn(
         await reply.push(text);
       }
     }
+    signal.throwIfAborted();
   } catch (error) {
     if (!(error instanceof EmptyTurnError)) {
-      warnings.push(
-        deadline.aborted
+      if (signal.aborted && signal.reason?.name === "AbortError") {
+        endState = "cancelled";
+      } else {
+        endState = "failed";
+        warnings.push(signal.aborted && signal.reason?.name === "TimeoutError"
           ? "Agent run timed out"
-          : error instanceof Error
-            ? error.message
-            : "agent run failed",
-      );
+          : signal.aborted && signal.reason instanceof Error ? signal.reason.message
+          : error instanceof Error ? error.message : "agent run failed");
+      }
     }
   } finally {
     stopStatusHeartbeat();
@@ -279,7 +292,7 @@ export async function handleTurn(
   // is its own message and its own notification, while a chat renders inline in
   // a conversation already flowing past.
   const drawn = images.filter((image) => !image.fetched);
-  const uploads = drawn.length > 0 ? drawn : images;
+  const uploads = endState === "cancelled" ? [] : drawn.length > 0 ? drawn : images;
 
   log.info(
     "messaging",
@@ -287,6 +300,7 @@ export async function handleTurn(
   );
   let imagesDelivered = 0;
   for (const [index, image] of uploads.entries()) {
+    if (input.signal?.aborted) break;
     try {
       await reply.sendImage(image, index);
       imagesDelivered += 1;
@@ -298,7 +312,8 @@ export async function handleTurn(
   // Signed here, one step before the message goes out, and for a window that
   // suits a record rather than an open page: a conversation is read minutes
   // later by the person who asked and days later by whoever searches it.
-  const produced = await resolveProducedFiles(producedRefs, deps.signFile, RECORD_URL_TTL_SECONDS);
+  if (signal.aborted && signal.reason?.name === "AbortError") endState = "cancelled";
+  const produced = await resolveProducedFiles(endState === "cancelled" ? [] : producedRefs, deps.signFile, RECORD_URL_TTL_SECONDS);
   for (const warning of produced.warnings) {
     if (!warnings.includes(warning)) {
       warnings.push(warning);
@@ -308,24 +323,28 @@ export async function handleTurn(
   // text but not delivered images. A produced file
   // counts for the same reason: it is the deliverable, and the link below is the
   // only place the reply carries it.
-  if (!text && uploads.length === 0 && producedRefs.length === 0 && warnings.length === 0) {
+  if (endState === "completed" && !text && uploads.length === 0 && producedRefs.length === 0 && warnings.length === 0) {
     warnings.push("The run finished without producing an answer.");
   }
   // Links first, warnings after: one is what the run made and the other is what
   // it lost, and a reader scanning the end of a reply should meet them in that
   // order.
   await rememberFiles(deps.fileHistory, project.name, input.conversation, input.actor, producedRefs.filter((file) => file.key), warnings);
+  // A stop can arrive while file URLs or history are being saved, after the model finished.
+  if (signal.aborted && signal.reason?.name === "AbortError") endState = "cancelled";
+  const filesToDeliver = endState === "cancelled" ? [] : produced.files;
   const suffix = [
     // `resolveProducedFiles` hands back only files it could address; the guard
     // is what the type still leaves open, not a case that occurs.
-    ...produced.files.flatMap((file) =>
+    ...filesToDeliver.flatMap((file) =>
       file.url ? [reply.fileLink({ url: file.url, name: file.name })] : [],
     ),
     ...warnings.map((warning) => reply.warningLine(warning)),
+    ...(endState === "cancelled" ? ["Stopped by user."] : []),
   ].join("\n");
-  await reply.finish(text, suffix);
+  await reply.finish(text, suffix, endState);
   return {
-    text, imagesDelivered, filesDelivered: produced.files.length, warnings,
+    text, imagesDelivered, filesDelivered: filesToDeliver.length, warnings,
     ...(readDocuments.length > 0 ? { inputDocuments: readDocuments } : {}),
   };
 }

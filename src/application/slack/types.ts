@@ -1,9 +1,11 @@
 import type { MessagingDeps } from "@/application/messaging/handleTurn";
 import type { SlackThreadRepository } from "@/domain/slack/repository";
+import type { SlackRunControlRepository } from "@/domain/slack/runControl";
 import type { SlackReaderPort } from "@/domain/slack/reader";
 import type {
   SlackChunk,
   SlackMessageContent,
+  SlackSessionStatusInput,
   SlackSuggestedPrompt,
   SlackTaskDisplayMode,
 } from "@/domain/slack/types";
@@ -17,6 +19,7 @@ export type { SlackChunk, SlackTaskDisplayMode };
  * declaring the subset it happens to call.
  */
 export interface SlackClientPort extends SlackReaderPort {
+  setSessionStatus(token: string, args: SlackSessionStatusInput): Promise<void>;
   postMessage(
     token: string,
     args: { channel: string; text: string; thread_ts?: string },
@@ -101,10 +104,6 @@ export interface SlackClientPort extends SlackReaderPort {
       prompts: SlackSuggestedPrompt[];
     },
   ): Promise<void>;
-  setTitle(
-    token: string,
-    args: { channel_id: string; thread_ts: string; title: string },
-  ): Promise<void>;
 }
 
 /**
@@ -116,6 +115,7 @@ export interface SlackClientPort extends SlackReaderPort {
  */
 export interface SlackEventDeps extends MessagingDeps {
   slack: SlackClientPort;
+  stops: SlackRunControlRepository;
   /**
    * Where the bot has spoken, so a channel follow-up needs no mention. Written
    * after every channel reply; the event gate is what reads it back.
@@ -167,6 +167,7 @@ export interface SlackEventBody {
     channel?: string;
     channel_type?: string;
     ts?: string;
+    event_ts?: string;
     thread_ts?: string;
     files?: SlackEventFile[];
     /** `app_home_opened` only: which App Home tab was opened. */
