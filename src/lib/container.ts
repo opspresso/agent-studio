@@ -1267,7 +1267,7 @@ export function getAudioRuntime() {
       await getLlmProviderConfigs();
       const candidates = getVisibleModels().filter(model => model.capabilities.transcription);
       const checked = await Promise.all(candidates.map(async (model) => {
-        try { await getTranscriptionTarget(model.id); return { id: model.id, displayName: model.displayName }; }
+        try { await getTranscriptionTarget(model.id); return model; }
         catch { return null; }
       }));
       const configuration = (await projectRepository.get(projectName))?.configuration;

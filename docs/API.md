@@ -1561,7 +1561,7 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 
 ## Models
 
-`/models` 화면은 선택·등록된 모델의 목록과 검색을 제공한다. 등록·수정·삭제·상태 확인과
+`/models` 화면은 선택·등록된 모델의 목록과 검색, 개인 즐겨찾기 관리를 제공한다. 등록·수정·삭제·상태 확인과
 모델 사용 설정은 Settings → Models에서 관리한다.
 
 모델 등록·선택·기본값·상태 검사는 admin 전용이며 목록은 member부터 읽는다.
@@ -1579,12 +1579,14 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 | `PUT /api/models/default` | `{ model }`. 도구 호출을 지원하는 등록 텍스트·Decisions 모델을 선택한다 |
 | `GET /api/models/catalog` | 등록 모델의 runtime facts, 현재 검색 선택, 검색 기능 활성 여부와 사용자 즐겨찾기를 반환한다 |
 | `PUT /api/models/selection` | `{ type: "embedding" | "rerank", model, migrate?, rerankerMinScore? }`. Embedding 변경은 `migrate: true`와 전체 재색인을 요구하며 Rerank는 probe 후 저장한다 |
-| `GET /api/models/workspace` | Runtime별 선택·호환 모델과 사용 가능한 Runtime 목록 |
+| `GET /api/models/workspace` | Runtime별 선택·호환 모델의 runtime facts·사용자 즐겨찾기와 사용 가능한 Runtime 목록 |
 | `PUT /api/models/workspace` | `{ runtime, model: string | null }`. 등록된 호환 모델을 선택하거나 해제한다 |
 | `GET/PUT /api/models/favorites` | 사용자별 `{ models: string[] }` |
 | `POST /api/models/test` | `{ model }`로 Text·Decisions·Image·Rerank의 실제 호출을 수행하고 `{ ok, latencyMs, error? }`를 반환한다. 호출 비용이 발생할 수 있다 |
 
 등록 모델은 최대 500개다. 가격 미제공은 `pricingKnown: false`로 표시하며 명시적 0과 구별한다.
+모델 선택기는 표시 이름·등록 ID·provider·유형별 가격을 공통으로 보여준다. 개인 즐겨찾기는
+`/models`에서 변경하며, 선택기에서는 provider 그룹보다 먼저 표시한다.
 조회 시 Provider의 명시적 유형·출력 modality를 이름 추정보다 우선한다. `decisions`·
 `transcription`·`rerank`도 출력 modality에서 판정한다. 입력 modality와 지원 parameter는
 Tools·Vision·Reasoning·구조화 출력의 독립적인 capability로 보존한다.
@@ -1632,7 +1634,7 @@ project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 �
 | POST | `/api/projects/{name}/source-files?unit=months&value=3&timezone=Asia%2FSeoul` | raw 파일 body, Content-Type과 percent-encoded `X-Filename` → 201 SourceFile metadata |
 | GET | `/api/projects/{name}/source-files/{file}` | 개인 파일 다운로드. 만료되면 거절하며 항상 attachment·no-store로 반환한다 |
 | GET | `/api/artifacts/{artifactId}/download` | 비공개 원본·결과 Artifact 다운로드. 소유자 session을 확인하며 공개 서명 URL로 전환하지 않는다 |
-| GET | `/api/projects/{name}/audio-options` | 설정된 전사 모델의 `{id, displayName}` 목록과 Agent 현재 설정에 바인딩된 MCP 이름 목록. 실제 저장 기능은 제출 시 검증한다 |
+| GET | `/api/projects/{name}/audio-options` | 설정된 전사 모델의 runtime facts·사용자 즐겨찾기 목록과 Agent 현재 설정에 바인딩된 MCP 이름 목록. 실제 저장 기능은 제출 시 검증한다 |
 | GET | `/api/projects/{name}/audio-config` | 현재 프로젝트 작업 설정 또는 null. 소유자만 읽는다 |
 | PUT | `/api/projects/{name}/audio-config` | `{revision, enabled, model, language?, retention, postprocess?, destination?, maxActive, maxPerOccurrence}` → 다음 revision. 최초 revision은 0, 충돌은 409 |
 | POST | `/api/projects/{name}/audio-jobs` | 작업 제출 → 202 accepted/duplicate, 접수 한도 초과·경합은 409 busy |

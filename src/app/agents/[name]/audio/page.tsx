@@ -7,6 +7,7 @@ import { Alert, Badge, Button, Checkbox, FileInput, Group, NumberInput, Paper, P
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
 import { useConfirm } from "@/app/_components/useConfirm";
+import { ModelSelect } from "@/app/_components/modelOptions";
 import { useViewer } from "@/app/_lib/useViewer";
 import { listProjects, type SanitizedProject } from "../../lib/api";
 import { formatDateTime } from "@/shared/date";
@@ -182,7 +183,7 @@ function AudioWorkspace({ name }: { name: string }) {
         <FileInput label={t("audio.file")} placeholder={t("audio.chooseFile")} description="MP3, WAV, FLAC, Ogg" accept=".mp3,.wav,.flac,.ogg" value={file} onChange={(file) => { setFile(file); setUploaded(null); }} clearable disabled={busy} />
       {uploaded && <Text component="a" size="sm" href={`${base}/source-files/${uploaded.file.id}`}>{t("audio.uploadedFile")}: {uploaded.file.filename}</Text>}
       {!useSaved && <>
-        <Select label={t("audio.model")} searchable data={options.models.map((model) => ({ value: model.id, label: `${model.displayName} · ${model.id}` }))} value={model} onChange={setModel} disabled={busy} />
+        <ModelSelect label={t("audio.model")} searchable models={options.models} value={model} onChange={setModel} disabled={busy} />
         <TextInput label={t("audio.language")} placeholder="ko, en" value={language} onChange={(e) => setLanguage(e.currentTarget.value)} maxLength={3} disabled={busy} />
       <SimpleGrid cols={{ base: 1, sm: 3 }}>
         <NumberInput label={t("audio.retention")} min={1} allowDecimal={false} value={duration} onChange={setDuration} disabled={busy} />

@@ -13,6 +13,7 @@ let saves: RegisteredModel[];
 let blockDeletion: boolean;
 let failDiscovery: boolean;
 let discoveryQueries: string[];
+let favorites: string[];
 
 test.beforeAll(async () => {
   discovered = await createProviderModelDiscovery(async () => Response.json({ data: [
@@ -36,13 +37,17 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 test.beforeEach(async ({ page }) => {
-  selected = []; saves = []; blockDeletion = false; failDiscovery = false; discoveryQueries = [];
+  selected = []; saves = []; blockDeletion = false; failDiscovery = false; discoveryQueries = []; favorites = [];
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/settings") return route.fulfill({ json: { llmProviders: { items: [{ name: "fixture", kind: "openrouter" }, { name: "other", kind: "openrouter" }] } } });
     if (path === "/api/models/discover") {
       discoveryQueries.push(new URL(route.request().url()).search);
       return failDiscovery ? route.fulfill({ status: 502, json: { error: "Provider discovery failed" } }) : route.fulfill({ json: { models: discovered } });
+    }
+    if (path === "/api/models/favorites") {
+      if (route.request().method() === "PUT") favorites = (route.request().postDataJSON() as { models: string[] }).models;
+      return route.fulfill({ json: { models: favorites } });
     }
     if (path === "/api/models/registry") {
       if (route.request().method() === "DELETE") {
@@ -131,6 +136,20 @@ test("shows saved selections before discovery and deletes from the selected-only
   expect(selected).toEqual([]);
   await page.reload();
   await expect(page.getByRole("article")).toHaveCount(0);
+});
+
+test("saves personal favorites from selected models and restores them after reload", async ({ page }) => {
+  const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
+  await jev.getByRole("button", { name: "Add model" }).click();
+  await page.goto(`${base}/selected`);
+  const selectedCard = page.getByRole("article").filter({ hasText: "fixture/~typesafe/jev-latest" });
+  await selectedCard.getByRole("button", { name: "Add to favorites" }).click();
+  await expect(selectedCard.getByRole("button", { name: "Remove from favorites" })).toHaveAttribute("aria-pressed", "true");
+  expect(favorites).toEqual(["fixture/~typesafe/jev-latest"]);
+  await page.reload();
+  await expect(selectedCard.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
+  await selectedCard.getByRole("button", { name: "Remove from favorites" }).click();
+  expect(favorites).toEqual([]);
 });
 
 test("retains the selected model and surfaces the API's in-use deletion refusal", async ({ page }) => {

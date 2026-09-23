@@ -13,12 +13,13 @@
  * (model, fallback, image model) and the /models console prices the same way.
  */
 
-import { CheckIcon, Group, Text } from "@mantine/core";
-import type { ComboboxData, ComboboxItem } from "@mantine/core";
-import type { ModelConfig, ModelType } from "@/domain/llm/models";
+import { CheckIcon, Group, Select, Text } from "@mantine/core";
+import type { ComboboxData, ComboboxItem, SelectProps } from "@mantine/core";
+import { modelType, type ModelConfig, type ModelType } from "@/domain/llm/models";
 import { formatUsd } from "@/app/_lib/formatUsd";
+import { useT } from "@/app/_i18n/provider";
 
-type ModelOption = ModelConfig & { favorite?: boolean };
+export type ModelOption = ModelConfig & { favorite?: boolean };
 
 /** Unit rates retain significant decimals (for example Jev's $0.042 per 1M). */
 export function formatModelPrice(value: number): string {
@@ -48,8 +49,10 @@ export function modelPriceLabel(
   const {
     inputPer1M,
     outputPer1M,
+    imageInputPer1M,
     imageOutputPer1M,
     perImage,
+    perInputImage,
     perSearch,
     perAudioMinute,
   } = pricing;
@@ -61,18 +64,24 @@ export function modelPriceLabel(
   if (type === "transcription" && perAudioMinute !== undefined) {
     return `${formatModelPrice(perAudioMinute)} / audio minute`;
   }
+  const imageInput = [
+    imageInputPer1M !== undefined && imageInputPer1M > 0
+      ? `${formatModelPrice(imageInputPer1M)} image in per 1M` : undefined,
+    perInputImage !== undefined && perInputImage > 0
+      ? `${formatModelPrice(perInputImage)} / input image` : undefined,
+  ].filter((value): value is string => value !== undefined);
   if (imageOutputPer1M === undefined && perImage === undefined) {
     // Explicit zero prices are free; missing pricing was handled above.
     if (inputPer1M === 0 && outputPer1M === 0) {
-      return "Free";
+      return imageInput.join(" · ") || "Free";
     }
-    return `${formatModelPrice(inputPer1M)} in · ${formatModelPrice(outputPer1M)} out per 1M`;
+    return [`${formatModelPrice(inputPer1M)} in · ${formatModelPrice(outputPer1M)} out per 1M`, ...imageInput].join(" · ");
   }
   const image =
     perImage !== undefined
       ? `${imageOutputPer1M ? "≈" : ""}${formatModelPrice(perImage)} / image`
       : `${formatModelPrice(imageOutputPer1M ?? 0)} image out per 1M`;
-  return inputPer1M > 0 ? `${image} · ${formatModelPrice(inputPer1M)} in per 1M` : image;
+  return [image, ...(inputPer1M > 0 ? [`${formatModelPrice(inputPer1M)} in per 1M`] : []), ...imageInput].join(" · ");
 }
 
 /**
@@ -86,7 +95,7 @@ export function modelOptionLabel(model: ModelConfig): string {
 
 /** Selected model in one line, for a Select's description. */
 export function modelSummary(model: ModelConfig): string {
-  return `${model.provider} · ${modelPriceLabel(model.pricingKnown === false ? undefined : model.pricing)}`;
+  return `${model.provider} · ${modelPriceLabel(model.pricingKnown === false ? undefined : model.pricing, modelType(model))}`;
 }
 
 /**
@@ -177,10 +186,22 @@ export function renderModelOption(models: ModelOption[]) {
             </Text>
           </div>
           <Text fz="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-            {modelPriceLabel(model.pricingKnown === false ? undefined : model.pricing)}
+            {modelPriceLabel(model.pricingKnown === false ? undefined : model.pricing, modelType(model))}
           </Text>
         </Group>
       </Group>
     );
   };
+}
+
+export function ModelSelect({ models, leading = [], details, ...props }: Omit<SelectProps, "data" | "renderOption" | "description"> & {
+  models: ModelOption[];
+  leading?: ComboboxItem[];
+  details?: string;
+}) {
+  const t = useT();
+  const selected = models.find(model => model.id === props.value);
+  const description = [selected ? modelSummary(selected) : undefined, details].filter(Boolean).join(" · ") || undefined;
+  return <Select {...props} data={modelSelectData(models, leading, t("models.favorites"))}
+    renderOption={renderModelOption(models)} description={description} {...selectOnFocus} />;
 }

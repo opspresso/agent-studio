@@ -55,7 +55,7 @@ export const GET = withMemberAuth(async (user) => {
     models: getVisibleModels().map((model) => ({
       ...model,
       type: modelType(model),
-      selectionHidden: false,
+      selectionHidden: !dedicated.has(model.provider),
       favorite: favorites.has(model.id),
     })),
     makers: listModelMakers(),

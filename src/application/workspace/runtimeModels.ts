@@ -1,4 +1,4 @@
-import { getModelConfig, getVisibleModels } from "@/domain/llm/models";
+import { getModelConfig, getVisibleModels, type ModelConfig } from "@/domain/llm/models";
 import { providerKind, registeredModelConfig } from "@/domain/llm/providerModels";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { ProviderChannelConfig } from "@/domain/settings/types";
@@ -15,7 +15,7 @@ interface RuntimeModelsDeps {
 }
 export interface WorkspaceRuntimeModelsView {
   selections: WorkspaceRuntimeModels;
-  options: Record<WorkspaceModelRuntime, { value: string; label: string }[]>;
+  options: Record<WorkspaceModelRuntime, ModelConfig[]>;
   available: WorkspaceRuntime[];
 }
 export function createWorkspaceRuntimeModelUseCases(deps: RuntimeModelsDeps) {
@@ -25,8 +25,7 @@ export function createWorkspaceRuntimeModelUseCases(deps: RuntimeModelsDeps) {
     const options = {} as WorkspaceRuntimeModelsView["options"];
     const available: WorkspaceRuntime[] = ["command"];
     for (const runtime of WORKSPACE_MODEL_RUNTIMES) {
-      options[runtime] = getVisibleModels().filter(model => !model.hidden && workspaceRuntimeModelCompatible(runtime, model) && workspaceModelChannel(model, channels))
-        .map(model => ({ value: model.id, label: `${model.displayName} (${model.provider})` }));
+      options[runtime] = getVisibleModels().filter(model => !model.hidden && workspaceRuntimeModelCompatible(runtime, model) && workspaceModelChannel(model, channels));
       const model = selections[runtime] ? getModelConfig(selections[runtime]!) : undefined;
       if (model && workspaceRuntimeModelCompatible(runtime, model) && workspaceModelChannel(model, channels)) available.push(runtime);
     }
@@ -36,7 +35,7 @@ export function createWorkspaceRuntimeModelUseCases(deps: RuntimeModelsDeps) {
     getView: view,
     async select(runtime: WorkspaceModelRuntime, modelId: string | null, actorEmail: string) {
       if (!WORKSPACE_MODEL_RUNTIMES.includes(runtime)) throw new ValidationError("Invalid Workspace model runtime");
-      if (modelId !== null && !(await view()).options[runtime].some(model => model.value === modelId)) throw new ValidationError("Workspace model must support this runtime and have a configured API key channel");
+      if (modelId !== null && !(await view()).options[runtime].some(model => model.id === modelId)) throw new ValidationError("Workspace model must support this runtime and have a configured API key channel");
       const channels = await deps.channels();
       await deps.repository.update(current => {
         if (modelId !== null) {

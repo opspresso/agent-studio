@@ -81,7 +81,7 @@ describe("GET /api/models/catalog", () => {
 
     expect(body.providers).toEqual([]);
     expect(body.models).toHaveLength(getVisibleModels().length);
-    expect(body.models.every((model) => !model.selectionHidden && !model.favorite)).toBe(true);
+    expect(body.models.every((model) => model.selectionHidden && !model.favorite)).toBe(true);
     expect(body.models.every((model) => !Object.hasOwn(model, "hidden"))).toBe(true);
     expect(new Set(body.models.map((model) => model.type))).toEqual(
       new Set(["text", "image", "embedding", "rerank", "transcription"]),
@@ -114,6 +114,8 @@ describe("GET /api/models/catalog", () => {
       dedicated: true,
     });
     expect(body.providers.find(provider => provider.name === "anthropic")).toBeUndefined();
+    expect(body.models.find(model => model.id === "openai/gpt-5.4")?.selectionHidden).toBe(false);
+    expect(body.models.find(model => model.id === "anthropic/claude-fable-5")?.selectionHidden).toBe(true);
   });
 
   it("marks favorites for the signed-in user", async () => {

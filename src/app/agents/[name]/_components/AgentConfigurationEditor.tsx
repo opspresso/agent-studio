@@ -23,12 +23,7 @@ import { useT } from "@/app/_i18n/provider";
 import { RuntimePolicyEditor } from "./RuntimePolicyEditor";
 import { CodeBlock } from "@/app/_components/CodeBlock";
 import { CopyButton } from "@/app/_components/CopyButton";
-import {
-  modelSelectData,
-  modelSummary,
-  renderModelOption,
-  selectOnFocus,
-} from "@/app/_components/modelOptions";
+import { ModelSelect } from "@/app/_components/modelOptions";
 import { monoInput } from "@/app/_components/monoInput";
 import { listProjects } from "../../lib/api";
 import { tierAtLeast } from "@/domain/member/tiers";
@@ -158,22 +153,18 @@ export function AgentConfigurationEditor({
   return (
     <Stack gap="md">
       {models.length > 0 ? (
-        <Select
+        <ModelSelect
           label={t("configuration.model")}
           value={value.model}
           onChange={(model) => patch({ model: model ?? "" })}
           placeholder={t("configuration.selectModel")}
           searchable
-          data={modelSelectData(
-            models,
+          models={models}
+          leading={
             // A stored model unavailable for new selection stays present so an
             // Agent can be saved without silently losing it.
-            value.model && !selectedModel ? [{ value: value.model, label: value.model }] : [],
-            t("models.favorites"),
-          )}
-          renderOption={renderModelOption(models)}
-          {...selectOnFocus}
-          description={selectedModel ? modelSummary(selectedModel) : undefined}
+            value.model && !selectedModel ? [{ value: value.model, label: value.model }] : []
+          }
           error={
             value.model && !selectedModel
               ? t("configuration.modelUnlisted")
@@ -191,23 +182,19 @@ export function AgentConfigurationEditor({
 
       {/* Fallback applies to retryable model failures before the first output. */}
       {(models.length > 0 ? (
-          <Select
+          <ModelSelect
             label={t("configuration.fallbackModel")}
             value={value.fallbackModel ?? null}
             onChange={(fallbackModel) => patch({ fallbackModel: fallbackModel ?? undefined })}
             placeholder={t("configuration.none")}
             clearable
             searchable
-            data={modelSelectData(
-              models,
+            models={models}
+            leading={
               value.fallbackModel && !fallbackModelConfig
                 ? [{ value: value.fallbackModel, label: value.fallbackModel }]
-                : [],
-              t("models.favorites"),
-            )}
-            renderOption={renderModelOption(models)}
-            {...selectOnFocus}
-            description={fallbackModelConfig ? modelSummary(fallbackModelConfig) : undefined}
+                : []
+            }
           />
         ) : (
           <TextInput
@@ -379,23 +366,20 @@ export function AgentConfigurationEditor({
           {t("configuration.imageToolsHint")}
         </Text>
         {value.parameters.imageGeneration && (
-          <Select
+          <ModelSelect
             label={t("configuration.imageModel")}
             value={value.parameters.imageModel ?? ""}
             onChange={(imageModel) => patchParams({ imageModel: imageModel || undefined })}
             allowDeselect={false}
-            data={modelSelectData(
-              imageModels,
+            models={imageModels}
+            leading={
               [
                 { value: "", label: t("configuration.default") },
                 ...(value.parameters.imageModel && !selectedImageModel
                   ? [{ value: value.parameters.imageModel, label: value.parameters.imageModel }]
                   : []),
-              ],
-              t("models.favorites"),
-            )}
-            renderOption={renderModelOption(imageModels)}
-            description={selectedImageModel ? modelSummary(selectedImageModel) : undefined}
+              ]
+            }
           />
         )}
       </Stack>

@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Button, Group, NumberInput, Select, Stack, Text } from "@mantine/core";
+import { Alert, Button, Group, NumberInput, Stack, Text } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { useConfirm } from "@/app/_components/useConfirm";
-import { modelSelectData, modelPriceLabel, renderModelOption, selectOnFocus } from "@/app/_components/modelOptions";
+import { ModelSelect } from "@/app/_components/modelOptions";
 import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
 import { reportError } from "@/app/_lib/reportError";
 import { selectableRetrievalModels } from "./modelTable";
@@ -101,26 +101,17 @@ export function ModelSelectionSection({
           const selected = options.find((model) => model.id === selection?.model);
           return (
             <Stack key={type} gap="xs">
-              <Select
+              <ModelSelect
                 label={t(`models.type.${type}`)}
                 value={selection?.model ?? null}
                 placeholder={t("models.selection.unconfigured")}
-                data={modelSelectData(
-                  options,
+                models={options}
+                leading={
                   selection?.model && !selected
                     ? [{ value: selection.model, label: selection.model }]
-                    : [],
-                  t("models.favorites"),
-                )}
-                renderOption={renderModelOption(options)}
-                description={
-                  selected
-                    ? `${selected.provider} · ${modelPriceLabel(
-                        selected.pricingKnown === false ? undefined : selected.pricing,
-                        selected.type,
-                      )} · ${selection?.source}`
-                    : selection?.source
+                    : []
                 }
+                details={selection?.source}
                 disabled={
                   !available[type] ||
                   options.length === 0 ||
@@ -128,7 +119,6 @@ export function ModelSelectionSection({
                   (type === "rerank" && !scoreFloorValid)
                 }
                 searchable
-                {...selectOnFocus}
                 onChange={(model) =>
                   void select(type, model, type === "rerank" ? scoreFloor : undefined)
                 }
