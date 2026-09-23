@@ -6,6 +6,7 @@ import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import type { ScheduleDelivery } from "@/domain/trigger/types";
+import type { PullRequestReviewForge } from "@/domain/trigger/pullRequestReview";
 
 /** Dependencies shared by trigger firing and lost-run repair. */
 export interface FiringDeps {
@@ -18,6 +19,8 @@ export interface FiringDeps {
     message?: string;
     actor: RunActor;
     userEmail?: string;
+    /** Server-owned source processing: bound skills only, no other capabilities. */
+    backgroundTask?: boolean;
   }) => AsyncGenerator<EngineChunk>;
   /**
    * Reused to enforce `allowConcurrent: false` — "at most one in flight, and a
@@ -32,4 +35,5 @@ export interface FiringDeps {
 /** The webhook path adds the cipher used to authenticate a delivery. */
 export interface TriggerRunnerDeps extends FiringDeps {
   cipher: SecretCipher;
+  reviewForge?: () => PullRequestReviewForge;
 }

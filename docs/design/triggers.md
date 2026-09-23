@@ -27,6 +27,32 @@ admission에서 Project·현재 설정이 없거나 겹침·실행 사용자 정
 skipped 이력을 남긴다. 시작한 실행은 running에서 succeeded 또는 failed로 마감한다.
 한도나 capability 손실은 succeeded에서도 warning으로 남을 수 있다.
 
+### GitHub PR 리뷰
+
+관리자는 Webhook의 `githubReview`를 설정해 일반 payload 실행 대신 PR 리뷰를 선택할 수 있다.
+`scope: accessible`은 설치의 GitHub 계정이 접근 가능한 저장소를, `scope: repositories`와
+`repositories`는 지정한 정확한 `owner/repo` 목록만 허용한다. 기본은 비활성이다.
+리뷰 설정 변경은 공유 GitHub 자격 증명을 위임하므로 프로젝트 쓰기 권한에 더해 관리자를 검사한다.
+시크릿을 가진 송신자는 선택 범위의 리뷰를 요청할 수 있으므로 등록할 저장소에만 시크릿을 제공한다.
+
+GitHub의 Pull requests 이벤트를 구독한다. HMAC이 유효한 `pull_request`의
+`opened`, `synchronize`, `reopened`, `ready_for_review`만 처리하며 draft·closed·대상 불일치는
+모델 실행 전에 ignored로 반환한다. 이 모드는 `X-Trigger-Secret` 단독 인증을 받지 않는다.
+중복 키는 base repository·PR 번호·HEAD SHA이며 같은 커밋의 다른 delivery도 한 번만 처리한다.
+일반 Webhook과 같은 보존 기간·유실 시 비재실행 계약을 적용한다.
+
+GitHub 어댑터가 고정된 API 주소로 PR과 최대 100개 변경 파일의 diff를 읽고 HEAD를 재검사한다.
+파일당 12,000자, 전체 파일 문맥 80,000자 내에서 입력하며 누락·잘림을 게시 본문에도 표시한다.
+`backgroundTask` 실행은 Skill만 읽고 MCP·외부 조회·코드 실행·파일 생성·위임을 제공하지 않는다.
+PR 자료가 게시 대상이나 권한을 선택하지 않는다. 이 리뷰는 제공된 변경 내용 검토이며 테스트 실행이나
+전체 저장소 감사를 수행하지 않는다.
+
+모델의 정상 완료·비어 있지 않은 20,000자 이하 응답·경고 없음을 확인한 뒤,
+현재 Webhook 활성 상태와 저장소 권한 설정을 다시 읽는다. 어댑터가 PR의 열린 상태·draft·HEAD를
+재검사하고 해당 commit_id에 `COMMENT` 리뷰만 게시한다. 확인 직후 새 커밋이 생기더라도 리뷰는
+검토한 커밋에 연결된다. 승인·변경 요구·merge는 하지 않는다. 전송 오류나 확인되지 않은 응답을
+자동 재전송하지 않는다. 이력의 `review`는 대상과 posted/skipped/failed·실제 게시 URL을 보관한다.
+
 ## 실행 문맥과 결과
 
 Webhook actor는 `webhook`이며 payload의 이메일을 사용자 권한으로 사용하지 않는다.

@@ -24,7 +24,7 @@ const project: Project = {
   updatedAt: "2026-01-01T00:00:00Z",
 };
 
-function fixture() {
+function fixture(authorizeReview?: (email: string) => Promise<void>) {
   const stored = new Map<string, Trigger>();
   const triggers: TriggerRepository = {
     get: async (_p, id) => stored.get(id) ?? null,
@@ -56,9 +56,36 @@ function fixture() {
     stored,
     triggers,
     storedWebhook,
-    useCases: createTriggerUseCases({ triggers, projects, cipher: secretCipher }),
+    useCases: createTriggerUseCases({ triggers, projects, cipher: secretCipher, authorizeReview }),
   };
 }
+
+describe("GitHub review trigger configuration", () => {
+  it("requires administrator authorization, preserves selection, and allows disabling reviews", async () => {
+    const authorize = vi.fn(async () => {});
+    const f = fixture(authorize);
+    const input = { triggerId: "webhook", githubReview: { scope: "accessible" as const } };
+    await expect(fixture().useCases.create("p", input, project.ownerEmail)).rejects.toThrow("administrator");
+    const created = await f.useCases.create("p", input, project.ownerEmail);
+    expect(authorize).toHaveBeenCalledExactlyOnceWith(project.ownerEmail);
+    expect(created.githubReview).toEqual({ scope: "accessible" });
+    const next = await f.useCases.update("p", "webhook", { githubReview: {
+      scope: "repositories", repositories: ["Example/Project", "example/project"],
+    } }, project.ownerEmail);
+    expect(next.githubReview).toEqual({ scope: "repositories", repositories: ["example/project"] });
+    expect((await f.useCases.update("p", "webhook", { description: "updated" }, project.ownerEmail)).githubReview).toEqual(next.githubReview);
+    expect((await f.useCases.update("p", "webhook", { githubReview: null }, project.ownerEmail)).githubReview).toBeUndefined();
+  });
+  it("refuses invalid repository scopes and review fields on schedules", async () => {
+    const f = fixture(async () => {});
+    await expect(f.useCases.create("p", { triggerId: "webhook", githubReview: { scope: "repositories", repositories: ["org/*"] } },
+      project.ownerEmail)).rejects.toThrow("exact owner/repo");
+    await expect(f.useCases.create("p", { triggerId: "hourly", kind: "schedule", cron: "0 * * * *", timezone: "UTC",
+      githubReview: { scope: "accessible" } }, project.ownerEmail)).rejects.toThrow("only available for webhooks");
+    expect(createTriggerSchema.safeParse({ triggerId: "webhook", githubReview: { scope: "accessible", repositories: ["org/repo"] } }).success).toBe(false);
+    expect(updateTriggerSchema.safeParse({ githubReview: { scope: "repositories", repositories: [] } }).success).toBe(false);
+  });
+});
 
 describe("schedule personal execution", () => {
   it("captures the authenticated owner's email and can explicitly clear it", async () => {

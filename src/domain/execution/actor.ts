@@ -134,7 +134,7 @@ function sanitizeCallerName(value: string | undefined): string | undefined {
  * threaded side by side through eight signatures.
  */
 export interface RunOrigin {
-  /** Durable postprocessing may read bound skills; its worker owns all external effects. */
+  /** Source processing may read bound skills; its calling use case owns all external effects. */
   backgroundTask?: boolean;
   actor?: RunActor;
   /**

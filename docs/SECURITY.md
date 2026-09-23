@@ -710,6 +710,11 @@ main 직접 푸시는 검토한 main SHA와 게시된 작업 HEAD를 대조하�
 GitHub 브랜치 규칙을 따르며 권한·보호 규칙을 우회하는 옵션을 제공하지 않는다.
 `/api/workspaces/github/webhook`은 서명과 delivery ID로 PR 메타데이터만 갱신하며 승인 권한이 없다.
 프로젝트 Trigger인 `/api/webhook/{project}`는 별도 프로젝트 시크릿으로 실행을 시작한다.
+관리자가 `githubReview`를 활성화하면 서명된 PR 이벤트에 대해 설치의 GitHub 연결로 리뷰 댓글을
+게시할 수 있다. 공유 자격 증명 위임 설정은 관리자만 변경하며, 접근 가능한 저장소 전체 또는
+명시적 저장소 목록으로 한정한다. PR의 본문·URL이 게시 목적지를 결정하지 않는다. 공급자 API가
+확인한 base repository·PR 번호·commit_id에 COMMENT만 게시하고 모델에는 Skill 읽기만 제공한다.
+프로젝트 Webhook Secret은 선택 범위의 리뷰를 요청할 권한이므로 승인한 GitHub 저장소에만 등록한다.
 Webhook·Schedule·메신저·project-token actor에는 user 전용 Workspace 빌트인을 제공하지 않는다.
 승인·CI 결과의 Chat 재개는 원래 소유자·프로젝트 접근·Workspace 선택과 SDK Session을 다시 확인한다.
 그 결과 이벤트는 새 사용자 요청이나 다음 Git 동작에 대한 승인으로 취급하지 않는다.

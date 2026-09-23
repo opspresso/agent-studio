@@ -1383,7 +1383,7 @@ POST   /api/projects/{name}/triggers/{trigger}/reveal    → 200 { secret, creat
 GET    /api/projects/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ … ] }   (1–100)
 ```
 
-생성 본문: `{ triggerId (slug), kind?, description?, enabled?, allowConcurrent?, cron?, timezone?, message?, deliveries?, runAsOwner? }`. `kind` 의 기본값은 `webhook` 이다. `schedule` 은
+생성 본문: `{ triggerId (slug), kind?, description?, enabled?, allowConcurrent?, cron?, timezone?, message?, deliveries?, runAsOwner?, githubReview? }`. `kind` 의 기본값은 `webhook` 이다. `schedule` 은
 `cron` (다섯 필드) 과 `timezone` (IANA) 을 요구하고, 각 kind 는 상대의 필드를 무시하는 대신 400
 으로 거절한다. `rotateSecret`은 webhook의 것이고,
 `cron`/`timezone`/`message`/`deliveries` 는 schedule 의 것이다. `deliveries` 는 최대 3개이고
@@ -1398,6 +1398,15 @@ Schedule 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email
 상태를 확인한다. actor는 schedule로 유지하며 검증된 email만 MCP `X-User-Email`로 전달한다.
 
 평범한 읽기는 `secretMasked` 만 돌려준다 (webhook 에 한한다. schedule 에는 secret 이 없다).
+
+관리자는 Webhook 생성·수정에 `githubReview: {scope:"accessible"}` 또는
+`{scope:"repositories", repositories:["owner/repo"]}`를 전달할 수 있다. 수정의 `null`은 리뷰를
+끄고 생략은 기존 선택을 유지한다. 저장소 목록은 최대 20개이며 wildcard·URL은 받지 않는다.
+설치의 GitHub 연결이 필요하고 일반 소유자는 리뷰 권한을 새로 위임할 수 없다.
+리뷰 모드는 GitHub HMAC만 받아 PR의 repository·number·HEAD를 검증한다. 비대상 이벤트는
+`202 {ok:true,status:"ignored",reason}`이며 모델을 실행하지 않는다. 정상 접수는 기존 accepted
+형태를 유지하고 완료 이력의 `review`에 repository·number·headSha·posted/skipped/failed와
+확인된 url 또는 reason을 담는다. [PR 리뷰 계약](design/triggers.md#github-pr-리뷰)을 따른다.
 secret 은 해시가 아니라 AES 로 암호화해 저장되므로. project API 토큰과 정확히 같이.
 `POST …/reveal` 로 **다시 읽을 수 있다** (본문이 살아 있는 인증 정보라서 POST 다. 소유자/admin
 전용이고, 모든 reveal 은 호출자의 이메일과 함께 로그된다). `rotateSecret: true` 를 담은 `PUT` 은

@@ -29,14 +29,18 @@ import { generateSecretValue } from "@/shared/generatedSecret";
 import { log } from "@/shared/logger";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { triggerSecretContext } from "@/domain/security/secretContext";
+import { reviewRepositories, type GitHubReviewConfig } from "@/domain/trigger/pullRequestReview";
 
 export interface TriggerDeps {
   triggers: TriggerRepository;
   projects: ProjectRepository;
   cipher: SecretCipher;
+  /** Shared GitHub credentials may be delegated only by an installation administrator. */
+  authorizeReview?: (email: string) => Promise<void>;
 }
 
 export interface CreateTriggerInput {
+  githubReview?: GitHubReviewConfig | null;
   runAsOwner?: boolean;
   triggerId: string;
   /** Defaults to `webhook`, the kind that existed before there were two. */
@@ -51,6 +55,7 @@ export interface CreateTriggerInput {
 }
 
 export interface UpdateTriggerInput {
+  githubReview?: GitHubReviewConfig | null;
   runAsOwner?: boolean;
   description?: string;
   enabled?: boolean;
@@ -70,6 +75,7 @@ export interface UpdateTriggerInput {
  * from `create` and from a rotation, the two moments the caller has to copy it.
  */
 export interface TriggerView {
+  githubReview?: GitHubReviewConfig;
   executionEmail?: string;
   projectName: string;
   triggerId: string;
@@ -179,6 +185,15 @@ export async function listProjectTriggers(
 }
 
 export function createTriggerUseCases(deps: TriggerDeps) {
+  async function reviewConfig(value: GitHubReviewConfig | null | undefined, email: string): Promise<GitHubReviewConfig | undefined> {
+    if (!value) return undefined;
+    if (!deps.authorizeReview) throw new ForbiddenError("GitHub review configuration requires an administrator");
+    await deps.authorizeReview(email);
+    if (value.scope === "accessible") return { scope: "accessible" };
+    const repositories = value.scope === "repositories" && reviewRepositories(value.repositories);
+    if (!repositories) throw new ValidationError("Select accessible repositories or a non-empty list of exact owner/repo names");
+    return { scope: "repositories", repositories };
+  }
   async function load(projectName: string, triggerId: string): Promise<Trigger> {
     const trigger = await deps.triggers.get(projectName, triggerId);
     if (!trigger) {
@@ -202,6 +217,8 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       const project = await assertProjectWritable(deps.projects, projectName, userEmail);
       if (input.runAsOwner && project.ownerEmail !== userEmail) throw new ForbiddenError("Only the owner can enable personal execution");
       if (input.runAsOwner !== undefined && input.kind !== "schedule") throw new ValidationError("Personal execution is only available for schedules");
+      if (input.githubReview !== undefined && input.kind === "schedule") throw new ValidationError("GitHub reviews are only available for webhooks");
+      const githubReview = await reviewConfig(input.githubReview, userEmail);
       // A project has exactly one webhook and it answers at `/api/webhook/{project}`,
       // which resolves this id and nothing else. Both halves of that are enforced
       // here, at the only place a row is minted: a webhook under any other name
@@ -263,6 +280,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
           ...base,
           kind: "webhook",
           secret: deps.cipher.encrypt(secret, triggerSecretContext(projectName, input.triggerId)),
+          ...(githubReview ? { githubReview } : {}),
         };
       }
       try {
@@ -285,6 +303,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       const project = await assertProjectWritable(deps.projects, projectName, userEmail);
       if (input.runAsOwner && project.ownerEmail !== userEmail) throw new ForbiddenError("Only the owner can enable personal execution");
       const existing = await load(projectName, triggerId);
+      if (input.githubReview !== undefined && existing.kind !== "webhook") throw new ValidationError("GitHub reviews are only available for webhooks");
       if (input.runAsOwner !== undefined && existing.kind !== "schedule") throw new ValidationError("Personal execution is only available for schedules");
       const shared = {
         description: input.description ?? existing.description,
@@ -328,9 +347,12 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         throw new ValidationError("Only a schedule trigger has cron, timezone, message or deliveries");
       }
       const rotated = input.rotateSecret ? newSecret() : undefined;
+      const { githubReview: previousReview, ...storedWebhook } = existing;
+      const githubReview = input.githubReview === undefined ? previousReview : await reviewConfig(input.githubReview, userEmail);
       const updated: WebhookTrigger = {
-        ...existing,
+        ...storedWebhook,
         ...shared,
+        ...(githubReview ? { githubReview } : {}),
         ...(rotated
           ? { secret: deps.cipher.encrypt(rotated, triggerSecretContext(projectName, triggerId)) }
           : {}),

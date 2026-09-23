@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Badge, Group, Stack, Table } from "@mantine/core";
+import { Alert, Anchor, Badge, Group, Stack, Table, Text } from "@mantine/core";
 import { formatDateTime } from "@/shared/date";
 import { useLocale } from "@/app/_i18n/provider";
 import type { TriggerRun } from "../../lib/api";
@@ -70,6 +70,14 @@ export function TriggerRuns({ runs }: { runs: TriggerRun[] }) {
                   actually said. */}
               <Table.Td>
                 <Stack gap={4}>
+                  {run.review && <Group gap={4}>
+                    <Badge color={run.review.status === "posted" ? "teal" : run.review.status === "failed" ? "red" : "gray"}>
+                      GitHub: {run.review.status}
+                    </Badge>
+                    {run.review.url ? <Anchor href={run.review.url} target="_blank" rel="noopener noreferrer" size="xs">
+                      {run.review.repository} #{run.review.number}
+                    </Anchor> : <Text size="xs">{run.review.reason}</Text>}
+                  </Group>}
                   {run.deliveryResults && run.deliveryResults.length > 0 && (
                     <Group gap={4}>
                       {run.deliveryResults.map((delivery) => (

@@ -520,7 +520,7 @@ export async function resolveRunTools(
    */
   configuration: AgentConfiguration;
 }> {
-  // Background postprocessing consumes source data; the worker owns every external effect.
+  // Source processing consumes data; the calling use case owns every external effect.
   if (origin?.backgroundTask) {
     configuration = { ...configuration, mcpList: [], subagentList: [], parameters: {
       ...configuration.parameters, dynamicCapabilities: false, memoryRecall: false,

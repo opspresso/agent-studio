@@ -573,6 +573,10 @@ export const triggerUseCases = createTriggerUseCases({
   triggers: triggerRepository,
   projects: projectRepository,
   cipher: secretCipher,
+  authorizeReview: async (email) => {
+    if (!await isEffectiveConfiguredAdminByEmail(email)) throw new ForbiddenError("Only administrators can configure GitHub review publication");
+    if (!getWorkspaceGitHubConfig()) throw new ValidationError("GitHub review integration is not configured");
+  },
 });
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs);
 export const modelSelectionUseCases = createModelSelectionUseCases({
@@ -1124,6 +1128,11 @@ export const executionDeps: ExecutionDeps = {
  * own dispatch decision or assemble image chunks.
  */
 export const triggerRunnerDeps: TriggerRunnerDeps = {
+  reviewForge: () => {
+    const settings = getWorkspaceGitHubConfig();
+    if (!settings) throw new ValidationError("GitHub review integration is not configured");
+    return createCodingGitHub(settings).reviews;
+  },
   executionUserActive: async (email) => {
     const member = await memberRepository.getByEmail(email);
     return !!member && member.tier !== "guest";
@@ -1141,6 +1150,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       configuration: input.configuration,
       messages: input.message ? [{ role: "user", content: input.message }] : [],
       actor: input.actor,
+      ...(input.backgroundTask ? { backgroundTask: true } : {}),
       ...(input.userEmail ? { ownerEmail: input.userEmail } : {}),
     });
   },

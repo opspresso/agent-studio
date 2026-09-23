@@ -10,6 +10,7 @@ import {
 } from "@/domain/llm/imageLimits";
 import type { ChannelToolCall } from "@/domain/llm/types";
 import type { McpBinding } from "@/domain/project/types";
+import { MAX_REVIEW_REPOSITORIES } from "@/domain/trigger/pullRequestReview";
 
 export const projectNameSchema = z
   .string()
@@ -97,7 +98,13 @@ export const updateProjectSchema = z.object({
 
 // Cron/timezone validity and which kind may carry which field are enforced in
 // `triggerUseCases` — the rules live beside the code that reads them.
+const githubReviewSchema = z.discriminatedUnion("scope", [
+  z.object({ scope: z.literal("accessible") }).strict(),
+  z.object({ scope: z.literal("repositories"), repositories: z.array(z.string().trim().min(1).max(200)).min(1).max(MAX_REVIEW_REPOSITORIES) }).strict(),
+]).nullable().optional();
+
 export const createTriggerSchema = z.object({
+  githubReview: githubReviewSchema,
   runAsOwner: z.boolean().optional(),
   triggerId: z
     .string()
@@ -113,6 +120,7 @@ export const createTriggerSchema = z.object({
 }).strict();
 
 export const updateTriggerSchema = z.object({
+  githubReview: githubReviewSchema,
   runAsOwner: z.boolean().optional(),
   description: z.string().optional(),
   enabled: z.boolean().optional(),

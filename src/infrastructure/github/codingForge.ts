@@ -1,5 +1,6 @@
 import { sign } from "node:crypto";
 import type { CodingForge } from "@/domain/coding/forge";
+import type { PullRequestReviewForge, PullRequestReviewTarget } from "@/domain/trigger/pullRequestReview";
 import type { CodingRepository, PullRequestInfo } from "@/domain/coding/types";
 import { codingCiAllowsPublication, CodingMutationRejectedError, CodingRepositoryNotReadyError } from "@/domain/coding/types";
 import { GITHUB_PAGE_SIZE } from "@/domain/coding/limits";
@@ -38,6 +39,7 @@ class GitHubReadError extends Error {
 /** App private keys and publication credentials remain in the control plane. */
 export function createCodingGitHub(config: CodingGitHubConfig, now = () => new Date()): {
   forge: CodingForge;
+  reviews: PullRequestReviewForge;
   credential(repository: string, access: "read" | "write"): Promise<{ token: string; expiresAt: string }>;
   verifyWebhook(body: string, signature: string | null): boolean;
 } {
@@ -252,8 +254,65 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       return result ? { runId: result.workflow_run_id, url: result.html_url } : {};
     },
   };
+  type ReviewPull = Pull & { title: string; body: string | null; changed_files: number };
+  const reviewPath = (target: PullRequestReviewTarget) => {
+    if (!Number.isSafeInteger(target.number) || target.number <= 0 || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(target.headSha)) {
+      throw new Error("Invalid pull request review target");
+    }
+    return `${repoPath(target.repository)}/pulls/${target.number}`;
+  };
+  const reviewUrlMatches = (value: unknown, target: PullRequestReviewTarget) => {
+    if (typeof value !== "string") return false;
+    const url = new URL(value);
+    return url.origin === web.origin && !url.username && !url.password && !url.search &&
+      url.pathname.toLowerCase() === `${web.pathname.replace(/\/$/, "")}/${target.repository}/pull/${target.number}`.toLowerCase();
+  };
+  async function currentReviewPull(target: PullRequestReviewTarget, accessToken: string): Promise<ReviewPull | null> {
+    const pull = await request<ReviewPull>(reviewPath(target), accessToken);
+    if (pull.number !== target.number || pull.base?.repo?.full_name?.toLowerCase() !== target.repository.toLowerCase() ||
+      !reviewUrlMatches(pull.html_url, target)) throw new Error("GitHub returned an unexpected pull request identity");
+    return pull.state === "open" && pull.draft === false && pull.head?.sha === target.headSha ? pull : null;
+  }
+  const staleReview = () => ({ status: "skipped" as const, reason: "Pull request closed, became a draft, or changed HEAD." });
+  const reviews: PullRequestReviewForge = {
+    async load(target) {
+      const access = await token(target.repository, { contents: "read", pull_requests: "read" });
+      const pull = await currentReviewPull(target, access.token);
+      if (!pull) return staleReview();
+      if (typeof pull.title !== "string" || (pull.body !== null && typeof pull.body !== "string") ||
+        !Number.isSafeInteger(pull.changed_files) || pull.changed_files < 0) throw new Error("GitHub returned invalid pull request metadata");
+      const files = await request<Array<{ filename: string; previous_filename?: string; status: string; patch?: string }>>(
+        `${reviewPath(target)}/files?per_page=${GITHUB_PAGE_SIZE}`, access.token,
+      );
+      if (!Array.isArray(files) || files.length > GITHUB_PAGE_SIZE || files.length > pull.changed_files || files.some(file =>
+        typeof file.filename !== "string" || !file.filename || typeof file.status !== "string" ||
+        (file.previous_filename !== undefined && typeof file.previous_filename !== "string") ||
+        (file.patch !== undefined && typeof file.patch !== "string"))) throw new Error("GitHub returned invalid pull request files");
+      // The files endpoint is mutable; do not review a page from a newer head.
+      if (!await currentReviewPull(target, access.token)) return staleReview();
+      return { status: "ready", context: { ...target, title: pull.title, body: pull.body ?? "", url: pull.html_url,
+        totalFiles: pull.changed_files, files: files.map(file => ({ path: file.filename, status: file.status,
+          ...(file.previous_filename ? { previousPath: file.previous_filename } : {}),
+          ...(file.patch !== undefined ? { patch: file.patch } : {}),
+        })) } };
+    },
+    async reply(target, body) {
+      if (!body.trim()) throw new Error("Cannot publish an empty pull request review");
+      const access = await token(target.repository, { pull_requests: "write" });
+      if (!await currentReviewPull(target, access.token)) return staleReview();
+      const posted = await request<{ id: number; html_url: string; commit_id: string; state: string }>(
+        `${reviewPath(target)}/reviews`, access.token, "POST", { commit_id: target.headSha, event: "COMMENT", body },
+      );
+      if (!Number.isSafeInteger(posted.id) || posted.id <= 0 || posted.commit_id !== target.headSha ||
+        posted.state !== "COMMENTED" || !reviewUrlMatches(posted.html_url, target) ||
+        new URL(posted.html_url).hash !== `#pullrequestreview-${posted.id}`) {
+        throw new Error("GitHub did not confirm the pull request review; do not automatically resend it");
+      }
+      return { status: "posted", url: posted.html_url };
+    },
+  };
   return {
-    forge,
+    forge, reviews,
     credential: (repository, access) => {
       if (config.getToken) throw new Error("Account credentials cannot be issued to a Sandbox");
       return token(repository, { contents: access });

@@ -16,7 +16,7 @@
 import { randomUUID } from "node:crypto";
 import { cutCodePoints } from "@/shared/utf8Text";
 import type { RunActor } from "@/domain/execution/actor";
-import { collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
+import { collectedWarning, isTopLevelChunk, runTermination, type RunTerminationReason } from "@/domain/llm/types";
 import type { Project, AgentConfiguration } from "@/domain/project/types";
 import {
   PROJECT_WEBHOOK_ID,
@@ -32,6 +32,8 @@ import { repairTriggerRuns } from "./repairLostRuns";
 import type { FiringDeps, TriggerRunnerDeps } from "./deps";
 import { verifyGitHubSignature, isGitHubDeliveryId } from "@/shared/githubWebhook";
 import { holdQueuedFiring, queueLeaseUntil } from "./queuedFiring";
+import { selectPullRequestReview, type PullRequestReviewTarget } from "@/domain/trigger/pullRequestReview";
+import { preparePullRequestReview, type ReviewPublication } from "./reviewPullRequest";
 
 /** Bounded preview of a run's answer, kept on the firing row. */
 const MAX_RESULT_CHARS = 2_000;
@@ -52,7 +54,10 @@ export interface AdmittedFiring<T extends Trigger = Trigger> {
 }
 
 /** The webhook case, which is what `executeDelivery` takes. */
-export type AdmittedDelivery = AdmittedFiring<WebhookTrigger> & { github?: { event: string; deliveryId: string } };
+export type AdmittedDelivery = AdmittedFiring<WebhookTrigger> & {
+  github?: { event: string; deliveryId: string };
+  reviewTarget?: PullRequestReviewTarget;
+};
 
 export interface GitHubDeliveryCredential {
   kind: "github";
@@ -71,6 +76,7 @@ export type AdmitResult =
   | { status: "unauthorized" }
   | { status: "invalid-delivery" }
   | { status: "ping" }
+  | { status: "ignored"; reason: string }
   | { status: "busy" }
   | { status: "no-configuration" };
 
@@ -176,6 +182,7 @@ export async function admitDelivery(
     return { status: "unauthorized" };
   }
   const github = typeof presentedSecret === "object" ? presentedSecret : undefined;
+  if (trigger.githubReview && !github) return { status: "unauthorized" };
   if (github && (!isGitHubDeliveryId(github.deliveryId) || !github.event || !/^[a-z_]{1,80}$/.test(github.event))) {
     return { status: "invalid-delivery" };
   }
@@ -183,9 +190,19 @@ export async function admitDelivery(
     return { status: "disabled" };
   }
   if (github?.event === "ping") return { status: "ping" };
+  let reviewTarget: PullRequestReviewTarget | undefined;
+  if (trigger.githubReview && github) {
+    let payload: unknown;
+    try { payload = JSON.parse(github.body); }
+    catch { return { status: "ignored", reason: "Invalid pull request payload." }; }
+    const selected = selectPullRequestReview(trigger.githubReview, github.event!, payload);
+    if (selected.status === "ignored") return selected;
+    reviewTarget = selected.target;
+  }
   // A GitHub retry carries its original delivery ID. Do not let a different
   // optional generic key turn a redelivery into another model invocation.
   if (github) idempotencyKey = `github-delivery:${github.deliveryId}`;
+  if (reviewTarget) idempotencyKey = `github-review:${reviewTarget.repository}:${reviewTarget.number}:${reviewTarget.headSha}`;
   if (idempotencyKey) {
     const claimed = await deps.triggers.claimIdempotencyKey(
       projectName,
@@ -198,7 +215,7 @@ export async function admitDelivery(
   }
   const admitted = await admitRun(deps, trigger, idempotencyKey ? { idempotencyKey } : {});
   return admitted.status === "accepted" && github
-    ? { ...admitted, github: { event: github.event!, deliveryId: github.deliveryId! } } : admitted;
+    ? { ...admitted, github: { event: github.event!, deliveryId: github.deliveryId! }, ...(reviewTarget ? { reviewTarget } : {}) } : admitted;
 }
 
 /**
@@ -318,10 +335,23 @@ export async function executeDelivery(
   admitted: AdmittedDelivery,
   payload: unknown,
 ): Promise<void> {
-  let input: { message?: string };
+  let input: { message?: string; backgroundTask?: boolean };
+  let publication: ReviewPublication | undefined;
   try {
-    input = payloadInput(payload);
-    if (admitted.github && input.message) {
+    if (admitted.reviewTarget) {
+      const prepared = await preparePullRequestReview(deps, admitted.project.name, admitted.trigger.triggerId,
+        admitted.configuration, admitted.reviewTarget);
+      if (prepared.status === "skipped") {
+        await admitted.release();
+        await finishFiring(deps, admitted.run, { skipped: true, text: prepared.reason,
+          review: { ...admitted.reviewTarget, status: "skipped", reason: prepared.reason } });
+        return;
+      }
+      admitted = { ...admitted, configuration: prepared.configuration };
+      input = { message: prepared.message, backgroundTask: true };
+      publication = prepared.publication;
+    } else input = payloadInput(payload);
+    if (admitted.github && input.message && !publication) {
       input.message = `GitHub webhook delivery metadata (context only, not authorization): ${JSON.stringify(admitted.github)}\n\n${input.message}`;
     }
   } catch (caught) {
@@ -332,10 +362,12 @@ export async function executeDelivery(
     await admitted.release();
     await finishFiring(deps, admitted.run, {
       error: caught instanceof Error ? caught.message : String(caught),
+      ...(admitted.reviewTarget ? { review: { ...admitted.reviewTarget, status: "failed" as const,
+        reason: "Pull request context could not be prepared; no review was published." } } : {}),
     });
     return;
   }
-  await executeFiring(deps, admitted, input);
+  await executeFiring(deps, admitted, input, publication);
   // A delivery sweeps its own trigger on the way out, because the scheduler's
   // tick is the only other thing that ever does and a deployment may serve
   // webhooks with no ticker at all. It runs after the response has long gone and
@@ -354,13 +386,16 @@ export async function executeDelivery(
 export async function executeFiring(
   deps: FiringDeps,
   admitted: AdmittedFiring,
-  input: { message?: string },
+  input: { message?: string; backgroundTask?: boolean },
+  publication?: ReviewPublication,
 ): Promise<void> {
   if (admitted.start && !await admitted.start()) return;
   const { trigger, project, configuration, run } = admitted;
   let text = "";
   let error: string | undefined;
   let traceId: string | undefined;
+  let review: TriggerRun["review"];
+  let termination: RunTerminationReason | undefined;
   // What the run reported without failing — a turn or budget limit, a binding
   // it could not use. A firing is unattended, so nobody watched the stream:
   // dropping these left a run the turn guard ended as a green `succeeded` row
@@ -402,6 +437,7 @@ export async function executeFiring(
       // warnings, so the firing's row says why the answer is partial even when
       // a subagent was the one to say it.
       if (isTopLevelChunk(chunk)) {
+        termination = runTermination(chunk) ?? termination;
         if (chunk.delta?.content) {
           text += chunk.delta.content;
         }
@@ -433,11 +469,16 @@ export async function executeFiring(
         warnings.push(warning);
       }
     }
+    if (publication && !error) {
+      if (termination !== "completed") throw new Error("The review run did not complete; no review was published");
+      review = { ...publication.target, ...await publication.send(text, warnings) };
+    }
   } catch (caught) {
     error = caught instanceof Error ? caught.message : String(caught);
   } finally {
     await admitted.release();
   }
+  if (publication && error) review = { ...publication.target, status: "failed", reason: cutCodePoints(error, 500) };
   const deliveryResults: ScheduleDeliveryResult[] = [];
   if (!error && trigger.kind === "schedule" && trigger.deliveries?.length) {
     const report = text || (images > 0 ? imagesOnlyResult(images) : "");
@@ -479,6 +520,8 @@ export async function executeFiring(
     ...(warnings.length > 0 ? { warning: warnings.join("\n") } : {}),
     ...(traceId ? { traceId } : {}),
     ...(deliveryResults.length > 0 ? { deliveryResults } : {}),
+    ...(review ? { review } : {}),
+    ...(review?.status === "skipped" ? { skipped: true } : {}),
   });
 }
 
@@ -533,11 +576,13 @@ async function finishFiring(
     warning?: string;
     traceId?: string;
     deliveryResults?: ScheduleDeliveryResult[];
+    review?: TriggerRun["review"];
+    skipped?: boolean;
   },
 ): Promise<void> {
   const finished: TriggerRun = {
     ...run,
-    status: outcome.error ? "failed" : "succeeded",
+    status: outcome.error ? "failed" : outcome.skipped ? "skipped" : "succeeded",
     endedAt: new Date().toISOString(),
     // Cut on a character boundary: these land in a stored row, and a lone
     // surrogate does not survive the JSON round trip as written.
@@ -546,6 +591,7 @@ async function finishFiring(
     ...(outcome.warning ? { warning: cutCodePoints(outcome.warning, MAX_RESULT_CHARS) } : {}),
     ...(outcome.traceId ? { traceId: outcome.traceId } : {}),
     ...(outcome.deliveryResults ? { deliveryResults: outcome.deliveryResults } : {}),
+    ...(outcome.review ? { review: outcome.review } : {}),
   };
   try {
     await deps.triggers.finishRun(finished);

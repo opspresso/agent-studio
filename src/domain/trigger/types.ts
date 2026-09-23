@@ -4,6 +4,7 @@ import type {
   MessageDestination,
   MessageDestinationKind,
 } from "@/domain/messaging/destination";
+import type { GitHubReviewConfig, PullRequestReviewTarget } from "./pullRequestReview";
 
 /** The kinds a stored trigger row can be. */
 export type TriggerKind = "webhook" | "schedule";
@@ -69,6 +70,7 @@ export interface WebhookTrigger extends TriggerBase {
   kind: "webhook";
   /** AES-encrypted at rest, masked on read, compared in constant time. */
   secret: string;
+  githubReview?: GitHubReviewConfig;
 }
 
 /**
@@ -129,4 +131,9 @@ export interface TriggerRun {
   deliveryResults?: ScheduleDeliveryResult[];
   /** Set when the run was sampled into a trace, so the two can be joined. */
   traceId?: string;
+  review?: PullRequestReviewTarget & {
+    status: "posted" | "skipped" | "failed";
+    url?: string;
+    reason?: string;
+  };
 }

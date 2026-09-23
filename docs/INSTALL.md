@@ -173,6 +173,21 @@ bare Git 저장소와 bundle을 주고받고 저장소 코드를 실행하지 �
 `pnpm test:workspace:git`는 무통신 Docker 안에 일회용 Git HTTP 저장소를 만들어 clone·권한·Diff·
 승인 Commit·복원을 검증한다. GitHub App API와 승인 경합·webhook 중복은 단위 테스트로 검증한다.
 
+## GitHub PR 자동 리뷰
+
+관리자가 프로젝트 설정의 Webhook을 켜고 PR 리뷰 동작을 선택한다. 위의 서버 GitHub 연결을
+재사용하며 Workspace worker는 필요하지 않다. App 인증은 대상 저장소의 Contents 읽기와
+Pull requests 읽기·쓰기 권한이 필요하다. 계정 토큰은 같은 저장소를 읽고 리뷰 댓글을 작성할 수
+있어야 한다. 자격 증명이나 GitHub 연결이 없으면 리뷰 게시를 활성화할 수 없다.
+
+GitHub 저장소 Webhook에 `/api/webhook/{project}` URL, `application/json`, 해당 프로젝트의
+Webhook Secret과 Pull requests 이벤트를 설정한다. Workspace 메타데이터 Webhook과 URL·Secret이
+다르다. 접근 가능한 모든 저장소 또는 정확한 저장소 목록 중 하나를 선택하며 기본은 일반 Webhook이다.
+새 PR과 새 커밋, 다시 열린 PR, draft 해제를 처리하고 완료 이력에서 실제 리뷰 링크를 확인한다.
+인터넷을 사용할 수 없는 설치에서는 접근 가능한 GitHub Enterprise API·웹 주소와 내부 호스트 허용
+설정을 사용한다. GitHub 연결이 없는 설치의 일반 대화·Webhook 동작에는 영향이 없다.
+한도·중복·게시 경합 계약은 [Trigger 설계](design/triggers.md#github-pr-리뷰)를 따른다.
+
 ## localdev
 
 로컬 개발은 Docker Compose를 사용한다. OrbStack 또는 Docker Desktop의 Docker 엔진에서

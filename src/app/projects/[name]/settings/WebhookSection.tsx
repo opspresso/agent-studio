@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Badge, Group, Stack, Switch, Text } from "@mantine/core";
+import { Alert, Badge, Button, Group, Select, Stack, Switch, Text, Textarea } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { SecretControl } from "@/app/_components/SecretControl";
@@ -38,6 +38,8 @@ export function WebhookSection({ projectName }: { projectName: string }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reviewScope, setReviewScope] = useState("off");
+  const [repositories, setRepositories] = useState("");
 
   const reload = useCallback(async () => {
     const { triggers } = await listTriggers(projectName);
@@ -49,6 +51,8 @@ export function WebhookSection({ projectName }: { projectName: string }) {
         (trigger) => trigger.triggerId === PROJECT_WEBHOOK_ID && trigger.kind === "webhook",
       ) ?? null;
     setWebhook(found);
+    setReviewScope(found?.githubReview?.scope ?? "off");
+    setRepositories(found?.githubReview?.scope === "repositories" ? found.githubReview.repositories.join("\n") : "");
     setRuns(found ? (await listTriggerRuns(projectName, found.triggerId)).runs : []);
   }, [projectName]);
 
@@ -146,6 +150,21 @@ export function WebhookSection({ projectName }: { projectName: string }) {
           <>
             <CopyableUrl url={url} />
             <Text fz="sm" c="dimmed">{t("webhook.githubHint")}</Text>
+            <Select label={t("webhook.reviewMode")} value={reviewScope} allowDeselect={false} disabled={busy}
+              onChange={(value) => setReviewScope(value ?? "off")}
+              data={[{ value: "off", label: t("webhook.generic") },
+                { value: "accessible", label: t("webhook.reviewAccessible") },
+                { value: "repositories", label: t("webhook.reviewSelected") }]} />
+            {reviewScope !== "off" && <Text size="sm" c="dimmed">{t("webhook.reviewHint")}</Text>}
+            {reviewScope === "repositories" && <Textarea label={t("webhook.reviewRepositories")} value={repositories}
+              placeholder="owner/repository" minRows={2} disabled={busy} onChange={event => setRepositories(event.currentTarget.value)} />}
+            <Button variant="light" disabled={busy} onClick={() => act(async () => {
+              await updateTrigger(projectName, PROJECT_WEBHOOK_ID, {
+                githubReview: reviewScope === "off" ? null : reviewScope === "accessible" ? { scope: "accessible" }
+                  : { scope: "repositories", repositories: repositories.split(/[\n,]/).map(value => value.trim()).filter(Boolean) },
+                ...(reviewScope !== "off" ? { allowConcurrent: true } : {}),
+              });
+            })}>{t("webhook.reviewSave")}</Button>
             <SecretControl key={projectName} label={t("webhook.section")} configured masked={webhook.secretMasked} initialValue={revealed ?? undefined}
               description={t("webhook.secretHint")} disabled={busy}
               onReveal={() => secretAction(() => revealTriggerSecret(projectName, PROJECT_WEBHOOK_ID))}
@@ -171,6 +190,7 @@ export function WebhookSection({ projectName }: { projectName: string }) {
               />
             </Group>
 
+            <Button variant="subtle" disabled={busy} onClick={() => act(reload)}>{t("webhook.refreshRuns")}</Button>
             <TriggerRuns runs={runs} />
           </>
         )}

@@ -1056,6 +1056,19 @@ async function main() {
     );
     pass("trigger run history: newest-first, startedBefore window, finish in place");
 
+    {
+      const reviewTrigger = { projectName, triggerId: "webhook", kind: "webhook" as const, secret: "integration-encrypted-secret",
+        description: "PR reviews", enabled: true, allowConcurrent: true, createdAt: now, updatedAt: now,
+        githubReview: { scope: "repositories" as const, repositories: ["example/project"] } };
+      await triggerRepository.create(reviewTrigger);
+      assert.deepEqual((await triggerRepository.get(projectName, "webhook")), reviewTrigger);
+      const review = { repository: "example/project", number: 42, headSha: "a".repeat(40), status: "posted" as const,
+        url: "https://github.com/example/project/pull/42#pullrequestreview-1" };
+      await triggerRepository.finishRun({ ...recentRun, status: "succeeded", endedAt: now, review });
+      assert.deepEqual((await triggerRepository.listRuns(projectName, triggerId, 1))[0]?.review, review);
+      pass("PR review trigger authorization and publication receipt persist through PostgreSQL");
+    }
+
     // ---------- queued schedule ownership and atomic dispatch ----------
     const queueTrigger = `it-queue-${suffix}`;
     const queueNow = Date.now();

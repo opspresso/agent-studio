@@ -22,6 +22,7 @@ import { expiresAtFromNow, expiresAtSeconds, RETENTION } from "@/infrastructure/
 import { boundedPageLimit } from "@/shared/pageLimit";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import type { ScheduleTrigger, Trigger, TriggerRun } from "@/domain/trigger/types";
+import type { GitHubReviewConfig } from "@/domain/trigger/pullRequestReview";
 
 const TRIGGER_ENTITY = "Trigger";
 const TRIGGER_RUN_ENTITY = "TriggerRun";
@@ -61,6 +62,7 @@ function toTrigger(item: Record<string, unknown>): Trigger {
     ...base,
     kind: "webhook",
     secret: String(item.secret ?? ""),
+    ...(item.githubReview ? { githubReview: item.githubReview as GitHubReviewConfig } : {}),
   };
 }
 
@@ -95,6 +97,7 @@ function toRun(item: Record<string, unknown>): TriggerRun {
       ? { deliveryResults: item.deliveryResults as TriggerRun["deliveryResults"] }
       : {}),
     ...(item.traceId ? { traceId: String(item.traceId) } : {}),
+    ...(item.review ? { review: item.review as TriggerRun["review"] } : {}),
   };
 }
 

@@ -1453,6 +1453,14 @@ export const en = {
   // console starts a run.
   "webhook.section": "Webhook",
   "webhook.githubHint": "GitHub: use this URL as the Payload URL, choose application/json, and enter this project’s webhook secret in GitHub’s Secret field. GitHub sends X-Hub-Signature-256; no custom header is needed. Select only the events this project should handle. Signed ping deliveries verify the connection without running the agent.",
+  "webhook.reviewMode": "Webhook behavior",
+  "webhook.generic": "Run Agent with the payload",
+  "webhook.reviewAccessible": "Review PRs in accessible GitHub repositories",
+  "webhook.reviewSelected": "Review PRs in selected GitHub repositories",
+  "webhook.reviewRepositories": "Repositories (one owner/repo per line)",
+  "webhook.reviewHint": "An administrator can enable automatic review comments using the installation's GitHub connection. Subscribe to Pull requests. Signed opened, synchronize, reopened and ready_for_review events review non-draft open PRs. The Agent reads the supplied diff with bound skills; it cannot execute repository code or other tools. Comments stay on the verified PR and commit. Different PRs may run concurrently.",
+  "webhook.reviewSave": "Save review settings",
+  "webhook.refreshRuns": "Refresh deliveries",
   "webhook.secretHint": "Generic senders use X-Trigger-Secret. GitHub uses this same value in its Secret field to sign deliveries. Anyone holding it can start the Agent’s current settings.",
   "webhook.intro":
     "One address per project, off until you turn it on. An outside system starts a run by posting JSON with X-Trigger-Secret or a GitHub HMAC-SHA256 signature; the delivery is acknowledged immediately and its outcome lands in the history below. The webhook always runs the Agent’s current configuration.",

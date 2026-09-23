@@ -64,6 +64,8 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
       return Response.json({ error: "GitHub deliveries require a valid X-GitHub-Delivery and X-GitHub-Event" }, { status: 400 });
     case "ping":
       return Response.json({ ok: true, status: "ping" }, { status: 202 });
+    case "ignored":
+      return Response.json({ ok: true, status: "ignored", reason: admitted.reason }, { status: 202 });
     case "not-configured":
       // Deliberately the same answer a wrong secret would get for a project that
       // does have a webhook would not be — but a project with no webhook at all

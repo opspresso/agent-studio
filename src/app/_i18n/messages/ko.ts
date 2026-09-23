@@ -1366,6 +1366,14 @@ export const ko: Messages = {
 
   "webhook.section": "Webhook",
   "webhook.githubHint": "GitHub에서는 이 주소를 Payload URL로, Content type을 application/json으로 설정하고 프로젝트 Webhook 시크릿을 Secret에 입력합니다. GitHub가 X-Hub-Signature-256 서명을 보내므로 별도 헤더는 필요 없습니다. 처리할 이벤트만 선택하세요. 서명된 ping은 에이전트를 실행하지 않고 연결만 확인합니다.",
+  "webhook.reviewMode": "Webhook 동작",
+  "webhook.generic": "Payload로 Agent 실행",
+  "webhook.reviewAccessible": "접근 가능한 GitHub 저장소의 PR 리뷰",
+  "webhook.reviewSelected": "지정한 GitHub 저장소의 PR 리뷰",
+  "webhook.reviewRepositories": "저장소 (한 줄에 owner/repo 하나)",
+  "webhook.reviewHint": "관리자가 설치의 GitHub 연결로 자동 리뷰 댓글을 활성화합니다. GitHub에서 Pull requests를 구독하세요. 서명된 opened·synchronize·reopened·ready_for_review 이벤트의 열린 일반 PR을 검토합니다. Agent는 제공된 diff와 연결된 Skill을 읽으며 저장소 코드나 다른 도구를 실행하지 않습니다. 검증한 PR과 커밋에만 댓글을 남깁니다. 서로 다른 PR은 동시에 처리할 수 있습니다.",
+  "webhook.reviewSave": "리뷰 설정 저장",
+  "webhook.refreshRuns": "전달 이력 새로고침",
   "webhook.secretHint": "일반 발신자는 X-Trigger-Secret 헤더로 전송합니다. GitHub에서는 같은 값을 Secret에 입력해 전달에 서명합니다. 이 값을 가진 쪽은 Agent의 현재 설정을 실행할 수 있습니다.",
   "webhook.intro":
     "프로젝트마다 주소 하나가 있고, 켜기 전까지는 꺼져 있습니다. 외부 시스템은 X-Trigger-Secret 또는 GitHub HMAC-SHA256 서명으로 인증한 JSON을 POST해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 아래 이력에 남습니다. Webhook 은 항상 Agent의 현재 설정을 실행합니다.",
