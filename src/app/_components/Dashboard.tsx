@@ -27,6 +27,7 @@ import {
 import { presetRange } from "../_lib/dateRange";
 import { DateRangePicker } from "./DateRangePicker";
 import { CostBarChart } from "./CostBarChart";
+import { readJson } from "@/app/_lib/httpClient";
 import classes from "./Dashboard.module.css";
 
 const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider", "department"];
@@ -69,22 +70,16 @@ export function Dashboard({ projects }: { projects: SanitizedProject[] | null })
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/usages/summary?from=${from}&to=${to}`);
-        if (!res.ok) {
-          const data = (await res.json().catch(() => ({}))) as { error?: string };
-          if (!cancelled) {
-            setError(data.error ?? `request failed (${res.status})`);
-            setItems([]);
-          }
-          return;
-        }
-        const data = (await res.json()) as { items?: UsageRow[] };
+        const data = await readJson<{ items?: UsageRow[] }>(
+          await fetch(`/api/usages/summary?from=${from}&to=${to}`),
+        );
         if (!cancelled) {
           setItems(data.items ?? []);
         }
       } catch (fetchError) {
         if (!cancelled) {
           setError(fetchError instanceof Error ? fetchError.message : "request failed");
+          setItems([]);
         }
       } finally {
         if (!cancelled) {
