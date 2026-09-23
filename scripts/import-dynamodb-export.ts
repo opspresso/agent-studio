@@ -136,13 +136,10 @@ async function main(): Promise<void> {
     // row is the same person with a fresh id and nothing of theirs on it, so
     // it gives way to the exported one; the next boot finds the imported
     // user by email and adds the password back.
-    const replaced = await client.query<{ id: string; email: string }>(
-      `DELETE FROM "user" WHERE lower("email") = ANY($1) AND NOT ("id" = ANY($2)) RETURNING "id", "email"`,
+    const replaced = await client.query(
+      `DELETE FROM "user" WHERE lower("email") = ANY($1) AND NOT ("id" = ANY($2))`,
       [[...userEmails], [...userIds]],
     );
-    for (const row of replaced.rows) {
-      console.log(`replacing user ${row.email} (${row.id}) with the exported row`);
-    }
     counts.replacedUsers += replaced.rowCount ?? 0;
 
     for (const file of files) {
@@ -283,9 +280,6 @@ async function main(): Promise<void> {
           // absolute path lets a managed image read unrelated host secrets.
           // Drop the retired field rather than carrying that authority into
           // the new deployment.
-          console.log(
-            `dropping unsupported envRefs of ${pk} (${item.envRefs.map(String).join(", ")})`,
-          );
           const { envRefs: _envRefs, ...rest } = item;
           item = rest;
           counts.droppedEnvRefs += 1;
@@ -297,9 +291,6 @@ async function main(): Promise<void> {
           // at a bucket that is now a MinIO the app alone can reach. Dropped,
           // so the new deployment's ARTIFACT_ACCESS_MODE decides; an admin can
           // set it again on /settings.
-          console.log(
-            `dropping artifactAccessMode=${item.artifactAccessMode} of ${pk}: it described the old object store`,
-          );
           const { artifactAccessMode: _mode, ...rest } = item;
           item = rest;
           counts.droppedSettings += 1;
