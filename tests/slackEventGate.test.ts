@@ -102,6 +102,26 @@ beforeEach(() => {
 });
 
 describe("which Slack events reach a handler", () => {
+  it.each([
+    null,
+    [],
+    { ...channelMessage(), authorizations: "not authorizations" },
+    channelMessage({ text: 42 }),
+    channelMessage({ attachments: "not attachments" }),
+  ])("refuses a malformed signed event before claiming it: %j", async (payload) => {
+    const response = await deliver(payload, ["deploy"]);
+    expect(response.status).toBe(400);
+    expect(claim).not.toHaveBeenCalled();
+  });
+
+  it("refuses a callback without an event id instead of running it without deduplication", async () => {
+    const { event_id: _missing, ...payload } = channelMessage();
+    const response = await deliver(payload, ["deploy"]);
+    expect(response.status).toBe(400);
+    expect(claim).not.toHaveBeenCalled();
+    expect(handled).toEqual([]);
+  });
+
   it("routes a native stop without launching a model or reading engagement", async () => {
     await deliver({ type: "event_callback", event_id: "EvStop", event: {
       type: "agent_session_stopped", channel: "C1", thread_ts: "1.0", event_ts: "2.0", user: "U1",
