@@ -1588,6 +1588,8 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 등록 모델은 최대 500개다. 가격 미제공은 `pricingKnown: false`로 표시하며 명시적 0과 구별한다.
 모델 선택기는 표시 이름·등록 ID·provider·유형별 가격을 공통으로 보여준다. 개인 즐겨찾기는
 `/models`에서 변경하며, 선택기에서는 provider 그룹보다 먼저 표시한다.
+선택 옵션 응답에서는 개인 즐겨찾기 조회가 실패해도 모델 목록을 반환하며 `favorite: false`로 표시한다.
+즐겨찾기 전용 API는 읽기 실패를 오류로 반환한다.
 조회 시 Provider의 명시적 유형·출력 modality를 이름 추정보다 우선한다. `decisions`·
 `transcription`·`rerank`도 출력 modality에서 판정한다. 입력 modality와 지원 parameter는
 Tools·Vision·Reasoning·구조화 출력의 독립적인 capability로 보존한다. 지원 parameter가

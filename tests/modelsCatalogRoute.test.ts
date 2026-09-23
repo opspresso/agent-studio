@@ -15,7 +15,7 @@ const {
   getEmbeddingModelSelection: vi.fn(),
   getRerankerModelSelection: vi.fn(),
   getRerankerMinScoreSelection: vi.fn(),
-  modelPreferenceUseCases: { list: vi.fn() },
+  modelPreferenceUseCases: { listOptional: vi.fn() },
   config: {
     catalogEnabled: false,
     reranker: undefined as { baseUrl: string; apiKey?: string } | undefined,
@@ -67,7 +67,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   getLlmProviderConfigs.mockResolvedValue([]);
   getHiddenModels.mockResolvedValue(undefined);
-  modelPreferenceUseCases.list.mockResolvedValue([]);
+  modelPreferenceUseCases.listOptional.mockResolvedValue([]);
   getEmbeddingModelSelection.mockResolvedValue({ model: "openrouter/qwen3-embedding-4b", source: "env" });
   getRerankerModelSelection.mockResolvedValue(undefined);
   getRerankerMinScoreSelection.mockResolvedValue({ value: 0.01, source: "default" });
@@ -119,10 +119,10 @@ describe("GET /api/models/catalog", () => {
   });
 
   it("marks favorites for the signed-in user", async () => {
-    modelPreferenceUseCases.list.mockResolvedValue(["openai/gpt-5.4"]);
+    modelPreferenceUseCases.listOptional.mockResolvedValue(["openai/gpt-5.4"]);
     const body = await catalog();
     expect(body.models.find((model) => model.id === "openai/gpt-5.4")?.favorite).toBe(true);
-    expect(modelPreferenceUseCases.list).toHaveBeenCalledWith("u1");
+    expect(modelPreferenceUseCases.listOptional).toHaveBeenCalledWith("u1");
   });
 
   it("exposes the active rerank selection under its model type", async () => {

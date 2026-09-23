@@ -13,7 +13,7 @@ export type WorkspaceRuntimeModelsResponse = Omit<WorkspaceRuntimeModelsView, "o
 };
 
 async function personalized(view: WorkspaceRuntimeModelsView, userId: string): Promise<WorkspaceRuntimeModelsResponse> {
-  const favorites = new Set(await modelPreferenceUseCases.list(userId));
+  const favorites = new Set(await modelPreferenceUseCases.listOptional(userId));
   const options = {} as WorkspaceRuntimeModelsResponse["options"];
   for (const runtime of WORKSPACE_MODEL_RUNTIMES) {
     options[runtime] = view.options[runtime].map(model => ({ ...model, favorite: favorites.has(model.id) }));

@@ -12,7 +12,7 @@ export const GET = withMemberAuth(async (user, _request: Request, context: { par
     const { name } = await context.params;
     const [options, favoriteIds] = await Promise.all([
       getAudioRuntime().options(name, user.email),
-      modelPreferenceUseCases.list(user.id),
+      modelPreferenceUseCases.listOptional(user.id),
     ]);
     const favorites = new Set(favoriteIds);
     return Response.json({ ...options, models: options.models.map(model => ({ ...model, favorite: favorites.has(model.id) })) } satisfies AudioOptionsResponse);

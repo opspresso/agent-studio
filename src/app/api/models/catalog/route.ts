@@ -39,7 +39,7 @@ export const GET = withMemberAuth(async (user) => {
     rerankerMinScore,
   ] = await Promise.all([
     getLlmProviderConfigs(),
-    modelPreferenceUseCases.list(user.id),
+    modelPreferenceUseCases.listOptional(user.id),
     getEmbeddingModelSelection(),
     getRerankerModelSelection(),
     getRerankerMinScoreSelection(),

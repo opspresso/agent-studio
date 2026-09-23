@@ -1415,6 +1415,7 @@ export const ko: Messages = {
   "models.favorite": "즐겨찾기에 추가",
   "models.unfavorite": "즐겨찾기에서 제거",
   "models.favoriteSaveFailed": "즐겨찾기를 저장하지 못했습니다",
+  "models.favoriteLoadFailed": "즐겨찾기를 불러오지 못했습니다",
   "models.hidden": "숨김",
   "models.hideModel": "{model} 숨김",
   "models.hiddenCount": "{count}개 숨김",

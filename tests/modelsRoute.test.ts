@@ -4,7 +4,7 @@ import { offeredModels } from "@/domain/llm/models";
 const { getLlmProviderConfigs, getDefaultModel, modelPreferenceUseCases } = vi.hoisted(() => ({
   getLlmProviderConfigs: vi.fn(),
   getDefaultModel: vi.fn(),
-  modelPreferenceUseCases: { list: vi.fn() },
+  modelPreferenceUseCases: { listOptional: vi.fn() },
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -39,7 +39,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   getLlmProviderConfigs.mockResolvedValue([]);
   getDefaultModel.mockResolvedValue(undefined);
-  modelPreferenceUseCases.list.mockResolvedValue([]);
+  modelPreferenceUseCases.listOptional.mockResolvedValue([]);
 });
 
 describe("GET /api/models", () => {
@@ -57,10 +57,10 @@ describe("GET /api/models", () => {
 
   it("marks only this user's favorite models", async () => {
     getLlmProviderConfigs.mockResolvedValue([provider("openai")]);
-    modelPreferenceUseCases.list.mockResolvedValue(["openai/gpt-5.4"]);
+    modelPreferenceUseCases.listOptional.mockResolvedValue(["openai/gpt-5.4"]);
     const models = await listedModels();
     expect(models.find((model) => model.id === "openai/gpt-5.4")?.favorite).toBe(true);
     expect(models.find((model) => model.id !== "openai/gpt-5.4")?.favorite).toBe(false);
-    expect(modelPreferenceUseCases.list).toHaveBeenCalledWith("u1");
+    expect(modelPreferenceUseCases.listOptional).toHaveBeenCalledWith("u1");
   });
 });

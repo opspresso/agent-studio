@@ -15,33 +15,31 @@ import { ModelCollection } from "./ModelCollection";
 export default function ModelsPage() {
   const t = useT();
   const [models, setModels] = useState<RegisteredModel[]>();
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const [favorites, setFavorites] = useState<string[]>();
   const [saving, setSaving] = useState<string>();
   const [error, setError] = useState<string>();
+  const [favoriteError, setFavoriteError] = useState<string>();
   useEffect(() => {
     let current = true;
-    void Promise.all([
-      listRegisteredModels(),
-      fetch("/api/models/favorites").then(readJson<ModelFavoritesResponse>),
-    ])
-      .then(([registered, preferences]) => { if (current) {
-        setModels(registered);
-        setFavorites(preferences.models);
-      } })
+    void listRegisteredModels()
+      .then(registered => { if (current) setModels(registered); })
       .catch(error => { if (current) setError(error instanceof Error ? error.message : "Could not load models"); });
+    void fetch("/api/models/favorites").then(readJson<ModelFavoritesResponse>)
+      .then(preferences => { if (current) setFavorites(preferences.models); })
+      .catch(error => { if (current) setFavoriteError(error instanceof Error ? error.message : t("models.favoriteLoadFailed")); });
     return () => { current = false; };
-  }, []);
+  }, [t]);
   async function toggleFavorite(id: string) {
-    if (saving) return;
+    if (saving || favorites === undefined) return;
     setSaving(id);
-    setError(undefined);
+    setFavoriteError(undefined);
     try {
       const result = await readJson<ModelFavoritesResponse>(await fetch("/api/models/favorites", {
         method: "PATCH", headers: jsonHeaders, body: JSON.stringify({ model: id, favorite: !favorites.includes(id) }),
       }));
       setFavorites(result.models);
     } catch (error) {
-      setError(error instanceof Error ? error.message : t("models.favoriteSaveFailed"));
+      setFavoriteError(error instanceof Error ? error.message : t("models.favoriteSaveFailed"));
     } finally {
       setSaving(undefined);
     }
@@ -49,9 +47,10 @@ export default function ModelsPage() {
   return <Stack gap="lg">
     <PageHeader title={t("nav.models")} description={t("modelAdmin.onlySelected")} Icon={IconCpu} />
     {error && <Alert color="red">{error}</Alert>}
+    {favoriteError && <Alert color="red">{favoriteError}</Alert>}
     {!models && !error && <LoadingText />}
     {models && <ModelCollection scope="browse" models={models} emptyText={t("models.empty")}
-      renderActions={model => <Button size="compact-sm" variant={favorites.includes(model.id) ? "light" : "default"}
+      renderActions={favorites === undefined ? undefined : model => <Button size="compact-sm" variant={favorites.includes(model.id) ? "light" : "default"}
         leftSection={favorites.includes(model.id) ? <IconStarFilled size={14} /> : <IconStar size={14} />}
         aria-pressed={favorites.includes(model.id)} disabled={!!saving} loading={saving === model.id}
         onClick={() => void toggleFavorite(model.id)}>

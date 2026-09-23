@@ -14,6 +14,7 @@ let blockDeletion: boolean;
 let failDiscovery: boolean;
 let discoveryQueries: string[];
 let favorites: string[];
+let failFavorites: boolean;
 
 test.beforeAll(async () => {
   discovered = await createProviderModelDiscovery(async () => Response.json({ data: [
@@ -37,7 +38,7 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 test.beforeEach(async ({ page }) => {
-  selected = []; saves = []; blockDeletion = false; failDiscovery = false; discoveryQueries = []; favorites = [];
+  selected = []; saves = []; blockDeletion = false; failDiscovery = false; failFavorites = false; discoveryQueries = []; favorites = [];
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/settings") return route.fulfill({ json: { llmProviders: { items: [{ name: "fixture", kind: "openrouter" }, { name: "other", kind: "openrouter" }] } } });
@@ -46,6 +47,7 @@ test.beforeEach(async ({ page }) => {
       return failDiscovery ? route.fulfill({ status: 502, json: { error: "Provider discovery failed" } }) : route.fulfill({ json: { models: discovered } });
     }
     if (path === "/api/models/favorites") {
+      if (failFavorites && route.request().method() === "GET") return route.fulfill({ status: 503, json: { error: "Favorites unavailable" } });
       if (route.request().method() === "PATCH") {
         const { model, favorite } = route.request().postDataJSON() as { model: string; favorite: boolean };
         favorites = favorite ? [...new Set([...favorites, model])].sort() : favorites.filter(id => id !== model);
@@ -161,6 +163,16 @@ test("saves personal favorites from selected models and restores them after relo
   await expect(selectedCard.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
   await selectedCard.getByRole("button", { name: "Remove from favorites" }).click();
   expect(favorites).toEqual([]);
+});
+
+test("keeps registered models visible when favorites cannot be loaded", async ({ page }) => {
+  const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
+  await jev.getByRole("button", { name: "Add model" }).click();
+  failFavorites = true;
+  await page.goto(`${base}/selected`);
+  await expect(page.getByRole("article")).toContainText("Jev Latest");
+  await expect(page.getByRole("alert")).toContainText("Favorites unavailable");
+  await expect(page.getByRole("button", { name: "Add to favorites" })).toHaveCount(0);
 });
 
 test("retains the selected model and surfaces the API's in-use deletion refusal", async ({ page }) => {

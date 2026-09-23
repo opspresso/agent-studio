@@ -1,5 +1,6 @@
 import { ValidationError } from "@/application/errors";
 import { getModelConfig } from "@/domain/llm/models";
+import { log } from "@/shared/logger";
 import {
   MAX_FAVORITE_MODELS,
   type ModelPreferencesRepository,
@@ -7,6 +8,7 @@ import {
 
 export interface ModelPreferenceUseCases {
   list(userId: string): Promise<string[]>;
+  listOptional(userId: string): Promise<string[]>;
   replace(userId: string, modelIds: string[]): Promise<string[]>;
   setFavorite(userId: string, modelId: string, favorite: boolean): Promise<string[]>;
 }
@@ -17,6 +19,16 @@ export function createModelPreferenceUseCases(
   return {
     list(userId) {
       return repository.getFavoriteModels(userId);
+    },
+
+    async listOptional(userId) {
+      try {
+        return await repository.getFavoriteModels(userId);
+      } catch (error) {
+        // A failed personal decoration must not block an otherwise available model list.
+        log.warn("models", "model favorites unavailable for selection options", error);
+        return [];
+      }
     },
 
     async replace(userId, modelIds) {
