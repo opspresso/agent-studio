@@ -35,8 +35,8 @@ export type CapabilityKind = "skill" | "mcpServer" | "mcpTool";
  * under it a correct answer lands around 0.3–0.5 and an unrelated one around
  * 0.24, so the floor sits just above the noise. Under Titan v2 the whole scale
  * is lower and the same floor would return nothing; under a model whose correct
- * answers sit near 0.8 it would admit everything. Changing `EMBEDDING_MODEL`
- * means re-measuring, which is what `CATALOG_MIN_SCORE` is for.
+ * answers sit near 0.8 it would admit everything. Changing the selected
+ * embedding model means re-measuring, which is what `CATALOG_MIN_SCORE` is for.
  *
  * The measurements themselves — every model tried, what each scored, and why
  * this deployment is on Cohere — live in

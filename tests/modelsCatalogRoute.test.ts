@@ -20,7 +20,6 @@ const {
   modelPreferenceUseCases: { listOptional: vi.fn() },
   config: {
     catalogEnabled: false,
-    reranker: undefined as { baseUrl: string; apiKey?: string } | undefined,
   },
 }));
 
@@ -76,7 +75,6 @@ beforeEach(() => {
   getDecisionModelSelection.mockResolvedValue(undefined);
   getRerankerMinScoreSelection.mockResolvedValue({ value: 0.01, source: "default" });
   config.catalogEnabled = false;
-  config.reranker = undefined;
 });
 
 describe("GET /api/models/catalog", () => {
@@ -143,11 +141,8 @@ describe("GET /api/models/catalog", () => {
     });
   });
 
-  it("allows selecting a registered reranker without a separate legacy endpoint", async () => {
+  it("allows selecting a registered reranker when the catalog is enabled", async () => {
     config.catalogEnabled = true;
-    expect((await catalog()).selectionAvailable.rerank).toBe(true);
-
-    config.reranker = { baseUrl: "http://reranker.internal/v1" };
     expect((await catalog()).selectionAvailable.rerank).toBe(true);
   });
 });

@@ -289,41 +289,6 @@ export const config = {
     return optionalEnv(process.env.CATALOG_ENABLED) === "true";
   },
   /**
-   * Which service embeds. `bedrock` needs no credentials of its own — the pod
-   * role carries `bedrock:InvokeModel` — while `openai` reuses the chat
-   * channel's base URL and key.
-   *
-   * Anything unrecognised falls back to `openai` rather than throwing: an
-   * embedding provider is not worth refusing to boot over, and a deployment
-   * with the catalog off never reaches either adapter.
-   */
-  get embeddingProvider(): "cohere" | "bedrock" | "openai" {
-    const raw = optionalEnv(process.env.EMBEDDING_PROVIDER)?.toLowerCase();
-    return raw === "cohere" || raw === "bedrock" ? raw : "openai";
-  },
-  /**
-   * The embedding model, whose dimension must equal the index's. Changing it
-   * means rebuilding the index: vectors from two models are not comparable, and
-   * nothing in a mixed index would report that — the scores would simply be
-   * wrong.
-   */
-  get embeddingModel(): string {
-    const configured = optionalEnv(process.env.EMBEDDING_MODEL);
-    if (configured) {
-      return configured;
-    }
-    switch (config.embeddingProvider) {
-      // The inference profile, not the bare model id — Cohere v4 refuses
-      // on-demand invocation by id outright.
-      case "cohere":
-        return "global.cohere.embed-v4:0";
-      case "bedrock":
-        return "amazon.titan-embed-text-v2:0";
-      default:
-        return "text-embedding-3-small";
-    }
-  },
-  /**
    * How many dimensions to ask the model for, or undefined for its native width.
    *
    * Providers that serve several widths need an explicit value — `text-
@@ -342,24 +307,11 @@ export const config = {
    * model** rather than to the search: measured on Titan v2 a correct answer
    * scores 0.34–0.41 and an unrelated one under 0.12, and a threshold tuned for
    * a model whose correct answers sit near 0.8 would return nothing at all.
-   * Changing `EMBEDDING_MODEL` means re-measuring this — the same warning
-   * `mcp-memory` carries on `RECALL_MIN_SIMILARITY`.
+   * Changing the selected embedding model means re-measuring this — the same
+   * warning `mcp-memory` carries on `RECALL_MIN_SIMILARITY`.
    */
   get catalogMinScore(): number {
     return fractionEnv("CATALOG_MIN_SCORE", DEFAULT_MIN_SCORE);
-  },
-  /** A configured reranker is optional, but a partial pair is an error. */
-  get reranker(): { baseUrl: string; apiKey?: string; model: string } | undefined {
-    const baseUrl = optionalEnv(process.env.RERANKER_BASE_URL);
-    const model = optionalEnv(process.env.RERANKER_MODEL);
-    if (!baseUrl && !model) {
-      return undefined;
-    }
-    if (!baseUrl || !model) {
-      throw new Error("RERANKER_BASE_URL and RERANKER_MODEL must be configured together");
-    }
-    const apiKey = optionalEnv(process.env.RERANKER_API_KEY);
-    return { baseUrl, ...(apiKey ? { apiKey } : {}), model };
   },
   get rerankerMinScore(): number {
     return fractionEnv("RERANKER_MIN_SCORE", DEFAULT_RERANKER_MIN_SCORE);

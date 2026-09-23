@@ -17,6 +17,7 @@ import {
   getLlmProviderConfigs,
   getPluginsRepoConfig,
   getRerankerModelSelection,
+  getRerankerModel,
   getRerankerTarget,
   getRerankerMinScoreSelection,
   invalidateSettingsCache,
@@ -239,6 +240,11 @@ describe("runtime settings precedence", () => {
       source: "default",
     });
     await expect(getRerankerModelSelection()).resolves.toBeUndefined();
+  });
+
+  it("names the model usage setting when no reranker is selected", async () => {
+    stub(null);
+    await expect(getRerankerModel()).rejects.toThrow("Select a reranker model in model usage settings");
   });
 
   it("resolves the reranker score floor from DB before env and default", async () => {

@@ -197,7 +197,7 @@ export async function getRerankerModelSelection(): Promise<ModelSelection | unde
 export async function getRerankerModel(): Promise<string> {
   const selection = await getRerankerModelSelection();
   if (!selection) {
-    throw new Error("RERANKER_MODEL not configured");
+    throw new Error("Select a reranker model in model usage settings");
   }
   return selection.model;
 }
