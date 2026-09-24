@@ -1,5 +1,6 @@
 import type { SettingKey, SettingsView, SettingsUpdate } from "@/application/settings/settingsUseCases";
 import type { MessageKey } from "@/app/_i18n/messages/en";
+import { MAX_RUN_SLOTS } from "@/domain/execution/runSlot";
 
 export type SettingsSection = "service" | "access" | "plugins";
 interface FieldLabel {
@@ -30,7 +31,7 @@ export const SETTINGS_FIELDS: Record<SettingsSection, SettingField[]> = {
       { value: "refuse", label: "settings.unknownModelPolicy.refuse" },
     ] },
     { key: "catalogMinScore", label: "settings.field.catalogMinScore", hint: "settings.hint.catalogMinScore", type: "number", min: 0, max: 1, step: 0.01 },
-    { key: "maxConcurrentRunsPerActor", label: "settings.field.maxConcurrentRuns", hint: "settings.hint.maxConcurrentRuns", type: "number", min: 0, max: 1000, step: 1 },
+    { key: "maxConcurrentRunsPerActor", label: "settings.field.maxConcurrentRuns", hint: "settings.hint.maxConcurrentRuns", type: "number", min: 0, max: MAX_RUN_SLOTS, step: 1 },
     { key: "slackLoadingIndicator", label: "settings.field.slackLoading", group: "settings.group.messaging", hint: "settings.hint.slackLoading", type: "text", placeholder: ":hourglass_flowing_sand:" },
   ],
   access: [

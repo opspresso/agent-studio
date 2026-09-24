@@ -1,7 +1,7 @@
 import { DEFAULT_MIN_SCORE, DEFAULT_RERANKER_MIN_SCORE } from "@/domain/catalog/types";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { MAX_RUN_SLOTS } from "@/domain/execution/runSlot";
+import { DEFAULT_RUN_SLOTS_PER_ACTOR, MAX_RUN_SLOTS } from "@/domain/execution/runSlot";
 import { BRAND_ASSET_FILES, resolveBranding } from "@/shared/branding";
 import { parseKeyValueList, parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
@@ -404,7 +404,7 @@ export const config = {
    * than inherit from an unset variable.
    */
   get maxConcurrentRunsPerActor(): number {
-    return positiveIntEnv("MAX_CONCURRENT_RUNS_PER_ACTOR", 10, 0, MAX_RUN_SLOTS);
+    return positiveIntEnv("MAX_CONCURRENT_RUNS_PER_ACTOR", DEFAULT_RUN_SLOTS_PER_ACTOR, 0, MAX_RUN_SLOTS);
   },
   /**
    * How long a discovered MCP tool list may be reused, and the most a server's

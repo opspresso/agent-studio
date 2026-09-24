@@ -82,8 +82,8 @@ export async function acquireRunSlot(
   // one inherits it. Only a `user` actor ever arrives with a tier — the
   // bracket's resolver answers `undefined` for machine callers and project
   // tokens alike, so a token stays a service credential bounded by the env number.
-  const limits = typeof deps.limits === "function" ? await deps.limits() : deps.limits;
-  const limit = (tier ? TIER_LIMITS[tier].maxConcurrentRuns : undefined) ?? limits.perActor;
+  const tierLimit = tier ? TIER_LIMITS[tier].maxConcurrentRuns : undefined;
+  const limit = tierLimit ?? (typeof deps.limits === "function" ? await deps.limits() : deps.limits).perActor;
   if (limit <= 0) {
     return UNLIMITED;
   }

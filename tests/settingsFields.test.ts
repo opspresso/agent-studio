@@ -31,6 +31,7 @@ describe("settings tab updates", () => {
   });
   it("preserves an intentional clear without resubmitting unrelated secrets", () => {
     expect(settingsPatch("plugins", { ...current, githubToken: "" }, view)).toEqual({ githubToken: "" });
+    expect(settingsPatch("service", { ...current, serviceLogo: "" }, view)).toEqual({ serviceLogo: "" });
   });
   it("saves the unpriced-model policy from General without touching model selections", () => {
     expect(settingsPatch("service", { ...current, unknownModelPolicy: "refuse" }, view)).toEqual({ unknownModelPolicy: "refuse" });

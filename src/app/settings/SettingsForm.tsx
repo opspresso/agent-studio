@@ -107,9 +107,9 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
           const description = field.hint ? t(field.hint) : undefined;
           const value = values[field.key] ?? "";
           let control: React.ReactNode;
-          if (field.type === "logo") control = <Select label={label} description={description} value={value} allowDeselect={false}
+          if (field.type === "logo") control = <Select label={label} description={description} value={value || null} clearable={meta?.source === "override"} allowDeselect={false}
             data={view?.serviceLogos.map(logo => ({ value: logo, label: logo })) ?? []}
-            onChange={value => { if (value) change(field.key, value); }} />;
+            onChange={value => change(field.key, value ?? "")} />;
           else if (field.type === "select") control = <Select label={label} description={description} value={value || field.fallback} allowDeselect={false}
             data={field.options.map(option => ({ value: option.value, label: t(option.label) }))}
             onChange={value => change(field.key, value ?? field.fallback)} />;

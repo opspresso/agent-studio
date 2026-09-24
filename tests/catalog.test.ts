@@ -360,6 +360,18 @@ describe("searchCapabilities", () => {
     expect((await searchCapabilities(deps, ["query"], { kind: "skill", limit: 5 })).map(entry => entry.name)).toEqual(["a"]);
   });
 
+  it("uses one score floor across all queries in a search", async () => {
+    const deps = searchDeps([
+      [match("skill#a", 0.38, { name: "a", description: "a" })],
+      [match("skill#b", 0.38, { name: "b", description: "b" })],
+    ]);
+    const floor = vi.fn().mockResolvedValue(0.35);
+    deps.minScore = floor;
+    const found = await searchCapabilities(deps, ["first", "second"], { kind: "skill", limit: 5 });
+    expect(found.map(entry => entry.name)).toEqual(["a", "b"]);
+    expect(floor).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps billed reranking usage when reindexing invalidates its matches", async () => {
     const deps = searchDeps([[
       match("skill#a", 0.9, { name: "a", description: "first" }),

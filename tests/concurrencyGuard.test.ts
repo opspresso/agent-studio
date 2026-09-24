@@ -241,6 +241,12 @@ describe("acquireRunSlot", () => {
 });
 
 describe("acquireRunSlot with a member tier", () => {
+  it("does not read the deployment limit when the tier has its own", async () => {
+    const limits = vi.fn(async () => { throw new Error("deployment limit unavailable"); });
+    const d = deps({ limits });
+    await expect(acquireRunSlot(d, user, "guest")).resolves.toBeDefined();
+    expect(limits).not.toHaveBeenCalled();
+  });
   const roomy = () => ({ runSlots: memorySlots().repo, limits: { perActor: 10 } });
   // Derived, not restated: the number is TIER_LIMITS's to change.
   const guestCeiling = TIER_LIMITS.guest.maxConcurrentRuns!;

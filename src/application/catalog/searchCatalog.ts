@@ -228,6 +228,7 @@ export async function searchCapabilitiesByKind(
   // rerank stage to one adapter deadline instead of one per recent turn.
   let queryResults: Awaited<ReturnType<typeof rankQuery>>[];
   try {
+    const floor = typeof deps.minScore === "function" ? await deps.minScore() : deps.minScore ?? DEFAULT_MIN_SCORE;
     queryResults = await Promise.all(
       usable.map((query, queryIndex) =>
         rankQuery(
@@ -236,6 +237,7 @@ export async function searchCapabilitiesByKind(
           requests,
           candidatesByRequest.map((perQuery) => perQuery[queryIndex] ?? []),
           rerankerMinScore,
+          floor,
           options,
         ),
       ),
@@ -352,9 +354,9 @@ async function rankQuery(
   requests: ReadonlyArray<{ kind: CapabilityKind; limit: number }>,
   candidatesByRequest: RankedCandidate[][],
   rerankerMinScore: number,
+  floor: number,
   options: CatalogSearchOptions,
 ): Promise<{ matches: RankedCandidate[][]; rerank: CatalogRerankReport }> {
-  const floor = typeof deps.minScore === "function" ? await deps.minScore() : deps.minScore ?? DEFAULT_MIN_SCORE;
   if (!deps.reranker || (deps.rerankerEnabled && !await deps.rerankerEnabled())) {
     return {
       matches: candidatesByRequest.map((candidates, index) =>

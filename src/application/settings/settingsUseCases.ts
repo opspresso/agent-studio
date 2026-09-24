@@ -9,13 +9,13 @@ import type {
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { DEFAULT_RERANKER_MIN_SCORE } from "@/domain/catalog/types";
 import { DEFAULT_MIN_SCORE } from "@/domain/catalog/types";
-import { MAX_RUN_SLOTS } from "@/domain/execution/runSlot";
+import { DEFAULT_RUN_SLOTS_PER_ACTOR, MAX_RUN_SLOTS } from "@/domain/execution/runSlot";
 import { DEFAULT_LOADING_INDICATOR } from "@/shared/slackLoadingIndicator";
 import { providerBaseUrl, providerKind } from "@/domain/llm/providerModels";
 import type { SupportedProvider } from "@/domain/llm/models";
 import { parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
-import { resolveBranding } from "@/shared/branding";
+import { DEFAULT_SERVICE_LOGO, DEFAULT_SERVICE_NAME, resolveBranding } from "@/shared/branding";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import {
@@ -53,10 +53,10 @@ interface FieldSpec {
  * as the effective value.
  */
 const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
-  { key: "serviceName", secret: false, env: () => optionalEnv(env.SERVICE_NAME), defaultValue: "Agent Studio" },
-  { key: "serviceLogo", secret: false, env: () => optionalEnv(env.SERVICE_LOGO), defaultValue: "agent-studio" },
+  { key: "serviceName", secret: false, env: () => optionalEnv(env.SERVICE_NAME), defaultValue: DEFAULT_SERVICE_NAME },
+  { key: "serviceLogo", secret: false, env: () => optionalEnv(env.SERVICE_LOGO), defaultValue: DEFAULT_SERVICE_LOGO },
   { key: "catalogMinScore", secret: false, env: () => optionalEnv(env.CATALOG_MIN_SCORE), defaultValue: String(DEFAULT_MIN_SCORE) },
-  { key: "maxConcurrentRunsPerActor", secret: false, env: () => optionalEnv(env.MAX_CONCURRENT_RUNS_PER_ACTOR), defaultValue: "10" },
+  { key: "maxConcurrentRunsPerActor", secret: false, env: () => optionalEnv(env.MAX_CONCURRENT_RUNS_PER_ACTOR), defaultValue: String(DEFAULT_RUN_SLOTS_PER_ACTOR) },
   { key: "s3PublicBaseUrl", secret: false, env: () => optionalEnv(env.S3_PUBLIC_BASE_URL) },
   { key: "slackLoadingIndicator", secret: false, env: () => optionalEnv(env.SLACK_LOADING_INDICATOR), defaultValue: DEFAULT_LOADING_INDICATOR },
   { key: "adminEmails", secret: false, env: () => optionalEnv(env.ADMIN_EMAILS) },
@@ -481,7 +481,7 @@ export function createSettingsUseCases(
         } catch {
           throw new ValidationError("Service name must be a single line of at most 80 characters and logo must name a brand folder");
         }
-        const effectiveLogo = next.serviceLogo ?? optionalEnv(env.SERVICE_LOGO) ?? "agent-studio";
+        const effectiveLogo = next.serviceLogo ?? optionalEnv(env.SERVICE_LOGO) ?? DEFAULT_SERVICE_LOGO;
         if (!serviceLogos.includes(effectiveLogo)) {
           throw new ValidationError("Service logo must have all required brand assets in this deployment");
         }

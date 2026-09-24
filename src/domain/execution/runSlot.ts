@@ -14,6 +14,7 @@
 
 /** The three-digit stored slot index can address indices `0..999`. */
 export const MAX_RUN_SLOTS = 1_000;
+export const DEFAULT_RUN_SLOTS_PER_ACTOR = 10;
 
 /** A repository caller's requested slot count within the stored index range. */
 export function boundedRunSlotLimit(limit: number): number {

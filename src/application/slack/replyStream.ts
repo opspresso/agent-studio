@@ -109,18 +109,6 @@ export const MAX_EDIT_TEXT = 2_800;
 const MIN_EDIT_TEXT = 700;
 /** How far back from the cap a paragraph or line break is looked for. */
 export const EDIT_CUT_WINDOW = 600;
-/**
- * Appended to an edited-in-place reply that is still being written, when the
- * deployment names nothing else.
- *
- * A built-in emoji as the default, because it is the only kind that renders
- * everywhere: a custom name a workspace has not defined shows up as its own
- * literal text, which is noise exactly where the reply should read as
- * unfinished-but-fine. A workspace that *has* one says so through
- * `SLACK_LOADING_INDICATOR`. A streamed reply needs none — Slack marks it as
- * still arriving itself.
- */
-
 /** Where a reply goes, and what that surface supports. */
 export interface ReplyTarget {
   /** A stale lease holder must not write into a newer run's session. */
