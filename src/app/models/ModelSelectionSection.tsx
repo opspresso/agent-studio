@@ -119,7 +119,7 @@ export function ModelSelectionSection({
                     ? [{ value: selection.model, label: selection.model }]
                     : []
                 }
-                details={selection?.source}
+                details={selection ? t(`settings.source.${selection.source}`) : undefined}
                 disabled={
                   !available[type] ||
                   options.length === 0 ||
@@ -134,7 +134,7 @@ export function ModelSelectionSection({
               <Group gap="sm" align="flex-end">
                 <NumberInput
                   label={t(type === "embedding" ? "models.selection.catalogMinScore" : "models.selection.rerankerMinScore")}
-                  description={`${configuredFloor.source} · ${t(type === "embedding" ? "models.selection.catalogMinScoreHint" : "models.selection.rerankerMinScoreHint")}`}
+                  description={`${t(`settings.source.${configuredFloor.source}`)} · ${t(type === "embedding" ? "models.selection.catalogMinScoreHint" : "models.selection.rerankerMinScoreHint")}`}
                   value={floor}
                   min={0}
                   max={1}
