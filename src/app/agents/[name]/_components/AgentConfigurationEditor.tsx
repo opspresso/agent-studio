@@ -9,6 +9,7 @@ import {
   Button,
   Checkbox,
   Code,
+  Divider,
   Group,
   List,
   Modal,
@@ -221,7 +222,8 @@ export function AgentConfigurationEditor({
         styles={monoInput}
       />
 
-      <SimpleGrid cols={2} spacing="sm">
+      <Divider label={t("configuration.group.response")} labelPosition="left" />
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
         <NumberField
           label={t("configuration.temperature")}
           value={value.parameters.temperature}
@@ -305,6 +307,7 @@ export function AgentConfigurationEditor({
         placeholder="50"
       />
 
+      <Divider label={t("configuration.group.policy")} labelPosition="left" />
       <Checkbox
         label={t("configuration.piiFiltering")}
         description={t("configuration.piiHint")}
@@ -356,6 +359,7 @@ export function AgentConfigurationEditor({
         </Stack>
       )}
 
+      <Divider label={t("configuration.group.builtins")} labelPosition="left" />
       <Stack gap="xs">
         <Checkbox
           label={t("configuration.imageTools")}
@@ -420,6 +424,7 @@ export function AgentConfigurationEditor({
         </Text>
       </Stack>
 
+      <Divider label={t("configuration.group.bindings")} labelPosition="left" />
       <Stack gap="sm">
 
         {pickerError && (
