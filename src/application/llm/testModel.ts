@@ -33,6 +33,8 @@ export interface TestModelDeps {
 
 const TEST_TIMEOUT_MS = 15_000;
 const IMAGE_TEST_TIMEOUT_MS = 120_000;
+const TEXT_TEST_MAX_TOKENS = 16;
+const REASONING_TEST_MAX_TOKENS = 256;
 
 export function createTestModel(models: ModelProvider, deps: TestModelDeps = {}): TestModel {
   return async (modelId) => {
@@ -69,7 +71,12 @@ export function createTestModel(models: ModelProvider, deps: TestModelDeps = {})
         await deps.testDecision!(modelId, signal);
       } else {
         await withTrace(new NoopTrace(), async () => (await models.getModel(modelId)).getResponse({
-          input: "ping", modelSettings: { maxTokens: 16, store: false },
+          input: "ping", modelSettings: {
+            // Reasoning tokens share the output cap; 16 can end before the
+            // first visible token and misreport a working model as unavailable.
+            maxTokens: model.capabilities.reasoning ? REASONING_TEST_MAX_TOKENS : TEXT_TEST_MAX_TOKENS,
+            store: false,
+          },
           tools: [], handoffs: [], outputType: "text", tracing: false, signal,
         }));
       }

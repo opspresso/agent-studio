@@ -50,7 +50,7 @@ describe("createTestModel", () => {
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
   });
 
-  it("sends one tiny bounded completion for the model under test", async () => {
+  it("gives reasoning models room for hidden tokens before visible output", async () => {
     const channel = new FakeChannel([[]]);
 
     await createTestModel(channel)(KNOWN_MODEL);
@@ -59,9 +59,15 @@ describe("createTestModel", () => {
     expect(channel.seenParams[0]).toMatchObject({
       model: KNOWN_MODEL,
       messages: [{ role: "user", content: "ping" }],
-      maxTokens: 16,
+      maxTokens: 256,
     });
     expect(channel.seenParams[0]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("keeps non-reasoning probes small", async () => {
+    const channel = new FakeChannel([[]]);
+    await createTestModel(channel)("openai/gpt-4o");
+    expect(channel.seenParams[0]).toMatchObject({ model: "openai/gpt-4o", maxTokens: 16 });
   });
 
   it("reports a channel failure as a result, not an exception", async () => {
