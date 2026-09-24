@@ -392,15 +392,19 @@ async function main() {
       { Authorization: "Bearer secret-token" },
       mcpHeadersContext(serverName),
     );
+    const sourceOutputs = [{ tool: "get_file", namespace: "plaud", urlPath: ["presigned_url"],
+      idPath: ["id"], namePath: ["name"], mimeType: "audio/mpeg", refreshArgument: "file_id" }];
     await mcpRepository.put({
       name: serverName,
       url: "http://localhost:9999/mcp",
       headers: mcpHeaders,
+      sourceOutputs,
       createdAt: now,
       updatedAt: now,
     });
     const mcp = await mcpRepository.get(serverName);
     assert.ok(mcp, "mcp get");
+    assert.deepEqual(mcp.sourceOutputs, sourceOutputs, "MCP source defaults survive JSONB round-trip");
     assert.equal(
       decryptHeadersForOutbound(mcp.headers, mcpHeadersContext(serverName)).Authorization,
       "Bearer secret-token",
