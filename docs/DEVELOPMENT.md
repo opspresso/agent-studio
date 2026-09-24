@@ -41,7 +41,6 @@ test -f .env.local || cp .env.example .env.local
 ```bash
 docker compose up -d postgres minio minio-init # PostgreSQL 18 + MinIO + bucket
 pnpm dev                             # http://localhost:3000 — 스키마는 부팅 때 앱이 만든다
-pnpm db:migrate                      # 앱을 띄우지 않고 스키마만 적용 (CI, 첫 부팅 전)
 ```
 
 `.env.example` 의 `DATABASE_URL`(`postgres://agent_studio:agent_studio@localhost:5432/agent_studio`)
@@ -49,8 +48,11 @@ pnpm db:migrate                      # 앱을 띄우지 않고 스키마만 적�
 lock 아래에서 멱등하게 적용하므로 따로 만들 것이 없다. pgvector 확장도 거기서 만든다.
 고정 개발 자격 증명을 쓰는 PostgreSQL 과 MinIO 포트는 호스트 loopback 에만 공개된다.
 
-Next.js는 `.env.local`을 읽지만 별도 CLI 스크립트는 자동으로 읽지 않는다. 파일에 지정한 DB에
-마이그레이션하려면 `pnpm tsx --env-file=.env.local scripts/db-migrate.ts`를 사용한다.
+Next.js는 `.env.local`을 읽지만 별도 CLI 스크립트는 자동으로 읽지 않는다. 앱을 띄우기 전에
+파일에 지정한 DB만 마이그레이션하려면 `pnpm tsx --env-file=.env.local scripts/db-migrate.ts`를
+사용한다. `pnpm db:migrate`는 프로세스의 `DATABASE_URL`을 사용하며 없으면 스크립트의 로컬
+기본 DB(`agent_studio`)에 적용한다. `.env.local`에서 DB 이름을 바꾼 경우에는 이 명령을
+그대로 실행하지 않는다.
 인증 계정의 키와 업그레이드 전제는 [설치 문서](INSTALL.md#업그레이드)를 따른다.
 
 `compose.yaml`은 `agent-studio-local` project에 PostgreSQL 18과 MinIO 전용 volume을 만든다.
@@ -200,8 +202,8 @@ pnpm install --frozen-lockfile → typecheck → test → test:integration
 독립적인 정기 검사 workflow도 없다.
 
 tag workflow의 `github-release`와 `release`는 `verify` 뒤에 실행되고, 이미지 빌드에서
-Dockerfile의 `pnpm build`가 수행된다. 이미지 게시가 끝나면 `gitops`가 alpha 이벤트를 자동 전달한다.
-`gitops-prod`는 alpha 전달 성공 후 `prod` Environment의 사용자 승인을 받아 prod 이벤트를 전달한다.
+Dockerfile의 `pnpm build`가 수행된다. 이미지 게시가 끝나면 `alpha`가 alpha 이벤트를 자동 전달한다.
+`prod`는 alpha 전달 성공 후 `prod` Environment의 사용자 승인을 받아 prod 이벤트를 전달한다.
 PR workflow에는 Release 생성·registry 게시·GitOps 전달 job이 없다.
 릴리스 권한과 완료 확인은 [OPERATIONS](OPERATIONS.md#릴리스-파이프라인)를 따른다.
 
@@ -300,6 +302,15 @@ PR workflow에는 Release 생성·registry 게시·GitOps 전달 job이 없다.
 
 문서만 바뀌면 명령·링크·앵커·코드 참조와 전체 diff를 확인한다. 런타임 코드를 바꿨을 때는
 해당 동작의 회귀 검사와 저장소 필수 검사를 실행한다.
+
+변경한 계약의 정본과 안내를 함께 확인한다.
+
+- API 경로·메서드·권한은 해당 `src/app/api/**/route.ts`와 요청 schema·응답 생성 코드를 확인하고
+  [API 라우트 색인](API.md#라우트-색인)과 상세 계약을 함께 갱신한다.
+- 환경변수·설정 override는 `src/lib/config.ts`, `src/lib/runtime-settings.ts`, Settings 화면을
+  확인하고 `.env.example`과 [CONFIGURATION](CONFIGURATION.md)의 경로·기본값을 맞춘다.
+- 설치·검증·릴리스 명령은 `package.json`, `scripts/`, `Dockerfile`, `.github/workflows/`를
+  확인하고 README·INSTALL·DEVELOPMENT·OPERATIONS의 예시와 job 이름을 맞춘다.
 
 문서는 변경 이력이 아니라 **현재** 상태를 기록한다: 완료된 마일스톤은 `MILESTONES.md` 에서
 삭제하고, 이력은 git log 와 태그별 GitHub Release 가 남긴다.

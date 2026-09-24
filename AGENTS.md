@@ -77,6 +77,9 @@ pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 Integration checks may use only a database whose name ends in `_test`. The `agent-studio-local`
 Compose project owns separate PostgreSQL and MinIO volumes. Never run `docker compose down -v`
 without explicit approval.
+`pnpm db:migrate` reads `DATABASE_URL` from the process environment and otherwise targets the
+script's local default database. To target `.env.local`, run
+`pnpm tsx --env-file=.env.local scripts/db-migrate.ts` instead.
 
 Boot requires `DATABASE_URL` and a 32-byte base64 `AES_ENCRYPTION_KEY`. Runs additionally
 require an administrator-selected model and its registered provider connection. Alpha/prod also requires `ADMIN_EMAILS` plus a sign-in method. Production

@@ -88,13 +88,13 @@ Workspace 체크포인트·DB·오브젝트 volume을 이미지 캐시와 함께
 | `verify` | 타입·단위·전용 PostgreSQL 통합 검사 |
 | `github-release` | verify 이후 커밋 메시지로 GitHub Release 노트를 생성·갱신한다 |
 | `release` | verify 이후 Dockerfile로 빌드하고 ECR·GHCR에 앱 `{tag}`·`latest`, Sandbox `workspace-{tag}`를 게시한다 |
-| `gitops` | 이미지 게시 이후 `v*` tag에서 `phase: alpha` 배포 이벤트를 자동 전달한다 |
-| `gitops-prod` | alpha 전달 성공 후 `prod` Environment의 사용자 승인을 기다리고 같은 tag를 `phase: prod`로 전달한다 |
+| `alpha` | 이미지 게시 이후 `v*` tag에서 `phase: alpha` 배포 이벤트를 자동 전달한다 |
+| `prod` | alpha 전달 성공 후 `prod` Environment의 사용자 승인을 기다리고 같은 tag를 `phase: prod`로 전달한다 |
 
 
-`prod` Environment의 required reviewer는 `nalbam`이다. Repository Settings → Environments →
-`prod`에서 관리하며, 릴리즈를 시작한 사용자도 직접 승인할 수 있다. Actions run의
-**Review deployments → prod → Approve and deploy**를 선택해야 `gitops-prod`가 실행된다.
+`prod` Environment의 승인자와 자기 배포 승인 허용 여부는 Repository Settings → Environments →
+`prod`에서 확인한다. 권한이 있는 승인자가 Actions run의
+**Review deployments → prod → Approve and deploy**를 선택해야 `prod`가 실행된다.
 승인을 거절하면 prod dispatch는 실행되지 않는다. 승인 대기 중에도 alpha 배포는 완료된다.
 
 prod dispatch는 기존 `argocd-env-demo`의 prod PR 절차를 사용한다. PR 반영과 Argo CD Sync는

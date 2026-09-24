@@ -154,6 +154,10 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/models` | `GET` | session |
 | `/api/models/favorites` | `GET` `PUT` `PATCH` | session |
 | `/api/models/catalog` | `GET` | member |
+| `/api/models/discover` | `GET` | admin |
+| `/api/models/registry` | `GET` `POST` `DELETE` | member / admin |
+| `/api/models/status` | `GET` | admin |
+| `/api/models/default` | `GET` `PUT` | admin |
 | `/api/models/test` | `POST` | admin |
 | `/api/models/selection` | `PUT` | admin |
 | `/api/models/decision` | `GET` `PUT` | admin |
