@@ -199,8 +199,15 @@ async function slackReplyChannel(
   token: string,
   target: ReplyTarget,
 ): Promise<ReplyChannel> {
+  let loadingIndicator: string | undefined;
+  try {
+    loadingIndicator = await deps.loadingIndicator?.();
+  } catch (error) {
+    // A display marker must not prevent an already accepted event from replying.
+    log.warn("slack", "loading indicator lookup failed; using default", error);
+  }
   return {
-    ...createReplySink(deps.slack, token, target, await deps.loadingIndicator?.()),
+    ...createReplySink(deps.slack, token, target, loadingIndicator),
     async say(text) {
       if (target.canWrite?.() === false) return;
       await deps.slack.postMessage(token, {
