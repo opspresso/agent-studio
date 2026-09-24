@@ -207,6 +207,18 @@ describe("updateProject visibility", () => {
 });
 
 describe("sanitizeProject and the invite list", () => {
+  it("exposes only capability flags needed by Agent navigation", () => {
+    const configuration: AgentConfiguration = {
+      projectName: "proj", systemPrompt: "", model: "openai/gpt-5-mini",
+      parameters: { piiFiltering: false, audioProcessing: true, workspaceTools: true },
+      mcpList: [], skillList: [], subagentList: [],
+    };
+    const enabled = sanitizeProject(project({ configuration }));
+    expect(enabled).toMatchObject({ configured: true, audioToolsEnabled: true, workspaceToolsEnabled: true });
+    expect(enabled).not.toHaveProperty("configuration");
+    expect(sanitizeProject(project())).toMatchObject({ configured: false, audioToolsEnabled: false, workspaceToolsEnabled: false });
+  });
+
   it("strips memberEmails unless the viewer manages the project", () => {
     const p = project({ visibility: "private", memberEmails: [MEMBER] });
     expect(sanitizeProject(p)).not.toHaveProperty("memberEmails");

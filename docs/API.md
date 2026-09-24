@@ -230,7 +230,8 @@ DELETE /api/skills/{name}     → 204                     | 404
 
 생성 시 배포가 제공하는 첫 번째 호환 텍스트 모델로 초기 Agent 설정을 같은 Project 행에
 저장한다. 호환 모델이 없으면 미설정 Agent로 생성한다. 일반 Project 응답은 시크릿을 포함한 설정 원문을 싣지 않고
-`configured`로 설정 유무를 알린다.
+`configured`로 설정 유무를 알린다. Agent 탭에 필요한 `audioToolsEnabled`와
+`workspaceToolsEnabled`는 현재 설정에서 계산한 불리언이며 설정 원문은 노출하지 않는다.
 
 #### 공개 범위와 복제
 

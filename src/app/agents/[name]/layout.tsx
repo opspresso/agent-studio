@@ -1,10 +1,9 @@
 "use client";
 
-import { projectHasWorkspaceTools } from "@/domain/project/workspaceAccess";
 import { ProjectWorkspaceContext } from "./_components/ProjectWorkspaceContext";
 import { useParams, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Stack, Text } from "@mantine/core";
+import { Alert, Button, Group, Stack, Text } from "@mantine/core";
 import {
   IconAdjustments,
   IconApi,
@@ -17,9 +16,8 @@ import {
 } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
-import { getProject, getConfiguration, type SanitizedProject } from "../lib/api";
+import { getProject, type SanitizedProject } from "../lib/api";
 import { onConfigurationChange } from "../lib/configurationEvents";
-import { projectHasAudioTools } from "@/domain/project/audioAccess";
 import { ProjectAudioContext } from "./_components/ProjectAudioContext";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { tierMayCreateProjects } from "@/domain/member/tiers";
@@ -39,9 +37,10 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   // second thing to keep in step.
   const viewer = useViewer();
   const t = useT();
-  const [project, setProject] = useState<SanitizedProject | null>(null);
-  const [audio, setAudio] = useState<{ name: string; enabled?: boolean; workspace?: boolean; error?: string }>();
-  const currentProject = project?.name === name ? project : null;
+  const [projectState, setProjectState] = useState<{ name: string; project: SanitizedProject | null; error: string | null } | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
+  const currentState = projectState?.name === name ? projectState : null;
+  const currentProject = currentState?.project ?? null;
   const ownerEmail = currentProject?.ownerEmail ?? null;
 
   useEffect(() => {
@@ -49,25 +48,12 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     let sequence = 0;
     const reload = () => {
       const request = ++sequence;
-      setAudio({ name });
-      // Retry transient reads once; stale responses cannot replace newer settings.
-      void (async () => {
-        for (let attempt = 0; attempt < 2; attempt++) {
-          try {
-            const project = await getProject(name);
-            if (cancelled || request !== sequence) return;
-            setProject(project);
-            const { configuration } = await getConfiguration(name);
-            if (!cancelled && request === sequence) setAudio({ name,
-              enabled: projectHasAudioTools({ configuration: configuration ?? undefined }),
-              workspace: projectHasWorkspaceTools({ configuration: configuration ?? undefined }) });
-            return;
-          } catch (error) {
-            if (cancelled || request !== sequence) return;
-            if (attempt === 1) setAudio({ name, error: error instanceof Error ? error.message : "Project settings could not be loaded" });
-          }
-        }
-      })();
+      void getProject(name).then((project) => {
+        if (!cancelled && request === sequence) setProjectState({ name, project, error: null });
+      }).catch((error) => {
+        if (!cancelled && request === sequence) setProjectState({ name, project: null,
+          error: error instanceof Error ? error.message : "Project could not be loaded" });
+      });
     };
     reload();
     const unsubscribe = onConfigurationChange(name, reload);
@@ -75,14 +61,14 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
       cancelled = true;
       unsubscribe();
     };
-  }, [name]);
+  }, [name, retryKey]);
 
   const canManage = canEditProject(viewer, ownerEmail);
   const tabs = [
     { href: base, label: t("project.tab.playground"), Icon: IconPlayerPlay },
     { href: `${base}/usage`, label: t("project.tab.usage"), Icon: IconChartBar },
-    ...(ownerEmail && viewer?.email === ownerEmail && audio?.name === name && audio.enabled ? [{ href: `${base}/audio`, label: t("audio.title"), Icon: IconSparkles }] : []),
-    ...(canManage && audio?.name === name && audio.workspace ? [{ href: `${base}/workspace`, label: t("workspace.toolsTitle"), Icon: IconSparkles }] : []),
+    ...(ownerEmail && viewer?.email === ownerEmail && currentProject?.audioToolsEnabled ? [{ href: `${base}/audio`, label: t("audio.title"), Icon: IconSparkles }] : []),
+    ...(canManage && currentProject?.workspaceToolsEnabled ? [{ href: `${base}/workspace`, label: t("workspace.toolsTitle"), Icon: IconSparkles }] : []),
     // Gated like Traces: these hold other people's runtime output, and the
     // delete here is the only way a Slack or trigger run's artifact is removed.
     ...(canManage
@@ -112,10 +98,14 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
         {ownerEmail && <OwnerLine ownerEmail={ownerEmail} isMine={viewer?.email === ownerEmail} prefix={t("project.ownedBy")} />}
         {viewer !== null && tierMayCreateProjects(viewer.tier) && <CloneProjectButton sourceName={name} />}
       </PageHeader>
+      {currentState?.error && <Alert color="red"><Group justify="space-between" gap="sm">
+        <Text size="sm">{currentState.error}</Text>
+        <Button size="xs" variant="light" onClick={() => setRetryKey(key => key + 1)}>{t("error.retry")}</Button>
+      </Group></Alert>}
       <PageTabs value={pathname} items={tabs} label={t("project.badge")} />
 
-      <ProjectAudioContext.Provider value={audio?.name === name ? { enabled: audio.enabled, error: audio.error } : {}}>
-        <ProjectWorkspaceContext.Provider value={audio?.name === name ? { enabled: audio.workspace, error: audio.error } : {}}>
+      <ProjectAudioContext.Provider value={currentState ? { enabled: currentProject?.audioToolsEnabled, error: currentState.error ?? undefined } : {}}>
+        <ProjectWorkspaceContext.Provider value={currentState ? { enabled: currentProject?.workspaceToolsEnabled, error: currentState.error ?? undefined } : {}}>
           {children}
         </ProjectWorkspaceContext.Provider>
       </ProjectAudioContext.Provider>
