@@ -584,6 +584,7 @@ export const en = {
   "usage.cached": "Cached",
   "usage.cost": "Cost",
   "usage.none": "No usage in this range.",
+  "usage.loadFailed": "Usage could not be loaded.",
   "usage.groupBy.project": "Agent",
   "usage.groupBy.model": "model",
   "usage.groupBy.provider": "provider",

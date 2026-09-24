@@ -103,6 +103,8 @@ export default function ProfilePage() {
   const groups = useMemo(() => groupUsage(rows, groupBy), [rows, groupBy]);
   const cost = useMemo(() => totalCost(rows), [rows]);
   const calls = useMemo(() => totalCalls(rows), [rows]);
+  const usageUnavailable = usageLoading || usageError !== null;
+  const usageDetail = usageLoading ? t("common.loading") : usageError ? t("usage.loadFailed") : t("cost.selectedPeriod");
 
   if (accountError) return <Alert color="red" variant="light">{accountError}</Alert>;
   if (account === null) return <LoadingText />;
@@ -184,14 +186,14 @@ export default function ProfilePage() {
       <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="md">
         <StatCard
           label={t("cost.totalCost")}
-          value={formatUsd(cost)}
-          detail={t("cost.selectedPeriod")}
+          value={usageUnavailable ? "—" : formatUsd(cost)}
+          detail={usageDetail}
           Icon={IconCoins}
         />
         <StatCard
           label={t("cost.totalCalls")}
-          value={calls.toLocaleString(locale)}
-          detail={t("cost.modelInvocations")}
+          value={usageUnavailable ? "—" : calls.toLocaleString(locale)}
+          detail={usageUnavailable ? usageDetail : t("cost.modelInvocations")}
           Icon={IconActivity}
         />
       </SimpleGrid>
@@ -207,11 +209,11 @@ export default function ProfilePage() {
         <CostBarChart
           data={daily.data}
           keys={daily.keys}
-          empty={usageLoading ? t("common.loading") : t("usage.none")}
+          empty={usageLoading ? t("common.loading") : usageError ? t("usage.loadFailed") : t("usage.none")}
         />
       </Card>
 
-      <UsageBreakdown groups={groups} label={groupBy} loading={usageLoading} />
+      <UsageBreakdown groups={groups} label={groupBy} loading={usageLoading} failed={usageError !== null} />
     </Stack>
   );
 }

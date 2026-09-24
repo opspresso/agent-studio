@@ -197,7 +197,7 @@ function UsageDetail({ name }: { name: string }) {
       {loading ? (
         <LoadingText />
       ) : rows.length === 0 ? (
-        <EmptyState>{t("projectUsage.empty")}</EmptyState>
+        <EmptyState>{t(error ? "usage.loadFailed" : "projectUsage.empty")}</EmptyState>
       ) : (
         <>
           <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="md">

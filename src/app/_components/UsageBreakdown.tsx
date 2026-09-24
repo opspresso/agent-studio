@@ -35,6 +35,7 @@ export function UsageBreakdown({
   groups,
   label,
   loading = false,
+  failed = false,
 }: {
   groups: UsageGroup[];
   /**
@@ -44,6 +45,7 @@ export function UsageBreakdown({
    */
   label: GroupBy;
   loading?: boolean;
+  failed?: boolean;
 }) {
   const t = useT();
   const largest = groups[0]?.cost ?? 0;
@@ -70,7 +72,7 @@ export function UsageBreakdown({
           <Table.Tr>
             <Table.Td colSpan={4}>
               <Text fz="sm" c="dimmed">
-                {loading ? t("common.loading") : t("usage.none")}
+                {loading ? t("common.loading") : failed ? t("usage.loadFailed") : t("usage.none")}
               </Text>
             </Table.Td>
           </Table.Tr>

@@ -551,6 +551,7 @@ export const ko: Messages = {
   "usage.cached": "캐시",
   "usage.cost": "비용",
   "usage.none": "이 기간에는 사용량이 없습니다.",
+  "usage.loadFailed": "사용량을 불러오지 못했습니다.",
   "usage.groupBy.project": "Agent",
   "usage.groupBy.model": "모델",
   "usage.groupBy.provider": "프로바이더",
