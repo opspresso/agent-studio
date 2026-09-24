@@ -27,8 +27,7 @@ export default function SettingsPage() {
   const [description, setDescription] = useState("");
   const [departmentCode, setDepartmentCode] = useState("");
   const [project, setProject] = useState<SanitizedProject | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{ name: string; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -37,6 +36,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setProject(null);
+    setLoadError(null);
+    setError(null);
+    setSaved(false);
     async function load() {
       try {
         const project = await getProject(name);
@@ -48,11 +51,7 @@ export default function SettingsPage() {
         }
       } catch (e) {
         if (!cancelled) {
-          setLoadError(e instanceof Error ? e.message : "Failed to load project");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
+          setLoadError({ name, message: e instanceof Error ? e.message : "Failed to load project" });
         }
       }
     }
@@ -102,21 +101,18 @@ export default function SettingsPage() {
     }
   }
 
-  if (loading) {
+  if (project?.name !== name && loadError?.name !== name) {
     return <LoadingText />;
   }
 
-  if (loadError) {
+  if (loadError?.name === name) {
     return (
       <Alert color="red" variant="light" maw={640}>
-        {loadError}
+        {loadError.message}
       </Alert>
     );
   }
-
-  if (!project) {
-    return <LoadingText />;
-  }
+  if (!project) return <LoadingText />;
 
   if (viewer === null) {
     return <LoadingText />;

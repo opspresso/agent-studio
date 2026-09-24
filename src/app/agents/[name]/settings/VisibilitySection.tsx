@@ -48,15 +48,15 @@ export function VisibilitySection({
     <CollapsibleSection
       title={t("pset.visibility")}
       badge={
-          visibility === "private" ? (
-            <Badge variant="light" color="gray">
-              {t("agents.privateBadge")}
-            </Badge>
-          ) : (
-            <Badge variant="light" color="teal">
-              {t("pset.visibilityPublic")}
-            </Badge>
-          )
+        visibility === "private" ? (
+          <Badge variant="light" color="gray">
+            {t("agents.privateBadge")}
+          </Badge>
+        ) : (
+          <Badge variant="light" color="teal">
+            {t("pset.visibilityPublic")}
+          </Badge>
+        )
       }
     >
       <Stack gap="md">
