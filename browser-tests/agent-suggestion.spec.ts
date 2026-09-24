@@ -42,6 +42,36 @@ test("debounces a suggestion, applies it explicitly and discards an old surface 
   ]);
 });
 
+test("keeps the previous suggestion while a changed request waits for another result", async ({ page }) => {
+  let nextRequested!: () => void;
+  const nextSeen = new Promise<void>(resolve => { nextRequested = resolve; });
+  let releaseNext!: () => void;
+  const held = new Promise<void>(resolve => { releaseNext = resolve; });
+  await page.route("**/api/agent-recommendations", async route => {
+    const { request } = route.request().postDataJSON() as { request: string };
+    if (request === "Please fix this code") {
+      return route.fulfill({ json: { recommendation: { name: "coder", confidence: 0.8 } } });
+    }
+    nextRequested();
+    await held;
+    return route.fulfill({ json: { recommendation: { name: "writer", confidence: 0.8 } } });
+  });
+  try {
+    await page.goto(base);
+    const request = page.getByRole("textbox", { name: "Request" });
+    await request.fill("Please fix this code");
+    await expect(page.getByRole("status")).toContainText("Coder");
+    await request.fill("Please draft meeting minutes");
+    await expect(page.getByRole("status")).toContainText("Coder");
+    await nextSeen;
+    await expect(page.getByRole("status")).toContainText("Coder");
+    releaseNext();
+    await expect(page.getByRole("status")).toContainText("Writer");
+  } finally {
+    releaseNext();
+  }
+});
+
 test("selects and clears a registered decision model in model usage settings", async ({ page }) => {
   const saved: Array<string | null> = [];
   await page.route("**/api/models/**", async route => {
