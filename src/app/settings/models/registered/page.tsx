@@ -10,30 +10,30 @@ import { useT } from "@/app/_i18n/provider";
 import { checkRegisteredModel, deleteRegisteredModel, listRegisteredModels } from "@/app/models/api";
 import { useViewer } from "@/app/_lib/useViewer";
 import { ModelEditor } from "@/app/models/ModelEditor";
-import { type RegisteredModel } from "@/domain/llm/providerModels";
+import type { RegisteredModelView } from "@/application/llm/modelRegistry";
 
 export default function RegisteredModelsPage() {
   const t = useT();
   const viewer = useViewer();
-  const [models, setModels] = useState<RegisteredModel[]>();
+  const [models, setModels] = useState<RegisteredModelView[]>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState<string>();
   const [statuses, setStatuses] = useState<Record<string, string>>({});
-  const [editing, setEditing] = useState<RegisteredModel>();
+  const [editing, setEditing] = useState<RegisteredModelView>();
   const { confirm, confirmModal } = useConfirm();
   useEffect(() => {
     let current = true;
     void listRegisteredModels().then(value => { if (current) setModels(value); }).catch(error => { if (current) setError(error instanceof Error ? error.message : "Could not load models"); });
     return () => { current = false; };
   }, []);
-  async function remove(model: RegisteredModel) {
+  async function remove(model: RegisteredModelView) {
     if (busy || !await confirm({ title: t("modelAdmin.deleteModel"), message: t("modelAdmin.deleteModelHint"), confirmLabel: t("modelAdmin.delete") })) return;
     setBusy(model.id); setError(undefined);
     try { await deleteRegisteredModel(model.id); setModels(current => current?.filter(item => item.id !== model.id)); }
     catch (error) { setError(error instanceof Error ? error.message : "Could not delete model"); }
     finally { setBusy(undefined); }
   }
-  async function check(model: RegisteredModel) {
+  async function check(model: RegisteredModelView) {
     if (busy) return;
     setBusy(model.id); setError(undefined);
     try {

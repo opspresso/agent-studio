@@ -1,4 +1,4 @@
-import type { ModelCapabilities, ModelPricing } from "@/domain/llm/models";
+import type { ModelCapabilities } from "@/domain/llm/models";
 import {
   providerBaseUrl, providerKind,
   REGISTRY_MODEL_TYPES,
@@ -6,7 +6,8 @@ import {
 } from "@/domain/llm/providerModels";
 import type { ProviderChannelConfig } from "@/domain/settings/types";
 import { readBodyBytes } from "@/shared/httpBody";
-import { withPublishedModelFacts } from "./publishedModelFacts";
+import { log } from "@/shared/logger";
+import { publishedModelCatalog } from "./publishedModelFacts";
 
 const MAX_PAGES = 20;
 const MAX_MODELS = 5_000;
@@ -33,7 +34,7 @@ function typeOf(entry: RecordValue, wireId: string): RegistryModelType | undefin
   const explicit = label(entry.type);
   if (explicit && REGISTRY_MODEL_TYPES.some(type => type === explicit)) return explicit as RegistryModelType;
   // Structured output modalities are authoritative, including opaque and latest-alias IDs.
-  if (outputs.includes("decisions")) return "decisions";
+  if (outputs.includes("decision")) return "decision";
   if (outputs.includes("embeddings") || outputs.includes("embedding")) return "embedding";
   if (outputs.includes("rerank")) return "rerank";
   if (outputs.includes("transcription")) return "transcription";
@@ -44,41 +45,18 @@ function typeOf(entry: RecordValue, wireId: string): RegistryModelType | undefin
   if (explicit === "rerank" || /rerank/i.test(wireId)) return "rerank";
   if (explicit === "transcription" || /whisper|transcrib/i.test(wireId)) return "transcription";
   if (outputs.includes("image") || /(^|[-/])(imagen|dall-e|gpt-image)|image(-generation)?/i.test(wireId)) return "image";
-  if (explicit === "decisions") return "decisions";
+  if (explicit === "decision") return "decision";
   // Unsupported audio/video/realtime protocols must not masquerade as chat models.
   if (outputs.some((v) => v === "audio" || v === "video") || /tts|realtime|audio|video|moderation/i.test(wireId)) return undefined;
   if (outputs.includes("text") || methods.includes("generateContent") || /^(text|llm|vlm)$/.test(explicit ?? "") || /^(gpt-|o\d|claude-|gemini-|grok-)/.test(wireId)) return "text";
   return undefined;
 }
 
-function openRouterPricing(entry: RecordValue, type: RegistryModelType | undefined): ModelPricing | undefined {
-  if (!type) return undefined;
-  const prices = record(entry.pricing);
-  const rate = (value: unknown): number | undefined => {
-    if ((typeof value !== "string" && typeof value !== "number") || value === "") return undefined;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed * 1_000_000 : undefined;
-  };
-  const input = rate(prices.prompt);
-  const output = rate(prices.completion);
-  if (input === undefined || output === undefined) return undefined;
-  const cached = rate(prices.input_cache_read);
-  const imageOutput = rate(prices.image_output);
-  // Zero text-token placeholders do not establish the price of a non-token
-  // operation. Published metadata may supply its per-request or per-image rate.
-  if (["image", "rerank", "transcription"].includes(type) && input === 0 && output === 0 && imageOutput === undefined) return undefined;
-  return {
-    inputPer1M: input, outputPer1M: output,
-    ...(cached !== undefined && cached <= input ? { cachedInputPer1M: cached } : {}),
-    ...(imageOutput !== undefined ? { imageOutputPer1M: imageOutput } : {}),
-  };
-}
-
-function toModel(value: unknown, kind: string): DiscoveredModel | undefined {
+function toModel(value: unknown): DiscoveredModel | undefined {
   const entry = record(value);
   const rawId = label(entry.id) ?? label(entry.name);
   if (!rawId) return undefined;
-  const wireId = kind === "google" ? rawId.replace(/^models\//, "") : rawId;
+  const wireId = rawId;
   if (wireId.length > 200 || /[\x00-\x1f\x7f]/.test(wireId)) return undefined;
   const type = typeOf(entry, wireId);
   const parameters = Array.isArray(entry.supported_parameters)
@@ -101,16 +79,8 @@ function toModel(value: unknown, kind: string): DiscoveredModel | undefined {
     const supported = typeof value === "boolean" ? value : record(value).supported;
     if (typeof supported === "boolean") capabilities[flag] = supported;
   }
-  if (kind === "anthropic") {
-    capabilities.tools ??= true;
-    for (const [source, target] of [["structured_outputs", "structuredOutput"], ["thinking", "reasoning"], ["image_input", "imageInput"]] as const) {
-      const supported = record(nativeCapabilities[source]).supported;
-      if (typeof supported === "boolean") capabilities[target] = supported;
-    }
-  }
   const contextWindow = count(entry.context_length ?? entry.inputTokenLimit ?? entry.max_input_tokens ?? entry.max_model_len);
   const maxTokens = count(entry.outputTokenLimit ?? entry.max_tokens ?? record(entry.top_provider).max_completion_tokens);
-  const pricing = kind === "openrouter" ? openRouterPricing(entry, type) : undefined;
   return {
     wireId, displayName: label(entry.display_name) ?? label(entry.displayName) ?? (entry.id ? label(entry.name) : undefined) ?? wireId,
     ...(type ? { type } : {}),
@@ -119,37 +89,33 @@ function toModel(value: unknown, kind: string): DiscoveredModel | undefined {
     ...(contextWindow !== undefined ? { contextWindow } : {}),
     ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(Object.keys(capabilities).length ? { capabilities } : {}),
-    ...(pricing ? { pricing } : {}),
   };
 }
 
 /** Only an explicitly registered channel is contacted; listing never installs a model. */
-export function createProviderModelDiscovery(fetchFn: typeof fetch = fetch): ProviderModelDiscovery {
+export function createProviderModelDiscovery(
+  fetchFn: typeof fetch = fetch,
+  catalog: Pick<typeof publishedModelCatalog, "refreshIfDue" | "list"> = publishedModelCatalog,
+): ProviderModelDiscovery {
   return {
     async list(provider: ProviderChannelConfig) {
-      if (provider.auth === "sigv4") throw new Error("Model discovery requires an API-key provider; register signed-channel models manually");
       const kind = providerKind(provider);
-      const base = providerBaseUrl(provider.baseUrl);
-      // Gemini's inference-compatible URL ends in /openai; its native listing does not.
-      const listingBase = kind === "google" ? base.replace(/\/openai$/, "") : base;
-      const headers: Record<string, string> = { accept: "application/json" };
-      if (provider.apiKey) {
-        if (kind === "anthropic") {
-          headers["x-api-key"] = provider.apiKey;
-          headers["anthropic-version"] = "2023-06-01";
-        } else if (kind === "google") headers["x-goog-api-key"] = provider.apiKey;
-        else headers.authorization = `Bearer ${provider.apiKey}`;
+      if (kind !== "selfhosted") {
+        try { await catalog.refreshIfDue(); }
+        catch (error) { log.warn("models", "catalog refresh failed; using the last validated catalog", error); }
+        return catalog.list(kind);
       }
+      if (provider.auth === "sigv4") throw new Error("Model discovery requires an API-key provider; register signed-channel models manually");
+      const base = providerBaseUrl(provider.baseUrl);
+      const headers: Record<string, string> = { accept: "application/json" };
+      if (provider.apiKey) headers.authorization = `Bearer ${provider.apiKey}`;
       const models = new Map<string, DiscoveredModel>();
       const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
       const cursors = new Set<string>();
       let cursor: string | undefined;
       for (let page = 0; page < MAX_PAGES; page++) {
-        const url = new URL(`${listingBase}/models`);
-        if (kind === "openrouter") url.searchParams.set("output_modalities", "all");
-        if (kind === "google") url.searchParams.set("pageSize", "1000");
-        if (kind === "anthropic") url.searchParams.set("limit", "1000");
-        if (cursor) url.searchParams.set(kind === "google" ? "pageToken" : "after_id", cursor);
+        const url = new URL(`${base}/models`);
+        if (cursor) url.searchParams.set("after_id", cursor);
         // Error bodies may echo credentials. Surface only a fixed operation and HTTP status.
         const response = await fetchFn(url.href, {
           headers, redirect: "error", cache: "no-store", signal,
@@ -166,10 +132,10 @@ export function createProviderModelDiscovery(fetchFn: typeof fetch = fetch): Pro
         if (!Array.isArray(entries)) throw new Error("Provider model discovery returned no models array");
         if (entries.length + models.size > MAX_MODELS) throw new Error("Provider model discovery exceeds the model limit");
         for (const entry of entries) {
-          const model = toModel(entry, kind);
-          if (model) models.set(model.wireId, withPublishedModelFacts(kind, model));
+          const model = toModel(entry);
+          if (model) models.set(model.wireId, model);
         }
-        cursor = kind === "google" ? label(body.nextPageToken) : body.has_more === true ? label(body.last_id) : undefined;
+        cursor = body.has_more === true ? label(body.last_id) : undefined;
         if (!cursor) {
           if (body.has_more === true) throw new Error("Provider model discovery returned an invalid cursor");
           return [...models.values()];

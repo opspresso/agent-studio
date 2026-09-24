@@ -24,14 +24,16 @@ import {
 } from "@/domain/settings/modelPolicy";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { parseProviderConfigs, resolveProviderTarget } from "@/infrastructure/llm/providers";
-import { getModelConfig, replaceModelRegistry } from "@/domain/llm/models";
+import { getModelConfig, listModels, replaceModelRegistry } from "@/domain/llm/models";
 import { registeredModelConfig, providerKind } from "@/domain/llm/providerModels";
+import { publishedModelCatalog } from "@/infrastructure/llm/publishedModelFacts";
 import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
 import type { TranscriptionConfig } from "@/infrastructure/llm/transcription";
 import { config, positiveIntEnv } from "./config";
 import { optionalEnv } from "@/shared/env";
 import { parseList } from "@/shared/parseList";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
+import { log } from "@/shared/logger";
 import {
   llmProviderApiKeyContext,
   settingsSecretContext,
@@ -64,7 +66,11 @@ async function loadSettings(): Promise<AppSettings | null> {
           const providers = value?.llmProviders ?? parseProviderConfigs(process.env);
           const models = (value?.registeredModels ?? []).flatMap(model => {
             const provider = providers.find(item => item.name === model.provider);
-            return provider ? [registeredModelConfig(model, providerKind(provider))] : [];
+            if (!provider) return [];
+            const kind = providerKind(provider);
+            const config = registeredModelConfig(model, kind);
+            const pricing = publishedModelCatalog.pricing(kind, model.wireId);
+            return [{ ...config, ...(pricing ? { pricing, pricingKnown: true } : {}) }];
           });
           replaceModelRegistry(models, value?.updatedAt ?? "");
         }
@@ -84,6 +90,32 @@ async function loadSettings(): Promise<AppSettings | null> {
 export function invalidateSettingsCache(): void {
   cacheGeneration += 1;
   cache = undefined;
+}
+
+/** Optional price refresh for processes that calculate model costs. */
+export async function refreshPublishedModelPrices(): Promise<boolean> {
+  if (!listModels().some(model => model.providerKind !== "selfhosted")) return false;
+  const changed = await publishedModelCatalog.refreshIfDue();
+  if (changed) {
+    invalidateSettingsCache();
+    await loadSettings();
+  }
+  return changed;
+}
+
+let modelRefreshTimer: ReturnType<typeof setInterval> | undefined;
+export function startPublishedModelRefresh(): void {
+  if (modelRefreshTimer) return;
+  const refresh = () => {
+    void refreshPublishedModelPrices().catch(error => {
+      log.warn("models", "price refresh failed; using the last validated catalog", error);
+    });
+  };
+  refresh();
+  // Poll the due check each minute so an admin discovery between ticks cannot
+  // postpone the next price refresh for another full catalog interval.
+  modelRefreshTimer = setInterval(refresh, 60_000);
+  modelRefreshTimer.unref();
 }
 
 export async function getDefaultModel(): Promise<string | undefined> {

@@ -254,6 +254,10 @@ Release workflow는 새 tag를 `argocd-env-demo`에 전달한다. Kubernetes man
 mirror하고, 모델은 `/settings/providers`에서 사내 endpoint를 등록한 뒤 `/settings/models`에서
 조회하거나 직접 등록한다. Plugin은 `/plugins`에서 checkout archive를 업로드할 수 있다. 내부 URL과 MCP
 주소는 각각 `URL_FETCH_INTERNAL_HOST_SUFFIXES`, `MCP_INTERNAL_HOST_SUFFIXES`에 선언한다.
+공개 Provider의 모델 목록·가격은 연결 가능할 때 `models.opspresso.com/models.json`에서
+갱신하며, 폐쇄망에서는 이미지에 포함된 검증된 스냅샷을 사용한다. 사내 모델 목록은
+해당 내부 연결에서 조회한다. 스냅샷을 새로 포함하려면 외부에서 `pnpm sync-models`를 실행하거나
+`pnpm sync-models --from <models.json>`으로 받은 파일을 적용해 이미지를 다시 빌드한다.
 
 문서 파서·생성기와 PDF용 한글 폰트는 앱 이미지에 포함된다. 별도 문서 MCP 서버나
 런타임 다운로드는 필요 없다. 지원 형식과 워커 실행 제약은

@@ -155,7 +155,7 @@ describe("createTestModel", () => {
       id: "router/~typesafe/jev-latest", provider: "router", providerKind: "openrouter",
       family: "jev-latest", maker: "typesafe", displayName: "Jev Latest",
       pricing: { inputPer1M: 0.042, outputPer1M: 0 },
-      capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false, decisions: true },
+      capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false, decision: true },
       contextWindow: 32000, maxTokens: 0,
     }]);
     expect(await createTestModel(channel, { testDecision })("router/~typesafe/jev-latest"))

@@ -10,7 +10,7 @@ import { useT } from "@/app/_i18n/provider";
 import { readJson } from "@/app/_lib/httpClient";
 import { ModelCollection } from "@/app/models/ModelCollection";
 import { MODEL_BROWSER_KEYS, deserializeModelProvider } from "@/app/models/modelTable";
-import { REGISTRY_MODEL_TYPES, registrationFromDiscovery, type DiscoveredModel, type RegisteredModel, type RegistryModelType } from "@/domain/llm/providerModels";
+import { REGISTRY_MODEL_TYPES, providerKind, registrationFromDiscovery, type DiscoveredModel, type RegisteredModel, type RegistryModelType } from "@/domain/llm/providerModels";
 import type { SettingsView } from "@/application/settings/settingsUseCases";
 import { deleteRegisteredModel, discoverProviderModels, listRegisteredModels, saveRegisteredModel } from "@/app/models/api";
 
@@ -21,6 +21,7 @@ export default function ModelSelectionPage() {
     key: MODEL_BROWSER_KEYS.activeProvider, defaultValue: null, deserialize: deserializeModelProvider, sync: false,
   });
   const provider = providers?.some(item => item.name === savedProvider) ? savedProvider : providers?.[0]?.name ?? null;
+  const manualAllowed = providers?.some(item => item.name === provider && providerKind(item) === "selfhosted") ?? false;
   // Each entry is a complete provider response. UI filters never mutate this source.
   const [catalogs, setCatalogs] = useState(() => new Map<string, DiscoveredModel[]>());
   const models = provider ? catalogs.get(provider) : undefined;
@@ -68,7 +69,7 @@ export default function ModelSelectionPage() {
   }
   async function remove(model: RegisteredModel) {
     if (pending || !await confirm({ title: t("modelAdmin.deleteModel"), message: t("modelAdmin.deleteModelHint"), confirmLabel: t("modelAdmin.delete") })) return;
-    setRemoving(model.wireId); setError(undefined);
+    setRemoving(model.id); setError(undefined);
     try {
       await deleteRegisteredModel(model.id);
       setRegistered(previous => previous.filter(item => item.id !== model.id));
@@ -76,11 +77,11 @@ export default function ModelSelectionPage() {
     finally { setRemoving(undefined); }
   }
   const selectedModels = registered.filter(model => model.provider === provider);
-  const selectedById = new Map(selectedModels.map(model => [model.wireId, model]));
-  const selected = new Set(selectedById.keys());
+  const selected = new Set(selectedModels.map(model => model.id));
+  const identity = (model: DiscoveredModel) => model.id ?? `${provider}/${model.wireId}`;
   const catalogRows: DiscoveredModel[] = [
-    ...(models ?? []).map(model => selectedById.get(model.wireId) ?? model),
-    ...selectedModels.filter(model => !models?.some(item => item.wireId === model.wireId)),
+    ...(models ?? []),
+    ...selectedModels.filter(model => !models?.some(item => identity(item) === model.id)),
   ];
   const types = REGISTRY_MODEL_TYPES.map(value => ({ value, label: t(`models.type.${value}`) }));
   return <Stack gap="lg">
@@ -95,7 +96,7 @@ export default function ModelSelectionPage() {
           data={providers.map(item => ({ value: item.name, label: `${item.name} (${item.kind})` }))}
           onChange={value => { generation.current++; setProvider(value); setBusy(false); setError(undefined); setChosenTypes(new Map()); setManual(false); }} />
         <Button onClick={() => void discover()} loading={busy} disabled={pending}>{t("modelAdmin.discover")}</Button>
-        <Button variant="default" disabled={!provider || pending} onClick={() => setManual(!manual)}>{t("modelAdmin.manual")}</Button>
+        {manualAllowed && <Button variant="default" disabled={!provider || pending} onClick={() => setManual(!manual)}>{t("modelAdmin.manual")}</Button>}
       </Group>
       {manual && <Card><form onSubmit={event => { event.preventDefault(); void register({ wireId: manualId.trim(), displayName: manualId.trim(), type: manualType }); }}>
         <Stack gap="md"><TextInput label={t("modelAdmin.wireId")} value={manualId} required onChange={event => setManualId(event.currentTarget.value)} disabled={!!adding} />
@@ -108,11 +109,11 @@ export default function ModelSelectionPage() {
       <>
         <Text size="xs" c="dimmed">{t("modelAdmin.factsHint")}</Text>
         <ModelCollection scope="discovery" models={catalogRows} provider={provider ?? undefined} emptyText={t(models ? "modelAdmin.discoveryEmpty" : "modelAdmin.discoverHint")}
-          isSelected={model => selected.has(model.wireId)}
-          renderActions={model => selected.has(model.wireId) ? <>
+          isSelected={model => selected.has(identity(model))}
+          renderActions={model => selected.has(identity(model)) ? <>
             <Badge color="teal">{t("modelAdmin.enabled")}</Badge>
-            <Button color="red" variant="subtle" disabled={pending} loading={removing === model.wireId}
-              onClick={() => { const item = selectedModels.find(item => item.wireId === model.wireId); if (item) void remove(item); }}>{t("modelAdmin.delete")}</Button>
+            <Button color="red" variant="subtle" disabled={pending} loading={removing === identity(model)}
+              onClick={() => { const item = selectedModels.find(item => item.id === identity(model)); if (item) void remove(item); }}>{t("modelAdmin.delete")}</Button>
           </> : <>
             {!model.type && !model.outputModalities?.length && <Select aria-label={`${model.displayName} ${t("models.type")}`} placeholder={t("modelAdmin.chooseType")}
               value={chosenTypes.get(model.wireId) ?? null} data={types} disabled={pending} onChange={value => { if (value) setChosenTypes(previous => new Map(previous).set(model.wireId, value as RegistryModelType)); }} />}

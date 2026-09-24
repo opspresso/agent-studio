@@ -156,30 +156,35 @@ Self-hosted는 키를 생략할 수 있다. 프로바이더 목록은 최대 50�
 3. `/settings/model-usage`에서 기본 모델, Agent 추천용 결정 모델, Workspace Runtime별 모델, 검색의 Embedding·Rerank를 선택한다.
 4. 선택 화면의 **선택된 모델만 보기**로 저장된 모델을 모아 보고 바로 삭제할 수 있다. Provider를 조회하지 않아도 저장된 선택을 표시한다. 등록 모델 관리에서는 수정·삭제·상태 확인을 수행한다. `/models`는 선택·등록된 모델의 조회와 검색만 제공한다.
 
-타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decisions`다.
-`decisions`는 판단·분류용 텍스트 모델이며 Agent 실행 모델로 사용하지 않는다. Agent 추천에는
+타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decision`이다.
+`decision`은 판단·분류용 텍스트 모델이며 Agent 실행 모델로 사용하지 않는다. Agent 추천에는
 [TypeSafe Choice](https://docs.typesafe.ai/primitives/choice)의 구조화된 결정 계약을 사용한다.
 등록된 OpenRouter 연결은 Decisions API(`/api/alpha/decisions`)로, System One 호환
 self-hosted 연결은 설정된 API 주소의 `/v1/systemone`으로 호출한다. 결정 모델을 선택하지
 않으면 추천 요청은 외부 호출 없이 빈 결과를 반환하며 Chat과 Workspace 입력·실행은 계속 가능하다.
-모델 ID는 `<등록한 프로바이더 이름>/<프로바이더의 모델 ID>`다. 프로바이더에 보내는 ID는
-별도로 보관하므로 OpenRouter와 self-hosted의 슬래시가 포함된 이름도 유지한다.
+공개 모델 ID는 models API의 `id`를 그대로 사용한다. 등록한 연결 이름은 `provider`에,
+실제 전송 ID는 `wireId`에 별도로 보관한다. 내부 `selfhosted` 모델 ID는
+`<등록한 연결 이름>/<wireId>`다.
 
 조회는 관리자 요청에만 수행하며 선택을 바꾸지 않는다. 명시적 출력 modality가 유형을 결정한다.
-Provider 조회는 화면 필터와 무관하게 항상 전체 목록을 가져온다. 선택 모델·검색·유형·기능
-조건은 전체 조회 결과에 적용한다. 조회 실패 시 마지막으로 완료된 전체 결과를 유지한다.
+공개 Provider 조회는 `https://models.opspresso.com/models.json`의 해당 Provider 종류를 사용한다.
+`selfhosted` 조회는 내부 연결의 모델 목록을 사용한다. 선택 모델·검색·유형·기능 조건은
+전체 조회 결과에 적용한다. 공개 API 조회 실패 시 검증된 내장 스냅샷을 사용한다.
 Provider와 조회 조건·정렬·페이지는 화면별 브라우저 localStorage에 저장한다. 다른 탭의
 변경을 현재 화면에 동기화하지 않으며, 모델 조회 데이터와 자격증명은 저장하지 않는다.
-Text·Image 등 출력 유형과 Tools·Vision·Reasoning 기능은 각각 표시한다. 제공자가 알려주지
-않은 정보는 내장 공개 모델 스냅샷의 정확한 제공자·전송 ID 일치로 보완한다. 유형을 끝내
-확인할 수 없으면 등록 전에 직접 선택한다. 한도 0은 미제공이며 화면에서 `—`로 표시한다.
+Text·Image 등 출력 유형과 Tools·Vision·Reasoning 기능은 각각 표시한다. 카탈로그의
+`id`를 선택·설정 키로, `wireId`가 있으면 이를 전송 ID로 사용한다. 내부 모델의 유형을 확인할 수 없으면 등록 전에
+직접 선택한다. 한도 0은 미제공이며 화면에서 `—`로 표시한다.
 가격 미제공과 명시적인 무료 요율을 구별한다.
 모델 목록 조회 성공은 실제 생성 성공이나 모든 capability의 지원을 보장하지 않는다.
 선택한 모델은 Settings에 최대 500개까지 저장하며 부팅과 설정 캐시 갱신에서 읽힌다.
 인터넷이 끊겨도 저장된 모델과 사내 프로바이더로 실행할 수 있다. 새 설치는 빈 목록으로 시작한다.
-공개 facts는 `pnpm sync-models`로 갱신한 `src/infrastructure/llm/data/publishedModels.json`을
-사용한다. 격리망에서는 `pnpm sync-models --from <models.json>`으로 갱신한다. 런타임은
-공개 카탈로그에 접속하지 않으며 스냅샷의 모델을 자동 등록하지 않는다.
+공개 카탈로그는 실행 프로세스마다 15분 간격으로 다시 조회한다. 실패 시 마지막으로 검증된
+카탈로그를 유지하고, 최초 값은 `src/infrastructure/llm/data/publishedModels.json`이다.
+`pnpm sync-models`로 내장 스냅샷을 갱신하며, 격리망 빌드는
+`pnpm sync-models --from <models.json>`을 사용한다. 공개 카탈로그의 모델은 자동 등록하지
+않는다. 등록된 공개 모델은 정확한 Provider 종류·전송 ID 일치로 현재 카탈로그 가격을 적용하며,
+일치하지 않는 내부 모델은 저장된 가격을 사용한다.
 
 기본 모델은 새 Agent와 모델 선택기의 첫 선택에 적용한다. 이미 저장한 Agent 설정은 유지한다.
 기본·Workspace·Embedding·Rerank에 지정된 모델은 사용 설정을 먼저 변경해야 삭제할 수 있다.

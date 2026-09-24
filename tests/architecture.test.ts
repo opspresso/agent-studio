@@ -1551,10 +1551,12 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // Self-hosted declarations make the deployment a publisher too, and a
     // publisher *states* the window rather than deriving from it: the console
     // section edits the number, and the discovery adapter carries what the
-    // serving stack reports. Transport of the value's origin, like models.ts.
+    // serving stack reports. The published catalog adapter also transports a
+    // declared window without deriving a run budget.
     alsoAllowedUnder: [
       "src/domain/llm/models.ts",
       "src/domain/llm/providerModels.ts",
+      "src/infrastructure/llm/publishedModelFacts.ts",
       "src/app/models/page.tsx",
       "src/app/models/ModelEditor.tsx",
       "src/app/models/ModelCollection.tsx",

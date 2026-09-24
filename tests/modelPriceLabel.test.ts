@@ -14,7 +14,7 @@ import { getModelConfig, listModels, modelType } from "@/domain/llm/models";
  */
 describe("modelPriceLabel", () => {
   it("preserves published fractional-cent unit rates instead of rounding them away", () => {
-    expect(modelPriceLabel({ inputPer1M: 0.042, outputPer1M: 0 }, "decisions")).toBe("$0.042 in · $0.00 out per 1M");
+    expect(modelPriceLabel({ inputPer1M: 0.042, outputPer1M: 0 }, "decision")).toBe("$0.042 in · $0.00 out per 1M");
   });
   it("distinguishes unpublished pricing from an explicitly free model", () => {
     expect(modelPriceLabel(undefined)).toBe("Price not provided");

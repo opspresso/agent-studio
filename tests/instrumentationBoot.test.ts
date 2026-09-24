@@ -25,7 +25,10 @@ vi.mock("@/lib/config", () => ({
   config: {},
 }));
 
-vi.mock("@/lib/runtime-settings", () => ({ getLlmProviderConfigs: async () => [] }));
+vi.mock("@/lib/runtime-settings", () => ({
+  getLlmProviderConfigs: async () => [],
+  startPublishedModelRefresh: () => {},
+}));
 
 vi.mock("@/shared/lifecycle", () => ({
   registerShutdownSignals: () => {},

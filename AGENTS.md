@@ -211,10 +211,13 @@ key, cap, formatter, error identity, or collapse rule, search
 
 - Models are deployment-owned selections in Settings. Provider discovery never enables a model.
   `providerModels.ts` owns registration shapes; `models.ts` owns runtime facts and pricing.
-  Published facts come from the committed `opspresso/agent-models` snapshot, maintained with
-  `pnpm sync-models`. Discovery uses it only to fill missing facts on exact provider/wire ID matches;
-  boot and execution never fetch it or enroll its models. Self-hosted connections use the same
-  registration flow and may have distinct names, endpoints and model types.
+  Public discovery and pricing use `models.opspresso.com/models.json`, validated by
+  `publishedModelFacts.ts` and refreshed every 15 minutes without blocking boot or execution.
+  The committed snapshot, maintained with `pnpm sync-models`, is the offline fallback.
+  Public selected IDs and the `decision` type follow the API keys exactly. Exact provider
+  kind/wire ID matches update selected model prices; catalog models are never
+  enrolled automatically. Self-hosted connections use their internal listing and the same
+  registration flow, and may have distinct names, endpoints and model types.
 - Image caps and data-URL rules live in `src/domain/llm/imageLimits.ts`; document caps live in
   `documentLimits.ts`. Never copy either locally.
 - Run output bytes are captured at `openRun`, never at an individual producer. Keep

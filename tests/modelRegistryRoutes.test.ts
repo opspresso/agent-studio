@@ -15,7 +15,7 @@ const registry = await import("@/app/api/models/registry/route");
 const discovery = await import("@/app/api/models/discover/route");
 const defaults = await import("@/app/api/models/default/route");
 const decisions = await import("@/app/api/models/decision/route");
-const model = { id: "office/model", provider: "office", wireId: "model", displayName: "Model", type: "decisions", contextWindow: 0, maxTokens: 0, capabilities: { tools: false, structuredOutput: true, imageInput: false, reasoning: false } };
+const model = { id: "office/model", provider: "office", wireId: "model", displayName: "Model", type: "decision", contextWindow: 0, maxTokens: 0, capabilities: { tools: false, structuredOutput: true, imageInput: false, reasoning: false } };
 const request = (method: string, path = "registry", body?: unknown) => new Request(`https://studio.example.test/api/models/${path}`, { method, ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }) });
 
 beforeEach(() => { vi.clearAllMocks(); role.admin = true; });
@@ -24,7 +24,7 @@ describe("model registry routes", () => {
     useCases.list.mockResolvedValue([model]);
     expect(await (await registry.GET()).json()).toEqual({ models: [model] });
     useCases.save.mockResolvedValue([model]);
-    for (const type of ["text", "image", "embedding", "rerank", "transcription", "decisions"]) {
+    for (const type of ["text", "image", "embedding", "rerank", "transcription", "decision"]) {
       expect((await registry.POST(request("POST", "registry", { ...model, type }))).status).toBe(200);
     }
     expect(useCases.save).toHaveBeenLastCalledWith(model, "admin@example.test");

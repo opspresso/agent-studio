@@ -64,7 +64,7 @@ export function deserializeModelProvider(value: string | undefined): string | nu
 
 function primaryPrice(model: Pick<DiscoveredModel, "type" | "pricing">): number | undefined {
   if (!model.pricing) return undefined;
-  if (model.type === "embedding" || model.type === "decisions") return model.pricing.inputPer1M;
+  if (model.type === "embedding" || model.type === "decision") return model.pricing.inputPer1M;
   if (model.type === "rerank") return model.pricing.perSearch ?? model.pricing.inputPer1M;
   if (model.type === "transcription") {
     return model.pricing.perAudioMinute ?? model.pricing.outputPer1M;

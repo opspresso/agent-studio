@@ -83,9 +83,9 @@ test("selects and clears a registered decision model in model usage settings", a
     if (path === "/api/models/catalog") return route.fulfill({ json: {
       providers: [{ name: "router", available: true, dedicated: true }], makers: {}, updatedAt: "", source: "override",
       models: [{ id: "router/~typesafe/jev-latest", provider: "router", providerKind: "openrouter", family: "jev-latest",
-        maker: "typesafe", displayName: "Jev Latest", type: "decisions", selectionHidden: false, favorite: false,
+        maker: "typesafe", displayName: "Jev Latest", type: "decision", selectionHidden: false, favorite: false,
         contextWindow: 32000, maxTokens: 0, pricing: { inputPer1M: 0.042, outputPer1M: 0 },
-        capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false, decisions: true } }],
+        capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false, decision: true } }],
       selections: { embedding: { model: "", source: "default" } },
       rerankerMinScore: { value: 0.01, source: "default" }, selectionAvailable: { embedding: false, rerank: false },
     } });

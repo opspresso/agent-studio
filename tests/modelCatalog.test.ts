@@ -17,14 +17,14 @@ describe("selected model runtime registry", () => {
     expect(offeredModels(["office"], undefined)).toHaveLength(1);
   });
   it("maps all six selected types to their runtime capability", () => {
-    for (const [type, capability] of [["image", "imageGeneration"], ["embedding", "embedding"], ["rerank", "rerank"], ["transcription", "transcription"], ["decisions", "decisions"]] as const) {
+    for (const [type, capability] of [["image", "imageGeneration"], ["embedding", "embedding"], ["rerank", "rerank"], ["transcription", "transcription"], ["decision", "decision"]] as const) {
       expect(registeredModelConfig({ ...selected, type }, "openai").capabilities[capability]).toBe(true);
     }
   });
   it("keeps a decisions model available for recommendations but out of Agent execution choices", () => {
-    const decision = registeredModelConfig({ ...selected, type: "decisions", capabilities: { ...selected.capabilities, tools: false } }, "openrouter");
+    const decision = registeredModelConfig({ ...selected, type: "decision", capabilities: { ...selected.capabilities, tools: false } }, "openrouter");
     replaceModelRegistry([decision]);
-    expect(getModelConfig(selected.id)?.capabilities.decisions).toBe(true);
+    expect(getModelConfig(selected.id)?.capabilities.decision).toBe(true);
     expect(offeredModels(["office"], undefined)).toEqual([]);
   });
   it("reports unknown pricing rather than silently treating a selected model as free", () => {

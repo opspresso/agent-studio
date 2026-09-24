@@ -1578,11 +1578,11 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 
 | API | 계약 |
 |---|---|
-| `GET /api/models/discover?provider=<name>` | 등록한 연결의 목록을 조회한다. `{ models: [{ wireId, displayName, maker?, type?, inputModalities?, outputModalities?, contextWindow?, maxTokens?, capabilities?, pricing? }] }`. 조회는 모델을 활성화하지 않는다 |
-| `GET /api/models/registry` | `{ models: RegisteredModel[] }`. 관리자가 선택하거나 직접 등록한 모델만 반환한다 |
-| `POST /api/models/registry` | `{ id, provider, wireId, displayName, maker?, type, inputModalities?, outputModalities?, contextWindow, maxTokens, capabilities, pricing? }`를 저장하고 갱신된 목록을 반환한다. 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decisions`다 |
+| `GET /api/models/discover?provider=<name>` | 등록한 공개 Provider의 모델을 `models.opspresso.com/models.json`에서 조회한다. 실패·폐쇄망에서는 내장 스냅샷을 사용한다. `selfhosted`는 해당 내부 연결의 목록을 조회한다. `{ models: [{ id?, wireId, displayName, family?, maker?, type?, inputModalities?, outputModalities?, contextWindow?, maxTokens?, capabilities?, pricing? }] }`. 공개 모델의 `id`는 API의 키다. 조회는 모델을 활성화하지 않는다 |
+| `GET /api/models/registry` | `{ models: RegisteredModelView[] }`. 관리자가 선택하거나 직접 등록한 모델만 반환한다. 공개 가격이 적용되면 현재 가격과 `pricingSource: "catalog"`를 표시한다 |
+| `POST /api/models/registry` | `{ id, provider, wireId, displayName, family?, maker?, type, inputModalities?, outputModalities?, contextWindow, maxTokens, capabilities, pricing? }`를 저장하고 갱신된 목록을 반환한다. 공개 모델의 `id`는 models API의 키와 일치해야 하고 `wireId`는 실제 전송 ID다. 내부 모델 ID는 `provider/wireId`다. 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decision`이다 |
 | `DELETE /api/models/registry?id=<id>` | 미사용 모델을 삭제한다. 성공 204, 현재 기본·결정·검색·Workspace에서 사용하면 409 |
-| `GET /api/models/status?id=<id>` | 프로바이더 목록에 등록 모델이 있는지 `{ available }`로 반환한다. 통신 실패는 502이며 실제 추론 성공을 뜻하지 않는다 |
+| `GET /api/models/status?id=<id>` | 등록 모델이 공개 카탈로그 또는 내부 `selfhosted` 목록에 있는지 `{ available }`로 반환한다. 실제 추론 성공을 뜻하지 않는다 |
 | `GET /api/models/default` | `{ model: string | null }` |
 | `PUT /api/models/default` | `{ model }`. 도구 호출을 지원하는 등록 Text 모델을 선택한다 |
 | `GET /api/models/decision` | `{ model: string | null }`. Agent 추천에 쓰는 전역 결정 모델 선택 |
@@ -1608,16 +1608,19 @@ Agent의 모델 설정을 자동 변경하지 않는다. 입력 중인 요청과
 `/models`에서 변경하며, 선택기에서는 provider 그룹보다 먼저 표시한다.
 선택 옵션 응답에서는 개인 즐겨찾기 조회가 실패해도 모델 목록을 반환하며 `favorite: false`로 표시한다.
 즐겨찾기 전용 API는 읽기 실패를 오류로 반환한다.
-조회 시 Provider의 명시적 유형·출력 modality를 이름 추정보다 우선한다. `decisions`·
-`transcription`·`rerank`도 출력 modality에서 판정한다. 입력 modality와 지원 parameter는
-Tools·Vision·Reasoning·구조화 출력의 독립적인 capability로 보존한다. 지원 parameter가
-객체로 오면 명시적으로 `true`인 항목만 지원 기능으로 취급한다.
-Provider 응답에 없는 정보는 제공자·전송 ID가 일치하는 내장 공개 모델 facts로 보완한다.
-공개 facts는 조회 결과에 모델을 추가하지 않으며 실행 레지스트리도 자동 변경하지 않는다.
-UI의 추가 버튼은 조회한 facts를 즉시 저장한다. 유형 정보 자체가 없으면 행 안에서 유형을
-선택해야 하며, 지원하지 않는 출력 프로토콜을 Text로 변환해 등록하지 않는다.
+공개 Provider는 카탈로그가 제공하는 `id`·유형·한도·기능·가격을 사용하고, 별도의
+`wireId`를 전송 ID로 사용한다. 숨김 모델은 새 조회 목록에서 제외한다. 내부 `selfhosted`는
+응답의 명시적 유형·출력 modality를 이름 추정보다 우선한다. 지원 parameter가 객체로 오면
+명시적으로 `true`인 항목만 지원 기능으로 취급한다. 어느 조회도 실행 레지스트리를 자동 변경하지 않는다.
+UI의 추가 버튼은 조회한 facts를 즉시 저장한다. 공개 모델은 API에 있는 ID만 등록한다.
+내부 모델에 유형 정보 자체가 없으면 행 안에서 유형을 선택해야 하며, 지원하지 않는 출력
+프로토콜을 Text로 변환해 등록하지 않는다.
 조회 실패나 프로바이더의 목록 변경은 저장된 선택을 자동 삭제하지 않는다. 모델 선택의 DB
 변경은 설정 캐시 TTL 이내에 다른 인스턴스에도 적용된다. 모델의 URL·키는 응답에 포함하지 않는다.
+등록된 공개 모델의 실행 요금은 동일한 Provider 종류와 `wireId`가 일치하는 카탈로그 가격을
+우선한다. 웹 서버·오디오·Workspace worker는 실행 중 15분 간격으로 공개 가격을 다시 조회하며,
+오류 시 마지막으로 검증된 가격을 유지한다. Provider가 호출 비용을 직접 보고하면 그 값을 우선한다.
+카탈로그 관리 가격은 Registered models 화면에서 읽기 전용으로 표시한다.
 
 ## 플랫폼 엔드포인트
 

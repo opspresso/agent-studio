@@ -63,7 +63,7 @@ export default function ModelUsagePage() {
     model.type === "text" && model.capabilities.tools && !model.selectionHidden,
   ) ?? [];
   const decisionOptions = view?.catalog.models.filter(model =>
-    model.type === "decisions" && (model.providerKind === "openrouter" || model.providerKind === "selfhosted") && !model.selectionHidden,
+    model.type === "decision" && (model.providerKind === "openrouter" || model.providerKind === "selfhosted") && !model.selectionHidden,
   ) ?? [];
   return <Stack gap="lg">
     <SectionHeading title={t("modelAdmin.usage")} description={t("modelAdmin.usageHint")} />

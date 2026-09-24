@@ -44,7 +44,7 @@ export function createTestModel(models: ModelProvider, deps: TestModelDeps = {})
       throw new ValidationError(`Unknown model "${modelId}"`);
     }
     const type = modelType(model);
-    if (type !== "text" && type !== "decisions" && type !== "image" && type !== "rerank") {
+    if (type !== "text" && type !== "decision" && type !== "image" && type !== "rerank") {
       throw new ValidationError(
         `${type[0]?.toUpperCase()}${type.slice(1)} model cannot be tested through chat completion: ${modelId}`,
       );
@@ -55,7 +55,7 @@ export function createTestModel(models: ModelProvider, deps: TestModelDeps = {})
     if (type === "image" && !deps.testImage) {
       throw new ValidationError(`The image endpoint is not configured: ${modelId}`);
     }
-    if (type === "decisions" && !deps.testDecision) {
+    if (type === "decision" && !deps.testDecision) {
       throw new ValidationError(`The decision endpoint is not configured: ${modelId}`);
     }
     const startedAt = Date.now();
@@ -65,7 +65,7 @@ export function createTestModel(models: ModelProvider, deps: TestModelDeps = {})
         await deps.testReranker!(modelId, signal);
       } else if (type === "image") {
         await deps.testImage!(modelId, signal);
-      } else if (type === "decisions") {
+      } else if (type === "decision") {
         await deps.testDecision!(modelId, signal);
       } else {
         await withTrace(new NoopTrace(), async () => (await models.getModel(modelId)).getResponse({

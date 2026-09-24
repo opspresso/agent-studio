@@ -149,6 +149,8 @@ import { createAgentRecommendationUseCases } from "@/application/llm/agentRecomm
 import { createDecisionClient } from "@/infrastructure/llm/decisionClient";
 import { agentRecommendationQuota } from "@/infrastructure/db/repositories/agentRecommendationQuota";
 import { createProviderModelDiscovery } from "@/infrastructure/llm/providerModelDiscovery";
+import { publishedModelCatalog } from "@/infrastructure/llm/publishedModelFacts";
+import { providerKind } from "@/domain/llm/providerModels";
 import { createModelPreferenceUseCases } from "@/application/llm/modelPreferences";
 import { createModelSelectionUseCases } from "@/application/llm/modelSelection";
 import { modelPreferencesRepository } from "@/infrastructure/db/repositories/modelPreferencesRepository";
@@ -219,6 +221,7 @@ import {
   getUnknownModelPolicy,
   invalidateSettingsCache,
   isConfiguredAdmin,
+  startPublishedModelRefresh,
 } from "./runtime-settings";
 import { getMemberTier, isEffectiveConfiguredAdminByEmail } from "./memberAccess";
 import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
@@ -344,6 +347,8 @@ export const modelRegistryUseCases = createModelRegistryUseCases({
   repository: settingsRepository,
   discovery: createProviderModelDiscovery(),
   providers: getLlmProviderConfigs,
+  catalogModelId: (provider, wireId) => publishedModelCatalog.modelId(providerKind(provider), wireId),
+  catalogPricing: (provider, wireId) => publishedModelCatalog.pricing(providerKind(provider), wireId),
   changed: async () => { invalidateSettingsCache(); await getLlmProviderConfigs(); },
 });
 
@@ -1300,6 +1305,8 @@ export function getAudioRuntime() {
 }
 
 export async function runAudioWorkerService(signal: AbortSignal): Promise<void> {
+  await getLlmProviderConfigs();
+  startPublishedModelRefresh();
   const runtime = getAudioRuntime();
   await runAudioWorker({
     due: (limit) => audioJobRepository.due(new Date().toISOString(), limit),
@@ -1385,6 +1392,8 @@ export async function closeChatWorkspace(chatId: string, ownerEmail: string): Pr
 }
 
 export async function runWorkspaceWorkerService(signal: AbortSignal, heartbeat?: () => Promise<void>): Promise<void> {
+  await getLlmProviderConfigs();
+  startPublishedModelRefresh();
   const concurrency = getWorkspaceConfig()?.workerConcurrency ?? 1;
   await Promise.all([
     runWorkspaceWorker(getWorkspaceWorkerDeps(), signal, concurrency, heartbeat),
