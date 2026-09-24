@@ -605,7 +605,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(117);
+    expect(entries.length).toBe(118);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/chats/_components/PendingApproval.tsx",
       "src/app/chats/_components/NewChatEntry.tsx",
@@ -624,6 +624,7 @@ describe("the client bundle", () => {
       "src/app/settings/ModelSettingsNav.tsx",
       "src/app/settings/SettingsShell.tsx",
       "src/app/settings/SettingsForm.tsx",
+      "src/app/agents/[name]/integrations/BotIntegrationSection.tsx",
       "src/app/_components/PageTabs.tsx",
       "src/app/_components/SecretInput.tsx",
       "src/app/_components/SecretControl.tsx",
