@@ -1041,6 +1041,7 @@ export const ko: Messages = {
     "이 Agent의 봇이 설치된 Slack 워크스페이스를 에이전트가 읽게 합니다 — 채널 히스토리, 스레드, 사용자 id 조회. 읽기 전용이라 글을 쓸 수는 없습니다. 기본은 꺼짐이고, Agent에 활성화된 Slack 봇이 없으면 켜도 동작하지 않습니다. Agent는 공유 카탈로그이므로, 이 Agent를 실행할 수 있는 사람은 봇이 읽을 수 있는 것을 모두 읽을 수 있습니다.",
 
   "configuration.skills": "Skills",
+  "configuration.pickerLoadFailed": "{items} 목록을 불러오지 못했습니다. 선택 가능한 항목이 누락되었을 수 있습니다.",
   "configuration.searchSkills": "등록된 Skill 검색",
   "configuration.dynamicCapabilities": "요청마다 필요한 기능 찾기",
   "configuration.dynamicCapabilitiesHint":

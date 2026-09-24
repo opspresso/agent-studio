@@ -1107,6 +1107,7 @@ export const en = {
     "Lets the agent read the Slack workspace this Agent's bot is installed in: channel history, threads, and who a user id is. Read-only — it can never post. Off by default, and inert unless the Agent has an enabled Slack bot. Note that Agents are a shared catalog, so anyone who can run this Agent can read anything the bot can.",
 
   "configuration.skills": "Skills",
+  "configuration.pickerLoadFailed": "Could not load {items}. Available choices may be incomplete.",
   "configuration.searchSkills": "Search registered skills",
   "configuration.dynamicCapabilities": "Find capabilities for each request",
   "configuration.dynamicCapabilitiesHint":
