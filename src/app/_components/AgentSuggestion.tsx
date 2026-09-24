@@ -8,7 +8,7 @@ import type { AgentRecommendationResponse } from "@/app/api/agent-recommendation
 import type { RecommendationSurface } from "@/application/llm/agentRecommendation";
 
 interface Candidate { name: string; displayName: string }
-interface Result { key: string; name: string | null }
+interface Result { surface: RecommendationSurface; name: string }
 
 /** A reversible suggestion shared by the new Chat and Workspace forms. */
 export function AgentSuggestion({ surface, request, candidates, selected, onSelect, disabled }: {
@@ -35,7 +35,10 @@ export function AgentSuggestion({ surface, request, candidates, selected, onSele
         body: JSON.stringify({ surface, request: text }), signal: controller.signal,
       }).then(response => readJson<AgentRecommendationResponse>(response)).then(body => {
         if (!controller.signal.aborted) {
-          setResult({ key, name: body.recommendation?.name ?? null });
+          const name = body.recommendation?.name;
+          if (name && candidates.some(candidate => candidate.name === name)) {
+            setResult({ surface, name });
+          }
           setErrorKey(null);
         }
       }).catch(() => { if (!controller.signal.aborted) setErrorKey(key); });
@@ -43,17 +46,18 @@ export function AgentSuggestion({ surface, request, candidates, selected, onSele
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [surface, text, names, disabled, key]);
 
-  const recommended = result?.key === key
+  const recommended = result?.surface === surface
     ? candidates.find(candidate => candidate.name === result.name)
     : undefined;
-  if (!text || disabled || candidates.length === 0) return null;
-  if (errorKey === key) return <Alert color="yellow" variant="light" py={4}>{t("agentSuggestion.failed")}</Alert>;
-  if (!recommended) return null;
-  return <Group gap="xs" align="center" role="status">
-    <Text size="xs" c="dimmed">{t("agentSuggestion.label")}</Text>
-    <Text size="xs" fw={600}>{recommended.displayName}</Text>
-    {selected !== recommended.name && <Button size="compact-xs" variant="light" onClick={() => onSelect(recommended.name)}>
-      {t("agentSuggestion.apply")}
-    </Button>}
-  </Group>;
+  if (disabled || candidates.length === 0 || (!recommended && errorKey !== key)) return null;
+  return <>
+    {recommended && <Group gap="xs" align="center" role="status">
+      <Text size="xs" c="dimmed">{t("agentSuggestion.label")}</Text>
+      <Text size="xs" fw={600}>{recommended.displayName}</Text>
+      {selected !== recommended.name && <Button size="compact-xs" variant="light" onClick={() => onSelect(recommended.name)}>
+        {t("agentSuggestion.apply")}
+      </Button>}
+    </Group>}
+    {errorKey === key && <Alert color="yellow" variant="light" py={4}>{t("agentSuggestion.failed")}</Alert>}
+  </>;
 }
