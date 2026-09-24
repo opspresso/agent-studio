@@ -1,17 +1,18 @@
 ---
-title: 시스템 개요
-description: 제품 경계와 주요 개념을 연결하고 상세 계약과 코드로 안내하는 검색·RAG용 지도
+title: Agent Studio 시스템 개요
+description: Agent Studio의 제품 경계와 개체 관계를 설명하는 RAG·Knowledge Graph용 지도
 audience: 개발자, 운영자, 신규 기여자, 개발 에이전트
-tags: [agent-studio, control-plane, rag, mcp, workspace, offline]
+tags: [agent-studio, control-plane, rag, knowledge-graph, mcp, workspace, offline]
 ---
 
-# 시스템 개요
+# Agent Studio
 
-이 앱은 기업 내부에 설치하는 AI Agent Control Plane이다. 사용자는 Agent를 만들고
+Agent Studio는 기업 내부에 설치하는 AI Agent Control Plane이다. 사용자는 Agent를 만들고
 현재 Agent 설정에 모델·프롬프트·도구를 구성한 뒤 여러 실행 창구에서 호출한다. 앱은 접근 권한,
 자격 증명, 예산과 기록을 관리하고 OpenAI Agents SDK는 모델 턴과 도구 실행을 관리한다.
 
-이 문서는 프로젝트 전체를 이해하거나 검색·RAG 문맥으로 읽는 통합 지도다. 세부 필드·수치·절차는
+이 문서는 Agent Memory에 저장해 RAG 검색과 Knowledge Graph의 근거로 사용하는 제품 지도다.
+이하의 Agent는 Agent Studio의 실행 단위이며, Agent Memory는 별도 서비스다. 세부 필드·수치·절차는
 각 절에서 연결한 문서가 소유한다. 문서와 구현이 어긋나면 연결한 코드에서 현재 동작을 확인한다.
 
 ## 제품 경계와 배포
@@ -51,8 +52,8 @@ Skill·MCP·하위 Agent binding과 실행 정책을 저장한다. 이미지 생
 | Skill | 모델이 필요할 때 읽는 Markdown 지침과 참고 파일 |
 | Tool | 입력 schema를 받아 실제 기능을 수행하는 함수 |
 | MCP | 외부 Tool·리소스와 자격 증명을 연결하는 프로토콜 |
-| 하위 Agent | 로컬 Project 또는 외부 OpenAI 호환 실행 대상 |
-| Memory | 연결된 MCP 서버가 보관하는 장기 지식 |
+| 하위 Agent | 현재 설치에 등록된 다른 Agent(Project)의 설정을 사용하는 실행 대상 |
+| Memory | 명시적으로 연결한 MCP 서버가 보관하는 장기 기억. Agent Memory가 한 예 |
 | SDK Session | 특정 Chat에서 재생할 정확한 모델·도구 이력 |
 | Workspace checkpoint | 파일·Git·native CLI Session의 복구 상태 |
 
@@ -68,6 +69,26 @@ MCP registry는 서버 주소를 소유하고 Agent binding은 도구 목록과 
 명시적 binding을 유지하면서 capability를 추가하며, 실제 사용 전에 정책과 연결 권한을 적용한다.
 별도의 Memory recall은 명시적으로 연결한 MCP의 `recall`을 호출해 장기 지식을 실행 문맥에 넣는다.
 앱 자체의 장기 Memory DB는 없다. [Capabilities](design/capabilities.md)가 두 경로를 설명한다.
+
+## 핵심 개체 관계
+
+- Agent Studio의 Agent는 저장소와 `/api/projects`에서 Project라고 부른다. 한 Project는 공개 범위·소유권·연동·비용 정책과 하나의 현재 `AgentConfiguration`을 저장한다.
+- `AgentConfiguration`은 등록된 텍스트 모델, 선택적 fallback·이미지 모델, Skill, MCP 서버와 같은 설치의 하위 Agent를 참조한다. 등록 모델은 프로바이더 연결의 전송 ID(`wireId`)로 호출된다.
+- Agent의 실행은 현재 설정을 읽고 공통 실행 파사드와 OpenAI Agents SDK를 거친다. Chat·API·메신저·Webhook·Schedule은 진입 계약이 달라도 이 Agent 실행 경로를 공유한다.
+- Chat은 소유자의 비공개 대화다. 일반 Chat은 실행할 Agent를 가리키며, 화면 메시지·SDK Session·재연결 로그는 서로 다른 상태다.
+- Workspace는 Agent·소유자·Workspace Chat에 연결된다. Sandbox는 Workspace의 작업 실행 환경이고 checkpoint는 파일·Git·native CLI 상태를 복구한다.
+- Artifact는 Agent 실행이나 첨부에서 나온 파일이다. PostgreSQL의 목록 행이 파일을 식별하고 S3 호환 저장소가 bytes를 보관한다.
+- Agent Studio는 Agent Memory를 MCP 서버로 연결할 수 있다. Agent Memory의 문서 chunk·Knowledge Graph와 Agent Studio의 `catalog_vectors`는 서로 다른 검색 데이터다.
+
+## Agent Memory와의 경계
+
+Agent Memory는 Agent Studio와 별도로 문서 원본·검색용 chunk·Knowledge Graph를 관리한다.
+이 문서의 검색용 chunk와, Knowledge extraction을 켰을 때 생성하는 Graph 관계는 Agent Studio의
+Chat 이력이나 SDK Session이 아니다.
+Agent Studio의 자동 `memoryRecall`은 명시적으로 바인딩한 MCP 서버의 `recall`만 호출한다.
+Agent Memory에서 문서와 Graph까지 통합 검색하려면 해당 MCP의 `context_search` 도구를 Agent에
+연결해 사용한다. `catalog_vectors`는 Agent Studio의 Skill·MCP 역량 검색에 쓰이며 외부 문서 Graph를
+저장하지 않는다.
 
 ## 요청이 실행되는 방식
 
@@ -96,8 +117,9 @@ credential, schema 검증, PII 치환, 예산과 로컬 Trace를 연결한다. �
 ## 모델·스트림·실행 주체
 
 관리자가 프로바이더 연결을 등록하고 해당 연결에서 조회하거나 직접 입력한 모델을 선택한다.
-선택한 모델만 DB에 저장해 사용하며 자체 호스팅도 같은 등록 구조를 따른다. 부팅은 공개
-모델 카탈로그에 접근하지 않는다. [모델 설정](CONFIGURATION.md#llm-채널)을 보라.
+선택한 모델만 DB에 저장해 사용하며 자체 호스팅도 같은 등록 구조를 따른다. 공개 모델
+카탈로그의 응답은 부팅 필수 조건이 아니다. 갱신이 켜져 있고 등록된 공개 모델이 있으면
+비동기 조회를 시도하며, 실패해도 내장 스냅샷을 사용한다. [모델 설정](CONFIGURATION.md#llm-채널)을 보라.
 
 `EngineChunk`는 텍스트·추론·도구·사용량·경고·이미지·파일·승인·종료 정보를 전달한다.
 최상위 chunk에는 `author`가 없고 자식 출력에만 작성 경로가 있다. 이미지와 파일은 별도 축이다.
@@ -132,7 +154,7 @@ Chat 실행은 브라우저 연결이 끊겨도 계속되고, 재접속한 클�
 
 Agent의 `File` 도구는 저장된 파일을 읽고 검사하며 지원 형식을 생성·편집한다.
 편집 결과는 원본을 덮지 않는 새 파일이다. `SaveFile`은 텍스트 기반 파일을 만든다.
-이미지 Project와 이미지 도구는 생성·편집을 제공한다.
+이미지 생성·편집은 Agent의 `GenerateImage`·`EditImage` 도구로 같은 실행 경로에서 수행한다.
 [문서 설계](design/documents.md)는 형식별 지원 범위와 HTML 실행 미리보기의 격리를 설명한다.
 
 Artifact metadata는 DB에, bytes는 S3 호환 저장소에 둔다. URL 발급과 원본 접근은 별도 계약이며,
