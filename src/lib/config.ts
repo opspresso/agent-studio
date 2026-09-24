@@ -50,6 +50,7 @@ export function assertRequiredConfig(): void {
     throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
   }
   decodeAes256Key(config.aesEncryptionKey);
+  void config.publishedModelsRefreshEnabled;
   const branding = config.branding;
   for (const file of BRAND_ASSET_FILES) {
     const path = join(process.cwd(), "public", "brands", branding.logo, file);
@@ -198,6 +199,12 @@ export const config = {
       throw new Error(`Invalid STAGE: ${stage}`);
     }
     return stage;
+  },
+  get publishedModelsRefreshEnabled(): boolean {
+    const value = optionalEnv(process.env.PUBLISHED_MODELS_REFRESH)?.toLowerCase();
+    if (value === undefined || value === "on") return true;
+    if (value === "off") return false;
+    throw new Error("PUBLISHED_MODELS_REFRESH must be on or off");
   },
   /**
    * The PostgreSQL connection string; every row this app keeps lives behind

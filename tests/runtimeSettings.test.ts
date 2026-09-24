@@ -3,6 +3,16 @@ process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 9).toString("base64");
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fixtureRegistrations } from "./modelFixtures";
 import type { AppSettings } from "@/domain/settings/types";
+import { calculateCost, getModelConfig } from "@/domain/llm/models";
+import { config } from "@/lib/config";
+
+const { catalogPricing, refreshCatalog } = vi.hoisted(() => ({
+  catalogPricing: vi.fn(),
+  refreshCatalog: vi.fn(),
+}));
+vi.mock("@/infrastructure/llm/publishedModelFacts", () => ({
+  publishedModelCatalog: { pricing: catalogPricing, refreshIfDue: refreshCatalog },
+}));
 
 vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
   settingsRepository: { get: vi.fn(), put: vi.fn() },
@@ -21,6 +31,7 @@ import {
   getRerankerTarget,
   getRerankerMinScoreSelection,
   invalidateSettingsCache,
+  refreshPublishedModelPrices,
   isAdminEmail,
   isConfiguredAdmin,
 } from "@/lib/runtime-settings";
@@ -49,12 +60,15 @@ const ENV_KEYS = [
   "RERANKER_BASE_URL",
   "RERANKER_API_KEY",
   "RERANKER_MIN_SCORE",
+  "PUBLISHED_MODELS_REFRESH",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
 beforeEach(() => {
   invalidateSettingsCache();
   mockGet.mockReset();
+  catalogPricing.mockReset().mockReturnValue(undefined);
+  refreshCatalog.mockReset().mockResolvedValue(false);
   for (const key of ENV_KEYS) {
     savedEnv[key] = process.env[key];
     delete process.env[key];
@@ -74,6 +88,40 @@ afterEach(() => {
 });
 
 describe("runtime settings precedence", () => {
+  it("disables published price refresh explicitly while retaining bundled prices", async () => {
+    stub({ updatedAt: "2026-09-24T00:00:00Z" });
+    await getLlmProviderConfigs();
+    process.env.PUBLISHED_MODELS_REFRESH = "off";
+    expect(config.publishedModelsRefreshEnabled).toBe(false);
+    expect(await refreshPublishedModelPrices()).toBe(false);
+    expect(refreshCatalog).not.toHaveBeenCalled();
+    process.env.PUBLISHED_MODELS_REFRESH = "invalid";
+    expect(() => config.publishedModelsRefreshEnabled).toThrow("must be on or off");
+  });
+
+  it("uses refreshed catalog rates for selected models without changing stored registration", async () => {
+    const selected = fixtureRegistrations().find(model => model.id === "openai/gpt-5-mini")!;
+    stub({
+      registeredModels: [selected],
+      llmProviders: [{ name: "openai", baseUrl: "https://provider.test/v1", apiKey: "test-key", keepModelPrefix: false, auth: "bearer" }],
+      updatedAt: "2026-09-24T00:00:00Z",
+    });
+    catalogPricing.mockReturnValue({ inputPer1M: 1, outputPer1M: 2 });
+    await getLlmProviderConfigs();
+    expect(getModelConfig(selected.id)?.pricing.inputPer1M).toBe(1);
+    expect(calculateCost(selected.id, { inputTokens: 1_000_000, outputTokens: 0 })).toBe(1);
+
+    refreshCatalog.mockImplementationOnce(async () => {
+      catalogPricing.mockReturnValue({ inputPer1M: 3, outputPer1M: 4 });
+      return true;
+    });
+    expect(await refreshPublishedModelPrices()).toBe(true);
+    expect(calculateCost(selected.id, { inputTokens: 1_000_000, outputTokens: 0 })).toBe(3);
+    expect(mockGet).toHaveBeenCalledTimes(2);
+    expect(selected.pricing.inputPer1M).not.toBe(3);
+    expect(catalogPricing).toHaveBeenCalledWith("openai", selected.wireId);
+  });
+
   it("resolves artifact access securely from DB, env, or the authenticated default", async () => {
     process.env.ARTIFACT_ACCESS_MODE = "public";
     stub({ artifactAccessMode: "authenticated", updatedAt: "2026-01-01T00:00:00Z" });

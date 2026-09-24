@@ -20,8 +20,11 @@ export const MAX_REGISTERED_MODELS = 500;
 
 /** Provider facts are optional: a listing is not a capability or pricing guarantee. */
 export interface DiscoveredModel {
+  /** Stable published key. Self-hosted listings have no catalog key. */
+  id?: string;
   wireId: string;
   displayName: string;
+  family?: string;
   maker?: string;
   inputModalities?: string[];
   outputModalities?: string[];
@@ -38,6 +41,7 @@ export interface RegisteredModel {
   provider: string;
   wireId: string;
   displayName: string;
+  family?: string;
   maker?: string;
   inputModalities?: string[];
   outputModalities?: string[];
@@ -75,8 +79,8 @@ export function registrationFromDiscovery(provider: string, model: DiscoveredMod
   if (!model.type) throw new Error("Choose a model type before registration");
   const type = model.type;
   return {
-    id: registeredModelId(provider, model.wireId), provider, wireId: model.wireId,
-    displayName: model.displayName, ...(model.maker ? { maker: model.maker } : {}), type,
+    id: model.id ?? registeredModelId(provider, model.wireId), provider, wireId: model.wireId,
+    displayName: model.displayName, ...(model.family ? { family: model.family } : {}), ...(model.maker ? { maker: model.maker } : {}), type,
     ...(model.inputModalities ? { inputModalities: model.inputModalities } : {}),
     ...(model.outputModalities ? { outputModalities: model.outputModalities } : {}),
     contextWindow: model.contextWindow ?? 0,
@@ -89,7 +93,7 @@ export function registrationFromDiscovery(provider: string, model: DiscoveredMod
 /** Project the administrator's selected model into the facts runtime consumers share. */
 export function registeredModelConfig(model: RegisteredModel, kind: SupportedProvider): ModelConfig {
   return {
-    id: model.id, provider: model.provider, providerKind: kind, family: model.wireId,
+    id: model.id, provider: model.provider, providerKind: kind, family: model.family ?? model.wireId,
     maker: model.maker ?? kind, displayName: model.displayName, wireId: model.wireId,
     contextWindow: model.contextWindow, maxTokens: model.maxTokens,
     pricing: model.pricing ?? { inputPer1M: 0, outputPer1M: 0 }, pricingKnown: model.pricing !== undefined,
@@ -101,16 +105,17 @@ export function registeredModelConfig(model: RegisteredModel, kind: SupportedPro
       ...(model.type === "embedding" ? { embedding: true } : {}),
       ...(model.type === "rerank" ? { rerank: true } : {}),
       ...(model.type === "transcription" ? { transcription: true } : {}),
-      ...(model.type === "decisions" ? { decisions: true } : {}),
+      ...(model.type === "decision" ? { decision: true } : {}),
     },
   };
 }
 
-export function registeredModelProblem(model: RegisteredModel): string | undefined {
+export function registeredModelProblem(model: RegisteredModel, expectedId = registeredModelId(model.provider, model.wireId)): string | undefined {
   if (!/^[a-z][a-z0-9_-]{0,63}$/.test(model.provider)) return "Invalid provider name";
   if (!model.wireId.trim() || model.wireId !== model.wireId.trim() || model.wireId.length > 200 || /[\x00-\x1f\x7f]/.test(model.wireId)) return "Invalid provider model ID";
-  if (model.id !== registeredModelId(model.provider, model.wireId) || model.id.length > 200) return "Invalid registered model ID";
+  if (model.id !== expectedId || model.id.length > 200) return "Invalid registered model ID";
   if (!model.displayName.trim() || model.displayName.length > 200) return "A model display name is required";
+  if (model.family !== undefined && (!model.family.trim() || model.family.length > 200)) return "Invalid model family";
   if (!REGISTRY_MODEL_TYPES.includes(model.type)) return "Invalid model type";
   const tokenProblem = modelTokenLimitsProblem(model, model.type === "embedding" || model.type === "rerank");
   if (tokenProblem) return tokenProblem;

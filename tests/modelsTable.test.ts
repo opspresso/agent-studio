@@ -50,8 +50,8 @@ const visible = (rows: typeof models, state: Partial<ModelBrowserState>) => filt
 
 describe("models table", () => {
   it("restores browser filters and ordering while rejecting malformed saved preferences", () => {
-    expect(deserializeModelBrowserState(JSON.stringify({ query: "Jev", type: "decisions", selectedOnly: true, capabilities: ["tools", "invalid"], sortKey: "price", direction: "desc", page: 3 })))
-      .toMatchObject({ query: "Jev", type: "decisions", selectedOnly: true, capabilities: ["tools"], sortKey: "price", direction: "desc", page: 3 });
+    expect(deserializeModelBrowserState(JSON.stringify({ query: "Jev", type: "decision", selectedOnly: true, capabilities: ["tools", "invalid"], sortKey: "price", direction: "desc", page: 3 })))
+      .toMatchObject({ query: "Jev", type: "decision", selectedOnly: true, capabilities: ["tools"], sortKey: "price", direction: "desc", page: 3 });
     expect(deserializeModelBrowserState("invalid JSON")).toEqual(DEFAULT_MODEL_BROWSER_STATE);
     expect(deserializeModelBrowserState(JSON.stringify({ page: -1, selectedOnly: "true", sortKey: "invalid", query: 4 })))
       .toMatchObject({ page: 1, selectedOnly: false, sortKey: "name", query: "" });
@@ -68,7 +68,7 @@ describe("models table", () => {
       { displayName: "Unknown" },
       { displayName: "Paid", type: "text" as const, pricing: { inputPer1M: 1, outputPer1M: 2 } },
       { displayName: "Free", type: "text" as const, pricing: { inputPer1M: 0, outputPer1M: 0 } },
-      { displayName: "Jev", type: "decisions" as const, pricing: { inputPer1M: 0.042, outputPer1M: 0 } },
+      { displayName: "Jev", type: "decision" as const, pricing: { inputPer1M: 0.042, outputPer1M: 0 } },
     ];
     expect(sortModelRows(rows, "price", "asc").map(model => model.displayName)).toEqual(["Free", "Jev", "Paid", "Unknown"]);
     expect(sortModelRows(rows, "price", "desc").map(model => model.displayName)).toEqual(["Paid", "Jev", "Free", "Unknown"]);

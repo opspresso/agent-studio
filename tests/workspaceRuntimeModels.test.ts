@@ -28,7 +28,7 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks(); 
 describe("Workspace runtime model selection", () => {
   it("excludes decision models from native CLI runtime choices even if tools is set", () => {
     const decision = { ...openai, id: "openrouter/jev", provider: "openrouter", providerKind: "openrouter" as const,
-      capabilities: { ...openai.capabilities, decisions: true, tools: true } };
+      capabilities: { ...openai.capabilities, decision: true, tools: true } };
     expect(workspaceRuntimeModelCompatible("codex", decision)).toBe(false);
     expect(workspaceRuntimeModelCompatible("opencode", decision)).toBe(false);
   });

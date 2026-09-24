@@ -90,8 +90,9 @@ export async function register(): Promise<void> {
     // first audited act, which writes nothing and says nothing.
     assertAuditSinkWired();
     // Required boot paths read only the deployment's persisted model selections.
-    const { getLlmProviderConfigs } = await import("@/lib/runtime-settings");
+    const { getLlmProviderConfigs, startPublishedModelRefresh } = await import("@/lib/runtime-settings");
     await getLlmProviderConfigs();
+    startPublishedModelRefresh();
     // The import is inside the guard so the edge build folds it away, and off
     // the awaited path because evaluating the composition root constructs every
     // AWS client — `register` is awaited before the server accepts connections,

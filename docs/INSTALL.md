@@ -252,8 +252,14 @@ Release workflow는 새 tag를 `argocd-env-demo`에 전달한다. Kubernetes man
 
 부팅·로그인·런·콘솔은 public internet 없이 동작한다. 이미지는 외부에서 빌드해 사내 registry로
 mirror하고, 모델은 `/settings/providers`에서 사내 endpoint를 등록한 뒤 `/settings/models`에서
-조회하거나 직접 등록한다. Plugin은 `/plugins`에서 checkout archive를 업로드할 수 있다. 내부 URL과 MCP
+공개 모델을 조회하거나 내부 self-hosted 모델을 직접 등록한다. Plugin은 `/plugins`에서 checkout archive를 업로드할 수 있다. 내부 URL과 MCP
 주소는 각각 `URL_FETCH_INTERNAL_HOST_SUFFIXES`, `MCP_INTERNAL_HOST_SUFFIXES`에 선언한다.
+공개 Provider의 모델 목록·가격은 연결 가능할 때 `models.opspresso.com/models.json`에서
+갱신하며, 폐쇄망에서는 이미지에 포함된 검증된 스냅샷을 사용한다. 사내 모델 목록은
+해당 내부 연결에서 조회한다. 스냅샷을 새로 포함하려면 외부에서 `pnpm sync-models`를 실행하거나
+`pnpm sync-models --from <models.json>`으로 받은 파일을 적용해 이미지를 다시 빌드한다.
+`PUBLISHED_MODELS_REFRESH=off`를 설정하면 런타임의 공개 API 접속 시도를 끄고 내장
+스냅샷만 사용한다. 설정하지 않으면 15분 간격의 비동기 갱신을 시도한다.
 
 문서 파서·생성기와 PDF용 한글 폰트는 앱 이미지에 포함된다. 별도 문서 MCP 서버나
 런타임 다운로드는 필요 없다. 지원 형식과 워커 실행 제약은
@@ -287,6 +293,9 @@ v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQ
 자동 이관하지 않으므로, 모델 등록이 없는 설치는 관리 화면에서 연결과 사용할 모델을 등록하고
 기존 Agent의 모델 ID 및 기본·Embedding·Rerank·Workspace 선택을 확인한다. 등록 전에는 해당
 모델 실행이 거부된다. 테이블을 직접 수정할 필요는 없으며 [모델 등록과 사용](CONFIGURATION.md#모델-등록과-사용)을 따른다.
+이번 변경의 공개 모델 `id`와 이전 `decisions` 유형은 자동 변환되지 않는다. 대체 모델을
+API의 `id`·`decision` 유형으로 먼저 등록하고 기본·Decision·Embedding·Rerank·Workspace
+선택 및 기존 Agent의 모델 ID를 바꾼 뒤, 참조가 없어진 이전 등록을 삭제한다.
 
 새 image tag의 앱은 부팅 시 advisory lock 아래에서 schema migration을 적용한다.
 개발 중인 프로젝트라 API·설정·저장 형식의 하위 호환을 보장하지 않으며 자동 down migration도 없다.

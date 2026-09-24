@@ -2,7 +2,6 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { build } from "esbuild";
 import { test, expect } from "@playwright/test";
-import { createProviderModelDiscovery } from "../src/infrastructure/llm/providerModelDiscovery";
 import type { DiscoveredModel, RegisteredModel } from "../src/domain/llm/providerModels";
 
 let server: Server;
@@ -17,15 +16,16 @@ let favorites: string[];
 let failFavorites: boolean;
 
 test.beforeAll(async () => {
-  discovered = await createProviderModelDiscovery(async () => Response.json({ data: [
-    { id: "vendor/zeta", name: "Zeta", architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] },
-      supported_parameters: ["tools", "reasoning", "structured_outputs"], context_length: 1000000,
-      top_provider: { max_completion_tokens: 128000 }, pricing: { prompt: "0.00001", completion: "0.00002", input_cache_read: "0.000001" } },
-    { id: "vendor/alpha", name: "Alpha", architecture: { output_modalities: ["text"] }, pricing: { prompt: "0.000002", completion: "0.000004" } },
-    { id: "~typesafe/jev-latest", name: "TypeSafe: Jev Latest", architecture: { input_modalities: ["text"], output_modalities: ["decisions"] },
-      supported_parameters: [], context_length: 32000, top_provider: { max_completion_tokens: 28800 }, pricing: { prompt: "0.000000042", completion: "0" } },
-    { id: "constructor", name: "Unknown" },
-  ] })).list({ name: "fixture", kind: "openrouter", baseUrl: "https://provider.test/v1", apiKey: "", auth: "bearer", keepModelPrefix: false });
+  discovered = [
+    { id: "openrouter/zeta", wireId: "vendor/zeta", displayName: "Zeta", type: "text", inputModalities: ["text", "image"], outputModalities: ["text"],
+      capabilities: { tools: true, imageInput: true, reasoning: true, structuredOutput: true },
+      contextWindow: 1000000, maxTokens: 128000, pricing: { inputPer1M: 10, outputPer1M: 20, cachedInputPer1M: 1 } },
+    { wireId: "vendor/alpha", displayName: "Alpha", type: "text", outputModalities: ["text"], pricing: { inputPer1M: 2, outputPer1M: 4 } },
+    { wireId: "~typesafe/jev-latest", displayName: "TypeSafe: Jev Latest", type: "decision", inputModalities: ["text"],
+      outputModalities: ["decision"], contextWindow: 32000, maxTokens: 28800,
+      capabilities: { tools: false, imageInput: false, reasoning: false, structuredOutput: false }, pricing: { inputPer1M: 0.042, outputPer1M: 0 } },
+    { wireId: "constructor", displayName: "Unknown" },
+  ];
   const bundle = await build({ entryPoints: ["browser-tests/fixtures/model-selection.tsx"], bundle: true, write: false,
     outdir: "/tmp/agent-studio-model-fixture", platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' } });
   server = createServer((request, response) => {
@@ -38,6 +38,7 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 test.beforeEach(async ({ page }) => {
+  discovered[0] = { ...discovered[0]!, pricing: { inputPer1M: 10, outputPer1M: 20, cachedInputPer1M: 1 } };
   selected = []; saves = []; blockDeletion = false; failDiscovery = false; failFavorites = false; discoveryQueries = []; favorites = [];
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
@@ -90,27 +91,36 @@ test("shows multiple capability badges, limits and prices and supports name/pric
   await expect(cards.first()).toContainText("Zeta");
 });
 
-test("finds a discovered model by its future provider-qualified ID", async ({ page }) => {
-  await page.getByRole("textbox", { name: "Search models" }).fill("fixture/vendor/zeta");
+test("updates a selected model's displayed rate after catalog rediscovery", async ({ page }) => {
+  const zeta = page.getByRole("article").filter({ hasText: "Zeta" });
+  await zeta.getByRole("button", { name: "Add model" }).click();
+  await expect(zeta).toContainText("$10.00 in");
+  discovered[0] = { ...discovered[0]!, pricing: { inputPer1M: 12, outputPer1M: 24 } };
+  await page.getByRole("button", { name: "Discover models", exact: true }).click();
+  await expect(zeta).toContainText("$12.00 in");
+});
+
+test("finds a discovered model by its published ID", async ({ page }) => {
+  await page.getByRole("textbox", { name: "Search models" }).fill("openrouter/zeta");
   await expect(page.getByRole("article")).toHaveCount(1);
   await expect(page.getByRole("article")).toContainText("Zeta");
 });
 
-test("adds Jev immediately without a dialog and retains decisions after reload and in selected models", async ({ page }) => {
+test("adds Jev immediately without a dialog and retains decision type after reload", async ({ page }) => {
   const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
-  await expect(jev).toContainText("Decisions");
+  await expect(jev).toContainText("Decision");
   await expect(jev).toContainText("32K");
   await jev.getByRole("button", { name: "Add model" }).click();
   await expect(jev).toContainText("Selected");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(saves).toHaveLength(1);
-  expect(saves[0]).toMatchObject({ id: "fixture/~typesafe/jev-latest", type: "decisions", contextWindow: 32000, maxTokens: 28800, outputModalities: ["decisions"], pricing: { inputPer1M: expect.closeTo(0.042), outputPer1M: 0 } });
+  expect(saves[0]).toMatchObject({ id: "fixture/~typesafe/jev-latest", type: "decision", contextWindow: 32000, maxTokens: 28800, outputModalities: ["decision"], pricing: { inputPer1M: expect.closeTo(0.042), outputPer1M: 0 } });
   await page.reload();
   await page.getByRole("button", { name: "Discover models", exact: true }).click();
   await expect(jev).toContainText("Selected");
   await page.goto(`${base}/selected`);
   await expect(page.getByRole("article")).toHaveCount(1);
-  await expect(page.getByRole("article")).toContainText("Decisions");
+  await expect(page.getByRole("article")).toContainText("Decision");
   await expect(page.getByRole("button", { name: "Add model" })).toHaveCount(0);
 });
 
@@ -118,11 +128,11 @@ test("requires an inline type choice for missing metadata instead of defaulting 
   const unknown = page.getByRole("article").filter({ hasText: "Unknown" });
   await expect(unknown.getByRole("button", { name: "Add model" })).toBeDisabled();
   await unknown.getByRole("combobox").click();
-  await page.getByRole("option", { name: "Decisions", exact: true }).click();
+  await page.getByRole("option", { name: "Decision", exact: true }).click();
   await unknown.getByRole("button", { name: "Add model" }).click();
   await expect(unknown).toContainText("Selected");
-  await expect(unknown).toContainText("Decisions");
-  expect(saves[0]?.type).toBe("decisions");
+  await expect(unknown).toContainText("Decision");
+  expect(saves[0]?.type).toBe("decision");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 

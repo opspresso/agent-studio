@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { calculateCost, calculateImageCost, getModelConfig } from "@/domain/llm/models";
+import { addTestModels } from "./modelFixtures";
 
 describe("calculateCost", () => {
   it("computes input + output cost from registry pricing", () => {
@@ -19,6 +20,16 @@ describe("calculateCost", () => {
       cachedTokens: 1_000_000,
     });
     expect(cost).toBeCloseTo(0.03, 10);
+  });
+
+  it("uses published net rates without applying their promotional discount twice", () => {
+    addTestModels([{
+      ...getModelConfig("openai/gpt-5-mini")!, id: "openrouter/promotional",
+      provider: "openrouter", pricing: { inputPer1M: 2, outputPer1M: 10, discount: 0.5 },
+    }]);
+    expect(calculateCost("openrouter/promotional", {
+      inputTokens: 1_000_000, outputTokens: 1_000_000,
+    })).toBe(12);
   });
 
   it("returns 0 for an unknown model", () => {

@@ -3,12 +3,14 @@ import { modelRegistryUseCases } from "@/lib/container";
 import { withAdminAuth, withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
-import { REGISTRY_MODEL_TYPES, type RegisteredModel } from "@/domain/llm/providerModels";
+import { REGISTRY_MODEL_TYPES } from "@/domain/llm/providerModels";
+import type { RegisteredModelView } from "@/application/llm/modelRegistry";
 
 const rate = z.number().finite().nonnegative();
 const schema = z.object({
   id: z.string().min(1).max(200), provider: z.string().min(1).max(64),
   wireId: z.string().min(1).max(200), displayName: z.string().min(1).max(200),
+  family: z.string().min(1).max(200).optional(),
   maker: z.string().min(1).max(100).optional(),
   inputModalities: z.array(z.string().min(1).max(40)).max(16).optional(),
   outputModalities: z.array(z.string().min(1).max(40)).max(16).optional(),
@@ -18,7 +20,7 @@ const schema = z.object({
   pricing: z.object({ inputPer1M: rate, outputPer1M: rate, cachedInputPer1M: rate.optional(), imageInputPer1M: rate.optional(), imageOutputPer1M: rate.optional(), perImage: rate.optional(), perInputImage: rate.optional(), perSearch: rate.optional(), perAudioMinute: rate.optional(), discount: rate.optional() }).optional(),
 });
 
-export interface ModelRegistryResponse { models: RegisteredModel[] }
+export interface ModelRegistryResponse { models: RegisteredModelView[] }
 
 export const GET = withMemberAuth(async () => {
   try { return Response.json({ models: await modelRegistryUseCases.list() } satisfies ModelRegistryResponse); }

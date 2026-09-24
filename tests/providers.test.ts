@@ -3,6 +3,7 @@ import {
   parseProviderConfigs,
   resolveProviderTarget,
 } from "@/infrastructure/llm/providers";
+import { addTestModels } from "./modelFixtures";
 
 
 describe("parseProviderConfigs", () => {
@@ -121,6 +122,20 @@ describe("resolveProviderTarget", () => {
     const target = resolveProviderTarget("anthropic/claude-opus-4.8", anthropic);
     expect(target.providerName).toBe("anthropic");
     expect(target.model).toBe("claude-opus-4-8");
+  });
+
+  it("routes a published ID through its registered connection using the separate wire ID", () => {
+    addTestModels([{
+      id: "openrouter/gpt-6-sol", provider: "company-router", providerKind: "openrouter",
+      family: "openai/gpt-6-sol", wireId: "openai/gpt-6-sol", maker: "openai", displayName: "GPT-6 Sol",
+      contextWindow: 1_000_000, maxTokens: 128_000,
+      capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+      pricing: { inputPer1M: 4, outputPer1M: 20 },
+    }]);
+    expect(resolveProviderTarget("openrouter/gpt-6-sol", [{
+      name: "company-router", kind: "openrouter", baseUrl: "https://router.example/v1",
+      apiKey: "test-key", auth: "bearer", keepModelPrefix: false,
+    }])).toMatchObject({ providerName: "openrouter", model: "openai/gpt-6-sol" });
   });
 
   it("keeps the full id when the channel wants the prefix, wire id or not", () => {

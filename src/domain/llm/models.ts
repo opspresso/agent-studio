@@ -28,7 +28,7 @@ export interface ModelPricing {
 }
 
 export interface ModelCapabilities {
-  decisions?: boolean;
+  decision?: boolean;
   tools: boolean;
   structuredOutput: boolean;
   imageInput: boolean;
@@ -40,7 +40,7 @@ export interface ModelCapabilities {
   reasoningWithTools?: boolean;
 }
 
-export const MODEL_TYPES = ["text", "image", "transcription", "embedding", "rerank", "decisions"] as const;
+export const MODEL_TYPES = ["text", "image", "transcription", "embedding", "rerank", "decision"] as const;
 export type ModelType = (typeof MODEL_TYPES)[number];
 
 export interface ModelConfig {
@@ -92,7 +92,7 @@ export function listModelMakers(): Record<string, string> {
 
 /** The catalog's mutually exclusive model types, derived from capability flags. */
 export function modelType(model: Pick<ModelConfig, "capabilities">): ModelType {
-  if (model.capabilities.decisions === true) return "decisions";
+  if (model.capabilities.decision === true) return "decision";
   if (model.capabilities.embedding === true) return "embedding";
   if (model.capabilities.rerank === true) return "rerank";
   if (model.capabilities.transcription === true) return "transcription";
