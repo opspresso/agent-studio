@@ -45,7 +45,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { ActionIcon, Box, CopyButton, Group, Image, Modal, Stack, Text } from "@mantine/core";
-import { IconCheck, IconCopy, IconInfoCircle, IconX } from "@tabler/icons-react";
+import { IconCheck, IconCopy, IconInfoCircle, IconX, IconZoomIn, IconZoomOut } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
 
 export type ViewedImage = {
@@ -161,6 +161,18 @@ export function ImageViewerProvider({ children }: { children: React.ReactNode })
                 zIndex: 2,
               }}
             >
+              <ActionIcon
+                variant="default"
+                size="lg"
+                aria-label={t(actual ? "viewer.fit" : "viewer.actual")}
+                title={t(actual ? "viewer.fit" : "viewer.actual")}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setActual((current) => !current);
+                }}
+              >
+                {actual ? <IconZoomOut size={18} /> : <IconZoomIn size={18} />}
+              </ActionIcon>
               <ActionIcon
                 variant={showInfo ? "filled" : "default"}
                 size="lg"
