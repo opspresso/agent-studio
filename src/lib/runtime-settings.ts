@@ -306,9 +306,21 @@ export async function getServiceBranding(): Promise<Branding> {
     stored?.serviceLogo ?? optionalEnv(process.env.SERVICE_LOGO));
 }
 
-export async function getCatalogMinScore(): Promise<number> {
+export async function getCatalogMinScoreSelection(): Promise<ScoreSelection> {
   const stored = (await loadSettings())?.catalogMinScore;
-  return stored === undefined ? config.catalogMinScore : Number(stored);
+  if (stored !== undefined) {
+    const value = Number(stored);
+    if (Number.isFinite(value) && value >= 0 && value <= 1) {
+      return { value, source: "override" };
+    }
+  }
+  return optionalEnv(process.env.CATALOG_MIN_SCORE) !== undefined
+    ? { value: config.catalogMinScore, source: "env" }
+    : { value: config.catalogMinScore, source: "default" };
+}
+
+export async function getCatalogMinScore(): Promise<number> {
+  return (await getCatalogMinScoreSelection()).value;
 }
 
 export async function getMaxConcurrentRunsPerActor(): Promise<number> {
@@ -336,8 +348,17 @@ export async function getArtifactAccessMode(): Promise<ArtifactAccessMode> {
  * module. The parsing is the domain's, one layer below both of us.
  */
 export async function getUnknownModelPolicy(): Promise<UnknownModelPolicy> {
+  return (await getUnknownModelPolicySelection()).value;
+}
+
+export async function getUnknownModelPolicySelection(): Promise<{
+  value: UnknownModelPolicy;
+  source: "override" | "env" | "default";
+}> {
   const stored = (await loadSettings())?.unknownModelPolicy;
-  return toUnknownModelPolicy(stored ?? process.env.UNKNOWN_MODEL_POLICY);
+  if (stored !== undefined) return { value: toUnknownModelPolicy(stored), source: "override" };
+  const env = optionalEnv(process.env.UNKNOWN_MODEL_POLICY);
+  return { value: toUnknownModelPolicy(env), source: env === undefined ? "default" : "env" };
 }
 
 /** Docker compute infrastructure is deployment-owned; project and model settings are stored separately. */

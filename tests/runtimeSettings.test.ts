@@ -22,7 +22,9 @@ import { settingsRepository } from "@/infrastructure/db/repositories/settingsRep
 import {
   getArtifactAccessMode,
   getCatalogMinScore,
+  getCatalogMinScoreSelection,
   getMaxConcurrentRunsPerActor,
+  getUnknownModelPolicySelection,
   getS3PublicBaseUrl,
   getSlackLoadingIndicator,
   getAdminEmails,
@@ -53,6 +55,7 @@ function stub(settings: AppSettings | null): void {
 
 const ENV_KEYS = [
   "CATALOG_MIN_SCORE",
+  "UNKNOWN_MODEL_POLICY",
   "MAX_CONCURRENT_RUNS_PER_ACTOR",
   "S3_PUBLIC_BASE_URL",
   "SLACK_LOADING_INDICATOR",
@@ -101,11 +104,24 @@ describe("runtime settings precedence", () => {
     process.env.MAX_CONCURRENT_RUNS_PER_ACTOR = "9";
     stub({ catalogMinScore: "0.4", maxConcurrentRunsPerActor: "2", updatedAt: "2026-09-24T00:00:00Z" });
     await expect(getCatalogMinScore()).resolves.toBe(0.4);
+    await expect(getCatalogMinScoreSelection()).resolves.toEqual({ value: 0.4, source: "override" });
     await expect(getMaxConcurrentRunsPerActor()).resolves.toBe(2);
     invalidateSettingsCache();
     stub(null);
     await expect(getCatalogMinScore()).resolves.toBe(0.3);
+    await expect(getCatalogMinScoreSelection()).resolves.toEqual({ value: 0.3, source: "env" });
     await expect(getMaxConcurrentRunsPerActor()).resolves.toBe(9);
+  });
+
+  it("reports the effective model price policy source", async () => {
+    process.env.UNKNOWN_MODEL_POLICY = "refuse";
+    stub({ unknownModelPolicy: "allow", updatedAt: "2026-09-24T00:00:00Z" });
+    await expect(getUnknownModelPolicySelection()).resolves.toEqual({ value: "allow", source: "override" });
+    invalidateSettingsCache();
+    stub(null);
+    await expect(getUnknownModelPolicySelection()).resolves.toEqual({ value: "refuse", source: "env" });
+    delete process.env.UNKNOWN_MODEL_POLICY;
+    await expect(getUnknownModelPolicySelection()).resolves.toEqual({ value: "allow", source: "default" });
   });
 
   it("applies saved public object and Slack display settings", async () => {

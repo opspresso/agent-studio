@@ -33,9 +33,9 @@ describe("settings tab updates", () => {
     expect(settingsPatch("plugins", { ...current, githubToken: "" }, view)).toEqual({ githubToken: "" });
     expect(settingsPatch("service", { ...current, serviceLogo: "" }, view)).toEqual({ serviceLogo: "" });
   });
-  it("saves the unpriced-model policy from General without touching model selections", () => {
-    expect(settingsPatch("service", { ...current, unknownModelPolicy: "refuse" }, view)).toEqual({ unknownModelPolicy: "refuse" });
-    expect(settingsPatch("plugins", { ...current, unknownModelPolicy: "refuse" }, view)).toEqual({});
+  it("keeps model scoring and price policies out of Service and Plugins", () => {
+    expect(settingsPatch("service", { ...current, unknownModelPolicy: "refuse", catalogMinScore: "0.4" }, view)).toEqual({});
+    expect(settingsPatch("plugins", { ...current, unknownModelPolicy: "refuse", catalogMinScore: "0.4" }, view)).toEqual({});
   });
   it("never clears fields missing from a partial draft", () => {
     const values: Partial<Record<SettingKey, string>> = { pluginsRepo: "org/new" };

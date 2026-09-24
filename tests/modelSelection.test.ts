@@ -98,6 +98,7 @@ function deps(initial: AppSettings | null = null): {
       settings: { getView: vi.fn() as never, update: update as never },
       current: async () => undefined,
       currentRerankerMinScore: async () => Number(stored?.rerankerMinScore ?? 0.01),
+      currentCatalogMinScore: async () => Number(stored?.catalogMinScore ?? 0.25),
       available: () => true,
       hidden: async () => undefined,
       testReranker,
@@ -218,6 +219,51 @@ describe("modelSelectionUseCases", () => {
     expect(setup.value()?.embeddingModel).toBe("legacy-model");
     expect(setup.reindex).toHaveBeenCalledTimes(2);
     expect(setup.invalidate).toHaveBeenCalledTimes(2);
+  });
+
+  it("changes the embedding score floor without rebuilding vectors", async () => {
+    installModels();
+    const setup = deps({ embeddingModel: EMBEDDING, catalogMinScore: "0.25", updatedAt: "2026-01-01T00:00:00Z" });
+    setup.deps.current = async () => EMBEDDING;
+    await createModelSelectionUseCases(setup.deps).select("embedding", EMBEDDING, false, "admin@example.com", undefined, 0.35);
+    expect(setup.value()?.catalogMinScore).toBe("0.35");
+    expect(setup.reindex).not.toHaveBeenCalled();
+    expect(setup.deps.lock.acquire).not.toHaveBeenCalled();
+    expect(setup.invalidate).toHaveBeenCalledOnce();
+  });
+
+  it("applies the embedding score before rebuilding for a new model", async () => {
+    installModels();
+    const setup = deps();
+    setup.reindex.mockImplementation(async () => {
+      expect(setup.value()).toMatchObject({ embeddingModel: EMBEDDING, catalogMinScore: "0.4" });
+      return { indexed: 12, removed: 0, undiscovered: [] };
+    });
+    await createModelSelectionUseCases(setup.deps).select("embedding", EMBEDDING, true, "admin@example.com", undefined, 0.4);
+    expect(setup.reindex).toHaveBeenCalledOnce();
+  });
+
+  it("restores both the embedding model and its score when migration fails", async () => {
+    installModels();
+    const setup = deps({ embeddingModel: "legacy-model", catalogMinScore: "0.2", updatedAt: "2026-01-01T00:00:00Z" });
+    setup.reindex.mockRejectedValueOnce(new Error("new model failed"))
+      .mockResolvedValueOnce({ indexed: 12, removed: 0, undiscovered: [] });
+    await expect(createModelSelectionUseCases(setup.deps).select(
+      "embedding", EMBEDDING, true, "admin@example.com", undefined, 0.4,
+    )).rejects.toThrow("new model failed");
+    expect(setup.value()).toMatchObject({ embeddingModel: "legacy-model", catalogMinScore: "0.2" });
+    expect(setup.update).toHaveBeenNthCalledWith(1, { embeddingModel: EMBEDDING, catalogMinScore: "0.4" }, "admin@example.com");
+    expect(setup.update).toHaveBeenNthCalledWith(2, { embeddingModel: "legacy-model", catalogMinScore: "0.2" }, "admin@example.com");
+  });
+
+  it("rejects score floors on the wrong model type", async () => {
+    installModels();
+    const setup = deps();
+    await expect(createModelSelectionUseCases(setup.deps).select("rerank", RERANKER, false, "admin@example.com", undefined, 0.3))
+      .rejects.toThrow("only to embedding models");
+    await expect(createModelSelectionUseCases(setup.deps).select("embedding", EMBEDDING, true, "admin@example.com", 0.3))
+      .rejects.toThrow("only to rerank models");
+    expect(setup.update).not.toHaveBeenCalled();
   });
 
   it("changes a rerank model without rebuilding vectors and rejects the wrong type", async () => {

@@ -9,6 +9,7 @@ const selectionSchema = z.object({
   model: z.string().min(1).max(200),
   migrate: z.boolean().optional(),
   rerankerMinScore: z.number().min(0).max(1).optional(),
+  catalogMinScore: z.number().min(0).max(1).optional(),
 });
 
 export const PUT = withAdminAuth(async (user, request: Request) => {
@@ -28,6 +29,7 @@ export const PUT = withAdminAuth(async (user, request: Request) => {
         parsed.data.migrate === true,
         user.email,
         parsed.data.rerankerMinScore,
+        parsed.data.catalogMinScore,
       ),
     );
   } catch (error) {

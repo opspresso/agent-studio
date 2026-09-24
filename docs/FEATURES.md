@@ -752,10 +752,10 @@ Profile에서 본인 정보와 사용량을 조회한다.
 
 | 탭 | 관리 항목 |
 |---|---|
-| Service | 서비스 이름·로고, 공개 주소·Artifact 전달, 가격 미지정 모델·검색 점수·동시 실행 정책, Slack 로딩 표시 |
+| Service | 서비스 이름·로고, 공개 주소·Artifact 전달, 동시 실행 한도, Slack 로딩 표시 |
 | Access | 관리자 이메일·허용 도메인 |
 | Plugins | Plugin GitHub 저장소·Branch·Token |
-| Models | 프로바이더 연결, 모델 선택·등록 관리, 기본·Workspace·검색 모델 사용 설정 |
+| Models | 프로바이더 연결, 모델 조회·등록 관리, 기본·Workspace·검색 모델 사용 설정, Embedding·Rerank 점수와 가격 미지정 모델 정책 |
 
 ### 설정 공통
 

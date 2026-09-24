@@ -26,12 +26,7 @@ export const SETTINGS_FIELDS: Record<SettingsSection, SettingField[]> = {
       { value: "proxied", label: "settings.artifactAccess.proxied" },
       { value: "public", label: "settings.artifactAccess.public" },
     ] },
-    { key: "unknownModelPolicy", label: "settings.field.unknownModelPolicy", group: "settings.group.execution", hint: "settings.hint.unknownModelPolicy", type: "select", fallback: "allow", options: [
-      { value: "allow", label: "settings.unknownModelPolicy.allow" },
-      { value: "refuse", label: "settings.unknownModelPolicy.refuse" },
-    ] },
-    { key: "catalogMinScore", label: "settings.field.catalogMinScore", hint: "settings.hint.catalogMinScore", type: "number", min: 0, max: 1, step: 0.01 },
-    { key: "maxConcurrentRunsPerActor", label: "settings.field.maxConcurrentRuns", hint: "settings.hint.maxConcurrentRuns", type: "number", min: 0, max: MAX_RUN_SLOTS, step: 1 },
+    { key: "maxConcurrentRunsPerActor", label: "settings.field.maxConcurrentRuns", group: "settings.group.execution", hint: "settings.hint.maxConcurrentRuns", type: "number", min: 0, max: MAX_RUN_SLOTS, step: 1 },
     { key: "slackLoadingIndicator", label: "settings.field.slackLoading", group: "settings.group.messaging", hint: "settings.hint.slackLoading", type: "text", placeholder: ":hourglass_flowing_sand:" },
   ],
   access: [

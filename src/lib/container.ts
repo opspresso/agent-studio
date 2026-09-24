@@ -571,6 +571,7 @@ export const modelSelectionUseCases = createModelSelectionUseCases({
       ? (await getEmbeddingModelSelection()).model || undefined
       : (await getRerankerModelSelection())?.model,
   currentRerankerMinScore: getRerankerMinScore,
+  currentCatalogMinScore: getCatalogMinScore,
   available: (type) =>
     type === "embedding" ? catalogDeps !== undefined : catalogDeps?.reranker !== undefined,
   hidden: async () => undefined,

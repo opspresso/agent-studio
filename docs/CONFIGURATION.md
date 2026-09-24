@@ -92,7 +92,7 @@ fail-open 이 될 수는 없다.
 | `ARTIFACT_ACCESS_MODE` | `authenticated` | **runtime** | 독자가 저장된 오브젝트에 어떻게 닿는가. **`proxied`**. 앱 자신의 주소 `PUBLIC_BASE_URL/api/objects/<key>?exp=&sig=[&dl=]` 를 건네고 앱이 바이트로 답한다(`PUBLIC_BASE_URL` 이 없으면 경로만, 콘솔은 같은 origin 이라 닿지만 Slack 같은 외부 독자에게는 주소가 아니다). 모델 입력 이미지는 URL이 아니라 저장소에서 읽은 bounded inline bytes로 전달된다. 스토어는 앱에게만 닿으면 되므로 설치형의 선택이다. 토큰이 증명하는 것과 수명은 [SECURITY.md](SECURITY.md#데이터-노출과-보존). **`authenticated`**. 유효 기간이 있는 스토어의 pre-signed URL. 브라우저가 스토어에 직접 닿을 수 있어야 한다. **`public`**. 영구적인 직접 URL. 버킷 정책이 `artifacts/*` 와 레거시 `images/*` 의 공개 읽기를 허용할 때만 동작한다. **다운로드 링크는 `public` 에서도 pre-signed 다**: 브라우저가 저장할 파일명이 요청 서명에 실려 가는데 S3 는 익명 GET 에서 `response-*` 오버라이드를 거부하기 때문이다. 그래서 `public` 모드에서 문서의 주소는 유효 기간이 있고 이미지의 주소는 영구로 남는다. public 모드는 갤러리 메타데이터와 삭제가 인증을 유지하더라도 URL 을 손에 넣은 누구에게나 오브젝트를 노출한다. 모르는 값은 `authenticated` 로 fail-closed 된다. |
 | `CATALOG_ENABLED` | `false` | — | `true` 면 이 배포가 capability 카탈로그를 갖는다. 벡터는 데이터베이스의 `catalog_vectors` 에 있고 따로 가리킬 것은 없다. 설정하지 않으면 `POST /api/catalog/reindex` 는 503 으로 답하고, 런은 자기 설정에 바인딩한 것만 제공한다. 그 503 에는 원인이 둘 있고 토큰 검사가 먼저 돌므로, `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우에도 메시지만 다른 같은 상태 코드가 나온다. 기본이 꺼짐인 이유: 카탈로그에는 배포의 채널이 서빙하는 임베딩 모델이 필요한데 부팅 때 그것을 확인할 길이 없다. 켜는 것은 그 모델이 있다는 선언이다. |
 | `EMBEDDING_DIM` | `1024` | — | provider 에 요청하는 폭. `native` 는 폭 파라미터를 생략해 모델의 native dimension을 쓴다. 테이블의 모든 행이 같은 폭이어야 pgvector 가 거리를 계산하므로 값을 바꾼 뒤 반드시 재색인하라. Cohere v4, Titan v2, OpenAI v3처럼 폭 선택을 지원하는 모델은 명시값을 사용하고, 폭 파라미터를 거부하는 모델은 `native` 를 사용한다. |
-| `CATALOG_MIN_SCORE` | `0.25` | **runtime** | vector 검색의 절대 하한. 유한한 숫자는 0–1로 clamp하고 그 밖에는 기본값을 사용하며 경고한다. query별 최고 점수의 상대 하한과 함께 적용한다. 모델·질의 언어가 바뀌면 [선택 절차](#임베딩-모델-선택)로 다시 확인한다. |
+| `CATALOG_MIN_SCORE` | `0.25` | **models** | vector 검색의 절대 하한. 유한한 숫자는 0–1로 clamp하고 그 밖에는 기본값을 사용하며 경고한다. query별 최고 점수의 상대 하한과 함께 적용한다. Settings → Models → Model usage에서 활성 Embedding 모델과 함께 저장한다. 점수만 바꾸면 재색인하지 않으며, 모델·질의 언어가 바뀌면 [선택 절차](#임베딩-모델-선택)로 다시 확인한다. |
 | `RERANKER_MIN_SCORE` | `0.01` | **models** | activation된 reranker relevance score의 noise floor. 각 query에서 최고 점수의 10%와 이 값 중 높은 쪽을 최종 하한으로 쓴다. 범위 밖 env 값은 `0`–`1`로 clamp한다. capability 설명은 답 자체가 아니라 답을 만들 도구이므로 adapter는 전용 instruction을 함께 보낸다. 모델을 바꾸면 다시 측정하고 `/settings/model-usage`에서 함께 저장하라. DB override가 env보다 우선하며 다음 검색부터 적용된다. |
 | `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`; 일반 URL 조립은 요청 origin, 없으면 `http://localhost:3000` | **runtime** | 바깥을 향하는 URL (Slack 매니페스트, MCP OAuth 콜백, MCP client ID 메타데이터 문서)을 만들 때 쓰는 scheme + host. 리버스 프록시 뒤에서는 요청 URL 이 bind 주소를 반영하므로 이 값은 설정에서 와야 한다. 요청 origin 단계는 요청이 손에 있는 일반 URL 조립에서만 적용된다. **거부된 사인인의 리디렉션(`/login?error=`)은 부팅 시 env 값으로 고정된다**: Better Auth 옵션은 한 번만 평가되므로 runtime 설정을 보지 못하고, env 가 비어 있으면 상대 경로가 되어 프록시 뒤에서 bind 주소 기준으로 해석될 수 있다. OIDC/Google 사인인을 쓰는 배포는 env 로도 설정하라. **MCP client ID 메타데이터 문서는 예외다**: 설정된 base 가 없으면 요청 origin 이나 localhost 를 추측하지 않고 503 으로 답한다. 그 URL 이 곧 OAuth `client_id` 이고 authorization server 가 가져가므로, loopback 이나 평문 http 값이면 흐름이 시작되기 전에 거부되고 provider 가 제공하는 경우 연결은 dynamic registration 으로 폴백한다. [SECURITY.md](SECURITY.md#mcp-oauth) 를 보라. |
 
@@ -126,8 +126,9 @@ fail-open 이 될 수는 없다.
 ## 설정 화면
 
 `/settings`는 Service·Access·Plugins·Models 탭으로 구성한다. Service는 서비스 이름·로고·공개 주소·
-Artifact 전달·검색 점수·동시 실행·Slack 표시를, Access는 관리자와 허용 도메인을 관리한다.
-Plugins는 저장소·브랜치·GitHub 토큰을, Models는 프로바이더 연결·모델 선택·사용 설정·등록 모델을
+Artifact 전달·동시 실행·Slack 표시를, Access는 관리자와 허용 도메인을 관리한다.
+Plugins는 저장소·브랜치·GitHub 토큰을, Models는 프로바이더 연결·등록 모델·모델 사용 설정·
+검색 모델별 점수와 가격 미지정 모델의 실행 정책을
 관리한다. 프로바이더 키는 주소와 함께 Models의 연결 설정에서 관리한다.
 Service 로고는 이 배포의 `public/brands/`에 필요한 자산이 모두 있는 폴더만 선택할 수 있다.
 부팅·DB·인증 제공자·스토리지 연결·보존 기간·아웃바운드 보안 경계를 정하는 값은 배포 환경에서 관리한다.
@@ -201,7 +202,7 @@ Rerank 변경은 실제 query/document probe가 성공한 뒤 저장한다. 검�
 포함하여 선택한 모델의 프로바이더 URL·키·전송 ID를 함께 사용한다.
 
 `UNKNOWN_MODEL_POLICY=allow|refuse`는 선택한 모델의 가격 미확인을 허용할지 정한다.
-Settings → Service의 **가격 정보가 없는 모델**에서 이 정책을 재정의할 수 있다.
+Settings → Models → Model usage의 **가격 정보가 없는 모델**에서 이 정책을 재정의할 수 있다.
 기본값은 `allow`다. 미등록 모델의 실행은 이 값과 무관하게 거부된다. 제공자가 실제 비용을
 반환하면 우선 사용하고, 가격을 계산할 수 없으면 비용 누락 경고·지표를 남긴다.
 
