@@ -94,6 +94,7 @@ export function invalidateSettingsCache(): void {
 
 /** Optional price refresh for processes that calculate model costs. */
 export async function refreshPublishedModelPrices(): Promise<boolean> {
+  if (!config.publishedModelsRefreshEnabled) return false;
   if (!listModels().some(model => model.providerKind !== "selfhosted")) return false;
   const changed = await publishedModelCatalog.refreshIfDue();
   if (changed) {
@@ -105,6 +106,7 @@ export async function refreshPublishedModelPrices(): Promise<boolean> {
 
 let modelRefreshTimer: ReturnType<typeof setInterval> | undefined;
 export function startPublishedModelRefresh(): void {
+  if (!config.publishedModelsRefreshEnabled) return;
   if (modelRefreshTimer) return;
   const refresh = () => {
     void refreshPublishedModelPrices().catch(error => {

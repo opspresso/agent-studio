@@ -70,7 +70,10 @@ export function createModelRegistryUseCases(deps: ModelRegistryDeps) {
         if (existing && usage(settings, input.id).length && (existing.type !== input.type || existing.capabilities.tools !== input.capabilities.tools)) {
           throw new ConflictError("Change model usage before changing the selected model's type or tool capability");
         }
-        const models = existing ? previous.map((model) => model.id === input.id ? input : model) : [...previous, input];
+        const saved = existing && deps.catalogPricing(provider, input.wireId)
+          ? { ...input, pricing: existing.pricing }
+          : input;
+        const models = existing ? previous.map((model) => model.id === input.id ? saved : model) : [...previous, saved];
         if (models.length > MAX_REGISTERED_MODELS) throw new ValidationError(`At most ${MAX_REGISTERED_MODELS} models may be registered`);
         return { ...settings, registeredModels: models, updatedAt: new Date().toISOString() };
       });

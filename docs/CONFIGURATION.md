@@ -181,6 +181,8 @@ Text·Image 등 출력 유형과 Tools·Vision·Reasoning 기능은 각각 표�
 인터넷이 끊겨도 저장된 모델과 사내 프로바이더로 실행할 수 있다. 새 설치는 빈 목록으로 시작한다.
 공개 카탈로그는 실행 프로세스마다 15분 간격으로 다시 조회한다. 실패 시 마지막으로 검증된
 카탈로그를 유지하고, 최초 값은 `src/infrastructure/llm/data/publishedModels.json`이다.
+`PUBLISHED_MODELS_REFRESH=off`는 공개망 조회만 끄고 이 스냅샷으로 모델 조회와 요금 계산을
+계속한다. 기본값은 `on`이며, 그 밖의 값은 부팅 오류다.
 `pnpm sync-models`로 내장 스냅샷을 갱신하며, 격리망 빌드는
 `pnpm sync-models --from <models.json>`을 사용한다. 공개 카탈로그의 모델은 자동 등록하지
 않는다. 등록된 공개 모델은 정확한 Provider 종류·전송 ID 일치로 현재 카탈로그 가격을 적용하며,

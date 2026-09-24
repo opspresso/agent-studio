@@ -212,7 +212,7 @@ key, cap, formatter, error identity, or collapse rule, search
 - Models are deployment-owned selections in Settings. Provider discovery never enables a model.
   `providerModels.ts` owns registration shapes; `models.ts` owns runtime facts and pricing.
   Public discovery and pricing use `models.opspresso.com/models.json`, validated by
-  `publishedModelFacts.ts` and refreshed every 15 minutes without blocking boot or execution.
+  `publishedModelFacts.ts` and refreshed every 15 minutes when enabled, without blocking boot or execution.
   The committed snapshot, maintained with `pnpm sync-models`, is the offline fallback.
   Public selected IDs and the `decision` type follow the API keys exactly. Exact provider
   kind/wire ID matches update selected model prices; catalog models are never

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fixtureRegistrations } from "./modelFixtures";
 import type { AppSettings } from "@/domain/settings/types";
 import { calculateCost, getModelConfig } from "@/domain/llm/models";
+import { config } from "@/lib/config";
 
 const { catalogPricing, refreshCatalog } = vi.hoisted(() => ({
   catalogPricing: vi.fn(),
@@ -59,6 +60,7 @@ const ENV_KEYS = [
   "RERANKER_BASE_URL",
   "RERANKER_API_KEY",
   "RERANKER_MIN_SCORE",
+  "PUBLISHED_MODELS_REFRESH",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -86,6 +88,17 @@ afterEach(() => {
 });
 
 describe("runtime settings precedence", () => {
+  it("disables published price refresh explicitly while retaining bundled prices", async () => {
+    stub({ updatedAt: "2026-09-24T00:00:00Z" });
+    await getLlmProviderConfigs();
+    process.env.PUBLISHED_MODELS_REFRESH = "off";
+    expect(config.publishedModelsRefreshEnabled).toBe(false);
+    expect(await refreshPublishedModelPrices()).toBe(false);
+    expect(refreshCatalog).not.toHaveBeenCalled();
+    process.env.PUBLISHED_MODELS_REFRESH = "invalid";
+    expect(() => config.publishedModelsRefreshEnabled).toThrow("must be on or off");
+  });
+
   it("uses refreshed catalog rates for selected models without changing stored registration", async () => {
     const selected = fixtureRegistrations().find(model => model.id === "openai/gpt-5-mini")!;
     stub({

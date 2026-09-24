@@ -54,12 +54,16 @@ describe("deployment model registry", () => {
   });
 
   it("shows current catalog pricing without overwriting the saved model", async () => {
-    const price = { inputPer1M: 3, outputPer1M: 12 };
+    let price: { inputPer1M: number; outputPer1M: number } | undefined = { inputPer1M: 3, outputPer1M: 12 };
     const { useCases } = setup(() => price);
     expect(await useCases.save({ ...model, pricing: { inputPer1M: 1, outputPer1M: 4 } }, "admin@example.test"))
       .toEqual([{ ...model, pricing: price, pricingSource: "catalog" }]);
-    expect(await useCases.list()).toEqual([{ ...model, pricing: price, pricingSource: "catalog" }]);
+    const [view] = await useCases.list();
+    expect(view).toEqual({ ...model, pricing: price, pricingSource: "catalog" });
+    await useCases.save(registrationFromDiscovery(model.provider, { ...view!, displayName: "Renamed" }), "admin@example.test");
     expect((await settingsRepository.get())?.registeredModels?.[0]?.pricing).toEqual({ inputPer1M: 1, outputPer1M: 4 });
+    price = undefined;
+    expect(await useCases.list()).toMatchObject([{ ...model, displayName: "Renamed", pricing: { inputPer1M: 1, outputPer1M: 4 } }]);
   });
 
   it("stores the published model key separately from the provider connection and wire ID", async () => {

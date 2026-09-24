@@ -345,7 +345,7 @@ export const testModel = createTestModel(agentModels, {
 export const modelPreferenceUseCases = createModelPreferenceUseCases(modelPreferencesRepository);
 export const modelRegistryUseCases = createModelRegistryUseCases({
   repository: settingsRepository,
-  discovery: createProviderModelDiscovery(),
+  discovery: createProviderModelDiscovery(fetch, publishedModelCatalog, () => config.publishedModelsRefreshEnabled),
   providers: getLlmProviderConfigs,
   catalogModelId: (provider, wireId) => publishedModelCatalog.modelId(providerKind(provider), wireId),
   catalogPricing: (provider, wireId) => publishedModelCatalog.pricing(providerKind(provider), wireId),

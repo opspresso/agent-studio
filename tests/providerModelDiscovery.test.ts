@@ -30,6 +30,16 @@ describe("model discovery", () => {
       .list(provider("openai", "openai"))).toEqual([{ wireId: "gpt-5", displayName: "GPT-5" }]);
   });
 
+  it("uses the bundled catalog without outbound refresh when disabled by the operator", async () => {
+    const published = catalog([{ id: "openai/gpt-5", wireId: "gpt-5", displayName: "GPT-5" }]);
+    const fetch = vi.fn();
+    const models = await createProviderModelDiscovery(fetch as unknown as typeof globalThis.fetch, published, () => false)
+      .list(provider("openai", "openai"));
+    expect(models).toEqual([{ id: "openai/gpt-5", wireId: "gpt-5", displayName: "GPT-5" }]);
+    expect(published.refreshIfDue).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("reads a self-hosted listing without leaking credentials in the URL", async () => {
     const fetch = vi.fn(async () => Response.json({ data: [{
       id: "local/model", type: "image", context_length: 8000,

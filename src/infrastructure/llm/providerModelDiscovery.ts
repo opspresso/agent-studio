@@ -96,13 +96,16 @@ function toModel(value: unknown): DiscoveredModel | undefined {
 export function createProviderModelDiscovery(
   fetchFn: typeof fetch = fetch,
   catalog: Pick<typeof publishedModelCatalog, "refreshIfDue" | "list"> = publishedModelCatalog,
+  refreshEnabled: () => boolean = () => true,
 ): ProviderModelDiscovery {
   return {
     async list(provider: ProviderChannelConfig) {
       const kind = providerKind(provider);
       if (kind !== "selfhosted") {
-        try { await catalog.refreshIfDue(); }
-        catch (error) { log.warn("models", "catalog refresh failed; using the last validated catalog", error); }
+        if (refreshEnabled()) {
+          try { await catalog.refreshIfDue(); }
+          catch (error) { log.warn("models", "catalog refresh failed; using the last validated catalog", error); }
+        }
         return catalog.list(kind);
       }
       if (provider.auth === "sigv4") throw new Error("Model discovery requires an API-key provider; register signed-channel models manually");
