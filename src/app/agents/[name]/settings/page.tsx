@@ -178,13 +178,13 @@ export default function SettingsPage() {
         </Stack>
       </form>
 
-      <VisibilitySection projectName={name} />
+      <VisibilitySection key={`visibility:${name}`} projectName={name} project={project} />
 
-      <CostLimitsSection projectName={name} />
+      <CostLimitsSection key={`cost:${name}`} projectName={name} project={project} />
 
       <WebhookSection projectName={name} />
 
-      <SchedulesSection projectName={name} project={project} />
+      <SchedulesSection key={`schedules:${name}`} projectName={name} project={project} />
 
       <CollapsibleSection title={t("pset.dangerZone")} danger>
         <Stack gap="sm" align="flex-start">

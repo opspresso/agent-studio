@@ -5,13 +5,13 @@ import { Alert, Badge, Button, Group, NumberInput, Select, Stack, Text, TextInpu
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { stateColor } from "@/app/_components/badgeColors";
 import {
-  getProject,
   listProjectTelegramChats,
   listProjectSlackChannels,
   updateProject,
   type CostLimits,
   type SlackChannelInfo,
   type TelegramDestination,
+  type SanitizedProject,
 } from "../../lib/api";
 import { useT } from "@/app/_i18n/provider";
 import { costAlertDestinations } from "@/domain/project/types";
@@ -43,13 +43,20 @@ export function costLimitsForSave(limits: CostLimits): CostLimits | null {
  * An empty field means "no limit" rather than zero — a zero block threshold
  * would refuse every run, which is never what clearing a box is meant to say.
  */
-export function CostLimitsSection({ projectName }: { projectName: string }) {
+export function CostLimitsSection({
+  projectName,
+  project,
+}: {
+  projectName: string;
+  project: Pick<SanitizedProject, "costLimits" | "slack" | "telegram" | "teams">;
+}) {
   const t = useT();
-  const [alertUsd, setAlertUsd] = useState<number | "">("");
-  const [blockUsd, setBlockUsd] = useState<number | "">("");
-  const [monthlyAlertUsd, setMonthlyAlertUsd] = useState<number | "">("");
-  const [monthlyBlockUsd, setMonthlyBlockUsd] = useState<number | "">("");
-  const [destinations, setDestinations] = useState<MessageDestination[]>([]);
+  const limits = project.costLimits;
+  const [alertUsd, setAlertUsd] = useState<number | "">(limits?.alertThresholdUsd ?? "");
+  const [blockUsd, setBlockUsd] = useState<number | "">(limits?.blockThresholdUsd ?? "");
+  const [monthlyAlertUsd, setMonthlyAlertUsd] = useState<number | "">(limits?.monthlyAlertThresholdUsd ?? "");
+  const [monthlyBlockUsd, setMonthlyBlockUsd] = useState<number | "">(limits?.monthlyBlockThresholdUsd ?? "");
+  const [destinations, setDestinations] = useState<MessageDestination[]>(limits ? costAlertDestinations(limits) : []);
   const [slackChannels, setSlackChannels] = useState<SlackChannelInfo[]>([]);
   const [telegramChats, setTelegramChats] = useState<TelegramDestination[]>([]);
   const [slackChannelsUnavailable, setSlackChannelsUnavailable] = useState(false);
@@ -57,29 +64,13 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
   const [availableDestinations, setAvailableDestinations] = useState<
     MessageDestinationKind[]
   >([]);
-  const [loading, setLoading] = useState(true);
-  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setLoaded(false);
     async function load() {
-      const project = await getProject(projectName);
-      if (cancelled) {
-        return;
-      }
-      const limits = project.costLimits;
-      setAlertUsd(limits?.alertThresholdUsd ?? "");
-      setBlockUsd(limits?.blockThresholdUsd ?? "");
-      setMonthlyAlertUsd(limits?.monthlyAlertThresholdUsd ?? "");
-      setMonthlyBlockUsd(limits?.monthlyBlockThresholdUsd ?? "");
-      setDestinations(limits ? costAlertDestinations(limits) : []);
-      setLoaded(true);
-      setLoading(false);
-
       // The project's own integration summaries say which surfaces exist, so
       // only those are asked anything further — an unconnected bot's channel
       // or chat listing is a guaranteed 400, fired on every settings visit.
@@ -113,19 +104,15 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
       })
       .finally(() => {
         if (!cancelled) {
-          setLoading(false);
           setSlackChannelsLoading(false);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [projectName]);
+  }, [projectName, project.slack?.configured, project.slack?.enabled, project.telegram?.configured, project.telegram?.enabled, project.teams?.configured, project.teams?.enabled]);
 
   async function save() {
-    if (!loaded) {
-      return;
-    }
     setSaving(true);
     setError(null);
     setSaved(false);
@@ -220,19 +207,9 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
   return (
     <CollapsibleSection
       title={t("pset.costLimits")}
-      badge={
-        !loaded ? undefined : (
-          <Badge color={stateColor(configured)} radius="xl">
-            {configured ? summary : "none"}
-          </Badge>
-        )
-      }
+      badge={<Badge color={stateColor(configured)} radius="xl">{configured ? summary : "none"}</Badge>}
     >
-      <Stack
-        gap="md"
-        renderRoot={(props) => <fieldset {...props} disabled={!loaded} />}
-        style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
-      >
+      <Stack gap="md">
         <Text fz="sm" c="dimmed">
           Spend is measured per UTC day and per UTC month across every model this project runs.
           Leave a field empty for no limit. A blocked project refuses every run — API, chat,
@@ -253,7 +230,6 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
             min={0}
             step={1}
             decimalScale={2}
-            disabled={loading}
           />
           <NumberInput
             label={t("pset.blockThreshold")}
@@ -263,7 +239,6 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
             min={0}
             step={1}
             decimalScale={2}
-            disabled={loading}
           />
         </Group>
         <Group grow align="flex-start">
@@ -275,7 +250,6 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
             min={0}
             step={10}
             decimalScale={2}
-            disabled={loading}
           />
           <NumberInput
             label={t("pset.monthlyBlock")}
@@ -285,7 +259,6 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
             min={0}
             step={10}
             decimalScale={2}
-            disabled={loading}
           />
         </Group>
         <Stack gap="xs">
@@ -442,7 +415,7 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
           ))}
         </Stack>
         <Group gap="sm">
-          <Button onClick={save} loading={saving} disabled={loading || !destinationsValid}>
+          <Button onClick={save} loading={saving} disabled={!destinationsValid}>
             Save cost limits
           </Button>
           {saved && (
