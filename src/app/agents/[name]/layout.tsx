@@ -25,6 +25,7 @@ import { CloneProjectButton } from "./_components/CloneProjectButton";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { PageTabs } from "@/app/_components/PageTabs";
 import { BackLink } from "@/app/_components/BackLink";
+import { LoadingText } from "@/app/_components/PageState";
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
   const params = useParams<{ name: string }>();
@@ -62,6 +63,13 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
       unsubscribe();
     };
   }, [name, retryKey]);
+
+  if (!currentState) {
+    return <Stack key={name} gap="lg">
+      <BackLink href="/agents" label={t("nav.agents")} />
+      <LoadingText />
+    </Stack>;
+  }
 
   const canManage = canEditProject(viewer, ownerEmail);
   const tabs = [
