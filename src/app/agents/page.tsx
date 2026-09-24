@@ -105,6 +105,7 @@ export default function AgentsPage() {
 
       <CardGrid
         loading={loading}
+        failed={!!error && projects.length === 0}
         empty={visibleProjects.length === 0}
         emptyText={t(projects.length === 0 ? "agents.empty" : "catalog.noResults")}
       >

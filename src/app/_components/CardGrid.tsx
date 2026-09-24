@@ -25,11 +25,14 @@ export function CardList({ children }: { children: React.ReactNode }) {
 
 export function CardGrid({
   loading,
+  failed = false,
   empty,
   emptyText,
   children,
 }: {
   loading: boolean;
+  /** The caller renders its fetch error; do not also claim the catalog is empty. */
+  failed?: boolean;
   empty: boolean;
   emptyText: string;
   children: React.ReactNode;
@@ -47,6 +50,9 @@ export function CardGrid({
         ))}
       </SimpleGrid>
     );
+  }
+  if (failed) {
+    return null;
   }
   if (empty) {
     return <EmptyState>{emptyText}</EmptyState>;

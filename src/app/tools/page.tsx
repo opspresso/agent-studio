@@ -103,6 +103,7 @@ export default function ToolsPage() {
 
       <CardGrid
         loading={loading}
+        failed={!!error && servers.length === 0}
         empty={visibleItems.length === 0}
         emptyText={t(servers.length === 0 ? "tools.empty" : "catalog.noResults")}
       >
