@@ -13,7 +13,7 @@ interface PublishedFacts { version: 1; updatedAt: string; source: string; models
 /** Reject an incomplete refresh before it can replace the last usable catalog. */
 export function parsePublishedModelFacts(value: unknown): PublishedFacts {
   const document = value as { version?: unknown; updatedAt?: unknown; source?: unknown; models?: unknown } | null;
-  if (!document || document.version !== 1 || typeof document.updatedAt !== "string" || !Number.isFinite(Date.parse(document.updatedAt)) || typeof document.source !== "string" || !Array.isArray(document.models)) {
+  if (!document || document.version !== 1 || typeof document.updatedAt !== "string" || !Number.isFinite(Date.parse(document.updatedAt)) || typeof document.source !== "string" || !Array.isArray(document.models) || document.models.length === 0) {
     throw new Error("Invalid published model catalog");
   }
   const keys = new Set<string>();
@@ -21,7 +21,10 @@ export function parsePublishedModelFacts(value: unknown): PublishedFacts {
     const model = entry as ModelConfig;
     if (!model || typeof model.id !== "string" || typeof model.provider !== "string" || !model.id.startsWith(`${model.provider}/`) ||
       !model.id.slice(model.provider.length + 1).trim() || model.id !== model.id.trim() || model.id.length > 200 ||
-      /[\x00-\x1f\x7f]/.test(model.id) || typeof model.displayName !== "string" || !model.capabilities || !model.pricing) {
+      /[\x00-\x1f\x7f]/.test(model.id) || typeof model.displayName !== "string" ||
+      typeof model.family !== "string" || !model.family.trim() || typeof model.maker !== "string" || !model.maker.trim() || model.maker.length > 100 ||
+      (model.wireId !== undefined && typeof model.wireId !== "string") ||
+      (model.hidden !== undefined && typeof model.hidden !== "boolean") || !model.capabilities || !model.pricing) {
       throw new Error("Invalid published model facts");
     }
     const id = registeredModelId(model.provider, wireId(model));
@@ -94,6 +97,7 @@ export function createPublishedModelCatalog(
         const bytes = await readBodyBytes(response, MAX_RESPONSE_BYTES, signal);
         const next = parsePublishedModelFacts(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
         if (next.updatedAt === document.updatedAt) return false;
+        if (Date.parse(next.updatedAt) < Date.parse(document.updatedAt)) throw new Error("Published model catalog is older than the current catalog");
         byId = new Map(next.models.map(model => [model.id, model]));
         canonicalIds = indexCanonicalIds(next.models);
         document = next;
@@ -105,4 +109,8 @@ export function createPublishedModelCatalog(
   };
 }
 
-export const publishedModelCatalog = createPublishedModelCatalog();
+// Next.js can evaluate this adapter in separate server bundles. The execution
+// registry is process-wide; its price source must be the same catalog instance.
+const CATALOG_SLOT = Symbol.for("agent-studio.published-model-catalog");
+const slot = globalThis as { [CATALOG_SLOT]?: ReturnType<typeof createPublishedModelCatalog> };
+export const publishedModelCatalog = slot[CATALOG_SLOT] ??= createPublishedModelCatalog();

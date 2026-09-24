@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPublishedModelCatalog, parsePublishedModelFacts } from "@/infrastructure/llm/publishedModelFacts";
+import { createPublishedModelCatalog, parsePublishedModelFacts, publishedModelCatalog } from "@/infrastructure/llm/publishedModelFacts";
 import type { ModelConfig } from "@/domain/llm/models";
 
 const base: ModelConfig = {
@@ -68,7 +68,7 @@ describe("published model catalog", () => {
     expect(fetch).toHaveBeenCalledOnce();
   });
 
-  it("retains the validated snapshot after invalid JSON or a failed fetch, then retries", async () => {
+  it("retains the validated snapshot after invalid facts or a failed fetch, then retries", async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(Response.json({ ...document("2026-09-24T01:00:00Z"), models: [{ ...base, pricing: { inputPer1M: -1, outputPer1M: 12 } }] }))
       .mockRejectedValueOnce(new Error("offline"))
@@ -85,6 +85,22 @@ describe("published model catalog", () => {
 
   it("rejects a malformed catalog before exposing it", () => {
     expect(() => parsePublishedModelFacts({ ...document("invalid") })).toThrow("Invalid published model catalog");
+    expect(() => parsePublishedModelFacts(document("2026-09-24T00:00:00Z", []))).toThrow("Invalid published model catalog");
     expect(() => parsePublishedModelFacts(document("2026-09-24T00:00:00Z", [base, base]))).toThrow("duplicate model ID");
+  });
+
+  it("does not replace current prices with an older published catalog", async () => {
+    const fetch = vi.fn(async () => Response.json(document("2026-09-23T00:00:00Z", [
+      { ...base, pricing: { inputPer1M: 1, outputPer1M: 5 } },
+    ])));
+    const catalog = createPublishedModelCatalog(document("2026-09-24T00:00:00Z"), fetch as unknown as typeof globalThis.fetch);
+    await expect(catalog.refreshIfDue(0)).rejects.toThrow("older than the current catalog");
+    expect(catalog.pricing("google", "gemini-3.1-pro-preview")?.inputPer1M).toBe(2);
+  });
+
+  it("shares the live catalog across server bundle module evaluations", async () => {
+    vi.resetModules();
+    const reloaded = await import("@/infrastructure/llm/publishedModelFacts");
+    expect(reloaded.publishedModelCatalog).toBe(publishedModelCatalog);
   });
 });
