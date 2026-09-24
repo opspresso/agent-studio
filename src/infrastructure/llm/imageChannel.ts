@@ -177,6 +177,8 @@ async function jsonImageRequest(
 ): Promise<ImageGenerationResult> {
   const response = await fetch(`${target.baseUrl.replace(/\/$/, "")}/${path}`, {
     method: "POST",
+    // A 307/308 could replay the prompt and inline source images at another URL.
+    redirect: "error",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${target.apiKey}`,
