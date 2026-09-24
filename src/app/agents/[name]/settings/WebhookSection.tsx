@@ -87,6 +87,19 @@ export function WebhookSection({ projectName }: { projectName: string }) {
     }
   }
 
+  async function refreshRuns() {
+    if (!webhook || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setRuns((await listTriggerRuns(projectName, webhook.triggerId)).runs);
+    } catch (e) {
+      setError(reportError(e, "Failed to refresh webhook runs"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /**
    * The switch. Turning it on the first time is what creates the row — there is
    * nothing else to configure, so asking anyone to "create a webhook" before
@@ -190,7 +203,7 @@ export function WebhookSection({ projectName }: { projectName: string }) {
               />
             </Group>
 
-            <Button variant="subtle" disabled={busy} onClick={() => act(reload)}>{t("webhook.refreshRuns")}</Button>
+            <Button variant="subtle" disabled={busy} onClick={() => void refreshRuns()}>{t("webhook.refreshRuns")}</Button>
             <TriggerRuns runs={runs} />
           </>
         )}

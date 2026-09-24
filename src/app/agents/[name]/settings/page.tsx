@@ -4,7 +4,7 @@ import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
-import { deleteProject, getProject, updateProject } from "../../lib/api";
+import { deleteProject, getProject, updateProject, type SanitizedProject } from "../../lib/api";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
@@ -26,9 +26,8 @@ export default function SettingsPage() {
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [departmentCode, setDepartmentCode] = useState("");
-  const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [project, setProject] = useState<SanitizedProject | null>(null);
+  const [loadError, setLoadError] = useState<{ name: string; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -37,6 +36,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setProject(null);
+    setLoadError(null);
+    setError(null);
+    setSaved(false);
     async function load() {
       try {
         const project = await getProject(name);
@@ -44,15 +47,11 @@ export default function SettingsPage() {
           setDisplayName(project.displayName);
           setDescription(project.description);
           setDepartmentCode(project.departmentCode ?? "");
-          setOwnerEmail(project.ownerEmail);
+          setProject(project);
         }
       } catch (e) {
         if (!cancelled) {
-          setLoadError(e instanceof Error ? e.message : "Failed to load project");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
+          setLoadError({ name, message: e instanceof Error ? e.message : "Failed to load project" });
         }
       }
     }
@@ -102,26 +101,27 @@ export default function SettingsPage() {
     }
   }
 
-  if (loading) {
+  if (project?.name !== name && loadError?.name !== name) {
     return <LoadingText />;
   }
 
-  if (loadError) {
+  if (loadError?.name === name) {
     return (
       <Alert color="red" variant="light" maw={640}>
-        {loadError}
+        {loadError.message}
       </Alert>
     );
   }
+  if (!project) return <LoadingText />;
 
   if (viewer === null) {
     return <LoadingText />;
   }
 
-  if (!canEditProject(viewer, ownerEmail)) {
+  if (!canEditProject(viewer, project.ownerEmail)) {
     return (
       <Alert variant="light" color="gray" maw={640}>
-        Only the project owner ({ownerEmail ?? "unknown"}) or an admin can change these settings.
+        Only the project owner ({project.ownerEmail ?? "unknown"}) or an admin can change these settings.
       </Alert>
     );
   }
@@ -174,13 +174,13 @@ export default function SettingsPage() {
         </Stack>
       </form>
 
-      <VisibilitySection projectName={name} />
+      <VisibilitySection key={`visibility:${name}`} projectName={name} project={project} />
 
-      <CostLimitsSection projectName={name} />
+      <CostLimitsSection key={`cost:${name}`} projectName={name} project={project} />
 
       <WebhookSection projectName={name} />
 
-      <SchedulesSection projectName={name} />
+      <SchedulesSection key={`schedules:${name}`} projectName={name} project={project} />
 
       <CollapsibleSection title={t("pset.dangerZone")} danger>
         <Stack gap="sm" align="flex-start">

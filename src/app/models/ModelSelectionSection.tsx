@@ -19,12 +19,14 @@ export function ModelSelectionSection({
   models,
   selections,
   rerankerMinScore,
+  catalogMinScore,
   available,
   onChanged,
 }: {
   models: CatalogModel[];
   selections: Catalog["selections"];
   rerankerMinScore: Catalog["rerankerMinScore"];
+  catalogMinScore: Catalog["catalogMinScore"];
   available: Catalog["selectionAvailable"];
   onChanged: () => Promise<void>;
 }) {
@@ -33,19 +35,22 @@ export function ModelSelectionSection({
   const [busy, setBusy] = useState<GlobalModelType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
-  const [scoreFloor, setScoreFloor] = useState(rerankerMinScore.value);
+  const [rerankerScoreFloor, setRerankerScoreFloor] = useState<number | string>(rerankerMinScore.value);
+  const [embeddingScoreFloor, setEmbeddingScoreFloor] = useState<number | string>(catalogMinScore.value);
 
   useEffect(() => {
-    setScoreFloor(rerankerMinScore.value);
-  }, [rerankerMinScore.value]);
-  const scoreFloorValid =
-    Number.isFinite(scoreFloor) && scoreFloor >= 0 && scoreFloor <= 1;
+    setRerankerScoreFloor(rerankerMinScore.value);
+    setEmbeddingScoreFloor(catalogMinScore.value);
+  }, [rerankerMinScore.value, catalogMinScore.value]);
+  const scoreFloorValid = (value: number | string): value is number =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 
   async function select(type: GlobalModelType, model: string | null, nextScore?: number) {
-    const scoreChanged = type === "rerank" && nextScore !== rerankerMinScore.value;
+    const scoreChanged = nextScore !== undefined && nextScore !== (type === "rerank" ? rerankerMinScore.value : catalogMinScore.value);
     if (!model || (model === selections[type]?.model && !scoreChanged)) return;
     if (
       type === "embedding" &&
+      model !== selections.embedding?.model &&
       !(await confirm({
         title: t("models.selection.embeddingConfirmTitle"),
         message: t("models.selection.embeddingConfirmMessage"),
@@ -66,8 +71,9 @@ export function ModelSelectionSection({
         body: JSON.stringify({
           type,
           model,
-          migrate: type === "embedding",
+          migrate: type === "embedding" && model !== selections.embedding?.model,
           ...(type === "rerank" ? { rerankerMinScore: nextScore } : {}),
+          ...(type === "embedding" ? { catalogMinScore: nextScore } : {}),
         }),
       });
       const body = await readJson<{ migration?: { indexed: number } }>(response);
@@ -99,6 +105,8 @@ export function ModelSelectionSection({
           const selection = selections[type];
           const options = selectableRetrievalModels(models, type);
           const selected = options.find((model) => model.id === selection?.model);
+          const floor = type === "embedding" ? embeddingScoreFloor : rerankerScoreFloor;
+          const configuredFloor = type === "embedding" ? catalogMinScore : rerankerMinScore;
           return (
             <Stack key={type} gap="xs">
               <ModelSelect
@@ -111,47 +119,36 @@ export function ModelSelectionSection({
                     ? [{ value: selection.model, label: selection.model }]
                     : []
                 }
-                details={selection?.source}
+                details={selection ? t(`settings.source.${selection.source}`) : undefined}
                 disabled={
                   !available[type] ||
                   options.length === 0 ||
                   busy !== null ||
-                  (type === "rerank" && !scoreFloorValid)
+                  !scoreFloorValid(floor)
                 }
                 searchable
                 onChange={(model) =>
-                  void select(type, model, type === "rerank" ? scoreFloor : undefined)
+                  void select(type, model, scoreFloorValid(floor) ? floor : undefined)
                 }
               />
-              {type === "rerank" && (
-                <Group gap="sm" align="flex-end">
-                  <NumberInput
-                    label={t("models.selection.rerankerMinScore")}
-                    description={`${rerankerMinScore.source} · ${t("models.selection.rerankerMinScoreHint")}`}
-                    value={scoreFloor}
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    decimalScale={4}
-                    onChange={(value) => setScoreFloor(Number(value))}
-                    disabled={!available.rerank || busy !== null}
-                    w={360}
-                  />
-                  <Button
-                    variant="default"
-                    disabled={
-                      !available.rerank ||
-                      !selection?.model ||
-                      !scoreFloorValid ||
-                      scoreFloor === rerankerMinScore.value ||
-                      busy !== null
-                    }
-                    onClick={() => void select("rerank", selection?.model ?? null, scoreFloor)}
-                  >
-                    {t("models.selection.saveScore")}
-                  </Button>
-                </Group>
-              )}
+              <Group gap="sm" align="flex-end">
+                <NumberInput
+                  label={t(type === "embedding" ? "models.selection.catalogMinScore" : "models.selection.rerankerMinScore")}
+                  description={`${t(`settings.source.${configuredFloor.source}`)} · ${t(type === "embedding" ? "models.selection.catalogMinScoreHint" : "models.selection.rerankerMinScoreHint")}`}
+                  value={floor}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  decimalScale={4}
+                  onChange={type === "embedding" ? setEmbeddingScoreFloor : setRerankerScoreFloor}
+                  disabled={!available[type] || busy !== null}
+                  w={360}
+                />
+                <Button variant="default" disabled={!available[type] || !selection?.model || !scoreFloorValid(floor) || floor === configuredFloor.value || busy !== null}
+                  onClick={() => void select(type, selection?.model ?? null, scoreFloorValid(floor) ? floor : undefined)}>
+                  {t("models.selection.saveScore")}
+                </Button>
+              </Group>
             </Stack>
           );
         })}

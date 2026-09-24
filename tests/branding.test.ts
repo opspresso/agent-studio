@@ -3,8 +3,18 @@ import { assertRequiredConfig, config } from "@/lib/config";
 import { resolveBranding } from "@/shared/branding";
 import { GET as favicon } from "@/app/favicon.ico/route";
 import { config as proxyConfig } from "@/proxy";
+import { getServiceBranding, invalidateSettingsCache } from "@/lib/runtime-settings";
+import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 
-afterEach(() => vi.unstubAllEnvs());
+vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
+  settingsRepository: { get: vi.fn().mockResolvedValue(null) },
+}));
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.mocked(settingsRepository.get).mockResolvedValue(null);
+  invalidateSettingsCache();
+});
 
 describe("deployment branding", () => {
   it("defaults to Agent Studio and selects AgentOps assets independently of the name", () => {
@@ -42,13 +52,24 @@ describe("deployment branding", () => {
     expect(() => assertRequiredConfig()).toThrow("SERVICE_LOGO=missing-brand requires");
   });
 
-  it("redirects conventional favicon requests to the selected folder without caching", () => {
+  it("redirects conventional favicon requests to the selected folder without caching", async () => {
     vi.stubEnv("SERVICE_LOGO", "agentops");
     expect(config.branding.name).toBe("Agent Studio");
-    const response = favicon();
+    const response = await favicon();
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe("/brands/agentops/favicon.ico");
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("uses saved branding over deployment values for pages and the favicon", async () => {
+    vi.stubEnv("SERVICE_NAME", "Environment Name");
+    vi.stubEnv("SERVICE_LOGO", "agent-studio");
+    vi.mocked(settingsRepository.get).mockResolvedValue({
+      updatedAt: "2026-09-24T00:00:00Z", serviceName: "Saved Name", serviceLogo: "agentops",
+    });
+    invalidateSettingsCache();
+    await expect(getServiceBranding()).resolves.toMatchObject({ name: "Saved Name", logo: "agentops" });
+    expect((await favicon()).headers.get("location")).toBe("/brands/agentops/favicon.ico");
   });
 
   it("lets branding assets through the page gate without opening similar page paths", () => {

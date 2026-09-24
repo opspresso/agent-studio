@@ -1827,12 +1827,26 @@ describe("falling back when a workspace cannot stream", () => {
     advancingClock();
     const { slack, posted } = makeSlackFake({ streaming: false });
     const deps = makeDeps(chunks, slack);
-    deps.loadingIndicator = ":loading:";
+    deps.loadingIndicator = async () => ":loading:";
 
     await handleSlackEvent(deps, EVENT, BINDING);
 
     expect(posted[0]?.text).toContain(":loading:");
     expect(posted[0]?.text).not.toContain(":hourglass_flowing_sand:");
+  });
+
+  it("keeps replying when the optional loading indicator cannot be read", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    advancingClock();
+    const { slack, posted, updates } = makeSlackFake({ streaming: false });
+    const deps = makeDeps(chunks, slack);
+    deps.loadingIndicator = async () => { throw new Error("settings unavailable"); };
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(posted[0]?.text).toContain(":hourglass_flowing_sand:");
+    expect(updates.at(-1)?.text).toBe("생각 중");
   });
 
   it("carries no marker when the reply did stream", async () => {

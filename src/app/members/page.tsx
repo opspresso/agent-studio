@@ -22,12 +22,13 @@ export default function MembersPage() {
   const viewer = useViewer();
   const [members, setMembers] = useState<MemberView[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
   async function changeTier(member: MemberView, tier: MemberTier) {
     setSavingId(member.id);
-    setError(null);
+    setSaveError(null);
     try {
       const updated = await readJson<Member>(
         await fetch(`/api/members/${member.id}/tier`, {
@@ -37,8 +38,8 @@ export default function MembersPage() {
         }),
       );
       setMembers((prev) => prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)));
-    } catch (saveError) {
-      setError(reportError(saveError, "Failed to update tier"));
+    } catch (cause) {
+      setSaveError(reportError(cause, "Failed to update tier"));
     } finally {
       setSavingId(null);
     }
@@ -50,7 +51,7 @@ export default function MembersPage() {
     fetch("/api/members")
       .then((res) => readJson<{ members: MemberView[] }>(res))
       .then((data) => !cancelled && setMembers(data.members))
-      .catch((loadError) => !cancelled && setError(loadError instanceof Error ? loadError.message : "Failed to load members"))
+      .catch((error) => !cancelled && setLoadError(error instanceof Error ? error.message : "Failed to load members"))
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
   }, [viewer?.isAdmin]);
@@ -66,8 +67,10 @@ export default function MembersPage() {
         Icon={IconUsers}
       />
 
-      {error ? (
-        <Alert color="red" variant="light">{error}</Alert>
+      {saveError && <Alert color="red" variant="light">{saveError}</Alert>}
+
+      {loadError ? (
+        <Alert color="red" variant="light">{loadError}</Alert>
       ) : loading ? (
         <LoadingText />
       ) : members.length === 0 ? (

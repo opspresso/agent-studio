@@ -97,9 +97,7 @@ export function RunPanel({
   // the one that stayed silent.
   const [warnings, setWarnings] = useState<string[]>([]);
   const [cost, setCost] = useState<number | null>(null);
-  const [agentImages, setAgentImages] = useState<
-    Array<{ b64: string; mimeType: string; prompt?: string }>
-  >([]);
+  const [agentImages, setAgentImages] = useState<Array<{ src: string; prompt?: string }>>([]);
   // Documents a tool rendered. They arrive addressed — `/agent` signs the
   // reference on its way out — so what this holds is already a download.
   const [agentFiles, setAgentFiles] = useState<
@@ -248,7 +246,8 @@ export function RunPanel({
         }
         if (chunk.image) {
           const generated = chunk.image;
-          setAgentImages((prev) => [...prev, generated]);
+          setAgentImages((prev) => [...prev, { src: imageDataUrl(generated),
+            ...(generated.prompt ? { prompt: generated.prompt } : {}) }]);
         }
         if (chunk.file) {
           const produced = chunk.file;
@@ -333,7 +332,7 @@ export function RunPanel({
           />
           <Group>
             <AttachButton
-              onPick={(files) => void addFiles(files)}
+              onPick={attach}
               disabled={running}
               documents
             />
@@ -431,7 +430,7 @@ export function RunPanel({
           w="100%"
           onClick={() =>
             view({
-              src: imageDataUrl(img),
+              src: img.src,
               alt: img.prompt ?? t("chat.generatedImage"),
               title: t("chat.generatedImage"),
               ...(img.prompt ? { caption: img.prompt } : {}),
@@ -440,7 +439,7 @@ export function RunPanel({
           style={{ cursor: "zoom-in" }}
         >
           <Image
-            src={imageDataUrl(img)}
+            src={img.src}
             alt={img.prompt ?? t("chat.generatedImage")}
             radius="md"
           />

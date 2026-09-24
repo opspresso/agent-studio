@@ -3,6 +3,7 @@ import type { ReplySink } from "@/domain/messaging/reply";
 import { log } from "@/shared/logger";
 import { cutPoint, splitMessages } from "@/shared/messageCut";
 import { unrefTimer } from "@/shared/unrefTimer";
+import { DEFAULT_LOADING_INDICATOR } from "@/shared/slackLoadingIndicator";
 
 /**
  * How a Slack reply is delivered — the single owner of that decision.
@@ -108,19 +109,6 @@ export const MAX_EDIT_TEXT = 2_800;
 const MIN_EDIT_TEXT = 700;
 /** How far back from the cap a paragraph or line break is looked for. */
 export const EDIT_CUT_WINDOW = 600;
-/**
- * Appended to an edited-in-place reply that is still being written, when the
- * deployment names nothing else.
- *
- * A built-in emoji as the default, because it is the only kind that renders
- * everywhere: a custom name a workspace has not defined shows up as its own
- * literal text, which is noise exactly where the reply should read as
- * unfinished-but-fine. A workspace that *has* one says so through
- * `SLACK_LOADING_INDICATOR`. A streamed reply needs none — Slack marks it as
- * still arriving itself.
- */
-export const DEFAULT_LOADING_INDICATOR = ":hourglass_flowing_sand:";
-
 /** Where a reply goes, and what that surface supports. */
 export interface ReplyTarget {
   /** A stale lease holder must not write into a newer run's session. */

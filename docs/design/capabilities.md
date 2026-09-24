@@ -78,6 +78,10 @@ Embedding 선택 변경은 새 모델로 재색인을 끝까지 수행하고 실
 lease의 generation은 해제 후에도 유지한다. 검색은 시작·vector 조회 후·반환 직전에 generation과
 활성 상태를 비교해 재색인과 겹친 결과를 사용하지 않는다.
 Rerank는 저장 벡터를 바꾸지 않으므로 semantic probe 후 선택만 저장한다.
+Settings → Models → Model usage에서 Embedding의 벡터 점수 하한(`CATALOG_MIN_SCORE`)과
+Rerank의 relevance 점수 하한(`RERANKER_MIN_SCORE`)을 각각 활성 모델 옆에서 조정한다.
+점수만 바꿀 때는 재색인하지 않는다. Embedding 모델과 점수를 함께 바꾸다 재색인이 실패하면
+두 선택을 이전 값으로 복원한 뒤 이전 모델로 다시 색인한다.
 [모델 선택 API](../API.md#models)와 [설정](../CONFIGURATION.md#임베딩-모델-선택)을 따른다.
 
 ### 검색과 순위

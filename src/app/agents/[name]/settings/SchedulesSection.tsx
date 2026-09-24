@@ -13,8 +13,6 @@ import { TriggerRuns } from "./TriggerRuns";
 import {
   createTrigger,
   deleteTrigger,
-  getProjectTeams,
-  getProjectTelegram,
   listProjectTelegramChats,
   listProjectSlackChannels,
   listTriggers,
@@ -23,6 +21,7 @@ import {
   type TriggerView,
   type SlackChannelInfo,
   type TelegramDestination,
+  type SanitizedProject,
 } from "../../lib/api";
 import {
   findTelegramDestination,
@@ -39,7 +38,13 @@ import { loadScheduleRuns } from "./scheduleRuns";
  * webhook — is one section up and is not a row anyone names, so this list is
  * schedules and only schedules.
  */
-export function SchedulesSection({ projectName }: { projectName: string }) {
+export function SchedulesSection({
+  projectName,
+  project,
+}: {
+  projectName: string;
+  project: Pick<SanitizedProject, "slack" | "telegram" | "teams">;
+}) {
   const t = useT();
   const [schedules, setSchedules] = useState<TriggerView[]>([]);
   const [runs, setRuns] = useState<Record<string, TriggerRun[]>>({});
@@ -98,12 +103,13 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    const slackOn = Boolean(project.slack?.configured && project.slack.enabled);
+    const telegramOn = Boolean(project.telegram?.configured && project.telegram.enabled);
+    const teamsOn = Boolean(project.teams?.configured && project.teams.enabled);
     void Promise.allSettled([
-      listProjectSlackChannels(projectName),
-      getProjectTelegram(projectName),
-      listProjectTelegramChats(projectName),
-      getProjectTeams(projectName),
-    ]).then(([slack, telegram, telegramDestinations, teams]) => {
+      slackOn ? listProjectSlackChannels(projectName) : Promise.resolve({ channels: [] }),
+      telegramOn ? listProjectTelegramChats(projectName) : Promise.resolve({ chats: [] }),
+    ]).then(([slack, telegramDestinations]) => {
       if (cancelled) {
         return;
       }
@@ -112,21 +118,17 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
       setTelegramChats(
         telegramDestinations.status === "fulfilled" ? telegramDestinations.value.chats : [],
       );
-      setSlackChannelsUnavailable(slack.status === "rejected" || channels.length === 0);
+      setSlackChannelsUnavailable(!slackOn || slack.status === "rejected" || channels.length === 0);
       setAvailableDestinations([
         ...(channels.length > 0 ? (["slack"] as const) : []),
-        ...(telegram.status === "fulfilled" && telegram.value.configured && telegram.value.enabled
-          ? (["telegram"] as const)
-          : []),
-        ...(teams.status === "fulfilled" && teams.value.configured && teams.value.enabled
-          ? (["teams"] as const)
-          : []),
+        ...(telegramOn ? (["telegram"] as const) : []),
+        ...(teamsOn ? (["teams"] as const) : []),
       ]);
     });
     return () => {
       cancelled = true;
     };
-  }, [projectName]);
+  }, [projectName, project.slack?.configured, project.slack?.enabled, project.telegram?.configured, project.telegram?.enabled, project.teams?.configured, project.teams?.enabled]);
 
   async function act(action: () => Promise<void>) {
     setBusy(true);

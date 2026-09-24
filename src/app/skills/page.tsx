@@ -94,6 +94,7 @@ export default function SkillsPage() {
 
       <CardGrid
         loading={loading}
+        failed={!!error && skills.length === 0}
         empty={visibleItems.length === 0}
         emptyText={t(skills.length === 0 ? "skills.empty" : "catalog.noResults")}
       >

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Loader, Stack, Text } from "@mantine/core";
+import { Alert, Stack, Text } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { LoadingText } from "@/app/_components/PageState";
 import { ModelSelect } from "@/app/_components/modelOptions";
 import { useT } from "@/app/_i18n/provider";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
@@ -31,7 +32,7 @@ export function WorkspaceModelsSection() {
     <Stack gap="md">
       <Text size="sm" c="dimmed">{t("workspace.modelsHint")}</Text>
       {error && <Alert color="red">{error}</Alert>}
-      {!view && !error && <Loader size="sm" />}
+      {!view && !error && <LoadingText />}
       {view && WORKSPACE_MODEL_RUNTIMES.map(runtime => {
         const selected = view.selections[runtime];
         const options = view.options[runtime];

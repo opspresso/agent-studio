@@ -99,7 +99,7 @@ import type { RuntimeSessionServices } from "@/application/runtime/session";
 import { urlPolicy } from "@/infrastructure/net/urlPolicy";
 import { createHttpResourceReader } from "@/infrastructure/net/httpResource";
 import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
-import { config } from "./config";
+import { availableServiceLogos, config } from "./config";
 import { oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
 import { oauthClient } from "@/infrastructure/mcp/oauthClient";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
@@ -157,7 +157,6 @@ import { modelPreferencesRepository } from "@/infrastructure/db/repositories/mod
 import { catalogReindexLock } from "@/infrastructure/db/repositories/catalogReindexLock";
 import { CATALOG_REINDEX_LEASE_MS } from "@/domain/catalog/reindexLock";
 import type { PostCostAlert } from "@/application/usage/costGuard";
-import type { ConcurrencyLimits } from "@/application/run/concurrencyGuard";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { CatalogIndexDeps } from "@/application/catalog/reindexCatalog";
 import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
@@ -214,6 +213,9 @@ import {
   getLlmProviderConfigs,
   getPluginsRepoConfig,
   getPublicBaseUrl,
+  getServiceBranding,
+  getCatalogMinScore,
+  getMaxConcurrentRunsPerActor,
   getRerankerModel,
   getRerankerTarget,
   getRerankerModelSelection,
@@ -438,7 +440,7 @@ const mcpAuthProvider = createMcpAuthProvider({
   cipher: secretCipher,
 });
 export const mcpAuthUseCases = createMcpAuthUseCases({
-  serviceName: config.branding.name,
+  serviceName: async () => (await getServiceBranding()).name,
   mcps: mcpRepository,
   projects: projectRepository,
   connections: mcpConnectionRepository,
@@ -494,7 +496,7 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
       }),
       catalog: createPgVectorStore("catalog_vectors"),
       reindexState: () => catalogReindexLock.state(),
-      minScore: config.catalogMinScore,
+      minScore: getCatalogMinScore,
       reranker: createReranker(async () => resolveReranker(await getRerankerModel())),
       rerankerEnabled: async () => !!(await getRerankerModelSelection()),
       rerankerMinScore: getRerankerMinScore,
@@ -559,7 +561,7 @@ export const triggerUseCases = createTriggerUseCases({
     if (!getWorkspaceGitHubConfig()) throw new ValidationError("GitHub review integration is not configured");
   },
 });
-export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs);
+export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs, availableServiceLogos());
 export const modelSelectionUseCases = createModelSelectionUseCases({
   repository: settingsRepository,
   lock: catalogReindexLock,
@@ -569,6 +571,7 @@ export const modelSelectionUseCases = createModelSelectionUseCases({
       ? (await getEmbeddingModelSelection()).model || undefined
       : (await getRerankerModelSelection())?.model,
   currentRerankerMinScore: getRerankerMinScore,
+  currentCatalogMinScore: getCatalogMinScore,
   available: (type) =>
     type === "embedding" ? catalogDeps !== undefined : catalogDeps?.reranker !== undefined,
   hidden: async () => undefined,
@@ -915,15 +918,6 @@ export const readinessReport = () =>
   } });
 
 /**
- * Per-caller concurrency ceilings. Read once here rather than at each guard
- * call: the numbers come from boot env, and a getter per run would re-parse
- * them on every request.
- */
-const concurrencyLimits: ConcurrencyLimits = {
-  perActor: config.maxConcurrentRunsPerActor,
-};
-
-/**
  * The member tier behind an actor, for the run bracket's tier policies. Only
  * a `user` actor resolves one — machine callers *and project tokens* answer
  * `undefined` and keep the deployment-wide limits: a token is a service
@@ -1077,7 +1071,7 @@ export const executionDeps: ExecutionDeps = {
   traces: runTraceRepository,
   postAlert: deliverProjectMessage,
   runSlots: runSlotRepository,
-  limits: concurrencyLimits,
+  limits: async () => ({ perActor: await getMaxConcurrentRunsPerActor() }),
   unknownModelPolicy: getUnknownModelPolicy,
   resolveActorTier: actorTierResolver,
   ...(artifactStorage ? { artifacts: artifactStorage } : {}),

@@ -5,6 +5,7 @@ import { Figtree, JetBrains_Mono } from "next/font/google";
 import { AppLayout } from "@/components/AppLayout";
 import { ImageViewerProvider } from "./_components/ImageViewer";
 import { config } from "@/lib/config";
+import { getServiceBranding } from "@/lib/runtime-settings";
 import { getSessionUser } from "@/lib/session";
 import { resolveViewer } from "@/lib/viewer";
 import { I18nProvider } from "./_i18n/provider";
@@ -20,8 +21,8 @@ import "@mantine/charts/styles.css";
 import "./globals.css";
 
 /** Page titles and icons use the deployment's runtime branding. */
-export function generateMetadata(): Metadata {
-  const branding = config.branding;
+export async function generateMetadata(): Promise<Metadata> {
+  const branding = await getServiceBranding();
   return {
     title: { default: branding.name, template: `%s · ${branding.name}` },
     applicationName: branding.name,
@@ -73,7 +74,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
    * line-breaking rules to apply to Hangul.
    */
   const locale = await resolveLocale();
-  const branding = config.branding;
+  const branding = await getServiceBranding();
 
   return (
     <html

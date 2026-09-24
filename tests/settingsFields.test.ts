@@ -3,12 +3,16 @@ import type { SettingKey, SettingsView } from "@/application/settings/settingsUs
 import { SETTINGS_FIELDS, settingsPatch } from "@/app/settings/fields";
 
 const current = {
+  serviceName: "Agent Studio", serviceLogo: "agent-studio",
+  catalogMinScore: "0.25", maxConcurrentRunsPerActor: "10",
+  s3PublicBaseUrl: "https://objects.example.test/bucket", slackLoadingIndicator: ":loading:",
   publicBaseUrl: "https://studio.example.test", artifactAccessMode: "proxied", unknownModelPolicy: "allow",
   adminEmails: "admin@example.test", allowedEmailDomains: "example.test",
   pluginsRepo: "org/plugins", pluginsRepoBranch: "main",
   githubToken: "****************",
 };
 const view: SettingsView = {
+  serviceLogos: ["agent-studio", "agentops"],
   fields: Object.fromEntries(Object.values(SETTINGS_FIELDS).flat().map(({ key, type }) => [key,
     { value: current[key as keyof typeof current], secret: type === "secret", source: "override" },
   ])) as SettingsView["fields"],
@@ -17,20 +21,21 @@ const view: SettingsView = {
 
 describe("settings tab updates", () => {
   it("does not write unchanged values or masked credentials", () => {
-    for (const section of ["general", "plugins", "keys"] as const) expect(settingsPatch(section, current, view)).toEqual({});
+    for (const section of ["service", "access", "plugins"] as const) expect(settingsPatch(section, current, view)).toEqual({});
   });
   it("saves only changed fields owned by the active tab", () => {
     const edits = { ...current, publicBaseUrl: "https://new.example.test", pluginsRepoBranch: "release", githubToken: "replacement-token" };
-    expect(settingsPatch("general", edits, view)).toEqual({ publicBaseUrl: "https://new.example.test" });
-    expect(settingsPatch("plugins", edits, view)).toEqual({ pluginsRepoBranch: "release" });
-    expect(settingsPatch("keys", edits, view)).toEqual({ githubToken: "replacement-token" });
+    expect(settingsPatch("service", edits, view)).toEqual({ publicBaseUrl: "https://new.example.test" });
+    expect(settingsPatch("access", edits, view)).toEqual({});
+    expect(settingsPatch("plugins", edits, view)).toEqual({ pluginsRepoBranch: "release", githubToken: "replacement-token" });
   });
   it("preserves an intentional clear without resubmitting unrelated secrets", () => {
-    expect(settingsPatch("keys", { ...current, githubToken: "" }, view)).toEqual({ githubToken: "" });
+    expect(settingsPatch("plugins", { ...current, githubToken: "" }, view)).toEqual({ githubToken: "" });
+    expect(settingsPatch("service", { ...current, serviceLogo: "" }, view)).toEqual({ serviceLogo: "" });
   });
-  it("saves the unpriced-model policy from General without touching model selections", () => {
-    expect(settingsPatch("general", { ...current, unknownModelPolicy: "refuse" }, view)).toEqual({ unknownModelPolicy: "refuse" });
-    expect(settingsPatch("keys", { ...current, unknownModelPolicy: "refuse" }, view)).toEqual({});
+  it("keeps model scoring and price policies out of Service and Plugins", () => {
+    expect(settingsPatch("service", { ...current, unknownModelPolicy: "refuse", catalogMinScore: "0.4" }, view)).toEqual({});
+    expect(settingsPatch("plugins", { ...current, unknownModelPolicy: "refuse", catalogMinScore: "0.4" }, view)).toEqual({});
   });
   it("never clears fields missing from a partial draft", () => {
     const values: Partial<Record<SettingKey, string>> = { pluginsRepo: "org/new" };

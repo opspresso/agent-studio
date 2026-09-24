@@ -93,6 +93,16 @@ function deps(overrides: Partial<ConcurrencyGuardDeps> = {}): ConcurrencyGuardDe
 const user: RunActor = { kind: "user", id: "a@example.com" };
 
 describe("acquireRunSlot", () => {
+  it("reads the current limit for each new run", async () => {
+    const slots = memorySlots();
+    let perActor = 1;
+    const d = { runSlots: slots.repo, limits: async () => ({ perActor }) };
+    await acquireRunSlot(d, user);
+    await expect(acquireRunSlot(d, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    perActor = 2;
+    await expect(acquireRunSlot(d, user)).resolves.toBeDefined();
+  });
+
   it("admits runs up to the limit and refuses the next", async () => {
     const d = deps();
     const first = await acquireRunSlot(d, user);
@@ -231,6 +241,12 @@ describe("acquireRunSlot", () => {
 });
 
 describe("acquireRunSlot with a member tier", () => {
+  it("does not read the deployment limit when the tier has its own", async () => {
+    const limits = vi.fn(async () => { throw new Error("deployment limit unavailable"); });
+    const d = deps({ limits });
+    await expect(acquireRunSlot(d, user, "guest")).resolves.toBeDefined();
+    expect(limits).not.toHaveBeenCalled();
+  });
   const roomy = () => ({ runSlots: memorySlots().repo, limits: { perActor: 10 } });
   // Derived, not restated: the number is TIER_LIMITS's to change.
   const guestCeiling = TIER_LIMITS.guest.maxConcurrentRuns!;

@@ -1,5 +1,5 @@
 import { SettingsForm } from "./SettingsForm";
 
 export default function SettingsPage() {
-  return <SettingsForm section="general" />;
+  return <SettingsForm section="service" />;
 }

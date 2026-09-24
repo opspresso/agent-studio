@@ -7,7 +7,7 @@ import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 
 // The cipher is injected now; every call below is unchanged.
 const createSettingsUseCases = (repo: Parameters<typeof createSettingsUseCasesImpl>[0]) =>
-  createSettingsUseCasesImpl(repo, secretCipher, process.env, parseProviderConfigs);
+  createSettingsUseCasesImpl(repo, secretCipher, process.env, parseProviderConfigs, ["agent-studio", "agentops"]);
 import { ValidationError } from "@/application/errors";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings } from "@/domain/settings/types";
@@ -21,6 +21,12 @@ import {
 const ADMIN = "admin@example.com";
 
 const ENV_KEYS = [
+  "SERVICE_NAME",
+  "SERVICE_LOGO",
+  "CATALOG_MIN_SCORE",
+  "MAX_CONCURRENT_RUNS_PER_ACTOR",
+  "S3_PUBLIC_BASE_URL",
+  "SLACK_LOADING_INDICATOR",
   "ADMIN_EMAILS",
   "LLM_PROVIDER_OPENAI_BASE_URL",
   "LLM_PROVIDER_OPENAI_API_KEY",
@@ -140,6 +146,45 @@ describe("settingsUseCases.update access-control guards", () => {
 });
 
 describe("settingsUseCases.update", () => {
+  it("accepts installed branding and rejects unavailable assets or invalid names", async () => {
+    process.env.SERVICE_NAME = "Environment Name";
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    const view = await useCases.update({ serviceName: "My Studio", serviceLogo: "agentops" }, ADMIN);
+    expect(current()).toMatchObject({ serviceName: "My Studio", serviceLogo: "agentops" });
+    expect(view.fields.serviceName).toMatchObject({ value: "My Studio", source: "override" });
+    expect(view.serviceLogos).toContain("agentops");
+    await expect(useCases.update({ serviceLogo: "missing" }, ADMIN)).rejects.toThrow("required brand assets");
+    await expect(useCases.update({ serviceName: "A\nB" }, ADMIN)).rejects.toThrow("single line");
+    expect(current()?.serviceLogo).toBe("agentops");
+    await useCases.update({ serviceName: "", serviceLogo: "" }, ADMIN);
+    expect(current()?.serviceName).toBeUndefined();
+    expect(current()?.serviceLogo).toBeUndefined();
+  });
+
+  it("validates mutable search and run limits and restores env fallback", async () => {
+    process.env.CATALOG_MIN_SCORE = "0.2";
+    process.env.MAX_CONCURRENT_RUNS_PER_ACTOR = "8";
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    await useCases.update({ catalogMinScore: "0.4", maxConcurrentRunsPerActor: "0" }, ADMIN);
+    expect(current()).toMatchObject({ catalogMinScore: "0.4", maxConcurrentRunsPerActor: "0" });
+    await expect(useCases.update({ catalogMinScore: "1.5" }, ADMIN)).rejects.toThrow("between 0 and 1");
+    await expect(useCases.update({ maxConcurrentRunsPerActor: "1.5" }, ADMIN)).rejects.toThrow("between 0 and 1000");
+    await useCases.update({ catalogMinScore: "", maxConcurrentRunsPerActor: "" }, ADMIN);
+    expect(current()?.catalogMinScore).toBeUndefined();
+    expect(current()?.maxConcurrentRunsPerActor).toBeUndefined();
+  });
+
+  it("validates public artifact URLs and Slack progress text", async () => {
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    await useCases.update({ s3PublicBaseUrl: "https://objects.example.com/public/", slackLoadingIndicator: ":loading:" }, ADMIN);
+    expect(current()).toMatchObject({ s3PublicBaseUrl: "https://objects.example.com/public/", slackLoadingIndicator: ":loading:" });
+    await expect(useCases.update({ s3PublicBaseUrl: "https://user:pass@objects.example.com" }, ADMIN)).rejects.toThrow("Public object URL");
+    await expect(useCases.update({ slackLoadingIndicator: "line\nbreak" }, ADMIN)).rejects.toThrow("one line");
+  });
+
   it("merges a patch against the latest row inside the repository update", async () => {
     let stored: AppSettings = {
       embeddingModel: "openai/text-embedding-3-small",

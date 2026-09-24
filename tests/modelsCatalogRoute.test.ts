@@ -8,6 +8,8 @@ const {
   getRerankerModelSelection,
   getDecisionModelSelection,
   getRerankerMinScoreSelection,
+  getCatalogMinScoreSelection,
+  getUnknownModelPolicySelection,
   modelPreferenceUseCases,
   config,
 } = vi.hoisted(() => ({
@@ -17,6 +19,8 @@ const {
   getRerankerModelSelection: vi.fn(),
   getDecisionModelSelection: vi.fn(),
   getRerankerMinScoreSelection: vi.fn(),
+  getCatalogMinScoreSelection: vi.fn(),
+  getUnknownModelPolicySelection: vi.fn(),
   modelPreferenceUseCases: { listOptional: vi.fn() },
   config: {
     catalogEnabled: false,
@@ -36,6 +40,8 @@ vi.mock("@/lib/runtime-settings", () => ({
   getRerankerModelSelection,
   getDecisionModelSelection,
   getRerankerMinScoreSelection,
+  getCatalogMinScoreSelection,
+  getUnknownModelPolicySelection,
 }));
 vi.mock("@/lib/container", () => ({ modelPreferenceUseCases }));
 vi.mock("@/lib/config", () => ({ config }));
@@ -57,6 +63,8 @@ interface CatalogBody {
   };
   selectionAvailable: { embedding: boolean; rerank: boolean };
   rerankerMinScore: { value: number; source: "override" | "env" | "default" };
+  catalogMinScore: { value: number; source: "override" | "env" | "default" };
+  unknownModelPolicy: { value: "allow" | "refuse"; source: "override" | "env" | "default" };
 }
 
 async function catalog(): Promise<CatalogBody> {
@@ -74,6 +82,8 @@ beforeEach(() => {
   getRerankerModelSelection.mockResolvedValue(undefined);
   getDecisionModelSelection.mockResolvedValue(undefined);
   getRerankerMinScoreSelection.mockResolvedValue({ value: 0.01, source: "default" });
+  getCatalogMinScoreSelection.mockResolvedValue({ value: 0.25, source: "default" });
+  getUnknownModelPolicySelection.mockResolvedValue({ value: "allow", source: "default" });
   config.catalogEnabled = false;
 });
 
@@ -94,6 +104,8 @@ describe("GET /api/models/catalog", () => {
     });
     expect(body.selectionAvailable).toEqual({ embedding: false, rerank: false });
     expect(body.rerankerMinScore).toEqual({ value: 0.01, source: "default" });
+    expect(body.catalogMinScore).toEqual({ value: 0.25, source: "default" });
+    expect(body.unknownModelPolicy).toEqual({ value: "allow", source: "default" });
     expect(body.source).toBe("override");
   });
 

@@ -3,6 +3,7 @@ import Image from "next/image";
 import { Alert, Anchor, Card, Center, Stack, Text, ThemeIcon, Title } from "@mantine/core";
 import { SignInButton } from "@/components/SignInButton";
 import { config } from "@/lib/config";
+import { getServiceBranding } from "@/lib/runtime-settings";
 import { getSessionUser } from "@/lib/session";
 import { safeNextPath } from "@/shared/safeNextPath";
 import { signInErrorMessage } from "@/shared/signInError";
@@ -36,7 +37,7 @@ export default async function LoginPage({
 
   // The refusal itself stays in English: it is an `AppError`-shaped string from
   // `shared/signInError.ts`, which the console does not translate.
-  const branding = config.branding;
+  const branding = await getServiceBranding();
   const error = signInErrorMessage(params.error, branding.name);
   const t = await getT();
 

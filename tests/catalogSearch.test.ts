@@ -14,6 +14,19 @@ function render(children: React.ReactNode) {
 }
 
 describe("catalog search", () => {
+  it("does not report an empty catalog when its initial request failed", () => {
+    const t = translator("en");
+    vi.mocked(useT).mockReturnValue(t);
+    const html = render(createElement(CardGrid, {
+      loading: false,
+      failed: true,
+      empty: true,
+      emptyText: t("catalog.noResults"),
+      children: null,
+    }));
+    expect(html).not.toContain(t("catalog.noResults"));
+  });
+
   it("matches visible fields regardless of case and surrounding whitespace", () => {
     expect(matchesFilter("  assistant  ", "demo", "Team Assistant", undefined)).toBe(true);
     expect(matchesFilter("없는 검색어", "지원 도우미", "Support assistant")).toBe(false);

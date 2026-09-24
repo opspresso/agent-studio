@@ -1,7 +1,7 @@
 "use client";
 
 import { SectionHeading } from "@/app/_components/SectionHeading";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Alert, Badge, Button, Card, Group, Select, Stack, TagsInput, Text, TextInput } from "@mantine/core";
 import type { SettingKey, SettingsView } from "@/application/settings/settingsUseCases";
 import { SecretInput } from "@/app/_components/SecretInput";
@@ -21,6 +21,7 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   function applyView(next: SettingsView) {
     setView(next);
     setValues(Object.fromEntries(Object.entries(next.fields).map(([k, f]) => [k, f.value])));
@@ -55,7 +56,7 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -93,29 +94,48 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
     );
   }
 
-  const dirty = view !== null && Object.keys(settingsPatch(section, values, view)).length > 0;
+  if (view === null) {
+    return <Stack gap="lg" maw={860}>
+      <SectionHeading title={t(`settings.tab.${section}`)} description={t(`settings.section.${section}`)} />
+      <Alert color="red">{error ?? t("settings.loadFailed")}</Alert>
+      <Group><Button variant="default" onClick={() => { setError(null); setLoading(true); setReloadKey(key => key + 1); }}>{t("error.retry")}</Button></Group>
+    </Stack>;
+  }
+
+  const dirty = Object.keys(settingsPatch(section, values, view)).length > 0;
   const change = (key: SettingKey, value: string) => { setValues(previous => ({ ...previous, [key]: value })); setSaved(false); };
   return <Stack gap="lg" maw={860}>
     <SectionHeading title={t(`settings.tab.${section}`)} description={t(`settings.section.${section}`)} />
     {error && <Alert color="red">{error}</Alert>}
     <Card><form onSubmit={save}>
-      <Stack renderRoot={props => <fieldset {...props} disabled={!view || saving} />} gap="lg" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+      <Stack renderRoot={props => <fieldset {...props} disabled={saving} />} gap="lg" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         {SETTINGS_FIELDS[section].map(field => {
           const meta = view?.fields[field.key];
           const label = <Group component="span" gap="xs"><Text component="span" size="sm" fw={500}>{t(field.label)}</Text>
             <Badge variant="light" color={meta?.source === "override" ? "brand" : "gray"}>{t(`settings.source.${meta?.source ?? "unset"}`)}</Badge></Group>;
           const description = field.hint ? t(field.hint) : undefined;
           const value = values[field.key] ?? "";
-          if (field.type === "select") return <Select key={field.key} label={label} description={description} value={value || field.fallback} allowDeselect={false}
+          let control: React.ReactNode;
+          if (field.type === "logo") control = <Select label={label} description={description} value={value || null} clearable={meta?.source === "override"} allowDeselect={false}
+            data={view?.serviceLogos.map(logo => ({ value: logo, label: logo })) ?? []}
+            onChange={value => change(field.key, value ?? "")} />;
+          else if (field.type === "select") control = <Select label={label} description={description} value={value || field.fallback} allowDeselect={false}
             data={field.options.map(option => ({ value: option.value, label: t(option.label) }))}
             onChange={value => change(field.key, value ?? field.fallback)} />;
-          if (field.type === "emails" || field.type === "domains") return <TagsInput key={field.key} label={label} description={description} placeholder={field.placeholder}
+          else if (field.type === "emails" || field.type === "domains") control = <TagsInput label={label} description={description} placeholder={field.placeholder}
             value={parseList(value)} splitChars={[",", " "]} onChange={items => change(field.key, items.join(", "))} />;
-          if (field.type === "secret") return <SecretInput key={field.key} label={label} description={description} value={value} storedValue={meta?.value} allowReset={meta?.source === "override"}
+          else if (field.type === "secret") control = <SecretInput label={label} description={description} value={value} storedValue={meta?.value} allowReset={meta?.source === "override"}
             onChange={value => change(field.key, value)} />;
-          return <TextInput key={field.key} label={label} description={description} value={value} placeholder={field.placeholder}
+          else if (field.type === "number") control = <TextInput label={label} description={description} value={value}
+            type="number" min={field.min} max={field.max} step={field.step}
+            onChange={event => change(field.key, event.currentTarget.value)} />;
+          else control = <TextInput label={label} description={description} value={value} placeholder={field.placeholder}
             type={field.type === "url" ? "url" : "text"} pattern={field.type === "url" ? "https?://.+" : field.type === "repository" ? "[\\w.\\-]+/[\\w.\\-]+" : undefined}
             onChange={event => change(field.key, event.currentTarget.value)} />;
+          return <Fragment key={field.key}>
+            {field.group && <Text fw={600} size="sm" mt="sm">{t(field.group)}</Text>}
+            {control}
+          </Fragment>;
         })}
         <Group><Button type="submit" loading={saving} disabled={!dirty}>{t("modelAdmin.save")}</Button>{saved && <Text size="sm" c="teal">{t("modelAdmin.saved")}</Text>}</Group>
       </Stack>

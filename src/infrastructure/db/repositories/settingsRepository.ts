@@ -10,6 +10,8 @@ import { keys } from "../keys";
 const ENTITY_TYPE = "SETTINGS" as const;
 
 const FIELDS = [
+  "serviceName",
+  "serviceLogo",
   "defaultModel",
   "adminEmails",
   "allowedEmailDomains",
@@ -22,6 +24,10 @@ const FIELDS = [
   "githubToken",
   "publicBaseUrl",
   "unknownModelPolicy",
+  "catalogMinScore",
+  "maxConcurrentRunsPerActor",
+  "s3PublicBaseUrl",
+  "slackLoadingIndicator",
 ] as const;
 
 function fromItem(item: Record<string, unknown>): AppSettings {

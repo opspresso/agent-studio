@@ -1,7 +1,7 @@
 "use client";
 
 import type { McpTool } from "@/domain/mcp/types";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionIcon,
   Autocomplete,
@@ -155,6 +155,14 @@ function OptionPicker<T extends PickerOption>({
   onPick: (option: T) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const byId = useMemo(() => {
+    const indexed = new Map<string, T>();
+    for (const option of options) {
+      const id = option.id ?? option.value;
+      if (!indexed.has(id)) indexed.set(id, option);
+    }
+    return indexed;
+  }, [options]);
 
   /**
    * The value `Autocomplete` is about to echo into the input.
@@ -186,7 +194,7 @@ function OptionPicker<T extends PickerOption>({
         }
         return items.filter((item) => {
           const value = "value" in item ? item.value : "";
-          const option = options.find((candidate) => (candidate.id ?? candidate.value) === value);
+          const option = byId.get(value);
           return (
             (option?.value ?? value).toLowerCase().includes(query) ||
             (option?.description ?? "").toLowerCase().includes(query)
@@ -194,7 +202,7 @@ function OptionPicker<T extends PickerOption>({
         });
       }}
       renderOption={({ option }) => {
-        const meta = options.find((candidate) => (candidate.id ?? candidate.value) === option.value);
+        const meta = byId.get(option.value);
         return (
           <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
             <Text fz="sm" style={{ flexShrink: 0 }}>
@@ -214,7 +222,7 @@ function OptionPicker<T extends PickerOption>({
         );
       }}
       onOptionSubmit={(value) => {
-        const option = options.find((candidate) => (candidate.id ?? candidate.value) === value);
+        const option = byId.get(value);
         if (option) {
           onPick(option);
         }

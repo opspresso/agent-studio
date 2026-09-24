@@ -29,6 +29,8 @@ describe("settingsRepository", () => {
     // declarations vanished within a tick and the next unrelated save deleted
     // the stored row's copy for good.
     const stored: Required<import("@/domain/settings/types").AppSettings> = {
+      serviceName: "Studio",
+      serviceLogo: "agentops",
       registeredModels: [{
         id: "openai/gpt-test", provider: "openai", wireId: "gpt-test", displayName: "Test", type: "text",
         contextWindow: 10000, maxTokens: 2000,
@@ -49,6 +51,10 @@ describe("settingsRepository", () => {
       publicBaseUrl: "https://studio.example.com",
       artifactAccessMode: "public",
       unknownModelPolicy: "refuse",
+      catalogMinScore: "0.3",
+      maxConcurrentRunsPerActor: "12",
+      s3PublicBaseUrl: "https://objects.example.com/bucket",
+      slackLoadingIndicator: ":loading:",
       updatedAt: "2026-01-01T00:00:00Z",
     };
     await settingsRepository.update(() => stored);

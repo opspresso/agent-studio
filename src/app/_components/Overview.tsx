@@ -130,7 +130,7 @@ export function Overview({
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/chats")
+    fetch(`/api/chats?limit=${RECENT_CHATS}`)
       .then((res) => readJson<{ chats?: ChatSummary[] }>(res))
       .then((data) => {
         if (!cancelled) {
@@ -201,7 +201,7 @@ export function Overview({
       {isNewWorkspace ? (
         <GetStarted showCatalogs={showCatalogs} canCreateProjects={canCreateProjects} />
       ) : (
-        <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
+        <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" style={{ alignItems: "start" }}>
           <Section
             title={t("overview.recentProjects")}
             description={t("overview.recentProjectsNote")}

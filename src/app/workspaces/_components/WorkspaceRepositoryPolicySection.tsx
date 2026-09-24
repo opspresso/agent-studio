@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Group, Loader, Select, Stack, TagsInput, Text, NumberInput, Textarea, Title } from "@mantine/core";
+import { Alert, Anchor, Button, Card, Group, Select, Stack, TagsInput, Text, NumberInput, Textarea, Title } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
+import { useViewer } from "@/app/_lib/useViewer";
+import { LoadingText } from "@/app/_components/PageState";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import type { WorkspacePolicyResponse } from "@/app/api/projects/[name]/workspace-policy/route";
 import type { WorkspaceRuntime, WorkspaceCheck } from "@/domain/workspace/types";
@@ -12,6 +14,7 @@ import { WORKSPACE_REPOSITORY_MODES, workspaceRepositoryMode, type WorkspaceRepo
 
 export function WorkspaceRepositoryPolicySection({ projectName }: { projectName: string }) {
   const t = useT();
+  const viewer = useViewer();
   const [view, setView] = useState<WorkspacePolicyResponse | null>(null);
   const [runtime, setRuntime] = useState<WorkspaceRuntime>("command");
   const [idleTtl, setIdleTtl] = useState<number | string>(1800);
@@ -58,14 +61,15 @@ export function WorkspaceRepositoryPolicySection({ projectName }: { projectName:
       <Title order={3} size="h5">{t("workspace.toolsTitle")}</Title>
       <Text size="sm" c="dimmed">{t("workspace.policy.description")}</Text>
       {error && <Alert color="red">{error}</Alert>}
-      {!view && !error && <Loader size="sm" />}
+      {!view && !error && <LoadingText />}
       {view && !view.backendReady && <Alert>{t("workspace.backendUnavailable")}</Alert>}
       {view && !view.canManage && <Alert>{t("workspace.policy.adminOnly")}</Alert>}
       {view?.enabled && <>
         <Select label={t("workspace.defaultRuntime")} value={runtime} allowDeselect={false} disabled={busy || !view.canManage}
           data={[...new Set([...view.runtimes, runtime])].map(value => ({ value, label: value === "command" ? t("workspace.command") : value, disabled: !view.runtimes.includes(value) }))}
           onChange={value => { if (value) setRuntime(value as WorkspaceRuntime); setSaved(false); }} />
-        <Text size="sm" component={Link} href="/models">{t("workspace.runtimeModelsLink")}</Text>
+        {viewer?.isAdmin ? <Anchor size="sm" component={Link} href="/settings/model-usage">{t("workspace.runtimeModelsLink")}</Anchor>
+          : <Text size="sm" c="dimmed">{t("workspace.runtimeModelsAskAdmin")}</Text>}
         <Select label={t("workspace.policy.mode")} value={mode} allowDeselect={false} disabled={busy || !view.canManage}
           data={WORKSPACE_REPOSITORY_MODES.map(value => ({ value, label: t(`workspace.policy.mode.${value}`) }))}
           onChange={value => { if (value) setMode(value as WorkspaceRepositoryMode); setSaved(false); }} />

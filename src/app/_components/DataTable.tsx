@@ -17,13 +17,16 @@ import { Paper, Table } from "@mantine/core";
  */
 export function DataTable({
   minWidth = 420,
+  header,
   children,
 }: {
   minWidth?: number;
+  header?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <Paper withBorder style={{ overflow: "hidden", background: "var(--studio-surface)" }}>
+      {header}
       <Table.ScrollContainer minWidth={minWidth}>
         <Table fz="sm" verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
           {children}

@@ -181,6 +181,7 @@ export default function PluginsPage() {
 
       <CardGrid
         loading={loading}
+        failed={!!error && plugins.length === 0}
         empty={visibleItems.length === 0}
         emptyText={t(plugins.length === 0 ? "plugins.empty" : "catalog.noResults")}
       >

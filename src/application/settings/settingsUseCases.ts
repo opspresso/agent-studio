@@ -8,10 +8,14 @@ import type {
 } from "@/domain/settings/types";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { DEFAULT_RERANKER_MIN_SCORE } from "@/domain/catalog/types";
+import { DEFAULT_MIN_SCORE } from "@/domain/catalog/types";
+import { DEFAULT_RUN_SLOTS_PER_ACTOR, MAX_RUN_SLOTS } from "@/domain/execution/runSlot";
+import { DEFAULT_LOADING_INDICATOR } from "@/shared/slackLoadingIndicator";
 import { providerBaseUrl, providerKind } from "@/domain/llm/providerModels";
 import type { SupportedProvider } from "@/domain/llm/models";
 import { parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
+import { DEFAULT_SERVICE_LOGO, DEFAULT_SERVICE_NAME, resolveBranding } from "@/shared/branding";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import {
@@ -49,6 +53,12 @@ interface FieldSpec {
  * as the effective value.
  */
 const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
+  { key: "serviceName", secret: false, env: () => optionalEnv(env.SERVICE_NAME), defaultValue: DEFAULT_SERVICE_NAME },
+  { key: "serviceLogo", secret: false, env: () => optionalEnv(env.SERVICE_LOGO), defaultValue: DEFAULT_SERVICE_LOGO },
+  { key: "catalogMinScore", secret: false, env: () => optionalEnv(env.CATALOG_MIN_SCORE), defaultValue: String(DEFAULT_MIN_SCORE) },
+  { key: "maxConcurrentRunsPerActor", secret: false, env: () => optionalEnv(env.MAX_CONCURRENT_RUNS_PER_ACTOR), defaultValue: String(DEFAULT_RUN_SLOTS_PER_ACTOR) },
+  { key: "s3PublicBaseUrl", secret: false, env: () => optionalEnv(env.S3_PUBLIC_BASE_URL) },
+  { key: "slackLoadingIndicator", secret: false, env: () => optionalEnv(env.SLACK_LOADING_INDICATOR), defaultValue: DEFAULT_LOADING_INDICATOR },
   { key: "adminEmails", secret: false, env: () => optionalEnv(env.ADMIN_EMAILS) },
   {
     key: "allowedEmailDomains",
@@ -112,6 +122,8 @@ export interface LlmProviderView {
 
 export interface SettingsView {
   fields: Record<SettingKey, SettingFieldView>;
+  /** Brand folders with every required asset present in this deployment. */
+  serviceLogos: string[];
   /** Per-provider LLM channels; `source` covers the list as a whole. */
   llmProviders: { source: "override" | "env"; items: LlmProviderView[] };
   updatedAt?: string;
@@ -210,6 +222,7 @@ function toView(
   parseProviderConfigs: ParseProviderConfigs,
   specs: FieldSpec[],
   settings: AppSettings | null,
+  serviceLogos: readonly string[],
 ): SettingsView {
   const fields = {} as Record<SettingKey, SettingFieldView>;
   for (const spec of specs) {
@@ -241,6 +254,7 @@ function toView(
   }
   return {
     fields,
+    serviceLogos: [...serviceLogos],
     llmProviders: toProviderViews(cipher, env, parseProviderConfigs, settings),
     updatedAt: settings?.updatedAt,
   };
@@ -326,13 +340,14 @@ export function createSettingsUseCases(
   cipher: SecretCipher,
   env: NodeJS.ProcessEnv,
   parseProviderConfigs: ParseProviderConfigs,
+  serviceLogos: readonly string[],
 ): SettingsUseCases {
   // `env` is fixed for the process, so the specs and their fallback closures are
   // built once here rather than rebuilt on every settings read and write.
   const specs = fieldSpecs(env);
   return {
     async getView() {
-      return toView(cipher, env, parseProviderConfigs, specs, await repo.get());
+      return toView(cipher, env, parseProviderConfigs, specs, await repo.get(), serviceLogos);
     },
 
     /**
@@ -364,6 +379,29 @@ export function createSettingsUseCases(
               throw new ValidationError("Reranker minimum score must be between 0 and 1");
             }
           }
+          if (spec.key === "catalogMinScore" && value !== "") {
+            const score = Number(value);
+            if (!Number.isFinite(score) || score < 0 || score > 1) {
+              throw new ValidationError("Catalog minimum score must be between 0 and 1");
+            }
+          }
+          if (spec.key === "maxConcurrentRunsPerActor" && value !== "") {
+            const limit = Number(value);
+            if (!Number.isInteger(limit) || limit < 0 || limit > MAX_RUN_SLOTS) {
+              throw new ValidationError(`Concurrent runs per actor must be between 0 and ${MAX_RUN_SLOTS}`);
+            }
+          }
+          if (spec.key === "s3PublicBaseUrl" && value !== "") {
+            try {
+              const url = new URL(value);
+              if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error();
+            } catch {
+              throw new ValidationError("Public object URL must be HTTP(S) without credentials, query parameters or fragments");
+            }
+          }
+          if (spec.key === "slackLoadingIndicator" && value !== "" && (value.length > 80 || /[\u0000-\u001f\u007f]/.test(value))) {
+            throw new ValidationError("Slack loading indicator must be one line of at most 80 characters");
+          }
           if (spec.key === "artifactAccessMode" && value !== "") {
             if (value !== "authenticated" && value !== "public" && value !== "proxied") {
               throw new ValidationError(
@@ -392,7 +430,7 @@ export function createSettingsUseCases(
             }
           } else if (
             value === spec.env() ||
-            (spec.key === "rerankerMinScore" &&
+            (["rerankerMinScore", "catalogMinScore", "maxConcurrentRunsPerActor"].includes(spec.key) &&
               spec.env() === undefined &&
               value === spec.defaultValue)
           ) {
@@ -438,6 +476,16 @@ export function createSettingsUseCases(
           }
         }
 
+        try {
+          resolveBranding(next.serviceName ?? optionalEnv(env.SERVICE_NAME), next.serviceLogo ?? optionalEnv(env.SERVICE_LOGO));
+        } catch {
+          throw new ValidationError("Service name must be a single line of at most 80 characters and logo must name a brand folder");
+        }
+        const effectiveLogo = next.serviceLogo ?? optionalEnv(env.SERVICE_LOGO) ?? DEFAULT_SERVICE_LOGO;
+        if (!serviceLogos.includes(effectiveLogo)) {
+          throw new ValidationError("Service logo must have all required brand assets in this deployment");
+        }
+
         const effectiveAdmins = parseList(next.adminEmails ?? env.ADMIN_EMAILS ?? "");
         if (effectiveAdmins.length > 0 && !effectiveAdmins.includes(userEmail.toLowerCase())) {
           throw new ValidationError(
@@ -461,7 +509,7 @@ export function createSettingsUseCases(
         target: auditTarget("settings", "app"),
         detail: changed.join(", ") || "no fields changed",
       });
-      return toView(cipher, env, parseProviderConfigs, specs, next);
+      return toView(cipher, env, parseProviderConfigs, specs, next, serviceLogos);
     },
   };
 }

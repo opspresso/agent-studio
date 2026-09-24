@@ -25,6 +25,9 @@ export interface LlmProviderSetting {
 export type ArtifactAccessMode = "authenticated" | "public" | "proxied";
 
 export interface AppSettings {
+  /** Display branding; absent values fall back to SERVICE_NAME/SERVICE_LOGO. */
+  serviceName?: string;
+  serviceLogo?: string;
   registeredModels?: import("../llm/providerModels").RegisteredModel[];
   defaultModel?: string;
   adminEmails?: string;
@@ -55,5 +58,13 @@ export interface AppSettings {
    * `toUnknownModelPolicy` is what reads it.
    */
   unknownModelPolicy?: string;
+  /** Capability search score floor; absent falls back to CATALOG_MIN_SCORE. */
+  catalogMinScore?: string;
+  /** Caller run-slot ceiling; absent falls back to MAX_CONCURRENT_RUNS_PER_ACTOR. */
+  maxConcurrentRunsPerActor?: string;
+  /** Public object delivery address; absent falls back to S3_PUBLIC_BASE_URL. */
+  s3PublicBaseUrl?: string;
+  /** Slack edit-in-place progress marker; absent falls back to SLACK_LOADING_INDICATOR. */
+  slackLoadingIndicator?: string;
   updatedAt: string;
 }

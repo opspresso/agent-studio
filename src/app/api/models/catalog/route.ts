@@ -13,6 +13,8 @@ import {
   getRerankerModelSelection,
   getDecisionModelSelection,
   getRerankerMinScoreSelection,
+  getCatalogMinScoreSelection,
+  getUnknownModelPolicySelection,
   type ModelSelection,
   type ScoreSelection,
 } from "@/lib/runtime-settings";
@@ -27,6 +29,8 @@ export interface ModelsCatalogResponse {
   source: "override" | "default";
   selections: { embedding: ModelSelection; rerank?: ModelSelection; decision?: ModelSelection };
   rerankerMinScore: ScoreSelection;
+  catalogMinScore: ScoreSelection;
+  unknownModelPolicy: Awaited<ReturnType<typeof getUnknownModelPolicySelection>>;
   selectionAvailable: { embedding: boolean; rerank: boolean };
 }
 
@@ -39,6 +43,8 @@ export const GET = withMemberAuth(async (user) => {
     rerank,
     decision,
     rerankerMinScore,
+    catalogMinScore,
+    unknownModelPolicy,
   ] = await Promise.all([
     getLlmProviderConfigs(),
     modelPreferenceUseCases.listOptional(user.id),
@@ -46,6 +52,8 @@ export const GET = withMemberAuth(async (user) => {
     getRerankerModelSelection(),
     getDecisionModelSelection(),
     getRerankerMinScoreSelection(),
+    getCatalogMinScoreSelection(),
+    getUnknownModelPolicySelection(),
   ]);
   const dedicated = new Set(providerConfigs.map((provider) => provider.name));
   const favorites = new Set(favoriteModels);
@@ -66,6 +74,8 @@ export const GET = withMemberAuth(async (user) => {
     source: "override",
     selections: { embedding, ...(rerank ? { rerank } : {}), ...(decision ? { decision } : {}) },
     rerankerMinScore,
+    catalogMinScore,
+    unknownModelPolicy,
     selectionAvailable: {
       embedding: config.catalogEnabled,
       rerank: config.catalogEnabled,

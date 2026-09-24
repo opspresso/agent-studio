@@ -10,8 +10,8 @@ export function ModelSettingsNav() {
   const links = [
     ["/settings/providers", "modelAdmin.providers"],
     ["/settings/models", "modelAdmin.selection"],
-    ["/settings/model-usage", "modelAdmin.usage"],
     ["/settings/models/registered", "settings.models.registered"],
+    ["/settings/model-usage", "modelAdmin.usage"],
   ] as const;
   return <PageTabs value={path} label={t("settings.tab.models")} variant="pills" items={links.map(([href, label]) => ({ href, label: t(label) }))} />;
 }

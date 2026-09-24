@@ -50,7 +50,7 @@ export function Dashboard({ projects }: { projects: SanitizedProject[] | null })
   const [to, setTo] = useState(initial.to);
   const [groupBy, setGroupBy] = useState<GroupBy>("project");
   const [items, setItems] = useState<UsageRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   /** projectName → departmentCode, for the chargeback grouping. */
@@ -105,6 +105,8 @@ export function Dashboard({ projects }: { projects: SanitizedProject[] | null })
   const cost = useMemo(() => totalCost(items), [items]);
   const calls = useMemo(() => totalCalls(items), [items]);
   const averageCost = calls > 0 ? cost / calls : 0;
+  const usageUnavailable = loading || error !== null;
+  const usageDetail = loading ? t("common.loading") : error ? t("usage.loadFailed") : t("cost.selectedPeriod");
 
   return (
     <Stack gap="xl">
@@ -133,26 +135,26 @@ export function Dashboard({ projects }: { projects: SanitizedProject[] | null })
       <SimpleGrid cols={{ base: 1, xs: 2, xl: 4 }} spacing="md">
         <StatCard
           label={t("cost.totalCost")}
-          value={formatUsd(cost)}
-          detail={t("cost.selectedPeriod")}
+          value={usageUnavailable ? "—" : formatUsd(cost)}
+          detail={usageDetail}
           Icon={IconCoins}
         />
         <StatCard
           label={t("cost.totalCalls")}
-          value={calls.toLocaleString(locale)}
-          detail={t("cost.modelInvocations")}
+          value={usageUnavailable ? "—" : calls.toLocaleString(locale)}
+          detail={usageUnavailable ? usageDetail : t("cost.modelInvocations")}
           Icon={IconActivity}
         />
         <StatCard
           label={t("cost.averageCost")}
-          value={formatUsd(averageCost, 4)}
-          detail={t("cost.perInvocation")}
+          value={usageUnavailable ? "—" : formatUsd(averageCost, 4)}
+          detail={usageUnavailable ? usageDetail : t("cost.perInvocation")}
           Icon={IconChartAreaLine}
         />
         <StatCard
           label={t("cost.activeGroups")}
-          value={groups.length.toLocaleString(locale)}
-          detail={t("usage.groupedBy", { axis: t(GROUP_BY_LABEL[groupBy]) })}
+          value={usageUnavailable ? "—" : groups.length.toLocaleString(locale)}
+          detail={usageUnavailable ? usageDetail : t("usage.groupedBy", { axis: t(GROUP_BY_LABEL[groupBy]) })}
           Icon={IconLayersIntersect}
         />
       </SimpleGrid>
@@ -168,11 +170,11 @@ export function Dashboard({ projects }: { projects: SanitizedProject[] | null })
         <CostBarChart
           data={daily.data}
           keys={daily.keys}
-          empty={loading ? t("common.loading") : t("usage.none")}
+          empty={loading ? t("common.loading") : error ? t("usage.loadFailed") : t("usage.none")}
         />
       </Card>
 
-      <UsageBreakdown groups={groups} label={groupBy} loading={loading} />
+      <UsageBreakdown groups={groups} label={groupBy} loading={loading} failed={error !== null} />
     </Stack>
   );
 }

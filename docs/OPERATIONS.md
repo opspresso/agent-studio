@@ -350,7 +350,7 @@ actor 에 대해 프로젝트의 비용 가드 다음, 슬롯 이전에 검사�
 
 ### 동시성 가드: fail-closed
 
-caller 당 `MAX_CONCURRENT_RUNS_PER_ACTOR` (기본 10)을 적용한다. `0` 은 그 한도를 끈다. 한도를 넘으면 런은
+caller 당 Settings → Service의 동시 실행 한도(`MAX_CONCURRENT_RUNS_PER_ACTOR` 폴백, 기본 10)를 적용한다. `0` 은 그 한도를 끈다. 한도를 넘으면 런은
 `429` 와 짧은 `Retry-After` 로 거부되는데, **시작되기 전에** 거부되므로 usage 도 트레이스도
 남기지 않는다. 상한의 최대값은 저장 slot index가 표현하는 1000이다.
 

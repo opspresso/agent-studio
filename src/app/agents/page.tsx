@@ -17,7 +17,6 @@ import {
 import { IconRobot } from "@tabler/icons-react";
 import { FormModal } from "@/app/_components/FormModal";
 import { useDisclosure } from "@mantine/hooks";
-import { useSession } from "@/lib/auth-client";
 import { tierMayCreateProjects } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
 import { toSlug } from "@/domain/naming";
@@ -34,7 +33,6 @@ export default function AgentsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const t = useT();
-  const { data: session } = useSession();
   const viewer = useViewer();
   const mayCreate = viewer !== null && tierMayCreateProjects(viewer.tier);
   const createRequested = searchParams.get("create") === "1";
@@ -107,6 +105,7 @@ export default function AgentsPage() {
 
       <CardGrid
         loading={loading}
+        failed={!!error && projects.length === 0}
         empty={visibleProjects.length === 0}
         emptyText={t(projects.length === 0 ? "agents.empty" : "catalog.noResults")}
       >
@@ -134,7 +133,7 @@ export default function AgentsPage() {
             </Text>
             <OwnerLine
               ownerEmail={project.ownerEmail}
-              isMine={session?.user.email === project.ownerEmail}
+              isMine={viewer?.email === project.ownerEmail}
               mt={4}
             />
             <Text fz="sm" c="dimmed" mt="xs" lineClamp={3}>

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   getSignedUrl: vi.fn(),
   getArtifactAccessMode: vi.fn(),
+  getS3PublicBaseUrl: vi.fn(),
 }));
 
 vi.mock("@aws-sdk/client-s3", () => ({
@@ -24,6 +25,7 @@ vi.mock("@aws-sdk/client-s3", () => ({
 vi.mock("@aws-sdk/s3-request-presigner", () => ({ getSignedUrl: mocks.getSignedUrl }));
 vi.mock("@/lib/runtime-settings", () => ({
   getArtifactAccessMode: mocks.getArtifactAccessMode,
+  getS3PublicBaseUrl: mocks.getS3PublicBaseUrl,
 }));
 
 const { artifactObjectStore, artifactPublicUrl, readStoredObject } = await import(
@@ -38,7 +40,7 @@ it("keeps private files outside generic reads, writes, deletes and URL generatio
   await expect(artifactObjectStore.put({ key, bytes: new Uint8Array([1]), mimeType: "audio/mpeg" })).rejects.toMatchObject({ name: "ObjectNotFoundError" });
   await expect(artifactObjectStore.delete(key)).rejects.toMatchObject({ name: "ObjectNotFoundError" });
   await expect(artifactObjectStore.sign(key, 60)).rejects.toMatchObject({ name: "ObjectNotFoundError" });
-  expect(() => artifactPublicUrl(key)).toThrow("No stored object");
+  await expect(artifactPublicUrl(key)).rejects.toThrow("No stored object");
   expect(mocks.send).not.toHaveBeenCalled();
   expect(mocks.getSignedUrl).not.toHaveBeenCalled();
 });
@@ -74,6 +76,7 @@ function streamingBody(chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array>)
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.getS3PublicBaseUrl.mockReset().mockResolvedValue(undefined);
   process.env.S3_BUCKET_NAME = "artifact-bucket";
   process.env.AWS_REGION = "ap-northeast-2";
 });
@@ -224,8 +227,16 @@ describe("artifactObjectStore access modes", () => {
       "https://artifact-bucket.s3.ap-northeast-2.amazonaws.com/artifacts/image/a%20b.png",
     );
     expect(mocks.getSignedUrl).not.toHaveBeenCalled();
-    expect(artifactPublicUrl("artifacts/문서/a b.pdf")).toContain(
+    expect(await artifactPublicUrl("artifacts/문서/a b.pdf")).toContain(
       "artifacts/%EB%AC%B8%EC%84%9C/a%20b.pdf",
+    );
+  });
+
+  it("uses the saved public object URL for direct links", async () => {
+    mocks.getArtifactAccessMode.mockResolvedValue("public");
+    mocks.getS3PublicBaseUrl.mockResolvedValue("https://objects.example.com/bucket/");
+    await expect(artifactObjectStore.sign("artifacts/image/a b.png", 900)).resolves.toBe(
+      "https://objects.example.com/bucket/artifacts/image/a%20b.png",
     );
   });
 

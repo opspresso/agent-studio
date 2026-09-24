@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * read the stored override, but no request could set it. This pins the schema
  * against the keys this general editor owns. Embedding and reranker selections
  * intentionally use `/api/models/selection`, where type checks and migration
- * approval cannot be bypassed.
+ * approval cannot be bypassed. The embedding score uses the same route.
  */
 const { useCases } = vi.hoisted(() => ({
   useCases: { update: vi.fn(), getView: vi.fn() },
@@ -39,6 +39,17 @@ beforeEach(() => {
 });
 
 describe("PUT /api/settings", () => {
+  it("forwards editable Service fields", async () => {
+    const body = {
+      serviceName: "My Studio", serviceLogo: "agentops",
+      s3PublicBaseUrl: "https://objects.example.com/public",
+      maxConcurrentRunsPerActor: "12", slackLoadingIndicator: ":loading:",
+    };
+    const res = await put(body);
+    expect(res.status).toBe(200);
+    expect(useCases.update).toHaveBeenCalledWith(body, "admin@example.com");
+  });
+
   it("forwards the plugins-repo keys to settingsUseCases.update", async () => {
     const body = {
       pluginsRepo: "org/plugins",
@@ -99,7 +110,7 @@ describe("PUT /api/settings", () => {
   });
 
   it("rejects direct model usage changes outside the selection use case", async () => {
-    const res = await put({ embeddingModel: "local/embedding", rerankerModel: "local/reranker" });
+    const res = await put({ embeddingModel: "local/embedding", rerankerModel: "local/reranker", catalogMinScore: "0.4" });
     expect(res.status).toBe(400);
     expect(useCases.update).not.toHaveBeenCalled();
   });
@@ -111,9 +122,7 @@ describe("PUT /api/settings", () => {
   });
 
   it("accepts an empty unknownModelPolicy, which is how the page clears an override", async () => {
-    // The page submits every field on every save and tells the operator to clear
-    // one to fall back to env. Refusing "" here made the only un-clearable field
-    // 400 the whole form, taking every other edit with it.
+    // The Models policy editor clears this override to restore the env value.
     const body = { pluginsRepo: "org/plugins", unknownModelPolicy: "" };
     const res = await put(body);
     expect(res.status).toBe(200);

@@ -2,7 +2,7 @@
 
 import { SecretInput } from "@/app/_components/SecretInput";
 import { useEffect, useState } from "react";
-import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { BotIntegrationSection } from "./BotIntegrationSection";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import {
@@ -12,9 +12,8 @@ import {
   updateProjectTeams,
 } from "../../lib/api";
 import type { ProjectTeamsResponse } from "../../lib/api";
-import { Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
+import { Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
-import { stateColor } from "@/app/_components/badgeColors";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
 
@@ -32,10 +31,13 @@ export function TeamsSection({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const { confirm, confirmModal } = useConfirm();
 
   useEffect(() => {
     let cancelled = false;
+    setView(null);
+    setError(null);
     getProjectTeams(projectName)
       .then((v) => {
         if (!cancelled) {
@@ -50,14 +52,11 @@ export function TeamsSection({
     return () => {
       cancelled = true;
     };
-  }, [projectName]);
+  }, [projectName, reloadKey]);
 
   if (!view) {
-    return error ? (
-      <Text fz="sm" c="red">
-        {error}
-      </Text>
-    ) : null;
+    return <BotIntegrationSection title={t("pset.teamsBot")} view={null} error={error}
+      onRetry={() => setReloadKey(key => key + 1)} />;
   }
 
   async function save() {
@@ -122,14 +121,8 @@ export function TeamsSection({
 
 
   return (
-    <CollapsibleSection
-      title={t("pset.teamsBot")}
-      badge={
-        <Badge color={stateColor(view.enabled)} radius="xl">
-          {view.enabled ? "enabled" : view.configured ? "configured (off)" : "not connected"}
-        </Badge>
-      }
-    >
+    <BotIntegrationSection title={t("pset.teamsBot")} view={view} error={error}
+      onRetry={() => setReloadKey(key => key + 1)}>
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>
           {t("pset.teamsIntro")}
@@ -190,6 +183,6 @@ export function TeamsSection({
           )}
         </Group>
       </Stack>
-    </CollapsibleSection>
+    </BotIntegrationSection>
   );
 }

@@ -318,7 +318,7 @@ function parseGrantedScopes(scope: string): string[] {
 }
 
 export interface McpAuthUseCasesDeps {
-  serviceName: string;
+  serviceName: () => Promise<string>;
   lifecycleClaims?: Set<string>;
   mcps: McpRepository;
   projects: ProjectRepository;
@@ -841,7 +841,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         } else if (server.auth.registrationEndpoint) {
           const registered = await deps.oauth.register({
             registrationEndpoint: server.auth.registrationEndpoint,
-            clientName: `${deps.serviceName} — ${projectName}`,
+            clientName: `${await deps.serviceName()} — ${projectName}`,
             redirectUri: callback,
             scopes,
             // The method the token requests will prove themselves with: a

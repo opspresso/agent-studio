@@ -46,6 +46,7 @@ describe("PUT /api/models/selection", () => {
       true,
       "admin@example.com",
       undefined,
+      undefined,
     );
   });
 
@@ -68,6 +69,7 @@ describe("PUT /api/models/selection", () => {
       false,
       "admin@example.com",
       undefined,
+      undefined,
     );
   });
 
@@ -85,7 +87,23 @@ describe("PUT /api/models/selection", () => {
       false,
       "admin@example.com",
       0.05,
+      undefined,
     );
+  });
+
+  it("passes an embedding score floor to the bound use case", async () => {
+    modelSelectionUseCases.select.mockResolvedValue({ settings: {} });
+    const res = await put({ type: "embedding", model: "selfhosted/Qwen/Qwen3-Embedding-4B", catalogMinScore: 0.35 });
+    expect(res.status).toBe(200);
+    expect(modelSelectionUseCases.select).toHaveBeenCalledWith(
+      "embedding", "selfhosted/Qwen/Qwen3-Embedding-4B", false, "admin@example.com", undefined, 0.35,
+    );
+  });
+
+  it("rejects an embedding score floor outside zero to one", async () => {
+    const res = await put({ type: "embedding", model: "selfhosted/Qwen/Qwen3-Embedding-4B", catalogMinScore: -0.1 });
+    expect(res.status).toBe(400);
+    expect(modelSelectionUseCases.select).not.toHaveBeenCalled();
   });
 
   it("rejects a rerank score floor outside zero to one", async () => {

@@ -25,6 +25,7 @@ export interface ModelSelectionDeps {
   settings: SettingsUseCases;
   current(type: GlobalModelType): Promise<string | undefined>;
   currentRerankerMinScore(): Promise<number>;
+  currentCatalogMinScore(): Promise<number>;
   available(type: GlobalModelType): boolean;
   hidden(): Promise<string[] | undefined>;
   testReranker?: (model: string) => Promise<void>;
@@ -39,6 +40,7 @@ export interface ModelSelectionUseCases {
     migrate: boolean,
     actorEmail: string,
     rerankerMinScore?: number,
+    catalogMinScore?: number,
   ): Promise<ModelSelectionResult>;
 }
 
@@ -46,7 +48,7 @@ export function createModelSelectionUseCases(
   deps: ModelSelectionDeps,
 ): ModelSelectionUseCases {
   return {
-    async select(type, model, migrate, actorEmail, rerankerMinScore) {
+    async select(type, model, migrate, actorEmail, rerankerMinScore, catalogMinScore) {
       const selected = getModelConfig(model);
       if (!selected) {
         throw new ValidationError(`Unknown model "${model}"`);
@@ -64,6 +66,9 @@ export function createModelSelectionUseCases(
       }
       const currentModel = await deps.current(type);
       if (type === "rerank") {
+        if (catalogMinScore !== undefined) {
+          throw new ValidationError("Catalog minimum score applies only to embedding models");
+        }
         if (
           rerankerMinScore !== undefined &&
           (!Number.isFinite(rerankerMinScore) || rerankerMinScore < 0 || rerankerMinScore > 1)
@@ -100,8 +105,20 @@ export function createModelSelectionUseCases(
       if (rerankerMinScore !== undefined) {
         throw new ValidationError("Reranker minimum score applies only to rerank models");
       }
-      if (model === currentModel) {
+      if (
+        catalogMinScore !== undefined &&
+        (!Number.isFinite(catalogMinScore) || catalogMinScore < 0 || catalogMinScore > 1)
+      ) {
+        throw new ValidationError("Catalog minimum score must be between 0 and 1");
+      }
+      const scoreChanged = catalogMinScore !== undefined && catalogMinScore !== await deps.currentCatalogMinScore();
+      if (model === currentModel && !scoreChanged) {
         return { settings: await deps.settings.getView() };
+      }
+      if (model === currentModel) {
+        const settings = await deps.settings.update({ catalogMinScore: String(catalogMinScore) }, actorEmail);
+        deps.invalidate();
+        return { settings };
       }
       if (!migrate) {
         throw new ValidationError("Changing the embedding model requires migration approval");
@@ -115,14 +132,18 @@ export function createModelSelectionUseCases(
       }
       try {
         const before = await deps.repository.get();
-        const settings = await deps.settings.update({ embeddingModel: model }, actorEmail);
+        const settings = await deps.settings.update({ embeddingModel: model,
+          ...(catalogMinScore !== undefined ? { catalogMinScore: String(catalogMinScore) } : {}),
+        }, actorEmail);
         deps.invalidate();
         try {
           return { settings, migration: await deps.reindex() };
         } catch (migrationError) {
           try {
             await deps.settings.update(
-              { embeddingModel: before?.embeddingModel ?? "" },
+              { embeddingModel: before?.embeddingModel ?? "",
+                ...(catalogMinScore !== undefined ? { catalogMinScore: before?.catalogMinScore ?? "" } : {}),
+              },
               actorEmail,
             );
           } catch (restoreSelectionError) {

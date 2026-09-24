@@ -79,8 +79,8 @@ fail-open 이 될 수는 없다.
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
 | `STAGE` | production 밖에서는 `local` | — | `local` \| `alpha` \| `prod`. 그 밖의 값은 부팅 시 throw 하며, 프로덕션 프로세스는 이 값을 명시적으로 설정해야 한다. 위의 접근 제어 검사를 게이트한다. |
-| `SERVICE_NAME` | `Agent Studio` | — | 화면·브라우저 제목·안내 문구, MCP OAuth 클라이언트 이름, Slack 매니페스트의 기본 설명에 표시할 이름. 앞뒤 공백을 제거한 한 줄, 최대 80자. `SERVICE_LOGO`와 독립적으로 설정한다. |
-| `SERVICE_LOGO` | `agent-studio` | — | `public/brands/<값>/` 자산 폴더 선택자. 내장 폴더는 `agent-studio`, `agentops`다. 소문자·숫자·하이픈만 허용하며 `logo.png`, `favicon.ico`, `favicon-32.png`, `icon-192.png`, `apple-touch-icon.png`가 모두 없으면 부팅을 거부한다. 새 브랜드도 같은 파일을 추가해 선택한다. 예: `SERVICE_NAME=AgentOps`, `SERVICE_LOGO=agentops`. |
+| `SERVICE_NAME` | `Agent Studio` | **runtime** | 화면·브라우저 제목·안내 문구, MCP OAuth 클라이언트 이름, Slack 매니페스트의 기본 설명에 표시할 이름. 앞뒤 공백을 제거한 한 줄, 최대 80자. `SERVICE_LOGO`와 독립적으로 설정한다. |
+| `SERVICE_LOGO` | `agent-studio` | **runtime** | `public/brands/<값>/` 자산 폴더 선택자. 내장 폴더는 `agent-studio`, `agentops`다. 소문자·숫자·하이픈만 허용하며 `logo.png`, `favicon.ico`, `favicon-32.png`, `icon-192.png`, `apple-touch-icon.png`가 모두 없으면 부팅을 거부한다. 새 브랜드도 같은 파일을 추가해 선택한다. 예: `SERVICE_NAME=AgentOps`, `SERVICE_LOGO=agentops`. |
 | `DATABASE_URL` | — (필수) | — | PostgreSQL 접속 문자열 (`postgres://user:pass@host:5432/db`). 이 앱의 모든 행. 아이템 테이블, Better Auth 의 테이블, capability 카탈로그의 벡터. 이 여기 있다. 서버에 `pgvector` 확장을 *만들 수 있어야* 한다 (`CREATE EXTENSION IF NOT EXISTS vector` 를 부팅 때 앱이 실행한다). 스키마는 부팅 때 마이그레이션된다. |
 | `DATABASE_POOL_SIZE` | `10` | — | 프로세스 하나의 최대 DB connection 수, 하한 1. 웹 replica와 worker별 pool을 합산해 DB의 접속 한도 안에 배치한다. 모델 응답을 기다리는 동안 DB connection을 계속 점유하지 않는다. |
 | `AWS_REGION` | `ap-northeast-2` | — | AWS 를 쓰는 기능. Bedrock 임베딩, `S3_ENDPOINT` 없이 AWS S3 자체를 쓸 때의 클라이언트. 이 쓰는 리전. 그 밖에는 읽히지 않는다. |
@@ -88,11 +88,11 @@ fail-open 이 될 수는 없다.
 | `S3_BUCKET_NAME` | 미설정 | — | Artifacts의 공통 버킷. 일반 생성 파일은 `artifacts/<kind>/`, 비공개 오디오·전사·요약은 `source-files/`에 저장한다. 어느 S3 호환 스토어든 된다 (MinIO, Garage, Ceph RGW, AWS S3). 행에는 오브젝트 키가 저장되고 URL 은 절대 저장되지 않는다. 자격증명은 스토어 자신의 `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` 쌍이고, 비어 있으면 SDK 기본 체인(`AWS_*`, 인스턴스 역할, AWS 자신에는 이것이 맞다)이다; 그 주체에게는 (레거시 `images/*` 만이 아니라) **`artifacts/*`와 `source-files/*`**의 put·get·delete와 비공개 파일의 multipart 업로드 권한이 있어야 한다. 설정하지 않으면 영속화가 통째로 꺼진다: 런은 여전히 그림을 그리고, 바이트는 표면까지 도달했다가 거기서 멈추며, artifact 갤러리는 404 로 답한다. |
 | `S3_ENDPOINT` | 미설정 | — | AWS 가 아닌 스토어의 주소 (`http://minio:9000`). 설정되면 path-style 로 주소를 만든다. 자체 호스팅 엔드포인트는 버킷 서브도메인을 해석하지 못하는 것이 보통이다. 비어 있으면 SDK 자신의 리전·자격증명 해석으로 AWS S3 에 간다. |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | 미설정 | — | 오브젝트 스토어의 키 쌍. `AWS_*` 에 넣지 않는다. 그 쌍은 프로세스의 다른 모든 AWS 클라이언트(Bedrock 채널·Cohere 임베딩)가 읽으므로, MinIO 의 키를 거기 두면 AWS 에 MinIO 키로 서명하게 된다. 비어 있으면 SDK 기본 체인을 따른다. |
-| `S3_PUBLIC_BASE_URL` | 미설정 | — | `public` 모드에서 독자가 오브젝트에 닿는 base 가 앱이 업로드하는 엔드포인트와 다를 때 (리버스 프록시 뒤의 MinIO). 비어 있으면 `S3_ENDPOINT`/`<bucket>`, 그것도 없으면 AWS 의 virtual-host 형태. |
+| `S3_PUBLIC_BASE_URL` | 미설정 | **runtime** | `public` 모드에서 독자가 오브젝트에 닿는 base 가 앱이 업로드하는 엔드포인트와 다를 때 (리버스 프록시 뒤의 MinIO). 비어 있으면 `S3_ENDPOINT`/`<bucket>`, 그것도 없으면 AWS 의 virtual-host 형태. |
 | `ARTIFACT_ACCESS_MODE` | `authenticated` | **runtime** | 독자가 저장된 오브젝트에 어떻게 닿는가. **`proxied`**. 앱 자신의 주소 `PUBLIC_BASE_URL/api/objects/<key>?exp=&sig=[&dl=]` 를 건네고 앱이 바이트로 답한다(`PUBLIC_BASE_URL` 이 없으면 경로만, 콘솔은 같은 origin 이라 닿지만 Slack 같은 외부 독자에게는 주소가 아니다). 모델 입력 이미지는 URL이 아니라 저장소에서 읽은 bounded inline bytes로 전달된다. 스토어는 앱에게만 닿으면 되므로 설치형의 선택이다. 토큰이 증명하는 것과 수명은 [SECURITY.md](SECURITY.md#데이터-노출과-보존). **`authenticated`**. 유효 기간이 있는 스토어의 pre-signed URL. 브라우저가 스토어에 직접 닿을 수 있어야 한다. **`public`**. 영구적인 직접 URL. 버킷 정책이 `artifacts/*` 와 레거시 `images/*` 의 공개 읽기를 허용할 때만 동작한다. **다운로드 링크는 `public` 에서도 pre-signed 다**: 브라우저가 저장할 파일명이 요청 서명에 실려 가는데 S3 는 익명 GET 에서 `response-*` 오버라이드를 거부하기 때문이다. 그래서 `public` 모드에서 문서의 주소는 유효 기간이 있고 이미지의 주소는 영구로 남는다. public 모드는 갤러리 메타데이터와 삭제가 인증을 유지하더라도 URL 을 손에 넣은 누구에게나 오브젝트를 노출한다. 모르는 값은 `authenticated` 로 fail-closed 된다. |
 | `CATALOG_ENABLED` | `false` | — | `true` 면 이 배포가 capability 카탈로그를 갖는다. 벡터는 데이터베이스의 `catalog_vectors` 에 있고 따로 가리킬 것은 없다. 설정하지 않으면 `POST /api/catalog/reindex` 는 503 으로 답하고, 런은 자기 설정에 바인딩한 것만 제공한다. 그 503 에는 원인이 둘 있고 토큰 검사가 먼저 돌므로, `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우에도 메시지만 다른 같은 상태 코드가 나온다. 기본이 꺼짐인 이유: 카탈로그에는 배포의 채널이 서빙하는 임베딩 모델이 필요한데 부팅 때 그것을 확인할 길이 없다. 켜는 것은 그 모델이 있다는 선언이다. |
 | `EMBEDDING_DIM` | `1024` | — | provider 에 요청하는 폭. `native` 는 폭 파라미터를 생략해 모델의 native dimension을 쓴다. 테이블의 모든 행이 같은 폭이어야 pgvector 가 거리를 계산하므로 값을 바꾼 뒤 반드시 재색인하라. Cohere v4, Titan v2, OpenAI v3처럼 폭 선택을 지원하는 모델은 명시값을 사용하고, 폭 파라미터를 거부하는 모델은 `native` 를 사용한다. |
-| `CATALOG_MIN_SCORE` | `0.25` | — | vector 검색의 절대 하한. 유한한 숫자는 0–1로 clamp하고 그 밖에는 기본값을 사용하며 경고한다. query별 최고 점수의 상대 하한과 함께 적용한다. 모델·질의 언어가 바뀌면 [선택 절차](#임베딩-모델-선택)로 다시 확인한다. |
+| `CATALOG_MIN_SCORE` | `0.25` | **models** | vector 검색의 절대 하한. 유한한 숫자는 0–1로 clamp하고 그 밖에는 기본값을 사용하며 경고한다. query별 최고 점수의 상대 하한과 함께 적용한다. Settings → Models → Model usage에서 활성 Embedding 모델과 함께 저장한다. 점수만 바꾸면 재색인하지 않으며, 모델·질의 언어가 바뀌면 [선택 절차](#임베딩-모델-선택)로 다시 확인한다. |
 | `RERANKER_MIN_SCORE` | `0.01` | **models** | activation된 reranker relevance score의 noise floor. 각 query에서 최고 점수의 10%와 이 값 중 높은 쪽을 최종 하한으로 쓴다. 범위 밖 env 값은 `0`–`1`로 clamp한다. capability 설명은 답 자체가 아니라 답을 만들 도구이므로 adapter는 전용 instruction을 함께 보낸다. 모델을 바꾸면 다시 측정하고 `/settings/model-usage`에서 함께 저장하라. DB override가 env보다 우선하며 다음 검색부터 적용된다. |
 | `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`; 일반 URL 조립은 요청 origin, 없으면 `http://localhost:3000` | **runtime** | 바깥을 향하는 URL (Slack 매니페스트, MCP OAuth 콜백, MCP client ID 메타데이터 문서)을 만들 때 쓰는 scheme + host. 리버스 프록시 뒤에서는 요청 URL 이 bind 주소를 반영하므로 이 값은 설정에서 와야 한다. 요청 origin 단계는 요청이 손에 있는 일반 URL 조립에서만 적용된다. **거부된 사인인의 리디렉션(`/login?error=`)은 부팅 시 env 값으로 고정된다**: Better Auth 옵션은 한 번만 평가되므로 runtime 설정을 보지 못하고, env 가 비어 있으면 상대 경로가 되어 프록시 뒤에서 bind 주소 기준으로 해석될 수 있다. OIDC/Google 사인인을 쓰는 배포는 env 로도 설정하라. **MCP client ID 메타데이터 문서는 예외다**: 설정된 base 가 없으면 요청 origin 이나 localhost 를 추측하지 않고 503 으로 답한다. 그 URL 이 곧 OAuth `client_id` 이고 authorization server 가 가져가므로, loopback 이나 평문 http 값이면 흐름이 시작되기 전에 거부되고 provider 가 제공하는 경우 연결은 dynamic registration 으로 폴백한다. [SECURITY.md](SECURITY.md#mcp-oauth) 를 보라. |
 
@@ -125,9 +125,13 @@ fail-open 이 될 수는 없다.
 
 ## 설정 화면
 
-`/settings`는 General·Plugins·Models·Keys 탭으로 구성한다. General은 서비스 URL·Artifact
-접근 방식·관리자와 허용 도메인, Plugins는 저장소와 브랜치, Keys는 GitHub 토큰을 관리한다. Models에는 프로바이더 연결·모델 선택·사용 설정·등록 모델
-관리를 둔다. 프로바이더 키는 주소와 함께 Models의 연결 설정에서 관리한다.
+`/settings`는 Service·Access·Plugins·Models 탭으로 구성한다. Service는 서비스 이름·로고·공개 주소·
+Artifact 전달·동시 실행·Slack 표시를, Access는 관리자와 허용 도메인을 관리한다.
+Plugins는 저장소·브랜치·GitHub 토큰을, Models는 프로바이더 연결·등록 모델·모델 사용 설정·
+검색 모델별 점수와 가격 미지정 모델의 실행 정책을
+관리한다. 프로바이더 키는 주소와 함께 Models의 연결 설정에서 관리한다.
+Service 로고는 이 배포의 `public/brands/`에 필요한 자산이 모두 있는 폴더만 선택할 수 있다.
+부팅·DB·인증 제공자·스토리지 연결·보존 기간·아웃바운드 보안 경계를 정하는 값은 배포 환경에서 관리한다.
 URL·목록·비밀값·선택값은 각각 주소 입력·태그 입력·비밀번호 입력·선택 컨트롤을 사용한다.
 저장은 현재 탭에서 변경한 필드만 전송하며 변경하지 않은 마스크나 다른 탭의 값은 전송하지 않는다.
 
@@ -198,7 +202,7 @@ Rerank 변경은 실제 query/document probe가 성공한 뒤 저장한다. 검�
 포함하여 선택한 모델의 프로바이더 URL·키·전송 ID를 함께 사용한다.
 
 `UNKNOWN_MODEL_POLICY=allow|refuse`는 선택한 모델의 가격 미확인을 허용할지 정한다.
-Settings → General의 **가격 정보가 없는 모델**에서 이 정책을 재정의할 수 있다.
+Settings → Models → Model usage의 **가격 정보가 없는 모델**에서 이 정책을 재정의할 수 있다.
 기본값은 `allow`다. 미등록 모델의 실행은 이 값과 무관하게 거부된다. 제공자가 실제 비용을
 반환하면 우선 사용하고, 가격을 계산할 수 없으면 비용 누락 경고·지표를 남긴다.
 
@@ -207,7 +211,7 @@ Settings → General의 **가격 정보가 없는 모델**에서 이 정책을 �
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
 | `MAX_RUN_DURATION_MS` | `600000` (10분) | — | 모든 진입점에 걸리는, 단일 런의 실제 경과 시간 상한. 멈춰 버린 provider 나 도구 호출이 무한정 돌거나 무한정 청구할 수 없다. 유효하지 않은 값은 경고와 함께 무시된다. Slack·Telegram·Teams 경로는 공용 메시징 파이프라인에서 추가로 고정된 3분 인터랙티브 데드라인(아래)을 적용하는데, 그것은 런을 짧게 만들 수만 있다. 런 슬롯 lease 는 이 값 + 60초, MCP OAuth 토큰 갱신 여유는 이 값 + 5분이다. 서명 URL 수명은 런 길이와 독립적으로 뷰 15분·지속되는 기록 7일이며 `src/shared/artifactUrlTtl.ts` 가 소유한다. |
-| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | — | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 자기 `maxConcurrentRuns` 를 가진 멤버 tier(*코드에 고정된 제한* 참고)는 그 멤버 자신의 런에 대해 이 값을 덮어쓴다. 기본 `guest` tier 가 그런 값을 하나 들고 있다. `admin`/`member`, 프로젝트 토큰, 그리고 모든 기계 호출자는 이 값을 물려받는다. |
+| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | **runtime** | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 자기 `maxConcurrentRuns` 를 가진 멤버 tier(*코드에 고정된 제한* 참고)는 그 멤버 자신의 런에 대해 이 값을 덮어쓴다. 기본 `guest` tier 가 그런 값을 하나 들고 있다. `admin`/`member`, 프로젝트 토큰, 그리고 모든 기계 호출자는 이 값을 물려받는다. |
 | `SCHEDULE_SCAN_TOKEN` | 미설정 | — | 모든 ticker 가 제시하는 단 하나의 자격증명(`X-Scan-Token`)이며, CronJob 이 POST 하는 세 엔드포인트가 공유한다: `/api/triggers/scan`(schedule), `/api/plugins/sync/scan`(plugins 저장소), `/api/catalog/reindex`(capability 카탈로그). 설정하지 않으면 이 배포에 ticker 가 없다는 뜻이다: 셋 다 503 으로 답하고 schedule 트리거는 결코 발화하지 않는다. 열리는 대신 꺼진다. |
 
 유효하지 않은 값(정수가 아니거나 음수, 또는 위 동시성 상한 초과)은 `0` 이 아니라 경고와 함께 기본값으로 떨어진다.
@@ -273,7 +277,7 @@ sync는 선언된 이름의 항목을 갱신하고 사라진 항목은 orphan으
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
-| `SLACK_LOADING_INDICATOR` | `:hourglass_flowing_sand:` | — | Slack 답변이 아직 쓰이고 있는 동안 뒤에 붙였다가 마지막 편집에서 떼어 내는 표시. **edit-in-place 폴백에서만 그렇다**. 스트리밍되는 답변은 Slack 자신이 아직 도착 중이라고 표시해 준다. 자기 spinner 이모지를 가진 워크스페이스는 여기에 그 이름을 적는다. 기본값이 내장돼 있는 이유는, 워크스페이스가 정의하지 않은 커스텀 이름은 글자 그대로 렌더링되기 때문이다. |
+| `SLACK_LOADING_INDICATOR` | `:hourglass_flowing_sand:` | **runtime** | Slack 답변이 아직 쓰이고 있는 동안 뒤에 붙였다가 마지막 편집에서 떼어 내는 표시. **edit-in-place 폴백에서만 그렇다**. 스트리밍되는 답변은 Slack 자신이 아직 도착 중이라고 표시해 준다. 자기 spinner 이모지를 가진 워크스페이스는 여기에 그 이름을 적는다. 기본값이 내장돼 있는 이유는, 워크스페이스가 정의하지 않은 커스텀 이름은 글자 그대로 렌더링되기 때문이다. |
 
 프로젝트별 Slack 설정. 봇 토큰, signing secret, 추천 프롬프트, 그리고 멘션 없이 봇을 깨우는
 **채널 키워드**. 는 환경이 아니라 프로젝트에 산다 (`/agents/{name}/settings`). Agent의

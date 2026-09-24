@@ -31,6 +31,7 @@ import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
 import type { TranscriptionConfig } from "@/infrastructure/llm/transcription";
 import { config, positiveIntEnv } from "./config";
 import { optionalEnv } from "@/shared/env";
+import { resolveBranding, type Branding } from "@/shared/branding";
 import { parseList } from "@/shared/parseList";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 import { log } from "@/shared/logger";
@@ -299,6 +300,42 @@ export async function getPublicBaseUrl(): Promise<string | undefined> {
   return (await loadSettings())?.publicBaseUrl ?? config.publicBaseUrl;
 }
 
+export async function getServiceBranding(): Promise<Branding> {
+  const stored = await loadSettings();
+  return resolveBranding(stored?.serviceName ?? optionalEnv(process.env.SERVICE_NAME),
+    stored?.serviceLogo ?? optionalEnv(process.env.SERVICE_LOGO));
+}
+
+export async function getCatalogMinScoreSelection(): Promise<ScoreSelection> {
+  const stored = (await loadSettings())?.catalogMinScore;
+  if (stored !== undefined) {
+    const value = Number(stored);
+    if (Number.isFinite(value) && value >= 0 && value <= 1) {
+      return { value, source: "override" };
+    }
+  }
+  return optionalEnv(process.env.CATALOG_MIN_SCORE) !== undefined
+    ? { value: config.catalogMinScore, source: "env" }
+    : { value: config.catalogMinScore, source: "default" };
+}
+
+export async function getCatalogMinScore(): Promise<number> {
+  return (await getCatalogMinScoreSelection()).value;
+}
+
+export async function getMaxConcurrentRunsPerActor(): Promise<number> {
+  const stored = (await loadSettings())?.maxConcurrentRunsPerActor;
+  return stored === undefined ? config.maxConcurrentRunsPerActor : Number(stored);
+}
+
+export async function getS3PublicBaseUrl(): Promise<string | undefined> {
+  return (await loadSettings())?.s3PublicBaseUrl ?? config.s3PublicBaseUrl;
+}
+
+export async function getSlackLoadingIndicator(): Promise<string | undefined> {
+  return (await loadSettings())?.slackLoadingIndicator ?? config.slackLoadingIndicator;
+}
+
 export async function getArtifactAccessMode(): Promise<ArtifactAccessMode> {
   const value =
     (await loadSettings())?.artifactAccessMode ?? optionalEnv(process.env.ARTIFACT_ACCESS_MODE);
@@ -311,8 +348,17 @@ export async function getArtifactAccessMode(): Promise<ArtifactAccessMode> {
  * module. The parsing is the domain's, one layer below both of us.
  */
 export async function getUnknownModelPolicy(): Promise<UnknownModelPolicy> {
+  return (await getUnknownModelPolicySelection()).value;
+}
+
+export async function getUnknownModelPolicySelection(): Promise<{
+  value: UnknownModelPolicy;
+  source: "override" | "env" | "default";
+}> {
   const stored = (await loadSettings())?.unknownModelPolicy;
-  return toUnknownModelPolicy(stored ?? process.env.UNKNOWN_MODEL_POLICY);
+  if (stored !== undefined) return { value: toUnknownModelPolicy(stored), source: "override" };
+  const env = optionalEnv(process.env.UNKNOWN_MODEL_POLICY);
+  return { value: toUnknownModelPolicy(env), source: env === undefined ? "default" : "env" };
 }
 
 /** Docker compute infrastructure is deployment-owned; project and model settings are stored separately. */

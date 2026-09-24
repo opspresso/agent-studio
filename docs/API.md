@@ -230,7 +230,8 @@ DELETE /api/skills/{name}     → 204                     | 404
 
 생성 시 배포가 제공하는 첫 번째 호환 텍스트 모델로 초기 Agent 설정을 같은 Project 행에
 저장한다. 호환 모델이 없으면 미설정 Agent로 생성한다. 일반 Project 응답은 시크릿을 포함한 설정 원문을 싣지 않고
-`configured`로 설정 유무를 알린다.
+`configured`로 설정 유무를 알린다. Agent 탭에 필요한 `audioToolsEnabled`와
+`workspaceToolsEnabled`는 현재 설정에서 계산한 불리언이며 설정 원문은 노출하지 않는다.
 
 #### 공개 범위와 복제
 
@@ -402,20 +403,27 @@ MCP 서버의 이름을 담는다. `guest` 가 거절당하는 바로 그 레지
 
 ```
 GET /api/settings → 200 { fields: { <key>: { value, source, secret } },
+                          serviceLogos: string[],
                           llmProviders: { source, items: [ { name, baseUrl, apiKey, keepModelPrefix, auth } ] },
                           updatedAt? }
 PUT /api/settings → 200 {…same shape…} | 400
 ```
 
-- 두 동사 모두 admin 전용이다. GET 의 `fields` 키는 `adminEmails`, `allowedEmailDomains`,
+- 두 동사 모두 admin 전용이다. GET 의 `fields` 키는 `serviceName`, `serviceLogo`,
+  `catalogMinScore`, `maxConcurrentRunsPerActor`, `s3PublicBaseUrl`, `slackLoadingIndicator`,
+  `adminEmails`, `allowedEmailDomains`,
   `embeddingModel`, `rerankerModel`, `rerankerMinScore`, `pluginsRepo`,
   `pluginsRepoBranch`, `githubToken`, `publicBaseUrl`, `artifactAccessMode`,
-  `unknownModelPolicy`다. 이 중 Embedding/Rerank 선택 세 필드는 읽기 전용이며
+  `unknownModelPolicy`다. Embedding/Rerank 선택 세 필드와 `catalogMinScore`는 이 API에서 읽기 전용이며
   `PUT /api/models/selection` 으로 변경한다. PUT 이 받는 `artifactAccessMode`
   (`authenticated` | `proxied` | `public` | `""`)와 `unknownModelPolicy`
   (`allow` | `refuse` | `""`)는 enum 으로 검증된다.
   `pluginsRepo` 는 자기만의 형태를 가진 나머지 하나의 키다. `owner/repo`, 또는 비우면
-  지운다. 나머지는 길이가 제한된 문자열이다.
+  지운다. `serviceLogo`는 이 배포에 필요한 파일이 모두 있는 브랜드 폴더만 허용한다.
+  `maxConcurrentRunsPerActor`는 0–1000의 정수다.
+  `s3PublicBaseUrl`은 자격증명·query·fragment 없는 HTTP(S) URL이고,
+  `slackLoadingIndicator`는 최대 80자의 한 줄이다. 빈 값은 각 env 폴백을 복원한다.
+  나머지는 길이가 제한된 문자열이다.
 
 - PUT의 `llmProviders`는 최대 50개의 전체 교체 목록이다. 각 항목은
   `{ name, kind?, baseUrl, apiKey, auth?, keepModelPrefix? }`다. `name`은 고유한 소문자 식별자,
@@ -1587,8 +1595,8 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 | `PUT /api/models/default` | `{ model }`. 도구 호출을 지원하는 등록 Text 모델을 선택한다 |
 | `GET /api/models/decision` | `{ model: string | null }`. Agent 추천에 쓰는 전역 결정 모델 선택 |
 | `PUT /api/models/decision` | `{ model: string | null }`. OpenRouter 또는 System One 호환 연결의 등록된 Decisions 모델을 선택하거나 해제한다 |
-| `GET /api/models/catalog` | 등록 모델의 runtime facts, 현재 검색 선택, 검색 기능 활성 여부와 사용자 즐겨찾기를 반환한다 |
-| `PUT /api/models/selection` | `{ type: "embedding" | "rerank", model, migrate?, rerankerMinScore? }`. Embedding 변경은 `migrate: true`와 전체 재색인을 요구하며 Rerank는 probe 후 저장한다 |
+| `GET /api/models/catalog` | 등록 모델의 runtime facts, 현재 검색 선택, `catalogMinScore`·`rerankerMinScore`·`unknownModelPolicy`의 유효 값과 출처, 검색 기능 활성 여부와 사용자 즐겨찾기를 반환한다 |
+| `PUT /api/models/selection` | `{ type: "embedding" | "rerank", model, migrate?, catalogMinScore?, rerankerMinScore? }`. Embedding 변경은 `migrate: true`와 전체 재색인을 요구하며 Rerank는 probe 후 저장한다. 점수만 변경할 때는 재색인·probe가 필요하지 않다. Embedding 변경과 함께 보낸 점수는 재색인 실패 시 이전 값으로 복원한다 |
 | `GET /api/models/workspace` | Runtime별 선택·호환 모델의 runtime facts·사용자 즐겨찾기와 사용 가능한 Runtime 목록 |
 | `PUT /api/models/workspace` | `{ runtime, model: string | null }`. 등록된 호환 모델을 선택하거나 해제한다 |
 | `GET/PUT /api/models/favorites` | 사용자별 `{ models: string[] }` 조회·전체 교체 |

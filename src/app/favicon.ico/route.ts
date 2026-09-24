@@ -1,13 +1,13 @@
-import { config } from "@/lib/config";
+import { getServiceBranding } from "@/lib/runtime-settings";
 
 export const dynamic = "force-dynamic";
 
 /** Conventional favicon requests follow the selected brand without caching the choice. */
-export function GET(): Response {
+export async function GET(): Promise<Response> {
   return new Response(null, {
     status: 307,
     headers: {
-      Location: config.branding.faviconUrl,
+      Location: (await getServiceBranding()).faviconUrl,
       "Cache-Control": "no-store",
     },
   });

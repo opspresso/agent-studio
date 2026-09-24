@@ -8,7 +8,9 @@ import { useT } from "@/app/_i18n/provider";
 import { ModelSelect } from "@/app/_components/modelOptions";
 import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
 import { ModelSelectionSection } from "@/app/models/ModelSelectionSection";
+import { ModelExecutionPolicySection } from "@/app/models/ModelExecutionPolicySection";
 import { WorkspaceModelsSection } from "@/app/models/WorkspaceModelsSection";
+import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import type { ModelsCatalogResponse } from "@/app/api/models/catalog/route";
 import type { DefaultModelResponse } from "@/app/api/models/default/route";
 import type { DecisionModelResponse } from "@/app/api/models/decision/route";
@@ -70,6 +72,7 @@ export default function ModelUsagePage() {
     {error && <Alert color="red">{error}</Alert>}
     {!view && !error && <LoadingText />}
     {view && <>
+      <CollapsibleSection title={t("modelAdmin.primaryModels")} defaultOpen><Stack gap="md">
       <ModelSelect label={t("modelAdmin.default")} placeholder={t("models.selection.unconfigured")} searchable disabled={busy} allowDeselect={false}
         value={view.selected.model} models={defaultOptions}
         leading={view.selected.model && !defaultOptions.some(model => model.id === view.selected.model)
@@ -81,9 +84,12 @@ export default function ModelUsagePage() {
         leading={view.catalog.selections.decision?.model && !decisionOptions.some(model => model.id === view.catalog.selections.decision?.model)
           ? [{ value: view.catalog.selections.decision.model, label: view.catalog.selections.decision.model }] : []}
         onChange={model => void selectDecision(model)} />
+      </Stack></CollapsibleSection>
       <WorkspaceModelsSection />
-      <ModelSelectionSection models={view.catalog.models} selections={view.catalog.selections} rerankerMinScore={view.catalog.rerankerMinScore}
+      <ModelSelectionSection models={view.catalog.models} selections={view.catalog.selections}
+        catalogMinScore={view.catalog.catalogMinScore} rerankerMinScore={view.catalog.rerankerMinScore}
         available={view.catalog.selectionAvailable} onChanged={async () => setView(await load())} />
+      <ModelExecutionPolicySection policy={view.catalog.unknownModelPolicy} onChanged={async () => setView(await load())} />
     </>}
   </Stack>;
 }

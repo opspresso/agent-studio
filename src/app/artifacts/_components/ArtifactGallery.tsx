@@ -90,6 +90,7 @@ export function ArtifactGallery({
   // when the kind changed cannot append the old kind's rows — or its cursor —
   // to the new list.
   const listGeneration = useRef(0);
+  const moreInFlight = useRef(false);
 
   const query = useCallback(
     (before?: string): ArtifactQuery => ({
@@ -106,6 +107,10 @@ export function ArtifactGallery({
     // last — showing the reader a kind they are no longer asking for.
     let cancelled = false;
     listGeneration.current += 1;
+    moreInFlight.current = false;
+    setArtifacts([]);
+    setNextBefore(undefined);
+    setLoadingMore(false);
     async function refresh() {
       setLoading(true);
       setError(null);
@@ -132,11 +137,13 @@ export function ArtifactGallery({
   }, [load, query]);
 
   async function loadMore() {
-    if (!nextBefore) {
+    if (!nextBefore || moreInFlight.current) {
       return;
     }
     const generation = listGeneration.current;
+    moreInFlight.current = true;
     setLoadingMore(true);
+    setError(null);
     try {
       const page = await load(query(nextBefore));
       if (listGeneration.current !== generation) {
@@ -149,7 +156,10 @@ export function ArtifactGallery({
         setError(e instanceof Error ? e.message : "Failed to load more");
       }
     } finally {
-      setLoadingMore(false);
+      if (listGeneration.current === generation) {
+        moreInFlight.current = false;
+        setLoadingMore(false);
+      }
     }
   }
 
@@ -228,7 +238,8 @@ export function ArtifactGallery({
         )}
       </Group>
 
-      <CardGrid loading={loading} empty={artifacts.length === 0} emptyText={emptyText}>
+      <CardGrid loading={loading} failed={!!error && artifacts.length === 0}
+        empty={visible.length === 0} emptyText={artifacts.length === 0 ? emptyText : t("catalog.noResults")}>
         {visible.map((artifact) => (
           <ArtifactCard
             key={artifact.artifactId}

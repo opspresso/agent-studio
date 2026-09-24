@@ -20,8 +20,8 @@ describe("costLimitsForSave", () => {
   });
 });
 
-describe("cost limits before a successful read", () => {
-  it("renders the editor inside a disabled fieldset", () => {
+describe("cost limits from the loaded project", () => {
+  it("renders saved values without another project request", () => {
     const html = renderToStaticMarkup(
       createElement(MantineProvider, {
         theme: {
@@ -29,11 +29,15 @@ describe("cost limits before a successful read", () => {
             AccordionPanel: { defaultProps: { keepMounted: true, keepMountedMode: "display-none" } },
           },
         },
-        children: createElement(CostLimitsSection, { projectName: "project" }),
+        children: createElement(CostLimitsSection, {
+          projectName: "project",
+          project: { costLimits: { alertThresholdUsd: 4 } },
+        }),
       }),
     );
 
-    expect(html).toMatch(/<fieldset[^>]*disabled=""/);
+    expect(html).toContain('value="4"');
+    expect(html).not.toMatch(/<fieldset[^>]*disabled=""/);
     expect(html).toContain("Save cost limits");
   });
 });

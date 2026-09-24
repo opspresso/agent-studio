@@ -139,7 +139,7 @@ function harness(
   }
 
   const deps: McpAuthUseCasesDeps = {
-    serviceName: "Agent Studio",
+    serviceName: async () => "Agent Studio",
     mcps: { get: async (name: string) => (name === server.name ? server : null) } as never,
     projects: {
       get: async (name: string) =>
