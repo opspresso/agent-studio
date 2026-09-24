@@ -122,7 +122,7 @@ export function Composer({
           onRemoveDocument={removeDocumentAt}
         />
         <Group gap="xs" align="flex-end" wrap="nowrap">
-          <AttachButton onPick={(files) => void addFiles(files)} disabled={disabled} documents />
+          <AttachButton onPick={attach} disabled={disabled} documents />
           <Textarea
             aria-label={t("chat.messageLabel")}
             value={value}
