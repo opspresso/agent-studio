@@ -22,7 +22,7 @@ vi.mock("@/lib/container", () => ({
   // than leaves undecided.
   signArtifactUrl: undefined,
 }));
-vi.mock("@/lib/config", () => ({ config: { slackLoadingIndicator: undefined } }));
+vi.mock("@/lib/runtime-settings", () => ({ getSlackLoadingIndicator: async () => undefined }));
 vi.mock("@/infrastructure/slack/client", () => ({ slackClient: {} }));
 vi.mock("@/application/execution/runProject", () => ({ executeAgent: () => {} }));
 vi.mock("@/infrastructure/db/repositories/slackEventRepository", () => ({

@@ -15,6 +15,7 @@ const { publicBaseUrl } = vi.hoisted(() => ({
 
 vi.mock("@/lib/runtime-settings", () => ({
   getPublicBaseUrl: async () => publicBaseUrl.value,
+  getServiceBranding: async () => ({ name: process.env.SERVICE_NAME || "Agent Studio" }),
 }));
 
 import { GET } from "@/app/api/mcps/oauth/client-metadata/[project]/route";
