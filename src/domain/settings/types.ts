@@ -25,6 +25,9 @@ export interface LlmProviderSetting {
 export type ArtifactAccessMode = "authenticated" | "public" | "proxied";
 
 export interface AppSettings {
+  /** Display branding; absent values fall back to SERVICE_NAME/SERVICE_LOGO. */
+  serviceName?: string;
+  serviceLogo?: string;
   registeredModels?: import("../llm/providerModels").RegisteredModel[];
   defaultModel?: string;
   adminEmails?: string;

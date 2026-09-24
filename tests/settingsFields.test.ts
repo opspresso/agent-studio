@@ -3,12 +3,14 @@ import type { SettingKey, SettingsView } from "@/application/settings/settingsUs
 import { SETTINGS_FIELDS, settingsPatch } from "@/app/settings/fields";
 
 const current = {
+  serviceName: "Agent Studio", serviceLogo: "agent-studio",
   publicBaseUrl: "https://studio.example.test", artifactAccessMode: "proxied", unknownModelPolicy: "allow",
   adminEmails: "admin@example.test", allowedEmailDomains: "example.test",
   pluginsRepo: "org/plugins", pluginsRepoBranch: "main",
   githubToken: "****************",
 };
 const view: SettingsView = {
+  serviceLogos: ["agent-studio", "agentops"],
   fields: Object.fromEntries(Object.values(SETTINGS_FIELDS).flat().map(({ key, type }) => [key,
     { value: current[key as keyof typeof current], secret: type === "secret", source: "override" },
   ])) as SettingsView["fields"],

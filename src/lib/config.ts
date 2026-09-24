@@ -1,5 +1,5 @@
 import { DEFAULT_MIN_SCORE, DEFAULT_RERANKER_MIN_SCORE } from "@/domain/catalog/types";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { MAX_RUN_SLOTS } from "@/domain/execution/runSlot";
 import { BRAND_ASSET_FILES, resolveBranding } from "@/shared/branding";
@@ -58,6 +58,16 @@ export function assertRequiredConfig(): void {
       throw new Error(`SERVICE_LOGO=${branding.logo} requires public/brands/${branding.logo}/${file}`);
     }
   }
+}
+
+/** Brand folders baked into this deployment and safe to select at runtime. */
+export function availableServiceLogos(): string[] {
+  const root = join(process.cwd(), "public", "brands");
+  return readdirSync(root, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && /^[a-z0-9][a-z0-9-]*$/.test(entry.name))
+    .filter(entry => BRAND_ASSET_FILES.every(file => existsSync(join(root, entry.name, file))))
+    .map(entry => entry.name)
+    .sort();
 }
 
 /**

@@ -106,6 +106,9 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
             <Badge variant="light" color={meta?.source === "override" ? "brand" : "gray"}>{t(`settings.source.${meta?.source ?? "unset"}`)}</Badge></Group>;
           const description = field.hint ? t(field.hint) : undefined;
           const value = values[field.key] ?? "";
+          if (field.type === "logo") return <Select key={field.key} label={label} description={description} value={value} allowDeselect={false}
+            data={view?.serviceLogos.map(logo => ({ value: logo, label: logo })) ?? []}
+            onChange={value => { if (value) change(field.key, value); }} />;
           if (field.type === "select") return <Select key={field.key} label={label} description={description} value={value || field.fallback} allowDeselect={false}
             data={field.options.map(option => ({ value: option.value, label: t(option.label) }))}
             onChange={value => change(field.key, value ?? field.fallback)} />;

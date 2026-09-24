@@ -10,10 +10,12 @@ interface FieldLabel {
 }
 type SettingField = FieldLabel & (
   | { type: "select"; fallback: string; options: readonly { value: string; label: MessageKey }[] }
-  | { type: "url" | "emails" | "domains" | "repository" | "text" | "secret" }
+  | { type: "url" | "emails" | "domains" | "repository" | "text" | "secret" | "logo" }
 );
 export const SETTINGS_FIELDS: Record<SettingsSection, SettingField[]> = {
   service: [
+    { key: "serviceName", label: "settings.field.serviceName", hint: "settings.hint.serviceName", type: "text", placeholder: "Agent Studio" },
+    { key: "serviceLogo", label: "settings.field.serviceLogo", hint: "settings.hint.serviceLogo", type: "logo" },
     { key: "publicBaseUrl", label: "settings.field.publicUrl", hint: "settings.hint.publicUrl", type: "url", placeholder: "https://studio.example.com" },
     { key: "artifactAccessMode", label: "settings.field.artifactAccess", hint: "settings.hint.artifactAccess", type: "select", fallback: "authenticated", options: [
       { value: "authenticated", label: "settings.artifactAccess.authenticated" },

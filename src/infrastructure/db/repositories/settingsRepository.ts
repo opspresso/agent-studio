@@ -10,6 +10,8 @@ import { keys } from "../keys";
 const ENTITY_TYPE = "SETTINGS" as const;
 
 const FIELDS = [
+  "serviceName",
+  "serviceLogo",
   "defaultModel",
   "adminEmails",
   "allowedEmailDomains",

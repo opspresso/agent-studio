@@ -12,6 +12,7 @@ import { providerBaseUrl, providerKind } from "@/domain/llm/providerModels";
 import type { SupportedProvider } from "@/domain/llm/models";
 import { parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
+import { resolveBranding } from "@/shared/branding";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import {
@@ -49,6 +50,8 @@ interface FieldSpec {
  * as the effective value.
  */
 const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
+  { key: "serviceName", secret: false, env: () => optionalEnv(env.SERVICE_NAME), defaultValue: "Agent Studio" },
+  { key: "serviceLogo", secret: false, env: () => optionalEnv(env.SERVICE_LOGO), defaultValue: "agent-studio" },
   { key: "adminEmails", secret: false, env: () => optionalEnv(env.ADMIN_EMAILS) },
   {
     key: "allowedEmailDomains",
@@ -112,6 +115,8 @@ export interface LlmProviderView {
 
 export interface SettingsView {
   fields: Record<SettingKey, SettingFieldView>;
+  /** Brand folders with every required asset present in this deployment. */
+  serviceLogos: string[];
   /** Per-provider LLM channels; `source` covers the list as a whole. */
   llmProviders: { source: "override" | "env"; items: LlmProviderView[] };
   updatedAt?: string;
@@ -210,6 +215,7 @@ function toView(
   parseProviderConfigs: ParseProviderConfigs,
   specs: FieldSpec[],
   settings: AppSettings | null,
+  serviceLogos: readonly string[],
 ): SettingsView {
   const fields = {} as Record<SettingKey, SettingFieldView>;
   for (const spec of specs) {
@@ -241,6 +247,7 @@ function toView(
   }
   return {
     fields,
+    serviceLogos: [...serviceLogos],
     llmProviders: toProviderViews(cipher, env, parseProviderConfigs, settings),
     updatedAt: settings?.updatedAt,
   };
@@ -326,13 +333,14 @@ export function createSettingsUseCases(
   cipher: SecretCipher,
   env: NodeJS.ProcessEnv,
   parseProviderConfigs: ParseProviderConfigs,
+  serviceLogos: readonly string[],
 ): SettingsUseCases {
   // `env` is fixed for the process, so the specs and their fallback closures are
   // built once here rather than rebuilt on every settings read and write.
   const specs = fieldSpecs(env);
   return {
     async getView() {
-      return toView(cipher, env, parseProviderConfigs, specs, await repo.get());
+      return toView(cipher, env, parseProviderConfigs, specs, await repo.get(), serviceLogos);
     },
 
     /**
@@ -438,6 +446,16 @@ export function createSettingsUseCases(
           }
         }
 
+        try {
+          resolveBranding(next.serviceName ?? optionalEnv(env.SERVICE_NAME), next.serviceLogo ?? optionalEnv(env.SERVICE_LOGO));
+        } catch {
+          throw new ValidationError("Service name must be a single line of at most 80 characters and logo must name a brand folder");
+        }
+        const effectiveLogo = next.serviceLogo ?? optionalEnv(env.SERVICE_LOGO) ?? "agent-studio";
+        if (!serviceLogos.includes(effectiveLogo)) {
+          throw new ValidationError("Service logo must have all required brand assets in this deployment");
+        }
+
         const effectiveAdmins = parseList(next.adminEmails ?? env.ADMIN_EMAILS ?? "");
         if (effectiveAdmins.length > 0 && !effectiveAdmins.includes(userEmail.toLowerCase())) {
           throw new ValidationError(
@@ -461,7 +479,7 @@ export function createSettingsUseCases(
         target: auditTarget("settings", "app"),
         detail: changed.join(", ") || "no fields changed",
       });
-      return toView(cipher, env, parseProviderConfigs, specs, next);
+      return toView(cipher, env, parseProviderConfigs, specs, next, serviceLogos);
     },
   };
 }

@@ -31,6 +31,7 @@ import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
 import type { TranscriptionConfig } from "@/infrastructure/llm/transcription";
 import { config, positiveIntEnv } from "./config";
 import { optionalEnv } from "@/shared/env";
+import { resolveBranding, type Branding } from "@/shared/branding";
 import { parseList } from "@/shared/parseList";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 import { log } from "@/shared/logger";
@@ -297,6 +298,12 @@ export async function getGitHubToken(): Promise<string | undefined> {
 
 export async function getPublicBaseUrl(): Promise<string | undefined> {
   return (await loadSettings())?.publicBaseUrl ?? config.publicBaseUrl;
+}
+
+export async function getServiceBranding(): Promise<Branding> {
+  const stored = await loadSettings();
+  return resolveBranding(stored?.serviceName ?? optionalEnv(process.env.SERVICE_NAME),
+    stored?.serviceLogo ?? optionalEnv(process.env.SERVICE_LOGO));
 }
 
 export async function getArtifactAccessMode(): Promise<ArtifactAccessMode> {

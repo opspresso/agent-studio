@@ -207,7 +207,7 @@ describe("app settings", () => {
         return { before, after };
       },
     };
-    return createSettingsUseCases(repo, cipher, {} as NodeJS.ProcessEnv, () => []);
+    return createSettingsUseCases(repo, cipher, {} as NodeJS.ProcessEnv, () => [], ["agent-studio"]);
   }
 
   it("records which keys were written, and never their values", async () => {

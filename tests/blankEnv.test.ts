@@ -173,6 +173,7 @@ describe("the settings view", () => {
       secretCipher,
       { NODE_ENV: "test", ...vars },
       parseProviderConfigs,
+      ["agent-studio", "agentops"],
     ).getView();
 
   it("does not report a blank variable as the effective value", async () => {

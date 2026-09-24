@@ -99,7 +99,7 @@ import type { RuntimeSessionServices } from "@/application/runtime/session";
 import { urlPolicy } from "@/infrastructure/net/urlPolicy";
 import { createHttpResourceReader } from "@/infrastructure/net/httpResource";
 import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
-import { config } from "./config";
+import { availableServiceLogos, config } from "./config";
 import { oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
 import { oauthClient } from "@/infrastructure/mcp/oauthClient";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
@@ -214,6 +214,7 @@ import {
   getLlmProviderConfigs,
   getPluginsRepoConfig,
   getPublicBaseUrl,
+  getServiceBranding,
   getRerankerModel,
   getRerankerTarget,
   getRerankerModelSelection,
@@ -438,7 +439,7 @@ const mcpAuthProvider = createMcpAuthProvider({
   cipher: secretCipher,
 });
 export const mcpAuthUseCases = createMcpAuthUseCases({
-  serviceName: config.branding.name,
+  serviceName: async () => (await getServiceBranding()).name,
   mcps: mcpRepository,
   projects: projectRepository,
   connections: mcpConnectionRepository,
@@ -559,7 +560,7 @@ export const triggerUseCases = createTriggerUseCases({
     if (!getWorkspaceGitHubConfig()) throw new ValidationError("GitHub review integration is not configured");
   },
 });
-export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs);
+export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs, availableServiceLogos());
 export const modelSelectionUseCases = createModelSelectionUseCases({
   repository: settingsRepository,
   lock: catalogReindexLock,

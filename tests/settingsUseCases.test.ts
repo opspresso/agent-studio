@@ -7,7 +7,7 @@ import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 
 // The cipher is injected now; every call below is unchanged.
 const createSettingsUseCases = (repo: Parameters<typeof createSettingsUseCasesImpl>[0]) =>
-  createSettingsUseCasesImpl(repo, secretCipher, process.env, parseProviderConfigs);
+  createSettingsUseCasesImpl(repo, secretCipher, process.env, parseProviderConfigs, ["agent-studio", "agentops"]);
 import { ValidationError } from "@/application/errors";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings } from "@/domain/settings/types";
@@ -21,6 +21,8 @@ import {
 const ADMIN = "admin@example.com";
 
 const ENV_KEYS = [
+  "SERVICE_NAME",
+  "SERVICE_LOGO",
   "ADMIN_EMAILS",
   "LLM_PROVIDER_OPENAI_BASE_URL",
   "LLM_PROVIDER_OPENAI_API_KEY",
@@ -140,6 +142,22 @@ describe("settingsUseCases.update access-control guards", () => {
 });
 
 describe("settingsUseCases.update", () => {
+  it("accepts installed branding and rejects unavailable assets or invalid names", async () => {
+    process.env.SERVICE_NAME = "Environment Name";
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    const view = await useCases.update({ serviceName: "My Studio", serviceLogo: "agentops" }, ADMIN);
+    expect(current()).toMatchObject({ serviceName: "My Studio", serviceLogo: "agentops" });
+    expect(view.fields.serviceName).toMatchObject({ value: "My Studio", source: "override" });
+    expect(view.serviceLogos).toContain("agentops");
+    await expect(useCases.update({ serviceLogo: "missing" }, ADMIN)).rejects.toThrow("required brand assets");
+    await expect(useCases.update({ serviceName: "A\nB" }, ADMIN)).rejects.toThrow("single line");
+    expect(current()?.serviceLogo).toBe("agentops");
+    await useCases.update({ serviceName: "", serviceLogo: "" }, ADMIN);
+    expect(current()?.serviceName).toBeUndefined();
+    expect(current()?.serviceLogo).toBeUndefined();
+  });
+
   it("merges a patch against the latest row inside the repository update", async () => {
     let stored: AppSettings = {
       embeddingModel: "openai/text-embedding-3-small",
