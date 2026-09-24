@@ -170,6 +170,22 @@ test("a paragraph that wraps carries one lineseg per estimated line", () => {
   assert.match(section, /<hp:lineseg textpos="[1-9]\d*"/);
 });
 
+test("line segments never start inside an emoji surrogate pair", () => {
+  for (const text of ["a".repeat(79) + "😀b", "a".repeat(35) + "😀" + "a".repeat(5)]) {
+    const section = partOf(build(text), "Contents/section0.xml");
+    const array = /<hp:linesegarray>([\s\S]*?)<\/hp:linesegarray>/.exec(section)?.[1] ?? "";
+    const starts = [...array.matchAll(/<hp:lineseg textpos="(\d+)"/g)].map((match) => Number(match[1]));
+    assert.ok(starts.length > 1, "the paragraph should span multiple line segments");
+    for (const start of starts) {
+      const unit = text.charCodeAt(start);
+      assert.ok(unit < 0xdc00 || unit > 0xdfff, `line starts inside a surrogate pair at ${start}`);
+    }
+  }
+  const short = partOf(build("😀".repeat(30)), "Contents/section0.xml");
+  const array = /<hp:linesegarray>([\s\S]*?)<\/hp:linesegarray>/.exec(short)?.[1] ?? "";
+  assert.equal((array.match(/<hp:lineseg /g) ?? []).length, 1, "30 code points do not need a forced split");
+});
+
 test("the section properties are written exactly once", () => {
   // They ride inside the first run of the document. Twice is a second section
   // definition; never is a document with no page size.

@@ -486,20 +486,25 @@ function lineSegments(text: string, size: number, width: number, leading: number
   // UTF-16 offsets, which is what `textpos` counts.
   const starts: number[] = [0];
   let used = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index]!;
+  let characters = 0;
+  for (let index = 0; index < text.length; ) {
+    const character = String.fromCodePoint(text.codePointAt(index)!);
+    characters += 1;
     const advance = character === "\t" ? size * 2 : WIDE.test(character) ? size : size / 2;
     if (used + advance > usable && used > 0) {
       starts.push(index);
       used = 0;
     }
     used += advance;
+    index += character.length;
   }
-  if (starts.length === 1 && text.length > SINGLE_LINESEG_LIMIT) {
+  if (starts.length === 1 && characters > SINGLE_LINESEG_LIMIT) {
     // Width said one line; the reader's contract says a paragraph this long
     // must not claim it. Break at a word boundary near the limit.
     const space = text.lastIndexOf(" ", FORCED_BREAK_AT);
-    starts.push(space > 4 ? space + 1 : FORCED_BREAK_AT);
+    const split = space > 4 ? space + 1 : FORCED_BREAK_AT;
+    const unit = text.charCodeAt(split);
+    starts.push(unit >= 0xdc00 && unit <= 0xdfff ? split - 1 : split);
   }
   return (
     "<hp:linesegarray>" +
