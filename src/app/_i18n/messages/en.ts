@@ -209,6 +209,7 @@ export const en = {
 
   "workspace.new": "New Workspace",
   "workspace.kind": "Workspace",
+  "workspace.optionsLoadFailed": "Workspace options could not be loaded. Deployment workflow choices may be unavailable.",
   "workspace.list": "Workspaces",
   "workspace.none": "No Workspaces yet.",
   "workspace.delete": "Delete Workspace",

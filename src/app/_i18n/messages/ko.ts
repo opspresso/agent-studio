@@ -190,6 +190,7 @@ export const ko: Messages = {
 
   "workspace.new": "새 Workspace",
   "workspace.kind": "Workspace",
+  "workspace.optionsLoadFailed": "Workspace 선택지를 불러오지 못했습니다. 배포 워크플로 선택지가 표시되지 않을 수 있습니다.",
   "workspace.list": "Workspaces",
   "workspace.none": "아직 Workspace가 없습니다.",
   "workspace.delete": "Workspace 삭제",
