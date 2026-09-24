@@ -42,6 +42,7 @@ export const ko: Messages = {
   "secrets.projectTokenHint": "이 Agent의 API로 들어오는 외부 요청을 인증한다. 사용량은 이 토큰과 Agent에 기록한다.",
   "settings.overview": "서비스, 접근 권한, Plugins와 Models를 관리한다.",
   "settings.adminOnly": "관리자만 애플리케이션 설정을 관리할 수 있다.",
+  "settings.loadFailed": "설정을 불러오지 못했습니다.",
   "settings.noResults": "검색 조건에 맞는 Model이 없다.",
   "settings.tab.service": "Service",
   "settings.tab.access": "Access",

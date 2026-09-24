@@ -61,6 +61,7 @@ export const en = {
   "secrets.projectTokenHint": "Authenticates external requests to this Agent’s APIs. Its usage is attributed to the token and charged to this Agent.",
   "settings.overview": "Manage service settings, access, plugins and models.",
   "settings.adminOnly": "Only administrators can manage app settings.",
+  "settings.loadFailed": "Could not load settings.",
   "settings.noResults": "No models match your search.",
   "settings.tab.service": "Service",
   "settings.tab.access": "Access",
