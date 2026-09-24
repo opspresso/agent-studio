@@ -70,12 +70,7 @@ export default function TracesPage() {
               <Accordion.Control>
                 <Group justify="space-between" gap="xs" wrap="wrap">
                   <div>
-                    <Anchor
-                      component={Link}
-                      href={`/agents/${name}/traces/${trace.traceId}`}
-                      ff="monospace"
-                      fz="sm"
-                    >{trace.traceId.slice(0, 8)}</Anchor>
+                    <Text component="span" ff="monospace" fz="sm">{trace.traceId.slice(0, 8)}</Text>
                     <Text component="span" fz="sm" c="dimmed" ml="xs">
                       {trace.spans.length} spans
                       {trace.spansDropped ? ` (+${trace.spansDropped} dropped)` : ""}
@@ -112,6 +107,9 @@ export default function TracesPage() {
                 )}
               </Accordion.Control>
               <Accordion.Panel>
+                <Anchor component={Link} href={`/agents/${name}/traces/${trace.traceId}`} fz="sm" mb="sm" display="inline-block">
+                  {t("trace.openDetail")} ↗
+                </Anchor>
                 <TraceContent trace={trace} />
               </Accordion.Panel>
             </Accordion.Item>
