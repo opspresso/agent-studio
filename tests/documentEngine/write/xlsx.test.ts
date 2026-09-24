@@ -86,6 +86,15 @@ test("formula validation applies to the expression written to XML", () => {
   assert.equal(inspectXlsx(rendered.bytes).sheets[0]!.cells[0]!.formula, "SUM(A2:A3)");
 });
 
+test("cell text is refused rather than changed when it contains invalid XML", () => {
+  for (const value of ["a\u0000b", { formula: "A2", cachedValue: "a\u0000b" }]) {
+    assert.throws(
+      () => renderXlsx([{ name: "Data", rows: [[value]] }], { title: "t", created: CREATED }),
+      /invalid XML characters/,
+    );
+  }
+});
+
 test("the header band is the design system's, not a colour typed into this file", () => {
   // It was `FF1F4E78` — one digit off the palette entry it had been copied from,
   // and the reason a renderer states no colour of its own.
