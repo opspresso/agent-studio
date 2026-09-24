@@ -30,6 +30,9 @@ export function NewWorkspaceForm() {
   const [task, setTask] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+  const [optionsRetry, setOptionsRetry] = useState(0);
+  const optionsInitialized = useRef(false);
   const request = useRef<{ body: string; key: string } | null>(null);
   const selected = options?.projects.find(option => option.projectName === project);
   const [branchRepository] = useDebouncedValue(repository, 300);
@@ -37,24 +40,24 @@ export function NewWorkspaceForm() {
 
   useEffect(() => {
     let current = true;
-    let initialized = false;
     let generation = 0;
     const load = () => {
       const reading = ++generation;
+      setOptionsError(null);
       void fetch("/api/workspaces/options").then(response => readJson<WorkspaceOptionsResponse>(response)).then(data => {
         if (!current || reading !== generation) return;
         setOptions(data);
-        if (!initialized) {
+        if (!optionsInitialized.current) {
           const first = data.projects[0];
           if (first) { setProject(first.projectName); setRuntime(first.defaultRuntime); setRepository(null); setCoding(false); }
-          initialized = true;
+          optionsInitialized.current = true;
         }
-      }).catch(error => { if (current && reading === generation) setError(error instanceof Error ? error.message : "Workspace options could not be loaded"); });
+      }).catch(error => { if (current && reading === generation) setOptionsError(error instanceof Error ? error.message : "Workspace options could not be loaded"); });
     };
     load();
     window.addEventListener("focus", load);
     return () => { current = false; window.removeEventListener("focus", load); };
-  }, []);
+  }, [optionsRetry]);
 
   useEffect(() => {
     let current = true;
@@ -87,7 +90,9 @@ export function NewWorkspaceForm() {
   return <Stack gap="md" maw={640} mx="auto" p={{ base: "sm", sm: "lg" }} h="100%" style={{ overflowY: "auto" }} onKeyDown={onModEnter(() => { void start(); })}>
     <Group><ThemeIcon size={44} variant="light"><IconTerminal2 /></ThemeIcon><div><Title order={2}>{t("workspace.new")}</Title><Text size="sm" c="dimmed">{t("workspace.intro")}</Text></div></Group>
     {error && <Alert color="red">{error}</Alert>}
-    {!options && !error && <Loader size="sm" />}
+    {optionsError && <Alert color="red"><Group justify="space-between" gap="sm"><Text size="sm">{optionsError}</Text>
+      <Button size="xs" variant="light" onClick={() => setOptionsRetry(value => value + 1)}>{t("error.retry")}</Button></Group></Alert>}
+    {!options && !optionsError && <Loader size="sm" />}
     {options && !options.projects.length && <Alert>{t("workspace.notConfigured")}</Alert>}
     <Select label={t("chat.project")} searchable value={project} data={(options?.projects ?? []).map(option => ({ value: option.projectName, label: option.displayName }))}
       onChange={selectProject} disabled={busy} />
