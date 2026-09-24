@@ -43,6 +43,12 @@ test("bytes that are not the format they claim are refused with the reason", () 
   assert.throws(() => imageSize(jpegFixture(), "image/png"), /not a readable PNG/);
   assert.throws(() => imageSize(pngFixture(), "image/jpeg"), /not a readable JPEG/);
   assert.throws(() => imageSize(new Uint8Array(4), "image/png"), /not a readable PNG/);
+  const wrongChunk = pngFixture();
+  wrongChunk.set([0x61, 0x62, 0x63, 0x64], 12);
+  assert.throws(() => imageSize(wrongChunk, "image/png"), /not a readable PNG/);
+  const wrongLength = pngFixture();
+  new DataView(wrongLength.buffer).setUint32(8, 12);
+  assert.throws(() => imageSize(wrongLength, "image/png"), /not a readable PNG/);
 });
 
 test("a picture scales down to fit and never up past its pixels", () => {

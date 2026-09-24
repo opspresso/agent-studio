@@ -46,7 +46,9 @@ function readUInt16(bytes: Uint8Array, at: number): number {
 function pngSize(bytes: Uint8Array): ImageSize {
   // The IHDR chunk is required to come first, so width and height sit at fixed
   // offsets: signature (8) + length (4) + "IHDR" (4).
-  if (bytes.length < 24 || PNG_SIGNATURE.some((expected, at) => bytes[at] !== expected)) {
+  if (bytes.length < 33 || PNG_SIGNATURE.some((expected, at) => bytes[at] !== expected) ||
+      readUInt32(bytes, 8) !== 13 ||
+      String.fromCharCode(...bytes.subarray(12, 16)) !== "IHDR") {
     return fail("PNG");
   }
   const width = readUInt32(bytes, 16);
