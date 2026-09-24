@@ -804,13 +804,13 @@ export const ko: Messages = {
   "guide.admin.membersBody":
     "Members에서 사용자를 찾아 Agent 생성이나 API 토큰 사용에 필요한 등급으로 변경한다. 적용된 한도는 사용자가 Profile에서 확인한다. ADMIN_EMAILS에 지정된 사용자는 admin으로 고정되며 목록에서 제거해도 저장된 등급이 자동 강등되지는 않는다.",
   "guide.admin.settings": "Settings 재정의와 배포 설정",
-  "guide.admin.settingsBody": "Settings는 General·Plugins·Models·Keys 탭으로 나눈다. General에서 공개 접근·Artifact 접근 방식·가격 미지정 모델의 실행 정책을 관리한다. Plugins는 저장소, Models는 프로바이더 연결과 선택 모델, Keys는 GitHub 자격 증명을 관리한다. 변경한 항목만 저장한다. DB·암호화·로그인 공급자·스토리지·보존 기간은 배포 설정에서 관리한다.",
+  "guide.admin.settingsBody": "Settings는 Service·Access·Plugins·Models 탭으로 나눈다. Service에서 브랜드·공개 주소·Artifact 전달·검색 및 실행 정책·Slack 표시를 관리한다. Access는 관리자와 허용 도메인, Plugins는 GitHub 저장소와 토큰, Models는 프로바이더 연결과 선택 모델을 관리한다. 변경한 항목만 저장한다. DB·암호화·로그인 공급자·스토리지 연결·보존 기간은 배포 설정에서 관리한다.",
   "guide.admin.models": "모델 연결과 검증",
   "guide.admin.modelsBody": "Settings → Models → 프로바이더에서 종류·고유 연결 이름·API base URL·키를 등록한다. Self-hosted도 같은 흐름을 사용하며 키를 생략할 수 있다. 인증 대상 주소를 바꾸면 새 키가 필요하다. 모델 사용 설정에서는 등록된 호환 모델 중 기본·Workspace·검색 모델을 선택한다.",
   "guide.admin.modelSelection": "모델 조회·선택·관리",
   "guide.admin.modelSelectionBody": "Model 선택은 항상 Provider의 전체 목록을 조회한다. 출력 유형과 독립적인 Tools·Vision·Reasoning 배지, 컨텍스트 한도와 가격을 비교하고 이름순·가격순으로 정렬한다. 모델 추가는 즉시 등록한다. 선택된 모델만 보기로 목록을 좁히고 삭제하며, 등록 모델 관리에서 수정·제공 상태를 확인한다. Provider·검색어·필터·정렬은 이 브라우저에 저장한다. Models는 저장된 선택의 읽기 전용 목록이다. 목록 조회 성공이 추론 성공을 뜻하지 않으므로 짧은 Agent 실행으로 확인한다.",
   "guide.admin.offline": "폐쇄망의 카탈로그와 검색 모델",
-  "guide.admin.offlineBody": "저장된 모델과 내부 프로바이더 연결은 공개 인터넷 없이 사용한다. 공개 모델 조회와 가격은 models.opspresso.com 및 내장 오프라인 카탈로그를 사용하며, 조회만으로 모델을 등록하지 않는다. 연결된 실행 프로세스는 공개 가격을 15분마다 갱신한다. 운영자는 로컬 카탈로그 파일로 내장 카탈로그를 갱신할 수 있다. 기능 검색은 검색 기능을 켜고 등록된 Embedding 모델을 지정해야 하며 Rerank는 선택 사항이다. Embedding을 바꾸면 색인을 다시 만든다. 미등록 모델은 항상 거부하며, 가격 미지정 등록 모델의 실행 허용 여부는 General에서 정한다.",
+  "guide.admin.offlineBody": "저장된 모델과 내부 프로바이더 연결은 공개 인터넷 없이 사용한다. 공개 모델 조회와 가격은 models.opspresso.com 및 내장 오프라인 카탈로그를 사용하며, 조회만으로 모델을 등록하지 않는다. 연결된 실행 프로세스는 공개 가격을 15분마다 갱신한다. 운영자는 로컬 카탈로그 파일로 내장 카탈로그를 갱신할 수 있다. 기능 검색은 검색 기능을 켜고 등록된 Embedding 모델을 지정해야 하며 Rerank는 선택 사항이다. Embedding을 바꾸면 색인을 다시 만든다. 미등록 모델은 항상 거부하며, 가격 미지정 등록 모델의 실행 허용 여부는 Service에서 정한다.",
   "guide.admin.artifacts": "사용자의 Artifact 접근 방식",
   "guide.admin.artifactsBody":
     "PUBLIC_BASE_URL에 사용자가 접속하는 앱 주소를 설정한다. Settings의 proxied 방식은 앱이 파일을 전달하므로 브라우저가 저장소에 직접 접근하지 못하는 환경에 적합하다. authenticated는 만료되는 저장소 URL을 반환하므로 브라우저의 직접 접근이 필요하다. public은 공개 읽기 저장소 정책이 필요하며 URL을 가진 누구나 읽을 수 있다. 사용자 네트워크에서 파일 생성·다시 열기·다운로드로 검증한다.",

@@ -402,12 +402,15 @@ MCP 서버의 이름을 담는다. `guest` 가 거절당하는 바로 그 레지
 
 ```
 GET /api/settings → 200 { fields: { <key>: { value, source, secret } },
+                          serviceLogos: string[],
                           llmProviders: { source, items: [ { name, baseUrl, apiKey, keepModelPrefix, auth } ] },
                           updatedAt? }
 PUT /api/settings → 200 {…same shape…} | 400
 ```
 
-- 두 동사 모두 admin 전용이다. GET 의 `fields` 키는 `adminEmails`, `allowedEmailDomains`,
+- 두 동사 모두 admin 전용이다. GET 의 `fields` 키는 `serviceName`, `serviceLogo`,
+  `catalogMinScore`, `maxConcurrentRunsPerActor`, `s3PublicBaseUrl`, `slackLoadingIndicator`,
+  `adminEmails`, `allowedEmailDomains`,
   `embeddingModel`, `rerankerModel`, `rerankerMinScore`, `pluginsRepo`,
   `pluginsRepoBranch`, `githubToken`, `publicBaseUrl`, `artifactAccessMode`,
   `unknownModelPolicy`다. 이 중 Embedding/Rerank 선택 세 필드는 읽기 전용이며
@@ -415,7 +418,11 @@ PUT /api/settings → 200 {…same shape…} | 400
   (`authenticated` | `proxied` | `public` | `""`)와 `unknownModelPolicy`
   (`allow` | `refuse` | `""`)는 enum 으로 검증된다.
   `pluginsRepo` 는 자기만의 형태를 가진 나머지 하나의 키다. `owner/repo`, 또는 비우면
-  지운다. 나머지는 길이가 제한된 문자열이다.
+  지운다. `serviceLogo`는 이 배포에 필요한 파일이 모두 있는 브랜드 폴더만 허용한다.
+  `catalogMinScore`는 0–1의 유한한 수, `maxConcurrentRunsPerActor`는 0–1000의 정수다.
+  `s3PublicBaseUrl`은 자격증명·query·fragment 없는 HTTP(S) URL이고,
+  `slackLoadingIndicator`는 최대 80자의 한 줄이다. 빈 값은 각 env 폴백을 복원한다.
+  나머지는 길이가 제한된 문자열이다.
 
 - PUT의 `llmProviders`는 최대 50개의 전체 교체 목록이다. 각 항목은
   `{ name, kind?, baseUrl, apiKey, auth?, keepModelPrefix? }`다. `name`은 고유한 소문자 식별자,

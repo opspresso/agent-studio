@@ -374,7 +374,7 @@ Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액�
 앱이 발급하는 프로젝트 토큰·Webhook 키는 `SecretControl`로 표시·복사·생성·재생성·폐기한다.
 지원하는 동작은 각 API의 기능과 권한에 따른다. 원문을 표시한 동안에만 복사할 수 있고,
 재생성·교체·폐기는 공통 확인창을 거친다. 평문은 브라우저 저장소에 기록하지 않는다.
-Settings는 General·Plugins·Models·Keys 탭으로 관리하고, `/models`는 등록된 모델 조회·검색만 제공한다.
+Settings는 Service·Access·Plugins·Models 탭으로 관리하고, `/models`는 등록된 모델 조회·검색만 제공한다.
 공통 검색은 `CatalogSearch`, IME Enter 전송은
 `isSubmitEnter`, Chat·Workspace 스크롤은 `useLatestScroll`이 담당한다.
 시스템 테마는 hydration 전후 기본값을 일치시키고, 답변·추론의 고빈도 출력은
