@@ -251,8 +251,8 @@ function UsageDetail({ name }: { name: string }) {
           )}
 
           {callers.length > 0 && (
-            <Card padding={0}>
-              <Group px="md" pt="md">
+            <DataTable header={
+              <Group px="md" pt="md" pb="sm">
                 <CardHeading
                   title={t("projectUsage.whoSpent")}
                   subtitle={t(
@@ -263,38 +263,37 @@ function UsageDetail({ name }: { name: string }) {
                   )}
                 />
               </Group>
-              <DataTable>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>{t("projectUsage.caller")}</Table.Th>
-                    <Table.Th ta="right">{t("usage.calls")}</Table.Th>
-                    <Table.Th ta="right">{t("usage.cost")}</Table.Th>
+            }>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>{t("projectUsage.caller")}</Table.Th>
+                  <Table.Th ta="right">{t("usage.calls")}</Table.Th>
+                  <Table.Th ta="right">{t("usage.cost")}</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {callers.map((caller) => (
+                  <Table.Tr key={caller.actor}>
+                    <Table.Td>
+                      <Group gap="xs" wrap="nowrap">
+                        <Avatar src={caller.avatarUrl ?? null} size={24} radius="xl">
+                          {caller.name.slice(0, 1).toUpperCase()}
+                        </Avatar>
+                        <Text fz="sm" ff={caller.avatarUrl ? undefined : "monospace"}>
+                          {caller.name}
+                        </Text>
+                      </Group>
+                    </Table.Td>
+                    <Table.Td ta="right" ff="monospace" c="dimmed">
+                      {caller.calls.toLocaleString(locale)}
+                    </Table.Td>
+                    <Table.Td ta="right" ff="monospace">
+                      {formatUsd(caller.costUsd)}
+                    </Table.Td>
                   </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {callers.map((caller) => (
-                    <Table.Tr key={caller.actor}>
-                      <Table.Td>
-                        <Group gap="xs" wrap="nowrap">
-                          <Avatar src={caller.avatarUrl ?? null} size={24} radius="xl">
-                            {caller.name.slice(0, 1).toUpperCase()}
-                          </Avatar>
-                          <Text fz="sm" ff={caller.avatarUrl ? undefined : "monospace"}>
-                            {caller.name}
-                          </Text>
-                        </Group>
-                      </Table.Td>
-                      <Table.Td ta="right" ff="monospace" c="dimmed">
-                        {caller.calls.toLocaleString(locale)}
-                      </Table.Td>
-                      <Table.Td ta="right" ff="monospace">
-                        {formatUsd(caller.costUsd)}
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </DataTable>
-            </Card>
+                ))}
+              </Table.Tbody>
+            </DataTable>
           )}
         </>
       )}
