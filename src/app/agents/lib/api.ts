@@ -153,18 +153,13 @@ export function previewPrompt(name: string, input: AgentConfigurationInput & { m
 
 // --- Models ---------------------------------------------------------------
 
-/** Fetch the model registry. Returns [] if the endpoint is unavailable. */
+/** Fetch the model registry; callers decide how to report an unavailable list. */
 export async function listModels(): Promise<ModelsResponse["models"]> {
-  try {
-    const res = await fetch("/api/models");
-    if (!res.ok) {
-      return [];
-    }
-    const data = (await res.json()) as ModelsResponse;
-    return data.models ?? [];
-  } catch {
-    return [];
+  const data = await readJson<ModelsResponse>(await fetch("/api/models"));
+  if (!Array.isArray(data.models)) {
+    throw new Error("Model registry returned no model list");
   }
+  return data.models;
 }
 
 // --- Usage ----------------------------------------------------------------
@@ -260,9 +255,9 @@ export async function disconnectProjectSlack(name: string): Promise<void> {
 
 export async function testProjectSlack(
   name: string,
-): Promise<{ ok?: boolean; team?: string; botUser?: string; error?: string }> {
+): Promise<{ ok: true; team?: string; botUser?: string }> {
   const res = await fetch(`/api/projects/${name}/slack/test`, { method: "POST" });
-  return (await res.json()) as { ok?: boolean; team?: string; botUser?: string; error?: string };
+  return readJson<{ ok: true; team?: string; botUser?: string }>(res);
 }
 
 export async function listProjectSlackChannels(

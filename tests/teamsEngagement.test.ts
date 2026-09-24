@@ -69,6 +69,13 @@ describe("classifyTeamsActivity", () => {
   it("refuses an activity with nowhere to answer", () => {
     expect(classifyTeamsActivity(activity({ serviceUrl: undefined }))).toMatchObject({ kind: "ignore" });
   });
+
+  it("does not start an unattributed run for a message without a sender id", () => {
+    expect(classifyTeamsActivity(activity({ from: undefined }))).toMatchObject({ kind: "ignore" });
+    expect(classifyTeamsActivity(activity({ from: { id: "" } }))).toMatchObject({ kind: "ignore" });
+    expect(runOf(classifyTeamsActivity(activity({ from: { id: "", aadObjectId: "aad-1" } }))))
+      .toEqual({ trigger: "personal", text: "hello" });
+  });
 });
 
 describe("stripBotMention", () => {

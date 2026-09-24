@@ -10,9 +10,9 @@ import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailur
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
-import { urlWithoutQueryOrFragment } from "@/shared/url";
+import { urlWithoutUserinfoQueryOrFragment } from "@/shared/url";
 
-/** Registry endpoints carry credentials in headers or OAuth, never in their visible URL. */
+/** Registry endpoints carry credentials in headers or OAuth, never in their URL. */
 export function assertCredentialFreeRegistryUrl(rawUrl: string): void {
   let url: URL;
   try {
@@ -20,9 +20,9 @@ export function assertCredentialFreeRegistryUrl(rawUrl: string): void {
   } catch {
     throw new ValidationError("Registry URL is invalid");
   }
-  if (url.search || url.hash) {
+  if (url.username || url.password || url.search || url.hash) {
     throw new ValidationError(
-      "Registry URLs cannot include query parameters or fragments; use headers or OAuth for credentials",
+      "Registry URLs cannot include userinfo, query parameters or fragments; use headers or OAuth for credentials",
     );
   }
 }
@@ -30,8 +30,8 @@ export function assertCredentialFreeRegistryUrl(rawUrl: string): void {
 /**
  * The address a registry patch actually names.
  *
- * A member-facing view strips query and fragment from a stored URL
- * (`urlWithoutQueryOrFragment`), and the console seeds its edit form from that
+ * A member-facing view strips userinfo, query and fragment from a stored URL
+ * (`urlWithoutUserinfoQueryOrFragment`), and the console seeds its edit form from that
  * view — so a save that never touched the address sends the *redacted* one
  * back. Taken at face value that reads as a move: the entry would be stored
  * pointing somewhere else, its credentials dropped for having followed an
@@ -50,7 +50,7 @@ export function resolveRegistryUrlPatch(existing: string, patch: string): string
     }
     throw error;
   }
-  return normalized === urlWithoutQueryOrFragment(existing) ? existing : patch;
+  return normalized === urlWithoutUserinfoQueryOrFragment(existing) ? existing : patch;
 }
 
 /** Minimal repository shape shared by the registry slices. */
@@ -85,7 +85,8 @@ export async function assertAllowedUrl(policy: UrlPolicy, url: string): Promise<
   try {
     await policy.assertAllowed(url);
   } catch (error) {
-    throw new ValidationError(error instanceof BlockedUrlError ? error.message : "Blocked URL");
+    if (error instanceof BlockedUrlError) throw new ValidationError(error.message);
+    throw error;
   }
 }
 

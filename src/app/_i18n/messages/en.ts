@@ -209,6 +209,7 @@ export const en = {
 
   "workspace.new": "New Workspace",
   "workspace.kind": "Workspace",
+  "workspace.optionsLoadFailed": "Workspace options could not be loaded. Deployment workflow choices may be unavailable.",
   "workspace.list": "Workspaces",
   "workspace.none": "No Workspaces yet.",
   "workspace.delete": "Delete Workspace",
@@ -1004,6 +1005,7 @@ export const en = {
 
   // The Playground edits one current Agent configuration.
   "playground.loadFailed": "Failed to load Agent",
+  "playground.modelRegistryWarning": "Model choices could not be loaded. Agent settings remain visible, but the model list is unavailable: {error}",
   "playground.saveFailed": "Failed to save Agent settings",
 
   "playground.notFound": "Agent not found",
@@ -1106,6 +1108,7 @@ export const en = {
     "Lets the agent read the Slack workspace this Agent's bot is installed in: channel history, threads, and who a user id is. Read-only — it can never post. Off by default, and inert unless the Agent has an enabled Slack bot. Note that Agents are a shared catalog, so anyone who can run this Agent can read anything the bot can.",
 
   "configuration.skills": "Skills",
+  "configuration.pickerLoadFailed": "Could not load {items}. Available choices may be incomplete.",
   "configuration.searchSkills": "Search registered skills",
   "configuration.dynamicCapabilities": "Find capabilities for each request",
   "configuration.dynamicCapabilitiesHint":
@@ -1467,6 +1470,7 @@ export const en = {
   "models.memberOnly": "Models are available from the member tier up.",
   "audit.lede": "Sensitive administrative actions, newest first.",
   "audit.empty": "No audit events in this range.",
+  "audit.loadMore": "Load more",
   "audit.time": "Time",
   "audit.action": "Action",
   "audit.actor": "Actor",

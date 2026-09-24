@@ -13,6 +13,7 @@ import type { TeamsEventBinding } from "@/application/teams/projectTeams";
 import type { TeamsActivity, TeamsEventDeps } from "@/application/teams/types";
 import { admitInboundEvent, readEventBody } from "@/app/api/_lib/inboundEvent";
 import { log } from "@/shared/logger";
+import { teamsActivitySchema } from "./activitySchema";
 
 const teamsEventDeps: TeamsEventDeps = {
   runAgent: (params) => executeAgent(executionDeps, params),
@@ -46,12 +47,17 @@ export async function handleTeamsActivityRequest(
   if (body instanceof Response) {
     return body;
   }
-  let activity: TeamsActivity;
+  let raw: unknown;
   try {
-    activity = JSON.parse(body) as TeamsActivity;
+    raw = JSON.parse(body);
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+  const parsed = teamsActivitySchema.safeParse(raw);
+  if (!parsed.success) {
+    return Response.json({ error: "Invalid Teams activity" }, { status: 400 });
+  }
+  const activity = parsed.data as TeamsActivity;
   const verified = await teamsClient.verifyRequest(request.headers.get("authorization"), {
     appId: binding.credentials.appId,
     serviceUrl: activity.serviceUrl ?? "",

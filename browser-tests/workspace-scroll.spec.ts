@@ -83,3 +83,49 @@ test("opens at the latest output without animated history traversal and respects
   await page.getByRole("button", { name: "Latest" }).click();
   await expect.poll(() => viewport.evaluate(element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop))).toBeLessThan(3);
 });
+
+test("keeps an output read failure visible when workspace detail refreshes", async ({ page }) => {
+  let detailReads = 0;
+  let eventReads = 0;
+  await page.route("**/api/workspaces/options", route => route.fulfill({ json: { projects: [] } }));
+  await page.route("**/api/workspaces/workspace-1**", route => {
+    detailReads += 1;
+    return route.fulfill({ json: detail });
+  });
+  await page.route("**/api/workspaces/workspace-1/events?**", async route => {
+    eventReads += 1;
+    if (eventReads === 1) return route.fulfill({ status: 503, json: { error: "Output store unavailable" } });
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    return route.fulfill({ json: { events: [], nextSeq: 0, hasMore: false } satisfies WorkspaceEventsResponse });
+  });
+  await page.goto(base);
+  await expect(page.getByText("Output store unavailable")).toBeVisible();
+  await expect.poll(() => detailReads).toBeGreaterThan(1);
+  await expect(page.getByText("Output store unavailable")).toBeVisible();
+});
+
+test("shows an unavailable Workspace options read and recovers on retry", async ({ page }) => {
+  let optionReads = 0;
+  const codingDetail: WorkspaceDetailResponse = {
+    ...detail,
+    workspace: { ...detail.workspace, runtime: "codex", coding: {
+      repository: "company/repo", baseBranch: "main", branch: "agent/workspace-1",
+    } },
+    runs: detail.runs.map(run => ({ ...run, input: { kind: "task" as const, prompt: "make output" } })),
+  };
+  await page.route("**/api/workspaces/options", route => {
+    optionReads += 1;
+    return optionReads === 1
+      ? route.fulfill({ status: 503, json: { error: "Options store unavailable" } })
+      : route.fulfill({ json: { projects: [] } });
+  });
+  await page.route("**/api/workspaces/workspace-1**", route => route.fulfill({ json: codingDetail }));
+  await page.route("**/api/workspaces/workspace-1/events?**", route => route.fulfill({ json: {
+    events: [], nextSeq: 0, hasMore: false,
+  } satisfies WorkspaceEventsResponse }));
+  await page.goto(base);
+  await expect(page.getByRole("alert")).toContainText("Workspace options could not be loaded");
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(optionReads).toBe(2);
+});

@@ -7,7 +7,7 @@ import {
   setAuditSink,
 } from "@/application/audit/recordAudit";
 import {
-  AUDIT_DAY_PAGE_SIZE,
+  AUDIT_PAGE_SIZE,
   createAuditUseCases,
   daysInRange,
   MAX_AUDIT_RANGE_DAYS,
@@ -174,13 +174,13 @@ describe("reading a range", () => {
       { actorEmail: "a@example.com", action: "settings.update", target: "settings:app" },
       new Date("2026-08-03T10:00:00Z"),
     );
-    expect(await useCases.list({ from: "2026-08-03" })).toHaveLength(1);
-    expect(await useCases.list({ from: "2026-08-02" })).toHaveLength(0);
+    expect((await useCases.list({ from: "2026-08-03" })).events).toHaveLength(1);
+    expect((await useCases.list({ from: "2026-08-02" })).events).toHaveLength(0);
   });
 
-  it("reads a busy audit day through bounded createdAt and eventId pages", async () => {
+  it("pages a busy audit day without collecting the entire partition", async () => {
     sink.rows.push(
-      ...Array.from({ length: AUDIT_DAY_PAGE_SIZE + 2 }, (_, index) => ({
+      ...Array.from({ length: AUDIT_PAGE_SIZE * 2 + 2 }, (_, index) => ({
         eventId: `event-${String(index).padStart(3, "0")}`,
         actorEmail: "admin@example.com",
         action: "settings.update" as const,
@@ -196,8 +196,53 @@ describe("reading a range", () => {
       return page;
     };
 
-    await expect(useCases.list({ from: "2026-08-03" })).resolves.toHaveLength(sink.rows.length);
-    expect(pageSizes).toEqual([AUDIT_DAY_PAGE_SIZE, 2]);
+    const first = await useCases.list({ from: "2026-08-03" });
+    expect(first.events).toHaveLength(AUDIT_PAGE_SIZE);
+    expect(first.nextCursor).toBeTruthy();
+    const second = await useCases.list({ from: "2026-08-03", cursor: first.nextCursor! });
+    expect(second.events).toHaveLength(AUDIT_PAGE_SIZE);
+    const third = await useCases.list({ from: "2026-08-03", cursor: second.nextCursor! });
+    expect(third.events).toHaveLength(2);
+    expect(third.nextCursor).toBeNull();
+    expect([...first.events, ...second.events, ...third.events].map((event) => event.eventId))
+      .toEqual([...sink.rows].reverse().map((event) => event.eventId));
+    expect(pageSizes).toEqual([AUDIT_PAGE_SIZE + 1, AUDIT_PAGE_SIZE + 1, 2]);
+  });
+
+  it("continues across UTC day partitions without repeating a row", async () => {
+    sink.rows.push(...["2026-08-03", "2026-08-02"].flatMap((day, dayIndex) =>
+      Array.from({ length: dayIndex === 0 ? 2 : 3 }, (_, index) => ({
+        eventId: `${day}-${index}`, actorEmail: "admin@example.com",
+        action: "settings.update" as const, target: "settings:app", createdAt: `${day}T10:00:00.000Z`,
+      }))));
+    const first = await useCases.list({ from: "2026-08-02", to: "2026-08-03", limit: 3 });
+    expect(first.events.map((event) => event.eventId)).toEqual(["2026-08-03-1", "2026-08-03-0", "2026-08-02-2"]);
+    const second = await useCases.list({ from: "2026-08-02", to: "2026-08-03", limit: 3, cursor: first.nextCursor! });
+    expect(second.events.map((event) => event.eventId)).toEqual(["2026-08-02-1", "2026-08-02-0"]);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it("does not offer another page when the result exactly fills one page", async () => {
+    sink.rows.push(...Array.from({ length: AUDIT_PAGE_SIZE }, (_, index) => ({
+      eventId: `event-${index}`, actorEmail: "admin@example.com",
+      action: "settings.update" as const, target: "settings:app", createdAt: "2026-08-03T10:00:00.000Z",
+    })));
+    const page = await useCases.list({ from: "2026-08-03" });
+    expect(page.events).toHaveLength(AUDIT_PAGE_SIZE);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("rejects a cursor outside the requested range or with invalid encoding", async () => {
+    sink.rows.push(...["e1", "e2"].map((eventId) => ({ eventId, actorEmail: "admin@example.com",
+      action: "settings.update" as const, target: "settings:app", createdAt: "2026-08-03T10:00:00.000Z" })));
+    const first = await useCases.list({ from: "2026-08-03", limit: 1 });
+    await expect(useCases.list({ from: "2026-08-02", cursor: first.nextCursor! }))
+      .rejects.toBeInstanceOf(ValidationError);
+    await expect(useCases.list({ from: "2026-08-03", cursor: "not-base64!" }))
+      .rejects.toBeInstanceOf(ValidationError);
+    const invalidTime = Buffer.from(JSON.stringify(["2026-08-03", "not-a-time", "e1"])).toString("base64url");
+    await expect(useCases.list({ from: "2026-08-03", cursor: invalidTime }))
+      .rejects.toBeInstanceOf(ValidationError);
   });
 
   it("refuses a malformed day rather than querying a partition that cannot exist", async () => {

@@ -33,7 +33,6 @@ import { optionalEnv } from "@/shared/env";
 import { parseList } from "@/shared/parseList";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 import {
-  llmApiKeyContext,
   llmProviderApiKeyContext,
   settingsSecretContext,
 } from "@/domain/security/secretContext";
@@ -134,33 +133,6 @@ export async function getAllowedEmailDomains(): Promise<string[]> {
   return stored !== undefined ? parseList(stored) : config.allowedEmailDomains;
 }
 
-export async function getLlmChannelConfig(): Promise<{ baseUrl: string; apiKey: string }> {
-  const stored = await loadSettings();
-  if (stored?.llmBaseUrl !== undefined && stored.llmApiKey === undefined) {
-    throw new Error("Stored LLM_BASE_URL has no matching LLM_API_KEY");
-  }
-  const baseUrl = stored?.llmBaseUrl ?? config.llmBaseUrl;
-  return {
-    baseUrl,
-    apiKey:
-      stored?.llmApiKey !== undefined
-        ? decryptSecret(stored.llmApiKey, llmApiKeyContext(baseUrl))
-        : config.llmApiKey,
-  };
-}
-
-export async function getEmbeddingChannelConfig(): Promise<{ baseUrl: string; apiKey: string }> {
-  if (config.embeddingBaseUrl) {
-    return {
-      baseUrl: config.embeddingBaseUrl,
-      // The OpenAI SDK requires a key even when a local endpoint does not.
-      // Never reuse the LLM secret for a separately addressed service.
-      apiKey: config.embeddingApiKey ?? "not-required",
-    };
-  }
-  return getLlmChannelConfig();
-}
-
 async function selectedTarget(model: string, type?: "embedding" | "rerank") {
   const providers = await getLlmProviderConfigs();
   const registered = getModelConfig(model);
@@ -225,7 +197,7 @@ export async function getRerankerModelSelection(): Promise<ModelSelection | unde
 export async function getRerankerModel(): Promise<string> {
   const selection = await getRerankerModelSelection();
   if (!selection) {
-    throw new Error("RERANKER_MODEL not configured");
+    throw new Error("Select a reranker model in model usage settings");
   }
   return selection.model;
 }

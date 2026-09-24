@@ -30,6 +30,12 @@ describe("MCP override row encoding", () => {
     });
   });
 
+  it("preserves a prototype-named override in the request body", () => {
+    const headers = rowsToOverrides([{ key: "__proto__", value: "", remove: true }]);
+    expect(headers && Object.hasOwn(headers, "__proto__")).toBe(true);
+    expect(JSON.stringify(headers)).toBe('{"__proto__":null}');
+  });
+
   it("drops half-typed rows with a blank header name", () => {
     expect(
       rowsToOverrides([

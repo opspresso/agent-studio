@@ -1,6 +1,4 @@
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 3).toString("base64");
-process.env.LLM_BASE_URL ??= "https://router.example/v1";
-process.env.LLM_API_KEY ??= "router-key";
 
 /**
  * The embedding adapter's one non-obvious job: pairing a vector back to the text

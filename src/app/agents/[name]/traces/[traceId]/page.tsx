@@ -12,9 +12,13 @@ import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDateTime } from "@/shared/date";
 
 export default function TraceDetailPage() {
+  const { name, traceId } = useParams<{ name: string; traceId: string }>();
+  return <TraceDetail key={`${name}:${traceId}`} name={name} traceId={traceId} />;
+}
+
+function TraceDetail({ name, traceId }: { name: string; traceId: string }) {
   const t = useT();
   const locale = useLocale();
-  const { name, traceId } = useParams<{ name: string; traceId: string }>();
   const [trace, setTrace] = useState<Trace | null>(null);
   const [error, setError] = useState<string | null>(null);
 

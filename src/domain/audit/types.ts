@@ -18,7 +18,7 @@ export type AuditAction =
   | "secret.rotate"
   /** A credential was removed. */
   | "secret.revoke"
-  /** An admin wrote a project owned by someone else. */
+  /** An admin used another owner's management authority, including credential reveal. */
   | "project.admin-override"
   /** App settings were written — the admin list and the LLM credential live here. */
   | "settings.update"

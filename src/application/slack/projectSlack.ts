@@ -1,7 +1,7 @@
 import { ValidationError } from "@/application/errors";
 import { MCP_OAUTH_CALLBACK_PATH } from "@/application/mcp/mcpAuthUseCases";
 import { persistProjectUpdate } from "@/application/project/projectUpdate";
-import { assertProjectWritable } from "@/application/project/projectUseCases";
+import { assertProjectOwnerOrAdminReadable, assertProjectWritable } from "@/application/project/projectUseCases";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, SlackIntegration } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
@@ -147,7 +147,7 @@ export async function getProjectSlack(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<ProjectSlackResult> {
-  const project = await assertProjectWritable(repo, name, userEmail);
+  const project = await assertProjectOwnerOrAdminReadable(repo, name, userEmail);
   return { project, view: maskedView(cipher, project) };
 }
 
@@ -343,7 +343,7 @@ export async function testProjectSlack(
   cipher: SecretCipher,
   authTest: (botToken: string) => Promise<{ team?: string; user?: string }>,
 ): Promise<{ ok: true; team?: string; botUser?: string } | { ok: false }> {
-  const project = await assertProjectWritable(repo, name, userEmail);
+  const project = await assertProjectOwnerOrAdminReadable(repo, name, userEmail);
   const runtime = resolveProjectSlackRuntime(cipher, project);
   if (!runtime) {
     return { ok: false };
@@ -423,7 +423,7 @@ export function createProjectSlackUseCases(deps: {
     test: (name, userEmail) =>
       testProjectSlack(deps.projects, name, userEmail, deps.cipher, deps.authTest),
     channels: async (name, userEmail) => {
-      const project = await assertProjectWritable(deps.projects, name, userEmail);
+      const project = await assertProjectOwnerOrAdminReadable(deps.projects, name, userEmail);
       const runtime = resolveProjectSlackRuntime(deps.cipher, project);
       if (!runtime) {
         throw new ValidationError("Slack is not configured or not enabled for this project");

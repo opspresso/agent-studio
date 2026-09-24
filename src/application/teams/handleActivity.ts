@@ -1,6 +1,6 @@
 import { resolveAgentProject, runRememberedTurn } from "@/application/messaging/rememberedTurn";
 import { createTeamsReplyChannel } from "@/application/teams/replyChannel";
-import type { TeamsActivityDisposition } from "@/application/teams/engagement";
+import { teamsSenderId, type TeamsActivityDisposition } from "@/application/teams/engagement";
 import type {
   TeamsActivity,
   TeamsAttachment,
@@ -140,7 +140,7 @@ export async function handleTeamsActivity(
 
   // The Entra object id where Teams gives one — it is the person across every
   // chat they are in — else the conversation-scoped id.
-  const userId = activity.from?.aadObjectId ?? activity.from?.id;
+  const userId = teamsSenderId(activity);
   const arrivedAt = activity.timestamp ? new Date(activity.timestamp) : new Date();
   await runRememberedTurn(deps, {
     project,

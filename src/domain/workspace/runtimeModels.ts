@@ -7,7 +7,7 @@ export type { WorkspaceModelRuntime, WorkspaceRuntimeModels } from "./types";
 
 /** Native CLI protocol support, separate from the agent's chat model selection. */
 export function workspaceRuntimeModelCompatible(runtime: WorkspaceModelRuntime, model: ModelConfig): boolean {
-  if (!["text", "decisions"].includes(modelType(model)) || !model.capabilities.tools) return false;
+  if (modelType(model) !== "text" || !model.capabilities.tools) return false;
   const kind = model.providerKind ?? model.provider;
   if (runtime === "claude") return kind === "anthropic";
   if (runtime === "codex") return ["openai", "openrouter", "selfhosted"].includes(kind);

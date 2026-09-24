@@ -39,7 +39,7 @@ export const RETENTION = {
   get usageDays(): number {
     return positiveIntEnv("USAGE_RETENTION_DAYS", 400, 31);
   },
-  /** Chats and their messages, measured from last activity. */
+  /** Chat META uses last activity; each message uses its creation time. */
   get chatDays(): number {
     return retentionDays("CHAT_RETENTION_DAYS", 180);
   },

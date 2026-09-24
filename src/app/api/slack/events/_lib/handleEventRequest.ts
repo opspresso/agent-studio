@@ -18,6 +18,7 @@ import type { SlackBotBinding } from "@/application/slack/handleSlackEvent";
 import type { SlackEventBody, SlackEventDeps } from "@/application/slack/types";
 import { config } from "@/lib/config";
 import { log } from "@/shared/logger";
+import { slackEventSchema } from "./eventSchema";
 
 const slackEventDeps: SlackEventDeps = {
   runAgent: (params) => executeAgent(executionDeps, params),
@@ -90,12 +91,17 @@ export async function handleSlackEventRequest(
     return Response.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  let payload: SlackEventBody & { challenge?: string };
+  let raw: unknown;
   try {
-    payload = JSON.parse(body) as SlackEventBody & { challenge?: string };
+    raw = JSON.parse(body);
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+  const parsed = slackEventSchema.safeParse(raw);
+  if (!parsed.success) {
+    return Response.json({ error: "Invalid Slack event" }, { status: 400 });
+  }
+  const payload = parsed.data as SlackEventBody & { challenge?: string };
 
   if (payload.type === "url_verification" && payload.challenge) {
     return Response.json({ challenge: payload.challenge });

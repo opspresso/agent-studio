@@ -35,10 +35,6 @@ export interface RenderedXlsx {
 const INVALID_SHEET_NAME = /[\\/:?*\[\]]/;
 const XML_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g;
 
-function xmlText(value: string): string {
-  return escapeXml(value.replace(XML_CONTROL, ""));
-}
-
 function columnName(column: number): string {
   let value = column + 1;
   let name = "";
@@ -152,11 +148,11 @@ export function cellXml(value: SpreadsheetCell, address: string, header: boolean
     const body =
       cached === undefined || cached === null
         ? ""
-        : `<v>${xmlText(typeof cached === "boolean" ? (cached ? "1" : "0") : String(cached))}</v>`;
-    return `<c r="${address}"${type}${style}><f>${xmlText(value.formula)}</f>${body}</c>`;
+        : `<v>${escapeXml(typeof cached === "boolean" ? (cached ? "1" : "0") : String(cached))}</v>`;
+    return `<c r="${address}"${type}${style}><f>${escapeXml(value.formula)}</f>${body}</c>`;
   }
   if (typeof value === "string") {
-    return `<c r="${address}" t="inlineStr"${style}><is><t xml:space="preserve">${xmlText(value)}</t></is></c>`;
+    return `<c r="${address}" t="inlineStr"${style}><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
   }
   if (typeof value === "boolean") {
     return `<c r="${address}" t="b"${style}><v>${value ? "1" : "0"}</v></c>`;
@@ -223,7 +219,7 @@ function workbookXml(sheets: readonly SpreadsheetSheet[]): string {
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
     'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
-    `<sheets>${sheets.map((sheet, index) => `<sheet name="${xmlText(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("")}</sheets>` +
+    `<sheets>${sheets.map((sheet, index) => `<sheet name="${escapeXml(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("")}</sheets>` +
     '<calcPr calcId="191029" calcMode="auto" fullCalcOnLoad="1" forceFullCalc="1"/>' +
     "</workbook>"
   );
@@ -268,7 +264,7 @@ function corePropertiesXml(title: string, created: string): string {
     '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ' +
     'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" ' +
     'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
-    `<dc:title>${xmlText(title)}</dc:title>` +
+    `<dc:title>${escapeXml(title)}</dc:title>` +
     `<dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created>` +
     `<dcterms:modified xsi:type="dcterms:W3CDTF">${created}</dcterms:modified>` +
     "</cp:coreProperties>"
@@ -294,7 +290,7 @@ export function renderXlsx(
     "docProps/core.xml": utf8(corePropertiesXml(options.title, options.created)),
     "docProps/app.xml": utf8(
       '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">' +
-        `<Application>${xmlText(PRODUCER)}</Application></Properties>`,
+        `<Application>${escapeXml(PRODUCER)}</Application></Properties>`,
     ),
     "xl/workbook.xml": utf8(workbookXml(sheets)),
     "xl/_rels/workbook.xml.rels": utf8(workbookRelsXml(sheets.length)),

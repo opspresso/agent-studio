@@ -33,12 +33,7 @@ const TOUCHED = [
   "PUBLIC_BASE_URL",
   "BETTER_AUTH_URL",
   "MANAGED_MCP_NETWORK_CONTAINER",
-  "LLM_BASE_URL",
-  "LLM_API_KEY",
   "AES_ENCRYPTION_KEY",
-  "RERANKER_BASE_URL",
-  "RERANKER_API_KEY",
-  "RERANKER_MODEL",
 ] as const;
 const ORIGINAL = Object.fromEntries(TOUCHED.map((key) => [key, process.env[key]]));
 
@@ -60,19 +55,6 @@ afterEach(() => {
 const BLANK = ["", " ", "\n", "  \t\n"];
 
 describe("optional config", () => {
-  it("requires a complete reranker endpoint and model pair", () => {
-    set("RERANKER_BASE_URL", "http://reranker.example/v1");
-    set("RERANKER_MODEL", undefined);
-    expect(() => config.reranker).toThrow(
-      "RERANKER_BASE_URL and RERANKER_MODEL must be configured together",
-    );
-    set("RERANKER_MODEL", "reranker");
-    expect(config.reranker).toEqual({
-      baseUrl: "http://reranker.example/v1",
-      model: "reranker",
-    });
-  });
-
   it.each(BLANK)("reads %o as unset", (raw) => {
     set("GITHUB_TOKEN", raw);
     set("S3_BUCKET_NAME", raw);
@@ -121,14 +103,8 @@ describe("optional config", () => {
 });
 
 describe("required config", () => {
-  it.each(BLANK)("refuses %o", (raw) => {
-    set("LLM_API_KEY", raw);
-    expect(() => config.llmApiKey).toThrow("LLM_API_KEY not configured");
-  });
-
   it.each(BLANK)("reports %o as missing at boot", (raw) => {
     set("DATABASE_URL", "postgres://unit:unit@localhost:5432/unit");
-    set("LLM_BASE_URL", "https://router.example/v1");
     set("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
     set("AES_ENCRYPTION_KEY", raw);
     expect(() => assertRequiredConfig()).toThrow(
@@ -138,8 +114,6 @@ describe("required config", () => {
 
   it("rejects a present but weak AES key at boot", () => {
     set("DATABASE_URL", "postgres://unit:unit@localhost:5432/unit");
-    set("LLM_BASE_URL", "https://router.example/v1");
-    set("LLM_API_KEY", "router-key");
     set("AES_ENCRYPTION_KEY", "AA==");
 
     expect(() => assertRequiredConfig()).toThrow(

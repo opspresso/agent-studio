@@ -14,10 +14,10 @@ import {
   getAdminEmails,
   getEmbeddingModelSelection,
   getEmbeddingTarget,
-  getLlmChannelConfig,
   getLlmProviderConfigs,
   getPluginsRepoConfig,
   getRerankerModelSelection,
+  getRerankerModel,
   getRerankerTarget,
   getRerankerMinScoreSelection,
   invalidateSettingsCache,
@@ -26,7 +26,6 @@ import {
 } from "@/lib/runtime-settings";
 import { encryptSecret } from "@/infrastructure/crypto/secretEncryption";
 import {
-  llmApiKeyContext,
   llmProviderApiKeyContext,
   settingsSecretContext,
 } from "@/domain/security/secretContext";
@@ -39,8 +38,6 @@ function stub(settings: AppSettings | null): void {
 
 const ENV_KEYS = [
   "ADMIN_EMAILS",
-  "LLM_BASE_URL",
-  "LLM_API_KEY",
   "LLM_PROVIDER_OPENAI_BASE_URL",
   "LLM_PROVIDER_OPENAI_API_KEY",
   "GITHUB_TOKEN",
@@ -103,38 +100,9 @@ describe("runtime settings precedence", () => {
 
   it("falls back to env when no override is stored", async () => {
     process.env.ADMIN_EMAILS = "env@example.com";
-    process.env.LLM_BASE_URL = "https://env.example.com/v1";
-    process.env.LLM_API_KEY = "sk-env";
     stub(null);
 
     expect(await getAdminEmails()).toEqual(["env@example.com"]);
-    expect(await getLlmChannelConfig()).toEqual({
-      baseUrl: "https://env.example.com/v1",
-      apiKey: "sk-env",
-    });
-  });
-
-  it("never pairs a stored LLM endpoint with the environment key", async () => {
-    process.env.LLM_BASE_URL = "https://env.example.com/v1";
-    process.env.LLM_API_KEY = "sk-env";
-    stub({
-      llmBaseUrl: "https://stored.example.com/v1",
-      updatedAt: "2026-01-01T00:00:00Z",
-    });
-
-    await expect(getLlmChannelConfig()).rejects.toThrow(
-      "Stored LLM_BASE_URL has no matching LLM_API_KEY",
-    );
-  });
-
-  it("refuses a stored LLM key moved to another endpoint context", async () => {
-    stub({
-      llmBaseUrl: "https://new.example.com/v1",
-      llmApiKey: encryptSecret("sk-db", llmApiKeyContext("https://old.example.com/v1")),
-      updatedAt: "2026-01-01T00:00:00Z",
-    });
-
-    await expect(getLlmChannelConfig()).rejects.toThrow();
   });
 
   it("prefers stored LLM providers over LLM_PROVIDER_* env, decrypting keys", async () => {
@@ -274,6 +242,11 @@ describe("runtime settings precedence", () => {
     await expect(getRerankerModelSelection()).resolves.toBeUndefined();
   });
 
+  it("names the model usage setting when no reranker is selected", async () => {
+    stub(null);
+    await expect(getRerankerModel()).rejects.toThrow("Select a reranker model in model usage settings");
+  });
+
   it("resolves the reranker score floor from DB before env and default", async () => {
     process.env.RERANKER_MIN_SCORE = "0.2";
     stub({ rerankerMinScore: "0.3", updatedAt: "2026-01-01T00:00:00Z" });
@@ -313,23 +286,16 @@ describe("runtime settings precedence", () => {
     );
 
     const admins = getAdminEmails();
-    const channel = getLlmChannelConfig();
+    const plugins = getPluginsRepoConfig();
     expect(mockGet).toHaveBeenCalledTimes(1);
 
     resolveRead({
       adminEmails: "admin@example.com",
-      llmBaseUrl: "https://llm.example.com/v1",
-      llmApiKey: encryptSecret(
-        "sk-db",
-        llmApiKeyContext("https://llm.example.com/v1"),
-      ),
+      pluginsRepo: "org/plugins",
       updatedAt: "2026-01-01T00:00:00Z",
     });
     await expect(admins).resolves.toEqual(["admin@example.com"]);
-    await expect(channel).resolves.toEqual({
-      baseUrl: "https://llm.example.com/v1",
-      apiKey: "sk-db",
-    });
+    await expect(plugins).resolves.toMatchObject({ repo: "org/plugins" });
     expect(mockGet).toHaveBeenCalledTimes(1);
   });
 

@@ -556,8 +556,12 @@ describe("executeDelivery", () => {
         throw new Error("payload too deep");
       },
     };
-    await expect(executeDelivery(f.deps, await accept(f), poison)).resolves.toBeUndefined();
+    const admitted = await accept(f);
+    f.rows.push({ projectName: "p", triggerId: PROJECT_WEBHOOK_ID, runId: "lost",
+      status: "running", startedAt: new Date(Date.now() - (REPAIR_AFTER_SECONDS + 60) * 1000).toISOString() });
+    await expect(executeDelivery(f.deps, admitted, poison)).resolves.toBeUndefined();
     expect(f.rows[0]).toMatchObject({ status: "failed", error: "payload too deep" });
+    expect(f.rows.find((row) => row.runId === "lost")?.status).toBe("failed");
     expect(f.runs).toHaveLength(0);
     // The slot came back: the next delivery is admitted, not busy.
     expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe("accepted");

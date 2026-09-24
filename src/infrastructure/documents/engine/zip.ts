@@ -59,6 +59,9 @@ export function listEntries(bytes: Uint8Array): ZipEntry[] {
   try {
     unzipSync(bytes, {
       filter(file) {
+        if (entries.length >= MAX_ZIP_ENTRIES) {
+          throw new ZipError(`the archive has more than ${MAX_ZIP_ENTRIES.toLocaleString("en-US")} entries`);
+        }
         entries.push({
           name: file.name,
           compressedSize: file.size,
@@ -68,6 +71,7 @@ export function listEntries(bytes: Uint8Array): ZipEntry[] {
       },
     });
   } catch (error) {
+    if (error instanceof ZipError) throw error;
     throw new ZipError(`the archive could not be read — ${describe(error)}`);
   }
   return entries;

@@ -1,4 +1,6 @@
 import { createWorkspaceRuntimeModelUseCases } from "@/application/workspace/runtimeModels";
+import { createWorkspaceOptionsUseCase } from "@/application/workspace/workspaceOptions";
+import { optionalToolAccessible } from "@/application/execution/optionalToolAccess";
 import { workerDocumentRenderer, workerDocumentEditor, workerDocumentExtractor } from "@/infrastructure/documents/workerAdapters";
 import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as workspaceSleep } from "node:timers/promises";
@@ -19,7 +21,7 @@ import { chatRunLogRepository } from "@/infrastructure/db/repositories/chatRunLo
 import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
 import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerProvider";
 import { createWorkspaceRuntimeAdapter, WORKSPACE_DIRECTORY } from "@/infrastructure/workspace/runtimeAdapters";
-import { workspaceRepositories, workspaceAllowsRepository, workspaceRepositoryMode } from "@/domain/workspace/policy";
+import { workspaceAllowsRepository } from "@/domain/workspace/policy";
 import { createDockerCodingWorktree } from "@/infrastructure/workspace/gitWorktree";
 import { createCodingGitHub } from "@/infrastructure/github/codingForge";
 import { createCodingUseCases } from "@/application/coding/codingUseCases";
@@ -164,7 +166,7 @@ import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createReranker } from "@/infrastructure/llm/reranker";
 import { createPgVectorStore } from "@/infrastructure/vector/pgVectorStore";
 import { deleteExpired } from "@/infrastructure/db/store";
-import { createProjectUseCases, setAdminCheck, userMayAccessProject } from "@/application/project/projectUseCases";
+import { createProjectUseCases, setAdminCheck } from "@/application/project/projectUseCases";
 import { createTraceUseCases } from "@/application/trace/traceUseCases";
 import { createUsageUseCases } from "@/application/usage/usageUseCases";
 import { createConfigurationUseCases } from "@/application/project/configurationUseCases";
@@ -1024,7 +1026,7 @@ export const executionDeps: ExecutionDeps = {
     if (origin.actor?.kind !== "user" || !getWorkspaceConfig() || !await workspaceRepositoryPolicyUseCases.enabled(projectName)) return undefined;
     const email = origin.actor.id;
     const authorize = () => authorizeWorkspaceTools(email, projectName);
-    try { await authorize(); } catch { return undefined; }
+    if (!await optionalToolAccessible(authorize)) return undefined;
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
       ...(getWorkspaceGitHubConfig() ? { createRepository: workspaceRepositoryCreationUseCases.create } : {}),
       requestGit: (id, ownerEmail, action, sourceChatId) => getCodingUseCases().request(id, ownerEmail, action, sourceChatId),
@@ -1047,7 +1049,7 @@ export const executionDeps: ExecutionDeps = {
     if (!email) return undefined;
     const project = origin.ancestry[0] ?? projectName;
     const runtime = getAudioRuntime();
-    try { await runtime.authorize(project, email); } catch { return undefined; }
+    if (!await optionalToolAccessible(() => runtime.authorize(project, email))) return undefined;
     return createAudioTool({ jobs: runtime.jobs, files: { read: async (sourceProject, id, user, maxBytes) => {
       await runtime.authorize(sourceProject, user);
       return runtime.files.read(sourceProject, id, user, maxBytes);
@@ -1418,21 +1420,13 @@ export async function receiveWorkspaceGitHubWebhook(deliveryId: string, raw: str
   return handleCodingWebhook(workspaceRepository, createCodingGitHub(config).forge, deliveryId, raw);
 }
 
-export async function workspaceOptions(ownerEmail: string) {
-  const settings = getWorkspaceConfig();
-  const available = [];
-  const runtimes = (await workspaceRuntimeModelUseCases.getView()).available;
-  for (const project of settings ? await projectUseCases.list() : []) {
-    if (!await userMayAccessProject(project, ownerEmail) || !await workspaceRepositoryPolicyUseCases.enabled(project.name)) continue;
-    const policy = await getWorkspaceProjectPolicy(project.name);
-    if (policy) available.push({
-      projectName: project.name, displayName: project.displayName, description: project.description,
-      runtimes, defaultRuntime: policy.defaultRuntime ?? "command", mode: workspaceRepositoryMode(policy), repositories: workspaceRepositories(policy),
-      repositoryOwners: policy.repositoryOwners ?? [], deploymentWorkflows: policy.deploymentWorkflows,
-    });
-  }
-  return { enabled: !!settings, gitEnabled: !!getWorkspaceGitHubConfig(), projects: available };
-}
+export const workspaceOptions = createWorkspaceOptionsUseCase({
+  listAccessible: projectUseCases.listAccessible,
+  policies: workspacePolicyRepository,
+  runtimes: async () => (await workspaceRuntimeModelUseCases.getView()).available,
+  backendReady: () => !!getWorkspaceConfig(),
+  gitEnabled: () => !!getWorkspaceGitHubConfig(),
+});
 
 export const agentRecommendationUseCases = createAgentRecommendationUseCases({
   decision: decisionClient,

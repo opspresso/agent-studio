@@ -73,6 +73,26 @@ describe("mcp repository mapping", () => {
 });
 
 describe("mcp connection mapping", () => {
+  it("prevents stale writes and disconnects from replacing a newer grant", async () => {
+    const connection: McpConnection = {
+      projectName: "p", serverName: "slack", clientId: "first",
+      issuer: "https://auth.example.com", resource: "https://mcp.example.com",
+      scopes: [], status: "needs_auth", updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    expect(await mcpConnectionRepository.putIfCurrent(connection, null)).toBe(true);
+    const first = (await mcpConnectionRepository.get("p", "slack"))!;
+    expect(await mcpConnectionRepository.putIfCurrent({ ...connection, clientId: "second" }, first)).toBe(true);
+    const second = (await mcpConnectionRepository.get("p", "slack"))!;
+
+    expect(await mcpConnectionRepository.putIfCurrent({ ...connection, clientId: "stale" }, first)).toBe(false);
+    expect(await mcpConnectionRepository.deleteIfCurrent(first)).toBe(false);
+    expect((await mcpConnectionRepository.get("p", "slack"))?.clientId).toBe("second");
+
+    expect(await mcpConnectionRepository.deleteIfCurrent(second)).toBe(true);
+    expect(await mcpConnectionRepository.putIfCurrent(connection, second)).toBe(false);
+    expect(await mcpConnectionRepository.get("p", "slack")).toBeNull();
+  });
+
   it.each([undefined, "enc:unchanged-refresh"])(
     "changes the revision on every put and token update with refresh token %s",
     async (refreshToken) => {
@@ -229,6 +249,22 @@ describe("mcp connection mapping", () => {
 });
 
 describe("connections written before the checks existed", () => {
+  it("lets the owner replace an unreadable legacy grant", async () => {
+    store.seed([{
+      ...keys.mcpConnection("p", "slack"), projectName: "p", serverName: "slack",
+      clientId: "old", status: "connected", updatedAt: "2026-01-01T00:00:00.000Z",
+    }]);
+    expect(await mcpConnectionRepository.get("p", "slack")).toBeNull();
+
+    const replacement: McpConnection = {
+      projectName: "p", serverName: "slack", clientId: "new",
+      issuer: "https://auth.example.com", resource: "https://mcp.example.com",
+      scopes: [], status: "needs_auth", updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    expect(await mcpConnectionRepository.putIfCurrent(replacement, null)).toBe(true);
+    expect((await mcpConnectionRepository.get("p", "slack"))?.clientId).toBe("new");
+  });
+
   it("fills a bounded page past unusable legacy rows", async () => {
     const valid = (serverName: string): McpConnection => ({
       projectName: "p",

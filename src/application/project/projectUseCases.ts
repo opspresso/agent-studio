@@ -127,7 +127,7 @@ export async function assertProjectWritable(
   name: string,
   userEmail: string,
 ): Promise<Project> {
-  const { project, override } = await writeAccess(repo, name, userEmail);
+  const { project, override } = await ownerOrAdminAccess(repo, name, userEmail);
   if (override) {
     await recordAdminOverride(project, userEmail);
   }
@@ -150,30 +150,31 @@ async function recordAdminOverride(project: Project, userEmail: string): Promise
  * Not a second rule and not a wider one — owner or admin, exactly as above. The
  * only difference is that nothing is recorded, and that is the point: reaching
  * into someone else's project to *change* it is an act worth an audit row,
- * while opening one of its artifacts is not. An admin clicking through a
- * gallery would otherwise write a row per click, each claiming a write override
- * that never happened, burying the trail the table exists for. It is the
- * position {@link assertProjectAccessible} already takes for its own reads:
- * logged, never audited.
+ * while opening masked integration settings or runtime output is not. An admin
+ * clicking through a gallery would otherwise write a row per click, each
+ * claiming a write override that never happened, burying the trail the table
+ * exists for. It is the position {@link assertProjectAccessible} already takes
+ * for its own reads: logged, never audited.
  *
  * `assertProjectAccessible` is *not* the substitute — it admits everyone a
- * public project admits, and a project's outputs are not public because the
- * project is. Which is why this exists at all.
+ * public project admits, and owner-scoped settings and outputs are not public
+ * because the project is. Which is why this exists at all.
  */
-export async function assertProjectOutputReadable(
+export async function assertProjectOwnerOrAdminReadable(
   repo: ProjectRepository,
   name: string,
   userEmail: string,
 ): Promise<Project> {
-  return (await writeAccess(repo, name, userEmail)).project;
+  return (await ownerOrAdminAccess(repo, name, userEmail, undefined, "read")).project;
 }
 
 /** Owner or admin, or the refusal. Says which, so only one caller records it. */
-async function writeAccess(
+async function ownerOrAdminAccess(
   repo: ProjectRepository,
   name: string,
   userEmail: string,
   options?: { includeDeleting?: boolean },
+  operation: "read" | "write" = "write",
 ): Promise<{ project: Project; override: boolean }> {
   const project = await repo.get(name, options);
   if (!project) {
@@ -185,7 +186,7 @@ async function writeAccess(
   if (await isAdminOverride(userEmail)) {
     log.warn(
       "authz",
-      `admin ${userEmail} is acting on project "${name}" owned by ${project.ownerEmail}`,
+      `admin ${userEmail} is ${operation === "read" ? "reading" : "acting on"} project "${name}" owned by ${project.ownerEmail}`,
     );
     return { project, override: true };
   }
@@ -335,7 +336,7 @@ export async function deleteProject(
   userEmail: string,
   beforeDelete?: BeforeProjectDelete,
 ): Promise<void> {
-  const { project, override } = await writeAccess(repo, name, userEmail, {
+  const { project, override } = await ownerOrAdminAccess(repo, name, userEmail, {
     includeDeleting: true,
   });
   if (override) {

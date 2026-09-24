@@ -16,7 +16,7 @@ import { formatUsd } from "@/app/_lib/formatUsd";
 import { buildDailySeries, groupUsage, sumRecord, type GroupBy } from "@/app/_lib/usage";
 import { getProject, usageActors, usageSummary, type ActorUsageView, type UsageRow } from "../../lib/api";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
-import { Alert, Avatar, Card, Group, SimpleGrid, Stack, Table, Text } from "@mantine/core";
+import { Alert, Avatar, Button, Card, Group, SimpleGrid, Stack, Table, Text } from "@mantine/core";
 import { IconActivity, IconCoins, IconUsers } from "@tabler/icons-react";
 import { useLocale, useT } from "@/app/_i18n/provider";
 
@@ -55,10 +55,13 @@ function totalsByCaller(rows: ActorUsageView[]): CallerTotal[] {
 }
 
 export default function UsagePage() {
+  const { name } = useParams<{ name: string }>();
+  return <UsageDetail key={name} name={name} />;
+}
+
+function UsageDetail({ name }: { name: string }) {
   const t = useT();
   const locale = useLocale();
-  const params = useParams<{ name: string }>();
-  const name = params.name;
 
   const [range, setRange] = useState(defaultDateRange);
   const [groupBy, setGroupBy] = useState<GroupBy>("model");
@@ -76,17 +79,23 @@ export default function UsagePage() {
   // to get a guaranteed 403 on every visit and range change.
   const viewer = useViewer();
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
+  const [ownerLoading, setOwnerLoading] = useState(true);
+  const [ownerError, setOwnerError] = useState<string | null>(null);
+  const [ownerRetry, setOwnerRetry] = useState(0);
   useEffect(() => {
     let cancelled = false;
+    setOwnerLoading(true);
+    setOwnerError(null);
     getProject(name)
       .then((project) => !cancelled && setOwnerEmail(project.ownerEmail))
-      // The summary below reports its own errors; without an owner the
-      // breakdown simply stays off, which is what the server would answer.
-      .catch(() => {});
+      .catch((loadError) => {
+        if (!cancelled) setOwnerError(loadError instanceof Error ? loadError.message : "Failed to load Agent");
+      })
+      .finally(() => { if (!cancelled) setOwnerLoading(false); });
     return () => {
       cancelled = true;
     };
-  }, [name]);
+  }, [name, ownerRetry]);
   const maySeeActors = canEditProject(viewer, ownerEmail);
 
   useEffect(() => {
@@ -180,6 +189,10 @@ export default function UsagePage() {
           {error}
         </Alert>
       )}
+      {ownerError && <Alert color="yellow" variant="light"><Group justify="space-between" gap="sm">
+        <Text size="sm">{ownerError}</Text>
+        <Button size="xs" variant="light" onClick={() => setOwnerRetry(value => value + 1)}>{t("error.retry")}</Button>
+      </Group></Alert>}
 
       {loading ? (
         <LoadingText />
@@ -202,11 +215,11 @@ export default function UsagePage() {
             />
             <StatCard
               label={t("projectUsage.callers")}
-              value={actorLoading ? "—" : actorTotal.toLocaleString(locale)}
+              value={ownerLoading || ownerError || actorLoading ? "—" : actorTotal.toLocaleString(locale)}
               detail={
-                actorLoading
+                ownerLoading || actorLoading
                   ? t("common.loading")
-                  : actorError
+                  : ownerError || actorError
                     ? t("projectUsage.unavailable")
                     : t(
                         maySeeActors

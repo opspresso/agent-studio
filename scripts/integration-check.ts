@@ -88,7 +88,6 @@ async function main() {
   const { runSlotRepository } = await import("@/infrastructure/db/repositories/runSlotRepository");
   const { triggerRepository } = await import("@/infrastructure/db/repositories/triggerRepository");
   const { auditRepository } = await import("@/infrastructure/db/repositories/auditRepository");
-  const { listAuditDay } = await import("@/application/audit/auditUseCases");
   const { artifactRepository } = await import(
     "@/infrastructure/db/repositories/artifactRepository"
   );
@@ -393,15 +392,19 @@ async function main() {
       { Authorization: "Bearer secret-token" },
       mcpHeadersContext(serverName),
     );
+    const sourceOutputs = [{ tool: "get_file", namespace: "plaud", urlPath: ["presigned_url"],
+      idPath: ["id"], namePath: ["name"], mimeType: "audio/mpeg", refreshArgument: "file_id" }];
     await mcpRepository.put({
       name: serverName,
       url: "http://localhost:9999/mcp",
       headers: mcpHeaders,
+      sourceOutputs,
       createdAt: now,
       updatedAt: now,
     });
     const mcp = await mcpRepository.get(serverName);
     assert.ok(mcp, "mcp get");
+    assert.deepEqual(mcp.sourceOutputs, sourceOutputs, "MCP source defaults survive JSONB round-trip");
     assert.equal(
       decryptHeadersForOutbound(mcp.headers, mcpHeadersContext(serverName)).Authorization,
       "Bearer secret-token",
@@ -536,6 +539,15 @@ async function main() {
     const revoked = await mcpConnectionRepository.get(projectName, serverName);
     assert.equal(revoked?.refreshToken, undefined, "cleared refresh token is absent, not null");
     assert.equal(revoked?.status, "needs_reauth", "status recorded");
+    assert.ok(revoked, "revoked connection remains available for a conditional replacement");
+    assert.equal(await mcpConnectionRepository.putIfCurrent({ ...conn, clientId: "stale" }, conn),
+      false, "a stale authorization cannot replace the current grant");
+    assert.equal(await mcpConnectionRepository.putIfCurrent({ ...revoked, clientId: "replacement" }, revoked),
+      true, "the current grant may be replaced");
+    assert.equal(await mcpConnectionRepository.deleteIfCurrent(revoked),
+      false, "a stale disconnect cannot remove a replacement grant");
+    assert.equal((await mcpConnectionRepository.get(projectName, serverName))?.clientId,
+      "replacement", "the replacement grant survives the stale disconnect");
 
     const oauthState = `it-state-${suffix}`;
     await mcpOAuthStateRepository.put(
@@ -1111,7 +1123,7 @@ async function main() {
       await auditRepository.append(row);
       auditFixtures.push({ day: auditDay, createdAt: row.createdAt, eventId: row.eventId });
     }
-    const dayRows = await listAuditDay(auditRepository, auditDay);
+    const dayRows = await auditRepository.listByDay(auditDay, 100);
     const mine = dayRows.filter((row) => row.eventId.endsWith(suffix));
     assert.deepEqual(
       mine.map((row) => row.eventId),

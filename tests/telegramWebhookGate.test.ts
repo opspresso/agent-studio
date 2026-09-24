@@ -97,6 +97,18 @@ describe("the Telegram webhook", () => {
     expect(res.status).toBe(400);
   });
 
+  it.each([
+    null,
+    [],
+    privateMessage("hi", { chat: null }),
+    privateMessage("hi", { entities: "not entities" }),
+    privateMessage("hi", { photo: "not photos" }),
+  ])("refuses a malformed update before claiming it: %j", async (payload) => {
+    const res = await handleTelegramUpdateRequest(request(payload), BINDING);
+    expect(res.status).toBe(400);
+    expect(claim).not.toHaveBeenCalled();
+  });
+
   it("claims and handles a private message, keyed by the update id", async () => {
     const res = await handleTelegramUpdateRequest(request(privateMessage("hi")), BINDING);
 

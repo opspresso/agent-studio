@@ -3,6 +3,7 @@ import { createFakeStore } from "./fakeStore";
 import { keys } from "@/infrastructure/db/keys";
 import { createAudioJobUseCases, type AudioJobUseCaseDeps, type SubmitAudioJobInput } from "@/application/audio/audioJobUseCases";
 import type { SourceFile } from "@/domain/artifact/sourceFile";
+import type { AudioJob } from "@/domain/audio/job";
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 import * as store from "@/infrastructure/db/store";
 import { audioJobRepository as jobs } from "@/infrastructure/db/repositories/audioJobRepository";
@@ -209,6 +210,33 @@ describe("audio job use cases", () => {
     expect((await api.list("audio", "owner@example.test", 1)).map((job) => job.id)).toEqual(["job-2"]);
     await expect(api.get("audio", "job-1", "owner@example.test")).rejects.toMatchObject({ status: 404 });
     await expect(api.cancel("audio", "job-1", "owner@example.test", 1)).rejects.toMatchObject({ status: 404 });
+  });
+  it("reads a page of job views concurrently with a bounded number of file lookups", async () => {
+    const f = fixture();
+    const email = "owner@example.test";
+    const now = f.deps.now().toISOString();
+    const records: AudioJob[] = Array.from({ length: 8 }, (_, index) => ({
+      projectName: "audio", userEmail: email, source: f.input.source as AudioJob["source"],
+      sourceKey: `source-${index}`, model: f.input.model!, retention: f.input.retention!,
+      id: `job-${index}`, revision: 1, status: "completed", stage: "cleaning",
+      createdAt: now, updatedAt: now, dueAt: now, attempt: 1, failures: 0, receipts: {},
+      fileId: `file-${index}`,
+    }));
+    f.deps.jobs = { ...jobs, list: async () => records };
+    let pending = 0;
+    let peak = 0;
+    f.deps.files.get = async () => {
+      pending += 1;
+      peak = Math.max(peak, pending);
+      await Promise.resolve();
+      pending -= 1;
+      return null;
+    };
+
+    const views = await f.api.list("audio", email, records.length);
+    expect(views.map((item) => item.id)).toEqual(records.map((item) => item.id));
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(4);
   });
   it("requires an explicit processing revision for a new run of the same source", async () => {
     const { api, input } = fixture();

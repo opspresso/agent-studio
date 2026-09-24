@@ -1,7 +1,7 @@
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { MemberUsageRow, UsageRow } from "@/domain/usage/types";
-import { assertProjectWritable } from "@/application/project/projectUseCases";
+import { assertProjectOwnerOrAdminReadable } from "@/application/project/projectUseCases";
 import { memberMonthToDate } from "./memberCostGuard";
 import { listProjectActors, type ListActorsDeps, type ProjectActorUsage } from "./listActors";
 
@@ -54,7 +54,7 @@ export async function listProjectActorsFor(
   from: string,
   to: string,
 ): Promise<ProjectActorUsage> {
-  const project = await assertProjectWritable(deps.projects, projectName, userEmail);
+  const project = await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
   return listProjectActors(deps, project, from, to);
 }
 

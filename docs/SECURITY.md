@@ -192,11 +192,14 @@ admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘�
 오버라이드의 두 가지 귀결은 없는 셈 치지 않고 처리한다:
 
 - **기록된다**. `project.admin-override` 감사 행과
-  `[authz] admin … is acting on project …` 라인. 그 쓰기가 누가 했는지를 알려 줬을 행 자체를
+  `[authz] admin … is acting on project …` 라인. 프로젝트 삭제는 수행자를 알려 줬을 행을
   파괴할 수 있고, project 의 API token 은 *그 소유자로서* 인증하므로 admin 의 reveal 은 그 둘에
   더해 `secret.reveal` 행을 남긴다.
 - 그것이 필요로 하는 설정 읽기는 **fail-closed** 다. 설정 저장소 장애는 소유자가 아닌 사람의
   결정적인 403 을 500 으로 바꾸는 대신 오버라이드를 거부한다.
+
+Trace·호출자별 Usage·프로젝트 Artifact 목록과 마스킹된 연동 설정·실행 이력은 같은
+소유자/admin 판정으로 읽지만, 읽기만으로 `project.admin-override` 쓰기 감사 행을 남기지 않는다.
 
 ## 저장된 시크릿
 
@@ -370,6 +373,8 @@ userinfo 를 실은 URL(`https://user:pass@host`, 주소 안의 자격 증명은
 방식이 아니고, 호스트를 다른 것처럼 읽히게 만드는 상투적 수단이다), 그리고
 사설·루프백·링크로컬(클라우드 메타데이터 주소 `169.254.169.254` 포함) 또는 그 밖의 예약 대역으로
 해석되는 호스트.
+DNS 조회가 예외로 실패하면 주소 거부로 바꾸지 않고 호출 실패로 전달한다. 조회가 정상적으로
+끝났지만 주소가 없거나 금지 대역을 포함하면 거부한다.
 
 IPv6 는 주소 하나에 철자가 여럿이므로, 텍스트가 아니라 8개 그룹으로 펼친 값으로 판정한다.
 IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/96`, 6to4
@@ -391,6 +396,9 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
   호스트는 풀링된 디스패처에 닿기 전에 거부되고, 다른 곳으로 해석되는 호스트는 다른 키를
   받는다.
 
+Slack 이미지 업로드의 `files.getUploadURLExternal` 응답은 HTTPS `files.slack.com/upload/v1/`
+주소인지 확인한 뒤 바이트를 보내며, 업로드 요청의 redirect는 따르지 않는다.
+
 **모델 입력의 이미지는 URL로 가져가지 않는다.** 실행 API는 지원하는 이미지
 바이트를 요청 안에 인라인으로 받으며, LLM 채널은 모든 `image_url`이 bounded `data:` URL인지
 마지막으로 다시 확인한다. `https://`만 검사한 뒤 원격 URL을 제공자에게 그대로 넘기면 요청은 이
@@ -399,9 +407,9 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
 앱의 아웃바운드 경계로 바이트를 가져와 같은 inline 형식으로 돌려준다.
 
 공개 URL 이면 무엇이든 허용된다. 신뢰하는 엔드포인트만 등록하라. Registry endpoint URL 은
-query parameter 와 fragment 를 받지 않는다. 둘은 멤버가 읽는 registry view 와 운영 로그에서
+userinfo, query parameter 와 fragment 를 받지 않는다. 이 값들은 멤버가 읽는 registry view 와 운영 로그에서
 자격 증명을 노출하기 쉬우므로, 인증 정보는 encrypted header 또는 OAuth 연결에 둔다. 이전 행에
-남은 query 와 fragment 는 dispatch 에만 쓰이고 reader-facing view 에서는 제거한다. 이 규칙은
+남은 userinfo, query 와 fragment 는 저장된 주소에만 남고 reader-facing view 에서는 제거한다. 이 규칙은
 **주소가 실제로 바뀔 때만** 적용한다. 저장된 주소를 그대로, 또는 콘솔이 보여 준 redacted 형태로
 되돌려 보내는 저장은 이동이 아니므로 거절하지도, 저장된 credential 을 버리지도 않는다
 (`resolveRegistryUrlPatch`). 그러지 않으면 편집 폼이 자기가 읽은 값을 되돌려 보내는 것만으로
@@ -588,6 +596,7 @@ protected-resource 문서는 MCP 주소의 401 challenge가 지정한 URL을 우
 challenge가 없으면 well-known 후보를 읽는다. resource 문서는 그 MCP 항목의 내부 호스트
 예외를 사용할 수 있지만, 문서가 지목한 authorization server까지 같은 예외를 주지는 않는다.
 authorization·token·registration endpoint는 HTTPS와 URL 정책으로 검사한다.
+메타데이터 조회 실패 메시지에는 후보 주소의 userinfo·query·fragment와 전송 오류 원문을 싣지 않는다.
 
 resource identifier는 문서를 찾은 대상과 일치해야 한다. 제한된 예외는
 `https://mcp.slack.com/mcp`가 공식 well-known 문서를 지목할 때

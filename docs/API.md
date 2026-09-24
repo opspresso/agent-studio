@@ -408,7 +408,7 @@ PUT /api/settings → 200 {…same shape…} | 400
 ```
 
 - 두 동사 모두 admin 전용이다. GET 의 `fields` 키는 `adminEmails`, `allowedEmailDomains`,
-  `llmBaseUrl`, `llmApiKey`, `embeddingModel`, `rerankerModel`, `rerankerMinScore`, `pluginsRepo`,
+  `embeddingModel`, `rerankerModel`, `rerankerMinScore`, `pluginsRepo`,
   `pluginsRepoBranch`, `githubToken`, `publicBaseUrl`, `artifactAccessMode`,
   `unknownModelPolicy`다. 이 중 Embedding/Rerank 선택 세 필드는 읽기 전용이며
   `PUT /api/models/selection` 으로 변경한다. PUT 이 받는 `artifactAccessMode`
@@ -434,8 +434,8 @@ PUT /api/settings → 200 {…same shape…} | 400
 ## 감사 기록
 
 ```
-GET /api/audit?from=2026-08-01&to=2026-08-03
-  → 200 { events: [ { eventId, actorEmail, action, target, detail?, createdAt } ] }
+GET /api/audit?from=2026-08-01&to=2026-08-03&limit=50&cursor=<opaque>
+  → 200 { events: [ { eventId, actorEmail, action, target, detail?, createdAt } ], nextCursor: string | null }
 ```
 
 - admin 전용이다: 행들이 사람의 이름을 담는다. `from` 의 기본값은 오늘, `to` 의 기본값은
@@ -443,7 +443,10 @@ GET /api/audit?from=2026-08-01&to=2026-08-03
   하나로 저장되고 같은 방식으로 읽히므로, 폭이 곧 쿼리 수다. 잘못된 형식의 날짜, 달력에 없는
   날짜(`2026-02-31`, `2026-13-01`), 뒤집힌 범위, 또는 그보다 넓은 범위는 `400` 이다. 폭은
   범위를 열거해서가 아니라 날짜에서 바로 거절하므로, 터무니없는 폭도 다른 거절과 같은 비용이다.
-- 최신순이다. `action` 은 `secret.reveal` | `secret.rotate` | `secret.revoke` |
+- 결과는 최신순으로 한 번에 최대 50건이다. `limit`의 기본값과 상한은 50이다.
+  `nextCursor`가 있으면 같은 날짜 범위와 함께 다음 요청의 `cursor`로 전달한다.
+  cursor가 잘못됐거나 요청 범위 밖이면 `400`이다. 날짜가 바뀌면 cursor 없이 첫 페이지부터 읽는다.
+  `action` 은 `secret.reveal` | `secret.rotate` | `secret.revoke` |
   `project.admin-override` | `settings.update` | `project.delete` | `catalog.install` |
   `catalog.remove` | `registry.delete` |
   `registry.adopt` (plugins sync 가 다른 출처가 만든 항목을 넘겨받는 것) |
@@ -572,14 +575,15 @@ DELETE /api/chats/{chatId}/runs/{runId}      → { cancelled }
 사람은 `error` 가 아니라 `warning` 프레임을 받는다.
 
 `images` 는 사용자의 첨부를 인라인 바이트로 담은 것이다. `[ { b64, mimeType } ]`, 턴당 최대
-4개, 각각 5MB, `image/png|jpeg|gif|webp`. `b64`는 유효한 padded 또는 unpadded base64여야 한다.
+4개, 각각 5MB, `image/png|jpeg|gif|webp`. `b64`는 padding을 붙이거나 생략한 canonical base64여야 한다.
+마지막 문자에서 사용하지 않는 비트는 0이어야 한다.
 모델에는 content part 로 닿고, (오브젝트 스토리지가
 설정돼 있으면) 사용자 메시지에 **object key** 로 저장된다. 읽기는 그 응답을 위해 서명된 URL 로
 답하며, 그 뒤로도 계속 동작하는 URL 은 절대 아니다. 주소를 만들 수 없는 이미지는 깨진 채로
 돌아오는 대신 메시지에서 빠진다.
 
 `documents` 는 보는 것이 아니라 읽는 파일이다. `[ { b64, mimeType, name } ]`, 턴당 최대 4개,
-각각 10MB이며 `b64` 형식도 검증한다: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML,
+각각 10MB이며 `b64`는 이미지와 같은 형식으로 검증한다: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML,
 HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 내장 문서 엔진이 읽으며 MCP 등록이나 Agent binding을 요구하지 않는다.
 파싱이 실패하면 추출 실패 warning을 돌려준다. 저장된 원본의 참조는 유지한다. `name` 은 필수이고,
 `mimeType` 이 `application/octet-stream` 일 때. 업로드는 흔히 이렇게 도착한다. 판단을 떠맡는다.

@@ -40,7 +40,21 @@ describe("environment-selected sign-in providers", () => {
 
   it.each(["not-a-url", "file:///realms/corp", "https://user:secret@sso.test/realms/corp", "https://sso.test?realm=corp", "https://sso.test/#corp"])("refuses invalid issuer %s without echoing it", (issuer) => {
     vi.stubEnv("KEYCLOAK_ISSUER", issuer);
-    expect(() => config.keycloak).toThrow(/^KEYCLOAK_ISSUER must be an HTTP\(S\) realm URL without credentials, query, or fragment$/);
+    expect(() => config.keycloak).toThrow(/^KEYCLOAK_ISSUER must be an HTTP\(S\) issuer URL without credentials, query, or fragment$/);
+  });
+
+  it.each(["not-a-url", "file:///tenant", "https://user:secret@sso.test/tenant", "https://sso.test?tenant=corp", "https://sso.test/#corp"])("refuses invalid standard OIDC issuer %s without echoing it", (issuer) => {
+    vi.stubEnv("OIDC_ISSUER", issuer);
+    vi.stubEnv("OIDC_CLIENT_ID", "studio-client");
+    vi.stubEnv("OIDC_CLIENT_SECRET", "test-client-secret");
+    expect(() => config.oidc).toThrow(/^OIDC_ISSUER must be an HTTP\(S\) issuer URL without credentials, query, or fragment$/);
+  });
+
+  it("normalizes the standard OIDC issuer path", () => {
+    vi.stubEnv("OIDC_ISSUER", "https://sso.corp.internal/tenant/");
+    vi.stubEnv("OIDC_CLIENT_ID", "studio-client");
+    vi.stubEnv("OIDC_CLIENT_SECRET", "test-client-secret");
+    expect(config.oidc?.issuer).toBe("https://sso.corp.internal/tenant");
   });
 
   it.each(["en", "ko"] as const)("renders configured Keycloak and Google buttons in %s", (locale) => {

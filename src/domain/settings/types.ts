@@ -29,9 +29,6 @@ export interface AppSettings {
   defaultModel?: string;
   adminEmails?: string;
   allowedEmailDomains?: string;
-  llmBaseUrl?: string;
-  /** Secret. */
-  llmApiKey?: string;
   /** When set, replaces the whole LLM_PROVIDER_* env-derived provider list. */
   llmProviders?: LlmProviderSetting[];
   /** Active capability-catalog embedding model; absent means no model selected. */

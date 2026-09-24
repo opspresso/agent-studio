@@ -190,6 +190,7 @@ export const ko: Messages = {
 
   "workspace.new": "새 Workspace",
   "workspace.kind": "Workspace",
+  "workspace.optionsLoadFailed": "Workspace 선택지를 불러오지 못했습니다. 배포 워크플로 선택지가 표시되지 않을 수 있습니다.",
   "workspace.list": "Workspaces",
   "workspace.none": "아직 Workspace가 없습니다.",
   "workspace.delete": "Workspace 삭제",
@@ -948,6 +949,7 @@ export const ko: Messages = {
   "project.tab.settings": "설정",
 
   "playground.loadFailed": "Agent를 불러오지 못했습니다",
+  "playground.modelRegistryWarning": "Model 선택 목록을 불러오지 못했습니다. Agent 설정은 계속 표시되지만 Model 목록을 사용할 수 없습니다: {error}",
   "playground.saveFailed": "Agent 설정을 저장하지 못했습니다.",
 
   "playground.notFound": "Agent를 찾을 수 없습니다",
@@ -1040,6 +1042,7 @@ export const ko: Messages = {
     "이 Agent의 봇이 설치된 Slack 워크스페이스를 에이전트가 읽게 합니다 — 채널 히스토리, 스레드, 사용자 id 조회. 읽기 전용이라 글을 쓸 수는 없습니다. 기본은 꺼짐이고, Agent에 활성화된 Slack 봇이 없으면 켜도 동작하지 않습니다. Agent는 공유 카탈로그이므로, 이 Agent를 실행할 수 있는 사람은 봇이 읽을 수 있는 것을 모두 읽을 수 있습니다.",
 
   "configuration.skills": "Skills",
+  "configuration.pickerLoadFailed": "{items} 목록을 불러오지 못했습니다. 선택 가능한 항목이 누락되었을 수 있습니다.",
   "configuration.searchSkills": "등록된 Skill 검색",
   "configuration.dynamicCapabilities": "요청마다 필요한 기능 찾기",
   "configuration.dynamicCapabilitiesHint":
@@ -1382,6 +1385,7 @@ export const ko: Messages = {
   "models.memberOnly": "Models 는 member 등급부터 볼 수 있습니다.",
   "audit.lede": "민감한 관리 작업을 최신순으로 보여줍니다.",
   "audit.empty": "이 기간에는 감사 기록이 없습니다.",
+  "audit.loadMore": "더 보기",
   "audit.time": "시간",
   "audit.action": "작업",
   "audit.actor": "실행자",

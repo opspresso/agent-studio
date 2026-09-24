@@ -546,6 +546,7 @@ export function xlsxToText(bytes: Uint8Array, maxChars: number): XlsxText {
   const lines: string[] = [];
   let length = 0;
   let kept = 0;
+  let readable = false;
   let total = 0;
   let sheetsRead = 0;
   let full = true;
@@ -579,11 +580,12 @@ export function xlsxToText(bytes: Uint8Array, maxChars: number): XlsxText {
       lines.push(line);
       length += line.length + 1;
       kept += 1;
+      if (line !== "") readable = true;
     }, 0, dates, epoch1904);
     walkXml(decoder.decode(part), reader);
   }
 
-  if (kept === 0) {
+  if (!readable) {
     // Every sheet empty, or the first row alone past the budget. Either way an
     // empty success would read as "this workbook has no data".
     throw new XlsxError("it has no readable cells");

@@ -18,7 +18,8 @@ export function useWorkspace(id: string, selectedRun: string | null) {
   const [detail, setDetail] = useState<WorkspaceDetailResponse | null>(null);
   const [events, setEvents] = useState<WorkspaceEvent[]>([]);
   const [readyOutputRunId, setReadyOutputRunId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [eventsError, setEventsError] = useState<string | null>(null);
   const loaded = useRef(false);
   const revision = useRef(-1);
   const alive = useRef(true);
@@ -32,7 +33,7 @@ export function useWorkspace(id: string, selectedRun: string | null) {
       revision.current = data.workspace.revision;
       setDetail(previous => previous ? { ...data, runs: mergeRows(previous.runs, data.runs), approvals: mergeRows(previous.approvals, data.approvals) } : data);
     }
-    setError(null);
+    setDetailError(null);
   }, [id]);
 
   useEffect(() => {
@@ -40,7 +41,7 @@ export function useWorkspace(id: string, selectedRun: string | null) {
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
-      try { await refresh(); } catch (error) { if (!stopped) setError(error instanceof Error ? error.message : "Workspace could not be loaded"); }
+      try { await refresh(); } catch (error) { if (!stopped) setDetailError(error instanceof Error ? error.message : "Workspace could not be loaded"); }
       const workspace = detailRef.current?.workspace;
       if (!stopped) timer = setTimeout(poll, workspace && !workspace.activeRunId && !workspace.activeActionId && !["closing", "suspending"].includes(workspace.status) ? 5000 : 1000);
     }
@@ -51,6 +52,7 @@ export function useWorkspace(id: string, selectedRun: string | null) {
   const runId = selectedRun ?? detail?.runs[0]?.id;
   useEffect(() => {
     setEvents([]);
+    setEventsError(null);
     setReadyOutputRunId(null);
     if (!runId) return;
     const eventRunId: string = runId;
@@ -65,8 +67,9 @@ export function useWorkspace(id: string, selectedRun: string | null) {
         if (stopped) return;
         after = data.nextSeq; more = data.hasMore;
         polledEvents = data.events;
+        setEventsError(null);
         if (data.events.length) setEvents(previous => [...previous, ...data.events].slice(-2000));
-      } catch (error) { if (!stopped) setError(error instanceof Error ? error.message : "Workspace output could not be read"); }
+      } catch (error) { if (!stopped) setEventsError(error instanceof Error ? error.message : "Workspace output could not be read"); }
       const run = detailRef.current?.runs.find(run => run.id === eventRunId);
       const finished = run && run.status !== "queued" && run.status !== "running" && after >= run.lastEventSeq;
       if (!stopped && polledEvents && (finished || polledEvents.some(event => workspaceOutputText(event).length > 0))) {
@@ -80,5 +83,5 @@ export function useWorkspace(id: string, selectedRun: string | null) {
   // A run switch renders before its effect clears the previous page of events.
   // Never draw that previous run's output under the newly selected run's header.
   const visibleEvents = events[0] && events[0].runId !== runId ? [] : events;
-  return { detail, events: visibleEvents, readyOutputRunId, error, refresh, runId };
+  return { detail, events: visibleEvents, readyOutputRunId, error: detailError ?? eventsError, refresh, runId };
 }

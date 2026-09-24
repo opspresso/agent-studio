@@ -18,7 +18,7 @@ import {
   type McpAuthUseCasesDeps,
 } from "@/application/mcp/mcpAuthUseCases";
 import { MCP_CONNECTION_LIST_PAGE_SIZE } from "@/application/mcp/listConnections";
-import { ForbiddenError, ValidationError } from "@/application/errors";
+import { ConflictError, ForbiddenError, ValidationError } from "@/application/errors";
 import { isMasked, maskSecret } from "@/infrastructure/crypto/secretEncryption";
 import type { McpConnection, McpOAuthState } from "@/domain/mcp/connection";
 import type { McpServer } from "@/domain/mcp/types";
@@ -121,6 +121,7 @@ function harness(
   const registrations: Harness["registrations"] = [];
   const probes: Array<{ url: string; headers: Record<string, string> }> = [];
   const unauthorized: string[] = [];
+  let revision = 0;
   const server = overrides.server ?? SERVER;
   if (overrides.connection) {
     connections.set("p/slack", {
@@ -157,8 +158,21 @@ function harness(
       put: async (connection: McpConnection) => {
         connections.set(`${connection.projectName}/${connection.serverName}`, connection);
       },
+      putIfCurrent: async (connection: McpConnection, current: McpConnection | null) => {
+        const key = `${connection.projectName}/${connection.serverName}`;
+        const stored = connections.get(key);
+        if (current === null ? stored !== undefined : stored === undefined || stored.revision !== current.revision) return false;
+        connections.set(key, { ...connection, revision: `revision-${++revision}` });
+        return true;
+      },
       delete: async (project: string, srv: string) => {
         connections.delete(`${project}/${srv}`);
+      },
+      deleteIfCurrent: async (current: McpConnection) => {
+        const key = `${current.projectName}/${current.serverName}`;
+        if (!connections.has(key) || connections.get(key)?.revision !== current.revision) return false;
+        connections.delete(key);
+        return true;
       },
       updateTokens: async () => true,
     },
@@ -264,6 +278,26 @@ describe("beginAuthorization", () => {
     expect(connection?.clientRegistered).toBe(true);
     // Whatever the server issued is stored encrypted, exactly like one typed in.
     expect(connection?.clientSecret).toBe("enc:dcr-secret");
+  });
+
+  it("does not overwrite a connection created during client registration", async () => {
+    const h = harness({
+      server: { ...SERVER, auth: { ...SERVER.auth!, registrationEndpoint: "https://auth.example.com/register" } },
+    });
+    const winner: McpConnection = {
+      projectName: "p", serverName: "slack", clientId: "other-client", revision: "other",
+      issuer: SERVER.auth!.issuer, resource: SERVER.auth!.resource,
+      scopes: [], status: "needs_auth", updatedAt: SERVER.updatedAt,
+    };
+    h.deps.oauth.register = async () => {
+      h.connections.set("p/slack", winner);
+      return { clientId: "dcr-client" };
+    };
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toThrow(ConflictError);
+    expect(h.connections.get("p/slack")).toBe(winner);
+    expect(h.states.size).toBe(0);
   });
 
   it("uses the operator-configured client for every project authorization", async () => {
@@ -394,6 +428,27 @@ describe("beginAuthorization", () => {
     const connection = h.connections.get("p/slack");
     expect(connection?.clientId).toBe("dcr-client");
     expect(connection?.clientFromMetadataDocument).toBeUndefined();
+  });
+
+  it("does not register a new client when checking the metadata URL fails", async () => {
+    const h = harness({
+      server: {
+        ...SERVER,
+        auth: {
+          ...SERVER.auth!,
+          clientIdMetadataDocumentSupported: true,
+          registrationEndpoint: "https://auth.example.com/register",
+        },
+      },
+    });
+    const failure = new Error("resolver unavailable");
+    h.deps.urlPolicy.assertAllowed = async () => { throw failure; };
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toBe(failure);
+    expect(h.registrations).toHaveLength(0);
+    expect(h.connections.size).toBe(0);
+    expect(h.states.size).toBe(0);
   });
 
   it("rebuilds a stored document client whose address this deployment no longer serves", async () => {
@@ -615,6 +670,33 @@ describe("completeAuthorization", () => {
     expect(h.connections.get("p/slack")?.status).toBe("needs_auth");
   });
 
+  it("does not restore a disconnected grant after the token exchange", async () => {
+    const { h, uc, state } = await started();
+    const exchangeCode = h.deps.oauth.exchangeCode;
+    h.deps.oauth.exchangeCode = async (target, params) => {
+      h.connections.delete("p/slack");
+      return exchangeCode(target, params);
+    };
+
+    await expect(uc.completeAuthorization({ state, code: "c", userEmail: OWNER }))
+      .rejects.toThrow(ConflictError);
+    expect(h.connections.has("p/slack")).toBe(false);
+  });
+
+  it("does not replace a newer grant after the token exchange", async () => {
+    const { h, uc, state } = await started();
+    const exchangeCode = h.deps.oauth.exchangeCode;
+    const replacement = { ...h.connections.get("p/slack")!, revision: "newer", status: "needs_auth" as const };
+    h.deps.oauth.exchangeCode = async (target, params) => {
+      h.connections.set("p/slack", replacement);
+      return exchangeCode(target, params);
+    };
+
+    await expect(uc.completeAuthorization({ state, code: "c", userEmail: OWNER }))
+      .rejects.toThrow(ConflictError);
+    expect(h.connections.get("p/slack")).toBe(replacement);
+  });
+
   it("refuses an unknown state without touching anything", async () => {
     const h = harness({ connection: {} });
     const uc = createMcpAuthUseCases(h.deps);
@@ -622,6 +704,23 @@ describe("completeAuthorization", () => {
       uc.completeAuthorization({ state: "made-up", code: "c", userEmail: OWNER }),
     ).rejects.toThrow(ValidationError);
     expect(h.exchanges).toHaveLength(0);
+  });
+});
+
+describe("disconnect", () => {
+  it("does not remove a connection replaced after the read", async () => {
+    const h = harness({ connection: {} });
+    const get = h.deps.connections.get;
+    const replacement = { ...h.connections.get("p/slack")!, revision: "newer" };
+    h.deps.connections.get = async (project, server) => {
+      const current = await get(project, server);
+      h.connections.set(`${project}/${server}`, replacement);
+      return current;
+    };
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await expect(uc.disconnect("p", "slack", OWNER)).rejects.toThrow(ConflictError);
+    expect(h.connections.get("p/slack")).toBe(replacement);
   });
 });
 
@@ -1011,6 +1110,21 @@ describe("saveClientCredentials", () => {
     expect(h.connections.get("p/slack")?.clientSecret).toBe("enc:new");
   });
 
+  it("does not restore a connection removed while credentials were saved", async () => {
+    const h = harness({ connection: {} });
+    const get = h.deps.connections.get;
+    h.deps.connections.get = async (project, server) => {
+      const current = await get(project, server);
+      h.connections.delete(`${project}/${server}`);
+      return current;
+    };
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await expect(uc.saveClientCredentials("p", "slack", { clientId: "replacement" }, OWNER))
+      .rejects.toThrow(ConflictError);
+    expect(h.connections.has("p/slack")).toBe(false);
+  });
+
   it("never exposes a secret or a token in the view", async () => {
     // There is no reveal path for either of these, unlike the
     // project API token — so the view is the only thing that could leak them.
@@ -1066,6 +1180,21 @@ describe("saveClientCredentials", () => {
 });
 
 describe("listing a server's tools as the project", () => {
+  it("distinguishes a rejected URL from a resolver failure", async () => {
+    const h = harness({ connection: {} });
+    const uc = createMcpAuthUseCases(h.deps);
+    const blocked = new BlockedUrlError("Private address");
+    h.deps.urlPolicy.assertAllowed = async () => { throw blocked; };
+
+    await expect(uc.listTools("p", "slack", OWNER)).resolves.toEqual({ ok: false, error: blocked.message });
+
+    const resolverFailure = new Error("DNS lookup failed");
+    h.deps.urlPolicy.assertAllowed = async () => { throw resolverFailure; };
+
+    await expect(uc.listTools("p", "slack", OWNER)).rejects.toBe(resolverFailure);
+    expect(h.probes).toHaveLength(0);
+  });
+
   it("resolves a saved masked toolset for discovery and fences moved endpoints", async () => {
     const h = harness({ connection: {} });
     const context = agentMcpHeadersContext("p", "slack");

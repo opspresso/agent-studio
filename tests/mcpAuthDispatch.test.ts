@@ -91,7 +91,9 @@ function providerHarness(opts: {
       get: async () => stored,
       listByProject: async () => (stored ? [stored] : []),
       put: async () => {},
+      putIfCurrent: async () => true,
       delete: async () => {},
+      deleteIfCurrent: async () => true,
       updateTokens: async (_p: string, _s: string, _expected: unknown, next: never) => {
         updates.push(next);
         opts.onUpdate?.(next);
@@ -237,7 +239,9 @@ describe("resolving the Authorization for a project's connection", () => {
         get: async () => stored,
         listByProject: async () => [stored],
         put: async () => {},
+        putIfCurrent: async () => true,
         delete: async () => {},
+        deleteIfCurrent: async () => true,
         updateTokens: async () => {
           // Someone else got there first and stored their own token.
           stored = { ...stored, accessToken: "enc:winner-token", status: "connected" };
@@ -609,7 +613,9 @@ describe("markUnauthorized with a scope challenge", () => {
         put: async (next: typeof stored) => {
           puts.push(next);
         },
+        putIfCurrent: async () => true,
         delete: async () => {},
+        deleteIfCurrent: async () => true,
         updateTokens: async (_p: string, _s: string, expected: unknown, next: Record<string, unknown>) => {
           updates.push({ expected, next });
           stored = { ...stored, ...(next as object) };

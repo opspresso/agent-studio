@@ -62,9 +62,12 @@ const RESTART_WATCH_MS = 6 * 60_000;
 const RESTART_POLL_INTERVAL_MS = 5_000;
 
 export default function McpDetailPage() {
-  const t = useT();
   const params = useParams<{ name: string }>();
-  const name = params.name;
+  return <McpDetail key={params.name} name={params.name} />;
+}
+
+function McpDetail({ name }: { name: string }) {
+  const t = useT();
   const router = useRouter();
   const viewer = useViewer();
 
@@ -84,14 +87,6 @@ export default function McpDetailPage() {
    * has to stop when the operator navigates away, not when its clock runs out.
    */
   const abandoned = useRef(false);
-  /**
-   * Which server this page is showing right now. History navigation between
-   * two `/tools/…` pages changes the param without a remount, so a restart
-   * watch or status read started for one name must not write into the other's
-   * view — `abandoned` cannot see that, it only sees unmount.
-   */
-  const showing = useRef(name);
-
   // `refresh` is called from the effect below *and* by hand after an edit or an
   // authorization, so the answer that arrives is not necessarily the one still
   // being waited for.
@@ -117,13 +112,9 @@ export default function McpDetailPage() {
     }
   }
 
-  // `refresh` is deliberately not a dependency: it is rebuilt every render, and
-  // the name is the only thing the answer depends on.
+  // The keyed detail instance starts with fresh per-server state after navigation.
+  // `refresh` is rebuilt every render; the name is the only input to its first read.
   useEffect(() => {
-    showing.current = name;
-    // Per-server view state does not survive a param-only navigation.
-    setManagedStatus(null);
-    setRestarting(false);
     void refresh();
   }, [name]);
 
@@ -154,13 +145,13 @@ export default function McpDetailPage() {
     const forName = name;
     try {
       const status = await getManagedMcpStatus(forName);
-      if (showing.current === forName) {
+      if (!abandoned.current) {
         setManagedStatus(status);
       }
     } catch {
       // Status is informational: a deployment that cannot reach the provisioner
       // still shows the entry rather than an error page.
-      if (showing.current === forName) {
+      if (!abandoned.current) {
         setManagedStatus(null);
       }
     }
@@ -183,11 +174,11 @@ export default function McpDetailPage() {
       const deadline = Date.now() + RESTART_WATCH_MS;
       while (Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, RESTART_POLL_INTERVAL_MS));
-        if (abandoned.current || showing.current !== forName) {
+        if (abandoned.current) {
           return;
         }
         const next = await getManagedMcpStatus(forName).catch(() => null);
-        if (abandoned.current || showing.current !== forName) {
+        if (abandoned.current) {
           return;
         }
         if (next) {
@@ -203,11 +194,11 @@ export default function McpDetailPage() {
         `Still no answer from "${forName}" after ${RESTART_WATCH_MS / 60_000} minutes. The restart may yet be running; reload to see where it got to.`,
       );
     } catch (e) {
-      if (showing.current === forName) {
+      if (!abandoned.current) {
         setError(reportError(e, "Failed to restart container"));
       }
     } finally {
-      if (!abandoned.current && showing.current === forName) {
+      if (!abandoned.current) {
         setRestarting(false);
       }
     }

@@ -25,8 +25,11 @@ export function WorkspacePanel({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [options, setOptions] = useState<WorkspaceOptionsResponse | null>(null);
+  const [optionsError, setOptionsError] = useState(false);
+  const [optionsRevision, setOptionsRevision] = useState(0);
   const request = useRef<{ body: string; key: string } | null>(null);
   const { detail, events, readyOutputRunId, error: loadError, refresh, runId } = useWorkspace(id, selected);
+  const needsOptions = !!detail?.workspace.coding;
   const { scrollRef, contentRef, isNearBottom, scrollToBottom } = useLatestScroll(!!detail && (!runId || readyOutputRunId === runId), `${id}:${runId ?? ""}`);
   const output = useMemo(() => events.map(workspaceOutputText).join(""), [events]);
 
@@ -38,10 +41,14 @@ export function WorkspacePanel({ id }: { id: string }) {
   }, []);
 
   useEffect(() => {
+    if (!needsOptions) return;
     let current = true;
-    void fetch("/api/workspaces/options").then(response => readJson<WorkspaceOptionsResponse>(response)).then(data => { if (current) setOptions(data); }).catch(() => {});
+    void fetch("/api/workspaces/options")
+      .then(response => readJson<WorkspaceOptionsResponse>(response))
+      .then(data => { if (current) { setOptions(data); setOptionsError(false); } })
+      .catch(() => { if (current) setOptionsError(true); });
     return () => { current = false; };
-  }, []);
+  }, [needsOptions, optionsRevision]);
 
   async function send() {
     if (!detail || !message.trim() || busy) return;
@@ -78,6 +85,12 @@ export function WorkspacePanel({ id }: { id: string }) {
     {workspace.coding && <Group gap="xs"><Code>{workspace.coding.branch}</Code><Text size="xs" c="dimmed">← {workspace.coding.baseBranch}</Text>
       {workspace.pullRequest && <Anchor href={workspace.pullRequest.url} target="_blank" rel="noreferrer" size="sm">{workspace.pullRequest.draft ? "Draft PR" : "PR"} #{workspace.pullRequest.number} · {workspace.pullRequest.ci}</Anchor>}</Group>}
     {(error || loadError || workspace.error) && <Alert color="red" py="xs">{error ?? loadError ?? workspace.error}</Alert>}
+    {optionsError && <Alert color="yellow" py="xs">
+      <Group justify="space-between" gap="xs">
+        <Text size="sm">{t("workspace.optionsLoadFailed")}</Text>
+        <Button size="xs" variant="light" onClick={() => setOptionsRevision(revision => revision + 1)}>{t("error.retry")}</Button>
+      </Group>
+    </Alert>}
     <Select label={t("workspace.runs")} size="xs" value={runId ?? null} allowDeselect={false} onChange={setSelected}
       data={detail.runs.map(run => ({ value: run.id, label: `${formatDateTime(run.createdAt, locale)} · ${status(run.status)}` }))} />
     <Tabs value={tab} onChange={setTab} style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>

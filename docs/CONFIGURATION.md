@@ -114,7 +114,7 @@ fail-open 이 될 수는 없다.
 | `BETTER_AUTH_SECRET` | — | — | 세션 서명 시크릿 (`openssl rand -base64 32`). |
 | `BETTER_AUTH_URL` | — | — | Better Auth 가 콜백을 만들 때 기준으로 삼는 base URL. |
 | `KEYCLOAK_ISSUER` / `KEYCLOAK_CLIENT_ID` / `KEYCLOAK_CLIENT_SECRET` | — | — | Keycloak 로그인. 셋이 모두 비어 있지 않을 때 켜지며 Google·표준 OIDC와 병행할 수 있다. issuer는 `https://sso.example.com/realms/corp` 같은 HTTP(S) realm URL이며 끝의 `/`는 제거한다. 사용자명·비밀번호·query·fragment가 포함된 URL은 거부한다. 콜백은 `BETTER_AUTH_URL/api/auth/callback/keycloak`이다. PKCE와 ID 토큰 검증을 사용한다. [설치 절차](INSTALL.md#keycloak-로그인)를 따른다. |
-| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | — | — | 표준 OIDC 제공자. Keycloak, Entra ID, Okta, Authentik 등 `<issuer>/.well-known/openid-configuration`을 제공하는 서버를 연결한다. 셋이 모두 있을 때만 켜진다(Better Auth의 `genericOAuth`, PKCE). 콜백은 `BETTER_AUTH_URL/api/auth/callback/oidc`이며 Keycloak 전용 설정과 별개의 provider다. |
+| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | — | — | 표준 OIDC 제공자. Keycloak, Entra ID, Okta, Authentik 등 `<issuer>/.well-known/openid-configuration`을 제공하는 서버를 연결한다. 셋이 모두 있을 때만 켜진다(Better Auth의 `genericOAuth`, PKCE). issuer는 HTTP(S) URL이며 끝의 `/`는 제거한다. 사용자명·비밀번호·query·fragment가 포함된 URL은 거부한다. 콜백은 `BETTER_AUTH_URL/api/auth/callback/oidc`이며 Keycloak 전용 설정과 별개의 provider다. |
 | `OIDC_DISPLAY_NAME` / `OIDC_SCOPES` | `SSO` / `openid email profile` | — | 로그인 버튼의 이름, 그리고 공백으로 구분한 scope. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | — | Google 로그인. 둘 다 있을 때만 켜진다. 콜백은 `/api/auth/callback/google`. |
 | `AUTH_PASSWORD` | `false` | — | `true` 면 이메일 + 비밀번호 로그인. **가입 폼은 없다**. 아무도 보증하지 않는 계정이므로 부트스트랩 관리자는 부팅 때 만들어지고, 그 밖의 비밀번호 계정은 관리자의 의도적인 행위다. 신원 제공자가 아직 닿지 않는 설치의 첫 관리자와, 제공자가 죽었을 때의 비상 접근을 위한 것이다. |

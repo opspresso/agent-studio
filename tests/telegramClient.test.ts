@@ -61,6 +61,23 @@ describe("how a Telegram call fails", () => {
     expect(failure).toBe("Telegram getMe failed: HTTP 502");
     expect(failure).not.toContain("AAHtoken");
   });
+
+  it("does not carry the token from a failed transport or Bot API description", async () => {
+    stubFetch((url) => {
+      throw new Error(`request failed for ${url}`);
+    });
+    const transportFailure = await telegramClient.getMe(TOKEN).catch((error: Error) => error.message);
+    expect(transportFailure).toContain("Telegram getMe");
+    expect(transportFailure).not.toContain(TOKEN);
+
+    stubFetch(() => jsonResponse({
+      ok: false,
+      description: `Bad Request for bot ${TOKEN}`,
+    }, { status: 400 }));
+    const apiFailure = await telegramClient.getMe(TOKEN).catch((error: Error) => error.message);
+    expect(apiFailure).toContain("Bad Request");
+    expect(apiFailure).not.toContain(TOKEN);
+  });
 });
 
 describe("what a Telegram call sends", () => {

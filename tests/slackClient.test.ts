@@ -85,3 +85,41 @@ describe("how long a Slack call may take", () => {
   });
 
 });
+
+describe("external file upload", () => {
+  it.each([
+    "http://files.slack.com/upload/v1/x",
+    "https://127.0.0.1/upload/v1/x",
+    "https://files.slack.com.evil.example/upload/v1/x",
+    "https://files.slack.com/other/x",
+    "https://user@files.slack.com/upload/v1/x",
+  ])("refuses an unexpected upload target before sending bytes: %s", async (uploadUrl) => {
+    const request = vi.fn(async () => jsonResponse({ ok: true, upload_url: uploadUrl, file_id: "F1" }));
+    vi.stubGlobal("fetch", request);
+
+    await expect(slackClient.uploadImage(TOKEN, {
+      channel: "C1", filename: "generated.png", data: Buffer.from("image"),
+    })).rejects.toThrow("Slack returned an unexpected file upload URL");
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("posts bytes only to Slack's upload host without following redirects", async () => {
+    const uploadUrl = "https://files.slack.com/upload/v1/abc";
+    const request = vi.fn(async (url: string, _init?: RequestInit) =>
+      url === uploadUrl
+        ? new Response("", { status: 200 })
+        : jsonResponse(url.includes("files.getUploadURLExternal")
+          ? { ok: true, upload_url: uploadUrl, file_id: "F1" }
+          : { ok: true }),
+    );
+    vi.stubGlobal("fetch", request);
+
+    await slackClient.uploadImage(TOKEN, {
+      channel: "C1", filename: "generated.png", data: Buffer.from("image"),
+    });
+
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(request.mock.calls[1]?.[0]).toBe(uploadUrl);
+    expect(request.mock.calls[1]?.[1]).toMatchObject({ method: "POST", redirect: "error" });
+  });
+});

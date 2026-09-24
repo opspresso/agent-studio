@@ -103,7 +103,9 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   ];
 
   return (
-    <Stack gap="lg">
+    // Param-only navigation can reuse this client layout. Remount its children
+    // so a draft or pending response from one Agent cannot enter another.
+    <Stack key={name} gap="lg">
       <BackLink href="/agents" label={t("nav.agents")} />
       <PageHeader title={currentProject?.displayName || name} Icon={IconSparkles}
         details={<Text fz="xs" ff="monospace" c="dimmed">{name}</Text>}>

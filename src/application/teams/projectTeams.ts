@@ -1,6 +1,6 @@
 import { ValidationError } from "@/application/errors";
 import { persistProjectUpdate } from "@/application/project/projectUpdate";
-import { assertProjectWritable } from "@/application/project/projectUseCases";
+import { assertProjectOwnerOrAdminReadable, assertProjectWritable } from "@/application/project/projectUseCases";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, TeamsIntegration } from "@/domain/project/types";
@@ -73,7 +73,7 @@ export async function getProjectTeams(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<ProjectTeamsResult> {
-  const project = await assertProjectWritable(repo, name, userEmail);
+  const project = await assertProjectOwnerOrAdminReadable(repo, name, userEmail);
   return { project, view: maskedView(cipher, project) };
 }
 
@@ -165,7 +165,7 @@ export async function testProjectTeams(
   cipher: SecretCipher,
   authenticate: (credentials: TeamsCredentials) => Promise<{ expiresInSeconds: number }>,
 ): Promise<{ ok: true; appId: string; expiresInSeconds: number } | { ok: false }> {
-  const project = await assertProjectWritable(repo, name, userEmail);
+  const project = await assertProjectOwnerOrAdminReadable(repo, name, userEmail);
   const runtime = resolveProjectTeamsRuntime(cipher, project);
   if (!runtime) {
     return { ok: false };

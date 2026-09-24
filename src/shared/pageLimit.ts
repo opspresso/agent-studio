@@ -46,7 +46,7 @@ export interface RequestedPage {
 /**
  * Put a page size in range: a whole number from 1 to `max`.
  *
- * A size that is not a number at all reads as *unstated* and takes the
+ * A size that is not finite reads as *unstated* and takes the
  * ceiling, which is the safe direction — the failure the other way is a page
  * of one row that looks like the end of the list. Callers that read the size
  * off a request never produce one; {@link parsePageLimit} has already
@@ -63,9 +63,9 @@ export function boundedPageLimit(limit: number, max: number = MAX_PAGE_LIMIT): n
  * Read `?limit=` off a request.
  *
  * `raw` is the query parameter as it came — `null` when it was not given at
- * all, and possibly `""` when it was given empty. Both are absent, and so is
- * anything that does not name a whole page of at least one row; all of them
- * take `fallback`.
+ * all, and possibly `""` when it was given empty. Both are absent, as are
+ * non-finite numbers and values below one; those take `fallback`. Finite
+ * fractional values of at least one are floored to a whole page size.
  */
 export function parsePageLimit(
   raw: string | null,

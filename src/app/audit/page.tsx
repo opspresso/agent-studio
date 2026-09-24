@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Alert, Badge, Stack, Table, Text } from "@mantine/core";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Badge, Button, Stack, Table, Text } from "@mantine/core";
 import { IconShieldCheck } from "@tabler/icons-react";
 import type { AuditEvent } from "@/domain/audit/types";
+import type { AuditPage } from "@/application/audit/auditUseCases";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { DataTable } from "@/app/_components/DataTable";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
@@ -20,8 +21,13 @@ export default function AuditPage() {
   const viewer = useViewer();
   const [range, setRange] = useState(defaultDateRange);
   const [events, setEvents] = useState<AuditEvent[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [moreError, setMoreError] = useState<string | null>(null);
+  const listGeneration = useRef(0);
+  const moreInFlight = useRef(false);
 
   useEffect(() => {
     // Only the newest request may write. Two ranges picked in a row are two
@@ -29,21 +35,28 @@ export default function AuditPage() {
     // order they were asked, and without this the slower first answer lands
     // last — showing the reader a range they are no longer asking for.
     let cancelled = false;
+    const generation = ++listGeneration.current;
+    moreInFlight.current = false;
+    setLoadingMore(false);
+    setMoreError(null);
     async function load() {
       setLoading(true);
       setError(null);
       try {
         const query = new URLSearchParams({ from: range.from, to: range.to });
         const data = await fetch(`/api/audit?${query}`).then((res) =>
-          readJson<{ events: AuditEvent[] }>(res),
+          readJson<AuditPage>(res),
         );
-        if (!cancelled) setEvents(data.events);
+        if (!cancelled && generation === listGeneration.current) {
+          setEvents(data.events);
+          setNextCursor(data.nextCursor);
+        }
       } catch (loadError) {
-        if (!cancelled) {
+        if (!cancelled && generation === listGeneration.current) {
           setError(loadError instanceof Error ? loadError.message : "Failed to load audit events");
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && generation === listGeneration.current) setLoading(false);
       }
     }
     if (viewer?.isAdmin) void load();
@@ -51,6 +64,30 @@ export default function AuditPage() {
       cancelled = true;
     };
   }, [range, viewer?.isAdmin]);
+
+  async function loadMore() {
+    if (!nextCursor || moreInFlight.current) return;
+    const generation = listGeneration.current;
+    moreInFlight.current = true;
+    setLoadingMore(true);
+    setMoreError(null);
+    try {
+      const query = new URLSearchParams({ from: range.from, to: range.to, cursor: nextCursor });
+      const page = await fetch(`/api/audit?${query}`).then((res) => readJson<AuditPage>(res));
+      if (generation !== listGeneration.current) return;
+      setEvents((current) => [...current, ...page.events]);
+      setNextCursor(page.nextCursor);
+    } catch (loadError) {
+      if (generation === listGeneration.current) {
+        setMoreError(loadError instanceof Error ? loadError.message : "Failed to load more audit events");
+      }
+    } finally {
+      if (generation === listGeneration.current) {
+        moreInFlight.current = false;
+        setLoadingMore(false);
+      }
+    }
+  }
 
   if (viewer === null) {
     return <LoadingText />;
@@ -68,7 +105,17 @@ export default function AuditPage() {
         Icon={IconShieldCheck}
       />
 
-      <DateRangePicker value={range} onChange={setRange} presets={[7, 14, 30]} />
+      <DateRangePicker value={range} onChange={(next) => {
+        listGeneration.current += 1;
+        setRange(next);
+        setEvents([]);
+        setNextCursor(null);
+        setLoading(true);
+        setError(null);
+        setMoreError(null);
+        moreInFlight.current = false;
+        setLoadingMore(false);
+      }} presets={[7, 14, 30]} />
 
       {error ? (
         <Alert color="red" variant="light">{error}</Alert>
@@ -77,7 +124,8 @@ export default function AuditPage() {
       ) : events.length === 0 ? (
         <EmptyState>{t("audit.empty")}</EmptyState>
       ) : (
-        <DataTable minWidth={760}>
+        <Stack gap="md">
+          <DataTable minWidth={760}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>{t("audit.time")}</Table.Th>
@@ -98,7 +146,12 @@ export default function AuditPage() {
                 </Table.Tr>
               ))}
             </Table.Tbody>
-        </DataTable>
+          </DataTable>
+          {moreError && <Alert color="red">{moreError}</Alert>}
+          {nextCursor && <Button variant="default" loading={loadingMore} onClick={() => void loadMore()}>
+            {t("audit.loadMore")}
+          </Button>}
+        </Stack>
       )}
     </Stack>
   );

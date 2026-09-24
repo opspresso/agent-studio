@@ -491,7 +491,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: webhookPath,
       title: "Telegram webhook",
       description:
-        "Telegram delivers message updates here once the bot is enabled on the Integrations tab. Requests are verified with the secret token this platform registered the webhook with — it is not called manually. A private-chat message always starts a run; in a group only a message that mentions the bot or replies to one of its messages does, and /start and /help are answered without one.",
+        "Telegram delivers message updates here once the bot is enabled on the Integrations tab. Requests are verified with the secret token this platform registered the webhook with — it is not called manually. A private-chat message with a sender ID starts a run; in a group only a message from an identified sender that mentions the bot or replies to one of its messages does, and /start and /help are answered without one.",
       auth: "telegram-secret",
       streaming: false,
       errorCodes: [401],
@@ -518,7 +518,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: messagingPath,
       title: "Microsoft Teams messaging endpoint",
       description:
-        "The Bot Framework delivers Teams activities here — set this URL as the Azure Bot's messaging endpoint. Requests are verified with the token the Bot Framework signs for this bot's App ID and serviceUrl — it is not called manually. A personal-chat message always starts a run; in a channel or group chat only a message that @mentions the bot does.",
+        "The Bot Framework delivers Teams activities here — set this URL as the Azure Bot's messaging endpoint. Requests are verified with the token the Bot Framework signs for this bot's App ID and serviceUrl — it is not called manually. A personal-chat message with a sender ID starts a run; in a channel or group chat only a message from an identified sender that @mentions the bot does.",
       auth: "teams-token",
       streaming: false,
       errorCodes: [401],

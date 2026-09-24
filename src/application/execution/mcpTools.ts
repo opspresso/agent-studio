@@ -89,9 +89,10 @@ export async function buildMcpTools(
             // always the registry's — a binding may redefine headers, never the host.
             await deps.urlPolicy.assertAllowed(mcp.url);
           } catch (error) {
-            const reason = error instanceof BlockedUrlError ? error.message : String(error);
-            log.warn("mcp", `skipping server '${mcp.name}': ${reason}`);
-            return { warning: `MCP server '${mcp.name}' was blocked: ${reason}` };
+            log.warn("mcp", `skipping server '${mcp.name}'`, error);
+            return { warning: error instanceof BlockedUrlError
+              ? `MCP server '${mcp.name}' was blocked: ${error.message}`
+              : `MCP server '${mcp.name}' could not be checked for a safe address; its tools were not offered.` };
           }
         }
         let overrides = binding.headers;

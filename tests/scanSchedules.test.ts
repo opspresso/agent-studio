@@ -330,6 +330,39 @@ describe("scanSchedules", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("keeps driving later firings when one release fails", async () => {
+    const f = fixture({ schedules: [
+      schedule({ triggerId: "first" }), schedule({ triggerId: "second" }), schedule({ triggerId: "third" }),
+    ] });
+    const { firings } = await scanSchedules(f.deps, AT);
+    const release = firings[0]!.release;
+    firings[0]!.release = async () => {
+      await release();
+      throw new Error("release failed");
+    };
+    const driven: string[] = [];
+
+    await driveFirings(firings, 1, async (firing) => { driven.push(firing.trigger.triggerId); });
+
+    expect(driven).toEqual(["first", "second", "third"]);
+    expect(f.rows).toHaveLength(3);
+    expect(f.rows.every((row) => row.status === "failed")).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("releases every queued firing when the driver limit is invalid", async () => {
+    const f = fixture({ schedules: [schedule({ triggerId: "first" }), schedule({ triggerId: "second" })] });
+    const { firings } = await scanSchedules(f.deps, AT);
+    const release = firings[0]!.release;
+    firings[0]!.release = async () => { await release(); throw new Error("release failed"); };
+
+    await expect(driveFirings(firings, 0, async () => {})).rejects.toThrow("positive integer limit");
+
+    expect(f.rows).toHaveLength(2);
+    expect(f.rows.every((row) => row.status === "failed")).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("refuses model effects if the queued-to-running transition loses its CAS", async () => {
     const f = fixture();
     const { firings } = await scanSchedules(f.deps, AT);

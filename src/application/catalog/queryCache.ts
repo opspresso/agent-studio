@@ -95,17 +95,14 @@ export function cacheQueryEmbeddings(
       const missing = [...new Set(texts.filter((text) => !answer.has(text)))];
       if (missing.length > 0) {
         const fresh = await inner.embed(missing, purpose);
-        // A short answer would pair vectors with the wrong texts here; the
-        // adapters refuse a count mismatch, so this only guards a new one.
-        if (fresh.length !== missing.length) {
-          return inner.embed(texts, purpose);
+        // A malformed answer cannot be paired with the requested texts or
+        // cached. Repeating the paid request would hide the provider failure.
+        if (!Array.isArray(fresh) || fresh.length !== missing.length ||
+            fresh.some((vector) => !Array.isArray(vector) || vector.length === 0)) {
+          throw new Error("Embedding response must contain one usable vector per query");
         }
         for (const [index, text] of missing.entries()) {
-          const vector = fresh[index];
-          if (!vector) {
-            // The same corruption as a short answer, one index further in.
-            return inner.embed(texts, purpose);
-          }
+          const vector = fresh[index]!;
           answer.set(text, vector);
           touch(keyOf(text), vector);
         }

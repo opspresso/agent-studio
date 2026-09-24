@@ -6,6 +6,7 @@ import { listMcps } from "@/app/tools/api";
 import {
   ActionIcon,
   Alert,
+  Button,
   Checkbox,
   Code,
   Group,
@@ -86,6 +87,8 @@ export function AgentConfigurationEditor({
   const [mcpOptions, setMcpOptions] = useState<PickerOption[]>([]);
   const [skillOptions, setSkillOptions] = useState<PickerOption[]>([]);
   const [subagentOptions, setSubagentOptions] = useState<PickerOption[]>([]);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+  const [pickerRevision, setPickerRevision] = useState(0);
   // The capability registries are `member`-gated server-side (`withMemberAuth`),
   // so a guest's picker requests are guaranteed 403s — the same predicate
   // decides here whether to ask at all. Projects stay: every tier may list them.
@@ -119,22 +122,25 @@ export function AgentConfigurationEditor({
             skills.value.map((s) => ({ value: s.name, description: s.description })),
           );
         }
-        const locals: PickerOption[] =
-          projects.status === "fulfilled"
-            ? projects.value
-                .filter((p) => p.configured && p.name !== projectName)
-                .map((p) => ({
-                  value: p.name,
-                  description: p.description,
-                }))
-            : [];
-        setSubagentOptions(locals);
+        if (projects.status === "fulfilled") {
+          setSubagentOptions(projects.value
+            .filter((p) => p.configured && p.name !== projectName)
+            .map((p) => ({ value: p.name, description: p.description })));
+        }
+        const failed = [
+          ...(mcps.status === "rejected" ? [t("bindings.mcpServers")] : []),
+          ...(skills.status === "rejected" ? [t("configuration.skills")] : []),
+          ...(projects.status === "rejected" ? [t("bindings.subagents")] : []),
+        ];
+        setPickerError(failed.length > 0
+          ? t("configuration.pickerLoadFailed", { items: failed.join(", ") })
+          : null);
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [projectName, viewer, mayReadRegistries]);
+  }, [projectName, viewer, mayReadRegistries, pickerRevision, t]);
   const [schemaHelpOpen, setSchemaHelpOpen] = useState(false);
 
   const selectedModel = models.find((m) => m.id === value.model);
@@ -415,6 +421,14 @@ export function AgentConfigurationEditor({
       </Stack>
 
       <Stack gap="sm">
+
+        {pickerError && (
+          <Alert color="yellow" title={pickerError}>
+            <Button size="xs" variant="light" onClick={() => setPickerRevision((revision) => revision + 1)}>
+              {t("error.retry")}
+            </Button>
+          </Alert>
+        )}
 
         <McpBindingInput
           projectName={projectName}

@@ -9,7 +9,7 @@
 import { NotFoundError, ValidationError } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import {
-  assertProjectOutputReadable,
+  assertProjectOwnerOrAdminReadable,
   assertProjectWritable,
 } from "@/application/project/projectUseCases";
 import type { ProjectRepository } from "@/domain/project/repository";
@@ -104,7 +104,7 @@ export function createArtifactUseCases(
    * which `remove` already avoids for a person's own deletes for the same
    * reason.
    *
-   * `assertProjectOutputReadable` is the same rule with nothing recorded — not
+   * `assertProjectOwnerOrAdminReadable` is the same rule with nothing recorded — not
    * `assertProjectAccessible`, which admits everyone a *public* project admits.
    * A project's outputs are not public because the project is: two people
    * running the same shared project each produced their own, and the project
@@ -114,7 +114,7 @@ export function createArtifactUseCases(
     if (isOwnRow(artifact, viewerEmail)) {
       return;
     }
-    await assertProjectOutputReadable(projects, artifact.projectName, viewerEmail);
+    await assertProjectOwnerOrAdminReadable(projects, artifact.projectName, viewerEmail);
   }
 
   return {
@@ -159,7 +159,7 @@ export function createArtifactUseCases(
     },
 
     async listByProject(projectName, viewerEmail, options = {}) {
-      await assertProjectWritable(projects, projectName, viewerEmail);
+      await assertProjectOwnerOrAdminReadable(projects, projectName, viewerEmail);
       return repo.listByProject(projectName, bounded(options));
     },
 

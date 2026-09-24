@@ -39,6 +39,7 @@ export default function PlaygroundPage() {
   const [schemaText, setSchemaText] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -49,13 +50,21 @@ export default function PlaygroundPage() {
     setSaving(false);
     setLoading(true);
     setError(null);
+    setModelError(null);
     setSaved(false);
     setSaveError(null);
-    void Promise.all([getProject(name), getConfiguration(name), listModels()]).then(([project, view, models]) => {
+    const modelRead = listModels()
+      .then((models) => ({ models, error: null }))
+      .catch((error) => ({
+        models: [] as SelectableModel[],
+        error: error instanceof Error ? error.message : "Model registry unavailable",
+      }));
+    void Promise.all([getProject(name), getConfiguration(name), modelRead]).then(([project, view, modelList]) => {
       if (!isCurrent()) return;
-      const next = view.configuration ? editable(view.configuration) : emptyInput(models);
+      const next = view.configuration ? editable(view.configuration) : emptyInput(modelList.models);
       setProject(project);
-      setModels(models);
+      setModels(modelList.models);
+      setModelError(modelList.error);
       setConfiguration(view.configuration);
       setUpdatedAt(view.updatedAt);
       setDraft(next);
@@ -113,6 +122,7 @@ export default function PlaygroundPage() {
               <Button onClick={save} loading={saving} disabled={saveState.disabled}>{t("playground.save")}</Button>
             </Group> : <Text fz="xs" c="dimmed">{t("playground.readOnly")}</Text>}
           </Group>
+          {modelError && <Alert color="yellow">{t("playground.modelRegistryWarning", { error: modelError })}</Alert>}
           {saveError && <Alert color="red">{saveError}</Alert>}
           <fieldset disabled={!canEdit || saving} className={canEdit ? undefined : classes.readonlyEditor}
             style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>

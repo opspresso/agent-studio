@@ -18,6 +18,7 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 
 import { McpMetadataError } from "@/domain/mcp/oauth";
 import { authorizationServerCandidates, oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
+import { SsrfError } from "@/infrastructure/net/ssrfGuard";
 
 const INTERNAL_URL = "http://mcp-memory.agent-mcps.svc.cluster.local/mcp";
 const RESOURCE_DOC = {
@@ -158,7 +159,7 @@ describe("reading protected resource metadata", () => {
 
   it("reports a refusal as a metadata failure, naming every candidate it tried", async () => {
     guardedFetch.mockRejectedValue(
-      new Error("URL host resolves to a private or reserved address: mcp-memory.agent-mcps.svc.cluster.local"),
+      new SsrfError("URL host resolves to a private or reserved address: mcp-memory.agent-mcps.svc.cluster.local"),
     );
 
     const error = await oauthMetadataClient

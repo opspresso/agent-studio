@@ -15,7 +15,6 @@ import { optionalEnv } from "@/shared/env";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import {
-  llmApiKeyContext,
   llmProviderApiKeyContext,
   settingsSecretContext,
 } from "@/domain/security/secretContext";
@@ -41,8 +40,7 @@ interface FieldSpec {
  * Env-overridable settings managed on the /settings page. Every fallback reads
  * the injected `env` rather than the `config` singleton: `config` resolves
  * `process.env` at call time, so a spec reaching for it would make the settings
- * view partly uncontrollable — and `config.llmBaseUrl`/`llmApiKey` additionally
- * throw when unset, which a settings *view* must not do.
+ * view partly uncontrollable.
  *
  * The reads go through `optionalEnv` for the same reason `config` does, and
  * *particularly* here: an override is stored trimmed already (see `update`), so
@@ -57,8 +55,6 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
     secret: false,
     env: () => optionalEnv(env.ALLOWED_EMAIL_DOMAINS),
   },
-  { key: "llmBaseUrl", secret: false, env: () => optionalEnv(env.LLM_BASE_URL) },
-  { key: "llmApiKey", secret: true, env: () => optionalEnv(env.LLM_API_KEY) },
   { key: "embeddingModel", secret: false, env: () => undefined },
   { key: "rerankerModel", secret: false, env: () => undefined },
   {
@@ -139,7 +135,7 @@ export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
 
 /**
  * Which settings a write actually moved — the audit row's detail. Names only:
- * two of these fields *are* credentials, and a third is the admin list, so
+ * some fields carry credentials and another is the admin list, so
  * recording what changed must never record what it changed to.
  *
  * Compare stored values rather than submitted field names: an unchanged mask
@@ -162,12 +158,8 @@ function changedKeys(specs: FieldSpec[], stored: AppSettings | null, next: AppSe
 
 function fieldSecretContext(
   key: SettingKey,
-  settings: AppSettings | null,
-  env: NodeJS.ProcessEnv,
 ): string {
   switch (key) {
-    case "llmApiKey":
-      return llmApiKeyContext(settings?.llmBaseUrl ?? optionalEnv(env.LLM_BASE_URL) ?? "");
     case "githubToken":
       return settingsSecretContext("github-token");
     default:
@@ -225,7 +217,7 @@ function toView(
     if (stored !== undefined) {
       fields[spec.key] = {
         value: spec.secret
-          ? cipher.mask(stored, fieldSecretContext(spec.key, settings, env))
+          ? cipher.mask(stored, fieldSecretContext(spec.key))
           : stored,
         source: "override",
         secret: spec.secret,
@@ -354,28 +346,6 @@ export function createSettingsUseCases(
       let changed: string[] = [];
       const mutate = (stored: AppSettings | null): AppSettings => {
         const next: AppSettings = { ...(stored ?? { updatedAt: "" }) };
-        const envBaseUrl = optionalEnv(env.LLM_BASE_URL);
-        const envApiKey = optionalEnv(env.LLM_API_KEY);
-        const submittedBaseUrl = patch.llmBaseUrl?.trim();
-        const currentBaseUrl = stored?.llmBaseUrl ?? envBaseUrl;
-        const nextBaseUrl =
-          submittedBaseUrl === undefined
-            ? currentBaseUrl
-            : submittedBaseUrl === "" || submittedBaseUrl === envBaseUrl
-              ? envBaseUrl
-              : submittedBaseUrl;
-        const llmTargetChanged = nextBaseUrl !== currentBaseUrl;
-        const submittedApiKey = patch.llmApiKey?.trim();
-        const revertsLlmPairToEnv =
-          nextBaseUrl === envBaseUrl &&
-          (submittedApiKey === "" || submittedApiKey === envApiKey);
-        if (
-          llmTargetChanged &&
-          !revertsLlmPairToEnv &&
-          (!submittedApiKey || cipher.isMasked(submittedApiKey))
-        ) {
-          throw new ValidationError("Changing LLM_BASE_URL requires a new LLM_API_KEY");
-        }
         for (const spec of specs) {
           const raw = patch[spec.key];
           if (raw === undefined) {
@@ -412,19 +382,12 @@ export function createSettingsUseCases(
           } else if (spec.secret) {
             if (cipher.isMasked(value)) {
               // A mask confirms what is stored; it says nothing to compare.
-            } else if (
-              value === spec.env() &&
-              !(
-                spec.key === "llmApiKey" &&
-                llmTargetChanged &&
-                !revertsLlmPairToEnv
-              )
-            ) {
+            } else if (value === spec.env()) {
               delete next[spec.key];
             } else {
               next[spec.key] = cipher.encrypt(
                 value,
-                fieldSecretContext(spec.key, next, env),
+                fieldSecretContext(spec.key),
               );
             }
           } else if (
@@ -438,10 +401,6 @@ export function createSettingsUseCases(
             next[spec.key] = value;
           }
         }
-        if (next.llmBaseUrl !== undefined && next.llmApiKey === undefined) {
-          throw new ValidationError("A stored LLM_BASE_URL requires a stored LLM_API_KEY");
-        }
-
         if (patch.llmProviders !== undefined) {
           const providers = patch.llmProviders.map((input) =>
             toProviderSetting(cipher, env, parseProviderConfigs, input, stored?.llmProviders),

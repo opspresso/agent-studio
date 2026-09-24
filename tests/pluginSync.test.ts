@@ -1262,6 +1262,32 @@ describe("syncPluginsFromSnapshot", () => {
 });
 
 describe("plugin-owned source mapping defaults", () => {
+  it("does not rewrite a Plaud mapping when JSONB changes object key order", async () => {
+    const mapping = { tool: "get_file", namespace: "plaud", urlPath: ["presigned_url"], idPath: ["id"],
+      namePath: ["name"], mimeType: "audio/mpeg", refreshArgument: "file_id" };
+    const storedMapping = { refreshArgument: "file_id", mimeType: "audio/mpeg", namePath: ["name"],
+      idPath: ["id"], urlPath: ["presigned_url"], namespace: "plaud", tool: "get_file" };
+    const f = makeDeps({ servers: [storedServer("plaud", {
+      source: `github:${REPO}#workspace`, sourceOutputs: [storedMapping],
+    })] });
+    const plugin = repoPlugin("workspace", { mcpJsonRaw: mcpJson({ plaud: httpServer() }) });
+    const manifestWithMapping = () => manifest("workspace", { extensions: {
+      "org.opspresso.agent-studio": { mcpSourceOutputs: { plaud: [mapping] } },
+    } });
+    plugin.manifestRaw = manifestWithMapping();
+
+    const first = await syncPluginsFromSnapshot(f.deps, snapshot([plugin]), ACTOR);
+    expect(section(first, "workspace").mcpServers.unchanged).toEqual(["plaud"]);
+    expect(f.mcps.patched).toEqual([]);
+
+    mapping.mimeType = "audio/wav";
+    plugin.manifestRaw = manifestWithMapping();
+    const changed = await syncPluginsFromSnapshot(f.deps, snapshot([plugin]), ACTOR);
+    expect(section(changed, "workspace").mcpServers.overwritten).toEqual([
+      { name: "plaud", fields: ["sourceOutputs"] },
+    ]);
+  });
+
   it("creates, updates and removes defaults through the MCP use case", async () => {
     const f = makeDeps();
     const mapping = { tool: "read", namespace: "files", idPath: ["id"], urlPath: ["url"], mimeType: "audio/mpeg" };

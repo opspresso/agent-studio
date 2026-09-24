@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { CONDITIONAL_WRITE_FAILED, deleteItem, getItem, queryItems, updateItem } from "../store";
+import { CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED, deleteItem, getItem, queryItems, updateItem } from "../store";
 import { keys } from "../keys";
 import { putProjectItem } from "../projectLifecycle";
 import type { McpConnection, McpConnectionRepository } from "@/domain/mcp/connection";
@@ -129,6 +129,21 @@ export const mcpConnectionRepository: McpConnectionRepository = {
     await putProjectItem(connection.projectName, toItem(connection));
   },
 
+  async putIfCurrent(connection, current) {
+    try {
+      await putProjectItem(connection.projectName, toItem(connection), (row) =>
+        current === null
+          ? row === null || (row.projectName === connection.projectName &&
+              row.serverName === connection.serverName && fromItem(row) === null)
+          : row !== null && row.revision === current.revision,
+      );
+      return true;
+    } catch (error) {
+      if ((error as { name?: string }).name === TRANSACTION_CANCELLED) return false;
+      throw error;
+    }
+  },
+
   /**
    * Compare-and-set on the whole grant's write identity. Token values and
    * timestamps may stay unchanged across reconnects; the revision never does.
@@ -180,5 +195,16 @@ export const mcpConnectionRepository: McpConnectionRepository = {
 
   async delete(projectName, serverName) {
     await deleteItem(keys.mcpConnection(projectName, serverName));
+  },
+
+  async deleteIfCurrent(current) {
+    try {
+      await deleteItem(keys.mcpConnection(current.projectName, current.serverName),
+        (row) => row !== null && row.revision === current.revision);
+      return true;
+    } catch (error) {
+      if ((error as { name?: string }).name === CONDITIONAL_WRITE_FAILED) return false;
+      throw error;
+    }
   },
 };

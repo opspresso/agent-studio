@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Button,
   Drawer,
   Group,
@@ -22,11 +23,13 @@ import type { Chat } from "../_lib/types";
 import { useRunningKeys } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
 import { ChatSidebarItems, type SidebarTab } from "./ChatSidebarItems";
+import { assertOk, readJson } from "@/app/_lib/httpClient";
+import { reportError } from "@/app/_lib/reportError";
 import classes from "./ChatSidebar.module.css";
 
 const NEW_CHAT_EVENT = "chats:new";
 const SIDEBAR_TAB_KEY = "agent-studio-chat-sidebar-tab";
-type SidebarPage = { chats: Chat[]; loaded: boolean; hasMore: boolean; limit: number };
+type SidebarPage = { chats: Chat[]; loaded: boolean; hasMore: boolean; limit: number; error: string | null };
 
 /** Subscribe to the "New chat" press. The button routes to /chats, but a panel
  * that swapped the URL to /chats/<id> without a route change is already that
@@ -49,8 +52,8 @@ export function ChatSidebar() {
    * Workspace behind newer Chats, even at the endpoint's maximum page size.
    */
   const [pages, setPages] = useState<Record<SidebarTab, SidebarPage>>({
-    chats: { chats: [], loaded: false, hasMore: false, limit: CHAT_PAGE },
-    workspaces: { chats: [], loaded: false, hasMore: false, limit: CHAT_PAGE },
+    chats: { chats: [], loaded: false, hasMore: false, limit: CHAT_PAGE, error: null },
+    workspaces: { chats: [], loaded: false, hasMore: false, limit: CHAT_PAGE, error: null },
   });
   const [tab, setTab] = useLocalStorage<SidebarTab>({
     key: SIDEBAR_TAB_KEY,
@@ -59,6 +62,7 @@ export function ChatSidebar() {
     sync: false,
   });
   const [drawerOpen, drawer] = useDisclosure(false);
+  const [deleteError, setDeleteError] = useState<{ tab: SidebarTab; message: string } | null>(null);
   /** A stale read may only replace rows from the same tab. */
   const loadSeq = useRef<Record<SidebarTab, number>>({ chats: 0, workspaces: 0 });
   // Keys, not chat ids: a chat still being created counts under its placeholder,
@@ -76,22 +80,21 @@ export function ChatSidebar() {
     const ticket = ++loadSeq.current[kind];
     try {
       const res = await fetch(`/api/chats?kind=${kind === "chats" ? "chat" : "workspace"}&limit=${limit}`);
+      const data = await readJson<ChatListResponse>(res);
       if (ticket !== loadSeq.current[kind]) {
         return;
       }
-      if (res.ok) {
-        const data = (await res.json()) as ChatListResponse;
-        if (ticket !== loadSeq.current[kind]) {
-          return;
-        }
-        setPages(current => current[kind].limit !== limit ? current : {
-          ...current,
-          [kind]: { ...current[kind], chats: data.chats ?? [], hasMore: data.hasMore ?? false, loaded: true },
-        });
-      }
-    } catch {
-      // A navigation or a transient network loss can reject fetch itself.
-      // Keep the last good list; the next run transition retries this read.
+      setPages(current => current[kind].limit !== limit ? current : {
+        ...current,
+        [kind]: { ...current[kind], chats: data.chats ?? [], hasMore: data.hasMore ?? false, loaded: true, error: null },
+      });
+    } catch (error) {
+      // Keep the last good rows and show why this read could not refresh them.
+      if (ticket !== loadSeq.current[kind]) return;
+      setPages(current => current[kind].limit !== limit ? current : {
+        ...current,
+        [kind]: { ...current[kind], loaded: true, error: error instanceof Error ? error.message : "Failed to load chats" },
+      });
     }
   }, []);
 
@@ -131,14 +134,18 @@ export function ChatSidebar() {
   const currentTitle = activeChat ? t("chat.currentItem", { title: activeChat.title }) : undefined;
 
   async function handleDelete(chatId: string) {
-    const res = await fetch(`/api/chats/${chatId}`, { method: "DELETE" });
-    if (res.ok) {
+    const deletingFrom = tab;
+    setDeleteError(null);
+    try {
+      await assertOk(await fetch(`/api/chats/${chatId}`, { method: "DELETE" }));
       // Otherwise its stream keeps reading rows that no longer exist.
       runStore.abort(chatId);
       await load(tab, limit);
       if (activeId === chatId) {
         router.push("/chats");
       }
+    } catch (error) {
+      setDeleteError({ tab: deletingFrom, message: reportError(error, "Failed to delete conversation") });
     }
   }
 
@@ -157,7 +164,16 @@ export function ChatSidebar() {
   const listFor = (kind: SidebarTab) => (
     <ScrollArea h="100%" scrollbarSize={6} pr={4}>
       <Stack gap={2}>
-        {pages[kind].loaded && !pages[kind].hasMore && pages[kind].chats.length === 0 && (
+        {deleteError?.tab === kind && <Alert color="red" variant="light" p="xs">{deleteError.message}</Alert>}
+        {pages[kind].error && <Alert color="red" variant="light" p="xs">
+          <Stack gap="xs">
+            <Text fz="xs">{pages[kind].error}</Text>
+            <Button variant="light" size="compact-xs" onClick={() => void load(kind, pages[kind].limit)}>
+              {t("error.retry")}
+            </Button>
+          </Stack>
+        </Alert>}
+        {pages[kind].loaded && !pages[kind].error && !pages[kind].hasMore && pages[kind].chats.length === 0 && (
           <Text fz="xs" c="dimmed" px="xs" py="md">
             {t(kind === "workspaces" ? "workspace.none" : "chat.none")}
           </Text>

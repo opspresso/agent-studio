@@ -99,6 +99,37 @@ test("loads and pages each tab independently", async ({ page }) => {
   expect(requests).not.toContain("workspace:100");
 });
 
+test("shows a failed sidebar load and retries it without calling the list empty", async ({ page }) => {
+  let attempts = 0;
+  await page.route("**/api/chats?**", route => {
+    attempts += 1;
+    return attempts === 1
+      ? route.fulfill({ status: 503, json: { error: "Sidebar unavailable" } })
+      : route.fulfill({ json: { chats: [
+        { chatId: "chat-1", ownerEmail: "reader@example.test", title: "Recovered Chat", createdAt: "", updatedAt: "" },
+      ], hasMore: false } satisfies ChatListResponse });
+  });
+  await page.goto(base);
+  const sidebar = page.locator("aside");
+  await expect(sidebar.getByRole("alert")).toContainText("Sidebar unavailable");
+  await expect(sidebar.getByText("No Chats yet.")).toHaveCount(0);
+  await sidebar.getByRole("button", { name: "Try again" }).click();
+  await expect(sidebar.getByRole("link", { name: "Recovered Chat" })).toBeVisible();
+});
+
+test("reports a refused Chat deletion and keeps the row", async ({ page }) => {
+  await page.route("**/api/chats?**", route => route.fulfill({ json: { chats: [
+    { chatId: "chat-1", ownerEmail: "reader@example.test", title: "Keep this Chat", createdAt: "", updatedAt: "" },
+  ], hasMore: false } satisfies ChatListResponse }));
+  await page.route("**/api/chats/chat-1", route => route.fulfill({ status: 503, json: { error: "Deletion unavailable" } }));
+  await page.goto(base);
+  const sidebar = page.locator("aside");
+  await expect(sidebar.getByRole("link", { name: "Keep this Chat" })).toBeVisible();
+  await sidebar.getByRole("button", { name: "Delete Chat" }).click();
+  await expect(sidebar.getByRole("alert")).toContainText("Deletion unavailable");
+  await expect(sidebar.getByRole("link", { name: "Keep this Chat" })).toBeVisible();
+});
+
 test("marks the open Chat or Workspace in the sidebar", async ({ page }) => {
   await page.route("**/api/chats?**", route => route.fulfill({ json: { chats: new URL(route.request().url()).searchParams.get("kind") === "workspace" ? [
     { chatId: "chat-2", ownerEmail: "reader@example.test", title: "Coding workspace", workspaceId: "workspace-1", createdAt: "", updatedAt: "" },

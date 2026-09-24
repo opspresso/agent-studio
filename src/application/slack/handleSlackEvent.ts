@@ -257,11 +257,23 @@ async function resolveSpeakers(
   // Only the asker's profile is needed to name the caller; the others are
   // fetched solely to tell speakers apart, so a single-speaker thread skips them.
   const wanted = humans.size > 1 ? [...humans] : currentUser ? [currentUser] : [];
+  let failedLookups = 0;
+  let firstFailure: unknown;
   const resolved = await mapWithLimit(
     wanted,
     MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS,
-    async (userId) => [userId, await deps.slack.userProfile(token, userId)] as const,
+    async (userId) => {
+      const profile = await deps.slack.userProfile(token, userId).catch((error) => {
+        failedLookups += 1;
+        if (failedLookups === 1) firstFailure = error;
+        return null;
+      });
+      return [userId, profile] as const;
+    },
   );
+  if (failedLookups > 0) {
+    log.warn("slack", `${failedLookups} speaker profile lookup(s) failed`, firstFailure);
+  }
 
   const nameByUser = new Map<string, string>();
   let caller: RunCaller | undefined;

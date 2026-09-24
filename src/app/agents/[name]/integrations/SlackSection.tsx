@@ -117,11 +117,7 @@ export function SlackSection({
     setError(null);
     try {
       const result = await testProjectSlack(projectName);
-      if (result.ok) {
-        setStatus(`Connected: ${result.team} (bot: ${result.botUser})`);
-      } else {
-        setError(result.error ?? "Connection test failed");
-      }
+      setStatus(`Connected: ${result.team} (bot: ${result.botUser})`);
     } catch (e) {
       setError(reportError(e, "Connection test failed"));
     } finally {

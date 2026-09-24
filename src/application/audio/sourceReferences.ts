@@ -2,7 +2,7 @@ import type { SourceReferenceRepository, SourceDownloader, SourceRefresh } from 
 import type { AudioJob } from "@/domain/audio/job";
 import { audioSourceProject } from "@/domain/audio/job";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import type { UrlPolicy } from "@/domain/security/urlPolicy";
+import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { sourceReferenceContext } from "@/domain/security/secretContext";
 import type { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { NotFoundError, ValidationError } from "@/application/errors";
@@ -39,7 +39,10 @@ export function createSourceReferenceUseCases(deps: SourceReferenceDeps) {
         !input.filename.trim() || input.filename.length > 255 || input.url.length > 8192 ||
         !/^[a-z]+\/[a-z0-9.+-]+$/i.test(input.mimeType)) throw new ValidationError("Invalid source reference metadata");
       try { await deps.urlPolicy.assertAllowed(input.url); }
-      catch { throw new ValidationError("Source URL is not permitted"); }
+      catch (error) {
+        if (!(error instanceof BlockedUrlError)) throw error;
+        throw new ValidationError("Source URL is not permitted");
+      }
       const id = deps.id();
       await deps.references.put({ id, projectName: input.projectName, userEmail: input.userEmail,
         namespace: input.namespace, itemId: input.itemId, filename: input.filename, mimeType: input.mimeType,
@@ -86,7 +89,10 @@ export function createSourceReferenceUseCases(deps: SourceReferenceDeps) {
           const current = await refresh();
           if (current.mimeType !== metadata.mimeType) throw new AudioJobStepError("source_type_changed", false);
           try { await deps.urlPolicy.assertAllowed(current.url); }
-          catch { throw new AudioJobStepError("source_url_refused", false); }
+          catch (error) {
+            if (!(error instanceof BlockedUrlError)) throw error;
+            throw new AudioJobStepError("source_url_refused", false);
+          }
           url = current.url;
         } else {
           const reference = await resolve(job.projectName, sourceRef, job.userEmail);

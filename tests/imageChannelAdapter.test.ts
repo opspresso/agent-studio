@@ -56,6 +56,7 @@ interface Sent {
   url: string;
   contentType: string | null;
   authorization: string | null;
+  redirect: RequestRedirect | undefined;
   /**
    * The body's constructor name. This, not the header, is how multipart is
    * detected: `fetch` derives `Content-Type` (with its boundary) from a
@@ -78,6 +79,7 @@ function stubFetch(payload: unknown, init?: { status?: number }): { sent: Sent |
         url: input instanceof Request ? input.url : String(input),
         contentType: headers.get("content-type"),
         authorization: headers.get("authorization"),
+        redirect: request?.redirect,
         bodyKind: request?.body?.constructor?.name ?? "none",
         raw:
           typeof request?.body === "string"
@@ -170,6 +172,7 @@ describe("xAI image dialect", () => {
     });
 
     expect(box.sent?.url).toBe("https://xai.example/v1/images/edits");
+    expect(box.sent?.redirect).toBe("error");
     // xAI documents the SDK's multipart edit call as unsupported.
     expect(box.sent?.contentType).toBe("application/json");
     expect(body(box.sent)).toMatchObject({
@@ -293,6 +296,7 @@ describe("OpenRouter image dialect", () => {
     // `images/generations` is OpenAI's path and 404s here; and the model goes
     // out under the vendor-qualified id the router knows it by.
     expect(box.sent?.url).toBe("https://openrouter.example/api/v1/images");
+    expect(box.sent?.redirect).toBe("error");
     expect(box.sent?.authorization).toBe("Bearer openrouter-key");
     expect(body(box.sent)).toEqual({
       model: "google/gemini-3.1-flash-image",
@@ -329,6 +333,7 @@ describe("OpenRouter image dialect", () => {
 
     expect(box.sent?.url).toBe("https://openrouter.example/api/v1/images");
     expect(box.sent?.bodyKind).toBe("String");
+    expect(box.sent?.redirect).toBe("error");
     expect(body(box.sent)).toMatchObject({
       input_references: [
         { type: "image_url", image_url: { url: "data:image/png;base64,b25l" } },

@@ -74,3 +74,27 @@ test("selects and clears a registered decision model in model usage settings", a
   await page.getByRole("button", { name: "Clear decision model" }).click();
   expect(saved).toEqual(["router/~typesafe/jev-latest", null]);
 });
+
+test("reports unavailable Agent binding choices and reloads them on retry", async ({ page }) => {
+  const reads = new Map<string, number>();
+  for (const [path, ready] of [
+    ["/api/mcps", [{ name: "tools", description: "Tool server" }]],
+    ["/api/skills", [{ name: "review", description: "Review work" }]],
+    ["/api/projects", [{ name: "helper", description: "Local helper", configured: true }]],
+  ] as const) {
+    await page.route(`**${path}`, route => {
+      const count = (reads.get(path) ?? 0) + 1;
+      reads.set(path, count);
+      return count === 1
+        ? route.fulfill({ status: 503, json: { error: "Temporary outage" } })
+        : route.fulfill({ json: ready });
+    });
+  }
+  await page.goto(`${base}/configuration`);
+  await expect(page.getByRole("alert")).toContainText("MCP servers, Skills, Subagents");
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect([...reads.values()]).toEqual([2, 2, 2]);
+  await page.getByPlaceholder("Search registered skills").click();
+  await expect(page.getByRole("option", { name: /review/ })).toBeVisible();
+});

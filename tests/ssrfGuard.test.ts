@@ -104,4 +104,10 @@ describe("assertPublicUrl with hostnames", () => {
       assertPublicUrl("https://nx.example.com", resolvesTo()),
     ).rejects.toBeInstanceOf(SsrfError);
   });
+
+  it("preserves a DNS resolver failure instead of reporting a blocked host", async () => {
+    const unavailable = new Error("resolver unavailable");
+    await expect(assertPublicUrl("https://api.example.com", async () => { throw unavailable; }))
+      .rejects.toBe(unavailable);
+  });
 });

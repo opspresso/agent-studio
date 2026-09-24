@@ -81,6 +81,15 @@ test("too many entries is refused before any of them is inflated", () => {
     error instanceof ZipError && /entries/.test(error.message));
 });
 
+test("central directory listing stops at the entry limit", () => {
+  const parts = Object.fromEntries(Array.from({ length: MAX_ZIP_ENTRIES + 1 }, (_, index) =>
+    [`part${index}.xml`, utf8("")]));
+  const archive = buildZip(parts);
+
+  assert.throws(() => listEntries(archive), (error: unknown) =>
+    error instanceof ZipError && /more than .* entries/.test(error.message));
+});
+
 test("a declared expansion past the budget is refused", () => {
   assert.throws(
     () =>

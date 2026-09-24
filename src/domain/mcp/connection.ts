@@ -137,6 +137,8 @@ export interface McpConnectionRepository {
   get(projectName: string, serverName: string): Promise<McpConnection | null>;
   listByProject(projectName: string, limit: number, after?: string): Promise<McpConnection[]>;
   put(connection: McpConnection): Promise<void>;
+  /** Replace only the snapshot read by a use case, or create only if still absent. */
+  putIfCurrent(connection: McpConnection, current: McpConnection | null): Promise<boolean>;
   /**
    * Replace the tokens only if the connection still has the revision read by
    * the caller. Every successful connection write changes that revision,
@@ -165,6 +167,8 @@ export interface McpConnectionRepository {
       Partial<Pick<McpConnection, "scopes">>,
   ): Promise<boolean>;
   delete(projectName: string, serverName: string): Promise<void>;
+  /** Disconnect only the grant the caller inspected, never a newer reconnect. */
+  deleteIfCurrent(current: McpConnection): Promise<boolean>;
 }
 
 export interface McpOAuthStateRepository {

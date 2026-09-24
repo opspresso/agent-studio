@@ -1,26 +1,25 @@
 import type { SlackThreadRepository } from "@/domain/slack/repository";
-import { getItem, putItem } from "../store";
+import { getItem, putItem, updateItem } from "../store";
 import { keys } from "../keys";
 import { expiresAtFromNow, isExpired, SLACK_ENGAGEMENT_TTL_SECONDS } from "../ttl";
 
 /**
  * Where this project's bot has spoken, so a follow-up there needs no mention.
  *
- * An unconditional put rather than an update: every reply restarts the window,
- * and a row that already exists is meant to be overwritten. There is nothing to
- * race over — two replies in the same thread write the same value.
+ * A reply refreshes engagement without changing an explicit mute. In
+ * particular, a mentioned reply may finish after someone muted the thread.
  */
 export const slackThreadRepository: SlackThreadRepository = {
   async markEngaged(projectName, channel, threadTs) {
-    await putItem({
-      ...keys.slackThread(projectName, channel, threadTs),
+    await updateItem(keys.slackThread(projectName, channel, threadTs), (current) => ({
+      ...current,
       entityType: "slackThread",
       projectName,
       channel,
       threadTs,
       engagedAt: new Date().toISOString(),
       expiresAt: expiresAtFromNow(SLACK_ENGAGEMENT_TTL_SECONDS),
-    });
+    }));
   },
 
   async setMuted(projectName, channel, threadTs, muted) {

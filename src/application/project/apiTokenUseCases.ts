@@ -7,7 +7,7 @@ import {
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { generateSecretValue, hashSecret, secretHashEquals } from "@/shared/generatedSecret";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import { assertProjectWritable, getProject } from "./projectUseCases";
+import { assertProjectOwnerOrAdminReadable, assertProjectWritable, getProject } from "./projectUseCases";
 import { log } from "@/shared/logger";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { projectApiTokenContext } from "@/domain/security/secretContext";
@@ -78,7 +78,7 @@ export async function getApiTokenStatus(
   name: string,
   userEmail: string,
 ): Promise<ApiTokenStatus> {
-  await assertProjectWritable(repo, name, userEmail);
+  await assertProjectOwnerOrAdminReadable(repo, name, userEmail);
   const token = await repo.getApiToken(name);
   if (!token) {
     return { configured: false };

@@ -15,6 +15,7 @@ import type { TelegramEventBinding } from "@/application/telegram/projectTelegra
 import type { TelegramEventDeps, TelegramUpdate } from "@/application/telegram/types";
 import { admitInboundEvent, readEventBody } from "@/app/api/_lib/inboundEvent";
 import { log } from "@/shared/logger";
+import { telegramUpdateSchema } from "./updateSchema";
 
 const telegramEventDeps: TelegramEventDeps = {
   runAgent: (params) => executeAgent(executionDeps, params),
@@ -63,12 +64,17 @@ export async function handleTelegramUpdateRequest(
     );
     return Response.json({ error: "Invalid secret" }, { status: 401 });
   }
-  let update: TelegramUpdate;
+  let raw: unknown;
   try {
-    update = JSON.parse(body) as TelegramUpdate;
+    raw = JSON.parse(body);
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+  const parsed = telegramUpdateSchema.safeParse(raw);
+  if (!parsed.success) {
+    return Response.json({ error: "Invalid Telegram update" }, { status: 400 });
+  }
+  const update = parsed.data as TelegramUpdate;
 
   const botId = botIdFromToken(binding.botToken);
   const disposition = classifyTelegramUpdate(update, {

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import {
   assertProjectWritable,
@@ -7,10 +7,18 @@ import {
 } from "@/application/project/projectUseCases";
 import {
   generateApiToken,
+  getApiTokenStatus,
   revealApiToken,
   revokeApiToken,
 } from "@/application/project/apiTokenUseCases";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
+import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
+import { listProjectTraces } from "@/application/trace/traceUseCases";
+import { listProjectActorsFor } from "@/application/usage/usageUseCases";
+import { getProjectSlack } from "@/application/slack/projectSlack";
+import { getProjectTelegram } from "@/application/telegram/projectTelegram";
+import { getProjectTeams } from "@/application/teams/projectTeams";
+import { createMcpAuthUseCases } from "@/application/mcp/mcpAuthUseCases";
 import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
 import {
   REGISTRY_LIST_PAGE_SIZE,
@@ -102,6 +110,25 @@ afterEach(() => {
 });
 
 describe("project acts", () => {
+  it("does not record a write override for owner-scoped reads", async () => {
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    setAdminCheck(async (email) => email === ADMIN);
+    const repo = projects();
+    await listProjectTraces({ projects: repo, traces: { listByProject: async () => [] } as never }, "p", ADMIN);
+    await listProjectActorsFor({ projects: repo, usage: { listActorsByProject: async () => [] } as never,
+      profileReaderFor: () => null }, "p", ADMIN, "2026-01-01", "2026-01-31");
+    await createArtifactUseCases({ listByProject: async () => [] } as never, {} as never, repo)
+      .listByProject("p", ADMIN);
+    await getApiTokenStatus(repo, "p", ADMIN);
+    await getProjectSlack(repo, "p", ADMIN, cipher);
+    await getProjectTelegram(repo, "p", ADMIN, cipher);
+    await getProjectTeams(repo, "p", ADMIN, cipher);
+    await createMcpAuthUseCases({ projects: repo, connections: { listByProject: async () => [] },
+      lifecycleClaims: new Set() } as never).listConnections("p", ADMIN);
+    warned.mockRestore();
+    expect(rows).toEqual([]);
+  });
+
   it("records an admin writing a project owned by someone else", async () => {
     setAdminCheck(async (email) => email === ADMIN);
     await assertProjectWritable(projects(), "p", ADMIN);
@@ -184,17 +211,17 @@ describe("app settings", () => {
   }
 
   it("records which keys were written, and never their values", async () => {
-    await useCases().update({ llmApiKey: "sk-live-secret", pluginsRepo: "org/plugins" }, ADMIN);
+    await useCases().update({ githubToken: "gh-live-secret", pluginsRepo: "org/plugins" }, ADMIN);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       actorEmail: ADMIN,
       action: "settings.update",
       target: "settings:app",
     });
-    expect(rows[0]?.detail).toContain("llmApiKey");
+    expect(rows[0]?.detail).toContain("githubToken");
     expect(rows[0]?.detail).toContain("pluginsRepo");
     // The row is the record of who moved a credential, not a copy of it.
-    expect(JSON.stringify(rows[0])).not.toContain("sk-live-secret");
+    expect(JSON.stringify(rows[0])).not.toContain("gh-live-secret");
   });
 
   it("records a rejected write not at all", async () => {
@@ -225,9 +252,9 @@ describe("app settings", () => {
     // A mask can only confirm a secret. The write keeps the stored value, so the
     // row must not claim the credential moved.
     const cases = useCases();
-    await cases.update({ llmApiKey: "sk-live" }, ADMIN);
+    await cases.update({ githubToken: "gh-live" }, ADMIN);
     rows = [];
-    await cases.update({ llmApiKey: "****", pluginsRepo: "org/plugins" }, ADMIN);
+    await cases.update({ githubToken: "****", pluginsRepo: "org/plugins" }, ADMIN);
     expect(rows[0]?.detail).toBe("pluginsRepo");
   });
 });
@@ -261,6 +288,15 @@ describe("webhook trigger secrets", () => {
     };
     return createTriggerUseCases({ triggers, projects: projects(), cipher });
   }
+
+  it("does not record a write override for an admin listing triggers or runs", async () => {
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    setAdminCheck(async (email) => email === ADMIN);
+    await useCases().list("p", ADMIN);
+    await useCases().runs("p", "inbound", 10, ADMIN);
+    warned.mockRestore();
+    expect(rows).toEqual([]);
+  });
 
   it("records a reveal", async () => {
     await useCases().reveal("p", "inbound", OWNER);

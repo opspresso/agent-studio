@@ -105,12 +105,21 @@ describe("cacheQueryEmbeddings", () => {
     expect(inner.calls).toEqual([["prompt"], ["prompt"]]);
   });
 
-  it("falls back to a plain call when the inner port answers short", async () => {
-    // Zipping a short answer would pair vectors with the wrong texts — the one
-    // corruption this file exists to prevent.
-    const inner: EmbeddingPort = { embed: vi.fn(async () => [[1]]) };
+  it("rejects a short answer without repeating paid embedding work", async () => {
+    const embed = vi.fn().mockResolvedValueOnce([[1]]).mockResolvedValueOnce([[1], [2]]);
+    const inner: EmbeddingPort = { embed };
     const cached = cacheQueryEmbeddings(inner, MODEL);
-    expect(await cached.embed(["a", "b"], "query")).toEqual([[1]]);
-    expect(inner.embed).toHaveBeenCalledTimes(2);
+    await expect(cached.embed(["a", "bb"], "query")).rejects.toThrow("one usable vector per query");
+    expect(embed).toHaveBeenCalledExactlyOnceWith(["a", "bb"], "query");
+    expect(await cached.embed(["a", "bb"], "query")).toEqual([[1], [2]]);
+    expect(embed).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache any part of a response containing an empty vector", async () => {
+    const embed = vi.fn().mockResolvedValueOnce([[1], []]).mockResolvedValueOnce([[1], [2]]);
+    const cached = cacheQueryEmbeddings({ embed }, MODEL);
+    await expect(cached.embed(["a", "bb"], "query")).rejects.toThrow("one usable vector per query");
+    expect(await cached.embed(["a", "bb"], "query")).toEqual([[1], [2]]);
+    expect(embed).toHaveBeenNthCalledWith(2, ["a", "bb"], "query");
   });
 });

@@ -235,6 +235,8 @@ test("a workbook with nothing in it is refused rather than returned empty", () =
   // An empty success reads as "this workbook has no data", which is a different
   // claim from "I could not read it".
   assert.throws(() => read(oneSheet("")), XlsxError);
+  // Formatting-only rows and cells do not turn an empty workbook into data.
+  assert.throws(() => read(oneSheet('<row r="1"/><row r="2"><c r="A2"/></row>')), /no readable cells/);
 });
 
 test("a sheet name is decoded, not spelled the way the XML escaped it", () => {

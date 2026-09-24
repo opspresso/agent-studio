@@ -11,6 +11,7 @@ import { listRegistry, resolveRegistryUrlPatch } from "@/application/registry/re
 import { parseFrontmatter } from "@/domain/plugin/frontmatter";
 import { isSlug } from "@/domain/naming";
 import { log } from "@/shared/logger";
+import { isDeepStrictEqual } from "node:util";
 import {
   classifyMcpJsonServer,
   parseMcpJson,
@@ -558,7 +559,9 @@ export async function syncPluginsFromSnapshot(
       const content = doc.content ?? (ours && current.content ? "" : undefined);
       const effectiveSourceOutputs = sourceOutputs ?? (ours ? [] : undefined);
       const patch: UpdateMcpInput = {
-        ...(effectiveSourceOutputs !== undefined && JSON.stringify(effectiveSourceOutputs) !== JSON.stringify(current.sourceOutputs ?? []) ? { sourceOutputs: effectiveSourceOutputs } : {}),
+        // PostgreSQL JSONB does not preserve object key order. Compare the
+        // mappings by value or every sync rewrites an unchanged server.
+        ...(effectiveSourceOutputs !== undefined && !isDeepStrictEqual(effectiveSourceOutputs, current.sourceOutputs ?? []) ? { sourceOutputs: effectiveSourceOutputs } : {}),
         ...(urlDiffers && !managed ? { url } : {}),
         ...(description !== undefined && description !== current.description ? { description } : {}),
         ...(content !== undefined && content !== current.content ? { content } : {}),

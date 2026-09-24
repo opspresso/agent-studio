@@ -14,10 +14,11 @@ import type { TeamsActivity } from "@/application/teams/types";
  * 1. **not a message** — a member joined, a reaction, an install — nothing;
  * 2. **the bot's own message** — nothing, because a run that answers itself
  *    never stops;
- * 3. **a personal chat** — every message in one is for the bot;
- * 4. **a channel or group message that mentions the bot** — answered, with
+ * 3. **no sender id** — there is no actor to attribute the run to;
+ * 4. **a personal chat** — every message in one is for the bot;
+ * 5. **a channel or group message that mentions the bot** — answered, with
  *    the `<at>…</at>` span taken out of the text;
- * 5. otherwise nothing.
+ * 6. otherwise nothing.
  */
 
 export type TeamsActivityDisposition =
@@ -25,6 +26,14 @@ export type TeamsActivityDisposition =
   | { kind: "run"; trigger: "personal" | "mention"; activity: TeamsActivity; text: string }
   /** Nothing to do. `because` is for tests and diagnosis, not for a reply. */
   | { kind: "ignore"; because: string };
+
+/** Prefer the person-wide Entra id, falling back to the conversation sender id. */
+export function teamsSenderId(activity: TeamsActivity): string | undefined {
+  const aad = activity.from?.aadObjectId;
+  if (typeof aad === "string" && aad.trim()) return aad.trim();
+  const id = activity.from?.id;
+  return typeof id === "string" && id.trim() ? id.trim() : undefined;
+}
 
 /** The mention spans naming this bot, as Teams marks them. */
 function botMentions(activity: TeamsActivity): string[] {
@@ -73,6 +82,9 @@ export function classifyTeamsActivity(activity: TeamsActivity): TeamsActivityDis
   }
   if (activity.from?.id && activity.recipient?.id && activity.from.id === activity.recipient.id) {
     return { kind: "ignore", because: "from the bot itself" };
+  }
+  if (!teamsSenderId(activity)) {
+    return { kind: "ignore", because: "no sender to attribute the run to" };
   }
   if (!activity.conversation?.id || !activity.serviceUrl) {
     return { kind: "ignore", because: "no conversation to answer in" };

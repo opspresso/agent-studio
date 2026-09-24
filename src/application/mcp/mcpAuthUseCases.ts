@@ -36,7 +36,7 @@ import {
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { resolveMcpBindings } from "@/application/project/mcpBindingSettings";
-import { assertProjectWritable } from "@/application/project/projectUseCases";
+import { assertProjectOwnerOrAdminReadable, assertProjectWritable } from "@/application/project/projectUseCases";
 import { applyMcpUserEmail, stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
 import { listProjectMcpConnections } from "./listConnections";
 import { processManagedMcpLifecycleClaims } from "./managedMcpUseCases";
@@ -489,14 +489,17 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
    * question — an https URL at a publicly routable address. `undefined` sends
    * the caller to the next way of getting a client, which is what the fallback
    * order exists for: a provider offering registration as well is not out of
-   * options just because this deployment cannot host a document.
+   * options just because this deployment cannot host a document. A failed
+   * policy lookup is not a verdict about that address and must not create a
+   * different client through registration.
    */
   async function servableMetadataUrl(projectName: string): Promise<string | undefined> {
     const url = clientMetadataUrl(await publicBase(), projectName);
     try {
       await assertAuthEndpoint(deps.urlPolicy, url, "Client ID metadata document");
       return url;
-    } catch {
+    } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
       return undefined;
     }
   }
@@ -676,7 +679,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
     },
 
     async listConnections(projectName, userEmail) {
-      await assertProjectWritable(deps.projects, projectName, userEmail);
+      await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
       return (await listProjectMcpConnections(deps.connections, projectName)).map((connection) =>
         toConnectionView(deps.cipher, connection),
       );
@@ -735,7 +738,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         status: "needs_auth",
         updatedAt: new Date().toISOString(),
       };
-      await deps.connections.put(next);
+      if (!await deps.connections.putIfCurrent(next, existing)) {
+        throw new ConflictError(`The connection to "${serverName}" changed while its credentials were being saved. Reload and retry.`);
+      }
       return toConnectionView(deps.cipher, next);
     },
 
@@ -875,7 +880,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
             `MCP server "${serverName}" supports neither client ID metadata documents nor dynamic client registration. Register an app with the provider and have an administrator save its client ID and secret in Tools > OAuth.`,
           );
         }
-        await deps.connections.put(fresh);
+        if (!await deps.connections.putIfCurrent(fresh, connection)) {
+          throw new ConflictError(`The connection to "${serverName}" changed while authorization was starting. Connect again.`);
+        }
         connection = fresh;
       }
 
@@ -978,7 +985,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         ...credentials
       } = connection;
       void _accessToken, _refreshToken, _expiresAt;
-      await deps.connections.put({
+      const completed: McpConnection = {
         ...credentials,
         // Stamped here too, so a row that predates the binding acquires both
         // halves the first time it is authorized rather than staying unbound
@@ -1016,7 +1023,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         connectedAt: now.toISOString(),
         authorizationEpoch: createHash("sha256").update(pending.state).digest("hex"),
         updatedAt: now.toISOString(),
-      });
+      };
+      if (!await deps.connections.putIfCurrent(completed, connection)) {
+        throw new ConflictError(`The connection to "${pending.serverName}" changed while authorization was completing. Connect again.`);
+      }
       return { projectName: pending.projectName, serverName: pending.serverName };
     },
 
@@ -1036,12 +1046,14 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
 
     async disconnect(projectName, serverName, userEmail) {
       await assertProjectWritable(deps.projects, projectName, userEmail);
-      await requireConnection(projectName, serverName);
-      await deps.connections.delete(projectName, serverName);
+      const connection = await requireConnection(projectName, serverName);
+      if (!await deps.connections.deleteIfCurrent(connection)) {
+        throw new ConflictError(`The connection to "${serverName}" changed while it was being disconnected. Reload and retry.`);
+      }
     },
 
     async listTools(projectName, serverName, userEmail, headerOverrides) {
-      const project = await assertProjectWritable(deps.projects, projectName, userEmail);
+      const project = await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
       const server = await requireServer(serverName);
       const loopback = skipsUrlGuard(server, deps.internalHostSuffixes);
       if (!loopback) {
@@ -1050,10 +1062,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           // edited to a blocked host since it was stored.
           await deps.urlPolicy.assertAllowed(server.url);
         } catch (error) {
-          // Narrowed to the policy's own verdict, like every other surface of
-          // this check: `instanceof Error` relayed a DNS or socket failure's
-          // internals to the console as though the policy had said them.
-          return { ok: false, error: error instanceof BlockedUrlError ? error.message : "Blocked URL" };
+          if (!(error instanceof BlockedUrlError)) throw error;
+          return { ok: false, error: error.message };
         }
       }
       const [binding] = await resolveMcpBindings(deps.cipher, { get: async () => server },
