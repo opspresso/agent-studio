@@ -252,7 +252,7 @@ Release workflow는 새 tag를 `argocd-env-demo`에 전달한다. Kubernetes man
 
 부팅·로그인·런·콘솔은 public internet 없이 동작한다. 이미지는 외부에서 빌드해 사내 registry로
 mirror하고, 모델은 `/settings/providers`에서 사내 endpoint를 등록한 뒤 `/settings/models`에서
-조회하거나 직접 등록한다. Plugin은 `/plugins`에서 checkout archive를 업로드할 수 있다. 내부 URL과 MCP
+공개 모델을 조회하거나 내부 self-hosted 모델을 직접 등록한다. Plugin은 `/plugins`에서 checkout archive를 업로드할 수 있다. 내부 URL과 MCP
 주소는 각각 `URL_FETCH_INTERNAL_HOST_SUFFIXES`, `MCP_INTERNAL_HOST_SUFFIXES`에 선언한다.
 공개 Provider의 모델 목록·가격은 연결 가능할 때 `models.opspresso.com/models.json`에서
 갱신하며, 폐쇄망에서는 이미지에 포함된 검증된 스냅샷을 사용한다. 사내 모델 목록은
