@@ -1,7 +1,7 @@
 import type { SettingKey, SettingsView, SettingsUpdate } from "@/application/settings/settingsUseCases";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 
-export type SettingsSection = "general" | "plugins" | "keys";
+export type SettingsSection = "service" | "access" | "plugins";
 interface FieldLabel {
   key: SettingKey;
   label: MessageKey;
@@ -13,7 +13,7 @@ type SettingField = FieldLabel & (
   | { type: "url" | "emails" | "domains" | "repository" | "text" | "secret" }
 );
 export const SETTINGS_FIELDS: Record<SettingsSection, SettingField[]> = {
-  general: [
+  service: [
     { key: "publicBaseUrl", label: "settings.field.publicUrl", hint: "settings.hint.publicUrl", type: "url", placeholder: "https://studio.example.com" },
     { key: "artifactAccessMode", label: "settings.field.artifactAccess", hint: "settings.hint.artifactAccess", type: "select", fallback: "authenticated", options: [
       { value: "authenticated", label: "settings.artifactAccess.authenticated" },
@@ -24,14 +24,14 @@ export const SETTINGS_FIELDS: Record<SettingsSection, SettingField[]> = {
       { value: "allow", label: "settings.unknownModelPolicy.allow" },
       { value: "refuse", label: "settings.unknownModelPolicy.refuse" },
     ] },
+  ],
+  access: [
     { key: "adminEmails", label: "settings.field.adminEmails", hint: "settings.hint.adminEmails", type: "emails", placeholder: "admin@example.com" },
     { key: "allowedEmailDomains", label: "settings.field.emailDomains", hint: "settings.hint.emailDomains", type: "domains", placeholder: "example.com" },
   ],
   plugins: [
     { key: "pluginsRepo", label: "settings.field.pluginRepo", hint: "settings.hint.pluginRepo", type: "repository", placeholder: "opspresso/agent-plugins" },
     { key: "pluginsRepoBranch", label: "settings.field.pluginBranch", type: "text", placeholder: "main" },
-  ],
-  keys: [
     { key: "githubToken", label: "settings.field.githubToken", hint: "settings.hint.githubToken", type: "secret" },
   ],
 };
