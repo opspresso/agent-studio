@@ -23,6 +23,10 @@ const ADMIN = "admin@example.com";
 const ENV_KEYS = [
   "SERVICE_NAME",
   "SERVICE_LOGO",
+  "CATALOG_MIN_SCORE",
+  "MAX_CONCURRENT_RUNS_PER_ACTOR",
+  "S3_PUBLIC_BASE_URL",
+  "SLACK_LOADING_INDICATOR",
   "ADMIN_EMAILS",
   "LLM_PROVIDER_OPENAI_BASE_URL",
   "LLM_PROVIDER_OPENAI_API_KEY",
@@ -156,6 +160,29 @@ describe("settingsUseCases.update", () => {
     await useCases.update({ serviceName: "", serviceLogo: "" }, ADMIN);
     expect(current()?.serviceName).toBeUndefined();
     expect(current()?.serviceLogo).toBeUndefined();
+  });
+
+  it("validates mutable search and run limits and restores env fallback", async () => {
+    process.env.CATALOG_MIN_SCORE = "0.2";
+    process.env.MAX_CONCURRENT_RUNS_PER_ACTOR = "8";
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    await useCases.update({ catalogMinScore: "0.4", maxConcurrentRunsPerActor: "0" }, ADMIN);
+    expect(current()).toMatchObject({ catalogMinScore: "0.4", maxConcurrentRunsPerActor: "0" });
+    await expect(useCases.update({ catalogMinScore: "1.5" }, ADMIN)).rejects.toThrow("between 0 and 1");
+    await expect(useCases.update({ maxConcurrentRunsPerActor: "1.5" }, ADMIN)).rejects.toThrow("between 0 and 1000");
+    await useCases.update({ catalogMinScore: "", maxConcurrentRunsPerActor: "" }, ADMIN);
+    expect(current()?.catalogMinScore).toBeUndefined();
+    expect(current()?.maxConcurrentRunsPerActor).toBeUndefined();
+  });
+
+  it("validates public artifact URLs and Slack progress text", async () => {
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    await useCases.update({ s3PublicBaseUrl: "https://objects.example.com/public/", slackLoadingIndicator: ":loading:" }, ADMIN);
+    expect(current()).toMatchObject({ s3PublicBaseUrl: "https://objects.example.com/public/", slackLoadingIndicator: ":loading:" });
+    await expect(useCases.update({ s3PublicBaseUrl: "https://user:pass@objects.example.com" }, ADMIN)).rejects.toThrow("Public object URL");
+    await expect(useCases.update({ slackLoadingIndicator: "line\nbreak" }, ADMIN)).rejects.toThrow("one line");
   });
 
   it("merges a patch against the latest row inside the repository update", async () => {

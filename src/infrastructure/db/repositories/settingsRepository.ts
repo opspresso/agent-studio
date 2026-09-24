@@ -24,6 +24,10 @@ const FIELDS = [
   "githubToken",
   "publicBaseUrl",
   "unknownModelPolicy",
+  "catalogMinScore",
+  "maxConcurrentRunsPerActor",
+  "s3PublicBaseUrl",
+  "slackLoadingIndicator",
 ] as const;
 
 function fromItem(item: Record<string, unknown>): AppSettings {

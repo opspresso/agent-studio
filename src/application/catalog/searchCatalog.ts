@@ -39,7 +39,7 @@ export interface CatalogSearchDeps {
    * to the embedding model and this layer cannot read configuration; absent
    * means the domain's measured default.
    */
-  minScore?: number;
+  minScore?: number | (() => Promise<number>);
   /** Search is withheld while an in-place vector rebuild overlaps this read. */
   reindexState?: () => Promise<CatalogReindexState>;
 }
@@ -354,7 +354,7 @@ async function rankQuery(
   rerankerMinScore: number,
   options: CatalogSearchOptions,
 ): Promise<{ matches: RankedCandidate[][]; rerank: CatalogRerankReport }> {
-  const floor = deps.minScore ?? DEFAULT_MIN_SCORE;
+  const floor = typeof deps.minScore === "function" ? await deps.minScore() : deps.minScore ?? DEFAULT_MIN_SCORE;
   if (!deps.reranker || (deps.rerankerEnabled && !await deps.rerankerEnabled())) {
     return {
       matches: candidatesByRequest.map((candidates, index) =>

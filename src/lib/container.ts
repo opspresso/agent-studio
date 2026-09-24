@@ -157,7 +157,6 @@ import { modelPreferencesRepository } from "@/infrastructure/db/repositories/mod
 import { catalogReindexLock } from "@/infrastructure/db/repositories/catalogReindexLock";
 import { CATALOG_REINDEX_LEASE_MS } from "@/domain/catalog/reindexLock";
 import type { PostCostAlert } from "@/application/usage/costGuard";
-import type { ConcurrencyLimits } from "@/application/run/concurrencyGuard";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { CatalogIndexDeps } from "@/application/catalog/reindexCatalog";
 import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
@@ -215,6 +214,8 @@ import {
   getPluginsRepoConfig,
   getPublicBaseUrl,
   getServiceBranding,
+  getCatalogMinScore,
+  getMaxConcurrentRunsPerActor,
   getRerankerModel,
   getRerankerTarget,
   getRerankerModelSelection,
@@ -495,7 +496,7 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
       }),
       catalog: createPgVectorStore("catalog_vectors"),
       reindexState: () => catalogReindexLock.state(),
-      minScore: config.catalogMinScore,
+      minScore: getCatalogMinScore,
       reranker: createReranker(async () => resolveReranker(await getRerankerModel())),
       rerankerEnabled: async () => !!(await getRerankerModelSelection()),
       rerankerMinScore: getRerankerMinScore,
@@ -916,15 +917,6 @@ export const readinessReport = () =>
   } });
 
 /**
- * Per-caller concurrency ceilings. Read once here rather than at each guard
- * call: the numbers come from boot env, and a getter per run would re-parse
- * them on every request.
- */
-const concurrencyLimits: ConcurrencyLimits = {
-  perActor: config.maxConcurrentRunsPerActor,
-};
-
-/**
  * The member tier behind an actor, for the run bracket's tier policies. Only
  * a `user` actor resolves one — machine callers *and project tokens* answer
  * `undefined` and keep the deployment-wide limits: a token is a service
@@ -1078,7 +1070,7 @@ export const executionDeps: ExecutionDeps = {
   traces: runTraceRepository,
   postAlert: deliverProjectMessage,
   runSlots: runSlotRepository,
-  limits: concurrencyLimits,
+  limits: async () => ({ perActor: await getMaxConcurrentRunsPerActor() }),
   unknownModelPolicy: getUnknownModelPolicy,
   resolveActorTier: actorTierResolver,
   ...(artifactStorage ? { artifacts: artifactStorage } : {}),

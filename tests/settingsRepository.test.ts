@@ -51,6 +51,10 @@ describe("settingsRepository", () => {
       publicBaseUrl: "https://studio.example.com",
       artifactAccessMode: "public",
       unknownModelPolicy: "refuse",
+      catalogMinScore: "0.3",
+      maxConcurrentRunsPerActor: "12",
+      s3PublicBaseUrl: "https://objects.example.com/bucket",
+      slackLoadingIndicator: ":loading:",
       updatedAt: "2026-01-01T00:00:00Z",
     };
     await settingsRepository.update(() => stored);

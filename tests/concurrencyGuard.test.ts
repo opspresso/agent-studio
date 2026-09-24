@@ -93,6 +93,16 @@ function deps(overrides: Partial<ConcurrencyGuardDeps> = {}): ConcurrencyGuardDe
 const user: RunActor = { kind: "user", id: "a@example.com" };
 
 describe("acquireRunSlot", () => {
+  it("reads the current limit for each new run", async () => {
+    const slots = memorySlots();
+    let perActor = 1;
+    const d = { runSlots: slots.repo, limits: async () => ({ perActor }) };
+    await acquireRunSlot(d, user);
+    await expect(acquireRunSlot(d, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    perActor = 2;
+    await expect(acquireRunSlot(d, user)).resolves.toBeDefined();
+  });
+
   it("admits runs up to the limit and refuses the next", async () => {
     const d = deps();
     const first = await acquireRunSlot(d, user);

@@ -1827,7 +1827,7 @@ describe("falling back when a workspace cannot stream", () => {
     advancingClock();
     const { slack, posted } = makeSlackFake({ streaming: false });
     const deps = makeDeps(chunks, slack);
-    deps.loadingIndicator = ":loading:";
+    deps.loadingIndicator = async () => ":loading:";
 
     await handleSlackEvent(deps, EVENT, BINDING);
 

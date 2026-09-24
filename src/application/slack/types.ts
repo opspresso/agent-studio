@@ -127,7 +127,7 @@ export interface SlackEventDeps extends MessagingDeps {
    * than read here: application code takes its configuration, it does not reach
    * for it. Unset means {@link DEFAULT_LOADING_INDICATOR}.
    */
-  loadingIndicator?: string;
+  loadingIndicator?: () => Promise<string | undefined>;
 }
 
 /** An attachment on an inbound message event. */

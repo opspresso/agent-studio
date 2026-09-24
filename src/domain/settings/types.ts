@@ -58,5 +58,13 @@ export interface AppSettings {
    * `toUnknownModelPolicy` is what reads it.
    */
   unknownModelPolicy?: string;
+  /** Capability search score floor; absent falls back to CATALOG_MIN_SCORE. */
+  catalogMinScore?: string;
+  /** Caller run-slot ceiling; absent falls back to MAX_CONCURRENT_RUNS_PER_ACTOR. */
+  maxConcurrentRunsPerActor?: string;
+  /** Public object delivery address; absent falls back to S3_PUBLIC_BASE_URL. */
+  s3PublicBaseUrl?: string;
+  /** Slack edit-in-place progress marker; absent falls back to SLACK_LOADING_INDICATOR. */
+  slackLoadingIndicator?: string;
   updatedAt: string;
 }

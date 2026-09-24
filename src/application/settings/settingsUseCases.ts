@@ -8,6 +8,9 @@ import type {
 } from "@/domain/settings/types";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { DEFAULT_RERANKER_MIN_SCORE } from "@/domain/catalog/types";
+import { DEFAULT_MIN_SCORE } from "@/domain/catalog/types";
+import { MAX_RUN_SLOTS } from "@/domain/execution/runSlot";
+import { DEFAULT_LOADING_INDICATOR } from "@/shared/slackLoadingIndicator";
 import { providerBaseUrl, providerKind } from "@/domain/llm/providerModels";
 import type { SupportedProvider } from "@/domain/llm/models";
 import { parseList } from "@/shared/parseList";
@@ -52,6 +55,10 @@ interface FieldSpec {
 const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
   { key: "serviceName", secret: false, env: () => optionalEnv(env.SERVICE_NAME), defaultValue: "Agent Studio" },
   { key: "serviceLogo", secret: false, env: () => optionalEnv(env.SERVICE_LOGO), defaultValue: "agent-studio" },
+  { key: "catalogMinScore", secret: false, env: () => optionalEnv(env.CATALOG_MIN_SCORE), defaultValue: String(DEFAULT_MIN_SCORE) },
+  { key: "maxConcurrentRunsPerActor", secret: false, env: () => optionalEnv(env.MAX_CONCURRENT_RUNS_PER_ACTOR), defaultValue: "10" },
+  { key: "s3PublicBaseUrl", secret: false, env: () => optionalEnv(env.S3_PUBLIC_BASE_URL) },
+  { key: "slackLoadingIndicator", secret: false, env: () => optionalEnv(env.SLACK_LOADING_INDICATOR), defaultValue: DEFAULT_LOADING_INDICATOR },
   { key: "adminEmails", secret: false, env: () => optionalEnv(env.ADMIN_EMAILS) },
   {
     key: "allowedEmailDomains",
@@ -372,6 +379,29 @@ export function createSettingsUseCases(
               throw new ValidationError("Reranker minimum score must be between 0 and 1");
             }
           }
+          if (spec.key === "catalogMinScore" && value !== "") {
+            const score = Number(value);
+            if (!Number.isFinite(score) || score < 0 || score > 1) {
+              throw new ValidationError("Catalog minimum score must be between 0 and 1");
+            }
+          }
+          if (spec.key === "maxConcurrentRunsPerActor" && value !== "") {
+            const limit = Number(value);
+            if (!Number.isInteger(limit) || limit < 0 || limit > MAX_RUN_SLOTS) {
+              throw new ValidationError(`Concurrent runs per actor must be between 0 and ${MAX_RUN_SLOTS}`);
+            }
+          }
+          if (spec.key === "s3PublicBaseUrl" && value !== "") {
+            try {
+              const url = new URL(value);
+              if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error();
+            } catch {
+              throw new ValidationError("Public object URL must be HTTP(S) without credentials, query parameters or fragments");
+            }
+          }
+          if (spec.key === "slackLoadingIndicator" && value !== "" && (value.length > 80 || /[\u0000-\u001f\u007f]/.test(value))) {
+            throw new ValidationError("Slack loading indicator must be one line of at most 80 characters");
+          }
           if (spec.key === "artifactAccessMode" && value !== "") {
             if (value !== "authenticated" && value !== "public" && value !== "proxied") {
               throw new ValidationError(
@@ -400,7 +430,7 @@ export function createSettingsUseCases(
             }
           } else if (
             value === spec.env() ||
-            (spec.key === "rerankerMinScore" &&
+            (["rerankerMinScore", "catalogMinScore", "maxConcurrentRunsPerActor"].includes(spec.key) &&
               spec.env() === undefined &&
               value === spec.defaultValue)
           ) {

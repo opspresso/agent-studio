@@ -3,6 +3,7 @@ import type { ReplySink } from "@/domain/messaging/reply";
 import { log } from "@/shared/logger";
 import { cutPoint, splitMessages } from "@/shared/messageCut";
 import { unrefTimer } from "@/shared/unrefTimer";
+import { DEFAULT_LOADING_INDICATOR } from "@/shared/slackLoadingIndicator";
 
 /**
  * How a Slack reply is delivered — the single owner of that decision.
@@ -119,7 +120,6 @@ export const EDIT_CUT_WINDOW = 600;
  * `SLACK_LOADING_INDICATOR`. A streamed reply needs none — Slack marks it as
  * still arriving itself.
  */
-export const DEFAULT_LOADING_INDICATOR = ":hourglass_flowing_sand:";
 
 /** Where a reply goes, and what that surface supports. */
 export interface ReplyTarget {

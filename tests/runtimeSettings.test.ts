@@ -21,6 +21,10 @@ vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import {
   getArtifactAccessMode,
+  getCatalogMinScore,
+  getMaxConcurrentRunsPerActor,
+  getS3PublicBaseUrl,
+  getSlackLoadingIndicator,
   getAdminEmails,
   getEmbeddingModelSelection,
   getEmbeddingTarget,
@@ -48,6 +52,10 @@ function stub(settings: AppSettings | null): void {
 }
 
 const ENV_KEYS = [
+  "CATALOG_MIN_SCORE",
+  "MAX_CONCURRENT_RUNS_PER_ACTOR",
+  "S3_PUBLIC_BASE_URL",
+  "SLACK_LOADING_INDICATOR",
   "ADMIN_EMAILS",
   "LLM_PROVIDER_OPENAI_BASE_URL",
   "LLM_PROVIDER_OPENAI_API_KEY",
@@ -88,6 +96,30 @@ afterEach(() => {
 });
 
 describe("runtime settings precedence", () => {
+  it("applies saved search and run limits and restores env values when cleared", async () => {
+    process.env.CATALOG_MIN_SCORE = "0.3";
+    process.env.MAX_CONCURRENT_RUNS_PER_ACTOR = "9";
+    stub({ catalogMinScore: "0.4", maxConcurrentRunsPerActor: "2", updatedAt: "2026-09-24T00:00:00Z" });
+    await expect(getCatalogMinScore()).resolves.toBe(0.4);
+    await expect(getMaxConcurrentRunsPerActor()).resolves.toBe(2);
+    invalidateSettingsCache();
+    stub(null);
+    await expect(getCatalogMinScore()).resolves.toBe(0.3);
+    await expect(getMaxConcurrentRunsPerActor()).resolves.toBe(9);
+  });
+
+  it("applies saved public object and Slack display settings", async () => {
+    process.env.S3_PUBLIC_BASE_URL = "https://env.example.com/bucket";
+    process.env.SLACK_LOADING_INDICATOR = ":hourglass:";
+    stub({ s3PublicBaseUrl: "https://saved.example.com/bucket", slackLoadingIndicator: ":loading:", updatedAt: "2026-09-24T00:00:00Z" });
+    await expect(getS3PublicBaseUrl()).resolves.toBe("https://saved.example.com/bucket");
+    await expect(getSlackLoadingIndicator()).resolves.toBe(":loading:");
+    invalidateSettingsCache();
+    stub(null);
+    await expect(getS3PublicBaseUrl()).resolves.toBe("https://env.example.com/bucket");
+    await expect(getSlackLoadingIndicator()).resolves.toBe(":hourglass:");
+  });
+
   it("disables published price refresh explicitly while retaining bundled prices", async () => {
     stub({ updatedAt: "2026-09-24T00:00:00Z" });
     await getLlmProviderConfigs();

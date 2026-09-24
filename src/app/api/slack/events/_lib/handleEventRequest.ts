@@ -16,7 +16,7 @@ import { classifySlackEvent, type EngagementPolicy } from "@/application/slack/e
 import { admitInboundEvent, readEventBody } from "@/app/api/_lib/inboundEvent";
 import type { SlackBotBinding } from "@/application/slack/handleSlackEvent";
 import type { SlackEventBody, SlackEventDeps } from "@/application/slack/types";
-import { config } from "@/lib/config";
+import { getSlackLoadingIndicator } from "@/lib/runtime-settings";
 import { log } from "@/shared/logger";
 import { slackEventSchema } from "./eventSchema";
 
@@ -33,7 +33,7 @@ const slackEventDeps: SlackEventDeps = {
   // source-level decision rather than an omitted field indistinguishable from
   // forgotten wiring.
   signFile: signArtifactUrl,
-  loadingIndicator: config.slackLoadingIndicator,
+  loadingIndicator: getSlackLoadingIndicator,
 };
 
 /**

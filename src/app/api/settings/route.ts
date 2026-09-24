@@ -9,6 +9,10 @@ import { editorBody } from "@/app/api/_lib/body";
 const updateSchema = z.object({
   serviceName: z.string().max(80).optional(),
   serviceLogo: z.string().max(80).optional(),
+  catalogMinScore: z.string().max(20).optional(),
+  maxConcurrentRunsPerActor: z.string().max(20).optional(),
+  s3PublicBaseUrl: z.string().max(4000).optional(),
+  slackLoadingIndicator: z.string().max(80).optional(),
   adminEmails: z.string().max(4000).optional(),
   allowedEmailDomains: z.string().max(4000).optional(),
   llmProviders: z

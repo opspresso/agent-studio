@@ -27,7 +27,7 @@ export interface ConcurrencyLimits {
 export interface ConcurrencyGuardDeps {
   /** Absent disables the guard entirely (tests, and deployments that opt out). */
   runSlots?: RunSlotRepository;
-  limits?: ConcurrencyLimits;
+  limits?: ConcurrencyLimits | (() => Promise<ConcurrencyLimits>);
 }
 
 /** All of this caller's slots are held; try again when one frees. */
@@ -82,7 +82,8 @@ export async function acquireRunSlot(
   // one inherits it. Only a `user` actor ever arrives with a tier — the
   // bracket's resolver answers `undefined` for machine callers and project
   // tokens alike, so a token stays a service credential bounded by the env number.
-  const limit = (tier ? TIER_LIMITS[tier].maxConcurrentRuns : undefined) ?? deps.limits.perActor;
+  const limits = typeof deps.limits === "function" ? await deps.limits() : deps.limits;
+  const limit = (tier ? TIER_LIMITS[tier].maxConcurrentRuns : undefined) ?? limits.perActor;
   if (limit <= 0) {
     return UNLIMITED;
   }

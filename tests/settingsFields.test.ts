@@ -4,6 +4,8 @@ import { SETTINGS_FIELDS, settingsPatch } from "@/app/settings/fields";
 
 const current = {
   serviceName: "Agent Studio", serviceLogo: "agent-studio",
+  catalogMinScore: "0.25", maxConcurrentRunsPerActor: "10",
+  s3PublicBaseUrl: "https://objects.example.test/bucket", slackLoadingIndicator: ":loading:",
   publicBaseUrl: "https://studio.example.test", artifactAccessMode: "proxied", unknownModelPolicy: "allow",
   adminEmails: "admin@example.test", allowedEmailDomains: "example.test",
   pluginsRepo: "org/plugins", pluginsRepoBranch: "main",

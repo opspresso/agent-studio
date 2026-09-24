@@ -348,6 +348,18 @@ const reranked = (scores: number[]) => ({
 });
 
 describe("searchCapabilities", () => {
+  it("reads the current vector floor for each search", async () => {
+    const deps = searchDeps([
+      [match("skill#a", 0.38, { name: "a", description: "a" })],
+      [match("skill#a", 0.38, { name: "a", description: "a" })],
+    ]);
+    let floor = 0.39;
+    deps.minScore = async () => floor;
+    await expect(searchCapabilities(deps, ["query"], { kind: "skill", limit: 5 })).resolves.toEqual([]);
+    floor = 0.35;
+    expect((await searchCapabilities(deps, ["query"], { kind: "skill", limit: 5 })).map(entry => entry.name)).toEqual(["a"]);
+  });
+
   it("keeps billed reranking usage when reindexing invalidates its matches", async () => {
     const deps = searchDeps([[
       match("skill#a", 0.9, { name: "a", description: "first" }),

@@ -9,7 +9,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { assertNotPrivateFileKey, ObjectNotFoundError, type ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import { config } from "@/lib/config";
-import { getArtifactAccessMode } from "@/lib/runtime-settings";
+import { getArtifactAccessMode, getS3PublicBaseUrl } from "@/lib/runtime-settings";
 import { sniffImageType } from "@/domain/llm/imageSniff";
 import { BodyTooLargeError, readBodyBytes } from "@/shared/httpBody";
 
@@ -52,11 +52,11 @@ export function isObjectStoreConfigured(): boolean {
  * reverse proxy in front of MinIO); otherwise the endpoint, path-style; and
  * for AWS itself the virtual-host form.
  */
-export function artifactPublicUrl(key: string): string {
+export async function artifactPublicUrl(key: string): Promise<string> {
   assertNotPrivateFileKey(key);
   const encodedKey = key.split("/").map(encodeURIComponent).join("/");
   const bucket = requireBucket();
-  const base = config.s3PublicBaseUrl?.replace(/\/+$/, "");
+  const base = (await getS3PublicBaseUrl())?.replace(/\/+$/, "");
   if (base) {
     return `${base}/${encodedKey}`;
   }

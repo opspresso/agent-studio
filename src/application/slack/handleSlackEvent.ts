@@ -194,13 +194,13 @@ function toHistoryTurn(deps: SlackEventDeps, token: string, turn: ThreadTurn): H
  * a Slack thread does with the rest — a standalone post, an upload per picture,
  * and the mrkdwn a file link and a warning line are spelled in.
  */
-function slackReplyChannel(
+async function slackReplyChannel(
   deps: SlackEventDeps,
   token: string,
   target: ReplyTarget,
-): ReplyChannel {
+): Promise<ReplyChannel> {
   return {
-    ...createReplySink(deps.slack, token, target, deps.loadingIndicator),
+    ...createReplySink(deps.slack, token, target, await deps.loadingIndicator?.()),
     async say(text) {
       if (target.canWrite?.() === false) return;
       await deps.slack.postMessage(token, {
@@ -414,7 +414,7 @@ export async function handleSlackEvent(
       ? { recipient: { userId: event.user, teamId: body.team_id } }
       : {}),
   };
-  const reply = slackReplyChannel(deps, token, target);
+  const reply = await slackReplyChannel(deps, token, target);
   if (!project || !configuration) {
     await reply.say(
       `Agent project not available: ${projectName} (must exist and have current Agent settings)`,

@@ -306,6 +306,24 @@ export async function getServiceBranding(): Promise<Branding> {
     stored?.serviceLogo ?? optionalEnv(process.env.SERVICE_LOGO));
 }
 
+export async function getCatalogMinScore(): Promise<number> {
+  const stored = (await loadSettings())?.catalogMinScore;
+  return stored === undefined ? config.catalogMinScore : Number(stored);
+}
+
+export async function getMaxConcurrentRunsPerActor(): Promise<number> {
+  const stored = (await loadSettings())?.maxConcurrentRunsPerActor;
+  return stored === undefined ? config.maxConcurrentRunsPerActor : Number(stored);
+}
+
+export async function getS3PublicBaseUrl(): Promise<string | undefined> {
+  return (await loadSettings())?.s3PublicBaseUrl ?? config.s3PublicBaseUrl;
+}
+
+export async function getSlackLoadingIndicator(): Promise<string | undefined> {
+  return (await loadSettings())?.slackLoadingIndicator ?? config.slackLoadingIndicator;
+}
+
 export async function getArtifactAccessMode(): Promise<ArtifactAccessMode> {
   const value =
     (await loadSettings())?.artifactAccessMode ?? optionalEnv(process.env.ARTIFACT_ACCESS_MODE);
