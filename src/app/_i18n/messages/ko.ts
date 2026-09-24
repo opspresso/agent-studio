@@ -440,6 +440,7 @@ export const ko: Messages = {
   "auth.signInFailed": "로그인을 시작하지 못했습니다. 다시 시도하세요.",
   "auth.or": "또는",
   "auth.signOut": "로그아웃",
+  "auth.signOutFailed": "로그아웃하지 못했습니다. 다시 시도하세요.",
   "auth.account": "계정",
   "login.title": "로그인이 필요합니다",
   "login.product": "{serviceName}에서 AI 에이전트를 만들고 활용하세요.",

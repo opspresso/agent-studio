@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ActionIcon, Avatar, Menu, Text } from "@mantine/core";
 import { IconLogout, IconUser } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 import { signOut } from "@/lib/auth-client";
 import { SignInButton, type SignInProviders } from "./SignInButton";
 
@@ -46,9 +47,13 @@ export function UserMenu({
   async function handleSignOut() {
     setSigningOut(true);
     try {
-      await signOut();
+      const { data, error } = await signOut();
+      if (error || data?.success !== true) {
+        throw new Error(error?.message ?? t("auth.signOutFailed"));
+      }
       window.location.assign("/");
-    } catch {
+    } catch (error) {
+      reportError(error, t("auth.signOutFailed"));
       setSigningOut(false);
     }
   }

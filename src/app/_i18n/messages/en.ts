@@ -464,6 +464,7 @@ export const en = {
   "auth.signInFailed": "Sign-in did not start. Try again.",
   "auth.or": "or",
   "auth.signOut": "Sign out",
+  "auth.signOutFailed": "Could not sign out. Try again.",
   "auth.account": "Account",
   "login.title": "Sign in to continue",
   "login.product": "{serviceName}, a platform for building and using AI agents.",
