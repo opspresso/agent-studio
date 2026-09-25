@@ -300,12 +300,20 @@ API의 `id`·`decision` 유형으로 먼저 등록하고 기본·Decision·Embed
 새 image tag의 앱은 부팅 시 advisory lock 아래에서 schema migration을 적용한다.
 Agent 저장 형식은 `agentName`, `AGENT#` 키와 새 암호화 문맥을 사용한다. 기존 형식의
 Agent 행이 있으면 migration 9가 부팅을 거절하며 데이터를 자동 변환하거나 삭제하지 않는다.
-이 변경을 배포하려면 DB·객체·암호화 키를 백업하고, 새 데이터베이스에 설치한 뒤 Agent 설정과
-연동 비밀을 다시 등록한다. 기존 DB가 필요한 경우 이전 앱과 함께 보관한다.
+이 변경을 배포하려면 진행 중인 런을 마치고 앱·worker를 중지한 다음 DB·객체·암호화 키를 백업하고
+새 데이터베이스에 설치한다. 새 DB에는 Better Auth 사용자·세션·멤버 tier, 모델 연결·등록·선택,
+Agent·Skill·Tool·Plugin, Chat·Workspace, Artifact·Trace·Usage·Audit·오디오 작업이
+이관되지 않는다. 필요한 설정과 계정·연동 비밀을 다시 등록하며, 기존 기록은 이전 DB에 남는다.
+객체 저장소도 새 설치에 전용 bucket을 지정한다. 이전 bucket의 파일은 DB 참조 없이 남을 수
+있으므로 보존·정리는 별도 운영 작업으로 처리한다.
+
+외부 호출자는 `/api/projects`를 `/api/agents`로 바꾸고 요청·응답의 `projectName`과
+`projects` 필드를 각각 `agentName`, `agents`로 갱신한다. 새 DB에서 발급한 Agent API 토큰을
+사용한다. 전체 요청·응답 형식은 [API 계약](API.md)을 따른다.
 개발 중인 프로젝트라 API·설정·저장 형식의 하위 호환을 보장하지 않으며 자동 down migration도 없다.
-이미지 tag만 되돌려도 복구된다고 가정하지 않는다. 교체 전에 DB·객체·암호화 키를 백업하고,
-기존 런과 worker를 정리한 뒤 새 앱·worker를 같은 버전으로 맞춘다. 이전 앱이 새 스키마를 읽을 수
-없으면 검증한 백업 복원 또는 전진 수정이 필요하다. 구체적인 교체·복원 명령은 배포 저장소가 소유한다.
+이미지 tag만 되돌려도 복구되지 않는다. 롤백에는 이전 앱·worker와 이전 DB·bucket·암호화 키를
+함께 사용해야 하며, 새 DB에서 생성한 기록은 이전 DB에 자동으로 합쳐지지 않는다.
+구체적인 교체·복원 명령은 배포 저장소가 소유한다.
 
 Better Auth 1.7.4 이상은 계정을 `providerId + accountId`로 찾는다. Migration 7은 기존
 `account.issuer`의 값과 컬럼을 보존하면서 `NOT NULL`과 issuer 기반 인덱스를 제거하고,
