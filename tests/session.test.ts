@@ -8,7 +8,7 @@ import type { SessionUser } from "@/lib/session";
 // `isAdminEmail`, because a stub would be a second copy of "empty means no
 // restriction" — the exact rule under test — and would keep passing if
 // `runtime-settings` ever tightened it. The settings row itself is unreachable
-// here (`tests/setup.ts` stubs the DynamoDB client), so the env var is what the
+// here (`tests/setup.ts` stubs the database client), so the env var is what the
 // effective list resolves to.
 const { authMock } = vi.hoisted(() => ({ authMock: { getSession: vi.fn() } }));
 

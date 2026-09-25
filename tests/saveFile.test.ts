@@ -121,7 +121,7 @@ describe("what a saved file is called", () => {
 
   it("cuts by character, so a long name is still text", () => {
     // `slice` counts UTF-16 units and ends a name of emoji on half a character.
-    // DynamoDB refuses to store that as written — after the object is already
+    // PostgreSQL JSONB refuses that invalid surrogate — after the object is already
     // in the bucket, so the file is lost over its name.
     const name = "보고서" + "📊".repeat(60);
     const out = savedFileName(name, "text/markdown");

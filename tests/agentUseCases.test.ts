@@ -603,7 +603,7 @@ describe("the admin override, per mutation path", () => {
      * availability. It has to fail closed and stay a ForbiddenError.
      */
     setAdminCheck(async () => {
-      throw new Error("DynamoDB unavailable");
+      throw new Error("repository unavailable");
     });
     vi.spyOn(console, "error").mockImplementation(() => {});
     try {

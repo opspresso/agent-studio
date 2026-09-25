@@ -288,17 +288,16 @@ async function main() {
     assert.ok(await skillRepository.get("integration-skill"), "skill get");
     pass("skill put/get");
 
-    // A projected read, which nothing but the service validates: the doc client
-    // accepts any `ProjectionExpression` and the unit tests replace this method
-    // entirely, so a name DynamoDB reserves — `name` is one, which is why this
-    // agents `description` alone — fails first in production.
+    // Exercise the repository's projected SQL read: unit tests replace this
+    // method, so only this check proves it returns descriptions in caller order
+    // and omits missing skills.
     const described = await skillRepository.describe(["integration-skill", "no-such-skill"]);
     assert.deepStrictEqual(
       described,
       [{ name: "integration-skill", description: "Integration testing behavior" }],
       "skill describe returns the description and omits what is not there",
     );
-    pass("skill describe (projected, reserved-word alias)");
+    pass("skill describe projected SQL read");
 
     // ---------- pgvector adapter ----------
     await withTransaction(async (client) => {
@@ -850,10 +849,9 @@ async function main() {
     pass("monthly threshold claim: conditional write on its own row");
 
     // ---------- webhook exactly-once ----------
-    // The only thing standing between a redelivered webhook and a second run,
-    // and it had never been executed against DynamoDB: every test that exercises
-    // delivery uses a `Set`-backed fake, which cannot tell a working condition
-    // expression from one that always succeeds. A typo here fails *open* — the
+    // The only thing standing between a redelivered webhook and a second run.
+    // Unit tests use a `Set`-backed fake, which cannot prove the PostgreSQL
+    // conditional write is atomic. A typo here fails *open* — the
     // claim always wins, the trigger runs twice, and 24 passing tests say
     // nothing about it.
     const hookTrigger = `it-once-${suffix}`;

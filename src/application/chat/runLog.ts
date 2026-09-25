@@ -48,7 +48,7 @@ const MAX_BUFFERED_BYTES = 350_000;
  */
 const BUFFER_LOW_WATER_BYTES = 280_000;
 
-/** One stored row, kept well under the 400KB item limit. */
+/** Bound each persisted replay row's size. */
 const MAX_ROW_BYTES = 300_000;
 
 /**

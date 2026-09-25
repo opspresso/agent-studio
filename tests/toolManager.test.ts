@@ -602,7 +602,7 @@ describe("ToolManager result truncation", () => {
    * The largest cut in the file, and the only one that used a raw `slice` while
    * eight others went through `cutCodePoints`. A cut between the halves of a
    * non-BMP character leaves a lone surrogate, which is not well-formed text:
-   * DynamoDB will not store it as written and it goes to a provider as an
+   * PostgreSQL JSONB will not store it and it goes to a provider as an
    * escape.
    */
   it("never cuts through a character", async () => {
