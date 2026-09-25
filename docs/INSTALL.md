@@ -298,18 +298,6 @@ API의 `id`·`decision` 유형으로 먼저 등록하고 기본·Decision·Embed
 선택 및 기존 Agent의 모델 ID를 바꾼 뒤, 참조가 없어진 이전 등록을 삭제한다.
 
 새 image tag의 앱은 부팅 시 advisory lock 아래에서 schema migration을 적용한다.
-Agent 저장 형식은 `agentName`, `AGENT#` 키와 새 암호화 문맥을 사용한다. 기존 형식의
-Agent 행이 있으면 migration 9가 부팅을 거절하며 데이터를 자동 변환하거나 삭제하지 않는다.
-k3s `alpha`는 Agent Studio의 `agent_studio` DB만 초기화하며, 같은 PostgreSQL의
-`agent_memory` DB는 보존한다. EKS `prod`는 쓰기를 멈춘 원본 DB를 정확히 백업해 별도 DB에
-복원한 뒤, release 이미지의 Agent 데이터 변환기로 키·필드·암호화 문맥을 이관한다.
-원본 DB와 객체 bucket은 보존하며 복원본의 행 수·내용 digest·복호화와 런타임 읽기를
-검증한 뒤에만 EKS 배포를 승인한다. 순서와 실패 시 중단 조건은
-[Agent 저장 형식 릴리즈](AGENT_RENAME_ROLLOUT.md)를 따른다.
-
-외부 호출자는 `/api/projects`를 `/api/agents`로 바꾸고 요청·응답의 `projectName`과
-`projects` 필드를 각각 `agentName`, `agents`로 갱신한다. 새 DB에서 발급한 Agent API 토큰을
-사용한다. 전체 요청·응답 형식은 [API 계약](API.md)을 따른다.
 개발 중인 프로젝트라 API·설정·저장 형식의 하위 호환을 보장하지 않으며 자동 down migration도 없다.
 이미지 tag만 되돌려도 복구되지 않는다. 롤백에는 이전 앱·worker와 이전 DB·bucket·암호화 키를
 함께 사용해야 하며, 새 DB에서 생성한 기록은 이전 DB에 자동으로 합쳐지지 않는다.

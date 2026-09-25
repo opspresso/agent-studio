@@ -57,8 +57,6 @@ async function main() {
 
   const { checkAudioQueueMigration } = await import("./audio-queue-check");
   await checkAudioQueueMigration();
-  const { checkAgentDataMigration } = await import("./agent-data-migration-check");
-  await checkAgentDataMigration();
   const { checkRuntimeSessions } = await import("./runtime-session-check");
   await checkRuntimeSessions();
   const { checkWorkspaces } = await import("./workspace-check");
