@@ -76,6 +76,17 @@ function legacyAgentName(row: Item): string | undefined {
   return typeof referenced === "string" ? referenced : undefined;
 }
 
+function validateLegacyIdentity(row: Item): void {
+  if (typeof row.PK !== "string" || !row.PK.startsWith("PROJECT#")) return;
+  const name = row.PK.slice("PROJECT#".length);
+  const configuration = record(row.configuration);
+  if ((typeof row.projectName === "string" && row.projectName !== name) ||
+    (row.entityType === "PROJECT" && row.name !== name) ||
+    (typeof configuration?.projectName === "string" && configuration.projectName !== name)) {
+    throw new Error("Legacy Agent row name disagrees with its partition key");
+  }
+}
+
 function legacyContext(name: string, ...parts: string[]): string {
   return JSON.stringify([LEGACY_SCOPE, name, ...parts]);
 }
@@ -145,8 +156,11 @@ function reencryptAgentSecrets(row: Item, original: Item, reencrypt: ReencryptSe
   return count;
 }
 
-function renameActor(value: unknown): void {
-  const actor = record(value);
+function renameActorField(container: Item): void {
+  if (typeof container.actor === "string" && container.actor.startsWith("project-token:")) {
+    container.actor = `agent-token:${container.actor.slice(14)}`;
+  }
+  const actor = record(container.actor);
   if (actor?.kind === "project-token") actor.kind = "agent-token";
 }
 
@@ -159,6 +173,7 @@ function encryptedLeaves(value: unknown, path = "data"): Array<{ path: string; v
 
 /** Convert one JSONB row without changing user-authored text or model/tool payloads. */
 export function convertLegacyAgentItem(original: Item, reencrypt: ReencryptSecret): { item: Item; secrets: number } {
+  validateLegacyIdentity(original);
   const item = structuredClone(original);
   const secrets = reencryptAgentSecrets(item, original, reencrypt);
   renameFields(item);
@@ -172,9 +187,11 @@ export function convertLegacyAgentItem(original: Item, reencrypt: ReencryptSecre
     if (typeof item.action === "string" && item.action.startsWith("project.")) item.action = `agent.${item.action.slice(8)}`;
     if (typeof item.target === "string" && item.target.startsWith("project:")) item.target = `agent:${item.target.slice(8)}`;
   }
-  if (typeof item.actor === "string" && item.actor.startsWith("project-token:")) item.actor = `agent-token:${item.actor.slice(14)}`;
-  renameActor(item.actor);
-  renameActor(record(item.job)?.actor);
+  renameActorField(item);
+  for (const key of ["job", "delta", "value"]) {
+    const child = record(item[key]);
+    if (child) renameActorField(child);
+  }
   if ((typeof original.PK === "string" && original.PK.startsWith("PROJECT#")) || original.entityType === "SourceReference") {
     const remaining = new Set(encryptedLeaves(item).map(entry => entry.value));
     const unchanged = encryptedLeaves(original).find(entry => remaining.has(entry.value));

@@ -108,11 +108,15 @@ describe("restored Agent data conversion", () => {
     }), reencrypt).item;
     expect(job.job).toMatchObject({ agentName: "writer", postprocess: { agentName: "summarizer" },
       sourceRefresh: { agentName: "source" }, actor: { kind: "agent-token" } });
+    const receipt = convertLegacyAgentItem(row("PROJECT#writer", "USAGERECEIPT#one", {
+      entityType: "UsageReceipt", delta: { projectName: "writer", actor: "project-token:owner@example.test" },
+    }), reencrypt).item;
+    expect(receipt.delta).toEqual({ agentName: "writer", actor: "agent-token:owner@example.test" });
   });
 
   it("refuses an old/new field collision instead of dropping either value", () => {
     expect(() => convertLegacyAgentItem(row("PROJECT#writer", "META", {
-      entityType: "PROJECT", projectName: "writer", agentName: "other",
+      entityType: "PROJECT", name: "writer", projectName: "writer", agentName: "other",
     }), reencrypt)).toThrow(/field collision/);
   });
 
@@ -120,5 +124,11 @@ describe("restored Agent data conversion", () => {
     expect(() => convertLegacyAgentItem(row("PROJECT#writer", "UNRECOGNIZED", {
       entityType: "UnknownAgentRow", credential: "enc:v2:opaque",
     }), reencrypt)).toThrow(/unconverted encrypted field/);
+  });
+
+  it("refuses a stored Agent identity that would bind secrets to the wrong name", () => {
+    expect(() => convertLegacyAgentItem(row("PROJECT#writer", "META", {
+      entityType: "PROJECT", name: "other", configuration: { projectName: "writer" },
+    }), reencrypt)).toThrow(/disagrees with its partition key/);
   });
 });
