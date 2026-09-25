@@ -77,10 +77,14 @@ export default function ModelSelectionPage() {
     finally { setRemoving(undefined); }
   }
   const selectedModels = registered.filter(model => model.provider === provider);
-  const selected = new Set(selectedModels.map(model => model.id));
+  const selectedById = new Map(selectedModels.map(model => [model.id, model]));
+  const selected = new Set(selectedById.keys());
   const identity = (model: DiscoveredModel) => model.id ?? `${provider}/${model.wireId}`;
   const catalogRows: DiscoveredModel[] = [
-    ...(models ?? []),
+    ...(models ?? []).map(model => {
+      const savedType = selectedById.get(identity(model))?.type;
+      return !model.type && savedType ? { ...model, type: savedType } : model;
+    }),
     ...selectedModels.filter(model => !models?.some(item => identity(item) === model.id)),
   ];
   const types = REGISTRY_MODEL_TYPES.map(value => ({ value, label: t(`models.type.${value}`) }));
@@ -113,7 +117,7 @@ export default function ModelSelectionPage() {
           renderActions={model => selected.has(identity(model)) ? <>
             <Badge color="teal">{t("modelAdmin.enabled")}</Badge>
             <Button color="red" variant="subtle" disabled={pending} loading={removing === identity(model)}
-              onClick={() => { const item = selectedModels.find(item => item.id === identity(model)); if (item) void remove(item); }}>{t("modelAdmin.delete")}</Button>
+              onClick={() => { const item = selectedById.get(identity(model)); if (item) void remove(item); }}>{t("modelAdmin.delete")}</Button>
           </> : <>
             {!model.type && !model.outputModalities?.length && <Select aria-label={`${model.displayName} ${t("models.type")}`} placeholder={t("modelAdmin.chooseType")}
               value={chosenTypes.get(model.wireId) ?? null} data={types} disabled={pending} onChange={value => { if (value) setChosenTypes(previous => new Map(previous).set(model.wireId, value as RegistryModelType)); }} />}
