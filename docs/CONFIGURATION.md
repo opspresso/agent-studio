@@ -121,7 +121,7 @@ fail-open 이 될 수는 없다.
 | `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | — | — | `AUTH_PASSWORD=true` 일 때 부팅 시 준비되는 계정 (`ensureBootstrapAdmin`). 같은 이메일의 사용자에게 비밀번호 credential 이 이미 있으면 변경하지 않는다. 사용자는 있지만 credential 이 없으면 기존 사용자 행을 유지하고 비밀번호 credential 을 추가한다. 기존 비밀번호는 환경변수 변경으로 갱신되지 않는다. 이메일은 `ADMIN_EMAILS` 에도 넣어야 admin 이 된다. `ALLOWED_EMAIL_DOMAINS` 는 이 주소에 적용되지 않는다. 제공자나 도메인 목록이 모두를 잠갔을 때의 비상 계정이므로. `AUTH_PASSWORD` 없이 설정하면 경고만 남기고 만들지 않는다. |
 | `ALLOWED_EMAIL_DOMAINS` | 비어 있음 | **runtime** | 로그인이 허용되는 도메인의 쉼표 구분 목록. 모든 로그인 수단에 적용된다(사용자 생성과 세션 생성의 훅). 비어 있으면 아무 도메인이나 허용한다. |
 | `TRUSTED_PROXY_CIDRS` | 비어 있음 | — | 이 배포 앞에 있는 리버스 프록시들의 IP/CIDR 범위, 쉼표 구분 (예: Caddy 와 ingress controller 처럼 두 홉이 `X-Forwarded-For` 에 덧붙일 때). Better Auth 는 rate limiting 의 키로 삼는 클라이언트 IP 를 알아내기 위해 체인 오른쪽에서 이 홉들을 벗겨 낸다. 비어 있으면 값이 하나뿐인 헤더만 신뢰하므로, 프록시 두 개 뒤에서는 모든 요청이 하나의 공유 버킷에 떨어진다. |
-| `ADMIN_EMAILS` | 비어 있음 | **runtime** | 쉼표 구분. 레지스트리·설정 변경 권한과 남이 소유한 프로젝트에 대한 쓰기 권한을 준다. 목록에 있는 멤버는 저장된 `admin` tier 로 승격되고 거기 고정된다. 목록에서 빼도 자동 강등은 없다. 비어 있으면 레지스트리·설정 변경에는 *제한 없음*, 프로젝트 오버라이드에는 *아무도 아님* 을 뜻한다. 두 질문이 서로 다른 술어로 답해지는 것은 의도적이다 ([SECURITY.md](SECURITY.md#인가-모델)). |
+| `ADMIN_EMAILS` | 비어 있음 | **runtime** | 쉼표 구분. 레지스트리·설정 변경 권한과 남이 소유한 Agent에 대한 쓰기 권한을 준다. 목록에 있는 멤버는 저장된 `admin` tier 로 승격되고 거기 고정된다. 목록에서 빼도 자동 강등은 없다. 비어 있으면 레지스트리·설정 변경에는 *제한 없음*, Agent 오버라이드에는 *아무도 아님* 을 뜻한다. 두 질문이 서로 다른 술어로 답해지는 것은 의도적이다 ([SECURITY.md](SECURITY.md#인가-모델)). |
 
 ## 설정 화면
 
@@ -211,7 +211,7 @@ Settings → Models → Model usage의 **가격 정보가 없는 모델**에서 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
 | `MAX_RUN_DURATION_MS` | `600000` (10분) | — | 모든 진입점에 걸리는, 단일 런의 실제 경과 시간 상한. 멈춰 버린 provider 나 도구 호출이 무한정 돌거나 무한정 청구할 수 없다. 유효하지 않은 값은 경고와 함께 무시된다. Slack·Telegram·Teams 경로는 공용 메시징 파이프라인에서 추가로 고정된 3분 인터랙티브 데드라인(아래)을 적용하는데, 그것은 런을 짧게 만들 수만 있다. 런 슬롯 lease 는 이 값 + 60초, MCP OAuth 토큰 갱신 여유는 이 값 + 5분이다. 서명 URL 수명은 런 길이와 독립적으로 뷰 15분·지속되는 기록 7일이며 `src/shared/artifactUrlTtl.ts` 가 소유한다. |
-| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | **runtime** | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 자기 `maxConcurrentRuns` 를 가진 멤버 tier(*코드에 고정된 제한* 참고)는 그 멤버 자신의 런에 대해 이 값을 덮어쓴다. 기본 `guest` tier 가 그런 값을 하나 들고 있다. `admin`/`member`, 프로젝트 토큰, 그리고 모든 기계 호출자는 이 값을 물려받는다. |
+| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | **runtime** | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 자기 `maxConcurrentRuns` 를 가진 멤버 tier(*코드에 고정된 제한* 참고)는 그 멤버 자신의 런에 대해 이 값을 덮어쓴다. 기본 `guest` tier 가 그런 값을 하나 들고 있다. `admin`/`member`, Agent 토큰, 그리고 모든 기계 호출자는 이 값을 물려받는다. |
 | `SCHEDULE_SCAN_TOKEN` | 미설정 | — | 모든 ticker 가 제시하는 단 하나의 자격증명(`X-Scan-Token`)이며, CronJob 이 POST 하는 세 엔드포인트가 공유한다: `/api/triggers/scan`(schedule), `/api/plugins/sync/scan`(plugins 저장소), `/api/catalog/reindex`(capability 카탈로그). 설정하지 않으면 이 배포에 ticker 가 없다는 뜻이다: 셋 다 503 으로 답하고 schedule 트리거는 결코 발화하지 않는다. 열리는 대신 꺼진다. |
 
 유효하지 않은 값(정수가 아니거나 음수, 또는 위 동시성 상한 초과)은 `0` 이 아니라 경고와 함께 기본값으로 떨어진다.
@@ -279,8 +279,8 @@ sync는 선언된 이름의 항목을 갱신하고 사라진 항목은 orphan으
 |---|---|---|---|
 | `SLACK_LOADING_INDICATOR` | `:hourglass_flowing_sand:` | **runtime** | Slack 답변이 아직 쓰이고 있는 동안 뒤에 붙였다가 마지막 편집에서 떼어 내는 표시. **edit-in-place 폴백에서만 그렇다**. 스트리밍되는 답변은 Slack 자신이 아직 도착 중이라고 표시해 준다. 자기 spinner 이모지를 가진 워크스페이스는 여기에 그 이름을 적는다. 기본값이 내장돼 있는 이유는, 워크스페이스가 정의하지 않은 커스텀 이름은 글자 그대로 렌더링되기 때문이다. |
 
-프로젝트별 Slack 설정. 봇 토큰, signing secret, 추천 프롬프트, 그리고 멘션 없이 봇을 깨우는
-**채널 키워드**. 는 환경이 아니라 프로젝트에 산다 (`/agents/{name}/settings`). Agent의
+Agent별 Slack 설정. 봇 토큰, signing secret, 추천 프롬프트, 그리고 멘션 없이 봇을 깨우는
+**채널 키워드**. 는 환경이 아니라 Agent에 산다 (`/agents/{name}/settings`). Agent의
 런이 워크스페이스를 *읽어도* 되는지는 Agent 파라미터(`slackWorkspace`)이고 기본은 꺼짐이다.
 
 **생성되는 매니페스트는 릴리즈와 함께 바뀐다.** 이제 `message.channels` 와
@@ -290,25 +290,25 @@ sync는 선언된 이름의 항목을 갱신하고 사라진 항목은 orphan으
 
 ## Telegram
 
-환경에는 아무것도 없다. 프로젝트별 설정. 봇 토큰과 봇이 켜져 있는지 여부. 는 프로젝트에
+환경에는 아무것도 없다. Agent별 설정. 봇 토큰과 봇이 켜져 있는지 여부. 는 Agent에
 산다 (`/agents/{name}/integrations`). webhook 시크릿은 거기서 발급되고, 봇을 켜면
-`PUBLIC_BASE_URL/api/telegram/webhook/{project}` 에 webhook 이 등록되며 끄면 삭제된다 (*Register
+`PUBLIC_BASE_URL/api/telegram/webhook/{agent}` 에 webhook 이 등록되며 끄면 삭제된다 (*Register
 webhook* 은 주소가 바뀐 뒤 다시 가리키는 용도다). 그래서 `PUBLIC_BASE_URL` 은 Telegram 이
 도달할 수 있는 주소여야 한다. BotFather 의 *privacy mode* 는 켜 둔 채로 둬도 된다: 어차피 봇은
 그룹에서 자기를 지목한 것에만 답한다 ([design/telegram.md](design/telegram.md)).
 
 ## Microsoft Teams
 
-환경에는 아무것도 없다. 프로젝트별 설정. Azure Bot 의 Microsoft App ID, 클라이언트 시크릿,
-(단일 테넌트 앱이면) 테넌트 id, 켜져 있는지 여부. 는 프로젝트에 산다
+환경에는 아무것도 없다. Agent별 설정. Azure Bot 의 Microsoft App ID, 클라이언트 시크릿,
+(단일 테넌트 앱이면) 테넌트 id, 켜져 있는지 여부. 는 Agent에 산다
 (`/agents/{name}/integrations`). Azure 에는 endpoint 를 가리키는 호출이 없으므로 콘솔은
-`PUBLIC_BASE_URL/api/teams/messages/{project}` 를 보여 주고 운영자가 Azure Bot 의 messaging
+`PUBLIC_BASE_URL/api/teams/messages/{agent}` 를 보여 주고 운영자가 Azure Bot 의 messaging
 endpoint 에 붙여 넣는다 ([design/teams.md](design/teams.md)).
 
 ## Workspace 실행
 
 Workspace 도구 사용 여부는 Agent 설정의 `parameters.workspaceTools`로 선택한다. 현재 설정에서
-켜면 프로젝트에 **워크스페이스 도구** 탭이 나타난다. 프로젝트 소유자·관리자는 그 탭에서 저장소 목록,
+켜면 Agent에 **워크스페이스 도구** 탭이 나타난다. Agent 소유자·관리자는 그 탭에서 저장소 목록,
 접근 모드, 기본 Runtime, 유휴 시간, 검사 명령과 배포 workflow를 관리한다. 기본 저장소는 없다.
 기본 접근 모드는 `new`(등록 + 신규), 기본 Runtime은 모델 없이 실행하는 `command`다.
 Codex·Claude·OpenCode의 모델은 **Model 사용 설정 → 워크스페이스 런타임 모델**에서 관리자가 선택한다.
@@ -325,7 +325,7 @@ Codex·Claude·OpenCode의 모델은 **Model 사용 설정 → 워크스페이�
 | `WORKSPACE_MEMORY_MB`, `WORKSPACE_DISK_MB`, `WORKSPACE_CPUS` | `2048`, `2048`, `2` | 메모리·각 tmpfs·CPU 상한 |
 | `WORKSPACE_WORKER_CONCURRENCY` | `4` | worker process의 동시 실행 수, 1~32 |
 
-프로젝트 저장소·소유자 목록은 각각 최대 100개다. `selected`는 등록한 저장소만,
+Agent 저장소·소유자 목록은 각각 최대 100개다. `selected`는 등록한 저장소만,
 `owners`는 목록과 정확한 소유자 범위를, `all`은 서버 GitHub 계정으로 접근 가능한 전체를 허용한다.
 `new`는 등록 목록을 유지하고 `Workspace.create_repository`의 실제 생성 성공을 자동 등록한다.
 [정책 계약](design/workspaces.md#저장소-정책-관리)을 따른다. 유휴 시간은 기본 1800초, 범위는 60초~7일이다.
@@ -354,7 +354,7 @@ Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 wo
 `GITHUB_WEB_URL`을 사용한다. `WORKSPACE_GITHUB_INTERNAL_HOSTS`는 폐쇄망 GitHub Enterprise의
 호스트 접미사를 선언하며, 다른 내부 URL 허용 목록과 공유하지 않는다.
 `WORKSPACE_GITHUB_WEBHOOK_SECRET`은 `/api/workspaces/github/webhook`의 PR 메타데이터 갱신용이다.
-`/api/webhook/{project}`는 프로젝트 Settings에서 발급한 별도 Trigger 시크릿을 사용한다.
+`/api/webhook/{agent}`는 Agent Settings에서 발급한 별도 Trigger 시크릿을 사용한다.
 App에는 Contents, Pull requests, Actions 쓰기와 Checks, Commit statuses 읽기를 부여하되,
 각 요청의 installation token은 실제 작업에 필요한 권한과 저장소로 좁힌다.
 GitHub App·fine-grained 토큰의 저장소 생성에는 Administration 쓰기가 필요하다. classic 토큰은
@@ -362,7 +362,7 @@ GitHub App·fine-grained 토큰의 저장소 생성에는 Administration 쓰기�
 저장소 또는 권한 있는 조직에 생성하며, App은 설치된 조직에만 생성한다. 생성용 App token은
 미래 저장소로 범위를 좁힐 수 없으므로 `administration: write`만 요청하고 서버에서만 사용한다.
 
-Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 실행 프로젝트별 선택을 최대 32개
+Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 실행 Agent별 선택을 최대 32개
 보관한다. 이는 Workspace 개수나 동시에 실행할 수 있는 작업 수가 아니다. 저장소 목록·조회는
 페이지 상한을 적용하고 실제 실행은 worker 동시성·소유자 run slot·시간·자원 한도를 따른다.
 체크포인트는 64 MiB의 파일 bytes 또는 20,000개 항목을 넘으면 실패한다.
@@ -375,7 +375,7 @@ Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 �
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | 미설정 | — | OTLP HTTP base 엔드포인트 (없으면 `/v1/traces` 를 덧붙인다). 설정되면 플랫폼이 영속화하는 모든 trace 가 데이터베이스 쓰기 이후에 OTEL span 으로도 내보내진다. export 실패는 `[otel]` 로그 라인으로 드러날 뿐, 결코 런으로 드러나지 않는다. 설정하지 않으면 export 자체가 없고 OTEL SDK 는 로드되지도 않는다. |
 | `OTEL_EXPORTER_OTLP_HEADERS` | 미설정 | — | 표준 `key=value,key2=value2` 형식이며 모든 OTLP 요청에 실려 간다. 대소문자를 보존한다: 값들이 collector 자격증명이고, 정규화된 bearer 토큰은 다른 토큰, 즉 틀린 토큰이 되기 때문이다. |
 | `SETTINGS_CACHE_TTL_MS` | `5000` | — | settings 행의 인메모리 TTL. 모든 runtime 오버라이드의 인스턴스 간 낡음에 한계를 둔다. [해석 순서](#해석-순서) 를 보라. 하한이 `1` 이라 `0` 은 캐시를 끄는 대신 기본값으로 떨어진다. |
-| `TRACE_RETENTION_DAYS` | `30` | — | Trace의 `createdAt` 기준. 프로젝트 삭제 참조도 같은 만료를 사용한다. |
+| `TRACE_RETENTION_DAYS` | `30` | — | Trace의 `createdAt` 기준. Agent 삭제 참조도 같은 만료를 사용한다. |
 | `USAGE_RETENTION_DAYS` | `400` | — | 대시보드의 184일 질의 창보다 한참 길게 유지한다. 하한은 `31`. 한 달 전체. 인데, 월간 비용 가드가 그 달의 일별 행들을 합산하기 때문이다. 더 짧은 창은 월말로 갈수록 지출을 조용히 적게 세게 된다. |
 | `CHAT_RETENTION_DAYS` | `180` | — | Chat META는 마지막 활동, 화면 메시지는 각 `createdAt`, SDK Session은 저장 시점 기준이다. |
 | `WORKSPACE_RETENTION_DAYS` | `180` | — | Workspace 실행·승인·이벤트·암호화된 체크포인트 보존 기간이다. Sandbox가 정리된 Workspace의 META도 이 기간을 따른다. 실행·정리 중인 META는 컴퓨팅 자원 정리 전에 sweep되지 않는다. |
@@ -407,7 +407,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | 제한 | 값 | 소유자 |
 |---|---|---|
 | agent 런당 턴 수 (Agent 설정 `maxTurn` 기본값) | `50` | `src/application/runtime/execute.ts` |
-| 멤버 tier 제한. 멤버당 동시 런 수 / 월 USD 상한 (`admin` —/—, `member` —/`20`, `guest` `1`/`2`. "—" 는 env 제한을 물려받거나 상한이 없다는 뜻). `guest` 는 추가로 프로젝트를 만들 수 없고 프로젝트 API 토큰도 쓸 수 없다 | `TIER_LIMITS` | `src/domain/member/tiers.ts` |
+| 멤버 tier 제한. 멤버당 동시 런 수 / 월 USD 상한 (`admin` —/—, `member` —/`20`, `guest` `1`/`2`. "—" 는 env 제한을 물려받거나 상한이 없다는 뜻). `guest` 는 추가로 Agent를 만들 수 없고 Agent API 토큰도 쓸 수 없다 | `TIER_LIMITS` | `src/domain/member/tiers.ts` |
 | SDK function tool 동시 실행 수 | `5` | `src/application/runtime/runner.ts` |
 | 턴당 도구 결과 텍스트 | `200,000` 자 | `src/application/llm/toolResultBudget.ts` |
 | subagent 로 넘기는 transfer transcript | `8,000` 자 | `src/application/runtime/transcript.ts` |
@@ -450,7 +450,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | Bot Framework(Teams) 호출 하나 / 첨부 전송 하나 | `30s` / `120s` | `src/infrastructure/teams/client.ts` |
 | Bot Framework 서명 키 캐시 / 모르는 `kid` 에 대한 재조회 최소 간격 / 토큰 시각 skew / 앱 토큰 만료 여유 | `24h` / `60s` / `5m` / `60s` | `src/infrastructure/teams/client.ts` |
 | OpenAI-compatible SDK client cache (text / image / embedding, adapter별) / Teams 앱 token cache | 각 `16` / `32` | `src/infrastructure/llm/clientCache.ts`, `src/infrastructure/teams/client.ts` |
-| 프로젝트 설정에 표시하는 최근 Telegram destination | `100` | `src/application/telegram/projectTelegram.ts` |
+| Agent 설정에 표시하는 최근 Telegram destination | `100` | `src/application/telegram/agentTelegram.ts` |
 | GitHub API 요청 하나 (plugins sync) | `15s` | `src/infrastructure/github/client.ts` |
 | 인터랙티브(Slack, Telegram, Teams) 런 데드라인 | `3` 분 | `src/shared/runDeadline.ts` |
 | 턴당 입력 이미지 수 / 이미지당 바이트(입력·생성·MCP) | `4` / `5 MiB` | `src/domain/llm/imageLimits.ts` |
@@ -480,7 +480,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | chat 메시지 하나가 보관하는 추론. 답변 **뒤에**, 같은 아이템 예산에서 | `40,000` 바이트 | `src/application/chat/run.ts` |
 | SDK Session 이력 | `256` items / 이미지 bytes를 제외한 JSON `150,000`자; 최신 완전한 턴은 보존 | `src/application/runtime/session.ts` |
 | SDK Session/checkpoint 저장 원문 | `64MiB`; 압축 후 인증 암호화 | `src/application/runtime/session.ts` |
-| Agent 정책의 입력 문자 상한 설정 범위 / 각 도구 정책 목록 | `1`–`1,000,000` / 최대 `128`개, 이름당 `1`–`64`자 | `src/app/api/projects/_lib/schemas.ts`의 `agentParametersSchema` |
+| Agent 정책의 입력 문자 상한 설정 범위 / 각 도구 정책 목록 | `1`–`1,000,000` / 최대 `128`개, 이름당 `1`–`64`자 | `src/app/api/agents/_lib/schemas.ts`의 `agentParametersSchema` |
 | 승인 재개 요청의 결정 수 / 승인 항목 ID | `1`–`128`개 / SHA-256 hex `64`자 | `src/app/api/chats/[chatId]/approval/route.ts`, `src/application/runtime/session.ts` |
 | 다음 턴의 SDK Session 이미지 | 최신 `4`개 | `src/application/runtime/historyImages.ts`, `src/domain/llm/imageLimits.ts` |
 | 인바운드 webhook / Slack 이벤트 / Telegram update / Teams activity 본문 | 넷이 함께 `1MB` | `src/app/api/_lib/inboundEvent.ts` 의 `MAX_INBOUND_EVENT_BYTES` |
@@ -490,13 +490,13 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | Telegram 앨범의 캡션 없는 멤버가 claim 전에 기다리는 시간 | `1s` | `src/application/telegram/handleUpdate.ts` |
 | Slack 스레드 제목 | `60` 자 | `src/application/slack/handleSlackEvent.ts` |
 | 모든 chat-bot 표면에서의 이력 이미지 되짚기 범위 | `10` 메시지 | `src/application/messaging/attachments.ts` |
-| 프로젝트당 Slack 추천 프롬프트 수 | `4` | `src/domain/slack/types.ts` |
+| Agent당 Slack 추천 프롬프트 수 | `4` | `src/domain/slack/types.ts` |
 | Slack 프롬프트 제목 / 메시지 / agent 설명 | `80` / `500` / `300` 자 | `src/domain/slack/types.ts` |
 | Slack 앱의 짧은 설명 | `140` 자 | `src/domain/slack/types.ts` |
 | Slack 중단 요청 확인 주기 | `1` 초 | `src/application/slack/watchStop.ts` |
 | Slack thread 중단 기록 보존 | `24h` | `src/infrastructure/db/ttl.ts` |
 | Slack thread 실행 lease | `90` 초, 남은 시간이 절반 이하일 때 갱신 | `src/infrastructure/db/ttl.ts`, `slackRunControlRepository.ts` |
-| 프로젝트당 Slack 채널 키워드 수 / 각 길이 | `20` / `2`–`50` 자 | `src/domain/slack/types.ts` |
+| Agent당 Slack 채널 키워드 수 / 각 길이 | `20` / `2`–`50` 자 | `src/domain/slack/types.ts` |
 | 봇이 답한 채널 스레드에서 참여 상태로 머무는 시간 (답할 때마다 갱신) | `24h` | `src/infrastructure/db/ttl.ts` |
 | 채널 체크리스트가 나열할 수 있는 서로 다른 도구 수, 그 뒤의 것들은 한 행을 함께 쓴다 | `25` | `src/application/slack/replyStream.ts` |
 | `SlackHistory`/`SlackThread` 읽기 하나가 돌려주는 메시지 수 (기본값 / 상한) | `20` / `100` | `src/application/slack/workspaceRead.ts` |
@@ -514,7 +514,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | Teams 답변 편집 주기 / typing 갱신 | `2s` / `3s` | `src/application/teams/replyChannel.ts` |
 | Telegram·Teams 대화의 턴을 유지하는 기간 | `7` 일 | `src/infrastructure/db/ttl.ts` |
 | usage 요약 질의 범위 | `184` 일 | `src/app/api/usages/summary/validation.ts` |
-| 프로젝트 호출자 usage 한 요청의 원시 행 / 반환·Slack 프로필 해석 수 | `10,000` / `100` | `src/application/usage/listActors.ts` |
+| Agent 호출자 usage 한 요청의 원시 행 / 반환·Slack 프로필 해석 수 | `10,000` / `100` | `src/application/usage/listActors.ts` |
 | schedule 따라잡기 창 (장애가 한 번에 발화시킬 수 있는 양에 한계를 둔다) | `10` 분 | `src/application/trigger/scanSchedules.ts` |
 | scan tick 하나가 동시에 굴리는 schedule 발화 수 | `8` | `src/application/trigger/scanSchedules.ts` |
 | 대기 중 schedule 예약 갱신 간격 / 유실 판정 | 실행 lease의 `1/3` / 마지막 queue lease 만료 | `src/application/trigger/queuedFiring.ts`, `repairLostRuns.ts` |
@@ -568,4 +568,4 @@ worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것
 | 후처리 입력 / 출력 / 호출 수 | 16,000자 / 최대 6,000자 / 64회 | `src/application/audio/postprocess.ts` |
 
 수동 재시도는 실행 구간만 새로 시작하며 원본·파생 파일의 만료를 연장하지 않는다.
-프로젝트의 maxActive·maxPerOccurrence 기본은 각각 1이며, 저장 설정에서 1–100 범위로 지정한다.
+Agent의 maxActive·maxPerOccurrence 기본은 각각 1이며, 저장 설정에서 1–100 범위로 지정한다.

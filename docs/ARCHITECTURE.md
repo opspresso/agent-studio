@@ -5,7 +5,7 @@
 설정값은 [CONFIGURATION](CONFIGURATION.md), 시각적 흐름은 [DIAGRAMS](DIAGRAMS.md)를 보라.
 
 코드를 처음 읽는다면 [요청 흐름](#요청-흐름)에서 사용할 진입점을 찾고,
-[`runProject.ts`](../src/application/execution/runProject.ts)와 필요한 [서브시스템](#서브시스템)을
+[`runAgent.ts`](../src/application/execution/runAgent.ts)와 필요한 [서브시스템](#서브시스템)을
 따라간다. 상수·형태·정책의 소유 파일은 [OWNERSHIP](OWNERSHIP.md)이 안내한다.
 
 ## 무엇을 위한 시스템인가
@@ -61,7 +61,7 @@ Session 계약을 직접 사용하고, 배포별 저장·모델·자격 증명�
 
 | 관심사 | 코드 |
 |---|---|
-| 프로젝트·현재 설정과 접근 | `application/project/`, `domain/project/` |
+| Agent·현재 설정과 접근 | `application/agent/`, `domain/agent/` |
 | Agent 실행 준비·바인딩·Memory·미리보기 | `application/execution/` |
 | SDK Agent·Runner·도구·Session·승인 | `application/runtime/` |
 | 프롬프트 조립·PII·문맥 예산·모델 카탈로그 | `application/llm/` |
@@ -119,7 +119,7 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 | `items` | `pk`·`sk`와 JSONB `data`로 제품 엔티티를 저장한다. 키는 `COLLATE "C"`로 정렬하고 JSONB에서 파생한 GSI·만료 컬럼에 인덱스를 둔다 |
 | `user`·`session`·`account`·`verification` | Better Auth의 인증 스키마와 유니크 제약 |
 | `catalog_vectors` | capability embedding과 metadata. 모델별 차원이 달라 열에 폭을 고정하지 않으며 재색인으로 일치시킨다 |
-| `runtime_sessions` | 압축·인증 암호화한 SDK 이력·RunState, owner·project·revision·만료·삭제 tombstone. 큰 native payload를 아이템 행과 분리한다 |
+| `runtime_sessions` | 압축·인증 암호화한 SDK 이력·RunState, owner·agent·revision·만료·삭제 tombstone. 큰 native payload를 아이템 행과 분리한다 |
 
 키의 유일한 작성자는 [`keys.ts`](../src/infrastructure/db/keys.ts)다.
 계층을 넘어 공개하는 Artifact cursor 형태만 `domain/artifact/repository.ts`의 `artifactCursor`가 소유한다.
@@ -127,27 +127,27 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 
 | 엔티티 | PK | SK | GSI1PK | GSI1SK |
 |---|---|---|---|---|
-| Project | `PROJECT#{name}` | `META` | `TYPE#PROJECT` | `{name}` |
-| 삭제된 Project 이름 tombstone | `PROJECT#{name}` | `META` | — | — |
-| Project API 토큰 | `PROJECT#{name}` | `APITOKEN` | — | — |
-| Workspace 정책 / 저장소 생성 receipt | `PROJECT#{name}` | `WORKSPACEPOLICY` / `REPOSITORYCREATE#{repository lowercased}` | — | — |
+| Agent | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
+| 삭제된 Agent 이름 tombstone | `AGENT#{name}` | `META` | — | — |
+| Agent API 토큰 | `AGENT#{name}` | `APITOKEN` | — | — |
+| Workspace 정책 / 저장소 생성 receipt | `AGENT#{name}` | `WORKSPACEPOLICY` / `REPOSITORYCREATE#{repository lowercased}` | — | — |
 | Workspace | `WORKSPACE#{id}` | `META` | `WORKSPACEOWNER#{email}` | `{createdAt}#{id}` |
 | Workspace Chat 역참조 | `WORKSPACECHAT#{chatId}` | `META` | — | — |
 | Workspace Session·Sandbox·Run·승인·요청·전달·후속 실행 | `WORKSPACE#{id}` | `{SESSION\|SANDBOX\|RUN\|APPROVAL\|REQUEST\|DELIVERY\|CONTINUATION}#{childId}` | — | — |
 | Workspace 이벤트 | `WORKSPACE#{id}` | `EVENT#{runId}#{seq zero-padded 8}` | — | — |
 | Workspace checkpoint manifest / chunk | `WORKSPACESTATE#{id}` | `{checkpointId}#META` / `{checkpointId}#{index zero-padded 6}` | — | — |
-| Project 의 MCP OAuth 연결 | `PROJECT#{name}` | `MCPCONN#{server}` | — | — |
+| Agent 의 MCP OAuth 연결 | `AGENT#{name}` | `MCPCONN#{server}` | — | — |
 | 진행 중인 MCP OAuth 인가 | `MCPOAUTH#{state}` | `META` | — | — |
-| Trigger (webhook / schedule) | `PROJECT#{name}` | `TRIGGER#{triggerId}` | schedule 만: `TYPE#SCHEDULE` | schedule 만: `{name}#{triggerId}` |
-| Trigger 런 (delivery / firing) | `PROJECT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt 또는 queuedAt}#{runId}` | queued만: `TRIGGERQUEUE#{name}#{triggerId}` | queued만: `{queueLeaseUntil}#{runId}` |
+| Trigger (webhook / schedule) | `AGENT#{name}` | `TRIGGER#{triggerId}` | schedule 만: `TYPE#SCHEDULE` | schedule 만: `{name}#{triggerId}` |
+| Trigger 런 (delivery / firing) | `AGENT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt 또는 queuedAt}#{runId}` | queued만: `TRIGGERQUEUE#{name}#{triggerId}` | queued만: `{queueLeaseUntil}#{runId}` |
 | Trigger 중복 제거 claim (`Idempotency-Key` / `schedule:{instant}`) | `TRIGGERIDEM#{name}#{triggerId}#{key}` | `META` | — | — |
-| 오디오 작업 | `PROJECT#{name}` | `AUDIOJOB#{id}` | — | — |
-| 오디오 프로젝트 큐 | `PROJECT#{name}` | `AUDIOSLOTS` | 비어 있지 않을 때: `AUDIOJOBDUE` | `{headDueAt}#{name}#{headJobId}` |
-| 오디오 기본 설정 | `PROJECT#{name}` | `AUDIOCONFIG` | — | — |
-| 오디오 중복 방지 / 발생별 한도 | `PROJECT#{name}` | `AUDIOSOURCE#{sourceKey}` / `AUDIOOCCURRENCE#{occurrence}` | — | — |
+| 오디오 작업 | `AGENT#{name}` | `AUDIOJOB#{id}` | — | — |
+| 오디오 Agent 큐 | `AGENT#{name}` | `AUDIOSLOTS` | 비어 있지 않을 때: `AUDIOJOBDUE` | `{headDueAt}#{name}#{headJobId}` |
+| 오디오 기본 설정 | `AGENT#{name}` | `AUDIOCONFIG` | — | — |
+| 오디오 중복 방지 / 발생별 한도 | `AGENT#{name}` | `AUDIOSOURCE#{sourceKey}` / `AUDIOOCCURRENCE#{occurrence}` | — | — |
 | 비공개 원본·파생 파일 inventory | `SOURCEFILE#{id}` | `META` | 미삭제 파일만: `SOURCEFILEEXPIRY` | `{retireAt}#{name}#{id}` |
 | 암호화된 원본 참조 | `SOURCEREFERENCE#{id}` | `META` | — | — |
-| 멱등 사용량 receipt | `PROJECT#{name}` | `USAGERECEIPT#{id}` | — | — |
+| 멱등 사용량 receipt | `AGENT#{name}` | `USAGERECEIPT#{id}` | — | — |
 | Chat | `CHAT#{chatId}` | `META` | `CHATOWNER#{email}` | `{updatedAt ISO}` |
 | Chat 메시지 | `CHAT#{chatId}` | `MSG#{seq zero-padded 6}` | — | — |
 | Chat 런 로그 (리플레이 버퍼, 짧은 TTL) | `CHAT#{chatId}` | `RUNLOG#{runId}#{seq zero-padded 6}` | — | — |
@@ -156,21 +156,21 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 | Plugin | `PLUGIN#{name}` | `META` | `TYPE#PLUGIN` | `{name}` |
 | Plugins-sync 리포트 (소스 repo 별) | `PLUGINSYNC#{repo}` | `REPORT` | — | — |
 | Plugins-sync 리스 | `PLUGINSYNC#{repo}` | `LOCK` | — | — |
-| Usage (프로젝트별 일간) | `USAGE#{projectName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{projectName}` |
-| Usage (호출자별 일간) | `USAGE#{projectName}` | `ACTOR#{yyyy-MM-dd}#{kind}:{id}` | — | — |
-| Usage 월간 임계값 claim | `USAGE#{projectName}` | `MONTHCLAIM#{yyyy-MM}` | — | — |
-| Usage (멤버별, 일별, 프로젝트별) | `USAGEMEMBER#{email}` | `DATE#{yyyy-MM-dd}#{projectName}` | — | — |
+| Usage (Agent별 일간) | `USAGE#{agentName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{agentName}` |
+| Usage (호출자별 일간) | `USAGE#{agentName}` | `ACTOR#{yyyy-MM-dd}#{kind}:{id}` | — | — |
+| Usage 월간 임계값 claim | `USAGE#{agentName}` | `MONTHCLAIM#{yyyy-MM}` | — | — |
+| Usage (멤버별, 일별, Agent별) | `USAGEMEMBER#{email}` | `DATE#{yyyy-MM-dd}#{agentName}` | — | — |
 | 런 동시성 슬롯 | `RUNSLOT#{kind}:{id}` | `SLOT#{index zero-padded 3}` | — | — |
 | Slack 이벤트 중복 제거 | `SLACKEVENT#{eventId}` | `META` | — | — |
-| Slack 스레드 참여 (봇이 답한, 또는 음소거된 스레드) | `SLACKTHREAD#{projectName}#{channel}#{threadTs}` | `META` | — | — |
-| Telegram 업데이트 중복 제거 (`update_id` 는 봇마다의 카운터이므로 봇으로 한정한다) | `PROJECT#{name}` | `TELEGRAMUPDATE#{botId}#{updateId}` | — | — |
-| Telegram 앨범 claim (한 `media_group_id` 에 한 번 답한다) | `PROJECT#{name}` | `TELEGRAMALBUM#{botId}#{mediaGroupId}` | — | — |
-| Telegram destination | `PROJECT#{name}` | `TELEGRAMDESTINATION#{botId}#{chatId}#{threadId}` | — | — |
-| Teams activity 중복 제거 (App ID 로 한정; activity id 는 대화 안에서만 유일하므로 대화 id 를 앞에 붙인다) | `PROJECT#{name}` | `TEAMSACTIVITY#{appId}#{conversationId}#{activityId}` | — | — |
-| 대화 transcript 턴 (플랫폼 히스토리가 없는 chat-bot 표면, Telegram, Teams; project 파티션에 있어 cascade 가 지운다) | `PROJECT#{name}` | `TRANSCRIPT#{conversationKey}#TURN#{createdAt ISO}#{seq}` | — | — |
-| Artifact (첨부 원본과 런 출력) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
-| Trace | `TRACE#{traceId}` | `META` | `TRACEPROJECT#{projectName}` | `{createdAt ISO}#{traceId}` |
-| Trace 삭제 참조 | `PROJECT#{name}` | `TRACE#{createdAt}#{traceId}` | — | — |
+| Slack 스레드 참여 (봇이 답한, 또는 음소거된 스레드) | `SLACKTHREAD#{agentName}#{channel}#{threadTs}` | `META` | — | — |
+| Telegram 업데이트 중복 제거 (`update_id` 는 봇마다의 카운터이므로 봇으로 한정한다) | `AGENT#{name}` | `TELEGRAMUPDATE#{botId}#{updateId}` | — | — |
+| Telegram 앨범 claim (한 `media_group_id` 에 한 번 답한다) | `AGENT#{name}` | `TELEGRAMALBUM#{botId}#{mediaGroupId}` | — | — |
+| Telegram destination | `AGENT#{name}` | `TELEGRAMDESTINATION#{botId}#{chatId}#{threadId}` | — | — |
+| Teams activity 중복 제거 (App ID 로 한정; activity id 는 대화 안에서만 유일하므로 대화 id 를 앞에 붙인다) | `AGENT#{name}` | `TEAMSACTIVITY#{appId}#{conversationId}#{activityId}` | — | — |
+| 대화 transcript 턴 (플랫폼 히스토리가 없는 chat-bot 표면, Telegram, Teams; agent 파티션에 있어 cascade 가 지운다) | `AGENT#{name}` | `TRANSCRIPT#{conversationKey}#TURN#{createdAt ISO}#{seq}` | — | — |
+| Artifact (첨부 원본과 런 출력) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTAGENT#{agentName}` | `{createdAt ISO}#{artifactId}` |
+| Trace | `TRACE#{traceId}` | `META` | `TRACEAGENT#{agentName}` | `{createdAt ISO}#{traceId}` |
+| Trace 삭제 참조 | `AGENT#{name}` | `TRACE#{createdAt}#{traceId}` | — | — |
 | 감사 기록 | `AUDIT#{yyyy-MM-dd}` | `{createdAt ISO}#{eventId}` | — | — |
 | 앱 설정 (환경변수 오버라이드) | `SETTINGS#app` | `META` | — | — |
 | Capability catalog reindex lease + 영구 generation (in-place rebuild와 겹친 검색은 결과를 버린다) | `CATALOGREINDEX#global` | `LOCK` | — | — |
@@ -184,7 +184,7 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 | 대기·진행 중인 Workspace 후속 실행 | `WORKSPACECONTINUATIONDUE` | `{dueAt}#{workspaceId}#{approvalId}` |
 | Telegram destination | `TELEGRAMDESTINATION#{name}#{botId}` | `{lastSeenAt ISO}` |
 | Artifact (소유자 이메일이 있는 행만, 희소) | `ARTIFACTOWNER#{email}` | `{createdAt ISO}#{artifactId}` |
-| 미삭제 파생 파일 | `SOURCEJOB#{project}#{job}` | `{kind}#{id}` |
+| 미삭제 파생 파일 | `SOURCEJOB#{agent}#{job}` | `{kind}#{id}` |
 
 GSI1은 종류·소유자·시각별 목록, GSI2는 Workspace 큐·후속 실행, Telegram destination,
 개인 Artifact와 작업별 source 파일을 조회한다. 둘 다 인덱스 키가 있는 행만 포함하는 희소 인덱스다.
@@ -198,48 +198,48 @@ Chat의 SDK `runtime_sessions`와 수명을 공유하지 않는다.
   전용 인증·벡터·SDK Session 테이블과 `skillRepository.describe`의 projection은 별도 SQL 경로다.
 - 무한히 늘어나는 목록에는 `limit`을 주고, 만료·조건 필터는 `LIMIT` 전에 적용한다.
   `queryItems`에 넘기는 `notExpiredAt`·`filter`가 그 경계다.
-- 이름 기반 registry의 공통 CRUD는 `createKeyedRepository`를 사용한다. Project 현재 설정은
+- 이름 기반 registry의 공통 CRUD는 `createKeyedRepository`를 사용한다. Agent 현재 설정은
   `META.configuration`, Chat 메시지 번호는 `META.nextSeq`가 소유한다.
-- Project 삭제는 먼저 `deletingAt`으로 자식 쓰기를 차단하고 관련 행을 정리한 뒤
+- Agent 삭제는 먼저 `deletingAt`으로 자식 쓰기를 차단하고 관련 행을 정리한 뒤
   소유권을 제거한 tombstone을 남긴다. 중단된 cascade는 같은 owner/admin이 다시 DELETE하여
-  이어간다. Chat·Artifact처럼 더 오래 남는 참조가 있어 프로젝트 이름을 재사용하지 않는다.
+  이어간다. Chat·Artifact처럼 더 오래 남는 참조가 있어 Agent 이름을 재사용하지 않는다.
 - Usage는 행 잠금 아래 모델별 델타를 더한다. 임계값 알림 claim은 Usage 행에 둬
-  프로젝트 편집 revision과 분리한다. 귀속·집계는 [관측성 설계](design/observability.md)를 따른다.
+  Agent 편집 revision과 분리한다. 귀속·집계는 [관측성 설계](design/observability.md)를 따른다.
 - DB 만료 삭제는 자동 TTL이 아닌 `sweepExpiredRows`다. 외부 schedule scan이 실행해야
   아이템·인증 Session·SDK Session을 정리하며 읽기도 만료를 검사한다.
   객체·오디오·Sandbox의 정리는 [행 보존](OPERATIONS.md#행-보존)에 따로 명시한다.
 
 ## 요청 흐름
 
-실행 표면은 인증·Project 접근·입력 검증을 마친 뒤
-[`runProject.ts`](../src/application/execution/runProject.ts)의 파사드를 호출한다.
+실행 표면은 인증·Agent 접근·입력 검증을 마친 뒤
+[`runAgent.ts`](../src/application/execution/runAgent.ts)의 파사드를 호출한다.
 
 | 파사드 | 계약 |
 |---|---|
-| `streamProjectRun` | 현재 Agent 설정으로 같은 도구 루프를 실행하고 모든 출력 축을 chunk로 반환한다 |
-| `executeProjectStream` / `executeProject` | 같은 Agent 실행을 스트림 또는 수집한 결과로 반환한다 |
+| `streamAgentRun` | 현재 Agent 설정으로 같은 도구 루프를 실행하고 모든 출력 축을 chunk로 반환한다 |
+| `streamAgentExecution` / `collectAgentRun` | 같은 Agent 실행을 스트림 또는 수집한 결과로 반환한다 |
 | `executeAgent` | Agent 바인딩·SDK Runtime·정산을 조율한다 |
 | `executeWorkspaceTask` | Workspace 작업의 공통 정책을 연다. 일반 명령에는 모델 설정이 없다 |
 
 이미지는 Agent의 GenerateImage·EditImage 도구로 실행한다. 새 chunk 소비자는
-`streamProjectRun`을 사용하며 이미지·파일 축을 함께 처리한다.
+`streamAgentRun`을 사용하며 이미지·파일 축을 함께 처리한다.
 
 | 진입점 | 호출자 | 사용하는 파사드 |
 |---|---|---|
-| Predict | `POST …/predict` | `executeProjectStream`(스트림) / `executeProject`(수집형). 입력은 `messages`다 |
-| OpenAI 호환 | `POST …/chat/completions` | `executeProjectStream` / `executeProject` 결과를 OpenAI 응답으로 변환한다 |
+| Predict | `POST …/predict` | `streamAgentExecution`(스트림) / `collectAgentRun`(수집형). 입력은 `messages`다 |
+| OpenAI 호환 | `POST …/chat/completions` | `streamAgentExecution` / `collectAgentRun` 결과를 OpenAI 응답으로 변환한다 |
 | Agent SSE | `POST …/agent` | `executeAgent` |
 | Chat | 생성·메시지 전송·SDK 승인 재개 API, Workspace 승인·CI 결과의 후속 실행 | `executeAgent` (`ChatDeps.runAgent` 로 바인딩) |
-| Slack | `/api/slack/events/[project]` → `handleSlackEvent` → `handleTurn` | `executeAgent` (`SlackEventDeps` 경유) |
-| Telegram | `/api/telegram/webhook/[project]` → `handleTelegramUpdate` → `handleTurn` | `executeAgent` (`TelegramEventDeps` 경유). Slack 과 같은 공유 파이프라인 ([design/messaging.md](design/messaging.md)) |
-| Teams | `/api/teams/messages/[project]` → `handleTeamsActivity` → `handleTurn` | `executeAgent` (`TeamsEventDeps` 경유). 같은 파이프라인 |
-| Webhook trigger | `POST /api/webhook/[project]` → `executeDelivery` | `streamProjectRun` (`triggerRunnerDeps.run`). JSON payload를 사용자 메시지로 전달한다 |
-| Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (같은 `triggerRunnerDeps.run`) |
-| Audio 후처리 | audio worker가 고정한 Project와 현재 설정으로 실행 | `streamProjectRun` + `collectRun` (`backgroundTask: true`) |
+| Slack | `/api/slack/events/[agent]` → `handleSlackEvent` → `handleTurn` | `executeAgent` (`SlackEventDeps` 경유) |
+| Telegram | `/api/telegram/webhook/[agent]` → `handleTelegramUpdate` → `handleTurn` | `executeAgent` (`TelegramEventDeps` 경유). Slack 과 같은 공유 파이프라인 ([design/messaging.md](design/messaging.md)) |
+| Teams | `/api/teams/messages/[agent]` → `handleTeamsActivity` → `handleTurn` | `executeAgent` (`TeamsEventDeps` 경유). 같은 파이프라인 |
+| Webhook trigger | `POST /api/webhook/[agent]` → `executeDelivery` | `streamAgentRun` (`triggerRunnerDeps.run`). JSON payload를 사용자 메시지로 전달한다 |
+| Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamAgentRun` (같은 `triggerRunnerDeps.run`) |
+| Audio 후처리 | audio worker가 고정한 Agent와 현재 설정으로 실행 | `streamAgentRun` + `collectRun` (`backgroundTask: true`) |
 | Workspace | 별도 worker가 DB 큐와 native operation을 이어받는다 | `executeWorkspaceTask` + 공통 `openTaskRun`. 일반 명령과 외부 CLI runtime은 앱 모델 설정 없이 실행한다 |
 
 오디오 전사 호출은 worker가 `openModelCall`로 모델 정책·비용·동시성을 적용하고,
-후처리는 표의 프로젝트 실행 경로를 사용한다. 같은 Agent 설정이라도 사용자·token·메신저·자동화가
+후처리는 표의 Agent 실행 경로를 사용한다. 같은 Agent 설정이라도 사용자·token·메신저·자동화가
 갖는 Session·도구·승인은 다르다. [실행 창구별 계약](design/workspaces.md#실행-창구별-계약)을 보라.
 
 ### 런 브래킷
@@ -247,22 +247,22 @@ Chat의 SDK `runtime_sessions`와 수명을 공유하지 않는다.
 [`runBracket.ts`](../src/application/run/runBracket.ts)는 최상위 실행의 공통 정책을 소유한다.
 
 1. 로그 correlation ID를 만들고 모델 실행이면 primary·fallback의 미등록 모델 정책을 검사한다.
-2. 프로젝트 일간·월간 비용과 해당 user actor의 멤버 월간 상한을 검사한다.
+2. Agent 일간·월간 비용과 해당 user actor의 멤버 월간 상한을 검사한다.
 3. 호출자별 DB lease 슬롯을 획득하고 in-flight 메트릭을 연다.
-4. `openRun`은 여기에 프로젝트·실행 주체가 묶인 Artifact recorder를 추가한다.
+4. `openRun`은 여기에 Agent·실행 주체가 묶인 Artifact recorder를 추가한다.
 5. 실행 경로가 사용량을 저장한 뒤 `close`가 메트릭을 닫고 슬롯을 해제하며 비용 임계값을 정산한다.
 
-프로젝트 실행 파사드는 `executeAgent`를 통해 `openRun`을 사용한다.
+Agent 실행 파사드는 `executeAgent`를 통해 `openRun`을 사용한다.
 오디오 전사는 `openModelCall`, Workspace 작업은 모델 없는 `openTaskRun`을 사용한다.
 Workspace native CLI의 사용량은 앱 SDK 모델 Usage와 별개다.
 
 거절된 실행은 실행 메트릭·Usage·Trace를 만들지 않는다. 비용·모델 정책의 설정 조회 장애는
 fail-open, 동시성 저장소 장애는 fail-closed다. user tier는 개인 예산과 동시성에 적용하고
-서비스 credential인 project-token에는 개인 예산을 청구하지 않는다.
+서비스 credential인 agent-token에는 개인 예산을 청구하지 않는다.
 
 슬롯은 획득 토큰과 만료가 있는 DB 행이다. 해제도 토큰을 검사해 만료된 실행이 새 실행의 슬롯을
 지우지 못한다. 하위 Agent는 부모 브래킷 안에서 실행하되 대상의 현재 설정·순환·깊이·모델·
-프로젝트 비용과 남은 턴을 검사한다. 사용량 flush 후 비용을 쓴 하위 프로젝트도 정산한다.
+Agent 비용과 남은 턴을 검사한다. 사용량 flush 후 비용을 쓴 하위 Agent도 정산한다.
 상한과 튜닝은 [CONFIGURATION](CONFIGURATION.md#실행-제한),
 실패 정책은 [OPERATIONS](OPERATIONS.md#지출-가드와-부하-가드)에 있다.
 
@@ -327,7 +327,7 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 
 | 문서 | 소유하는 설명 |
 |---|---|
-| [execution](design/execution.md) | Project·현재 설정, SDK Runtime, 이미지와 Artifacts |
+| [execution](design/execution.md) | Agent·현재 설정, SDK Runtime, 이미지와 Artifacts |
 | [sdk-capabilities](design/sdk-capabilities.md) | SDK 기능별 제품 적용 범위·미지원 경계·검증 근거 |
 | [chat](design/chat.md) | 화면 기록·SDK Session·승인·연결 분리·재연결 |
 | [agent-recommendation](design/agent-recommendation.md) | Jev 결정 모델의 Agent 추천·선택 경계·provider 계약 |
@@ -371,14 +371,14 @@ Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액�
 저장된 키는 앞뒤 4자를 드러낸 서버 마스크로 표시한다(8자 이하는 전부 숨긴다).
 교체를 눌러 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다.
 설정 override 삭제는 별도 동작으로 제공한다.
-앱이 발급하는 프로젝트 토큰·Webhook 키는 `SecretControl`로 표시·복사·생성·재생성·폐기한다.
+앱이 발급하는 Agent 토큰·Webhook 키는 `SecretControl`로 표시·복사·생성·재생성·폐기한다.
 지원하는 동작은 각 API의 기능과 권한에 따른다. 원문을 표시한 동안에만 복사할 수 있고,
 재생성·교체·폐기는 공통 확인창을 거친다. 평문은 브라우저 저장소에 기록하지 않는다.
 Settings는 Service·Access·Plugins·Models 탭으로 관리하고, `/models`는 등록된 모델 조회·검색만 제공한다.
 공통 검색은 `CatalogSearch`, IME Enter 전송은
 `isSubmitEnter`, Chat·Workspace 스크롤은 `useLatestScroll`이 담당한다.
 시스템 테마는 hydration 전후 기본값을 일치시키고, 답변·추론의 고빈도 출력은
-`createTextPacer`로 묶는다. API Reference 예제는 프로젝트 주소에 맞춰 만들고 credential은
+`createTextPacer`로 묶는다. API Reference 예제는 Agent 주소에 맞춰 만들고 credential은
 자리표시자로만 표시한다.
 
 ## 용어
@@ -388,7 +388,7 @@ Settings는 Service·Access·Plugins·Models 탭으로 관리하고, `/models`�
 `Agents`, `Artifacts`, `Plugins`, `Skills`, `Tools`, `Models`, `Members`처럼 복수형을 쓰고,
 개별 유형·생성·삭제는 `Chat`, `Workspace`, `Agent`, `Artifact`, `Plugin`, `Skill`, `Tool`,
 `Model`, `Member`처럼 단수형을 쓴다.
-코드의 `Project`는 콘솔의 Agent를 저장하는 단위이고, `subagent`는 다른 Agent 설정의
+`Agent`는 콘솔에서 설정하고 저장하는 실행 단위이며, `subagent`는 다른 Agent 설정의
 실행 대상 참조다. `McpServer`는 콘솔의 Tools에 등록한 서버를 뜻한다.
 
 `RunActor`는 실행 귀속, `RunCaller`는 선택적 사용자 표시 문맥, `RunConversation`은 표면별

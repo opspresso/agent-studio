@@ -6,16 +6,16 @@ HTTP 요청·응답은 [API](../API.md#triggers), ticker·보존·알림은
 
 ## Webhook
 
-Project에는 예약 ID `webhook`인 Webhook 하나와 이름이 있는 Schedule들을 둘 수 있다.
-Webhook 주소는 `projectWebhookPath`가 만드는 `/api/webhook/{project}`다.
+Agent에는 예약 ID `webhook`인 Webhook 하나와 이름이 있는 Schedule들을 둘 수 있다.
+Webhook 주소는 `agentWebhookPath`가 만드는 `/api/webhook/{agent}`다.
 다른 ID의 Webhook이나 `webhook`이라는 Schedule 생성은 거절한다.
 
-trigger와 실행 이력은 프로젝트 파티션에 저장하고 실행 이력에 보존 기간을 적용한다.
-모델 실행은 Project와 함께 읽은 현재 Agent 설정을 고정한다.
+trigger와 실행 이력은 Agent 파티션에 저장하고 실행 이력에 보존 기간을 적용한다.
+모델 실행은 Agent와 함께 읽은 현재 Agent 설정을 고정한다.
 
 | 경계 | 동작 |
 |---|---|
-| 인증 | enabled 검사 전에 프로젝트 secret을 상수 시간 비교한다 |
+| 인증 | enabled 검사 전에 Agent secret을 상수 시간 비교한다 |
 | GitHub | 원본 body의 HMAC과 event·delivery header를 검사한다. GitHub 헤더가 있으면 일반 secret 방식으로 후퇴하지 않는다 |
 | 중복 | `Idempotency-Key`, GitHub의 경우 delivery ID를 조건부 claim한다 |
 | 겹침 | 기본 `allowConcurrent: false`; DB 실행 슬롯으로 같은 trigger의 겹침을 거절한다 |
@@ -23,7 +23,7 @@ trigger와 실행 이력은 프로젝트 파티션에 저장하고 실행 이력
 | 실행 | 202 접수 후 `after()`에서 실행한다. 202는 성공적인 처리 완료가 아니다 |
 
 인증 실패·미설정·비활성·중복·서명된 ping은 새 실행 이력을 만들지 않는다.
-admission에서 Project·현재 설정이 없거나 겹침·실행 사용자 정책에 거절된 경우에는
+admission에서 Agent·현재 설정이 없거나 겹침·실행 사용자 정책에 거절된 경우에는
 skipped 이력을 남긴다. 시작한 실행은 running에서 succeeded 또는 failed로 마감한다.
 한도나 capability 손실은 succeeded에서도 warning으로 남을 수 있다.
 
@@ -32,7 +32,7 @@ skipped 이력을 남긴다. 시작한 실행은 running에서 succeeded 또는 
 관리자는 Webhook의 `githubReview`를 설정해 일반 payload 실행 대신 PR 리뷰를 선택할 수 있다.
 `scope: accessible`은 설치의 GitHub 계정이 접근 가능한 저장소를, `scope: repositories`와
 `repositories`는 지정한 정확한 `owner/repo` 목록만 허용한다. 기본은 비활성이다.
-리뷰 설정 변경은 공유 GitHub 자격 증명을 위임하므로 프로젝트 쓰기 권한에 더해 관리자를 검사한다.
+리뷰 설정 변경은 공유 GitHub 자격 증명을 위임하므로 Agent 쓰기 권한에 더해 관리자를 검사한다.
 시크릿을 가진 송신자는 선택 범위의 리뷰를 요청할 수 있으므로 등록할 저장소에만 시크릿을 제공한다.
 
 GitHub의 Pull requests 이벤트를 구독한다. HMAC이 유효한 `pull_request`의
@@ -57,7 +57,7 @@ PR 자료가 게시 대상이나 권한을 선택하지 않는다. 이 리뷰는
 
 Webhook actor는 `webhook`이며 payload의 이메일을 사용자 권한으로 사용하지 않는다.
 Schedule은 소유자가 `runAsOwner`를 명시적으로 켰을 때만 확인한 `executionEmail`을 저장하고
-admission·실행 직전에 현재 프로젝트 소유권과 member 상태를 다시 검사한다.
+admission·실행 직전에 현재 Agent 소유권과 member 상태를 다시 검사한다.
 
 이메일은 개인 MCP·오디오 문맥에 사용할 수 있지만 actor는 `schedule`로 유지한다.
 Webhook·Schedule은 user 전용 Workspace 도구와 영속 Chat 승인 화면을 얻지 않는다.
@@ -94,7 +94,7 @@ scan이 없는 배포에서는 같은 키가 계속 남을 수 있으므로 새 
 
 Schedule은 저장한 message를 사용하고 자기 secret이나 외부 payload를 요구하지 않는다.
 schedule 인덱스는 페이지로 순회하며 admission과 실제 발화에 각각 동시성 상한을 적용한다.
-한 번의 DB 조회와 동시에 수행하는 작업을 제한하는 것이며, 전체 프로젝트·발생 수의 전역 cap은 아니다.
+한 번의 DB 조회와 동시에 수행하는 작업을 제한하는 것이며, 전체 Agent·발생 수의 전역 cap은 아니다.
 구체적인 값은 [CONFIGURATION](../CONFIGURATION.md#코드에-고정된-제한)을 따른다.
 
 접수한 발생은 `queued` 이력에 `queuedAt`과 갱신 가능한 `queueLeaseUntil`을 기록한다.
@@ -111,7 +111,7 @@ tick 응답의 `fired`는 접수한 수이며 실제 시작·완료 수가 아�
 Slack·Telegram·Teams를 각각 하나의 delivery 대상으로 고를 수 있다.
 오류 없이 끝난 텍스트 응답을 독립적으로 전송하고 `sent`·`failed`를 `deliveryResults`에 남긴다.
 전송 실패는 모델 실행 성공을 실패로 바꾸지 않고 warning을 추가한다.
-Slack은 프로젝트 bot의 참가 채널, Telegram은 chat과 선택적 topic, Teams는 conversation을 사용한다.
+Slack은 Agent bot의 참가 채널, Telegram은 chat과 선택적 topic, Teams는 conversation을 사용한다.
 Teams serviceUrl을 사용자 입력으로 받지 않는다.
 
 ## 유실된 발화 복구
@@ -123,11 +123,11 @@ queued 행은 별도 lease 만료 인덱스로 읽고 해당 lease가 여전히 
 정상 heartbeat나 실행 시작이 먼저 반영되면 오래된 복구 쓰기는 거절된다. 프로세스가 유실된
 대기 역시 자동 재실행하지 않는다.
 
-주기적 scan의 복구 tick은 모든 프로젝트의 Webhook·Schedule을 순회한다.
+주기적 scan의 복구 tick은 모든 Agent의 Webhook·Schedule을 순회한다.
 Webhook 전달이 끝날 때도 자기 trigger의 과거 실행을 정리하므로 ticker가 없는 설치는
 다음 전달에서 정리할 수 있다. ticker도 다음 전달도 없으면 자동 정리가 진행되지 않는다.
 
 복구 query는 running의 시작 시각 또는 queued의 lease 만료 시각·상태·보존 만료 조건을 limit 전에 적용한다.
-완료 행이 복구 대상의 자리를 차지하지 않으며 한 번에 읽을 행 수와 프로젝트 병렬 처리 수를 제한한다.
+완료 행이 복구 대상의 자리를 차지하지 않으며 한 번에 읽을 행 수와 Agent 병렬 처리 수를 제한한다.
 비활성 trigger의 이전 실행도 확인하고 개별 파티션 오류는 다른 복구를 중단시키지 않는다.
 마감 기준·주기는 [고정 제한](../CONFIGURATION.md#코드에-고정된-제한)이 소유한다.

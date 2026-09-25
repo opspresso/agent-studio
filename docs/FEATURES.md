@@ -121,7 +121,7 @@ Fallback은 첫 출력 전 429·5xx 오류에서 한 번 전환한다.
 
 도구마다 Agent 설정·저장소·연동·호출자 권한 등의 활성 조건이 있다.
 
-구현 근거: [Agent 저장 형태](../src/domain/project/types.ts),
+구현 근거: [Agent 저장 형태](../src/domain/agent/types.ts),
 [Agent 설정 편집기](../src/app/agents/[name]/_components/AgentConfigurationEditor.tsx),
 [내장 도구 목록](../src/domain/llm/toolNames.ts).
 
@@ -350,7 +350,7 @@ Integrations에서 Agent 인증과 외부 연동을 설정하고 API Reference�
 - curl·Python·Node.js 예제.
 - 예제 복사.
 
-API Reference는 `/api/projects/{name}` 주소로 현재 Agent 설정을 호출하는 예제를 제공한다.
+API Reference는 `/api/agents/{name}` 주소로 현재 Agent 설정을 호출하는 예제를 제공한다.
 
 ### Slack
 

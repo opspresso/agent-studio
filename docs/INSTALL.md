@@ -86,7 +86,7 @@ Slack에서 Agent의 HTTPS 이벤트 URL에 접근할 수 있어야 하며, 앱�
 실행한다. 로컬 `.env.local`을 사용할 때는 `node --env-file=.env.local --import tsx scripts/audio-worker.ts`로 실행한다.
 환경변수가 이미 주입된 환경에서는 `pnpm worker:audio`를 사용한다. DB 초기화는 앱 또는 기존 migration 명령으로
 먼저 수행한다. worker는 DB의 선택 모델·프로바이더 설정을 주기적으로 읽고 작업과 원본 만료를 처리한다.
-여러 파일은 DB 큐에 접수하며 프로젝트마다 한 건씩 순차 실행한다. `maxActive`는 대기·진행 작업을
+여러 파일은 DB 큐에 접수하며 Agent마다 한 건씩 순차 실행한다. `maxActive`는 대기·진행 작업을
 합친 접수 상한이고 `maxPerOccurrence`는 한 요청에서 접수할 수 있는 새 작업 수다.
 앱과 worker는 같은 큐 스키마 버전을 사용해야 한다. 큐 인덱스 변경을 포함한 업그레이드는 구버전
 앱·worker의 작업 쓰기를 중단하고 migration을 완료한 뒤 새 버전을 시작한다. migration은 기존
@@ -136,7 +136,7 @@ Sandbox 이미지는 파일 검색용 ripgrep을 포함하며 네이티브 도�
 폐쇄망에는 앱과 해당 Sandbox 이미지를 함께 반입한다. `node build/workspace-health.cjs`는
 설정·Docker resource controller·이미지·네트워크·모델 채널을 검사하며 `--worker`는 큐 heartbeat도 확인한다.
 
-앱과 worker는 같은 PostgreSQL, `AES_ENCRYPTION_KEY`, Sandbox 인프라 설정을 사용한다. 프로젝트·모델 설정은 공유 DB에서 읽는다. DB는 기존
+앱과 worker는 같은 PostgreSQL, `AES_ENCRYPTION_KEY`, Sandbox 인프라 설정을 사용한다. Agent·모델 설정은 공유 DB에서 읽는다. DB는 기존
 migration 명령으로 먼저 준비한다. 배포 이미지는 `node build/workspace-worker.cjs`를 제공하며
 Docker CLI도 포함한다. 실행 worker와 Git 승인 API가 있는 앱 서버는 같은 Docker daemon에
 접근해야 한다. 이 제어 프로세스에는 전용 daemon 또는 Docker context를 사용한다. Sandbox에는 socket,
@@ -184,7 +184,7 @@ fine-grained 토큰·GitHub App의 Workflows 쓰기 권한도 필요하다. 저�
 Pull requests 읽기·쓰기 권한이 필요하다. 계정 토큰은 같은 저장소를 읽고 리뷰 댓글을 작성할 수
 있어야 한다. 자격 증명이나 GitHub 연결이 없으면 리뷰 게시를 활성화할 수 없다.
 
-GitHub 저장소 Webhook에 `/api/webhook/{project}` URL, `application/json`, 해당 Agent의
+GitHub 저장소 Webhook에 `/api/webhook/{agent}` URL, `application/json`, 해당 Agent의
 Webhook Secret과 Pull requests 이벤트를 설정한다. Workspace 메타데이터 Webhook과 URL·Secret이
 다르다. 접근 가능한 모든 저장소 또는 정확한 저장소 목록 중 하나를 선택하며 기본은 일반 Webhook이다.
 새 PR과 새 커밋, 다시 열린 PR, draft 해제를 처리하고 완료 이력에서 실제 리뷰 링크를 확인한다.
@@ -218,7 +218,7 @@ provider에서 Decisions 모델을 등록하고 Settings → Models → 모델 �
 MinIO 서버와 초기화용 `mc` 이미지는 Quay의 `minio` 저장소에서 받는다.
 고정 릴리스 태그는 루트 `compose.yaml`이 정본이다.
 
-루트 compose project 이름은 `agent-studio-local`로 고정되어 있다. PostgreSQL 18과 MinIO volume은
+루트 Compose 프로젝트 이름은 `agent-studio-local`로 고정되어 있다. PostgreSQL 18과 MinIO volume은
 이 앱 전용이다. `docker compose down -v`는 이 로컬 데이터를 삭제하므로 주의한다.
 
 Agent Plugins가 등록하는 사설 DNS 이름 그대로 MCP를 시험하려면 OrbStack에서:
@@ -298,6 +298,10 @@ API의 `id`·`decision` 유형으로 먼저 등록하고 기본·Decision·Embed
 선택 및 기존 Agent의 모델 ID를 바꾼 뒤, 참조가 없어진 이전 등록을 삭제한다.
 
 새 image tag의 앱은 부팅 시 advisory lock 아래에서 schema migration을 적용한다.
+Agent 저장 형식은 `agentName`, `AGENT#` 키와 새 암호화 문맥을 사용한다. 기존 형식의
+Agent 행이 있으면 migration 9가 부팅을 거절하며 데이터를 자동 변환하거나 삭제하지 않는다.
+이 변경을 배포하려면 DB·객체·암호화 키를 백업하고, 새 데이터베이스에 설치한 뒤 Agent 설정과
+연동 비밀을 다시 등록한다. 기존 DB가 필요한 경우 이전 앱과 함께 보관한다.
 개발 중인 프로젝트라 API·설정·저장 형식의 하위 호환을 보장하지 않으며 자동 down migration도 없다.
 이미지 tag만 되돌려도 복구된다고 가정하지 않는다. 교체 전에 DB·객체·암호화 키를 백업하고,
 기존 런과 worker를 정리한 뒤 새 앱·worker를 같은 버전으로 맞춘다. 이전 앱이 새 스키마를 읽을 수
