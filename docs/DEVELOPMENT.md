@@ -44,8 +44,9 @@ pnpm dev                             # http://localhost:3000 — 스키마는 �
 ```
 
 `.env.example` 의 `DATABASE_URL`(`postgres://agent_studio:agent_studio@localhost:5432/agent_studio`)
-이 이 컨테이너를 가리킨다. 스키마는 `src/infrastructure/db/migrations.ts` 가 부팅 때 advisory
-lock 아래에서 멱등하게 적용하므로 따로 만들 것이 없다. pgvector 확장도 거기서 만든다.
+이 이 컨테이너를 가리킨다. 빈 DB의 현재 스키마는 `src/infrastructure/db/migrations.ts` 가
+부팅 때 advisory lock 아래에서 만든다. pgvector 확장도 거기서 만든다. 기존 DB는 기준선 버전
+10이어야 하며, 다른 적용 기록이나 스키마는 자동 변환하지 않는다.
 고정 개발 자격 증명을 쓰는 PostgreSQL 과 MinIO 포트는 호스트 loopback 에만 공개된다.
 
 Next.js는 `.env.local`을 읽지만 별도 CLI 스크립트는 자동으로 읽지 않는다. 앱을 띄우기 전에
@@ -53,7 +54,7 @@ Next.js는 `.env.local`을 읽지만 별도 CLI 스크립트는 자동으로 읽
 사용한다. `pnpm db:migrate`는 프로세스의 `DATABASE_URL`을 사용하며 없으면 스크립트의 로컬
 기본 DB(`agent_studio`)에 적용한다. `.env.local`에서 DB 이름을 바꾼 경우에는 이 명령을
 그대로 실행하지 않는다.
-인증 계정의 키와 업그레이드 전제는 [설치 문서](INSTALL.md#업그레이드)를 따른다.
+인증 계정의 현재 키는 [보안 문서](SECURITY.md)를 따른다.
 
 `compose.yaml`은 `agent-studio-local` Compose 프로젝트에 PostgreSQL 18과 MinIO 전용 volume을 만든다.
 Agent Memory는 별도 Compose 프로젝트와 포트를 사용하므로 서로 독립적으로 시작하고 종료할 수 있다.
@@ -161,14 +162,14 @@ discovery·PKCE·콜백·세션 생성·재로그인을 확인한다. audience·
 
 | 스크립트 | 용도 |
 |---|---|
-| `scripts/db-migrate.ts` | `DATABASE_URL` 의 데이터베이스를 현재 스키마로 올린다. 앱이 부팅 때 하는 것과 같은 마이그레이션이고, CI 나 첫 부팅 전에 앱 없이 돌리는 형태다. |
+| `scripts/db-migrate.ts` | 빈 `DATABASE_URL` 데이터베이스를 현재 스키마로 초기화한다. 앱이 부팅 때 하는 것과 같은 경로이며, 알 수 없는 기존 스키마는 거부한다. |
 | `scripts/dev-session.ts` | 개발용 사용자와 세션을 Better Auth 의 테이블에 바로 써 넣고 서명된 세션 쿠키를 출력한다. 신원 제공자 왕복 없이 인증이 필요한 라우트를 시험한다. 로컬이 아닌 `DATABASE_URL` 은 거부한다. |
 | `scripts/mock-llm.ts` | `127.0.0.1:8002` (`MOCK_LLM_PORT`) 에서 도는 독립 실행형 OpenAI 호환 mock 서버. 스트리밍과 비스트리밍을 모두 지원하고, 도구가 제공되고 *동시에* 메시지가 `skill named "<slug>"` 를 언급할 때 `Skill` 도구 호출을 한 번 요청한다. `MOCK_LLM_CHUNKS` 와 `MOCK_LLM_DELAY_MS` 는 답변을 부풀리고 늦춰 긴 스트리밍 응답으로 만든다. 답이 도착하는 동안 chat 창이 무엇을 하는지 볼 수 있는 유일한 방법이다. 기본값은 통합 체크가 기대하는 한 줄 답변을 유지한다. |
 | `scripts/seed-skills.ts` | 샘플 Skill 을 멱등하게 시드한다. |
-| `scripts/integration-check.ts` | 저장소 왕복, 인증 마이그레이션, SDK 모델·도구 실행과 영속 Session 승인·재개를 검증한다. 아래 두 helper를 함께 호출한다. |
-| `scripts/auth-schema-check.ts` | 테스트 DB의 임시 스키마에서 계정 키 중복 거부, 기존 계정 보존, issuer 없는 신규 계정 및 기존·신규 비밀번호 로그인을 검증한다. |
+| `scripts/integration-check.ts` | 저장소 왕복, 현재 스키마, SDK 모델·도구 실행과 영속 Session 승인·재개를 검증한다. 아래 helper를 함께 호출한다. |
+| `scripts/schema-baseline-check.ts` | 테스트 DB의 임시 스키마에서 신규 설치, 멱등 부팅, 다른 스키마 거부를 검증한다. |
+| `scripts/auth-schema-check.ts` | 테스트 DB의 임시 스키마에서 계정 키 중복 거부, nullable issuer, 저장된 계정과 신규 계정의 로그인을 검증한다. |
 | `scripts/runtime-session-check.ts` | 실제 SQL Session 저장소의 소유자 범위, CAS 경쟁, 암호화 문맥, 만료와 삭제 후 늦은 쓰기 방지를 검증한다. |
-| `scripts/import-dynamodb-export.ts` | 일회성 이관: AWS CLI 로 내보낸 옛 DynamoDB 테이블(`aws dynamodb scan … --output json`)을 이 스키마로 들여온다. `AUTH#` 행은 Better Auth 의 테이블로, 유니크 락 행은 버리고, 나머지는 같은 키로 `items` 에 upsert 한다. 지원하지 않는 managed MCP host-file `envRefs` 와 저장소 종속 `artifactAccessMode` 는 제거하고, 같은 이메일로 먼저 생긴 사용자는 export 의 원래 id 를 보존하기 위해 교체한다. 절차는 [INSTALL.md](INSTALL.md#데이터-이관). |
 
 ## 통합 체크
 

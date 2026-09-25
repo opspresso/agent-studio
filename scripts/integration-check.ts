@@ -12,7 +12,6 @@ import { assertLocalDatabase } from "./local-database";
  *   pnpm test:integration
  */
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
 
@@ -55,10 +54,8 @@ async function main() {
       apiKey: encryptProviderKey("test", llmProviderApiKeyContext(name, baseUrl)) })), updatedAt: new Date().toISOString() }));
   replaceModelRegistry(registeredModels.map(model => registeredModelConfig(model, "selfhosted")));
 
-  const { checkAudioQueueMigration } = await import("./audio-queue-check");
-  await checkAudioQueueMigration();
-  const { checkAgentDataMigration } = await import("./agent-data-migration-check");
-  await checkAgentDataMigration();
+  const { checkSchemaBaseline } = await import("./schema-baseline-check");
+  await checkSchemaBaseline();
   const { checkRuntimeSessions } = await import("./runtime-session-check");
   await checkRuntimeSessions();
   const { checkWorkspaces } = await import("./workspace-check");
@@ -120,23 +117,6 @@ async function main() {
     results.push(`PASS ${label}`);
     console.log(`PASS ${label}`);
   };
-
-  // A legacy Agent row must stop the rename before the old data becomes invisible.
-  const { withTransaction: checkTransaction } = await import("@/infrastructure/db/client");
-  await assert.rejects(
-    checkTransaction(async (client) => {
-      const schema = `agent_rename_${randomUUID().replaceAll("-", "")}`;
-      await client.query(`CREATE SCHEMA "${schema}"`);
-      await client.query(`SET LOCAL search_path TO "${schema}"`);
-      await client.query("CREATE TABLE items (pk text, data jsonb)");
-      await client.query("CREATE TABLE schema_migrations (version integer PRIMARY KEY, name text NOT NULL)");
-      await client.query("INSERT INTO schema_migrations SELECT generate_series(1, 8), 'historical'");
-      await client.query("INSERT INTO items VALUES ($1, $2::jsonb)", ["PROJECT#legacy", JSON.stringify({ projectName: "legacy" })]);
-      await migrate((work) => work(client));
-    }),
-    /Existing Agent records require a fresh database/,
-  );
-  pass("Agent storage migration rejects legacy rows without changing them");
 
   // ---------- mock LLM server ----------
   const llmCalls: Array<Record<string, unknown>> = [];
@@ -207,8 +187,6 @@ async function main() {
 
   const suffix = Date.now().toString(36);
   const agentName = `it-proj-${suffix}`;
-  const legacyDestinationAgent = `it-telegram-migration-${suffix}`;
-  const legacyDestinationKey = dbKeys.telegramDestination(legacyDestinationAgent, 42, 1);
   const integrationMemberId = `it-member-${suffix}`;
   const integrationMemberEmail = `${integrationMemberId}@example.com`;
   const vectorTable = `it_vectors_${suffix}`;
@@ -229,44 +207,8 @@ async function main() {
     const { checkManagedMcpTransport } = await import("./managed-mcp-check");
     await checkManagedMcpTransport();
     pass("managed MCP provision, registration and real loopback transport");
-
-    // ---------- schema migration backfill ----------
     const { withTransaction } = await import("@/infrastructure/db/client");
-    await withTransaction(async (client) => {
-      await client.query("DELETE FROM schema_migrations WHERE version = $1", [5]);
-      await client.query(
-        "INSERT INTO items (pk, sk, data) VALUES ($1, $2, $3) ON CONFLICT (pk, sk) DO UPDATE SET data = EXCLUDED.data",
-        [
-          legacyDestinationKey.PK,
-          legacyDestinationKey.SK,
-          JSON.stringify({
-            ...legacyDestinationKey,
-            entityType: "telegramDestination",
-            projectName: legacyDestinationAgent,
-            botId: 42,
-            chatId: 1,
-            chatType: "private",
-            title: "Legacy chat",
-            lastSeenAt: now,
-          }),
-        ],
-      );
-    });
-    await migrate();
     const { getItem } = await import("@/infrastructure/db/store");
-    assert.deepEqual(await getItem(legacyDestinationKey), {
-      ...legacyDestinationKey,
-      entityType: "telegramDestination",
-      projectName: legacyDestinationAgent,
-      botId: 42,
-      chatId: 1,
-      chatType: "private",
-      title: "Legacy chat",
-      lastSeenAt: now,
-      ...dbKeys.telegramDestinationIndexPrefix(legacyDestinationAgent, 42),
-      GSI2SK: now,
-    });
-    pass("migration backfills Telegram destination recency index");
 
     // ---------- agent + current settings ----------
     await agentRepository.create({
@@ -283,6 +225,12 @@ async function main() {
     const listed = await listAgents(agentRepository);
     assert.ok(listed.some((p) => p.name === agentName), "agent list contains created");
     pass("agent create/get/list");
+
+    const { telegramDestinationRepository } = await import("@/infrastructure/db/repositories/telegramDestinationRepository");
+    const destination = { chatId: 42, chatType: "private" as const, title: "Integration destination", lastSeenAt: now };
+    await telegramDestinationRepository.put(agentName, 7, destination);
+    assert.deepEqual(await telegramDestinationRepository.list(agentName, 7, 10), [destination]);
+    pass("Telegram destination current index round-trip");
 
     const workspacePolicy = { agentName, revision: 1, updatedAt: now, rules: { repositoryOwners: ["integration-owner"] } };
     const policyWrites = await Promise.allSettled([
@@ -1700,9 +1648,6 @@ async function main() {
     await chatRepository.delete(`it-chat-list-ordinary-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-list-workspace-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-swept-${suffix}`).catch(() => {});
-    await import("@/infrastructure/db/store")
-      .then(({ deleteItem }) => deleteItem(legacyDestinationKey))
-      .catch(() => {});
     await import("@/infrastructure/db/client")
       .then(({ withTransaction }) =>
         withTransaction(async (client) => {

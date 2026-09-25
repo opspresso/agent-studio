@@ -50,8 +50,7 @@
 | SDK native span의 로컬 수집과 안전한 메타데이터 변환 | `src/application/runtime/tracing.ts` | 코드 |
 | Agent의 입력 Guardrail과 Handoff 대상 검사 | `src/application/runtime/policy.ts`; 도구 정책은 SDK 도구 조립에 적용한다 | 코드 |
 | 선택적 실행 도구의 권한 거부와 권한 조회 실패 구분 | `src/application/execution/optionalToolAccess.ts`; Workspace·오디오 조립은 같은 판정을 사용한다 | 코드 |
-| 스키마. `items`와 파생 컬럼·부분 인덱스, Better Auth 테이블, `catalog_vectors`, `runtime_sessions`, 적용된 버전 | `src/infrastructure/db/migrations.ts`. 추가만 하는 목록, advisory lock 아래에서 부팅마다 | 코드 |
-| 이전 Agent 저장 형식의 백업 복원본을 변환하고 범위가 바뀐 비밀을 다시 암호화하는 절차 | `src/infrastructure/db/agentDataMigration.ts`와 `scripts/migrate-agent-data.ts`; 원본 DB를 직접 수정하지 않는다 | 코드 |
+| 현재 PostgreSQL 스키마. `items`와 파생 컬럼·부분 인덱스, Better Auth 테이블, `catalog_vectors`, `runtime_sessions`, 기준선 버전 | `src/infrastructure/db/migrations.ts`. 빈 DB를 advisory lock 아래 초기화하고 다른 스키마는 거부한다 | 코드 |
 | 선택된 모델의 facts와 실행 레지스트리 | 저장 형태·검증은 `src/domain/llm/providerModels.ts`, runtime facts·가격 계산은 `src/domain/llm/models.ts`, 선택·삭제는 `src/application/llm/modelRegistry.ts`가 소유한다 | 코드 |
 | 내부 self-hosted 모델의 유형·modality·기능 해석 | `src/infrastructure/llm/providerModelDiscovery.ts`; 명시적 메타데이터를 이름 추정보다 우선한다 | 코드 |
 | 공개 모델 카탈로그 조회·검증·공개 ID와 전송 ID 매핑·가격 | `src/infrastructure/llm/publishedModelFacts.ts`; `scripts/sync-models.ts`가 오프라인 스냅샷을 갱신한다 | 코드 |
@@ -205,7 +204,7 @@
 | 같은 도구 call ID를 실행·위임별로 구분하는 내부 키 | `src/domain/llm/types.ts` 의 `toolCallKey`. 트레이스와 UI가 author 경로·transfer ID·call ID를 함께 사용한다 | 구조 |
 | 401 응답 본문 | `src/shared/unauthorized.ts` | 구조 |
 | 거부된 sign-in 을 식별하는 코드 | `src/shared/signInError.ts` | 구조 |
-| Better Auth 계정 키와 스키마 이관 | `src/infrastructure/db/migrations.ts`; 현재 키는 `providerId + accountId`이며 `issuer` 값은 nullable로 보존한다 | 코드 |
+| Better Auth 계정 키와 테이블 구조 | `src/infrastructure/db/migrations.ts`; 키는 `providerId + accountId`이며 기존 `issuer` 값은 nullable로 보존한다 | 코드 |
 | 만료 행을 지우는 틱 | `src/lib/container.ts`의 `sweepExpiredRows`: items, Better Auth session, runtime_sessions를 정리한다. 호출은 `src/app/api/triggers/scan/route.ts`가 담당한다 | 코드 |
 | Better Auth 의 `user` 행을 멤버로 읽기. 스토어가 소유하지 않는 테이블에 대한 plain SQL | `src/infrastructure/db/repositories/memberRepository.ts` | 코드 |
 | 어떤 로그인 수단이 켜져 있는가 | `src/lib/config.ts` 의 `authProviders`. `auth.ts` 가 그대로 조립하고 로그인 페이지가 그대로 그린다 | 코드 |
