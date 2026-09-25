@@ -35,7 +35,7 @@ function fromChatItem(item: Item): Chat {
     chatId: item.chatId as string,
     title: item.title as string,
     ownerEmail: item.ownerEmail as string,
-    projectName: item.projectName as string | undefined,
+    agentName: item.agentName as string | undefined,
     workspaceId: item.workspaceId as string | undefined,
     linkedWorkspaces: item.linkedWorkspaces as Chat["linkedWorkspaces"],
     createdAt: item.createdAt as string,
@@ -55,7 +55,7 @@ function chatFields(chat: Chat): Item {
     chatId: chat.chatId,
     title: chat.title,
     ownerEmail: chat.ownerEmail,
-    projectName: chat.projectName ?? null,
+    agentName: chat.agentName ?? null,
     createdAt: chat.createdAt,
   };
 }

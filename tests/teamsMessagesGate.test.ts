@@ -15,14 +15,14 @@ const { handled, claim, settle, verdict } = vi.hoisted(() => ({
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 vi.mock("@/lib/container", () => ({
   executionDeps: {},
-  projectRepository: {},
+  agentRepository: {},
   signArtifactUrl: undefined,
 }));
 vi.mock("@/infrastructure/teams/client", () => ({
   teamsClient: { verifyRequest: async () => verdict.value },
 }));
 vi.mock("@/infrastructure/llm/documentExtractor", () => ({ documentExtractor: {} }));
-vi.mock("@/application/execution/runProject", () => ({ executeAgent: () => {} }));
+vi.mock("@/application/execution/runAgent", () => ({ executeAgent: () => {} }));
 vi.mock("@/infrastructure/db/repositories/teamsActivityRepository", () => ({
   teamsActivityRepository: { forBot: () => ({ claim, settle }) },
 }));
@@ -35,7 +35,7 @@ vi.mock("@/application/teams/handleActivity", () => ({
 
 const { handleTeamsActivityRequest } = await import("@/app/api/teams/messages/_lib/handleActivityRequest");
 
-const BINDING = { projectName: "painter", credentials: { appId: "app-id", appPassword: "secret" } };
+const BINDING = { agentName: "painter", credentials: { appId: "app-id", appPassword: "secret" } };
 
 function request(payload: unknown, authorization: string | null = "Bearer tok"): Request {
   return new Request("https://studio.example.com/api/teams/messages/painter", {

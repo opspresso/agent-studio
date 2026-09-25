@@ -9,7 +9,7 @@ import { teeToRunLog } from "./runLog";
 import { watchChatCancel } from "./cancelRun";
 import { ChatConflictError } from "./errors";
 import { readRuntimeSession } from "@/application/runtime/session";
-import { userMayAccessProject } from "@/application/project/projectUseCases";
+import { userMayAccessAgent } from "@/application/agent/agentUseCases";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { log } from "@/shared/logger";
@@ -18,7 +18,7 @@ import { ForbiddenError, ValidationError } from "@/application/errors";
 export interface WorkspaceContinuationDeps {
   chat: ChatDeps;
   workspaces: WorkspaceRepository;
-  authorize(ownerEmail: string, projectName: string): Promise<void>;
+  authorize(ownerEmail: string, agentName: string): Promise<void>;
   pullRequest(workspaceId: string, ownerEmail: string): Promise<PullRequestInfo | undefined>;
   now(): Date;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
@@ -47,22 +47,22 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
   const chat = await deps.chat.chats.get(item.chatId);
   const workspace = await deps.workspaces.get(item.workspaceId);
   const approval = await deps.workspaces.approval(item.workspaceId, item.approvalId);
-  if (!chat || chat.ownerEmail !== item.ownerEmail || chat.workspaceId || !chat.projectName ||
+  if (!chat || chat.ownerEmail !== item.ownerEmail || chat.workspaceId || !chat.agentName ||
     !workspace || workspace.ownerEmail !== item.ownerEmail || workspace.deleteRequestedAt ||
-    chat.linkedWorkspaces?.[item.projectName] !== workspace.id ||
+    chat.linkedWorkspaces?.[item.agentName] !== workspace.id ||
     !approval || approval.sourceChatId !== chat.chatId || approval.requestedBy !== item.ownerEmail || !isTerminalCodingApproval(approval.status)) {
     await save({ status: "cancelled", error: "The source chat, Workspace or action is no longer available for continuation." });
     return;
   }
-  const project = await deps.chat.projects.get(chat.projectName);
-  if (!project || !(await userMayAccessProject(project, item.ownerEmail))) {
-    await save({ status: "cancelled", error: "The source project is no longer accessible." });
+  const agent = await deps.chat.agents.get(chat.agentName);
+  if (!agent || !(await userMayAccessAgent(agent, item.ownerEmail))) {
+    await save({ status: "cancelled", error: "The source agent is no longer accessible." });
     return;
   }
-  try { await deps.authorize(item.ownerEmail, item.projectName); }
+  try { await deps.authorize(item.ownerEmail, item.agentName); }
   catch (error) {
     if (!(error instanceof ForbiddenError || error instanceof ValidationError)) throw error;
-    await save({ status: "cancelled", error: "The requesting account can no longer run this project." }); return;
+    await save({ status: "cancelled", error: "The requesting account can no longer run this agent." }); return;
   }
   let pullRequest: PullRequestInfo | undefined;
   let ciFailure: string | undefined;
@@ -95,8 +95,8 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     try { pullRequest = await deps.pullRequest(workspace.id, item.ownerEmail); }
     catch { pullRequest = workspace.pullRequest; }
   }
-  const configuration = project.configuration;
-  if (!configuration) { await save({ status: "failed", error: "The source project has no Agent configuration." }); return; }
+  const configuration = agent.configuration;
+  if (!configuration) { await save({ status: "failed", error: "The source agent has no Agent configuration." }); return; }
   let runId: string;
   try { runId = await claimChatRun(deps.chat.chats, chat.chatId); }
   catch (error) {
@@ -120,7 +120,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
       dueAt: new Date(now.getTime() + RUN_LEASE_SECONDS * 1000).toISOString() };
     const outcome = item.phase === "ci" ? (ciFailure || pullRequest?.ci === "failed" ? "failed" : "succeeded") : approval.status;
     const result = item.phase === "ci" ? (ciFailure ?? `PR #${pullRequest!.number} checks: ${pullRequest!.ci}`) : approval.result;
-    const event = { event: item.phase === "ci" ? "workspace_ci_result" : "workspace_action_result", workspace_id: workspace.id, workspace_project: workspace.projectName, approval_id: approval.id,
+    const event = { event: item.phase === "ci" ? "workspace_ci_result" : "workspace_action_result", workspace_id: workspace.id, workspace_agent: workspace.agentName, approval_id: approval.id,
       action: approval.action.kind, status: outcome, result: result ?? null, ...(pullRequest ? { pull_request: pullRequest } : {}),
       ...(ciWatch && !item.phase ? { ci_watch: ciWatch } : {}) };
     const claimed = await deps.workspaces.updateContinuation(running, item.revision, {
@@ -139,7 +139,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     const controller = new AbortController();
     const runSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     stopCancel = watchChatCancel(deps.chat.chats, chat.chatId, runId, controller);
-    const source = deps.chat.runAgent({ project, configuration, actor: { kind: "user", id: item.ownerEmail },
+    const source = deps.chat.runAgent({ agent, configuration, actor: { kind: "user", id: item.ownerEmail },
       conversation: chatConversation(chat.chatId), signal: runSignal,
       messages: [{ role: "system", content: CONTINUATION_INSTRUCTION }, { role: "user", content: JSON.stringify(event) }] });
     const tee = teeToRunLog(deps.chat, chat.chatId, runId, runAndPersist(deps.chat, chat, source, runSignal));

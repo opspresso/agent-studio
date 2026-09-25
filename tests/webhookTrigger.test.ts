@@ -10,10 +10,10 @@ import type { TriggerRunnerDeps } from "@/application/trigger/deps";
 import { REPAIR_AFTER_SECONDS } from "@/application/trigger/repairLostRuns";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import {
-  PROJECT_WEBHOOK_ID,
+  AGENT_WEBHOOK_ID,
   type TriggerRun,
   type WebhookTrigger,
 } from "@/domain/trigger/types";
@@ -25,7 +25,7 @@ process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 3).toString("base64");
 
 const SECRET = "asw_test-secret-value";
 
-const project: Project = {
+const agent: Agent = {
   name: "p",
   displayName: "P",
   description: "",
@@ -36,7 +36,7 @@ const project: Project = {
 };
 
 const configuration: AgentConfiguration = {
-  projectName: "p",
+  agentName: "p",
 
   systemPrompt: "",
 
@@ -49,12 +49,12 @@ const configuration: AgentConfiguration = {
 
 function trigger(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
   return {
-    projectName: "p",
-    triggerId: PROJECT_WEBHOOK_ID,
+    agentName: "p",
+    triggerId: AGENT_WEBHOOK_ID,
     kind: "webhook",
     description: "",
     enabled: true,
-    secret: secretCipher.encrypt(SECRET, triggerSecretContext("p", PROJECT_WEBHOOK_ID)),
+    secret: secretCipher.encrypt(SECRET, triggerSecretContext("p", AGENT_WEBHOOK_ID)),
     allowConcurrent: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -106,7 +106,7 @@ function fixture(
   const runs: Fixture["runs"] = [];
   const triggers: TriggerRepository = {
     get: async () => (opts.stored === undefined ? trigger() : opts.stored),
-    listByProject: async () => [],
+    listByAgent: async () => [],
     listSchedules: async () => [],
     create: async () => {},
     put: async () => {},
@@ -132,7 +132,7 @@ function fixture(
     },
     // Bounded the way the real query is, so the repair sweep a delivery runs on
     // its way out is exercised against the window it actually asks for.
-    listRuns: async (_project, triggerId, limit, listOpts = {}) =>
+    listRuns: async (_agent, triggerId, limit, listOpts = {}) =>
       rows
         .filter((r) => r.triggerId === triggerId)
         .filter((r) => !listOpts.startedBefore || (r.startedAt ?? "") < listOpts.startedBefore)
@@ -145,7 +145,7 @@ function fixture(
     runs,
     deps: {
       triggers,
-      projects: { get: async () => ({ ...project, configuration: opts.configuration === undefined ? configuration : opts.configuration ?? undefined }), list: async () => [], put: async () => {}, delete: async () => {} } as never,
+      agents: { get: async () => ({ ...agent, configuration: opts.configuration === undefined ? configuration : opts.configuration ?? undefined }), list: async () => [], put: async () => {}, delete: async () => {} } as never,
       cipher: secretCipher,
       runSlots: memorySlots(),
       async *run(input) {
@@ -170,7 +170,7 @@ describe("payloadInput", () => {
     expect(payloadInput(payload).message).toBe(`Trigger payload:\n\n${JSON.stringify(payload, null, 2)}`);
   });
 
-  it("serialises the payload into the message for an agent project", () => {
+  it("serialises the payload into the message for an agent", () => {
     const input = payloadInput({ event: "push" });
     expect(input.message).toContain('"event": "push"');
   });
@@ -205,10 +205,10 @@ describe("admitDelivery", () => {
     expect(f.claimed.size).toBe(0);
     expect(f.rows).toHaveLength(0);
   });
-  it("rejects tampering and signatures scoped to another project", async () => {
+  it("rejects tampering and signatures scoped to another agent", async () => {
     const f = fixture();
     expect((await admitDelivery(f.deps, "p", signed({ body: '{}' }), null)).status).toBe("unauthorized");
-    expect((await admitDelivery(f.deps, "another-project", signed(), null)).status).toBe("unauthorized");
+    expect((await admitDelivery(f.deps, "another-agent", signed(), null)).status).toBe("unauthorized");
     expect(f.claimed.size).toBe(0);
   });
   it("authenticates ping without starting a model and validates delivery metadata", async () => {
@@ -233,10 +233,10 @@ describe("admitDelivery", () => {
     );
   });
 
-  it("refuses a webhook ciphertext moved to another project", async () => {
+  it("refuses a webhook ciphertext moved to another agent", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const f = fixture();
-    expect((await admitDelivery(f.deps, "other-project", SECRET, null)).status).toBe(
+    expect((await admitDelivery(f.deps, "other-agent", SECRET, null)).status).toBe(
       "unauthorized",
     );
     expect(error).toHaveBeenCalled();
@@ -247,7 +247,7 @@ describe("admitDelivery", () => {
     expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe("accepted");
   });
 
-  it("reports a project with no webhook as not configured", async () => {
+  it("reports an agent with no webhook as not configured", async () => {
     const f = fixture({ stored: null });
     expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe(
       "not-configured",
@@ -276,7 +276,7 @@ describe("admitDelivery", () => {
     const result = await admitDelivery(f.deps, "p", SECRET, null);
     expect(result.status).toBe("accepted");
     expect(f.rows).toHaveLength(1);
-    expect(f.rows[0]).toMatchObject({ status: "running", triggerId: PROJECT_WEBHOOK_ID });
+    expect(f.rows[0]).toMatchObject({ status: "running", triggerId: AGENT_WEBHOOK_ID });
   });
 
   it("refuses a redelivery of the same Idempotency-Key without a second history row", async () => {
@@ -418,7 +418,7 @@ describe("executeDelivery", () => {
     const f = fixture();
     await executeDelivery(f.deps, await accept(f), {});
     expect(f.runs[0]?.actorKind).toBe("webhook");
-    expect(triggerActor(trigger())).toEqual({ kind: "webhook", id: `p:${PROJECT_WEBHOOK_ID}` });
+    expect(triggerActor(trigger())).toEqual({ kind: "webhook", id: `p:${AGENT_WEBHOOK_ID}` });
   });
 
   it("finishes a row an earlier lost instance stranded, with no ticker involved", async () => {
@@ -427,8 +427,8 @@ describe("executeDelivery", () => {
     // durability fix would simply not exist for that shape.
     const f = fixture();
     f.rows.push({
-      projectName: "p",
-      triggerId: PROJECT_WEBHOOK_ID,
+      agentName: "p",
+      triggerId: AGENT_WEBHOOK_ID,
       runId: "lost-delivery",
       status: "running",
       startedAt: new Date(Date.now() - (REPAIR_AFTER_SECONDS + 60) * 1000).toISOString(),
@@ -460,7 +460,7 @@ describe("executeDelivery", () => {
   });
 
   it("counts a picture a subagent drew", async () => {
-    // An image subagent is how an agent project delegates drawing, and its
+    // An image subagent is how an agent delegates drawing, and its
     // chunks are always authored — counted only behind the top-level gate,
     // that delegation closed as an empty `succeeded` row, the exact state
     // `imagesOnlyResult` exists to prevent.
@@ -557,7 +557,7 @@ describe("executeDelivery", () => {
       },
     };
     const admitted = await accept(f);
-    f.rows.push({ projectName: "p", triggerId: PROJECT_WEBHOOK_ID, runId: "lost",
+    f.rows.push({ agentName: "p", triggerId: AGENT_WEBHOOK_ID, runId: "lost",
       status: "running", startedAt: new Date(Date.now() - (REPAIR_AFTER_SECONDS + 60) * 1000).toISOString() });
     await expect(executeDelivery(f.deps, admitted, poison)).resolves.toBeUndefined();
     expect(f.rows[0]).toMatchObject({ status: "failed", error: "payload too deep" });

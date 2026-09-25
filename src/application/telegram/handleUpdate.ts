@@ -1,4 +1,4 @@
-import { resolveAgentProject, runRememberedTurn } from "@/application/messaging/rememberedTurn";
+import { resolveAgentSummary, runRememberedTurn } from "@/application/messaging/rememberedTurn";
 import { createTelegramReplyChannel } from "@/application/telegram/replyChannel";
 import { botIdFromToken, type TelegramUpdateDisposition } from "@/application/telegram/engagement";
 import type {
@@ -23,9 +23,9 @@ import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
  */
 const ALBUM_GRACE_MS = 1000;
 
-/** Credentials and project binding for a project-dedicated bot. */
+/** Credentials and agent binding for an agent-dedicated bot. */
 export interface TelegramBotBinding {
-  projectName: string;
+  agentName: string;
   botToken: string;
   /** Learned from `getMe` when the token was saved; absent until then. */
   botUsername?: string;
@@ -170,7 +170,7 @@ async function claimsAlbum(
     await (deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))))(ALBUM_GRACE_MS);
   }
   const nowSeconds = Math.floor(Date.now() / 1000);
-  const claims = deps.albums(binding.projectName, botIdFromToken(binding.botToken) ?? "unknown");
+  const claims = deps.albums(binding.agentName, botIdFromToken(binding.botToken) ?? "unknown");
   try {
     const token = await claims.claim(message.media_group_id, nowSeconds, nowSeconds + RUN_LEASE_SECONDS);
     if (token !== null) {
@@ -186,7 +186,7 @@ async function claimsAlbum(
 }
 
 /**
- * Run the agent project for one update and stream the reply.
+ * Run the agent for one update and stream the reply.
  *
  * Whether this update was for the bot at all is already decided:
  * `classifyTelegramUpdate` is the single owner of that, and it runs in the
@@ -207,7 +207,7 @@ export async function handleTelegramUpdate(
   if (deps.destinations) {
     const botId = botIdFromToken(binding.botToken) ?? "unknown";
     await deps.destinations
-      .put(binding.projectName, botId, destinationOf(message, threadId))
+      .put(binding.agentName, botId, destinationOf(message, threadId))
       .catch((error) => log.warn("telegram", "could not remember the message destination", error));
   }
   const reply = createTelegramReplyChannel(
@@ -221,31 +221,31 @@ export async function handleTelegramUpdate(
     { ...(deps.sleep ? { sleep: deps.sleep } : {}) },
   );
 
-  // A command is answered whether or not the project has a runnable configuration:
+  // A command is answered whether or not the agent has a runnable configuration:
   // `/start` on a bot that is currently failing should still say what it is.
   if (disposition.kind === "command") {
-    const project = await deps.projects.get(binding.projectName);
-    const intro = project?.description?.trim() || `the ${binding.projectName} project`;
+    const agent = await deps.agents.get(binding.agentName);
+    const intro = agent?.description?.trim() || `the ${binding.agentName} agent`;
     await reply.say(
-      disposition.command === "start" ? `Hello — I am ${project?.displayName ?? binding.projectName}, ${intro}.\n\n${HELP}` : HELP,
+      disposition.command === "start" ? `Hello — I am ${agent?.displayName ?? binding.agentName}, ${intro}.\n\n${HELP}` : HELP,
     );
     return;
   }
 
-  const runnable = await resolveAgentProject(deps, binding.projectName, reply);
+  const runnable = await resolveAgentSummary(deps, binding.agentName, reply);
   if (!runnable) {
     return;
   }
-  const { project, configuration } = runnable;
+  const { agent, configuration } = runnable;
 
   if (!(await claimsAlbum(deps, binding, message, disposition.text))) {
-    log.info("telegram", `album member skipped project=${project.name} chat=${message.chat.id}`);
+    log.info("telegram", `album member skipped agent=${agent.name} chat=${message.chat.id}`);
     return;
   }
 
   log.info(
     "telegram",
-    `run start project=${project.name} chat=${message.chat.id} message=${message.message_id}`,
+    `run start agent=${agent.name} chat=${message.chat.id} message=${message.message_id}`,
   );
 
   const warnings: string[] = [];
@@ -254,7 +254,7 @@ export async function handleTelegramUpdate(
   }
   const userId = disposition.userId;
   await runRememberedTurn(deps, {
-    project,
+    agent,
     configuration,
     reply,
     conversation: telegramConversation(message.chat.id, threadId),

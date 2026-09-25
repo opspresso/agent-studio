@@ -3,19 +3,19 @@
 import { SectionHeading } from "@/app/_components/SectionHeading";
 import { Fragment, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { canEditProject, useViewer } from "@/app/_lib/useViewer";
+import { canEditAgent, useViewer } from "@/app/_lib/useViewer";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { LoadingText } from "@/app/_components/PageState";
 import { CodeBlock } from "@/app/_components/CodeBlock";
 import { Badge, Card, Code, Group, SegmentedControl, Stack, Table, Text } from "@mantine/core";
 import {
-  getProject,
-  getProjectSlack,
-  getProjectTeams,
-  getProjectTelegram,
+  getAgent,
+  getAgentSlack,
+  getAgentTeams,
+  getAgentTelegram,
   listTriggers,
 } from "../../lib/api";
-import { PROJECT_WEBHOOK_ID } from "@/domain/trigger/types";
+import { AGENT_WEBHOOK_ID } from "@/domain/trigger/types";
 import {
   AUTH_LABEL,
   buildApiReference,
@@ -198,25 +198,25 @@ export default function ApiReferencePage() {
 
     async function load() {
       try {
-        const project = await getProject(name);
-        const isOwner = canEditProject(viewer, project.ownerEmail);
+        const agent = await getAgent(name);
+        const isOwner = canEditAgent(viewer, agent.ownerEmail);
 
         const [slack, telegram, teams, triggers] = await Promise.all([
-          isOwner ? getProjectSlack(name).catch(() => null) : Promise.resolve(null),
-          isOwner ? getProjectTelegram(name).catch(() => null) : Promise.resolve(null),
-          isOwner ? getProjectTeams(name).catch(() => null) : Promise.resolve(null),
+          isOwner ? getAgentSlack(name).catch(() => null) : Promise.resolve(null),
+          isOwner ? getAgentTelegram(name).catch(() => null) : Promise.resolve(null),
+          isOwner ? getAgentTeams(name).catch(() => null) : Promise.resolve(null),
           // Owner-gated like Slack: the list carries the webhook's masked secret,
           // and a viewer who cannot read the secret cannot call the endpoint.
           isOwner ? listTriggers(name).catch(() => null) : Promise.resolve(null),
         ]);
         const webhook =
           triggers?.triggers.find(
-            (trigger) => trigger.triggerId === PROJECT_WEBHOOK_ID && trigger.kind === "webhook",
+            (trigger) => trigger.triggerId === AGENT_WEBHOOK_ID && trigger.kind === "webhook",
           ) ?? null;
 
         const ctx: ApiReferenceContext = {
-          projectName: project.name,
-          configured: project.configured ?? null,
+          agentName: agent.name,
+          configured: agent.configured ?? null,
           origin: typeof window === "undefined" ? "" : window.location.origin,
           slack: slack ? { configured: slack.configured } : null,
           telegram: telegram ? { configured: telegram.configured } : null,
@@ -253,7 +253,7 @@ export default function ApiReferencePage() {
 
   return (
     <Stack gap="md">
-      <SectionHeading title={t("project.tab.apiReference")} description={t("apiReference.intro")} />
+      <SectionHeading title={t("agent.tab.apiReference")} description={t("apiReference.intro")} />
       <Text fz="sm" c="dimmed">
         {t("apiReference.environmentHint")}
       </Text>

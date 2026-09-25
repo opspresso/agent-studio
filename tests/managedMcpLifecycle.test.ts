@@ -588,14 +588,14 @@ describe("managed MCP reconcile", () => {
   });
 
   it("probes with the entry's headers minus reserved metadata spellings", async () => {
-    // The health probe has no user, project, or conversation — a stored
+    // The health probe has no user, agent, or conversation — a stored
     // spelling of a reserved metadata header must not ride it claiming one.
     const f = fixture({
       existing: managedRow({
         headers: {
           Authorization: "enc:v1:Bearer static",
           "X-User-Email": "enc:v1:forged@example.com",
-          "x-tenant-id": "enc:v1:forged-project",
+          "x-tenant-id": "enc:v1:forged-agent",
           "X-Conversation-Id": "enc:v1:chat:forged",
         },
       }),

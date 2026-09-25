@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentModelRejectReason } from "@/application/project/modelCompatibility";
+import { agentModelRejectReason } from "@/application/agent/modelCompatibility";
 import type { ModelConfig } from "@/domain/llm/models";
 
 const model: ModelConfig = {

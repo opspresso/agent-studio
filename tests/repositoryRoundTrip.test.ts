@@ -11,7 +11,7 @@ import type { ChatMessage } from "@/domain/chat/types";
 import { keys } from "@/infrastructure/db/keys";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
-import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
+import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
 import { artifactRepository } from "@/infrastructure/db/repositories/artifactRepository";
@@ -28,12 +28,12 @@ beforeEach(() => {
   store.rows.clear();
 });
 
-/** A live project row a configuration, usage or trace write may land in. */
-function seedProject(name: string, over: Record<string, unknown> = {}): void {
+/** A live agent row a configuration, usage or trace write may land in. */
+function seedAgent(name: string, over: Record<string, unknown> = {}): void {
   store.seed([
     {
-      ...keys.project(name),
-      entityType: "PROJECT",
+      ...keys.agent(name),
+      entityType: "AGENT",
       name,
       displayName: name,
       description: "",
@@ -47,28 +47,28 @@ function seedProject(name: string, over: Record<string, unknown> = {}): void {
 
 describe("telegramDestinationRepository", () => {
   it("keeps destinations separate by bot and lists the newest first", async () => {
-    seedProject("telegram-project");
-    await telegramDestinationRepository.put("telegram-project", 42, {
+    seedAgent("telegram-agent");
+    await telegramDestinationRepository.put("telegram-agent", 42, {
       chatId: 100,
       chatType: "private",
       title: "Bruce",
       lastSeenAt: "2026-01-01T00:00:00.000Z",
     });
-    await telegramDestinationRepository.put("telegram-project", 42, {
+    await telegramDestinationRepository.put("telegram-agent", 42, {
       chatId: -5,
       chatType: "supergroup",
       title: "Ops",
       threadId: 9,
       lastSeenAt: "2026-01-02T00:00:00.000Z",
     });
-    await telegramDestinationRepository.put("telegram-project", 43, {
+    await telegramDestinationRepository.put("telegram-agent", 43, {
       chatId: 200,
       chatType: "private",
       title: "Other bot",
       lastSeenAt: "2026-01-03T00:00:00.000Z",
     });
 
-    expect(await telegramDestinationRepository.list("telegram-project", 42, 100)).toEqual([
+    expect(await telegramDestinationRepository.list("telegram-agent", 42, 100)).toEqual([
       {
         chatId: -5,
         chatType: "supergroup",
@@ -86,7 +86,7 @@ describe("telegramDestinationRepository", () => {
   });
 
   it("bounds observed destinations to the newest application page", async () => {
-    seedProject("many-destinations");
+    seedAgent("many-destinations");
     for (let index = 0; index < 205; index++) {
       await telegramDestinationRepository.put("many-destinations", 42, {
         chatId: index + 1,
@@ -111,7 +111,7 @@ describe("telegramDestinationRepository", () => {
       return withTelegramDestinationIndex({
         ...keys.telegramDestination("legacy-destinations", 42, chatId),
         entityType: "telegramDestination",
-        projectName: "legacy-destinations",
+        agentName: "legacy-destinations",
         botId: 42,
         chatId,
         chatType: "private",
@@ -140,8 +140,8 @@ afterAll(() => {
   vi.useRealTimers();
 });
 
-describe("Project atomic writes", () => {
-  const project = {
+describe("Agent atomic writes", () => {
+  const agent = {
     name: "atomic",
     displayName: "Atomic",
     description: "",
@@ -154,12 +154,12 @@ describe("Project atomic writes", () => {
     // The write spreads the whole entity, but the read maps fields by name —
     // which is exactly how these two were stored and then dropped on every
     // read: the console saved visibility with a 200 and got "public" back.
-    seedProject(project.name);
-    await projectRepository.update(
-      { ...project, visibility: "private", memberEmails: ["invited@example.com"] },
+    seedAgent(agent.name);
+    await agentRepository.update(
+      { ...agent, visibility: "private", memberEmails: ["invited@example.com"] },
       NOW,
     );
-    const read = await projectRepository.get(project.name);
+    const read = await agentRepository.get(agent.name);
     expect(read?.visibility).toBe("private");
     expect(read?.memberEmails).toEqual(["invited@example.com"]);
   });
@@ -167,9 +167,9 @@ describe("Project atomic writes", () => {
   it("refuses an invalid stored visibility instead of treating it as public", async () => {
     store.seed([
       {
-        ...keys.project("corrupt-visibility"),
-        entityType: "PROJECT",
-        GSI1PK: keys.typePartition("PROJECT"),
+        ...keys.agent("corrupt-visibility"),
+        entityType: "AGENT",
+        GSI1PK: keys.typePartition("AGENT"),
         GSI1SK: "corrupt-visibility",
         name: "corrupt-visibility",
         displayName: "Corrupt",
@@ -181,30 +181,30 @@ describe("Project atomic writes", () => {
       },
     ]);
 
-    await expect(projectRepository.get("corrupt-visibility")).rejects.toThrow(
-      /invalid project visibility/,
+    await expect(agentRepository.get("corrupt-visibility")).rejects.toThrow(
+      /invalid agent visibility/,
     );
   });
 
-  it("guards project replacement with the previously read timestamp", async () => {
-    seedProject(project.name);
+  it("guards agent replacement with the previously read timestamp", async () => {
+    seedAgent(agent.name);
 
     // A snapshot someone else has since replaced is refused, and the row keeps
     // what the other writer put there.
-    await expect(projectRepository.update(project, "2025-12-31T00:00:00.000Z")).rejects.toThrow(
+    await expect(agentRepository.update(agent, "2025-12-31T00:00:00.000Z")).rejects.toThrow(
       expect.objectContaining({ name: store.CONDITIONAL_WRITE_FAILED }),
     );
-    expect((await projectRepository.get(project.name))?.updatedAt).toBe(NOW);
+    expect((await agentRepository.get(agent.name))?.updatedAt).toBe(NOW);
 
-    // So is a project mid-deletion, whatever timestamp the caller read.
-    seedProject(project.name, { deletingAt: NOW });
-    await expect(projectRepository.update(project, NOW)).rejects.toThrow(
+    // So is an agent mid-deletion, whatever timestamp the caller read.
+    seedAgent(agent.name, { deletingAt: NOW });
+    await expect(agentRepository.update(agent, NOW)).rejects.toThrow(
       expect.objectContaining({ name: store.CONDITIONAL_WRITE_FAILED }),
     );
 
-    seedProject(project.name);
-    await projectRepository.update(project, NOW);
-    expect((await projectRepository.get(project.name))?.updatedAt).toBe(project.updatedAt);
+    seedAgent(agent.name);
+    await agentRepository.update(agent, NOW);
+    expect((await agentRepository.get(agent.name))?.updatedAt).toBe(agent.updatedAt);
   });
 
 
@@ -272,39 +272,39 @@ describe("runSlotRepository ownership", () => {
 
 describe("triggerRepository messaging destination round-trip", () => {
   it("fences queue repair against renewal and atomically moves one run to its actual start time", async () => {
-    const projectName = "queued-round-trip";
-    seedProject(projectName);
-    const queued = { projectName, triggerId: "daily", runId: "queued", status: "queued" as const,
+    const agentName = "queued-round-trip";
+    seedAgent(agentName);
+    const queued = { agentName, triggerId: "daily", runId: "queued", status: "queued" as const,
       queuedAt: new Date(Date.parse(NOW) - 5000).toISOString(), queueLeaseUntil: new Date(Date.parse(NOW) + 60_000).toISOString() };
     await triggerRepository.appendRun(queued);
     const renewed = { ...queued, queueLeaseUntil: new Date(Date.parse(NOW) + 120_000).toISOString() };
     expect(await triggerRepository.updateQueuedRun(queued, renewed)).toBe(true);
     expect(await triggerRepository.updateQueuedRun(queued, { ...queued, status: "failed", endedAt: NOW })).toBe(false);
-    const started = { projectName, triggerId: "daily", runId: queued.runId, queuedAt: queued.queuedAt, status: "running" as const, startedAt: NOW };
+    const started = { agentName, triggerId: "daily", runId: queued.runId, queuedAt: queued.queuedAt, status: "running" as const, startedAt: NOW };
     expect(await triggerRepository.updateQueuedRun(renewed, started)).toBe(true);
     expect(await triggerRepository.updateQueuedRun(renewed, started)).toBe(false);
-    expect(await triggerRepository.listRuns(projectName, "daily", 10)).toEqual([started]);
-    expect(await triggerRepository.listRuns(projectName, "daily", 10, { status: "queued" })).toEqual([]);
-    expect(await store.getItem(keys.triggerRun(projectName, "daily", queued.queuedAt, queued.runId))).toBeNull();
-    expect(await triggerRepository.listRuns(projectName, "daily", 1, { status: "running", startedBefore: new Date(Date.parse(NOW) - 1).toISOString() })).toEqual([]);
+    expect(await triggerRepository.listRuns(agentName, "daily", 10)).toEqual([started]);
+    expect(await triggerRepository.listRuns(agentName, "daily", 10, { status: "queued" })).toEqual([]);
+    expect(await store.getItem(keys.triggerRun(agentName, "daily", queued.queuedAt, queued.runId))).toBeNull();
+    expect(await triggerRepository.listRuns(agentName, "daily", 1, { status: "running", startedBefore: new Date(Date.parse(NOW) - 1).toISOString() })).toEqual([]);
   });
 
   it("finds expired queue leases before the limit and prevents their late dispatch", async () => {
-    const projectName = "queued-repair";
-    seedProject(projectName);
-    const expired = { projectName, triggerId: "daily", runId: "lost", status: "queued" as const,
+    const agentName = "queued-repair";
+    seedAgent(agentName);
+    const expired = { agentName, triggerId: "daily", runId: "lost", status: "queued" as const,
       queuedAt: new Date(Date.parse(NOW) - 60_000).toISOString(), queueLeaseUntil: new Date(Date.parse(NOW) - 1).toISOString() };
     await triggerRepository.appendRun(expired);
     for (let index = 0; index < 3; index++) await triggerRepository.appendRun({ ...expired, runId: `live-${index}`, queueLeaseUntil: new Date(Date.parse(NOW) + 60_000).toISOString() });
-    expect(await triggerRepository.listRuns(projectName, "daily", 1, { status: "queued", queueLeaseBefore: NOW })).toEqual([expired]);
+    expect(await triggerRepository.listRuns(agentName, "daily", 1, { status: "queued", queueLeaseBefore: NOW })).toEqual([expired]);
     expect(await triggerRepository.updateQueuedRun(expired, { ...expired, status: "running", startedAt: NOW })).toBe(false);
     expect(await triggerRepository.updateQueuedRun(expired, { ...expired, status: "failed", endedAt: NOW })).toBe(true);
     expect(await triggerRepository.updateQueuedRun(expired, { ...expired, queueLeaseUntil: new Date(Date.parse(NOW) + 60_000).toISOString() })).toBe(false);
   });
   it("preserves schedule destinations through put + get", async () => {
-    seedProject("destination-round-trip");
+    seedAgent("destination-round-trip");
     await triggerRepository.put({
-      projectName: "destination-round-trip",
+      agentName: "destination-round-trip",
       triggerId: "daily",
       kind: "schedule",
       description: "",
@@ -333,9 +333,9 @@ describe("triggerRepository messaging destination round-trip", () => {
   });
 
   it("preserves per-destination results through append + list", async () => {
-    seedProject("destination-result-round-trip");
+    seedAgent("destination-result-round-trip");
     await triggerRepository.appendRun({
-      projectName: "destination-result-round-trip",
+      agentName: "destination-result-round-trip",
       triggerId: "daily",
       runId: "run-1",
       status: "succeeded",
@@ -361,14 +361,14 @@ describe("triggerRepository messaging destination round-trip", () => {
 });
 
 describe("stored Agent MCP bindings", () => {
-  const projectKey = keys.project("bindings");
+  const agentKey = keys.agent("bindings");
 
   function writeRaw(mcpList: unknown): void {
     store.seed([
       {
-        ...projectKey, entityType: "PROJECT", name: "bindings", displayName: "Bindings", ownerEmail: "owner@example.test",
+        ...agentKey, entityType: "AGENT", name: "bindings", displayName: "Bindings", ownerEmail: "owner@example.test",
         configuration: {
-          projectName: "bindings", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false },
+          agentName: "bindings", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false },
           mcpList, skillList: [], subagentList: [],
         },
         createdAt: NOW, updatedAt: NOW,
@@ -379,7 +379,7 @@ describe("stored Agent MCP bindings", () => {
   it("keeps header overrides on stored bindings", async () => {
     writeRaw([{ name: "alpha", headers: { Authorization: "enc:v2:x", "X-Gone": null } }]);
 
-    const configuration = (await projectRepository.get("bindings"))?.configuration;
+    const configuration = (await agentRepository.get("bindings"))?.configuration;
 
     expect(configuration?.mcpList).toEqual([
       { name: "alpha", headers: { Authorization: "enc:v2:x", "X-Gone": null } },
@@ -392,7 +392,7 @@ describe("stored Agent MCP bindings", () => {
     // what the Agent configuration selected.
     writeRaw([{ name: "alpha", tools: ["search", "fetch"] }]);
 
-    const configuration = (await projectRepository.get("bindings"))?.configuration;
+    const configuration = (await agentRepository.get("bindings"))?.configuration;
 
     expect(configuration?.mcpList).toEqual([{ name: "alpha", tools: ["search", "fetch"] }]);
   });
@@ -407,7 +407,7 @@ describe("stored Agent MCP bindings", () => {
       },
     ]);
 
-    const configuration = (await projectRepository.get("bindings"))?.configuration;
+    const configuration = (await agentRepository.get("bindings"))?.configuration;
 
     expect(configuration?.mcpList).toEqual([
       {
@@ -424,7 +424,7 @@ describe("stored Agent MCP bindings", () => {
     // not be stored as a narrowing that would offer none.
     writeRaw([{ name: "alpha", tools: [] }]);
 
-    const configuration = (await projectRepository.get("bindings"))?.configuration;
+    const configuration = (await agentRepository.get("bindings"))?.configuration;
 
     expect(configuration?.mcpList).toEqual([{ name: "alpha" }]);
   });
@@ -438,7 +438,7 @@ describe("stored Agent MCP bindings", () => {
     ["unknown field", [{ name: "alpha", url: "https://example.test" }]],
   ])("rejects a %s instead of silently dropping a binding", async (_name, bindings) => {
     writeRaw(bindings);
-    await expect(projectRepository.get("bindings")).rejects.toThrow(/Stored Agent MCP binding/);
+    await expect(agentRepository.get("bindings")).rejects.toThrow(/Stored Agent MCP binding/);
   });
 });
 
@@ -656,7 +656,7 @@ describe("artifactRepository round-trip", () => {
       mimeType: "image/png",
       filename: "chart.png",
       byteSize: 1234,
-      projectName: "p1",
+      agentName: "p1",
       actor: { kind: "slack" as const, id: "U0ABCDEF" },
       // A Slack run looks the asker's address up so their pictures land in
       // their own gallery; the actor stays the Slack id.
@@ -677,9 +677,9 @@ describe("artifactRepository round-trip", () => {
 
 describe("usageRepository.record", () => {
   it("materialises the row then adds into per-model maps under the same key", async () => {
-    seedProject("p");
+    seedAgent("p");
     const delta = {
-      projectName: "p",
+      agentName: "p",
       date: "2026-01-01",
       model: "openai/gpt-5-mini",
       calls: 1,
@@ -693,7 +693,7 @@ describe("usageRepository.record", () => {
     const key = keys.usage("p", "2026-01-01");
     expect(await store.getItem(key)).toMatchObject({
       entityType: "Usage",
-      projectName: "p",
+      agentName: "p",
       date: "2026-01-01",
       GSI1PK: keys.usageDatePartition("2026-01-01"),
       GSI1SK: "p",
@@ -719,11 +719,11 @@ describe("usageRepository.record", () => {
     });
   });
 
-  it("refuses to land a row in a project being cascade deleted", async () => {
-    seedProject("going", { deletingAt: NOW });
+  it("refuses to land a row in an agent being cascade deleted", async () => {
+    seedAgent("going", { deletingAt: NOW });
     await expect(
       usageRepository.record({
-        projectName: "going",
+        agentName: "going",
         date: "2026-01-01",
         model: "openai/gpt-5-mini",
         calls: 1,
@@ -739,7 +739,7 @@ describe("usageRepository.record", () => {
     store.seed([
       {
         ...keys.usage("p2", "2026-01-02"),
-        projectName: "p2",
+        agentName: "p2",
         date: "2026-01-02",
         calls: { "openai/gpt-5-mini": 2 },
         // inputTokens/outputTokens/cachedTokens/costUsd absent: must default to
@@ -747,10 +747,10 @@ describe("usageRepository.record", () => {
         // reads as.
       },
     ]);
-    const rows = await usageRepository.listByProject("p2", "2026-01-01", "2026-01-03");
+    const rows = await usageRepository.listByAgent("p2", "2026-01-01", "2026-01-03");
     expect(rows).toHaveLength(1);
     expect(rows[0]).toEqual({
-      projectName: "p2",
+      agentName: "p2",
       date: "2026-01-02",
       calls: { "openai/gpt-5-mini": 2 },
       inputTokens: {},
@@ -763,10 +763,10 @@ describe("usageRepository.record", () => {
 
 describe("traceRepository round-trip", () => {
   it("persists and loads a typed trace", async () => {
-    seedProject("p");
+    seedAgent("p");
     const trace = {
       traceId: "trace-1",
-      projectName: "p",
+      agentName: "p",
       status: "completed" as const,
       spans: [],
       startedAt: NOW,

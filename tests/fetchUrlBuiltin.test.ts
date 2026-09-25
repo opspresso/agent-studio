@@ -21,7 +21,7 @@ const PNG = Buffer.from("89504e470d0a1a0a", "hex").toString("base64");
 
 function input(over: Partial<RunAgentInput> = {}): RunAgentInput {
   return {
-    projectName: "p",
+    agentName: "p",
     model: MODEL,
     systemPrompt: "s",
     messages: [{ role: "user", content: "read it" }],

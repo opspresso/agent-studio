@@ -19,7 +19,7 @@ import {
 import { IconX } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
 import type { McpBinding, SubagentRef } from "../../lib/api";
-import { listProjectMcpTools } from "../../lib/api";
+import { listAgentMcpTools } from "../../lib/api";
 import { getMcp } from "@/app/tools/api";
 import { overridesToRows, rowsToOverrides, type OverrideRow } from "./mcpOverrides";
 import { McpBindingSettings, type ConfigurationSave } from "./McpBindingSettings";
@@ -303,8 +303,8 @@ function ToolSelector({
   onChange: (tools: string[]) => void;
   load: () => Promise<McpTool[]>;
   /**
-   * Bumped when the project's connection to this server changes. An OAuth
-   * server answers `401` until the project has authorized, and the connection
+   * Bumped when the agent's connection to this server changes. An OAuth
+   * server answers `401` until the agent has authorized, and the connection
    * card that authorizes it is in the same dialog as this list — so without a
    * signal the reader authorizes, watches the card go green, and the tools
    * above it stay on the failure they were loaded with.
@@ -319,7 +319,7 @@ function ToolSelector({
     let cancelled = false;
     // Back to loading, not "keep the old answer until the new one lands": a
     // stale error is what this reload exists to clear, and a stale *list* would
-    // be the tools of the credentials the project no longer uses.
+    // be the tools of the credentials the agent no longer uses.
     setTools(null);
     setError(null);
     load().then(
@@ -498,13 +498,13 @@ function OverrideEditor({
  * this Agent only; the URL always stays the registry's.
  */
 export function McpBindingInput({
-  projectName,
+  agentName,
   values,
   onChange,
   options,
   save,
 }: {
-  projectName: string;
+  agentName: string;
   values: McpBinding[];
   onChange: (values: McpBinding[]) => void;
   options: PickerOption[];
@@ -525,7 +525,7 @@ export function McpBindingInput({
    * whose header name is still blank has no place in an override map, so
    * deriving rows from the binding would delete a freshly added row before it
    * could be typed into. Same split as the registry header editor, which keeps
-   * its rows in the form and only projects them on submit.
+   * its rows in the form and only agents them on submit.
    */
   const [rowsByName, setRowsByName] = useState<Record<string, OverrideRow[]>>({});
 
@@ -635,7 +635,7 @@ export function McpBindingInput({
         })}
         {settingsFor && (
           <McpBindingSettings
-            projectName={projectName}
+            agentName={agentName}
             serverName={settingsFor}
             onClose={() => setSettingsFor(null)}
             save={save}
@@ -652,8 +652,8 @@ export function McpBindingInput({
                   onChange={(tools) => setTools(settingsFor, tools)}
                   reloadOn={connectionEpoch}
                   load={() =>
-                    listProjectMcpTools(
-                      projectName,
+                    listAgentMcpTools(
+                      agentName,
                       settingsFor,
                       values.find((v) => v.name === settingsFor)?.headers,
                                         )

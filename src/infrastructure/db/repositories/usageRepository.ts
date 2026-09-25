@@ -1,5 +1,5 @@
 /**
- * Usage repository. Daily per-project rows hold per-model maps (`calls`,
+ * Usage repository. Daily per-agent rows hold per-model maps (`calls`,
  * `inputTokens`, `outputTokens`, `cachedTokens`, `costUsd`) incremented
  * under the row lock, so two runs finishing at once both land.
  *
@@ -26,7 +26,7 @@ import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import { memberEmailFromActorKey } from "@/domain/execution/actor";
 import { daysBetween } from "@/shared/date";
 import type { ActorUsageRow, MemberUsageRow, UsageDelta, UsageRow } from "@/domain/usage/types";
-import { projectIsLive } from "@/infrastructure/db/projectLifecycle";
+import { agentIsLive } from "@/infrastructure/db/agentLifecycle";
 
 /**
  * Attribute the once-per-day notification claim is written to. One per kind, so
@@ -75,7 +75,7 @@ async function listUsageItems(
 
 function toUsageRow(item: Item): UsageRow {
   return {
-    projectName: String(item.projectName ?? ""),
+    agentName: String(item.agentName ?? ""),
     date: String(item.date ?? ""),
     calls: (item.calls as Record<string, number>) ?? {},
     inputTokens: (item.inputTokens as Record<string, number>) ?? {},
@@ -103,7 +103,7 @@ function added(row: Item | null, delta: UsageDelta, extra: Item): Item {
   const next: Item = {
     ...row,
     entityType: row?.entityType ?? extra.entityType,
-    projectName: row?.projectName ?? delta.projectName,
+    agentName: row?.agentName ?? delta.agentName,
     date: row?.date ?? delta.date,
     // Retention runs from the usage date, so a day's row is never purged
     // mid-aggregation and backfilled dates don't linger.
@@ -130,27 +130,27 @@ function added(row: Item | null, delta: UsageDelta, extra: Item): Item {
 export class PostgresUsageRepository implements UsageRepository {
   async record(delta: UsageDelta): Promise<void> {
     if (delta.idempotencyKey !== undefined) { await this.recordOnce(delta); return; }
-    await this.addTo(keys.usage(delta.projectName, delta.date), delta, {
+    await this.addTo(keys.usage(delta.agentName, delta.date), delta, {
       entityType: "Usage",
       GSI1PK: keys.usageDatePartition(delta.date),
-      GSI1SK: delta.projectName,
+      GSI1SK: delta.agentName,
     });
     if (delta.actor) {
-      // After the project total, and separately: attribution is additive, so a
+      // After the agent total, and separately: attribution is additive, so a
       // failure to write who spent it must not lose the fact that it was spent.
-      // No GSI entry — this row is only ever read within its project.
-      await this.addTo(keys.usageActor(delta.projectName, delta.date, delta.actor), delta, {
+      // No GSI entry — this row is only ever read within its agent.
+      await this.addTo(keys.usageActor(delta.agentName, delta.date, delta.actor), delta, {
         entityType: "Usage",
         actor: delta.actor,
       });
       // Third and last, same additive reasoning: the member's own daily row,
       // which the tier cap and the profile page both read. Only a `user` actor
-      // writes one — a machine caller has no personal budget, and a project
-      // token deliberately spends against its project's limits, not its
+      // writes one — a machine caller has no personal budget, and an agent
+      // token deliberately spends against its agent's limits, not its
       // owner's.
       const email = memberEmailFromActorKey(delta.actor);
       if (email) {
-        await updateItem(keys.usageMember(email, delta.date, delta.projectName), (row) =>
+        await updateItem(keys.usageMember(email, delta.date, delta.agentName), (row) =>
           added(row, delta, { entityType: "UsageMember", email }),
         );
       }
@@ -160,7 +160,7 @@ export class PostgresUsageRepository implements UsageRepository {
   /** The receipt and all projections commit together; retries cannot partially charge twice. */
   private async recordOnce(delta: UsageDelta): Promise<void> {
     if (!delta.idempotencyKey || delta.idempotencyKey.length > 256) throw new Error("Invalid usage event identity");
-    const receipt = keys.usageReceipt(delta.projectName, delta.idempotencyKey);
+    const receipt = keys.usageReceipt(delta.agentName, delta.idempotencyKey);
     const same = (item: Item) => {
       const stored = (item.delta ?? {}) as Record<string, unknown>;
       const entries = Object.entries(delta).filter(([, value]) => value !== undefined);
@@ -172,17 +172,17 @@ export class PostgresUsageRepository implements UsageRepository {
       return;
     }
     const ops: TransactOp[] = [
-      { kind: "check", key: keys.project(delta.projectName), condition: projectIsLive },
+      { kind: "check", key: keys.agent(delta.agentName), condition: agentIsLive },
       { kind: "put", item: { ...receipt, entityType: "UsageReceipt", delta }, condition: (item) => item === null },
-      { kind: "update", key: keys.usage(delta.projectName, delta.date), patch: (item) => added(item, delta, {
-        entityType: "Usage", GSI1PK: keys.usageDatePartition(delta.date), GSI1SK: delta.projectName,
+      { kind: "update", key: keys.usage(delta.agentName, delta.date), patch: (item) => added(item, delta, {
+        entityType: "Usage", GSI1PK: keys.usageDatePartition(delta.date), GSI1SK: delta.agentName,
       }) },
     ];
     if (delta.actor) {
-      ops.push({ kind: "update", key: keys.usageActor(delta.projectName, delta.date, delta.actor),
+      ops.push({ kind: "update", key: keys.usageActor(delta.agentName, delta.date, delta.actor),
         patch: (item) => added(item, delta, { entityType: "Usage", actor: delta.actor }) });
       const email = memberEmailFromActorKey(delta.actor);
-      if (email) ops.push({ kind: "update", key: keys.usageMember(email, delta.date, delta.projectName),
+      if (email) ops.push({ kind: "update", key: keys.usageMember(email, delta.date, delta.agentName),
         patch: (item) => added(item, delta, { entityType: "UsageMember", email }) });
     }
     try { await transact(ops); }
@@ -195,14 +195,14 @@ export class PostgresUsageRepository implements UsageRepository {
   }
 
   /**
-   * One row's increment, refused while the project is being cascade deleted
+   * One row's increment, refused while the agent is being cascade deleted
    * so a usage row cannot land in a partition the delete is sweeping. The
    * member row above is a *person's* spend in their own partition, which no
-   * project deletion touches, so it carries no such check.
+   * agent deletion touches, so it carries no such check.
    */
   private async addTo(key: { PK: string; SK: string }, delta: UsageDelta, extra: Item): Promise<void> {
     await transact([
-      { kind: "check", key: keys.project(delta.projectName), condition: projectIsLive },
+      { kind: "check", key: keys.agent(delta.agentName), condition: agentIsLive },
       { kind: "update", key, patch: (row) => added(row, delta, extra) },
     ]);
   }
@@ -210,15 +210,15 @@ export class PostgresUsageRepository implements UsageRepository {
   async listMemberDays(email: string, from: string, to: string): Promise<MemberUsageRow[]> {
     const items = await listUsageItems({
       pk: keys.usageMemberPartition(email),
-      // The project follows the date in the sort key, so the upper bound has
-      // to sort after every project on `to` — bound by the prefix rather
-      // than by any project name guessed for it.
+      // The agent follows the date in the sort key, so the upper bound has
+      // to sort after every agent on `to` — bound by the prefix rather
+      // than by any agent name guessed for it.
       sk: { between: [keys.usageMemberPrefix(from), `${keys.usageMemberPrefix(to)}￿`] },
       notExpiredAt: Math.floor(Date.now() / 1000),
     });
     return items.map((item) => ({
       email: String(item.email ?? email),
-      projectName: String(item.projectName ?? ""),
+      agentName: String(item.agentName ?? ""),
       date: String(item.date ?? ""),
       calls: (item.calls as Record<string, number>) ?? {},
       inputTokens: (item.inputTokens as Record<string, number>) ?? {},
@@ -228,8 +228,8 @@ export class PostgresUsageRepository implements UsageRepository {
     }));
   }
 
-  async listActorsByProject(
-    projectName: string,
+  async listActorsByAgent(
+    agentName: string,
     from: string,
     to: string,
     limit: number,
@@ -239,7 +239,7 @@ export class PostgresUsageRepository implements UsageRepository {
     }
     const items = await listUsageItems(
       {
-        pk: keys.usage(projectName, from).PK,
+        pk: keys.usage(agentName, from).PK,
         // The upper bound has to sort after every actor on `to`, and actor ids
         // are unbounded strings — so bound by the prefix of the day after,
         // exclusive, rather than by any suffix guessed for `to` itself.
@@ -252,25 +252,25 @@ export class PostgresUsageRepository implements UsageRepository {
     return items.map(toActorUsageRow);
   }
 
-  async getDay(projectName: string, date: string): Promise<UsageRow | null> {
-    const item = await getItem(keys.usage(projectName, date));
+  async getDay(agentName: string, date: string): Promise<UsageRow | null> {
+    const item = await getItem(keys.usage(agentName, date));
     if (!item) {
       return null;
     }
     // The sweep is periodic, so an expired row can still be read. Counting it
-    // would charge a project for a day that has already been retired.
+    // would charge an agent for a day that has already been retired.
     return isExpired(item.expiresAt, Date.now()) ? null : toUsageRow(item);
   }
 
-  async claimAlert(projectName: string, date: string, kind: CostAlertKind): Promise<boolean> {
+  async claimAlert(agentName: string, date: string, kind: CostAlertKind): Promise<boolean> {
     const marker = ALERT_MARKER[kind];
     try {
       await updateItem(
-        keys.usage(projectName, date),
+        keys.usage(agentName, date),
         (row) => ({ ...row, [marker]: new Date().toISOString() }),
         // The row exists by construction — the guard only claims after reading
         // spend off it — but requiring it here keeps a claim from materialising
-        // a usage row for a project that never ran.
+        // a usage row for an agent that never ran.
         (row) => row !== null && row[marker] === undefined,
       );
       return true;
@@ -283,14 +283,14 @@ export class PostgresUsageRepository implements UsageRepository {
   }
 
   async claimMonthAlert(
-    projectName: string,
+    agentName: string,
     month: string,
     kind: CostAlertKind,
   ): Promise<boolean> {
     const marker = ALERT_MARKER[kind];
     try {
       await updateItem(
-        keys.usageMonthClaim(projectName, month),
+        keys.usageMonthClaim(agentName, month),
         // Unlike the daily claim, this row does not exist by construction —
         // the first claim of a month materialises it, retained as long as the
         // usage rows whose window it closes.
@@ -312,9 +312,9 @@ export class PostgresUsageRepository implements UsageRepository {
     }
   }
 
-  async listByProject(projectName: string, from: string, to: string): Promise<UsageRow[]> {
-    const fromKey = keys.usage(projectName, from);
-    const toKey = keys.usage(projectName, to);
+  async listByAgent(agentName: string, from: string, to: string): Promise<UsageRow[]> {
+    const fromKey = keys.usage(agentName, from);
+    const toKey = keys.usage(agentName, to);
     const items = await listUsageItems({
       pk: fromKey.PK,
       sk: { between: [fromKey.SK, toKey.SK] },

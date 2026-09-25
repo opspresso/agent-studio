@@ -10,7 +10,7 @@ let base: string;
 
 const now = "2026-09-23T00:00:00Z";
 const detail: WorkspaceDetailResponse = {
-  workspace: { id: "workspace-1", chatId: "chat-1", projectName: "project",
+  workspace: { id: "workspace-1", chatId: "chat-1", agentName: "agent",
     title: "Long running workspace", runtime: "command", sessionId: "session-1", status: "active",
     revision: 1, createdAt: now, updatedAt: now, dueAt: now, idleTtlSeconds: 3600, activeRunId: "run-1" },
   session: null,
@@ -54,7 +54,7 @@ test("opens at the latest output without animated history traversal and respects
       observer.observe(document.body, { subtree: true, childList: true, characterData: true });
     });
   });
-  await page.route("**/api/workspaces/options", route => route.fulfill({ json: { projects: [] } }));
+  await page.route("**/api/workspaces/options", route => route.fulfill({ json: { agents: [] } }));
   await page.route("**/api/workspaces/workspace-1**", route => route.fulfill({ json: detail }));
   await page.route("**/api/workspaces/workspace-1/events?**", route => {
     const after = Number(new URL(route.request().url()).searchParams.get("after"));
@@ -87,7 +87,7 @@ test("opens at the latest output without animated history traversal and respects
 test("keeps an output read failure visible when workspace detail refreshes", async ({ page }) => {
   let detailReads = 0;
   let eventReads = 0;
-  await page.route("**/api/workspaces/options", route => route.fulfill({ json: { projects: [] } }));
+  await page.route("**/api/workspaces/options", route => route.fulfill({ json: { agents: [] } }));
   await page.route("**/api/workspaces/workspace-1**", route => {
     detailReads += 1;
     return route.fulfill({ json: detail });
@@ -117,7 +117,7 @@ test("shows an unavailable Workspace options read and recovers on retry", async 
     optionReads += 1;
     return optionReads === 1
       ? route.fulfill({ status: 503, json: { error: "Options store unavailable" } })
-      : route.fulfill({ json: { projects: [] } });
+      : route.fulfill({ json: { agents: [] } });
   });
   await page.route("**/api/workspaces/workspace-1**", route => route.fulfill({ json: codingDetail }));
   await page.route("**/api/workspaces/workspace-1/events?**", route => route.fulfill({ json: {

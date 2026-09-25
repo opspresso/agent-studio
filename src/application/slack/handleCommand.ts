@@ -13,7 +13,7 @@ import { log } from "@/shared/logger";
 
 /** What one command needs to know about where it was sent. */
 export interface CommandContext {
-  projectName: string;
+  agentName: string;
   botToken: string;
   channel: string;
   /** The thread the reply goes in — the message's own ts when it started one. */
@@ -74,7 +74,7 @@ export async function handleSlackCommand(
       .catch((error) => log.error("slack", `command ${command} could not reply`, error));
   };
 
-  log.info("slack", `command ${command} project=${ctx.projectName} channel=${ctx.channel}`);
+  log.info("slack", `command ${command} agent=${ctx.agentName} channel=${ctx.channel}`);
 
   if (command === "help") {
     await say(HELP);
@@ -105,7 +105,7 @@ export async function handleSlackCommand(
   }
   const muted = command === "mute";
   try {
-    await deps.threads.setMuted(ctx.projectName, ctx.channel, ctx.threadTs, muted);
+    await deps.threads.setMuted(ctx.agentName, ctx.channel, ctx.threadTs, muted);
   } catch (error) {
     log.error("slack", `command ${command} could not be recorded`, error);
     // Said out loud rather than swallowed: the whole point of the command is

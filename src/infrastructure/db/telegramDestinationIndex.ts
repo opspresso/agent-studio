@@ -6,7 +6,7 @@ export function withTelegramDestinationIndex(
 ): Record<string, unknown> {
   if (
     item.entityType !== "telegramDestination" ||
-    typeof item.projectName !== "string" ||
+    typeof item.agentName !== "string" ||
     (typeof item.botId !== "number" && typeof item.botId !== "string") ||
     typeof item.lastSeenAt !== "string"
   ) {
@@ -14,7 +14,7 @@ export function withTelegramDestinationIndex(
   }
   return {
     ...item,
-    ...keys.telegramDestinationIndexPrefix(item.projectName, item.botId),
+    ...keys.telegramDestinationIndexPrefix(item.agentName, item.botId),
     GSI2SK: item.lastSeenAt,
   };
 }

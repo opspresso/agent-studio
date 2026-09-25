@@ -114,11 +114,11 @@ export function isAdmin(user: SessionUser): Promise<boolean> {
  * `admin`. It gates the capability registries the console's Intelligence
  * section reads — skills, MCP tools, plugins, and the model
  * catalogue — which are a catalogue of what this deployment can reach rather
- * than anything a guest's own work needs. A guest still *runs* projects bound to those capabilities:
+ * than anything a guest's own work needs. A guest still *runs* agents bound to those capabilities:
  * resolution happens server-side and never consults the reader's tier.
  *
  * Two routes under those paths are deliberately outside it. The OAuth callback
- * belongs to a project's connection flow rather than the console, and the
+ * belongs to an agent's connection flow rather than the console, and the
  * client-metadata document is fetched by an authorization server that carries
  * no session at all.
  */

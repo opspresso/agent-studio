@@ -15,7 +15,7 @@
  * parent's run and would otherwise inflate the gauge with work that consumes no
  * additional connection.
  *
- * Nothing here is labelled by project, user or model — the same rule the
+ * Nothing here is labelled by agent, user or model — the same rule the
  * unknown-model counter follows. A label whose values are unbounded turns one
  * metric into a time series per value, and none of these questions need one.
  */

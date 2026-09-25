@@ -1,11 +1,11 @@
-import type { Project } from "@/domain/project/types";
+import type { Agent } from "@/domain/agent/types";
 import type { SlackMessage } from "@/domain/slack/types";
 import { slackConversation } from "@/domain/slack/conversation";
 import { slackInputText } from "@/domain/slack/messageText";
 import { slackTimestampValue } from "@/domain/slack/runControl";
 import { watchSlackStop } from "./watchStop";
-import { isProjectPrivate } from "@/domain/project/access";
-import { userMayAccessProject } from "@/application/project/projectUseCases";
+import { isAgentPrivate } from "@/domain/agent/access";
+import { userMayAccessAgent } from "@/application/agent/agentUseCases";
 import { createReplySink, type ReplyTarget } from "@/application/slack/replyStream";
 import { parseSlackCommand, selfUserId, slackStopEvent } from "@/application/slack/engagement";
 import { handleSlackCommand } from "@/application/slack/handleCommand";
@@ -39,7 +39,7 @@ const THINKING_MESSAGES = ["is thinking…", "is working through it…", "is sti
  *
  * Built-in rather than configurable, and built-in rather than a custom name: a
  * workspace that has not defined a custom emoji renders the reaction as an
- * error, and there is no evidence yet about what a project would want instead.
+ * error, and there is no evidence yet about what an agent would want instead.
  */
 const PICKED_UP_REACTION = "eyes";
 /** Most recent thread turns carried as context; older turns are dropped. */
@@ -299,18 +299,18 @@ async function resolveSpeakers(
   };
 }
 
-/** Credentials and project binding for a project-dedicated bot. */
+/** Credentials and agent binding for an agent-dedicated bot. */
 export interface SlackBotBinding {
-  projectName: string;
+  agentName: string;
   botToken: string;
 }
 
-/** The one refusal a private project's bot gives, on every path that refuses. */
-export const privateProjectRefusal = (projectName: string): string =>
-  `Sorry — project "${projectName}" is private. Ask its owner to invite you.`;
+/** The one refusal a private agent's bot gives, on every path that refuses. */
+export const privateAgentRefusal = (agentName: string): string =>
+  `Sorry — agent "${agentName}" is private. Ask its owner to invite you.`;
 
 /**
- * May the sender of this Slack event act on the project? The gate for every
+ * May the sender of this Slack event act on the agent? The gate for every
  * path a Slack event can take — the run, the `!mute` commands, the
  * thread-start greeting — so no path answers someone another path refuses.
  *
@@ -327,24 +327,24 @@ export const privateProjectRefusal = (projectName: string): string =>
 export async function slackSenderMayAccess(
   deps: Pick<SlackEventDeps, "slack">,
   token: string,
-  project: Project,
+  agent: Agent,
   sender: { user?: string; botId?: string },
 ): Promise<boolean> {
-  if (!isProjectPrivate(project)) {
+  if (!isAgentPrivate(agent)) {
     return true;
   }
   if (!sender.user) {
     return Boolean(sender.botId);
   }
   const email = await deps.slack.userEmail(token, sender.user).catch((error) => {
-    log.warn("slack", "sender email lookup failed for a private project", error);
+    log.warn("slack", "sender email lookup failed for a private agent", error);
     return null;
   });
-  return email !== null && (await userMayAccessProject(project, email));
+  return email !== null && (await userMayAccessAgent(agent, email));
 }
 
 /**
- * Run the agent project for one message and stream the reply.
+ * Run the agent for one message and stream the reply.
  *
  * Whether this message was for the bot at all is already decided:
  * `classifySlackEvent` is the single owner of that, and it runs in the route
@@ -365,26 +365,26 @@ export async function handleSlackEvent(
   // Everything the message says: an app's alert keeps its body in an
   // attachment, and `text` alone would hand the run the headline.
   const message = slackInputText(event, selfUserId(body));
-  const projectName = binding.projectName;
+  const agentName = binding.agentName;
   const threadTs = event.thread_ts ?? event.ts;
   // DM progress uses a status line; channel progress uses tasks and needs a stream recipient.
   const isAssistantThread = event.channel_type === "im";
 
   // Ahead of the current-settings lookup, because a command is answered whether or
-  // not this project has current Agent settings — `!mute` in particular has to
+  // not this agent has current Agent settings — `!mute` in particular has to
   // work on a bot that is currently failing, which is exactly when someone
   // reaches for it. Not ahead of the visibility gate: a command writes the
-  // project's engagement state, so an uninvited user muting a private
-  // project's thread would be exactly the acted-on message the gate exists to
-  // prevent. A project repository failure must not erase that gate: only a
-  // successful lookup may distinguish a public or missing project.
+  // agent's engagement state, so an uninvited user muting a private
+  // agent's thread would be exactly the acted-on message the gate exists to
+  // prevent. An agent repository failure must not erase that gate: only a
+  // successful lookup may distinguish a public or missing agent.
   const command = parseSlackCommand(message);
   if (command) {
     if (command === "stop" && (!event.user || event.bot_id)) return;
-    const commandProject = await deps.projects.get(projectName);
+    const commandAgent = await deps.agents.get(agentName);
     if (
-      commandProject &&
-      !(await slackSenderMayAccess(deps, token, commandProject, {
+      commandAgent &&
+      !(await slackSenderMayAccess(deps, token, commandAgent, {
         ...(event.user ? { user: event.user } : {}),
         ...(event.bot_id ? { botId: event.bot_id } : {}),
       }))
@@ -392,12 +392,12 @@ export async function handleSlackEvent(
       await deps.slack.postMessage(token, {
         channel: event.channel,
         thread_ts: threadTs,
-        text: privateProjectRefusal(projectName),
+        text: privateAgentRefusal(agentName),
       });
       return;
     }
     await handleSlackCommand(deps, command, {
-      projectName,
+      agentName,
       botToken: token,
       channel: event.channel,
       threadTs,
@@ -408,9 +408,9 @@ export async function handleSlackEvent(
     return;
   }
 
-  const project = await deps.projects.get(projectName);
-  // Pin current settings alongside the Project for this messaging turn.
-  const configuration = project ? project.configuration : null;
+  const agent = await deps.agents.get(agentName);
+  // Pin current settings alongside the Agent for this messaging turn.
+  const configuration = agent ? agent.configuration : null;
   let canWrite = () => true;
   const target: ReplyTarget = {
     canWrite: () => canWrite(),
@@ -422,29 +422,29 @@ export async function handleSlackEvent(
       : {}),
   };
   const reply = await slackReplyChannel(deps, token, target);
-  if (!project || !configuration) {
+  if (!agent || !configuration) {
     await reply.say(
-      `Agent project not available: ${projectName} (must exist and have current Agent settings)`,
+      `Agent not available: ${agentName} (must exist and have current settings)`,
     );
     return;
   }
 
   // The visibility gate, ahead of any acknowledgement — no reaction, no status
-  // line, no thread read happens for someone the project keeps out. What
+  // line, no thread read happens for someone the agent keeps out. What
   // passes and why is {@link slackSenderMayAccess}'s.
   if (
-    !(await slackSenderMayAccess(deps, token, project, {
+    !(await slackSenderMayAccess(deps, token, agent, {
       ...(event.user ? { user: event.user } : {}),
       ...(event.bot_id ? { botId: event.bot_id } : {}),
     }))
   ) {
-    await reply.say(privateProjectRefusal(projectName));
+    await reply.say(privateAgentRefusal(agentName));
     return;
   }
 
-  log.info("slack", `run start project=${projectName} channel=${event.channel} ts=${event.ts}`);
+  log.info("slack", `run start agent=${agentName} channel=${event.channel} ts=${event.ts}`);
 
-  const runTarget = { projectName, channel: event.channel, threadTs };
+  const runTarget = { agentName, channel: event.channel, threadTs };
   const lease = await deps.stops.acquire(runTarget);
   if (!lease) {
     await reply.say("I am already working in this thread. Please wait, or use !stop before sending another request.");
@@ -512,7 +512,7 @@ export async function handleSlackEvent(
     }
     await reply.status(THINKING_MESSAGES[0] ?? "is thinking…", THINKING_MESSAGES);
 
-    // The Agent's opt-in gates the *lookup*, not just the prompt: a project that
+    // The Agent's opt-in gates the *lookup*, not just the prompt: an agent that
     // did not ask to know who is asking should not be sending anyone's id to
     // Slack's profile API either.
     const named = configuration.parameters.callerContext
@@ -524,12 +524,12 @@ export async function handleSlackEvent(
     // gallery is not something an Agent parameter should be able to cause.
     //
     // Best effort in both directions — a workspace that does not share addresses,
-    // or a bot without the scope, files by project exactly as before.
+    // or a bot without the scope, files by agent exactly as before.
     const ownerEmail = event.user
       ? await deps.slack
           .userEmail(token, event.user)
           .catch((error) => {
-            log.warn("slack", "owner lookup failed; filing by project alone", error);
+            log.warn("slack", "owner lookup failed; filing by agent alone", error);
             return null;
           })
       : null;
@@ -554,7 +554,7 @@ export async function handleSlackEvent(
     await handleTurn(
       deps,
       {
-        project,
+        agent,
         configuration,
         text: askText,
         attachments: (event.files ?? []).map((file) => toAttachment(deps, token, file)),
@@ -584,7 +584,7 @@ export async function handleSlackEvent(
     // the turn someone answers without stopping to re-address it.
     if (!isAssistantThread) {
       await deps.threads
-        .markEngaged(projectName, event.channel, threadTs)
+        .markEngaged(agentName, event.channel, threadTs)
         // A lost record costs the next follow-up its mention-free reply. Not
         // worth failing a run that already answered.
         .catch((error) => log.error("slack", "thread engagement could not be recorded", error));
@@ -603,11 +603,11 @@ export async function handleSlackEvent(
   }
 }
 
-/** Signed native stop events use the same project access gate as messages. */
+/** Signed native stop events use the same agent access gate as messages. */
 export async function handleSlackStop(deps: SlackEventDeps, body: SlackEventBody, binding: SlackBotBinding): Promise<void> {
   const event = slackStopEvent(body);
   if (!event) return;
-  const project = await deps.projects.get(binding.projectName);
-  if (!project || !(await slackSenderMayAccess(deps, binding.botToken, project, { user: event.userId }))) return;
-  await deps.stops.requestStop({ projectName: binding.projectName, channel: event.channel, threadTs: event.threadTs }, event.eventTs);
+  const agent = await deps.agents.get(binding.agentName);
+  if (!agent || !(await slackSenderMayAccess(deps, binding.botToken, agent, { user: event.userId }))) return;
+  await deps.stops.requestStop({ agentName: binding.agentName, channel: event.channel, threadTs: event.threadTs }, event.eventTs);
 }

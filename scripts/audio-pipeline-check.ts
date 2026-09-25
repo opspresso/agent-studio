@@ -92,7 +92,7 @@ async function main() {
   const { getAudioRuntime, mcpUseCases, artifactUseCases } = await import("@/lib/container");
   const { artifactRepository } = await import("@/infrastructure/db/repositories/artifactRepository");
   const { getS3Client, deleteStoredObject } = await import("@/infrastructure/storage/s3ObjectStore");
-  const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
+  const { agentRepository } = await import("@/infrastructure/db/repositories/agentRepository");
   const { getLlmProviderConfigs } = await import("@/lib/runtime-settings");
   const { resolveProviderTarget } = await import("@/infrastructure/llm/providers");
   assert.equal(resolveProviderTarget("openai/gpt-5-mini", await getLlmProviderConfigs()).baseUrl,
@@ -102,11 +102,11 @@ async function main() {
   const { keys } = await import("@/infrastructure/db/keys");
   const { usageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
   const client = getS3Client();
-  const id = randomUUID(); const email = memoryUrl ? process.env.AUDIO_TEST_MEMORY_EMAIL! : `${id}@example.test`; const projectName = `audio-${id}`;
+  const id = randomUUID(); const email = memoryUrl ? process.env.AUDIO_TEST_MEMORY_EMAIL! : `${id}@example.test`; const agentName = `audio-${id}`;
   const memoryName = `memory-${id}`;
   let memoryRegistered = false;
   let userCreated = false;
-  let projectCreated = false;
+  let agentCreated = false;
   const now = new Date().toISOString(); const directory = await mkdtemp(join(tmpdir(), "audio-pipeline-"));
   await client.send(new CreateBucketCommand({ Bucket: bucket }));
   try {
@@ -114,18 +114,18 @@ async function main() {
       `INSERT INTO "user" ("id", "name", "email", "emailVerified", "tier", "createdAt", "updatedAt") VALUES ($1, $2, $3, true, 'member', $4, $4)`,
       [id, "Audio Pipeline Test", email, now]); });
     userCreated = true;
-    await projectRepository.create({ name: projectName, ownerEmail: email, displayName: "Audio Pipeline Test",
+    await agentRepository.create({ name: agentName, ownerEmail: email, displayName: "Audio Pipeline Test",
       description: "", visibility: "private", createdAt: now, updatedAt: now,
-      configuration: { projectName, model: "openai/gpt-5-mini",
+      configuration: { agentName, model: "openai/gpt-5-mini",
       systemPrompt: "Summarize the source.", parameters: { piiFiltering: false, audioProcessing: true,
         dynamicCapabilities: true, memoryRecall: true, urlFetch: true, imageGeneration: true, slackWorkspace: true },
       skillList: [], mcpList: [{ name: "must-not-resolve" }], subagentList: [{ name: "must-not-run" }] } });
-    projectCreated = true;
+    agentCreated = true;
     if (memoryUrl) {
       await mcpUseCases.create({ name: memoryName, url: memoryUrl.href, headers: { Authorization: `Bearer ${memoryToken}` } });
       memoryRegistered = true;
-      const project = await projectRepository.get(projectName); assert.ok(project?.configuration);
-      await projectRepository.update({ ...project, configuration: { ...project.configuration, mcpList: [{ name: memoryName }] } }, project.updatedAt);
+      const agent = await agentRepository.get(agentName); assert.ok(agent?.configuration);
+      await agentRepository.update({ ...agent, configuration: { ...agent.configuration, mcpList: [{ name: memoryName }] } }, agent.updatedAt);
     }
     const path = join(directory, "source.mp3");
     await promisify(execFile)(process.env.FFMPEG_PATH ?? "ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
@@ -133,44 +133,44 @@ async function main() {
     const bytes = await readFile(path);
     const runtime = getAudioRuntime();
     const retention = { unit: "months" as const, value: 3, timezone: "Asia/Seoul" };
-    const file = await runtime.files.import({ id: randomUUID(), projectName, userEmail: email,
+    const file = await runtime.files.import({ id: randomUUID(), agentName, userEmail: email,
       filename: "source.mp3", mimeType: "audio/mpeg", retention }, async () => (async function* () { yield bytes; })());
     const input = { task: "process" as const, source: { kind: "file" as const, fileId: file.id }, model: "openai/whisper-1", retention,
-      postprocess: { projectName },
+      postprocess: { agentName },
       ...(memoryUrl ? { destination: { serverName: memoryName, documents: true, memories: true } } : {}) };
-    let configuration = await runtime.configuration.save(projectName, email, { enabled: true, model: input.model, retention,
+    let configuration = await runtime.configuration.save(agentName, email, { enabled: true, model: input.model, retention,
       postprocess: input.postprocess, destination: input.destination, maxActive: 1, maxPerOccurrence: 1 }, 0);
     const edits = await Promise.allSettled([
-      runtime.configuration.save(projectName, email, configuration, configuration.revision),
-      runtime.configuration.save(projectName, email, configuration, configuration.revision),
+      runtime.configuration.save(agentName, email, configuration, configuration.revision),
+      runtime.configuration.save(agentName, email, configuration, configuration.revision),
     ]);
     const winners = edits.filter((edit) => edit.status === "fulfilled");
     assert.equal(winners.length, 1, "only one concurrent configuration edit may win");
     configuration = winners[0]!.value;
     const submitInput = { source: input.source, configRevision: configuration.revision };
-    const submitted = await runtime.jobs.submit(projectName, email, submitInput, { occurrence: "test" });
+    const submitted = await runtime.jobs.submit(agentName, email, submitInput, { occurrence: "test" });
     assert.ok("job" in submitted); assert.equal(submitted.status, "accepted");
-    let completed = await runtime.process(projectName, submitted.job.id);
+    let completed = await runtime.process(agentName, submitted.job.id);
     const deadline = Date.now() + 90_000;
     while (completed?.status === "waiting" && Date.now() < deadline) {
       await delay(Math.max(1, Math.min(1000, Date.parse(completed.dueAt) - Date.now())));
-      completed = await runtime.process(projectName, submitted.job.id) ?? completed;
+      completed = await runtime.process(agentName, submitted.job.id) ?? completed;
     }
     assert.equal(completed?.status, "completed", JSON.stringify(completed));
     assert.equal(completed.configRevision, configuration.revision);
-    const publicJob = await runtime.jobs.get(projectName, completed.id, email);
+    const publicJob = await runtime.jobs.get(agentName, completed.id, email);
     assert.deepEqual(publicJob.fileInfo, { filename: file.filename, byteSize: file.byteSize, expiresAt: file.retireAt });
     assert.deepEqual(publicJob.transcriptionProgress, { processedSeconds: 1.5, totalSeconds: 1.5, completedSegments: 1 });
     assert.ok(completed.transcriptRef);
     {
-      const result = await runtime.files.read(projectName, completed.transcriptRef, email);
+      const result = await runtime.files.read(agentName, completed.transcriptRef, email);
       assert.equal(result.file.retireAt, file.retireAt);
       assert.equal(result.file.retainUntil, file.retireAt);
       const transcript = JSON.parse(new TextDecoder().decode(result.bytes));
       assert.equal(transcript.text, "Sample transcript");
       assert.equal(transcript.totalSeconds, 1.5);
       assert.ok(completed.draftRef);
-      const draft = await runtime.files.read(projectName, completed.draftRef, email);
+      const draft = await runtime.files.read(agentName, completed.draftRef, email);
       assert.equal(draft.file.retireAt, file.retireAt);
       assert.equal(draft.file.retainUntil, file.retireAt);
       assert.equal(JSON.parse(new TextDecoder().decode(draft.bytes)).text, "Summary of sample");
@@ -179,7 +179,7 @@ async function main() {
     const finalIds = [file.id, completed.transcriptRef, completed.draftRef, completed.summaryRef, completed.dialogueRef];
     assert.ok(artifactUseCases);
     const artifacts = await artifactUseCases.listMine(email, { limit: 100 });
-    assert.deepEqual(artifacts.filter((a) => a.projectName === projectName).map((a) => a.artifactId).sort(), [...finalIds].sort());
+    assert.deepEqual(artifacts.filter((a) => a.agentName === agentName).map((a) => a.artifactId).sort(), [...finalIds].sort());
     for (const id of finalIds) {
       const result = await artifactUseCases.readPrivateFile(id, email);
       assert.equal(result.artifact.retireAt, file.retireAt);
@@ -194,12 +194,12 @@ async function main() {
     assert.deepEqual((remaining.Contents ?? []).filter((object) => object.Size !== 0).map((object) => object.Key).sort(), finalIds.map(sourceFileObjectKey).sort());
     assert.equal(calls, 1);
     assert.equal(postprocessCalls, 1);
-    assert.equal((await runtime.jobs.submit(projectName, email, submitInput, { occurrence: "test-again" })).status, "duplicate");
-    assert.equal(await runtime.process(projectName, completed.id), null);
+    assert.equal((await runtime.jobs.submit(agentName, email, submitInput, { occurrence: "test-again" })).status, "duplicate");
+    assert.equal(await runtime.process(agentName, completed.id), null);
     assert.equal(calls, 1);
-    const usage = await usageRepository.getDay(projectName, new Date().toISOString().slice(0, 10));
+    const usage = await usageRepository.getDay(agentName, new Date().toISOString().slice(0, 10));
     assert.equal(usage?.calls["openai/whisper-1"], 1);
-    await assert.rejects(runtime.jobs.get(projectName, completed.id, "other@example.test"));
+    await assert.rejects(runtime.jobs.get(agentName, completed.id, "other@example.test"));
     if (memoryUrl) {
       assert.ok(completed.receipts["document:transcript"]);
       assert.ok(completed.receipts["document:result"]);
@@ -210,7 +210,7 @@ async function main() {
     let opened = false;
     try {
       process.env.ARTIFACT_ACCESS_MODE = "public";
-      await assert.rejects(runtime.files.import({ id: `${id}-refused`, projectName, userEmail: email,
+      await assert.rejects(runtime.files.import({ id: `${id}-refused`, agentName, userEmail: email,
         filename: "refused.mp3", mimeType: "audio/mpeg", retention: file.retention }, async () => {
         opened = true; return (async function* () { yield bytes; })();
       }), /Private Artifacts require/);
@@ -231,10 +231,10 @@ async function main() {
         await deleteItem(keys.sourceFile(id));
       }
     }
-    if (projectCreated) await projectRepository.delete(projectName);
+    if (agentCreated) await agentRepository.delete(agentName);
     if (memoryRegistered) await mcpUseCases.remove(memoryName, email);
-    await deleteItem(keys.usageMember(email, now.slice(0, 10), projectName));
-    await deleteItem(keys.usageMember(email, new Date().toISOString().slice(0, 10), projectName));
+    await deleteItem(keys.usageMember(email, now.slice(0, 10), agentName));
+    await deleteItem(keys.usageMember(email, new Date().toISOString().slice(0, 10), agentName));
     if (userCreated) await withTransaction(async (db) => { await db.query(`DELETE FROM "user" WHERE "id" = $1`, [id]); });
     await client.send(new DeleteBucketCommand({ Bucket: bucket }));
     await restoreModelSettings?.(); restoreModelSettings = undefined;

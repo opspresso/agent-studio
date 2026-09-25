@@ -59,7 +59,7 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 | API 라우트 | `withAuth` / `withMemberAuth` / `withAdminAuth` (`src/lib/session.ts`) | 세션이 없으면 401. member gate는 tier를, admin gate는 아래의 effective admin 판정을 사용한다. 실패는 403이며 성공하면 `SessionUser`를 건넨다 |
 
 `src/shared/pageAccess.ts` 는 어떤 페이지가 공개인지에 대한 단일 소유자다. `/`, `/login`, `/guide`.
-가이드는 로그인 없이 읽는 정적 안내이며, 가이드에서 연결하는 프로젝트·설정 페이지와 API는
+가이드는 로그인 없이 읽는 정적 안내이며, 가이드에서 연결하는 Agent·설정 페이지와 API는
 각자의 인증·권한 검사를 유지한다.
 `src/proxy.ts`와 브라우저의 만료 세션 redirect가 같은 판정을 읽는다. matcher 가 닿는 나머지
 전부는 세션을 요구하므로 **새 라우트는 기본이 보호 상태** 다. 그 방향은
@@ -68,7 +68,7 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 
 페이지 게이트는 세션 쿠키의 유효성이 아니라 *존재* 를 확인한다. 유효성까지 확인하려면 모든
 내비게이션마다 세션을 읽어야 하고, 그러고도 그것은 인가 결정이 아니다. 인가는 실제로
-데이터를 만지는 요청을 보는 `withAuth` 와 `assertProjectWritable` 에서 서버 측에 남는다.
+데이터를 만지는 요청을 보는 `withAuth` 와 `assertAgentWritable` 에서 서버 측에 남는다.
 따라서 존재하지만 유효하지 않은 쿠키는 페이지에 도달하고 그 뒤의 API 에서 401 을 받는다.
 브라우저의 공통 응답 경계는 같은 origin의 `/api/*` 401을 받으면 현재 path·query·fragment를
 `next`로 보존해 `/login`으로 full navigation한다. Root layout이 이미 세션을 유효하지 않다고
@@ -87,56 +87,56 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 
 ## 인가 모델
 
-**Project 는 공유 카탈로그이되, 공개 범위(visibility)를 갖는다.** `public`(기본값이자
+**Agent 는 공유 카탈로그이되, 공개 범위(visibility)를 갖는다.** `public`(기본값이자
 `visibility` 필드가 없는 기존 행의 의미)은 로그인한 사용자라면 누구나 읽고 실행하고 복제할
 수 있다. `private` 은 그 범위를 소유자와 `memberEmails` 의 초대 목록으로 좁힌다. 쓰기는
 이 축과 무관하게 언제나 소유자-또는-admin 이다. 판정의 유일한 정의는
-`src/domain/project/access.ts` (`mayAccessProject`)이고, admin 오버라이드를 합친 형태가
-`assertProjectAccessible` / `userMayAccessProject` (`projectUseCases.ts`)다. 새 읽기·실행
+`src/domain/agent/access.ts` (`mayAccessAgent`)이고, admin 오버라이드를 합친 형태가
+`assertAgentAccessible` / `userMayAccessAgent` (`agentUseCases.ts`)다. 새 읽기·실행
 표면은 이 둘 중 하나를 지나며, `visibility` 나 `memberEmails` 를 직접 비교하는 두 번째
 판정을 만들지 않는다.
 
 **세 부류의 표면이 세 가지로 다르게 게이트된다.** 사람이 세션으로 들어오는 콘솔·chat 은
-`assertProjectAccessible` 로 막는다. API token, trigger, webhook, 그리고
+`assertAgentAccessible` 로 막는다. API token, trigger, webhook, 그리고
 소유자가 직접 연결한 Telegram·Teams bot 은 *자격 증명 자체가 접근권* 이라 visibility 를 묻지
 않는다. token 은 소유자로서 행동하고, bot 배선은 소유자의 선택이다. Slack bot 만 그 중간에
-있다: workspace 의 누구나 말을 걸 수 있으므로, private project 의 bot 은 `users.info` 의
+있다: workspace 의 누구나 말을 걸 수 있으므로, private agent 의 bot 은 `users.info` 의
 이메일로 묻는 사람을 식별해 초대 여부를 확인하고, 이메일을 공유하지 않는 workspace 의
 사용자는 거절한다 (`slackSenderMayAccess`, 런, `!mute`·`!stop` 명령, native 중단 이벤트, thread-start 인사가 같은
 게이트를 지난다). 앱이 서명한 메시지(키워드로 깨운 알림 등)는 통과한다: 그 키워드는
 소유자 자신의 설정이라 trigger 와 같은 소유자-배선 자동화다. 조회된 주소는 판정에만
 쓰이고 프롬프트에는 닿지 않는다. 초대 목록 자체(`memberEmails`)는 제3자 주소의 명부이므로
-응답에서도 소유자·admin 에게만 나간다 (`sanitizeProject`).
+응답에서도 소유자·admin 에게만 나간다 (`sanitizeAgent`).
 
-private project 를 local subagent 로 *바인딩* 하는 것도 읽기다: 편집자가 접근할 수 없는
-project 는 Agent 설정 저장 시점에 거절된다 (`assertSubagentProjectsAccessible`). 이미 바인딩된
-참조는 project 가 뒤늦게 private 이 되어도 편집 가능성을 잃지 않는다. 실행 시점의 transfer
-는 소유자의 token 과 같은 플랫폼 자신의 조립이다. 비용 대시보드의 project *합계* 는
+private agent 를 local subagent 로 *바인딩* 하는 것도 읽기다: 편집자가 접근할 수 없는
+agent 는 Agent 설정 저장 시점에 거절된다 (`assertSubavailableAgentsAccessible`). 이미 바인딩된
+참조는 agent 가 뒤늦게 private 이 되어도 편집 가능성을 잃지 않는다. 실행 시점의 transfer
+는 소유자의 token 과 같은 플랫폼 자신의 조립이다. 비용 대시보드의 agent *합계* 는
 visibility 이전처럼 열려 있다: 이름과 지출 집계는 카탈로그 운영의 일부로 남겨 둔 결정이다.
 
 | 리소스 | 읽기 | 쓰기 |
 |---|---|---|
-| Project, Agent 설정 | 접근 가능한 사용자 (`assertProjectAccessible`, public 은 전원, private 은 소유자·초대 멤버·admin) | 소유자 또는 설정된 admin (`assertProjectWritable`) |
-| Project trace | 소유자 또는 설정된 admin | — |
-| Project Slack 설정 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
-| Project API token, trigger, MCP 연결 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
+| Agent, Agent 설정 | 접근 가능한 사용자 (`assertAgentAccessible`, public 은 전원, private 은 소유자·초대 멤버·admin) | 소유자 또는 설정된 admin (`assertAgentWritable`) |
+| Agent trace | 소유자 또는 설정된 admin | — |
+| Agent Slack 설정 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
+| Agent API token, trigger, MCP 연결 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
 | 호출자별 usage (`usage/actors`) | 소유자 또는 설정된 admin | — |
-| Project usage 합계 | 로그인한 모든 사용자 | — |
+| Agent usage 합계 | 로그인한 모든 사용자 | — |
 | Skill / MCP 서버 / plugin | `member` tier 이상 (`withMemberAuth`; `guest` 는 403) | admin (`withAdminAuth`) |
 | 앱 설정 | admin | admin |
 | 모델 즐겨찾기 | 로그인한 사용자 본인 | 로그인한 사용자 본인 |
 | 멤버 디렉터리 | admin | admin (tier 변경, `member.set-tier` 로 감사) |
 | Chat | 소유자만 (소유자가 아니면 404) | 소유자만 |
-| Workspace | 소유자와 현재 프로젝트 접근 검사 | 소유자; 실행·Git 승인은 활성화·정책·승인 상태도 검사 |
-| 오디오 job·비공개 source 파일 | 작업/파일 소유자와 프로젝트 접근 검사 | 소유자 범위와 job/file 상태에 따른 조작 |
-| 일반 Artifact | 생성·첨부 소유자 또는 프로젝트 소유자/admin | 같은 소유권 범위에서 삭제. 비공개 source 파일은 위 전용 경계 |
+| Workspace | 소유자와 현재 Agent 접근 검사 | 소유자; 실행·Git 승인은 활성화·정책·승인 상태도 검사 |
+| 오디오 job·비공개 source 파일 | 작업/파일 소유자와 Agent 접근 검사 | 소유자 범위와 job/file 상태에 따른 조작 |
+| 일반 Artifact | 생성·첨부 소유자 또는 Agent 소유자/admin | 같은 소유권 범위에서 삭제. 비공개 source 파일은 위 전용 경계 |
 
 trace 와 Slack 설정은 *읽기* 도 게이트되는데, 다른 사용자의 런타임 입출력과 마스킹된 자격
-증명의 가장자리를 노출하기 때문이다. project *합계* 는 카탈로그가 공유되므로 열어 둔다.
+증명의 가장자리를 노출하기 때문이다. agent *합계* 는 카탈로그가 공유되므로 열어 둔다.
 호출자별 내역은 개인을 지목하므로 `usage/actors` 는 그렇지 않다. capability 레지스트리는
 `guest` tier 에서 제외되는데, 그것이 담는 것은 guest 자신의 작업에 필요한 무엇이 아니라 이
-배포가 무엇에 닿을 수 있는지의 목록이기 때문이다. guest 도 그것들에 바인딩된 project 를
-*실행* 은 하며, 해석(resolution)은 서버 측에서 일어난다. project 의 `preview` 도 같은 단에
+배포가 무엇에 닿을 수 있는지의 목록이기 때문이다. guest 도 그것들에 바인딩된 agent 를
+*실행* 은 하며, 해석(resolution)은 서버 측에서 일어난다. agent 의 `preview` 도 같은 단에
 있다. 레지스트리가 감췄을 해석된 capability 이름을 그대로 렌더링하기 때문이다.
 
 ### `isAdminEmail` vs `isConfiguredAdmin`
@@ -146,13 +146,13 @@ trace 와 Slack 설정은 *읽기* 도 게이트되는데, 다른 사용자의 �
 | 술어 | 질문 | `ADMIN_EMAILS` 가 비었다는 것의 뜻 |
 |---|---|---|
 | `isAdminEmail` | 공유 레지스트리와 앱 설정을 변경해도 되는가? | **제한 없음**. 로그인한 모든 사용자 |
-| `isConfiguredAdmin` | 남이 소유한 project 를 써도 되는가? | **아무도 안 된다** |
+| `isConfiguredAdmin` | 남이 소유한 agent 를 써도 되는가? | **아무도 안 된다** |
 
-첫 번째를 project 소유권에 쓰면 `ADMIN_EMAILS` 를 한 번도 설정하지 않은 배포에서 로그인한 모든
-사용자에게 모든 project 의 쓰기 권한을 넘기게 된다. 두 플래그는 `GET /api/me` 가 브라우저로
-함께 보낸다. `isAdmin` 과 `isConfiguredAdmin` 으로. "이 project 를 편집해도 되는가"에 대한
-콘솔의 게이트가 `assertProjectWritable` 을 정확히 반영해야 하기 때문이다. 거기서 `isAdmin` 을
-읽었더니 모든 사용자에게 모든 project 의 편집 폼이 열렸고, 저장은 전부 403 이 났다.
+첫 번째를 agent 소유권에 쓰면 `ADMIN_EMAILS` 를 한 번도 설정하지 않은 배포에서 로그인한 모든
+사용자에게 모든 agent 의 쓰기 권한을 넘기게 된다. 두 플래그는 `GET /api/me` 가 브라우저로
+함께 보낸다. `isAdmin` 과 `isConfiguredAdmin` 으로. "이 agent 를 편집해도 되는가"에 대한
+콘솔의 게이트가 `assertAgentWritable` 을 정확히 반영해야 하기 때문이다. 거기서 `isAdmin` 을
+읽었더니 모든 사용자에게 모든 agent 의 편집 폼이 열렸고, 저장은 전부 403 이 났다.
 
 **멤버 tier 는 두 번째 소스를 더할 뿐, 두 번째 술어를 만들지 않는다.** 저장된 `tier` 가
 `admin` 인 멤버는 *두* 술어가 부여하는 것을 모두 얻는다. 그 합성은 오직
@@ -163,19 +163,19 @@ trace 와 Slack 설정은 *읽기* 도 게이트되는데, 다른 사용자의 �
 명시적으로 더 낮은 tier 를 골라야 한다. tier 는 Better Auth 의 user 행에 있고(`input: false`
 라 어떤 auth API 로도 사용자가 자기 것을 설정할 수 없다), 내부 어댑터 또는
 `memberRepository.setTier` 의 단일 속성 조건부 업데이트로만 쓰이며, 세션에 실려 라우트
-핸들러에 도달한다. 요청마다 새로 읽는다. 세션을 볼 일이 없는 이음매들(project 쓰기
+핸들러에 도달한다. 요청마다 새로 읽는다. 세션을 볼 일이 없는 이음매들(agent 쓰기
 오버라이드, 런 브래킷의 가드)은 email → tier 를 30초짜리 인스턴스별 캐시로 해석하고, 그 캐시는
 tier 변경을 처리한 인스턴스에서 무효화된다. 각 tier 가 동시에 몇 개를 진행할 수 있는지, UTC
-월 기준으로 얼마를 쓸 수 있는지, 무엇을 할 수 있는지(project 생성, API token 사용)는
+월 기준으로 얼마를 쓸 수 있는지, 무엇을 할 수 있는지(agent 생성, API token 사용)는
 `src/domain/member/tiers.ts` 의 `TIER_LIMITS` 다. 게이트는 tier 이름 비교가 아니라 그 파일의
-`tierMay*` 술어를 거친다. project 생성도 별도의 effective-admin 우회 없이 그 tier capability 를
+`tierMay*` 술어를 거친다. agent 생성도 별도의 effective-admin 우회 없이 그 tier capability 를
 따른다.
 
 월 상한은 멤버 자신의 일별 행을 UTC 월 1일부터 합산한다. 프로필 페이지가 읽는 것과 같은 창,
 같은 행이다. 집계가 하나뿐이므로 페이지가 가드와 어긋나는 합계를 보고할 수 없다. 사람 모양의
 한도는 `user` actor 에만 적용된다. 기계 호출자(Slack, webhook, schedule)에는 멤버가 없다.
-**project token** 은 소유자의 email 을 싣지만 의도적으로 소유자의 개인 예산이 아니라 *자기
-project* 의 한도에서 지출한다. token 은 서비스 자격 증명이다. 그것이 우회가 되지 않게 하는
+**agent token** 은 소유자의 email 을 싣지만 의도적으로 소유자의 개인 예산이 아니라 *자기
+agent* 의 한도에서 지출한다. token 은 서비스 자격 증명이다. 그것이 우회가 되지 않게 하는
 것은 token 게이트다. API token 권한이 없는 tier 는 token 을 발급할 수도 없고(소유자 범위,
 admin 포함) 이미 있는 token 으로 인증할 수도 없다. `authenticateExecution` 은 모든 bearer
 요청에서 소유자의 현재 tier 를 다시 확인하고 403 으로 답하므로, 강등은 그 소유자의 token 을
@@ -183,42 +183,42 @@ admin 포함) 이미 있는 token 으로 인증할 수도 없다. `authenticateE
 그만큼 전파가 늦을 수 있다. 멤버 행이 없으면 기본 `guest`로 거절하고, 캐시를 갱신할 때 tier 저장소를 읽지 못하면 503으로
 fail-closed 한다. 권한 저장소 장애가 이미 제한된 credential 을 다시 활성화해서는 안 된다.
 
-admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘기는 대신 `assertProjectWritable`
+admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘기는 대신 `assertAgentWritable`
 *안에서* 확인된다. 규칙은 "소유자 또는 admin"이고, 한 호출자가 넘기는 것을 잊은 플래그는 그
 경로에서만 조용히 소유자 전용으로 규칙을 좁힐 것이다. 함수 이름은 소유자가 아니라 그 규칙을
 따라 붙었다. 진짜로 **소유권** 이 필요한 것(attribution, 누구의 자격 증명으로 디스패치할지,
-누구에게 알릴지)은 `project.ownerEmail` 을 읽는다.
+누구에게 알릴지)은 `agent.ownerEmail` 을 읽는다.
 
 오버라이드의 두 가지 귀결은 없는 셈 치지 않고 처리한다:
 
-- **기록된다**. `project.admin-override` 감사 행과
-  `[authz] admin … is acting on project …` 라인. 프로젝트 삭제는 수행자를 알려 줬을 행을
-  파괴할 수 있고, project 의 API token 은 *그 소유자로서* 인증하므로 admin 의 reveal 은 그 둘에
+- **기록된다**. `agent.admin-override` 감사 행과
+  `[authz] admin … is acting on agent …` 라인. Agent 삭제는 수행자를 알려 줬을 행을
+  파괴할 수 있고, agent 의 API token 은 *그 소유자로서* 인증하므로 admin 의 reveal 은 그 둘에
   더해 `secret.reveal` 행을 남긴다.
 - 그것이 필요로 하는 설정 읽기는 **fail-closed** 다. 설정 저장소 장애는 소유자가 아닌 사람의
   결정적인 403 을 500 으로 바꾸는 대신 오버라이드를 거부한다.
 
-Trace·호출자별 Usage·프로젝트 Artifact 목록과 마스킹된 연동 설정·실행 이력은 같은
-소유자/admin 판정으로 읽지만, 읽기만으로 `project.admin-override` 쓰기 감사 행을 남기지 않는다.
+Trace·호출자별 Usage·Agent Artifact 목록과 마스킹된 연동 설정·실행 이력은 같은
+소유자/admin 판정으로 읽지만, 읽기만으로 `agent.admin-override` 쓰기 감사 행을 남기지 않는다.
 
 ## 저장된 시크릿
 
 저장되는 모든 자격 증명. MCP 서버 헤더, Agent별 헤더 오버라이드, MCP OAuth 의
 access/refresh token·client secret·인가 중인 PKCE verifier, Slack 봇 token 과 서명 시크릿,
-Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿, project API token, webhook trigger 시크릿, 그리고 시크릿인 앱
+Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿, agent API token, webhook trigger 시크릿, 그리고 시크릿인 앱
 설정(LLM API 키와 plugins 저장소의 GitHub token)은 `AES_ENCRYPTION_KEY` 로 AES-256-GCM
 암호화된다(`src/infrastructure/crypto/secretEncryption.ts`). 새 값은 모두 `enc:v2:` 로 쓴다.
 v2 는 row 와 field 정체성을 AES-GCM AAD 로 묶으므로 암호문만 다른 위치로 옮기면 인증에
 실패한다. 기존 `enc:v1:` 값은 다시 저장하거나 재발급하기 전까지 그대로 읽는다.
 
-Project API token 과 webhook trigger secret 은 각각 project 이름과
-`project + triggerId` 에 묶인다. Slack 의 bot token·signing secret, Telegram 의 bot
-token·webhook secret, Teams 의 app password 는 `project + integration + field` 를 쓴다.
+Agent API token 과 webhook trigger secret 은 각각 agent 이름과
+`agent + triggerId` 에 묶인다. Slack 의 bot token·signing secret, Telegram 의 bot
+token·webhook secret, Teams 의 app password 는 `agent + integration + field` 를 쓴다.
 MCP registry header 는 항목 이름과 header 이름에, managed MCP 의 environment 는
 항목 이름과 변수 이름에 묶인다. HTTP header의 override 병합만 이름의 대소문자를 무시하고,
 AAD 는 environment와 같은 공통 map 규칙에 따라 저장된 키 철자를 그대로 쓴다.
 
-Agent의 MCP header override는 `project + agent + server + header`에 묶인다. 현재 설정을
+Agent의 MCP header override는 `agent + configuration + mcp + server + header`에 묶인다. 현재 설정을
 같은 Agent에서 수정해도 암호화 문맥은 유지되며 다른 Agent로 복제할 때는 시크릿을 복사하지
 않는다.
 
@@ -255,8 +255,8 @@ Agent별 MCP 문자열 오버라이드는 저장 당시 registry URL 의 fingerp
 
 | 시크릿 | 엔드포인트 | 누가 |
 |---|---|---|
-| Agent API token | `POST /api/projects/{name}/token/reveal` | 소유자 또는 admin |
-| Webhook trigger 시크릿 | `POST /api/projects/{name}/triggers/{trigger}/reveal` | 소유자 또는 admin |
+| Agent API token | `POST /api/agents/{name}/token/reveal` | 소유자 또는 admin |
+| Webhook trigger 시크릿 | `POST /api/agents/{name}/triggers/{trigger}/reveal` | 소유자 또는 admin |
 
 둘 모두 **읽는데도 POST** 다. 응답 본문이 살아 있는 자격 증명이므로 캐시, 브라우저 기록,
 프리페치 바깥에 머물러야 한다. 모든 reveal 은 호출자의 email 과 함께 **감사 행** 을 남기고, 그
@@ -265,8 +265,8 @@ Agent별 MCP 문자열 오버라이드는 저장 당시 registry URL 의 fingerp
 
 따라서 둘은 해시가 아니라 **암호화해서** 저장되며, 이는 의도된 트레이드오프다. 데이터스토어만으로는
 하나도 쓸 수 없지만, 데이터스토어 *더하기* `AES_ENCRYPTION_KEY` 면 쓸 수 있다. **그 키를 테이블
-덤프와 살아 있는 project 자격 증명 사이에 서 있는 것으로 다뤄라.** reveal 이 생기기 전에 발급된
-project token 은 대신 SHA-256 해시로 저장돼 있다. 검증은 되지만 다시 보여 줄 수는 없으므로
+덤프와 살아 있는 agent 자격 증명 사이에 서 있는 것으로 다뤄라.** reveal 이 생기기 전에 발급된
+agent token 은 대신 SHA-256 해시로 저장돼 있다. 검증은 되지만 다시 보여 줄 수는 없으므로
 콘솔이 재발급을 제안한다.
 
 ### 발급한 시크릿의 접두사
@@ -276,15 +276,15 @@ project token 은 대신 SHA-256 해시로 저장돼 있다. 검증은 되지만
 
 | 접두사 | 시크릿 |
 |---|---|
-| `ast_` | Project API token (소유자 관리) |
+| `ast_` | Agent API token (소유자 관리) |
 | `asw_` | Webhook trigger 시크릿 (소유자 관리) |
-| `asg_` | Telegram webhook 시크릿 (project 마다 발행. Telegram 에게만 건네고 결코 reveal 하지 않는다) |
+| `asg_` | Telegram webhook 시크릿 (agent 마다 발행. Telegram 에게만 건네고 결코 reveal 하지 않는다) |
 
 랜덤 부분은 32바이트(256비트)이므로 접두사가 잡아먹는 엔트로피는 문제가 되지 않는다. 검증은
 접두사를 결코 보지 않으므로 예전 표기로 발급된 token. `ad*_`, 그 이전의 `sk_proj_`. 도 계속
 동작한다.
 
-project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 옆에 저장되므로, token 을 나열하는
+agent token 의 표시용 마스크는 생성 시점에 계산돼 암호문 옆에 저장되므로, token 을 나열하는
 데는 복호화 비용이 들지 않는다. 그 마스크는 접두사와 가장자리 문자만 실어 나르며, token 을
 복원하기에 충분한 적은 결코 없다.
 
@@ -294,11 +294,11 @@ project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 �
 
 | 표면 | 자격 증명 | 검증 |
 |---|---|---|
-| 실행 엔드포인트 (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer ast_…` | 복호화 후 상수 시간 비교(레거시 token 은 해시 비교), 경로의 `{name}` 으로 범위 제한. **project 소유자로서** 실행된다 (`authenticateExecution`) |
-| Slack 이벤트 | Slack 서명 시크릿 | HMAC + `timingSafeEqualString`, 5분 리플레이 윈도, project 별 시크릿 |
-| Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | 이 플랫폼이 webhook 을 등록할 때 쓴 project 별 시크릿(`asg_…`)과 `timingSafeEqualString` 비교. Telegram 이 배달마다 그대로 되돌려주며, 그 밖에 확인할 서명은 없다 |
+| 실행 엔드포인트 (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer ast_…` | 복호화 후 상수 시간 비교(레거시 token 은 해시 비교), 경로의 `{name}` 으로 범위 제한. **agent 소유자로서** 실행된다 (`authenticateExecution`) |
+| Slack 이벤트 | Slack 서명 시크릿 | HMAC + `timingSafeEqualString`, 5분 리플레이 윈도, agent 별 시크릿 |
+| Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | 이 플랫폼이 webhook 을 등록할 때 쓴 agent 별 시크릿(`asg_…`)과 `timingSafeEqualString` 비교. Telegram 이 배달마다 그대로 되돌려주며, 그 밖에 확인할 서명은 없다 |
 | Teams messaging endpoint | Bot Framework bearer 토큰 (JWT) | RS256 서명을 서비스가 공개한 JWKS(`login.botframework.com`) 로 검증하고, 발급자 `https://api.botframework.com`, audience = 그 봇의 App ID, `exp`/`nbf`(5분 skew), 그리고 **`serviceurl` 클레임 = activity 의 `serviceUrl`** 을 요구한다. 답은 그 주소로 이 앱의 토큰을 붙여 나가므로. Emulator 토큰은 받지 않는다 (`src/infrastructure/teams/client.ts`) |
-| Webhook trigger | `X-Trigger-Secret` 또는 GitHub `X-Hub-Signature-256` | 프로젝트 시크릿의 `cipher.decryptEquals` 또는 원본 UTF-8 body의 HMAC-SHA256 상수 시간 비교. GitHub 헤더가 있으면 서명 검증을 강제하고 일반 시크릿으로 폴백하지 않는다. 서명된 ping은 실행하지 않으며 GitHub delivery ID로 중복을 차단한다 |
+| Webhook trigger | `X-Trigger-Secret` 또는 GitHub `X-Hub-Signature-256` | Agent 시크릿의 `cipher.decryptEquals` 또는 원본 UTF-8 body의 HMAC-SHA256 상수 시간 비교. GitHub 헤더가 있으면 서명 검증을 강제하고 일반 시크릿으로 폴백하지 않는다. 서명된 ping은 실행하지 않으며 GitHub delivery ID로 중복을 차단한다 |
 | Workspace GitHub webhook | `X-Hub-Signature-256`과 `X-GitHub-Delivery` | 별도 배포 시크릿으로 검증하고 PR/CI 메타데이터만 갱신한다. Git 실행 승인이 아니다 |
 | CronJob 틱. schedule 스캔(`/api/triggers/scan`), 카탈로그 재색인(`/api/catalog/reindex`), plugins sync(`/api/plugins/sync/scan`) | `X-Scan-Token` | `SCHEDULE_SCAN_TOKEN` 과 `timingSafeEqualString` 비교. 설정돼 있지 않으면 503 으로 답하고, 거부된 token 은 셋 모두에서 경고를 로그에 남긴다 |
 
@@ -314,12 +314,12 @@ trigger 와 다르게 답할 수 없게 하기 위해서다. 그 차이는 어�
 상수 시간 비교는 소유자가 하나, `src/shared/timingSafe.ts` 이고
 `tests/architecture.test.ts` 가 고정한다.
 
-리플레이 억제는 Slack `event_id`, Telegram의 project·bot·`update_id`,
-Teams의 project·App ID·conversation·activity ID를 키로 한 조건부 claim을 사용한다.
+리플레이 억제는 Slack `event_id`, Telegram의 agent·bot·`update_id`,
+Teams의 agent·App ID·conversation·activity ID를 키로 한 조건부 claim을 사용한다.
 완료 claim은 중복을 막고, 실패 또는 만료된 처리 lease는 재전달 시 다시 claim할 수 있다.
 ACK 후 실행하는 과정과 외부 도구 효과를 하나의 transaction으로 묶지는 않으므로
 end-to-end exactly-once를 보장하지 않는다. 플랫폼이 재전달하지 않으면 유실 이벤트를
-스스로 복구하는 worker도 없다. Project webhook의 멱등 계약은 [Trigger 설계](design/triggers.md)를 따른다.
+스스로 복구하는 worker도 없다. Agent webhook의 멱등 계약은 [Trigger 설계](design/triggers.md)를 따른다.
 
 ## 인바운드 요청 크기
 
@@ -345,8 +345,8 @@ JSON 본문은 schema 검증 전에 bounded reader를 지난다. 관리·편집 
 
 Cookie session으로 인증하는 `POST`·`PUT`·`PATCH`·`DELETE`는 `Origin`이 request origin 또는
 설정된 `PUBLIC_BASE_URL` origin과 정확히 같아야 한다. Origin이 없거나 `null`이거나 URL로
-해석되지 않으면 403이다. 세 session wrapper가 일반 console API를 한 번에 보호하고, project
-실행 API는 bearer project token을 먼저 검증한 뒤 cookie session으로 fallback할 때 같은 검사를
+해석되지 않으면 403이다. 세 session wrapper가 일반 console API를 한 번에 보호하고, agent
+실행 API는 bearer agent token을 먼저 검증한 뒤 cookie session으로 fallback할 때 같은 검사를
 적용한다. bearer token, webhook signature처럼 cookie를 쓰지 않는 머신 호출에는 CSRF
 검사를 적용하지 않는다.
 
@@ -443,7 +443,7 @@ MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local
 
 선언된 접미사 아래의 호스트는 그 질문이 던져지는 모든 곳에서 public URL 가드를 건너뛴다.
 항목을 등록할 때와 편집할 때, 콘솔의 "Test connection" 프로브, admin 이 항목의 OAuth 메타데이터를
-읽을 때, project 자신의 도구 목록, 그리고 디스패치. 각각 `skipsUrlGuard` 를 통해서다. **차단된
+읽을 때, agent 자신의 도구 목록, 그리고 디스패치. 각각 `skipsUrlGuard` 를 통해서다. **차단된
 주소 대역이 넓어지는 것은 아니다**. 다른 모든 항목은 여전히 원래 받던 검사를 받는다. 이것은
 가드를 느슨하게 하는 것이 아니라 managed 루프백 옆에 놓인 두 번째 좁은 예외다.
 
@@ -516,21 +516,21 @@ capability를 모두 버리며 `no-new-privileges`로 실행된다. root filesys
 
 `application/mcpMetadataHeaders.ts`가 저장된 예약 header를 제거하고 확인한 신원을 붙인다.
 다른 대소문자 표기도 같은 이름으로 취급하며 OAuth 가용성 검사 전에 제거한다.
-사용자가 정적 header를 저장해 다른 사람·프로젝트·대화를 사칭할 수 없다.
+사용자가 정적 header를 저장해 다른 사람·Agent·대화를 사칭할 수 없다.
 
 | Header | 의미·범위 |
 |---|---|
-| `X-Tenant-Id` | 실행 Project 이름. 프로젝트별 도구 목록과 discovery cache를 구분한다 |
-| `X-User-Email` | user·project-token의 정규화 이메일 또는 Slack이 확인한 이메일. 신원 cache key에 포함한다 |
+| `X-Tenant-Id` | 실행 Agent 이름. Agent별 도구 목록과 discovery cache를 구분한다 |
+| `X-User-Email` | user·agent-token의 정규화 이메일 또는 Slack이 확인한 이메일. 신원 cache key에 포함한다 |
 | `X-Conversation-Id` | 대화 주소. 요청의 context header이며 discovery cache key에 포함하지 않는다 |
 
 이메일은 MCP discovery부터 평문으로 전송하며 PII 필터가 가리지 않는다.
 서버 등록은 사용자 이메일과 복원된 도구 인자 공개를 포함하는 신뢰 결정이다.
 이 header만으로 인증되지 않으며 서버는 별도 Bearer·OAuth grant와 함께 위임 신원을 검증해야 한다.
 
-registry Test와 프로젝트 도구 조회는 요청 사용자 email을 전송한다.
+registry Test와 Agent 도구 조회는 요청 사용자 email을 전송한다.
 카탈로그·managed health probe에는 사용자·대화가 없다.
-프로젝트 도구 조회는 OAuth와 override를 사용하지만 tenant header는 보내지 않는 현재 차이가 있다.
+Agent 도구 조회는 OAuth와 override를 사용하지만 tenant header는 보내지 않는 현재 차이가 있다.
 따라서 tenant마다 도구 목록이 다른 서버에서는 probe와 런의 목록이 다를 수 있다.
 
 API 대화 주소의 caller 부분은 배포 키로 만든 digest다.
@@ -585,7 +585,7 @@ firing이나 대화 ID 없는 요청은 대화 header를 보내지 않는다.
 ## MCP OAuth
 
 관리자는 registry에 OAuth 메타데이터와 선택적 공유 client를 등록하고,
-프로젝트별 connection은 사용자 grant를 보관한다.
+Agent별 connection은 사용자 grant를 보관한다.
 실행 경로는 well-known 문서를 다시 읽지 않고 저장된 계약으로 token을 해석한다.
 발견·연결·callback의 HTTP 형태는 [API](API.md#mcp-oauth), refresh 수명은
 [MCP 설계](design/mcp.md#oauth)를 따른다.
@@ -625,7 +625,7 @@ registry URL 변경은 이전 `auth`를 폐기한다. 새 주소의 Discover가 
 | resource | authorization과 token 요청에 대상 resource를 포함 |
 | callback issuer | code 교환 전에 pending state의 issuer와 문자 그대로 비교. provider가 지원을 광고했는데 `iss`가 없으면 거절 |
 | 오류 callback | issuer를 검증할 수 없는 응답의 `error_description`을 그대로 전달하지 않음 |
-| callback 권한 | 현재 프로젝트 쓰기 권한과 client·resource를 다시 확인 |
+| callback 권한 | 현재 Agent 쓰기 권한과 client·resource를 다시 확인 |
 | token endpoint 인증 | 등록한 인증 방식을 연결에 저장·사용. basic은 client ID와 secret을 form encoding 후 Base64. secret 없는 client는 `none` |
 | 동적 등록 | `application_type: "web"`을 명시하고 token 요청과 같은 인증 방식으로 등록 |
 
@@ -635,17 +635,17 @@ registry URL 변경은 이전 `auth`를 폐기한다. 새 주소의 Discover가 
 
 공유 앱은 `clientFromRegistry`와 Client ID를 기록하고 code 교환·refresh 때 현재 Secret을 읽는다.
 Secret 회전은 기존 grant에 반영하지만 Client ID의 교체·제거는 기존 grant를 차단한다.
-개별 동적 등록 Secret은 해당 프로젝트 connection에 보관한다.
+개별 동적 등록 Secret은 해당 Agent connection에 보관한다.
 
 ### 공개 Client ID 문서
 
-`/api/mcps/oauth/client-metadata/{project}`는 authorization server가 쿠키 없이 가져가는 문서다.
+`/api/mcps/oauth/client-metadata/{agent}`는 authorization server가 쿠키 없이 가져가는 문서다.
 secret은 없고 client 이름·client ID URL·고정 redirect URI를 제공한다.
 요청 Host 대신 설정된 공개 base로 주소를 만든다. 이 URL을 실제 client ID로 선택하는
 인가 준비 단계에서 HTTPS·공개 도달 가능 조건을 확인한다.
 
-project 존재 여부는 조회하지 않는다. 모르는 이름에도 문서를 제공하는 것이 인가를 만들지는 않으며,
-실제 callback은 저장된 state·연결·프로젝트 권한을 요구한다.
+agent 존재 여부는 조회하지 않는다. 모르는 이름에도 문서를 제공하는 것이 인가를 만들지는 않으며,
+실제 callback은 저장된 state·연결·Agent 권한을 요구한다.
 공개 base가 없거나 provider가 가져갈 수 없는 주소면 metadata 방식 대신 지원되는 등록 경로를
 사용하거나 설정 오류를 반환한다.
 
@@ -670,9 +670,9 @@ grant를 사용할 수 없어도 별도의 정적 credential이 있으면 서버
 
 ## Workspace와 코딩 작업
 
-Workspace는 chat 소유자에게만 공개되며 실행·승인은 현재 프로젝트 접근도 다시 확인한다.
-Workspace 설정 쓰기는 프로젝트 소유자·관리자에게 한정하고 revision 조건과 프로젝트 수명 경계로 보호한다.
-Agent의 도구 활성화는 해당 프로젝트에서 서버 GitHub 계정을 정책 범위 내 사용하는 것을 허용한다.
+Workspace는 chat 소유자에게만 공개되며 실행·승인은 현재 Agent 접근도 다시 확인한다.
+Workspace 설정 쓰기는 Agent 소유자·관리자에게 한정하고 revision 조건과 Agent 수명 경계로 보호한다.
+Agent의 도구 활성화는 해당 Agent에서 서버 GitHub 계정을 정책 범위 내 사용하는 것을 허용한다.
 Runtime 모델 선택은 관리자에게 한정하며 도구를 끄면 새 실행·Git 승인을 거절한다.
 등록 저장소·정확한 소유자 허용은 DB에서 현재 값을 읽으며 일반 Agent가 수정하지 않는다.
 소유자 허용은 해당 계정의 향후 저장소도 포함하므로 관리 화면에서 그 범위를 명시한다. 조회 실패는
@@ -690,7 +690,7 @@ GitHub App의 private key는 서버에 남고 clone/push에 발행하는 token�
 
 효과는 검토한 tree/HEAD와 사용자 결정에 묶인 승인 레코드를 먼저 claim한 뒤 실행한다.
 종료·삭제가 먼저 기록되면 pending/실행 claim을 거절한다. 종료된 Workspace의 새 Git 검토는
-소유자·살아 있는 Chat·프로젝트와 action lease를 원자적으로 확인한 뒤 복원하며 삭제는 되돌리지 않는다.
+소유자·살아 있는 Chat·Agent와 action lease를 원자적으로 확인한 뒤 복원하며 삭제는 되돌리지 않는다.
 main 병합은 PR 소유 범위와 CI를
 재확인하고 GitHub의 정확한 head SHA 조건을 사용한다. 배포는 허용된 main workflow와
 승인한 inputs로만 요청한다. 전송 오류 이후의 불확실한 효과는 자동 재실행하지 않는다.
@@ -698,14 +698,14 @@ main 직접 푸시는 검토한 main SHA와 게시된 작업 HEAD를 대조하�
 검사 미보고는 `none`으로 승인 화면에 표시하고, 대기 중·실패한 검사와 구분한다. 모든 main 반영은
 GitHub 브랜치 규칙을 따르며 권한·보호 규칙을 우회하는 옵션을 제공하지 않는다.
 `/api/workspaces/github/webhook`은 서명과 delivery ID로 PR 메타데이터만 갱신하며 승인 권한이 없다.
-프로젝트 Trigger인 `/api/webhook/{project}`는 별도 프로젝트 시크릿으로 실행을 시작한다.
+Agent Trigger인 `/api/webhook/{agent}`는 별도 Agent 시크릿으로 실행을 시작한다.
 관리자가 `githubReview`를 활성화하면 서명된 PR 이벤트에 대해 설치의 GitHub 연결로 리뷰 댓글을
 게시할 수 있다. 공유 자격 증명 위임 설정은 관리자만 변경하며, 접근 가능한 저장소 전체 또는
 명시적 저장소 목록으로 한정한다. PR의 본문·URL이 게시 목적지를 결정하지 않는다. 공급자 API가
 확인한 base repository·PR 번호·commit_id에 COMMENT만 게시하고 모델에는 Skill 읽기만 제공한다.
-프로젝트 Webhook Secret은 선택 범위의 리뷰를 요청할 권한이므로 승인한 GitHub 저장소에만 등록한다.
-Webhook·Schedule·메신저·project-token actor에는 user 전용 Workspace 빌트인을 제공하지 않는다.
-승인·CI 결과의 Chat 재개는 원래 소유자·프로젝트 접근·Workspace 선택과 SDK Session을 다시 확인한다.
+Agent Webhook Secret은 선택 범위의 리뷰를 요청할 권한이므로 승인한 GitHub 저장소에만 등록한다.
+Webhook·Schedule·메신저·agent-token actor에는 user 전용 Workspace 빌트인을 제공하지 않는다.
+승인·CI 결과의 Chat 재개는 원래 소유자·Agent 접근·Workspace 선택과 SDK Session을 다시 확인한다.
 그 결과 이벤트는 새 사용자 요청이나 다음 Git 동작에 대한 승인으로 취급하지 않는다.
 
 ## SDK Session과 승인 상태
@@ -716,7 +716,7 @@ SDK Session 이력과 승인 대기 RunState는 `runtime_sessions`에 별도로 
 암호화 키를 분리해 관리하고 백업·복구 시 같은 키를 유지하라.
 
 승인은 Chat 소유자가 정확한 revision과 항목 ID를 지정한다. 동일 출처 session 변경 검사,
-프로젝트 접근 재확인, 실행 lease와 Session CAS를 함께 적용한다. 승인 상태는 도구 실행 전에
+Agent 접근 재확인, 실행 lease와 Session CAS를 함께 적용한다. 승인 상태는 도구 실행 전에
 pending에서 running으로 선점한다. 중복·낡은 결정, 변경된 설정과 연결은 거부하며 승인 후
 중단된 실행은 자동으로 반복하지 않는다. 삭제 tombstone은 늦게 끝난 실행의 재생성을 막는다.
 
@@ -770,13 +770,13 @@ preview는 모델을 호출하지 않아도 recall·discovery를 수행할 수 �
 그리고 제공자가 로깅하는 무엇에든 집어넣겠다는 결정이다.
 
 옵트인은 모델에 넣을 이름·시간대·아바타를 위한 프로필 조회를 게이트한다. Slack 의 private
-project 접근 검사와 artifact 소유자 식별에 필요한 email 조회는 옵트인과 독립적으로
+agent 접근 검사와 artifact 소유자 식별에 필요한 email 조회는 옵트인과 독립적으로
 `users.info` 를 호출할 수 있다. 그 email 은 모델의 caller 블록에 들어가지 않는다.
 이름이 메시지와 함께 도착하는 Telegram 에서는 옵트인하지 않은 이름이 대화 트랜스크립트에 쓰이지도
 않는다([데이터 노출과 보존](#데이터-노출과-보존) 참고). **transfer 는 호출자를
 자식에게 실어 나르고**(`RunOrigin`), 거기서 자식 Agent 자신의 옵트인이 다시 결정한다. 그래서
 이름은 몇 홉 떨어져 있든 그것을 요청한 Agent에만 도달하고, 소유자가 한 번도 옵트인하지 않은
-project 는 그것을 결코 보지 않는다. 해석된 프로필은 워크스페이스별로 메모리에
+agent 는 그것을 결코 보지 않는다. 해석된 프로필은 워크스페이스별로 메모리에
 캐시되고(1시간, 실패는 1분), 크기가 제한되며, 결코 영속되지 않는다.
 
 **표시 이름은 공격자가 통제한다.** 누구나 자기 것을 무엇으로든 설정할 수 있고, 그것이 시스템
@@ -802,12 +802,12 @@ reference, 알림을 만들지 않는 date token은 보존한다.
 
 ## Slack 워크스페이스 읽기
 
-`parameters.slackWorkspace` 로 Agent별 옵트인. 켜져 있으면 런은 자기 project 의 봇이 설치된
+`parameters.slackWorkspace` 로 Agent별 옵트인. 켜져 있으면 런은 자기 agent 의 봇이 설치된
 워크스페이스의 채널 히스토리, 스레드, 사용자 이름을 읽을 수 있다.
 
-**Project 는 공유 카탈로그다** (private project 라면 그 접근 범위 안에서). 따라서 project 를
+**Agent 는 공유 카탈로그다** (private agent 라면 그 접근 범위 안에서). 따라서 agent 를
 실행할 수 있는 사람은 누구나 그 봇이 읽을 수 있는 것을 읽을 수 있다. 봇이 초대된 모든
-채널이며, `groups:history` 가 적용되는 비공개 채널도 포함이다. 그것이 이것을 Slack 에 연결된 모든 project 가 갖는 capability 가 아니라 Agent별
+채널이며, `groups:history` 가 적용되는 비공개 채널도 포함이다. 그것이 이것을 Slack 에 연결된 모든 agent 가 갖는 capability 가 아니라 Agent별
 옵트인으로 만든 이유 전부다. 켜는 것은 어떤 채널의 내용을 그 채널 자신의 멤버보다 더 넓은
 사람들에게 닿게 하겠다는 결정이다.
 
@@ -822,7 +822,7 @@ reference, 알림을 만들지 않는 date token은 보존한다.
   [호출자 컨텍스트](#호출자-컨텍스트)가 이미 적용하는 규칙이고, 이유도 같다. email 은 Slack 밖에서
   사람을 식별하며, 어떤 답도 잘 쓰이기 위해 그것을 필요로 하지 않는다.
 
-  이메일은 private 프로젝트 접근 판정, MCP 위임 신원과 Artifact의 개인 귀속에 별도로 사용한다.
+  이메일은 private Agent 접근 판정, MCP 위임 신원과 Artifact의 개인 귀속에 별도로 사용한다.
   Slack actor는 발신자의 Slack 사용자 ID다. `ownerEmail`을 해석해도 actor를 email로 바꾸거나
   개인 user tier 예산으로 다시 분류하지 않는다. `toUserDetail`은 이메일을 모델용 도구 결과에
   복사하지 않는다. 이 조회는 모델 표시 문맥을 제어하는 `callerContext`와 독립적이다.
@@ -860,7 +860,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   (email, 전화번호, 한국 등록번호, 카드 번호, 이름은 아니다).
 - **Chat은 원본과 추출문을 분리해 보관한다.** 턴당 최대 40,000자의 추출문과 파일 참조는
   소유자 전용 chat 행에 남고, 원본은 `source: attachment`인 artifact로 저장한다. 원본은
-  기존 artifact와 같은 소유자·project owner·admin 읽기 정책, artifact 보존 기간과 오브젝트
+  기존 artifact와 같은 소유자·agent owner·admin 읽기 정책, artifact 보존 기간과 오브젝트
   접근 모드를 따른다. 원본은 chat 삭제만으로 삭제되지 않으며 artifact 삭제·보존 정책이 소유한다.
 
 ## 데이터 노출과 보존
@@ -875,7 +875,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   `piiFiltering` 을 켠 Agent에서도 추론은 걸러지지 않은 채 chat 행에 앉는다. 추론은 요청을 모델
   자신의 말로 되풀이하는 자리라 입력이 실어 온 것을 그대로 품기 쉽다. 옵트인인 이유가 이것이고,
   보존 기간은 chat 행과 같다(`RETENTION.chatDays`).
-- `/api/metrics` 는 project, 사용자, model 을 지목하지 않는다. 메트릭 라벨은 히스토그램의
+- `/api/metrics` 는 agent, 사용자, model 을 지목하지 않는다. 메트릭 라벨은 히스토그램의
   `le` 와 build 정보의 유한한 `version`·`stage`뿐이다.
 - 로그 라인은 런의 correlation id 를 실을 뿐, 프롬프트 내용은 결코 싣지 않는다.
 - Trace, usage 행, chat, trigger 배달 행은 모두 `expiresAt` 을 지니고
@@ -884,12 +884,12 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
 - **메시징 파일 참조 기록**은 Slack·Telegram·Teams에서 대화·actor별로 생성 파일 ID와
   이름만 7일간 보관한다. URL이나 바이트는 기록하지 않는다. 최근 20개 기록, 기록당 20개
   파일, 런당 20,000자로 제한하며 참조를 얻어도 `File` 도구의 권한 검사를 통과해야 한다.
-- **Telegram·Teams 대화 트랜스크립트** 는 project 의 봇과 주고받은 모든 턴의 *텍스트* 를 7일간
+- **Telegram·Teams 대화 트랜스크립트** 는 agent 의 봇과 주고받은 모든 턴의 *텍스트* 를 7일간
   보관한다. 대화별로 질문과 답을. 두 플랫폼 모두 히스토리를 돌려주지 않아 후속 질문이 그 앞의
   질문을 실어 날라야 하기 때문이다. 그것은 chat 메시지처럼 저장된 사용자 텍스트다. chat 과 달리
   그 대화의 다음 런 외에는 아무것도 그것을 읽지 않는다. 보낸 사람의 플랫폼 사용자 id(Telegram
   user id, Teams 는 Entra object id)는 턴 옆에 저장되고, 보낸 사람의 *이름* 은 Agent가 `callerContext` 에 옵트인했을 때만 저장되며, 옵트인을 끈
-  Agent는 이전에 저장된 이름도 읽지 않는다. 행은 project 파티션에 있어 project 를 지우면 함께
+  Agent는 이전에 저장된 이름도 읽지 않는다. 행은 agent 파티션에 있어 agent 를 지우면 함께
   지워진다.
 - **생성된 이미지** 는 `S3_BUCKET_NAME` 이 설정돼 있으면 추측할 수 없는 UUID 키 아래 저장되고,
   chat 행은 주소가 아니라 **오브젝트 키** 를 보관한다. 읽기 시점에 키가 주소가 되며, 수명은
@@ -957,7 +957,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
     [INSTALL.md](INSTALL.md#오디오-worker)의 저장소 정책을 따른다.
 - **비공개 파일 Artifacts**는 같은 `S3_BUCKET_NAME`을 사용하지만 일반 object 접근 경로로 읽거나
   URL을 발급할 수 없다. `source-files/` 키는 일반 어댑터와 bearer URL 검증에서 거절하며,
-  소유자·프로젝트·파일 상태·만료를 확인하는 다운로드·미리보기 경로만 사용한다.
+  소유자·Agent·파일 상태·만료를 확인하는 다운로드·미리보기 경로만 사용한다.
   `public` 모드에서는 가져오기 전에 비공개 파일 쓰기를 거절한다. 실제 bucket policy와 ACL의
   익명 읽기 차단은 배포 환경이 소유한다.
 - **Artifact 행** 은 런이 만들어 낸 모든 오브젝트를 지목하고, 그것이 저장된 이미지나 문서를
@@ -965,7 +965,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   - 행은 갤러리를 읽을 수 있게 하려고 **프롬프트의 500자 발췌** 를 보관한다. 그것은
     `ARTIFACT_RETENTION_DAYS` 동안 사는 사용자 텍스트이며, 그것을 실어 온 chat 메시지보다 오래
     남는다. PII 필터링은 *모델* 이 보는 것을 한정할 뿐, 저장되는 것을 한정하지 않는다.
-  - project 의 artifact 탭은 그 project 의 소유자와 admin 이 읽을 수 있다. trace 가 쓰는 것과
+  - agent 의 artifact 탭은 그 agent 의 소유자와 admin 이 읽을 수 있다. trace 가 쓰는 것과
     같은 규칙이고, 이유도 같다(다른 사람의 런타임 출력을 담고 있다). 실제로는 trace 보다 더 넓은
     노출이다. Agent trace는 항상 기록하고 기본 30일을 보관하지만, artifact 는 모든 오브젝트이고 180일을
     보관한다.
@@ -975,7 +975,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
 
 ## 운영 노트
 
-- **고쳐 쓰지 말고 회전시켜라.** 유출된 project token과 trigger 시크릿은 콘솔에서
+- **고쳐 쓰지 말고 회전시켜라.** 유출된 agent token과 trigger 시크릿은 콘솔에서
   회전시킨다(`POST …/token`, `rotateSecret: true` 를 실은
   `PUT …/triggers/{id}`). 이전 값의 무효화 시점은 아래의 캐시 전파 범위를 따른다.
 - **설정 전파는 즉시가 아니다.** 강등된 admin의 권한 변경는 그 쓰기를 처리하지 않은

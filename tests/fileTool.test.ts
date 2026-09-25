@@ -23,12 +23,12 @@ function setup() {
   const read = vi.fn(async (key: string) => ({ bytes: bytes.get(key)!, mimeType: rows.values().next().value?.mimeType ?? "" }));
   const storage: ArtifactStorage = {
     rows: { put: async (row) => { rows.set(row.artifactId, row); }, get: async (id) => rows.get(id) ?? null,
-      listByProject: async () => [], listByOwner: async () => [], delete: async () => {} },
+      listByAgent: async () => [], listByOwner: async () => [], delete: async () => {} },
     objects: { put: async (input) => { bytes.set(input.key, input.bytes); }, read, sign: async () => "https://files.test/download", delete: async () => {} },
   };
   const deps = { artifacts: storage, documents: documentExtractor, documentRenderer, documentEditor, now: () => now };
-  const call = buildFileTool(deps, "project", { actor, ancestry: ["project"] })!;
-  const recorder = createArtifactRecorder(storage, { projectName: "project", actor });
+  const call = buildFileTool(deps, "agent", { actor, ancestry: ["agent"] })!;
+  const recorder = createArtifactRecorder(storage, { agentName: "agent", actor });
   async function capture(result: McpToolResult) {
     async function* output(): AsyncGenerator<EngineChunk> {
       for (const file of result.files ?? []) yield { file: { ...file, source: "builtin: File" } };
@@ -47,7 +47,7 @@ describe("private Artifact inputs", () => {
     const f = setup();
     f.rows.set("summary", { artifactId: "summary", privateFileId: "private-summary", kind: "document", source: "generated",
       key: "source-files/private-summary", mimeType: "text/markdown", filename: "summary.md", byteSize: 7,
-      projectName: "other-agent", ownerEmail: actor.id, createdAt: now.toISOString() });
+      agentName: "other-agent", ownerEmail: actor.id, createdAt: now.toISOString() });
     const readPrivateArtifact = vi.fn(async () => ({ bytes: new TextEncoder().encode("Summary") }));
     const call = buildFileTool({ ...f.deps, readPrivateArtifact }, "recorder", { actor, ancestry: ["recorder"] })!;
     expect((await call({ operation: "read", file_id: "summary" })).text).toContain("Summary");
@@ -120,17 +120,17 @@ describe("native File tool", () => {
     expect((await run.call({ operation: "read", file_id: first.artifactId })).text).toContain("Original content.");
   });
 
-  it("checks ownership before fetching bytes and scopes project tokens to their entry project", async () => {
+  it("checks ownership before fetching bytes and scopes agent tokens to their entry agent", async () => {
     const run = setup();
     const created = await run.call({ operation: "create", format: "xlsx", sheets: [{ name: "Sheet", rows: [[42]] }] });
     await run.capture(created);
     const fileId = created.files![0]!.artifactId;
-    const stranger = buildFileTool(run.deps, "project", { actor: { ...actor, id: "other@example.com" }, ancestry: ["project"] })!;
+    const stranger = buildFileTool(run.deps, "agent", { actor: { ...actor, id: "other@example.com" }, ancestry: ["agent"] })!;
     expect((await stranger({ operation: "read", file_id: fileId })).text).toBe("Error: File unavailable");
-    const token = buildFileTool(run.deps, "elsewhere", { actor: { kind: "project-token", id: actor.id }, ancestry: ["elsewhere"] })!;
+    const token = buildFileTool(run.deps, "elsewhere", { actor: { kind: "agent-token", id: actor.id }, ancestry: ["elsewhere"] })!;
     expect((await token({ operation: "read", file_id: fileId })).text).toBe("Error: File unavailable");
     expect(run.read).not.toHaveBeenCalled();
-    const child = buildFileTool(run.deps, "child", { actor: { kind: "project-token", id: actor.id }, ancestry: ["project", "child"] })!;
+    const child = buildFileTool(run.deps, "child", { actor: { kind: "agent-token", id: actor.id }, ancestry: ["agent", "child"] })!;
     expect((await child({ operation: "read", file_id: fileId })).text).toContain("42");
   });
 
@@ -142,7 +142,7 @@ describe("native File tool", () => {
     ]);
     const chunks: EngineChunk[] = [];
     const source = runAgent({ createToolSchemaValidator, channel, recordUsage: async () => {}, fileTool: run.call }, {
-      projectName: "project", model: "custom/test", systemPrompt: "Create a report.", messages: [{ role: "user", content: "Write the report." }],
+      agentName: "agent", model: "custom/test", systemPrompt: "Create a report.", messages: [{ role: "user", content: "Write the report." }],
     });
     for await (const chunk of captureRunArtifacts(run.recorder, source)) chunks.push(chunk);
     expect(channel.seenParams[0]!.tools?.some(({ function: fn }) => fn.name === "File")).toBe(true);
@@ -155,7 +155,7 @@ describe("native File tool", () => {
 
   it("does not advertise unavailable storage and reports invalid operations", async () => {
     const run = setup();
-    expect(buildFileTool({ ...run.deps, artifacts: undefined }, "project", { ancestry: ["project"] })).toBeUndefined();
+    expect(buildFileTool({ ...run.deps, artifacts: undefined }, "agent", { ancestry: ["agent"] })).toBeUndefined();
     expect((await run.call({ operation: "create", format: "hwp" })).text).toContain("Error:");
     expect((await run.call({ operation: "edit", file_id: "missing", edits: [] })).text).toBe("Error: File unavailable");
   });
@@ -166,7 +166,7 @@ describe("native File tool", () => {
     const channel = new FakeChannel([calls, [contentChunk("finished")]]);
     const chunks: EngineChunk[] = [];
     for await (const chunk of runAgent({ createToolSchemaValidator, channel, recordUsage: async () => {}, fileTool, saveFile }, {
-      projectName: "project", model: "custom/test", systemPrompt: "Create files", messages: [{ role: "user", content: "Create files" }],
+      agentName: "agent", model: "custom/test", systemPrompt: "Create files", messages: [{ role: "user", content: "Create files" }],
     })) chunks.push(chunk);
     expect(fileTool).toHaveBeenCalledTimes(9);
     expect(saveFile).toHaveBeenCalledTimes(1);

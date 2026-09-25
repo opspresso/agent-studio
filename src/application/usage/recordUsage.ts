@@ -9,7 +9,7 @@ import { log } from "@/shared/logger";
 import { utcDay } from "@/shared/date";
 
 export interface RecordUsageInput {
-  projectName: string;
+  agentName: string;
   model: string;
   inputTokens: number;
   outputTokens: number;
@@ -39,7 +39,7 @@ export async function recordUsage(
   input: RecordUsageInput,
 ): Promise<void> {
   await repo.record({
-    projectName: input.projectName,
+    agentName: input.agentName,
     date: input.date ?? todayUtc(),
     model: input.model,
     calls: 1,
@@ -55,19 +55,19 @@ export interface UsageAggregator {
   /** Buffer one call's usage. Never performs I/O, never rejects. */
   record: (input: RecordUsageInput) => Promise<void>;
   /**
-   * Write one atomic increment per (project, date, model). Best-effort.
+   * Write one atomic increment per (agent, date, model). Best-effort.
    *
-   * Returns the distinct projects it wrote for. A run spends on more than
+   * Returns the distinct agents it wrote for. A run spends on more than
    * one whenever it transfers, and the caller is the only thing that can
-   * settle a *child* project's thresholds — the run bracket settles the
-   * project it admitted and knows nothing about the rest.
+   * settle a *child* agent's thresholds — the run bracket settles the
+   * agent it admitted and knows nothing about the rest.
    */
   flush: () => Promise<string[]>;
 }
 
 /**
  * Collapse a multi-turn run's many usage writes into one increment per
- * (project, date, model). `record` accumulates in memory; `flush` (call it in a
+ * (agent, date, model). `record` accumulates in memory; `flush` (call it in a
  * `finally` so partial runs still record) performs the writes. Flush is
  * best-effort: a telemetry write failure is logged, never thrown, so it cannot
  * turn into a user-facing error after the answer was already delivered.
@@ -88,8 +88,8 @@ export function createUsageAggregator(
       // whole file binary to `grep`, `rg` and every tool built on them — and
       // this repository's one defence against a second copy of a decision is
       // searching for the first. The separator itself stays NUL because it is
-      // the one character a project name and a model id cannot contain.
-      const key = `${input.projectName}\0${date}\0${input.model}`;
+      // the one character an agent name and a model id cannot contain.
+      const key = `${input.agentName}\0${date}\0${input.model}`;
       const existing = totals.get(key);
       if (existing) {
         existing.inputTokens += input.inputTokens;
@@ -99,18 +99,18 @@ export function createUsageAggregator(
         existing.calls += 1;
       } else {
         // Normalised on the way in, so the sum above never has to ask whether
-        // the first call of a (project, date, model) happened to report one.
+        // the first call of a (agent, date, model) happened to report one.
         totals.set(key, { ...input, date, calls: 1, cachedTokens: input.cachedTokens ?? 0 });
       }
     },
     async flush() {
       const pending = [...totals.values()];
       totals.clear();
-      const projects = [...new Set(pending.map((total) => total.projectName))];
+      const agents = [...new Set(pending.map((total) => total.agentName))];
       for (const total of pending) {
         try {
           await repo.record({
-            projectName: total.projectName,
+            agentName: total.agentName,
             date: total.date,
             model: total.model,
             calls: total.calls,
@@ -119,14 +119,14 @@ export function createUsageAggregator(
             cachedTokens: total.cachedTokens,
             costUsd: total.costUsd,
             // The run's actor, not the buffered record's: a subagent transfer
-            // spends on a different project but is still the same person's run.
+            // spends on a different agent but is still the same person's run.
             ...(actor ? { actor } : {}),
           });
         } catch (error) {
           log.error("usage", "flush failed", { model: total.model, error });
         }
       }
-      return projects;
+      return agents;
     },
   };
 }

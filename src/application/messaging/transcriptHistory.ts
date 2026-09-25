@@ -42,7 +42,7 @@ export const MAX_TRANSCRIPT_TURN_CHARS = 20_000;
  */
 export async function loadTranscriptHistory(
   transcripts: ConversationTranscriptRepository | undefined,
-  projectName: string,
+  agentName: string,
   conversationKey: string,
   warnings: string[],
   scope: LogScope,
@@ -52,7 +52,7 @@ export async function loadTranscriptHistory(
   }
   let turns: TranscriptTurn[];
   try {
-    turns = await transcripts.recent(projectName, conversationKey, MAX_HISTORY_TURNS);
+    turns = await transcripts.recent(agentName, conversationKey, MAX_HISTORY_TURNS);
   } catch (error) {
     log.error(scope, "conversation history failed", error);
     warnings.push("Conversation history unavailable; answered without prior context.");
@@ -85,7 +85,7 @@ export async function loadTranscriptHistory(
  */
 export async function rememberTurn(
   transcripts: ConversationTranscriptRepository | undefined,
-  projectName: string,
+  agentName: string,
   conversationKey: string,
   turn: TranscriptTurn,
   scope: LogScope,
@@ -98,7 +98,7 @@ export async function rememberTurn(
       ? `${cutCodePoints(turn.content, MAX_TRANSCRIPT_TURN_CHARS)}\n…[truncated]`
       : turn.content;
   await transcripts
-    .append(projectName, conversationKey, { ...turn, content })
+    .append(agentName, conversationKey, { ...turn, content })
     .catch((error) => log.error(scope, "conversation turn could not be recorded", error));
 }
 

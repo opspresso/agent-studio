@@ -7,8 +7,8 @@ describe("Workspace Sandbox deployment configuration", () => {
       image: "workspace:test", network: "none", memoryMb: 2048, diskMb: 2048, cpus: 2, workerConcurrency: 1,
     });
   });
-  it("does not enable tools through legacy project or runtime configuration", () => {
-    expect(parseWorkspaceConfig({ WORKSPACE_CONFIG: JSON.stringify({ image: "workspace:test", projects: [{ projectName: "demo", agentTools: true }] }) })).toBeUndefined();
+  it("does not enable tools through legacy agent or runtime configuration", () => {
+    expect(parseWorkspaceConfig({ WORKSPACE_CONFIG: JSON.stringify({ image: "workspace:test", agents: [{ agentName: "demo", agentTools: true }] }) })).toBeUndefined();
     expect(parseWorkspaceConfig({})).toBeUndefined();
     expect(parseWorkspaceConfig({ WORKSPACE_IMAGE: " " })).toBeUndefined();
   });

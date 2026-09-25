@@ -2,7 +2,7 @@ import type { FileRetention } from "./retention";
 
 export interface SourceFile {
   id: string;
-  projectName: string;
+  agentName: string;
   userEmail: string;
   filename: string;
   mimeType: string;
@@ -43,10 +43,10 @@ export function isSourceFileObjectKey(key: string): boolean { return key.startsW
 
 export interface SourceFileRepository {
   create(file: SourceFile): Promise<SourceFile>;
-  get(projectName: string, id: string): Promise<SourceFile | null>;
+  get(agentName: string, id: string): Promise<SourceFile | null>;
   finish(file: SourceFile, result: { storedAt: string; retireAt: string; byteSize: number; checksum: string }): Promise<SourceFile | null>;
   expired(now: string, limit: number): Promise<SourceFile[]>;
-  forJob(projectName: string, jobId: string, kind: NonNullable<SourceFile["derived"]>["kind"], limit: number): Promise<SourceFile[]>;
+  forJob(agentName: string, jobId: string, kind: NonNullable<SourceFile["derived"]>["kind"], limit: number): Promise<SourceFile[]>;
   retire(file: SourceFile, now: string): Promise<SourceFile | null>;
   markDeleting(file: SourceFile, now: string): Promise<SourceFile | null>;
   markDeleted(file: SourceFile, now: string): Promise<boolean>;

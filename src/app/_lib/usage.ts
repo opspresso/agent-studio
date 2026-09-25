@@ -3,16 +3,16 @@ import { daysBetween } from "@/shared/date";
 
 export type { UsageRow };
 
-export type GroupBy = "project" | "model" | "provider" | "department";
+export type GroupBy = "agent" | "model" | "provider" | "department";
 
 /**
  * What every helper here actually reads: a day, and the per-model maps for it.
  *
  * Narrower than `UsageRow` so a member's own rows — which carry an email
- * instead of a project — go through the same grouping, totalling and series
- * code as a project's. `projectName` is required only by the two groupings
+ * instead of an agent — go through the same grouping, totalling and series
+ * code as an agent's. `agentName` is required only by the two groupings
  * that name one; a row without it buckets as `NO_DEPARTMENT_KEY`, which is
- * what those groupings already do for a project with no department.
+ * what those groupings already do for an agent with no department.
  */
 export interface DailyCostRow {
   date: string;
@@ -25,11 +25,11 @@ export interface DailyCostRow {
    * and so does a channel that never reports it.
    */
   cachedTokens?: Record<string, number>;
-  projectName?: string;
+  agentName?: string;
 }
 
 /**
- * The bucket for projects with no `departmentCode`. A visible key rather than a
+ * The bucket for agents with no `departmentCode`. A visible key rather than a
  * dropped row: unattributed spend hidden from a chargeback view reads as "the
  * departments cover everything", which is exactly the claim it cannot make.
  */
@@ -44,7 +44,7 @@ export interface UsageGroup {
   cachedTokens: number;
 }
 
-/** Exported because the project usage page totals the same rows. */
+/** Exported because the agent usage page totals the same rows. */
 export function sumRecord(record: Record<string, number>): number {
   let total = 0;
   for (const value of Object.values(record)) {
@@ -59,18 +59,18 @@ export function providerOf(model: string): string {
   return index === -1 ? model : model.slice(0, index);
 }
 
-/** The per-project grouping key — the project itself, or its department. */
+/** The per-agent grouping key — the agent itself, or its department. */
 function rowKey(
   row: DailyCostRow,
   by: GroupBy,
   departments?: ReadonlyMap<string, string>,
 ): string {
-  if (!row.projectName) {
+  if (!row.agentName) {
     return NO_DEPARTMENT_KEY;
   }
   return by === "department"
-    ? departments?.get(row.projectName) || NO_DEPARTMENT_KEY
-    : row.projectName;
+    ? departments?.get(row.agentName) || NO_DEPARTMENT_KEY
+    : row.agentName;
 }
 
 export function totalCost(items: readonly DailyCostRow[]): number {
@@ -97,7 +97,7 @@ export function groupUsage(
   };
 
   for (const row of items) {
-    if (by === "project" || by === "department") {
+    if (by === "agent" || by === "department") {
       add(
         rowKey(row, by, departments),
         sumRecord(row.costUsd),
@@ -185,7 +185,7 @@ export interface ChartColumn {
   /** What the chart addresses the series by. Never contains a dot. */
   dataKey: string;
   index: number;
-  /** What the reader sees: a project name, a model id, or `OTHERS_KEY`. */
+  /** What the reader sees: an agent name, a model id, or `OTHERS_KEY`. */
   label: string;
 }
 
@@ -233,7 +233,7 @@ export function buildDailySeries(
   };
 
   for (const row of items) {
-    if (by === "project" || by === "department") {
+    if (by === "agent" || by === "department") {
       add(row.date, rowKey(row, by, departments), sumRecord(row.costUsd));
       continue;
     }

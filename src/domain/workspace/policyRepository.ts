@@ -1,15 +1,15 @@
-import type { WorkspaceProjectSettings } from "./policy";
+import type { WorkspaceAgentSettings } from "./policy";
 
 export interface WorkspaceRepositoryPolicy {
-  projectName: string;
-  /** Absent uses the project defaults; writes preserve the revision fence. */
-  rules?: WorkspaceProjectSettings;
+  agentName: string;
+  /** Absent uses the agent defaults; writes preserve the revision fence. */
+  rules?: WorkspaceAgentSettings;
   revision: number;
   updatedAt: string;
 }
 
 export interface WorkspacePolicyRepository {
-  get(projectName: string): Promise<WorkspaceRepositoryPolicy | null>;
-  /** Refuses a deleted project or a stale revision. */
+  get(agentName: string): Promise<WorkspaceRepositoryPolicy | null>;
+  /** Refuses a deleted agent or a stale revision. */
   put(policy: WorkspaceRepositoryPolicy, expectedRevision: number | null): Promise<void>;
 }

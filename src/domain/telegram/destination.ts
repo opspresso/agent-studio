@@ -8,12 +8,12 @@ export interface TelegramDestination {
 
 export interface TelegramDestinationRepository {
   put(
-    projectName: string,
+    agentName: string,
     botId: number | string,
     destination: TelegramDestination,
   ): Promise<void>;
   list(
-    projectName: string,
+    agentName: string,
     botId: number | string,
     limit: number,
   ): Promise<TelegramDestination[]>;

@@ -3,8 +3,8 @@ import { conversationOf, type RunConversation } from "@/domain/execution/actor";
 /**
  * A chat's conversation is the chat: `chat:{chatId}`.
  *
- * Chats are private and one-project, so the id alone is the whole address —
- * no owner or project qualifies it. Through the one builder all the same, so
+ * Chats are private and one-agent, so the id alone is the whole address —
+ * no owner or agent qualifies it. Through the one builder all the same, so
  * a chat id and every other surface's id are made safe by the same rule.
  */
 export function chatConversation(chatId: string): RunConversation {

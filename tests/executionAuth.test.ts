@@ -12,7 +12,7 @@ const { verify, getMemberTier, getSessionUser, assertAccessible, isSameOriginMut
 
 vi.mock("@/lib/container", () => ({
   apiTokenUseCases: { verify },
-  projectUseCases: { assertAccessible },
+  agentUseCases: { assertAccessible },
 }));
 vi.mock("@/lib/memberAccess", () => ({ getMemberTier }));
 vi.mock("@/lib/session", () => ({
@@ -22,10 +22,10 @@ vi.mock("@/lib/session", () => ({
     Response.json({ error: "Cross-origin mutation refused" }, { status: 403 }),
 }));
 
-const { authenticateExecution } = await import("@/app/api/projects/_lib/executionAuth");
+const { authenticateExecution } = await import("@/app/api/agents/_lib/executionAuth");
 
 const request = (bearer?: string) =>
-  new Request("http://test/api/projects/p/predict", {
+  new Request("http://test/api/agents/p/predict", {
     method: "POST",
     headers: bearer ? { authorization: `Bearer ${bearer}` } : {},
   });
@@ -92,7 +92,7 @@ describe("authenticateExecution with a session", () => {
     expect(assertAccessible).toHaveBeenCalledWith("p", "u@x.com");
   });
 
-  it("403s a session user the project's visibility keeps out", async () => {
+  it("403s a session user the agent's visibility keeps out", async () => {
     getSessionUser.mockResolvedValue({
       id: "u1",
       email: "u@x.com",
@@ -101,7 +101,7 @@ describe("authenticateExecution with a session", () => {
       tier: "member",
     });
     const { ForbiddenError } = await import("@/application/errors");
-    assertAccessible.mockRejectedValue(new ForbiddenError('Project "p" is private'));
+    assertAccessible.mockRejectedValue(new ForbiddenError('Agent "p" is private'));
     const result = await authenticateExecution(request(), "p");
     expect(result).toBeInstanceOf(Response);
     expect((result as Response).status).toBe(403);
@@ -113,7 +113,7 @@ describe("authenticateExecution with a session", () => {
     expect((result as Response).status).toBe(401);
   });
 
-  it("403s a cross-origin session before checking project visibility", async () => {
+  it("403s a cross-origin session before checking agent visibility", async () => {
     getSessionUser.mockResolvedValue({
       id: "u1",
       email: "u@x.com",

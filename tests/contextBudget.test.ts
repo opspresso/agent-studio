@@ -214,7 +214,7 @@ describe("runAgent context budget", () => {
       callMcpTool: async () => ({ text: "x".repeat(100_000) }),
     };
     const input: RunAgentInput = {
-      projectName: "p",
+      agentName: "p",
       model: SMALL_WINDOW_MODEL,
       parameters: SMALL_BUDGET_PARAMS,
       messages: [{ role: "user", content: "go" }],
@@ -241,7 +241,7 @@ describe("runAgent context budget", () => {
       callMcpTool: async () => ({ text: "x".repeat(100_000) }),
       loadAgent: async () => { throw new Error("The unused specialist must not be loaded"); },
     }, {
-      projectName: "p", model: SMALL_WINDOW_MODEL, parameters: SMALL_BUDGET_PARAMS,
+      agentName: "p", model: SMALL_WINDOW_MODEL, parameters: SMALL_BUDGET_PARAMS,
       messages: [{ role: "user", content: "go" }], mcpTools: TOOL,
       subagents: [{ name: "specialist", description: "Detailed expertise. ".repeat(250) }],
     }));
@@ -267,7 +267,7 @@ describe("runAgent context budget", () => {
     const channel = toolLoopChannel();
     const deps: AgentDeps = { createToolSchemaValidator, channel, callMcpTool: async () => ({ text: "result" }) };
     const input: RunAgentInput = {
-      projectName: "p",
+      agentName: "p",
       model: SMALL_WINDOW_MODEL,
       // An 8,000-token budget, and 10,000 tokens of input to put in it.
       parameters: SMALL_BUDGET_PARAMS,
@@ -299,7 +299,7 @@ describe("runAgent context budget", () => {
       callMcpTool: async () => ({ text: payload }),
     };
     const input: RunAgentInput = {
-      projectName: "p",
+      agentName: "p",
       model: HUGE_WINDOW_MODEL,
       messages: [{ role: "user", content: "go" }],
       mcpTools: TOOL,
@@ -330,7 +330,7 @@ describe("runAgent context budget", () => {
       callMcpTool: async () => ({ text: "x".repeat(250_000) }),
     };
     const input: RunAgentInput = {
-      projectName: "p",
+      agentName: "p",
       model: SMALL_WINDOW_MODEL,
       parameters: SMALL_BUDGET_PARAMS,
       messages: [{ role: "user", content: "go" }],
@@ -363,7 +363,7 @@ describe("runAgent context budget", () => {
       callMcpTool: async () => ({ text: "x".repeat(250_000) }),
     };
     const input: RunAgentInput = {
-      projectName: "p",
+      agentName: "p",
       model: SMALL_WINDOW_MODEL,
       parameters: SMALL_BUDGET_PARAMS,
       messages: [{ role: "user", content: "go" }],
@@ -393,7 +393,7 @@ describe("runAgent context budget", () => {
       callMcpTool: async () => ({ text: payload }),
     };
     const input: RunAgentInput = {
-      projectName: "p",
+      agentName: "p",
       model: SMALL_WINDOW_MODEL,
       parameters: { maxTokens: 190_000, piiFiltering: true },
       messages: [{ role: "user", content: "go" }],
@@ -418,7 +418,7 @@ describe("runAgent context budget", () => {
       callMcpTool: async () => ({ text: payload }),
     };
     const input: RunAgentInput = {
-      projectName: "p",
+      agentName: "p",
       model: HUGE_WINDOW_MODEL,
       messages: [{ role: "user", content: "go" }],
       mcpTools: TOOL,
@@ -452,7 +452,7 @@ describe("runAgent context budget", () => {
       callMcpTool: async () => ({ text: "x".repeat(250_000) }),
     };
     const input: RunAgentInput = {
-      projectName: "p",
+      agentName: "p",
       model: HUGE_WINDOW_MODEL,
       messages: [{ role: "user", content: "go" }],
       mcpTools: TOOL,
@@ -493,7 +493,7 @@ describe("runAgent context budget", () => {
       },
     };
     const input: RunAgentInput = {
-      projectName: "p",
+      agentName: "p",
       model: HUGE_WINDOW_MODEL,
       messages: [{ role: "user", content: "go" }],
       mcpTools: TOOL,
@@ -517,7 +517,7 @@ describe("runAgent context budget", () => {
       callMcpTool: async () => ({ text: payload }),
     };
     const input: RunAgentInput = {
-      projectName: "p",
+      agentName: "p",
       model: "custom/private-model",
       messages: [{ role: "user", content: "go" }],
       mcpTools: TOOL,

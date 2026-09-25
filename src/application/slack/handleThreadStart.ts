@@ -3,8 +3,8 @@ import type { SlackEventBody, SlackEventDeps } from "@/application/slack/types";
 import { MAX_SUGGESTED_PROMPTS } from "@/domain/slack/types";
 import { log } from "@/shared/logger";
 
-/** Only the project catalog and the Slack client; no agent runs here. */
-export type ThreadStartDeps = Pick<SlackEventDeps, "projects" | "slack">;
+/** Only the agent catalog and the Slack client; no agent runs here. */
+export type ThreadStartDeps = Pick<SlackEventDeps, "agents" | "slack">;
 
 /**
  * Where a freshly opened agent surface is, and whether it is new.
@@ -46,8 +46,8 @@ function openedSurface(body: SlackEventBody): OpenedSurface | null {
 }
 
 /**
- * Answer a user opening the agent: pin this project's suggested prompts, and on
- * a brand-new thread introduce the project.
+ * Answer a user opening the agent: pin this agent's suggested prompts, and on
+ * a brand-new thread introduce the agent.
  *
  * Without this the agent container opens empty, which reads as a bot that is
  * not running rather than one waiting for a question.
@@ -62,18 +62,18 @@ export async function handleThreadStart(
     return;
   }
   const token = binding.botToken;
-  const project = await deps.projects.get(binding.projectName);
+  const agent = await deps.agents.get(binding.agentName);
   // Silent, unlike a mention: nobody asked anything, so an error message here
   // would be an unprompted complaint in a thread the user just opened.
-  if (!project) {
+  if (!agent) {
     return;
   }
   // The same gate as a run, and silent on the same reasoning as above: the
-  // greeting restates the project's description and prompts, which is exactly
+  // greeting restates the agent's description and prompts, which is exactly
   // the read the visibility gate protects. The person's first actual message
   // gets the spoken refusal.
   if (
-    !(await slackSenderMayAccess(deps, token, project, {
+    !(await slackSenderMayAccess(deps, token, agent, {
       ...(surface.userId ? { user: surface.userId } : {}),
     }))
   ) {
@@ -81,19 +81,19 @@ export async function handleThreadStart(
   }
 
   if (surface.greet) {
-    const intro = project.description.trim();
+    const intro = agent.description.trim();
     await deps.slack
       .postMessage(token, {
         channel: surface.channel,
         ...(surface.threadTs ? { thread_ts: surface.threadTs } : {}),
         text: intro
-          ? `*${project.displayName}*\n${intro}`
-          : `*${project.displayName}* is ready. What can I help you with?`,
+          ? `*${agent.displayName}*\n${intro}`
+          : `*${agent.displayName}* is ready. What can I help you with?`,
       })
       .catch((error) => log.error("slack", "thread greeting failed", error));
   }
 
-  const prompts = (project.slack?.suggestedPrompts ?? []).slice(0, MAX_SUGGESTED_PROMPTS);
+  const prompts = (agent.slack?.suggestedPrompts ?? []).slice(0, MAX_SUGGESTED_PROMPTS);
   if (prompts.length === 0) {
     return;
   }

@@ -14,7 +14,7 @@ const NOW_S = Math.floor(NOW_MS / 1000);
 const turn = (content: string, createdAt: string, extra: Record<string, unknown> = {}) => ({
   ...keys.transcriptTurn("painter", "telegram:100", createdAt, content),
   entityType: "transcriptTurn",
-  projectName: "painter",
+  agentName: "painter",
   conversationKey: "telegram:100",
   role: "user",
   content,
@@ -29,8 +29,8 @@ beforeEach(() => {
 });
 
 describe("transcriptRepository", () => {
-  it("writes a turn into the project's partition under the conversation's prefix, expiring, with only what it was given", async () => {
-    store.seed([{ ...keys.project("painter"), entityType: "PROJECT", name: "painter" }]);
+  it("writes a turn into the agent's partition under the conversation's prefix, expiring, with only what it was given", async () => {
+    store.seed([{ ...keys.agent("painter"), entityType: "AGENT", name: "painter" }]);
     await transcriptRepository.append("painter", "telegram:100", {
       role: "user",
       content: "hi",
@@ -39,7 +39,7 @@ describe("transcriptRepository", () => {
     });
     const item = store.all().find((row) => row.entityType === "transcriptTurn");
     expect(store.all()).toHaveLength(2);
-    expect(item?.PK).toBe("PROJECT#painter");
+    expect(item?.PK).toBe("AGENT#painter");
     expect(String(item?.SK).startsWith("TRANSCRIPT#telegram:100#TURN#2026-08-17T00:00:00.000Z#")).toBe(true);
     expect(item).toMatchObject({ entityType: "transcriptTurn", role: "user", content: "hi", userId: "1" });
     expect(item?.speaker).toBeUndefined();
@@ -51,7 +51,7 @@ describe("transcriptRepository", () => {
       turn("third", "3", { role: "assistant" }),
       turn("second", "2", { userId: "1", speaker: "Bruce" }),
       turn("expired", "1", { expiresAt: NOW_S - 10 }),
-      // Another conversation in the same project partition stays out.
+      // Another conversation in the same agent partition stays out.
       { ...turn("other", "2"), ...keys.transcriptTurn("painter", "telegram:200", "2", "other") },
     ]);
     const turns = await transcriptRepository.recent("painter", "telegram:100", 10);

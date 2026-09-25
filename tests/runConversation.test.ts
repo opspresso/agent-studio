@@ -15,12 +15,12 @@ import {
 } from "@/domain/execution/actor";
 import { chatConversation } from "@/domain/chat/conversation";
 import { slackConversation } from "@/domain/slack/conversation";
-import { requestConversation } from "@/app/api/projects/_lib/conversation";
+import { requestConversation } from "@/app/api/agents/_lib/conversation";
 import { ValidationError } from "@/application/errors";
 import { createTraceRecorder } from "@/application/run/traceLifecycle";
 import type { Trace } from "@/domain/trace/types";
 import type { TraceRepository } from "@/domain/trace/repository";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 
 describe("conversationOf", () => {
   it("keeps a plain id as it is, under its surface", () => {
@@ -71,7 +71,7 @@ describe("the surfaces' own spellings", () => {
 
 describe("requestConversation", () => {
   const request = (value?: string) =>
-    new Request("https://x.test/api/projects/p/agent", {
+    new Request("https://x.test/api/agents/p/agent", {
       headers: value === undefined ? {} : { "X-Conversation-Id": value },
     });
 
@@ -127,14 +127,14 @@ describe("a trace records the conversation key", () => {
         written.push(trace);
       },
     } as unknown as TraceRepository;
-    const project = { name: "p" } as Project;
-    const configuration = { projectName: "p", model: "openai/gpt-4o", systemPrompt: "", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] } satisfies AgentConfiguration;
+    const agent = { name: "p" } as Agent;
+    const configuration = { agentName: "p", model: "openai/gpt-4o", systemPrompt: "", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] } satisfies AgentConfiguration;
 
-    await createTraceRecorder(traces, project, configuration, 1, {
+    await createTraceRecorder(traces, agent, configuration, 1, {
       ancestry: ["p"],
       conversation: { surface: "chat", id: "c-1" },
     }).finish();
-    await createTraceRecorder(traces, project, configuration, 1, { ancestry: ["p"] }).finish();
+    await createTraceRecorder(traces, agent, configuration, 1, { ancestry: ["p"] }).finish();
 
     expect(written[0]?.conversation).toBe("chat:c-1");
     expect(written[1]).not.toHaveProperty("conversation");

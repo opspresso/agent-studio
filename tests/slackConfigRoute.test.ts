@@ -3,9 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Route-handler test: withAuth is stubbed to inject a controllable user, the
 // container repo is mocked, public-url is pinned, and the real owner-gating +
 // secret masking run. Guards against the Slack config leaking to non-owners.
-const { state, projectRepo } = vi.hoisted(() => ({
+const { state, agentRepo } = vi.hoisted(() => ({
   state: { email: "owner@example.com" },
-  projectRepo: { get: vi.fn(), update: vi.fn(async () => {}) },
+  agentRepo: { get: vi.fn(), update: vi.fn(async () => {}) },
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -16,10 +16,10 @@ vi.mock("@/lib/session", () => ({
 }));
 
 vi.mock("@/lib/container", async () => ({
-  projectSlackUseCases: (
-    await import("@/application/slack/projectSlack")
-  ).createProjectSlackUseCases({
-    projects: projectRepo as never,
+  agentSlackUseCases: (
+    await import("@/application/slack/agentSlack")
+  ).createAgentSlackUseCases({
+    agents: agentRepo as never,
     cipher: (await import("@/infrastructure/crypto/secretCipher")).secretCipher,
     // Reached only by the sibling `test` route, which this file does not import.
     authTest: async () => ({}),
@@ -30,16 +30,16 @@ vi.mock("@/lib/public-url", () => ({
   resolvePublicBaseUrl: async () => "https://studio.example.com",
 }));
 
-const { GET, PUT, DELETE } = await import("@/app/api/projects/[name]/slack/route");
+const { GET, PUT, DELETE } = await import("@/app/api/agents/[name]/slack/route");
 
 const BOT_TOKEN = "xoxb-1234567890abcdef1234";
 const SIGNING_SECRET = "abcdef1234567890abcdef12";
-const project = {
+const agent = {
   name: "proj",
   displayName: "Proj",
   // The agent view's description comes from here, and Slack requires one.
   description: "Does the thing",
-  // A Slack bot only attaches to an agent project, so a fixture without a type
+  // A Slack bot only attaches to an agent, so a fixture without a type
   // is one the write path refuses.
   ownerEmail: "owner@example.com",
   updatedAt: "2026-01-01T00:00:00.000Z",
@@ -47,16 +47,16 @@ const project = {
 };
 
 const ctx = () => ({ params: Promise.resolve({ name: "proj" }) });
-const req = () => new Request("https://studio.example.com/api/projects/proj/slack");
+const req = () => new Request("https://studio.example.com/api/agents/proj/slack");
 
 beforeEach(() => {
   vi.clearAllMocks();
   state.email = "owner@example.com";
 });
 
-describe("GET /api/projects/[name]/slack (owner-gated)", () => {
-  it("returns the masked config and manifest to the project owner", async () => {
-    projectRepo.get.mockResolvedValue(project);
+describe("GET /api/agents/[name]/slack (owner-gated)", () => {
+  it("returns the masked config and manifest to the agent owner", async () => {
+    agentRepo.get.mockResolvedValue(agent);
     const res = await GET(req(), ctx());
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -69,7 +69,7 @@ describe("GET /api/projects/[name]/slack (owner-gated)", () => {
 
   it("forbids a non-owner with 403 and leaks no secret or manifest", async () => {
     state.email = "intruder@example.com";
-    projectRepo.get.mockResolvedValue(project);
+    agentRepo.get.mockResolvedValue(agent);
     const res = await GET(req(), ctx());
     expect(res.status).toBe(403);
     const body = await res.json();
@@ -78,8 +78,8 @@ describe("GET /api/projects/[name]/slack (owner-gated)", () => {
     expect(body.manifest).toBeUndefined();
   });
 
-  it("returns 404 for a missing project", async () => {
-    projectRepo.get.mockResolvedValue(undefined);
+  it("returns 404 for a missing agent", async () => {
+    agentRepo.get.mockResolvedValue(undefined);
     const res = await GET(req(), ctx());
     expect(res.status).toBe(404);
   });
@@ -90,14 +90,14 @@ describe("every verb answers with the same shape", () => {
   // from it. A response that is a subset of the read is a crashed page one click
   // later — which is exactly what shipped: only GET carried the manifest.
   const mutate = (body: unknown) =>
-    new Request("https://studio.example.com/api/projects/proj/slack", {
+    new Request("https://studio.example.com/api/agents/proj/slack", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
 
   it("returns the manifest after a save", async () => {
-    projectRepo.get.mockResolvedValue(project);
+    agentRepo.get.mockResolvedValue(agent);
     const res = await PUT(mutate({ enabled: false }), ctx());
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -106,9 +106,9 @@ describe("every verb answers with the same shape", () => {
   });
 
   it("returns the manifest after a disconnect", async () => {
-    projectRepo.get.mockResolvedValue(project);
+    agentRepo.get.mockResolvedValue(agent);
     const res = await DELETE(
-      new Request("https://studio.example.com/api/projects/proj/slack", { method: "DELETE" }),
+      new Request("https://studio.example.com/api/agents/proj/slack", { method: "DELETE" }),
       ctx(),
     );
     expect(res.status).toBe(200);
@@ -117,12 +117,12 @@ describe("every verb answers with the same shape", () => {
 
   it("still refuses a non-owner", async () => {
     state.email = "intruder@example.com";
-    projectRepo.get.mockResolvedValue(project);
+    agentRepo.get.mockResolvedValue(agent);
     expect((await PUT(mutate({ enabled: false }), ctx())).status).toBe(403);
   });
 
   it("round-trips suggested prompts into the view and the manifest", async () => {
-    projectRepo.get.mockResolvedValue(project);
+    agentRepo.get.mockResolvedValue(agent);
     const res = await PUT(
       mutate({
         suggestedPrompts: [
@@ -143,7 +143,7 @@ describe("every verb answers with the same shape", () => {
   });
 
   it("rejects a prompt that has only half of itself", async () => {
-    projectRepo.get.mockResolvedValue(project);
+    agentRepo.get.mockResolvedValue(agent);
     const res = await PUT(mutate({ suggestedPrompts: [{ title: "Draw", message: "" }] }), ctx());
 
     expect(res.status).toBe(400);

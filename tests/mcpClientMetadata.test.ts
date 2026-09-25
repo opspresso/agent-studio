@@ -1,5 +1,5 @@
 /**
- * The Client ID Metadata Document this deployment publishes per project.
+ * The Client ID Metadata Document this deployment publishes per agent.
  *
  * What it has to get right is narrow and unforgiving: the `client_id` inside the
  * document must equal the URL it was fetched from, or every authorization
@@ -18,12 +18,12 @@ vi.mock("@/lib/runtime-settings", () => ({
   getServiceBranding: async () => ({ name: process.env.SERVICE_NAME || "Agent Studio" }),
 }));
 
-import { GET } from "@/app/api/mcps/oauth/client-metadata/[project]/route";
+import { GET } from "@/app/api/mcps/oauth/client-metadata/[agent]/route";
 import { clientMetadataUrl, MCP_OAUTH_CALLBACK_PATH } from "@/application/mcp/mcpAuthUseCases";
 
-function get(project: string): Promise<Response> {
+function get(agent: string): Promise<Response> {
   return GET(new Request("https://whatever.example/ignored"), {
-    params: Promise.resolve({ project }),
+    params: Promise.resolve({ agent }),
   });
 }
 
@@ -32,7 +32,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 
-describe("a project's client ID metadata document", () => {
+describe("an agent's client ID metadata document", () => {
   it("states a client_id equal to the URL it is served at", async () => {
     const response = await get("helper");
     const document = (await response.json()) as Record<string, unknown>;
@@ -62,7 +62,7 @@ describe("a project's client ID metadata document", () => {
     expect(document.client_id).toBe(clientMetadataUrl("https://studio.example.com", "helper"));
   });
 
-  it("names the project, so a person approving the connection can tell which is asking", async () => {
+  it("names the agent, so a person approving the connection can tell which is asking", async () => {
     const first = (await (await get("alpha")).json()) as Record<string, unknown>;
     const second = (await (await get("beta")).json()) as Record<string, unknown>;
 
@@ -79,7 +79,7 @@ describe("a project's client ID metadata document", () => {
     expect(response.status).toBe(200);
   });
 
-  it("refuses a name that could not have been a project", async () => {
+  it("refuses a name that could not have been an agent", async () => {
     expect((await get("../../etc/passwd")).status).toBe(404);
     expect((await get("Not A Slug")).status).toBe(404);
   });

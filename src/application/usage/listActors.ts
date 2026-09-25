@@ -1,5 +1,5 @@
 import type { RunCaller } from "@/domain/execution/actor";
-import type { Project } from "@/domain/project/types";
+import type { Agent } from "@/domain/agent/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { ActorUsageRow } from "@/domain/usage/types";
 import { log } from "@/shared/logger";
@@ -25,7 +25,7 @@ export interface ActorUsageView extends Omit<ActorUsageRow, "date"> {
   display?: { name: string; avatarUrl?: string };
 }
 
-export interface ProjectActorUsage {
+export interface AgentActorUsage {
   items: ActorUsageView[];
   /** Every distinct actor in the rows inspected, including omitted views. */
   totalActors: number;
@@ -33,41 +33,41 @@ export interface ProjectActorUsage {
   truncated: boolean;
 }
 
-/** A profile lookup already bound to one project's bot token. */
+/** A profile lookup already bound to one agent's bot token. */
 export type SlackProfileReader = (userId: string) => Promise<RunCaller | null>;
 
 export interface ListActorsDeps {
   usage: UsageRepository;
   /**
-   * The project's Slack profile lookup, token resolution included — `null` for
-   * a project with no enabled bot, which is what lets the read skip the whole
+   * The agent's Slack profile lookup, token resolution included — `null` for
+   * an agent with no enabled bot, which is what lets the read skip the whole
    * enrichment pass. A factory rather than a client and a cipher: which token a
-   * project reads with is the slack slice's knowledge, and importing its
+   * agent reads with is the slack slice's knowledge, and importing its
    * resolver from here dragged that slice into every consumer of usage. The
    * composition root closes over both instead.
    */
-  profileReaderFor: (project: Project) => SlackProfileReader | null;
+  profileReaderFor: (agent: Agent) => SlackProfileReader | null;
 }
 
 /**
- * Who spent a project's budget over a date range.
+ * Who spent an agent's budget over a date range.
  *
  * Slack callers are stored as `slack:U123`, which is unreadable in a dashboard
  * whose whole point is telling an owner where the money went. Resolving them
- * needs the project's own bot token, so this is the only place that can do it.
+ * needs the agent's own bot token, so this is the only place that can do it.
  *
- * Enrichment is strictly best-effort and never fails the read: a project with no
+ * Enrichment is strictly best-effort and never fails the read: an agent with no
  * Slack bot, a revoked token, a deactivated user and a Slack outage all land in
  * the same place — the raw key, which is what the endpoint returned before.
  */
-export async function listProjectActors(
+export async function listAgentActors(
   deps: ListActorsDeps,
-  project: Project,
+  agent: Agent,
   from: string,
   to: string,
-): Promise<ProjectActorUsage> {
-  const rows = await deps.usage.listActorsByProject(
-    project.name,
+): Promise<AgentActorUsage> {
+  const rows = await deps.usage.listActorsByAgent(
+    agent.name,
     from,
     to,
     MAX_ACTOR_USAGE_ROWS + 1,
@@ -81,7 +81,7 @@ export async function listProjectActors(
   for (const row of rows) {
     const existing = byActor.get(row.actor);
     byActor.set(row.actor, {
-      projectName: row.projectName,
+      agentName: row.agentName,
       actor: row.actor,
       calls: addCounters(existing?.calls, row.calls),
       inputTokens: addCounters(existing?.inputTokens, row.inputTokens),
@@ -101,7 +101,7 @@ export async function listProjectActors(
       .filter((row) => row.actor.startsWith(SLACK_ACTOR_PREFIX))
       .map((row) => row.actor.slice(SLACK_ACTOR_PREFIX.length)),
   );
-  const readProfile = deps.profileReaderFor(project);
+  const readProfile = deps.profileReaderFor(agent);
   if (slackIds.size === 0 || !readProfile) {
     return {
       items: visible,
@@ -125,7 +125,7 @@ export async function listProjectActors(
         } catch (error) {
           log.warn(
             "usage",
-            `could not resolve Slack profile ${userId} for ${project.name}: ${
+            `could not resolve Slack profile ${userId} for ${agent.name}: ${
               error instanceof Error ? error.message : "unknown"
             }`,
           );

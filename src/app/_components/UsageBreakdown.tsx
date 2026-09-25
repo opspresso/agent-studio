@@ -29,7 +29,7 @@ function cachedShare(group: UsageGroup): string {
  *
  * The bar is share of the largest group, not of the total: the question it
  * answers is "what dominates this", and against a total a page with one busy
- * project and a long tail draws every row but the first as a sliver.
+ * agent and a long tail draws every row but the first as a sliver.
  */
 export function UsageBreakdown({
   groups,

@@ -31,39 +31,39 @@ export const keys = {
   workspaceCheckpointChunk: (id: string, checkpointId: string, index: number) => ({
     PK: `WORKSPACESTATE#${id}`, SK: `${checkpointId}#${String(index).padStart(6, "0")}`,
   }),
-  project: (name: string) => ({ PK: `PROJECT#${name}`, SK: "META" }),
-  projectPartition: (name: string) => `PROJECT#${name}`,
-  projectApiToken: (name: string) => ({ PK: `PROJECT#${name}`, SK: "APITOKEN" }),
-  workspacePolicy: (name: string) => ({ PK: `PROJECT#${name}`, SK: "WORKSPACEPOLICY" }),
-  workspaceRepositoryCreation: (project: string, repository: string) => ({ PK: `PROJECT#${project}`, SK: `REPOSITORYCREATE#${repository.toLowerCase()}` }),
+  agent: (name: string) => ({ PK: `AGENT#${name}`, SK: "META" }),
+  agentPartition: (name: string) => `AGENT#${name}`,
+  agentApiToken: (name: string) => ({ PK: `AGENT#${name}`, SK: "APITOKEN" }),
+  workspacePolicy: (name: string) => ({ PK: `AGENT#${name}`, SK: "WORKSPACEPOLICY" }),
+  workspaceRepositoryCreation: (agent: string, repository: string) => ({ PK: `AGENT#${agent}`, SK: `REPOSITORYCREATE#${repository.toLowerCase()}` }),
 
-  audioJob: (projectName: string, id: string) => ({ PK: `PROJECT#${projectName}`, SK: `AUDIOJOB#${id}` }),
-  audioJobConfig: (projectName: string) => ({ PK: `PROJECT#${projectName}`, SK: "AUDIOCONFIG" }),
+  audioJob: (agentName: string, id: string) => ({ PK: `AGENT#${agentName}`, SK: `AUDIOJOB#${id}` }),
+  audioJobConfig: (agentName: string) => ({ PK: `AGENT#${agentName}`, SK: "AUDIOCONFIG" }),
   audioJobPrefix: () => "AUDIOJOB#",
-  usageReceipt: (projectName: string, id: string) => ({ PK: `PROJECT#${projectName}`, SK: `USAGERECEIPT#${id}` }),
+  usageReceipt: (agentName: string, id: string) => ({ PK: `AGENT#${agentName}`, SK: `USAGERECEIPT#${id}` }),
   sourceFile: (id: string) => ({ PK: `SOURCEFILE#${id}`, SK: "META" }),
-  sourceFileJobIndex: (project: string, job: string, kind: string, id: string) => ({
-    GSI2PK: `SOURCEJOB#${project}#${job}`, GSI2SK: `${kind}#${id}`,
+  sourceFileJobIndex: (agent: string, job: string, kind: string, id: string) => ({
+    GSI2PK: `SOURCEJOB#${agent}#${job}`, GSI2SK: `${kind}#${id}`,
   }),
-  sourceFileJobQuery: (project: string, job: string, kind: string) => ({
-    pk: `SOURCEJOB#${project}#${job}`, sk: { prefix: `${kind}#` },
+  sourceFileJobQuery: (agent: string, job: string, kind: string) => ({
+    pk: `SOURCEJOB#${agent}#${job}`, sk: { prefix: `${kind}#` },
   }),
   sourceReference: (id: string) => ({ PK: `SOURCEREFERENCE#${id}`, SK: "META" }),
-  sourceFileExpiryIndex: (retireAt: string, projectName: string, id: string) => ({
-    GSI1PK: "SOURCEFILEEXPIRY", GSI1SK: `${retireAt}#${projectName}#${id}`,
+  sourceFileExpiryIndex: (retireAt: string, agentName: string, id: string) => ({
+    GSI1PK: "SOURCEFILEEXPIRY", GSI1SK: `${retireAt}#${agentName}#${id}`,
   }),
   sourceFileExpiryQuery: (now: string) => ({
     pk: "SOURCEFILEEXPIRY", sk: { between: ["", `${now}#\uffff`] as [string, string] },
   }),
-  audioJobSlots: (projectName: string) => ({ PK: `PROJECT#${projectName}`, SK: "AUDIOSLOTS" }),
-  audioJobSource: (projectName: string, sourceKey: string) => ({
-    PK: `PROJECT#${projectName}`, SK: `AUDIOSOURCE#${sourceKey}`,
+  audioJobSlots: (agentName: string) => ({ PK: `AGENT#${agentName}`, SK: "AUDIOSLOTS" }),
+  audioJobSource: (agentName: string, sourceKey: string) => ({
+    PK: `AGENT#${agentName}`, SK: `AUDIOSOURCE#${sourceKey}`,
   }),
-  audioJobOccurrence: (projectName: string, occurrence: string) => ({
-    PK: `PROJECT#${projectName}`, SK: `AUDIOOCCURRENCE#${occurrence}`,
+  audioJobOccurrence: (agentName: string, occurrence: string) => ({
+    PK: `AGENT#${agentName}`, SK: `AUDIOOCCURRENCE#${occurrence}`,
   }),
-  audioJobDueIndex: (dueAt: string, projectName: string, id: string) => ({
-    GSI1PK: "AUDIOJOBDUE", GSI1SK: `${dueAt}#${projectName}#${id}`,
+  audioJobDueIndex: (dueAt: string, agentName: string, id: string) => ({
+    GSI1PK: "AUDIOJOBDUE", GSI1SK: `${dueAt}#${agentName}#${id}`,
   }),
   audioJobDueQuery: (now: string) => ({
     pk: "AUDIOJOBDUE", sk: { between: ["", `${now}#\uffff`] as [string, string] },
@@ -129,54 +129,54 @@ export const keys = {
   pluginSyncLock: (repo: string) => ({ PK: `PLUGINSYNC#${repo}`, SK: "LOCK" }),
 
   /**
-   * A project's triggers and their delivery history, both in the project
-   * partition — so the project cascade delete already removes them, and a
+   * An agent's triggers and their delivery history, both in the agent
+   * partition — so the agent cascade delete already removes them, and a
    * trigger's runs list is one `begins_with` query.
    */
-  trigger: (projectName: string, triggerId: string) => ({
-    PK: `PROJECT#${projectName}`,
+  trigger: (agentName: string, triggerId: string) => ({
+    PK: `AGENT#${agentName}`,
     SK: `TRIGGER#${triggerId}`,
   }),
   triggerPrefix: () => "TRIGGER#",
   /**
-   * The cross-project schedule listing a scan tick walks. Only schedule rows
+   * The cross-agent schedule listing a scan tick walks. Only schedule rows
    * carry these GSI1 attributes; webhook rows stay invisible to the index.
    */
-  scheduleIndex: (projectName: string, triggerId: string) => ({
+  scheduleIndex: (agentName: string, triggerId: string) => ({
     GSI1PK: keys.typePartition("SCHEDULE"),
-    GSI1SK: `${projectName}#${triggerId}`,
+    GSI1SK: `${agentName}#${triggerId}`,
   }),
-  triggerRun: (projectName: string, triggerId: string, startedAt: string, runId: string) => ({
-    PK: `PROJECT#${projectName}`,
+  triggerRun: (agentName: string, triggerId: string, startedAt: string, runId: string) => ({
+    PK: `AGENT#${agentName}`,
     SK: `TRIGGERRUN#${triggerId}#${startedAt}#${runId}`,
   }),
   triggerRunPrefix: (triggerId: string) => `TRIGGERRUN#${triggerId}#`,
-  queuedTriggerRunPartition: (projectName: string, triggerId: string) => `TRIGGERQUEUE#${projectName}#${triggerId}`,
-  queuedTriggerRunIndex: (projectName: string, triggerId: string, leaseUntil: string, runId: string) => ({
-    GSI1PK: keys.queuedTriggerRunPartition(projectName, triggerId),
+  queuedTriggerRunPartition: (agentName: string, triggerId: string) => `TRIGGERQUEUE#${agentName}#${triggerId}`,
+  queuedTriggerRunIndex: (agentName: string, triggerId: string, leaseUntil: string, runId: string) => ({
+    GSI1PK: keys.queuedTriggerRunPartition(agentName, triggerId),
     GSI1SK: `${leaseUntil}#${runId}`,
   }),
   /**
    * A delivery's idempotency claim. Its own partition because the key is an
-   * arbitrary caller-supplied string, which has no business in the project
+   * arbitrary caller-supplied string, which has no business in the agent
    * partition's sort-key space.
    */
-  triggerIdempotency: (projectName: string, triggerId: string, key: string) => ({
-    PK: `TRIGGERIDEM#${projectName}#${triggerId}#${key}`,
+  triggerIdempotency: (agentName: string, triggerId: string, key: string) => ({
+    PK: `TRIGGERIDEM#${agentName}#${triggerId}#${key}`,
     SK: "META",
   }),
 
-  /** A project's OAuth connection to one registry MCP server. */
-  mcpConnection: (projectName: string, serverName: string) => ({
-    PK: `PROJECT#${projectName}`,
+  /** An agent's OAuth connection to one registry MCP server. */
+  mcpConnection: (agentName: string, serverName: string) => ({
+    PK: `AGENT#${agentName}`,
     SK: `MCPCONN#${serverName}`,
   }),
   mcpConnectionPrefix: () => "MCPCONN#",
   /** An authorization in flight, keyed by the opaque `state` it was started with. */
   mcpOAuthState: (state: string) => ({ PK: `MCPOAUTH#${state}`, SK: "META" }),
 
-  usage: (projectName: string, date: string) => ({
-    PK: `USAGE#${projectName}`,
+  usage: (agentName: string, date: string) => ({
+    PK: `USAGE#${agentName}`,
     SK: `DATE#${date}`,
   }),
   /**
@@ -184,44 +184,44 @@ export const keys = {
    * Its own row rather than a marker on a daily row, because the instances
    * crossing the threshold on different days read different daily rows.
    */
-  usageMonthClaim: (projectName: string, month: string) => ({
-    PK: `USAGE#${projectName}`,
+  usageMonthClaim: (agentName: string, month: string) => ({
+    PK: `USAGE#${agentName}`,
     SK: `MONTHCLAIM#${month}`,
   }),
   usageDatePartition: (date: string) => `USAGEDATE#${date}`,
   /**
-   * One member's cross-project spend for one UTC day — their own console runs
-   * (`user:` actors), which is what the tier cost cap bounds. A project
-   * token's spend deliberately stays out (it is bounded by the project's own
+   * One member's cross-agent spend for one UTC day — their own console runs
+   * (`user:` actors), which is what the tier cost cap bounds. An agent
+   * token's spend deliberately stays out (it is bounded by the agent's own
    * limits; see `memberEmailFromActorKey`). Its own partition because no
-   * project's cascade delete may take a person's history with it.
+   * agent's cascade delete may take a person's history with it.
    *
-   * Daily rather than monthly, and for the same reason the project rows are:
+   * Daily rather than monthly, and for the same reason the agent rows are:
    * one shape answers both readers. The cap sums the month from `MONTH-01` to
-   * today, exactly as the project guard does over `USAGE#{project}`, and the
+   * today, exactly as the agent guard does over `USAGE#{agent}`, and the
    * profile page reads whatever window its date picker names — a month
    * aggregate could only have answered the first, and keeping both would be
    * two running totals of the same spend.
    *
-   * The project is part of the sort key rather than collapsed into the row,
+   * The agent is part of the sort key rather than collapsed into the row,
    * so a person can be shown *where* their spend went as well as on which
    * model. Date leads it so a window is still one `BETWEEN`; the cap sums every
    * row the window returns.
    */
-  usageMember: (email: string, date: string, projectName: string) => ({
+  usageMember: (email: string, date: string, agentName: string) => ({
     PK: `USAGEMEMBER#${email}`,
-    SK: `DATE#${date}#${projectName}`,
+    SK: `DATE#${date}#${agentName}`,
   }),
   usageMemberPartition: (email: string) => `USAGEMEMBER#${email}`,
   usageMemberPrefix: (date: string) => `DATE#${date}`,
   /**
-   * Per-caller daily usage, in the project's usage partition. Date leads the
+   * Per-caller daily usage, in the agent's usage partition. Date leads the
    * sort key so a range query over dates is one `BETWEEN`, and so the rows of
    * one day sit together; `DATE#` and `ACTOR#` are distinct prefixes, so the
-   * project totals above are never swept up by an actor query or vice versa.
+   * agent totals above are never swept up by an actor query or vice versa.
    */
-  usageActor: (projectName: string, date: string, actor: string) => ({
-    PK: `USAGE#${projectName}`,
+  usageActor: (agentName: string, date: string, actor: string) => ({
+    PK: `USAGE#${agentName}`,
     SK: `ACTOR#${date}#${actor}`,
   }),
   usageActorPrefix: (date: string) => `ACTOR#${date}`,
@@ -243,80 +243,80 @@ export const keys = {
   slackEvent: (eventId: string) => ({ PK: `SLACKEVENT#${eventId}`, SK: "META" }),
 
   /**
-   * One Telegram update delivered to one project's bot, one album (a
+   * One Telegram update delivered to one agent's bot, one album (a
    * `media_group_id`) the bot answers once, and one observed report
-   * destination. In the project partition so the cascade delete takes them;
+   * destination. In the agent partition so the cascade delete takes them;
    * qualified by bot because an `update_id` is a counter per bot, and a
-   * project may change bots.
+   * agent may change bots.
    */
-  telegramUpdate: (projectName: string, botId: number | string, updateId: number | string) => ({
-    PK: `PROJECT#${projectName}`,
+  telegramUpdate: (agentName: string, botId: number | string, updateId: number | string) => ({
+    PK: `AGENT#${agentName}`,
     SK: `TELEGRAMUPDATE#${botId}#${updateId}`,
   }),
-  telegramAlbum: (projectName: string, botId: number | string, mediaGroupId: string) => ({
-    PK: `PROJECT#${projectName}`,
+  telegramAlbum: (agentName: string, botId: number | string, mediaGroupId: string) => ({
+    PK: `AGENT#${agentName}`,
     SK: `TELEGRAMALBUM#${botId}#${mediaGroupId}`,
   }),
-  telegramDestinationPrefix: (projectName: string, botId: number | string) => ({
-    PK: `PROJECT#${projectName}`,
+  telegramDestinationPrefix: (agentName: string, botId: number | string) => ({
+    PK: `AGENT#${agentName}`,
     prefix: `TELEGRAMDESTINATION#${botId}#`,
   }),
-  telegramDestinationIndexPrefix: (projectName: string, botId: number | string) => ({
-    GSI2PK: `${TELEGRAM_DESTINATION_INDEX_PREFIX}${projectName}#${botId}`,
+  telegramDestinationIndexPrefix: (agentName: string, botId: number | string) => ({
+    GSI2PK: `${TELEGRAM_DESTINATION_INDEX_PREFIX}${agentName}#${botId}`,
   }),
   telegramDestination: (
-    projectName: string,
+    agentName: string,
     botId: number | string,
     chatId: number,
     threadId?: number,
   ) => ({
-    PK: `PROJECT#${projectName}`,
+    PK: `AGENT#${agentName}`,
     SK: `TELEGRAMDESTINATION#${botId}#${chatId}#${threadId ?? ""}`,
   }),
 
   /**
-   * One Bot Framework activity delivered to one project's Teams bot. In the
-   * project partition, qualified by app id, for the reasons the Telegram
+   * One Bot Framework activity delivered to one agent's Teams bot. In the
+   * agent partition, qualified by app id, for the reasons the Telegram
    * update is; the id the caller passes is `{conversationId}#{activityId}`,
    * because an activity id is unique only within its conversation.
    */
-  teamsActivity: (projectName: string, appId: string, conversationAndActivityId: string) => ({
-    PK: `PROJECT#${projectName}`,
+  teamsActivity: (agentName: string, appId: string, conversationAndActivityId: string) => ({
+    PK: `AGENT#${agentName}`,
     SK: `TEAMSACTIVITY#${appId}#${conversationAndActivityId}`,
   }),
 
   /**
-   * What a chat-bot surface remembers of one conversation. In the project
-   * partition so the cascade delete takes it — a deleted project must not
+   * What a chat-bot surface remembers of one conversation. In the agent
+   * partition so the cascade delete takes it — a deleted agent must not
    * leave a week of somebody's messages behind — and one turn per row so a
    * long conversation never rewrites a growing item; the newest turns are one
    * bounded query on the sort-key prefix, newest first.
    */
-  transcriptTurnPrefix: (projectName: string, conversationKey: string) => ({
-    PK: `PROJECT#${projectName}`,
+  transcriptTurnPrefix: (agentName: string, conversationKey: string) => ({
+    PK: `AGENT#${agentName}`,
     prefix: `TRANSCRIPT#${conversationKey}#TURN#`,
   }),
-  transcriptTurn: (projectName: string, conversationKey: string, createdAt: string, seq: string) => ({
-    PK: `PROJECT#${projectName}`,
+  transcriptTurn: (agentName: string, conversationKey: string, createdAt: string, seq: string) => ({
+    PK: `AGENT#${agentName}`,
     SK: `TRANSCRIPT#${conversationKey}#TURN#${createdAt}#${seq}`,
   }),
 
   /**
-   * A channel thread this project's bot is engaged in. Point-read only — the
+   * A channel thread this agent's bot is engaged in. Point-read only — the
    * gate asks about one thread — so the whole address is the partition and
    * nothing ever queries across them.
    */
-  slackThread: (projectName: string, channel: string, threadTs: string) => ({
-    PK: `SLACKTHREAD#${projectName}#${channel}#${threadTs}`,
+  slackThread: (agentName: string, channel: string, threadTs: string) => ({
+    PK: `SLACKTHREAD#${agentName}#${channel}#${threadTs}`,
     SK: "META",
   }),
 
-  slackRunControl: (projectName: string, channel: string, threadTs: string) => ({
-    PK: `PROJECT#${projectName}`,
+  slackRunControl: (agentName: string, channel: string, threadTs: string) => ({
+    PK: `AGENT#${agentName}`,
     SK: `SLACKSTOP#${channel}#${threadTs}`,
   }),
-  slackRunLease: (projectName: string, channel: string, threadTs: string) => ({
-    PK: `PROJECT#${projectName}`,
+  slackRunLease: (agentName: string, channel: string, threadTs: string) => ({
+    PK: `AGENT#${agentName}`,
     SK: `SLACKRUN#${channel}#${threadTs}`,
   }),
 
@@ -334,24 +334,24 @@ export const keys = {
 
   /**
    * What a run produced. Two indexes, because each reaches rows the other
-   * cannot: a Slack or trigger run names no email, so the project index is
-   * the only way those are ever listed or deleted; and projects are a shared
+   * cannot: a Slack or trigger run names no email, so the agent index is
+   * the only way those are ever listed or deleted; and agents are a shared
    * catalog, so the owner index is the only way a person finds their own work
-   * without reading someone else's project.
+   * without reading someone else's agent.
    */
   artifact: (artifactId: string) => ({ PK: `ARTIFACT#${artifactId}`, SK: "META" }),
-  artifactProjectPartition: (projectName: string) => `ARTIFACTPROJECT#${projectName}`,
+  artifactAgentPartition: (agentName: string) => `ARTIFACTAGENT#${agentName}`,
   /** Sparse: only rows whose actor names an email carry the GSI2 attributes. */
   artifactOwnerPartition: (email: string) => `ARTIFACTOWNER#${email}`,
 
   trace: (traceId: string) => ({ PK: `TRACE#${traceId}`, SK: "META" }),
-  traceRef: (projectName: string, createdAt: string, traceId: string) => ({
-    PK: `PROJECT#${projectName}`,
+  traceRef: (agentName: string, createdAt: string, traceId: string) => ({
+    PK: `AGENT#${agentName}`,
     SK: `TRACE#${createdAt}#${traceId}`,
   }),
-  traceProjectPartition: (projectName: string) => `TRACEPROJECT#${projectName}`,
+  traceAgentPartition: (agentName: string) => `TRACEAGENT#${agentName}`,
 
   typePartition: (
-    entityType: "PROJECT" | "SKILL" | "MCP" | "PLUGIN" | "SCHEDULE",
+    entityType: "AGENT" | "SKILL" | "MCP" | "PLUGIN" | "SCHEDULE",
   ) => `TYPE#${entityType}`,
 } as const;

@@ -6,7 +6,7 @@ vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).c
 const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 const { slackThreadRepository } = await import("@/infrastructure/db/repositories/slackThreadRepository");
 
-const target = ["project", "channel", "123.456"] as const;
+const target = ["agent", "channel", "123.456"] as const;
 const row = () => store.getItem(keys.slackThread(...target));
 
 beforeEach(() => {

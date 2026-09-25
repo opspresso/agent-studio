@@ -15,13 +15,13 @@ const fake = store as unknown as ReturnType<typeof createFakeStore>;
 let clock: Date;
 let contents: Map<string, { bytes: Uint8Array; mimeType: string; storedAt: string }>;
 let objects: SourceObjectStore;
-const input = { id: "file-1", projectName: "audio", userEmail: "owner@example.test", filename: "audio.mp3",
+const input = { id: "file-1", agentName: "audio", userEmail: "owner@example.test", filename: "audio.mp3",
   mimeType: "audio/mpeg", retention: { unit: "months" as const, value: 3, timezone: "Asia/Seoul" } };
 const open = vi.fn(async function* () { yield new Uint8Array([1, 2, 3]); });
 const useCases = () => createSourceFileUseCases({ files, objects, now: () => clock });
 beforeEach(() => {
   vi.clearAllMocks(); fake.rows.clear(); fake.seed([
-    { ...keys.project("audio"), entityType: "PROJECT" }, { ...keys.project("other"), entityType: "PROJECT" },
+    { ...keys.agent("audio"), entityType: "AGENT" }, { ...keys.agent("other"), entityType: "AGENT" },
   ]);
   clock = new Date("2026-11-30T01:00:00.000Z"); contents = new Map();
   objects = {
@@ -57,14 +57,14 @@ describe("private source file lifecycle", () => {
       assertWritable: async () => { throw new ValidationError("Private storage required"); } });
     await expect(api.import(input, openBody)).rejects.toMatchObject({ status: 400 });
     expect(open).not.toHaveBeenCalled();
-    expect(await files.get(input.projectName, input.id)).toBeNull();
+    expect(await files.get(input.agentName, input.id)).toBeNull();
   });
   it("passes worker cancellation through reads and import metadata lookups", async () => {
     const controller = new AbortController();
     const api = useCases();
     await api.import(input, openBody, controller.signal);
     expect(objects.stat).toHaveBeenCalledWith("source-files/file-1", controller.signal);
-    await api.read(input.projectName, input.id, input.userEmail, 10, controller.signal);
+    await api.read(input.agentName, input.id, input.userEmail, 10, controller.signal);
     expect(objects.read).toHaveBeenCalledWith("source-files/file-1", 10, controller.signal);
     controller.abort(new Error("shutdown"));
     await expect(api.sweep(100, controller.signal)).rejects.toThrow("shutdown");
@@ -75,10 +75,10 @@ describe("private source file lifecycle", () => {
     const read = objects.read;
     objects.read = vi.fn(async (key, limit) => {
       const bytes = await read(key, limit);
-      await api.remove(input.projectName, input.id, input.userEmail);
+      await api.remove(input.agentName, input.id, input.userEmail);
       return bytes;
     });
-    await expect(api.read(input.projectName, input.id, input.userEmail)).rejects.toMatchObject({ status: 409 });
+    await expect(api.read(input.agentName, input.id, input.userEmail)).rejects.toMatchObject({ status: 409 });
   });
   it("retries artifact publication without downloading the completed file again", async () => {
     const publish = vi.fn().mockRejectedValueOnce(new Error("inventory unavailable")).mockResolvedValue(undefined);
@@ -106,7 +106,7 @@ describe("private source file lifecycle", () => {
       await api.import({ ...input, id: kind, derived: { jobId: "job", kind } }, openBody);
     }
     fake.seed([{ ...keys.audioJob("audio", "job"), job: { status: "running", stage: "cleaning", userEmail: input.userEmail } }]);
-    const job = { id: "job", projectName: "audio", userEmail: input.userEmail, fileId: input.id } as AudioJob;
+    const job = { id: "job", agentName: "audio", userEmail: input.userEmail, fileId: input.id } as AudioJob;
     const context = { signal: new AbortController().signal, record: async () => {} };
     const clean = createAudioCleanup({ files, objects, now: () => clock });
     await clean(job, context);
@@ -126,7 +126,7 @@ describe("private source file lifecycle", () => {
     await useCases().import({ ...input, derived: { jobId: "job", kind: "checkpoint" } }, openBody);
     await useCases().import({ ...input, id: "other", derived: { jobId: "other-job", kind: "checkpoint" } }, openBody);
     const clean = createAudioCleanup({ files, objects, now: () => clock });
-    const job = { id: "job", projectName: "audio", userEmail: input.userEmail } as AudioJob;
+    const job = { id: "job", agentName: "audio", userEmail: input.userEmail } as AudioJob;
     const context = { signal: new AbortController().signal, record: async () => {} };
     vi.mocked(objects.delete).mockRejectedValueOnce(new Error("storage offline"));
     await expect(clean(job, context)).rejects.toThrow("storage offline");
@@ -142,7 +142,7 @@ describe("private source file lifecycle", () => {
     expect(file.retireAt).toBe(retainUntil);
     expect((await useCases().import({ ...input, retainUntil: "2027-04-01T00:00:00.000Z" }, openBody)).retireAt).toBe(retainUntil);
     clock = new Date(retainUntil);
-    await expect(useCases().read(input.projectName, input.id, input.userEmail)).rejects.toMatchObject({ status: 409 });
+    await expect(useCases().read(input.agentName, input.id, input.userEmail)).rejects.toMatchObject({ status: 409 });
     expect(await useCases().sweep()).toEqual({ deleted: 1, failed: 0 });
     expect(open).toHaveBeenCalledTimes(1);
   });
@@ -153,7 +153,7 @@ describe("private source file lifecycle", () => {
     await expect(useCases().import({ ...input, retainUntil }, openBody)).rejects.toThrow("database unavailable");
     clock = new Date(retainUntil);
     expect(await useCases().sweep()).toEqual({ deleted: 1, failed: 0 });
-    expect(await files.get(input.projectName, input.id)).toMatchObject({ status: "deleted", retireAt: retainUntil });
+    expect(await files.get(input.agentName, input.id)).toMatchObject({ status: "deleted", retireAt: retainUntil });
     finish.mockRestore();
   });
 
@@ -162,7 +162,7 @@ describe("private source file lifecycle", () => {
       await expect(useCases().import({ ...input, retainUntil }, openBody)).rejects.toThrow();
     }
     expect(open).not.toHaveBeenCalled();
-    expect(await files.get(input.projectName, input.id)).toBeNull();
+    expect(await files.get(input.agentName, input.id)).toBeNull();
   });
 
   it("does not return readable output if its inherited deadline passes during upload", async () => {
@@ -180,8 +180,8 @@ describe("private source file lifecycle", () => {
     await expect(useCases().import(input, async () => Object.assign(open(), { close }))).rejects.toThrow();
     expect(close).toHaveBeenCalledTimes(1);
   });
-  it("does not open an upload for a project being deleted", async () => {
-    fake.seed([{ ...keys.project("audio"), entityType: "PROJECT", deletingAt: clock.toISOString() }]);
+  it("does not open an upload for an agent being deleted", async () => {
+    fake.seed([{ ...keys.agent("audio"), entityType: "AGENT", deletingAt: clock.toISOString() }]);
     await expect(useCases().import(input, openBody)).rejects.toThrow();
     expect(open).not.toHaveBeenCalled();
   });
@@ -205,12 +205,12 @@ describe("private source file lifecycle", () => {
     finish.mockRestore();
   });
 
-  it("does not grant another user or project access through a file ID", async () => {
+  it("does not grant another user or agent access through a file ID", async () => {
     await useCases().import(input, openBody);
     await expect(useCases().read("audio", "file-1", "other@example.test")).rejects.toMatchObject({ status: 404 });
     await expect(useCases().read("other", "file-1", input.userEmail)).rejects.toMatchObject({ status: 404 });
     await expect(useCases().import({ ...input, userEmail: "other@example.test" }, openBody)).rejects.toMatchObject({ status: 404 });
-    await expect(useCases().import({ ...input, projectName: "other" }, openBody)).rejects.toThrow();
+    await expect(useCases().import({ ...input, agentName: "other" }, openBody)).rejects.toThrow();
     expect(objects.write).toHaveBeenCalledTimes(1);
   });
 

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { buildAgentDeps } from "@/application/execution/agentBindings";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import { descend } from "@/domain/execution/actor";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import { FakeChannel } from "./fakeChannel";
 import { resolveRunTools } from "@/application/execution/bindings";
 import { prepareMemoryForRun } from "@/application/execution/memoryRecall";
@@ -11,7 +11,7 @@ describe("background audio recursion guard", () => {
   it("withholds submission tools from the postprocessor and all of its subagents", async () => {
     const audioTools = vi.fn(async () => vi.fn(async () => ({ text: "queued" })));
     const deps = { channel: new FakeChannel([]), audioTools } as unknown as ExecutionDeps;
-    const configuration: AgentConfiguration = { projectName: "writer",  model: "openai/gpt-5-mini",
+    const configuration: AgentConfiguration = { agentName: "writer",  model: "openai/gpt-5-mini",
       systemPrompt: "",  parameters: { piiFiltering: false, audioProcessing: true },
       skillList: [], mcpList: [], subagentList: [] };
     const normal = await buildAgentDeps(deps, configuration, "writer", async () => {}, { ancestry: ["writer"] });
@@ -31,9 +31,9 @@ describe("background audio recursion guard", () => {
 
   it("does not resolve bindings or discover capabilities for source postprocessing", async () => {
     const denied = vi.fn(async () => { throw new Error("Capability must not be resolved"); });
-    const deps = { mcps: { get: denied }, projects: { get: denied },
+    const deps = { mcps: { get: denied }, agents: { get: denied },
       catalog: { search: denied }, skills: { describe: vi.fn(async () => [{ name: "writer", description: "Writing guidance" }]) } } as unknown as ExecutionDeps;
-    const configuration: AgentConfiguration = { projectName: "writer",  model: "openai/gpt-5-mini",
+    const configuration: AgentConfiguration = { agentName: "writer",  model: "openai/gpt-5-mini",
       systemPrompt: "",  parameters: { piiFiltering: false, dynamicCapabilities: true, memoryRecall: true },
       skillList: ["writer"], mcpList: [{ name: "server" }], subagentList: [{ name: "child" }] };
     const resolved = await resolveRunTools(deps, configuration, undefined, ["source"], { backgroundTask: true });

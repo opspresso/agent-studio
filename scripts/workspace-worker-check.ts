@@ -13,7 +13,7 @@ async function main() {
   await migrate();
   const { workspaceRepository: repository } = await import("@/infrastructure/db/repositories/workspaceRepository");
   const { chatRepository: chats } = await import("@/infrastructure/db/repositories/chatRepository");
-  const { projectRepository: projects } = await import("@/infrastructure/db/repositories/projectRepository");
+  const { agentRepository: agents } = await import("@/infrastructure/db/repositories/agentRepository");
   const { usageRepository: usage } = await import("@/infrastructure/db/repositories/usageRepository");
   const { secretCipher } = await import("@/infrastructure/crypto/secretCipher");
   const { createWorkspaceCheckpointStore } = await import("@/infrastructure/db/repositories/workspaceCheckpointStore");
@@ -21,14 +21,14 @@ async function main() {
   const { createWorkspaceRuntimeAdapter } = await import("@/infrastructure/workspace/runtimeAdapters");
   const { createWorkspaceUseCases } = await import("@/application/workspace/workspaceUseCases");
   const { processWorkspace } = await import("@/application/workspace/worker");
-  const { executeWorkspaceTask } = await import("@/application/execution/runProject");
+  const { executeWorkspaceTask } = await import("@/application/execution/runAgent");
   const { deleteItem, deletePartition } = await import("@/infrastructure/db/store");
   const { closePool } = await import("@/infrastructure/db/client");
   const { keys } = await import("@/infrastructure/db/keys");
   const provider = createDockerSandboxProvider({ image: process.env.WORKSPACE_SANDBOX_IMAGE || "agent-studio-workspace:agents",
     network: "none", memoryMb: 512, diskMb: 256, cpus: 1 });
   const checkpoints = createWorkspaceCheckpointStore(secretCipher);
-  const projectName = `worker-${randomUUID()}`;
+  const agentName = `worker-${randomUUID()}`;
   const chatId = randomUUID();
   const ownerEmail = "workspace-worker@example.test";
   const at = new Date().toISOString();
@@ -36,20 +36,20 @@ async function main() {
   let workspaceId: string | undefined;
   const containers = new Set<string>();
   const deps: WorkspaceWorkerDeps = {
-    repository, chats, projects, provider: { ...provider, ensure: async id => {
+    repository, chats, agents, provider: { ...provider, ensure: async id => {
       const result = await provider.ensure(id); containers.add(result.externalId); return result;
     } }, checkpoints, now: () => new Date(Date.now() + offset), newId: randomUUID, idleTtlSeconds: 60, runTimeoutMs: 60_000,
-    policy: () => ({ projectName, runtimes: ["command"], checks: [{ name: "test", command: "test -s executions.txt" }], deploymentWorkflows: [] }),
+    policy: () => ({ agentName, runtimes: ["command"], checks: [{ name: "test", command: "test -s executions.txt" }], deploymentWorkflows: [] }),
     runtime: kind => createWorkspaceRuntimeAdapter(kind),
-    execute: (workspace, work) => executeWorkspaceTask({ usage }, projects, workspace, work),
+    execute: (workspace, work) => executeWorkspaceTask({ usage }, agents, workspace, work),
     sleep: async (ms, signal) => { await delay(ms, undefined, { signal }); },
   };
   const api = createWorkspaceUseCases(deps);
   try {
-    await projects.create({ name: projectName, displayName: "Workspace worker check", description: "", ownerEmail,
+    await agents.create({ name: agentName, displayName: "Workspace worker check", description: "", ownerEmail,
       createdAt: at, updatedAt: at });
-    await chats.create({ chatId, projectName, title: "Workspace worker check", ownerEmail, createdAt: at, updatedAt: at });
-    const workspace = await api.create({ chatId, projectName, title: "General work", runtime: "command" }, ownerEmail);
+    await chats.create({ chatId, agentName, title: "Workspace worker check", ownerEmail, createdAt: at, updatedAt: at });
+    const workspace = await api.create({ chatId, agentName, title: "General work", runtime: "command" }, ownerEmail);
     workspaceId = workspace.id;
     const first = await api.enqueue(workspace.id, ownerEmail, { kind: "command", script: "printf once >> executions.txt; sleep 1; printf complete" }, "worker-request-0001");
     const stopping = new AbortController();
@@ -102,7 +102,7 @@ async function main() {
     if (workspaceId) { await checkpoints.delete(workspaceId); await deletePartition(keys.workspacePartition(workspaceId)); }
     await deleteItem(keys.workspaceChat(chatId));
     if (await chats.get(chatId)) await chats.delete(chatId);
-    if (await projects.get(projectName)) await projects.delete(projectName);
+    if (await agents.get(agentName)) await agents.delete(agentName);
     await closePool();
   }
 }

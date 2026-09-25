@@ -10,15 +10,15 @@ import { SLACK_RUN_LEASE_SECONDS, SLACK_STOP_TTL_SECONDS } from "@/infrastructur
 vi.mock("node:crypto", async (original) => ({ ...await original<typeof import("node:crypto")>(), randomUUID: vi.fn() }));
 
 const NOW = 1_750_000_000_000;
-const target = { projectName: "stop-test", channel: "C1", threadTs: "1.0" };
+const target = { agentName: "stop-test", channel: "C1", threadTs: "1.0" };
 beforeEach(async () => {
   let token = 0;
   vi.mocked(randomUUID).mockImplementation(() => `00000000-0000-4000-8000-${String(++token).padStart(12, "0")}`);
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
-  await putItem({ ...keys.project(target.projectName), entityType: "PROJECT" });
-  await deleteItem(keys.slackRunControl(target.projectName, target.channel, target.threadTs));
-  await deleteItem(keys.slackRunLease(target.projectName, target.channel, target.threadTs));
+  await putItem({ ...keys.agent(target.agentName), entityType: "AGENT" });
+  await deleteItem(keys.slackRunControl(target.agentName, target.channel, target.threadTs));
+  await deleteItem(keys.slackRunLease(target.agentName, target.channel, target.threadTs));
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
@@ -76,23 +76,23 @@ describe("Slack stop delivery", () => {
     }
   });
 
-  it("keeps the latest stop across out-of-order delivery and isolates projects and threads", async () => {
+  it("keeps the latest stop across out-of-order delivery and isolates agents and threads", async () => {
     await repository.requestStop(target, "2.8");
     await repository.requestStop(target, "2.3");
     expect(await repository.stoppedAfter(target, "2.7")).toBe(true);
     expect(await repository.stoppedAfter(target, "2.8")).toBe(true);
     expect(await repository.stoppedAfter(target, "2.9")).toBe(false);
     expect(await repository.stoppedAfter({ ...target, threadTs: "9.0" }, "2.7")).toBe(false);
-    expect(await repository.stoppedAfter({ ...target, projectName: "other" }, "2.7")).toBe(false);
+    expect(await repository.stoppedAfter({ ...target, agentName: "other" }, "2.7")).toBe(false);
   });
 
-  it("expires stop records and refuses writes under a deleted project", async () => {
+  it("expires stop records and refuses writes under a deleted agent", async () => {
     await repository.requestStop(target, "2.8");
-    const row = await getItem(keys.slackRunControl(target.projectName, target.channel, target.threadTs));
+    const row = await getItem(keys.slackRunControl(target.agentName, target.channel, target.threadTs));
     expect(row?.expiresAt).toBe(NOW / 1000 + SLACK_STOP_TTL_SECONDS);
     vi.setSystemTime(NOW + (SLACK_STOP_TTL_SECONDS + 1) * 1000);
     expect(await repository.stoppedAfter(target, "2.7")).toBe(false);
-    await expect(repository.requestStop({ ...target, projectName: "deleted" }, "2.8")).rejects.toThrow();
+    await expect(repository.requestStop({ ...target, agentName: "deleted" }, "2.8")).rejects.toThrow();
   });
 
   it("cancels through a shared store even when another handler records the stop", async () => {

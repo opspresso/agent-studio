@@ -4,12 +4,12 @@ import * as store from "@/infrastructure/db/store";
 import { keys } from "@/infrastructure/db/keys";
 import { workspacePolicyRepository as policies } from "@/infrastructure/db/repositories/workspacePolicyRepository";
 import { workspaceRepositoryCreationStore as creations } from "@/infrastructure/db/repositories/workspaceRepositoryCreationStore";
-import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
+import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
 import { createWorkspaceRepositoryCreationUseCases } from "@/application/workspace/createRepository";
 import { ForbiddenError } from "@/application/errors";
 import type { CodingForge } from "@/domain/coding/forge";
 import { CodingMutationRejectedError } from "@/domain/coding/types";
-import type { WorkspaceProjectPolicy } from "@/domain/workspace/policy";
+import type { WorkspaceAgentPolicy } from "@/domain/workspace/policy";
 import { workspaceAllowsRepository, withWorkspaceRepositoryRules } from "@/domain/workspace/policy";
 import type { CreateWorkspaceRepositoryInput } from "@/domain/workspace/repositoryCreation";
 
@@ -20,20 +20,20 @@ const owner = "owner@example.test";
 const input = { repository: "company/new-game", description: "A game", private: true };
 const created = (request: CreateWorkspaceRepositoryInput) => ({ repository: request.repository, repositoryId: 42, url: `https://github.example.test/${request.repository}`, baseBranch: "main", private: request.private });
 const createRepository = vi.fn<NonNullable<CodingForge["createRepository"]>>();
-let deployment: WorkspaceProjectPolicy;
+let deployment: WorkspaceAgentPolicy;
 async function saveSettings() {
   const current = await policies.get("demo");
-  await policies.put({ projectName: "demo", revision: (current?.revision ?? 0) + 1, rules: deployment, updatedAt: now.toISOString() }, current?.revision ?? null);
+  await policies.put({ agentName: "demo", revision: (current?.revision ?? 0) + 1, rules: deployment, updatedAt: now.toISOString() }, current?.revision ?? null);
 }
 const api = createWorkspaceRepositoryCreationUseCases({ policies, creations,
-  authorize: async (_project, email) => { if (email !== owner) throw new ForbiddenError("Workspace access denied"); },
+  authorize: async (_agent, email) => { if (email !== owner) throw new ForbiddenError("Workspace access denied"); },
   forge: () => ({ createRepository }), now: () => now });
 
 beforeEach(async () => {
   vi.useFakeTimers(); vi.setSystemTime(now); fake.rows.clear();
   createRepository.mockReset().mockImplementation(async request => created(request));
-  deployment = { projectName: "demo", mode: "new", repositories: ["company/existing"], runtimes: ["codex"], checks: [], deploymentWorkflows: [] };
-  fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner, createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
+  deployment = { agentName: "demo", mode: "new", repositories: ["company/existing"], runtimes: ["codex"], checks: [], deploymentWorkflows: [] };
+  fake.seed([{ ...keys.agent("demo"), entityType: "AGENT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner, createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
   await saveSettings();
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -108,7 +108,7 @@ describe("server-owned repository creation and automatic access registration", (
 
   it("records creation without granting access when an administrator revokes new mode during the request", async () => {
     createRepository.mockImplementation(async request => {
-      await policies.put({ projectName: "demo", revision: 2, updatedAt: now.toISOString(), rules: { mode: "selected", repositories: [] } }, 1);
+      await policies.put({ agentName: "demo", revision: 2, updatedAt: now.toISOString(), rules: { mode: "selected", repositories: [] } }, 1);
       return created(request);
     });
     expect(await api.create("demo", input, owner)).toMatchObject({ status: "created", allowed: false, error: expect.stringContaining("current policy") });
@@ -140,8 +140,8 @@ describe("server-owned repository creation and automatic access registration", (
     expect((await creations.get("demo", input.repository))?.status).toBe("creating");
   });
 
-  it("does not recreate policy or receipts after project deletion during a remote create", async () => {
-    createRepository.mockImplementation(async request => { await projectRepository.delete("demo"); return created(request); });
+  it("does not recreate policy or receipts after agent deletion during a remote create", async () => {
+    createRepository.mockImplementation(async request => { await agentRepository.delete("demo"); return created(request); });
     await expect(api.create("demo", input, owner)).rejects.toMatchObject({ status: 502 });
     expect(await policies.get("demo")).toBeNull();
     expect(await creations.get("demo", input.repository)).toBeNull();

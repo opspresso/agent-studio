@@ -32,7 +32,7 @@ function TraceDetail({ name, traceId }: { name: string; traceId: string }) {
 
   return (
     <Stack gap="md">
-      <BackLink href={`/agents/${name}/traces`} label={t("project.tab.traces")} />
+      <BackLink href={`/agents/${name}/traces`} label={t("agent.tab.traces")} />
       {error ? (
         <Alert color="red" variant="light">{error}</Alert>
       ) : !trace ? (

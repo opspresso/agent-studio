@@ -77,7 +77,7 @@ export function compileAgent(
   const emit = output.emit;
   if (input.parameters?.policy?.approvalTools?.some((name) => name.startsWith("handoff_"))) throw new ValidationError("Require approval for delegate tools, not handoffs");
   const scope = graph.scope ?? "root";
-  const key = `${scope}/${input.projectName}`;
+  const key = `${scope}/${input.agentName}`;
   const saved = graph.saved?.agents[key];
   const filter = inheritedFilter ?? (saved?.pii ? PiiFilter.restoreSnapshot(saved.pii) : input.parameters?.piiFiltering ? new PiiFilter() : undefined);
   const previousImages = scope === "root" && !saved ? input.runtime?.images ?? [] : [];
@@ -117,7 +117,7 @@ export function compileAgent(
   if (assembly.tools.length && !schemas) throw new Error("Tool schema validation is not configured");
   const capabilities = createRuntimeTools(deps, input, assembly, turn, emit, filter, schemas);
   const agent: SdkAgent = new Agent<unknown, AgentOutputType>({
-    name: input.projectName || "prompt", model, outputType,
+    name: input.agentName || "prompt", model, outputType,
     instructions: assembly.systemPrompt,
     tools: capabilities.tools,
     mcpServers: capabilities.mcp.servers,
@@ -149,7 +149,7 @@ export function compileAgent(
       let nextInput: RunAgentInput | undefined;
       const transfer = new Handoff<unknown, AgentOutputType>(prototype, async (context, args) => {
         const request = task(args);
-        const prepared = await deps.loadAgent!(binding.agentName, { ...request, invocationId: `${input.projectName}/${binding.name}` });
+        const prepared = await deps.loadAgent!(binding.agentName, { ...request, invocationId: `${input.agentName}/${binding.name}` });
         graph.close.push(prepared.close);
         for (const warning of prepared.warnings) emit({ warning });
         nextInput = prepared.input;
@@ -157,7 +157,7 @@ export function compileAgent(
         await checkHandoffInput(compiled.agent, prepared.input.messages, context);
         transfer.agent = compiled.agent;
         const records = graph.handoffs![scope] ??= [];
-        if (!records.some((entry) => entry.source === input.projectName && entry.tool === binding.name && entry.args === args)) records.push({ source: input.projectName, tool: binding.name, args });
+        if (!records.some((entry) => entry.source === input.agentName && entry.tool === binding.name && entry.args === args)) records.push({ source: input.agentName, tool: binding.name, args });
         return compiled.agent;
       });
       transfer.toolName = binding.name;
@@ -201,7 +201,7 @@ export function compileAgent(
       return childEmit;
     };
     const restoredChildren = new Map<string, { prepared: PreparedAgent; child: ReturnType<typeof compileAgent>; close: () => Promise<void> }>();
-    graph.restoreDelegations.set(`${scope}/${input.projectName}/${binding.name}`, async (id, args) => {
+    graph.restoreDelegations.set(`${scope}/${input.agentName}/${binding.name}`, async (id, args) => {
       const childScope = `tool/${id}`;
       const request = task(args);
       const prepared = await deps.loadAgent!(binding.agentName, { ...request, invocationId: id });
@@ -234,11 +234,11 @@ export function compileAgent(
       try {
         const request = task(args, details?.signal ?? input.signal);
         request.invocationId = id;
-        const transcript = buildTransferTranscript(turn.conversation ?? input.messages, input.projectName);
+        const transcript = buildTransferTranscript(turn.conversation ?? input.messages, input.agentName);
         if (transcript.dropped) emit({ warning: "Earlier conversation was omitted from the delegated task's bounded context." });
         request.transcript = filter?.mask(transcript.text) ?? transcript.text;
         const prepared = restoredChild?.prepared ?? await deps.loadAgent!(binding.agentName, request);
-        if (!graph.delegations!.some((entry) => entry.scope === scope && entry.id === id)) graph.delegations!.push({ scope, source: input.projectName, tool: binding.name, id, args });
+        if (!graph.delegations!.some((entry) => entry.scope === scope && entry.id === id)) graph.delegations!.push({ scope, source: input.agentName, tool: binding.name, id, args });
         if (!restoredChild) childGraph.close.push(prepared.close);
         for (const warning of prepared.warnings) childEmit({ warning });
         const child = restoredChild?.child ?? compileAgent(prepared.deps, prepared.input, childEmit, childGraph, filter, request.images);

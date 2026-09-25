@@ -63,7 +63,7 @@ Teams 는 아래의 transcript 저장소에 묻는다. 누가 묻고 있는지�
 | `ReplySink` | 스트리밍되는 답과 그 진행 상황: `status`, `step`, `stepDone`, `keepStatusAlive`, `push`, `finish`. 보고는 하나이고 표면이 할 수 있는 방식대로 렌더링된다 — Slack 의 상태 줄과 작업 행, Telegram·Teams 의 입력 중 표시. 편집으로 답을 전달하는 표면(Telegram, Teams)은 `application/messaging/editInPlaceReply.ts` 의 공유 구현에 플랫폼의 호출·상한·렌더링(`EditInPlaceTransport`)만 건넨다 |
 | `ReplyChannel` | sink 에, 답변이 그 곁에서 표면에 요구하는 것을 더한 것: 독립 메시지를 `say`, `sendImage`, 그리고 `fileLink` 와 `warningLine` 을 표면 자신의 마크업으로 적는 것 — 링크는 곧 마크업이고, mrkdwn 에서 안전한 이름이 HTML 에서는 문법이기 때문이다 |
 | `InboundAttachment` / `HistoryTurn` | 파이프라인이 메시지에서 읽는 것: 이름, 타입, 크기, 그리고 플랫폼의 자격 증명에 묶인 `download` — 플랫폼이 주소를 주지 않았다면 없음이며, 그것은 읽기 실패가 아니라 없다는 사실 그대로 보고된다 |
-| `InboundEventClaims` | 전달의 중복을 억제하는 조건부 claim과 settle이다. 실패·만료 lease의 재전달은 다시 받을 수 있으므로 외부효과의 exactly-once를 보장하지 않는다. Slack 은 `event_id` 로, Telegram 은 project·봇·`update_id` 로, Teams 는 project·App ID·activity id 로 키를 만든다. repository 하나 (`createInboundClaimRepository`) 가 모두 담당한다 |
+| `InboundEventClaims` | 전달의 중복을 억제하는 조건부 claim과 settle이다. 실패·만료 lease의 재전달은 다시 받을 수 있으므로 외부효과의 exactly-once를 보장하지 않는다. Slack 은 `event_id` 로, Telegram 은 agent·봇·`update_id` 로, Teams 는 agent·App ID·activity id 로 키를 만든다. repository 하나 (`createInboundClaimRepository`) 가 모두 담당한다 |
 | `ConversationTranscriptRepository` | 플랫폼이 되읽을 수 있는 이력을 보관하지 않을 때, 표면이 대화에 대해 기억하는 것 — [Telegram](telegram.md#히스토리) 참고. 읽기 예산·기록 규칙·화자 라벨은 `application/messaging/transcriptHistory.ts` 한 곳이다 |
 
 **webhook 꼬리**도 같은 방식으로 공유된다 (`src/app/api/_lib/inboundEvent.ts`): 플랫폼 자신의
@@ -81,12 +81,12 @@ id 아래 백그라운드로 작업을 예약하며, 획득한 token이 현재 c
 - `domain/<platform>/client.ts` 의 **클라이언트 port** 와 그 fetch 어댑터,
 - **gate** — 플랫폼의 이벤트 중 어느 것이 봇에게 온 것인지 — claim 보다 앞서 라우트에서
   실행되는 것,
-- **update handler** — 프로젝트를 해석하고 (현재 설정. 거절 문구는 관례로 공유한다),
+- **update handler** — Agent를 해석하고 (현재 설정. 거절 문구는 관례로 공유한다),
   이벤트를 `TurnInput` 으로 정규화하고, `ReplyChannel` 을 열고, "생각 중"을 한 번 말하고,
   `handleTurn` 을 호출하며, 그 뒤에 플랫폼의 장부 정리를 하는 것,
 - 플랫폼의 렌더링을 위한 **`ReplyChannel`** 과, 모든 channel 이 통과해야 하는 테스트
   (`tests/messagingTurn.test.ts` 가 파이프라인 쪽에서 본 계약을 진술한다),
-- 프로젝트별 자격 증명을 위한 **설정 slice**. 다른 모든 시크릿과 마찬가지로 암호화된다,
+- Agent별 자격 증명을 위한 **설정 slice**. 다른 모든 시크릿과 마찬가지로 암호화된다,
 - `RunActorKind`, `RunSurface`, `keys.ts`, `ttl.ts`, 로거의 scope, 그리고
   `tests/architecture.test.ts` 에서 wiring site 와 agent-run 진입점을 한정하는 두 목록에
   각각 한 줄씩 — *일부러* 추가하는 것이고, 그것이 그 목록이 존재하는 이유다.
@@ -102,8 +102,8 @@ Chat 과 trigger 도 각각 엔진의 스트림을 소비하며, 각자 자기 �
 이 파일이 언젠가 자라서 덮게 될 누락이 아니다: Chat은 화면 기록과 SDK Session을 따로 영속화하며,
 발화(firing) 에는 이력 행이 있다 — 이들의 출력 계약은
 챗봇의 것과도, 서로의 것과도 다르며, 파사드는 이들에게 필요한 두 계약을 이미 제공한다
-(chunk 소비자에게는 `streamProjectRun`, completion 에는 `executeProjectStream` /
-`executeProject`). 이들 전부를 묶는 것은 공유된 루프가 아니라 `tests/architecture.test.ts`
+(chunk 소비자에게는 `streamAgentRun`, completion 에는 `streamAgentExecution` /
+`collectAgentRun`). 이들 전부를 묶는 것은 공유된 루프가 아니라 `tests/architecture.test.ts`
 의 pairing 규칙이다: 한 출력 축을 읽는 모듈은 다른 축도 읽는다. Slack 자신의 개념들 —
 assistant 스레드의 상태 줄, 채널 체크리스트, `app_home_opened`, 채널 키워드, workspace 읽기
 tool — 도 같은 이유로 Slack 의 어댑터 안에 남는다: 그것들은 공유된 보고를 Slack 이 렌더링하는

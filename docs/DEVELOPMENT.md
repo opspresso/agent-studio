@@ -55,8 +55,8 @@ Next.js는 `.env.local`을 읽지만 별도 CLI 스크립트는 자동으로 읽
 그대로 실행하지 않는다.
 인증 계정의 키와 업그레이드 전제는 [설치 문서](INSTALL.md#업그레이드)를 따른다.
 
-`compose.yaml`은 `agent-studio-local` project에 PostgreSQL 18과 MinIO 전용 volume을 만든다.
-Agent Memory는 별도 project와 포트를 사용하므로 서로 독립적으로 시작하고 종료할 수 있다.
+`compose.yaml`은 `agent-studio-local` Compose 프로젝트에 PostgreSQL 18과 MinIO 전용 volume을 만든다.
+Agent Memory는 별도 Compose 프로젝트와 포트를 사용하므로 서로 독립적으로 시작하고 종료할 수 있다.
 `docker compose down -v`는 이 앱의 로컬 데이터를 삭제하므로 명시적 확인 없이 실행하지 마라.
 
 `.env.example` 의 기본 object-store 설정은 이 앱의 MinIO(:9000, console :9001)를 가리킨다.
@@ -283,8 +283,8 @@ PR workflow에는 Release 생성·registry 게시·GitOps 전달 job이 없다.
 - [ ] 한없이 늘어나는 새 행은 `src/infrastructure/db/ttl.ts` 에서 온 `expiresAt` 을 갖는다.
       그래야 틱의 sweep 이 지운다.
 - [ ] 새 실행 진입점은 파사드로 같은 Agent 도구 루프를 호출하고, 런 브래킷을
-      연다. 런을 chunk 로 받는 소비자(이미지 포함)에게는 `streamProjectRun`, completion 으로
-      답하는 소비자에게는 `executeProjectStream`/`executeProject`을 사용한다. 이미지도 Agent 도구의 출력으로 처리한다.
+      연다. 런을 chunk 로 받는 소비자(이미지 포함)에게는 `streamAgentRun`, completion 으로
+      답하는 소비자에게는 `streamAgentExecution`/`collectAgentRun`을 사용한다. 이미지도 Agent 도구의 출력으로 처리한다.
 - [ ] 이제 두 곳에 존재하게 된 결정은 단일 소유자와 `SINGLE_OWNERS` 항목을 갖는다.
 - [ ] `pnpm typecheck && pnpm test && pnpm build` 가 통과한다.
 

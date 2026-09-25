@@ -82,9 +82,9 @@ function useCases(
         }
       },
     },
-    // Discovery is an admin action on the shared entry; none of the per-project
+    // Discovery is an admin action on the shared entry; none of the per-agent
     // collaborators below are reachable from it.
-    projects: {} as never,
+    agents: {} as never,
     connections: {} as never,
     states: {} as never,
     oauth: {} as never,
@@ -180,7 +180,7 @@ describe("discovering a server's authorization configuration", () => {
 
   it("asks which authorization server to use rather than taking the first", async () => {
     // RFC 9728 puts the choice on the client. Silently taking [0] would bind
-    // every project's tokens to whichever the provider happened to list first.
+    // every agent's tokens to whichever the provider happened to list first.
     const { useCases: uc, stored } = useCases({
       fetchProtectedResource: async () => ({
         resource: "https://mcp.example.com",

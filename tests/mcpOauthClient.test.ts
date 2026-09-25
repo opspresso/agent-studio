@@ -4,7 +4,7 @@
  * The use-case tests replace `OAuthClient` wholesale, which is right for them
  * and leaves this file's actual decisions unexercised. Two of them matter well
  * beyond their size: whether a token failure is the provider's verdict or a
- * transport hiccup — the first costs a project its connection, the second must
+ * transport hiccup — the first costs an agent its connection, the second must
  * not — and which credentials go where on the wire, since a client that sends
  * its secret the way a server does not expect simply never authenticates.
  */
@@ -153,7 +153,7 @@ describe("token requests", () => {
 
 describe("telling a dead grant from a bad moment", () => {
   it("raises OAuthGrantError only for the codes that mean the grant is gone", async () => {
-    // This is the whole distinction: these cost the project its connection.
+    // This is the whole distinction: these cost the agent its connection.
     for (const errorCode of ["invalid_grant", "invalid_client", "unauthorized_client", "invalid_scope"]) {
       stub(400, { error: errorCode, error_description: "no" });
       await expect(oauthClient.refresh(target, "rt")).rejects.toBeInstanceOf(OAuthGrantError);

@@ -11,7 +11,7 @@ import { createFakeStore } from "./fakeStore";
  * nothing under `tests/` is meant to open a connection.
  *
  * It is here rather than in each file because forgetting it does not fail
- * loudly. A use case that quietly grew a settings read — `assertProjectWritable`
+ * loudly. A use case that quietly grew a settings read — `assertAgentWritable`
  * consulting the admin list is the one that did — turns an unrelated test into
  * a hang on a connection attempt far from the cause, and six test files had
  * each pasted the same defensive mock in response. The boundary is the

@@ -14,7 +14,7 @@ import { useT } from "@/app/_i18n/provider";
  * same drift the control itself exists to prevent.
  */
 export const GROUP_BY_LABEL: Record<GroupBy, MessageKey> = {
-  project: "usage.groupBy.project",
+  agent: "usage.groupBy.agent",
   model: "usage.groupBy.model",
   provider: "usage.groupBy.provider",
   department: "usage.groupBy.department",
@@ -24,10 +24,10 @@ export const GROUP_BY_LABEL: Record<GroupBy, MessageKey> = {
  * Which axis a cost chart and its breakdown are grouped by.
  *
  * The options are the caller's because the three surfaces can answer
- * different questions from the same rows: the overview knows every project
- * and their departments, a member's own rows know their projects but no
- * department map, and one project's rows have nothing left to say about
- * projects at all. What must not differ is the control itself — the reader
+ * different questions from the same rows: the overview knows every agent
+ * and their departments, a member's own rows know their agents but no
+ * department map, and one agent's rows have nothing left to say about
+ * agents at all. What must not differ is the control itself — the reader
  * learns it once.
  */
 export function GroupByControl({

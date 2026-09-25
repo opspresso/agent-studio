@@ -67,7 +67,7 @@ export const POST = withAuth(async (user, request: Request) =>
       const { chat, runId, userSeq, startedAtMs, stream, onClientGone } = await createChat(
         chatDeps,
         {
-          projectName: parsed.data.projectName,
+          agentName: parsed.data.agentName,
           firstMessage: parsed.data.firstMessage,
           ...(parsed.data.images ? { images: parsed.data.images } : {}),
           ...(parsed.data.documents ? { documents: parsed.data.documents } : {}),

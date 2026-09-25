@@ -47,9 +47,9 @@ import { version } from "../../package.json";
  */
 const DOMAINS = [
   {
-    label: "projects",
-    title: "home.domain.projects",
-    body: "home.domain.projectsBody",
+    label: "agents",
+    title: "home.domain.agents",
+    body: "home.domain.agentsBody",
     Icon: IconFolder,
   },
   {

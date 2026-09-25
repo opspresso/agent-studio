@@ -7,7 +7,7 @@ import type { EngineChunk } from "@/domain/llm/types";
 
 const NOW = "2026-08-12T04:00:00.000Z";
 const CONTEXT = {
-  projectName: "poster-bot",
+  agentName: "poster-bot",
   actor: { kind: "user" as const, id: "bruce@daangn.com" },
   ancestry: ["poster-bot"],
   runId: "run-1",
@@ -54,7 +54,7 @@ function fakeStorage(over: { putFails?: boolean; rowFails?: boolean; error?: Err
       async get() {
         return null;
       },
-      async listByProject() {
+      async listByAgent() {
         return [];
       },
       async listByOwner() {
@@ -130,7 +130,7 @@ describe("storeArtifact", () => {
       producedBy: "image-child",
     });
     expect(artifact).toMatchObject({
-      projectName: "poster-bot",
+      agentName: "poster-bot",
       actor: { kind: "user", id: "bruce@daangn.com" },
       ancestry: ["poster-bot"],
       producedBy: "image-child",
@@ -158,7 +158,7 @@ describe("storeArtifact", () => {
     const storage = fakeStorage();
     const artifact = await storeArtifact(
       storage,
-      { projectName: "p" },
+      { agentName: "p" },
       { kind: "document", source: "generated", bytes: Buffer.from("x"), mimeType: "application/pdf" },
     );
     expect(artifact.actor).toBeUndefined();

@@ -52,10 +52,10 @@ DB·기존 `S3_BUCKET_NAME`의 비공개 Artifacts 저장소·암호화 키·전
 
 전체 초기화가 필요한 개발·운영 유지보수에서는 다음 범위만 정리한다. 전용 reset API나 화면 버튼은 없다.
 
-1. 해당 프로젝트의 schedule과 신규 작업·재시도를 비활성화한다. 이미 시작된 실행과 worker 작업이
+1. 해당 Agent의 schedule과 신규 작업·재시도를 비활성화한다. 이미 시작된 실행과 worker 작업이
    끝나거나 취소되어 lease·활성 slot이 비어 있는지 확인한다.
-2. `keys.ts`의 해당 프로젝트 AUDIOJOB·AUDIOSOURCE·AUDIOOCCURRENCE·AUDIOSLOTS 행을 함께 정리한다.
-   일부만 지워 중복 claim이 삭제된 job을 가리키게 하지 않는다. 다른 프로젝트의 행은 건드리지 않는다.
+2. `keys.ts`의 해당 Agent AUDIOJOB·AUDIOSOURCE·AUDIOOCCURRENCE·AUDIOSLOTS 행을 함께 정리한다.
+   일부만 지워 중복 claim이 삭제된 job을 가리키게 하지 않는다. 다른 Agent의 행은 건드리지 않는다.
 3. Artifact 삭제 여부는 별도로 결정한다. source-file 삭제 inventory·0바이트 표식은 유지해 지연된
    업로드가 지운 파일을 복원하지 못하게 한다. Agent·skill·인증·오디오 설정은 유지할 수 있다.
 4. 빈 작업 목록과 중복 claim 정리를 확인하고 설정·schedule을 다시 켠다. 다음 실행은 설정된 수집
@@ -209,7 +209,7 @@ provider 보고 비용을 사용하는 텍스트 호출은 이 계산을 거치�
 전체 호출 수로 해석하지 않는다. `UNKNOWN_MODEL_POLICY=refuse` (env 또는 런타임
 설정)는 이 카운터를 거부로 바꾼다: 런 브래킷이 어떤 가드보다도 먼저 `400` 을 답한다.
 
-카운터는 프로세스 단위이며 **project 도 user 도 model 도 이름 붙이지 않는다**. 라벨은
+카운터는 프로세스 단위이며 **agent 도 user 도 model 도 이름 붙이지 않는다**. 라벨은
 히스토그램의 `le`와 build 정보의 유한한 `version`·`stage`뿐이다. 값의 범위가 무한한 라벨은
 메트릭 하나를 값마다 하나씩의 시계열로 바꿔 놓는데, unknown model id 를 라벨로 달지 않고
 카운트하는 이유도 그것이다.
@@ -236,7 +236,7 @@ domain의 제한된 경고와 브라우저 오류 경계 등 예외는 구조 �
 
 Agent 런은 **항상** 트레이싱되며 이미지 도구도 같은 실행 Trace에 포함된다.
 
-트레이스는 프로젝트 소유자와 관리자(`assertProjectOwnerOrAdminReadable` 기준)에게 보인다. SDK span은 이름·종류·상태·시간,
+트레이스는 Agent 소유자와 관리자(`assertAgentOwnerOrAdminReadable` 기준)에게 보인다. SDK span은 이름·종류·상태·시간,
 native ID와 부모 ID, 모델 토큰·비용을 저장한다. `prepare`에는 skill·Agent·MCP·도구의 수와
 발견한 capability 이름 최대 20개를 기록한다. 원본 프롬프트와 도구 결과는 span에 저장하지 않는다.
 다만 Trace의 `error`와 `warnings`는 원문 오류를 최대 1,000자로 보관하므로 민감 정보가 포함될
@@ -247,7 +247,7 @@ native ID와 부모 ID, 모델 토큰·비용을 저장한다. `prepare`에는 s
 앱 런을 root로 만들고 저장된 `parentSpanId` 관계를 따라 span 계층을 내보낸다. 자식이 먼저
 완료되어 저장됐어도 부모부터 생성하며, 생략된 부모는 root에 연결한다. 타임스탬프·이름·상태와
 `app.span_id`·`app.parent_span_id`·`app.span.kind`·`app.span.author`, root의
-`app.trace_id`·프로젝트·호출자·대화 속성을 전송한다. OTLP 자체 ID는 새로 생성하며
+`app.trace_id`·Agent·호출자·대화 속성을 전송한다. OTLP 자체 ID는 새로 생성하며
 원래 SDK ID는 위 속성으로 대응한다. 세부 사용량과 원문을 제외한 native 메타데이터는 DB Trace에서 조회한다.
 
 기록의 정본은 DB 행이다. collector 장애는 `[otel]` 로그로 보고하고 실행을 실패시키지 않는다.
@@ -306,16 +306,16 @@ DB만 복원하면 파일 참조가 끊길 수 있고 암호화 키를 잃으면
 읽을 수 없다. 실제 backup 도구·주기·보관 장소·접근 권한은 배포 저장소가 소유한다.
 
 복원은 격리된 환경에서 검증한다. worker와 ticker를 먼저 켜지 말고 DB 스키마·키 복호화·
-대표 파일·로그인·프로젝트 실행을 확인한 뒤 외부 연결을 재개한다. 복원한 승인·job이
+대표 파일·로그인·Agent 실행을 확인한 뒤 외부 연결을 재개한다. 복원한 승인·job이
 이미 수행된 외부효과를 반복하지 않는지 확인한다. `catalog_vectors`는 재색인할 수 있지만
-Project·Session·Usage·Audit와 원본 파일은 파생 캐시가 아니다.
+Agent·Session·Usage·Audit와 원본 파일은 파생 캐시가 아니다.
 
 ## 지출 가드와 부하 가드
 
 둘 다 런 브래킷(`src/application/run/runBracket.ts`)에 매달려 있고 **의도적으로 서로 반대
 방향으로 실패한다**. 그 사이에 세 번째 가드가 있다: **member tier 의 월간 상한**
 (`src/domain/member/tiers.ts` 의 `TIER_LIMITS`, 기본값은 `member` $20, `guest` $2)은 `user`
-actor 에 대해 프로젝트의 비용 가드 다음, 슬롯 이전에 검사된다. 그래서 예산을 넘긴 사람은 어차피
+actor 에 대해 Agent의 비용 가드 다음, 슬롯 이전에 검사된다. 그래서 예산을 넘긴 사람은 어차피
 거부될 런의 슬롯을 기다리는 대신 그 사실을 바로 듣게 된다. 이 가드도 나머지 둘처럼 `429` 를
 답하고, 비용 가드처럼 fail-open 하며, tier 모델과 함께
 [SECURITY.md](SECURITY.md#인가-모델) 에 문서화돼 있다.
@@ -380,7 +380,7 @@ sweep도 이 틱에 얹혀 있다**. 1분마다 이미 도는 유일한 것이�
   쓰기로 claim 되고 정확히 하나의 claim 만 이긴다
   ([design/triggers.md](design/triggers.md#schedule)).
 - **한 번의 틱은 동시에 최대 8건까지만 발화한다** (`MAX_CONCURRENT_FIRINGS`). 그러지 않으면 모든
-  프로젝트가 공유하는 09:00 이 틱을 받은 인스턴스 하나에서 그만큼의 동시 런이 되고, caller 별
+  Agent가 공유하는 09:00 이 틱을 받은 인스턴스 하나에서 그만큼의 동시 런이 되고, caller 별
   동시성 가드는 그 팬아웃을 묶지 못한다. 트리거는 저마다 자기 자신이 actor 라, 하나하나가
   자기 한도 안에 있기 때문이다.
 - 요약은 매 틱마다 로그에 남는다(그리고 응답에도 담긴다): `repaired` > 0 이면 인스턴스가 발화
@@ -466,7 +466,7 @@ sweep도 이 틱에 얹혀 있다**. 1분마다 이미 도는 유일한 것이�
 | MCP 레지스트리 편집 | `MCP_DISCOVERY_CACHE_TTL_MS` / `MCP_MAX_SERVER_TTL_MS` | 한 인스턴스에서 한 편집이 그 구간만큼 다른 인스턴스들에게 보이지 않는다. |
 | 관리형 MCP | — | **호스트당 앱 인스턴스 하나.** 관리형 컨테이너가 게시하는 호스트 루프백 포트를 앱이 공유한다. |
 | 메트릭 카운터 | — | 프로세스 단위. 인스턴스들 사이의 집계는 스크레이프 계층에서 하라. |
-| 백그라운드 작업 (`after()`) | — | 인스턴스가 갑자기 사라지며 중단된 Slack 이벤트·Telegram 업데이트·Teams activity·트리거 발화는 **재개되지 않는다**. 런은 멱등하지 않다. 두 종류의 트리거 행 모두 sweep 이 `failed` 로 복구한다. 5분마다 오는 스캔 틱에서(`REPAIR_EVERY_MINUTES`, sweep 이 모든 프로젝트의 트리거를 훑고 그 history 를 읽기 때문에 매분 할 만한 일이 아니다), 그리고 그 트리거 자신의 다음 webhook 전달에서. 그래서 티커를 설정하지 않은 배포에서도 원장은 결국 올바르게 끝난다. 잃어버린 Slack 이벤트·Telegram 업데이트·Teams activity 는 의도적으로 복구하지 않는다. 마무리할 행을 남기지 않고, 답을 못 받은 사용자만 남기기 때문이다. |
+| 백그라운드 작업 (`after()`) | — | 인스턴스가 갑자기 사라지며 중단된 Slack 이벤트·Telegram 업데이트·Teams activity·트리거 발화는 **재개되지 않는다**. 런은 멱등하지 않다. 두 종류의 트리거 행 모두 sweep 이 `failed` 로 복구한다. 5분마다 오는 스캔 틱에서(`REPAIR_EVERY_MINUTES`, sweep 이 모든 Agent의 트리거를 훑고 그 history 를 읽기 때문에 매분 할 만한 일이 아니다), 그리고 그 트리거 자신의 다음 webhook 전달에서. 그래서 티커를 설정하지 않은 배포에서도 원장은 결국 올바르게 끝난다. 잃어버린 Slack 이벤트·Telegram 업데이트·Teams activity 는 의도적으로 복구하지 않는다. 마무리할 행을 남기지 않고, 답을 못 받은 사용자만 남기기 때문이다. |
 
 ### 재배포 이후의 관리형 MCP
 

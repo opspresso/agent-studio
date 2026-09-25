@@ -12,14 +12,14 @@
 import type { RunActor } from "@/domain/execution/actor";
 
 /**
- * The header every MCP request names its calling project with — the project
+ * The header every MCP request names its calling agent with — the agent
  * name, as a tenant id.
  *
  * The platform's own metadata, in the spirit of the protocol's `Mcp-Method` /
  * `Mcp-Name`: derived from context, sent unconditionally, ignored by a server
  * that does not read it — and outside the `Mcp-` namespace because it is not
  * the protocol's. A multi-tenant server (mcp-memory) scopes its data by it
- * without any per-project registration.
+ * without any per-agent registration.
  *
  * The generic name is deliberate, both halves of it. What the header carries
  * is a tenancy fact, not branding — a vendor-named header would have to chase
@@ -28,11 +28,11 @@ import type { RunActor } from "@/domain/execution/actor";
  * already treats `X-Tenant-Id` as its tenancy switch will act on ours, which
  * is the behaviour wanted from a server that understands it at all.
  *
- * Applied at assembly rather than in the session, which has no project to know
+ * Applied at assembly rather than in the session, which has no agent to know
  * about — and riding in the session's header map is also what keys the
- * discovery cache per project, so a server free to expose different tools per
+ * discovery cache per agent, so a server free to expose different tools per
  * tenant is cached per tenant. The catalog probe and "Test connection" carry
- * no project and therefore no header; a server that requires one refuses those
+ * no agent and therefore no header; a server that requires one refuses those
  * listings and is indexed at server level only, which the reindex reports.
  */
 export const TENANT_ID_HEADER = "X-Tenant-Id";
@@ -40,7 +40,7 @@ export const TENANT_ID_HEADER = "X-Tenant-Id";
 /**
  * The header a request names its user with — the delegated identity an MCP
  * server may scope per-user permissions by (Agent Memory does). Carried by
- * `user` and `project-token` actors, whose ids are emails, and by surfaces
+ * `user` and `agent-token` actors, whose ids are emails, and by surfaces
  * that resolve an address separately from a non-email actor (Slack). Not a
  * credential: the server must pair it with its own Bearer token or OAuth
  * grant before trusting it. Rides the session's identity map like the tenant,
@@ -61,7 +61,7 @@ export const USER_EMAIL_HEADER = "X-User-Email";
  * pay a full discovery per thread for a catalogue that has not changed.
  *
  * What a server may do with it: a memory server can tell working notes for
- * one thread from knowledge shared by the project, and any stateful server can
+ * one thread from knowledge shared by the agent, and any stateful server can
  * keep per-conversation context. What it must not do is treat it as
  * authorization — like its siblings, it authenticates nothing.
  *
@@ -81,7 +81,7 @@ const RESERVED_NAMES = new Set(
  * Called once per header assembly, on the merged registry/binding map and
  * **before** the OAuth availability check reads it: a stored metadata header
  * must never count as "a way to authenticate" a server whose connection is
- * unavailable, and must never reach the server impersonating another project,
+ * unavailable, and must never reach the server impersonating another agent,
  * user, or conversation — fetch folds two case-variants into one comma-joined
  * value that reads as neither. The platform's own values are applied after the
  * check, by the assembly site.
@@ -101,7 +101,7 @@ function normalizedEmail(value: string | undefined): string | undefined {
 
 /**
  * The user a run presents to MCP servers. An email-shaped actor (`user`,
- * `project-token`) is its own answer; otherwise the surface's separately
+ * `agent-token`) is its own answer; otherwise the surface's separately
  * resolved address (Slack's profile lookup) stands in, and a surface with
  * neither presents nobody.
  */
@@ -109,7 +109,7 @@ export function mcpUserEmail(
   actor: RunActor | undefined,
   resolvedUserEmail?: string,
 ): string | undefined {
-  if (actor?.kind === "user" || actor?.kind === "project-token") {
+  if (actor?.kind === "user" || actor?.kind === "agent-token") {
     return normalizedEmail(actor.id);
   }
   return normalizedEmail(resolvedUserEmail);

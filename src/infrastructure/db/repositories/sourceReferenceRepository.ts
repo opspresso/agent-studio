@@ -1,12 +1,12 @@
 import type { SourceReference, SourceReferenceRepository } from "@/domain/artifact/sourceReference";
 import { keys } from "../keys";
 import { conditions, getItem, transact } from "../store";
-import { projectIsLive } from "../projectLifecycle";
+import { agentIsLive } from "../agentLifecycle";
 
 export const sourceReferenceRepository: SourceReferenceRepository = {
   async put(reference) {
     await transact([
-      { kind: "check", key: keys.project(reference.projectName), condition: projectIsLive },
+      { kind: "check", key: keys.agent(reference.agentName), condition: agentIsLive },
       { kind: "put", item: { ...keys.sourceReference(reference.id), entityType: "SourceReference",
         reference, expiresAt: reference.expiresAt }, condition: conditions.notExists },
     ]);

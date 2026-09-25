@@ -17,7 +17,7 @@ Agent Studio는 기업 내부에 설치하는 AI Agent Control Plane이다. 사�
 
 ## 제품 경계와 배포
 
-한 설치는 한 기업이다. 멀티테넌시는 없으며 설치 안의 접근은 멤버 등급, 프로젝트 공개 범위와
+한 설치는 한 기업이다. 멀티테넌시는 없으며 설치 안의 접근은 멤버 등급, Agent 공개 범위와
 소유권으로 나눈다. PostgreSQL + pgvector가 기본 영속 저장소다. 사내 로그인 수단과 OpenAI 호환
 모델 채널을 구성하면 필수 부팅·로그인·실행·콘솔 경로를 공개 인터넷 없이 운영할 수 있다.
 
@@ -32,17 +32,17 @@ Plugin sync, Slack·Telegram·Teams·GitHub는 배포가 선택하는 연결이�
 
 ## Agents와 현재 설정
 
-콘솔에서는 Agent를 `/agents`에서 만들고 관리한다. 저장소와 `/api/projects`의 `Project`는
+콘솔에서는 Agent를 `/agents`에서 만들고 관리한다. 저장소와 `/api/agents`의 `Agent`는
 같은 Agent를 가리키는 내부 계약이다. 현재 설정에 모델·fallback·시스템 프롬프트·생성 설정,
 Skill·MCP·하위 Agent binding과 실행 정책을 저장한다. 이미지 생성·편집도 Agent의 도구로 제공한다.
 
-설정 저장은 Project의 `updatedAt`으로 동시 수정을 검사한다. 저장한 설정은 다음 실행부터
+설정 저장은 Agent의 `updatedAt`으로 동시 수정을 검사한다. 저장한 설정은 다음 실행부터
 적용된다. 각 Agent는 준비 시점의 설정을 유지하며 로컬 하위 Agent는 호출될 때 자기 설정을 읽는다.
 접수된 Audio 작업은 접수 시점의 설정을 유지한다. 실행에는 현재 설정이 필요하며,
 승인 대기 중 설정·연결 변경은 재개를 막는다.
 
-[실행 설계](design/execution.md#project와-현재-설정)와 [설정 API](API.md#agent-현재-설정)가
-계약을 설명하며 [`configurationUseCases.ts`](../src/application/project/configurationUseCases.ts)가
+[실행 설계](design/execution.md#agent와-현재-설정)와 [설정 API](API.md#agent-현재-설정)가
+계약을 설명하며 [`configurationUseCases.ts`](../src/application/agent/configurationUseCases.ts)가
 설정 접근·저장·마스킹을 소유한다.
 
 ## Skill·Tool·MCP·Agent·Memory
@@ -52,7 +52,7 @@ Skill·MCP·하위 Agent binding과 실행 정책을 저장한다. 이미지 생
 | Skill | 모델이 필요할 때 읽는 Markdown 지침과 참고 파일 |
 | Tool | 입력 schema를 받아 실제 기능을 수행하는 함수 |
 | MCP | 외부 Tool·리소스와 자격 증명을 연결하는 프로토콜 |
-| 하위 Agent | 현재 설치에 등록된 다른 Agent(Project)의 설정을 사용하는 실행 대상 |
+| 하위 Agent | 현재 설치에 등록된 다른 Agent(Agent)의 설정을 사용하는 실행 대상 |
 | Memory | 명시적으로 연결한 MCP 서버가 보관하는 장기 기억. Agent Memory가 한 예 |
 | SDK Session | 특정 Chat에서 재생할 정확한 모델·도구 이력 |
 | Workspace checkpoint | 파일·Git·native CLI Session의 복구 상태 |
@@ -62,7 +62,7 @@ Skill 본문은 시스템 프롬프트에 모두 넣지 않는다. 이름·설�
 sync는 사라진 항목을 보고하지만 삭제는 별도의 명시적 작업으로 남긴다.
 
 MCP registry는 서버 주소를 소유하고 Agent binding은 도구 목록과 헤더를 좁히거나 덮어쓴다.
-프로젝트별 OAuth 연결과 선택적인 Docker 관리형 서버도 지원한다. 등록·dispatch 경계에서
+Agent별 OAuth 연결과 선택적인 Docker 관리형 서버도 지원한다. 등록·dispatch 경계에서
 주소와 자격 증명을 검사한다. [MCP](design/mcp.md)와 [보안](SECURITY.md#mcp-oauth)을 보라.
 
 선택적 capability 검색은 전역 `catalog_vectors`에서 현재 요청에 맞는 Skill·MCP 서버·도구를 찾는다.
@@ -72,7 +72,7 @@ MCP registry는 서버 주소를 소유하고 Agent binding은 도구 목록과 
 
 ## 핵심 개체 관계
 
-- Agent Studio의 Agent는 저장소와 `/api/projects`에서 Project라고 부른다. 한 Project는 공개 범위·소유권·연동·비용 정책과 하나의 현재 `AgentConfiguration`을 저장한다.
+- Agent Studio의 Agent는 저장소와 `/api/agents`에서 Agent라고 부른다. 한 Agent는 공개 범위·소유권·연동·비용 정책과 하나의 현재 `AgentConfiguration`을 저장한다.
 - `AgentConfiguration`은 등록된 텍스트 모델, 선택적 fallback·이미지 모델, Skill, MCP 서버와 같은 설치의 하위 Agent를 참조한다. 등록 모델은 프로바이더 연결의 전송 ID(`wireId`)로 호출된다.
 - Agent의 실행은 현재 설정을 읽고 공통 실행 파사드와 OpenAI Agents SDK를 거친다. Chat·API·메신저·Webhook·Schedule은 진입 계약이 달라도 이 Agent 실행 경로를 공유한다.
 - Chat은 소유자의 비공개 대화다. 일반 Chat은 실행할 Agent를 가리키며, 화면 메시지·SDK Session·재연결 로그는 서로 다른 상태다.
@@ -93,17 +93,17 @@ Agent Memory에서 문서와 Graph까지 통합 검색하려면 해당 MCP의 `c
 ## 요청이 실행되는 방식
 
 ```text
-실행 창구 → 인증·프로젝트 접근·입력 검증 → 현재 Agent 설정 읽기
+실행 창구 → 인증·Agent 접근·입력 검증 → 현재 Agent 설정 읽기
   → 실행 파사드 → 공통 실행 가드 → capability 준비 → SDK Runtime
   → EngineChunk → 창구별 응답·저장 → 사용량 정산·자원 해제
 ```
 
-[`runProject.ts`](../src/application/execution/runProject.ts)는 모든 Project를 같은 Agent 루프로
-실행한다. `streamProjectRun`은 chunk 소비자, `executeProjectStream`/`executeProject`는
+[`runAgent.ts`](../src/application/execution/runAgent.ts)는 모든 Agent를 같은 Agent 루프로
+실행한다. `streamAgentRun`은 chunk 소비자, `streamAgentExecution`/`collectAgentRun`는
 스트림·수집형 응답을 위한 파사드다. 모두 `executeAgent`에서 설정·도구·SDK Runtime을 조립한다.
 이미지 생성·편집도 Agent 도구를 통해 같은 실행과 출력 축에 포함된다.
 
-최상위 실행은 [런 브래킷](ARCHITECTURE.md#런-브래킷)을 통과한다. 모델 정책, 프로젝트·멤버 비용,
+최상위 실행은 [런 브래킷](ARCHITECTURE.md#런-브래킷)을 통과한다. 모델 정책, Agent·멤버 비용,
 호출자 동시성을 검사하고 메트릭과 결과 저장 범위를 연다. 비용 조회 장애는 실행을 허용하고,
 동시성 저장소 장애는 실행을 거절한다. 종료 시 사용량을 저장한 뒤 슬롯을 놓고 비용 임계값을 정산한다.
 이미 진행 중인 실행의 미정산 비용까지 예약하지 않으므로 비용 한도는 절대적인 청구 상한이 아니다.
@@ -127,7 +127,7 @@ credential, schema 검증, PII 치환, 예산과 로컬 Trace를 연결한다. �
 warning으로 전달한다. reasoning 표시 옵션은 원래 모델 턴의 provider 재생 이력을 삭제하지 않는다.
 자세한 소비 규칙은 [EngineChunk 계약](ARCHITECTURE.md#enginechunk-계약)에 있다.
 
-`actor`는 비용·동시성에 쓰는 안정적인 실행 주체다. user와 project-token은 이메일,
+`actor`는 비용·동시성에 쓰는 안정적인 실행 주체다. user와 agent-token은 이메일,
 Slack과 Telegram은 사용자 ID, Teams는 발신자 Entra object ID를 사용한다. 메신저 workspace나
 bot ID와 혼동하지 않는다. `caller`는 Agent 설정이 허용한 표시 이름·시간대 등의 모델 문맥이며
 이메일 필드가 없다. `ownerEmail`은 파일의 개인 귀속, `conversation`은 대화의 연속성을 나타낸다.
@@ -170,7 +170,7 @@ Artifact metadata는 DB에, bytes는 S3 호환 저장소에 둔다. URL 발급�
 [오디오 설계](design/audio-processing-spec.md)와 [운영](OPERATIONS.md#오디오-작업-운영)을 따른다.
 
 Workspace는 파일·Git·native CLI Session의 영속 공간이고 Sandbox는 작업을 실행하는 격리 자원이다.
-`parameters.workspaceTools`, 프로젝트 정책, 사용자 권한과 배포 설정이 함께 충족되어야 Agent에
+`parameters.workspaceTools`, Agent 정책, 사용자 권한과 배포 설정이 함께 충족되어야 Agent에
 도구가 제공된다. GitHub MCP의 로그인은 worker의 Git 자격 증명이나 저장소 허용 정책을 대신하지 않는다.
 
 별도 Workspace worker가 실행·관찰·검사·체크포인트·만료 정리를 담당한다. 커밋·푸시·PR·main 반영은
@@ -179,11 +179,11 @@ Workspace는 파일·Git·native CLI Session의 영속 공간이고 Sandbox는 �
 
 ## 외부 실행과 연동
 
-Predict·OpenAI 호환 Chat Completions·Agent SSE는 프로젝트 실행 API다. 프로젝트 token은
-해당 프로젝트의 실행 credential이며 사용자 Session이나 Workspace 권한을 만들지 않는다.
+Predict·OpenAI 호환 Chat Completions·Agent SSE는 Agent 실행 API다. Agent token은
+해당 Agent의 실행 credential이며 사용자 Session이나 Workspace 권한을 만들지 않는다.
 로그인 사용자로 실행하더라도 stateless API에는 영속 Chat 승인 화면이 없다.
 
-Slack·Telegram·Teams는 프로젝트별 bot으로 같은 메시징 파이프라인을 사용한다. 인증과 참여 판단,
+Slack·Telegram·Teams는 Agent별 bot으로 같은 메시징 파이프라인을 사용한다. 인증과 참여 판단,
 첨부 수신·응답 렌더링은 플랫폼별 adapter가 담당한다. Slack은 플랫폼 thread를 읽고,
 Telegram·Teams는 앱이 한정된 transcript를 보관한다. 중복 delivery를 막지만 실행 중 급사한
 비멱등 작업을 자동 재생하지 않는다. [메시징 설계](design/messaging.md)를 보라.

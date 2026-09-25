@@ -1,5 +1,5 @@
 import type { AudioJob } from "@/domain/audio/job";
-import { audioSourceProject } from "@/domain/audio/job";
+import { audioSourceAgent } from "@/domain/audio/job";
 import type { AudioPostprocessOutput } from "@/domain/audio/output";
 import type { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { AudioJobStepError, type AudioJobStepContext } from "./processJob";
@@ -30,12 +30,12 @@ function document(value: unknown) {
 export function createAudioDeliveryStep(deps: AudioDeliveryDeps) {
   return async (job: AudioJob, context: AudioJobStepContext) => {
     if (!job.destination || !job.transcriptRef) throw new AudioJobStepError("delivery_configuration_missing", false);
-    const source = await deps.files.read(job.projectName, job.transcriptRef, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
+    const source = await deps.files.read(job.agentName, job.transcriptRef, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
     const transcript = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(source.bytes)) as AudioTranscript;
     if (typeof transcript.text !== "string") throw new AudioJobStepError("transcript_invalid", false);
     let output: AudioPostprocessOutput | undefined;
     if (job.draftRef) {
-      const draft = await deps.files.read(job.projectName, job.draftRef, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
+      const draft = await deps.files.read(job.agentName, job.draftRef, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
       output = parseAudioPostprocessOutput(new TextDecoder("utf-8", { fatal: true }).decode(draft.bytes), transcript.text, MAX_TRANSCRIPT_BYTES);
     }
     const receipts = { ...job.receipts };
@@ -44,10 +44,10 @@ export function createAudioDeliveryStep(deps: AudioDeliveryDeps) {
       await context.record({ receipts });
     };
     const sourceUri = `urn:agent-studio:audio-job:${job.id}`;
-    const filename = job.fileId ? (await deps.files.metadata(audioSourceProject(job), job.fileId, job.userEmail)).filename : job.id;
+    const filename = job.fileId ? (await deps.files.metadata(audioSourceAgent(job), job.fileId, job.userEmail)).filename : job.id;
     const metadata = { jobId: job.id, sourceFileId: job.fileId, model: transcript.model,
       sourceChecksum: transcript.sourceChecksum, coverage: transcript.coverage, sourceIdentity: job.sourceIdentity,
-      ...(job.postprocess ? { postprocess: { projectName: job.postprocess.projectName,
+      ...(job.postprocess ? { postprocess: { agentName: job.postprocess.agentName,
         model: job.postprocess.configuration?.model } } : {}) };
     const client = await deps.open(job, context.signal);
     try {

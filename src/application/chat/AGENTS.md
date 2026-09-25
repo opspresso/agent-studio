@@ -6,13 +6,13 @@ there are no framework, adapter or composition-root imports here. Read
 
 ## Ownership
 
-- `run.ts` folds display output and persists it. Admission reads the Project’s current configuration.
+- `run.ts` folds display output and persists it. Admission reads the Agent’s current configuration.
 - `runLease.ts` claims one active run per chat; `runLog.ts` owns terminal logging and release.
 - `replayRunLog.ts` replays/follows a detached run; `cancelRun.ts` persists and polls cancellation.
 - `workspaceContinuation.ts` consumes durable Workspace action results once, claims the source chat lease,
   records a platform notice and continues through the shared facade and native SDK Session. Never replay
   a claimed continuation after a crash, or reconstruct the user request from display records.
-- `approval.ts` checks chat ownership/project access, claims the lease and resumes or discards
+- `approval.ts` checks chat ownership/agent access, claims the lease and resumes or discards
   an SDK checkpoint. `application/runtime/session.ts` owns native history, CAS and approval state.
 - `resolveImages.ts` and `resolveFiles.ts` sign references for the reader. Neither rebuilds model
   context. `messageList.ts` owns bounded display history reads.
@@ -37,7 +37,7 @@ there are no framework, adapter or composition-root imports here. Read
 
 ## Display records and SDK Session
 
-- `Chat.linkedWorkspaces` is the Workspace use case's durable project selection for an Agent
+- `Chat.linkedWorkspaces` is the Workspace use case's durable agent selection for an Agent
   conversation. Workspace creation binds it atomically; ordinary chat updates preserve it.
   It is distinct from `Chat.workspaceId`, which routes the Workspace's own Chat to its panel.
 
@@ -59,7 +59,7 @@ there are no framework, adapter or composition-root imports here. Read
   the runtime claims the checkpoint before any effect. A changed configuration or binding is refused.
   A crashed approved run has an uncertain outcome and is never automatically replayed.
 - Discard refuses a live lease, keeps display records and removes the unfinished run from model
-  context. Reads and mutations treat every non-owner as 404. Resume rechecks project access.
+  context. Reads and mutations treat every non-owner as 404. Resume rechecks agent access.
 
 ## Attachments and output
 

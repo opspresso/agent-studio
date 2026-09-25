@@ -16,7 +16,7 @@ Workspace 옵션 목록은 접근 가능한 Agent의 현재 도구 설정을 한
   `domain/coding`에 둔다. 일반 Workspace에는 저장소나 Git 브랜치가 필요하지 않다.
 - application은 주입된 provider/runtime을 사용한다. Docker 명령과 CLI 프로토콜은
   infrastructure가 소유한다. 향후 Kubernetes provider는 같은 포트를 구현한다.
-- 기능은 배포 설정으로 활성화한다. 비활성 상태의 기존 부팅·로그인·프로젝트 실행·콘솔에는
+- 기능은 배포 설정으로 활성화한다. 비활성 상태의 기존 부팅·로그인·Agent 실행·콘솔에는
   새 네트워크 의존성을 추가하지 않는다. 폐쇄망은 내부 이미지·GitHub Enterprise·모델 endpoint를 사용한다.
 - Sandbox에는 Docker socket, 호스트 경로, 운영 환경변수, 장기 Git 자격증명을 넘기지 않는다.
   Git 쓰기와 CI/CD 호출은 서버의 승인 경계에 둔다. 이미지와 네트워크는 운영자가 고정한다.
@@ -76,7 +76,7 @@ Worker와 Git 작업은 adapter를 기다리는 동안에도 3분 lease를 1분�
 adapter 호출은 결과를 기다리며, 불확실한 효과를 자동으로 재실행하지 않는다.
 
 실행은 `executeWorkspaceTask` facade와 공통 `openTaskRun` bracket을 지난다. 일반 명령에는
-앱 모델 설정이 없으므로 모델을 임의로 만들지 않는다. 기존 프로젝트의 비용·멤버 상한,
+앱 모델 설정이 없으므로 모델을 임의로 만들지 않는다. 기존 Agent의 비용·멤버 상한,
 동시성 슬롯과 메트릭은 유지한다. Native CLI의 토큰·비용은 SDK 모델 usage와 별개다.
 
 비활성 Workspace는 `suspending`으로 바꿔 새 접수를 막은 뒤 체크포인트 저장 → Sandbox 삭제 →
@@ -95,9 +95,9 @@ native Session의 활동·보존 기한을 갱신한다. 완료 시 미결 승�
 
 Agent 설정에서 `parameters.workspaceTools`를 켜면 `/agents/{name}/workspace`에 전용 도구 탭이 나타난다.
 탭과 실행 모두 현재 Agent 설정의 개별 opt-in을 확인한다.
-프로젝트 소유자·관리자가 저장소, 접근 모드, 기본 Runtime, 유휴 시간, 검사 명령과 배포 workflow를 관리한다.
+Agent 소유자·관리자가 저장소, 접근 모드, 기본 Runtime, 유휴 시간, 검사 명령과 배포 workflow를 관리한다.
 기본 저장소는 없으며 Git 작업은 저장소와 기준 브랜치를 명시한다. 모델이 필요한 Runtime은 Settings → Models → 모델 사용 설정의
-전역 Runtime별 선택을 사용한다. 프로젝트 설정과 모델 설정은 환경변수로 관리하지 않는다.
+전역 Runtime별 선택을 사용한다. Agent 설정과 모델 설정은 환경변수로 관리하지 않는다.
 `repositoryOwners`는 정확한 계정·조직 이름을 대소문자 없이 비교하며 현재·향후 저장소를 허용한다.
 GitHub MCP 연결과 Workspace 서버 Git 자격증명은 별도이고, 정책 허용이 그 계정의 권한을 늘리지는 않는다.
 
@@ -106,19 +106,19 @@ GitHub MCP 연결과 Workspace 서버 Git 자격증명은 별도이고, 정책 �
 | `selected` — 저장소 고정 | 등록 목록 | 등록된 이름만 생성 가능 |
 | `owners` — 소유자 지정 | 등록 목록 및 정확한 소유자 범위 | 해당 범위의 이름 |
 | `all` — 모든 저장소 | 서버 GitHub 계정으로 접근 가능한 모든 이름 | GitHub 계정이 생성할 수 있는 계정·조직 |
-| `new` — 등록 목록 + 신규 자동 허용 | 등록 목록만 | 이 프로젝트의 `Workspace.create_repository`가 성공하면 자동 등록 |
+| `new` — 등록 목록 + 신규 자동 허용 | 등록 목록만 | 이 Agent의 `Workspace.create_repository`가 성공하면 자동 등록 |
 
 기본 `mode`는 `new`다. `all`은 GitHub 권한을 우회하지 않으며, `new`는 생성 시각이나 모델이
 제출한 생성 주장으로 기존 저장소를 허용하지 않는다.
 
-`PROJECT#{name}/WORKSPACEPOLICY`에 프로젝트 설정과 revision을 저장한다. 모델 선택은 전역 Settings의
+`AGENT#{name}/WORKSPACEPOLICY`에 Agent 설정과 revision을 저장한다. 모델 선택은 전역 Settings의
 `workspaceModels`이며 API 키는 기존 LLM 채널이 소유한다. 이미지·네트워크·자원 한도는 배포 인프라다.
-정책 저장은 revision과 프로젝트 수명 경계로 보호하며 일반 Agent에 설정 편집 도구를 제공하지 않는다.
+정책 저장은 revision과 Agent 수명 경계로 보호하며 일반 Agent에 설정 편집 도구를 제공하지 않는다.
 도구를 끄면 신규 실행·Git 승인·Chat 후속 실행을 거절한다. 기존 조회·취소·종료와 worker의 체크포인트
 관찰은 유지한다. 런타임 모델 해제도 이미 실행한 operation을 재실행하지 않는다.
 
 `repositoryPolicy.getPolicy`는 DB를 캐시하지 않는다. 접수·저장소 연결·Git 승인과 worker가 같은
-프로젝트 설정을 읽는다. 조회 실패를 기본값으로 대체하지 않으며 이미 실행 중인 native 작업을
+Agent 설정을 읽는다. 조회 실패를 기본값으로 대체하지 않으며 이미 실행 중인 native 작업을
 설정 변경만으로 자동 취소하지 않는다. 모델 채널의 캐시 수명은 전역 Runtime Settings 계약을 따른다.
 
 새 저장소 생성 전 Agent는 `check_repository_access`로 정확한 owner/name의 허용 여부를 먼저 확인한다.
@@ -130,7 +130,7 @@ GitHub MCP 연결과 Workspace 서버 Git 자격증명은 별도이고, 정책 �
 
 ### 신규 저장소 생성과 등록
 
-서버가 저장소 생성 전 `PROJECT#{name}/REPOSITORYCREATE#{owner/repo}`에 요청자·인자 fingerprint·
+서버가 저장소 생성 전 `AGENT#{name}/REPOSITORYCREATE#{owner/repo}`에 요청자·인자 fingerprint·
 revision을 기록한다. 개인 저장소는 서버 계정의 `/user/repos`, 조직 저장소는 `/orgs/{owner}/repos`를
 사용하며 README 초기화를 항상 요청한다. GitHub App은 설치된 조직의 생성만 지원한다. 개인 저장소에는
 계정 토큰이 필요하다. 필요한 GitHub 권한은 [Repository API](https://docs.github.com/en/rest/repos/repos)를 따른다.
@@ -143,7 +143,7 @@ HTTP 201과 저장소 ID·이름·URL·공개 범위·기준 branch를 검증한
 
 완료한 같은 요청은 저장된 결과를 재사용한다. 명시적 GitHub 거절은 원인을 수정한 뒤 다시 시도할 수
 있으나, 전송 오류·응답 유실·결과 저장 실패는 생성 여부가 불확실하므로 자동 재생성하지 않는다.
-프로젝트 삭제는 정책과 생성 receipt를 함께 제거하고 늦은 쓰기를 차단한다. GitHub의 원격 저장소를
+Agent 삭제는 정책과 생성 receipt를 함께 제거하고 늦은 쓰기를 차단한다. GitHub의 원격 저장소를
 자동 삭제하지는 않는다. MCP가 별도로 생성한 저장소는 관리자가 기존 저장소로 등록해야 한다.
 
 ### Git 작업
@@ -189,27 +189,27 @@ CI 증거가 없음을 표시하며 GitHub 브랜치 규칙을 따른다. `none`
 ## 실행 창구별 계약
 
 같은 Agent라도 모든 진입점에 같은 도구·이력·승인이 제공되는 것은 아니다.
-`container.ts`의 Workspace 도구 바인딩은 `actor.kind=user`와 현재 member 권한, 프로젝트의
+`container.ts`의 Workspace 도구 바인딩은 `actor.kind=user`와 현재 member 권한, Agent의
 현재 설정의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외부 효과 도구를 제공하지 않는다.
 
 | 창구 | Workspace 빌트인 | 원래 Chat으로 승인 결과 전달 |
 |---|---|---|
 | 로그인한 member/admin의 Agent Chat | Agent의 Workspace 도구가 활성화되면 제공 | 같은 Chat의 SDK Session으로 자동 재개 |
 | 로그인한 member/admin의 Playground·Agent 실행 API | Agent의 Workspace 도구가 활성화되면 제공 | source Chat이 없으므로 자동 재개 없음 |
-| 프로젝트 API token | 미제공. actor는 `project-token` | Chat Session·승인 UI 없음 |
+| Agent API token | 미제공. actor는 `agent-token` | Chat Session·승인 UI 없음 |
 | Slack·Telegram·Teams | 플랫폼 actor이므로 미제공 | 플랫폼 응답이며 Chat 승인 UI 없음 |
 | Webhook·Schedule | machine actor이므로 미제공. Schedule의 개인 문맥 옵션도 actor를 바꾸지 않음 | Trigger 이력으로 결과 확인 |
 | Workspace 화면의 직접 작업·Git 검토 | 전용 API로 소유한 공간을 조작 | Agent가 만든 source Chat 연결이 있는 승인만 전달 |
 
-API token은 프로젝트 소유자로 인증하고 MCP에 소유자 email을 전달한다. 이것은 브라우저 사용자
+API token은 Agent 소유자로 인증하고 MCP에 소유자 email을 전달한다. 이것은 브라우저 사용자
 세션, Workspace 실행 자격, SDK 승인 UI와는 별개다. Skill이나 system prompt로 이 경계를 바꾸지 않는다.
 
 ## 사용자 화면과 API
 
-Agent 설정의 `parameters.workspaceTools`를 켜면 로그인한 member 이상 사용자의 해당 프로젝트 Agent에
+Agent 설정의 `parameters.workspaceTools`를 켜면 로그인한 member 이상 사용자의 해당 Agent에
 `Workspace` 빌트인을 제공한다. `options`, `start`, `run`, `status`, `wait`, `cancel`, `close`로
-설정 조회·작업 접수·후속 실행·결과 확인·정리를 수행한다. 호출마다 현재 멤버 권한과 프로젝트
-접근을 확인하며 다른 프로젝트의 Workspace ID는 거절한다. 비인간 실행과 background Task에는
+설정 조회·작업 접수·후속 실행·결과 확인·정리를 수행한다. 호출마다 현재 멤버 권한과 Agent
+접근을 확인하며 다른 Agent의 Workspace ID는 거절한다. 비인간 실행과 background Task에는
 이 도구를 제공하지 않는다. 프롬프트 미리보기에도 같은 사용자 기준으로 제공 여부를 표시한다.
 
 Agent가 만든 Workspace는 자신의 Chat을 가진다. 요청을 조율하는 SDK 대화 이력과 native Session을
@@ -222,7 +222,7 @@ Agent가 만든 Workspace는 자신의 Chat을 가진다. 요청을 조율하는
 검증한다. 승인 성공은 workflow 접수이며 실제 배포 완료는 해당 실행과 서비스 상태로 확인한다.
 Chat에서 요청한 승인은 `sourceChatId`를 보관한다. 승인 성공·실패·거절·결과 불명 기록과
 `WorkspaceContinuation` 알림을 같은 transaction에 쓴다. 별도 Workspace worker의 알림 소비자는
-원래 Chat의 소유권·프로젝트 접근·현재 Workspace 선택을 다시 확인하고 Chat run lease를 잡는다.
+원래 Chat의 소유권·Agent 접근·현재 Workspace 선택을 다시 확인하고 Chat run lease를 잡는다.
 알림 claim과 채팅의 승인 결과 표시는 원자적으로 저장한다. 원래 SDK Session을 사용해 공통
 `executeAgent` facade로 남은 요청을 이어가며, 새 사용자 메시지를 저장하거나 Git 동작을 재실행하지 않는다.
 커밋·푸시 → PR → main 병합은 각각의 승인 결과가 다음 검토를 준비한다. 한 승인으로 뒤의 동작까지 승인하지 않는다.
@@ -252,7 +252,7 @@ Chat이 없는 Playground·직접 Workspace 화면 요청에는 원래 채팅을
 플러그인의 `workspace-task`, `sandbox-task`는 이 기능을 사용하는 공용 작업 지침이다.
 Agent의 설명·시스템 프롬프트에는 역할을 쓰고, 계정·저장소·변경사항은 사용자 요청에 둔다.
 
-Chats 페이지의 Workspace 선택에서 프로젝트, Runtime, 선택적 저장소·기준 브랜치와 작업 내용을
+Chats 페이지의 Workspace 선택에서 Agent, Runtime, 선택적 저장소·기준 브랜치와 작업 내용을
 입력한다. 기존 Chat 실행과 Workspace 실행은 같은 화면의 별도 경로를 사용한다.
 목록은 `workspaceId`의 유무로 Chats와 Workspaces를 조회 단계에서 나누어 탭으로 표시하고,
 선택한 탭은 브라우저에 보관한다.
@@ -265,9 +265,9 @@ Workspace 화면은 유형 배지와 실행 출력·Diff·검사 결과, 명시�
 
 ## 원래 채팅과 Workspace 선택
 
-Agent 대화의 `Chat.linkedWorkspaces`는 실행 프로젝트마다 선택한 Workspace ID를 보관한다.
+Agent 대화의 `Chat.linkedWorkspaces`는 실행 Agent마다 선택한 Workspace ID를 보관한다.
 새 Workspace·전용 Chat·원래 Chat의 연결은 한 transaction에서 생성한다. 한 Chat의 연결은
-최대 32개 프로젝트로 제한한다. 동시 생성과 서로 다른 tool call ID의 `start`도 같은 연결을
+최대 32개 Agent로 제한한다. 동시 생성과 서로 다른 tool call ID의 `start`도 같은 연결을
 사용하며, 기존 Workspace를 반환할 때에는 새 작업을 접수하지 않는다. Chat이 없는 실행은
 한 실행 내에서 `start`가 하나의 Workspace만 생성한다.
 
@@ -291,7 +291,7 @@ Agent 대화의 `Chat.linkedWorkspaces`는 실행 프로젝트마다 선택한 W
 `POST /api/workspaces`와 `POST /api/workspaces/{id}/runs`는 `Idempotency-Key`를 요구한다.
 목록·이벤트는 제한된 페이지로 읽으며 클라이언트는 최근 실행 50개와 이벤트 2,000개를 유지한다.
 `GET /api/workspaces/{id}`의 공개 view에는 lease, operation handle과 체크포인트 주소를 넣지 않는다.
-모든 사용자 API는 member 이상과 Chat 소유권·현재 프로젝트 접근 권한을 확인한다.
+모든 사용자 API는 member 이상과 Chat 소유권·현재 Agent 접근 권한을 확인한다.
 
 `POST /api/workspaces/github/webhook`은 HMAC 서명을 검증한 뒤 PR 상태만 갱신한다. 이벤트 본문으로
 작업을 실행하거나 승인하지 않는다. delivery ID와 본문 fingerprint를 상태 갱신과 함께 저장한다.

@@ -28,7 +28,7 @@ export interface AudioJobProcessorDeps {
   jobs: AudioJobRepository;
   now(): Date;
   token(): string;
-  /** Recheck the current project and user before every external stage. */
+  /** Recheck the current agent and user before every external stage. */
   authorize(job: AudioJob): Promise<void>;
   importFile(job: AudioJob, context: AudioJobStepContext): Promise<{ fileId: string; fileInfo?: AudioJob["fileInfo"] }>;
   transcribe(job: AudioJob, context: AudioJobStepContext): Promise<{ transcriptRef: string }>;
@@ -52,13 +52,13 @@ function requireReference(reference: string): void {
 /** Runs a claimed job independently of the initiating Agent connection. */
 export async function processAudioJob(
   deps: AudioJobProcessorDeps,
-  projectName: string,
+  agentName: string,
   id: string,
   signal?: AbortSignal,
 ): Promise<AudioJob | null> {
   signal?.throwIfAborted();
   const start = deps.now();
-  let current = await deps.jobs.claim(projectName, id, start.toISOString(), deps.token(),
+  let current = await deps.jobs.claim(agentName, id, start.toISOString(), deps.token(),
     new Date(start.getTime() + AUDIO_JOB_LEASE_MS).toISOString());
   if (!current) return null;
 

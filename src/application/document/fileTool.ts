@@ -31,7 +31,7 @@ function requiredString(value: unknown, name: string): string {
 /** File identities are resolved by trusted storage, never by a model-provided object key or URL. */
 export function buildFileTool(
   deps: FileToolDeps,
-  projectName: string,
+  agentName: string,
   origin: RunOrigin,
   signal?: AbortSignal,
 ): ((args: Record<string, unknown>) => Promise<McpToolResult>) | undefined {
@@ -49,8 +49,8 @@ export function buildFileTool(
     const own = artifact && actor && (
       actor.kind === "user"
         ? artifactOwnerEmail(artifact.actor, artifact.ownerEmail) === actor.id
-        : artifact.projectName === (origin.ancestry[0] ?? projectName) && (
-          actor.kind === "project-token"
+        : artifact.agentName === (origin.ancestry[0] ?? agentName) && (
+          actor.kind === "agent-token"
             ? artifactOwnerEmail(artifact.actor, artifact.ownerEmail) === actor.id
             : artifact.actor?.kind === actor.kind && artifact.actor.id === actor.id
         )

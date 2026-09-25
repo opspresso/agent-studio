@@ -7,7 +7,7 @@ import { MAX_MCP_TOOLS_PER_RUN } from "@/domain/llm/toolLimits";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { McpServer } from "@/domain/mcp/types";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 
 vi.mock("@/infrastructure/net/publicFetch", () => ({
@@ -69,7 +69,7 @@ function depsFor(): ExecutionDeps {
   } as unknown as ExecutionDeps;
 }
 
-const configuration = { projectName: "p", mcpList: [{ name: "srv" }] } as unknown as AgentConfiguration;
+const configuration = { agentName: "p", mcpList: [{ name: "srv" }] } as unknown as AgentConfiguration;
 
 describe("the per-run MCP tool cap", () => {
   beforeEach(() => {

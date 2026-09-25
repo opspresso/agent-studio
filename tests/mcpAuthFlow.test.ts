@@ -26,7 +26,7 @@ import type { TokenRequestTarget, TokenSet } from "@/domain/mcp/oauth";
 import type { ListToolsResult } from "@/domain/mcp/toolProbe";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
 import { mcpOAuthStateContext, agentMcpHeadersContext } from "@/domain/security/secretContext";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import { mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 
@@ -125,7 +125,7 @@ function harness(
   const server = overrides.server ?? SERVER;
   if (overrides.connection) {
     connections.set("p/slack", {
-      projectName: "p",
+      agentName: "p",
       serverName: "slack",
       clientId: "client-1",
       clientSecret: "enc:shh",
@@ -141,35 +141,35 @@ function harness(
   const deps: McpAuthUseCasesDeps = {
     serviceName: async () => "Agent Studio",
     mcps: { get: async (name: string) => (name === server.name ? server : null) } as never,
-    projects: {
+    agents: {
       get: async (name: string) =>
         name === "p"
           ? { name: "p", ownerEmail: overrides.owner ?? OWNER }
           : null,
     } as never,
     connections: {
-      get: async (project: string, srv: string) => connections.get(`${project}/${srv}`) ?? null,
-      listByProject: async (projectName: string, limit: number, after?: string) =>
+      get: async (agent: string, srv: string) => connections.get(`${agent}/${srv}`) ?? null,
+      listByAgent: async (agentName: string, limit: number, after?: string) =>
         [...connections.values()]
-          .filter((connection) => connection.projectName === projectName)
+          .filter((connection) => connection.agentName === agentName)
           .sort((a, b) => a.serverName.localeCompare(b.serverName))
           .filter((connection) => !after || connection.serverName > after)
           .slice(0, limit),
       put: async (connection: McpConnection) => {
-        connections.set(`${connection.projectName}/${connection.serverName}`, connection);
+        connections.set(`${connection.agentName}/${connection.serverName}`, connection);
       },
       putIfCurrent: async (connection: McpConnection, current: McpConnection | null) => {
-        const key = `${connection.projectName}/${connection.serverName}`;
+        const key = `${connection.agentName}/${connection.serverName}`;
         const stored = connections.get(key);
         if (current === null ? stored !== undefined : stored === undefined || stored.revision !== current.revision) return false;
         connections.set(key, { ...connection, revision: `revision-${++revision}` });
         return true;
       },
-      delete: async (project: string, srv: string) => {
-        connections.delete(`${project}/${srv}`);
+      delete: async (agent: string, srv: string) => {
+        connections.delete(`${agent}/${srv}`);
       },
       deleteIfCurrent: async (current: McpConnection) => {
-        const key = `${current.projectName}/${current.serverName}`;
+        const key = `${current.agentName}/${current.serverName}`;
         if (!connections.has(key) || connections.get(key)?.revision !== current.revision) return false;
         connections.delete(key);
         return true;
@@ -218,7 +218,7 @@ function harness(
     },
     authProvider: {
       headersFor: async () => overrides.authHeaders ?? { headers: { Authorization: "Bearer at" } },
-      markUnauthorized: async (_project: string, serverName: string) => {
+      markUnauthorized: async (_agent: string, serverName: string) => {
         unauthorized.push(serverName);
       },
     },
@@ -285,7 +285,7 @@ describe("beginAuthorization", () => {
       server: { ...SERVER, auth: { ...SERVER.auth!, registrationEndpoint: "https://auth.example.com/register" } },
     });
     const winner: McpConnection = {
-      projectName: "p", serverName: "slack", clientId: "other-client", revision: "other",
+      agentName: "p", serverName: "slack", clientId: "other-client", revision: "other",
       issuer: SERVER.auth!.issuer, resource: SERVER.auth!.resource,
       scopes: [], status: "needs_auth", updatedAt: SERVER.updatedAt,
     };
@@ -300,7 +300,7 @@ describe("beginAuthorization", () => {
     expect(h.states.size).toBe(0);
   });
 
-  it("uses the operator-configured client for every project authorization", async () => {
+  it("uses the operator-configured client for every agent authorization", async () => {
     const h = harness({
       server: {
         ...SERVER,
@@ -555,7 +555,7 @@ describe("completeAuthorization", () => {
 
     const result = await uc.completeAuthorization({ state, code: "the-code", userEmail: OWNER });
 
-    expect(result).toEqual({ projectName: "p", serverName: "slack" });
+    expect(result).toEqual({ agentName: "p", serverName: "slack" });
     const exchange = h.exchanges[0];
     expect(exchange?.target.resource).toBe("https://mcp.slack.com");
     expect(exchange?.target.clientSecret).toBe("shh");
@@ -659,7 +659,7 @@ describe("completeAuthorization", () => {
 
   it("refuses when ownership changed while the user was away at the provider", async () => {
     const { h, uc, state } = await started();
-    h.deps.projects.get = (async () => ({
+    h.deps.agents.get = (async () => ({
       name: "p",
       ownerEmail: "new-owner@example.com",
     })) as never;
@@ -712,9 +712,9 @@ describe("disconnect", () => {
     const h = harness({ connection: {} });
     const get = h.deps.connections.get;
     const replacement = { ...h.connections.get("p/slack")!, revision: "newer" };
-    h.deps.connections.get = async (project, server) => {
-      const current = await get(project, server);
-      h.connections.set(`${project}/${server}`, replacement);
+    h.deps.connections.get = async (agent, server) => {
+      const current = await get(agent, server);
+      h.connections.set(`${agent}/${server}`, replacement);
       return current;
     };
     const uc = createMcpAuthUseCases(h.deps);
@@ -1042,7 +1042,7 @@ describe("saveClientCredentials", () => {
   it("leaves a live connection alone when nothing was edited", async () => {
     // Both boxes arrive prefilled from the stored connection, so Save without an
     // edit is the likeliest press there is — and it would reset the whole
-    // connection, costing the project the tokens those credentials authorized.
+    // connection, costing the agent the tokens those credentials authorized.
     const h = harness({
       connection: {
         status: "connected",
@@ -1113,9 +1113,9 @@ describe("saveClientCredentials", () => {
   it("does not restore a connection removed while credentials were saved", async () => {
     const h = harness({ connection: {} });
     const get = h.deps.connections.get;
-    h.deps.connections.get = async (project, server) => {
-      const current = await get(project, server);
-      h.connections.delete(`${project}/${server}`);
+    h.deps.connections.get = async (agent, server) => {
+      const current = await get(agent, server);
+      h.connections.delete(`${agent}/${server}`);
       return current;
     };
     const uc = createMcpAuthUseCases(h.deps);
@@ -1127,7 +1127,7 @@ describe("saveClientCredentials", () => {
 
   it("never exposes a secret or a token in the view", async () => {
     // There is no reveal path for either of these, unlike the
-    // project API token — so the view is the only thing that could leak them.
+    // agent API token — so the view is the only thing that could leak them.
     const h = harness({
       connection: {
         status: "connected",
@@ -1150,12 +1150,12 @@ describe("saveClientCredentials", () => {
     }
   });
 
-  it("lists every project connection through bounded repository pages", async () => {
+  it("lists every agent connection through bounded repository pages", async () => {
     const h = harness({});
     for (let index = 0; index < MCP_CONNECTION_LIST_PAGE_SIZE + 2; index += 1) {
       const serverName = `server-${String(index).padStart(3, "0")}`;
       h.connections.set(`p/${serverName}`, {
-        projectName: "p",
+        agentName: "p",
         serverName,
         clientId: "client",
         issuer: `https://${serverName}.example.com`,
@@ -1165,10 +1165,10 @@ describe("saveClientCredentials", () => {
         updatedAt: "2026-01-01T00:00:00.000Z",
       });
     }
-    const listByProject = h.deps.connections.listByProject.bind(h.deps.connections);
+    const listByAgent = h.deps.connections.listByAgent.bind(h.deps.connections);
     const pageSizes: number[] = [];
-    h.deps.connections.listByProject = async (projectName, limit, after) => {
-      const page = await listByProject(projectName, limit, after);
+    h.deps.connections.listByAgent = async (agentName, limit, after) => {
+      const page = await listByAgent(agentName, limit, after);
       pageSizes.push(page.length);
       return page;
     };
@@ -1179,7 +1179,7 @@ describe("saveClientCredentials", () => {
   });
 });
 
-describe("listing a server's tools as the project", () => {
+describe("listing a server's tools as the agent", () => {
   it("distinguishes a rejected URL from a resolver failure", async () => {
     const h = harness({ connection: {} });
     const uc = createMcpAuthUseCases(h.deps);
@@ -1199,11 +1199,11 @@ describe("listing a server's tools as the project", () => {
     const h = harness({ connection: {} });
     const context = agentMcpHeadersContext("p", "slack");
     const headers = secretCipher.mergeHeaderOverrideUpdate({}, { "X-MCP-Toolsets": "context,repos,actions" }, context);
-    const configuration = { projectName: "p", model: "test", systemPrompt: "", parameters: { piiFiltering: false }, skillList: [], subagentList: [], mcpList: [
+    const configuration = { agentName: "p", model: "test", systemPrompt: "", parameters: { piiFiltering: false }, skillList: [], subagentList: [], mcpList: [
       { name: "slack", headers, headerTarget: mcpHeaderTarget(SERVER.url) },
     ] } as AgentConfiguration;
-    const getProject = h.deps.projects.get;
-    h.deps.projects.get = async name => { const project = await getProject(name); return project ? { ...project, configuration } : null; };
+    const getAgent = h.deps.agents.get;
+    h.deps.agents.get = async name => { const agent = await getAgent(name); return agent ? { ...agent, configuration } : null; };
     const uc = createMcpAuthUseCases({ ...h.deps, cipher: secretCipher });
     await uc.listTools("p", "slack", OWNER, secretCipher.maskHeaderOverrides(headers, context));
     expect(h.probes[0]?.headers["X-MCP-Toolsets"]).toBe("context,repos,actions");
@@ -1217,9 +1217,9 @@ describe("listing a server's tools as the project", () => {
     expect(h.probes).toHaveLength(3);
   });
 
-  it("sends the project's token, not just the registry entry's headers", async () => {
+  it("sends the agent's token, not just the registry entry's headers", async () => {
     // The registry probe carries only the entry's static headers, so against an
-    // OAuth server it can do nothing but 401 — the credential is the project's.
+    // OAuth server it can do nothing but 401 — the credential is the agent's.
     const h = harness({ connection: {} });
     const uc = createMcpAuthUseCases(h.deps);
 
@@ -1247,14 +1247,14 @@ describe("listing a server's tools as the project", () => {
     expect(h.probes).toHaveLength(0);
   });
 
-  it("falls back to the entry's own headers when the project has not connected", async () => {
+  it("falls back to the entry's own headers when the agent has not connected", async () => {
     // Discovering OAuth on an entry adds a way to authenticate it, not a veto on
     // the one already configured: an entry carrying a static credential kept
-    // working for every project until an admin pressed Discover on it.
+    // working for every agent until an admin pressed Discover on it.
     const h = harness({
       connection: {},
       server: { ...SERVER, headers: { Authorization: "enc:Bearer registry-pat" } },
-      authHeaders: { headers: {}, unavailable: "slack has not been connected by this project." },
+      authHeaders: { headers: {}, unavailable: "slack has not been connected by this agent." },
     });
     const uc = createMcpAuthUseCases(h.deps);
 
@@ -1265,7 +1265,7 @@ describe("listing a server's tools as the project", () => {
   it("layers the binding's header overrides the way a run does", async () => {
     // The override editor and this list sit in the same dialog. A list assembled
     // from the registry entry alone would answer a question nobody asked — and
-    // the project's Authorization still goes on last, so an Agent binding
+    // the agent's Authorization still goes on last, so an Agent binding
     // cannot substitute its own.
     const h = harness({
       connection: {},
@@ -1276,7 +1276,7 @@ describe("listing a server's tools as the project", () => {
     await uc.listTools("p", "slack", OWNER, {
       "X-Tenant": "override",
       "X-Drop": null,
-      "X-Tenant-Id": "forged-project",
+      "X-Tenant-Id": "forged-agent",
       "X-Conversation-Id": "chat:forged",
       "X-User-Email": "forged@example.com",
       Authorization: "Bearer binding-token",
@@ -1286,7 +1286,7 @@ describe("listing a server's tools as the project", () => {
     expect(h.probes[0]?.headers["X-Drop"]).toBeUndefined();
     expect(h.probes[0]?.headers.Authorization).toBe("Bearer at");
     // The reserved metadata trio: a stored spelling never rides the probe.
-    // This probe carries no project or conversation of its own, so the first
+    // This probe carries no agent or conversation of its own, so the first
     // two are simply absent; the user is the platform's own value.
     expect(h.probes[0]?.headers["X-Tenant-Id"]).toBeUndefined();
     expect(h.probes[0]?.headers["X-Conversation-Id"]).toBeUndefined();

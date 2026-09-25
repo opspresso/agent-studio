@@ -9,30 +9,30 @@
  * "still running" from "nobody is coming back", and only this can say so.
  *
  * **Two callers, because one tick is not a guarantee.** The scheduler's scan
- * sweeps every project on a gated tick, and a webhook delivery sweeps its own
+ * sweeps every agent on a gated tick, and a webhook delivery sweeps its own
  * trigger as it finishes. The second exists because the ticker is optional —
  * a deployment can serve webhooks and configure no CronJob at all — and a
  * durability fix that only runs where a scheduler happens to be pointed is not
  * one.
  *
- * **Enumeration walks projects rather than a cross-project index.** Schedule
+ * **Enumeration walks agents rather than a cross-agent index.** Schedule
  * rows carry one (`TYPE#SCHEDULE`) because the tick fires them every minute, so
  * listing them is that scan's hot path. Repair is not: it runs on a gated tick
  * and only to find wreckage. Granting webhook rows the same index would cover
  * only rows written after the index existed, and a webhook trigger that predates
  * this repair is precisely the one most likely to have stranded a row already —
  * a durability fix that skips the rows it was written for is the wrong shape.
- * Walking `listProjects()` reads every row that exists today in bounded pages,
- * needs no backfill, and costs one query per project on a repair tick only.
+ * Walking `listAgents()` reads every row that exists today in bounded pages,
+ * needs no backfill, and costs one query per agent on a repair tick only.
  */
 
 import type { Trigger, TriggerRun } from "@/domain/trigger/types";
-import { listProjects } from "@/application/project/projectUseCases";
+import { listAgents } from "@/application/agent/agentUseCases";
 import { mapWithLimit } from "@/shared/mapWithLimit";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
 import type { FiringDeps } from "./deps";
-import { listProjectTriggers } from "./triggerUseCases";
+import { listAgentTriggers } from "./triggerUseCases";
 
 /**
  * How far past a run's lease a `running` row must sit before it is declared
@@ -57,8 +57,8 @@ export const REPAIR_AFTER_SECONDS = RUN_LEASE_SECONDS + REPAIR_MARGIN_SECONDS;
  */
 export const REPAIR_SCAN_LIMIT = 50;
 
-/** Project partitions read concurrently by one repair tick. */
-export const REPAIR_PROJECT_CONCURRENCY = 8;
+/** Agent partitions read concurrently by one repair tick. */
+export const REPAIR_AGENT_CONCURRENCY = 8;
 
 /** What a repaired row says happened, in the place an operator will read it. */
 export const LOST_RUN_ERROR =
@@ -77,29 +77,29 @@ function merge(into: RepairSummary, from: RepairSummary): void {
 }
 
 /**
- * Sweep every trigger of every project at instant `at`. Never throws: it runs
+ * Sweep every trigger of every agent at instant `at`. Never throws: it runs
  * inside a tick whose other work must survive a single unreadable partition.
  */
 export async function repairLostRuns(deps: FiringDeps, at: Date): Promise<RepairSummary> {
-  let projectNames: string[];
+  let agentNames: string[];
   try {
-    projectNames = (await listProjects(deps.projects)).map((project) => project.name);
+    agentNames = (await listAgents(deps.agents)).map((agent) => agent.name);
   } catch (error) {
-    // Without the project list there is nothing to walk; the next repair tick
+    // Without the agent list there is nothing to walk; the next repair tick
     // tries again, and the rows are not going anywhere.
-    log.warn("trigger", "could not list projects to repair lost firings", error);
+    log.warn("trigger", "could not list agents to repair lost firings", error);
     return { repaired: 0, errors: 1 };
   }
-  const projectSummaries = await mapWithLimit(
-    projectNames,
-    REPAIR_PROJECT_CONCURRENCY,
-    async (projectName): Promise<RepairSummary> => {
+  const agentSummaries = await mapWithLimit(
+    agentNames,
+    REPAIR_AGENT_CONCURRENCY,
+    async (agentName): Promise<RepairSummary> => {
       const summary: RepairSummary = { repaired: 0, errors: 0 };
       let triggers: Trigger[];
       try {
-        triggers = await listProjectTriggers(deps.triggers, projectName);
+        triggers = await listAgentTriggers(deps.triggers, agentName);
       } catch (error) {
-        log.warn("trigger", `could not list triggers of '${projectName}' for repair`, error);
+        log.warn("trigger", `could not list triggers of '${agentName}' for repair`, error);
         return { repaired: 0, errors: 1 };
       }
       for (const trigger of triggers) {
@@ -111,8 +111,8 @@ export async function repairLostRuns(deps: FiringDeps, at: Date): Promise<Repair
     },
   );
   const summary: RepairSummary = { repaired: 0, errors: 0 };
-  for (const projectSummary of projectSummaries) {
-    merge(summary, projectSummary);
+  for (const agentSummary of agentSummaries) {
+    merge(summary, agentSummary);
   }
   return summary;
 }
@@ -135,7 +135,7 @@ export async function repairTriggerRuns(
   const cutoff = at.getTime() - REPAIR_AFTER_SECONDS * 1000;
   if (trigger.kind === "schedule") {
     try {
-      const queued = await deps.triggers.listRuns(trigger.projectName, trigger.triggerId, REPAIR_SCAN_LIMIT, {
+      const queued = await deps.triggers.listRuns(trigger.agentName, trigger.triggerId, REPAIR_SCAN_LIMIT, {
         status: "queued", queueLeaseBefore: at.toISOString(),
       });
       for (const row of queued) {
@@ -151,7 +151,7 @@ export async function repairTriggerRuns(
   }
   let rows: TriggerRun[];
   try {
-    rows = await deps.triggers.listRuns(trigger.projectName, trigger.triggerId, REPAIR_SCAN_LIMIT, {
+    rows = await deps.triggers.listRuns(trigger.agentName, trigger.triggerId, REPAIR_SCAN_LIMIT, {
       // Ask for the rows that could be dead rather than the rows that are
       // recent. On a busy trigger those sets do not overlap at all.
       startedBefore: new Date(cutoff).toISOString(),

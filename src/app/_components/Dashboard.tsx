@@ -9,7 +9,7 @@ import {
   IconCoins,
   IconLayersIntersect,
 } from "@tabler/icons-react";
-import type { SanitizedProject } from "@/app/agents/lib/api";
+import type { SanitizedAgent } from "@/app/agents/lib/api";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { SectionHeading } from "./SectionHeading";
 import { CardHeading } from "./CardHeading";
@@ -30,39 +30,39 @@ import { CostBarChart } from "./CostBarChart";
 import { readJson } from "@/app/_lib/httpClient";
 import classes from "./Dashboard.module.css";
 
-const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider", "department"];
+const GROUP_OPTIONS: GroupBy[] = ["agent", "model", "provider", "department"];
 
 /**
  * The cost section of the overview.
  *
- * `projects` arrives from the overview rather than being fetched here: it holds
+ * `agents` arrives from the overview rather than being fetched here: it holds
  * the same list already, and the department map is the only thing this needed it
  * for. `null` means that load failed — the other groupings never needed the
  * catalog, so it does not error the section, but it is *said* when the
- * department view is open: every project silently falling into "(none)" is
+ * department view is open: every agent silently falling into "(none)" is
  * exactly the false claim that view exists to avoid.
  */
-export function Dashboard({ projects }: { projects: SanitizedProject[] | null }) {
+export function Dashboard({ agents }: { agents: SanitizedAgent[] | null }) {
   const t = useT();
   const locale = useLocale();
   const initial = useMemo(() => presetRange(30), []);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
-  const [groupBy, setGroupBy] = useState<GroupBy>("project");
+  const [groupBy, setGroupBy] = useState<GroupBy>("agent");
   const [items, setItems] = useState<UsageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  /** projectName → departmentCode, for the chargeback grouping. */
+  /** agentName → departmentCode, for the chargeback grouping. */
   const departments = useMemo(() => {
     const map = new Map<string, string>();
-    for (const project of projects ?? []) {
-      if (project.departmentCode) {
-        map.set(project.name, project.departmentCode);
+    for (const agent of agents ?? []) {
+      if (agent.departmentCode) {
+        map.set(agent.name, agent.departmentCode);
       }
     }
     return map;
-  }, [projects]);
+  }, [agents]);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,7 +126,7 @@ export function Dashboard({ projects }: { projects: SanitizedProject[] | null })
         </Alert>
       )}
 
-      {groupBy === "department" && projects === null && (
+      {groupBy === "department" && agents === null && (
         <Alert color="yellow" variant="light">
           {t("cost.departmentsFailed")}
         </Alert>

@@ -12,8 +12,8 @@ import type { ModelProvider } from "@openai/agents";
 import type { ToolSchemaValidator } from "@/domain/llm/toolSchema";
 import type { ChatMessageInput, EngineParameters, McpToolResult } from "@/domain/llm/types";
 import type { McpRepository } from "@/domain/mcp/repository";
-import type { ProjectRepository } from "@/domain/project/repository";
-import type { Project, AgentConfiguration, McpBinding } from "@/domain/project/types";
+import type { AgentRepository } from "@/domain/agent/repository";
+import type { Agent, AgentConfiguration, McpBinding } from "@/domain/agent/types";
 import type { McpServer } from "@/domain/mcp/types";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
@@ -41,7 +41,7 @@ import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession"
 export interface ExecutionDeps extends RunBracketDeps {
   createToolSchemaValidator: () => ToolSchemaValidator;
   runtimeSessions?: RuntimeSessionServices;
-  projects: ProjectRepository;
+  agents: AgentRepository;
   skills: SkillRepository;
   mcps: McpRepository;
   usage: UsageRepository;
@@ -64,39 +64,39 @@ export interface ExecutionDeps extends RunBracketDeps {
   readPrivateArtifact?: FileToolDeps["readPrivateArtifact"];
   documentRenderer?: DocumentRenderer;
   documentEditor?: DocumentEditor;
-  audioTools?: (projectName: string, origin: RunOrigin) => Promise<
+  audioTools?: (agentName: string, origin: RunOrigin) => Promise<
     ((tool: string, args: Record<string, unknown>) => Promise<McpToolResult>) | undefined
   >;
-  workspaceTool?: (projectName: string, origin: RunOrigin) => Promise<
+  workspaceTool?: (agentName: string, origin: RunOrigin) => Promise<
     ((args: Record<string, unknown>, callId: string) => Promise<McpToolResult>) | undefined
   >;
   registerMcpSource?: RegisterMcpSource;
   sourceRefreshIdentity?(input: { configuration: AgentConfiguration; binding: McpBinding; server: McpServer }): Promise<string>;
   /**
-   * A reader for the Slack workspace this project's bot is installed in, or
+   * A reader for the Slack workspace this agent's bot is installed in, or
    * null when it has no enabled bot.
    *
    * Bound by the composition root rather than assembled here, and that is the
-   * layering rather than a preference: *which token a project reads with* is
+   * layering rather than a preference: *which token an agent reads with* is
    * the Slack slice's knowledge, and reaching for it from execution makes the
    * two slices mutually dependent — the Slack slice already names this one to
    * describe the runs it starts. The usage slice takes its profile reader the
    * same way, for the same reason.
    */
-  slackWorkspace: (project: Project) => SlackWorkspaceReader | null;
+  slackWorkspace: (agent: Agent) => SlackWorkspaceReader | null;
   /** MCP tool sessions — wired by the composition root; tests inject a fake. */
   mcpSessions: McpSessionFactory;
-  /** Per-project OAuth for registry servers that require it. */
+  /** Per-agent OAuth for registry servers that require it. */
   mcpAuth: McpAuthProvider;
   /**
-   * Which registry servers this project has an OAuth connection to.
+   * Which registry servers this agent has an OAuth connection to.
    *
    * Read-only, and separate from {@link mcpAuth} on purpose: resolving headers
    * refreshes tokens, while capability discovery only needs to know whether a
    * connection exists before it offers a server it never bound. Absent means
    * discovery cannot tell, and treats every OAuth server as unconnected.
    */
-  mcpConnections?: Pick<McpConnectionRepository, "listByProject">;
+  mcpConnections?: Pick<McpConnectionRepository, "listByAgent">;
   /**
    * The global capability catalog, when this deployment has one. Absent means
    * an Agent's `dynamicCapabilities` has nothing to search and the run offers
@@ -122,7 +122,7 @@ export interface ExecutionDeps extends RunBracketDeps {
 export interface ExecuteAgentInput {
   resumeApproval?: { revision: number; decisions: RuntimeApprovalDecision[] };
   backgroundTask?: boolean;
-  project: Project;
+  agent: Agent;
   configuration: AgentConfiguration;
   /** OpenAI-shaped message history from the route/chat boundary. */
   messages: ChatMessageInput[];
@@ -144,11 +144,11 @@ export interface ExecuteAgentInput {
   signal?: AbortSignal;
 }
 
-// --- Project-level dispatch --------------------------------------------------
+// --- Agent-level dispatch --------------------------------------------------
 
-export interface ExecuteProjectInput {
+export interface AgentRunInput {
   backgroundTask?: boolean;
-  project: Project;
+  agent: Agent;
   configuration: AgentConfiguration;
   messages: ChatMessageInput[];
   actor?: RunActor;
@@ -175,13 +175,13 @@ export function callerFor(input: { configuration: AgentConfiguration; caller?: R
 
 /** Forward surface context unchanged; callerFor owns the prompt's identity opt-in. */
 export function toRunInput(
-  input: ExecuteProjectInput,
+  input: AgentRunInput,
 ): Pick<
   ExecuteAgentInput,
-  "project" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "signal" | "ownerEmail" | "backgroundTask"
+  "agent" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "signal" | "ownerEmail" | "backgroundTask"
 > {
   return {
-    project: input.project,
+    agent: input.agent,
     configuration: input.configuration,
     messages: input.messages,
     ...(input.actor ? { actor: input.actor } : {}),

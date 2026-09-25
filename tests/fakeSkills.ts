@@ -13,7 +13,7 @@ import type { SkillRepository } from "@/domain/skill/repository";
  * `describe` issues its own projected read and cannot be checked here for
  * agreeing with `get`. That is the integration check's job — it exercises both
  * against a real table — and it is why a test that cares which read a run made
- * (`runProject.test.ts`, "describes without reading a body") stubs the two
+ * (`runAgent.test.ts`, "describes without reading a body") stubs the two
  * separately instead of using this.
  */
 export function fakeSkillRepository(

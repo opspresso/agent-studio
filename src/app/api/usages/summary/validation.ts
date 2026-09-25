@@ -11,7 +11,7 @@ export const summaryQuerySchema = z
   .object({
     from: dateSchema,
     to: dateSchema,
-    project: z.string().min(1).optional(),
+    agent: z.string().min(1).optional(),
   })
   .refine((v) => v.from <= v.to, {
     message: "from must be on or before to",

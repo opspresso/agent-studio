@@ -1,4 +1,4 @@
-import { withConfigurations } from "./projectConfigurations";
+import { withConfigurations } from "./agentConfigurations";
 import { describe, expect, it, vi } from "vitest";
 import { openRun } from "@/application/run/runBracket";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
@@ -11,7 +11,7 @@ import { prepareSubagent } from "@/application/execution/agentBindings";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import { ValidationError } from "@/application/errors";
 import { listModels } from "@/domain/llm/models";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 
 /**
@@ -23,7 +23,7 @@ import type { UsageRepository } from "@/domain/usage/repository";
 const REGISTERED = listModels()[0]?.id ?? "openai/gpt-5-mini";
 const UNKNOWN = "acme/not-in-the-registry";
 
-const project: Project = {
+const agent: Agent = {
   name: "p",
   displayName: "P",
   description: "",
@@ -34,7 +34,7 @@ const project: Project = {
 
 function configuration(overrides: Partial<AgentConfiguration> = {}): AgentConfiguration {
   return {
-    projectName: "p",
+    agentName: "p",
 
     systemPrompt: "",
 
@@ -52,7 +52,7 @@ const usage: UsageRepository = {
   record: async () => {},
   getDay: async () => null,
   claimAlert: async () => false,
-  listActorsByProject: async () => [],
+  listActorsByAgent: async () => [],
 } as unknown as UsageRepository;
 
 describe("toUnknownModelPolicy", () => {
@@ -121,15 +121,15 @@ describe("the run bracket enforces it", () => {
         return null;
       },
     } as unknown as UsageRepository;
-    const limitedProject = { ...project, costLimits: { blockThresholdUsd: 1 } };
+    const limitedAgent = { ...agent, costLimits: { blockThresholdUsd: 1 } };
     // Prove this budget fixture reads usage when the cost guard is reached.
-    await assertWithinCostLimit({ usage: counting }, limitedProject, new Date("2026-09-21T00:00:00Z"));
+    await assertWithinCostLimit({ usage: counting }, limitedAgent, new Date("2026-09-21T00:00:00Z"));
     expect(costReads).toBe(1);
     costReads = 0;
     await expect(
       openRun(
         { usage: counting, unknownModelPolicy: async () => "refuse" },
-        limitedProject,
+        limitedAgent,
         configuration({ model: UNKNOWN }),
       ),
     ).rejects.toBeInstanceOf(ValidationError);
@@ -137,13 +137,13 @@ describe("the run bracket enforces it", () => {
   });
 
   it("refuses an unselected model even when unpriced selected models are allowed", async () => {
-    await expect(openRun({ usage, unknownModelPolicy: async () => "allow" }, project, configuration({ model: UNKNOWN })))
+    await expect(openRun({ usage, unknownModelPolicy: async () => "allow" }, agent, configuration({ model: UNKNOWN })))
       .rejects.toBeInstanceOf(ValidationError);
   });
 
   it("admits it when no policy is injected at all", async () => {
     // A deps bag assembled before this existed must behave exactly as it did.
-    const bracket = await openRun({ usage }, project, configuration({ model: UNKNOWN }));
+    const bracket = await openRun({ usage }, agent, configuration({ model: UNKNOWN }));
 
     expect(bracket.runId).toMatch(/[0-9a-f-]{36}/);
     await bracket.close();
@@ -166,7 +166,7 @@ describe("the run bracket enforces it", () => {
           throw new Error("dynamo down");
         },
       },
-      project,
+      agent,
       configuration(),
     );
 
@@ -177,11 +177,11 @@ describe("the run bracket enforces it", () => {
 });
 
 describe("subagent preparation enforces model policy", () => {
-  const child: Project = { ...project, name: "child" };
-  const parent = configuration({ projectName: "parent", subagentList: [{ name: "child" }] });
+  const child: Agent = { ...agent, name: "child" };
+  const parent = configuration({ agentName: "parent", subagentList: [{ name: "child" }] });
   function prepare(policy: UnknownModelPolicy | undefined, model: string) {
     const deps = {
-      projects: withConfigurations({ get: async () => child }, ({ get: async () => configuration({ projectName: "child", model }) }).get),
+      agents: withConfigurations({ get: async () => child }, ({ get: async () => configuration({ agentName: "child", model }) }).get),
       ...(policy ? { unknownModelPolicy: async () => policy } : {}),
     } as unknown as ExecutionDeps;
     return prepareSubagent(deps, parent, "child", { message: "hi", images: [] }, async () => {}, { ancestry: ["parent"] });

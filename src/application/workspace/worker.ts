@@ -3,7 +3,7 @@ import type { Sandbox, Workspace, WorkspaceRun } from "@/domain/workspace/types"
 import type { CodingWorktree } from "@/domain/coding/worktree";
 import { isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
-import { assertProjectAccessible } from "@/application/project/projectUseCases";
+import { assertAgentAccessible } from "@/application/agent/agentUseCases";
 import { RateLimitedError } from "@/application/errors";
 import type { WorkspaceDeps } from "./workspaceUseCases";
 import { workspacePolicy } from "./workspaceUseCases";
@@ -115,8 +115,8 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     await finishRun(deps, state, "cancelled", "Stopped by user");
     return;
   }
-  await assertProjectAccessible(deps.projects, workspace.projectName, workspace.ownerEmail);
-  const policy = await workspacePolicy(deps, workspace.projectName);
+  await assertAgentAccessible(deps.agents, workspace.agentName, workspace.ownerEmail);
+  const policy = await workspacePolicy(deps, workspace.agentName);
   if (!policy.runtimes.includes(workspace.runtime) || (workspace.coding && !workspaceAllowsRepository(policy, workspace.coding.repository))) {
     throw new Error("Workspace runtime or repository configuration changed");
   }

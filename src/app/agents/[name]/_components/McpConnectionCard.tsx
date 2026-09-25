@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * OAuth connections belong to the Project and save independently of Agent settings.
+ * OAuth connections belong to the Agent and save independently of Agent settings.
  * Token rotation does not edit the current model, tools or prompt configuration.
  */
 
@@ -59,14 +59,14 @@ export async function openMcpAuthorizationPopup(
 }
 
 export function McpConnectionCard({
-  projectName,
+  agentName,
   serverName,
   onConnectionChanged,
 }: {
-  projectName: string;
+  agentName: string;
   serverName: string;
   /**
-   * Called whenever the project's credentials for this server change — an
+   * Called whenever the agent's credentials for this server change — an
    * authorization finishing, credentials saved, a disconnect. What the server
    * offers depends on them, so anything showing that has to be told; the card
    * cannot know who is listening, which is why this is a signal rather than a
@@ -91,12 +91,12 @@ export function McpConnectionCard({
   const refresh = useCallback(async () => {
     const isCurrent = latestOnly();
     // Settled independently on purpose. Only the registry entry can say whether
-    // this server needs authorization at all, so a failure to read the project's
+    // this server needs authorization at all, so a failure to read the agent's
     // *connections* — which is what a non-owner gets — must never be able to
     // leave the card claiming the server needs none.
     const [entry, connections] = await Promise.allSettled([
       getMcp(serverName),
-      listMcpConnections(projectName),
+      listMcpConnections(agentName),
     ]);
     if (isCurrent() && entry.status === "fulfilled") {
       setServer(entry.value);
@@ -118,7 +118,7 @@ export function McpConnectionCard({
       setError(null);
     }
     setLoaded(true);
-  }, [latestOnly, projectName, serverName]);
+  }, [latestOnly, agentName, serverName]);
 
   useEffect(() => {
     void refresh();
@@ -244,7 +244,7 @@ export function McpConnectionCard({
               // A popup rather than a redirect: the editor keeps its unsaved
               // state, and the callback page reports back to this window.
               await openMcpAuthorizationPopup(
-                () => beginMcpAuthorization(projectName, serverName),
+                () => beginMcpAuthorization(agentName, serverName),
                 (url, target, features) => window.open(url, target, features),
               );
             })
@@ -257,7 +257,7 @@ export function McpConnectionCard({
             variant="default"
             color="red"
             disabled={busy}
-            onClick={() => run(async () => disconnectMcp(projectName, serverName), true)}
+            onClick={() => run(async () => disconnectMcp(agentName, serverName), true)}
           >
             {t("mcpConn.disconnect")}
           </Button>

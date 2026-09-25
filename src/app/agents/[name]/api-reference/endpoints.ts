@@ -1,4 +1,4 @@
-import { projectWebhookPath } from "@/domain/trigger/types";
+import { agentWebhookPath } from "@/domain/trigger/types";
 import { MAX_DOCUMENTS, MAX_DOCUMENT_SIZE_LABEL } from "@/domain/llm/documentLimits";
 
 /**
@@ -28,7 +28,7 @@ export const AUTH_LABEL: Record<AuthKind, string> = {
 
 /** Placeholder tokens — the only credential-shaped strings any example may contain. */
 export const PLACEHOLDERS = {
-  token: "$PROJECT_API_TOKEN",
+  token: "$AGENT_API_TOKEN",
   webhookSecret: "$WEBHOOK_SECRET",
   slackSignature: "$SLACK_SIGNATURE",
   slackTimestamp: "$SLACK_TIMESTAMP",
@@ -77,7 +77,7 @@ export interface ApiEndpoint {
 }
 
 export interface ApiReferenceContext {
-  projectName: string;
+  agentName: string;
   /** Whether the Agent has saved settings that can be executed. */
   configured: boolean;
   /** Absolute origin for example URLs (e.g. window.location.origin); "" is tolerated. */
@@ -172,7 +172,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="${opts.baseUrl}",
-    api_key=os.environ["PROJECT_API_TOKEN"],  # sent as Authorization: Bearer
+    api_key=os.environ["AGENT_API_TOKEN"],  # sent as Authorization: Bearer
 )
 
 ${call}`;
@@ -207,7 +207,7 @@ console.log(response.choices[0].message.content);`;
 
 const client = new OpenAI({
   baseURL: "${opts.baseUrl}",
-  apiKey: process.env.PROJECT_API_TOKEN, // sent as Authorization: Bearer
+  apiKey: process.env.AGENT_API_TOKEN, // sent as Authorization: Bearer
 });
 
 ${call}`;
@@ -238,13 +238,13 @@ const OUTPUT_FIELDS: FieldSpec[] = [
 ];
 
 export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
-  const { projectName, configured, origin, slack, telegram, teams, webhook } = ctx;
+  const { agentName, configured, origin, slack, telegram, teams, webhook } = ctx;
   const abs = (path: string): string => `${origin}${path}`;
   const endpoints: ApiEndpoint[] = [];
 
   // Execution endpoints target the current Agent configuration; without one they are hidden.
   if (configured) {
-    const agentBase = `/api/projects/${projectName}`;
+    const agentBase = `/api/agents/${agentName}`;
 
     {
       const predictPath = `${agentBase}/predict`;
@@ -417,7 +417,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
   // gated on saved Agent settings — the address is live either way, and what it
   // answers without one is the `no-configuration` status documented below.
   if (webhook && webhook.enabled) {
-    const webhookPath = projectWebhookPath(projectName);
+    const webhookPath = agentWebhookPath(agentName);
     const webhookBody = { event: "build.finished", status: "ok" };
     endpoints.push({
       id: "webhook",
@@ -460,7 +460,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
 
   // Slack webhook is shown to the owner once a bot is configured.
   if (slack && slack.configured) {
-    const eventsPath = `/api/slack/events/${projectName}`;
+    const eventsPath = `/api/slack/events/${agentName}`;
     endpoints.push({
       id: "slack-events",
       method: "POST",
@@ -484,7 +484,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
 
   // The Telegram webhook is shown to the owner once a bot is configured.
   if (telegram && telegram.configured) {
-    const webhookPath = `/api/telegram/webhook/${projectName}`;
+    const webhookPath = `/api/telegram/webhook/${agentName}`;
     endpoints.push({
       id: "telegram-webhook",
       method: "POST",
@@ -511,7 +511,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
 
   // The Teams messaging endpoint is shown to the owner once a bot is configured.
   if (teams && teams.configured) {
-    const messagingPath = `/api/teams/messages/${projectName}`;
+    const messagingPath = `/api/teams/messages/${agentName}`;
     endpoints.push({
       id: "teams-messages",
       method: "POST",

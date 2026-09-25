@@ -19,11 +19,11 @@ export type AuditAction =
   /** A credential was removed. */
   | "secret.revoke"
   /** An admin used another owner's management authority, including credential reveal. */
-  | "project.admin-override"
+  | "agent.admin-override"
   /** App settings were written — the admin list and the LLM credential live here. */
   | "settings.update"
-  /** A project and everything in its partition were deleted. */
-  | "project.delete"
+  /** An agent and everything in its partition were deleted. */
+  | "agent.delete"
   /**
    * An admin installed a model catalog document by hand, which from then on
    * decides which models exist and what they cost — or removed it. `detail`
@@ -55,7 +55,7 @@ export interface AuditEvent {
   actorEmail: string;
   action: AuditAction;
   /**
-   * What was acted on, as `kind:name` — `project:my-bot`, `skill:pdf-reader`,
+   * What was acted on, as `kind:name` — `agent:my-bot`, `skill:pdf-reader`,
    * `settings:app`. One string rather than a pair because it is only ever
    * displayed and filtered as a whole, and a shape that cannot drift apart.
    */

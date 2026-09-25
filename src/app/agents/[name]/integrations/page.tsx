@@ -4,8 +4,8 @@ import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Alert, Stack } from "@mantine/core";
-import { canEditProject, useViewer } from "@/app/_lib/useViewer";
-import { getProject } from "../../lib/api";
+import { canEditAgent, useViewer } from "@/app/_lib/useViewer";
+import { getAgent } from "../../lib/api";
 import { LoadingText } from "@/app/_components/PageState";
 import { SlackSection } from "./SlackSection";
 import { TeamsSection } from "./TeamsSection";
@@ -14,10 +14,10 @@ import { TokenSection } from "./TokenSection";
 import { useT } from "@/app/_i18n/provider";
 
 /**
- * How other systems reach this project: the API token an outside caller
+ * How other systems reach this agent: the API token an outside caller
  * presents and the chat platforms whose bots run it.
  * Split out of Settings once the bots outnumbered everything else on that
- * page — what the project *is* stays there; what connects to it is here.
+ * page — what the agent *is* stays there; what connects to it is here.
  */
 export default function IntegrationsPage() {
   const t = useT();
@@ -30,13 +30,13 @@ export default function IntegrationsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    getProject(name)
-      .then((project) => {
+    getAgent(name)
+      .then((agent) => {
         if (!cancelled) {
-          setOwnerEmail(project.ownerEmail);
+          setOwnerEmail(agent.ownerEmail);
         }
       })
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Failed to load project"))
+      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Failed to load agent"))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
@@ -56,7 +56,7 @@ export default function IntegrationsPage() {
   if (viewer === null) {
     return <LoadingText />;
   }
-  if (!canEditProject(viewer, ownerEmail)) {
+  if (!canEditAgent(viewer, ownerEmail)) {
     return (
       <Alert variant="light" color="gray" maw={640}>
         {t("pint.ownerOnly", { owner: ownerEmail ?? "unknown" })}
@@ -66,14 +66,14 @@ export default function IntegrationsPage() {
 
   return (
     <Stack gap="xl" maw={760}>
-      <SectionHeading title={t("project.tab.integrations")} description={t("pint.lede")} />
-      <TokenSection projectName={name} />
+      <SectionHeading title={t("agent.tab.integrations")} description={t("pint.lede")} />
+      <TokenSection agentName={name} />
 
-      <SlackSection projectName={name} />
+      <SlackSection agentName={name} />
 
-      <TelegramSection projectName={name} />
+      <TelegramSection agentName={name} />
 
-      <TeamsSection projectName={name} />
+      <TeamsSection agentName={name} />
 
     </Stack>
   );

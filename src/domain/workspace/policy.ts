@@ -4,23 +4,23 @@ import { WORKSPACE_LIMITS } from "./limits";
 export const WORKSPACE_REPOSITORY_MODES = ["selected", "owners", "all", "new"] as const;
 export type WorkspaceRepositoryMode = (typeof WORKSPACE_REPOSITORY_MODES)[number];
 
-/** Project-owned Git scope. Registered + newly created repositories is the default. */
+/** Agent-owned Git scope. Registered + newly created repositories is the default. */
 export interface WorkspaceRepositoryRules {
   mode?: WorkspaceRepositoryMode;
   repositories?: string[];
   repositoryOwners?: string[];
 }
 
-export interface WorkspaceProjectSettings extends WorkspaceRepositoryRules {
+export interface WorkspaceAgentSettings extends WorkspaceRepositoryRules {
   defaultRuntime?: WorkspaceRuntime;
   idleTtlSeconds?: number;
   checks?: { name: WorkspaceCheck["name"]; command: string }[];
   deploymentWorkflows?: string[];
 }
 
-/** Effective project settings, independent of the Sandbox deployment. */
-export interface WorkspaceProjectPolicy extends WorkspaceRepositoryRules {
-  projectName: string;
+/** Effective agent settings, independent of the Sandbox deployment. */
+export interface WorkspaceAgentPolicy extends WorkspaceRepositoryRules {
+  agentName: string;
   defaultRuntime?: WorkspaceRuntime;
   idleTtlSeconds?: number;
   runtimes: WorkspaceRuntime[];
@@ -56,7 +56,7 @@ export function isRepositoryOwner(value: string): boolean {
 }
 
 /** Replace scope without changing the runtime capabilities. */
-export function withWorkspaceRepositoryRules(policy: WorkspaceProjectPolicy, rules: WorkspaceRepositoryRules | undefined): WorkspaceProjectPolicy {
+export function withWorkspaceRepositoryRules(policy: WorkspaceAgentPolicy, rules: WorkspaceRepositoryRules | undefined): WorkspaceAgentPolicy {
   const { mode: _mode, repositories: _repositories, repositoryOwners: _owners, ...compute } = policy;
   void [_mode, _repositories, _owners];
   return { ...compute, ...normalizeWorkspaceRepositoryRules(rules ?? policy) };
@@ -93,7 +93,7 @@ export function normalizeWorkspaceRepositoryRules(rules: WorkspaceRepositoryRule
     repositoryOwners: [...new Set(owners.map(name => name.trim().toLowerCase()))] };
 }
 
-export function normalizeWorkspaceProjectSettings(settings: WorkspaceProjectSettings): WorkspaceProjectSettings {
+export function normalizeWorkspaceAgentSettings(settings: WorkspaceAgentSettings): WorkspaceAgentSettings {
   const rules = normalizeWorkspaceRepositoryRules(settings);
   const defaultRuntime = settings.defaultRuntime ?? "command";
   const idleTtlSeconds = settings.idleTtlSeconds ?? 1800;
@@ -107,7 +107,7 @@ export function normalizeWorkspaceProjectSettings(settings: WorkspaceProjectSett
   return { ...rules, defaultRuntime, idleTtlSeconds, checks: checks.map(check => ({ ...check, command: check.command.trim() })), deploymentWorkflows: [...new Set(deploymentWorkflows.map(value => value.trim()))] };
 }
 
-export function workspaceProjectPolicy(projectName: string, settings: WorkspaceProjectSettings = {}): WorkspaceProjectPolicy {
-  const normalized = normalizeWorkspaceProjectSettings(settings);
-  return { ...normalized, projectName, runtimes: [...WORKSPACE_RUNTIMES], checks: normalized.checks!, deploymentWorkflows: normalized.deploymentWorkflows! };
+export function workspaceAgentPolicy(agentName: string, settings: WorkspaceAgentSettings = {}): WorkspaceAgentPolicy {
+  const normalized = normalizeWorkspaceAgentSettings(settings);
+  return { ...normalized, agentName, runtimes: [...WORKSPACE_RUNTIMES], checks: normalized.checks!, deploymentWorkflows: normalized.deploymentWorkflows! };
 }

@@ -1,5 +1,5 @@
 import { buildFileTool } from "@/application/document/fileTool";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import { descend, type RunOrigin } from "@/domain/execution/actor";
 import { imageDataUrl } from "@/domain/llm/types";
 import type { AgentDeps, AgentTask, PreparedAgent, RecordUsageFn } from "@/application/runtime/types";
@@ -20,26 +20,26 @@ export const MAX_SUBAGENT_DEPTH = 5;
 
 /** Bind Studio capabilities and credentials. SDK Agent/Runner owns execution. */
 export async function buildAgentDeps(
-  deps: ExecutionDeps, configuration: AgentConfiguration, projectName: string, recordUsage: RecordUsageFn,
+  deps: ExecutionDeps, configuration: AgentConfiguration, agentName: string, recordUsage: RecordUsageFn,
   origin: RunOrigin, signal?: AbortSignal, callMcpTool?: AgentDeps["callMcpTool"],
   runtime?: RuntimeTurnPersistence,
 ): Promise<AgentDeps> {
   const common = { channel: deps.channel, createToolSchemaValidator: deps.createToolSchemaValidator, recordUsage, loadSkillContent: buildSkillLoader(createSkillReader(deps)) };
   if (origin.backgroundTask) return common;
-  const imageModel = resolveImageModel(configuration, projectName);
+  const imageModel = resolveImageModel(configuration, agentName);
   return {
     ...common,
     ...(callMcpTool ? { callMcpTool } : {}),
     canDelegate: (configuration.subagentList?.length ?? 0) > 0,
     loadAgent: (name, request) => prepareSubagent(deps, configuration, name, request, recordUsage, origin, runtime),
-    generateImage: buildImageGenerator(deps, imageModel, projectName, recordUsage, signal),
-    editImage: buildImageEditor(deps, imageModel, projectName, recordUsage, signal),
+    generateImage: buildImageGenerator(deps, imageModel, agentName, recordUsage, signal),
+    editImage: buildImageEditor(deps, imageModel, agentName, recordUsage, signal),
     fetchUrl: buildUrlFetcher(deps, configuration),
     saveFile: buildFileSaver(deps),
-    fileTool: buildFileTool(deps, projectName, origin, signal),
-    audioTools: configuration.parameters.audioProcessing ? await deps.audioTools?.(projectName, origin) : undefined,
-    workspaceTool: configuration.parameters.workspaceTools ? await deps.workspaceTool?.(projectName, origin) : undefined,
-    readSlack: await buildSlackReader(deps, configuration, projectName),
+    fileTool: buildFileTool(deps, agentName, origin, signal),
+    audioTools: configuration.parameters.audioProcessing ? await deps.audioTools?.(agentName, origin) : undefined,
+    workspaceTool: configuration.parameters.workspaceTools ? await deps.workspaceTool?.(agentName, origin) : undefined,
+    readSlack: await buildSlackReader(deps, configuration, agentName),
   };
 }
 
@@ -54,13 +54,13 @@ export async function prepareSubagent(
   if (!ref) throw new ValidationError(`Agent '${name}' is not connected to the current Agent settings`);
   if (parentOrigin.ancestry.includes(name)) throw new ValidationError(`Delegating to '${name}' would create a cycle`);
   if (parentOrigin.ancestry.length >= MAX_SUBAGENT_DEPTH) throw new ValidationError(`Subagent depth limit (${MAX_SUBAGENT_DEPTH}) reached`);
-  const project = await deps.projects.get(name);
-  if (!project) throw new ValidationError(`Agent project '${name}' was not found`);
-  const configuration = project.configuration;
+  const agent = await deps.agents.get(name);
+  if (!agent) throw new ValidationError(`Agent '${name}' was not found`);
+  const configuration = agent.configuration;
   if (!configuration) throw new ValidationError(`Agent '${name}' has no Agent configuration`);
   runtime?.checkBinding(`${task.invocationId ?? name}/configuration`, runtimeFingerprint(configuration));
   if (deps.unknownModelPolicy) assertModelsPriceable(await deps.unknownModelPolicy(), configuration);
-  await assertWithinCostLimit(deps, project);
+  await assertWithinCostLimit(deps, agent);
   const origin = descend(parentOrigin, name);
   const message = task.transcript ? `Conversation context:\n${task.transcript}\n\nRequest:\n${task.message}` : task.message;
   const userMessage = {
@@ -68,7 +68,7 @@ export async function prepareSubagent(
     content: task.images.length ? [{ type: "text" as const, text: message }, ...task.images.map((image) => ({ type: "image_url" as const, image_url: { url: imageDataUrl(image) } }))] : message,
   };
   const baseInput = {
-    projectName: project.name, model: configuration.model, fallbackModel: configuration.fallbackModel,
+    agentName: agent.name, model: configuration.model, fallbackModel: configuration.fallbackModel,
     systemPrompt: configuration.systemPrompt, parameters: toEngineParameters(configuration),
     now: runClock(deps), ...callerFor({ configuration, caller: origin.caller }),
     maxTurn: Math.min(configuration.maxTurn ?? 50, task.maxTurns ?? 50),

@@ -4,14 +4,14 @@ import { keys } from "@/infrastructure/db/keys";
 import { conditions, getItem, queryItems, transact, type SortKeyMatch } from "@/infrastructure/db/store";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import { boundedPageLimit } from "@/shared/pageLimit";
-import { projectIsLive } from "@/infrastructure/db/projectLifecycle";
+import { agentIsLive } from "@/infrastructure/db/agentLifecycle";
 
 const MAX_SPANS = 100;
 
 function fromItem(item: Record<string, unknown>): Trace {
   return {
     traceId: String(item.traceId ?? ""),
-    projectName: String(item.projectName ?? ""),
+    agentName: String(item.agentName ?? ""),
     ...(Array.isArray(item.ancestry) ? { ancestry: item.ancestry as string[] } : {}),
     ...(item.actor ? { actor: item.actor as Trace["actor"] } : {}),
     ...(typeof item.conversation === "string" ? { conversation: item.conversation } : {}),
@@ -38,8 +38,8 @@ export class PostgresTraceRepository implements TraceRepository {
     await transact([
       {
         kind: "check",
-        key: keys.project(trace.projectName),
-        condition: projectIsLive,
+        key: keys.agent(trace.agentName),
+        condition: agentIsLive,
       },
       {
         kind: "put",
@@ -48,7 +48,7 @@ export class PostgresTraceRepository implements TraceRepository {
           spans: trace.spans.slice(0, MAX_SPANS),
           ...traceKey,
           entityType: "TRACE",
-          GSI1PK: keys.traceProjectPartition(trace.projectName),
+          GSI1PK: keys.traceAgentPartition(trace.agentName),
           GSI1SK: `${trace.createdAt}#${trace.traceId}`,
           expiresAt,
         },
@@ -57,7 +57,7 @@ export class PostgresTraceRepository implements TraceRepository {
       {
         kind: "put",
         item: {
-          ...keys.traceRef(trace.projectName, trace.createdAt, trace.traceId),
+          ...keys.traceRef(trace.agentName, trace.createdAt, trace.traceId),
           entityType: "TRACE_REF",
           tracePK: traceKey.PK,
           traceSK: traceKey.SK,
@@ -76,7 +76,7 @@ export class PostgresTraceRepository implements TraceRepository {
     return fromItem(item);
   }
 
-  async listByProject(projectName: string, options: ListTracesOptions = {}): Promise<Trace[]> {
+  async listByAgent(agentName: string, options: ListTracesOptions = {}): Promise<Trace[]> {
     const { limit = 50, from, to } = options;
     // GSI1SK is `${createdAt}#${traceId}`; filter on the date prefix. The upper
     // bound appends ￿ so the whole "to" day (with any time/id suffix) is included.
@@ -90,7 +90,7 @@ export class PostgresTraceRepository implements TraceRepository {
     }
     const items = await queryItems({
       index: "GSI1",
-      pk: keys.traceProjectPartition(projectName),
+      pk: keys.traceAgentPartition(agentName),
       sk,
       forward: false,
       limit: boundedPageLimit(limit),

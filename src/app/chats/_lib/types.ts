@@ -134,7 +134,7 @@ export interface LiveTurn {
   authorPaths: string[][];
 }
 
-export interface AgentProject {
+export interface AgentSummary {
   name: string;
   displayName: string;
   description?: string;

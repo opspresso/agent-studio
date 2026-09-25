@@ -12,7 +12,7 @@ export const MCP_SOURCE_RESULT_DESCRIPTION =
   'with source={"kind":"source","id":"<returned source_ref>"} when audio tools are available. ' +
   "Never substitute external_id or request the hidden URL.";
 
-export type RegisterMcpSource = (input: { projectName: string; userEmail: string; namespace: string;
+export type RegisterMcpSource = (input: { agentName: string; userEmail: string; namespace: string;
   itemId: string; url: string; filename: string; mimeType: string; refresh?: SourceRefresh }) => Promise<{ sourceRef: string; filename: string; mimeType: string }>;
 
 function readPath(value: unknown, path: readonly string[]): unknown {
@@ -82,14 +82,14 @@ export function readMcpSourceResult(raw: unknown, mapping: McpSourceMapping, ser
 
 /** Never return the raw response on a mapping failure: it may contain live access URLs. */
 export async function mapMcpSource(input: {
-  result: unknown; mapping: McpSourceMapping; serverName: string; projectName: string;
+  result: unknown; mapping: McpSourceMapping; serverName: string; agentName: string;
   userEmail?: string; register?: RegisterMcpSource; refresh?: SourceRefresh;
 }): Promise<McpToolResult> {
   if (!input.userEmail || !input.register) return { text: "Error: private source references are unavailable for this run." };
   try {
     if (input.mapping.refreshArgument && !input.refresh) throw new Error("Source refresh identity unavailable");
     const source = readMcpSourceResult(input.result, input.mapping, input.serverName);
-    const reference = await input.register({ projectName: input.projectName, userEmail: input.userEmail,
+    const reference = await input.register({ agentName: input.agentName, userEmail: input.userEmail,
       ...source, ...(input.refresh ? { refresh: input.refresh } : {}) });
     return { text: JSON.stringify({ source_ref: reference.sourceRef, filename: reference.filename,
       mime_type: reference.mimeType, source: input.serverName, external_id: source.itemId }) };

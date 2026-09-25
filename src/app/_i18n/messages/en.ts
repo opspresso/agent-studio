@@ -58,7 +58,7 @@ export const en = {
   "secrets.revokeHint": "Requests using this key will no longer be authenticated.",
   "secrets.legacyHint": "This older token cannot be shown again. Regenerate it to obtain a readable token.",
   "secrets.createdAt": "Created {date}",
-  "secrets.projectTokenHint": "Authenticates external requests to this Agent’s APIs. Its usage is attributed to the token and charged to this Agent.",
+  "secrets.agentTokenHint": "Authenticates external requests to this Agent’s APIs. Its usage is attributed to the token and charged to this Agent.",
   "settings.overview": "Manage service settings, access, plugins and models.",
   "settings.adminOnly": "Only administrators can manage app settings.",
   "settings.loadFailed": "Could not load settings.",
@@ -318,7 +318,7 @@ export const en = {
   "audio.useSaved": "Use saved Agent settings",
   "audio.configRevision": "Settings revision",
   "audio.configDisabled": "New jobs are disabled. Enable and save the Agent settings to resume submissions.",
-  "audio.projectConfig": "Agent job settings",
+  "audio.agentConfig": "Agent job settings",
   "audio.configEnabled": "Allow new jobs and retries",
   "audio.maxActive": "Maximum queued and running jobs",
   "audio.maxPerOccurrence": "Maximum new jobs per run",
@@ -496,8 +496,8 @@ export const en = {
   "home.streamCaption": "agent run · text/event-stream",
   "home.streamLive": "example",
   "home.coverage": "What {serviceName} covers",
-  "home.domain.projects": "Agents and settings",
-  "home.domain.projectsBody":
+  "home.domain.agents": "Agents and settings",
+  "home.domain.agentsBody":
     "Each Agent has one current configuration: its model, instructions, capabilities, and limits. Saved settings apply to the next run.",
   "home.domain.agent": "Agent loop",
   "home.domain.agentBody":
@@ -580,13 +580,13 @@ export const en = {
   "headers.deleteRow": "Delete header row",
 
   // Cost and usage, on all three surfaces that draw it: the overview, a
-  // project's usage tab, and a member's profile.
+  // agent's usage tab, and a member's profile.
   "usage.calls": "Calls",
   "usage.cached": "Cached",
   "usage.cost": "Cost",
   "usage.none": "No usage in this range.",
   "usage.loadFailed": "Usage could not be loaded.",
-  "usage.groupBy.project": "Agent",
+  "usage.groupBy.agent": "Agent",
   "usage.groupBy.model": "model",
   "usage.groupBy.provider": "provider",
   "usage.groupBy.department": "department",
@@ -630,13 +630,13 @@ export const en = {
   "overview.welcomeAnon": "Welcome back",
   "overview.lede":
     "Configure Agents, test requests in the console, and connect them to other systems. Agent tools support images, documents, and background audio processing.",
-  "overview.newProject": "New Agent",
+  "overview.newAgent": "New Agent",
   "overview.newChat": "New Chat",
-  "overview.recentProjects": "Recent Agents",
-  "overview.recentProjectsNote": "Your Agents come first, followed by other recently updated Agents.",
-  "overview.allProjects": "All Agents",
-  "overview.projectsFailed": "Agents could not be loaded.",
-  "overview.noProjects": "No Agents yet.",
+  "overview.recentAgents": "Recent Agents",
+  "overview.recentAgentsNote": "Your Agents come first, followed by other recently updated Agents.",
+  "overview.allAgents": "All Agents",
+  "overview.agentsFailed": "Agents could not be loaded.",
+  "overview.noAgents": "No Agents yet.",
   "overview.chatsFailed": "Could not load recent Chats and Workspaces. Reload to try again.",
   "overview.recentChats": "Recent Chats & Workspaces",
   "overview.recentChatsNote": "Check the type and continue the Chat or Workspace task.",
@@ -796,13 +796,13 @@ export const en = {
     "Save the tested Agent settings and issue an Agent token in Integrations; the owner’s tier must allow API tokens. Send it as Authorization: Bearer <token>. It is scoped to that Agent’s execution, uses a service actor and passes the owner’s email to bound MCP servers. Treat it as access to those configured tools, not as a browser login or a way to obtain Workspace tools.",
   "guide.api.address": "Use the Agent address",
   "guide.api.addressBody":
-    "Execution URLs start with /api/projects/{name}/ and use the Agent’s current saved settings. Send the task in messages. Use the {serviceName} host reachable from the calling system.",
+    "Execution URLs start with /api/agents/{name}/ and use the Agent’s current saved settings. Send the task in messages. Use the {serviceName} host reachable from the calling system.",
   "guide.api.input": "Send the task as messages",
   "guide.api.inputBody":
     "Send {\"messages\":[{\"role\":\"user\",\"content\":\"Summarize these notes\"}],\"stream\":false} to predict. Include supported inline image parts when needed. Images are generated or edited by the Agent’s image tools. Begin with one request and inspect its answer, warnings, and usage.",
   "guide.api.sdk": "OpenAI-compatible clients",
   "guide.api.sdkBody":
-    "Use chat/completions and the Python or JavaScript examples in API Reference. Set the SDK base URL to the Agent address and the API key to its token. Saved Agent settings determine the model and sampling parameters; model, temperature, and max_tokens do not override them. Set PROJECT_API_TOKEN and CONVERSATION_ID in the calling process environment before running the examples.",
+    "Use chat/completions and the Python or JavaScript examples in API Reference. Set the SDK base URL to the Agent address and the API key to its token. Saved Agent settings determine the model and sampling parameters; model, temperature, and max_tokens do not override them. Set AGENT_API_TOKEN and CONVERSATION_ID in the calling process environment before running the examples.",
   "guide.api.stream": "Streaming and conversation history",
   "guide.api.streamBody":
     "For text predict or chat/completions, stream:true returns SSE; agent also provides an endpoint for streaming text and tool activity. Keep the connection open and handle warning, error, and completion events, because HTTP 200 alone does not prove the run succeeded. HTTP callers send their own message history. X-Conversation-Id can preserve downstream MCP conversation identity, but does not load past messages for you.",
@@ -972,14 +972,14 @@ export const en = {
   "chat.stop": "Stop",
   "chat.placeholder": "Send a message…",
   "chat.firstPlaceholder": "Send your first message…",
-  "chat.pickProject": "Pick an Agent and send your first message.",
+  "chat.pickAgent": "Pick an Agent and send your first message.",
   "chat.welcomeTitle": "What would you like to work on?",
   "chat.welcomeHint": "Your Chat stays with the selected Agent. Start a new Chat to switch Agents.",
   "chat.messageLabel": "Message",
   "chat.inputHint": "Enter to send · Shift + Enter for a new line",
-  "chat.project": "Agent",
-  "chat.noAgentProjects": "No Agents yet",
-  "chat.noAgentProjectsBody":
+  "chat.agent": "Agent",
+  "chat.noAgentSummarys": "No Agents yet",
+  "chat.noAgentSummarysBody":
     "Chats run against an Agent. Create one from Agents to start chatting.",
   "chat.running": "Running",
   "chat.answeredIn": "Answered in {duration}",
@@ -1016,25 +1016,25 @@ export const en = {
   "agents.privateBadge": "Private",
   "agents.cloneFailed": "Failed to clone Agent",
 
-  // One project's header and tab strip.
-  "project.badge": "AI Agent",
-  "project.lede": "Design, test, and observe this Agent from one workspace.",
-  "project.ownedBy": "Owned by ",
-  "project.clone": "Clone",
-  "project.cloneTitle": "Clone {name}",
-  "project.tab.playground": "Playground",
+  // One agent's header and tab strip.
+  "agent.badge": "AI Agent",
+  "agent.lede": "Design, test, and observe this Agent from one workspace.",
+  "agent.ownedBy": "Owned by ",
+  "agent.clone": "Clone",
+  "agent.cloneTitle": "Clone {name}",
+  "agent.tab.playground": "Playground",
 
-  "project.tab.usage": "Usage",
-  "project.tab.artifacts": "Artifacts",
-  "project.tab.traces": "Traces",
+  "agent.tab.usage": "Usage",
+  "agent.tab.artifacts": "Artifacts",
+  "agent.tab.traces": "Traces",
   "trace.inConversation": "conversation",
   "trace.openDetail": "Open full trace",
-  "project.tab.apiReference": "API Reference",
+  "agent.tab.apiReference": "API Reference",
   "apiReference.intro": "These Agent URLs run the current saved Agent settings. Create an Agent token in Integrations → API token.",
-  "apiReference.environmentHint": "Set PROJECT_API_TOKEN and CONVERSATION_ID in the calling process environment. curl expands $… placeholders; Python and Node.js read environment variables. Keep credentials on your server.",
+  "apiReference.environmentHint": "Set AGENT_API_TOKEN and CONVERSATION_ID in the calling process environment. curl expands $… placeholders; Python and Node.js read environment variables. Keep credentials on your server.",
   "apiReference.configureFirst": "Save the Agent settings in Playground to enable execution endpoints.",
-  "project.tab.integrations": "Integrations",
-  "project.tab.settings": "Settings",
+  "agent.tab.integrations": "Integrations",
+  "agent.tab.settings": "Settings",
 
   // The Playground edits one current Agent configuration.
   "playground.loadFailed": "Failed to load Agent",
@@ -1211,7 +1211,7 @@ export const en = {
   "preview.blurb":
     "Builds the system prompt the way a run does — recalled context, skill table, connected MCP servers and their tool names, transfer instructions — by contacting the configured services on demand.",
 
-  // A project's OAuth authorization for one MCP server.
+  // An agent's OAuth authorization for one MCP server.
   "mcpConn.connected": "Connected",
   "mcpConn.needsAuth": "Not authorized",
   "mcpConn.needsReauth": "Reconnect required",
@@ -1388,12 +1388,12 @@ export const en = {
   "managed.pathPlaceholder": "/mcp",
   "managed.urlSetByRuntime": "Set by the managed runtime.",
 
-  // The project's Integrations tab: how other systems reach it.
+  // The agent's Integrations tab: how other systems reach it.
   "pint.lede":
     "How other systems reach this Agent — its API token and the chat platforms whose bots run it. Agent settings, cost limits and triggers stay under Settings.",
   "pint.ownerOnly": "Only the Agent owner ({owner}) or an admin can change these integrations.",
 
-  // A project's settings tab: the sections and their forms.
+  // An agent's settings tab: the sections and their forms.
   "pset.dangerZone": "Danger zone",
   "pset.deleteConfirm": "Deleting \"{name}\" removes its settings, integrations, traces and usage records. This cannot be undone, and the Agent name cannot be reused.",
   "pset.deleteHint": "Agent deletion removes its settings and Agent-owned records. Chats and artifacts follow their own retention rules; the Agent name remains reserved.",
@@ -1452,7 +1452,7 @@ export const en = {
   "pset.teamsTenantId": "Tenant id (single-tenant apps only)",
   "pset.teamsEnable": "Enable message handling at this endpoint",
 
-  // The project webhook and schedules — the two ways something outside the
+  // The agent webhook and schedules — the two ways something outside the
   // console starts a run.
   "webhook.section": "Webhook",
   "webhook.githubHint": "GitHub: use this URL as the Payload URL, choose application/json, and enter this Agent’s webhook secret in GitHub’s Secret field. GitHub sends X-Hub-Signature-256; no custom header is needed. Select only the events this Agent should handle. Signed ping deliveries verify the connection without running the agent.",
@@ -1499,7 +1499,7 @@ export const en = {
   "trigger.destinationHint": "Select an available integration to configure its destination.",
   "trigger.saveScheduleSettings": "Save",
 
-  // The admin pages, the profile, and the per-project usage tab.
+  // The admin pages, the profile, and the per-agent usage tab.
   "admin.adminOnlyAudit": "Audit events are available to admins only.",
   "admin.adminOnlyMembers": "Members are available to admins only.",
   "models.memberOnly": "Models are available from the member tier up.",
@@ -1584,16 +1584,16 @@ export const en = {
   "settings.optional": "optional",
   "apiRef.request": "Request",
   "apiRef.response": "Response",
-  "projectArtifacts.empty": "This Agent has not produced anything yet.",
-  "projectUsage.empty": "No usage recorded in this range.",
-  "projectUsage.callers": "Callers",
-  "projectUsage.whoSpent": "Usage by caller",
-  "projectUsage.ownerAdminOnly": "Visible to owners and admins",
-  "projectUsage.distinctIdentities": "Unique callers",
-  "projectUsage.unavailable": "Caller details unavailable",
-  "projectUsage.perCallerRange": "Per caller in the selected range",
-  "projectUsage.topCallersRange": "Top {count} callers by cost in the selected range",
-  "projectUsage.caller": "Caller",
+  "agentArtifacts.empty": "This Agent has not produced anything yet.",
+  "agentUsage.empty": "No usage recorded in this range.",
+  "agentUsage.callers": "Callers",
+  "agentUsage.whoSpent": "Usage by caller",
+  "agentUsage.ownerAdminOnly": "Visible to owners and admins",
+  "agentUsage.distinctIdentities": "Unique callers",
+  "agentUsage.unavailable": "Caller details unavailable",
+  "agentUsage.perCallerRange": "Per caller in the selected range",
+  "agentUsage.topCallersRange": "Top {count} callers by cost in the selected range",
+  "agentUsage.caller": "Caller",
 
 } as const;
 

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AudioJob, AudioJobRepository, AudioJobTask, AudioSource } from "@/domain/audio/job";
-import { AUDIO_JOB_TASKS, audioSourceProject } from "@/domain/audio/job";
+import { AUDIO_JOB_TASKS, audioSourceAgent } from "@/domain/audio/job";
 import type { FileRetention } from "@/domain/artifact/retention";
 import type { SourceFile, SourceFileRepository } from "@/domain/artifact/sourceFile";
 import { sourceFileAvailability, type SourceFileAvailability } from "@/domain/artifact/sourceFile";
@@ -29,11 +29,11 @@ export interface AudioJobUseCaseDeps {
   configs?: Pick<AudioJobConfigRepository, "get">;
   files: Pick<SourceFileRepository, "get">;
   resolveArtifact?(id: string, email: string): Promise<SourceFile>;
-  sourceIdentity(project: string, id: string, email: string): Promise<{ namespace: string; itemId: string; refresh?: AudioJob["sourceRefresh"] }>;
-  authorize(project: string, email: string): Promise<void>;
+  sourceIdentity(agent: string, id: string, email: string): Promise<{ namespace: string; itemId: string; refresh?: AudioJob["sourceRefresh"] }>;
+  authorize(agent: string, email: string): Promise<void>;
   validateModel(model: string): Promise<void>;
-  validateOutputs(input: SubmitAudioJobInput, project: string, email: string): Promise<Pick<AudioJob, "postprocess" | "destination">>;
-  limits(project: string): Promise<{ maxActive: number; maxPerOccurrence: number }>;
+  validateOutputs(input: SubmitAudioJobInput, agent: string, email: string): Promise<Pick<AudioJob, "postprocess" | "destination">>;
+  limits(agent: string): Promise<{ maxActive: number; maxPerOccurrence: number }>;
   now(): Date;
   id(): string;
 }
@@ -44,7 +44,7 @@ export type AudioJobView = Pick<AudioJob, "id" | "task" | "sourceIdentity" | "st
     artifacts: { source?: string; transcript?: string; processed?: string; structured?: string; dialogue?: string };
     artifactLinks: Partial<Record<AudioArtifactKind, string>>;
     unavailableArtifacts?: Partial<Record<AudioArtifactKind, Exclude<SourceFileAvailability, "ready">>>;
-    transcriptProjectName: string;
+    transcriptAgentName: string;
   };
 
 type AudioArtifactKind = keyof AudioJobView["artifacts"];
@@ -54,7 +54,7 @@ type AudioArtifactKind = keyof AudioJobView["artifacts"];
 const MAX_CONCURRENT_AUDIO_JOB_VIEWS = 4;
 
 async function view(job: AudioJob, deps: Pick<AudioJobUseCaseDeps, "files" | "now">): Promise<AudioJobView> {
-  const transcriptProjectName = job.task === "postprocess" ? audioSourceProject(job) : job.projectName;
+  const transcriptAgentName = job.task === "postprocess" ? audioSourceAgent(job) : job.agentName;
   const references: AudioJobView["artifacts"] = {
     source: job.fileId, transcript: job.transcriptRef, processed: job.summaryRef ?? job.draftRef,
     structured: job.draftRef, dialogue: job.dialogueRef,
@@ -67,11 +67,11 @@ async function view(job: AudioJob, deps: Pick<AudioJobUseCaseDeps, "files" | "no
   // At most five output reads per job; shared draft/summary refs read once.
   await Promise.all((Object.entries(references) as [AudioArtifactKind, string | undefined][]).map(async ([kind, id]) => {
     if (!id) return;
-    const projectName = kind === "source" ? audioSourceProject(job)
-      : kind === "transcript" ? transcriptProjectName : job.projectName;
-    const key = `${projectName}:${id}`;
+    const agentName = kind === "source" ? audioSourceAgent(job)
+      : kind === "transcript" ? transcriptAgentName : job.agentName;
+    const key = `${agentName}:${id}`;
     let read = reads.get(key);
-    if (!read) { read = deps.files.get(projectName, id); reads.set(key, read); }
+    if (!read) { read = deps.files.get(agentName, id); reads.set(key, read); }
     const availability = sourceFileAvailability(await read, job.userEmail, now);
     if (availability === "ready") {
       artifacts[kind] = id;
@@ -82,7 +82,7 @@ async function view(job: AudioJob, deps: Pick<AudioJobUseCaseDeps, "files" | "no
   }));
   return { id: job.id, task: job.task ?? "process", sourceIdentity: job.sourceIdentity, status: job.status, stage: job.stage,
     model: job.task === "postprocess" ? job.postprocess?.configuration?.model ?? "" : job.model, createdAt: job.createdAt,
-    transcriptProjectName, artifacts, artifactLinks,
+    transcriptAgentName, artifacts, artifactLinks,
     ...(Object.keys(unavailableArtifacts).length ? { unavailableArtifacts } : {}),
     updatedAt: job.updatedAt, dueAt: job.dueAt, attempt: job.attempt, failures: job.failures,
     fileId: job.fileId, transcriptRef: job.transcriptRef, draftRef: job.draftRef,
@@ -91,31 +91,31 @@ async function view(job: AudioJob, deps: Pick<AudioJobUseCaseDeps, "files" | "no
 }
 
 export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
-  const owned = async (project: string, id: string, email: string) => {
-    await deps.authorize(project, email);
-    const job = await deps.jobs.get(project, id);
+  const owned = async (agent: string, id: string, email: string) => {
+    await deps.authorize(agent, email);
+    const job = await deps.jobs.get(agent, id);
     if (!job || job.userEmail !== email) throw new NotFoundError("Audio job not found");
     return job;
   };
   return {
-    async configuration(project: string, email: string) {
-      await deps.authorize(project, email);
-      const config = await deps.configs?.get(project);
+    async configuration(agent: string, email: string) {
+      await deps.authorize(agent, email);
+      const config = await deps.configs?.get(agent);
       if (!config) return null;
       if (config.userEmail !== email) throw new ConflictError("Audio configuration requires owner confirmation");
       if (config.enabled) await deps.validateModel(config.model);
-      const { userEmail: _email, projectName: _project, ...view } = config;
+      const { userEmail: _email, agentName: _agent, ...view } = config;
       return view;
     },
-    async submit(projectName: string, userEmail: string, input: SubmitAudioJobInput,
+    async submit(agentName: string, userEmail: string, input: SubmitAudioJobInput,
       origin: { occurrence: string; actor?: RunActor; producedBy?: string }) {
-      await deps.authorize(projectName, userEmail);
+      await deps.authorize(agentName, userEmail);
       if (input.source.kind === "artifact") {
         if (!deps.resolveArtifact) throw new ValidationError("Artifact inputs are unavailable");
         const file = await deps.resolveArtifact(input.source.artifactId, userEmail);
-        input = { ...input, source: { kind: "file", fileId: file.id, projectName: file.projectName } };
+        input = { ...input, source: { kind: "file", fileId: file.id, agentName: file.agentName } };
       }
-      const config = await deps.configs?.get(projectName);
+      const config = await deps.configs?.get(agentName);
       if (config && (!config.enabled || config.userEmail !== userEmail)) throw new ConflictError("Audio configuration is disabled or requires owner confirmation");
       if (input.configRevision !== undefined) {
         if (!config || config.revision !== input.configRevision) throw new ConflictError("Audio configuration changed");
@@ -142,12 +142,12 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
         await deps.validateModel(input.model);
       }
       if (task !== "process" && task !== "postprocess" && (input.postprocess || input.destination)) throw new ValidationError("Only process or postprocess tasks accept output options");
-      const outputs = await deps.validateOutputs(input, projectName, userEmail);
+      const outputs = await deps.validateOutputs(input, agentName, userEmail);
       let identity: { namespace: string; itemId: string; refresh?: AudioJob["sourceRefresh"] };
       if (input.source.kind === "file") {
-        const sourceProject = input.source.projectName ?? projectName;
-        await deps.authorize(sourceProject, userEmail);
-        const file = await deps.files.get(sourceProject, input.source.fileId);
+        const sourceAgent = input.source.agentName ?? agentName;
+        await deps.authorize(sourceAgent, userEmail);
+        const file = await deps.files.get(sourceAgent, input.source.fileId);
         if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
         if (sourceFileAvailability(file, userEmail, now) !== "ready") throw new ConflictError("Source file is unavailable or expired");
         if ((task === "transcribe" || task === "process") && file.derived?.kind === "transcript") {
@@ -158,13 +158,13 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
         }
         identity = { namespace: "stored-file", itemId: file.id };
       } else if (input.source.kind === "source") {
-        identity = await deps.sourceIdentity(projectName, input.source.sourceRef, userEmail);
+        identity = await deps.sourceIdentity(agentName, input.source.sourceRef, userEmail);
       } else throw new ValidationError("Invalid audio source");
       const sourceKey = createHash("sha256").update(JSON.stringify([
         userEmail, identity.namespace, identity.itemId, task, input.processingRevision ?? "1",
       ])).digest("hex");
-      const limits = config ? { maxActive: config.maxActive, maxPerOccurrence: config.maxPerOccurrence } : await deps.limits(projectName);
-      const result = await deps.jobs.submit({ projectName, userEmail, actor: origin.actor,
+      const limits = config ? { maxActive: config.maxActive, maxPerOccurrence: config.maxPerOccurrence } : await deps.limits(agentName);
+      const result = await deps.jobs.submit({ agentName, userEmail, actor: origin.actor,
         ...(origin.producedBy ? { producedBy: origin.producedBy } : {}),
         source: input.source, sourceKey, sourceIdentity: { namespace: identity.namespace, itemId: identity.itemId }, sourceRefresh: identity.refresh,
         model: input.model ?? "", task, language: input.language,
@@ -172,10 +172,10 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       { id: deps.id(), now, occurrence: origin.occurrence, ...limits });
       return result.status === "busy" ? result : { status: result.status, job: await view(result.job, deps) };
     },
-    async get(project: string, id: string, email: string) { return view(await owned(project, id, email), deps); },
-    async list(project: string, email: string, limit: number, after?: string) {
-      await deps.authorize(project, email);
-      const jobs = await deps.jobs.list(project, limit, after, email);
+    async get(agent: string, id: string, email: string) { return view(await owned(agent, id, email), deps); },
+    async list(agent: string, email: string, limit: number, after?: string) {
+      await deps.authorize(agent, email);
+      const jobs = await deps.jobs.list(agent, limit, after, email);
       const result: AudioJobView[] = [];
       for (let start = 0; start < jobs.length; start += MAX_CONCURRENT_AUDIO_JOB_VIEWS) {
         result.push(...await Promise.all(jobs.slice(start, start + MAX_CONCURRENT_AUDIO_JOB_VIEWS)
@@ -183,24 +183,24 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       }
       return result;
     },
-    async cancel(project: string, id: string, email: string, revision: number) {
-      await owned(project, id, email);
-      if (!await deps.jobs.cancel(project, id, revision, deps.now().toISOString())) throw new ConflictError("Audio job changed or is already terminal");
-      const job = await deps.jobs.get(project, id);
+    async cancel(agent: string, id: string, email: string, revision: number) {
+      await owned(agent, id, email);
+      if (!await deps.jobs.cancel(agent, id, revision, deps.now().toISOString())) throw new ConflictError("Audio job changed or is already terminal");
+      const job = await deps.jobs.get(agent, id);
       if (!job) throw new NotFoundError("Audio job not found");
       return view(job, deps);
     },
-    async delete(project: string, id: string, email: string, revision: number) {
-      await owned(project, id, email);
-      if (!await deps.jobs.delete(project, id, revision)) throw new ConflictError("Audio job changed or is still active; cancel it before deleting");
+    async delete(agent: string, id: string, email: string, revision: number) {
+      await owned(agent, id, email);
+      if (!await deps.jobs.delete(agent, id, revision)) throw new ConflictError("Audio job changed or is still active; cancel it before deleting");
       return { deleted: true };
     },
-    async retry(project: string, id: string, email: string, revision: number) {
-      await owned(project, id, email);
-      const config = await deps.configs?.get(project);
+    async retry(agent: string, id: string, email: string, revision: number) {
+      await owned(agent, id, email);
+      const config = await deps.configs?.get(agent);
       if (config && (!config.enabled || config.userEmail !== email)) throw new ConflictError("Audio configuration is disabled or requires owner confirmation");
-      const limits = config ? { maxActive: config.maxActive } : await deps.limits(project);
-      const job = await deps.jobs.retry(project, id, revision, deps.now().toISOString(), limits.maxActive);
+      const limits = config ? { maxActive: config.maxActive } : await deps.limits(agent);
+      const job = await deps.jobs.retry(agent, id, revision, deps.now().toISOString(), limits.maxActive);
       if (!job) throw new ConflictError("Audio job changed or cannot be retried");
       return view(job, deps);
     },

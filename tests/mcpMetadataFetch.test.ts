@@ -204,7 +204,7 @@ describe("reading authorization server metadata", () => {
 /**
  * What the adapter reads *out* of an authorization server's document.
  *
- * Untested until now, and it is the seam that decides how a project gets an
+ * Untested until now, and it is the seam that decides how an agent gets an
  * OAuth client: `client_id_metadata_document_supported` and
  * `registration_endpoint` are what `beginAuthorization` branches on, and both
  * are spelled in exactly one place. Every test above this stubs the port rather

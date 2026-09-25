@@ -1,33 +1,33 @@
-/** AES-GCM context for one project's bearer token. */
-export function projectApiTokenContext(projectName: string): string {
-  return JSON.stringify(["project", projectName, "api-token"]);
+/** AES-GCM context for one agent's bearer token. */
+export function agentApiTokenContext(agentName: string): string {
+  return JSON.stringify(["agent", agentName, "api-token"]);
 }
 
-export function sourceReferenceContext(projectName: string, id: string): string {
-  return JSON.stringify(["project", projectName, "source-reference", id, "url"]);
+export function sourceReferenceContext(agentName: string, id: string): string {
+  return JSON.stringify(["agent", agentName, "source-reference", id, "url"]);
 }
 
-/** AES-GCM context for one project's webhook trigger secret. */
-export function triggerSecretContext(projectName: string, triggerId: string): string {
-  return JSON.stringify(["project", projectName, "trigger", triggerId, "secret"]);
+/** AES-GCM context for one agent's webhook trigger secret. */
+export function triggerSecretContext(agentName: string, triggerId: string): string {
+  return JSON.stringify(["agent", agentName, "trigger", triggerId, "secret"]);
 }
 
 export function slackSecretContext(
-  projectName: string,
+  agentName: string,
   field: "bot-token" | "signing-secret",
 ): string {
-  return JSON.stringify(["project", projectName, "slack", field]);
+  return JSON.stringify(["agent", agentName, "slack", field]);
 }
 
 export function telegramSecretContext(
-  projectName: string,
+  agentName: string,
   field: "bot-token" | "webhook-secret",
 ): string {
-  return JSON.stringify(["project", projectName, "telegram", field]);
+  return JSON.stringify(["agent", agentName, "telegram", field]);
 }
 
-export function teamsSecretContext(projectName: string): string {
-  return JSON.stringify(["project", projectName, "teams", "app-password"]);
+export function teamsSecretContext(agentName: string): string {
+  return JSON.stringify(["agent", agentName, "teams", "app-password"]);
 }
 
 export function mcpHeadersContext(name: string): string {
@@ -43,16 +43,16 @@ export function managedMcpEnvironmentContext(name: string): string {
 }
 
 /** Agent settings retain the same credential identity across ordinary edits. */
-export function agentMcpHeadersContext(projectName: string, serverName: string): string {
-  return JSON.stringify(["project", projectName, "agent", "mcp", serverName]);
+export function agentMcpHeadersContext(agentName: string, serverName: string): string {
+  return JSON.stringify(["agent", agentName, "configuration", "mcp", serverName]);
 }
 
 export function mcpConnectionSecretContext(
-  projectName: string,
+  agentName: string,
   serverName: string,
   field: "client-secret" | "access-token" | "refresh-token",
 ): string {
-  return JSON.stringify(["project", projectName, "mcp", serverName, field]);
+  return JSON.stringify(["agent", agentName, "mcp", serverName, field]);
 }
 
 export function mcpOAuthStateContext(state: string): string {

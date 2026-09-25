@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { workspaceRepository as repository } from "@/infrastructure/db/repositories/workspaceRepository";
 import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
-import { projectRepository as projects } from "@/infrastructure/db/repositories/projectRepository";
+import { agentRepository as agents } from "@/infrastructure/db/repositories/agentRepository";
 import { chatRepository as chats } from "@/infrastructure/db/repositories/chatRepository";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { createWorkspaceUseCases } from "@/application/workspace/workspaceUseCases";
@@ -14,7 +14,7 @@ import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 /** Runs only after integration-check's local `_test` database guard and migration. */
 export async function checkWorkspaces(): Promise<void> {
   const suffix = randomUUID();
-  const projectName = `workspace-${suffix}`;
+  const agentName = `workspace-${suffix}`;
   const chatId = `workspace-${suffix}`;
   const sourceChatId = `source-${suffix}`;
   const sourceWorkspaces = new Map<string, string>();
@@ -22,22 +22,22 @@ export async function checkWorkspaces(): Promise<void> {
   const now = new Date().toISOString();
   const checkpoints = createWorkspaceCheckpointStore(secretCipher);
   let workspaceId: string | undefined;
-  const useCases = createWorkspaceUseCases({ repository, chats, projects, now: () => new Date(), newId: randomUUID,
-    idleTtlSeconds: 3600, policy: () => ({ projectName, runtimes: ["command"], checks: [], deploymentWorkflows: [] }) });
+  const useCases = createWorkspaceUseCases({ repository, chats, agents, now: () => new Date(), newId: randomUUID,
+    idleTtlSeconds: 3600, policy: () => ({ agentName, runtimes: ["command"], checks: [], deploymentWorkflows: [] }) });
   try {
-    await projects.create({ name: projectName, displayName: "Workspace integration", description: "",
+    await agents.create({ name: agentName, displayName: "Workspace integration", description: "",
       ownerEmail: owner, createdAt: now, updatedAt: now });
-    await chats.create({ chatId, projectName, title: "Workspace integration", ownerEmail: owner, createdAt: now, updatedAt: now });
-    await chats.create({ chatId: sourceChatId, projectName, title: "Agent source", ownerEmail: owner, createdAt: now, updatedAt: now });
-    const starts = await Promise.allSettled(Array.from({ length: 8 }, (_, index) => useCases.startForChat({ projectName, runtime: "command",
+    await chats.create({ chatId, agentName, title: "Workspace integration", ownerEmail: owner, createdAt: now, updatedAt: now });
+    await chats.create({ chatId: sourceChatId, agentName, title: "Agent source", ownerEmail: owner, createdAt: now, updatedAt: now });
+    const starts = await Promise.allSettled(Array.from({ length: 8 }, (_, index) => useCases.startForChat({ agentName, runtime: "command",
       input: { kind: "command", script: `printf request-${index}` } }, owner, sourceChatId)));
     for (const result of starts) if (result.status === "fulfilled") sourceWorkspaces.set(result.value.workspace.id, result.value.workspace.chatId);
     assert.equal(starts.filter(result => result.status === "fulfilled").length, 8, "concurrent starts resolve the same source selection");
     assert.equal(sourceWorkspaces.size, 1, "one source chat cannot create duplicate Workspaces");
     const selectedId = [...sourceWorkspaces.keys()][0]!;
-    assert.equal((await chats.get(sourceChatId))?.linkedWorkspaces?.[projectName], selectedId);
+    assert.equal((await chats.get(sourceChatId))?.linkedWorkspaces?.[agentName], selectedId);
     assert.equal((await repository.runs(selectedId, 10)).length, 1, "only the winning start queues its first task");
-    const later = await useCases.startForChat({ projectName, runtime: "command", input: { kind: "command", script: "printf later" } }, owner, sourceChatId);
+    const later = await useCases.startForChat({ agentName, runtime: "command", input: { kind: "command", script: "printf later" } }, owner, sourceChatId);
     assert.equal(later.reused, true);
     assert.equal(later.workspace.id, selectedId);
     assert.equal((await repository.runs(selectedId, 10)).length, 1, "another start does not replay or enqueue work");
@@ -71,7 +71,7 @@ export async function checkWorkspaces(): Promise<void> {
       workspace: { ...sourceAfterDelivery, revision: sourceAfterDelivery.revision + 1 }, approval });
     assert.equal((await repository.continuation(selectedId, approval.id))?.status, "completed", "saving an outcome again cannot redeliver it");
 
-    const workspace = await useCases.create({ chatId, projectName, title: "General task", runtime: "command" }, owner);
+    const workspace = await useCases.create({ chatId, agentName, title: "General task", runtime: "command" }, owner);
     workspaceId = workspace.id;
     assert.equal(workspace.coding, undefined);
     const input = { kind: "command" as const, script: "printf integration" };
@@ -137,6 +137,6 @@ export async function checkWorkspaces(): Promise<void> {
     }
     await deleteItem(keys.workspaceChat(chatId));
     if (await chats.get(chatId)) await chats.delete(chatId);
-    if (await projects.get(projectName)) await projects.delete(projectName);
+    if (await agents.get(agentName)) await agents.delete(agentName);
   }
 }

@@ -9,31 +9,31 @@ function fixture() {
   const recipe: SourceRefresh = { serverName: "files", identity: "epoch-1", mapping: {
     tool: "get_file", namespace: "account", idPath: ["id"], urlPath: ["url"], mimeType: "audio/mpeg", refreshArgument: "file_id",
   } };
-  const configuration = { projectName: "audio", mcpList: [{ name: "files", sourceOutputs: [recipe.mapping] }] };
+  const configuration = { agentName: "audio", mcpList: [{ name: "files", sourceOutputs: [recipe.mapping] }] };
   const identity = vi.fn(async () => "epoch-1");
-  const getProject = vi.fn(async () => ({ ownerEmail: "owner@example.test", configuration }));
-  const deps = { projects: { get: getProject }, mcps: { get: async () => ({ name: "files" }) }, sourceRefreshIdentity: identity } as unknown as Parameters<typeof createMcpSourceRefresher>[0];
+  const getAgent = vi.fn(async () => ({ ownerEmail: "owner@example.test", configuration }));
+  const deps = { agents: { get: getAgent }, mcps: { get: async () => ({ name: "files" }) }, sourceRefreshIdentity: identity } as unknown as Parameters<typeof createMcpSourceRefresher>[0];
   const call = vi.fn(async () => {
-    await vi.mocked(buildMcpTools).mock.calls[0]?.[0].registerMcpSource?.({ projectName: "audio", userEmail: "owner@example.test", namespace: "account", itemId: "42", url: "https://files.example.test/fresh", filename: "source", mimeType: "audio/mpeg" });
+    await vi.mocked(buildMcpTools).mock.calls[0]?.[0].registerMcpSource?.({ agentName: "audio", userEmail: "owner@example.test", namespace: "account", itemId: "42", url: "https://files.example.test/fresh", filename: "source", mimeType: "audio/mpeg" });
     return { text: "opaque projected result" };
   });
   const close = vi.fn(async () => {});
   vi.mocked(buildMcpTools).mockResolvedValue({ signature: "test", mcpTools: [{ type: "function", function: { name: "file_read", parameters: { properties: { file_id: { type: "integer" } } } } }],
     mcpServers: [], warnings: [], aliasFor: () => "file_read", callMcpTool: call, close });
-  const job = { projectName: "audio", userEmail: "owner@example.test", sourceIdentity: { namespace: "account", itemId: "42" } } as AudioJob;
-  return { run: createMcpSourceRefresher(deps), job, recipe, call, close, identity, configuration, getProject };
+  const job = { agentName: "audio", userEmail: "owner@example.test", sourceIdentity: { namespace: "account", itemId: "42" } } as AudioJob;
+  return { run: createMcpSourceRefresher(deps), job, recipe, call, close, identity, configuration, getAgent };
 }
 describe("registered MCP source replay", () => {
   it("refreshes through the sub-agent binding and rejects ownership changes after the read", async () => {
-    const f = fixture(); f.recipe.projectName = "downloader";
+    const f = fixture(); f.recipe.agentName = "downloader";
     await f.run(f.job, f.recipe, new AbortController().signal);
-    expect(f.getProject).toHaveBeenCalledWith("downloader");
-    expect(f.getProject).toHaveBeenCalledTimes(2);
-    f.getProject.mockResolvedValueOnce({ ownerEmail: "owner@example.test", configuration: f.configuration }).mockResolvedValueOnce({ ownerEmail: "new-owner@example.test", configuration: f.configuration });
-    await expect(f.run(f.job, f.recipe, new AbortController().signal)).rejects.toThrow("source_project_access_changed");
+    expect(f.getAgent).toHaveBeenCalledWith("downloader");
+    expect(f.getAgent).toHaveBeenCalledTimes(2);
+    f.getAgent.mockResolvedValueOnce({ ownerEmail: "owner@example.test", configuration: f.configuration }).mockResolvedValueOnce({ ownerEmail: "new-owner@example.test", configuration: f.configuration });
+    await expect(f.run(f.job, f.recipe, new AbortController().signal)).rejects.toThrow("source_agent_access_changed");
     expect(f.close).toHaveBeenCalledTimes(2);
   });
-  it("uses the fixed read tool and projects privately before model-facing truncation without persisting a new reference", async () => {
+  it("uses the fixed read tool and agents privately before model-facing truncation without persisting a new reference", async () => {
     const f = fixture();
     const value = await f.run(f.job, f.recipe, new AbortController().signal);
     expect(value).toMatchObject({ itemId: "42", url: "https://files.example.test/fresh" });

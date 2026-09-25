@@ -7,7 +7,7 @@
  * call — a bot sees each update once — so the only way a follow-up can carry
  * the question before it is for this platform to have written both down. That
  * is what this is: a bounded, expiring record of the turns exchanged in one
- * conversation, per project, kept for context and nothing else. It is not a
+ * conversation, per agent, kept for context and nothing else. It is not a
  * chat: nobody reads it back in a console, it is not replayed with its tool
  * traffic, and losing it costs the next question its context, not its answer.
  */
@@ -34,7 +34,7 @@ export interface ConversationTranscriptRepository {
    * The newest `limit` turns of one conversation, oldest first — what a run
    * carries as history. Expired rows are not returned.
    */
-  recent(projectName: string, conversationKey: string, limit: number): Promise<TranscriptTurn[]>;
+  recent(agentName: string, conversationKey: string, limit: number): Promise<TranscriptTurn[]>;
   /** Write one turn down. Never throws for a full or slow store's sake — the caller decides that. */
-  append(projectName: string, conversationKey: string, turn: TranscriptTurn): Promise<void>;
+  append(agentName: string, conversationKey: string, turn: TranscriptTurn): Promise<void>;
 }

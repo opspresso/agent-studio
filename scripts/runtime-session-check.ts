@@ -3,22 +3,22 @@ import { randomUUID } from "node:crypto";
 import { runtimeSessionRepository as repository } from "@/infrastructure/db/repositories/runtimeSessionRepository";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { openRuntimeSession, readRuntimeSession } from "@/application/runtime/session";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 
 /** Called only by integration-check after its dedicated-test-database guard. */
 export async function checkRuntimeSessions(): Promise<void> {
   const id = randomUUID();
   const owner = "runtime-integration@example.test";
-  const configuration: AgentConfiguration = { projectName: "runtime-integration",  model: "openai/gpt-5-mini", systemPrompt: "",  parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] };
+  const configuration: AgentConfiguration = { agentName: "runtime-integration",  model: "openai/gpt-5-mini", systemPrompt: "",  parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] };
   const services = { repository, cipher: secretCipher, retentionDays: 1 };
-  await openRuntimeSession(services, { sessionId: id, ownerEmail: owner, projectName: configuration.projectName, configuration });
+  await openRuntimeSession(services, { sessionId: id, ownerEmail: owner, agentName: configuration.agentName, configuration });
   const row = await repository.get(id, owner);
   assert.ok(row);
   assert.ok(row.payload.startsWith("enc:v2:"));
   assert.equal(await repository.get(id, "someone-else@example.test"), null);
   assert.deepEqual((await readRuntimeSession(services, id, owner))?.document.items, []);
 
-  const update = { sessionId: id, ownerEmail: owner, projectName: row.projectName, payload: row.payload, expiresAt: row.expiresAt };
+  const update = { sessionId: id, ownerEmail: owner, agentName: row.agentName, payload: row.payload, expiresAt: row.expiresAt };
   const raced = await Promise.all([repository.save(update, row.revision), repository.save(update, row.revision)]);
   assert.equal(raced.filter((value) => value !== null).length, 1, "only one session CAS may win");
   const current = (await repository.get(id, owner))!;

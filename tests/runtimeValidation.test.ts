@@ -15,7 +15,7 @@ describe("SDK runtime validation boundaries", () => {
     const channel = new FakeChannel([]);
     const chunks = [];
     for await (const chunk of runAgent({ channel }, {
-      projectName: "project", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "lookup" }],
+      agentName: "agent", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "lookup" }],
       mcpTools: [{ type: "function", function: { name: "lookup", parameters: {} } }],
     })) chunks.push(chunk);
     expect(channel.calls).toBe(0);
@@ -26,7 +26,7 @@ describe("SDK runtime validation boundaries", () => {
     const message = "person@example.com";
     const channel = new FakeChannel([[contentChunk("done")]]);
     const chunks = [];
-    for await (const chunk of runAgent({ channel }, { projectName: "p", model: "openai/gpt-5-mini",
+    for await (const chunk of runAgent({ channel }, { agentName: "p", model: "openai/gpt-5-mini",
       messages: [{ role: "user", content: message }], parameters: { piiFiltering: true, policy: { maxInputChars: message.length } } })) chunks.push(chunk);
     expect(chunks.at(-1)).toMatchObject({ done: true });
     expect(JSON.stringify(channel.seenParams)).not.toContain(message);
@@ -40,7 +40,7 @@ describe("SDK runtime validation boundaries", () => {
     const chunks = await f.run(root, "help", undefined, {
       loadAgent: async (name, task) => ({
         deps: { channel: child }, warnings: [], close,
-        input: { projectName: name, model: f.configuration.model, messages: [{ role: "user", content: task.message }], parameters: { policy: { maxInputChars: 2 } } },
+        input: { agentName: name, model: f.configuration.model, messages: [{ role: "user", content: task.message }], parameters: { policy: { maxInputChars: 2 } } },
       }),
     }, { subagents: [{ name: "child", description: "child" }] });
     expect(child.calls).toBe(0);

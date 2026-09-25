@@ -30,7 +30,7 @@ describe("cached prompt tokens", () => {
     const withCache = await collect(
       runAgent(
         { channel: cached, recordUsage: record },
-        { projectName: "p", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "hi" }] },
+        { agentName: "p", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "hi" }] },
       ),
     );
     expect(recorded[0]).toMatchObject({ inputTokens: 100, cachedTokens: 80 });
@@ -41,7 +41,7 @@ describe("cached prompt tokens", () => {
     const withoutCache = await collect(
       runAgent(
         { channel: silent, recordUsage: record },
-        { projectName: "p", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "hi" }] },
+        { agentName: "p", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "hi" }] },
       ),
     );
     expect(recorded[0]).not.toHaveProperty("cachedTokens");
@@ -56,7 +56,7 @@ describe("Agent usage recording is best-effort", () => {
     const chunks = await collect(
       runAgent(
         { channel, recordUsage: failingUsage },
-        { projectName: "p", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "hi" }] },
+        { agentName: "p", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "hi" }] },
       ),
     );
     expect(chunks.some((c) => c.error)).toBe(false);

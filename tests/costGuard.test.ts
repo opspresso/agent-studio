@@ -1,4 +1,4 @@
-import { withConfigurations } from "./projectConfigurations";
+import { withConfigurations } from "./agentConfigurations";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertWithinCostLimit,
@@ -11,12 +11,12 @@ import { openRun } from "@/application/run/runBracket";
 import { prepareSubagent } from "@/application/execution/agentBindings";
 import {
   executeAgent,
-  executeProject,
-  executeProjectStream,
+  collectAgentRun,
+  streamAgentExecution,
   type ExecutionDeps,
-} from "@/application/execution/runProject";
+} from "@/application/execution/runAgent";
 import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
-import type { CostLimits, Project, AgentConfiguration } from "@/domain/project/types";
+import type { CostLimits, Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import type { UsageRow } from "@/domain/usage/types";
 import { fakeSkillRepository } from "./fakeSkills";
@@ -28,7 +28,7 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function project(costLimits?: CostLimits, slackEnabled = false): Project {
+function agent(costLimits?: CostLimits, slackEnabled = false): Agent {
   return {
     name: "proj",
     displayName: "Proj",
@@ -45,7 +45,7 @@ function project(costLimits?: CostLimits, slackEnabled = false): Project {
 
 function row(costUsd: Record<string, number>): UsageRow {
   return {
-    projectName: "proj",
+    agentName: "proj",
     date: today(),
     calls: {},
     inputTokens: {},
@@ -64,7 +64,7 @@ function fixture(
   opts: {
     day?: UsageRow | null;
     dayError?: Error;
-    /** The month's daily rows, returned by `listByProject`. */
+    /** The month's daily rows, returned by `listByAgent`. */
     month?: UsageRow[];
     /** Fails only the month query, so the windows can fail independently. */
     monthError?: Error;
@@ -83,16 +83,16 @@ function fixture(
       return opts.day ?? null;
     },
     listMemberDays: async () => [],
-    async claimAlert(_projectName, date, kind) {
+    async claimAlert(_agentName, date, kind) {
       claims.push({ kind, date });
       return opts.claimable ?? true;
     },
-    async claimMonthAlert(_projectName, month, kind) {
+    async claimMonthAlert(_agentName, month, kind) {
       claims.push({ kind, date: month });
       return opts.claimable ?? true;
     },
-    listActorsByProject: async () => [],
-    async listByProject() {
+    listActorsByAgent: async () => [],
+    async listByAgent() {
       if (opts.monthError) {
         throw opts.monthError;
       }
@@ -106,7 +106,7 @@ function fixture(
       ...(opts.withSlack === false
         ? {}
         : {
-            // The composition root's closure, emulated: resolve the project's
+            // The composition root's closure, emulated: resolve the agent's
             // own token, or report that it has no notification path.
             postAlert: async (target, destination, text) => {
               if (destination.kind !== "slack" || !target.slack?.enabled) {
@@ -139,22 +139,22 @@ describe("secondsUntilUtcMidnight", () => {
 });
 
 describe("assertWithinCostLimit", () => {
-  it("allows a project with no limits without reading usage", async () => {
+  it("allows an agent with no limits without reading usage", async () => {
     const f = fixture({ dayError: new Error("must not be read") });
-    await expect(assertWithinCostLimit(f.deps, project())).resolves.toBeUndefined();
+    await expect(assertWithinCostLimit(f.deps, agent())).resolves.toBeUndefined();
   });
 
   it("allows spend below the block threshold", async () => {
     const f = fixture({ day: row({ "openai/gpt-5-mini": 4.5 }) });
     await expect(
-      assertWithinCostLimit(f.deps, project({ blockThresholdUsd: 10 })),
+      assertWithinCostLimit(f.deps, agent({ blockThresholdUsd: 10 })),
     ).resolves.toBeUndefined();
   });
 
   it("refuses once spend reaches the block threshold, summing every model", async () => {
     const f = fixture({ day: row({ "openai/gpt-5-mini": 6, "google/gemini-3.1-flash-lite": 4.5 }) });
     await expect(
-      assertWithinCostLimit(f.deps, project({ blockThresholdUsd: 10 }), new Date("2026-07-29T23:00:00Z")),
+      assertWithinCostLimit(f.deps, agent({ blockThresholdUsd: 10 }), new Date("2026-07-29T23:00:00Z")),
     ).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
@@ -162,7 +162,7 @@ describe("assertWithinCostLimit", () => {
     const f = fixture({ day: row({ m: 12 }) });
     const thrown = await assertWithinCostLimit(
       f.deps,
-      project({ blockThresholdUsd: 10 }),
+      agent({ blockThresholdUsd: 10 }),
       new Date("2026-07-29T23:00:00Z"),
     ).then(
       () => null,
@@ -178,21 +178,21 @@ describe("assertWithinCostLimit", () => {
   it("an alert threshold alone never blocks", async () => {
     const f = fixture({ day: row({ m: 999 }) });
     await expect(
-      assertWithinCostLimit(f.deps, project({ alertThresholdUsd: 1 })),
+      assertWithinCostLimit(f.deps, agent({ alertThresholdUsd: 1 })),
     ).resolves.toBeUndefined();
   });
 
   it("refuses once the month's summed rows reach the monthly block threshold", async () => {
     const { deps } = fixture({ month: [row({ m: 6 }), row({ m: 5 })] });
     await expect(
-      assertWithinCostLimit(deps, project({ monthlyBlockThresholdUsd: 10 })),
+      assertWithinCostLimit(deps, agent({ monthlyBlockThresholdUsd: 10 })),
     ).rejects.toThrow(CostLimitExceededError);
   });
 
   it("allows monthly spend below the monthly block threshold", async () => {
     const { deps } = fixture({ month: [row({ m: 4 })] });
     await expect(
-      assertWithinCostLimit(deps, project({ monthlyBlockThresholdUsd: 10 })),
+      assertWithinCostLimit(deps, agent({ monthlyBlockThresholdUsd: 10 })),
     ).resolves.toBeUndefined();
   });
 
@@ -202,7 +202,7 @@ describe("assertWithinCostLimit", () => {
     // Both windows are crossed; the monthly Retry-After is the one that is true.
     const refusal = await assertWithinCostLimit(
       deps,
-      project({ blockThresholdUsd: 10, monthlyBlockThresholdUsd: 15 }),
+      agent({ blockThresholdUsd: 10, monthlyBlockThresholdUsd: 15 }),
       now,
     ).then(
       () => null,
@@ -218,7 +218,7 @@ describe("assertWithinCostLimit", () => {
     const { deps } = fixture({ monthError: new Error("boom") });
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(
-      assertWithinCostLimit(deps, project({ monthlyBlockThresholdUsd: 1 })),
+      assertWithinCostLimit(deps, agent({ monthlyBlockThresholdUsd: 1 })),
     ).resolves.toBeUndefined();
     error.mockRestore();
   });
@@ -227,7 +227,7 @@ describe("assertWithinCostLimit", () => {
     const warn = vi.spyOn(console, "error").mockImplementation(() => {});
     const f = fixture({ dayError: new Error("dynamo down") });
     await expect(
-      assertWithinCostLimit(f.deps, project({ blockThresholdUsd: 1 })),
+      assertWithinCostLimit(f.deps, agent({ blockThresholdUsd: 1 })),
     ).resolves.toBeUndefined();
     warn.mockRestore();
   });
@@ -237,7 +237,7 @@ describe("assertWithinCostLimit", () => {
     const { deps } = fixture({ monthError: new Error("throttled"), day: row({ m: 400 }) });
     const refusal = await assertWithinCostLimit(
       deps,
-      project({ blockThresholdUsd: 50, monthlyBlockThresholdUsd: 500 }),
+      agent({ blockThresholdUsd: 50, monthlyBlockThresholdUsd: 500 }),
     ).then(
       () => null,
       (e: CostLimitExceededError) => e,
@@ -252,7 +252,7 @@ describe("assertWithinCostLimit", () => {
     const { deps } = fixture({ dayError: new Error("must not be read"), month: [row({ m: 20 })] });
     const refusal = await assertWithinCostLimit(
       deps,
-      project({ blockThresholdUsd: 10, monthlyBlockThresholdUsd: 100 }),
+      agent({ blockThresholdUsd: 10, monthlyBlockThresholdUsd: 100 }),
     ).then(
       () => null,
       (e: CostLimitExceededError) => e,
@@ -267,7 +267,7 @@ describe("settleCostLimit", () => {
     const f = fixture({ day: row({ m: 5 }) });
     await settleCostLimit(
       f.deps,
-      project({ alertThresholdUsd: 4, alertSlackChannel: "C1" }, true),
+      agent({ alertThresholdUsd: 4, alertSlackChannel: "C1" }, true),
     );
     expect(f.claims).toEqual([{ kind: "alert", date: today() }]);
     expect(f.posted).toHaveLength(1);
@@ -287,7 +287,7 @@ describe("settleCostLimit", () => {
     };
     await settleCostLimit(
       f.deps,
-      project({
+      agent({
         alertThresholdUsd: 4,
         alertDestinations: [
           { kind: "slack", channelId: "C1" },
@@ -305,7 +305,7 @@ describe("settleCostLimit", () => {
     const f = fixture({ day: row({ m: 5 }), claimable: false });
     await settleCostLimit(
       f.deps,
-      project({ alertThresholdUsd: 4, alertSlackChannel: "C1" }, true),
+      agent({ alertThresholdUsd: 4, alertSlackChannel: "C1" }, true),
     );
     expect(f.claims).toHaveLength(1);
     expect(f.posted).toHaveLength(0);
@@ -315,7 +315,7 @@ describe("settleCostLimit", () => {
     const f = fixture({ day: row({ m: 20 }) });
     await settleCostLimit(
       f.deps,
-      project({ alertThresholdUsd: 5, blockThresholdUsd: 10, alertSlackChannel: "C1" }, true),
+      agent({ alertThresholdUsd: 5, blockThresholdUsd: 10, alertSlackChannel: "C1" }, true),
     );
     expect(f.claims.map((c) => c.kind)).toEqual(["block", "alert"]);
     expect(f.posted).toHaveLength(2);
@@ -330,18 +330,18 @@ describe("settleCostLimit", () => {
     });
     await settleCostLimit(
       deps,
-      project({ monthlyAlertThresholdUsd: 10, alertSlackChannel: "C123" }, true),
+      agent({ monthlyAlertThresholdUsd: 10, alertSlackChannel: "C123" }, true),
     );
     expect(claims).toEqual([{ kind: "alert", date: today().slice(0, 7) }]);
     expect(posted).toHaveLength(1);
     expect(posted[0]?.text).toContain("monthly");
   });
 
-  it("settles a monthly-only project without reading the day row", async () => {
+  it("settles a monthly-only agent without reading the day row", async () => {
     const f = fixture({ dayError: new Error("must not be read"), month: [row({ m: 12 })] });
     await settleCostLimit(
       f.deps,
-      project({ monthlyAlertThresholdUsd: 10, alertSlackChannel: "C1" }, true),
+      agent({ monthlyAlertThresholdUsd: 10, alertSlackChannel: "C1" }, true),
     );
     expect(f.claims).toEqual([{ kind: "alert", date: today().slice(0, 7) }]);
   });
@@ -350,7 +350,7 @@ describe("settleCostLimit", () => {
     const f = fixture({ dayError: new Error("must not be read"), month: [row({ m: 20 })] });
     await settleCostLimit(
       f.deps,
-      project({ alertThresholdUsd: 5, monthlyAlertThresholdUsd: 100, alertSlackChannel: "C1" }, true),
+      agent({ alertThresholdUsd: 5, monthlyAlertThresholdUsd: 100, alertSlackChannel: "C1" }, true),
     );
     // The daily alert fired from the month's rows; `getDay` was never called.
     expect(f.claims).toEqual([{ kind: "alert", date: today() }]);
@@ -363,7 +363,7 @@ describe("settleCostLimit", () => {
     const f = fixture({ monthError: new Error("boom"), day: row({ m: 5 }) });
     await settleCostLimit(
       f.deps,
-      project(
+      agent(
         { alertThresholdUsd: 4, monthlyAlertThresholdUsd: 100, alertSlackChannel: "C1" },
         true,
       ),
@@ -374,7 +374,7 @@ describe("settleCostLimit", () => {
 
   it("stays silent below every threshold", async () => {
     const f = fixture({ day: row({ m: 1 }) });
-    await settleCostLimit(f.deps, project({ alertThresholdUsd: 5, blockThresholdUsd: 10 }, true));
+    await settleCostLimit(f.deps, agent({ alertThresholdUsd: 5, blockThresholdUsd: 10 }, true));
     expect(f.claims).toHaveLength(0);
     expect(f.posted).toHaveLength(0);
   });
@@ -382,7 +382,7 @@ describe("settleCostLimit", () => {
   it("still claims — and therefore still records — with no channel configured", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const f = fixture({ day: row({ m: 5 }) });
-    await settleCostLimit(f.deps, project({ alertThresholdUsd: 4 }, true));
+    await settleCostLimit(f.deps, agent({ alertThresholdUsd: 4 }, true));
     expect(f.claims).toHaveLength(1);
     expect(f.posted).toHaveLength(0);
     warn.mockRestore();
@@ -397,8 +397,8 @@ describe("settleCostLimit", () => {
         listMemberDays: async () => [],
         claimAlert: async () => true,
         claimMonthAlert: async () => true,
-        listActorsByProject: async () => [],
-    listByProject: async () => [],
+        listActorsByAgent: async () => [],
+    listByAgent: async () => [],
         listByDateRange: async () => [],
       },
       postAlert: async () => {
@@ -406,7 +406,7 @@ describe("settleCostLimit", () => {
       },
     };
     await expect(
-      settleCostLimit(deps, project({ alertThresholdUsd: 1, alertSlackChannel: "C1" }, true)),
+      settleCostLimit(deps, agent({ alertThresholdUsd: 1, alertSlackChannel: "C1" }, true)),
     ).resolves.toBeUndefined();
     error.mockRestore();
   });
@@ -424,7 +424,7 @@ describe("every top-level entry point is guarded", () => {
     const f = fixture({ day: row({ m: 100 }) });
     return {
       ...f.deps,
-      projects: withConfigurations({ get: reject, list: reject, put: reject, delete: reject }, ({ get: reject, list: reject, put: reject, delete: reject }).get),
+      agents: withConfigurations({ get: reject, list: reject, put: reject, delete: reject }, ({ get: reject, list: reject, put: reject, delete: reject }).get),
 
       skills: fakeSkillRepository(reject),
       mcps: { get: reject, list: reject, put: reject, delete: reject },
@@ -433,9 +433,9 @@ describe("every top-level entry point is guarded", () => {
     } as unknown as ExecutionDeps;
   }
 
-  const blocked = project({ blockThresholdUsd: 10 });
+  const blocked = agent({ blockThresholdUsd: 10 });
   const configuration: AgentConfiguration = {
-    projectName: "proj",
+    agentName: "proj",
 
     systemPrompt: "",
 
@@ -446,24 +446,24 @@ describe("every top-level entry point is guarded", () => {
     subagentList: [],
   };
 
-  it("executeProject refuses", async () => {
+  it("collectAgentRun refuses", async () => {
     await expect(
-      executeProject(blockedDeps(), { project: blocked, configuration, messages: [] }),
+      collectAgentRun(blockedDeps(), { agent: blocked, configuration, messages: [] }),
     ).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
-  it("executeProjectStream refuses before the first chunk", async () => {
-    const stream = executeProjectStream(blockedDeps(), { project: blocked, configuration, messages: [] });
+  it("streamAgentExecution refuses before the first chunk", async () => {
+    const stream = streamAgentExecution(blockedDeps(), { agent: blocked, configuration, messages: [] });
     await expect(stream.next()).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
   it("executeAgent refuses before the first chunk", async () => {
-    const stream = executeAgent(blockedDeps(), { project: blocked, configuration, messages: [] });
+    const stream = executeAgent(blockedDeps(), { agent: blocked, configuration, messages: [] });
     await expect(stream.next()).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
   it("guards an Agent that enables image tools before any image call", async () => {
-    await expect(executeProject(blockedDeps(), { project: blocked,
+    await expect(collectAgentRun(blockedDeps(), { agent: blocked,
       configuration: { ...configuration, parameters: { piiFiltering: false, imageGeneration: true } },
       messages: [{ role: "user", content: "Draw a cat" }],
     })).rejects.toBeInstanceOf(CostLimitExceededError);
@@ -475,7 +475,7 @@ describe("every top-level entry point is guarded", () => {
     const traces: unknown[] = [];
     deps.traces = { put: async (t: unknown) => void traces.push(t) } as ExecutionDeps["traces"];
 
-    await expect(executeProject(deps, { project: blocked, configuration, messages: [] })).rejects.toBeInstanceOf(
+    await expect(collectAgentRun(deps, { agent: blocked, configuration, messages: [] })).rejects.toBeInstanceOf(
       CostLimitExceededError,
     );
     expect(traces).toHaveLength(0);
@@ -486,13 +486,13 @@ describe("every top-level entry point is guarded", () => {
 describe("a subagent transfer is guarded too", () => {
   /**
    * A transfer never opens a bracket — it is not a top-level run — but it *is* a
-   * whole run on another project, with its own tool loop and its own usage rows.
-   * Nothing else ever asks whether that project may spend, so a child at its
+   * whole run on another agent, with its own tool loop and its own usage rows.
+   * Nothing else ever asks whether that agent may spend, so a child at its
    * threshold ran anyway on the strength of its parent's admission.
    */
-  const child = project({ blockThresholdUsd: 10 });
+  const child = agent({ blockThresholdUsd: 10 });
   const childConfiguration: AgentConfiguration = {
-    projectName: "proj",
+    agentName: "proj",
 
     systemPrompt: "",
 
@@ -507,7 +507,7 @@ describe("a subagent transfer is guarded too", () => {
     const f = fixture({ day: row({ m: spentUsd }) });
     return {
       ...f.deps,
-      projects: withConfigurations({ get: async () => ({ ...child }) }, ({ get: async () => childConfiguration }).get),
+      agents: withConfigurations({ get: async () => ({ ...child }) }, ({ get: async () => childConfiguration }).get),
 
       channel: {
         stream: () => {
@@ -518,12 +518,12 @@ describe("a subagent transfer is guarded too", () => {
   }
 
   function prepareChild(spentUsd: number) {
-    return prepareSubagent(deps(spentUsd), { ...childConfiguration, projectName: "parent", subagentList: [{ name: "proj" }] }, "proj", { message: "hi", images: [] }, async () => {}, { ancestry: ["parent"] });
+    return prepareSubagent(deps(spentUsd), { ...childConfiguration, agentName: "parent", subagentList: [{ name: "proj" }] }, "proj", { message: "hi", images: [] }, async () => {}, { ancestry: ["parent"] });
   }
-  it("refuses a child over its own project spending limit", async () => {
+  it("refuses a child over its own agent spending limit", async () => {
     await expect(prepareChild(100)).rejects.toThrow(/daily|limit|spend/i);
   });
-  it("prepares a child under its project spending limit", async () => {
+  it("prepares a child under its agent spending limit", async () => {
     expect(await prepareChild(1)).toMatchObject({ input: { model: childConfiguration.model } });
   });
 });
@@ -531,7 +531,7 @@ describe("a subagent transfer is guarded too", () => {
 describe("openRun", () => {
   /** Minimal configuration; the bracket reads only its model ids. */
   const configuration: AgentConfiguration = {
-    projectName: "proj",
+    agentName: "proj",
 
     systemPrompt: "",
 
@@ -545,7 +545,7 @@ describe("openRun", () => {
   it("does not count a run the guard refused", async () => {
     resetRunMetrics();
     const f = fixture({ day: row({ m: 50 }) });
-    await expect(openRun(f.deps, project({ blockThresholdUsd: 10 }), configuration)).rejects.toBeInstanceOf(
+    await expect(openRun(f.deps, agent({ blockThresholdUsd: 10 }), configuration)).rejects.toBeInstanceOf(
       CostLimitExceededError,
     );
     expect(runMetricsSnapshot()).toMatchObject({ activeRuns: 0, runsStarted: 0 });
@@ -554,7 +554,7 @@ describe("openRun", () => {
   it("counts an admitted run and releases it exactly once", async () => {
     resetRunMetrics();
     const f = fixture({ day: null });
-    const bracket = await openRun(f.deps, project({ blockThresholdUsd: 10 }), configuration);
+    const bracket = await openRun(f.deps, agent({ blockThresholdUsd: 10 }), configuration);
     expect(runMetricsSnapshot().activeRuns).toBe(1);
     await bracket.close();
     // A generator reaches its `finally` through both a return and a consumer's

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildMcpTools, type McpToolDeps } from "@/application/execution/mcpTools";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 
 describe("orchestrated private source ownership", () => {
   it("uses plugin mappings by default, scopes accounts, and honors an empty override", async () => {
@@ -14,7 +14,7 @@ describe("orchestrated private source ownership", () => {
       sourceRefreshIdentity: async () => identity, mcpSessions: { open: async (value: McpServerConfig[]) => {
         servers = value; return { tools: [], toolNamesByServer: new Map(), warnings: [], unauthorizedServers: [], aliasFor: () => undefined, close: async () => {} };
       } } } as unknown as McpToolDeps;
-    const configuration = { projectName: "audio", mcpList: [{ name: "files" }] } as unknown as AgentConfiguration;
+    const configuration = { agentName: "audio", mcpList: [{ name: "files" }] } as unknown as AgentConfiguration;
     const raw = { content: [{ type: "text", text: JSON.stringify({ id: "recording", url: "https://files.example.test/audio?sig=private" }) }] };
     await buildMcpTools(deps, configuration, undefined, { userEmail: "owner@example.test" });
     expect((await servers[0]!.resultTransforms!.read!(raw)).text).not.toContain("sig=");
@@ -35,13 +35,13 @@ describe("orchestrated private source ownership", () => {
       sourceRefreshIdentity: async () => "child-connection", mcpSessions: { open: async (value: McpServerConfig[]) => {
         servers = value; return { tools: [], toolNamesByServer: new Map(), warnings: [], unauthorizedServers: [], aliasFor: () => undefined, close: async () => {} };
       } } } as unknown as McpToolDeps;
-    const configuration = { projectName: "downloader", mcpList: [{ name: "files", sourceOutputs: [
+    const configuration = { agentName: "downloader", mcpList: [{ name: "files", sourceOutputs: [
       { tool: "read", namespace: "account", idPath: ["id"], urlPath: ["url"], mimeType: "audio/mpeg", refreshArgument: "id" },
     ] }] } as unknown as AgentConfiguration;
     await buildMcpTools(deps, configuration, undefined, { actor: { kind: "user", id: "owner@example.test" }, ancestry: ["main", "downloader"] });
     const result = await servers[0]!.resultTransforms!.read!({ content: [{ type: "text", text: JSON.stringify({ id: "recording", url: "https://files.example.test/audio?sig=private" }) }] });
-    expect(register).toHaveBeenCalledWith(expect.objectContaining({ projectName: "main", userEmail: "owner@example.test",
-      refresh: expect.objectContaining({ projectName: "downloader", identity: "child-connection" }) }));
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({ agentName: "main", userEmail: "owner@example.test",
+      refresh: expect.objectContaining({ agentName: "downloader", identity: "child-connection" }) }));
     expect(result.text).toContain("private-ref");
     expect(result.text).not.toContain("sig=");
   });

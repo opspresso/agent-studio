@@ -1,10 +1,10 @@
-import { withConfigurations } from "./projectConfigurations";
+import { withConfigurations } from "./agentConfigurations";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getChatApproval, resumeChatApproval, discardChatApproval } from "@/application/chat/approval";
 import { sendMessage } from "@/application/chat/sendMessage";
 import type { ChatDeps } from "@/application/chat/deps";
 import type { ActiveChatRun, Chat, ChatMessage } from "@/domain/chat/types";
-import type { Project } from "@/domain/project/types";
+import type { Agent } from "@/domain/agent/types";
 import { runtimeSessionFixture } from "./runtimeSessionFixture";
 import { FakeChannel, contentChunk, toolCallChunk } from "./fakeChannel";
 
@@ -16,8 +16,8 @@ async function fixture() {
   const effect = vi.fn(async () => ({ text: "looked up" }));
   const tools = [{ type: "function" as const, function: { name: "lookup", parameters: {} } }];
   await f.run(new FakeChannel([[toolCallChunk(0, "call", "lookup", "{}")]]), "lookup", undefined, { callMcpTool: effect }, { mcpTools: tools });
-  const chat: Chat = { chatId: f.scope.sessionId, ownerEmail: f.scope.ownerEmail, projectName: f.scope.projectName, title: "Chat", createdAt: "2026-09-12T00:00:00Z", updatedAt: "2026-09-12T00:00:00Z" };
-  const project: Project = { name: f.scope.projectName, ownerEmail: f.scope.ownerEmail, displayName: "Project", description: "",  createdAt: chat.createdAt, updatedAt: chat.updatedAt };
+  const chat: Chat = { chatId: f.scope.sessionId, ownerEmail: f.scope.ownerEmail, agentName: f.scope.agentName, title: "Chat", createdAt: "2026-09-12T00:00:00Z", updatedAt: "2026-09-12T00:00:00Z" };
+  const agent: Agent = { name: f.scope.agentName, ownerEmail: f.scope.ownerEmail, displayName: "Agent", description: "",  createdAt: chat.createdAt, updatedAt: chat.updatedAt };
   const messages: ChatMessage[] = [];
   const order: string[] = [];
   let active: ActiveChatRun | null = null;
@@ -33,7 +33,7 @@ async function fixture() {
   };
   const deps = {
     chats, runtimeSessions: f.services,
-    projects: withConfigurations({ get: async () => project }, ({ get: async () => f.configuration }).get),
+    agents: withConfigurations({ get: async () => agent }, ({ get: async () => f.configuration }).get),
     runLog: { append: async (_chat: string, _run: string, entries: Array<{ terminal?: boolean }>) => { if (entries.some((entry) => entry.terminal)) order.push("terminal"); }, read: async () => [] },
     documents: { extract: async () => ({ text: "" }) },
     runAgent: async function* (input: Parameters<ChatDeps["runAgent"]>[0]) {
@@ -42,7 +42,7 @@ async function fixture() {
   } as unknown as ChatDeps;
   const pending = (await getChatApproval(deps, chat.chatId, chat.ownerEmail))!;
   const input = { chatId: chat.chatId, userEmail: chat.ownerEmail, revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] };
-  return { ...f, chat, project, deps, chats, messages, order, effect, channel, input };
+  return { ...f, chat, agent, deps, chats, messages, order, effect, channel, input };
 }
 
 describe("chat approval ownership and lifecycle", () => {
@@ -78,11 +78,11 @@ describe("chat approval ownership and lifecycle", () => {
     await expect(resumeChatApproval(f.deps, f.input)).rejects.toMatchObject({ status: 409 });
   });
 
-  it("refuses stale revisions and revoked project access before a run lease", async () => {
+  it("refuses stale revisions and revoked agent access before a run lease", async () => {
     const f = await fixture();
     await expect(resumeChatApproval(f.deps, { ...f.input, revision: f.input.revision - 1 })).rejects.toMatchObject({ status: 409 });
-    f.project.ownerEmail = "other@example.com";
-    f.project.visibility = "private";
+    f.agent.ownerEmail = "other@example.com";
+    f.agent.visibility = "private";
     await expect(resumeChatApproval(f.deps, f.input)).rejects.toMatchObject({ status: 403 });
     expect(f.chats.claimRun).not.toHaveBeenCalled();
     expect(f.effect).not.toHaveBeenCalled();

@@ -2,17 +2,17 @@
  * Reading and removing what runs produced.
  *
  * The owner index includes outputs attributed to a resolved email, including
- * personal-context automation. The project index also includes outputs without
- * a personal owner, and uses the project's management access rules.
+ * personal-context automation. The agent index also includes outputs without
+ * a personal owner, and uses the agent's management access rules.
  */
 
 import { NotFoundError, ValidationError } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import {
-  assertProjectOwnerOrAdminReadable,
-  assertProjectWritable,
-} from "@/application/project/projectUseCases";
-import type { ProjectRepository } from "@/domain/project/repository";
+  assertAgentOwnerOrAdminReadable,
+  assertAgentWritable,
+} from "@/application/agent/agentUseCases";
+import type { AgentRepository } from "@/domain/agent/repository";
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import type { ArtifactRepository, ListArtifactsOptions } from "@/domain/artifact/repository";
 import {
@@ -30,8 +30,8 @@ export const DEFAULT_ARTIFACT_PAGE = 24;
 export interface ArtifactUseCases {
   readPrivateFile(artifactId: string, viewerEmail: string, maxBytes?: number): Promise<{ artifact: Artifact; bytes: Uint8Array }>;
   listMine(email: string, options?: ListArtifactsOptions): Promise<Artifact[]>;
-  listByProject(
-    projectName: string,
+  listByAgent(
+    agentName: string,
     viewerEmail: string,
     options?: ListArtifactsOptions,
   ): Promise<Artifact[]>;
@@ -61,10 +61,10 @@ export interface ArtifactUseCases {
 export function createArtifactUseCases(
   repo: ArtifactRepository,
   objects: ArtifactObjectStore,
-  projects: ProjectRepository,
+  agents: AgentRepository,
   privateFiles?: {
-    read(project: string, file: string, email: string, maxBytes?: number): Promise<{ bytes: Uint8Array }>;
-    remove(project: string, file: string, email: string): Promise<void>;
+    read(agent: string, file: string, email: string, maxBytes?: number): Promise<{ bytes: Uint8Array }>;
+    remove(agent: string, file: string, email: string): Promise<void>;
   },
 ): ArtifactUseCases {
   /**
@@ -83,7 +83,7 @@ export function createArtifactUseCases(
   }
 
   /**
-   * Who may remove this. Falls through to the project's own write rule, which
+   * Who may remove this. Falls through to the agent's own write rule, which
    * admits the owner and an admin — and records the override when it is an
    * admin reaching in.
    */
@@ -91,12 +91,12 @@ export function createArtifactUseCases(
     if (isOwnRow(artifact, actorEmail)) {
       return;
     }
-    await assertProjectWritable(projects, artifact.projectName, actorEmail);
+    await assertAgentWritable(agents, artifact.agentName, actorEmail);
   }
 
   /**
    * Who may look at this. The *read* sibling, and not the same call as above on
-   * purpose: `assertProjectWritable` writes a `project.admin-override` audit row
+   * purpose: `assertAgentWritable` writes a `agent.admin-override` audit row
    * and a warn line every time it admits an admin, which is the right record for
    * a delete and the wrong one for a GET behind a link. An admin opening ten
    * artifacts in a gallery would have written ten rows claiming a write
@@ -104,17 +104,17 @@ export function createArtifactUseCases(
    * which `remove` already avoids for a person's own deletes for the same
    * reason.
    *
-   * `assertProjectOwnerOrAdminReadable` is the same rule with nothing recorded — not
-   * `assertProjectAccessible`, which admits everyone a *public* project admits.
-   * A project's outputs are not public because the project is: two people
-   * running the same shared project each produced their own, and the project
+   * `assertAgentOwnerOrAdminReadable` is the same rule with nothing recorded — not
+   * `assertAgentAccessible`, which admits everyone a *public* agent admits.
+   * An agent's outputs are not public because the agent is: two people
+   * running the same shared agent each produced their own, and the agent
    * gallery already asks the stricter question to list them.
    */
   async function assertMayRead(artifact: Artifact, viewerEmail: string): Promise<void> {
     if (isOwnRow(artifact, viewerEmail)) {
       return;
     }
-    await assertProjectOwnerOrAdminReadable(projects, artifact.projectName, viewerEmail);
+    await assertAgentOwnerOrAdminReadable(agents, artifact.agentName, viewerEmail);
   }
 
   return {
@@ -123,7 +123,7 @@ export function createArtifactUseCases(
       if (!artifact?.privateFileId || !privateFiles || !isOwnRow(artifact, viewerEmail)) {
         throw new NotFoundError("Private artifact not found");
       }
-      const { bytes } = await privateFiles.read(artifact.projectName, artifact.privateFileId, viewerEmail, maxBytes);
+      const { bytes } = await privateFiles.read(artifact.agentName, artifact.privateFileId, viewerEmail, maxBytes);
       return { artifact, bytes };
     },
     async readForView(artifactId, viewerEmail) {
@@ -149,7 +149,7 @@ export function createArtifactUseCases(
       }
       if (artifact.privateFileId && (!privateFiles || !isOwnRow(artifact, viewerEmail))) throw new NotFoundError("Private artifact not found");
       const { bytes } = artifact.privateFileId
-        ? await privateFiles!.read(artifact.projectName, artifact.privateFileId, viewerEmail, MAX_INLINE_VIEW_BYTES)
+        ? await privateFiles!.read(artifact.agentName, artifact.privateFileId, viewerEmail, MAX_INLINE_VIEW_BYTES)
         : await objects.read(artifact.key, MAX_INLINE_VIEW_BYTES);
       return { artifact, bytes, view };
     },
@@ -158,9 +158,9 @@ export function createArtifactUseCases(
       return repo.listByOwner(email, bounded(options));
     },
 
-    async listByProject(projectName, viewerEmail, options = {}) {
-      await assertProjectOwnerOrAdminReadable(projects, projectName, viewerEmail);
-      return repo.listByProject(projectName, bounded(options));
+    async listByAgent(agentName, viewerEmail, options = {}) {
+      await assertAgentOwnerOrAdminReadable(agents, agentName, viewerEmail);
+      return repo.listByAgent(agentName, bounded(options));
     },
 
     async remove(artifactId, actorEmail) {
@@ -174,7 +174,7 @@ export function createArtifactUseCases(
       // inventory names — and nothing can find those to remove them later.
       if (artifact.privateFileId) {
         if (!privateFiles || !isOwnRow(artifact, actorEmail)) throw new NotFoundError("Private artifact not found");
-        await privateFiles.remove(artifact.projectName, artifact.privateFileId, actorEmail);
+        await privateFiles.remove(artifact.agentName, artifact.privateFileId, actorEmail);
       } else await objects.delete(artifact.key);
       await repo.delete(artifactId);
       // Only when it was not the person's own. A gallery tidy-up recorded row by
@@ -185,7 +185,7 @@ export function createArtifactUseCases(
           actorEmail,
           action: "artifact.delete",
           target: auditTarget("artifact", artifactId),
-          detail: `${artifact.kind} in project ${artifact.projectName}`,
+          detail: `${artifact.kind} in agent ${artifact.agentName}`,
         });
       }
     },

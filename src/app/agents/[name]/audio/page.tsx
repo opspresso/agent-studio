@@ -9,27 +9,27 @@ import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { ModelSelect } from "@/app/_components/modelOptions";
 import { useViewer } from "@/app/_lib/useViewer";
-import { listProjects, type SanitizedProject } from "../../lib/api";
+import { listAgents, type SanitizedAgent } from "../../lib/api";
 import { formatDateTime } from "@/shared/date";
-import type { AudioOptionsResponse } from "@/app/api/projects/[name]/audio-options/route";
-import type { AudioJobsResponse } from "@/app/api/projects/[name]/audio-jobs/route";
+import type { AudioOptionsResponse } from "@/app/api/agents/[name]/audio-options/route";
+import type { AudioJobsResponse } from "@/app/api/agents/[name]/audio-jobs/route";
 import type { AudioJobView } from "@/application/audio/audioJobUseCases";
 import type { SourceFile } from "@/domain/artifact/sourceFile";
-import type { AudioConfigResponse } from "@/app/api/projects/[name]/audio-config/route";
+import type { AudioConfigResponse } from "@/app/api/agents/[name]/audio-config/route";
 import { isAudioJobTerminal, MAX_ACTIVE_AUDIO_JOBS } from "@/domain/audio/job";
-import { useProjectAudio } from "../_components/ProjectAudioContext";
+import { useAgentAudio } from "../_components/AgentAudioContext";
 import { loadActiveAudioJobs, mergeAudioJobUpdates } from "./jobPolling";
 
 export default function AudioPage() {
-  const { enabled, error } = useProjectAudio();
+  const { enabled, error } = useAgentAudio();
   const t = useT();
   if (error) return <Alert color="red">{error}</Alert>;
   if (enabled === undefined) return <Text c="dimmed">{t("common.loading")}</Text>;
   if (!enabled) return <Alert color="blue">{t("audio.toolsRequired")}</Alert>;
-  return <AudioProjectPage />;
+  return <AudioAgentPage />;
 }
 
-function AudioProjectPage() {
+function AudioAgentPage() {
   const { name } = useParams<{ name: string }>();
   return <AudioWorkspace key={name} name={name} />;
 }
@@ -37,7 +37,7 @@ function AudioProjectPage() {
 function AudioWorkspace({ name }: { name: string }) {
   const t = useT(); const locale = useLocale(); const viewer = useViewer();
   const { confirm, confirmModal } = useConfirm();
-  const base = `/api/projects/${encodeURIComponent(name)}`;
+  const base = `/api/agents/${encodeURIComponent(name)}`;
   const [options, setOptions] = useState<AudioOptionsResponse>({ models: [], destinations: [] });
   const [optionsLoaded, setOptionsLoaded] = useState(false);
   const [savedConfig, setSavedConfig] = useState<AudioConfigResponse>(null);
@@ -47,7 +47,7 @@ function AudioWorkspace({ name }: { name: string }) {
   const [maxPerOccurrence, setMaxPerOccurrence] = useState<number | string>(1);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const listRequest = useRef<AbortController | null>(null);
-  const [projects, setProjects] = useState<SanitizedProject[]>([]);
+  const [agents, setAgents] = useState<SanitizedAgent[]>([]);
   const [jobs, setJobs] = useState<AudioJobView[]>([]);
   const [next, setNext] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -80,9 +80,9 @@ function AudioWorkspace({ name }: { name: string }) {
   }, [base]);
   useEffect(() => {
     let active = true;
-    Promise.all([fetch(`${base}/audio-options`).then(readJson<AudioOptionsResponse>), listProjects(), fetch(`${base}/audio-config`).then(readJson<AudioConfigResponse>)])
-      .then(([options, projects, config]) => { if (active) {
-        setOptions(options); setProjects(projects); setOptionsLoaded(true); setSavedConfig(config); setUseSaved(Boolean(config));
+    Promise.all([fetch(`${base}/audio-options`).then(readJson<AudioOptionsResponse>), listAgents(), fetch(`${base}/audio-config`).then(readJson<AudioConfigResponse>)])
+      .then(([options, agents, config]) => { if (active) {
+        setOptions(options); setAgents(agents); setOptionsLoaded(true); setSavedConfig(config); setUseSaved(Boolean(config));
         if (config) { setConfigEnabled(config.enabled); setMaxActive(config.maxActive); setMaxPerOccurrence(config.maxPerOccurrence); }
       } })
       .catch((error) => { if (active) setError(error.message); });
@@ -111,7 +111,7 @@ function AudioWorkspace({ name }: { name: string }) {
     model: savedConfig.model, language: savedConfig.language, retention: savedConfig.retention,
     postprocess: savedConfig.postprocess, destination: savedConfig.destination,
   } : { model: model ?? "", ...(language.trim() ? { language: language.trim() } : {}), retention: { unit: unit as "months" | "days", value: Number(duration), timezone },
-    ...(writer ? { postprocess: { projectName: writer } } : {}),
+    ...(writer ? { postprocess: { agentName: writer } } : {}),
     ...(destination ? { destination: { serverName: destination, documents, memories } } : {}) };
   const validProcessing = useSaved ? Boolean(savedConfig) : Boolean(model) && validRetention &&
     (!language.trim() || /^[a-z]{2,3}$/i.test(language.trim())) &&
@@ -169,14 +169,14 @@ function AudioWorkspace({ name }: { name: string }) {
           const checked = e.currentTarget.checked;
           if (!checked) {
             setModel(savedConfig.model); setLanguage(savedConfig.language ?? ""); setUnit(savedConfig.retention.unit); setDuration(savedConfig.retention.value); setTimezone(savedConfig.retention.timezone);
-            setWriter(savedConfig.postprocess?.projectName ?? null);
+            setWriter(savedConfig.postprocess?.agentName ?? null);
             setDestination(savedConfig.destination?.serverName ?? null); setDocuments(savedConfig.destination?.documents ?? true); setMemories(savedConfig.destination?.memories ?? false);
           }
           setUseSaved(checked);
         }} disabled={busy} />
         {useSaved && <Text size="sm">{savedConfig.model} · {t("audio.configRevision")}: {savedConfig.revision} · {savedConfig.retention.value} {t(savedConfig.retention.unit === "months" ? "audio.months" : "audio.days")} · {savedConfig.retention.timezone}</Text>}
         {useSaved && savedConfig.language && <Text size="sm">{t("audio.language")}: {savedConfig.language}</Text>}
-        {useSaved && savedConfig.postprocess && <Text size="sm">{t("audio.writer")}: {savedConfig.postprocess.projectName}</Text>}
+        {useSaved && savedConfig.postprocess && <Text size="sm">{t("audio.writer")}: {savedConfig.postprocess.agentName}</Text>}
         {useSaved && savedConfig.destination && <Text size="sm">{t("audio.destination")}: {savedConfig.destination.serverName} · {savedConfig.destination.documents ? t("audio.saveDocuments") : ""} {savedConfig.destination.memories ? t("audio.saveMemories") : ""}</Text>}
         {!savedConfig.enabled && <Alert>{t("audio.configDisabled")}</Alert>}
       </>}
@@ -192,8 +192,8 @@ function AudioWorkspace({ name }: { name: string }) {
       </SimpleGrid>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
         <Select label={t("audio.writer")} clearable searchable value={writer} onChange={setWriter} disabled={busy}
-          data={projects.filter(project => project.ownerEmail === viewer?.email && project.configured)
-            .map(project => ({ value: project.name, label: project.displayName }))} />
+          data={agents.filter(agent => agent.ownerEmail === viewer?.email && agent.configured)
+            .map(agent => ({ value: agent.name, label: agent.displayName }))} />
       </SimpleGrid>
       <Select label={t("audio.destination")} description={t("audio.destinationHint")} clearable value={destination} onChange={setDestination} data={options.destinations} disabled={busy} />
       {destination && <Group><Checkbox label={t("audio.saveDocuments")} checked={documents} onChange={(e) => setDocuments(e.currentTarget.checked)} disabled={busy} />
@@ -201,7 +201,7 @@ function AudioWorkspace({ name }: { name: string }) {
       </>}
       <Group justify="space-between"><Text size="sm" c="dimmed">{t("audio.personalOnly")}</Text>
         <Button loading={busy} disabled={!file || !validProcessing || savedConfig?.enabled === false} onClick={submit}>{t("audio.submit")}</Button></Group>
-      <details><Text component="summary">{t("audio.projectConfig")}</Text><Stack mt="sm">
+      <details><Text component="summary">{t("audio.agentConfig")}</Text><Stack mt="sm">
         <Checkbox label={t("audio.configEnabled")} checked={configEnabled} onChange={(e) => setConfigEnabled(e.currentTarget.checked)} disabled={busy} />
         <SimpleGrid cols={{ base: 1, sm: 2 }}>
           <NumberInput label={t("audio.maxActive")} value={maxActive} onChange={setMaxActive} min={1} max={MAX_ACTIVE_AUDIO_JOBS} allowDecimal={false} disabled={busy} />

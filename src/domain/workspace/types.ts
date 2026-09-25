@@ -11,7 +11,7 @@ export interface Workspace {
   id: string;
   chatId: string;
   ownerEmail: string;
-  projectName: string;
+  agentName: string;
   title: string;
   creationFingerprint?: string;
   runtime: WorkspaceRuntime;

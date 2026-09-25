@@ -68,7 +68,7 @@ const FALLBACK = "openai/gpt-5-mini";
 
 function agentInput(overrides: Partial<RunAgentInput> = {}): RunAgentInput {
   return {
-    projectName: "fallback-bot",
+    agentName: "fallback-bot",
     model: PRIMARY,
     messages: [{ role: "user", content: "hi" }],
     ...overrides,

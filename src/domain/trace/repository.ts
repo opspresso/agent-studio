@@ -11,5 +11,5 @@ export interface ListTracesOptions {
 export interface TraceRepository {
   put(trace: Trace): Promise<void>;
   get(traceId: string): Promise<Trace | null>;
-  listByProject(projectName: string, options?: ListTracesOptions): Promise<Trace[]>;
+  listByAgent(agentName: string, options?: ListTracesOptions): Promise<Trace[]>;
 }

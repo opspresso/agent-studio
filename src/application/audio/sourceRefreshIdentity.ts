@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { McpConnection } from "@/domain/mcp/connection";
 import type { McpServer } from "@/domain/mcp/types";
-import type { McpBinding } from "@/domain/project/types";
+import type { McpBinding } from "@/domain/agent/types";
 
 /** Reauthorization changes identity; ordinary token rotation does not. */
 export function sourceRefreshFingerprint(server: McpServer, binding: McpBinding,

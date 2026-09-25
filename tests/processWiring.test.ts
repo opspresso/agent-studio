@@ -4,7 +4,7 @@ afterEach(async () => {
   vi.resetModules();
   const [{ setAuditSink }, { setAdminCheck }] = await Promise.all([
     import("@/application/audit/recordAudit"),
-    import("@/application/project/projectUseCases"),
+    import("@/application/agent/agentUseCases"),
   ]);
   setAuditSink(undefined);
   setAdminCheck(async () => false);
@@ -24,14 +24,14 @@ describe("process-wide application wiring", () => {
   });
 
   it("keeps the configured admin check across duplicate module evaluations", async () => {
-    const first = await import("@/application/project/projectUseCases");
+    const first = await import("@/application/agent/agentUseCases");
     first.setAdminCheck(async (email) => email === "admin@example.com");
 
     vi.resetModules();
-    const second = await import("@/application/project/projectUseCases");
-    const project = {
-      name: "private-project",
-      displayName: "Private project",
+    const second = await import("@/application/agent/agentUseCases");
+    const agent = {
+      name: "private-agent",
+      displayName: "Private agent",
       description: "",
       visibility: "private" as const,
       memberEmails: [],
@@ -40,7 +40,7 @@ describe("process-wide application wiring", () => {
       updatedAt: "2026-01-01T00:00:00.000Z",
     };
 
-    await expect(second.userMayAccessProject(project, "admin@example.com")).resolves.toBe(true);
+    await expect(second.userMayAccessAgent(agent, "admin@example.com")).resolves.toBe(true);
   });
 
   it("keeps managed MCP lifecycle claims across duplicate module evaluations", async () => {

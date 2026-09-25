@@ -42,7 +42,7 @@ export interface ArtifactRepository {
   put(artifact: Artifact): Promise<void>;
   get(artifactId: string): Promise<Artifact | null>;
   /** Newest first. */
-  listByProject(projectName: string, options?: ListArtifactsOptions): Promise<Artifact[]>;
+  listByAgent(agentName: string, options?: ListArtifactsOptions): Promise<Artifact[]>;
   /** Newest first. Only rows whose actor names an email appear here. */
   listByOwner(email: string, options?: ListArtifactsOptions): Promise<Artifact[]>;
   delete(artifactId: string): Promise<void>;

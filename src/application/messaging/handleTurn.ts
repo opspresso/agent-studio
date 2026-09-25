@@ -11,8 +11,8 @@ import { collectedWarning, isTopLevelChunk, toolCallKey } from "@/domain/llm/typ
 import type { ChatMessageInput, ContentPart, EngineChunk } from "@/domain/llm/types";
 import type { HistoryTurn, InboundAttachment } from "@/domain/messaging/inbound";
 import type { ReplyChannel, ReplyEndState, ReplyImage } from "@/domain/messaging/reply";
-import type { ProjectRepository } from "@/domain/project/repository";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { AgentRepository } from "@/domain/agent/repository";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import {
   fileRefOf,
   resolveProducedFiles,
@@ -53,7 +53,7 @@ export interface MessagingDeps {
   fileHistory?: ConversationTranscriptRepository;
   /** Bound wrapper over `executeAgent(executionDeps, params)`. */
   runAgent: (params: ExecuteAgentInput) => AsyncGenerator<EngineChunk>;
-  projects: ProjectRepository;
+  agents: AgentRepository;
   /**
    * Reads an attached document into the text a turn carries. Required rather
    * than optional: a deployment that forgot to wire it would drop every attached
@@ -75,7 +75,7 @@ export interface MessagingDeps {
 
 /** One inbound turn, normalised by its adapter. */
 export interface TurnInput {
-  project: Project;
+  agent: Agent;
   configuration: AgentConfiguration;
   /**
    * What the person wrote, as the model should read it — the surface has
@@ -130,7 +130,7 @@ export async function handleTurn(
   input: TurnInput,
   reply: ReplyChannel,
 ): Promise<TurnOutcome> {
-  const { project, configuration, warnings } = input;
+  const { agent, configuration, warnings } = input;
   let text = "";
   // `fetched` rides along: what the run read is delivered only when it is all
   // the run has to show (see below).
@@ -180,7 +180,7 @@ export async function handleTurn(
     const documentCandidates = [...attached, ...historyTurns.flatMap((turn) => turn.message.role === "user" ? turn.attachments : [])];
     if (documentCandidates.some((attachment) => documentKind(attachment.mimeType, attachment.name) !== null)) {
       const persistence = { storage: deps.artifacts, context: {
-        projectName: project.name, actor: input.actor, ownerEmail: input.ownerEmail,
+        agentName: agent.name, actor: input.actor, ownerEmail: input.ownerEmail,
       } };
       readDocuments = await collectDocuments(deps.documents, attached, warnings, persistence);
       historyTurns = await withHistoryDocuments(deps.documents, historyTurns, attached, readDocuments, warnings, persistence);
@@ -204,12 +204,12 @@ export async function handleTurn(
     if (typeof userContent === "string" && userContent === "") {
       throw new EmptyTurnError();
     }
-    const fileHistory = await loadFileHistory(deps.fileHistory, project.name, input.conversation, input.actor, warnings);
+    const fileHistory = await loadFileHistory(deps.fileHistory, agent.name, input.conversation, input.actor, warnings);
     const messages: ChatMessageInput[] = [...history, ...(fileHistory ? [{ role: "user" as const, content: fileHistory }] : []), { role: "user", content: userContent }];
     endState = await refreshCancellation();
     signal.throwIfAborted();
     for await (const chunk of deps.runAgent({
-      project,
+      agent,
       configuration,
       messages,
       ...(input.actor ? { actor: input.actor } : {}),
@@ -311,7 +311,7 @@ export async function handleTurn(
 
   log.info(
     "messaging",
-    `run done project=${project.name} chars=${text.length} images=${uploads.length} warnings=${warnings.length}`,
+    `run done agent=${agent.name} chars=${text.length} images=${uploads.length} warnings=${warnings.length}`,
   );
   let imagesDelivered = 0;
   for (const [index, image] of uploads.entries()) {
@@ -345,7 +345,7 @@ export async function handleTurn(
   // Links first, warnings after: one is what the run made and the other is what
   // it lost, and a reader scanning the end of a reply should meet them in that
   // order.
-  await rememberFiles(deps.fileHistory, project.name, input.conversation, input.actor, producedRefs.filter((file) => file.key), warnings);
+  await rememberFiles(deps.fileHistory, agent.name, input.conversation, input.actor, producedRefs.filter((file) => file.key), warnings);
   // A stop can arrive while file URLs or history are being saved, after the model finished.
   endState = await refreshCancellation();
   const filesToDeliver = signal.aborted ? [] : produced.files;

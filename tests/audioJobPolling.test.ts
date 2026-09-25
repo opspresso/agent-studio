@@ -12,10 +12,10 @@ describe("audio job polling", () => {
     const completed = job("30", "completed", 2);
     const fetch = vi.fn(async () => Response.json(completed));
     vi.stubGlobal("fetch", fetch);
-    const updates = await loadActiveAudioJobs("/api/projects/audio", jobs, new AbortController().signal);
+    const updates = await loadActiveAudioJobs("/api/agents/audio", jobs, new AbortController().signal);
     const merged = mergeAudioJobUpdates(jobs, updates);
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(fetch).toHaveBeenCalledWith("/api/projects/audio/audio-jobs/30", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(fetch).toHaveBeenCalledWith("/api/agents/audio/audio-jobs/30", expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(merged).toHaveLength(40);
     expect(merged[30]).toEqual(completed);
     expect(merged[0]).toBe(jobs[0]);
@@ -30,7 +30,7 @@ describe("audio job polling", () => {
       return Response.json(job("result"));
     }));
     const jobs = Array.from({ length: 10 }, (_, index) => job(String(index), index % 2 ? "queued" : "waiting"));
-    expect(await loadActiveAudioJobs("/api/projects/audio", jobs, new AbortController().signal)).toHaveLength(10);
+    expect(await loadActiveAudioJobs("/api/agents/audio", jobs, new AbortController().signal)).toHaveLength(10);
     expect(maximum).toBe(MAX_CONCURRENT_AUDIO_JOB_READS);
   });
 
@@ -51,13 +51,13 @@ describe("audio job polling", () => {
   it("does not start requests after the polling effect is cancelled", async () => {
     const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
     const controller = new AbortController(); controller.abort();
-    await expect(loadActiveAudioJobs("/api/projects/audio", [job("1")], controller.signal)).rejects.toThrow();
+    await expect(loadActiveAudioJobs("/api/agents/audio", [job("1")], controller.signal)).rejects.toThrow();
     expect(fetch).not.toHaveBeenCalled();
   });
 
   it("surfaces failed status reads", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "Unavailable" }, { status: 503 })));
-    await expect(loadActiveAudioJobs("/api/projects/audio", [job("1")], new AbortController().signal)).rejects.toThrow("Unavailable");
+    await expect(loadActiveAudioJobs("/api/agents/audio", [job("1")], new AbortController().signal)).rejects.toThrow("Unavailable");
   });
 
   it("cancels sibling reads after a failed batch so the next poll cannot accumulate requests", async () => {
@@ -70,7 +70,7 @@ describe("audio job polling", () => {
       });
     });
     vi.stubGlobal("fetch", fetch);
-    await expect(loadActiveAudioJobs("/api/projects/audio", [job("1"), job("2")], new AbortController().signal)).rejects.toThrow("Unavailable");
+    await expect(loadActiveAudioJobs("/api/agents/audio", [job("1"), job("2")], new AbortController().signal)).rejects.toThrow("Unavailable");
     expect(siblingSignal?.aborted).toBe(true);
   });
 });

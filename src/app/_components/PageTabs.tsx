@@ -11,7 +11,7 @@ export function activeTabHref(pathname: string, items: readonly { href: string }
     (pathname === href || pathname.startsWith(`${href}/`)) && href.length > (active?.length ?? 0) ? href : active, null);
 }
 
-/** Route-backed tabs share active, keyboard and overflow behavior across settings and projects. */
+/** Route-backed tabs share active, keyboard and overflow behavior across settings and agents. */
 export function PageTabs({ value, items, label, variant = "default" }: {
   value: string;
   items: readonly { href: string; label: string; Icon?: TablerIcon }[];

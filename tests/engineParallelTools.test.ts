@@ -43,7 +43,7 @@ describe("runAgent aggregates multiple tool calls from one response", () => {
     ]);
     const callMcpTool = vi.fn(async () => ({ text: "found" }));
     const chunks = await collect(runAgent({ createToolSchemaValidator, channel, callMcpTool }, {
-      projectName: "p", model: MODEL, messages: [{ role: "user", content: "lookup" }],
+      agentName: "p", model: MODEL, messages: [{ role: "user", content: "lookup" }],
       mcpTools: [{ type: "function", function: { name: "lookup", parameters: {} } }],
     }));
     expect(callMcpTool).toHaveBeenCalledExactlyOnceWith("lookup", { query: "Seoul" });
@@ -70,7 +70,7 @@ describe("runAgent aggregates multiple tool calls from one response", () => {
     });
     const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {}, callMcpTool };
     const input: RunAgentInput = {
-      projectName: "p",
+      agentName: "p",
       model: MODEL,
       systemPrompt: "s",
       messages: [{ role: "user", content: "weather and time?" }],
@@ -121,7 +121,7 @@ describe("ToolCallAccumulator makes every call of a response addressable", () =>
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "weather and time?" }],
         mcpTools: [
@@ -163,7 +163,7 @@ describe("ToolCallAccumulator makes every call of a response addressable", () =>
 
     await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "both" }],
         mcpTools: [
@@ -196,7 +196,7 @@ describe("ToolCallAccumulator makes every call of a response addressable", () =>
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "twice" }],
         mcpTools: [{ type: "function", function: { name: "getTime", parameters: {} } }],
@@ -225,7 +225,7 @@ describe("ToolCallAccumulator reassembles streamed fragments", () => {
 
     await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "search cats" }],
         mcpTools: [{ type: "function", function: { name: "search", parameters: {} } }],
@@ -268,7 +268,7 @@ describe("MCP calls of one response overlap", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "do both" }],
         mcpTools: [
@@ -316,7 +316,7 @@ describe("images an MCP tool returns", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "what is on screen?" }],
         mcpTools: screenshotTools,
@@ -354,7 +354,7 @@ describe("images an MCP tool returns", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: "openai/gpt-5-mini-text-only-not-in-catalog",
         messages: [{ role: "user", content: "what is on screen?" }],
         mcpTools: screenshotTools,
@@ -385,7 +385,7 @@ describe("images an MCP tool returns", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "capture everything" }],
         mcpTools: screenshotTools,
@@ -415,7 +415,7 @@ describe("images an MCP tool returns", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "check both pages" }],
         mcpTools: screenshotTools,
@@ -438,7 +438,7 @@ describe("images an MCP tool returns", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "capture" }],
         mcpTools: screenshotTools,
@@ -471,7 +471,7 @@ describe("per-turn tool result budget", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "dump everything" }],
         mcpTools: [{ type: "function", function: { name: "dump", parameters: {} } }],

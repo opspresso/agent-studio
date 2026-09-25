@@ -90,7 +90,7 @@ export function registrationFromDiscovery(provider: string, model: DiscoveredMod
   };
 }
 
-/** Project the administrator's selected model into the facts runtime consumers share. */
+/** Agent the administrator's selected model into the facts runtime consumers share. */
 export function registeredModelConfig(model: RegisteredModel, kind: SupportedProvider): ModelConfig {
   return {
     id: model.id, provider: model.provider, providerKind: kind, family: model.family ?? model.wireId,

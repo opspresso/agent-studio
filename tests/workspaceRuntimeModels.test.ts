@@ -7,9 +7,9 @@ import { createWorkspaceRuntimeModelUseCases } from "@/application/workspace/run
 import { getVisibleModels } from "@/domain/llm/models";
 import type { ProviderChannelConfig } from "@/domain/settings/types";
 import { getWorkspaceRuntimeConfig, invalidateSettingsCache } from "@/lib/runtime-settings";
-import { projectHasWorkspaceTools } from "@/domain/project/workspaceAccess";
+import { agentHasWorkspaceTools } from "@/domain/agent/workspaceAccess";
 import { workspaceRuntimeModelCompatible } from "@/domain/workspace/runtimeModels";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
@@ -72,9 +72,9 @@ describe("Workspace runtime model selection", () => {
     expect(await getWorkspaceRuntimeConfig("command")).toEqual({});
   });
   it("uses the current Workspace opt-in independently from audio", () => {
-    const configuration: AgentConfiguration = { projectName: "p", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false, workspaceTools: true, audioProcessing: false }, mcpList: [], skillList: [], subagentList: [] };
-    expect(projectHasWorkspaceTools({ configuration })).toBe(true);
-    expect(projectHasWorkspaceTools({ configuration: { ...configuration, parameters: { piiFiltering: false, workspaceTools: false, audioProcessing: true } } })).toBe(false);
-    expect(projectHasWorkspaceTools({})).toBe(false);
+    const configuration: AgentConfiguration = { agentName: "p", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false, workspaceTools: true, audioProcessing: false }, mcpList: [], skillList: [], subagentList: [] };
+    expect(agentHasWorkspaceTools({ configuration })).toBe(true);
+    expect(agentHasWorkspaceTools({ configuration: { ...configuration, parameters: { piiFiltering: false, workspaceTools: false, audioProcessing: true } } })).toBe(false);
+    expect(agentHasWorkspaceTools({})).toBe(false);
   });
 });

@@ -37,7 +37,7 @@ export const mcpOAuthStateRepository: McpOAuthStateRepository = {
     }
     return {
       state: item.state as string,
-      projectName: item.projectName as string,
+      agentName: item.agentName as string,
       serverName: item.serverName as string,
       codeVerifier: item.codeVerifier as string,
       userEmail: item.userEmail as string,

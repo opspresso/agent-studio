@@ -1,5 +1,5 @@
 /**
- * Threads this project's bot is currently part of.
+ * Threads this agent's bot is currently part of.
  *
  * A channel does not tell the bot which of its messages are for it, and asking
  * Slack — reading a thread's replies to see whether the bot is in it — costs a
@@ -17,12 +17,12 @@ export interface SlackThreadRepository {
    * Called after every channel reply, so an active conversation stays open for
    * as long as it stays active.
    */
-  markEngaged(projectName: string, channel: string, threadTs: string): Promise<void>;
+  markEngaged(agentName: string, channel: string, threadTs: string): Promise<void>;
   /**
    * Whether the bot answered in this thread, the window has not passed, and
    * nobody has muted it.
    */
-  isEngaged(projectName: string, channel: string, threadTs: string): Promise<boolean>;
+  isEngaged(agentName: string, channel: string, threadTs: string): Promise<boolean>;
   /**
    * Stop, or resume, following a thread without a mention.
    *
@@ -33,7 +33,7 @@ export interface SlackThreadRepository {
    * remember the opposite command.
    */
   setMuted(
-    projectName: string,
+    agentName: string,
     channel: string,
     threadTs: string,
     muted: boolean,

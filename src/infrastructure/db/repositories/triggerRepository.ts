@@ -1,10 +1,10 @@
 /**
  * Triggers and their delivery history.
  *
- * Both live in the project partition, so the project cascade delete already
+ * Both live in the agent partition, so the agent cascade delete already
  * removes them and a trigger's runs are one prefix query. Run rows carry a
  * TTL: delivery history is an operational log, not a record to keep, and an
- * untrimmed one would grow the project partition without bound.
+ * untrimmed one would grow the agent partition without bound.
  */
 
 import { keys } from "@/infrastructure/db/keys";
@@ -17,7 +17,7 @@ import {
   TRANSACTION_CANCELLED,
   transact,
 } from "@/infrastructure/db/store";
-import { projectIsLive, putProjectItem } from "@/infrastructure/db/projectLifecycle";
+import { agentIsLive, putAgentItem } from "@/infrastructure/db/agentLifecycle";
 import { expiresAtFromNow, expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
 import { boundedPageLimit } from "@/shared/pageLimit";
 import type { TriggerRepository } from "@/domain/trigger/repository";
@@ -36,7 +36,7 @@ const IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60;
 
 function toTrigger(item: Record<string, unknown>): Trigger {
   const base = {
-    projectName: String(item.projectName ?? ""),
+    agentName: String(item.agentName ?? ""),
     triggerId: String(item.triggerId ?? ""),
     description: String(item.description ?? ""),
     enabled: Boolean(item.enabled),
@@ -68,19 +68,19 @@ function toTrigger(item: Record<string, unknown>): Trigger {
 
 function triggerItem(trigger: Trigger): Record<string, unknown> {
   return {
-    ...keys.trigger(trigger.projectName, trigger.triggerId),
+    ...keys.trigger(trigger.agentName, trigger.triggerId),
     ...trigger,
     entityType: TRIGGER_ENTITY,
-    // Schedule rows alone join the cross-project index the scan tick reads.
+    // Schedule rows alone join the cross-agent index the scan tick reads.
     ...(trigger.kind === "schedule"
-      ? keys.scheduleIndex(trigger.projectName, trigger.triggerId)
+      ? keys.scheduleIndex(trigger.agentName, trigger.triggerId)
       : {}),
   };
 }
 
 function toRun(item: Record<string, unknown>): TriggerRun {
   return {
-    projectName: String(item.projectName ?? ""),
+    agentName: String(item.agentName ?? ""),
     triggerId: String(item.triggerId ?? ""),
     runId: String(item.runId ?? ""),
     status: item.status as TriggerRun["status"],
@@ -105,8 +105,8 @@ function runItem(run: TriggerRun): Record<string, unknown> {
   const at = run.startedAt ?? run.queuedAt;
   if (!at) throw new Error("A trigger run requires an admission or start time");
   return {
-    ...keys.triggerRun(run.projectName, run.triggerId, at, run.runId),
-    ...(run.status === "queued" && run.queueLeaseUntil ? keys.queuedTriggerRunIndex(run.projectName, run.triggerId, run.queueLeaseUntil, run.runId) : {}),
+    ...keys.triggerRun(run.agentName, run.triggerId, at, run.runId),
+    ...(run.status === "queued" && run.queueLeaseUntil ? keys.queuedTriggerRunIndex(run.agentName, run.triggerId, run.queueLeaseUntil, run.runId) : {}),
     ...run,
     entityType: TRIGGER_RUN_ENTITY,
     expiresAt: expiresAtSeconds(at, RETENTION.triggerRunDays),
@@ -114,23 +114,23 @@ function runItem(run: TriggerRun): Record<string, unknown> {
 }
 
 export const triggerRepository: TriggerRepository = {
-  async get(projectName, triggerId) {
-    const item = await getItem(keys.trigger(projectName, triggerId));
+  async get(agentName, triggerId) {
+    const item = await getItem(keys.trigger(agentName, triggerId));
     return item ? toTrigger(item) : null;
   },
 
-  async listByProject(projectName, limit, after) {
+  async listByAgent(agentName, limit, after) {
     const items = await queryItems({
-      pk: keys.projectPartition(projectName),
+      pk: keys.agentPartition(agentName),
       sk: { prefix: keys.triggerPrefix() },
       limit: boundedPageLimit(limit),
-      ...(after ? { after: keys.trigger(projectName, after).SK } : {}),
+      ...(after ? { after: keys.trigger(agentName, after).SK } : {}),
     });
     return items.map((item) => {
       const trigger = toTrigger(item);
       if (
-        trigger.projectName !== projectName ||
-        keys.trigger(projectName, trigger.triggerId).SK !== item.SK
+        trigger.agentName !== agentName ||
+        keys.trigger(agentName, trigger.triggerId).SK !== item.SK
       ) {
         throw new Error("trigger row identity does not match its key");
       }
@@ -144,7 +144,7 @@ export const triggerRepository: TriggerRepository = {
       pk: keys.typePartition("SCHEDULE"),
       limit: boundedPageLimit(limit),
       ...(after
-        ? { after: keys.scheduleIndex(after.projectName, after.triggerId).GSI1SK }
+        ? { after: keys.scheduleIndex(after.agentName, after.triggerId).GSI1SK }
         : {}),
     });
     return items.map((item) => {
@@ -157,23 +157,23 @@ export const triggerRepository: TriggerRepository = {
   },
 
   async create(trigger) {
-    await putProjectItem(trigger.projectName, triggerItem(trigger), conditions.notExists);
+    await putAgentItem(trigger.agentName, triggerItem(trigger), conditions.notExists);
   },
 
   async put(trigger) {
-    await putProjectItem(trigger.projectName, triggerItem(trigger));
+    await putAgentItem(trigger.agentName, triggerItem(trigger));
   },
 
-  async delete(projectName, triggerId) {
-    await deleteItem(keys.trigger(projectName, triggerId));
+  async delete(agentName, triggerId) {
+    await deleteItem(keys.trigger(agentName, triggerId));
   },
 
-  async claimIdempotencyKey(projectName, triggerId, key) {
+  async claimIdempotencyKey(agentName, triggerId, key) {
     try {
-      await putProjectItem(
-        projectName,
+      await putAgentItem(
+        agentName,
         {
-          ...keys.triggerIdempotency(projectName, triggerId, key),
+          ...keys.triggerIdempotency(agentName, triggerId, key),
           entityType: "TriggerIdempotency",
           expiresAt: expiresAtFromNow(IDEMPOTENCY_TTL_SECONDS),
         },
@@ -192,13 +192,13 @@ export const triggerRepository: TriggerRepository = {
   },
 
   async appendRun(run) {
-    await putProjectItem(run.projectName, runItem(run));
+    await putAgentItem(run.agentName, runItem(run));
   },
 
   async finishRun(run) {
     // A plain overwrite of the same key: the row was written when the run
     // started, and only this run's own completion ever rewrites it.
-    await putProjectItem(run.projectName, runItem(run));
+    await putAgentItem(run.agentName, runItem(run));
   },
 
   async updateQueuedRun(previous, next) {
@@ -209,7 +209,7 @@ export const triggerRepository: TriggerRepository = {
     try {
       const oldKey = { PK: String(oldItem.PK), SK: String(oldItem.SK) };
       await transact([
-        { kind: "check", key: keys.project(previous.projectName), condition: projectIsLive },
+        { kind: "check", key: keys.agent(previous.agentName), condition: agentIsLive },
         ...(oldItem.SK === nextItem.SK ? [{ kind: "put" as const, item: nextItem, condition }] : [
           { kind: "delete" as const, key: oldKey, condition },
           { kind: "put" as const, item: nextItem, condition: conditions.notExists },
@@ -222,9 +222,9 @@ export const triggerRepository: TriggerRepository = {
     }
   },
 
-  async listRuns(projectName, triggerId, limit, opts = {}) {
+  async listRuns(agentName, triggerId, limit, opts = {}) {
     if (opts.status === "queued") {
-      const items = await queryItems({ index: "GSI1", pk: keys.queuedTriggerRunPartition(projectName, triggerId),
+      const items = await queryItems({ index: "GSI1", pk: keys.queuedTriggerRunPartition(agentName, triggerId),
         ...(opts.queueLeaseBefore ? { sk: { between: ["", opts.queueLeaseBefore] as [string, string] } } : {}),
         limit, notExpiredAt: Math.floor(Date.now() / 1000) });
       return items.map(toRun);
@@ -239,7 +239,7 @@ export const triggerRepository: TriggerRepository = {
     // also runs before LIMIT, so completed history cannot hide stranded runs.
     const prefix = keys.triggerRunPrefix(triggerId);
     const items = await queryItems({
-      pk: keys.projectPartition(projectName),
+      pk: keys.agentPartition(agentName),
       sk: opts.startedBefore
         ? { between: [prefix, `${prefix}${opts.startedBefore}`] }
         : { prefix },

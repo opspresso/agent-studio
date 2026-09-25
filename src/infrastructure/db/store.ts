@@ -91,10 +91,10 @@ function rowData(rows: { data: Item }[]): Item | null {
  * collision only makes two unrelated keys take turns.
  *
  * `shared` is for a key a transaction only *reads a condition off* — the
- * `check` op, which asserts a project or chat is still live while writing
+ * `check` op, which asserts an agent or chat is still live while writing
  * somewhere else. Two of those have nothing to say to each other, and the
- * exclusive form made every usage row, trace and configuration write in a project
- * queue on that project's one META row. A shared holder still blocks, and is
+ * exclusive form made every usage row, trace and configuration write in an agent
+ * queue on that agent's one META row. A shared holder still blocks, and is
  * blocked by, an exclusive one, so the delete the check guards against is
  * still serialised against it.
  */

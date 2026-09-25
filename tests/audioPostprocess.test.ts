@@ -4,19 +4,19 @@ import type { AudioJob } from "@/domain/audio/job";
 import type { SourceFile } from "@/domain/artifact/sourceFile";
 
 function fixture(text = "Fact one.") {
-  const job: AudioJob = { id: "job", projectName: "audio", userEmail: "owner@example.test", model: "asr",
+  const job: AudioJob = { id: "job", agentName: "audio", userEmail: "owner@example.test", model: "asr",
     source: { kind: "file", fileId: "source" }, sourceKey: "source", transcriptRef: "transcript",
     retention: { unit: "months", value: 3, timezone: "Asia/Seoul" }, status: "running", stage: "postprocessing",
     revision: 1, createdAt: "2026-09-09T00:00:00Z", updatedAt: "2026-09-09T00:00:00Z", dueAt: "2026-09-09T00:02:00Z",
-    failures: 0, attempt: 1, receipts: {}, postprocess: { projectName: "writer", configuration: {
-      projectName: "writer", model: "text-model", systemPrompt: "Summarize",
+    failures: 0, attempt: 1, receipts: {}, postprocess: { agentName: "writer", configuration: {
+      agentName: "writer", model: "text-model", systemPrompt: "Summarize",
       parameters: { piiFiltering: false }, skillList: [], mcpList: [], subagentList: [] ,
     } } };
   const saved = new Map<string, Uint8Array>([["transcript", new TextEncoder().encode(JSON.stringify({ text, model: "asr", segments: [], warnings: ["source warning"] }))]]);
-  const metadata: SourceFile = { id: "file", projectName: job.projectName, userEmail: job.userEmail, filename: "file.json",
+  const metadata: SourceFile = { id: "file", agentName: job.agentName, userEmail: job.userEmail, filename: "file.json",
     mimeType: "application/json", retention: job.retention, revision: 1, status: "ready", createdAt: job.createdAt, retireAt: "2026-12-09T00:00:00Z" };
   const deps: AudioPostprocessDeps = {
-    files: { async metadata() { return metadata; }, async read(_project, id) { return { bytes: saved.get(id)!, file: metadata, mimeType: "application/json" }; },
+    files: { async metadata() { return metadata; }, async read(_agent, id) { return { bytes: saved.get(id)!, file: metadata, mimeType: "application/json" }; },
       async import(input, open) {
         if (!saved.has(input.id)) {
           const parts: Uint8Array[] = []; for await (const part of await open(1024 * 1024)) parts.push(part);
@@ -85,7 +85,7 @@ describe("durable Agent postprocessing", () => {
     expect(f.context.record).toHaveBeenCalledExactlyOnceWith({ postprocessProgress: { phase: "extract", round: 0, completed: 0, total: 1 } });
   });
   it("reads a separate Agent's transcript and stores a readable Markdown summary with provenance", async () => {
-    const f = fixture(); f.job.task = "postprocess"; f.job.source = { kind: "file", projectName: "transcriber", fileId: "transcript" };
+    const f = fixture(); f.job.task = "postprocess"; f.job.source = { kind: "file", agentName: "transcriber", fileId: "transcript" };
     const read = vi.spyOn(f.deps.files, "read");
     const imported = vi.spyOn(f.deps.files, "import");
     const result = await f.run(f.job, f.context);

@@ -31,11 +31,11 @@ test.beforeAll(async () => {
 test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 
 test("clears a failed Trace read when navigating to another Trace", async ({ page }) => {
-  await page.route("**/api/projects/agent/traces/**", route => {
+  await page.route("**/api/agents/agent/traces/**", route => {
     const id = new URL(route.request().url()).pathname.split("/").at(-1);
     return id === "missing"
       ? route.fulfill({ status: 404, json: { error: "Trace unavailable" } })
-      : route.fulfill({ json: { traceId: "present", projectName: "agent", status: "completed",
+      : route.fulfill({ json: { traceId: "present", agentName: "agent", status: "completed",
         createdAt: "2026-09-24T00:00:00Z", startedAt: "2026-09-24T00:00:00Z",
         durationMs: 10, spans: [] } });
   });

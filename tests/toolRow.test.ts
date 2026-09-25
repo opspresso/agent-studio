@@ -9,7 +9,7 @@ vi.mock("@/app/_i18n/provider", () => ({ useT: () => (key: string) => key }));
 
 describe("tool result status", () => {
   it.each([
-    ["Error: Repository or base branch is not configured for this project", "❌"],
+    ["Error: Repository or base branch is not configured for this agent", "❌"],
     ['{"ready":true}', "✅"],
     [undefined, "…"],
   ])("renders %s as %s in stored and live tool rows", (content, marker) => {

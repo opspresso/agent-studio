@@ -191,7 +191,7 @@ describe("native Agents SDK execution over Studio routing", () => {
       channel: createAgentModelProvider(async () => target),
       callMcpTool: async () => ({ text: "captured", images: [{ b64: "aGVsbG8=", mimeType: "image/png" }], files: [{ name: "report.txt", mimeType: "text/plain", b64: "c2VjcmV0LWZpbGU=" }] }),
     }, {
-      projectName: "studio", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "capture" }], maxTurn: 4,
+      agentName: "studio", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "capture" }], maxTurn: 4,
       mcpTools: [{ type: "function", function: { name: "capture", parameters: { type: "object", properties: {} } } }],
     })) chunks.push(chunk);
     expect(chunks.some((chunk) => chunk.file?.name === "report.txt")).toBe(true);

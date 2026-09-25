@@ -6,7 +6,7 @@ import { useT } from "@/app/_i18n/provider";
 
 /**
  * Shared From/To date range picker with quick-select preset buttons. Used by the
- * cost dashboard, project usage, and project traces so date search looks and
+ * cost dashboard, agent usage, and agent traces so date search looks and
  * behaves the same everywhere.
  *
  * Native date inputs on purpose: the range is two plain ISO dates the API takes

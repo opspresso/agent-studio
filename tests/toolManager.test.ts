@@ -392,7 +392,7 @@ describe("ToolManager tool-name collision aliasing", () => {
     expect(transform).not.toHaveBeenCalled();
     await manager.close();
   });
-  it("projects a source response before truncating large text", async () => {
+  it("agents a source response before truncating large text", async () => {
     const original = JSON.stringify({ padding: "x".repeat(110_000), url: "https://files.test/?signature=private" });
     stubMcpFetch({ "https://a.test/mcp": { listTools: [{ name: "get_file" }], callContent: [textBlock(original)] } });
     const transform = vi.fn(async (raw: unknown) => {
@@ -1035,7 +1035,7 @@ describe("ToolManager session release", () => {
 
   it("does not remember a discovery the caller cancelled as the server failing", async () => {
     // The failure cache is keyed per url + headers, so a cancelled discovery
-    // written there would answer every later run of that project with a
+    // written there would answer every later run of that agent with a
     // replayed "unavailable" — for a server that was never asked to finish.
     const controller = new AbortController();
     stubMcpFetch({
@@ -1922,7 +1922,7 @@ describe("ToolManager result content blocks", () => {
         callContent: [
           {
             type: "resource_link",
-            uri: "file:///project/src/main.rs",
+            uri: "file:///agent/src/main.rs",
             name: "main.rs",
             description: "Primary application entry point",
             mimeType: "text/x-rust",
@@ -1934,7 +1934,7 @@ describe("ToolManager result content blocks", () => {
     await manager.init();
 
     const result = await manager.callTool("find", {});
-    expect(result.text).toContain("file:///project/src/main.rs");
+    expect(result.text).toContain("file:///agent/src/main.rs");
     expect(result.text).toContain("main.rs");
     // A pointer to something, which would read as a broken server.
     expect(result.text).not.toContain("Invalid");

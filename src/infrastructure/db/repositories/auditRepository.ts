@@ -3,9 +3,9 @@
  *
  * Append-only: nothing in the app updates or deletes a row, and expiry is the
  * store's sweep rather than a code path. That is the point — a record whose
- * subject can erase it is not a record. It also means a project's cascade delete
+ * subject can erase it is not a record. It also means an agent's cascade delete
  * leaves its audit rows standing, which is exactly what makes "who deleted this
- * project" answerable at all.
+ * agent" answerable at all.
  */
 
 import { keys } from "@/infrastructure/db/keys";

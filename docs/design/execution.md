@@ -9,14 +9,14 @@ Agent의 현재 설정, SDK 도구 실행, 이미지 도구와 실행 기록의 
 > 실행 불변식의 정본은 `src/application/runtime/AGENTS.md`다. SDK API는
 > [OpenAI Agents SDK](https://openai.github.io/openai-agents-js/)의 계약을 직접 사용한다.
 
-## Project와 현재 설정
+## Agent와 현재 설정
 
-Project는 이름으로 호출하는 Agent다. 공개 범위·소유권·연동·비용 정책과 현재
-`AgentConfiguration`을 같은 Project 행에 보관한다. 설정에는 모델·fallback·system prompt·
+Agent는 이름으로 호출하는 Agent다. 공개 범위·소유권·연동·비용 정책과 현재
+`AgentConfiguration`을 같은 Agent 행에 보관한다. 설정에는 모델·fallback·system prompt·
 생성 파라미터·Skill·MCP·하위 Agent·실행 정책이 들어간다. 이미지 생성·편집은 Agent 도구다.
 
 - `configurationUseCases`가 접근·소유자 검사, 모델 capability와 참조 검증, 시크릿 병합을 소유한다.
-  저장은 전체 설정 교체이며 `expectedUpdatedAt`과 Project의 `updatedAt`으로 동시 수정을 거절한다.
+  저장은 전체 설정 교체이며 `expectedUpdatedAt`과 Agent의 `updatedAt`으로 동시 수정을 거절한다.
 - `model`은 도구 호출을 지원하는 등록 텍스트 모델이다. `imageModel`은 이미지 도구의 모델이다.
   등록 모델의 capability 충돌은 거절하며 모델 선택과 가격 미확인 정책은
   [모델 설정](../CONFIGURATION.md#모델-등록과-사용)을 따른다.
@@ -26,14 +26,14 @@ Project는 이름으로 호출하는 Agent다. 공개 범위·소유권·연동�
   저장 당시 URL fingerprint와 현재 URL이 다르면 옛 credential을 전송하지 않는다.
 - `presencePenalty`는 -2부터 2까지이며 provider가 지원할 때 `presence_penalty`로 전달한다.
   미설정 값은 provider 기본값을 유지하며 하위 Agent는 자신의 설정을 사용한다.
-- 모든 실행 창구가 Project와 함께 읽은 현재 설정을 사용한다. 각 Agent는 준비 시점의 설정을
-  유지한다. 로컬 하위 Agent는 실제 호출할 때 자기 Project의 현재 설정을 읽으므로 부모 시작
+- 모든 실행 창구가 Agent와 함께 읽은 현재 설정을 사용한다. 각 Agent는 준비 시점의 설정을
+  유지한다. 로컬 하위 Agent는 실제 호출할 때 자기 Agent의 현재 설정을 읽으므로 부모 시작
   시점에 전체 하위 그래프가 고정되는 것은 아니다. 승인 대기에는 설정·연결 fingerprint를
   보존해 변경된 상태의 재개를 거절한다.
 - 입력은 사용자 메시지이며 저장한 시스템 프롬프트와 함께 실행한다.
 
 전체 HTTP 형태와 마스킹 규칙은 [Agent 설정 API](../API.md#agent-현재-설정),
-Project의 비용 정책은 [지출 가드](../OPERATIONS.md#지출-가드와-부하-가드)가 소유한다.
+Agent의 비용 정책은 [지출 가드](../OPERATIONS.md#지출-가드와-부하-가드)가 소유한다.
 
 ## Native Agent Runtime
 
@@ -226,7 +226,7 @@ recorder가 없는 배포에서는 캡처 wrapper가 원래 chunk를 통과시�
 참조할 수 있다.
 읽기·편집 권한은 [문서 설계](documents.md#채널-간-파일-참조)를 따른다.
 
-Artifact는 project·actor·run ID·위임 경로를 기록한다.
+Artifact는 agent·actor·run ID·위임 경로를 기록한다.
 `model`은 실제 생성자가 명시한 이미지 모델만 사용하고 부모 Agent 설정에서 추측하지 않는다.
 MCP가 준 bytes나 첨부처럼 모델을 확정할 수 없는 경우에는 비운다.
 저장 실패는 원래 응답을 실패로 바꾸지 않고 손실 건수와 제한된 원인 분류를 경고한다.
@@ -234,12 +234,12 @@ MCP가 준 bytes나 첨부처럼 모델을 확정할 수 없는 경우에는 비
 ### 소유권과 읽기
 
 `artifactOwnerEmail`은 email actor 또는 표면이 확인한 별도 이메일로 개인 귀속을 정한다.
-이메일이 없는 결과는 Project 목록에서 관리하며 프로젝트 소유자 이메일을 임의로 채우지 않는다.
-개인 목록과 프로젝트 목록의 DB 주소는 [저장 키 지도](../ARCHITECTURE.md#postgresql-아이템-테이블-설계)에 있다.
+이메일이 없는 결과는 Agent 목록에서 관리하며 Agent 소유자 이메일을 임의로 채우지 않는다.
+개인 목록과 Agent 목록의 DB 주소는 [저장 키 지도](../ARCHITECTURE.md#postgresql-아이템-테이블-설계)에 있다.
 
-일반 파일은 생성·첨부 소유자 또는 프로젝트 소유자/admin이 읽고 삭제한다.
-일반적인 public 프로젝트 실행 권한만으로 남의 출력에 접근하지 못한다.
-비공개 오디오 source 파일은 파일 소유권·현재 프로젝트 접근·상태·만료를 별도로 검사한다.
+일반 파일은 생성·첨부 소유자 또는 Agent 소유자/admin이 읽고 삭제한다.
+일반적인 public Agent 실행 권한만으로 남의 출력에 접근하지 못한다.
+비공개 오디오 source 파일은 파일 소유권·현재 Agent 접근·상태·만료를 별도로 검사한다.
 
 일반 파일의 주소는 `ARTIFACT_ACCESS_MODE`에 따라 proxied·pre-signed·직접 URL로 해석한다.
 proxied 모드의 bytes도 앱을 통해 전달되며 URL token이 읽기 credential이다.

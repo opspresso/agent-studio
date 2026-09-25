@@ -2,7 +2,7 @@
  * The query and the response shape both artifact listings share.
  *
  * Two routes read the same rows down two different indexes — a person's own
- * gallery and a project's — and a filter parsed differently by one of them would
+ * gallery and an agent's — and a filter parsed differently by one of them would
  * be a gallery that disagrees with itself about what "images only" means.
  */
 

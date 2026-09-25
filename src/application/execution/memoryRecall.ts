@@ -14,13 +14,13 @@
  * recalled text as an input field, exactly as it receives the caller. And kept
  * to the tool contract rather than a memory port of its own, because the
  * platform's boundary for what outlives a run is MCP — a second, native store
- * beside a bound memory server would be two answers to "what does this project
+ * beside a bound memory server would be two answers to "what does this agent
  * remember".
  */
 
 import type * as engine from "@/application/runtime";
-import { bindingsMayOfferRecall, RECALL_TOOL_NAME } from "@/domain/project/memoryRecall";
-import type { AgentConfiguration } from "@/domain/project/types";
+import { bindingsMayOfferRecall, RECALL_TOOL_NAME } from "@/domain/agent/memoryRecall";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import type { RunOrigin } from "@/domain/execution/actor";
 import { buildMcpTools, closeMcp, type McpToolDeps, type ResolvedMcp } from "./mcpTools";
 import { log } from "@/shared/logger";

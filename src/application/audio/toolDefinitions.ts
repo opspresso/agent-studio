@@ -11,7 +11,7 @@ const retention = object({ unit: { type: "string", enum: ["days", "months"] }, v
 const processingRevision = optional({ ...text, description: "Only for explicit reprocessing. Reuse this value for retries of the same request." });
 const source = object({ kind: { type: "string", enum: ["artifact", "file", "source"] },
   id: { ...text, description: "The returned Artifact ID, stored file ID or opaque source_ref matching kind. Never a URL or external recording ID." } });
-const postprocess = object({ projectName: text });
+const postprocess = object({ agentName: text });
 const destination = object({ serverName: text, documents: { type: "boolean" }, memories: { type: "boolean" } });
 
 /** A nested union keeps query, configured submission and explicit processing inputs separate. */
@@ -36,7 +36,7 @@ export const AUDIO_TOOL_DEFS: ChannelToolDef[] = [
     description: "Import and transcribe audio, without a summary. For the complete workflow use AudioJob configured submit. Transcript Artifacts require AudioJob postprocess, not transcription.",
     parameters: object({ source, model: text, language: optional(text), retention, processing_revision: processingRevision }) } },
   { type: "function", function: { name: AUDIO_JOB_TOOL_NAME,
-    description: "Follow the connected audio-processing skill. Select one request shape. config reads project defaults; each submit queues one durable import → transcription → configured summary job using that revision. For multiple requested recordings, submit each within config maxActive (queued + running) and maxPerOccurrence; the worker processes one job at a time per project. postprocess summarizes an existing transcript Artifact. process supplies explicit options only when project defaults are unsuitable. list/status/read inspect jobs and results. Optional values are null. Report admitted job IDs and any unsubmitted remainder; do not poll while waiting. Completed jobs are reused unless reprocessing is explicitly requested.",
+    description: "Follow the connected audio-processing skill. Select one request shape. config reads agent defaults; each submit queues one durable import → transcription → configured summary job using that revision. For multiple requested recordings, submit each within config maxActive (queued + running) and maxPerOccurrence; the worker processes one job at a time per agent. postprocess summarizes an existing transcript Artifact. process supplies explicit options only when agent defaults are unsuitable. list/status/read inspect jobs and results. Optional values are null. Report admitted job IDs and any unsubmitted remainder; do not poll while waiting. Completed jobs are reused unless reprocessing is explicitly requested.",
     parameters: AUDIO_JOB_REQUEST_SCHEMA } },
 ];
 

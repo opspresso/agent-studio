@@ -4,7 +4,7 @@
  * The cost chart, loaded when a page that draws one is actually opened.
  *
  * recharts — which `@mantine/charts` wraps — is a 400KB chunk, and the three
- * surfaces that show a chart (the overview, a project's usage tab, a member's
+ * surfaces that show a chart (the overview, an agent's usage tab, a member's
  * profile) were each paying for it in their first load, ahead of the numbers
  * the chart plots. Nothing else in the console is that size, so this is the one
  * place a lazy boundary is worth its indirection.

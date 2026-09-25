@@ -6,8 +6,8 @@ import type { McpServer } from "../api";
  * How an entry can be authenticated, at a glance.
  *
  * Both badges can appear at once, and the order is the order they are tried at
- * dispatch: a project's OAuth connection first, the entry's own headers as the
- * fallback for projects that have not connected. Neither badge means the entry
+ * dispatch: an agent's OAuth connection first, the entry's own headers as the
+ * fallback for agents that have not connected. Neither badge means the entry
  * sends no credential at all, which is worth seeing.
  *
  * Colour carries whether a credential is there; the text carries which kind. An

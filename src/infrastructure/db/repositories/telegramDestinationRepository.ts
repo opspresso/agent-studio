@@ -4,7 +4,7 @@ import type {
 } from "@/domain/telegram/destination";
 import { keys } from "@/infrastructure/db/keys";
 import { queryItems } from "@/infrastructure/db/store";
-import { putProjectItem } from "@/infrastructure/db/projectLifecycle";
+import { putAgentItem } from "@/infrastructure/db/agentLifecycle";
 
 function fromItem(item: Record<string, unknown>): TelegramDestination {
   if (
@@ -26,20 +26,20 @@ function fromItem(item: Record<string, unknown>): TelegramDestination {
 }
 
 export const telegramDestinationRepository: TelegramDestinationRepository = {
-  async put(projectName, botId, destination) {
-    await putProjectItem(projectName, {
-      ...keys.telegramDestination(projectName, botId, destination.chatId, destination.threadId),
-      ...keys.telegramDestinationIndexPrefix(projectName, botId),
+  async put(agentName, botId, destination) {
+    await putAgentItem(agentName, {
+      ...keys.telegramDestination(agentName, botId, destination.chatId, destination.threadId),
+      ...keys.telegramDestinationIndexPrefix(agentName, botId),
       GSI2SK: destination.lastSeenAt,
       entityType: "telegramDestination",
-      projectName,
+      agentName,
       botId,
       ...destination,
     });
   },
 
-  async list(projectName, botId, limit) {
-    const index = keys.telegramDestinationIndexPrefix(projectName, botId);
+  async list(agentName, botId, limit) {
+    const index = keys.telegramDestinationIndexPrefix(agentName, botId);
     const items = await queryItems({
       index: "GSI2",
       pk: index.GSI2PK,

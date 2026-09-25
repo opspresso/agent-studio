@@ -7,13 +7,13 @@ import type { AudioJobStepContext } from "@/application/audio/processJob";
 function fixture() {
   const saved = new Map<string, Uint8Array>();
   const job: AudioJob = {
-    id: "job-1", projectName: "audio", userEmail: "owner@example.test", source: { kind: "file", fileId: "input" },
+    id: "job-1", agentName: "audio", userEmail: "owner@example.test", source: { kind: "file", fileId: "input" },
     sourceKey: "source", fileId: "input", model: "selfhosted/asr", language: "ko",
     retention: { unit: "months", value: 3, timezone: "Asia/Seoul" }, revision: 1, status: "running",
     stage: "transcribing", createdAt: "2026-09-08T00:00:00.000Z", updatedAt: "2026-09-08T00:00:00.000Z",
     dueAt: "2026-09-08T00:02:00.000Z", attempt: 1, failures: 0, receipts: {},
   };
-  const metadata: SourceFile = { id: "input", projectName: job.projectName, userEmail: job.userEmail,
+  const metadata: SourceFile = { id: "input", agentName: job.agentName, userEmail: job.userEmail,
     filename: "sample.mp3", mimeType: "audio/mpeg", retention: job.retention, revision: 1, status: "ready",
     createdAt: job.createdAt, storedAt: job.createdAt, retireAt: "2026-12-08T00:00:00.000Z", checksum: "source-checksum", byteSize: 3 };
   const transcribe = vi.fn(async () => ({ text: "안녕", segments: [{ text: "안녕", start: 0, end: 1, speaker: "A" }],
@@ -30,7 +30,7 @@ function fixture() {
         }
         return { ...metadata, ...input };
       },
-      async read(_project, id, _user) {
+      async read(_agent, id, _user) {
         return { file: metadata, mimeType: id === "input" ? "audio/mpeg" : "application/json",
           bytes: id === "input" ? new Uint8Array([1, 2, 3]) : saved.get(id)! };
       },
@@ -52,13 +52,13 @@ function fixture() {
 describe("resumable file transcription", () => {
   it("reads a previous Agent's Artifact while storing derived output under the transcribing Agent", async () => {
     const f = fixture();
-    f.job.source = { kind: "file", fileId: "input", projectName: "downloader" };
+    f.job.source = { kind: "file", fileId: "input", agentName: "downloader" };
     f.job.producedBy = "transcriber";
     const read = vi.spyOn(f.deps.files, "read");
     const write = vi.spyOn(f.deps.files, "import");
     await createAudioTranscriptionStep(f.deps)(f.job, f.context);
     expect(read).toHaveBeenCalledWith("downloader", "input", f.job.userEmail, undefined, f.context.signal);
-    expect(write).toHaveBeenCalledWith(expect.objectContaining({ projectName: "audio", producedBy: "transcriber", derivedFrom: "input", model: f.job.model,
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ agentName: "audio", producedBy: "transcriber", derivedFrom: "input", model: f.job.model,
       retainUntil: "2026-12-08T00:00:00.000Z" }), expect.any(Function), f.context.signal);
     expect(f.transcribe).toHaveBeenCalledTimes(2);
   });

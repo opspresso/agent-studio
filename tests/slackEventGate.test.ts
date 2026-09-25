@@ -17,14 +17,14 @@ const { handled, claim, settle, isEngaged } = vi.hoisted(() => ({
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 vi.mock("@/lib/container", () => ({
   executionDeps: {},
-  projectRepository: {},
+  agentRepository: {},
   // No object storage in this deployment, which the wiring site names rather
   // than leaves undecided.
   signArtifactUrl: undefined,
 }));
 vi.mock("@/lib/runtime-settings", () => ({ getSlackLoadingIndicator: async () => undefined }));
 vi.mock("@/infrastructure/slack/client", () => ({ slackClient: {} }));
-vi.mock("@/application/execution/runProject", () => ({ executeAgent: () => {} }));
+vi.mock("@/application/execution/runAgent", () => ({ executeAgent: () => {} }));
 vi.mock("@/infrastructure/db/repositories/slackEventRepository", () => ({
   slackEventRepository: { claim, settle },
 }));
@@ -50,7 +50,7 @@ const { handleSlackEventRequest } = await import(
 );
 
 const SIGNING_SECRET = "test-signing-secret";
-const BINDING = { projectName: "painter", botToken: "tok" };
+const BINDING = { agentName: "painter", botToken: "tok" };
 
 function signedRequest(payload: unknown): Request {
   const body = JSON.stringify(payload);
@@ -73,7 +73,7 @@ const deliver = (payload: unknown, keywords?: string[]) =>
   handleSlackEventRequest(signedRequest(payload), {
     signingSecret: SIGNING_SECRET,
     binding: BINDING,
-    logLabel: "project painter",
+    logLabel: "agent painter",
     ...(keywords ? { engagement: { keywords } } : {}),
   });
 
@@ -243,7 +243,7 @@ describe("which Slack events reach a handler", () => {
       expect(claim).not.toHaveBeenCalled();
     });
 
-    it("runs when it carries a keyword the project named", async () => {
+    it("runs when it carries a keyword the agent named", async () => {
       await deliver(channelMessage(), ["deploy"]);
 
       expect(handled).toEqual([{ handler: "run", type: "message" }]);
@@ -289,7 +289,7 @@ describe("which Slack events reach a handler", () => {
         method: "POST",
         body: JSON.stringify({ type: "event_callback", event: { type: "app_mention" } }),
       }),
-      { signingSecret: SIGNING_SECRET, binding: BINDING, logLabel: "project painter" },
+      { signingSecret: SIGNING_SECRET, binding: BINDING, logLabel: "agent painter" },
     );
 
     expect(res.status).toBe(401);

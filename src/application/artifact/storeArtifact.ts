@@ -33,11 +33,11 @@ export async function registerSourceArtifact(rows: ArtifactRepository, file: Sou
   if (file.status !== "ready" || file.derived?.kind === "checkpoint") return;
   try { await rows.put({ artifactId: file.id, privateFileId: file.id, retireAt: file.retireAt,
     ...(file.derivedFrom ? { derivedFrom: file.derivedFrom } : {}), ...(file.model ? { model: file.model } : {}),
-    producedBy: file.producedBy ?? file.projectName,
+    producedBy: file.producedBy ?? file.agentName,
     kind: file.mimeType.startsWith("audio/") ? "audio" : "document",
     source: file.derived ? "generated" : "attachment", key: sourceFileObjectKey(file.id),
     mimeType: file.mimeType, filename: file.filename, byteSize: file.byteSize!,
-    projectName: file.projectName, ownerEmail: file.userEmail,
+    agentName: file.agentName, ownerEmail: file.userEmail,
     createdAt: file.storedAt ?? file.createdAt }); }
   catch (error) {
     if (isTransactionCancelled(error)) throw new ConflictError("Private file changed or expired before Artifact registration");
@@ -53,7 +53,7 @@ export interface ArtifactStorage {
 
 /** What the run already knows, bound once by the bracket that opened it. */
 export interface ArtifactContext {
-  projectName: string;
+  agentName: string;
   actor?: RunActor;
   /** The mailbox this run's output belongs to, when the surface knows one. */
   ownerEmail?: string;
@@ -75,7 +75,7 @@ export interface ArtifactInput {
   prompt?: string;
   /** The subagent that produced it, from the chunk's author. */
   producedBy?: string;
-  /** Transfer path that produced it, relative to the bracket's root project. */
+  /** Transfer path that produced it, relative to the bracket's root agent. */
   authorPath?: readonly string[];
   /** The model that drew it, from the chunk. Absent when nothing can name one. */
   model?: string;
@@ -108,7 +108,7 @@ export async function storeArtifact(
     mimeType: input.mimeType,
     ...(input.filename ? { filename: input.filename } : {}),
     byteSize: input.bytes.byteLength,
-    projectName: context.projectName,
+    agentName: context.agentName,
     ...(context.actor ? { actor: context.actor } : {}),
     ...(context.ownerEmail ? { ownerEmail: context.ownerEmail } : {}),
     ...(context.ancestry && context.ancestry.length > 0 ? { ancestry: context.ancestry } : {}),

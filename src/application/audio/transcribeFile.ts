@@ -1,5 +1,5 @@
 import type { AudioJob } from "@/domain/audio/job";
-import { audioSourceProject } from "@/domain/audio/job";
+import { audioSourceAgent } from "@/domain/audio/job";
 import type { AudioSegmenter } from "@/domain/audio/segmenter";
 import { validateTranscription, type TranscriptionPort, type TranscriptionResult, type TranscriptSegment } from "@/domain/llm/transcription";
 import type { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
@@ -68,7 +68,7 @@ function parseSegment(bytes: Uint8Array, expected: Omit<StoredSegment, "result">
 export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
   return async (job: AudioJob, context: AudioJobStepContext): Promise<{ transcriptRef: string }> => {
     if (!job.fileId) throw new AudioJobStepError("missing_file", false);
-    const source = await deps.files.read(audioSourceProject(job), job.fileId, job.userEmail, undefined, context.signal);
+    const source = await deps.files.read(audioSourceAgent(job), job.fileId, job.userEmail, undefined, context.signal);
     if (!source.file.checksum) throw new AudioJobStepError("missing_checksum", false);
     const config = await deps.resolve(job.model);
     const parts: StoredSegment[] = [];
@@ -87,7 +87,7 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
       let close: ((failed: boolean) => Promise<void>) | undefined;
       let failed = true;
       try {
-        await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
+        await deps.files.import({ id, agentName: job.agentName, userEmail: job.userEmail,
           filename: `segment-${segment.index}.json`, mimeType: "application/json", retention: job.retention,
           retainUntil: source.file.retireAt, derived: { jobId: job.id, kind: "checkpoint" } }, async () => {
           close = await deps.beforeTranscribe(job, segment.end - segment.start);
@@ -98,7 +98,7 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
           if (bytes.length > MAX_TRANSCRIPT_BYTES) throw new AudioJobStepError("transcript_limit", false);
           return (async function* () { yield bytes; })();
         }, context.signal);
-        const checkpoint = await deps.files.read(job.projectName, id, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
+        const checkpoint = await deps.files.read(job.agentName, id, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
         checkpointBytes += checkpoint.bytes.length;
         if (checkpointBytes > MAX_TRANSCRIPT_BYTES) throw new AudioJobStepError("transcript_limit", false);
         const part = parseSegment(checkpoint.bytes, expected);
@@ -132,7 +132,7 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
     const bytes = new TextEncoder().encode(JSON.stringify(output));
     if (bytes.length > MAX_TRANSCRIPT_BYTES) throw new AudioJobStepError("transcript_limit", false);
     const id = `${job.id}-transcript`;
-    await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
+    await deps.files.import({ id, agentName: job.agentName, userEmail: job.userEmail,
       filename: "transcript.json", mimeType: "application/json", retention: job.retention, retainUntil: source.file.retireAt,
       derivedFrom: job.fileId, model: job.model, producedBy: job.producedBy,
       derived: { jobId: job.id, kind: "transcript" } },

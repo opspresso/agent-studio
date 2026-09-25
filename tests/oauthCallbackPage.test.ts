@@ -49,7 +49,7 @@ describe("the callback page's script payload", () => {
   });
 
   it("leaves an ordinary success untouched in meaning", () => {
-    const outcome = { ok: true, project: "sample-agent", server: "notion" } as const;
+    const outcome = { ok: true, agent: "sample-agent", server: "notion" } as const;
 
     expect(JSON.parse(JSON.parse(scriptJson(outcome)) as string)).toEqual(outcome);
   });

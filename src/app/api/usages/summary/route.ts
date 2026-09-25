@@ -8,13 +8,13 @@ export const GET = withAuth(async (_user, request: Request) => {
   const parsed = summaryQuerySchema.safeParse({
     from: params.get("from"),
     to: params.get("to"),
-    project: params.get("project") ?? undefined,
+    agent: params.get("agent") ?? undefined,
   });
 
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }
 
-  const { from, to, project } = parsed.data;
-  return Response.json({ items: await usageUseCases.summary(from, to, project) });
+  const { from, to, agent } = parsed.data;
+  return Response.json({ items: await usageUseCases.summary(from, to, agent) });
 });

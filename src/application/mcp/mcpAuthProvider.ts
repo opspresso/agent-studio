@@ -1,5 +1,5 @@
 /**
- * The outbound `Authorization` for a project's OAuth connection, refreshed when
+ * The outbound `Authorization` for an agent's OAuth connection, refreshed when
  * a run could outlive the stored token.
  *
  * Everything a run needs to know about OAuth is answered here in one shape:
@@ -52,9 +52,9 @@ function bearer(token: string): Record<string, string> {
  * Does this connection still belong to what the entry points at?
  *
  * The registry entry is shared and admin-owned; these credentials are per
- * project and owner-owned; the only thing joining them is the entry's name. An
+ * agent and owner-owned; the only thing joining them is the entry's name. An
  * admin moving an entry to another address, or deleting and recreating it under
- * the same name, therefore changes what that name means while every project's
+ * the same name, therefore changes what that name means while every agent's
  * stored tokens stay exactly where they are. Without this the next run would
  * present a token minted for one server to a different one — across the very
  * admin/owner boundary the rest of this codebase is careful to keep.
@@ -72,13 +72,13 @@ function mismatchReason(
   auth: McpServerAuth,
 ): string | undefined {
   if (connection.issuer !== auth.issuer) {
-    return `MCP server '${serverName}' points at a different authorization server than the one this project's credentials were registered with; it needs to be connected again.`;
+    return `MCP server '${serverName}' points at a different authorization server than the one this agent's credentials were registered with; it needs to be connected again.`;
   }
   if (connection.resource !== auth.resource) {
-    return `MCP server '${serverName}' now identifies as a different resource than the one this project's access was granted for; it needs to be connected again.`;
+    return `MCP server '${serverName}' now identifies as a different resource than the one this agent's access was granted for; it needs to be connected again.`;
   }
   if (registryClientMismatch(connection, auth)) {
-    return `MCP server '${serverName}' has changed or removed its shared OAuth client; connect this project again.`;
+    return `MCP server '${serverName}' has changed or removed its shared OAuth client; connect this agent again.`;
   }
   return undefined;
 }
@@ -93,10 +93,10 @@ function unavailableReason(
     return mismatch;
   }
   if (connection.status === "needs_reauth") {
-    return `MCP server '${serverName}' needs to be reconnected for this project.`;
+    return `MCP server '${serverName}' needs to be reconnected for this agent.`;
   }
   if (connection.status !== "connected" || !connection.accessToken) {
-    return `MCP server '${serverName}' has not been authorized for this project yet.`;
+    return `MCP server '${serverName}' has not been authorized for this agent yet.`;
   }
   return undefined;
 }
@@ -125,7 +125,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
     if (!stored) {
       return {
         headers: {},
-        unavailable: `MCP server '${connection.serverName}' needs to be reconnected for this project: its access has expired and the provider issued no refresh token.`,
+        unavailable: `MCP server '${connection.serverName}' needs to be reconnected for this agent: its access has expired and the provider issued no refresh token.`,
       };
     }
     try {
@@ -134,7 +134,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         deps.cipher.decrypt(
           stored,
           mcpConnectionSecretContext(
-            connection.projectName,
+            connection.agentName,
             connection.serverName,
             "refresh-token",
           ),
@@ -142,14 +142,14 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       );
       const now = Date.now();
       const won = await deps.connections.updateTokens(
-        connection.projectName,
+        connection.agentName,
         connection.serverName,
         connection.revision,
         {
           accessToken: deps.cipher.encrypt(
             tokens.accessToken,
             mcpConnectionSecretContext(
-              connection.projectName,
+              connection.agentName,
               connection.serverName,
               "access-token",
             ),
@@ -159,7 +159,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
                 refreshToken: deps.cipher.encrypt(
                   tokens.refreshToken,
                   mcpConnectionSecretContext(
-                    connection.projectName,
+                    connection.agentName,
                     connection.serverName,
                     "refresh-token",
                   ),
@@ -178,7 +178,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       }
       // A refresh or reconnect won. Its grant may belong to a different target
       // or no longer be connected, so validate it against this run's snapshot.
-      const current = await deps.connections.get(connection.projectName, connection.serverName);
+      const current = await deps.connections.get(connection.agentName, connection.serverName);
       if (current) {
         const unavailable = unavailableReason(current, connection.serverName, auth);
         if (unavailable) {
@@ -191,7 +191,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
             deps.cipher.decrypt(
               current.accessToken,
               mcpConnectionSecretContext(
-                current.projectName,
+                current.agentName,
                 current.serverName,
                 "access-token",
               ),
@@ -201,7 +201,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       }
       return {
         headers: {},
-        unavailable: `MCP server '${connection.serverName}' could not be authorized for this project: its credentials changed while this run was starting.`,
+        unavailable: `MCP server '${connection.serverName}' could not be authorized for this agent: its credentials changed while this run was starting.`,
       };
     } catch (error) {
       if (error instanceof OAuthGrantError) {
@@ -209,32 +209,32 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         // re-authorize. Conditional on the same revision, so a concurrent
         // successful refresh is not overwritten by this failure.
         await deps.connections.updateTokens(
-          connection.projectName,
+          connection.agentName,
           connection.serverName,
           connection.revision,
           { status: "needs_reauth", updatedAt: new Date().toISOString() },
         );
         return {
           headers: {},
-          unavailable: `MCP server '${connection.serverName}' needs to be reconnected for this project (${error.code}).`,
+          unavailable: `MCP server '${connection.serverName}' needs to be reconnected for this agent (${error.code}).`,
         };
       }
       // A 5xx, a timeout, a proxy page: transient, and must not cost anyone
       // their connection. The run loses this server's tools and says so.
       return {
         headers: {},
-        unavailable: `MCP server '${connection.serverName}' could not be authorized for this project: ${error instanceof Error ? error.message : String(error)}`,
+        unavailable: `MCP server '${connection.serverName}' could not be authorized for this agent: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }
 
   return {
-    async headersFor(projectName, serverName, auth) {
-      const connection = await deps.connections.get(projectName, serverName);
+    async headersFor(agentName, serverName, auth) {
+      const connection = await deps.connections.get(agentName, serverName);
       if (!connection) {
         return {
           headers: {},
-          unavailable: `MCP server '${serverName}' requires authorization and this project has not connected it.`,
+          unavailable: `MCP server '${serverName}' requires authorization and this agent has not connected it.`,
         };
       }
       // Ahead of every path that would hand a credential out, including the one
@@ -249,7 +249,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
           headers: bearer(
             deps.cipher.decrypt(
               connection.accessToken,
-              mcpConnectionSecretContext(projectName, serverName, "access-token"),
+              mcpConnectionSecretContext(agentName, serverName, "access-token"),
             ),
           ),
         };
@@ -258,8 +258,8 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       return refresh(connection, mcpTokenTarget(deps.cipher, connection, auth), auth);
     },
 
-    async markUnauthorized(projectName, serverName, scope) {
-      const connection = await deps.connections.get(projectName, serverName);
+    async markUnauthorized(agentName, serverName, scope) {
+      const connection = await deps.connections.get(agentName, serverName);
       if (!connection) {
         return;
       }
@@ -275,7 +275,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       // Through the compare-and-set, like every other write to this row: a
       // reconnect or a refresh landing between the read above and this write
       // would otherwise be overwritten with the stale row just read.
-      await deps.connections.updateTokens(projectName, serverName, connection.revision, {
+      await deps.connections.updateTokens(agentName, serverName, connection.revision, {
         accessToken: connection.accessToken,
         refreshToken: connection.refreshToken,
         expiresAt: connection.expiresAt,

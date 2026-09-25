@@ -13,7 +13,7 @@ const hasSomethingToSay = (value: {
 
 export const createChatSchema = z
   .object({
-    projectName: z.string().min(1),
+    agentName: z.string().min(1),
     firstMessage: z.string().default(""),
     images: attachedImagesSchema,
     documents: attachedDocumentsSchema,

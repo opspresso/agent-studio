@@ -9,19 +9,19 @@ const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const input: AudioConfigInput = { enabled: true, model: "openai/whisper-1", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" }, maxActive: 1, maxPerOccurrence: 1 };
 const authorize = vi.fn(async () => {});
 const api = createAudioConfigUseCases({ configs, authorize, validate: async () => {}, now: () => new Date("2026-09-09T00:00:00Z") });
-beforeEach(() => { vi.clearAllMocks(); fake.rows.clear(); fake.seed([{ ...keys.project("audio"), entityType: "PROJECT" }]); });
+beforeEach(() => { vi.clearAllMocks(); fake.rows.clear(); fake.seed([{ ...keys.agent("audio"), entityType: "AGENT" }]); });
 describe("revisioned audio configuration", () => {
   const seedWriter = (overrides = {}) => fake.seed([
-    { ...keys.project("writer"), entityType: "PROJECT", ownerEmail: "owner@example.test", configuration: { model: "text" }, ...overrides },
+    { ...keys.agent("writer"), entityType: "AGENT", ownerEmail: "owner@example.test", configuration: { model: "text" }, ...overrides },
   ]);
-  const writerInput = { ...input, postprocess: { projectName: "writer" } };
+  const writerInput = { ...input, postprocess: { agentName: "writer" } };
 
   it("stores a reference to a live configured Agent without changing its settings", async () => {
     seedWriter();
-    const before = await store.getItem(keys.project("writer"));
+    const before = await store.getItem(keys.agent("writer"));
     await api.save("audio", "owner@example.test", writerInput, 0);
-    expect(await store.getItem(keys.project("writer"))).toEqual(before);
-    expect((await configs.get("audio"))?.postprocess).toEqual({ projectName: "writer" });
+    expect(await store.getItem(keys.agent("writer"))).toEqual(before);
+    expect((await configs.get("audio"))?.postprocess).toEqual({ agentName: "writer" });
   });
   it.each([{ configuration: undefined }, { deletingAt: "now" }, { ownerEmail: "other@example.test" }])(
     "refuses a postprocessor that became unavailable: %j", async overrides => {
@@ -55,8 +55,8 @@ describe("revisioned audio configuration", () => {
     await expect(api.save("audio", "owner@example.test", { ...input, retention: { ...input.retention, value: -1 } }, 0)).rejects.toMatchObject({ status: 400 });
     expect(await configs.get("audio")).toBeNull();
   });
-  it("never creates configuration under a deleting project", async () => {
-    fake.seed([{ ...keys.project("audio"), entityType: "PROJECT", deletingAt: "2026-09-09T00:00:00Z" }]);
+  it("never creates configuration under a deleting agent", async () => {
+    fake.seed([{ ...keys.agent("audio"), entityType: "AGENT", deletingAt: "2026-09-09T00:00:00Z" }]);
     await expect(api.save("audio", "owner@example.test", input, 0)).rejects.toMatchObject({ status: 409 });
     expect(await configs.get("audio")).toBeNull();
   });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { toChatCompletion, toChatCompletionChunks } from "@/app/api/projects/_lib/openai";
-import { collectRun } from "@/application/execution/runProject";
+import { toChatCompletion, toChatCompletionChunks } from "@/app/api/agents/_lib/openai";
+import { collectRun } from "@/application/execution/runAgent";
 import type { EngineChunk } from "@/domain/llm/types";
 
 async function* stream(chunks: EngineChunk[]): AsyncGenerator<EngineChunk> {
@@ -86,7 +86,7 @@ describe("toChatCompletionChunks images", () => {
   });
 
   it("streams an image a subagent drew", async () => {
-    // Delegating to an image subagent is how an agent project draws, so the
+    // Delegating to an image subagent is how an agent draws, so the
     // picture arrives authored — it is still the answer.
     const frames: Record<string, unknown>[] = [];
     for await (const frame of toChatCompletionChunks(

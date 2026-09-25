@@ -3,8 +3,8 @@ import type { EngineChunk } from "@/domain/llm/types";
 
 // Route-handler test: the container repos and execution facade are mocked to
 // verify the response contract and the selected streaming mode.
-const { projectRepo, calls } = vi.hoisted(() => ({
-  projectRepo: { get: vi.fn() },
+const { agentRepo, calls } = vi.hoisted(() => ({
+  agentRepo: { get: vi.fn() },
   calls: [] as string[],
 }));
 
@@ -18,22 +18,22 @@ vi.mock("@/lib/container", async () => ({
   // override would otherwise fail on an undefined binding rather than say what
   // is missing.
   apiTokenUseCases: (
-    await import("@/application/project/apiTokenUseCases")
+    await import("@/application/agent/apiTokenUseCases")
   ).createApiTokenUseCases({ getApiToken: async () => null } as never, {} as never),
-  projectUseCases: (
-    await import("@/application/project/projectUseCases")
-  ).createProjectUseCases(projectRepo as never),
+  agentUseCases: (
+    await import("@/application/agent/agentUseCases")
+  ).createAgentUseCases(agentRepo as never),
 
 }));
 
-vi.mock("@/app/api/projects/_lib/executionAuth", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/app/api/projects/_lib/executionAuth")>()),
+vi.mock("@/app/api/agents/_lib/executionAuth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/app/api/agents/_lib/executionAuth")>()),
   authenticateExecution: async () => ({ email: "owner@example.com", viaToken: false }),
 }));
 
-vi.mock("@/application/execution/runProject", () => ({
-  executeProject: async () => {
-    calls.push("executeProject");
+vi.mock("@/application/execution/runAgent", () => ({
+  collectAgentRun: async () => {
+    calls.push("collectAgentRun");
     return {
       content: "collected answer",
       model: "openai/gpt-5-mini",
@@ -43,19 +43,19 @@ vi.mock("@/application/execution/runProject", () => ({
       warnings: [],
     };
   },
-  executeProjectStream: () => {
-    calls.push("executeProjectStream");
+  streamAgentExecution: () => {
+    calls.push("streamAgentExecution");
     return (async function* (): AsyncGenerator<EngineChunk> {
       yield { done: true };
     })();
   },
 }));
 
-const { POST } = await import("@/app/api/projects/[name]/predict/route");
+const { POST } = await import("@/app/api/agents/[name]/predict/route");
 
 const ctx = { params: Promise.resolve({ name: "proj" }) };
 const req = (body: unknown) =>
-  new Request("http://localhost/api/projects/proj/predict", {
+  new Request("http://localhost/api/agents/proj/predict", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -68,24 +68,24 @@ beforeEach(() => {
 
 describe("POST /predict", () => {
   it("hands a non-streaming request to the execution facade", async () => {
-    projectRepo.get.mockResolvedValue({
+    agentRepo.get.mockResolvedValue({
       name: "proj",
       ownerEmail: "owner@example.com",
-      configuration: { projectName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
+      configuration: { agentName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
     });
 
     const res = await POST(req({ messages: [{ role: "user", content: "hi" }] }), ctx);
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ result: "collected answer" });
-    expect(calls).toEqual(["executeProject"]);
+    expect(calls).toEqual(["collectAgentRun"]);
   });
 
   it("rejects unsupported inputs before starting execution", async () => {
-    projectRepo.get.mockResolvedValue({
+    agentRepo.get.mockResolvedValue({
       name: "proj",
       ownerEmail: "owner@example.com",
-      configuration: { projectName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
+      configuration: { agentName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
     });
 
     const res = await POST(req({ variables: { topic: "otters" } }), ctx);
@@ -95,15 +95,15 @@ describe("POST /predict", () => {
   });
 
   it("streams through the shared type dispatch", async () => {
-    projectRepo.get.mockResolvedValue({
+    agentRepo.get.mockResolvedValue({
       name: "proj",
       ownerEmail: "owner@example.com",
-      configuration: { projectName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
+      configuration: { agentName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
     });
 
     const res = await POST(req({ messages: [{ role: "user", content: "hi" }], stream: true }), ctx);
 
     expect(res.headers.get("content-type")).toContain("text/event-stream");
-    expect(calls).toEqual(["executeProjectStream"]);
+    expect(calls).toEqual(["streamAgentExecution"]);
   });
 });

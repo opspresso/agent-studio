@@ -1,6 +1,6 @@
 # Chat
 
-Chat은 agent Project를 실행하는 소유자별 비공개 대화다. 다른 사용자는 존재 여부도 조회할 수 없다.
+Chat은 Agent를 실행하는 소유자별 비공개 대화다. 다른 사용자는 존재 여부도 조회할 수 없다.
 새 Chat의 입력 문구에 대한 Agent 추천은 설정된 결정 모델로 접근 가능한 Agent의 이름·설명을
 평가한다. 결과는 선택 버튼으로만 반영하며 기존 Chat의 실행·모델 이력에는 개입하지 않는다.
 실행은 공통 `ChatDeps.runAgent`에 바인딩한 `executeAgent`를 사용하고 HTTP self-call 없이
@@ -11,7 +11,7 @@ SSE로 전달한다. HTTP 계약은 [Chat API](../API.md#chats), 변경 불변�
 
 | 상태 | 목적·소유자 |
 |---|---|
-| Chat META | 제목·소유자·Project, `nextSeq`, 실행 lease, Workspace 연결 |
+| Chat META | 제목·소유자·Agent, `nextSeq`, 실행 lease, Workspace 연결 |
 | ChatMessage | 화면의 user·assistant·tool 기록, 경고와 Artifact 참조. `run.ts`가 저장한다 |
 | SDK Session | 모델에 재생할 native 이력과 승인 RunState. `runtime/session.ts`와 전용 SQL repository가 소유한다 |
 | run log | 연결이 끊긴 독자가 실행을 따라잡는 짧은 버퍼. `runLog.ts`가 기록한다 |
@@ -42,7 +42,7 @@ Session은 오래된 완전한 턴과 이미지를 예산에 맞춰 생략하고
 
 승인이 필요한 도구는 효과 실행 전에 RunState를 저장한다. 소유자는 Agent·도구·전체 인자를
 검토하고 승인·거절한다. 승인 중에는 새 메시지를 보내지 못하며 승인 재개는 새 user 행을 만들지 않는다.
-재개는 정확한 revision·항목 ID, 현재 프로젝트 접근, Agent 설정·연결·도구 binding fingerprint를 검사한다.
+재개는 정확한 revision·항목 ID, 현재 Agent 접근, Agent 설정·연결·도구 binding fingerprint를 검사한다.
 
 체크포인트를 running으로 선점한 후 중단된 실행은 도구 효과가 불확실하므로 자동 재실행하지 않는다.
 살아 있는 lease가 없을 때 폐기하면 화면 기록은 보존하고 미완료 실행을 다음 모델 문맥에서 제외한다.
@@ -137,11 +137,11 @@ SDK Session이 최근 이미지와 편집 핸들을 다음 턴으로 이어 준�
 ## Workspace 후속 실행
 
 `Chat.workspaceId`는 Chat 자체가 Workspace 실행 패널일 때 사용한다.
-일반 Agent 대화가 선택한 작업 공간은 `linkedWorkspaces`에 프로젝트별로 기록한다.
+일반 Agent 대화가 선택한 작업 공간은 `linkedWorkspaces`에 Agent별로 기록한다.
 Workspace use case의 transaction이 이 선택을 관리하고 일반 Chat 갱신은 보존한다.
 
 승인·CI 결과는 `workspaceAction`이 있는 플랫폼 assistant 행으로 표시한다.
-worker는 원래 소유자·프로젝트·Workspace 선택·SDK Session을 확인한 뒤 검증한 결과 이벤트로
+worker는 원래 소유자·Agent·Workspace 선택·SDK Session을 확인한 뒤 검증한 결과 이벤트로
 후속 실행을 시작한다. 플랫폼 결과를 새 사용자 요청이나 다음 Git 동작의 승인으로 해석하지 않는다.
 
 연결된 화면은 보이는 동안 실행이 없을 때 tail을 확인하고 새 run을 발견하면 재접속한다.

@@ -4,7 +4,7 @@ import * as store from "@/infrastructure/db/store";
 import { keys } from "@/infrastructure/db/keys";
 import { workspaceRepository as repository } from "@/infrastructure/db/repositories/workspaceRepository";
 import { chatRepository as chats } from "@/infrastructure/db/repositories/chatRepository";
-import { projectRepository as projects } from "@/infrastructure/db/repositories/projectRepository";
+import { agentRepository as agents } from "@/infrastructure/db/repositories/agentRepository";
 import { createWorkspaceUseCases, type WorkspaceView } from "@/application/workspace/workspaceUseCases";
 import { WORKSPACE_DIRECTORY } from "@/infrastructure/workspace/runtimeAdapters";
 import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
@@ -20,20 +20,20 @@ const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const now = new Date("2026-09-14T00:00:00Z");
 const owner = "owner@example.com";
 let serial = 0;
-const policy = { projectName: "demo", runtimes: ["command", "codex"] as ("command" | "codex")[], repositories: ["org/repo"], checks: [], deploymentWorkflows: [] };
-const useCases = createWorkspaceUseCases({ repository, chats, projects, now: () => now, newId: () => `id-${++serial}`,
+const policy = { agentName: "demo", runtimes: ["command", "codex"] as ("command" | "codex")[], repositories: ["org/repo"], checks: [], deploymentWorkflows: [] };
+const useCases = createWorkspaceUseCases({ repository, chats, agents, now: () => now, newId: () => `id-${++serial}`,
   policy: () => policy, idleTtlSeconds: 60, checkRepository: async () => {} });
 const authorize = vi.fn(async () => {});
 const sleep = vi.fn(async (_ms: number) => {});
 const requestGit = vi.fn<(...args: unknown[]) => Promise<CodingApproval>>();
 const attachRepository = vi.fn<(...args: unknown[]) => Promise<WorkspaceView>>();
 const pullRequest = vi.fn<(...args: unknown[]) => Promise<PullRequestInfo | undefined>>();
-const makeTool = (projectName = "demo", ownerEmail = owner, sourceChatId?: string, occurrence = "parent-run") => createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, publicBaseUrl: "https://studio.example.test", policy: () => policy }, { projectName, ownerEmail, sourceChatId, occurrence });
+const makeTool = (agentName = "demo", ownerEmail = owner, sourceChatId?: string, occurrence = "parent-run") => createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, publicBaseUrl: "https://studio.example.test", policy: () => policy }, { agentName, ownerEmail, sourceChatId, occurrence });
 const invoke = async (request: Record<string, unknown>, callId = "call-start") => JSON.parse((await makeTool()({ request }, callId)).text);
 const start = { operation: "start", runtime: "command", repository: null, base_branch: null, task: "printf report > report.txt" };
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(now); vi.clearAllMocks(); serial = 0; fake.rows.clear();
-  fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner, visibility: "public", createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
+  fake.seed([{ ...keys.agent("demo"), entityType: "AGENT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner, visibility: "public", createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
 });
 afterEach(() => vi.useRealTimers());
 
@@ -43,16 +43,16 @@ describe("Workspace Agent capability", () => {
       result: { repository: "org/new", repositoryId: 42, url: "https://github.example.test/org/new", baseBranch: "main", private: true } }));
     const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, createRepository,
       workdir: WORKSPACE_DIRECTORY, publicBaseUrl: "https://studio.example.test", policy: () => ({ ...policy, mode: "new" }) },
-    { projectName: "demo", ownerEmail: owner, occurrence: "creation-test" });
+    { agentName: "demo", ownerEmail: owner, occurrence: "creation-test" });
     const access = JSON.parse((await tool({ request: { operation: "check_repository_access", repository: "org/new" } }, "check")).text);
     expect(access).toMatchObject({ allowed: false, creation_allowed: true, repository_mode: "new" });
-    const request = { operation: "create_repository", repository: "org/new", description: "New project", private: true };
+    const request = { operation: "create_repository", repository: "org/new", description: "New agent", private: true };
     const validate = createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!);
     expect(() => validate({ request })).not.toThrow();
     expect(() => validate({ request: { ...request, created_at: "2026-09-15" } })).toThrow();
     expect(JSON.parse((await tool({ request }, "create")).text)).toMatchObject({ status: "created", allowed: true,
       repository_url: "https://github.example.test/org/new", base_branch: "main", workspace_created: false, task_queued: false });
-    expect(createRepository).toHaveBeenCalledWith("demo", { repository: "org/new", description: "New project", private: true }, owner);
+    expect(createRepository).toHaveBeenCalledWith("demo", { repository: "org/new", description: "New agent", private: true }, owner);
   });
   it("checks policy before repository creation and returns a real management link without creating compute", async () => {
     const request = { operation: "check_repository_access", repository: "org/new-repo" };
@@ -71,7 +71,7 @@ describe("Workspace Agent capability", () => {
     await expect(invoke({ ...request, repository: "other/repo" })).rejects.toMatchObject({ status: 400 });
   });
   it("reuses the source chat across tool IDs and turns, then accepts a minimal follow-up run", async () => {
-    await chats.create({ chatId: "source-chat", projectName: "demo", title: "Task", ownerEmail: owner, createdAt: now.toISOString(), updatedAt: now.toISOString() });
+    await chats.create({ chatId: "source-chat", agentName: "demo", title: "Task", ownerEmail: owner, createdAt: now.toISOString(), updatedAt: now.toISOString() });
     const tool = makeTool("demo", owner, "source-chat");
     const first = JSON.parse((await tool({ request: start }, "start-1")).text);
     expect(first.workdir).toBe(WORKSPACE_DIRECTORY);
@@ -97,7 +97,7 @@ describe("Workspace Agent capability", () => {
   });
 
   it("requires explicit selection before mutating a different Workspace", async () => {
-    await chats.create({ chatId: "source-chat", projectName: "demo", title: "Task", ownerEmail: owner, createdAt: now.toISOString(), updatedAt: now.toISOString() });
+    await chats.create({ chatId: "source-chat", agentName: "demo", title: "Task", ownerEmail: owner, createdAt: now.toISOString(), updatedAt: now.toISOString() });
     const first = JSON.parse((await makeTool("demo", owner, undefined, "first-run")({ request: start }, "first")).text);
     const second = JSON.parse((await makeTool("demo", owner, undefined, "second-run")({ request: start }, "second")).text);
     const tool = makeTool("demo", owner, "source-chat");
@@ -111,7 +111,7 @@ describe("Workspace Agent capability", () => {
     authorize.mockRejectedValueOnce(new Error("Access revoked"));
     await expect(invoke(start)).rejects.toThrow("Access revoked");
     expect(await repository.list(owner, 10)).toHaveLength(0);
-    const disabled = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, policy: () => undefined }, { projectName: "demo", ownerEmail: owner, occurrence: "parent" });
+    const disabled = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, policy: () => undefined }, { agentName: "demo", ownerEmail: owner, occurrence: "parent" });
     await expect(disabled({ request: { operation: "options" } }, "read")).rejects.toThrow("not enabled");
   });
   it("queues a Git-free task once for a repeated SDK call and reports admission honestly", async () => {
@@ -130,7 +130,7 @@ describe("Workspace Agent capability", () => {
     expect(await repository.list(owner, 20)).toHaveLength(1);
     expect(await repository.runs(first.workspace_id, 20)).toHaveLength(1);
   });
-  it("rejects an unconfigured repository and foreign owners or projects", async () => {
+  it("rejects an unconfigured repository and foreign owners or agents", async () => {
     await expect(invoke({ ...start, repository: "other/repo", base_branch: "main" })).rejects.toMatchObject({ status: 400 });
     const first = await invoke(start);
     const args = { request: { operation: "status", workspace_id: first.workspace_id, run_id: null, after_seq: 0 } };
@@ -170,7 +170,7 @@ describe("Workspace Agent capability", () => {
     { kind: "push-main" },
     { kind: "deploy", workflow: "deploy.yml", ref: "main", inputs: { environment: "preview" } },
   ])("prepares $kind through the actual tool schema and reuses its pending review without native tasks", async action => {
-    const workspace = await useCases.create({ projectName: "demo", chatId: "review-chat", createChat: true,
+    const workspace = await useCases.create({ agentName: "demo", chatId: "review-chat", createChat: true,
       title: "Review", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
     const approval: CodingApproval = { id: "approval-1", workspaceId: workspace.id, action, requestedBy: owner,
       requestedAt: now.toISOString(), status: "pending", fingerprint: "reviewed-tree",
@@ -199,13 +199,13 @@ describe("Workspace Agent capability", () => {
   it("exposes current deployment choices without creating a workspace", async () => {
     const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest,
       workdir: WORKSPACE_DIRECTORY, policy: () => ({ ...policy, deploymentWorkflows: ["deploy.yml"] }) },
-    { projectName: "demo", ownerEmail: owner, occurrence: "options" });
+    { agentName: "demo", ownerEmail: owner, occurrence: "options" });
     expect(JSON.parse((await tool({ request: { operation: "options" } }, "options")).text).deployment_workflows).toEqual(["deploy.yml"]);
     expect(await repository.list(owner, 20)).toHaveLength(0);
     expect(requestGit).not.toHaveBeenCalled();
   });
   it("rejects ambiguous deployment inputs and preserves approval-policy failures", async () => {
-    const workspace = await useCases.create({ projectName: "demo", chatId: "deploy-chat", createChat: true,
+    const workspace = await useCases.create({ agentName: "demo", chatId: "deploy-chat", createChat: true,
       title: "Deploy", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
     const action = { kind: "deploy", workflow: "deploy.yml", ref: "main", inputs: [] };
     const request = { operation: "prepare_git", workspace_id: workspace.id, action };
@@ -223,7 +223,7 @@ describe("Workspace Agent capability", () => {
     expect(await repository.runs(workspace.id, 10)).toHaveLength(0);
   });
   it("reports PR publication and refreshes its current head/CI even without a native run", async () => {
-    const workspace = await useCases.create({ projectName: "demo", chatId: "pr-chat", createChat: true,
+    const workspace = await useCases.create({ agentName: "demo", chatId: "pr-chat", createChat: true,
       title: "PR", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
     const pr: PullRequestInfo = { number: 7, url: "https://example.test/org/repo/pull/7", headSha: "a".repeat(40), baseBranch: "main", draft: false, state: "open", ci: "pending" };
     await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, pullRequest: pr, revision: workspace.revision + 1 } });
@@ -237,7 +237,7 @@ describe("Workspace Agent capability", () => {
     const channel = new FakeChannel([[toolCallChunk(0, "workspace-call", "Workspace", JSON.stringify({ request: { operation: "options" } }))], [contentChunk("Ready")]]);
     const workspaceTool = vi.fn(makeTool());
     const chunks = [];
-    for await (const chunk of runAgent({ channel, createToolSchemaValidator, workspaceTool }, { projectName: "demo", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "Show Workspace options" }] })) chunks.push(chunk);
+    for await (const chunk of runAgent({ channel, createToolSchemaValidator, workspaceTool }, { agentName: "demo", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "Show Workspace options" }] })) chunks.push(chunk);
     expect(workspaceTool).toHaveBeenCalledWith({ request: { operation: "options" } }, "workspace-call");
     expect(chunks.some(chunk => chunk.toolResult?.name === "Workspace")).toBe(true);
   });

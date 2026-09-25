@@ -11,7 +11,7 @@ const backendSchema = z.object({
 });
 export type WorkspaceConfig = z.infer<typeof backendSchema>;
 
-/** Only Sandbox infrastructure is deployment-owned. Project tools and models live in the database. */
+/** Only Sandbox infrastructure is deployment-owned. Agent tools and models live in the database. */
 export function parseWorkspaceConfig(env: Record<string, string | undefined>): WorkspaceConfig | undefined {
   if (!env.WORKSPACE_IMAGE?.trim()) return undefined;
   try { return backendSchema.parse({ image: env.WORKSPACE_IMAGE, network: env.WORKSPACE_NETWORK,

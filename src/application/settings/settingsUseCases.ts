@@ -461,7 +461,7 @@ export function createSettingsUseCases(
          * What it would fall back *to* is fail-open and silent. An empty admin list
          * makes `isAdminEmail` true for everyone — every signed-in user could then
          * mutate the shared registries and re-edit this very page — while making
-         * `isConfiguredAdmin` false for everyone, revoking the project override at
+         * `isConfiguredAdmin` false for everyone, revoking the agent override at
          * the same moment; `assertAccessControlConfig` cannot catch it, because it
          * reads the env var and never runs again. An empty allowed-domains list lets
          * any Google account sign in, which a deployment chooses by leaving the env

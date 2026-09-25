@@ -50,7 +50,7 @@ export default function TracesPage() {
 
   return (
     <Stack gap="md">
-      <SectionHeading title={t("project.tab.traces")}><DateRangePicker value={range} onChange={setRange} /></SectionHeading>
+      <SectionHeading title={t("agent.tab.traces")}><DateRangePicker value={range} onChange={setRange} /></SectionHeading>
 
       {loading ? (
         <LoadingText />

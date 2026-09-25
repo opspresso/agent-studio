@@ -1,7 +1,7 @@
 /**
  * The registry list shape: loading, then empty, then a grid of cards.
  *
- * Four pages — agents, tools, skills, projects — spelled this out identically,
+ * Four pages — agents, tools, skills, agents — spelled this out identically,
  * down to the breakpoints. The card surface itself is now Mantine's `Card`
  * (see the `Card` defaults in `src/app/theme.ts`); what stays here is the
  * three states and the grid, because those are what has to read the same across

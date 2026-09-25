@@ -34,12 +34,12 @@ export function listMyArtifacts(query: ArtifactQuery = {}): Promise<ArtifactPage
   return fetch(`/api/artifacts${queryString(query)}`).then((r) => readJson<ArtifactPage>(r));
 }
 
-/** Everything a project produced, including the Slack and trigger runs. */
-export function listProjectArtifacts(
-  projectName: string,
+/** Everything an agent produced, including the Slack and trigger runs. */
+export function listAgentArtifacts(
+  agentName: string,
   query: ArtifactQuery = {},
 ): Promise<ArtifactPage> {
-  return fetch(`/api/projects/${projectName}/artifacts${queryString(query)}`).then((r) =>
+  return fetch(`/api/agents/${agentName}/artifacts${queryString(query)}`).then((r) =>
     readJson<ArtifactPage>(r),
   );
 }

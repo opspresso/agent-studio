@@ -10,9 +10,9 @@ import { conversationOf, type RunConversation } from "@/domain/execution/actor";
  * is its own conversation; a plain group without topics is one conversation
  * for everyone in it, which is what it looks like to its members too.
  *
- * Deliberately not qualified by bot: bots are per project and a project has one
+ * Deliberately not qualified by bot: bots are per agent and an agent has one
  * Telegram bot, so the chat id is already unique within everything the key is
- * ever compared against — the project's MCP tenant, its transcript rows, and
+ * ever compared against — the agent's MCP tenant, its transcript rows, and
  * its remote-conversation rows.
  */
 export function telegramConversation(chatId: number | string, threadId?: number): RunConversation {

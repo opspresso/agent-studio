@@ -4,7 +4,7 @@ import {
   MEMBER_TIERS,
   TIER_LIMITS,
   tierAtLeast,
-  tierMayCreateProjects,
+  tierMayCreateAgents,
   tierMayUseApiTokens,
   toMemberTier,
 } from "@/domain/member/tiers";
@@ -40,10 +40,10 @@ describe("memberEmailFromActorKey", () => {
     expect(memberEmailFromActorKey("user:a@example.com")).toBe("a@example.com");
   });
 
-  it("does not bill a project token to its owner", () => {
-    // A token is a service credential bounded by its project's limits; the
+  it("does not bill an agent token to its owner", () => {
+    // A token is a service credential bounded by its agent's limits; the
     // bypass this would otherwise open is closed by the token-auth tier gate.
-    expect(memberEmailFromActorKey("project-token:a@example.com")).toBeNull();
+    expect(memberEmailFromActorKey("agent-token:a@example.com")).toBeNull();
   });
 
   it("returns null for machine kinds and empty ids", () => {
@@ -54,15 +54,15 @@ describe("memberEmailFromActorKey", () => {
 });
 
 describe("tier capabilities", () => {
-  it("lets admin and member create projects and use API tokens", () => {
+  it("lets admin and member create agents and use API tokens", () => {
     for (const tier of ["admin", "member"] as const) {
-      expect(tierMayCreateProjects(tier)).toBe(true);
+      expect(tierMayCreateAgents(tier)).toBe(true);
       expect(tierMayUseApiTokens(tier)).toBe(true);
     }
   });
 
   it("refuses both to guest", () => {
-    expect(tierMayCreateProjects("guest")).toBe(false);
+    expect(tierMayCreateAgents("guest")).toBe(false);
     expect(tierMayUseApiTokens("guest")).toBe(false);
   });
 

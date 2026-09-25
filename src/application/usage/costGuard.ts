@@ -1,8 +1,8 @@
 /**
- * Spend guard for one project, over the UTC day and the UTC month.
+ * Spend guard for one agent, over the UTC day and the UTC month.
  *
  * The usage aggregates were already there; nothing read them back. A runaway
- * tool loop, or a caller hammering the shared project catalog, could spend
+ * tool loop, or a caller hammering the shared agent catalog, could spend
  * without limit inside the per-run bounds (10 minutes, 50 turns) because those
  * bound one run and nothing bounded the day — and a slow burn under the daily
  * threshold every day was bounded by nothing at all, which is what the monthly
@@ -15,12 +15,12 @@
  * Short-timescale suppression is a different mechanism (see the abuse-control
  * milestone) and must not be assumed from this one.
  *
- * Every failure here is fail-open: a project must not stop running because the
+ * Every failure here is fail-open: an agent must not stop running because the
  * guard's own read failed. The one exception is the block decision itself,
  * which is only ever reached on a successful read.
  */
 
-import { costAlertDestinations, type Project } from "@/domain/project/types";
+import { costAlertDestinations, type Agent } from "@/domain/agent/types";
 import type { MessageDestination } from "@/domain/messaging/destination";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import type { UsageRow } from "@/domain/usage/types";
@@ -32,20 +32,20 @@ import { log } from "@/shared/logger";
 export type CostWindow = "daily" | "monthly";
 
 /**
- * Posting one alert with the project's own integration credentials, including
+ * Posting one alert with the agent's own integration credentials, including
  * credential resolution and each platform's delivery details. Keeping that in
  * one injected function prevents the usage slice from importing messaging
  * adapters; the composition root closes over them instead.
  */
 export type PostCostAlert = (
-  project: Project,
+  agent: Agent,
   destination: MessageDestination,
   text: string,
 ) => Promise<void>;
 
 /**
  * Only `usage` is required. The notification is the optional half of this
- * guard: a project with a block threshold and no way to announce it must still
+ * guard: an agent with a block threshold and no way to announce it must still
  * stop spending.
  */
 export interface CostGuardDeps {
@@ -61,14 +61,14 @@ export interface CostGuardDeps {
  */
 export class CostLimitExceededError extends RateLimitedError {
   constructor(
-    readonly projectName: string,
+    readonly agentName: string,
     readonly spentUsd: number,
     readonly limitUsd: number,
     retryAfterSeconds: number,
     readonly window: CostWindow = "daily",
   ) {
     super(
-      `Project "${projectName}" has reached its ${window} cost limit ` +
+      `Agent "${agentName}" has reached its ${window} cost limit ` +
         `($${spentUsd.toFixed(2)} of $${limitUsd.toFixed(2)}); runs resume at ` +
         `${window === "daily" ? "00:00 UTC" : "the start of the next month (UTC)"}.`,
       retryAfterSeconds,
@@ -104,27 +104,27 @@ function sumCost(costUsd: Record<string, number>): number {
   return Object.values(costUsd).reduce((sum, value) => sum + (value || 0), 0);
 }
 
-/** Total USD spent on a project for one day, across every model. */
+/** Total USD spent on an agent for one day, across every model. */
 async function spentToday(
   deps: CostGuardDeps,
-  projectName: string,
+  agentName: string,
   date: string,
 ): Promise<number> {
-  const row = await deps.usage.getDay(projectName, date);
+  const row = await deps.usage.getDay(agentName, date);
   return row ? sumCost(row.costUsd) : 0;
 }
 
 /**
  * The month's daily rows — one bounded query over at most 31 rows in the
- * project's own partition. The result carries today's row too, so a caller that
+ * agent's own partition. The result carries today's row too, so a caller that
  * needs both windows reads once.
  */
 async function monthRowsFor(
   deps: CostGuardDeps,
-  projectName: string,
+  agentName: string,
   now: Date,
 ): Promise<UsageRow[]> {
-  return deps.usage.listByProject(projectName, `${utcMonth(now)}-01`, utcDay(now));
+  return deps.usage.listByAgent(agentName, `${utcMonth(now)}-01`, utcDay(now));
 }
 
 function sumRows(rows: UsageRow[]): number {
@@ -136,9 +136,9 @@ function dayFromMonthRows(rows: UsageRow[], date: string): number {
   return todayRow ? sumCost(todayRow.costUsd) : 0;
 }
 
-/** True when the project has no guard configured — the common case, and free. */
-function unguarded(project: Project): boolean {
-  const limits = project.costLimits;
+/** True when the agent has no guard configured — the common case, and free. */
+function unguarded(agent: Agent): boolean {
+  const limits = agent.costLimits;
   return (
     !limits ||
     (limits.alertThresholdUsd === undefined &&
@@ -149,18 +149,18 @@ function unguarded(project: Project): boolean {
 }
 
 /**
- * Refuse the run when the project has already spent its daily block threshold.
+ * Refuse the run when the agent has already spent its daily block threshold.
  *
  * Called before a run is admitted, so a refused run consumes nothing — no
  * metric, no trace, no usage row.
  */
 export async function assertWithinCostLimit(
   deps: CostGuardDeps,
-  project: Project,
+  agent: Agent,
   now: Date = new Date(),
 ): Promise<void> {
-  const dailyLimit = project.costLimits?.blockThresholdUsd;
-  const monthlyLimit = project.costLimits?.monthlyBlockThresholdUsd;
+  const dailyLimit = agent.costLimits?.blockThresholdUsd;
+  const monthlyLimit = agent.costLimits?.monthlyBlockThresholdUsd;
   if (dailyLimit === undefined && monthlyLimit === undefined) {
     return;
   }
@@ -173,11 +173,11 @@ export async function assertWithinCostLimit(
   let monthRows: UsageRow[] | null = null;
   if (monthlyLimit !== undefined) {
     try {
-      monthRows = await monthRowsFor(deps, project.name, now);
+      monthRows = await monthRowsFor(deps, agent.name, now);
     } catch (error) {
       log.error(
         "cost-guard",
-        `could not read month spend for "${project.name}"; skipping the monthly check`,
+        `could not read month spend for "${agent.name}"; skipping the monthly check`,
         error,
       );
     }
@@ -185,7 +185,7 @@ export async function assertWithinCostLimit(
       const spent = sumRows(monthRows);
       if (spent >= monthlyLimit) {
         throw new CostLimitExceededError(
-          project.name,
+          agent.name,
           spent,
           monthlyLimit,
           secondsUntilNextUtcMonth(now),
@@ -202,19 +202,19 @@ export async function assertWithinCostLimit(
       spent = dayFromMonthRows(monthRows, today);
     } else {
       try {
-        spent = await spentToday(deps, project.name, today);
+        spent = await spentToday(deps, agent.name, today);
       } catch (error) {
         // Fail open: the guard exists to bound spend, not to be a second way
         // for a storage blip to take the platform down.
         log.error(
           "cost-guard",
-          `could not read spend for "${project.name}"; allowing the run`,
+          `could not read spend for "${agent.name}"; allowing the run`,
           error,
         );
       }
     }
     if (spent !== null && spent >= dailyLimit) {
-      throw new CostLimitExceededError(project.name, spent, dailyLimit, secondsUntilUtcMidnight(now));
+      throw new CostLimitExceededError(agent.name, spent, dailyLimit, secondsUntilUtcMidnight(now));
     }
   }
 }
@@ -222,19 +222,19 @@ export async function assertWithinCostLimit(
 /**
  * After a run's usage is flushed: re-read the day and notify once per threshold.
  *
- * Runs after the flush on purpose — before it, the run that pushed a project
+ * Runs after the flush on purpose — before it, the run that pushed an agent
  * over its threshold is exactly the run whose spend is not yet visible.
  * Never throws: the answer has already been delivered.
  */
 export async function settleCostLimit(
   deps: CostGuardDeps,
-  project: Project,
+  agent: Agent,
   now: Date = new Date(),
 ): Promise<void> {
-  if (unguarded(project)) {
+  if (unguarded(agent)) {
     return;
   }
-  const limits = project.costLimits!;
+  const limits = agent.costLimits!;
   const date = utcDay(now);
   const wantsDaily =
     limits.blockThresholdUsd !== undefined || limits.alertThresholdUsd !== undefined;
@@ -242,16 +242,16 @@ export async function settleCostLimit(
     limits.monthlyBlockThresholdUsd !== undefined || limits.monthlyAlertThresholdUsd !== undefined;
 
   // One read per window it needs — the month's rows already carry today's, so a
-  // project with both windows configured reads once and a monthly-only project
+  // agent with both windows configured reads once and a monthly-only agent
   // never touches the day row. Each window settles in its own try: a failed
   // daily read must not swallow the monthly notification, which may be the only
   // announcement that runs are now refused.
   let monthRows: UsageRow[] | null = null;
   if (wantsMonthly) {
     try {
-      monthRows = await monthRowsFor(deps, project.name, now);
+      monthRows = await monthRowsFor(deps, agent.name, now);
     } catch (error) {
-      log.error("cost-guard", `settle could not read month spend for "${project.name}"`, error);
+      log.error("cost-guard", `settle could not read month spend for "${agent.name}"`, error);
     }
   }
 
@@ -259,18 +259,18 @@ export async function settleCostLimit(
     try {
       const spent = monthRows
         ? dayFromMonthRows(monthRows, date)
-        : await spentToday(deps, project.name, date);
+        : await spentToday(deps, agent.name, date);
       // Block is reported ahead of alert: once spend is past both, the fact that
       // runs are now refused is the more urgent of the two, and each threshold
       // keeps its own claim so neither swallows the other.
       if (limits.blockThresholdUsd !== undefined && spent >= limits.blockThresholdUsd) {
-        await notifyOnce(deps, project, "daily", date, "block", spent, limits.blockThresholdUsd);
+        await notifyOnce(deps, agent, "daily", date, "block", spent, limits.blockThresholdUsd);
       }
       if (limits.alertThresholdUsd !== undefined && spent >= limits.alertThresholdUsd) {
-        await notifyOnce(deps, project, "daily", date, "alert", spent, limits.alertThresholdUsd);
+        await notifyOnce(deps, agent, "daily", date, "alert", spent, limits.alertThresholdUsd);
       }
     } catch (error) {
-      log.error("cost-guard", `settle failed for "${project.name}" (daily)`, error);
+      log.error("cost-guard", `settle failed for "${agent.name}" (daily)`, error);
     }
   }
 
@@ -284,7 +284,7 @@ export async function settleCostLimit(
       ) {
         await notifyOnce(
           deps,
-          project,
+          agent,
           "monthly",
           month,
           "block",
@@ -298,7 +298,7 @@ export async function settleCostLimit(
       ) {
         await notifyOnce(
           deps,
-          project,
+          agent,
           "monthly",
           month,
           "alert",
@@ -307,7 +307,7 @@ export async function settleCostLimit(
         );
       }
     } catch (error) {
-      log.error("cost-guard", `settle failed for "${project.name}" (monthly)`, error);
+      log.error("cost-guard", `settle failed for "${agent.name}" (monthly)`, error);
     }
   }
 }
@@ -325,7 +325,7 @@ export async function settleCostLimit(
  */
 async function notifyOnce(
   deps: CostGuardDeps,
-  project: Project,
+  agent: Agent,
   window: CostWindow,
   period: string,
   kind: CostAlertKind,
@@ -334,30 +334,30 @@ async function notifyOnce(
 ): Promise<void> {
   const claimed =
     window === "monthly"
-      ? await deps.usage.claimMonthAlert(project.name, period, kind)
-      : await deps.usage.claimAlert(project.name, period, kind);
+      ? await deps.usage.claimMonthAlert(agent.name, period, kind)
+      : await deps.usage.claimAlert(agent.name, period, kind);
   if (!claimed) {
     return;
   }
-  const destinations = project.costLimits ? costAlertDestinations(project.costLimits) : [];
+  const destinations = agent.costLimits ? costAlertDestinations(agent.costLimits) : [];
   const postAlert = deps.postAlert;
   if (postAlert && destinations.length > 0) {
     const resume = window === "daily" ? "00:00 UTC" : "the start of the next month (UTC)";
     const text =
       kind === "block"
-        ? `⛔ ${project.displayName} has reached its ${window} cost limit — ` +
+        ? `⛔ ${agent.displayName} has reached its ${window} cost limit — ` +
           `$${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)} (${period}, UTC). ` +
           `Further runs are refused until ${resume}.`
-        : `⚠️ ${project.displayName} has passed its ${window} cost alert threshold — ` +
+        : `⚠️ ${agent.displayName} has passed its ${window} cost alert threshold — ` +
           `$${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)} (${period}, UTC).`;
     const results = await Promise.allSettled(
-      destinations.map((destination) => postAlert(project, destination, text)),
+      destinations.map((destination) => postAlert(agent, destination, text)),
     );
     results.forEach((result, index) => {
       if (result.status === "rejected") {
         log.error(
           "cost-guard",
-          `could not deliver ${destinations[index]?.kind ?? "unknown"} cost alert for "${project.name}"`,
+          `could not deliver ${destinations[index]?.kind ?? "unknown"} cost alert for "${agent.name}"`,
           result.reason,
         );
       }
@@ -370,7 +370,7 @@ async function notifyOnce(
   // once in the log is the only place an operator can notice the gap.
   log.warn(
     "cost-guard",
-    `"${project.name}" crossed its ${window} ${kind} threshold ` +
+    `"${agent.name}" crossed its ${window} ${kind} threshold ` +
       `($${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)}) with no notification destination available`,
   );
 }

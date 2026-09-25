@@ -443,7 +443,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
             <Text component="h2" fz="sm" fw={700} m={0} truncate="end" title={chat.title}>{chat.title}</Text>
             <Group gap="xs">
               <Badge variant="outline" color="gray">{t("chat.kind")}</Badge>
-              {chat.projectName && <Badge color={BADGE.owned} radius="xl">{chat.projectName}</Badge>}
+              {chat.agentName && <Badge color={BADGE.owned} radius="xl">{chat.agentName}</Badge>}
             </Group>
           </Stack>
         </Box>

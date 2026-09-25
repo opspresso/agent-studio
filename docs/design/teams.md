@@ -1,6 +1,6 @@
 # Microsoft Teams
 
-공유 [메시징 파이프라인](messaging.md) 위에 얹은 프로젝트별 봇: Bot Framework 가 어떻게
+공유 [메시징 파이프라인](messaging.md) 위에 얹은 Agent별 봇: Bot Framework 가 어떻게
 인증되는지, 스트리밍이 없는 곳에서 답이 어떻게 전달되는지, 봇이 받는 activity 중 어느 것이
 봇을 향한 것인지, 그리고 히스토리를 돌려주지 않는 플랫폼에서 후속 질문이 맥락을 어떻게
 나르는지 — Telegram 과 같은 질문에, Teams 의 답으로.
@@ -9,9 +9,9 @@
 [API.md](../API.md#레지스트리연동-오퍼레이션) 에, 토큰이 어떻게 검증되는지는
 [SECURITY.md](../SECURITY.md#머신-호출자의-요청-인증) 에 있다.
 
-봇은 **프로젝트별**이다: 운영자가 Azure Bot(Bot Framework) 을 등록하고 Teams 채널을 켠 뒤,
-그 **Microsoft App ID** 와 **클라이언트 시크릿**을 프로젝트의 연동 탭에 붙여 넣고, Azure 에서
-봇의 messaging endpoint 를 `/api/teams/messages/[project]` 로 가리킨다. Telegram 과 달리
+봇은 **Agent별**이다: 운영자가 Azure Bot(Bot Framework) 을 등록하고 Teams 채널을 켠 뒤,
+그 **Microsoft App ID** 와 **클라이언트 시크릿**을 Agent의 연동 탭에 붙여 넣고, Azure 에서
+봇의 messaging endpoint 를 `/api/teams/messages/[agent]` 로 가리킨다. Telegram 과 달리
 이 플랫폼이 발급하는 것도 등록하는 것도 없다 — Azure 에는 endpoint 를 가리키는 호출이
 없어서 콘솔은 주소를 보여 주고 운영자가 붙여 넣는다. *연결 테스트*는 저장된 자격 증명으로
 토큰을 받아 보는 것이고, 그것이 한 쌍이 동작한다는 증거다.
@@ -63,7 +63,7 @@ claim 보다 앞서 라우트에서 실행된다** — Slack·Telegram 과 같�
 
 판단의 대부분은 Teams 가 한다. 채널이나 그룹 채팅의 봇은 (이 플랫폼이 요청하지 않는
 resource-specific consent 없이는) 자기를 @멘션한 메시지만 받고, 개인 채팅은 전부를 보낸다.
-그래서 깔때기는 짧다 (중복 제거는 project·App ID·**대화 id·activity id** 로 키를 잡는다 — activity id 는
+그래서 깔때기는 짧다 (중복 제거는 agent·App ID·**대화 id·activity id** 로 키를 잡는다 — activity id 는
 대화 안에서만 유일하고, 두 채팅이 같은 밀리초를 찍을 수 있다):
 
 1. **메시지가 아님** — 멤버 추가, 리액션, 설치 — 아무것도 하지 않는다;
@@ -93,7 +93,7 @@ Bot Framework 도 봇에게 각 activity 를 한 번 주고 히스토리는 주�
 
 **누가 묻고 있는지**는 Agent가 옵트인했을 때만, activity 가 나르는 만큼만: 보낸 사람의 표시
 이름이다(`callerFrom` 이 프롬프트에 안전하게 만든다). Teams 는 봇에게 email 을 주지 않으므로
-Teams 런은 artifact 를 project 만으로 분류한다. actor 는 사람의 Entra(Azure AD) object id 다 —
+Teams 런은 artifact 를 agent 만으로 분류한다. actor 는 사람의 Entra(Azure AD) object id 다 —
 대화마다 달라지는 `from.id` 와 달리 사람을 가로질러 같다.
 
 ## 첨부

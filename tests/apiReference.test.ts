@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentSchema, chatCompletionsSchema, predictSchema } from "@/app/api/projects/_lib/schemas";
+import { agentSchema, chatCompletionsSchema, predictSchema } from "@/app/api/agents/_lib/schemas";
 import {
   buildApiReference,
   PLACEHOLDERS,
@@ -11,7 +11,7 @@ const ORIGIN = "https://studio.example.com";
 
 function ctx(overrides: Partial<ApiReferenceContext> = {}): ApiReferenceContext {
   return {
-    projectName: "my-bot",
+    agentName: "my-bot",
     configured: true,
     origin: ORIGIN,
     slack: null,
@@ -41,12 +41,12 @@ describe("buildApiReference — current configuration gating", () => {
     expect(ids({ configured: false })).toEqual([]);
   });
 
-  it("uses project names for execution paths", () => {
+  it("uses agent names for execution paths", () => {
     const predict = buildApiReference(ctx({ configured: true })).find(
       (e) => e.id === "predict",
     );
-    expect(predict?.path).toBe("/api/projects/my-bot/predict");
-    expect(codeOf(predict!, "bash")).toContain(`${ORIGIN}/api/projects/my-bot/predict`);
+    expect(predict?.path).toBe("/api/agents/my-bot/predict");
+    expect(codeOf(predict!, "bash")).toContain(`${ORIGIN}/api/agents/my-bot/predict`);
   });
 });
 
@@ -103,7 +103,7 @@ describe("buildApiReference — code examples (curl + Python + Node.js)", () => 
     expect(py).toContain("stream=True");
     expect(node).toContain("stream: true");
     // Same base URL as the non-streaming SDK samples — no separate endpoint.
-    expect(py).toContain(`${ORIGIN}/api/projects/my-bot`);
+    expect(py).toContain(`${ORIGIN}/api/agents/my-bot`);
   });
 
   it("non-OpenAI endpoints carry a curl sample only", () => {
@@ -111,24 +111,24 @@ describe("buildApiReference — code examples (curl + Python + Node.js)", () => 
     expect(predict?.codeExamples.map((c) => c.language)).toEqual(["bash"]);
   });
 
-  it("SDK samples point base_url at the project root (SDK appends /chat/completions)", () => {
+  it("SDK samples point base_url at the agent root (SDK appends /chat/completions)", () => {
     const cc = buildApiReference(ctx({ configured: true })).find(
       (e) => e.id === "chat-completions",
     );
-    const base = `${ORIGIN}/api/projects/my-bot`;
+    const base = `${ORIGIN}/api/agents/my-bot`;
     expect(codeOf(cc!, "python")).toContain(`base_url="${base}"`);
     expect(codeOf(cc!, "javascript")).toContain(`baseURL: "${base}"`);
   });
 });
 
-describe("buildApiReference — project webhook", () => {
+describe("buildApiReference — agent webhook", () => {
   it("shows the webhook only once it is switched on (owner view)", () => {
     expect(ids({ webhook: { enabled: true } })).toContain("webhook");
     expect(ids({ webhook: { enabled: false } })).not.toContain("webhook");
     expect(ids({ webhook: null })).not.toContain("webhook");
   });
 
-  it("addresses it by project name alone and authenticates with the trigger secret", () => {
+  it("addresses it by agent name alone and authenticates with the trigger secret", () => {
     const endpoint = buildApiReference(ctx({ webhook: { enabled: true } })).find(
       (e) => e.id === "webhook",
     );
@@ -207,7 +207,7 @@ describe("buildApiReference — no real secrets leak into examples", () => {
 
     for (const text of allStrings()) {
       expect(text).not.toMatch(/sk-[A-Za-z0-9]/); // OpenAI-style key
-      expect(text).not.toMatch(/sk_proj_[A-Za-z0-9]/); // a real project token value
+      expect(text).not.toMatch(/sk_proj_[A-Za-z0-9]/); // a real agent token value
       expect(text).not.toMatch(/xoxb-/); // Slack bot token
     }
   });
@@ -225,8 +225,8 @@ describe("buildApiReference — no real secrets leak into examples", () => {
 
     expect(codeOf(byId("predict"), "bash")).toContain(PLACEHOLDERS.token);
     expect(codeOf(byId("predict"), "bash")).toContain("Authorization: Bearer");
-    expect(codeOf(byId("chat-completions"), "python")).toContain('os.environ["PROJECT_API_TOKEN"]');
-    expect(codeOf(byId("chat-completions"), "javascript")).toContain("process.env.PROJECT_API_TOKEN");
+    expect(codeOf(byId("chat-completions"), "python")).toContain('os.environ["AGENT_API_TOKEN"]');
+    expect(codeOf(byId("chat-completions"), "javascript")).toContain("process.env.AGENT_API_TOKEN");
     expect(codeOf(byId("slack-events"), "bash")).toContain(PLACEHOLDERS.slackSignature);
     expect(codeOf(byId("telegram-webhook"), "bash")).toContain(PLACEHOLDERS.telegramSecret);
     expect(codeOf(byId("teams-messages"), "bash")).toContain(PLACEHOLDERS.teamsToken);

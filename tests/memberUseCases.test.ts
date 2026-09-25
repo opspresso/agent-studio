@@ -131,7 +131,7 @@ describe("member use cases", () => {
       await expect(useCases.me("u@x.com")).resolves.toEqual(stored);
     });
 
-    it("projects an ADMIN_EMAILS member as admin", async () => {
+    it("agents an ADMIN_EMAILS member as admin", async () => {
       const stored = member({ tier: "guest" });
       let persistedTier = stored.tier;
       const useCases = createMemberUseCases(

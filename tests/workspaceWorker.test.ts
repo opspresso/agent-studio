@@ -4,20 +4,20 @@ import * as store from "@/infrastructure/db/store";
 import { keys } from "@/infrastructure/db/keys";
 import { workspaceRepository as repository } from "@/infrastructure/db/repositories/workspaceRepository";
 import { chatRepository as chats } from "@/infrastructure/db/repositories/chatRepository";
-import { projectRepository as projects } from "@/infrastructure/db/repositories/projectRepository";
+import { agentRepository as agents } from "@/infrastructure/db/repositories/agentRepository";
 import { createWorkspaceUseCases } from "@/application/workspace/workspaceUseCases";
 import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { claimWorkspace, WORKSPACE_HEARTBEAT_MS, WORKSPACE_LEASE_MS, WORKSPACE_RETRY_MS } from "@/application/workspace/workerState";
 import { createWorkspaceRuntimeAdapter } from "@/infrastructure/workspace/runtimeAdapters";
 import type { SandboxOperation, SandboxProvider, SandboxCommand } from "@/domain/workspace/ports";
-import type { WorkspaceProjectPolicy } from "@/domain/workspace/policy";
+import type { WorkspaceAgentPolicy } from "@/domain/workspace/policy";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const owner = "owner@example.test";
 let time: number;
 let id: number;
-let policy: WorkspaceProjectPolicy;
+let policy: WorkspaceAgentPolicy;
 let deps: WorkspaceWorkerDeps;
 let operations: Map<string, { status: SandboxOperation["status"]; command: SandboxCommand; frames: { stream: "stdout" | "stderr"; text: string }[]; exitCode: number }>;
 let provider: SandboxProvider;
@@ -35,7 +35,7 @@ beforeEach(async () => {
   operations = new Map();
   existing = new Set();
   checkpointRows = new Map();
-  policy = { projectName: "demo", runtimes: ["command", "codex"], checks: [], deploymentWorkflows: [] };
+  policy = { agentName: "demo", runtimes: ["command", "codex"], checks: [], deploymentWorkflows: [] };
   provider = {
     kind: "fake",
     ensure: vi.fn(async () => { const externalId = `sandbox-${++id}`; existing.add(externalId); return { externalId }; }),
@@ -55,7 +55,7 @@ beforeEach(async () => {
     restore: vi.fn(async () => {}),
     destroy: vi.fn(async externalId => { existing.delete(externalId); }),
   };
-  deps = { repository, chats, projects, provider, policy: () => policy, idleTtlSeconds: 60,
+  deps = { repository, chats, agents, provider, policy: () => policy, idleTtlSeconds: 60,
     checkRepository: async () => {},
     now: () => new Date(time), newId: () => `id-${++id}`, runTimeoutMs: 10_000,
     runtime: kind => createWorkspaceRuntimeAdapter(kind), execute: async (_workspace, work) => { await work(); },
@@ -63,9 +63,9 @@ beforeEach(async () => {
     checkpoints: { put: vi.fn(async (_workspaceId, checkpointId, bytes) => { checkpointRows.set(checkpointId, bytes); }),
       get: vi.fn(async (_workspaceId, checkpointId) => checkpointRows.get(checkpointId) ?? null), delete: vi.fn(async () => { checkpointRows.clear(); }) } };
   const at = new Date(time).toISOString();
-  fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner,
+  fake.seed([{ ...keys.agent("demo"), entityType: "AGENT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner,
     visibility: "public", createdAt: at, updatedAt: at }]);
-  await chats.create({ chatId: "chat-1", projectName: "demo", ownerEmail: owner, title: "Task", createdAt: at, updatedAt: at });
+  await chats.create({ chatId: "chat-1", agentName: "demo", ownerEmail: owner, title: "Task", createdAt: at, updatedAt: at });
 });
 afterEach(() => {
   try { expect(vi.getTimerCount()).toBe(0); }
@@ -74,7 +74,7 @@ afterEach(() => {
 
 async function start(runtime: "command" | "codex" = "command") {
   const api = createWorkspaceUseCases(deps);
-  const workspace = await api.create({ chatId: "chat-1", projectName: "demo", title: "Task", runtime }, owner);
+  const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime }, owner);
   const run = await api.enqueue(workspace.id, owner, runtime === "command" ? { kind: "command", script: "echo task" } : { kind: "task", prompt: "do task" }, "request-0001");
   return { api, workspace, run };
 }
@@ -85,7 +85,7 @@ describe("durable workspace worker", () => {
     policy.repositoryOwners = ["company"];
     deps.policy = async () => policy;
     const api = createWorkspaceUseCases(deps);
-    const workspace = await api.create({ chatId: "chat-1", projectName: "demo", title: "New repository", runtime: "codex", repository: "company/new", baseBranch: "main" }, owner);
+    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "New repository", runtime: "codex", repository: "company/new", baseBranch: "main" }, owner);
     const run = await api.enqueue(workspace.id, owner, { kind: "task", prompt: "Implement feature" }, "request-0001");
     policy = { ...policy, mode: "owners", repositoryOwners: [] };
     await processWorkspace(deps, workspace.id);
@@ -100,7 +100,7 @@ describe("durable workspace worker", () => {
       review: async () => ({ headSha: "a".repeat(40), headTreeSha: "b".repeat(40), treeSha: "b".repeat(40), fingerprint: "tree", diff: "", truncated: false }),
       commit: vi.fn(async () => "unexpected"), push: vi.fn(async () => {}) };
     const api = createWorkspaceUseCases(deps);
-    const workspace = await api.create({ chatId: "chat-1", projectName: "demo", title: "Git work", runtime: "codex", repository: "company/repo", baseBranch: "main" }, owner);
+    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Git work", runtime: "codex", repository: "company/repo", baseBranch: "main" }, owner);
     await api.enqueue(workspace.id, owner, { kind: "task", prompt: "Commit and push the changes" }, "request-0001");
     await processWorkspace(deps, workspace.id);
     const command = vi.mocked(provider.start).mock.calls[0]![2];

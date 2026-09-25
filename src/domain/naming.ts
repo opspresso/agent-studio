@@ -1,5 +1,5 @@
 /**
- * The name every registry entry, project and skill is addressed by.
+ * The name every registry entry, agent and skill is addressed by.
  *
  * One owner, because it was written out ten times — three API schemas, the
  * route-param check, both repo sync clients, and prose in this file's own

@@ -18,7 +18,7 @@ function Fixture() {
   const [fail, setFail] = useState(false);
   const [hold, setHold] = useState(false);
   const [complete, setComplete] = useState<(() => void) | null>(null);
-  const [identity, setIdentity] = useState("Project token");
+  const [identity, setIdentity] = useState("Agent token");
   const [rows, setRows] = useState(() => recordToRows({ Authorization: mask }));
   async function action(name: string) {
     setEvents(current => [...current, name]);
@@ -45,7 +45,7 @@ function Fixture() {
       <Switch label="Fail operations" checked={fail} onChange={event => setFail(event.currentTarget.checked)} />
       <Switch label="Hold operations" checked={hold} onChange={event => setHold(event.currentTarget.checked)} />
       <Button onClick={() => complete?.()}>Complete operation</Button>
-      <Button onClick={() => setIdentity("Other project token")}>Change project</Button>
+      <Button onClick={() => setIdentity("Other agent token")}>Change agent</Button>
       <output aria-label="Operations">{events.join(",") || "none"}</output>
     </Stack>
   </I18nProvider></MantineProvider>;

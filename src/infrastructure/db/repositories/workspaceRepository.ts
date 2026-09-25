@@ -8,7 +8,7 @@ import { keys } from "../keys";
 import { conditions, getItem, queryItems, transact, CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED, type Item, type TransactOp } from "../store";
 import { chatActivityFields, chatIsLive } from "../chatLifecycle";
 import { chatCreationItem, chatMessageItem } from "./chatRepository";
-import { projectIsLive } from "../projectLifecycle";
+import { agentIsLive } from "../agentLifecycle";
 import { expiresAtSeconds, expiresAtFromNow, isExpired, RETENTION } from "../ttl";
 
 function page(limit: number): number {
@@ -51,13 +51,13 @@ function continuationItem(item: WorkspaceContinuation): Item {
 
 function sourceChatLink(workspace: Workspace, sourceChatId: string, expectedWorkspaceId?: string): TransactOp {
   return { kind: "update", key: keys.chat(sourceChatId),
-    patch: row => ({ ...row, linkedWorkspaces: { ...(row?.linkedWorkspaces as Record<string, string> | undefined), [workspace.projectName]: workspace.id } }),
+    patch: row => ({ ...row, linkedWorkspaces: { ...(row?.linkedWorkspaces as Record<string, string> | undefined), [workspace.agentName]: workspace.id } }),
     condition: row => {
       const links = (row?.linkedWorkspaces ?? {}) as Record<string, string>;
-      const current = links[workspace.projectName];
+      const current = links[workspace.agentName];
       return chatIsLive(row) && row?.ownerEmail === workspace.ownerEmail && !row.workspaceId &&
         !isExpired(row.expiresAt, Date.now()) && (current === workspace.id || current === expectedWorkspaceId) &&
-        (current !== undefined || Object.keys(links).length < WORKSPACE_LIMITS.linkedProjects);
+        (current !== undefined || Object.keys(links).length < WORKSPACE_LIMITS.linkedAgents);
     } };
 }
 
@@ -65,15 +65,15 @@ function sourceChatLink(workspace: Workspace, sourceChatId: string, expectedWork
 export const workspaceRepository: WorkspaceRepository = {
   async create(workspace, session, chat, sourceChatId) {
     assertChild(workspace.id, session);
-    if (chat && (chat.chatId !== workspace.chatId || chat.ownerEmail !== workspace.ownerEmail || chat.projectName !== workspace.projectName)) throw new Error("Workspace chat scope mismatch");
+    if (chat && (chat.chatId !== workspace.chatId || chat.ownerEmail !== workspace.ownerEmail || chat.agentName !== workspace.agentName)) throw new Error("Workspace chat scope mismatch");
     if (workspace.revision !== 0 || workspace.sessionId !== session.id || workspace.runtime !== session.runtime) throw new Error("invalid initial workspace");
     if (sourceChatId === workspace.chatId) throw new Error("Workspace cannot be its own source chat");
     await transact([
-      { kind: "check", key: keys.project(workspace.projectName), condition: projectIsLive },
+      { kind: "check", key: keys.agent(workspace.agentName), condition: agentIsLive },
       ...(chat ? [{ kind: "put" as const, item: chatCreationItem({ ...chat, workspaceId: workspace.id }), condition: conditions.notExists }] : [
       { kind: "update" as const, key: keys.chat(workspace.chatId), patch: (row: Item | null) => ({ ...row, workspaceId: workspace.id }), condition: (row: Item | null) =>
         chatIsLive(row) && row?.ownerEmail === workspace.ownerEmail &&
-        row?.projectName === workspace.projectName && row?.workspaceId === undefined && row?.activeRunId === undefined &&
+        row?.agentName === workspace.agentName && row?.workspaceId === undefined && row?.activeRunId === undefined &&
         !isExpired(row?.expiresAt, Date.now()) }]),
       { kind: "put", item: workspaceItem(workspace), condition: conditions.notExists },
       { kind: "put", item: { ...keys.workspaceChat(workspace.chatId), value: workspace.id,
@@ -88,7 +88,7 @@ export const workspaceRepository: WorkspaceRepository = {
     await transact([
       { kind: "check", key: keys.workspace(workspace.id), condition: row => {
         const current = row?.value as Workspace | undefined;
-        return current?.ownerEmail === workspace.ownerEmail && current.projectName === workspace.projectName &&
+        return current?.ownerEmail === workspace.ownerEmail && current.agentName === workspace.agentName &&
           !current.deleteRequestedAt && !isExpired(row?.expiresAt, Date.now());
       } },
       sourceChatLink(workspace, sourceChatId, expectedWorkspaceId),
@@ -115,7 +115,7 @@ export const workspaceRepository: WorkspaceRepository = {
     const operations: TransactOp[] = [{ kind: "put", item: workspaceItem(workspace), condition: row => {
       const previous = row?.value as Workspace | undefined;
       return row?.revision === expectedRevision && previous?.ownerEmail === workspace.ownerEmail &&
-        previous?.chatId === workspace.chatId && previous?.projectName === workspace.projectName &&
+        previous?.chatId === workspace.chatId && previous?.agentName === workspace.agentName &&
         previous?.sessionId === workspace.sessionId && previous?.runtime === workspace.runtime &&
         (previous?.status !== "closed" || (!previous.deleteRequestedAt && (
           (change.reopenOwner === workspace.ownerEmail && workspace.status === "active" && run?.status === "queued" && !!request) ||
@@ -134,7 +134,7 @@ export const workspaceRepository: WorkspaceRepository = {
     }
     if (approval?.sourceChatId && isTerminalCodingApproval(approval.status)) {
       const notification: WorkspaceContinuation = { workspaceId: workspace.id, approvalId: approval.id,
-        chatId: approval.sourceChatId, ownerEmail: approval.requestedBy, projectName: workspace.projectName, revision: 0, status: "pending",
+        chatId: approval.sourceChatId, ownerEmail: approval.requestedBy, agentName: workspace.agentName, revision: 0, status: "pending",
         createdAt: workspace.updatedAt, dueAt: workspace.updatedAt };
       // The effect result and its delivery are one transaction. Re-saving an outcome
       // must not reset a notification already claimed by a chat worker.
@@ -143,7 +143,7 @@ export const workspaceRepository: WorkspaceRepository = {
         condition: row => !row || (row.value as WorkspaceContinuation).chatId === notification.chatId });
     }
     if (request || change.reopenGitOwner) {
-      operations.push({ kind: "check", key: keys.project(workspace.projectName), condition: projectIsLive });
+      operations.push({ kind: "check", key: keys.agent(workspace.agentName), condition: agentIsLive });
       operations.push({ kind: "update", key: keys.chat(workspace.chatId), patch: row => ({ ...row, ...chatActivityFields(workspace.updatedAt) }), condition: row =>
         chatIsLive(row) && row?.ownerEmail === workspace.ownerEmail && !isExpired(row?.expiresAt, Date.now()) });
     }
@@ -207,16 +207,16 @@ export const workspaceRepository: WorkspaceRepository = {
       await transact([{ kind: "update", key: keys.workspaceChild(next.workspaceId, "CONTINUATION", next.approvalId), patch: () => continuationItem(next), condition: row => {
         const previous = row?.value as WorkspaceContinuation | undefined;
         return previous?.revision === expectedRevision && previous.chatId === next.chatId &&
-          previous.ownerEmail === next.ownerEmail && previous.projectName === next.projectName && !isExpired(row?.expiresAt, Date.now());
+          previous.ownerEmail === next.ownerEmail && previous.agentName === next.agentName && !isExpired(row?.expiresAt, Date.now());
       } }, ...(notice ? [
         { kind: "check" as const, key: keys.workspace(next.workspaceId), condition: (row: Item | null) => {
           const workspace = row?.value as Workspace | undefined;
-          return workspace?.ownerEmail === next.ownerEmail && workspace.projectName === next.projectName &&
+          return workspace?.ownerEmail === next.ownerEmail && workspace.agentName === next.agentName &&
             !workspace.deleteRequestedAt && !isExpired(row?.expiresAt, Date.now());
         } },
         { kind: "check" as const, key: keys.chat(next.chatId), condition: (row: Item | null) => chatIsLive(row) &&
           row?.ownerEmail === next.ownerEmail && row?.activeRunId === next.runId &&
-          !isExpired(row?.expiresAt, Date.now()) && (row?.linkedWorkspaces as Record<string, string> | undefined)?.[next.projectName] === next.workspaceId },
+          !isExpired(row?.expiresAt, Date.now()) && (row?.linkedWorkspaces as Record<string, string> | undefined)?.[next.agentName] === next.workspaceId },
         { kind: "put" as const, item: chatMessageItem(notice), condition: conditions.notExists },
       ] : [])]);
       return true;

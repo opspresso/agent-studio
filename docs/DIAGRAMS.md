@@ -38,7 +38,7 @@ flowchart TB
 
 ## 2. 요청 흐름과 이미지 도구
 
-모든 Project 실행은 `src/application/execution/runProject.ts`의 같은 Agent 루프로 모인다.
+모든 Agent 실행은 `src/application/execution/runAgent.ts`의 같은 Agent 루프로 모인다.
 이미지 생성·편집도 이 루프의 도구로 실행한다. 각 표면은 HTTP 형태, 인증, 응답 모양을 결정한다
 ([ARCHITECTURE.md#요청-흐름](ARCHITECTURE.md#요청-흐름)).
 
@@ -50,22 +50,22 @@ flowchart LR
     cc["POST …/chat/completions"]
     agentsse["POST …/agent (SSE)"]
     chat["Chat 생성 · 메시지 · 승인 재개"]
-    slack["POST /api/slack/events/{project}"]
-    telegram["POST /api/telegram/webhook/{project}"]
-    teams["POST /api/teams/messages/{project}"]
-    webhook["POST /api/webhook/{project}"]
+    slack["POST /api/slack/events/{agent}"]
+    telegram["POST /api/telegram/webhook/{agent}"]
+    teams["POST /api/teams/messages/{agent}"]
+    webhook["POST /api/webhook/{agent}"]
     schedule["POST /api/triggers/scan"]
     audio["Audio worker 후처리"]
   end
 
-  subgraph facade["실행 파사드 — runProject.ts"]
+  subgraph facade["실행 파사드 — runAgent.ts"]
     direction TB
     dispatch["현재 Agent 설정 → SDK 도구 루프"]
-    fns["streamProjectRun (청크)<br/>executeProjectStream / executeProject (스트림·수집형)<br/>executeAgent (설정·실행·정산)"]
+    fns["streamAgentRun (청크)<br/>streamAgentExecution / collectAgentRun (스트림·수집형)<br/>executeAgent (설정·실행·정산)"]
   end
 
 
-  bracket["런 브래킷 — openRun<br/>상관 ID → 모델 정책 → 프로젝트 비용 → 멤버 월 상한 → 동시성 슬롯 → 메트릭·Artifact recorder"]
+  bracket["런 브래킷 — openRun<br/>상관 ID → 모델 정책 → Agent 비용 → 멤버 월 상한 → 동시성 슬롯 → 메트릭·Artifact recorder"]
   memory["메모리 준비 (memory prepare span)<br/>명시적 바인딩 recall"]
   resolve["바인딩 해석 (tools prepare span)<br/>요청 + 관련 기억으로 (옵트인) 카탈로그 검색<br/>스킬 · MCP 세션 · 서브에이전트"]
   engine["SDK Agent · Runner — runAgent"]
@@ -105,7 +105,7 @@ flowchart LR
 
 ## 3. 런 브래킷: 최상위 런을 감싸는 한 곳
 
-모든 프로젝트 실행은 `executeAgent`를 통해
+모든 Agent 실행은 `executeAgent`를 통해
 `openRun`을 열고, 오디오 전사는 `openModelCall`, Workspace는 모델 설정 없는 `openTaskRun`을 연다.
 가드는 메트릭 앞에서, `close()`는 사용량 flush 뒤에서 실행한다
 ([ARCHITECTURE.md#런-브래킷](ARCHITECTURE.md#런-브래킷)).
@@ -117,7 +117,7 @@ sequenceDiagram
   participant B as openRun (runBracket)
   participant E as engine.runAgent
   participant T as 도구 · MCP · 서브에이전트
-  S->>F: executeAgent(deps, {project, configuration, messages, actor, caller, conversation})
+  S->>F: executeAgent(deps, {agent, configuration, messages, actor, caller, conversation})
   F->>B: openRun — 상관 ID · 모델 정책 · 비용(fail-open) · 동시성(fail-closed) · 메트릭 · Artifact recorder
   B-->>F: bracket
   F->>F: prepareMemoryForRun (명시적 바인딩 recall)<br/>memory prepare span 으로 기록
@@ -185,7 +185,7 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  container["src/lib/container.ts<br/>리포지토리 · 도메인 포트 · 레지스트리 슬라이스 · projectSlack/Telegram/TeamsUseCases<br/>executionDeps · triggerRunnerDeps · chatDeps"]
+  container["src/lib/container.ts<br/>리포지토리 · 도메인 포트 · 레지스트리 슬라이스 · agentSlack/Telegram/TeamsUseCases<br/>executionDeps · triggerRunnerDeps · chatDeps"]
   chatdeps["src/app/api/chats/_deps.ts<br/>container의 공통 ChatDeps 재노출"]
   slackdeps["src/app/api/slack/events/_lib/<br/>SlackEventDeps"]
   tgdeps["src/app/api/telegram/webhook/_lib/<br/>TelegramEventDeps"]
@@ -225,8 +225,8 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  subgraph project["PROJECT#{name} 파티션"]
-    meta["META (Project + 현재 configuration)"]
+  subgraph agent["AGENT#{name} 파티션"]
+    meta["META (Agent + 현재 configuration)"]
     tok["APITOKEN"]
     trig["TRIGGER#{id} · TRIGGERRUN#…"]
     conn["MCPCONN#{server}"]
@@ -244,15 +244,15 @@ flowchart LR
     plugin["PLUGIN#{name}"]
   end
   subgraph runs["런의 흔적"]
-    usage["USAGE#{project} / DATE#… · ACTOR#…"]
-    trace["TRACE#{id} (GSI1 TRACEPROJECT#)"]
-    artifact["ARTIFACT#{id} (GSI1 프로젝트 · GSI2 소유자)"]
+    usage["USAGE#{agent} / DATE#… · ACTOR#…"]
+    trace["TRACE#{id} (GSI1 TRACEAGENT#)"]
+    artifact["ARTIFACT#{id} (GSI1 Agent · GSI2 소유자)"]
     slot["RUNSLOT#{actor} / SLOT#nnn"]
   end
   subgraph inbound["인바운드 표면"]
     sev["SLACKEVENT#{eventId}"]
-    sthread["SLACKTHREAD#{project}#{channel}#{ts}"]
-    transcript["PROJECT 파티션 안: TELEGRAMUPDATE#… · TELEGRAMALBUM#… · TEAMSACTIVITY#… · TRANSCRIPT#{conversation}#TURN#…"]
+    sthread["SLACKTHREAD#{agent}#{channel}#{ts}"]
+    transcript["AGENT 파티션 안: TELEGRAMUPDATE#… · TELEGRAMALBUM#… · TEAMSACTIVITY#… · TRANSCRIPT#{conversation}#TURN#…"]
   end
   subgraph workspace["Workspace 영속 상태"]
     ws["WORKSPACE#{id}<br/>META · SESSION · SANDBOX · RUN · EVENT · APPROVAL · CONTINUATION"]
@@ -302,8 +302,8 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  chat["원래 Agent Chat<br/>SDK Session"] --> tool["Workspace 빌트인<br/>사용자·프로젝트 권한 확인"]
-  tool --> queue["DB Workspace 작업 큐<br/>한 Chat/프로젝트의 선택 재사용"]
+  chat["원래 Agent Chat<br/>SDK Session"] --> tool["Workspace 빌트인<br/>사용자·Agent 권한 확인"]
+  tool --> queue["DB Workspace 작업 큐<br/>한 Chat/Agent의 선택 재사용"]
   queue --> worker["Workspace worker"]
   worker --> sandbox["격리 Sandbox<br/>command · Codex · Claude · OpenCode"]
   sandbox --> checkpoint["암호화 파일·native Session 체크포인트"]

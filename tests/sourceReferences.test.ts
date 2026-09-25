@@ -16,17 +16,17 @@ function fixture() {
     files: { import: vi.fn(), read: vi.fn(), metadata: vi.fn(), sweep: vi.fn(), remove: vi.fn() },
     authorize: vi.fn(async () => {}), now: () => now, id: () => "ref-1",
   };
-  const input = { projectName: "audio", userEmail: "owner@example.test", namespace: "account-1", itemId: "external-1",
+  const input = { agentName: "audio", userEmail: "owner@example.test", namespace: "account-1", itemId: "external-1",
     filename: "audio.mp3", mimeType: "audio/mpeg", url: "https://files.example.test/audio?sig=private" };
   return { api: createSourceReferenceUseCases(deps), deps, input, rows, advance: (value: string) => { now = new Date(value); } };
 }
 
 describe("encrypted source references", () => {
-  it("reuses a cross-Agent file after checking its project, with no download or upload", async () => {
+  it("reuses a cross-Agent file after checking its agent, with no download or upload", async () => {
     const f = fixture();
     vi.mocked(f.deps.files.metadata).mockResolvedValue({ id: "existing", status: "ready", retireAt: "2026-12-09T00:00:00Z" } as never);
-    const job = { projectName: "transcriber", userEmail: f.input.userEmail,
-      source: { kind: "file", fileId: "existing", projectName: "downloader" } } as AudioJob;
+    const job = { agentName: "transcriber", userEmail: f.input.userEmail,
+      source: { kind: "file", fileId: "existing", agentName: "downloader" } } as AudioJob;
     expect(await f.api.importFile(job, { signal: new AbortController().signal, record: async () => {} })).toEqual({ fileId: "existing" });
     expect(f.deps.authorize).toHaveBeenCalledWith("downloader", f.input.userEmail);
     expect(f.deps.files.metadata).toHaveBeenCalledWith("downloader", "existing", f.input.userEmail);
@@ -48,7 +48,7 @@ describe("encrypted source references", () => {
       for await (const _part of await open(100)) { /* consume */ }
       return { ...input, status: "ready", revision: 2, createdAt: "now", retireAt: "later" };
     });
-    const job: AudioJob = { id: "job", projectName: "audio", userEmail: f.input.userEmail, source: { kind: "source", sourceRef: "ref-1" },
+    const job: AudioJob = { id: "job", agentName: "audio", userEmail: f.input.userEmail, source: { kind: "source", sourceRef: "ref-1" },
       sourceKey: "key", sourceIdentity: identity, sourceRefresh: identity.refresh, model: "asr", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
       revision: 1, status: "running", stage: "importing", createdAt: "now", updatedAt: "now", dueAt: "now", attempt: 1, failures: 0, receipts: {} };
     const context = { signal: new AbortController().signal, record: async () => {} };
@@ -69,14 +69,14 @@ describe("encrypted source references", () => {
     await expect(f.api.importFile(job, context)).rejects.toBe(outage);
     expect(f.deps.downloader.open).toHaveBeenCalledTimes(1);
   });
-  it("returns an opaque reference and encrypts the URL with its project-bound context", async () => {
+  it("returns an opaque reference and encrypts the URL with its agent-bound context", async () => {
     const f = fixture();
     expect(await f.api.register(f.input)).toEqual({ sourceRef: "ref-1", filename: "audio.mp3", mimeType: "audio/mpeg" });
     expect(f.deps.cipher.encrypt).toHaveBeenCalledWith(f.input.url, sourceReferenceContext("audio", "ref-1"));
     expect(JSON.stringify(f.rows.get("ref-1"))).not.toContain("sig=private");
     expect(await f.api.identity("audio", "ref-1", f.input.userEmail)).toEqual({ namespace: "account-1", itemId: "external-1" });
   });
-  it("does not reveal another user or project's reference", async () => {
+  it("does not reveal another user or agent's reference", async () => {
     const f = fixture(); await f.api.register(f.input);
     await expect(f.api.identity("other", "ref-1", f.input.userEmail)).rejects.toMatchObject({ status: 404 });
     await expect(f.api.identity("audio", "ref-1", "other@example.test")).rejects.toMatchObject({ status: 404 });
@@ -101,12 +101,12 @@ describe("encrypted source references", () => {
   it("reuses an imported file even after the temporary source reference expires", async () => {
     const f = fixture(); await f.api.register(f.input); f.advance("2026-09-10T00:00:00Z");
     const retention = { unit: "months" as const, value: 3, timezone: "Asia/Seoul" };
-    const file = { id: "job-1-source", projectName: "audio", userEmail: f.input.userEmail, filename: "audio.mp3",
+    const file = { id: "job-1-source", agentName: "audio", userEmail: f.input.userEmail, filename: "audio.mp3",
       mimeType: "audio/mpeg", retention, status: "ready" as const, revision: 2,
       createdAt: "2026-09-09T00:00:00Z", retireAt: "2026-12-09T00:00:00Z" };
     vi.mocked(f.deps.files.metadata).mockResolvedValue(file);
     vi.mocked(f.deps.files.import).mockResolvedValue(file);
-    const job: AudioJob = { id: "job-1", projectName: "audio", userEmail: f.input.userEmail,
+    const job: AudioJob = { id: "job-1", agentName: "audio", userEmail: f.input.userEmail,
       source: { kind: "source", sourceRef: "ref-1" }, sourceKey: "stable", model: "asr", retention,
       revision: 1, status: "running", stage: "importing", createdAt: file.createdAt, updatedAt: file.createdAt,
       dueAt: file.createdAt, attempt: 1, failures: 0, receipts: {} };

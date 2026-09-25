@@ -4,7 +4,7 @@ import type { McpServerAuth } from "@/domain/mcp/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { mcpConnectionSecretContext, mcpOAuthClientSecretContext } from "@/domain/security/secretContext";
 
-/** A shared client is referenced, never copied into a project's grant. */
+/** A shared client is referenced, never copied into an agent's grant. */
 export function registryClientMismatch(connection: McpConnection, auth: McpServerAuth): boolean {
   return connection.clientFromRegistry === true && connection.clientId !== auth.clientId;
 }
@@ -23,7 +23,7 @@ export function mcpTokenTarget(
     ...(stored ? {
       clientSecret: cipher.decrypt(stored, shared
         ? mcpOAuthClientSecretContext(connection.serverName)
-        : mcpConnectionSecretContext(connection.projectName, connection.serverName, "client-secret")),
+        : mcpConnectionSecretContext(connection.agentName, connection.serverName, "client-secret")),
     } : {}),
     tokenEndpointAuthMethod: shared
       ? auth.tokenEndpointAuthMethod

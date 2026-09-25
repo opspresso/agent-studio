@@ -1,23 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import {
-  assertProjectWritable,
-  deleteProject,
+  assertAgentWritable,
+  deleteAgent,
   setAdminCheck,
-} from "@/application/project/projectUseCases";
+} from "@/application/agent/agentUseCases";
 import {
   generateApiToken,
   getApiTokenStatus,
   revealApiToken,
   revokeApiToken,
-} from "@/application/project/apiTokenUseCases";
+} from "@/application/agent/apiTokenUseCases";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
-import { listProjectTraces } from "@/application/trace/traceUseCases";
-import { listProjectActorsFor } from "@/application/usage/usageUseCases";
-import { getProjectSlack } from "@/application/slack/projectSlack";
-import { getProjectTelegram } from "@/application/telegram/projectTelegram";
-import { getProjectTeams } from "@/application/teams/projectTeams";
+import { listAgentTraces } from "@/application/trace/traceUseCases";
+import { listAgentActorsFor } from "@/application/usage/usageUseCases";
+import { getAgentSlack } from "@/application/slack/agentSlack";
+import { getAgentTelegram } from "@/application/telegram/agentTelegram";
+import { getAgentTeams } from "@/application/teams/agentTeams";
 import { createMcpAuthUseCases } from "@/application/mcp/mcpAuthUseCases";
 import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
 import {
@@ -26,8 +26,8 @@ import {
 } from "@/application/registry/registryUseCases";
 import type { AuditEvent } from "@/domain/audit/types";
 import type { AuditRepository } from "@/domain/audit/repository";
-import type { Project } from "@/domain/project/types";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { Agent } from "@/domain/agent/types";
+import type { AgentRepository } from "@/domain/agent/repository";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings } from "@/domain/settings/types";
@@ -40,7 +40,7 @@ import type { Trigger, WebhookTrigger } from "@/domain/trigger/types";
  * The gap this closes was uneven rather than total: reveals and the admin
  * override already wrote a log line, while a settings write and a deletion left
  * nothing at all — so "who changed the admin list, and when" had no answer, and
- * a deleted project took the row that would have named its owner.
+ * a deleted agent took the row that would have named its owner.
  */
 
 const OWNER = "owner@example.com";
@@ -69,7 +69,7 @@ const cipher = {
     stored.replace(/^enc:v1:/, "") === candidate,
 } as unknown as SecretCipher;
 
-const project: Project = {
+const agent: Agent = {
   name: "p",
   displayName: "P",
   description: "",
@@ -78,10 +78,10 @@ const project: Project = {
   updatedAt: "2026-01-01T00:00:00Z",
 };
 
-function projects(overrides: Partial<ProjectRepository> = {}): ProjectRepository {
+function agents(overrides: Partial<AgentRepository> = {}): AgentRepository {
   return {
-    get: async () => project,
-    list: async () => [project],
+    get: async () => agent,
+    list: async () => [agent],
     create: async () => {},
     update: async () => {},
     delete: async () => {},
@@ -109,80 +109,80 @@ afterEach(() => {
   setAdminCheck(async () => false);
 });
 
-describe("project acts", () => {
+describe("agent acts", () => {
   it("does not record a write override for owner-scoped reads", async () => {
     const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
     setAdminCheck(async (email) => email === ADMIN);
-    const repo = projects();
-    await listProjectTraces({ projects: repo, traces: { listByProject: async () => [] } as never }, "p", ADMIN);
-    await listProjectActorsFor({ projects: repo, usage: { listActorsByProject: async () => [] } as never,
+    const repo = agents();
+    await listAgentTraces({ agents: repo, traces: { listByAgent: async () => [] } as never }, "p", ADMIN);
+    await listAgentActorsFor({ agents: repo, usage: { listActorsByAgent: async () => [] } as never,
       profileReaderFor: () => null }, "p", ADMIN, "2026-01-01", "2026-01-31");
-    await createArtifactUseCases({ listByProject: async () => [] } as never, {} as never, repo)
-      .listByProject("p", ADMIN);
+    await createArtifactUseCases({ listByAgent: async () => [] } as never, {} as never, repo)
+      .listByAgent("p", ADMIN);
     await getApiTokenStatus(repo, "p", ADMIN);
-    await getProjectSlack(repo, "p", ADMIN, cipher);
-    await getProjectTelegram(repo, "p", ADMIN, cipher);
-    await getProjectTeams(repo, "p", ADMIN, cipher);
-    await createMcpAuthUseCases({ projects: repo, connections: { listByProject: async () => [] },
+    await getAgentSlack(repo, "p", ADMIN, cipher);
+    await getAgentTelegram(repo, "p", ADMIN, cipher);
+    await getAgentTeams(repo, "p", ADMIN, cipher);
+    await createMcpAuthUseCases({ agents: repo, connections: { listByAgent: async () => [] },
       lifecycleClaims: new Set() } as never).listConnections("p", ADMIN);
     warned.mockRestore();
     expect(rows).toEqual([]);
   });
 
-  it("records an admin writing a project owned by someone else", async () => {
+  it("records an admin writing an agent owned by someone else", async () => {
     setAdminCheck(async (email) => email === ADMIN);
-    await assertProjectWritable(projects(), "p", ADMIN);
+    await assertAgentWritable(agents(), "p", ADMIN);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       actorEmail: ADMIN,
-      action: "project.admin-override",
-      target: "project:p",
+      action: "agent.admin-override",
+      target: "agent:p",
       detail: `owned by ${OWNER}`,
     });
   });
 
-  it("records nothing when the owner writes their own project", async () => {
-    await assertProjectWritable(projects(), "p", OWNER);
+  it("records nothing when the owner writes their own agent", async () => {
+    await assertAgentWritable(agents(), "p", OWNER);
     expect(rows).toHaveLength(0);
   });
 
   it("records a deletion, with the owner the cascade is about to erase", async () => {
-    await deleteProject(projects(), "p", OWNER);
+    await deleteAgent(agents(), "p", OWNER);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      action: "project.delete",
-      target: "project:p",
+      action: "agent.delete",
+      target: "agent:p",
       detail: `owned by ${OWNER}`,
     });
   });
 
-  it("still deletes when the pre-delete hook fails — nothing may make a project undeletable", async () => {
-    const repo = projects();
+  it("still deletes when the pre-delete hook fails — nothing may make an agent undeletable", async () => {
+    const repo = agents();
     let deleted = false;
     repo.delete = async () => {
       deleted = true;
     };
-    await deleteProject(repo, "p", OWNER, async () => {
+    await deleteAgent(repo, "p", OWNER, async () => {
       throw new Error("Unsupported state or unable to authenticate data");
     });
     expect(deleted).toBe(true);
-    expect(actions()).toEqual(["project.delete"]);
+    expect(actions()).toEqual(["agent.delete"]);
   });
 });
 
-describe("project API token", () => {
+describe("agent API token", () => {
   it("records issuing one", async () => {
-    await generateApiToken(projects(), "p", OWNER, cipher);
+    await generateApiToken(agents(), "p", OWNER, cipher);
     expect(actions()).toEqual(["secret.rotate"]);
   });
 
   it("records revealing one", async () => {
-    await revealApiToken(projects(), "p", OWNER, cipher);
-    expect(rows[0]).toMatchObject({ action: "secret.reveal", target: "project:p" });
+    await revealApiToken(agents(), "p", OWNER, cipher);
+    expect(rows[0]).toMatchObject({ action: "secret.reveal", target: "agent:p" });
   });
 
   it("records revoking one", async () => {
-    await revokeApiToken(projects(), "p", OWNER);
+    await revokeApiToken(agents(), "p", OWNER);
     expect(actions()).toEqual(["secret.revoke"]);
   });
 
@@ -190,8 +190,8 @@ describe("project API token", () => {
     // The token authenticates as the owner, so this is an admin taking a
     // credential that acts in another person's name. One row would not say that.
     setAdminCheck(async (email) => email === ADMIN);
-    await revealApiToken(projects(), "p", ADMIN, cipher);
-    expect(actions()).toEqual(["project.admin-override", "secret.reveal"]);
+    await revealApiToken(agents(), "p", ADMIN, cipher);
+    expect(actions()).toEqual(["agent.admin-override", "secret.reveal"]);
   });
 });
 
@@ -261,7 +261,7 @@ describe("app settings", () => {
 
 describe("webhook trigger secrets", () => {
   const webhook: WebhookTrigger = {
-    projectName: "p",
+    agentName: "p",
     triggerId: "inbound",
     kind: "webhook",
     description: "",
@@ -275,7 +275,7 @@ describe("webhook trigger secrets", () => {
   function useCases(stored: Trigger = webhook) {
     const triggers: TriggerRepository = {
       get: async () => stored,
-      listByProject: async () => [stored],
+      listByAgent: async () => [stored],
       listSchedules: async () => [],
       create: async () => {},
       put: async () => {},
@@ -286,7 +286,7 @@ describe("webhook trigger secrets", () => {
       updateQueuedRun: async () => { throw new Error("CRUD does not dispatch queued runs"); },
       listRuns: async () => [],
     };
-    return createTriggerUseCases({ triggers, projects: projects(), cipher });
+    return createTriggerUseCases({ triggers, agents: agents(), cipher });
   }
 
   it("does not record a write override for an admin listing triggers or runs", async () => {
@@ -300,7 +300,7 @@ describe("webhook trigger secrets", () => {
 
   it("records a reveal", async () => {
     await useCases().reveal("p", "inbound", OWNER);
-    expect(rows[0]).toMatchObject({ action: "secret.reveal", target: "project:p" });
+    expect(rows[0]).toMatchObject({ action: "secret.reveal", target: "agent:p" });
     expect(rows[0]?.detail).toContain("inbound");
   });
 
@@ -325,7 +325,7 @@ describe("webhook trigger secrets", () => {
     // under the action an auditor filters on to enumerate credential removals
     // makes that filter untrustworthy.
     const schedule: Trigger = {
-      projectName: "p",
+      agentName: "p",
       triggerId: "nightly",
       kind: "schedule",
       description: "",

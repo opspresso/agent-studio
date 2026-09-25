@@ -132,7 +132,7 @@ export interface SyncPluginsDeps {
   /**
    * Which Agents bind the names about to be offered for deletion — the
    * blast radius next to the delete checkbox. Optional because it needs the
-   * project store; without it orphans report with no binding info.
+   * agent store; without it orphans report with no binding info.
    */
   findBindings?: (skills: string[], mcpServers: string[]) => Promise<OrphanBindings>;
 }

@@ -104,7 +104,7 @@ function dayTick(date: string): string {
 
 /**
  * Stacked daily spend — the one cost chart, on all three surfaces that draw
- * one: the overview, a project's usage tab, and a member's own profile.
+ * one: the overview, an agent's usage tab, and a member's own profile.
  *
  * The empty state lives here rather than at each caller, because it is the
  * same sentence every time and one of the three had been rendering nothing

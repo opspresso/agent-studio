@@ -24,7 +24,7 @@ export interface WorkspaceWrite {
 
 export interface WorkspaceRepository {
   create(workspace: Workspace, session: RuntimeSession, chat?: Chat, sourceChatId?: string): Promise<void>;
-  /** Select an existing owned Workspace with a CAS on the source chat's project binding. */
+  /** Select an existing owned Workspace with a CAS on the source chat's agent binding. */
   linkChat(workspace: Workspace, sourceChatId: string, expectedWorkspaceId?: string): Promise<void>;
   get(id: string): Promise<Workspace | null>;
   forChat(chatId: string): Promise<Workspace | null>;

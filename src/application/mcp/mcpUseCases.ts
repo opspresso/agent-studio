@@ -224,7 +224,7 @@ export function createMcpUseCases(
         mcpHeadersContext(existing.name),
       );
       // A registry entry's stored spelling of a reserved metadata header does
-      // not ride this probe impersonating a project, user, or conversation.
+      // not ride this probe impersonating an agent, user, or conversation.
       stripMcpMetadataHeaders(headers);
       applyMcpUserEmail(headers, userEmail);
       return probe.listTools(existing.url, headers, loopback);

@@ -1,28 +1,28 @@
 import { createHash } from "node:crypto";
 import type { ChatRepository } from "@/domain/chat/repository";
 import { isLiveClaim } from "@/domain/chat/types";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { AgentRepository } from "@/domain/agent/repository";
 import type { WorkspaceRepository } from "@/domain/workspace/repository";
 import type { Workspace, WorkspaceInput, WorkspaceRuntime, WorkspaceRun, RuntimeSession } from "@/domain/workspace/types";
-import type { WorkspaceProjectPolicy } from "@/domain/workspace/policy";
+import type { WorkspaceAgentPolicy } from "@/domain/workspace/policy";
 import { isGitBranch, isRepositoryName, workspaceAllowsRepository } from "@/domain/workspace/policy";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import type { CodingApproval } from "@/domain/coding/types";
 import type { WorkspaceContinuation } from "@/domain/workspace/continuation";
 import { CodingRepositoryNotReadyError } from "@/domain/coding/types";
 import { titleFromMessage } from "@/application/chat/title";
-import { assertProjectAccessible } from "@/application/project/projectUseCases";
+import { assertAgentAccessible } from "@/application/agent/agentUseCases";
 import { ConflictError, NotFoundError, ValidationError, UpstreamError, isConditionalWriteFailure } from "@/application/errors";
 
 export interface WorkspaceDeps {
   repository: WorkspaceRepository;
   chats: ChatRepository;
-  projects: ProjectRepository;
-  policy(projectName: string): WorkspaceProjectPolicy | undefined | Promise<WorkspaceProjectPolicy | undefined>;
+  agents: AgentRepository;
+  policy(agentName: string): WorkspaceAgentPolicy | undefined | Promise<WorkspaceAgentPolicy | undefined>;
   now(): Date;
   newId(): string;
   idleTtlSeconds: number;
-  authorize?(projectName: string, email: string): Promise<void>;
+  authorize?(agentName: string, email: string): Promise<void>;
   assertRuntime?(runtime: WorkspaceRuntime): Promise<void>;
   checkRepository?(repository: string, baseBranch: string): Promise<void>;
 }
@@ -39,7 +39,7 @@ export async function checkWorkspaceRepository(deps: WorkspaceDeps, repository: 
 
 export interface CreateWorkspaceInput {
   chatId: string;
-  projectName: string;
+  agentName: string;
   runtime: WorkspaceRuntime;
   baseBranch?: string;
   repository?: string;
@@ -50,7 +50,7 @@ export interface CreateWorkspaceInput {
 }
 
 export interface StartWorkspaceInput {
-  projectName: string;
+  agentName: string;
   runtime: WorkspaceRuntime;
   baseBranch?: string;
   repository?: string;
@@ -86,13 +86,13 @@ export async function ownedWorkspace(deps: WorkspaceDeps, id: string, ownerEmail
   if (!workspace || workspace.ownerEmail !== ownerEmail || workspace.deleteRequestedAt) {
     throw new NotFoundError("Workspace not found");
   }
-  await assertProjectAccessible(deps.projects, workspace.projectName, ownerEmail);
+  await assertAgentAccessible(deps.agents, workspace.agentName, ownerEmail);
   return workspace;
 }
 
-export async function workspacePolicy(deps: WorkspaceDeps, projectName: string): Promise<WorkspaceProjectPolicy> {
-  const policy = await deps.policy(projectName);
-  if (!policy) throw new ValidationError("Workspaces are not enabled for this project");
+export async function workspacePolicy(deps: WorkspaceDeps, agentName: string): Promise<WorkspaceAgentPolicy> {
+  const policy = await deps.policy(agentName);
+  if (!policy) throw new ValidationError("Workspaces are not enabled for this agent");
   return policy;
 }
 
@@ -117,25 +117,25 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
     return chat;
   }
   return {
-    async checkRepository(projectName: string, ownerEmail: string, repository: string, baseBranch: string) {
-      await assertProjectAccessible(deps.projects, projectName, ownerEmail);
-      await deps.authorize?.(projectName, ownerEmail);
-      if (!isRepositoryName(repository) || !isGitBranch(baseBranch) || !workspaceAllowsRepository(await workspacePolicy(deps, projectName), repository)) throw new ValidationError("Repository or base branch is not configured for this project");
+    async checkRepository(agentName: string, ownerEmail: string, repository: string, baseBranch: string) {
+      await assertAgentAccessible(deps.agents, agentName, ownerEmail);
+      await deps.authorize?.(agentName, ownerEmail);
+      if (!isRepositoryName(repository) || !isGitBranch(baseBranch) || !workspaceAllowsRepository(await workspacePolicy(deps, agentName), repository)) throw new ValidationError("Repository or base branch is not configured for this agent");
       await checkWorkspaceRepository(deps, repository, baseBranch);
     },
     async create(input: CreateWorkspaceInput, ownerEmail: string): Promise<Workspace> {
-      await assertProjectAccessible(deps.projects, input.projectName, ownerEmail);
-      await deps.authorize?.(input.projectName, ownerEmail);
+      await assertAgentAccessible(deps.agents, input.agentName, ownerEmail);
+      await deps.authorize?.(input.agentName, ownerEmail);
       await deps.assertRuntime?.(input.runtime);
-      const policy = await workspacePolicy(deps, input.projectName);
+      const policy = await workspacePolicy(deps, input.agentName);
       if (!policy.runtimes.includes(input.runtime)) throw new ValidationError("Workspace runtime is not enabled");
       if (input.sourceChatId) {
         const source = await sourceChat(input.sourceChatId, ownerEmail);
-        if (!input.createChat || source.workspaceId || source.linkedWorkspaces?.[input.projectName]) throw new ConflictError("The source chat already has a Workspace");
-        if (Object.keys(source.linkedWorkspaces ?? {}).length >= WORKSPACE_LIMITS.linkedProjects) throw new ValidationError("The source chat has reached its Workspace project limit");
+        if (!input.createChat || source.workspaceId || source.linkedWorkspaces?.[input.agentName]) throw new ConflictError("The source chat already has a Workspace");
+        if (Object.keys(source.linkedWorkspaces ?? {}).length >= WORKSPACE_LIMITS.linkedAgents) throw new ValidationError("The source chat has reached its Workspace agent limit");
       }
       const chat = input.createChat ? null : await deps.chats.get(input.chatId);
-      if (!input.createChat && (!chat || chat.ownerEmail !== ownerEmail || chat.projectName !== input.projectName)) {
+      if (!input.createChat && (!chat || chat.ownerEmail !== ownerEmail || chat.agentName !== input.agentName)) {
         throw new NotFoundError("Chat not found");
       }
       if (isLiveClaim(await deps.chats.getActiveRun(input.chatId), deps.now().getTime())) throw new ConflictError("Chat already has an agent run");
@@ -155,17 +155,17 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       const id = deps.newId();
       const session: RuntimeSession = { id: deps.newId(), workspaceId: id, runtime: input.runtime, createdAt: now, updatedAt: now };
       const workspace: Workspace = {
-        id, chatId: input.chatId, projectName: input.projectName, ownerEmail, title: input.title.trim(),
+        id, chatId: input.chatId, agentName: input.agentName, ownerEmail, title: input.title.trim(),
         ...(input.creationFingerprint ? { creationFingerprint: input.creationFingerprint } : {}),
         runtime: input.runtime, sessionId: session.id, revision: 0, status: "active",
         createdAt: now, updatedAt: now, dueAt: new Date(deps.now().getTime() + idleTtlSeconds * 1000).toISOString(),
         idleTtlSeconds,
         ...(input.baseBranch ? { coding: { repository: repository!, baseBranch: input.baseBranch, branch: `agent/${id}` } } : {}),
       };
-      try { await deps.repository.create(workspace, session, input.createChat ? { chatId: input.chatId, projectName: input.projectName,
+      try { await deps.repository.create(workspace, session, input.createChat ? { chatId: input.chatId, agentName: input.agentName,
         ownerEmail, title: workspace.title, createdAt: now, updatedAt: now } : undefined, input.sourceChatId); }
       catch (error) {
-        if (isConditionalWriteFailure(error, { includeTransaction: true })) throw new ConflictError("Chat or project changed while creating workspace");
+        if (isConditionalWriteFailure(error, { includeTransaction: true })) throw new ConflictError("Chat or agent changed while creating workspace");
         throw error;
       }
       return workspace;
@@ -186,11 +186,11 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
     async start(input: StartWorkspaceInput, ownerEmail: string, requestKey: string, sourceChatId?: string): Promise<StartWorkspaceResult> {
       if (!/^[\w-]{8,128}$/.test(requestKey)) throw new ValidationError("Invalid Idempotency-Key");
       validateInput({ runtime: input.runtime }, input.input);
-      const creationFingerprint = createHash("sha256").update(JSON.stringify([input.projectName, input.runtime, input.repository ?? null, input.baseBranch ?? null, input.input])).digest("hex");
+      const creationFingerprint = createHash("sha256").update(JSON.stringify([input.agentName, input.runtime, input.repository ?? null, input.baseBranch ?? null, input.input])).digest("hex");
       const chatId = workspaceChatId(ownerEmail, requestKey);
       let workspace = await deps.repository.forChat(chatId);
       if (!workspace) {
-        try { workspace = await this.create({ chatId, projectName: input.projectName, runtime: input.runtime, baseBranch: input.baseBranch, repository: input.repository,
+        try { workspace = await this.create({ chatId, agentName: input.agentName, runtime: input.runtime, baseBranch: input.baseBranch, repository: input.repository,
           title: titleFromMessage(input.input.kind === "task" ? input.input.prompt : input.input.script), createChat: true, creationFingerprint, sourceChatId }, ownerEmail); }
         catch (error) {
           if (!(error instanceof ConflictError)) throw error;
@@ -203,30 +203,30 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       return { workspace: workspaceView(await ownedWorkspace(deps, workspace.id, ownerEmail)), run: workspaceRunView(run) };
     },
 
-    async forStartRequest(projectName: string, ownerEmail: string, requestKey: string): Promise<WorkspaceView | null> {
+    async forStartRequest(agentName: string, ownerEmail: string, requestKey: string): Promise<WorkspaceView | null> {
       const workspace = await deps.repository.forChat(workspaceChatId(ownerEmail, requestKey));
       if (!workspace) return null;
       const owned = await ownedWorkspace(deps, workspace.id, ownerEmail);
-      if (owned.projectName !== projectName) throw new NotFoundError("Workspace not found");
+      if (owned.agentName !== agentName) throw new NotFoundError("Workspace not found");
       return workspaceView(owned);
     },
 
-    async forSourceChat(chatId: string, projectName: string, ownerEmail: string): Promise<WorkspaceView | null> {
+    async forSourceChat(chatId: string, agentName: string, ownerEmail: string): Promise<WorkspaceView | null> {
       const chat = await sourceChat(chatId, ownerEmail);
-      const id = chat.workspaceId ?? chat.linkedWorkspaces?.[projectName];
+      const id = chat.workspaceId ?? chat.linkedWorkspaces?.[agentName];
       if (!id) return null;
       const workspace = await ownedWorkspace(deps, id, ownerEmail);
-      if (workspace.projectName !== projectName) throw new ConflictError("The source chat's Workspace belongs to a different project");
+      if (workspace.agentName !== agentName) throw new ConflictError("The source chat's Workspace belongs to a different agent");
       return workspaceView(workspace);
     },
 
-    async selectForChat(chatId: string, id: string, projectName: string, ownerEmail: string): Promise<WorkspaceView> {
+    async selectForChat(chatId: string, id: string, agentName: string, ownerEmail: string): Promise<WorkspaceView> {
       const workspace = await ownedWorkspace(deps, id, ownerEmail);
-      if (workspace.projectName !== projectName) throw new NotFoundError("Workspace not found");
+      if (workspace.agentName !== agentName) throw new NotFoundError("Workspace not found");
       const chat = await sourceChat(chatId, ownerEmail);
       if (chat.workspaceId === id) return workspaceView(workspace);
       if (chat.workspaceId) throw new ConflictError("A Workspace chat cannot select another Workspace");
-      try { await deps.repository.linkChat(workspace, chatId, chat.linkedWorkspaces?.[projectName]); }
+      try { await deps.repository.linkChat(workspace, chatId, chat.linkedWorkspaces?.[agentName]); }
       catch (error) {
         if (isConditionalWriteFailure(error, { includeTransaction: true })) throw new ConflictError("The source chat's Workspace selection changed");
         throw error;
@@ -235,13 +235,13 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
     },
 
     async startForChat(input: StartWorkspaceInput, ownerEmail: string, sourceChatId: string): Promise<{ workspace: WorkspaceView; run?: WorkspaceRunView; reused: boolean }> {
-      const current = await this.forSourceChat(sourceChatId, input.projectName, ownerEmail);
+      const current = await this.forSourceChat(sourceChatId, input.agentName, ownerEmail);
       if (current) return { workspace: current, reused: true };
-      const key = createHash("sha256").update(JSON.stringify(["source-chat", ownerEmail, sourceChatId, input.projectName])).digest("hex");
+      const key = createHash("sha256").update(JSON.stringify(["source-chat", ownerEmail, sourceChatId, input.agentName])).digest("hex");
       try { return { ...await this.start(input, ownerEmail, key, sourceChatId), reused: false }; }
       catch (error) {
         if (!(error instanceof ConflictError)) throw error;
-        const winner = await this.forSourceChat(sourceChatId, input.projectName, ownerEmail);
+        const winner = await this.forSourceChat(sourceChatId, input.agentName, ownerEmail);
         if (!winner) throw error;
         return { workspace: winner, reused: true };
       }
@@ -261,9 +261,9 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
 
     async enqueue(id: string, ownerEmail: string, input: WorkspaceInput, requestKey: string): Promise<WorkspaceRun> {
       const workspace = await ownedWorkspace(deps, id, ownerEmail);
-      await deps.authorize?.(workspace.projectName, ownerEmail);
+      await deps.authorize?.(workspace.agentName, ownerEmail);
       await deps.assertRuntime?.(workspace.runtime);
-      const policy = await workspacePolicy(deps, workspace.projectName);
+      const policy = await workspacePolicy(deps, workspace.agentName);
       if (!policy.runtimes.includes(workspace.runtime)) throw new ValidationError("Workspace runtime is not enabled");
       if (workspace.coding && !workspaceAllowsRepository(policy, workspace.coding.repository)) throw new ConflictError("Workspace repository configuration changed");
       validateInput(workspace, input);

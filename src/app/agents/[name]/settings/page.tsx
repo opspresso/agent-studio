@@ -3,8 +3,8 @@
 import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { canEditProject, useViewer } from "@/app/_lib/useViewer";
-import { deleteProject, getProject, updateProject, type SanitizedProject } from "../../lib/api";
+import { canEditAgent, useViewer } from "@/app/_lib/useViewer";
+import { deleteAgent, getAgent, updateAgent, type SanitizedAgent } from "../../lib/api";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
@@ -26,7 +26,7 @@ export default function SettingsPage() {
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [departmentCode, setDepartmentCode] = useState("");
-  const [project, setProject] = useState<SanitizedProject | null>(null);
+  const [agent, setAgent] = useState<SanitizedAgent | null>(null);
   const [loadError, setLoadError] = useState<{ name: string; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -36,22 +36,22 @@ export default function SettingsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setProject(null);
+    setAgent(null);
     setLoadError(null);
     setError(null);
     setSaved(false);
     async function load() {
       try {
-        const project = await getProject(name);
+        const agent = await getAgent(name);
         if (!cancelled) {
-          setDisplayName(project.displayName);
-          setDescription(project.description);
-          setDepartmentCode(project.departmentCode ?? "");
-          setProject(project);
+          setDisplayName(agent.displayName);
+          setDescription(agent.description);
+          setDepartmentCode(agent.departmentCode ?? "");
+          setAgent(agent);
         }
       } catch (e) {
         if (!cancelled) {
-          setLoadError({ name, message: e instanceof Error ? e.message : "Failed to load project" });
+          setLoadError({ name, message: e instanceof Error ? e.message : "Failed to load agent" });
         }
       }
     }
@@ -67,7 +67,7 @@ export default function SettingsPage() {
     setError(null);
     setSaved(false);
     try {
-      await updateProject(name, {
+      await updateAgent(name, {
         displayName,
         description,
         departmentCode,
@@ -82,9 +82,9 @@ export default function SettingsPage() {
 
   async function remove() {
     const ok = await confirm({
-      title: "Delete project",
+      title: "Delete agent",
       message: t("pset.deleteConfirm", { name }),
-      confirmLabel: "Delete project",
+      confirmLabel: "Delete agent",
       requireText: name,
     });
     if (!ok) {
@@ -93,7 +93,7 @@ export default function SettingsPage() {
     setDeleting(true);
     setError(null);
     try {
-      await deleteProject(name);
+      await deleteAgent(name);
       router.push("/agents");
     } catch (err) {
       setError(reportError(err, "Failed to delete"));
@@ -101,7 +101,7 @@ export default function SettingsPage() {
     }
   }
 
-  if (project?.name !== name && loadError?.name !== name) {
+  if (agent?.name !== name && loadError?.name !== name) {
     return <LoadingText />;
   }
 
@@ -112,27 +112,27 @@ export default function SettingsPage() {
       </Alert>
     );
   }
-  if (!project) return <LoadingText />;
+  if (!agent) return <LoadingText />;
 
   if (viewer === null) {
     return <LoadingText />;
   }
 
-  if (!canEditProject(viewer, project.ownerEmail)) {
+  if (!canEditAgent(viewer, agent.ownerEmail)) {
     return (
       <Alert variant="light" color="gray" maw={640}>
-        Only the project owner ({project.ownerEmail ?? "unknown"}) or an admin can change these settings.
+        Only the agent owner ({agent.ownerEmail ?? "unknown"}) or an admin can change these settings.
       </Alert>
     );
   }
 
   // Capped where the playground's form column lands on a wide monitor, so the
-  // two tabs of this project read alike — but in pixels, for the reason the
+  // two tabs of this agent read alike — but in pixels, for the reason the
   // app-settings page carries: a fraction of the row keeps shrinking after the
   // content has run out of room, and nothing here is sharing that row.
   return (
     <Stack gap="lg" maw={860}>
-      <SectionHeading title={t("project.tab.settings")} />
+      <SectionHeading title={t("agent.tab.settings")} />
       <form onSubmit={save}>
         <Stack gap="md">
           {error && (
@@ -174,13 +174,13 @@ export default function SettingsPage() {
         </Stack>
       </form>
 
-      <VisibilitySection key={`visibility:${name}`} projectName={name} project={project} />
+      <VisibilitySection key={`visibility:${name}`} agentName={name} agent={agent} />
 
-      <CostLimitsSection key={`cost:${name}`} projectName={name} project={project} />
+      <CostLimitsSection key={`cost:${name}`} agentName={name} agent={agent} />
 
-      <WebhookSection projectName={name} />
+      <WebhookSection agentName={name} />
 
-      <SchedulesSection key={`schedules:${name}`} projectName={name} project={project} />
+      <SchedulesSection key={`schedules:${name}`} agentName={name} agent={agent} />
 
       <CollapsibleSection title={t("pset.dangerZone")} danger>
         <Stack gap="sm" align="flex-start">
@@ -188,7 +188,7 @@ export default function SettingsPage() {
             {t("pset.deleteHint")}
           </Text>
           <Button variant="default" color="red" onClick={remove} loading={deleting}>
-            Delete project
+            Delete agent
           </Button>
         </Stack>
       </CollapsibleSection>

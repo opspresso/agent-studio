@@ -50,7 +50,7 @@ sync로 서버 URL이 바뀌면 이전 주소의 header·OAuth를 새 주소로 
 ## 케이퍼빌리티 카탈로그
 
 `catalog_vectors`는 설치 전역의 Skill·MCP 서버·MCP 도구를 색인한다.
-로컬 Project는 자동 검색 대상이 아니며 명시적 하위 Agent binding으로 연결한다.
+로컬 Agent는 자동 검색 대상이 아니며 명시적 하위 Agent binding으로 연결한다.
 카탈로그는 실행 권한을 부여하지 않는다. 실제 연결과 정책은 dispatch에서 확인한다.
 
 항목은 `CapabilityEntry { kind, name, toolName?, description }`이며
@@ -99,8 +99,8 @@ Rerank의 relevance 점수 하한(`RERANKER_MIN_SCORE`)을 각각 활성 모델 
 | 최종 병합 | query별 하한을 통과한 후보의 최고 점수를 유지하고 종류별 limit으로 자른다 |
 
 reranker 장애는 vector 순위로 돌아가고 실제 런에 warning을 남긴다. 사용자 취소는 즉시 전파한다.
-실제 런의 성공한 rerank 사용량은 프로젝트·actor 비용에 포함한다.
-preview·모델 선택 probe는 프로젝트 Usage를 만들지 않는다.
+실제 런의 성공한 rerank 사용량은 Agent·actor 비용에 포함한다.
+preview·모델 선택 probe는 Agent Usage를 만들지 않는다.
 임베딩 모델별 점수 분포가 다르므로 다른 모델의 임계값이나 과거 실험 수치를 그대로 쓰지 않는다.
 
 ### 실행 시 discovery
@@ -113,7 +113,7 @@ MCP 후보는 tool hit와 server hit를 서버 이름으로 합치고 더 높은
 tool hit가 있으면 그 도구들로 binding을 좁히고 server hit만 있으면 서버를 연결한 뒤 목록을 읽는다.
 후보를 넉넉하게 읽어 삭제됐거나 연결 권한이 없는 후보가 유효한 슬롯을 차지하지 않게 한다.
 
-OAuth 서버는 해당 프로젝트의 `connected` 연결이 있을 때만 자동 추가한다.
+OAuth 서버는 해당 Agent의 `connected` 연결이 있을 때만 자동 추가한다.
 선택한 추가 목록은 이름순으로 정렬해 alias 배정과 프롬프트 배치가 query 점수에 따라 흔들리지 않게 한다.
 새 capability는 `discovered`로 반환하며 손실인 warning과 구분한다.
 실행은 로그, preview는 별도 목록으로 표시한다.
@@ -131,11 +131,11 @@ background 후처리는 discovery·MCP·subagent를 제공하지 않는다.
 `parameters.memoryRecall`은 첫 모델 호출 전에 명시적 MCP binding의 `recall`을 호출한다.
 dynamic discovery가 우연히 찾은 서버는 자동 recall 대상이 아니다.
 `prepareMemoryForRun`이 회상용 세션을 준비·해제하고 `recallMemories`가
-query 제한·타임아웃·병렬 호출·병합을 담당한다. 이름의 정본은 `domain/project/memoryRecall.ts`다.
+query 제한·타임아웃·병렬 호출·병합을 담당한다. 이름의 정본은 `domain/agent/memoryRecall.ts`다.
 
 최근 사용자 요청으로 묻고 결과를 `What you remember` 블록에 배경 데이터로 넣는다.
 이 문맥은 capability 검색에도 쓸 수 있지만 기억에서 URL·credential·권한을 생성하지 않는다.
-회상 세션과 최종 실행 세션은 같은 사용자·프로젝트의 discovery cache를 재사용할 수 있다.
+회상 세션과 최종 실행 세션은 같은 사용자·Agent의 discovery cache를 재사용할 수 있다.
 
 도구 선택에서 제외하거나 차단·승인 정책에 걸린 recall은 자동 호출하지 않는다.
 승인 대상 도구는 SDK의 승인 가능한 경로에 남는다. background 작업은 사전 recall을 하지 않는다.

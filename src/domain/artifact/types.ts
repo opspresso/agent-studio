@@ -1,7 +1,7 @@
 /**
  * What a run left behind.
  *
- * One inventory row per stored object, reachable by the project that produced
+ * One inventory row per stored object, reachable by the agent that produced
  * it and by the person who asked for it. Keeping inventory independent from a
  * chat message lets trigger runs retain outputs too, and makes every
  * object listable and removable.
@@ -30,8 +30,8 @@ export interface Artifact {
   /** What the producer called the file. Documents have one; images rarely do. */
   filename?: string;
   byteSize: number;
-  /** The project whose run bracket admitted this. Always present. */
-  projectName: string;
+  /** The agent whose run bracket admitted this. Always present. */
+  agentName: string;
   /**
    * Who caused the run, reusing the run's own attribution rather than restating
    * it: a usage row and an artifact row must not name the same run differently.
@@ -44,7 +44,7 @@ export interface Artifact {
    *
    * A Slack actor is a workspace id, so the owner index — which is keyed by
    * email — had nothing to key on, and a picture somebody asked the bot to draw
-   * was reachable only through its project. The surface can resolve the address,
+   * was reachable only through its agent. The surface can resolve the address,
    * so it does, and files the output under the person who asked for it.
    *
    * Deliberately *not* folded into the actor. That is a storage key grouped by
@@ -54,7 +54,7 @@ export interface Artifact {
    * different decision than "file this where its author can find it".
    */
   ownerEmail?: string;
-  /** Project names on the transfer chain, outermost first. */
+  /** Agent names on the transfer chain, outermost first. */
   ancestry?: readonly string[];
   /** The subagent that produced it, from the chunk's author. Absent at top level. */
   producedBy?: string;
@@ -299,12 +299,12 @@ export function artifactObjectKey(
 /**
  * The person an artifact belongs to, or undefined when nobody is named.
  *
- * Only `user` and `project-token` carry an email — a token runs on its owner's
+ * Only `user` and `agent-token` carry an email — a token runs on its owner's
  * behalf. Messaging surfaces and authorized personal-context schedules can
  * supply a verified address as `resolved`, which wins. Without that context,
  * client and trigger actors have no mailbox and their artifacts are reachable
- * through the project instead. That is why the owner index is
- * sparse and why the project index is not optional: without it those artifacts
+ * through the agent instead. That is why the owner index is
+ * sparse and why the agent index is not optional: without it those artifacts
  * could never be listed or deleted.
  */
 export function artifactOwnerEmail(
@@ -318,7 +318,7 @@ export function artifactOwnerEmail(
   if (!actor) {
     return undefined;
   }
-  return actor.kind === "user" || actor.kind === "project-token" ? actor.id : undefined;
+  return actor.kind === "user" || actor.kind === "agent-token" ? actor.id : undefined;
 }
 
 /** A stored file reference; read surfaces replace the key with a signed URL. */

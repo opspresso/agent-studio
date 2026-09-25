@@ -5,7 +5,7 @@ import type { SourceFile } from "@/domain/artifact/sourceFile";
 import { artifactOwnerEmail } from "@/domain/artifact/types";
 import { keys } from "@/infrastructure/db/keys";
 import { deleteItem, getItem, putItem, queryItems, transact, type SortKeyMatch, type Item } from "@/infrastructure/db/store";
-import { projectIsLive } from "../projectLifecycle";
+import { agentIsLive } from "../agentLifecycle";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import { boundedPageLimit } from "@/shared/pageLimit";
 
@@ -23,7 +23,7 @@ function fromItem(item: Record<string, unknown>): Artifact {
     mimeType: String(item.mimeType ?? ""),
     ...(typeof item.filename === "string" ? { filename: item.filename } : {}),
     byteSize: Number(item.byteSize ?? 0),
-    projectName: String(item.projectName ?? ""),
+    agentName: String(item.agentName ?? ""),
     ...(item.actor ? { actor: item.actor as Artifact["actor"] } : {}),
     // Read by name like every other field. The write spreads the whole artifact,
     // so a field missing from here stores fine, type-checks fine and comes back
@@ -64,12 +64,12 @@ async function list(
   // would thin the page *after* the limit counted, and the only recoveries
   // from that are both wrong: answering short, or asking again in a loop that
   // has to give up somewhere — and a listing that gave up looked exactly like
-  // one that had reached the end. A project holding a few hundred images and
+  // one that had reached the end. An agent holding a few hundred images and
   // a handful of older documents answered "documents only" with an empty
   // gallery and no cursor to page past it.
   //
   // The cost is at the other end: a filter that matches *nothing* now walks
-  // its partition's index — one project or one mailbox, over
+  // its partition's index — one agent or one mailbox, over
   // `ARTIFACT_RETENTION_DAYS` — instead of stopping after a fixed number of
   // pages. It is one indexed descending read that stops at the first full
   // page, so the ordinary case (matches somewhere recent) is cheaper than the
@@ -99,7 +99,7 @@ export class PostgresArtifactRepository implements ArtifactRepository {
       ...artifact,
       ...keys.artifact(artifact.artifactId),
       entityType: ARTIFACT_ENTITY,
-      GSI1PK: keys.artifactProjectPartition(artifact.projectName),
+      GSI1PK: keys.artifactAgentPartition(artifact.agentName),
       GSI1SK: artifactCursor(artifact),
       // Sparse on purpose: a row that names no mailbox writes no GSI2
       // attributes, so a trigger artifact simply is not in the owner
@@ -117,10 +117,10 @@ export class PostgresArtifactRepository implements ArtifactRepository {
       // File retirement and gallery publication share a transaction fence.
       // A delayed publisher must not recreate a row after its bytes are deleted.
       await transact([
-        { kind: "check", key: keys.project(artifact.projectName), condition: projectIsLive },
+        { kind: "check", key: keys.agent(artifact.agentName), condition: agentIsLive },
         { kind: "check", key: keys.sourceFile(artifact.privateFileId), condition: (row) => {
           const file = row?.file as SourceFile | undefined;
-          return file?.status === "ready" && file.projectName === artifact.projectName &&
+          return file?.status === "ready" && file.agentName === artifact.agentName &&
             file.userEmail === ownerEmail && file.retireAt === artifact.retireAt &&
             file.retireAt > new Date().toISOString() && file.derived?.kind !== "checkpoint";
         } },
@@ -137,8 +137,8 @@ export class PostgresArtifactRepository implements ArtifactRepository {
     return fromItem(item);
   }
 
-  async listByProject(projectName: string, options: ListArtifactsOptions = {}): Promise<Artifact[]> {
-    return list("GSI1", keys.artifactProjectPartition(projectName), options);
+  async listByAgent(agentName: string, options: ListArtifactsOptions = {}): Promise<Artifact[]> {
+    return list("GSI1", keys.artifactAgentPartition(agentName), options);
   }
 
   async listByOwner(email: string, options: ListArtifactsOptions = {}): Promise<Artifact[]> {

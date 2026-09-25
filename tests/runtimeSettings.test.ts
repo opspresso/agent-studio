@@ -418,8 +418,8 @@ describe("runtime settings precedence", () => {
  * The two admin questions differ only on the unconfigured case, and that
  * difference is load-bearing: `isAdminEmail` gates shared-registry mutations,
  * where "no list" has always meant "no restriction"; `isConfiguredAdmin` gates
- * overriding someone else's project ownership, where the same reading would
- * hand every signed-in user write access to every project.
+ * overriding someone else's agent ownership, where the same reading would
+ * hand every signed-in user write access to every agent.
  */
 describe("admin predicates", () => {
   it("both accept an address on the configured list", async () => {

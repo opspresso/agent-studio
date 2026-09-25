@@ -8,7 +8,7 @@ const secret = "https://files.example.test/audio?signature=private";
 const body = { file: { id: "item-1", name: "audio.mp3", url: secret }, alternate: secret, notes: `Download ${secret}` };
 function input() {
   const register = vi.fn<RegisterMcpSource>(async (value) => ({ sourceRef: "ref-1", filename: value.filename, mimeType: value.mimeType }));
-  return { mapping, register, serverName: "files", projectName: "audio", userEmail: "owner@example.test",
+  return { mapping, register, serverName: "files", agentName: "audio", userEmail: "owner@example.test",
     result: { content: [{ type: "text", text: JSON.stringify(body) }] } };
 }
 describe("MCP source projection", () => {
@@ -67,7 +67,7 @@ describe("MCP source projection", () => {
   it("returns only opaque file metadata and never copies alternate URLs or provider notes", async () => {
     const value = input(); const result = await mapMcpSource(value);
     expect(JSON.parse(result.text)).toEqual({ source_ref: "ref-1", filename: "audio.mp3", mime_type: "audio/mpeg", source: "files", external_id: "item-1" });
-    expect(value.register).toHaveBeenCalledWith(expect.objectContaining({ url: secret, projectName: "audio", userEmail: "owner@example.test" }));
+    expect(value.register).toHaveBeenCalledWith(expect.objectContaining({ url: secret, agentName: "audio", userEmail: "owner@example.test" }));
     expect(result.text).not.toContain("signature");
   });
   it("uses structured output without depending on a text preview", async () => {

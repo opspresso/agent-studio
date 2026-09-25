@@ -14,9 +14,9 @@ const user: RunActor = { kind: "user", id: "a@x.com" };
 
 const guestCap = TIER_LIMITS.guest.monthlyCostCapUsd!;
 
-const day = (date: string, cost: number, projectName = "p"): MemberUsageRow => ({
+const day = (date: string, cost: number, agentName = "p"): MemberUsageRow => ({
   email: "a@x.com",
-  projectName,
+  agentName,
   date,
   calls: { m: 1 },
   inputTokens: {},
@@ -37,8 +37,8 @@ function usageWith(
     },
     claimAlert: async () => false,
     claimMonthAlert: async () => false,
-    listActorsByProject: async () => [],
-    listByProject: async () => [],
+    listActorsByAgent: async () => [],
+    listByAgent: async () => [],
     listByDateRange: async () => [],
   };
 }
@@ -97,9 +97,9 @@ describe("assertWithinMemberCostLimit", () => {
       { kind: "slack", id: "U1" },
       { kind: "webhook", id: "p:t" },
       { kind: "schedule", id: "p:t" },
-      // A token spends against its project, not its owner; the tier gate on
+      // A token spends against its agent, not its owner; the tier gate on
       // token authentication is what keeps this from being a bypass.
-      { kind: "project-token", id: "a@x.com" },
+      { kind: "agent-token", id: "a@x.com" },
     ] as RunActor[]) {
       await expect(assertWithinMemberCostLimit({ usage }, actor, "guest", now)).resolves.toBeUndefined();
     }

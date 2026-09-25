@@ -1,7 +1,7 @@
 /**
  * Shared application error hierarchy. Every domain-level error carries the HTTP
  * status a route should surface, so `apiError` (and any route) can map errors
- * from any domain uniformly. Domain-specific error modules (project, chat)
+ * from any domain uniformly. Domain-specific error modules (agent, chat)
  * extend or re-export these.
  */
 export class AppError extends Error {

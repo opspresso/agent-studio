@@ -6,7 +6,7 @@ import { attachmentSrc, type Attachment } from "@/app/_lib/imageAttachments";
 import { useT } from "@/app/_i18n/provider";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { readJson } from "@/app/_lib/httpClient";
-import { EMPTY_TURN, type AgentProject } from "../_lib/types";
+import { EMPTY_TURN, type AgentSummary } from "../_lib/types";
 import { useRunEntry } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
 import { ChatThread } from "./ChatThread";
@@ -19,19 +19,19 @@ import { useLocalStorage } from "@mantine/hooks";
 import classes from "./ChatThread.module.css";
 import { AgentSuggestion } from "@/app/_components/AgentSuggestion";
 
-const PROJECT_KEY = "agent-studio-chat-project";
+const AGENT_KEY = "agent-studio-chat-agent";
 
 export function NewChatPanel() {
   const t = useT();
-  const [projects, setProjects] = useState<AgentProject[]>([]);
-  const [projectsLoaded, setProjectsLoaded] = useState(false);
-  const [projectsError, setProjectsError] = useState<string | null>(null);
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [agentsLoaded, setAgentsLoaded] = useState(false);
+  const [agentsError, setAgentsError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  // The project a new chat runs against, remembered per browser so the next one
+  // The agent a new chat runs against, remembered per browser so the next one
   // opens on the last pick. Not synced across tabs: a pick made in another tab
-  // must not swap the project under a message being typed here.
-  const [projectName, setProjectName] = useLocalStorage({
-    key: PROJECT_KEY,
+  // must not swap the agent under a message being typed here.
+  const [agentName, setAgentName] = useLocalStorage({
+    key: AGENT_KEY,
     defaultValue: "",
     sync: false,
   });
@@ -53,28 +53,28 @@ export function NewChatPanel() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadProjects() {
+    async function loadAgents() {
       try {
-        const agents = await readJson<AgentProject[]>(await fetch("/api/projects"));
+        const agents = await readJson<AgentSummary[]>(await fetch("/api/agents"));
         if (cancelled) return;
-        setProjects(agents);
+        setAgents(agents);
         if (agents.length > 0) {
           // The remembered Agent may have been deleted or renamed.
-          setProjectName((current) =>
-            agents.some((project) => project.name === current) ? current : agents[0]!.name,
+          setAgentName((current) =>
+            agents.some((agent) => agent.name === current) ? current : agents[0]!.name,
           );
         }
       } catch (error) {
         if (!cancelled) {
-          setProjectsError(
+          setAgentsError(
             error instanceof Error ? error.message : t("agents.loadFailed"),
           );
         }
       } finally {
-        if (!cancelled) setProjectsLoaded(true);
+        if (!cancelled) setAgentsLoaded(true);
       }
     }
-    void loadProjects();
+    void loadAgents();
     return () => {
       cancelled = true;
     };
@@ -122,10 +122,10 @@ export function NewChatPanel() {
     // key set, and guarding on that alone made Send do nothing for the rest of
     // the session — silently, since the button still looks enabled. Refused
     // sends report themselves so the composer keeps the draft.
-    if (!projectsLoaded || !projects.some((project) => project.name === projectName) || starting) {
+    if (!agentsLoaded || !agents.some((agent) => agent.name === agentName) || starting) {
       return false;
     }
-    setKey(runStore.startNewChat(projectName, { content, attachments, documents }));
+    setKey(runStore.startNewChat(agentName, { content, attachments, documents }));
     return true;
   }
 
@@ -135,7 +135,7 @@ export function NewChatPanel() {
     return <ChatThread chatId={chatId} />;
   }
 
-  if (!projectsLoaded) {
+  if (!agentsLoaded) {
     return (
       <Flex h="100%" align="center" justify="center" role="status">
         <Group gap="sm">
@@ -146,22 +146,22 @@ export function NewChatPanel() {
     );
   }
 
-  if (projectsLoaded && projects.length === 0) {
+  if (agentsLoaded && agents.length === 0) {
     return (
       <Flex h="100%" align="center" justify="center">
         <Stack gap="xs" maw={420} ta="center">
-          {projectsError ? (
+          {agentsError ? (
             <Alert color="red" variant="light">
-              {projectsError}
+              {agentsError}
             </Alert>
           ) : (
             <>
               <ThemeIcon size={56} radius="xl" variant="light" mx="auto">
                 <IconMessageCircle size={28} />
               </ThemeIcon>
-              <Title order={1} fz="h3">{t("chat.noAgentProjects")}</Title>
+              <Title order={1} fz="h3">{t("chat.noAgentSummarys")}</Title>
               <Text fz="sm" c="dimmed">
-                {t("chat.noAgentProjectsBody")}
+                {t("chat.noAgentSummarysBody")}
               </Text>
               <Group justify="center" mt="sm">
                 <Button component={Link} href="/agents" rightSection={<IconArrowRight size={16} />}>
@@ -177,7 +177,7 @@ export function NewChatPanel() {
   }
 
   const starting = entry?.status === "streaming";
-  const selectedProject = projects.find((project) => project.name === projectName);
+  const selectedAgent = agents.find((agent) => agent.name === agentName);
 
   return (
     <Flex direction="column" h="100%">
@@ -190,19 +190,19 @@ export function NewChatPanel() {
               </ThemeIcon>
               <div>
                 <Title order={1} fz={{ base: 26, sm: 32 }}>{t("chat.welcomeTitle")}</Title>
-                <Text fz="sm" c="dimmed" mt="xs">{t("chat.pickProject")}</Text>
+                <Text fz="sm" c="dimmed" mt="xs">{t("chat.pickAgent")}</Text>
               </div>
               <Select
-                label={t("chat.project")}
-                value={projectName}
-                onChange={(value) => setProjectName(value ?? "")}
+                label={t("chat.agent")}
+                value={agentName}
+                onChange={(value) => setAgentName(value ?? "")}
                 allowDeselect={false}
                 searchable
-                data={projects.map((project) => ({ value: project.name, label: project.displayName || project.name }))}
+                data={agents.map((agent) => ({ value: agent.name, label: agent.displayName || agent.name }))}
               />
-              {selectedProject?.description && (
-                <Text fz="sm" c="dimmed" className={classes.projectDescription}>
-                  {selectedProject.description}
+              {selectedAgent?.description && (
+                <Text fz="sm" c="dimmed" className={classes.agentDescription}>
+                  {selectedAgent.description}
                 </Text>
               )}
               <Text fz="xs" c="dimmed">{t("chat.welcomeHint")}</Text>
@@ -253,25 +253,25 @@ export function NewChatPanel() {
             key={composerKey}
             onSend={start}
             onDraftChange={setDraft}
-            suggestion={<AgentSuggestion surface="chat" request={draft} candidates={projects} selected={projectName}
-              onSelect={setProjectName} disabled={starting} />}
-            disabled={starting || !selectedProject}
+            suggestion={<AgentSuggestion surface="chat" request={draft} candidates={agents} selected={agentName}
+              onSelect={setAgentName} disabled={starting} />}
+            disabled={starting || !selectedAgent}
             placeholder={t("chat.firstPlaceholder")}
             status={<RunningAgents paths={entry?.live.authorPaths ?? []} />}
             leading={entry?.pendingUser !== undefined && (
               <Group gap="xs" align="center">
                 <Text fz="xs" fw={500} c="dimmed">
-                  {t("chat.project")}
+                  {t("chat.agent")}
                 </Text>
                 <Select
-                  aria-label={t("chat.project")}
-                  value={projectName}
-                  onChange={(value) => setProjectName(value ?? "")}
+                  aria-label={t("chat.agent")}
+                  value={agentName}
+                  onChange={(value) => setAgentName(value ?? "")}
                   disabled={starting}
                   allowDeselect={false}
-                  data={projects.map((project) => ({
-                    value: project.name,
-                    label: project.displayName || project.name,
+                  data={agents.map((agent) => ({
+                    value: agent.name,
+                    label: agent.displayName || agent.name,
                   }))}
                 />
               </Group>

@@ -3,7 +3,7 @@
  *
  * The load-bearing property is that discovery is *additive*: a configuration's own
  * bindings are resolved in full and in order, and nothing a search finds can
- * displace, reorder or truncate them. A project turning this on has to be able
+ * displace, reorder or truncate them. An agent turning this on has to be able
  * to do so without re-auditing what it already relies on — so that is what most
  * of these pin.
  *
@@ -23,14 +23,14 @@ import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import type { CapabilityKind } from "@/domain/catalog/types";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import type { McpServer } from "@/domain/mcp/types";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import type { VectorMatch } from "@/domain/vector/types";
 
 const TIME = "2026-01-01T00:00:00Z";
 
 function configuration(overrides: Partial<AgentConfiguration> = {}): AgentConfiguration {
   return {
-    projectName: "proj",
+    agentName: "proj",
 
     systemPrompt: "You review pull requests.",
 
@@ -115,9 +115,9 @@ function harness(
         describe: async (names: readonly string[]) =>
           names.map((name) => ({ name, description: `about ${name}` })),
       },
-      projects: { get: async () => null },
+      agents: { get: async () => null },
       mcps: { get: async (name: string) => registry.get(name) ?? null },
-      mcpConnections: { listByProject: async () => options.connections ?? [] },
+      mcpConnections: { listByAgent: async () => options.connections ?? [] },
       ...(options.catalog ? { catalog: options.catalog } : {}),
       cipher: { mergeOutboundHeaders: () => ({}) },
       urlPolicy: { assertAllowed: async () => {} },
@@ -274,7 +274,7 @@ describe("capability discovery", () => {
     ]);
   });
 
-  it("refuses an OAuth server this project has not connected", async () => {
+  it("refuses an OAuth server this agent has not connected", async () => {
     const { deps, opened } = harness({
       catalog: fakeCatalog({ mcpTool: [found("slack", "post")] }),
       servers: [server("slack", OAUTH)],
@@ -284,8 +284,8 @@ describe("capability discovery", () => {
     expect(resolved.warnings.some((line) => line.includes("has not connected it"))).toBe(true);
   });
 
-  it("offers an OAuth server this project *has* connected", async () => {
-    // Authorizing a server in the console says this project may use it, and
+  it("offers an OAuth server this agent *has* connected", async () => {
+    // Authorizing a server in the console says this agent may use it, and
     // discovery has no business being the one caller that ignores that. The
     // connection rows answer by being read — resolving the credential would
     // refresh tokens and make discovery a writer.
@@ -375,7 +375,7 @@ describe("capability discovery", () => {
     expect(resolved.rerank).toEqual({ calls: 2, candidates: 2, failed: 2, usage: [] });
   });
 
-  it("records successful rerank usage against the project making the run", async () => {
+  it("records successful rerank usage against the agent making the run", async () => {
     const catalog = fakeCatalog({ skill: [found("aws-knowledge")] });
     catalog.reranker = {
       rerank: async () => ({
@@ -397,7 +397,7 @@ describe("capability discovery", () => {
 
     expect(resolved.skills.map((skill) => skill.name)).toEqual(["aws-knowledge"]);
     expect(recordUsage).toHaveBeenCalledWith({
-      projectName: "proj",
+      agentName: "proj",
       model: "openrouter/rerank-v3.5",
       inputTokens: 21,
       outputTokens: 0,
@@ -437,7 +437,7 @@ describe("capability discovery", () => {
   });
 
   it("a skipped candidate does not cost a slot", async () => {
-    // The top scorer needs OAuth this project never connected. Sized at exactly
+    // The top scorer needs OAuth this agent never connected. Sized at exactly
     // the cap, it starved the third server the request actually asked for.
     const { deps, opened } = harness({
       catalog: fakeCatalog({

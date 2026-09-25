@@ -75,11 +75,11 @@ export function WorkspacePanel({ id }: { id: string }) {
   const pending = detail.approvals.find(approval => approval.id === workspace.activeActionId && approval.status === "pending");
   const blocked = busy || !!workspace.activeRunId || (!!workspace.activeActionId && !pending) || ["closing", "suspending"].includes(workspace.status);
   const status = (value: string) => t(`workspace.status.${value}` as MessageKey);
-  const workflows = options?.projects.find(project => project.projectName === workspace.projectName)?.deploymentWorkflows ?? [];
+  const workflows = options?.agents.find(agent => agent.agentName === workspace.agentName)?.deploymentWorkflows ?? [];
 
   return <Stack h="100%" gap="sm">
     <Group justify="space-between" wrap="wrap">
-      <div><Title order={2} size="h4">{workspace.title}</Title><Group gap="xs" mt={4}><Badge variant="outline" color="cyan">{t("workspace.kind")}</Badge><Text size="xs" c="dimmed">{workspace.projectName} · {workspace.runtime}</Text><Badge variant="light">{status(workspace.status)}</Badge></Group></div>
+      <div><Title order={2} size="h4">{workspace.title}</Title><Group gap="xs" mt={4}><Badge variant="outline" color="cyan">{t("workspace.kind")}</Badge><Text size="xs" c="dimmed">{workspace.agentName} · {workspace.runtime}</Text><Badge variant="light">{status(workspace.status)}</Badge></Group></div>
       <Button size="xs" variant="default" disabled={busy || workspace.status === "closed" || workspace.status === "closing"} onClick={() => { void stop(true); }}>{t("workspace.finish")}</Button>
     </Group>
     {workspace.coding && <Group gap="xs"><Code>{workspace.coding.branch}</Code><Text size="xs" c="dimmed">← {workspace.coding.baseBranch}</Text>

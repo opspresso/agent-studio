@@ -7,12 +7,12 @@ import { CollapsibleCode } from "@/app/_components/CollapsibleCode";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import {
-  disconnectProjectSlack,
-  getProjectSlack,
-  testProjectSlack,
-  updateProjectSlack,
+  disconnectAgentSlack,
+  getAgentSlack,
+  testAgentSlack,
+  updateAgentSlack,
 } from "../../lib/api";
-import type { ProjectSlackResponse, SlackSuggestedPrompt } from "../../lib/api";
+import type { AgentSlackResponse, SlackSuggestedPrompt } from "../../lib/api";
 import { Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { MAX_SUGGESTED_PROMPTS } from "@/domain/slack/types";
 import { parseList } from "@/shared/parseList";
@@ -32,12 +32,12 @@ function emptyPrompts(stored: SlackSuggestedPrompt[]): SlackSuggestedPrompt[] {
 }
 
 export function SlackSection({
-  projectName,
+  agentName,
 }: {
-  projectName: string;
+  agentName: string;
 }) {
   const t = useT();
-  const [view, setView] = useState<ProjectSlackResponse | null>(null);
+  const [view, setView] = useState<AgentSlackResponse | null>(null);
   const [botToken, setBotToken] = useState("");
   const [signingSecret, setSigningSecret] = useState("");
   const [enabled, setEnabled] = useState(false);
@@ -61,7 +61,7 @@ export function SlackSection({
     let cancelled = false;
     setView(null);
     setError(null);
-    getProjectSlack(projectName)
+    getAgentSlack(agentName)
       .then((v) => {
         if (!cancelled) {
           setView(v);
@@ -76,7 +76,7 @@ export function SlackSection({
     return () => {
       cancelled = true;
     };
-  }, [projectName, reloadKey]);
+  }, [agentName, reloadKey]);
 
   if (!view) {
     return <BotIntegrationSection title={t("pset.slackBot")} view={null} error={error}
@@ -88,7 +88,7 @@ export function SlackSection({
     setStatus(null);
     setError(null);
     try {
-      const next = await updateProjectSlack(projectName, {
+      const next = await updateAgentSlack(agentName, {
         botToken,
         signingSecret,
         enabled,
@@ -115,7 +115,7 @@ export function SlackSection({
     setStatus(null);
     setError(null);
     try {
-      const result = await testProjectSlack(projectName);
+      const result = await testAgentSlack(agentName);
       setStatus(`Connected: ${result.team} (bot: ${result.botUser})`);
     } catch (e) {
       setError(reportError(e, "Connection test failed"));
@@ -128,7 +128,7 @@ export function SlackSection({
     if (
       !(await confirm({
         title: "Remove Slack credentials",
-        message: "Remove the Slack bot credentials for this project?",
+        message: "Remove the Slack bot credentials for this agent?",
         confirmLabel: "Remove",
       }))
     ) {
@@ -136,8 +136,8 @@ export function SlackSection({
     }
     setBusy(true);
     try {
-      await disconnectProjectSlack(projectName);
-      const next = await getProjectSlack(projectName);
+      await disconnectAgentSlack(agentName);
+      const next = await getAgentSlack(agentName);
       setView(next);
       setBotToken("");
       setSigningSecret("");

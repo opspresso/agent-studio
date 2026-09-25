@@ -52,12 +52,12 @@ export function toMemberTier(value: unknown): MemberTier {
 export interface TierLimits {
   /** Absent ⇒ the deployment's env limit (`MAX_CONCURRENT_RUNS_PER_ACTOR`) applies. */
   maxConcurrentRuns?: number;
-  /** Absent ⇒ uncapped. USD over the UTC month, summed across every project. */
+  /** Absent ⇒ uncapped. USD over the UTC month, summed across every agent. */
   monthlyCostCapUsd?: number;
-  /** May create new projects. Absent ⇒ allowed. */
-  canCreateProjects?: boolean;
+  /** May create new agents. Absent ⇒ allowed. */
+  canCreateAgents?: boolean;
   /**
-   * May a project owned by this tier issue — and authenticate with — API
+   * May an agent owned by this tier issue — and authenticate with — API
    * tokens. Absent ⇒ allowed. Owner-scoped, not caller-scoped: the token acts
    * as the owner, so it is the owner's tier that decides whether such a
    * credential may exist at all.
@@ -80,7 +80,7 @@ export const TIER_LIMITS: Record<MemberTier, TierLimits> = {
   guest: {
     maxConcurrentRuns: 1,
     monthlyCostCapUsd: 2,
-    canCreateProjects: false,
+    canCreateAgents: false,
     canUseApiTokens: false,
   },
 };
@@ -90,8 +90,8 @@ export const TIER_LIMITS: Record<MemberTier, TierLimits> = {
  * comparing tier names, so the answer has one owner on both sides of the
  * wire (the API routes and the buttons the console offers).
  */
-export function tierMayCreateProjects(tier: MemberTier): boolean {
-  return TIER_LIMITS[tier].canCreateProjects !== false;
+export function tierMayCreateAgents(tier: MemberTier): boolean {
+  return TIER_LIMITS[tier].canCreateAgents !== false;
 }
 
 export function tierMayUseApiTokens(tier: MemberTier): boolean {

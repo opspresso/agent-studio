@@ -1,8 +1,8 @@
 import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
 
 export interface SourceRefresh {
-  /** Project owning the MCP binding and OAuth connection, independent of artifact ownership. */
-  projectName?: string;
+  /** Agent owning the MCP binding and OAuth connection, independent of artifact ownership. */
+  agentName?: string;
   serverName: string;
   mapping: McpSourceMapping;
   /** Fingerprint of the endpoint, binding and connection generation, excluding rotated OAuth tokens. */
@@ -11,7 +11,7 @@ export interface SourceRefresh {
 
 export interface SourceReference {
   id: string;
-  projectName: string;
+  agentName: string;
   userEmail: string;
   /** Stable external identity, independent of a temporary signed URL. */
   namespace: string;

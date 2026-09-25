@@ -9,7 +9,7 @@ import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import type { McpServer } from "@/domain/mcp/types";
 import type { McpProvisioner } from "@/domain/mcp/provisioner";
 import type { ExecutionDeps } from "@/application/execution/deps";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 
 /**
  * The whole path, against a server actually listening on loopback: provision,
@@ -143,7 +143,7 @@ export async function checkManagedMcpTransport(): Promise<void> {
     } as unknown as ExecutionDeps;
 
     resolved = await buildMcpTools(deps, {
-      projectName: "p",
+      agentName: "p",
       mcpList: [{ name: "image-fetch" }],
     } as unknown as AgentConfiguration);
 

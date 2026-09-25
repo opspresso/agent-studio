@@ -2,7 +2,7 @@
 export interface RuntimeSessionRow {
   sessionId: string;
   ownerEmail: string;
-  projectName: string;
+  agentName: string;
   revision: number;
   payload: string;
   expiresAt: string;

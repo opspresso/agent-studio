@@ -234,7 +234,7 @@ describe("readEventBody", () => {
   });
 
   it("refuses one over it with a 413 that names the bound", async () => {
-    // Four webhooks — Slack, Telegram, Teams and a project's own — each named
+    // Four webhooks — Slack, Telegram, Teams and an agent's own — each named
     // their own megabyte and then wrote a flat "Request body too large", the
     // only 413 on the platform that did not say what the limit was. A caller
     // that cannot read the bound out of the refusal learns it from a 500.

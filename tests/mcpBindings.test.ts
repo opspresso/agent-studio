@@ -20,12 +20,12 @@ import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTar
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
 }));
-import { executeAgent } from "@/application/execution/runProject";
-import type { ExecutionDeps } from "@/application/execution/runProject";
+import { executeAgent } from "@/application/execution/runAgent";
+import type { ExecutionDeps } from "@/application/execution/runAgent";
 import { encryptHeaderOverrides, encryptHeaders } from "@/infrastructure/crypto/secretEncryption";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { McpBinding, Project, AgentConfiguration } from "@/domain/project/types";
+import type { McpBinding, Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { RunActor, RunConversation } from "@/domain/execution/actor";
 import { getCachedDiscovery } from "@/infrastructure/mcp/discoveryCache";
 import {
@@ -39,7 +39,7 @@ import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 
 const MCP_URL = "https://shared-mcp.test/mcp";
 
-/** One shared registry server both projects bind to. */
+/** One shared registry server both agents bind to. */
 const registryServer = {
   name: "shared-mcp",
   url: MCP_URL,
@@ -52,7 +52,7 @@ const registryServer = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-function projectFixture(name: string): Project {
+function agentFixture(name: string): Agent {
   return {
     name,
     displayName: name,
@@ -63,9 +63,9 @@ function projectFixture(name: string): Project {
   };
 }
 
-function configurationFixture(projectName: string, mcpList: McpBinding[]): AgentConfiguration {
+function configurationFixture(agentName: string, mcpList: McpBinding[]): AgentConfiguration {
   return {
-    projectName,
+    agentName,
 
     systemPrompt: "",
 
@@ -90,15 +90,15 @@ function depsFixture(
   const server = overrides.server ?? registryServer;
   return {
     ...(overrides.mcpAuth ? { mcpAuth: overrides.mcpAuth } : {}),
-    projects: { get: reject, list: reject, put: reject, delete: reject },
+    agents: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => server, list: reject, put: reject, delete: reject },
     usage: {
       record: async (_delta: UsageDelta) => {},
       getDay: async () => null,
       claimAlert: async () => false,
-      listActorsByProject: reject,
-      listByProject: reject,
+      listActorsByAgent: reject,
+      listByAgent: reject,
       listByDateRange: reject,
     },
     createToolSchemaValidator,
@@ -137,7 +137,7 @@ function stubMcpServer(toolNames: string[] = ["search"]): Array<Record<string, s
 
 /** Run one agent turn and return the headers the MCP server was called with. */
 async function dispatchHeaders(
-  projectName: string,
+  agentName: string,
   mcpList: McpBinding[],
   overrides: Parameters<typeof depsFixture>[1] & {
     actor?: RunActor;
@@ -150,8 +150,8 @@ async function dispatchHeaders(
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     const chunks: EngineChunk[] = [];
     for await (const chunk of executeAgent(depsFixture(channel, overrides), {
-      project: projectFixture(projectName),
-      configuration: configurationFixture(projectName, mcpList),
+      agent: agentFixture(agentName),
+      configuration: configurationFixture(agentName, mcpList),
       messages: [{ role: "user", content: "hi" }],
       ...(overrides.actor ? { actor: overrides.actor } : {}),
       ...(overrides.conversation ? { conversation: overrides.conversation } : {}),
@@ -173,7 +173,7 @@ beforeEach(() => {
   clearMcpDiscoveryCache();
 });
 
-describe("per-project MCP header overrides at dispatch", () => {
+describe("per-agent MCP header overrides at dispatch", () => {
   it("decrypts context-bound registry and Agent binding headers together", async () => {
     const server = {
       ...registryServer,
@@ -188,7 +188,7 @@ describe("per-project MCP header overrides at dispatch", () => {
         {
           name: "shared-mcp",
           headers: encryptHeaderOverrides(
-            { Authorization: "Bearer project" },
+            { Authorization: "Bearer agent" },
             agentMcpHeadersContext("bound", "shared-mcp"),
           ),
         },
@@ -196,7 +196,7 @@ describe("per-project MCP header overrides at dispatch", () => {
       { server },
     );
 
-    expect(headers.authorization).toBe("Bearer project");
+    expect(headers.authorization).toBe("Bearer agent");
     expect(headers["x-shared"]).toBe("shared");
   });
 
@@ -207,8 +207,8 @@ describe("per-project MCP header overrides at dispatch", () => {
     expect(headers["x-shared"]).toBe("shared-value");
   });
 
-  it("names the calling project on every request, with no registration", async () => {
-    // What lets a multi-tenant server (mcp-memory) scope its data per project
+  it("names the calling agent on every request, with no registration", async () => {
+    // What lets a multi-tenant server (mcp-memory) scope its data per agent
     // without anyone configuring a header per binding.
     const headers = await dispatchHeaders("painter", [{ name: "shared-mcp" }]);
 
@@ -217,7 +217,7 @@ describe("per-project MCP header overrides at dispatch", () => {
 
   it.each([
     [{ kind: "user", id: "Member@Example.com" }, "member@example.com"],
-    [{ kind: "project-token", id: "Owner@Example.com" }, "owner@example.com"],
+    [{ kind: "agent-token", id: "Owner@Example.com" }, "owner@example.com"],
   ] as const)("names an email actor on every request", async (actor, email) => {
     const headers = await dispatchHeaders("painter", [{ name: "shared-mcp" }], { actor });
 
@@ -273,7 +273,7 @@ describe("per-project MCP header overrides at dispatch", () => {
 
   it("names the run's conversation on every request, outside the discovery cache key", async () => {
     // What lets a stateful server (a memory server) tell one thread's working
-    // notes from the project's shared knowledge — and what must *not* cost a
+    // notes from the agent's shared knowledge — and what must *not* cost a
     // full discovery per thread: the tenant keys the cache, the conversation
     // only travels.
     const conversation: RunConversation = { surface: "slack", id: "C1:1723.45" };
@@ -312,21 +312,21 @@ describe("per-project MCP header overrides at dispatch", () => {
     expect(headers["x-conversation-id"]).toBe("chat:mine");
   });
 
-  it("a binding cannot impersonate another project's tenant", async () => {
-    // The override merge runs first and the project header is applied on top —
+  it("a binding cannot impersonate another agent's tenant", async () => {
+    // The override merge runs first and the agent header is applied on top —
     // in any spelling: a case-variant surviving beside the real one would reach
-    // the server as one comma-joined value, which reads as neither project.
+    // the server as one comma-joined value, which reads as neither agent.
     const headers = await dispatchHeaders("painter", [
       {
         name: "shared-mcp",
-        headers: encryptHeaderOverrides({ "x-tenant-id": "other-project" }),
+        headers: encryptHeaderOverrides({ "x-tenant-id": "other-agent" }),
       },
     ]);
 
     expect(headers["x-tenant-id"]).toBe("painter");
   });
 
-  it("still sends the registry headers when the entry has OAuth the project has not connected", async () => {
+  it("still sends the registry headers when the entry has OAuth the agent has not connected", async () => {
     // Discovering OAuth on an entry adds a way to authenticate it. It would
     // take one away: any `auth` block made the run drop the server outright,
     // so an entry that had been working on a static Authorization header went
@@ -341,7 +341,7 @@ describe("per-project MCP header overrides at dispatch", () => {
       mcpAuth: {
         headersFor: async () => ({
           headers: {},
-          unavailable: "MCP server 'shared-mcp' requires authorization and this project has not connected it.",
+          unavailable: "MCP server 'shared-mcp' requires authorization and this agent has not connected it.",
         }),
         markUnauthorized: async () => {},
       },
@@ -360,7 +360,7 @@ describe("per-project MCP header overrides at dispatch", () => {
     const oauthServer = {
       ...registryServer,
       headers: encryptHeaders({
-        "X-Tenant-Id": "forged-project",
+        "X-Tenant-Id": "forged-agent",
         "X-User-Email": "forged@example.com",
       }),
       auth: { type: "oauth2", resource: "https://shared-mcp.test" },
@@ -377,13 +377,13 @@ describe("per-project MCP header overrides at dispatch", () => {
             headersFor: async () => ({
               headers: {},
               unavailable:
-                "MCP server 'shared-mcp' requires authorization and this project has not connected it.",
+                "MCP server 'shared-mcp' requires authorization and this agent has not connected it.",
             }),
             markUnauthorized: async () => {},
           },
         }),
         {
-          project: projectFixture("no-connection"),
+          agent: agentFixture("no-connection"),
           configuration: configurationFixture("no-connection", [{ name: "shared-mcp" }]),
           messages: [{ role: "user", content: "hi" }],
         },
@@ -397,9 +397,9 @@ describe("per-project MCP header overrides at dispatch", () => {
     }
   });
 
-  it("prefers the project's connection over the entry's own header", async () => {
+  it("prefers the agent's connection over the entry's own header", async () => {
     // The connection is the more specific credential, so it wins where both
-    // exist — the fallback is for projects that have not connected.
+    // exist — the fallback is for agents that have not connected.
     const oauthServer = {
       ...registryServer,
       auth: { type: "oauth2", resource: "https://shared-mcp.test" },
@@ -408,16 +408,16 @@ describe("per-project MCP header overrides at dispatch", () => {
     const headers = await dispatchHeaders("connected", [{ name: "shared-mcp" }], {
       server: oauthServer,
       mcpAuth: {
-        headersFor: async () => ({ headers: { Authorization: "Bearer project-oauth" } }),
+        headersFor: async () => ({ headers: { Authorization: "Bearer agent-oauth" } }),
         markUnauthorized: async () => {},
       },
     });
 
-    expect(headers.authorization).toBe("Bearer project-oauth");
+    expect(headers.authorization).toBe("Bearer agent-oauth");
     expect(headers["x-shared"]).toBe("shared-value");
   });
 
-  it("lets two projects call one registry server with different credentials", async () => {
+  it("lets two agents call one registry server with different credentials", async () => {
     const a = await dispatchHeaders("tenant-a", [
       { name: "shared-mcp", headers: encryptHeaderOverrides({ Authorization: "Bearer token-a" }) },
     ]);
@@ -482,7 +482,7 @@ describe("per-project MCP header overrides at dispatch", () => {
       const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
       const fetchMock = globalThis.fetch as unknown as { mock: { calls: unknown[][] } };
       for await (const _chunk of executeAgent(depsFixture(channel), {
-        project: projectFixture("url-check"),
+        agent: agentFixture("url-check"),
         configuration: configurationFixture("url-check", [
           {
             name: "shared-mcp",
@@ -511,7 +511,7 @@ describe("what a run may offer from a bound server", () => {
       const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
       const chunks: EngineChunk[] = [];
       for await (const chunk of executeAgent(depsFixture(channel), {
-        project: projectFixture("p"),
+        agent: agentFixture("p"),
         configuration: configurationFixture("p", mcpList),
         messages: [{ role: "user", content: "hi" }],
       })) {

@@ -172,7 +172,7 @@ export interface EngineChunk {
     fetched?: boolean;
     /**
      * The model that drew it, named by the producer that used it — the image
-     * project's own model, the one `resolveImageModel` gave the builtins, an
+     * agent's own model, the one `resolveImageModel` gave the builtins, an
      * image subagent's. Absent when nothing here can name one: a picture an MCP
      * tool handed back, or one `FetchUrl` merely read.
      *

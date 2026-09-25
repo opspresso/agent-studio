@@ -66,7 +66,7 @@ export function createArtifactRecorder(
             ? {
                 ...context,
                 ancestry: [
-                  ...(context.ancestry ?? [context.projectName]),
+                  ...(context.ancestry ?? [context.agentName]),
                   ...input.authorPath,
                 ],
               }
@@ -78,7 +78,7 @@ export function createArtifactRecorder(
         failures += 1;
         hint ??= failureHint(error);
         log.warn("artifact", "could not store what a run produced", {
-          project: context.projectName,
+          agent: context.agentName,
           kind: input.kind,
           error: error instanceof Error ? error.message : String(error),
         });

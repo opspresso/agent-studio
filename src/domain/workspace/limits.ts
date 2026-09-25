@@ -2,7 +2,7 @@
 export const WORKSPACE_LIMITS = {
   page: 50,
   maxPage: 200,
-  linkedProjects: 32,
+  linkedAgents: 32,
   policyRepositories: 100,
   policyOwners: 100,
   repositoryDescriptionChars: 350,

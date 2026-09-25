@@ -17,12 +17,12 @@ import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
 }));
-import { executeAgent } from "@/application/execution/runProject";
-import type { ExecutionDeps } from "@/application/execution/runProject";
+import { executeAgent } from "@/application/execution/runAgent";
+import type { ExecutionDeps } from "@/application/execution/runAgent";
 import { encryptHeaders } from "@/infrastructure/crypto/secretEncryption";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
 import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
@@ -37,7 +37,7 @@ const registryServer = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-function projectFixture(): Project {
+function agentFixture(): Agent {
   return {
     name: "painter",
     displayName: "painter",
@@ -50,7 +50,7 @@ function projectFixture(): Project {
 
 function configurationFixture(overrides: Partial<AgentConfiguration> = {}): AgentConfiguration {
   return {
-    projectName: "painter",
+    agentName: "painter",
 
     systemPrompt: "",
 
@@ -77,15 +77,15 @@ function depsFixture(channel: FakeChannel) {
     editImage: reject,
   } as unknown as ImageChannel;
   return {
-    projects: { get: reject, list: reject, put: reject, delete: reject },
+    agents: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => registryServer, list: reject, put: reject, delete: reject },
     usage: {
       record: async () => {},
       getDay: async () => null,
       claimAlert: async () => false,
-      listActorsByProject: reject,
-      listByProject: reject,
+      listActorsByAgent: reject,
+      listByAgent: reject,
       listByDateRange: reject,
     },
     createToolSchemaValidator,
@@ -135,7 +135,7 @@ async function run(
 ): Promise<{ chunks: EngineChunk[]; toolNames: string[] }> {
   const chunks: EngineChunk[] = [];
   for await (const chunk of executeAgent(depsFixture(channel), {
-    project: projectFixture(),
+    agent: agentFixture(),
     configuration,
     messages: [{ role: "user", content: "go" }],
   })) {

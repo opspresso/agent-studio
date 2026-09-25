@@ -71,7 +71,7 @@ test.beforeEach(async ({ page }) => {
     return route.abort();
   });
   await page.goto(base);
-  await page.getByRole("button", { name: "Discover models", exact: true }).click();
+  await page.getByRole("button", { name: "Discover Models", exact: true }).click();
   await expect(page.getByRole("article")).toHaveCount(4);
 });
 
@@ -96,7 +96,7 @@ test("updates a selected model's displayed rate after catalog rediscovery", asyn
   await zeta.getByRole("button", { name: "Add model" }).click();
   await expect(zeta).toContainText("$10.00 in");
   discovered[0] = { ...discovered[0]!, pricing: { inputPer1M: 12, outputPer1M: 24 } };
-  await page.getByRole("button", { name: "Discover models", exact: true }).click();
+  await page.getByRole("button", { name: "Discover Models", exact: true }).click();
   await expect(zeta).toContainText("$12.00 in");
 });
 
@@ -116,7 +116,7 @@ test("adds Jev immediately without a dialog and retains decision type after relo
   expect(saves).toHaveLength(1);
   expect(saves[0]).toMatchObject({ id: "fixture/~typesafe/jev-latest", type: "decision", contextWindow: 32000, maxTokens: 28800, outputModalities: ["decision"], pricing: { inputPer1M: expect.closeTo(0.042), outputPer1M: 0 } });
   await page.reload();
-  await page.getByRole("button", { name: "Discover models", exact: true }).click();
+  await page.getByRole("button", { name: "Discover Models", exact: true }).click();
   await expect(jev).toContainText("Selected");
   await page.goto(`${base}/selected`);
   await expect(page.getByRole("article")).toHaveCount(1);
@@ -140,14 +140,14 @@ test("shows saved selections before discovery and deletes from the selected-only
   const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
   await jev.getByRole("button", { name: "Add model" }).click();
   await expect(jev).toContainText("Selected");
-  await page.getByRole("checkbox", { name: "Selected models only" }).check();
-  await expect(page.getByRole("checkbox", { name: "Selected models only" })).toBeChecked();
+  await page.getByRole("checkbox", { name: "Selected Models only" }).check();
+  await expect(page.getByRole("checkbox", { name: "Selected Models only" })).toBeChecked();
   await expect(page.getByRole("article")).toHaveCount(1);
-  await page.getByRole("checkbox", { name: "Selected models only" }).uncheck();
+  await page.getByRole("checkbox", { name: "Selected Models only" }).uncheck();
   await expect(page.getByRole("article")).toHaveCount(4);
   await page.reload();
   await expect(page.getByRole("article")).toHaveCount(1);
-  await page.getByRole("checkbox", { name: "Selected models only" }).check();
+  await page.getByRole("checkbox", { name: "Selected Models only" }).check();
   await jev.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByRole("article")).toHaveCount(1);
@@ -225,25 +225,25 @@ test("always queries the complete provider catalog even while selected-only is a
   const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
   await jev.getByRole("button", { name: "Add model" }).click();
   await expect(jev).toContainText("Selected");
-  await page.getByRole("checkbox", { name: "Selected models only" }).check();
-  await page.getByRole("button", { name: "Discover models", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Selected Models only" }).check();
+  await page.getByRole("button", { name: "Discover Models", exact: true }).click();
   await expect.poll(() => discoveryQueries.length).toBe(2);
   expect(discoveryQueries).toEqual(["?provider=fixture", "?provider=fixture"]);
   await expect(page.getByRole("article")).toHaveCount(1);
-  await page.getByRole("checkbox", { name: "Selected models only" }).uncheck();
+  await page.getByRole("checkbox", { name: "Selected Models only" }).uncheck();
   await expect(page.getByRole("article")).toHaveCount(4);
   failDiscovery = true;
-  await page.getByRole("checkbox", { name: "Selected models only" }).check();
-  await page.getByRole("button", { name: "Discover models", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Selected Models only" }).check();
+  await page.getByRole("button", { name: "Discover Models", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Provider discovery failed");
-  await page.getByRole("checkbox", { name: "Selected models only" }).uncheck();
+  await page.getByRole("checkbox", { name: "Selected Models only" }).uncheck();
   await expect(page.getByRole("article")).toHaveCount(4);
 });
 
 test("restores provider, query, type, capability filters, selected-only and sort from browser storage", async ({ page }) => {
   await page.getByRole("combobox", { name: "Providers", exact: true }).click();
   await page.getByRole("option", { name: "other (openrouter)", exact: true }).click();
-  await page.getByRole("button", { name: "Discover models", exact: true }).click();
+  await page.getByRole("button", { name: "Discover Models", exact: true }).click();
   const zeta = page.getByRole("article").filter({ hasText: "Zeta" });
   await zeta.getByRole("button", { name: "Add model" }).click();
   await expect(zeta).toContainText("Selected");
@@ -252,15 +252,15 @@ test("restores provider, query, type, capability filters, selected-only and sort
   await page.getByRole("option", { name: "Text", exact: true }).click();
   await page.getByRole("checkbox", { name: "Tools", exact: true }).check();
   await page.getByRole("checkbox", { name: "Vision", exact: true }).check();
-  await page.getByRole("checkbox", { name: "Selected models only" }).check();
+  await page.getByRole("checkbox", { name: "Selected Models only" }).check();
   await page.getByRole("button", { name: "Price", exact: true }).click();
   await page.reload();
   await expect(page.getByRole("combobox", { name: "Providers", exact: true })).toHaveValue("other (openrouter)");
   await expect(page.getByRole("textbox", { name: "Search models" })).toHaveValue("Zeta");
   await expect(page.getByRole("combobox", { name: "Model type", exact: true })).toHaveValue("Text");
-  for (const name of ["Tools", "Vision", "Selected models only"]) await expect(page.getByRole("checkbox", { name, exact: true })).toBeChecked();
+  for (const name of ["Tools", "Vision", "Selected Models only"]) await expect(page.getByRole("checkbox", { name, exact: true })).toBeChecked();
   await expect(page.getByRole("button", { name: "Price ↑" })).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "Discover models", exact: true }).click();
+  await page.getByRole("button", { name: "Discover Models", exact: true }).click();
   await expect(zeta).toContainText("Selected");
   await page.getByRole("button", { name: "Reset filters" }).click();
   await expect(page.getByRole("article")).toHaveCount(4);
@@ -290,6 +290,6 @@ test("editing uses the registration rules without retaining obsolete output type
   await page.getByRole("option", { name: "Embedding", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  expect(selected[0]).toMatchObject({ id: "fixture/vendor/zeta", wireId: "vendor/zeta", displayName: "Edited model", type: "embedding", maxTokens: 0, pricing: { cachedInputPer1M: 1 } });
+  expect(selected[0]).toMatchObject({ id: "openrouter/zeta", wireId: "vendor/zeta", displayName: "Edited model", type: "embedding", maxTokens: 0, pricing: { cachedInputPer1M: 1 } });
   expect(selected[0]?.outputModalities).toBeUndefined();
 });

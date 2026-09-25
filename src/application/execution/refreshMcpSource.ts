@@ -4,14 +4,14 @@ import { buildMcpTools, closeMcp, type McpToolDeps } from "@/application/executi
 import type { RegisterMcpSource } from "@/application/audio/mapMcpSource";
 import { AudioJobStepError } from "@/application/audio/processJob";
 
-export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps, "projects">): NonNullable<SourceReferenceDeps["refresh"]> {
+export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps, "agents">): NonNullable<SourceReferenceDeps["refresh"]> {
   return async (job, recipe, signal) => {
     const check = async () => {
-      const project = await deps.projects.get(recipe.projectName ?? job.projectName);
-      if (recipe.projectName && recipe.projectName !== job.projectName) {
-        if (project?.ownerEmail !== job.userEmail) throw new AudioJobStepError("source_project_access_changed", false);
+      const agent = await deps.agents.get(recipe.agentName ?? job.agentName);
+      if (recipe.agentName && recipe.agentName !== job.agentName) {
+        if (agent?.ownerEmail !== job.userEmail) throw new AudioJobStepError("source_agent_access_changed", false);
       }
-      const configuration = project?.configuration;
+      const configuration = agent?.configuration;
       const server = await deps.mcps.get(recipe.serverName);
       const binding = configuration?.mcpList.find((entry) => entry.name === recipe.serverName);
       if (!configuration || !server || !binding || !recipe.mapping.refreshArgument ||
@@ -22,7 +22,7 @@ export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps,
     };
     const { configuration, binding } = await check();
     let refreshed: Parameters<RegisterMcpSource>[0] | undefined;
-    // Project before the model-facing result cap; a large provider response may
+    // Agent before the model-facing result cap; a large provider response may
     // otherwise lose the closing JSON delimiter. This callback persists nothing.
     const client = await buildMcpTools({ ...deps, registerMcpSource: async (source) => {
       refreshed = source;

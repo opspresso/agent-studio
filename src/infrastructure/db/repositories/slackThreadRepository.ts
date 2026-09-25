@@ -4,17 +4,17 @@ import { keys } from "../keys";
 import { expiresAtFromNow, isExpired, SLACK_ENGAGEMENT_TTL_SECONDS } from "../ttl";
 
 /**
- * Where this project's bot has spoken, so a follow-up there needs no mention.
+ * Where this agent's bot has spoken, so a follow-up there needs no mention.
  *
  * A reply refreshes engagement without changing an explicit mute. In
  * particular, a mentioned reply may finish after someone muted the thread.
  */
 export const slackThreadRepository: SlackThreadRepository = {
-  async markEngaged(projectName, channel, threadTs) {
-    await updateItem(keys.slackThread(projectName, channel, threadTs), (current) => ({
+  async markEngaged(agentName, channel, threadTs) {
+    await updateItem(keys.slackThread(agentName, channel, threadTs), (current) => ({
       ...current,
       entityType: "slackThread",
-      projectName,
+      agentName,
       channel,
       threadTs,
       engagedAt: new Date().toISOString(),
@@ -22,14 +22,14 @@ export const slackThreadRepository: SlackThreadRepository = {
     }));
   },
 
-  async setMuted(projectName, channel, threadTs, muted) {
+  async setMuted(agentName, channel, threadTs, muted) {
     // A put rather than an update, like `markEngaged`: a mute on a thread the
     // bot has not spoken in yet still has to be recorded, and there is nothing
     // to merge with.
     await putItem({
-      ...keys.slackThread(projectName, channel, threadTs),
+      ...keys.slackThread(agentName, channel, threadTs),
       entityType: "slackThread",
-      projectName,
+      agentName,
       channel,
       threadTs,
       muted,
@@ -38,8 +38,8 @@ export const slackThreadRepository: SlackThreadRepository = {
     });
   },
 
-  async isEngaged(projectName, channel, threadTs) {
-    const item = await getItem(keys.slackThread(projectName, channel, threadTs));
+  async isEngaged(agentName, channel, threadTs) {
+    const item = await getItem(keys.slackThread(agentName, channel, threadTs));
     if (!item || item.muted === true) {
       return false;
     }

@@ -1,28 +1,28 @@
 import type { ScheduleTrigger, Trigger, TriggerRun } from "./types";
 
 export interface TriggerRepository {
-  get(projectName: string, triggerId: string): Promise<Trigger | null>;
-  listByProject(projectName: string, limit: number, after?: string): Promise<Trigger[]>;
-  /** One page of every project's schedule triggers — the rows a scan tick walks. */
+  get(agentName: string, triggerId: string): Promise<Trigger | null>;
+  listByAgent(agentName: string, limit: number, after?: string): Promise<Trigger[]>;
+  /** One page of every agent's schedule triggers — the rows a scan tick walks. */
   listSchedules(
     limit: number,
-    after?: { projectName: string; triggerId: string },
+    after?: { agentName: string; triggerId: string },
   ): Promise<ScheduleTrigger[]>;
-  /** Create; fails if the id is taken within the project. */
+  /** Create; fails if the id is taken within the agent. */
   create(trigger: Trigger): Promise<void>;
   put(trigger: Trigger): Promise<void>;
-  delete(projectName: string, triggerId: string): Promise<void>;
+  delete(agentName: string, triggerId: string): Promise<void>;
 
   /**
    * Claim a firing's dedup key: a delivery's `Idempotency-Key`, or a schedule
    * occurrence's `schedule:{UTC instant}`. True exactly once per
-   * (project, trigger, key); false for a redelivery or a slot another instance
+   * (agent, trigger, key); false for a redelivery or a slot another instance
    * already claimed.
    *
    * A conditional write rather than a read-then-write, because the whole point
    * is the case where the same key arrives at two instances at once.
    */
-  claimIdempotencyKey(projectName: string, triggerId: string, key: string): Promise<boolean>;
+  claimIdempotencyKey(agentName: string, triggerId: string, key: string): Promise<boolean>;
 
   appendRun(run: TriggerRun): Promise<void>;
   /** Finish a run in place — the row was written when it started. */
@@ -41,7 +41,7 @@ export interface TriggerRepository {
    * `queueLeaseBefore` applies to the queued lease index before its limit.
    */
   listRuns(
-    projectName: string,
+    agentName: string,
     triggerId: string,
     limit: number,
     opts?: { startedBefore?: string; queueLeaseBefore?: string; status?: TriggerRun["status"] },

@@ -1,6 +1,6 @@
 /** Rendering what a run would send, without dispatching the model. */
 
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { RunActor, RunCaller } from "@/domain/execution/actor";
 import * as engine from "@/application/runtime";
 import type { ExecutionDeps, PromptPreview } from "./deps";
@@ -18,7 +18,7 @@ import { buildAgentDeps } from "./agentBindings";
 export async function previewPrompt(
   deps: ExecutionDeps,
   input: {
-    project: Project;
+    agent: Agent;
     configuration: AgentConfiguration;
     /**
      * The caller's connection, so a preview stops when they navigate away.
@@ -47,7 +47,7 @@ export async function previewPrompt(
     actor?: RunActor;
   },
 ): Promise<PromptPreview> {
-  const { project, configuration } = input;
+  const { agent, configuration } = input;
   const warnings: string[] = [];
   if (configuration.parameters.piiFiltering) {
     warnings.push(
@@ -92,10 +92,10 @@ export async function previewPrompt(
       // As widened by discovery, so the preview stands for the run it describes
       // rather than the Agent as saved.
       resolved.configuration,
-      project.name,
+      agent.name,
       async () => {},
       // Resolve actor-gated capabilities without executing them.
-      { ...origin, ancestry: [project.name] },
+      { ...origin, ancestry: [agent.name] },
     );
     // Without a preview request, recall performs no query. Still report missing
     // recall bindings so the author can fix them before running the Agent.

@@ -33,10 +33,10 @@ import { buildDailySeries, groupUsage, totalCalls, totalCost, type GroupBy } fro
 import { useLocale, useT } from "@/app/_i18n/provider";
 
 /**
- * A person's own rows carry their project and their model, but no department
- * map — that lives with the project catalog the overview already loads.
+ * A person's own rows carry their agent and their model, but no department
+ * map — that lives with the agent catalog the overview already loads.
  */
-const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider"];
+const GROUP_OPTIONS: GroupBy[] = ["agent", "model", "provider"];
 
 interface ProfileAccount {
   member: Member;
@@ -49,7 +49,7 @@ export default function ProfilePage() {
   const locale = useLocale();
   const [account, setAccount] = useState<ProfileAccount | null>(null);
   const [range, setRange] = useState(defaultDateRange);
-  const [groupBy, setGroupBy] = useState<GroupBy>("project");
+  const [groupBy, setGroupBy] = useState<GroupBy>("agent");
   const [rows, setRows] = useState<MemberUsageRow[]>([]);
   const [usageLoading, setUsageLoading] = useState(true);
   const [accountError, setAccountError] = useState<string | null>(null);

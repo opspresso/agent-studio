@@ -3,7 +3,7 @@
 Working rules for coding agents in this repository (`CLAUDE.md` is a symlink to this file).
 
 Agent Studio is a single Next.js 16 full-stack application installed inside one enterprise
-network. One install is one company; there is no multi-tenancy. Boot, sign-in, project runs,
+network. One install is one company; there is no multi-tenancy. Boot, sign-in, agent runs,
 and the console must work with the public internet unreachable.
 
 This file is a routing contract: what to read, what not to break, and where each decision is
@@ -11,7 +11,7 @@ owned. System explanations belong in `docs/`; historical failure narratives belo
 
 ## Development status and compatibility
 
-This project is under active development. Backward compatibility is not required unless the
+This agent is under active development. Backward compatibility is not required unless the
 user explicitly requests it. Prefer the clean current-state design over compatibility shims;
 breaking changes to APIs, configuration, schemas, and stored data formats are allowed. Any
 operation that destroys existing data or git history still requires explicit user approval and
@@ -75,7 +75,7 @@ pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ```
 
 Integration checks may use only a database whose name ends in `_test`. The `agent-studio-local`
-Compose project owns separate PostgreSQL and MinIO volumes. Never run `docker compose down -v`
+Compose agent owns separate PostgreSQL and MinIO volumes. Never run `docker compose down -v`
 without explicit approval.
 `pnpm db:migrate` reads `DATABASE_URL` from the process environment and otherwise targets the
 script's local default database. To target `.env.local`, run
@@ -165,13 +165,13 @@ key, cap, formatter, error identity, or collapse rule, search
 
 ### Execution and streams
 
-- Every new execution entry uses the facade and opens the run bracket. Use `streamProjectRun` for
-  chunk consumers, including image; `executeProjectStream`/`executeProject` for completion
-  consumers. All Project executions use the same Agent loop, including image tools. See `AGENT_RUN_ENTRY_POINTS` in the architecture test.
+- Every new execution entry uses the facade and opens the run bracket. Use `streamAgentRun` for
+  chunk consumers, including image; `streamAgentExecution`/`collectAgentRun` for completion
+  consumers. All Agent executions use the same Agent loop, including image tools. See `AGENT_RUN_ENTRY_POINTS` in the architecture test.
 - Workspace jobs use `executeWorkspaceTask` and the shared `openTaskRun` bracket. Ordinary commands
   have no Studio model configuration; native CLI history stays in the Workspace checkpoint. Workspace polling
   must distinguish a missing operation from a transport failure and never replay uncertain work.
-- A surface needing only chunks stays behind `streamProjectRun`. Image generation and editing
+- A surface needing only chunks stays behind `streamAgentRun`. Image generation and editing
   run through `application/execution/imageTool.ts` inside the same Agent bracket.
 - `resolveRunTools` receives `discoveryQueries`; omitting them silently disables dynamic discovery.
   Keep `TOOL_RESOLUTION_SITES` accurate.

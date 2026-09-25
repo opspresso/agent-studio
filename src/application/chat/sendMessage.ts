@@ -3,7 +3,7 @@ import type { ChatMessage } from "@/domain/chat/types";
 import { chatConversation } from "@/domain/chat/conversation";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError, ChatConflictError } from "./errors";
-import { userMayAccessProject } from "@/application/project/projectUseCases";
+import { userMayAccessAgent } from "@/application/agent/agentUseCases";
 import {
   runAndPersist,
   readMessageDocuments,
@@ -67,22 +67,22 @@ export async function sendMessage(
     // exists, and a chat is private to its owner (docs/API.md).
     throw new ChatNotFoundError();
   }
-  if (!chat.projectName) {
-    throw new ChatValidationError("chat is not bound to a project");
+  if (!chat.agentName) {
+    throw new ChatValidationError("chat is not bound to an agent");
   }
 
-  const project = await deps.projects.get(chat.projectName);
-  if (!project) {
-    throw new ChatValidationError(`project not found: ${chat.projectName}`);
+  const agent = await deps.agents.get(chat.agentName);
+  if (!agent) {
+    throw new ChatValidationError(`agent not found: ${chat.agentName}`);
   }
-  // Re-checked every turn, not only at creation: a project made private after
+  // Re-checked every turn, not only at creation: an agent made private after
   // this chat began stops answering people who lost access with it.
-  if (!(await userMayAccessProject(project, input.userEmail))) {
-    throw new ChatForbiddenError(`project "${project.name}" is private`);
+  if (!(await userMayAccessAgent(agent, input.userEmail))) {
+    throw new ChatForbiddenError(`agent "${agent.name}" is private`);
   }
-  const configuration = project.configuration;
+  const configuration = agent.configuration;
   if (!configuration) {
-    throw new ChatValidationError("project has no Agent configuration");
+    throw new ChatValidationError("agent has no Agent configuration");
   }
 
   const savedRuntime = deps.runtimeSessions ? await readRuntimeSession(deps.runtimeSessions, input.chatId, input.userEmail) : undefined;
@@ -96,12 +96,12 @@ export async function sendMessage(
     const attachments = input.images ?? [];
     const uploaded = await storeAttachedImages(
       deps,
-      { projectName: project.name, actor: { kind: "user", id: input.userEmail } },
+      { agentName: agent.name, actor: { kind: "user", id: input.userEmail } },
       attachments,
     );
     const documentInput = input.documents ?? [];
     const read = await readMessageDocuments(deps, {
-      projectName: project.name,
+      agentName: agent.name,
       actor: { kind: "user", id: input.userEmail },
     }, documentInput);
     const userMessage: ChatMessage = {
@@ -116,7 +116,7 @@ export async function sendMessage(
     await deps.chats.appendMessage(userMessage);
 
     const source = deps.runAgent({
-      project,
+      agent,
       configuration,
       // The SDK Session supplies prior turns; this input contains only the new turn.
       messages: [

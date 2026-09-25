@@ -1,9 +1,9 @@
 /**
  * Who caused a run.
  *
- * Project access follows visibility and membership; multiple callers can run a
- * shared project, so
- * the project name does not identify the spender, and until this existed "who
+ * Agent access follows visibility and membership; multiple callers can run a
+ * shared agent, so
+ * the agent name does not identify the spender, and until this existed "who
  * spent this" had no answer at all on a platform whose purpose is cost
  * management. Every execution entry point has a subject even when no human is
  * present, which is why this is a discriminated kind rather than an email.
@@ -11,15 +11,15 @@
 export type RunActorKind =
   /** A signed-in console/API user, identified by email. */
   | "user"
-  /** A per-project API token. It authenticates *as the owner*, so `id` is theirs. */
-  | "project-token"
+  /** A per-agent API token. It authenticates *as the owner*, so `id` is theirs. */
+  | "agent-token"
   /** A Slack mention or DM, identified by the Slack user id. */
   | "slack"
-  /** A Telegram message to a project's bot, identified by the Telegram user id. */
+  /** A Telegram message to an agent's bot, identified by the Telegram user id. */
   | "telegram"
-  /** A Microsoft Teams message to a project's bot, identified by the sender's Entra object id. */
+  /** A Microsoft Teams message to an agent's bot, identified by the sender's Entra object id. */
   | "teams"
-  /** A webhook trigger delivery, identified by `{project}:{triggerId}`. */
+  /** A webhook trigger delivery, identified by `{agent}:{triggerId}`. */
   | "webhook"
   /** A schedule trigger occurrence, identified the same way. */
   | "schedule";
@@ -27,7 +27,7 @@ export type RunActorKind =
 export interface RunActor {
   kind: RunActorKind;
   /**
-   * Stable within the kind. An email for `user` and `project-token` (a token
+   * Stable within the kind. An email for `user` and `agent-token` (a token
    * runs on its owner's behalf, and the kind is what keeps the two apart), a
    * Slack user id for `slack`, a Telegram user id for `telegram`, an Entra
    * object id for `teams`.
@@ -148,7 +148,7 @@ export interface RunOrigin {
    * be able to tell the second question in it from a first.
    */
   conversation?: RunConversation;
-  /** Project names on the transfer chain, outermost first. */
+  /** Agent names on the transfer chain, outermost first. */
   ancestry: readonly string[];
 }
 
@@ -170,7 +170,7 @@ export type RunSurface = "chat" | "slack" | "telegram" | "teams" | "api";
  *
  * An MCP server that keeps state — a memory server — needs to
  * know which conversation is asking. Neither the actor (a person is in many
- * conversations) nor the ancestry (a chain of projects, not of turns) can
+ * conversations) nor the ancestry (a chain of agents, not of turns) can
  * stand in for it, which is why it is its own field rather than a spelling of
  * either.
  */
@@ -264,9 +264,9 @@ export function actorKey(actor: RunActor): string {
 /**
  * The inverse of {@link actorKey}, for the one question the member-shaped
  * limits ask: which member's personal budget does this key spend? Only `user`
- * names one. A `project-token` carries the owner's email too, but on purpose
+ * names one. A `agent-token` carries the owner's email too, but on purpose
  * it does **not** bill to them: a token is a service credential, bounded by
- * its project's own limits, and person-shaped limits stop applying the moment
+ * its agent's own limits, and person-shaped limits stop applying the moment
  * nobody is at the other end. What keeps that from being a bypass is the
  * token *authentication* gate — a tier that may not use API tokens cannot
  * mint or present one (`tierMayUseApiTokens`), enforced where the bearer
@@ -277,6 +277,6 @@ export function memberEmailFromActorKey(key: string): string | null {
 }
 
 /** A run one hop deeper on the transfer chain, caused by the same actor. */
-export function descend(origin: RunOrigin, projectName: string): RunOrigin {
-  return { ...origin, ancestry: [...origin.ancestry, projectName] };
+export function descend(origin: RunOrigin, agentName: string): RunOrigin {
+  return { ...origin, ancestry: [...origin.ancestry, agentName] };
 }

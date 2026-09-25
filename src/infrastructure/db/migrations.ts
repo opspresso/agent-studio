@@ -22,7 +22,7 @@ interface Migration {
 }
 
 /** Arbitrary, fixed: the one lock every migrator of this database takes. */
-const MIGRATION_LOCK = 7_420_115;
+export const MIGRATION_LOCK = 7_420_115;
 
 const MIGRATIONS: Migration[] = [
   {
@@ -219,6 +219,18 @@ const MIGRATIONS: Migration[] = [
          AND head.gsi1pk = '${keys.audioJobDueQuery("").pk}'`,
       `UPDATE items SET data = data - 'GSI1PK' - 'GSI1SK'
        WHERE data->>'entityType' = 'AudioJob' AND gsi1pk = '${keys.audioJobDueQuery("").pk}'`,
+    ],
+  },
+  {
+    version: 9,
+    name: "agent_runtime_session_column",
+    statements: [
+      `DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM items WHERE pk LIKE 'PROJECT#%' OR data ? 'projectName') THEN
+          RAISE EXCEPTION 'Existing Agent records require a fresh database before upgrading';
+        END IF;
+      END $$`,
+      `ALTER TABLE runtime_sessions RENAME COLUMN project_name TO agent_name`,
     ],
   },
 ];

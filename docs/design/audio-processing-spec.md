@@ -42,7 +42,7 @@ Agent가 다양한 출처의 파일을 보관하고, 오디오를 지정 모델�
 
 | 역할 | 호출과 산출물 |
 | --- | --- |
-| 운영 Agent | skill을 읽고 `AudioJob list/status`의 task·sourceIdentity·Artifact 관계로 진행 상태를 확인한다. 새 녹음은 프로젝트 설정으로 한 작업을 제출한다 |
+| 운영 Agent | skill을 읽고 `AudioJob list/status`의 task·sourceIdentity·Artifact 관계로 진행 상태를 확인한다. 새 녹음은 Agent 설정으로 한 작업을 제출한다 |
 | worker | 보관·전사·후처리를 이어가며 원본·전사·summary.md·dialogue.md·구조화 JSON을 비공개 Artifact로 저장한다 |
 | 후처리 실행 | 같은 Agent의 접수 시점 설정을 `backgroundTask`로 실행한다. Skill 읽기만 제공하므로 새 작업 제출·MCP 쓰기·하위 Agent 호출은 수행하지 않는다 |
 | 요청한 기록 | 같은 운영 Agent가 `File read` 후 연결된 MCP의 document_ingest 또는 remember를 호출한다. 개인 scope와 동일한 idempotencyKey를 사용한다 |
@@ -52,7 +52,7 @@ Agent가 다양한 출처의 파일을 보관하고, 오디오를 지정 모델�
 절차와 기록 규칙은 plugin skill, 모델·보존 기간·후처리 Agent 설정은 오디오 설정, 수집 범위·탐색 한도는
 schedule 메시지에 둔다. 시스템 프롬프트에는 skill 선택과 사용자 요청 범위만 짧게 둔다.
 
-여러 녹음 요청은 설정 한도 안에서 각각 영속 큐에 접수한다. worker는 프로젝트별로 접수 순서대로
+여러 녹음 요청은 설정 한도 안에서 각각 영속 큐에 접수한다. worker는 Agent별로 접수 순서대로
 한 건씩 실행한다. pending 작업은 완료로 보고하지 않으며 다음 실행에서 같은 job ID를 확인한다.
 완료된 단계를 다시 실행하거나 만료된 원본을 자동 재다운로드하지 않는다.
 이미 보관된 전사 Artifact로 후처리만 다시 수행할 수 있으며, 명시적인 재처리는 processing_revision을 구분한다.
@@ -67,7 +67,7 @@ schedule 메시지에 둔다. 시스템 프롬프트에는 skill 선택과 사�
 조직 scope로 바꾸거나 새 멱등 키를 무작정 발급하지 않는다.
 
 MCP OAuth는 해당 서버를 호출하는 운영 Agent에 연결한다. 위임을 선택한 구성에서도 원본 참조·작업·
-산출물은 메인 프로젝트에 보관하며, URL 갱신에 사용할 호출 프로젝트와 연결 세대는 별도로 유지한다.
+산출물은 메인 Agent에 보관하며, URL 갱신에 사용할 호출 Agent와 연결 세대는 별도로 유지한다.
 schedule은 검증된 owner email 문맥을 사용하고, cron 기본 요청에는 외부 저장을 포함하지 않는다.
 
 ## 책임과 재사용 경계
@@ -75,7 +75,7 @@ schedule은 검증된 owner email 문맥을 사용하고, cron 기본 요청에�
 | 소유자 | 재사용 | 오디오 처리에서 담당하는 기능 |
 | --- | --- | --- |
 | 앱 `application/trigger/` | cron, 발생 claim, 동시 런 방지 | 선택적 실행 사용자 문맥 전달 |
-| 앱 MCP | 프로젝트 연결·OAuth refresh·schema discovery | 결과 파일 참조와 재조회 계약 |
+| 앱 MCP | Agent 연결·OAuth refresh·schema discovery | 결과 파일 참조와 재조회 계약 |
 | 앱 모델 카탈로그·runtime settings | Transcription 타입, provider·wire ID·가격 | 전사 포트·어댑터·사용량 집계 |
 | 앱 object store | S3 호환 storage·제한된 읽기·삭제 | streaming import, 파일별 retention |
 | 앱 실행 facade | run bracket·Agent 실행·비용·trace | worker의 후처리 실행과 작업별 접근 범위 |
@@ -120,7 +120,7 @@ Agent는 source를 선택해 작업을 제출하고 실제 작업은 worker가 �
 새 queue 서비스를 필수로 도입하지 않고 `after()`나 문서 변환용 30초 process pool에 장기 전사를
 맡기지 않는다. Agent 런의 기본 10분 제한과 작업의 수명은 별개다.
 
-후처리는 설정한 Project와 job에 고정한 configuration snapshot을 `streamProjectRun` facade로 호출한다.
+후처리는 설정한 Agent와 job에 고정한 configuration snapshot을 `streamAgentRun` facade로 호출한다.
 직접 engine을 호출하지 않으며 run bracket·비용·trace를 유지한다. 후처리 origin은 서버가 주입하고
 이 실행에서는 새 작업 제출 능력을 제공하지 않아 재귀 생성을 막는다. 저장은 모델의 완료 주장 대신
 검증된 출력과 실제 receipt로 판정한다.
@@ -139,7 +139,7 @@ Slack 조회·이미지·파일 생성 능력은 실행 경계에서 차단하�
 - schedule actor는 그대로 유지하고, 이 설정이 있는 실행에만 검증된 email을 `RunOrigin.userEmail`로
   전달한다. 공용 MCP metadata 조립 함수가 `X-User-Email`을 생성한다. registry·Agent의 수동
   예약 header override는 계속 제거한다. 설정이 없는 기존 schedule 동작은 유지한다.
-- job은 email과 원래 project·자동화 설정 revision을 보존한다. worker·후처리·저장 요청에도 같은
+- job은 email과 원래 agent·자동화 설정 revision을 보존한다. worker·후처리·저장 요청에도 같은
   문맥을 전달한다. 소유자 변경·멤버 비활성·연결 변경 시 현재 권한을 재검증하고 다른 사람으로
   조용히 전환하지 않는다. 현재 owner와 저장한 주체가 다르면 재설정 전 `blocked`로 처리한다.
 - Memory는 email을 정규화해 설치 조직의 active 사용자로 해석하고 기존 ACL을 적용한다.
@@ -153,12 +153,12 @@ Slack 조회·이미지·파일 생성 능력은 실행 경계에서 차단하�
 
 ## 범용 설정과 도구
 
-프로젝트별 `AudioJobConfig`에 `enabled`, `model`, `language`, `postprocess?`,
+Agent별 `AudioJobConfig`에 `enabled`, `model`, `language`, `postprocess?`,
 `destination?`, `retention`, `maxActive`, `maxPerOccurrence`, `revision`을 둔다.
 `postprocess`는 후처리 Agent를, `destination`은 저장할 결과와 MCP binding을 참조한다.
-source 연결·사용자 문맥은 기존 프로젝트 연결과 자동화 설정을 사용한다. 작업 접수 시 후처리
+source 연결·사용자 문맥은 기존 Agent 연결과 자동화 설정을 사용한다. 작업 접수 시 후처리
 Agent와 전달 대상의 현재 설정을 snapshot으로 고정해 이후 설정 변경은 새 작업에만 적용한다.
-설정 저장은 대상 프로젝트가 존재하고 같은 소유자의 설정된 Agent인지 transaction에서 확인한다.
+설정 저장은 대상 Agent가 존재하고 같은 소유자의 설정된 Agent인지 transaction에서 확인한다.
 접수 때 사라졌거나 미설정인 대상은 명시적인 오류로 거절하며 다른 Agent로 대체하지 않는다.
 기간이나 cron에 고정값을 넣지 않는다. 임의 코드·템플릿으로 서버 실행 로직을 주입하지 않는다.
 AudioJob의 LLM 인수는 request 안의 operation별 union으로 분리한다. configured submit에는 source·
@@ -176,7 +176,7 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 | `TranscribeAudio` | 원본 Artifact ID·모델 선택으로 비동기 전사를 제출하고 job ID 반환. `artifacts.transcript`가 결과 Artifact ID |
 | `AudioJob` `submit` | source ref 또는 file ID·설정 참조 → accepted/busy/duplicate/blocked와 job ID |
 | `AudioJob` `postprocess` | 기존 전사 Artifact·후처리 Agent·retention으로 요약만 실행. model·language·destination·config_revision은 받지 않는다 |
-| `AudioJob` `config` | 본인 프로젝트 작업 설정과 revision 또는 null |
+| `AudioJob` `config` | 본인 Agent 작업 설정과 revision 또는 null |
 | `AudioJob` `status` | job ID → 단계·처리 범위·오류·retry 시각·결과 참조 |
 | `AudioJob` `list`의 작업 구분 | `task`와 비밀이 아닌 `sourceIdentity`로 완료된 다운로드·전사·후처리를 연결하고 이미 처리한 입력을 구분한다 |
 | `AudioJob` `read` | job ID·결과 종류·cursor·limit → bounded 본문과 nextCursor |
@@ -185,9 +185,9 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 완료되지 않으면 task ID를 반환하고 `AudioJob status`로 진행을 확인한다. `AudioJob submit`은 이
 공통 기능에 선택적 후처리·저장을 연결하는 편의 계약이며 다운로드·전사 로직을 복제하지 않는다.
 
-`artifact_id`는 현재 사용자가 소유한 비공개 Artifact를 가리킨다. 다른 Agent 프로젝트에서 만든
-파일도 입력으로 사용할 수 있다. 접수 시 실제 파일 위치로 고정하고 양쪽 프로젝트의 소유 권한을
-확인한다. worker와 각 전사 요청에서도 원본 프로젝트 권한을 재확인하며 바이트는 복사하지 않는다.
+`artifact_id`는 현재 사용자가 소유한 비공개 Artifact를 가리킨다. 다른 Agent에서 만든
+파일도 입력으로 사용할 수 있다. 접수 시 실제 파일 위치로 고정하고 양쪽 Agent의 소유 권한을
+확인한다. worker와 각 전사 요청에서도 원본 Agent 권한을 재확인하며 바이트는 복사하지 않는다.
 파생 Artifact는 입력의 만료를 상속하고 `derivedFrom`·`model`로 원본과 생성 모델을 기록한다.
 후처리 결과는 구조화 JSON과 `summary.md`로 각각 보관한다. `artifacts.processed`는 읽기용
 Markdown, `artifacts.structured`는 원문 근거와 경고가 포함된 JSON Artifact ID다.
@@ -196,13 +196,13 @@ Markdown, `artifacts.structured`는 원문 근거와 경고가 포함된 JSON Ar
 구간 목록이 불완전해도 전체 전사문을 함께 보존한다. 대화 내용의 Markdown·HTML은 문자 그대로 표시한다.
 
 `source_ref`는 서버가 발급한 불투명 참조다. 등록된 MCP tool의 파일 URL을
-메인 Agent의 프로젝트에 보관한다. 하위 Agent가 조회한 경우에도 작업과 참조의 보관 범위는
-같으며, 재조회 recipe는 하위 Agent의 프로젝트·현재 binding·OAuth 연결을 별도로 고정한다.
-재조회 전후에 해당 프로젝트의 소유 권한과 연결 세대를 확인한다.
+메인 Agent의 Agent에 보관한다. 하위 Agent가 조회한 경우에도 작업과 참조의 보관 범위는
+같으며, 재조회 recipe는 하위 Agent의 Agent·현재 binding·OAuth 연결을 별도로 고정한다.
+재조회 전후에 해당 Agent의 소유 권한과 연결 세대를 확인한다.
 
 plugin.json의 `extensions.org.opspresso.agent-studio.mcpSourceOutputs`는 서버별 기본 파일 응답 매핑이다.
 동기화는 검증된 매핑을 MCP 레지스트리에 저장한다. Agent의 sourceOutputs가 생략되면 기본값을 사용하고,
-명시적 배열은 기본값을 덮어쓰며 빈 배열은 비활성화다. 기본 namespace는 프로젝트와 연결 fingerprint에
+명시적 배열은 기본값을 덮어쓰며 빈 배열은 비활성화다. 기본 namespace는 Agent와 연결 fingerprint에
 묶어 계정 간 입력을 구분한다. 매핑 변경은 기존 source refresh fingerprint를 무효화한다.
 Plaud plugin은 get_file의 presigned_url·id·name·file_id 재조회 계약을 선언하므로 수동 매핑이 필요하지 않다.
 스킬·MCP 설명은 사용 절차를 설명하며 URL 변환은 이 기계 판독 가능한 선언이 담당한다.
@@ -210,7 +210,7 @@ Plaud plugin은 get_file의 presigned_url·id·name·file_id 재조회 계약을
 입력 스키마와 설명은 유지하고, 도구 alias를 기준으로 해당 매핑에만 적용한다. 기본 매핑을
 비활성화한 Agent에는 안내를 붙이지 않으며 공유 discovery 캐시도 수정하지 않는다.
 
-참조는 프로젝트·연결·외부 item ID에 연결한다. 직접 업로드는 비공개 file ID를 반환한다. JSON 안의 URL은 등록된 binding의 필드 mapping으로
+참조는 Agent·연결·외부 item ID에 연결한다. 직접 업로드는 비공개 file ID를 반환한다. JSON 안의 URL은 등록된 binding의 필드 mapping으로
 정규화하며 worker는 원래 필드명을 알지 않는다. URL·인증정보를 job 입력에 그대로 복제하지 않는다.
 필요한 경우 짧은 수명의 URL을 암호화해 임시 저장하고 가져오기 완료·만료 시 폐기한다.
 갱신은 binding에 등록한 read tool·고정 argument mapping으로만 수행한다. 임의 tool 실행은 금지한다.
@@ -230,7 +230,7 @@ source ref로 치환한 뒤 모델·trace에 전달한다. 선택한 출처가 �
 
 read는 기본 12,000자·최대 20,000자를 반환한다. `result_kind`로 전사문 또는 후처리 본문을 선택한다.
 Unicode 경계를 보존하는 문자 offset cursor로 남은 내용을 다음 호출에 제공한다. 작업 상태와 경고를 유지한다.
-작업·파일 ID는 접근 권한이 아니며 시작 project와 실행 사용자를 확인한다.
+작업·파일 ID는 접근 권한이 아니며 시작 agent와 실행 사용자를 확인한다.
 
 ## 파일 입력과 전사
 
@@ -278,16 +278,16 @@ importing → transcribing → postprocessing(선택) → storing(선택) → cl
 기존 전사문 후처리는 transcribing을 건너뛴다. 실패 단계와 safe error code를 별도로 기록한다.
 완료 여부는 stage 이름 대신 status로 판정한다.
 
-job은 project·source identity·item ID·configuration snapshot·실행 email·stage·attempt·retryAt·
+job은 agent·source identity·item ID·configuration snapshot·실행 email·stage·attempt·retryAt·
 lease generation·file ref·checksum·expiry·segment manifest·output manifest·receipts를 저장한다.
 본문은 object storage에 두고 DB에는 bounded metadata를 저장한다.
 
-- project slot과 `(project, source identity, item ID, 처리 revision)` claim을 transaction으로 획득한다.
+- agent slot과 `(agent, source identity, item ID, 처리 revision)` claim을 transaction으로 획득한다.
   `maxActive`는 대기·진행을 합친 비종료 작업 수이고 `maxPerOccurrence`는 한 Agent 실행의 접수 한도다.
-  실제 실행은 여러 worker에서도 프로젝트별 한 건이다. `AUDIOSLOTS.jobIds`의 접수 순서를 사용하며,
+  실제 실행은 여러 worker에서도 Agent별 한 건이다. `AUDIOSLOTS.jobIds`의 접수 순서를 사용하며,
   큐의 첫 작업만 due 인덱스와 claim에 노출한다. lease·heartbeat·대기 시각과 큐 인덱스를 함께 갱신한다.
   완료·실패·차단·취소는 slot 반환과 다음 작업 활성화를 한 transaction으로 처리한다.
-  재시도 작업은 큐 끝에 추가한다. 한 프로젝트의 대기 목록이 다른 프로젝트의 due 조회 한도를 차지하지 않는다.
+  재시도 작업은 큐 끝에 추가한다. 한 Agent의 대기 목록이 다른 Agent의 due 조회 한도를 차지하지 않는다.
   접수 거절은 active_limit·occurrence_limit·conflict로 구분한다. Agent 도구는 Error로 전달하고,
   완료 후에도 복원되지 않는 발생당 한도를 worker 지연으로 오해해 반복 제출하지 않도록 안내한다.
 - 발생당 신규 작업 상한은 서버가 전달한 occurrence ID에 귀속한다. 같은 발생의 Agent가 여러 번
@@ -323,7 +323,7 @@ Memory 추출이 필요 없는 실행과 통합 회차는 모델에서 Markdown 
 런타임이 빈 memories·warnings 배열과 함께 내부 JSON envelope로 감싼다. Memory 저장을 선택한
 추출 회차만 구조화 출력으로 본문과 근거 후보를 함께 생성한다.
 
-후처리는 기존 run bracket의 예산·trace를 사용한다. ASR도 같은 프로젝트 예산 승인·정산 메커니즘을
+후처리는 기존 run bracket의 예산·trace를 사용한다. ASR도 같은 Agent 예산 승인·정산 메커니즘을
 확장하며 정책 소유자는 run bracket이다. 요청별 실제 audio seconds/token과 retry를 집계하고
 unknown usage를 0으로 표시하지 않는다. 각 구간 전에 잔여 예산을 확인한다.
 
@@ -385,7 +385,7 @@ retention은 `{unit: days | months, value, timezone}`으로 설정하고 최초 
 원본·전사문·후처리 결과는 각각 저장된 비공개 파일을 그대로 참조해 Artifact 목록에 등록한다.
 외부 문서·Memory 저장은 복사이며 최종 Artifact를 지우거나 보존 기간을 연장하지 않는다.
 checkpoint는 목록에 공개하지 않는다. Artifact 다운로드·미리보기·삭제는 원본 파일 소유자와
-현재 프로젝트 권한을 확인한다. 일반 Artifact의 읽기·쓰기·삭제·URL 발급과 bearer URL 조회는
+현재 Agent 권한을 확인한다. 일반 Artifact의 읽기·쓰기·삭제·URL 발급과 bearer URL 조회는
 `source-files/` 키를 거절한다. 파일 상태·보존 기한 확인과 Artifact 등록은 같은 transaction으로
 보호하므로 삭제와 경합한 등록이 목록을 되살리지 않는다.
 실패 복구 payload는 정해진 expiry까지 유지한다. 외부 저장 receipt와
@@ -410,7 +410,7 @@ checkpoint에 기록해 표시한다. 진행 막대는 각 단계 기준이며 �
 오디오 처리 탭은 오디오 도구를 켠 Agent의 소유자에게만 노출한다. 현재 저장된 설정을 기준으로 한다. 직접 페이지 주소를 열어도 동일한 기능 설정을 확인한다.
 화면에 펼친 모든 페이지의 진행 중인 작업을 5초마다 갱신하며, 완료된 행과 페이지 cursor를 유지한다.
 탭이 숨겨지면 조회를 건너뛰고 동시에 최대 4건만 읽는다.
-개인 파일·본문·후처리 run output·trace는 실행 사용자와 원래 project 범위로 제한하며 공개 project 갤러리에 노출하지 않는다.
+개인 파일·본문·후처리 run output·trace는 실행 사용자와 원래 agent 범위로 제한하며 공개 agent 갤러리에 노출하지 않는다.
 owner 변경·삭제 시 worker를 중단하고 object 정리를 완료/예약한다. 외부 sink 자료는 자동 삭제하지 않는다.
 목록은 cursor·limit으로 제한한다. 일반 로그에는 job·stage·safe error·model·크기·시간·attempt만
 기록하며 파일 URL·token·본문은 제외한다. 외부 source 장애가 앱의 필수 offline 경로를 막지 않는다.
@@ -420,7 +420,7 @@ owner 변경·삭제 시 worker를 중단하고 object 정리를 완료/예약�
 이 절은 운영 시 구성할 사례이며 공통 코드의 필수 조건이 아니다.
 
 - 설치별 앱 주소에 Agent를 구성하고 로컬에서 검증한 뒤 같은 설정을 운영 설치에 적용한다.
-- 출처는 기존 Plaud MCP와 프로젝트 OAuth를 연결한다. 목록 탐색·조회 방법은 plugin이 소유한다.
+- 출처는 기존 Plaud MCP와 Agent OAuth를 연결한다. 목록 탐색·조회 방법은 plugin이 소유한다.
   `list_files`·`get_file`과 실제 schema를 사용하고 임시 오디오 URL을 범용 source ref로 변환한다.
   출처별 pagination 제약은 해당 skill과 실제 도구 schema를 따른다.
   [Plaud 공식 계약](https://docs.plaud.ai/plaud-mcp-cli/mcp)을 참조한다.
@@ -428,7 +428,7 @@ owner 변경·삭제 시 worker를 중단하고 object 정리를 완료/예약�
   작업 설정은 maxActive=1, maxPerOccurrence=1로 두고 한 process 작업이 보관·전사·후처리를 이어간다.
   기존 작업이 진행 중이면 새 파일을 시작하지 않는다. 최초 수집 시작일은 활성화 전에 정한다.
   "최근 일주일 녹음을 가져와서 전사하고 요약해"처럼 기간을 지정할 수 있다. 한 요청에서 여러 건을
-  접수하려면 두 접수 한도를 필요한 큐 크기로 설정한다. 한도를 늘려도 프로젝트 내 실제 실행은 한 건씩이다.
+  접수하려면 두 접수 한도를 필요한 큐 크기로 설정한다. 한도를 늘려도 Agent 내 실제 실행은 한 건씩이다.
 - 지정 Transcription 모델로 MP3를 전사하고 `meeting-minutes` skill로 후처리한다.
   결정·할 일·미결·담당자·기한·근거 검수는 이 skill과 Agent schema가 결정한다.
 - 전사 JSON·summary.md·dialogue.md를 Artifact에 보관한다. 사용자 요청이 있을 때만 선택한 문서를

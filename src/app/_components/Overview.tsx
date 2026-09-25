@@ -28,12 +28,12 @@ import {
   IconTool,
 } from "@tabler/icons-react";
 import { readJson } from "@/app/_lib/httpClient";
-import { recentProjects } from "@/app/_lib/overview";
+import { recentAgents } from "@/app/_lib/overview";
 import type { Chat } from "@/domain/chat/types";
-import { listProjects, type SanitizedProject } from "@/app/agents/lib/api";
+import { listAgents, type SanitizedAgent } from "@/app/agents/lib/api";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
-import { tierAtLeast, tierMayCreateProjects, type MemberTier } from "@/domain/member/tiers";
+import { tierAtLeast, tierMayCreateAgents, type MemberTier } from "@/domain/member/tiers";
 import { formatDate } from "@/shared/date";
 import { OwnerLine } from "./OwnerLine";
 import { PageHeader } from "./PageHeader";
@@ -41,9 +41,9 @@ import { Dashboard } from "./Dashboard";
 import classes from "./Overview.module.css";
 
 /** A chat as the list endpoint returns it. Newest first, per `listChats`. */
-type ChatSummary = Pick<Chat, "chatId" | "title" | "projectName" | "updatedAt" | "workspaceId">;
+type ChatSummary = Pick<Chat, "chatId" | "title" | "agentName" | "updatedAt" | "workspaceId">;
 
-const RECENT_PROJECTS = 4;
+const RECENT_AGENTS = 4;
 const RECENT_CHATS = 7;
 
 /**
@@ -71,7 +71,7 @@ type CatalogKey = (typeof CATALOGS)[number]["key"];
  * server component that has already awaited the session, and a hook that
  * resolves after hydration renders a different greeting than the server sent —
  * which is a hydration mismatch, not a flicker. It also means the first render
- * already knows whose projects are whose.
+ * already knows whose agents are whose.
  */
 export function Overview({
   userName,
@@ -89,12 +89,12 @@ export function Overview({
 }) {
   const viewerEmail = userEmail;
   const showCatalogs = tierAtLeast(tier, "member");
-  const canCreateProjects = tierMayCreateProjects(tier);
+  const canCreateAgents = tierMayCreateAgents(tier);
   const t = useT();
   const locale = useLocale();
 
-  const [projects, setProjects] = useState<SanitizedProject[] | null>(null);
-  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [agents, setAgents] = useState<SanitizedAgent[] | null>(null);
+  const [agentsLoaded, setAgentsLoaded] = useState(false);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [chatsLoaded, setChatsLoaded] = useState(false);
   const [chatsFailed, setChatsFailed] = useState(false);
@@ -107,20 +107,20 @@ export function Overview({
 
   useEffect(() => {
     let cancelled = false;
-    listProjects()
+    listAgents()
       .then((loaded) => {
         if (!cancelled) {
-          setProjects(loaded);
+          setAgents(loaded);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setProjects(null);
+          setAgents(null);
         }
       })
       .finally(() => {
         if (!cancelled) {
-          setProjectsLoaded(true);
+          setAgentsLoaded(true);
         }
       });
     return () => {
@@ -175,18 +175,18 @@ export function Overview({
     };
   }, [showCatalogs]);
 
-  const recent = recentProjects(projects ?? [], viewerEmail, RECENT_PROJECTS);
+  const recent = recentAgents(agents ?? [], viewerEmail, RECENT_AGENTS);
   const firstName = userName.split(" ")[0];
   // Only once both have answered, so the first-run panel never flashes over a
   // workspace that simply had not loaded yet.
   const isNewWorkspace =
-    projectsLoaded && chatsLoaded && projects !== null && projects.length === 0 && !chatsFailed && chats.length === 0;
+    agentsLoaded && chatsLoaded && agents !== null && agents.length === 0 && !chatsFailed && chats.length === 0;
 
   return (
     <Stack gap={32}>
       <PageHeader title={firstName ? t("overview.welcome", { name: firstName }) : t("overview.welcomeAnon")} description={t("overview.lede")} Icon={IconSparkles}>
-          <Button component={Link} href={canCreateProjects ? "/agents?create=1" : "/agents"} leftSection={canCreateProjects ? <IconPlus size={16} /> : <IconRobot size={16} />}>
-            {t(canCreateProjects ? "overview.newProject" : "overview.allProjects")}
+          <Button component={Link} href={canCreateAgents ? "/agents?create=1" : "/agents"} leftSection={canCreateAgents ? <IconPlus size={16} /> : <IconRobot size={16} />}>
+            {t(canCreateAgents ? "overview.newAgent" : "overview.allAgents")}
           </Button>
           <Button
             component={Link}
@@ -199,38 +199,38 @@ export function Overview({
       </PageHeader>
 
       {isNewWorkspace ? (
-        <GetStarted showCatalogs={showCatalogs} canCreateProjects={canCreateProjects} />
+        <GetStarted showCatalogs={showCatalogs} canCreateAgents={canCreateAgents} />
       ) : (
         <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" style={{ alignItems: "start" }}>
           <Section
-            title={t("overview.recentProjects")}
-            description={t("overview.recentProjectsNote")}
+            title={t("overview.recentAgents")}
+            description={t("overview.recentAgentsNote")}
             href="/agents"
-            linkLabel={t("overview.allProjects")}
+            linkLabel={t("overview.allAgents")}
           >
-            {!projectsLoaded && <RowSkeleton rows={3} />}
-            {projectsLoaded && projects === null && (
+            {!agentsLoaded && <RowSkeleton rows={3} />}
+            {agentsLoaded && agents === null && (
               <Alert color="red" variant="light">
-                {t("overview.projectsFailed")}
+                {t("overview.agentsFailed")}
               </Alert>
             )}
-            {projectsLoaded && projects !== null && recent.length === 0 && (
-              <EmptyLine>{t("overview.noProjects")}</EmptyLine>
+            {agentsLoaded && agents !== null && recent.length === 0 && (
+              <EmptyLine>{t("overview.noAgents")}</EmptyLine>
             )}
             <Stack gap="sm">
-              {recent.map((project) => (
-                <Card key={project.name} component={Link} href={`/agents/${project.name}`} padding="sm" className={classes.projectRow}>
+              {recent.map((agent) => (
+                <Card key={agent.name} component={Link} href={`/agents/${agent.name}`} padding="sm" className={classes.agentRow}>
                   <Group justify="space-between" gap="xs" wrap="nowrap">
                     <Text fw={500} truncate>
-                      {project.displayName || project.name}
+                      {agent.displayName || agent.name}
                     </Text>
                   </Group>
                   <Text ff="monospace" fz="xs" c="dimmed" mt={2}>
-                    {project.name}
+                    {agent.name}
                   </Text>
                   <OwnerLine
-                    ownerEmail={project.ownerEmail}
-                    isMine={viewerEmail === project.ownerEmail}
+                    ownerEmail={agent.ownerEmail}
+                    isMine={viewerEmail === agent.ownerEmail}
                     mt={6}
                   />
                 </Card>
@@ -260,7 +260,7 @@ export function Overview({
                     <Text fz="sm" truncate>{chat.title}</Text>
                   </Group>
                   <Text fz="xs" c="dimmed" mt={2}>
-                    {chat.projectName ? `${chat.projectName} · ` : ""}
+                    {chat.agentName ? `${chat.agentName} · ` : ""}
                     {formatDate(chat.updatedAt, locale)}
                   </Text>
                 </UnstyledButton>
@@ -274,7 +274,7 @@ export function Overview({
         <CountTile
           href="/agents"
           label={t("nav.agents")}
-          count={projects?.length}
+          count={agents?.length}
           Icon={IconRobot}
         />
         {showCatalogs &&
@@ -283,7 +283,7 @@ export function Overview({
           ))}
       </SimpleGrid>
 
-      <Dashboard projects={projects} />
+      <Dashboard agents={agents} />
     </Stack>
   );
 }
@@ -377,7 +377,7 @@ function RowSkeleton({ rows }: { rows: number }) {
  * workspace showing three "nothing here" boxes says what is missing and never
  * what to do about it.
  */
-function GetStarted({ showCatalogs, canCreateProjects }: { showCatalogs: boolean; canCreateProjects: boolean }) {
+function GetStarted({ showCatalogs, canCreateAgents }: { showCatalogs: boolean; canCreateAgents: boolean }) {
   const t = useT();
   return (
     <Paper withBorder p="xl" className={classes.getStarted}>
@@ -391,8 +391,8 @@ function GetStarted({ showCatalogs, canCreateProjects }: { showCatalogs: boolean
             {t("overview.getStartedBody")}
           </Text>
           <Group gap="xs" mt={4}>
-            <Button component={Link} href={canCreateProjects ? "/agents?create=1" : "/agents"} leftSection={canCreateProjects ? <IconPlus size={16} /> : <IconRobot size={16} />}>
-              {t(canCreateProjects ? "overview.newProject" : "overview.allProjects")}
+            <Button component={Link} href={canCreateAgents ? "/agents?create=1" : "/agents"} leftSection={canCreateAgents ? <IconPlus size={16} /> : <IconRobot size={16} />}>
+              {t(canCreateAgents ? "overview.newAgent" : "overview.allAgents")}
             </Button>
             {showCatalogs && (
               <Button component={Link} href="/skills" variant="default">

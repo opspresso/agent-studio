@@ -197,7 +197,7 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     if (!isManagedLoopback(entry)) {
       return false;
     }
-    // This probe has no user, project, or conversation — a stored spelling of
+    // This probe has no user, agent, or conversation — a stored spelling of
     // a reserved metadata header must not ride it claiming one.
     const headers = deps.cipher.decryptHeadersForOutbound(
       entry.headers,

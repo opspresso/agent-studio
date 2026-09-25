@@ -2,7 +2,7 @@ import { mcpAuthUseCases } from "@/lib/container";
 import { withAuth } from "@/lib/session";
 import { AppError } from "@/application/errors";
 
-type CallbackOutcome = { ok: true; project: string; server: string } | { ok: false; error: string };
+type CallbackOutcome = { ok: true; agent: string; server: string } | { ok: false; error: string };
 
 /**
  * A small self-closing page rather than JSON: the authorization server redirects
@@ -12,7 +12,7 @@ type CallbackOutcome = { ok: true; project: string; server: string } | { ok: fal
  */
 function resultPage(outcome: CallbackOutcome): Response {
   const message = outcome.ok
-    ? `Connected ${outcome.server} to ${outcome.project}. You can close this window.`
+    ? `Connected ${outcome.server} to ${outcome.agent}. You can close this window.`
     : `Connection failed: ${outcome.error}`;
   const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>MCP authorization</title></head>
 <body style="font:14px system-ui;padding:2rem;color:#333">
@@ -112,13 +112,13 @@ export const GET = withAuth(async (user, request: Request) => {
     return resultPage({ ok: false, error: "The provider's redirect was missing state or code." });
   }
   try {
-    const { projectName, serverName } = await mcpAuthUseCases.completeAuthorization({
+    const { agentName, serverName } = await mcpAuthUseCases.completeAuthorization({
       state,
       code,
       userEmail: user.email,
       iss,
     });
-    return resultPage({ ok: true, project: projectName, server: serverName });
+    return resultPage({ ok: true, agent: agentName, server: serverName });
   } catch (error) {
     // Message only — an AppError here is a rejected state, a lost ownership or
     // an issuer that did not match, all of which the person in front of the

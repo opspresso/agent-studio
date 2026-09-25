@@ -1,7 +1,7 @@
 # MCP
 
 전역 registry의 서버를 Agent 설정에 연결하고 SDK Runtime에 도구로 제공한다.
-서버 주소·설명은 registry, 도구 선택·헤더 override는 Agent 설정, OAuth grant는 Project가 소유한다.
+서버 주소·설명은 registry, 도구 선택·헤더 override는 Agent 설정, OAuth grant는 Agent가 소유한다.
 HTTP 형태는 [API](../API.md#mcp-oauth), 설정은 [CONFIGURATION](../CONFIGURATION.md#mcp),
 인가·SSRF·OAuth 검사는 [SECURITY](../SECURITY.md#mcp-oauth)를 따른다.
 
@@ -30,13 +30,13 @@ Plugin sync는 streamable-HTTP 서버만 가져오며 header를 가져오지 않
 
 | Header | 의미 | discovery cache |
 |---|---|---|
-| `X-Tenant-Id` | 호출하는 Project 이름 | 신원 키에 포함 |
-| `X-User-Email` | 확인한 user·project-token 이메일 또는 표면이 해석한 이메일 | 신원 키에 포함 |
+| `X-Tenant-Id` | 호출하는 Agent 이름 | 신원 키에 포함 |
+| `X-User-Email` | 확인한 user·agent-token 이메일 또는 표면이 해석한 이메일 | 신원 키에 포함 |
 | `X-Conversation-Id` | 표면과 호출자 범위로 구분한 대화 주소 | 요청 문맥으로만 전달 |
 
 이 값은 credential을 대신하지 않는다. MCP 서버는 자기 Bearer/OAuth와 함께 인가해야 한다.
-시스템 probe에는 사용자·대화가 없으며 registry Test와 프로젝트 도구 조회는 요청 사용자 email을
-사용한다. 프로젝트 도구 조회도 tenant header는 보내지 않는 현재 차이가 있다.
+시스템 probe에는 사용자·대화가 없으며 registry Test와 Agent 도구 조회는 요청 사용자 email을
+사용한다. Agent 도구 조회도 tenant header는 보내지 않는 현재 차이가 있다.
 각 probe와 런의 정확한 범위는 [보안 계약](../SECURITY.md#mcp-서버가-호출자에-대해-듣는-것)에 있다.
 
 ## Transport 와 세션
@@ -91,7 +91,7 @@ throw 동작과 `SdkErrorCode` 매핑을 확인한다.
 
 ## Discovery 캐시
 
-캐시 키는 URL과 신원 header다. 사용자·프로젝트별 도구 목록을 공유하지 않는다.
+캐시 키는 URL과 신원 header다. 사용자·Agent별 도구 목록을 공유하지 않는다.
 대화 header는 key에 포함하지 않는다. 캐시가 맞으면 세션을 열지 않고 준비할 수 있으며
 실제 도구 호출 시 lazy 연결한다.
 
@@ -123,15 +123,15 @@ running과 reachable을 별도로 확인한다. [운영](../OPERATIONS.md#재배
 ## OAuth
 
 관리자는 서버에서 discovery한 `auth`와 공유 OAuth 앱을 관리하고,
-프로젝트 소유자는 그 앱으로 자기 계정의 grant를 연결한다.
-access/refresh token과 연결 revision은 프로젝트별 연결 행에 보관하며 Agent 실행 설정과 분리한다.
+Agent 소유자는 그 앱으로 자기 계정의 grant를 연결한다.
+access/refresh token과 연결 revision은 Agent별 연결 행에 보관하며 Agent 실행 설정과 분리한다.
 
 실행 경로는 well-known 문서를 다시 가져오지 않는다. 저장된 메타데이터로 grant를 해석하고
 필요하면 갱신한다. 공유 client secret은 registry에서 읽어 회전을 반영하고,
 Client ID가 달라지면 기존 grant를 거절한다. 개별 등록 client secret은 해당 connection에 남는다.
 
 credential 선택은 기존 client, 사용할 수 있는 Client ID Metadata Document,
-dynamic registration 순서다. 프로젝트별 공개 metadata URL은 설정한 공개 base로만 만든다.
+dynamic registration 순서다. Agent별 공개 metadata URL은 설정한 공개 base로만 만든다.
 제공자가 가져올 수 없는 주소이면 다른 지원 경로를 사용하거나 구체적인 설정 오류로 거절한다.
 
 refresh는 남은 실행 시간을 고려한 여유 구간에서 수행한다.

@@ -39,7 +39,7 @@ describe("catalog search", () => {
     const html = render(createElement(CatalogSearch, {
       value: "missing",
       onChange: vi.fn(),
-      placeholder: "Search projects",
+      placeholder: "Search agents",
       resultCount: 0,
       totalCount: 12,
       onReset: vi.fn(),
