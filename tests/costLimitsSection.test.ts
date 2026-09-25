@@ -20,8 +20,8 @@ describe("costLimitsForSave", () => {
   });
 });
 
-describe("cost limits from the loaded project", () => {
-  it("renders saved values without another project request", () => {
+describe("cost limits from the loaded agent", () => {
+  it("renders saved values without another agent request", () => {
     const html = renderToStaticMarkup(
       createElement(MantineProvider, {
         theme: {
@@ -30,8 +30,8 @@ describe("cost limits from the loaded project", () => {
           },
         },
         children: createElement(CostLimitsSection, {
-          projectName: "project",
-          project: { costLimits: { alertThresholdUsd: 4 } },
+          agentName: "agent",
+          agent: { costLimits: { alertThresholdUsd: 4 } },
         }),
       }),
     );

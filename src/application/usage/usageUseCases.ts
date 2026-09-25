@@ -1,34 +1,34 @@
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { AgentRepository } from "@/domain/agent/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { MemberUsageRow, UsageRow } from "@/domain/usage/types";
-import { assertProjectOwnerOrAdminReadable } from "@/application/project/projectUseCases";
+import { assertAgentOwnerOrAdminReadable } from "@/application/agent/agentUseCases";
 import { memberMonthToDate } from "./memberCostGuard";
-import { listProjectActors, type ListActorsDeps, type ProjectActorUsage } from "./listActors";
+import { listAgentActors, type ListActorsDeps, type AgentActorUsage } from "./listActors";
 
 /**
- * Usage rows over a date range — the dashboard read. One project's rows when a
- * project is named, every project's otherwise. The totals are open to any
- * signed-in user because the project catalog is shared; the per-caller
+ * Usage rows over a date range — the dashboard read. One agent's rows when a
+ * agent is named, every agent's otherwise. The totals are open to any
+ * signed-in user because the agent catalog is shared; the per-caller
  * breakdown below is not, which is why the two reads authorize differently.
  */
 export function listUsageSummary(
   usage: UsageRepository,
   from: string,
   to: string,
-  projectName?: string,
+  agentName?: string,
 ): Promise<UsageRow[]> {
-  return projectName
-    ? usage.listByProject(projectName, from, to)
+  return agentName
+    ? usage.listByAgent(agentName, from, to)
     : usage.listByDateRange(from, to);
 }
 
 export interface UsageReadDeps extends ListActorsDeps {
-  projects: ProjectRepository;
+  agents: AgentRepository;
 }
 
 /**
  * One member's own daily spend over a range — the profile read, and the same
- * rows in the same shape the project usage page gets for a project. Always the
+ * rows in the same shape the agent usage page gets for an agent. Always the
  * caller's own email (the route passes the session user), which is why this
  * needs no gate: `memberCostGuard` owns enforcing the cap, this only reports
  * the rows it counts.
@@ -43,19 +43,19 @@ export function listMemberUsage(
 }
 
 /**
- * Who spent a project's budget, owner/admin only: a breakdown by caller names
+ * Who spent an agent's budget, owner/admin only: a breakdown by caller names
  * individuals and what they ran, so it is gated like traces rather than like
  * the shared totals.
  */
-export async function listProjectActorsFor(
+export async function listAgentActorsFor(
   deps: UsageReadDeps,
-  projectName: string,
+  agentName: string,
   userEmail: string,
   from: string,
   to: string,
-): Promise<ProjectActorUsage> {
-  const project = await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
-  return listProjectActors(deps, project, from, to);
+): Promise<AgentActorUsage> {
+  const agent = await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
+  return listAgentActors(deps, agent, from, to);
 }
 
 /**
@@ -63,13 +63,13 @@ export async function listProjectActorsFor(
  * so the presentation layer chooses neither cipher nor profile client.
  */
 export interface UsageUseCases {
-  summary(from: string, to: string, projectName?: string): Promise<UsageRow[]>;
+  summary(from: string, to: string, agentName?: string): Promise<UsageRow[]>;
   actors(
-    projectName: string,
+    agentName: string,
     userEmail: string,
     from: string,
     to: string,
-  ): Promise<ProjectActorUsage>;
+  ): Promise<AgentActorUsage>;
   memberUsage(email: string, from: string, to: string): Promise<MemberUsageRow[]>;
   /** This member's spend since the first of the UTC month — what the cap bounds. */
   memberMonthToDate(email: string, now?: Date): Promise<number>;
@@ -77,9 +77,9 @@ export interface UsageUseCases {
 
 export function createUsageUseCases(deps: UsageReadDeps): UsageUseCases {
   return {
-    summary: (from, to, projectName) => listUsageSummary(deps.usage, from, to, projectName),
-    actors: (projectName, userEmail, from, to) =>
-      listProjectActorsFor(deps, projectName, userEmail, from, to),
+    summary: (from, to, agentName) => listUsageSummary(deps.usage, from, to, agentName),
+    actors: (agentName, userEmail, from, to) =>
+      listAgentActorsFor(deps, agentName, userEmail, from, to),
     memberUsage: (email, from, to) => listMemberUsage(deps.usage, email, from, to),
     memberMonthToDate: (email, now) => memberMonthToDate(deps, email, now),
   };

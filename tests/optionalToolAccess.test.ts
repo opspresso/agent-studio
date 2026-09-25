@@ -5,8 +5,8 @@ import { optionalToolAccessible } from "@/application/execution/optionalToolAcce
 describe("optional execution tool access", () => {
   it("omits a tool for a known authorization or configuration refusal", async () => {
     for (const refusal of [
-      new ForbiddenError("private project"),
-      new NotFoundError("project removed"),
+      new ForbiddenError("private agent"),
+      new NotFoundError("agent removed"),
       new ValidationError("tool disabled"),
     ]) {
       expect(await optionalToolAccessible(async () => { throw refusal; })).toBe(false);

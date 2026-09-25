@@ -27,7 +27,7 @@ export interface SlackSessionStatusInput {
 }
 
 /**
- * Caps on the words a project may be woken by in a channel.
+ * Caps on the words an agent may be woken by in a channel.
  *
  * Ours rather than Slack's, and low on purpose: every keyword is matched
  * against every message in every channel the bot belongs to, and a list long

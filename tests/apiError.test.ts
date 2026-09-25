@@ -51,7 +51,7 @@ describe("apiError logging", () => {
   // rejected request, which is why there was no log line here to begin with.
   it.each([
     ["a bad body", new ValidationError("Invalid name"), 400],
-    ["a name that is not there", new NotFoundError("no such project"), 404],
+    ["a name that is not there", new NotFoundError("no such agent"), 404],
     ["a caller without rights", new ForbiddenError("not yours"), 403],
     ["a refusal that says when to retry", new RateLimitedError("over the cap", 42), 429],
   ])("stays quiet on %s", (_label, error, status) => {

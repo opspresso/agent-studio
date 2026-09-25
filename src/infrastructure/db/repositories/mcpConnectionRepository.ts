@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED, deleteItem, getItem, queryItems, updateItem } from "../store";
 import { keys } from "../keys";
-import { putProjectItem } from "../projectLifecycle";
+import { putAgentItem } from "../agentLifecycle";
 import type { McpConnection, McpConnectionRepository } from "@/domain/mcp/connection";
 import type { TokenEndpointAuthMethod } from "@/domain/mcp/types";
 import { boundedPageLimit } from "@/shared/pageLimit";
@@ -20,7 +20,7 @@ const EXPIRES_AT_ISO = "expiresAtIso";
 function toItem(connection: McpConnection): Record<string, unknown> {
   const { expiresAt, ...rest } = connection;
   return {
-    ...keys.mcpConnection(connection.projectName, connection.serverName),
+    ...keys.mcpConnection(connection.agentName, connection.serverName),
     entityType: ENTITY_TYPE,
     ...rest,
     revision: randomUUID(),
@@ -55,7 +55,7 @@ function fromItem(item: Record<string, unknown>): McpConnection | null {
     return null;
   }
   return {
-    projectName: item.projectName as string,
+    agentName: item.agentName as string,
     serverName: item.serverName as string,
     clientId: item.clientId as string,
     clientSecret: optionalString(item.clientSecret),
@@ -87,19 +87,19 @@ function fromItem(item: Record<string, unknown>): McpConnection | null {
 }
 
 export const mcpConnectionRepository: McpConnectionRepository = {
-  async get(projectName, serverName) {
-    const item = await getItem(keys.mcpConnection(projectName, serverName));
+  async get(agentName, serverName) {
+    const item = await getItem(keys.mcpConnection(agentName, serverName));
     return item ? fromItem(item) : null;
   },
 
-  async listByProject(projectName, limit, after) {
+  async listByAgent(agentName, limit, after) {
     const wanted = boundedPageLimit(limit);
     const connections: McpConnection[] = [];
-    let cursor = after ? keys.mcpConnection(projectName, after).SK : undefined;
+    let cursor = after ? keys.mcpConnection(agentName, after).SK : undefined;
     while (connections.length < wanted) {
       const readLimit = wanted - connections.length;
       const items = await queryItems({
-        pk: keys.projectPartition(projectName),
+        pk: keys.agentPartition(agentName),
         sk: { prefix: keys.mcpConnectionPrefix() },
         limit: readLimit,
         ...(cursor ? { after: cursor } : {}),
@@ -110,8 +110,8 @@ export const mcpConnectionRepository: McpConnectionRepository = {
           continue;
         }
         if (
-          connection.projectName !== projectName ||
-          keys.mcpConnection(projectName, connection.serverName).SK !== item.SK
+          connection.agentName !== agentName ||
+          keys.mcpConnection(agentName, connection.serverName).SK !== item.SK
         ) {
           throw new Error("MCP connection row identity does not match its key");
         }
@@ -126,14 +126,14 @@ export const mcpConnectionRepository: McpConnectionRepository = {
   },
 
   async put(connection) {
-    await putProjectItem(connection.projectName, toItem(connection));
+    await putAgentItem(connection.agentName, toItem(connection));
   },
 
   async putIfCurrent(connection, current) {
     try {
-      await putProjectItem(connection.projectName, toItem(connection), (row) =>
+      await putAgentItem(connection.agentName, toItem(connection), (row) =>
         current === null
-          ? row === null || (row.projectName === connection.projectName &&
+          ? row === null || (row.agentName === connection.agentName &&
               row.serverName === connection.serverName && fromItem(row) === null)
           : row !== null && row.revision === current.revision,
       );
@@ -148,10 +148,10 @@ export const mcpConnectionRepository: McpConnectionRepository = {
    * Compare-and-set on the whole grant's write identity. Token values and
    * timestamps may stay unchanged across reconnects; the revision never does.
    */
-  async updateTokens(projectName, serverName, expectedRevision, next) {
+  async updateTokens(agentName, serverName, expectedRevision, next) {
     try {
       await updateItem(
-        keys.mcpConnection(projectName, serverName),
+        keys.mcpConnection(agentName, serverName),
         (row) => {
           // Absent values are removed, never written as null: optional token
           // fields must not read as present while carrying no token. The legacy
@@ -193,13 +193,13 @@ export const mcpConnectionRepository: McpConnectionRepository = {
     }
   },
 
-  async delete(projectName, serverName) {
-    await deleteItem(keys.mcpConnection(projectName, serverName));
+  async delete(agentName, serverName) {
+    await deleteItem(keys.mcpConnection(agentName, serverName));
   },
 
   async deleteIfCurrent(current) {
     try {
-      await deleteItem(keys.mcpConnection(current.projectName, current.serverName),
+      await deleteItem(keys.mcpConnection(current.agentName, current.serverName),
         (row) => row !== null && row.revision === current.revision);
       return true;
     } catch (error) {

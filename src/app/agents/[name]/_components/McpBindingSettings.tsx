@@ -6,7 +6,7 @@
  * The three sections do not save the same way, and saying so is the point of
  * splitting them: tools and header overrides are part of the Agent settings and land
  * with its Save — the footer button, which is the page's own — while the
- * connection belongs to the project and is written the moment its own buttons
+ * connection belongs to the agent and is written the moment its own buttons
  * are pressed. One "Save" over all three would have to lie about one of them,
  * so the footer names what it commits.
  */
@@ -39,7 +39,7 @@ export interface ConfigurationSave {
 }
 
 export function McpBindingSettings({
-  projectName,
+  agentName,
   serverName,
   onClose,
   save,
@@ -48,7 +48,7 @@ export function McpBindingSettings({
   sources,
   onConnectionChanged,
 }: {
-  projectName: string;
+  agentName: string;
   serverName: string;
   onClose: () => void;
   save: ConfigurationSave;
@@ -85,7 +85,7 @@ export function McpBindingSettings({
         {sources && <Stack gap="xs"><Text fw={600}>{t("audio.mappingTitle")}</Text>{sources}</Stack>}
         <Section title={t("mcpSettings.connection")} note={t("mcpSettings.connectionNote")}>
           <McpConnectionCard
-            projectName={projectName}
+            agentName={agentName}
             serverName={serverName}
             onConnectionChanged={onConnectionChanged}
           />

@@ -44,7 +44,7 @@ export interface McpToolSession {
   readonly warnings: readonly string[];
   /**
    * Servers that answered 401. Kept apart from `warnings` because it is the one
-   * failure the *project* can fix, by reconnecting — everything else points at
+   * failure the *agent* can fix, by reconnecting — everything else points at
    * the server.
    */
   readonly unauthorizedServers: readonly string[];

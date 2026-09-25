@@ -8,7 +8,7 @@ vi.mock("@/infrastructure/db/store", () => createFakeStore());
 import * as store from "@/infrastructure/db/store";
 import { audioJobRepository as jobs } from "@/infrastructure/db/repositories/audioJobRepository";
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
-beforeEach(() => { fake.rows.clear(); fake.seed([{ ...keys.project("audio"), entityType: "PROJECT" }]); });
+beforeEach(() => { fake.rows.clear(); fake.seed([{ ...keys.agent("audio"), entityType: "AGENT" }]); });
 function fixture() {
   let id = 0;
   const deps: AudioJobUseCaseDeps = {
@@ -29,13 +29,13 @@ describe("audio job use cases", () => {
     const claimed = await jobs.claim("audio", "job-1", now, "worker", "2026-09-09T00:02:00Z");
     await jobs.checkpoint(claimed!, { status: "completed", stage: "cleaning", dueAt: now,
       fileId: "original", transcriptRef: "transcript", summaryRef: "summary" }, now);
-    const file: SourceFile = { id: "original", projectName: "audio", userEmail: email, filename: "recording.mp3",
+    const file: SourceFile = { id: "original", agentName: "audio", userEmail: email, filename: "recording.mp3",
       mimeType: "audio/mpeg", status: "ready", revision: 1, createdAt: now,
       retireAt: "2026-12-09T00:00:00Z", retention: f.input.retention! };
     const transcript = { ...file, id: "transcript" };
     const summary = { ...file, id: "summary" };
     const files = new Map([file, transcript, summary].map(value => [value.id, value]));
-    f.deps.files.get = async (_project, id) => files.get(id) ?? null;
+    f.deps.files.get = async (_agent, id) => files.get(id) ?? null;
     const available = await f.api.get("audio", "job-1", email);
     expect(available.artifactLinks.transcript).toBe("/api/artifacts/transcript/view");
     expect(available.artifacts)
@@ -60,7 +60,7 @@ describe("audio job use cases", () => {
 
   it("checks the saved transcription channel before offering a configuration for new work", async () => {
     const f = fixture();
-    const config = { projectName: "audio", userEmail: "owner@example.test", revision: 1, enabled: true,
+    const config = { agentName: "audio", userEmail: "owner@example.test", revision: 1, enabled: true,
       updatedAt: "2026-09-09T00:00:00Z", model: "openai/whisper-1",
       retention: { unit: "months" as const, value: 3, timezone: "Asia/Seoul" }, maxActive: 1, maxPerOccurrence: 1 };
     f.deps.configs = { get: async () => config };
@@ -75,19 +75,19 @@ describe("audio job use cases", () => {
     expect(await f.api.configuration("audio", config.userEmail)).toMatchObject({ enabled: false });
     expect(f.deps.validateModel).not.toHaveBeenCalled();
   });
-  it("checks reused source and transcript files in their original project and hides foreign-owned outputs", async () => {
+  it("checks reused source and transcript files in their original agent and hides foreign-owned outputs", async () => {
     const f = fixture();
     const email = "owner@example.test";
     const now = f.deps.now().toISOString();
-    const transcript: SourceFile = { id: "transcript", projectName: "transcriber", userEmail: email,
+    const transcript: SourceFile = { id: "transcript", agentName: "transcriber", userEmail: email,
       filename: "transcript.json", mimeType: "application/json", status: "ready", revision: 1,
       createdAt: now, retireAt: "2026-12-09T00:00:00Z", retention: f.input.retention!,
       derived: { kind: "transcript", jobId: "prior" } };
-    const draft = { ...transcript, id: "draft", projectName: "audio", userEmail: "someone-else@example.test" };
-    f.deps.files.get = vi.fn(async (project, id) =>
-      project === transcript.projectName && id === transcript.id ? transcript : project === "audio" && id === "draft" ? draft : null);
-    await f.api.submit("audio", email, { task: "postprocess", source: { kind: "file", projectName: "transcriber", fileId: "transcript" },
-      postprocess: { projectName: "writer" }, retention: f.input.retention }, { occurrence: "summary" });
+    const draft = { ...transcript, id: "draft", agentName: "audio", userEmail: "someone-else@example.test" };
+    f.deps.files.get = vi.fn(async (agent, id) =>
+      agent === transcript.agentName && id === transcript.id ? transcript : agent === "audio" && id === "draft" ? draft : null);
+    await f.api.submit("audio", email, { task: "postprocess", source: { kind: "file", agentName: "transcriber", fileId: "transcript" },
+      postprocess: { agentName: "writer" }, retention: f.input.retention }, { occurrence: "summary" });
     const claimed = await jobs.claim("audio", "job-1", now, "worker", "2026-09-09T00:02:00Z");
     await jobs.checkpoint(claimed!, { status: "completed", stage: "cleaning", dueAt: now,
       fileId: "transcript", transcriptRef: "transcript", draftRef: "draft" }, now);
@@ -120,11 +120,11 @@ describe("audio job use cases", () => {
   });
   it("admits summary-only work without an ASR model and refuses external delivery options", async () => {
     const f = fixture();
-    const file = { id: "transcript", projectName: "transcriber", userEmail: "owner@example.test", status: "ready", mimeType: "application/json",
+    const file = { id: "transcript", agentName: "transcriber", userEmail: "owner@example.test", status: "ready", mimeType: "application/json",
       derived: { kind: "transcript", jobId: "original" }, retireAt: "2026-12-09T00:00:00.000Z" } as import("@/domain/artifact/sourceFile").SourceFile;
     f.deps.resolveArtifact = async () => file; f.deps.files.get = async () => file;
     const input: SubmitAudioJobInput = { task: "postprocess", source: { kind: "artifact", artifactId: "transcript" }, retention: f.input.retention,
-      postprocess: { projectName: "writer" } };
+      postprocess: { agentName: "writer" } };
     expect((await f.api.submit("audio", file.userEmail, input, { occurrence: "summary" })).status).toBe("accepted");
     expect(f.deps.validateModel).not.toHaveBeenCalled();
     await expect(f.api.submit("audio", file.userEmail, {
@@ -136,7 +136,7 @@ describe("audio job use cases", () => {
   });
   it("resolves another Agent's owned Artifact to its original private file without copying bytes", async () => {
     const f = fixture();
-    const file = { id: "downloaded-file", projectName: "downloader", userEmail: "owner@example.test", status: "ready" as const,
+    const file = { id: "downloaded-file", agentName: "downloader", userEmail: "owner@example.test", status: "ready" as const,
       retireAt: "2026-12-09T00:00:00Z" } as import("@/domain/artifact/sourceFile").SourceFile;
     f.deps.resolveArtifact = vi.fn(async () => file);
     f.deps.files.get = vi.fn(async () => file);
@@ -146,11 +146,11 @@ describe("audio job use cases", () => {
     expect(f.deps.resolveArtifact).toHaveBeenCalledWith("artifact-1", file.userEmail);
     expect(f.deps.authorize).toHaveBeenCalledWith("downloader", file.userEmail);
     expect(f.deps.files.get).toHaveBeenCalledWith("downloader", file.id);
-    expect(await jobs.get("audio", "job-1")).toMatchObject({ producedBy: "transcriber", source: { kind: "file", fileId: file.id, projectName: "downloader" } });
+    expect(await jobs.get("audio", "job-1")).toMatchObject({ producedBy: "transcriber", source: { kind: "file", fileId: file.id, agentName: "downloader" } });
   });
   it("refuses inaccessible, foreign-owned and expired Artifact inputs before admitting a job", async () => {
     const f = fixture();
-    const file = { id: "file", projectName: "downloader", userEmail: "other@example.test", status: "ready" as const,
+    const file = { id: "file", agentName: "downloader", userEmail: "other@example.test", status: "ready" as const,
       retireAt: "2026-12-09T00:00:00Z" } as import("@/domain/artifact/sourceFile").SourceFile;
     f.deps.resolveArtifact = async () => file;
     f.deps.files.get = async () => file;
@@ -158,7 +158,7 @@ describe("audio job use cases", () => {
     await expect(submit()).rejects.toThrow("Source file not found");
     file.userEmail = "owner@example.test"; file.retireAt = "2026-09-09T00:00:00.000Z";
     await expect(submit()).rejects.toThrow("expired");
-    f.deps.authorize = async (project) => { if (project === "downloader") throw new Error("access revoked"); };
+    f.deps.authorize = async (agent) => { if (agent === "downloader") throw new Error("access revoked"); };
     await expect(submit()).rejects.toThrow("access revoked");
     expect(await jobs.get("audio", "job-1")).toBeNull();
   });
@@ -174,7 +174,7 @@ describe("audio job use cases", () => {
   });
   it("pins a configuration revision without allowing overrides and keeps submitted work unchanged", async () => {
     const f = fixture();
-    let config = { projectName: "audio", userEmail: "owner@example.test", revision: 1, enabled: true, updatedAt: "2026-09-09T00:00:00Z",
+    let config = { agentName: "audio", userEmail: "owner@example.test", revision: 1, enabled: true, updatedAt: "2026-09-09T00:00:00Z",
       model: "openai/whisper-1", retention: { unit: "months" as const, value: 3, timezone: "Asia/Seoul" }, maxActive: 1, maxPerOccurrence: 1 };
     f.deps.configs = { get: async () => config };
     const input = { source: f.input.source, configRevision: 1 };
@@ -216,7 +216,7 @@ describe("audio job use cases", () => {
     const email = "owner@example.test";
     const now = f.deps.now().toISOString();
     const records: AudioJob[] = Array.from({ length: 8 }, (_, index) => ({
-      projectName: "audio", userEmail: email, source: f.input.source as AudioJob["source"],
+      agentName: "audio", userEmail: email, source: f.input.source as AudioJob["source"],
       sourceKey: `source-${index}`, model: f.input.model!, retention: f.input.retention!,
       id: `job-${index}`, revision: 1, status: "completed", stage: "cleaning",
       createdAt: now, updatedAt: now, dueAt: now, attempt: 1, failures: 0, receipts: {},

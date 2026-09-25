@@ -12,6 +12,7 @@ import { assertLocalDatabase } from "./local-database";
  *   pnpm test:integration
  */
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
 
@@ -64,11 +65,11 @@ async function main() {
   await checkAuthSchema();
   // Isolate the auth singleton and its environment in a child process.
   execFileSync(process.execPath, ["--import", "tsx", "scripts/keycloak-auth-check.ts"], { stdio: "inherit" });
-  const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
+  const { agentRepository } = await import("@/infrastructure/db/repositories/agentRepository");
   const { workspacePolicyRepository } = await import("@/infrastructure/db/repositories/workspacePolicyRepository");
   const { workspaceRepositoryCreationStore } = await import("@/infrastructure/db/repositories/workspaceRepositoryCreationStore");
   const { createWorkspaceRepositoryCreationUseCases } = await import("@/application/workspace/createRepository");
-  const { listProjects } = await import("@/application/project/projectUseCases");
+  const { listAgents } = await import("@/application/agent/agentUseCases");
   const { skillRepository } = await import("@/infrastructure/db/repositories/skillRepository");
   const { mcpRepository } = await import("@/infrastructure/db/repositories/mcpRepository");
   const { chatRepository } = await import("@/infrastructure/db/repositories/chatRepository");
@@ -78,7 +79,7 @@ async function main() {
   const { mcpConnectionRepository } = await import(
     "@/infrastructure/db/repositories/mcpConnectionRepository"
   );
-  const { listProjectMcpConnections } = await import("@/application/mcp/listConnections");
+  const { listAgentMcpConnections } = await import("@/application/mcp/listConnections");
   const { mcpOAuthStateRepository } = await import(
     "@/infrastructure/db/repositories/mcpOAuthStateRepository"
   );
@@ -99,7 +100,7 @@ async function main() {
     "@/infrastructure/db/repositories/transcriptRepository"
   );
   const { executionDeps } = await import("@/lib/container");
-  const { executeProject, executeAgent } = await import("@/application/execution/runProject");
+  const { collectAgentRun, executeAgent } = await import("@/application/execution/runAgent");
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
     "@/infrastructure/crypto/secretEncryption"
   );
@@ -117,6 +118,23 @@ async function main() {
     results.push(`PASS ${label}`);
     console.log(`PASS ${label}`);
   };
+
+  // A legacy Agent row must stop the rename before the old data becomes invisible.
+  const { withTransaction: checkTransaction } = await import("@/infrastructure/db/client");
+  await assert.rejects(
+    checkTransaction(async (client) => {
+      const schema = `agent_rename_${randomUUID().replaceAll("-", "")}`;
+      await client.query(`CREATE SCHEMA "${schema}"`);
+      await client.query(`SET LOCAL search_path TO "${schema}"`);
+      await client.query("CREATE TABLE items (pk text, data jsonb)");
+      await client.query("CREATE TABLE schema_migrations (version integer PRIMARY KEY, name text NOT NULL)");
+      await client.query("INSERT INTO schema_migrations SELECT generate_series(1, 8), 'historical'");
+      await client.query("INSERT INTO items VALUES ($1, $2::jsonb)", ["PROJECT#legacy", JSON.stringify({ projectName: "legacy" })]);
+      await migrate((work) => work(client));
+    }),
+    /Existing Agent records require a fresh database/,
+  );
+  pass("Agent storage migration rejects legacy rows without changing them");
 
   // ---------- mock LLM server ----------
   const llmCalls: Array<Record<string, unknown>> = [];
@@ -186,24 +204,24 @@ async function main() {
   await new Promise<void>((resolve) => mock.listen(MOCK_PORT, "127.0.0.1", resolve));
 
   const suffix = Date.now().toString(36);
-  const projectName = `it-proj-${suffix}`;
-  const legacyDestinationProject = `it-telegram-migration-${suffix}`;
-  const legacyDestinationKey = dbKeys.telegramDestination(legacyDestinationProject, 42, 1);
+  const agentName = `it-proj-${suffix}`;
+  const legacyDestinationAgent = `it-telegram-migration-${suffix}`;
+  const legacyDestinationKey = dbKeys.telegramDestination(legacyDestinationAgent, 42, 1);
   const integrationMemberId = `it-member-${suffix}`;
   const integrationMemberEmail = `${integrationMemberId}@example.com`;
   const vectorTable = `it_vectors_${suffix}`;
   // Audit rows are the one fixture no repository can remove: the entity is
   // append-only on purpose — a record its subject could erase would not be one —
-  // and it lives outside the project partition the cascade clears. Their keys
+  // and it lives outside the agent partition the cascade clears. Their keys
   // are collected here so the `finally` can delete them through the client,
-  // since this table is shared with every other project on the machine.
+  // since this table is shared with every other agent on the machine.
   const auditFixtures: Array<{ day: string; createdAt: string; eventId: string }> = [];
-  // Artifacts are not in the project partition either — they outlive the project
+  // Artifacts are not in the agent partition either — they outlive the agent
   // the way chats do — so the cascade never reaches them.
   const artifactFixtures: string[] = [];
   // A member's daily rows are keyed by email in their own partition — outside
   // the cascade, and an atomic ADD, so a leftover would accumulate across runs.
-  const memberDayFixtures: Array<{ email: string; date: string; project: string }> = [];
+  const memberDayFixtures: Array<{ email: string; date: string; agent: string }> = [];
 
   try {
     const { checkManagedMcpTransport } = await import("./managed-mcp-check");
@@ -222,7 +240,7 @@ async function main() {
           JSON.stringify({
             ...legacyDestinationKey,
             entityType: "telegramDestination",
-            projectName: legacyDestinationProject,
+            projectName: legacyDestinationAgent,
             botId: 42,
             chatId: 1,
             chatType: "private",
@@ -237,41 +255,41 @@ async function main() {
     assert.deepEqual(await getItem(legacyDestinationKey), {
       ...legacyDestinationKey,
       entityType: "telegramDestination",
-      projectName: legacyDestinationProject,
+      projectName: legacyDestinationAgent,
       botId: 42,
       chatId: 1,
       chatType: "private",
       title: "Legacy chat",
       lastSeenAt: now,
-      ...dbKeys.telegramDestinationIndexPrefix(legacyDestinationProject, 42),
+      ...dbKeys.telegramDestinationIndexPrefix(legacyDestinationAgent, 42),
       GSI2SK: now,
     });
     pass("migration backfills Telegram destination recency index");
 
-    // ---------- project + current settings ----------
-    await projectRepository.create({
-      name: projectName,
-      displayName: "Integration Project",
+    // ---------- agent + current settings ----------
+    await agentRepository.create({
+      name: agentName,
+      displayName: "Integration Agent",
       description: "integration test",
       ownerEmail: "it@example.com",
       createdAt: now,
       updatedAt: now,
     });
-    const project = await projectRepository.get(projectName);
-    assert.ok(project, "project get");
-    assert.equal(project.displayName, "Integration Project");
-    const listed = await listProjects(projectRepository);
-    assert.ok(listed.some((p) => p.name === projectName), "project list contains created");
-    pass("project create/get/list");
+    const agent = await agentRepository.get(agentName);
+    assert.ok(agent, "agent get");
+    assert.equal(agent.displayName, "Integration Agent");
+    const listed = await listAgents(agentRepository);
+    assert.ok(listed.some((p) => p.name === agentName), "agent list contains created");
+    pass("agent create/get/list");
 
-    const workspacePolicy = { projectName, revision: 1, updatedAt: now, rules: { repositoryOwners: ["integration-owner"] } };
+    const workspacePolicy = { agentName, revision: 1, updatedAt: now, rules: { repositoryOwners: ["integration-owner"] } };
     const policyWrites = await Promise.allSettled([
       workspacePolicyRepository.put(workspacePolicy, null), workspacePolicyRepository.put(workspacePolicy, null),
     ]);
     assert.equal(policyWrites.filter(result => result.status === "fulfilled").length, 1, "one policy writer wins");
-    assert.deepEqual((await workspacePolicyRepository.get(projectName))?.rules, workspacePolicy.rules);
-    await workspacePolicyRepository.put({ projectName, revision: 2, updatedAt: now }, 1);
-    assert.equal((await workspacePolicyRepository.get(projectName))?.rules, undefined, "reset retains revision without an override");
+    assert.deepEqual((await workspacePolicyRepository.get(agentName))?.rules, workspacePolicy.rules);
+    await workspacePolicyRepository.put({ agentName, revision: 2, updatedAt: now }, 1);
+    assert.equal((await workspacePolicyRepository.get(agentName))?.rules, undefined, "reset retains revision without an override");
     await assert.rejects(workspacePolicyRepository.put(workspacePolicy, 1), "stale policy edit cannot overwrite reset");
     pass("Workspace repository policy persistence, concurrent edits and reset");
 
@@ -282,32 +300,32 @@ async function main() {
         repositoryCreates++;
         return { repository: request.repository, repositoryId: 42, url: `https://github.example.test/${request.repository}`, baseBranch: "main", private: request.private };
       } }) });
-    const repositoryAttempts = await Promise.allSettled([createRepository.create(projectName, repositoryRequest, "it@example.com"), createRepository.create(projectName, repositoryRequest, "it@example.com")]);
+    const repositoryAttempts = await Promise.allSettled([createRepository.create(agentName, repositoryRequest, "it@example.com"), createRepository.create(agentName, repositoryRequest, "it@example.com")]);
     assert.ok(repositoryAttempts.some(result => result.status === "fulfilled"));
     assert.equal(repositoryCreates, 1, "one external create across concurrent requests");
-    assert.deepEqual((await workspacePolicyRepository.get(projectName))?.rules?.repositories, [repositoryRequest.repository]);
-    assert.equal((await workspaceRepositoryCreationStore.get(projectName, repositoryRequest.repository))?.status, "created");
-    assert.equal((await createRepository.create(projectName, repositoryRequest, "it@example.com")).reused, true);
+    assert.deepEqual((await workspacePolicyRepository.get(agentName))?.rules?.repositories, [repositoryRequest.repository]);
+    assert.equal((await workspaceRepositoryCreationStore.get(agentName, repositoryRequest.repository))?.status, "created");
+    assert.equal((await createRepository.create(agentName, repositoryRequest, "it@example.com")).reused, true);
     assert.equal(repositoryCreates, 1, "completed receipt is not recreated");
     pass("Workspace repository creation: durable claim, atomic registration and replay");
 
     const configuration = {
-      projectName, systemPrompt: "You are a helpful integration bot.", model: "integration/model",
+      agentName, systemPrompt: "You are a helpful integration bot.", model: "integration/model",
       parameters: { piiFiltering: false }, mcpList: [], skillList: ["integration-skill"], subagentList: [], maxTurn: 5,
     };
     const configuredAt = new Date(Date.parse(now) + 1).toISOString();
-    await projectRepository.update({ ...project, configuration, updatedAt: configuredAt }, now);
-    assert.deepEqual((await projectRepository.get(projectName))?.configuration, configuration);
+    await agentRepository.update({ ...agent, configuration, updatedAt: configuredAt }, now);
+    assert.deepEqual((await agentRepository.get(agentName))?.configuration, configuration);
     pass("current Agent configuration round-trip");
     await assert.rejects(
-      projectRepository.update(
-        { ...project, description: "stale write", updatedAt: new Date(Date.parse(now) + 2).toISOString() },
+      agentRepository.update(
+        { ...agent, description: "stale write", updatedAt: new Date(Date.parse(now) + 2).toISOString() },
         now,
       ),
       (error: unknown) =>
         error instanceof Error && error.name === "ConditionalWriteFailed",
     );
-    pass("project optimistic write conflict");
+    pass("agent optimistic write conflict");
 
     // ---------- skill ----------
     await skillRepository.put({
@@ -323,7 +341,7 @@ async function main() {
     // A projected read, which nothing but the service validates: the doc client
     // accepts any `ProjectionExpression` and the unit tests replace this method
     // entirely, so a name DynamoDB reserves — `name` is one, which is why this
-    // projects `description` alone — fails first in production.
+    // agents `description` alone — fails first in production.
     const described = await skillRepository.describe(["integration-skill", "no-such-skill"]);
     assert.deepStrictEqual(
       described,
@@ -339,9 +357,9 @@ async function main() {
       );
     });
     const vectors = createPgVectorStore(vectorTable);
-    const vectorA = `${projectName}:a`;
-    const vectorB = `${projectName}:b`;
-    const vectorC = `${projectName}:c`;
+    const vectorA = `${agentName}:a`;
+    const vectorB = `${agentName}:b`;
+    const vectorC = `${agentName}:c`;
     await vectors.upsert([
       { key: vectorA, vector: [1, 0, 0], metadata: { kind: "skill", label: "A" } },
       { key: vectorB, vector: [0.8, 0.2, 0], metadata: { kind: "skill", label: "B" } },
@@ -434,23 +452,23 @@ async function main() {
 
     // ---------- mcp oauth connection + in-flight state ----------
     await mcpConnectionRepository.put({
-      projectName,
+      agentName,
       serverName,
       clientId: "client-abc",
       clientSecret: encryptSecret(
         "client-secret",
-        mcpConnectionSecretContext(projectName, serverName, "client-secret"),
+        mcpConnectionSecretContext(agentName, serverName, "client-secret"),
       ),
       issuer: "https://auth.example.com",
       resource: "https://mcp.example.com",
       scopes: ["chat:write"],
       accessToken: encryptSecret(
         "access-1",
-        mcpConnectionSecretContext(projectName, serverName, "access-token"),
+        mcpConnectionSecretContext(agentName, serverName, "access-token"),
       ),
       refreshToken: encryptSecret(
         "refresh-1",
-        mcpConnectionSecretContext(projectName, serverName, "refresh-token"),
+        mcpConnectionSecretContext(agentName, serverName, "refresh-token"),
       ),
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
       status: "connected",
@@ -458,12 +476,12 @@ async function main() {
       connectedAt: now,
       updatedAt: now,
     });
-    const conn = await mcpConnectionRepository.get(projectName, serverName);
+    const conn = await mcpConnectionRepository.get(agentName, serverName);
     assert.ok(conn, "mcp connection get");
     assert.equal(
       decryptSecret(
         conn.clientSecret ?? "",
-        mcpConnectionSecretContext(projectName, serverName, "client-secret"),
+        mcpConnectionSecretContext(agentName, serverName, "client-secret"),
       ),
       "client-secret",
       "client secret round-trip",
@@ -474,23 +492,23 @@ async function main() {
     assert.equal(conn.issuer, "https://auth.example.com", "credential issuer round-trip");
     assert.equal(conn.resource, "https://mcp.example.com", "token resource round-trip");
     assert.equal(
-      (await listProjectMcpConnections(mcpConnectionRepository, projectName)).length,
+      (await listAgentMcpConnections(mcpConnectionRepository, agentName)).length,
       1,
-      "connection listed under its project partition",
+      "connection listed under its agent partition",
     );
 
     // Compare-and-set on the grant revision: only the first writer can replace
     // the connection snapshot both callers read.
     const stored = conn.revision;
     assert.equal(
-      await mcpConnectionRepository.updateTokens(projectName, serverName, stored, {
+      await mcpConnectionRepository.updateTokens(agentName, serverName, stored, {
         accessToken: encryptSecret(
           "access-2",
-          mcpConnectionSecretContext(projectName, serverName, "access-token"),
+          mcpConnectionSecretContext(agentName, serverName, "access-token"),
         ),
         refreshToken: encryptSecret(
           "refresh-2",
-          mcpConnectionSecretContext(projectName, serverName, "refresh-token"),
+          mcpConnectionSecretContext(agentName, serverName, "refresh-token"),
         ),
         expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
         status: "connected",
@@ -500,14 +518,14 @@ async function main() {
       "refresh with the current grant revision wins",
     );
     assert.equal(
-      await mcpConnectionRepository.updateTokens(projectName, serverName, stored, {
+      await mcpConnectionRepository.updateTokens(agentName, serverName, stored, {
         accessToken: encryptSecret(
           "access-3",
-          mcpConnectionSecretContext(projectName, serverName, "access-token"),
+          mcpConnectionSecretContext(agentName, serverName, "access-token"),
         ),
         refreshToken: encryptSecret(
           "refresh-3",
-          mcpConnectionSecretContext(projectName, serverName, "refresh-token"),
+          mcpConnectionSecretContext(agentName, serverName, "refresh-token"),
         ),
         expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
         status: "connected",
@@ -518,8 +536,8 @@ async function main() {
     );
     assert.equal(
       decryptSecret(
-        (await mcpConnectionRepository.get(projectName, serverName))?.accessToken ?? "",
-        mcpConnectionSecretContext(projectName, serverName, "access-token"),
+        (await mcpConnectionRepository.get(agentName, serverName))?.accessToken ?? "",
+        mcpConnectionSecretContext(agentName, serverName, "access-token"),
       ),
       "access-2",
       "the winner's token survives the race",
@@ -527,16 +545,16 @@ async function main() {
 
     // Absent values REMOVE rather than storing null. The expected revision is
     // read back from the winner before clearing its tokens.
-    const won = await mcpConnectionRepository.get(projectName, serverName);
+    const won = await mcpConnectionRepository.get(agentName, serverName);
     assert.equal(
-      await mcpConnectionRepository.updateTokens(projectName, serverName, won?.revision, {
+      await mcpConnectionRepository.updateTokens(agentName, serverName, won?.revision, {
         status: "needs_reauth",
         updatedAt: new Date().toISOString(),
       }),
       true,
       "clearing tokens with the stored grant revision succeeds",
     );
-    const revoked = await mcpConnectionRepository.get(projectName, serverName);
+    const revoked = await mcpConnectionRepository.get(agentName, serverName);
     assert.equal(revoked?.refreshToken, undefined, "cleared refresh token is absent, not null");
     assert.equal(revoked?.status, "needs_reauth", "status recorded");
     assert.ok(revoked, "revoked connection remains available for a conditional replacement");
@@ -546,14 +564,14 @@ async function main() {
       true, "the current grant may be replaced");
     assert.equal(await mcpConnectionRepository.deleteIfCurrent(revoked),
       false, "a stale disconnect cannot remove a replacement grant");
-    assert.equal((await mcpConnectionRepository.get(projectName, serverName))?.clientId,
+    assert.equal((await mcpConnectionRepository.get(agentName, serverName))?.clientId,
       "replacement", "the replacement grant survives the stale disconnect");
 
     const oauthState = `it-state-${suffix}`;
     await mcpOAuthStateRepository.put(
       {
         state: oauthState,
-        projectName,
+        agentName,
         serverName,
         codeVerifier: encryptSecret("verifier", mcpOAuthStateContext(oauthState)),
         userEmail: "owner@example.com",
@@ -587,7 +605,7 @@ async function main() {
       chatId,
       title: "Integration chat",
       ownerEmail: "it@example.com",
-      projectName,
+      agentName,
       createdAt: now,
       updatedAt: now,
     });
@@ -773,7 +791,7 @@ async function main() {
 
     // ---------- usage (atomic ADD, twice) ----------
     const usageDelta = {
-      projectName,
+      agentName,
       date: today,
       model: "openai/gpt-5-mini",
       calls: 1,
@@ -784,7 +802,7 @@ async function main() {
     };
     await usageRepository.record(usageDelta);
     await usageRepository.record(usageDelta);
-    const rows = await usageRepository.listByProject(projectName, today, today);
+    const rows = await usageRepository.listByAgent(agentName, today, today);
     assert.equal(rows.length, 1, "usage row exists");
     assert.equal(rows[0]?.calls["openai/gpt-5-mini"], 2, "usage calls accumulated");
     assert.equal(rows[0]?.inputTokens["openai/gpt-5-mini"], 200, "usage tokens accumulated");
@@ -797,51 +815,51 @@ async function main() {
     );
     const rangeRows = await usageRepository.listByDateRange(today, today);
     assert.ok(
-      rangeRows.some((r) => r.projectName === projectName),
+      rangeRows.some((r) => r.agentName === agentName),
       "usage date-range GSI listing",
     );
     pass("usage atomic ADD accumulation + range query");
 
     // ---------- usage attribution (per-caller rows) ----------
     await usageRepository.record({ ...usageDelta, actor: "user:it@example.com" });
-    await usageRepository.record({ ...usageDelta, actor: "project-token:it@example.com" });
-    const actorRows = await usageRepository.listActorsByProject(projectName, today, today, 100);
+    await usageRepository.record({ ...usageDelta, actor: "agent-token:it@example.com" });
+    const actorRows = await usageRepository.listActorsByAgent(agentName, today, today, 100);
     assert.equal(actorRows.length, 2, "one row per caller");
     assert.deepEqual(
       actorRows.map((r) => r.actor).sort(),
-      ["project-token:it@example.com", "user:it@example.com"],
+      ["agent-token:it@example.com", "user:it@example.com"],
       "a token's spend is not merged into its owner's own",
     );
-    const projectRows = await usageRepository.listByProject(projectName, today, today);
-    assert.equal(projectRows.length, 1, "actor rows do not leak into the project listing");
+    const agentRows = await usageRepository.listByAgent(agentName, today, today);
+    assert.equal(agentRows.length, 1, "actor rows do not leak into the agent listing");
     assert.equal(
-      projectRows[0]?.calls["openai/gpt-5-mini"],
+      agentRows[0]?.calls["openai/gpt-5-mini"],
       4,
-      "the project total counts attributed calls too",
+      "the agent total counts attributed calls too",
     );
-    pass("usage attribution: per-caller rows, project totals unaffected");
+    pass("usage attribution: per-caller rows, agent totals unaffected");
 
     // ---------- member day rows (one history per email, across actor kinds) ----------
     // The attribution block above also wrote member rows for its fixed address;
     // register it for cleanup, but assert on a per-run address — the row is an
     // atomic ADD keyed by email alone, so a leftover from an interrupted run
     // would otherwise inflate the count.
-    memberDayFixtures.push({ email: "it@example.com", date: today, project: projectName });
+    memberDayFixtures.push({ email: "it@example.com", date: today, agent: agentName });
     const memberEmail = `it-member-${suffix}@example.com`;
-    memberDayFixtures.push({ email: memberEmail, date: today, project: projectName });
+    memberDayFixtures.push({ email: memberEmail, date: today, agent: agentName });
     await usageRepository.record({ ...usageDelta, actor: `user:${memberEmail}` });
-    await usageRepository.record({ ...usageDelta, actor: `project-token:${memberEmail}` });
-    // The project follows the date in the sort key, so this range only returns
-    // anything if the upper bound reaches past a project name — a plain
+    await usageRepository.record({ ...usageDelta, actor: `agent-token:${memberEmail}` });
+    // The agent follows the date in the sort key, so this range only returns
+    // anything if the upper bound reaches past an agent name — a plain
     // `BETWEEN DATE#from AND DATE#to` finds nothing at all.
     const memberDays = await usageRepository.listMemberDays(memberEmail, today, today);
-    assert.equal(memberDays.length, 1, "one row per member per project per day");
+    assert.equal(memberDays.length, 1, "one row per member per agent per day");
     assert.equal(
       memberDays[0]?.calls["openai/gpt-5-mini"],
       1,
       "token spend stays out of the member's own history",
     );
-    assert.equal(memberDays[0]?.projectName, projectName, "the row names where it was spent");
+    assert.equal(memberDays[0]?.agentName, agentName, "the row names where it was spent");
     assert.deepEqual(
       await usageRepository.listMemberDays(`nobody-${suffix}@example.com`, today, today),
       [],
@@ -854,26 +872,26 @@ async function main() {
       today,
     );
     assert.equal(capWindow.length, 1, "the month-to-date window finds the day");
-    pass("member day rows: per-project split, per-actor filtering, range query");
+    pass("member day rows: per-agent split, per-actor filtering, range query");
 
     // ---------- monthly threshold claim (conditional, its own row) ----------
     const month = today.slice(0, 7);
     assert.equal(
-      await usageRepository.claimMonthAlert(projectName, month, "alert"),
+      await usageRepository.claimMonthAlert(agentName, month, "alert"),
       true,
       "first monthly claim wins",
     );
     assert.equal(
-      await usageRepository.claimMonthAlert(projectName, month, "alert"),
+      await usageRepository.claimMonthAlert(agentName, month, "alert"),
       false,
       "second monthly claim loses",
     );
     assert.equal(
-      await usageRepository.claimMonthAlert(projectName, month, "block"),
+      await usageRepository.claimMonthAlert(agentName, month, "block"),
       true,
       "each threshold keeps its own monthly claim",
     );
-    const monthRows = await usageRepository.listByProject(projectName, today, today);
+    const monthRows = await usageRepository.listByAgent(agentName, today, today);
     assert.equal(
       monthRows.length,
       1,
@@ -891,24 +909,24 @@ async function main() {
     const hookTrigger = `it-once-${suffix}`;
     const deliveryId = `delivery-${suffix}`;
     assert.equal(
-      await triggerRepository.claimIdempotencyKey(projectName, hookTrigger, deliveryId),
+      await triggerRepository.claimIdempotencyKey(agentName, hookTrigger, deliveryId),
       true,
       "the first delivery claims the key",
     );
     assert.equal(
-      await triggerRepository.claimIdempotencyKey(projectName, hookTrigger, deliveryId),
+      await triggerRepository.claimIdempotencyKey(agentName, hookTrigger, deliveryId),
       false,
       "a redelivery of the same id is refused",
     );
     assert.equal(
-      await triggerRepository.claimIdempotencyKey(projectName, hookTrigger, `${deliveryId}-b`),
+      await triggerRepository.claimIdempotencyKey(agentName, hookTrigger, `${deliveryId}-b`),
       true,
       "a different delivery is not blocked by it",
     );
-    // Scoped per trigger, not per project: two triggers can legitimately be
+    // Scoped per trigger, not per agent: two triggers can legitimately be
     // handed the same delivery id by different senders.
     assert.equal(
-      await triggerRepository.claimIdempotencyKey(projectName, `${hookTrigger}-other`, deliveryId),
+      await triggerRepository.claimIdempotencyKey(agentName, `${hookTrigger}-other`, deliveryId),
       true,
       "the claim is scoped to its own trigger",
     );
@@ -918,7 +936,7 @@ async function main() {
     // The one repository every chat platform's webhook dedups through, and the
     // same reasoning as the webhook claim above: a `Set`-backed fake cannot tell
     // a working condition expression from one that always wins.
-    const claims = telegramUpdateRepository.forBot(projectName, 42).updates;
+    const claims = telegramUpdateRepository.forBot(agentName, 42).updates;
     const claimNow = Math.floor(Date.now() / 1000);
     const firstClaim = await claims.claim("1001", claimNow, claimNow + 600);
     assert.ok(firstClaim, "first delivery claims");
@@ -965,13 +983,13 @@ async function main() {
 
     // Stop events can reach a different replica, and may be delivered out of order.
     const { slackRunControlRepository: slackControl } = await import("@/infrastructure/db/repositories/slackRunControlRepository");
-    const slackRunTarget = { projectName, channel: "C1", threadTs: "1.0" };
+    const slackRunTarget = { agentName, channel: "C1", threadTs: "1.0" };
     await Promise.all(["2.8", "2.3", "2.7"].map((ts) => slackControl.requestStop(slackRunTarget, ts)));
     assert.equal(await slackControl.stoppedAfter(slackRunTarget, "2.7"), true);
     assert.equal(await slackControl.stoppedAfter(slackRunTarget, "2.9"), false);
     assert.equal(await slackControl.stoppedAfter({ ...slackRunTarget, channel: "C2" }, "2.7"), false);
-    await assert.rejects(slackControl.requestStop({ ...slackRunTarget, projectName: `missing-${suffix}` }, "2.8"));
-    pass("Slack stop delivery: concurrent watermark, subsequent-message isolation and project fence");
+    await assert.rejects(slackControl.requestStop({ ...slackRunTarget, agentName: `missing-${suffix}` }, "2.8"));
+    pass("Slack stop delivery: concurrent watermark, subsequent-message isolation and agent fence");
     const slackLeases = await Promise.all([slackControl.acquire(slackRunTarget), slackControl.acquire(slackRunTarget)]);
     const leaseWinners = slackLeases.filter((token): token is string => token !== null);
     assert.equal(leaseWinners.length, 1);
@@ -987,18 +1005,18 @@ async function main() {
     // ---------- conversation transcript (newest N, oldest first, per conversation) ----------
     const conversationKey = `telegram:${suffix}`;
     for (const [index, content] of ["one", "two", "three"].entries()) {
-      await transcriptRepository.append(projectName, conversationKey, {
+      await transcriptRepository.append(agentName, conversationKey, {
         role: index % 2 === 0 ? "user" : "assistant",
         content,
         createdAt: new Date(Date.parse(now) + index * 1000).toISOString(),
       });
     }
-    await transcriptRepository.append(projectName, `${conversationKey}-other`, {
+    await transcriptRepository.append(agentName, `${conversationKey}-other`, {
       role: "user",
       content: "elsewhere",
       createdAt: now,
     });
-    const recent = await transcriptRepository.recent(projectName, conversationKey, 2);
+    const recent = await transcriptRepository.recent(agentName, conversationKey, 2);
     assert.deepEqual(
       recent.map((turn) => turn.content),
       ["two", "three"],
@@ -1012,17 +1030,17 @@ async function main() {
     // the whole reason repository queries are checked here.
     const triggerId = `it-hook-${suffix}`;
     const runAt = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
-    const oldRun = { projectName, triggerId, runId: "old", status: "running" as const, startedAt: runAt(3_600_000) };
-    const recentRun = { projectName, triggerId, runId: "recent", status: "running" as const, startedAt: runAt(1_000) };
+    const oldRun = { agentName, triggerId, runId: "old", status: "running" as const, startedAt: runAt(3_600_000) };
+    const recentRun = { agentName, triggerId, runId: "recent", status: "running" as const, startedAt: runAt(1_000) };
     await triggerRepository.appendRun(oldRun);
     await triggerRepository.appendRun(recentRun);
-    const newestFirst = await triggerRepository.listRuns(projectName, triggerId, 10);
+    const newestFirst = await triggerRepository.listRuns(agentName, triggerId, 10);
     assert.deepEqual(
       newestFirst.map((r) => r.runId),
       ["recent", "old"],
       "trigger runs come back newest first",
     );
-    const beforeCutoff = await triggerRepository.listRuns(projectName, triggerId, 10, {
+    const beforeCutoff = await triggerRepository.listRuns(agentName, triggerId, 10, {
       startedBefore: runAt(60_000),
     });
     assert.deepEqual(
@@ -1039,7 +1057,7 @@ async function main() {
     const olderRun = { ...oldRun, runId: "older", startedAt: runAt(7_200_000) };
     await triggerRepository.appendRun(olderRun);
     assert.deepEqual(
-      (await triggerRepository.listRuns(projectName, triggerId, 1, {
+      (await triggerRepository.listRuns(agentName, triggerId, 1, {
         startedBefore: runAt(60_000),
         status: "running",
       })).map((run) => run.runId),
@@ -1047,7 +1065,7 @@ async function main() {
       "completed history does not consume the repair query limit",
     );
     assert.equal(
-      (await triggerRepository.listRuns(projectName, triggerId, 10)).find((r) => r.runId === "old")
+      (await triggerRepository.listRuns(agentName, triggerId, 10)).find((r) => r.runId === "old")
         ?.status,
       "failed",
       "a repaired row is finished in place",
@@ -1055,22 +1073,22 @@ async function main() {
     pass("trigger run history: newest-first, startedBefore window, finish in place");
 
     {
-      const reviewTrigger = { projectName, triggerId: "webhook", kind: "webhook" as const, secret: "integration-encrypted-secret",
+      const reviewTrigger = { agentName, triggerId: "webhook", kind: "webhook" as const, secret: "integration-encrypted-secret",
         description: "PR reviews", enabled: true, allowConcurrent: true, createdAt: now, updatedAt: now,
-        githubReview: { scope: "repositories" as const, repositories: ["example/project"] } };
+        githubReview: { scope: "repositories" as const, repositories: ["example/agent"] } };
       await triggerRepository.create(reviewTrigger);
-      assert.deepEqual((await triggerRepository.get(projectName, "webhook")), reviewTrigger);
-      const review = { repository: "example/project", number: 42, headSha: "a".repeat(40), status: "posted" as const,
-        url: "https://github.com/example/project/pull/42#pullrequestreview-1" };
+      assert.deepEqual((await triggerRepository.get(agentName, "webhook")), reviewTrigger);
+      const review = { repository: "example/agent", number: 42, headSha: "a".repeat(40), status: "posted" as const,
+        url: "https://github.com/example/agent/pull/42#pullrequestreview-1" };
       await triggerRepository.finishRun({ ...recentRun, status: "succeeded", endedAt: now, review });
-      assert.deepEqual((await triggerRepository.listRuns(projectName, triggerId, 1))[0]?.review, review);
+      assert.deepEqual((await triggerRepository.listRuns(agentName, triggerId, 1))[0]?.review, review);
       pass("PR review trigger authorization and publication receipt persist through PostgreSQL");
     }
 
     // ---------- queued schedule ownership and atomic dispatch ----------
     const queueTrigger = `it-queue-${suffix}`;
     const queueNow = Date.now();
-    const queuedRun = { projectName, triggerId: queueTrigger, runId: "queued", status: "queued" as const,
+    const queuedRun = { agentName, triggerId: queueTrigger, runId: "queued", status: "queued" as const,
       queuedAt: new Date(queueNow - 60_000).toISOString(), queueLeaseUntil: new Date(queueNow + 60_000).toISOString() };
     await triggerRepository.appendRun(queuedRun);
     const renewedQueue = { ...queuedRun, queueLeaseUntil: new Date(queueNow + 120_000).toISOString() };
@@ -1085,15 +1103,15 @@ async function main() {
       triggerRepository.updateQueuedRun(renewedQueue, runningQueue),
     ]);
     assert.equal(starts.filter(Boolean).length, 1, "one queued-to-running transition wins");
-    assert.deepEqual(await triggerRepository.listRuns(projectName, queueTrigger, 10), [runningQueue]);
-    assert.equal(await getItem(dbKeys.triggerRun(projectName, queueTrigger, queuedRun.queuedAt, queuedRun.runId)), null,
+    assert.deepEqual(await triggerRepository.listRuns(agentName, queueTrigger, 10), [runningQueue]);
+    assert.equal(await getItem(dbKeys.triggerRun(agentName, queueTrigger, queuedRun.queuedAt, queuedRun.runId)), null,
       "moving to the actual start key leaves no duplicate history");
-    assert.deepEqual(await triggerRepository.listRuns(projectName, queueTrigger, 10, { status: "queued" }), []);
+    assert.deepEqual(await triggerRepository.listRuns(agentName, queueTrigger, 10, { status: "queued" }), []);
     const expiredQueue = { ...queuedRun, runId: "expired", queueLeaseUntil: new Date(queueNow - 1).toISOString() };
     await triggerRepository.appendRun({ ...expiredQueue, runId: "past-retention", queuedAt: "1970-01-01T00:00:00.000Z", queueLeaseUntil: "1970-01-01T00:01:00.000Z" });
     await triggerRepository.appendRun(expiredQueue);
     await triggerRepository.appendRun({ ...queuedRun, runId: "live" });
-    assert.deepEqual(await triggerRepository.listRuns(projectName, queueTrigger, 1, {
+    assert.deepEqual(await triggerRepository.listRuns(agentName, queueTrigger, 1, {
       status: "queued", queueLeaseBefore: new Date(queueNow).toISOString(),
     }), [expiredQueue], "expiry and lease windows are applied before the queue repair limit");
     assert.equal(await triggerRepository.updateQueuedRun(expiredQueue, { ...expiredQueue, status: "running", startedAt: now }), false);
@@ -1115,7 +1133,7 @@ async function main() {
         eventId: `it-audit-b-${suffix}`,
         actorEmail: "it@example.com",
         action: "secret.reveal" as const,
-        target: `project:${projectName}`,
+        target: `agent:${agentName}`,
         createdAt: new Date(Date.parse(now) + 1000).toISOString(),
       },
     ];
@@ -1135,7 +1153,7 @@ async function main() {
     pass("audit append + day-partition listing");
 
     // ---------- artifacts (both indexes, and the sparse one staying sparse) ----------
-    // The two indexes are the point: a Slack run names no email, so the project
+    // The two indexes are the point: a Slack run names no email, so the agent
     // index is the only way its output is ever listed or deleted. Mocked doc
     // clients cannot show that a sparse GSI2 really omits the row.
     const artifactIds = [`it-art-img-${suffix}`, `it-art-doc-${suffix}`, `it-art-slack-${suffix}`];
@@ -1147,7 +1165,7 @@ async function main() {
         key: `artifacts/image/${artifactIds[0]}.png`,
         mimeType: "image/png",
         byteSize: 2048,
-        projectName,
+        agentName,
         actor: { kind: "user" as const, id: "it@example.com" },
         prompt: "a poster",
         createdAt: now,
@@ -1160,7 +1178,7 @@ async function main() {
         mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename: "보고서.docx",
         byteSize: 40960,
-        projectName,
+        agentName,
         actor: { kind: "user" as const, id: "it@example.com" },
         createdAt: new Date(Date.parse(now) + 1000).toISOString(),
       },
@@ -1171,7 +1189,7 @@ async function main() {
         key: `artifacts/image/${artifactIds[2]}.png`,
         mimeType: "image/png",
         byteSize: 512,
-        projectName,
+        agentName,
         actor: { kind: "slack" as const, id: "U-integration" },
         createdAt: new Date(Date.parse(now) + 2000).toISOString(),
       },
@@ -1184,11 +1202,11 @@ async function main() {
     assert.equal(storedArtifact?.filename, "보고서.docx", "a Korean filename round-trips");
     assert.equal(storedArtifact?.byteSize, 40960, "byteSize round-trips");
 
-    const byProject = await artifactRepository.listByProject(projectName);
+    const byAgent = await artifactRepository.listByAgent(agentName);
     assert.deepEqual(
-      byProject.filter((a) => a.artifactId.endsWith(suffix)).map((a) => a.artifactId),
+      byAgent.filter((a) => a.artifactId.endsWith(suffix)).map((a) => a.artifactId),
       [artifactIds[2], artifactIds[1], artifactIds[0]],
-      "the project index returns every artifact, newest first",
+      "the agent index returns every artifact, newest first",
     );
 
     const byOwner = await artifactRepository.listByOwner("it@example.com");
@@ -1198,7 +1216,7 @@ async function main() {
       "the owner index omits the Slack run, whose actor names no mailbox",
     );
 
-    const images = await artifactRepository.listByProject(projectName, { kind: "image" });
+    const images = await artifactRepository.listByAgent(agentName, { kind: "image" });
     assert.deepEqual(
       images.filter((a) => a.artifactId.endsWith(suffix)).map((a) => a.artifactId),
       [artifactIds[2], artifactIds[0]],
@@ -1211,13 +1229,13 @@ async function main() {
     // and this is the round trip that would notice if that stopped being true:
     // the boundary row appears once across the two pages, not twice and not
     // never.
-    const firstPage = await artifactRepository.listByProject(projectName, { limit: 2 });
+    const firstPage = await artifactRepository.listByAgent(agentName, { limit: 2 });
     assert.deepEqual(
       firstPage.map((a) => a.artifactId),
       [artifactIds[2], artifactIds[1]],
       "a page of two returns the two newest",
     );
-    const secondPage = await artifactRepository.listByProject(projectName, {
+    const secondPage = await artifactRepository.listByAgent(agentName, {
       limit: 2,
       before: artifactCursor(firstPage.at(-1)!),
     });
@@ -1232,8 +1250,8 @@ async function main() {
     // filter over what came back and pull up to five extra pages to refill,
     // which meant a match further back than that was invisible — and an empty
     // gallery with no cursor is indistinguishable from having reached the end.
-    // Its own project, so the ordering the assertions above pin is untouched.
-    const filterProject = `it-filter-${suffix}`;
+    // Its own agent, so the ordering the assertions above pin is untouched.
+    const filterAgent = `it-filter-${suffix}`;
     const filterBase = Date.parse(now);
     for (let i = 0; i < 40; i += 1) {
       const id = `it-art-fill-${i}-${suffix}`;
@@ -1244,7 +1262,7 @@ async function main() {
         key: `artifacts/image/${id}.png`,
         mimeType: "image/png",
         byteSize: 128,
-        projectName: filterProject,
+        agentName: filterAgent,
         actor: { kind: "user" as const, id: "it@example.com" },
         createdAt: new Date(filterBase + 1000 + i * 1000).toISOString(),
       });
@@ -1258,13 +1276,13 @@ async function main() {
       key: `artifacts/document/${buriedId}.pdf`,
       mimeType: "application/pdf",
       byteSize: 1024,
-      projectName: filterProject,
+      agentName: filterAgent,
       actor: { kind: "user" as const, id: "it@example.com" },
       createdAt: new Date(filterBase).toISOString(),
     });
     artifactFixtures.push(buriedId);
     assert.deepEqual(
-      (await artifactRepository.listByProject(filterProject, { limit: 24, kind: "document" })).map(
+      (await artifactRepository.listByAgent(filterAgent, { limit: 24, kind: "document" })).map(
         (a) => a.artifactId,
       ),
       [buriedId],
@@ -1272,7 +1290,7 @@ async function main() {
     );
     assert.deepEqual(
       (
-        await artifactRepository.listByProject(filterProject, {
+        await artifactRepository.listByAgent(filterAgent, {
           limit: 5,
           kind: "image",
           source: "generated",
@@ -1282,7 +1300,7 @@ async function main() {
       "a filtered page is full at the limit, not thinned by the filter",
     );
     assert.deepEqual(
-      await artifactRepository.listByProject(filterProject, { kind: "document", source: "generated" }),
+      await artifactRepository.listByAgent(filterAgent, { kind: "document", source: "generated" }),
       [],
       "two filters are an AND, so a generated document is not the attached one",
     );
@@ -1296,7 +1314,7 @@ async function main() {
       (
         await queryItems({
           index: "GSI1",
-          pk: keys.artifactProjectPartition(filterProject),
+          pk: keys.artifactAgentPartition(filterAgent),
           filter: { byteSize: "1024" },
         })
       ).map((row) => row.artifactId),
@@ -1306,7 +1324,7 @@ async function main() {
     assert.deepEqual(
       await queryItems({
         index: "GSI1",
-        pk: keys.artifactProjectPartition(filterProject),
+        pk: keys.artifactAgentPartition(filterAgent),
         filter: { nosuchfield: "anything" },
       }),
       [],
@@ -1323,21 +1341,21 @@ async function main() {
     // Idempotent: the object is removed before the row, so an interrupted delete
     // is retried, and the second attempt must not throw.
     await artifactRepository.delete(artifactIds[0]!);
-    pass("artifacts: project + owner indexes, sparse owner index, kind filter, idempotent delete");
+    pass("artifacts: agent + owner indexes, sparse owner index, kind filter, idempotent delete");
 
     // ---------- transact lock modes (a checked key does not serialise) ----------
     // A `check` op asserts something elsewhere is still live; the exclusive
-    // lock it used to take made every usage row, trace and project write in a
-    // project queue on that project's one META row. The two directions that
+    // lock it used to take made every usage row, trace and agent write in a
+    // agent queue on that agent's one META row. The two directions that
     // matter: a shared holder must not block a checker, and an exclusive one
     // must still block it — that is the delete the check exists to catch.
     {
       const { transact, conditions } = await import("@/infrastructure/db/store");
       const { getPool } = await import("@/infrastructure/db/client");
       const { keys } = await import("@/infrastructure/db/keys");
-      const projectKey = keys.project(projectName);
+      const agentKey = keys.agent(agentName);
       const probeKey = keys.trace(`lock-probe-${suffix}`);
-      const probe = { ...probeKey, entityType: "TRACE", projectName, createdAt: now };
+      const probe = { ...probeKey, entityType: "TRACE", agentName, createdAt: now };
       const holder = await getPool().connect();
       let writer: Promise<void> | undefined;
       const waited = <T,>(promise: Promise<T>) =>
@@ -1349,16 +1367,16 @@ async function main() {
         await holder.query("BEGIN");
         await holder.query(
           "SELECT pg_advisory_xact_lock_shared(hashtext($1::text), hashtext($2::text))",
-          [projectKey.PK, projectKey.SK],
+          [agentKey.PK, agentKey.SK],
         );
         await holder.query("SELECT data FROM items WHERE pk = $1 AND sk = $2 FOR SHARE", [
-          projectKey.PK,
-          projectKey.SK,
+          agentKey.PK,
+          agentKey.SK,
         ]);
         assert.equal(
           await waited(
             transact([
-              { kind: "check", key: projectKey, condition: conditions.exists },
+              { kind: "check", key: agentKey, condition: conditions.exists },
               { kind: "put", item: probe },
             ]),
           ),
@@ -1369,7 +1387,7 @@ async function main() {
         // An `update` rather than a `put`, so the row keeps what the fixture
         // wrote and the checks after this one still read it.
         writer = transact([
-          { kind: "update", key: projectKey, patch: (row) => ({ ...(row ?? {}) }) },
+          { kind: "update", key: agentKey, patch: (row) => ({ ...(row ?? {}) }) },
         ]);
         assert.equal(await waited(writer), "waiting", "a write on the key still waits on a reader");
       } finally {
@@ -1388,16 +1406,16 @@ async function main() {
     // ---------- audio configuration target availability ----------
     {
       const { audioJobConfigRepository: configs } = await import("@/infrastructure/db/repositories/audioJobConfigRepository");
-      const target = (await projectRepository.get(projectName))!;
-      const config = { projectName, userEmail: target.ownerEmail, revision: 1, enabled: true, model: "integration/asr",
+      const target = (await agentRepository.get(agentName))!;
+      const config = { agentName, userEmail: target.ownerEmail, revision: 1, enabled: true, model: "integration/asr",
         retention: { unit: "months" as const, value: 3, timezone: "UTC" }, maxActive: 1, maxPerOccurrence: 1,
-        postprocess: { projectName }, updatedAt: now };
+        postprocess: { agentName }, updatedAt: now };
       assert.equal(await configs.save(config, 0), true);
-      const before = (await projectRepository.get(projectName))!;
+      const before = (await agentRepository.get(agentName))!;
       assert.deepEqual(before.configuration, target.configuration, "saving a recipe preserves Agent settings");
       assert.equal(await configs.save({ ...config, userEmail: "other@example.test", revision: 2 }, 1), false);
-      assert.equal(await configs.save({ ...config, postprocess: { projectName: "missing-target" }, revision: 2 }, 1), false);
-      assert.equal((await configs.get(projectName))?.revision, 1);
+      assert.equal(await configs.save({ ...config, postprocess: { agentName: "missing-target" }, revision: 2 }, 1), false);
+      assert.equal((await configs.get(agentName))?.revision, 1);
       const raced = await Promise.all([
         configs.save({ ...config, maxActive: 2, revision: 2 }, 1),
         configs.save({ ...config, maxActive: 3, revision: 2 }, 1),
@@ -1408,19 +1426,19 @@ async function main() {
 
     // ---------- durable usage receipts ----------
     {
-      const event = { idempotencyKey: `asr-${suffix}`, projectName, date: today, model: "asr-integration",
+      const event = { idempotencyKey: `asr-${suffix}`, agentName, date: today, model: "asr-integration",
         calls: 1, inputTokens: 10, outputTokens: 2, costUsd: 0.01, actor: "user:audio-integration@example.com" };
       try {
         await Promise.all(Array.from({ length: 8 }, () => usageRepository.record(event)));
-        assert.equal((await usageRepository.getDay(projectName, today))?.calls["asr-integration"], 1);
+        assert.equal((await usageRepository.getDay(agentName, today))?.calls["asr-integration"], 1);
         // PostgreSQL JSONB reorders object keys; replay compares values, not serialized order.
         await usageRepository.record(event);
         await assert.rejects(usageRepository.record({ ...event, costUsd: 2 }));
-        assert.equal((await usageRepository.getDay(projectName, today))?.costUsd["asr-integration"], 0.01);
+        assert.equal((await usageRepository.getDay(agentName, today))?.costUsd["asr-integration"], 0.01);
         pass("usage receipts: concurrent replay bills once and rejects conflicting payloads");
       } finally {
         const { deleteItem } = await import("@/infrastructure/db/store");
-        await deleteItem(dbKeys.usageMember("audio-integration@example.com", today, projectName));
+        await deleteItem(dbKeys.usageMember("audio-integration@example.com", today, agentName));
       }
     }
 
@@ -1430,7 +1448,7 @@ async function main() {
       const { deleteItem } = await import("@/infrastructure/db/store");
       const id = `source-${suffix}`;
       try {
-        const pending = await files.create({ id, projectName, userEmail: "integration@example.com",
+        const pending = await files.create({ id, agentName, userEmail: "integration@example.com",
           filename: "sample.mp3", mimeType: "audio/mpeg", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
           revision: 1, status: "pending", createdAt: now, retireAt: now });
         const competing = await Promise.all([
@@ -1438,16 +1456,16 @@ async function main() {
           files.finish(pending, { storedAt: now, retireAt: now, checksum: "sha256", byteSize: 3 }),
         ]);
         assert.equal(competing.filter(Boolean).length, 1);
-        assert.equal(await files.get(`${projectName}-other`, id), null);
-        const ready = (await files.get(projectName, id))!;
+        assert.equal(await files.get(`${agentName}-other`, id), null);
+        const ready = (await files.get(agentName, id))!;
         assert.equal(ready.status, "ready");
         const deleting = await files.markDeleting(ready, now);
         assert.ok(deleting);
         assert.equal(await files.finish(pending, { storedAt: now, retireAt: now, checksum: "late", byteSize: 3 }), null);
         assert.equal(await files.markDeleted(deleting, now), true);
-        assert.equal((await files.get(projectName, id))?.status, "deleted");
+        assert.equal((await files.get(agentName, id))?.status, "deleted");
         assert.equal((await files.expired(now, 100)).some((file) => file.id === id), false);
-        pass("source inventory: atomic completion, project isolation and deletion fencing");
+        pass("source inventory: atomic completion, agent isolation and deletion fencing");
       } finally {
         await deleteItem(dbKeys.sourceFile(id));
       }
@@ -1460,7 +1478,7 @@ async function main() {
       const { deleteItem } = await import("@/infrastructure/db/store");
       const id = `source-artifact-${suffix}`;
       try {
-        const pending = await files.create({ id, projectName, userEmail: "integration@example.com",
+        const pending = await files.create({ id, agentName, userEmail: "integration@example.com",
           filename: "sample.mp3", mimeType: "audio/mpeg", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
           revision: 1, status: "pending", createdAt: now, retireAt: now });
         const ready = await files.finish(pending, { storedAt: now,
@@ -1487,7 +1505,7 @@ async function main() {
     {
       const { audioJobRepository: jobs } = await import("@/infrastructure/db/repositories/audioJobRepository");
       const input = {
-        projectName, userEmail: "integration@example.com", source: { kind: "file" as const, fileId: "audio-file" },
+        agentName, userEmail: "integration@example.com", source: { kind: "file" as const, fileId: "audio-file" },
         sourceKey: "integration-source", model: "selfhosted/asr",
         retention: { unit: "months" as const, value: 3, timezone: "Asia/Seoul" },
       };
@@ -1503,12 +1521,12 @@ async function main() {
       const reclaimedAt = new Date(Date.parse(now) + 180_000).toISOString();
       const nextUntil = new Date(Date.parse(now) + 300_000).toISOString();
       const claims = await Promise.all([
-        jobs.claim(projectName, job.id, now, "worker-a", leaseUntil),
-        jobs.claim(projectName, job.id, now, "worker-b", leaseUntil),
+        jobs.claim(agentName, job.id, now, "worker-a", leaseUntil),
+        jobs.claim(agentName, job.id, now, "worker-b", leaseUntil),
       ]);
       assert.equal(claims.filter(Boolean).length, 1);
       const first = claims.find((value) => value !== null)!;
-      const second = await jobs.claim(projectName, job.id, reclaimedAt, "worker-c", nextUntil);
+      const second = await jobs.claim(agentName, job.id, reclaimedAt, "worker-c", nextUntil);
       assert.ok(second);
       assert.equal(await jobs.checkpoint(first, {
         status: "completed", stage: "storing", dueAt: reclaimedAt,
@@ -1522,24 +1540,24 @@ async function main() {
       const next = await jobs.submit({ ...input, sourceKey: "other-source" }, {
         id: "audio-next", now: reclaimedAt, occurrence: "next-hour", maxActive: 1, maxPerOccurrence: 1,
       });
-      assert.equal(next.status, "accepted", "terminal job releases its durable project slot");
-      assert.equal(await jobs.cancel(projectName, "audio-next", 1, reclaimedAt), true);
+      assert.equal(next.status, "accepted", "terminal job releases its durable agent slot");
+      assert.equal(await jobs.cancel(agentName, "audio-next", 1, reclaimedAt), true);
       pass("audio jobs: concurrent admission, lease fencing, durable dedup and slot release");
 
       const queued = await Promise.all(Array.from({ length: 3 }, (_, index) => jobs.submit({ ...input, sourceKey: `queued-source-${index}` }, {
         id: `queued-audio-${index}`, now, occurrence: "queued-hour", maxActive: 3, maxPerOccurrence: 3,
       })));
       assert.equal(queued.filter((result) => result.status === "accepted").length, 3);
-      const queue = await getItem(dbKeys.audioJobSlots(projectName));
+      const queue = await getItem(dbKeys.audioJobSlots(agentName));
       const order = queue!.jobIds as string[];
       for (const id of order) {
-        const competing = await Promise.all(order.map((candidate) => jobs.claim(projectName, candidate, now, `worker-${candidate}`, leaseUntil)));
+        const competing = await Promise.all(order.map((candidate) => jobs.claim(agentName, candidate, now, `worker-${candidate}`, leaseUntil)));
         const claimed = competing.filter((job) => job !== null);
-        assert.equal(claimed.length, 1, "only the project queue head can be claimed across workers");
+        assert.equal(claimed.length, 1, "only the agent queue head can be claimed across workers");
         assert.equal(claimed[0]!.id, id, "execution follows transactional admission order");
         assert.ok(await jobs.checkpoint(claimed[0]!, { status: "completed", stage: "cleaning", dueAt: now }, now));
       }
-      assert.deepEqual((await getItem(dbKeys.audioJobSlots(projectName)))!.jobIds, []);
+      assert.deepEqual((await getItem(dbKeys.audioJobSlots(agentName)))!.jobIds, []);
     pass("audio jobs: concurrent queue admission and serial FIFO processing across workers");
     }
 
@@ -1595,20 +1613,20 @@ async function main() {
     pass("concurrency slots: exact limit, owned renewal, release and lease reclaim");
 
     // ---------- Agent: collected completion ----------
-    const runResult = await executeProject(executionDeps, {
-      project,
+    const runResult = await collectAgentRun(executionDeps, {
+      agent,
       configuration,
       messages: [{ role: "user", content: "Hello world" }],
     });
-    assert.equal(runResult.content, "streamed answer", "executeProject content");
-    assert.ok(runResult.usage.inputTokens > 0, "executeProject usage recorded");
-    pass("executeProject collected Agent via mock LLM");
+    assert.equal(runResult.content, "streamed answer", "collectAgentRun content");
+    assert.ok(runResult.usage.inputTokens > 0, "collectAgentRun usage recorded");
+    pass("collectAgentRun collected Agent via mock LLM");
 
     // ---------- engine: agent loop with Skill tool ----------
     const chunks: Array<{ delta?: { content?: string }; toolResult?: unknown; error?: string }> =
       [];
     for await (const chunk of executeAgent(executionDeps, {
-      project,
+      agent,
       configuration,
       messages: [{ role: "user", content: "use your skill" }],
       actor: { kind: "user", id: "it@example.com" },
@@ -1632,7 +1650,7 @@ async function main() {
       const sessionId = `integration-session-${suffix}`;
       const owner = "it@example.com";
       const approvalConfiguration = { ...configuration, parameters: { ...configuration.parameters, policy: { approvalTools: ["Skill"] } } };
-      const base = { project, configuration: approvalConfiguration, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
+      const base = { agent, configuration: approvalConfiguration, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
       const first = [];
       for await (const chunk of executeAgent(executionDeps, { ...base, messages: [{ role: "user", content: "use your skill" }] })) first.push(chunk);
       assert.ok(first.some((chunk) => chunk.approval), "approval is persisted before notifying the client");
@@ -1652,26 +1670,26 @@ async function main() {
     }
 
     // ---------- cascade delete ----------
-    await projectRepository.delete(projectName);
-    assert.equal(await projectRepository.get(projectName), null, "project deleted");
+    await agentRepository.delete(agentName);
+    assert.equal(await agentRepository.get(agentName), null, "agent deleted");
     await assert.rejects(
-      () => projectRepository.create(project),
-      "a deleted project name remains reserved by its tombstone",
+      () => agentRepository.create(agent),
+      "a deleted agent name remains reserved by its tombstone",
     );
-    assert.equal(await workspacePolicyRepository.get(projectName), null, "Workspace policy deleted");
-    assert.equal(await workspaceRepositoryCreationStore.get(projectName, repositoryRequest.repository), null, "Repository creation receipt deleted");
-    await assert.rejects(workspacePolicyRepository.put(workspacePolicy, null), "deleted project cannot regain Workspace access");
+    assert.equal(await workspacePolicyRepository.get(agentName), null, "Workspace policy deleted");
+    assert.equal(await workspaceRepositoryCreationStore.get(agentName, repositoryRequest.repository), null, "Repository creation receipt deleted");
+    await assert.rejects(workspacePolicyRepository.put(workspacePolicy, null), "deleted agent cannot regain Workspace access");
     assert.equal(
-      (await usageRepository.listByProject(projectName, today, today)).length,
+      (await usageRepository.listByAgent(agentName, today, today)).length,
       0,
       "usage rows deleted",
     );
     assert.equal(
-      (await transcriptRepository.recent(projectName, `telegram:${suffix}`, 5)).length,
+      (await transcriptRepository.recent(agentName, `telegram:${suffix}`, 5)).length,
       0,
-      "transcript turns deleted with the project",
+      "transcript turns deleted with the agent",
     );
-    pass("project cascade delete (name tombstone + settings + usage + transcript)");
+    pass("agent cascade delete (name tombstone + settings + usage + transcript)");
   } finally {
     // cleanup non-cascading fixtures
     await skillRepository.delete("integration-skill").catch(() => {});
@@ -1703,7 +1721,7 @@ async function main() {
         );
       }
       for (const fixture of memberDayFixtures) {
-        await deleteItem(keys.usageMember(fixture.email, fixture.date, fixture.project)).catch(
+        await deleteItem(keys.usageMember(fixture.email, fixture.date, fixture.agent)).catch(
           () => {},
         );
       }

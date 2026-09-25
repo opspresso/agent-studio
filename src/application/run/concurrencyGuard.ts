@@ -20,7 +20,7 @@ import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
 
 export interface ConcurrencyLimits {
-  /** Per identified caller — a person, or a project token acting for one. */
+  /** Per identified caller — a person, or an agent token acting for one. */
   perActor: number;
 }
 
@@ -64,7 +64,7 @@ const UNLIMITED: AcquiredSlot = { release: async () => {} };
  * opens. This one protects the platform itself, and opening it when the store
  * is failing adds load at exactly the moment the store cannot take it. A 429
  * with a short `Retry-After` is also a better answer than the 500 the run would
- * have produced anyway — every run reads its project and Agent from the same
+ * have produced anyway — every run reads its agent and Agent from the same
  * table, so a store that cannot answer here was about to fail the run regardless.
  */
 export async function acquireRunSlot(
@@ -80,7 +80,7 @@ export async function acquireRunSlot(
   }
   // A tier's own ceiling wins over the deployment-wide number; a tier without
   // one inherits it. Only a `user` actor ever arrives with a tier — the
-  // bracket's resolver answers `undefined` for machine callers and project
+  // bracket's resolver answers `undefined` for machine callers and agent
   // tokens alike, so a token stays a service credential bounded by the env number.
   const tierLimit = tier ? TIER_LIMITS[tier].maxConcurrentRuns : undefined;
   const limit = tierLimit ?? (typeof deps.limits === "function" ? await deps.limits() : deps.limits).perActor;

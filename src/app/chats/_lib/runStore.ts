@@ -117,7 +117,7 @@ export interface RunStore {
    */
   startTurn(chatId: string, pending: PendingUser): string | null;
   /** Start a chat. Returns a placeholder key, aliased to the chat id once it exists. */
-  startNewChat(projectName: string, pending: PendingUser): string;
+  startNewChat(agentName: string, pending: PendingUser): string;
   /** Pick up a run this tab did not start — a reload, or a second window. */
   attach(chatId: string, runId: string): void;
   /** A view has shown this turn and taken what it needs; free the bytes. */
@@ -621,7 +621,7 @@ export function createRunStore(): RunStore {
       return chatId;
     },
 
-    startNewChat(projectName, pending) {
+    startNewChat(agentName, pending) {
       const key = `new:${nextPlaceholder++}`;
       create(key, { pendingUser: pending });
       void pump(key, (signal) =>
@@ -629,7 +629,7 @@ export function createRunStore(): RunStore {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            projectName,
+            agentName,
             firstMessage: pending.content,
             images: toRequestImages(pending.attachments),
             documents: pending.documents,

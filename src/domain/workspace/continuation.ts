@@ -4,7 +4,7 @@ export interface WorkspaceContinuation {
   approvalId: string;
   chatId: string;
   ownerEmail: string;
-  projectName: string;
+  agentName: string;
   revision: number;
   status: "pending" | "waiting-ci" | "running" | "completed" | "failed" | "cancelled";
   /** A second event observes checks; it never replays the completed Git action. */

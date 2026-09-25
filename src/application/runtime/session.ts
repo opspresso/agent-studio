@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import type { RuntimeSessionRepository, RuntimeSessionRow, RuntimeApproval, RuntimeApprovalDecision } from "@/domain/execution/runtimeSession";
 import { CONTEXT_ENCRYPTED_PREFIX, type SecretCipher } from "@/domain/security/secretCipher";
 import { runtimeSessionContext } from "@/domain/security/secretContext";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import { ConflictError, ValidationError } from "@/application/errors";
 import { PiiFilter } from "@/application/llm/pii";
 import { maskValues, restoreValues } from "./messages";
@@ -105,11 +105,11 @@ function boundedHistory(items: AgentInputItem[]): { items: AgentInputItem[]; dro
 
 export async function openRuntimeSession(
   services: RuntimeSessionServices,
-  scope: { sessionId: string; ownerEmail: string; projectName: string; configuration: AgentConfiguration },
+  scope: { sessionId: string; ownerEmail: string; agentName: string; configuration: AgentConfiguration },
   resume?: { revision: number; decisions: RuntimeApprovalDecision[] },
 ): Promise<RuntimeTurnPersistence> {
   const saved = await readRuntimeSession(services, scope.sessionId, scope.ownerEmail);
-  if (saved && saved.row.projectName !== scope.projectName) throw new ConflictError("Runtime session belongs to another project");
+  if (saved && saved.row.agentName !== scope.agentName) throw new ConflictError("Runtime session belongs to another agent");
   let revision = saved?.row.revision ?? null;
   const document: SessionDocument = saved?.document ?? { format: 1, items: [] };
   const checkpoint = document.checkpoint;
@@ -129,7 +129,7 @@ export async function openRuntimeSession(
   if (!document.images) for (const image of media.images) images.add(image, "from the conversation");
   const write = async (next: SessionDocument) => {
     const payload = await encode(next, services, scope.sessionId, scope.ownerEmail);
-    const nextRevision = await services.repository.save({ sessionId: scope.sessionId, ownerEmail: scope.ownerEmail, projectName: scope.projectName, payload, expiresAt: new Date(Date.now() + services.retentionDays * MS_PER_DAY).toISOString() }, revision);
+    const nextRevision = await services.repository.save({ sessionId: scope.sessionId, ownerEmail: scope.ownerEmail, agentName: scope.agentName, payload, expiresAt: new Date(Date.now() + services.retentionDays * MS_PER_DAY).toISOString() }, revision);
     if (nextRevision === null) throw new ConflictError("Runtime session was changed by another run");
     revision = nextRevision;
   };
@@ -174,7 +174,7 @@ export async function discardRuntimeCheckpoint(services: RuntimeSessionServices,
   const saved = await readRuntimeSession(services, sessionId, ownerEmail);
   if (!saved || saved.row.revision !== revision || !saved.document.checkpoint) throw new ConflictError("This approval is no longer pending");
   const checkpoint = saved.document.checkpoint;
-  const images = checkpoint.graph.agents[`root/${saved.row.projectName}`]?.images.filter((image) => checkpoint.previousImageIds?.includes(image.id));
+  const images = checkpoint.graph.agents[`root/${saved.row.agentName}`]?.images.filter((image) => checkpoint.previousImageIds?.includes(image.id));
   const next: SessionDocument = { format: 1, items: saved.document.items.slice(0, checkpoint.previousItemCount), images, nextImageId: saved.document.nextImageId };
   const { payload: _old, revision: _revision, ...row } = saved.row;
   void _old; void _revision;

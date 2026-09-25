@@ -7,9 +7,9 @@ function types(language: HighlightLanguage, code: string): Set<TokenType> {
 
 describe("tokenize — lossless", () => {
   const samples: Array<[HighlightLanguage, string]> = [
-    ["bash", `curl -X POST 'https://x/y' \\\n  -H 'Authorization: Bearer $PROJECT_API_TOKEN'`],
-    ["python", `from openai import OpenAI  # comment\nclient = OpenAI(api_key="$PROJECT_API_TOKEN")`],
-    ["javascript", `import OpenAI from "openai";\nconst c = new OpenAI({ apiKey: "$PROJECT_API_TOKEN" });`],
+    ["bash", `curl -X POST 'https://x/y' \\\n  -H 'Authorization: Bearer $AGENT_API_TOKEN'`],
+    ["python", `from openai import OpenAI  # comment\nclient = OpenAI(api_key="$AGENT_API_TOKEN")`],
+    ["javascript", `import OpenAI from "openai";\nconst c = new OpenAI({ apiKey: "$AGENT_API_TOKEN" });`],
     ["json", `{\n  "model": "openai/gpt-5-mini",\n  "usage": { "costUsd": 0.0001, "ok": true }\n}`],
   ];
 
@@ -25,11 +25,11 @@ describe("tokenize — lossless", () => {
 
 describe("tokenize — classification", () => {
   it("bash: curl keyword, quoted string, and $placeholder inside the string", () => {
-    const tokens = tokenize("bash", `curl -H 'Authorization: Bearer $PROJECT_API_TOKEN'`);
+    const tokens = tokenize("bash", `curl -H 'Authorization: Bearer $AGENT_API_TOKEN'`);
     expect(tokens.some((t) => t.type === "keyword" && t.value === "curl")).toBe(true);
     expect(tokens.some((t) => t.type === "string")).toBe(true);
     // The placeholder inside the quoted string is split out as a variable.
-    expect(tokens.some((t) => t.type === "variable" && t.value === "$PROJECT_API_TOKEN")).toBe(true);
+    expect(tokens.some((t) => t.type === "variable" && t.value === "$AGENT_API_TOKEN")).toBe(true);
   });
 
   it("python: keywords, comment, and function call", () => {

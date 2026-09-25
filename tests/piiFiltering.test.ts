@@ -289,7 +289,7 @@ describe("PiiFilter", () => {
       { channel },
       {
         model: "test/model",
-        projectName: "test", messages: [{ role: "user", content: input }],
+        agentName: "test", messages: [{ role: "user", content: input }],
         parameters: { piiFiltering: true },
       },
     ));
@@ -309,7 +309,7 @@ describe("PiiFilter", () => {
         { channel },
         {
           model: "test/model",
-          projectName: "test", messages: [{ role: "user", content: input }],
+          agentName: "test", messages: [{ role: "user", content: input }],
           parameters: { piiFiltering: true },
         },
       ),
@@ -326,7 +326,7 @@ describe("PiiFilter", () => {
       runAgent(
         { createToolSchemaValidator, channel },
         {
-          projectName: "test",
+          agentName: "test",
           model: "test/model",
           messages: [{ role: "user", content: input }],
           parameters: { piiFiltering: true },
@@ -363,7 +363,7 @@ describe("PiiFilter", () => {
         },
       },
       {
-        projectName: "image-agent",
+        agentName: "image-agent",
         model: "test/model",
         messages: [{ role: "user", content: input }],
         parameters: { piiFiltering: true },
@@ -391,7 +391,7 @@ describe("PiiFilter", () => {
         },
       },
       {
-        projectName: "image-agent",
+        agentName: "image-agent",
         model: "test/model",
         messages: [{ role: "user", content: input }],
         parameters: { piiFiltering: true },
@@ -416,7 +416,7 @@ describe("PiiFilter", () => {
       { channel },
       {
         model: "test/model",
-        projectName: "test", messages: [{ role: "user", content: "email@example.com" }],
+        agentName: "test", messages: [{ role: "user", content: "email@example.com" }],
         parameters: { piiFiltering: true },
       },
     )) {
@@ -436,7 +436,7 @@ describe("PiiFilter", () => {
         { channel },
         {
           model: "test/model",
-          projectName: "test", messages: [{ role: "user", content: input }],
+          agentName: "test", messages: [{ role: "user", content: input }],
           parameters: { piiFiltering: false },
         },
       ),

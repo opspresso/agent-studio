@@ -6,24 +6,24 @@ import { BotIntegrationSection } from "./BotIntegrationSection";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import {
-  disconnectProjectTeams,
-  getProjectTeams,
-  testProjectTeams,
-  updateProjectTeams,
+  disconnectAgentTeams,
+  getAgentTeams,
+  testAgentTeams,
+  updateAgentTeams,
 } from "../../lib/api";
-import type { ProjectTeamsResponse } from "../../lib/api";
+import type { AgentTeamsResponse } from "../../lib/api";
 import { Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
 
 export function TeamsSection({
-  projectName,
+  agentName,
 }: {
-  projectName: string;
+  agentName: string;
 }) {
   const t = useT();
-  const [view, setView] = useState<ProjectTeamsResponse | null>(null);
+  const [view, setView] = useState<AgentTeamsResponse | null>(null);
   const [appId, setAppId] = useState("");
   const [appPassword, setAppPassword] = useState("");
   const [tenantId, setTenantId] = useState("");
@@ -38,7 +38,7 @@ export function TeamsSection({
     let cancelled = false;
     setView(null);
     setError(null);
-    getProjectTeams(projectName)
+    getAgentTeams(agentName)
       .then((v) => {
         if (!cancelled) {
           setView(v);
@@ -52,7 +52,7 @@ export function TeamsSection({
     return () => {
       cancelled = true;
     };
-  }, [projectName, reloadKey]);
+  }, [agentName, reloadKey]);
 
   if (!view) {
     return <BotIntegrationSection title={t("pset.teamsBot")} view={null} error={error}
@@ -64,7 +64,7 @@ export function TeamsSection({
     setStatus(null);
     setError(null);
     try {
-      const next = await updateProjectTeams(projectName, { appId, appPassword, tenantId, enabled });
+      const next = await updateAgentTeams(agentName, { appId, appPassword, tenantId, enabled });
       setView(next);
       setAppId(next.appId);
       setAppPassword(next.appPassword);
@@ -83,7 +83,7 @@ export function TeamsSection({
     setStatus(null);
     setError(null);
     try {
-      const result = await testProjectTeams(projectName);
+      const result = await testAgentTeams(agentName);
       setStatus(`Connected: token issued for ${result.appId}`);
     } catch (e) {
       setError(reportError(e, "Connection test failed"));
@@ -96,7 +96,7 @@ export function TeamsSection({
     if (
       !(await confirm({
         title: "Remove Teams credentials",
-        message: "Remove the Teams bot registration for this project? The Azure Bot itself is untouched.",
+        message: "Remove the Teams bot registration for this agent? The Azure Bot itself is untouched.",
         confirmLabel: "Remove",
       }))
     ) {
@@ -104,8 +104,8 @@ export function TeamsSection({
     }
     setBusy(true);
     try {
-      await disconnectProjectTeams(projectName);
-      const next = await getProjectTeams(projectName);
+      await disconnectAgentTeams(agentName);
+      const next = await getAgentTeams(agentName);
       setView(next);
       setAppId("");
       setAppPassword("");

@@ -35,6 +35,6 @@ export function withTraceExport(
       }
     },
     get: (traceId) => repository.get(traceId),
-    listByProject: (projectName, options) => repository.listByProject(projectName, options),
+    listByAgent: (agentName, options) => repository.listByAgent(agentName, options),
   };
 }

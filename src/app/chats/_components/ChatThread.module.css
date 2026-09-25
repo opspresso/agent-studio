@@ -20,7 +20,7 @@
   padding: clamp(20px, 4vh, 48px) var(--mantine-spacing-lg);
 }
 
-.projectDescription {
+.agentDescription {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   max-height: 8rem;

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ActiveChatRun, Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ChatRunLogRepository, RunLogEntry } from "@/domain/chat/runLog";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { AgentRepository } from "@/domain/agent/repository";
 import type { ChatDeps } from "@/application/chat/deps";
 import { openRunLogReplay } from "@/application/chat/replayRunLog";
 import { getChat } from "@/application/chat/getChat";
@@ -16,7 +16,7 @@ const CHAT: Chat = {
   chatId: "c1",
   title: "t",
   ownerEmail: "owner@x.com",
-  projectName: "p1",
+  agentName: "p1",
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -76,7 +76,7 @@ function makeDeps(options: {
     deps: {
       chats,
       runLog,
-      projects: {} as ProjectRepository,
+      agents: {} as AgentRepository,
       runAgent: () => (async function* () {})(),
       documents: { extract: async () => ({ text: "" }) },
     },

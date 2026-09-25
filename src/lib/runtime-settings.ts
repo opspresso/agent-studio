@@ -142,7 +142,7 @@ export async function getAdminEmails(): Promise<string[]> {
  * an empty list is a safe "no restriction" for a shared registry, but it must
  * never read as "everyone is an admin" where admin is an override on someone
  * else's ownership — on a deployment that never set `ADMIN_EMAILS` that would
- * silently hand every signed-in user write access to every project. With no
+ * silently hand every signed-in user write access to every agent. With no
  * list configured there are no admins, and ownership stands on its own.
  */
 export async function isConfiguredAdmin(email: string): Promise<boolean> {
@@ -361,7 +361,7 @@ export async function getUnknownModelPolicySelection(): Promise<{
   return { value: toUnknownModelPolicy(env), source: env === undefined ? "default" : "env" };
 }
 
-/** Docker compute infrastructure is deployment-owned; project and model settings are stored separately. */
+/** Docker compute infrastructure is deployment-owned; agent and model settings are stored separately. */
 export function getWorkspaceConfig() { return config.workspace; }
 export async function getWorkspaceRuntimeConfig(kind: WorkspaceRuntime) {
   if (kind === "command") return {};

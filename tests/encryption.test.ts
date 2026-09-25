@@ -42,13 +42,13 @@ describe("header encryption round-trip", () => {
 
   it("binds a v2 ciphertext to its storage context while still reading v1", () => {
     const legacy = encryptSecret("legacy-secret");
-    const bound = encryptSecret("bound-secret", "project:alpha:token");
+    const bound = encryptSecret("bound-secret", "agent:alpha:token");
 
     expect(legacy.startsWith("enc:v1:")).toBe(true);
     expect(bound.startsWith("enc:v2:")).toBe(true);
-    expect(decryptSecret(legacy, "project:alpha:token")).toBe("legacy-secret");
-    expect(decryptSecret(bound, "project:alpha:token")).toBe("bound-secret");
-    expect(() => decryptSecret(bound, "project:beta:token")).toThrow();
+    expect(decryptSecret(legacy, "agent:alpha:token")).toBe("legacy-secret");
+    expect(decryptSecret(bound, "agent:alpha:token")).toBe("bound-secret");
+    expect(() => decryptSecret(bound, "agent:beta:token")).toThrow();
     expect(() => decryptSecret(bound)).toThrow("requires its encryption context");
   });
 
@@ -196,7 +196,7 @@ describe("partial-reveal masking tiers", () => {
 describe("MCP header overrides", () => {
   it("encrypts values but carries the null delete marker through untouched", () => {
     const encrypted = encryptHeaderOverrides({
-      Authorization: "Bearer project-token",
+      Authorization: "Bearer agent-token",
       "X-Drop-Me": null,
     });
     expect(isEncrypted(encrypted.Authorization as string)).toBe(true);
@@ -311,13 +311,13 @@ describe("mergeOutboundHeaders", () => {
     const merged = mergeOutboundHeaders(
       registry,
       encryptHeaderOverrides({
-        Authorization: "Bearer project-token",
+        Authorization: "Bearer agent-token",
         "X-Tenant": "acme",
         "X-Shared": null,
       }),
     );
     expect(merged).toEqual({
-      Authorization: "Bearer project-token",
+      Authorization: "Bearer agent-token",
       "X-Tenant": "acme",
     });
   });
@@ -340,7 +340,7 @@ describe("mergeOutboundHeaders", () => {
     // server. Skipping leaves the registry's own header standing, which is what
     // "no override" means.
     const merged = mergeOutboundHeaders(registry, {
-      Authorization: maskSecret("Bearer project-token"),
+      Authorization: maskSecret("Bearer agent-token"),
       "X-Tenant": maskSecret("sample-agent"),
     });
 
@@ -353,7 +353,7 @@ describe("mergeOutboundHeaders", () => {
 
   it("still honours an explicit removal alongside a masked override", () => {
     const merged = mergeOutboundHeaders(registry, {
-      Authorization: maskSecret("Bearer project-token"),
+      Authorization: maskSecret("Bearer agent-token"),
       "X-Shared": null,
     });
     // A mask leaves the default alone; `null` is a decision, not an artifact.

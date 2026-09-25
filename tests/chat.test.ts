@@ -1,11 +1,11 @@
-import { withConfigurations } from "./projectConfigurations";
+import { withConfigurations } from "./agentConfigurations";
 import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { describe, expect, it, vi } from "vitest";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ChatRunLogRepository, RunLogEntry } from "@/domain/chat/runLog";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { AgentRepository } from "@/domain/agent/repository";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { AgentRunner, ChatDeps } from "@/application/chat/deps";
 import { titleFromMessage } from "@/application/chat/title";
@@ -31,7 +31,7 @@ function chatFixture(ownerEmail: string): Chat {
     chatId: "c1",
     title: "t",
     ownerEmail,
-    projectName: "p1",
+    agentName: "p1",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
@@ -120,7 +120,7 @@ function makeChatRepo(initial: Chat | null, messages: ChatMessage[] = []) {
   return { repo, state };
 }
 
-const emptyProjects: ProjectRepository = {
+const emptyAgents: AgentRepository = {
   async get() {
     return null;
   },
@@ -199,7 +199,7 @@ function fakeArtifacts(over: { putFails?: boolean } = {}) {
       async get() {
         return null;
       },
-      async listByProject() {
+      async listByAgent() {
         return [];
       },
       async listByOwner() {
@@ -223,7 +223,7 @@ function makeDeps(repo: ChatRepository, overrides: Partial<ChatDeps> = {}): Chat
   return {
     chats: repo,
     runLog: makeRunLog().repo,
-    projects: withConfigurations(emptyProjects, (emptyConfigurations).get),
+    agents: withConfigurations(emptyAgents, (emptyConfigurations).get),
 
     runAgent: () => emptyAgent(),
     // Extraction has its own tests; here it only has to turn bytes into text so
@@ -788,7 +788,7 @@ describe("ownership checks", () => {
     expect(state.deleted).toBe(true);
   });
 
-  it("sendMessage answers a non-owner with 404 before touching the project", async () => {
+  it("sendMessage answers a non-owner with 404 before touching the agent", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     await expect(
       sendMessage(makeDeps(repo), { chatId: "c1", content: "hey", userEmail: "intruder@x.com" }),
@@ -801,9 +801,9 @@ describe("ownership checks", () => {
   });
 });
 
-describe("chat access to a private project", () => {
-  const privateProjects: ProjectRepository = {
-    ...emptyProjects,
+describe("chat access to a private agent", () => {
+  const privateAgents: AgentRepository = {
+    ...emptyAgents,
     async get() {
       return {
         name: "p1",
@@ -819,21 +819,21 @@ describe("chat access to a private project", () => {
     },
   };
 
-  it("refuses to create a chat for someone the project keeps out", async () => {
+  it("refuses to create a chat for someone the agent keeps out", async () => {
     const { repo } = makeChatRepo(null);
     await expect(
-      createChat(makeDeps(repo, { projects: privateProjects }), {
-        projectName: "p1",
+      createChat(makeDeps(repo, { agents: privateAgents }), {
+        agentName: "p1",
         firstMessage: "hi",
         userEmail: "owner@x.com",
       }),
     ).rejects.toBeInstanceOf(ChatForbiddenError);
   });
 
-  it("refuses the next turn of a chat whose project went private", async () => {
+  it("refuses the next turn of a chat whose agent went private", async () => {
     const { repo, state } = makeChatRepo(chatFixture("owner@x.com"));
     await expect(
-      sendMessage(makeDeps(repo, { projects: privateProjects }), {
+      sendMessage(makeDeps(repo, { agents: privateAgents }), {
         chatId: "c1",
         content: "hey",
         userEmail: "owner@x.com",
@@ -843,12 +843,12 @@ describe("chat access to a private project", () => {
     expect(state.activeRunId).toBeUndefined();
   });
 
-  it("lets an invited member chat with a private project", async () => {
+  it("lets an invited member chat with a private agent", async () => {
     const { repo } = makeChatRepo(chatFixture("invited@x.com"));
     // Access passes; the missing configuration is the next check in line, which is
     // proof the visibility gate is what let the turn through.
     await expect(
-      sendMessage(makeDeps(repo, { projects: privateProjects }), {
+      sendMessage(makeDeps(repo, { agents: privateAgents }), {
         chatId: "c1",
         content: "hey",
         userEmail: "invited@x.com",
@@ -860,8 +860,8 @@ describe("chat access to a private project", () => {
 describe("chat image attachments", () => {
   const PNG = { b64: "YXR0YWNoZWQ=", mimeType: "image/png" };
 
-  const agentProjects: ProjectRepository = {
-    ...emptyProjects,
+  const availableAgents: AgentRepository = {
+    ...emptyAgents,
     async get() {
       return {
         name: "p1",
@@ -878,7 +878,7 @@ describe("chat image attachments", () => {
     ...emptyConfigurations,
     async get() {
       return {
-        projectName: "p1",
+        agentName: "p1",
 
         systemPrompt: "",
 
@@ -897,19 +897,19 @@ describe("chat image attachments", () => {
     const { storage } = fakeArtifacts();
     const put = vi.spyOn(storage.rows, "put");
     const deps = makeDeps(repo, {
-      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+      agents: withConfigurations(availableAgents, (savedConfigurations).get),
 
       artifacts: storage,
     });
     const result = action === "create"
-      ? await createChat(deps, { projectName: "p1", firstMessage: "look", images: [PNG], userEmail })
+      ? await createChat(deps, { agentName: "p1", firstMessage: "look", images: [PNG], userEmail })
       : await sendMessage(deps, { chatId: "c1", content: "look", images: [PNG], userEmail });
     for await (const _chunk of result.stream) {
       // Finish the run and release its lease.
     }
     expect(put).toHaveBeenCalledWith(expect.objectContaining({
       source: "attachment",
-      projectName: "p1",
+      agentName: "p1",
       actor: { kind: "user", id: userEmail },
     }));
   });
@@ -928,7 +928,7 @@ describe("chat image attachments", () => {
     };
 
     await expect(
-      sendMessage(makeDeps(repo, { projects: withConfigurations(agentProjects, (savedConfigurations).get) }), {
+      sendMessage(makeDeps(repo, { agents: withConfigurations(availableAgents, (savedConfigurations).get) }), {
         chatId: "c1",
         content: "hey",
         userEmail: "owner@x.com",
@@ -945,7 +945,7 @@ describe("chat image attachments", () => {
     };
 
     await expect(
-      sendMessage(makeDeps(repo, { projects: withConfigurations(agentProjects, (savedConfigurations).get) }), {
+      sendMessage(makeDeps(repo, { agents: withConfigurations(availableAgents, (savedConfigurations).get) }), {
         chatId: "c1",
         content: "hey",
         userEmail: "owner@x.com",
@@ -964,7 +964,7 @@ describe("chat image attachments", () => {
     const artifacts = fakeArtifacts();
     const runAgent = vi.fn<AgentRunner>(() => emptyAgent());
     const { stream } = await sendMessage(makeDeps(repo, {
-      projects: withConfigurations(agentProjects, (savedConfigurations).get),  artifacts: artifacts.storage, runAgent,
+      agents: withConfigurations(availableAgents, (savedConfigurations).get),  artifacts: artifacts.storage, runAgent,
     }), { chatId: "c1", content: "edit the previous image", userEmail: "owner@x.com" });
     for await (const _ of stream) { /* drain persistence */ }
 
@@ -981,7 +981,7 @@ describe("chat image attachments", () => {
       return emptyAgent();
     };
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
-    const deps = makeDeps(repo, { projects: withConfigurations(agentProjects, (savedConfigurations).get),  runAgent });
+    const deps = makeDeps(repo, { agents: withConfigurations(availableAgents, (savedConfigurations).get),  runAgent });
     const { stream } = await sendMessage(deps, {
       chatId: "c1",
       content: "and now?",
@@ -998,7 +998,7 @@ describe("chat image attachments", () => {
     const seenMessages: unknown[] = [];
     const attachmentStore = fakeArtifacts();
     const deps = makeDeps(repo, {
-      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+      agents: withConfigurations(availableAgents, (savedConfigurations).get),
 
       artifacts: attachmentStore.storage,
       runAgent: (params) => {
@@ -1039,7 +1039,7 @@ describe("chat image attachments", () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const seenMessages: unknown[] = [];
     const deps = makeDeps(repo, {
-      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+      agents: withConfigurations(availableAgents, (savedConfigurations).get),
 
       runAgent: (params) => {
         seenMessages.push(...params.messages);
@@ -1092,10 +1092,10 @@ describe("chat request schemas", () => {
     ).toBe(false);
   });
 
-  it("requires a project and something to say when creating a chat", () => {
-    expect(createChatSchema.safeParse({ projectName: "p1", images: [image] }).success).toBe(true);
-    expect(createChatSchema.safeParse({ projectName: "p1", firstMessage: "hi" }).success).toBe(true);
-    expect(createChatSchema.safeParse({ projectName: "p1" }).success).toBe(false);
+  it("requires an agent and something to say when creating a chat", () => {
+    expect(createChatSchema.safeParse({ agentName: "p1", images: [image] }).success).toBe(true);
+    expect(createChatSchema.safeParse({ agentName: "p1", firstMessage: "hi" }).success).toBe(true);
+    expect(createChatSchema.safeParse({ agentName: "p1" }).success).toBe(false);
     expect(createChatSchema.safeParse({ firstMessage: "hi" }).success).toBe(false);
   });
 });
@@ -1362,8 +1362,8 @@ describe("run stream frames", () => {
  * and then fail "what does section 3 say?".
  */
 describe("attached documents", () => {
-  const agentProjects: ProjectRepository = {
-    ...emptyProjects,
+  const availableAgents: AgentRepository = {
+    ...emptyAgents,
     async get() {
       return {
         name: "agent",
@@ -1380,7 +1380,7 @@ describe("attached documents", () => {
     ...emptyConfigurations,
     async get() {
       return {
-        projectName: "agent",
+        agentName: "agent",
 
         systemPrompt: "",
 
@@ -1397,7 +1397,7 @@ describe("attached documents", () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const seenMessages: unknown[] = [];
     const deps = makeDeps(repo, {
-      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+      agents: withConfigurations(availableAgents, (savedConfigurations).get),
 
       runAgent: (params) => {
         seenMessages.push(...params.messages);
@@ -1442,7 +1442,7 @@ describe("attached documents", () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const extract = vi.fn(async () => ({ text: "| Quarter | Revenue |\n| --- | --- |\n| Q3 | 12 |" }));
     const deps = makeDeps(repo, {
-      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+      agents: withConfigurations(availableAgents, (savedConfigurations).get),
 
       documents: { extract },
     });
@@ -1467,13 +1467,13 @@ describe("attached documents", () => {
     const { repo } = makeChatRepo(null);
     const extract = vi.fn(async () => ({ text: "revenue rose" }));
     const deps = makeDeps(repo, {
-      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+      agents: withConfigurations(availableAgents, (savedConfigurations).get),
 
       documents: { extract },
     });
 
     const { stream } = await createChat(deps, {
-      projectName: "agent",
+      agentName: "agent",
       firstMessage: "analyse this",
       documents: [{ b64: "AQID", mimeType: "application/octet-stream", name: "q3.xlsx" }],
       userEmail: "owner@x.com",
@@ -1488,7 +1488,7 @@ describe("attached documents", () => {
   it("answers, and says why, when the document could not be read", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const deps = makeDeps(repo, {
-      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+      agents: withConfigurations(availableAgents, (savedConfigurations).get),
 
       documents: {
         extract: async () => {

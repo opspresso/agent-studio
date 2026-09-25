@@ -11,7 +11,7 @@ describe("audio builtins", () => {
   it("accepts a configured request with null revision and rejects padded option overrides", async () => {
     const submit = vi.fn(async () => ({ status: "accepted", job: { id: "job" } }));
     const tool = createAudioTool({ jobs: { submit } as unknown as ReturnType<typeof createAudioJobUseCases>, files: { read: vi.fn() } },
-      { projectName: "audio", userEmail: "owner@example.test", occurrence: "run" });
+      { agentName: "audio", userEmail: "owner@example.test", occurrence: "run" });
     const request = { operation: "submit", source: { kind: "source", id: "ref" }, config_revision: 12, processing_revision: null };
     expect((await tool("AudioJob", { request })).text).not.toMatch(/^Error:/);
     expect(submit).toHaveBeenCalledWith("audio", "owner@example.test", expect.objectContaining({ configRevision: 12, processingRevision: undefined }), expect.anything());
@@ -34,7 +34,7 @@ describe("audio builtins", () => {
   it("reports exhausted run admission as an error that waiting cannot resolve", async () => {
     const submit = vi.fn(async () => ({ status: "busy", reason: "occurrence_limit" }));
     const tool = createAudioTool({ jobs: { submit } as unknown as ReturnType<typeof createAudioJobUseCases>, files: { read: vi.fn() } },
-      { projectName: "audio", userEmail: "owner@example.test", occurrence: "run" });
+      { agentName: "audio", userEmail: "owner@example.test", occurrence: "run" });
     const result = await tool("AudioJob", { request: { operation: "submit", source: { kind: "source", id: "ref" }, config_revision: 1 } });
     expect(result.text).toMatch(/^Error:.*occurrence_limit/);
     expect(result.text).toContain("even if its earlier job completed");
@@ -45,7 +45,7 @@ describe("audio builtins", () => {
     expect(definition?.function.parameters).toMatchObject({ properties: { processing_revision: { anyOf: [expect.objectContaining({ type: "string" }), { type: "null" }] } } });
     const submit = vi.fn(async () => ({ status: "accepted" as const, job: { id: "job-1" } }));
     const tool = createAudioTool({ jobs: { submit } as unknown as ReturnType<typeof createAudioJobUseCases>, files: { read: vi.fn() } },
-      { projectName: "audio", userEmail: "owner@example.test", occurrence: "run-1" });
+      { agentName: "audio", userEmail: "owner@example.test", occurrence: "run-1" });
     const args = { source: { kind: "source", id: "opaque-source" }, ...(name === "TranscribeAudio" ? { model: "asr" } : {}),
       retention: { unit: "months", value: 3, timezone: "Asia/Seoul" } };
     for (const processing_revision of [undefined, "user-requested-revision"]) {
@@ -57,10 +57,10 @@ describe("audio builtins", () => {
 
   it("reads the selected processed result without substituting the transcript", async () => {
     const get = vi.fn(async () => ({ id: "job-1", status: "completed", transcriptRef: "transcript", draftRef: "draft" }));
-    const read = vi.fn(async (_project: string, _id: string) => ({ bytes: new TextEncoder().encode(JSON.stringify({ text: "Summary" })) }));
+    const read = vi.fn(async (_agent: string, _id: string) => ({ bytes: new TextEncoder().encode(JSON.stringify({ text: "Summary" })) }));
     const tool = createAudioTool({ jobs: { get } as unknown as ReturnType<typeof createAudioJobUseCases>,
       files: { read } as unknown as Parameters<typeof createAudioTool>[0]["files"] },
-    { projectName: "audio", userEmail: "owner@example.test", occurrence: "run" });
+    { agentName: "audio", userEmail: "owner@example.test", occurrence: "run" });
     expect(JSON.parse((await tool("AudioJob", { request: { operation: "read", job_id: "job-1", result_kind: "processed" } })).text).text).toBe("Summary");
     expect(read.mock.calls[0]?.[1]).toBe("draft");
   });
@@ -69,7 +69,7 @@ describe("audio builtins", () => {
     const get = vi.fn(async () => ({ id: "job-1", status: "completed", movedTo }));
     const read = vi.fn();
     const tool = createAudioTool({ jobs: { get } as unknown as ReturnType<typeof createAudioJobUseCases>, files: { read } },
-      { projectName: "audio", userEmail: "owner@example.test", occurrence: "run" });
+      { agentName: "audio", userEmail: "owner@example.test", occurrence: "run" });
     const result = await tool("AudioJob", { request: { operation: "read", job_id: "job-1" } });
     expect(JSON.parse(result.text)).toEqual({ status: "moved", destination: movedTo, jobStatus: "completed" });
     expect(read).not.toHaveBeenCalled();
@@ -83,7 +83,7 @@ describe("audio builtins", () => {
     ]);
     const chunks = [];
     for await (const chunk of runAgent({ createToolSchemaValidator, channel, recordUsage: async () => {}, audioTools }, {
-      projectName: "audio", model: "openai/gpt-5-mini", systemPrompt: "Transcribe audio", messages: [{ role: "user", content: "Transcribe" }],
+      agentName: "audio", model: "openai/gpt-5-mini", systemPrompt: "Transcribe audio", messages: [{ role: "user", content: "Transcribe" }],
     })) chunks.push(chunk);
     expect(audioTools).toHaveBeenCalledWith("TranscribeAudio", args);
     expect(chunks.some((chunk) => chunk.toolResult?.content.includes("job-1"))).toBe(true);
@@ -94,7 +94,7 @@ describe("audio builtins", () => {
   it("does not offer audio tools without the capability", async () => {
     const channel = new FakeChannel([[contentChunk("No tools")]]);
     for await (const _chunk of runAgent({ createToolSchemaValidator, channel, recordUsage: async () => {} }, {
-      projectName: "audio", model: "openai/gpt-5-mini", systemPrompt: "", messages: [],
+      agentName: "audio", model: "openai/gpt-5-mini", systemPrompt: "", messages: [],
     })) { /* drain */ }
     expect(channel.seenParams[0]?.tools?.some((tool) => AUDIO_TOOL_NAMES.includes(tool.function.name)) ?? false).toBe(false);
   });
@@ -102,7 +102,7 @@ describe("audio builtins", () => {
   it("binds submissions to one server-owned user and occurrence", async () => {
     const submit = vi.fn(async () => ({ status: "accepted" as const, job: { id: "job-1" } }));
     const tool = createAudioTool({ jobs: { submit } as unknown as ReturnType<typeof createAudioJobUseCases>,
-      files: { read: vi.fn() } }, { projectName: "audio", userEmail: "owner@example.test", occurrence: "run-1" });
+      files: { read: vi.fn() } }, { agentName: "audio", userEmail: "owner@example.test", occurrence: "run-1" });
     await tool("TranscribeAudio", { source: { kind: "source", id: "source-1" }, model: "asr", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" } });
     expect(submit).toHaveBeenCalledWith("audio", "owner@example.test", expect.objectContaining({ task: "transcribe" }),
       { occurrence: "run-1", actor: undefined });
@@ -114,7 +114,7 @@ describe("audio builtins", () => {
   it("accepts an Artifact ID but refuses ambiguous input identities", async () => {
     const submit = vi.fn(async () => ({ status: "accepted" as const, job: { id: "job" } }));
     const tool = createAudioTool({ jobs: { submit } as unknown as ReturnType<typeof createAudioJobUseCases>, files: { read: vi.fn() } },
-      { projectName: "main", producedBy: "transcriber", userEmail: "owner@example.test", occurrence: "run" });
+      { agentName: "main", producedBy: "transcriber", userEmail: "owner@example.test", occurrence: "run" });
     const args = { source: { kind: "artifact", id: "original" }, model: "asr", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" } };
     await tool("TranscribeAudio", args);
     expect(submit).toHaveBeenCalledWith("main", "owner@example.test", expect.objectContaining({ source: { kind: "artifact", artifactId: "original" } }), expect.objectContaining({ producedBy: "transcriber" }));
@@ -124,7 +124,7 @@ describe("audio builtins", () => {
   it("keeps reading local results after a copy has been stored in Memory", async () => {
     const jobs = { get: async () => ({ transcriptRef: "transcript", status: "completed", movedTo: { serverName: "memory", transcriptId: "doc" } }) } as unknown as ReturnType<typeof createAudioJobUseCases>;
     const read = vi.fn(async () => ({ file: {} as never, mimeType: "application/json", bytes: new TextEncoder().encode(JSON.stringify({ text: "retained local result" })) }));
-    const tool = createAudioTool({ jobs, files: { read } }, { projectName: "audio", userEmail: "owner@example.test", occurrence: "read" });
+    const tool = createAudioTool({ jobs, files: { read } }, { agentName: "audio", userEmail: "owner@example.test", occurrence: "read" });
     expect(JSON.parse((await tool("AudioJob", { request: { operation: "read", job_id: "job" } })).text)).toMatchObject({ text: "retained local result" });
     expect(read).toHaveBeenCalledTimes(1);
   });
@@ -132,7 +132,7 @@ describe("audio builtins", () => {
     const jobs = { get: async () => ({ transcriptRef: "transcript", status: "completed" }) } as unknown as ReturnType<typeof createAudioJobUseCases>;
     const tool = createAudioTool({ jobs, files: { read: vi.fn(async () => ({
         file: {} as never, mimeType: "application/json", bytes: new TextEncoder().encode(JSON.stringify({ text: "😀a", warnings: ["usage unknown"] })),
-      })) } }, { projectName: "audio", userEmail: "owner@example.test", occurrence: "run-1" });
+      })) } }, { agentName: "audio", userEmail: "owner@example.test", occurrence: "run-1" });
     const first = JSON.parse((await tool("AudioJob", { request: { operation: "read", job_id: "job-1", limit: 1 } })).text);
     expect(first).toMatchObject({ text: "😀", nextCursor: "2", warnings: ["usage unknown"] });
     expect((await tool("AudioJob", { request: { operation: "read", job_id: "job-1", cursor: "1" } })).text).toMatch(/^Error:/);

@@ -9,10 +9,10 @@ import { conversationOf, type RunConversation } from "@/domain/execution/actor";
  * is the root of its own thread (`threadTs` is then its own `ts`), so the same
  * key holds whether the reply lands in a thread or opens one.
  *
- * Deliberately not qualified by workspace: bots are per project and a project
+ * Deliberately not qualified by workspace: bots are per agent and an agent
  * has one Slack app, so `channel:threadTs` is already unique within everything
- * the key is ever compared against — the project's MCP tenant, and the
- * project's remote-conversation rows.
+ * the key is ever compared against — the agent's MCP tenant, and the
+ * agent's remote-conversation rows.
  */
 export function slackConversation(channel: string, threadTs: string): RunConversation {
   // Both halves are Slack's own ids — short, ASCII — so the builder never has

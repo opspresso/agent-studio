@@ -42,11 +42,11 @@ function charCount(preview: PromptPreview): number {
  * Editing the draft marks the previous result stale and cancels an active preview.
  */
 export function PromptPreview({
-  projectName,
+  agentName,
   draft,
   validationError,
 }: {
-  projectName: string;
+  agentName: string;
   draft: AgentConfigurationInput;
   validationError: string | null;
 }) {
@@ -73,9 +73,9 @@ export function PromptPreview({
   // the box would suggest the assembled prompt varies when it does not.
   const usesRequest =
     (draft.parameters.dynamicCapabilities === true || draft.parameters.memoryRecall === true);
-  // Project identity scopes masked overrides; draft and request changes invalidate the result.
+  // Agent identity scopes masked overrides; draft and request changes invalidate the result.
   const current = JSON.stringify({
-    projectName,
+    agentName,
     draft,
     ...(usesRequest ? { message } : {}),
   });
@@ -107,7 +107,7 @@ export function PromptPreview({
     setError(null);
     try {
       const result = await previewPrompt(
-        projectName,
+        agentName,
         {
           ...draft,
           ...(usesRequest && message.trim() ? { message } : {}),

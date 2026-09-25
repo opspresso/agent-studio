@@ -6,7 +6,7 @@ import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { SecretControl } from "@/app/_components/SecretControl";
 import { stateColor } from "@/app/_components/badgeColors";
-import { PROJECT_WEBHOOK_ID, projectWebhookPath } from "@/domain/trigger/types";
+import { AGENT_WEBHOOK_ID, agentWebhookPath } from "@/domain/trigger/types";
 import { useT } from "@/app/_i18n/provider";
 import { TriggerRuns } from "./TriggerRuns";
 import {
@@ -21,16 +21,16 @@ import {
 import { reportError } from "@/app/_lib/reportError";
 
 /**
- * The project's webhook: one address, turned on and off.
+ * The agent's webhook: one address, turned on and off.
  *
- * Nobody names it — `/api/webhook/{project}` is the whole address — so the
+ * Nobody names it — `/api/webhook/{agent}` is the whole address — so the
  * panel is a switch, and the row it stands for is created the first time the
  * switch goes on. Everything below the switch is what a sender needs to use it:
  * the URL, the secret, how the payload reaches the run, and what recent
  * deliveries did. SecretControl owns reveal, copy, hide and rotation; plaintext
  * is held only in component state until hidden or the page is left.
  */
-export function WebhookSection({ projectName }: { projectName: string }) {
+export function WebhookSection({ agentName }: { agentName: string }) {
   const t = useT();
   const [webhook, setWebhook] = useState<TriggerView | null>(null);
   const [runs, setRuns] = useState<TriggerRun[]>([]);
@@ -42,19 +42,19 @@ export function WebhookSection({ projectName }: { projectName: string }) {
   const [repositories, setRepositories] = useState("");
 
   const reload = useCallback(async () => {
-    const { triggers } = await listTriggers(projectName);
+    const { triggers } = await listTriggers(agentName);
     // Kind as well as id: a row under the reserved id that is somehow not a
     // webhook has no secret and no delivery URL, and the panel below would
     // offer both.
     const found =
       triggers.find(
-        (trigger) => trigger.triggerId === PROJECT_WEBHOOK_ID && trigger.kind === "webhook",
+        (trigger) => trigger.triggerId === AGENT_WEBHOOK_ID && trigger.kind === "webhook",
       ) ?? null;
     setWebhook(found);
     setReviewScope(found?.githubReview?.scope ?? "off");
     setRepositories(found?.githubReview?.scope === "repositories" ? found.githubReview.repositories.join("\n") : "");
-    setRuns(found ? (await listTriggerRuns(projectName, found.triggerId)).runs : []);
-  }, [projectName]);
+    setRuns(found ? (await listTriggerRuns(agentName, found.triggerId)).runs : []);
+  }, [agentName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,7 +92,7 @@ export function WebhookSection({ projectName }: { projectName: string }) {
     setBusy(true);
     setError(null);
     try {
-      setRuns((await listTriggerRuns(projectName, webhook.triggerId)).runs);
+      setRuns((await listTriggerRuns(agentName, webhook.triggerId)).runs);
     } catch (e) {
       setError(reportError(e, "Failed to refresh webhook runs"));
     } finally {
@@ -108,13 +108,13 @@ export function WebhookSection({ projectName }: { projectName: string }) {
   function setEnabled(enabled: boolean) {
     void act(async () => {
       if (!webhook) {
-        const created = await createTrigger(projectName, { triggerId: PROJECT_WEBHOOK_ID });
+        const created = await createTrigger(agentName, { triggerId: AGENT_WEBHOOK_ID });
         if (created.secret) {
           setRevealed(created.secret);
         }
         return;
       }
-      await updateTrigger(projectName, PROJECT_WEBHOOK_ID, { enabled });
+      await updateTrigger(agentName, AGENT_WEBHOOK_ID, { enabled });
     });
   }
 
@@ -126,14 +126,14 @@ export function WebhookSection({ projectName }: { projectName: string }) {
 
   const url =
     typeof window === "undefined"
-      ? projectWebhookPath(projectName)
-      : `${window.location.origin}${projectWebhookPath(projectName)}`;
+      ? agentWebhookPath(agentName)
+      : `${window.location.origin}${agentWebhookPath(agentName)}`;
 
   return (
     <CollapsibleSection
       title={t("webhook.section")}
       // Readable while collapsed, like the token's set/none: whether an outside
-      // system can start this project at all, before anyone opens the section.
+      // system can start this agent at all, before anyone opens the section.
       badge={
         loading ? undefined : (
           <Badge color={stateColor(webhook?.enabled === true)} radius="xl">
@@ -172,17 +172,17 @@ export function WebhookSection({ projectName }: { projectName: string }) {
             {reviewScope === "repositories" && <Textarea label={t("webhook.reviewRepositories")} value={repositories}
               placeholder="owner/repository" minRows={2} disabled={busy} onChange={event => setRepositories(event.currentTarget.value)} />}
             <Button variant="light" disabled={busy} onClick={() => act(async () => {
-              await updateTrigger(projectName, PROJECT_WEBHOOK_ID, {
+              await updateTrigger(agentName, AGENT_WEBHOOK_ID, {
                 githubReview: reviewScope === "off" ? null : reviewScope === "accessible" ? { scope: "accessible" }
                   : { scope: "repositories", repositories: repositories.split(/[\n,]/).map(value => value.trim()).filter(Boolean) },
                 ...(reviewScope !== "off" ? { allowConcurrent: true } : {}),
               });
             })}>{t("webhook.reviewSave")}</Button>
-            <SecretControl key={projectName} label={t("webhook.section")} configured masked={webhook.secretMasked} initialValue={revealed ?? undefined}
+            <SecretControl key={agentName} label={t("webhook.section")} configured masked={webhook.secretMasked} initialValue={revealed ?? undefined}
               description={t("webhook.secretHint")} disabled={busy}
-              onReveal={() => secretAction(() => revealTriggerSecret(projectName, PROJECT_WEBHOOK_ID))}
+              onReveal={() => secretAction(() => revealTriggerSecret(agentName, AGENT_WEBHOOK_ID))}
               onGenerate={() => secretAction(async () => {
-                const next = await updateTrigger(projectName, PROJECT_WEBHOOK_ID, { rotateSecret: true });
+                const next = await updateTrigger(agentName, AGENT_WEBHOOK_ID, { rotateSecret: true });
                 if (!next.secret) throw new Error("No webhook secret was returned");
                 await reload(); return next.secret;
               })} />
@@ -195,7 +195,7 @@ export function WebhookSection({ projectName }: { projectName: string }) {
                 mb={8}
                 onChange={(e) =>
                   act(async () => {
-                    await updateTrigger(projectName, PROJECT_WEBHOOK_ID, {
+                    await updateTrigger(agentName, AGENT_WEBHOOK_ID, {
                       allowConcurrent: e.currentTarget.checked,
                     });
                   })

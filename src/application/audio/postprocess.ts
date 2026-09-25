@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AudioJob } from "@/domain/audio/job";
-import { audioSourceProject } from "@/domain/audio/job";
+import { audioSourceAgent } from "@/domain/audio/job";
 import { AUDIO_MEMORY_KINDS, type AudioPostprocessOutput, type AudioMemoryCandidate } from "@/domain/audio/output";
 import type { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { cutCodePoints } from "@/shared/utf8Text";
@@ -47,7 +47,7 @@ function chunks(text: string): string[] {
 export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
   return async (job: AudioJob, context: AudioJobStepContext): Promise<{ draftRef: string; summaryRef: string; dialogueRef: string }> => {
     if (!job.postprocess?.configuration || !job.transcriptRef) throw new AudioJobStepError("postprocess_configuration_missing", false);
-    const file = await deps.files.read(job.task === "postprocess" ? audioSourceProject(job) : job.projectName,
+    const file = await deps.files.read(job.task === "postprocess" ? audioSourceAgent(job) : job.agentName,
       job.transcriptRef, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
     const transcript = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes)) as AudioTranscript;
     try { validateTranscription(transcript); }
@@ -58,14 +58,14 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
       const mode = round === 0 ? "extract" : "reduce";
       const digest = createHash("sha256").update(JSON.stringify([job.postprocess!.configuration, text, mode])).digest("hex");
       const id = `${job.id}-post-${round}-${index}`;
-      await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
+      await deps.files.import({ id, agentName: job.agentName, userEmail: job.userEmail,
         filename: "postprocess.json", mimeType: "application/json", retention: job.retention, retainUntil: file.file.retireAt,
         derived: { jobId: job.id, kind: "checkpoint" } }, async () => {
         const output = parseAudioPostprocessOutput(await deps.run(job, text, mode, OUTPUT_CHARS, context.signal), transcript.text, OUTPUT_CHARS);
         const bytes = new TextEncoder().encode(JSON.stringify({ digest, output }));
         return (async function* () { yield bytes; })();
       }, context.signal);
-      const cached = await deps.files.read(job.projectName, id, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
+      const cached = await deps.files.read(job.agentName, id, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
       const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(cached.bytes)) as { digest: string; output: AudioPostprocessOutput };
       if (value.digest !== digest) throw new AudioJobStepError("postprocess_checkpoint_mismatch", false);
       return parseAudioPostprocessOutput(JSON.stringify(value.output), transcript.text, OUTPUT_CHARS);
@@ -117,23 +117,23 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
     await record("saving", 0, 0, 3);
     const bytes = new TextEncoder().encode(JSON.stringify(final));
     const id = `${job.id}-draft`;
-    await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
+    await deps.files.import({ id, agentName: job.agentName, userEmail: job.userEmail,
       filename: "result.json", mimeType: "application/json", retention: job.retention, retainUntil: file.file.retireAt,
-      derivedFrom: job.transcriptRef, model: job.postprocess.configuration.model, producedBy: job.postprocess.projectName,
+      derivedFrom: job.transcriptRef, model: job.postprocess.configuration.model, producedBy: job.postprocess.agentName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield bytes; })(), context.signal);
     await record("saving", 0, 1, 3);
     const summaryRef = `${job.id}-summary`;
-    await deps.files.import({ id: summaryRef, projectName: job.projectName, userEmail: job.userEmail,
+    await deps.files.import({ id: summaryRef, agentName: job.agentName, userEmail: job.userEmail,
       filename: "summary.md", mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
-      derivedFrom: job.transcriptRef, model: job.postprocess.configuration.model, producedBy: job.postprocess.projectName,
+      derivedFrom: job.transcriptRef, model: job.postprocess.configuration.model, producedBy: job.postprocess.agentName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield new TextEncoder().encode(final.text); })(), context.signal);
     await record("saving", 0, 2, 3);
     const dialogueRef = `${job.id}-dialogue`;
-    await deps.files.import({ id: dialogueRef, projectName: job.projectName, userEmail: job.userEmail,
+    await deps.files.import({ id: dialogueRef, agentName: job.agentName, userEmail: job.userEmail,
       filename: "dialogue.md", mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
-      derivedFrom: job.transcriptRef, model: transcript.model, producedBy: job.postprocess.projectName,
+      derivedFrom: job.transcriptRef, model: transcript.model, producedBy: job.postprocess.agentName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield new TextEncoder().encode(renderDialogue(transcript)); })(), context.signal);
     await record("saving", 0, 3, 3);

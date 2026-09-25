@@ -39,7 +39,7 @@ function object(args: Record<string, unknown>, field: string): Record<string, un
 
 /** One bound user and occurrence, shared by all audio calls in an Agent run. */
 export function createAudioTool(deps: AudioToolDeps, context: {
-  projectName: string; userEmail: string; occurrence: string; actor?: RunActor; producedBy?: string;
+  agentName: string; userEmail: string; occurrence: string; actor?: RunActor; producedBy?: string;
 }) {
   return async (tool: string, args: Record<string, unknown>): Promise<McpToolResult> => {
     try {
@@ -53,17 +53,17 @@ export function createAudioTool(deps: AudioToolDeps, context: {
       if (!allowed || Object.keys(args).some((key) => !allowed.includes(key))) {
         throw new ValidationError("Unexpected audio input; use only fields of the selected request shape");
       }
-      if (operation === "config") return { text: JSON.stringify(await deps.jobs.configuration(context.projectName, context.userEmail)) };
+      if (operation === "config") return { text: JSON.stringify(await deps.jobs.configuration(context.agentName, context.userEmail)) };
       if (operation === "list") {
         const limit = args.limit ?? 20;
         if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new ValidationError("Invalid list limit");
-        const jobs = await deps.jobs.list(context.projectName, context.userEmail, limit, text(args, "cursor"));
+        const jobs = await deps.jobs.list(context.agentName, context.userEmail, limit, text(args, "cursor"));
         return { text: JSON.stringify({ jobs, nextCursor: jobs.length === limit ? jobs.at(-1)!.id : null }) };
       }
       if (operation === "status" || operation === "read") {
         const id = text(args, "job_id");
         if (!id) throw new ValidationError("job_id is required");
-        const job = await deps.jobs.get(context.projectName, id, context.userEmail);
+        const job = await deps.jobs.get(context.agentName, id, context.userEmail);
         if (operation === "status") return { text: JSON.stringify(job) };
         const kind = text(args, "result_kind") ?? "transcript";
         if (kind !== "transcript" && kind !== "processed") throw new ValidationError("Invalid result_kind");
@@ -77,7 +77,7 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         const limit = args.limit ?? 12_000;
         if (!/^\d+$/.test(cursor) || !Number.isSafeInteger(Number(cursor)) || typeof limit !== "number" ||
           !Number.isInteger(limit) || limit < 1 || limit > 20_000) throw new ValidationError("Invalid transcript page");
-        const file = await deps.files.read(kind === "transcript" ? job.transcriptProjectName ?? context.projectName : context.projectName,
+        const file = await deps.files.read(kind === "transcript" ? job.transcriptAgentName ?? context.agentName : context.agentName,
           reference, context.userEmail, MAX_TRANSCRIPT_BYTES);
         const body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes)) as { text?: unknown; warnings?: unknown };
         if (typeof body.text !== "string") throw new ValidationError("The stored transcript is invalid");
@@ -95,8 +95,8 @@ export function createAudioTool(deps: AudioToolDeps, context: {
       if (!["submit", "process", "postprocess"].includes(operation ?? "")) throw new ValidationError("Invalid audio operation");
       const task = operation === "postprocess" ? "postprocess" : "process";
       const post = object(args, "postprocess"); const destination = object(args, "destination");
-      const projectName = post && text(post, "projectName");
-      if (post && !projectName) throw new ValidationError("A postprocessing Agent is required");
+      const agentName = post && text(post, "agentName");
+      if (post && !agentName) throw new ValidationError("A postprocessing Agent is required");
       const serverName = destination && text(destination, "serverName");
       if (destination && (!serverName || typeof destination.documents !== "boolean" || typeof destination.memories !== "boolean")) {
         throw new ValidationError("Invalid destination");
@@ -114,22 +114,22 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         throw new ValidationError("Invalid config_revision");
       }
       if ([fileId, sourceRef, artifactId].filter(Boolean).length !== 1) throw new ValidationError("Provide source with kind and a non-empty id; postprocess requires artifact_id");
-      const result = await deps.jobs.submit(context.projectName, context.userEmail, {
+      const result = await deps.jobs.submit(context.agentName, context.userEmail, {
         source: artifactId ? { kind: "artifact", artifactId } : fileId ? { kind: "file", fileId } : { kind: "source", sourceRef: sourceRef! },
         task: tool === IMPORT_FILE_TOOL_NAME ? "import" : tool === TRANSCRIBE_AUDIO_TOOL_NAME ? "transcribe" :
           task === "postprocess" ? "postprocess" : "process",
         model: text(args, "model"), language: text(args, "language"), retention: args.retention === undefined ? undefined : retention(args.retention),
         ...(configRevision !== undefined ? { configRevision } : {}),
         processingRevision: text(args, "processing_revision"),
-        ...(post ? { postprocess: { projectName: projectName! } } : {}),
+        ...(post ? { postprocess: { agentName: agentName! } } : {}),
         ...(destination ? { destination: { serverName: serverName!, documents: destination.documents as boolean, memories: destination.memories as boolean } } : {}),
       }, { occurrence: context.occurrence, actor: context.actor,
         ...(context.producedBy ? { producedBy: context.producedBy } : {}) });
       if (result.status === "busy") {
         const reasons = {
           occurrence_limit: "This Agent run has used its new-job allowance, even if its earlier job completed. Do not retry submissions or poll in this run. Report the existing job and remaining work. In a new run, use AudioJob submit with config_revision to process import, transcription and summary as one durable job.",
-          active_limit: "The project has reached its queued-and-running job limit. Report admitted job IDs and the unsubmitted remainder; do not repeatedly poll or submit in this run.",
-          conflict: "The project or job changed during submission. No new job was admitted. Report the conflict instead of repeatedly submitting.",
+          active_limit: "The agent has reached its queued-and-running job limit. Report admitted job IDs and the unsubmitted remainder; do not repeatedly poll or submit in this run.",
+          conflict: "The agent or job changed during submission. No new job was admitted. Report the conflict instead of repeatedly submitting.",
         };
         return { text: `Error: Audio job not admitted (${result.reason}). ${reasons[result.reason]}` };
       }

@@ -88,6 +88,8 @@ test("selects and clears a registered decision model in model usage settings", a
         capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false, decision: true } }],
       selections: { embedding: { model: "", source: "default" } },
       rerankerMinScore: { value: 0.01, source: "default" }, selectionAvailable: { embedding: false, rerank: false },
+      catalogMinScore: { value: 0.01, source: "default" },
+      unknownModelPolicy: { value: "refuse", source: "default" },
     } });
     if (path === "/api/models/decision") {
       const { model } = route.request().postDataJSON() as { model: string | null };
@@ -110,7 +112,7 @@ test("reports unavailable Agent binding choices and reloads them on retry", asyn
   for (const [path, ready] of [
     ["/api/mcps", [{ name: "tools", description: "Tool server" }]],
     ["/api/skills", [{ name: "review", description: "Review work" }]],
-    ["/api/projects", [{ name: "helper", description: "Local helper", configured: true }]],
+    ["/api/agents", [{ name: "helper", description: "Local helper", configured: true }]],
   ] as const) {
     await page.route(`**${path}`, route => {
       const count = (reads.get(path) ?? 0) + 1;

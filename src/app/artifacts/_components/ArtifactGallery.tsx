@@ -3,9 +3,9 @@
 /**
  * What runs produced, and the one place they can be removed.
  *
- * Shared by the personal gallery and a project's tab because the two differ only
+ * Shared by the personal gallery and an agent's tab because the two differ only
  * in which index they read: the rows, the tiles and the delete flow are the same
- * question asked down two axes. The project list also includes runs whose
+ * question asked down two axes. The agent list also includes runs whose
  * outputs have no resolved personal owner.
  */
 
@@ -69,12 +69,12 @@ const KIND_NOUN: Record<ArtifactKind, MessageKey> = {
 export function ArtifactGallery({
   load,
   emptyText,
-  showProject = true,
+  showAgent = true,
 }: {
   load: (query: ArtifactQuery) => Promise<ArtifactPage>;
   emptyText: string;
-  /** A project's own tab already knows whose these are. */
-  showProject?: boolean;
+  /** An agent's own tab already knows whose these are. */
+  showAgent?: boolean;
 }) {
   const t = useT();
   const [artifacts, setArtifacts] = useState<ArtifactView[]>([]);
@@ -191,7 +191,7 @@ export function ArtifactGallery({
       filter,
       artifact.filename ?? "",
       artifact.prompt ?? "",
-      artifact.projectName,
+      artifact.agentName,
       artifact.producedBy,
       artifact.model,
     ),
@@ -244,7 +244,7 @@ export function ArtifactGallery({
           <ArtifactCard
             key={artifact.artifactId}
             artifact={artifact}
-            showProject={showProject}
+            showAgent={showAgent}
             onPreview={() => openPreview(artifact)}
             onDelete={() => void remove(artifact)}
           />
@@ -264,12 +264,12 @@ export function ArtifactGallery({
 
 function ArtifactCard({
   artifact,
-  showProject,
+  showAgent,
   onPreview,
   onDelete,
 }: {
   artifact: ArtifactView;
-  showProject: boolean;
+  showAgent: boolean;
   /** Images only — a document is offered as a download, never rendered. */
   onPreview: () => void;
   onDelete: () => void;
@@ -330,7 +330,7 @@ function ArtifactCard({
         )}
 
         <Text fz="xs" c="dimmed">
-          {showProject && `${artifact.projectName} · `}
+          {showAgent && `${artifact.agentName} · `}
           {formatBytes(artifact.byteSize)} · {formatShortDateTime(artifact.createdAt, locale)}
         </Text>
 

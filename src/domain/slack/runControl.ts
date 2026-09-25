@@ -8,7 +8,7 @@ export function slackTimestampValue(value: unknown): bigint | null {
 }
 
 export interface SlackRunTarget {
-  projectName: string;
+  agentName: string;
   channel: string;
   threadTs: string;
 }

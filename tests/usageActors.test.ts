@@ -2,13 +2,13 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   MAX_ACTOR_USAGE_ROWS,
   MAX_ACTOR_VIEWS,
-  listProjectActors,
+  listAgentActors,
   type ListActorsDeps,
 } from "@/application/usage/listActors";
-import { resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
+import { resolveAgentSlackRuntime } from "@/application/slack/agentSlack";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import type { RunCaller } from "@/domain/execution/actor";
-import type { Project } from "@/domain/project/types";
+import type { Agent } from "@/domain/agent/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { ActorUsageRow } from "@/domain/usage/types";
 import { slackSecretContext } from "@/domain/security/secretContext";
@@ -17,7 +17,7 @@ beforeAll(() => {
   process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 });
 
-function makeProject(withSlack: boolean): Project {
+function makeAgent(withSlack: boolean): Agent {
   return {
     name: "painter",
     displayName: "Painter",
@@ -45,7 +45,7 @@ function makeProject(withSlack: boolean): Project {
 
 function row(actor: string, calls = 2, cost = 0.5): ActorUsageRow {
   return {
-    projectName: "painter",
+    agentName: "painter",
     date: "2026-07-30",
     actor,
     calls: { "gpt-5": calls },
@@ -60,26 +60,26 @@ function makeDeps(
   resolveSlackProfile: (botToken: string, userId: string) => Promise<RunCaller | null>,
 ): ListActorsDeps {
   return {
-    usage: { listActorsByProject: async () => rows } as unknown as UsageRepository,
+    usage: { listActorsByAgent: async () => rows } as unknown as UsageRepository,
     // The composition root's closure, spelled out: the reader is bound to the
-    // project's own decrypted token, or absent when it has no enabled bot.
-    profileReaderFor: (project) => {
-      const runtime = resolveProjectSlackRuntime(secretCipher, project);
+    // agent's own decrypted token, or absent when it has no enabled bot.
+    profileReaderFor: (agent) => {
+      const runtime = resolveAgentSlackRuntime(secretCipher, agent);
       return runtime ? (userId) => resolveSlackProfile(runtime.botToken, userId) : null;
     },
   };
 }
 
-describe("listProjectActors", () => {
+describe("listAgentActors", () => {
   it("puts a name and an avatar on a Slack caller", async () => {
     const resolve = vi.fn(async () => ({
       displayName: "Bruce",
       avatarUrl: "https://x/512.png",
     }));
 
-    const result = await listProjectActors(
+    const result = await listAgentActors(
       makeDeps([row("slack:U1")], resolve),
-      makeProject(true),
+      makeAgent(true),
       "2026-07-01",
       "2026-07-31",
     );
@@ -95,9 +95,9 @@ describe("listProjectActors", () => {
   it("resolves each distinct user once, however many days they span", async () => {
     const resolve = vi.fn(async () => ({ displayName: "Bruce" }));
 
-    await listProjectActors(
+    await listAgentActors(
       makeDeps([row("slack:U1"), { ...row("slack:U1"), date: "2026-07-29" }], resolve),
-      makeProject(true),
+      makeAgent(true),
       "2026-07-01",
       "2026-07-31",
     );
@@ -108,9 +108,9 @@ describe("listProjectActors", () => {
   it("leaves non-Slack callers alone", async () => {
     const resolve = vi.fn(async () => ({ displayName: "Bruce" }));
 
-    const result = await listProjectActors(
-      makeDeps([row("user:someone@example.com"), row("webhook:project:trigger")], resolve),
-      makeProject(true),
+    const result = await listAgentActors(
+      makeDeps([row("user:someone@example.com"), row("webhook:agent:trigger")], resolve),
+      makeAgent(true),
       "2026-07-01",
       "2026-07-31",
     );
@@ -119,12 +119,12 @@ describe("listProjectActors", () => {
     expect(result.items.every((item) => item.display === undefined)).toBe(true);
   });
 
-  it("returns the raw keys when the project has no Slack bot", async () => {
+  it("returns the raw keys when the agent has no Slack bot", async () => {
     const resolve = vi.fn(async () => ({ displayName: "Bruce" }));
 
-    const result = await listProjectActors(
+    const result = await listAgentActors(
       makeDeps([row("slack:U1")], resolve),
-      makeProject(false),
+      makeAgent(false),
       "2026-07-01",
       "2026-07-31",
     );
@@ -139,9 +139,9 @@ describe("listProjectActors", () => {
       throw new Error("slack is down");
     });
 
-    const result = await listProjectActors(
+    const result = await listAgentActors(
       makeDeps([row("slack:U1")], resolve),
-      makeProject(true),
+      makeAgent(true),
       "2026-07-01",
       "2026-07-31",
     );
@@ -155,9 +155,9 @@ describe("listProjectActors", () => {
   it("aggregates an actor before ranking and enriching it", async () => {
     const resolve = vi.fn(async () => ({ displayName: "Bruce" }));
 
-    const result = await listProjectActors(
+    const result = await listAgentActors(
       makeDeps([row("slack:U1"), { ...row("slack:U1", 3, 0.75), date: "2026-07-29" }], resolve),
-      makeProject(true),
+      makeAgent(true),
       "2026-07-01",
       "2026-07-31",
     );
@@ -177,9 +177,9 @@ describe("listProjectActors", () => {
       row(`slack:U${String(index).padStart(3, "0")}`, 1, index),
     );
 
-    const result = await listProjectActors(
+    const result = await listAgentActors(
       makeDeps(rows, resolve),
-      makeProject(true),
+      makeAgent(true),
       "2026-07-01",
       "2026-07-31",
     );
@@ -197,9 +197,9 @@ describe("listProjectActors", () => {
     );
 
     await expect(
-      listProjectActors(
+      listAgentActors(
         makeDeps(rows, async () => null),
-        makeProject(false),
+        makeAgent(false),
         "2026-01-01",
         "2026-07-03",
       ),

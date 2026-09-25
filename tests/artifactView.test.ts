@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { setAuditSink } from "@/application/audit/recordAudit";
-import { setAdminCheck } from "@/application/project/projectUseCases";
+import { setAdminCheck } from "@/application/agent/agentUseCases";
 import {
   baseMimeType,
   inlineViewOf,
@@ -10,14 +10,14 @@ import {
   SAVABLE_TYPES,
 } from "@/domain/artifact/types";
 import type { Artifact } from "@/domain/artifact/types";
-import type { Project } from "@/domain/project/types";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { Agent } from "@/domain/agent/types";
+import type { AgentRepository } from "@/domain/agent/repository";
 
 const OWNER = "owner@x.com";
 const OTHER = "other@x.com";
 const ADMIN = "admin@x.com";
 
-const project: Project = {
+const agent: Agent = {
   name: "report-bot",
   displayName: "Report",
   description: "",
@@ -34,19 +34,19 @@ function artifact(over: Partial<Artifact> = {}): Artifact {
     key: "artifacts/document/a1.html",
     mimeType: "text/html",
     byteSize: 120,
-    projectName: "report-bot",
+    agentName: "report-bot",
     actor: { kind: "user", id: OWNER },
     createdAt: "2026-08-22T00:00:00.000Z",
     ...over,
   };
 }
 
-const projects: ProjectRepository = {
+const agents: AgentRepository = {
   async get(name) {
-    return name === project.name ? project : null;
+    return name === agent.name ? agent : null;
   },
   async list() {
-    return [project];
+    return [agent];
   },
   async create() {},
   async update() {},
@@ -65,7 +65,7 @@ function setup(stored: Artifact | null) {
     async get(id: string) {
       return stored && stored.artifactId === id ? stored : null;
     },
-    async listByProject() {
+    async listByAgent() {
       return [];
     },
     async listByOwner() {
@@ -84,7 +84,7 @@ function setup(stored: Artifact | null) {
     },
     async delete() {},
   };
-  return { useCases: createArtifactUseCases(rows, objects, projects), reads };
+  return { useCases: createArtifactUseCases(rows, objects, agents), reads };
 }
 
 beforeEach(() => {
@@ -146,7 +146,7 @@ describe("reading an artifact for a view", () => {
   });
 
   it("does not record an admin override for a read", async () => {
-    // `assertProjectWritable` writes a `project.admin-override` row every time
+    // `assertAgentWritable` writes a `agent.admin-override` row every time
     // it admits an admin — the right record for a delete, and the wrong one for
     // a GET behind a link. Ten clicks through a gallery would be ten rows
     // claiming a write that never happened.
@@ -161,10 +161,10 @@ describe("reading an artifact for a view", () => {
     expect(recorded).toEqual([]);
 
     await setup(artifact()).useCases.remove("a1", ADMIN);
-    expect(recorded).toContain("project.admin-override");
+    expect(recorded).toContain("agent.admin-override");
   });
 
-  it("admits an admin reaching into the project, and refuses everyone else", async () => {
+  it("admits an admin reaching into the agent, and refuses everyone else", async () => {
     // The same predicate as a delete, deliberately: a gallery that lists a row
     // whose open button answers 403 is the shape two rules produce.
     await expect(setup(artifact()).useCases.readForView("a1", ADMIN)).resolves.toBeTruthy();

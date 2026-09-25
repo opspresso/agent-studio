@@ -1,13 +1,13 @@
 import { runtimeFingerprint } from "@/application/runtime/session";
 /** Resolving an Agent's skills, subagents and MCP tools for one run. */
 
-import type { McpBinding, SubagentRef, AgentConfiguration } from "@/domain/project/types";
+import type { McpBinding, SubagentRef, AgentConfiguration } from "@/domain/agent/types";
 import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput } from "@/domain/llm/types";
 import type { RunOrigin } from "@/domain/execution/actor";
 import type { Skill } from "@/domain/skill/types";
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
-import { listProjectMcpConnections } from "@/application/mcp/listConnections";
+import { listAgentMcpConnections } from "@/application/mcp/listConnections";
 import {
   searchCapabilitiesByKind,
   type CatalogRerankReport,
@@ -87,13 +87,13 @@ export async function resolveSkills(
 
 /** Same for subagents: an unresolvable target is not offered as a transfer. */
 export async function resolveSubagents(
-  deps: Pick<ExecutionDeps, "projects">,
+  deps: Pick<ExecutionDeps, "agents">,
   subagentList: SubagentRef[] | undefined,
 ): Promise<{ subagents: engine.SubagentInfo[]; warnings: string[] }> {
   const resolved = await Promise.all(
     (subagentList ?? []).map(
       async (ref): Promise<{ subagent?: engine.SubagentInfo; warning?: string }> => {
-        const target = await deps.projects.get(ref.name);
+        const target = await deps.agents.get(ref.name);
         if (!target) {
           log.warn(
             "run",
@@ -229,12 +229,12 @@ export function discoveryQueries(
  *
  * Everything here is *additive*: it returns names to append, and the caller
  * appends them after the bindings. An Agent's own list is never reordered,
- * filtered or truncated by this — which is the whole reason a project can turn
+ * filtered or truncated by this — which is the whole reason an agent can turn
  * discovery on without auditing what it already relies on.
  *
- * **An MCP server that requires OAuth is added only where this project has
+ * **An MCP server that requires OAuth is added only where this agent has
  * already connected it.** Someone authorizing a server in the console is
- * saying this project may use it, and there is no reason discovery should be
+ * saying this agent may use it, and there is no reason discovery should be
  * the one caller that ignores that. What it must not do is *resolve* the
  * credential to find out: `headersFor` refreshes tokens as a side effect, so
  * asking it a question would make discovery a writer. The connection rows
@@ -282,7 +282,7 @@ async function discoverCapabilities(
       // like any other binding that came back empty.
       //
       // Oversampled past the binding cap, because a candidate the loop below
-      // skips — an OAuth server this project has not connected, an entry
+      // skips — an OAuth server this agent has not connected, an entry
       // deleted since the index was built — must not cost a slot. Sized at
       // exactly the cap, one unconnected high scorer starved the servers the
       // request actually asked for.
@@ -295,7 +295,7 @@ async function discoverCapabilities(
     await Promise.all(
       search.rerank.usage.map((usage) =>
         recordUsage({
-          projectName: configuration.projectName,
+          agentName: configuration.agentName,
           model: usage.model,
           inputTokens: usage.inputTokens,
           outputTokens: 0,
@@ -310,7 +310,7 @@ async function discoverCapabilities(
   // `needs_reauth` are connections in name only — the console shows both as
   // something a person still has to finish — so only `connected` counts.
   const connections = deps.mcpConnections
-    ? await listProjectMcpConnections(deps.mcpConnections, configuration.projectName)
+    ? await listAgentMcpConnections(deps.mcpConnections, configuration.agentName)
     : [];
   const connected = new Set<string>(
     connections
@@ -362,7 +362,7 @@ async function discoverCapabilities(
     }
     if (server.auth && !connected.has(candidate.name)) {
       notes.push(
-        `MCP server '${candidate.name}' matched this request but this project has not connected it; authorize it from that server's own settings — binding it alone would still leave the run unable to sign in.`,
+        `MCP server '${candidate.name}' matched this request but this agent has not connected it; authorize it from that server's own settings — binding it alone would still leave the run unable to sign in.`,
       );
       continue;
     }
@@ -459,7 +459,7 @@ export function toolsPrepared(resolved: {
  * checks) from needing to know the difference.
  */
 export async function resolveRunTools(
-  deps: Pick<ExecutionDeps, "projects" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
+  deps: Pick<ExecutionDeps, "agents" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
   configuration: AgentConfiguration,
   signal?: AbortSignal,
   queries?: readonly string[],
@@ -597,7 +597,7 @@ export async function resolveRunTools(
       discovered,
       rerank,
       // Discovery's losses lead — a search that could not run, or a server it
-      // matched but the project cannot sign in to, is context for every binding
+      // matched but the agent cannot sign in to, is context for every binding
       // warning after it. What a search *found* is not here; see `discovered`.
       warnings: [
         ...discoveryNotes,

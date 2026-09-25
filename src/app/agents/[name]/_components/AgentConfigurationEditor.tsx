@@ -27,7 +27,7 @@ import { CodeBlock } from "@/app/_components/CodeBlock";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { ModelSelect } from "@/app/_components/modelOptions";
 import { monoInput } from "@/app/_components/monoInput";
-import { listProjects } from "../../lib/api";
+import { listAgents } from "../../lib/api";
 import { tierAtLeast } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
 import type { SelectableModel, AgentConfigurationInput, AgentParameters } from "../../lib/api";
@@ -39,7 +39,7 @@ import {
 } from "./inputs";
 import type { PickerOption } from "./inputs";
 import type { ConfigurationSave } from "./McpBindingSettings";
-import { bindingsMayOfferRecall } from "@/domain/project/memoryRecall";
+import { bindingsMayOfferRecall } from "@/domain/agent/memoryRecall";
 import { PRESENCE_PENALTY_RANGE } from "@/domain/llm/channel";
 
 /** Parse the JSON object the API accepts, without using a type assertion as validation. */
@@ -63,7 +63,7 @@ export function parseConfigurationDraft(value: AgentConfigurationInput, schemaTe
 }
 
 export function AgentConfigurationEditor({
-  projectName,
+  agentName,
   models,
   imageModels,
   value,
@@ -73,7 +73,7 @@ export function AgentConfigurationEditor({
   schemaError,
   save,
 }: {
-  projectName: string;
+  agentName: string;
   models: SelectableModel[];
   imageModels: SelectableModel[];
   value: AgentConfigurationInput;
@@ -92,7 +92,7 @@ export function AgentConfigurationEditor({
   const [pickerRevision, setPickerRevision] = useState(0);
   // The capability registries are `member`-gated server-side (`withMemberAuth`),
   // so a guest's picker requests are guaranteed 403s — the same predicate
-  // decides here whether to ask at all. Projects stay: every tier may list them.
+  // decides here whether to ask at all. Agents stay: every tier may list them.
   const viewer = useViewer();
   const mayReadRegistries = viewer !== null && tierAtLeast(viewer.tier, "member");
 
@@ -107,9 +107,9 @@ export function AgentConfigurationEditor({
     void Promise.allSettled([
       mayReadRegistries ? listMcps() : Promise.resolve(none),
       mayReadRegistries ? listSkills() : Promise.resolve(none),
-      listProjects(),
+      listAgents(),
     ]).then(
-      ([mcps, skills, projects]) => {
+      ([mcps, skills, agents]) => {
         if (cancelled) {
           return;
         }
@@ -123,15 +123,15 @@ export function AgentConfigurationEditor({
             skills.value.map((s) => ({ value: s.name, description: s.description })),
           );
         }
-        if (projects.status === "fulfilled") {
-          setSubagentOptions(projects.value
-            .filter((p) => p.configured && p.name !== projectName)
+        if (agents.status === "fulfilled") {
+          setSubagentOptions(agents.value
+            .filter((p) => p.configured && p.name !== agentName)
             .map((p) => ({ value: p.name, description: p.description })));
         }
         const failed = [
           ...(mcps.status === "rejected" ? [t("bindings.mcpServers")] : []),
           ...(skills.status === "rejected" ? [t("configuration.skills")] : []),
-          ...(projects.status === "rejected" ? [t("bindings.subagents")] : []),
+          ...(agents.status === "rejected" ? [t("bindings.subagents")] : []),
         ];
         setPickerError(failed.length > 0
           ? t("configuration.pickerLoadFailed", { items: failed.join(", ") })
@@ -141,7 +141,7 @@ export function AgentConfigurationEditor({
     return () => {
       cancelled = true;
     };
-  }, [projectName, viewer, mayReadRegistries, pickerRevision, t]);
+  }, [agentName, viewer, mayReadRegistries, pickerRevision, t]);
   const [schemaHelpOpen, setSchemaHelpOpen] = useState(false);
 
   const selectedModel = models.find((m) => m.id === value.model);
@@ -436,7 +436,7 @@ export function AgentConfigurationEditor({
         )}
 
         <McpBindingInput
-          projectName={projectName}
+          agentName={agentName}
           values={value.mcpList}
           onChange={(mcpList) => patch({ mcpList })}
           options={mcpOptions}

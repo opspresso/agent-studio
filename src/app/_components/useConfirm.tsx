@@ -10,7 +10,7 @@ type ConfirmOptions = {
   message: string;
   /** The action button's label — name the action ("Delete", "Publish"), never "OK". */
   confirmLabel: string;
-  /** Require typing this exact text before the action enables (project deletion). */
+  /** Require typing this exact text before the action enables (agent deletion). */
   requireText?: string;
   /** Action button colour. Red (destructive) unless the ask is not one — publish passes teal. */
   color?: string;

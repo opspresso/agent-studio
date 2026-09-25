@@ -19,9 +19,9 @@ const NOW_ISO = "2026-07-01T00:00:00Z";
 const expiredSec = Math.floor(Date.parse("2026-06-01T00:00:00Z") / 1000);
 const freshSec = Math.floor(Date.parse("2026-08-01T00:00:00Z") / 1000);
 
-/** A live project row a trace or usage write is allowed to land in. */
-function seedProject(name: string): void {
-  store.seed([{ ...keys.project(name), entityType: "PROJECT", name, updatedAt: NOW_ISO }]);
+/** A live agent row a trace or usage write is allowed to land in. */
+function seedAgent(name: string): void {
+  store.seed([{ ...keys.agent(name), entityType: "AGENT", name, updatedAt: NOW_ISO }]);
 }
 
 beforeEach(() => {
@@ -36,7 +36,7 @@ afterEach(() => {
 
 const trace = (over: Record<string, unknown> = {}) => ({
   traceId: "t1",
-  projectName: "p",
+  agentName: "p",
   status: "completed" as const,
   spans: [],
   startedAt: "2026-06-30T00:00:00Z",
@@ -46,14 +46,14 @@ const trace = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-/** A trace row as the repository would have written it, under the project index. */
+/** A trace row as the repository would have written it, under the agent index. */
 function traceRow(over: Record<string, unknown>, expiresAt: number): Record<string, unknown> {
   const body = trace(over);
   return {
     ...body,
     ...keys.trace(body.traceId),
     entityType: "TRACE",
-    GSI1PK: keys.traceProjectPartition(body.projectName),
+    GSI1PK: keys.traceAgentPartition(body.agentName),
     GSI1SK: `${body.createdAt}#${body.traceId}`,
     expiresAt,
   };
@@ -61,7 +61,7 @@ function traceRow(over: Record<string, unknown>, expiresAt: number): Record<stri
 
 describe("trace TTL", () => {
   it("writes one shared expiresAt on the trace body and its index row", async () => {
-    seedProject("p");
+    seedAgent("p");
     await traceRepository.put(trace());
     const body = store.all().find((row) => row.entityType === "TRACE");
     const ref = store.all().find((row) => row.entityType === "TRACE_REF");
@@ -79,12 +79,12 @@ describe("trace TTL", () => {
     expect((await traceRepository.get("t1"))?.traceId).toBe("t1");
   });
 
-  it("filters expired traces from listByProject()", async () => {
+  it("filters expired traces from listByAgent()", async () => {
     store.seed([
       traceRow({ traceId: "fresh" }, freshSec),
       traceRow({ traceId: "old" }, expiredSec),
     ]);
-    const traces = await traceRepository.listByProject("p");
+    const traces = await traceRepository.listByAgent("p");
     expect(traces.map((t) => t.traceId)).toEqual(["fresh"]);
   });
 
@@ -97,7 +97,7 @@ describe("trace TTL", () => {
       traceRow({ traceId: "b", createdAt: "2026-06-30T00:00:00Z" }, freshSec),
     ]);
 
-    const traces = await traceRepository.listByProject("p", { limit: 2 });
+    const traces = await traceRepository.listByAgent("p", { limit: 2 });
 
     expect(traces.map((t) => t.traceId)).toEqual(["a", "b"]);
   });
@@ -105,7 +105,7 @@ describe("trace TTL", () => {
   it("returns everything live when the limit exceeds the partition", async () => {
     store.seed([traceRow({ traceId: "only" }, freshSec)]);
 
-    const traces = await traceRepository.listByProject("p", { limit: 50 });
+    const traces = await traceRepository.listByAgent("p", { limit: 50 });
 
     expect(traces.map((t) => t.traceId)).toEqual(["only"]);
   });
@@ -113,9 +113,9 @@ describe("trace TTL", () => {
 
 describe("usage TTL", () => {
   it("sets expiresAt from the usage date when materialising a row", async () => {
-    seedProject("p");
+    seedAgent("p");
     const delta = {
-      projectName: "p",
+      agentName: "p",
       date: "2026-05-01",
       model: "openai/gpt-5",
       calls: 1,
@@ -134,12 +134,12 @@ describe("usage TTL", () => {
     expect((await store.getItem(keys.usage("p", "2026-05-01")))?.expiresAt).toBe(expected);
   });
 
-  it("filters expired usage rows from listByProject()", async () => {
+  it("filters expired usage rows from listByAgent()", async () => {
     store.seed([
-      { ...keys.usage("p", "2026-06-30"), projectName: "p", date: "2026-06-30", expiresAt: freshSec, calls: {} },
-      { ...keys.usage("p", "2025-01-01"), projectName: "p", date: "2025-01-01", expiresAt: expiredSec, calls: {} },
+      { ...keys.usage("p", "2026-06-30"), agentName: "p", date: "2026-06-30", expiresAt: freshSec, calls: {} },
+      { ...keys.usage("p", "2025-01-01"), agentName: "p", date: "2025-01-01", expiresAt: expiredSec, calls: {} },
     ]);
-    const rows = await usageRepository.listByProject("p", "2025-01-01", "2026-07-01");
+    const rows = await usageRepository.listByAgent("p", "2025-01-01", "2026-07-01");
     expect(rows.map((r) => r.date)).toEqual(["2026-06-30"]);
   });
 });

@@ -4,7 +4,7 @@ import * as store from "@/infrastructure/db/store";
 import { keys } from "@/infrastructure/db/keys";
 import { workspaceRepository as repository } from "@/infrastructure/db/repositories/workspaceRepository";
 import { chatRepository as chats } from "@/infrastructure/db/repositories/chatRepository";
-import { projectRepository as projects } from "@/infrastructure/db/repositories/projectRepository";
+import { agentRepository as agents } from "@/infrastructure/db/repositories/agentRepository";
 import { createWorkspaceUseCases } from "@/application/workspace/workspaceUseCases";
 import { createCodingUseCases, type CodingDeps } from "@/application/coding/codingUseCases";
 import { createWorkspaceRuntimeAdapter } from "@/infrastructure/workspace/runtimeAdapters";
@@ -31,9 +31,9 @@ beforeEach(async () => {
   vi.useFakeTimers(); vi.setSystemTime(now); fake.rows.clear(); id = 0;
   review = { headSha: head, treeSha: "b".repeat(40), headTreeSha: "c".repeat(40), fingerprint: "full-tree-fingerprint", diff: "+change", truncated: false };
   pull = { number: 7, url: "https://example.test/company/repo/pull/7", headSha: head, baseBranch: "main", draft: false, state: "open", ci: "passed" };
-  deps = { repository, chats, projects, now: () => now, newId: () => `id-${++id}`, idleTtlSeconds: 60, runTimeoutMs: 60_000,
+  deps = { repository, chats, agents, now: () => now, newId: () => `id-${++id}`, idleTtlSeconds: 60, runTimeoutMs: 60_000,
     checkRepository: vi.fn(async () => {}),
-    policy: () => ({ projectName: "demo", repositories: ["company/repo"], runtimes: ["codex"], checks: [], deploymentWorkflows: ["deploy.yml"] }),
+    policy: () => ({ agentName: "demo", repositories: ["company/repo"], runtimes: ["codex"], checks: [], deploymentWorkflows: ["deploy.yml"] }),
     runtime: kind => createWorkspaceRuntimeAdapter(kind), execute: async (_workspace, work) => { await work(); }, sleep: async () => {},
     provider: { kind: "fake", ensure: async () => ({ externalId: "sandbox-1" }), inspect: async () => "ready",
       execute: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })), start: vi.fn(async () => {}), operation: async () => ({ id: "", status: "not-started" }),
@@ -46,9 +46,9 @@ beforeEach(async () => {
       openPullRequest: vi.fn(async () => ({ ...pull })), merge: vi.fn(async () => "merged-sha"), dispatch: vi.fn(async () => ({ runId: 99 })) },
   };
   const at = now.toISOString();
-  fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", ownerEmail: owner, createdAt: at, updatedAt: at }]);
-  await chats.create({ chatId: "chat-1", projectName: "demo", title: "Task", ownerEmail: owner, createdAt: at, updatedAt: at });
-  workspace = await createWorkspaceUseCases(deps).create({ chatId: "chat-1", projectName: "demo", title: "Coding", runtime: "codex", repository: "company/repo", baseBranch: "main" }, owner);
+  fake.seed([{ ...keys.agent("demo"), entityType: "AGENT", name: "demo", displayName: "Demo", ownerEmail: owner, createdAt: at, updatedAt: at }]);
+  await chats.create({ chatId: "chat-1", agentName: "demo", title: "Task", ownerEmail: owner, createdAt: at, updatedAt: at });
+  workspace = await createWorkspaceUseCases(deps).create({ chatId: "chat-1", agentName: "demo", title: "Coding", runtime: "codex", repository: "company/repo", baseBranch: "main" }, owner);
 });
 afterEach(() => {
   try { expect(vi.getTimerCount()).toBe(0); }
@@ -113,7 +113,7 @@ describe("explicit coding action approvals", () => {
     const api = createCodingUseCases(deps);
     const approval = await api.request(workspace.id, owner, { kind: "commit", message: "Reviewed change" });
     deps.authorize = async () => { throw new Error("Workspace tools disabled"); };
-    deps.policy = () => ({ projectName: "demo", runtimes: ["codex"], mode: "selected", repositories: [], checks: [], deploymentWorkflows: [] });
+    deps.policy = () => ({ agentName: "demo", runtimes: ["codex"], mode: "selected", repositories: [], checks: [], deploymentWorkflows: [] });
     await expect(api.decide(workspace.id, owner, approval.id, true)).rejects.toThrow("Workspace tools disabled");
     expect((await api.decide(workspace.id, owner, approval.id, false)).status).toBe("rejected");
     expect(deps.coding.commit).not.toHaveBeenCalled();
@@ -122,7 +122,7 @@ describe("explicit coding action approvals", () => {
   it("rechecks asynchronous repository policy after review and refuses a revoked repository before any Git effect", async () => {
     const api = createCodingUseCases(deps);
     const approval = await api.request(workspace.id, owner, { kind: "commit", message: "feat: add game" });
-    deps.policy = async () => ({ projectName: "demo", runtimes: ["codex"], checks: [], deploymentWorkflows: [] });
+    deps.policy = async () => ({ agentName: "demo", runtimes: ["codex"], checks: [], deploymentWorkflows: [] });
     await expect(api.decide(workspace.id, owner, approval.id, true)).rejects.toMatchObject({ status: 409 });
     expect(deps.coding.commit).not.toHaveBeenCalled();
     expect(deps.coding.push).not.toHaveBeenCalled();
@@ -295,7 +295,7 @@ describe("explicit coding action approvals", () => {
     expect(await repository.runs(workspace.id, 20)).toHaveLength(0);
   });
   it("connects an empty Git-free Workspace without changing its identity or session", async () => {
-    const free = await createWorkspaceUseCases(deps).create({ chatId: "free-chat", createChat: true, projectName: "demo", title: "Files", runtime: "codex" }, owner);
+    const free = await createWorkspaceUseCases(deps).create({ chatId: "free-chat", createChat: true, agentName: "demo", title: "Files", runtime: "codex" }, owner);
     const attached = await createCodingUseCases(deps).attachRepository(free.id, owner, "company/repo", "main");
     expect(attached).toMatchObject({ id: free.id, sessionId: free.sessionId, coding: { repository: "company/repo", baseBranch: "main" } });
     expect(await repository.runs(free.id, 20)).toHaveLength(0);
@@ -304,7 +304,7 @@ describe("explicit coding action approvals", () => {
     await expect(createCodingUseCases(deps).attachRepository(free.id, owner, "other/repo", "main")).rejects.toThrow("different repository");
   });
   it("keeps the existing Workspace when repository attachment is refused", async () => {
-    const free = await createWorkspaceUseCases(deps).create({ chatId: "free-chat", createChat: true, projectName: "demo", title: "Files", runtime: "codex" }, owner);
+    const free = await createWorkspaceUseCases(deps).create({ chatId: "free-chat", createChat: true, agentName: "demo", title: "Files", runtime: "codex" }, owner);
     deps.coding.prepare = async () => { throw new Error("workdir is not empty; existing files were kept"); };
     await expect(createCodingUseCases(deps).attachRepository(free.id, owner, "company/repo", "main")).rejects.toThrow("existing files were kept");
     expect((await repository.get(free.id))?.coding).toBeUndefined();

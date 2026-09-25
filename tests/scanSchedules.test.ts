@@ -10,14 +10,14 @@ import {
 } from "@/application/trigger/scanSchedules";
 import {
   REPAIR_AFTER_SECONDS,
-  REPAIR_PROJECT_CONCURRENCY,
+  REPAIR_AGENT_CONCURRENCY,
   repairLostRuns,
 } from "@/application/trigger/repairLostRuns";
 import { admitRun, executeFiring } from "@/application/trigger/runTrigger";
 import { toRunInput } from "@/application/execution/deps";
 import type { FiringDeps } from "@/application/trigger/deps";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import type {
   ScheduleTrigger,
@@ -34,7 +34,7 @@ const AT = new Date("2026-08-01T00:30:30Z");
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(AT); });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
-const project: Project = {
+const agent: Agent = {
   name: "p",
   displayName: "P",
   description: "",
@@ -45,7 +45,7 @@ const project: Project = {
 };
 
 const configuration: AgentConfiguration = {
-  projectName: "p",
+  agentName: "p",
 
   systemPrompt: "",
 
@@ -58,7 +58,7 @@ const configuration: AgentConfiguration = {
 
 function schedule(overrides: Partial<ScheduleTrigger> = {}): ScheduleTrigger {
   return {
-    projectName: "p",
+    agentName: "p",
     triggerId: "nightly",
     kind: "schedule",
     description: "",
@@ -76,7 +76,7 @@ function schedule(overrides: Partial<ScheduleTrigger> = {}): ScheduleTrigger {
 
 function webhook(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
   return {
-    projectName: "p",
+    agentName: "p",
     triggerId: "inbound",
     kind: "webhook",
     description: "",
@@ -123,11 +123,11 @@ interface Fixture {
 function fixture(
   opts: {
     schedules?: ScheduleTrigger[];
-    /** Non-schedule rows the project holds; the repair sweep sees these too. */
+    /** Non-schedule rows the agent holds; the repair sweep sees these too. */
     webhooks?: WebhookTrigger[];
     seededRows?: TriggerRun[];
     configuration?: AgentConfiguration | null;
-    projectMissing?: boolean;
+    agentMissing?: boolean;
     chunks?: EngineChunk[];
     runThrows?: Error;
     slotsBusy?: boolean;
@@ -137,20 +137,20 @@ function fixture(
   const claimed = new Set<string>();
   const runs: Fixture["runs"] = [];
   const schedules = opts.schedules ?? [schedule()];
-  // What the project partition holds, which is what the repair sweep walks —
+  // What the agent partition holds, which is what the repair sweep walks —
   // the scan's own index read stays schedules-only.
   const stored: Trigger[] = [...schedules, ...(opts.webhooks ?? [])];
   const triggers: TriggerRepository = {
     get: async () => null,
-    listByProject: async (projectName, limit, after) => stored
-      .filter((trigger) => trigger.projectName === projectName && (!after || trigger.triggerId > after))
+    listByAgent: async (agentName, limit, after) => stored
+      .filter((trigger) => trigger.agentName === agentName && (!after || trigger.triggerId > after))
       .sort((left, right) => left.triggerId < right.triggerId ? -1 : left.triggerId > right.triggerId ? 1 : 0)
       .slice(0, limit),
     listSchedules: async (limit, after) => {
       const start = after
         ? schedules.findIndex(
             (trigger) =>
-              trigger.projectName === after.projectName && trigger.triggerId === after.triggerId,
+              trigger.agentName === after.agentName && trigger.triggerId === after.triggerId,
           ) + 1
         : 0;
       return schedules.slice(start, start + limit);
@@ -158,8 +158,8 @@ function fixture(
     create: async () => {},
     put: async () => {},
     delete: async () => {},
-    async claimIdempotencyKey(projectName, triggerId, key) {
-      const scoped = JSON.stringify([projectName, triggerId, key]);
+    async claimIdempotencyKey(agentName, triggerId, key) {
+      const scoped = JSON.stringify([agentName, triggerId, key]);
       if (claimed.has(scoped)) {
         return false;
       }
@@ -186,14 +186,14 @@ function fixture(
       return true;
     },
     // Scoped to the trigger, as the real query is: the repair sweep visits every
-    // trigger of the project and must not see another one's rows as its own.
+    // trigger of the agent and must not see another one's rows as its own.
     // Newest first, bounded by `limit` and by `startedBefore`, because the real
     // query answers all three from the sort key — a fake that ignored them could
     // not tell a window of old rows from a page of recent ones, which is exactly
     // the difference a busy trigger turns into a row that never gets repaired.
-    listRuns: async (projectName, triggerId, limit, listOpts = {}) =>
+    listRuns: async (agentName, triggerId, limit, listOpts = {}) =>
       rows
-        .filter((r) => r.projectName === projectName && r.triggerId === triggerId)
+        .filter((r) => r.agentName === agentName && r.triggerId === triggerId)
         .filter((r) => !listOpts.startedBefore || (r.startedAt ?? "") < listOpts.startedBefore)
         .filter((r) => !listOpts.queueLeaseBefore || (r.queueLeaseUntil ?? "") < listOpts.queueLeaseBefore)
         .filter((r) => !listOpts.status || r.status === listOpts.status)
@@ -210,11 +210,11 @@ function fixture(
     runs,
     deps: {
       triggers,
-      projects: {
-        get: async () => (opts.projectMissing ? null : { ...project, configuration: opts.configuration === undefined ? configuration : opts.configuration ?? undefined }),
-        // The repair sweep enumerates by project, since webhook rows carry no
-        // cross-project index.
-        list: async () => (opts.projectMissing ? [] : [project]),
+      agents: {
+        get: async () => (opts.agentMissing ? null : { ...agent, configuration: opts.configuration === undefined ? configuration : opts.configuration ?? undefined }),
+        // The repair sweep enumerates by agent, since webhook rows carry no
+        // cross-agent index.
+        list: async () => (opts.agentMissing ? [] : [agent]),
         put: async () => {},
         delete: async () => {},
       } as never,
@@ -311,7 +311,7 @@ describe("scanSchedules", () => {
 
   it("releases queued admissions when a later schedule page cannot be read", async () => {
     const f = fixture({ schedules: Array.from({ length: SCHEDULE_SCAN_PAGE_SIZE }, (_, index) => schedule({ triggerId: `schedule-${index}` })) });
-    const repairPages = vi.spyOn(f.deps.triggers, "listByProject");
+    const repairPages = vi.spyOn(f.deps.triggers, "listByAgent");
     const list = f.deps.triggers.listSchedules;
     f.deps.triggers.listSchedules = async (limit, after) => { if (after) throw new Error("page failed"); return list(limit, after); };
     await expect(scanSchedules(f.deps, AT)).rejects.toThrow("page failed");
@@ -380,20 +380,20 @@ describe("scanSchedules", () => {
   });
 
   it("carries an explicitly authorized owner email without changing the schedule actor", async () => {
-    const f = fixture({ schedules: [schedule({ executionEmail: project.ownerEmail })] });
+    const f = fixture({ schedules: [schedule({ executionEmail: agent.ownerEmail })] });
     f.deps.executionUserActive = async () => true;
     let email: string | undefined;
     const original = f.deps.run;
     f.deps.run = async function* (input) { email = input.userEmail; yield* original(input); };
     const result = await scanAndExecute(f);
     expect(result.summary.fired).toBe(1);
-    expect(email).toBe(project.ownerEmail);
+    expect(email).toBe(agent.ownerEmail);
     expect(f.runs[0]?.actorKind).toBe("schedule");
-    expect(toRunInput({ project, configuration, messages: [], ownerEmail: email }).ownerEmail).toBe(email);
+    expect(toRunInput({ agent, configuration, messages: [], ownerEmail: email }).ownerEmail).toBe(email);
   });
 
   it("does not admit a schedule whose delegated user is inactive", async () => {
-    const f = fixture({ schedules: [schedule({ executionEmail: project.ownerEmail })] });
+    const f = fixture({ schedules: [schedule({ executionEmail: agent.ownerEmail })] });
     f.deps.executionUserActive = async () => false;
     const result = await scanAndExecute(f);
     expect(result.firings).toHaveLength(0);
@@ -401,11 +401,11 @@ describe("scanSchedules", () => {
   });
 
   it("rechecks ownership after admission and before dispatch", async () => {
-    const f = fixture({ schedules: [schedule({ executionEmail: project.ownerEmail })] });
+    const f = fixture({ schedules: [schedule({ executionEmail: agent.ownerEmail })] });
     f.deps.executionUserActive = async () => true;
     const result = await scanSchedules(f.deps, AT);
     expect(result.firings).toHaveLength(1);
-    f.deps.projects.get = async () => ({ ...project, ownerEmail: "new-owner@example.com" });
+    f.deps.agents.get = async () => ({ ...agent, ownerEmail: "new-owner@example.com" });
     const firing = result.firings[0]!;
     await executeFiring(f.deps, firing, scheduleInput(firing.trigger));
     expect(f.runs).toHaveLength(0);
@@ -439,7 +439,7 @@ describe("scanSchedules", () => {
       chunks: [{ delta: { content: "market close" } }],
     });
     const sent: Array<{ kind: string; text: string }> = [];
-    f.deps.deliverReport = async (_project, delivery, text) => {
+    f.deps.deliverReport = async (_agent, delivery, text) => {
       sent.push({ kind: delivery.kind, text });
     };
     await scanAndExecute(f);
@@ -466,7 +466,7 @@ describe("scanSchedules", () => {
         }),
       ],
     });
-    f.deps.deliverReport = async (_project, delivery) => {
+    f.deps.deliverReport = async (_agent, delivery) => {
       if (delivery.kind === "slack") {
         throw new Error("channel_not_found");
       }
@@ -570,7 +570,7 @@ describe("scanSchedules", () => {
 
   it("records a row for an occurrence whose claim was won but whose admit failed", async () => {
     const f = fixture();
-    f.deps.projects.get = async () => {
+    f.deps.agents.get = async () => {
       throw new Error("dynamo down");
     };
     const { summary } = await scanAndExecute(f);
@@ -586,11 +586,11 @@ describe("scanSchedules", () => {
     ]);
   });
 
-  it("records a skip row when the schedule's project is gone", async () => {
-    const f = fixture({ projectMissing: true });
+  it("records a skip row when the schedule's agent is gone", async () => {
+    const f = fixture({ agentMissing: true });
     const { summary } = await scanAndExecute(f);
     expect(summary).toMatchObject({ fired: 0, skipped: 1 });
-    expect(f.rows[0]).toMatchObject({ status: "skipped", error: "Project not found." });
+    expect(f.rows[0]).toMatchObject({ status: "skipped", error: "Agent not found." });
   });
 
   it("records a claimed occurrence it cannot run as a skipped row", async () => {
@@ -613,7 +613,7 @@ describe("scanSchedules", () => {
 
   it("finishes a row a lost instance left running once its lease is surely dead", async () => {
     const lost: TriggerRun = {
-      projectName: "p",
+      agentName: "p",
       triggerId: "nightly",
       runId: "lost-run",
       status: "running",
@@ -645,7 +645,7 @@ describe("scanSchedules", () => {
     // `after()`, so an instance lost mid-run leaves a row saying it is still
     // going. Unlike a schedule there is no next occurrence to notice.
     const lost: TriggerRun = {
-      projectName: "p",
+      agentName: "p",
       triggerId: "inbound",
       runId: "lost-delivery",
       status: "running",
@@ -659,7 +659,7 @@ describe("scanSchedules", () => {
     };
     const f = fixture({
       // Disabled, and the only schedule: a webhook is reached through the
-      // project walk, never through the schedule index the scan reads.
+      // agent walk, never through the schedule index the scan reads.
       schedules: [schedule({ enabled: false })],
       webhooks: [webhook()],
       seededRows: [lost, alive],
@@ -679,14 +679,14 @@ describe("scanSchedules", () => {
     // that needs finishing is never on the page — and it only sinks further the
     // longer it stays stranded, so no number of sweeps would ever reach it.
     const lost: TriggerRun = {
-      projectName: "p",
+      agentName: "p",
       triggerId: "inbound",
       runId: "lost-delivery",
       status: "running",
       startedAt: new Date(AT.getTime() - (REPAIR_AFTER_SECONDS + 300) * 1000).toISOString(),
     };
     const busy: TriggerRun[] = Array.from({ length: 200 }, (_unused, index) => ({
-      projectName: "p",
+      agentName: "p",
       triggerId: "inbound",
       runId: `recent-${index}`,
       status: "succeeded" as const,
@@ -705,7 +705,7 @@ describe("scanSchedules", () => {
 
   it("repairs a disabled webhook's rows too — disabling must not strand one", async () => {
     const lost: TriggerRun = {
-      projectName: "p",
+      agentName: "p",
       triggerId: "inbound",
       runId: "lost-delivery",
       status: "running",
@@ -720,9 +720,9 @@ describe("scanSchedules", () => {
     expect(summary.repaired).toBe(1);
   });
 
-  it("counts a project whose triggers cannot be listed as an error, and finishes the tick", async () => {
+  it("counts an agent whose triggers cannot be listed as an error, and finishes the tick", async () => {
     const f = fixture({ schedules: [schedule({ enabled: false })] });
-    f.deps.triggers.listByProject = async () => {
+    f.deps.triggers.listByAgent = async () => {
       throw new Error("partition unavailable");
     };
     const { summary } = await scanAndExecute(f);
@@ -832,10 +832,10 @@ describe("scheduleInput", () => {
 });
 
 describe("repairLostRuns", () => {
-  it("bounds concurrent project partition reads", async () => {
+  it("bounds concurrent agent partition reads", async () => {
     const f = fixture({ schedules: [] });
-    const projects = Array.from({ length: REPAIR_PROJECT_CONCURRENCY + 2 }, (_, index) => ({
-      ...project,
+    const agents = Array.from({ length: REPAIR_AGENT_CONCURRENCY + 2 }, (_, index) => ({
+      ...agent,
       name: `p-${index}`,
     }));
     let active = 0;
@@ -848,11 +848,11 @@ describe("repairLostRuns", () => {
     const atLimit = new Promise<void>((resolve) => {
       reached = resolve;
     });
-    f.deps.projects.list = async () => projects;
-    f.deps.triggers.listByProject = async () => {
+    f.deps.agents.list = async () => agents;
+    f.deps.triggers.listByAgent = async () => {
       active += 1;
       maxActive = Math.max(maxActive, active);
-      if (active === REPAIR_PROJECT_CONCURRENCY) {
+      if (active === REPAIR_AGENT_CONCURRENCY) {
         reached();
       }
       await gate;
@@ -862,7 +862,7 @@ describe("repairLostRuns", () => {
 
     const repair = repairLostRuns(f.deps, AT);
     await atLimit;
-    expect(maxActive).toBe(REPAIR_PROJECT_CONCURRENCY);
+    expect(maxActive).toBe(REPAIR_AGENT_CONCURRENCY);
     release();
 
     await expect(repair).resolves.toEqual({ repaired: 0, errors: 0 });

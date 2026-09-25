@@ -148,7 +148,7 @@ export interface TokenRequestTarget {
 }
 
 /**
- * Resolves the outbound `Authorization` for one project's connection to one
+ * Resolves the outbound `Authorization` for one agent's connection to one
  * server, refreshing when the stored token is close enough to expiry that a run
  * could outlive it.
  *
@@ -157,7 +157,7 @@ export interface TokenRequestTarget {
  * with one answer shape — headers to send, or a reason there are none.
  */
 /**
- * The outbound headers this project's OAuth connection contributes, or why it
+ * The outbound headers this agent's OAuth connection contributes, or why it
  * contributes none.
  *
  * `unavailable` is deliberately not called a warning: OAuth is one way to
@@ -179,7 +179,7 @@ export interface McpAuthProvider {
    * already hold the entry, so the check costs no read on a run's critical path.
    */
   headersFor(
-    projectName: string,
+    agentName: string,
     serverName: string,
     auth: McpServerAuth,
   ): Promise<McpAuthResolution>;
@@ -187,7 +187,7 @@ export interface McpAuthProvider {
    * Record that the server rejected this connection's token, so the console can
    * offer a reconnect instead of reporting the server as down.
    */
-  markUnauthorized(projectName: string, serverName: string, scope?: string): Promise<void>;
+  markUnauthorized(agentName: string, serverName: string, scope?: string): Promise<void>;
 }
 
 export interface OAuthClient {

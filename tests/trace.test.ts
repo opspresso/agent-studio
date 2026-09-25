@@ -15,8 +15,8 @@ function memoryRepository(): { repository: TraceRepository; traces: Trace[] } {
       async get(traceId) {
         return traces.find((trace) => trace.traceId === traceId) ?? null;
       },
-      async listByProject(projectName) {
-        return traces.filter((trace) => trace.projectName === projectName);
+      async listByAgent(agentName) {
+        return traces.filter((trace) => trace.agentName === agentName);
       },
     },
   };
@@ -29,7 +29,7 @@ describe("TraceRecorder", () => {
     try {
       const { repository, traces } = memoryRepository();
       const recorder = new TraceRecorder(repository, {
-        projectName: "parent", model: "model", messageCount: 1,
+        agentName: "parent", model: "model", messageCount: 1,
       });
       const contexts: Partial<EngineChunk>[] = [
         {},
@@ -74,7 +74,7 @@ describe("TraceRecorder", () => {
     try {
       const { repository, traces } = memoryRepository();
       const recorder = new TraceRecorder(repository, {
-        projectName: "parent", model: "model", messageCount: 1,
+        agentName: "parent", model: "model", messageCount: 1,
       });
       const context = (transferId: string) => ({
         author: "child",
@@ -114,7 +114,7 @@ describe("TraceRecorder", () => {
     const argumentsText = JSON.stringify({ q: inputMarker });
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "parent",
+      agentName: "parent",
       model: "openai/gpt-5-mini",
       messageCount: 4,
     });
@@ -138,7 +138,7 @@ describe("TraceRecorder", () => {
 
     expect(traces).toHaveLength(1);
     expect(traces[0]).toMatchObject({
-      projectName: "parent",
+      agentName: "parent",
       status: "completed",
     });
     // A subagent's tokens do NOT become a model span here: this run does not know
@@ -165,7 +165,7 @@ describe("TraceRecorder", () => {
     // recorder has that a tool failed.
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "p",
+      agentName: "p",
       model: "openai/gpt-5-mini",
       messageCount: 1,
     });
@@ -185,7 +185,7 @@ describe("TraceRecorder", () => {
   it("keeps two transfers to the same agent as two spans", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "parent",
+      agentName: "parent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
     });
@@ -202,7 +202,7 @@ describe("TraceRecorder", () => {
   it("keeps unsampled transfers separate and folds their completion chunks", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "parent",
+      agentName: "parent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
     });
@@ -229,7 +229,7 @@ describe("TraceRecorder", () => {
   it("rolls a nested chain into the transfer that started it", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "bruce-bot",
+      agentName: "bruce-bot",
       model: "openai/gpt-5-mini",
       messageCount: 1,
     });
@@ -261,7 +261,7 @@ describe("TraceRecorder", () => {
     try {
       const { repository, traces } = memoryRepository();
       const recorder = new TraceRecorder(repository, {
-        projectName: "parent",
+        agentName: "parent",
         model: "openai/gpt-5-mini",
         messageCount: 1,
       });
@@ -291,7 +291,7 @@ describe("TraceRecorder", () => {
   it("records the model that actually produced a fallback turn", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "p",
+      agentName: "p",
       model: "openai/primary",
       messageCount: 1,
     });
@@ -316,7 +316,7 @@ describe("TraceRecorder", () => {
     // this, like a turn that wrote 4,010 words.
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "p",
+      agentName: "p",
       model: "openai/gpt-5-mini",
       messageCount: 1,
     });
@@ -342,7 +342,7 @@ describe("TraceRecorder", () => {
       // Constructed before the configuration's tools resolve, on purpose: a resolve
       // that throws must still leave a trace.
       const recorder = new TraceRecorder(repository, {
-        projectName: "parent",
+        agentName: "parent",
         model: "openai/gpt-5-mini",
         messageCount: 1,
       });
@@ -380,7 +380,7 @@ describe("TraceRecorder", () => {
     try {
       const { repository, traces } = memoryRepository();
       const recorder = new TraceRecorder(repository, {
-        projectName: "parent",
+        agentName: "parent",
         model: "openai/gpt-5-mini",
         messageCount: 1,
       });
@@ -414,7 +414,7 @@ describe("TraceRecorder", () => {
   it("bounds what a stage may put on its span", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "parent",
+      agentName: "parent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
     });
@@ -443,7 +443,7 @@ describe("TraceRecorder", () => {
     try {
       const { repository, traces } = memoryRepository();
       const recorder = new TraceRecorder(repository, {
-        projectName: "parent",
+        agentName: "parent",
         model: "openai/gpt-5-mini",
         messageCount: 1,
       });
@@ -475,7 +475,7 @@ describe("TraceRecorder", () => {
   it("fails the subagent span, not the run, when a transfer errors", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "parent",
+      agentName: "parent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
     });
@@ -493,7 +493,7 @@ describe("TraceRecorder", () => {
   it("counts spans dropped past the cap instead of hiding them", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "p",
+      agentName: "p",
       model: "openai/gpt-5-mini",
       messageCount: 1,
     });
@@ -510,7 +510,7 @@ describe("TraceRecorder", () => {
   it("marks a trace failed when an error chunk is observed", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "p",
+      agentName: "p",
       model: "openai/gpt-5-mini",
       messageCount: 1,
     });
@@ -525,7 +525,7 @@ describe("TraceRecorder", () => {
   it("records caller cancellation instead of the abort error that delivered it", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "p",
+      agentName: "p",
       model: "openai/gpt-5-mini",
       messageCount: 1,
     });
@@ -542,7 +542,7 @@ describe("TraceRecorder", () => {
     // A normally exhausted generator can still carry an incomplete answer.
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "p",
+      agentName: "p",
       model: "openai/gpt-5-mini",
       messageCount: 1,
     });
@@ -559,7 +559,7 @@ describe("TraceRecorder", () => {
     // result — and the parent may still answer normally.
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
-      projectName: "p",
+      agentName: "p",
       model: "openai/gpt-5-mini",
       messageCount: 1,
     });
@@ -577,7 +577,7 @@ describe("TraceRecorder", () => {
     try {
       const { repository, traces } = memoryRepository();
       const recorder = new TraceRecorder(repository, {
-        projectName: "p", model: "model", messageCount: 1,
+        agentName: "p", model: "model", messageCount: 1,
       });
       recorder.observeResult({
         content: "partial", model: "model", usage: { inputTokens: 5, outputTokens: 10, costUsd: 0 },

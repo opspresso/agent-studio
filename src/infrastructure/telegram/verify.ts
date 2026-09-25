@@ -4,7 +4,7 @@ import { timingSafeEqualString } from "@/shared/timingSafe";
 export const TELEGRAM_SECRET_HEADER = "x-telegram-bot-api-secret-token";
 
 /**
- * Whether a delivery carries the secret this project's webhook was registered
+ * Whether a delivery carries the secret this agent's webhook was registered
  * with. Constant-time, like every other secret comparison here; a missing
  * header is simply wrong.
  */

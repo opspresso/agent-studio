@@ -9,11 +9,11 @@ export function createAudioCleanup(deps: SourceFileDeps): AudioJobProcessorDeps[
     for (const kind of kinds) {
       for (;;) {
         context.signal.throwIfAborted();
-        const batch = await deps.files.forJob(job.projectName, job.id, kind, 100);
+        const batch = await deps.files.forJob(job.agentName, job.id, kind, 100);
         if (!batch.length) break;
         for (const file of batch) {
           context.signal.throwIfAborted();
-          if (file.projectName !== job.projectName || file.userEmail !== job.userEmail || file.derived?.jobId !== job.id || file.id === job.fileId) {
+          if (file.agentName !== job.agentName || file.userEmail !== job.userEmail || file.derived?.jobId !== job.id || file.id === job.fileId) {
             throw new AudioJobStepError("cleanup_scope_invalid", false);
           }
           const now = deps.now().toISOString();

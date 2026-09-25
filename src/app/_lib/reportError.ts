@@ -6,7 +6,7 @@ import { notifications } from "@mantine/notifications";
  * The inline alert beside the form is the right place for the explanation: it
  * is anchored to the thing that failed and it stays. What it cannot do is be
  * *seen*. These pages are long — the schedules list, the model catalogue, a
- * project's settings — and the press that failed is often nowhere near the top
+ * agent's settings — and the press that failed is often nowhere near the top
  * of the viewport by the time the answer comes back, so a save that did not
  * happen looked exactly like a save that did.
  *

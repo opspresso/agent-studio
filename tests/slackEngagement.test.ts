@@ -231,7 +231,7 @@ describe("which Slack events are for the bot", () => {
       ).toBe("run");
     });
 
-    it("does nothing when the project named none", () => {
+    it("does nothing when the agent named none", () => {
       expect(classifySlackEvent(channelMessage({ text: "deploy?" })).kind).toBe("ignore");
       expect(classifySlackEvent(channelMessage({ text: "deploy?" }), { keywords: [] }).kind).toBe(
         "ignore",

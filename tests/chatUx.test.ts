@@ -31,14 +31,14 @@ describe("chat startup and composer accessibility", () => {
     expect(html).toContain(">Workspace<");
   });
 
-  it.each(["en", "ko"] as const)("announces project loading without offering a premature send in %s", (locale) => {
+  it.each(["en", "ko"] as const)("announces agent loading without offering a premature send in %s", (locale) => {
     const t = translator(locale);
     vi.mocked(useT).mockReturnValue(t);
     const html = render(createElement(NewChatPanel));
     expect(html).toContain('role="status"');
     expect(html).toContain(t("common.loading"));
     expect(html).not.toContain("<textarea");
-    expect(html).not.toContain(t("chat.noAgentProjects"));
+    expect(html).not.toContain(t("chat.noAgentSummarys"));
     expect(html).not.toContain(`aria-label="${t("chat.send")}"`);
   });
 

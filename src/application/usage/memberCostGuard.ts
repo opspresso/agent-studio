@@ -1,14 +1,14 @@
 /**
  * Spend guard for one member, over the UTC month — the tier cost cap.
  *
- * The project guard beside it bounds what a *project* may cost; nothing
+ * The agent guard beside it bounds what a *agent* may cost; nothing
  * bounded what one *person* could spend across the shared catalog, which is
  * the axis a tier prices. The cap comes from `TIER_LIMITS` and the spend from
  * the member's own daily rows, summed from the first of the UTC month — the
- * same bounded query over one partition that the project guard's monthly
+ * same bounded query over one partition that the agent guard's monthly
  * window already runs, and the same rows the profile page reads.
  *
- * Same contract as the project guard, deliberately: **a backstop, not an
+ * Same contract as the agent guard, deliberately: **a backstop, not an
  * exact cap** (usage flushes at run end, so runs that start together all pass
  * the pre-check), and every read failure is fail-open — a person must not
  * stop working because the guard's own read failed. No Slack notification: a
@@ -47,8 +47,8 @@ export class MemberCostLimitExceededError extends RateLimitedError {
 /**
  * Refuse the run when the member behind the actor has spent their tier's
  * monthly cap. A no-op for uncapped tiers (no read at all), and for every
- * actor kind that spends no personal budget — machine callers, and project
- * tokens, whose spend belongs to their project.
+ * actor kind that spends no personal budget — machine callers, and agent
+ * tokens, whose spend belongs to their agent.
  */
 export async function assertWithinMemberCostLimit(
   deps: MemberCostGuardDeps,

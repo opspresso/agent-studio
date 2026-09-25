@@ -5,12 +5,12 @@ import type {
 } from "@/domain/messaging/transcript";
 import { queryItems } from "../store";
 import { keys } from "../keys";
-import { putProjectItem } from "../projectLifecycle";
+import { putAgentItem } from "../agentLifecycle";
 import { expiresAtFromNow, TRANSCRIPT_TTL_SECONDS } from "../ttl";
 import { boundedPageLimit } from "@/shared/pageLimit";
 
 /**
- * A conversation's turns, one row each, in the project's partition under a
+ * A conversation's turns, one row each, in the agent's partition under a
  * sort-key prefix that names the conversation.
  *
  * The sort key is the turn's instant plus a random suffix: two turns can land
@@ -20,12 +20,12 @@ import { boundedPageLimit } from "@/shared/pageLimit";
  * instant keeps them ordered.
  */
 export const transcriptRepository: ConversationTranscriptRepository = {
-  async append(projectName, conversationKey, turn) {
+  async append(agentName, conversationKey, turn) {
     const seq = randomUUID().slice(0, 8);
-    await putProjectItem(projectName, {
-      ...keys.transcriptTurn(projectName, conversationKey, turn.createdAt, seq),
+    await putAgentItem(agentName, {
+      ...keys.transcriptTurn(agentName, conversationKey, turn.createdAt, seq),
       entityType: "transcriptTurn",
-      projectName,
+      agentName,
       conversationKey,
       role: turn.role,
       content: turn.content,
@@ -36,9 +36,9 @@ export const transcriptRepository: ConversationTranscriptRepository = {
     });
   },
 
-  async recent(projectName, conversationKey, limit) {
+  async recent(agentName, conversationKey, limit) {
     const pageLimit = boundedPageLimit(limit);
-    const prefix = keys.transcriptTurnPrefix(projectName, conversationKey);
+    const prefix = keys.transcriptTurnPrefix(agentName, conversationKey);
     // Newest first, bounded, with expired rows left out before the bound
     // counts — the sweep is periodic.
     const items = await queryItems({

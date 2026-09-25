@@ -29,7 +29,7 @@ export function ViewerProvider({
  * The root layout resolves this once before rendering and provides it to every
  * page. `useSession` already carries the email, but not the admin flag — and
  * the pages that gate on ownership need both, because an admin may mutate any
- * project. One hook so the gates cannot drift apart on what "may edit this"
+ * agent. One hook so the gates cannot drift apart on what "may edit this"
  * means. `null` means nobody is signed in; it is never a loading sentinel.
  */
 export function useViewer(): Viewer | null {
@@ -41,15 +41,15 @@ export function useViewer(): Viewer | null {
 }
 
 /**
- * Whether this viewer may mutate a project owned by `ownerEmail`.
+ * Whether this viewer may mutate an agent owned by `ownerEmail`.
  *
- * `isConfiguredAdmin`, not `isAdmin`: this must mirror `assertProjectWritable`
+ * `isConfiguredAdmin`, not `isAdmin`: this must mirror `assertAgentWritable`
  * exactly, and the two differ on a deployment that has no admin list — where
  * `isAdmin` is true for everyone and the server still allows only the owner.
  * Using the wrong one here does not open anything up, but it offers every user
- * an edit form for every project that 403s on save.
+ * an edit form for every agent that 403s on save.
  */
-export function canEditProject(viewer: Viewer | null, ownerEmail: string | null): boolean {
+export function canEditAgent(viewer: Viewer | null, ownerEmail: string | null): boolean {
   return (
     viewer !== null &&
     ownerEmail !== null &&

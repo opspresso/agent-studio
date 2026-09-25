@@ -2,7 +2,7 @@
 
 import type * as engine from "@/application/runtime";
 import { readUrlContent } from "@/application/llm/urlContent";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import type { ExecutionDeps } from "./deps";
 
 /**

@@ -6,7 +6,7 @@
 
 import type { RunActor } from "@/domain/execution/actor";
 import type { MemberTier } from "@/domain/member/tiers";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import { beginRun, endRun } from "@/lib/runMetrics";
 import { enterRunContext } from "@/shared/runContext";
 import { assertWithinCostLimit, settleCostLimit, type CostGuardDeps } from "@/application/usage/costGuard";
@@ -55,7 +55,7 @@ export interface RunBracket {
   readonly runId: string;
   /**
    * Where this run's output goes, with the run's own identity already bound —
-   * project, Agent, actor, transfer chain, correlation id.
+   * agent, Agent, actor, transfer chain, correlation id.
    *
    * It is built here for the same reason the guards are: four entry points admit
    * a top-level run, and every one of them produces bytes. Binding the context
@@ -69,7 +69,7 @@ export interface RunBracket {
  * Admit a top-level run, or refuse it.
  *
  * Throws `ValidationError` when the Agent names a model this deployment
- * refuses to price, `CostLimitExceededError` when the project is over its daily
+ * refuses to price, `CostLimitExceededError` when the agent is over its daily
  * block threshold, `MemberCostLimitExceededError` when the member behind the
  * actor has spent their tier's monthly cap, or `ConcurrencyLimitError` when the
  * caller already has every slot in flight. All but the first are 429s carrying
@@ -81,7 +81,7 @@ export interface RunBracket {
  */
 async function openExecutionBracket(
   deps: RunBracketDeps,
-  project: Project,
+  agent: Agent,
   configuration: Pick<AgentConfiguration, "model" | "fallbackModel"> | undefined,
   actor?: RunActor,
 ): Promise<Omit<RunBracket, "artifacts">> {
@@ -120,7 +120,7 @@ async function openExecutionBracket(
       ...(configuration.fallbackModel ? { fallbackModel: configuration.fallbackModel } : {}),
     });
   }
-  await assertWithinCostLimit(deps, project);
+  await assertWithinCostLimit(deps, agent);
   // Resolved once, for both tier policies below. Fail open on the read like
   // the policy above: `undefined` degrades to the deployment-wide limits.
   let tier: MemberTier | undefined;
@@ -152,44 +152,44 @@ async function openExecutionBracket(
       closed = true;
       endRun(runMetric, { durationMs: Date.now() - startedAt, ...outcome });
       await slot.release();
-      await settleCostLimit(deps, project);
+      await settleCostLimit(deps, agent);
     },
   };
 }
 
 export function openModelCall(
   deps: RunBracketDeps,
-  project: Project,
+  agent: Agent,
   configuration: Pick<AgentConfiguration, "model" | "fallbackModel">,
   actor?: RunActor,
 ): Promise<Omit<RunBracket, "artifacts">> {
-  return openExecutionBracket(deps, project, configuration, actor);
+  return openExecutionBracket(deps, agent, configuration, actor);
 }
 
 /** Non-model workspace jobs share cost, concurrency and metrics without inventing a model. */
 export function openTaskRun(
   deps: RunBracketDeps,
-  project: Project,
+  agent: Agent,
   actor: RunActor,
 ): Promise<Omit<RunBracket, "artifacts">> {
-  return openExecutionBracket(deps, project, undefined, actor);
+  return openExecutionBracket(deps, agent, undefined, actor);
 }
 
 /** Chunk-producing runs add artifact capture to the common metered model-call bracket. */
 export async function openRun(
   deps: RunBracketDeps,
-  project: Project,
+  agent: Agent,
   configuration: AgentConfiguration,
   actor?: RunActor,
   opts: { ownerEmail?: string } = {},
 ): Promise<RunBracket> {
-  const bracket = await openModelCall(deps, project, configuration, actor);
+  const bracket = await openModelCall(deps, agent, configuration, actor);
   return {
     ...bracket,
     ...(deps.artifacts ? { artifacts: createArtifactRecorder(deps.artifacts, {
-      projectName: project.name,
+      agentName: agent.name,
       ...(actor ? { actor } : {}), ...(opts.ownerEmail ? { ownerEmail: opts.ownerEmail } : {}),
-      ancestry: [project.name], runId: bracket.runId,
+      ancestry: [agent.name], runId: bracket.runId,
     }) } : {}),
   };
 }

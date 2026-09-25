@@ -3,10 +3,10 @@
  *
  * The catalog is one global index over everything a run could reach — every
  * skill and every MCP server and the tools it offers. It is
- * not per project: which of them a given run may use is decided at dispatch,
+ * not per agent: which of them a given run may use is decided at dispatch,
  * from the Agent's bindings and this deployment's connections, and an index
  * that had already made that decision would have to be rebuilt whenever a
- * project changed.
+ * agent changed.
  */
 
 /**

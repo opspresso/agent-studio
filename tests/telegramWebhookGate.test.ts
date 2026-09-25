@@ -16,12 +16,12 @@ const { handled, claim, settle, failNext } = vi.hoisted(() => ({
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 vi.mock("@/lib/container", () => ({
   executionDeps: {},
-  projectRepository: {},
+  agentRepository: {},
   signArtifactUrl: undefined,
 }));
 vi.mock("@/infrastructure/telegram/client", () => ({ telegramClient: {} }));
 vi.mock("@/infrastructure/llm/documentExtractor", () => ({ documentExtractor: {} }));
-vi.mock("@/application/execution/runProject", () => ({ executeAgent: () => {} }));
+vi.mock("@/application/execution/runAgent", () => ({ executeAgent: () => {} }));
 vi.mock("@/infrastructure/db/repositories/telegramUpdateRepository", () => ({
   telegramUpdateRepository: {
     forBot: () => ({ updates: { claim, settle }, albums: { claim, settle } }),
@@ -48,7 +48,7 @@ const { handleTelegramUpdateRequest } = await import(
 );
 
 const SECRET = "asg_test-secret";
-const BINDING = { projectName: "painter", botToken: "42:tok", webhookSecret: SECRET, botUsername: "painter_bot" };
+const BINDING = { agentName: "painter", botToken: "42:tok", webhookSecret: SECRET, botUsername: "painter_bot" };
 
 function request(payload: unknown, secret: string | null = SECRET): Request {
   return new Request("https://studio.example.com/api/telegram/webhook/painter", {

@@ -16,7 +16,7 @@ import { summaryQuerySchema } from "@/app/api/usages/summary/validation";
 
 const rows: UsageRow[] = [
   {
-    projectName: "alpha",
+    agentName: "alpha",
     date: "2026-01-01",
     calls: { "google/gemini-3.1-flash-lite": 10, "openai/gpt-5-mini": 4 },
     inputTokens: { "google/gemini-3.1-flash-lite": 1000, "openai/gpt-5-mini": 400 },
@@ -24,7 +24,7 @@ const rows: UsageRow[] = [
     costUsd: { "google/gemini-3.1-flash-lite": 0.2, "openai/gpt-5-mini": 0.8 },
   },
   {
-    projectName: "beta",
+    agentName: "beta",
     date: "2026-01-01",
     calls: { "openai/gpt-5-mini": 6 },
     inputTokens: { "openai/gpt-5-mini": 600 },
@@ -52,8 +52,8 @@ describe("totals", () => {
 });
 
 describe("groupUsage", () => {
-  it("groups by project, sorted by cost desc", () => {
-    expect(groupUsage(rows, "project")).toEqual([
+  it("groups by agent, sorted by cost desc", () => {
+    expect(groupUsage(rows, "agent")).toEqual([
       { key: "beta", cost: 1.2, calls: 6, inputTokens: 600, cachedTokens: 480 },
       { key: "alpha", cost: 1, calls: 14, inputTokens: 1400, cachedTokens: 0 },
     ]);
@@ -83,22 +83,22 @@ describe("groupUsage", () => {
     // Rows written before the field carry no map at all, and a row summing to
     // zero cached tokens is what the breakdown renders as blank rather than 0%.
     const legacy: DailyCostRow[] = [
-      { projectName: "alpha", date: "2026-01-01", calls: { m: 1 }, costUsd: { m: 1 } },
+      { agentName: "alpha", date: "2026-01-01", calls: { m: 1 }, costUsd: { m: 1 } },
     ];
-    expect(groupUsage(legacy, "project")).toEqual([
+    expect(groupUsage(legacy, "agent")).toEqual([
       { key: "alpha", cost: 1, calls: 1, inputTokens: 0, cachedTokens: 0 },
     ]);
   });
 
   it("groups a member's own rows the same three ways", () => {
     // A member row carries no `inputTokens`/`outputTokens` need and no
-    // department, but it names its project — which is the axis the profile
-    // page adds over a project's own usage tab.
+    // department, but it names its agent — which is the axis the profile
+    // page adds over an agent's own usage tab.
     const mine: DailyCostRow[] = [
-      { projectName: "alpha", date: "2026-01-01", calls: { "openai/gpt-5-mini": 2 }, costUsd: { "openai/gpt-5-mini": 1 } },
-      { projectName: "beta", date: "2026-01-01", calls: { "google/gemini-3.1-flash-lite": 1 }, costUsd: { "google/gemini-3.1-flash-lite": 3 } },
+      { agentName: "alpha", date: "2026-01-01", calls: { "openai/gpt-5-mini": 2 }, costUsd: { "openai/gpt-5-mini": 1 } },
+      { agentName: "beta", date: "2026-01-01", calls: { "google/gemini-3.1-flash-lite": 1 }, costUsd: { "google/gemini-3.1-flash-lite": 3 } },
     ];
-    expect(groupUsage(mine, "project")).toEqual([
+    expect(groupUsage(mine, "agent")).toEqual([
       { key: "beta", cost: 3, calls: 1, inputTokens: 0, cachedTokens: 0 },
       { key: "alpha", cost: 1, calls: 2, inputTokens: 0, cachedTokens: 0 },
     ]);
@@ -111,8 +111,8 @@ describe("groupUsage", () => {
 });
 
 describe("buildDailySeries", () => {
-  it("buckets cost per day and groups by project", () => {
-    const series = buildDailySeries(rows, "project", "2026-01-01", "2026-01-02");
+  it("buckets cost per day and groups by agent", () => {
+    const series = buildDailySeries(rows, "agent", "2026-01-01", "2026-01-02");
     expect(series.keys).toEqual(["beta", "alpha"]);
     expect(series.data).toEqual([
       { date: "2026-01-01", values: [1.2, 1] },
@@ -127,7 +127,7 @@ describe("buildDailySeries", () => {
   });
 
   it("fills every date in range with zeros when there are no items", () => {
-    const series = buildDailySeries([], "project", "2026-01-01", "2026-01-03");
+    const series = buildDailySeries([], "agent", "2026-01-01", "2026-01-03");
     expect(series.keys).toEqual([]);
     expect(series.data.map((point) => point.date)).toEqual([
       "2026-01-01",
@@ -138,33 +138,33 @@ describe("buildDailySeries", () => {
 
   it("folds series beyond the limit into Others", () => {
     const many: UsageRow[] = Array.from({ length: MAX_CHART_SERIES + 2 }, (_, i) => ({
-      projectName: `p${i}`,
+      agentName: `p${i}`,
       date: "2026-01-01",
       calls: { "openai/gpt-5-mini": 1 },
       inputTokens: { "openai/gpt-5-mini": 100 },
       outputTokens: { "openai/gpt-5-mini": 50 },
       costUsd: { "openai/gpt-5-mini": i + 1 },
     }));
-    const series = buildDailySeries(many, "project", "2026-01-01", "2026-01-01");
+    const series = buildDailySeries(many, "agent", "2026-01-01", "2026-01-01");
     expect(series.keys).toHaveLength(MAX_CHART_SERIES + 1);
     expect(series.keys[series.keys.length - 1]).toBe(OTHERS_KEY);
-    // Keys keep the highest-cost projects; the two cheapest (1 + 2) fold into Others.
+    // Keys keep the highest-cost agents; the two cheapest (1 + 2) fold into Others.
     expect(series.keys).not.toContain("p0");
     expect(series.keys).not.toContain("p1");
     expect(series.data[0]?.values.at(-1)).toBeCloseTo(3, 6);
   });
 
   it("returns empty data for a malformed range", () => {
-    const series = buildDailySeries(rows, "project", "not-a-date", "2026-01-02");
+    const series = buildDailySeries(rows, "agent", "not-a-date", "2026-01-02");
     expect(series.data).toEqual([]);
   });
 });
 
 describe("toChartColumns / toChartData", () => {
-  it("preserves chart dates when a project is named date", () => {
+  it("preserves chart dates when an agent is named date", () => {
     const series = buildDailySeries([
-      { projectName: "date", date: "2026-01-01", calls: { m: 1 }, costUsd: { m: 3 } },
-    ], "project", "2026-01-01", "2026-01-02");
+      { agentName: "date", date: "2026-01-01", calls: { m: 1 }, costUsd: { m: 3 } },
+    ], "agent", "2026-01-01", "2026-01-02");
     const columns = toChartColumns(series.keys);
     expect(columns.map((column) => column.label)).toEqual(["date"]);
     expect(toChartData(series.data, columns)).toEqual([
@@ -175,7 +175,7 @@ describe("toChartColumns / toChartData", () => {
 
   it("preserves spend attributed to a department named __proto__", () => {
     const series = buildDailySeries([
-      { projectName: "alpha", date: "2026-01-01", calls: { m: 1 }, costUsd: { m: 3 } },
+      { agentName: "alpha", date: "2026-01-01", calls: { m: 1 }, costUsd: { m: 3 } },
     ], "department", "2026-01-01", "2026-01-01", new Map([["alpha", "__proto__"]]));
     const columns = toChartColumns(series.keys);
     expect(columns.map((column) => column.label)).toEqual(["__proto__"]);
@@ -184,13 +184,13 @@ describe("toChartColumns / toChartData", () => {
 
   it("keeps an Others department separate from the remaining departments' spend", () => {
     const many: DailyCostRow[] = Array.from({ length: MAX_CHART_SERIES + 2 }, (_, i) => ({
-      projectName: `p${i}`,
+      agentName: `p${i}`,
       date: "2026-01-01",
       calls: { m: 1 },
       costUsd: { m: i + 1 },
     }));
     const departments = new Map(many.map((row, index) => [
-      row.projectName!, index === many.length - 1 ? "Others" : `department-${index}`,
+      row.agentName!, index === many.length - 1 ? "Others" : `department-${index}`,
     ]));
     const series = buildDailySeries(many, "department", "2026-01-01", "2026-01-02", departments);
     const columns = toChartColumns(series.keys);
@@ -224,7 +224,7 @@ describe("toChartColumns / toChartData", () => {
   });
 
   it("preserves each column's spend when columns are reordered or filtered", () => {
-    const series = buildDailySeries(rows, "project", "2026-01-01", "2026-01-01");
+    const series = buildDailySeries(rows, "agent", "2026-01-01", "2026-01-01");
     const columns = toChartColumns(series.keys);
     expect(toChartData(series.data, columns.toReversed())).toEqual([
       { date: "2026-01-01", s0: 1.2, s1: 1 },
@@ -236,23 +236,23 @@ describe("toChartColumns / toChartData", () => {
 });
 
 describe("summaryQuerySchema", () => {
-  it("accepts a valid range and leaves project optional", () => {
+  it("accepts a valid range and leaves agent optional", () => {
     const result = summaryQuerySchema.safeParse({ from: "2026-05-01", to: "2026-05-10" });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.project).toBeUndefined();
+      expect(result.data.agent).toBeUndefined();
     }
   });
 
-  it("keeps an explicit project", () => {
+  it("keeps an explicit agent", () => {
     const result = summaryQuerySchema.safeParse({
       from: "2026-05-01",
       to: "2026-05-10",
-      project: "alpha",
+      agent: "alpha",
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.project).toBe("alpha");
+      expect(result.data.agent).toBe("alpha");
     }
   });
 

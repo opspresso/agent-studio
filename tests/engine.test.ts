@@ -47,7 +47,7 @@ describe("runAgent tool loop", () => {
       callMcpTool,
     };
     const input: RunAgentInput = {
-      projectName: "weather-bot",
+      agentName: "weather-bot",
       model: MODEL,
       systemPrompt: "You are helpful.",
       messages: [{ role: "user", content: "weather in Seoul?" }],
@@ -88,7 +88,7 @@ describe("runAgent tool loop", () => {
       runAgent(
         { createToolSchemaValidator, channel, recordUsage: async (r) => void recorded.push(r as { costUsd: number }) },
         {
-          projectName: "router-bot",
+          agentName: "router-bot",
           model: MODEL,
           systemPrompt: "You are helpful.",
           messages: [{ role: "user", content: "hi" }],
@@ -108,7 +108,7 @@ describe("runAgent tool loop", () => {
       runAgent(
         { createToolSchemaValidator, channel, recordUsage: async (r) => void recorded.push(r as { costUsd: number }) },
         {
-          projectName: "direct-bot",
+          agentName: "direct-bot",
           model: MODEL,
           systemPrompt: "You are helpful.",
           messages: [{ role: "user", content: "hi" }],
@@ -134,7 +134,7 @@ describe("runAgent tool loop", () => {
       runAgent(
         { createToolSchemaValidator, channel, callMcpTool: async () => ({ text: "a page" }) },
         {
-          projectName: "docs-bot",
+          agentName: "docs-bot",
           model: MODEL,
           systemPrompt: "You are helpful.",
           messages: [{ role: "user", content: "find the docs" }],
@@ -162,7 +162,7 @@ describe("runAgent tool loop", () => {
       runAgent(
         { createToolSchemaValidator, channel, callMcpTool: async () => ({ text: "a page" }) },
         {
-          projectName: "docs-bot",
+          agentName: "docs-bot",
           model: MODEL,
           systemPrompt: "You are helpful.",
           messages: [{ role: "user", content: "find the docs" }],
@@ -188,7 +188,7 @@ describe("runAgent tool loop", () => {
       loadSkillContent: async () => "# skill content",
     };
     const input: RunAgentInput = {
-      projectName: "p",
+      agentName: "p",
       model: MODEL,
       systemPrompt: "s",
       messages: [{ role: "user", content: "draw" }],
@@ -223,7 +223,7 @@ describe("runAgent tool loop", () => {
       },
     };
     const input: RunAgentInput = {
-      projectName: "p",
+      agentName: "p",
       model: MODEL,
       systemPrompt: "s",
       messages: [{ role: "user", content: "go" }],
@@ -255,7 +255,7 @@ describe("runAgent tool loop", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "weather?" }],
         mcpTools: [{ type: "function", function: { name: "getWeather", parameters: {} } }],
@@ -290,7 +290,7 @@ describe("runAgent tool loop", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "search" }],
         mcpTools: [{ type: "function", function: { name: "search", parameters: {} } }],
@@ -320,7 +320,7 @@ describe("runAgent tool loop", () => {
       callMcpTool: async () => ({ text: "ok" }),
     };
     const input: RunAgentInput = {
-      projectName: "looper",
+      agentName: "looper",
       model: MODEL,
       messages: [{ role: "user", content: "go" }],
       maxTurn: 2,
@@ -366,7 +366,7 @@ describe("tools + reasoning_effort provider constraint", () => {
 
     await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: "openai/gpt-5.6-sol",
         messages: [{ role: "user", content: "hi" }],
         parameters: { reasoningEffort: "medium" },
@@ -384,7 +384,7 @@ describe("tools + reasoning_effort provider constraint", () => {
 
     await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: "openai/gpt-5.6-sol",
         messages: [{ role: "user", content: "hi" }],
         mcpTools: [TOOL],
@@ -402,7 +402,7 @@ describe("tools + reasoning_effort provider constraint", () => {
 
     await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: "openai/gpt-5.4",
         messages: [{ role: "user", content: "hi" }],
         parameters: { reasoningEffort: "medium" },
@@ -419,7 +419,7 @@ describe("tools + reasoning_effort provider constraint", () => {
 
     await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: "openai/gpt-5.6-sol",
         messages: [{ role: "user", content: "hi" }],
         parameters: { reasoningEffort: "medium" },
@@ -445,7 +445,7 @@ describe("recording the run's reasoning", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "hi" }],
       }),
@@ -461,7 +461,7 @@ describe("recording the run's reasoning", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "hi" }],
         parameters: { reasoningTrace: true },
@@ -488,7 +488,7 @@ describe("recording the run's reasoning", () => {
 
     await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "hi" }],
         mcpTools: [TOOL],
@@ -512,7 +512,7 @@ describe("recording the run's reasoning", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "hi" }],
         mcpTools: [TOOL],
@@ -540,7 +540,7 @@ describe("recording the run's reasoning", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: "openai/gpt-5.6-sol",
         messages: [{ role: "user", content: "hi" }],
         mcpTools: [TOOL],
@@ -558,7 +558,7 @@ describe("recording the run's reasoning", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: "openai/gpt-5.6-sol",
         messages: [{ role: "user", content: "hi" }],
         mcpTools: [TOOL],
@@ -602,7 +602,7 @@ describe("recording the run's reasoning", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "mail me at a@b.com" }],
         mcpTools: [TOOL],
@@ -630,7 +630,7 @@ describe("recording the run's reasoning", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "hi" }],
       }),
@@ -653,7 +653,7 @@ describe("recording the run's reasoning", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "hi" }],
         mcpTools: [TOOL],
@@ -674,7 +674,7 @@ describe("recording the run's reasoning", () => {
       runAgent(
         { createToolSchemaValidator, channel, recordUsage: async () => {} },
         {
-          projectName: "p",
+          agentName: "p",
           model: MODEL,
           messages: [{ role: "user", content: "hi" }],
           parameters: { reasoningTrace: true },
@@ -698,7 +698,7 @@ describe("recording the run's reasoning", () => {
       runAgent(
         { createToolSchemaValidator, channel, recordUsage: async () => {} },
         {
-          projectName: "p",
+          agentName: "p",
           model: MODEL,
           messages: [{ role: "user", content: "hi" }],
           parameters: { reasoningTrace: true },
@@ -719,7 +719,7 @@ describe("recording the run's reasoning", () => {
     const chunks = await collect(
       runAgent(
         { createToolSchemaValidator, channel, recordUsage: async () => {} },
-        { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] },
+        { agentName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] },
       ),
     );
 
@@ -734,7 +734,7 @@ describe("recording the run's reasoning", () => {
     const chunks = await collect(
       runAgent(
         { createToolSchemaValidator, channel, recordUsage: async () => {} },
-        { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] },
+        { agentName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] },
       ),
     );
 
@@ -753,7 +753,7 @@ describe("recording the run's reasoning", () => {
       const chunks = await collect(
         runAgent(
           { createToolSchemaValidator, channel, recordUsage: async (r) => void recorded.push(r) },
-          { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] },
+          { agentName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] },
         ),
       );
       const usage = chunks.find((c) => c.usage)?.usage;
@@ -779,7 +779,7 @@ describe("runAgent GenerateImage builtin", () => {
     const deps: AgentDeps = { createToolSchemaValidator, channel, generateImage };
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "artist",
+        agentName: "artist",
         model: MODEL,
         messages: [{ role: "user", content: "draw a fox" }],
       }),
@@ -804,7 +804,7 @@ describe("runAgent GenerateImage builtin", () => {
     const { FakeChannel: FC } = await import("./fakeChannel");
     const channel = new FC([[contentChunk("hi"), usageChunk(1, 1)]]);
     await collect(
-      runAgent({ createToolSchemaValidator, channel }, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] }),
+      runAgent({ createToolSchemaValidator, channel }, { agentName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] }),
     );
     expect(channel.seenParams[0]?.tools?.some((t) => t.function.name === "GenerateImage") ?? false).toBe(false);
   });
@@ -817,7 +817,7 @@ describe("runAgent separates the configuration's prompt from what the engine app
       runAgent(
         { createToolSchemaValidator, channel, loadSkillContent: async () => "body", loadAgent: async () => { throw new Error("Unexpected delegation"); } },
         {
-          projectName: "p",
+          agentName: "p",
           model: MODEL,
           systemPrompt: "You are the front desk.",
           messages: [{ role: "user", content: "hi" }],
@@ -880,7 +880,7 @@ describe("runAgent MCP server system prompt", () => {
       runAgent(
         { createToolSchemaValidator, channel },
         {
-          projectName: "p",
+          agentName: "p",
           model: MODEL,
           systemPrompt: "base prompt",
           messages: [{ role: "user", content: "hi" }],
@@ -907,7 +907,7 @@ describe("runAgent MCP server system prompt", () => {
       runAgent(
         { createToolSchemaValidator, channel },
         {
-          projectName: "p",
+          agentName: "p",
           model: MODEL,
           systemPrompt: "base prompt",
           messages: [{ role: "user", content: "hi" }],
@@ -927,7 +927,7 @@ describe("runAgent MCP server system prompt", () => {
       runAgent(
         { createToolSchemaValidator, channel },
         {
-          projectName: "p",
+          agentName: "p",
           model: MODEL,
           messages: [{ role: "user", content: "hi" }],
           mcpTools: ["a", "b"].map((name) => ({ type: "function", function: { name, parameters: {} } })),
@@ -957,7 +957,7 @@ describe("runAgent skill and subagent system prompt", () => {
       runAgent(
         { createToolSchemaValidator, channel, loadSkillContent: async () => "" },
         {
-          projectName: "p",
+          agentName: "p",
           model: MODEL,
           systemPrompt: "base prompt",
           messages: [{ role: "user", content: "hi" }],
@@ -1003,7 +1003,7 @@ describe("runAgent image input", () => {
     await collect(
       runAgent(
         { createToolSchemaValidator, channel },
-        { projectName: "p", model: MODEL, messages: IMAGE_MESSAGE },
+        { agentName: "p", model: MODEL, messages: IMAGE_MESSAGE },
       ),
     );
 
@@ -1018,7 +1018,7 @@ describe("runAgent image input", () => {
       collect(
         runAgent(
           { createToolSchemaValidator, channel },
-          { projectName: "p", model: "xai/grok-code-fast-1", messages: IMAGE_MESSAGE },
+          { agentName: "p", model: "xai/grok-code-fast-1", messages: IMAGE_MESSAGE },
         ),
       ),
     ).rejects.toThrow("does not accept image input");
@@ -1030,7 +1030,7 @@ describe("runAgent image input", () => {
 
     await expect(
       collect(
-        runAgent({ createToolSchemaValidator, channel }, { projectName: "p", model: "who/knows", messages: IMAGE_MESSAGE }),
+        runAgent({ createToolSchemaValidator, channel }, { agentName: "p", model: "who/knows", messages: IMAGE_MESSAGE }),
       ),
     ).rejects.toThrow("not in the registry");
   });
@@ -1044,7 +1044,7 @@ describe("runAgent image input", () => {
       runAgent(
         { createToolSchemaValidator, channel },
         {
-          projectName: "p",
+          agentName: "p",
           model: MODEL,
           fallbackModel: "xai/grok-code-fast-1",
           messages: IMAGE_MESSAGE,
@@ -1063,7 +1063,7 @@ describe("runAgent image input", () => {
       runAgent(
         { createToolSchemaValidator, channel },
         {
-          projectName: "p",
+          agentName: "p",
           model: MODEL,
           parameters: { piiFiltering: true },
           messages: [
@@ -1096,7 +1096,7 @@ describe("runAgent skill system prompt", () => {
       runAgent(
         { createToolSchemaValidator, channel, loadSkillContent: async () => "" },
         {
-          projectName: "p",
+          agentName: "p",
           model: MODEL,
           messages: [{ role: "user", content: "hi" }],
           skills: [
@@ -1125,7 +1125,7 @@ describe("runAgent separates what consecutive turns say", () => {
     callMcpTool: async () => ({ text: "ok" }),
   });
   const input = (): RunAgentInput => ({
-    projectName: "p",
+    agentName: "p",
     model: MODEL,
     systemPrompt: "",
     messages: [{ role: "user", content: "go" }],
@@ -1262,7 +1262,7 @@ describe("provider output cut (finish_reason: length)", () => {
     const deps: AgentDeps = { createToolSchemaValidator, channel: scriptedModels(channel), recordUsage: async () => {} };
 
     const chunks = await collect(
-      runAgent(deps, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
+      runAgent(deps, { agentName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
     );
 
     expect(chunks.some((c) => c.done)).toBe(false);
@@ -1278,7 +1278,7 @@ describe("provider output cut (finish_reason: length)", () => {
     const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
 
     const chunks = await collect(
-      runAgent(deps, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
+      runAgent(deps, { agentName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
     );
 
     expect(chunks.some((c) => c.done)).toBe(true);
@@ -1302,7 +1302,7 @@ describe("provider output cut (finish_reason: length)", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "go" }],
         mcpTools: [{ type: "function", function: { name: "search", parameters: {} } }],
@@ -1333,7 +1333,7 @@ describe("provider output cut (finish_reason: length)", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "go" }],
         mcpTools: [{ type: "function", function: { name: "search", parameters: {} } }],
@@ -1356,7 +1356,7 @@ describe("provider output cut (finish_reason: length)", () => {
 
     const chunks = await collect(
       runAgent(deps, {
-        projectName: "p",
+        agentName: "p",
         model: MODEL,
         messages: [{ role: "user", content: "go" }],
         mcpTools: [{ type: "function", function: { name: "search", parameters: {} } }],
@@ -1384,7 +1384,7 @@ describe("provider output cut (finish_reason: length)", () => {
 describe("the final turn", () => {
   const toolDef = { type: "function" as const, function: { name: "loop", parameters: {} } };
   const loopingInput = (maxTurn: number): RunAgentInput => ({
-    projectName: "looper",
+    agentName: "looper",
     model: MODEL,
     messages: [{ role: "user", content: "go" }],
     maxTurn,
@@ -1482,7 +1482,7 @@ describe("empty provider errors", () => {
     const deps: AgentDeps = { createToolSchemaValidator, channel: scriptedModels(channel), recordUsage: async () => {} };
 
     const chunks = await collect(
-      runAgent(deps, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
+      runAgent(deps, { agentName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
     );
 
     expect(chunks.at(-1)?.error).toBe("unknown error");

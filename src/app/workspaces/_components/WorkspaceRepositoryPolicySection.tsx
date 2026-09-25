@@ -6,13 +6,13 @@ import { useT } from "@/app/_i18n/provider";
 import { useViewer } from "@/app/_lib/useViewer";
 import { LoadingText } from "@/app/_components/PageState";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
-import type { WorkspacePolicyResponse } from "@/app/api/projects/[name]/workspace-policy/route";
+import type { WorkspacePolicyResponse } from "@/app/api/agents/[name]/workspace-policy/route";
 import type { WorkspaceRuntime, WorkspaceCheck } from "@/domain/workspace/types";
 import Link from "next/link";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { WORKSPACE_REPOSITORY_MODES, workspaceRepositoryMode, type WorkspaceRepositoryMode } from "@/domain/workspace/policy";
 
-export function WorkspaceRepositoryPolicySection({ projectName }: { projectName: string }) {
+export function WorkspaceRepositoryPolicySection({ agentName }: { agentName: string }) {
   const t = useT();
   const viewer = useViewer();
   const [view, setView] = useState<WorkspacePolicyResponse | null>(null);
@@ -26,7 +26,7 @@ export function WorkspaceRepositoryPolicySection({ projectName }: { projectName:
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  const endpoint = `/api/projects/${encodeURIComponent(projectName)}/workspace-policy`;
+  const endpoint = `/api/agents/${encodeURIComponent(agentName)}/workspace-policy`;
 
   function apply(next: WorkspacePolicyResponse) {
     setView(next); setRuntime(next.rules.defaultRuntime ?? "command");

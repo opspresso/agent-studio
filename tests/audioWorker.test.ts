@@ -8,8 +8,8 @@ describe("audio worker lifecycle", () => {
   it("keeps admitting jobs during a slow retention sweep without overlapping sweeps", async () => {
     vi.useFakeTimers(); vi.setSystemTime("2026-09-09T00:00:00Z");
     const controller = new AbortController();
-    const due = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([{ id: "1", projectName: "a" }] as AudioJob[]);
-    const process = vi.fn(async (_project: string, _id: string, signal: AbortSignal) => {
+    const due = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([{ id: "1", agentName: "a" }] as AudioJob[]);
+    const process = vi.fn(async (_agent: string, _id: string, signal: AbortSignal) => {
       await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
     });
     const sweep = vi.fn(async (signal: AbortSignal) => {
@@ -27,8 +27,8 @@ describe("audio worker lifecycle", () => {
   it("runs bounded concurrent jobs, keeps polling and drains on shutdown", async () => {
     vi.useFakeTimers(); vi.setSystemTime("2026-09-09T00:00:00Z");
     const controller = new AbortController();
-    const due = vi.fn(async () => [{ id: "1", projectName: "a" }, { id: "2", projectName: "b" }] as AudioJob[]);
-    const process = vi.fn(async (_project: string, _id: string, signal: AbortSignal) => {
+    const due = vi.fn(async () => [{ id: "1", agentName: "a" }, { id: "2", agentName: "b" }] as AudioJob[]);
+    const process = vi.fn(async (_agent: string, _id: string, signal: AbortSignal) => {
       await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
     });
     const sweep = vi.fn(async () => ({ deleted: 0, failed: 0 }));

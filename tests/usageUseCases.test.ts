@@ -5,7 +5,7 @@ import type { MemberUsageRow } from "@/domain/usage/types";
 
 const row: MemberUsageRow = {
   email: "u@x.com",
-  projectName: "p",
+  agentName: "p",
   date: "2026-02-10",
   calls: { m: 3 },
   inputTokens: { m: 30 },
@@ -23,8 +23,8 @@ function usageWith(asked: Array<[string, string, string]>): UsageRepository {
     },
     claimAlert: async () => false,
     claimMonthAlert: async () => false,
-    listActorsByProject: async () => [],
-    listByProject: async () => [],
+    listActorsByAgent: async () => [],
+    listByAgent: async () => [],
     listByDateRange: async () => [],
   };
 }

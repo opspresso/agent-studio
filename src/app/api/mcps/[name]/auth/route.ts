@@ -30,7 +30,7 @@ export const GET = withAdminAuth(async (_user, _request: Request, ctx: RouteCont
 /**
  * Discover and store what an OAuth flow against this server needs. Admin-only:
  * the registry entry is shared, so its endpoints and OAuth client are operator
- * configuration; projects only perform their own owner-gated authorization.
+ * configuration; agents only perform their own owner-gated authorization.
  */
 export const POST = withAdminAuth(async (_user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
@@ -55,7 +55,7 @@ export const POST = withAdminAuth(async (_user, request: Request, ctx: RouteCont
   }
 });
 
-/** Save the OAuth app credentials shared by projects using this MCP entry. */
+/** Save the OAuth app credentials shared by agents using this MCP entry. */
 export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   const body = await editorBody(request, { empty: {} });

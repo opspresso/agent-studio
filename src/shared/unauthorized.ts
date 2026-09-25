@@ -1,5 +1,5 @@
 /**
- * The single 401 shape: both auth paths (session, project API token) return it.
+ * The single 401 shape: both auth paths (session, agent API token) return it.
  *
  * A surface whose card or metadata declares how to authenticate names the
  * scheme in `WWW-Authenticate`, so a client that reads the challenge learns

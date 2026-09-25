@@ -1,4 +1,4 @@
-import { withConfigurations } from "./projectConfigurations";
+import { withConfigurations } from "./agentConfigurations";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 /**
  * Memory recall before the first token — `parameters.memoryRecall`.
@@ -19,12 +19,12 @@ import {
   prepareMemoryForRun,
   recallMemories,
 } from "@/application/execution/memoryRecall";
-import { bindingsMayOfferRecall } from "@/domain/project/memoryRecall";
+import { bindingsMayOfferRecall } from "@/domain/agent/memoryRecall";
 import { buildAgentSystemPrompt, rememberedBlock } from "@/application/llm/agentAssembly";
-import { executeAgent } from "@/application/execution/runProject";
+import { executeAgent } from "@/application/execution/runAgent";
 import { prepareSubagent } from "@/application/execution/agentBindings";
 import { runAgent } from "@/application/runtime";
-import type { ExecutionDeps } from "@/application/execution/runProject";
+import type { ExecutionDeps } from "@/application/execution/runAgent";
 import { previewPrompt } from "@/application/execution/promptPreview";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
@@ -33,7 +33,7 @@ import { encryptHeaders } from "@/infrastructure/crypto/secretEncryption";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { UsageDelta } from "@/domain/usage/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
@@ -289,13 +289,13 @@ const testUrlPolicy: UrlPolicy = { async assertAllowed() {} };
 const registryServer = {
   name: "memory",
   url: MCP_URL,
-  description: "what the project remembers",
+  description: "what the agent remembers",
   headers: encryptHeaders({}),
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-function projectFixture(): Project {
+function agentFixture(): Agent {
   return {
     name: "recaller",
     displayName: "recaller",
@@ -308,7 +308,7 @@ function projectFixture(): Project {
 
 function configurationFixture(memoryRecall: boolean): AgentConfiguration {
   return {
-    projectName: "recaller",
+    agentName: "recaller",
 
     systemPrompt: "You are the team's assistant.",
 
@@ -324,15 +324,15 @@ function depsFixture(channel: FakeChannel): ExecutionDeps {
   const reject = () => Promise.reject(new Error("not used in this test"));
   const imageChannel = { generateImage: reject } as unknown as ImageChannel;
   return {
-    projects: { get: reject, list: reject, put: reject, delete: reject },
+    agents: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => registryServer, list: reject, put: reject, delete: reject },
     usage: {
       record: async (_delta: UsageDelta) => {},
       getDay: async () => null,
       claimAlert: async () => false,
-      listActorsByProject: reject,
-      listByProject: reject,
+      listActorsByAgent: reject,
+      listByAgent: reject,
       listByDateRange: reject,
     },
     createToolSchemaValidator,
@@ -389,7 +389,7 @@ describe("a configuration that opted in recalls before the first token", () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     const chunks: EngineChunk[] = [];
     for await (const chunk of executeAgent(depsFixture(channel), {
-      project: projectFixture(),
+      agent: agentFixture(),
       configuration: configurationFixture(memoryRecall),
       messages: [
         { role: "user", content: "earlier question" },
@@ -481,15 +481,15 @@ describe("a configuration that opted in recalls before the first token", () => {
     };
     const configuration = configurationFixture(true);
     configuration.parameters = { ...configuration.parameters, dynamicCapabilities: true };
-    const project = { ...projectFixture() };
-    deps.projects.get = async () => project;
-    deps.projects = withConfigurations(deps.projects, async () => configuration) as typeof deps.projects;
+    const agent = { ...agentFixture() };
+    deps.agents.get = async () => agent;
+    deps.agents = withConfigurations(deps.agents, async () => configuration) as typeof deps.agents;
     const actor = { kind: "user" as const, id: "reader@example.com" };
     const query = "유정열을 검색해서 정리해";
     const stream = surface === "root"
-      ? executeAgent(deps, { project, configuration, actor, messages: [{ role: "user", content: query }] })
+      ? executeAgent(deps, { agent, configuration, actor, messages: [{ role: "user", content: query }] })
       : (async function* () {
-          const prepared = await prepareSubagent(deps, { ...configuration, projectName: "parent", subagentList: [{ name: project.name }] }, project.name,
+          const prepared = await prepareSubagent(deps, { ...configuration, agentName: "parent", subagentList: [{ name: agent.name }] }, agent.name,
             { message: query, images: [], maxTurns: 8 }, async () => {}, { actor, ancestry: ["parent"] });
           try { yield* runAgent(prepared.deps, prepared.input); } finally { await prepared.close(); }
         })();
@@ -542,7 +542,7 @@ describe("a configuration that opted in recalls before the first token", () => {
     };
     const chunks: EngineChunk[] = [];
     for await (const chunk of executeAgent(deps, {
-      project: projectFixture(),
+      agent: agentFixture(),
       configuration: { ...configurationFixture(true), mcpList: [{ name: "memory" }, { name: "docs" }] },
       messages: [{ role: "user", content: "how do we deploy?" }],
     })) chunks.push(chunk);
@@ -553,7 +553,7 @@ describe("a configuration that opted in recalls before the first token", () => {
   it("the preview says the block is missing rather than showing a prompt one block short", async () => {
     const seen = stubMemoryServer();
     const preview = await previewPrompt(depsFixture(new FakeChannel([])), {
-      project: projectFixture(),
+      agent: agentFixture(),
       configuration: configurationFixture(true),
     });
     expect(preview.warnings.some((w) => w.startsWith("Memory recall is on"))).toBe(true);
@@ -567,7 +567,7 @@ describe("a configuration that opted in recalls before the first token", () => {
   it("the preview recalls and renders the memory block when a request is supplied", async () => {
     const seen = stubMemoryServer();
     const preview = await previewPrompt(depsFixture(new FakeChannel([])), {
-      project: projectFixture(),
+      agent: agentFixture(),
       configuration: configurationFixture(true),
       message: "how do we deploy?",
       actor: { kind: "user", id: "reader@example.com" },
@@ -586,7 +586,7 @@ describe("a configuration that opted in recalls before the first token", () => {
   it("the preview names a configuration with recall on and no server to recall from", async () => {
     stubMemoryServer();
     const preview = await previewPrompt(depsFixture(new FakeChannel([])), {
-      project: projectFixture(),
+      agent: agentFixture(),
       configuration: { ...configurationFixture(true), mcpList: [] },
     });
     expect(preview.warnings.some((w) => w.includes("no bound MCP server offers a 'recall' tool"))).toBe(

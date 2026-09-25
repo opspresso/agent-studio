@@ -5,7 +5,7 @@ import { listTriggerRuns, type TriggerRun } from "../../lib/api";
 export const MAX_CONCURRENT_SCHEDULE_RUN_READS = 8;
 
 export async function loadScheduleRuns(
-  projectName: string,
+  agentName: string,
   schedules: readonly { triggerId: string }[],
   readRuns: typeof listTriggerRuns = listTriggerRuns,
 ): Promise<Record<string, TriggerRun[]>> {
@@ -13,7 +13,7 @@ export async function loadScheduleRuns(
     schedules,
     MAX_CONCURRENT_SCHEDULE_RUN_READS,
     async (trigger) => {
-      const { runs } = await readRuns(projectName, trigger.triggerId);
+      const { runs } = await readRuns(agentName, trigger.triggerId);
       return [trigger.triggerId, runs] as const;
     },
   );

@@ -37,10 +37,10 @@ function fixture(reply: (body: Record<string, unknown>, index: number) => unknow
   const closed = vi.fn(async () => {});
   const loadAgent = vi.fn<NonNullable<AgentDeps["loadAgent"]>>(async (name, task) => ({
     deps: { createToolSchemaValidator, channel: models }, close: closed, warnings: [],
-    input: { projectName: name, model: CHILD, maxTurn: 4, messages: [{ role: "user", content: task.message }], signal: task.signal },
+    input: { agentName: name, model: CHILD, maxTurn: 4, messages: [{ role: "user", content: task.message }], signal: task.signal },
   }));
   const deps: AgentDeps = { createToolSchemaValidator, channel: models, canDelegate: true, loadAgent };
-  const input: RunAgentInput = { projectName: "root", model: ROOT, maxTurn: 8, canDispatch: true, messages: [{ role: "user", content: "help me" }], subagents: [{ name: "child", description: "Specialist" }] };
+  const input: RunAgentInput = { agentName: "root", model: ROOT, maxTurn: 8, canDispatch: true, messages: [{ role: "user", content: "help me" }], subagents: [{ name: "child", description: "Specialist" }] };
   return { deps, input, requests, closed, loadAgent, models };
 }
 
@@ -96,7 +96,7 @@ describe("native SDK delegation", () => {
 
   it("reports a child admission refusal as a tool result and lets the parent answer", async () => {
     const f = fixture((_body, index) => index === 0 ? calls({ name: "delegate_child", input: "research" }) : answer("The specialist is unavailable"));
-    f.loadAgent.mockRejectedValue(new Error("Child project spending limit reached"));
+    f.loadAgent.mockRejectedValue(new Error("Child agent spending limit reached"));
     const chunks = await collect(runAgent(f.deps, f.input));
     expect(f.requests.map((body) => body.model)).toEqual([ROOT, ROOT]);
     expect(chunks.some((chunk) => chunk.toolResult?.content.includes("spending limit"))).toBe(true);

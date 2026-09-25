@@ -221,6 +221,18 @@ const MIGRATIONS: Migration[] = [
        WHERE data->>'entityType' = 'AudioJob' AND gsi1pk = '${keys.audioJobDueQuery("").pk}'`,
     ],
   },
+  {
+    version: 9,
+    name: "agent_runtime_session_column",
+    statements: [
+      `DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM items WHERE pk LIKE 'PROJECT#%' OR data ? 'projectName') THEN
+          RAISE EXCEPTION 'Existing Agent records require a fresh database before upgrading';
+        END IF;
+      END $$`,
+      `ALTER TABLE runtime_sessions RENAME COLUMN project_name TO agent_name`,
+    ],
+  },
 ];
 
 /** Bring the database to the current schema. Safe to call on every boot. */

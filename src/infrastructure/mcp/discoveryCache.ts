@@ -9,7 +9,7 @@
  * makes no MCP request at all, and a run that does pays the same three requests
  * it always did.
  *
- * Keyed by url *and* headers: two projects may reach one registry server with
+ * Keyed by url *and* headers: two agents may reach one registry server with
  * different credentials, and a server is free to expose different tools to each.
  * Sharing an entry across them would leak one caller's tool list to the other.
  *

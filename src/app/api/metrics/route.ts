@@ -23,7 +23,7 @@ import { isShuttingDown } from "@/shared/lifecycle";
  *
  * Unauthenticated and dependency-free, like `/api/health`: it is scraped
  * in-cluster on the pod address, and it exposes only process-wide counts — no
- * project, user, or model is named.
+ * agent, user, or model is named.
  */
 export function GET(): Response {
   const {

@@ -13,7 +13,7 @@ const detail = await import("@/app/api/workspaces/[id]/route");
 const events = await import("@/app/api/workspaces/[id]/events/route");
 const actions = await import("@/app/api/workspaces/[id]/actions/route");
 const decision = await import("@/app/api/workspaces/[id]/actions/[action]/route");
-const policy = await import("@/app/api/projects/[name]/workspace-policy/route");
+const policy = await import("@/app/api/agents/[name]/workspace-policy/route");
 const context = { params: Promise.resolve({ id: "workspace-1", action: "approval-1" }) };
 const request = (path: string, method = "GET", body?: unknown) => new Request(`http://localhost/api/workspaces${path}`, {
   method, headers: { "Content-Type": "application/json", "Idempotency-Key": "stable-request-key" },
@@ -24,13 +24,13 @@ beforeEach(() => { vi.clearAllMocks(); f.events.mockResolvedValue([]); });
 describe("Workspace HTTP contract", () => {
   it.each(["selected", "owners", "all", "new"])("accepts the explicit %s repository mode", async mode => {
     const body = { revision: null, rules: { mode, repositories: [], repositoryOwners: [], defaultRuntime: "command", idleTtlSeconds: 1800, checks: [], deploymentWorkflows: [] } };
-    f.update.mockResolvedValue({ projectName: "demo", rules: body.rules, revision: 1 });
+    f.update.mockResolvedValue({ agentName: "demo", rules: body.rules, revision: 1 });
     expect((await policy.PUT(request("/policy", "PUT", body), { params: Promise.resolve({ name: "demo" }) })).status).toBe(200);
     expect(f.update).toHaveBeenCalledWith("demo", body, "owner@example.com");
   });
-  it("uses the member identity for project authorization and revision for repository policy writes and rejects compute or wildcard fields", async () => {
+  it("uses the member identity for agent authorization and revision for repository policy writes and rejects compute or wildcard fields", async () => {
     const context = { params: Promise.resolve({ name: "demo" }) };
-    f.update.mockResolvedValue({ projectName: "demo", revision: 2 });
+    f.update.mockResolvedValue({ agentName: "demo", revision: 2 });
     const body = { revision: 1, rules: { mode: "owners", repositories: ["company/repo"], repositoryOwners: ["company"], defaultRuntime: "codex", idleTtlSeconds: 300, checks: [{ name: "test", command: "pnpm test" }], deploymentWorkflows: [] } };
     expect((await policy.PUT(request("/policy", "PUT", body), context)).status).toBe(200);
     expect(f.update).toHaveBeenCalledWith("demo", body, "owner@example.com");
@@ -39,12 +39,12 @@ describe("Workspace HTTP contract", () => {
     }
     expect(f.update).toHaveBeenCalledTimes(1);
     expect((await policy.PUT(request("/policy", "PUT", { revision: 2, rules: null }), context)).status).toBe(400);
-    f.getView.mockResolvedValue({ projectName: "demo", canManage: false });
+    f.getView.mockResolvedValue({ agentName: "demo", canManage: false });
     expect((await policy.GET(request("/policy"), context)).status).toBe(200);
     expect(f.getView).toHaveBeenCalledWith("demo", "owner@example.com");
   });
   it("forwards creation identity and member ownership and validates the runtime at the boundary", async () => {
-    const input = { projectName: "demo", runtime: "codex", input: { kind: "task", prompt: "Make a report" } };
+    const input = { agentName: "demo", runtime: "codex", input: { kind: "task", prompt: "Make a report" } };
     f.start.mockResolvedValue({ workspace: { id: "workspace-1" }, run: { id: "run-1" } });
     expect((await start.POST(request("", "POST", input))).status).toBe(202);
     expect(f.start).toHaveBeenCalledWith(input, "owner@example.com", "stable-request-key");

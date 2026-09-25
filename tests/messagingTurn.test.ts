@@ -1,14 +1,14 @@
-import { withConfigurations } from "./projectConfigurations";
+import { withConfigurations } from "./agentConfigurations";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleTurn, type MessagingDeps, type TurnInput } from "@/application/messaging/handleTurn";
 import type { ReplyChannel } from "@/domain/messaging/reply";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
+import type { AgentRepository } from "@/domain/agent/repository";
 
 const NOW = 1_750_000_000_000;
 
-function projectFixture(): Project {
+function agentFixture(): Agent {
   return {
     name: "painter",
     displayName: "Painter",
@@ -22,7 +22,7 @@ function projectFixture(): Project {
 
 function configurationFixture(): AgentConfiguration {
   return {
-    projectName: "painter",
+    agentName: "painter",
 
     systemPrompt: "",
 
@@ -106,7 +106,7 @@ function makeDeps(chunks: EngineChunk[]): MessagingDeps & { seen: () => TurnInpu
         yield chunk;
       }
     },
-    projects: withConfigurations({ get: async () => projectFixture() } as unknown as ProjectRepository, ({ get: async () => configurationFixture(), list: async () => [] }).get),
+    agents: withConfigurations({ get: async () => agentFixture() } as unknown as AgentRepository, ({ get: async () => configurationFixture(), list: async () => [] }).get),
 
     documents: { extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }) },
     seen: () => seen,
@@ -115,7 +115,7 @@ function makeDeps(chunks: EngineChunk[]): MessagingDeps & { seen: () => TurnInpu
 
 function turn(overrides: Partial<TurnInput> = {}): TurnInput {
   return {
-    project: projectFixture(),
+    agent: agentFixture(),
     configuration: configurationFixture(),
     text: "hello",
     attachments: [],

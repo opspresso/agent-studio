@@ -18,7 +18,7 @@ export const BADGE = {
   attention: "yellow",
   /** Broken. */
   broken: "red",
-  /** Belongs to this viewer, this project, or this deployment. */
+  /** Belongs to this viewer, this agent, or this deployment. */
   owned: "brand",
 } as const;
 

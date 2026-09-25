@@ -1,26 +1,26 @@
 import type { FileRetention } from "@/domain/artifact/retention";
 import type { RunActor } from "@/domain/execution/actor";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import type { SourceRefresh } from "@/domain/artifact/sourceReference";
 
 export type AudioJobStage = "importing" | "transcribing" | "postprocessing" | "storing" | "cleaning";
 export type AudioJobStatus = "queued" | "running" | "waiting" | "completed" | "blocked" | "failed" | "cancelled";
 export const AUDIO_JOB_TASKS = ["import", "transcribe", "postprocess", "process"] as const;
 export type AudioJobTask = (typeof AUDIO_JOB_TASKS)[number];
-export type AudioSource = { kind: "file"; fileId: string; projectName?: string } | { kind: "source"; sourceRef: string };
+export type AudioSource = { kind: "file"; fileId: string; agentName?: string } | { kind: "source"; sourceRef: string };
 
 /** Stored input may belong to another Agent owned by the same requesting user. */
-export function audioSourceProject(job: Pick<AudioJobInput, "source" | "projectName">): string {
-  return job.source.kind === "file" ? job.source.projectName ?? job.projectName : job.projectName;
+export function audioSourceAgent(job: Pick<AudioJobInput, "source" | "agentName">): string {
+  return job.source.kind === "file" ? job.source.agentName ?? job.agentName : job.agentName;
 }
 
 /** Stable input: retries never choose a different model, identity, or destination. */
 export interface AudioJobInput {
   task?: AudioJobTask;
-  projectName: string;
+  agentName: string;
   userEmail: string;
   actor?: RunActor;
-  /** Server-bound Agent that submitted the work; storage remains in projectName. */
+  /** Server-bound Agent that submitted the work; storage remains in agentName. */
   producedBy?: string;
   source: AudioSource;
   /** Hash of source identity, item identity and the explicit processing revision. */
@@ -31,7 +31,7 @@ export interface AudioJobInput {
   configRevision?: number;
   language?: string;
   retention: FileRetention;
-  postprocess?: { projectName: string; configuration?: AgentConfiguration };
+  postprocess?: { agentName: string; configuration?: AgentConfiguration };
   destination?: { serverName: string; documents: boolean; memories: boolean; configuration?: AgentConfiguration };
 }
 
@@ -80,15 +80,15 @@ export interface AudioJobRepository {
   submit(input: AudioJobInput, admission: {
     id: string; now: string; occurrence: string; maxActive: number; maxPerOccurrence: number;
   }): Promise<{ status: "accepted" | "duplicate"; job: AudioJob } | { status: "busy"; reason: "active_limit" | "occurrence_limit" | "conflict" }>;
-  get(projectName: string, id: string): Promise<AudioJob | null>;
-  list(projectName: string, limit: number, after?: string, userEmail?: string): Promise<AudioJob[]>;
+  get(agentName: string, id: string): Promise<AudioJob | null>;
+  list(agentName: string, limit: number, after?: string, userEmail?: string): Promise<AudioJob[]>;
   due(now: string, limit: number): Promise<AudioJob[]>;
-  claim(projectName: string, id: string, now: string, token: string, until: string): Promise<AudioJob | null>;
+  claim(agentName: string, id: string, now: string, token: string, until: string): Promise<AudioJob | null>;
   heartbeat(job: AudioJob, now: string, until: string): Promise<boolean>;
   checkpoint(job: AudioJob, patch: AudioJobCheckpoint, now: string): Promise<AudioJob | null>;
   /** Administrative cancellation also fences a worker already holding the job. */
-  cancel(projectName: string, id: string, revision: number, now: string): Promise<boolean>;
+  cancel(agentName: string, id: string, revision: number, now: string): Promise<boolean>;
   /** Remove terminal job history and release its source identity for a new submission. Files retain their own lifetime. */
-  delete(projectName: string, id: string, revision: number): Promise<boolean>;
-  retry(projectName: string, id: string, revision: number, now: string, maxActive: number): Promise<AudioJob | null>;
+  delete(agentName: string, id: string, revision: number): Promise<boolean>;
+  retry(agentName: string, id: string, revision: number, now: string, maxActive: number): Promise<AudioJob | null>;
 }

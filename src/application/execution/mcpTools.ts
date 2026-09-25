@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 /** An Agent's MCP bindings resolved into offered tools, and session cleanup. */
 
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import { conversationKey, type RunOrigin } from "@/domain/execution/actor";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
@@ -115,30 +115,30 @@ export async function buildMcpTools(
           ? await deps.sourceRefreshIdentity?.({ configuration, binding, server: mcp }) : undefined;
         // Default namespaces belong to the authenticated connection, never to a shared plugin account.
         const mappings = sourceOutputs?.map((mapping) => defaults ? { ...mapping,
-          namespace: createHash("sha256").update(JSON.stringify([mapping.namespace, configuration.projectName, refreshIdentity])).digest("hex") } : mapping);
+          namespace: createHash("sha256").update(JSON.stringify([mapping.namespace, configuration.agentName, refreshIdentity])).digest("hex") } : mapping);
         const headers = deps.cipher.mergeOutboundHeaders(
           mcp.headers,
           overrides,
           mcpHeadersContext(mcp.name),
           agentMcpHeadersContext(
-            configuration.projectName,
+            configuration.agentName,
             binding.name,
           ),
         );
         // Before the availability check below: a stored spelling of a reserved
         // metadata header must never count as "a way to authenticate" a server
         // whose connection is unavailable, and must never impersonate another
-        // project, user, or conversation.
+        // agent, user, or conversation.
         stripMcpMetadataHeaders(headers);
         if (mcp.auth) {
-          // A per-project credential, resolved and refreshed by the auth
+          // A per-agent credential, resolved and refreshed by the auth
           // provider. Applied last on purpose: an Agent must not be able to
-          // substitute its own Authorization for the project's connection.
+          // substitute its own Authorization for the agent's connection.
           // The entry's own OAuth block goes with it, so the provider can tell
           // whether the connection still belongs to what this name points at —
           // it is already in hand here, which keeps that check off the read path.
           const resolved = await deps.mcpAuth.headersFor(
-            configuration.projectName,
+            configuration.agentName,
             mcp.name,
             mcp.auth,
           );
@@ -160,7 +160,7 @@ export async function buildMcpTools(
         // removed every stored spelling, so nothing merged from the registry
         // or a binding survives to be folded with these.
         applyMcpUserEmail(headers, mcpUserEmail(origin?.actor, origin?.userEmail));
-        headers[TENANT_ID_HEADER] = configuration.projectName;
+        headers[TENANT_ID_HEADER] = configuration.agentName;
         return {
           server: {
             name: mcp.name,
@@ -170,8 +170,8 @@ export async function buildMcpTools(
             ...(contextHeaders ? { contextHeaders } : {}),
             ...(binding.tools && binding.tools.length > 0 ? { tools: binding.tools } : {}),
             ...(mappings?.length ? { resultTransforms: Object.fromEntries(mappings.map((mapping) => [mapping.tool,
-              (result: unknown) => defaults && !refreshIdentity ? Promise.resolve({ text: "Error: default file mapping requires a connection identity." }) : mapMcpSource({ result, mapping, serverName: mcp.name, projectName: origin?.ancestry?.[0] ?? configuration.projectName,
-                ...(mapping.refreshArgument && refreshIdentity ? { refresh: { projectName: configuration.projectName, serverName: mcp.name, mapping, identity: refreshIdentity } } : {}),
+              (result: unknown) => defaults && !refreshIdentity ? Promise.resolve({ text: "Error: default file mapping requires a connection identity." }) : mapMcpSource({ result, mapping, serverName: mcp.name, agentName: origin?.ancestry?.[0] ?? configuration.agentName,
+                ...(mapping.refreshArgument && refreshIdentity ? { refresh: { agentName: configuration.agentName, serverName: mcp.name, mapping, identity: refreshIdentity } } : {}),
                 userEmail: mcpUserEmail(origin?.actor, origin?.userEmail), register: deps.registerMcpSource })])) } : {}),
           },
           description: mcp.description ?? "",
@@ -200,7 +200,7 @@ export async function buildMcpTools(
   // cancelled mid-init leaks nothing.
   const reservedNames = [...engine.BUILTIN_TOOL_NAMES, ...(configuration.subagentList ?? []).flatMap((agent) => [agentToolName(agent.name, "handoff"), agentToolName(agent.name, "delegate")])];
   const toolManager = await deps.mcpSessions.open(servers, reservedNames, signal);
-  // A server that rejected the token is the one failure the project itself can
+  // A server that rejected the token is the one failure the agent itself can
   // fix. Recorded so the console offers a reconnect rather than leaving the
   // owner to re-diagnose it from a warning on every future run.
   const flagged = new Set<string>();
@@ -211,7 +211,7 @@ export async function buildMcpTools(
       }
       flagged.add(serverName);
       await deps.mcpAuth
-        .markUnauthorized(configuration.projectName, serverName, toolManager.scopeChallenges?.get(serverName))
+        .markUnauthorized(configuration.agentName, serverName, toolManager.scopeChallenges?.get(serverName))
         .catch((error: unknown) => {
           log.warn("mcp", `could not flag '${serverName}' as needing reauthorization`, error);
         });

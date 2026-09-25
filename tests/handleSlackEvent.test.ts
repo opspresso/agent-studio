@@ -1,4 +1,4 @@
-import { withConfigurations } from "./projectConfigurations";
+import { withConfigurations } from "./agentConfigurations";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleSlackEvent, handleSlackStop } from "@/application/slack/handleSlackEvent";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
@@ -11,15 +11,15 @@ import type {
 import type { SlackMessage } from "@/infrastructure/slack/client";
 import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { RunCaller } from "@/domain/execution/actor";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { AgentRepository } from "@/domain/agent/repository";
 import { MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS } from "@/domain/slack/reader";
 
 const NOW = 1_750_000_000_000;
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
 
-function projectFixture(): Project {
+function agentFixture(): Agent {
   return {
     name: "painter",
     displayName: "Painter",
@@ -33,7 +33,7 @@ function projectFixture(): Project {
 
 function configurationFixture(): AgentConfiguration {
   return {
-    projectName: "painter",
+    agentName: "painter",
 
     systemPrompt: "",
 
@@ -276,7 +276,7 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
  * can read it without threading a recorder through `makeDeps`; cleared between
  * tests below.
  */
-const engagements: Array<{ project: string; channel: string; threadTs: string }> = [];
+const engagements: Array<{ agent: string; channel: string; threadTs: string }> = [];
 /** Mute changes the handler recorded, in order. */
 const mutes: Array<{ threadTs: string; muted: boolean }> = [];
 
@@ -290,11 +290,11 @@ function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps
       requestStop: async () => {}, stoppedAfter: async () => false,
     },
     threads: {
-      markEngaged: async (project, channel, threadTs) => {
-        engagements.push({ project, channel, threadTs });
+      markEngaged: async (agent, channel, threadTs) => {
+        engagements.push({ agent, channel, threadTs });
       },
       isEngaged: async () => false,
-      setMuted: async (_project, _channel, threadTs, muted) => {
+      setMuted: async (_agent, _channel, threadTs, muted) => {
         mutes.push({ threadTs, muted });
       },
     },
@@ -312,7 +312,7 @@ function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps
           ? { text }
           : { text: text.slice(0, maxChars), note: `the first ${maxChars} characters of ${name}` };
       } },
-    projects: withConfigurations({ get: async () => projectFixture() } as unknown as ProjectRepository, async () => configurationFixture()),
+    agents: withConfigurations({ get: async () => agentFixture() } as unknown as AgentRepository, async () => configurationFixture()),
 
     slack,
   };
@@ -331,7 +331,7 @@ const DM_EVENT: SlackEventBody = {
   event: { type: "message", channel_type: "im", channel: "D1", ts: "1.0", text: "hello" },
 };
 
-const BINDING = { projectName: "painter", botToken: "tok" };
+const BINDING = { agentName: "painter", botToken: "tok" };
 
 /** A run that yields nothing but `done`. */
 const deps0 = (slack: SlackClientPort) => makeDeps([{ done: true }], slack);
@@ -388,15 +388,15 @@ describe("stopping Slack runs", () => {
     const requestStop = vi.spyOn(deps.stops, "requestStop");
     const run = vi.spyOn(deps, "runAgent");
     await handleSlackStop(deps, stopEvent, BINDING);
-    expect(requestStop).toHaveBeenCalledWith({ projectName: "painter", channel: "D1", threadTs: "1.0" }, "2.0");
+    expect(requestStop).toHaveBeenCalledWith({ agentName: "painter", channel: "D1", threadTs: "1.0" }, "2.0");
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("applies the private-project access gate before recording native and command stops", async () => {
+  it("applies the private-agent access gate before recording native and command stops", async () => {
     const { slack, emails } = makeSlackFake();
     emails.set("U1", "outsider@example.com");
     const deps = deps0(slack);
-    deps.projects.get = async () => ({ ...projectFixture(), visibility: "private" });
+    deps.agents.get = async () => ({ ...agentFixture(), visibility: "private" });
     const requestStop = vi.spyOn(deps.stops, "requestStop");
     await handleSlackStop(deps, stopEvent, BINDING);
     await handleSlackEvent(deps, { ...DM_EVENT, event: { ...DM_EVENT.event, thread_ts: "1.0", ts: "2.0", user: "U1", text: "!stop" } }, BINDING);
@@ -435,19 +435,19 @@ afterEach(() => {
 });
 
 describe("handleSlackEvent", () => {
-  it("always runs the project bound to the endpoint", async () => {
+  it("always runs the agent bound to the endpoint", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
     const { slack } = makeSlackFake();
     const deps = makeDeps([], slack);
-    let requestedProject: string | undefined;
+    let requestedAgent: string | undefined;
     let userMessage: string | undefined;
-    deps.projects = {
+    deps.agents = {
       get: async (name: string) => {
-        requestedProject = name;
-        return { ...projectFixture(), configuration: configurationFixture() };
+        requestedAgent = name;
+        return { ...agentFixture(), configuration: configurationFixture() };
       },
-    } as unknown as ProjectRepository;
+    } as unknown as AgentRepository;
     deps.runAgent = async function* (input) {
       const last = input.messages.at(-1);
       userMessage = last ? messageText(last) : undefined;
@@ -458,13 +458,13 @@ describe("handleSlackEvent", () => {
       deps,
       {
         ...EVENT,
-        event: { ...EVENT.event, text: "<@U0> project:other hello" },
+        event: { ...EVENT.event, text: "<@U0> agent:other hello" },
       },
       BINDING,
     );
 
-    expect(requestedProject).toBe("painter");
-    expect(userMessage).toBe("project:other hello");
+    expect(requestedAgent).toBe("painter");
+    expect(userMessage).toBe("agent:other hello");
   });
 
   it("names the thread as the run's conversation, root message and DM alike", async () => {
@@ -669,15 +669,15 @@ describe("handleSlackEvent", () => {
     expect(finalText()).toContain("without producing an answer");
   });
 
-  it("replies with guidance when the project is not a runnable agent", async () => {
+  it("replies with guidance when the agent is not a runnable agent", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     const { slack, posted } = makeSlackFake();
     const deps = makeDeps([], slack);
-    deps.projects = { get: async () => null } as unknown as ProjectRepository;
+    deps.agents = { get: async () => null } as unknown as AgentRepository;
 
     await handleSlackEvent(deps, EVENT, BINDING);
 
-    expect(posted[0]?.text).toContain("Agent project not available");
+    expect(posted[0]?.text).toContain("Agent not available");
   });
 
   it("reads the thread before writing anything of its own", async () => {
@@ -1446,7 +1446,7 @@ describe("streaming a Slack reply", () => {
  */
 describe("telling the run who is asking", () => {
   function withCallerContext(deps: SlackEventDeps, on: boolean) {
-    deps.projects = withConfigurations(deps.projects, async () => ({
+    deps.agents = withConfigurations(deps.agents, async () => ({
         ...configurationFixture(),
         parameters: { piiFiltering: false, callerContext: on },
       }));
@@ -1466,7 +1466,7 @@ describe("telling the run who is asking", () => {
 
     await handleSlackEvent(deps, { ...DM_EVENT, event: { ...DM_EVENT.event, user: "U1" } }, BINDING);
 
-    // The opt-in gates the lookup, not just the prompt — a project that did not
+    // The opt-in gates the lookup, not just the prompt — an agent that did not
     // ask should not be sending anyone's id to Slack's profile API either.
     expect(profileLookups).toEqual([]);
     expect(seenCaller).toBeUndefined();
@@ -2065,7 +2065,7 @@ describe("uploading what the run read", () => {
  *
  * A Slack actor is a workspace id, and the artifact owner index is keyed by
  * email — so a picture somebody asked the bot to draw was reachable only through
- * its project, never from their own gallery. The surface can resolve the
+ * its agent, never from their own gallery. The surface can resolve the
  * address, so it does.
  */
 describe("filing a Slack run's output under its author", () => {
@@ -2092,7 +2092,7 @@ describe("filing a Slack run's output under its author", () => {
     expect(seen.actor).toEqual({ kind: "slack", id: "U1" });
   });
 
-  it("files by project alone when the workspace shares no address", async () => {
+  it("files by agent alone when the workspace shares no address", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const { slack } = makeSlackFake();
     const deps = deps0(slack);
@@ -2129,7 +2129,7 @@ describe("filing a Slack run's output under its author", () => {
     const { slack, emails } = makeSlackFake();
     emails.set("U1", "me@nalbam.com");
     const deps = deps0(slack);
-    deps.projects = withConfigurations(deps.projects, async () => ({ ...configurationFixture(), parameters: { piiFiltering: false } }));
+    deps.agents = withConfigurations(deps.agents, async () => ({ ...configurationFixture(), parameters: { piiFiltering: false } }));
     let seen: { ownerEmail?: string; caller?: unknown } = {};
     deps.runAgent = async function* (input) {
       seen = input;
@@ -2156,7 +2156,7 @@ describe("what the bot remembers about a channel thread", () => {
 
     // The mention opened a new thread rooted at its own ts, which is where the
     // reply went and therefore what a follow-up will carry as `thread_ts`.
-    expect(engagements).toEqual([{ project: "painter", channel: "C1", threadTs: "1.0" }]);
+    expect(engagements).toEqual([{ agent: "painter", channel: "C1", threadTs: "1.0" }]);
   });
 
   it("records the existing thread when the mention was a reply", async () => {
@@ -2168,7 +2168,7 @@ describe("what the bot remembers about a channel thread", () => {
       BINDING,
     );
 
-    expect(engagements).toEqual([{ project: "painter", channel: "C1", threadTs: "1.0" }]);
+    expect(engagements).toEqual([{ agent: "painter", channel: "C1", threadTs: "1.0" }]);
   });
 
   it("records nothing for a DM, where every message is already for the bot", async () => {
@@ -2321,9 +2321,9 @@ describe("commands", () => {
   });
 });
 
-describe("private project visibility gate", () => {
-  const privateProject = (): Project => ({
-    ...projectFixture(),
+describe("private agent visibility gate", () => {
+  const privateAgent = (): Agent => ({
+    ...agentFixture(),
     configuration: configurationFixture(),
     visibility: "private",
     memberEmails: ["invited@x.com"],
@@ -2335,11 +2335,11 @@ describe("private project visibility gate", () => {
   });
   const privateDeps = (slack: SlackClientPort) => {
     const deps = deps0(slack);
-    deps.projects = { get: async () => privateProject() } as unknown as ProjectRepository;
+    deps.agents = { get: async () => privateAgent() } as unknown as AgentRepository;
     return deps;
   };
 
-  it("refuses a workspace user the project does not invite, before any acknowledgement", async () => {
+  it("refuses a workspace user the agent does not invite, before any acknowledgement", async () => {
     const { slack, posted, reactions, emails } = makeSlackFake();
     emails.set("U2", "stranger@x.com");
 
@@ -2429,14 +2429,14 @@ describe("private project visibility gate", () => {
     expect(mutes).toEqual([{ threadTs: "1.0", muted: true }]);
   });
 
-  it("does not run a command when the project visibility cannot be read", async () => {
+  it("does not run a command when the agent visibility cannot be read", async () => {
     const { slack, posted } = makeSlackFake();
     const deps = privateDeps(slack);
-    deps.projects = {
+    deps.agents = {
       get: async () => {
-        throw new Error("project store unavailable");
+        throw new Error("agent store unavailable");
       },
-    } as unknown as ProjectRepository;
+    } as unknown as AgentRepository;
     const event: SlackEventBody = {
       event_id: "Ev9",
       authorizations: [{ user_id: "U0", is_bot: true }],
@@ -2451,7 +2451,7 @@ describe("private project visibility gate", () => {
     };
 
     await expect(handleSlackEvent(deps, event, BINDING)).rejects.toThrow(
-      "project store unavailable",
+      "agent store unavailable",
     );
 
     expect(mutes).toHaveLength(0);
@@ -2480,7 +2480,7 @@ describe("private project visibility gate", () => {
     expect(posted.every((message) => !message.text.includes("private"))).toBe(true);
   });
 
-  it("leaves a public project's turns alone — no email lookup at the gate", async () => {
+  it("leaves a public agent's turns alone — no email lookup at the gate", async () => {
     const { slack, reactions } = makeSlackFake();
 
     await handleSlackEvent(deps0(slack), withUser("U2"), BINDING);

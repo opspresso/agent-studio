@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listModels, testProjectSlack } from "@/app/agents/lib/api";
+import { listModels, testAgentSlack } from "@/app/agents/lib/api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -24,7 +24,7 @@ describe("Slack connection test", () => {
       new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
     ));
 
-    await expect(testProjectSlack("sample")).rejects.toThrow("Authentication required");
+    await expect(testAgentSlack("sample")).rejects.toThrow("Authentication required");
     expect(replace).toHaveBeenCalledOnce();
   });
 });

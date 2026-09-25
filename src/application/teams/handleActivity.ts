@@ -1,4 +1,4 @@
-import { resolveAgentProject, runRememberedTurn } from "@/application/messaging/rememberedTurn";
+import { resolveAgentSummary, runRememberedTurn } from "@/application/messaging/rememberedTurn";
 import { createTeamsReplyChannel } from "@/application/teams/replyChannel";
 import { teamsSenderId, type TeamsActivityDisposition } from "@/application/teams/engagement";
 import type {
@@ -12,9 +12,9 @@ import type { InboundAttachment } from "@/domain/messaging/inbound";
 import { teamsConversation } from "@/domain/teams/conversation";
 import { log } from "@/shared/logger";
 
-/** Credentials and project binding for a project-dedicated bot. */
+/** Credentials and agent binding for an agent-dedicated bot. */
 export interface TeamsBotBinding {
-  projectName: string;
+  agentName: string;
   credentials: TeamsCredentials;
 }
 
@@ -102,7 +102,7 @@ function mimeOfFileType(fileType: string | undefined, name: string | undefined):
 }
 
 /**
- * Run the agent project for one activity and stream the reply.
+ * Run the agent for one activity and stream the reply.
  *
  * Whether this activity was for the bot at all is already decided:
  * `classifyTeamsActivity` is the single owner of that, and it runs in the
@@ -127,15 +127,15 @@ export async function handleTeamsActivity(
     { ...(deps.sleep ? { sleep: deps.sleep } : {}) },
   );
 
-  const runnable = await resolveAgentProject(deps, binding.projectName, reply);
+  const runnable = await resolveAgentSummary(deps, binding.agentName, reply);
   if (!runnable) {
     return;
   }
-  const { project, configuration } = runnable;
+  const { agent, configuration } = runnable;
 
   log.info(
     "teams",
-    `run start project=${project.name} conversation=${conversationId} activity=${activity.id ?? "?"}`,
+    `run start agent=${agent.name} conversation=${conversationId} activity=${activity.id ?? "?"}`,
   );
 
   // The Entra object id where Teams gives one — it is the person across every
@@ -143,7 +143,7 @@ export async function handleTeamsActivity(
   const userId = teamsSenderId(activity);
   const arrivedAt = activity.timestamp ? new Date(activity.timestamp) : new Date();
   await runRememberedTurn(deps, {
-    project,
+    agent,
     configuration,
     reply,
     conversation: teamsConversation(conversationId),

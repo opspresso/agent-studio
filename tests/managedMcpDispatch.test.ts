@@ -9,7 +9,7 @@ import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { buildMcpTools } from "@/application/execution/mcpTools";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { McpServer } from "@/domain/mcp/types";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 
 vi.mock("@/infrastructure/net/publicFetch", () => ({
@@ -68,7 +68,7 @@ function depsFor(server: McpServer, policy: UrlPolicy): ExecutionDeps {
   } as unknown as ExecutionDeps;
 }
 
-const configuration = { projectName: "p", mcpList: [{ name: "srv" }] } as unknown as AgentConfiguration;
+const configuration = { agentName: "p", mcpList: [{ name: "srv" }] } as unknown as AgentConfiguration;
 
 function entry(patch: Partial<McpServer>): McpServer {
   return {
@@ -145,12 +145,12 @@ describe("managed loopback dispatch", () => {
 });
 
 describe("the tenant header", () => {
-  it("stamps every request with the calling project, over any override spelling", async () => {
+  it("stamps every request with the calling agent, over any override spelling", async () => {
     // An Agent binding override in any case-variant must not survive the stamp: fetch
-    // folds two spellings into one comma-joined value that names no project.
+    // folds two spellings into one comma-joined value that names no agent.
     const spoofing = {
-      projectName: "p",
-      mcpList: [{ name: "srv", headers: { "x-TENANT-id": "other-project" } }],
+      agentName: "p",
+      mcpList: [{ name: "srv", headers: { "x-TENANT-id": "other-agent" } }],
     } as unknown as AgentConfiguration;
     const resolved = await buildMcpTools(
       depsFor(entry({ runtime: "managed" }), strictPolicy()),

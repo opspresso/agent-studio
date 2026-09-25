@@ -5,16 +5,16 @@ vi.mock("@/lib/session", () => ({ withMemberAuth: (handler: (user: { id: string;
   (request: Request, context: unknown) => handler({ id: "owner-1", email: "owner@example.test" }, request, context) }));
 vi.mock("@/lib/container", () => ({ getAudioRuntime: () => ({ jobs: mocks, options: mocks.options, references: { register: mocks.register }, configuration: { get: mocks.getConfig, save: mocks.saveConfig } }), modelPreferenceUseCases: { listOptional: mocks.favorites } }));
 vi.mock("node:crypto", async (original) => ({ ...await original<typeof import("node:crypto")>(), randomUUID: () => "occurrence-1" }));
-import { POST, GET } from "@/app/api/projects/[name]/audio-jobs/route";
-import { POST as action } from "@/app/api/projects/[name]/audio-jobs/[job]/route";
-import { POST as source } from "@/app/api/projects/[name]/source-references/route";
-import { GET as options } from "@/app/api/projects/[name]/audio-options/route";
-import { PUT as saveConfig } from "@/app/api/projects/[name]/audio-config/route";
+import { POST, GET } from "@/app/api/agents/[name]/audio-jobs/route";
+import { POST as action } from "@/app/api/agents/[name]/audio-jobs/[job]/route";
+import { POST as source } from "@/app/api/agents/[name]/source-references/route";
+import { GET as options } from "@/app/api/agents/[name]/audio-options/route";
+import { PUT as saveConfig } from "@/app/api/agents/[name]/audio-config/route";
 
 const context = { params: Promise.resolve({ name: "audio" }) };
 const input = { source: { kind: "file", fileId: "file-1" }, task: "transcribe", model: "openai/whisper-1",
   retention: { unit: "months", value: 3, timezone: "Asia/Seoul" } };
-function request(body: unknown) { return new Request("https://studio.test/api/projects/audio/audio-jobs", {
+function request(body: unknown) { return new Request("https://studio.test/api/agents/audio/audio-jobs", {
   method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
 }); }
 beforeEach(() => { vi.clearAllMocks(); mocks.submit.mockResolvedValue({ status: "accepted", job: { id: "job-1" } }); mocks.favorites.mockResolvedValue([]); });
@@ -52,7 +52,7 @@ describe("audio job HTTP contracts", () => {
   it("keeps audio model options available without optional favorites", async () => {
     const data = { models: [{ id: "openai/whisper-1" }], destinations: [] };
     mocks.options.mockResolvedValue(data);
-    const response = await options(new Request("https://studio.test/api/projects/audio/audio-options"), context);
+    const response = await options(new Request("https://studio.test/api/agents/audio/audio-options"), context);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ...data, models: [{ ...data.models[0], favorite: false }] });
   });
@@ -87,6 +87,6 @@ describe("audio job HTTP contracts", () => {
     const response = await source(request(metadata), context);
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({ sourceRef: "ref-1" });
-    expect(mocks.register).toHaveBeenCalledWith({ ...metadata, projectName: "audio", userEmail: "owner@example.test" });
+    expect(mocks.register).toHaveBeenCalledWith({ ...metadata, agentName: "audio", userEmail: "owner@example.test" });
   });
 });

@@ -14,14 +14,14 @@ import { UsageBreakdown } from "@/app/_components/UsageBreakdown";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { buildDailySeries, groupUsage, sumRecord, type GroupBy } from "@/app/_lib/usage";
-import { getProject, usageActors, usageSummary, type ActorUsageView, type UsageRow } from "../../lib/api";
-import { canEditProject, useViewer } from "@/app/_lib/useViewer";
+import { getAgent, usageActors, usageSummary, type ActorUsageView, type UsageRow } from "../../lib/api";
+import { canEditAgent, useViewer } from "@/app/_lib/useViewer";
 import { Alert, Avatar, Button, Card, Group, SimpleGrid, Stack, Table, Text } from "@mantine/core";
 import { IconActivity, IconCoins, IconUsers } from "@tabler/icons-react";
 import { useLocale, useT } from "@/app/_i18n/provider";
 
 /**
- * The axes one project's own rows can still tell apart. Grouping by project
+ * The axes one agent's own rows can still tell apart. Grouping by agent
  * here would draw a single bar — the page is already scoped to one.
  */
 const GROUP_OPTIONS: GroupBy[] = ["model", "provider"];
@@ -75,7 +75,7 @@ function UsageDetail({ name }: { name: string }) {
   const [error, setError] = useState<string | null>(null);
 
   // The per-caller breakdown is owner/admin-only server-side, so the page asks
-  // the same question before requesting it — a member on a shared project used
+  // the same question before requesting it — a member on a shared agent used
   // to get a guaranteed 403 on every visit and range change.
   const viewer = useViewer();
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
@@ -86,8 +86,8 @@ function UsageDetail({ name }: { name: string }) {
     let cancelled = false;
     setOwnerLoading(true);
     setOwnerError(null);
-    getProject(name)
-      .then((project) => !cancelled && setOwnerEmail(project.ownerEmail))
+    getAgent(name)
+      .then((agent) => !cancelled && setOwnerEmail(agent.ownerEmail))
       .catch((loadError) => {
         if (!cancelled) setOwnerError(loadError instanceof Error ? loadError.message : "Failed to load Agent");
       })
@@ -96,7 +96,7 @@ function UsageDetail({ name }: { name: string }) {
       cancelled = true;
     };
   }, [name, ownerRetry]);
-  const maySeeActors = canEditProject(viewer, ownerEmail);
+  const maySeeActors = canEditAgent(viewer, ownerEmail);
 
   useEffect(() => {
     // Only the newest request may write. Two ranges picked in a row are two
@@ -136,7 +136,7 @@ function UsageDetail({ name }: { name: string }) {
       };
     }
     // Separately, and never fatal: a breakdown that fails should cost the
-    // project totals nothing.
+    // agent totals nothing.
     async function loadActors() {
       try {
         const { items, totalActors, truncated } = await usageActors(
@@ -181,7 +181,7 @@ function UsageDetail({ name }: { name: string }) {
 
   return (
     <Stack gap="md">
-      <SectionHeading title={t("project.tab.usage")} />
+      <SectionHeading title={t("agent.tab.usage")} />
       <DateRangePicker value={range} onChange={setRange} />
 
       {error && (
@@ -197,7 +197,7 @@ function UsageDetail({ name }: { name: string }) {
       {loading ? (
         <LoadingText />
       ) : rows.length === 0 ? (
-        <EmptyState>{t(error ? "usage.loadFailed" : "projectUsage.empty")}</EmptyState>
+        <EmptyState>{t(error ? "usage.loadFailed" : "agentUsage.empty")}</EmptyState>
       ) : (
         <>
           <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="md">
@@ -214,17 +214,17 @@ function UsageDetail({ name }: { name: string }) {
               Icon={IconActivity}
             />
             <StatCard
-              label={t("projectUsage.callers")}
+              label={t("agentUsage.callers")}
               value={ownerLoading || ownerError || actorLoading ? "—" : actorTotal.toLocaleString(locale)}
               detail={
                 ownerLoading || actorLoading
                   ? t("common.loading")
                   : ownerError || actorError
-                    ? t("projectUsage.unavailable")
+                    ? t("agentUsage.unavailable")
                     : t(
                         maySeeActors
-                          ? "projectUsage.distinctIdentities"
-                          : "projectUsage.ownerAdminOnly",
+                          ? "agentUsage.distinctIdentities"
+                          : "agentUsage.ownerAdminOnly",
                     )
               }
               Icon={IconUsers}
@@ -254,11 +254,11 @@ function UsageDetail({ name }: { name: string }) {
             <DataTable header={
               <Group px="md" pt="md" pb="sm">
                 <CardHeading
-                  title={t("projectUsage.whoSpent")}
+                  title={t("agentUsage.whoSpent")}
                   subtitle={t(
                     actorTruncated
-                      ? "projectUsage.topCallersRange"
-                      : "projectUsage.perCallerRange",
+                      ? "agentUsage.topCallersRange"
+                      : "agentUsage.perCallerRange",
                     { count: callers.length },
                   )}
                 />
@@ -266,7 +266,7 @@ function UsageDetail({ name }: { name: string }) {
             }>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>{t("projectUsage.caller")}</Table.Th>
+                  <Table.Th>{t("agentUsage.caller")}</Table.Th>
                   <Table.Th ta="right">{t("usage.calls")}</Table.Th>
                   <Table.Th ta="right">{t("usage.cost")}</Table.Th>
                 </Table.Tr>

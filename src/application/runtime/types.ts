@@ -4,14 +4,14 @@ import type { RunCaller } from "@/domain/execution/actor";
 import type { ChatMessageInput, EngineParameters, McpToolResult } from "@/domain/llm/types";
 import type { AgentCapabilityDeps, SkillInfo, SubagentInfo, McpServerInfo } from "@/application/llm/agentAssembly";
 import type { RuntimeApproval, RuntimeApprovalDecision } from "@/domain/execution/runtimeSession";
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import type { PiiFilter } from "@/application/llm/pii";
 import type { ImageHandle } from "@/application/llm/agentAssembly";
 import type { TraceSpan } from "@/domain/trace/types";
 import type { ToolSchemaValidator } from "@/domain/llm/toolSchema";
 
 export type RecordUsageFn = (record: {
-  projectName: string;
+  agentName: string;
   model: string;
   inputTokens: number;
   outputTokens: number;
@@ -58,7 +58,7 @@ export interface PreparedAgent {
 
 export interface RunAgentInput {
   runtime?: RuntimeTurnPersistence;
-  projectName: string;
+  agentName: string;
   model: string;
   fallbackModel?: string;
   systemPrompt?: string;

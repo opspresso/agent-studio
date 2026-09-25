@@ -17,9 +17,9 @@ import { randomUUID } from "node:crypto";
 import { cutCodePoints } from "@/shared/utf8Text";
 import type { RunActor } from "@/domain/execution/actor";
 import { collectedWarning, isTopLevelChunk, runTermination, type RunTerminationReason } from "@/domain/llm/types";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import {
-  PROJECT_WEBHOOK_ID,
+  AGENT_WEBHOOK_ID,
   type ScheduleDeliveryResult,
   type Trigger,
   type TriggerRun,
@@ -45,7 +45,7 @@ export interface AdmittedFiring<T extends Trigger = Trigger> {
   status: "accepted";
   runId: string;
   trigger: T;
-  project: Project;
+  agent: Agent;
   configuration: AgentConfiguration;
   run: TriggerRun;
   release: () => Promise<void>;
@@ -84,22 +84,22 @@ function triggerSecretMatches(
   deps: TriggerRunnerDeps,
   trigger: WebhookTrigger,
   candidate: string | GitHubDeliveryCredential,
-  projectName: string,
+  agentName: string,
   triggerId: string,
 ): boolean {
   try {
     if (typeof candidate !== "string") return verifyGitHubSignature(
-      deps.cipher.decrypt(trigger.secret, triggerSecretContext(projectName, triggerId)), candidate.body, candidate.signature,
+      deps.cipher.decrypt(trigger.secret, triggerSecretContext(agentName, triggerId)), candidate.body, candidate.signature,
     );
     return deps.cipher.decryptEquals(
       trigger.secret,
       candidate,
-      triggerSecretContext(projectName, triggerId),
+      triggerSecretContext(agentName, triggerId),
     );
   } catch (error) {
     log.error(
       "trigger",
-      `secret of trigger '${projectName}/${triggerId}' cannot be decrypted:`,
+      `secret of trigger '${agentName}/${triggerId}' cannot be decrypted:`,
       error instanceof Error ? error.message : String(error),
     );
     return false;
@@ -108,22 +108,22 @@ function triggerSecretMatches(
 
 /** The actor a firing is attributed to; the trigger kind is the actor kind. */
 export function triggerActor(
-  trigger: Pick<Trigger, "kind" | "projectName" | "triggerId">,
+  trigger: Pick<Trigger, "kind" | "agentName" | "triggerId">,
 ): RunActor {
-  return { kind: trigger.kind, id: `${trigger.projectName}:${trigger.triggerId}` };
+  return { kind: trigger.kind, id: `${trigger.agentName}:${trigger.triggerId}` };
 }
 
 const EXECUTION_USER_UNAUTHORIZED = "The schedule execution user is no longer authorized.";
 
-async function executionUserAllowed(deps: FiringDeps, trigger: Trigger, project: Project): Promise<boolean> {
+async function executionUserAllowed(deps: FiringDeps, trigger: Trigger, agent: Agent): Promise<boolean> {
   if (trigger.kind !== "schedule" || !trigger.executionEmail) return true;
-  return trigger.executionEmail === project.ownerEmail && !!deps.executionUserActive &&
+  return trigger.executionEmail === agent.ownerEmail && !!deps.executionUserActive &&
     await deps.executionUserActive(trigger.executionEmail);
 }
 
 /** The overlap lease's key. Distinct from the actor's own slot partition. */
-function overlapKey(projectName: string, triggerId: string): string {
-  return `trigger-overlap:${projectName}:${triggerId}`;
+function overlapKey(agentName: string, triggerId: string): string {
+  return `trigger-overlap:${agentName}:${triggerId}`;
 }
 
 /** What a firing row carries beyond its outcome: how it was deduplicated. */
@@ -145,11 +145,11 @@ export function payloadInput(payload: unknown): { message: string } {
 }
 
 /**
- * Authenticate and admit a delivery to a project's webhook, or say why not.
+ * Authenticate and admit a delivery to an agent's webhook, or say why not.
  *
- * The project name is the whole address: a project has one webhook, stored
- * under `PROJECT_WEBHOOK_ID`, and this resolves it. No caller chooses which row
- * a delivery lands on, which is what makes "one webhook per project" a fact
+ * The agent name is the whole address: an agent has one webhook, stored
+ * under `AGENT_WEBHOOK_ID`, and this resolves it. No caller chooses which row
+ * a delivery lands on, which is what makes "one webhook per agent" a fact
  * about the code rather than a convention the routes agree to keep.
  *
  * Returns before the run happens: the caller acks, then drives `execute` in the
@@ -158,18 +158,18 @@ export function payloadInput(payload: unknown): { message: string } {
  */
 export async function admitDelivery(
   deps: TriggerRunnerDeps,
-  projectName: string,
+  agentName: string,
   presentedSecret: string | GitHubDeliveryCredential | null,
   idempotencyKey: string | null,
 ): Promise<AdmitResult> {
-  const trigger = await deps.triggers.get(projectName, PROJECT_WEBHOOK_ID);
+  const trigger = await deps.triggers.get(agentName, AGENT_WEBHOOK_ID);
   if (!trigger) {
     return { status: "not-configured" };
   }
   if (trigger.kind !== "webhook") {
     // `create` refuses to let a schedule take the id, so this is unreachable
     // through the API — but a row is not a type, and answering exactly like a
-    // project with no webhook is the only safe reading of one that is wrong.
+    // agent with no webhook is the only safe reading of one that is wrong.
     return { status: "not-configured" };
   }
   // The secret is checked before anything else observable happens, and in
@@ -177,7 +177,7 @@ export async function admitDelivery(
   // secret than an enabled one would.
   if (
     !presentedSecret ||
-    !triggerSecretMatches(deps, trigger, presentedSecret, projectName, PROJECT_WEBHOOK_ID)
+    !triggerSecretMatches(deps, trigger, presentedSecret, agentName, AGENT_WEBHOOK_ID)
   ) {
     return { status: "unauthorized" };
   }
@@ -205,8 +205,8 @@ export async function admitDelivery(
   if (reviewTarget) idempotencyKey = `github-review:${reviewTarget.repository}:${reviewTarget.number}:${reviewTarget.headSha}`;
   if (idempotencyKey) {
     const claimed = await deps.triggers.claimIdempotencyKey(
-      projectName,
-      PROJECT_WEBHOOK_ID,
+      agentName,
+      AGENT_WEBHOOK_ID,
       idempotencyKey,
     );
     if (!claimed) {
@@ -233,20 +233,20 @@ export async function admitRun<T extends Trigger>(
   | { status: "busy" }
   | { status: "no-configuration" }
 > {
-  const project = await deps.projects.get(trigger.projectName);
-  if (!project) {
-    // A row too, like every refusal below: a schedule can outlive its project,
+  const agent = await deps.agents.get(trigger.agentName);
+  if (!agent) {
+    // A row too, like every refusal below: a schedule can outlive its agent,
     // and "skipped: 1" in a scan summary with nothing in the history explaining
     // it is exactly what skip rows exist to prevent.
-    await recordSkip(deps, trigger, extra, "Project not found.");
+    await recordSkip(deps, trigger, extra, "Agent not found.");
     return { status: "not-configured" };
   }
   // Recheck the configured execution user's access before using current settings.
-  if (!await executionUserAllowed(deps, trigger, project)) {
+  if (!await executionUserAllowed(deps, trigger, agent)) {
     await recordSkip(deps, trigger, extra, EXECUTION_USER_UNAUTHORIZED);
     return { status: "not-configured" };
   }
-  const configuration = project.configuration;
+  const configuration = agent.configuration;
   if (!configuration) {
     await recordSkip(deps, trigger, extra, "Agent is not configured.");
     return { status: "no-configuration" };
@@ -257,7 +257,7 @@ export async function admitRun<T extends Trigger>(
   if (!trigger.allowConcurrent && deps.runSlots) {
     const leaseUntil = Math.floor(Date.now() / 1000) + RUN_LEASE_SECONDS;
     const slot = await deps.runSlots.acquire(
-      overlapKey(trigger.projectName, trigger.triggerId),
+      overlapKey(trigger.agentName, trigger.triggerId),
       1,
       leaseUntil,
     );
@@ -271,10 +271,10 @@ export async function admitRun<T extends Trigger>(
       return { status: "busy" };
     }
     const slots = deps.runSlots;
-    renewSlot = () => slots.renew(overlapKey(trigger.projectName, trigger.triggerId), slot, Math.floor(Date.now() / 1000) + RUN_LEASE_SECONDS);
+    renewSlot = () => slots.renew(overlapKey(trigger.agentName, trigger.triggerId), slot, Math.floor(Date.now() / 1000) + RUN_LEASE_SECONDS);
     release = async () => {
       try {
-        await slots.release(overlapKey(trigger.projectName, trigger.triggerId), slot);
+        await slots.release(overlapKey(trigger.agentName, trigger.triggerId), slot);
       } catch (error) {
         // The lease expires on its own; a failed release costs one window, not
         // a permanently blocked trigger.
@@ -284,7 +284,7 @@ export async function admitRun<T extends Trigger>(
   }
 
   const run: TriggerRun = {
-    projectName: trigger.projectName,
+    agentName: trigger.agentName,
     triggerId: trigger.triggerId,
     runId: randomUUID(),
     status: queued ? "queued" : "running",
@@ -299,7 +299,7 @@ export async function admitRun<T extends Trigger>(
     // History is a log; losing a row must not cost the firing.
     log.error("trigger", "could not record the start of a firing", error);
   }
-  const firing: AdmittedFiring<T> = { status: "accepted", runId: run.runId, trigger, project, configuration, run, release };
+  const firing: AdmittedFiring<T> = { status: "accepted", runId: run.runId, trigger, agent, configuration, run, release };
   if (queued) holdQueuedFiring(deps, firing, renewSlot);
   return firing;
 }
@@ -307,14 +307,14 @@ export async function admitRun<T extends Trigger>(
 /** A firing that never ran, recorded so the console can say why. */
 export async function recordSkip(
   deps: FiringDeps,
-  trigger: Pick<Trigger, "projectName" | "triggerId">,
+  trigger: Pick<Trigger, "agentName" | "triggerId">,
   extra: FiringExtra,
   reason: string,
 ): Promise<void> {
   const now = new Date().toISOString();
   try {
     await deps.triggers.appendRun({
-      projectName: trigger.projectName,
+      agentName: trigger.agentName,
       triggerId: trigger.triggerId,
       runId: randomUUID(),
       status: "skipped",
@@ -340,7 +340,7 @@ export async function executeDelivery(
     let publication: ReviewPublication | undefined;
     try {
       if (admitted.reviewTarget) {
-        const prepared = await preparePullRequestReview(deps, admitted.project.name, admitted.trigger.triggerId,
+        const prepared = await preparePullRequestReview(deps, admitted.agent.name, admitted.trigger.triggerId,
           admitted.configuration, admitted.reviewTarget);
         if (prepared.status === "skipped") {
           await admitted.release();
@@ -389,7 +389,7 @@ export async function executeFiring(
   publication?: ReviewPublication,
 ): Promise<void> {
   if (admitted.start && !await admitted.start()) return;
-  const { trigger, project, configuration, run } = admitted;
+  const { trigger, agent, configuration, run } = admitted;
   let text = "";
   let error: string | undefined;
   let traceId: string | undefined;
@@ -417,11 +417,11 @@ export async function executeFiring(
   let produced = 0;
   try {
     if (trigger.kind === "schedule" && trigger.executionEmail) {
-      const current = await deps.projects.get(project.name);
+      const current = await deps.agents.get(agent.name);
       if (!current || !await executionUserAllowed(deps, trigger, current)) throw new Error(EXECUTION_USER_UNAUTHORIZED);
     }
     for await (const chunk of deps.run({
-      project,
+      agent,
       configuration,
       ...input,
       actor: triggerActor(trigger),
@@ -445,7 +445,7 @@ export async function executeFiring(
         traceId ??= chunk.traceId;
       }
       // Counted from subagent turns too, like `collectRun`'s: an image
-      // subagent is how an agent project delegates drawing, and behind the
+      // subagent is how an agent delegates drawing, and behind the
       // gate above that delegation closed as an empty `succeeded` row — the
       // exact state `imagesOnlyResult` exists to prevent.
       // A fetched picture was read, not drawn — "Generated N images" must not
@@ -485,7 +485,7 @@ export async function executeFiring(
             if (!deps.deliverReport) {
               throw new Error("Schedule report delivery is unavailable");
             }
-            await deps.deliverReport(project, delivery, report);
+            await deps.deliverReport(agent, delivery, report);
             return { kind: delivery.kind, status: "sent" };
           } catch (caught) {
             const message = caught instanceof Error ? caught.message : String(caught);
@@ -541,7 +541,7 @@ const MAX_LISTED_FILES = 10;
  *
  * A row carries text and a signature would be long expired by the time anyone
  * read this one, so the names are what it offers: enough to find the document
- * in the project's artifacts, which is where the bytes actually are.
+ * in the agent's artifacts, which is where the bytes actually are.
  */
 function producedNote(text: string, produced: number, files: readonly string[]): string {
   if (produced === 0) {
@@ -549,7 +549,7 @@ function producedNote(text: string, produced: number, files: readonly string[]):
   }
   // The count is the run's; the names are as many as the row will carry.
   const named = files.length < produced ? `${files.join(", ")}, …` : files.join(", ");
-  const line = `Produced ${produced} file${produced === 1 ? "" : "s"}: ${named}. They are kept with the project's artifacts.`;
+  const line = `Produced ${produced} file${produced === 1 ? "" : "s"}: ${named}. They are kept with the agent's artifacts.`;
   if (!text) {
     return line;
   }

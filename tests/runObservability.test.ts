@@ -10,10 +10,10 @@ import {
   runMetricsSnapshot,
 } from "@/lib/runMetrics";
 import { GET as metricsRoute } from "@/app/api/metrics/route";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 
-const project: Project = {
+const agent: Agent = {
   name: "p",
   displayName: "P",
   description: "",
@@ -24,7 +24,7 @@ const project: Project = {
 
 /** Minimal Agent configuration; the bracket reads only its model ids. */
 const configuration: AgentConfiguration = {
-  projectName: "p",
+  agentName: "p",
 
   systemPrompt: "",
 
@@ -41,8 +41,8 @@ const usage: UsageRepository = {
   listMemberDays: async () => [],
   claimAlert: async () => false,
   claimMonthAlert: async () => false,
-  listActorsByProject: async () => [],
-  listByProject: async () => [],
+  listActorsByAgent: async () => [],
+  listByAgent: async () => [],
   listByDateRange: async () => [],
 };
 
@@ -95,7 +95,7 @@ describe("run correlation", () => {
 
   it("gives an admitted run an id", async () => {
     resetRunMetrics();
-    const bracket = await openRun({ usage }, project, configuration);
+    const bracket = await openRun({ usage }, agent, configuration);
     expect(bracket.runId).toMatch(/[0-9a-f-]{36}/);
     await bracket.close();
   });
@@ -108,14 +108,14 @@ describe("run correlation", () => {
    */
   it("is visible to the caller after openRun returns", async () => {
     resetRunMetrics();
-    const bracket = await openRun({ usage }, project, configuration);
+    const bracket = await openRun({ usage }, agent, configuration);
     expect(currentRunContext()?.runId).toBe(bracket.runId);
     await bracket.close();
   });
 
   it("still carries the id at the end of the run, not just the start", async () => {
     resetRunMetrics();
-    const bracket = await openRun({ usage }, project, configuration);
+    const bracket = await openRun({ usage }, agent, configuration);
     await Promise.resolve();
     linkTrace("trace-x");
     expect(currentRunContext()).toMatchObject({ runId: bracket.runId, traceId: "trace-x" });
@@ -128,7 +128,7 @@ describe("run correlation", () => {
     // would split one delivery's lines across two.
     resetRunMetrics();
     await withRunContext({ runId: "delivery-1" }, async () => {
-      const bracket = await openRun({ usage }, project, configuration);
+      const bracket = await openRun({ usage }, agent, configuration);
       expect(bracket.runId).toBe("delivery-1");
       expect(currentRunContext()?.runId).toBe("delivery-1");
       await bracket.close();
@@ -186,7 +186,7 @@ describe("/api/metrics", () => {
     expect(body).toContain("agent_studio_run_duration_seconds_count 1");
   });
 
-  it("names no project, user or model in any label", async () => {
+  it("names no agent, user or model in any label", async () => {
     resetRunMetrics();
     const run = beginRun();
     endRun(run, { durationMs: 1_000 });

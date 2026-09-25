@@ -5,7 +5,7 @@
  * override entirely — is directly testable.
  */
 
-import type { McpBinding } from "@/domain/project/types";
+import type { McpBinding } from "@/domain/agent/types";
 import type { HeaderRow } from "@/app/_components/HeaderRows";
 
 /**

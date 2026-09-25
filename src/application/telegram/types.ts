@@ -20,11 +20,11 @@ export interface TelegramEventDeps extends MessagingDeps {
    */
   transcripts?: ConversationTranscriptRepository;
   /**
-   * Where an album is claimed once, per project and bot. Optional like the
+   * Where an album is claimed once, per agent and bot. Optional like the
    * transcript: without it every member of an album is answered, which is
    * what an album got before the claim existed.
    */
-  albums?: (projectName: string, botId: number | string) => InboundEventClaims;
+  albums?: (agentName: string, botId: number | string) => InboundEventClaims;
   /**
    * How the handler waits — the pacing between a long reply's closing edits,
    * the moment an album's caption-less member gives the captioned one. Injected

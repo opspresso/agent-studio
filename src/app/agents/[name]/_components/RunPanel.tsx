@@ -67,11 +67,11 @@ function toolCallView(raw: unknown, chunk: EngineChunk): ToolCallView {
 }
 
 export function RunPanel({
-  projectName,
+  agentName,
   configured,
   modelAcceptsImages,
 }: {
-  projectName: string;
+  agentName: string;
   configured: boolean;
   /** From the model registry; `undefined` when the model is not in the catalog. */
   modelAcceptsImages?: boolean;
@@ -175,7 +175,7 @@ export function RunPanel({
         image_url: { url: imageDataUrl(image) },
       }));
       const res = await streamAgent(
-        projectName,
+        agentName,
         [{
           role: "user",
           content: imageParts.length > 0
@@ -285,7 +285,7 @@ export function RunPanel({
     }
   }
 
-  // The panel's own attachments are the source images an `image` project edits,
+  // The panel's own attachments are the source images an `image` agent edits,
   // so a screenshot pasted into the prompt is the gesture this surface is for.
   const attach = useCallback((files: File[]) => void addFiles(files), [addFiles]);
   const { dragging, handlers } = useFileDrop(attach, running);
@@ -376,7 +376,7 @@ export function RunPanel({
               {running ? t("run.running") : t("run.ran")}
             </Text>
             <Badge color={BADGE.owned} ff="monospace">
-              {projectName}
+              {agentName}
             </Badge>
             {activePaths.length > 0 && (
               <Text fz="xs" c="dimmed">

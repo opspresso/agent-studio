@@ -18,7 +18,7 @@ const STATUS_COLOR: Record<TriggerRun["status"], string> = {
  * schedule list read the same rows, and a second copy would be a second answer
  * to "what does `skipped` look like".
  *
- * The history scrolls in place. The endpoint returns up to twenty, and a project
+ * The history scrolls in place. The endpoint returns up to twenty, and an agent
  * with several triggers pushed everything below it — Slack, the danger
  * zone — off the screen, so the section that reads "what happened recently"
  * buried the ones that configure what happens next. The header stays put while

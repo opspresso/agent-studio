@@ -6,12 +6,12 @@ import { transcriptRepository } from "@/infrastructure/db/repositories/transcrip
 import {
   signArtifactUrl,
   executionDeps,
-  projectRepository,
+  agentRepository,
 } from "@/lib/container";
-import { executeAgent } from "@/application/execution/runProject";
+import { executeAgent } from "@/application/execution/runAgent";
 import { botIdFromToken, classifyTelegramUpdate } from "@/application/telegram/engagement";
 import { handleTelegramUpdate } from "@/application/telegram/handleUpdate";
-import type { TelegramEventBinding } from "@/application/telegram/projectTelegram";
+import type { TelegramEventBinding } from "@/application/telegram/agentTelegram";
 import type { TelegramEventDeps, TelegramUpdate } from "@/application/telegram/types";
 import { admitInboundEvent, readEventBody } from "@/app/api/_lib/inboundEvent";
 import { log } from "@/shared/logger";
@@ -19,7 +19,7 @@ import { telegramUpdateSchema } from "./updateSchema";
 
 const telegramEventDeps: TelegramEventDeps = {
   runAgent: (params) => executeAgent(executionDeps, params),
-  projects: projectRepository,
+  agents: agentRepository,
   telegram: telegramClient,
   destinations: telegramDestinationRepository,
   documents: executionDeps.documents,
@@ -29,7 +29,7 @@ const telegramEventDeps: TelegramEventDeps = {
   // source-level decision rather than omitted wiring.
   signFile: signArtifactUrl,
   transcripts: transcriptRepository,
-  albums: (projectName, botId) => telegramUpdateRepository.forBot(projectName, botId).albums,
+  albums: (agentName, botId) => telegramUpdateRepository.forBot(agentName, botId).albums,
 };
 
 /**
@@ -59,7 +59,7 @@ export async function handleTelegramUpdateRequest(
     // Telegram, present at a webhook registered with another secret.
     log.warn(
       "telegram",
-      `project ${binding.projectName}: refused a request whose secret did not verify ` +
+      `agent ${binding.agentName}: refused a request whose secret did not verify ` +
         `(header ${request.headers.get(TELEGRAM_SECRET_HEADER) === null ? "missing" : "present"}, ${body.length} byte body)`,
     );
     return Response.json({ error: "Invalid secret" }, { status: 401 });
@@ -86,13 +86,13 @@ export async function handleTelegramUpdateRequest(
   }
 
   const admitted = await admitInboundEvent({
-    // Keyed by bot as well as project: an update id is a counter per bot, and
-    // a project that changes bots must not have the new bot's early updates
+    // Keyed by bot as well as agent: an update id is a counter per bot, and
+    // an agent that changes bots must not have the new bot's early updates
     // refused as duplicates of the old bot's.
-    claims: telegramUpdateRepository.forBot(binding.projectName, botId ?? "unknown").updates,
+    claims: telegramUpdateRepository.forBot(binding.agentName, botId ?? "unknown").updates,
     eventId: typeof update.update_id === "number" ? String(update.update_id) : undefined,
     scope: "telegram",
-    logLabel: `project ${binding.projectName}`,
+    logLabel: `agent ${binding.agentName}`,
     work: () => handleTelegramUpdate(telegramEventDeps, disposition, binding),
   });
   if (admitted === "duplicate") {

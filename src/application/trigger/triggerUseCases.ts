@@ -4,12 +4,12 @@
  * The delivery path is `runTrigger.ts`; this module never runs anything.
  */
 
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { AgentRepository } from "@/domain/agent/repository";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { isValidTimezone, parseCron } from "@/domain/trigger/cron";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import {
-  PROJECT_WEBHOOK_ID,
+  AGENT_WEBHOOK_ID,
   type ScheduleDelivery,
   type ScheduleTrigger,
   type Trigger,
@@ -24,7 +24,7 @@ import {
   ValidationError,
   isConditionalWriteFailure,
 } from "@/application/errors";
-import { assertProjectOwnerOrAdminReadable, assertProjectWritable } from "@/application/project/projectUseCases";
+import { assertAgentOwnerOrAdminReadable, assertAgentWritable } from "@/application/agent/agentUseCases";
 import { generateSecretValue } from "@/shared/generatedSecret";
 import { log } from "@/shared/logger";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
@@ -33,7 +33,7 @@ import { reviewRepositories, type GitHubReviewConfig } from "@/domain/trigger/pu
 
 export interface TriggerDeps {
   triggers: TriggerRepository;
-  projects: ProjectRepository;
+  agents: AgentRepository;
   cipher: SecretCipher;
   /** Shared GitHub credentials may be delegated only by an installation administrator. */
   authorizeReview?: (email: string) => Promise<void>;
@@ -77,7 +77,7 @@ export interface UpdateTriggerInput {
 export interface TriggerView {
   githubReview?: GitHubReviewConfig;
   executionEmail?: string;
-  projectName: string;
+  agentName: string;
   triggerId: string;
   kind: TriggerKind;
   description: string;
@@ -103,7 +103,7 @@ function toView(trigger: Trigger, cipher: SecretCipher, plaintext?: string): Tri
   const { secret: _stored, ...rest } = trigger;
   return {
     ...rest,
-    secretMasked: cipher.mask(_stored, triggerSecretContext(trigger.projectName, trigger.triggerId)),
+    secretMasked: cipher.mask(_stored, triggerSecretContext(trigger.agentName, trigger.triggerId)),
     ...(plaintext ? { secret: plaintext } : {}),
   };
 }
@@ -168,14 +168,14 @@ function newSecret(): string {
 
 export const TRIGGER_LIST_PAGE_SIZE = 100;
 
-export async function listProjectTriggers(
-  repo: Pick<TriggerRepository, "listByProject">,
-  projectName: string,
+export async function listAgentTriggers(
+  repo: Pick<TriggerRepository, "listByAgent">,
+  agentName: string,
 ): Promise<Trigger[]> {
   const triggers: Trigger[] = [];
   let after: string | undefined;
   for (;;) {
-    const page = await repo.listByProject(projectName, TRIGGER_LIST_PAGE_SIZE, after);
+    const page = await repo.listByAgent(agentName, TRIGGER_LIST_PAGE_SIZE, after);
     triggers.push(...page);
     if (page.length < TRIGGER_LIST_PAGE_SIZE) {
       return triggers;
@@ -194,8 +194,8 @@ export function createTriggerUseCases(deps: TriggerDeps) {
     if (!repositories) throw new ValidationError("Select accessible repositories or a non-empty list of exact owner/repo names");
     return { scope: "repositories", repositories };
   }
-  async function load(projectName: string, triggerId: string): Promise<Trigger> {
-    const trigger = await deps.triggers.get(projectName, triggerId);
+  async function load(agentName: string, triggerId: string): Promise<Trigger> {
+    const trigger = await deps.triggers.get(agentName, triggerId);
     if (!trigger) {
       throw new NotFoundError(`Trigger "${triggerId}" not found`);
     }
@@ -203,39 +203,39 @@ export function createTriggerUseCases(deps: TriggerDeps) {
   }
 
   return {
-    async list(projectName: string, userEmail: string): Promise<TriggerView[]> {
-      await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
-      const triggers = await listProjectTriggers(deps.triggers, projectName);
+    async list(agentName: string, userEmail: string): Promise<TriggerView[]> {
+      await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
+      const triggers = await listAgentTriggers(deps.triggers, agentName);
       return triggers.map((trigger) => toView(trigger, deps.cipher));
     },
 
     async create(
-      projectName: string,
+      agentName: string,
       input: CreateTriggerInput,
       userEmail: string,
     ): Promise<TriggerView> {
-      const project = await assertProjectWritable(deps.projects, projectName, userEmail);
-      if (input.runAsOwner && project.ownerEmail !== userEmail) throw new ForbiddenError("Only the owner can enable personal execution");
+      const agent = await assertAgentWritable(deps.agents, agentName, userEmail);
+      if (input.runAsOwner && agent.ownerEmail !== userEmail) throw new ForbiddenError("Only the owner can enable personal execution");
       if (input.runAsOwner !== undefined && input.kind !== "schedule") throw new ValidationError("Personal execution is only available for schedules");
       if (input.githubReview !== undefined && input.kind === "schedule") throw new ValidationError("GitHub reviews are only available for webhooks");
       const githubReview = await reviewConfig(input.githubReview, userEmail);
-      // A project has exactly one webhook and it answers at `/api/webhook/{project}`,
+      // An agent has exactly one webhook and it answers at `/api/webhook/{agent}`,
       // which resolves this id and nothing else. Both halves of that are enforced
       // here, at the only place a row is minted: a webhook under any other name
       // would be a secret with no door, and a schedule under this one would make
-      // the delivery endpoint 404 for a project whose console shows a webhook.
+      // the delivery endpoint 404 for an agent whose console shows a webhook.
       if ((input.kind ?? "webhook") === "webhook") {
-        if (input.triggerId !== PROJECT_WEBHOOK_ID) {
+        if (input.triggerId !== AGENT_WEBHOOK_ID) {
           throw new ValidationError(
-            `A project's webhook is always "${PROJECT_WEBHOOK_ID}" — it is addressed by the project name`,
+            `An agent's webhook is always "${AGENT_WEBHOOK_ID}" — it is addressed by the agent name`,
           );
         }
-      } else if (input.triggerId === PROJECT_WEBHOOK_ID) {
-        throw new ValidationError(`"${PROJECT_WEBHOOK_ID}" is reserved for the project's webhook`);
+      } else if (input.triggerId === AGENT_WEBHOOK_ID) {
+        throw new ValidationError(`"${AGENT_WEBHOOK_ID}" is reserved for the agent's webhook`);
       }
       const now = new Date().toISOString();
       const base = {
-        projectName,
+        agentName,
         triggerId: input.triggerId,
         description: input.description ?? "",
         enabled: input.enabled ?? true,
@@ -279,7 +279,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         trigger = {
           ...base,
           kind: "webhook",
-          secret: deps.cipher.encrypt(secret, triggerSecretContext(projectName, input.triggerId)),
+          secret: deps.cipher.encrypt(secret, triggerSecretContext(agentName, input.triggerId)),
           ...(githubReview ? { githubReview } : {}),
         };
       }
@@ -295,14 +295,14 @@ export function createTriggerUseCases(deps: TriggerDeps) {
     },
 
     async update(
-      projectName: string,
+      agentName: string,
       triggerId: string,
       input: UpdateTriggerInput,
       userEmail: string,
     ): Promise<TriggerView> {
-      const project = await assertProjectWritable(deps.projects, projectName, userEmail);
-      if (input.runAsOwner && project.ownerEmail !== userEmail) throw new ForbiddenError("Only the owner can enable personal execution");
-      const existing = await load(projectName, triggerId);
+      const agent = await assertAgentWritable(deps.agents, agentName, userEmail);
+      if (input.runAsOwner && agent.ownerEmail !== userEmail) throw new ForbiddenError("Only the owner can enable personal execution");
+      const existing = await load(agentName, triggerId);
       if (input.githubReview !== undefined && existing.kind !== "webhook") throw new ValidationError("GitHub reviews are only available for webhooks");
       if (input.runAsOwner !== undefined && existing.kind !== "schedule") throw new ValidationError("Personal execution is only available for schedules");
       const shared = {
@@ -354,7 +354,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         ...shared,
         ...(githubReview ? { githubReview } : {}),
         ...(rotated
-          ? { secret: deps.cipher.encrypt(rotated, triggerSecretContext(projectName, triggerId)) }
+          ? { secret: deps.cipher.encrypt(rotated, triggerSecretContext(agentName, triggerId)) }
           : {}),
       };
       await deps.triggers.put(updated);
@@ -362,7 +362,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         await recordAudit({
           actorEmail: userEmail,
           action: "secret.rotate",
-          target: auditTarget("project", projectName),
+          target: auditTarget("agent", agentName),
           detail: `webhook trigger secret '${triggerId}' reissued; the previous secret stopped working`,
         });
       }
@@ -372,18 +372,18 @@ export function createTriggerUseCases(deps: TriggerDeps) {
     /**
      * The secret in plaintext, for an owner or admin.
      *
-     * Possible for the same reason a project API token is: it is stored
+     * Possible for the same reason an agent API token is: it is stored
      * AES-encrypted rather than hashed, so it can be shown again instead of
      * forcing a rotation every time someone needs to re-copy it. The trade is
      * the same too — ciphertext plus `AES_ENCRYPTION_KEY` is enough to use one.
      */
     async reveal(
-      projectName: string,
+      agentName: string,
       triggerId: string,
       userEmail: string,
     ): Promise<{ secret: string; createdAt: string }> {
-      await assertProjectWritable(deps.projects, projectName, userEmail);
-      const trigger = await load(projectName, triggerId);
+      await assertAgentWritable(deps.agents, agentName, userEmail);
+      const trigger = await load(agentName, triggerId);
       if (trigger.kind !== "webhook") {
         throw new ValidationError("A schedule trigger has no secret");
       }
@@ -391,27 +391,27 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       // that can be queried later, and as a line that survives the audit store.
       log.warn(
         "trigger",
-        `secret of trigger '${projectName}/${triggerId}' revealed by ${userEmail}`,
+        `secret of trigger '${agentName}/${triggerId}' revealed by ${userEmail}`,
       );
       await recordAudit({
         actorEmail: userEmail,
         action: "secret.reveal",
-        target: auditTarget("project", projectName),
+        target: auditTarget("agent", agentName),
         detail: `webhook trigger secret '${triggerId}'`,
       });
       return {
         secret: deps.cipher.decrypt(
           trigger.secret,
-          triggerSecretContext(projectName, triggerId),
+          triggerSecretContext(agentName, triggerId),
         ),
         createdAt: trigger.createdAt,
       };
     },
 
-    async remove(projectName: string, triggerId: string, userEmail: string): Promise<void> {
-      await assertProjectWritable(deps.projects, projectName, userEmail);
-      const removed = await load(projectName, triggerId);
-      await deps.triggers.delete(projectName, triggerId);
+    async remove(agentName: string, triggerId: string, userEmail: string): Promise<void> {
+      await assertAgentWritable(deps.agents, agentName, userEmail);
+      const removed = await load(agentName, triggerId);
+      await deps.triggers.delete(agentName, triggerId);
       // Only a webhook deletion is a revocation: its row *is* the credential, so
       // deleting it stops a secret from working. A schedule has none — twelve
       // lines up, revealing one is refused for exactly that reason — and
@@ -425,20 +425,20 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       await recordAudit({
         actorEmail: userEmail,
         action: "secret.revoke",
-        target: auditTarget("project", projectName),
+        target: auditTarget("agent", agentName),
         detail: `webhook trigger '${triggerId}' deleted; its secret stopped working`,
       });
     },
 
     async runs(
-      projectName: string,
+      agentName: string,
       triggerId: string,
       limit: number,
       userEmail: string,
     ): Promise<TriggerRun[]> {
       // Owner/admin like traces: a delivery's result preview is runtime output.
-      await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
-      return deps.triggers.listRuns(projectName, triggerId, limit);
+      await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
+      return deps.triggers.listRuns(agentName, triggerId, limit);
     },
   };
 }

@@ -3,7 +3,7 @@ import { createAudioDeliveryStep, type AudioDeliveryDeps } from "@/application/a
 import type { AudioJob } from "@/domain/audio/job";
 
 function fixture() {
-  const job: AudioJob = { id: "job", projectName: "audio", userEmail: "owner@example.test", model: "asr",
+  const job: AudioJob = { id: "job", agentName: "audio", userEmail: "owner@example.test", model: "asr",
     source: { kind: "file", fileId: "source" }, sourceKey: "source", fileId: "source", transcriptRef: "transcript", draftRef: "draft",
     retention: { unit: "months", value: 3, timezone: "Asia/Seoul" }, status: "running", stage: "storing", revision: 1,
     createdAt: "2026-09-09T00:00:00Z", updatedAt: "2026-09-09T00:00:00Z", dueAt: "2026-09-09T00:02:00Z",
@@ -25,7 +25,7 @@ function fixture() {
   });
   const close = vi.fn(async () => {});
   const deps: AudioDeliveryDeps = { files: {
-    read: vi.fn(async (_project, id) => ({ file: {} as never, mimeType: "application/json",
+    read: vi.fn(async (_agent, id) => ({ file: {} as never, mimeType: "application/json",
       bytes: new TextEncoder().encode(JSON.stringify(id === "transcript" ? transcript : draft)) })),
     metadata: vi.fn(async () => ({ filename: "source.mp3" }) as never), import: vi.fn(), sweep: vi.fn(), remove: vi.fn(),
   }, open: async () => ({ call, close }) };

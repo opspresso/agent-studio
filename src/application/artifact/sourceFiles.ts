@@ -50,12 +50,12 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       retireAt: expiry(existing.storedAt, file) });
   };
   return {
-    async metadata(projectName: string, id: string, userEmail: string): Promise<SourceFile> {
-      const file = await deps.files.get(projectName, id);
+    async metadata(agentName: string, id: string, userEmail: string): Promise<SourceFile> {
+      const file = await deps.files.get(agentName, id);
       if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
       return file;
     },
-    async import(input: Pick<SourceFile, "id" | "projectName" | "userEmail" | "filename" | "mimeType" | "retention" | "retainUntil" | "derived" | "derivedFrom" | "model" | "producedBy">,
+    async import(input: Pick<SourceFile, "id" | "agentName" | "userEmail" | "filename" | "mimeType" | "retention" | "retainUntil" | "derived" | "derivedFrom" | "model" | "producedBy">,
       open: (maxBytes: number) => Promise<SourceByteStream>, signal?: AbortSignal): Promise<SourceFile> {
       signal?.throwIfAborted();
       await deps.assertWritable?.();
@@ -97,26 +97,26 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       const finished = await deps.files.finish(file, { ...receipt, storedAt: existing.storedAt,
         retireAt: expiry(existing.storedAt, file) });
       if (finished) { assertReadable(finished, input.userEmail, deps.now().toISOString()); return publish(finished); }
-      const latest = await deps.files.get(file.projectName, file.id);
+      const latest = await deps.files.get(file.agentName, file.id);
       if (latest?.status === "deleting" || latest?.status === "deleted") await deps.objects.delete(key);
       assertReadable(latest, input.userEmail, deps.now().toISOString());
       return publish(latest);
     },
 
-    async read(projectName: string, id: string, userEmail: string, maxBytes = MAX_SOURCE_BYTES, signal?: AbortSignal) {
+    async read(agentName: string, id: string, userEmail: string, maxBytes = MAX_SOURCE_BYTES, signal?: AbortSignal) {
       signal?.throwIfAborted();
       if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > MAX_SOURCE_BYTES) throw new ValidationError("Invalid source read limit");
-      const file = await deps.files.get(projectName, id);
+      const file = await deps.files.get(agentName, id);
       assertReadable(file, userEmail, deps.now().toISOString());
       const result = await deps.objects.read(sourceFileObjectKey(id), maxBytes, signal);
       signal?.throwIfAborted();
-      const latest = await deps.files.get(projectName, id);
+      const latest = await deps.files.get(agentName, id);
       assertReadable(latest, userEmail, deps.now().toISOString());
       return { file: latest, ...result };
     },
 
-    async remove(projectName: string, id: string, userEmail: string): Promise<void> {
-      const file = await deps.files.get(projectName, id);
+    async remove(agentName: string, id: string, userEmail: string): Promise<void> {
+      const file = await deps.files.get(agentName, id);
       if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
       if (file.status === "deleted") return;
       const now = deps.now().toISOString();

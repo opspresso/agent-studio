@@ -5,7 +5,7 @@
  * in `infrastructure/telegram` implements it. In `domain` so both sides can
  * name it without either importing the other.
  *
- * Every call takes the bot token first: bots are per project, and which token
+ * Every call takes the bot token first: bots are per agent, and which token
  * a call goes out with is the caller's knowledge, never the adapter's.
  */
 export interface TelegramClientPort {

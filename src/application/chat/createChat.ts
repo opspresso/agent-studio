@@ -4,7 +4,7 @@ import type { Chat, ChatMessage } from "@/domain/chat/types";
 import { chatConversation } from "@/domain/chat/conversation";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatValidationError } from "./errors";
-import { userMayAccessProject } from "@/application/project/projectUseCases";
+import { userMayAccessAgent } from "@/application/agent/agentUseCases";
 import {
   runAndPersist,
   readMessageDocuments,
@@ -17,7 +17,7 @@ import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { teeToRunLog } from "./runLog";
 
 export interface CreateChatInput {
-  projectName: string;
+  agentName: string;
   firstMessage: string;
   /** Images the user attached to the first message. */
   images?: AttachedImage[];
@@ -54,24 +54,24 @@ export interface CreateChatResult {
 }
 
 /**
- * Create a chat bound to an agent project, persist the first user message, and
+ * Create a chat bound to an agent, persist the first user message, and
  * return the chat meta plus a stream of the first assistant response.
  */
 export async function createChat(
   deps: ChatDeps,
   input: CreateChatInput,
 ): Promise<CreateChatResult> {
-  const project = await deps.projects.get(input.projectName);
-  if (!project) {
-    throw new ChatValidationError(`project not found: ${input.projectName}`);
+  const agent = await deps.agents.get(input.agentName);
+  if (!agent) {
+    throw new ChatValidationError(`agent not found: ${input.agentName}`);
   }
-  if (!(await userMayAccessProject(project, input.userEmail))) {
-    throw new ChatForbiddenError(`project "${project.name}" is private`);
+  if (!(await userMayAccessAgent(agent, input.userEmail))) {
+    throw new ChatForbiddenError(`agent "${agent.name}" is private`);
   }
 
-  const configuration = project.configuration;
+  const configuration = agent.configuration;
   if (!configuration) {
-    throw new ChatValidationError("project has no Agent configuration");
+    throw new ChatValidationError("agent has no Agent configuration");
   }
 
   const startedAt = new Date();
@@ -80,7 +80,7 @@ export async function createChat(
     chatId: randomUUID(),
     title: titleFromMessage(input.firstMessage),
     ownerEmail: input.userEmail,
-    projectName: project.name,
+    agentName: agent.name,
     createdAt: now,
     updatedAt: now,
   };
@@ -91,12 +91,12 @@ export async function createChat(
     const attachments = input.images ?? [];
     const uploaded = await storeAttachedImages(
       deps,
-      { projectName: project.name, actor: { kind: "user", id: input.userEmail } },
+      { agentName: agent.name, actor: { kind: "user", id: input.userEmail } },
       attachments,
     );
     const documentInput = input.documents ?? [];
     const read = await readMessageDocuments(deps, {
-      projectName: project.name,
+      agentName: agent.name,
       actor: { kind: "user", id: input.userEmail },
     }, documentInput);
     const userSeq = await deps.chats.reserveMessageSeq(chat.chatId);
@@ -112,7 +112,7 @@ export async function createChat(
     await deps.chats.appendMessage(userMessage);
 
     const source = deps.runAgent({
-      project,
+      agent,
       configuration,
       // The attachment bytes go straight to the engine; the stored URLs are for
       // replay on later turns.

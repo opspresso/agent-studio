@@ -7,9 +7,9 @@ import { slackRunControlRepository } from "@/infrastructure/db/repositories/slac
 import {
   signArtifactUrl,
   executionDeps,
-  projectRepository,
+  agentRepository,
 } from "@/lib/container";
-import { executeAgent } from "@/application/execution/runProject";
+import { executeAgent } from "@/application/execution/runAgent";
 import { handleSlackEvent, handleSlackStop } from "@/application/slack/handleSlackEvent";
 import { handleThreadStart } from "@/application/slack/handleThreadStart";
 import { classifySlackEvent, type EngagementPolicy } from "@/application/slack/engagement";
@@ -22,7 +22,7 @@ import { slackEventSchema } from "./eventSchema";
 
 const slackEventDeps: SlackEventDeps = {
   runAgent: (params) => executeAgent(executionDeps, params),
-  projects: projectRepository,
+  agents: agentRepository,
   slack: slackClient,
   threads: slackThreadRepository,
   stops: slackRunControlRepository,
@@ -56,7 +56,7 @@ export async function handleSlackEventRequest(
     signingSecret: string;
     binding: SlackBotBinding;
     logLabel: string;
-    /** What this project asked to be woken by, beyond a mention. */
+    /** What this agent asked to be woken by, beyond a mention. */
     engagement?: EngagementPolicy;
   },
 ): Promise<Response> {
@@ -80,7 +80,7 @@ export async function handleSlackEventRequest(
     // The signature and the secret are never logged; what is logged is the
     // shape of the failure, which is what narrows it: missing headers point at
     // something that is not Slack, a large skew at the clock, and neither of
-    // those at the wrong signing secret being stored for this project.
+    // those at the wrong signing secret being stored for this agent.
     const skew = timestamp ? Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp)) : null;
     log.warn(
       "slack",
@@ -116,7 +116,7 @@ export async function handleSlackEventRequest(
   // claim below, an unengaged thread would already have cost a write.
   if (disposition.kind === "engagedThread") {
     const engaged = await slackThreadRepository
-      .isEngaged(opts.binding.projectName, disposition.channel, disposition.threadTs)
+      .isEngaged(opts.binding.agentName, disposition.channel, disposition.threadTs)
       // A lookup that failed must not answer a message nobody addressed. The
       // cost of being wrong here is one unanswered follow-up; the cost the
       // other way is the bot speaking uninvited in a channel.

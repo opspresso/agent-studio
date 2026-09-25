@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Route-handler test: `withMemberAuth` is stubbed to inject a controllable
 // user. The preview is tier-gated at `member` rather than owner-gated — the
 // route says why saving's owner gate is deliberately not applied — so a
-// non-owner assembling someone else's project is the contract, not a leak. That
+// non-owner assembling someone else's agent is the contract, not a leak. That
 // the rung refuses a guest is `tests/session.test.ts`'s to fix, not this
 // file's; here the wrapper is a stub either way.
-const { state, projectRepo, calls } = vi.hoisted(() => ({
+const { state, agentRepo, calls } = vi.hoisted(() => ({
   state: { email: "owner@example.com" },
-  projectRepo: { get: vi.fn() },
+  agentRepo: { get: vi.fn() },
   calls: [] as Array<{
     systemPrompt: string;
     message?: string;
@@ -25,20 +25,20 @@ vi.mock("@/lib/session", () => ({
 
 vi.mock("@/lib/container", async () => ({
   executionDeps: {},
-  projectUseCases: (
-    await import("@/application/project/projectUseCases")
-  ).createProjectUseCases(projectRepo as never),
+  agentUseCases: (
+    await import("@/application/agent/agentUseCases")
+  ).createAgentUseCases(agentRepo as never),
   // Draft mask resolution uses this bound configuration use case.
   configurationUseCases: (
-    await import("@/application/project/configurationUseCases")
+    await import("@/application/agent/configurationUseCases")
   ).createConfigurationUseCases({
-    projects: projectRepo as never,
+    agents: agentRepo as never,
     refs: {} as never,
     cipher: {} as never,
   }),
 }));
 
-vi.mock("@/application/execution/runProject", () => ({
+vi.mock("@/application/execution/runAgent", () => ({
   previewPrompt: async (
     _deps: unknown,
     input: {
@@ -61,11 +61,11 @@ vi.mock("@/application/execution/runProject", () => ({
   },
 }));
 
-const { POST } = await import("@/app/api/projects/[name]/preview/route");
+const { POST } = await import("@/app/api/agents/[name]/preview/route");
 
 const ctx = () => ({ params: Promise.resolve({ name: "proj" }) });
 const body = (extra: Record<string, unknown> = {}) =>
-  new Request("https://studio.example.com/api/projects/proj/preview", {
+  new Request("https://studio.example.com/api/agents/proj/preview", {
     method: "POST",
     body: JSON.stringify({ model: "gpt-test", ...extra }),
   });
@@ -74,14 +74,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   calls.length = 0;
   state.email = "owner@example.com";
-  projectRepo.get.mockResolvedValue({
+  agentRepo.get.mockResolvedValue({
     name: "proj",
     displayName: "Proj",
     ownerEmail: "owner@example.com",
   });
 });
 
-describe("POST /api/projects/[name]/preview", () => {
+describe("POST /api/agents/[name]/preview", () => {
   it("assembles the request draft", async () => {
     const res = await POST(body({ systemPrompt: "You are helpful." }), ctx());
 
@@ -93,7 +93,7 @@ describe("POST /api/projects/[name]/preview", () => {
     }]);
   });
 
-  it("assembles for a session caller who does not own the project, like a run", async () => {
+  it("assembles for a session caller who does not own the agent, like a run", async () => {
     state.email = "someone@example.com";
 
     const res = await POST(body(), ctx());
@@ -115,8 +115,8 @@ describe("POST /api/projects/[name]/preview", () => {
     });
   });
 
-  it("404s on a project that does not exist", async () => {
-    projectRepo.get.mockResolvedValue(null);
+  it("404s on an agent that does not exist", async () => {
+    agentRepo.get.mockResolvedValue(null);
 
     const res = await POST(body(), ctx());
 
@@ -126,7 +126,7 @@ describe("POST /api/projects/[name]/preview", () => {
 
   it("rejects an invalid configuration body", async () => {
     const res = await POST(
-      new Request("https://studio.example.com/api/projects/proj/preview", {
+      new Request("https://studio.example.com/api/agents/proj/preview", {
         method: "POST",
         body: JSON.stringify({ systemPrompt: "no model" }),
       }),

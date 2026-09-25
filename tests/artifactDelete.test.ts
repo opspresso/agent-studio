@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { setAuditSink } from "@/application/audit/recordAudit";
-import { setAdminCheck } from "@/application/project/projectUseCases";
+import { setAdminCheck } from "@/application/agent/agentUseCases";
 import { NotFoundError } from "@/application/errors";
 import type { AuditEvent } from "@/domain/audit/types";
 import type { Artifact } from "@/domain/artifact/types";
-import type { Project } from "@/domain/project/types";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { Agent } from "@/domain/agent/types";
+import type { AgentRepository } from "@/domain/agent/repository";
 
 const OWNER = "owner@x.com";
 const OTHER = "other@x.com";
 const ADMIN = "admin@x.com";
 
-const project: Project = {
+const agent: Agent = {
   name: "poster-bot",
   displayName: "Poster",
   description: "",
@@ -29,19 +29,19 @@ function artifact(over: Partial<Artifact> = {}): Artifact {
     key: "artifacts/image/a1.png",
     mimeType: "image/png",
     byteSize: 100,
-    projectName: "poster-bot",
+    agentName: "poster-bot",
     actor: { kind: "user", id: OWNER },
     createdAt: "2026-08-01T00:00:00.000Z",
     ...over,
   };
 }
 
-const projects: ProjectRepository = {
+const agents: AgentRepository = {
   async get(name) {
-    return name === project.name ? project : null;
+    return name === agent.name ? agent : null;
   },
   async list() {
-    return [project];
+    return [agent];
   },
   async create() {},
   async update() {},
@@ -61,7 +61,7 @@ function setup(stored: Artifact | null, over: { rowDeleteFails?: boolean } = {})
     async get(id: string) {
       return current && current.artifactId === id ? current : null;
     },
-    async listByProject() {
+    async listByAgent() {
       return [];
     },
     async listByOwner() {
@@ -89,7 +89,7 @@ function setup(stored: Artifact | null, over: { rowDeleteFails?: boolean } = {})
       calls.push("object.delete");
     },
   };
-  const useCases = createArtifactUseCases(rows, objects, projects);
+  const useCases = createArtifactUseCases(rows, objects, agents);
   return { useCases, calls, present: () => current !== null };
 }
 
@@ -142,15 +142,15 @@ describe("who may delete", () => {
     expect(present()).toBe(false);
   });
 
-  it("lets the project owner remove what a Slack run produced", async () => {
-    // The whole reason the project axis exists: this row names no mailbox, so
+  it("lets the agent owner remove what a Slack run produced", async () => {
+    // The whole reason the agent axis exists: this row names no mailbox, so
     // nobody could reach it through a personal gallery.
     const { useCases, present } = setup(artifact({ actor: { kind: "slack", id: "U1" } }));
     await useCases.remove("a1", OWNER);
     expect(present()).toBe(false);
   });
 
-  it("lets an admin reach into another project", async () => {
+  it("lets an admin reach into another agent", async () => {
     const { useCases, present } = setup(artifact({ actor: { kind: "user", id: OTHER } }));
     await useCases.remove("a1", ADMIN);
     expect(present()).toBe(false);
@@ -170,7 +170,7 @@ describe("what is recorded", () => {
     const deletion = audited.find((event) => event.action === "artifact.delete");
     expect(deletion).toMatchObject({ actorEmail: ADMIN, target: "artifact:a1" });
     // Never the prompt or the bytes — a trail row is not a copy of the content.
-    expect(deletion?.detail).toBe("image in project poster-bot");
+    expect(deletion?.detail).toBe("image in agent poster-bot");
   });
 
   it("stays quiet when a person tidies up their own gallery", async () => {
@@ -183,15 +183,15 @@ describe("what is recorded", () => {
   it("records the admin override on the way through", async () => {
     const { useCases } = setup(artifact({ actor: { kind: "slack", id: "U1" } }));
     await useCases.remove("a1", ADMIN);
-    expect(audited.map((event) => event.action)).toContain("project.admin-override");
+    expect(audited.map((event) => event.action)).toContain("agent.admin-override");
   });
 });
 
 describe("listing", () => {
-  it("checks the project before handing over its artifacts", async () => {
+  it("checks the agent before handing over its artifacts", async () => {
     const { useCases } = setup(artifact());
-    await expect(useCases.listByProject("poster-bot", OTHER)).rejects.toThrow();
-    await expect(useCases.listByProject("poster-bot", OWNER)).resolves.toEqual([]);
+    await expect(useCases.listByAgent("poster-bot", OTHER)).rejects.toThrow();
+    await expect(useCases.listByAgent("poster-bot", OWNER)).resolves.toEqual([]);
   });
 
   it("bounds a page however much a caller asks for", async () => {
@@ -201,7 +201,7 @@ describe("listing", () => {
       async get() {
         return null;
       },
-      async listByProject() {
+      async listByAgent() {
         return [];
       },
       async listByOwner(_email: string, options?: { limit?: number }) {
@@ -222,7 +222,7 @@ describe("listing", () => {
         },
         async delete() {},
       },
-      projects,
+      agents,
     );
     await useCases.listMine(OWNER, { limit: 5000 });
     await useCases.listMine(OWNER, { limit: 0 });

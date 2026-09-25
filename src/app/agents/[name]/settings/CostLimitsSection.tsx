@@ -5,16 +5,16 @@ import { Alert, Badge, Button, Group, NumberInput, Select, Stack, Text, TextInpu
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { stateColor } from "@/app/_components/badgeColors";
 import {
-  listProjectTelegramChats,
-  listProjectSlackChannels,
-  updateProject,
+  listAgentTelegramChats,
+  listAgentSlackChannels,
+  updateAgent,
   type CostLimits,
   type SlackChannelInfo,
   type TelegramDestination,
-  type SanitizedProject,
+  type SanitizedAgent,
 } from "../../lib/api";
 import { useT } from "@/app/_i18n/provider";
-import { costAlertDestinations } from "@/domain/project/types";
+import { costAlertDestinations } from "@/domain/agent/types";
 import type {
   MessageDestination,
   MessageDestinationKind,
@@ -44,14 +44,14 @@ export function costLimitsForSave(limits: CostLimits): CostLimits | null {
  * would refuse every run, which is never what clearing a box is meant to say.
  */
 export function CostLimitsSection({
-  projectName,
-  project,
+  agentName,
+  agent,
 }: {
-  projectName: string;
-  project: Pick<SanitizedProject, "costLimits" | "slack" | "telegram" | "teams">;
+  agentName: string;
+  agent: Pick<SanitizedAgent, "costLimits" | "slack" | "telegram" | "teams">;
 }) {
   const t = useT();
-  const limits = project.costLimits;
+  const limits = agent.costLimits;
   const [alertUsd, setAlertUsd] = useState<number | "">(limits?.alertThresholdUsd ?? "");
   const [blockUsd, setBlockUsd] = useState<number | "">(limits?.blockThresholdUsd ?? "");
   const [monthlyAlertUsd, setMonthlyAlertUsd] = useState<number | "">(limits?.monthlyAlertThresholdUsd ?? "");
@@ -71,15 +71,15 @@ export function CostLimitsSection({
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      // The project's own integration summaries say which surfaces exist, so
+      // The agent's own integration summaries say which surfaces exist, so
       // only those are asked anything further — an unconnected bot's channel
       // or chat listing is a guaranteed 400, fired on every settings visit.
-      const slackOn = Boolean(project.slack?.configured && project.slack.enabled);
-      const telegramOn = Boolean(project.telegram?.configured && project.telegram.enabled);
-      const teamsOn = Boolean(project.teams?.configured && project.teams.enabled);
+      const slackOn = Boolean(agent.slack?.configured && agent.slack.enabled);
+      const telegramOn = Boolean(agent.telegram?.configured && agent.telegram.enabled);
+      const teamsOn = Boolean(agent.teams?.configured && agent.teams.enabled);
       const [slack, telegramDestinations] = await Promise.allSettled([
-        slackOn ? listProjectSlackChannels(projectName) : Promise.resolve({ channels: [] }),
-        telegramOn ? listProjectTelegramChats(projectName) : Promise.resolve({ chats: [] }),
+        slackOn ? listAgentSlackChannels(agentName) : Promise.resolve({ channels: [] }),
+        telegramOn ? listAgentTelegramChats(agentName) : Promise.resolve({ chats: [] }),
       ]);
       if (cancelled) {
         return;
@@ -110,7 +110,7 @@ export function CostLimitsSection({
     return () => {
       cancelled = true;
     };
-  }, [projectName, project.slack?.configured, project.slack?.enabled, project.telegram?.configured, project.telegram?.enabled, project.teams?.configured, project.teams?.enabled]);
+  }, [agentName, agent.slack?.configured, agent.slack?.enabled, agent.telegram?.configured, agent.telegram?.enabled, agent.teams?.configured, agent.teams?.enabled]);
 
   async function save() {
     setSaving(true);
@@ -126,7 +126,7 @@ export function CostLimitsSection({
     try {
       // Destinations may be chosen before a threshold. Clear the stored object
       // only when both the thresholds and their future delivery targets are gone.
-      await updateProject(projectName, { costLimits: costLimitsForSave(limits) });
+      await updateAgent(agentName, { costLimits: costLimitsForSave(limits) });
       setSaved(true);
     } catch (e) {
       setError(reportError(e, "Failed to save cost limits"));
@@ -211,8 +211,8 @@ export function CostLimitsSection({
     >
       <Stack gap="md">
         <Text fz="sm" c="dimmed">
-          Spend is measured per UTC day and per UTC month across every model this project runs.
-          Leave a field empty for no limit. A blocked project refuses every run — API, chat,
+          Spend is measured per UTC day and per UTC month across every model this agent runs.
+          Leave a field empty for no limit. A blocked agent refuses every run — API, chat,
           Slack and triggers alike — until the window rolls over: 00:00 UTC for the day, the first
           of the next month for the month.
         </Text>

@@ -11,10 +11,10 @@ import { isEffectiveAdmin, isEffectiveConfiguredAdmin } from "./memberAccess";
  *
  * Both are here, under the names the server uses, because they answer different
  * questions and the UI needs both. Sending one and letting the client infer the
- * other is what went wrong before: `isAdmin` alone fed the project edit gate, so
+ * other is what went wrong before: `isAdmin` alone fed the agent edit gate, so
  * on a deployment with no `ADMIN_EMAILS` — where `isAdminEmail` means "no
- * restriction" but `assertProjectWritable` gates on `isConfiguredAdmin` — every
- * signed-in user was offered the editable form for every project and then got a
+ * restriction" but `assertAgentWritable` gates on `isConfiguredAdmin` — every
+ * signed-in user was offered the editable form for every agent and then got a
  * 403 on save. The two predicates are split on purpose in `runtime-settings.ts`;
  * they have to stay split across the wire too. A member whose *tier* is `admin`
  * gets both — the composition is `memberAccess.ts`'s — but the split survives
@@ -28,7 +28,7 @@ export interface Viewer {
   email: string;
   /** May mutate shared registries and app settings. Empty list = no restriction. */
   isAdmin: boolean;
-  /** May write a project owned by someone else. Empty list = nobody. */
+  /** May write an agent owned by someone else. Empty list = nobody. */
   isConfiguredAdmin: boolean;
   /**
    * The member's tier, so the UI can gate what a tier may do through the same

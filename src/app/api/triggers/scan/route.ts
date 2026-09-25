@@ -64,7 +64,7 @@ export async function POST(request: Request): Promise<Response> {
     ),
   );
   after(() =>
-    // Bounded, not one task per firing: a 09:00 shared by every project must
+    // Bounded, not one task per firing: a 09:00 shared by every agent must
     // not become that many simultaneous runs on the pod that served the tick.
     driveFirings(firings, MAX_CONCURRENT_FIRINGS, (firing) =>
       // The firing's run id, for the same reason the webhook route opens it: a

@@ -64,7 +64,7 @@ describe("recordAudit", () => {
       {
         actorEmail: "admin@example.com",
         action: "secret.reveal",
-        target: auditTarget("project", "my-bot"),
+        target: auditTarget("agent", "my-bot"),
         detail: "API token",
       },
       new Date("2026-08-03T10:00:00Z"),
@@ -72,7 +72,7 @@ describe("recordAudit", () => {
     expect(sink.rows[0]).toMatchObject({
       actorEmail: "admin@example.com",
       action: "secret.reveal",
-      target: "project:my-bot",
+      target: "agent:my-bot",
       detail: "API token",
       createdAt: "2026-08-03T10:00:00.000Z",
     });
@@ -91,7 +91,7 @@ describe("recordAudit", () => {
       listByDay: async () => [],
     });
     await expect(
-      recordAudit({ actorEmail: "a@example.com", action: "project.delete", target: "project:p" }),
+      recordAudit({ actorEmail: "a@example.com", action: "agent.delete", target: "agent:p" }),
     ).resolves.toBeUndefined();
   });
 });

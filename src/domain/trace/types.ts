@@ -31,7 +31,7 @@ export interface TraceSpan {
 
 export interface Trace {
   traceId: string;
-  projectName: string;
+  agentName: string;
   /**
    * Who caused the run. A subagent's trace carries the actor of the top-level
    * run that reached it — the transfer was not a second person's decision.
@@ -40,7 +40,7 @@ export interface Trace {
   actor?: RunActor;
   /**
    * Transfer chain that reached this run, outermost first — the last element is
-   * this run's own project. Present on nested runs so a trace can be read
+   * this run's own agent. Present on nested runs so a trace can be read
    * upwards, not only downwards through `subagentTraceId`.
    */
   ancestry?: string[];

@@ -24,7 +24,7 @@ import { slackTimestampValue } from "@/domain/slack/runControl";
  * 2. an `app_mention` — always answered, whatever else is configured;
  * 3. a DM — every message in one is addressed to the bot;
  * 4. a thread the bot already answered in, inside {@link isEngaged}'s window;
- * 5. a keyword the project asked to be woken by;
+ * 5. a keyword the agent asked to be woken by;
  * 6. otherwise nothing.
  *
  * Only step 4 needs storage, and only a *threaded* message reaches it — ordinary
@@ -51,7 +51,7 @@ import { slackTimestampValue } from "@/domain/slack/runControl";
  */
 const ALLOWED_SUBTYPES = new Set(["file_share", "bot_message"]);
 
-/** What the project asked to be woken by, beyond a mention. */
+/** What the agent asked to be woken by, beyond a mention. */
 export interface EngagementPolicy {
   /**
    * Words that make an un-mentioned channel message a question for this bot.

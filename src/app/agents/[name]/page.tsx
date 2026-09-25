@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Alert, Button, Grid, Group, Stack, Text } from "@mantine/core";
-import { getConfiguration, getProject, listModels, putConfiguration,
-  type AgentConfiguration, type AgentConfigurationInput, type SelectableModel, type SanitizedProject } from "../lib/api";
+import { getConfiguration, getAgent, listModels, putConfiguration,
+  type AgentConfiguration, type AgentConfigurationInput, type SelectableModel, type SanitizedAgent } from "../lib/api";
 import { useT } from "@/app/_i18n/provider";
-import { canEditProject, useViewer } from "@/app/_lib/useViewer";
+import { canEditAgent, useViewer } from "@/app/_lib/useViewer";
 import { tierAtLeast } from "@/domain/member/tiers";
 import { modelType } from "@/domain/llm/models";
 import { LoadingText } from "@/app/_components/PageState";
@@ -18,7 +18,7 @@ import { createLatestOnly } from "@/app/_lib/latestOnly";
 import classes from "./Playground.module.css";
 
 function editable(configuration: AgentConfiguration): AgentConfigurationInput {
-  const { projectName: _project, ...settings } = configuration;
+  const { agentName: _agent, ...settings } = configuration;
   return settings;
 }
 function emptyInput(models: SelectableModel[] = []): AgentConfigurationInput {
@@ -30,7 +30,7 @@ export default function PlaygroundPage() {
   const { name } = useParams<{ name: string }>();
   const t = useT();
   const viewer = useViewer();
-  const [project, setProject] = useState<SanitizedProject | null>(null);
+  const [agent, setAgent] = useState<SanitizedAgent | null>(null);
   const [models, setModels] = useState<SelectableModel[]>([]);
   const [configuration, setConfiguration] = useState<AgentConfiguration | null>(null);
   const [updatedAt, setUpdatedAt] = useState("");
@@ -59,10 +59,10 @@ export default function PlaygroundPage() {
         models: [] as SelectableModel[],
         error: error instanceof Error ? error.message : "Model registry unavailable",
       }));
-    void Promise.all([getProject(name), getConfiguration(name), modelRead]).then(([project, view, modelList]) => {
+    void Promise.all([getAgent(name), getConfiguration(name), modelRead]).then(([agent, view, modelList]) => {
       if (!isCurrent()) return;
       const next = view.configuration ? editable(view.configuration) : emptyInput(modelList.models);
-      setProject(project);
+      setAgent(agent);
       setModels(modelList.models);
       setModelError(modelList.error);
       setConfiguration(view.configuration);
@@ -103,8 +103,8 @@ export default function PlaygroundPage() {
   }
 
   if (loading || viewer === null) return <LoadingText />;
-  if (error || !project || project.name !== name) return <Alert color="red">{error ?? t("playground.notFound")}</Alert>;
-  const canEdit = canEditProject(viewer, project.ownerEmail);
+  if (error || !agent || agent.name !== name) return <Alert color="red">{error ?? t("playground.notFound")}</Alert>;
+  const canEdit = canEditAgent(viewer, agent.ownerEmail);
   const canPreview = tierAtLeast(viewer.tier, "member");
   const runModel = models.find(model => model.id === configuration?.model);
   const saveState = { run: save, saving, disabled: !draft.model || schemaError !== null,
@@ -126,7 +126,7 @@ export default function PlaygroundPage() {
           {saveError && <Alert color="red">{saveError}</Alert>}
           <fieldset disabled={!canEdit || saving} className={canEdit ? undefined : classes.readonlyEditor}
             style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-            <AgentConfigurationEditor key={name} projectName={name}
+            <AgentConfigurationEditor key={name} agentName={name}
               models={models.filter(model => modelType(model) === "text")}
               imageModels={models.filter(model => modelType(model) === "image")}
               value={draft} onChange={setDraft} schemaText={currentSchema} onSchemaChange={setSchemaText}
@@ -137,10 +137,10 @@ export default function PlaygroundPage() {
       <Grid.Col span={{ base: 12, lg: 6 }}>
         <Stack gap="md">
           {canPreview && <CollapsibleSection title={t("playground.preview")}>
-            <PromptPreview projectName={name} draft={parsed ?? draft} validationError={schemaError} />
+            <PromptPreview agentName={name} draft={parsed ?? draft} validationError={schemaError} />
           </CollapsibleSection>}
           <CollapsibleSection title={t("playground.run")} defaultOpen>
-            <RunPanel key={name} projectName={name} configured={configuration !== null}
+            <RunPanel key={name} agentName={name} configured={configuration !== null}
               modelAcceptsImages={runModel?.capabilities.imageInput} />
           </CollapsibleSection>
         </Stack>

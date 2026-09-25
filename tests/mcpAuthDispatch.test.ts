@@ -11,13 +11,13 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 }));
 
 import { createMcpAuthProvider, TOKEN_REFRESH_MARGIN_MS } from "@/application/mcp/mcpAuthProvider";
-import { executeAgent, type ExecutionDeps } from "@/application/execution/runProject";
+import { executeAgent, type ExecutionDeps } from "@/application/execution/runAgent";
 import { OAuthGrantError, type TokenSet } from "@/domain/mcp/oauth";
 import type { McpConnection } from "@/domain/mcp/connection";
 import type { McpServer } from "@/domain/mcp/types";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
@@ -59,7 +59,7 @@ const cipher = {
 
 function connectionFixture(overrides: Partial<McpConnection> = {}): McpConnection {
   return {
-    projectName: "p",
+    agentName: "p",
     serverName: "slack",
     clientId: "client-1",
     clientSecret: "enc:shh",
@@ -89,7 +89,7 @@ function providerHarness(opts: {
   const provider = createMcpAuthProvider({
     connections: {
       get: async () => stored,
-      listByProject: async () => (stored ? [stored] : []),
+      listByAgent: async () => (stored ? [stored] : []),
       put: async () => {},
       putIfCurrent: async () => true,
       delete: async () => {},
@@ -122,8 +122,8 @@ function providerHarness(opts: {
      * callers — they already hold the entry, so the identity check it feeds
      * costs no read.
      */
-    headersFor: (projectName = "p", serverName = "slack") =>
-      provider.headersFor(projectName, serverName, (opts.server ?? OAUTH_SERVER).auth!),
+    headersFor: (agentName = "p", serverName = "slack") =>
+      provider.headersFor(agentName, serverName, (opts.server ?? OAUTH_SERVER).auth!),
     provider,
     refreshCalls,
     updates,
@@ -131,7 +131,7 @@ function providerHarness(opts: {
   };
 }
 
-describe("resolving the Authorization for a project's connection", () => {
+describe("resolving the Authorization for an agent's connection", () => {
   it("uses the stored token without refreshing when it outlives any run", async () => {
     // The header must stay byte-identical between runs: the discovery cache is
     // keyed on url + headers, so refreshing every run would change the key every
@@ -159,7 +159,7 @@ describe("resolving the Authorization for a project's connection", () => {
     expect(h.updates[0]).toMatchObject({ accessToken: "enc:refreshed-token", status: "connected" });
   });
 
-  it("will not spend this project's credentials at an authorization server that did not issue them", async () => {
+  it("will not spend this agent's credentials at an authorization server that did not issue them", async () => {
     // SEP-2352. A refresh is the one thing on the run path that presents the
     // client_id and secret, so an entry repointed by a re-discovery would send
     // them to a server that never registered them.
@@ -185,7 +185,7 @@ describe("resolving the Authorization for a project's connection", () => {
     // The path that needs no refresh still hands out a bearer token, and a token
     // carries an RFC 8707 audience. An admin who repoints this shared entry —
     // by editing its URL and rediscovering, or by deleting and recreating it
-    // under the same name — would otherwise have every project's token
+    // under the same name — would otherwise have every agent's token
     // delivered to a server it was never minted for, across the admin/owner
     // boundary the rest of this codebase keeps.
     const h = providerHarness({
@@ -237,7 +237,7 @@ describe("resolving the Authorization for a project's connection", () => {
     const provider = createMcpAuthProvider({
       connections: {
         get: async () => stored,
-        listByProject: async () => [stored],
+        listByAgent: async () => [stored],
         put: async () => {},
         putIfCurrent: async () => true,
         delete: async () => {},
@@ -288,7 +288,7 @@ describe("resolving the Authorization for a project's connection", () => {
     expect(transient.current()?.status).toBe("connected");
   });
 
-  it("explains an unconnected project instead of sending nothing", async () => {
+  it("explains an unconnected agent instead of sending nothing", async () => {
     const h = providerHarness({ connection: null });
     const result = await h.headersFor();
     expect(result.headers).toEqual({});
@@ -308,7 +308,7 @@ describe("a refresh racing a reconnect", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     store.rows.clear();
-    store.seed([{ ...keys.project("p"), entityType: "PROJECT", name: "p" }]);
+    store.seed([{ ...keys.agent("p"), entityType: "AGENT", name: "p" }]);
   });
   afterEach(() => vi.useRealTimers());
 
@@ -419,8 +419,8 @@ describe("a refresh racing a reconnect", () => {
     const provider = createMcpAuthProvider({
       connections: {
         ...mcpConnectionRepository,
-        async get(projectName, serverName) {
-          const snapshot = await mcpConnectionRepository.get(projectName, serverName);
+        async get(agentName, serverName) {
+          const snapshot = await mcpConnectionRepository.get(agentName, serverName);
           read.resolve();
           await resume.promise;
           return snapshot;
@@ -444,7 +444,7 @@ describe("a refresh racing a reconnect", () => {
 
 const testUrlPolicy: UrlPolicy = { async assertAllowed() {} };
 
-function projectFixture(): Project {
+function agentFixture(): Agent {
   return {
     name: "p",
     displayName: "p",
@@ -457,7 +457,7 @@ function projectFixture(): Project {
 
 function configurationFixture(): AgentConfiguration {
   return {
-    projectName: "p",
+    agentName: "p",
 
     systemPrompt: "",
 
@@ -475,7 +475,7 @@ function runDeps(
 ): ExecutionDeps {
   const reject = () => Promise.reject(new Error("not used in this test"));
   return {
-    projects: { get: reject },
+    agents: { get: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => OAUTH_SERVER },
     usage: { record: async () => {} },
@@ -519,7 +519,7 @@ function stubMcpServer(opts: { rejectUnauthorized?: boolean } = {}) {
 async function runOnce(deps: ExecutionDeps): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
   for await (const chunk of executeAgent(deps, {
-    project: projectFixture(),
+    agent: agentFixture(),
     configuration: configurationFixture(),
     messages: [{ role: "user", content: "hi" }],
   })) {
@@ -535,24 +535,24 @@ beforeEach(() => {
 });
 
 describe("a run against an OAuth-required server", () => {
-  it("sends the project's bearer token", async () => {
+  it("sends the agent's bearer token", async () => {
     const seen = stubMcpServer();
     try {
       const chunks = await runOnce(
         runDeps(new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]), {
-          headersFor: async () => ({ headers: { Authorization: "Bearer project-token" } }),
+          headersFor: async () => ({ headers: { Authorization: "Bearer agent-token" } }),
           markUnauthorized: async () => {},
         }),
       );
       expect(chunks.some((c) => c.error)).toBe(false);
-      expect(seen[0]?.authorization).toBe("Bearer project-token");
+      expect(seen[0]?.authorization).toBe("Bearer agent-token");
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it("completes without that server's tools when the project has not connected it", async () => {
-    // The whole point of degrading rather than failing: a project that has not
+  it("completes without that server's tools when the agent has not connected it", async () => {
+    // The whole point of degrading rather than failing: an agent that has not
     // connected Slack must still be able to answer everything else.
     const seen = stubMcpServer();
     try {
@@ -609,7 +609,7 @@ describe("markUnauthorized with a scope challenge", () => {
     const provider = createMcpAuthProvider({
       connections: {
         get: async () => stored,
-        listByProject: async () => [stored],
+        listByAgent: async () => [stored],
         put: async (next: typeof stored) => {
           puts.push(next);
         },

@@ -1,11 +1,11 @@
-import { withConfigurations } from "./projectConfigurations";
+import { withConfigurations } from "./agentConfigurations";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeStore } from "./fakeStore";
 import * as store from "@/infrastructure/db/store";
 import { keys } from "@/infrastructure/db/keys";
 import { workspaceRepository as repository } from "@/infrastructure/db/repositories/workspaceRepository";
 import { chatRepository as chats } from "@/infrastructure/db/repositories/chatRepository";
-import { projectRepository as projects } from "@/infrastructure/db/repositories/projectRepository";
+import { agentRepository as agents } from "@/infrastructure/db/repositories/agentRepository";
 import { createWorkspaceUseCases } from "@/application/workspace/workspaceUseCases";
 import { createCodingUseCases, type CodingDeps } from "@/application/coding/codingUseCases";
 import { createWorkspaceRuntimeAdapter } from "@/infrastructure/workspace/runtimeAdapters";
@@ -27,9 +27,9 @@ async function fixture() {
   f.configuration.parameters.piiFiltering = false;
   const owner = f.scope.ownerEmail;
   const at = new Date().toISOString();
-  fake.seed([{ ...keys.project("project"), entityType: "PROJECT", name: "project", displayName: "Project", description: "",
+  fake.seed([{ ...keys.agent("agent"), entityType: "AGENT", name: "agent", displayName: "Agent", description: "",
     ownerEmail: owner, createdAt: at, updatedAt: at }]);
-  await chats.create({ chatId: f.scope.sessionId, projectName: "project", title: "Implement, create PR and merge", ownerEmail: owner, createdAt: at, updatedAt: at });
+  await chats.create({ chatId: f.scope.sessionId, agentName: "agent", title: "Implement, create PR and merge", ownerEmail: owner, createdAt: at, updatedAt: at });
   await f.run(new FakeChannel([[contentChunk("Waiting for the commit approval")]]), "Commit and push, create a PR, then merge it to main");
   let serial = 0;
   let head = "a".repeat(40);
@@ -37,8 +37,8 @@ async function fixture() {
   const pull: PullRequestInfo = { number: 1, url: "https://example.test/company/repo/pull/1", headSha: "b".repeat(40),
     baseBranch: "main", state: "open", draft: false, ci: "passed" };
   const coding: CodingDeps = {
-    repository, chats, projects, now: () => new Date(), newId: () => `id-${++serial}`, idleTtlSeconds: 60,
-    checkRepository: async () => {}, policy: () => ({ projectName: "project", repositories: ["company/repo"], runtimes: ["codex"], checks: [], deploymentWorkflows: [] }),
+    repository, chats, agents, now: () => new Date(), newId: () => `id-${++serial}`, idleTtlSeconds: 60,
+    checkRepository: async () => {}, policy: () => ({ agentName: "agent", repositories: ["company/repo"], runtimes: ["codex"], checks: [], deploymentWorkflows: [] }),
     runtime: kind => createWorkspaceRuntimeAdapter(kind), runTimeoutMs: 1000,
     execute: async (_workspace, work) => { await work(); }, sleep: async () => {},
     provider: { kind: "fake", ensure: async () => ({ externalId: "sandbox-1" }), inspect: async () => "ready",
@@ -53,19 +53,19 @@ async function fixture() {
       reviewMainPush: async () => ({ baseSha: head, ci: "passed" }), pushMain: async () => head, dispatch: async () => ({}) },
   };
   const useCases = createWorkspaceUseCases(coding);
-  const workspace = await useCases.create({ chatId: "workspace-chat", projectName: "project", title: "Work", runtime: "codex",
+  const workspace = await useCases.create({ chatId: "workspace-chat", agentName: "agent", title: "Work", runtime: "codex",
     repository: "company/repo", baseBranch: "main", createChat: true, sourceChatId: f.scope.sessionId }, owner);
   const git = createCodingUseCases(coding);
-  const workspaceTool = createWorkspaceTool({ useCases, authorize: async () => {}, policy: () => coding.policy("project"),
+  const workspaceTool = createWorkspaceTool({ useCases, authorize: async () => {}, policy: () => coding.policy("agent"),
     workdir: "/workspace/repo", publicBaseUrl: "https://studio.example.test", sleep: async () => {},
     requestGit: git.request, pullRequest: git.pullRequest, attachRepository: git.attachRepository },
-  { sourceChatId: f.scope.sessionId, projectName: "project", ownerEmail: owner, occurrence: "continuation" });
+  { sourceChatId: f.scope.sessionId, agentName: "agent", ownerEmail: owner, occurrence: "continuation" });
   let channel = new FakeChannel([[contentChunk("Result received")]]);
   const runAgent = vi.fn<ChatDeps["runAgent"]>(async function* (input) {
     for (const chunk of await f.run(channel, "", undefined, { workspaceTool }, { messages: input.messages })) yield chunk;
   });
   const deps: WorkspaceContinuationDeps = { workspaces: repository, authorize: vi.fn(async () => {}), pullRequest: vi.fn(git.pullRequest), now: () => new Date(), sleep: async () => {},
-    chat: { chats, projects: withConfigurations(projects, ({ get: async () => f.configuration }).get),  runtimeSessions: f.services, runAgent,
+    chat: { chats, agents: withConfigurations(agents, ({ get: async () => f.configuration }).get),  runtimeSessions: f.services, runAgent,
       runLog: { append: vi.fn(async () => {}), read: async () => [] }, documents: { extract: async () => ({ text: "" }) } } };
   const approval = await git.request(workspace.id, owner, { kind: "commit-and-push", message: "feat: implement" }, f.scope.sessionId);
   const drain = async () => {
@@ -263,8 +263,8 @@ describe("Workspace decisions returning to their source chat", () => {
     const f = await fixture();
     await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
     const api = createWorkspaceUseCases(f.coding);
-    const other = await api.create({ chatId: "other-workspace-chat", createChat: true, projectName: "project", runtime: "codex", title: "Other" }, f.owner);
-    await api.selectForChat(f.scope.sessionId, other.id, "project", f.owner);
+    const other = await api.create({ chatId: "other-workspace-chat", createChat: true, agentName: "agent", runtime: "codex", title: "Other" }, f.owner);
+    await api.selectForChat(f.scope.sessionId, other.id, "agent", f.owner);
     await f.drain();
     expect(f.runAgent).not.toHaveBeenCalled();
     expect((await repository.continuation(f.workspace.id, f.approval.id))?.status).toBe("cancelled");

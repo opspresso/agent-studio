@@ -593,7 +593,7 @@ export function isTimeout(error: unknown): boolean {
  * Does this failure mean the connection has to be authorized again?
  *
  * The single owner of that reading, because what it asks for is unlike every
- * other failure: a 401 asks the *project* to reconnect, while the rest ask an
+ * other failure: a 401 asks the *agent* to reconnect, while the rest ask an
  * operator to go and look at the server. Three places need the answer —
  * discovery, a tool call made against a session the discovery cache let through
  * unconnected, and the registry's probe — so they share this predicate.

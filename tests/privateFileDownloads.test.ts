@@ -10,7 +10,7 @@ vi.mock("@/lib/container", () => ({
   getAudioRuntime: () => ({ authorize: reads.authorize, files: { read: reads.file } }),
 }));
 import { GET as downloadArtifact } from "@/app/api/artifacts/[artifactId]/download/route";
-import { GET as downloadSource } from "@/app/api/projects/[name]/source-files/[file]/route";
+import { GET as downloadSource } from "@/app/api/agents/[name]/source-files/[file]/route";
 
 const bytes = new Uint8Array([0x49, 0x44, 0x33, 0xff]);
 beforeEach(() => { vi.clearAllMocks(); });

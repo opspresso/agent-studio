@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { actorKey, descend, type RunActor } from "@/domain/execution/actor";
-import { principalActor } from "@/app/api/projects/_lib/executionAuth";
+import { principalActor } from "@/app/api/agents/_lib/executionAuth";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import { TraceRecorder } from "@/application/trace/recorder";
 import type { Trace } from "@/domain/trace/types";
@@ -17,8 +17,8 @@ function fakeUsage() {
     listMemberDays: async () => [],
     claimAlert: async () => false,
     claimMonthAlert: async () => false,
-    listActorsByProject: async () => [],
-    listByProject: async () => [],
+    listActorsByAgent: async () => [],
+    listByAgent: async () => [],
     listByDateRange: async () => [],
   };
   return { repo, writes };
@@ -34,7 +34,7 @@ describe("actorKey", () => {
     // Both authenticate as the same person; only the kind says which is which,
     // and telling them apart is the whole reason to attribute at all.
     const owner: RunActor = { kind: "user", id: "a@example.com" };
-    const token: RunActor = { kind: "project-token", id: "a@example.com" };
+    const token: RunActor = { kind: "agent-token", id: "a@example.com" };
     expect(actorKey(owner)).not.toBe(actorKey(token));
   });
 });
@@ -49,7 +49,7 @@ describe("principalActor", () => {
 
   it("maps a token principal to its own kind, carrying the owner's email", () => {
     expect(principalActor({ email: "a@example.com", viaToken: true })).toEqual({
-      kind: "project-token",
+      kind: "agent-token",
       id: "a@example.com",
     });
   });
@@ -72,23 +72,23 @@ describe("descend", () => {
 });
 
 describe("usage attribution", () => {
-  it("records the actor alongside the project total", async () => {
+  it("records the actor alongside the agent total", async () => {
     const { repo, writes } = fakeUsage();
     await recordUsage(repo, {
-      projectName: "p",
+      agentName: "p",
       model: "m",
       inputTokens: 1,
       outputTokens: 2,
       costUsd: 0.5,
       actor: "user:a@example.com",
     });
-    expect(writes[0]).toMatchObject({ projectName: "p", actor: "user:a@example.com" });
+    expect(writes[0]).toMatchObject({ agentName: "p", actor: "user:a@example.com" });
   });
 
   it("omits the actor entirely when the run has none", async () => {
     const { repo, writes } = fakeUsage();
     await recordUsage(repo, {
-      projectName: "p",
+      agentName: "p",
       model: "m",
       inputTokens: 1,
       outputTokens: 2,
@@ -97,27 +97,27 @@ describe("usage attribution", () => {
     expect(writes[0]).not.toHaveProperty("actor");
   });
 
-  it("stamps the run's actor on every flushed total, across projects", async () => {
+  it("stamps the run's actor on every flushed total, across agents", async () => {
     const { repo, writes } = fakeUsage();
     const aggregator = createUsageAggregator(repo, "user:a@example.com");
-    // A subagent transfer spends on another project, but it is still this
+    // A subagent transfer spends on another agent, but it is still this
     // person's run — the actor is the run's, not the turn's.
     await aggregator.record({
-      projectName: "parent",
+      agentName: "parent",
       model: "m",
       inputTokens: 1,
       outputTokens: 1,
       costUsd: 1,
     });
     await aggregator.record({
-      projectName: "child",
+      agentName: "child",
       model: "m",
       inputTokens: 1,
       outputTokens: 1,
       costUsd: 2,
     });
     await aggregator.flush();
-    expect(writes.map((w) => [w.projectName, w.actor])).toEqual([
+    expect(writes.map((w) => [w.agentName, w.actor])).toEqual([
       ["parent", "user:a@example.com"],
       ["child", "user:a@example.com"],
     ]);
@@ -130,7 +130,7 @@ describe("trace attribution", () => {
     const recorder = new TraceRecorder(
       { put: async (t: Trace) => void traces.push(t) } as never,
       {
-        projectName: "p",
+        agentName: "p",
         model: "m",
         messageCount: 1,
         ...(actor ? { actor } : {}),

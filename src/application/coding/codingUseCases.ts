@@ -24,12 +24,12 @@ function repository(workspace: Workspace): CodingRepository {
 
 async function reserve(deps: CodingDeps, id: string, ownerEmail: string, actionId: string | undefined, resuming = false, attachRepository?: string, authorizeEffect = true): Promise<WorkspaceWorkerState> {
   const workspace = await ownedWorkspace(deps, id, ownerEmail);
-  if (authorizeEffect) await deps.authorize?.(workspace.projectName, ownerEmail);
+  if (authorizeEffect) await deps.authorize?.(workspace.agentName, ownerEmail);
   if (!["active", "suspended", "closed"].includes(workspace.status) || workspace.activeRunId ||
     (workspace.leaseToken && Date.parse(workspace.leaseUntil ?? "") > deps.now().getTime()) ||
     (workspace.activeActionId && (!resuming || workspace.activeActionId !== actionId))) throw new ConflictError("Workspace is busy");
   if (attachRepository && workspace.coding) throw new ConflictError("Workspace already has a Git repository");
-  if (authorizeEffect && !workspaceAllowsRepository(await workspacePolicy(deps, workspace.projectName), attachRepository ?? repository(workspace).repository)) throw new ConflictError("Workspace repository configuration changed");
+  if (authorizeEffect && !workspaceAllowsRepository(await workspacePolicy(deps, workspace.agentName), attachRepository ?? repository(workspace).repository)) throw new ConflictError("Workspace repository configuration changed");
   const token = deps.newId();
   const leaseUntil = new Date(deps.now().getTime() + WORKSPACE_LEASE_MS).toISOString();
   try {
@@ -74,7 +74,7 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
     if (review.treeSha !== review.headTreeSha) throw new ConflictError("Workspace has uncommitted changes");
     return { pullRequest: current };
   } else {
-    const policy = await workspacePolicy(deps, workspace.projectName);
+    const policy = await workspacePolicy(deps, workspace.agentName);
     if (!policy.deploymentWorkflows.includes(action.workflow) || action.ref !== "main") throw new ValidationError("Deployment must use an allowed workflow on main");
     if (Object.keys(action.inputs).length > 25 || Object.entries(action.inputs).some(([key, value]) => !/^[\w-]{1,100}$/.test(key) || typeof value !== "string" || value.length > 4000)) {
       throw new ValidationError("Invalid deployment workflow inputs");
@@ -128,8 +128,8 @@ export function createCodingUseCases(deps: CodingDeps) {
       if (sourceChatId) {
         const workspace = await ownedWorkspace(deps, id, ownerEmail);
         const chat = await deps.chats.get(sourceChatId);
-        if (!chat || chat.ownerEmail !== ownerEmail || chat.workspaceId || !chat.projectName ||
-          chat.linkedWorkspaces?.[workspace.projectName] !== id) throw new NotFoundError("Source chat not found");
+        if (!chat || chat.ownerEmail !== ownerEmail || chat.workspaceId || !chat.agentName ||
+          chat.linkedWorkspaces?.[workspace.agentName] !== id) throw new NotFoundError("Source chat not found");
       }
       const approvalId = `${deps.now().getTime()}-${deps.newId()}`;
       const state = await reserve(deps, id, ownerEmail, approvalId);

@@ -1,6 +1,6 @@
 /** Image generation and editing capabilities of an Agent. */
 
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import type { ImageGenerationResult } from "@/domain/llm/imageChannel";
 import { getModelConfig, getVisibleModels, toImageUsageRecord } from "@/domain/llm/models";
 import type { ImageToolResult } from "@/application/llm/agentAssembly";
@@ -30,7 +30,7 @@ export function defaultImageModel(): string | undefined {
  * draw at all. A model that left the registry falls back to the default instead
  * of disabling the tools the Agent asked for.
  */
-export function resolveImageModel(configuration: AgentConfiguration, projectName: string): string | undefined {
+export function resolveImageModel(configuration: AgentConfiguration, agentName: string): string | undefined {
   if (configuration.parameters.imageGeneration !== true) {
     return undefined;
   }
@@ -42,7 +42,7 @@ export function resolveImageModel(configuration: AgentConfiguration, projectName
   if (requested) {
     log.warn(
       "image",
-      `Agent ${projectName} requests unavailable image model "${requested}"; falling back to ${fallback}`,
+      `Agent ${agentName} requests unavailable image model "${requested}"; falling back to ${fallback}`,
     );
   }
   return fallback;
@@ -56,7 +56,7 @@ export function resolveImageModel(configuration: AgentConfiguration, projectName
 export function buildImageGenerator(
   deps: Pick<ExecutionDeps, "imageChannel">,
   model: string | undefined,
-  projectName: string,
+  agentName: string,
   recordUsageFn: engine.RecordUsageFn,
   signal?: AbortSignal,
 ): engine.AgentDeps["generateImage"] {
@@ -73,7 +73,7 @@ export function buildImageGenerator(
       quality,
       signal,
     });
-    return recordImageResult(result, model, projectName, recordUsageFn);
+    return recordImageResult(result, model, agentName, recordUsageFn);
   };
 }
 
@@ -86,7 +86,7 @@ export function buildImageGenerator(
 export function buildImageEditor(
   deps: Pick<ExecutionDeps, "imageChannel">,
   model: string | undefined,
-  projectName: string,
+  agentName: string,
   recordUsageFn: engine.RecordUsageFn,
   signal?: AbortSignal,
 ): engine.AgentDeps["editImage"] {
@@ -104,7 +104,7 @@ export function buildImageEditor(
       quality,
       signal,
     });
-    return recordImageResult(result, model, projectName, recordUsageFn, images.length);
+    return recordImageResult(result, model, agentName, recordUsageFn, images.length);
   };
 }
 
@@ -112,7 +112,7 @@ export function buildImageEditor(
 async function recordImageResult(
   result: ImageGenerationResult,
   model: string,
-  projectName: string,
+  agentName: string,
   recordUsage: engine.RecordUsageFn,
   sourceImages?: number,
 ): Promise<ImageToolResult> {
@@ -120,6 +120,6 @@ async function recordImageResult(
     ...result.usage,
     ...(sourceImages === undefined ? {} : { sourceImages }),
   }) };
-  await recordUsage({ projectName, ...usage });
+  await recordUsage({ agentName, ...usage });
   return { b64: result.b64, mimeType: result.mimeType, model, usage };
 }

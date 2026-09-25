@@ -215,7 +215,7 @@ describe("MCP registry secret contract", () => {
     // The block was read out of the *old* address's well-known documents: its
     // `resource` names that server and its endpoints belong to whichever
     // authorization server vouched for it. Carried across a move, every
-    // project's stored token — bound by RFC 8707 to that stale `resource` —
+    // agent's stored token — bound by RFC 8707 to that stale `resource` —
     // would be sent to the new address instead.
     const { repo, store } = makeMcpRepo();
     const useCases = createMcpUseCases(repo);
@@ -271,7 +271,7 @@ describe("MCP registry secret contract", () => {
 
   it("keeps the OAuth block when the address is unchanged", async () => {
     // Editing headers or a description must not cost an entry its discovery —
-    // that would make every unrelated save a reconnect for every project.
+    // that would make every unrelated save a reconnect for every agent.
     const { repo, store } = makeMcpRepo();
     const useCases = createMcpUseCases(repo);
     await useCases.create({ name: "m", url: "https://mcp.example/mcp", headers: {} });
@@ -376,7 +376,7 @@ describe("MCP registry secret contract", () => {
         url: "https://mcp.example/mcp",
         headers: {
           "x-user-email": "forged@example.com",
-          "X-Tenant-Id": "forged-project",
+          "X-Tenant-Id": "forged-agent",
           "X-Conversation-Id": "chat:forged",
         },
         createdAt: NOW,

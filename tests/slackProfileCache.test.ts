@@ -56,7 +56,7 @@ describe("the Slack profile cache", () => {
   it("evicts the oldest entries rather than growing without a bound", () => {
     // Expiry alone does not bound this map — an entry is only dropped when it is
     // read after expiring, and most are never read again. The key space is every
-    // Slack user who ever talks to any project bot, plus a fresh set on every
+    // Slack user who ever talks to any agent bot, plus a fresh set on every
     // token rotation.
     for (let index = 0; index < 2100; index += 1) {
       rememberProfile("tok", `U${index}`, PROFILE, NOW);

@@ -37,7 +37,7 @@ export interface ProducedFile {
   url?: string;
 }
 
-/** Project stored chunks to public file handles without bytes or producer internals. */
+/** Agent stored chunks to public file handles without bytes or producer internals. */
 export function fileRefOf(file: NonNullable<EngineChunk["file"]>): ProducedFileRef {
   return {
     name: file.name,

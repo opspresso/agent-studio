@@ -45,7 +45,7 @@ export interface SlackReaderPort {
    * answered into a tool result.
    *
    * Shares the caller lookup's cache: both are one `users.info` call, and a
-   * project using caller context and this tool should not pay for it twice.
+   * agent using caller context and this tool should not pay for it twice.
    */
   userDetail(token: string, userId: string): Promise<SlackUserDetail | null>;
   /**
@@ -53,8 +53,8 @@ export interface SlackReaderPort {
    *
    * A Slack actor is a workspace id, so the artifact owner index (keyed by
    * email) had nothing to key on and a picture somebody asked the bot to draw
-   * was reachable only through its project. `null` when the workspace does not
-   * share it or the scope is missing, and the output is then filed by project
+   * was reachable only through its agent. `null` when the workspace does not
+   * share it or the scope is missing, and the output is then filed by agent
    * exactly as before.
    */
   userEmail(token: string, userId: string): Promise<string | null>;

@@ -5,7 +5,7 @@ import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerPr
 import type { Workspace, RuntimeSession, WorkspaceRuntime } from "@/domain/workspace/types";
 
 function fixtures(runtime: WorkspaceRuntime, nativeSessionId?: string): [Workspace, RuntimeSession] {
-  return [{ id: "workspace-1", chatId: "chat-1", title: "Task", ownerEmail: "owner@example.test", projectName: "demo",
+  return [{ id: "workspace-1", chatId: "chat-1", title: "Task", ownerEmail: "owner@example.test", agentName: "demo",
     runtime, sessionId: "49d8f2ee-a602-4c45-bb60-e541cb4bbb82", revision: 0, status: "active", createdAt: "", updatedAt: "", dueAt: "", idleTtlSeconds: 3600 },
   { id: "49d8f2ee-a602-4c45-bb60-e541cb4bbb82", workspaceId: "workspace-1", runtime, nativeSessionId, createdAt: "", updatedAt: "" }];
 }

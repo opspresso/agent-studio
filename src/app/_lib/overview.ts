@@ -1,9 +1,9 @@
 /** Shared helpers for the signed-in overview. */
 
-import type { Project } from "@/domain/project/types";
+import type { Agent } from "@/domain/agent/types";
 
 /**
- * The projects to offer as "pick up where you left off".
+ * The agents to offer as "pick up where you left off".
  *
  * The viewer's own come first, and only then everyone else's — the catalog is
  * shared, so a workspace where somebody else has been busier would otherwise
@@ -13,15 +13,15 @@ import type { Project } from "@/domain/project/types";
  * Chats need no counterpart: `listChats` returns them newest-first from the
  * `CHATOWNER#{email}` GSI, and they are the viewer's own by definition.
  */
-export function recentProjects<T extends Pick<Project, "ownerEmail" | "updatedAt">>(
-  projects: T[],
+export function recentAgents<T extends Pick<Agent, "ownerEmail" | "updatedAt">>(
+  agents: T[],
   viewerEmail: string | null,
   limit: number,
 ): T[] {
   const byRecency = (a: T, b: T) => b.updatedAt.localeCompare(a.updatedAt);
-  const isMine = (project: T) =>
-    viewerEmail !== null && project.ownerEmail === viewerEmail;
-  const mine = projects.filter(isMine).sort(byRecency);
-  const others = projects.filter((project) => !isMine(project)).sort(byRecency);
+  const isMine = (agent: T) =>
+    viewerEmail !== null && agent.ownerEmail === viewerEmail;
+  const mine = agents.filter(isMine).sort(byRecency);
+  const others = agents.filter((agent) => !isMine(agent)).sort(byRecency);
   return [...mine, ...others].slice(0, limit);
 }

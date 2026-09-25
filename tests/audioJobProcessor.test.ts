@@ -11,7 +11,7 @@ import { audioJobRepository as jobs } from "@/infrastructure/db/repositories/aud
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const now = "2026-09-08T00:00:00.000Z";
 const input: AudioJobInput = {
-  projectName: "audio", userEmail: "owner@example.test", source: { kind: "file", fileId: "file-1" },
+  agentName: "audio", userEmail: "owner@example.test", source: { kind: "file", fileId: "file-1" },
   sourceKey: "source-1", model: "selfhosted/asr", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
 };
 async function submit(overrides: Partial<AudioJobInput> = {}) {
@@ -29,13 +29,13 @@ function deps(): AudioJobProcessorDeps {
 }
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(now);
-  fake.rows.clear(); fake.seed([{ ...keys.project("audio"), entityType: "PROJECT" }]);
+  fake.rows.clear(); fake.seed([{ ...keys.agent("audio"), entityType: "AGENT" }]);
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("audio job processor", () => {
   it("runs standalone postprocessing from an existing transcript without ASR or external writes", async () => {
-    await submit({ task: "postprocess", model: "", postprocess: { projectName: "writer" } });
+    await submit({ task: "postprocess", model: "", postprocess: { agentName: "writer" } });
     const d = deps();
     vi.mocked(d.postprocess).mockResolvedValue({ draftRef: "draft", summaryRef: "summary", dialogueRef: "dialogue" });
     expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "completed", transcriptRef: "stored", draftRef: "draft", summaryRef: "summary", dialogueRef: "dialogue" });
@@ -77,7 +77,7 @@ describe("audio job processor", () => {
   });
 
   it("resumes storage without repeating import, ASR or postprocessing", async () => {
-    await submit({ postprocess: { projectName: "writer" },
+    await submit({ postprocess: { agentName: "writer" },
       destination: { serverName: "memory", documents: true, memories: true } });
     const d = deps();
     vi.mocked(d.store).mockImplementationOnce(async (_job, context) => {
@@ -120,7 +120,7 @@ describe("audio job processor", () => {
   it("does not persist failed work after administrative cancellation", async () => {
     await submit(); const d = deps();
     d.transcribe = vi.fn(async (job) => {
-      await jobs.cancel(job.projectName, job.id, job.revision, new Date().toISOString());
+      await jobs.cancel(job.agentName, job.id, job.revision, new Date().toISOString());
       return { transcriptRef: "orphan-must-be-reconciled" };
     });
     await processAudioJob(d, "audio", "job-1");

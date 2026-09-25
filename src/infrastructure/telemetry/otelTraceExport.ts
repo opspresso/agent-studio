@@ -82,11 +82,11 @@ export function createOtelTraceExport(config: OtelExportConfig): OtelTraceExport
   const tracer = provider.getTracer("agent-studio");
 
   const exportTrace = (trace: Trace) => {
-    const root = tracer.startSpan(`Agent ${trace.projectName}`, {
+    const root = tracer.startSpan(`Agent ${trace.agentName}`, {
       startTime: new Date(trace.startedAt),
       attributes: {
         "app.trace_id": trace.traceId,
-        "app.project": trace.projectName,
+        "app.agent": trace.agentName,
         "app.status": trace.status,
         ...(trace.actor ? { "app.actor": `${trace.actor.kind}:${trace.actor.id}` } : {}),
         ...(trace.conversation ? { "app.conversation": trace.conversation } : {}),

@@ -3,7 +3,7 @@
  *
  * Discovery runs once, when an admin registers or repairs a server, and stores
  * everything a run needs on the registry entry. Operator OAuth client settings
- * live there too; project connections hold the resulting user grant. The run path
+ * live there too; agent connections hold the resulting user grant. The run path
  * never reads a well-known document: that would add two round trips and a third party's
  * availability to every time-to-first-token.
  */
@@ -24,7 +24,7 @@ import type {
   McpConnectionRepository,
   McpOAuthStateRepository,
 } from "@/domain/mcp/connection";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { AgentRepository } from "@/domain/agent/repository";
 import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCipher";
 import {
   mcpConnectionSecretContext,
@@ -35,10 +35,10 @@ import {
 } from "@/domain/security/secretContext";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
-import { resolveMcpBindings } from "@/application/project/mcpBindingSettings";
-import { assertProjectOwnerOrAdminReadable, assertProjectWritable } from "@/application/project/projectUseCases";
+import { resolveMcpBindings } from "@/application/agent/mcpBindingSettings";
+import { assertAgentOwnerOrAdminReadable, assertAgentWritable } from "@/application/agent/agentUseCases";
 import { applyMcpUserEmail, stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
-import { listProjectMcpConnections } from "./listConnections";
+import { listAgentMcpConnections } from "./listConnections";
 import { processManagedMcpLifecycleClaims } from "./managedMcpUseCases";
 import { assertAllowedUrl } from "@/application/registry/registryUseCases";
 import { skipsUrlGuard } from "@/domain/mcp/types";
@@ -51,7 +51,7 @@ import { mcpTokenTarget, registryClientMismatch } from "./mcpOAuthClient";
 /**
  * Discovery either finishes, or stops to ask which authorization server to use.
  * RFC 9728 lets a resource advertise several and puts the choice on the client;
- * silently taking the first would bind every project's tokens to whichever the
+ * silently taking the first would bind every agent's tokens to whichever the
  * provider happened to list first.
  */
 export type DiscoverAuthResult =
@@ -170,9 +170,9 @@ export const OAUTH_STATE_TTL_SECONDS = 600;
 export const MCP_OAUTH_CALLBACK_PATH = "/api/mcps/oauth/callback";
 
 /**
- * Where this deployment publishes a project's Client ID Metadata Document.
+ * Where this deployment publishes an agent's Client ID Metadata Document.
  *
- * One document per project rather than one for the deployment, because the
+ * One document per agent rather than one for the deployment, because the
  * document is what an authorization server shows the person approving the
  * connection. Its client name includes this deployment's display name and the
  * Agent name so the reader can identify both.
@@ -185,7 +185,7 @@ function trimBase(baseUrl: string): string {
 }
 
 /**
- * The `client_id` a project presents: the address of its metadata document.
+ * The `client_id` an agent presents: the address of its metadata document.
  *
  * The spec requires the `client_id` **inside** the document to equal the URL the
  * document was fetched from, exactly — an authorization server that finds them
@@ -194,8 +194,8 @@ function trimBase(baseUrl: string): string {
  * configured public base rather than from a request: two places deriving the
  * same URL is precisely the drift the rule is checking for.
  */
-export function clientMetadataUrl(baseUrl: string, projectName: string): string {
-  return `${trimBase(baseUrl)}${MCP_CLIENT_METADATA_PATH}/${projectName}`;
+export function clientMetadataUrl(baseUrl: string, agentName: string): string {
+  return `${trimBase(baseUrl)}${MCP_CLIENT_METADATA_PATH}/${agentName}`;
 }
 
 /**
@@ -212,13 +212,13 @@ export function clientMetadataUrl(baseUrl: string, projectName: string): string 
  */
 export function clientMetadataDocument(
   baseUrl: string,
-  projectName: string,
+  agentName: string,
   serviceName = DEFAULT_SERVICE_NAME,
 ): Record<string, unknown> {
   const base = trimBase(baseUrl);
   return {
-    client_id: clientMetadataUrl(base, projectName),
-    client_name: `${serviceName} — ${projectName}`,
+    client_id: clientMetadataUrl(base, agentName),
+    client_name: `${serviceName} — ${agentName}`,
     client_uri: base,
     redirect_uris: [`${base}${MCP_OAUTH_CALLBACK_PATH}`],
     grant_types: ["authorization_code", "refresh_token"],
@@ -233,7 +233,7 @@ export function clientMetadataDocument(
  * The client secret is masked the way every other stored secret in this codebase
  * is — length-preserving, edges revealed in proportion to length — so an owner
  * can recognise which credential is stored without it being readable. Tokens are
- * absent entirely: unlike the project API token there is no
+ * absent entirely: unlike the agent API token there is no
  * reveal path here, and a token has no reason to be displayed at all.
  */
 export interface McpConnectionView {
@@ -259,7 +259,7 @@ function toConnectionView(cipher: SecretCipher, connection: McpConnection): McpC
           clientSecret: cipher.mask(
             connection.clientSecret,
             mcpConnectionSecretContext(
-              connection.projectName,
+              connection.agentName,
               connection.serverName,
               "client-secret",
             ),
@@ -321,7 +321,7 @@ export interface McpAuthUseCasesDeps {
   serviceName: () => Promise<string>;
   lifecycleClaims?: Set<string>;
   mcps: McpRepository;
-  projects: ProjectRepository;
+  agents: AgentRepository;
   connections: McpConnectionRepository;
   states: McpOAuthStateRepository;
   metadata: OAuthMetadataClient;
@@ -330,7 +330,7 @@ export interface McpAuthUseCasesDeps {
   urlPolicy: UrlPolicy;
   /** One-shot tool listing, shared with the registry's own probe. */
   probe: McpToolProbe;
-  /** Resolves (and refreshes) this project's outbound Authorization. */
+  /** Resolves (and refreshes) this agent's outbound Authorization. */
   authProvider: McpAuthProvider;
   /** Absolute base of this deployment; the redirect URI is built from it. */
   publicBaseUrl: () => Promise<string | undefined>;
@@ -357,16 +357,16 @@ export interface McpAuthUseCases {
     input: SaveOAuthClientCredentialsInput,
   ): Promise<McpServerAuth>;
 
-  listConnections(projectName: string, userEmail: string): Promise<McpConnectionView[]>;
+  listConnections(agentName: string, userEmail: string): Promise<McpConnectionView[]>;
   saveClientCredentials(
-    projectName: string,
+    agentName: string,
     serverName: string,
     input: SaveClientCredentialsInput,
     userEmail: string,
   ): Promise<McpConnectionView>;
   /** Returns the URL to send the browser to. */
   beginAuthorization(
-    projectName: string,
+    agentName: string,
     serverName: string,
     userEmail: string,
   ): Promise<{ authorizeUrl: string }>;
@@ -376,7 +376,7 @@ export interface McpAuthUseCases {
     userEmail: string;
     /** RFC 9207, as the provider sent it. Validated before the code is redeemed. */
     iss?: string;
-  }): Promise<{ projectName: string; serverName: string }>;
+  }): Promise<{ agentName: string; serverName: string }>;
   /**
    * The provider redirected back with an error instead of a code.
    *
@@ -395,18 +395,18 @@ export interface McpAuthUseCases {
     errorDescription?: string;
     iss?: string;
   }): Promise<{ error: string }>;
-  disconnect(projectName: string, serverName: string, userEmail: string): Promise<void>;
+  disconnect(agentName: string, serverName: string, userEmail: string): Promise<void>;
   /**
-   * What this server offers *this project*. The registry's own probe carries
+   * What this server offers *this agent*. The registry's own probe carries
    * only the entry's static headers, so against an OAuth server it can do
-   * nothing but 401 — the credential that would answer belongs to the project.
+   * nothing but 401 — the credential that would answer belongs to the agent.
    *
    * `headerOverrides` is the binding's own layer, passed so the answer matches
    * what a run would offer. Owner-gated like the rest of this use case: it
-   * spends the project's connection and sends the caller's headers with it.
+   * spends the agent's connection and sends the caller's headers with it.
    */
   listTools(
-    projectName: string,
+    agentName: string,
     serverName: string,
     userEmail: string,
     headerOverrides?: HeaderOverrides,
@@ -493,8 +493,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
    * policy lookup is not a verdict about that address and must not create a
    * different client through registration.
    */
-  async function servableMetadataUrl(projectName: string): Promise<string | undefined> {
-    const url = clientMetadataUrl(await publicBase(), projectName);
+  async function servableMetadataUrl(agentName: string): Promise<string | undefined> {
+    const url = clientMetadataUrl(await publicBase(), agentName);
     try {
       await assertAuthEndpoint(deps.urlPolicy, url, "Client ID metadata document");
       return url;
@@ -505,13 +505,13 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
   }
 
   async function requireConnection(
-    projectName: string,
+    agentName: string,
     serverName: string,
   ): Promise<McpConnection> {
-    const connection = await deps.connections.get(projectName, serverName);
+    const connection = await deps.connections.get(agentName, serverName);
     if (!connection) {
       throw new NotFoundError(
-        `Project "${projectName}" has no connection to MCP server "${serverName}".`,
+        `Agent "${agentName}" has no connection to MCP server "${serverName}".`,
       );
     }
     return connection;
@@ -678,17 +678,17 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       return maskedMcpAuth(deps.cipher, name, nextAuth);
     },
 
-    async listConnections(projectName, userEmail) {
-      await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
-      return (await listProjectMcpConnections(deps.connections, projectName)).map((connection) =>
+    async listConnections(agentName, userEmail) {
+      await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
+      return (await listAgentMcpConnections(deps.connections, agentName)).map((connection) =>
         toConnectionView(deps.cipher, connection),
       );
     },
 
-    async saveClientCredentials(projectName, serverName, input, userEmail) {
-      await assertProjectWritable(deps.projects, projectName, userEmail);
+    async saveClientCredentials(agentName, serverName, input, userEmail) {
+      await assertAgentWritable(deps.agents, agentName, userEmail);
       const server = await requireOAuthServer(serverName);
-      const existing = await deps.connections.get(projectName, serverName);
+      const existing = await deps.connections.get(agentName, serverName);
 
       // An omitted or masked secret keeps what is stored, matching how every
       // other stored secret in this codebase behaves on update. An empty one
@@ -701,7 +701,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
             ? undefined
             : deps.cipher.encrypt(
                 submitted,
-                mcpConnectionSecretContext(projectName, serverName, "client-secret"),
+                mcpConnectionSecretContext(agentName, serverName, "client-secret"),
               );
       const scopes = input.scopes ?? existing?.scopes ?? server.auth.scopesSupported ?? [];
 
@@ -710,7 +710,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       // Saving credentials that did not change is a no-op, not a reset. Both
       // boxes arrive prefilled from the stored connection, so pressing Save
       // without editing anything is the likeliest press there is — and it must
-      // not cost the project the tokens those very credentials authorized.
+      // not cost the agent the tokens those very credentials authorized.
       if (
         existing &&
         existing.clientId === input.clientId &&
@@ -722,7 +722,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       }
 
       const next: McpConnection = {
-        projectName,
+        agentName,
         serverName,
         clientId: input.clientId,
         ...(clientSecret ? { clientSecret } : {}),
@@ -744,12 +744,12 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       return toConnectionView(deps.cipher, next);
     },
 
-    async beginAuthorization(projectName, serverName, userEmail) {
-      await assertProjectWritable(deps.projects, projectName, userEmail);
+    async beginAuthorization(agentName, serverName, userEmail) {
+      await assertAgentWritable(deps.agents, agentName, userEmail);
       const server = await requireOAuthServer(serverName);
       const callback = await redirectUri(server.auth.redirectUri);
       const issuer = server.auth.issuer;
-      let connection = await deps.connections.get(projectName, serverName);
+      let connection = await deps.connections.get(agentName, serverName);
 
       /**
        * SEP-2352: a `client_id` means nothing away from the server that issued
@@ -781,7 +781,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       // reach is not a route, and taking it anyway dead-ends at the provider
       // with a message about a client rather than about a URL.
       const metadataUrl = !server.auth.clientId && server.auth.clientIdMetadataDocumentSupported
-        ? await servableMetadataUrl(projectName)
+        ? await servableMetadataUrl(agentName)
         : undefined;
 
       /**
@@ -818,7 +818,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         // client authorized was granted by a different server, and must not
         // survive into this one.
         const base = {
-          projectName,
+          agentName,
           serverName,
           issuer,
           resource: server.auth.resource,
@@ -841,7 +841,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         } else if (server.auth.registrationEndpoint) {
           const registered = await deps.oauth.register({
             registrationEndpoint: server.auth.registrationEndpoint,
-            clientName: `${await deps.serviceName()} — ${projectName}`,
+            clientName: `${await deps.serviceName()} — ${agentName}`,
             redirectUri: callback,
             scopes,
             // The method the token requests will prove themselves with: a
@@ -857,7 +857,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
               ? {
                   clientSecret: deps.cipher.encrypt(
                     registered.clientSecret,
-                    mcpConnectionSecretContext(projectName, serverName, "client-secret"),
+                    mcpConnectionSecretContext(agentName, serverName, "client-secret"),
                   ),
                 }
               : {}),
@@ -891,7 +891,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       await deps.states.put(
         {
           state,
-          projectName,
+          agentName,
           serverName,
           codeVerifier: deps.cipher.encrypt(pkce.verifier, mcpOAuthStateContext(state)),
           userEmail,
@@ -944,7 +944,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       assertIssuerMatches(pending, iss);
       // Re-checked here, not only at authorize time: ownership can change while
       // the user is away at the provider.
-      await assertProjectWritable(deps.projects, pending.projectName, userEmail);
+      await assertAgentWritable(deps.agents, pending.agentName, userEmail);
 
       const server = await requireOAuthServer(pending.serverName);
       // The entry may have been repointed while the user was at the provider.
@@ -956,7 +956,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           `The authorization server configured for "${pending.serverName}" changed while this authorization was in progress. Please connect it again.`,
         );
       }
-      const connection = await requireConnection(pending.projectName, pending.serverName);
+      const connection = await requireConnection(pending.agentName, pending.serverName);
       if (
         registryClientMismatch(connection, server.auth) ||
         (pending.clientId !== undefined && (
@@ -996,7 +996,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         accessToken: deps.cipher.encrypt(
           tokens.accessToken,
           mcpConnectionSecretContext(
-            pending.projectName,
+            pending.agentName,
             pending.serverName,
             "access-token",
           ),
@@ -1006,7 +1006,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
               refreshToken: deps.cipher.encrypt(
                 tokens.refreshToken,
                 mcpConnectionSecretContext(
-                  pending.projectName,
+                  pending.agentName,
                   pending.serverName,
                   "refresh-token",
                 ),
@@ -1027,7 +1027,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       if (!await deps.connections.putIfCurrent(completed, connection)) {
         throw new ConflictError(`The connection to "${pending.serverName}" changed while authorization was completing. Connect again.`);
       }
-      return { projectName: pending.projectName, serverName: pending.serverName };
+      return { agentName: pending.agentName, serverName: pending.serverName };
     },
 
     async abandonAuthorization({ state, userEmail, error, errorDescription, iss }) {
@@ -1044,16 +1044,16 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       return { error: errorDescription ?? error };
     },
 
-    async disconnect(projectName, serverName, userEmail) {
-      await assertProjectWritable(deps.projects, projectName, userEmail);
-      const connection = await requireConnection(projectName, serverName);
+    async disconnect(agentName, serverName, userEmail) {
+      await assertAgentWritable(deps.agents, agentName, userEmail);
+      const connection = await requireConnection(agentName, serverName);
       if (!await deps.connections.deleteIfCurrent(connection)) {
         throw new ConflictError(`The connection to "${serverName}" changed while it was being disconnected. Reload and retry.`);
       }
     },
 
-    async listTools(projectName, serverName, userEmail, headerOverrides) {
-      const project = await assertProjectOwnerOrAdminReadable(deps.projects, projectName, userEmail);
+    async listTools(agentName, serverName, userEmail, headerOverrides) {
+      const agent = await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
       const server = await requireServer(serverName);
       const loopback = skipsUrlGuard(server, deps.internalHostSuffixes);
       if (!loopback) {
@@ -1068,24 +1068,24 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       }
       const [binding] = await resolveMcpBindings(deps.cipher, { get: async () => server },
         [{ name: serverName, ...(headerOverrides === undefined ? {} : { headers: headerOverrides }) }],
-        project.configuration?.mcpList ?? [], name => agentMcpHeadersContext(projectName, name));
+        agent.configuration?.mcpList ?? [], name => agentMcpHeadersContext(agentName, name));
       const resolvedOverrides = binding?.headers;
       // Assembled exactly as a run assembles it (see execution/mcpTools) — the
-      // binding's overrides layered over the entry, then the project's
+      // binding's overrides layered over the entry, then the agent's
       // Authorization last so an Agent cannot substitute its own. A list built
       // any other way would be answering a question nobody asked.
       const headers = deps.cipher.mergeOutboundHeaders(
         server.headers,
         resolvedOverrides,
         mcpHeadersContext(server.name),
-        agentMcpHeadersContext(projectName, serverName),
+        agentMcpHeadersContext(agentName, serverName),
       );
       // Before the availability check below, exactly as a run strips them: a
       // stored spelling of a reserved metadata header is not "a way to
       // authenticate", and this probe must not relay one either.
       stripMcpMetadataHeaders(headers);
       if (server.auth) {
-        const resolved = await deps.authProvider.headersFor(projectName, serverName, server.auth);
+        const resolved = await deps.authProvider.headersFor(agentName, serverName, server.auth);
         if (!resolved.unavailable) {
           Object.assign(headers, resolved.headers);
         } else if (Object.keys(headers).length === 0) {
@@ -1102,7 +1102,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       if (!result.ok && result.unauthorized && server.auth) {
         // What a run does with the same 401: record it, so the console offers a
         // reconnect instead of leaving the owner to re-diagnose the message.
-        await deps.authProvider.markUnauthorized(projectName, serverName).catch((error: unknown) => {
+        await deps.authProvider.markUnauthorized(agentName, serverName).catch((error: unknown) => {
           log.warn("mcp", `could not flag '${serverName}' as needing reauthorization`, error);
         });
       }

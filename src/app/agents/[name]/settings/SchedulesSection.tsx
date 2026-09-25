@@ -5,7 +5,7 @@ import { useConfirm } from "@/app/_components/useConfirm";
 import { Alert, Badge, Button, Group, Paper, Select, Stack, Switch, Text, TextInput } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { stateColor } from "@/app/_components/badgeColors";
-import { PROJECT_WEBHOOK_ID } from "@/domain/trigger/types";
+import { AGENT_WEBHOOK_ID } from "@/domain/trigger/types";
 import type { ScheduleDelivery, ScheduleDeliveryKind } from "@/domain/trigger/types";
 import { toSlug } from "@/domain/naming";
 import { useT } from "@/app/_i18n/provider";
@@ -13,15 +13,15 @@ import { TriggerRuns } from "./TriggerRuns";
 import {
   createTrigger,
   deleteTrigger,
-  listProjectTelegramChats,
-  listProjectSlackChannels,
+  listAgentTelegramChats,
+  listAgentSlackChannels,
   listTriggers,
   updateTrigger,
   type TriggerRun,
   type TriggerView,
   type SlackChannelInfo,
   type TelegramDestination,
-  type SanitizedProject,
+  type SanitizedAgent,
 } from "../../lib/api";
 import {
   findTelegramDestination,
@@ -34,16 +34,16 @@ import { loadScheduleRuns } from "./scheduleRuns";
 /**
  * Schedules: a cron in a timezone, and what recent firings did.
  *
- * The other way something outside the console starts a run — the project's
+ * The other way something outside the console starts a run — the agent's
  * webhook — is one section up and is not a row anyone names, so this list is
  * schedules and only schedules.
  */
 export function SchedulesSection({
-  projectName,
-  project,
+  agentName,
+  agent,
 }: {
-  projectName: string;
-  project: Pick<SanitizedProject, "slack" | "telegram" | "teams">;
+  agentName: string;
+  agent: Pick<SanitizedAgent, "slack" | "telegram" | "teams">;
 }) {
   const t = useT();
   const [schedules, setSchedules] = useState<TriggerView[]>([]);
@@ -58,7 +58,7 @@ export function SchedulesSection({
   const [telegramChats, setTelegramChats] = useState<TelegramDestination[]>([]);
   const [slackChannelsUnavailable, setSlackChannelsUnavailable] = useState(false);
   const [availableDestinations, setAvailableDestinations] = useState<ScheduleDeliveryKind[]>([]);
-  // Webhook rows registered by name before a project had one of its own. There
+  // Webhook rows registered by name before an agent had one of its own. There
   // is no delivery address that reaches them any more, so they run nothing —
   // but the row is still an encrypted secret, and a credential nobody can see
   // is a credential nobody can revoke. Listed only to be deleted.
@@ -72,16 +72,16 @@ export function SchedulesSection({
   }, []);
 
   const reload = useCallback(async () => {
-    const { triggers } = await listTriggers(projectName);
+    const { triggers } = await listTriggers(agentName);
     const listed = triggers.filter((trigger) => trigger.kind === "schedule");
     setSchedules(listed);
     setOrphans(
       triggers.filter(
-        (trigger) => trigger.kind !== "schedule" && trigger.triggerId !== PROJECT_WEBHOOK_ID,
+        (trigger) => trigger.kind !== "schedule" && trigger.triggerId !== AGENT_WEBHOOK_ID,
       ),
     );
-    setRuns(await loadScheduleRuns(projectName, listed));
-  }, [projectName]);
+    setRuns(await loadScheduleRuns(agentName, listed));
+  }, [agentName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -103,12 +103,12 @@ export function SchedulesSection({
 
   useEffect(() => {
     let cancelled = false;
-    const slackOn = Boolean(project.slack?.configured && project.slack.enabled);
-    const telegramOn = Boolean(project.telegram?.configured && project.telegram.enabled);
-    const teamsOn = Boolean(project.teams?.configured && project.teams.enabled);
+    const slackOn = Boolean(agent.slack?.configured && agent.slack.enabled);
+    const telegramOn = Boolean(agent.telegram?.configured && agent.telegram.enabled);
+    const teamsOn = Boolean(agent.teams?.configured && agent.teams.enabled);
     void Promise.allSettled([
-      slackOn ? listProjectSlackChannels(projectName) : Promise.resolve({ channels: [] }),
-      telegramOn ? listProjectTelegramChats(projectName) : Promise.resolve({ chats: [] }),
+      slackOn ? listAgentSlackChannels(agentName) : Promise.resolve({ channels: [] }),
+      telegramOn ? listAgentTelegramChats(agentName) : Promise.resolve({ chats: [] }),
     ]).then(([slack, telegramDestinations]) => {
       if (cancelled) {
         return;
@@ -128,7 +128,7 @@ export function SchedulesSection({
     return () => {
       cancelled = true;
     };
-  }, [projectName, project.slack?.configured, project.slack?.enabled, project.telegram?.configured, project.telegram?.enabled, project.teams?.configured, project.teams?.enabled]);
+  }, [agentName, agent.slack?.configured, agent.slack?.enabled, agent.telegram?.configured, agent.telegram?.enabled, agent.teams?.configured, agent.teams?.enabled]);
 
   async function act(action: () => Promise<void>) {
     setBusy(true);
@@ -179,7 +179,7 @@ export function SchedulesSection({
               placeholder={t("trigger.newIdPlaceholder")}
               value={newId}
               onChange={(e) => setNewId(e.currentTarget.value)}
-              // Same rule and same moment as a project name: normalised on blur so
+              // Same rule and same moment as an agent name: normalised on blur so
               // typing stays unsurprising, and the id that reaches the slug-only
               // API is always one it accepts.
               onBlur={() => setNewId(toSlug(newId))}
@@ -210,7 +210,7 @@ export function SchedulesSection({
               disabled={createDisabled}
               onClick={() =>
                 act(async () => {
-                  await createTrigger(projectName, {
+                  await createTrigger(agentName, {
                     triggerId: toSlug(newId),
                     kind: "schedule",
                     cron: newCron.trim(),
@@ -252,7 +252,7 @@ export function SchedulesSection({
                 busy={busy}
                 onSave={(input) =>
                   act(async () => {
-                    await updateTrigger(projectName, schedule.triggerId, input);
+                    await updateTrigger(agentName, schedule.triggerId, input);
                   })
                 }
                 actions={
@@ -263,7 +263,7 @@ export function SchedulesSection({
                     disabled={busy}
                     onChange={(e) =>
                       act(async () => {
-                        await updateTrigger(projectName, schedule.triggerId, {
+                        await updateTrigger(agentName, schedule.triggerId, {
                           enabled: e.currentTarget.checked,
                         });
                       })
@@ -274,7 +274,7 @@ export function SchedulesSection({
                     description={t("audio.runAsOwnerHint")}
                     checked={Boolean(schedule.executionEmail)}
                     disabled={busy}
-                    onChange={(e) => { const runAsOwner = e.currentTarget.checked; act(async () => { await updateTrigger(projectName, schedule.triggerId, { runAsOwner }); }); }}
+                    onChange={(e) => { const runAsOwner = e.currentTarget.checked; act(async () => { await updateTrigger(agentName, schedule.triggerId, { runAsOwner }); }); }}
                   />
                   <Switch
                     label={t("trigger.allowOverlap")}
@@ -282,7 +282,7 @@ export function SchedulesSection({
                     disabled={busy}
                     onChange={(e) =>
                       act(async () => {
-                        await updateTrigger(projectName, schedule.triggerId, {
+                        await updateTrigger(agentName, schedule.triggerId, {
                           allowConcurrent: e.currentTarget.checked,
                         });
                       })
@@ -303,7 +303,7 @@ export function SchedulesSection({
                       ) {
                         return;
                       }
-                      void act(() => deleteTrigger(projectName, schedule.triggerId));
+                      void act(() => deleteTrigger(agentName, schedule.triggerId));
                     }}
                   >
                     Delete
@@ -328,7 +328,7 @@ export function SchedulesSection({
             <Stack gap="xs">
               <Text fz="sm">
                 {orphans.length === 1 ? "A webhook" : "Webhooks"} registered under{" "}
-                {orphans.length === 1 ? "a name" : "names"} of their own, from before a project had
+                {orphans.length === 1 ? "a name" : "names"} of their own, from before an agent had
                 one webhook addressed by its own name. Nothing delivers to{" "}
                 {orphans.length === 1 ? "it" : "them"} any more; deleting{" "}
                 {orphans.length === 1 ? "it retires its secret" : "them retires their secrets"}.
@@ -353,7 +353,7 @@ export function SchedulesSection({
                       ) {
                         return;
                       }
-                      void act(() => deleteTrigger(projectName, orphan.triggerId));
+                      void act(() => deleteTrigger(agentName, orphan.triggerId));
                     }}
                   >
                     Delete

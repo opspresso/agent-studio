@@ -81,13 +81,13 @@ function stripComments(source: string): string {
  *
  * A *module* is the wrong grain for some questions.
  * `@/application/image/generateImage` exports one use case, so importing it at
- * all is the signal; `@/application/execution/runProject` is the whole execution
+ * all is the signal; `@/application/execution/runAgent` is the whole execution
  * facade, and "who may start an agent run" asks about one export of it.
  *
  * `import * as ns` binds every export at once, so it answers **yes to every
  * name** rather than none. Returning `[]` for it — which reads reasonable, since
  * no clause spells a name out — is an escape hatch from both by-name rules
- * below: `import * as rp from "…/runProject"` then `rp.executeAgent(…)` is a
+ * below: `import * as rp from "…/runAgent"` then `rp.executeAgent(…)` is a
  * fourth entry point neither of them can see. Not hypothetical in this codebase,
  * which already imports the engine that way in two places.
  */
@@ -615,7 +615,7 @@ describe("the client bundle", () => {
       "src/app/workspaces/_components/WorkspaceActions.tsx",
       "src/app/workspaces/_components/WorkspaceRepositoryPolicySection.tsx",
       "src/app/agents/[name]/workspace/page.tsx",
-      "src/app/agents/[name]/_components/ProjectWorkspaceContext.tsx",
+      "src/app/agents/[name]/_components/AgentWorkspaceContext.tsx",
       "src/app/models/WorkspaceModelsSection.tsx",
       "src/app/models/ModelEditor.tsx",
       "src/app/models/ModelCollection.tsx",
@@ -636,7 +636,7 @@ describe("the client bundle", () => {
       "src/app/agents/[name]/_components/RuntimePolicyEditor.tsx",
       "src/app/agents/[name]/audio/page.tsx",
       "src/app/agents/[name]/_components/SourceMappings.tsx",
-      "src/app/agents/[name]/_components/ProjectAudioContext.tsx",
+      "src/app/agents/[name]/_components/AgentAudioContext.tsx",
     ]));
     expect(entries.map((file) => file.path)).toContain(
       "src/app/agents/[name]/_components/PromptPreview.tsx",
@@ -698,7 +698,7 @@ describe("the client bundle", () => {
  * name with one a producer exports. Naming is the whole point, so an import or
  * an alias (`type ImageResult = GenerateImageOutput`) is not a declaration — a
  * body is. Producers keep declaring theirs; a route that builds the shape it
- * answers with (`ProjectSlackResponse`, `SkillSummary`) is not client-reachable,
+ * answers with (`AgentSlackResponse`, `SkillSummary`) is not client-reachable,
  * because the console reaches it type-only.
  *
  * Request shapes are deliberately excluded. A console input is often narrower
@@ -765,7 +765,7 @@ describe("response shapes", () => {
  * stays the whole set rather than half of it.
  */
 const RUN_ENDING_SITES = [
-  "src/application/execution/runProject.ts",
+  "src/application/execution/runAgent.ts",
 ];
 
 describe("a run's ending", () => {
@@ -795,7 +795,7 @@ describe("a run's ending", () => {
 
 /** Routes receive bound use cases; these dependencies are selected at wiring sites. */
 const ROUTE_BOUND_DEPENDENCIES = [
-  "projectRepository",
+  "agentRepository",
   "traceRepository",
   "usageRepository",
   "secretCipher",
@@ -837,7 +837,7 @@ describe("composition in the app layer", () => {
 
 /**
  * The slice a file or an import specifier belongs to, within `application` —
- * `src/application/execution/runProject.ts` and `@/application/execution/deps`
+ * `src/application/execution/runAgent.ts` and `@/application/execution/deps`
  * are both `execution`; the single-file `errors.ts` kernel is its own slice.
  */
 function applicationSliceOf(pathOrSpec: string): string | null {
@@ -937,7 +937,7 @@ describe("application slice graph", () => {
     const files = SOURCE_FILES.filter((file) => applicationSliceOf(file.path));
     expect(files.length).toBeGreaterThan(50);
     expect(applicationSliceOf("src/application/errors.ts")).toBe("errors");
-    expect(applicationSliceOf("@/application/execution/runProject")).toBe("execution");
+    expect(applicationSliceOf("@/application/execution/runAgent")).toBe("execution");
   });
 });
 
@@ -1104,8 +1104,8 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // route, the connection that presents it, and whatever renders it next — so
     // the source comment already argues the rule; without this it was argued and
     // not fixed, which is the failure the convention names.
-    what: "the address a project's client ID metadata document is served at",
-    pattern: /MCP_CLIENT_METADATA_PATH\}\/\$\{projectName\}/,
+    what: "the address an agent's client ID metadata document is served at",
+    pattern: /MCP_CLIENT_METADATA_PATH\}\/\$\{agentName\}/,
     owner: "src/application/mcp/mcpAuthUseCases.ts",
   },
   {
@@ -1283,10 +1283,10 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/execution/bindings.ts",
   },
   {
-    // One spelling of the header that names the calling project to an MCP
+    // One spelling of the header that names the calling agent to an MCP
     // server. A second literal is how a probe and a run end up presenting
     // different tenants to the same server.
-    what: "the header that names the calling project to an MCP server",
+    what: "the header that names the calling agent to an MCP server",
     pattern: /"X-Tenant-Id"/,
     owner: "src/application/mcpMetadataHeaders.ts",
   },
@@ -1310,7 +1310,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // The API Reference tab *shows* the inbound spelling to a caller; it is a
     // client module and cannot import the route helper that owns it.
     alsoAllowedUnder: [
-      "src/app/api/projects/_lib/conversation.ts",
+      "src/app/api/agents/_lib/conversation.ts",
       "src/app/agents/[name]/api-reference/endpoints.ts",
     ],
   },
@@ -1493,7 +1493,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     pattern: /chunk\.warning/,
     owner: "src/domain/llm/types.ts",
     alsoAllowedUnder: [
-      "src/app/api/projects/_lib/openai.ts",
+      "src/app/api/agents/_lib/openai.ts",
       "src/application/trace/recorder.ts",
       "src/application/chat/run.ts",
     ],
@@ -1621,7 +1621,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // serves it. A URL a person copies out of one surface and a URL another
     // surface built by hand are the same string right up until one of them
     // moves, and the failure is a sender that 404s with nothing to read.
-    what: "where a project's webhook is delivered",
+    what: "where an agent's webhook is delivered",
     // The interpolation, not the prose: several files name the path in a
     // comment, and only one may *build* it.
     pattern: /`\/api\/webhook\/\$\{/,
@@ -1722,7 +1722,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/shared/signInError.ts",
   },
   {
-    // A 401 asks for something no other MCP failure does — the *project* must
+    // A 401 asks for something no other MCP failure does — the *agent* must
     // reconnect, rather than an operator going to look at the server — and three
     // places have to tell them apart: discovery, a tool call made against a
     // session the discovery cache let through uninitialized, and the registry's
@@ -2015,7 +2015,7 @@ const ARTIFACT_CAPTURE_SITES = [
   // Builds the recorder, with the run's identity bound once.
   "src/application/run/runBracket.ts",
   // Wraps the agent stream, where every producer's bytes converge.
-  "src/application/execution/runProject.ts",
+  "src/application/execution/runAgent.ts",
 ];
 
 /**
@@ -2093,7 +2093,7 @@ describe("run artifacts", () => {
     );
     // Anchors the check: an `openRun` that stopped matching would empty this and
     // read as a clean pass.
-    expect(openers.map(file => file.path)).toEqual(["src/application/execution/runProject.ts"]);
+    expect(openers.map(file => file.path)).toEqual(["src/application/execution/runAgent.ts"]);
     const missing = openers
       .filter((file) => !/bracket\.artifacts|captureRunArtifacts\(/.test(stripComments(file.text)))
       .map((file) => file.path);
@@ -2133,8 +2133,8 @@ const ONE_AXIS_ON_PURPOSE = [
  * be spent on a reader who may not be attached.
  */
 const RAW_CHUNK_STREAM_ROUTES = [
-  "src/app/api/projects/[name]/agent/route.ts",
-  "src/app/api/projects/[name]/predict/route.ts",
+  "src/app/api/agents/[name]/agent/route.ts",
+  "src/app/api/agents/[name]/predict/route.ts",
 ];
 
 describe("what a run produced", () => {
@@ -2240,7 +2240,7 @@ describe("folding a run's reasoning", () => {
  */
 const AGENT_RUN_ENTRY_POINTS = [
   // Answers with SSE chunks for one Agent.
-  "src/app/api/projects/[name]/agent/route.ts",
+  "src/app/api/agents/[name]/agent/route.ts",
   // Binds `ChatDeps.runAgent`; the chat use cases never see the facade.
   "src/lib/container.ts",
   // Binds `SlackEventDeps.runAgent`, the same way.
@@ -2254,7 +2254,7 @@ const AGENT_RUN_ENTRY_POINTS = [
 /** Every tool-resolution caller passes discovery queries so opted-in search runs. */
 const TOOL_RESOLUTION_SITES = [
   // The top-level agent run; queries come from the newest user turn.
-  "src/application/execution/runProject.ts",
+  "src/application/execution/runAgent.ts",
   // A transferred-to child; the transfer message is its whole request.
   "src/application/execution/agentBindings.ts",
   // The Playground preview; the request is optional there, and without one it
@@ -2306,7 +2306,7 @@ describe("tool resolution", () => {
 describe("agent runs", () => {
   it("routes workspace execution through its facade and shared task bracket", () => {
     const callers = SOURCE_FILES.filter(file => parseImports(file.text).some(i =>
-      resolveSpec(i.spec, file.path) === "@/application/execution/runProject" && !i.typeOnly && bindsName(i, "executeWorkspaceTask"),
+      resolveSpec(i.spec, file.path) === "@/application/execution/runAgent" && !i.typeOnly && bindsName(i, "executeWorkspaceTask"),
     )).map(file => file.path);
     expect(callers).toEqual(["src/lib/container.ts"]);
     const brackets = SOURCE_FILES.filter(file => parseImports(file.text).some(i =>
@@ -2318,7 +2318,7 @@ describe("agent runs", () => {
     const callers = SOURCE_FILES.filter((file) =>
       parseImports(file.text).some(
         (i) =>
-          resolveSpec(i.spec, file.path) === "@/application/execution/runProject" &&
+          resolveSpec(i.spec, file.path) === "@/application/execution/runAgent" &&
           !i.typeOnly &&
           bindsName(i, "executeAgent"),
       ),
@@ -2597,15 +2597,15 @@ describe("scanner", () => {
   it("reads dynamic destructuring aliases, direct properties, and namespace access", () => {
     const parsed = parseImports(
       [
-        `const { executeAgent: run, streamProjectRun } = await import("@/application/execution/runProject");`,
-        `(await import("@/application/execution/runProject")).executeAgent;`,
+        `const { executeAgent: run, streamAgentRun } = await import("@/application/execution/runAgent");`,
+        `(await import("@/application/execution/runAgent")).executeAgent;`,
         `const engine = await import("@/application/runtime");`,
-        `import("@/application/execution/runProject").then(({ executeAgent: run }) => run);`,
+        `import("@/application/execution/runAgent").then(({ executeAgent: run }) => run);`,
       ].join("\n"),
     );
 
     expect(parsed.map((item) => item.names)).toEqual([
-      ["executeAgent", "streamProjectRun"],
+      ["executeAgent", "streamAgentRun"],
       ["executeAgent"],
       ["*"],
       ["executeAgent"],
@@ -2626,7 +2626,7 @@ describe("scanner", () => {
     // module rather than an export — so neither is a named binding.
     const parsed = parseImports(
       [
-        `import { executeAgent as run, type Deps } from "@/application/execution/runProject";`,
+        `import { executeAgent as run, type Deps } from "@/application/execution/runAgent";`,
         `import * as engine from "@/application/runtime";`,
         `import React from "react";`,
       ].join("\n"),

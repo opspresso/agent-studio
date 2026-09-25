@@ -5,7 +5,7 @@ import { Paper, Table } from "@mantine/core";
  * dense a usage table is and how it overflows.
  *
  * The three cost surfaces had disagreed on both: the overview used
- * `sm`/`lg` inside a `ScrollArea` with a `miw`, the project usage and profile
+ * `sm`/`lg` inside a `ScrollArea` with a `miw`, the agent usage and profile
  * pages `xs`/`md` inside a `Table.ScrollContainer`. Same columns, same
  * numbers, three different row heights. `sm` vertical because the overview's
  * rows carry a progress bar under the name and `xs` crushes them; `md`

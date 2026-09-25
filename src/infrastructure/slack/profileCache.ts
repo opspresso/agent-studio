@@ -20,7 +20,7 @@ export interface CachedSlackProfile {
  *
  * The *detail* is what is cached, not the caller block derived from it: both
  * views come from one `users.info` call, and caching the narrower one would make
- * a project that uses caller context and the profile tool fetch the same person
+ * an agent that uses caller context and the profile tool fetch the same person
  * twice.
  *
  * Every mention and every thread participant would otherwise cost a `users.info`
@@ -46,7 +46,7 @@ const FAILURE_TTL_MS = 60 * 1000;
  * Expiry alone does not bound this map: an entry is only dropped when it is
  * *read* after expiring, and the whole point of a cache is that most entries
  * are never read again. The key space here is every Slack user who ever talks
- * to any project bot — plus a fresh set on every bot-token rotation — so without
+ * to any agent bot — plus a fresh set on every bot-token rotation — so without
  * a ceiling a long-lived process grows one entry per person, forever.
  */
 const MAX_ENTRIES = 2000;

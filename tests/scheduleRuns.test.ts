@@ -13,7 +13,7 @@ describe("loadScheduleRuns", () => {
     let active = 0;
     let maxActive = 0;
 
-    const runs = await loadScheduleRuns("project", schedules, async () => {
+    const runs = await loadScheduleRuns("agent", schedules, async () => {
       active += 1;
       maxActive = Math.max(maxActive, active);
       await Promise.resolve();

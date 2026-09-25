@@ -6,24 +6,24 @@ import { BotIntegrationSection } from "./BotIntegrationSection";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import {
-  disconnectProjectTelegram,
-  getProjectTelegram,
-  registerProjectTelegramWebhook,
-  testProjectTelegram,
-  updateProjectTelegram,
+  disconnectAgentTelegram,
+  getAgentTelegram,
+  registerAgentTelegramWebhook,
+  testAgentTelegram,
+  updateAgentTelegram,
 } from "../../lib/api";
-import type { ProjectTelegramResponse } from "../../lib/api";
+import type { AgentTelegramResponse } from "../../lib/api";
 import { Button, Checkbox, Group, Stack, Text } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
 
 export function TelegramSection({
-  projectName,
+  agentName,
 }: {
-  projectName: string;
+  agentName: string;
 }) {
   const t = useT();
-  const [view, setView] = useState<ProjectTelegramResponse | null>(null);
+  const [view, setView] = useState<AgentTelegramResponse | null>(null);
   const [botToken, setBotToken] = useState("");
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -36,7 +36,7 @@ export function TelegramSection({
     let cancelled = false;
     setView(null);
     setError(null);
-    getProjectTelegram(projectName)
+    getAgentTelegram(agentName)
       .then((v) => {
         if (!cancelled) {
           setView(v);
@@ -48,7 +48,7 @@ export function TelegramSection({
     return () => {
       cancelled = true;
     };
-  }, [projectName, reloadKey]);
+  }, [agentName, reloadKey]);
 
   if (!view) {
     return <BotIntegrationSection title={t("pset.telegramBot")} view={null} error={error}
@@ -60,7 +60,7 @@ export function TelegramSection({
     setStatus(null);
     setError(null);
     try {
-      const next = await updateProjectTelegram(projectName, { botToken, enabled });
+      const next = await updateAgentTelegram(agentName, { botToken, enabled });
       setView(next);
       setBotToken(next.botToken);
       setEnabled(next.enabled);
@@ -82,7 +82,7 @@ export function TelegramSection({
     setStatus(null);
     setError(null);
     try {
-      const result = await testProjectTelegram(projectName);
+      const result = await testAgentTelegram(agentName);
       setStatus(`Connected: @${result.botUsername ?? result.botId}`);
     } catch (e) {
       setError(reportError(e, "Connection test failed"));
@@ -96,7 +96,7 @@ export function TelegramSection({
     setStatus(null);
     setError(null);
     try {
-      const result = await registerProjectTelegramWebhook(projectName);
+      const result = await registerAgentTelegramWebhook(agentName);
       setStatus(`${t("pset.telegramWebhookRegistered")} ${result.url}`);
     } catch (e) {
       setError(reportError(e, "Webhook registration failed"));
@@ -109,7 +109,7 @@ export function TelegramSection({
     if (
       !(await confirm({
         title: "Remove Telegram credentials",
-        message: "Remove the Telegram bot token for this project and unregister its webhook?",
+        message: "Remove the Telegram bot token for this agent and unregister its webhook?",
         confirmLabel: "Remove",
       }))
     ) {
@@ -117,8 +117,8 @@ export function TelegramSection({
     }
     setBusy(true);
     try {
-      await disconnectProjectTelegram(projectName);
-      const next = await getProjectTelegram(projectName);
+      await disconnectAgentTelegram(agentName);
+      const next = await getAgentTelegram(agentName);
       setView(next);
       setBotToken("");
       setEnabled(false);

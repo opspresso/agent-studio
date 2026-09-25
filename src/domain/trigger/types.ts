@@ -10,29 +10,29 @@ import type { GitHubReviewConfig, PullRequestReviewTarget } from "./pullRequestR
 export type TriggerKind = "webhook" | "schedule";
 
 /**
- * The id a project's own webhook is stored under.
+ * The id an agent's own webhook is stored under.
  *
- * A project has exactly one webhook, addressed by the project name alone, so
+ * An agent has exactly one webhook, addressed by the agent name alone, so
  * nobody names it — the console turns it on and off. It is still a trigger row,
  * because everything a delivery needs already lives there: the secret, the
- * firing history, the idempotency claim, the overlap lease, the project
+ * firing history, the idempotency claim, the overlap lease, the agent
  * cascade delete. Reserving one id is what buys all of that without a second
  * entity that would have to re-derive each of them.
  *
  * A schedule may not take this id (`triggerUseCases.create` refuses it); a
  * webhook row that predates this and happens to carry it simply *is* the
- * project's webhook.
+ * agent's webhook.
  */
-export const PROJECT_WEBHOOK_ID = "webhook";
+export const AGENT_WEBHOOK_ID = "webhook";
 
 /**
- * Where a project's webhook is delivered — the single owner of that address.
+ * Where an agent's webhook is delivered — the single owner of that address.
  *
  * The console shows it, the API reference documents it, and the route serves
  * it; three spellings of one path is how a copied URL stops working.
  */
-export function projectWebhookPath(projectName: string): string {
-  return `/api/webhook/${projectName}`;
+export function agentWebhookPath(agentName: string): string {
+  return `/api/webhook/${agentName}`;
 }
 
 /** A destination that receives a schedule's completed text report. */
@@ -49,8 +49,8 @@ export interface ScheduleDeliveryResult {
 
 /** What every trigger kind shares; each kind adds what only it needs. */
 interface TriggerBase {
-  projectName: string;
-  /** Slug, unique within the project; part of the delivery URL for webhooks. */
+  agentName: string;
+  /** Slug, unique within the agent; part of the delivery URL for webhooks. */
   triggerId: string;
   description: string;
   /** A disabled trigger never runs — a webhook's URL stays valid, a schedule's occurrences pass. */
@@ -86,7 +86,7 @@ export interface ScheduleTrigger extends TriggerBase {
   cron: string;
   /** IANA zone the cron fields are read in, e.g. `Asia/Seoul`. */
   timezone: string;
-  /** The user message each firing runs with; an agent project needs one. */
+  /** The user message each firing runs with; an agent needs one. */
   message?: string;
   /** Independently attempted after a successful run, at most once per platform. */
   deliveries?: ScheduleDelivery[];
@@ -103,7 +103,7 @@ export type TriggerRunStatus =
   | "skipped";
 
 export interface TriggerRun {
-  projectName: string;
+  agentName: string;
   triggerId: string;
   runId: string;
   status: TriggerRunStatus;

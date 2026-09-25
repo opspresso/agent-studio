@@ -71,15 +71,15 @@ function harness() {
   const uc = createMcpAuthUseCases({
     serviceName: async () => "Agent Studio",
     mcps: mcpRepository, connections: mcpConnectionRepository, states: mcpOAuthStateRepository,
-    projects: { get: async (name: string) => ({ name, ownerEmail: OWNER }) } as never,
+    agents: { get: async (name: string) => ({ name, ownerEmail: OWNER }) } as never,
     oauth, cipher: secretCipher, metadata, urlPolicy: policy, probe, authProvider: provider,
     publicBaseUrl: async () => baseUrl, lifecycleClaims: new Set(),
   });
   return {
     uc, oauth, provider, metadata,
     moveBase: (value: string) => { baseUrl = value; },
-    async begin(project = "p") {
-      const result = await uc.beginAuthorization(project, "github", OWNER);
+    async begin(agent = "p") {
+      const result = await uc.beginAuthorization(agent, "github", OWNER);
       return new URL(result.authorizeUrl).searchParams.get("state")!;
     },
     async save() {
@@ -97,7 +97,7 @@ beforeEach(async () => {
   vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"));
   vi.stubEnv("ADMIN_EMAILS", OWNER);
   store.rows.clear();
-  for (const name of ["p", "q"]) store.seed([{ ...keys.project(name), entityType: "PROJECT", name }]);
+  for (const name of ["p", "q"]) store.seed([{ ...keys.agent(name), entityType: "AGENT", name }]);
   await mcpRepository.put(server);
   vi.clearAllMocks();
   mocks.getSession.mockResolvedValue({ user: { id: "owner", email: OWNER, tier: "admin" } });
@@ -168,7 +168,7 @@ describe("shared MCP OAuth app", () => {
     expect(secretCipher.decrypt(b!.accessToken!, mcpConnectionSecretContext("q", "github", "access-token"))).toBe("second-person-access");
   });
 
-  it("refreshes with a rotated shared secret without storing a copy on the project", async () => {
+  it("refreshes with a rotated shared secret without storing a copy on the agent", async () => {
     const h = harness();
     await h.save();
     await h.uc.completeAuthorization({ state: await h.begin(), code: "c", userEmail: OWNER });

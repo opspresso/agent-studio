@@ -1,22 +1,22 @@
 import type { TokenEndpointAuthMethod } from "./types";
 /**
- * One project's OAuth connection to a shared registry MCP server, and the
+ * One agent's OAuth connection to a shared registry MCP server, and the
  * short-lived record of an authorization still in flight.
  *
  * The registry entry is shared and says *where* the authorization server is
  * (`McpServerAuth`), including an optional shared OAuth app. A connection is per
- * project and holds the user's grant; a shared app's secret stays in the registry.
+ * agent and holds the user's grant; a shared app's secret stays in the registry.
  *
  * Connections have their own rows and revisions because provider-driven token
  * rotation is independent of editing Agent settings. Refreshing a token must
- * not conflict with the Project's optimistic configuration updates.
+ * not conflict with the Agent's optimistic configuration updates.
  */
 
 /** Where a connection is in its lifecycle; drives what the console offers. */
 export type McpConnectionStatus = "needs_auth" | "connected" | "needs_reauth";
 
 export interface McpConnection {
-  projectName: string;
+  agentName: string;
   serverName: string;
   /** Not a secret; stored in the clear. Issued by RFC 7591 or entered by hand. */
   clientId: string;
@@ -64,7 +64,7 @@ export interface McpConnection {
    * they are bound to, and therefore the only server they may be presented at.
    *
    * Recorded for the same reason as {@link issuer}, on the other axis. A
-   * registry entry is shared and admin-owned while these rows are per project
+   * registry entry is shared and admin-owned while these rows are per agent
    * and owner-owned, joined only by the entry's *name*: moving an entry to
    * another address, or deleting and recreating it under the same name, changes
    * what that name means without touching anything here. Comparing this against
@@ -107,7 +107,7 @@ export interface McpConnection {
  */
 export interface McpOAuthState {
   state: string;
-  projectName: string;
+  agentName: string;
   serverName: string;
   /** Encrypted — it is the secret half of the PKCE pair. */
   codeVerifier: string;
@@ -134,8 +134,8 @@ export interface McpOAuthState {
 }
 
 export interface McpConnectionRepository {
-  get(projectName: string, serverName: string): Promise<McpConnection | null>;
-  listByProject(projectName: string, limit: number, after?: string): Promise<McpConnection[]>;
+  get(agentName: string, serverName: string): Promise<McpConnection | null>;
+  listByAgent(agentName: string, limit: number, after?: string): Promise<McpConnection[]>;
   put(connection: McpConnection): Promise<void>;
   /** Replace only the snapshot read by a use case, or create only if still absent. */
   putIfCurrent(connection: McpConnection, current: McpConnection | null): Promise<boolean>;
@@ -156,7 +156,7 @@ export interface McpConnectionRepository {
    * assigns its first revision under the same atomic condition.
    */
   updateTokens(
-    projectName: string,
+    agentName: string,
     serverName: string,
     expectedRevision: string | undefined,
     next: Pick<
@@ -166,7 +166,7 @@ export interface McpConnectionRepository {
       /** Set only by a scope challenge widening the grant; absent leaves the stored scopes. */
       Partial<Pick<McpConnection, "scopes">>,
   ): Promise<boolean>;
-  delete(projectName: string, serverName: string): Promise<void>;
+  delete(agentName: string, serverName: string): Promise<void>;
   /** Disconnect only the grant the caller inspected, never a newer reconnect. */
   deleteIfCurrent(current: McpConnection): Promise<boolean>;
 }

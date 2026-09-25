@@ -1,21 +1,21 @@
 /** Trace recorder creation and termination for one run. */
 
 import { conversationKey, type RunOrigin } from "@/domain/execution/actor";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import { TraceRecorder } from "@/application/trace/recorder";
 import { log } from "@/shared/logger";
 
 export function createTraceRecorder(
   traces: TraceRepository,
-  project: Project,
+  agent: Agent,
   configuration: AgentConfiguration,
   messageCount: number,
   /** Who caused the run, and the transfer chain that reached it. */
   origin: RunOrigin,
 ): TraceRecorder {
   return new TraceRecorder(traces, {
-    projectName: project.name,
+    agentName: agent.name,
     model: configuration.model,
     messageCount,
     ancestry: [...origin.ancestry],

@@ -4,14 +4,14 @@ const f = vi.hoisted(() => ({ admit: vi.fn(), execute: vi.fn(), after: vi.fn(), 
 vi.mock("next/server", () => ({ after: f.after }));
 vi.mock("@/lib/container", () => ({ triggerRunnerDeps: f.deps }));
 vi.mock("@/application/trigger/runTrigger", () => ({ admitDelivery: f.admit, executeDelivery: f.execute }));
-const { POST } = await import("@/app/api/webhook/[project]/route");
-const context = { params: Promise.resolve({ project: "code-agent" }) };
+const { POST } = await import("@/app/api/webhook/[agent]/route");
+const context = { params: Promise.resolve({ agent: "code-agent" }) };
 const request = (headers: Record<string, string>, body = '{ "action": "opened", "title": "박쥐" }\n') =>
   new Request("https://studio.example.test/api/webhook/code-agent", { method: "POST", headers, body });
 
 beforeEach(() => { vi.clearAllMocks(); f.admit.mockResolvedValue({ status: "accepted", runId: "run-1" }); });
 
-describe("project GitHub webhook delivery route", () => {
+describe("agent GitHub webhook delivery route", () => {
   it("passes the original body and GitHub authentication without requiring a custom secret header", async () => {
     const body = '{ "action": "opened", "title": "박쥐" }\n';
     const res = await POST(request({ "X-Hub-Signature-256": "sha256=" + "a".repeat(64), "X-GitHub-Delivery": "delivery-1", "X-GitHub-Event": "issues" }, body), context);

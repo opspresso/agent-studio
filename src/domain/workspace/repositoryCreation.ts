@@ -16,7 +16,7 @@ export interface CreatedWorkspaceRepository {
 
 /** A creation receipt is written before GitHub is called and never trusts model-supplied creation claims. */
 export interface WorkspaceRepositoryCreation {
-  projectName: string;
+  agentName: string;
   repository: string;
   requestedBy: string;
   fingerprint: string;
@@ -29,7 +29,7 @@ export interface WorkspaceRepositoryCreation {
 }
 
 export interface WorkspaceRepositoryCreationStore {
-  get(projectName: string, repository: string): Promise<WorkspaceRepositoryCreation | null>;
+  get(agentName: string, repository: string): Promise<WorkspaceRepositoryCreation | null>;
   begin(creation: WorkspaceRepositoryCreation, expectedRevision: number | null, expectedPolicyRevision: number | null): Promise<void>;
   /** Atomically record the remote outcome and merge registration into the current policy. */
   finish(creation: WorkspaceRepositoryCreation, expectedRevision: number,

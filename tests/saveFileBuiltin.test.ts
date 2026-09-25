@@ -28,7 +28,7 @@ const BODY = "<!doctype html><title>q3</title>" + "<p>revenue</p>".repeat(2000);
 
 function input(over: Partial<RunAgentInput> = {}): RunAgentInput {
   return {
-    projectName: "p",
+    agentName: "p",
     model: MODEL,
     systemPrompt: "s",
     messages: [{ role: "user", content: "write it up" }],

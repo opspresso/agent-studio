@@ -4,12 +4,12 @@ import { transcriptRepository } from "@/infrastructure/db/repositories/transcrip
 import {
   signArtifactUrl,
   executionDeps,
-  projectRepository,
+  agentRepository,
 } from "@/lib/container";
-import { executeAgent } from "@/application/execution/runProject";
+import { executeAgent } from "@/application/execution/runAgent";
 import { classifyTeamsActivity } from "@/application/teams/engagement";
 import { handleTeamsActivity } from "@/application/teams/handleActivity";
-import type { TeamsEventBinding } from "@/application/teams/projectTeams";
+import type { TeamsEventBinding } from "@/application/teams/agentTeams";
 import type { TeamsActivity, TeamsEventDeps } from "@/application/teams/types";
 import { admitInboundEvent, readEventBody } from "@/app/api/_lib/inboundEvent";
 import { log } from "@/shared/logger";
@@ -17,7 +17,7 @@ import { teamsActivitySchema } from "./activitySchema";
 
 const teamsEventDeps: TeamsEventDeps = {
   runAgent: (params) => executeAgent(executionDeps, params),
-  projects: projectRepository,
+  agents: agentRepository,
   teams: teamsClient,
   documents: executionDeps.documents,
   artifacts: executionDeps.artifacts,
@@ -68,7 +68,7 @@ export async function handleTeamsActivityRequest(
     // same from outside. The reason names the check that failed, never the token.
     log.warn(
       "teams",
-      `project ${binding.projectName}: refused a request whose token did not verify (${verified.reason}, ${body.length} byte body)`,
+      `agent ${binding.agentName}: refused a request whose token did not verify (${verified.reason}, ${body.length} byte body)`,
     );
     return Response.json({ error: "Invalid token" }, { status: 401 });
   }
@@ -79,12 +79,12 @@ export async function handleTeamsActivityRequest(
   }
 
   const admitted = await admitInboundEvent({
-    claims: teamsActivityRepository.forBot(binding.projectName, binding.credentials.appId),
+    claims: teamsActivityRepository.forBot(binding.agentName, binding.credentials.appId),
     // An activity id is unique within its conversation and no further — two
     // chats can stamp the same millisecond — so the conversation qualifies it.
     eventId: activity.id ? `${activity.conversation?.id ?? ""}#${activity.id}` : undefined,
     scope: "teams",
-    logLabel: `project ${binding.projectName}`,
+    logLabel: `agent ${binding.agentName}`,
     work: () => handleTeamsActivity(teamsEventDeps, disposition, binding),
   });
   // The Bot Framework wants a bare 200 (or 202); a body is not read.

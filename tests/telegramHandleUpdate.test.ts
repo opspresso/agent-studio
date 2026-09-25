@@ -7,12 +7,12 @@ import type { TranscriptTurn } from "@/domain/messaging/transcript";
 import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { ExecuteAgentInput } from "@/application/execution/deps";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
+import type { AgentRepository } from "@/domain/agent/repository";
 
 const NOW = 1_750_000_000_000;
 
-function projectFixture(): Project {
+function agentFixture(): Agent {
   return {
     name: "painter",
     displayName: "Painter",
@@ -26,7 +26,7 @@ function projectFixture(): Project {
 
 function configurationFixture(callerContext = false): AgentConfiguration {
   return {
-    projectName: "painter",
+    agentName: "painter",
 
     systemPrompt: "",
 
@@ -90,12 +90,12 @@ function makeDeps(chunks: EngineChunk[], telegram: TelegramClientPort, options: 
         yield chunk;
       }
     },
-    projects: { get: async () => ({ ...projectFixture(), configuration: configurationFixture(options.callerContext) }) } as unknown as ProjectRepository,
+    agents: { get: async () => ({ ...agentFixture(), configuration: configurationFixture(options.callerContext) }) } as unknown as AgentRepository,
     documents: { extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }) },
     telegram,
     transcripts: {
       recent: async () => stored,
-      append: async (_project, key, turn) => {
+      append: async (_agent, key, turn) => {
         remembered.push({ key, turn });
       },
     },
@@ -116,7 +116,7 @@ function message(overrides: Partial<TelegramMessage> = {}): TelegramMessage {
 }
 
 const BOT = { botId: 42, botUsername: "painter_bot" };
-const BINDING = { projectName: "painter", botToken: "42:tok", botUsername: "painter_bot" };
+const BINDING = { agentName: "painter", botToken: "42:tok", botUsername: "painter_bot" };
 
 function dispositionOf(update: TelegramUpdate) {
   const disposition = classifyTelegramUpdate(update, BOT);
@@ -182,7 +182,7 @@ describe("handleTelegramUpdate", () => {
     expect(finalText()).toBe("ok");
   });
 
-  it("runs the bound project with the Telegram user as the actor and the chat as the conversation", async () => {
+  it("runs the bound agent with the Telegram user as the actor and the chat as the conversation", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
     const { telegram, finalText, sent } = makeTelegramFake();
@@ -409,14 +409,14 @@ describe("handleTelegramUpdate", () => {
     expect(sent[0]?.text).toContain("/help");
   });
 
-  it("replies with guidance when the project is not a runnable agent", async () => {
+  it("replies with guidance when the agent is not a runnable agent", async () => {
     const { telegram, sent } = makeTelegramFake();
     const { deps } = makeDeps([], telegram);
-    deps.projects = { get: async () => null } as unknown as ProjectRepository;
+    deps.agents = { get: async () => null } as unknown as AgentRepository;
 
     await handleTelegramUpdate(deps, dispositionOf({ update_id: 1, message: message() }), BINDING);
 
-    expect(sent[0]?.text).toContain("Agent project not available");
+    expect(sent[0]?.text).toContain("Agent not available");
   });
 
   it("carries the remembered conversation as history and writes both new turns down after", async () => {

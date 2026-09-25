@@ -50,7 +50,7 @@ test("keeps saved keys separate from replacement drafts and explicit reset", asy
 
 test("shows and copies only a revealed value, and discards it on hide or resource change", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  const token = page.getByRole("group", { name: "Project token", exact: true });
+  const token = page.getByRole("group", { name: "Agent token", exact: true });
   await expect(page.getByLabel("Operations", { exact: true })).toHaveText("none");
   await expect(token.getByRole("button", { name: "Copy", exact: true })).toHaveCount(0);
   await token.getByRole("button", { name: "Show", exact: true }).click();
@@ -61,8 +61,8 @@ test("shows and copies only a revealed value, and discards it on hide or resourc
   await expect(token.getByRole("textbox")).not.toHaveValue("synthetic-revealed-key");
   await expect(token.getByRole("button", { name: "Copy", exact: true })).toHaveCount(0);
   await token.getByRole("button", { name: "Show", exact: true }).click();
-  await page.getByRole("button", { name: "Change project" }).click();
-  await expect(page.getByRole("textbox", { name: "Other project token" })).not.toHaveValue("synthetic-revealed-key");
+  await page.getByRole("button", { name: "Change agent" }).click();
+  await expect(page.getByRole("textbox", { name: "Other agent token" })).not.toHaveValue("synthetic-revealed-key");
 });
 
 test("finishes replacement even when the saved key has identical visible edges and length", async ({ page }) => {
@@ -75,7 +75,7 @@ test("finishes replacement even when the saved key has identical visible edges a
 });
 
 test("confirms replacement and revocation, and returns to generation after revocation", async ({ page }) => {
-  const token = page.getByRole("group", { name: "Project token", exact: true });
+  const token = page.getByRole("group", { name: "Agent token", exact: true });
   await token.getByRole("button", { name: "Regenerate", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("stops working immediately");
   await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
@@ -93,7 +93,7 @@ test("confirms replacement and revocation, and returns to generation after revoc
 });
 
 test("manual replacement and reset share confirmation and clear plaintext", async ({ page }) => {
-  const token = page.getByRole("group", { name: "Project token", exact: true });
+  const token = page.getByRole("group", { name: "Agent token", exact: true });
   await token.getByRole("button", { name: "Enter a value" }).click();
   await token.getByLabel("New key or token").fill("synthetic-manual-key");
   await token.getByLabel("New key or token").press("Enter");
@@ -108,7 +108,7 @@ test("manual replacement and reset share confirmation and clear plaintext", asyn
 });
 
 test("blocks overlapping operations and preserves recovery after a failed reveal", async ({ page }) => {
-  const token = page.getByRole("group", { name: "Project token", exact: true });
+  const token = page.getByRole("group", { name: "Agent token", exact: true });
   await page.getByLabel("Hold operations").check();
   await page.getByLabel("Fail operations").check();
   await token.getByRole("button", { name: "Show", exact: true }).click();

@@ -8,7 +8,7 @@ export const workspaceInputSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("task"), prompt: z.string().trim().min(1).max(WORKSPACE_LIMITS.promptChars) }).strict(),
   z.object({ kind: z.literal("command"), script: z.string().min(1).max(WORKSPACE_LIMITS.scriptChars) }).strict(),
 ]);
-export const startWorkspaceSchema = z.object({ projectName: z.string().refine(isSlug), runtime: z.enum(WORKSPACE_RUNTIMES),
+export const startWorkspaceSchema = z.object({ agentName: z.string().refine(isSlug), runtime: z.enum(WORKSPACE_RUNTIMES),
   repository: z.string().refine(isRepositoryName).optional(), baseBranch: z.string().refine(isGitBranch).optional(), input: workspaceInputSchema }).strict();
 export const codingActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("commit"), message: z.string().trim().min(1).max(8000) }).strict(),

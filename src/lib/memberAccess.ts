@@ -11,7 +11,7 @@
  * before tiers.
  *
  * Tier-admin implies *both* predicates: an admin console that could edit
- * settings but not override a project write would be a third predicate nobody
+ * settings but not override an agent write would be a third predicate nobody
  * asked for.
  */
 
@@ -31,14 +31,14 @@ export async function isEffectiveAdmin(user: TieredUser): Promise<boolean> {
   return user.tier === "admin" || isAdminEmail(user.email);
 }
 
-/** May write a project owned by someone else — `assertProjectWritable`'s question. */
+/** May write an agent owned by someone else — `assertAgentWritable`'s question. */
 export async function isEffectiveConfiguredAdmin(user: TieredUser): Promise<boolean> {
   return user.tier === "admin" || isConfiguredAdmin(user.email);
 }
 
 /**
  * The email-only form, for the seams that never see a session — today the
- * admin check injected into the project use cases. The list is asked first: it
+ * admin check injected into the agent use cases. The list is asked first: it
  * is already cached for 5s, and a configured admin then costs no member read.
  */
 export async function isEffectiveConfiguredAdminByEmail(email: string): Promise<boolean> {

@@ -6,7 +6,7 @@ import type { TraceRepository } from "@/domain/trace/repository";
 function traceFixture(): Trace {
   return {
     traceId: "t-1",
-    projectName: "demo",
+    agentName: "demo",
     status: "completed",
     spans: [],
     startedAt: "2026-08-09T00:00:00.000Z",
@@ -22,7 +22,7 @@ function fakeRepository(calls: string[]): TraceRepository {
       calls.push("put");
     },
     get: async () => null,
-    listByProject: async () => [],
+    listByAgent: async () => [],
   };
 }
 
@@ -55,7 +55,7 @@ describe("withTraceExport", () => {
         throw new Error("storage down");
       },
       get: async () => null,
-      listByProject: async () => [],
+      listByAgent: async () => [],
     };
     const decorated = withTraceExport(failing, exportTrace);
 
@@ -72,13 +72,13 @@ describe("withTraceExport", () => {
       async get(): Promise<Trace | null> {
         return traceFixture();
       }
-      async listByProject(): Promise<Trace[]> {
+      async listByAgent(): Promise<Trace[]> {
         return [traceFixture()];
       }
     }
     const decorated = withTraceExport(new ClassRepository(), () => {});
 
     await expect(decorated.get("t-1")).resolves.toMatchObject({ traceId: "t-1" });
-    await expect(decorated.listByProject("demo")).resolves.toHaveLength(1);
+    await expect(decorated.listByAgent("demo")).resolves.toHaveLength(1);
   });
 });

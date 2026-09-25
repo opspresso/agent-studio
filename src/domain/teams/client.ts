@@ -5,7 +5,7 @@
  * port, and the adapter in `infrastructure/teams` implements it. In `domain`
  * so both sides can name it without either importing the other.
  *
- * Every call takes the bot's credentials first: bots are per project, and
+ * Every call takes the bot's credentials first: bots are per agent, and
  * which app a call goes out as is the caller's knowledge, never the adapter's.
  */
 

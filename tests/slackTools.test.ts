@@ -352,7 +352,7 @@ describe("what a run is offered", () => {
  */
 describe("dispatching a Slack tool", () => {
   const input = (): RunAgentInput => ({
-    projectName: "p",
+    agentName: "p",
     model: "google/gemini-2.5-flash",
     systemPrompt: "s",
     messages: [{ role: "user", content: "what happened in #deploy?" }],

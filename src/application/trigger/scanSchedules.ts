@@ -42,7 +42,7 @@ export const SCHEDULE_CATCHUP_WINDOW_MS = 10 * 60 * 1000;
 
 /**
  * How many firings one tick's caller may drive concurrently. One 09:00 shared
- * by every project must not become that many simultaneous runs on whichever
+ * by every agent must not become that many simultaneous runs on whichever
  * instance served the tick — the per-actor concurrency guard cannot bound this
  * fan-out, because each trigger is its own actor.
  */
@@ -51,11 +51,11 @@ export const MAX_CONCURRENT_FIRINGS = 8;
 /** Schedule triggers whose occurrences one tick may admit concurrently. */
 export const MAX_CONCURRENT_SCHEDULE_SCANS = 8;
 
-/** Schedule rows read from the cross-project index at once. */
+/** Schedule rows read from the cross-agent index at once. */
 export const SCHEDULE_SCAN_PAGE_SIZE = 100;
 
 /**
- * Repair walks every project's triggers and reads their history; firing due
+ * Repair walks every agent's triggers and reads their history; firing due
  * occurrences does neither. Gating the sweep to every fifth minute keeps the
  * steady-state tick at one index query, at the cost of a repair landing a few
  * minutes later — against `REPAIR_AFTER_SECONDS` that delay is noise.
@@ -140,14 +140,14 @@ export async function scanSchedules(deps: FiringDeps, at: Date): Promise<Schedul
   const firings: ScheduleFiring[] = [];
   const windowStart = at.getTime() - SCHEDULE_CATCHUP_WINDOW_MS;
   if (at.getUTCMinutes() % REPAIR_EVERY_MINUTES === 0) {
-    // Once for the whole tick, not once per schedule: the sweep is by project
+    // Once for the whole tick, not once per schedule: the sweep is by agent
     // and covers webhook deliveries too, which have no occurrence of their own
     // to be repaired by.
     const repair = await repairLostRuns(deps, at);
     summary.repaired += repair.repaired;
     summary.errors += repair.errors;
   }
-  let after: { projectName: string; triggerId: string } | undefined;
+  let after: { agentName: string; triggerId: string } | undefined;
   for (;;) {
     let triggers: ScheduleTrigger[];
     try { triggers = await deps.triggers.listSchedules(SCHEDULE_SCAN_PAGE_SIZE, after); }
@@ -182,7 +182,7 @@ export async function scanSchedules(deps: FiringDeps, at: Date): Promise<Schedul
           } catch (error) {
             log.error(
               "trigger",
-              `scan of schedule '${trigger.projectName}/${trigger.triggerId}' failed`,
+              `scan of schedule '${trigger.agentName}/${trigger.triggerId}' failed`,
               error,
             );
             triggerSummary.errors += 1;
@@ -204,7 +204,7 @@ export async function scanSchedules(deps: FiringDeps, at: Date): Promise<Schedul
       break;
     }
     const last = triggers.at(-1)!;
-    after = { projectName: last.projectName, triggerId: last.triggerId };
+    after = { agentName: last.agentName, triggerId: last.triggerId };
   }
   return { summary, firings };
 }
@@ -224,7 +224,7 @@ async function fireDueOccurrences(
     // not kill the tick, and must not be silent either.
     log.warn(
       "trigger",
-      `schedule '${trigger.projectName}/${trigger.triggerId}' has an unusable cron or timezone`,
+      `schedule '${trigger.agentName}/${trigger.triggerId}' has an unusable cron or timezone`,
     );
     summary.invalid += 1;
     return;
@@ -245,7 +245,7 @@ async function fireDueOccurrences(
     let claimed = false;
     try {
       claimed = await deps.triggers.claimIdempotencyKey(
-        trigger.projectName,
+        trigger.agentName,
         trigger.triggerId,
         `schedule:${scheduledFor}`,
       );
@@ -276,7 +276,7 @@ async function fireDueOccurrences(
     } catch (error) {
       log.error(
         "trigger",
-        `could not admit occurrence ${scheduledFor} of '${trigger.projectName}/${trigger.triggerId}'`,
+        `could not admit occurrence ${scheduledFor} of '${trigger.agentName}/${trigger.triggerId}'`,
         error,
       );
       summary.errors += 1;

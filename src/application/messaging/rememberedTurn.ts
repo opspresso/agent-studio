@@ -4,7 +4,7 @@ import { conversationKey, type RunActor, type RunCaller, type RunConversation } 
 import type { InboundAttachment } from "@/domain/messaging/inbound";
 import type { ReplyChannel } from "@/domain/messaging/reply";
 import type { ConversationTranscriptRepository } from "@/domain/messaging/transcript";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { LogScope } from "@/shared/logger";
 import { handleTurn, type MessagingDeps, type TurnOutcome } from "./handleTurn";
 import {
@@ -31,7 +31,7 @@ import {
 export type RememberedTurnDeps = MessagingDeps & { transcripts?: ConversationTranscriptRepository };
 
 export interface RememberedTurnInput {
-  project: Project;
+  agent: Agent;
   configuration: AgentConfiguration;
   reply: ReplyChannel;
   conversation: RunConversation;
@@ -58,31 +58,31 @@ export interface RememberedTurnInput {
 }
 
 /** Resolve the Agent and its current settings before accepting a messaging turn. */
-export async function resolveAgentProject(
+export async function resolveAgentSummary(
   deps: MessagingDeps,
-  projectName: string,
+  agentName: string,
   reply: ReplyChannel,
-): Promise<{ project: Project; configuration: AgentConfiguration } | null> {
-  const project = await deps.projects.get(projectName);
-  const configuration = project ? project.configuration : null;
-  if (!project || !configuration) {
+): Promise<{ agent: Agent; configuration: AgentConfiguration } | null> {
+  const agent = await deps.agents.get(agentName);
+  const configuration = agent ? agent.configuration : null;
+  if (!agent || !configuration) {
     await reply.say(
-      `Agent project not available: ${projectName} (must exist and have current Agent settings)`,
+      `Agent not available: ${agentName} (must exist and have current settings)`,
     );
     return null;
   }
-  return { project, configuration };
+  return { agent, configuration };
 }
 
 export async function runRememberedTurn(
   deps: RememberedTurnDeps,
   input: RememberedTurnInput,
 ): Promise<TurnOutcome> {
-  const { project, configuration, reply, conversation, warnings, scope } = input;
+  const { agent, configuration, reply, conversation, warnings, scope } = input;
   const key = conversationKey(conversation);
   // Read before anything is written, like the Slack thread: the reply must
   // not come back as an assistant turn in this run's own context.
-  const remembered = await loadTranscriptHistory(deps.transcripts, project.name, key, warnings, scope);
+  const remembered = await loadTranscriptHistory(deps.transcripts, agent.name, key, warnings, scope);
   await reply.status("is thinking…");
 
   // The Agent's opt-in gates whether a name reaches the model, and so
@@ -99,7 +99,7 @@ export async function runRememberedTurn(
   const outcome = await handleTurn(
     deps,
     {
-      project,
+      agent,
       configuration,
       text: askText,
       attachments: input.attachments,
@@ -121,7 +121,7 @@ export async function runRememberedTurn(
   const askedAt = input.arrivedAt.toISOString();
   await rememberTurn(
     deps.transcripts,
-    project.name,
+    agent.name,
     key,
     {
       role: "user",
@@ -135,7 +135,7 @@ export async function runRememberedTurn(
   );
   await rememberTurn(
     deps.transcripts,
-    project.name,
+    agent.name,
     key,
     {
       role: "assistant",

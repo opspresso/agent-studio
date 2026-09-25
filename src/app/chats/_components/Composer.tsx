@@ -20,7 +20,7 @@ import { isSubmitEnter } from "@/app/_lib/modEnter";
  * The one composer.
  *
  * New and existing chats share this component. Their only layout difference is
- * the `leading` slot: a project picker before a chat exists, and nothing after.
+ * the `leading` slot: an agent picker before a chat exists, and nothing after.
  */
 export function Composer({
   onSend,
@@ -53,7 +53,7 @@ export function Composer({
   disabled?: boolean;
   busy?: boolean;
   placeholder?: string;
-  /** Above the input: the project picker, on a chat that does not exist yet. */
+  /** Above the input: the agent picker, on a chat that does not exist yet. */
   leading?: React.ReactNode;
   /**
    * Between the two: who is answering right now. It lives here rather than in

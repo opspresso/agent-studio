@@ -43,7 +43,7 @@ export function createAttachmentReadEpoch(): {
 }
 
 /**
- * Staged attachments for one turn — shared by the chat composers and the project
+ * Staged attachments for one turn — shared by the chat composers and the agent
  * run panel so every surface enforces one set of limits and reports rejections
  * the same way.
  *

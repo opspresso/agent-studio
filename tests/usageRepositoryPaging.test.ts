@@ -35,7 +35,7 @@ describe("usage repository paging", () => {
       return {
         ...keys.usage("p", date),
         entityType: "Usage",
-        projectName: "p",
+        agentName: "p",
         date,
         ...counters(),
       };
@@ -43,7 +43,7 @@ describe("usage repository paging", () => {
     const actors = Array.from({ length: 205 }, (_, index) => ({
       ...keys.usageActor("p", "2026-08-01", `user:${String(index).padStart(3, "0")}`),
       entityType: "Usage",
-      projectName: "p",
+      agentName: "p",
       date: "2026-08-01",
       actor: `user:${String(index).padStart(3, "0")}`,
       ...counters(),
@@ -52,40 +52,40 @@ describe("usage repository paging", () => {
       ...keys.usageMember("member@example.com", "2026-08-01", `p-${String(index).padStart(3, "0")}`),
       entityType: "UsageMember",
       email: "member@example.com",
-      projectName: `p-${String(index).padStart(3, "0")}`,
+      agentName: `p-${String(index).padStart(3, "0")}`,
       date: "2026-08-01",
       ...counters(),
     }));
     store.seed([...days, ...actors, ...member]);
     const repository = new PostgresUsageRepository();
 
-    await expect(repository.listByProject("p", "2026-01-01", "2026-05-30")).resolves.toHaveLength(
+    await expect(repository.listByAgent("p", "2026-01-01", "2026-05-30")).resolves.toHaveLength(
       150,
     );
     await expect(
-      repository.listActorsByProject("p", "2026-08-01", "2026-08-01", 300),
+      repository.listActorsByAgent("p", "2026-08-01", "2026-08-01", 300),
     ).resolves.toHaveLength(205);
     await expect(
-      repository.listActorsByProject("p", "2026-08-01", "2026-08-01", 101),
+      repository.listActorsByAgent("p", "2026-08-01", "2026-08-01", 101),
     ).resolves.toHaveLength(101);
     await expect(
-      repository.listActorsByProject("p", "2026-08-01", "2026-08-01", 0),
+      repository.listActorsByAgent("p", "2026-08-01", "2026-08-01", 0),
     ).rejects.toThrow("limit must be a positive integer");
     await expect(
       repository.listMemberDays("member@example.com", "2026-08-01", "2026-08-01"),
     ).resolves.toHaveLength(205);
   });
 
-  it("drains every project from a date-index page", async () => {
+  it("drains every agent from a date-index page", async () => {
     store.seed(
       Array.from({ length: 205 }, (_, index) => {
-        const projectName = `p-${String(index).padStart(3, "0")}`;
+        const agentName = `p-${String(index).padStart(3, "0")}`;
         return {
-          ...keys.usage(projectName, "2026-08-01"),
+          ...keys.usage(agentName, "2026-08-01"),
           entityType: "Usage",
           GSI1PK: keys.usageDatePartition("2026-08-01"),
-          GSI1SK: projectName,
-          projectName,
+          GSI1SK: agentName,
+          agentName,
           date: "2026-08-01",
           ...counters(),
         };

@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FakeStore } from "./fakeStore";
-import type { Project } from "@/domain/project/types";
+import type { Agent } from "@/domain/agent/types";
 import { agentMcpHeadersContext } from "@/domain/security/secretContext";
-import { createConfigurationUseCases, type AgentConfigurationInput } from "@/application/project/configurationUseCases";
-import { setAdminCheck, updateProject } from "@/application/project/projectUseCases";
-import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
+import { createConfigurationUseCases, type AgentConfigurationInput } from "@/application/agent/configurationUseCases";
+import { setAdminCheck, updateAgent } from "@/application/agent/agentUseCases";
+import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { skillRepository } from "@/infrastructure/db/repositories/skillRepository";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { keys } from "@/infrastructure/db/keys";
-import { putAgentConfigurationSchema } from "@/app/api/projects/_lib/schemas";
-import { sanitizeProject } from "@/app/api/projects/_lib/http";
+import { putAgentConfigurationSchema } from "@/app/api/agents/_lib/schemas";
+import { sanitizeAgent } from "@/app/api/agents/_lib/http";
 
 vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
 vi.mock("node:crypto", async (original) => ({
@@ -24,7 +24,7 @@ const READER = "reader@example.test";
 const ADMIN = "admin@example.test";
 const NOW = "2026-09-19T12:00:00.000Z";
 const SECRET = "Bearer synthetic-configuration-credential";
-const project: Project = {
+const agent: Agent = {
   name: "agent", displayName: "Agent", description: "",
   ownerEmail: OWNER, createdAt: NOW, updatedAt: NOW,
 };
@@ -33,13 +33,13 @@ const input = (overrides: Partial<AgentConfigurationInput> = {}): AgentConfigura
   mcpList: [], skillList: [], subagentList: [], ...overrides,
 });
 const useCases = createConfigurationUseCases({
-  projects: projectRepository, cipher: secretCipher,
-  refs: { projects: projectRepository, mcps: mcpRepository,
+  agents: agentRepository, cipher: secretCipher,
+  refs: { agents: agentRepository, mcps: mcpRepository,
     skills: skillRepository },
 });
 
 async function save(overrides: Partial<AgentConfigurationInput> = {}, expectedUpdatedAt = NOW, email = OWNER) {
-  return useCases.put(project.name, { ...input(overrides), expectedUpdatedAt }, email);
+  return useCases.put(agent.name, { ...input(overrides), expectedUpdatedAt }, email);
 }
 
 async function seedMcp(url = "https://tools.example.test/mcp") {
@@ -53,7 +53,7 @@ beforeEach(async () => {
   vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 9).toString("base64"));
   setAdminCheck(async email => email === ADMIN);
   store.rows.clear();
-  await projectRepository.create(project);
+  await agentRepository.create(agent);
 });
 afterEach(() => {
   setAdminCheck(async () => false);
@@ -62,11 +62,11 @@ afterEach(() => {
 });
 
 describe("current Agent configuration", () => {
-  it("stores one current configuration on the Agent's Project row", async () => {
-    expect(await useCases.getView(project.name, READER)).toEqual({ configuration: null, updatedAt: NOW });
+  it("stores one current configuration on the Agent's Agent row", async () => {
+    expect(await useCases.getView(agent.name, READER)).toEqual({ configuration: null, updatedAt: NOW });
     const saved = await save();
-    const stored = await projectRepository.get(project.name);
-    expect(stored?.configuration).toEqual({ projectName: project.name, ...input() });
+    const stored = await agentRepository.get(agent.name);
+    expect(stored?.configuration).toEqual({ agentName: agent.name, ...input() });
     expect(saved.updatedAt).not.toBe(NOW);
     expect([...store.rows.values()].some(row => row.entityType === "VERSION")).toBe(false);
     expect(saved.configuration).not.toHaveProperty("createdAt");
@@ -77,16 +77,16 @@ describe("current Agent configuration", () => {
     const results = await Promise.allSettled([save({ systemPrompt: "A" }), save({ systemPrompt: "B" })]);
     expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
     expect(results.filter(result => result.status === "rejected")).toHaveLength(1);
-    const winner = await projectRepository.get(project.name);
+    const winner = await agentRepository.get(agent.name);
     await expect(save({ systemPrompt: "stale" })).rejects.toMatchObject({ status: 409 });
-    expect(await projectRepository.get(project.name)).toEqual(winner);
+    expect(await agentRepository.get(agent.name)).toEqual(winner);
   });
 
   it("preserves an execution snapshot and current settings through metadata edits", async () => {
     const first = await save({ maxTurn: 12, fallbackModel: "openai/gpt-5-mini" });
-    const snapshot = (await projectRepository.get(project.name))!.configuration!;
+    const snapshot = (await agentRepository.get(agent.name))!.configuration!;
     await save({ systemPrompt: "Next request" }, first.updatedAt);
-    const updated = await updateProject(projectRepository, project.name, { description: "Updated" }, OWNER);
+    const updated = await updateAgent(agentRepository, agent.name, { description: "Updated" }, OWNER);
     expect(snapshot.systemPrompt).toBe("Be helpful");
     expect(updated.configuration?.systemPrompt).toBe("Next request");
     expect(updated.configuration?.maxTurn).toBeUndefined();
@@ -94,32 +94,32 @@ describe("current Agent configuration", () => {
     await expect(save({}, first.updatedAt)).rejects.toMatchObject({ status: 409 });
   });
 
-  it("keeps write ownership and private-project reads at the existing boundaries", async () => {
+  it("keeps write ownership and private-agent reads at the existing boundaries", async () => {
     await expect(save({}, NOW, READER)).rejects.toMatchObject({ status: 403 });
     const adminSave = await save({}, NOW, ADMIN);
-    const privateProject = await updateProject(projectRepository, project.name, { visibility: "private" }, OWNER);
-    await expect(useCases.getView(project.name, READER)).rejects.toMatchObject({ status: 403 });
-    expect((await useCases.getView(project.name, ADMIN)).configuration).toEqual(adminSave.configuration);
-    expect(privateProject.configuration).toBeDefined();
+    const privateAgent = await updateAgent(agentRepository, agent.name, { visibility: "private" }, OWNER);
+    await expect(useCases.getView(agent.name, READER)).rejects.toMatchObject({ status: 403 });
+    expect((await useCases.getView(agent.name, ADMIN)).configuration).toEqual(adminSave.configuration);
+    expect(privateAgent.configuration).toBeDefined();
     await expect(useCases.getView("missing", OWNER)).rejects.toMatchObject({ status: 404 });
   });
 
-  it("encrypts credentials in the Agent context and removes internal settings from Project responses", async () => {
+  it("encrypts credentials in the Agent context and removes internal settings from Agent responses", async () => {
     await seedMcp();
     const saved = await save({ mcpList: [{ name: "tools", headers: { Authorization: SECRET }, tools: ["lookup"] }] });
-    const stored = (await projectRepository.get(project.name))!;
+    const stored = (await agentRepository.get(agent.name))!;
     const headers = stored.configuration!.mcpList[0]!.headers!;
     expect(headers.Authorization).toMatch(/^enc:v2:/);
-    expect(secretCipher.maskHeaderOverrides(headers, agentMcpHeadersContext(project.name, "tools")))
+    expect(secretCipher.maskHeaderOverrides(headers, agentMcpHeadersContext(agent.name, "tools")))
       .toEqual(saved.configuration!.mcpList[0]!.headers);
     expect(secretCipher.decryptHeadersForOutbound(headers as Record<string, string>,
-      agentMcpHeadersContext(project.name, "tools")).Authorization).toBe(SECRET);
+      agentMcpHeadersContext(agent.name, "tools")).Authorization).toBe(SECRET);
     expect(() => secretCipher.decryptHeadersForOutbound(headers as Record<string, string>,
-      agentMcpHeadersContext("another-project", "tools"))).toThrow();
+      agentMcpHeadersContext("another-agent", "tools"))).toThrow();
     expect(JSON.stringify(saved)).not.toContain(SECRET);
     expect(saved.configuration!.mcpList[0]).not.toHaveProperty("headerTarget");
-    expect(sanitizeProject(stored)).not.toHaveProperty("configuration");
-    expect(sanitizeProject(stored, { withMemberEmails: true })).not.toHaveProperty("configuration");
+    expect(sanitizeAgent(stored)).not.toHaveProperty("configuration");
+    expect(sanitizeAgent(stored, { withMemberEmails: true })).not.toHaveProperty("configuration");
   });
 
   it("preserves masked and omitted headers, permits explicit clearing, and never creates a secret from a mask", async () => {
@@ -139,7 +139,7 @@ describe("current Agent configuration", () => {
     await seedMcp();
     const first = await save({ mcpList: [{ name: "tools", headers: { Authorization: SECRET } }] });
     await seedMcp("https://replacement.example.test/mcp");
-    const preview = await useCases.resolveDraftBindings(project.name, first.configuration!.mcpList, OWNER);
+    const preview = await useCases.resolveDraftBindings(agent.name, first.configuration!.mcpList, OWNER);
     expect(preview[0]).not.toHaveProperty("headers");
     const saved = await save({ mcpList: first.configuration!.mcpList }, first.updatedAt);
     expect(saved.configuration!.mcpList[0]).not.toHaveProperty("headers");
@@ -150,9 +150,9 @@ describe("current Agent configuration", () => {
     await expect(save({ model: "openai/o1-pro" })).rejects.toThrow("tool calling");
     await expect(save({ skillList: ["missing"] })).rejects.toThrow("does not exist");
     await expect(save({ mcpList: [{ name: "tools" }, { name: "tools" }] })).rejects.toThrow("more than once");
-    await projectRepository.create({ ...project, name: "private-child", ownerEmail: READER, visibility: "private" });
+    await agentRepository.create({ ...agent, name: "private-child", ownerEmail: READER, visibility: "private" });
     await expect(save({ subagentList: [{ name: "private-child" }] })).rejects.toThrow("private");
-    expect((await projectRepository.get(project.name))!.configuration).toBeUndefined();
+    expect((await agentRepository.get(agent.name))!.configuration).toBeUndefined();
   });
 
   it("retains the ability to edit away a binding after its registry entry disappears", async () => {
@@ -164,9 +164,9 @@ describe("current Agent configuration", () => {
     expect((await save({}, second.updatedAt)).configuration!.mcpList).toEqual([]);
   });
 
-  it("rejects a stored configuration belonging to another Project", async () => {
-    await store.updateItem(keys.project(project.name), row => ({ ...row!, configuration: { ...input(), projectName: "other" } }));
-    await expect(projectRepository.get(project.name)).rejects.toThrow("belongs to another Project");
+  it("rejects a stored configuration belonging to another Agent", async () => {
+    await store.updateItem(keys.agent(agent.name), row => ({ ...row!, configuration: { ...input(), agentName: "other" } }));
+    await expect(agentRepository.get(agent.name)).rejects.toThrow("belongs to another Agent");
   });
 
   it("requires the editor revision at the HTTP boundary", () => {

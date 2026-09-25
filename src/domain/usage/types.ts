@@ -1,6 +1,6 @@
-/** Daily per-project usage aggregates with per-model breakdowns. */
+/** Daily per-agent usage aggregates with per-model breakdowns. */
 export interface UsageRow {
-  projectName: string;
+  agentName: string;
   /** yyyy-MM-dd */
   date: string;
   calls: Record<string, number>;
@@ -19,17 +19,17 @@ export interface UsageRow {
 }
 
 /**
- * One caller's spend on one project for one day.
+ * One caller's spend on one agent for one day.
  *
  * A separate row rather than another dimension on {@link UsageRow}: that row
  * holds a map per metric keyed by model, and keying those by `actor|model`
  * instead would grow one row with the number of distinct callers — a busy
- * project's daily row would be rewritten whole for every caller's every call,
+ * agent's daily row would be rewritten whole for every caller's every call,
  * and the dashboard would pay for every caller on every read whether it wanted
  * them or not. Splitting keeps both reads exactly as wide as their question.
  */
 export interface ActorUsageRow {
-  projectName: string;
+  agentName: string;
   /** yyyy-MM-dd */
   date: string;
   /** `kind:id` — see `actorKey` in `domain/execution/actor.ts`. */
@@ -43,18 +43,18 @@ export interface ActorUsageRow {
 }
 
 /**
- * One member's own spend on one project for one UTC day. Only `user` actors
- * land here — a project token spends against its project, not its owner; see
+ * One member's own spend on one agent for one UTC day. Only `user` actors
+ * land here — an agent token spends against its agent, not its owner; see
  * `memberEmailFromActorKey` in `domain/execution/actor.ts`.
  *
- * Per project rather than summed across them, so the profile can group a
+ * Per agent rather than summed across them, so the profile can group a
  * person's spend the same three ways the overview groups the workspace's. The
  * tier cap sums whatever the window returns, which is the same number either
  * way.
  */
 export interface MemberUsageRow {
   email: string;
-  projectName: string;
+  agentName: string;
   /** yyyy-MM-dd */
   date: string;
   calls: Record<string, number>;
@@ -68,7 +68,7 @@ export interface MemberUsageRow {
 export interface UsageDelta {
   /** Stable event identity for durable callers replaying the same receipt. */
   idempotencyKey?: string;
-  projectName: string;
+  agentName: string;
   date: string;
   model: string;
   calls: number;
@@ -79,7 +79,7 @@ export interface UsageDelta {
   costUsd: number;
   /**
    * Who to bill it to, as `kind:id`. Absent means the run had no identifiable
-   * caller, and only the project total is written — attribution is additive, so
+   * caller, and only the agent total is written — attribution is additive, so
    * a path that cannot name its actor still records the spend it caused.
    */
   actor?: string;

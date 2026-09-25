@@ -1,15 +1,15 @@
-import type { Project } from "@/domain/project/types";
-import { projectHasWorkspaceTools } from "@/domain/project/workspaceAccess";
+import type { Agent } from "@/domain/agent/types";
+import { agentHasWorkspaceTools } from "@/domain/agent/workspaceAccess";
 import type { WorkspacePolicyRepository } from "@/domain/workspace/policyRepository";
-import { workspaceProjectPolicy, workspaceRepositories, workspaceRepositoryMode } from "@/domain/workspace/policy";
+import { workspaceAgentPolicy, workspaceRepositories, workspaceRepositoryMode } from "@/domain/workspace/policy";
 import type { WorkspaceRuntime } from "@/domain/workspace/types";
 import { mapWithLimit } from "@/shared/mapWithLimit";
 
-/** A listing can span the installation's projects; cap policy reads per request. */
+/** A listing can span the installation's agents; cap policy reads per request. */
 const MAX_CONCURRENT_POLICY_READS = 8;
 
 export interface WorkspaceOption {
-  projectName: string;
+  agentName: string;
   displayName: string;
   description: string;
   runtimes: WorkspaceRuntime[];
@@ -23,11 +23,11 @@ export interface WorkspaceOption {
 export interface WorkspaceOptionsView {
   enabled: boolean;
   gitEnabled: boolean;
-  projects: WorkspaceOption[];
+  agents: WorkspaceOption[];
 }
 
 export function createWorkspaceOptionsUseCase(deps: {
-  listAccessible(email: string): Promise<Project[]>;
+  listAccessible(email: string): Promise<Agent[]>;
   policies: Pick<WorkspacePolicyRepository, "get">;
   runtimes(): Promise<WorkspaceRuntime[]>;
   backendReady(): boolean;
@@ -36,16 +36,16 @@ export function createWorkspaceOptionsUseCase(deps: {
   return async (ownerEmail: string): Promise<WorkspaceOptionsView> => {
     const enabled = deps.backendReady();
     const runtimes = await deps.runtimes();
-    const projects = enabled
-      ? (await deps.listAccessible(ownerEmail)).filter(projectHasWorkspaceTools)
+    const agents = enabled
+      ? (await deps.listAccessible(ownerEmail)).filter(agentHasWorkspaceTools)
       : [];
-    const available = await mapWithLimit(projects, MAX_CONCURRENT_POLICY_READS, async (project) => {
-      const stored = await deps.policies.get(project.name);
-      const policy = workspaceProjectPolicy(project.name, stored?.rules);
+    const available = await mapWithLimit(agents, MAX_CONCURRENT_POLICY_READS, async (agent) => {
+      const stored = await deps.policies.get(agent.name);
+      const policy = workspaceAgentPolicy(agent.name, stored?.rules);
       return {
-        projectName: project.name,
-        displayName: project.displayName,
-        description: project.description,
+        agentName: agent.name,
+        displayName: agent.displayName,
+        description: agent.description,
         runtimes,
         defaultRuntime: policy.defaultRuntime ?? "command",
         mode: workspaceRepositoryMode(policy),
@@ -54,6 +54,6 @@ export function createWorkspaceOptionsUseCase(deps: {
         deploymentWorkflows: policy.deploymentWorkflows,
       };
     });
-    return { enabled, gitEnabled: deps.gitEnabled(), projects: available };
+    return { enabled, gitEnabled: deps.gitEnabled(), agents: available };
   };
 }

@@ -21,7 +21,7 @@ import type { Artifact } from "@/domain/artifact/types";
 function rows(count: number): Artifact[] {
   return Array.from({ length: count }, (_, at) => ({
     artifactId: `a${at}`,
-    projectName: "demo",
+    agentName: "demo",
     kind: "image" as const,
     source: "generated" as const,
     mimeType: "image/png",

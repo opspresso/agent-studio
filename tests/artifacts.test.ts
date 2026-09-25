@@ -24,7 +24,7 @@ function artifact(over: Partial<Artifact> = {}): Artifact {
     key: "artifacts/image/a1.png",
     mimeType: "image/png",
     byteSize: 1024,
-    projectName: "poster-bot",
+    agentName: "poster-bot",
     actor: { kind: "user", id: "bruce@daangn.com" },
     createdAt: CREATED,
     ...over,
@@ -39,7 +39,7 @@ function row(over: Partial<Artifact> = {}, expiresAt = freshSec): Record<string,
     ...stored,
     ...keys.artifact(stored.artifactId),
     entityType: "ARTIFACT",
-    GSI1PK: keys.artifactProjectPartition(stored.projectName),
+    GSI1PK: keys.artifactAgentPartition(stored.agentName),
     GSI1SK: artifactCursor(stored),
     ...(owner
       ? { GSI2PK: keys.artifactOwnerPartition(owner), GSI2SK: artifactCursor(stored) }
@@ -66,8 +66,8 @@ afterEach(() => {
 describe("private artifact persistence", () => {
   it("round-trips the private file address and excludes it once source retention expires", async () => {
     const stored = artifact({ kind: "audio", privateFileId: "source-id", retireAt: "2026-08-13T00:00:00.000Z" });
-    store.seed([{ ...keys.project(stored.projectName), entityType: "PROJECT" },
-      { ...keys.sourceFile("source-id"), file: { status: "ready", projectName: stored.projectName,
+    store.seed([{ ...keys.agent(stored.agentName), entityType: "AGENT" },
+      { ...keys.sourceFile("source-id"), file: { status: "ready", agentName: stored.agentName,
         userEmail: "bruce@daangn.com", retireAt: stored.retireAt } }]);
     await artifactRepository.put(stored);
     expect(await artifactRepository.get(stored.artifactId)).toEqual(stored);
@@ -78,8 +78,8 @@ describe("private artifact persistence", () => {
   });
   it.each(["pending", "deleting", "deleted"])("does not publish a stale private artifact after its file becomes %s", async (status) => {
     const stored = artifact({ kind: "audio", privateFileId: "source-id", retireAt: "2026-08-13T00:00:00.000Z" });
-    store.seed([{ ...keys.project(stored.projectName), entityType: "PROJECT" },
-      { ...keys.sourceFile("source-id"), file: { status, projectName: stored.projectName,
+    store.seed([{ ...keys.agent(stored.agentName), entityType: "AGENT" },
+      { ...keys.sourceFile("source-id"), file: { status, agentName: stored.agentName,
         userEmail: "bruce@daangn.com", retireAt: stored.retireAt } }]);
     await expect(artifactRepository.put(stored)).rejects.toThrow();
     expect(await artifactRepository.get(stored.artifactId)).toBeNull();
@@ -137,7 +137,7 @@ describe("artifactOwnerEmail", () => {
   it("names the email for the two actors that have one", () => {
     expect(artifactOwnerEmail({ kind: "user", id: "bruce@daangn.com" })).toBe("bruce@daangn.com");
     // A token runs on its owner's behalf, so the id is theirs.
-    expect(artifactOwnerEmail({ kind: "project-token", id: "bruce@daangn.com" })).toBe(
+    expect(artifactOwnerEmail({ kind: "agent-token", id: "bruce@daangn.com" })).toBe(
       "bruce@daangn.com",
     );
   });
@@ -155,13 +155,13 @@ describe("artifactOwnerEmail", () => {
 });
 
 describe("put", () => {
-  it("indexes by project, which is the only axis every artifact has", async () => {
+  it("indexes by agent, which is the only axis every artifact has", async () => {
     await artifactRepository.put(artifact());
     expect(await store.getItem(keys.artifact("a1"))).toMatchObject({
       PK: "ARTIFACT#a1",
       SK: "META",
       entityType: "ARTIFACT",
-      GSI1PK: "ARTIFACTPROJECT#poster-bot",
+      GSI1PK: "ARTIFACTAGENT#poster-bot",
       GSI1SK: `${CREATED}#a1`,
     });
   });
@@ -176,13 +176,13 @@ describe("put", () => {
 
   it("leaves the owner index empty for a run nobody's mailbox caused", async () => {
     // Sparse rather than a placeholder: a Slack artifact is reachable through
-    // its project, and a row under a fake owner would be listed for nobody.
+    // its agent, and a row under a fake owner would be listed for nobody.
     await artifactRepository.put(artifact({ actor: { kind: "slack", id: "U123" } }));
     const stored = await store.getItem(keys.artifact("a1"));
     expect(stored?.GSI2PK).toBeUndefined();
     expect(stored?.GSI2SK).toBeUndefined();
-    // Still findable, which is the whole reason the project index is not optional.
-    expect(stored?.GSI1PK).toBe("ARTIFACTPROJECT#poster-bot");
+    // Still findable, which is the whole reason the agent index is not optional.
+    expect(stored?.GSI1PK).toBe("ARTIFACTAGENT#poster-bot");
   });
 
   it("expires the row on the artifact retention window", async () => {
@@ -224,13 +224,13 @@ describe("get", () => {
 });
 
 describe("listing", () => {
-  it("lists a project's artifacts newest first, and nobody else's", async () => {
+  it("lists an agent's artifacts newest first, and nobody else's", async () => {
     store.seed([
       row({ artifactId: "older", createdAt: createdPlus(0) }),
       row({ artifactId: "newer", createdAt: createdPlus(60) }),
-      row({ artifactId: "elsewhere", projectName: "other-bot", createdAt: createdPlus(120) }),
+      row({ artifactId: "elsewhere", agentName: "other-bot", createdAt: createdPlus(120) }),
     ]);
-    const found = await artifactRepository.listByProject("poster-bot");
+    const found = await artifactRepository.listByAgent("poster-bot");
     expect(found.map((a) => a.artifactId)).toEqual(["newer", "older"]);
   });
 
@@ -239,7 +239,7 @@ describe("listing", () => {
       row({ artifactId: "mine" }),
       row({ artifactId: "theirs", actor: { kind: "user", id: "someone@daangn.com" } }),
       // A Slack run names no mailbox, so it is in nobody's gallery — only its
-      // project's listing reaches it.
+      // agent's listing reaches it.
       row({ artifactId: "nobodys", actor: { kind: "slack", id: "U123" } }),
     ]);
     const found = await artifactRepository.listByOwner("bruce@daangn.com");
@@ -248,7 +248,7 @@ describe("listing", () => {
 
   it("drops expired rows the purge has not reached", async () => {
     store.seed([row({ artifactId: "fresh" }), row({ artifactId: "old" }, expiredSec)]);
-    const found = await artifactRepository.listByProject("poster-bot");
+    const found = await artifactRepository.listByAgent("poster-bot");
     expect(found.map((a) => a.artifactId)).toEqual(["fresh"]);
   });
 
@@ -260,7 +260,7 @@ describe("listing", () => {
       row({ artifactId: "img1", createdAt: createdPlus(60) }),
       row({ artifactId: "img2", createdAt: createdPlus(0) }),
     ]);
-    const found = await artifactRepository.listByProject("poster-bot", { limit: 2, kind: "image" });
+    const found = await artifactRepository.listByAgent("poster-bot", { limit: 2, kind: "image" });
     expect(found.map((a) => a.artifactId)).toEqual(["img1", "img2"]);
   });
 
@@ -269,7 +269,7 @@ describe("listing", () => {
       row({ artifactId: "gen", createdAt: createdPlus(60) }),
       row({ artifactId: "att", source: "attachment", createdAt: createdPlus(0) }),
     ]);
-    const found = await artifactRepository.listByProject("poster-bot", { source: "attachment" });
+    const found = await artifactRepository.listByAgent("poster-bot", { source: "attachment" });
     expect(found.map((a) => a.artifactId)).toEqual(["att"]);
   });
 
@@ -280,7 +280,7 @@ describe("listing", () => {
       ),
     );
     const query = vi.spyOn(store, "queryItems");
-    const found = await artifactRepository.listByProject("poster-bot", { limit: 1, kind: "image" });
+    const found = await artifactRepository.listByAgent("poster-bot", { limit: 1, kind: "image" });
     expect(found).toEqual([]);
     expect(query).toHaveBeenCalledTimes(1);
   });
@@ -288,7 +288,7 @@ describe("listing", () => {
   it("reaches matches that lie past a page of non-matches", async () => {
     // The refill loop this replaced pulled at most five pages and then gave
     // up, and giving up looked exactly like reaching the end: an empty
-    // gallery with no cursor to page past. A project holding a few hundred
+    // gallery with no cursor to page past. An agent holding a few hundred
     // images and a handful of older documents is the ordinary shape of it.
     store.seed([
       ...Array.from({ length: 600 }, (_, i) =>
@@ -296,7 +296,7 @@ describe("listing", () => {
       ),
       row({ artifactId: "doc-old", kind: "document", createdAt: createdPlus(0) }),
     ]);
-    const found = await artifactRepository.listByProject("poster-bot", {
+    const found = await artifactRepository.listByAgent("poster-bot", {
       limit: 24,
       kind: "document",
     });
@@ -314,7 +314,7 @@ describe("listing", () => {
         createdAt: createdPlus(30),
       }),
     ]);
-    const found = await artifactRepository.listByProject("poster-bot", {
+    const found = await artifactRepository.listByAgent("poster-bot", {
       kind: "image",
       source: "attachment",
     });
@@ -328,7 +328,7 @@ describe("listing", () => {
     ]);
     const cursor = artifactCursor(artifact({ artifactId: "a1" }));
     expect(cursor).toBe(`${CREATED}#a1`);
-    const found = await artifactRepository.listByProject("poster-bot", { before: cursor });
+    const found = await artifactRepository.listByAgent("poster-bot", { before: cursor });
     expect(found.map((a) => a.artifactId)).toEqual(["a0"]);
   });
 
@@ -338,7 +338,7 @@ describe("listing", () => {
       row({ artifactId: "day-after", createdAt: "2026-08-13T00:00:00.000Z" }),
       row({ artifactId: "before", createdAt: "2026-07-31T23:59:59.000Z" }),
     ]);
-    const found = await artifactRepository.listByProject("poster-bot", {
+    const found = await artifactRepository.listByAgent("poster-bot", {
       from: "2026-08-01",
       to: "2026-08-12",
     });
@@ -351,7 +351,7 @@ describe("listing", () => {
         row({ artifactId: `a${String(i).padStart(3, "0")}`, createdAt: createdPlus(i) }),
       ),
     );
-    const found = await artifactRepository.listByProject("poster-bot", { limit: 5000 });
+    const found = await artifactRepository.listByAgent("poster-bot", { limit: 5000 });
     expect(found).toHaveLength(100);
   });
 });

@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Route-handler tests for the project token reveal endpoint.
+// Route-handler tests for the agent token reveal endpoint.
 // `withAuth`/`withAdminAuth` are stubbed so the caller and their admin status
 // are drivable from `state`; the real *owner* gate runs inside the use case.
 // These guard the blast radius: a reveal endpoint that answers the wrong caller
 // hands over a working key.
-const { state, projectRepo } = vi.hoisted(() => ({
+const { state, agentRepo } = vi.hoisted(() => ({
   state: { email: "owner@example.com", admin: true },
-  projectRepo: { get: vi.fn(), getApiToken: vi.fn() },
+  agentRepo: { get: vi.fn(), getApiToken: vi.fn() },
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -34,11 +34,11 @@ const cipher = {
 };
 vi.mock("@/lib/container", async () => ({
   apiTokenUseCases: (
-    await import("@/application/project/apiTokenUseCases")
-  ).createApiTokenUseCases(projectRepo as never, cipher as never),
+    await import("@/application/agent/apiTokenUseCases")
+  ).createApiTokenUseCases(agentRepo as never, cipher as never),
 }));
 vi.mock("@/lib/runtime-settings", () => ({
-  // The project token route is owner-gated; no admin list is configured here,
+  // The agent token route is owner-gated; no admin list is configured here,
   // so the owner check stands on its own. `isAdminEmail` is deliberately absent:
   // `withAdminAuth` is stubbed above, so nothing reaches it, and a stub of it
   // returning `true` would quietly neutralise the non-admin rejection below if
@@ -51,12 +51,12 @@ vi.mock("@/infrastructure/crypto/secretEncryption", () => ({
   maskSecret: () => "ast_••••wxyz",
 }));
 
-const { POST: revealToken } = await import("@/app/api/projects/[name]/token/reveal/route");
+const { POST: revealToken } = await import("@/app/api/agents/[name]/token/reveal/route");
 
 const ctx = () => ({ params: Promise.resolve({ name: "proj" }) });
 const req = () => new Request("https://studio.example.com/x", { method: "POST" });
 
-const project = { name: "proj", displayName: "Proj", ownerEmail: "owner@example.com" };
+const agent = { name: "proj", displayName: "Proj", ownerEmail: "owner@example.com" };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -65,10 +65,10 @@ beforeEach(() => {
   state.admin = true;
 });
 
-describe("POST /api/projects/[name]/token/reveal", () => {
-  it("returns the token to the project owner", async () => {
-    projectRepo.get.mockResolvedValue(project);
-    projectRepo.getApiToken.mockResolvedValue({
+describe("POST /api/agents/[name]/token/reveal", () => {
+  it("returns the token to the agent owner", async () => {
+    agentRepo.get.mockResolvedValue(agent);
+    agentRepo.getApiToken.mockResolvedValue({
       token: "enc:v1:ast_realtoken",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
@@ -83,8 +83,8 @@ describe("POST /api/projects/[name]/token/reveal", () => {
 
   it("forbids a non-owner and leaks no token", async () => {
     state.email = "someone@example.com";
-    projectRepo.get.mockResolvedValue(project);
-    projectRepo.getApiToken.mockResolvedValue({
+    agentRepo.get.mockResolvedValue(agent);
+    agentRepo.getApiToken.mockResolvedValue({
       token: "enc:v1:ast_realtoken",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
@@ -95,8 +95,8 @@ describe("POST /api/projects/[name]/token/reveal", () => {
   });
 
   it("explains a legacy hashed token with 400 instead of failing obscurely", async () => {
-    projectRepo.get.mockResolvedValue(project);
-    projectRepo.getApiToken.mockResolvedValue({
+    agentRepo.get.mockResolvedValue(agent);
+    agentRepo.getApiToken.mockResolvedValue({
       tokenHash: "deadbeef",
       createdAt: "2026-01-01T00:00:00.000Z",
     });

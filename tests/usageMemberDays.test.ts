@@ -11,7 +11,7 @@ const { PostgresUsageRepository } = await import("@/infrastructure/db/repositori
 const NOW_MS = Date.parse("2026-08-13T12:00:00Z");
 
 const delta = (actor?: string, model = "m"): UsageDelta => ({
-  projectName: "p",
+  agentName: "p",
   date: "2026-08-13",
   model,
   calls: 1,
@@ -26,14 +26,14 @@ const memberRows = () =>
 
 beforeEach(() => {
   store.rows.clear();
-  // Every usage write checks the project is live first, so the partition it
+  // Every usage write checks the agent is live first, so the partition it
   // lands in is not one a cascade delete is sweeping.
-  store.seed([{ ...keys.project("p"), entityType: "PROJECT", name: "p" }]);
+  store.seed([{ ...keys.agent("p"), entityType: "AGENT", name: "p" }]);
   vi.spyOn(Date, "now").mockReturnValue(NOW_MS);
 });
 
 describe("the member day row", () => {
-  it("is written beside the project and actor rows, keyed by email, UTC day and project, for a user actor", async () => {
+  it("is written beside the agent and actor rows, keyed by email, UTC day and agent, for a user actor", async () => {
     await new PostgresUsageRepository().record(delta("user:a@x.com"));
 
     expect(memberRows()).toHaveLength(1);
@@ -42,7 +42,7 @@ describe("the member day row", () => {
       SK: "DATE#2026-08-13#p",
       entityType: "UsageMember",
       email: "a@x.com",
-      projectName: "p",
+      agentName: "p",
       date: "2026-08-13",
       calls: { m: 1 },
       inputTokens: { m: 10 },
@@ -51,8 +51,8 @@ describe("the member day row", () => {
       costUsd: { m: 0.5 },
     });
     expect(typeof memberRows()[0]?.expiresAt).toBe("number");
-    // Additive, not a replacement of the project's own accounting: the
-    // project total and the actor row are written too.
+    // Additive, not a replacement of the agent's own accounting: the
+    // agent total and the actor row are written too.
     expect(store.all().map((row) => `${row.PK} ${row.SK}`)).toEqual(
       expect.arrayContaining([
         "USAGE#p DATE#2026-08-13",
@@ -75,9 +75,9 @@ describe("the member day row", () => {
     });
   });
 
-  it("is not written for project tokens, machine actors, or unattributed spend", async () => {
-    // A token spends against its project's limits, never its owner's budget.
-    await new PostgresUsageRepository().record(delta("project-token:a@x.com"));
+  it("is not written for agent tokens, machine actors, or unattributed spend", async () => {
+    // A token spends against its agent's limits, never its owner's budget.
+    await new PostgresUsageRepository().record(delta("agent-token:a@x.com"));
     await new PostgresUsageRepository().record(delta("slack:U1"));
     await new PostgresUsageRepository().record(delta());
     expect(memberRows()).toHaveLength(0);
@@ -85,13 +85,13 @@ describe("the member day row", () => {
 });
 
 describe("listMemberDays", () => {
-  it("reads the member's own partition across the day range, every project on the last day included", async () => {
+  it("reads the member's own partition across the day range, every agent on the last day included", async () => {
     const nowSeconds = Math.floor(NOW_MS / 1000);
-    const row = (date: string, projectName: string, extra: Record<string, unknown> = {}) => ({
-      ...keys.usageMember("a@x.com", date, projectName),
+    const row = (date: string, agentName: string, extra: Record<string, unknown> = {}) => ({
+      ...keys.usageMember("a@x.com", date, agentName),
       entityType: "UsageMember",
       email: "a@x.com",
-      projectName,
+      agentName,
       date,
       costUsd: { m: 3 },
       calls: { m: 2 },
@@ -101,19 +101,19 @@ describe("listMemberDays", () => {
     store.seed([
       row("2026-07-31", "p"),
       row("2026-08-01", "p"),
-      // Past the first project name on the last day — the bound is the day,
-      // not any project guessed for it.
+      // Past the first agent name on the last day — the bound is the day,
+      // not any agent guessed for it.
       row("2026-08-13", "p"),
       row("2026-08-13", "zzz"),
       row("2026-08-14", "p"),
       // Swept late: an expired row must not count against the window.
       row("2026-08-10", "p", { expiresAt: nowSeconds - 1 }),
-      { ...keys.usageMember("b@x.com", "2026-08-13", "p"), email: "b@x.com", projectName: "p", date: "2026-08-13" },
+      { ...keys.usageMember("b@x.com", "2026-08-13", "p"), email: "b@x.com", agentName: "p", date: "2026-08-13" },
     ]);
 
-    const shape = (date: string, projectName: string) => ({
+    const shape = (date: string, agentName: string) => ({
       email: "a@x.com",
-      projectName,
+      agentName,
       date,
       calls: { m: 2 },
       inputTokens: {},

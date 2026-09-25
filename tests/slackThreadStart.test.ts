@@ -1,18 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleThreadStart, type ThreadStartDeps } from "@/application/slack/handleThreadStart";
 import type { SlackClientPort, SlackEventBody } from "@/application/slack/types";
-import type { Project } from "@/domain/project/types";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { Agent } from "@/domain/agent/types";
+import type { AgentRepository } from "@/domain/agent/repository";
 import type { SlackSuggestedPrompt } from "@/domain/slack/types";
 
-const BINDING = { projectName: "painter", botToken: "tok" };
+const BINDING = { agentName: "painter", botToken: "tok" };
 
 const PROMPTS: SlackSuggestedPrompt[] = [
   { title: "Draw", message: "Draw me a cat" },
   { title: "Explain", message: "Explain what you can do" },
 ];
 
-function projectFixture(overrides: Partial<Project> = {}): Project {
+function agentFixture(overrides: Partial<Agent> = {}): Agent {
   return {
     name: "painter",
     displayName: "Painter",
@@ -26,7 +26,7 @@ function projectFixture(overrides: Partial<Project> = {}): Project {
   };
 }
 
-function makeDeps(project: Project | null) {
+function makeDeps(agent: Agent | null) {
   const posted: Array<{ channel: string; text: string; thread_ts?: string }> = [];
   const prompts: Array<{ channel_id: string; thread_ts?: string; prompts: SlackSuggestedPrompt[] }> =
     [];
@@ -43,7 +43,7 @@ function makeDeps(project: Project | null) {
     },
   } as unknown as SlackClientPort;
   const deps: ThreadStartDeps = {
-    projects: { get: async () => project } as unknown as ProjectRepository,
+    agents: { get: async () => agent } as unknown as AgentRepository,
     slack,
   };
   return { deps, posted, prompts };
@@ -64,7 +64,7 @@ const LEGACY_THREAD_STARTED: SlackEventBody = {
 
 describe("handleThreadStart", () => {
   it("pins the prompts when the agent container is opened", async () => {
-    const { deps, posted, prompts } = makeDeps(projectFixture());
+    const { deps, posted, prompts } = makeDeps(agentFixture());
 
     await handleThreadStart(deps, HOME_OPENED, BINDING);
 
@@ -77,7 +77,7 @@ describe("handleThreadStart", () => {
   });
 
   it("ignores the Home tab, which is a different surface", async () => {
-    const { deps, prompts } = makeDeps(projectFixture());
+    const { deps, prompts } = makeDeps(agentFixture());
 
     await handleThreadStart(
       deps,
@@ -88,8 +88,8 @@ describe("handleThreadStart", () => {
     expect(prompts).toEqual([]);
   });
 
-  it("introduces the project on a new legacy assistant thread", async () => {
-    const { deps, posted, prompts } = makeDeps(projectFixture());
+  it("introduces the agent on a new legacy assistant thread", async () => {
+    const { deps, posted, prompts } = makeDeps(agentFixture());
 
     await handleThreadStart(deps, LEGACY_THREAD_STARTED, BINDING);
 
@@ -100,17 +100,17 @@ describe("handleThreadStart", () => {
     expect(prompts).toEqual([{ channel_id: "D1", thread_ts: "1.0", prompts: PROMPTS }]);
   });
 
-  it("still introduces a project that has no description", async () => {
-    const { deps, posted } = makeDeps(projectFixture({ description: "   " }));
+  it("still introduces an agent that has no description", async () => {
+    const { deps, posted } = makeDeps(agentFixture({ description: "   " }));
 
     await handleThreadStart(deps, LEGACY_THREAD_STARTED, BINDING);
 
     expect(posted[0]?.text).toContain("Painter");
   });
 
-  it("calls nothing when the project configured no prompts", async () => {
+  it("calls nothing when the agent configured no prompts", async () => {
     const { deps, prompts } = makeDeps(
-      projectFixture({ slack: { botToken: "enc", signingSecret: "enc", enabled: true } }),
+      agentFixture({ slack: { botToken: "enc", signingSecret: "enc", enabled: true } }),
     );
 
     await handleThreadStart(deps, HOME_OPENED, BINDING);
@@ -118,7 +118,7 @@ describe("handleThreadStart", () => {
     expect(prompts).toEqual([]);
   });
 
-  it("stays silent for a missing project", async () => {
+  it("stays silent for a missing agent", async () => {
     const missing = makeDeps(null);
     await handleThreadStart(missing.deps, LEGACY_THREAD_STARTED, BINDING);
 
@@ -129,7 +129,7 @@ describe("handleThreadStart", () => {
 
   it("keeps going when the greeting fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const { deps, prompts } = makeDeps(projectFixture());
+    const { deps, prompts } = makeDeps(agentFixture());
     deps.slack.postMessage = async () => {
       throw new Error("channel_not_found");
     };

@@ -34,7 +34,7 @@ const FIRING = {
   status: "accepted",
   runId: "run-1",
   release: async () => {},
-  trigger: { kind: "schedule", projectName: "p", triggerId: "nightly", message: "go" },
+  trigger: { kind: "schedule", agentName: "p", triggerId: "nightly", message: "go" },
 };
 
 function request(token?: string): Request {

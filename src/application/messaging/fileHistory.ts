@@ -13,11 +13,11 @@ function key(conversation: RunConversation, actor: RunActor): string {
 /** The platform's text history need not contain IDs for files whose links it displays. */
 export async function loadFileHistory(
   repository: ConversationTranscriptRepository | undefined,
-  project: string, conversation: RunConversation, actor: RunActor | undefined, warnings: string[],
+  agent: string, conversation: RunConversation, actor: RunActor | undefined, warnings: string[],
 ): Promise<string> {
   if (!repository || !actor) return "";
   try {
-    const turns = await repository.recent(project, key(conversation, actor), FILE_HISTORY_TURNS);
+    const turns = await repository.recent(agent, key(conversation, actor), FILE_HISTORY_TURNS);
     const kept: string[] = [];
     let chars = 0;
     for (let index = turns.length - 1; index >= 0; index--) {
@@ -39,7 +39,7 @@ export async function loadFileHistory(
 
 export async function rememberFiles(
   repository: ConversationTranscriptRepository | undefined,
-  project: string, conversation: RunConversation, actor: RunActor | undefined, files: ProducedFile[], warnings: string[],
+  agent: string, conversation: RunConversation, actor: RunActor | undefined, files: ProducedFile[], warnings: string[],
 ): Promise<void> {
   if (!repository || !actor) return;
   const referenced = files.filter((file) => file.fileId);
@@ -47,7 +47,7 @@ export async function rememberFiles(
   const content = fileReferenceText(referenced.slice(-MAX_FILE_REFERENCES_PER_TURN));
   if (!content) return;
   try {
-    await repository.append(project, key(conversation, actor), {
+    await repository.append(agent, key(conversation, actor), {
       role: "assistant", content, createdAt: new Date().toISOString(),
     });
   } catch (error) {

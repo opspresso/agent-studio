@@ -17,12 +17,12 @@ import {
 import { IconRobot } from "@tabler/icons-react";
 import { FormModal } from "@/app/_components/FormModal";
 import { useDisclosure } from "@mantine/hooks";
-import { tierMayCreateProjects } from "@/domain/member/tiers";
+import { tierMayCreateAgents } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
 import { toSlug } from "@/domain/naming";
 import { useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
-import { createProject, listProjects, type SanitizedProject } from "./lib/api";
+import { createAgent, listAgents, type SanitizedAgent } from "./lib/api";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { PageHeader } from "@/app/_components/PageHeader";
@@ -34,9 +34,9 @@ export default function AgentsPage() {
   const searchParams = useSearchParams();
   const t = useT();
   const viewer = useViewer();
-  const mayCreate = viewer !== null && tierMayCreateProjects(viewer.tier);
+  const mayCreate = viewer !== null && tierMayCreateAgents(viewer.tier);
   const createRequested = searchParams.get("create") === "1";
-  const [projects, setProjects] = useState<SanitizedProject[]>([]);
+  const [agents, setAgents] = useState<SanitizedAgent[]>([]);
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,8 +48,8 @@ export default function AgentsPage() {
     setLoading(true);
     setError(null);
     try {
-      const loaded = await listProjects();
-      if (isCurrent()) setProjects(loaded);
+      const loaded = await listAgents();
+      if (isCurrent()) setAgents(loaded);
     } catch (e) {
       if (isCurrent()) setError(e instanceof Error ? e.message : t("agents.loadFailed"));
     } finally {
@@ -68,8 +68,8 @@ export default function AgentsPage() {
     }
   }, [createRequested, mayCreate, open, router]);
 
-  const visibleProjects = projects.filter((project) =>
-    matchesFilter(filter, project.displayName, project.name, project.description),
+  const visibleAgents = agents.filter((agent) =>
+    matchesFilter(filter, agent.displayName, agent.name, agent.description),
   );
 
   return (
@@ -90,14 +90,14 @@ export default function AgentsPage() {
         </Alert>
       )}
 
-      {projects.length > 0 && (
+      {agents.length > 0 && (
         <Group align="flex-start" gap="md">
           <CatalogSearch
             value={filter}
             onChange={setFilter}
             placeholder={t("agents.filter")}
-            resultCount={visibleProjects.length}
-            totalCount={projects.length}
+            resultCount={visibleAgents.length}
+            totalCount={agents.length}
             onReset={filter ? () => setFilter("") : undefined}
           />
         </Group>
@@ -105,23 +105,23 @@ export default function AgentsPage() {
 
       <CardGrid
         loading={loading}
-        failed={!!error && projects.length === 0}
-        empty={visibleProjects.length === 0}
-        emptyText={t(projects.length === 0 ? "agents.empty" : "catalog.noResults")}
+        failed={!!error && agents.length === 0}
+        empty={visibleAgents.length === 0}
+        emptyText={t(agents.length === 0 ? "agents.empty" : "catalog.noResults")}
       >
-        {visibleProjects.map((project) => (
+        {visibleAgents.map((agent) => (
           <Card
-            key={project.name}
+            key={agent.name}
             component={Link}
-            href={`/agents/${project.name}`}
+            href={`/agents/${agent.name}`}
             h="100%"
           >
             <Group justify="space-between" gap="xs" wrap="nowrap">
               <Text fw={500} truncate>
-                {project.displayName || project.name}
+                {agent.displayName || agent.name}
               </Text>
               <Group gap={6} wrap="nowrap">
-                {project.visibility === "private" && (
+                {agent.visibility === "private" && (
                   <Badge variant="light" color="gray">
                     {t("agents.privateBadge")}
                   </Badge>
@@ -129,15 +129,15 @@ export default function AgentsPage() {
               </Group>
             </Group>
             <Text ff="monospace" fz="xs" c="dimmed" mt={2}>
-              {project.name}
+              {agent.name}
             </Text>
             <OwnerLine
-              ownerEmail={project.ownerEmail}
-              isMine={viewer?.email === project.ownerEmail}
+              ownerEmail={agent.ownerEmail}
+              isMine={viewer?.email === agent.ownerEmail}
               mt={4}
             />
             <Text fz="sm" c="dimmed" mt="xs" lineClamp={3}>
-              {project.description}
+              {agent.description}
             </Text>
           </Card>
         ))}
@@ -188,14 +188,14 @@ function CreateAgentModal({
     setSubmitting(true);
     setError(null);
     try {
-      const project = await createProject({
+      const agent = await createAgent({
         name,
         displayName: displayName || name,
         description,
         departmentCode: departmentCode || undefined,
       });
       reset();
-      onCreated(project.name);
+      onCreated(agent.name);
     } catch (err) {
       setError(reportError(err, t("agents.createFailed")));
     } finally {

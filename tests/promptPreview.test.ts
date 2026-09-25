@@ -7,7 +7,7 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
 }));
 
-import { executeAgent, previewPrompt } from "@/application/execution/runProject";
+import { executeAgent, previewPrompt } from "@/application/execution/runAgent";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
@@ -15,18 +15,18 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 // Allow every URL: these tests are about the run loop, not the SSRF policy.
 // Injected rather than module-mocked, now that the policy is a port.
 const testUrlPolicy: UrlPolicy = { async assertAllowed() {} };
-import type { ExecutionDeps } from "@/application/execution/runProject";
+import type { ExecutionDeps } from "@/application/execution/runAgent";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
 import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 
 const MCP_URL = "https://crm.test/mcp";
 
-function projectFixture(): Project {
+function agentFixture(): Agent {
   return {
     name: "helper",
     displayName: "Helper",
@@ -39,7 +39,7 @@ function projectFixture(): Project {
 
 function configurationFixture(): AgentConfiguration {
   return {
-    projectName: "helper",
+    agentName: "helper",
 
     systemPrompt: "You are helpful.",
 
@@ -78,7 +78,7 @@ function executionDepsFixture(channel: FakeChannel) {
     },
   } as unknown as ImageChannel;
   return {
-    projects: { get: reject },
+    agents: { get: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: reject },
     usage: { record: async () => {} },
@@ -129,10 +129,10 @@ function wireRegistry(deps: ExecutionDeps): void {
     name === "crm"
       ? { name, url: MCP_URL, description: "Sales CRM", headers: {} }
       : null) as ExecutionDeps["mcps"]["get"];
-  deps.projects.get = (async (name: string) =>
+  deps.agents.get = (async (name: string) =>
     name === "painter"
-      ? { ...projectFixture(), name, description: "Draws things" }
-      : null) as ExecutionDeps["projects"]["get"];
+      ? { ...agentFixture(), name, description: "Draws things" }
+      : null) as ExecutionDeps["agents"]["get"];
 }
 
 async function drain(gen: AsyncGenerator<EngineChunk>): Promise<void> {
@@ -158,7 +158,7 @@ describe("previewPrompt", () => {
     deps.mcps.get = (async (name: string) => ({
       name,
       url: MCP_URL,
-      description: name === "memory" ? "Project memory" : "Search opspresso documents",
+      description: name === "memory" ? "Agent memory" : "Search opspresso documents",
       headers: {},
     })) as ExecutionDeps["mcps"]["get"];
     deps.catalog = {
@@ -183,7 +183,7 @@ describe("previewPrompt", () => {
       },
     };
     const preview = await previewPrompt(deps, {
-      project: projectFixture(),
+      agent: agentFixture(),
       configuration: {
         ...configurationFixture(),
         mcpList: [{ name: "memory" }],
@@ -213,10 +213,10 @@ describe("previewPrompt", () => {
     stubMcpServer(["query", "update"]);
     const configuration = boundConfiguration();
 
-    const preview = await previewPrompt(deps, { project: projectFixture(), configuration });
+    const preview = await previewPrompt(deps, { agent: agentFixture(), configuration });
     await drain(
       executeAgent(deps, {
-        project: projectFixture(),
+        agent: agentFixture(),
         configuration,
         messages: [{ role: "user", content: "hi" }],
       }),
@@ -243,7 +243,7 @@ describe("previewPrompt", () => {
     stubMcpServer(["query"]);
 
     const preview = await previewPrompt(deps, {
-      project: projectFixture(),
+      agent: agentFixture(),
       configuration: boundConfiguration(),
     });
 
@@ -270,7 +270,7 @@ describe("previewPrompt", () => {
     wireRegistry(deps);
     const server = stubMcpServer(["query"]);
 
-    await previewPrompt(deps, { project: projectFixture(), configuration: boundConfiguration() });
+    await previewPrompt(deps, { agent: agentFixture(), configuration: boundConfiguration() });
 
     expect(server.verbs).not.toContain("DELETE");
     expect(server.verbs.every((verb) => verb === "POST")).toBe(true);
@@ -285,7 +285,7 @@ describe("previewPrompt", () => {
       deps.skills.get = (async () => null) as ExecutionDeps["skills"]["get"];
 
       const preview = await previewPrompt(deps, {
-        project: projectFixture(),
+        agent: agentFixture(),
         configuration: boundConfiguration(),
       });
 
@@ -300,7 +300,7 @@ describe("previewPrompt", () => {
     const deps = executionDepsFixture(new FakeChannel([]));
 
     const preview = await previewPrompt(deps, {
-      project: { ...projectFixture() },
+      agent: { ...agentFixture() },
       configuration: { ...configurationFixture(), parameters: { piiFiltering: true } },
     });
 
@@ -342,7 +342,7 @@ describe("previewPrompt", () => {
       deps.catalog = catalogFor(queries);
 
       const preview = await previewPrompt(deps, {
-        project: projectFixture(),
+        agent: agentFixture(),
         configuration: {
           ...configurationFixture(),
           parameters: { piiFiltering: false, dynamicCapabilities: true },
@@ -368,7 +368,7 @@ describe("previewPrompt", () => {
       deps.catalog = catalogFor(queries);
 
       await previewPrompt(deps, {
-        project: projectFixture(),
+        agent: agentFixture(),
         configuration: {
           ...configurationFixture(),
           parameters: { piiFiltering: false, dynamicCapabilities: true },
@@ -386,7 +386,7 @@ describe("previewPrompt", () => {
       deps.catalog = catalogFor(queries);
 
       const preview = await previewPrompt(deps, {
-        project: projectFixture(),
+        agent: agentFixture(),
         configuration: {
           ...configurationFixture(),
           parameters: { piiFiltering: false, dynamicCapabilities: true },
@@ -404,7 +404,7 @@ describe("previewPrompt", () => {
       deps.catalog = catalogFor(queries);
 
       const preview = await previewPrompt(deps, {
-        project: projectFixture(),
+        agent: agentFixture(),
         configuration: configurationFixture(),
         message: "say hello to the customer",
       });

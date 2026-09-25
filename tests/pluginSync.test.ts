@@ -23,7 +23,7 @@ import { ConflictError, NotFoundError, ValidationError } from "@/application/err
 import { setAuditSink } from "@/application/audit/recordAudit";
 import type { AuditEvent } from "@/domain/audit/types";
 import { findRegistryBindings } from "@/application/plugin/bindingIndex";
-import type { Project } from "@/domain/project/types";
+import type { Agent } from "@/domain/agent/types";
 
 const REPO = "opspresso/agent-plugins";
 const NOW = "2026-02-02T00:00:00.000Z";
@@ -1166,24 +1166,24 @@ describe("syncPluginsFromSnapshot", () => {
     ]);
   });
 
-  it("annotates constructor-named skills and servers with their current projects", async () => {
+  it("annotates constructor-named skills and servers with their current agents", async () => {
     const { deps } = makeDeps({
       skills: [storedSkill("constructor")],
       servers: [storedServer("constructor")],
     });
-    const project: Project = {
+    const agent: Agent = {
       name: "bot", displayName: "Bot", description: "", ownerEmail: ACTOR,
       createdAt: NOW, updatedAt: NOW,
       configuration: {
-        projectName: "bot", model: "openai/gpt-4o", systemPrompt: "",
+        agentName: "bot", model: "openai/gpt-4o", systemPrompt: "",
         skillList: ["constructor"], mcpList: [{ name: "constructor" }], subagentList: [],
         parameters: { piiFiltering: false },
       },
     };
     const result = await syncPluginsFromSnapshot({
       ...deps,
-      findBindings: (skills, servers) => findRegistryBindings({ projects: {
-        list: async () => [project],
+      findBindings: (skills, servers) => findRegistryBindings({ agents: {
+        list: async () => [agent],
       } }, skills, servers),
     }, snapshot([repoPlugin("devops")]), ACTOR);
     const report = section(result, "devops");

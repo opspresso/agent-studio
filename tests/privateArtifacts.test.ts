@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { registerSourceArtifact } from "@/application/artifact/storeArtifact";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { toArtifactViews } from "@/app/api/artifacts/_lib/query";
-import { setAdminCheck } from "@/application/project/projectUseCases";
+import { setAdminCheck } from "@/application/agent/agentUseCases";
 import type { SourceFile } from "@/domain/artifact/sourceFile";
 import type { Artifact } from "@/domain/artifact/types";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { AgentRepository } from "@/domain/agent/repository";
 
-const file: SourceFile = { id: "audio-file", projectName: "collector", userEmail: "owner@example.test",
+const file: SourceFile = { id: "audio-file", agentName: "collector", userEmail: "owner@example.test",
   filename: "recording.mp3", mimeType: "audio/mpeg", retention: { value: 3, unit: "months", timezone: "Asia/Seoul" },
   revision: 2, status: "ready", createdAt: "2026-09-09T00:00:00.000Z", storedAt: "2026-09-09T00:00:01.000Z",
   retireAt: "2026-12-09T00:00:01.000Z", byteSize: 100, checksum: "sha256" };
@@ -16,11 +16,11 @@ function fixture() {
   const stored = new Map<string, Artifact>();
   const rows = { put: vi.fn(async (a: Artifact) => { stored.set(a.artifactId, a); }),
     get: async (id: string) => stored.get(id) ?? null, delete: vi.fn(async (id: string) => { stored.delete(id); }),
-    listByOwner: async () => [...stored.values()], listByProject: async () => [...stored.values()] };
+    listByOwner: async () => [...stored.values()], listByAgent: async () => [...stored.values()] };
   const objects = { put: vi.fn(), read: vi.fn(), sign: vi.fn(), delete: vi.fn() };
   const privateFiles = { read: vi.fn(async () => ({ bytes: new Uint8Array([1, 2, 3]) })), remove: vi.fn() };
-  const projects = { get: async () => ({ name: "collector", ownerEmail: file.userEmail }) } as unknown as ProjectRepository;
-  return { rows, objects, privateFiles, api: createArtifactUseCases(rows, objects, projects, privateFiles) };
+  const agents = { get: async () => ({ name: "collector", ownerEmail: file.userEmail }) } as unknown as AgentRepository;
+  return { rows, objects, privateFiles, api: createArtifactUseCases(rows, objects, agents, privateFiles) };
 }
 beforeEach(() => { setAdminCheck(async () => false); });
 describe("private files in the Artifact inventory", () => {
@@ -56,7 +56,7 @@ describe("private files in the Artifact inventory", () => {
     expect((await f.api.readPrivateFile(file.id, file.userEmail)).bytes).toHaveLength(3);
     await expect(f.api.readPrivateFile(file.id, "other@example.test")).rejects.toThrow("not found");
     await f.api.remove(file.id, file.userEmail);
-    expect(f.privateFiles.remove).toHaveBeenCalledWith(file.projectName, file.id, file.userEmail);
+    expect(f.privateFiles.remove).toHaveBeenCalledWith(file.agentName, file.id, file.userEmail);
     expect(f.objects.delete).not.toHaveBeenCalled();
     expect(await f.rows.get(file.id)).toBeNull();
   });

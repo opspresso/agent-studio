@@ -22,7 +22,7 @@ import { AUTH_COOKIE_PREFIX } from "@/shared/authCookies";
  * What is checked is the *presence* of the session cookie, not its validity.
  * Verifying it would mean a session read on every navigation and it still would
  * not be the authorization decision — that stays server-side in `withAuth` and
- * `assertProjectWritable`, which see the request that actually touches data. So a
+ * `assertAgentWritable`, which see the request that actually touches data. So a
  * cookie that is present but no longer valid reaches the page and gets its 401
  * from the API behind it; the browser response boundary then sends the tab to
  * `/login`. This gate removes the ordinary no-cookie case before render.

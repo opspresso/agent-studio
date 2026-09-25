@@ -12,11 +12,11 @@ const now = "2026-09-08T00:00:00.000Z";
 const until = "2026-09-08T00:02:00.000Z";
 const later = "2026-09-08T00:03:00.000Z";
 const input: AudioJobInput = {
-  projectName: "audio", userEmail: "owner@example.test", source: { kind: "file", fileId: "file-1" },
+  agentName: "audio", userEmail: "owner@example.test", source: { kind: "file", fileId: "file-1" },
   sourceKey: "source-1", model: "selfhosted/asr", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
 };
 const admission = { id: "job-1", now, occurrence: "hour-1", maxActive: 1, maxPerOccurrence: 1 };
-beforeEach(() => { fake.rows.clear(); fake.seed([{ ...keys.project("audio"), entityType: "PROJECT" }]); });
+beforeEach(() => { fake.rows.clear(); fake.seed([{ ...keys.agent("audio"), entityType: "AGENT" }]); });
 
 describe("durable audio jobs", () => {
   it("queues multiple sources but only lets workers claim the FIFO head", async () => {
@@ -36,20 +36,20 @@ describe("durable audio jobs", () => {
     expect((await jobs.due(now, 10)).map((job) => job.id)).toEqual(["m-third"]);
   });
 
-  it("keeps another project eligible while a full queue waits behind a leased head", async () => {
+  it("keeps another agent eligible while a full queue waits behind a leased head", async () => {
     const limits = { ...admission, maxActive: 100, maxPerOccurrence: 100 };
     await jobs.submit(input, limits);
     const first = (await jobs.claim("audio", "job-1", now, "worker-1", until))!;
     for (let index = 2; index <= 100; index++) {
       await jobs.submit({ ...input, sourceKey: `source-${index}` }, { ...limits, id: `job-${index}` });
     }
-    fake.seed([{ ...keys.project("other"), entityType: "PROJECT" }]);
-    await jobs.submit({ ...input, projectName: "other" }, admission);
-    expect((await jobs.due(now, 1)).map((job) => job.projectName)).toEqual(["other"]);
+    fake.seed([{ ...keys.agent("other"), entityType: "AGENT" }]);
+    await jobs.submit({ ...input, agentName: "other" }, admission);
+    expect((await jobs.due(now, 1)).map((job) => job.agentName)).toEqual(["other"]);
     await jobs.checkpoint(first, { status: "waiting", stage: "transcribing", dueAt: later }, now);
-    expect((await jobs.due(until, 1)).map((job) => job.projectName)).toEqual(["other"]);
+    expect((await jobs.due(until, 1)).map((job) => job.agentName)).toEqual(["other"]);
     expect(await jobs.claim("audio", "job-2", later, "worker-2", "2026-09-08T00:05:00.000Z")).toBeNull();
-    expect((await jobs.due(later, 10)).map((job) => job.projectName).sort()).toEqual(["audio", "other"]);
+    expect((await jobs.due(later, 10)).map((job) => job.agentName).sort()).toEqual(["audio", "other"]);
   });
 
   it("preserves the head lease when cancelling a queued job and advances on head cancellation", async () => {
@@ -108,8 +108,8 @@ describe("durable audio jobs", () => {
     expect(await jobs.delete("audio", "job-1", 2)).toBe(false);
     expect(await jobs.get("audio", "job-1")).not.toBeNull();
   });
-  it("does not admit work while the project is being deleted", async () => {
-    fake.seed([{ ...keys.project("audio"), entityType: "PROJECT", deletingAt: now }]);
+  it("does not admit work while the agent is being deleted", async () => {
+    fake.seed([{ ...keys.agent("audio"), entityType: "AGENT", deletingAt: now }]);
     expect(await jobs.submit(input, admission)).toEqual({ status: "busy", reason: "conflict" });
     expect(await jobs.get("audio", "job-1")).toBeNull();
   });
@@ -124,7 +124,7 @@ describe("durable audio jobs", () => {
     expect(await jobs.due(later, 10)).toEqual([]);
   });
 
-  it("holds the project slot across worker expiry and waiting retries", async () => {
+  it("holds the agent slot across worker expiry and waiting retries", async () => {
     await jobs.submit(input, admission);
     expect(await jobs.submit({ ...input, sourceKey: "source-2" }, { ...admission, id: "job-2", now: later,
       occurrence: "hour-2" })).toEqual({ status: "busy", reason: "active_limit" });
@@ -188,7 +188,7 @@ describe("durable audio jobs", () => {
     expect((await jobs.list("audio", 1, "job-1"))[0]?.id).toBe("job-2");
     await expect(jobs.due(now, 0)).rejects.toThrow();
     await expect(jobs.list("audio", 101)).rejects.toThrow();
-    expect(await jobs.list("another-project", 10)).toEqual([]);
+    expect(await jobs.list("another-agent", 10)).toEqual([]);
   });
 
   it("honors a reduced concurrency limit while older slots are still occupied", async () => {

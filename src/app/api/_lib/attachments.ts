@@ -15,7 +15,7 @@ import {
 } from "@/domain/llm/documentLimits";
 
 /**
- * Inbound image attachment bodies (chat turns, project runs). The caps live in
+ * Inbound image attachment bodies (chat turns, agent runs). The caps live in
  * `@/domain/llm/imageLimits`; the bytes arrive base64-encoded in JSON, so the
  * byte cap becomes a character cap here.
  */

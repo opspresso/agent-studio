@@ -496,8 +496,8 @@ function McpDetail({ name }: { name: string }) {
 /**
  * OAuth configuration for this registry entry (admin-only).
  *
- * This is operator configuration shared by every project: where the authorization
- * server is and, when required, which OAuth app all projects use.
+ * This is operator configuration shared by every agent: where the authorization
+ * server is and, when required, which OAuth app all agents use.
  */
 function OAuthSection({
   server,
@@ -548,7 +548,7 @@ function OAuthSection({
       const result = await discoverMcpAuth(server.name, authorizationServer);
       if (result.status === "choose") {
         // The resource advertises several; RFC 9728 puts the choice on us, and
-        // taking the first would bind every project's tokens to it silently.
+        // taking the first would bind every agent's tokens to it silently.
         setChoices(result.authorizationServers);
         return;
       }
@@ -662,7 +662,7 @@ function OAuthSection({
               [
                 "Client identity",
                 // Both, when both are on offer: which one a connection ends up
-                // using is decided per project, and an operator diagnosing one
+                // using is decided per agent, and an operator diagnosing one
                 // needs to see what was available to it rather than the winner.
                 [
                   server.auth.clientIdMetadataDocumentSupported
@@ -740,7 +740,7 @@ function OAuthSection({
         </Stack>
       ) : (
         <Text fz="sm" c="dimmed">
-          Not configured. Discovery reads the server&apos;s published metadata; projects then
+          Not configured. Discovery reads the server&apos;s published metadata; agents then
           authorize with the OAuth client configured here.
         </Text>
       )}

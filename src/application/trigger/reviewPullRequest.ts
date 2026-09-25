@@ -1,4 +1,4 @@
-import type { AgentConfiguration } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/agent/types";
 import type { PullRequestReviewContext, PullRequestReviewDelivery, PullRequestReviewTarget } from "@/domain/trigger/pullRequestReview";
 import { reviewAllowsRepository } from "@/domain/trigger/pullRequestReview";
 import { cutCodePoints } from "@/shared/utf8Text";
@@ -43,7 +43,7 @@ export function reviewInput(context: PullRequestReviewContext) {
 
 export async function preparePullRequestReview(
   deps: TriggerRunnerDeps,
-  projectName: string,
+  agentName: string,
   triggerId: string,
   configuration: AgentConfiguration,
   target: PullRequestReviewTarget,
@@ -63,7 +63,7 @@ export async function preparePullRequestReview(
       const body = `검토 커밋: \`${target.headSha}\`\n${input.coverage}\n\n${text.trim()}`;
       if (!text.trim() || body.length > MAX_REVIEW_REPLY_CHARS) throw new Error("Review output is empty or exceeds the publication limit");
       // An owner can revoke automation while the model is running.
-      const current = await deps.triggers.get(projectName, triggerId);
+      const current = await deps.triggers.get(agentName, triggerId);
       if (current?.kind !== "webhook" || !current.enabled ||
         !reviewAllowsRepository(current.githubReview, target.repository)) {
         return { status: "skipped", reason: "Review automation was disabled or its repository authorization changed." };

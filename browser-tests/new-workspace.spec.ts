@@ -30,8 +30,8 @@ test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject
 
 test("clears an options read error on retry while preserving the drafted task", async ({ page }) => {
   let reads = 0;
-  const options: WorkspaceOptionsResponse = { enabled: true, gitEnabled: false, projects: [{
-    projectName: "agent", displayName: "Agent", description: "", runtimes: ["command"],
+  const options: WorkspaceOptionsResponse = { enabled: true, gitEnabled: false, agents: [{
+    agentName: "agent", displayName: "Agent", description: "", runtimes: ["command"],
     defaultRuntime: "command", mode: "selected", repositories: [], repositoryOwners: [], deploymentWorkflows: [],
   }] };
   await page.route("**/api/workspaces/options", route => {
@@ -50,17 +50,17 @@ test("clears an options read error on retry while preserving the drafted task", 
   expect(reads).toBe(2);
 });
 
-test("keeps the selected project after a failed refresh and retry", async ({ page }) => {
+test("keeps the selected agent after a failed refresh and retry", async ({ page }) => {
   let reads = 0;
-  const projects: WorkspaceOptionsResponse["projects"] = ["agent", "other"].map(name => ({
-    projectName: name, displayName: name === "agent" ? "Agent" : "Other", description: "", runtimes: ["command"],
+  const agents: WorkspaceOptionsResponse["agents"] = ["agent", "other"].map(name => ({
+    agentName: name, displayName: name === "agent" ? "Agent" : "Other", description: "", runtimes: ["command"],
     defaultRuntime: "command", mode: "selected", repositories: [], repositoryOwners: [], deploymentWorkflows: [],
   }));
   await page.route("**/api/workspaces/options", route => {
     reads += 1;
     return reads === 2
       ? route.fulfill({ status: 503, json: { error: "Options store unavailable" } })
-      : route.fulfill({ json: { enabled: true, gitEnabled: false, projects } satisfies WorkspaceOptionsResponse });
+      : route.fulfill({ json: { enabled: true, gitEnabled: false, agents } satisfies WorkspaceOptionsResponse });
   });
   await page.goto(base);
   await page.getByRole("combobox", { name: "Agent" }).click();

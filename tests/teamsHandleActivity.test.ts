@@ -7,12 +7,12 @@ import type { TranscriptTurn } from "@/domain/messaging/transcript";
 import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { ExecuteAgentInput } from "@/application/execution/deps";
-import type { Project, AgentConfiguration } from "@/domain/project/types";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { Agent, AgentConfiguration } from "@/domain/agent/types";
+import type { AgentRepository } from "@/domain/agent/repository";
 
 const NOW = 1_750_000_000_000;
 
-function projectFixture(): Project {
+function agentFixture(): Agent {
   return {
     name: "painter",
     displayName: "Painter",
@@ -26,7 +26,7 @@ function projectFixture(): Project {
 
 function configurationFixture(callerContext = false): AgentConfiguration {
   return {
-    projectName: "painter",
+    agentName: "painter",
 
     systemPrompt: "",
 
@@ -78,12 +78,12 @@ function makeDeps(chunks: EngineChunk[], teams: TeamsClientPort, options: { call
         yield chunk;
       }
     },
-    projects: { get: async () => ({ ...projectFixture(), configuration: configurationFixture(options.callerContext) }) } as unknown as ProjectRepository,
+    agents: { get: async () => ({ ...agentFixture(), configuration: configurationFixture(options.callerContext) }) } as unknown as AgentRepository,
     documents: { extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }) },
     teams,
     transcripts: {
       recent: async () => stored,
-      append: async (_project, key, turn) => {
+      append: async (_agent, key, turn) => {
         remembered.push({ key, turn });
       },
     },
@@ -106,7 +106,7 @@ function activity(overrides: Partial<TeamsActivity> = {}): TeamsActivity {
   };
 }
 
-const BINDING = { projectName: "painter", credentials: { appId: "app", appPassword: "secret" } };
+const BINDING = { agentName: "painter", credentials: { appId: "app", appPassword: "secret" } };
 
 function dispositionOf(a: TeamsActivity) {
   const d = classifyTeamsActivity(a);
@@ -121,7 +121,7 @@ afterEach(() => {
 });
 
 describe("handleTeamsActivity", () => {
-  it("runs the bound project with the Entra object id as the actor and the Teams conversation as the conversation", async () => {
+  it("runs the bound agent with the Entra object id as the actor and the Teams conversation as the conversation", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
     const { teams, finalText, sent } = makeTeamsFake();
@@ -169,14 +169,14 @@ describe("handleTeamsActivity", () => {
     expect(last && messageText(last)).toBe("hi");
   });
 
-  it("replies with guidance when the project is not a runnable agent", async () => {
+  it("replies with guidance when the agent is not a runnable agent", async () => {
     const { teams, sent } = makeTeamsFake();
     const { deps } = makeDeps([], teams);
-    deps.projects = { get: async () => null } as unknown as ProjectRepository;
+    deps.agents = { get: async () => null } as unknown as AgentRepository;
 
     await handleTeamsActivity(deps, dispositionOf(activity()), BINDING);
 
-    expect(sent[0]?.text).toContain("Agent project not available");
+    expect(sent[0]?.text).toContain("Agent not available");
   });
 
   it("carries the remembered conversation and writes both turns down after, names gated on the opt-in", async () => {
