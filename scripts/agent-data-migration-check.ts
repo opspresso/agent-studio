@@ -5,7 +5,7 @@ import { withTransaction } from "@/infrastructure/db/client";
 import { migrate } from "@/infrastructure/db/migrations";
 import { convertLegacyAgentDatabase } from "@/infrastructure/db/agentDataMigration";
 import { decryptSecret, encryptSecret } from "@/infrastructure/crypto/secretEncryption";
-import { agentApiTokenContext, agentMcpHeadersContext, mcpConnectionSecretContext, runtimeSessionContext,
+import { agentApiTokenContext, agentMcpHeadersContext, agentVersionMcpHeadersContext, mcpConnectionSecretContext, runtimeSessionContext,
   slackSecretContext, sourceReferenceContext, triggerSecretContext } from "@/domain/security/secretContext";
 import { assertLocalDatabase } from "./local-database";
 
@@ -42,9 +42,9 @@ export async function checkAgentDataMigration(): Promise<void> {
         refreshToken: encryptSecret("refresh", oldConnectionContext("refresh-token")) },
       { PK: "PROJECT#writer", SK: "TRIGGER#hook", entityType: "Trigger", projectName: "writer", triggerId: "hook",
         secret: encryptSecret("trigger", oldTriggerContext) },
-      { PK: "PROJECT#writer", SK: "VERSION#one", entityType: "VERSION", projectName: "writer",
+      { PK: "PROJECT#writer", SK: "VERSION#one", entityType: "VERSION", projectName: "writer", versionName: "one",
         mcpList: [{ name: "files", headers: { X: encryptSecret("historical", JSON.stringify([
-          JSON.stringify(["project", "writer", "agent", "mcp", "files"]), "X",
+          JSON.stringify(["project", "writer", "version", "one", "mcp", "files"]), "X",
         ])) } }] },
       { PK: "SOURCEREFERENCE#ref", SK: "META", entityType: "SourceReference",
         reference: { id: "ref", projectName: "writer", encryptedUrl: encryptSecret("https://source.example.test", oldReferenceContext) } },
@@ -93,7 +93,7 @@ export async function checkAgentDataMigration(): Promise<void> {
     const version = (await client.query<{ data: { mcpList: Array<{ headers: { X: string } }> } }>(
       "SELECT data FROM items WHERE pk='AGENT#writer' AND sk='VERSION#one'",
     )).rows[0]!.data;
-    assert.equal(decryptSecret(version.mcpList[0]!.headers.X, JSON.stringify([agentMcpHeadersContext("writer", "files"), "X"])), "historical");
+    assert.equal(decryptSecret(version.mcpList[0]!.headers.X, JSON.stringify([agentVersionMcpHeadersContext("writer", "one", "files"), "X"])), "historical");
     assert.equal((await client.query("SELECT 1 FROM items WHERE pk LIKE 'PROJECT#%' OR data ? 'projectName'")).rowCount, 0);
     assert.equal((await client.query<{ agent_name: string }>("SELECT agent_name FROM runtime_sessions WHERE session_id='session-one'")).rows[0]!.agent_name, "writer");
     assert.equal((await client.query("SELECT 1 FROM items WHERE gsi1pk='TYPE#AGENT'")).rowCount, 1);

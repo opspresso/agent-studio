@@ -56,9 +56,15 @@ describe("restored Agent data conversion", () => {
     expect(reference.secrets).toBe(1);
     expect(reference.item.reference).toMatchObject({ agentName: "writer" });
     const version = convertLegacyAgentItem(row("PROJECT#writer", "VERSION#one", {
-      entityType: "VERSION", projectName: "writer", mcpList: [{ name: "files", headers: { X: "old-version" } }],
+      entityType: "VERSION", projectName: "writer", versionName: "one",
+      mcpList: [{ name: "files", headers: { X: "old-version" } }],
     }), reencrypt);
     expect(version.secrets).toBe(1);
+    expect(JSON.parse((version.item.mcpList as Array<{ headers: { X: string } }>)[0]!.headers.X)).toEqual({
+      value: "old-version",
+      previous: JSON.stringify([JSON.stringify(["project", "writer", "version", "one", "mcp", "files"]), "X"]),
+      next: JSON.stringify([JSON.stringify(["agent", "writer", "version", "one", "mcp", "files"]), "X"]),
+    });
   });
 
   it("converts typed references and indexes while leaving user payloads intact", () => {
