@@ -300,12 +300,12 @@ API의 `id`·`decision` 유형으로 먼저 등록하고 기본·Decision·Embed
 새 image tag의 앱은 부팅 시 advisory lock 아래에서 schema migration을 적용한다.
 Agent 저장 형식은 `agentName`, `AGENT#` 키와 새 암호화 문맥을 사용한다. 기존 형식의
 Agent 행이 있으면 migration 9가 부팅을 거절하며 데이터를 자동 변환하거나 삭제하지 않는다.
-이 변경을 배포하려면 진행 중인 런을 마치고 앱·worker를 중지한 다음 DB·객체·암호화 키를 백업하고
-새 데이터베이스에 설치한다. 새 DB에는 Better Auth 사용자·세션·멤버 tier, 모델 연결·등록·선택,
-Agent·Skill·Tool·Plugin, Chat·Workspace, Artifact·Trace·Usage·Audit·오디오 작업이
-이관되지 않는다. 필요한 설정과 계정·연동 비밀을 다시 등록하며, 기존 기록은 이전 DB에 남는다.
-객체 저장소도 새 설치에 전용 bucket을 지정한다. 이전 bucket의 파일은 DB 참조 없이 남을 수
-있으므로 보존·정리는 별도 운영 작업으로 처리한다.
+k3s `alpha`는 Agent Studio의 `agent_studio` DB만 초기화하며, 같은 PostgreSQL의
+`agent_memory` DB는 보존한다. EKS `prod`는 쓰기를 멈춘 원본 DB를 정확히 백업해 별도 DB에
+복원한 뒤, release 이미지의 Agent 데이터 변환기로 키·필드·암호화 문맥을 이관한다.
+원본 DB와 객체 bucket은 보존하며 복원본의 행 수·내용 digest·복호화와 런타임 읽기를
+검증한 뒤에만 EKS 배포를 승인한다. 순서와 실패 시 중단 조건은
+[Agent 저장 형식 릴리즈](AGENT_RENAME_ROLLOUT.md)를 따른다.
 
 외부 호출자는 `/api/projects`를 `/api/agents`로 바꾸고 요청·응답의 `projectName`과
 `projects` 필드를 각각 `agentName`, `agents`로 갱신한다. 새 DB에서 발급한 Agent API 토큰을

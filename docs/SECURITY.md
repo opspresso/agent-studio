@@ -218,7 +218,7 @@ MCP registry header 는 항목 이름과 header 이름에, managed MCP 의 envir
 항목 이름과 변수 이름에 묶인다. HTTP header의 override 병합만 이름의 대소문자를 무시하고,
 AAD 는 environment와 같은 공통 map 규칙에 따라 저장된 키 철자를 그대로 쓴다.
 
-Agent의 MCP header override는 `agent + agent + server + header`에 묶인다. 현재 설정을
+Agent의 MCP header override는 `agent + configuration + mcp + server + header`에 묶인다. 현재 설정을
 같은 Agent에서 수정해도 암호화 문맥은 유지되며 다른 Agent로 복제할 때는 시크릿을 복사하지
 않는다.
 

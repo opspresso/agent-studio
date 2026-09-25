@@ -51,6 +51,7 @@
 | Agent의 입력 Guardrail과 Handoff 대상 검사 | `src/application/runtime/policy.ts`; 도구 정책은 SDK 도구 조립에 적용한다 | 코드 |
 | 선택적 실행 도구의 권한 거부와 권한 조회 실패 구분 | `src/application/execution/optionalToolAccess.ts`; Workspace·오디오 조립은 같은 판정을 사용한다 | 코드 |
 | 스키마. `items`와 파생 컬럼·부분 인덱스, Better Auth 테이블, `catalog_vectors`, `runtime_sessions`, 적용된 버전 | `src/infrastructure/db/migrations.ts`. 추가만 하는 목록, advisory lock 아래에서 부팅마다 | 코드 |
+| 이전 Agent 저장 형식의 백업 복원본을 변환하고 범위가 바뀐 비밀을 다시 암호화하는 절차 | `src/infrastructure/db/agentDataMigration.ts`와 `scripts/migrate-agent-data.ts`; 원본 DB를 직접 수정하지 않는다 | 코드 |
 | 선택된 모델의 facts와 실행 레지스트리 | 저장 형태·검증은 `src/domain/llm/providerModels.ts`, runtime facts·가격 계산은 `src/domain/llm/models.ts`, 선택·삭제는 `src/application/llm/modelRegistry.ts`가 소유한다 | 코드 |
 | 내부 self-hosted 모델의 유형·modality·기능 해석 | `src/infrastructure/llm/providerModelDiscovery.ts`; 명시적 메타데이터를 이름 추정보다 우선한다 | 코드 |
 | 공개 모델 카탈로그 조회·검증·공개 ID와 전송 ID 매핑·가격 | `src/infrastructure/llm/publishedModelFacts.ts`; `scripts/sync-models.ts`가 오프라인 스냅샷을 갱신한다 | 코드 |

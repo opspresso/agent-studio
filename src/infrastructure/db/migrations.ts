@@ -22,7 +22,7 @@ interface Migration {
 }
 
 /** Arbitrary, fixed: the one lock every migrator of this database takes. */
-const MIGRATION_LOCK = 7_420_115;
+export const MIGRATION_LOCK = 7_420_115;
 
 const MIGRATIONS: Migration[] = [
   {

@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "pnpm build:documents && next dev",
-    "build": "pnpm build:documents && pnpm build:audio && pnpm build:workspace && next build",
+    "build": "pnpm build:documents && pnpm build:audio && pnpm build:workspace && pnpm build:migration && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -19,6 +19,7 @@
     "test:workspace:git": "tsx scripts/workspace-git-check.ts",
     "worker:workspace": "tsx scripts/workspace-worker.ts",
     "build:workspace": "node scripts/build-workspace-worker.mjs",
+    "build:migration": "node scripts/build-agent-data-migration.mjs",
     "test:storage": "tsx scripts/source-storage-check.ts",
     "test:audio": "tsx scripts/audio-segment-check.ts",
     "test:audio:pipeline": "tsx scripts/audio-pipeline-check.ts",
