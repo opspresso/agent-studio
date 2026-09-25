@@ -19,7 +19,23 @@ Application을 자동 동기화하므로, 승인과 DB 작업 사이에 별도�
 `kubectl scale`을 되돌릴 수 있으므로 scale 명령만으로 쓰기 중단을 증명하지 않는다.
 유지보수 설정은 배포 저장소의 `env/k3s-demo.yaml` 또는 `env/eks-demo.yaml`에 있는
 `agent_studio_maintenance`다. 대상 환경에서만 `true`로 바꾸고 생성 values를 빌드·검증해
-GitOps에 반영한다. 작업이 끝나면 같은 값을 `false`로 돌린다.
+GitOps에 반영한다. Studio 앱·오디오/Workspace worker Pod가 모두 종료되고, 이미 시작된
+scan/reindex Job도 완료된 것을 확인한다. PostgreSQL·Agent Memory Pod는 계속 실행한다.
+작업이 끝나면 같은 값을 `false`로 돌린다. scan의 놓친 실행은 60초, reindex는 3600초가
+지나면 시작하지 않도록 chart가 제한한다.
+
+## k3s: Studio DB만 초기화
+
+`alpha` 릴리즈 tag를 밀기 전에 `env/k3s-demo.yaml`의 유지보수 설정을 `true`로 GitOps에
+반영하고 위의 종료 조건을 확인한다. 현재 PostgreSQL은 두 DB를 한 인스턴스에 보관한다.
+`postgres` DB에 접속하여 `agent_studio`의 연결 수가 0인지 확인한 다음 **그 DB만** drop/create한다.
+`agent_memory` DB와 PostgreSQL PVC를 삭제하거나 초기화하지 않는다. 새 DB는 동일한
+`agent_studio` 사용자가 소유하며 `template0`에서 생성한다. 생성 전후 `agent_memory`의
+DB OID와 접근 가능 여부를 확인한다. 새 앱 부팅이 migration 1–9를 적용한다.
+
+릴리즈 workflow의 `alpha` GitOps 버전 반영을 확인한 다음 유지보수 설정을 `false`로
+되돌린다. 새 버전 Pod·worker가 Ready이고 Argo CD가 Synced/Healthy인 것과
+`/api/metrics`의 `agent_studio_build_info` version·stage를 실제로 확인한다.
 
 ## EKS: 백업과 복원 검증
 
