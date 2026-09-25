@@ -50,7 +50,7 @@ const usage: UsageRepository = {
 };
 
 /**
- * An in-memory stand-in with the same exactness guarantee as the DynamoDB one:
+ * An in-memory stand-in with the same exactness guarantee as the PostgreSQL one:
  * each index is held by at most one run, and a lease that has passed is free.
  */
 function memorySlots(now = () => Math.floor(Date.now() / 1000)) {

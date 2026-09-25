@@ -1431,8 +1431,8 @@ describe("attached documents", () => {
 
     const stored = await repo.listMessages("c1");
     const user = stored.find((message) => message.role === "user");
-    // The text, not the bytes: a 10MB file does not fit in a DynamoDB item, and
-    // the text is what the turn actually carried.
+    // The text, not the bytes: file bytes stay in object storage, and the
+    // extracted text is what the turn actually carried.
     expect((user as { documents?: unknown }).documents).toEqual([
       { name: "q3.txt", text: "Q3 revenue rose 12%" },
     ]);

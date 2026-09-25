@@ -44,8 +44,8 @@ describe("reading a URL", () => {
   });
 
   it("keeps far more text than an attachment would", async () => {
-    // The asymmetry is deliberate and documented: an attachment is inlined into
-    // a turn and stored as one DynamoDB item; this is a transient tool result.
+    // The asymmetry is deliberate and documented: an attachment enters the
+    // persisted turn and model context; this is a transient tool result.
     expect(MAX_FETCHED_TEXT_CHARS).toBeGreaterThan(MAX_DOCUMENT_CHARS);
   });
 

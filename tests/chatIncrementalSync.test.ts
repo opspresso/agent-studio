@@ -178,7 +178,7 @@ describe("chatMessageRange", () => {
   it("has no range past the last sequence a key can hold", () => {
     // Not a clamp: clamping would answer "nothing after the last row" with
     // that row itself, and leaving it alone would invert the bounds, which
-    // DynamoDB refuses outright.
+    // a range query cannot interpret as the caller intended.
     expect(keys.chatMessageRange(CHAT_MESSAGE_MAX_SEQ + 1)).toBeNull();
     expect(keys.chatMessageRange(CHAT_MESSAGE_MAX_SEQ)).not.toBeNull();
   });

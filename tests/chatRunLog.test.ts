@@ -117,7 +117,7 @@ async function run(
 describe("teeToRunLog", () => {
   /**
    * The whole cost argument for this design: a run nobody abandoned pays no
-   * DynamoDB writes at all, because the reader saw every frame as it happened.
+   * persistent DB writes at all, because the reader saw every frame as it happened.
    */
   it("writes nothing while a reader is still there", async () => {
     const { deps, appended } = recordingDeps();
@@ -381,9 +381,9 @@ describe("teeToRunLog", () => {
   });
 
   /**
-   * DynamoDB counts bytes; `String.length` counts UTF-16 units, and
+   * The replay-row budget counts bytes; `String.length` counts UTF-16 units, and
    * `JSON.stringify` leaves non-ASCII alone. Measured the wrong way a Korean run
-   * builds a row three times the size it reports — past the 400KB item limit,
+   * builds a row three times the size it reports — past the stored-row budget,
    * where the append fails, the sequence has already moved on, and the reader
    * gets a hole no gap check can see.
    */

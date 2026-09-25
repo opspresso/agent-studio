@@ -3,7 +3,7 @@
  *
  * A mapper that sees only the last returned row sets a cursor for every
  * non-empty page — so three pictures offer "Load more" and
- * the click paid for up to five DynamoDB queries and a signing fan-out to come
+ * the click paid for up to five item-store queries and a signing fan-out to come
  * back empty. The page is asked for one row past its size now, and that row is
  * the whole evidence.
  */

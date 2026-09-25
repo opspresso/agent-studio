@@ -70,7 +70,7 @@ describe("decodeUtf8Text", () => {
 /**
  * `slice` on a JS string cuts UTF-16 units, so truncating user text at an
  * arbitrary index can land between the halves of a non-BMP character. What comes
- * back is then not well-formed text: DynamoDB will not store it as written, and
+ * back is then not well-formed text: PostgreSQL JSONB will not store it, and
  * it reaches a provider as a lone surrogate escape.
  */
 describe("cutCodePoints", () => {

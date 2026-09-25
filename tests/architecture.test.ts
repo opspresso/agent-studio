@@ -553,7 +553,7 @@ const SERVER_ONLY_LAYERS = ["application", "infrastructure"];
  * `lib` is not a layer the rule can ban wholesale — `auth-client` is a client
  * module by construction — so its server half is named instead. Leaving it out
  * was worse than the hole it was written to close: `@/lib/container` is the
- * composition root, and a client component importing it ships every DynamoDB
+ * composition root, and a client component importing it ships every PostgreSQL
  * repository, the AES cipher, both LLM channels and the AWS SDK to the browser.
  * `config` and `runtime-settings` are the same shape for environment values.
  */
@@ -1014,7 +1014,7 @@ describe("catalog reindex serialization", () => {
  * about the same rule being written twice, which is the failure this codebase
  * actually kept hitting: `McpTool` reached four definitions that had already
  * drifted apart (one carried `inputSchema`, another made `description`
- * required), the DynamoDB conditional-write name was spelled out at seven call
+ * required), the conditional-write error name was spelled out at seven call
  * sites — and only one of them handled the transactional form — and the image
  * usage collapse was derived independently four times.
  *

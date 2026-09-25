@@ -2,16 +2,11 @@
  * The key-addressed item store every repository adapter writes through.
  *
  * One table, `items`, holds every entity as a JSONB document addressed by the
- * partition/sort key pair `keys.ts` spells — the single-table design the
- * schema had on DynamoDB, kept on purpose: the access patterns are the same
- * ones, the key catalogue is already the single owner of every address, and a
- * row copied across carries its document unchanged. What changes underneath is
- * what a relational store gives for free — no item size ceiling, no 1MB page,
- * one statement for a cascade, and a transaction that is a transaction.
+ * partition/sort key pair `keys.ts` spells. The key catalogue owns every
+ * address; PostgreSQL provides indexed range reads, cascades and transactions.
  *
  * Conditions are plain predicates over the row as it is, evaluated under a row
- * lock (`SELECT … FOR UPDATE`) so a conditional write is atomic the way a
- * DynamoDB `ConditionExpression` was. A lost precondition raises
+ * lock (`SELECT … FOR UPDATE`) so a conditional write is atomic. A lost precondition raises
  * {@link ConditionalWriteError}; `application/errors.ts` owns recognising it.
  */
 

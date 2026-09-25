@@ -150,7 +150,7 @@ describe("the run bracket enforces it", () => {
   });
 
   /**
-   * The read is a DynamoDB settings lookup, and the cost guard one line below it
+   * The read is a settings repository lookup, and the cost guard one line below it
    * fails open through the same outage — "a storage blip must not stop the
    * platform". Without a `try`, a blip fails the run
    * with a raw 500 while the guard beside it was deliberately letting runs

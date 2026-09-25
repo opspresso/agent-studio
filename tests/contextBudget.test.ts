@@ -290,7 +290,7 @@ describe("runAgent context budget", () => {
 
   it("never cuts a tool result through a surrogate pair, and the marker tells the truth", async () => {
     // "a" + 100k emoji: the 200k per-turn boundary lands between the halves
-    // of a pair. A raw slice kept the high half — a string DynamoDB refuses
+    // of a pair. A raw slice kept the high half — invalid JSONB text that storage refuses
     // and the provider receives as a lone surrogate escape.
     const payload = `a${"😀".repeat(100_000)}`;
     const channel = toolLoopChannel();
