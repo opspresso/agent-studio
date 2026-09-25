@@ -47,6 +47,11 @@ export function agentMcpHeadersContext(agentName: string, serverName: string): s
   return JSON.stringify(["agent", agentName, "configuration", "mcp", serverName]);
 }
 
+/** Encryption identity for preserved historical VERSION snapshots. */
+export function agentVersionMcpHeadersContext(agentName: string, versionName: string, serverName: string): string {
+  return JSON.stringify(["agent", agentName, "version", versionName, "mcp", serverName]);
+}
+
 export function mcpConnectionSecretContext(
   agentName: string,
   serverName: string,

@@ -4,6 +4,7 @@ import { keys } from "./keys";
 import {
   agentApiTokenContext,
   agentMcpHeadersContext,
+  agentVersionMcpHeadersContext,
   mcpConnectionSecretContext,
   slackSecretContext,
   sourceReferenceContext,
@@ -98,15 +99,19 @@ function reencryptField(row: Item, field: string, before: string, after: string,
   return 1;
 }
 
-function reencryptBindings(value: unknown, agentName: string, reencrypt: ReencryptSecret): number {
+function reencryptBindings(value: unknown, agentName: string, reencrypt: ReencryptSecret, versionName?: string): number {
   if (!Array.isArray(value)) return 0;
   let count = 0;
   for (const entry of value) {
     const binding = record(entry);
     const headers = record(binding?.headers);
     if (!binding || !headers || typeof binding.name !== "string") continue;
-    const previous = legacyContext(agentName, "agent", "mcp", binding.name);
-    const next = agentMcpHeadersContext(agentName, binding.name);
+    const previous = versionName === undefined
+      ? legacyContext(agentName, "agent", "mcp", binding.name)
+      : legacyContext(agentName, "version", versionName, "mcp", binding.name);
+    const next = versionName === undefined
+      ? agentMcpHeadersContext(agentName, binding.name)
+      : agentVersionMcpHeadersContext(agentName, versionName, binding.name);
     for (const [header, secret] of Object.entries(headers)) {
       if (typeof secret !== "string") continue;
       headers[header] = reencrypt(secret, JSON.stringify([previous, header]), JSON.stringify([next, header]));
@@ -134,7 +139,10 @@ function reencryptAgentSecrets(row: Item, original: Item, reencrypt: ReencryptSe
     if (teams) count += reencryptField(teams, "appPassword", legacyContext(name, "teams", "app-password"), teamsSecretContext(name), reencrypt);
     count += reencryptBindings(record(row.configuration)?.mcpList, name, reencrypt);
   }
-  if (type === "VERSION") count += reencryptBindings(row.mcpList, name, reencrypt);
+  if (type === "VERSION") {
+    if (typeof original.versionName !== "string") throw new Error("Legacy Agent VERSION row has no versionName");
+    count += reencryptBindings(row.mcpList, name, reencrypt, original.versionName);
+  }
   if (type === "APITOKEN") count += reencryptField(row, "token", legacyContext(name, "api-token"), agentApiTokenContext(name), reencrypt);
   if (type === "Trigger" && typeof row.triggerId === "string") {
     count += reencryptField(row, "secret", legacyContext(name, "trigger", row.triggerId, "secret"), triggerSecretContext(name, row.triggerId), reencrypt);
