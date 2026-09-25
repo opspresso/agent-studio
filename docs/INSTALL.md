@@ -272,47 +272,9 @@ Agent Runtime은 앱에 포함된 OpenAI Agents SDK를 사용한다. SDK Session
 없거나 만료됐으면 새 모델 문맥에서 시작한다는 경고를 표시한다. 모델 이력이 필요한 새
 대화는 현재 런타임에서 시작한다. 배포 교체 시 진행 중인 런을 먼저 drain하라.
 
-## 데이터 이관
+## 데이터베이스 스키마
 
-v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQL에 이관한다.
-`AES_ENCRYPTION_KEY`와 `BETTER_AUTH_SECRET`은 기존 값을 유지해야 저장된 credential과 session을
-계속 읽을 수 있다. Object는 배포 저장소가 소유하는 migration 절차로 대상 S3-compatible store에
-옮긴다. Capability catalog는 복사하지 않고 `/api/catalog/reindex`로 다시 만든다.
-페이지로 나눈 scan 파일은 한 번의 명령에 모두 넘긴다. 이관기는 전체 파일을 하나의 transaction으로
-처리하고 모든 user를 session·account보다 먼저 써서 page 경계가 참조 순서를 바꾸지 못하게 한다.
-
-이관기는 새 배포에서 그대로 쓰면 위험한 두 설정을 의도적으로 제거한다. managed MCP 의 옛
-`envRefs` 는 더 이상 지원하지 않는 호스트 파일 참조이고,
-`artifactAccessMode` 는 이전 object store 의 도달성에 대한 답이므로 새 환경에서 다시 정해야 한다.
-같은 이메일로 새 DB에 먼저 만들어진 사용자가 있으면 export 의 원래 사용자 id 와 참조를 보존하기
-위해 그 행을 교체한다. 실행 결과가 제거·교체 건수를 출력하므로 이관 뒤 반드시 확인하라.
-
-## 업그레이드
-
-모델은 `items`의 설정 행에 저장된 등록 목록만 사용한다. 기존 카탈로그·self-hosted 선언은
-자동 이관하지 않으므로, 모델 등록이 없는 설치는 관리 화면에서 연결과 사용할 모델을 등록하고
-기존 Agent의 모델 ID 및 기본·Embedding·Rerank·Workspace 선택을 확인한다. 등록 전에는 해당
-모델 실행이 거부된다. 테이블을 직접 수정할 필요는 없으며 [모델 등록과 사용](CONFIGURATION.md#모델-등록과-사용)을 따른다.
-이번 변경의 공개 모델 `id`와 이전 `decisions` 유형은 자동 변환되지 않는다. 대체 모델을
-API의 `id`·`decision` 유형으로 먼저 등록하고 기본·Decision·Embedding·Rerank·Workspace
-선택 및 기존 Agent의 모델 ID를 바꾼 뒤, 참조가 없어진 이전 등록을 삭제한다.
-
-새 image tag의 앱은 부팅 시 advisory lock 아래에서 schema migration을 적용한다.
-개발 중인 프로젝트라 API·설정·저장 형식의 하위 호환을 보장하지 않으며 자동 down migration도 없다.
-이미지 tag만 되돌려도 복구되지 않는다. 롤백에는 이전 앱·worker와 이전 DB·bucket·암호화 키를
-함께 사용해야 하며, 새 DB에서 생성한 기록은 이전 DB에 자동으로 합쳐지지 않는다.
-구체적인 교체·복원 명령은 배포 저장소가 소유한다.
-
-Better Auth 1.7.4 이상은 계정을 `providerId + accountId`로 찾는다. Migration 7은 기존
-`account.issuer`의 값과 컬럼을 보존하면서 `NOT NULL`과 issuer 기반 인덱스를 제거하고,
-provider 계정 키의 unique index를 만든다. 중복 키가 있으면 어떤 계정도 변경하지 않고
-실패한다. 서로 다른 issuer가 같은 provider ID를 쓴 경우 운영자가 신뢰할 수 있는 ID 매핑을
-확인해 충돌을 해결해야 한다. 로컬 설정을 쓰는 개발 서버에는
-`pnpm tsx --env-file=.env.local scripts/db-migrate.ts`를 적용한 뒤 재시작한다.
-[Better Auth 업그레이드 가이드](https://better-auth.com/docs/guides/1-7-upgrade-guide)를 따른다.
-
-이전 `SOURCE_FILES_BUCKET_NAME`에 파일이 있으면 worker와 새 작업 접수를 멈추고 진행 중인 업로드를
-정리한 뒤 `source-files/`의 키·본문·metadata를 `S3_BUCKET_NAME` 버킷으로 복사한다. 0바이트 삭제
-표식도 포함하며 대상 파일의 checksum과 metadata를 검증한다. DB의 파일 ID·저장 시각·보존 기한은
-변경하지 않는다. 복사 확인 후 이전 환경변수를 제거하고 새 앱·worker를 시작한다. 원본 버킷 삭제는
-별도 운영 작업이며 업그레이드 과정에서 자동 삭제하지 않는다.
+새 설치는 빈 PostgreSQL 데이터베이스에서 시작한다. 앱 또는 `pnpm db:migrate`가 advisory lock 아래
+현재 스키마를 만들고 `schema_migrations`에 기준선 버전 10을 기록한다. 이미 데이터가 있으나 기준선이
+확인되지 않는 DB는 자동으로 덮어쓰지 않고 부팅을 거부한다. 앱·audio worker·Workspace worker는
+같은 스키마 버전과 암호화 키를 사용한다. 운영 백업과 배포·복구 절차는 [운영](OPERATIONS.md)을 따른다.

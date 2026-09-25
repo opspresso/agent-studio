@@ -18,8 +18,8 @@ Better Auth 1.7은 앱의 커넥션 풀 위에서 라이브러리 자신의 Post
 만든다), email·token 의 유일성은 테이블의 유니크 제약이다.
 
 계정의 식별자는 `providerId + accountId`이며 이 조합에 unique index를 둔다. `issuer`는
-기존 값을 보존하는 nullable 이력 컬럼이고 새 계정에는 쓰지 않는다. 같은 계정 키가 여러 행에
-있으면 업그레이드를 중단한다. 서로 다른 사용자를 자동 병합하거나 provider를 임의로 바꾸지 않는다.
+기존 값을 보존하는 nullable 이력 컬럼이고 새 계정에는 쓰지 않는다. 같은 계정 키의 중복은
+unique index가 거부한다. 서로 다른 사용자를 자동 병합하거나 provider를 임의로 바꾸지 않는다.
 
 로그인 수단은 **전부 선택**이고 설치가 고른다 (`src/lib/config.ts` 의 `authProviders`,
 그대로 `auth.ts` 와 로그인 페이지로):

@@ -111,8 +111,9 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 
 ## PostgreSQL 아이템 테이블 설계
 
-[`migrations.ts`](../src/infrastructure/db/migrations.ts)가 advisory lock 아래 스키마를 적용하고
-`schema_migrations`에 기록한다. 부팅 또는 `pnpm db:migrate`가 같은 경로를 사용한다.
+[`migrations.ts`](../src/infrastructure/db/migrations.ts)가 advisory lock 아래 빈 DB에 현재
+스키마를 만들고 `schema_migrations`에 기준선 버전을 기록한다. 부팅 또는 `pnpm db:migrate`가
+같은 경로를 사용하며, 확인되지 않은 기존 스키마는 거부한다.
 
 | 저장 영역 | 목적 |
 |---|---|
