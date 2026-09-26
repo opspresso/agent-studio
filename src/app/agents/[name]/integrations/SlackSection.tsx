@@ -33,8 +33,12 @@ function emptyPrompts(stored: SlackSuggestedPrompt[]): SlackSuggestedPrompt[] {
 
 export function SlackSection({
   agentName,
+  onSelect,
+  selected,
 }: {
   agentName: string;
+  onSelect?: () => void;
+  selected?: boolean;
 }) {
   const t = useT();
   const [view, setView] = useState<AgentSlackResponse | null>(null);
@@ -79,7 +83,7 @@ export function SlackSection({
   }, [agentName, reloadKey]);
 
   if (!view) {
-    return <BotIntegrationSection title={t("pset.slackBot")} view={null} error={error}
+    return <BotIntegrationSection title={t("pset.slackBot")} view={null} error={error} onSelect={onSelect} selected={selected}
       onRetry={() => setReloadKey(key => key + 1)} />;
   }
 
@@ -153,7 +157,7 @@ export function SlackSection({
 
 
   return (
-    <BotIntegrationSection title={t("pset.slackBot")} view={view} error={error}
+    <BotIntegrationSection title={t("pset.slackBot")} view={view} error={error} onSelect={onSelect} selected={selected}
       onRetry={() => setReloadKey(key => key + 1)}>
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>

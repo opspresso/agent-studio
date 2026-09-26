@@ -111,7 +111,7 @@ export function deleteAgent(name: string): Promise<void> {
 
 export function listTraces(
   name: string,
-  range?: { from?: string; to?: string },
+  range?: { from?: string; to?: string; actorKind?: import("@/domain/execution/actor").RunActorKind },
 ): Promise<{ traces: Trace[] }> {
   const query = new URLSearchParams();
   if (range?.from) {
@@ -119,6 +119,9 @@ export function listTraces(
   }
   if (range?.to) {
     query.set("to", range.to);
+  }
+  if (range?.actorKind) {
+    query.set("actorKind", range.actorKind);
   }
   const qs = query.toString();
   return fetch(`/api/agents/${name}/traces${qs ? `?${qs}` : ""}`).then((r) =>

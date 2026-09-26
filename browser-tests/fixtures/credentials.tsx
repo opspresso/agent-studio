@@ -20,6 +20,7 @@ function Fixture() {
   const [hold, setHold] = useState(false);
   const [complete, setComplete] = useState<(() => void) | null>(null);
   const [identity, setIdentity] = useState("Agent token");
+  const [historySelected, setHistorySelected] = useState(false);
   const [rows, setRows] = useState(() => recordToRows({ Authorization: mask }));
   async function action(name: string) {
     setEvents(current => [...current, name]);
@@ -40,7 +41,10 @@ function Fixture() {
         onSave={async () => { await action("save"); setConfigured(true); }}
         onReset={async () => { await action("reset"); setConfigured(false); }} />
       </Card>
-      <Card><TokenSection agentName="fixture-agent" /></Card>
+      <Card><TokenSection agentName="fixture-agent" selected={historySelected}
+        onSelect={() => setHistorySelected(true)} />
+        <output aria-label="History selected">{String(historySelected)}</output>
+      </Card>
       <Card><HeaderRowsEditor rows={rows} onChange={setRows} />
         <output aria-label="Header unchanged">{String(rowsToRecord(rows).Authorization === mask)}</output>
       </Card>

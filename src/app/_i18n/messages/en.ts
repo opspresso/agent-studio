@@ -1357,6 +1357,13 @@ export const en = {
   "pint.lede":
     "Connect this Agent through its API token, chat bots, webhook and schedules. Choose an integration to inspect its recent activity.",
   "pint.ownerOnly": "Only the Agent owner ({owner}) or an admin can change these integrations.",
+  "pint.historyTitle": "Delivery history",
+  "pint.historyChoose": "Select an integration to see its recent activity.",
+  "pint.historyRefresh": "Refresh",
+  "pint.historyView": "View history",
+  "pint.historyEmpty": "No recent history for this integration.",
+  "pint.historyFailed": "Could not load integration history.",
+  "pint.traceHistoryHint": "These are Agent run traces. A completed trace does not confirm that a bot reply reached its destination.",
 
   // An agent's settings tab: the sections and their forms.
   "pset.dangerZone": "Danger zone",
@@ -1428,13 +1435,12 @@ export const en = {
   "webhook.reviewRepositories": "Repositories (one owner/repo per line)",
   "webhook.reviewHint": "An administrator can enable automatic review comments using the installation's GitHub connection. Subscribe to Pull requests. Signed opened, synchronize, reopened and ready_for_review events review non-draft open PRs. The Agent reads the supplied diff with bound skills; it cannot execute repository code or other tools. Comments stay on the verified PR and commit. Different PRs may run concurrently.",
   "webhook.reviewSave": "Save review settings",
-  "webhook.refreshRuns": "Refresh deliveries",
   "webhook.secretHint": "Generic senders use X-Trigger-Secret. GitHub uses this same value in its Secret field to sign deliveries. Anyone holding it can start the Agent’s current settings.",
   "webhook.intro":
-    "One address per Agent, off until you turn it on. An outside system starts a run by posting JSON with X-Trigger-Secret or a GitHub HMAC-SHA256 signature; the delivery is acknowledged immediately and its outcome lands in the history below. The webhook always runs the Agent’s current configuration.",
+    "One address per Agent, off until you turn it on. An outside system starts a run by posting JSON with X-Trigger-Secret or a GitHub HMAC-SHA256 signature; the delivery is acknowledged immediately and its outcome appears in the history on the right. The webhook always runs the Agent’s current configuration.",
   "schedule.section": "Schedules",
   "schedule.intro":
-    "A cron expression in a timezone, fired without anyone asking. Schedules always run the Agent’s current configuration, and their outcomes show up under each one.",
+    "A cron expression in a timezone, fired without anyone asking. Schedules always run the Agent’s current configuration, and their outcomes appear in the history on the right.",
   "trigger.newId": "New schedule id",
   "trigger.newIdPlaceholder": "nightly-report",
   "trigger.cron": "Cron",

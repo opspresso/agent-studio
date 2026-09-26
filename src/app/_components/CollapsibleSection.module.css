@@ -1,0 +1,4 @@
+.selected { box-shadow: inset 3px 0 0 var(--mantine-primary-color-filled); }
+.heading { display: flex; align-items: stretch; }
+.control { flex: 1; min-width: 0; width: auto; }
+.action { flex-shrink: 0; align-self: center; margin-right: 8px; }

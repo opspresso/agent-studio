@@ -1,7 +1,7 @@
 import { mapWithLimit } from "@/shared/mapWithLimit";
 import { listTriggerRuns, type TriggerRun } from "../../lib/api";
 
-/** Recent-run requests the schedule settings screen may keep in flight. */
+/** Recent-run requests the Integrations history panel may keep in flight. */
 export const MAX_CONCURRENT_SCHEDULE_RUN_READS = 8;
 
 export async function loadScheduleRuns(

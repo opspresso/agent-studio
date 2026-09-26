@@ -247,7 +247,7 @@
 | 떠나 버린 소비자로부터 스트림을 떼어내기 | `src/shared/detachOnReturn.ts` | 코드 |
 | 바이트 상한 아래에서 HTTP 본문 읽기 | `src/shared/httpBody.ts` | 코드 |
 | 백그라운드 타이머가 프로세스를 붙잡아 두지 않게 하기 | `src/shared/unrefTimer.ts` | 코드 |
-| 목록 읽기. 매치 전체를 답하고, 경계는 호출자의 `limit`, 만료 필터는 `LIMIT` 보다 먼저 도는 `notExpiredAt`, 호출자가 가져온 값·속성 유무 필터도 같은 자리에서 도는 `filter` / `attributePresence` | `src/infrastructure/db/store.ts`의 `queryItems`. 호출자의 limit과 만료·조건 필터를 같은 쿼리에 적용한다 | 코드 |
+| 목록 읽기. 매치 전체를 답하고, 경계는 호출자의 `limit`, 만료 필터는 `LIMIT` 보다 먼저 도는 `notExpiredAt`, 호출자가 가져온 값·속성 유무 필터도 같은 자리에서 도는 `filter` / `jsonContains` / `attributePresence` | `src/infrastructure/db/store.ts`의 `queryItems`. 호출자의 limit과 만료·조건 필터를 같은 쿼리에 적용한다 | 코드 |
 | chunk 가 top-level 인지 여부 | `src/domain/llm/types.ts` 의 `isTopLevelChunk()` | 코드 |
 | 현재 Agent 설정의 접근·저장·실행 시점 snapshot | `src/application/agent/configurationUseCases.ts`; Agent repository의 META CAS와 runtime Session fingerprint 검사 | 코드 |
 | 행의 `expiresAt`. 보존 창과 그것을 초로 바꾸는 헬퍼 | `src/infrastructure/db/ttl.ts` | 코드 |

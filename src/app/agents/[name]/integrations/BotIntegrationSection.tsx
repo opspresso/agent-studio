@@ -12,12 +12,16 @@ export function BotIntegrationSection({
   view,
   error,
   onRetry,
+  onSelect,
+  selected,
   children,
 }: {
   title: string;
   view: { enabled: boolean; configured: boolean } | null;
   error: string | null;
   onRetry: () => void;
+  onSelect?: () => void;
+  selected?: boolean;
   children?: React.ReactNode;
 }) {
   const t = useT();
@@ -28,7 +32,8 @@ export function BotIntegrationSection({
           {t(view.enabled ? "integrations.enabled" : view.configured ? "integrations.configuredOff" : "integrations.notConnected")}
         </Badge>
       : undefined;
-  return <CollapsibleSection title={title} badge={badge}>
+  return <CollapsibleSection title={title} badge={badge} onSelect={onSelect} selected={selected}
+    selectLabel={onSelect ? t("pint.historyView") : undefined}>
     {view ? children : error ? <Alert color="red"><Stack gap="xs" align="flex-start">
       <Text size="sm">{error}</Text>
       <Button size="xs" variant="light" onClick={onRetry}>{t("error.retry")}</Button>

@@ -19,8 +19,12 @@ import { reportError } from "@/app/_lib/reportError";
 
 export function TelegramSection({
   agentName,
+  onSelect,
+  selected,
 }: {
   agentName: string;
+  onSelect?: () => void;
+  selected?: boolean;
 }) {
   const t = useT();
   const [view, setView] = useState<AgentTelegramResponse | null>(null);
@@ -51,7 +55,7 @@ export function TelegramSection({
   }, [agentName, reloadKey]);
 
   if (!view) {
-    return <BotIntegrationSection title={t("pset.telegramBot")} view={null} error={error}
+    return <BotIntegrationSection title={t("pset.telegramBot")} view={null} error={error} onSelect={onSelect} selected={selected}
       onRetry={() => setReloadKey(key => key + 1)} />;
   }
 
@@ -132,7 +136,7 @@ export function TelegramSection({
 
 
   return (
-    <BotIntegrationSection title={t("pset.telegramBot")} view={view} error={error}
+    <BotIntegrationSection title={t("pset.telegramBot")} view={view} error={error} onSelect={onSelect} selected={selected}
       onRetry={() => setReloadKey(key => key + 1)}>
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>

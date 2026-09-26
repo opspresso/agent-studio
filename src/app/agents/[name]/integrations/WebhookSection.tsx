@@ -8,14 +8,11 @@ import { SecretControl } from "@/app/_components/SecretControl";
 import { stateColor } from "@/app/_components/badgeColors";
 import { AGENT_WEBHOOK_ID, agentWebhookPath } from "@/domain/trigger/types";
 import { useT } from "@/app/_i18n/provider";
-import { TriggerRuns } from "./TriggerRuns";
 import {
   createTrigger,
-  listTriggerRuns,
   listTriggers,
   revealTriggerSecret,
   updateTrigger,
-  type TriggerRun,
   type TriggerView,
 } from "../../lib/api";
 import { reportError } from "@/app/_lib/reportError";
@@ -26,14 +23,13 @@ import { reportError } from "@/app/_lib/reportError";
  * Nobody names it — `/api/webhook/{agent}` is the whole address — so the
  * panel is a switch, and the row it stands for is created the first time the
  * switch goes on. Everything below the switch is what a sender needs to use it:
- * the URL, the secret, how the payload reaches the run, and what recent
- * deliveries did. SecretControl owns reveal, copy, hide and rotation; plaintext
+ * the URL, the secret, and how the payload reaches the run. Recent delivery
+ * history lives beside the integration list. SecretControl owns reveal, copy, hide and rotation; plaintext
  * is held only in component state until hidden or the page is left.
  */
-export function WebhookSection({ agentName }: { agentName: string }) {
+export function WebhookSection({ agentName, onSelect, selected }: { agentName: string; onSelect?: () => void; selected?: boolean }) {
   const t = useT();
   const [webhook, setWebhook] = useState<TriggerView | null>(null);
-  const [runs, setRuns] = useState<TriggerRun[]>([]);
   const [revealed, setRevealed] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -53,7 +49,6 @@ export function WebhookSection({ agentName }: { agentName: string }) {
     setWebhook(found);
     setReviewScope(found?.githubReview?.scope ?? "off");
     setRepositories(found?.githubReview?.scope === "repositories" ? found.githubReview.repositories.join("\n") : "");
-    setRuns(found ? (await listTriggerRuns(agentName, found.triggerId)).runs : []);
   }, [agentName]);
 
   useEffect(() => {
@@ -82,19 +77,6 @@ export function WebhookSection({ agentName }: { agentName: string }) {
       await reload();
     } catch (e) {
       setError(reportError(e, "Failed"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function refreshRuns() {
-    if (!webhook || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setRuns((await listTriggerRuns(agentName, webhook.triggerId)).runs);
-    } catch (e) {
-      setError(reportError(e, "Failed to refresh webhook runs"));
     } finally {
       setBusy(false);
     }
@@ -132,6 +114,9 @@ export function WebhookSection({ agentName }: { agentName: string }) {
   return (
     <CollapsibleSection
       title={t("webhook.section")}
+      onSelect={onSelect}
+      selected={selected}
+      selectLabel={onSelect ? t("pint.historyView") : undefined}
       // Readable while collapsed, like the token's set/none: whether an outside
       // system can start this agent at all, before anyone opens the section.
       badge={
@@ -203,8 +188,6 @@ export function WebhookSection({ agentName }: { agentName: string }) {
               />
             </Group>
 
-            <Button variant="subtle" disabled={busy} onClick={() => void refreshRuns()}>{t("webhook.refreshRuns")}</Button>
-            <TriggerRuns runs={runs} />
           </>
         )}
       </Stack>

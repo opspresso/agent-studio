@@ -51,6 +51,20 @@ test("shows the Agent API token name once and keeps its status in the section ti
   await expect(page.getByRole("button", { name: "API token Configured" })).toBeVisible();
 });
 
+test("history button selects the integration without opening its settings", async ({ page }) => {
+  const section = page.getByRole("button", { name: "API token Configured" });
+  await expect(section).toHaveAttribute("aria-expanded", "false");
+  await section.click();
+  await expect(section).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByLabel("History selected")).toHaveText("false");
+  await section.click();
+  await expect(section).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByLabel("History selected")).toHaveText("false");
+  await page.getByRole("button", { name: "View history" }).click();
+  await expect(page.getByLabel("History selected")).toHaveText("true");
+  await expect(section).toHaveAttribute("aria-expanded", "false");
+});
+
 test("keeps saved keys separate from replacement drafts and explicit reset", async ({ page }) => {
   const input = page.getByLabel("Provider key", { exact: false });
   const visibility = page.getByRole("button", { name: "Show entered value" }).first();

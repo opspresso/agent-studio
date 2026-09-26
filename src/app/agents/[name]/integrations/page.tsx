@@ -1,7 +1,7 @@
 "use client";
 
 import { SectionHeading } from "@/app/_components/SectionHeading";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Alert, Stack } from "@mantine/core";
 import { canEditAgent, useViewer } from "@/app/_lib/useViewer";
@@ -13,6 +13,7 @@ import { TelegramSection } from "./TelegramSection";
 import { TokenSection } from "./TokenSection";
 import { WebhookSection } from "./WebhookSection";
 import { SchedulesSection } from "./SchedulesSection";
+import { IntegrationHistory, type IntegrationKind } from "./IntegrationHistory";
 import { useT } from "@/app/_i18n/provider";
 import columns from "../AgentPageColumns.module.css";
 
@@ -30,6 +31,15 @@ export default function IntegrationsPage() {
   const [agent, setAgent] = useState<SanitizedAgent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<IntegrationKind | null>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  function selectHistory(kind: IntegrationKind) {
+    setSelected(kind);
+    if (window.matchMedia("(max-width: 75em)").matches) {
+      requestAnimationFrame(() => historyRef.current?.scrollIntoView({ block: "start" }));
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -74,13 +84,15 @@ export default function IntegrationsPage() {
     <div className={columns.split}>
       <Stack gap="xl" className={columns.primary}>
         <SectionHeading title={t("agent.tab.integrations")} description={t("pint.lede")} />
-        <TokenSection agentName={name} />
-        <SlackSection agentName={name} />
-        <TelegramSection agentName={name} />
-        <TeamsSection agentName={name} />
-        <WebhookSection agentName={name} />
-        <SchedulesSection key={`schedules:${name}`} agentName={name} agent={agent} />
+        <TokenSection agentName={name} selected={selected === "token"} onSelect={() => selectHistory("token")} />
+        <SlackSection agentName={name} selected={selected === "slack"} onSelect={() => selectHistory("slack")} />
+        <TelegramSection agentName={name} selected={selected === "telegram"} onSelect={() => selectHistory("telegram")} />
+        <TeamsSection agentName={name} selected={selected === "teams"} onSelect={() => selectHistory("teams")} />
+        <WebhookSection agentName={name} selected={selected === "webhook"} onSelect={() => selectHistory("webhook")} />
+        <SchedulesSection key={`schedules:${name}`} agentName={name} agent={agent}
+          selected={selected === "schedule"} onSelect={() => selectHistory("schedule")} />
       </Stack>
+      <div ref={historyRef} className={columns.secondary}><IntegrationHistory agentName={name} selected={selected} /></div>
     </div>
   );
 }

@@ -1276,6 +1276,13 @@ export const ko: Messages = {
   "pint.lede":
     "API 토큰, 채팅 봇, Webhook과 Schedules로 이 Agent를 연결합니다. 연동을 선택해 최근 활동을 확인하세요.",
   "pint.ownerOnly": "Agent 소유자({owner})나 admin 만 이 연동을 바꿀 수 있습니다.",
+  "pint.historyTitle": "전송 이력",
+  "pint.historyChoose": "연동을 선택하면 최근 활동을 볼 수 있습니다.",
+  "pint.historyRefresh": "새로고침",
+  "pint.historyView": "이력 보기",
+  "pint.historyEmpty": "이 연동의 최근 이력이 없습니다.",
+  "pint.historyFailed": "연동 이력을 불러오지 못했습니다.",
+  "pint.traceHistoryHint": "Agent 실행 Trace입니다. 완료된 Trace만으로 봇 응답이 목적지에 전달됐는지는 확인할 수 없습니다.",
 
   "pset.dangerZone": "위험 구역",
   "pset.deleteConfirm": "\"{name}\"의 설정·연동·Trace·사용량 기록을 삭제합니다. 되돌릴 수 없으며 Agent 이름을 다시 사용할 수 없습니다.",
@@ -1344,13 +1351,12 @@ export const ko: Messages = {
   "webhook.reviewRepositories": "저장소 (한 줄에 owner/repo 하나)",
   "webhook.reviewHint": "관리자가 설치의 GitHub 연결로 자동 리뷰 댓글을 활성화합니다. GitHub에서 Pull requests를 구독하세요. 서명된 opened·synchronize·reopened·ready_for_review 이벤트의 열린 일반 PR을 검토합니다. Agent는 제공된 diff와 연결된 Skill을 읽으며 저장소 코드나 다른 도구를 실행하지 않습니다. 검증한 PR과 커밋에만 댓글을 남깁니다. 서로 다른 PR은 동시에 처리할 수 있습니다.",
   "webhook.reviewSave": "리뷰 설정 저장",
-  "webhook.refreshRuns": "전달 이력 새로고침",
   "webhook.secretHint": "일반 발신자는 X-Trigger-Secret 헤더로 전송합니다. GitHub에서는 같은 값을 Secret에 입력해 전달에 서명합니다. 이 값을 가진 쪽은 Agent의 현재 설정을 실행할 수 있습니다.",
   "webhook.intro":
-    "Agent마다 주소 하나가 있고, 켜기 전까지는 꺼져 있습니다. 외부 시스템은 X-Trigger-Secret 또는 GitHub HMAC-SHA256 서명으로 인증한 JSON을 POST해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 아래 이력에 남습니다. Webhook 은 항상 Agent의 현재 설정을 실행합니다.",
+    "Agent마다 주소 하나가 있고, 켜기 전까지는 꺼져 있습니다. 외부 시스템은 X-Trigger-Secret 또는 GitHub HMAC-SHA256 서명으로 인증한 JSON을 POST해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 오른쪽 이력에 남습니다. Webhook은 항상 Agent의 현재 설정을 실행합니다.",
   "schedule.section": "스케줄",
   "schedule.intro":
-    "타임존과 함께 지정한 cron 식으로 스스로 발화합니다. 스케줄도 항상 Agent의 현재 설정을 실행하며, 결과는 각 스케줄 아래에 표시됩니다.",
+    "타임존과 함께 지정한 cron 식으로 스스로 발화합니다. 스케줄도 항상 Agent의 현재 설정을 실행하며, 결과는 오른쪽 이력에 표시됩니다.",
   "trigger.newId": "새 스케줄 ID",
   "trigger.newIdPlaceholder": "nightly-report",
   "trigger.cron": "Cron",

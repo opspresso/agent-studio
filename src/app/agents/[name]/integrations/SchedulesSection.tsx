@@ -9,7 +9,6 @@ import { AGENT_WEBHOOK_ID } from "@/domain/trigger/types";
 import type { ScheduleDelivery, ScheduleDeliveryKind } from "@/domain/trigger/types";
 import { toSlug } from "@/domain/naming";
 import { useT } from "@/app/_i18n/provider";
-import { TriggerRuns } from "./TriggerRuns";
 import {
   createTrigger,
   deleteTrigger,
@@ -17,7 +16,6 @@ import {
   listAgentSlackChannels,
   listTriggers,
   updateTrigger,
-  type TriggerRun,
   type TriggerView,
   type SlackChannelInfo,
   type TelegramDestination,
@@ -29,7 +27,6 @@ import {
   telegramDestinationValue,
 } from "../_components/telegramDestinations";
 import { reportError } from "@/app/_lib/reportError";
-import { loadScheduleRuns } from "./scheduleRuns";
 
 /**
  * Schedules: a cron in a timezone, and what recent firings did.
@@ -41,13 +38,16 @@ import { loadScheduleRuns } from "./scheduleRuns";
 export function SchedulesSection({
   agentName,
   agent,
+  onSelect,
+  selected,
 }: {
   agentName: string;
   agent: Pick<SanitizedAgent, "slack" | "telegram" | "teams">;
+  onSelect?: () => void;
+  selected?: boolean;
 }) {
   const t = useT();
   const [schedules, setSchedules] = useState<TriggerView[]>([]);
-  const [runs, setRuns] = useState<Record<string, TriggerRun[]>>({});
   const [newId, setNewId] = useState("");
   const [newCron, setNewCron] = useState("");
   // The server and browser may have different zones; keep hydration stable,
@@ -80,7 +80,6 @@ export function SchedulesSection({
         (trigger) => trigger.kind !== "schedule" && trigger.triggerId !== AGENT_WEBHOOK_ID,
       ),
     );
-    setRuns(await loadScheduleRuns(agentName, listed));
   }, [agentName]);
 
   useEffect(() => {
@@ -151,6 +150,9 @@ export function SchedulesSection({
   return (
     <CollapsibleSection
       title={t("schedule.section")}
+      onSelect={onSelect}
+      selected={selected}
+      selectLabel={onSelect ? t("pint.historyView") : undefined}
       // Readable while collapsed, like the token's set/none: how many schedules
       // exist, before anyone opens the section.
       badge={
@@ -312,7 +314,6 @@ export function SchedulesSection({
                 }
               />
 
-              <TriggerRuns runs={runs[schedule.triggerId] ?? []} />
             </Stack>
           </Paper>
         ))}

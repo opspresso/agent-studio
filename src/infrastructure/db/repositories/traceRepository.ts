@@ -77,7 +77,7 @@ export class PostgresTraceRepository implements TraceRepository {
   }
 
   async listByAgent(agentName: string, options: ListTracesOptions = {}): Promise<Trace[]> {
-    const { limit = 50, from, to } = options;
+    const { limit = 50, from, to, actorKind } = options;
     // GSI1SK is `${createdAt}#${traceId}`; filter on the date prefix. The upper
     // bound appends ￿ so the whole "to" day (with any time/id suffix) is included.
     let sk: SortKeyMatch | undefined;
@@ -94,6 +94,7 @@ export class PostgresTraceRepository implements TraceRepository {
       sk,
       forward: false,
       limit: boundedPageLimit(limit),
+      ...(actorKind ? { jsonContains: { actor: { kind: actorKind } } } : {}),
       notExpiredAt: Math.floor(Date.now() / 1000),
     });
     return items.map(fromItem);

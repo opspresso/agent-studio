@@ -19,8 +19,12 @@ import { reportError } from "@/app/_lib/reportError";
 
 export function TeamsSection({
   agentName,
+  onSelect,
+  selected,
 }: {
   agentName: string;
+  onSelect?: () => void;
+  selected?: boolean;
 }) {
   const t = useT();
   const [view, setView] = useState<AgentTeamsResponse | null>(null);
@@ -55,7 +59,7 @@ export function TeamsSection({
   }, [agentName, reloadKey]);
 
   if (!view) {
-    return <BotIntegrationSection title={t("pset.teamsBot")} view={null} error={error}
+    return <BotIntegrationSection title={t("pset.teamsBot")} view={null} error={error} onSelect={onSelect} selected={selected}
       onRetry={() => setReloadKey(key => key + 1)} />;
   }
 
@@ -121,7 +125,7 @@ export function TeamsSection({
 
 
   return (
-    <BotIntegrationSection title={t("pset.teamsBot")} view={view} error={error}
+    <BotIntegrationSection title={t("pset.teamsBot")} view={view} error={error} onSelect={onSelect} selected={selected}
       onRetry={() => setReloadKey(key => key + 1)}>
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>

@@ -1,4 +1,5 @@
 import type { Trace } from "./types";
+import type { RunActorKind } from "@/domain/execution/actor";
 
 export interface ListTracesOptions {
   limit?: number;
@@ -6,6 +7,8 @@ export interface ListTracesOptions {
   from?: string;
   /** Inclusive upper bound on the trace date (YYYY-MM-DD). */
   to?: string;
+  /** Filter before the page limit so other surfaces cannot hide this history. */
+  actorKind?: RunActorKind;
 }
 
 export interface TraceRepository {

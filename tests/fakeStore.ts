@@ -59,6 +59,15 @@ function clone<T>(value: T): T {
   return value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T);
 }
 
+function containsJson(value: unknown, fragment: unknown): boolean {
+  if (fragment === null || typeof fragment !== "object" || Array.isArray(fragment)) {
+    return value === fragment;
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.entries(fragment).every(([key, expected]) =>
+    containsJson((value as Record<string, unknown>)[key], expected));
+}
+
 export interface FakeStore {
   /** Every stored row, keyed by `PK SK` (one space between). Seed or inspect directly. */
   rows: Map<string, Item>;
@@ -231,6 +240,9 @@ export function createFakeStore(): FakeStore {
           }
           return (typeof held === "object" ? JSON.stringify(held) : String(held)) === value;
         });
+      }
+      if (input.jsonContains) {
+        matches = matches.filter((row) => containsJson(row, input.jsonContains));
       }
       if (input.attributePresence) {
         const { attribute, exists } = input.attributePresence;
