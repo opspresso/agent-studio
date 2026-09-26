@@ -370,6 +370,8 @@ Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액�
 `DataTable`/`CardGrid`, `PageState`, `FormModal`이 공통 표현을 소유한다.
 Agents·Plugins·Skills·Tools·Models 카탈로그는 행/그리드 보기를 제공하고 `CatalogView`가 브라우저별
 공통 선택을 저장한다. 그리드는 콘텐츠 너비에 맞춰 최대 4열까지 표시한다.
+Agent 상세의 Playground·Integrations·Settings는 `AgentPageColumns.module.css`의 동일한
+7:5 가로 비율을 쓴다. 한 영역만 있는 두 페이지는 왼쪽 영역을 사용하고, 작은 화면에서는 전체 폭으로 쌓인다.
 외부에서 발급받는 키는 `SecretInput`으로 입력한다. 저장된 마스킹 값과 교체 초안을 분리하고,
 저장된 키는 앞뒤 4자를 드러낸 서버 마스크로 표시한다(8자 이하는 전부 숨긴다).
 교체를 눌러 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다.

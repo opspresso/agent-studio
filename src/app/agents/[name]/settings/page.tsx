@@ -15,6 +15,7 @@ import { WebhookSection } from "./WebhookSection";
 import { Alert, Button, Group, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
+import columns from "../AgentPageColumns.module.css";
 
 export default function SettingsPage() {
   const t = useT();
@@ -107,9 +108,9 @@ export default function SettingsPage() {
 
   if (loadError?.name === name) {
     return (
-      <Alert color="red" variant="light" maw={640}>
-        {loadError.message}
-      </Alert>
+      <div className={columns.split}>
+        <Alert color="red" variant="light" className={columns.primary}>{loadError.message}</Alert>
+      </div>
     );
   }
   if (!agent) return <LoadingText />;
@@ -120,19 +121,18 @@ export default function SettingsPage() {
 
   if (!canEditAgent(viewer, agent.ownerEmail)) {
     return (
-      <Alert variant="light" color="gray" maw={640}>
-        Only the agent owner ({agent.ownerEmail ?? "unknown"}) or an admin can change these settings.
-      </Alert>
+      <div className={columns.split}>
+        <Alert variant="light" color="gray" className={columns.primary}>
+          Only the agent owner ({agent.ownerEmail ?? "unknown"}) or an admin can change these settings.
+        </Alert>
+      </div>
     );
   }
 
-  // Capped where the playground's form column lands on a wide monitor, so the
-  // two tabs of this agent read alike — but in pixels, for the reason the
-  // app-settings page carries: a fraction of the row keeps shrinking after the
-  // content has run out of room, and nothing here is sharing that row.
   return (
-    <Stack gap="lg" maw={860}>
-      <SectionHeading title={t("agent.tab.settings")} />
+    <div className={columns.split}>
+      <Stack gap="lg" className={columns.primary}>
+        <SectionHeading title={t("agent.tab.settings")} />
       <form onSubmit={save}>
         <Stack gap="md">
           {error && (
@@ -193,7 +193,8 @@ export default function SettingsPage() {
         </Stack>
       </CollapsibleSection>
 
-      {confirmModal}
-    </Stack>
+        {confirmModal}
+      </Stack>
+    </div>
   );
 }

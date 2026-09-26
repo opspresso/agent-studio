@@ -12,6 +12,7 @@ import { TeamsSection } from "./TeamsSection";
 import { TelegramSection } from "./TelegramSection";
 import { TokenSection } from "./TokenSection";
 import { useT } from "@/app/_i18n/provider";
+import columns from "../AgentPageColumns.module.css";
 
 /**
  * How other systems reach this agent: the API token an outside caller
@@ -48,9 +49,9 @@ export default function IntegrationsPage() {
   }
   if (error) {
     return (
-      <Alert color="red" variant="light" maw={640}>
-        {error}
-      </Alert>
+      <div className={columns.split}>
+        <Alert color="red" variant="light" className={columns.primary}>{error}</Alert>
+      </div>
     );
   }
   if (viewer === null) {
@@ -58,23 +59,23 @@ export default function IntegrationsPage() {
   }
   if (!canEditAgent(viewer, ownerEmail)) {
     return (
-      <Alert variant="light" color="gray" maw={640}>
-        {t("pint.ownerOnly", { owner: ownerEmail ?? "unknown" })}
-      </Alert>
+      <div className={columns.split}>
+        <Alert variant="light" color="gray" className={columns.primary}>
+          {t("pint.ownerOnly", { owner: ownerEmail ?? "unknown" })}
+        </Alert>
+      </div>
     );
   }
 
   return (
-    <Stack gap="xl" maw={760}>
-      <SectionHeading title={t("agent.tab.integrations")} description={t("pint.lede")} />
-      <TokenSection agentName={name} />
-
-      <SlackSection agentName={name} />
-
-      <TelegramSection agentName={name} />
-
-      <TeamsSection agentName={name} />
-
-    </Stack>
+    <div className={columns.split}>
+      <Stack gap="xl" className={columns.primary}>
+        <SectionHeading title={t("agent.tab.integrations")} description={t("pint.lede")} />
+        <TokenSection agentName={name} />
+        <SlackSection agentName={name} />
+        <TelegramSection agentName={name} />
+        <TeamsSection agentName={name} />
+      </Stack>
+    </div>
   );
 }

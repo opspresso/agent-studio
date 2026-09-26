@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { Alert, Button, Grid, Group, Stack, Text } from "@mantine/core";
+import { Alert, Button, Group, Stack, Text } from "@mantine/core";
 import { getConfiguration, getAgent, listModels, putConfiguration,
   type AgentConfiguration, type AgentConfigurationInput, type SelectableModel, type SanitizedAgent } from "../lib/api";
 import { useT } from "@/app/_i18n/provider";
@@ -16,6 +16,7 @@ import { PromptPreview } from "./_components/PromptPreview";
 import { RunPanel } from "./_components/RunPanel";
 import { createLatestOnly } from "@/app/_lib/latestOnly";
 import classes from "./Playground.module.css";
+import columns from "./AgentPageColumns.module.css";
 
 function editable(configuration: AgentConfiguration): AgentConfigurationInput {
   const { agentName: _agent, ...settings } = configuration;
@@ -110,8 +111,8 @@ export default function PlaygroundPage() {
   const saveState = { run: save, saving, disabled: !draft.model || schemaError !== null,
     error: schemaError ?? saveError, saved: saved && !dirty, label: t("playground.save") };
 
-  return <Grid gap="xl">
-    <Grid.Col span={{ base: 12, lg: 7 }}>
+  return <div className={columns.split}>
+    <div className={columns.primary}>
       <Stack gap="md">
         <Group justify="space-between" className={classes.columnHeading}>
           <Text fw={600}>{t("configuration.title")}</Text>
@@ -133,8 +134,8 @@ export default function PlaygroundPage() {
             schemaError={schemaError} save={saveState} />
         </fieldset>
       </Stack>
-    </Grid.Col>
-    <Grid.Col span={{ base: 12, lg: 5 }}>
+    </div>
+    <div className={columns.secondary}>
       <Stack gap="md" className={classes.sidePanels}>
         {canPreview && <CollapsibleSection title={t("playground.preview")}>
           <PromptPreview agentName={name} draft={parsed ?? draft} validationError={schemaError} />
@@ -144,6 +145,6 @@ export default function PlaygroundPage() {
             modelAcceptsImages={runModel?.capabilities.imageInput} />
         </CollapsibleSection>
       </Stack>
-    </Grid.Col>
-  </Grid>;
+    </div>
+  </div>;
 }
