@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert } from "@mantine/core";
+import { Alert, Badge } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { SecretControl } from "@/app/_components/SecretControl";
 import { LoadingText } from "@/app/_components/PageState";
@@ -21,9 +21,12 @@ export function TokenSection({ agentName }: { agentName: string }) {
       .catch(error => { if (current) setError(error instanceof Error ? error.message : "Could not load agent token"); });
     return () => { current = false; };
   }, [agentName]);
-  return <CollapsibleSection title={t("pset.apiToken")}>
+  return <CollapsibleSection title={t("pset.apiToken")} badge={status &&
+    <Badge color={status.configured ? "teal" : "gray"} radius="xl">
+      {t(status.configured ? "secrets.configured" : "secrets.notConfigured")}
+    </Badge>}>
     {error ? <Alert color="red">{error}</Alert> : !status ? <LoadingText /> : <SecretControl key={agentName}
-      label={t("pset.apiToken")} configured={status.configured} masked={status.masked}
+      label={t("pset.apiToken")} showHeading={false} configured={status.configured} masked={status.masked}
       description={t("secrets.agentTokenHint")}
       details={status.revealable === false ? t("secrets.legacyHint") : status.createdAt ? t("secrets.createdAt", { date: formatDate(status.createdAt, locale) }) : undefined}
       onReveal={status.revealable === false ? undefined : () => revealAgentToken(agentName)}

@@ -11,7 +11,7 @@ import { monoInput } from "./monoInput";
 import { useConfirm } from "./useConfirm";
 
 /** App-issued credentials share presentation and lifecycle controls; adapters retain authorization and storage. */
-export function SecretControl({ label, configured, masked, description, details, initialValue, disabled, generateDisabled,
+export function SecretControl({ label, configured, masked, description, details, initialValue, disabled, generateDisabled, showHeading = true,
   onReveal, onGenerate, onRevoke, onSave, onReset }: {
   label: string;
   configured: boolean;
@@ -21,6 +21,8 @@ export function SecretControl({ label, configured, masked, description, details,
   initialValue?: string;
   disabled?: boolean;
   generateDisabled?: boolean;
+  /** The surrounding section may already show the name and state. */
+  showHeading?: boolean;
   onReveal?: () => Promise<string>;
   onGenerate?: () => Promise<string>;
   onRevoke?: () => Promise<void>;
@@ -66,7 +68,7 @@ export function SecretControl({ label, configured, masked, description, details,
   }
   return <Stack gap="sm" role="group" aria-label={label}>
     {confirmModal}
-    <Group justify="space-between" gap="xs"><Text size="sm" fw={600}>{label}</Text><Badge color={configured ? "teal" : "gray"}>{t(configured ? "secrets.configured" : "secrets.notConfigured")}</Badge></Group>
+    {showHeading && <Group justify="space-between" gap="xs"><Text size="sm" fw={600}>{label}</Text><Badge color={configured ? "teal" : "gray"}>{t(configured ? "secrets.configured" : "secrets.notConfigured")}</Badge></Group>}
     {description && <Text size="sm" c="dimmed">{description}</Text>}
     <TextInput readOnly aria-label={label} value={raw ?? (configured ? compactSecretMask(masked || "••••••••") : "")} placeholder={t("secrets.notConfigured")} styles={monoInput} />
     {raw && <Text size="xs" c="dimmed">{t("secrets.visibleHint")}</Text>}

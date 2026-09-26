@@ -377,6 +377,7 @@ Agent 상세의 Playground·Integrations·Settings는 `AgentPageColumns.module.c
 교체를 눌러 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다.
 설정 override 삭제는 별도 동작으로 제공한다.
 앱이 발급하는 Agent 토큰·Webhook 키는 `SecretControl`로 표시·복사·생성·재생성·폐기한다.
+Agent API 토큰의 이름과 설정 상태는 Integrations의 접이식 섹션 제목에 한 번만 표시한다.
 지원하는 동작은 각 API의 기능과 권한에 따른다. 원문을 표시한 동안에만 복사할 수 있고,
 재생성·교체·폐기는 공통 확인창을 거친다. 평문은 브라우저 저장소에 기록하지 않는다.
 Settings는 Service·Access·Plugins·Models 탭으로 관리하고, `/models`는 등록된 모델 조회·검색만 제공한다.

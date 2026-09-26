@@ -21,7 +21,35 @@ test.beforeAll(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
-test.beforeEach(async ({ page }) => { await page.goto(base); });
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/agents/fixture-agent/token", route => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({ json: { configured: true, masked: "ast_••••abcd", createdAt: "2026-09-26T00:00:00Z", revealable: true } });
+    }
+    if (route.request().method() === "DELETE") return route.fulfill({ status: 204 });
+    if (route.request().method() === "POST") {
+      return route.fulfill({ json: { token: "synthetic-new-agent-token", masked: "ast_••••wxyz", createdAt: "2026-09-26T00:00:00Z" } });
+    }
+    return route.abort();
+  });
+  await page.goto(base);
+});
+
+test("shows the Agent API token name once and keeps its status in the section title", async ({ page }) => {
+  const section = page.getByRole("button", { name: "API token Configured" });
+  await expect(section).toBeVisible();
+  await section.click();
+  const token = page.getByRole("group", { name: "API token" });
+  await expect(token.getByRole("textbox", { name: "API token" })).toBeVisible();
+  await expect(token.getByText("API token", { exact: true })).toHaveCount(0);
+  await expect(token.getByText("Configured", { exact: true })).toHaveCount(0);
+
+  await token.getByRole("button", { name: "Revoke" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Revoke" }).click();
+  await expect(page.getByRole("button", { name: "API token Not configured" })).toBeVisible();
+  await token.getByRole("button", { name: "Generate" }).click();
+  await expect(page.getByRole("button", { name: "API token Configured" })).toBeVisible();
+});
 
 test("keeps saved keys separate from replacement drafts and explicit reset", async ({ page }) => {
   const input = page.getByLabel("Provider key", { exact: false });

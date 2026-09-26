@@ -4,6 +4,7 @@ import { Button, Card, MantineProvider, Stack, Switch } from "@mantine/core";
 import "@mantine/core/styles.css";
 import { I18nProvider } from "../../src/app/_i18n/provider";
 import { SecretControl } from "../../src/app/_components/SecretControl";
+import { TokenSection } from "../../src/app/agents/[name]/integrations/TokenSection";
 import { SecretInput } from "../../src/app/_components/SecretInput";
 import { HeaderRowsEditor, recordToRows, rowsToRecord } from "../../src/app/_components/HeaderRows";
 import { theme } from "../../src/app/theme";
@@ -39,6 +40,7 @@ function Fixture() {
         onSave={async () => { await action("save"); setConfigured(true); }}
         onReset={async () => { await action("reset"); setConfigured(false); }} />
       </Card>
+      <Card><TokenSection agentName="fixture-agent" /></Card>
       <Card><HeaderRowsEditor rows={rows} onChange={setRows} />
         <output aria-label="Header unchanged">{String(rowsToRecord(rows).Authorization === mask)}</output>
       </Card>
