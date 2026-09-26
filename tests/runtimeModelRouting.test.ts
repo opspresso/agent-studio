@@ -55,6 +55,20 @@ describe("native runtime call routing", () => {
     for await (const chunk of runAgent({ channel, createToolSchemaValidator }, { agentName: "test", model: "local/base", messages: [{ role: "user", content: "Hello" }] })) expect(chunk.error).toBeUndefined();
     expect(channel.seenParams[0]?.tools?.some((tool) => tool.function.name === "ModelTask")).not.toBe(true);
   });
+  it("sends only the referenced Run image to the vision call and returns to the main model", async () => {
+    const image = "data:image/png;base64,aW1hZ2U=";
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "vision", "ModelTask", JSON.stringify({ purpose: "vision", prompt: "Describe the image", model: null, image_ids: ["img_1"] }))],
+      [contentChunk("An image description")], [contentChunk("Final description")],
+    ]);
+    for await (const chunk of runAgent(deps(channel), { agentName: "test", model: "local/base",
+      messages: [{ role: "user", content: [{ type: "text", text: "Describe" }, { type: "image_url", image_url: { url: image } }] }],
+      parameters: { modelRouting: { ...config, tiers: { vision: "local/fast" }, policies: { vision: "vision" } } },
+    })) expect(chunk.error).toBeUndefined();
+    expect(channel.seenParams.map((params) => params.model)).toEqual(["local/base", "local/fast", "local/base"]);
+    expect(JSON.stringify(channel.seenParams[1]?.messages)).toContain(image);
+    expect(JSON.stringify(channel.seenParams[0]?.messages)).toContain("Pass ids in image_ids to `ModelTask`");
+  });
 
   it("blocks invalid arguments, absent image handles and calls beyond the quota without contacting another model", async () => {
     const channel = new FakeChannel([

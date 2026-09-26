@@ -124,6 +124,18 @@ describe("call model routing", () => {
     await expect(budget.execute(task, invoke)).rejects.toThrow("budget");
     expect(invoke).not.toHaveBeenCalled(); expect(budget.choose).not.toHaveBeenCalled();
   });
+  it("includes decision output pricing in admission and avoids an unbounded paid decision", async () => {
+    replaceModelRegistry([model("base"), model("fast"), model("jev", {
+      pricing: { inputPer1M: 0, outputPer1M: 1_000 },
+      capabilities: { decision: true, tools: false, reasoning: false, imageInput: false, structuredOutput: false },
+    })]);
+    const { execute, choose, events } = setup({ ...settings, tiers: { fast: "fast" } });
+    const invoke = vi.fn().mockResolvedValue(result);
+    await execute(task, invoke);
+    expect(choose).not.toHaveBeenCalled();
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("base");
+    expect(events).toContainEqual(expect.objectContaining({ source: "jev", outcome: "failed", reason: "decision-failed" }));
+  });
   it("propagates cancellation without promotion or fallback", async () => {
     const controller = new AbortController();
     const { execute } = setup({ ...settings, policies: { summary: "fast" } });

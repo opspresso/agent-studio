@@ -399,7 +399,7 @@ function delegationDefinitions(subagents: SubagentInfo[], canDispatch: boolean):
 
 function imageSystemPromptAddition(
   handles: readonly ImageHandle[],
-  uses: { canEdit: boolean; canTransfer: boolean },
+  uses: { canEdit: boolean; canTransfer: boolean; canModelTask?: boolean },
   withMcpTools: boolean,
 ): string {
   // Listed even when empty: the image tools' only documentation is a pointer to
@@ -434,6 +434,7 @@ function imageSystemPromptAddition(
       "Pass ids in image_ids on a delegate or handoff tool to include the real picture.",
     );
   }
+  if (uses.canModelTask) howTo.push(`Pass ids in image_ids to \`${MODEL_TASK_TOOL_NAME}\` with purpose vision to analyze those images.`);
   return ["## Available Images", "", ...howTo.flatMap((line) => [line, ""]), ...table].join("\n");
 }
 
@@ -515,7 +516,7 @@ export interface AgentSystemPromptInput {
   skills: SkillInfo[];
   subagents: SubagentInfo[];
   mcpServers: McpServerInfo[];
-  images: { handles: readonly ImageHandle[]; canEdit: boolean; canTransfer: boolean };
+  images: { handles: readonly ImageHandle[]; canEdit: boolean; canTransfer: boolean; canModelTask?: boolean };
   /** The run's wall clock, injected. Omitted keeps the prompt clock-free. */
   now?: Date;
   /** Whether this run may offer SDK Agent-as-Tool delegation. */
@@ -587,7 +588,7 @@ export function buildAgentSystemPrompt(input: AgentSystemPromptInput): string {
   if (subagents.length > 0) {
     sections.push(subagentSystemPromptAddition(subagents, canDispatch, input.agentToolNames));
   }
-  if (images.canEdit || images.canTransfer) {
+  if (images.canEdit || images.canTransfer || images.canModelTask) {
     sections.push(imageSystemPromptAddition(images.handles, images, toolsCanReturnImages));
   }
   const blocks: string[] = [];
@@ -1104,7 +1105,7 @@ export function assembleAgentRun(
   // A persisted run also retains handles for later turns with image tools enabled.
   const images = new ImageRegistry(input.imageSequence);
   images.restore(input.images ?? []);
-  if ((canEdit || canTransfer || input.retainInputImages) && input.messages) {
+  if ((canEdit || canTransfer || deps.callRouting || input.retainInputImages) && input.messages) {
     registerInputImages(images, input.messages);
   }
   // From the deps, never from the Agent: a run is told it can do a thing
@@ -1142,7 +1143,7 @@ export function assembleAgentRun(
     subagents: availableAgents,
     agentToolNames: [...offeredNames],
     mcpServers: visibleServers,
-    images: { handles: images.list(), canEdit: availableEdit, canTransfer: availableTransfer },
+    images: { handles: images.list(), canEdit: availableEdit, canTransfer: availableTransfer, canModelTask: builtinNames.has(MODEL_TASK_TOOL_NAME) },
     ...(input.now ? { now: input.now } : {}),
     canDispatch,
     withUrlTool: builtinNames.has(FETCH_URL_TOOL_NAME),

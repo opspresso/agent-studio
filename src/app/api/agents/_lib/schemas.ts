@@ -10,7 +10,7 @@ import {
 } from "@/domain/llm/imageLimits";
 import type { ChannelToolCall } from "@/domain/llm/types";
 import type { McpBinding } from "@/domain/agent/types";
-import { MODEL_TIERS, CALL_PURPOSES } from "@/domain/llm/callRouting";
+import { MODEL_TIERS, CALL_PURPOSES, CALL_ROUTING_LIMITS } from "@/domain/llm/callRouting";
 import { MAX_REVIEW_REPOSITORIES } from "@/domain/trigger/pullRequestReview";
 
 export const agentNameSchema = z
@@ -138,10 +138,10 @@ export const agentParametersSchema = z.object({
     tiers: z.partialRecord(z.enum(MODEL_TIERS), z.string().min(1).max(200)),
     policies: z.partialRecord(z.enum(CALL_PURPOSES), z.enum(MODEL_TIERS)),
     localOnly: z.boolean(),
-    maxCallCostUsd: z.number().finite().positive().max(100),
-    maxRunCostUsd: z.number().finite().positive().max(100),
-    maxCalls: z.number().int().min(1).max(30),
-    minOutputChars: z.number().int().min(1).max(1_000),
+    maxCallCostUsd: z.number().finite().positive().max(CALL_ROUTING_LIMITS.maxBudgetUsd),
+    maxRunCostUsd: z.number().finite().positive().max(CALL_ROUTING_LIMITS.maxBudgetUsd),
+    maxCalls: z.number().int().min(1).max(CALL_ROUTING_LIMITS.maxCalls),
+    minOutputChars: z.number().int().min(1).max(CALL_ROUTING_LIMITS.maxMinOutputChars),
   }).strict().refine((value) => value.maxCallCostUsd <= value.maxRunCostUsd, "Call budget exceeds run budget").optional(),
   policy: z.object({
     maxInputChars: z.number().int().min(1).max(1_000_000).optional(),

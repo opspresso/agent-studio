@@ -105,12 +105,17 @@ export function createCallModelRouter(
                 fast: "Short summaries and straightforward classification", general: "General language tasks",
                 coding: "Code generation and debugging", reasoning: "Complex analysis and multi-step reasoning", vision: "Image understanding",
               }[key]]));
+              const available = await deps.canUseModel(decisionModel, settings.localOnly);
               const facts = getModelConfig(decisionModel);
               const decisionTokens = estimateContextTokens(stateText + JSON.stringify(criteria)) + PROTOCOL_HEADROOM_TOKENS;
-              const decisionCost = facts && facts.pricingKnown !== false
-                ? decisionTokens * facts.pricing.inputPer1M / 1_000_000 : Infinity;
-              if (!facts?.capabilities.decision || decisionCost > settings.maxCallCostUsd ||
-                  state.spentUsd + decisionCost > settings.maxRunCostUsd || !await deps.canUseModel(decisionModel, settings.localOnly)) {
+              const outputPriceable = facts && (facts.pricing.outputPer1M === 0 || facts.maxTokens > 0);
+              const decisionCost = facts && facts.pricingKnown !== false && outputPriceable
+                ? (decisionTokens * facts.pricing.inputPer1M + facts.maxTokens * facts.pricing.outputPer1M) / 1_000_000 : Infinity;
+              const decisionContext = createRunContextBudget(decisionModel, undefined, facts?.maxTokens ?? 0);
+              if (!available || !facts?.capabilities.decision || !decisionContext ||
+                  decisionTokens - PROTOCOL_HEADROOM_TOKENS > decisionContext.remaining() ||
+                  !Number.isFinite(decisionCost) || decisionCost > settings.maxCallCostUsd ||
+                  state.spentUsd + decisionCost > settings.maxRunCostUsd) {
                 throw new Error("Decision model is outside routing policy");
               }
               state.spentUsd += decisionCost;
