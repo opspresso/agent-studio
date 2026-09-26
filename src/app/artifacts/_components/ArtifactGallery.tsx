@@ -16,10 +16,8 @@ import {
   Anchor,
   Badge,
   Button,
-  Card,
   Group,
   Image,
-  Paper,
   SegmentedControl,
   Stack,
   Text,
@@ -31,7 +29,10 @@ import {
   IconFile,
   IconTrash,
 } from "@tabler/icons-react";
-import { CardGrid } from "@/app/_components/CardGrid";
+import { CatalogCollection } from "@/app/_components/CatalogCollection";
+import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
+import rows from "@/app/_components/CatalogRows.module.css";
+import classes from "./ArtifactGallery.module.css";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useImageViewer } from "@/app/_components/ImageViewer";
 import { useConfirm } from "@/app/_components/useConfirm";
@@ -77,6 +78,7 @@ export function ArtifactGallery({
   showAgent?: boolean;
 }) {
   const t = useT();
+  const [catalogView, setCatalogView] = useCatalogView();
   const [artifacts, setArtifacts] = useState<ArtifactView[]>([]);
   const [nextBefore, setNextBefore] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
@@ -233,15 +235,18 @@ export function ArtifactGallery({
             { label: t("artifacts.audio"), value: "audio" },
           ]}
         />
-        {artifacts.length > 0 && (
-          <CatalogSearch value={filter} onChange={setFilter} placeholder={t("artifacts.filter")} />
-        )}
+        <Group gap="sm">
+          {artifacts.length > 0 && (
+            <CatalogSearch value={filter} onChange={setFilter} placeholder={t("artifacts.filter")} />
+          )}
+          <CatalogViewToggle value={catalogView} onChange={setCatalogView} />
+        </Group>
       </Group>
 
-      <CardGrid loading={loading} failed={!!error && artifacts.length === 0}
+      <CatalogCollection view={catalogView} loading={loading} failed={!!error && artifacts.length === 0}
         empty={visible.length === 0} emptyText={artifacts.length === 0 ? emptyText : t("catalog.noResults")}>
         {visible.map((artifact) => (
-          <ArtifactCard
+          <ArtifactEntry
             key={artifact.artifactId}
             artifact={artifact}
             showAgent={showAgent}
@@ -249,7 +254,7 @@ export function ArtifactGallery({
             onDelete={() => void remove(artifact)}
           />
         ))}
-      </CardGrid>
+      </CatalogCollection>
 
       {nextBefore && !loading && (
         <Group justify="center">
@@ -262,7 +267,7 @@ export function ArtifactGallery({
   );
 }
 
-function ArtifactCard({
+function ArtifactEntry({
   artifact,
   showAgent,
   onPreview,
@@ -270,7 +275,7 @@ function ArtifactCard({
 }: {
   artifact: ArtifactView;
   showAgent: boolean;
-  /** Images only — a document is offered as a download, never rendered. */
+  /** Images open in the viewer; inline documents use their sandboxed route. */
   onPreview: () => void;
   onDelete: () => void;
 }) {
@@ -280,48 +285,34 @@ function ArtifactCard({
   const t = useT();
   const locale = useLocale();
   const available = artifact.url !== undefined && artifact.url !== failedUrl;
+  const title = artifact.filename ?? artifact.prompt ?? t(KIND_NOUN[artifact.kind]);
 
   return (
-    <Card h="100%">
-      <Card.Section>
+    <article className={classes.entry} aria-label={title}>
+      <div className={classes.preview}>
         {artifact.kind === "image" && available ? (
           <UnstyledButton
             type="button"
             aria-label={t("artifacts.view")}
             onClick={onPreview}
-            w="100%"
-            style={{ display: "block", cursor: "pointer" }}
+            className={classes.imageButton}
           >
             <Image
               src={artifact.url}
               alt={artifact.prompt ?? t("artifacts.imageAlt")}
-              h={180}
+              h="100%"
               fit="cover"
               onError={() => setFailedUrl(artifact.url)}
             />
           </UnstyledButton>
         ) : (
-          <Paper h={180} style={{ display: "grid", placeItems: "center" }}>
-            {available ? (
-              <FileTypeIcon artifact={artifact} />
-            ) : (
-              <Text fz="sm" c="dimmed" ta="center" px="md">
-                {t("artifacts.unavailable")}
-              </Text>
-            )}
-          </Paper>
+          <div className={classes.filePreview}><FileTypeIcon artifact={artifact} /></div>
         )}
-      </Card.Section>
+      </div>
 
-      <Stack gap={6} mt="sm" style={{ flex: 1 }}>
-        <Group gap="xs" wrap="nowrap" justify="space-between">
-          <Text fw={500} truncate>
-            {/* Neither name nor prompt: the kind is all there is to call it,
-                and it is a word a reader sees rather than a stored value. */}
-            {artifact.filename ?? artifact.prompt ?? t(KIND_NOUN[artifact.kind])}
-          </Text>
-          {artifact.source === "attachment" && <Badge variant="light">{t("artifacts.attached")}</Badge>}
-        </Group>
+      <div className={classes.identity}>
+        <Text className={rows.name} lineClamp={2}>{title}</Text>
+        {artifact.source === "attachment" && <Badge variant="light" mt={6}>{t("artifacts.attached")}</Badge>}
 
         {artifact.prompt && artifact.filename && (
           <Text fz="sm" c="dimmed" lineClamp={2}>
@@ -329,16 +320,18 @@ function ArtifactCard({
           </Text>
         )}
 
-        <Text fz="xs" c="dimmed">
-          {showAgent && `${artifact.agentName} · `}
-          {formatBytes(artifact.byteSize)} · {formatShortDateTime(artifact.createdAt, locale)}
-        </Text>
+        {!available && <Text fz="xs" c="dimmed" mt={6}>{t("artifacts.unavailable")}</Text>}
+      </div>
+
+      <div className={classes.metadata}>
+        {showAgent && <Text fz="xs" c="dimmed">{artifact.agentName}</Text>}
+        <Text fz="xs" c="dimmed">{formatBytes(artifact.byteSize)} · {formatShortDateTime(artifact.createdAt, locale)}</Text>
 
         {/* Who drew it and with what. Either half can be missing — a top-level
             run has no subagent to name, and an MCP tool's picture names no
             model — and with neither the line is not rendered at all. */}
         {(artifact.producedBy || artifact.model) && (
-          <Text fz="xs" c="dimmed" truncate>
+          <Text fz="xs" c="dimmed" className={classes.provenance}>
             {[
               artifact.producedBy && t("artifacts.producedBy", { name: artifact.producedBy }),
               artifact.model,
@@ -347,53 +340,53 @@ function ArtifactCard({
               .join(" · ")}
           </Text>
         )}
+      </div>
 
-        <Group gap="xs" mt="auto" justify="space-between">
-          {/* Images render in place; documents are offered as a separate link. */}
-          {!available ? (
-            <span />
-          ) : artifact.kind === "image" ? (
-            <Anchor component="button" type="button" onClick={onPreview} fz="sm">
-              <Group gap={4}>
-                <IconEye size={14} />
-                {t("artifacts.view")}
-              </Group>
-            </Anchor>
-          ) : (
-            <Group gap="md" wrap="nowrap">
-              {/* Opened, not saved — and never at the object's own address:
-                  `/view` serves it under a sandbox policy, which an S3 URL
-                  cannot carry. Gated on size as well as type, because the route
-                  refuses a row past its read limit and only a `SaveFile` row is
-                  guaranteed under it. Everything else has only a download. */}
-              {isInlineViewable(artifact.mimeType) &&
-                artifact.byteSize <= MAX_INLINE_VIEW_BYTES && (
-                <Anchor
-                  href={`/api/artifacts/${artifact.artifactId}/view`}
-                  target="_blank"
-                  rel="noreferrer"
-                  fz="sm"
-                >
-                  <Group gap={4}>
-                    <IconEye size={14} />
-                    {t("artifacts.view")}
-                  </Group>
-                </Anchor>
-              )}
-              <Anchor href={artifact.url} target="_blank" rel="noreferrer" fz="sm">
+      <Group gap="xs" className={classes.actions}>
+        {/* Images render in place; documents are offered as a separate link. */}
+        {!available ? (
+          <span />
+        ) : artifact.kind === "image" ? (
+          <Anchor component="button" type="button" onClick={onPreview} fz="sm">
+            <Group gap={4}>
+              <IconEye size={14} aria-hidden="true" />
+              {t("artifacts.view")}
+            </Group>
+          </Anchor>
+        ) : (
+          <Group gap="md">
+            {/* Opened, not saved — and never at the object's own address:
+                `/view` serves it under a sandbox policy, which an S3 URL
+                cannot carry. Gated on size as well as type, because the route
+                refuses a row past its read limit and only a `SaveFile` row is
+                guaranteed under it. Everything else has only a download. */}
+            {isInlineViewable(artifact.mimeType) &&
+              artifact.byteSize <= MAX_INLINE_VIEW_BYTES && (
+              <Anchor
+                href={`/api/artifacts/${artifact.artifactId}/view`}
+                target="_blank"
+                rel="noreferrer"
+                fz="sm"
+              >
                 <Group gap={4}>
-                  <IconDownload size={14} />
-                  {t("artifacts.download")}
+                  <IconEye size={14} aria-hidden="true" />
+                  {t("artifacts.view")}
                 </Group>
               </Anchor>
-            </Group>
-          )}
-          <ActionIcon variant="subtle" color="red" onClick={onDelete} aria-label={t("artifacts.delete")}>
-            <IconTrash size={16} />
-          </ActionIcon>
-        </Group>
-      </Stack>
-    </Card>
+            )}
+            <Anchor href={artifact.url} target="_blank" rel="noreferrer" fz="sm">
+              <Group gap={4}>
+                <IconDownload size={14} aria-hidden="true" />
+                {t("artifacts.download")}
+              </Group>
+            </Anchor>
+          </Group>
+        )}
+        <ActionIcon variant="subtle" color="red" onClick={onDelete} aria-label={t("artifacts.delete")}>
+          <IconTrash size={16} aria-hidden="true" />
+        </ActionIcon>
+      </Group>
+    </article>
   );
 }
 

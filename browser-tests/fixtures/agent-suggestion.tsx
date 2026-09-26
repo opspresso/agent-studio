@@ -10,6 +10,7 @@ import ModelUsagePage from "../../src/app/settings/model-usage/page";
 import { AgentConfigurationEditor } from "../../src/app/agents/[name]/_components/AgentConfigurationEditor";
 import { ViewerProvider } from "../../src/app/_lib/useViewer";
 import type { AgentConfigurationInput } from "../../src/app/agents/lib/api";
+import { NewChatPanel } from "../../src/app/chats/_components/NewChatPanel";
 
 function Fixture() {
   const [request, setRequest] = useState("");
@@ -40,5 +41,7 @@ function ConfigurationFixture() {
 }
 
 createRoot(document.getElementById("root")!).render(<MantineProvider theme={theme}><I18nProvider locale="en">
-  {location.pathname === "/usage" ? <ModelUsagePage /> : location.pathname === "/configuration" ? <ConfigurationFixture /> : <Fixture />}
+  {location.pathname === "/chat"
+    ? <div style={{ height: "100vh", padding: 16 }}><NewChatPanel /></div>
+    : location.pathname === "/usage" ? <ModelUsagePage /> : location.pathname === "/configuration" ? <ConfigurationFixture /> : <Fixture />}
 </I18nProvider></MantineProvider>);

@@ -367,8 +367,8 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 
 Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액션은 `PageHeader`, 하위 섹션은
 `SectionHeading`, 경로 기반 탭은 `PageTabs`를 사용한다. 목록·빈 상태·폼 모달은
-`DataTable`/`CardGrid`, `PageState`, `FormModal`이 공통 표현을 소유한다.
-Agents·Plugins·Skills·Tools·Models 카탈로그는 행/그리드 보기를 제공하고 `CatalogView`가 브라우저별
+`DataTable`/`CatalogCollection`, `PageState`, `FormModal`이 공통 표현을 소유한다.
+Agents·Plugins·Skills·Tools·Models·Artifacts 카탈로그는 행/그리드 아이콘으로 보기를 선택하고 `CatalogView`가 브라우저별
 공통 선택을 저장한다. 클라이언트에서 새로 마운트되는 목록은 첫 표시부터 저장된 선택을 읽는다.
 `CatalogCollection`이 카탈로그의 로딩·오류·빈 상태를, `CatalogLayout.module.css`가 콘텐츠
 너비에 맞춘 최대 4열 배치를 소유한다. 행의 반응형 배치도 본문 컨테이너 너비를 따른다.

@@ -34,7 +34,7 @@
 
 [data-view="grid"] .row:hover { border-color: var(--mantine-primary-color-filled); }
 [data-view="grid"] .meta { margin-top: auto; }
-[data-view="grid"] .arrow { align-self: flex-end; }
+[data-view="grid"] .arrow { display: none; }
 
 @container (max-width: 900px) {
   .row { grid-template-columns: minmax(0, 1fr) 18px; gap: 10px 16px; }

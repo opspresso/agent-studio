@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MantineProvider } from "@mantine/core";
 import { describe, expect, it, vi } from "vitest";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
-import { CardGrid } from "@/app/_components/CardGrid";
+import { CatalogCollection } from "@/app/_components/CatalogCollection";
 import { translator } from "@/app/_i18n/translate";
 import { useT } from "@/app/_i18n/provider";
 
@@ -14,10 +14,11 @@ function render(children: React.ReactNode) {
 }
 
 describe("catalog search", () => {
-  it("does not report an empty catalog when its initial request failed", () => {
+  it.each(["list", "grid"] as const)("does not report an empty catalog when its initial request failed in %s view", view => {
     const t = translator("en");
     vi.mocked(useT).mockReturnValue(t);
-    const html = render(createElement(CardGrid, {
+    const html = render(createElement(CatalogCollection, {
+      view,
       loading: false,
       failed: true,
       empty: true,
@@ -50,13 +51,15 @@ describe("catalog search", () => {
     expect(html).toContain(t("catalog.resetFilters"));
   });
 
-  it("shows the no-match explanation instead of cards when a filter excludes all items", () => {
+  it.each(["list", "grid"] as const)("shows the no-match explanation instead of entries when a filter excludes all items in %s view", view => {
     const t = translator("en");
     vi.mocked(useT).mockReturnValue(t);
     const items = [{ name: "Support" }, { name: "Research" }];
     const visible = items.filter((item) => matchesFilter("missing", item.name));
-    const html = render(createElement(CardGrid, {
+    const html = render(createElement(CatalogCollection, {
+      view,
       loading: false,
+      failed: false,
       empty: visible.length === 0,
       emptyText: t(items.length === 0 ? "agents.empty" : "catalog.noResults"),
       children: visible.map((item) => createElement("article", { key: item.name }, item.name)),

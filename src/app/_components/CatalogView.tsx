@@ -1,6 +1,7 @@
 "use client";
 
-import { SegmentedControl } from "@mantine/core";
+import { Center, SegmentedControl, Tooltip, VisuallyHidden } from "@mantine/core";
+import { IconLayoutGrid, IconList } from "@tabler/icons-react";
 import { useSyncExternalStore } from "react";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
@@ -66,5 +67,18 @@ export function CatalogViewToggle({ value, onChange }: {
   const t = useT();
   return <SegmentedControl aria-label={t("catalog.view")}
     value={value} onChange={next => onChange(next === "grid" ? "grid" : "list")}
-    data={[{ value: "list", label: t("catalog.view.list") }, { value: "grid", label: t("catalog.view.grid") }]} />;
+    data={[
+      { value: "list", label: <Tooltip label={t("catalog.view.list")}>
+        <Center w={28} h={24}>
+          <IconList size={18} aria-hidden="true" />
+          <VisuallyHidden>{t("catalog.view.list")}</VisuallyHidden>
+        </Center>
+      </Tooltip> },
+      { value: "grid", label: <Tooltip label={t("catalog.view.grid")}>
+        <Center w={28} h={24}>
+          <IconLayoutGrid size={18} aria-hidden="true" />
+          <VisuallyHidden>{t("catalog.view.grid")}</VisuallyHidden>
+        </Center>
+      </Tooltip> },
+    ]} />;
 }

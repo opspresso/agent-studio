@@ -277,7 +277,7 @@ test("fits model rows to their content container on a wide viewport", async ({ p
 
 test("remembers row or grid view and fits at most four models across", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
-  await page.getByText("Grid", { exact: true }).click();
+  await page.getByRole("radio", { name: "Grid" }).locator("..").click();
   await expect(page.getByRole("radio", { name: "Grid" })).toBeChecked();
   const desktop = await modelRows(page).evaluateAll(elements => elements.map(element => {
     const box = element.getBoundingClientRect();
@@ -300,7 +300,7 @@ test("remembers row or grid view and fits at most four models across", async ({ 
   expect(new Set(mobile.map(y => Math.round(y))).size).toBe(4);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
-  await page.getByText("Rows", { exact: true }).click();
+  await page.getByRole("radio", { name: "Rows" }).locator("..").click();
   await page.reload();
   await expect(page.getByRole("radio", { name: "Rows" })).toBeChecked();
 });

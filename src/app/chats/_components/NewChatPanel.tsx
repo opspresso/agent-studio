@@ -240,28 +240,30 @@ export function NewChatPanel() {
             key={composerKey}
             onSend={start}
             onDraftChange={setDraft}
-            suggestion={<AgentSuggestion surface="chat" request={draft} candidates={agents} selected={agentName}
-              onSelect={setAgentName} disabled={starting} />}
             disabled={starting || !selectedAgent}
             placeholder={t("chat.firstPlaceholder")}
             status={<RunningAgents paths={entry?.live.authorPaths ?? []} />}
             leading={(
-              <Group gap="xs" align="center">
-                <Text fz="xs" fw={500} c="dimmed">
-                  {t("chat.agent")}
-                </Text>
-                <Select
-                  aria-label={t("chat.agent")}
-                  value={agentName}
-                  onChange={(value) => setAgentName(value ?? "")}
-                  disabled={starting}
-                  allowDeselect={false}
-                  searchable
-                  data={agents.map((agent) => ({
-                    value: agent.name,
-                    label: agent.displayName || agent.name,
-                  }))}
-                />
+              <Group gap="md" align="center">
+                <Group gap="xs" wrap="nowrap">
+                  <Text fz="xs" fw={500} c="dimmed">
+                    {t("chat.agent")}
+                  </Text>
+                  <Select
+                    aria-label={t("chat.agent")}
+                    value={agentName}
+                    onChange={(value) => setAgentName(value ?? "")}
+                    disabled={starting}
+                    allowDeselect={false}
+                    searchable
+                    data={agents.map((agent) => ({
+                      value: agent.name,
+                      label: agent.displayName || agent.name,
+                    }))}
+                  />
+                </Group>
+                <AgentSuggestion surface="chat" request={draft} candidates={agents} selected={agentName}
+                  onSelect={setAgentName} disabled={starting} />
               </Group>
             )}
             {...(starting && entry?.runId && key
