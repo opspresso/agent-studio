@@ -28,6 +28,36 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 
+test("refreshes Agent suggestions while the Workspace task is still being typed", async ({ page }) => {
+  const seen: Array<{ surface: string; request: string }> = [];
+  const options: WorkspaceOptionsResponse = { enabled: true, gitEnabled: false, agents: ["writer", "coder"].map(name => ({
+    agentName: name, displayName: name === "writer" ? "Writer" : "Coder", description: "", runtimes: ["command"],
+    defaultRuntime: "command", mode: "selected", repositories: [], repositoryOwners: [], deploymentWorkflows: [],
+  })) };
+  await page.clock.install({ time: new Date("2026-09-26T00:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-09-26T00:00:01Z"));
+  await page.route("**/api/workspaces/options", route => route.fulfill({ json: options }));
+  await page.route("**/api/agent-recommendations", route => {
+    seen.push(route.request().postDataJSON());
+    return route.fulfill({ json: { recommendation: { name: "coder", confidence: 0.8 } } });
+  });
+  await page.goto(base);
+  await expect(page.getByRole("combobox", { name: "Agent", exact: true })).toHaveValue("Writer");
+  const input = page.getByRole("textbox", { name: "Script", exact: true });
+  await input.fill("Fix code");
+  await page.clock.runFor(200);
+  await expect(page.getByRole("status")).toContainText("Coder");
+  for (let index = 0; index < 20; index++) {
+    await input.fill(`Fix code ${index}`);
+    await page.clock.runFor(100);
+  }
+  await expect.poll(() => seen.length).toBeGreaterThanOrEqual(3);
+  expect(seen.every(request => request.surface === "workspace")).toBe(true);
+  await page.getByRole("button", { name: "Use Agent", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Agent", exact: true })).toHaveValue("Coder");
+  await expect(input).toHaveValue("Fix code 19");
+});
+
 test("clears an options read error on retry while preserving the drafted task", async ({ page }) => {
   let reads = 0;
   const options: WorkspaceOptionsResponse = { enabled: true, gitEnabled: false, agents: [{

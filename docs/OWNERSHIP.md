@@ -216,6 +216,7 @@
 | 결정 | 소유자 | 확인 |
 |---|---|---|
 | 새 Chat·Workspace의 요청에 어떤 Agent를 추천하는가 | `src/application/llm/agentRecommendation.ts`의 Choice 구성·후보 분할·선택 매핑. 접근 가능한 후보 목록은 `src/lib/container.ts`가 각 기존 목록 유스케이스에 바인딩한다 | 코드 |
+| Chat·Workspace 입력 중 추천을 언제 요청하고 최신 입력을 어떻게 합치는가 | `src/app/_lib/agentSuggestionQueue.ts`의 입력 대기·최대 대기·최소 요청 간격과 단일 진행 요청 | 코드 |
 | 결정 모델 호출의 provider별 URL·응답 해석 | `src/infrastructure/llm/decisionClient.ts`. 결정 모델의 등록·삭제 가드는 `src/application/llm/modelRegistry.ts` | 코드 |
 | 사용자별 Agent 추천 요청 수의 분·일 상한과 공유 카운터 | `src/infrastructure/db/repositories/agentRecommendationQuota.ts`의 원자적 일일 행 | 코드 |
 | 배포의 표시 이름과 로고 폴더·자산 URL | `src/shared/branding.ts`; 환경 읽기와 부팅 시 자산 검사는 `src/lib/config.ts` | 코드 |

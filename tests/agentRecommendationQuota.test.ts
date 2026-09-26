@@ -23,7 +23,7 @@ describe("Agent recommendation quota", () => {
     instant = new Date("2026-09-24T12:01:00Z");
     expect(await quota.admit("user@example.test")).toBeUndefined();
     const row = await store.getItem(keys.agentRecommendationQuota("user@example.test", "2026-09-24"));
-    expect(row).toMatchObject({ dayCount: 31, minuteCount: 1, expiresAt: 1790380800 });
+    expect(row).toMatchObject({ dayCount: MAX_AGENT_RECOMMENDATIONS_PER_MINUTE + 1, minuteCount: 1, expiresAt: 1790380800 });
   });
 
   it("limits the day while keeping different members separate", async () => {

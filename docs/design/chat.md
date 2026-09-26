@@ -4,6 +4,7 @@ Chat은 Agent를 실행하는 소유자별 비공개 대화다. 다른 사용자
 새 Chat의 입력 문구에 대한 Agent 추천은 설정된 결정 모델로 접근 가능한 Agent의 이름·설명을
 평가한다. 추천은 Agent 선택과 같은 줄에 표시하고, 좁은 화면에서는 줄을 바꾼다.
 결과는 선택 버튼으로만 반영하며 기존 Chat의 실행·모델 이력에는 개입하지 않는다.
+입력 중 추천의 갱신과 요청 대기는 [Agent 추천](agent-recommendation.md#입력-중-추천)을 따른다.
 실행은 공통 `ChatDeps.runAgent`에 바인딩한 `executeAgent`를 사용하고 HTTP self-call 없이
 SSE로 전달한다. HTTP 계약은 [Chat API](../API.md#chats), 변경 불변식은
 [Chat 지침](../../src/application/chat/AGENTS.md)과 [Runtime 지침](../../src/application/runtime/AGENTS.md)을 따른다.
