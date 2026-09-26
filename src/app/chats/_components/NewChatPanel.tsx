@@ -183,31 +183,18 @@ export function NewChatPanel() {
     <Flex direction="column" h="100%">
       <ScrollArea style={{ flex: 1, minHeight: 0 }} pb="md">
         {entry?.pendingUser === undefined ? (
-          <Flex h="100%" align="center" justify="center" className={classes.welcome}>
-            <Stack gap="md" w="100%" maw={480}>
-              <ThemeIcon size={52} radius="lg" variant="light">
-                <IconMessageCircle size={27} stroke={1.7} />
-              </ThemeIcon>
-              <div>
-                <Title order={1} fz={{ base: 26, sm: 32 }}>{t("chat.welcomeTitle")}</Title>
-                <Text fz="sm" c="dimmed" mt="xs">{t("chat.pickAgent")}</Text>
-              </div>
-              <Select
-                label={t("chat.agent")}
-                value={agentName}
-                onChange={(value) => setAgentName(value ?? "")}
-                allowDeselect={false}
-                searchable
-                data={agents.map((agent) => ({ value: agent.name, label: agent.displayName || agent.name }))}
-              />
-              {selectedAgent?.description && (
-                <Text fz="sm" c="dimmed" className={classes.agentDescription}>
-                  {selectedAgent.description}
-                </Text>
-              )}
-              <Text fz="xs" c="dimmed">{t("chat.welcomeHint")}</Text>
-            </Stack>
-          </Flex>
+          <Box className={classes.welcome}>
+            <div className={classes.welcomeContent}>
+              <Text className={classes.welcomeLabel}>{t("chat.welcomeTitle")}</Text>
+              <Title order={1} fz={{ base: 26, sm: 32 }}>
+                {selectedAgent?.displayName || selectedAgent?.name || t("chat.welcomeTitle")}
+              </Title>
+              <Text fz="sm" c="dimmed" mt="xs" className={classes.agentDescription}>
+                {selectedAgent?.description || t("chat.pickAgent")}
+              </Text>
+              <Text fz="xs" c="dimmed" mt="md">{t("chat.welcomeHint")}</Text>
+            </div>
+          </Box>
         ) : (
           <Stack gap="sm" className={classes.column}>
             <MessageView
@@ -258,7 +245,7 @@ export function NewChatPanel() {
             disabled={starting || !selectedAgent}
             placeholder={t("chat.firstPlaceholder")}
             status={<RunningAgents paths={entry?.live.authorPaths ?? []} />}
-            leading={entry?.pendingUser !== undefined && (
+            leading={(
               <Group gap="xs" align="center">
                 <Text fz="xs" fw={500} c="dimmed">
                   {t("chat.agent")}
@@ -269,6 +256,7 @@ export function NewChatPanel() {
                   onChange={(value) => setAgentName(value ?? "")}
                   disabled={starting}
                   allowDeselect={false}
+                  searchable
                   data={agents.map((agent) => ({
                     value: agent.name,
                     label: agent.displayName || agent.name,

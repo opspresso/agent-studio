@@ -16,13 +16,28 @@
 }
 
 .welcome {
-  min-height: 18rem;
-  padding: clamp(20px, 4vh, 48px) var(--mantine-spacing-lg);
+  padding: clamp(40px, 8vh, 96px) var(--mantine-spacing-lg);
+}
+
+.welcomeContent {
+  max-width: 48rem;
+  padding-inline: var(--mantine-spacing-md);
+  margin-inline: auto;
+}
+
+.welcomeLabel {
+  margin-bottom: 14px;
+  color: var(--mantine-primary-color-filled);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .agentDescription {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+  max-width: 620px;
   max-height: 8rem;
   overflow-y: auto;
 }
