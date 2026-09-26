@@ -310,9 +310,20 @@ Agent 메타데이터나 설정의 동시 수정이 먼저 저장되면 409를 �
 `temperature?`, `presencePenalty?`, `maxTokens?`, `reasoningEffort?`, `piiFiltering`,
 `structuredOutput?`, `jsonSchema?`, `imageGeneration?`, `imageModel?`, `callerContext?`,
 `urlFetch?`, `slackWorkspace?`, `audioProcessing?`, `workspaceTools?`, `dynamicCapabilities?`,
-`memoryRecall?`, `reasoningTrace?`, `policy?`를 갖는다. 카탈로그에 있는 모델의 능력과
+`memoryRecall?`, `reasoningTrace?`, `policy?`, `modelRouting?`를 갖는다. 카탈로그에 있는 모델의 능력과
 설정이 충돌하면 400이다. 카탈로그에 없는 사용자 모델은 경고 대상으로 둔다.
 `imageModel`은 이미지 생성 능력이 있는 카탈로그 모델이어야 한다.
+
+`modelRouting`은 `{ enabled, tiers, policies, localOnly, maxCallCostUsd, maxRunCostUsd,
+maxCalls, minOutputChars }`다. `tiers`는 fast/general/coding/reasoning/vision의 선택적 등록 모델
+ID이고, `policies`는 summary/classification/coding/reasoning/vision 목적의 선택적 tier다.
+활성화하면 등록된 text 모델만 허용하며 정책 tier에는 모델이 있어야 한다.
+비용은 양수 USD(최대 100)이고 호출 예산은 Run 예산 이하다. `maxCalls`는 1–30,
+`minOutputChars`는 1–1,000이다. 저장 기본값은 미설정·비활성이고 UI 초기값은 시도당 $0.1,
+보조 호출 전체 $1, 10회, 최소 1자다. `localOnly`는 결정 모델을 포함한 self-hosted provider
+연결 제한이다. 연결을 self-hosted로 등록한 것만으로 주소가 사내망임을 보증하지는 않으며,
+내부 endpoint 등록·네트워크 격리는 배포가 관리한다.
+주 모델 유지·선택 우선순위·승격·trace·승인 재개는 [호출 단위 라우팅](design/execution.md#호출-단위-모델-라우팅)을 따른다.
 
 `mcpList[{name, headers?, tools?, sourceOutputs?}]`, `skillList[]`,
 `subagentList[{name, type: "local"|"remote"}]`는 전체 목록을 저장한다.

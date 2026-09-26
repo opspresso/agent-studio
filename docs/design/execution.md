@@ -110,6 +110,41 @@ SDK function tool 동시성은 5다. 실제 실행에 진입한 도구만 결과
 파일 bytes는 모델 문맥에 넣지 않으며, 이미지는 domain 한도 내 inline bytes만 허용한다.
 스트림 소비자의 backpressure와 취소는 자식 실행과 MCP 연결의 정리까지 기다린다.
 
+### 호출 단위 모델 라우팅
+
+Agent 설정의 `parameters.modelRouting`은 선택 기능이다. 미설정 Agent는 기존 도구와 주 모델을
+그대로 사용한다. 설정한 Agent에는 같은 Run 안의 `ModelTask` 도구가 제공된다. 주 Agent의
+SDK 턴은 항상 `model`을 사용하며 ModelTask의 `summary`, `classification`, `coding`,
+`reasoning`, `vision` 호출만 별도 모델을 선택한다. 도구는 필요 문맥과 기존 이미지 핸들만
+전달하며 다른 도구를 실행하거나 두 번째 Agent 루프를 만들지 않는다.
+
+활성화 시 선택 순서는 명시적 모델 → 작업별 tier 정책 → Jev Choice → 주 모델이다.
+비활성화하면 ModelTask도 주 모델을 사용하며 명시적 override와 Jev는 무시한다.
+`tiers`는 Agent가 허용한 등록 모델 목록이다. 명시적 모델은 이 목록 또는 주 모델에 있어야 하며,
+잘못된 명시적 override는 다른 모델로 조용히 바꾸지 않고 거절한다. 작업별 정책의 모델이
+사용 불가능하면 남은 후보를 Jev로 판단한다.
+
+Jev에는 목적, 고정된 용어와 입력 크기로 만든 요약, 필요 기능, 예산과 사용 가능한 tier만
+보낸다. 원문 substring, 모델 ID, 이미지 bytes, 도구·system prompt·자격증명은 보내지 않는다.
+반환값은 `fast`, `general`, `coding`, `reasoning`, `vision` 중 실제 제공한 tier만 인정한다.
+모델 등록·연결, Agent 허용 목록, self-hosted 제한, 기능, 기존 context 예산과 비용 검사는
+`callModelRouter.ts`가 모델 호출 직전에 다시 수행한다. 연결 해석 가능 여부와 Run 안의 실패
+기록이 가용성 기준이며, 별도의 외부 health probe는 수행하지 않는다.
+
+한 작업은 최대 네 번 시도한다. 같은 모델이 두 번 실패하거나 답변이 비어 있음·최소 길이
+미달·출력 잘림·분류 JSON 형식 오류일 때 상위 tier로 승격한다. 텍스트 승격 순서는
+fast → general → coding → reasoning이며 이미지 호출은 vision → reasoning 중 이미지 기능을
+충족하는 모델을 사용한다. 마지막 시도는 주 모델 fallback에 남긴다. 취소는 즉시 전파하고,
+기본 모델도 정책을 충족하지 못하거나 호출에 실패하면 도구 오류를 반환한다. 품질 검사는
+출력의 구조·완결성을 검사하며 사실 정확성을 판정하지 않는다.
+
+시도 전 카탈로그 가격과 보수적인 토큰 추정으로 예산을 예약하고 완료 응답의 실제 청구 비용으로
+정산한다. 실패한 요청의 예약 비용은 청구 여부를 알 수 없으므로 보수적으로 남긴다. Jev의
+비용도 같은 보조 호출 예산과 Run 사용량에 포함한다. 승인 체크포인트는 호출 수·소비 예산·
+모델별 실패 횟수를 보존한다. `model-routing` native span에는 선택·거절·승격·실패 이유와
+실제 모델만 저장하며 원문과 결과는 넣지 않는다. 각 생성 호출의 span과 usage는 실제 모델에
+귀속된다. 결정 모델 미설정·오프라인·잘못된 tier 응답은 주 모델로 fallback한다.
+
 ### Handoff와 Agent-as-Tool
 
 로컬 text agent는 `handoff_<name>`으로 담당 Agent를 바꾸거나, 최상위 Agent가 제공하는

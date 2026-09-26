@@ -605,8 +605,9 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(120);
+    expect(entries.length).toBe(121);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
+      "src/app/agents/[name]/_components/ModelRoutingEditor.tsx",
       "src/app/chats/_components/PendingApproval.tsx",
       "src/app/chats/_components/NewChatEntry.tsx",
       "src/app/chats/_components/ChatSidebarItems.tsx",
@@ -1048,6 +1049,11 @@ interface SingleOwner {
 }
 
 const SINGLE_OWNERS: SingleOwner[] = [
+  {
+    what: "model call tiers and purposes",
+    pattern: /(?:MODEL_TIERS|CALL_PURPOSES|CALL_ROUTING_LIMITS)\s*=/,
+    owner: "src/domain/llm/callRouting.ts",
+  },
   {
     what: "transcription channel and wire format selection",
     pattern: /export async function getTranscriptionTarget\b/,

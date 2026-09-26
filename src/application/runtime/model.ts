@@ -1,6 +1,6 @@
 import { getCurrentSpan, type AgentOutputItem, type Model, type ModelRequest, type ModelResponse, type ResponseStreamEvent } from "@openai/agents";
-import { applyModelConstraints, calculateCost, describeImageInputReject } from "@/domain/llm/models";
-import type { UsageInfo } from "@/domain/llm/types";
+import { applyModelConstraints, describeImageInputReject } from "@/domain/llm/models";
+import { modelResponseUsage, type ResponseUsage } from "./modelUsage";
 import { createRunContextBudget, type RunContextBudget } from "@/application/llm/contextBudget";
 import { createToolResultBudget, MAX_TOOL_RESULT_CHARS_PER_TURN, type ToolResultBudget } from "@/application/llm/toolResultBudget";
 import { PiiFilter } from "@/application/llm/pii";
@@ -13,6 +13,7 @@ import type { EngineDeps, RunAgentInput } from "./types";
 import type { RuntimeEmitter } from "./output";
 
 export interface RuntimeTurn {
+  routing?: import("@/domain/llm/callRouting").CallRoutingState;
   conversation?: ChatMessageInput[];
   resources?: { urls: number; files: number; imageTurn: number; imagesUsed: number };
   number: number;
@@ -108,23 +109,9 @@ export function createRunModel(
     turn.results = createToolResultBudget(MAX_TOOL_RESULT_CHARS_PER_TURN, turn.contextBudget);
   }
 
-  async function record(model: string, response: {
-    usage: { inputTokens: number; outputTokens: number; inputTokensDetails?: Record<string, number> | Record<string, number>[]; outputTokensDetails?: Record<string, number> | Record<string, number>[] };
-    rawUsage?: Record<string, unknown>;
-  }) {
-    const { inputTokens, outputTokens } = response.usage;
-    const sum = (details: Record<string, number> | Record<string, number>[] | undefined, key: string) =>
-      Array.isArray(details) ? details.reduce((total, entry) => total + (entry[key] ?? 0), 0) : details?.[key] ?? 0;
-    const cachedTokens = sum(response.usage.inputTokensDetails, "cached_tokens");
-    const reasoningTokens = sum(response.usage.outputTokensDetails, "reasoning_tokens");
-    const billed = response.rawUsage?.cost ?? response.rawUsage?.cost_usd;
-    const usage: UsageInfo = {
-      model, inputTokens, outputTokens,
-      costUsd: typeof billed === "number" && Number.isFinite(billed)
-        ? billed : calculateCost(model, { inputTokens, outputTokens, cachedTokens }),
-      ...(cachedTokens > 0 ? { cachedTokens } : {}),
-      ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
-    };
+  async function record(model: string, response: ResponseUsage) {
+    const usage = modelResponseUsage(model, response);
+    const { inputTokens, outputTokens, cachedTokens = 0, reasoningTokens = 0 } = usage;
     const span = getCurrentSpan();
     if (span?.spanData.type === "generation") {
       span.spanData.model = model;

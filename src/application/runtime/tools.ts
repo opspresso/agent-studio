@@ -4,6 +4,8 @@ import { imageDataUrl } from "@/domain/llm/types";
 import { describeImageInputReject } from "@/domain/llm/models";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { AUDIO_TOOL_NAMES, FILE_TOOL_NAME, WORKSPACE_TOOL_NAME } from "@/domain/llm/toolNames";
+import { MODEL_TASK_TOOL_NAME } from "@/domain/llm/toolNames";
+import { createRuntimeModelTask } from "./modelTask";
 import {
   SKILL_TOOL_NAME, IMAGE_TOOL_NAME, EDIT_IMAGE_TOOL_NAME, FETCH_URL_TOOL_NAME,
   SAVE_FILE_TOOL_NAME, SLACK_TOOL_NAMES,
@@ -31,6 +33,7 @@ export function createRuntimeTools(
   turn: RuntimeTurn, emit: RuntimeEmitter, filter?: PiiFilter, schemas?: ToolSchemaValidator,
 ) {
   const resources = turn.resources ??= { urls: 0, files: 0, imageTurn: 0, imagesUsed: 0 };
+  const modelTask = assembly.builtinNames.has(MODEL_TASK_TOOL_NAME) ? createRuntimeModelTask(deps, input, turn, assembly.images, emit) : undefined;
   let lossReported = false;
   let serial = Promise.resolve();
   const imageInputReject = describeImageInputReject(input.model);
@@ -39,6 +42,7 @@ export function createRuntimeTools(
   async function invoke(name: string, args: Record<string, unknown>, display: Record<string, unknown>, callId: string): Promise<CapabilityOutput> {
     const builtin = assembly.builtinNames.has(name);
     if (!builtin) return deps.callMcpTool ? deps.callMcpTool(name, display) : { text: `Error: Tool '${name}' cannot be executed in this context.` };
+    if (name === MODEL_TASK_TOOL_NAME) return modelTask!(args);
     if (name === SKILL_TOOL_NAME) {
       const skill = string(display.skill_name);
       if (!(input.skills ?? []).some((entry) => entry.name === skill)) return { text: `Error: skill '${skill}' is not available. Available skills: ${(input.skills ?? []).map((entry) => entry.name).join(", ")}.`, bounded: true };
@@ -127,7 +131,7 @@ export function createRuntimeTools(
         if (name === SKILL_TOOL_NAME && string(display.skill_name)) displayNames.set(callId, `${name}: ${string(display.skill_name)}`);
         if (details?.toolCall) details.toolCall.arguments = JSON.stringify(boundToolArgsPair(args, display).wire);
         const action = () => invoke(name, args, display, callId);
-        const sequential = [IMAGE_TOOL_NAME, EDIT_IMAGE_TOOL_NAME, SKILL_TOOL_NAME, ...SLACK_TOOL_NAMES].includes(name);
+        const sequential = [MODEL_TASK_TOOL_NAME, IMAGE_TOOL_NAME, EDIT_IMAGE_TOOL_NAME, SKILL_TOOL_NAME, ...SLACK_TOOL_NAMES].includes(name);
         const task = sequential ? serial.then(action) : action();
         if (sequential) serial = task.then(() => {}, () => {});
         const result = await task;

@@ -1,9 +1,8 @@
-import type { UsageInfo } from "./types";
-
 export const MODEL_TIERS = ["fast", "general", "coding", "reasoning", "vision"] as const;
 export type ModelTier = typeof MODEL_TIERS[number];
 export const CALL_PURPOSES = ["summary", "classification", "coding", "reasoning", "vision"] as const;
 export type CallPurpose = typeof CALL_PURPOSES[number];
+export const CALL_ROUTING_LIMITS = { maxCalls: 30, maxBudgetUsd: 100, maxMinOutputChars: 1_000 } as const;
 
 /** Models are deployment registrations; these assignments are the Agent's allow list. */
 export interface CallRoutingSettings {
@@ -47,10 +46,4 @@ export interface CallRoutingState {
   calls: number;
   spentUsd: number;
   failures: Record<string, number>;
-}
-
-export interface RoutedModelResult {
-  text: string;
-  usage: UsageInfo;
-  truncated?: boolean;
 }

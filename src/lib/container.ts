@@ -151,6 +151,7 @@ import { agentRecommendationQuota } from "@/infrastructure/db/repositories/agent
 import { createProviderModelDiscovery } from "@/infrastructure/llm/providerModelDiscovery";
 import { publishedModelCatalog } from "@/infrastructure/llm/publishedModelFacts";
 import { providerKind } from "@/domain/llm/providerModels";
+import { getModelConfig } from "@/domain/llm/models";
 import { createModelPreferenceUseCases } from "@/application/llm/modelPreferences";
 import { createModelSelectionUseCases } from "@/application/llm/modelSelection";
 import { modelPreferencesRepository } from "@/infrastructure/db/repositories/modelPreferencesRepository";
@@ -1005,6 +1006,16 @@ export const executionDeps: ExecutionDeps = {
   mcps: mcpRepository,
   usage: usageRepository,
   channel: agentModels,
+  callRouting: {
+    decision: decisionClient,
+    selectedDecisionModel: async () => (await getDecisionModelSelection())?.model,
+    canUseModel: async (id, localOnly) => {
+      const providers = await getLlmProviderConfigs();
+      const facts = getModelConfig(id);
+      const provider = facts && !facts.hidden ? providers.find((entry) => entry.name === facts.provider) : undefined;
+      return Boolean(provider && (!localOnly || provider.kind === "selfhosted"));
+    },
+  },
   imageChannel,
   cipher: secretCipher,
   urlPolicy,

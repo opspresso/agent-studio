@@ -21,6 +21,7 @@ export type RecordUsageFn = (record: {
 }) => Promise<void>;
 
 export interface EngineDeps {
+  callRouting?: import("@/application/llm/callModelRouter").CallRoutingDeps;
   onSdkSpan?: (span: TraceSpan) => void;
   channel: ModelProvider;
   recordUsage?: RecordUsageFn;
@@ -91,6 +92,7 @@ export interface RunAgentInput {
 }
 
 export interface RuntimeAgentSnapshot {
+  routing?: import("@/domain/llm/callRouting").CallRoutingState;
   pii?: Array<[string, string]>;
   turn: number;
   resultChars: number;

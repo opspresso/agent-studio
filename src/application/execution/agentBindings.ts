@@ -24,7 +24,7 @@ export async function buildAgentDeps(
   origin: RunOrigin, signal?: AbortSignal, callMcpTool?: AgentDeps["callMcpTool"],
   runtime?: RuntimeTurnPersistence,
 ): Promise<AgentDeps> {
-  const common = { channel: deps.channel, createToolSchemaValidator: deps.createToolSchemaValidator, recordUsage, loadSkillContent: buildSkillLoader(createSkillReader(deps)) };
+  const common = { channel: deps.channel, callRouting: configuration.parameters.modelRouting ? deps.callRouting : undefined, createToolSchemaValidator: deps.createToolSchemaValidator, recordUsage, loadSkillContent: buildSkillLoader(createSkillReader(deps)) };
   if (origin.backgroundTask) return common;
   const imageModel = resolveImageModel(configuration, agentName);
   return {

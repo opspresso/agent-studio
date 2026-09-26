@@ -39,6 +39,7 @@ import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession"
  * a policy that silently stops applying to text runs.
  */
 export interface ExecutionDeps extends RunBracketDeps {
+  callRouting?: import("@/application/llm/callModelRouter").CallRoutingDeps;
   createToolSchemaValidator: () => ToolSchemaValidator;
   runtimeSessions?: RuntimeSessionServices;
   agents: AgentRepository;
@@ -226,6 +227,7 @@ export interface PromptPreview {
 export function toEngineParameters(configuration: AgentConfiguration): EngineParameters {
   const p = configuration.parameters;
   const params: EngineParameters = {};
+  if (p.modelRouting) params.modelRouting = p.modelRouting;
   if (p.policy) params.policy = p.policy;
   if (p.temperature !== undefined) {
     params.temperature = p.temperature;

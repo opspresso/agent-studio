@@ -68,7 +68,10 @@ function toStudioSpan(span: Span<SpanData>): TraceSpan {
   } else if (data.type === "mcp_tools") {
     name = `MCP: ${data.server ?? "tools"}`;
     output.toolCount = data.result?.length ?? 0;
-  } else if (data.type === "task" || data.type === "custom") name = data.name;
+  } else if (data.type === "task" || data.type === "custom") {
+    name = data.name;
+    if (data.type === "custom" && data.name === "model-routing" && Array.isArray(data.data?.routing)) output.routing = data.data.routing;
+  }
   else if (data.type === "turn") {
     name = `${data.agent_name}: turn ${data.turn}`;
     output.turn = data.turn;

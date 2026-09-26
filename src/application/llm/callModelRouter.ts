@@ -2,10 +2,16 @@ import { getModelConfig, modelType } from "@/domain/llm/models";
 import type { DecisionModel } from "@/domain/llm/decision";
 import {
   MODEL_TIERS, type ModelTier, type CallRoutingSettings, type RoutedModelTask,
-  type CallRoutingEvent, type CallRoutingState, type RoutedModelResult,
+  type CallRoutingEvent, type CallRoutingState,
 } from "@/domain/llm/callRouting";
-import { createRunContextBudget, estimateContextTokens, IMAGE_PART_TOKENS } from "./contextBudget";
+import { createRunContextBudget, estimateContextTokens, IMAGE_PART_TOKENS, PROTOCOL_HEADROOM_TOKENS } from "./contextBudget";
 import type { UsageInfo } from "@/domain/llm/types";
+
+export interface RoutedModelResult {
+  text: string;
+  usage: UsageInfo;
+  truncated?: boolean;
+}
 
 export interface CallRoutingDeps {
   decision: DecisionModel;
@@ -37,8 +43,9 @@ export function createCallModelRouter(
 ) {
   async function rejection(model: string, task: RoutedModelTask): Promise<CallRoutingEvent["reason"] | undefined> {
     if (model !== baseModel && !Object.values(settings.tiers).includes(model)) return "permission";
+    if (!await deps.canUseModel(model, settings.localOnly)) return "unavailable";
     const facts = getModelConfig(model);
-    if (!facts || modelType(facts) !== "text") return "unavailable";
+    if (!facts || facts.hidden || modelType(facts) !== "text") return "unavailable";
     if (settings.localOnly && facts.providerKind !== "selfhosted") return "security";
     if (task.imageCount && !facts.capabilities.imageInput) return "capability";
     if (task.purpose === "reasoning" && !facts.capabilities.reasoning) return "capability";
@@ -49,14 +56,13 @@ export function createCallModelRouter(
     if (facts.pricingKnown === false || !Number.isFinite(estimate(model, task))) return "budget";
     const cost = estimate(model, task);
     if (cost > settings.maxCallCostUsd || cost + state.spentUsd > settings.maxRunCostUsd) return "budget";
-    if (!await deps.canUseModel(model, settings.localOnly)) return "unavailable";
     return undefined;
   }
 
   function estimate(model: string, task: RoutedModelTask): number {
     const facts = getModelConfig(model);
     if (!facts) return Infinity;
-    const tokens = estimateContextTokens(task.prompt) + task.imageCount * IMAGE_PART_TOKENS + 2_000;
+    const tokens = estimateContextTokens(task.prompt) + task.imageCount * IMAGE_PART_TOKENS + PROTOCOL_HEADROOM_TOKENS;
     return (tokens * facts.pricing.inputPer1M + task.maxOutputTokens * facts.pricing.outputPer1M) / 1_000_000;
   }
 
@@ -73,8 +79,8 @@ export function createCallModelRouter(
         for (const candidate of MODEL_TIERS) {
           const model = settings.tiers[candidate];
           if (!model) continue;
-          const reason = await rejection(model, task);
-          if (!reason && (state.failures[model] ?? 0) < FAILURES_BEFORE_PROMOTION) valid.set(candidate, model);
+          const reason = await rejection(model, task) ?? ((state.failures[model] ?? 0) >= FAILURES_BEFORE_PROMOTION ? "unavailable" : undefined);
+          if (!reason) valid.set(candidate, model);
           else observe({ purpose: task.purpose, model, tier: candidate, source: "policy", outcome: "rejected", attempt: 0, reason });
         }
         if (task.model) {
@@ -100,7 +106,7 @@ export function createCallModelRouter(
                 coding: "Code generation and debugging", reasoning: "Complex analysis and multi-step reasoning", vision: "Image understanding",
               }[key]]));
               const facts = getModelConfig(decisionModel);
-              const decisionTokens = estimateContextTokens(stateText + JSON.stringify(criteria)) + 2_000;
+              const decisionTokens = estimateContextTokens(stateText + JSON.stringify(criteria)) + PROTOCOL_HEADROOM_TOKENS;
               const decisionCost = facts && facts.pricingKnown !== false
                 ? decisionTokens * facts.pricing.inputPer1M / 1_000_000 : Infinity;
               if (!facts?.capabilities.decision || decisionCost > settings.maxCallCostUsd ||

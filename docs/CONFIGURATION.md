@@ -155,6 +155,14 @@ Self-hosted는 키를 생략할 수 있다. 프로바이더 목록은 최대 50�
 
 ### 모델 등록과 사용
 
+Agent 설정의 **모델 라우팅**은 보조 `ModelTask` 호출을 위한 선택 기능이다. 주 모델은 유지한다.
+fast/general/coding/reasoning/vision에 등록 text 모델을 배정하고 필요하면 작업별 tier 정책을
+선택한다. 정책이 없으면 Settings의 결정 모델로 Jev Choice를 요청하고, 결정 모델이 없거나
+실패하면 주 모델을 사용한다. 비활성화하면 보조 호출도 주 모델을 사용한다.
+가격·한도를 모르는 모델은 보조 호출의 비용·context 검사에서 거절한다.
+필드와 기본값은 [Agent 설정 API](API.md#agent-현재-설정), 실행 계약은
+[호출 단위 라우팅](design/execution.md#호출-단위-모델-라우팅)이 소유한다.
+
 1. `/settings/models`에서 등록한 프로바이더를 선택하고 **Model 조회**를 실행한다.
 2. 사용할 항목의 유형·기능·한도·가격을 비교하고 **모델 추가**를 누르면 즉시 등록된다. 이름순·가격순 정렬과 기능 필터를 제공한다. 직접 등록은 화면 안의 입력 폼을 사용한다.
 3. `/settings/model-usage`에서 기본 모델, Agent 추천용 결정 모델, Workspace Runtime별 모델, 검색의 Embedding·Rerank를 선택한다.
@@ -409,6 +417,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | agent 런당 턴 수 (Agent 설정 `maxTurn` 기본값) | `50` | `src/application/runtime/execute.ts` |
 | 멤버 tier 제한. 멤버당 동시 런 수 / 월 USD 상한 (`admin` —/—, `member` —/`20`, `guest` `1`/`2`. "—" 는 env 제한을 물려받거나 상한이 없다는 뜻). `guest` 는 추가로 Agent를 만들 수 없고 Agent API 토큰도 쓸 수 없다 | `TIER_LIMITS` | `src/domain/member/tiers.ts` |
 | SDK function tool 동시 실행 수 | `5` | `src/application/runtime/runner.ts` |
+| ModelTask 작업당 최대 시도 / 승격 전 같은 모델의 실패 수 | `4` / `2` | `src/application/llm/callModelRouter.ts` |
 | 턴당 도구 결과 텍스트 | `200,000` 자 | `src/application/llm/toolResultBudget.ts` |
 | subagent 로 넘기는 transfer transcript | `8,000` 자 | `src/application/runtime/transcript.ts` |
 | subagent 중첩 깊이 | `5` | `src/application/execution/agentBindings.ts` |

@@ -1,4 +1,5 @@
 export const SKILL_TOOL_NAME = "Skill";
+export const MODEL_TASK_TOOL_NAME = "ModelTask";
 /** Stable SDK function names, including agents whose names reach the 64-character cap. */
 export function agentToolName(name: string, mode: "handoff" | "delegate"): string {
   const prefix = mode === "handoff" ? "handoff_" : "delegate_";
@@ -44,6 +45,7 @@ export const SLACK_TOOL_NAMES: readonly string[] = [
  * decided before the run's tool set is built.
  */
 export const BUILTIN_TOOL_NAMES: readonly string[] = [
+  MODEL_TASK_TOOL_NAME,
   SKILL_TOOL_NAME,
   IMAGE_TOOL_NAME,
   EDIT_IMAGE_TOOL_NAME,

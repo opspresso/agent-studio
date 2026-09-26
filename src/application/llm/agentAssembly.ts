@@ -2,6 +2,9 @@ import { DOCUMENT_FORMATS, DOCUMENT_PROFILES } from "@/domain/document/processor
 /** Shared capability and prompt assembly for SDK execution and preview. */
 
 import type { ChannelToolDef } from "@/domain/llm/channel";
+import { MODEL_TASK_TOOL_NAME } from "@/domain/llm/toolNames";
+import { MODEL_TASK_TOOL_DEF } from "./modelTaskDefinition";
+import type { CallRoutingDeps } from "./callModelRouter";
 import { MAX_TOOLS_PER_REQUEST } from "@/domain/llm/toolLimits";
 import type { ChatMessageInput, McpToolResult, UsageInfo } from "@/domain/llm/types";
 import { SAVABLE_TYPES } from "@/domain/artifact/types";
@@ -205,6 +208,7 @@ export type FileSaver = (input: {
  * anything satisfying it by shape previews exactly what it would run.
  */
 export interface AgentCapabilityDeps {
+  callRouting?: CallRoutingDeps;
   loadSkillContent?: SkillContentLoader;
   canDelegate?: boolean;
   generateImage?: ImageGenerator;
@@ -912,6 +916,7 @@ export interface AgentToolsInput {
   withFileTool?: boolean;
   withAudioTools?: boolean;
   withWorkspaceTool?: boolean;
+  withModelTasks?: boolean;
   /** Whether this run may read the Slack workspace its agent's bot is in. */
   withSlackTools: boolean;
   /**
@@ -936,6 +941,10 @@ export function buildAgentTools(input: AgentToolsInput): {
   // only when its name is in here, so "offered" and "intercepted" cannot drift
   // apart — an MCP tool named like an inactive builtin stays reachable.
   const builtinNames = new Set<string>();
+  if (input.withModelTasks) {
+    tools.push(MODEL_TASK_TOOL_DEF);
+    builtinNames.add(MODEL_TASK_TOOL_NAME);
+  }
   if (canLoadSkills && skills.length > 0) {
     tools.push(skillToolDef(skills));
     builtinNames.add(SKILL_TOOL_NAME);
@@ -1113,6 +1122,7 @@ export function assembleAgentRun(
     withFileTool: Boolean(deps.fileTool),
     withAudioTools: Boolean(deps.audioTools),
     withWorkspaceTool: Boolean(deps.workspaceTool),
+    withModelTasks: Boolean(deps.callRouting),
     withImageTool: Boolean(deps.generateImage),
     withEditTool: canEdit,
     withImageTransfer: canTransfer,
