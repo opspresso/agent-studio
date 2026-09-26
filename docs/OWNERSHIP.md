@@ -14,7 +14,8 @@
 
 | 결정 | 소유자 | 확인 |
 |---|---|---|
-| 호출 단위 모델 tier·작업 목적·Agent 저장 설정 | `src/domain/llm/callRouting.ts` | 구조 |
+| 호출 단위 모델 tier·작업 목적·전역 정책 형태와 기본값 | `src/domain/llm/callRouting.ts`; Agent는 boolean 사용 여부만 저장한다 | 구조 |
+| 전역 라우팅 정책 저장·검증과 모델 삭제 가드 | `src/application/llm/modelRegistry.ts`, `callRoutingPolicy.ts` | 코드 |
 | 보조 호출 모델 우선순위·권한·기능·예산·승격·fallback | `src/application/llm/callModelRouter.ts`; context 추정은 기존 `contextBudget.ts`를 사용한다 | 코드 |
 | ModelTask의 SDK 호출·청구·안전한 라우팅 trace | `src/application/runtime/modelTask.ts`; 모델 usage 해석은 `modelUsage.ts`, 로컬 span 변환은 `tracing.ts` | 코드 |
 | 실행의 첫 응답을 확인한 뒤 경고를 먼저 전달하고 조기 종료 시 원본 실행을 닫기 | `src/application/run/leadingWarnings.ts` 의 `withLeadingWarnings`. Chat과 실행 API가 같은 첫 응답·종료 계약을 사용한다 | 구조 |

@@ -21,6 +21,7 @@ export type RecordUsageFn = (record: {
 }) => Promise<void>;
 
 export interface EngineDeps {
+  modelRoutingPolicy?: import("@/domain/llm/callRouting").CallRoutingPolicy;
   callRouting?: import("@/application/llm/callModelRouter").CallRoutingDeps;
   onSdkSpan?: (span: TraceSpan) => void;
   channel: ModelProvider;

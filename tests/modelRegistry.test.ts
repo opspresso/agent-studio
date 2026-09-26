@@ -3,6 +3,7 @@ import { createModelRegistryUseCases } from "@/application/llm/modelRegistry";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { registeredModelConfig, registeredModelProblem, registrationFromDiscovery, type RegisteredModel } from "@/domain/llm/providerModels";
 import { modelType } from "@/domain/llm/models";
+import { DEFAULT_CALL_ROUTING_POLICY } from "@/domain/llm/callRouting";
 import type { FakeStore } from "./fakeStore";
 
 const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
@@ -35,6 +36,28 @@ describe("deployment model registry", () => {
     expect(await useCases.discover("openai")).toHaveLength(1);
     expect(await useCases.list()).toEqual([]);
     expect(changed).not.toHaveBeenCalled();
+  });
+  it("stores one shared routing policy, preserves unrelated settings and protects its model pool", async () => {
+    const { useCases, changed } = setup();
+    await settingsRepository.update(() => ({ updatedAt: "", adminEmails: "admin@example.test" }));
+    await useCases.save({ ...model, pricing: { inputPer1M: 0.1, outputPer1M: 0.2 } }, "admin@example.test");
+    const policy = { ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: model.id } };
+    expect(await useCases.saveRouting(policy, "admin@example.test")).toMatchObject({ configured: true, policy });
+    expect((await useCases.getRouting()).policy).toEqual(policy);
+    expect((await settingsRepository.get())?.adminEmails).toBe("admin@example.test");
+    await expect(useCases.remove(model.id, "admin@example.test")).rejects.toThrow("routing:fast");
+    expect(changed).toHaveBeenCalledTimes(2);
+  });
+  it("refuses invalid or unregistered shared routing models and unavailable connections", async () => {
+    const { useCases } = setup();
+    await expect(useCases.saveRouting({ ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: "missing/model" } }, "admin@example.test")).rejects.toThrow("registered text model");
+    await useCases.save(model, "admin@example.test");
+    await expect(useCases.saveRouting({ ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: model.id } }, "admin@example.test")).rejects.toThrow("price is unknown");
+    await useCases.save({ ...model, pricing: { inputPer1M: 0, outputPer1M: 0 } }, "admin@example.test");
+    await expect(useCases.saveRouting({ ...DEFAULT_CALL_ROUTING_POLICY, tiers: { vision: model.id } }, "admin@example.test")).rejects.toThrow("tier vision");
+    await expect(useCases.saveRouting({ ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: model.id }, localOnly: true }, "admin@example.test")).rejects.toThrow("self-hosted");
+    await settingsRepository.update(current => ({ ...current!, llmProviders: [] }));
+    await expect(useCases.saveRouting({ ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: model.id } }, "admin@example.test")).rejects.toThrow("registered text model");
   });
 
   it("only discovers configured providers", async () => {

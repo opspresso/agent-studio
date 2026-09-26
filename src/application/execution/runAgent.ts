@@ -35,6 +35,7 @@ import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecyc
 import { callerFor, runClock, toEngineParameters, toRunInput } from "./deps";
 import { memoryPrepared, prepareMemoryForRun } from "./memoryRecall";
 import { openRuntimeSession, runtimeFingerprint } from "@/application/runtime/session";
+import { DEFAULT_CALL_ROUTING_POLICY } from "@/domain/llm/callRouting";
 
 export type {
   ExecutionDeps,
@@ -287,13 +288,15 @@ export async function* executeAgent(
     // assembles has to agree on when "now" is, and a parent and a child landing
     // on different dates across a midnight boundary is the exact confusion the
     // clock exists to remove. The pinned deps travel down the transfer chain.
+    const routingPolicy = await deps.getCallRoutingPolicy?.() ?? structuredClone(DEFAULT_CALL_ROUTING_POLICY);
     const runtime = deps.runtimeSessions && input.conversation?.surface === "chat" && input.actor?.kind === "user"
-      ? await openRuntimeSession(deps.runtimeSessions, { sessionId: input.conversation.id, ownerEmail: input.actor.id, agentName: input.agent.name, configuration: input.configuration }, input.resumeApproval)
+      ? await openRuntimeSession(deps.runtimeSessions, { sessionId: input.conversation.id, ownerEmail: input.actor.id, agentName: input.agent.name, configuration: input.configuration,
+        routingPolicyFingerprint: runtimeFingerprint(routingPolicy) }, input.resumeApproval)
       : undefined;
     if (input.resumeApproval && !runtime) throw new ValidationError("Approval resumption requires a persisted chat session");
     const messages = runtime?.checkpoint?.input.messages ?? input.messages;
     const startedAt = runtime?.checkpoint?.input.now ? new Date(runtime.checkpoint.input.now) : runClock(deps);
-    const runDeps: ExecutionDeps = { ...deps, now: () => startedAt };
+    const runDeps: ExecutionDeps = { ...deps, now: () => startedAt, getCallRoutingPolicy: async () => routingPolicy };
     // Recall explicit bindings before discovery, so remembered associations can
     // help find the sources needed to answer the request.
     const recallStartedAt = new Date();

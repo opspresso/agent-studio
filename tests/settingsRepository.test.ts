@@ -44,6 +44,7 @@ describe("settingsRepository", () => {
       embeddingModel: "selfhosted/Qwen/Qwen3-Embedding-4B",
       rerankerModel: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
       decisionModel: "router/~typesafe/jev-latest",
+      modelRouting: { ...(await import("@/domain/llm/callRouting")).DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: "openai/gpt-test" } },
       rerankerMinScore: "0.02",
       pluginsRepo: "opspresso/agent-plugins",
       pluginsRepoBranch: "main",

@@ -169,7 +169,7 @@ export function createCallModelRouter(
         } catch (error) { signal?.throwIfAborted(); lastError = error; }
         observe({ purpose: task.purpose, model: selected, ...(tier ? { tier } : {}), source, outcome: qualityFailed ? "quality-rejected" : "failed", attempt });
         state.failures[selected] = (state.failures[selected] ?? 0) + 1;
-        if (selected === baseModel) throw lastError;
+        if (source === "default") throw lastError;
         if (settings.enabled && (qualityFailed || state.failures[selected]! >= FAILURES_BEFORE_PROMOTION)) {
           const promotionOrder: ModelTier[] = task.imageCount ? ["vision", "reasoning"] : ["fast", "general", "coding", "reasoning"];
           const higher = promotionOrder.slice(Math.max(0, tier ? promotionOrder.indexOf(tier) + 1 : 0))

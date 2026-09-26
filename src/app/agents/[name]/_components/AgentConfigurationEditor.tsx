@@ -222,7 +222,7 @@ export function AgentConfigurationEditor({
         maxRows={30}
         styles={monoInput}
       />
-      <ModelRoutingEditor value={value.parameters.modelRouting} models={models}
+      <ModelRoutingEditor value={value.parameters.modelRouting}
         onChange={(modelRouting) => patchParams({ modelRouting })} />
 
       <Divider label={t("configuration.group.response")} labelPosition="left" />

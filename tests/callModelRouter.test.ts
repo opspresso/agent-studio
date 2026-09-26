@@ -3,7 +3,8 @@ import { listModels, replaceModelRegistry, type ModelConfig } from "@/domain/llm
 import { DEFAULT_CALL_ROUTING, type CallRoutingEvent, type CallRoutingSettings, type CallRoutingState, type RoutedModelTask } from "@/domain/llm/callRouting";
 import { createCallModelRouter, routingPromptSummary, type CallRoutingDeps } from "@/application/llm/callModelRouter";
 import { agentParametersSchema } from "@/app/api/agents/_lib/schemas";
-import { assertModelSupports } from "@/application/agent/configurationPolicy";
+import { assertCallRoutingPolicy } from "@/application/llm/callRoutingPolicy";
+import { modelRoutingPolicySchema } from "@/app/api/models/routing/schema";
 
 const original = listModels();
 function model(id: string, patch: Partial<ModelConfig> = {}): ModelConfig {
@@ -99,6 +100,13 @@ describe("call model routing", () => {
     expect(state.spentUsd).toBeGreaterThanOrEqual(result.usage.costUsd * 2);
     expect(events).toContainEqual(expect.objectContaining({ outcome: "quality-rejected", model: "fast" }));
   });
+  it("promotes a failed tier selection even when that tier uses the Agent's main model", async () => {
+    const { execute, events } = setup({ ...settings, tiers: { general: "base", reasoning: "strong" }, policies: { summary: "general" } });
+    const invoke = vi.fn().mockResolvedValueOnce({ ...result, text: "" }).mockResolvedValueOnce(result);
+    await execute(task, invoke);
+    expect(invoke.mock.calls.map(([model]) => model)).toEqual(["base", "strong"]);
+    expect(events.at(-1)).toMatchObject({ source: "promotion", model: "strong", outcome: "completed" });
+  });
   it("filters capability, context, price, security and unavailable candidates before decision", async () => {
     const variants = [
       [model("fast", { capabilities: { tools: true, imageInput: false, reasoning: false, structuredOutput: false } }), { ...task, purpose: "vision" as const, imageCount: 1 }, "capability"],
@@ -146,15 +154,20 @@ describe("call model routing", () => {
 });
 
 describe("routing settings admission", () => {
-  it("accepts disabled settings and rejects unknown tiers, invalid budgets and excessive calls", () => {
-    expect(agentParametersSchema.parse({ modelRouting: settings }).modelRouting).toEqual(settings);
+  const { enabled: _, ...policy } = settings;
+  it("keeps only an Agent opt-in and rejects Agent-owned policy objects", () => {
+    expect(agentParametersSchema.parse({ modelRouting: true }).modelRouting).toBe(true);
+    expect(agentParametersSchema.safeParse({ modelRouting: settings }).success).toBe(false);
+  });
+  it("rejects unknown tiers, invalid budgets and excessive calls in the shared policy", () => {
+    expect(modelRoutingPolicySchema.parse({ policy }).policy).toEqual(policy);
     for (const patch of [{ maxCalls: 31 }, { maxCallCostUsd: 2 }, { tiers: { invented: "fast" } }]) {
-      expect(agentParametersSchema.safeParse({ modelRouting: { ...settings, ...patch } }).success).toBe(false);
+      expect(modelRoutingPolicySchema.safeParse({ policy: { ...policy, ...patch } }).success).toBe(false);
     }
   });
   it("validates registered models and configured task policies when enabling", () => {
-    expect(() => assertModelSupports("base", { piiFiltering: false, modelRouting: settings })).not.toThrow();
-    expect(() => assertModelSupports("base", { piiFiltering: false, modelRouting: { ...settings, tiers: { fast: "missing" } } })).toThrow("registered text model");
-    expect(() => assertModelSupports("base", { piiFiltering: false, modelRouting: { ...settings, policies: { vision: "vision" } } })).toThrow("no model");
+    expect(() => assertCallRoutingPolicy(policy, listModels())).not.toThrow();
+    expect(() => assertCallRoutingPolicy({ ...policy, tiers: { fast: "missing" } }, listModels())).toThrow("registered text model");
+    expect(() => assertCallRoutingPolicy({ ...policy, policies: { vision: "vision" } }, listModels())).toThrow("no model");
   });
 });

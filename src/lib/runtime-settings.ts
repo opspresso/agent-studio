@@ -18,6 +18,7 @@ import type { WorkspaceRuntime } from "@/domain/workspace/types";
 import { workspaceModelChannel, workspaceRuntimeModelCompatible } from "@/domain/workspace/runtimeModels";
 import { withWorkspaceModelChannel } from "@/infrastructure/workspace/runtimeAdapters";
 import type { AppSettings, ArtifactAccessMode } from "@/domain/settings/types";
+import { DEFAULT_CALL_ROUTING_POLICY, type CallRoutingPolicy } from "@/domain/llm/callRouting";
 import {
   toUnknownModelPolicy,
   type UnknownModelPolicy,
@@ -123,6 +124,10 @@ export function startPublishedModelRefresh(): void {
 
 export async function getDefaultModel(): Promise<string | undefined> {
   return (await loadSettings())?.defaultModel;
+}
+
+export async function getCallRoutingPolicy(): Promise<CallRoutingPolicy> {
+  return structuredClone((await loadSettings())?.modelRouting ?? DEFAULT_CALL_ROUTING_POLICY);
 }
 
 export async function getDecisionModelSelection(): Promise<ModelSelection | undefined> {

@@ -112,17 +112,25 @@ SDK function tool 동시성은 5다. 실제 실행에 진입한 도구만 결과
 
 ### 호출 단위 모델 라우팅
 
-Agent 설정의 `parameters.modelRouting`은 선택 기능이다. 미설정 Agent는 기존 도구와 주 모델을
-그대로 사용한다. 설정한 Agent에는 같은 Run 안의 `ModelTask` 도구가 제공된다. 주 Agent의
+Agent 설정의 `parameters.modelRouting`은 boolean 사용 여부만 저장한다. 모델 배정·작업별
+정책·보안·예산·품질 기준은 Settings의 `modelRouting` 한 곳에 저장하며
+Settings → Models → Model 사용 설정에서 관리한다. Agent 화면에는 스위치와 읽기 전용
+tier 요약만 보인다. 미설정 Agent는 기존 도구와 주 모델을 그대로 사용한다.
+설정한 Agent에는 같은 Run 안의 `ModelTask` 도구가 제공된다. 주 Agent의
 SDK 턴은 항상 `model`을 사용하며 ModelTask의 `summary`, `classification`, `coding`,
 `reasoning`, `vision` 호출만 별도 모델을 선택한다. 도구는 필요 문맥과 기존 이미지 핸들만
 전달하며 다른 도구를 실행하거나 두 번째 Agent 루프를 만들지 않는다.
 
 활성화 시 선택 순서는 명시적 모델 → 작업별 tier 정책 → Jev Choice → 주 모델이다.
 비활성화하면 ModelTask도 주 모델을 사용하며 명시적 override와 Jev는 무시한다.
-`tiers`는 Agent가 허용한 등록 모델 목록이다. 명시적 모델은 이 목록 또는 주 모델에 있어야 하며,
+`tiers`는 관리자가 허용한 전역 등록 모델 목록이다. 명시적 모델은 이 목록 또는 주 모델에 있어야 하며,
 잘못된 명시적 override는 다른 모델로 조용히 바꾸지 않고 거절한다. 작업별 정책의 모델이
 사용 불가능하면 남은 후보를 Jev로 판단한다.
+
+전역 정책은 Run 준비 시 스냅샷을 만들고 Handoff·위임에도 같은 스냅샷을 사용한다.
+전역 정책 변경은 이미 진행 중인 Run을 바꾸지 않는다. 승인 대기에는 정책 fingerprint를
+보관하고 재개할 때 비교하므로 다른 모델·예산·보안 조건으로 승인된 작업을 재생하지 않는다.
+Agent가 라우팅 기능을 설정하지 않았으면 이 fingerprint 검사에 영향을 받지 않는다.
 
 Jev에는 목적, 고정된 용어와 입력 크기로 만든 요약, 필요 기능, 예산과 사용 가능한 tier만
 보낸다. 원문 substring, 모델 ID, 이미지 bytes, 도구·system prompt·자격증명은 보내지 않는다.
@@ -195,6 +203,8 @@ Chat 삭제는 tombstone으로 늦게 끝난 실행의 이력 재생성을 막�
 SDK의 기본 공개 exporter는 로컬 `TracingProcessor`로 교체한다. 각 Agent의 앱 Trace에
 native Agent·generation·function·MCP listing·Guardrail·Handoff span을 연결하며 native
 span ID와 부모 ID를 보존한다. 모델 입력·출력, 도구 인자와 credential은 수집하지 않는다.
+로컬 수집의 async context는 route bundle 사이에서도 프로세스 단위로 공유한다.
+ModelTask는 청구된 generation span을 직접 소유하며 어댑터의 중첩 span은 수집하지 않는다.
 승인 대기 실행은 `awaiting-approval` 상태다. 선택적인 운영 OTLP 전송은 배포가 구성한
 기존 exporter를 통하며, 기본 실행에는 외부 tracing 서비스나 OpenAI API key가 필요 없다.
 

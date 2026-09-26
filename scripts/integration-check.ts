@@ -123,10 +123,11 @@ async function main() {
   // ---------- mock LLM server ----------
   const llmCalls: Array<Record<string, unknown>> = [];
   const decisionCalls: Array<Record<string, unknown>> = [];
+  let onNextRoutingRequest: (() => Promise<void>) | undefined;
   const mock = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
-    req.on("end", () => {
+    req.on("end", async () => {
       const body = JSON.parse(raw) as {
         stream?: boolean;
         model?: string;
@@ -149,6 +150,11 @@ async function main() {
         !hasToolResult &&
         JSON.stringify(body.messages).includes("integration-skill") &&
         JSON.stringify(body).includes('"tools"');
+      if (wantsModelTask && onNextRoutingRequest) {
+        const change = onNextRoutingRequest;
+        onNextRoutingRequest = undefined;
+        await change();
+      }
 
       if (body.stream) {
         res.writeHead(200, { "Content-Type": "text/event-stream" });
@@ -1611,15 +1617,22 @@ async function main() {
 
     // ---------- call-level routing: actual Jev/LLM transport and SQL persistence ----------
     {
-      const { DEFAULT_CALL_ROUTING } = await import("@/domain/llm/callRouting");
-      const modelRouting = { ...DEFAULT_CALL_ROUTING, enabled: true, tiers: { fast: "integration/fast" }, localOnly: true };
-      const routedConfiguration = { ...configuration, parameters: { ...configuration.parameters, modelRouting } };
+      const { DEFAULT_CALL_ROUTING_POLICY } = await import("@/domain/llm/callRouting");
+      const modelRouting = { ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: "integration/fast" }, localOnly: true };
+      const { modelRegistryUseCases } = await import("@/lib/container");
+      const routingActor = `it-routing-${suffix}@example.test`;
+      await modelRegistryUseCases.saveRouting(modelRouting, routingActor);
+      const routingAuditDay = new Date().toISOString().slice(0, 10);
+      assert.deepEqual((await modelRegistryUseCases.getRouting()).policy, modelRouting);
+      const routedConfiguration = { ...configuration, parameters: { ...configuration.parameters, modelRouting: true } };
       const current = (await agentRepository.get(agentName))!;
       const routedAt = new Date(Date.parse(current.updatedAt) + 1).toISOString();
       await agentRepository.update({ ...current, configuration: routedConfiguration, updatedAt: routedAt }, current.updatedAt);
-      assert.deepEqual((await agentRepository.get(agentName))?.configuration?.parameters.modelRouting, modelRouting);
+      assert.equal((await agentRepository.get(agentName))?.configuration?.parameters.modelRouting, true);
       const before = llmCalls.length;
       const routed = [];
+      const nextPolicy = { ...modelRouting, tiers: { fast: "integration/model" } };
+      onNextRoutingRequest = async () => { await modelRegistryUseCases.saveRouting(nextPolicy, routingActor); };
       for await (const chunk of executeAgent(executionDeps, {
         agent, configuration: routedConfiguration, messages: [{ role: "user", content: "route model task" }],
         actor: { kind: "user", id: "it@example.com" },
@@ -1641,14 +1654,43 @@ async function main() {
       const trace = await executionDeps.traces!.get(traceId);
       assert.ok(trace?.spans.some((span) => span.name === "model-routing" && JSON.stringify(span.output).includes('"source":"jev"')), "routing reasons survived trace storage");
       assert.ok(trace?.spans.some((span) => span.kind === "model" && span.name === "integration/jev" && span.output?.costUsd === 0.001), "Jev billing has its own model span");
+      assert.deepEqual(trace?.spans.filter(span => span.kind === "model").map(span => span.name), ["integration/model", "integration/jev", "integration/fast", "integration/model"], "each actual inference has exactly one billed span");
       assert.ok(!JSON.stringify(trace).includes("ROUTING_PRIVATE_SOURCE"), "routing trace stores no source prompt");
+      const nextBefore = llmCalls.length;
+      for await (const chunk of executeAgent(executionDeps, {
+        agent, configuration: routedConfiguration, messages: [{ role: "user", content: "route model task" }], actor: { kind: "user", id: "it@example.com" },
+      })) assert.equal(chunk.error, undefined);
+      assert.deepEqual(llmCalls.slice(nextBefore).map(call => call.model), ["model", "model", "model"], "next Run uses the new shared policy");
+      assert.equal(decisionCalls.length, 2);
+      pass("shared routing policy: in-flight snapshot stability and next-Run adoption");
       const disabledBefore = llmCalls.length;
       for await (const chunk of executeAgent(executionDeps, {
-        agent, configuration: { ...routedConfiguration, parameters: { ...routedConfiguration.parameters, modelRouting: { ...modelRouting, enabled: false } } },
+        agent, configuration: { ...routedConfiguration, parameters: { ...routedConfiguration.parameters, modelRouting: false } },
         messages: [{ role: "user", content: "route model task" }], actor: { kind: "user", id: "it@example.com" },
       })) assert.equal(chunk.error, undefined);
       assert.deepEqual(llmCalls.slice(disabledBefore).map((call) => call.model), ["model", "model", "model"]);
-      assert.equal(decisionCalls.length, 1, "disabled routing does not contact Jev");
+      assert.equal(decisionCalls.length, 2, "disabled routing does not contact Jev");
+      const { pendingRuntimeApproval } = await import("@/application/runtime/session");
+      const sessionId = `integration-routing-approval-${suffix}`;
+      const owner = "it@example.com";
+      const approvalConfiguration = { ...routedConfiguration, parameters: { ...routedConfiguration.parameters, policy: { approvalTools: ["Skill"] } } };
+      const scope = { agent, configuration: approvalConfiguration, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
+      try {
+        for await (const chunk of executeAgent(executionDeps, { ...scope, messages: [{ role: "user", content: "use your skill" }] })) assert.equal(chunk.error, undefined);
+        const pending = await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner);
+        assert.ok(pending?.approvals.length);
+        await modelRegistryUseCases.saveRouting({ ...nextPolicy, maxCalls: 9 }, routingActor);
+        const callsBeforeResume = llmCalls.length;
+        await assert.rejects(async () => {
+          for await (const chunk of executeAgent(executionDeps, { ...scope, messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) assert.equal(chunk.error, undefined);
+        }, /routing policy changed/);
+        assert.equal(llmCalls.length, callsBeforeResume, "changed policy cannot execute an approved call");
+        assert.equal((await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner))?.revision, pending.revision, "policy refusal happens before claiming pending work");
+        pass("shared routing policy: approval changes rejected before pending claim");
+      } finally { await executionDeps.runtimeSessions!.repository.delete(sessionId, owner); }
+      for (const row of (await auditRepository.listByDay(routingAuditDay, 100)).filter(row => row.actorEmail === routingActor)) {
+        auditFixtures.push({ day: routingAuditDay, createdAt: row.createdAt, eventId: row.eventId });
+      }
       const restoreAt = new Date(Date.parse(routedAt) + 1).toISOString();
       await agentRepository.update({ ...current, configuration, updatedAt: restoreAt }, routedAt);
       pass("call model routing: SQL settings, Jev metadata boundary, primary model stability, billing, trace and disable");

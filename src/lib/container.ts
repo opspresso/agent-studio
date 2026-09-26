@@ -209,6 +209,7 @@ import {
   getEmbeddingTarget,
   getDefaultModel,
   getDecisionModelSelection,
+  getCallRoutingPolicy,
   getEmbeddingModel,
   getEmbeddingModelSelection,
   getLlmProviderConfigs,
@@ -998,6 +999,7 @@ const deliverAgentMessage: PostCostAlert = async (agent, destination, text) => {
 
 /** Repository and channel dependencies for the execution facade. */
 export const executionDeps: ExecutionDeps = {
+  getCallRoutingPolicy: getCallRoutingPolicy,
   createToolSchemaValidator,
   runtimeSessions: runtimeSessions,
   agents: agentRepository,

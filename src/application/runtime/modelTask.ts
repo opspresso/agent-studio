@@ -8,6 +8,7 @@ import type { AgentDeps, RunAgentInput } from "./types";
 import type { RuntimeTurn } from "./model";
 import type { RuntimeEmitter } from "./output";
 import { modelResponseUsage } from "./modelUsage";
+import { withoutNativeTracing } from "./tracing";
 
 /** Focused inference inside the admitted Run, with no tools, credentials or second Agent loop. */
 export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, turn: RuntimeTurn, images: ImageRegistry, emit: RuntimeEmitter) {
@@ -17,7 +18,7 @@ export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, tu
     await deps.recordUsage?.({ ...usage, agentName: input.agentName, model: usage.model! });
   }
   return async (args: Record<string, unknown>) => {
-    if (!deps.callRouting || !input.parameters?.modelRouting) throw new Error("ModelTask is not configured");
+    if (!deps.callRouting || !deps.modelRoutingPolicy || input.parameters?.modelRouting === undefined) throw new Error("ModelTask is not configured");
     if (!CALL_PURPOSES.includes(args.purpose as CallPurpose) || typeof args.prompt !== "string" || !args.prompt.trim()) throw new Error("Invalid ModelTask request");
     const ids = args.image_ids;
     if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string" || !images.get(id))) throw new Error("ModelTask image is not available in this run");
@@ -35,7 +36,7 @@ export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, tu
           };
           return decision;
         }),
-      } }, input.parameters!.modelRouting!, input.model,
+      } }, { ...deps.modelRoutingPolicy!, enabled: input.parameters!.modelRouting === true }, input.model,
         state, (event) => events.push(event), record);
       const purpose = args.purpose as CallPurpose;
       const prompt = `${purpose === "classification" ? "Return a JSON object or array. " : ""}${args.prompt as string}`;
@@ -53,9 +54,10 @@ export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, tu
             ...(purpose === "reasoning" ? { reasoning: { effort: "high" } } : {}),
           },
         };
-        const native = await (await deps.channel.getModel(model)).getResponse(request);
+        const native = await withoutNativeTracing(async () => (await deps.channel.getModel(model)).getResponse(request));
         const usage = modelResponseUsage(model, native);
-        generation.spanData.usage = { input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, cost_usd: usage.costUsd };
+        generation.spanData.usage = { input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, cost_usd: usage.costUsd,
+          cached_tokens: usage.cachedTokens ?? 0, reasoning_tokens: usage.reasoningTokens ?? 0 };
         // Bill every successful paid response, including a subsequently rejected answer.
         await record(usage);
         const text = native.output.flatMap((item) => item.type !== "message" ? [] : typeof item.content === "string" ? [item.content] : item.content.flatMap((part) => part.type === "output_text" ? [part.text] : [])).join("\n");

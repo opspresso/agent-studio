@@ -3,22 +3,22 @@ import { runAgent } from "@/application/runtime";
 import type { AgentDeps } from "@/application/runtime/types";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { listModels, replaceModelRegistry, type ModelConfig } from "@/domain/llm/models";
-import { DEFAULT_CALL_ROUTING } from "@/domain/llm/callRouting";
+import { DEFAULT_CALL_ROUTING_POLICY, type CallRoutingPolicy } from "@/domain/llm/callRouting";
 import type { TraceSpan } from "@/domain/trace/types";
 import { FakeChannel, contentChunk, toolCallChunk, usageChunk } from "./fakeChannel";
 import { runtimeSessionFixture } from "./runtimeSessionFixture";
 import { pendingRuntimeApproval } from "@/application/runtime/session";
 
 const original = listModels();
-const config = { ...DEFAULT_CALL_ROUTING, enabled: true, tiers: { fast: "local/fast" }, policies: { summary: "fast" as const } };
+const config: CallRoutingPolicy = { ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: "local/fast" }, policies: { summary: "fast" as const } };
 const taskArgs = JSON.stringify({ purpose: "summary", prompt: "Summarize the supplied document", model: null, image_ids: [] });
 function model(id: string): ModelConfig {
   return { id, provider: "local", providerKind: "selfhosted", family: "test", maker: "test", displayName: id,
     pricing: { inputPer1M: 0, outputPer1M: 0 }, contextWindow: 32_000, maxTokens: 4_000,
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true } };
 }
-function deps(channel: FakeChannel, spans: TraceSpan[] = []): AgentDeps {
-  return { channel, createToolSchemaValidator, onSdkSpan: (span) => spans.push(span),
+function deps(channel: FakeChannel, spans: TraceSpan[] = [], policy: CallRoutingPolicy = config): AgentDeps {
+  return { channel, createToolSchemaValidator, modelRoutingPolicy: policy, onSdkSpan: (span) => spans.push(span),
     callRouting: { decision: { choose: vi.fn() }, selectedDecisionModel: async () => undefined, canUseModel: async () => true } };
 }
 beforeEach(() => {
@@ -38,13 +38,14 @@ describe("native runtime call routing", () => {
     const chunks = [];
     for await (const chunk of runAgent(deps(channel, spans), {
       agentName: "test", model: "local/base", messages: [{ role: "user", content: "Summarize" }],
-      parameters: { modelRouting: { ...config, enabled } },
+      parameters: { modelRouting: enabled },
     })) chunks.push(chunk);
     expect(chunks.filter((chunk) => chunk.error)).toEqual([]);
     expect(channel.seenParams.map((params) => params.model)).toEqual(["local/base", enabled ? "local/fast" : "local/base", "local/base"]);
     expect(channel.seenParams[1]?.tools ?? []).toHaveLength(0);
     expect(chunks.some((chunk) => chunk.toolResult?.content.includes("A concise summary"))).toBe(true);
     expect(chunks.filter((chunk) => chunk.usage).map((chunk) => chunk.usage?.costUsd)).toEqual([0.01, 0.02, 0.03]);
+    expect(spans.filter(span => span.kind === "model").map(span => span.name)).toEqual(["local/base", enabled ? "local/fast" : "local/base", "local/base"]);
     const routing = spans.find((span) => span.name === "model-routing");
     expect(routing?.output?.routing).toEqual(expect.arrayContaining([expect.objectContaining({ source: enabled ? "policy" : "default", outcome: "completed" })]));
     expect(JSON.stringify(spans)).not.toContain("supplied document");
@@ -61,9 +62,9 @@ describe("native runtime call routing", () => {
       [toolCallChunk(0, "vision", "ModelTask", JSON.stringify({ purpose: "vision", prompt: "Describe the image", model: null, image_ids: ["img_1"] }))],
       [contentChunk("An image description")], [contentChunk("Final description")],
     ]);
-    for await (const chunk of runAgent(deps(channel), { agentName: "test", model: "local/base",
+    for await (const chunk of runAgent(deps(channel, [], { ...config, tiers: { vision: "local/fast" }, policies: { vision: "vision" } }), { agentName: "test", model: "local/base",
       messages: [{ role: "user", content: [{ type: "text", text: "Describe" }, { type: "image_url", image_url: { url: image } }] }],
-      parameters: { modelRouting: { ...config, tiers: { vision: "local/fast" }, policies: { vision: "vision" } } },
+      parameters: { modelRouting: true },
     })) expect(chunk.error).toBeUndefined();
     expect(channel.seenParams.map((params) => params.model)).toEqual(["local/base", "local/fast", "local/base"]);
     expect(JSON.stringify(channel.seenParams[1]?.messages)).toContain(image);
@@ -78,8 +79,8 @@ describe("native runtime call routing", () => {
       [toolCallChunk(0, "over", "ModelTask", taskArgs)], [contentChunk("Final answer")],
     ]);
     const chunks = [];
-    for await (const chunk of runAgent(deps(channel), { agentName: "test", model: "local/base",
-      messages: [{ role: "user", content: "Hello" }], parameters: { modelRouting: { ...config, maxCalls: 1 } }, maxTurn: 6 })) chunks.push(chunk);
+    for await (const chunk of runAgent(deps(channel, [], { ...config, maxCalls: 1 }), { agentName: "test", model: "local/base",
+      messages: [{ role: "user", content: "Hello" }], parameters: { modelRouting: true }, maxTurn: 6 })) chunks.push(chunk);
     expect(channel.seenParams.filter((params) => params.model === "local/fast")).toHaveLength(1);
     expect(chunks.some((chunk) => chunk.toolResult?.content.includes("not available"))).toBe(true);
     expect(chunks.some((chunk) => chunk.toolResult?.content.includes("call limit"))).toBe(true);
@@ -87,9 +88,9 @@ describe("native runtime call routing", () => {
 
   it("persists routing counters across an approval restart and applies the saved limit after resumption", async () => {
     const f = runtimeSessionFixture({ approvalTools: ["Skill"] });
-    f.configuration.parameters.modelRouting = { ...config, maxCalls: 1 };
+    f.configuration.parameters.modelRouting = true;
     const callDeps = deps(new FakeChannel([]));
-    const overrides = { callRouting: callDeps.callRouting, loadSkillContent: async () => "Instructions" };
+    const overrides = { callRouting: callDeps.callRouting, modelRoutingPolicy: { ...config, maxCalls: 1 }, loadSkillContent: async () => "Instructions" };
     await f.run(new FakeChannel([
       [toolCallChunk(0, "task", "ModelTask", taskArgs)], [contentChunk("summary")],
       [toolCallChunk(0, "approve", "Skill", '{"skill_name":"guide"}')],

@@ -155,12 +155,15 @@ Self-hosted는 키를 생략할 수 있다. 프로바이더 목록은 최대 50�
 
 ### 모델 등록과 사용
 
-Agent 설정의 **모델 라우팅**은 보조 `ModelTask` 호출을 위한 선택 기능이다. 주 모델은 유지한다.
-fast/general/coding/reasoning/vision에 등록 text 모델을 배정하고 필요하면 작업별 tier 정책을
-선택한다. 정책이 없으면 Settings의 결정 모델로 Jev Choice를 요청하고, 결정 모델이 없거나
+Agent 설정의 **모델 라우팅**은 사용 여부만 선택하는 보조 `ModelTask` 기능이다. 주 모델은 유지한다.
+Settings → Models → Model 사용 설정의 **자동 모델 라우팅**에서 fast/general/coding/reasoning/vision에
+등록 text 모델을 한 번 배정한다. 작업별 tier 정책·보안·예산·품질 기준은 접힌 고급 설정에서
+관리하며 모든 사용 Agent가 같은 전역 정책을 따른다. 작업 정책이 없으면 Settings의 결정
+모델로 Jev Choice를 요청하고, 결정 모델이 없거나
 실패하면 주 모델을 사용한다. 비활성화하면 보조 호출도 주 모델을 사용한다.
 가격·한도를 모르는 모델은 보조 호출의 비용·context 검사에서 거절한다.
-필드와 기본값은 [Agent 설정 API](API.md#agent-현재-설정), 실행 계약은
+사용 스위치는 [Agent 설정 API](API.md#agent-현재-설정), 전역 정책 필드와 기본값은
+[모델 API](API.md#models), 실행 계약은
 [호출 단위 라우팅](design/execution.md#호출-단위-모델-라우팅)이 소유한다.
 
 1. `/settings/models`에서 등록한 프로바이더를 선택하고 **Model 조회**를 실행한다.
