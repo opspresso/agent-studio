@@ -135,7 +135,7 @@ Agent가 라우팅 기능을 설정하지 않았으면 이 fingerprint 검사에
 Jev에는 목적, 고정된 용어와 입력 크기로 만든 요약, 필요 기능, 예산과 사용 가능한 tier만
 보낸다. 원문 substring, 모델 ID, 이미지 bytes, 도구·system prompt·자격증명은 보내지 않는다.
 반환값은 `fast`, `general`, `coding`, `reasoning`, `vision` 중 실제 제공한 tier만 인정한다.
-모델 등록·연결, Agent 허용 목록, self-hosted 제한, 기능, 기존 context 예산과 비용 검사는
+모델 등록·연결, 전역 모델 허용 목록, self-hosted 제한, 기능, 기존 context 예산과 비용 검사는
 `callModelRouter.ts`가 모델 호출 직전에 다시 수행한다. 연결 해석 가능 여부와 Run 안의 실패
 기록이 가용성 기준이며, 별도의 외부 health probe는 수행하지 않는다.
 
