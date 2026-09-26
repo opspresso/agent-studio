@@ -80,7 +80,7 @@ describe("native runtime call routing", () => {
     for(const request of channel.seenParams) expect(JSON.stringify(request.messages)).not.toContain(email);
     expect(chunks.some(chunk=>chunk.toolResult?.content.includes(email))).toBe(true);
   });
-  it.each([true, false])("keeps the main model before and after a task when enabled=%s", async (enabled) => {
+  it.each([true, false])("routes the first and subsequent primary calls only when enabled=%s", async (enabled) => {
     const channel = new FakeChannel([
       [toolCallChunk(0, "task", "ModelTask", taskArgs), usageChunk(10, 5, undefined, 0.01)],
       [contentChunk("A concise summary"), usageChunk(11, 6, undefined, 0.02)],
@@ -93,12 +93,12 @@ describe("native runtime call routing", () => {
       parameters: { modelRouting: enabled },
     })) chunks.push(chunk);
     expect(chunks.filter((chunk) => chunk.error)).toEqual([]);
-    expect(channel.seenParams.map((params) => params.model)).toEqual(["local/base", enabled ? "local/fast" : "local/base", "local/base"]);
+    expect(channel.seenParams.map((params) => params.model)).toEqual(Array(3).fill(enabled ? "local/fast" : "local/base"));
     expect(channel.seenParams[1]?.tools ?? []).toHaveLength(0);
     expect(chunks.some((chunk) => chunk.toolResult?.content.includes("A concise summary"))).toBe(true);
     expect(chunks.filter((chunk) => chunk.usage).map((chunk) => chunk.usage?.costUsd)).toEqual([0.01, 0.02, 0.03]);
-    expect(spans.filter(span => span.kind === "model").map(span => span.name)).toEqual(["local/base", enabled ? "local/fast" : "local/base", "local/base"]);
-    const routing = spans.find((span) => span.name === "model-routing");
+    expect(spans.filter(span => span.kind === "model").map(span => span.name)).toEqual(Array(3).fill(enabled ? "local/fast" : "local/base"));
+    const routing = spans.find((span) => span.name === "model-routing" && !(span.output?.routing as Array<{callKind?:string}>)?.some(event=>event.callKind==="primary"));
     expect(routing?.output?.routing).toEqual(expect.arrayContaining([expect.objectContaining({ source: enabled ? "policy" : "default", outcome: "completed" })]));
     expect(JSON.stringify(spans)).not.toContain("supplied document");
   });
@@ -108,7 +108,7 @@ describe("native runtime call routing", () => {
     for await (const chunk of runAgent({ channel, createToolSchemaValidator }, { agentName: "test", model: "local/base", messages: [{ role: "user", content: "Hello" }] })) expect(chunk.error).toBeUndefined();
     expect(channel.seenParams[0]?.tools?.some((tool) => tool.function.name === "ModelTask")).not.toBe(true);
   });
-  it("sends only the referenced Run image to the vision call and returns to the main model", async () => {
+  it("routes the primary vision call and sends only referenced images to the auxiliary call", async () => {
     const image = "data:image/png;base64,aW1hZ2U=";
     const channel = new FakeChannel([
       [toolCallChunk(0, "vision", "ModelTask", JSON.stringify({ purpose: "vision", prompt: "Describe the image", model: null, image_ids: ["img_1"] }))],
@@ -118,7 +118,7 @@ describe("native runtime call routing", () => {
       messages: [{ role: "user", content: [{ type: "text", text: "Describe" }, { type: "image_url", image_url: { url: image } }] }],
       parameters: { modelRouting: true },
     })) expect(chunk.error).toBeUndefined();
-    expect(channel.seenParams.map((params) => params.model)).toEqual(["local/base", "local/fast", "local/base"]);
+    expect(channel.seenParams.map((params) => params.model)).toEqual(["local/fast", "local/fast", "local/fast"]);
     expect(JSON.stringify(channel.seenParams[1]?.messages)).toContain(image);
     expect(JSON.stringify(channel.seenParams[0]?.messages)).toContain("Pass ids in image_ids to `ModelTask`");
   });
@@ -131,7 +131,7 @@ describe("native runtime call routing", () => {
       [toolCallChunk(0, "over", "ModelTask", taskArgs)], [contentChunk("Final answer")],
     ]);
     const chunks = [];
-    for await (const chunk of runAgent(deps(channel, [], { ...config, maxCalls: 1 }), { agentName: "test", model: "local/base",
+    for await (const chunk of runAgent(deps(channel, [], { ...config, tiers: {fast:"local/fast",general:"local/base"}, maxCalls: 5 }), { agentName: "test", model: "local/base",
       messages: [{ role: "user", content: "Hello" }], parameters: { modelRouting: true }, maxTurn: 6 })) chunks.push(chunk);
     expect(channel.seenParams.filter((params) => params.model === "local/fast")).toHaveLength(1);
     expect(chunks.some((chunk) => chunk.toolResult?.content.includes("not available"))).toBe(true);
@@ -142,7 +142,7 @@ describe("native runtime call routing", () => {
     const f = runtimeSessionFixture({ approvalTools: ["Skill"] });
     f.configuration.parameters.modelRouting = true;
     const callDeps = deps(new FakeChannel([]));
-    const overrides = { callRouting: callDeps.callRouting, modelRoutingPolicy: { ...config, maxCalls: 1 }, loadSkillContent: async () => "Instructions" };
+    const overrides = { callRouting: callDeps.callRouting, modelRoutingPolicy: { ...config, maxCalls: 3 }, loadSkillContent: async () => "Instructions" };
     await f.run(new FakeChannel([
       [toolCallChunk(0, "task", "ModelTask", taskArgs)], [contentChunk("summary")],
       [toolCallChunk(0, "approve", "Skill", '{"skill_name":"guide"}')],
@@ -152,7 +152,7 @@ describe("native runtime call routing", () => {
     const next = new FakeChannel([[toolCallChunk(0, "second", "ModelTask", taskArgs)], [contentChunk("done")]]);
     const resumed = await f.run(next, "", { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] },
       overrides, { skills: [{ name: "guide", description: "Guidance" }] });
-    expect(next.seenParams.every((params) => params.model === f.configuration.model)).toBe(true);
-    expect(resumed.some((chunk) => chunk.toolResult?.content.includes("call limit"))).toBe(true);
+    expect(next.seenParams).toHaveLength(0);
+    expect(resumed.some((chunk) => chunk.error?.includes("call limit"))).toBe(true);
   });
 });

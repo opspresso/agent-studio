@@ -7,7 +7,7 @@ import type { RunOrigin } from "@/domain/execution/actor";
 import { FakeChannel } from "./fakeChannel";
 import { DEFAULT_CALL_ROUTING_POLICY } from "@/domain/llm/callRouting";
 import type { RuntimeTurnPersistence } from "@/application/runtime/types";
-import { runtimeFingerprint } from "@/application/runtime/session";
+import { modelRoutingPolicyFingerprint } from "@/application/runtime/session";
 
 function fixture(agentOverrides: Partial<Agent> = {}, configurationOverrides: Partial<AgentConfiguration> = {}) {
   const now = "2026-09-12T00:00:00Z";
@@ -39,7 +39,7 @@ describe("Studio prepares native SDK agent bindings", () => {
       { checkBinding } as unknown as RuntimeTurnPersistence);
     expect(bound.modelRoutingPolicy).toEqual(policy);
     expect(bound.callRouting).toBe(f.deps.callRouting);
-    expect(checkBinding).toHaveBeenCalledWith("model-routing", runtimeFingerprint(policy));
+    expect(checkBinding).toHaveBeenCalledWith("model-routing", modelRoutingPolicyFingerprint(policy));
   });
   it("does not bind routing or block unrelated approvals when an Agent never opted in", async () => {
     const f = fixture();

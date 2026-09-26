@@ -2,17 +2,16 @@ import { withCustomSpan, withGenerationSpan, type ModelRequest } from "@openai/a
 import { CALL_PURPOSES, type CallPurpose, type CallRoutingEvent } from "@/domain/llm/callRouting";
 import type { UsageInfo } from "@/domain/llm/types";
 import { imageDataUrl } from "@/domain/llm/types";
-import { createCallModelRouter } from "@/application/llm/callModelRouter";
+import { createRuntimeRouter } from "./modelRouting";
 import type { ImageRegistry } from "@/application/llm/agentAssembly";
 import type { AgentDeps, RunAgentInput } from "./types";
-import type { RuntimeTurn } from "./model";
+import type { RuntimeTurn } from "./types";
 import type { RuntimeEmitter } from "./output";
 import { modelResponseUsage, modelResponseIsTruncated } from "./modelUsage";
 import { withoutNativeTracing } from "./tracing";
 
 /** Focused inference inside the admitted Run, with no tools, credentials or second Agent loop. */
 export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, turn: RuntimeTurn, images: ImageRegistry, emit: RuntimeEmitter) {
-  const state = turn.routing ??= { calls: 0, spentUsd: 0, failures: {} };
   async function record(usage: UsageInfo) {
     emit({ usage });
     await deps.recordUsage?.({ ...usage, agentName: input.agentName, model: usage.model! });
@@ -27,17 +26,7 @@ export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, tu
     return withCustomSpan(async (span) => {
       // Only routing metadata enters this span; prompt and answers remain out of trace storage.
       span.spanData.data = { routing: events };
-      const router = createCallModelRouter({ ...deps.callRouting!, decision: {
-        choose: (request) => withGenerationSpan(async (generation) => {
-          generation.spanData.model = request.model;
-          const decision = await deps.callRouting!.decision.choose(request);
-          if (decision.usage) generation.spanData.usage = {
-            input_tokens: decision.usage.inputTokens, output_tokens: decision.usage.outputTokens, cost_usd: decision.usage.costUsd,
-          };
-          return decision;
-        }),
-      } }, { ...deps.modelRoutingPolicy!, enabled: input.parameters!.modelRouting === true }, input.model,
-        state, (event) => events.push(event), record);
+      const router = createRuntimeRouter(deps, input, turn, event => events.push(event), record, turn.model);
       const purpose = args.purpose as CallPurpose;
       const prompt = `${purpose === "classification" ? "Return a non-empty JSON object or array. " : ""}${args.prompt as string}`;
       const result = await router.execute({ purpose, prompt, imageCount: selectedImages.length,

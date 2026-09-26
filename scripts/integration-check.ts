@@ -1649,8 +1649,8 @@ async function main() {
         actor: { kind: "user", id: "it@example.com" },
       })) routed.push(chunk);
       assert.ok(!routed.some((chunk) => chunk.error), "routed SDK loop completed");
-      assert.deepEqual(llmCalls.slice(before).map((call) => call.model), ["model", "fast", "model"], "primary stays unchanged around auxiliary inference");
-      assert.equal(decisionCalls.length, 1, "Jev was actually called through the System One adapter");
+      assert.deepEqual(llmCalls.slice(before).map((call) => call.model), ["fast", "fast", "fast"], "primary routes before the first inference and remains selected across tool turns");
+      assert.equal(decisionCalls.length, 2, "primary and auxiliary choices actually use the System One adapter");
       const decision = decisionCalls[0]!;
       const decisionState = JSON.parse(decision.state as string);
       assert.deepEqual(Object.keys(decisionState).sort(), ["availableTiers", "budget", "promptSummary", "purpose", "requiredFeatures", "tierFacts"]);
@@ -1664,18 +1664,19 @@ async function main() {
       assert.ok(traceId);
       const trace = await executionDeps.traces!.get(traceId);
       assert.ok(trace?.spans.some((span) => span.name === "model-routing" && JSON.stringify(span.output).includes('"source":"jev"')), "routing reasons survived trace storage");
+      assert.ok(trace?.spans.some((span) => span.name === "model-routing" && JSON.stringify(span.output).includes('"callKind":"primary"')), "primary selection survived trace storage");
       assert.ok(trace?.spans.some((span) => span.name === "model-routing" && JSON.stringify(span.output).includes('"decisionConfidence":1')), "decision certainty survived trace storage");
       assert.equal(typeof decisionState.tierFacts.fast.estimatedCostUsd,"number");
       assert.equal(decisionState.tierFacts.general.usesPrimaryModel,true);
       assert.ok(trace?.spans.some((span) => span.kind === "model" && span.name === "integration/jev" && span.output?.costUsd === 0.001), "Jev billing has its own model span");
-      assert.deepEqual(trace?.spans.filter(span => span.kind === "model").map(span => span.name), ["integration/model", "integration/jev", "integration/fast", "integration/model"], "each actual inference has exactly one billed span");
+      assert.deepEqual(trace?.spans.filter(span => span.kind === "model").map(span => span.name), ["integration/jev", "integration/fast", "integration/jev", "integration/fast", "integration/fast"], "each actual inference has exactly one billed span");
       assert.ok(!JSON.stringify(trace).includes("ROUTING_PRIVATE_SOURCE"), "routing trace stores no source prompt");
       const nextBefore = llmCalls.length;
       for await (const chunk of executeAgent(executionDeps, {
         agent, configuration: routedConfiguration, messages: [{ role: "user", content: "route model task" }], actor: { kind: "user", id: "it@example.com" },
       })) assert.equal(chunk.error, undefined);
       assert.deepEqual(llmCalls.slice(nextBefore).map(call => call.model), ["model", "model", "model"], "next Run uses the new shared policy");
-      assert.equal(decisionCalls.length, 1,"one physical candidate does not need a paid decision");
+      assert.equal(decisionCalls.length, 2,"one physical candidate does not need a paid decision");
       pass("shared routing policy: in-flight snapshot stability and next-Run adoption");
       const disabledBefore = llmCalls.length;
       for await (const chunk of executeAgent(executionDeps, {
@@ -1683,7 +1684,7 @@ async function main() {
         messages: [{ role: "user", content: "route model task" }], actor: { kind: "user", id: "it@example.com" },
       })) assert.equal(chunk.error, undefined);
       assert.deepEqual(llmCalls.slice(disabledBefore).map((call) => call.model), ["model", "model", "model"]);
-      assert.equal(decisionCalls.length, 1, "disabled routing does not contact Jev");
+      assert.equal(decisionCalls.length, 2, "disabled routing does not contact Jev");
       const { pendingRuntimeApproval } = await import("@/application/runtime/session");
       const sessionId = `integration-routing-approval-${suffix}`;
       const owner = "it@example.com";
@@ -1707,7 +1708,7 @@ async function main() {
       }
       const restoreAt = new Date(Date.parse(routedAt) + 1).toISOString();
       await agentRepository.update({ ...current, configuration, updatedAt: restoreAt }, routedAt);
-      pass("call model routing: SQL settings, Jev metadata boundary, primary model stability, billing, trace and disable");
+      pass("call model routing: SQL settings, Jev metadata boundary, first-response selection and continuation, billing, trace and disable");
     }
 
     // ---------- capped reasoning-only response: transport, billing and trace ----------

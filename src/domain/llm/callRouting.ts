@@ -1,6 +1,6 @@
 export const MODEL_TIERS = ["fast", "general", "coding", "reasoning", "vision"] as const;
 export type ModelTier = typeof MODEL_TIERS[number];
-export const CALL_PURPOSES = ["summary", "classification", "coding", "reasoning", "vision"] as const;
+export const CALL_PURPOSES = ["general", "summary", "classification", "coding", "reasoning", "vision"] as const;
 export type CallPurpose = typeof CALL_PURPOSES[number];
 export const CALL_ROUTING_LIMITS = { maxCalls: 30, maxBudgetUsd: 100, maxMinOutputChars: 1_000 } as const;
 export const MODEL_ROUTING_POLICY_BINDING = "model-routing";
@@ -49,13 +49,23 @@ export interface RoutedModelTask {
   activePrimaryModel?: string;
   imageCount: number;
   maxOutputTokens: number;
+  /** Primary calls account for the complete native request, not only its newest user text. */
+  inputTokens?: number;
+  requiresTools?: boolean;
+  requiresReasoning?: boolean;
+  requiresStructuredOutput?: boolean;
+  /** An implicit primary output cap may shrink to the remaining estimated budget. */
+  budgetOutputTokens?: boolean;
+  callKind?: "primary";
 }
 
 export interface CallRoutingEvent {
+  callKind?: "primary";
+  maxOutputTokens?: number;
   purpose: CallPurpose;
   model?: string;
   tier?: ModelTier;
-  source: "explicit" | "policy" | "sole-candidate" | "jev" | "default" | "promotion";
+  source: "explicit" | "continuation" | "policy" | "sole-candidate" | "jev" | "default" | "promotion";
   outcome: "selected" | "rejected" | "failed" | "quality-rejected" | "completed";
   attempt: number;
   reason?: "permission" | "security" | "capability" | "context" | "budget" | "unavailable" | "decision-failed" | "invalid-decision" | "ambiguous-decision" | "same-primary-model";

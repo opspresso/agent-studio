@@ -315,12 +315,11 @@ Agent 메타데이터나 설정의 동시 수정이 먼저 저장되면 409를 �
 설정이 충돌하면 400이다. 카탈로그에 없는 사용자 모델은 경고 대상으로 둔다.
 `imageModel`은 이미지 생성 능력이 있는 카탈로그 모델이어야 한다.
 
-`modelRouting`은 선택적 boolean이다. `true`면 [전역 라우팅 정책](#models)을 사용하고,
-`false`면 ModelTask 호출도 이 Agent의 주 모델을 사용한다. 미설정이면 ModelTask를 제공하지
+`modelRouting`은 선택적 boolean이다. `true`면 [전역 라우팅 정책](#models)의 후보 중 첫 SDK 응답에 적절한 모델을 선택한다. `false`면 주 호출과 ModelTask 모두 이 Agent의 설정 모델을 사용한다. 미설정이면 ModelTask를 제공하지
 않는다. Agent별 tier·예산·정책 객체는 받지 않는다.
-ModelTask의 선택적 `require_different_model: true`는 설정된 주 모델과 실제 primary fallback 등록 ID의 재사용을
+ModelTask의 선택적 `require_different_model: true`는 해당 턴의 실제 primary 등록 ID의 재사용을
 거절한다. 다른 등록 모델이 없으면 도구 오류를 반환한다.
-주 모델 유지·선택 우선순위·승격·trace·승인 재개는 [호출 단위 라우팅](design/execution.md#호출-단위-모델-라우팅)을 따른다.
+주 모델 선택·우선순위·승격·trace·승인 재개는 [호출 단위 라우팅](design/execution.md#호출-단위-모델-라우팅)을 따른다.
 
 `mcpList[{name, headers?, tools?, sourceOutputs?}]`, `skillList[]`,
 `subagentList[{name, type: "local"|"remote"}]`는 전체 목록을 저장한다.
@@ -1621,13 +1620,13 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 
 전역 `policy`는 `{ tiers, policies, localOnly, maxCallCostUsd, maxRunCostUsd, maxCalls,
 minOutputChars }`다. `tiers`는 fast/general/coding/reasoning/vision의 선택적 등록 text 모델 ID,
-`policies`는 summary/classification/coding/reasoning/vision 목적의 선택적 tier다. 정책에 지정한
+`policies`는 general/summary/classification/coding/reasoning/vision 목적의 선택적 tier다. 정책에 지정한
 tier에는 모델이 있어야 하며 reasoning/vision 배정은 해당 기능을 요구한다.
 비용은 양수 USD(최대 100), 호출 예산은 Run 예산 이하다. `maxCalls`는 1–30,
-`minOutputChars`는 1–1,000이다. 초기값은 모델 미배정, 시도당 $0.1, 보조 호출 전체 $1,
+`minOutputChars`는 1–1,000이다. 초기값은 모델 미배정, 시도당 $0.1, 라우팅 추론 전체 $1,
 10회, 최소 1자다. `localOnly`는 결정 모델을 포함한 self-hosted provider 연결 제한이다.
-호출 전 예상 비용을 검사하고 응답 후 실제 청구액을 누적한다. 보조 예산에는 Jev와 ModelTask가
-포함되며 주 모델·검색 비용은 포함되지 않는다.
+호출 전 예상 비용을 검사하고 응답 후 실제 청구액을 누적한다. 라우팅 예산에는 주 SDK 호출, Jev와 ModelTask가
+포함되며 검색·rerank 비용은 포함되지 않는다.
 실제 사내 endpoint와 네트워크 격리는 배포가 관리한다.
 
 `POST /api/agent-recommendations`는 `{ surface: "chat" | "workspace", request: string }`을 받고

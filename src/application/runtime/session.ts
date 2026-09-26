@@ -6,7 +6,7 @@ import type { RuntimeSessionRepository, RuntimeSessionRow, RuntimeApproval, Runt
 import { CONTEXT_ENCRYPTED_PREFIX, type SecretCipher } from "@/domain/security/secretCipher";
 import { runtimeSessionContext } from "@/domain/security/secretContext";
 import type { AgentConfiguration } from "@/domain/agent/types";
-import { MODEL_ROUTING_POLICY_BINDING } from "@/domain/llm/callRouting";
+import { MODEL_ROUTING_POLICY_BINDING, type CallRoutingPolicy } from "@/domain/llm/callRouting";
 import { ConflictError, ValidationError } from "@/application/errors";
 import { PiiFilter } from "@/application/llm/pii";
 import { maskValues, restoreValues } from "./messages";
@@ -73,6 +73,11 @@ export function runtimeFingerprint(value: unknown): string {
     item && typeof item === "object" && !Array.isArray(item)
       ? Object.fromEntries(Object.entries(item).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)) : item,
   )).digest("hex");
+}
+
+/** Checkpoint admission includes the accounting contract, before claiming any approved work. */
+export function modelRoutingPolicyFingerprint(policy: CallRoutingPolicy): string {
+  return runtimeFingerprint({ policy, ledger: "shared-run-attempts-v1" });
 }
 
 export function approvalId(item: RunToolApprovalItem): string {

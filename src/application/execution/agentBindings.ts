@@ -7,7 +7,7 @@ import type { AgentDeps, AgentTask, PreparedAgent, RecordUsageFn } from "@/appli
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
 import { ValidationError } from "@/application/errors";
-import { runtimeFingerprint, type RuntimeTurnPersistence } from "@/application/runtime/session";
+import { runtimeFingerprint, modelRoutingPolicyFingerprint, type RuntimeTurnPersistence } from "@/application/runtime/session";
 import { buildSkillLoader, createSkillReader, discoveryQueries, resolveRunTools } from "./bindings";
 import { prepareMemoryForRun } from "./memoryRecall";
 import { buildImageEditor, buildImageGenerator, resolveImageModel } from "./imageTool";
@@ -28,7 +28,7 @@ export async function buildAgentDeps(
   if (configuration.parameters.modelRouting !== undefined && typeof configuration.parameters.modelRouting !== "boolean") throw new ValidationError("Agent model routing must be a boolean");
   const routingConfigured = configuration.parameters.modelRouting !== undefined;
   const modelRoutingPolicy = routingConfigured ? await deps.getCallRoutingPolicy?.() ?? structuredClone(DEFAULT_CALL_ROUTING_POLICY) : undefined;
-  if (modelRoutingPolicy) runtime?.checkBinding(MODEL_ROUTING_POLICY_BINDING, runtimeFingerprint(modelRoutingPolicy));
+  if (modelRoutingPolicy) runtime?.checkBinding(MODEL_ROUTING_POLICY_BINDING, modelRoutingPolicyFingerprint(modelRoutingPolicy));
   const common = { channel: deps.channel, callRouting: routingConfigured ? deps.callRouting : undefined,
     modelRoutingPolicy,
     createToolSchemaValidator: deps.createToolSchemaValidator, recordUsage, loadSkillContent: buildSkillLoader(createSkillReader(deps)) };

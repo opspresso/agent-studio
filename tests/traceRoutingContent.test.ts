@@ -11,14 +11,14 @@ describe("routing trace presentation", () => {
     const trace: Trace = { traceId: "trace", agentName: "agent", status: "completed", startedAt: time, endedAt: time,
       durationMs: 1, createdAt: time, spans: [{ spanId: "routing", kind: "prepare", name: "model-routing", status: "ok",
         startedAt: time, endedAt: time, durationMs: 1, output: { routing: [
-          { purpose: "summary", model: "local/fast", tier: "fast", source: "jev", outcome: "quality-rejected", attempt: 1, decisionConfidence: 0.63, decisionProbabilities: {fast:0.72,general:0.28} },
+          { callKind:"primary", maxOutputTokens:2048, purpose: "summary", model: "local/fast", tier: "fast", source: "jev", outcome: "quality-rejected", attempt: 1, decisionConfidence: 0.63, decisionProbabilities: {fast:0.72,general:0.28} },
           { purpose: "summary", model: "local/strong", tier: "reasoning", source: "promotion", outcome: "completed", attempt: 2 },
           { purpose: "vision", model: "external/model", source: "explicit", outcome: "rejected", attempt: 0, reason: "security" },
           null,
         ] } }] };
     const markup = renderToStaticMarkup(createElement(MantineProvider, { children: createElement(TraceContent, { trace }) }));
     expect(markup).toContain("summary → local/fast (fast) · jev · quality-rejected · #1");
-    expect(markup).toContain("confidence 0.63 · probabilities fast 0.72, general 0.28");
+    expect(markup).toContain("confidence 0.63 · probabilities fast 0.72, general 0.28 · primary · maxOutputTokens 2048");
     expect(markup).toContain("summary → local/strong (reasoning) · promotion · completed · #2");
     expect(markup).toContain("vision → external/model · explicit · rejected · security");
     expect(markup).not.toContain("[object Object]");

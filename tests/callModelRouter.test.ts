@@ -20,8 +20,8 @@ function setup(config: CallRoutingSettings = settings, depsPatch: Partial<CallRo
   const events: CallRoutingEvent[] = [];
   const state = saved ?? { calls: 0, spentUsd: 0, failures: {} };
   const deps: CallRoutingDeps = { decision: { choose }, selectedDecisionModel: async () => "jev", canUseModel: async () => true, ...depsPatch };
-  const execute = createCallModelRouter(deps, config, "base", state, (event) => events.push(event)).execute;
-  return { execute, choose, events, state };
+  const router = createCallModelRouter(deps, config, "base", state, (event) => events.push(event));
+  return { execute: router.execute, select: router.select, choose, events, state };
 }
 beforeEach(() => replaceModelRegistry([
   model("base"), model("fast"), model("general"), model("strong"),
@@ -30,6 +30,18 @@ beforeEach(() => replaceModelRegistry([
 afterEach(() => replaceModelRegistry(original));
 
 describe("call model routing", () => {
+  it("admits at most one concurrent reservation when only one call fits the shared budget",async()=>{
+    const {select,state}=setup({...settings,tiers:{fast:"fast"},maxCallCostUsd:0.00045,maxRunCostUsd:0.00045});
+    const results=await Promise.allSettled([select(task),select(task)]);
+    expect(results.filter(result=>result.status==="fulfilled")).toHaveLength(1);
+    expect(state.calls).toBe(1);expect(state.spentUsd).toBeLessThanOrEqual(0.00045);
+  });
+  it("counts promotion attempts against the actual inference call limit",async()=>{
+    const {execute,state}=setup({...settings,maxCalls:1,policies:{summary:"fast"}});
+    const invoke=vi.fn().mockResolvedValue({...result,text:""});
+    await expect(execute(task,invoke)).rejects.toThrow("call limit");
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("fast");expect(state.calls).toBe(1);
+  });
   it("also excludes the actual primary fallback model for independent verification",async()=>{
     const {execute}=setup();const invoke=vi.fn().mockResolvedValue(result);
     await execute({...task,activePrimaryModel:"fast",requireDifferentModel:true,model:"strong"},invoke);
@@ -114,7 +126,7 @@ describe("call model routing", () => {
     expect(state.tierFacts.fast.estimatedCostUsd).toBe(events.find(event => event.outcome === "selected")?.estimatedCostUsd);
     expect(events.find(event => event.outcome === "selected")).toMatchObject({ decisionConfidence: 1, decisionProbabilities: {fast: 1, general: 0, reasoning: 0} });
   });
-  it.each([ ["coding", 0, "coding"], ["vision", 1, "vision"] ] as const)("uses the %s alias for duplicate models", async (purpose, imageCount, choice) => {
+  it.each([ ["coding", 0, "coding"], ["coding", 1, "coding"], ["vision", 1, "vision"] ] as const)("uses the %s alias for duplicate models", async (purpose, imageCount, choice) => {
     const choose = vi.fn<CallRoutingDeps["decision"]["choose"]>().mockImplementation(async ({criteria}) => ({choice, confidence: 1,
       probabilities: Object.fromEntries(Object.keys(criteria).map(key=>[key,key===choice ? 1 : 0]))}));
     const { execute } = setup({ ...settings, tiers: {fast: "fast", general: "general", coding: "general", vision: "general"} }, {decision: {choose}});

@@ -56,8 +56,11 @@ function prepareDetail(span: Trace["spans"][number]): string | null {
           return [`${key} ${probability}`];
         }).join(", ") : "";
       const distribution = probabilities ? ` · probabilities ${probabilities}` : "";
+      const primary = event.callKind === "primary" ? " · primary" : "";
+      const outputLimit = typeof event.maxOutputTokens === "number" && Number.isInteger(event.maxOutputTokens)
+        ? ` · maxOutputTokens ${event.maxOutputTokens}` : "";
       const different = event.requiresDifferentModel === true ? " · different model required" : "";
-      return [`${event.purpose}${model}${tier} · ${event.source} · ${event.outcome}${attempt}${reason}${confidence}${distribution}${different}`];
+      return [`${event.purpose}${model}${tier} · ${event.source} · ${event.outcome}${attempt}${reason}${confidence}${distribution}${different}${primary}${outputLimit}`];
     });
     return decisions.join("\n") || null;
   }

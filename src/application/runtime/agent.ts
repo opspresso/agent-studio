@@ -6,7 +6,8 @@ import { createToolResultBudget, MAX_TOOL_RESULT_CHARS_PER_TURN } from "@/applic
 import { PiiFilter } from "@/application/llm/pii";
 import { hasImageParts } from "@/domain/llm/types";
 import { describeImageInputReject } from "@/domain/llm/models";
-import { createRunModel, type RuntimeTurn, type RuntimeCallIds } from "./model";
+import { createRunModel, type RuntimeCallIds } from "./model";
+import type { RuntimeTurn } from "./types";
 import { createRuntimeTools, claimToolSlot, waitForSlot } from "./tools";
 import { toAgentInput, conversationMessages } from "./messages";
 import { buildTransferTranscript } from "./transcript";
@@ -23,6 +24,7 @@ type SdkAgent = Agent<unknown, AgentOutputType>;
 
 /** Owns connections opened while the SDK changes agents within one invocation. */
 export interface AgentGraph {
+  routing?: import("@/domain/llm/callRouting").CallRoutingState;
   imageSequence?: ImageSequence;
   history?: AgentInputItem[];
   persistent?: boolean;
@@ -40,6 +42,7 @@ export interface AgentGraph {
 
 export function snapshotGraph(graph: AgentGraph): RuntimeGraphSnapshot {
   return {
+    routing: graph.routing,
     nextImageId: graph.imageSequence?.next,
     agents: Object.fromEntries(Object.entries(graph.capture ?? {}).map(([key, read]) => [key, read()])),
     handoffs: graph.handoffs ?? {},
@@ -69,7 +72,7 @@ export function compileAgent(
   deps: AgentDeps, input: RunAgentInput, destination: RuntimeEmitter, graph: AgentGraph,
   inheritedFilter?: PiiFilter, transferredImages?: readonly ImageHandle[],
 ) {
-  if (input.messages.some(hasImageParts)) {
+  if (input.parameters?.modelRouting !== true && input.messages.some(hasImageParts)) {
     const refusal = describeImageInputReject(input.model);
     if (refusal) throw new ValidationError(refusal);
   }
@@ -94,7 +97,7 @@ export function compileAgent(
     number: saved?.turn ?? 0, maxTurns: input.maxTurn ?? 50, finalTurn: false, outputCut: false,
     model: saved?.activeModel ?? input.model, results: createToolResultBudget(saved?.resultChars ?? MAX_TOOL_RESULT_CHARS_PER_TURN),
     resources: saved?.resources,
-    routing: saved?.routing,
+    routing: graph.routing ??= graph.saved?.routing ?? { calls: 0, spentUsd: 0, failures: {} },
     handoffTools: new Set(assembly.delegations.filter((entry) => entry.mode === "handoff").map((entry) => entry.name)),
   };
   if (saved?.context) {
@@ -106,7 +109,7 @@ export function compileAgent(
   graph.ids ??= {};
   graph.delegations ??= [];
   graph.restoreDelegations ??= new Map();
-  graph.capture[key] = () => ({ activeModel: turn.model, pii: filter?.snapshot(), turn: turn.number, resultChars: turn.results.remaining(), context: turn.contextBudget?.snapshot(), images: assembly.images.list(), resources: turn.resources, routing: turn.routing });
+  graph.capture[key] = () => ({ activeModel: turn.model, pii: filter?.snapshot(), turn: turn.number, resultChars: turn.results.remaining(), context: turn.contextBudget?.snapshot(), images: assembly.images.list(), resources: turn.resources });
   const savedIds = graph.saved?.identifiers[scope];
   graph.identifiers ??= { prefix: savedIds?.prefix, used: new Set(savedIds?.used ?? []) };
   graph.ids[scope] = graph.identifiers;
@@ -206,7 +209,7 @@ export function compileAgent(
       const childScope = `tool/${id}`;
       const request = task(args);
       const prepared = await deps.loadAgent!(binding.agentName, { ...request, invocationId: id });
-      const restoredGraph: AgentGraph = { close: [], persistent: graph.persistent, imageSequence: graph.imageSequence, scope: childScope, saved: graph.saved, capture: graph.capture, handoffs: graph.handoffs, ids: graph.ids, delegations: graph.delegations, restoreDelegations: graph.restoreDelegations };
+      const restoredGraph: AgentGraph = { close: [], routing: graph.routing, persistent: graph.persistent, imageSequence: graph.imageSequence, scope: childScope, saved: graph.saved, capture: graph.capture, handoffs: graph.handoffs, ids: graph.ids, delegations: graph.delegations, restoreDelegations: graph.restoreDelegations };
       let closed = false;
       const close = async () => {
         if (closed) return;
@@ -227,7 +230,7 @@ export function compileAgent(
       const restoredChild = restoredChildren.get(id);
       const childScope = `tool/${id}`;
       const childIds = graph.saved?.identifiers[childScope];
-      const childGraph: AgentGraph = { close: [], persistent: graph.persistent, imageSequence: graph.imageSequence, scope: childScope, saved: graph.saved, capture: graph.capture, handoffs: graph.handoffs, ids: graph.ids, delegations: graph.delegations, restoreDelegations: graph.restoreDelegations,
+      const childGraph: AgentGraph = { close: [], routing: graph.routing, persistent: graph.persistent, imageSequence: graph.imageSequence, scope: childScope, saved: graph.saved, capture: graph.capture, handoffs: graph.handoffs, ids: graph.ids, delegations: graph.delegations, restoreDelegations: graph.restoreDelegations,
         identifiers: { prefix: childIds?.prefix ?? randomUUID().replaceAll("-", ""), used: new Set(childIds?.used ?? []) } };
       const childEmit = childOutput(id);
       let paused = false;

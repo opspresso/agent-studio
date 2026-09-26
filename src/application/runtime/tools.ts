@@ -14,7 +14,7 @@ import {
 import type { PiiFilter } from "@/application/llm/pii";
 import { framedFetchedUrl } from "@/application/llm/documentParts";
 import type { AgentDeps, RunAgentInput } from "./types";
-import type { RuntimeTurn } from "./model";
+import type { RuntimeTurn } from "./types";
 import { restoreValues } from "./messages";
 import { boundToolArgsPair } from "./arguments";
 import { writeToolResult, type RuntimeEmitter } from "./output";

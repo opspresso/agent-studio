@@ -34,7 +34,7 @@ import { buildAgentDeps } from "./agentBindings";
 import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
 import { callerFor, runClock, toEngineParameters, toRunInput } from "./deps";
 import { memoryPrepared, prepareMemoryForRun } from "./memoryRecall";
-import { openRuntimeSession, runtimeFingerprint } from "@/application/runtime/session";
+import { openRuntimeSession, runtimeFingerprint, modelRoutingPolicyFingerprint } from "@/application/runtime/session";
 import { DEFAULT_CALL_ROUTING_POLICY } from "@/domain/llm/callRouting";
 
 export type {
@@ -291,7 +291,7 @@ export async function* executeAgent(
     const routingPolicy = await deps.getCallRoutingPolicy?.() ?? structuredClone(DEFAULT_CALL_ROUTING_POLICY);
     const runtime = deps.runtimeSessions && input.conversation?.surface === "chat" && input.actor?.kind === "user"
       ? await openRuntimeSession(deps.runtimeSessions, { sessionId: input.conversation.id, ownerEmail: input.actor.id, agentName: input.agent.name, configuration: input.configuration,
-        routingPolicyFingerprint: runtimeFingerprint(routingPolicy) }, input.resumeApproval)
+        routingPolicyFingerprint: modelRoutingPolicyFingerprint(routingPolicy) }, input.resumeApproval)
       : undefined;
     if (input.resumeApproval && !runtime) throw new ValidationError("Approval resumption requires a persisted chat session");
     const messages = runtime?.checkpoint?.input.messages ?? input.messages;
