@@ -15,11 +15,12 @@ import classes from "./ModelCollection.module.css";
 
 
 /** Discovery, selected models and administration share the same facts, filters and ordering. */
-export function ModelCollection<T extends ModelRow>({ models, provider, emptyText, renderActions, isSelected, scope }: {
+export function ModelCollection<T extends ModelRow>({ models, provider, emptyText, renderActions, renderTitleAction, isSelected, scope }: {
   models: T[];
   provider?: string;
   emptyText: string;
   renderActions?: (model: T) => React.ReactNode;
+  renderTitleAction?: (model: T) => React.ReactNode;
   isSelected?: (model: T) => boolean;
   scope: "browse" | "discovery" | "registered";
 }) {
@@ -63,16 +64,20 @@ export function ModelCollection<T extends ModelRow>({ models, provider, emptyTex
       </Group>
     </Group>
     {!filtered.length ? <EmptyState>{models.length ? t("settings.noResults") : emptyText}</EmptyState> : (
-      <div className={classes.collection}><div className={view === "grid" ? classes.grid : classes.list}
+      <div className={classes.collection}><div className={`${view === "grid" ? classes.grid : classes.list} ${renderActions ? classes.withActions : ""}`}
         role="table" aria-label={t("nav.models")}>
         <div className={classes.header} role="row">
           <span role="columnheader">{t("models.column.model")}</span><span role="columnheader">{t("models.column.capabilities")}</span>
-          <span role="columnheader">{t("models.column.pricing")}</span><span role="columnheader">{t("models.column.actions")}</span>
+          <span role="columnheader">{t("models.column.pricing")}</span>
+          {renderActions && <span role="columnheader">{t("models.column.actions")}</span>}
         </div>
         {filtered.slice((currentPage - 1) * 24, currentPage * 24).map(model => (
           <div className={classes.row} role="row" key={model.id ?? `${provider}/${model.wireId}`}>
             <div className={classes.identity} role="cell">
-              <Text fw={650}>{model.displayName}</Text>
+              <div className={classes.identityTop}>
+                <Text fw={650} className={classes.identityName}>{model.displayName}</Text>
+                {renderTitleAction?.(model)}
+              </div>
               <Text className={classes.modelId} ff="monospace">{model.id ?? model.wireId}</Text>
               <Group gap={5} mt={8}>
                 {(model.provider || provider) && <Badge color="gray">{model.provider || provider}</Badge>}
@@ -94,9 +99,9 @@ export function ModelCollection<T extends ModelRow>({ models, provider, emptyTex
               {model.pricing?.cachedInputPer1M !== undefined && <Text size="xs" c="dimmed">{t("models.cached")} {formatModelPrice(model.pricing.cachedInputPer1M)} / 1M</Text>}
               {model.capabilities?.reasoning && model.capabilities.reasoningWithTools === false && <Text size="xs" c="orange">{t("models.reasoningNoTools")}</Text>}
             </div>
-            <div className={classes.actions} role="cell">
-              {renderActions && <Group gap="xs">{renderActions(model)}</Group>}
-            </div>
+            {renderActions && <div className={classes.actions} role="cell">
+              <Group gap="xs">{renderActions(model)}</Group>
+            </div>}
           </div>
         ))}
       </div></div>

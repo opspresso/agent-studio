@@ -5,8 +5,13 @@
 .header,
 .row {
   display: grid;
-  grid-template-columns: minmax(210px, 1.5fr) minmax(170px, 1fr) minmax(180px, 1fr) minmax(120px, 0.65fr);
+  grid-template-columns: minmax(210px, 1.5fr) minmax(170px, 1fr) minmax(180px, 1fr);
   gap: clamp(16px, 2vw, 36px);
+}
+
+.withActions .header,
+.withActions .row {
+  grid-template-columns: minmax(210px, 1.5fr) minmax(170px, 1fr) minmax(180px, 1fr) minmax(120px, 0.65fr);
 }
 
 .header {
@@ -28,7 +33,9 @@
 .pricing,
 .actions { min-width: 0; }
 
-.identity p:first-child { overflow-wrap: anywhere; }
+.identityTop { display: flex; align-items: flex-start; gap: 8px; }
+.identityName { min-width: 0; overflow-wrap: anywhere; }
+.identityTop button { flex-shrink: 0; }
 .modelId { margin-top: 4px; color: var(--mantine-color-dimmed); font-size: 12px; overflow-wrap: anywhere; }
 .mobileLabel { display: none; }
 .actions { display: flex; justify-content: flex-end; }
@@ -50,6 +57,8 @@
   border: 1px solid var(--studio-border);
   border-radius: var(--mantine-radius-lg);
 }
+.grid .identity { width: 100%; }
+.grid .identityTop { justify-content: space-between; }
 .grid .capabilities,
 .grid .pricing { width: 100%; }
 .grid .actions { justify-content: flex-start; margin-top: auto; }
@@ -78,6 +87,7 @@
     white-space: nowrap;
   }
   .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+  .withActions .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .identity { grid-column: 1 / -1; }
   .actions { justify-content: flex-start; grid-column: 1 / -1; }
   .mobileLabel { display: block; margin-bottom: 7px; color: var(--mantine-color-dimmed); font-size: 12px; font-weight: 600; }
@@ -85,6 +95,7 @@
 
 @media (max-width: 540px) {
   .row { grid-template-columns: 1fr; }
+  .withActions .row { grid-template-columns: 1fr; }
   .identity,
   .actions { grid-column: 1; }
 }
