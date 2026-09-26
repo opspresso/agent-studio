@@ -22,6 +22,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
 import rows from "@/app/_components/CatalogRows.module.css";
+import { CatalogHelp } from "@/app/_components/CatalogHelp";
 import { ManagedMcpModal } from "./_components/ManagedMcpModal";
 import { CredentialBadges } from "./_components/CredentialBadges";
 import { MCP_RUNTIME_COLOR, PLUGIN_COLOR } from "@/app/_components/badgeColors";
@@ -82,9 +83,7 @@ export default function ToolsPage() {
         </Group>}
       </PageHeader>
 
-      <Text fz="sm" c="dimmed" maw={920}>
-        <strong>{t("capabilities.descriptionTitle")}.</strong> {t("tools.descriptionRole")}
-      </Text>
+      <CatalogHelp title={t("capabilities.descriptionTitle")}>{t("tools.descriptionRole")}</CatalogHelp>
 
       {error && (
         <Alert color="red" variant="light">

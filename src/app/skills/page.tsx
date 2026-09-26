@@ -22,6 +22,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
 import rows from "@/app/_components/CatalogRows.module.css";
+import { CatalogHelp } from "@/app/_components/CatalogHelp";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { PLUGIN_COLOR } from "@/app/_components/badgeColors";
@@ -73,9 +74,7 @@ export default function SkillsPage() {
         {viewer?.isAdmin && <Button onClick={open}>{t("skills.new")}</Button>}
       </PageHeader>
 
-      <Text fz="sm" c="dimmed" maw={920}>
-        <strong>{t("capabilities.descriptionTitle")}.</strong> {t("skills.descriptionRole")}
-      </Text>
+      <CatalogHelp title={t("capabilities.descriptionTitle")}>{t("skills.descriptionRole")}</CatalogHelp>
 
       {error && (
         <Alert color="red" variant="light">

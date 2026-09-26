@@ -8,6 +8,7 @@ import { PluginSyncSummary } from "@/app/_components/PluginSyncSummary";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
 import rows from "@/app/_components/CatalogRows.module.css";
+import { CatalogHelp } from "@/app/_components/CatalogHelp";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useViewer } from "@/app/_lib/useViewer";
@@ -135,9 +136,7 @@ export default function PluginsPage() {
         )}
       </PageHeader>
 
-      <Text fz="sm" c="dimmed" maw={920}>
-        <strong>{t("plugins.descriptionTitle")}.</strong> {t("plugins.descriptionRole")}
-      </Text>
+      <CatalogHelp title={t("plugins.descriptionTitle")}>{t("plugins.descriptionRole")}</CatalogHelp>
 
       {syncConfig && (
         <Text fz="xs" c={syncConfig.configured ? "dimmed" : "orange"}>
