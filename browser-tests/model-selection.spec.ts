@@ -19,6 +19,7 @@ let failFavorites: boolean;
 let holdFirstFavoritePatch: boolean;
 let releaseFirstFavoritePatch: (() => void) | undefined;
 let favoritePatchCount: number;
+let failFavoritePatchModel: string | undefined;
 
 test.beforeAll(async () => {
   discovered = [
@@ -46,6 +47,7 @@ test.beforeEach(async ({ page }) => {
   discovered[0] = { ...discovered[0]!, pricing: { inputPer1M: 10, outputPer1M: 20, cachedInputPer1M: 1 } };
   selected = []; saves = []; blockDeletion = false; failDiscovery = false; failFavorites = false; discoveryQueries = []; favorites = [];
   holdFirstFavoritePatch = false; releaseFirstFavoritePatch = undefined; favoritePatchCount = 0;
+  failFavoritePatchModel = undefined;
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/settings") return route.fulfill({ json: { llmProviders: { items: [{ name: "fixture", kind: "openrouter" }, { name: "other", kind: "openrouter" }] } } });
@@ -57,13 +59,14 @@ test.beforeEach(async ({ page }) => {
       if (failFavorites && route.request().method() === "GET") return route.fulfill({ status: 503, json: { error: "Favorites unavailable" } });
       if (route.request().method() === "PATCH") {
         const { model, favorite } = route.request().postDataJSON() as { model: string; favorite: boolean };
-        favorites = favorite ? [...new Set([...favorites, model])].sort() : favorites.filter(id => id !== model);
+        const failed = model === failFavoritePatchModel;
+        if (!failed) favorites = favorite ? [...new Set([...favorites, model])].sort() : favorites.filter(id => id !== model);
         const response = { models: [...favorites] };
         favoritePatchCount += 1;
         if (holdFirstFavoritePatch && favoritePatchCount === 1) {
           await new Promise<void>(resolve => { releaseFirstFavoritePatch = resolve; });
         }
-        return route.fulfill({ json: response });
+        return failed ? route.fulfill({ status: 503, json: { error: "Favorite save unavailable" } }) : route.fulfill({ json: response });
       }
       return route.fulfill({ json: { models: favorites } });
     }
@@ -192,9 +195,10 @@ test("saves personal favorites from selected models and restores them after relo
   expect(favorites).toEqual([]);
 });
 
-test("keeps other stars active and preserves distinct favorites when responses arrive out of order", async ({ page }) => {
+test("keeps other stars active and preserves persisted changes from another tab across queued saves", async ({ page }) => {
   await modelRows(page).filter({ hasText: "openrouter/zeta" }).getByRole("button", { name: "Add model" }).click();
   await modelRows(page).filter({ hasText: "~typesafe/jev-latest" }).getByRole("button", { name: "Add model" }).click();
+  await modelRows(page).filter({ hasText: "vendor/alpha" }).getByRole("button", { name: "Add model" }).click();
   await page.goto(`${base}/selected`);
   const zeta = modelRows(page).filter({ hasText: "openrouter/zeta" }).getByRole("cell").first();
   const jev = modelRows(page).filter({ hasText: "fixture/~typesafe/jev-latest" }).getByRole("cell").first();
@@ -203,12 +207,31 @@ test("keeps other stars active and preserves distinct favorites when responses a
   await expect.poll(() => Boolean(releaseFirstFavoritePatch)).toBe(true);
   await expect(zeta.getByRole("button", { name: "Add to favorites" })).toBeDisabled();
   await expect(jev.getByRole("button", { name: "Add to favorites" })).toBeEnabled();
+  favorites = [...favorites, "fixture/vendor/alpha"].sort();
   await jev.getByRole("button", { name: "Add to favorites" }).click();
-  await expect(jev.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
   releaseFirstFavoritePatch?.();
   await expect(zeta.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
   await expect(jev.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
-  expect(favorites).toEqual(["fixture/~typesafe/jev-latest", "openrouter/zeta"]);
+  await expect(modelRows(page).filter({ hasText: "fixture/vendor/alpha" }).getByRole("button", { name: "Remove from favorites" })).toBeVisible();
+  expect(favorites).toEqual(["fixture/vendor/alpha", "fixture/~typesafe/jev-latest", "openrouter/zeta"]);
+});
+
+test("reports a failed favorite save and continues a separately queued change", async ({ page }) => {
+  await modelRows(page).filter({ hasText: "openrouter/zeta" }).getByRole("button", { name: "Add model" }).click();
+  await modelRows(page).filter({ hasText: "~typesafe/jev-latest" }).getByRole("button", { name: "Add model" }).click();
+  await page.goto(`${base}/selected`);
+  const zeta = modelRows(page).filter({ hasText: "openrouter/zeta" });
+  const jev = modelRows(page).filter({ hasText: "fixture/~typesafe/jev-latest" });
+  holdFirstFavoritePatch = true;
+  failFavoritePatchModel = "openrouter/zeta";
+  await zeta.getByRole("button", { name: "Add to favorites" }).click();
+  await expect.poll(() => Boolean(releaseFirstFavoritePatch)).toBe(true);
+  await jev.getByRole("button", { name: "Add to favorites" }).click();
+  releaseFirstFavoritePatch?.();
+  await expect(page.getByRole("alert")).toContainText("Favorite save unavailable");
+  await expect(jev.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
+  await expect(zeta.getByRole("button", { name: "Add to favorites" })).toBeEnabled();
+  expect(favorites).toEqual(["fixture/~typesafe/jev-latest"]);
 });
 
 test("keeps registered models visible when favorites cannot be loaded", async ({ page }) => {

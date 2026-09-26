@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActionIcon, Alert, Stack } from "@mantine/core";
 import { IconCpu, IconStar } from "@tabler/icons-react";
 import { PageHeader } from "@/app/_components/PageHeader";
@@ -17,6 +17,8 @@ export default function ModelsPage() {
   const [models, setModels] = useState<RegisteredModel[]>();
   const [favorites, setFavorites] = useState<string[]>();
   const [savingIds, setSavingIds] = useState<string[]>([]);
+  const pendingIds = useRef(new Set<string>());
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const [error, setError] = useState<string>();
   const [favoriteError, setFavoriteError] = useState<string>();
   useEffect(() => {
@@ -29,24 +31,27 @@ export default function ModelsPage() {
       .catch(error => { if (current) setFavoriteError(error instanceof Error ? error.message : t("models.favoriteLoadFailed")); });
     return () => { current = false; };
   }, [t]);
-  async function toggleFavorite(id: string) {
-    if (favorites === undefined || savingIds.includes(id)) return;
+  function toggleFavorite(id: string) {
+    if (favorites === undefined || pendingIds.current.has(id)) return;
     const favorite = !favorites.includes(id);
+    pendingIds.current.add(id);
     setSavingIds(current => [...current, id]);
     setFavoriteError(undefined);
-    try {
-      const result = await readJson<ModelFavoritesResponse>(await fetch("/api/models/favorites", {
-        method: "PATCH", headers: jsonHeaders, body: JSON.stringify({ model: id, favorite }),
-      }));
-      // Distinct model updates may finish out of order. Apply only this change
-      // so an older response cannot erase another star the user just saved.
-      setFavorites(current => current === undefined ? result.models
-        : favorite ? [...new Set([...current, id])].sort() : current.filter(model => model !== id));
-    } catch (error) {
-      setFavoriteError(error instanceof Error ? error.message : t("models.favoriteSaveFailed"));
-    } finally {
-      setSavingIds(current => current.filter(model => model !== id));
-    }
+    // Serial requests keep each full persisted response authoritative, including
+    // other tabs' changes, while only the clicked stars show pending state.
+    saveQueue.current = saveQueue.current.then(async () => {
+      try {
+        const result = await readJson<ModelFavoritesResponse>(await fetch("/api/models/favorites", {
+          method: "PATCH", headers: jsonHeaders, body: JSON.stringify({ model: id, favorite }),
+        }));
+        setFavorites(result.models);
+      } catch (error) {
+        setFavoriteError(error instanceof Error ? error.message : t("models.favoriteSaveFailed"));
+      } finally {
+        pendingIds.current.delete(id);
+        setSavingIds(current => current.filter(model => model !== id));
+      }
+    });
   }
   return <Stack gap="lg">
     <PageHeader title={t("nav.models")} description={t("modelAdmin.onlySelected")} Icon={IconCpu} />
