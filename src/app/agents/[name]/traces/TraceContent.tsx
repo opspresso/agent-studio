@@ -37,6 +37,19 @@ function prepareDetail(span: Trace["spans"][number]): string | null {
   if (span.kind !== "prepare" || !span.output) {
     return null;
   }
+  if (span.name === "model-routing" && Array.isArray(span.output.routing)) {
+    const decisions = span.output.routing.flatMap((value: unknown) => {
+      if (!value || typeof value !== "object") return [];
+      const event = value as Record<string, unknown>;
+      if (typeof event.purpose !== "string" || typeof event.source !== "string" || typeof event.outcome !== "string") return [];
+      const model = typeof event.model === "string" ? ` → ${event.model}` : "";
+      const tier = typeof event.tier === "string" ? ` (${event.tier})` : "";
+      const attempt = typeof event.attempt === "number" && event.attempt > 0 ? ` · #${event.attempt}` : "";
+      const reason = typeof event.reason === "string" ? ` · ${event.reason}` : "";
+      return [`${event.purpose}${model}${tier} · ${event.source} · ${event.outcome}${attempt}${reason}`];
+    });
+    return decisions.join("\n") || null;
+  }
   const parts = Object.entries(span.output).flatMap(([key, value]) => {
     if (Array.isArray(value)) {
       return value.length > 0 ? [`${key}: ${value.join(", ")}`] : [];
