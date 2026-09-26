@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, Badge, Button, FileButton, Group, Stack, Text } from "@mantine/core";
 import { IconArrowRight, IconPackage } from "@tabler/icons-react";
 import { PluginSyncSummary } from "@/app/_components/PluginSyncSummary";
-import { EmptyState, LoadingText } from "@/app/_components/PageState";
+import { CatalogCollection } from "@/app/_components/CatalogCollection";
 import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
 import rows from "@/app/_components/CatalogRows.module.css";
 import { CatalogHelp } from "@/app/_components/CatalogHelp";
@@ -179,12 +179,8 @@ export default function PluginsPage() {
         </Group>
       )}
 
-      {loading && <LoadingText />}
-      {!loading && !error && visibleItems.length === 0 && (
-        <EmptyState>{t(plugins.length === 0 ? "plugins.empty" : "catalog.noResults")}</EmptyState>
-      )}
-      {!loading && visibleItems.length > 0 && (
-        <div className={rows.collection}><div className={view === "grid" ? rows.grid : rows.list}>
+      <CatalogCollection view={view} loading={loading} failed={!!error && plugins.length === 0}
+        empty={visibleItems.length === 0} emptyText={t(plugins.length === 0 ? "plugins.empty" : "catalog.noResults")}>
           {visibleItems.map((plugin) => (
             <Link key={plugin.name} href={`/plugins/${plugin.name}`} className={rows.row}>
               <div className={rows.identity}>
@@ -201,8 +197,7 @@ export default function PluginsPage() {
               <IconArrowRight className={rows.arrow} size={18} aria-hidden="true" />
             </Link>
           ))}
-        </div></div>
-      )}
+      </CatalogCollection>
     </Stack>
   );
 }

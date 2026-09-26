@@ -12,6 +12,7 @@ import { contextWindowLabel } from "@/domain/llm/models";
 import { REGISTRY_MODEL_TYPES } from "@/domain/llm/providerModels";
 import { activeModelProvider, DEFAULT_MODEL_BROWSER_STATE, MODEL_BROWSER_KEYS, MODEL_FILTER_CAPABILITIES, deserializeModelBrowserState, filterModelRows, modelOutputTypes, nextSort, type ModelBrowserState, type ModelRow } from "./modelTable";
 import classes from "./ModelCollection.module.css";
+import layout from "@/app/_components/CatalogLayout.module.css";
 
 
 /** Discovery, selected models and administration share the same facts, filters and ordering. */
@@ -64,7 +65,7 @@ export function ModelCollection<T extends ModelRow>({ models, provider, emptyTex
       </Group>
     </Group>
     {!filtered.length ? <EmptyState>{models.length ? t("settings.noResults") : emptyText}</EmptyState> : (
-      <div className={classes.collection}><div className={`${view === "grid" ? classes.grid : classes.list} ${renderActions ? classes.withActions : ""}`}
+      <div className={layout.collection} data-view={view}><div className={`${view === "grid" ? layout.grid : layout.list} ${renderActions ? classes.withActions : ""}`}
         role="table" aria-label={t("nav.models")}>
         <div className={classes.header} role="row">
           <span role="columnheader">{t("models.column.model")}</span><span role="columnheader">{t("models.column.capabilities")}</span>

@@ -1,8 +1,3 @@
-.collection { container: catalog / inline-size; }
-.list { border-top: 1px solid var(--studio-border); }
-
-.grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
-
 .row {
   display: grid;
   grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.5fr) minmax(160px, 0.7fr) 18px;
@@ -26,7 +21,7 @@
 .meta { display: grid; gap: 6px; min-width: 0; color: var(--mantine-color-dimmed); font-size: 12px; }
 .arrow { margin-top: 3px; color: var(--mantine-color-dimmed); }
 
-.grid .row {
+[data-view="grid"] .row {
   display: flex;
   flex-direction: column;
   min-height: 210px;
@@ -37,23 +32,11 @@
   background: var(--studio-surface);
 }
 
-.grid .row:hover { border-color: var(--mantine-primary-color-filled); }
-.grid .meta { margin-top: auto; }
-.grid .arrow { align-self: flex-end; }
+[data-view="grid"] .row:hover { border-color: var(--mantine-primary-color-filled); }
+[data-view="grid"] .meta { margin-top: auto; }
+[data-view="grid"] .arrow { align-self: flex-end; }
 
-@container catalog (min-width: 620px) {
-  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@container catalog (min-width: 960px) {
-  .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-
-@container catalog (min-width: 1320px) {
-  .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-
-@media (max-width: 900px) {
+@container (max-width: 900px) {
   .row { grid-template-columns: minmax(0, 1fr) 18px; gap: 10px 16px; }
   .identity, .description, .meta { grid-column: 1; }
   .description { grid-row: 2; }

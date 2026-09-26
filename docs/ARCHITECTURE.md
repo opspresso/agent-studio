@@ -369,7 +369,9 @@ Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액�
 `SectionHeading`, 경로 기반 탭은 `PageTabs`를 사용한다. 목록·빈 상태·폼 모달은
 `DataTable`/`CardGrid`, `PageState`, `FormModal`이 공통 표현을 소유한다.
 Agents·Plugins·Skills·Tools·Models 카탈로그는 행/그리드 보기를 제공하고 `CatalogView`가 브라우저별
-공통 선택을 저장한다. 그리드는 콘텐츠 너비에 맞춰 최대 4열까지 표시한다.
+공통 선택을 저장한다. 클라이언트에서 새로 마운트되는 목록은 첫 표시부터 저장된 선택을 읽는다.
+`CatalogCollection`이 카탈로그의 로딩·오류·빈 상태를, `CatalogLayout.module.css`가 콘텐츠
+너비에 맞춘 최대 4열 배치를 소유한다. 행의 반응형 배치도 본문 컨테이너 너비를 따른다.
 Agent 상세의 Playground·Integrations·Settings는 `AgentPageColumns.module.css`의 동일한
 7:5 가로 비율을 쓴다. 한 영역만 있는 두 페이지는 왼쪽 영역을 사용하고, 작은 화면에서는 전체 폭으로 쌓인다.
 Agent의 API 토큰·봇·Webhook·Schedules는 Integrations에서 관리하고, 공개 범위·비용 한도·기본 정보는 Settings에서 관리한다.

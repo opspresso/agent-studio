@@ -238,6 +238,20 @@ test("keeps model rows within a mobile viewport", async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
+test("uses the saved catalog view on the first client mount", async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem("agent-studio-catalog-view", '"grid"'));
+  await page.goto(`${base}/view`);
+  await expect(page.getByLabel("First catalog view")).toHaveText("grid");
+});
+
+test("fits model rows to their content container on a wide viewport", async ({ page }) => {
+  await page.goto(`${base}/narrow`);
+  await page.getByRole("button", { name: "Discover Models", exact: true }).click();
+  await expect(modelRows(page)).toHaveCount(4);
+  expect(await page.getByRole("table", { name: "Models" }).evaluate(element =>
+    element.scrollWidth <= element.clientWidth)).toBe(true);
+});
+
 test("remembers row or grid view and fits at most four models across", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.getByText("Grid", { exact: true }).click();

@@ -19,7 +19,7 @@ import { IconArrowRight, IconTool } from "@tabler/icons-react";
 import { FormModal } from "@/app/_components/FormModal";
 import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
-import { EmptyState, LoadingText } from "@/app/_components/PageState";
+import { CatalogCollection } from "@/app/_components/CatalogCollection";
 import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
 import rows from "@/app/_components/CatalogRows.module.css";
 import { CatalogHelp } from "@/app/_components/CatalogHelp";
@@ -100,12 +100,8 @@ export default function ToolsPage() {
         </Group>
       )}
 
-      {loading && <LoadingText />}
-      {!loading && !error && visibleItems.length === 0 && (
-        <EmptyState>{t(servers.length === 0 ? "tools.empty" : "catalog.noResults")}</EmptyState>
-      )}
-      {!loading && visibleItems.length > 0 && (
-        <div className={rows.collection}><div className={view === "grid" ? rows.grid : rows.list}>
+      <CatalogCollection view={view} loading={loading} failed={!!error && servers.length === 0}
+        empty={visibleItems.length === 0} emptyText={t(servers.length === 0 ? "tools.empty" : "catalog.noResults")}>
           {visibleItems.map((server) => {
           const plugin = server.source ? parsePluginSource(server.source) : null;
           return (
@@ -124,8 +120,7 @@ export default function ToolsPage() {
             </Link>
           );
           })}
-        </div></div>
-      )}
+      </CatalogCollection>
 
       <ManagedMcpModal
         opened={managedOpened}

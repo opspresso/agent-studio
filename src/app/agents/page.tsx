@@ -22,7 +22,7 @@ import { toSlug } from "@/domain/naming";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { createAgent, listAgents, type SanitizedAgent } from "./lib/api";
-import { EmptyState, LoadingText } from "@/app/_components/PageState";
+import { CatalogCollection } from "@/app/_components/CatalogCollection";
 import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
 import rows from "@/app/_components/CatalogRows.module.css";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
@@ -108,12 +108,8 @@ export default function AgentsPage() {
         </Group>
       )}
 
-      {loading && <LoadingText />}
-      {!loading && !error && visibleAgents.length === 0 && (
-        <EmptyState>{t(agents.length === 0 ? "agents.empty" : "catalog.noResults")}</EmptyState>
-      )}
-      {!loading && visibleAgents.length > 0 && (
-        <div className={rows.collection}><div className={view === "grid" ? rows.grid : rows.list}>
+      <CatalogCollection view={view} loading={loading} failed={!!error && agents.length === 0}
+        empty={visibleAgents.length === 0} emptyText={t(agents.length === 0 ? "agents.empty" : "catalog.noResults")}>
           {visibleAgents.map((agent) => (
             <Link key={agent.name} href={`/agents/${agent.name}`} className={rows.row}>
               <div className={rows.identity}>
@@ -134,8 +130,7 @@ export default function AgentsPage() {
               <IconArrowRight className={rows.arrow} size={18} aria-hidden="true" />
             </Link>
           ))}
-        </div></div>
-      )}
+      </CatalogCollection>
 
       <CreateAgentModal
         opened={opened}

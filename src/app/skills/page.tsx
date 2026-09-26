@@ -19,7 +19,7 @@ import { IconArrowRight, IconBook2 } from "@tabler/icons-react";
 import { FormModal } from "@/app/_components/FormModal";
 import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
-import { EmptyState, LoadingText } from "@/app/_components/PageState";
+import { CatalogCollection } from "@/app/_components/CatalogCollection";
 import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
 import rows from "@/app/_components/CatalogRows.module.css";
 import { CatalogHelp } from "@/app/_components/CatalogHelp";
@@ -91,12 +91,8 @@ export default function SkillsPage() {
         </Group>
       )}
 
-      {loading && <LoadingText />}
-      {!loading && !error && visibleItems.length === 0 && (
-        <EmptyState>{t(skills.length === 0 ? "skills.empty" : "catalog.noResults")}</EmptyState>
-      )}
-      {!loading && visibleItems.length > 0 && (
-        <div className={rows.collection}><div className={view === "grid" ? rows.grid : rows.list}>
+      <CatalogCollection view={view} loading={loading} failed={!!error && skills.length === 0}
+        empty={visibleItems.length === 0} emptyText={t(skills.length === 0 ? "skills.empty" : "catalog.noResults")}>
           {visibleItems.map((skill) => {
           const plugin = skill.source ? parsePluginSource(skill.source) : null;
           return (
@@ -111,8 +107,7 @@ export default function SkillsPage() {
             </Link>
           );
           })}
-        </div></div>
-      )}
+      </CatalogCollection>
 
       <CreateSkillModal
         opened={opened}
