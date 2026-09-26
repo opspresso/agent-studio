@@ -175,6 +175,10 @@ export const en = {
   "models.capability.reasoning": "Reasoning",
   "models.capability.structuredOutput": "Structured output",
   "models.sort": "Sort Models",
+  "models.column.model": "Model",
+  "models.column.capabilities": "Capabilities",
+  "models.column.pricing": "Pricing and context",
+  "models.column.actions": "Actions",
   "models.sort.name": "Name",
   "models.sort.price": "Price",
   "models.sortPriceHint": "Output token price for text; input token price for embedding and decision models; per-image, audio-minute or rerank price when provided. Unknown prices are last.",
@@ -495,6 +499,9 @@ export const en = {
   // Vocabulary more than one page uses. A word here is one a reader meets on
   // several screens and should not have to re-learn.
   "catalog.clearSearch": "Clear search",
+  "catalog.view": "Catalog view",
+  "catalog.view.list": "Rows",
+  "catalog.view.grid": "Grid",
   "catalog.resetFilters": "Reset filters",
   "catalog.resultCount": "{count} of {total} results",
   "catalog.noResults": "No matches found. Try another search or reset your filters.",
@@ -1219,6 +1226,7 @@ export const en = {
   "skills.contentBadge": "Loaded after selection",
   "skills.new": "New Skill",
   "skills.filter": "Filter Skills…",
+  "skills.attachmentsCount": "{count} attachments",
   "skills.empty": "No Skills yet. Sync a Plugins repository, or create one here.",
   "skills.namePlaceholder": "my-skill",
   "skills.contentPlaceholder": "# Instructions…",

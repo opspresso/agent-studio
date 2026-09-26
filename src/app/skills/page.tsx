@@ -9,18 +9,19 @@ import {
   Alert,
   Badge,
   Button,
-  Card,
   Group,
   Stack,
   Text,
   Textarea,
   TextInput,
 } from "@mantine/core";
-import { IconBook2 } from "@tabler/icons-react";
+import { IconArrowRight, IconBook2 } from "@tabler/icons-react";
 import { FormModal } from "@/app/_components/FormModal";
 import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
-import { CardGrid } from "@/app/_components/CardGrid";
+import { EmptyState, LoadingText } from "@/app/_components/PageState";
+import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
+import rows from "@/app/_components/CatalogRows.module.css";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { PLUGIN_COLOR } from "@/app/_components/badgeColors";
@@ -31,6 +32,7 @@ import { createLatestOnly } from "@/app/_lib/latestOnly";
 
 export default function SkillsPage() {
   const t = useT();
+  const [view, setView] = useCatalogView();
   const viewer = useViewer();
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,9 +73,9 @@ export default function SkillsPage() {
         {viewer?.isAdmin && <Button onClick={open}>{t("skills.new")}</Button>}
       </PageHeader>
 
-      <Alert color="blue" variant="light" title={t("capabilities.descriptionTitle")}>
-        {t("skills.descriptionRole")}
-      </Alert>
+      <Text fz="sm" c="dimmed" maw={920}>
+        <strong>{t("capabilities.descriptionTitle")}.</strong> {t("skills.descriptionRole")}
+      </Text>
 
       {error && (
         <Alert color="red" variant="light">
@@ -82,45 +84,36 @@ export default function SkillsPage() {
       )}
 
       {skills.length > 0 && (
-        <CatalogSearch
-          value={filter}
-          onChange={setFilter}
-          placeholder={t("skills.filter")}
-          resultCount={visibleItems.length}
-          totalCount={skills.length}
-          onReset={filter ? () => setFilter("") : undefined}
-        />
+        <Group align="flex-start" justify="space-between" gap="md">
+          <CatalogSearch value={filter} onChange={setFilter} placeholder={t("skills.filter")}
+            resultCount={visibleItems.length} totalCount={skills.length}
+            onReset={filter ? () => setFilter("") : undefined} />
+          <CatalogViewToggle value={view} onChange={setView} />
+        </Group>
       )}
 
-      <CardGrid
-        loading={loading}
-        failed={!!error && skills.length === 0}
-        empty={visibleItems.length === 0}
-        emptyText={t(skills.length === 0 ? "skills.empty" : "catalog.noResults")}
-      >
-        {visibleItems.map((skill) => {
+      {loading && <LoadingText />}
+      {!loading && !error && visibleItems.length === 0 && (
+        <EmptyState>{t(skills.length === 0 ? "skills.empty" : "catalog.noResults")}</EmptyState>
+      )}
+      {!loading && visibleItems.length > 0 && (
+        <div className={rows.collection}><div className={view === "grid" ? rows.grid : rows.list}>
+          {visibleItems.map((skill) => {
           const plugin = skill.source ? parsePluginSource(skill.source) : null;
-          const files = skill.files;
           return (
-            <Card key={skill.name} component={Link} href={`/skills/${skill.name}`} h="100%">
-              <Group gap="xs" wrap="nowrap">
-                <Text fw={500} truncate>
-                  {skill.name}
-                </Text>
-                {plugin && <Badge color={PLUGIN_COLOR}>{plugin.plugin}</Badge>}
-              </Group>
-              <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
-                {skill.description}
-              </Text>
-              {files > 0 && (
-                <Text fz="xs" c="dimmed" mt={6}>
-                  {files} attachment{files === 1 ? "" : "s"}
-                </Text>
-              )}
-            </Card>
+            <Link key={skill.name} href={`/skills/${skill.name}`} className={rows.row}>
+              <div className={rows.identity}>
+                <Group gap="xs" wrap="wrap"><Text className={rows.name}>{skill.name}</Text>
+                  {plugin && <Badge color={PLUGIN_COLOR}>{plugin.plugin}</Badge>}</Group>
+              </div>
+              <Text className={rows.description} lineClamp={2}>{skill.description}</Text>
+              <div className={rows.meta}><Text fz="xs">{t("skills.attachmentsCount", { count: skill.files })}</Text></div>
+              <IconArrowRight className={rows.arrow} size={18} aria-hidden="true" />
+            </Link>
           );
-        })}
-      </CardGrid>
+          })}
+        </div></div>
+      )}
 
       <CreateSkillModal
         opened={opened}

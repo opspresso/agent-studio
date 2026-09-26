@@ -1,4 +1,7 @@
+.collection { container: catalog / inline-size; }
 .list { border-top: 1px solid var(--studio-border); }
+
+.grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 
 .row {
   display: grid;
@@ -22,6 +25,33 @@
 .description { min-width: 0; color: var(--mantine-color-dimmed); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
 .meta { display: grid; gap: 6px; min-width: 0; color: var(--mantine-color-dimmed); font-size: 12px; }
 .arrow { margin-top: 3px; color: var(--mantine-color-dimmed); }
+
+.grid .row {
+  display: flex;
+  flex-direction: column;
+  min-height: 210px;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--studio-border);
+  border-radius: var(--mantine-radius-lg);
+  background: var(--studio-surface);
+}
+
+.grid .row:hover { border-color: var(--mantine-primary-color-filled); }
+.grid .meta { margin-top: auto; }
+.grid .arrow { align-self: flex-end; }
+
+@container catalog (min-width: 620px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container catalog (min-width: 960px) {
+  .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@container catalog (min-width: 1320px) {
+  .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 
 @media (max-width: 900px) {
   .row { grid-template-columns: minmax(0, 1fr) 18px; gap: 10px 16px; }

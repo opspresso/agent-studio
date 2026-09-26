@@ -23,6 +23,7 @@ import { useLocale, useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { createAgent, listAgents, type SanitizedAgent } from "./lib/api";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
+import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
 import rows from "@/app/_components/CatalogRows.module.css";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { PageHeader } from "@/app/_components/PageHeader";
@@ -35,6 +36,7 @@ export default function AgentsPage() {
   const searchParams = useSearchParams();
   const t = useT();
   const locale = useLocale();
+  const [view, setView] = useCatalogView();
   const viewer = useViewer();
   const mayCreate = viewer !== null && tierMayCreateAgents(viewer.tier);
   const createRequested = searchParams.get("create") === "1";
@@ -93,7 +95,7 @@ export default function AgentsPage() {
       )}
 
       {agents.length > 0 && (
-        <Group align="flex-start" gap="md">
+        <Group align="flex-start" justify="space-between" gap="md">
           <CatalogSearch
             value={filter}
             onChange={setFilter}
@@ -102,6 +104,7 @@ export default function AgentsPage() {
             totalCount={agents.length}
             onReset={filter ? () => setFilter("") : undefined}
           />
+          <CatalogViewToggle value={view} onChange={setView} />
         </Group>
       )}
 
@@ -110,7 +113,7 @@ export default function AgentsPage() {
         <EmptyState>{t(agents.length === 0 ? "agents.empty" : "catalog.noResults")}</EmptyState>
       )}
       {!loading && visibleAgents.length > 0 && (
-        <div className={rows.list}>
+        <div className={rows.collection}><div className={view === "grid" ? rows.grid : rows.list}>
           {visibleAgents.map((agent) => (
             <Link key={agent.name} href={`/agents/${agent.name}`} className={rows.row}>
               <div className={rows.identity}>
@@ -131,7 +134,7 @@ export default function AgentsPage() {
               <IconArrowRight className={rows.arrow} size={18} aria-hidden="true" />
             </Link>
           ))}
-        </div>
+        </div></div>
       )}
 
       <CreateAgentModal

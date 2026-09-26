@@ -6,6 +6,7 @@ import { Alert, Badge, Button, FileButton, Group, Stack, Text } from "@mantine/c
 import { IconArrowRight, IconPackage } from "@tabler/icons-react";
 import { PluginSyncSummary } from "@/app/_components/PluginSyncSummary";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
+import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
 import rows from "@/app/_components/CatalogRows.module.css";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
@@ -28,6 +29,7 @@ import { createLatestOnly } from "@/app/_lib/latestOnly";
 export default function PluginsPage() {
   const t = useT();
   const locale = useLocale();
+  const [view, setView] = useCatalogView();
   const viewer = useViewer();
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,14 +172,12 @@ export default function PluginsPage() {
       )}
 
       {plugins.length > 0 && (
-        <CatalogSearch
-          value={filter}
-          onChange={setFilter}
-          placeholder={t("plugins.filter")}
-          resultCount={visibleItems.length}
-          totalCount={plugins.length}
-          onReset={filter ? () => setFilter("") : undefined}
-        />
+        <Group align="flex-start" justify="space-between" gap="md">
+          <CatalogSearch value={filter} onChange={setFilter} placeholder={t("plugins.filter")}
+            resultCount={visibleItems.length} totalCount={plugins.length}
+            onReset={filter ? () => setFilter("") : undefined} />
+          <CatalogViewToggle value={view} onChange={setView} />
+        </Group>
       )}
 
       {loading && <LoadingText />}
@@ -185,7 +185,7 @@ export default function PluginsPage() {
         <EmptyState>{t(plugins.length === 0 ? "plugins.empty" : "catalog.noResults")}</EmptyState>
       )}
       {!loading && visibleItems.length > 0 && (
-        <div className={rows.list}>
+        <div className={rows.collection}><div className={view === "grid" ? rows.grid : rows.list}>
           {visibleItems.map((plugin) => (
             <Link key={plugin.name} href={`/plugins/${plugin.name}`} className={rows.row}>
               <div className={rows.identity}>
@@ -202,7 +202,7 @@ export default function PluginsPage() {
               <IconArrowRight className={rows.arrow} size={18} aria-hidden="true" />
             </Link>
           ))}
-        </div>
+        </div></div>
       )}
     </Stack>
   );

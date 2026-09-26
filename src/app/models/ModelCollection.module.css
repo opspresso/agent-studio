@@ -1,0 +1,90 @@
+.collection { container: models / inline-size; }
+.list { border-top: 1px solid var(--studio-border); }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+
+.header,
+.row {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.5fr) minmax(170px, 1fr) minmax(180px, 1fr) minmax(120px, 0.65fr);
+  gap: clamp(16px, 2vw, 36px);
+}
+
+.header {
+  padding: 13px 14px;
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.row {
+  align-items: start;
+  padding: 20px 14px;
+  border-top: 1px solid var(--studio-border);
+  background: var(--studio-surface);
+}
+
+.identity,
+.capabilities,
+.pricing,
+.actions { min-width: 0; }
+
+.identity p:first-child { overflow-wrap: anywhere; }
+.modelId { margin-top: 4px; color: var(--mantine-color-dimmed); font-size: 12px; overflow-wrap: anywhere; }
+.mobileLabel { display: none; }
+.actions { display: flex; justify-content: flex-end; }
+
+.grid .header {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.grid .row {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 290px;
+  border: 1px solid var(--studio-border);
+  border-radius: var(--mantine-radius-lg);
+}
+.grid .capabilities,
+.grid .pricing { width: 100%; }
+.grid .actions { justify-content: flex-start; margin-top: auto; }
+.grid .mobileLabel { display: block; margin-bottom: 7px; color: var(--mantine-color-dimmed); font-size: 12px; font-weight: 600; }
+
+@container models (min-width: 620px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container models (min-width: 960px) {
+  .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@container models (min-width: 1320px) {
+  .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .header {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+  .identity { grid-column: 1 / -1; }
+  .actions { justify-content: flex-start; grid-column: 1 / -1; }
+  .mobileLabel { display: block; margin-bottom: 7px; color: var(--mantine-color-dimmed); font-size: 12px; font-weight: 600; }
+}
+
+@media (max-width: 540px) {
+  .row { grid-template-columns: 1fr; }
+  .identity,
+  .actions { grid-column: 1; }
+}

@@ -1,8 +1,10 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { build } from "esbuild";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import type { DiscoveredModel, RegisteredModel } from "../src/domain/llm/providerModels";
+
+const modelRows = (page: Page) => page.getByRole("row").filter({ has: page.getByRole("cell") });
 
 let server: Server;
 let base: string;
@@ -72,13 +74,13 @@ test.beforeEach(async ({ page }) => {
   });
   await page.goto(base);
   await page.getByRole("button", { name: "Discover Models", exact: true }).click();
-  await expect(page.getByRole("article")).toHaveCount(4);
+  await expect(modelRows(page)).toHaveCount(4);
 });
 
 test("shows multiple capability badges, limits and prices and supports name/price sorting", async ({ page }) => {
-  const zeta = page.getByRole("article").filter({ hasText: "Zeta" });
+  const zeta = modelRows(page).filter({ hasText: "Zeta" });
   for (const label of ["Text", "Tools", "Vision", "Reasoning", "Structured output", "Context 1M", "128K", "$10.00 in", "$20.00 out", "cached $1.00"]) await expect(zeta).toContainText(label);
-  const cards = page.getByRole("article");
+  const cards = modelRows(page);
   await expect(cards.first()).toContainText("Alpha");
   await page.getByRole("button", { name: "Name ↑" }).click();
   await expect(cards.first()).toContainText("Zeta");
@@ -92,7 +94,7 @@ test("shows multiple capability badges, limits and prices and supports name/pric
 });
 
 test("updates a selected model's displayed rate after catalog rediscovery", async ({ page }) => {
-  const zeta = page.getByRole("article").filter({ hasText: "Zeta" });
+  const zeta = modelRows(page).filter({ hasText: "Zeta" });
   await zeta.getByRole("button", { name: "Add model" }).click();
   await expect(zeta).toContainText("$10.00 in");
   discovered[0] = { ...discovered[0]!, pricing: { inputPer1M: 12, outputPer1M: 24 } };
@@ -102,12 +104,12 @@ test("updates a selected model's displayed rate after catalog rediscovery", asyn
 
 test("finds a discovered model by its published ID", async ({ page }) => {
   await page.getByRole("textbox", { name: "Search models" }).fill("openrouter/zeta");
-  await expect(page.getByRole("article")).toHaveCount(1);
-  await expect(page.getByRole("article")).toContainText("Zeta");
+  await expect(modelRows(page)).toHaveCount(1);
+  await expect(modelRows(page)).toContainText("Zeta");
 });
 
 test("adds Jev immediately without a dialog and retains decision type after reload", async ({ page }) => {
-  const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
+  const jev = modelRows(page).filter({ hasText: "~typesafe/jev-latest" });
   await expect(jev).toContainText("Decision");
   await expect(jev).toContainText("32K");
   await jev.getByRole("button", { name: "Add model" }).click();
@@ -119,13 +121,13 @@ test("adds Jev immediately without a dialog and retains decision type after relo
   await page.getByRole("button", { name: "Discover Models", exact: true }).click();
   await expect(jev).toContainText("Selected");
   await page.goto(`${base}/selected`);
-  await expect(page.getByRole("article")).toHaveCount(1);
-  await expect(page.getByRole("article")).toContainText("Decision");
+  await expect(modelRows(page)).toHaveCount(1);
+  await expect(modelRows(page)).toContainText("Decision");
   await expect(page.getByRole("button", { name: "Add model" })).toHaveCount(0);
 });
 
 test("requires an inline type choice for missing metadata instead of defaulting to text", async ({ page }) => {
-  const unknown = page.getByRole("article").filter({ hasText: "Unknown" });
+  const unknown = modelRows(page).filter({ hasText: "Unknown" });
   await expect(unknown.getByRole("button", { name: "Add model" })).toBeDisabled();
   await unknown.getByRole("combobox").click();
   await page.getByRole("option", { name: "Decision", exact: true }).click();
@@ -137,35 +139,35 @@ test("requires an inline type choice for missing metadata instead of defaulting 
 });
 
 test("shows saved selections before discovery and deletes from the selected-only view", async ({ page }) => {
-  const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
+  const jev = modelRows(page).filter({ hasText: "~typesafe/jev-latest" });
   await jev.getByRole("button", { name: "Add model" }).click();
   await expect(jev).toContainText("Selected");
   await page.getByRole("checkbox", { name: "Selected Models only" }).check();
   await expect(page.getByRole("checkbox", { name: "Selected Models only" })).toBeChecked();
-  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(modelRows(page)).toHaveCount(1);
   await page.getByRole("checkbox", { name: "Selected Models only" }).uncheck();
-  await expect(page.getByRole("article")).toHaveCount(4);
+  await expect(modelRows(page)).toHaveCount(4);
   await page.reload();
-  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(modelRows(page)).toHaveCount(1);
   await page.getByRole("checkbox", { name: "Selected Models only" }).check();
   await jev.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(modelRows(page)).toHaveCount(1);
   await jev.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(page.getByRole("article")).toHaveCount(0);
+  await expect(modelRows(page)).toHaveCount(0);
   expect(selected).toEqual([]);
   await page.reload();
-  await expect(page.getByRole("article")).toHaveCount(0);
+  await expect(modelRows(page)).toHaveCount(0);
 });
 
 test("saves personal favorites from selected models and restores them after reload", async ({ page }) => {
-  const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
+  const jev = modelRows(page).filter({ hasText: "~typesafe/jev-latest" });
   await jev.getByRole("button", { name: "Add model" }).click();
   await page.goto(`${base}/selected`);
-  const selectedCard = page.getByRole("article").filter({ hasText: "fixture/~typesafe/jev-latest" });
+  const selectedCard = modelRows(page).filter({ hasText: "fixture/~typesafe/jev-latest" });
   await page.getByRole("textbox", { name: "Search models" }).fill("fixture/~typesafe/jev-latest");
-  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(modelRows(page)).toHaveCount(1);
   await selectedCard.getByRole("button", { name: "Add to favorites" }).click();
   await expect(selectedCard.getByRole("button", { name: "Remove from favorites" })).toHaveAttribute("aria-pressed", "true");
   expect(favorites).toEqual(["fixture/~typesafe/jev-latest"]);
@@ -176,17 +178,17 @@ test("saves personal favorites from selected models and restores them after relo
 });
 
 test("keeps registered models visible when favorites cannot be loaded", async ({ page }) => {
-  const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
+  const jev = modelRows(page).filter({ hasText: "~typesafe/jev-latest" });
   await jev.getByRole("button", { name: "Add model" }).click();
   failFavorites = true;
   await page.goto(`${base}/selected`);
-  await expect(page.getByRole("article")).toContainText("Jev Latest");
+  await expect(modelRows(page)).toContainText("Jev Latest");
   await expect(page.getByRole("alert")).toContainText("Favorites unavailable");
   await expect(page.getByRole("button", { name: "Add to favorites" })).toHaveCount(0);
 });
 
 test("retains the selected model and surfaces the API's in-use deletion refusal", async ({ page }) => {
-  const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
+  const jev = modelRows(page).filter({ hasText: "~typesafe/jev-latest" });
   await jev.getByRole("button", { name: "Add model" }).click();
   await expect(jev).toContainText("Selected");
   blockDeletion = true;
@@ -197,9 +199,39 @@ test("retains the selected model and surfaces the API's in-use deletion refusal"
   expect(selected).toHaveLength(1);
 });
 
-test("keeps model cards within a mobile viewport", async ({ page }) => {
+test("keeps model rows within a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("remembers row or grid view and fits at most four models across", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.getByText("Grid", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: "Grid" })).toBeChecked();
+  const desktop = await modelRows(page).evaluateAll(elements => elements.map(element => {
+    const box = element.getBoundingClientRect();
+    return { x: box.x, y: box.y };
+  }));
+  expect(desktop).toHaveLength(4);
+  expect(new Set(desktop.map(box => Math.round(box.y))).size).toBe(1);
+  expect(desktop.map(box => box.x)).toEqual([...desktop.map(box => box.x)].sort((a, b) => a - b));
+
+  await page.reload();
+  await expect(page.getByRole("radio", { name: "Grid" })).toBeChecked();
+  await page.goto(`${base}/selected`);
+  await expect(page.getByRole("radio", { name: "Grid" })).toBeChecked();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(base);
+  await page.getByRole("button", { name: "Discover Models", exact: true }).click();
+  await expect(modelRows(page)).toHaveCount(4);
+  const mobile = await modelRows(page).evaluateAll(elements => elements.map(element => element.getBoundingClientRect().y));
+  expect(new Set(mobile.map(y => Math.round(y))).size).toBe(4);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+  await page.getByText("Rows", { exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole("radio", { name: "Rows" })).toBeChecked();
 });
 
 test("shared model picker shows the selected identity, favorite group and per-model prices on mobile", async ({ page }) => {
@@ -222,29 +254,29 @@ test("shared model picker shows the selected identity, favorite group and per-mo
 });
 
 test("always queries the complete provider catalog even while selected-only is active", async ({ page }) => {
-  const jev = page.getByRole("article").filter({ hasText: "~typesafe/jev-latest" });
+  const jev = modelRows(page).filter({ hasText: "~typesafe/jev-latest" });
   await jev.getByRole("button", { name: "Add model" }).click();
   await expect(jev).toContainText("Selected");
   await page.getByRole("checkbox", { name: "Selected Models only" }).check();
   await page.getByRole("button", { name: "Discover Models", exact: true }).click();
   await expect.poll(() => discoveryQueries.length).toBe(2);
   expect(discoveryQueries).toEqual(["?provider=fixture", "?provider=fixture"]);
-  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(modelRows(page)).toHaveCount(1);
   await page.getByRole("checkbox", { name: "Selected Models only" }).uncheck();
-  await expect(page.getByRole("article")).toHaveCount(4);
+  await expect(modelRows(page)).toHaveCount(4);
   failDiscovery = true;
   await page.getByRole("checkbox", { name: "Selected Models only" }).check();
   await page.getByRole("button", { name: "Discover Models", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Provider discovery failed");
   await page.getByRole("checkbox", { name: "Selected Models only" }).uncheck();
-  await expect(page.getByRole("article")).toHaveCount(4);
+  await expect(modelRows(page)).toHaveCount(4);
 });
 
 test("restores provider, query, type, capability filters, selected-only and sort from browser storage", async ({ page }) => {
   await page.getByRole("combobox", { name: "Providers", exact: true }).click();
   await page.getByRole("option", { name: "other (openrouter)", exact: true }).click();
   await page.getByRole("button", { name: "Discover Models", exact: true }).click();
-  const zeta = page.getByRole("article").filter({ hasText: "Zeta" });
+  const zeta = modelRows(page).filter({ hasText: "Zeta" });
   await zeta.getByRole("button", { name: "Add model" }).click();
   await expect(zeta).toContainText("Selected");
   await page.getByRole("textbox", { name: "Search models" }).fill("Zeta");
@@ -263,25 +295,25 @@ test("restores provider, query, type, capability filters, selected-only and sort
   await page.getByRole("button", { name: "Discover Models", exact: true }).click();
   await expect(zeta).toContainText("Selected");
   await page.getByRole("button", { name: "Reset filters" }).click();
-  await expect(page.getByRole("article")).toHaveCount(4);
+  await expect(modelRows(page)).toHaveCount(4);
 });
 
 test("a removed provider preference cannot hide the remaining registered models", async ({ page }) => {
-  await page.getByRole("article").filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
+  await modelRows(page).filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
   await expect.poll(() => selected.length).toBe(1);
   selected.push({ ...selected[0]!, id: "other/temporary", wireId: "temporary", provider: "other", displayName: "Temporary" });
   await page.goto(`${base}/selected`);
   await page.getByRole("combobox", { name: "Providers", exact: true }).click();
   await page.getByRole("option", { name: "other", exact: true }).click();
-  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(modelRows(page)).toHaveCount(1);
   selected = selected.filter(model => model.provider !== "other");
   await page.reload();
-  await expect(page.getByRole("article")).toHaveCount(1);
-  await expect(page.getByRole("article")).toContainText("Zeta");
+  await expect(modelRows(page)).toHaveCount(1);
+  await expect(modelRows(page)).toContainText("Zeta");
 });
 
 test("editing uses the registration rules without retaining obsolete output types", async ({ page }) => {
-  await page.getByRole("article").filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
+  await modelRows(page).filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
   await expect.poll(() => selected.length).toBe(1);
   await page.goto(`${base}/registered`);
   await page.getByRole("button", { name: "Edit", exact: true }).click();

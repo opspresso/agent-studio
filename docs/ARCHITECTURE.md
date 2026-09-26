@@ -368,6 +368,8 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액션은 `PageHeader`, 하위 섹션은
 `SectionHeading`, 경로 기반 탭은 `PageTabs`를 사용한다. 목록·빈 상태·폼 모달은
 `DataTable`/`CardGrid`, `PageState`, `FormModal`이 공통 표현을 소유한다.
+Agents·Plugins·Skills·Tools·Models 카탈로그는 행/그리드 보기를 제공하고 `CatalogView`가 브라우저별
+공통 선택을 저장한다. 그리드는 콘텐츠 너비에 맞춰 최대 4열까지 표시한다.
 외부에서 발급받는 키는 `SecretInput`으로 입력한다. 저장된 마스킹 값과 교체 초안을 분리하고,
 저장된 키는 앞뒤 4자를 드러낸 서버 마스크로 표시한다(8자 이하는 전부 숨긴다).
 교체를 눌러 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다.
