@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import {
-  ActionIcon,
   AppShell,
   Burger,
   Group,
@@ -98,7 +97,7 @@ const NAV_GROUPS = [
  * foot of the sidebar.
  *
  * Neither is a thing the workspace holds: one is the account looking at it and
- * the other is how to use it. Sitting in the workspace group they pushed the
+ * the other is how to use it. Sitting in the work group they pushed the
  * registries down and read as more work to do. The profile link stays here
  * rather than moving into the header entirely, because the header's own link
  * to it is `visibleFrom="lg"` and would disappear on a laptop.
@@ -278,9 +277,6 @@ export function AppLayout({
                 <Text fw={650} fz="md" lh={1.1}>
                   {branding.name}
                 </Text>
-                <Text fz={10} c="dimmed" tt="uppercase" lts="0.12em" visibleFrom="xs">
-                  {t("chrome.tagline")}
-                </Text>
               </div>
             </UnstyledButton>
             <Group gap="xs" ml="auto" wrap="nowrap">
@@ -304,22 +300,6 @@ export function AppLayout({
       <AppShell.Navbar className={classes.navbar} p="md">
         {showNav && (
         <>
-        <Group justify="space-between" mb="sm">
-          <Text fz={11} fw={600} c="dimmed">
-            {t("chrome.navLabel")}
-          </Text>
-          <ActionIcon
-            component={Link}
-            href="/agents"
-            variant="light"
-            color="brand"
-            size="sm"
-            aria-label={t("chrome.openAgents")}
-            onClick={close}
-          >
-            <IconRobot size={16} />
-          </ActionIcon>
-        </Group>
         <ScrollArea viewportRef={navViewport} style={{ flex: 1 }} scrollbarSize={6} type="always">
           <Stack gap="md">
             {NAV_GROUPS.filter(visibleTo(viewer)).map((group) => (

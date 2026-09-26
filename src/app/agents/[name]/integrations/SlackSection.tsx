@@ -13,6 +13,7 @@ import {
   updateAgentSlack,
 } from "../../lib/api";
 import type { AgentSlackResponse, SlackSuggestedPrompt } from "../../lib/api";
+import type { IntegrationSummary } from "@/app/api/agents/_lib/http";
 import { Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { MAX_SUGGESTED_PROMPTS } from "@/domain/slack/types";
 import { parseList } from "@/shared/parseList";
@@ -33,8 +34,14 @@ function emptyPrompts(stored: SlackSuggestedPrompt[]): SlackSuggestedPrompt[] {
 
 export function SlackSection({
   agentName,
+  onSelect,
+  selected,
+  onConnectionChange,
 }: {
   agentName: string;
+  onSelect?: () => void;
+  selected?: boolean;
+  onConnectionChange?: (summary: IntegrationSummary) => void;
 }) {
   const t = useT();
   const [view, setView] = useState<AgentSlackResponse | null>(null);
@@ -79,7 +86,7 @@ export function SlackSection({
   }, [agentName, reloadKey]);
 
   if (!view) {
-    return <BotIntegrationSection title={t("pset.slackBot")} view={null} error={error}
+    return <BotIntegrationSection title={t("pset.slackBot")} view={null} error={error} onSelect={onSelect} selected={selected}
       onRetry={() => setReloadKey(key => key + 1)} />;
   }
 
@@ -103,6 +110,7 @@ export function SlackSection({
       // What came back, not what was typed — the use case normalized it.
       setKeywords(next.channelKeywords.join(", "));
       setStatus("Saved");
+      onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
     } catch (e) {
       setError(reportError(e, "Save failed"));
     } finally {
@@ -144,6 +152,7 @@ export function SlackSection({
       setEnabled(false);
       setPrompts(emptyPrompts([]));
       setStatus("Disconnected");
+      onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
     } catch (e) {
       setError(reportError(e, "Disconnect failed"));
     } finally {
@@ -153,7 +162,7 @@ export function SlackSection({
 
 
   return (
-    <BotIntegrationSection title={t("pset.slackBot")} view={view} error={error}
+    <BotIntegrationSection title={t("pset.slackBot")} view={view} error={error} onSelect={onSelect} selected={selected}
       onRetry={() => setReloadKey(key => key + 1)}>
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>

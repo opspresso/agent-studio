@@ -67,6 +67,12 @@ Webhook·Schedule은 user 전용 Workspace 도구와 영속 Chat 승인 화면�
 이미지 bytes를 넣지 않고 생성 사실을 적는다. 별도 객체 저장소가 있으면 결과 파일을 보관한다.
 Schedule의 플랫폼 전송 결과는 아래의 `deliveryResults`로 구분한다.
 
+콘솔의 Integrations에서 이력 아이콘을 누르면 오른쪽에 Webhook 또는 전체 Schedule 이력이
+표시된다. Schedule은 각 트리거에서 같은 페이지 크기를 읽고 실제 시작 시각(대기 중이면
+접수 시각)으로 병합해 최근 50건을 보여준다. 동시 읽기는 8개로 제한하며 다른 연동으로
+이동하면 진행 중인 읽기를 취소한다. 봇 설정의 저장·교체·해제는 같은 화면의 전송 대상에
+즉시 반영되며, 목적지 조회 실패는 빈 목록으로 숨기지 않고 표시한다.
+
 ## Schedule
 
 외부 ticker가 공유 token으로 `POST /api/triggers/scan`을 호출한다.

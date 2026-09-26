@@ -9,18 +9,20 @@ import {
   Alert,
   Badge,
   Button,
-  Card,
   Group,
   Stack,
   Text,
   Textarea,
   TextInput,
 } from "@mantine/core";
-import { IconTool } from "@tabler/icons-react";
+import { IconArrowRight, IconTool } from "@tabler/icons-react";
 import { FormModal } from "@/app/_components/FormModal";
 import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
-import { CardGrid } from "@/app/_components/CardGrid";
+import { CatalogCollection } from "@/app/_components/CatalogCollection";
+import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
+import rows from "@/app/_components/CatalogRows.module.css";
+import { CatalogHelp } from "@/app/_components/CatalogHelp";
 import { ManagedMcpModal } from "./_components/ManagedMcpModal";
 import { CredentialBadges } from "./_components/CredentialBadges";
 import { MCP_RUNTIME_COLOR, PLUGIN_COLOR } from "@/app/_components/badgeColors";
@@ -34,6 +36,7 @@ import { createLatestOnly } from "@/app/_lib/latestOnly";
 
 export default function ToolsPage() {
   const t = useT();
+  const [view, setView] = useCatalogView();
   const viewer = useViewer();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,9 +83,7 @@ export default function ToolsPage() {
         </Group>}
       </PageHeader>
 
-      <Alert color="blue" variant="light" title={t("capabilities.descriptionTitle")}>
-        {t("tools.descriptionRole")}
-      </Alert>
+      <CatalogHelp title={t("capabilities.descriptionTitle")}>{t("tools.descriptionRole")}</CatalogHelp>
 
       {error && (
         <Alert color="red" variant="light">
@@ -91,44 +92,35 @@ export default function ToolsPage() {
       )}
 
       {servers.length > 0 && (
-        <CatalogSearch
-          value={filter}
-          onChange={setFilter}
-          placeholder={t("tools.filter")}
-          resultCount={visibleItems.length}
-          totalCount={servers.length}
-          onReset={filter ? () => setFilter("") : undefined}
-        />
+        <Group align="flex-start" justify="space-between" gap="md">
+          <CatalogSearch value={filter} onChange={setFilter} placeholder={t("tools.filter")}
+            resultCount={visibleItems.length} totalCount={servers.length}
+            onReset={filter ? () => setFilter("") : undefined} />
+          <CatalogViewToggle value={view} onChange={setView} />
+        </Group>
       )}
 
-      <CardGrid
-        loading={loading}
-        failed={!!error && servers.length === 0}
-        empty={visibleItems.length === 0}
-        emptyText={t(servers.length === 0 ? "tools.empty" : "catalog.noResults")}
-      >
-        {visibleItems.map((server) => {
+      <CatalogCollection view={view} loading={loading} failed={!!error && servers.length === 0}
+        empty={visibleItems.length === 0} emptyText={t(servers.length === 0 ? "tools.empty" : "catalog.noResults")}>
+          {visibleItems.map((server) => {
           const plugin = server.source ? parsePluginSource(server.source) : null;
           return (
-            <Card key={server.name} component={Link} href={`/tools/${server.name}`} h="100%">
-              <Group gap="xs" wrap="wrap">
-                <Text fw={500}>{server.name}</Text>
-                {plugin && <Badge color={PLUGIN_COLOR}>{plugin.plugin}</Badge>}
-                {server.runtime === "managed" && (
-                  <Badge color={MCP_RUNTIME_COLOR.managed}>managed</Badge>
-                )}
-                <CredentialBadges server={server} />
-              </Group>
-              <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
-                {server.description || "No description"}
-              </Text>
-              <Text fz="xs" c="dimmed" mt="xs" truncate>
-                {server.url}
-              </Text>
-            </Card>
+            <Link key={server.name} href={`/tools/${server.name}`} className={rows.row}>
+              <div className={rows.identity}>
+                <Text className={rows.name}>{server.name}</Text>
+                <Group gap={5} mt={7} wrap="wrap">
+                  {plugin && <Badge color={PLUGIN_COLOR}>{plugin.plugin}</Badge>}
+                  {server.runtime === "managed" && <Badge color={MCP_RUNTIME_COLOR.managed}>managed</Badge>}
+                  <CredentialBadges server={server} />
+                </Group>
+              </div>
+              <Text className={rows.description} lineClamp={2}>{server.description || t("tools.noDescription")}</Text>
+              <div className={rows.meta}><Text className={rows.subtle} ff="monospace">{server.url}</Text></div>
+              <IconArrowRight className={rows.arrow} size={18} aria-hidden="true" />
+            </Link>
           );
-        })}
-      </CardGrid>
+          })}
+      </CatalogCollection>
 
       <ManagedMcpModal
         opened={managedOpened}

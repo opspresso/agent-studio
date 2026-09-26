@@ -10,6 +10,7 @@ import RegisteredModelsPage from "../../src/app/settings/models/registered/page"
 import { ViewerProvider } from "../../src/app/_lib/useViewer";
 import { ModelSelect } from "../../src/app/_components/modelOptions";
 import type { ModelOption } from "../../src/app/_components/modelOptions";
+import { useCatalogView } from "../../src/app/_components/CatalogView";
 
 const pickerModels: ModelOption[] = [
   { id: "office/long-model-name-with-many-segments-and-a-provider-route", provider: "office", family: "long-model", maker: "office",
@@ -27,8 +28,14 @@ function PickerFixture() {
   return <ModelSelect label="Model" models={pickerModels} value={model} searchable onChange={setModel} />;
 }
 
+function ViewFixture() {
+  const [view] = useCatalogView();
+  const [firstView] = useState(view);
+  return <output aria-label="First catalog view">{firstView}</output>;
+}
+
 createRoot(document.getElementById("root")!).render(<MantineProvider theme={theme}><I18nProvider locale="en">
   <ViewerProvider viewer={{ email: "admin@example.test", isAdmin: true, isConfiguredAdmin: true, tier: "admin" }}>
-    <div style={{ padding: 24 }}>{location.pathname === "/selected" ? <ModelsPage /> : location.pathname === "/registered" ? <RegisteredModelsPage /> : location.pathname === "/picker" ? <PickerFixture /> : <ModelSelectionPage />}</div>
+    <div style={{ padding: 24, maxWidth: location.pathname === "/narrow" ? 600 : undefined }}>{location.pathname === "/view" ? <ViewFixture /> : location.pathname === "/selected" ? <ModelsPage /> : location.pathname === "/registered" ? <RegisteredModelsPage /> : location.pathname === "/picker" ? <PickerFixture /> : <ModelSelectionPage />}</div>
   </ViewerProvider>
 </I18nProvider></MantineProvider>);

@@ -54,7 +54,7 @@ export function CatalogSearch({
   );
 }
 
-/** Case-insensitive match over the fields a card actually shows. */
+/** Case-insensitive match over the fields an entry actually shows. */
 export function matchesFilter(filter: string, ...fields: Array<string | undefined>): boolean {
   const needle = filter.trim().toLowerCase();
   if (needle === "") {

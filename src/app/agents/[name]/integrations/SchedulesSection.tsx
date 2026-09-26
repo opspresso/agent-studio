@@ -9,7 +9,6 @@ import { AGENT_WEBHOOK_ID } from "@/domain/trigger/types";
 import type { ScheduleDelivery, ScheduleDeliveryKind } from "@/domain/trigger/types";
 import { toSlug } from "@/domain/naming";
 import { useT } from "@/app/_i18n/provider";
-import { TriggerRuns } from "./TriggerRuns";
 import {
   createTrigger,
   deleteTrigger,
@@ -17,7 +16,6 @@ import {
   listAgentSlackChannels,
   listTriggers,
   updateTrigger,
-  type TriggerRun,
   type TriggerView,
   type SlackChannelInfo,
   type TelegramDestination,
@@ -27,12 +25,11 @@ import {
   findTelegramDestination,
   telegramDestinationLabel,
   telegramDestinationValue,
-} from "./telegramDestinations";
+} from "../_components/telegramDestinations";
 import { reportError } from "@/app/_lib/reportError";
-import { loadScheduleRuns } from "./scheduleRuns";
 
 /**
- * Schedules: a cron in a timezone, and what recent firings did.
+ * Schedules configure a cron, timezone and optional delivery destinations.
  *
  * The other way something outside the console starts a run — the agent's
  * webhook — is one section up and is not a row anyone names, so this list is
@@ -41,13 +38,16 @@ import { loadScheduleRuns } from "./scheduleRuns";
 export function SchedulesSection({
   agentName,
   agent,
+  onSelect,
+  selected,
 }: {
   agentName: string;
   agent: Pick<SanitizedAgent, "slack" | "telegram" | "teams">;
+  onSelect?: () => void;
+  selected?: boolean;
 }) {
   const t = useT();
   const [schedules, setSchedules] = useState<TriggerView[]>([]);
-  const [runs, setRuns] = useState<Record<string, TriggerRun[]>>({});
   const [newId, setNewId] = useState("");
   const [newCron, setNewCron] = useState("");
   // The server and browser may have different zones; keep hydration stable,
@@ -56,8 +56,17 @@ export function SchedulesSection({
   const [newMessage, setNewMessage] = useState("");
   const [slackChannels, setSlackChannels] = useState<SlackChannelInfo[]>([]);
   const [telegramChats, setTelegramChats] = useState<TelegramDestination[]>([]);
-  const [slackChannelsUnavailable, setSlackChannelsUnavailable] = useState(false);
-  const [availableDestinations, setAvailableDestinations] = useState<ScheduleDeliveryKind[]>([]);
+  const [slackChannelsError, setSlackChannelsError] = useState<string | null>(null);
+  const [telegramChatsError, setTelegramChatsError] = useState<string | null>(null);
+  const slackOn = Boolean(agent.slack?.configured && agent.slack.enabled);
+  const telegramOn = Boolean(agent.telegram?.configured && agent.telegram.enabled);
+  const teamsOn = Boolean(agent.teams?.configured && agent.teams.enabled);
+  const slackChannelsUnavailable = !slackOn || slackChannels.length === 0;
+  const availableDestinations: ScheduleDeliveryKind[] = [
+    ...(slackChannels.length > 0 ? (["slack"] as const) : []),
+    ...(telegramOn ? (["telegram"] as const) : []),
+    ...(teamsOn ? (["teams"] as const) : []),
+  ];
   // Webhook rows registered by name before an agent had one of its own. There
   // is no delivery address that reaches them any more, so they run nothing —
   // but the row is still an encrypted secret, and a credential nobody can see
@@ -80,7 +89,6 @@ export function SchedulesSection({
         (trigger) => trigger.kind !== "schedule" && trigger.triggerId !== AGENT_WEBHOOK_ID,
       ),
     );
-    setRuns(await loadScheduleRuns(agentName, listed));
   }, [agentName]);
 
   useEffect(() => {
@@ -103,32 +111,27 @@ export function SchedulesSection({
 
   useEffect(() => {
     let cancelled = false;
-    const slackOn = Boolean(agent.slack?.configured && agent.slack.enabled);
-    const telegramOn = Boolean(agent.telegram?.configured && agent.telegram.enabled);
-    const teamsOn = Boolean(agent.teams?.configured && agent.teams.enabled);
-    void Promise.allSettled([
-      slackOn ? listAgentSlackChannels(agentName) : Promise.resolve({ channels: [] }),
-      telegramOn ? listAgentTelegramChats(agentName) : Promise.resolve({ chats: [] }),
-    ]).then(([slack, telegramDestinations]) => {
-      if (cancelled) {
-        return;
-      }
-      const channels = slack.status === "fulfilled" ? slack.value.channels : [];
-      setSlackChannels(channels);
-      setTelegramChats(
-        telegramDestinations.status === "fulfilled" ? telegramDestinations.value.chats : [],
-      );
-      setSlackChannelsUnavailable(!slackOn || slack.status === "rejected" || channels.length === 0);
-      setAvailableDestinations([
-        ...(channels.length > 0 ? (["slack"] as const) : []),
-        ...(telegramOn ? (["telegram"] as const) : []),
-        ...(teamsOn ? (["teams"] as const) : []),
-      ]);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [agentName, agent.slack?.configured, agent.slack?.enabled, agent.telegram?.configured, agent.telegram?.enabled, agent.teams?.configured, agent.teams?.enabled]);
+    setSlackChannels([]);
+    setSlackChannelsError(null);
+    if (agent.slack?.configured && agent.slack.enabled) {
+      void listAgentSlackChannels(agentName)
+        .then(({ channels }) => { if (!cancelled) setSlackChannels(channels); })
+        .catch(reason => { if (!cancelled) setSlackChannelsError(reason instanceof Error ? reason.message : "Failed to load Slack destinations"); });
+    }
+    return () => { cancelled = true; };
+  }, [agentName, agent.slack]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTelegramChats([]);
+    setTelegramChatsError(null);
+    if (agent.telegram?.configured && agent.telegram.enabled) {
+      void listAgentTelegramChats(agentName)
+        .then(({ chats }) => { if (!cancelled) setTelegramChats(chats); })
+        .catch(reason => { if (!cancelled) setTelegramChatsError(reason instanceof Error ? reason.message : "Failed to load Telegram destinations"); });
+    }
+    return () => { cancelled = true; };
+  }, [agentName, agent.telegram]);
 
   async function act(action: () => Promise<void>) {
     setBusy(true);
@@ -151,6 +154,9 @@ export function SchedulesSection({
   return (
     <CollapsibleSection
       title={t("schedule.section")}
+      onSelect={onSelect}
+      selected={selected}
+      selectLabel={onSelect ? t("pint.historyView") : undefined}
       // Readable while collapsed, like the token's set/none: how many schedules
       // exist, before anyone opens the section.
       badge={
@@ -171,6 +177,8 @@ export function SchedulesSection({
             {error}
           </Alert>
         )}
+        {slackChannelsError && <Alert color="red">{slackChannelsError}</Alert>}
+        {telegramChatsError && <Alert color="red">{telegramChatsError}</Alert>}
 
         <Stack gap="sm">
           <Group align="flex-end" gap="sm">
@@ -312,7 +320,6 @@ export function SchedulesSection({
                 }
               />
 
-              <TriggerRuns runs={runs[schedule.triggerId] ?? []} />
             </Stack>
           </Paper>
         ))}

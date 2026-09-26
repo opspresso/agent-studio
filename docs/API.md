@@ -1557,7 +1557,7 @@ actor 가 이메일을 지목하거나 표면이 소유자 이메일을 해석�
 ## 트레이스
 
 ```
-GET /api/agents/{name}/traces?limit=50[&from=2026-07-01&to=2026-07-31]
+GET /api/agents/{name}/traces?limit=50[&from=2026-07-01&to=2026-07-31][&actorKind=slack]
 → 200 { traces: [ … ] } | 400
 GET /api/agents/{name}/traces/{traceId}
 → 200 { …the trace itself, unwrapped… } | 404
@@ -1565,6 +1565,8 @@ GET /api/agents/{name}/traces/{traceId}
 
 `from`/`to` (YYYY-MM-DD, 양끝 포함) 는 GSI1 날짜 키로 목록을 트레이스 날짜로 거른다. 잘못된
 형식의 날짜나 뒤집힌 범위는 `400` 이다. `limit` 의 기본값은 50 이고 1–100 으로 제한된다.
+`actorKind` 는 `user`·`agent-token`·`slack`·`telegram`·`teams`·`webhook`·`schedule` 중 하나이며,
+해당 실행 주체로 저장된 Trace만 `limit` 전에 거른다. 전달 성공 여부는 Trace 상태와 별개다.
 다른 agent 에 속한 `traceId` 는 남의 트레이스가 아니라 `404` 다.
 
 두 엔드포인트 모두 소유자와 effective admin으로 제한된다(그 외에는 403). agent 런은 항상

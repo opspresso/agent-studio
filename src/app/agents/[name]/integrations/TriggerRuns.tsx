@@ -14,24 +14,16 @@ const STATUS_COLOR: Record<TriggerRun["status"], string> = {
 };
 
 /**
- * What recent firings did. One table for both kinds — the webhook panel and the
- * schedule list read the same rows, and a second copy would be a second answer
- * to "what does `skipped` look like".
- *
- * The history scrolls in place. The endpoint returns up to twenty, and an agent
- * with several triggers pushed everything below it — Slack, the danger
- * zone — off the screen, so the section that reads "what happened recently"
- * buried the ones that configure what happens next. The header stays put while
- * it scrolls, because a status column whose label has scrolled away is the same
- * table this one already fought to keep readable.
+ * What recent firings did. The selected Webhook or Schedules history appears
+ * in the right panel; schedule rows also identify the trigger that fired.
  */
-export function TriggerRuns({ runs }: { runs: TriggerRun[] }) {
+export function TriggerRuns({ runs, showTriggerId = false }: { runs: TriggerRun[]; showTriggerId?: boolean }) {
   const locale = useLocale();
   if (runs.length === 0) {
     return null;
   }
   return (
-    <Table.ScrollContainer minWidth={0} maxHeight={260} type="native">
+    <Table.ScrollContainer minWidth={0} type="native">
       <Table fz="xs" withTableBorder stickyHeader>
         <Table.Thead>
           <Table.Tr>
@@ -52,6 +44,7 @@ export function TriggerRuns({ runs }: { runs: TriggerRun[] }) {
                   defeats the table. */}
               <Table.Td style={{ whiteSpace: "nowrap" }}>
                 {run.startedAt ? formatDateTime(run.startedAt, locale) : "—"}
+                {showTriggerId && <Text fz="xs" c="dimmed">{run.triggerId}</Text>}
               </Table.Td>
               <Table.Td style={{ whiteSpace: "nowrap" }}>
                 {/* Badge clamps its own label independently of the cell, so the

@@ -175,6 +175,10 @@ export const en = {
   "models.capability.reasoning": "Reasoning",
   "models.capability.structuredOutput": "Structured output",
   "models.sort": "Sort Models",
+  "models.column.model": "Model",
+  "models.column.capabilities": "Capabilities",
+  "models.column.pricing": "Pricing and context",
+  "models.column.actions": "Actions",
   "models.sort.name": "Name",
   "models.sort.price": "Price",
   "models.sortPriceHint": "Output token price for text; input token price for embedding and decision models; per-image, audio-minute or rerank price when provided. Unknown prices are last.",
@@ -430,16 +434,14 @@ export const en = {
   "theme.dark": "Dark",
 
   // App chrome: the header, the sidebar and its groups.
-  "chrome.tagline": "Agent platform",
-  "chrome.navLabel": "Workspace navigation",
   "chrome.openNavigation": "Open navigation",
   "chrome.skipToContent": "Skip to main content",
   "chrome.closeNavigation": "Close navigation",
   "chrome.openAgents": "Open Agents",
   "chrome.status": "Version {version}",
-  "nav.group.workspace": "Workspace",
-  "nav.group.intelligence": "Registries",
-  "nav.group.system": "System",
+  "nav.group.workspace": "Work",
+  "nav.group.intelligence": "Components",
+  "nav.group.system": "Administration",
   "nav.overview": "Overview",
   "nav.chats": "Chats",
   "nav.artifacts": "Artifacts",
@@ -471,76 +473,33 @@ export const en = {
   "login.domains": "Use an account on one of this deployment’s allowed domains.",
 
   // The signed-out landing page.
-  "home.domain.workspaces": "Workspaces & Sandboxes",
-  "home.domain.workspacesBody": "Enable Workspace tools on an agent to keep code, files and runtime sessions in a persistent Workspace. Execute in an isolated Sandbox, review Git changes and receive approval results in the requesting chat.",
-  "home.flow.title": "From an idea to a working agent",
-  "home.flow.build": "Configure an Agent",
-  "home.flow.buildBody": "Choose a model and instructions. Add skills and tools when your agent needs them.",
-  "home.flow.run": "Save and run",
-  "home.flow.runBody": "Save the Agent settings, then run from the console, API, or connected messaging service.",
-  "home.flow.review": "Review the results",
-  "home.flow.reviewBody": "Return to Chats, Workspace reviews and Artifacts. Inspect traces and usage alongside the results.",
-  "home.eyebrow": "Agent · tools · run",
-  "home.headline": "Build AI agents",
-  "home.headlineAccent": " and put them to work.",
-  "home.lede":
-    "{serviceName} connects models, skills, and tools in one platform. Configure an Agent and use it in conversations, APIs, messaging, and automation.",
+  "home.eyebrow": "Agent operations · one installation",
+  "home.headline": "Connect your models and tools to an Agent.",
+  "home.headlineAccent": "Follow the work through to its result.",
+  "home.lede": "Build and run Agents inside your organization’s network. Manage their settings, conversations, execution traces, and usage in one place.",
   "home.signInHint": "Sign in with an account from an allowed domain.",
-  "home.proof.network": "From ideas to agents",
-  "home.proof.networkNote": "Create, test, and run in one platform",
-  "home.proof.engine": "One interface for your models",
-  "home.proof.engineNote": "Connect the right model for each task",
-  "home.proof.cost": "Cost and traces per run",
-  "home.proof.costNote": "Attributed to the caller that started the run",
-  "home.streamLabel": "Example of an agent run stream",
-  "home.streamCaption": "agent run · text/event-stream",
-  "home.streamLive": "example",
-  "home.coverage": "What {serviceName} covers",
-  "home.domain.agents": "Agents and settings",
-  "home.domain.agentsBody":
-    "Each Agent has one current configuration: its model, instructions, capabilities, and limits. Saved settings apply to the next run.",
-  "home.domain.agent": "Agent loop",
-  "home.domain.agentBody":
-    "An agent can load skills, call MCP tools, delegate to subagents, and read URLs. Turn and context limits keep each run bounded.",
-  "home.domain.mcp": "MCP Tools",
-  "home.domain.mcpBody":
-    "Register a server once, then bind it to any Agent. Each binding can limit the available tools and override outbound headers. Agent-specific OAuth is supported, and secrets are encrypted at rest.",
-  "home.domain.skills": "Skills",
-  "home.domain.skillsBody":
-    "Reusable instructions written in Markdown. The model sees a short list of names and descriptions, then loads the full instructions when needed.",
-  "home.domain.plugins": "Agent Plugins",
-  "home.domain.pluginsBody":
-    "Bring reusable skills and MCP tools into your Agents from plugin repositories or uploaded archives.",
-  "home.domain.catalog": "Capability catalog",
-  "home.domain.catalogBody":
-    "Search skills and MCP servers or tools in one catalog. An opted-in Agent adds relevant capabilities for the current run without changing its saved bindings.",
-  "home.domain.chats": "Chats",
-  "home.domain.chatsBody":
-    "Talk to an agent in the console. Read PDF, text, and Office attachments without a document MCP server, and follow replies and tool calls. Closing the tab does not stop the run.",
-  "home.domain.images": "Images",
-  "home.domain.imagesBody":
-    "Enable image tools in the Agent settings to generate or edit images. The Agent can edit an attached image or one produced earlier in the run using its configured image model.",
-  "home.domain.audio": "Audio transcription & summaries",
-  "home.domain.audioBody": "Import audio from uploads or connected tools, transcribe it with a selected model, and produce summaries in the background. Keep originals and results as private Artifacts; personal records are saved when requested.",
-  "home.domain.artifacts": "Documents & artifacts",
-  "home.domain.artifactsBody":
-    "Create reports, presentations, and spreadsheets. Edit supported attachments into new files while keeping the originals. Configured storage keeps originals and results available for download.",
-  "home.domain.surfaces": "Slack & webhooks",
-  "home.domain.surfacesBody":
-    "Connect Agents to messengers, APIs, webhooks and schedules. Identity, history, approval rules and Workspace availability differ by entry point.",
-  "home.domain.cost": "Cost & guards",
-  "home.domain.costBody":
-    "Record model-call cost by Agent, caller and day. Configured thresholds can alert or block new runs; external Workspace CLI usage is tracked separately by its provider.",
-  "home.domain.traces": "Traces & audit",
-  "home.domain.tracesBody":
-    "Inspect recorded model runs, tool activity and usage. Tracing and audit have separate scopes and retention; administrative changes and issued-secret access are audited.",
-  "home.guide.title": "Get started with {serviceName}",
-  "home.guide.body": "Learn to configure Agents, connect tools, use Workspaces and follow approval results. Check which capabilities each execution surface supports. The guide is readable without signing in.",
-  "home.product": "An AI agent platform.",
-
+  "home.flow.title": "How an Agent moves through the studio",
+  "home.flow.build": "Configure",
+  "home.flow.buildBody": "Choose a registered model, write instructions, and bind the skills and tools this Agent needs.",
+  "home.flow.run": "Run",
+  "home.flow.runBody": "Use the Agent in Chat, through its API, or from a connected messaging service.",
+  "home.flow.review": "Review",
+  "home.flow.reviewBody": "Inspect the response, produced files, trace, and model usage. Review Workspace changes before publication.",
+  "home.sectionLabel": "Designed for your network",
+  "home.coverage": "From configuration to evidence",
+  "home.coverageBody": "The studio gives each stage a place, so the result and the decisions behind it stay visible.",
+  "home.benefit.network": "Runs on your network",
+  "home.benefit.networkBody": "Boot, sign-in, execution, and the console can use your internal services without public internet access.",
+  "home.benefit.control": "Capabilities with boundaries",
+  "home.benefit.controlBody": "Select deployment-owned models, bind tools to an Agent, and set execution limits where they are needed.",
+  "home.benefit.evidence": "Results you can inspect",
+  "home.benefit.evidenceBody": "Follow conversations, files, traces, and usage to understand what an Agent produced and what it used.",
   // Vocabulary more than one page uses. A word here is one a reader meets on
   // several screens and should not have to re-learn.
   "catalog.clearSearch": "Clear search",
+  "catalog.view": "Catalog view",
+  "catalog.view.list": "Rows",
+  "catalog.view.grid": "Grid",
   "catalog.resetFilters": "Reset filters",
   "catalog.resultCount": "{count} of {total} results",
   "catalog.noResults": "No matches found. Try another search or reset your filters.",
@@ -595,8 +554,7 @@ export const en = {
 
   // The cost dashboard on the overview.
   "cost.title": "Cost",
-  "cost.lede":
-    "What every Agent spends, priced per call from the model registry — with daily and monthly limits that warn, then refuse.",
+  "cost.lede": "Model calls and estimated cost for the selected period.",
   "cost.departmentsFailed":
     "Agent departments could not be loaded, so every Agent is shown under “(none)”. Reload to attribute this spend.",
   "cost.totalCost": "Total cost",
@@ -604,8 +562,6 @@ export const en = {
   "cost.totalCalls": "Total calls",
   "cost.modelInvocations": "Model invocations",
   "cost.averageCost": "Average cost",
-  "cost.perInvocation": "Per invocation",
-  "cost.activeGroups": "Active groups",
   "cost.dailyCost": "Daily cost",
 
   // Page-level failures: the segment error boundaries and the missing page.
@@ -626,20 +582,19 @@ export const en = {
   "attach.unreadable": "{name}: unreadable",
 
   // The signed-in home.
-  "overview.welcome": "Welcome back, {name}",
-  "overview.welcomeAnon": "Welcome back",
-  "overview.lede":
-    "Configure Agents, test requests in the console, and connect them to other systems. Agent tools support images, documents, and background audio processing.",
+  "overview.title": "Workspace overview",
+  "overview.lede": "Continue a conversation, open an Agent, or review model usage.",
+  "overview.inventory": "Registered capabilities",
   "overview.newAgent": "New Agent",
   "overview.newChat": "New Chat",
   "overview.recentAgents": "Recent Agents",
-  "overview.recentAgentsNote": "Your Agents come first, followed by other recently updated Agents.",
+  "overview.recentAgentsNote": "Your Agents first, then recently updated Agents.",
   "overview.allAgents": "All Agents",
   "overview.agentsFailed": "Agents could not be loaded.",
   "overview.noAgents": "No Agents yet.",
   "overview.chatsFailed": "Could not load recent Chats and Workspaces. Reload to try again.",
   "overview.recentChats": "Recent Chats & Workspaces",
-  "overview.recentChatsNote": "Check the type and continue the Chat or Workspace task.",
+  "overview.recentChatsNote": "Return to a conversation or Workspace task.",
   "overview.allChats": "View all",
   "overview.noChats": "No Chats or Workspaces yet.",
   "overview.getStarted": "Start with an Agent",
@@ -821,10 +776,10 @@ export const en = {
     "In an Agent's Integrations, save and enable the Telegram bot token; enabling registers its webhook. Use Register webhook again after an application URL change. For Teams, enable the Azure Bot's Teams channel, save its application ID and client secret (plus tenant ID for a single-tenant app), and set its messaging endpoint to the displayed URL. Test in a direct conversation before trying group mentions.",
   "guide.integrations.webhook": "Receive a webhook",
   "guide.integrations.webhookBody":
-    "Enable the Agent webhook in Settings. Generic callers send X-Trigger-Secret; GitHub uses the same secret to sign X-Hub-Signature-256. The JSON payload becomes a user message. HTTP 202 acknowledges delivery; check Trigger history for execution and skipped runs. With overlap disabled, deliveries arriving during a run are skipped.",
+    "Enable the Agent webhook in Integrations. Generic callers send X-Trigger-Secret; GitHub uses the same secret to sign X-Hub-Signature-256. The JSON payload becomes a user message. HTTP 202 acknowledges delivery; check Trigger history for execution and skipped runs. With overlap disabled, deliveries arriving during a run are skipped.",
   "guide.integrations.schedule": "Schedule a recurring task",
   "guide.integrations.scheduleBody":
-    "In Agent Settings, add a schedule with a five-field cron expression, an IANA time zone such as Asia/Seoul, and the message to run. Select any delivery destinations and enable it. Schedules use the current Agent configuration and require the deployment's external ticker. Check both run status and delivery results: a generated answer can succeed even when sending it to a bot fails.",
+    "In Agent Integrations, add a schedule with a five-field cron expression, an IANA time zone such as Asia/Seoul, and the message to run. Select any delivery destinations and enable it. Schedules use the current Agent configuration and require the deployment's external ticker. Check both run status and delivery results: a generated answer can succeed even when sending it to a bot fails.",
 
   "guide.records.title": "Results, usage, and limits",
   "guide.records.artifacts": "Find originals and generated files",
@@ -948,6 +903,7 @@ export const en = {
   "chat.new": "New Chat",
   "chat.list": "Chats",
   "chat.kind": "Chat",
+  "chat.startMode": "Start a new",
   "chat.currentItem": "Open: {title}",
   "chat.history": "Chats & Workspaces",
   "chat.none": "No Chats yet.",
@@ -973,7 +929,7 @@ export const en = {
   "chat.placeholder": "Send a message…",
   "chat.firstPlaceholder": "Send your first message…",
   "chat.pickAgent": "Pick an Agent and send your first message.",
-  "chat.welcomeTitle": "What would you like to work on?",
+  "chat.welcomeTitle": "New Chat",
   "chat.welcomeHint": "Your Chat stays with the selected Agent. Start a new Chat to switch Agents.",
   "chat.messageLabel": "Message",
   "chat.inputHint": "Enter to send · Shift + Enter for a new line",
@@ -1014,6 +970,8 @@ export const en = {
   "agents.departmentCode": "Department code",
   "agents.departmentHint": "Optional code for grouping Agent ownership and costs.",
   "agents.privateBadge": "Private",
+  "agents.configured": "Configured",
+  "agents.needsConfiguration": "Needs configuration",
   "agents.cloneFailed": "Failed to clone Agent",
 
   // One agent's header and tab strip.
@@ -1264,6 +1222,7 @@ export const en = {
   "skills.contentBadge": "Loaded after selection",
   "skills.new": "New Skill",
   "skills.filter": "Filter Skills…",
+  "skills.attachmentsCount": "{count} attachments",
   "skills.empty": "No Skills yet. Sync a Plugins repository, or create one here.",
   "skills.namePlaceholder": "my-skill",
   "skills.contentPlaceholder": "# Instructions…",
@@ -1314,6 +1273,12 @@ export const en = {
     "A .tar.gz of the plugins repository (git archive or tar of a checkout) — for a deployment that cannot reach GitHub.",
   "plugins.archiveSource": "Archive: {name}",
   "plugins.uploadFailed": "Upload failed",
+  "plugins.syncFromGitHub": "Sync from GitHub",
+  "plugins.source": "GitHub source: {repo} · {branch}",
+  "plugins.syncNotConfigured": "Plugin sync is not configured. Add the repository and token in Settings.",
+  "plugins.lastSynced": "Last synced {date} by {actor}",
+  "plugins.componentCount": "{skills} Skills · {servers} MCP servers",
+  "plugins.revision": "Synced {date} · {sha}",
 
   "capabilities.descriptionTitle": "Description controls discovery",
 
@@ -1390,8 +1355,15 @@ export const en = {
 
   // The agent's Integrations tab: how other systems reach it.
   "pint.lede":
-    "How other systems reach this Agent — its API token and the chat platforms whose bots run it. Agent settings, cost limits and triggers stay under Settings.",
+    "Connect this Agent through its API token, chat bots, webhook and schedules. Choose an integration to inspect its recent activity.",
   "pint.ownerOnly": "Only the Agent owner ({owner}) or an admin can change these integrations.",
+  "pint.historyTitle": "Delivery history",
+  "pint.historyChoose": "Select an integration to see its recent activity.",
+  "pint.historyRefresh": "Refresh",
+  "pint.historyView": "View history",
+  "pint.historyEmpty": "No recent history for this integration.",
+  "pint.historyFailed": "Could not load integration history.",
+  "pint.traceHistoryHint": "These are Agent run traces. A completed trace does not confirm that a bot reply reached its destination.",
 
   // An agent's settings tab: the sections and their forms.
   "pset.dangerZone": "Danger zone",
@@ -1463,13 +1435,12 @@ export const en = {
   "webhook.reviewRepositories": "Repositories (one owner/repo per line)",
   "webhook.reviewHint": "An administrator can enable automatic review comments using the installation's GitHub connection. Subscribe to Pull requests. Signed opened, synchronize, reopened and ready_for_review events review non-draft open PRs. The Agent reads the supplied diff with bound skills; it cannot execute repository code or other tools. Comments stay on the verified PR and commit. Different PRs may run concurrently.",
   "webhook.reviewSave": "Save review settings",
-  "webhook.refreshRuns": "Refresh deliveries",
   "webhook.secretHint": "Generic senders use X-Trigger-Secret. GitHub uses this same value in its Secret field to sign deliveries. Anyone holding it can start the Agent’s current settings.",
   "webhook.intro":
-    "One address per Agent, off until you turn it on. An outside system starts a run by posting JSON with X-Trigger-Secret or a GitHub HMAC-SHA256 signature; the delivery is acknowledged immediately and its outcome lands in the history below. The webhook always runs the Agent’s current configuration.",
+    "One address per Agent, off until you turn it on. An outside system starts a run by posting JSON with X-Trigger-Secret or a GitHub HMAC-SHA256 signature; the delivery is acknowledged immediately and its outcome appears in the history on the right. The webhook always runs the Agent’s current configuration.",
   "schedule.section": "Schedules",
   "schedule.intro":
-    "A cron expression in a timezone, fired without anyone asking. Schedules always run the Agent’s current configuration, and their outcomes show up under each one.",
+    "A cron expression in a timezone, fired without anyone asking. Schedules always run the Agent’s current configuration, and their outcomes appear in the history on the right.",
   "trigger.newId": "New schedule id",
   "trigger.newIdPlaceholder": "nightly-report",
   "trigger.cron": "Cron",

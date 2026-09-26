@@ -368,11 +368,19 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액션은 `PageHeader`, 하위 섹션은
 `SectionHeading`, 경로 기반 탭은 `PageTabs`를 사용한다. 목록·빈 상태·폼 모달은
 `DataTable`/`CardGrid`, `PageState`, `FormModal`이 공통 표현을 소유한다.
+Agents·Plugins·Skills·Tools·Models 카탈로그는 행/그리드 보기를 제공하고 `CatalogView`가 브라우저별
+공통 선택을 저장한다. 클라이언트에서 새로 마운트되는 목록은 첫 표시부터 저장된 선택을 읽는다.
+`CatalogCollection`이 카탈로그의 로딩·오류·빈 상태를, `CatalogLayout.module.css`가 콘텐츠
+너비에 맞춘 최대 4열 배치를 소유한다. 행의 반응형 배치도 본문 컨테이너 너비를 따른다.
+Agent 상세의 Playground·Integrations·Settings는 `AgentPageColumns.module.css`의 동일한
+7:5 가로 비율을 쓴다. Settings처럼 한 영역만 있는 페이지는 왼쪽 영역을 사용하고, 작은 화면에서는 전체 폭으로 쌓인다.
+Agent의 API 토큰·봇·Webhook·Schedules는 Integrations에서 관리하고, 공개 범위·비용 한도·기본 정보는 Settings에서 관리한다.
 외부에서 발급받는 키는 `SecretInput`으로 입력한다. 저장된 마스킹 값과 교체 초안을 분리하고,
 저장된 키는 앞뒤 4자를 드러낸 서버 마스크로 표시한다(8자 이하는 전부 숨긴다).
 교체를 눌러 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다.
 설정 override 삭제는 별도 동작으로 제공한다.
 앱이 발급하는 Agent 토큰·Webhook 키는 `SecretControl`로 표시·복사·생성·재생성·폐기한다.
+Agent API 토큰의 이름과 설정 상태는 Integrations의 접이식 섹션 제목에 한 번만 표시한다.
 지원하는 동작은 각 API의 기능과 권한에 따른다. 원문을 표시한 동안에만 복사할 수 있고,
 재생성·교체·폐기는 공통 확인창을 거친다. 평문은 브라우저 저장소에 기록하지 않는다.
 Settings는 Service·Access·Plugins·Models 탭으로 관리하고, `/models`는 등록된 모델 조회·검색만 제공한다.

@@ -109,6 +109,17 @@ describe("trace TTL", () => {
 
     expect(traces.map((t) => t.traceId)).toEqual(["only"]);
   });
+
+  it("filters nested actor kind before applying the page limit", async () => {
+    store.seed([
+      traceRow({ traceId: "new-user", createdAt: "2026-06-30T00:00:03Z", actor: { kind: "user", id: "u" } }, freshSec),
+      traceRow({ traceId: "slack-2", createdAt: "2026-06-30T00:00:02Z", actor: { kind: "slack", id: "s2" } }, freshSec),
+      traceRow({ traceId: "new-telegram", createdAt: "2026-06-30T00:00:01Z", actor: { kind: "telegram", id: "t" } }, freshSec),
+      traceRow({ traceId: "slack-1", createdAt: "2026-06-30T00:00:00Z", actor: { kind: "slack", id: "s1" } }, freshSec),
+    ]);
+    const traces = await traceRepository.listByAgent("p", { actorKind: "slack", limit: 2 });
+    expect(traces.map((trace) => trace.traceId)).toEqual(["slack-2", "slack-1"]);
+  });
 });
 
 describe("usage TTL", () => {

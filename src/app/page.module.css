@@ -1,42 +1,167 @@
-.hero,
-.domainCard,
-.guidePanel,
-.workflow {
+.landing {
+  display: grid;
+  gap: clamp(72px, 8vw, 128px);
+  padding-block: clamp(32px, 5vw, 80px) 48px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(340px, 0.88fr);
+  align-items: center;
+  gap: clamp(36px, 6vw, 104px);
+}
+
+.heroCopy { max-width: 720px; }
+
+.eyebrow,
+.sectionLabel {
+  margin: 0 0 20px;
+  color: var(--mantine-primary-color-filled);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.headline {
+  max-width: 760px;
+  font-size: clamp(42px, 4.3vw, 72px);
+  font-weight: 650;
+  line-height: 1.13;
+  letter-spacing: -0.055em;
   word-break: keep-all;
 }
 
-.eyebrow {
-  border: 1px solid var(--studio-border);
+.headline span { color: var(--mantine-primary-color-filled); }
+
+.lede {
+  max-width: 620px;
+  margin-top: 26px;
+  color: var(--mantine-color-dimmed);
+  font-size: clamp(16px, 1.4vw, 18px);
+  line-height: 1.75;
+  word-break: keep-all;
 }
 
-.gradientText {
-  color: light-dark(var(--mantine-color-brand-7), var(--mantine-color-brand-3));
-}
+.actions { margin-top: 32px; }
 
-.proofRow > div {
-  padding-left: var(--mantine-spacing-md);
-  border-left: 2px solid var(--studio-border);
+.signInHint {
+  margin-top: 14px;
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
 }
 
 .workflow {
+  border: 1px solid var(--studio-border);
+  border-radius: 18px;
   background: var(--studio-surface);
-  box-shadow: var(--surface-shadow);
+  box-shadow: 0 22px 60px color-mix(in oklab, var(--mantine-color-dark-9) 6%, transparent);
 }
 
-.flowStep {
-  padding: var(--mantine-spacing-sm);
+.workflowHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 28px;
+  border-bottom: 1px solid var(--studio-border);
+  font-weight: 650;
 }
 
-.flowArrow {
-  display: block;
-  margin: 0 0 var(--mantine-spacing-xs) 25px;
+.workflowHeader span {
+  color: var(--mantine-color-dimmed);
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+}
+
+.workflowList {
+  padding: 8px 28px 14px;
+  margin: 0;
+  list-style: none;
+}
+
+.workflowList li {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 16px;
+  padding: 24px 0;
+}
+
+.workflowList li + li { border-top: 1px solid var(--studio-border); }
+
+.stepNumber {
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mantine-primary-color-filled);
+}
+
+.stepBody {
+  margin-top: 7px;
+  color: var(--mantine-color-dimmed);
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+
+.benefits {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.75fr) minmax(0, 1.25fr);
+  gap: clamp(36px, 7vw, 112px);
+  padding-top: 40px;
+  border-top: 1px solid var(--studio-border);
+}
+
+.benefitIntro h2 {
+  font-size: clamp(26px, 2.6vw, 38px);
+  line-height: 1.2;
+  letter-spacing: -0.035em;
+  word-break: keep-all;
+}
+
+.benefitIntro > p:last-child {
+  max-width: 460px;
+  margin-top: 18px;
+  color: var(--mantine-color-dimmed);
+  line-height: 1.7;
+  word-break: keep-all;
+}
+
+.benefitList { display: grid; }
+
+.benefit {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 16px;
+  padding: 20px 0;
+  border-top: 1px solid var(--studio-border);
+}
+
+.benefit > span {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
   color: var(--mantine-color-dimmed);
 }
 
-.domainCard {
-  background: var(--studio-surface);
+.benefit h3 { font-size: 19px; line-height: 1.3; }
+
+.benefit p {
+  max-width: 640px;
+  margin-top: 8px;
+  color: var(--mantine-color-dimmed);
+  font-size: 14px;
+  line-height: 1.65;
+  word-break: keep-all;
 }
 
-.guidePanel {
-  background: var(--studio-surface);
+@media (max-width: 900px) {
+  .hero,
+  .benefits { grid-template-columns: 1fr; }
+  .workflow { max-width: 680px; }
+}
+
+@media (max-width: 600px) {
+  .landing { gap: 64px; }
+  .headline { font-size: clamp(36px, 9vw, 50px); }
+  .workflowHeader,
+  .workflowList { padding-inline: 20px; }
 }

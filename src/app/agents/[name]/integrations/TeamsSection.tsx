@@ -12,6 +12,7 @@ import {
   updateAgentTeams,
 } from "../../lib/api";
 import type { AgentTeamsResponse } from "../../lib/api";
+import type { IntegrationSummary } from "@/app/api/agents/_lib/http";
 import { Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
 import { useT } from "@/app/_i18n/provider";
@@ -19,8 +20,14 @@ import { reportError } from "@/app/_lib/reportError";
 
 export function TeamsSection({
   agentName,
+  onSelect,
+  selected,
+  onConnectionChange,
 }: {
   agentName: string;
+  onSelect?: () => void;
+  selected?: boolean;
+  onConnectionChange?: (summary: IntegrationSummary) => void;
 }) {
   const t = useT();
   const [view, setView] = useState<AgentTeamsResponse | null>(null);
@@ -55,7 +62,7 @@ export function TeamsSection({
   }, [agentName, reloadKey]);
 
   if (!view) {
-    return <BotIntegrationSection title={t("pset.teamsBot")} view={null} error={error}
+    return <BotIntegrationSection title={t("pset.teamsBot")} view={null} error={error} onSelect={onSelect} selected={selected}
       onRetry={() => setReloadKey(key => key + 1)} />;
   }
 
@@ -71,6 +78,7 @@ export function TeamsSection({
       setTenantId(next.tenantId);
       setEnabled(next.enabled);
       setStatus("Saved");
+      onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
     } catch (e) {
       setError(reportError(e, "Save failed"));
     } finally {
@@ -112,6 +120,7 @@ export function TeamsSection({
       setTenantId("");
       setEnabled(false);
       setStatus("Disconnected");
+      onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
     } catch (e) {
       setError(reportError(e, "Disconnect failed"));
     } finally {
@@ -121,7 +130,7 @@ export function TeamsSection({
 
 
   return (
-    <BotIntegrationSection title={t("pset.teamsBot")} view={view} error={error}
+    <BotIntegrationSection title={t("pset.teamsBot")} view={view} error={error} onSelect={onSelect} selected={selected}
       onRetry={() => setReloadKey(key => key + 1)}>
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>

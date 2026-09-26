@@ -1,4 +1,4 @@
-import { Group, Text, ThemeIcon, Title } from "@mantine/core";
+import { Group, Text, Title } from "@mantine/core";
 import type { TablerIcon } from "@tabler/icons-react";
 import classes from "./PageHeader.module.css";
 
@@ -20,10 +20,8 @@ export function PageHeader({
   return (
     <header className={classes.header}>
       <Group justify="space-between" gap="lg" align="flex-start" wrap="wrap">
-        <Group gap="md" wrap="nowrap" align="flex-start" className={classes.identity}>
-          {Icon && <ThemeIcon size={42} radius="lg" variant="light" color="brand" style={{ flexShrink: 0 }}>
-            <Icon size={23} stroke={1.7} />
-          </ThemeIcon>}
+        <Group gap="sm" wrap="nowrap" align="flex-start" className={classes.identity}>
+          {Icon && <Icon className={classes.icon} size={22} stroke={1.8} aria-hidden="true" />}
           <div className={classes.content}>
             <Group gap="xs" wrap="wrap"><Title order={1} className={classes.title}>{title}</Title>{badges}</Group>
             {description && <Text fz="sm" c="dimmed" mt={5} maw={720} className={classes.description}>{description}</Text>}

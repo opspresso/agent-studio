@@ -8,21 +8,14 @@
  * management. Every execution entry point has a subject even when no human is
  * present, which is why this is a discriminated kind rather than an email.
  */
-export type RunActorKind =
-  /** A signed-in console/API user, identified by email. */
-  | "user"
-  /** A per-agent API token. It authenticates *as the owner*, so `id` is theirs. */
-  | "agent-token"
-  /** A Slack mention or DM, identified by the Slack user id. */
-  | "slack"
-  /** A Telegram message to an agent's bot, identified by the Telegram user id. */
-  | "telegram"
-  /** A Microsoft Teams message to an agent's bot, identified by the sender's Entra object id. */
-  | "teams"
-  /** A webhook trigger delivery, identified by `{agent}:{triggerId}`. */
-  | "webhook"
-  /** A schedule trigger occurrence, identified the same way. */
-  | "schedule";
+export const RUN_ACTOR_KINDS = [
+  "user", "agent-token", "slack", "telegram", "teams", "webhook", "schedule",
+] as const;
+export type RunActorKind = (typeof RUN_ACTOR_KINDS)[number];
+
+export function isRunActorKind(value: string): value is RunActorKind {
+  return RUN_ACTOR_KINDS.some((kind) => kind === value);
+}
 
 export interface RunActor {
   kind: RunActorKind;

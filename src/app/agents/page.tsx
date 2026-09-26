@@ -7,32 +7,36 @@ import {
   Alert,
   Badge,
   Button,
-  Card,
   Group,
   Stack,
   Text,
   Textarea,
   TextInput,
 } from "@mantine/core";
-import { IconRobot } from "@tabler/icons-react";
+import { IconArrowRight, IconRobot } from "@tabler/icons-react";
 import { FormModal } from "@/app/_components/FormModal";
 import { useDisclosure } from "@mantine/hooks";
 import { tierMayCreateAgents } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
 import { toSlug } from "@/domain/naming";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { createAgent, listAgents, type SanitizedAgent } from "./lib/api";
-import { CardGrid } from "@/app/_components/CardGrid";
+import { CatalogCollection } from "@/app/_components/CatalogCollection";
+import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
+import rows from "@/app/_components/CatalogRows.module.css";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { reportError } from "@/app/_lib/reportError";
 import { createLatestOnly } from "@/app/_lib/latestOnly";
+import { formatDate } from "@/shared/date";
 
 export default function AgentsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const t = useT();
+  const locale = useLocale();
+  const [view, setView] = useCatalogView();
   const viewer = useViewer();
   const mayCreate = viewer !== null && tierMayCreateAgents(viewer.tier);
   const createRequested = searchParams.get("create") === "1";
@@ -91,7 +95,7 @@ export default function AgentsPage() {
       )}
 
       {agents.length > 0 && (
-        <Group align="flex-start" gap="md">
+        <Group align="flex-start" justify="space-between" gap="md">
           <CatalogSearch
             value={filter}
             onChange={setFilter}
@@ -100,48 +104,33 @@ export default function AgentsPage() {
             totalCount={agents.length}
             onReset={filter ? () => setFilter("") : undefined}
           />
+          <CatalogViewToggle value={view} onChange={setView} />
         </Group>
       )}
 
-      <CardGrid
-        loading={loading}
-        failed={!!error && agents.length === 0}
-        empty={visibleAgents.length === 0}
-        emptyText={t(agents.length === 0 ? "agents.empty" : "catalog.noResults")}
-      >
-        {visibleAgents.map((agent) => (
-          <Card
-            key={agent.name}
-            component={Link}
-            href={`/agents/${agent.name}`}
-            h="100%"
-          >
-            <Group justify="space-between" gap="xs" wrap="nowrap">
-              <Text fw={500} truncate>
-                {agent.displayName || agent.name}
-              </Text>
-              <Group gap={6} wrap="nowrap">
-                {agent.visibility === "private" && (
-                  <Badge variant="light" color="gray">
-                    {t("agents.privateBadge")}
-                  </Badge>
-                )}
-              </Group>
-            </Group>
-            <Text ff="monospace" fz="xs" c="dimmed" mt={2}>
-              {agent.name}
-            </Text>
-            <OwnerLine
-              ownerEmail={agent.ownerEmail}
-              isMine={viewer?.email === agent.ownerEmail}
-              mt={4}
-            />
-            <Text fz="sm" c="dimmed" mt="xs" lineClamp={3}>
-              {agent.description}
-            </Text>
-          </Card>
-        ))}
-      </CardGrid>
+      <CatalogCollection view={view} loading={loading} failed={!!error && agents.length === 0}
+        empty={visibleAgents.length === 0} emptyText={t(agents.length === 0 ? "agents.empty" : "catalog.noResults")}>
+          {visibleAgents.map((agent) => (
+            <Link key={agent.name} href={`/agents/${agent.name}`} className={rows.row}>
+              <div className={rows.identity}>
+                <Group gap="xs" wrap="wrap">
+                  <Text className={rows.name}>{agent.displayName || agent.name}</Text>
+                  {agent.visibility === "private" && <Badge size="xs" color="gray">{t("agents.privateBadge")}</Badge>}
+                </Group>
+                <Text className={rows.subtle} ff="monospace">{agent.name}</Text>
+              </div>
+              <Text className={rows.description} lineClamp={2}>{agent.description}</Text>
+              <div className={rows.meta}>
+                <Text c={agent.configured ? "teal" : "orange"} fz="xs" fw={600}>
+                  {t(agent.configured ? "agents.configured" : "agents.needsConfiguration")}
+                </Text>
+                <OwnerLine ownerEmail={agent.ownerEmail} isMine={viewer?.email === agent.ownerEmail} />
+                <Text fz="xs" c="dimmed">{formatDate(agent.updatedAt, locale)}</Text>
+              </div>
+              <IconArrowRight className={rows.arrow} size={18} aria-hidden="true" />
+            </Link>
+          ))}
+      </CatalogCollection>
 
       <CreateAgentModal
         opened={opened}

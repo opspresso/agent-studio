@@ -3,6 +3,7 @@ import { traceUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
 import { isUtcDay } from "@/shared/date";
 import { parsePageLimit } from "@/shared/pageLimit";
+import { isRunActorKind, type RunActorKind } from "@/domain/execution/actor";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -15,6 +16,7 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
   const { limit } = parsePageLimit(params.get("limit"), { fallback: DEFAULT_LIMIT });
   const from = params.get("from") || undefined;
   const to = params.get("to") || undefined;
+  const actorKindParam = params.get("actorKind");
   // `isUtcDay`, not a shape regex: `2026-02-31` must not ride into the GSI range
   // condition as written.
   if (
@@ -24,8 +26,15 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
   ) {
     return Response.json({ error: "from/to must be YYYY-MM-DD with from ≤ to" }, { status: 400 });
   }
+  let actorKind: RunActorKind | undefined;
+  if (actorKindParam !== null) {
+    if (!isRunActorKind(actorKindParam)) {
+      return Response.json({ error: "actorKind is invalid" }, { status: 400 });
+    }
+    actorKind = actorKindParam;
+  }
   try {
-    return Response.json({ traces: await traceUseCases.list(name, user.email, { limit, from, to }) });
+    return Response.json({ traces: await traceUseCases.list(name, user.email, { limit, from, to, actorKind }) });
   } catch (error) {
     return apiError(error);
   }

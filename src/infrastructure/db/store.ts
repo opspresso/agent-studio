@@ -327,6 +327,8 @@ export interface QueryInput {
    * put anything of its own into the statement.
    */
   filter?: Record<string, string>;
+  /** Match a nested JSONB fragment before `limit` counts, such as `{ actor: { kind: "slack" } }`. */
+  jsonContains?: Record<string, unknown>;
   /** Test a top-level JSONB attribute's presence before `limit` counts. */
   attributePresence?: { attribute: string; exists: boolean };
 }
@@ -374,6 +376,9 @@ function queryWhere(input: QueryInput): {
     // `jsonb ->> integer`, and an untyped bind parameter leaves PostgreSQL
     // unable to choose between them.
     where.push(`data ->> ${bind(attribute)}::text = ${bind(value)}`);
+  }
+  if (input.jsonContains) {
+    where.push(`data @> ${bind(JSON.stringify(input.jsonContains))}::jsonb`);
   }
   if (input.attributePresence) {
     const { attribute, exists } = input.attributePresence;

@@ -179,7 +179,7 @@ fine-grained 토큰·GitHub App의 Workflows 쓰기 권한도 필요하다. 저�
 
 ## GitHub PR 자동 리뷰
 
-관리자가 Agent 설정의 Webhook을 켜고 PR 리뷰 동작을 선택한다. 위의 서버 GitHub 연결을
+관리자가 Agent 연동의 Webhook을 켜고 PR 리뷰 동작을 선택한다. 위의 서버 GitHub 연결을
 재사용하며 Workspace worker는 필요하지 않다. App 인증은 대상 저장소의 Contents 읽기와
 Pull requests 읽기·쓰기 권한이 필요하다. 계정 토큰은 같은 저장소를 읽고 리뷰 댓글을 작성할 수
 있어야 한다. 자격 증명이나 GitHub 연결이 없으면 리뷰 게시를 활성화할 수 없다.

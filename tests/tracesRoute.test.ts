@@ -45,6 +45,7 @@ describe("GET /api/agents/[name]/traces (owner-gated)", () => {
       limit: 10,
       from: undefined,
       to: undefined,
+      actorKind: undefined,
     });
   });
 
@@ -60,7 +61,24 @@ describe("GET /api/agents/[name]/traces (owner-gated)", () => {
       limit: 50,
       from: "2026-07-01",
       to: "2026-07-31",
+      actorKind: undefined,
     });
+  });
+
+  it("passes a validated actor kind to the repository", async () => {
+    agentRepo.get.mockResolvedValue({ name: "proj", ownerEmail: "owner@example.com" });
+    traceRepo.listByAgent.mockResolvedValue([]);
+    const res = await GET(new Request("http://localhost/api/agents/proj/traces?actorKind=slack"), ctx("proj"));
+    expect(res.status).toBe(200);
+    expect(traceRepo.listByAgent).toHaveBeenCalledWith("proj", {
+      limit: 50, from: undefined, to: undefined, actorKind: "slack",
+    });
+  });
+
+  it("rejects an unknown actor kind before reading traces", async () => {
+    const res = await GET(new Request("http://localhost/api/agents/proj/traces?actorKind=other"), ctx("proj"));
+    expect(res.status).toBe(400);
+    expect(traceRepo.listByAgent).not.toHaveBeenCalled();
   });
 
   it("forbids a non-owner with 403 and never reads traces", async () => {

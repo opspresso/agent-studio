@@ -1,39 +1,56 @@
 "use client";
 
 import { SectionHeading } from "@/app/_components/SectionHeading";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Alert, Stack } from "@mantine/core";
 import { canEditAgent, useViewer } from "@/app/_lib/useViewer";
-import { getAgent } from "../../lib/api";
+import { getAgent, type SanitizedAgent } from "../../lib/api";
 import { LoadingText } from "@/app/_components/PageState";
 import { SlackSection } from "./SlackSection";
 import { TeamsSection } from "./TeamsSection";
 import { TelegramSection } from "./TelegramSection";
 import { TokenSection } from "./TokenSection";
+import { WebhookSection } from "./WebhookSection";
+import { SchedulesSection } from "./SchedulesSection";
+import { IntegrationHistory, type IntegrationKind } from "./IntegrationHistory";
 import { useT } from "@/app/_i18n/provider";
+import columns from "../AgentPageColumns.module.css";
+import type { IntegrationSummary } from "@/app/api/agents/_lib/http";
 
 /**
  * How other systems reach this agent: the API token an outside caller
- * presents and the chat platforms whose bots run it.
- * Split out of Settings once the bots outnumbered everything else on that
- * page — what the agent *is* stays there; what connects to it is here.
+ * presents, chat bots, webhooks and schedules. Saved connection summaries
+ * also control which delivery destinations the schedule editor can offer.
  */
 export default function IntegrationsPage() {
   const t = useT();
   const params = useParams<{ name: string }>();
   const name = params.name;
   const viewer = useViewer();
-  const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
+  const [agent, setAgent] = useState<SanitizedAgent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<IntegrationKind | null>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  function updateConnection(kind: "slack" | "telegram" | "teams", summary: IntegrationSummary) {
+    setAgent(current => current ? { ...current, [kind]: summary } : current);
+  }
+
+  function selectHistory(kind: IntegrationKind) {
+    setSelected(kind);
+    if (window.matchMedia("(max-width: 75em)").matches) {
+      requestAnimationFrame(() => historyRef.current?.scrollIntoView({ block: "start" }));
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
     getAgent(name)
-      .then((agent) => {
+      .then((loaded) => {
         if (!cancelled) {
-          setOwnerEmail(agent.ownerEmail);
+          setAgent(loaded);
         }
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Failed to load agent"))
@@ -48,33 +65,41 @@ export default function IntegrationsPage() {
   }
   if (error) {
     return (
-      <Alert color="red" variant="light" maw={640}>
-        {error}
-      </Alert>
+      <div className={columns.split}>
+        <Alert color="red" variant="light" className={columns.primary}>{error}</Alert>
+      </div>
     );
   }
   if (viewer === null) {
     return <LoadingText />;
   }
-  if (!canEditAgent(viewer, ownerEmail)) {
+  if (!agent) return <LoadingText />;
+  if (!canEditAgent(viewer, agent.ownerEmail)) {
     return (
-      <Alert variant="light" color="gray" maw={640}>
-        {t("pint.ownerOnly", { owner: ownerEmail ?? "unknown" })}
-      </Alert>
+      <div className={columns.split}>
+        <Alert variant="light" color="gray" className={columns.primary}>
+          {t("pint.ownerOnly", { owner: agent.ownerEmail })}
+        </Alert>
+      </div>
     );
   }
 
   return (
-    <Stack gap="xl" maw={760}>
-      <SectionHeading title={t("agent.tab.integrations")} description={t("pint.lede")} />
-      <TokenSection agentName={name} />
-
-      <SlackSection agentName={name} />
-
-      <TelegramSection agentName={name} />
-
-      <TeamsSection agentName={name} />
-
-    </Stack>
+    <div className={columns.split}>
+      <Stack gap="xl" className={columns.primary}>
+        <SectionHeading title={t("agent.tab.integrations")} description={t("pint.lede")} />
+        <TokenSection agentName={name} selected={selected === "token"} onSelect={() => selectHistory("token")} />
+        <SlackSection agentName={name} selected={selected === "slack"} onSelect={() => selectHistory("slack")}
+          onConnectionChange={summary => updateConnection("slack", summary)} />
+        <TelegramSection agentName={name} selected={selected === "telegram"} onSelect={() => selectHistory("telegram")}
+          onConnectionChange={summary => updateConnection("telegram", summary)} />
+        <TeamsSection agentName={name} selected={selected === "teams"} onSelect={() => selectHistory("teams")}
+          onConnectionChange={summary => updateConnection("teams", summary)} />
+        <WebhookSection agentName={name} selected={selected === "webhook"} onSelect={() => selectHistory("webhook")} />
+        <SchedulesSection key={`schedules:${name}`} agentName={name} agent={agent}
+          selected={selected === "schedule"} onSelect={() => selectHistory("schedule")} />
+      </Stack>
+      <div ref={historyRef} className={columns.secondary}><IntegrationHistory agentName={name} selected={selected} /></div>
+    </div>
   );
 }

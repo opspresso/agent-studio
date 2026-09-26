@@ -1,0 +1,13 @@
+.collection { container-type: inline-size; }
+.list { border-top: 1px solid var(--studio-border); }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+
+@container (min-width: 620px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (min-width: 960px) {
+  .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (min-width: 1320px) {
+  .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}

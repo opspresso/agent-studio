@@ -1,7 +1,9 @@
 "use client";
 
-import { Accordion, Group, Text } from "@mantine/core";
+import { Accordion, ActionIcon, Group, Text } from "@mantine/core";
+import { IconHistory } from "@tabler/icons-react";
 import { BADGE } from "@/app/_components/badgeColors";
+import classes from "./CollapsibleSection.module.css";
 
 /**
  * Collapsible card, closed unless the call site says otherwise. The title and
@@ -24,12 +26,18 @@ export function CollapsibleSection({
   badge,
   danger,
   defaultOpen,
+  selected,
+  onSelect,
+  selectLabel,
   children,
 }: {
   title: string;
   badge?: React.ReactNode;
   danger?: boolean;
   defaultOpen?: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
+  selectLabel?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -39,19 +47,28 @@ export function CollapsibleSection({
       radius="md"
       defaultValue={defaultOpen ? "section" : null}
     >
-      <Accordion.Item value="section">
-        <Accordion.Control>
-          <Group justify="space-between" gap="sm" pr="sm" wrap="nowrap">
-            <Text
-              fz="sm"
-              fw={600}
-              c={danger ? BADGE.broken : undefined}
-            >
-              {title}
-            </Text>
-            {badge}
-          </Group>
-        </Accordion.Control>
+      <Accordion.Item value="section" className={selected ? classes.selected : undefined}>
+        <div className={classes.heading}>
+          <Accordion.Control className={classes.control}>
+            <Group justify="space-between" gap="sm" pr="sm" wrap="nowrap">
+              <Text
+                fz="sm"
+                fw={600}
+                c={danger ? BADGE.broken : undefined}
+              >
+                {title}
+              </Text>
+              {badge}
+            </Group>
+          </Accordion.Control>
+          {onSelect && selectLabel && (
+            <ActionIcon type="button" variant={selected ? "light" : "subtle"}
+              size="md" className={classes.action} onClick={onSelect}
+              aria-label={selectLabel} title={selectLabel}>
+              <IconHistory size={18} stroke={1.8} aria-hidden="true" />
+            </ActionIcon>
+          )}
+        </div>
         <Accordion.Panel>{children}</Accordion.Panel>
       </Accordion.Item>
     </Accordion>

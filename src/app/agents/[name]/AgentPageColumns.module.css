@@ -1,0 +1,13 @@
+/* Shared measure for the Agent pages that use one or both columns. */
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: var(--mantine-spacing-xl);
+}
+
+.primary,
+.secondary { min-width: 0; }
+
+@media (max-width: $mantine-breakpoint-lg) {
+  .split { grid-template-columns: minmax(0, 1fr); }
+}

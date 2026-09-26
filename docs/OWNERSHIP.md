@@ -197,7 +197,7 @@
 | `AES_ENCRYPTION_KEY` 의 base64 해석과 32바이트 검증 | `src/shared/aesKey.ts` 의 `decodeAes256Key` | 구조 |
 | 쉼표로 구분된 설정 목록의 파싱 | `src/shared/parseList.ts` | 구조 |
 | 설정된 값이 비어 있는지 여부 | `src/shared/env.ts` | 구조 |
-| schedule 설정 화면이 동시에 읽을 최근 실행 목록 수 | `src/app/agents/[name]/settings/scheduleRuns.ts` 의 `MAX_CONCURRENT_SCHEDULE_RUN_READS` | 구조 |
+| Schedule 연동 화면이 동시에 읽을 최근 실행 목록 수 | `src/app/agents/[name]/integrations/scheduleRuns.ts` 의 `MAX_CONCURRENT_SCHEDULE_RUN_READS` | 구조 |
 | 각 member tier 가 쓸 수 있는 금액 | `src/domain/member/tiers.ts` 의 `TIER_LIMITS` | 구조 |
 | `undici` 에 직접 닿기 | `src/infrastructure/net/publicFetch.ts`. dispatcher와 fetch는 같은 undici 구현을 사용한다 | 구조 |
 | chunk 가 거쳐 온 transfer 사슬을 도출하기 | `src/domain/llm/types.ts` 의 `chunkAuthorPath` | 구조 |
@@ -247,7 +247,7 @@
 | 떠나 버린 소비자로부터 스트림을 떼어내기 | `src/shared/detachOnReturn.ts` | 코드 |
 | 바이트 상한 아래에서 HTTP 본문 읽기 | `src/shared/httpBody.ts` | 코드 |
 | 백그라운드 타이머가 프로세스를 붙잡아 두지 않게 하기 | `src/shared/unrefTimer.ts` | 코드 |
-| 목록 읽기. 매치 전체를 답하고, 경계는 호출자의 `limit`, 만료 필터는 `LIMIT` 보다 먼저 도는 `notExpiredAt`, 호출자가 가져온 값·속성 유무 필터도 같은 자리에서 도는 `filter` / `attributePresence` | `src/infrastructure/db/store.ts`의 `queryItems`. 호출자의 limit과 만료·조건 필터를 같은 쿼리에 적용한다 | 코드 |
+| 목록 읽기. 매치 전체를 답하고, 경계는 호출자의 `limit`, 만료 필터는 `LIMIT` 보다 먼저 도는 `notExpiredAt`, 호출자가 가져온 값·속성 유무 필터도 같은 자리에서 도는 `filter` / `jsonContains` / `attributePresence` | `src/infrastructure/db/store.ts`의 `queryItems`. 호출자의 limit과 만료·조건 필터를 같은 쿼리에 적용한다 | 코드 |
 | chunk 가 top-level 인지 여부 | `src/domain/llm/types.ts` 의 `isTopLevelChunk()` | 코드 |
 | 현재 Agent 설정의 접근·저장·실행 시점 snapshot | `src/application/agent/configurationUseCases.ts`; Agent repository의 META CAS와 runtime Session fingerprint 검사 | 코드 |
 | 행의 `expiresAt`. 보존 창과 그것을 초로 바꾸는 헬퍼 | `src/infrastructure/db/ttl.ts` | 코드 |
@@ -255,6 +255,9 @@
 | repo sync 가 무엇을 했고, 무엇을 사람에게 남겼는가 | `src/domain/sync/types.ts` | 코드 |
 | 브랜드 팔레트와 컴포넌트 기본값 | `src/app/theme.ts` | 코드 |
 | 페이지·섹션 제목과 경로 탭 | `src/app/_components/PageHeader.tsx`, `SectionHeading.tsx`, `PageTabs.tsx` | 코드 |
+| Agent 상세의 분할 페이지 가로 비율 | `src/app/agents/[name]/AgentPageColumns.module.css` | 코드 |
+| 카탈로그 행/그리드 보기와 브라우저 저장 키 | `src/app/_components/CatalogView.tsx`; 상태 표현은 `CatalogCollection.tsx`, 컨테이너 기준 열 배치는 `CatalogLayout.module.css`, 항목 스타일은 `CatalogRows.module.css` / `ModelCollection.module.css` | 코드 |
+| 연동 이력의 읽기 수명과 Schedule 이력의 병합·페이지 크기·동시 읽기 상한 | `src/app/agents/[name]/integrations/IntegrationHistory.tsx` / `scheduleRuns.ts` | 코드 |
 | 외부 키의 교체 초안과 저장된 마스크 구분 | `src/app/_components/SecretInput.tsx` | 코드 |
 | 앱 발급 키의 표시·숨기기·복사와 변경 확인 | `src/app/_components/SecretControl.tsx`; API 기능·권한은 각 호출자가 제공한다 | 코드 |
 | tool 호출을 그에 답한 결과와 짝짓기 | `src/app/_lib/toolPairs.ts` | 코드 |
