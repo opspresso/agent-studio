@@ -318,6 +318,8 @@ Agent 메타데이터나 설정의 동시 수정이 먼저 저장되면 409를 �
 `modelRouting`은 선택적 boolean이다. `true`면 [전역 라우팅 정책](#models)을 사용하고,
 `false`면 ModelTask 호출도 이 Agent의 주 모델을 사용한다. 미설정이면 ModelTask를 제공하지
 않는다. Agent별 tier·예산·정책 객체는 받지 않는다.
+ModelTask의 선택적 `require_different_model: true`는 주 모델 등록 ID의 재사용과 fallback을
+거절한다. 다른 등록 모델이 없으면 도구 오류를 반환한다.
 주 모델 유지·선택 우선순위·승격·trace·승인 재개는 [호출 단위 라우팅](design/execution.md#호출-단위-모델-라우팅)을 따른다.
 
 `mcpList[{name, headers?, tools?, sourceOutputs?}]`, `skillList[]`,
@@ -1624,6 +1626,8 @@ tier에는 모델이 있어야 하며 reasoning/vision 배정은 해당 기능�
 비용은 양수 USD(최대 100), 호출 예산은 Run 예산 이하다. `maxCalls`는 1–30,
 `minOutputChars`는 1–1,000이다. 초기값은 모델 미배정, 시도당 $0.1, 보조 호출 전체 $1,
 10회, 최소 1자다. `localOnly`는 결정 모델을 포함한 self-hosted provider 연결 제한이다.
+호출 전 예상 비용을 검사하고 응답 후 실제 청구액을 누적한다. 보조 예산에는 Jev와 ModelTask가
+포함되며 주 모델·검색 비용은 포함되지 않는다.
 실제 사내 endpoint와 네트워크 격리는 배포가 관리한다.
 
 `POST /api/agent-recommendations`는 `{ surface: "chat" | "workspace", request: string }`을 받고

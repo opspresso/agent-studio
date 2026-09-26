@@ -56,7 +56,8 @@ function prepareDetail(span: Trace["spans"][number]): string | null {
           return [`${key} ${probability}`];
         }).join(", ") : "";
       const distribution = probabilities ? ` · probabilities ${probabilities}` : "";
-      return [`${event.purpose}${model}${tier} · ${event.source} · ${event.outcome}${attempt}${reason}${confidence}${distribution}`];
+      const different = event.requiresDifferentModel === true ? " · different model required" : "";
+      return [`${event.purpose}${model}${tier} · ${event.source} · ${event.outcome}${attempt}${reason}${confidence}${distribution}${different}`];
     });
     return decisions.join("\n") || null;
   }

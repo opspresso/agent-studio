@@ -131,6 +131,7 @@ async function main() {
       const body = JSON.parse(raw) as {
         stream?: boolean;
         model?: string;
+        max_completion_tokens?: number;
         questions?: Record<string, { criteria: Record<string, string> }>;
         messages: Array<{ role: string; content?: unknown }>;
       };
@@ -144,6 +145,16 @@ async function main() {
         return;
       }
       llmCalls.push(body);
+      if (body.stream && JSON.stringify(body.messages).includes("integration-empty-at-cap")) {
+        const cap=body.max_completion_tokens!;
+        res.writeHead(200,{"Content-Type":"text/event-stream"});
+        for(const data of [
+          {id:"empty-at-cap",choices:[{index:0,delta:{reasoning_content:"Still solving"},finish_reason:null}]},
+          {id:"empty-at-cap",choices:[{index:0,delta:{},finish_reason:"stop"}],usage:{prompt_tokens:20,completion_tokens:cap,total_tokens:20+cap,completion_tokens_details:{reasoning_tokens:cap},cost:0.002}},
+        ]) res.write(`data: ${JSON.stringify(data)}\n\n`);
+        res.end("data: [DONE]\n\n");
+        return;
+      }
       const hasToolResult = body.messages.some((m) => m.role === "tool");
       const wantsModelTask = !hasToolResult && JSON.stringify(body.messages).includes("route model task") && JSON.stringify(body).includes('"ModelTask"');
       const wantsSkill =
@@ -1697,6 +1708,24 @@ async function main() {
       const restoreAt = new Date(Date.parse(routedAt) + 1).toISOString();
       await agentRepository.update({ ...current, configuration, updatedAt: restoreAt }, routedAt);
       pass("call model routing: SQL settings, Jev metadata boundary, primary model stability, billing, trace and disable");
+    }
+
+    // ---------- capped reasoning-only response: transport, billing and trace ----------
+    {
+      const before=llmCalls.length;
+      const chunks=[];
+      for await(const chunk of executeAgent(executionDeps,{agent,configuration:{...configuration,parameters:{...configuration.parameters,maxTokens:32}},
+        messages:[{role:"user",content:"integration-empty-at-cap"}],actor:{kind:"user",id:"it@example.com"}})) chunks.push(chunk);
+      assert.equal(llmCalls.length-before,1,"an exhausted reasoning response cannot launch another paid SDK turn");
+      assert.ok(chunks.some(chunk=>chunk.finishReason==="output-limit"));
+      assert.ok(!chunks.some(chunk=>chunk.done));
+      const traceId=chunks.find(chunk=>chunk.traceId)?.traceId;
+      assert.ok(traceId);
+      const trace=await executionDeps.traces!.get(traceId);
+      assert.equal(trace?.status,"output-limit");
+      assert.equal(trace.spans.filter(span=>span.kind==="model").length,1);
+      assert.equal(trace.spans.find(span=>span.kind==="model")?.output?.costUsd,0.002);
+      pass("reasoning output exhaustion: no replay, actual billing and output-limit trace persistence");
     }
 
     // ---------- durable SDK Session + approval over PostgreSQL ----------

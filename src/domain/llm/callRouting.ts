@@ -44,6 +44,7 @@ export interface RoutedModelTask {
   prompt: string;
   /** Explicit overrides may address only the base model or an assigned tier model. */
   model?: string;
+  requireDifferentModel?: boolean;
   imageCount: number;
   maxOutputTokens: number;
 }
@@ -55,10 +56,11 @@ export interface CallRoutingEvent {
   source: "explicit" | "policy" | "sole-candidate" | "jev" | "default" | "promotion";
   outcome: "selected" | "rejected" | "failed" | "quality-rejected" | "completed";
   attempt: number;
-  reason?: "permission" | "security" | "capability" | "context" | "budget" | "unavailable" | "decision-failed" | "invalid-decision" | "ambiguous-decision";
+  reason?: "permission" | "security" | "capability" | "context" | "budget" | "unavailable" | "decision-failed" | "invalid-decision" | "ambiguous-decision" | "same-primary-model";
   estimatedCostUsd?: number;
   decisionConfidence?: number;
   decisionProbabilities?: Partial<Record<ModelTier, number>>;
+  requiresDifferentModel?: boolean;
 }
 
 /** Checkpoints retain admission counters so approval resumption cannot reset them. */

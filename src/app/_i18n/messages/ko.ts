@@ -535,7 +535,7 @@ export const ko: Messages = {
   "routing.purpose.coding": "코딩",
   "routing.purpose.reasoning": "복잡한 추론",
   "routing.purpose.vision": "이미지 이해",
-  "routing.callBudget": "시도당 최대 비용 (USD)",
+  "routing.callBudget": "시도당 예상 비용 한도 (USD)",
   "routing.runBudget": "Run당 ModelTask 예산 (USD)",
   "routing.maxCalls": "Run당 최대 ModelTask 호출 수",
   "routing.minOutputChars": "답변 최소 글자 수",

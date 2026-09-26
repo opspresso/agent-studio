@@ -1,6 +1,6 @@
-import { getCurrentSpan, type AgentOutputItem, type Model, type ModelRequest, type ModelResponse, type ResponseStreamEvent } from "@openai/agents";
+import { getCurrentSpan, ModelBehaviorError, type AgentOutputItem, type Model, type ModelRequest, type ModelResponse, type ResponseStreamEvent } from "@openai/agents";
 import { applyModelConstraints, describeImageInputReject } from "@/domain/llm/models";
-import { modelResponseUsage, type ResponseUsage } from "./modelUsage";
+import { modelResponseUsage, modelResponseIsTruncated, modelResponseHasOutput, type ResponseUsage } from "./modelUsage";
 import { createRunContextBudget, type RunContextBudget } from "@/application/llm/contextBudget";
 import { createToolResultBudget, MAX_TOOL_RESULT_CHARS_PER_TURN, type ToolResultBudget } from "@/application/llm/toolResultBudget";
 import { PiiFilter } from "@/application/llm/pii";
@@ -178,17 +178,20 @@ export function createRunModel(
       begin(request);
       let model = input.model;
       let response: ModelResponse;
-      try { response = await (await deps.channel.getModel(model)).getResponse(prepare(request, model)); }
+      let prepared = prepare(request, model);
+      try { response = await (await deps.channel.getModel(model)).getResponse(prepared); }
       catch (error) {
         request.signal?.throwIfAborted();
         const fallback = fallbackFor(request);
         if (!fallback || !isRetryable(error)) throw error;
         model = fallback;
-        response = await (await deps.channel.getModel(model)).getResponse(prepare(request, model));
+        prepared = prepare(request, model);
+        response = await (await deps.channel.getModel(model)).getResponse(prepared);
       }
       turn.model = model;
-      turn.outputCut = response.providerData?.choices?.[0]?.finish_reason === "length";
+      turn.outputCut = modelResponseIsTruncated(response, prepared.modelSettings.maxTokens);
       await record(model, response);
+      if (turn.outputCut && !modelResponseHasOutput(response)) throw new ModelBehaviorError("The model exhausted its output limit without a final answer");
       return { ...response, output: output(response.output) };
     },
     async *getStreamedResponse(request): AsyncIterable<ResponseStreamEvent> {
@@ -207,7 +210,8 @@ export function createRunModel(
       const consume = async function* (model: string): AsyncIterable<ResponseStreamEvent> {
         turn.model = model;
         const source = await deps.channel.getModel(model);
-        for await (const event of source.getStreamedResponse(prepare(request, model))) {
+        const prepared = prepare(request, model);
+        for await (const event of source.getStreamedResponse(prepared)) {
           started = true;
           if (event.type === "output_text_delta" && event.delta) {
             turn.answered = turn.answered || event.delta.trim().length > 0;
@@ -230,12 +234,14 @@ export function createRunModel(
             }
           }
           if (event.type === "response_done") {
+            turn.outputCut ||= modelResponseIsTruncated(event.response, prepared.modelSettings.maxTokens);
             flush();
             await record(model, event.response);
             if (turn.outputCut && !reportedCut) {
               reportedCut = true;
               emit({ warning: "The model's response was cut at its output limit." });
             }
+            if (turn.outputCut && !modelResponseHasOutput(event.response)) throw new ModelBehaviorError("The model exhausted its output limit without a final answer");
             if ((turn.finalTurn || !event.response.output.some((item) => item.type === "function_call")) && !saidContent && saidReasoning) {
               emit({ warning: traceReasoning
                 ? "This model answered inside its reasoning, so the reply is empty and the answer is in the recorded reasoning."

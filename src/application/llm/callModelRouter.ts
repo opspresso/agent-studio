@@ -42,6 +42,7 @@ export function createCallModelRouter(
   recordDecisionUsage: (usage: UsageInfo) => Promise<void> = async () => {},
 ) {
   async function rejection(model: string, task: RoutedModelTask): Promise<CallRoutingEvent["reason"] | undefined> {
+    if (task.requireDifferentModel && model === baseModel) return "same-primary-model";
     if (model !== baseModel && !Object.values(settings.tiers).includes(model)) return "permission";
     if (!await deps.canUseModel(model, settings.localOnly)) return "unavailable";
     const facts = getModelConfig(model);
@@ -112,7 +113,7 @@ export function createCallModelRouter(
               const decisionModel = await deps.selectedDecisionModel();
               if (decisionModel) {
                 const stateText = JSON.stringify({ purpose: task.purpose, promptSummary: routingPromptSummary(task),
-                  requiredFeatures: { imageInput: task.imageCount > 0, reasoning: task.purpose === "reasoning", structuredOutput: task.purpose === "classification" },
+                  requiredFeatures: { imageInput: task.imageCount > 0, reasoning: task.purpose === "reasoning", structuredOutput: task.purpose === "classification", differentModel: task.requireDifferentModel === true },
                   budget: { maxCallCostUsd: settings.maxCallCostUsd, remainingRunCostUsd: Math.max(0, settings.maxRunCostUsd - state.spentUsd) },
                   availableTiers: [...options.keys()],
                   tierFacts: Object.fromEntries([...options].map(([key, model]) => [key, {
@@ -168,11 +169,13 @@ export function createCallModelRouter(
         const reason = await rejection(selected, task);
         if (reason) {
           observe({ purpose: task.purpose, model: selected, ...(tier ? { tier } : {}), source, outcome: "rejected", attempt, reason });
-          if (selected === baseModel) throw new Error(`Default ModelTask model rejected: ${reason}`);
+          if (selected === baseModel) throw new Error(reason === "same-primary-model"
+            ? "No different ModelTask model is available within routing policy" : `Default ModelTask model rejected: ${reason}`);
           selected = baseModel; tier = undefined; source = "default"; continue;
         }
         const estimatedCostUsd = estimate(selected, task);
         observe({ purpose: task.purpose, model: selected, ...(tier ? { tier } : {}), source, outcome: "selected", attempt, estimatedCostUsd,
+          ...(task.requireDifferentModel ? {requiresDifferentModel:true} : {}),
           ...(source === "jev" ? decisionDetails : {}) });
         // Reserve before awaiting so parallel callers cannot spend the same remaining budget.
         state.spentUsd += estimatedCostUsd;

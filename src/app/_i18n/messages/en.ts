@@ -568,7 +568,7 @@ export const en = {
   "routing.purpose.coding": "Coding",
   "routing.purpose.reasoning": "Complex reasoning",
   "routing.purpose.vision": "Image understanding",
-  "routing.callBudget": "Maximum cost per attempt (USD)",
+  "routing.callBudget": "Maximum estimated cost per attempt (USD)",
   "routing.runBudget": "ModelTask budget per Run (USD)",
   "routing.maxCalls": "Maximum ModelTask calls per Run",
   "routing.minOutputChars": "Minimum answer characters",

@@ -7,7 +7,7 @@ import type { ImageRegistry } from "@/application/llm/agentAssembly";
 import type { AgentDeps, RunAgentInput } from "./types";
 import type { RuntimeTurn } from "./model";
 import type { RuntimeEmitter } from "./output";
-import { modelResponseUsage } from "./modelUsage";
+import { modelResponseUsage, modelResponseIsTruncated } from "./modelUsage";
 import { withoutNativeTracing } from "./tracing";
 
 /** Focused inference inside the admitted Run, with no tools, credentials or second Agent loop. */
@@ -41,6 +41,7 @@ export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, tu
       const purpose = args.purpose as CallPurpose;
       const prompt = `${purpose === "classification" ? "Return a non-empty JSON object or array. " : ""}${args.prompt as string}`;
       const result = await router.execute({ purpose, prompt, imageCount: selectedImages.length,
+        ...(args.require_different_model === true ? {requireDifferentModel:true} : {}),
         ...(typeof args.model === "string" && args.model ? { model: args.model } : {}),
         maxOutputTokens: input.parameters?.maxTokens ?? 2_048,
       }, async (model) => withGenerationSpan(async (generation) => {
@@ -51,7 +52,7 @@ export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, tu
           ] }] : prompt,
           tools: [], handoffs: [], outputType: "text", tracing: false, signal: input.signal,
           modelSettings: { maxTokens: input.parameters?.maxTokens ?? 2_048,
-            ...(purpose === "reasoning" ? { reasoning: { effort: "high" } } : {}),
+            ...(purpose === "reasoning" ? { reasoning: { effort: input.parameters?.reasoningEffort ?? "medium" } } : {}),
           },
         };
         const native = await withoutNativeTracing(async () => (await deps.channel.getModel(model)).getResponse(request));
@@ -61,8 +62,7 @@ export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, tu
         // Bill every successful paid response, including a subsequently rejected answer.
         await record(usage);
         const text = native.output.flatMap((item) => item.type !== "message" ? [] : typeof item.content === "string" ? [item.content] : item.content.flatMap((part) => part.type === "output_text" ? [part.text] : [])).join("\n");
-        const finish = (native.providerData?.choices as Array<{ finish_reason?: string }> | undefined)?.[0]?.finish_reason;
-        return { text, usage, truncated: finish === "length" };
+        return { text, usage, truncated: modelResponseIsTruncated(native, request.modelSettings.maxTokens) };
       }), input.signal);
       return { text: result.text };
     }, { data: { name: "model-routing" } });

@@ -28,6 +28,36 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); replaceModelRegistry(original); });
 
 describe("native runtime call routing", () => {
+  it("forwards the independent-model requirement and reports unavailable alternatives without a primary-model subcall",async()=>{
+    const args=JSON.stringify({purpose:"summary",prompt:"Check independently",model:null,image_ids:[],require_different_model:true});
+    const channel=new FakeChannel([[toolCallChunk(0,"independent","ModelTask",args)],[contentChunk("No alternative is available")]]);
+    const policy:CallRoutingPolicy={...config,tiers:{general:"local/base"},policies:{summary:"general"}};
+    const chunks=[];
+    for await(const chunk of runAgent(deps(channel,[],policy),{agentName:"test",model:"local/base",messages:[{role:"user",content:"Use another model"}],parameters:{modelRouting:true}})) chunks.push(chunk);
+    expect(channel.seenParams).toHaveLength(2);
+    expect(chunks.some(chunk=>chunk.toolResult?.content.includes("No different ModelTask model"))).toBe(true);
+  });
+  it.each([undefined,"medium","low","high"] as const)("honors the configured reasoning effort for a focused task: %s",async (effort)=>{
+    const args=JSON.stringify({purpose:"reasoning",prompt:"Solve the scheduling problem",model:null,image_ids:[]});
+    const channel=new FakeChannel([[toolCallChunk(0,"reasoning","ModelTask",args)],[contentChunk("A proof")],[contentChunk("Done")]]);
+    const policy:CallRoutingPolicy={...config,tiers:{reasoning:"local/fast"},policies:{reasoning:"reasoning"}};
+    for await(const chunk of runAgent(deps(channel,[],policy),{agentName:"test",model:"local/base",messages:[{role:"user",content:"Solve"}],parameters:{modelRouting:true,reasoningEffort:effort}})) expect(chunk.error).toBeUndefined();
+    expect(channel.seenParams[1]?.reasoningEffort).toBe(effort??"medium");
+  });
+  it("keeps PII masked on auxiliary requests and subsequent main-model context", async () => {
+    const email = "routing-person@example.test";
+    const args = JSON.stringify({purpose:"summary",prompt:`Summarize ${email}`,model:null,image_ids:[]});
+    const channel = new FakeChannel([
+      [toolCallChunk(0,"pii-task","ModelTask",args)],
+      [contentChunk(`Summary for ${email}`)],
+      [contentChunk("Done")],
+    ]);
+    const chunks=[];
+    for await(const chunk of runAgent(deps(channel),{agentName:"test",model:"local/base",messages:[{role:"user",content:email}],parameters:{modelRouting:true,piiFiltering:true}})) chunks.push(chunk);
+    expect(channel.seenParams).toHaveLength(3);
+    for(const request of channel.seenParams) expect(JSON.stringify(request.messages)).not.toContain(email);
+    expect(chunks.some(chunk=>chunk.toolResult?.content.includes(email))).toBe(true);
+  });
   it.each([true, false])("keeps the main model before and after a task when enabled=%s", async (enabled) => {
     const channel = new FakeChannel([
       [toolCallChunk(0, "task", "ModelTask", taskArgs), usageChunk(10, 5, undefined, 0.01)],

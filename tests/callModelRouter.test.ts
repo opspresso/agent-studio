@@ -30,6 +30,31 @@ beforeEach(() => replaceModelRegistry([
 afterEach(() => replaceModelRegistry(original));
 
 describe("call model routing", () => {
+  it("excludes main-model aliases when a different registered model is required",async()=>{
+    const {execute,choose,events}=setup({...settings,tiers:{fast:"base",general:"base",reasoning:"strong"}});
+    const invoke=vi.fn().mockResolvedValue(result);
+    await execute({...task,requireDifferentModel:true},invoke);
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("strong");
+    expect(choose).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({reason:"same-primary-model"}));
+    expect(events.find(event=>event.outcome==="selected")).toMatchObject({requiresDifferentModel:true});
+  });
+  it("refuses an explicit main model for an independent-model task",async()=>{
+    const {execute}=setup();const invoke=vi.fn();
+    await expect(execute({...task,model:"base",requireDifferentModel:true},invoke)).rejects.toThrow("same-primary-model");
+    expect(invoke).not.toHaveBeenCalled();
+  });
+  it("does not fall back to the main model after every distinct candidate fails quality",async()=>{
+    const {execute}=setup({...settings,tiers:{fast:"fast",reasoning:"strong"},policies:{summary:"fast"}});
+    const invoke=vi.fn().mockResolvedValue({...result,text:""});
+    await expect(execute({...task,requireDifferentModel:true},invoke)).rejects.toThrow("No different ModelTask model");
+    expect(invoke.mock.calls.map(([model])=>model)).toEqual(["fast","strong"]);
+  });
+  it("does not grant a different model when routing is disabled",async()=>{
+    const {execute,choose}=setup({...settings,enabled:false});const invoke=vi.fn();
+    await expect(execute({...task,requireDifferentModel:true},invoke)).rejects.toThrow("No different ModelTask model");
+    expect(invoke).not.toHaveBeenCalled();expect(choose).not.toHaveBeenCalled();
+  });
   it("uses only the base model when disabled, even with an explicit override", async () => {
     const { execute, choose, events } = setup({ ...settings, enabled: false });
     const invoke = vi.fn().mockResolvedValue(result);
