@@ -130,7 +130,26 @@ export WORKSPACE_NETWORK=none
 node --env-file=.env.local --import tsx scripts/workspace-worker.ts
 ```
 
-Sandbox 이미지는 파일 검색용 ripgrep을 포함하며 네이티브 도구의 시작 시 다운로드에 의존하지 않는다.
+Sandbox 이미지는 다음 개발 환경을 포함한다. 고정 버전은 `sandbox/Dockerfile`이 소유한다.
+
+| 언어 | 기본 실행·개발 도구 |
+|---|---|
+| Java 25 (LTS) | JDK (`java`, `javac`, `jar`), Maven, Gradle |
+| Python 3.14 | `python`, `python3`, pip, venv, uv/uvx, Poetry, build, pytest, Ruff |
+| Go 1.27 | `go` (build/test/vet/mod), `gofmt`, cgo용 GCC·G++·Make·pkg-config |
+| Node.js 24 (LTS) | npm/npx, Corepack, pnpm, TypeScript (`tsc`), tsx |
+
+공통 도구는 Git, ripgrep, curl, zip/unzip이다. Python 개발 도구는 이미지의 별도 venv에 설치한다.
+프로젝트 의존성은 `python3 -m venv --copies .venv`로 만든 쓰기 가능한 venv에 설치한다.
+`--copies`는 저장된 Workspace에 이미지 바깥을 가리키는 Python 실행 파일 symlink가 들어가지 않게 한다.
+루트 파일시스템에 패키지를 설치하지 않으며, 사용자 설치 실행 파일은 `~/.local/bin`과 `~/go/bin`에서 찾는다.
+
+기본 pnpm 12의 네이티브 실행 파일과 이 저장소의 pnpm 11은 빌드 시 Corepack 캐시에 넣고
+작업 시작 시 사용자 캐시로 복사한다. 포함된 도구의 시작은 다운로드에 의존하지 않는다.
+프로젝트 의존성이나 wrapper가 지정한 다른 Maven·Gradle·pnpm
+버전은 별도 준비가 필요하다. 폐쇄망에서는 내부 패키지 저장소 또는 사전 반입한 의존성을 사용한다.
+Go의 자동 toolchain 다운로드는 기본적으로 끈다.
+
 릴리스는 앱과 같은 ECR·GHCR 저장소에 `workspace-vX.Y.Z` tag의 Sandbox 이미지도 게시한다.
 배포는 접근 권한이 있는 registry를 선택하고 이미지 pull에 해당 registry의 인증을 사용한다.
 폐쇄망에는 앱과 해당 Sandbox 이미지를 함께 반입한다. `node build/workspace-health.cjs`는
@@ -157,8 +176,10 @@ worker는 동일 핸들을 이어서 관찰하며 불확실한 작업을 자동�
 정리가 실행되지 않으므로, 설정·Docker context 변경 전에 기존 Workspace를 종료하라.
 
 `pnpm test:sandbox`는 Docker만, `pnpm test:workspace`는 Docker와 로컬 `_test` 데이터베이스를 사용한다.
+Sandbox 검사는 네트워크 없이 uid 1000·읽기 전용 root에서 Java·Python·Go·Node.js 프로젝트의
+컴파일·패키지 설치·테스트와 빌드 캐시 제외·설정 복원·Corepack 캐시 재생성을 확인한다.
 `WORKSPACE_SANDBOX_IMAGE`로 검사 이미지를 지정할 수 있고 `WORKSPACE_TEST_AGENTS=true`는
-세 CLI의 비특권 실행도 확인한다. 실제 모델 요청은 이 검사에서 보내지 않는다.
+세 CLI의 비특권 실행과 시작·재개 인자 파싱도 확인한다. 실제 모델 요청은 이 검사에서 보내지 않는다.
 
 코딩을 켜려면 Agent의 Workspace 저장소 접근 정책에 저장소를 등록하고 작업 요청에
 `repository: "owner/repo"`를 지정한다. GitHub App 또는

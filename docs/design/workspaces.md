@@ -40,7 +40,9 @@ Workspace 옵션 목록은 접근 가능한 Agent의 현재 도구 설정을 한
 
 ## Docker 실행 계약
 
-`sandbox/Dockerfile`은 Node·Git·Python과 고정 버전 CLI를 담는다. 이미지 빌드는 인터넷에
+`sandbox/Dockerfile`은 Java JDK·Maven·Gradle, Python·pip·venv·uv·Poetry·build·pytest·Ruff,
+Go·gofmt·cgo 빌드 도구, Node·npm·Corepack·pnpm·TypeScript·tsx와 고정 버전 코딩 CLI를 담는다.
+전체 도구 목록과 프로젝트 의존성 준비는 [설치](../INSTALL.md#workspace-worker)를 따른다. 이미지 빌드는 인터넷에
 접근하는 빌드 환경에서 수행하고 폐쇄망에는 완성 이미지를 반입한다. `INSTALL_AGENTS=false`는
 일반 명령 실행 검증용 이미지를 만든다. `pnpm test:sandbox`는 기본적으로
 `agent-studio-workspace:test` 이미지와 `none` 네트워크에서 일회용 컨테이너를 검증한다.
@@ -60,7 +62,11 @@ Provider는 Docker CLI에 인자 배열을 넘긴다. API 입력과 모델 설�
 경로 탈출, symlink 아래로 쓰는 복원, 특수 파일은 거절한다. 복원은 빈 Sandbox에서만 허용한다.
 CLI 로그인 자격증명 파일은 체크포인트에서 제외한다. 64 MiB의 파일 bytes 또는 20,000개
 항목을 넘으면 체크포인트를 실패시키며, 부분 백업을 성공으로 취급하지 않는다.
-홈의 `.npm`, `.cache`, `.codex/.tmp`, `.codex/tmp`는 재생성 가능한 패키지·CLI 캐시라 제외한다.
+홈의 `.npm`, `.cache`, `.codex/.tmp`, `.codex/tmp`, `.m2/repository`, `.gradle/caches`,
+`.gradle/daemon`, `.gradle/wrapper/dists`, `go/pkg/mod`, `.local/share/pnpm/store`는
+재생성 가능한 패키지·CLI·빌드 캐시라 제외한다.
+Maven `settings.xml`과 Gradle `gradle.properties` 등 사용자 설정은 보관한다. Corepack의 기본 pnpm
+캐시는 이미지에서 사용자 캐시로 복사하며 복원 후에도 네트워크 없이 재생성한다.
 native Session 이력과 SQLite 상태는 보관한다. Codex의 자동 plugin·App·hook 로딩은 끈다.
 
 ## Worker와 복구

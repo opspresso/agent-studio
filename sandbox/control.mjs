@@ -50,7 +50,10 @@ function safeCommand(spec) {
   const cwd = path.resolve(spec.cwd || work);
   if (cwd !== work && !cwd.startsWith(`${work}/`)) throw new Error("Command must run in workspace");
   if (!Number.isSafeInteger(spec.timeoutMs) || spec.timeoutMs < 1 || spec.timeoutMs > 86_400_000) throw new Error("Invalid command deadline");
-  const env = { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: home, LANG: "C.UTF-8", CI: "true",
+  // Only image-owned tool paths are inherited; host/operator environment stays outside the Sandbox.
+  const env = { PATH: `${home}/.local/bin:${home}/go/bin:${process.env.PATH}`, HOME: home, LANG: "C.UTF-8", CI: "true",
+    JAVA_HOME: process.env.JAVA_HOME, GOTOOLCHAIN: "local", COREPACK_HOME: `${home}/.cache/node/corepack`,
+    COREPACK_DEFAULT_TO_LATEST: "0",
     CODEX_HOME: `${home}/.codex`, CLAUDE_CONFIG_DIR: `${home}/.claude`, XDG_DATA_HOME: `${home}/.local/share`,
     XDG_CONFIG_HOME: `${home}/.config`, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "safe.directory", GIT_CONFIG_VALUE_0: work,
     DISABLE_AUTOUPDATER: "1", DISABLE_TELEMETRY: "1", OPENCODE_DISABLE_AUTOUPDATE: "true",
@@ -116,7 +119,9 @@ async function run(id) {
     };
     // Create native state directories as the workload user, never as the privileged supervisor.
     const child = spawn("/bin/sh", ["-c",
-      'mkdir -p "$CODEX_HOME" "$CLAUDE_CONFIG_DIR" "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" && exec "$@"',
+      'mkdir -p "$CODEX_HOME" "$CLAUDE_CONFIG_DIR" "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$COREPACK_HOME" && '
+        + 'if ! test -f "$COREPACK_HOME/.workspace-seeded"; then '
+        + 'cp -R /opt/corepack/. "$COREPACK_HOME/" && touch "$COREPACK_HOME/.workspace-seeded" || exit; fi && exec "$@"',
       "workspace-runtime", ...spec.argv], { cwd, env, uid: 1000, gid: 1000, detached: true, stdio: ["pipe", "pipe", "pipe"] });
     const timeout = setTimeout(() => { void killWorkload(); }, spec.timeoutMs);
     for (const stream of ["stdout", "stderr"]) {
@@ -150,7 +155,9 @@ async function snapshot() {
   const gitFiles = await checkpointGitFiles();
   let total = 0;
   const excluded = new Set(["repo/.git", "home/.codex/auth.json", "home/.claude/.credentials.json", "home/.local/share/opencode/auth.json",
-    "home/.npm", "home/.cache", "home/.codex/.tmp", "home/.codex/tmp"]);
+    "home/.npm", "home/.cache", "home/.codex/.tmp", "home/.codex/tmp",
+    "home/.m2/repository", "home/.gradle/caches", "home/.gradle/daemon", "home/.gradle/wrapper/dists", "home/go/pkg/mod",
+    "home/.local/share/pnpm/store"]);
   async function visit(base, relative = "") {
     for (const name of await fs.readdir(base)) {
       const rel = relative ? `${relative}/${name}` : name;
