@@ -1011,8 +1011,6 @@ export const en = {
 
   "playground.preview": "Preview",
   "playground.run": "Run",
-  "playground.runHint": "Test the saved Agent configuration. Save edits before running them.",
-  "playground.editSettings": "Edit configuration",
 
   // What an Agent binds: MCP servers, their tools, header overrides, subagents.
   "bindings.mcpServers": "MCP servers",

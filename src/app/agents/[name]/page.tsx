@@ -110,8 +110,8 @@ export default function PlaygroundPage() {
   const saveState = { run: save, saving, disabled: !draft.model || schemaError !== null,
     error: schemaError ?? saveError, saved: saved && !dirty, label: t("playground.save") };
 
-  const configurationColumn = (
-    <Grid.Col key="configuration" span={{ base: 12, lg: 5 }}>
+  return <Grid gap="xl">
+    <Grid.Col span={{ base: 12, lg: 7 }}>
       <Stack gap="md">
         <Group justify="space-between" className={classes.columnHeading}>
           <Text fw={600}>{t("configuration.title")}</Text>
@@ -124,33 +124,26 @@ export default function PlaygroundPage() {
         </Group>
         {modelError && <Alert color="yellow">{t("playground.modelRegistryWarning", { error: modelError })}</Alert>}
         {saveError && <Alert color="red">{saveError}</Alert>}
-        <CollapsibleSection title={t("playground.editSettings")} defaultOpen={configuration === null}>
-          <fieldset disabled={!canEdit || saving} className={canEdit ? undefined : classes.readonlyEditor}
-            style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-            <AgentConfigurationEditor key={name} agentName={name}
-              models={models.filter(model => modelType(model) === "text")}
-              imageModels={models.filter(model => modelType(model) === "image")}
-              value={draft} onChange={setDraft} schemaText={currentSchema} onSchemaChange={setSchemaText}
-              schemaError={schemaError} save={saveState} />
-          </fieldset>
-        </CollapsibleSection>
+        <fieldset disabled={!canEdit || saving} className={canEdit ? undefined : classes.readonlyEditor}
+          style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+          <AgentConfigurationEditor key={name} agentName={name}
+            models={models.filter(model => modelType(model) === "text")}
+            imageModels={models.filter(model => modelType(model) === "image")}
+            value={draft} onChange={setDraft} schemaText={currentSchema} onSchemaChange={setSchemaText}
+            schemaError={schemaError} save={saveState} />
+        </fieldset>
+      </Stack>
+    </Grid.Col>
+    <Grid.Col span={{ base: 12, lg: 5 }}>
+      <Stack gap="md" className={classes.sidePanels}>
         {canPreview && <CollapsibleSection title={t("playground.preview")}>
           <PromptPreview agentName={name} draft={parsed ?? draft} validationError={schemaError} />
         </CollapsibleSection>}
+        <CollapsibleSection title={t("playground.run")} defaultOpen>
+          <RunPanel key={name} agentName={name} configured={configuration !== null}
+            modelAcceptsImages={runModel?.capabilities.imageInput} />
+        </CollapsibleSection>
       </Stack>
     </Grid.Col>
-  );
-  const runColumn = (
-    <Grid.Col key="run" span={{ base: 12, lg: 7 }}>
-      <section className={classes.runSurface} aria-labelledby="playground-run-title">
-        <Text component="h2" id="playground-run-title" fw={650} fz="lg">{t("playground.run")}</Text>
-        <Text fz="sm" c="dimmed" mt={4} mb="lg">{t("playground.runHint")}</Text>
-        <RunPanel key={name} agentName={name} configured={configuration !== null}
-          modelAcceptsImages={runModel?.capabilities.imageInput} />
-      </section>
-    </Grid.Col>
-  );
-
-  return <Grid gap="xl">{configuration === null ? configurationColumn : runColumn}
-    {configuration === null ? runColumn : configurationColumn}</Grid>;
+  </Grid>;
 }

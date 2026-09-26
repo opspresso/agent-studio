@@ -955,8 +955,6 @@ export const ko: Messages = {
 
   "playground.preview": "미리보기",
   "playground.run": "실행",
-  "playground.runHint": "저장된 Agent 설정을 시험합니다. 변경한 설정은 저장 후 실행에 적용됩니다.",
-  "playground.editSettings": "설정 편집",
 
   "bindings.mcpServers": "MCP 서버",
   "bindings.searchServers": "등록된 MCP 서버 검색",
