@@ -23,6 +23,7 @@ import {
 import { IconHelp } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
 import { RuntimePolicyEditor } from "./RuntimePolicyEditor";
+import { ModelRoutingEditor } from "./ModelRoutingEditor";
 import { CodeBlock } from "@/app/_components/CodeBlock";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { ModelSelect } from "@/app/_components/modelOptions";
@@ -221,6 +222,8 @@ export function AgentConfigurationEditor({
         maxRows={30}
         styles={monoInput}
       />
+      <ModelRoutingEditor value={value.parameters.modelRouting}
+        onChange={(modelRouting) => patchParams({ modelRouting })} />
 
       <Divider label={t("configuration.group.response")} labelPosition="left" />
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">

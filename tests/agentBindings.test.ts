@@ -5,6 +5,9 @@ import type { ExecutionDeps } from "@/application/execution/deps";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { RunOrigin } from "@/domain/execution/actor";
 import { FakeChannel } from "./fakeChannel";
+import { DEFAULT_CALL_ROUTING_POLICY } from "@/domain/llm/callRouting";
+import type { RuntimeTurnPersistence } from "@/application/runtime/types";
+import { modelRoutingPolicyFingerprint } from "@/application/runtime/session";
 
 function fixture(agentOverrides: Partial<Agent> = {}, configurationOverrides: Partial<AgentConfiguration> = {}) {
   const now = "2026-09-12T00:00:00Z";
@@ -26,6 +29,29 @@ function fixture(agentOverrides: Partial<Agent> = {}, configurationOverrides: Pa
 }
 
 describe("Studio prepares native SDK agent bindings", () => {
+  it.each([true, false])("binds shared policy and checks pending policy identity when opted-in=%s", async (enabled) => {
+    const f = fixture({}, { parameters: { piiFiltering: false, modelRouting: enabled } });
+    const policy = { ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: "local/fast" } };
+    f.deps.getCallRoutingPolicy = vi.fn(async () => policy);
+    f.deps.callRouting = { decision: { choose: vi.fn() }, selectedDecisionModel: async () => undefined, canUseModel: async () => true };
+    const checkBinding = vi.fn();
+    const bound = await buildAgentDeps(f.deps, f.configuration, "child", async () => {}, { ...f.origin, backgroundTask: true }, undefined, undefined,
+      { checkBinding } as unknown as RuntimeTurnPersistence);
+    expect(bound.modelRoutingPolicy).toEqual(policy);
+    expect(bound.callRouting).toBe(f.deps.callRouting);
+    expect(checkBinding).toHaveBeenCalledWith("model-routing", modelRoutingPolicyFingerprint(policy));
+  });
+  it("does not bind routing or block unrelated approvals when an Agent never opted in", async () => {
+    const f = fixture();
+    f.deps.getCallRoutingPolicy = vi.fn();
+    const checkBinding = vi.fn();
+    const bound = await buildAgentDeps(f.deps, f.configuration, "child", async () => {}, { ...f.origin, backgroundTask: true }, undefined, undefined,
+      { checkBinding } as unknown as RuntimeTurnPersistence);
+    expect(bound.callRouting).toBeUndefined();
+    expect(bound.modelRoutingPolicy).toBeUndefined();
+    expect(f.deps.getCallRoutingPolicy).not.toHaveBeenCalled();
+    expect(checkBinding).not.toHaveBeenCalled();
+  });
   it("binds Workspace for the requesting origin but excludes background task effects", async () => {
     const f = fixture();
     const handler = vi.fn(async () => ({ text: "ready" }));

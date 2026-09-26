@@ -3,7 +3,11 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { TraceSpan } from "@/domain/trace/types";
 
 export type NativeTraceSink = (span: TraceSpan) => void;
-const sink = new AsyncLocalStorage<NativeTraceSink>();
+// Next.js can load this module in separate route bundles. SDK processors are
+// process-wide, so every registration must observe the same async context.
+const SINK_SLOT = Symbol.for("agent-studio.native-trace-sink");
+const tracingState = globalThis as { [SINK_SLOT]?: AsyncLocalStorage<NativeTraceSink> };
+const sink = tracingState[SINK_SLOT] ??= new AsyncLocalStorage<NativeTraceSink>();
 
 /** No public exporter, queue, credentials or network are installed by this processor. */
 const localProcessor: TracingProcessor = {
@@ -27,6 +31,11 @@ export function nativeTracingEnabled(): boolean { return sink.getStore() !== und
 
 export function withNativeTracing<T>(write: NativeTraceSink | undefined, run: () => Promise<T>): Promise<T> {
   return write ? sink.run(write, run) : run();
+}
+
+/** A focused call already owns a billed generation span; omit adapter-only nested spans. */
+export function withoutNativeTracing<T>(run: () => Promise<T>): Promise<T> {
+  return sink.exit(run);
 }
 
 function toStudioSpan(span: Span<SpanData>): TraceSpan {
@@ -68,7 +77,10 @@ function toStudioSpan(span: Span<SpanData>): TraceSpan {
   } else if (data.type === "mcp_tools") {
     name = `MCP: ${data.server ?? "tools"}`;
     output.toolCount = data.result?.length ?? 0;
-  } else if (data.type === "task" || data.type === "custom") name = data.name;
+  } else if (data.type === "task" || data.type === "custom") {
+    name = data.name;
+    if (data.type === "custom" && data.name === "model-routing" && Array.isArray(data.data?.routing)) output.routing = data.data.routing;
+  }
   else if (data.type === "turn") {
     name = `${data.agent_name}: turn ${data.turn}`;
     output.turn = data.turn;

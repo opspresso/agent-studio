@@ -132,6 +132,7 @@ export const updateTriggerSchema = z.object({
 }).strict();
 
 export const agentParametersSchema = z.object({
+  modelRouting: z.boolean().optional(),
   policy: z.object({
     maxInputChars: z.number().int().min(1).max(1_000_000).optional(),
     blockedTools: z.array(z.string().min(1).max(64)).max(128).optional(),

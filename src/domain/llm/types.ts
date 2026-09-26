@@ -393,6 +393,7 @@ export interface RunResult {
 
 /** Sampling / generation parameters resolved from Agent settings. */
 export interface EngineParameters {
+  modelRouting?: boolean;
   policy?: RuntimePolicy;
   temperature?: number;
   presencePenalty?: number;

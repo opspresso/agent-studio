@@ -13,6 +13,7 @@ export function readAgentConfiguration(raw: unknown, agentName: string): AgentCo
     typeof value.model !== "string" || !value.model ||
     !parameters || typeof parameters !== "object" || Array.isArray(parameters) ||
     !("piiFiltering" in parameters) || typeof parameters.piiFiltering !== "boolean" ||
+    ("modelRouting" in parameters && parameters.modelRouting !== undefined && typeof parameters.modelRouting !== "boolean") ||
     !Array.isArray(value.skillList) || !value.skillList.every(name => typeof name === "string") ||
     !Array.isArray(value.subagentList) || !value.subagentList.every(ref => ref && typeof ref === "object" &&
       typeof ref.name === "string" && Object.keys(ref).length === 1)) {

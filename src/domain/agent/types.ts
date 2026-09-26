@@ -166,6 +166,8 @@ export interface Agent {
 }
 
 export interface AgentParameters {
+  /** Use the deployment's shared model routing policy for focused calls. */
+  modelRouting?: boolean;
   policy?: RuntimePolicy;
   temperature?: number;
   presencePenalty?: number;

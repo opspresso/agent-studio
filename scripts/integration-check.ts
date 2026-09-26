@@ -40,16 +40,18 @@ async function main() {
   const { replaceModelRegistry } = await import("@/domain/llm/models");
   const previousSettings = await settingsRepository.get();
   restoreModelSettings = () => settingsRepository.update(() => previousSettings ?? { updatedAt: "" });
-  const registeredModels = ["openai/gpt-5-mini", "integration/model"].map(id => ({
+  const registeredModels = [...["openai/gpt-5-mini", "integration/model", "integration/fast"].map(id => ({
     id, provider: id.split("/")[0]!, wireId: id.split("/")[1]!, displayName: id, type: "text" as const,
     contextWindow: 128000, maxTokens: 4000,
     capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: false },
     pricing: { inputPer1M: 0, outputPer1M: 0 },
-  }));
+  })), { id: "integration/jev", provider: "integration", wireId: "jev", displayName: "Jev fixture", type: "decision" as const,
+    contextWindow: 32000, maxTokens: 28800, capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false },
+    pricing: { inputPer1M: 0, outputPer1M: 0 } }];
   const { encryptSecret: encryptProviderKey } = await import("@/infrastructure/crypto/secretEncryption");
   const { llmProviderApiKeyContext } = await import("@/domain/security/secretContext");
   const baseUrl = `http://127.0.0.1:${MOCK_PORT}/v1`;
-  await settingsRepository.update(current => ({ ...current, registeredModels,
+  await settingsRepository.update(current => ({ ...current, registeredModels, decisionModel: "integration/jev",
     llmProviders: ["openai", "integration"].map(name => ({ name, kind: "selfhosted" as const, baseUrl,
       apiKey: encryptProviderKey("test", llmProviderApiKeyContext(name, baseUrl)) })), updatedAt: new Date().toISOString() }));
   replaceModelRegistry(registeredModels.map(model => registeredModelConfig(model, "selfhosted")));
@@ -120,25 +122,55 @@ async function main() {
 
   // ---------- mock LLM server ----------
   const llmCalls: Array<Record<string, unknown>> = [];
+  const decisionCalls: Array<Record<string, unknown>> = [];
+  let onNextRoutingRequest: (() => Promise<void>) | undefined;
   const mock = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
-    req.on("end", () => {
+    req.on("end", async () => {
       const body = JSON.parse(raw) as {
         stream?: boolean;
+        model?: string;
+        max_completion_tokens?: number;
+        questions?: Record<string, { criteria: Record<string, string> }>;
         messages: Array<{ role: string; content?: unknown }>;
       };
+      if (req.url?.endsWith("/systemone")) {
+        decisionCalls.push(body);
+        const criteria = body.questions!.selection!.criteria;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ answers: { selection: { type: "choice", choice: "fast", confidence: 1,
+          probabilities: Object.fromEntries(Object.keys(criteria).map((key) => [key, key === "fast" ? 1 : 0])) } },
+          usage: { input_tokens: 20, output_tokens: 2, cost: 0.001 } }));
+        return;
+      }
       llmCalls.push(body);
+      if (body.stream && JSON.stringify(body.messages).includes("integration-empty-at-cap")) {
+        const cap=body.max_completion_tokens!;
+        res.writeHead(200,{"Content-Type":"text/event-stream"});
+        for(const data of [
+          {id:"empty-at-cap",choices:[{index:0,delta:{reasoning_content:"Still solving"},finish_reason:null}]},
+          {id:"empty-at-cap",choices:[{index:0,delta:{},finish_reason:"stop"}],usage:{prompt_tokens:20,completion_tokens:cap,total_tokens:20+cap,completion_tokens_details:{reasoning_tokens:cap},cost:0.002}},
+        ]) res.write(`data: ${JSON.stringify(data)}\n\n`);
+        res.end("data: [DONE]\n\n");
+        return;
+      }
       const hasToolResult = body.messages.some((m) => m.role === "tool");
+      const wantsModelTask = !hasToolResult && JSON.stringify(body.messages).includes("route model task") && JSON.stringify(body).includes('"ModelTask"');
       const wantsSkill =
         !hasToolResult &&
         JSON.stringify(body.messages).includes("integration-skill") &&
         JSON.stringify(body).includes('"tools"');
+      if (wantsModelTask && onNextRoutingRequest) {
+        const change = onNextRoutingRequest;
+        onNextRoutingRequest = undefined;
+        await change();
+      }
 
       if (body.stream) {
         res.writeHead(200, { "Content-Type": "text/event-stream" });
         const send = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
-        if (wantsSkill) {
+        if (wantsSkill || wantsModelTask) {
           send({
             choices: [
               {
@@ -149,7 +181,9 @@ async function main() {
                       index: 0,
                       id: "call_1",
                       type: "function",
-                      function: { name: "Skill", arguments: '{"skill_name":"integration-skill"}' },
+                      function: wantsModelTask
+                        ? { name: "ModelTask", arguments: JSON.stringify({ purpose: "summary", prompt: "Summarize ROUTING_PRIVATE_SOURCE with alice@example.test", model: null, image_ids: [] }) }
+                        : { name: "Skill", arguments: '{"skill_name":"integration-skill"}' },
                     },
                   ],
                 },
@@ -177,7 +211,7 @@ async function main() {
                 finish_reason: "stop",
               },
             ],
-            usage: { prompt_tokens: 12, completion_tokens: 3 },
+            usage: { prompt_tokens: 12, completion_tokens: 3, cost: 0.002 },
           }),
         );
       }
@@ -1591,6 +1625,109 @@ async function main() {
     );
     assert.ok(llmCalls.length >= 2, "agent loop made a second LLM call after the tool round");
     pass("executeAgent loop with builtin Skill tool");
+
+    // ---------- call-level routing: actual Jev/LLM transport and SQL persistence ----------
+    {
+      const { DEFAULT_CALL_ROUTING_POLICY } = await import("@/domain/llm/callRouting");
+      const modelRouting = { ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: "integration/fast",general:"integration/model" }, localOnly: true };
+      const { modelRegistryUseCases } = await import("@/lib/container");
+      const routingActor = `it-routing-${suffix}@example.test`;
+      await modelRegistryUseCases.saveRouting(modelRouting, routingActor);
+      const routingAuditDay = new Date().toISOString().slice(0, 10);
+      assert.deepEqual((await modelRegistryUseCases.getRouting()).policy, modelRouting);
+      const routedConfiguration = { ...configuration, parameters: { ...configuration.parameters, modelRouting: true } };
+      const current = (await agentRepository.get(agentName))!;
+      const routedAt = new Date(Date.parse(current.updatedAt) + 1).toISOString();
+      await agentRepository.update({ ...current, configuration: routedConfiguration, updatedAt: routedAt }, current.updatedAt);
+      assert.equal((await agentRepository.get(agentName))?.configuration?.parameters.modelRouting, true);
+      const before = llmCalls.length;
+      const routed = [];
+      const nextPolicy = { ...modelRouting, tiers: { fast: "integration/model",general:"integration/model" } };
+      onNextRoutingRequest = async () => { await modelRegistryUseCases.saveRouting(nextPolicy, routingActor); };
+      for await (const chunk of executeAgent(executionDeps, {
+        agent, configuration: routedConfiguration, messages: [{ role: "user", content: "route model task" }],
+        actor: { kind: "user", id: "it@example.com" },
+      })) routed.push(chunk);
+      assert.ok(!routed.some((chunk) => chunk.error), "routed SDK loop completed");
+      assert.deepEqual(llmCalls.slice(before).map((call) => call.model), ["fast", "fast", "fast"], "primary routes before the first inference and remains selected across tool turns");
+      assert.equal(decisionCalls.length, 2, "primary and auxiliary choices actually use the System One adapter");
+      const decision = decisionCalls[0]!;
+      const decisionState = JSON.parse(decision.state as string);
+      assert.deepEqual(Object.keys(decisionState).sort(), ["availableTiers", "budget", "promptSummary", "purpose", "requiredFeatures", "tierFacts"]);
+      assert.deepEqual(decisionState.availableTiers, ["general", "fast"]);
+      assert.ok(!JSON.stringify(decision).includes("ROUTING_PRIVATE_SOURCE"), "routing never sends the original prompt");
+      assert.ok(!JSON.stringify(decision).includes("alice@example.test"), "routing never sends original personal data");
+      assert.ok(routed.some((chunk) => chunk.toolResult?.name === "ModelTask" && chunk.toolResult.content === "plain answer"));
+      assert.ok(routed.some((chunk) => chunk.usage?.model === "integration/jev" && chunk.usage.costUsd === 0.001));
+      assert.ok(routed.some((chunk) => chunk.usage?.model === "integration/fast" && chunk.usage.costUsd === 0.002));
+      const traceId = routed.find((chunk) => chunk.traceId)?.traceId;
+      assert.ok(traceId);
+      const trace = await executionDeps.traces!.get(traceId);
+      assert.ok(trace?.spans.some((span) => span.name === "model-routing" && JSON.stringify(span.output).includes('"source":"jev"')), "routing reasons survived trace storage");
+      assert.ok(trace?.spans.some((span) => span.name === "model-routing" && JSON.stringify(span.output).includes('"callKind":"primary"')), "primary selection survived trace storage");
+      assert.ok(trace?.spans.some((span) => span.name === "model-routing" && JSON.stringify(span.output).includes('"decisionConfidence":1')), "decision certainty survived trace storage");
+      assert.equal(typeof decisionState.tierFacts.fast.estimatedCostUsd,"number");
+      assert.equal(decisionState.tierFacts.general.usesPrimaryModel,true);
+      assert.ok(trace?.spans.some((span) => span.kind === "model" && span.name === "integration/jev" && span.output?.costUsd === 0.001), "Jev billing has its own model span");
+      assert.deepEqual(trace?.spans.filter(span => span.kind === "model").map(span => span.name), ["integration/jev", "integration/fast", "integration/jev", "integration/fast", "integration/fast"], "each actual inference has exactly one billed span");
+      assert.ok(!JSON.stringify(trace).includes("ROUTING_PRIVATE_SOURCE"), "routing trace stores no source prompt");
+      const nextBefore = llmCalls.length;
+      for await (const chunk of executeAgent(executionDeps, {
+        agent, configuration: routedConfiguration, messages: [{ role: "user", content: "route model task" }], actor: { kind: "user", id: "it@example.com" },
+      })) assert.equal(chunk.error, undefined);
+      assert.deepEqual(llmCalls.slice(nextBefore).map(call => call.model), ["model", "model", "model"], "next Run uses the new shared policy");
+      assert.equal(decisionCalls.length, 2,"one physical candidate does not need a paid decision");
+      pass("shared routing policy: in-flight snapshot stability and next-Run adoption");
+      const disabledBefore = llmCalls.length;
+      for await (const chunk of executeAgent(executionDeps, {
+        agent, configuration: { ...routedConfiguration, parameters: { ...routedConfiguration.parameters, modelRouting: false } },
+        messages: [{ role: "user", content: "route model task" }], actor: { kind: "user", id: "it@example.com" },
+      })) assert.equal(chunk.error, undefined);
+      assert.deepEqual(llmCalls.slice(disabledBefore).map((call) => call.model), ["model", "model", "model"]);
+      assert.equal(decisionCalls.length, 2, "disabled routing does not contact Jev");
+      const { pendingRuntimeApproval } = await import("@/application/runtime/session");
+      const sessionId = `integration-routing-approval-${suffix}`;
+      const owner = "it@example.com";
+      const approvalConfiguration = { ...routedConfiguration, parameters: { ...routedConfiguration.parameters, policy: { approvalTools: ["Skill"] } } };
+      const scope = { agent, configuration: approvalConfiguration, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
+      try {
+        for await (const chunk of executeAgent(executionDeps, { ...scope, messages: [{ role: "user", content: "use your skill" }] })) assert.equal(chunk.error, undefined);
+        const pending = await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner);
+        assert.ok(pending?.approvals.length);
+        await modelRegistryUseCases.saveRouting({ ...nextPolicy, maxCalls: 9 }, routingActor);
+        const callsBeforeResume = llmCalls.length;
+        await assert.rejects(async () => {
+          for await (const chunk of executeAgent(executionDeps, { ...scope, messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) assert.equal(chunk.error, undefined);
+        }, /routing policy changed/);
+        assert.equal(llmCalls.length, callsBeforeResume, "changed policy cannot execute an approved call");
+        assert.equal((await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner))?.revision, pending.revision, "policy refusal happens before claiming pending work");
+        pass("shared routing policy: approval changes rejected before pending claim");
+      } finally { await executionDeps.runtimeSessions!.repository.delete(sessionId, owner); }
+      for (const row of (await auditRepository.listByDay(routingAuditDay, 100)).filter(row => row.actorEmail === routingActor)) {
+        auditFixtures.push({ day: routingAuditDay, createdAt: row.createdAt, eventId: row.eventId });
+      }
+      const restoreAt = new Date(Date.parse(routedAt) + 1).toISOString();
+      await agentRepository.update({ ...current, configuration, updatedAt: restoreAt }, routedAt);
+      pass("call model routing: SQL settings, Jev metadata boundary, first-response selection and continuation, billing, trace and disable");
+    }
+
+    // ---------- capped reasoning-only response: transport, billing and trace ----------
+    {
+      const before=llmCalls.length;
+      const chunks=[];
+      for await(const chunk of executeAgent(executionDeps,{agent,configuration:{...configuration,parameters:{...configuration.parameters,maxTokens:32}},
+        messages:[{role:"user",content:"integration-empty-at-cap"}],actor:{kind:"user",id:"it@example.com"}})) chunks.push(chunk);
+      assert.equal(llmCalls.length-before,1,"an exhausted reasoning response cannot launch another paid SDK turn");
+      assert.ok(chunks.some(chunk=>chunk.finishReason==="output-limit"));
+      assert.ok(!chunks.some(chunk=>chunk.done));
+      const traceId=chunks.find(chunk=>chunk.traceId)?.traceId;
+      assert.ok(traceId);
+      const trace=await executionDeps.traces!.get(traceId);
+      assert.equal(trace?.status,"output-limit");
+      assert.equal(trace.spans.filter(span=>span.kind==="model").length,1);
+      assert.equal(trace.spans.find(span=>span.kind==="model")?.output?.costUsd,0.002);
+      pass("reasoning output exhaustion: no replay, actual billing and output-limit trace persistence");
+    }
 
     // ---------- durable SDK Session + approval over PostgreSQL ----------
     {

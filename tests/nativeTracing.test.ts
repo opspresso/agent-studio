@@ -4,7 +4,7 @@ import { runAgent } from "@/application/runtime";
 import { TraceRecorder } from "@/application/trace/recorder";
 import type { Trace } from "@/domain/trace/types";
 import type { TraceRepository } from "@/domain/trace/repository";
-import { FakeChannel, contentChunk, toolCallChunk, usageChunk } from "./fakeChannel";
+import { FakeChannel, contentChunk, toolCallChunk, usageChunk, reasoningChunk, finishReasonChunk } from "./fakeChannel";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
@@ -19,6 +19,20 @@ function recorder() {
 }
 
 describe("local SDK tracing", () => {
+  it("records a budget-exhausted reasoning-only response as output-limit even when the provider reports stop", async () => {
+    const f = recorder();
+    const channel = new FakeChannel([[reasoningChunk("Still solving"), usageChunk(20, 2048, 0, 0.001, 2048), finishReasonChunk("stop")]]);
+    const chunks = [];
+    for await (const chunk of runAgent({ channel, onSdkSpan: span => f.recorder.observeSdkSpan(span) }, {
+      agentName: "agent", model: "openai/gpt-5-mini", messages: [{role:"user",content:"Solve the problem"}], parameters: {maxTokens:2048},
+    })) { chunks.push(chunk); f.recorder.observe(chunk); }
+    await f.recorder.finish();
+    expect(chunks.at(-1)).toMatchObject({finishReason:"output-limit"});
+    expect(chunks.some(chunk => chunk.done)).toBe(false);
+    expect(channel.calls).toBe(1);
+    expect(f.saved[0]?.status).toBe("output-limit");
+    expect(f.saved[0]?.spans.find(span => span.kind === "model")?.output?.costUsd).toBe(0.001);
+  });
   it("records native model, MCP and tool spans without input, credentials or public export", async () => {
     const network = vi.fn(async () => { throw new Error("Unexpected network access"); });
     vi.stubGlobal("fetch", network);

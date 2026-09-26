@@ -154,6 +154,7 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/models` | `GET` | session |
 | `/api/models/favorites` | `GET` `PUT` `PATCH` | session |
 | `/api/models/catalog` | `GET` | member |
+| `/api/models/routing` | `GET` `PUT` | session / admin |
 | `/api/models/discover` | `GET` | admin |
 | `/api/models/registry` | `GET` `POST` `DELETE` | member / admin |
 | `/api/models/status` | `GET` | admin |
@@ -310,9 +311,15 @@ Agent 메타데이터나 설정의 동시 수정이 먼저 저장되면 409를 �
 `temperature?`, `presencePenalty?`, `maxTokens?`, `reasoningEffort?`, `piiFiltering`,
 `structuredOutput?`, `jsonSchema?`, `imageGeneration?`, `imageModel?`, `callerContext?`,
 `urlFetch?`, `slackWorkspace?`, `audioProcessing?`, `workspaceTools?`, `dynamicCapabilities?`,
-`memoryRecall?`, `reasoningTrace?`, `policy?`를 갖는다. 카탈로그에 있는 모델의 능력과
+`memoryRecall?`, `reasoningTrace?`, `policy?`, `modelRouting?`를 갖는다. 카탈로그에 있는 모델의 능력과
 설정이 충돌하면 400이다. 카탈로그에 없는 사용자 모델은 경고 대상으로 둔다.
 `imageModel`은 이미지 생성 능력이 있는 카탈로그 모델이어야 한다.
+
+`modelRouting`은 선택적 boolean이다. `true`면 [전역 라우팅 정책](#models)의 후보 중 첫 SDK 응답에 적절한 모델을 선택한다. `false`면 주 호출과 ModelTask 모두 이 Agent의 설정 모델을 사용한다. 미설정이면 ModelTask를 제공하지
+않는다. Agent별 tier·예산·정책 객체는 받지 않는다.
+ModelTask의 선택적 `require_different_model: true`는 해당 턴의 실제 primary 등록 ID의 재사용을
+거절한다. 다른 등록 모델이 없으면 도구 오류를 반환한다.
+주 모델 선택·우선순위·승격·trace·승인 재개는 [호출 단위 라우팅](design/execution.md#호출-단위-모델-라우팅)을 따른다.
 
 `mcpList[{name, headers?, tools?, sourceOutputs?}]`, `skillList[]`,
 `subagentList[{name, type: "local"|"remote"}]`는 전체 목록을 저장한다.
@@ -1595,12 +1602,14 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 | `GET /api/models/discover?provider=<name>` | 등록한 공개 Provider의 모델을 `models.opspresso.com/models.json`에서 조회한다. 실패·폐쇄망에서는 내장 스냅샷을 사용한다. `selfhosted`는 해당 내부 연결의 목록을 조회한다. `{ models: [{ id?, wireId, displayName, family?, maker?, type?, inputModalities?, outputModalities?, contextWindow?, maxTokens?, capabilities?, pricing? }] }`. 공개 모델의 `id`는 API의 키다. 조회는 모델을 활성화하지 않는다 |
 | `GET /api/models/registry` | `{ models: RegisteredModelView[] }`. 관리자가 선택하거나 직접 등록한 모델만 반환한다. 공개 가격이 적용되면 현재 가격과 `pricingSource: "catalog"`를 표시한다 |
 | `POST /api/models/registry` | `{ id, provider, wireId, displayName, family?, maker?, type, inputModalities?, outputModalities?, contextWindow, maxTokens, capabilities, pricing? }`를 저장하고 갱신된 목록을 반환한다. 공개 모델의 `id`는 models API의 키와 일치해야 하고 `wireId`는 실제 전송 ID다. 내부 모델 ID는 `provider/wireId`다. 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decision`이다 |
-| `DELETE /api/models/registry?id=<id>` | 미사용 모델을 삭제한다. 성공 204, 현재 기본·결정·검색·Workspace에서 사용하면 409 |
+| `DELETE /api/models/registry?id=<id>` | 미사용 모델을 삭제한다. 성공 204, 현재 기본·결정·검색·Workspace·전역 라우팅 tier에서 사용하면 409 |
 | `GET /api/models/status?id=<id>` | 등록 모델이 공개 카탈로그 또는 내부 `selfhosted` 목록에 있는지 `{ available }`로 반환한다. 실제 추론 성공을 뜻하지 않는다 |
 | `GET /api/models/default` | `{ model: string | null }` |
 | `PUT /api/models/default` | `{ model }`. 도구 호출을 지원하는 등록 Text 모델을 선택한다 |
-| `GET /api/models/decision` | `{ model: string | null }`. Agent 추천에 쓰는 전역 결정 모델 선택 |
+| `GET /api/models/decision` | `{ model: string | null }`. Agent 추천과 모델 라우팅에 쓰는 전역 결정 모델 선택 |
 | `PUT /api/models/decision` | `{ model: string | null }`. OpenRouter 또는 System One 호환 연결의 등록된 Decisions 모델을 선택하거나 해제한다 |
+| `GET /api/models/routing` | 인증된 사용자에게 `{ policy, configured, decisionModel }` 전역 정책 요약을 반환한다. 자격증명은 포함하지 않는다 |
+| `PUT /api/models/routing` | admin이 `{ policy }`로 전역 정책을 전체 교체한다. 등록·연결·유형·가격·tier 기능과 정책 참조를 검사한다 |
 | `GET /api/models/catalog` | 등록 모델의 runtime facts, 현재 검색 선택, `catalogMinScore`·`rerankerMinScore`·`unknownModelPolicy`의 유효 값과 출처, 검색 기능 활성 여부와 사용자 즐겨찾기를 반환한다 |
 | `PUT /api/models/selection` | `{ type: "embedding" | "rerank", model, migrate?, catalogMinScore?, rerankerMinScore? }`. Embedding 변경은 `migrate: true`와 전체 재색인을 요구하며 Rerank는 probe 후 저장한다. 점수만 변경할 때는 재색인·probe가 필요하지 않다. Embedding 변경과 함께 보낸 점수는 재색인 실패 시 이전 값으로 복원한다 |
 | `GET /api/models/workspace` | Runtime별 선택·호환 모델의 runtime facts·사용자 즐겨찾기와 사용 가능한 Runtime 목록 |
@@ -1608,6 +1617,17 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 | `GET/PUT /api/models/favorites` | 사용자별 `{ models: string[] }` 조회·전체 교체 |
 | `PATCH /api/models/favorites` | `{ model, favorite: boolean }`으로 개인 즐겨찾기 한 개를 원자적으로 추가·제거하고 `{ models: string[] }` 반환 |
 | `POST /api/models/test` | `{ model }`로 Text·Decisions·Image·Rerank의 실제 호출을 수행하고 `{ ok, latencyMs, error? }`를 반환한다. Decisions는 Choice 엔드포인트를 사용한다. 호출 비용이 발생할 수 있다 |
+
+전역 `policy`는 `{ tiers, policies, localOnly, maxCallCostUsd, maxRunCostUsd, maxCalls,
+minOutputChars }`다. `tiers`는 fast/general/coding/reasoning/vision의 선택적 등록 text 모델 ID,
+`policies`는 general/summary/classification/coding/reasoning/vision 목적의 선택적 tier다. 정책에 지정한
+tier에는 모델이 있어야 하며 reasoning/vision 배정은 해당 기능을 요구한다.
+비용은 양수 USD(최대 100), 호출 예산은 Run 예산 이하다. `maxCalls`는 1–30,
+`minOutputChars`는 1–1,000이다. 초기값은 모델 미배정, 시도당 $0.1, 라우팅 추론 전체 $1,
+10회, 최소 1자다. `localOnly`는 결정 모델을 포함한 self-hosted provider 연결 제한이다.
+호출 전 예상 비용을 검사하고 응답 후 실제 청구액을 누적한다. 라우팅 예산에는 주 SDK 호출, Jev와 ModelTask가
+포함되며 검색·rerank 비용은 포함되지 않는다.
+실제 사내 endpoint와 네트워크 격리는 배포가 관리한다.
 
 `POST /api/agent-recommendations`는 `{ surface: "chat" | "workspace", request: string }`을 받고
 `{ recommendation: { name, confidence } | null }`을 반환한다. 입력은 1–4,000자다. 서버가

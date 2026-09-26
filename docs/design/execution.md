@@ -104,11 +104,98 @@ SDK usage와 provider의 실제 청구 비용을 보존한다. 청구 비용이 
 저장한다. `reasoning_content` dialect는 SDK 이력의 해당 모델 턴에 남긴다. `reasoningTrace`는
 화면으로 보낼 reasoning만 제어하며 provider 재생 이력은 삭제하지 않는다.
 
+provider가 `length`를 보고하면 출력 한도 종료로 기록한다. `stop`을 보고하더라도 설정된
+출력 토큰을 모두 쓰고 최종 텍스트·refusal·도구 요청 없이 reasoning만 남으면 `output-limit`로
+종료하며 SDK가 추가 유료 턴을 자동 실행하지 못하게 한다. 사용량은 먼저 기록한다.
+한도에 도달한 정상 답변과 도구 요청은 이 추론을 적용하지 않는다. 주 모델과 ModelTask는
+같은 `modelUsage.ts` 판정을 사용하며 ModelTask는 기존 품질 승격 규칙을 따른다.
+
 SDK function tool 동시성은 5다. 실제 실행에 진입한 도구만 결과 예산 순서를 점유하므로,
 승인 대기·인자 오류로 실행되지 않은 도구가 형제 도구의 완료를 막지 않는다. 텍스트 결과는
 마스킹 → 예산 차감 → 복원한 화면 출력 순으로 처리하고 SDK에는 마스킹된 결과를 돌려준다.
 파일 bytes는 모델 문맥에 넣지 않으며, 이미지는 domain 한도 내 inline bytes만 허용한다.
 스트림 소비자의 backpressure와 취소는 자식 실행과 MCP 연결의 정리까지 기다린다.
+
+### 호출 단위 모델 라우팅
+
+Agent 설정의 `parameters.modelRouting`은 boolean 사용 여부만 저장한다. 모델 배정·작업별
+정책·보안·예산·품질 기준은 Settings의 `modelRouting` 한 곳에 저장하며
+Settings → Models → Model 사용 설정에서 관리한다. Agent 화면에는 스위치와 읽기 전용
+tier 요약만 보인다. 미설정 Agent는 기존 도구와 주 모델을 그대로 사용한다.
+활성화한 Agent는 첫 SDK 호출 전에 사용자의 최신 요청을 `general`, `summary`, `classification`,
+`coding`, `reasoning`, `vision` 목적의 고정 용어로 분류하고 전역 후보 중 주 모델을 선택한다.
+이전 이미지가 context에 남아 있어도 최신 요청의 코딩·추론 목적을 유지하며 이미지 기능은 별도로 검사한다.
+도구·handoff·구조화 출력·대화의 모든 이미지와 system/tools/history를 포함한 전체 context를
+후보 검사에 포함한다. 구성된 Agent `model`은 결정 실패 시 기본 후보다. 같은 사용자 Run의
+후속 도구 턴과 승인 재개는 선택한 실제 모델을 재검증하여 유지한다. 필요한 기능이나 예산을
+충족하지 못하면 후보 선택을 다시 수행한다. 목적과 synopsis는 키워드 기반의 힌트이므로
+임의의 요청에 대한 난도나 의미적 정확성을 보장하지 않는다. 새 사용자 요청은 새로 선택한다.
+
+주 호출의 명시적 `maxTokens`는 그대로 검증하며, 미설정이면 8,192토큰을 상한으로 등록 모델
+한도와 남은 예상 예산에 맞춰 줄인다. 선택 trace에는 실제 출력 한도를 남긴다. 추론 강도는
+Agent 명시값을 우선하고 미설정 시 fast tier·요약·분류·vision은 `low`, 일반 대화·코딩·추론은
+`medium`을 사용한다.
+주 응답은 SDK의 같은 Agent 루프에서 바로 스트리밍하며, 출력 시작 후 품질 재시도는 하지 않는다.
+
+설정한 Agent에는 독립적인 보조 작업을 위한 `ModelTask` 도구도 제공한다. 도구는 필요 문맥과
+기존 이미지 핸들만 전달하며 다른 도구를 실행하거나 두 번째 Agent 루프를 만들지 않는다.
+인사·짧은 요약·일상 언어 작업은 직접 답변하고, 추가 호출에 이점이 있을 때만 위임한다.
+
+reasoning 목적의 ModelTask는 Agent의 `reasoningEffort`를 따르며, 미설정이면 `medium`을 사용한다.
+출력 한도는 Agent의 `maxTokens`, 미설정이면 2,048토큰이며 reasoning 토큰도 이 한도에 포함된다.
+
+다른 모델 검증 요구에는 `require_different_model: true`를 지정한다. 이 제약은 주 모델의
+실제 등록 ID를 후보·명시적 선택·fallback에서 제외한다.
+실제 주 모델 ID는 승인 체크포인트에 보존해 재개 후에도 같은 제약을 적용한다. 다른 후보가 없거나 모두 실패하면 도구
+오류를 반환한다. 서로 다른 등록 ID가 통계적으로 독립된 모델 가중치임을 보장하지는 않는다.
+
+활성화 시 선택 순서는 명시적 모델 → 작업별 tier 정책 → Jev Choice → 주 모델이다.
+출력 전의 429/5xx 전송 오류에는 서로 다른 명시적 Agent `fallbackModel`을 우선 사용하고,
+없거나 이미 선택한 모델과 같으면 구성된 Agent `model`을 재검증하여 한 번 시도한다.
+등록·기능·예산을 재검증하며 같은 등록 ID를 중복 호출하거나 출력 후 재호출하지 않는다.
+비활성화하면 ModelTask도 주 모델을 사용하며 명시적 override와 Jev는 무시한다.
+`tiers`는 관리자가 허용한 전역 등록 모델 목록이다. 명시적 모델은 이 목록 또는 주 모델에 있어야 하며,
+잘못된 명시적 override는 다른 모델로 조용히 바꾸지 않고 거절한다. 작업별 정책의 모델이
+사용 불가능하면 남은 후보를 Jev로 판단한다.
+
+전역 정책은 Run 준비 시 스냅샷을 만들고 Handoff·위임에도 같은 스냅샷을 사용한다.
+전역 정책 변경은 이미 진행 중인 Run을 바꾸지 않는다. Run 그래프가 라우팅 호출에 하나의 호출 수·예산 원장을
+소유하며 Handoff와 병렬 Agent-as-Tool도 같은 원장을 공유한다. 승인 대기에는 정책 fingerprint를
+보관하며 원장 형식도 fingerprint에 포함한다. 재개 전에 비교하므로 다른 모델·예산·보안 조건으로 승인된 작업을 재생하지 않는다.
+Agent가 라우팅 기능을 설정하지 않았으면 이 fingerprint 검사에 영향을 받지 않는다.
+
+Jev에 제시하는 후보는 등록 모델 ID 기준으로 중복을 제거한다. 같은 모델의 별칭은 코딩·이미지·
+추론 목적에 해당하는 tier를 우선하며 나머지는 일반 tier를 우선한다. 목적 이름만으로
+고가의 추론 모델을 강제하지 않으며 일반 모델로 가능한 제한된 수학·일정 문제는 일반 후보도 평가한다. 실제 후보 모델이 하나면
+`sole-candidate`로 실행하고 Jev 호출을 생략한다. 명시적 모델과 작업 정책은 이 축약을 적용하지 않는다.
+
+Jev에는 목적, 고정된 용어와 입력 크기로 만든 요약, 필요 기능, 예산과 사용 가능한 tier,
+tier별 예상 호출 비용과 주 모델 사용 여부를
+보낸다. 원문 substring, 모델 ID, 이미지 bytes, 도구·system prompt·자격증명은 보내지 않는다.
+반환값은 `fast`, `general`, `coding`, `reasoning`, `vision` 중 실제 제공한 tier만 인정한다.
+확신도와 후보별 확률은 trace에 저장한다. 확신도가 0이거나 선택한 후보가 유일한 최대 확률이
+아니면 `ambiguous-decision`으로 거절하고 주 모델로 복귀한다. 그 외 선택에는 보정 데이터 없는
+확신도 임계값을 추가하지 않는다. 확신도는 개별 답변의 정답 보장이 아니다.
+모델 등록·연결, 전역 모델 허용 목록, self-hosted 제한, 기능, 기존 context 예산과 비용 검사는
+`callModelRouter.ts`가 모델 호출 직전에 다시 수행한다. 연결 해석 가능 여부와 Run 안의 실패
+기록이 가용성 기준이며, 별도의 외부 health probe는 수행하지 않는다.
+
+ModelTask 작업은 최대 네 번 시도한다. 같은 모델이 두 번 실패하거나 답변이 비어 있음·최소 길이
+미달·출력 잘림·분류 JSON 형식 오류 또는 빈 객체/배열일 때 상위 tier로 승격한다. 텍스트 승격 순서는
+fast → general → coding → reasoning이며 이미지 호출은 vision → reasoning 중 이미지 기능을
+충족하는 모델을 사용한다. 마지막 시도는 주 모델 fallback에 남긴다. 취소는 즉시 전파하고,
+기본 모델도 정책을 충족하지 못하거나 호출에 실패하면 도구 오류를 반환한다. 품질 검사는
+출력의 구조·완결성을 검사하며 사실 정확성을 판정하지 않는다.
+
+시도당 비용 한도는 카탈로그 가격과 보수적인 토큰 추정에 대한 입장 검사다. 캐시 쓰기와
+provider별 가격 조건으로 실제 청구액은 예상값과 다를 수 있다. 시도 전 예상 비용을 예약하고 완료 응답의 실제 청구 비용으로
+정산한다. 실패한 요청의 예약 비용은 청구 여부를 알 수 없으므로 보수적으로 남긴다. Jev의
+비용도 같은 라우팅 예산과 Run 사용량에 포함한다. 활성화 시 주 SDK 호출과 ModelTask가 호출 수와
+예산을 공유하며, 검색·rerank 비용은 이 추론 예산에 포함하지 않는다. 동시 호출은 최종 입장 검사를 예약과 같은 동기 구간에서 수행한다. 호출 수는 주 모델과 보조
+모델의 실제 추론 시도마다 소비하며 Jev는 비용에만 포함한다. 승인 체크포인트의 Run 그래프는 호출 수·소비 예산·
+모델별 실패 횟수와 실제 주 모델을 보존한다. `model-routing` native span에는 선택·거절·승격·실패 이유와
+실제 모델·주 호출 여부·출력 한도를 저장하며 원문과 결과는 넣지 않는다. 각 생성 호출의 span과 usage는 실제 모델에
+귀속된다. 여러 후보가 있을 때 결정 모델 미설정·오프라인·잘못된 tier 응답은 주 모델로 fallback한다.
 
 ### Handoff와 Agent-as-Tool
 
@@ -160,6 +247,8 @@ Chat 삭제는 tombstone으로 늦게 끝난 실행의 이력 재생성을 막�
 SDK의 기본 공개 exporter는 로컬 `TracingProcessor`로 교체한다. 각 Agent의 앱 Trace에
 native Agent·generation·function·MCP listing·Guardrail·Handoff span을 연결하며 native
 span ID와 부모 ID를 보존한다. 모델 입력·출력, 도구 인자와 credential은 수집하지 않는다.
+로컬 수집의 async context는 route bundle 사이에서도 프로세스 단위로 공유한다.
+ModelTask는 청구된 generation span을 직접 소유하며 어댑터의 중첩 span은 수집하지 않는다.
 승인 대기 실행은 `awaiting-approval` 상태다. 선택적인 운영 OTLP 전송은 배포가 구성한
 기존 exporter를 통하며, 기본 실행에는 외부 tracing 서비스나 OpenAI API key가 필요 없다.
 

@@ -1,3 +1,5 @@
+import type { RunContextBudget } from "@/application/llm/contextBudget";
+import type { ToolResultBudget } from "@/application/llm/toolResultBudget";
 import type { ModelProvider, Session, AgentInputItem, RunState, Agent, AgentOutputType } from "@openai/agents";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { RunCaller } from "@/domain/execution/actor";
@@ -21,6 +23,8 @@ export type RecordUsageFn = (record: {
 }) => Promise<void>;
 
 export interface EngineDeps {
+  modelRoutingPolicy?: import("@/domain/llm/callRouting").CallRoutingPolicy;
+  callRouting?: import("@/application/llm/callModelRouter").CallRoutingDeps;
   onSdkSpan?: (span: TraceSpan) => void;
   channel: ModelProvider;
   recordUsage?: RecordUsageFn;
@@ -91,6 +95,7 @@ export interface RunAgentInput {
 }
 
 export interface RuntimeAgentSnapshot {
+  activeModel?: string;
   pii?: Array<[string, string]>;
   turn: number;
   resultChars: number;
@@ -100,6 +105,7 @@ export interface RuntimeAgentSnapshot {
 }
 
 export interface RuntimeGraphSnapshot {
+  routing?: import("@/domain/llm/callRouting").CallRoutingState;
   nextImageId?: number;
   delegations?: Array<{ scope: string; source: string; tool: string; id: string; args: string }>;
   agents: Record<string, RuntimeAgentSnapshot>;
@@ -130,4 +136,20 @@ export interface RuntimeTurnPersistence {
   images: ImageHandle[];
   checkBinding(key: string, fingerprint: string): void;
   commit(input: RunAgentInput, state: Pick<RunState<unknown, Agent<unknown, AgentOutputType>>, "getInterruptions" | "toString">, history: AgentInputItem[], graph: RuntimeGraphSnapshot): Promise<RuntimeApproval[]>;
+}
+
+export interface RuntimeTurn {
+  routing?: import("@/domain/llm/callRouting").CallRoutingState;
+  conversation?: ChatMessageInput[];
+  resources?: { urls: number; files: number; imageTurn: number; imagesUsed: number };
+  number: number;
+  maxTurns: number;
+  finalTurn: boolean;
+  outputCut: boolean;
+  answered?: boolean;
+  model: string;
+  contextBudget?: RunContextBudget;
+  results: ToolResultBudget;
+  handoffTools?: Set<string>;
+  toolOrder?: Map<string, { previous: Promise<void>; finished: Promise<void>; complete: () => void }>;
 }

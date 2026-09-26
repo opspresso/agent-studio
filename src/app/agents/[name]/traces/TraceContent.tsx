@@ -37,6 +37,33 @@ function prepareDetail(span: Trace["spans"][number]): string | null {
   if (span.kind !== "prepare" || !span.output) {
     return null;
   }
+  if (span.name === "model-routing" && Array.isArray(span.output.routing)) {
+    const decisions = span.output.routing.flatMap((value: unknown) => {
+      if (!value || typeof value !== "object") return [];
+      const event = value as Record<string, unknown>;
+      if (typeof event.purpose !== "string" || typeof event.source !== "string" || typeof event.outcome !== "string") return [];
+      const model = typeof event.model === "string" ? ` → ${event.model}` : "";
+      const tier = typeof event.tier === "string" ? ` (${event.tier})` : "";
+      const attempt = typeof event.attempt === "number" && event.attempt > 0 ? ` · #${event.attempt}` : "";
+      const reason = typeof event.reason === "string" ? ` · ${event.reason}` : "";
+      const confidenceValue = typeof event.decisionConfidence === "number" && Number.isFinite(event.decisionConfidence)
+        ? event.decisionConfidence.toFixed(2) : undefined;
+      const confidence = confidenceValue !== undefined ? ` · confidence ${confidenceValue}` : "";
+      const probabilities = event.decisionProbabilities && typeof event.decisionProbabilities === "object"
+        ? Object.entries(event.decisionProbabilities).flatMap(([key, value]) => {
+          if (typeof value !== "number" || !Number.isFinite(value)) return [];
+          const probability = value.toFixed(2);
+          return [`${key} ${probability}`];
+        }).join(", ") : "";
+      const distribution = probabilities ? ` · probabilities ${probabilities}` : "";
+      const primary = event.callKind === "primary" ? " · primary" : "";
+      const outputLimit = typeof event.maxOutputTokens === "number" && Number.isInteger(event.maxOutputTokens)
+        ? ` · maxOutputTokens ${event.maxOutputTokens}` : "";
+      const different = event.requiresDifferentModel === true ? " · different model required" : "";
+      return [`${event.purpose}${model}${tier} · ${event.source} · ${event.outcome}${attempt}${reason}${confidence}${distribution}${different}${primary}${outputLimit}`];
+    });
+    return decisions.join("\n") || null;
+  }
   const parts = Object.entries(span.output).flatMap(([key, value]) => {
     if (Array.isArray(value)) {
       return value.length > 0 ? [`${key}: ${value.join(", ")}`] : [];

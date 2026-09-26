@@ -6,6 +6,7 @@ import type { RuntimeSessionRepository, RuntimeSessionRow, RuntimeApproval, Runt
 import { CONTEXT_ENCRYPTED_PREFIX, type SecretCipher } from "@/domain/security/secretCipher";
 import { runtimeSessionContext } from "@/domain/security/secretContext";
 import type { AgentConfiguration } from "@/domain/agent/types";
+import { MODEL_ROUTING_POLICY_BINDING, type CallRoutingPolicy } from "@/domain/llm/callRouting";
 import { ConflictError, ValidationError } from "@/application/errors";
 import { PiiFilter } from "@/application/llm/pii";
 import { maskValues, restoreValues } from "./messages";
@@ -74,6 +75,11 @@ export function runtimeFingerprint(value: unknown): string {
   )).digest("hex");
 }
 
+/** Checkpoint admission includes the accounting contract, before claiming any approved work. */
+export function modelRoutingPolicyFingerprint(policy: CallRoutingPolicy): string {
+  return runtimeFingerprint({ policy, ledger: "shared-run-attempts-v1" });
+}
+
 export function approvalId(item: RunToolApprovalItem): string {
   return runtimeFingerprint([item.agent.name, item.toolName, item.rawItem]);
 }
@@ -105,7 +111,7 @@ function boundedHistory(items: AgentInputItem[]): { items: AgentInputItem[]; dro
 
 export async function openRuntimeSession(
   services: RuntimeSessionServices,
-  scope: { sessionId: string; ownerEmail: string; agentName: string; configuration: AgentConfiguration },
+  scope: { sessionId: string; ownerEmail: string; agentName: string; configuration: AgentConfiguration; routingPolicyFingerprint?: string },
   resume?: { revision: number; decisions: RuntimeApprovalDecision[] },
 ): Promise<RuntimeTurnPersistence> {
   const saved = await readRuntimeSession(services, scope.sessionId, scope.ownerEmail);
@@ -117,6 +123,9 @@ export async function openRuntimeSession(
   if (resume && (!checkpoint || checkpoint.status !== "pending" || resume.revision !== revision)) throw new ConflictError("This approval is no longer pending");
   if (checkpoint && !checkpoint.configuration) throw new ConflictError("This pending run has no Agent configuration; discard it before starting a new run");
   if (checkpoint && runtimeFingerprint(checkpoint.configuration) !== runtimeFingerprint(scope.configuration)) throw new ConflictError("The Agent configuration changed while approval was pending; discard this run and start again");
+  if (checkpoint?.bindings[MODEL_ROUTING_POLICY_BINDING] && checkpoint.bindings[MODEL_ROUTING_POLICY_BINDING] !== scope.routingPolicyFingerprint) {
+    throw new ConflictError("The model routing policy changed while approval was pending; discard this run and start again");
+  }
   if (resume && (!resume.decisions.length || new Set(resume.decisions.map((entry) => entry.id)).size !== resume.decisions.length || resume.decisions.some((entry) => !checkpoint?.approvals.some((approval) => approval.id === entry.id)))) throw new ValidationError("Unknown or duplicate approval decision");
   const filter = checkpoint ? (checkpoint.input.parameters?.piiFiltering || checkpoint.pii.length ? PiiFilter.restoreSnapshot(checkpoint.pii) : undefined) : scope.configuration.parameters.piiFiltering ? new PiiFilter() : undefined;
   const history = checkpoint ? { items: document.items, dropped: false } : boundedHistory(document.items);
