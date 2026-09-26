@@ -26,7 +26,16 @@ export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, tu
     return withCustomSpan(async (span) => {
       // Only routing metadata enters this span; prompt and answers remain out of trace storage.
       span.spanData.data = { routing: events };
-      const router = createCallModelRouter(deps.callRouting!, input.parameters!.modelRouting!, input.model,
+      const router = createCallModelRouter({ ...deps.callRouting!, decision: {
+        choose: (request) => withGenerationSpan(async (generation) => {
+          generation.spanData.model = request.model;
+          const decision = await deps.callRouting!.decision.choose(request);
+          if (decision.usage) generation.spanData.usage = {
+            input_tokens: decision.usage.inputTokens, output_tokens: decision.usage.outputTokens, cost_usd: decision.usage.costUsd,
+          };
+          return decision;
+        }),
+      } }, input.parameters!.modelRouting!, input.model,
         state, (event) => events.push(event), record);
       const purpose = args.purpose as CallPurpose;
       const prompt = `${purpose === "classification" ? "Return a JSON object or array. " : ""}${args.prompt as string}`;

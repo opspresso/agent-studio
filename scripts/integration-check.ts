@@ -1640,6 +1640,7 @@ async function main() {
       assert.ok(traceId);
       const trace = await executionDeps.traces!.get(traceId);
       assert.ok(trace?.spans.some((span) => span.name === "model-routing" && JSON.stringify(span.output).includes('"source":"jev"')), "routing reasons survived trace storage");
+      assert.ok(trace?.spans.some((span) => span.kind === "model" && span.name === "integration/jev" && span.output?.costUsd === 0.001), "Jev billing has its own model span");
       assert.ok(!JSON.stringify(trace).includes("ROUTING_PRIVATE_SOURCE"), "routing trace stores no source prompt");
       const disabledBefore = llmCalls.length;
       for await (const chunk of executeAgent(executionDeps, {
