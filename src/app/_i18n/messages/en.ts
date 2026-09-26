@@ -553,7 +553,7 @@ export const en = {
   "routing.saveShared": "Save routing policy",
   "routing.enabled": "Automatically route focused model calls",
   "routing.hint": "Keep the main Agent model. Route ModelTask calls by purpose; when disabled, these calls use the main model.",
-  "routing.privacy": "Jev receives only task purpose, a fixed-vocabulary prompt summary, required features, budgets and available tiers. It never receives the prompt, image bytes or model IDs. Configure the decision model in Settings.",
+  "routing.privacy": "Jev receives task purpose, a fixed-vocabulary prompt summary, required features, budgets, unique tier choices, estimated costs and whether a tier uses the main model. It never receives the prompt, image bytes or model IDs. Configure the decision model in Settings.",
   "routing.localOnly": "Use self-hosted provider connections only, including the decision model",
   "routing.unassigned": "No model assigned",
   "routing.automatic": "Jev selection, then main model",

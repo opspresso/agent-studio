@@ -61,12 +61,62 @@ describe("call model routing", () => {
     await execute({ ...task, prompt }, invoke);
     const sent = choose.mock.calls[0]![0];
     const state = JSON.parse(sent.state);
-    expect(Object.keys(state).sort()).toEqual(["availableTiers", "budget", "promptSummary", "purpose", "requiredFeatures"]);
+    expect(Object.keys(state).sort()).toEqual(["availableTiers", "budget", "promptSummary", "purpose", "requiredFeatures", "tierFacts"]);
     expect(sent.state + JSON.stringify(sent.criteria)).not.toMatch(/secret-model|private\.test|alice|SECRET/);
-    expect(state.availableTiers).toEqual(["fast", "general", "reasoning"]);
+    expect(state.availableTiers).toEqual(["general", "fast", "reasoning"]);
     expect(Object.keys(sent.criteria)).toEqual(state.availableTiers);
     expect(invoke).toHaveBeenCalledExactlyOnceWith("fast");
     expect(routingPromptSummary({ ...task, prompt })).toContain("code");
+  });
+  it("provides anonymous admission costs and collapses aliases of the main model", async () => {
+    replaceModelRegistry([model("base", { pricing: { inputPer1M: 2, outputPer1M: 10 } }), model("fast"), model("strong"), model("jev", {
+      pricing: { inputPer1M: 0.042, outputPer1M: 0 }, capabilities: { decision: true, tools: false, reasoning: false, imageInput: false, structuredOutput: false },
+    })]);
+    const { execute, choose, events } = setup({ ...settings, tiers: { fast: "fast", general: "base", coding: "base", vision: "base", reasoning: "strong" } });
+    await execute(task, vi.fn().mockResolvedValue(result));
+    const state = JSON.parse(choose.mock.calls[0]![0].state);
+    expect(state.availableTiers).toEqual(["general", "fast", "reasoning"]);
+    expect(state.tierFacts.general.usesPrimaryModel).toBe(true);
+    expect(state.tierFacts.fast.usesPrimaryModel).toBe(false);
+    expect(state.tierFacts.general.estimatedCostUsd).toBeGreaterThan(state.tierFacts.fast.estimatedCostUsd);
+    expect(state.tierFacts.fast.estimatedCostUsd).toBe(events.find(event => event.outcome === "selected")?.estimatedCostUsd);
+    expect(events.find(event => event.outcome === "selected")).toMatchObject({ decisionConfidence: 1, decisionProbabilities: {fast: 1, general: 0, reasoning: 0} });
+  });
+  it.each([ ["coding", 0, "coding"], ["vision", 1, "vision"] ] as const)("uses the %s alias for duplicate models", async (purpose, imageCount, choice) => {
+    const choose = vi.fn<CallRoutingDeps["decision"]["choose"]>().mockImplementation(async ({criteria}) => ({choice, confidence: 1,
+      probabilities: Object.fromEntries(Object.keys(criteria).map(key=>[key,key===choice ? 1 : 0]))}));
+    const { execute } = setup({ ...settings, tiers: {fast: "fast", general: "general", coding: "general", vision: "general"} }, {decision: {choose}});
+    await execute({...task,purpose,imageCount},vi.fn().mockResolvedValue(result));
+    expect(Object.keys(choose.mock.calls[0]![0].criteria)).toEqual([choice,"fast"]);
+  });
+  it("skips paid decision transport when every tier resolves to one model", async () => {
+    const selectedDecisionModel = vi.fn(async()=>"jev");
+    const { execute, choose, events } = setup({...settings,tiers:{general:"general",coding:"general",vision:"general"}}, {selectedDecisionModel});
+    const invoke = vi.fn().mockResolvedValue(result);
+    await execute(task,invoke);
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("general");
+    expect(choose).not.toHaveBeenCalled();
+    expect(selectedDecisionModel).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({source:"sole-candidate",outcome:"completed"});
+  });
+  it.each([
+    {confidence:0,probabilities:{fast:1,general:0,reasoning:0}},
+    {confidence:0.1,probabilities:{fast:0.5,general:0.5,reasoning:0}},
+    {confidence:0.8,probabilities:{fast:0.2,general:0.8,reasoning:0}},
+  ])("does not execute a decision with no unique preferred choice: %j", async (details) => {
+    const choose = vi.fn().mockResolvedValue({choice:"fast",...details});
+    const {execute,events}=setup(settings,{decision:{choose}});
+    const invoke=vi.fn().mockResolvedValue(result);
+    await execute(task,invoke);
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("base");
+    expect(events).toContainEqual(expect.objectContaining({reason:"ambiguous-decision",decisionConfidence:details.confidence,decisionProbabilities:details.probabilities}));
+  });
+  it("retains uncertain unique choices for evaluation without inventing a confidence cutoff or leaking extra keys", async () => {
+    const {execute,events}=setup(settings,{decision:{choose:vi.fn().mockResolvedValue({choice:"fast",confidence:0.01,
+      probabilities:{fast:0.34,general:0.33,reasoning:0.33,SECRET:1}})}});
+    await execute(task,vi.fn().mockResolvedValue(result));
+    expect(events.find(event=>event.outcome==="selected")).toMatchObject({source:"jev",decisionConfidence:0.01});
+    expect(JSON.stringify(events)).not.toContain("SECRET");
   });
   it("refuses arbitrary explicit models rather than widening the Agent's allow list", async () => {
     const { execute, choose } = setup();
@@ -99,6 +149,12 @@ describe("call model routing", () => {
     expect(invoke.mock.calls.map(([id]) => id)).toEqual(["fast", "general"]);
     expect(state.spentUsd).toBeGreaterThanOrEqual(result.usage.costUsd * 2);
     expect(events).toContainEqual(expect.objectContaining({ outcome: "quality-rejected", model: "fast" }));
+  });
+  it.each(["{}","[]"])("promotes empty classification output %s", async (text) => {
+    const {execute}=setup();
+    const invoke=vi.fn().mockResolvedValueOnce({...result,text}).mockResolvedValueOnce({...result,text:'{"label":"support"}'});
+    await execute({...task,purpose:"classification"},invoke);
+    expect(invoke.mock.calls.map(([model])=>model)).toEqual(["fast","general"]);
   });
   it("promotes a failed tier selection even when that tier uses the Agent's main model", async () => {
     const { execute, events } = setup({ ...settings, tiers: { general: "base", reasoning: "strong" }, policies: { summary: "general" } });
@@ -133,11 +189,11 @@ describe("call model routing", () => {
     expect(invoke).not.toHaveBeenCalled(); expect(budget.choose).not.toHaveBeenCalled();
   });
   it("includes decision output pricing in admission and avoids an unbounded paid decision", async () => {
-    replaceModelRegistry([model("base"), model("fast"), model("jev", {
+    replaceModelRegistry([model("base"), model("fast"), model("general"), model("jev", {
       pricing: { inputPer1M: 0, outputPer1M: 1_000 },
       capabilities: { decision: true, tools: false, reasoning: false, imageInput: false, structuredOutput: false },
     })]);
-    const { execute, choose, events } = setup({ ...settings, tiers: { fast: "fast" } });
+    const { execute, choose, events } = setup({ ...settings, tiers: { fast: "fast", general:"general" } });
     const invoke = vi.fn().mockResolvedValue(result);
     await execute(task, invoke);
     expect(choose).not.toHaveBeenCalled();

@@ -520,7 +520,7 @@ export const ko: Messages = {
   "routing.saveShared": "라우팅 정책 저장",
   "routing.enabled": "작업별 모델 호출 자동 라우팅",
   "routing.hint": "주 Agent 모델은 유지합니다. ModelTask 호출만 목적에 따라 라우팅하며, 끄면 이 호출도 주 모델을 사용합니다.",
-  "routing.privacy": "Jev에는 작업 목적, 정해진 용어로 만든 프롬프트 요약, 필요 기능, 예산과 사용 가능한 tier만 전달합니다. 원문, 이미지 bytes와 모델 ID는 전달하지 않습니다. 결정 모델은 설정에서 선택합니다.",
+  "routing.privacy": "Jev에는 작업 목적, 정해진 용어로 만든 프롬프트 요약, 필요 기능, 예산, 중복 없는 tier 후보, 예상 비용과 주 모델 사용 여부를 전달합니다. 원문, 이미지 bytes와 모델 ID는 전달하지 않습니다. 결정 모델은 설정에서 선택합니다.",
   "routing.localOnly": "결정 모델을 포함하여 self-hosted provider 연결만 사용",
   "routing.unassigned": "모델 미지정",
   "routing.automatic": "Jev 선택 후 주 모델",

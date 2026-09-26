@@ -158,9 +158,9 @@ Self-hosted는 키를 생략할 수 있다. 프로바이더 목록은 최대 50�
 Agent 설정의 **모델 라우팅**은 사용 여부만 선택하는 보조 `ModelTask` 기능이다. 주 모델은 유지한다.
 Settings → Models → Model 사용 설정의 **자동 모델 라우팅**에서 fast/general/coding/reasoning/vision에
 등록 text 모델을 한 번 배정한다. 작업별 tier 정책·보안·예산·품질 기준은 접힌 고급 설정에서
-관리하며 모든 사용 Agent가 같은 전역 정책을 따른다. 작업 정책이 없으면 Settings의 결정
-모델로 Jev Choice를 요청하고, 결정 모델이 없거나
-실패하면 주 모델을 사용한다. 비활성화하면 보조 호출도 주 모델을 사용한다.
+관리하며 모든 사용 Agent가 같은 전역 정책을 따른다. 작업 정책이 없으면 같은 모델 후보를
+합친 뒤 Settings의 결정 모델로 Jev Choice를 요청한다. 단일 후보면 Jev 호출을 생략하고,
+결정 모델이 없거나 실패·동률이면 주 모델을 사용한다. 비활성화하면 보조 호출도 주 모델을 사용한다.
 가격·한도를 모르는 모델은 보조 호출의 비용·context 검사에서 거절한다.
 사용 스위치는 [Agent 설정 API](API.md#agent-현재-설정), 전역 정책 필드와 기본값은
 [모델 API](API.md#models), 실행 계약은
@@ -168,7 +168,7 @@ Settings → Models → Model 사용 설정의 **자동 모델 라우팅**에서
 
 1. `/settings/models`에서 등록한 프로바이더를 선택하고 **Model 조회**를 실행한다.
 2. 사용할 항목의 유형·기능·한도·가격을 비교하고 **모델 추가**를 누르면 즉시 등록된다. 이름순·가격순 정렬과 기능 필터를 제공한다. 직접 등록은 화면 안의 입력 폼을 사용한다.
-3. `/settings/model-usage`에서 기본 모델, Agent 추천용 결정 모델, Workspace Runtime별 모델, 검색의 Embedding·Rerank를 선택한다.
+3. `/settings/model-usage`에서 기본 모델, Agent 추천·라우팅용 결정 모델, Workspace Runtime별 모델, 검색의 Embedding·Rerank를 선택한다.
 4. 선택 화면의 **선택된 모델만 보기**로 저장된 모델을 모아 보고 바로 삭제할 수 있다. Provider를 조회하지 않아도 저장된 선택을 표시한다. 등록 모델 관리에서는 수정·삭제·상태 확인을 수행한다. `/models`는 선택·등록된 모델의 조회와 검색만 제공한다.
 
 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decision`이다.

@@ -75,6 +75,7 @@ export function createCallModelRouter(
       let source: CallRoutingEvent["source"] = "default";
       let selected = baseModel;
       let tier: ModelTier | undefined;
+      let decisionDetails: Pick<CallRoutingEvent, "decisionConfidence" | "decisionProbabilities"> | undefined;
       if (settings.enabled) {
         for (const candidate of MODEL_TIERS) {
           const model = settings.tiers[candidate];
@@ -94,44 +95,69 @@ export function createCallModelRouter(
         } else if (settings.policies[task.purpose] && valid.has(settings.policies[task.purpose]!)) {
           tier = settings.policies[task.purpose]!; selected = valid.get(tier)!; source = "policy";
         } else if (valid.size) {
-          try {
-            const decisionModel = await deps.selectedDecisionModel();
-            if (decisionModel) {
-              const stateText = JSON.stringify({ purpose: task.purpose, promptSummary: routingPromptSummary(task),
-                requiredFeatures: { imageInput: task.imageCount > 0, reasoning: task.purpose === "reasoning", structuredOutput: task.purpose === "classification" },
-                budget: { maxCallCostUsd: settings.maxCallCostUsd, remainingRunCostUsd: Math.max(0, settings.maxRunCostUsd - state.spentUsd) },
-                availableTiers: [...valid.keys()] });
-              const criteria = Object.fromEntries([...valid.keys()].map((key) => [key, {
-                fast: "Short summaries and straightforward classification", general: "General language tasks",
-                coding: "Code generation and debugging", reasoning: "Complex analysis and multi-step reasoning", vision: "Image understanding",
-              }[key]]));
-              const available = await deps.canUseModel(decisionModel, settings.localOnly);
-              const facts = getModelConfig(decisionModel);
-              const decisionTokens = estimateContextTokens(stateText + JSON.stringify(criteria)) + PROTOCOL_HEADROOM_TOKENS;
-              const outputPriceable = facts && (facts.pricing.outputPer1M === 0 || facts.maxTokens > 0);
-              const decisionCost = facts && facts.pricingKnown !== false && outputPriceable
-                ? (decisionTokens * facts.pricing.inputPer1M + facts.maxTokens * facts.pricing.outputPer1M) / 1_000_000 : Infinity;
-              const decisionContext = createRunContextBudget(decisionModel, undefined, facts?.maxTokens ?? 0);
-              if (!available || !facts?.capabilities.decision || !decisionContext ||
-                  decisionTokens - PROTOCOL_HEADROOM_TOKENS > decisionContext.remaining() ||
-                  !Number.isFinite(decisionCost) || decisionCost > settings.maxCallCostUsd ||
-                  state.spentUsd + decisionCost > settings.maxRunCostUsd) {
-                throw new Error("Decision model is outside routing policy");
+          // Aliases of the same registered model are one execution choice.
+          // Preserve the task-specific alias without changing explicit policies or promotion.
+          const preferred = task.imageCount ? "vision" : task.purpose === "coding" ? "coding" : task.purpose === "reasoning" ? "reasoning" : "general";
+          const options = new Map<ModelTier, string>();
+          const models = new Set<string>();
+          for (const candidate of [preferred, ...MODEL_TIERS] as ModelTier[]) {
+            const model = valid.get(candidate);
+            if (model && !models.has(model)) { options.set(candidate, model); models.add(model); }
+          }
+          if (options.size === 1) {
+            [tier, selected] = options.entries().next().value!;
+            source = "sole-candidate";
+          } else {
+            try {
+              const decisionModel = await deps.selectedDecisionModel();
+              if (decisionModel) {
+                const stateText = JSON.stringify({ purpose: task.purpose, promptSummary: routingPromptSummary(task),
+                  requiredFeatures: { imageInput: task.imageCount > 0, reasoning: task.purpose === "reasoning", structuredOutput: task.purpose === "classification" },
+                  budget: { maxCallCostUsd: settings.maxCallCostUsd, remainingRunCostUsd: Math.max(0, settings.maxRunCostUsd - state.spentUsd) },
+                  availableTiers: [...options.keys()],
+                  tierFacts: Object.fromEntries([...options].map(([key, model]) => [key, {
+                    estimatedCostUsd: estimate(model, task), usesPrimaryModel: model === baseModel,
+                  }])) });
+                const criteria = Object.fromEntries([...options.keys()].map((key) => [key, {
+                  fast: "Short summaries and straightforward classification", general: "General language tasks",
+                  coding: "Code generation and debugging", reasoning: "Complex analysis and multi-step reasoning", vision: "Image understanding",
+                }[key]]));
+                const available = await deps.canUseModel(decisionModel, settings.localOnly);
+                const facts = getModelConfig(decisionModel);
+                const decisionTokens = estimateContextTokens(stateText + JSON.stringify(criteria)) + PROTOCOL_HEADROOM_TOKENS;
+                const outputPriceable = facts && (facts.pricing.outputPer1M === 0 || facts.maxTokens > 0);
+                const decisionCost = facts && facts.pricingKnown !== false && outputPriceable
+                  ? (decisionTokens * facts.pricing.inputPer1M + facts.maxTokens * facts.pricing.outputPer1M) / 1_000_000 : Infinity;
+                const decisionContext = createRunContextBudget(decisionModel, undefined, facts?.maxTokens ?? 0);
+                if (!available || !facts?.capabilities.decision || !decisionContext ||
+                    decisionTokens - PROTOCOL_HEADROOM_TOKENS > decisionContext.remaining() ||
+                    !Number.isFinite(decisionCost) || decisionCost > settings.maxCallCostUsd ||
+                    state.spentUsd + decisionCost > settings.maxRunCostUsd) {
+                  throw new Error("Decision model is outside routing policy");
+                }
+                state.spentUsd += decisionCost;
+                const decision = await deps.decision.choose({ model: decisionModel, state: stateText,
+                  instructions: "Choose the least expensive available tier that can satisfy the purpose, promptSummary and requiredFeatures. Compare tierFacts.estimatedCostUsd among suitable tiers. A usesPrimaryModel tier adds an isolated call, not a new model capability. Higher cost alone does not prove suitability. Return only one available tier.", criteria, signal });
+                if (decision.usage) {
+                  state.spentUsd += decision.usage.costUsd - decisionCost;
+                  await recordDecisionUsage(decision.usage);
+                }
+                if (options.has(decision.choice as ModelTier)) {
+                  const probabilities = Object.fromEntries([...options.keys()].map(key => [key, decision.probabilities[key]]));
+                  decisionDetails = { decisionConfidence: decision.confidence, decisionProbabilities: probabilities };
+                  const probability = decision.probabilities[decision.choice];
+                  if (decision.confidence <= 0 || !Number.isFinite(probability) || [...options.keys()].some(key => key !== decision.choice && decision.probabilities[key]! >= probability!)) {
+                    observe({ purpose: task.purpose, source: "jev", outcome: "rejected", attempt: 0, reason: "ambiguous-decision", ...decisionDetails });
+                    decisionDetails = undefined;
+                  } else {
+                    tier = decision.choice as ModelTier; selected = options.get(tier)!; source = "jev";
+                  }
+                } else observe({ purpose: task.purpose, source: "jev", outcome: "rejected", attempt: 0, reason: "invalid-decision" });
               }
-              state.spentUsd += decisionCost;
-              const decision = await deps.decision.choose({ model: decisionModel, state: stateText,
-                instructions: "Choose the least expensive available tier that can satisfy this task. Return only one available tier.", criteria, signal });
-              if (decision.usage) {
-                state.spentUsd += decision.usage.costUsd - decisionCost;
-                await recordDecisionUsage(decision.usage);
-              }
-              if (valid.has(decision.choice as ModelTier)) {
-                tier = decision.choice as ModelTier; selected = valid.get(tier)!; source = "jev";
-              } else observe({ purpose: task.purpose, source: "jev", outcome: "rejected", attempt: 0, reason: "invalid-decision" });
+            } catch {
+              signal?.throwIfAborted();
+              observe({ purpose: task.purpose, source: "jev", outcome: "failed", attempt: 0, reason: "decision-failed" });
             }
-          } catch {
-            signal?.throwIfAborted();
-            observe({ purpose: task.purpose, source: "jev", outcome: "failed", attempt: 0, reason: "decision-failed" });
           }
         }
       }
@@ -146,7 +172,8 @@ export function createCallModelRouter(
           selected = baseModel; tier = undefined; source = "default"; continue;
         }
         const estimatedCostUsd = estimate(selected, task);
-        observe({ purpose: task.purpose, model: selected, ...(tier ? { tier } : {}), source, outcome: "selected", attempt, estimatedCostUsd });
+        observe({ purpose: task.purpose, model: selected, ...(tier ? { tier } : {}), source, outcome: "selected", attempt, estimatedCostUsd,
+          ...(source === "jev" ? decisionDetails : {}) });
         // Reserve before awaiting so parallel callers cannot spend the same remaining budget.
         state.spentUsd += estimatedCostUsd;
         attempted.add(selected);
@@ -157,7 +184,7 @@ export function createCallModelRouter(
           signal?.throwIfAborted();
           qualityFailed = result.truncated === true || result.text.trim().length < settings.minOutputChars;
           if (task.purpose === "classification") {
-            try { const parsed: unknown = JSON.parse(result.text); qualityFailed ||= parsed === null || typeof parsed !== "object"; }
+            try { const parsed: unknown = JSON.parse(result.text); qualityFailed ||= parsed === null || typeof parsed !== "object" || Object.keys(parsed).length === 0; }
             catch { qualityFailed = true; }
           }
           if (!qualityFailed) {

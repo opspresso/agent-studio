@@ -46,7 +46,17 @@ function prepareDetail(span: Trace["spans"][number]): string | null {
       const tier = typeof event.tier === "string" ? ` (${event.tier})` : "";
       const attempt = typeof event.attempt === "number" && event.attempt > 0 ? ` · #${event.attempt}` : "";
       const reason = typeof event.reason === "string" ? ` · ${event.reason}` : "";
-      return [`${event.purpose}${model}${tier} · ${event.source} · ${event.outcome}${attempt}${reason}`];
+      const confidenceValue = typeof event.decisionConfidence === "number" && Number.isFinite(event.decisionConfidence)
+        ? event.decisionConfidence.toFixed(2) : undefined;
+      const confidence = confidenceValue !== undefined ? ` · confidence ${confidenceValue}` : "";
+      const probabilities = event.decisionProbabilities && typeof event.decisionProbabilities === "object"
+        ? Object.entries(event.decisionProbabilities).flatMap(([key, value]) => {
+          if (typeof value !== "number" || !Number.isFinite(value)) return [];
+          const probability = value.toFixed(2);
+          return [`${key} ${probability}`];
+        }).join(", ") : "";
+      const distribution = probabilities ? ` · probabilities ${probabilities}` : "";
+      return [`${event.purpose}${model}${tier} · ${event.source} · ${event.outcome}${attempt}${reason}${confidence}${distribution}`];
     });
     return decisions.join("\n") || null;
   }

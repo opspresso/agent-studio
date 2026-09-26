@@ -6,7 +6,7 @@ import type { ChannelToolDef } from "@/domain/llm/channel";
 export const MODEL_TASK_TOOL_DEF: ChannelToolDef = {
   type: "function", function: {
     name: MODEL_TASK_TOOL_NAME,
-    description: "Make one focused model call for summary, classification, coding, complex reasoning or vision, then use its result in your answer. Your main model stays unchanged. Supply only the context needed for this task. Classification must return a JSON object or array. Model routing, budgets and quality checks are enforced by the server. A null model allows automatic selection; explicit models must be configured for this Agent. Image ids must refer to images already available in this run.",
+    description: "Use an additional focused model call only when a cheaper isolated subtask or a capability beyond your own materially helps. Answer greetings, short summaries, routine language tasks and work you can already complete directly; do not delegate merely to restate the user's request or rewrite an answer. Each call adds latency and your own planning and final-answer cost. Your main model stays unchanged. Supply only the context needed for summary, classification, coding, complex reasoning or vision. Classification must return a non-empty JSON object or array. The server enforces model enrollment, budgets, truncation and output-shape checks; these do not verify factual correctness. A null model allows automatic selection; explicit models must belong to the shared tier pool or be your main model. Image ids must refer to images already available in this run.",
     parameters: {
       type: "object", additionalProperties: false,
       properties: {

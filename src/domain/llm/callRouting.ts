@@ -52,11 +52,13 @@ export interface CallRoutingEvent {
   purpose: CallPurpose;
   model?: string;
   tier?: ModelTier;
-  source: "explicit" | "policy" | "jev" | "default" | "promotion";
+  source: "explicit" | "policy" | "sole-candidate" | "jev" | "default" | "promotion";
   outcome: "selected" | "rejected" | "failed" | "quality-rejected" | "completed";
   attempt: number;
-  reason?: "permission" | "security" | "capability" | "context" | "budget" | "unavailable" | "decision-failed" | "invalid-decision";
+  reason?: "permission" | "security" | "capability" | "context" | "budget" | "unavailable" | "decision-failed" | "invalid-decision" | "ambiguous-decision";
   estimatedCostUsd?: number;
+  decisionConfidence?: number;
+  decisionProbabilities?: Partial<Record<ModelTier, number>>;
 }
 
 /** Checkpoints retain admission counters so approval resumption cannot reset them. */

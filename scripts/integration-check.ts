@@ -1618,7 +1618,7 @@ async function main() {
     // ---------- call-level routing: actual Jev/LLM transport and SQL persistence ----------
     {
       const { DEFAULT_CALL_ROUTING_POLICY } = await import("@/domain/llm/callRouting");
-      const modelRouting = { ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: "integration/fast" }, localOnly: true };
+      const modelRouting = { ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: "integration/fast",general:"integration/model" }, localOnly: true };
       const { modelRegistryUseCases } = await import("@/lib/container");
       const routingActor = `it-routing-${suffix}@example.test`;
       await modelRegistryUseCases.saveRouting(modelRouting, routingActor);
@@ -1631,7 +1631,7 @@ async function main() {
       assert.equal((await agentRepository.get(agentName))?.configuration?.parameters.modelRouting, true);
       const before = llmCalls.length;
       const routed = [];
-      const nextPolicy = { ...modelRouting, tiers: { fast: "integration/model" } };
+      const nextPolicy = { ...modelRouting, tiers: { fast: "integration/model",general:"integration/model" } };
       onNextRoutingRequest = async () => { await modelRegistryUseCases.saveRouting(nextPolicy, routingActor); };
       for await (const chunk of executeAgent(executionDeps, {
         agent, configuration: routedConfiguration, messages: [{ role: "user", content: "route model task" }],
@@ -1642,8 +1642,8 @@ async function main() {
       assert.equal(decisionCalls.length, 1, "Jev was actually called through the System One adapter");
       const decision = decisionCalls[0]!;
       const decisionState = JSON.parse(decision.state as string);
-      assert.deepEqual(Object.keys(decisionState).sort(), ["availableTiers", "budget", "promptSummary", "purpose", "requiredFeatures"]);
-      assert.deepEqual(decisionState.availableTiers, ["fast"]);
+      assert.deepEqual(Object.keys(decisionState).sort(), ["availableTiers", "budget", "promptSummary", "purpose", "requiredFeatures", "tierFacts"]);
+      assert.deepEqual(decisionState.availableTiers, ["general", "fast"]);
       assert.ok(!JSON.stringify(decision).includes("ROUTING_PRIVATE_SOURCE"), "routing never sends the original prompt");
       assert.ok(!JSON.stringify(decision).includes("alice@example.test"), "routing never sends original personal data");
       assert.ok(routed.some((chunk) => chunk.toolResult?.name === "ModelTask" && chunk.toolResult.content === "plain answer"));
@@ -1653,6 +1653,9 @@ async function main() {
       assert.ok(traceId);
       const trace = await executionDeps.traces!.get(traceId);
       assert.ok(trace?.spans.some((span) => span.name === "model-routing" && JSON.stringify(span.output).includes('"source":"jev"')), "routing reasons survived trace storage");
+      assert.ok(trace?.spans.some((span) => span.name === "model-routing" && JSON.stringify(span.output).includes('"decisionConfidence":1')), "decision certainty survived trace storage");
+      assert.equal(typeof decisionState.tierFacts.fast.estimatedCostUsd,"number");
+      assert.equal(decisionState.tierFacts.general.usesPrimaryModel,true);
       assert.ok(trace?.spans.some((span) => span.kind === "model" && span.name === "integration/jev" && span.output?.costUsd === 0.001), "Jev billing has its own model span");
       assert.deepEqual(trace?.spans.filter(span => span.kind === "model").map(span => span.name), ["integration/model", "integration/jev", "integration/fast", "integration/model"], "each actual inference has exactly one billed span");
       assert.ok(!JSON.stringify(trace).includes("ROUTING_PRIVATE_SOURCE"), "routing trace stores no source prompt");
@@ -1661,7 +1664,7 @@ async function main() {
         agent, configuration: routedConfiguration, messages: [{ role: "user", content: "route model task" }], actor: { kind: "user", id: "it@example.com" },
       })) assert.equal(chunk.error, undefined);
       assert.deepEqual(llmCalls.slice(nextBefore).map(call => call.model), ["model", "model", "model"], "next Run uses the new shared policy");
-      assert.equal(decisionCalls.length, 2);
+      assert.equal(decisionCalls.length, 1,"one physical candidate does not need a paid decision");
       pass("shared routing policy: in-flight snapshot stability and next-Run adoption");
       const disabledBefore = llmCalls.length;
       for await (const chunk of executeAgent(executionDeps, {
@@ -1669,7 +1672,7 @@ async function main() {
         messages: [{ role: "user", content: "route model task" }], actor: { kind: "user", id: "it@example.com" },
       })) assert.equal(chunk.error, undefined);
       assert.deepEqual(llmCalls.slice(disabledBefore).map((call) => call.model), ["model", "model", "model"]);
-      assert.equal(decisionCalls.length, 2, "disabled routing does not contact Jev");
+      assert.equal(decisionCalls.length, 1, "disabled routing does not contact Jev");
       const { pendingRuntimeApproval } = await import("@/application/runtime/session");
       const sessionId = `integration-routing-approval-${suffix}`;
       const owner = "it@example.com";
