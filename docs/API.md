@@ -318,7 +318,7 @@ Agent 메타데이터나 설정의 동시 수정이 먼저 저장되면 409를 �
 `modelRouting`은 선택적 boolean이다. `true`면 [전역 라우팅 정책](#models)을 사용하고,
 `false`면 ModelTask 호출도 이 Agent의 주 모델을 사용한다. 미설정이면 ModelTask를 제공하지
 않는다. Agent별 tier·예산·정책 객체는 받지 않는다.
-ModelTask의 선택적 `require_different_model: true`는 주 모델 등록 ID의 재사용과 fallback을
+ModelTask의 선택적 `require_different_model: true`는 설정된 주 모델과 실제 primary fallback 등록 ID의 재사용을
 거절한다. 다른 등록 모델이 없으면 도구 오류를 반환한다.
 주 모델 유지·선택 우선순위·승격·trace·승인 재개는 [호출 단위 라우팅](design/execution.md#호출-단위-모델-라우팅)을 따른다.
 

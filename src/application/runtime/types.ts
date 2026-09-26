@@ -93,6 +93,7 @@ export interface RunAgentInput {
 }
 
 export interface RuntimeAgentSnapshot {
+  activeModel?: string;
   routing?: import("@/domain/llm/callRouting").CallRoutingState;
   pii?: Array<[string, string]>;
   turn: number;

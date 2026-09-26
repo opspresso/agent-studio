@@ -45,6 +45,8 @@ export interface RoutedModelTask {
   /** Explicit overrides may address only the base model or an assigned tier model. */
   model?: string;
   requireDifferentModel?: boolean;
+  /** Actual primary model for this SDK turn, including a transport fallback. */
+  activePrimaryModel?: string;
   imageCount: number;
   maxOutputTokens: number;
 }

@@ -7,7 +7,7 @@ import { DEFAULT_CALL_ROUTING_POLICY, type CallRoutingPolicy } from "@/domain/ll
 import type { TraceSpan } from "@/domain/trace/types";
 import { FakeChannel, contentChunk, toolCallChunk, usageChunk } from "./fakeChannel";
 import { runtimeSessionFixture } from "./runtimeSessionFixture";
-import { pendingRuntimeApproval } from "@/application/runtime/session";
+import { pendingRuntimeApproval,readRuntimeSession } from "@/application/runtime/session";
 
 const original = listModels();
 const config: CallRoutingPolicy = { ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: "local/fast" }, policies: { summary: "fast" as const } };
@@ -28,6 +28,28 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); replaceModelRegistry(original); });
 
 describe("native runtime call routing", () => {
+  it("preserves the actual primary fallback across an approval restart for independent verification",async()=>{
+    const f=runtimeSessionFixture({approvalTools:["ModelTask"]});
+    f.configuration.model="local/base";f.configuration.parameters.modelRouting=true;
+    replaceModelRegistry([model("local/base"),model("local/fast"),model("local/strong")]);
+    const args=JSON.stringify({purpose:"summary",prompt:"Verify independently",model:null,image_ids:[],require_different_model:true});
+    const primary=new FakeChannel([[toolCallChunk(0,"independent-pending","ModelTask",args)],[contentChunk("Done")]]);
+    const strong=new FakeChannel([[contentChunk("Verified")]]);
+    const channel:AgentDeps["channel"]={getModel:async(name)=>{
+      if(name==="local/base")return {getResponse:async()=>{throw Object.assign(new Error("unavailable"),{status:503});},async *getStreamedResponse(){throw Object.assign(new Error("unavailable"),{status:503});}};
+      return (name==="local/strong"?strong:primary).getModel(name);
+    }};
+    const callDeps=deps(primary,[],{...config,tiers:{fast:"local/fast",reasoning:"local/strong"},policies:{summary:"fast"}});
+    const overrides={...callDeps,channel};
+    const first=await f.run(primary,"Verify with another model",undefined,overrides,{fallbackModel:"local/fast"});
+    expect(first.some(chunk=>chunk.approval?.pending)).toBe(true);
+    const saved=await readRuntimeSession(f.services,"chat-1",f.scope.ownerEmail);
+    expect(saved?.document.checkpoint?.graph.agents["root/agent"]?.activeModel).toBe("local/fast");
+    const pending=(await pendingRuntimeApproval(f.services,"chat-1",f.scope.ownerEmail))!;
+    const resumed=await f.run(primary,"",{revision:pending.revision,decisions:[{id:pending.approvals[0]!.id,approve:true}]},overrides,{fallbackModel:"local/fast"});
+    expect(resumed.some(chunk=>chunk.error)).toBe(false);
+    expect(strong.calls).toBe(1);expect(primary.calls).toBe(2);
+  });
   it("forwards the independent-model requirement and reports unavailable alternatives without a primary-model subcall",async()=>{
     const args=JSON.stringify({purpose:"summary",prompt:"Check independently",model:null,image_ids:[],require_different_model:true});
     const channel=new FakeChannel([[toolCallChunk(0,"independent","ModelTask",args)],[contentChunk("No alternative is available")]]);

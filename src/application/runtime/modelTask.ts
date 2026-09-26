@@ -41,6 +41,7 @@ export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, tu
       const purpose = args.purpose as CallPurpose;
       const prompt = `${purpose === "classification" ? "Return a non-empty JSON object or array. " : ""}${args.prompt as string}`;
       const result = await router.execute({ purpose, prompt, imageCount: selectedImages.length,
+        activePrimaryModel: turn.model,
         ...(args.require_different_model === true ? {requireDifferentModel:true} : {}),
         ...(typeof args.model === "string" && args.model ? { model: args.model } : {}),
         maxOutputTokens: input.parameters?.maxTokens ?? 2_048,

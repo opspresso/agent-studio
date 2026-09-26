@@ -30,6 +30,13 @@ beforeEach(() => replaceModelRegistry([
 afterEach(() => replaceModelRegistry(original));
 
 describe("call model routing", () => {
+  it("also excludes the actual primary fallback model for independent verification",async()=>{
+    const {execute}=setup();const invoke=vi.fn().mockResolvedValue(result);
+    await execute({...task,activePrimaryModel:"fast",requireDifferentModel:true,model:"strong"},invoke);
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("strong");
+    await expect(execute({...task,activePrimaryModel:"fast",requireDifferentModel:true,model:"fast"},invoke)).rejects.toThrow("same-primary-model");
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
   it("excludes main-model aliases when a different registered model is required",async()=>{
     const {execute,choose,events}=setup({...settings,tiers:{fast:"base",general:"base",reasoning:"strong"}});
     const invoke=vi.fn().mockResolvedValue(result);

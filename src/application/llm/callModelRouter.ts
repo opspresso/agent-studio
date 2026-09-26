@@ -42,7 +42,7 @@ export function createCallModelRouter(
   recordDecisionUsage: (usage: UsageInfo) => Promise<void> = async () => {},
 ) {
   async function rejection(model: string, task: RoutedModelTask): Promise<CallRoutingEvent["reason"] | undefined> {
-    if (task.requireDifferentModel && model === baseModel) return "same-primary-model";
+    if (task.requireDifferentModel && (model === baseModel || model === task.activePrimaryModel)) return "same-primary-model";
     if (model !== baseModel && !Object.values(settings.tiers).includes(model)) return "permission";
     if (!await deps.canUseModel(model, settings.localOnly)) return "unavailable";
     const facts = getModelConfig(model);
@@ -117,7 +117,7 @@ export function createCallModelRouter(
                   budget: { maxCallCostUsd: settings.maxCallCostUsd, remainingRunCostUsd: Math.max(0, settings.maxRunCostUsd - state.spentUsd) },
                   availableTiers: [...options.keys()],
                   tierFacts: Object.fromEntries([...options].map(([key, model]) => [key, {
-                    estimatedCostUsd: estimate(model, task), usesPrimaryModel: model === baseModel,
+                    estimatedCostUsd: estimate(model, task), usesPrimaryModel: model === baseModel || model === task.activePrimaryModel,
                   }])) });
                 const criteria = Object.fromEntries([...options.keys()].map((key) => [key, {
                   fast: "Short summaries and straightforward classification", general: "General language tasks",

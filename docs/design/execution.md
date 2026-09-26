@@ -133,7 +133,8 @@ reasoning 목적의 ModelTask는 Agent의 `reasoningEffort`를 따르며, 미설
 출력 한도는 Agent의 `maxTokens`, 미설정이면 2,048토큰이며 reasoning 토큰도 이 한도에 포함된다.
 
 다른 모델 검증 요구에는 `require_different_model: true`를 지정한다. 이 제약은 주 모델의
-등록 ID를 후보·명시적 선택·fallback에서 제외한다. 다른 후보가 없거나 모두 실패하면 도구
+등록 ID와 해당 턴의 실제 fallback 모델 ID를 후보·명시적 선택·fallback에서 제외한다.
+실제 주 모델 ID는 승인 체크포인트에 보존해 재개 후에도 같은 제약을 적용한다. 다른 후보가 없거나 모두 실패하면 도구
 오류를 반환한다. 서로 다른 등록 ID가 통계적으로 독립된 모델 가중치임을 보장하지는 않는다.
 
 활성화 시 선택 순서는 명시적 모델 → 작업별 tier 정책 → Jev Choice → 주 모델이다.

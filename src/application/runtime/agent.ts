@@ -92,7 +92,7 @@ export function compileAgent(
   const turn: RuntimeTurn = {
     conversation: graph.history ? [...conversationMessages(graph.history), ...(input.runtime?.checkpoint ? [] : input.messages)] : input.messages,
     number: saved?.turn ?? 0, maxTurns: input.maxTurn ?? 50, finalTurn: false, outputCut: false,
-    model: input.model, results: createToolResultBudget(saved?.resultChars ?? MAX_TOOL_RESULT_CHARS_PER_TURN),
+    model: saved?.activeModel ?? input.model, results: createToolResultBudget(saved?.resultChars ?? MAX_TOOL_RESULT_CHARS_PER_TURN),
     resources: saved?.resources,
     routing: saved?.routing,
     handoffTools: new Set(assembly.delegations.filter((entry) => entry.mode === "handoff").map((entry) => entry.name)),
@@ -106,7 +106,7 @@ export function compileAgent(
   graph.ids ??= {};
   graph.delegations ??= [];
   graph.restoreDelegations ??= new Map();
-  graph.capture[key] = () => ({ pii: filter?.snapshot(), turn: turn.number, resultChars: turn.results.remaining(), context: turn.contextBudget?.snapshot(), images: assembly.images.list(), resources: turn.resources, routing: turn.routing });
+  graph.capture[key] = () => ({ activeModel: turn.model, pii: filter?.snapshot(), turn: turn.number, resultChars: turn.results.remaining(), context: turn.contextBudget?.snapshot(), images: assembly.images.list(), resources: turn.resources, routing: turn.routing });
   const savedIds = graph.saved?.identifiers[scope];
   graph.identifiers ??= { prefix: savedIds?.prefix, used: new Set(savedIds?.used ?? []) };
   graph.ids[scope] = graph.identifiers;
