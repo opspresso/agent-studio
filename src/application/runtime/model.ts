@@ -152,8 +152,9 @@ export function createRunModel(
     return turn.finalTurn ? normalized.filter((item) => item.type !== "function_call") : normalized;
   }
 
-  function fallbackFor(request: ModelRequest): string | undefined {
-    const fallback = input.fallbackModel;
+  function fallbackFor(request: ModelRequest, currentModel = input.model): string | undefined {
+    const fallback = input.fallbackModel && input.fallbackModel !== currentModel ? input.fallbackModel
+      : input.parameters?.modelRouting === true && input.model !== currentModel ? input.model : undefined;
     if (!fallback) return undefined;
     const hasImages = Array.isArray(request.input) && request.input.some((item) => {
       const content = item.type === "function_call_result" ? item.output
@@ -179,7 +180,7 @@ export function createRunModel(
       try { response = await (await deps.channel.getModel(model)).getResponse(prepared); }
       catch (error) {
         request.signal?.throwIfAborted();
-        const fallback = fallbackFor(request);
+        const fallback = fallbackFor(request, model);
         if (!fallback || fallback === model || !isRetryable(error)) throw error;
         routed = await routePrimaryModel(deps, input, turn, request, emit, fallback);
         model = routed?.model ?? fallback;
@@ -257,7 +258,7 @@ export function createRunModel(
         try { yield* consume(primaryModel); }
         catch (error) {
           request.signal?.throwIfAborted();
-          const fallback = fallbackFor(request);
+          const fallback = fallbackFor(request, primaryModel);
           if (started || !fallback || fallback === primaryModel || !isRetryable(error)) throw error;
           routed = await routePrimaryModel(deps, input, turn, request, emit, fallback);
           const model = routed?.model ?? fallback;

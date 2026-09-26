@@ -51,14 +51,15 @@ export function primaryRoutingTask(request: ModelRequest, input: RunAgentInput):
   const prompt = typeof request.input === "string" ? request.input
     : String(conversationMessages(request.input).findLast(message => message.role === "user")?.content ?? "");
   let imageCount = 0;
-  const text = JSON.stringify({ input: request.input, system: request.systemInstructions, tools: request.tools,
-    handoffs: request.handoffs, outputType: request.outputType }, (_key, value: unknown) => {
+  const nativeInput = JSON.stringify(request.input, (_key, value: unknown) => {
     if (value && typeof value === "object" && "type" in value && (value.type === "input_image" || value.type === "image")) {
       imageCount += 1;
       return { type: value.type };
     }
     return value;
   });
+  const text = nativeInput + JSON.stringify({ system: request.systemInstructions, tools: request.tools,
+    handoffs: request.handoffs, outputType: request.outputType });
   const purpose = primaryCallPurpose(prompt, imageCount);
   return { purpose, prompt, imageCount,
     inputTokens: estimateContextTokens(text) + estimateContextTokens(primaryRoutingInstructions(purpose)) + imageCount * IMAGE_PART_TOKENS,

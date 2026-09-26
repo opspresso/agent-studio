@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { withTrace, NoopTrace, type ModelRequest } from "@openai/agents";
+import { withTrace, NoopTrace, type ModelRequest, type JsonSchemaDefinition } from "@openai/agents";
 import { createRunModel } from "@/application/runtime/model";
 import { createToolResultBudget, MAX_TOOL_RESULT_CHARS_PER_TURN } from "@/application/llm/toolResultBudget";
 import { listModels, replaceModelRegistry, type ModelConfig } from "@/domain/llm/models";
@@ -90,6 +90,15 @@ describe("automatic primary model routing",()=>{
     await collect(deps,{...input,messages:[{role:"user",content:"이 아키텍처의 장단점을 설명해 주세요."}]});
     expect(channel.seenParams[0]).toMatchObject({model:"local/base",reasoningEffort:"medium"});
   });
+  it.each([undefined,"local/fast"])("uses the configured main after a routed transport failure with fallback=%s",async(fallbackModel)=>{
+    const base=new FakeChannel([[contentChunk("base answer")]]);let failedCalls=0;
+    const channel:AgentDeps["channel"]={getModel:async(name)=>name==="local/fast"?{
+      getResponse:async()=>{throw new Error("unused");},async *getStreamedResponse(){failedCalls++;throw Object.assign(new Error("unavailable"),{status:503});},
+    }:base.getModel(name)};
+    const {deps}=setup(channel);const chunks=await collect(deps,{...input,fallbackModel});
+    expect(failedCalls).toBe(1);expect(base.seenParams.map(request=>request.model)).toEqual(["local/base"]);
+    expect(chunks.some(chunk=>chunk.error)).toBe(false);expect(chunks.map(chunk=>chunk.delta?.content??"").join("")).toBe("base answer");
+  });
   it("admits an operator-configured transport fallback even outside the automatic tier pool",async()=>{
     replaceModelRegistry([...listModels(),model("local/fallback")]);
     const fallback=new FakeChannel([[contentChunk("fallback answer")]]);let failedCalls=0;
@@ -155,6 +164,12 @@ describe("automatic primary model routing",()=>{
     const saved=await readRuntimeSession(f.services,"chat-1",f.scope.ownerEmail);
     expect(saved?.document.checkpoint?.status).toBe("pending");
     expect(saved?.document.checkpoint?.graph.routing?.calls).toBe(1);
+  });
+  it("does not treat image-shaped schema examples as native input images",()=>{
+    const request:ModelRequest={input:"Describe metadata",tools:[],handoffs:[],modelSettings:{},tracing:false,
+      outputType:{type:"json_schema",name:"metadata",strict:false,schema:{type:"object",properties:{type:{type:"string"},image:{type:"string"}},required:["type","image"],additionalProperties:false,const:{type:"image",image:"example"}} as JsonSchemaDefinition["schema"]}};
+    const task=primaryRoutingTask(request,input);
+    expect(task.imageCount).toBe(0);expect(task.purpose).toBe("general");expect(task.requiresStructuredOutput).toBe(true);
   });
   it("uses full system, tools, replay and image context for admission without counting image bytes as text",()=>{
     const request:ModelRequest={input:[{role:"user",content:[{type:"input_text",text:"도형"},{type:"input_image",image:"data:image/png;base64,"+"A".repeat(100_000),detail:"auto"}]}],systemInstructions:"system ".repeat(1_000),tools:[],handoffs:[],outputType:"text",modelSettings:{},tracing:false};
