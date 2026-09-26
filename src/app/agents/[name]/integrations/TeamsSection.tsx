@@ -12,6 +12,7 @@ import {
   updateAgentTeams,
 } from "../../lib/api";
 import type { AgentTeamsResponse } from "../../lib/api";
+import type { IntegrationSummary } from "@/app/api/agents/_lib/http";
 import { Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
 import { useT } from "@/app/_i18n/provider";
@@ -21,10 +22,12 @@ export function TeamsSection({
   agentName,
   onSelect,
   selected,
+  onConnectionChange,
 }: {
   agentName: string;
   onSelect?: () => void;
   selected?: boolean;
+  onConnectionChange?: (summary: IntegrationSummary) => void;
 }) {
   const t = useT();
   const [view, setView] = useState<AgentTeamsResponse | null>(null);
@@ -75,6 +78,7 @@ export function TeamsSection({
       setTenantId(next.tenantId);
       setEnabled(next.enabled);
       setStatus("Saved");
+      onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
     } catch (e) {
       setError(reportError(e, "Save failed"));
     } finally {
@@ -116,6 +120,7 @@ export function TeamsSection({
       setTenantId("");
       setEnabled(false);
       setStatus("Disconnected");
+      onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
     } catch (e) {
       setError(reportError(e, "Disconnect failed"));
     } finally {

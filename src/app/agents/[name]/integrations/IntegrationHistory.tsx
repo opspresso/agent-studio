@@ -32,23 +32,20 @@ const TRACE_ACTOR = {
 
 type History = { kind: "trace"; traces: Trace[] } | { kind: "trigger"; runs: TriggerRun[] };
 
-async function readHistory(agentName: string, selected: IntegrationKind): Promise<History> {
+async function readHistory(agentName: string, selected: IntegrationKind, signal: AbortSignal): Promise<History> {
   if (selected in TRACE_ACTOR) {
     const actorKind = TRACE_ACTOR[selected as keyof typeof TRACE_ACTOR];
-    const { traces } = await listTraces(agentName, { actorKind });
+    const { traces } = await listTraces(agentName, { actorKind }, signal);
     return { kind: "trace", traces };
   }
-  const { triggers } = await listTriggers(agentName);
+  const { triggers } = await listTriggers(agentName, signal);
   if (selected === "webhook") {
     const webhook = triggers.find(trigger => trigger.kind === "webhook" && trigger.triggerId === AGENT_WEBHOOK_ID);
-    const runs = webhook ? (await listTriggerRuns(agentName, webhook.triggerId)).runs : [];
+    const runs = webhook ? (await listTriggerRuns(agentName, webhook.triggerId, undefined, signal)).runs : [];
     return { kind: "trigger", runs };
   }
   const schedules = triggers.filter(trigger => trigger.kind === "schedule");
-  const grouped = await loadScheduleRuns(agentName, schedules);
-  const runs = Object.values(grouped).flat().sort((a, b) =>
-    (b.queuedAt ?? b.startedAt ?? b.scheduledFor ?? "").localeCompare(a.queuedAt ?? a.startedAt ?? a.scheduledFor ?? ""));
-  return { kind: "trigger", runs: runs.slice(0, 50) };
+  return { kind: "trigger", runs: await loadScheduleRuns(agentName, schedules, listTriggerRuns, signal) };
 }
 
 export function IntegrationHistory({ agentName, selected }: { agentName: string; selected: IntegrationKind | null }) {
@@ -67,12 +64,13 @@ export function IntegrationHistory({ agentName, selected }: { agentName: string;
       setLoading(false);
       return;
     }
+    const controller = new AbortController();
     setLoading(true);
-    void readHistory(agentName, selected)
+    void readHistory(agentName, selected, controller.signal)
       .then(value => { if (current) setHistory(value); })
       .catch(reason => { if (current) setError(reason instanceof Error ? reason.message : t("pint.historyFailed")); })
       .finally(() => { if (current) setLoading(false); });
-    return () => { current = false; };
+    return () => { current = false; controller.abort(); };
   }, [agentName, selected, revision, t]);
 
   return <aside className={classes.panel} aria-label={t("pint.historyTitle")}>
@@ -81,7 +79,7 @@ export function IntegrationHistory({ agentName, selected }: { agentName: string;
         <Title order={3} fz="lg">{t("pint.historyTitle")}</Title>
         <Text fz="sm" c="dimmed" mt={4}>{selected ? t(LABEL[selected]) : t("pint.historyChoose")}</Text>
       </div>
-      {selected && <Button variant="subtle" size="compact-sm" onClick={() => setRevision(value => value + 1)}>
+      {selected && <Button variant="subtle" size="compact-sm" disabled={loading} onClick={() => setRevision(value => value + 1)}>
         {t("pint.historyRefresh")}
       </Button>}
     </div>

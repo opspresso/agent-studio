@@ -373,7 +373,7 @@ Agents·Plugins·Skills·Tools·Models 카탈로그는 행/그리드 보기를 �
 `CatalogCollection`이 카탈로그의 로딩·오류·빈 상태를, `CatalogLayout.module.css`가 콘텐츠
 너비에 맞춘 최대 4열 배치를 소유한다. 행의 반응형 배치도 본문 컨테이너 너비를 따른다.
 Agent 상세의 Playground·Integrations·Settings는 `AgentPageColumns.module.css`의 동일한
-7:5 가로 비율을 쓴다. 한 영역만 있는 두 페이지는 왼쪽 영역을 사용하고, 작은 화면에서는 전체 폭으로 쌓인다.
+7:5 가로 비율을 쓴다. Settings처럼 한 영역만 있는 페이지는 왼쪽 영역을 사용하고, 작은 화면에서는 전체 폭으로 쌓인다.
 Agent의 API 토큰·봇·Webhook·Schedules는 Integrations에서 관리하고, 공개 범위·비용 한도·기본 정보는 Settings에서 관리한다.
 외부에서 발급받는 키는 `SecretInput`으로 입력한다. 저장된 마스킹 값과 교체 초안을 분리하고,
 저장된 키는 앞뒤 4자를 드러낸 서버 마스크로 표시한다(8자 이하는 전부 숨긴다).

@@ -112,6 +112,7 @@ export function deleteAgent(name: string): Promise<void> {
 export function listTraces(
   name: string,
   range?: { from?: string; to?: string; actorKind?: import("@/domain/execution/actor").RunActorKind },
+  signal?: AbortSignal,
 ): Promise<{ traces: Trace[] }> {
   const query = new URLSearchParams();
   if (range?.from) {
@@ -124,7 +125,7 @@ export function listTraces(
     query.set("actorKind", range.actorKind);
   }
   const qs = query.toString();
-  return fetch(`/api/agents/${name}/traces${qs ? `?${qs}` : ""}`).then((r) =>
+  return fetch(`/api/agents/${name}/traces${qs ? `?${qs}` : ""}`, { signal }).then((r) =>
     readJson<{ traces: Trace[] }>(r),
   );
 }
@@ -468,8 +469,8 @@ import type {
   UpdateTriggerInput,
 } from "@/application/trigger/triggerUseCases";
 
-export function listTriggers(name: string): Promise<{ triggers: TriggerView[] }> {
-  return fetch(`/api/agents/${name}/triggers`).then((r) =>
+export function listTriggers(name: string, signal?: AbortSignal): Promise<{ triggers: TriggerView[] }> {
+  return fetch(`/api/agents/${name}/triggers`, { signal }).then((r) =>
     readJson<{ triggers: TriggerView[] }>(r),
   );
 }
@@ -508,8 +509,10 @@ export function revealTriggerSecret(name: string, triggerId: string): Promise<st
 export function listTriggerRuns(
   name: string,
   triggerId: string,
+  limit?: number,
+  signal?: AbortSignal,
 ): Promise<{ runs: import("@/domain/trigger/types").TriggerRun[] }> {
-  return fetch(`/api/agents/${name}/triggers/${triggerId}/runs`).then((r) =>
+  return fetch(`/api/agents/${name}/triggers/${triggerId}/runs${limit === undefined ? "" : `?limit=${limit}`}`, { signal }).then((r) =>
     readJson<{ runs: import("@/domain/trigger/types").TriggerRun[] }>(r),
   );
 }
