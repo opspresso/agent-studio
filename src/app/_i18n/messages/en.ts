@@ -776,10 +776,10 @@ export const en = {
     "In an Agent's Integrations, save and enable the Telegram bot token; enabling registers its webhook. Use Register webhook again after an application URL change. For Teams, enable the Azure Bot's Teams channel, save its application ID and client secret (plus tenant ID for a single-tenant app), and set its messaging endpoint to the displayed URL. Test in a direct conversation before trying group mentions.",
   "guide.integrations.webhook": "Receive a webhook",
   "guide.integrations.webhookBody":
-    "Enable the Agent webhook in Settings. Generic callers send X-Trigger-Secret; GitHub uses the same secret to sign X-Hub-Signature-256. The JSON payload becomes a user message. HTTP 202 acknowledges delivery; check Trigger history for execution and skipped runs. With overlap disabled, deliveries arriving during a run are skipped.",
+    "Enable the Agent webhook in Integrations. Generic callers send X-Trigger-Secret; GitHub uses the same secret to sign X-Hub-Signature-256. The JSON payload becomes a user message. HTTP 202 acknowledges delivery; check Trigger history for execution and skipped runs. With overlap disabled, deliveries arriving during a run are skipped.",
   "guide.integrations.schedule": "Schedule a recurring task",
   "guide.integrations.scheduleBody":
-    "In Agent Settings, add a schedule with a five-field cron expression, an IANA time zone such as Asia/Seoul, and the message to run. Select any delivery destinations and enable it. Schedules use the current Agent configuration and require the deployment's external ticker. Check both run status and delivery results: a generated answer can succeed even when sending it to a bot fails.",
+    "In Agent Integrations, add a schedule with a five-field cron expression, an IANA time zone such as Asia/Seoul, and the message to run. Select any delivery destinations and enable it. Schedules use the current Agent configuration and require the deployment's external ticker. Check both run status and delivery results: a generated answer can succeed even when sending it to a bot fails.",
 
   "guide.records.title": "Results, usage, and limits",
   "guide.records.artifacts": "Find originals and generated files",
@@ -1355,7 +1355,7 @@ export const en = {
 
   // The agent's Integrations tab: how other systems reach it.
   "pint.lede":
-    "How other systems reach this Agent — its API token and the chat platforms whose bots run it. Agent settings, cost limits and triggers stay under Settings.",
+    "Connect this Agent through its API token, chat bots, webhook and schedules. Choose an integration to inspect its recent activity.",
   "pint.ownerOnly": "Only the Agent owner ({owner}) or an admin can change these integrations.",
 
   // An agent's settings tab: the sections and their forms.

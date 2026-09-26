@@ -10,8 +10,6 @@ import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { CostLimitsSection } from "./CostLimitsSection";
 import { VisibilitySection } from "./VisibilitySection";
-import { SchedulesSection } from "./SchedulesSection";
-import { WebhookSection } from "./WebhookSection";
 import { Alert, Button, Group, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
@@ -177,10 +175,6 @@ export default function SettingsPage() {
       <VisibilitySection key={`visibility:${name}`} agentName={name} agent={agent} />
 
       <CostLimitsSection key={`cost:${name}`} agentName={name} agent={agent} />
-
-      <WebhookSection agentName={name} />
-
-      <SchedulesSection key={`schedules:${name}`} agentName={name} agent={agent} />
 
       <CollapsibleSection title={t("pset.dangerZone")} danger>
         <Stack gap="sm" align="flex-start">

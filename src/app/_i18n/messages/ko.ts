@@ -732,10 +732,10 @@ export const ko: Messages = {
     "Agent의 Integrations에서 Telegram bot token을 저장하고 활성화하면 webhook이 등록된다. 앱 주소가 바뀌면 Register webhook으로 다시 등록한다. Teams는 Azure Bot의 Teams 채널을 활성화하고 application ID·client secret, 단일 tenant 앱이면 tenant ID를 저장한 뒤 표시된 URL을 messaging endpoint로 설정한다. 그룹 멘션을 시험하기 전에 다이렉트 대화에서 확인한다.",
   "guide.integrations.webhook": "웹훅으로 실행하기",
   "guide.integrations.webhookBody":
-    "Settings에서 Agent webhook을 활성화한다. 일반 발신자는 X-Trigger-Secret을 보내고 GitHub는 같은 Secret으로 X-Hub-Signature-256 서명을 만든다. JSON 본문은 사용자 메시지로 전달된다. HTTP 202는 접수 응답이므로 Trigger 이력에서 실행·건너뜀 결과를 확인한다. 동시 실행을 허용하지 않으면 실행 중 들어온 전달은 건너뛴다.",
+    "Agent 연동에서 Webhook을 활성화한다. 일반 발신자는 X-Trigger-Secret을 보내고 GitHub는 같은 Secret으로 X-Hub-Signature-256 서명을 만든다. JSON 본문은 사용자 메시지로 전달된다. HTTP 202는 접수 응답이므로 Trigger 이력에서 실행·건너뜀 결과를 확인한다. 동시 실행을 허용하지 않으면 실행 중 들어온 전달은 건너뛴다.",
   "guide.integrations.schedule": "반복 작업 예약하기",
   "guide.integrations.scheduleBody":
-    "Agent Settings에서 다섯 필드 cron 식, Asia/Seoul 같은 IANA 시간대, 실행할 메시지를 지정해 스케줄을 추가한다. 필요하면 전송 목적지를 선택하고 활성화한다. 스케줄은 현재 Agent 설정을 사용하며 배포 환경의 외부 티커가 필요하다. 답변 생성은 성공해도 봇 전송이 실패할 수 있으므로 실행 상태와 전달 결과를 함께 확인한다.",
+    "Agent 연동에서 다섯 필드 cron 식, Asia/Seoul 같은 IANA 시간대, 실행할 메시지를 지정해 스케줄을 추가한다. 필요하면 전송 목적지를 선택하고 활성화한다. 스케줄은 현재 Agent 설정을 사용하며 배포 환경의 외부 티커가 필요하다. 답변 생성은 성공해도 봇 전송이 실패할 수 있으므로 실행 상태와 전달 결과를 함께 확인한다.",
 
   "guide.records.title": "결과물·사용량·한도",
   "guide.records.artifacts": "원본과 생성 파일 찾기",
@@ -1274,7 +1274,7 @@ export const ko: Messages = {
 
   // Agent의 연동 탭: 다른 시스템이 이 Agent에 닿는 방법.
   "pint.lede":
-    "다른 시스템이 이 Agent에 닿는 방법입니다 — API 토큰과 봇이 Agent를 실행하는 채팅 플랫폼을 관리합니다. Agent 설정·비용 한도·트리거는 설정 탭에 있습니다.",
+    "API 토큰, 채팅 봇, Webhook과 Schedules로 이 Agent를 연결합니다. 연동을 선택해 최근 활동을 확인하세요.",
   "pint.ownerOnly": "Agent 소유자({owner})나 admin 만 이 연동을 바꿀 수 있습니다.",
 
   "pset.dangerZone": "위험 구역",

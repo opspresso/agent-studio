@@ -441,8 +441,8 @@ Trigger 계층에서 처리하고 실행은 공통 Agent 경로를 사용한다.
 
 예약 실행은 외부 ticker가 호출한다.
 
-구현 근거: [Webhook 설정](../src/app/agents/[name]/settings/WebhookSection.tsx),
-[Schedule 설정](../src/app/agents/[name]/settings/SchedulesSection.tsx), [Trigger 설계](design/triggers.md).
+구현 근거: [Webhook 설정](../src/app/agents/[name]/integrations/WebhookSection.tsx),
+[Schedule 설정](../src/app/agents/[name]/integrations/SchedulesSection.tsx), [Trigger 설계](design/triggers.md).
 
 ## 10. Workspace·Sandbox·Coding
 

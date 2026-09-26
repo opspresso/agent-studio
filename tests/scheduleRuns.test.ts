@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   loadScheduleRuns,
   MAX_CONCURRENT_SCHEDULE_RUN_READS,
-} from "@/app/agents/[name]/settings/scheduleRuns";
+} from "@/app/agents/[name]/integrations/scheduleRuns";
 
 describe("loadScheduleRuns", () => {
   it("bounds per-schedule requests and preserves every result key", async () => {

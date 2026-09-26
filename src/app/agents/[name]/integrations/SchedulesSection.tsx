@@ -27,7 +27,7 @@ import {
   findTelegramDestination,
   telegramDestinationLabel,
   telegramDestinationValue,
-} from "./telegramDestinations";
+} from "../_components/telegramDestinations";
 import { reportError } from "@/app/_lib/reportError";
 import { loadScheduleRuns } from "./scheduleRuns";
 

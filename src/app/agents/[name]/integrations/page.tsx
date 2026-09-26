@@ -5,12 +5,14 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Alert, Stack } from "@mantine/core";
 import { canEditAgent, useViewer } from "@/app/_lib/useViewer";
-import { getAgent } from "../../lib/api";
+import { getAgent, type SanitizedAgent } from "../../lib/api";
 import { LoadingText } from "@/app/_components/PageState";
 import { SlackSection } from "./SlackSection";
 import { TeamsSection } from "./TeamsSection";
 import { TelegramSection } from "./TelegramSection";
 import { TokenSection } from "./TokenSection";
+import { WebhookSection } from "./WebhookSection";
+import { SchedulesSection } from "./SchedulesSection";
 import { useT } from "@/app/_i18n/provider";
 import columns from "../AgentPageColumns.module.css";
 
@@ -25,16 +27,16 @@ export default function IntegrationsPage() {
   const params = useParams<{ name: string }>();
   const name = params.name;
   const viewer = useViewer();
-  const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
+  const [agent, setAgent] = useState<SanitizedAgent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     getAgent(name)
-      .then((agent) => {
+      .then((loaded) => {
         if (!cancelled) {
-          setOwnerEmail(agent.ownerEmail);
+          setAgent(loaded);
         }
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Failed to load agent"))
@@ -57,11 +59,12 @@ export default function IntegrationsPage() {
   if (viewer === null) {
     return <LoadingText />;
   }
-  if (!canEditAgent(viewer, ownerEmail)) {
+  if (!agent) return <LoadingText />;
+  if (!canEditAgent(viewer, agent.ownerEmail)) {
     return (
       <div className={columns.split}>
         <Alert variant="light" color="gray" className={columns.primary}>
-          {t("pint.ownerOnly", { owner: ownerEmail ?? "unknown" })}
+          {t("pint.ownerOnly", { owner: agent.ownerEmail })}
         </Alert>
       </div>
     );
@@ -75,6 +78,8 @@ export default function IntegrationsPage() {
         <SlackSection agentName={name} />
         <TelegramSection agentName={name} />
         <TeamsSection agentName={name} />
+        <WebhookSection agentName={name} />
+        <SchedulesSection key={`schedules:${name}`} agentName={name} agent={agent} />
       </Stack>
     </div>
   );
