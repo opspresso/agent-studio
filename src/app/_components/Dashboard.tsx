@@ -2,19 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatUsd } from "@/app/_lib/formatUsd";
-import { Alert, Card, Group, SimpleGrid, Stack } from "@mantine/core";
-import {
-  IconActivity,
-  IconChartAreaLine,
-  IconCoins,
-  IconLayersIntersect,
-} from "@tabler/icons-react";
+import { Alert, Group, Stack, Text } from "@mantine/core";
 import type { SanitizedAgent } from "@/app/agents/lib/api";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { SectionHeading } from "./SectionHeading";
 import { CardHeading } from "./CardHeading";
 import { GROUP_BY_LABEL, GroupByControl } from "./GroupByControl";
-import { StatCard } from "./StatCard";
 import { UsageBreakdown } from "./UsageBreakdown";
 import {
   buildDailySeries,
@@ -106,7 +99,6 @@ export function Dashboard({ agents }: { agents: SanitizedAgent[] | null }) {
   const calls = useMemo(() => totalCalls(items), [items]);
   const averageCost = calls > 0 ? cost / calls : 0;
   const usageUnavailable = loading || error !== null;
-  const usageDetail = loading ? t("common.loading") : error ? t("usage.loadFailed") : t("cost.selectedPeriod");
 
   return (
     <Stack gap="xl">
@@ -132,34 +124,13 @@ export function Dashboard({ agents }: { agents: SanitizedAgent[] | null }) {
         </Alert>
       )}
 
-      <SimpleGrid cols={{ base: 1, xs: 2, xl: 4 }} spacing="md">
-        <StatCard
-          label={t("cost.totalCost")}
-          value={usageUnavailable ? "—" : formatUsd(cost)}
-          detail={usageDetail}
-          Icon={IconCoins}
-        />
-        <StatCard
-          label={t("cost.totalCalls")}
-          value={usageUnavailable ? "—" : calls.toLocaleString(locale)}
-          detail={usageUnavailable ? usageDetail : t("cost.modelInvocations")}
-          Icon={IconActivity}
-        />
-        <StatCard
-          label={t("cost.averageCost")}
-          value={usageUnavailable ? "—" : formatUsd(averageCost, 4)}
-          detail={usageUnavailable ? usageDetail : t("cost.perInvocation")}
-          Icon={IconChartAreaLine}
-        />
-        <StatCard
-          label={t("cost.activeGroups")}
-          value={usageUnavailable ? "—" : groups.length.toLocaleString(locale)}
-          detail={usageUnavailable ? usageDetail : t("usage.groupedBy", { axis: t(GROUP_BY_LABEL[groupBy]) })}
-          Icon={IconLayersIntersect}
-        />
-      </SimpleGrid>
+      <div className={classes.summary} aria-busy={loading}>
+        <div><Text>{t("cost.totalCost")}</Text><strong>{usageUnavailable ? "—" : formatUsd(cost)}</strong></div>
+        <div><Text>{t("cost.totalCalls")}</Text><strong>{usageUnavailable ? "—" : calls.toLocaleString(locale)}</strong></div>
+        <div><Text>{t("cost.averageCost")}</Text><strong>{usageUnavailable ? "—" : formatUsd(averageCost, 4)}</strong></div>
+      </div>
 
-      <Card className={classes.chartCard}>
+      <div className={classes.chartPanel}>
         <Group justify="space-between" mb="md" gap="md" wrap="wrap">
           <CardHeading
             title={t("cost.dailyCost")}
@@ -172,7 +143,7 @@ export function Dashboard({ agents }: { agents: SanitizedAgent[] | null }) {
           keys={daily.keys}
           empty={loading ? t("common.loading") : error ? t("usage.loadFailed") : t("usage.none")}
         />
-      </Card>
+      </div>
 
       <UsageBreakdown groups={groups} label={groupBy} loading={loading} failed={error !== null} />
     </Stack>

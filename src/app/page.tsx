@@ -23,7 +23,7 @@ const BENEFITS = [
 export default async function Home() {
   const user = await getSessionUser();
   if (user) {
-    return <Overview userName={user.name} userEmail={user.email} tier={user.tier} />;
+    return <Overview userEmail={user.email} tier={user.tier} />;
   }
 
   const t = await getT();

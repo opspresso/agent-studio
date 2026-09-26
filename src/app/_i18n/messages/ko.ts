@@ -515,8 +515,7 @@ export const ko: Messages = {
   "usage.stackedBy": "{axis} 기준 누적",
 
   "cost.title": "비용",
-  "cost.lede":
-    "각 Agent가 얼마를 쓰는지 모델 레지스트리 단가로 호출마다 계산합니다. 일간·월간 한도에 닿으면 경고하고, 넘으면 거절합니다.",
+  "cost.lede": "선택한 기간의 모델 호출과 예상 비용입니다.",
   "cost.departmentsFailed":
     "Agent 부서 정보를 불러오지 못해 모든 Agent를 “(none)” 으로 묶었습니다. 새로고침하면 다시 귀속됩니다.",
   "cost.totalCost": "총 비용",
@@ -524,8 +523,6 @@ export const ko: Messages = {
   "cost.totalCalls": "총 호출",
   "cost.modelInvocations": "모델 호출 횟수",
   "cost.averageCost": "평균 비용",
-  "cost.perInvocation": "호출당",
-  "cost.activeGroups": "활성 그룹",
   "cost.dailyCost": "일별 비용",
 
   "error.pageTitle": "페이지를 표시할 수 없습니다",
@@ -543,20 +540,19 @@ export const ko: Messages = {
   "attach.tooManyDocuments": "메시지당 문서는 최대 {count} 개입니다",
   "attach.unreadable": "{name}: 읽을 수 없습니다",
 
-  "overview.welcome": "{name}님, 다시 오셨네요",
-  "overview.welcomeAnon": "다시 오셨네요",
-  "overview.lede":
-    "Agent를 설정하고 콘솔에서 요청을 테스트한 뒤 필요한 시스템에 연결하세요. 이미지·문서 작업과 백그라운드 오디오 처리도 Agent 도구로 구성할 수 있습니다.",
+  "overview.title": "작업 개요",
+  "overview.lede": "대화를 이어가거나 Agent를 열고 모델 사용량을 확인하세요.",
+  "overview.inventory": "등록된 역량",
   "overview.newAgent": "새 Agent",
   "overview.newChat": "새 Chat",
   "overview.recentAgents": "최근 Agents",
-  "overview.recentAgentsNote": "내 Agent를 먼저, 다른 Agent는 최근 수정된 순서로 보여 줍니다.",
+  "overview.recentAgentsNote": "내 Agent를 먼저, 최근 수정된 Agent를 이어서 보여 줍니다.",
   "overview.allAgents": "전체 보기",
   "overview.agentsFailed": "Agents를 불러오지 못했습니다.",
   "overview.noAgents": "아직 Agent가 없습니다.",
   "overview.chatsFailed": "최근 Chats와 Workspaces를 불러오지 못했습니다. 새로고침해 다시 확인하세요.",
   "overview.recentChats": "최근 Chats · Workspaces",
-  "overview.recentChatsNote": "유형을 확인하고 Chat 또는 파일 작업을 이어가세요.",
+  "overview.recentChatsNote": "대화나 Workspace 작업으로 돌아가세요.",
   "overview.allChats": "전체 보기",
   "overview.noChats": "아직 Chat이나 Workspace가 없습니다.",
   "overview.getStarted": "Agent로 시작하기",

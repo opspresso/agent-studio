@@ -1,3 +1,19 @@
-.chartCard {
-  padding: clamp(18px, 3vw, 28px);
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--studio-border);
+  border-bottom: 1px solid var(--studio-border);
+}
+
+.summary > div { padding: 18px 22px; }
+.summary > div + div { border-left: 1px solid var(--studio-border); }
+.summary p { color: var(--mantine-color-dimmed); font-size: 12px; }
+.summary strong { display: block; margin-top: 5px; font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+
+.chartPanel { padding: 16px 0 0; }
+
+@media (max-width: 600px) {
+  .summary { grid-template-columns: 1fr; }
+  .summary > div { padding: 14px 0; }
+  .summary > div + div { border-left: 0; border-top: 1px solid var(--studio-border); }
 }

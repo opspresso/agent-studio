@@ -549,8 +549,7 @@ export const en = {
 
   // The cost dashboard on the overview.
   "cost.title": "Cost",
-  "cost.lede":
-    "What every Agent spends, priced per call from the model registry — with daily and monthly limits that warn, then refuse.",
+  "cost.lede": "Model calls and estimated cost for the selected period.",
   "cost.departmentsFailed":
     "Agent departments could not be loaded, so every Agent is shown under “(none)”. Reload to attribute this spend.",
   "cost.totalCost": "Total cost",
@@ -558,8 +557,6 @@ export const en = {
   "cost.totalCalls": "Total calls",
   "cost.modelInvocations": "Model invocations",
   "cost.averageCost": "Average cost",
-  "cost.perInvocation": "Per invocation",
-  "cost.activeGroups": "Active groups",
   "cost.dailyCost": "Daily cost",
 
   // Page-level failures: the segment error boundaries and the missing page.
@@ -580,20 +577,19 @@ export const en = {
   "attach.unreadable": "{name}: unreadable",
 
   // The signed-in home.
-  "overview.welcome": "Welcome back, {name}",
-  "overview.welcomeAnon": "Welcome back",
-  "overview.lede":
-    "Configure Agents, test requests in the console, and connect them to other systems. Agent tools support images, documents, and background audio processing.",
+  "overview.title": "Workspace overview",
+  "overview.lede": "Continue a conversation, open an Agent, or review model usage.",
+  "overview.inventory": "Registered capabilities",
   "overview.newAgent": "New Agent",
   "overview.newChat": "New Chat",
   "overview.recentAgents": "Recent Agents",
-  "overview.recentAgentsNote": "Your Agents come first, followed by other recently updated Agents.",
+  "overview.recentAgentsNote": "Your Agents first, then recently updated Agents.",
   "overview.allAgents": "All Agents",
   "overview.agentsFailed": "Agents could not be loaded.",
   "overview.noAgents": "No Agents yet.",
   "overview.chatsFailed": "Could not load recent Chats and Workspaces. Reload to try again.",
   "overview.recentChats": "Recent Chats & Workspaces",
-  "overview.recentChatsNote": "Check the type and continue the Chat or Workspace task.",
+  "overview.recentChatsNote": "Return to a conversation or Workspace task.",
   "overview.allChats": "View all",
   "overview.noChats": "No Chats or Workspaces yet.",
   "overview.getStarted": "Start with an Agent",

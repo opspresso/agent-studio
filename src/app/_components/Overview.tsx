@@ -5,12 +5,9 @@ import { useEffect, useState } from "react";
 import {
   Alert,
   Anchor,
-  Badge,
   Button,
-  Card,
   Group,
   Paper,
-  SimpleGrid,
   Skeleton,
   Stack,
   Text,
@@ -20,12 +17,10 @@ import {
 } from "@mantine/core";
 import {
   IconArrowRight,
-  IconBook2,
   IconRobot,
   IconMessageCircle,
   IconPlus,
   IconSparkles,
-  IconTool,
 } from "@tabler/icons-react";
 import { readJson } from "@/app/_lib/httpClient";
 import { recentAgents } from "@/app/_lib/overview";
@@ -52,14 +47,13 @@ const RECENT_CHATS = 7;
  * are bounded registries rather than growing tables.
  */
 const CATALOGS = [
-  { key: "skills", href: "/skills", label: "nav.skills", url: "/api/skills", Icon: IconBook2 },
-  { key: "tools", href: "/tools", label: "nav.tools", url: "/api/mcps", Icon: IconTool },
+  { key: "skills", href: "/skills", label: "nav.skills", url: "/api/skills" },
+  { key: "tools", href: "/tools", label: "nav.tools", url: "/api/mcps" },
 ] as const satisfies ReadonlyArray<{
   key: string;
   href: string;
   label: MessageKey;
   url: string;
-  Icon: typeof IconBook2;
 }>;
 
 type CatalogKey = (typeof CATALOGS)[number]["key"];
@@ -68,17 +62,13 @@ type CatalogKey = (typeof CATALOGS)[number]["key"];
  * The signed-in home.
  *
  * The viewer arrives as props rather than through `useSession()`: the page is a
- * server component that has already awaited the session, and a hook that
- * resolves after hydration renders a different greeting than the server sent —
- * which is a hydration mismatch, not a flicker. It also means the first render
- * already knows whose agents are whose.
+ * server component that has already awaited the session, so the first render
+ * knows which catalog links are available and whose Agents are whose.
  */
 export function Overview({
-  userName,
   userEmail,
   tier,
 }: {
-  userName: string;
   userEmail: string;
   /**
    * Arrives as a prop for the same reason the email does: `useViewer()` answers
@@ -176,146 +166,85 @@ export function Overview({
   }, [showCatalogs]);
 
   const recent = recentAgents(agents ?? [], viewerEmail, RECENT_AGENTS);
-  const firstName = userName.split(" ")[0];
   // Only once both have answered, so the first-run panel never flashes over a
   // workspace that simply had not loaded yet.
   const isNewWorkspace =
     agentsLoaded && chatsLoaded && agents !== null && agents.length === 0 && !chatsFailed && chats.length === 0;
 
   return (
-    <Stack gap={32}>
-      <PageHeader title={firstName ? t("overview.welcome", { name: firstName }) : t("overview.welcomeAnon")} description={t("overview.lede")} Icon={IconSparkles}>
-          <Button component={Link} href={canCreateAgents ? "/agents?create=1" : "/agents"} leftSection={canCreateAgents ? <IconPlus size={16} /> : <IconRobot size={16} />}>
-            {t(canCreateAgents ? "overview.newAgent" : "overview.allAgents")}
-          </Button>
-          <Button
-            component={Link}
-            href="/chats"
-            variant="default"
-            leftSection={<IconMessageCircle size={16} />}
-          >
-            {t("overview.newChat")}
-          </Button>
+    <Stack gap={36}>
+      <PageHeader title={t("overview.title")} description={t("overview.lede")}>
+        <Button component={Link} href="/chats" leftSection={<IconMessageCircle size={16} />}>
+          {t("overview.newChat")}
+        </Button>
+        <Button component={Link} href={canCreateAgents ? "/agents?create=1" : "/agents"}
+          variant="default" leftSection={canCreateAgents ? <IconPlus size={16} /> : <IconRobot size={16} />}>
+          {t(canCreateAgents ? "overview.newAgent" : "overview.allAgents")}
+        </Button>
       </PageHeader>
 
       {isNewWorkspace ? (
         <GetStarted showCatalogs={showCatalogs} canCreateAgents={canCreateAgents} />
       ) : (
-        <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" style={{ alignItems: "start" }}>
-          <Section
-            title={t("overview.recentAgents")}
-            description={t("overview.recentAgentsNote")}
-            href="/agents"
-            linkLabel={t("overview.allAgents")}
-          >
-            {!agentsLoaded && <RowSkeleton rows={3} />}
-            {agentsLoaded && agents === null && (
-              <Alert color="red" variant="light">
-                {t("overview.agentsFailed")}
-              </Alert>
-            )}
-            {agentsLoaded && agents !== null && recent.length === 0 && (
-              <EmptyLine>{t("overview.noAgents")}</EmptyLine>
-            )}
-            <Stack gap="sm">
-              {recent.map((agent) => (
-                <Card key={agent.name} component={Link} href={`/agents/${agent.name}`} padding="sm" className={classes.agentRow}>
-                  <Group justify="space-between" gap="xs" wrap="nowrap">
-                    <Text fw={500} truncate>
-                      {agent.displayName || agent.name}
-                    </Text>
-                  </Group>
-                  <Text ff="monospace" fz="xs" c="dimmed" mt={2}>
-                    {agent.name}
-                  </Text>
-                  <OwnerLine
-                    ownerEmail={agent.ownerEmail}
-                    isMine={viewerEmail === agent.ownerEmail}
-                    mt={6}
-                  />
-                </Card>
-              ))}
-            </Stack>
-          </Section>
-
-          <Section
-            title={t("overview.recentChats")}
-            description={t("overview.recentChatsNote")}
-            href="/chats"
-            linkLabel={t("overview.allChats")}
-          >
-            {!chatsLoaded && <RowSkeleton rows={3} />}
+        <div className={classes.activityGrid}>
+          <Section title={t("overview.recentChats")} description={t("overview.recentChatsNote")}
+            href="/chats" linkLabel={t("overview.allChats")}>
+            {!chatsLoaded && <RowSkeleton rows={4} />}
             {chatsLoaded && chatsFailed && <Alert color="red" variant="light">{t("overview.chatsFailed")}</Alert>}
             {chatsLoaded && !chatsFailed && chats.length === 0 && <EmptyLine>{t("overview.noChats")}</EmptyLine>}
-            <Stack gap={2}>
+            <div className={classes.chatList}>
               {chats.slice(0, RECENT_CHATS).map((chat) => (
-                <UnstyledButton
-                  key={chat.chatId}
-                  component={Link}
-                  href={`/chats/${chat.chatId}`}
-                  className={classes.chatRow}
-                >
-                  <Group gap="xs" wrap="nowrap">
-                    <Badge size="xs" variant="light">{chat.workspaceId ? t("workspace.kind") : t("chat.kind")}</Badge>
-                    <Text fz="sm" truncate>{chat.title}</Text>
-                  </Group>
-                  <Text fz="xs" c="dimmed" mt={2}>
-                    {chat.agentName ? `${chat.agentName} · ` : ""}
-                    {formatDate(chat.updatedAt, locale)}
+                <UnstyledButton key={chat.chatId} component={Link} href={`/chats/${chat.chatId}`}
+                  className={classes.chatRow}>
+                  <div className={classes.chatRowMain}>
+                    <span className={classes.kind}>{chat.workspaceId ? t("workspace.kind") : t("chat.kind")}</span>
+                    <Text component="span" truncate>{chat.title}</Text>
+                  </div>
+                  <Text className={classes.rowMeta}>
+                    {chat.agentName ? `${chat.agentName} · ` : ""}{formatDate(chat.updatedAt, locale)}
                   </Text>
                 </UnstyledButton>
               ))}
-            </Stack>
+            </div>
           </Section>
-        </SimpleGrid>
+
+          <Section title={t("overview.recentAgents")} description={t("overview.recentAgentsNote")}
+            href="/agents" linkLabel={t("overview.allAgents")}>
+            {!agentsLoaded && <RowSkeleton rows={3} />}
+            {agentsLoaded && agents === null && <Alert color="red" variant="light">{t("overview.agentsFailed")}</Alert>}
+            {agentsLoaded && agents !== null && recent.length === 0 && <EmptyLine>{t("overview.noAgents")}</EmptyLine>}
+            <div className={classes.agentList}>
+              {recent.map((agent) => (
+                <UnstyledButton key={agent.name} component={Link} href={`/agents/${agent.name}`}
+                  className={classes.agentRow}>
+                  <Group justify="space-between" gap="xs" wrap="nowrap">
+                    <Text fw={600} truncate>{agent.displayName || agent.name}</Text>
+                    <IconArrowRight size={16} aria-hidden="true" />
+                  </Group>
+                  {agent.description && <Text className={classes.agentDescription} lineClamp={2}>{agent.description}</Text>}
+                  <Text className={classes.rowMeta} ff="monospace">{agent.name}</Text>
+                  {viewerEmail !== agent.ownerEmail && (
+                    <OwnerLine ownerEmail={agent.ownerEmail} isMine={false} mt={4} />
+                  )}
+                </UnstyledButton>
+              ))}
+            </div>
+          </Section>
+        </div>
       )}
 
-      <SimpleGrid cols={{ base: 1, sm: 2, md: showCatalogs ? 3 : 1 }} spacing="md">
-        <CountTile
-          href="/agents"
-          label={t("nav.agents")}
-          count={agents?.length}
-          Icon={IconRobot}
-        />
-        {showCatalogs &&
-          CATALOGS.map(({ key, href, label, Icon }) => (
-            <CountTile key={key} href={href} label={t(label)} count={counts[key]} Icon={Icon} />
+      <nav aria-label={t("overview.inventory")} className={classes.inventory}>
+        <Text className={classes.inventoryLabel}>{t("overview.inventory")}</Text>
+        <div className={classes.inventoryLinks}>
+          <Link href="/agents"><span>{t("nav.agents")}</span><strong>{agents?.length ?? "—"}</strong></Link>
+          {showCatalogs && CATALOGS.map(({ key, href, label }) => (
+            <Link href={href} key={key}><span>{t(label)}</span><strong>{counts[key] ?? "—"}</strong></Link>
           ))}
-      </SimpleGrid>
-
-      <Dashboard agents={agents} />
-    </Stack>
-  );
-}
-
-function CountTile({
-  href,
-  label,
-  count,
-  Icon,
-}: {
-  href: string;
-  label: string;
-  /** Absent while loading, and after a failed read. */
-  count?: number;
-  Icon: typeof IconRobot;
-}) {
-  return (
-    <Card component={Link} href={href} padding="md">
-      <Group justify="space-between" align="flex-start" wrap="nowrap">
-        <div>
-          <Text fz="sm" fw={500} c="dimmed">
-            {label}
-          </Text>
-          <Text fz={24} fw={600} mt={4} lts="-0.035em">
-            {count ?? "—"}
-          </Text>
         </div>
-        <ThemeIcon variant="light" color="brand" size={34} radius="lg">
-          <Icon size={18} stroke={1.7} />
-        </ThemeIcon>
-      </Group>
-    </Card>
+      </nav>
+
+      <div className={classes.usageSection}><Dashboard agents={agents} /></div>
+    </Stack>
   );
 }
 
@@ -336,8 +265,8 @@ function Section({
     <Stack gap="md" component="section" className={classes.section}>
       <Group justify="space-between" align="flex-end" gap="xs" wrap="wrap">
         <div>
-          <Title order={2} fz="md" fw={600}>{title}</Title>
-          <Text fz="xs" c="dimmed">
+          <Title order={2} fz="xl" fw={650}>{title}</Title>
+          <Text fz="sm" c="dimmed" mt={4}>
             {description}
           </Text>
         </div>
