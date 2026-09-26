@@ -112,7 +112,7 @@ describe("translator", () => {
   });
 
   it("uses the deployment name in branded copy", () => {
-    expect(translator("en", "AgentOps")("home.coverage")).toBe("What AgentOps covers");
+    expect(translator("en", "AgentOps")("login.product")).toBe("AgentOps, a platform for building and using AI agents.");
     expect(translator("ko", "AgentOps")("login.product")).toBe("AgentOps에서 AI 에이전트를 만들고 활용하세요.");
   });
 
