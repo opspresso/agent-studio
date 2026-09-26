@@ -167,7 +167,6 @@ export function AppLayout({
   const [opened, { toggle, close }] = useDisclosure(false);
   const navViewport = useRef<HTMLDivElement>(null);
   const requiresLogin = viewer === null && !isPublicPagePath(pathname);
-  const chatFocus = pathname === "/chats" || pathname.startsWith("/chats/");
 
   useEffect(() => {
     if (requiresLogin) {
@@ -245,7 +244,7 @@ export function AppLayout({
       navbar={{
         width: 232,
         breakpoint: "md",
-        collapsed: { mobile: !opened || !showNav, desktop: !showNav || (chatFocus && !opened) },
+        collapsed: { mobile: !opened || !showNav, desktop: !showNav },
       }}
       padding={0}
     >
@@ -265,7 +264,7 @@ export function AppLayout({
               <Burger
                 opened={opened}
                 onClick={toggle}
-                hiddenFrom={chatFocus ? undefined : "md"}
+                hiddenFrom="md"
                 size="sm"
                 aria-label={t(opened ? "chrome.closeNavigation" : "chrome.openNavigation")}
               />
