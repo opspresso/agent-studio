@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Alert, Badge, Button, Card, FileButton, Group, Stack, Text } from "@mantine/core";
-import { IconPackage } from "@tabler/icons-react";
+import { Alert, Badge, Button, FileButton, Group, Stack, Text } from "@mantine/core";
+import { IconArrowRight, IconPackage } from "@tabler/icons-react";
 import { PluginSyncSummary } from "@/app/_components/PluginSyncSummary";
-import { CardGrid } from "@/app/_components/CardGrid";
+import { EmptyState, LoadingText } from "@/app/_components/PageState";
+import rows from "@/app/_components/CatalogRows.module.css";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useViewer } from "@/app/_lib/useViewer";
@@ -126,23 +127,23 @@ export default function PluginsPage() {
               disabled={syncing || !syncConfig?.configured}
               onClick={() => void syncFrom(null)}
             >
-              Sync from GitHub
+              {t("plugins.syncFromGitHub")}
             </Button>
           </Group>
         )}
       </PageHeader>
 
-      <Alert color="blue" variant="light" title={t("plugins.descriptionTitle")}>
-        {t("plugins.descriptionRole")}
-      </Alert>
+      <Text fz="sm" c="dimmed" maw={920}>
+        <strong>{t("plugins.descriptionTitle")}.</strong> {t("plugins.descriptionRole")}
+      </Text>
 
       {syncConfig && (
         <Text fz="xs" c={syncConfig.configured ? "dimmed" : "orange"}>
-          {syncConfig.configured
-            ? `GitHub source: ${syncConfig.repo} · ${syncConfig.branch}`
-            : "Plugin sync is not configured. Add the repository and token in Settings."}
+          {syncConfig.configured && syncConfig.repo
+            ? t("plugins.source", { repo: syncConfig.repo, branch: syncConfig.branch })
+            : t("plugins.syncNotConfigured")}
           {syncConfig.last &&
-            ` · last synced ${formatDateTime(syncConfig.last.finishedAt, locale)} by ${syncConfig.last.actorEmail}`}
+            ` · ${t("plugins.lastSynced", { date: formatDateTime(syncConfig.last.finishedAt, locale), actor: syncConfig.last.actorEmail })}`}
           {archive && syncResult && ` · ${t("plugins.archiveSource", { name: archive.name })}`}
         </Text>
       )}
@@ -179,37 +180,30 @@ export default function PluginsPage() {
         />
       )}
 
-      <CardGrid
-        loading={loading}
-        failed={!!error && plugins.length === 0}
-        empty={visibleItems.length === 0}
-        emptyText={t(plugins.length === 0 ? "plugins.empty" : "catalog.noResults")}
-      >
-        {visibleItems.map((plugin) => (
-          <Card key={plugin.name} component={Link} href={`/plugins/${plugin.name}`} h="100%">
-            <Group gap="xs" wrap="nowrap">
-              <Text fw={500} truncate>
-                {plugin.name}
-              </Text>
-              {plugin.version && (
-                <Badge size="xs" variant="light">
-                  v{plugin.version}
-                </Badge>
-              )}
-            </Group>
-            {plugin.description && (
-              <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
-                {plugin.description}
-              </Text>
-            )}
-            <Text fz="xs" c="dimmed" mt={8}>
-              {plugin.skills.length} skill{plugin.skills.length === 1 ? "" : "s"} ·{" "}
-              {plugin.mcpServers.length} server{plugin.mcpServers.length === 1 ? "" : "s"} ·
-              synced {formatDate(plugin.syncedAt, locale)} · {plugin.commitSha.slice(0, 7)}
-            </Text>
-          </Card>
-        ))}
-      </CardGrid>
+      {loading && <LoadingText />}
+      {!loading && !error && visibleItems.length === 0 && (
+        <EmptyState>{t(plugins.length === 0 ? "plugins.empty" : "catalog.noResults")}</EmptyState>
+      )}
+      {!loading && visibleItems.length > 0 && (
+        <div className={rows.list}>
+          {visibleItems.map((plugin) => (
+            <Link key={plugin.name} href={`/plugins/${plugin.name}`} className={rows.row}>
+              <div className={rows.identity}>
+                <Group gap="xs" wrap="wrap">
+                  <Text className={rows.name}>{plugin.name}</Text>
+                  {plugin.version && <Badge size="xs" color="gray">v{plugin.version}</Badge>}
+                </Group>
+              </div>
+              <Text className={rows.description} lineClamp={2}>{plugin.description}</Text>
+              <div className={rows.meta}>
+                <Text fz="xs">{t("plugins.componentCount", { skills: plugin.skills.length, servers: plugin.mcpServers.length })}</Text>
+                <Text fz="xs" c="dimmed">{t("plugins.revision", { date: formatDate(plugin.syncedAt, locale), sha: plugin.commitSha.slice(0, 7) })}</Text>
+              </div>
+              <IconArrowRight className={rows.arrow} size={18} aria-hidden="true" />
+            </Link>
+          ))}
+        </div>
+      )}
     </Stack>
   );
 }

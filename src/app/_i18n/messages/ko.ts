@@ -911,6 +911,8 @@ export const ko: Messages = {
   "agents.departmentCode": "부서 코드",
   "agents.departmentHint": "Agent 소유와 비용을 묶는 선택 코드입니다.",
   "agents.privateBadge": "비공개",
+  "agents.configured": "설정됨",
+  "agents.needsConfiguration": "설정 필요",
   "agents.cloneFailed": "Agent 복제에 실패했습니다",
 
   "agent.badge": "AI Agent",
@@ -1192,6 +1194,12 @@ export const ko: Messages = {
     "Plugin 저장소의 .tar.gz (git archive 또는 체크아웃의 tar) — GitHub 에 닿을 수 없는 배포를 위한 경로입니다.",
   "plugins.archiveSource": "아카이브: {name}",
   "plugins.uploadFailed": "업로드에 실패했습니다",
+  "plugins.syncFromGitHub": "GitHub에서 동기화",
+  "plugins.source": "GitHub 원본: {repo} · {branch}",
+  "plugins.syncNotConfigured": "Plugin 동기화가 설정되지 않았습니다. 설정에서 저장소와 토큰을 등록하세요.",
+  "plugins.lastSynced": "마지막 동기화 {date} · {actor}",
+  "plugins.componentCount": "Skill {skills}개 · MCP 서버 {servers}개",
+  "plugins.revision": "동기화 {date} · {sha}",
 
   "capabilities.descriptionTitle": "설명이 검색 결과를 결정합니다",
 

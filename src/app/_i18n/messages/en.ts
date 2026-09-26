@@ -965,6 +965,8 @@ export const en = {
   "agents.departmentCode": "Department code",
   "agents.departmentHint": "Optional code for grouping Agent ownership and costs.",
   "agents.privateBadge": "Private",
+  "agents.configured": "Configured",
+  "agents.needsConfiguration": "Needs configuration",
   "agents.cloneFailed": "Failed to clone Agent",
 
   // One agent's header and tab strip.
@@ -1267,6 +1269,12 @@ export const en = {
     "A .tar.gz of the plugins repository (git archive or tar of a checkout) — for a deployment that cannot reach GitHub.",
   "plugins.archiveSource": "Archive: {name}",
   "plugins.uploadFailed": "Upload failed",
+  "plugins.syncFromGitHub": "Sync from GitHub",
+  "plugins.source": "GitHub source: {repo} · {branch}",
+  "plugins.syncNotConfigured": "Plugin sync is not configured. Add the repository and token in Settings.",
+  "plugins.lastSynced": "Last synced {date} by {actor}",
+  "plugins.componentCount": "{skills} Skills · {servers} MCP servers",
+  "plugins.revision": "Synced {date} · {sha}",
 
   "capabilities.descriptionTitle": "Description controls discovery",
 
