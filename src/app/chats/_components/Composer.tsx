@@ -31,7 +31,6 @@ export function Composer({
   leading,
   status,
   onDraftChange,
-  suggestion,
 }: {
   /**
    * Returns whether the send was accepted. `false` keeps the draft — text and
@@ -63,7 +62,6 @@ export function Composer({
    */
   status?: React.ReactNode;
   onDraftChange?: (value: string) => void;
-  suggestion?: React.ReactNode;
 }) {
   const [value, setValue] = useState("");
   const t = useT();
@@ -112,7 +110,6 @@ export function Composer({
       {dragging && <DropHint />}
       <Stack gap="xs">
         {leading}
-        {suggestion}
         {status}
         <AttachmentBar
           attachments={attachments}

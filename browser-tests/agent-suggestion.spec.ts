@@ -5,11 +5,12 @@ import { test, expect } from "@playwright/test";
 
 let server: Server;
 let base: string;
+let pageErrors: string[];
 
 test.beforeAll(async () => {
   const bundle = await build({ entryPoints: ["browser-tests/fixtures/agent-suggestion.tsx"], bundle: true, write: false,
     outdir: "/tmp/agent-studio-suggestion-fixture", platform: "browser", format: "iife", jsx: "automatic",
-    define: { "process.env.NODE_ENV": '"production"' } });
+    define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" } });
   server = createServer((request, response) => {
     const file = bundle.outputFiles.find(file => request.url === `/${file.path.split("/").at(-1)}`);
     response.setHeader("Content-Type", `${file ? file.path.endsWith(".css") ? "text/css" : "text/javascript" : "text/html"}; charset=utf-8`);
@@ -19,6 +20,8 @@ test.beforeAll(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
+test.beforeEach(async ({ page }) => { pageErrors = []; page.on("pageerror", error => pageErrors.push(error.message)); });
+test.afterEach(() => { expect(pageErrors).toEqual([]); });
 
 test("debounces a suggestion, applies it explicitly and discards an old surface result", async ({ page }) => {
   const seen: Array<{ surface: string; request: string }> = [];
@@ -70,6 +73,33 @@ test("keeps the previous suggestion while a changed request waits for another re
   } finally {
     releaseNext();
   }
+});
+
+test("places Chat suggestions beside the Agent picker and applies them without sending the draft", async ({ page }) => {
+  let sends = 0;
+  await page.route("**/api/agents", route => route.fulfill({ json: [
+    { name: "writer", displayName: "Writer", description: "Write reports" },
+    { name: "coder", displayName: "Coder", description: "Fix code" },
+  ] }));
+  await page.route("**/api/agent-recommendations", route => route.fulfill({ json: { recommendation: { name: "coder", confidence: 0.8 } } }));
+  await page.route("**/api/chats**", route => { sends += 1; return route.abort(); });
+  await page.goto(`${base}/chat`);
+  const picker = page.getByRole("combobox", { name: "Agent", exact: true });
+  const draft = page.getByRole("textbox", { name: "Message", exact: true });
+  await draft.fill("Please fix this code");
+  const suggestion = page.getByRole("status").filter({ hasText: "Suggested Agent" });
+  await expect(suggestion).toContainText("Coder");
+  const pickerBox = (await picker.boundingBox())!;
+  const suggestionBox = (await suggestion.boundingBox())!;
+  expect(suggestionBox.x).toBeGreaterThan(pickerBox.x + pickerBox.width);
+  expect(Math.abs(pickerBox.y + pickerBox.height / 2 - suggestionBox.y - suggestionBox.height / 2)).toBeLessThan(2);
+  await page.getByRole("button", { name: "Use Agent", exact: true }).click();
+  await expect(picker).toHaveValue("Coder");
+  await expect(draft).toHaveValue("Please fix this code");
+  expect(sends).toBe(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(suggestion).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 test("selects and clears a registered decision model in model usage settings", async ({ page }) => {

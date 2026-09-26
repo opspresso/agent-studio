@@ -15,7 +15,7 @@ import {
   Text,
 } from "@mantine/core";
 import { BackLink } from "@/app/_components/BackLink";
-import { CardList } from "@/app/_components/CardGrid";
+import { CardList } from "@/app/_components/CardList";
 import { LoadingText } from "@/app/_components/PageState";
 import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
 import { listSkills, type SkillSummary } from "@/app/skills/api";
