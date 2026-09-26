@@ -10,3 +10,9 @@
 .readonlyEditor select:disabled {
   cursor: default;
 }
+
+.columnHeading,
+.runSurface {
+  padding-top: 16px;
+  border-top: 2px solid var(--mantine-color-text);
+}
