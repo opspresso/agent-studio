@@ -97,7 +97,7 @@ const NAV_GROUPS = [
  * foot of the sidebar.
  *
  * Neither is a thing the workspace holds: one is the account looking at it and
- * the other is how to use it. Sitting in the workspace group they pushed the
+ * the other is how to use it. Sitting in the work group they pushed the
  * registries down and read as more work to do. The profile link stays here
  * rather than moving into the header entirely, because the header's own link
  * to it is `visibleFrom="lg"` and would disappear on a laptop.

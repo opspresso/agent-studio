@@ -72,7 +72,7 @@ export function Overview({
   userEmail: string;
   /**
    * Arrives as a prop for the same reason the email does: `useViewer()` answers
-   * after hydration, so the catalogue tiles would render and then vanish for
+   * after hydration, so the catalogue links would render and then vanish for
    * the one reader who is not allowed to see they exist.
    */
   tier: MemberTier;
@@ -140,11 +140,11 @@ export function Overview({
     };
   }, []);
 
-  // Independently, so one unreachable registry costs its own tile and no more.
+  // Independently, so one unreachable registry costs its own count and no more.
   useEffect(() => {
     let cancelled = false;
     if (!showCatalogs) {
-      // Not merely a hidden tile: asking would be three 403s per visit, and the
+      // Not merely a hidden link: asking would be refused, and the
       // count is the fact being withheld.
       return;
     }
@@ -157,7 +157,7 @@ export function Overview({
           }
         })
         .catch(() => {
-          // Left absent, so the tile shows a dash rather than a zero.
+          // Left absent, so the link shows a dash rather than a zero.
         });
     }
     return () => {
