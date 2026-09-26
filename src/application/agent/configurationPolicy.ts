@@ -3,6 +3,7 @@ import type { AgentRepository } from "@/domain/agent/repository";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { McpRepository } from "@/domain/mcp/repository";
 import { getModelConfig } from "@/domain/llm/models";
+import { modelType } from "@/domain/llm/models";
 import { ValidationError } from "@/application/errors";
 import { userMayAccessAgent } from "./agentUseCases";
 import { agentModelRejectReason } from "./modelCompatibility";
@@ -194,6 +195,18 @@ export function assertAgentModelType(model: string): void {
 }
 
 export function assertModelSupports(model: string, parameters: AgentParameters): void {
+  const routing = parameters.modelRouting;
+  if (routing?.enabled) {
+    for (const id of Object.values(routing.tiers)) {
+      const candidate = getModelConfig(id);
+      if (!candidate || candidate.hidden || modelType(candidate) !== "text") throw new ValidationError(`Routing model is not an available registered text model: ${id}`);
+      if (candidate.pricingKnown === false) throw new ValidationError(`Routing model price is unknown: ${id}`);
+      if (routing.localOnly && candidate.providerKind !== "selfhosted") throw new ValidationError(`Routing model violates local-only policy: ${id}`);
+    }
+    for (const tier of Object.values(routing.policies)) {
+      if (!routing.tiers[tier]) throw new ValidationError(`Routing policy tier has no model: ${tier}`);
+    }
+  }
   const cfg = getModelConfig(model);
   if (!cfg) {
     return;

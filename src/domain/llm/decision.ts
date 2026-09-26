@@ -5,6 +5,7 @@ export interface ChoiceDecision {
   choice: string;
   confidence: number;
   probabilities: Record<string, number>;
+  usage?: import("./types").UsageInfo;
 }
 
 export interface DecisionModel {

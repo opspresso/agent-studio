@@ -166,6 +166,7 @@ export interface Agent {
 }
 
 export interface AgentParameters {
+  modelRouting?: import("@/domain/llm/callRouting").CallRoutingSettings;
   policy?: RuntimePolicy;
   temperature?: number;
   presencePenalty?: number;
