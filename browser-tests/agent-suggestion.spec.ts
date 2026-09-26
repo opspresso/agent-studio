@@ -75,6 +75,83 @@ test("keeps the previous suggestion while a changed request waits for another re
   }
 });
 
+for (const surface of ["chat", "workspace"] as const) {
+  test(`suggests within 200ms and keeps evaluating continuous input on ${surface}`, async ({ page }) => {
+    const seen: Array<{ surface: string; request: string }> = [];
+    await page.clock.install({ time: new Date("2026-09-26T00:00:00Z") });
+    await page.clock.pauseAt(new Date("2026-09-26T00:00:01Z"));
+    await page.route("**/api/agent-recommendations", route => {
+      seen.push(route.request().postDataJSON());
+      return route.fulfill({ json: { recommendation: { name: "coder", confidence: 0.8 } } });
+    });
+    await page.goto(base);
+    if (surface === "workspace") await page.getByRole("button", { name: "Switch surface" }).click();
+    const input = page.getByRole("textbox", { name: "Request" });
+    await input.fill("Fix this code");
+    await page.clock.runFor(200);
+    await expect(page.getByRole("status")).toContainText("Coder");
+    for (let index = 0; index < 20; index++) {
+      await input.fill(`Fix this code ${index}`);
+      await page.clock.runFor(100);
+    }
+    await expect.poll(() => seen.length).toBeGreaterThanOrEqual(3);
+    expect(seen.every(request => request.surface === surface)).toBe(true);
+  });
+}
+
+test("finishes a slow recommendation while edits queue only the latest draft", async ({ page }) => {
+  const seen: string[] = [];
+  let releaseFirst!: () => void;
+  const held = new Promise<void>(resolve => { releaseFirst = resolve; });
+  await page.clock.install({ time: new Date("2026-09-26T00:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-09-26T00:00:01Z"));
+  await page.route("**/api/agent-recommendations", async route => {
+    const { request } = route.request().postDataJSON() as { request: string };
+    seen.push(request);
+    if (seen.length === 1) await held;
+    await route.fulfill({ json: { recommendation: { name: seen.length === 1 ? "coder" : "writer", confidence: 0.8 } } });
+  });
+  try {
+    await page.goto(base);
+    const input = page.getByRole("textbox", { name: "Request" });
+    await input.fill("Fix code");
+    await page.clock.runFor(200);
+    await expect.poll(() => seen.length).toBe(1);
+    await input.fill("Write a report");
+    await input.fill("Write meeting minutes");
+    await page.clock.runFor(2_000);
+    expect(seen).toEqual(["Fix code"]);
+    releaseFirst();
+    await expect(page.getByRole("status")).toContainText("Coder");
+    await page.clock.runFor(1);
+    await expect(page.getByRole("status")).toContainText("Writer");
+    expect(seen).toEqual(["Fix code", "Write meeting minutes"]);
+  } finally { releaseFirst(); }
+});
+
+test("waits for Retry-After before evaluating another edited draft", async ({ page }) => {
+  const seen: string[] = [];
+  await page.clock.install({ time: new Date("2026-09-26T00:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-09-26T00:00:01Z"));
+  await page.route("**/api/agent-recommendations", route => {
+    seen.push((route.request().postDataJSON() as { request: string }).request);
+    return seen.length === 1
+      ? route.fulfill({ status: 429, headers: { "Retry-After": "3" }, json: { error: "Quota exhausted" } })
+      : route.fulfill({ json: { recommendation: { name: "coder", confidence: 0.8 } } });
+  });
+  await page.goto(base);
+  const input = page.getByRole("textbox", { name: "Request" });
+  await input.fill("Fix code");
+  await page.clock.runFor(200);
+  await expect(page.getByRole("alert")).toContainText("Agent suggestion is unavailable");
+  await input.fill("Fix the latest code");
+  await page.clock.runFor(2_999);
+  expect(seen).toEqual(["Fix code"]);
+  await page.clock.runFor(1);
+  await expect(page.getByRole("status")).toContainText("Coder");
+  expect(seen).toEqual(["Fix code", "Fix the latest code"]);
+});
+
 test("places Chat suggestions beside the Agent picker and applies them without sending the draft", async ({ page }) => {
   let sends = 0;
   await page.route("**/api/agents", route => route.fulfill({ json: [

@@ -36,7 +36,8 @@ Agent의 system prompt·도구 자격증명·첨부 내용은 보내지 않는�
 | 인증된 사용자에 대한 Chat·Workspace 후보 목록 바인딩 | `lib/container.ts` |
 | OpenRouter Decisions API 또는 설정된 System One 호환 endpoint 호출·응답 검증 | `infrastructure/llm/decisionClient.ts` |
 | 사용자별 추천 요청 수의 분·일 단위 제한 | `infrastructure/db/repositories/agentRecommendationQuota.ts` |
-| 입력 변경 debounce·이전 응답 취소·수동 적용 | `app/_components/AgentSuggestion.tsx` |
+| 입력 대기·요청 주기·최신 입력 합치기 | `app/_lib/agentSuggestionQueue.ts` |
+| 추천 표시·요청 응답 처리·수동 적용 | `app/_components/AgentSuggestion.tsx` |
 
 Chat 후보는 사용자가 접근 가능한 Agent이고 Workspace 후보는 그 사용자에게 Workspace
 정책이 활성화된 Agent다. 추천 응답의 이름은 해당 목록에 있는 값만 인정한다. 모델이
@@ -44,9 +45,18 @@ Chat 후보는 사용자가 접근 가능한 Agent이고 Workspace 후보는 그
 막지 않고 추천 오류로 표시한다. 입력이 바뀌어 새 결과를 기다리거나 결과가 비어 있거나
 실패해도 마지막 유효한 추천은 유지한다. 화면 종류가 바뀌거나 후보에서 빠진 Agent는 표시하지
 않는다. 이 기능이 꺼져 있을 때 필수 경로에 외부 네트워크 의존성은 없다.
-등록된 결정 모델 호출은 사용자별 분당 30회·UTC 하루 300회로 제한한다. 카운터는
+등록된 결정 모델 호출은 사용자별 분당 120회·UTC 하루 2,400회로 제한한다. 카운터는
 PostgreSQL item 행에서 원자적으로 증가하므로 앱 인스턴스를 늘려도 같은 상한을 적용한다.
 한도 초과는 `Retry-After`를 포함한 429이고, 추천 실패는 Chat·Workspace 실행을 막지 않는다.
+
+## 입력 중 추천
+
+Chat·Workspace는 같은 추천 큐를 사용한다. 입력이 멈추면 200ms 후에 평가하고, 계속 입력해도
+진행 중인 요청이 없으면 최대 1초 후에 평가한다. 요청 시작 간격은 최소 1초다.
+입력 변경은 진행 중인 추론을 취소하지 않으며, 그동안 바뀐 입력 중 최신 한 건만 이어서 평가한다.
+같은 입력은 반복 조회하지 않고, 빈 입력·화면 종료·후보 목록 변경·실행 중에는 대기·진행 요청을 취소한다.
+마지막 유효한 추천은 다음 유효한 추천까지 유지한다. 429 응답은 화면에 오류로 표시하며,
+`Retry-After` 동안 새 입력의 평가도 기다린다. 실패한 동일 입력을 자동으로 재시도하지 않는다.
 
 `domain/llm/decision.ts`는 특정 Agent에 묶이지 않은 Choice 포트다. 다른 닫힌 선택지
 결정에도 같은 provider adapter를 사용할 수 있으며, Agent 실행 모델을 사용자 요청에 따라

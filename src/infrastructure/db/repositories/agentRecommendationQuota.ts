@@ -4,8 +4,8 @@ import { keys } from "../keys";
 import { updateItem } from "../store";
 
 /** Bounded per-user inference admission across all app instances. */
-export const MAX_AGENT_RECOMMENDATIONS_PER_MINUTE = 30;
-export const MAX_AGENT_RECOMMENDATIONS_PER_DAY = 300;
+export const MAX_AGENT_RECOMMENDATIONS_PER_MINUTE = 120;
+export const MAX_AGENT_RECOMMENDATIONS_PER_DAY = 2_400;
 
 const MINUTE_MS = 60_000;
 
