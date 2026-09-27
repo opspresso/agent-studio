@@ -1,10 +1,4 @@
-/**
- * The query and the response shape both artifact listings share.
- *
- * Two routes read the same rows down two different indexes — a person's own
- * gallery and an agent's — and a filter parsed differently by one of them would
- * be a gallery that disagrees with itself about what "images only" means.
- */
+/** Shared gallery query parsing and response shapes for owner and Agent indexes. */
 
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import {
@@ -34,10 +28,7 @@ function oneOf<T extends string>(raw: string | null, allowed: readonly T[]): T |
 
 export function parseArtifactQuery(url: string): ParsedQuery {
   const params = new URL(url).searchParams;
-  // The bounds the use case owns, read by the rule every other list endpoint
-  // reads by. Spelled out here — as three of them once were — the route and
-  // the use case were free to disagree about page size, which this file's own
-  // header warns about for every other filter it parses.
+  // Reuse the use-case bounds.
   const { limit } = parsePageLimit(params.get("limit"), {
     fallback: DEFAULT_ARTIFACT_PAGE,
     max: MAX_ARTIFACT_PAGE,
@@ -91,18 +82,9 @@ function pageSize(options: ListArtifactsOptions): number {
 }
 
 /**
- * The listing options with room for **one row past the page**, which is how a
- * page tells "this is the last one" from "there is another".
- *
- * Without it every non-empty page carried a cursor, because the only thing this
- * file could see was that some row was last — so a gallery holding three
- * pictures offered "Load more", and the click cost up to five index queries
- * and a signing fan-out to answer with nothing.
- *
- * The probe row is fetched, never rendered and never signed. At
- * `MAX_ARTIFACT_PAGE` there is no room for it (the use case clamps there), so
- * the largest page falls back to "a full page may have more" — one empty
- * follow-up remains possible when the total is an exact multiple of it.
+ * Read one extra row to detect a next page without signing or rendering it.
+ * At MAX_ARTIFACT_PAGE the use-case cap leaves no probe room; a full page then
+ * offers a cursor and may require one empty follow-up.
  */
 export function probeFor(options: ListArtifactsOptions): ListArtifactsOptions {
   return { ...options, limit: probeSize(options) };
