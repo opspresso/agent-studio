@@ -213,7 +213,7 @@ function ComponentSection({
   );
 }
 
-/** Declared by the plugin but absent from the registry — skipped on sync. */
+/** A declared component absent from the current registry; its cause requires a sync report. */
 function MissingCard({ name }: { name: string }) {
   return (
     <Card h="100%" opacity={0.6}>
@@ -221,8 +221,8 @@ function MissingCard({ name }: { name: string }) {
         {name}
       </Text>
       <Text fz="xs" c="dimmed" mt={4}>
-        Declared by the plugin but not in the registry — the last sync skipped it; run a sync to
-        see why.
+        Declared by the plugin but absent from the registry. Inspect the sync report or run a
+        new sync to check why it is unavailable.
       </Text>
     </Card>
   );
