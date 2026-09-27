@@ -6,9 +6,7 @@ import { useT } from "@/app/_i18n/provider";
 /**
  * Clipboard button with transient "Copied" feedback.
  *
- * A wrapper over Mantine's `CopyButton`, which is a render prop: six call sites
- * would otherwise each spell out the same `{({ copied, copy }) => …}` block,
- * and the label is the only thing any of them varies.
+ * Shared wrapper over Mantine's render prop; callers can customize the label.
  */
 export function CopyButton({ text, label, size = "compact-xs", disabled }: { text: string; label?: string; size?: ButtonProps["size"]; disabled?: boolean }) {
   const t = useT();

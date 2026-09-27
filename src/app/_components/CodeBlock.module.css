@@ -1,8 +1,5 @@
 /*
- * Syntax colours for `CodeBlock`. Kept as a stylesheet rather than inline
- * styles so each token type has one light value and one dark value sitting
- * next to each other — the pairing that drifted when these were Tailwind
- * `text-x dark:text-y` pairs spread down a lookup table.
+ * Shared CodeBlock token colours, with light and dark values defined together.
  */
 
 .block {
