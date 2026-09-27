@@ -1,14 +1,7 @@
 /**
- * Embeddings over an OpenAI-compatible channel.
- *
- * A deployment may give embeddings their own endpoint and credential, or omit
- * that pair to reuse the default LLM channel. The model is separate because it
- * has to be — an embedding model is not a chat model, and its dimension has to
- * match the index the vectors go into.
- *
- * Runtime settings resolve the selected model's provider channel as one
- * endpoint/credential/model tuple. Self-hosted models use the dedicated
- * embedding endpoint, which may differ from their chat endpoint.
+ * OpenAI-compatible embeddings for the selected registered retrieval model.
+ * Runtime settings resolve its endpoint, credential and wire ID together;
+ * there is no dedicated-endpoint or default-chat-channel fallback.
  */
 
 import OpenAI from "openai";

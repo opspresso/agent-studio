@@ -1,13 +1,7 @@
 /**
- * {@link DocumentExtractor} over `unpdf` for PDFs and a UTF-8 decode for
- * everything else.
- *
- * `unpdf` because it ships a serverless build of PDF.js with no dependencies of
- * its own, so there is nothing to compile into the standalone image. The sibling
- * `mcp-url-fetch` extracts the same way for the same reason; that server reads a
- * URL, which is why this exists rather than delegating — an upload has no URL,
- * and a Slack attachment lives behind `url_private` with a bot token this app
- * holds and no MCP server does.
+ * Extract PDF text through unpdf, Office text through the document engine, and
+ * HTML/plain text through bounded decoding. Receiving surfaces use this port
+ * for uploaded bytes without delegating them to an external document server.
  */
 
 import {

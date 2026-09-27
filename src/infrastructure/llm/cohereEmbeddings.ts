@@ -1,22 +1,6 @@
 /**
- * {@link EmbeddingPort} over Cohere Embed v4 on Bedrock.
- *
- * The multilingual one, and the reason this deployment has it: a Korean query
- * against an English description scores 0.39 here against 0.07 on Titan v2,
- * where an unrelated pair scores 0.04 — Titan cannot tell "깃헙 레포 알려줘"
- * from noise, so a registry described in English is unreachable from a Korean
- * request. Cohere separates them by a factor of two.
- *
- * What it costs is that everything scores higher, unrelated pairs included, so
- * the relevance floor sits proportionally higher too — see `DEFAULT_MIN_SCORE`.
- *
- * **`input_type` is the whole point.** Cohere embeds a question and the thing
- * that answers it into different spaces, and passing the same type for both
- * throws away most of what makes it better here. That is why the port carries
- * a purpose at all.
- *
- * Reached through its **inference profile** (`global.cohere.embed-v4:0`): the
- * bare model id refuses on-demand invocation outright.
+ * Native Bedrock Cohere embeddings. Document and query input types remain
+ * distinct; the selected model supplies its wire ID and configured dimension.
  */
 
 import { InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";

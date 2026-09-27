@@ -123,7 +123,8 @@ URL·목록·비밀값·선택값은 각각 주소 입력·태그 입력·비밀
 `openai`, `anthropic`, `google`, `xai`, `openrouter`, `bedrock`, `selfhosted`다.
 같은 종류를 여러 이름으로 등록할 수 있으므로 서로 다른 사내 서버도 별도 연결로 관리한다.
 URL에는 API 버전 경로를 포함한다. 예를 들어 OpenAI 호환 서버는 `/v1`, Google은
-`/v1beta/openai`를 사용한다. Discovery는 Google·Anthropic의 native 목록 계약을 해석한다.
+`/v1beta/openai`를 사용한다. 공개 Provider 목록은 공개 모델 카탈로그에서 읽고,
+self-hosted 목록은 등록한 내부 연결의 `/models`에서 읽는다.
 
 키는 endpoint 문맥에 묶어 암호화하며 조회 응답은 마스킹한다. 빈 입력 또는 마스크는 같은
 주소·종류·인증 방식의 기존 키를 유지한다. 주소나 인증 대상을 바꾸면 새 키를 입력한다.
