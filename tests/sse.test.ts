@@ -1,9 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sseResponse } from "@/app/api/_lib/sse";
 import { apiError } from "@/app/api/_lib/http";
 import { RateLimitedError } from "@/application/errors";
 import { detachOnReturn } from "@/shared/detachOnReturn";
 import { readSse } from "@/app/_lib/sse";
+
+beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime("2026-01-01T00:00:00.000Z"); });
+afterEach(() => vi.useRealTimers());
 
 async function collectSse(response: Response, options?: { requireDone?: boolean }): Promise<unknown[]> {
   const chunks: unknown[] = [];
@@ -111,14 +114,9 @@ describe("sseResponse", () => {
 });
 
 describe("sseResponse keepalive", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   /**
-   * The ALB in front of the deployed app kills any connection silent for 60s,
-   * which is shorter than one image generation. Comments keep bytes flowing
-   * while the generator is silent, and readSse discards them.
+   * Keepalive comments maintain activity through silent generation; readSse
+   * discards them without emitting application data.
    */
   it("emits comment frames while the generator is silent, none after it ends", async () => {
     vi.useFakeTimers();
@@ -150,12 +148,8 @@ describe("sseResponse keepalive", () => {
   });
 
   /**
-   * The keepalive cannot start until the response exists, so a generator whose
-   * *first* chunk is far away would spend the whole 60s idle budget in
-   * silence and be cut mid-run. Two runs do exactly that: an image, whose bytes
-   * arrive in one chunk at the end, and a reasoning model on a configuration that is
-   * not recording its thinking — that stream's first chunk is the end-of-turn
-   * usage.
+   * A bounded first-chunk grace preserves early HTTP failures and lets keepalive
+   * start while a slow producer has not emitted any data.
    */
   it("builds the response and starts the keepalive while the first chunk is still coming", async () => {
     vi.useFakeTimers();
