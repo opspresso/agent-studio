@@ -2,12 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FakeStore } from "./fakeStore";
 
 /**
- * `update` writes the whole settings object, but `fromItem` reads back only what
- * it names — a field missing there is written and then silently dropped on the
- * next read, surviving exactly until the process restarts. `unknownModelPolicy`
- * shipped that way: the /settings page stored a `refuse` override that the run
- * bracket never saw again. This pins the read against the fields the runtime
- * consumes, non-string shapes included.
+ * Settings writes and explicit field mapping round-trip all current AppSettings
+ * fields, including structured values. Retired fields are omitted on rewrite.
  */
 vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
 const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
@@ -22,12 +18,8 @@ beforeEach(() => {
 
 describe("settingsRepository", () => {
   it("reads back what update writes — every AppSettings field, by construction", async () => {
-    // `Required<AppSettings>` is the recurrence killer: a field added to the
-    // type without a value here fails `pnpm typecheck`, and a value here that
-    // `fromItem` drops fails the equality below. `unknownModelPolicy` shipped
-    // dropped-on-read once and `selfHostedModels` shipped that way twice over —
-    // declarations vanished within a tick and the next unrelated save deleted
-    // the stored row's copy for good.
+    // Required<AppSettings> catches missing fixture fields at typecheck; equality
+    // catches fields omitted by the repository reader.
     const stored: Required<import("@/domain/settings/types").AppSettings> = {
       serviceName: "Studio",
       serviceLogo: "agentops",
