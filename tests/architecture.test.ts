@@ -1444,18 +1444,11 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/app/_lib/textPacer.ts",
   },
   {
-    // Where the subtleties of a hand-rolled merge live: exactly one in-flight
-    // `next()` per source, return values kept at their own index rather than in
-    // arrival order, and closing that is deliberately never awaited. A second
-    // copy gets one of those three wrong.
-    what: "merging concurrent generators",
+    // The detached iterator answers return() immediately while the source
+    // keeps running. Keep this connection-lifetime mechanism in one owner.
+    what: "detached stream iterator implementation",
     pattern: /IteratorResult</,
-    owner: "src/shared/mergeGenerators.ts",
-    // `detachOnReturn` hand-rolls an iterator for the same reason this one does
-    // — `return()` cannot reach a generator parked at an `await` — so it spells
-    // the type out too. It merges nothing; the shared token is generator
-    // plumbing, not a second copy of the merge.
-    alsoAllowedUnder: ["src/shared/detachOnReturn.ts"],
+    owner: "src/shared/detachOnReturn.ts",
   },
   {
     // Two consumers derived this identically, and they would have drifted the
@@ -1486,7 +1479,6 @@ const SINGLE_OWNERS: SingleOwner[] = [
       "src/app/api/_lib/sse.ts",
       "src/app/api/chats/_lib/frames.ts",
       "src/application/run/leadingWarnings.ts",
-      "src/shared/mergeGenerators.ts",
       "src/shared/detachOnReturn.ts",
       "src/infrastructure/slack/profileCache.ts",
     ],

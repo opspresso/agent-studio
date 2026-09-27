@@ -237,7 +237,6 @@
 | Agent 의 webhook 이 어디로 전달되는가 | `src/domain/trigger/types.ts` 의 `agentWebhookPath` | 구조 |
 | Agent optimistic update 가 경쟁에서 졌을 때의 오류 계약 | `src/application/agent/agentUpdate.ts` 의 `persistAgentUpdate` | 구조 |
 | managed workload 이름 규칙 | `src/domain/naming.ts` 의 `MANAGED_NAME` | 구조 |
-| 동시에 도는 generator 를 병합하기 | `src/shared/mergeGenerators.ts` | 구조 |
 | 사람이 읽을 달러 금액 | `src/app/_lib/formatUsd.ts` 의 `formatUsd`. `SINGLE_OWNERS` 행이 아니라 그 자체가 하나의 규칙으로 강제된다: `app` 안 어디에도 `${…toFixed(…)}` 는 없고 두 `_lib` 포매터만 있다 | 구조 |
 | 저장된 시각 문자열을 밀리초로 읽기 | `src/shared/date.ts` 의 `parsedInstant`. 읽을 수 없는 `createdAt` 은 값이 없는 것이라는 판단을 포매터들과 나눠 갖는다 | 구조 |
 | 런이 왜 끝났는지를 그 chunk 들로부터 도출하기 | `src/domain/llm/types.ts` 의 `chunkTermination`/`runTermination` | 구조 |
@@ -249,7 +248,7 @@
 | SDK span 부모 관계의 OTLP 변환 | `src/infrastructure/telemetry/otelTraceExport.ts`; 완료 순서와 무관하게 저장된 부모 관계를 사용한다 | 코드 |
 | 실행 전 도구 JSON Schema 검증 | `src/domain/llm/toolSchema.ts`의 포트, `src/infrastructure/llm/toolSchema.ts`의 검증기; 선언은 기존 도구 소유자가 유지한다 | 코드 |
 | 아이템 테이블에 쓰는 방법. 행 잠금 아래에서 평가되는 조건, 키 순서로 잠그는 트랜잭션, 접두사 쿼리의 상한(U+10FFFF), 만료 행의 sweep | `src/infrastructure/db/store.ts`. 리포지토리는 이 계약을 통해 조건부 쓰기·키 순서 잠금·접두사 범위·만료 삭제를 수행한다 | 코드 |
-| 떠나 버린 소비자로부터 스트림을 떼어내기 | `src/shared/detachOnReturn.ts` | 코드 |
+| 떠나 버린 소비자로부터 스트림을 떼어내기 | `src/shared/detachOnReturn.ts` | 구조 |
 | 바이트 상한 아래에서 HTTP 본문 읽기 | `src/shared/httpBody.ts` | 코드 |
 | 백그라운드 타이머가 프로세스를 붙잡아 두지 않게 하기 | `src/shared/unrefTimer.ts` | 코드 |
 | 목록 읽기. 매치 전체를 답하고, 경계는 호출자의 `limit`, 만료 필터는 `LIMIT` 보다 먼저 도는 `notExpiredAt`, 호출자가 가져온 값·속성 유무 필터도 같은 자리에서 도는 `filter` / `jsonContains` / `attributePresence` | `src/infrastructure/db/store.ts`의 `queryItems`. 호출자의 limit과 만료·조건 필터를 같은 쿼리에 적용한다 | 코드 |
