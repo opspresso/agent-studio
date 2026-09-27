@@ -25,6 +25,7 @@ export interface SlackReaderPort {
     token: string,
     args: { channel: string; limit?: number },
   ): Promise<SlackMessage[]>;
+  /** Oldest first; an explicit limit bounds the total result across pages. */
   threadReplies(
     token: string,
     args: { channel: string; ts: string; limit?: number },

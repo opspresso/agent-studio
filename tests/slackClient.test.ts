@@ -62,6 +62,32 @@ describe("how a Slack call fails", () => {
 });
 
 describe("how long a Slack call may take", () => {
+  it("bounds an explicit thread limit across pages and stops fetching once full", async () => {
+    const request = vi.fn(async (url: string) => {
+      const cursor = new URL(url).searchParams.get("cursor");
+      const messages = cursor === null ? [{ ts: "1", text: "one" }, { ts: "2", text: "two" }]
+        : cursor === "next" ? [{ ts: "3", text: "three" }, { ts: "4", text: "four" }] : [];
+      return jsonResponse({ ok: true, messages, response_metadata: { next_cursor: cursor === null ? "next" : cursor === "next" ? "extra" : "" } });
+    });
+    vi.stubGlobal("fetch", request);
+
+    const messages = await slackClient.threadReplies(TOKEN, { channel: "C1", ts: "1.0", limit: 3 });
+
+    expect(messages.map(message => message.ts)).toEqual(["1", "2", "3"]);
+    expect(request.mock.calls.map(([url]) => new URL(url).searchParams.get("limit"))).toEqual(["3", "1"]);
+  });
+
+  it("continues paginated event history when no total limit was supplied", async () => {
+    const request = vi.fn(async (url: string) => {
+      const first = !new URL(url).searchParams.has("cursor");
+      return jsonResponse({ ok: true, messages: [{ ts: first ? "1" : "2" }], response_metadata: { next_cursor: first ? "next" : "" } });
+    });
+    vi.stubGlobal("fetch", request);
+
+    expect((await slackClient.threadReplies(TOKEN, { channel: "C1", ts: "1.0" })).map(message => message.ts)).toEqual(["1", "2"]);
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   it("bounds every request rather than waiting on Slack forever", async () => {
     // The signal is what the run has instead of a deadline: `after()` is past
     // the response, so nothing above this call will give up on its behalf.

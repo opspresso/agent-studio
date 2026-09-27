@@ -190,3 +190,6 @@ reader는 Agent bot token에 묶여 있으며 모델이 다른 workspace나 cred
 사용자 profile의 이메일은 도구 결과에서 제외한다. 검색·프로필 해석·출력에는 각각 한도가 있고
 잘린 결과를 알린다. capability를 켜면 해당 Agent 실행자가 bot이 읽을 수 있는 채널에
 접근할 수 있으므로 [읽기 권한 경계](../SECURITY.md#slack-워크스페이스-읽기)를 확인하라.
+
+`SlackThread`의 명시적 메시지 limit은 페이지를 합친 전체 반환 수에 적용한다.
+이벤트 응답용 thread 이력은 이 limit을 생략하고 제한된 페이지를 읽은 뒤 최신 턴을 선택한다.

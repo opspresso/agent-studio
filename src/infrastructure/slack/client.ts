@@ -566,9 +566,9 @@ export const slackClient = {
     return slackApi(token, "assistant.threads.setSuggestedPrompts", args).then(() => undefined);
   },
   /**
-   * Every reply in a thread, oldest first. Slack paginates this endpoint and
-   * returns pages oldest-first, so reading a single page drops the *newest*
-   * messages — page through to the end instead (bounded by MAX_THREAD_PAGES).
+   * Thread replies in wire order, oldest first. An explicit limit bounds the
+   * whole result, not each page. Event history omits it and walks up to
+   * MAX_THREAD_PAGES before the application selects recent turns.
    */
   async threadReplies(
     token: string,
@@ -577,11 +577,12 @@ export const slackClient = {
     const messages: SlackMessage[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < MAX_THREAD_PAGES; page += 1) {
+      const remaining = args.limit === undefined ? undefined : args.limit - messages.length;
       // Read-family Web API methods reject JSON bodies; use GET with query params.
       const params = new URLSearchParams({
         channel: args.channel,
         ts: args.ts,
-        limit: String(args.limit ?? PAGE_SIZE),
+        limit: String(Math.min(remaining ?? PAGE_SIZE, PAGE_SIZE)),
       });
       if (cursor) {
         params.set("cursor", cursor);
@@ -590,7 +591,10 @@ export const slackClient = {
         messages?: SlackMessage[];
         response_metadata?: { next_cursor?: string };
       }>(token, "conversations.replies", params);
-      messages.push(...(data.messages ?? []));
+      messages.push(...(data.messages ?? []).slice(0, remaining));
+      if (args.limit !== undefined && messages.length >= args.limit) {
+        return messages;
+      }
       cursor = data.response_metadata?.next_cursor || undefined;
       if (!cursor) {
         return messages;
