@@ -367,27 +367,24 @@ caller 당 Settings → Service의 동시 실행 한도(`MAX_CONCURRENT_RUNS_PER
 
 ## Schedule 티커
 
-Schedule 트리거는 무언가가 `X-Scan-Token: $SCHEDULE_SCAN_TOKEN` 과 함께
-`POST /api/triggers/scan` 을 틱할 때에만 발화한다. localdev는 `deploy/local/scripts/tick.sh`를
-사용하고, 실제 환경의 ticker는 `../dockpad`와 `../argocd-env-demo`가 소유한다. **행 보존의
-sweep도 이 틱에 얹혀 있다**. 1분마다 이미 도는 유일한 것이기 때문이다. 티커가 만족해야 하는
-계약은 다음이 전부다:
+`X-Scan-Token: $SCHEDULE_SCAN_TOKEN`으로 `POST /api/triggers/scan`을 1분 이하 간격으로
+호출한다. localdev는 `deploy/local/scripts/tick.sh`, 배포 환경은 `../dockpad`와
+`../argocd-env-demo`가 ticker를 소유한다. 이 호출이 [DB 만료 sweep](#행-보존)도 예약한다.
 
-- **주기 ≤ 1분.** 스캔은 고정된 10분짜리 만회 윈도우를 되돌아보므로, 틱을 한 번 놓치거나 짧게
-  장애가 나도 잃는 것이 없다; 윈도우보다 긴 장애는 그 발생분들을 영영 버린다 (의도적으로 유한하게
-  뒀다. 복구가 한 번에 시작할 수 있는 런의 수도 함께 묶기 때문이다).
-- **중복은 안전하다.** 티커가 몇 개든 어느 인스턴스든 동시에 호출해도 된다; 각 발생은 조건부
-  쓰기로 claim 되고 정확히 하나의 claim 만 이긴다
-  ([design/triggers.md](design/triggers.md#schedule)).
-- **한 번의 틱은 동시에 최대 8건까지만 발화한다** (`MAX_CONCURRENT_FIRINGS`). 그러지 않으면 모든
-  Agent가 공유하는 09:00 이 틱을 받은 인스턴스 하나에서 그만큼의 동시 런이 되고, caller 별
-  동시성 가드는 그 팬아웃을 묶지 못한다. 트리거는 저마다 자기 자신이 actor 라, 하나하나가
-  자기 한도 안에 있기 때문이다.
-- 요약은 매 틱마다 로그에 남는다(그리고 응답에도 담긴다): `repaired` > 0 이면 인스턴스가 발화
-  도중에 죽었다는 뜻이고, `invalid` > 0 이면 저장된 cron/타임존이 더는 파싱되지 않는다는 뜻이며,
-  `errors` > 0 이면 저장소 호출이 실패해 차단됐다는 뜻이다. 거부된 토큰은 서버 쪽에 경고를
-  남긴다. 세 토큰 엔드포인트 전부에서. 401 을 받는 티커는 그러지 않으면 클러스터 안에서
-  보이지 않기 때문이다.
+- 최근 10분의 발생만 catch-up한다. 그보다 오래된 발생은 자동 실행하지 않는다.
+- 조건부 claim이 겹친 tick의 같은 발생을 중복 접수하지 않게 한다. 생성·편집 이전 발생과
+  겹침 금지 상태의 오래된 catch-up은 [트리거 설계](design/triggers.md#schedule)를 따른다.
+- 한 tick의 admission과 실행은 각각 최대 8건을 동시에 처리한다. 여러 tick·전체 배포의
+  전역 동시 실행 상한은 아니며, 전체 접수 수를 8건으로 제한하지 않는다.
+- 응답·로그의 `fired`는 queued 접수 수다. 실행 시작·성공은 trigger 이력에서 확인한다.
+  `repaired`는 만료된 queued lease 또는 실행 lease와 여유 시간이 지난 running 이력을
+  failed로 마감한 수다. `invalid`는 cron·시간대 오류, `errors`는 복구·admission 처리 오류 수다.
+  저장소 페이지 조회 실패는 요청을 실패시킨다.
+- scan token 미설정은 `503`, 잘못된 token은 `401`과 서버 경고로 확인한다.
+
+복구는 UTC 분이 5의 배수인 scan에서 모든 trigger를 확인하며, Webhook 전달 완료 시에도
+자기 trigger를 확인한다. ticker와 다음 Webhook 전달이 모두 없으면 자동 복구가 진행되지 않는다.
+복구는 이력만 마감하고 불확실한 모델·도구 실행을 재시도하지 않는다.
 
 ## 카탈로그 재색인
 
@@ -461,7 +458,7 @@ discovery와 문서 embedding을 반복한다.
 | MCP 레지스트리 편집 | `MCP_DISCOVERY_CACHE_TTL_MS` / `MCP_MAX_SERVER_TTL_MS` | 한 인스턴스에서 한 편집이 그 구간만큼 다른 인스턴스들에게 보이지 않는다. |
 | 관리형 MCP | — | **호스트당 앱 인스턴스 하나.** 관리형 컨테이너가 게시하는 호스트 루프백 포트를 앱이 공유한다. |
 | 메트릭 카운터 | — | 프로세스 단위. 인스턴스들 사이의 집계는 스크레이프 계층에서 하라. |
-| 백그라운드 작업 (`after()`) | — | 인스턴스가 갑자기 사라지며 중단된 Slack 이벤트·Telegram 업데이트·Teams activity·트리거 발화는 **재개되지 않는다**. 런은 멱등하지 않다. 두 종류의 트리거 행 모두 sweep 이 `failed` 로 복구한다. 5분마다 오는 스캔 틱에서(`REPAIR_EVERY_MINUTES`, sweep 이 모든 Agent의 트리거를 훑고 그 history 를 읽기 때문에 매분 할 만한 일이 아니다), 그리고 그 트리거 자신의 다음 webhook 전달에서. 그래서 티커를 설정하지 않은 배포에서도 원장은 결국 올바르게 끝난다. 잃어버린 Slack 이벤트·Telegram 업데이트·Teams activity 는 의도적으로 복구하지 않는다. 마무리할 행을 남기지 않고, 답을 못 받은 사용자만 남기기 때문이다. |
+| 백그라운드 작업 (`after()`) | 해당 프로세스 | 중단된 메신저 이벤트·트리거 발화를 자동 재실행하지 않는다. 트리거 이력은 [복구 호출](#schedule-티커)이 있을 때 만료 lease를 failed로 마감한다. 메신저 이벤트에는 이 복구를 적용하지 않는다. |
 
 ### 재배포 이후의 관리형 MCP
 

@@ -1,26 +1,10 @@
 /**
- * One scheduler tick: walk every schedule trigger, claim the occurrences that
- * came due, and admit a run for each claim won.
- *
- * The tick itself comes from outside the process — a deployment-owned ticker hitting
- * the scan endpoint (docs/design/triggers.md records the decision). Everything the
- * tick finds is decided here, and every instance may be ticked concurrently:
- * the per-occurrence conditional-write claim is what makes "exactly once"
- * true, not the ticker.
- *
- * Crash policy: a claim is permanent — a firing whose instance died is *not*
- * re-executed, because a run is not idempotent (its tools have side effects)
- * and the next occurrence is the natural retry. What a lost instance leaves
- * behind is a row stuck in `queued` or `running`; once its lease could no longer be live,
- * the tick finishes it as `failed` so the ledger says what happened. That sweep
- * covers **both** kinds and lives in `repairLostRuns.ts` — a webhook delivery
- * strands a row for the same reason and has no occurrence of its own to be
- * repaired by.
- *
- * One trigger's failure is its own: every repository call here is fenced per
- * trigger and per occurrence, because a thrown claim would otherwise abort the
- * tick with earlier occurrences already claimed — and a claim, once won, is
- * never offered again.
+ * Scan due schedule occurrences and return queued admissions for the caller
+ * to drive. Conditional claims deduplicate overlapping ticks; their retention
+ * outlasts the catch-up window. Claimed occurrences are not automatically
+ * replayed after failure because tools may already have produced side effects.
+ * Per-trigger and per-occurrence failures are recorded without stopping other
+ * admissions. Gated repair finishes expired queued/running history as failed.
  */
 
 import type { ScheduleTrigger } from "@/domain/trigger/types";
@@ -281,8 +265,7 @@ async function fireDueOccurrences(
       );
       summary.errors += 1;
       if (claimed) {
-        // The claim is already won and will never be offered again; without a
-        // row the occurrence would just silently not exist.
+        // Keep an outcome for the consumed claim even when admission fails.
         await recordSkip(
           deps,
           trigger,

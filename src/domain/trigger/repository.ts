@@ -15,9 +15,10 @@ export interface TriggerRepository {
 
   /**
    * Claim a firing's dedup key: a delivery's `Idempotency-Key`, or a schedule
-   * occurrence's `schedule:{UTC instant}`. True exactly once per
-   * (agent, trigger, key); false for a redelivery or a slot another instance
-   * already claimed.
+   * occurrence's `schedule:{UTC instant}`. One caller wins per
+   * (agent, trigger, key) while its claim row exists; false for a redelivery or
+   * a slot another instance already claimed. Expiry does not unblock the key
+   * until retention deletes the row.
    *
    * A conditional write rather than a read-then-write, because the whole point
    * is the case where the same key arrives at two instances at once.
