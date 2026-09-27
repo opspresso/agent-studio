@@ -1,25 +1,17 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createImageChannel } from "@/infrastructure/llm/imageChannel";
 import { resolveProviderTarget } from "@/infrastructure/llm/providers";
 import { base64Chars, MAX_IMAGE_BYTES } from "@/domain/llm/imageLimits";
 
 /**
- * The image adapter had no test at all, which is how four separate defects
- * against xAI shipped together: a `size` field its API refuses outright, a
- * `response_format` default this adapter cannot read, a hardcoded `image/png`
- * over JPEG bytes, and an edit call sent as multipart to an endpoint that takes
- * JSON only. Every fake `ImageChannel` in the suite sits *above* this module, so
- * none of it was observable. Same harness as `channelAdapter.test.ts`: stub
- * `fetch` and read the outbound request — the OpenAI SDK goes through `fetch`
- * too, so both dialects are checked the same way.
+ * Verify provider-specific image request/response contracts at global fetch.
+ * OpenAI SDK calls use the same boundary as direct xAI/OpenRouter JSON calls.
  */
 
 /**
- * The OpenAI base url is per-test on purpose, exactly as `channelAdapter.test.ts`
- * does it: the adapter caches one SDK client per credential fingerprint, and a cached
- * client holds the `fetch` that was global when it was built — so a second test
- * reusing the url would silently answer from the first test's stub.
+ * SDK clients capture fetch at construction and cache by credential fingerprint.
+ * OpenAI generation and edit cases use separate endpoints to isolate their stubs.
  */
 const runtime = { openaiBaseUrl: "https://openai.example/v1" };
 
@@ -105,9 +97,15 @@ const XAI_OK = {
   usage: { cost_in_usd_ticks: 200000000 },
 };
 
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime("2026-09-12T00:00:00.000Z");
+});
+
 afterEach(() => {
   runtime.openaiBaseUrl = "https://openai.example/v1";
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("xAI image dialect", () => {
@@ -376,11 +374,8 @@ describe("OpenRouter image dialect", () => {
   });
 
   /**
-   * The refusal this drop exists to prevent, in the provider's own words:
-   * `No provider for x-ai/grok-imagine-image-2.0 supports the requested
-   * parameter(s): quality "high" … Accepted: low, medium`. The tool schema
-   * offers the model "high", so passing the field on would 400 a run that asked
-   * for nothing unusual.
+   * The router request omits quality because the shared tool vocabulary does
+   * not map consistently to the vendors served by this endpoint.
    */
   it("never sends quality, whichever vendor is behind the route", async () => {
     const box = stubFetch(OPENROUTER_OK);
@@ -403,10 +398,8 @@ describe("OpenRouter image dialect", () => {
   });
 
   /**
-   * The shape of the silent-$0 failure: a successful draw whose usage this
-   * reader cannot find prices at nothing, and only the log says so. Pinned
-   * because the field names are the router's, not this app's, and a rename
-   * upstream would otherwise land as a free month of image generation.
+   * Missing usage yields zero token counts and a warning; token-rated models
+   * cannot derive an accurate price from an image response without those fields.
    */
   it("reads zeros when usage is missing, and says so", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -445,7 +438,7 @@ describe("OpenRouter image dialect", () => {
   });
 });
 
-describe("the OpenAI dialect is unchanged", () => {
+describe("the OpenAI image dialect", () => {
   it("still sends size and quality, and no xAI fields", async () => {
     const box = stubFetch({
       data: [{ b64_json: "aW1n" }],
