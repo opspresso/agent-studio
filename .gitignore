@@ -11,19 +11,12 @@ build/
 
 # env
 .env
-.env.local
-.env.local.*
-.env.*.local
+.env.*
+!.env.example
+!.env.*.example
 
-# Host connection settings and operator secrets.
-.env.host
-.env.secrets
-
-# Local deployment credentials and kubeconfig; `.env` is covered above.
-deploy/idc/.env.aws
-deploy/idc/.env.mcp
+# Local kubeconfig; credentials are covered by the env rules above.
 deploy/idc/kubeconfig
-deploy/local/.env.aws
 
 # misc
 .DS_Store

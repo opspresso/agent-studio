@@ -3,8 +3,7 @@ node_modules
 build
 .git
 .env
-.env.local
-.env.*.local
+.env.*
 coverage
 *.log
 .DS_Store
