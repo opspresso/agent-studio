@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { classifyTelegramUpdate } from "@/application/telegram/engagement";
 import { handleTelegramUpdate } from "@/application/telegram/handleUpdate";
 import type { TelegramEventDeps, TelegramMessage, TelegramUpdate } from "@/application/telegram/types";
@@ -11,6 +11,8 @@ import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { AgentRepository } from "@/domain/agent/repository";
 
 const NOW = 1_750_000_000_000;
+
+beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
 
 function agentFixture(): Agent {
   return {
@@ -127,6 +129,7 @@ function dispositionOf(update: TelegramUpdate) {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 

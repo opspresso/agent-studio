@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The webhook decides which updates reach the handler at all, and what it
@@ -74,11 +74,14 @@ const privateMessage = (text: string, over: Record<string, unknown> = {}) => ({
 });
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
   handled.length = 0;
   claim.mockClear();
   settle.mockClear();
   claim.mockResolvedValue("claim-token");
 });
+afterEach(() => vi.useRealTimers());
 
 describe("the Telegram webhook", () => {
   it("refuses a delivery whose secret does not match, without touching the store", async () => {
