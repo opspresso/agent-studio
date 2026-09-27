@@ -129,7 +129,7 @@ export interface TriggerRun {
   warning?: string;
   /** Per-destination outcome for a schedule report. */
   deliveryResults?: ScheduleDeliveryResult[];
-  /** Set when the run was sampled into a trace, so the two can be joined. */
+  /** Recorded execution Trace ID, for joining history to diagnostics. */
   traceId?: string;
   review?: PullRequestReviewTarget & {
     status: "posted" | "skipped" | "failed";

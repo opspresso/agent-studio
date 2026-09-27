@@ -7,10 +7,10 @@ export type { ChannelAuth, ProviderChannelConfig } from "../llm/providerModels";
 /** One per-provider LLM channel override (replaces the LLM_PROVIDER_* env set). */
 export interface LlmProviderSetting {
   kind?: import("../llm/models").SupportedProvider;
-  /** Lowercase provider key matching the model id prefix (e.g. "openai"). */
+  /** Connection key referenced by RegisteredModel.provider; independent of public catalog IDs. */
   name: string;
   baseUrl: string;
-  /** Secret (enc:v1: at rest). Empty for `sigv4`, which has no key. */
+  /** Encrypted secret. Empty for SigV4 or a keyless self-hosted connection. */
   apiKey: string;
   keepModelPrefix?: boolean;
   /** Absent means `bearer` — the form every stored row predating this had. */
@@ -50,7 +50,7 @@ export interface AppSettings {
   pluginsRepoBranch?: string;
   /** Secret. */
   githubToken?: string;
-  /** Secret. */
+  /** Public address used to build externally reachable application URLs. */
   publicBaseUrl?: string;
   /** An {@link ArtifactAccessMode} (`authenticated` by default); controls how stored artifact URLs are resolved. */
   artifactAccessMode?: string;
