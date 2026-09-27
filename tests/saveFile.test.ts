@@ -66,8 +66,7 @@ describe("saving a file a run wrote", () => {
   });
 
   it("measures bytes rather than characters", () => {
-    // Hangul is three bytes a character in UTF-8. A limit read off `length`
-    // would accept a file a third over it.
+    // UTF-8 Hangul uses three bytes; UTF-16 length is not the file's byte size.
     const content = "가".repeat(MAX_SAVED_FILE_BYTES / 3 + 1);
     expect(saveFileResult({ name: "k.txt", mimeType: "text/plain", content }).files).toBeUndefined();
   });
@@ -120,9 +119,7 @@ describe("what a saved file is called", () => {
   });
 
   it("cuts by character, so a long name is still text", () => {
-    // `slice` counts UTF-16 units and ends a name of emoji on half a character.
-    // PostgreSQL JSONB refuses that invalid surrogate — after the object is already
-    // in the bucket, so the file is lost over its name.
+    // Filename truncation must preserve complete Unicode characters.
     const name = "보고서" + "📊".repeat(60);
     const out = savedFileName(name, "text/markdown");
 
@@ -135,8 +132,7 @@ describe("whether the tool is offered at all", () => {
   const storage = {} as ArtifactStorage;
 
   it("is absent where nothing would keep the file", () => {
-    // Announced-and-dropped is the failure this prevents: without storage the
-    // bracket strips the bytes and the reader gets a row with no download.
+    // SaveFile requires persistent artifact storage.
     expect(buildFileSaver({})).toBeUndefined();
     expect(buildFileSaver({ artifacts: storage })).toBeDefined();
   });

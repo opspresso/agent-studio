@@ -1,6 +1,16 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const entropy = vi.hoisted(() => ({ sequence: 0, seed: 0x12345678 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++entropy.sequence).padStart(12, "0")}`,
+  randomInt: (max: number) => {
+    entropy.seed = (Math.imul(entropy.seed, 1664525) + 1013904223) >>> 0;
+    return Math.floor(entropy.seed / 0x1_0000_0000 * max);
+  },
+}));
 import type { EngineChunk } from "@/domain/llm/types";
 import type {
   ChannelChunk,
@@ -13,6 +23,14 @@ import { SAVE_FILE_TOOL_NAME } from "@/application/llm/agentAssembly";
 import { buildFileSaver } from "@/application/execution/saveFileTool";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
+
+beforeEach(() => {
+  entropy.sequence = 0;
+  entropy.seed = 0x12345678;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
@@ -80,10 +98,8 @@ function sentBack(channel: FakeChannel, id: string): Record<string, unknown> {
 
 describe("announcing a call that carries a whole file", () => {
   it("swaps the body for its size", async () => {
-    // An announced call is kept by everything downstream — rendered, buffered in
-    // the run log, and persisted onto an assistant message that is one 400KB
-    // item. `tool_calls` is the axis nothing truncates, so the body cannot ride
-    // on it.
+    // Display and model history retain a bounded argument summary; file bytes
+    // travel on their own output axis.
     const channel = new FakeChannel([
       [saveCall("c1", BODY), usageChunk(10, 5)],
       [contentChunk("done"), usageChunk(4, 2)],
@@ -99,10 +115,7 @@ describe("announcing a call that carries a whole file", () => {
   });
 
   it("keeps it out of the assistant message the provider gets back too", async () => {
-    // The other half of the same failure, and the worse one: that message is
-    // re-sent on every remaining turn and `contextBudget` cannot cut it, so a
-    // megabyte of content is ~350k tokens per turn — past the window of most
-    // of the catalog, i.e. a provider 400 mid-run after the file was delivered.
+    // Subsequent model turns receive the bounded summary, not the generated file body.
     const channel = new FakeChannel([
       [saveCall("c1", BODY), usageChunk(10, 5)],
       [contentChunk("done"), usageChunk(4, 2)],
@@ -118,8 +131,7 @@ describe("announcing a call that carries a whole file", () => {
   });
 
   it("bounds a call whose arguments never parsed, which is how a big one arrives", async () => {
-    // The provider cuts the turn at its output limit part-way through the file,
-    // so nothing parses and the accumulator has no cap of its own.
+    // Incomplete JSON cannot be summarized by field, so the raw argument is bounded.
     const channel = new FakeChannel([
       [
         toolCallChunk(0, "c1", SAVE_FILE_TOOL_NAME, `{"name":"q3","content":"${BODY}`),
