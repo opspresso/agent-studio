@@ -1,5 +1,12 @@
 import { withConfigurations } from "./agentConfigurations";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { addTestModels } from "./modelFixtures";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
 import { openRun } from "@/application/run/runBracket";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
@@ -10,18 +17,24 @@ import {
 import { prepareSubagent } from "@/application/execution/agentBindings";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import { ValidationError } from "@/application/errors";
-import { listModels } from "@/domain/llm/models";
+import { getModelConfig, listModels } from "@/domain/llm/models";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 
 /**
- * A model the registry does not carry still dispatches and is booked at $0, so
- * the one report that would reveal the spend is the one it corrupts. Allow stays
- * the default; a deployment whose usage rows become an invoice can refuse.
+ * Model admission requires administrator selections. Unknown-price policy
+ * additionally decides whether a selected model without published rates may run.
  */
 
 const REGISTERED = listModels()[0]?.id ?? "openai/gpt-5-mini";
 const UNKNOWN = "acme/not-in-the-registry";
+
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+});
+afterEach(() => { vi.useRealTimers(); addTestModels([]); });
 
 const agent: Agent = {
   name: "p",
@@ -73,6 +86,14 @@ describe("toUnknownModelPolicy", () => {
 });
 
 describe("assertModelsPriceable", () => {
+  it("allows or refuses unknown rates on an already selected model", () => {
+    const unpriced = { ...getModelConfig(REGISTERED)!, id: "local/unpriced", pricingKnown: false,
+      pricing: { inputPer1M: 0, outputPer1M: 0 } };
+    addTestModels([unpriced]);
+
+    expect(() => assertModelsPriceable("allow", { model: unpriced.id })).not.toThrow();
+    expect(() => assertModelsPriceable("refuse", { model: unpriced.id })).toThrow("Model pricing is not configured");
+  });
   it("refuses unselected models even when unknown pricing is allowed", () => {
     expect(() =>
       assertModelsPriceable("allow", { model: UNKNOWN, fallbackModel: UNKNOWN }),
@@ -142,7 +163,7 @@ describe("the run bracket enforces it", () => {
   });
 
   it("admits it when no policy is injected at all", async () => {
-    // A deps bag assembled before this existed must behave exactly as it did.
+    // The generic bracket applies this policy only when its callback is bound.
     const bracket = await openRun({ usage }, agent, configuration({ model: UNKNOWN }));
 
     expect(bracket.runId).toMatch(/[0-9a-f-]{36}/);
@@ -163,7 +184,7 @@ describe("the run bracket enforces it", () => {
       {
         usage,
         unknownModelPolicy: async () => {
-          throw new Error("dynamo down");
+          throw new Error("database unavailable");
         },
       },
       agent,
@@ -186,13 +207,17 @@ describe("subagent preparation enforces model policy", () => {
     } as unknown as ExecutionDeps;
     return prepareSubagent(deps, parent, "child", { message: "hi", images: [] }, async () => {}, { ancestry: ["parent"] });
   }
-  it("refuses an unpriced child before model execution", async () => {
+  it("refuses an unselected child before model execution", async () => {
     await expect(prepare("refuse", UNKNOWN)).rejects.toThrow("selected by an administrator");
   });
   it("prepares a registered model", async () => {
-    expect(await prepare("refuse", REGISTERED)).toMatchObject({ input: { model: REGISTERED } });
+    const prepared = await prepare("refuse", REGISTERED);
+    try { expect(prepared).toMatchObject({ input: { model: REGISTERED } }); }
+    finally { await prepared.close(); }
   });
-  it("allows unpriced models when no refusal policy is configured", async () => {
-    expect(await prepare(undefined, UNKNOWN)).toMatchObject({ input: { model: UNKNOWN } });
+  it("omits the admission check when no policy callback is bound", async () => {
+    const prepared = await prepare(undefined, UNKNOWN);
+    try { expect(prepared).toMatchObject({ input: { model: UNKNOWN } }); }
+    finally { await prepared.close(); }
   });
 });
