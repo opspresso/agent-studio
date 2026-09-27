@@ -1,8 +1,6 @@
 /**
- * Shared application error hierarchy. Every domain-level error carries the HTTP
- * status a route should surface, so `apiError` (and any route) can map errors
- * from any domain uniformly. Domain-specific error modules (agent, chat)
- * extend or re-export these.
+ * Application errors carry the HTTP status apiError surfaces. Pure domain
+ * errors remain independent; use cases translate them at their boundary.
  */
 export class AppError extends Error {
   constructor(
@@ -43,12 +41,8 @@ export class ForbiddenError extends AppError {
 /**
  * Something this app called failed — GitHub, an MCP server, a provider.
  *
- * A distinct type because deriving status from a message substring
- * (`message.includes("GitHub") ? 502 : 500`), which is case-sensitive, blind to
- * every message that does not happen to contain the word, and a second owner of
- * a mapping `apiError` already owns. 502 says "not our fault, and not something
- * retrying differently will fix", which is exactly what an operator needs to
- * know before going to look at the other system.
+ * HTTP 502 identifies a dependency failure without deriving status from an
+ * error-message substring. It does not decide whether retrying is safe.
  */
 export class UpstreamError extends AppError {
   constructor(message: string) {
