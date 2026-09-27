@@ -1,5 +1,5 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ChannelMessage, ChannelToolCall } from "@/domain/llm/channel";
 import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/runtime";
@@ -11,6 +11,18 @@ import {
   toolCallChunkWithoutId,
   usageChunk,
 } from "./fakeChannel";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers();
+  vi.setSystemTime("2026-09-12T00:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
@@ -104,7 +116,7 @@ describe("runAgent aggregates multiple tool calls from one response", () => {
 
 });
 
-describe("ToolCallAccumulator makes every call of a response addressable", () => {
+describe("native call IDs make every requested tool addressable", () => {
   it("gives calls the provider left without an id distinct ids, so neither reads the other's result", async () => {
     const channel = new FakeChannel([
       [
@@ -209,7 +221,7 @@ describe("ToolCallAccumulator makes every call of a response addressable", () =>
   });
 });
 
-describe("ToolCallAccumulator reassembles streamed fragments", () => {
+describe("native tool calls reassemble streamed fragments", () => {
   it("joins a call whose id/name arrive first and arguments span later fragments", async () => {
     const channel = new FakeChannel([
       [
@@ -426,13 +438,12 @@ describe("images an MCP tool returns", () => {
     expect(chunks.filter((c) => c.toolResult?.content.includes("dropped"))).toHaveLength(0);
   });
 
-  it("does not claim images are attached when none were", async () => {
+  it("reports the attached count and dropped images without claiming an empty attachment", async () => {
     const channel = screenshotChannel();
     const many = Array.from({ length: 6 }, () => ({ b64: PIXEL, mimeType: "image/png" }));
     const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
-      // Two calls in one response: the second finds the turn's budget spent.
       callMcpTool: async () => ({ text: "captured", images: many }),
     };
 
@@ -450,6 +461,24 @@ describe("images an MCP tool returns", () => {
     expect(toolResult).toContain("2 more were dropped");
     expect(toolResult).not.toContain("0 image(s)");
   });
+
+  it("does not announce attachments when an earlier sibling spent the image budget", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "first", "screenshot", "{}"), toolCallChunk(1, "second", "screenshot", "{}")],
+      [contentChunk("done")],
+    ]);
+    const images = Array.from({ length: 4 }, () => ({ b64: PIXEL, mimeType: "image/png" }));
+    const chunks = await collect(runAgent({ createToolSchemaValidator, channel,
+      callMcpTool: async () => ({ text: "captured", images }),
+    }, { agentName: "p", model: MODEL, messages: [{ role: "user", content: "capture twice" }], mcpTools: screenshotTools }));
+    expect(chunks.filter(chunk => chunk.image)).toHaveLength(4);
+    const results = chunks.filter(chunk => chunk.toolResult).map(chunk => chunk.toolResult!);
+    expect(results.map(result => result.toolCallId)).toEqual(["first", "second"]);
+    expect(results[0]!.content).toContain("attached to the next message");
+    expect(results[1]!.content).toContain("4 more were dropped");
+    expect(results[1]!.content).not.toMatch(/delivered to the user|attached to the next message|0 image/);
+  });
+
 });
 
 describe("per-turn tool result budget", () => {
