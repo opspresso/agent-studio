@@ -15,7 +15,8 @@ backup, rollout, ticker는 각 배포 저장소에서 관리한다.
 ## 필요한 런타임
 
 - PostgreSQL 18 + pgvector. 앱이 부팅할 때 스키마를 적용하고 `vector` 확장을 만든다.
-- 관리자가 등록한 OpenAI 호환 LLM endpoint. 로그인 후 프로바이더와 모델을 등록할 수 있으므로 부팅에는 모델 연결이 필요하지 않다.
+- Agent 실행에는 관리자가 등록한 지원 프로바이더 연결과 도구 호출 가능한 텍스트 모델이 필요하다.
+  로그인 후 등록하므로 부팅에는 모델 연결이 필요하지 않다. 폐쇄망에서는 사내 모델 endpoint를 사용한다.
 - 32-byte base64 `AES_ENCRYPTION_KEY`.
 - S3 호환 object store는 선택이다. 없으면 artifact 영속화와 `File` 도구가 꺼진다.
   첨부 문서의 텍스트 추출은 계속되지만 원본 보관·재열기·편집은 할 수 없다.
