@@ -1,55 +1,23 @@
-process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 5).toString("base64");
-
 /**
- * Blank is unset, at every point a value is configured.
- *
- * `|| undefined` was the shape every optional env read took, so the empty string
- * already meant "not set" — and whitespace, which carries the same intent, did
- * not. A secret mounted from a file arrives with a trailing newline; one typed
- * with a stray space arrives with that. Without normalization both survive as values:
- * an empty credential would otherwise appear configured on the settings page.
- *
- * The asymmetry that made it worst lived inside the settings page, which asks
- * the blank question twice: an override is stored trimmed (`update` does it),
- * the environment was not. So the same value cleared the field on one side and
- * counted as configured on the other.
+ * Blank configuration values are unset. Environment reads, provider parsing
+ * and stored override views share trimming and blank-value semantics.
  */
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRequiredConfig, config } from "@/lib/config";
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import type { SettingsRepository } from "@/domain/settings/repository";
 
-const TOUCHED = [
-  "GITHUB_TOKEN",
-  "GITHUB_API_URL",
-  "GITHUB_WEB_URL",
-  "PLUGINS_REPO",
-  "PLUGINS_REPO_BRANCH",
-  "S3_BUCKET_NAME",
-  "SCHEDULE_SCAN_TOKEN",
-  "PUBLIC_BASE_URL",
-  "BETTER_AUTH_URL",
-  "MANAGED_MCP_NETWORK_CONTAINER",
-  "AES_ENCRYPTION_KEY",
-] as const;
-const ORIGINAL = Object.fromEntries(TOUCHED.map((key) => [key, process.env[key]]));
+beforeEach(() => {
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
+});
+afterEach(() => vi.unstubAllEnvs());
 
 function set(name: string, value: string | undefined): void {
-  if (value === undefined) {
-    delete process.env[name];
-  } else {
-    process.env[name] = value;
-  }
+  vi.stubEnv(name, value);
 }
-
-afterEach(() => {
-  for (const key of TOUCHED) {
-    set(key, ORIGINAL[key]);
-  }
-});
 
 // The two ways a blank value is written by hand and by a mounted file.
 const BLANK = ["", " ", "\n", "  \t\n"];
