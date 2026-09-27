@@ -15,7 +15,8 @@ test.beforeAll(async () => {
     requests.push(request.url!);
     if (request.url === "/parent") {
       response.writeHead(200, { "Content-Type": "text/html", "Set-Cookie": "app-secret=private; SameSite=Strict" });
-      response.end('<div id="trusted">Application</div><script>localStorage.setItem("secret","private")</script><iframe id="outer" src="/view"></iframe>');
+      // Keep the trusted parent from adding a browser-generated favicon request.
+      response.end('<link rel="icon" href="data:,"><div id="trusted">Application</div><script>localStorage.setItem("secret","private")</script><iframe id="outer" src="/view"></iframe>');
       return;
     }
     response.writeHead(200, {
