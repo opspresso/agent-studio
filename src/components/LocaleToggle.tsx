@@ -3,12 +3,8 @@
 /**
  * The language picker, beside the colour-scheme one in the header.
  *
- * Writing the cookie from the browser and calling `router.refresh()` is the
- * whole mechanism: the refresh re-runs the server tree, the root layout reads
- * the new cookie, and every string re-renders in place. Client state survives
- * it — a half-filled form stays filled — which a full navigation would not
- * give, and there is no locale in the URL to keep in step because the choice
- * was deliberately kept out of the route (`_i18n/locale.ts` says why).
+ * Write the locale cookie and refresh the server tree. The root supplies the
+ * new locale while client drafts survive; language does not change the URL.
  */
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";

@@ -27,11 +27,8 @@ export function ThemeToggle() {
   const t = useT();
 
   /**
-   * The stored preference exists only in the browser, so the server always
-   * renders the default ("auto") while the client renders whatever is in
-   * localStorage — a hydration mismatch that React resolves by throwing the
-   * tree away and rebuilding it. Showing the default until mount makes both
-   * first renders agree; the real preference lands one paint later.
+   * Show the default icon until mount to match SSR; then read the browser's
+   * stored preference. Mantine already applies the actual page scheme before paint.
    */
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
