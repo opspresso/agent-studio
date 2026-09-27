@@ -1,6 +1,17 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const entropy = vi.hoisted(() => ({ seed: 0x12345678, sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomInt: (max: number) => {
+    // A repeatable stream still gives large masking tables distinct tokens.
+    entropy.seed = (Math.imul(entropy.seed, 1664525) + 1013904223) >>> 0;
+    return Math.floor(entropy.seed / 0x1_0000_0000 * max);
+  },
+  randomUUID: () => `00000000-0000-4000-8000-${String(++entropy.sequence).padStart(12, "0")}`,
+}));
 import { runAgent } from "@/application/runtime";
 import { PiiFilter } from "@/application/llm/pii";
 import type {
@@ -10,6 +21,14 @@ import type {
   LlmChannel,
 } from "./channelFixtures";
 import type { EngineChunk } from "@/domain/llm/types";
+
+beforeEach(() => {
+  entropy.seed = 0x12345678;
+  entropy.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 class EchoChannel implements LlmChannel {
   getModel(name?: string) { return scriptedModels(this).getModel(name); }
@@ -54,51 +73,6 @@ class ErrorChannel implements LlmChannel {
     throw new Error("stream failed");
   }
 }
-
-class TransferChannel implements LlmChannel {
-  getModel(name?: string) { return scriptedModels(this).getModel(name); }
-  readonly seenParams: ChannelParams[] = [];
-
-  async chatCompletion(): Promise<ChannelCompletion> {
-    throw new Error("not used");
-  }
-
-  async *chatCompletionStream(params: ChannelParams): AsyncGenerator<ChannelChunk> {
-    this.seenParams.push(params);
-    if (this.seenParams.length === 1) {
-      const message = String(params.messages.at(-1)?.content);
-      yield {
-        choices: [
-          {
-            delta: {
-              tool_calls: [
-                {
-                  index: 0,
-                  id: "call_1",
-                  type: "function",
-                  function: {
-                    name: "transfer_to_agent",
-                    arguments: JSON.stringify({ agent_name: "child", message }),
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      };
-      return;
-    }
-    yield { choices: [{ delta: { content: "Done." } }] };
-  }
-}
-
-/**
- * Same shape as {@link TransferChannel} but fanning out. The model quotes back
- * what it was shown — which is masked — because that is what a real one does, and
- * it is the only way a restored copy of the message can be told apart from the
- * masked original once it reaches the child.
- */
-
 
 class ImageToolChannel implements LlmChannel {
   getModel(name?: string) { return scriptedModels(this).getModel(name); }
@@ -339,14 +313,6 @@ describe("PiiFilter", () => {
     expect(sent).not.toContain("010-1234-5678");
     expect(result).toBe(`Contact ${input}`);
   });
-
-
-
-
-
-
-
-
 
   it("keeps PII masked for image generation while restoring the displayed prompt", async () => {
     const channel = new ImageToolChannel();
