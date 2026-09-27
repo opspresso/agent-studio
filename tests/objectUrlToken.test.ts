@@ -1,5 +1,3 @@
-process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 9).toString("base64");
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 
@@ -18,6 +16,9 @@ const { withArtifactAccessMode } = await import("@/infrastructure/storage/artifa
 
 const KEY = "artifacts/image/8f0c1d2e-3b4a-4c5d-9e6f-7a8b9c0d1e2f.png";
 const NOW = 1_756_000_000;
+
+beforeEach(() => vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 9).toString("base64")));
+afterEach(() => vi.unstubAllEnvs());
 
 describe("the proxied object token", () => {
   it("opens exactly the claims it was minted over", () => {
