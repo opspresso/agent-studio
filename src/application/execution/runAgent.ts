@@ -1,11 +1,7 @@
 /**
- * Execution use cases — the composition point that resolves an Agent's skills,
- * MCP tools and subagents from repositories, runs the LLM engine, and records
- * usage. Surfaces dispatch through `streamAgentExecution` / `collectAgentRun`
- * rather than picking an executor themselves; keep these signatures stable.
- *
- * The concrete OpenAI-compatible channel is the default, but `ExecutionDeps`
- * exposes an optional `channel` so tests can inject a fake.
+ * Shared Agent execution facade: prepare bindings, run the native SDK runtime,
+ * capture output and settle usage. ExecutionDeps supplies the required SDK
+ * ModelProvider; surfaces choose chunk, completion stream or collected output.
  */
 
 import { collectedWarning, isTopLevelChunk, messageText, runTermination } from "@/domain/llm/types";
@@ -79,21 +75,9 @@ export interface RunImage {
 }
 
 /**
- * A run drained into one answer — what a surface that cannot stream receives.
- *
- * `warnings` is part of the answer, not a detail beside it. A run reports what
- * it lost as it goes (a skill no longer in the registry, an MCP server the
- * guard blocked, tools past the per-run cap, a clipped transfer transcript, a
- * child that came back empty), and a collected surface has no later frame to
- * say any of it in. Carrying it here is the same judgement `termination`
- * already made: without it, a degraded run and a clean one are the same JSON.
- *
- * `files` is the same judgement again, arrived at later and the hard way. A
- * document a tool rendered was stored as an artifact and then dropped from
- * every collected answer — the caller received prose about a report with no
- * report attached, while the picture beside it came back inline. The reference
- * is carried here; the surface turns it into an address, because how long a
- * signature lives is the surface's question and not this one's.
+ * Collected output retains images, file references, losses and termination.
+ * Surfaces turn file references into reader-specific URLs; output bytes stay
+ * outside model context and have already passed through artifact capture.
  */
 export interface CollectedRun extends RunResult {
   images: RunImage[];
@@ -105,21 +89,9 @@ export interface CollectedRun extends RunResult {
 }
 
 /**
- * Settle the thresholds of every agent this run spent on but did not open.
- *
- * A transfer is not another turn — it is a whole run on another agent, with
- * its own limits and its own usage rows. `bracket.close` settles the agent it
- * admitted and knows about no other, and `settleCostLimit` is the only thing
- * that claims the block and alert notifications. So an agent reached only
- * through transfers accrued spend, began refusing at its threshold — the child's
- * own `assertWithinCostLimit` sees to that — and told nobody, because the one
- * announcement its owner could have received was never sent.
- *
- * After the flush, for the reason the flush is before the close: the totals have
- * to include the run that just spent them.
- *
- * Telemetry, like the flush: a settle that cannot read must not turn an answer
- * already delivered into a failure.
+ * Settle delegated Agents after usage flush. They share the parent bracket but
+ * keep their own spend and thresholds; bracket.close settles only its Agent.
+ * Settlement failures are logged without invalidating delivered output.
  */
 async function settleTransferred(
   deps: ExecutionDeps,
@@ -162,21 +134,12 @@ export async function collectRun(
       // Same as the streaming path: a subagent failure is a tool error the
       // parent may still answer from, so it does not fail the request.
       if (isTopLevelChunk(chunk)) {
-        // Typed, not bare. The engine wrote this sentence for a reader, and a
-        // streaming caller gets to read it; thrown as a plain `Error` the
-        // collected caller got "Internal server error" instead, because
-        // `apiError` cannot tell an engine's message from a stack trace. The
-        // same text, with the status that says the failure is upstream.
+        // A typed upstream error preserves the runtime's reader-facing message.
         throw new UpstreamError(chunk.error);
       }
       continue;
     }
-    // What the run lost, kept alongside the answer rather than dropped. A
-    // collected surface has no later frame to say it in, and every other
-    // consumer of this stream — chat, Slack, the console — reports these;
-    // dropping them here is what made a run that silently lost half its tools
-    // indistinguishable from one that had them. `collectedWarning` owns which
-    // ones count.
+    // Losses remain part of collected responses, including delegated warnings.
     const warning = collectedWarning(chunk, warnings);
     if (warning) {
       warnings.push(warning);
@@ -203,12 +166,7 @@ export async function collectRun(
       usage.inputTokens += chunk.usage.inputTokens;
       usage.outputTokens += chunk.usage.outputTokens;
       usage.costUsd += chunk.usage.costUsd;
-      // The two subset fields are summed here rather than left off, because
-      // this accumulator and the single-shot path answer the *same* endpoint:
-      // built field by field, an agent's `/predict` silently dropped
-      // what an `llm` agent's returned, and a caller reading either could
-      // not tell a provider that reports neither from a shape that discards
-      // them. Absent-not-zero, so a run nobody reported them for is unchanged.
+      // Preserve reported token subsets; omit them when the total is zero.
       cachedTokens += chunk.usage.cachedTokens ?? 0;
       reasoningTokens += chunk.usage.reasoningTokens ?? 0;
     }
@@ -229,11 +187,8 @@ export async function collectRun(
 }
 
 /**
- * Single non-streaming dispatch point — {@link streamAgentExecution}'s
- * counterpart for surfaces that answer with one collected body. Two route
- * handlers each mapped strategy→executor for themselves, and the copies had
- * already diverged on the image case; the mapping is answered here once, and a
- * route only decides how to serialise the result.
+ * Collect the same Agent stream used by streaming consumers. Routes own only
+ * response serialization, including reader-specific artifact addressing.
  */
 export async function collectAgentRun(
   deps: ExecutionDeps,
