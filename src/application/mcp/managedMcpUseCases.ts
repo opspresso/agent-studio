@@ -1,19 +1,8 @@
 /**
- * Managed MCP servers: the registry entry and the container are one thing, so
- * they are created and destroyed together.
- *
- * The address is the seam. A managed entry is trusted because the provisioner
- * reported where it bound the port, so that value is written here and nowhere
- * else — `mcpUseCases` refuses to move it, and `isManagedLoopback` refuses to
- * believe it if it is not loopback.
- *
- * Reachability, not liveness, is what says a managed server works. A container
- * joins this app's network namespace when it starts, and Docker pins that to the
- * app container's *identity*, not its name — so replacing this app leaves the
- * container running perfectly in a namespace nothing can address any more.
- * `docker inspect` still calls it healthy. Only asking the server tells them
- * apart, which is why `status` probes and `reconcile` restarts what does not
- * answer.
+ * Manage registry entries and host-loopback containers under one lifecycle claim.
+ * The provisioner owns their address; ordinary registry edits cannot move it.
+ * Container liveness and MCP reachability are separate: status probes the server
+ * and reconcile restarts unusable entries from their stored workload spec.
  */
 
 import type { McpRepository } from "@/domain/mcp/repository";
@@ -60,9 +49,8 @@ export interface ManagedMcpStatus {
   image?: string;
   running: boolean;
   /**
-   * The server answered. Separate from `running` on purpose: "running and
-   * unreachable" is a real state, and reporting only the first is what let a
-   * stranded container look healthy for half a day.
+   * MCP discovery succeeded or returned an authentication refusal, independently
+   * of the container's running state.
    */
   reachable: boolean;
   address?: string;
@@ -140,7 +128,7 @@ export interface ManagedMcpUseCases {
   remove(name: string, actorEmail: string): Promise<void>;
   status(name: string): Promise<ManagedMcpStatus>;
   /**
-   * Re-create one entry's container against the namespace this app has now.
+   * Re-create one entry's container from its stored spec and publish its host port.
    *
    * Returns once the restart has been *accepted*, not once it is done: starting
    * a container polls the runtime for minutes, and a caller that gave up
@@ -615,10 +603,8 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
             continue;
           }
           const restarted = await restartEntry(current, specFor(current));
-          // One restart per entry per sweep. If it still does not answer once
-          // it has had time to come up, the problem is not the namespace it was
-          // stranded in, and going round again would only take it down a second
-          // time to prove that.
+          // Restart once per entry per sweep; report failed settling rather than
+          // repeatedly tearing down a server that still cannot be reached.
           outcomes.push(
             (await settles(restarted))
               ? { name: entry.name, action: "restarted" }

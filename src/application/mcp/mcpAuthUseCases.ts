@@ -947,8 +947,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const server = await requireOAuthServer(pending.serverName);
       // The entry may have been repointed while the user was at the provider.
       // Redeeming at the new server's token endpoint would send it a code its
-      // authorization server never issued. Skipped for a state that predates the
-      // recorded issuer, which has nothing to compare.
+      // authorization server never issued. Compare the stored issuer exactly.
       if (server.auth.issuer !== pending.issuer) {
         throw new ValidationError(
           `The authorization server configured for "${pending.serverName}" changed while this authorization was in progress. Please connect it again.`,
@@ -985,10 +984,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       void _accessToken, _refreshToken, _expiresAt;
       const completed: McpConnection = {
         ...credentials,
-        // Stamped here too, so a row that predates the binding acquires both
-        // halves the first time it is authorized rather than staying unbound
-        // forever. `resource` is what these very tokens were minted for — the
-        // RFC 8707 audience sent on the exchange just above.
+        // Store the issuer and resource used for this exact exchange.
         issuer: server.auth.issuer,
         resource: server.auth.resource,
         accessToken: deps.cipher.encrypt(
