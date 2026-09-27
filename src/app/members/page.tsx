@@ -24,10 +24,11 @@ export default function MembersPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set());
 
   async function changeTier(member: MemberView, tier: MemberTier) {
-    setSavingId(member.id);
+    if (savingIds.has(member.id)) return;
+    setSavingIds(previous => new Set(previous).add(member.id));
     setSaveError(null);
     try {
       const updated = await readJson<Member>(
@@ -41,7 +42,11 @@ export default function MembersPage() {
     } catch (cause) {
       setSaveError(reportError(cause, "Failed to update tier"));
     } finally {
-      setSavingId(null);
+      setSavingIds(previous => {
+        const remaining = new Set(previous);
+        remaining.delete(member.id);
+        return remaining;
+      });
     }
   }
 
@@ -103,7 +108,7 @@ export default function MembersPage() {
                       w={110}
                       data={[...MEMBER_TIERS]}
                       value={member.tier}
-                      disabled={member.tierLocked || savingId === member.id}
+                      disabled={member.tierLocked || savingIds.has(member.id)}
                       allowDeselect={false}
                       aria-label={`Tier of ${member.email}`}
                       onChange={(value) => {
