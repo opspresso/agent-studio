@@ -177,6 +177,23 @@ describe("call model routing", () => {
       expect(events).toContainEqual(expect.objectContaining({ source: "jev", outcome: expect.stringMatching(/failed|rejected/) }));
     }
   });
+  it("uses the base on the final attempt after a promoted model's first transport failure",async()=>{
+    const {execute}=setup();const invoke=vi.fn().mockRejectedValueOnce(new Error("503")).mockRejectedValueOnce(new Error("503"))
+      .mockRejectedValueOnce(new Error("503")).mockResolvedValueOnce(result);
+    await execute(task,invoke);
+    expect(invoke.mock.calls.map(([id])=>id)).toEqual(["fast","fast","general","base"]);
+  });
+  it.each([undefined,"invalid"])("retains an eligible different model when the decision is unavailable: %s",async(decisionModel)=>{
+    const {execute}=setup(settings,{selectedDecisionModel:async()=>decisionModel});const invoke=vi.fn().mockResolvedValue(result);
+    await execute({...task,requireDifferentModel:true},invoke);
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("general");
+  });
+  it("preserves one inference's budget before paying for a decision, including a rejected continuation",async()=>{
+    const {select,choose,state}=setup({...settings,maxCallCostUsd:0.00045,maxRunCostUsd:0.00045});
+    const selected=await select({...task,callKind:"primary"},undefined,"missing");
+    expect(choose).not.toHaveBeenCalled();expect(selected.model).toBe("base");
+    expect(state.calls).toBe(1);expect(state.spentUsd).toBeLessThanOrEqual(0.00045);
+  });
   it("promotes after two failures and reserves the final attempt for the base model", async () => {
     const { execute, events } = setup();
     const invoke = vi.fn().mockRejectedValueOnce(new Error("HTTP 503")).mockRejectedValueOnce(new Error("HTTP 503"))

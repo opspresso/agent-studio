@@ -84,6 +84,18 @@ export function createCallModelRouter(
     return (tokens * facts.pricing.inputPer1M + outputTokens(model, task) * facts.pricing.outputPer1M) / 1_000_000;
   }
 
+  function preferredTier(task: RoutedModelTask): ModelTier {
+    return task.purpose === "coding" ? "coding" : task.purpose === "reasoning" ? "reasoning" : task.imageCount ? "vision" : "general";
+  }
+  async function defaultCandidate(task: RoutedModelTask, valid: Map<ModelTier, string>, attempted = new Set<string>()) {
+    if (!await rejection(baseModel, task)) return { selected: baseModel, tier: undefined as ModelTier | undefined };
+    for (const tier of [preferredTier(task), "general", ...MODEL_TIERS] as ModelTier[]) {
+      const model = valid.get(tier);
+      if (model && !attempted.has(model) && !await rejection(model, task)) return { selected: model, tier };
+    }
+    return { selected: baseModel, tier: undefined as ModelTier | undefined };
+  }
+
   /** Admission is synchronous after async eligibility checks, including parallel child callers. */
   function reserve(model: string, task: RoutedModelTask) {
     if (state.calls >= settings.maxCalls) throw new Error("Routed model call limit reached");
@@ -126,7 +138,7 @@ export function createCallModelRouter(
       } else if (valid.size) {
         // Aliases of the same registered model are one execution choice.
         // Preserve the task-specific alias without changing explicit policies or promotion.
-        const preferred = task.purpose === "coding" ? "coding" : task.purpose === "reasoning" ? "reasoning" : task.imageCount ? "vision" : "general";
+        const preferred = preferredTier(task);
         const options = new Map<ModelTier, string>();
         const models = new Set<string>();
         for (const candidate of [preferred, ...MODEL_TIERS] as ModelTier[]) {
@@ -158,11 +170,13 @@ export function createCallModelRouter(
               const outputPriceable = facts && (facts.pricing.outputPer1M === 0 || facts.maxTokens > 0);
               const decisionCost = facts && facts.pricingKnown !== false && outputPriceable
                 ? (decisionTokens * facts.pricing.inputPer1M + facts.maxTokens * facts.pricing.outputPer1M) / 1_000_000 : Infinity;
+              const nativeCandidates = [...options.values(), ...(!await rejection(baseModel, task) ? [baseModel] : [])];
+              const minimumCallCost = Math.min(...nativeCandidates.map(model => estimate(model, task)));
               const decisionContext = createRunContextBudget(decisionModel, undefined, facts?.maxTokens ?? 0);
               if (!available || !facts?.capabilities.decision || !decisionContext ||
                   decisionTokens - PROTOCOL_HEADROOM_TOKENS > decisionContext.remaining() ||
                   !Number.isFinite(decisionCost) || decisionCost > settings.maxCallCostUsd ||
-                  state.spentUsd + decisionCost > settings.maxRunCostUsd) {
+                  state.spentUsd + decisionCost + minimumCallCost > settings.maxRunCostUsd) {
                 throw new Error("Decision model is outside routing policy");
               }
               state.spentUsd += decisionCost;
@@ -191,18 +205,19 @@ export function createCallModelRouter(
         }
       }
     }
+    if (source === "default") ({ selected, tier } = await defaultCandidate(task, valid));
     return { selected, tier, source: source as CallRoutingEvent["source"], valid, decisionDetails };
   }
   return {
     /** Reserve once before a native SDK call; no output retries or second Agent loop. */
     async select(task: RoutedModelTask, signal?: AbortSignal, continuationModel?: string) {
       const continuation = continuationModel && !await rejection(continuationModel, task) ? continuationModel : undefined;
-      let { selected, tier, source, decisionDetails } = await selection(continuation ? { ...task, model: continuation } : task, signal);
+      let { selected, tier, source, valid, decisionDetails } = await selection(continuation ? { ...task, model: continuation } : task, signal);
       if (continuation) source = "continuation";
       let reason = await rejection(selected, task);
-      if (reason && selected !== baseModel) {
+      if (reason) {
         observe({ purpose: task.purpose, model: selected, tier, source, outcome: "rejected", attempt: 1, reason });
-        selected = baseModel; tier = undefined; source = "default";
+        ({ selected, tier } = await defaultCandidate(task, valid)); source = "default";
         reason = await rejection(selected, task);
       }
       if (reason) throw new Error(`Primary model rejected by routing policy: ${reason}`);
@@ -227,7 +242,7 @@ export function createCallModelRouter(
           observe({ purpose: task.purpose, model: selected, ...(tier ? { tier } : {}), source, outcome: "rejected", attempt, reason });
           if (selected === baseModel) throw new Error(reason === "same-primary-model"
             ? "No different ModelTask model is available within routing policy" : `Default ModelTask model rejected: ${reason}`);
-          selected = baseModel; tier = undefined; source = "default"; continue;
+          ({ selected, tier } = await defaultCandidate(task, valid, attempted)); source = "default"; continue;
         }
         const { estimatedCostUsd } = reserve(selected, task);
         observe({ purpose: task.purpose, model: selected, ...(tier ? { tier } : {}), source, outcome: "selected", attempt, estimatedCostUsd,
@@ -259,7 +274,9 @@ export function createCallModelRouter(
           const higher = promotionOrder.slice(Math.max(0, tier ? promotionOrder.indexOf(tier) + 1 : 0))
             .find((key) => valid.has(key) && !attempted.has(valid.get(key)!));
           if (higher && attempt < MAX_ATTEMPTS - 1) { tier = higher; selected = valid.get(higher)!; source = "promotion"; continue; }
-          selected = baseModel; tier = undefined; source = "default";
+          ({ selected, tier } = await defaultCandidate(task, valid, attempted)); source = "default";
+        } else if (attempt >= MAX_ATTEMPTS - 1) {
+          ({ selected, tier } = await defaultCandidate(task, valid, attempted)); source = "default";
         }
       }
       throw lastError ?? new Error("ModelTask could not complete");

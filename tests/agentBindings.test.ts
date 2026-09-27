@@ -41,6 +41,16 @@ describe("Studio prepares native SDK agent bindings", () => {
     expect(bound.callRouting).toBe(f.deps.callRouting);
     expect(checkBinding).toHaveBeenCalledWith("model-routing", modelRoutingPolicyFingerprint(policy));
   });
+  it("includes the selected decision model in pending policy identity",async()=>{
+    const f=fixture({}, {parameters:{piiFiltering:false,modelRouting:true}});
+    const policy={...DEFAULT_CALL_ROUTING_POLICY,tiers:{fast:"local/fast"}};
+    f.deps.getCallRoutingPolicy=async()=>policy;
+    f.deps.callRouting={decision:{choose:vi.fn()},selectedDecisionModel:async()=>"local/decision",canUseModel:async()=>true};
+    const checkBinding=vi.fn();
+    await buildAgentDeps(f.deps,f.configuration,"child",async()=>{},{...f.origin,backgroundTask:true},undefined,undefined,{checkBinding} as unknown as RuntimeTurnPersistence);
+    expect(checkBinding).toHaveBeenCalledWith("model-routing",modelRoutingPolicyFingerprint(policy,"local/decision"));
+    expect(modelRoutingPolicyFingerprint(policy,"local/decision")).not.toBe(modelRoutingPolicyFingerprint(policy,"local/replacement"));
+  });
   it("does not bind routing or block unrelated approvals when an Agent never opted in", async () => {
     const f = fixture();
     f.deps.getCallRoutingPolicy = vi.fn();

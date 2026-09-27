@@ -28,7 +28,7 @@ export async function buildAgentDeps(
   if (configuration.parameters.modelRouting !== undefined && typeof configuration.parameters.modelRouting !== "boolean") throw new ValidationError("Agent model routing must be a boolean");
   const routingConfigured = configuration.parameters.modelRouting !== undefined;
   const modelRoutingPolicy = routingConfigured ? await deps.getCallRoutingPolicy?.() ?? structuredClone(DEFAULT_CALL_ROUTING_POLICY) : undefined;
-  if (modelRoutingPolicy) runtime?.checkBinding(MODEL_ROUTING_POLICY_BINDING, modelRoutingPolicyFingerprint(modelRoutingPolicy));
+  if (modelRoutingPolicy) runtime?.checkBinding(MODEL_ROUTING_POLICY_BINDING, modelRoutingPolicyFingerprint(modelRoutingPolicy, await deps.callRouting?.selectedDecisionModel()));
   const common = { channel: deps.channel, callRouting: routingConfigured ? deps.callRouting : undefined,
     modelRoutingPolicy,
     createToolSchemaValidator: deps.createToolSchemaValidator, recordUsage, loadSkillContent: buildSkillLoader(createSkillReader(deps)) };

@@ -510,6 +510,8 @@ export const ko: Messages = {
   "usage.calls": "호출",
   "usage.cached": "캐시",
   "usage.cost": "비용",
+  "routing.reset": "기본값 복원 (보조 호출 없음)",
+  "routing.unsetHint": "Agent에 설정된 모델을 사용하며 ModelTask 도구를 제공하지 않습니다.",
   "routing.title": "모델 라우팅",
   "routing.globalTitle": "자동 모델 라우팅",
   "routing.globalHint": "자동 라우팅을 켠 모든 Agent가 사용할 tier 모델을 한 번 배정합니다. 첫 답변부터 적절한 주 모델을 선택합니다. 결정 모델은 위에서 선택하고, 작업별 정책과 한도는 고급 설정에서 관리합니다.",

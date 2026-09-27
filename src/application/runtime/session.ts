@@ -76,8 +76,8 @@ export function runtimeFingerprint(value: unknown): string {
 }
 
 /** Checkpoint admission includes the accounting contract, before claiming any approved work. */
-export function modelRoutingPolicyFingerprint(policy: CallRoutingPolicy): string {
-  return runtimeFingerprint({ policy, ledger: "shared-run-attempts-v1" });
+export function modelRoutingPolicyFingerprint(policy: CallRoutingPolicy, decisionModel?: string): string {
+  return runtimeFingerprint({ policy, decisionModel, ledger: "shared-run-attempts-v1" });
 }
 
 export function approvalId(item: RunToolApprovalItem): string {

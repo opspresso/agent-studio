@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Anchor, Checkbox, Divider, Stack, Text } from "@mantine/core";
+import { Anchor, Button, Checkbox, Divider, Stack, Text } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
 import { MODEL_TIERS } from "@/domain/llm/callRouting";
 import type { ModelRoutingResponse } from "@/app/api/models/routing/route";
 
-export function ModelRoutingEditor({ value, onChange }: { value?: boolean; onChange(value: boolean): void }) {
+export function ModelRoutingEditor({ value, onChange }: { value?: boolean; onChange(value: boolean | undefined): void }) {
   const t = useT();
   const viewer = useViewer();
   const [view, setView] = useState<ModelRoutingResponse>();
@@ -25,8 +25,10 @@ export function ModelRoutingEditor({ value, onChange }: { value?: boolean; onCha
   const tiers = view ? MODEL_TIERS.filter(tier => view.policy.tiers[tier]) : [];
   return <Stack gap="xs">
     <Divider label={t("routing.title")} labelPosition="left" />
-    <Checkbox label={t("routing.enabled")} checked={value === true} description={t("routing.hint")}
+    <Checkbox label={t("routing.enabled")} checked={value === true} description={t(value === undefined ? "routing.unsetHint" : "routing.hint")}
       onChange={event => onChange(event.currentTarget.checked)} />
+    {value !== undefined && <Button variant="subtle" size="compact-xs" style={{ alignSelf: "flex-start" }}
+      onClick={() => onChange(undefined)}>{t("routing.reset")}</Button>}
     {value && <>
       <Text size="xs" c="dimmed">{t("routing.sharedHint")}</Text>
       {view && <Text size="xs" c={tiers.length ? "dimmed" : "orange"}>

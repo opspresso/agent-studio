@@ -6,7 +6,7 @@ import { ViewerProvider } from "@/app/_lib/useViewer";
 import { ModelRoutingEditor } from "@/app/agents/[name]/_components/ModelRoutingEditor";
 
 describe("Agent routing opt-in", () => {
-  it.each([true, false])("shows a single opt-in without exposing shared policy inputs: enabled=%s", (enabled) => {
+  it.each([true, false, undefined])("shows a single opt-in without exposing shared policy inputs: enabled=%s", (enabled) => {
     const markup = renderToStaticMarkup(createElement(MantineProvider, { children: createElement(ViewerProvider, { viewer: null,
       children: createElement(ModelRoutingEditor, { value: enabled, onChange: () => {} }),
     }) }));

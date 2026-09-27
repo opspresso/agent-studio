@@ -543,6 +543,8 @@ export const en = {
   "usage.calls": "Calls",
   "usage.cached": "Cached",
   "usage.cost": "Cost",
+  "routing.reset": "Restore default (no focused model calls)",
+  "routing.unsetHint": "Uses the configured Agent model without the ModelTask tool.",
   "routing.title": "Model routing",
   "routing.globalTitle": "Automatic model routing",
   "routing.globalHint": "Assign tier models once for all Agents that enable automatic routing. Routing selects the primary model before the first response. Select the decision model above; task policies and limits are under Advanced settings.",
