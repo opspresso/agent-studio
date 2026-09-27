@@ -167,6 +167,21 @@ describe("verifying a Bot Framework token", () => {
 });
 
 describe("talking to the Bot Framework", () => {
+  it.each(["not json", "null", "[]", "{}", '{"id":42}', '{"id":"  "}'])("refuses an unusable activity receipt: %s", async (body) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    try {
+      const calls = stubFetch((url) => url.includes("/oauth2/v2.0/token")
+        ? jsonResponse({ access_token: "tok", expires_in: 3600 })
+        : new Response(body, { status: 200 }));
+
+      await expect(teamsClient.sendActivity(CREDS, SERVICE, "conversation", { type: "message", text: "reply" })).rejects.toThrow();
+      expect(calls.filter(call => call.url.endsWith("/activities"))).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("trades the credentials for a token once, and sends activities with it", async () => {
     const calls = stubFetch((url, init) => {
       if (url === "https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token") {

@@ -56,6 +56,10 @@ UTF-16 기준 약 100KB 이고 본문은 80KB 이내를 권장한다. 20,000 UTF
 메타데이터 여유를 남긴다. 그만큼 긴 답은 어차피
 둘로 나뉘는 편이 읽기 좋다.
 
+전송 응답은 JSON과 비어 있지 않은 문자열 activity ID를 검증한다.
+[REST 전송 응답](https://learn.microsoft.com/en-us/azure/bot-service/rest-api/bot-framework-rest-connector-api-reference#send-to-conversation)이
+잘못되면 빈 ID로 성공 처리하거나 후속 편집 주소를 만들지 않고 오류를 전달한다.
+
 ## 어떤 activity 가 봇을 향한 것인가
 
 함수 하나, `classifyTeamsActivity` (`src/application/teams/engagement.ts`), 그리고 **dedup

@@ -270,8 +270,11 @@ export const teamsClient: TeamsClientPort = {
     if (!res.ok) {
       throw await readError(res, "sendActivity");
     }
-    const data = (await res.json().catch(() => ({}))) as { id?: string };
-    return { id: data.id ?? "" };
+    const data = (await res.json()) as { id?: unknown } | null;
+    if (typeof data?.id !== "string" || !data.id.trim()) {
+      throw new Error("Teams sendActivity returned no usable activity id");
+    }
+    return { id: data.id };
   },
 
   async updateActivity(credentials, serviceUrl, conversationId, activityId, activity) {
