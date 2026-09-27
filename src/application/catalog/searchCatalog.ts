@@ -6,10 +6,8 @@
  * requests without averaging unrelated text into one embedding. Query selection
  * belongs to execution/bindings; a request-free preview can use the Agent role.
  *
- * One kind per call. The caller wants a bounded number of each — skills and
- * agents are cheap to add, an MCP server costs a discovery round trip — so a
- * single mixed query whose results had to be re-bucketed afterwards would return
- * the wrong quantities of each and hide it.
+ * Each kind has its own result limit: Skill, MCP server and MCP tool candidates
+ * share embeddings and reranking but are selected independently.
  */
 
 import {
@@ -87,16 +85,8 @@ function reindexOverlapped(
  * How far below the best match an entry may sit and still be returned, as a
  * *fraction of that best score* rather than an absolute number.
  *
- * `mcp-memory` learned this the hard way and wrote it down: absolute cosine
- * thresholds do not transfer between embedding models — a correct answer scores
- * 0.15–0.41 on Titan v2 and around 0.8 elsewhere, so a threshold tuned for one
- * silently returns nothing at all on the other. A ratio survives the swap.
- *
- * This is the half of the cut that reads the *shape* of a result set, and it
- * does most of the work when one entry clearly wins: measured against this
- * registry, "깃헙 레포" puts github at 0.393 with the next server at 0.29, and
- * only a ratio can express "that gap means the rest are also-rans". The
- * absolute floor cannot — 0.29 clears it comfortably.
+ * Relative distance from the best result complements the model-specific
+ * absolute floor without assuming cosine scores transfer between models.
  */
 const KEEP_RATIO = 0.7;
 

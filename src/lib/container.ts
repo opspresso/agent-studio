@@ -482,15 +482,9 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
         const result = await mcpUseCases.testConnection(serverName);
         return result.ok ? result.tools : undefined;
       },
-      // Wrapped so an Agent's system prompt — the same text on every run of
-      // that Agent — is embedded once per process rather than once per run.
-      // Only queries are cached; a reindex's documents pass straight through.
-      //
-      // The space a cached vector belongs to is the model *and*, for the
-      // OpenAI-compatible adapter, the endpoint it resolves from runtime
-      // settings — which an admin can repoint without restarting anything. Both
-      // reads are already cached where they live, so this costs nothing per
-      // call and makes a repoint a cache miss instead of a wrong answer.
+      // Reuse exact query vectors within this process. The selected model,
+      // endpoint and wire ID identify the embedding space; reindex documents
+      // bypass the cache and a model/channel change produces a cache miss.
       embeddings: cacheQueryEmbeddings(openAiEmbeddings, async () => {
         const model = await getEmbeddingModel();
         const target = await getEmbeddingTarget(model);

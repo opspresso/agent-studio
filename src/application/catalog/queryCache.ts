@@ -1,18 +1,7 @@
 /**
- * Remembering the vector for a query text this process has already embedded.
- *
- * Discovery searches with the Agent's system prompt and the request. Repeated
- * text reuses its vector within the same embedding space, avoiding a provider
- * round trip before the first token.
- *
- * **Queries only.** A reindex embeds documents, every one of them different and
- * seen once; caching those would evict the queries that repeat and hold the
- * whole catalog in memory to do it. The purpose the port already carries is
- * what tells the two apart.
- *
- * A hit requires exact text and the current embedding space. The caller
- * resolves that space per call so model or endpoint changes cannot reuse an
- * incompatible vector. LRU eviction bounds memory without a separate reset.
+ * Cache exact query embeddings within the current embedding space. The caller
+ * resolves that space per call so model/channel changes cannot reuse incompatible
+ * vectors. Document embeddings bypass the cache; LRU eviction bounds memory.
  */
 
 import type { EmbeddingPort, EmbeddingPurpose } from "@/domain/vector/types";
@@ -28,13 +17,8 @@ import type { EmbeddingPort, EmbeddingPurpose } from "@/domain/vector/types";
 export type EmbeddingSpace = () => Promise<string> | string;
 
 /**
- * How many query texts to keep.
- *
- * Sized to retain frequently reused system prompts through the churn of user requests
- * flowing past — those miss by nature and evict on the way out. Eviction is
- * least-recently-*used*, which is what {@link cacheQueryEmbeddings} arranges
- * and why: a system prompt is reused across runs until edited, so evicting
- * by insertion order would drop exactly the entry this exists for.
+ * Maximum distinct query texts retained. Reads refresh recency so repeatedly
+ * used queries survive one-off traffic.
  */
 const MAX_ENTRIES = 128;
 
@@ -46,12 +30,7 @@ export function cacheQueryEmbeddings(
   const cache = new Map<string, number[]>();
 
   /**
-   * Insert or move-to-newest. A `Map` iterates in insertion order, so deleting
-   * before setting is what makes eviction least-recently-*used* rather than
-   * least-recently-inserted — and that distinction is the whole point here: a
-   * system prompt is asked for on every run but inserted once, so insertion
-   * order alone would let a stream of one-off requests evict exactly the entry
-   * this cache exists for.
+   * Delete before setting to move a hit to the newest Map position.
    */
   function touch(key: string, vector: number[]): void {
     cache.delete(key);
