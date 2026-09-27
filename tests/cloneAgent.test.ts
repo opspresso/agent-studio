@@ -1,12 +1,16 @@
-process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
-
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { composeCloneAgent } from "@/application/agent/cloneAgentFlow";
 import type { ConfigurationRefRepos } from "@/application/agent/configurationPolicy";
 import { ConflictError, ForbiddenError } from "@/application/errors";
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-02T00:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 const OWNER = "owner@x.com";
 const CLONER = "cloner@x.com";
