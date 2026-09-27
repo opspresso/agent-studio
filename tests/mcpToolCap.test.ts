@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
@@ -15,14 +15,7 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 }));
 
 /**
- * The per-run tool cap, at the two places it has to mean the same thing.
- *
- * It decided what a run *offers* and nothing else: the alias map inside the
- * manager still held every discovered tool, so a cut name that arrived at
- * dispatch executed and reported an ordinary result — while the run's warning
- * said those tools "were not offered". The model does not have to invent the
- * name for that to matter; a chat replays an earlier run's top-level tool calls,
- * and the earlier run may have had room this one does not.
+ * The per-run tool cap bounds declarations, dispatch and direct alias lookup.
  */
 function stubServerWith(toolCount: number): void {
   vi.stubGlobal(
@@ -73,8 +66,15 @@ const configuration = { agentName: "p", mcpList: [{ name: "srv" }] } as unknown 
 
 describe("the per-run MCP tool cap", () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime("2026-01-01T00:00:00.000Z");
     clearMcpDiscoveryCache();
     vi.unstubAllGlobals();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    clearMcpDiscoveryCache();
   });
 
   it("offers at most the cap, and says what it left out", async () => {

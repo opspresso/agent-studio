@@ -52,10 +52,12 @@ function stubSourceResponse(text: string) {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
   clearMcpDiscoveryCache();
   stubSourceResponse(JSON.stringify(recording));
 });
-afterEach(() => { vi.unstubAllGlobals(); clearMcpDiscoveryCache(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); clearMcpDiscoveryCache(); });
 
 describe("mapped MCP tools offered to an Agent", () => {
   it("registers and refreshes enveloped file responses through the plugin default mapping before truncation", async () => {

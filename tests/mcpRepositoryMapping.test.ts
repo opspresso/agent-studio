@@ -2,6 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "@/infrastructure/db/keys";
 import type { FakeStore } from "./fakeStore";
 
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+
 /** Records what was written and answers reads from it. */
 vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
 const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
@@ -14,6 +20,7 @@ import type { McpServer } from "@/domain/mcp/types";
 import type { McpConnection } from "@/domain/mcp/connection";
 
 beforeEach(() => {
+  ids.sequence = 0;
   store.rows.clear();
   store.seed([{ ...keys.agent("p"), entityType: "AGENT", name: "p" }]);
 });
@@ -56,7 +63,7 @@ describe("mcp repository mapping", () => {
     expect(read?.url).toBe("http://127.0.0.1:3204/mcp");
   });
 
-  it("reads a row written before managed servers existed as remote", async () => {
+  it("leaves an omitted runtime classification undefined", async () => {
     store.seed([
       {
         ...keys.mcp("github"),
@@ -161,12 +168,9 @@ describe("mcp connection mapping", () => {
     expect((await mcpConnectionRepository.get("p", "slack"))?.revision).toBeTruthy();
   });
 
-  it("round-trips the flag that decides whether the issuer check applies", async () => {
-    // The write spreads the whole connection while the read names its fields, so
-    // a field added to the type and not to the reader is stored and then lost on
-    // the way back. This one is the difference between a metadata-document
-    // client surviving a move to another authorization server and being refused
-    // as belonging to the old one.
+  it("round-trips CIMD client provenance for authorization selection", async () => {
+    // The reader must retain CIMD provenance so beginAuthorization can rebuild
+    // its public client independently of issuer-bound registered credentials.
     const connection: McpConnection = {
       agentName: "p",
       serverName: "slack",
@@ -248,7 +252,7 @@ describe("mcp connection mapping", () => {
   });
 });
 
-describe("connections written before the checks existed", () => {
+describe("connections missing required identity bindings", () => {
   it("lets the owner replace an unreadable legacy grant", async () => {
     store.seed([{
       ...keys.mcpConnection("p", "slack"), agentName: "p", serverName: "slack",
@@ -295,9 +299,7 @@ describe("connections written before the checks existed", () => {
   });
 
   it("reads a row missing its issuer as no connection at all", async () => {
-    // There is nothing safe to assume for it. The old fallback — "it belongs to
-    // whatever the entry points at now" — is the assumption the field exists to
-    // stop making, and a token checked against a guess is not checked.
+    // A missing credential binding must never inherit the current registry identity.
     store.seed([
       {
         ...keys.mcpConnection("p", "slack"),

@@ -1,15 +1,13 @@
 /**
  * Discovering what an OAuth flow against a registry MCP server needs.
  *
- * The failure this guards against is a build shaped around one provider: Slack
- * has no dynamic registration, one authorization server and `client_secret_post`,
- * so code written against Slack alone silently assumes all three.
+ * Metadata determines the authorization server, client mechanism and token
+ * authentication method independently of any one provider's defaults.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// The SSRF boundary has its own tests and resolves DNS for real; here it stands
-// aside so the stubbed fetch is what the metadata client talks to.
+// SSRF has separate coverage; these tests read metadata through stubbed fetch.
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
 }));
@@ -25,6 +23,15 @@ import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import type { FakeStore } from "./fakeStore";
 
 const store = await import("@/infrastructure/db/store") as unknown as FakeStore;
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 const SERVER: McpServer = {
   name: "slack",
@@ -93,8 +100,7 @@ function useCases(
     authProvider: {} as never,
     publicBaseUrl: async () => undefined,
     ...(opts.internalHostSuffixes ? { internalHostSuffixes: opts.internalHostSuffixes } : {}),
-    // The fixtures above predate the spec's refusal and say nothing about PKCE;
-    // the default here accepts them, and the refusal has its own tests below.
+    // Missing-PKCE acceptance isolates other discovery decisions; refusal has its own cases.
     allowUnadvertisedPkce: opts.allowUnadvertisedPkce ?? true,
   };
   return { useCases: createMcpAuthUseCases(deps), stored };
