@@ -1,8 +1,21 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
 import { TraceRecorder } from "@/application/trace/recorder";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { Trace } from "@/domain/trace/types";
 import type { EngineChunk } from "@/domain/llm/types";
+
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 function memoryRepository(): { repository: TraceRepository; traces: Trace[] } {
   const traces: Trace[] = [];
@@ -23,7 +36,7 @@ function memoryRepository(): { repository: TraceRepository; traces: Trace[] } {
 }
 
 describe("TraceRecorder", () => {
-  it.each([false, true])("pairs parent and nested tool calls independently when sampled=%s", async (sampled) => {
+  it.each([false, true])("pairs parent and nested tool calls with trace metadata present=%s", async (withTraceId) => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     try {
@@ -42,7 +55,7 @@ describe("TraceRecorder", () => {
         vi.setSystemTime(index * 1000);
         recorder.observe({
           ...contexts[index],
-          ...(sampled ? { traceId: "sampled-trace" } : {}),
+          ...(withTraceId ? { traceId: "chunk-trace" } : {}),
           delta: { toolCalls: [{ id: "call_1", function: { name: names[index], arguments: args[index] } }] },
         });
       }
@@ -50,7 +63,7 @@ describe("TraceRecorder", () => {
         vi.setSystemTime(time);
         recorder.observe({
           ...contexts[index],
-          ...(sampled ? { traceId: "sampled-trace" } : {}),
+          ...(withTraceId ? { traceId: "chunk-trace" } : {}),
           toolResult: { toolCallId: "call_1", name: "result", content: "ok" },
         });
       }
@@ -68,7 +81,7 @@ describe("TraceRecorder", () => {
     }
   });
 
-  it.each([false, true])("pairs overlapping transfers to the same child when sampled=%s", async (sampled) => {
+  it.each([false, true])("pairs overlapping transfers with trace metadata present=%s", async (withTraceId) => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     try {
@@ -80,7 +93,7 @@ describe("TraceRecorder", () => {
         author: "child",
         authorPath: ["child"],
         transferId,
-        ...(sampled ? { traceId: `trace-${transferId}` } : {}),
+        ...(withTraceId ? { traceId: `trace-${transferId}` } : {}),
       });
       recorder.observe({
         ...context("first"),
@@ -199,7 +212,7 @@ describe("TraceRecorder", () => {
     expect(subagentSpans.map((span) => span.output?.subagentTraceId)).toEqual(["run-1", "run-2"]);
   });
 
-  it("keeps unsampled transfers separate and folds their completion chunks", async () => {
+  it("keeps transfers without trace IDs separate and folds their completion chunks", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       agentName: "parent",
