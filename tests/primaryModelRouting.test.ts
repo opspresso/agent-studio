@@ -14,6 +14,17 @@ import type { TraceSpan } from "@/domain/trace/types";
 import { runtimeSessionFixture } from "./runtimeSessionFixture";
 import { openRuntimeSession, pendingRuntimeApproval, readRuntimeSession, modelRoutingPolicyFingerprint, runtimeFingerprint } from "@/application/runtime/session";
 
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+  randomUUID: () => `00000000-0000-4000-8000-${String(++entropy.sequence).padStart(12, "0")}`,
+}));
+
 const original = listModels();
 const capabilities = { tools: true, reasoning: true, structuredOutput: true, imageInput: true };
 function model(id: string, patch: Partial<ModelConfig> = {}): ModelConfig {
@@ -35,6 +46,7 @@ async function collect(deps: AgentDeps, request=input) {
   return chunks;
 }
 beforeEach(()=> {
+  entropy.sequence = 0;
   vi.useFakeTimers({toFake:["Date"]});vi.setSystemTime(new Date("2026-09-27T00:00:00Z"));
   replaceModelRegistry([model("local/base"),model("local/fast"),model("local/jev",{pricing:{inputPer1M:0.042,outputPer1M:0},capabilities:{...capabilities,decision:true}})]);
 });
