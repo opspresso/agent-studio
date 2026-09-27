@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * What runs produced, and the one place they can be removed.
+ * Stored attachments and run outputs, with previews, downloads and deletion.
  *
  * Shared by the personal gallery and an agent's tab because the two differ only
  * in which index they read: the rows, the tiles and the delete flow are the same
@@ -199,9 +199,7 @@ export function ArtifactGallery({
     ),
   );
 
-  // The filename is the header and the prompt a caption under the picture,
-  // never the title: a paragraph-long prompt there once stretched the dialog
-  // past the screen and pushed the image out of view.
+  // Keep the filename as the title and the prompt in the collapsible details.
   function openPreview(artifact: ArtifactView) {
     if (!artifact.url) {
       return;
@@ -327,9 +325,7 @@ function ArtifactEntry({
         {showAgent && <Text fz="xs" c="dimmed">{artifact.agentName}</Text>}
         <Text fz="xs" c="dimmed">{formatBytes(artifact.byteSize)} · {formatShortDateTime(artifact.createdAt, locale)}</Text>
 
-        {/* Who drew it and with what. Either half can be missing — a top-level
-            run has no subagent to name, and an MCP tool's picture names no
-            model — and with neither the line is not rendered at all. */}
+        {/* Producer and model are independent optional metadata. */}
         {(artifact.producedBy || artifact.model) && (
           <Text fz="xs" c="dimmed" className={classes.provenance}>
             {[

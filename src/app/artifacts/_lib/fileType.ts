@@ -33,8 +33,7 @@ const MIME_TYPES: Record<string, ArtifactFileType> = {
   "application/haansofthwpx": "hwpx",
   "application/vnd.hancom.hwpx": "hwpx",
   "application/x-hwp": "hwpx",
-  // Everything a run can write for itself. Before these, a saved report and a
-  // saved dataset were the same blank tile.
+  // Text formats supported by SaveFile.
   "text/html": "html",
   "text/markdown": "md",
   "text/csv": "csv",
@@ -80,9 +79,7 @@ export function artifactFileType(
   filename?: string,
   key?: string,
 ): ArtifactFileType {
-  // The bare type, the same reading `isInlineViewable` gives it on the same
-  // card: a row an MCP tool wrote as `text/html; charset=euc-kr` was getting a
-  // View link and a blank tile.
+  // Ignore MIME parameters, using the same bare type as inline-view eligibility.
   // Own keys only, here and for the alias below: both keys come from outside —
   // an MCP server's mime type, a model's filename — and a plain lookup answers
   // `constructor` with a function off `Object.prototype`, which the truthy
