@@ -1,5 +1,4 @@
-process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { FakeStore } from "./fakeStore";
@@ -18,6 +17,28 @@ import { agentRepository } from "@/infrastructure/db/repositories/agentRepositor
 vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
 const store = await import("@/infrastructure/db/store") as unknown as FakeStore;
 const { ConditionalWriteError } = store;
+// Distinct fixture bytes exercise rotation without sampling real randomness.
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+}));
+
+beforeEach(() => {
+  entropy.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-02T00:00:00.000Z");
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
+
 const OWNER = "owner@x.com";
 const OTHER = "intruder@x.com";
 const admins = { emails: [] as string[] };

@@ -1,7 +1,4 @@
-// A 32-byte key must be present before the encryption module reads config.
-process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
-
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { Agent, AgentApiToken } from "@/domain/agent/types";
 import {
@@ -14,7 +11,7 @@ import {
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { setAdminCheck } from "@/application/agent/agentUseCases";
 
-// The cipher is injected now; every call below is unchanged.
+// Exercise the production cipher through the injected boundary.
 type Gen = Parameters<typeof generateApiTokenImpl>;
 type Rev = Parameters<typeof revealApiTokenImpl>;
 type Ver = Parameters<typeof verifyAgentApiTokenImpl>;
@@ -37,6 +34,28 @@ import {
   isEncrypted,
 } from "@/infrastructure/crypto/secretEncryption";
 import { agentApiTokenContext } from "@/domain/security/secretContext";
+
+// Distinct fixture bytes exercise rotation without sampling real randomness.
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+}));
+
+beforeEach(() => {
+  entropy.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-02T00:00:00.000Z");
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 const OWNER = "owner@example.com";
 
@@ -93,10 +112,11 @@ describe("generated secret helpers", () => {
     expect(secretPrefix("triggerSecret")).not.toBe(secretPrefix("agentApiToken"));
   });
 
-  it("keeps full entropy after the prefix", () => {
+  it("encodes all 32 source bytes after the prefix", () => {
     const value = generateSecretValue("agentApiToken");
     // 32 random bytes as base64url = 43 chars, regardless of the prefix.
     expect(value.slice("ast_".length)).toHaveLength(43);
+    expect(Buffer.from(value.slice("ast_".length), "base64url")).toHaveLength(32);
     expect(value).toMatch(/^ast_[A-Za-z0-9_-]{43}$/);
   });
 
@@ -114,7 +134,7 @@ describe("generateApiToken", () => {
     const { token, masked, createdAt } = await generateApiToken(repo, "my-bot", OWNER);
 
     expect(token.startsWith(secretPrefix("agentApiToken"))).toBe(true);
-    expect(createdAt).toBeTruthy();
+    expect(createdAt).toBe("2026-01-02T00:00:00.000Z");
     // Stored encrypted so the owner can read it back — never as plaintext, and
     // with no hash left over from the form that could not be read back.
     expect(isEncrypted(stored()?.token ?? "")).toBe(true);

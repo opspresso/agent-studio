@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   disconnectAgentTelegram,
   listAgentTelegramDestinations,
@@ -48,8 +48,26 @@ function update(
   return updateAgentTelegram(repo, "bot-proj", input, email, secretCipher, calls, BASE_URL);
 }
 
-beforeAll(() => {
-  process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 5).toString("base64");
+// Distinct fixture bytes exercise rotation without sampling real randomness.
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+}));
+
+beforeEach(() => {
+  entropy.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-02T00:00:00.000Z");
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {
@@ -156,15 +174,19 @@ describe("updateAgentTelegram", () => {
     const { repo, current } = fakeRepo(makeAgent());
     const { calls, registered, deleted } = makeCalls();
     await update(repo, { botToken: "42:first", enabled: true }, OWNER, calls);
-    const secret = current().telegram?.webhookSecret;
+    const context = telegramSecretContext("bot-proj", "webhook-secret");
+    const secret = secretCipher.decrypt(current().telegram!.webhookSecret, context);
     await update(repo, { botToken: "43:second" }, OWNER, calls);
     expect(deleted).toEqual(["42:first"]);
-    expect(current().telegram?.webhookSecret).not.toBe(secret);
+    const rotated = secretCipher.decrypt(current().telegram!.webhookSecret, context);
+    expect(rotated).not.toBe(secret);
     expect(registered.map((r) => r.token)).toEqual(["42:first", "43:second"]);
+    expect(registered.map((r) => r.secretToken)).toEqual([secret, rotated]);
     // The same token again is not a change.
     await update(repo, { botToken: "43:second" }, OWNER, calls);
     expect(deleted).toEqual(["42:first"]);
     expect(registered).toHaveLength(2);
+    expect(secretCipher.decrypt(current().telegram!.webhookSecret, context)).toBe(rotated);
   });
 
   it("registers the webhook when the bot is enabled and deletes it when disabled", async () => {
