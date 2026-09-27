@@ -1,11 +1,8 @@
 /**
  * Turning what a run produced into something a reader can fetch.
  *
- * Three states, and the difference between them is the whole point: an address,
- * a sentence saying why there is none, and deliberate silence when something
- * else has already said it. Getting the third wrong is how a reader hears the
- * same failure twice; getting the second wrong is how they hear nothing at all,
- * which is the state this module was written to end.
+ * Stored files receive addresses. Missing storage or signing failures produce
+ * loss warnings; a capture failure that already warned produces no duplicate.
  */
 
 import { describe, expect, it, vi } from "vitest";
