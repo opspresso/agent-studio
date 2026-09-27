@@ -113,12 +113,8 @@ function StoredToolRow({
  * to full size, shoving everything below it — which during a reply is the text
  * the reader is in the middle of.
  *
- * The fallback is for bytes that are no longer there. A signed URL is minted
- * offline and never checks that the object exists, so an image the bucket's
- * lifecycle rule swept — or that someone deleted from the artifacts gallery —
- * fails at fetch time and would otherwise render as a broken icon with nothing
- * said. That case predates the gallery: retention has always been able to
- * outlive a transcript.
+ * Signing does not verify object existence. Show an unavailable state when
+ * loading fails, including files removed by retention or explicit deletion.
  *
  * A click opens it in the shared viewer, where another click shows it at its
  * own pixel size. `label` names what it is ("Generated image", "Attached
@@ -458,11 +454,8 @@ function RunProgress({ startedAtMs }: { startedAtMs?: number | undefined }) {
  * announcing is the transition, once, so the counterpart to `RunProgress`'s
  * "running" is this line at the finish.
  *
- * **The region is always mounted and starts empty.** Assistive technology
- * registers a live region when it enters the accessibility tree and speaks
- * what changes *after* that; a region mounted with its text already inside is
- * announced by nothing, which is what the first version of this did. Filling
- * an already-registered region is the mutation that gets spoken.
+ * Keep the live region mounted and initially empty so the completion text is
+ * an update to an existing region.
  *
  * And only for a run this view watched end. A thread opened onto a turn that
  * finished long ago would otherwise be told the answer just completed, so the

@@ -3,11 +3,7 @@ import type { ChatMessage } from "@/domain/chat/types";
 /**
  * Fold a tail read (`?sinceSeq=`) into the thread already on screen.
  *
- * The thread stopped re-reading the whole transcript on every finished turn,
- * which means the rows it holds and the rows that come back are now two
- * different sets — and this is where they become one.
- *
- * Two rules, and both have already been the bug in some other client:
+ * Combine held and fetched rows by sequence under two rules:
  *
  * - **The fetched row wins.** A row can be read twice — an overlapping
  *   `sinceSeq`, a retry — and the fresher copy is the one from the server: the

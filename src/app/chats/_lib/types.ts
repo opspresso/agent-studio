@@ -52,7 +52,7 @@ export interface StreamChunk {
   transferId?: string;
   /** This authored run returned and is no longer active. */
   authorDone?: boolean;
-  /** A binding the run could not use; the run still answers. */
+  /** A reported run loss or limit, which can accompany a partial answer. */
   warning?: string;
   error?: string;
 }
@@ -121,7 +121,7 @@ export interface LiveTurn {
   tools: LiveToolResult[];
   images: LiveImage[];
   files: LiveFile[];
-  /** Bindings this run could not use, reported before the answer starts. */
+  /** Run losses and limits reported at any point in the stream. */
   warnings: string[];
   /**
    * The chains currently producing chunks, each outermost first — cleared when
