@@ -311,9 +311,10 @@ Agent 메타데이터나 설정의 동시 수정이 먼저 저장되면 409를 �
 `temperature?`, `presencePenalty?`, `maxTokens?`, `reasoningEffort?`, `piiFiltering`,
 `structuredOutput?`, `jsonSchema?`, `imageGeneration?`, `imageModel?`, `callerContext?`,
 `urlFetch?`, `slackWorkspace?`, `audioProcessing?`, `workspaceTools?`, `dynamicCapabilities?`,
-`memoryRecall?`, `reasoningTrace?`, `policy?`, `modelRouting?`를 갖는다. 카탈로그에 있는 모델의 능력과
-설정이 충돌하면 400이다. 카탈로그에 없는 사용자 모델은 경고 대상으로 둔다.
-`imageModel`은 이미지 생성 능력이 있는 카탈로그 모델이어야 한다.
+`memoryRecall?`, `reasoningTrace?`, `policy?`, `modelRouting?`를 갖는다. 등록된 모델의 능력과
+설정이 충돌하면 400이다. 미등록 모델 이름은 저장할 수 있지만 경고를 기록하며,
+실행하려면 관리자가 Settings에 해당 모델과 provider를 등록해야 한다.
+`imageModel`은 이미지 생성 능력이 있는 등록 모델이어야 한다.
 
 `modelRouting`은 선택적 boolean이다. `true`면 [전역 라우팅 정책](#models)의 후보 중 첫 SDK 응답에 적절한 모델을 선택한다. `false`면 주 호출과 ModelTask 모두 이 Agent의 설정 모델을 사용한다. 미설정이면 ModelTask를 제공하지
 않는다. Agent별 tier·예산·정책 객체는 받지 않는다.
@@ -322,7 +323,8 @@ ModelTask의 선택적 `require_different_model: true`는 해당 턴의 실제 p
 주 모델 선택·우선순위·승격·trace·승인 재개는 [호출 단위 라우팅](design/execution.md#호출-단위-모델-라우팅)을 따른다.
 
 `mcpList[{name, headers?, tools?, sourceOutputs?}]`, `skillList[]`,
-`subagentList[{name, type: "local"|"remote"}]`는 전체 목록을 저장한다.
+`subagentList[{name}]`는 전체 목록을 저장한다. 하위 Agent는 이 설치의 다른 Agent이며
+`type` 같은 추가 필드는 거절한다.
 새 참조는 존재·접근 권한을 검사하며, 이미 연결한 항목이 사라져도 다른 설정을 수정할 수 있다.
 동일한 MCP·Skill·Agent 이름의 중복은 거절한다. 선택 필드 `fallbackModel`·`maxTurn`은 생략해
 해제하며 `null`을 받지 않는다. 응답의 MCP 헤더는 마스킹하고 내부 endpoint fingerprint는 숨긴다.
