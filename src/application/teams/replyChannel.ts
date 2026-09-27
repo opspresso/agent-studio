@@ -34,9 +34,8 @@ const TYPING_REFRESH_MS = 3000;
 const CURSOR = " ▌";
 export const SOFT_CUT_WINDOW = 1500;
 /**
- * Teams documents an inline bot picture at 1MB and 1024×1024; past this the
- * connector refuses the activity, so the refusal is made here, where it can be
- * said as a warning instead of a failed send.
+ * Byte cap for inline bot pictures. Refuse oversize data before sending the
+ * activity so the shared pipeline can report the loss as a warning.
  */
 const MAX_INLINE_IMAGE_BYTES = 1024 * 1024;
 

@@ -85,6 +85,64 @@ afterEach(() => {
 });
 
 describe("verifying a Bot Framework token", () => {
+  it("does not trust expired cached keys while a failed refresh is paced", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    let unavailable = false;
+    const request = vi.fn(async (url: string) => {
+      if (url.includes("openidconfiguration")) return jsonResponse({ jwks_uri: "https://login.botframework.com/keys" });
+      if (unavailable) throw new Error("fixture outage");
+      return jsonResponse({ keys: [JWK] });
+    });
+    vi.stubGlobal("fetch", request);
+    try {
+      expect(await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE })).toEqual({ ok: true });
+      await vi.advanceTimersByTimeAsync(25 * 60 * 60 * 1000);
+      unavailable = true;
+      for (let i = 0; i < 2; i++) {
+        expect(await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE })).toMatchObject({ ok: false });
+      }
+      expect(request).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("paces failed cold signing-key fetches before trying again", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    let unavailable = true;
+    const request = vi.fn(async (url: string) => {
+      if (url.includes("openidconfiguration")) return jsonResponse({ jwks_uri: "https://login.botframework.com/keys" });
+      if (unavailable) throw new Error("fixture outage");
+      return jsonResponse({ keys: [JWK] });
+    });
+    vi.stubGlobal("fetch", request);
+    try {
+      for (let i = 0; i < 2; i++) {
+        expect(await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE })).toMatchObject({ ok: false });
+      }
+      expect(request).toHaveBeenCalledTimes(2);
+      unavailable = false;
+      await vi.advanceTimersByTimeAsync(60_001);
+      expect(await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE })).toEqual({ ok: true });
+      expect(request).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["openidconfiguration", "keys"])("refuses a failed %s response even with usable JSON", async (failedDocument) => {
+    const request = vi.fn(async (url: string) => {
+      const configuration = url.includes("openidconfiguration");
+      return jsonResponse(configuration ? { jwks_uri: "https://login.botframework.com/keys" } : { keys: [JWK] },
+        { status: (configuration ? "openidconfiguration" : "keys") === failedDocument ? 503 : 200 });
+    });
+    vi.stubGlobal("fetch", request);
+    expect(await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE }))
+      .toMatchObject({ ok: false, reason: expect.stringContaining("signing keys unavailable") });
+  });
+
   it("accepts a token the service signed for this app and this serviceUrl", async () => {
     stubFetch();
     const verdict = await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE });

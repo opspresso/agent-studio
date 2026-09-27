@@ -108,21 +108,29 @@ async function appToken(credentials: TeamsCredentials): Promise<{ token: string;
 let signingKeys: { fetchedAt: number; keys: Map<string, SigningKey> } | undefined;
 /** The fetch in flight, so N tokens arriving on a rotation cost one round trip, not N. */
 let signingKeysFetch: Promise<void> | undefined;
+let signingKeysAttemptAt = Number.NEGATIVE_INFINITY;
 /**
- * How soon after a fetch an unknown `kid` may cause another. The service
- * rotates keys rarely; an unknown kid arriving faster than this is a token
- * nobody signed, and it must not be able to make this process hammer the key
- * endpoint — every claim below is checked before the signature, and all of
- * them can be typed by hand.
+ * Minimum interval between signing-document attempts, including failed cold
+ * loads and expired-cache refreshes. Unsigned kid values must not turn an
+ * upstream outage into one metadata fetch per inbound request.
  */
 const KEYS_REFETCH_MIN_MS = 60_000;
 
+async function signingDocument<T>(url: string): Promise<T> {
+  const response = await teamsFetch(url);
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error(`Bot Framework signing metadata returned HTTP ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
+
 async function fetchSigningKeys(): Promise<void> {
-  const configuration = (await (await teamsFetch(OPENID_CONFIGURATION)).json()) as { jwks_uri?: string };
-  if (!configuration.jwks_uri) {
+  const configuration = await signingDocument<{ jwks_uri?: string } | null>(OPENID_CONFIGURATION);
+  if (typeof configuration?.jwks_uri !== "string" || !configuration.jwks_uri) {
     throw new Error("Bot Framework OpenID configuration names no jwks_uri");
   }
-  const jwks = (await (await teamsFetch(configuration.jwks_uri)).json()) as { keys?: SigningKey[] };
+  const jwks = await signingDocument<{ keys?: SigningKey[] }>(configuration.jwks_uri);
   signingKeys = {
     fetchedAt: Date.now(),
     keys: new Map((jwks.keys ?? []).filter((key) => key.kid).map((key) => [key.kid as string, key])),
@@ -137,9 +145,16 @@ async function keyFor(kid: string): Promise<SigningKey | undefined> {
   // not more often than the floor, and once for everyone waiting.
   const missed = signingKeys !== undefined && !signingKeys.keys.has(kid) && now - signingKeys.fetchedAt > KEYS_REFETCH_MIN_MS;
   if (stale || missed) {
-    signingKeysFetch ??= fetchSigningKeys().finally(() => {
-      signingKeysFetch = undefined;
-    });
+    if (!signingKeysFetch) {
+      if (now - signingKeysAttemptAt < KEYS_REFETCH_MIN_MS) {
+        if (stale) throw new Error("Bot Framework signing keys are temporarily unavailable");
+        return undefined;
+      }
+      signingKeysAttemptAt = now;
+      signingKeysFetch = fetchSigningKeys().finally(() => {
+        signingKeysFetch = undefined;
+      });
+    }
     await signingKeysFetch;
   }
   return signingKeys?.keys.get(kid);
@@ -345,4 +360,5 @@ export function clearTeamsCaches(): void {
   tokens.clear();
   signingKeys = undefined;
   signingKeysFetch = undefined;
+  signingKeysAttemptAt = Number.NEGATIVE_INFINITY;
 }
