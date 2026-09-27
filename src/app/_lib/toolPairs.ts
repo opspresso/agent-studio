@@ -1,15 +1,8 @@
 import { toolCallKey } from "@/domain/llm/types";
 
 /**
- * A tool call and what it returned, as one thing.
- *
- * The stream reports them apart — a `delta.toolCalls` when the model asks, a
- * `toolResult` whenever the answer comes back. Drawn straight from those lists
- * the reader gets "🔧 tool call: search" and, somewhere below it, "✅ tool
- * result: search": two rows for one thing, and no way to tell which result
- * belongs to which call once the same tool has run twice. Shared by every
- * surface that draws a run's tool traffic — the chat and the playground had
- * each grown their own rendering of the same wire format.
+ * Pair separately streamed calls and results into stable rows for Chat and
+ * Playground, preserving delegation scope and repeated calls to the same tool.
  */
 
 export interface ToolPair {
@@ -107,10 +100,7 @@ export function pairToolTraffic(
     claimed.add(index);
     pairs[index] = {
       ...pairs[index],
-      // The result's name wins: it is the display name the engine built, and it
-      // carries what the call's name cannot — the MCP server that served it. A
-      // call goes out as the bare `get_me`, so a row keyed on it stayed bare for
-      // the whole of a run and only named its server once the page reloaded.
+      // Prefer the result's decorated display name, including its MCP server.
       ...(result.name === undefined ? {} : { name: result.name }),
       content: result.content,
       author: result.author ?? pairs[index]?.author,

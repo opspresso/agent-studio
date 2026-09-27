@@ -1,12 +1,8 @@
 /**
  * Which transfer chains a run is producing chunks from.
  *
- * One owner for both consumers — the chat stream reducer and the Playground run
- * panel — because they read the same `authorPath` off the same chunks, and a
- * second copy of these rules would drift as soon as one of them was fixed.
- *
- * Two *different* questions, so two functions. Answering them with one is how a
- * finished agent ended up still being shown as running:
+ * Shared by Chat and Playground. Visited paths describe participation; active
+ * paths describe current execution, so they use different collapse rules:
  *
  * - **visited** — every chain this run reached, for "agents involved". Grows, and
  *   a deeper chain absorbs the shallower one it extends.

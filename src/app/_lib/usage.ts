@@ -21,8 +21,7 @@ export interface DailyCostRow {
   inputTokens?: Record<string, number>;
   /**
    * Of `inputTokens`, what the provider served from its cache. Optional for the
-   * same reason it is on the row: days recorded before it existed have none,
-   * and so does a channel that never reports it.
+   * same reason it is on the row: providers may omit cache usage.
    */
   cachedTokens?: Record<string, number>;
   agentName?: string;
@@ -192,7 +191,7 @@ export interface ChartColumn {
 /**
  * A model id can carry a dot (`openai/gpt-5.4`), and both recharts (which reads
  * a `dataKey` as a nested path) and Mantine's legend (which renders only what
- * follows the last dot) mangle one — `openai/gpt-5.4` showed up as `4`. Address
+ * follows the last dot) parse it as structure. Address
  * every series by its index instead and carry the name as a label neither of
  * them parses.
  */

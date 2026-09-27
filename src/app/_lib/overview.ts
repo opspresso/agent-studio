@@ -10,8 +10,8 @@ import type { Agent } from "@/domain/agent/types";
  * push the reader's own work off a four-card list entirely. Within each group
  * the newest edit wins.
  *
- * Chats need no counterpart: `listChats` returns them newest-first from the
- * `CHATOWNER#{email}` GSI, and they are the viewer's own by definition.
+ * Chats need no counterpart: `listChats` already returns the viewer's own
+ * conversations newest-first.
  */
 export function recentAgents<T extends Pick<Agent, "ownerEmail" | "updatedAt">>(
   agents: T[],
