@@ -8,7 +8,7 @@ import { withRunContext } from "@/shared/runContext";
 
 /**
  * The tail every chat-platform webhook shares, once the platform's own
- * verification and gate have run: claim the event exactly once, ack at once,
+ * verification and gate have run: claim this delivery attempt, ack at once,
  * and do the work in the background under the event's own correlation id.
  *
  * Every platform requires a fast ack (Slack within three seconds, Telegram

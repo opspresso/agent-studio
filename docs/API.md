@@ -417,7 +417,7 @@ MCP 서버의 이름을 담는다. `guest` 가 거절당하는 바로 그 레지
 ```
 GET /api/settings → 200 { fields: { <key>: { value, source, secret } },
                           serviceLogos: string[],
-                          llmProviders: { source, items: [ { name, baseUrl, apiKey, keepModelPrefix, auth } ] },
+                          llmProviders: { source, items: [ { name, kind, baseUrl, apiKey, keepModelPrefix, auth } ] },
                           updatedAt? }
 PUT /api/settings → 200 {…same shape…} | 400
 ```
@@ -529,7 +529,8 @@ PUT /api/members/{id}/tier
 ```
 
 admin 전용이다. 멤버는 이 워크스페이스에 로그인한 적이 있는 Better Auth 사용자이고,
-`joinedAt` 최신순으로 정렬된다. `lastLoginAt` 은 새 세션이 만들어질 때 갱신된다. 로그인 추적이
+`lastLoginAt` 최신순으로 정렬되며 로그인 기록이 없으면 뒤에 온다. `joinedAt`은 가입 시각이다.
+`lastLoginAt`은 새 세션이 만들어질 때 갱신된다. 로그인 추적이
 도입되기 전에 만들어진 사용자는 다음 로그인에 성공할 때까지 `null` 이다.
 
 `tier` 는 모든 가입에 대해 `guest` 가 기본값이다 (tier 가 존재하기 전에 쓰인 행도 `guest` 로

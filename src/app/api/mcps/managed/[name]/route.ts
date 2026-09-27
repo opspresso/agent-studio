@@ -51,7 +51,7 @@ export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteConte
   }
 });
 
-/** Removes the container and the entry together; neither outlives the other. */
+/** Stop the container before deleting its entry; a failed delete leaves a repairable row. */
 export const DELETE = withAdminAuth(async (user, _request: Request, ctx: RouteContext) => {
   if (!managedMcpUseCases) {
     return unavailable();
