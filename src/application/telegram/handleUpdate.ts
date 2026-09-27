@@ -174,7 +174,7 @@ async function claimsAlbum(
   try {
     const token = await claims.claim(message.media_group_id, nowSeconds, nowSeconds + RUN_LEASE_SECONDS);
     if (token !== null) {
-      // Never reclaimed: an album answered once is answered.
+      // Consume the album before execution; done rows block redelivery while retained.
       await claims.settle(message.media_group_id, token, "done");
     }
     return token !== null;
