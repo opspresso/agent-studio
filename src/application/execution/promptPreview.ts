@@ -20,14 +20,7 @@ export async function previewPrompt(
   input: {
     agent: Agent;
     configuration: AgentConfiguration;
-    /**
-     * The caller's connection, so a preview stops when they navigate away.
-     *
-     * A preview is the expensive half of a run: it opens bound MCP servers,
-     * may call recall, and embeds catalog queries. It does not go through the run
-     * bracket — nothing counts it, nothing bounds how many are in flight — so
-     * the connection is the only thing that can end one, and it was not passed.
-     */
+    /** Cancels MCP discovery, recall and catalog queries when the caller disconnects. */
     signal?: AbortSignal;
     /**
      * The request to preview against, when there is one.

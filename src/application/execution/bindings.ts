@@ -26,11 +26,7 @@ import { log } from "@/shared/logger";
  * once per attachment it asks for — so the reader caches one item for the run.
  * A skill edited mid-run is not picked up, which is what consistency wants.
  *
- * Scoped to one agent's deps (`buildAgentDeps` builds it), so each hop of a
- * transfer chain has its own. Sharing one across the chain would save a read
- * only where a parent and a child bind the same skill *and* both load it, and
- * the way to get it there is a parameter on a signature that already carries
- * eight — not a trade worth making without a measurement asking for it.
+ * Scoped to one Agent's deps, so each delegation or handoff has its own cache.
  */
 export type SkillReader = (name: string) => Promise<Skill | null>;
 
@@ -135,11 +131,9 @@ export function buildSkillLoader(
  *
  * This platform's own policy, so it sits beside the loop that spends it rather
  * than in `domain/` — nobody else imposes these numbers. They are not one
- * number because the three cost different things: a skill is a row in a table
- * whose body is read only if the model asks for it, an agent is a row and an
- * enum value, and an **MCP server is a discovery round trip before the first
- * token** plus every one of its tools competing for the per-run tool cap. The
- * server limit is low for that reason, not out of caution about relevance.
+ * number because Skill bodies are loaded on demand, while MCP discovery opens
+ * servers before the first token and consumes the run's tool budget. Subagents
+ * use explicit bindings and are not added by discovery.
  */
 const DISCOVERY_LIMITS = { skill: 5, mcpServer: 3 } as const;
 
@@ -477,30 +471,14 @@ export async function resolveRunTools(
   /** Everything the run lost while resolving, in binding order. */
   warnings: string[];
   /**
-   * What a search added beyond the Agent's own bindings — a **gain**, which is
-   * why it is not in `warnings`.
-   *
-   * It was, and every healthy run of a discovery-enabled Agent therefore
-   * reported a warning: a yellow alert on every chat turn, a non-empty
-   * `warnings` array in every `/predict` answer, and anything keying on "did
-   * this run report a loss" firing on all of them. `collectedWarning` owns what
-   * a run *lost*, and a capability being found is the opposite of that. The
-   * preview renders this on its own; a run logs it, since what a run actually
-   * used is already visible in its tool traffic.
+   * Skills and MCP servers added by search. These are gains, kept separate from
+   * loss warnings; previews display them and runs log them.
    */
   discovered: string[];
   rerank: CatalogRerankReport;
   /**
-   * The Agent as this resolve read it — the caller's own where nothing was
-   * discovered, and widened by the search where something was.
-   *
-   * Returned because **the resolved lists are not the whole story**. `subagents`
-   * above is what the model is *told* about, while what it can actually reach is
-   * decided separately by `buildSubagentRunner`, from a `subagentList`. Handing
-   * the caller the widened Agent is what keeps those two reading the same
-   * list: passing the original meant a discovered agent appeared in the transfer
-   * enum and the prompt's table, and answered `Unknown agent` when the model
-   * used it.
+   * Effective configuration after background-task restrictions and discovery.
+   * Callers use it to assemble capabilities from the same bindings resolved here.
    */
   configuration: AgentConfiguration;
 }> {
@@ -513,12 +491,8 @@ export async function resolveRunTools(
   const discoveryNotes: string[] = [];
   const discovered: string[] = [];
   let rerank: CatalogRerankReport = { calls: 0, candidates: 0, failed: 0, usage: [] };
-  // An Agent that asked for discovery and did not get it says so, on the same
-  // channel a failed search uses. Nothing else can tell the author: the checkbox
-  // stays ticked, the bindings still resolve, the run answers normally, and the
-  // preview shows the same prompt — the feature reads as on and is inert. That
-  // is the shape of the defect this branch was itself found to have, one call
-  // site up, so it is not left to be discovered the same way twice.
+  // Report unavailable discovery rather than silently treating an enabled
+  // capability as off. Explicit bindings still resolve normally.
   if (configuration.parameters.dynamicCapabilities) {
     if (!deps.catalog) {
       discoveryNotes.push(

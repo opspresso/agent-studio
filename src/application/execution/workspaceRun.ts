@@ -3,7 +3,7 @@ import type { Workspace } from "@/domain/workspace/types";
 import { assertAgentAccessible } from "@/application/agent/agentUseCases";
 import { openTaskRun, type RunBracketDeps } from "@/application/run/runBracket";
 
-/** Execution facade for externally hosted workspace runtimes and ordinary sandbox jobs. */
+/** Run bracket for coding jobs and ordinary commands in persistent Workspace sandboxes. */
 export async function executeWorkspaceTask(
   deps: RunBracketDeps,
   agents: AgentRepository,

@@ -9,11 +9,8 @@ import type { ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
 
 /**
- * Default image model: the first *visible* registry entry that can draw. A
- * function, not a constant — the registry is a catalog loaded at boot and
- * refreshed after — and "first" is a decision the catalog's publisher curates:
- * The registry holds administrator-selected models (see `listModels`), so a removed
- * (hidden) model can never become the default by sitting early in the list.
+ * Default image model: the first visible administrator-selected registry entry
+ * with image-generation capability. Resolve it per run as selections can change.
  */
 export function defaultImageModel(): string | undefined {
   return getVisibleModels().find((m) => m.capabilities.imageGeneration)?.id;
