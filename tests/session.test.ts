@@ -26,27 +26,20 @@ const session = (email: string, tier?: string) => ({
 
 const adminEmails = {
   set value(emails: string[]) {
-    if (emails.length === 0) {
-      delete process.env.ADMIN_EMAILS;
-    } else {
-      process.env.ADMIN_EMAILS = emails.join(",");
-    }
+    vi.stubEnv("ADMIN_EMAILS", emails.length === 0 ? undefined : emails.join(","));
   },
 };
 
-const savedAdminEmails = process.env.ADMIN_EMAILS;
-
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-27T00:00:00Z"));
   vi.clearAllMocks();
   adminEmails.value = [];
 });
 
 afterEach(() => {
-  if (savedAdminEmails === undefined) {
-    delete process.env.ADMIN_EMAILS;
-  } else {
-    process.env.ADMIN_EMAILS = savedAdminEmails;
-  }
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 describe("withAuth", () => {
