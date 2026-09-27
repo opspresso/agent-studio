@@ -1,15 +1,7 @@
 /**
- * Layer boundary enforcement.
- *
- * The dependency rule `app → application → domain ← infrastructure` lived only
- * in docs/ARCHITECTURE.md, so nothing stopped it from eroding. This test makes
- * it mechanical: no new dependency, just `node:fs` and a regex.
- *
- * Every rule's `allow` list is empty: the boundaries are enforced, not frozen.
- * A list is compared exactly (`toEqual` on a sorted array) rather than by count,
- * so one violation cannot disappear while another appears and read as unchanged.
- * A boundary that ever has to be relaxed belongs in `allow` with its reason —
- * `exempt` is only for the deliberate wiring sites named below.
+ * Enforce `app → application → domain ← infrastructure` across the source tree.
+ * All boundary allowlists stay empty; fix violations rather than adding entries.
+ * Deliberate composition sites are named separately by `exempt`.
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -33,63 +25,36 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 /**
- * Matches `import … from "x"` and `export … from "x"`, including multi-line
- * clauses. Re-exports count: `export type { T } from "@/infrastructure/…"`
- * propagates an infrastructure type to every consumer of the module, which is
- * exactly the coupling this rule exists to catch.
- *
- * The clause is `[^;]*?` rather than `[\s\S]*?` because an import clause never
- * contains a semicolon, while an unbounded span happily runs from a from-less
- * statement (`export type X = …;`) to the `from` of a *later* import — pinning
- * the wrong keyword to it and reporting a value import as type-only.
+ * Match static imports and re-exports, including multiline clauses.
+ * A semicolon bounds the clause so a from-less declaration cannot consume
+ * the next import. Type-only re-exports still count as structural dependencies.
  */
 const STATIC_IMPORT_RE = /(?:^|\n)[ \t]*(?:import|export)\b([^;]*?)from[ \t]*["']([^"']+)["']/g;
 
 /**
- * `import("x")`, which has no `from` for the pattern above to find: `await
- * import("x")` at runtime and `import("x").T` in a type position. Either one
- * binds the two modules exactly as a top-level import does, so a rule that
- * could not see them would be trivial to step around.
+ * Match runtime and type-position `import("x")` expressions.
+ * Both count as dependencies. The scanner conservatively treats inline imports
+ * as values because it does not distinguish TypeScript type positions.
  */
 const INLINE_IMPORT_RE = /\bimport[ \t]*\([ \t]*["']([^"']+)["'][ \t]*\)/g;
 
 /**
- * `import "x"` — a side-effect import binds no name and carries no `from`, so
- * neither pattern above could see it. It joins the module graph exactly as a
- * static import does (`instrumentation.ts` documents modules that are wired by
- * import side effect alone), so a rule blind to it was one bare line away from
- * unenforced.
+ * Match side-effect imports, which create static dependencies without bindings.
  */
 const SIDE_EFFECT_IMPORT_RE = /(?:^|\n)[ \t]*import[ \t]*["']([^"']+)["']/g;
 
 /**
- * Comments talk about modules and the environment without touching them, and
- * the import pattern's `[^;]*?` clause happily spans a docblock: a sentence
- * like `apart from "could not decide".` between an `export` keyword and the
- * next semicolon minted a ghost import with that phrase as its specifier.
- * Harmless while every rule was a blocklist — a ghost has no layer — but a
- * whitelist rule reads a ghost as a violation, so the scan parses code only.
- * The `//` stripper skips `://` so a URL inside a string survives.
+ * Ignore imports mentioned in comments. Preserve `://` inside URL strings.
+ * This is a bounded source scanner, not a TypeScript parser.
  */
 function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(?<!:)\/\/[^\n]*/g, "");
 }
 
 /**
- * Every named binding taken from a module, `type` prefixes and `as` aliases
- * stripped.
- *
- * A *module* is the wrong grain for some questions.
- * `@/application/image/generateImage` exports one use case, so importing it at
- * all is the signal; `@/application/execution/runAgent` is the whole execution
- * facade, and "who may start an agent run" asks about one export of it.
- *
- * `import * as ns` binds every export at once, so it answers **yes to every
- * name** rather than none. Returning `[]` for it — which reads reasonable, since
- * no clause spells a name out — is an escape hatch from both by-name rules
- * below: `import * as rp from "…/runAgent"` then `rp.executeAgent(…)` is a
- * fourth entry point neither of them can see. Not hypothetical in this codebase,
- * which already imports the engine that way in two places.
+ * Read named exports without `type` prefixes or local aliases.
+ * Namespace imports bind every export and therefore match every by-name rule;
+ * default imports do not name an export.
  */
 const NAMESPACE_IMPORT = "*";
 
@@ -148,9 +113,9 @@ export interface ModuleImport {
   spec: string;
   /** True for `import type …` / `export type …`, whose cost is compile-time only. */
   typeOnly: boolean;
-  /** True for `import("x")`. Only a *static* import joins a module's own graph. */
+  /** True for `import("x")`; static-only walks skip these deferred edges. */
   dynamic: boolean;
-  /** Named bindings taken from the module; empty for a default or dynamic import. */
+  /** Selected exports; `*` for a namespace and empty for default/side-effect imports. */
   names: string[];
 }
 
@@ -185,13 +150,8 @@ export function parseImports(source: string): ModuleImport[] {
 }
 
 /**
- * `src/application/foo/bar.ts` → `application`. A file at the root of `src/`
- * (`proxy.ts`, `instrumentation.ts`) has no directory to name a layer, so it
- * was governed by nothing: an infrastructure import there would have passed
- * every rule in this file — and `proxy.ts` is the single owner of which pages
- * are public, exactly the file that must not drift quietly. Both are
- * framework entry points, which is presentation-adjacent glue: they answer to
- * `app`'s rules.
+ * Classify `src/application/foo/bar.ts` as `application`. Root framework
+ * entries such as `proxy.ts` and `instrumentation.ts` follow app-layer rules.
  */
 function layerOf(relPath: string): string | null {
   if (/^src\/[^/]+\.tsx?$/.test(relPath)) {
@@ -206,11 +166,8 @@ function targetLayer(spec: string): string | null {
 }
 
 /**
- * Rewrite a relative specifier into the `@/…` form every rule matches on, so
- * `../../infrastructure/db/client` is classified exactly like
- * `@/infrastructure/db/client`. Without this the rules read a null target layer
- * for any relative import and pass it — the whole dependency rule is one `../`
- * away from being unenforced.
+ * Normalize relative imports to `@/…` so aliases and relative paths enforce
+ * the same layer boundary.
  */
 function resolveSpec(spec: string, fromPath: string): string {
   if (!spec.startsWith(".")) {
@@ -227,19 +184,17 @@ interface Rule {
   /** True when importing `spec` from this layer is a violation. */
   banned: (spec: string) => boolean;
   /**
-   * Files the rule does not govern at all. Reserved for deliberate composition
-   * sites — never for "we have not fixed this yet", which belongs in `allow`.
+   * Named composition sites governed by their wiring contract instead. Never
+   * exempt a violation just because it has not been fixed.
    */
   exempt?: (relPath: string) => boolean;
-  /** Frozen current violations, sorted. Empty means the rule is fully enforced. */
+  /** Must remain empty: all governed source files obey the boundary. */
   allow: string[];
 }
 
 /**
- * Deliberate wiring sites (docs/ARCHITECTURE.md): these compose adapters for a
- * route exactly as the composition root does. They are a rule EXCEPTION, not an
- * allowlist entry — folding a permanent exception into the allowlist would
- * destroy "the list is empty" as the signal that the rule is fully enforced.
+ * App wiring sites compose adapters for routes or startup. These named
+ * exceptions leave all layer-boundary allowlists empty.
  */
 const APP_WIRING_SITES = [
   "src/app/api/chats/_deps.ts",
@@ -258,10 +213,9 @@ const APP_WIRING_SITES = [
 ];
 
 /**
- * Protocol/runtime SDKs whose native contracts are owned by their library.
- * Studio's runtime uses Agent, Runner, Session and RunState directly; recreating
- * those contracts as ports would recreate the agent runtime being replaced.
- * Network clients and credential resolution still live in infrastructure.
+ * The Agents SDK owns its native Agent, Runner, Session and RunState contracts.
+ * Application uses those directly; network clients and credentials stay in
+ * infrastructure.
  */
 const PROTOCOL_SDKS = ["@openai/agents"];
 
@@ -276,11 +230,7 @@ const RULES: Rule[] = [
     allow: [],
   },
   {
-    // Once a blocklist of four regretted names (`next|react|@aws-sdk|
-    // better-auth`), which left `zod`, `openai`, the MCP SDK and every other
-    // package legal in the one layer whose doctrine is pure TS. The same
-    // reverse rule as application's below, minus the protocol exception —
-    // domain cannot depend on SDK contracts.
+    // Pure domain code has no external package or protocol SDK dependencies.
     name: "domain imports only the domain and the standard library",
     from: "domain",
     banned: (spec) =>
@@ -344,10 +294,8 @@ const RULES: Rule[] = [
     allow: [],
   },
   {
-    // The composition root wires everything, so an adapter importing it would
-    // close a cycle: container -> adapter -> container. Use cases are the same
-    // rule seen from the other side — they are handed their dependencies and
-    // must never pull them, which is the coupling M2 and M3 removed.
+    // Adapters importing the composition root close a dependency cycle.
+    // Use cases receive dependencies through injection.
     name: "adapters and use cases do not import the composition root",
     from: ["infrastructure", "application"],
     banned: (spec) => spec === "@/lib/container",
@@ -459,26 +407,10 @@ describe("layer boundaries", () => {
 });
 
 /**
- * The environment, which the import rules cannot see.
- *
- * Every rule above matches specifiers, and `process.env.X` is not one — so a
- * layer could read configuration and no boundary would notice. The failure that
- * follows is always the same: a value read at module scope becomes a
- * process-wide constant nothing declared, nobody injected, and the boot
- * validation never checked. `domain` and `shared` are the worst place for it
- * (one is pure by construction, the other is imported by everything), but
- * `infrastructure` had three of them — two MCP cache TTLs frozen at import, and
- * a retention window whose own parser fell back silently, so a typo deleted rows
- * a year early without a line in the log.
- *
- * Adapters declare their settings through `lib/config`, which owns the parse and
- * the warning; `lib` itself is where reading the environment is the job, so it
- * is outside this rule.
- *
- * `runDeadline.ts` is the one occupant, and it is *named* rather than
- * allowlisted. The run deadline is a process-level backstop that `application`
- * needs and cannot be handed one — it may not import `lib` — so it is read there
- * on purpose. Naming it is what keeps the second one from arriving quietly.
+ * Environment reads are forbidden in domain, shared, infrastructure and
+ * application except the named `runDeadline.ts` process backstop. Adapters
+ * receive parsed configuration through `lib/config`; use cases receive deps.
+ * The exception must remain present so the check cannot silently lose coverage.
  */
 const ENV_READ = /process\.env\b/;
 const ENV_READERS_AT_THE_BOTTOM = ["src/shared/runDeadline.ts"];
@@ -511,68 +443,28 @@ describe("configuration reads", () => {
 });
 
 /**
- * What ships to the browser, which the layer rules cannot see.
- *
- * `src/components` is barred from `application` and `infrastructure` by a rule
- * above. `src/app` — 165 files, and the only place a client component actually
- * lives — was barred from `infrastructure` alone, so nothing stopped a
- * `"use client"` file from importing a use case. One already did:
- * `PromptPreview.tsx` reached `@/application/llm/template` for a regex over
- * `{{var}}` placeholders. That module was 29 lines with no imports of its own,
- * so it cost nothing and read as harmless — which is the point. The same line
- * naming `@/application/runtime` instead pulls the tool loop, the PII filter,
- * the context budget and the logger into the browser bundle, and no rule here
- * would have said a word.
- *
- * A layer is the wrong axis for this, because the boundary is not where a file
- * sits but which runtime it is compiled for. So the rule reads the directive,
- * the way the `configuration reads` rule reads `process.env`.
- *
- * The fix for the one occupant was to move the module rather than exempt the
- * import, and that is still the shape of a fix here — but not always to the same
- * place. A helper both sides *run* and no layer owns goes to `src/shared`, which
- * is what `template.ts` did. A rule or format a domain type owns goes to
- * `domain/`, which is pure TS and just as reachable from a client — `slug.ts`,
- * `frontmatter.ts` and `imageSniff.ts` came back out of `shared` for that reason.
- * And a *type* needs no move at all: a type-only import is erased before any
- * bundle exists, which is how the console names the shapes its routes and use
- * cases answer with. What must never cross is a value.
+ * Client-reachable value imports cannot enter application, infrastructure
+ * or server-side lib modules. Shared runtime helpers belong in `shared`;
+ * domain vocabulary and rules stay in domain. Type-only imports are erased.
  */
 /**
- * A directive may follow comments, and nearly every file here opens with a
- * docblock. Anchored without `m` this matched only a file whose very first
- * characters are the directive, so a client component written in the house
- * style — docblock, then `"use client"` — would have dropped out of the scan
- * entirely and been free to import anything.
+ * Recognize a client directive after leading whitespace, docblocks or
+ * line comments; house-style file headers must not hide client entry points.
  */
 const CLIENT_DIRECTIVE = /^\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*["']use client["']/;
 
 const SERVER_ONLY_LAYERS = ["application", "infrastructure"];
 
 /**
- * `lib` is not a layer the rule can ban wholesale — `auth-client` is a client
- * module by construction — so its server half is named instead. Leaving it out
- * was worse than the hole it was written to close: `@/lib/container` is the
- * composition root, and a client component importing it ships every PostgreSQL
- * repository, the AES cipher, both LLM channels and the AWS SDK to the browser.
- * `config` and `runtime-settings` are the same shape for environment values.
+ * Only `auth-client` is client-safe lib code. Server glue such as container,
+ * config and runtime-settings must stay outside the browser graph.
  */
 const CLIENT_SAFE_LIB = ["@/lib/auth-client"];
 
 /**
- * Every module the browser bundle can reach from a client entry point.
- *
- * The directive marks an entry, not the boundary. A module with no directive of
- * its own is compiled into the client bundle as soon as a client component
- * imports it, and one already sits in exactly that position:
- * `src/app/agents/lib/api.ts` is imported by ~19 client components and imports
- * `@/application/trigger/triggerUseCases` — type-only today, therefore erased,
- * and one word away from not being. Checking only the marked files would have
- * called that clean.
- *
- * Type-only imports are erased and stop the walk. Dynamic imports do not: a
- * `await import()` is a separate chunk, not an exclusion, and the code still
- * ships.
+ * Walk all modules reachable from client entries, including modules without
+ * their own directive. Type-only imports stop the walk; dynamic value imports
+ * produce client chunks and remain reachable.
  */
 function clientReachable(entries: typeof SOURCE_FILES): typeof SOURCE_FILES {
   const seen = new Map<string, (typeof SOURCE_FILES)[number]>();
@@ -600,10 +492,8 @@ describe("the client bundle", () => {
   const entries = SOURCE_FILES.filter((file) => CLIENT_DIRECTIVE.test(file.text));
   const reachable = clientReachable(entries);
 
-  // A count, not `> 0`: the scan going blind is the failure mode that reads
-  // exactly like a clean pass, and 54 of 55 entries dropping out would have
-  // satisfied the looser assertion. Update this number when a client component
-  // is added or removed — that is the point of it.
+  // The exact count detects missing entry points. Update it deliberately when
+  // adding or removing a client component.
   it("is scanned from every client entry point", () => {
     expect(entries.length).toBe(123);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
@@ -688,28 +578,10 @@ describe("the client bundle", () => {
 });
 
 /**
- * A response shape is declared where the response is built.
- *
- * Eighteen of them were declared twice — once by the producer, once again by
- * the browser client — because a `"use client"` module may not *import*
- * `application/`. It may *name* one: a type-only import is erased before a
- * bundle exists. Nothing linked the copies, and they had drifted: a card type
- * widened to `Record<string, unknown>` where the producer says `AgentCard`, an
- * image result missing the warning its producer sends, a Slack view without the
- * manifest a mutation answers with — the pair that crashed the settings page.
- *
- * Checked by *name*, from the browser's side, which is the half that must not
- * restate: a type declared in a client-reachable `app` module must not share its
- * name with one a producer exports. Naming is the whole point, so an import or
- * an alias (`type ImageResult = GenerateImageOutput`) is not a declaration — a
- * body is. Producers keep declaring theirs; a route that builds the shape it
- * answers with (`AgentSlackResponse`, `SkillSummary`) is not client-reachable,
- * because the console reaches it type-only.
- *
- * Request shapes are deliberately excluded. A console input is often narrower
- * than what the use case accepts — `CreateMcpInput` omits `source`, the sync's
- * provenance, which must not be settable from a form — so those two
- * declarations are two contracts rather than one written twice.
+ * Response shapes are declared by their producer and imported type-only by
+ * clients. A client declaration with the same exported name is a duplicate;
+ * aliases name a contract without copying its body. Request shapes are excluded
+ * because console input may deliberately be narrower than a use-case input.
  */
 const DECLARED_TYPE = /^export\s+(?:interface\s+([A-Za-z0-9_]+)\s*(?:extends[^{]*)?\{|type\s+([A-Za-z0-9_]+)\s*=\s*[^;]*[{|])/gm;
 
@@ -754,20 +626,9 @@ describe("response shapes", () => {
 });
 
 /**
- * Where a run's ending is classified.
- *
- * A run signal aborts for two reasons and they are not the same ending — the
- * caller left, or `MAX_RUN_DURATION_MS` stopped a run that was otherwise
- * working — so every path that composes one has to ask which it was. Two did
- * not: a transferred-to prompt child wrote the raw abort reason on its trace
- * while its parent wrote the deadline's sentence for the same event, and an
- * image child rethrew before it wrote a trace at all.
- *
- * A prose list said "four run paths" while the branch that wrote it wired five,
- * which is why this is a test: the rule is that a file composing a run deadline
- * classifies what stopped it, and the two child paths that classify without
- * composing (they run on their parent's signal) are named here so the list
- * stays the whole set rather than half of it.
+ * The execution facade composes the run deadline and classifies its ending
+ * through `runEnding`, distinguishing caller cancellation from the deadline.
+ * Keep the named sites and deadline-composing import sites in agreement.
  */
 const RUN_ENDING_SITES = [
   "src/application/execution/runAgent.ts",
@@ -905,17 +766,8 @@ describe("module graph", () => {
 });
 
 /**
- * The layer rules govern edges *between* layers; nothing governed the edges
- * between application slices, and two cycles had formed before anything said
- * so: `execution ↔ image` (the facade dispatches image runs, and the image use
- * case reached back for the run bracket that then lived in `execution`), and
- * `execution → usage → slack → execution` (the cost guard imported the slack
- * slice's token resolver, and slack's deps name the facade's input type). A
- * slice cycle is the stage before a file cycle, and it makes every member
- * slice untestable and unmovable except as a lump.
- *
- * Type-only edges count, exactly as they do in the layer rules: a type is how
- * this kind of coupling arrives first.
+ * Application slices must remain acyclic, including type-only and dynamic
+ * import edges. Layer boundaries alone do not enforce this rule.
  */
 describe("application slice graph", () => {
   it("has no cycles", () => {
@@ -1013,19 +865,9 @@ describe("catalog reindex serialization", () => {
 });
 
 /**
- * Single-owner invariants.
- *
- * The rules above enforce which direction an import may point. They say nothing
- * about the same rule being written twice, which is the failure this codebase
- * actually kept hitting: `McpTool` reached four definitions that had already
- * drifted apart (one carried `inputSchema`, another made `description`
- * required), the conditional-write error name was spelled out at seven call
- * sites — and only one of them handled the transactional form — and the image
- * usage collapse was derived independently four times.
- *
- * Each entry below names a decision and the file that owns it. A second copy
- * fails here, in the same spirit as the allowlists: the point is not to have a
- * tidy list, it is that adding a copy is not quietly possible.
+ * Each decision has one named owner. Reject duplicate definitions and also
+ * reject an owner that no longer contains its definition. Exemptions identify
+ * distinct legitimate roles and are bounded by layer, path or subsystem.
  */
 interface SingleOwner {
   /** The decision, phrased as what would be inconsistent if it were duplicated. */
@@ -1965,24 +1807,9 @@ describe("single owners", () => {
 });
 
 /**
- * The other half of `formatUsd`'s single-owner claim, which the check above
- * cannot make: a copy does not repeat the *definition*, it hand-rolls a
- * different one. `$${value.toFixed(4)}` is what three cost tables and a compare
- * badge actually wrote, and it disagrees with the owner in two ways at once —
- * no thousands separator, and a fixed width that reports `$0.00` for the
- * sub-cent amounts a cost page exists to show. So the rule is spelled as the
- * shape of the mistake rather than the shape of the definition.
- *
- * Scoped to `app` because that is exactly where the owner is reachable. The
- * cost guards format dollars into a 429 message and a messaging alert, and they
- * live in `application`, which may not import `@/app` — their amounts are
- * sentences for a caller, not columns for a reader, and the dependency rule is
- * what keeps the two apart.
- *
- * `formatBytes` is exempt by name rather than by pattern: the two `_lib`
- * formatters are each the owner of their own format, and a byte count's
- * `toFixed(1)` is indistinguishable from a dollar's in source text — the `${`
- * of a template literal and the `$` + `{expr}` of JSX read the same.
+ * App dollar amounts use `formatUsd`; hand-written `$` plus `toFixed` loses
+ * its precision and grouping policy. `formatBytes` owns a separate format and
+ * is exempt. Application-layer cost messages cannot import app formatters.
  */
 describe("a dollar amount is never written by hand", () => {
   it("has no `$` followed by a rounded number in app outside formatUsd", () => {
@@ -2026,21 +1853,9 @@ const ARTIFACT_CAPTURE_SITES = [
 ];
 
 /**
- * The one place an address the *model* chose is fetched.
- *
- * `fetchPublicUrl` was built as the second of two controls: `docs/SECURITY.md`
- * describes the registration check as the first, and the dispatch check as
- * narrowing — not closing — the window between them. A URL a model named has no
- * first control at all, so this adapter is the whole defence.
- *
- * The MCP internal-host exemption is the specific thing that must never reach
- * it. `skipsUrlGuard` exists so this app can talk to its own cluster MCP
- * services; one line honouring it here turns a prompt injection into a read of
- * `http://mcp-argocd.agent-mcps.svc.cluster.local/`. Cheap to check, and the
- * kind of line that looks like a consistency fix to whoever adds it. The
- * adapter has a list of its own (`URL_FETCH_INTERNAL_HOST_SUFFIXES`), and the
- * point of it being a second list is that this file never reads the first —
- * nor any configuration at all: its list is injected by the composition root.
+ * Model-chosen URLs are fetched through `httpResource` with their own injected
+ * internal-host policy. Never reuse the MCP exemption or attach deployment
+ * credentials: a model-selected URL has no prior operator registration check.
  */
 const MODEL_CHOSEN_URL_FETCHER = "src/infrastructure/net/httpResource.ts";
 
@@ -2125,19 +1940,9 @@ const ONE_AXIS_ON_PURPOSE = [
 ];
 
 /**
- * The routes whose answer *is* the engine's chunk.
- *
- * Two of them, and they have to agree: `/agent` and `/predict` with
- * `stream: true` hand the same frames to the same SSE helper. A file frame
- * leaving either one carries the object key and artifact id the run bracket put
- * on it unless something swaps them for an address — which is a leak of this
- * platform's bookkeeping in one direction and, in the other, a frame naming a
- * document the caller has no way to fetch.
- *
- * The chat routes are deliberately absent: they wrap their own envelope and sign
- * a file when the finished turn is read back, a turn later, because a run there
- * outlives the connection that started it and a signature minted mid-run would
- * be spent on a reader who may not be attached.
+ * `/agent` and streaming `/predict` emit raw chunks and address file output
+ * before SSE serialization. Chat uses a separate envelope and signs files
+ * when reading the stored turn because runs outlive their initiating connection.
  */
 const RAW_CHUNK_STREAM_ROUTES = [
   "src/app/api/agents/[name]/agent/route.ts",
@@ -2335,34 +2140,17 @@ describe("agent runs", () => {
 });
 
 /**
- * A synthetic event read from inside a state updater.
- *
- * React nulls `SyntheticEvent.currentTarget` once the handler returns — it only
- * means anything while the event is being dispatched. A `setState` updater is
- * *not* run then; React defers it to the next render. So
- * `setX(prev => ({ ...prev, k: e.currentTarget.value }))` throws
- * "Cannot read properties of null" whenever React batches, which on the admin
- * settings page it did on every load.
- *
- * The value has to be read in the handler's own scope and closed over. This
- * catches the shape rather than the symptom: an updater arrow whose body still
- * mentions the event.
+ * Read `SyntheticEvent.currentTarget` in the event handler before closing over
+ * its value in a state updater. React clears currentTarget after dispatch,
+ * while an updater may run later.
  */
 const DEFERRED_EVENT_READ =
   /set[A-Z]\w*\(\s*\((?:prev|current)\w*\)\s*=>[\s\S]{0,400}?currentTarget/;
 
 /**
- * Mantine components whose root element is a block-level `<div>`.
- *
- * `<Text>` renders a `<p>`, which accepts phrasing content only: a browser
- * *closes the paragraph* where a `<div>` opens inside it, so the server's HTML
- * and React's tree disagree about the shape of the document and hydration
- * fails. The plugins sync summary put a `<Badge>` inside a `<Text>` and every
- * sync logged "In HTML, <div> cannot be a descendant of <p>".
- *
- * The fix is per-component and cheap — `component="span"` on the inner one, or
- * a `Group` around both — but nothing made the mistake visible before a browser
- * ran the page, which is why it is caught here.
+ * These Mantine components default to block roots. Nesting them inside a
+ * paragraph or heading can violate HTML content rules and break hydration.
+ * Use a suitable `component` override or a structural container.
  */
 const BLOCK_ROOTED = [
   "Badge", "Group", "Stack", "Divider", "Card", "Paper", "Alert", "SimpleGrid",
@@ -2435,19 +2223,9 @@ describe("react event handling", () => {
 });
 
 /**
- * A create modal that keeps its draft.
- *
- * These modals are mounted for the life of the page — `opened` is a prop, not a
- * mount — so their `useState` fields outlive being closed. After a successful
- * create the next open came up still holding the item that had just been saved,
- * and the operator either cleared every field by hand or submitted a name the
- * registry already had.
- *
- * Clearing them means naming every field, which is exactly what drifts when a
- * field is added later, so the rule is mechanical rather than a comment: a
- * component that calls `onCreated()` clears through a `reset()` immediately
- * before it, and that `reset()` touches every field setter the component
- * declares. Adding a field and forgetting its reset fails here.
+ * Create modals stay mounted while closed. Before `onCreated()`, call reset()
+ * and clear every draft field setter; submitting/error state are not fields.
+ * Adding a field must include its reset.
  */
 const NOT_A_FIELD = new Set(["setSubmitting", "setError"]);
 
@@ -2485,17 +2263,10 @@ describe("create modals", () => {
 });
 
 /**
- * What the Edge runtime has to be able to load.
- *
- * Next compiles `instrumentation.ts` for **both** the Node and Edge runtimes.
- * `proxy.ts` defaults to Node as of Next 16, but it stays on this list because
- * it is the one file a deploy target may lift out to its edge network, and it
- * runs on every page: a Node builtin anywhere in its transitive imports takes
- * the whole console down while every `/api/*` route keeps working, because those
- * are outside the matcher. That asymmetry is exactly what let it ship once: the
- * API surface tested clean.
- *
- * `pnpm build` only *warns*. This fails.
+ * Keep static imports of instrumentation and proxy compatible with Edge.
+ * Instrumentation is compiled for Node and Edge; proxy defaults to Node in
+ * Next 16 and is also held to this conservative boundary. Dynamic Node-only
+ * imports belong behind the runtime gate. The build may warn; this check fails.
  */
 const EDGE_ENTRY_POINTS = ["src/instrumentation.ts", "src/proxy.ts"];
 
@@ -2628,9 +2399,8 @@ describe("scanner", () => {
   });
 
   it("reads a clause's bindings without its aliases or default", () => {
-    // What the by-name entry-point checks rest on. An alias binds a local name
-    // the rule never asks about, and a namespace or default import names the
-    // module rather than an export — so neither is a named binding.
+    // Aliases retain the exported name; namespaces match every export.
+    // A default import has no selected export name.
     const parsed = parseImports(
       [
         `import { executeAgent as run, type Deps } from "@/application/execution/runAgent";`,
