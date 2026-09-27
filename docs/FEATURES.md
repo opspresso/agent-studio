@@ -1,808 +1,158 @@
 # 기능 현황
 
-현재 구현된 기능과 사용 조건을 화면·API·실행 경로·worker 기준으로 정리한다.
-선택 기능은 배포 환경의 설정에 따라 활성화한다.
+현재 구현된 기능, 활성 조건과 확인할 결과를 정리한다. 한 설치가 한 기업이며,
+필수 부팅·로그인·Agent 실행·콘솔은 사내 서비스만으로 구성할 수 있다.
 
-개념과 연결 관계는 [시스템 개요](AGENT_STUDIO.md), HTTP 계약은 [API](API.md),
-활성 조건과 제한값은 [CONFIGURATION](CONFIGURATION.md), 실행 원리는
-[설계 문서](ARCHITECTURE.md#서브시스템)를 따른다. 개발 계획은 [MILESTONES](MILESTONES.md)에서 관리한다.
+사용 절차는 [콘솔 Guide](../src/app/guide/page.tsx), HTTP 계약은 [API](API.md),
+설정·상한은 [CONFIGURATION](CONFIGURATION.md), 배포·worker·보존은
+[OPERATIONS](OPERATIONS.md)를 따른다. 미구현 작업은 [MILESTONES](MILESTONES.md)에서 관리한다.
 
-## 명칭과 기능 경계
+## 제품 단위와 접근 권한
 
-| 현재 명칭 | 실제 역할 |
+| 단위 | 역할·접근 범위 |
 |---|---|
-| Agents | 현재 설정을 저장하고 실행하는 단위 |
-| Tools | MCP 서버 등록·연결·운영 기능 |
-| Plugins | Skills와 MCP 서버를 가져오는 동기화 묶음 |
-
-Agent는 기본 모델·fallback 모델·이미지 도구 모델을 사용한다.
-Reasoning은 모델의 capability와 실행 설정으로 제어한다.
-
-## 1. Agents
-
-### 기본 관리
-
-- Agent 목록과 검색: 이름·표시 이름·설명.
-- 고유 이름, 표시 이름, 설명, 소유자, 부서 코드.
-- Agent 생성.
-- 표시 이름·설명·부서 코드 수정.
-- Agent 복제.
-- Agent 삭제.
-- 공개 범위 표시.
-- 조직 공개 / 비공개 설정.
-- 비공개 Agent의 사용자 이메일 초대.
-
-현재 공개는 로그인한 조직 사용자에게 공개한다는 의미다. 초대 사용자는 조회·실행·복제가
-가능하지만 편집자는 소유자·관리자다.
-
-### Agent 실행
-
-모든 Agent는 같은 도구 실행 경로를 사용한다. 이미지 생성·편집은
-Agent의 GenerateImage·EditImage 도구로 제공한다.
-
-### 현재 Agent 설정
-
-- 하나의 현재 설정 조회·전체 저장.
-- 저장하지 않은 변경 표시와 Prompt preview.
-- 조회 권한이 있는 사용자의 읽기 전용 조회.
-- Agent 메타데이터·설정의 동시 저장 충돌 검사.
-- 새 실행에 저장 내용 적용, 진행 중 실행·Audio 작업의 설정 snapshot 유지.
-- 승인 대기 중 설정·연결 변경 검사와 중복 재개 방지.
-
-실험을 분리하려면 Agent를 복제한다.
-
-### 모델과 프롬프트
-
-Agent에 기본 모델과 fallback, 프롬프트와 생성 설정을 저장한다.
-
-- 기본 모델 선택.
-- 모델 검색·즐겨찾기 그룹·capability 확인.
-- Fallback 모델 선택.
-- 시스템 프롬프트.
-- Temperature.
-- 최대 출력 토큰.
-- Presence penalty.
-- Reasoning effort: 기본값 / low / medium / high.
-- Reasoning 표시·기록 여부.
-- Structured output 활성화.
-- JSON Schema 입력·구문 검사.
-- 요청자 정보 전달 여부: 이름, 표면이 제공하는 시간대·아바타. 이메일은 모델용 요청자 정보에서 제외.
-- PII filtering: 이메일·전화번호·한국 주민등록번호·카드번호 치환.
-
-Agent는 대화 메시지를 입력으로 사용한다.
-Fallback은 첫 출력 전 429·5xx 오류에서 한 번 전환한다.
-이미지 도구는 별도의 이미지 모델을 사용하며 PII filtering을 켜면 도구 프롬프트에도 적용한다.
-
-### Agent 역량과 실행 정책
-
-- 복수 Skills 연결.
-- 복수 MCP 서버 연결.
-- 서버별 사용할 도구 선택.
-- Agent별 MCP 헤더 추가·교체·제거.
-- MCP 결과의 원본 파일 매핑 설정.
-- Agent별 MCP OAuth 연결·재인증·해제.
-- 로컬 Agent를 하위 Agent로 연결.
-- Handoff.
-- Agent-as-Tool 위임.
-- 이미지 도구를 가진 Agent 위임.
-- 최대 Agent 턴 수.
-- 최대 입력 문자 수.
-- 차단할 도구 이름 목록.
-- 승인이 필요한 도구 이름 목록.
-- 도구 입력 스키마 검증.
-- 위임 깊이·순환·남은 턴 검사.
-- 잘린 결과·누락된 역량·실행 손실 경고.
-
-### Memory·자동 검색
-
-- 실행 전 Memory recall 활성화.
-- 연결된 MCP의 `recall`로 관련 기억 조회.
-- 조회한 기억을 모델 문맥에 추가.
-- MCP가 제공하는 기억 저장 도구 사용.
-- Dynamic capabilities 활성화.
-- Skill·MCP 서버·MCP 도구의 의미 기반 검색.
-- Embedding 검색과 선택적 Rerank.
-- 명시적으로 연결한 역량에 검색 결과 추가.
-- 검색된 역량·준비 경고 표시.
-
-장기 Memory는 외부 MCP에서 관리하며 Chat 이력과 별도 문맥으로 사용한다.
-하위 Agent는 명시적으로 연결한 로컬 Agent다.
-
-### 내장 도구
-
-- `Skill`: 지침·참고 파일 읽기.
-- `GenerateImage`, `EditImage`: 이미지 생성·편집.
-- `FetchUrl`: URL 내용 읽기.
-- `SaveFile`: 텍스트 계열 파일 생성.
-- `File`: 문서 읽기·검사·생성·편집.
-- `Workspace`: Sandbox 작업·코딩·Git 검토 요청.
-- `ImportFile`, `TranscribeAudio`, `AudioJob`: 파일 가져오기·전사·오디오 작업.
-- Slack 읽기 도구: `SlackHistory`, `SlackThread`, `SlackUser`, `SlackUsers`, `SlackChannels`, `SlackReactions`.
-
-도구마다 Agent 설정·저장소·연동·호출자 권한 등의 활성 조건이 있다.
-
-구현 근거: [Agent 저장 형태](../src/domain/agent/types.ts),
-[Agent 설정 편집기](../src/app/agents/[name]/_components/AgentConfigurationEditor.tsx),
-[내장 도구 목록](../src/domain/llm/toolNames.ts).
-
-## 2. Playground
-
-### Playground
-
-- 현재 Agent 설정 조회.
-- 설정 편집과 실행 결과를 함께 표시.
-- 저장 전 초안의 Prompt preview: 조립된 시스템 메시지, 선택적 검색 요청,
-  실제 도구 JSON Schema, 발견한 역량, Memory·바인딩·PII 관련 경고, 결과 복사.
-- 저장한 Agent 설정 테스트 실행.
-- 텍스트 메시지 입력.
-- 이미지·문서 첨부.
-- 이미지 생성·원본 이미지 편집.
-- 답변 스트리밍.
-- Reasoning·도구 호출·하위 Agent 진행 표시.
-- 생성 이미지·파일 표시.
-- 비용·오류·경고·종료 상태 표시.
-
-Prompt preview는 모델 답변을 생성하지 않지만 검색·MCP 조회·Memory recall은 실제 수행할 수
-있다. 실제 Run은 저장한 Agent 설정을 실행한다.
-
-구현 근거: [Prompt preview](../src/app/agents/[name]/_components/PromptPreview.tsx),
-[실행 패널](../src/app/agents/[name]/_components/RunPanel.tsx).
-
-## 3. Chats
-
-Chat은 Agent를 선택해 대화를 이어가는 실행 화면이다.
-
-- 접근 가능한 Agent 선택·검색.
-- 새 대화 생성.
-- 마지막 선택 Agent 기억.
-- 첫 메시지 기반 제목 자동 생성.
-- 본인 대화 목록·최근 활동순 표시.
-- 일반 Chat과 Workspace 대화 구분.
-- 목록 더 보기.
-- 실행 중 표시.
-- 대화 삭제.
-- 텍스트·이미지·문서 첨부.
-- 파일 선택·드래그앤드롭·붙여넣기.
-- Markdown 답변·복사.
-- Reasoning 표시.
-- 도구 이름·인자·결과 표시.
-- 하위 Agent·위임 경로 표시.
-- 실행 시간 표시.
-- 이미지 확대·파일 미리보기·다운로드.
-- Stop으로 실행 취소.
-- 이전 대화·모델·도구 이력 유지.
-- 화면 이동·연결 종료 후 서버 실행 유지.
-- 재접속 시 실행 상태·제한된 로그 이어받기.
-- 도구별 승인·거절.
-- 승인 체크포인트에서 실행 재개.
-- 불확실하게 중단된 승인 실행 폐기.
-- Workspace 승인·CI 결과 수신 및 후속 실행.
-
-Chat은 소유자 개인 대화이며 연결이 종료돼도 서버에서 실행을 이어간다.
-서버가 중단된 실행은 저장된 상태와 외부 효과를 확인한 뒤 처리한다.
-
-구현 근거: [새 대화](../src/app/chats/_components/NewChatPanel.tsx),
-[대화 소유권·조회](../src/application/chat/getChat.ts), [Chat 설계](design/chat.md).
-
-## 4. Models
-
-### 목록·탐색
-
-`/models`는 관리자가 등록한 모델의 목록이다. 로그인한 사용자는 여기서 개인 즐겨찾기를 추가·제거한다.
-
-- 등록 모델 ID·전송 모델 ID·표시 이름·provider.
-- 모델 유형: Text, Image, Embedding, Rerank, Transcription, Decisions.
-- Tools·Structured output·Vision·Reasoning capability.
-- Context window·출력 토큰 한도.
-- 입력·출력·캐시 등 유형별 가격.
-- 이름·전체 등록 ID·전송 ID·제작사·provider 검색.
-- Provider·유형·capability 필터.
-- 이름·가격 정렬.
-- 검색·필터·정렬·페이지 상태 기억.
-- 즐겨찾기 모델은 Agent·기본·검색·Workspace·오디오 모델 선택기에서 우선 표시.
-
-### 관리자 관리
-
-Settings → Models에서 연결·등록·사용 설정을 관리한다. Self-hosted도 같은 등록 흐름을 사용한다.
-
-- 이름·종류·API base URL·키로 프로바이더 연결 등록.
-- 프로바이더의 전체 모델 목록 조회·필터·선택 등록과 직접 등록.
-- 선택된 모델만 보기와 삭제.
-- 등록 모델의 표시 이름·유형·문맥 크기·출력 토큰·capability·가격 수정.
-- 프로바이더 목록에 등록 모델이 있는지 상태 확인. 실제 추론 성공은 별도로 검증한다.
-
-### 모델 사용 설정
-
-- 새 Agent와 모델 선택기에 사용할 기본 모델.
-- Capability 검색용 Embedding 모델.
-- Embedding 변경 시 확인 후 재색인.
-- Rerank 모델·최소 점수.
-- Codex·Claude·OpenCode별 Workspace 모델.
-- Workspace 모델 선택 해제로 해당 runtime 비활성화.
-
-미등록 모델과 삭제된 모델을 사용하는 새 실행은 거부한다. `UNKNOWN_MODEL_POLICY`는 등록됐지만
-가격이 없는 모델의 실행 허용 여부만 제어한다. 공개 모델 메타데이터는 조회 결과의 누락된 facts를
-보완하며 모델을 자동 등록하지 않는다. 등록·삭제 제약과 오프라인 메타데이터 갱신은
-[모델 등록과 사용](CONFIGURATION.md#모델-등록과-사용)을 따른다.
-
-구현 근거: [Models 화면](../src/app/models/page.tsx),
-[모델 등록](../src/application/llm/modelRegistry.ts),
-[모델 선택](../src/application/llm/modelSelection.ts).
-
-## 5. Plugins
-
-- 설치된 Plugin 목록·검색.
-- 이름·버전·설명.
-- 포함된 Skill·MCP 서버 수.
-- 동기화 시각·commit.
-- 상세 구성 요소 조회.
-- 원본 저장소·branch·경로·commit 링크.
-- GitHub 저장소 동기화.
-- 오프라인 `.tar / .tar.gz / .tgz` 업로드 동기화.
-- Skill 본문·참고 파일 가져오기.
-- MCP 서버 정의·설명·운영 문서 가져오기.
-- 기존 항목 갱신 및 출처 인수.
-- 변경·생성·스킵·실패 보고서.
-- 변경된 필드·스킵 이유 표시.
-- 원본에서 사라진 항목 감지.
-- 해당 항목을 사용하는 Agent 표시.
-- 사라진 Plugin·Skill·MCP의 명시적 선택 삭제.
-- 최근 동기화 보고서 보관.
-- 외부 ticker 기반 자동 동기화.
-- 동기화 후 capability 재색인.
-
-Plugin은 원본 동기화로 관리한다. 항목 삭제는 사용자가 명시적으로 선택한다.
-MCP header credential은 앱의 자격 증명 설정에서 관리한다.
-
-구현 근거: [Plugin 목록](../src/app/plugins/page.tsx),
-[동기화 보고서](../src/app/_components/PluginSyncSummary.tsx),
-[Plugin 동기화](../src/application/plugin/syncPlugins.ts).
-
-## 6. Skills
-
-- Skill 목록·검색.
-- 이름·설명·Plugin 출처·참고 파일 수.
-- 수동 Skill 생성.
-- Markdown 지침 본문 작성.
-- 설명·본문 편집.
-- 수동 Skill 삭제.
-- 본문 조회.
-- 참고 파일 경로·내용 조회.
-- 소유 Plugin으로 이동.
-- Agent에 명시적으로 연결.
-- 자동 capability 검색으로 발견.
-- 실행 중 필요한 지침·참고 파일만 읽기.
-
-Plugin 소유 Skill과 참고 파일은 원본 동기화로 관리한다. Agent는 필요한 지침과 파일을 읽어 사용한다.
-
-구현 근거: [Skill 목록](../src/app/skills/page.tsx),
-[Skill 상세](../src/app/skills/[name]/page.tsx), [Skill 로딩](../src/application/skill/loadSkill.ts).
-
-## 7. Tools — MCP 서버
-
-### 원격 서버
-
-- 목록·검색.
-- 이름·URL·모델용 설명·운영 문서.
-- HTTP 헤더·자격 증명.
-- 서버 등록·편집·삭제.
-- Plugin 출처 표시.
-- 자격 증명 마스킹.
-- 연결 테스트.
-- 제공 도구 이름·설명·개수 조회.
-- 연결 오류 표시.
-- Agent에서 사용할 도구 선택.
-
-연결 테스트로 MCP 도구를 발견하고 이름·설명·연결 상태를 확인한다.
-
-### OAuth
-
-- 서버 인증 메타데이터 발견·재발견.
-- Authorization server 선택.
-- Resource·authorize/token endpoint 조회.
-- Client 등록 방식 확인.
-- 공유 Client ID·Client Secret·Redirect URI 설정.
-- OAuth 설정 제거.
-- Agent별 연결·재인증·해제.
-- Token 갱신·재인증 필요 상태 처리.
-
-### Managed MCP — 조건부
-
-- Docker 기반 서버 생성·시작.
-- 이미지·포트·환경변수·실행 인자·endpoint 설정.
-- 설명·운영 문서.
-- 실행·연결 상태 조회.
-- 재시작.
-- 실행 설정 변경 시 재시작.
-- 컨테이너와 등록 항목 삭제.
-- 앱 부팅 후 상태 확인·복구.
-
-Docker와 Managed MCP 설정이 필요하다. Kubernetes 관리형 runtime은 현재 구현돼 있지 않다.
-
-구현 근거: [MCP 관리 화면](../src/app/tools/[name]/page.tsx),
-[Managed MCP 생성](../src/app/tools/_components/ManagedMcpModal.tsx), [MCP 설계](design/mcp.md).
-
-## 8. Integrations·API Reference
-
-Integrations에서 Agent 인증과 외부 연동을 설정하고 API Reference에서 호출 계약과 예제를 확인한다.
-
-### Agent API Token
-
-- 생성.
-- 상태·마스킹 값·발급 시각 조회.
-- 값 보기·숨기기·복사.
-- 재발급.
-- 폐기.
-- 소유자 tier에 따른 발급·사용 제한.
-
-현재 Agent당 Token 하나다.
-
-### 실행 API·Reference
-
-- Predict 완료형·스트리밍.
-- Agent raw chunk 스트리밍.
-- OpenAI-compatible Chat Completions.
-- Agent 이미지 도구의 결과 반환.
-- 메시지·인라인 이미지·문서 입력.
-- 모델·사용량·비용·경고·종료 이유·출력 파일 반환.
-- 선택적 대화 ID 전달.
-- Endpoint·인증·요청/응답·오류 문서.
-- curl·Python·Node.js 예제.
-- 예제 복사.
-
-API Reference는 `/api/agents/{name}` 주소로 현재 Agent 설정을 호출하는 예제를 제공한다.
-
-### Slack
-
-- App manifest 생성·복사.
-- Bot Token·Signing Secret.
-- 활성화·연결 테스트·해제.
-- 이벤트 endpoint 안내.
-- 제안 프롬프트·채널 키워드 설정.
-- DM·mention·참여 중인 thread 응답.
-- 키워드 기반 참여.
-- Assistant 시작 안내·제안 프롬프트.
-- `!help / !mute / !unmute`.
-- 스트리밍 답변·진행 표시.
-- Thread 문맥·이미지·문서 읽기.
-- 생성 이미지·파일 전달.
-- 비공개 Agent의 사용자 접근 검사.
-- Schedule·비용 알림 목적지.
-
-### Telegram
-
-- Bot Token.
-- 활성화·연결 테스트·해제.
-- Webhook 자동 등록·해제·재등록.
-- 개인 Chat·그룹 mention·봇 답장 처리.
-- `/start / /help`.
-- 타이핑·편집 방식 응답·긴 답변 분할.
-- 이미지·문서 입력과 결과 전달.
-- 대화 이력·forum topic 구분.
-- 관찰한 Chat·topic을 알림 목적지로 선택.
-
-음성 메시지 자동 전사 기능으로 보면 안 된다.
-
-### Microsoft Teams
-
-- App ID·Client Secret·선택 Tenant ID.
-- 활성화·연결 테스트·해제.
-- Messaging endpoint 안내.
-- 개인 Chat·채널/그룹 mention 응답.
-- 타이핑·메시지 편집·긴 답변 분할.
-- 이미지·문서 입력과 결과 전달.
-- 대화 이력.
-- Schedule·비용 알림 목적지.
-
-배포 담당자가 준비한 Azure Bot·Teams App의 자격 증명을 연결한다.
-
-구현 근거: [연동 화면](../src/app/agents/[name]/integrations/page.tsx),
-[API Reference](../src/app/agents/[name]/api-reference/endpoints.ts),
-[메시징 설계](design/messaging.md).
-
-## 9. Webhook·Schedules
-
-Webhook과 Schedules는 Agent 실행을 호출하는 선택적 어댑터다. 접수·중복 방지·이력은
-Trigger 계층에서 처리하고 실행은 공통 Agent 경로를 사용한다.
-
-### Webhook
-
-- Agent별 Webhook 설정.
-- 호출 주소 복사.
-- 활성화.
-- Secret 생성·확인·회전.
-- JSON payload를 사용자 메시지로 전달.
-- 겹침 실행 허용 여부.
-- Secret header·GitHub 서명 검증.
-- 중복 요청 억제.
-- 접수 후 백그라운드 실행.
-- 현재 Agent 설정 실행.
-- 최근 실행 상태·결과·오류·경고.
-- 생성 Artifact 보관.
-- API에서 설명 설정.
-
-### Schedules
-
-- 여러 Schedule 생성·조회·수정·삭제.
-- Schedule ID.
-- 5필드 cron.
-- IANA 시간대.
-- 실행 메시지.
-- 활성화.
-- 겹침 실행 허용 여부.
-- 소유자 문맥으로 실행 여부.
-- Slack·Telegram·Teams 결과 배달.
-- 최근 실행 결과.
-- 플랫폼별 배달 성공·실패.
-- 제한된 놓친 실행 보충.
-- 중복 tick 억제.
-- 유실된 실행 상태 정리.
-- API에서 설명 설정.
-
-예약 실행은 외부 ticker가 호출한다.
-
-구현 근거: [Webhook 설정](../src/app/agents/[name]/integrations/WebhookSection.tsx),
-[Schedule 설정](../src/app/agents/[name]/integrations/SchedulesSection.tsx), [Trigger 설계](design/triggers.md).
-
-## 10. Workspace·Sandbox·Coding
-
-### 작업 실행
-
-- Chat / Workspace 실행 방식 선택.
-- Agent 선택.
-- Runtime 선택: Command, Codex, Claude, OpenCode.
-- Script 또는 자연어 코딩 작업 접수.
-- 저장소·기준 브랜치 선택.
-- 같은 Workspace에서 후속 작업.
-- 작업 상태·실행 이력.
-- stdout·stderr·메시지·경고 조회.
-- Git Diff 조회.
-- Test·Lint·Build 결과 조회.
-- 작업 취소.
-- Workspace 종료.
-- PR 링크·CI 상태 조회.
-
-### 영속성
-
-- 작업 큐.
-- 파일·Git·native Session 체크포인트.
-- 유휴 Sandbox 정리.
-- 후속 요청 시 복구.
-- Worker 재시작 후 작업 관찰·이어받기.
-- 결과가 불명확한 외부 작업의 자동 재실행 방지.
-
-### Agent 정책
-
-- Workspace 도구 활성화.
-- 기본 Runtime.
-- 저장소·허용 owner 목록.
-- 저장소 접근 범위: 지정 저장소, 지정 owner, 서버 계정이 접근 가능한 전체,
-  Agent가 만든 신규 저장소 자동 허용.
-- 유휴 TTL.
-- Test·Lint·Build 명령.
-- 배포 허용 workflow.
-
-### Git·배포 승인
-
-- Commit.
-- Commit & push.
-- 작업 브랜치 Push.
-- Draft PR·PR 생성·상태 변경.
-- PR 병합.
-- 조건부 main fast-forward push.
-- 허용된 GitHub workflow 실행.
-- 정확한 HEAD·Diff·CI 상태를 확인한 승인·거절.
-- 작업 결과·거절·실패·결과 불명 상태 보관.
-- GitHub Webhook 기반 PR·CI 상태 갱신.
-- 원래 Chat으로 결과 전달·후속 실행.
-
-### Agent 도구로 가능한 추가 작업
-
-- 저장소 접근 확인.
-- 새 저장소 생성.
-- Workspace 생성·선택.
-- 저장소 연결.
-- 작업 실행·상태 확인·대기·취소·종료.
-- Git 검토 준비와 승인 URL 발급.
-
-Docker·별도 worker·runtime 모델 설정이 필요하다. Command 실행은 모델을 사용하지 않는다.
-작업을 제출하고 출력·Diff·검사 결과를 확인하는 화면을 제공한다.
-Agent의 Workspace 도구는 로그인한 member 이상 사용자의 실행에서 제공하며, Agent API Token이나
-메신저·예약 실행이 같은 권한을 자동으로 얻지는 않는다.
-
-구현 근거: [Workspace 화면](../src/app/workspaces/_components/WorkspacePanel.tsx),
-[Workspace 도구](../src/application/workspace/workspaceTool.ts), [Workspace 설계](design/workspaces.md).
-
-## 11. Documents·파일 생성·편집
-
-### 읽기·추출
-
-- UTF-8 텍스트·Markdown·CSV·JSON·XML·YAML.
-- HTML.
-- PDF 텍스트 레이어.
-- DOCX·XLSX·PPTX.
-- HWP 5.x·HWPX.
-- ODT·ODS·ODP.
-- RTF.
-- 추출 실패·누락·길이 초과 경고.
-- Artifact ID로 저장된 파일 읽기.
-
-### 문서 검사
-
-- 문서 구조.
-- 편집 대상 텍스트 위치.
-- 시트·셀 주소·값·수식.
-- 숨김 시트 포함 여부.
-- 범위를 나눠 조회.
-
-### 문서 생성
-
-- DOCX.
-- PDF.
-- HWPX.
-- PPTX.
-- XLSX.
-- 제목·파일명·문서 스타일 프로필.
-- 지원 형식의 이미지 삽입.
-- 시트·셀·수식 지정.
-- 생성 결과의 구조 검사·재열기 검증.
-
-### 파일 편집
-
-- 텍스트·HTML·SVG 문자열 교체.
-- JSON 수정 및 문법 검사.
-- DOCX·PPTX·HWPX의 지정 텍스트 교체.
-- XLSX 셀 값·수식 변경.
-- 원본 보존 및 수정본 생성.
-- 원본과 수정본의 관계 기록.
-
-### SaveFile
-
-- HTML·Markdown·TXT·CSV·JSON·SVG 생성.
-- 다운로드 및 Artifact 연결.
-
-업로드한 문서는 추출문을 모델 문맥에 넣거나 파일 ID로 읽는다.
-
-구현 근거: [문서 처리 계약](../src/domain/document/processor.ts),
-[File 도구](../src/application/document/fileTool.ts), [문서 설계](design/documents.md).
-
-## 12. Audio Processing
-
-- MP3·WAV·FLAC·Ogg 업로드.
-- 원본 파일 가져오기.
-- Transcription 모델 선택.
-- 언어 지정.
-- 원본 보존 기간·시간대.
-- 후처리 Agent 선택.
-- 접수 시점의 후처리·전달 설정 보존.
-- 외부 MCP 저장 목적지.
-- Documents·Memories 저장 여부.
-- 활성화·활성 작업 수·발생당 작업 수 설정.
-- 가져오기만 / 전사 / 후처리 / 전체 처리.
-- 영속 작업 큐·중복 접수 억제.
-- 긴 오디오 변환·분할 전사.
-- 완료된 구간 재사용.
-- 긴 전사문 분할 후처리·통합.
-- 단계·진행률·시도 횟수·오류 조회.
-- 자동 재시도·수동 재시도·취소.
-- 종료된 작업 이력 삭제.
-- 원본 다운로드.
-- 전사 JSON·요약 Markdown·구조화 결과·대화록.
-- 외부 Documents·Memory 저장 결과 확인.
-- 원본·파생 파일 만료 정리.
-- Agent가 `AudioJob`으로 작업 제출·조회·읽기.
-
-저장소·전사 채널·별도 worker를 구성해 Agent 소유자인 member 이상의 개인 오디오 파일을 처리한다.
-외부 Documents·Memory 저장에는 수신 MCP의 도구와 계약이 필요하다.
-
-구현 근거: [Audio 화면](../src/app/agents/[name]/audio/page.tsx),
-[Audio 도구](../src/application/audio/toolDefinitions.ts), [오디오 설계](design/audio-processing-spec.md).
-
-## 13. Artifacts
-
-- 개인 갤러리.
-- Agent별 갤러리.
-- 이미지·문서·오디오 필터.
-- 불러온 목록에서 파일명·프롬프트·Agent·모델 검색.
-- 목록 더 보기.
-- 이미지 썸네일·확대.
-- 원본 첨부와 생성 파일 구분.
-- 파일명·크기·생성 시각·생성 모델·출처 표시.
-- 다운로드.
-- HTML·Markdown·CSV·JSON·SVG·텍스트 미리보기.
-- HTML 상호작용 미리보기: 버튼·입력·스크립트·Canvas, Sandbox iframe, Stop·Restart,
-  스크립트 오류·차단 리소스 안내.
-- 삭제.
-- 실행·사용자·하위 Agent·원본 관계 보관.
-- API·자동화 등 다른 실행 표면의 출력 수집.
-
-산출물은 파일별 접근 권한으로 보호하며 사용자·Agent별 갤러리에서 조회한다.
-Office·PDF 원본은 다운로드해 확인한다. 개인 Audio 원본·파생 파일은 소유권과 만료 조건으로
-접근을 검사한다.
-
-구현 근거: [Artifact 갤러리](../src/app/artifacts/_components/ArtifactGallery.tsx),
-[산출물 권한](../src/application/artifact/artifactUseCases.ts).
-
-## 14. Usage·비용 한도
-
-### 사용량 조회
-
-- 기간·빠른 기간 선택.
-- 전체 비용.
-- 모델 호출 수.
-- 평균 호출 비용.
-- 일별 비용 차트.
-- Agent별 집계.
-- 모델별 집계.
-- Provider별 집계.
-- 부서별 집계.
-- 캐시 사용 비율.
-- Agent별 호출자 수.
-- 호출자별 호출 수·비용.
-- 개인 사용량.
-- 개인 월 예산 사용률.
-- API·저장 데이터의 입력·출력·캐시 토큰과 비용.
-
-위치는 전체 Overview, Agent Usage, 개인 Profile로 나뉜다. 전체 Overview는 Agent·모델·
-provider·부서별, Agent Usage는 모델·provider별, Profile은 Agent·모델·provider별 집계를
-제공한다. 호출자별 상세는 소유자·관리자 전용이다.
-
-### Agent 비용 정책
-
-- 일별 경고 한도.
-- 일별 차단 한도.
-- 월별 경고 한도.
-- 월별 차단 한도.
-- 한도 해제.
-- Slack·Telegram·Teams 알림 목적지.
-- 임계액 도달 알림.
-- 차단 한도 도달 후 추가 실행 거부.
-- UTC 일·월 기준 집계.
-
-### 사용자 등급 정책
-
-- Guest·Member·Admin별 월 비용 정책.
-- 등급별 동시 실행 정책.
-- Agent 생성 가능 여부.
-- Agent API Token 사용 가능 여부.
-
-등급별 한도는 코드 정책으로 관리한다. 비용 가드는 기록된 사용량을 기준으로 새 실행을 제어한다.
-
-구현 근거: [전체 비용 화면](../src/app/_components/Dashboard.tsx),
-[사용량 조회·권한](../src/application/usage/usageUseCases.ts),
-[등급 정책](../src/domain/member/tiers.ts), [비용·기록 설계](design/observability.md).
-
-## 15. Traces
-
-- Agent별 기간 조회.
-- Trace 상세.
-- 실행 시간·상태.
-- 완료·실패·취소·승인 대기·턴/출력 제한 구분.
-- 호출자·대화 ID·Agent 호출 경로 기록.
-- 모델·도구·하위 Agent·준비·Guardrail span.
-- 입력·출력·캐시·Reasoning 토큰.
-- Span별 상태·시간.
-- 준비한 역량·Memory 통계.
-- 오류·경고.
-- 하위 Trace 이동.
-- 생략된 span 수 표시.
-- Agent 실행의 상시 기록.
-- 선택적 OTLP export.
-
-소유자·관리자가 span 표에서 실행 상태·시간·사용량을 확인한다.
-
-구현 근거: [Trace 목록](../src/app/agents/[name]/traces/page.tsx),
-[Span 표시](../src/app/agents/[name]/traces/TraceContent.tsx), [Trace 설계](design/observability.md#trace).
-
-## 16. Audit
-
-- 관리자 감사 기록 조회.
-- 기간 필터.
-- 시각·행위·행위자·대상·상세 표시.
-- 시크릿 조회·발급/회전·폐기 기록.
-- 관리자 Agent 변경 기록.
-- 설정 변경·모델 등록·수정·삭제·기본값 변경.
-- Agent 삭제.
-- 공유 레지스트리 삭제·소유 출처 변경.
-- 타인 Artifact 삭제.
-- 사용자 tier 변경.
-- 보존 기간에 따른 정리.
-
-기간을 선택해 감사 기록을 조회한다.
-
-구현 근거: [감사 화면](../src/app/audit/page.tsx), [감사 대상 행위](../src/domain/audit/types.ts).
-
-## 17. 인증·Members·Profile
-
-### 인증
-
-- Keycloak 로그인.
-- 표준 OIDC 로그인.
-- Google 로그인.
-- 선택적 이메일·비밀번호 로그인.
-- 초기 관리자 부트스트랩.
-- 허용 이메일 도메인 제한.
-- 세션 로그인·로그아웃.
-- 로그인 후 원래 페이지로 복귀.
-- 역할별 페이지·API 접근 제어.
-
-### Members
-
-- 관리자용 사용자 목록.
-- 이름·이메일·프로필 이미지.
-- 가입 시각·마지막 로그인.
-- Guest / Member / Admin 변경.
-- 설정으로 지정한 관리자 tier 잠금.
-
-### Profile
-
-- 본인 이름·이메일·이미지·tier.
-- 가입 시각·마지막 로그인.
-- 동시 실행·월 예산 정책.
-- 이번 달 지출·한도 사용률.
-- 기간별 개인 사용량.
-- Agent·모델·provider별 개인 비용.
-
-Profile에서 본인 정보와 사용량을 조회한다.
-
-구현 근거: [인증 구성](../src/lib/auth.ts), [Members 화면](../src/app/members/page.tsx),
-[Profile 화면](../src/app/profile/page.tsx), [인증·인가 계약](SECURITY.md).
-
-## 18. Settings
-
-| 탭 | 관리 항목 |
+| Agent | 모델·프롬프트·역량·한도를 저장하는 실행 단위. public은 조직의 로그인 사용자에게 공개하며, private은 소유자·초대 이메일·관리자로 제한한다 |
+| Skill | 모델이 이름·설명으로 선택한 뒤 본문과 참고 파일을 읽는 지침 |
+| Tools | MCP 서버 레지스트리. 서버 설명은 모델용이고 운영 메모는 콘솔용이다 |
+| Plugin | Skill·MCP 정의의 원본 묶음. GitHub 저장소 또는 checkout archive에서 동기화한다 |
+| Chat | 소유자 개인 대화와 SDK Session. 화면 기록과 모델 이력은 별도로 보관한다 |
+| Workspace / Sandbox | Workspace는 파일·native Session을 유지하고, Sandbox는 작업을 실행하는 일시적 컨테이너다 |
+| Artifact | 첨부 원본·생성·수정 결과 파일. 개인 귀속과 Agent 접근 범위에 따라 조회한다. 비공개 Audio 파일은 소유자만 읽고 삭제한다 |
+
+Agent 조회·실행·복제 권한과 편집 권한은 다르다. 초대는 편집 권한을 주지 않으며,
+복제에는 Agent 생성 권한도 필요하다. 공유 레지스트리는 member 이상이 조회하고 관리자가 변경한다.
+Agent 소유자·관리자는 설정·연동·Trace를 관리한다. 봇·토큰·자동화의 인증은 사용자 세션을 대신하지 않는다.
+
+근거: [Agent 접근](../src/application/agent/agentUseCases.ts),
+[등급 정책](../src/domain/member/tiers.ts), [인증·인가](SECURITY.md).
+
+## 계정과 기본 화면
+
+| 기능 | 조건·사용 위치 | 확인할 결과 |
+|---|---|---|
+| 로그인 | Keycloak·표준 OIDC·Google 또는 선택적 비밀번호 로그인. 허용 이메일 도메인과 초기 관리자 설정은 배포가 관리한다 | 로그인 후 원래 페이지로 돌아간다. 로그아웃은 앱 세션을 종료한다 |
+| Members | 관리자 전용 사용자 목록·tier 변경. 설정에 지정한 관리자는 tier를 잠근다 | 이름·이메일·가입·마지막 로그인과 tier를 확인한다. 동시 변경은 사용자별 요청이 끝날 때까지 해당 입력을 잠근다 |
+| Profile | 본인 계정·등급별 동시 실행·월 비용 정책 | 날짜 필터의 개인 사용량과 현재 UTC 월의 한도 사용률을 구분한다 |
+| Overview | 최근 Agent·Chat·Workspace, 카탈로그 수, 비용 요약과 최초 사용 안내 | 목록 조회 실패를 빈 목록·0 비용으로 표시하지 않는다 |
+| 공통 화면 | 공개 소개·로그인 없는 Guide, 한국어/영어, Light/Dark/System, 반응형 메뉴·계정 메뉴 | locale은 cookie로 유지하며 URL을 바꾸지 않는다. 필요한 정적 자산은 앱에서 제공한다 |
+
+근거: [계정](../src/app/profile/page.tsx), [Members](../src/app/members/page.tsx),
+[공통 화면](../src/components/AppLayout.tsx), [Overview](../src/app/_components/Overview.tsx).
+
+## Agent 구성과 실행
+
+| 기능 | 조건·사용 위치 | 확인할 결과 |
+|---|---|---|
+| Agent 관리 | 생성 가능한 tier. 목록에서 이름·표시 이름·설명 검색, 생성·복제·메타데이터·부서·공개 범위·초대 관리 | 식별자는 변경하지 않는다. 삭제된 이름은 재사용하지 않으며 Chat·Artifact는 각 보존 규칙을 따른다 |
+| 현재 설정 | Playground에서 하나의 현재 설정을 저장한다. 독립 실험은 복제본을 사용한다 | 초안·미저장 상태를 표시하고 동시 설정 저장 충돌을 거절한다. Run은 저장된 설정을 사용한다 |
+| 모델·출력 설정 | 등록된 도구 호출 가능 텍스트 모델, 선택적 fallback·이미지 도구 모델. Temperature·출력 토큰·Presence penalty·Reasoning effort·JSON Schema | 모델 capability를 검사한다. fallback은 첫 출력 전 재시도 가능한 전송 오류에 한 번 적용한다. 턴·출력 제한은 부분 답변으로 구분한다 |
+| 실행 정책 | 최대 입력·턴 수, 차단·승인 도구 이름, 호출자 문맥·PII filtering | 스키마·위임 깊이·순환·턴 예산을 검사한다. PII filtering은 제한된 패턴 치환이며 완전한 익명화를 보장하지 않는다 |
+| Prompt preview | member 이상이 현재 초안을 조립한다. 선택적 요청으로 Memory·동적 검색을 확인한다 | 시스템 메시지·실제 도구 Schema·발견한 역량·경고를 복사한다. 답변 생성은 하지 않지만 MCP·검색·recall은 실제 읽기다 |
+| Playground Run | 저장된 설정에 텍스트·이미지·문서를 전달한다 | 답변·Reasoning·도구·하위 Agent·이미지·파일·비용·오류·경고를 스트리밍한다 |
+| 로컬 위임 | 설정된 Agent를 명시적으로 바인딩한다 | Handoff 또는 Agent-as-Tool로 실행한다. 하위 활동은 author로 표시하며 같은 실행·비용·Artifact 계약을 따른다 |
+| 동적 역량 검색 | 활성 capability catalog와 등록 Embedding 모델; Rerank는 선택적이다 | 최근 요청으로 Skill·MCP 서버/도구를 찾아 명시적 바인딩에 추가한다. 발견은 경고가 아니며, 사용할 수 없거나 잘린 역량은 경고한다 |
+| Memory recall | Agent에서 켜고 recall을 제공하는 MCP를 명시적으로 바인딩한다 | 실행 가능한 서버마다 사전 recall을 호출한다. 차단·승인 도구는 자동 호출에서 제외하며 실패·시간 초과는 경고한다. 장기 Memory는 MCP가 소유한다 |
+| 자동 모델 라우팅 | Settings → Models → Model 사용 설정의 전역 tier·작업 정책·예산과 Agent별 스위치. 결정 모델은 후보 선택에 사용한다 | 첫 응답 전 주 모델을 선택한다. ModelTask는 보조 추론을 수행하며 출력·품질·예산을 검사한다. 기본값 복원은 ModelTask를 제거한다. 선택 근거는 Trace에서 확인한다 |
+| Agent 추천 | 관리자 선택 결정 모델, 새 Chat·Workspace의 입력 요청 | 접근 가능한 후보에서 추천한다. 선택은 사용자가 적용하며 마지막 성공한 추천은 입력 중 유지한다. 요청·후보 설명의 인식된 PII 패턴을 가린 뒤 결정 프로바이더에 전달한다 |
+
+모든 Agent 실행은 같은 facade·SDK 루프·run bracket을 사용한다. 진행 중 Agent 실행과 접수된
+Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 요청은 현재 저장된 설정을 읽는다.
+승인 재개는 저장된 설정·연결·정책을 다시 검사한다.
+
+근거: [Playground](../src/app/agents/[name]/page.tsx),
+[실행 facade](../src/application/execution/runAgent.ts), [실행 설계](design/execution.md).
+
+### 내장 도구의 활성 조건
+
+| 도구 | 조건·지원 범위 |
 |---|---|
-| Service | 서비스 이름·로고, 공개 주소·Artifact 전달, 동시 실행 한도, Slack 로딩 표시 |
-| Access | 관리자 이메일·허용 도메인 |
-| Plugins | Plugin GitHub 저장소·Branch·Token |
-| Models | 프로바이더 연결, 모델 조회·등록 관리, 기본·Workspace·검색 모델 사용 설정, Embedding·Rerank 점수와 가격 미지정 모델 정책 |
+| Skill | 명시적 바인딩 또는 동적 검색으로 제공된 Skill의 본문·참고 파일 읽기 |
+| GenerateImage / EditImage | Agent의 이미지 기능과 등록 이미지 모델·프로바이더. 생성·편집 결과를 같은 Agent 실행에서 전달한다 |
+| FetchUrl | Agent의 URL 읽기 opt-in. URL guard를 거쳐 웹·PDF·데이터·이미지를 읽는다 |
+| SaveFile / File | Artifact 저장소. 텍스트 파일 저장과 지원 문서 읽기·검사·생성·편집. 문서 엔진에 MCP 바인딩은 필요하지 않다 |
+| ImportFile / TranscribeAudio / AudioJob | Agent의 Audio 기능과 소유자의 member 이상 문맥. 파일은 비공개 저장소에 보관하고 worker가 작업을 처리한다. 전사는 등록된 전사 채널을 추가로 요구한다 |
+| Workspace | Agent의 Workspace 기능, 로그인한 member 이상, Sandbox·worker·실행 정책. 토큰·봇·예약 실행에는 자동 제공하지 않는다 |
+| Slack 읽기 | Agent의 Slack 읽기 기능과 활성 봇. History·Thread·User(s)·Channels·Reactions를 봇 권한으로 읽으며 이 도구들은 게시하지 않는다 |
+| ModelTask | Agent의 명시적 모델 라우팅 설정. 다른 도구나 두 번째 Agent 루프를 실행하지 않는 보조 모델 호출 |
 
-### 설정 공통
+근거: [도구 이름](../src/domain/llm/toolNames.ts),
+[역량 조립](../src/application/execution/agentBindings.ts).
 
-- 일반 설정 값의 출처 표시: override / env / default / unset.
-- 현재 탭에서 변경한 필드만 DB override로 저장.
-- 일반 설정의 override 해제 시 환경변수로 복귀. 모델 선택은 DB에서만 관리한다.
-- 시크릿 마스킹·암호화 보관.
+## Chat·Workspace와 결과 파일
 
-SSO·DB·스토리지·worker·retention은 배포 설정으로 관리한다. 필드와 적용 범위는
-[설정 화면](CONFIGURATION.md#설정-화면)을 따른다.
+| 기능 | 조건·사용 위치 | 확인할 결과 |
+|---|---|---|
+| Chat | 접근 가능한 Agent를 선택한다. 마지막 선택을 기억하고 첫 메시지로 제목을 만든다 | 개인 목록을 최근 활동순으로 조회하며 일반 Chat·Workspace를 별도로 페이지한다. 입력·첨부 초안은 접수 거절 시 유지한다 |
+| Chat 표시·재접속 | Markdown·Reasoning·짝지은 도구 호출/결과·위임 경로·이미지·파일·실행 시간 | 화면 이동은 실행을 중단하지 않는다. Stop은 취소를 요청한다. 재접속은 제한된 실행 로그를 읽고 저장된 답변으로 교체한다 |
+| Chat 승인 | Agent가 지정한 승인 도구와 영속 SDK checkpoint | 전체 인자를 보고 승인·거절한다. 불확실하게 중단된 실행은 폐기할 수 있다. 화면 메시지로 모델 Session을 재구축하지 않는다 |
+| Workspace 실행 | Chats의 Workspace 선택 또는 Agent 도구. Command는 정확한 script, Codex·Claude·OpenCode는 설정된 native 모델 채널과 자연어 작업 | 같은 Workspace에서 후속 작업·stdout/stderr·Diff·설정한 Test/Lint/Build 결과를 확인한다. Command는 Studio 모델 없이 실행한다 |
+| Workspace 영속성 | Docker Sandbox와 별도 worker. 파일·Git·native Session checkpoint, idle suspension·복구 | 작업 취소와 Workspace 종료를 구분한다. 종료 후 보존된 checkpoint로 후속 작업을 시작할 수 있다. 불명확한 외부 작업은 자동 재실행하지 않는다 |
+| 저장소 정책 | Agent의 Workspace 도구 탭에서 저장소·owner·전체 접근·신규 자동 등록 모드, 기본 runtime·idle TTL·검사·workflow 설정 | 기존 저장소 접근과 새 저장소 생성을 구분한다. 권한·정책·각 Git 승인을 현재 설정으로 재검사한다 |
+| Git·배포 검토 | Commit, commit-and-push, 작업 브랜치 push, Draft PR/PR, 병합, 조건부 main fast-forward, 허용 workflow | 정확한 HEAD·파일 트리·Diff·CI에 동작별 승인·거절을 적용한다. 결과·CI 갱신은 요청한 Chat으로 돌아간다. 실패·결과 불명은 게시 성공이 아니다 |
+| Audio 작업 | 원본 가져오기·전사·후처리·전체 처리, 접수 설정 snapshot·큐·중복 방지·완료 단계 재사용 | 단계별 진행량·시도·오류·재시도·취소를 확인한다. 원본·전사 JSON·요약 Markdown·대화록·구조화 결과는 비공개 Artifact다 |
+| Audio 외부 전달 | 명시적 Documents/Memory 목적지와 수신 MCP의 ingestion·idempotency 계약 | 접수 ID와 처리 완료를 구분한다. 작업 삭제는 중복 방지를 해제하지만 원본·결과의 보존 기간은 유지한다 |
+| Artifact 갤러리 | 개인/Agent 갤러리, 이미지·문서·오디오 필터, 불러온 목록 검색·추가 조회 | 첨부 원본과 생성·수정 결과를 구분하고 크기·시각·Agent·모델·출처를 확인한다. 만료·삭제 파일은 링크 갱신으로 복원하지 않는다 |
+| 미리보기·다운로드 | 이미지 확대와 HTML·Markdown·CSV·JSON·SVG·텍스트 preview. Office·PDF는 다운로드한다 | HTML은 격리 iframe에서 바로 실행하며 Stop/Restart·스크립트 오류·차단 안내를 제공한다. 웹 요청 제한은 완전한 오프라인 격리가 아니며 preview 변경은 원본에 저장하지 않는다 |
 
-구현 근거: [Settings 탭 정의](../src/app/settings/tabs.ts),
-[Settings API](../src/app/api/settings/route.ts), [설정 계약](CONFIGURATION.md).
+근거: [Chat 설계](design/chat.md), [Workspace 설계](design/workspaces.md),
+[Audio 설계](design/audio-processing-spec.md), [Artifact 권한](../src/application/artifact/artifactUseCases.ts).
 
-## 19. 공통 화면·운영 기능
+### 문서 지원 범위
 
-### 공통 화면
+| 형식 | 읽기·검사 | 생성 | 원본을 보존하는 편집 |
+|---|---|---|---|
+| UTF-8 텍스트·Markdown·CSV·JSON·XML·YAML·HTML·SVG | 추출문·본문 | SaveFile: TXT·Markdown·CSV·JSON·HTML·SVG | 한 번만 나타나는 문자열 교체; JSON은 수정 후 문법 검사 |
+| DOCX | 텍스트·문서 구조·대상 | 지원 | 지정 텍스트 교체 |
+| PPTX | 텍스트·슬라이드 대상 | 지원 | 지정 텍스트 교체 |
+| HWPX | 텍스트·대상 | 지원 | 지정 텍스트 교체 |
+| XLSX | 시트·셀·값·수식·선택적 숨김 시트 | 지원 | 셀 값·수식 변경 |
+| PDF | 읽기: 텍스트 레이어 | 지원 | 미지원 |
+| HWP 5.x·ODT/ODS/ODP·RTF | 읽기: 텍스트 추출 | 미지원 | 미지원 |
 
-- 공개 소개 화면.
-- 로그인 후 Overview.
-- 최근 Agent·대화.
-- 새 Agent·Chat 바로가기.
-- 카탈로그 수·비용 요약.
-- 최초 사용 안내.
-- 사용 가이드.
-- 한국어·영어.
-- Light·Dark·System 테마.
-- 반응형 메뉴.
-- 사용자 메뉴·로그아웃.
+첨부 문서의 텍스트 추출은 저장소 없이도 동작한다. 원본 파일 ID로 다시 읽거나 편집하려면
+원본이 저장되어야 하며 편집은 별도 수정본을 만든다. 생성 시 문서 스타일·지원 이미지·시트·수식을
+지정할 수 있다. 수식 계산·OCR·암호화 파일·서명 문서/매크로 workbook 편집은
+지원하지 않는다. DOCX·PPTX·HWPX 텍스트 교체는 문단·줄바꿈을 추가하지 않는다.
+결과의 내용·배치는 다운로드 후 검토한다.
 
-### 운영·기반 기능
+근거: [문서 처리 계약](../src/domain/document/processor.ts), [문서 설계](design/documents.md).
 
-- 사내 설치·공개 인터넷 없는 필수 실행 경로.
-- 부팅 시 설정 검사·DB migration.
-- S3-compatible 저장소.
-- 시크릿 암호화·마스킹.
-- URL 접근·SSRF 제한.
-- 실행 동시성·시간·문맥·도구 결과 상한.
-- Liveness·Readiness endpoint.
-- Prometheus 메트릭.
-- 선택적 OTLP tracing.
-- 종료 시 draining.
-- 외부 ticker 기반 예약·Plugin 동기화·카탈로그 재색인.
-- 만료 데이터 정리.
-- Audio·Workspace worker.
-- Managed MCP 복구.
+## Models·레지스트리·연동
 
-구현 근거: [공통 메뉴](../src/components/AppLayout.tsx),
-[Overview](../src/app/_components/Overview.tsx), [부팅](../src/instrumentation.ts),
-[메트릭](../src/app/api/metrics/route.ts), [운영 계약](OPERATIONS.md).
+| 기능 | 조건·사용 위치 | 확인할 결과 |
+|---|---|---|
+| Models | member 이상이 관리자가 등록한 Text·Image·Embedding·Rerank·Transcription·Decision 모델을 조회한다 | provider·ID·capability·문맥·유형별 가격을 검색·필터·정렬하고 개인 즐겨찾기를 선택기에 반영한다 |
+| 모델 관리 | Settings → Models에서 provider 이름·종류·주소·키와 모델을 등록한다. Self-hosted는 같은 흐름이며 직접 등록도 지원한다 | 전체 provider 목록 조회와 등록을 구분한다. 등록 모델 수정·삭제·제공 상태를 검사하며 listing 성공은 추론 성공을 보장하지 않는다 |
+| 모델 사용 설정 | 기본·결정·Workspace·Embedding·Rerank 모델, 검색 점수, 전역 라우팅과 가격 미지정 정책 | 선택된 모델만 실행한다. 공개 catalog·가격은 오프라인 snapshot과 선택적 갱신을 사용하며 자동 등록하지 않는다. Embedding 변경은 확인 후 재색인한다 |
+| Skills | 관리자 수동 생성·본문 편집·삭제, Plugin 출처와 참고 파일 조회 | 이름·설명이 검색과 모델 선택을 안내하며 본문은 로드 후 전달한다. Plugin 소유 본문·참고 파일은 원본에서 수정한다 |
+| Plugins | 관리자 GitHub 동기화 또는 .tar/.tar.gz/.tgz 업로드, 변경·skipped·실패·출처 인수·고아 항목 보고 | 헤더 credential은 가져오지 않는다. 고아 항목·Plugin은 바인딩 영향과 현재 원본을 확인해 명시적으로 삭제한다. archive hold 중 자동 GitHub 동기화는 진행하지 않는다 |
+| 원격 MCP | 관리자 등록·검사·편집과 Agent 바인딩·도구 선택·헤더 override | 도구 이름·설명·Schema를 발견한다. private DNS는 배포 allowlist와 실제 도달성이 필요하다. URL이 이동하면 저장한 credential을 새 대상으로 보내지 않는다 |
+| MCP OAuth | 관리자 metadata 발견·authorization server 선택·공유 client 설정, Agent 소유자 연결·재인증·해제 | 연결은 Agent 설정 Save와 별도로 저장된다. token 갱신과 재인증 상태를 확인한다. discovery 성공만으로 자원 접근을 증명하지 않는다 |
+| Managed MCP | 선택적 Docker provisioner, 이미지·내부 포트·환경·argv·endpoint 설정 | 컨테이너 상태·접속·재시작·삭제를 확인한다. loopback에 게시하고 PORT를 전달한다. private registry 인증은 호스트가 준비한다. Kubernetes 관리형 adapter는 미구현이다 |
+| Agent API Token | 소유자의 허용 tier, Agent당 credential 하나. 발급·조회·회전·폐기와 API Reference 예제 | bearer는 해당 Agent 실행을 인증한다. 서비스 actor로 비용을 귀속하고 MCP에 소유자 email을 전달하지만 Workspace/Chat 승인 권한을 부여하지 않는다 |
+| 실행 API | predict 완료형/raw stream, agent raw stream, OpenAI chat/completions. 메시지·인라인 이미지, 지원 경로의 문서 입력 | 응답·이미지·파일·사용량·경고·종료 이유를 확인한다. 호출자가 이력을 공급하며 X-Conversation-Id는 MCP 식별만 유지한다 |
+| Slack | dedicated bot manifest·token·signature·활성화와 실제 event URL. DM·mention·참여 thread·키워드, help/mute, 제안 프롬프트 | 입력·도구·답변·이미지·파일을 플랫폼에 전달한다. 읽기 capability와 게시 목적지는 별도다. private Agent 접근을 검사한다 |
+| Telegram | token·secret webhook, 활성화 시 자동 등록·해제와 재등록 | 식별된 발신자의 개인 Chat·그룹 mention/봇 답장에 응답하며 /start·/help, 분할 답변·forum topic·관찰한 목적지를 지원한다. 음성 메시지 자동 전사는 제공하지 않는다 |
+| Teams | Azure Bot/Teams 채널, App ID·secret·선택 tenant와 messaging URL | token·serviceUrl을 검증하고 식별된 발신자의 개인 Chat·그룹/채널 mention에 답한다. typing·편집·분할·이미지·문서·알림 목적지를 지원한다 |
+| Webhook | Agent별 주소·secret/서명·활성화·겹침 정책·중복 방지 | JSON 입력을 접수 후 배경 실행한다. 202의 accepted·skipped 사유·ping을 구분하고 이력에서 결과를 확인한다 |
+| GitHub PR 리뷰 | 관리자가 Webhook에 허용 저장소·리뷰 모드를 설정한다 | 서명된 지원 PR 이벤트의 diff를 제한된 Agent로 검토하고 검증한 PR/HEAD에 댓글을 남긴다. 미선택 이벤트는 ignored이며 일반 secret 인증은 거부한다 |
+| Schedules | 다섯 필드 cron·IANA 시간대·메시지·활성화·겹침 정책, 외부 ticker | 현재 설정 실행·중복 tick·제한된 놓친 발생분·유실 상태 복구를 처리한다. owner 문맥과 Slack/Telegram/Teams 전달은 명시적으로 설정하며 실행 성공과 전달 성공을 구분한다 |
+
+근거: [모델 등록](../src/application/llm/modelRegistry.ts), [Plugin 동기화](../src/application/plugin/syncPlugins.ts),
+[MCP 설계](design/mcp.md), [메시징 설계](design/messaging.md), [Trigger 설계](design/triggers.md),
+[API Reference](../src/app/agents/[name]/api-reference/endpoints.ts).
+
+## 비용·진단·운영
+
+| 기능 | 조건·사용 위치 | 확인할 결과 |
+|---|---|---|
+| Usage | Overview는 Agent·모델·provider·부서, Agent Usage는 모델·provider, Profile은 Agent·모델·provider별 집계 | UTC 기간·일별 비용·호출·캐시 비율을 확인한다. 호출자 상세는 소유자·관리자 전용이며 가격 추정 0은 실제 무료의 증거가 아니다 |
+| 비용·등급 한도 | Agent의 일·월 alert/block, 알림 목적지와 사용자 tier의 월 비용·동시성·생성·토큰 정책 | 기록된 사용량으로 새 실행을 제어한다. 기준값은 선불 잔액이 아니며 알림 실패와 차단은 별개다 |
+| Traces | Agent 소유자·관리자. 실행·준비·모델·도구·위임·Guardrail·라우팅 span과 대화 식별 | 완료·실패·취소·승인 대기·턴/출력 제한, 시간·입출력·캐시·Reasoning·오류·손실·span 생략을 확인한다. 봇 전달 성공은 별도로 확인한다 |
+| Audit | 관리자 전용 기간 조회. secret 조회·회전·폐기, 설정·모델·레지스트리·tier·관리자 작업 기록 | 행위자·대상·상세·UTC 날짜 페이지를 조회한다. 실행 진단은 Trace를 사용한다 |
+| Settings | Service: branding·주소·Artifact 전달·동시성·Slack 표시, Access: admin/domain, Plugins: repo/branch/token, Models: 연결·등록·사용 | 변경한 탭 필드만 저장하고 override/env/default/unset 출처를 표시한다. 일반 override reset과 배포 전용 설정을 구분한다 |
+| 운영 기반 | 부팅 설정 검사·DB schema, 암호화·mask·SSRF guard·실행 상한, health/ready·Prometheus·선택 OTLP·draining | 실제 Agent 실행과 파일 재열기로 경로를 검증한다. 일정·Plugin sync·catalog reindex는 각각 외부 호출이 필요하다. Audio·Workspace는 별도 worker다 |
+| 보존·복구 | authenticated schedule tick의 DB sweep, 일반 object lifecycle, private Audio expiry와 Sandbox cleanup | DB 기록·객체·Session·worker 상태의 수명을 구분하고 복구를 별도 환경에서 검증한다 |
+
+근거: [비용·기록 설계](design/observability.md), [감사 행위](../src/domain/audit/types.ts),
+[Settings 계약](CONFIGURATION.md#설정-화면), [운영 계약](OPERATIONS.md).
