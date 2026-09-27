@@ -15,8 +15,8 @@ import { unauthorized } from "@/shared/unauthorized";
  * must return in milliseconds while probing every MCP server and embedding the
  * whole registry takes seconds. Its outcome lands in the log line below.
  *
- * Ticking twice is safe. Keys are derived from the entry, so a second pass
- * writes the same records over the same keys and computes the same leftovers.
+ * The installation-wide DB lease refuses overlapping rebuilds. A competing
+ * background tick logs the refusal; the response only acknowledges scheduling.
  */
 export async function POST(request: Request): Promise<Response> {
   const token = config.scheduleScanToken;

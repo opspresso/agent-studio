@@ -697,34 +697,10 @@ export const syncPluginsFromArchive = async (
   );
 
 /**
- * Refresh the capability catalog once a sync has applied the repository.
- *
- * The catalog is otherwise rebuilt only by its own hourly tick, and a sync is
- * the single event that moves the most of it at once — a merge to the plugins
- * repo can add, rename or retire a dozen skills and servers together. Waiting
- * up to an hour to notice would mean a run discovering a skill the registry no
- * longer has, or missing one it just gained.
- *
- * This is the one exception to "indexing is never hooked to a write", and the
- * difference is what a failure would cost. Hanging it off a single registry
- * save would make an operator's 200 depend on an embedding call; here the sync
- * has already committed, its report is already persisted, and a failed reindex
- * changes none of that — the next tick repairs it. So the failure is logged and
- * swallowed rather than raised.
- *
- * Also the only way a **local** deployment refreshes at all: there is no
- * CronJob outside the cluster, so `pnpm` a sync and the index follows.
- *
- * **Scheduled, not awaited**, which is why this returns `void` rather than a
- * promise — an `await` on it would be a no-op, and the signature is what says
- * so. A reindex probes every registered MCP server, embeds the whole registry
- * and rewrites the index; awaiting it put all of that between the admin pressing
- * Sync and their answer, on a deployment that has already lost a response to a
- * 60-second proxy idle timeout — for work whose outcome that answer does not
- * depend on. It also ran *inside* `pluginSyncLock`'s five-minute lease, so a
- * slow one could outlive the lease, let a second sync acquire it, and then have
- * the first release someone else's. Deferring past the response fixes both: the
- * `finally` below releases the lease before this callback is ever entered.
+ * Schedule a catalog refresh after the sync report is persisted. The request
+ * receives its result and the plugin lease is released before discovery and
+ * embedding begin. Reindex failures leave the committed sync intact, are
+ * logged, and are repaired by the deployment's next reindex tick.
  */
 const reindexAfterSync = (): void => {
   if (!catalogDeps) {

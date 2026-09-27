@@ -1,17 +1,9 @@
 /**
- * Rebuilding the global capability index from the registries.
- *
- * Driven by a periodic tick rather than hooked into every registry write. A
- * write hook would have to decide what a successful save with a failed
- * indexing means — and the honest answer is "nothing an operator should see a
- * 500 for", since the catalog only affects which capabilities a run *discovers*
- * and never what an Agent explicitly bound. Freshness in seconds buys nothing
- * here; a tick that runs and reports is worth more than a write path that can
- * fail in a new way.
- *
- * The whole index is rewritten each time, which is also what removes entries the
- * registries no longer have: keys are derived from the entry, so what is in the
- * index and not in this run's key set is exactly what is gone.
+ * Rebuild the global capability index from the current registries.
+ * Callers own the installation-wide lease and search generation. Ordinary
+ * registry writes do not reindex; ticks, model changes and completed plugin
+ * syncs invoke this operation. Upsert precedes pruning so a failed rebuild
+ * does not remove live entries before their replacements are stored.
  */
 
 import type { CapabilityEntry } from "@/domain/catalog/types";
@@ -68,17 +60,9 @@ async function collectEntries(
     entries.push({ kind: "skill", name: skill.name, description: skill.description });
   }
 
-  // Probed concurrently: each is a round trip to someone else's server, and a
-  // reindex walks every one of them. A fixed worker count keeps a large registry
-  // from opening every connection at once.
-  //
-  // Fenced per server, the way the plugins sync fences a write. `probeMcpTools`
-  // is `testConnection`, which *throws* rather than answering for a server
-  // deleted since `list()` or one whose stored headers no longer decrypt under
-  // the current key — and a bare `Promise.all` turned either into a rejected
-  // rebuild that wrote nothing at all, freezing the whole index until someone
-  // fixed the one bad row. A server that cannot be probed is the case
-  // `undiscovered` already exists for.
+  // Bound outbound discovery and isolate each server's failure. An unreachable,
+  // deleted or undecryptable server is still indexed without tools and reported
+  // as undiscovered; it does not prevent indexing the remaining registry.
   const undiscovered: string[] = [];
   const probed: Array<{ server: (typeof servers)[number]; tools: readonly McpTool[] | undefined }> =
     new Array(servers.length);
@@ -131,15 +115,9 @@ async function collectEntries(
 }
 
 export async function reindexCatalog(deps: CatalogIndexDeps): Promise<ReindexReport> {
-  // Read *before* the registries, and it is the ordering that matters rather
-  // than the cost. Pruning means "keys this pass did not write", and taking that
-  // list at the end makes it "keys written by anyone else since I started" too:
-  // the hourly tick and the reindex a plugins sync fires now overlap as a matter
-  // of course, and the tick — whose snapshot predates the sync — would delete
-  // the very entries the sync had just added, leaving them undiscoverable until
-  // the next hour. Taken first, a key another pass wrote after this one began is
-  // simply not a candidate, and a genuinely stale one is caught on the pass
-  // after. No lock, and nothing to hold across a rebuild.
+  // Only keys present before this pass are prune candidates. Callers serialize
+  // rebuilds with a lease; this snapshot also avoids deleting keys added later
+  // if a rebuild outlives that lease.
   const keysAtStart = await deps.catalog.listKeys();
   const { entries, undiscovered } = await collectEntries(deps);
   // Documents: these are the things a query will be matched *against*.
@@ -151,14 +129,8 @@ export async function reindexCatalog(deps: CatalogIndexDeps): Promise<ReindexRep
     keep.add(key);
     const vector = vectors[index];
     if (!vector || vector.length === 0) {
-      // A short answer or a zero-length vector. The adapters refuse a count
-      // mismatch, so reaching this means a shape nothing here can act on — and
-      // an empty vector is not the harmless case it looks like: the index fixes
-      // its dimension, so writing one fails the whole batch it rides in.
-      //
-      // It is still a live capability, so its key is kept out of the prune
-      // above; otherwise "skip it" quietly meant "delete whatever it already
-      // had", which is the opposite of leaving the index alone.
+      // Preserve the existing entry when this live capability has no usable
+      // replacement vector. Empty vectors cannot be stored in the fixed dimension.
       log.warn("catalog", `no usable vector for ${key}; leaving its existing entry alone`);
       continue;
     }
@@ -175,10 +147,7 @@ export async function reindexCatalog(deps: CatalogIndexDeps): Promise<ReindexRep
   }
   await deps.catalog.upsert(records);
 
-  // After the upsert, never before: a crash between the two leaves the index
-  // holding entries that no longer exist, which the next tick removes. The other
-  // order would leave a window where a live capability is absent from the index
-  // entirely, and searches during it would silently under-answer.
+  // A failure before pruning leaves stale entries for the next successful pass.
   const stale = keysAtStart.filter((key) => !keep.has(key));
   if (stale.length > 0) {
     await deps.catalog.deleteByKeys(stale);

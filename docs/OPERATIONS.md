@@ -391,28 +391,23 @@ sweep도 이 틱에 얹혀 있다**. 1분마다 이미 도는 유일한 것이�
 
 ## 카탈로그 재색인
 
-`POST /api/catalog/reindex`, 위와 같은 `X-Scan-Token`, 또 하나의 CronJob. schedule 티커와 달리
-놓칠 윈도우가 없다: 틱은 지금 이 순간의 레지스트리로부터 인덱스를 다시 만들므로, 한 번
-건너뛰어도 지난번 이후 바뀐 것의 발견이 늦춰질 뿐이다. **한 시간 간격이면 충분하다**; 분 단위
-틱은 아무 소득 없이 모든 MCP 서버를 그 빈도로 프로브하게 된다.
+`X-Scan-Token`으로 `POST /api/catalog/reindex`를 매시간 호출한다. 현재 레지스트리 전체를
+재색인하므로 누락된 tick은 다음 성공한 tick이 반영한다. 분 단위 호출은 모든 MCP 서버의
+discovery와 문서 embedding을 반복한다.
 
-- **중복은 안전하다.** 키는 항목에서 파생되므로, 두 번째 패스는 같은 레코드를 쓰고 같은 잔여물을
-  계산한다.
-- MCP tool discovery는 동시에 최대 8개 서버만 진행한다. registry 크기가 그대로 outbound 연결
-  burst가 되지 않게 하는 실행 상한이다.
-- 틱은 작업을 넘기자마자 반환한다; 결과는 로그 라인에 있다. `indexed`, `removed`, 그리고 도구
-  목록을 가져오지 못한 서버를 이름 붙이는 `undiscovered`. OAuth 연결이 필요한 서버가 그 목록에
-  있는 것은 예상된 일이다: 서버 수준에서는 여전히 색인되고, 다만 그 도구들이 없을 뿐이다.
-- 503 에는 두 가지 원인이 있고 이 순서로 확인된다: `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우.
-  엔드포인트에 티커를 인증할 자격 증명이 없다는 뜻이므로 누가 요청하든 스캔을 거부한다.
-  그다음 `CATALOG_ENABLED` 가 설정되지 않은 경우(`CATALOG_ENABLED is not set`)인데, 이는 결함이
-  아니라 카탈로그가 없는 배포다. 그러면 런은 Agent에 명시적으로 연결한 역량을 사용한다. 어느
-  쪽인지는 응답 body 가 이름을 밝힌다. 인덱스는 같은 데이터베이스의 `catalog_vectors` 에 있으므로
-  백업과 복원에 따라오고, 옮겨 갈 때는 옮기지 않고 재색인 한 번으로 다시 만든다.
-- **완료된 plugins sync 도 재색인한다**, 두 경로(콘솔과 분 단위 틱) 모두에서. 그래서 plugins
-  저장소로의 머지는 한 시간을 기다리지 않고도 발견된다. 그 재색인은 sync 가 커밋되고 그 리포트가
-  저장된 뒤에 실행되므로, 실패는 로그에 남고 삼켜진다. 로그의
-  `reindex after plugins sync failed` 가 그것이고, 다음 틱이 복구한다.
+- 설치 전역 DB lease가 재색인을 직렬화한다. 겹친 요청은 재색인을 거절하고 로그에 남긴다.
+  검색은 lease 활성 상태와 generation을 확인해 재색인과 겹친 결과를 사용하지 않는다.
+- MCP tool discovery는 동시에 최대 8개 서버에서 진행한다.
+- 응답의 `{ started: true }`는 background 작업 예약이며 lease 획득·완료를 보장하지 않는다.
+  로그의 `indexed`·`removed`와 discovery 실패 서버 목록인 `undiscovered`를 확인한다.
+  실패 서버는 도구 없이 서버 항목만 색인한다. OAuth 미연결도 이 목록에 포함될 수 있다.
+- `503`은 scan token 미설정 또는 `CATALOG_ENABLED` 미설정이다. 응답 body로 구분한다.
+  카탈로그가 없는 배포는 Agent의 명시적 binding을 사용한다.
+- GitHub·아카이브 Plugin sync는 보고서 저장 후 재색인을 예약한다. 실패는
+  `reindex after plugins sync failed` 로그로 남으며 다음 reindex tick이 복구한다.
+
+인덱스는 같은 DB의 `catalog_vectors`에 저장한다. 백업·복원에 포함하거나 재색인으로
+재구축할 수 있다. 모델 전환과 검색 보류 조건은 [카탈로그 설계](design/capabilities.md#색인과-모델-전환)를 따른다.
 
 ## Plugins sync 티커
 
