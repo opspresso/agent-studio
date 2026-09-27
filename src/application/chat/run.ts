@@ -49,21 +49,7 @@ export async function readMessageDocuments(
   })));
 }
 
-/**
- * Take the keys off images a run already stored.
- *
- * Nothing is uploaded here any more: the run bracket keeps what a run produces,
- * which is what finally covers the pictures this surface never made itself — the
- * builtins, an image subagent, an MCP tool that returned one. What is left is
- * mapping the reference onto the message, since the chat row keeps its own copy
- * of the key rather than a pointer to the artifact row (a message has to render
- * without a second read, and a replay needs the key inline).
- *
- * A drop is still reported rather than only logged: to the reader an image that
- * was never stored is indistinguishable from one that was never made. When
- * storage *is* configured the capture already warned about its own failure, so
- * saying it twice would be the noise, and only the unconfigured case speaks.
- */
+/** Map run-captured image keys to display rows; report absent storage without repeating capture failures. */
 export function collectGeneratedImages(
   images: Array<{ prompt?: string; key?: string }>,
   storageConfigured: boolean,
@@ -87,21 +73,7 @@ export function collectGeneratedImages(
   return { stored, warnings: [] };
 }
 
-/**
- * Take the references off files a run already stored.
- *
- * The sibling of {@link collectGeneratedImages}, with one asymmetry that decides
- * the wording. An image that failed to store was still *seen* — its bytes rode
- * the stream, so "shown for this turn only" is the truth. A file's bytes are
- * stripped at the bracket the moment it is stored, and a file that was not
- * stored has been nowhere at all: there is no copy on the connection to fall
- * back to, and the reader is being told the download does not exist rather than
- * that it is temporary.
- *
- * Only the unconfigured case speaks here. When storage *is* configured the
- * capture already warned, with the provider's reason attached — repeating it
- * would be the noise.
- */
+/** Map captured file references to display rows; file bytes never become model history. */
 export function collectGeneratedFiles(
   files: Array<{
     name: string;
@@ -136,14 +108,7 @@ export function collectGeneratedFiles(
   return { stored, warnings: [] };
 }
 
-/**
- * Keep an image a person attached, and give the message its key.
- *
- * These get an artifact row like anything else. Before that they went to the
- * same bucket with no inventory at all, which made them the one class of stored
- * object nothing could ever list or delete — building a gallery with a delete
- * button while still producing those would be shipping the same hole twice.
- */
+/** Store attached images as inventoried Artifacts and keep their keys for display. */
 export async function storeAttachedImages(
   deps: ChatDeps,
   context: ArtifactContext,
@@ -185,23 +150,10 @@ export async function storeAttachedImages(
   return { stored, warnings };
 }
 
-/**
- * A single chat message is one row that every later turn replays. Truncate on a
- * byte budget so one oversized tool result / answer can't fail the whole turn's
- * persistence and lose the reply the user already saw streamed.
- */
+/** Bound each display row so oversized text does not prevent saving the streamed reply. */
 const MAX_PERSISTED_CONTENT_BYTES = 350_000;
 
-/**
- * How much of a run's thinking one message keeps.
- *
- * Charged *after* the answer and out of the same budget above, not beside it: a
- * reasoning model can think for as long as it speaks, and giving each its own
- * 350KB is how one item becomes 700KB and the whole turn's write fails —
- * silently, since `persist()` logs rather than throws, taking the reply the
- * reader just watched stream with it. The answer is what must survive, so it is
- * spent first and this is a ceiling on whatever is left.
- */
+/** Reasoning uses the budget left after the answer, up to this ceiling. */
 const MAX_PERSISTED_REASONING_BYTES = 40_000;
 
 function truncateForPersist(content: string, budget = MAX_PERSISTED_CONTENT_BYTES): string {
@@ -226,33 +178,14 @@ function truncateForPersist(content: string, budget = MAX_PERSISTED_CONTENT_BYTE
 const MAX_PERSISTED_WARNINGS = 20;
 
 /**
- * Tee an engine stream to the client while accumulating the assistant answer and
- * tool results, then persist them.
+ * Stream engine chunks and save display records on every exit path. The SDK
+ * Session independently owns native model/tool history; these rows are never
+ * reconstructed into provider messages. Tool rows precede the assistant row
+ * in display storage. Only top-level content, reasoning and calls fold into
+ * that answer; child results retain author/displayOnly for the UI.
  *
- * Only non-subagent chunks (`author` absent) contribute to the persisted assistant
- * message; subagent chunks still reach the client for live rendering.
- *
- * Persistence is best-effort and runs on every exit path — normal completion,
- * an engine error, and a consumer that stopped early (`generator.return()`) — so
- * an interrupted run persists what streamed instead of leaving a dangling user
- * turn. A persistence failure is logged, never thrown: throwing on the return
- * path would reject the SSE `cancel()`, and the client already saw the answer.
- *
- * The run lease is **not** released here. `teeToRunLog` wraps this and owns the
- * release, so the terminal log entry lands between the two — see the ordering
- * this file's caller depends on in `runLog.ts`.
- *
- * The turn's top-level tool calls AND their results are stored, which is what
- * lets `toEngineMessages` pair them and replay the recent ones — without it a
- * follow-up question reaches a model that cannot see what the tools returned and
- * calls them again. Keep both sides of this contract in sync (see the round-trip
- * test in tests/chat.test.ts).
- *
- * A subagent's results are stored too, but as `displayOnly` rows carrying the
- * author: reading a chat means seeing which agent, skill and tool produced the
- * answer, while replay must still refuse them — the matching calls belong to the
- * child's conversation, so a replayed row would claim a result this turn never
- * declared. Only the top-level calls are stored on the assistant message.
+ * Persistence failures are logged without replacing the streamed outcome.
+ * runLog.ts owns terminal logging and lease release after persistence.
  */
 export async function* runAndPersist(
   deps: ChatDeps,
@@ -291,9 +224,7 @@ export async function* runAndPersist(
   // Why the run came out the shape it did — a binding it could not use, history
   // it could not carry. Persisted so reloading the chat still explains it.
   const warnings: string[] = [];
-  // The top-level run's own thinking, when the Agent asked for it to be kept.
-  // Subagent reasoning is dropped for the reason its content is: four children
-  // dispatched at once interleave on the wire with nothing saying whose is whose.
+  // Only top-level reasoning belongs to this assistant display block.
   let reasoning = "";
   let reasoningTokens = 0;
   let persisted = false;
@@ -407,8 +338,7 @@ export async function* runAndPersist(
         toolCalls.push(...chunk.delta.toolCalls);
       }
       if (chunk.toolResult) {
-        // A subagent's row, and a transfer's marker, are kept for the reader but
-        // never replayed — see `toEngineMessages`.
+        // Mark child results and transfer markers for display grouping.
         const displayOnly = !isTopLevelChunk(chunk) || chunk.toolResult.displayOnly === true;
         toolMessages.push({
           content: chunk.toolResult.content,
@@ -444,11 +374,7 @@ export async function* runAndPersist(
     // say which it was — it rethrows whichever one it was given, so the intent
     // survives on the signal instead.
     //
-    // The note is handled here rather than outside because this is the only
-    // place that can *persist* it. Wrapped around this generator, a stop reached
-    // the reader and no further: the assistant message was already written by
-    // the time the abort surfaced, so reloading the chat showed a reply stopping
-    // mid-sentence with nothing to say why.
+    // Add the stop notice before persistence so it survives a reload.
     const notice = endNoticeFor(signal);
     if (notice === undefined) {
       throw thrown;

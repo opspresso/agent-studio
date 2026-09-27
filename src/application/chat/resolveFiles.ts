@@ -1,17 +1,6 @@
 /**
- * Resolve stored file references to addresses a reader can download from.
- *
- * A separate walk from `resolveImages.ts`, and the separation is the contract
- * rather than tidiness: **only the view calls this.** The replay path restores
- * image bytes into the turn; a file's bytes never enter the model's context at
- * all — the tool result text is what named it — so
- * signing one there would spend a signature on a URL nothing reads, and would
- * leave the next reader of that path believing files are part of it.
- *
- * A file that cannot be addressed is dropped rather than offered as a dead link.
- * How many is returned, not just logged: a document the reader watched a run
- * produce, gone from the transcript with nothing said, reads as the chat having
- * lost it — which is precisely what happened.
+ * Resolve display file references without reading bytes into model context.
+ * Unaddressable files are omitted and counted so the caller can report loss.
  */
 
 import type { ChatMessage, ChatMessageFile } from "@/domain/chat/types";

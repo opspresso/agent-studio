@@ -1,11 +1,4 @@
-/**
- * Turning a stored image reference into an address something can fetch.
- *
- * The single owner of the compatibility rule: a row carries either an object
- * `key` (signed on read) or a legacy public `url` (used as-is). The chat view
- * applies that compatibility rule; model replay restores object bytes through
- * the object-store port instead of resolving an address.
- */
+/** Resolve display image references: use a stored public URL or sign an object key. */
 
 import type { ChatMessageImage } from "./types";
 

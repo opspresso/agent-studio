@@ -136,8 +136,7 @@ export async function sendMessage(
       deps,
       input.chatId,
       runId,
-      // Ahead of the answer: a chat too long to replay in full, and an attachment
-      // that could not be stored — the reader needs both before reading the reply.
+      // Report missing SDK context and attachment storage loss before the answer.
       runAndPersist(
         deps,
         chat,
