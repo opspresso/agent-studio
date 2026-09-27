@@ -1,4 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
 import {
   MEMBER_LIST_PAGE_SIZE,
   MEMBER_RECONCILE_CONCURRENCY,
@@ -27,7 +33,13 @@ const member = (overrides: Partial<Member> = {}): Member => ({
   ...overrides,
 });
 
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+});
 afterEach(() => {
+  vi.useRealTimers();
   setAuditSink(undefined);
 });
 
@@ -131,7 +143,7 @@ describe("member use cases", () => {
       await expect(useCases.me("u@x.com")).resolves.toEqual(stored);
     });
 
-    it("agents an ADMIN_EMAILS member as admin", async () => {
+    it("promotes an ADMIN_EMAILS member to admin", async () => {
       const stored = member({ tier: "guest" });
       let persistedTier = stored.tier;
       const useCases = createMemberUseCases(
@@ -180,6 +192,7 @@ describe("member use cases", () => {
       expect(updated.tier).toBe("admin");
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({
+        createdAt: "2026-01-01T00:00:00.000Z",
         actorEmail: "boss@x.com",
         action: "member.set-tier",
         target: "member:u@x.com",
