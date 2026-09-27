@@ -23,8 +23,7 @@ RUN apk add --no-cache ffmpeg docker-cli git && addgroup -S app && adduser -S ap
 COPY --from=build --chown=app:app /app/.next/standalone ./
 COPY --from=build --chown=app:app /app/.next/static ./.next/static
 COPY --from=build --chown=app:app /app/public ./public
-# The standalone app and the durable audio worker share one image. The worker
-# is started by the IDC Compose service with `node build/audio-worker.cjs`.
+# The app image also provides audio and Workspace worker entrypoints in build/.
 COPY --from=build --chown=app:app /app/build ./build
 USER app
 

@@ -2,7 +2,7 @@
 
 배포하고, 프로브하고, 스케일링하고, 데이터베이스를 유한하게 유지하는 일.
 
-관련 문서: localdev와 배포 저장소의 소유권, 폐쇄망 대체 경로, 옛 AWS 배포 이관은
+관련 문서: localdev와 배포 저장소의 소유권, 폐쇄망 대체 경로는
 [INSTALL.md](INSTALL.md) 다. 여기 이름이 나오는 모든 변수는
 [CONFIGURATION.md](CONFIGURATION.md), 자격 증명 취급은 [SECURITY.md](SECURITY.md), 로컬
 루프는 [DEVELOPMENT.md](DEVELOPMENT.md).

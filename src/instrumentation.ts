@@ -1,17 +1,8 @@
 /**
- * Next.js instrumentation hook — runs once at server startup. Validates that
- * the required environment and access-control guardrails are in place so a
- * misconfiguration fails fast at boot rather than as a 500 on the first request
- * that touches the missing value, and arms graceful-shutdown signal handling.
- *
- * It also loads administrator-selected models and repairs managed MCP servers, because a new process
- * is exactly the event that breaks them: their containers join this app's
- * network namespace, and replacing this app strands them in the old one.
- *
- * Every `import()` here stays lexically inside the `NEXT_RUNTIME` check. This
- * file is compiled for the edge runtime too, where that comparison folds to
- * false and takes the imports with it — hoisting one out to module scope pulls
- * `node:crypto` and the AWS SDK into a bundle that cannot load them.
+ * Boot validates configuration, prepares the schema and audit sink, and loads
+ * selected models before serving. Managed MCP repair runs in the background;
+ * its containers publish ports on the host loopback.
+ * Node-only imports stay inside the runtime guard so edge builds exclude them.
  */
 
 import type { ManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
@@ -69,34 +60,20 @@ export async function register(): Promise<void> {
     // reachable yet. A no-op everywhere else.
     const { ensureBootstrapAdmin } = await import("@/lib/auth");
     await ensureBootstrapAdmin();
-    // Awaited, unlike the composition root below. The sink is what makes
-    // `recordAudit` write anything, and the root wires it only as a side effect
-    // of being imported — a route may not import it when it
-    // needs nothing from it. A request served before that floating import
-    // resolves would reveal a credential and record no row, and an unrecorded
-    // act is indistinguishable from one that never happened. Two AWS SDK
-    // modules, no client construction (the document client is lazy), so this
-    // costs the boot path nothing measurable.
+    // Wire audit storage before any request can perform an audited action.
     const [{ setAuditSink, assertAuditSinkWired }, { auditRepository }] = await Promise.all([
       import("@/application/audit/recordAudit"),
       import("@/infrastructure/db/repositories/auditRepository"),
     ]);
     setAuditSink(auditRepository);
-    // Refuses the boot if that push did not take — an adapter export that failed
-    // to initialise, a barrel resolving to `undefined`. Narrow on purpose, and
-    // the docblock says why: read back through the same module instance it was
-    // pushed to, this cannot see a *duplicate* of that module left empty, and
-    // nothing in-process can. Without it the same defect is silent until the
-    // first audited act, which writes nothing and says nothing.
+    // Fail boot if this module instance has no sink. Duplicate module instances
+    // must be prevented by the build; this assertion cannot detect them.
     assertAuditSinkWired();
     // Required boot paths read only the deployment's persisted model selections.
     const { getLlmProviderConfigs, startPublishedModelRefresh } = await import("@/lib/runtime-settings");
     await getLlmProviderConfigs();
     startPublishedModelRefresh();
-    // The import is inside the guard so the edge build folds it away, and off
-    // the awaited path because evaluating the composition root constructs every
-    // AWS client — `register` is awaited before the server accepts connections,
-    // so anything left here lands in cold-start latency.
+    // Optional container repair must not delay the server's readiness to listen.
     void (async () => {
       const { managedMcpUseCases } = await import("@/lib/container");
       // Undefined where this deployment cannot start containers at all; there
