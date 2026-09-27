@@ -1,7 +1,7 @@
 /**
  * A one-shot "does this model answer" probe for the /models console. Text models
  * use a small completion and image models generate through the image channel;
- * rerank models use their injected specialized-endpoint probe. It reports an
+ * rerank and decision models use their injected specialized-endpoint probes. It reports an
  * endpoint failure as a result rather than throwing, because turning failure
  * into a report is this function's job.
  *

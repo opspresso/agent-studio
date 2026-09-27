@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestModel } from "@/application/llm/testModel";
 import { ValidationError } from "@/application/errors";
 import type { ModelProvider } from "@openai/agents";
@@ -7,7 +7,10 @@ import { addTestModels } from "./modelFixtures";
 
 const KNOWN_MODEL = "openai/gpt-5.4";
 
+beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime("2026-01-01T00:00:00.000Z"); });
+
 afterEach(() => {
+  vi.useRealTimers();
   addTestModels([]);
 });
 
