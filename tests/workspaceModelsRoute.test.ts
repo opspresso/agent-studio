@@ -34,7 +34,7 @@ describe("/api/models/workspace", () => {
     expect(mocks.favorites).toHaveBeenCalledWith("user-1");
   });
 
-  it("returns a committed selection when optional favorites are unavailable", async () => {
+  it("returns a committed selection with an empty favorites list", async () => {
     const response = await PUT(new Request("https://studio.example.test/api/models/workspace", {
       method: "PUT", body: JSON.stringify({ runtime: "codex", model: "openai/gpt-5.4" }),
     }));

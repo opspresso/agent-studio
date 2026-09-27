@@ -91,9 +91,7 @@ describe("groupUsage", () => {
   });
 
   it("groups a member's own rows the same three ways", () => {
-    // A member row carries no `inputTokens`/`outputTokens` need and no
-    // department, but it names its agent — which is the axis the profile
-    // page adds over an agent's own usage tab.
+    // This minimal projection omits token maps but retains the Agent axis.
     const mine: DailyCostRow[] = [
       { agentName: "alpha", date: "2026-01-01", calls: { "openai/gpt-5-mini": 2 }, costUsd: { "openai/gpt-5-mini": 1 } },
       { agentName: "beta", date: "2026-01-01", calls: { "google/gemini-3.1-flash-lite": 1 }, costUsd: { "google/gemini-3.1-flash-lite": 3 } },
