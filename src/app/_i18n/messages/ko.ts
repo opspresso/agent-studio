@@ -541,6 +541,7 @@ export const ko: Messages = {
   "routing.callBudget": "시도당 예상 비용 한도 (USD)",
   "routing.runBudget": "Run당 라우팅 추론 예산 (USD)",
   "routing.maxCalls": "Run당 최대 주 모델·ModelTask 호출 수",
+  "routing.unlimitedHint": "0은 무제한",
   "routing.minOutputChars": "답변 최소 글자 수",
   "routing.qualityHint": "ModelTask는 빈 답변·출력 잘림·잘못된 분류 JSON을 상위 모델로 승격하며 최대 네 번 시도합니다. 주 모델은 바로 스트리밍하며 출력이 시작되면 재호출하지 않습니다. 사실 정확성을 보장하는 검사는 아닙니다.",
   "usage.none": "이 기간에는 사용량이 없습니다.",

@@ -117,6 +117,26 @@ describe("automatic primary model routing",()=>{
     const denied=new FakeChannel([]);const chunks=await collect({...deps,channel:denied},{...input,parameters:{modelRouting:true,maxTokens:101}});
     expect(denied.calls).toBe(0);expect(chunks.some(chunk=>chunk.error?.includes("budget"))).toBe(true);
   });
+  it("completes HTML saving after more than ten tool turns without shrinking the default output budget", async () => {
+    replaceModelRegistry([model("local/base", { contextWindow: 1_050_000, maxTokens: 128_000, pricing: { inputPer1M: 2, outputPer1M: 10 } })]);
+    const html = "<!doctype html><html lang=\"ko\"><body>" + "문서 본문".repeat(2_000) + "</body></html>";
+    const channel = new FakeChannel([
+      ...Array.from({ length: 11 }, (_, n) => [toolCallChunk(0, `read-${n}`, "read", "{}")]),
+      [toolCallChunk(0, "save-html", "SaveFile", JSON.stringify({ name: "report.html", mime_type: "text/html", content: html }))],
+      [contentChunk("HTML saved")],
+    ]);
+    const { deps } = setup(channel);
+    deps.modelRoutingPolicy = { ...DEFAULT_CALL_ROUTING_POLICY, tiers: { general: "local/base" } };
+    deps.callMcpTool = vi.fn(async () => ({ text: "분석 자료".repeat(1_000) }));
+    deps.saveFile = vi.fn(async () => ({ text: "Created report.html" }));
+    const chunks = await collect(deps, { ...input, messages: [{ role: "user", content: "html로 작성해 주세요.\n" + "분석 문맥".repeat(10_000) }],
+      mcpTools: [{ type: "function", function: { name: "read", parameters: { type: "object", properties: {} } } }] });
+    expect(channel.seenParams).toHaveLength(13);
+    expect(channel.seenParams.every(request => request.maxTokens === 8_192)).toBe(true);
+    expect(deps.saveFile).toHaveBeenCalledExactlyOnceWith({ name: "report.html", mimeType: "text/html", content: html });
+    expect(chunks.some(chunk => chunk.error)).toBe(false);
+    expect(chunks.map(chunk => chunk.delta?.content ?? "").join("")).toBe("HTML saved");
+  });
   it("retains the selected model after a tool result without another paid decision",async()=>{
     const channel=new FakeChannel([[toolCallChunk(0,"read","read","{}")],[contentChunk("완료")]]);const {deps,choose}=setup(channel);
     deps.callMcpTool=async()=>({text:"자료"});

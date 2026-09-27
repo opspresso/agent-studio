@@ -1622,9 +1622,10 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 minOutputChars }`다. `tiers`는 fast/general/coding/reasoning/vision의 선택적 등록 text 모델 ID,
 `policies`는 general/summary/classification/coding/reasoning/vision 목적의 선택적 tier다. 정책에 지정한
 tier에는 모델이 있어야 하며 reasoning/vision 배정은 해당 기능을 요구한다.
-비용은 양수 USD(최대 100), 호출 예산은 Run 예산 이하다. `maxCalls`는 1–30,
-`minOutputChars`는 1–1,000이다. 초기값은 모델 미배정, 시도당 $0.1, 라우팅 추론 전체 $1,
-10회, 최소 1자다. `localOnly`는 결정 모델을 포함한 self-hosted provider 연결 제한이다.
+비용은 0–100 USD, `maxCalls`는 0–30이며 각각 `0`이면 해당 제한을 적용하지 않는다.
+두 비용 한도가 모두 양수이면 호출 예산은 Run 예산 이하다. `minOutputChars`는 1–1,000이다.
+초기값은 모델 미배정, 호출당 비용·Run당 비용·호출 수 제한 모두 `0`(무제한), 최소 1자다.
+`localOnly`는 결정 모델을 포함한 self-hosted provider 연결 제한이다.
 호출 전 예상 비용을 검사하고 응답 후 실제 청구액을 누적한다. 라우팅 예산에는 주 SDK 호출, Jev와 ModelTask가
 포함되며 검색·rerank 비용은 포함되지 않는다.
 실제 사내 endpoint와 네트워크 격리는 배포가 관리한다.

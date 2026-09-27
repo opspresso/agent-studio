@@ -574,6 +574,7 @@ export const en = {
   "routing.callBudget": "Maximum estimated cost per attempt (USD)",
   "routing.runBudget": "Routed inference budget per Run (USD)",
   "routing.maxCalls": "Maximum routed primary and ModelTask calls per Run",
+  "routing.unlimitedHint": "0 means unlimited",
   "routing.minOutputChars": "Minimum answer characters",
   "routing.qualityHint": "ModelTask promotes empty, short or truncated answers and invalid classification JSON, with at most four attempts. Primary responses stream directly and are never replayed after output starts. These checks do not verify factual accuracy.",
   "usage.none": "No usage in this range.",

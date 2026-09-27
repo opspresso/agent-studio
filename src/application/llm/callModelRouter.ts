@@ -44,11 +44,14 @@ export function createCallModelRouter(
   state: CallRoutingState, observe: (event: CallRoutingEvent) => void,
   recordDecisionUsage: (usage: UsageInfo) => Promise<void> = async () => {},
 ) {
+  const maxCallCostUsd = settings.maxCallCostUsd > 0 ? settings.maxCallCostUsd : Infinity;
+  const maxRunCostUsd = settings.maxRunCostUsd > 0 ? settings.maxRunCostUsd : Infinity;
+
   function outputTokens(model: string, task: RoutedModelTask): number {
     const facts = getModelConfig(model);
     if (!facts || !task.budgetOutputTokens) return task.maxOutputTokens;
     const inputCost = (inputTokens(task) + PROTOCOL_HEADROOM_TOKENS) * facts.pricing.inputPer1M / 1_000_000;
-    const room = Math.min(settings.maxCallCostUsd, settings.maxRunCostUsd - state.spentUsd) - inputCost;
+    const room = Math.min(maxCallCostUsd, maxRunCostUsd - state.spentUsd) - inputCost;
     const affordable = facts.pricing.outputPer1M > 0 ? Math.floor(room * 1_000_000 / facts.pricing.outputPer1M) : facts.maxTokens;
     return room < 0 ? 0 : Math.max(0, Math.min(task.maxOutputTokens, facts.maxTokens, affordable));
   }
@@ -73,7 +76,7 @@ export function createCallModelRouter(
     if (!context || inputTokens(task) > context.remaining() || !facts.maxTokens || cap > facts.maxTokens) return "context";
     if (facts.pricingKnown === false || !Number.isFinite(estimate(model, task))) return "budget";
     const cost = estimate(model, task);
-    if (cost > settings.maxCallCostUsd || cost + state.spentUsd > settings.maxRunCostUsd) return "budget";
+    if (cost > maxCallCostUsd || cost + state.spentUsd > maxRunCostUsd) return "budget";
     return undefined;
   }
 
@@ -98,10 +101,10 @@ export function createCallModelRouter(
 
   /** Admission is synchronous after async eligibility checks, including parallel child callers. */
   function reserve(model: string, task: RoutedModelTask) {
-    if (state.calls >= settings.maxCalls) throw new Error("Routed model call limit reached");
+    if (settings.maxCalls > 0 && state.calls >= settings.maxCalls) throw new Error("Routed model call limit reached");
     const maxOutputTokens = outputTokens(model, task);
     const estimatedCostUsd = estimate(model, task);
-    if (maxOutputTokens < 1 || estimatedCostUsd > settings.maxCallCostUsd || estimatedCostUsd + state.spentUsd > settings.maxRunCostUsd) {
+    if (maxOutputTokens < 1 || estimatedCostUsd > maxCallCostUsd || estimatedCostUsd + state.spentUsd > maxRunCostUsd) {
       throw new Error("Routed model budget exceeded");
     }
     state.calls += 1;
@@ -111,7 +114,7 @@ export function createCallModelRouter(
 
   async function selection(task: RoutedModelTask, signal?: AbortSignal) {
     signal?.throwIfAborted();
-    if (state.calls >= settings.maxCalls) throw new Error("Routed model call limit reached");
+    if (settings.maxCalls > 0 && state.calls >= settings.maxCalls) throw new Error("Routed model call limit reached");
     const valid = new Map<ModelTier, string>();
     let source: CallRoutingEvent["source"] = "default";
     let selected = baseModel;
@@ -154,7 +157,8 @@ export function createCallModelRouter(
             if (decisionModel) {
               const stateText = JSON.stringify({ purpose: task.purpose, promptSummary: routingPromptSummary(task),
                 requiredFeatures: { imageInput: task.imageCount > 0, reasoning: task.purpose === "reasoning" || task.requiresReasoning === true, structuredOutput: task.purpose === "classification" || task.requiresStructuredOutput === true, tools: task.requiresTools === true, differentModel: task.requireDifferentModel === true },
-                budget: { maxCallCostUsd: settings.maxCallCostUsd, remainingRunCostUsd: Math.max(0, settings.maxRunCostUsd - state.spentUsd) },
+                budget: { maxCallCostUsd: Number.isFinite(maxCallCostUsd) ? maxCallCostUsd : null,
+                  remainingRunCostUsd: Number.isFinite(maxRunCostUsd) ? Math.max(0, maxRunCostUsd - state.spentUsd) : null },
                 availableTiers: [...options.keys()],
                 tierFacts: Object.fromEntries([...options].map(([key, model]) => [key, {
                   estimatedCostUsd: estimate(model, task), usesPrimaryModel: model === baseModel || model === task.activePrimaryModel,
@@ -175,13 +179,13 @@ export function createCallModelRouter(
               const decisionContext = createRunContextBudget(decisionModel, undefined, facts?.maxTokens ?? 0);
               if (!available || !facts?.capabilities.decision || !decisionContext ||
                   decisionTokens - PROTOCOL_HEADROOM_TOKENS > decisionContext.remaining() ||
-                  !Number.isFinite(decisionCost) || decisionCost > settings.maxCallCostUsd ||
-                  state.spentUsd + decisionCost + minimumCallCost > settings.maxRunCostUsd) {
+                  !Number.isFinite(decisionCost) || decisionCost > maxCallCostUsd ||
+                  state.spentUsd + decisionCost + minimumCallCost > maxRunCostUsd) {
                 throw new Error("Decision model is outside routing policy");
               }
               state.spentUsd += decisionCost;
               const decision = await deps.decision.choose({ model: decisionModel, state: stateText,
-                instructions: `Choose the least expensive available tier that can satisfy the purpose, promptSummary and requiredFeatures. Compare tierFacts.estimatedCostUsd among suitable tiers. ${task.callKind === "primary" ? "This selects the model that answers the user directly; usesPrimaryModel is only the configured fallback identity." : "A usesPrimaryModel tier adds an isolated call, not a new model capability."} Higher cost alone does not prove suitability. Return only one available tier.`, criteria, signal });
+                instructions: `Choose the least expensive available tier that can satisfy the purpose, promptSummary and requiredFeatures. Null budget values mean no limit. Compare tierFacts.estimatedCostUsd among suitable tiers. ${task.callKind === "primary" ? "This selects the model that answers the user directly; usesPrimaryModel is only the configured fallback identity." : "A usesPrimaryModel tier adds an isolated call, not a new model capability."} Higher cost alone does not prove suitability. Return only one available tier.`, criteria, signal });
               if (decision.usage) {
                 state.spentUsd += decision.usage.costUsd - decisionCost;
                 await recordDecisionUsage(decision.usage);

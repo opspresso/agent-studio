@@ -49,11 +49,11 @@ export function ModelRoutingPolicyEditor({ value, models, onChange }: {
             }} />)}
         </SimpleGrid>
         <SimpleGrid cols={{ base: 1, sm: 2 }}>
-          <NumberInput label={t("routing.callBudget")} value={value.maxCallCostUsd} min={0.000001} max={CALL_ROUTING_LIMITS.maxBudgetUsd} step={0.01}
+          <NumberInput label={t("routing.callBudget")} description={t("routing.unlimitedHint")} value={value.maxCallCostUsd} min={0} max={CALL_ROUTING_LIMITS.maxBudgetUsd} step={0.01}
             onChange={cost => patch({ maxCallCostUsd: typeof cost === "number" ? cost : DEFAULT_CALL_ROUTING_POLICY.maxCallCostUsd })} />
-          <NumberInput label={t("routing.runBudget")} value={value.maxRunCostUsd} min={0.000001} max={CALL_ROUTING_LIMITS.maxBudgetUsd} step={0.1}
+          <NumberInput label={t("routing.runBudget")} description={t("routing.unlimitedHint")} value={value.maxRunCostUsd} min={0} max={CALL_ROUTING_LIMITS.maxBudgetUsd} step={0.1}
             onChange={cost => patch({ maxRunCostUsd: typeof cost === "number" ? cost : DEFAULT_CALL_ROUTING_POLICY.maxRunCostUsd })} />
-          <NumberInput label={t("routing.maxCalls")} value={value.maxCalls} min={1} max={CALL_ROUTING_LIMITS.maxCalls} step={1} allowDecimal={false}
+          <NumberInput label={t("routing.maxCalls")} description={t("routing.unlimitedHint")} value={value.maxCalls} min={0} max={CALL_ROUTING_LIMITS.maxCalls} step={1} allowDecimal={false}
             onChange={count => patch({ maxCalls: typeof count === "number" ? count : DEFAULT_CALL_ROUTING_POLICY.maxCalls })} />
           <NumberInput label={t("routing.minOutputChars")} value={value.minOutputChars} min={1} max={CALL_ROUTING_LIMITS.maxMinOutputChars} step={1} allowDecimal={false}
             onChange={count => patch({ minOutputChars: typeof count === "number" ? count : DEFAULT_CALL_ROUTING_POLICY.minOutputChars })} />

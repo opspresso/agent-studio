@@ -10,8 +10,11 @@ export interface CallRoutingPolicy {
   tiers: Partial<Record<ModelTier, string>>;
   policies: Partial<Record<CallPurpose, ModelTier>>;
   localOnly: boolean;
+  /** Zero disables this cost limit. */
   maxCallCostUsd: number;
+  /** Zero disables this cost limit. */
   maxRunCostUsd: number;
+  /** Zero disables the routed inference call limit. */
   maxCalls: number;
   minOutputChars: number;
 }
@@ -21,7 +24,7 @@ export interface CallRoutingSettings extends CallRoutingPolicy { enabled: boolea
 
 export const DEFAULT_CALL_ROUTING_POLICY: CallRoutingPolicy = {
   tiers: {}, policies: {}, localOnly: false,
-  maxCallCostUsd: 0.2, maxRunCostUsd: 1, maxCalls: 10, minOutputChars: 1,
+  maxCallCostUsd: 0, maxRunCostUsd: 0, maxCalls: 0, minOutputChars: 1,
 };
 export const DEFAULT_CALL_ROUTING: CallRoutingSettings = { ...DEFAULT_CALL_ROUTING_POLICY, enabled: false };
 
@@ -33,9 +36,10 @@ export function isCallRoutingPolicy(value: unknown): value is CallRoutingPolicy 
   const map = (entry: unknown): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object" && !Array.isArray(entry));
   if (!map(policy.tiers) || Object.entries(policy.tiers).some(([tier, id]) => !MODEL_TIERS.includes(tier as ModelTier) || typeof id !== "string" || !id.trim() || id.length > 200)) return false;
   if (!map(policy.policies) || Object.entries(policy.policies).some(([purpose, tier]) => !CALL_PURPOSES.includes(purpose as CallPurpose) || !MODEL_TIERS.includes(tier as ModelTier))) return false;
-  const budget = (amount: unknown): amount is number => typeof amount === "number" && Number.isFinite(amount) && amount > 0 && amount <= CALL_ROUTING_LIMITS.maxBudgetUsd;
-  return typeof policy.localOnly === "boolean" && budget(policy.maxCallCostUsd) && budget(policy.maxRunCostUsd) && policy.maxCallCostUsd <= policy.maxRunCostUsd &&
-    typeof policy.maxCalls === "number" && Number.isInteger(policy.maxCalls) && policy.maxCalls >= 1 && policy.maxCalls <= CALL_ROUTING_LIMITS.maxCalls &&
+  const budget = (amount: unknown): amount is number => typeof amount === "number" && Number.isFinite(amount) && amount >= 0 && amount <= CALL_ROUTING_LIMITS.maxBudgetUsd;
+  return typeof policy.localOnly === "boolean" && budget(policy.maxCallCostUsd) && budget(policy.maxRunCostUsd) &&
+    (policy.maxCallCostUsd === 0 || policy.maxRunCostUsd === 0 || policy.maxCallCostUsd <= policy.maxRunCostUsd) &&
+    typeof policy.maxCalls === "number" && Number.isInteger(policy.maxCalls) && policy.maxCalls >= 0 && policy.maxCalls <= CALL_ROUTING_LIMITS.maxCalls &&
     typeof policy.minOutputChars === "number" && Number.isInteger(policy.minOutputChars) && policy.minOutputChars >= 1 && policy.minOutputChars <= CALL_ROUTING_LIMITS.maxMinOutputChars;
 }
 

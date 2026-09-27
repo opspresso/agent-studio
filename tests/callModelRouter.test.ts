@@ -1,6 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { listModels, replaceModelRegistry, type ModelConfig } from "@/domain/llm/models";
-import { DEFAULT_CALL_ROUTING, type CallRoutingEvent, type CallRoutingSettings, type CallRoutingState, type RoutedModelTask } from "@/domain/llm/callRouting";
+import { DEFAULT_CALL_ROUTING, DEFAULT_CALL_ROUTING_POLICY, type CallRoutingEvent, type CallRoutingSettings, type CallRoutingState, type RoutedModelTask } from "@/domain/llm/callRouting";
 import { createCallModelRouter, routingPromptSummary, type CallRoutingDeps } from "@/application/llm/callModelRouter";
 import { agentParametersSchema } from "@/app/api/agents/_lib/schemas";
 import { assertCallRoutingPolicy } from "@/application/llm/callRoutingPolicy";
@@ -13,7 +13,8 @@ function model(id: string, patch: Partial<ModelConfig> = {}): ModelConfig {
     capabilities: { tools: true, reasoning: true, imageInput: true, structuredOutput: true }, ...patch };
 }
 const task: RoutedModelTask = { purpose: "summary", prompt: "Summarize this document", imageCount: 0, maxOutputTokens: 1_000 };
-const settings: CallRoutingSettings = { ...DEFAULT_CALL_ROUTING, enabled: true, tiers: { fast: "fast", general: "general", reasoning: "strong" } };
+const settings: CallRoutingSettings = { ...DEFAULT_CALL_ROUTING, enabled: true, tiers: { fast: "fast", general: "general", reasoning: "strong" },
+  maxCallCostUsd: 0.2, maxRunCostUsd: 1, maxCalls: 10 };
 const result = { text: "A useful answer", usage: { inputTokens: 10, outputTokens: 3, costUsd: 0.00001 } };
 function setup(config: CallRoutingSettings = settings, depsPatch: Partial<CallRoutingDeps> = {}, saved?: CallRoutingState) {
   const choose = vi.fn<CallRoutingDeps["decision"]["choose"]>().mockResolvedValue({ choice: "fast", confidence: 1, probabilities: { fast: 1, general: 0, reasoning: 0 } });
@@ -30,6 +31,52 @@ beforeEach(() => replaceModelRegistry([
 afterEach(() => replaceModelRegistry(original));
 
 describe("call model routing", () => {
+  it("keeps the full implicit output budget as document history grows with default unlimited limits", async () => {
+    replaceModelRegistry([model("base", { contextWindow: 1_050_000, maxTokens: 128_000, pricing: { inputPer1M: 2, outputPer1M: 10 } })]);
+    const { select, state } = setup({ ...DEFAULT_CALL_ROUTING, enabled: true, tiers: { general: "base" } }, {},
+      { calls: 40, spentUsd: 150, failures: {} });
+    for (const inputTokens of [80_000, 95_000]) {
+      const selected = await select({ ...task, inputTokens, maxOutputTokens: 8_192, budgetOutputTokens: true, callKind: "primary" });
+      expect(selected).toMatchObject({ model: "base", maxOutputTokens: 8_192 });
+      selected.settle(result.usage);
+    }
+    expect(state.calls).toBe(42);
+    expect(state.spentUsd).toBeCloseTo(150.00002);
+  });
+  it.each([
+    { maxCallCostUsd: 2, maxRunCostUsd: 0, spentUsd: 100, cap: 2 },
+    { maxCallCostUsd: 0, maxRunCostUsd: 2, spentUsd: 1, cap: 1 },
+  ])("enforces the remaining positive cost limit independently: %j", async ({ spentUsd, cap, ...limits }) => {
+    replaceModelRegistry([model("base", { pricing: { inputPer1M: 0, outputPer1M: 1_000_000 } })]);
+    const { select } = setup({ ...DEFAULT_CALL_ROUTING, enabled: true, tiers: { general: "base" }, ...limits }, {},
+      { calls: 40, spentUsd, failures: {} });
+    const request = { ...task, maxOutputTokens: 10, budgetOutputTokens: true };
+    const selected = await select(request);
+    expect(selected.maxOutputTokens).toBe(cap);
+    selected.settle({ ...result.usage, costUsd: 0 });
+    await expect(select({ ...request, maxOutputTokens: cap + 1, budgetOutputTokens: false })).rejects.toThrow("budget");
+  });
+  it("enforces a positive call count even when both cost limits are disabled", async () => {
+    const { select } = setup({ ...DEFAULT_CALL_ROUTING, enabled: true, tiers: { general: "base" }, maxCalls: 1 });
+    await select(task);
+    await expect(select(task)).rejects.toThrow("call limit");
+  });
+  it("runs and accounts for Jev and auxiliary calls with unlimited budgets", async () => {
+    const { execute, choose, state } = setup({ ...settings, maxCallCostUsd: 0, maxRunCostUsd: 0, maxCalls: 0 }, {},
+      { calls: 40, spentUsd: 150, failures: {} });
+    const invoke = vi.fn().mockResolvedValue(result);
+    await execute(task, invoke);
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("fast");
+    expect(JSON.parse(choose.mock.calls[0]![0].state).budget).toEqual({ maxCallCostUsd: null, remainingRunCostUsd: null });
+    expect(state.calls).toBe(41);
+    expect(state.spentUsd).toBeGreaterThan(150);
+    expect(Number.isFinite(state.spentUsd)).toBe(true);
+  });
+  it("retains provider output limits when routing cost limits are disabled", async () => {
+    const { select } = setup({ ...DEFAULT_CALL_ROUTING, enabled: true, tiers: { general: "base" } });
+    expect((await select({ ...task, maxOutputTokens: 8_192, budgetOutputTokens: true })).maxOutputTokens).toBe(4_000);
+    await expect(select({ ...task, maxOutputTokens: 4_001 })).rejects.toThrow("context");
+  });
   it("admits at most one concurrent reservation when only one call fits the shared budget",async()=>{
     const {select,state}=setup({...settings,tiers:{fast:"fast"},maxCallCostUsd:0.00045,maxRunCostUsd:0.00045});
     const results=await Promise.allSettled([select(task),select(task)]);
@@ -278,9 +325,20 @@ describe("routing settings admission", () => {
   });
   it("rejects unknown tiers, invalid budgets and excessive calls in the shared policy", () => {
     expect(modelRoutingPolicySchema.parse({ policy }).policy).toEqual(policy);
-    for (const patch of [{ maxCalls: 31 }, { maxCallCostUsd: 2 }, { tiers: { invented: "fast" } }]) {
+    for (const patch of [{ maxCalls: 31 }, { maxCalls: -1 }, { maxCalls: 0.5 }, { maxCallCostUsd: -1 },
+      { maxRunCostUsd: -1 }, { maxCallCostUsd: Infinity }, { maxRunCostUsd: NaN }, { maxCallCostUsd: 101 },
+      { maxCallCostUsd: 2 }, { minOutputChars: 0 }, { tiers: { invented: "fast" } }]) {
       expect(modelRoutingPolicySchema.safeParse({ policy: { ...policy, ...patch } }).success).toBe(false);
     }
+  });
+  it.each([
+    DEFAULT_CALL_ROUTING_POLICY,
+    { ...policy, maxCallCostUsd: 0 },
+    { ...policy, maxRunCostUsd: 0 },
+    { ...policy, maxCalls: 0 },
+  ])("accepts independently disabled limits in the shared policy: %j", accepted => {
+    expect(modelRoutingPolicySchema.parse({ policy: accepted }).policy).toEqual(accepted);
+    expect(() => assertCallRoutingPolicy(accepted, listModels())).not.toThrow();
   });
   it("validates registered models and configured task policies when enabling", () => {
     expect(() => assertCallRoutingPolicy(policy, listModels())).not.toThrow();
