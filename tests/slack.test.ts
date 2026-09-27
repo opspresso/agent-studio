@@ -1,11 +1,16 @@
 import { createHmac } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { verifySlackSignature } from "@/infrastructure/slack/verify";
 import { slackClient } from "@/infrastructure/slack/client";
 import { BodyTooLargeError } from "@/shared/httpBody";
 import { threadToTurns } from "@/application/slack/handleSlackEvent";
 
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(1_700_000_000_000);
+});
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 

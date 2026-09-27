@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Route-handler test: withAuth is stubbed to inject a controllable user, the
 // container repo is mocked, public-url is pinned, and the real owner-gating +
@@ -39,8 +39,6 @@ const agent = {
   displayName: "Proj",
   // The agent view's description comes from here, and Slack requires one.
   description: "Does the thing",
-  // A Slack bot only attaches to an agent, so a fixture without a type
-  // is one the write path refuses.
   ownerEmail: "owner@example.com",
   updatedAt: "2026-01-01T00:00:00.000Z",
   slack: { enabled: true, botToken: BOT_TOKEN, signingSecret: SIGNING_SECRET },
@@ -50,9 +48,13 @@ const ctx = () => ({ params: Promise.resolve({ name: "proj" }) });
 const req = () => new Request("https://studio.example.com/api/agents/proj/slack");
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
   vi.clearAllMocks();
   state.email = "owner@example.com";
 });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 describe("GET /api/agents/[name]/slack (owner-gated)", () => {
   it("returns the masked config and manifest to the agent owner", async () => {
@@ -86,9 +88,7 @@ describe("GET /api/agents/[name]/slack (owner-gated)", () => {
 });
 
 describe("every verb answers with the same shape", () => {
-  // The settings page keeps whatever a mutation returns and renders the manifest
-  // from it. A response that is a subset of the read is a crashed page one click
-  // later — which is exactly what shipped: only GET carried the manifest.
+  // Read, save and disconnect responses all carry the masked view and manifest.
   const mutate = (body: unknown) =>
     new Request("https://studio.example.com/api/agents/proj/slack", {
       method: "PUT",
