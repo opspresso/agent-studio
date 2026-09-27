@@ -389,9 +389,8 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
 배포가 지정한 LLM·인증·스토리지·카탈로그 endpoint까지 모두 이 가드로 검사하는 것은 아니다.
 그 주소들은 배포 설정의 신뢰 경계다. 공개 registry 요청에는 다음 검사를 적용한다:
 
-- DNS 는 **모든 요청과 모든 리다이렉트 홉마다** 다시 해석하고 다시 확인한다. 등록과 사용
-  사이의 DNS 리바인딩 창을 (완전히 닫지는 못하지만) 좁힌다.
-- 커넥션은 확인된 주소에 고정된다.
+- DNS는 모든 요청과 redirect 홉에서 다시 확인하고 커넥션을 검증한 주소에 고정한다.
+  등록 시 검증만으로 연결의 안전을 보장하지 않는다.
 - 네이티브 리다이렉트 추종은 꺼져 있고 **교차 출처 리다이렉트는 거부한다**. 저장된 자격 증명이
   다른 호스트로 전달될 수 없게 하기 위해서다.
 - 디스패처는 커넥션 재사용을 위해 `origin|pinned address` 별로 풀링된다. 이것이 캐시하는 것은
@@ -417,9 +416,10 @@ userinfo, query parameter 와 fragment 를 받지 않는다. 이 값들은 멤�
 되돌려 보내는 저장은 이동이 아니므로 거절하지도, 저장된 credential 을 버리지도 않는다
 (`resolveRegistryUrlPatch`). 그러지 않으면 편집 폼이 자기가 읽은 값을 되돌려 보내는 것만으로
 레거시 항목이 다른 endpoint 를 가리키게 되고, 원래 주소는 다시 입력할 수도 없다.
-LLM 채널도 endpoint 와 credential 을 한 보안 단위로 취급한다. 기본 채널의 URL 또는 provider
-채널의 URL·인증 방식을 바꾸면 마스킹된 기존 key 를 새 주소로 옮기지 않고 새 key 입력을 요구한다.
-기본 URL override 와 key override 를 함께 비우는 것은 둘 다 env 쌍으로 되돌리는 명시적 예외다.
+LLM provider의 이름·종류·endpoint·인증 방식과 credential은 한 보안 단위다.
+등록 provider의 endpoint·종류·인증 방식을 바꾸면 기존 key의 마스크·빈 입력으로 옮길 수 없다.
+key가 필요한 새 연결에는 새 값을 입력하며 SigV4는 API key 없이 AWS credential chain을 사용한다.
+실행 모델은 Settings에서 선택한 등록 모델이어야 한다. 기본 모델 선택이 별도 기본 채널을 만들지는 않는다.
 
 MCP 클라이언트는 `@modelcontextprotocol/client` 위에서 돌고, 가드는 그 옆에 놓이는 대신 그 안으로
 **주입된다**. 트랜스포트에 `fetch` 로 주어지는 것이
@@ -543,11 +543,10 @@ firing이나 대화 ID 없는 요청은 대화 header를 보내지 않는다.
 
 ### 모델이 고른 URL
 
-위의 모든 것은 **운영자가 등록한** 주소에 관한 것이고, 거기서는 등록 시 검증이 첫 번째 통제이며
-디스패치 시 확인이 두 번째다. 그 사이의 창을 닫는 것이 아니라 좁힌다. `FetchUrl` 빌트인에는
-첫 번째 통제가 없다. 주소를 지목하는 것은 모델이고, 모델은 자기가 읽는 텍스트에 설득당한다.
-`src/infrastructure/net/httpResource.ts` 가 그런 주소를 요청하는 유일한 자리이며, 그 규칙들은
-심층 방어가 아니라 하중을 지고 있다:
+`FetchUrl`은 모델이 지목한 주소를 `src/infrastructure/net/httpResource.ts`로 요청한다.
+registry의 등록 시 검증을 거치지 않으므로 호출 자체의 URL·DNS·redirect·byte 제한이 경계다.
+같은 공개 fetch 경계는 Teams 첨부와 source 파일 주소에도 적용하지만 각 경로의 credential·
+내부 호스트 예외는 별도 정책을 따른다.
 
 - **MCP 의 내부 호스트 예외는 결코 참조하지 않는다.** `MCP_INTERNAL_HOST_SUFFIXES` 는 이 앱이 자기
   클러스터의 MCP 서비스에 닿을 수 있게 하려고 존재한다. 여기서 그것을 존중하면 프롬프트 인젝션
