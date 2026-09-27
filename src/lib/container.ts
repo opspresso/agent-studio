@@ -277,11 +277,7 @@ export const proxiedObjects = artifactStorage
  * How a stored object becomes an address a reader can follow — or `undefined`,
  * which is this deployment keeping nothing.
  *
- * Eight routes reached into `artifactStorage.objects.sign` for it, which is a
- * route deciding *which* signer addresses a file: the same composition choice
- * the repositories were taken out of the app layer for. Two of them did it
- * beside a guard on `artifactUseCases`, re-deriving from the store a fact the
- * use case they had just called was built from.
+ * Routes receive the bound signer rather than choosing an object-store adapter.
  */
 export const signArtifactUrl: SignObjectUrl | undefined = artifactStorage?.objects.sign;
 
@@ -395,10 +391,7 @@ const runTraceRepository = otelEndpoint
     })
   : traceRepository;
 
-// The narrow raw surface: the Slack event wiring site takes the two
-// repositories. Everything
-// else leaves this file already composed — a singleton nothing imports is a
-// door with nothing behind it, and five of them stood open here.
+// Raw Agent reads are available to wiring sites; routes otherwise use bound use cases.
 export { agentRepository };
 
 /**
@@ -522,9 +515,7 @@ export async function reindexCatalogNow(): Promise<
  * than holding one long lock.
  */
 export async function sweepExpiredRows(now: Date = new Date()): Promise<number> {
-  // Two tables expire rows: the item table by its unix-second `expiresAt`,
-  // and Better Auth's `session` by its own timestamp — which the library
-  // itself purges only when that session's cookie is presented again.
+  // Each table owns its expiry representation and per-sweep bound.
   const items = await deleteExpired(Math.floor(now.getTime() / 1000));
   const sessions = await deleteExpiredSessions(now);
   const runtime = await runtimeSessionRepository.sweepExpired(now);
@@ -834,11 +825,8 @@ export const usageUseCases = createUsageUseCases({
 });
 
 /**
- * Registry lookups an Agent's mcp/skill/subagent references are validated
- * against. Module-local: the configuration slice below is the only consumer, and an
- * exported bundle of repositories is the door the factory just closed —
- * `REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE` bans the two names, not a object
- * holding them.
+ * Registry lookups for validating configuration edits and cloned Agent bindings.
+ * Module-local so presentation modules cannot choose repository dependencies.
  */
 const configurationRefRepos = {
   skills: skillRepository,

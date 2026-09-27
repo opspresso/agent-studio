@@ -23,9 +23,8 @@ export const slackThreadRepository: SlackThreadRepository = {
   },
 
   async setMuted(agentName, channel, threadTs, muted) {
-    // A put rather than an update, like `markEngaged`: a mute on a thread the
-    // bot has not spoken in yet still has to be recorded, and there is nothing
-    // to merge with.
+    // Store the explicit mute even before the bot has engaged this thread.
+    // Concurrent engagement updates merge this value rather than clearing it.
     await putItem({
       ...keys.slackThread(agentName, channel, threadTs),
       entityType: "slackThread",

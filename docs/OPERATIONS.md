@@ -492,8 +492,8 @@ await 하지 않는 이유는 재시작 한 번이 이미지를 당겨 오는 �
       - `/api/triggers/scan` 을 최대 1분 간격으로. schedule 트리거, **그리고 행 보존의 sweep**.
         티커 없는 배포는 `expiresAt` 이 지난 행을 영원히 쌓는다
       - `CATALOG_ENABLED=true` 라면 `/api/catalog/reindex` 를 매시간. 레지스트리 쓰기는 결코
-        재색인하지 않으므로, 이 틱이 없으면 인덱스를 갱신하는 것은 완료된 plugins sync 뿐이고,
-        손으로 등록한 Skill 이나 서버는 영영 발견되지 않는다
+        재색인하지 않으므로 수동 등록 항목의 자동 반영에 이 tick이 필요하다.
+        명시적 reindex 요청·Embedding 모델 변경·완료된 Plugin sync도 인덱스를 갱신한다
       - `PLUGINS_REPO` 가 설정됐다면 `/api/plugins/sync/scan`. 할 일이 없는 틱은 head SHA
         하나만 읽으므로 1분 간격이어도 괜찮다
 - [ ] **백업.** 배포 저장소가 PostgreSQL과 object store backup·restore 절차를 소유해야 한다.

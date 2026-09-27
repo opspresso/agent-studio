@@ -322,9 +322,9 @@ export interface QueryInput {
    * matches" from "I stopped looking" — or answering short. Filtering here
    * makes the limit mean what it says.
    *
-   * Equality on a stored string only, which is what a facet filter is. The
-   * attribute name is bound as a parameter like the value, so no caller can
-   * put anything of its own into the statement.
+   * Compares PostgreSQL's `->>` text representation, including numbers and
+   * booleans. Missing/null attributes do not match. Attribute names and values
+   * are bound parameters.
    */
   filter?: Record<string, string>;
   /** Match a nested JSONB fragment before `limit` counts, such as `{ actor: { kind: "slack" } }`. */
