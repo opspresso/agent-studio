@@ -18,7 +18,6 @@ import { artifactRepository } from "@/infrastructure/db/repositories/artifactRep
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
 import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
-import { withTelegramDestinationIndex } from "@/infrastructure/db/telegramDestinationIndex";
 import { expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
 
 const NOW = "2026-01-01T00:00:00.000Z";
@@ -105,23 +104,19 @@ describe("telegramDestinationRepository", () => {
     );
   });
 
-  it("returns the actual newest page after legacy rows gain the recency index", async () => {
-    const rows = Array.from({ length: 101 }, (_, index) => {
+  it("orders by recency independently of chat IDs before applying the page limit", async () => {
+    seedAgent("recency-destinations");
+    for (let index = 0; index < 101; index++) {
       const chatId = index + 1;
-      return withTelegramDestinationIndex({
-        ...keys.telegramDestination("legacy-destinations", 42, chatId),
-        entityType: "telegramDestination",
-        agentName: "legacy-destinations",
-        botId: 42,
+      await telegramDestinationRepository.put("recency-destinations", 42, {
         chatId,
         chatType: "private",
         title: `Chat ${chatId}`,
         lastSeenAt: new Date(Date.UTC(2026, 0, 1, 0, 0, 101 - index)).toISOString(),
       });
-    });
-    store.seed(rows);
+    }
 
-    const destinations = await telegramDestinationRepository.list("legacy-destinations", 42, 100);
+    const destinations = await telegramDestinationRepository.list("recency-destinations", 42, 100);
 
     expect(destinations).toHaveLength(100);
     expect(destinations[0]?.chatId).toBe(1);
