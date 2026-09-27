@@ -1,9 +1,9 @@
 import { assertLocalDatabase } from "./local-database";
 
 /**
- * End-to-end integration check against a local PostgreSQL and a mock LLM
- * server. Exercises every repository round-trip plus the execution engine
- * (single-shot and agent loop with the builtin Skill tool).
+ * Integration checks against local PostgreSQL and mock provider transports.
+ * Covers schema/auth, repository transactions and SDK Agent execution,
+ * routing, billing, persistent Sessions and approval resume.
  *
  * Runs against the *test* database (`agent_studio_test`), never the dev one
  * (`agent_studio`): this check writes fixtures and cascade-deletes them.
@@ -27,8 +27,6 @@ try {
 // Overridable so the check can run beside a `scripts/mock-llm.ts` already
 // holding the default port; CI leaves it unset.
 const MOCK_PORT = Number(process.env.INTEGRATION_MOCK_PORT ?? 8002);
-process.env.LLM_BASE_URL = `http://127.0.0.1:${MOCK_PORT}/v1`;
-process.env.LLM_API_KEY = "test";
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 
 let restoreModelSettings: (() => Promise<unknown>) | undefined;
@@ -882,12 +880,8 @@ async function main() {
     );
     pass("monthly threshold claim: conditional write on its own row");
 
-    // ---------- webhook exactly-once ----------
-    // The only thing standing between a redelivered webhook and a second run.
-    // Unit tests use a `Set`-backed fake, which cannot prove the PostgreSQL
-    // conditional write is atomic. A typo here fails *open* — the
-    // claim always wins, the trigger runs twice, and 24 passing tests say
-    // nothing about it.
+    // ---------- webhook deduplication while the claim is retained ----------
+    // Exercise the real PostgreSQL conditional write across repeated keys.
     const hookTrigger = `it-once-${suffix}`;
     const deliveryId = `delivery-${suffix}`;
     assert.equal(
@@ -912,7 +906,7 @@ async function main() {
       true,
       "the claim is scoped to its own trigger",
     );
-    pass("webhook exactly-once: conditional claim, redelivery refused, scoped per trigger");
+    pass("webhook deduplication: conditional claim, redelivery refused, scoped per trigger");
 
     // ---------- inbound event claim (lease, settle, reclaim) ----------
     // The one repository every chat platform's webhook dedups through, and the
@@ -1007,9 +1001,7 @@ async function main() {
     pass("conversation transcript: bounded newest-first read, returned oldest first");
 
     // ---------- trigger history (the repair sweep's bounded window) ----------
-    // The bound is a sort-key range, not a filter, and a mocked doc client
-    // cannot tell a working KeyConditionExpression from a broken one — which is
-    // the whole reason repository queries are checked here.
+    // Check the SQL sort-key range and pre-limit status filter against real rows.
     const triggerId = `it-hook-${suffix}`;
     const runAt = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
     const oldRun = { agentName, triggerId, runId: "old", status: "running" as const, startedAt: runAt(3_600_000) };
@@ -1064,7 +1056,7 @@ async function main() {
         url: "https://github.com/example/agent/pull/42#pullrequestreview-1" };
       await triggerRepository.finishRun({ ...recentRun, status: "succeeded", endedAt: now, review });
       assert.deepEqual((await triggerRepository.listRuns(agentName, triggerId, 1))[0]?.review, review);
-      pass("PR review trigger authorization and publication receipt persist through PostgreSQL");
+      pass("PR review scope and publication receipt persist through PostgreSQL");
     }
 
     // ---------- queued schedule ownership and atomic dispatch ----------
