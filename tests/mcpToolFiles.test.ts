@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatToolResult } from "@/infrastructure/mcp/toolManager";
+import { MAX_IMAGE_BYTES } from "@/domain/llm/imageLimits";
 
 /**
  * Turning a server's content blocks into one tool result, at the unit.
@@ -53,7 +54,7 @@ describe("files in a tool result", () => {
     expect(result.files?.[0]?.name).toBe("report.docx");
   });
 
-  it("omits a blob too large to carry, in the shape it always did", () => {
+  it("omits a blob above the tool-file byte cap", () => {
     const blob = Buffer.alloc(10_500_001, 0xff).toString("base64");
     const result = formatToolResult(resource({ uri: "file:///big.bin", mimeType: DOCX, blob }));
     expect(result.files).toBeUndefined();
@@ -69,9 +70,7 @@ describe("files in a tool result", () => {
   });
 
   /**
-   * Each file block writes "delivered to the user" into its own text. Cutting
-   * the list afterwards left those notes standing for files nobody received —
-   * so the model told the reader about six documents and four existed.
+   * Delivery notes describe only retained files; excess files have omission notes.
    */
   it("says which files it dropped rather than leaving their delivery notes standing", () => {
     const many = Array.from({ length: 6 }, (_, i) => ({
@@ -104,10 +103,7 @@ describe("files in a tool result", () => {
   });
 
   /**
-   * `decodeURIComponent` throws on a lone `%`, and this runs while formatting a
-   * call that *succeeded* — inside the catch that turns anything thrown into
-   * `Error: tool call failed`. The server rendered the document; the client
-   * reported a failure and dropped it.
+   * A malformed URI escape must not turn successfully returned bytes into a tool error.
    */
   it("survives a uri the decoder refuses", () => {
     const blob = blobOf([0x00, 0xff]);
@@ -161,15 +157,10 @@ describe("files in a tool result", () => {
   });
 
   /**
-   * The count budget downstream bounds how many images a turn carries and has
-   * never had anything to say about how large one is. Only the upload path
-   * checked the byte cap — which is a bound providers impose, so where the
-   * picture came from cannot change it. The cost of skipping it was the whole
-   * turn: the image rides on the next user message, and a provider refusing it
-   * fails the request rather than the picture.
+   * MCP image bytes use the shared per-image cap before entering model context.
    */
-  it("refuses an image no provider would accept, and says so", () => {
-    const blob = Buffer.alloc(5 * 1024 * 1024 + 1, 0x41).toString("base64");
+  it("refuses an image above the shared byte cap, and says so", () => {
+    const blob = Buffer.alloc(MAX_IMAGE_BYTES + 1, 0x41).toString("base64");
     const result = formatToolResult(
       resource({ uri: "file:///huge.png", mimeType: "image/png", blob }),
     );
@@ -180,7 +171,7 @@ describe("files in a tool result", () => {
   });
 
   it("keeps an image at the limit", () => {
-    const blob = Buffer.alloc(5 * 1024 * 1024, 0x41).toString("base64");
+    const blob = Buffer.alloc(MAX_IMAGE_BYTES, 0x41).toString("base64");
     const result = formatToolResult(
       resource({ uri: "file:///big.png", mimeType: "image/png", blob }),
     );
@@ -199,10 +190,7 @@ describe("files in a tool result", () => {
   });
 
   /**
-   * `data:image/png; charset=binary;base64,…` is not a valid data URL, and the
-   * turn the picture rides on is what fails. The same string was also the
-   * artifact's media type, where nothing matched it and the object was stored
-   * as `.bin`.
+   * Canonical base MIME types drive image validation, data URLs and artifact extensions.
    */
   it("takes a media type's parameters off before anything is built from it", () => {
     const blob = blobOf([0x89, 0x50, 0x4e, 0x47]);

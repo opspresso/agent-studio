@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTelegramReplyChannel, MAX_MESSAGE_CHARS } from "@/application/telegram/replyChannel";
 import type { TelegramClientPort } from "@/domain/telegram/client";
 
 const NOW = 1_750_000_000_000;
+
+beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
 
 function makeTelegramFake(options: { refuseHtml?: boolean; failEdits?: boolean } = {}) {
   const sent: Array<{ text: string; parseMode?: string; replyTo?: number; threadId?: number; id: number }> = [];

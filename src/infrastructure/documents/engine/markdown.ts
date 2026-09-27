@@ -1,28 +1,8 @@
 /**
- * Markdown in, one document model, four report and presentation formats out.
- *
- * One parser and three renderers, rather than three writers each with its own
- * idea of what `**bold**` is. The shape in between is deliberately small — runs
- * of styled text inside a handful of block kinds — because it is the greatest
- * common denominator of DOCX, PDF and HWPX, and anything richer would be a
- * feature one renderer could honour and the others would silently drop.
- *
- * **Unsupported syntax is not an error.** Footnotes, raw HTML, nested
- * blockquotes: these come through as the literal characters the caller wrote.
- * The alternative is refusing to produce a document over a line of it, which
- * for a model writing a report is a much worse outcome than a stray `<div>` in
- * the output — and it is visible in the result rather than hidden in a diff.
- *
- * An image is the one exception, because dropping it loses two things a reader
- * wants. `![alt](url)` becomes a **link** carrying the alt text: nothing here
- * fetches or embeds pictures, so the honest rendering is a pointer to where the
- * picture is, labelled with what it was said to be.
- *
- * Paragraph continuation follows Markdown rather than the source: two lines
- * with no blank between them are one paragraph. That is what the format says,
- * and a renderer cannot recover a distinction the parser threw away — so the
- * tool description says it, and a caller who wants two lines leaves a blank
- * line between them.
+ * Shared Markdown AST for DOCX, PDF, HWPX and PPTX. Unsupported syntax stays
+ * literal. Paragraph continuation joins adjacent source lines. Image syntax
+ * becomes an alt-text link; renderers may embed a standalone asset:// reference
+ * using supplied image bytes, while external images remain links.
  */
 
 export interface Run {
@@ -51,17 +31,7 @@ export interface ListItem {
  */
 export type Align = "left" | "center" | "right";
 
-/**
- * The eight kinds, named one at a time.
- *
- * `Block` is unchanged — the union below is the same shape it always was — but
- * a name lets the *reading* side import the five kinds where a document and a
- * renderer agree (`src/read/blocks.ts`) without importing the two where they do
- * not. A read table carries cell spans and a read document carries pictures,
- * and neither can join this union: `parseMarkdown` cannot produce a span, GFM
- * has no syntax for one, and the four renderers' exhaustive `kind` switches are
- * what make "handled everywhere" a compile error rather than a promise.
- */
+/** Shared block vocabulary; read tables, pictures and boundaries use a separate union. */
 export type Heading = { kind: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; runs: Run[] };
 export type Paragraph = { kind: "paragraph"; runs: Run[] };
 export type List = { kind: "list"; ordered: boolean; items: ListItem[] };
@@ -293,9 +263,7 @@ export function parseInline(source: string, style: Style = {}, depth = 0): Run[]
     }
 
     if (here === "!" && rest[1] === "[") {
-      // Nothing here fetches or embeds pictures, so an image becomes a link to
-      // where the picture is. Its label is not parsed as inline markup: alt
-      // text is a description, and `*` in it is an asterisk.
+      // Retain the alt text and target for the renderer; alt text remains literal.
       const image = readLink(index + 2);
       if (image) {
         flush();

@@ -1,40 +1,9 @@
 /**
- * A stored artifact as a page a reader can open.
- *
- * `text/html` never comes through here — `interactiveHtml.ts` places it inside
- * a sandboxed iframe. Everything else is a file a browser would save, and this is
- * what makes View mean the same thing for all of them: the reader presses it
- * and gets something to look at, rather than learning that one kind of report
- * opens and the rest land in Downloads.
- *
- * **Each type is shown as what it is, not as text that happens to be in it.**
- * Markdown is rendered, CSV becomes a table, JSON is re-indented, SVG is drawn,
- * plain text is plain text. A single `<pre>` for all five would be less work
- * and would answer a different question than the reader asked.
- *
- * Markdown uses **the same renderer the chat thread uses** (`react-markdown` +
- * `remark-gfm`), deliberately: a run's report should not read differently
- * depending on which of the two surfaces it is being read on, and a second
- * Markdown dialect in this repository is a second set of edge cases in tables,
- * task lists and fenced code. It also decides the safety argument. It renders
- * raw HTML in the source as *text* rather than markup and strips dangerous URL
- * schemes, so the page carries no script by construction.
- *
- * Nothing built here has script, so these static views receive a sandbox
- * with no `allow-*` grant. HTML has a separate interactive wrapper. SVG
- * is drawn through `<img>` rather than inlined: an SVG loaded as an image cannot
- * run script or fetch anything, by specification, before any header has a say.
- *
- * **`react-dom/server.edge`, not `react-dom/server`, and not by preference.**
- * The App Router build refuses the latter outright ("You're importing a
- * component that imports react-dom/server") because in a page it is nearly
- * always a mistake. Here it is not a page: nothing hydrates, the output is a
- * string this route writes into a response, and the alternative is a browser
- * saving the file. `.edge` is the same renderer through the entry point that
- * guard does not name. If a future Next widens it, the replacement is the
- * pipeline `react-markdown` runs internally — `unified` + `remark-parse` +
- * `remark-gfm` + `remark-rehype` + `rehype-stringify` — which keeps the dialect
- * and costs four dependencies.
+ * Script-free Markdown, CSV, JSON, SVG and text artifact views. HTML uses
+ * interactiveHtml.ts. Markdown shares the chat renderer; raw HTML stays text.
+ * SVG uses an image data URL so it cannot execute script or fetch resources.
+ * Use react-dom/server.edge: Next.js rejects the server entry in App Router
+ * modules even when a route only uses it to produce static response markup.
  */
 
 import { createElement } from "react";
@@ -46,40 +15,13 @@ import { cutUtf8Bytes, decodeUtf8Text } from "@/shared/utf8Text";
 import { parseCsv } from "./csv";
 import { escapeHtml } from "./htmlSafety";
 
-/**
- * How many rows of a table are drawn.
- *
- * A view, not an export — the file itself is one click away and holds
- * everything. The cap exists because a 2 MB CSV is tens of thousands of rows
- * and a browser asked to lay them all out stops responding, which reads as the
- * page being broken rather than as the file being large. What is left out is
- * said on the page; a table silently missing its tail is the failure this
- * avoids.
- */
+/** Bound browser table layout; omitted rows are reported with a download instruction. */
 const MAX_CSV_ROWS = 2000;
 
-/**
- * How much Markdown is rendered.
- *
- * The renderer is **synchronous and superlinear**: measured on this repo's own
- * `react-markdown`, 256 KB takes ~0.4 s and 2 MB takes ~7 s with about a
- * gigabyte of heap. It runs in the route handler before the Response exists, so
- * that time is the whole Node instance stopped — every in-flight SSE run
- * included, which is the silent gap `FIRST_CHUNK_GRACE_MS` exists elsewhere to
- * prevent. `MAX_INLINE_VIEW_BYTES` is a memory cap and far too generous to be
- * this one; a table has its row cap and JSON its shape, and Markdown had
- * nothing. What is cut is said on the page.
- */
+/** Bound synchronous Markdown rendering on the shared server event loop; report truncation. */
 const MAX_MARKDOWN_BYTES = 256 * 1024;
 
-/**
- * Enough of a stylesheet to read a report by, and no more.
- *
- * Self-contained because the page runs on an opaque origin under
- * `default-src 'none'`: there is no stylesheet it could fetch and no font it
- * could load. Both schemes are written out rather than one being derived,
- * since the reader's browser is the only thing that says which applies.
- */
+/** Inline styles work under the view policy without network assets. */
 const STYLE = `
 :root {
   color-scheme: light dark;
@@ -187,13 +129,7 @@ function cell(tag: "td" | "th", value: string): string {
   return `<${tag}>${escapeHtml(value)}</${tag}>`;
 }
 
-/**
- * A CSV as the table it describes.
- *
- * The first row is the header, which is the default the `text/csv` media type
- * registers — and the shape of every file a run writes here, since a column of
- * numbers with nothing naming it is not a report.
- */
+/** Treat the first CSV row as headers and report rows beyond the view cap. */
 function csvBody(text: string): { body: string; note?: string } {
   const rows = parseCsv(text);
   if (rows.length === 0) {
@@ -218,14 +154,7 @@ function csvBody(text: string): { body: string; note?: string } {
     : { body: table };
 }
 
-/**
- * JSON re-indented, or the text as it stands when it is not JSON.
- *
- * A run writes this by hand into a string argument, so a stored `.json` that
- * does not parse is a real outcome rather than a corruption — and it is still
- * the thing the reader was handed, so it is shown rather than refused. What is
- * *not* done is showing it as if it had parsed.
- */
+/** Re-indent JSON; invalid JSON stays readable with a warning. */
 function jsonBody(text: string): { body: string; note?: string } {
   try {
     const reindented = JSON.stringify(JSON.parse(text), null, 2);
@@ -238,15 +167,7 @@ function jsonBody(text: string): { body: string; note?: string } {
   }
 }
 
-/**
- * The drawing, through `<img>` and a `data:` URL.
- *
- * Not inlined into the page, and not because of the header: an SVG loaded as an
- * image runs no script and fetches nothing, by specification, so this is the one
- * way to show a picture a model wrote without the question arising. The bytes
- * are re-encoded rather than linked because the object's own address is exactly
- * what this route exists not to hand out.
- */
+/** Re-encode SVG as an image data URL instead of exposing an object address. */
 function svgBody(text: string): string {
   const data = Buffer.from(text, "utf-8").toString("base64");
   return `<div class="drawing"><img src="data:image/svg+xml;base64,${data}" alt=""></div>`;
@@ -259,23 +180,12 @@ const MEASURE: Partial<Record<InlineView, string>> = {
   json: "code",
 };
 
-/**
- * The page, or `null` when the stored bytes are not what the type says.
- *
- * `Buffer.toString("utf-8")` would answer for anything — a PDF mislabelled
- * `text/markdown` becomes a screen of replacement characters and renders as if
- * it worked — so the decode decides, and a caller that gets `null` says the row
- * could not be read rather than showing the wreckage — SVG included, since an
- * SVG that is not text is not an SVG.
- */
+/** Render validated UTF-8 text, or return null for unreadable bytes. */
 export function viewPage(
   view: Exclude<InlineView, "html">,
   bytes: Uint8Array,
   title: string | undefined,
 ): string | null {
-  // Every kind, SVG included: an SVG is text by definition, so bytes that are
-  // not text are not one — and drawing them anyway produced an inert data URL
-  // inside an `<img>`, which is a blank page with nothing saying why.
   const text = decodeUtf8Text(bytes);
   if (text === null) {
     return null;

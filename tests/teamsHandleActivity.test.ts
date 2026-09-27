@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { classifyTeamsActivity } from "@/application/teams/engagement";
 import { handleTeamsActivity } from "@/application/teams/handleActivity";
 import type { TeamsActivity, TeamsEventDeps } from "@/application/teams/types";
@@ -11,6 +11,8 @@ import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { AgentRepository } from "@/domain/agent/repository";
 
 const NOW = 1_750_000_000_000;
+
+beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
 
 function agentFixture(): Agent {
   return {
@@ -117,6 +119,7 @@ function dispositionOf(a: TeamsActivity) {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 

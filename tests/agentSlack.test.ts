@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildAgentSlackManifest,
   createAgentSlackUseCases,
@@ -7,7 +7,7 @@ import {
 } from "@/application/slack/agentSlack";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 
-// The cipher is injected now; every call below is unchanged.
+// Exercise the production cipher through the injected boundary.
 type Upd = Parameters<typeof updateAgentSlackImpl>;
 const resolveAgentSlackRuntime = (
   agent: Parameters<typeof resolveAgentSlackRuntimeImpl>[1],
@@ -23,8 +23,26 @@ import type { AgentRepository } from "@/domain/agent/repository";
 const OWNER = "t@example.com";
 const OTHER = "intruder@example.com";
 
-beforeAll(() => {
-  process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 5).toString("base64");
+// Distinct fixture bytes exercise rotation without sampling real randomness.
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+}));
+
+beforeEach(() => {
+  entropy.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-02T00:00:00.000Z");
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {

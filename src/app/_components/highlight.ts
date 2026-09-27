@@ -1,8 +1,6 @@
 /**
- * Minimal, dependency-free syntax tokenizer for the API Reference code samples.
- * Only the four languages we emit (bash/python/javascript/json) are supported,
- * and the samples are fixed-shape, so a small regex tokenizer is enough — it is
- * not a general-purpose highlighter. Returns a flat token list the UI colors.
+ * Dependency-free display tokenizer for API samples and JSON tool traffic.
+ * Supports bash/python/javascript/json and returns flat tokens the UI colors.
  */
 
 export type TokenType =
@@ -35,10 +33,8 @@ interface Rule {
  * `\w*(?=\()` reads to the end of the input at every letter it starts on, then
  * gives the characters back one at a time re-asking for the bracket — so a run
  * of word characters with no bracket in it costs one pass per character.
- * Measured: 200,000 of them took 36 seconds, on the browser's one thread. The
- * highlighter only ever sees code this app wrote today, which is why nothing
- * has hit it; a bound is what keeps that from being load-bearing. No real
- * identifier comes near it.
+ * Bound the scan so long provider-supplied identifiers cannot make each
+ * attempted function match traverse the rest of the text.
  */
 const MAX_IDENTIFIER_CHARS = 127;
 

@@ -97,14 +97,16 @@ export function dateStylesOf(xml: string): Set<number> {
  * where the same serial means a date four years and a day later.
  */
 export function serialToIso(serial: number, epoch1904: boolean): string | undefined {
-  if (!Number.isFinite(serial) || serial < 0 || serial > 2_958_465) {
+  if (!Number.isFinite(serial) || serial < 0 || serial >= 2_958_466) {
     return undefined;
   }
+  // The 1900 system's entire serial-60 day has no Gregorian date; keep the raw value.
+  if (!epoch1904 && serial >= 60 && serial < 61) return undefined;
   const days = epoch1904 ? serial : serial < 60 ? serial : serial - 1;
   const base = epoch1904 ? Date.UTC(1904, 0, 1) : Date.UTC(1899, 11, 31);
   const at = base + Math.round(days * MS_PER_DAY);
   const date = new Date(at);
-  if (Number.isNaN(date.getTime())) {
+  if (Number.isNaN(date.getTime()) || date.getUTCFullYear() > 9999) {
     return undefined;
   }
   const iso = date.toISOString();

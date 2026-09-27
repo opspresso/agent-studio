@@ -15,8 +15,26 @@ import {
 import { ValidationError } from "@/application/errors";
 import type { AuditRepository } from "@/domain/audit/repository";
 import type { AuditEvent } from "@/domain/audit/types";
-import { expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
+import { RETENTION } from "@/infrastructure/db/ttl";
+import { auditRepository } from "@/infrastructure/db/repositories/auditRepository";
+import type { FakeStore } from "./fakeStore";
 import { keys } from "@/infrastructure/db/keys";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
+const store = await import("@/infrastructure/db/store") as unknown as FakeStore;
+
+beforeEach(() => {
+  ids.sequence = 0;
+  store.rows.clear();
+  setAuditSink(undefined);
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-08-03T12:00:00.000Z");
+});
 
 function memorySink(): AuditRepository & { rows: AuditEvent[] } {
   const rows: AuditEvent[] = [];
@@ -44,6 +62,7 @@ function memorySink(): AuditRepository & { rows: AuditEvent[] } {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   setAuditSink(undefined);
   vi.restoreAllMocks();
 });
@@ -76,7 +95,7 @@ describe("recordAudit", () => {
       detail: "API token",
       createdAt: "2026-08-03T10:00:00.000Z",
     });
-    expect(sink.rows[0]?.eventId).toBeTruthy();
+    expect(sink.rows[0]?.eventId).toBe("00000000-0000-4000-8000-000000000001");
   });
 
   it("logs and continues when the store refuses the write", async () => {
@@ -84,6 +103,7 @@ describe("recordAudit", () => {
     // could not be appended would turn a storage blip into an outage of every
     // sensitive operation at once — and the log line beside each call site is
     // what remains in exactly this case.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     setAuditSink({
       append: async () => {
         throw new Error("table unavailable");
@@ -93,6 +113,8 @@ describe("recordAudit", () => {
     await expect(
       recordAudit({ actorEmail: "a@example.com", action: "agent.delete", target: "agent:p" }),
     ).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error.mock.calls[0]?.[0]).toContain("could not record agent.delete on agent:p");
   });
 });
 
@@ -136,10 +158,19 @@ describe("auditTarget", () => {
 });
 
 describe("the row a repository writes", () => {
-  it("carries an expiresAt derived from the retention variable", () => {
-    const createdAt = "2026-08-03T10:00:00.000Z";
-    const expected = expiresAtSeconds(createdAt, RETENTION.auditDays);
-    expect(expected).toBe(Math.floor(Date.parse(createdAt) / 1000) + RETENTION.auditDays * 86_400);
+  it("persists the event with its UTC day key and configured retention", async () => {
+    const event: AuditEvent = {
+      eventId: "event-1", actorEmail: "admin@example.test", action: "settings.update",
+      target: "settings:app", createdAt: "2026-08-03T10:00:00.000Z",
+    };
+    await auditRepository.append(event);
+    expect(await store.getItem({ PK: "AUDIT#2026-08-03", SK: `${event.createdAt}#event-1` }))
+      .toEqual({
+        PK: "AUDIT#2026-08-03", SK: `${event.createdAt}#event-1`, ...event,
+        entityType: "AuditEvent",
+        expiresAt: Math.floor(Date.parse(event.createdAt) / 1000) + RETENTION.auditDays * 86_400,
+      });
+    expect(await auditRepository.listByDay("2026-08-03", 1)).toEqual([event]);
   });
 
   it("is keyed by the UTC day it happened on, newest last within the day", () => {

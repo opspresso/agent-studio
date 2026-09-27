@@ -1,16 +1,9 @@
 "use client";
 
 /**
- * How a model reads in a picker.
- *
- * The same model is now reachable by several routes — its vendor's own API,
- * Bedrock, a router — so three options can carry the identical display name and
- * differ only in who serves them and what they charge. A list of three "Opus
- * 4.8"s is a coin flip; these group the options by provider and put the price
- * on each one, which is the pair of facts the choice actually turns on.
- *
- * Shared rather than written per picker: the Agent settings editor alone has three
- * (model, fallback, image model) and the /models console prices the same way.
+ * Shared model picker presentation: provider groups, registered ids and prices
+ * distinguish connections that use the same display name. Favorites form their
+ * own group while ordinary entries retain registry order within each provider.
  */
 
 import { CheckIcon, Group, Select, Text } from "@mantine/core";
@@ -21,7 +14,7 @@ import { useT } from "@/app/_i18n/provider";
 
 export type ModelOption = ModelConfig & { favorite?: boolean };
 
-/** Unit rates retain significant decimals (for example Jev's $0.042 per 1M). */
+/** Unit rates retain significant decimals, to a maximum of ten fractional digits. */
 export function formatModelPrice(value: number): string {
   const precision = value.toFixed(10).replace(/0+$/, "").split(".")[1]?.length ?? 0;
   return formatUsd(value, Math.max(value !== 0 && Math.abs(value) < 0.01 ? 4 : 2, precision));
@@ -30,11 +23,8 @@ export function formatModelPrice(value: number): string {
 /**
  * What a model costs, in the terms it is actually billed in.
  *
- * An image model's output is image tokens (`imageOutputPer1M`) or a flat price
- * per picture — never `outputPer1M`, which is the text rate and is 0 for a model
- * that emits no text. Reading only the text pair printed `$5.00 in · $0.00 out`
- * for GPT Image 2, which bills $30.00 per 1M image tokens: the one field the
- * money is in was the one field the label skipped.
+ * Display image output, input-image fees, audio minutes and rerank requests
+ * using their pricing fields. Missing pricing is distinct from explicit zeros.
  *
  * `perImage` leads where it exists, because comparing pictures is what an image
  * model is chosen on — marked `≈` when the model is billed by tokens and that
@@ -101,11 +91,8 @@ export function modelSummary(model: ModelConfig): string {
 /**
  * Makes a searchable Select filter from scratch when focused.
  *
- * The input holds the selected option's label, and typing into it *appends* —
- * so on a picker whose labels carry the id, searching for "solar" produced the
- * query `GPT-5.4 (openai/gpt-5.4)solar` and an empty list. Selecting the text
- * on focus means the first keystroke replaces it, which is what typing into a
- * picker of seventy models is for.
+ * Select the current label on focus so typing replaces it instead of appending
+ * to the selected model's name and id.
  */
 export const selectOnFocus = {
   onFocus: (event: React.FocusEvent<HTMLInputElement>) => event.currentTarget.select(),
@@ -148,11 +135,8 @@ export function modelSelectData(
  * Renders one option: the model over its id, with the price on the right and a
  * tick on the one that is currently selected.
  *
- * The tick has to be drawn here. Mantine renders its own check icon only for
- * the *default* option renderer — supplying `renderOption` replaces that whole
- * row, and the first version of this dropped the mark silently: a list of
- * sixty models with no indication of which one the Agent already uses.
- * `checked` arrives beside the option for exactly this.
+ * Custom rendering replaces the default check icon, so draw the tick from the
+ * `checked` state supplied beside the option.
  *
  * The renderer is also handed only `{ value, label }`, so the model is looked
  * up by id — an option that is not a model (the leading entries above) falls

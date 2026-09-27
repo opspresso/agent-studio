@@ -52,7 +52,7 @@ Skill·MCP·하위 Agent binding과 실행 정책을 저장한다. 이미지 생
 | Skill | 모델이 필요할 때 읽는 Markdown 지침과 참고 파일 |
 | Tool | 입력 schema를 받아 실제 기능을 수행하는 함수 |
 | MCP | 외부 Tool·리소스와 자격 증명을 연결하는 프로토콜 |
-| 하위 Agent | 현재 설치에 등록된 다른 Agent(Agent)의 설정을 사용하는 실행 대상 |
+| 하위 Agent | 같은 설치에 등록된 다른 Agent를 현재 설정으로 실행하는 대상 |
 | Memory | 명시적으로 연결한 MCP 서버가 보관하는 장기 기억. Agent Memory가 한 예 |
 | SDK Session | 특정 Chat에서 재생할 정확한 모델·도구 이력 |
 | Workspace checkpoint | 파일·Git·native CLI Session의 복구 상태 |
@@ -72,7 +72,7 @@ Agent별 OAuth 연결과 선택적인 Docker 관리형 서버도 지원한다. �
 
 ## 핵심 개체 관계
 
-- Agent Studio의 Agent는 저장소와 `/api/agents`에서 Agent라고 부른다. 한 Agent는 공개 범위·소유권·연동·비용 정책과 하나의 현재 `AgentConfiguration`을 저장한다.
+- Agent Studio의 Agent는 공개 범위·소유권·연동·비용 정책과 하나의 현재 `AgentConfiguration`을 저장한다. 저장소와 `/api/agents`는 같은 개체를 가리킨다.
 - `AgentConfiguration`은 등록된 텍스트 모델, 선택적 fallback·이미지 모델, Skill, MCP 서버와 같은 설치의 하위 Agent를 참조한다. 등록 모델은 프로바이더 연결의 전송 ID(`wireId`)로 호출된다.
 - Agent의 실행은 현재 설정을 읽고 공통 실행 파사드와 OpenAI Agents SDK를 거친다. Chat·API·메신저·Webhook·Schedule은 진입 계약이 달라도 이 Agent 실행 경로를 공유한다.
 - Chat은 소유자의 비공개 대화다. 일반 Chat은 실행할 Agent를 가리키며, 화면 메시지·SDK Session·재연결 로그는 서로 다른 상태다.

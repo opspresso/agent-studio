@@ -11,21 +11,12 @@ build/
 
 # env
 .env
-.env.local
-.env.local.*
-.env.*.local
+.env.*
+!.env.example
+!.env.*.example
 
-# What deploy.sh mints or the operator writes beside a deployment's `.env`:
-# the host's database and object-store credentials, and the secrets file.
-.env.host
-.env.secrets
-
-# deploy — the filled-in copies of deploy/*/*.example, and the kubeconfig the
-# eks profile mounts. `.env` above already covers each deployment's `.env`.
-deploy/idc/.env.aws
-deploy/idc/.env.mcp
+# Local kubeconfig; credentials are covered by the env rules above.
 deploy/idc/kubeconfig
-deploy/local/.env.aws
 
 # misc
 .DS_Store

@@ -1,47 +1,33 @@
 /**
  * The two numeric env parsers, and the settings that go through them.
  *
- * These values must share parsers: otherwise MCP discovery TTLs freeze at
- * import, the retention windows fell back in silence, and the trace rate had a
- * second clamp in the composition root. What a wrong value does is now one
- * answer per shape — fall back for a limit, clamp for a rate — and it is said
- * out loud either way.
+ * Shared parsers apply limit fallbacks and rate clamps with deduplicated
+ * warnings. Consumers read current settings instead of freezing them at import.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { config, fractionEnv, positiveIntEnv, resetConfigWarnings } from "@/lib/config";
 import { RETENTION } from "@/infrastructure/db/ttl";
-import { getCachedTools, setCachedTools } from "@/infrastructure/mcp/discoveryCache";
-
-const TOUCHED = [
-  "PROBE_NUMBER",
-  "USAGE_RETENTION_DAYS",
-  "MCP_DISCOVERY_CACHE_TTL_MS",
-  "MCP_MAX_SERVER_TTL_MS",
-  "MAX_CONCURRENT_RUNS_PER_ACTOR",
-  "EMBEDDING_DIM",
-  "RERANKER_MIN_SCORE",
-] as const;
-const ORIGINAL = Object.fromEntries(TOUCHED.map((key) => [key, process.env[key]]));
+import { clearMcpDiscoveryCache, getCachedTools, setCachedTools } from "@/infrastructure/mcp/discoveryCache";
 
 function set(name: string, value: string | undefined): void {
-  if (value === undefined) {
-    delete process.env[name];
-  } else {
-    process.env[name] = value;
-  }
+  vi.stubEnv(name, value);
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+  clearMcpDiscoveryCache();
   // The warning is deduped per setting+value, so a test asserting on it has to
   // start from a process that has not already said this one.
   resetConfigWarnings();
 });
 
 afterEach(() => {
-  for (const key of TOUCHED) {
-    set(key, ORIGINAL[key]);
-  }
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+  clearMcpDiscoveryCache();
+  resetConfigWarnings();
   vi.restoreAllMocks();
 });
 
@@ -130,12 +116,7 @@ describe("settings with shared numeric parsing", () => {
   });
 
   it("warns once on a retention window it had to ignore, not once per row", () => {
-    // Two things at once. It would fall back in silence, so a typo deleted
-    // rows a year early with nothing in the log to say the configured value had
-    // not been used. And this is a getter read on *every* row write — once per
-    // model call for usage — so warning from inside it without a memo turns one
-    // bad variable into a line per write, burying the message in the
-    // deployments that most need to read it.
+    // Row writes read this getter repeatedly; the invalid value warns only once.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     set("USAGE_RETENTION_DAYS", "not-a-number");
     expect(RETENTION.usageDays).toBe(400);

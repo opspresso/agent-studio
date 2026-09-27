@@ -1,11 +1,4 @@
-/**
- * A stored object's size, for a person.
- *
- * Shared the moment it had a second reader rather than after: the gallery asks
- * "why is my bucket big" and a chat asks "is this worth downloading", and the
- * two answers have to be the same number in the same units — a transcript
- * saying `1.5 MB` beside a gallery saying `1,605,516 bytes` reads as two files.
- */
+/** Shared object-size display for Chat and the gallery, scaled in powers of 1024. */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) {
     return `${bytes} B`;

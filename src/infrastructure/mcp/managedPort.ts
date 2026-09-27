@@ -1,16 +1,10 @@
 /**
- * The port a managed MCP container binds, and the image name it may run.
- *
- * Its own module rather than a detail of the provisioner, because the port is
- * derived twice: once when a container is started, and again when it is
- * reached by name at dispatch or repaired after a restart. If the two
- * derivations ever differed, the container would start, report healthy, and
- * be unreachable — a failure with no error anywhere. When there were two
- * provisioners they carried byte-identical copies of this, which is exactly
- * how two values that must agree begin to disagree.
+ * Derive the same host port for provisioning, inspection and restart.
+ * Collisions are possible within the 400-port range and are reported by the
+ * provisioner; this function does not reserve a port.
  */
 
-/** Ports handed to managed containers. Above the ephemeral range this app uses. */
+/** Start of the managed host-port range. */
 const PORT_BASE = 3100;
 
 /** Deterministic per name, so a restart re-derives the port it already bound. */

@@ -4,13 +4,14 @@ import { mcpUseCases } from "@/lib/container";
 import { withAdminAuth, withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
+import { headerRecordSchema } from "@/app/api/_lib/headerRecord";
 
 const createSchema = z.object({
   name: z.string().refine(isSlug, `name ${SLUG_RULE}`),
   url: z.url(),
   description: z.string().optional(),
   content: z.string().optional(),
-  headers: z.record(z.string(), z.string()).default({}),
+  headers: headerRecordSchema(z.string()).default({}),
 });
 
 export const GET = withMemberAuth(async () => {

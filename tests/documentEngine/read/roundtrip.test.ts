@@ -1,15 +1,7 @@
 /**
- * What this server writes, read back by what it reads.
- *
- * The reader tests assert on markup they build by hand, which proves an
- * element is handled and not that a document survives. This is the other half:
- * one source through three renderers and back, asserting that the *shape* is
- * still there — a heading's level, a table's columns and their alignment, a
- * list's order and depth, a picture's place.
- *
- * It is also the only evidence that survives this change. Forty reader
- * assertions moved when the output stopped being flat lines, so "the tests
- * still pass" proves nothing about that work; a round trip does.
+ * Render DOCX, HWPX and PPTX through their real writers and readers. Round trips
+ * verify preserved headings, table structure/alignment, lists and inline styles;
+ * format-specific losses remain explicit in each case.
  */
 
 import { strict as assert } from "node:assert";

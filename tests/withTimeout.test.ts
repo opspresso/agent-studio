@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TimeoutError, withTimeout } from "@/shared/withTimeout";
 
 describe("withTimeout", () => {
+  beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
     vi.useRealTimers();
   });

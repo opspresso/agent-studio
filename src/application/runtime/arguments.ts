@@ -1,4 +1,5 @@
 import { cutUtf8Bytes } from "@/shared/utf8Text";
+import type { AgentInputItem } from "@openai/agents";
 
 const MAX_TOOL_ARG_BYTES = 16 * 1024;
 
@@ -8,29 +9,11 @@ function elidedArg(bytes: number): string {
 }
 
 /**
- * The arguments a call is *kept* with, which are not always the ones it is made
- * with.
- *
- * A call's arguments outlive the call twice over, and neither copy is bounded
- * by anything else. **The turn's assistant message carries them back to the
- * provider on every remaining turn of the run** — `contextBudget` charges them
- * and nothing can cut them, so one megabyte of `content` is about 350k tokens
- * re-sent per turn, past the window of most models in the catalog: a 400 from
- * the provider, mid-run, after the file was already delivered. And **the
- * announced copy is persisted onto one chat-message row** under a byte budget,
- * the cut caught and logged, taking the reply the reader just watched stream.
- *
- * So the value is swapped for its size, in both copies. The model is not
- * deprived of anything it needs: the tool result on the very same turn says the
- * file exists and what it is called, which is the whole of what a later turn
- * can act on. It cannot re-read what it wrote — it could not anyway, one run
- * later.
- *
- * **Keyed to size, not to a tool name.** The hazard is a large argument, and
- * `SaveFile` is only the first tool to have one: a document renderer takes the
- * document's text, and a model that emits a long string as an array of lines
- * arrives here with a large value under a name nothing anticipated.
+ * Bound values retained for display and completed native call history. Dispatch
+ * and unresolved approvals keep their original arguments. The marker reports
+ * elision; file IDs returned by tools still allow authorized later reads.
  */
+
 // A string is measured as itself, so the number a reader is shown is the
 // one the tool result and the artifact row also report. Anything else — the
 // shape a model reaches for when it cannot fit a string — is measured as it
@@ -84,4 +67,22 @@ export function boundArgumentText(text: string): string {
   return Buffer.byteLength(text, "utf8") <= MAX_TOOL_ARG_BYTES
     ? text
     : `${cutUtf8Bytes(text, MAX_TOOL_ARG_BYTES)}…[truncated]`;
+}
+
+/** Keep parsed wire/display arguments in sync; malformed JSON uses the raw-text byte bound. */
+export function boundToolArgumentTextPair(wire: string, display: string): { wire: string; display: string } {
+  try {
+    const bounded = boundToolArgsPair(JSON.parse(wire) as Record<string, unknown>, JSON.parse(display) as Record<string, unknown>);
+    return { wire: JSON.stringify(bounded.wire), display: JSON.stringify(bounded.display) };
+  } catch {
+    return { wire: boundArgumentText(wire), display: boundArgumentText(display) };
+  }
+}
+
+/** Bound completed/rejected calls without changing arguments still needed for approval or dispatch. */
+export function boundCompletedToolArguments(items: AgentInputItem[], display: (text: string) => string = text => text): AgentInputItem[] {
+  const completed = new Set(items.flatMap(item => item.type === "function_call_result" ? [item.callId] : []));
+  return items.map(item => item.type === "function_call" && completed.has(item.callId)
+    ? { ...item, arguments: boundToolArgumentTextPair(item.arguments, display(item.arguments)).wire }
+    : item);
 }

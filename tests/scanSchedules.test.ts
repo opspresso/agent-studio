@@ -29,9 +29,15 @@ import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { QUEUE_HEARTBEAT_MS } from "@/application/trigger/queuedFiring";
 
-/** Held still: 09:30 KST on a fixed day, one minute after the schedule below. */
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+
+/** Fixed at 09:30:30 KST, thirty seconds after the schedule below. */
 const AT = new Date("2026-08-01T00:30:30Z");
-beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(AT); });
+beforeEach(() => { ids.sequence = 0; vi.useFakeTimers(); vi.setSystemTime(AT); });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
 const agent: Agent = {
@@ -571,7 +577,7 @@ describe("scanSchedules", () => {
   it("records a row for an occurrence whose claim was won but whose admit failed", async () => {
     const f = fixture();
     f.deps.agents.get = async () => {
-      throw new Error("dynamo down");
+      throw new Error("database unavailable");
     };
     const { summary } = await scanAndExecute(f);
     // The claim is permanent, so without a row the occurrence would silently
@@ -619,9 +625,7 @@ describe("scanSchedules", () => {
       status: "running",
       startedAt: new Date(AT.getTime() - (REPAIR_AFTER_SECONDS + 60) * 1000).toISOString(),
     };
-    // Old enough that a one-tick margin would already have branded it lost —
-    // but startedAt is stamped at admit time, and the run may not have started
-    // until a tick later, so this must survive the repair pass.
+    // The shared repair margin protects rows below REPAIR_AFTER_SECONDS.
     const slowButAlive: TriggerRun = {
       ...lost,
       runId: "alive-run",

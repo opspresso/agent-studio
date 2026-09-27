@@ -7,21 +7,11 @@ function lostCondition(error: unknown): boolean {
 }
 
 /**
- * The claim-and-settle contract every inbound-event repository shares — one
- * conditional put and one conditional update, keyed however the platform's
- * events are.
- *
- * The claim carries a lease rather than being permanent. Processing runs in the
- * background after the ack, so an instance that died mid-processing would
- * otherwise leave the event recorded as handled with nothing having handled it,
- * and a redelivery would be refused as a duplicate. An expired lease is
- * reclaimable; a settled claim never is.
- *
- * This bounds the damage from an abnormal exit — it does not make delivery
- * durable. Once the ack is sent the platform considers the event delivered, so
- * an instance killed between ack and completion loses that event unless the
- * platform redelivers. What it leaves behind is a row still in `claimed` past
- * its lease, which is what a durable worker would pick up.
+ * Conditional claim and owner-token settlement for inbound platform events.
+ * Redelivery may reclaim failed attempts or expired claimed leases; done rows
+ * block it while retained. Rows carry a 24-hour TTL and require the DB sweep
+ * for deletion. This does not guarantee exactly-once tool effects or durable
+ * background execution: after ACK, recovery depends on platform redelivery.
  */
 export function createInboundClaimRepository(shape: {
   key: (eventId: string) => { PK: string; SK: string };

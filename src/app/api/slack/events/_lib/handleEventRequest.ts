@@ -37,18 +37,9 @@ const slackEventDeps: SlackEventDeps = {
 };
 
 /**
- * Shared Slack Events pipeline: verify signature → url_verification →
- * engagement gate → exactly-once claim → ack immediately and process in the
- * background (`admitInboundEvent`, the tail every chat platform's webhook
- * shares). Slack requires an ack within 3 seconds; the container runs as a
- * persistent process, so background work survives the response.
- *
- * **The gate is ahead of the claim, and that is a cost contract.** The bot
- * receives every message in every channel it belongs to, and the great majority
- * are not for it; deciding that before the claim is what keeps an ignored
- * message from writing a row. `classifySlackEvent` owns the decision
- * and spends nothing — the one branch that needs storage says so by returning
- * `engagedThread`, and only a threaded message can reach it.
+ * Verify signature, answer challenges and gate engagement before claiming a
+ * delivery lease. Ignored messages cost no claim write. Accepted work runs
+ * after the ack; failed or expired attempts may be claimed again.
  */
 export async function handleSlackEventRequest(
   request: Request,

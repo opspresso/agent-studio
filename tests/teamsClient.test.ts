@@ -85,6 +85,70 @@ afterEach(() => {
 });
 
 describe("verifying a Bot Framework token", () => {
+  it("does not trust expired cached keys while a failed refresh is paced", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    let unavailable = false;
+    const request = vi.fn(async (url: string) => {
+      if (url.includes("openidconfiguration")) return jsonResponse({ jwks_uri: "https://login.botframework.com/keys" });
+      if (unavailable) throw new Error("fixture outage");
+      return jsonResponse({ keys: [JWK] });
+    });
+    vi.stubGlobal("fetch", request);
+    try {
+      expect(await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE })).toEqual({ ok: true });
+      await vi.advanceTimersByTimeAsync(25 * 60 * 60 * 1000);
+      unavailable = true;
+      for (let i = 0; i < 2; i++) {
+        expect(await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE })).toMatchObject({ ok: false });
+      }
+      expect(request).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("paces failed cold signing-key fetches before trying again", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    let unavailable = true;
+    const request = vi.fn(async (url: string) => {
+      if (url.includes("openidconfiguration")) return jsonResponse({ jwks_uri: "https://login.botframework.com/keys" });
+      if (unavailable) throw new Error("fixture outage");
+      return jsonResponse({ keys: [JWK] });
+    });
+    vi.stubGlobal("fetch", request);
+    try {
+      for (let i = 0; i < 2; i++) {
+        expect(await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE })).toMatchObject({ ok: false });
+      }
+      expect(request).toHaveBeenCalledTimes(2);
+      unavailable = false;
+      await vi.advanceTimersByTimeAsync(60_001);
+      expect(await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE })).toEqual({ ok: true });
+      expect(request).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["openidconfiguration", "keys"])("refuses a failed %s response even with usable JSON", async (failedDocument) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    const request = vi.fn(async (url: string) => {
+      const configuration = url.includes("openidconfiguration");
+      return jsonResponse(configuration ? { jwks_uri: "https://login.botframework.com/keys" } : { keys: [JWK] },
+        { status: (configuration ? "openidconfiguration" : "keys") === failedDocument ? 503 : 200 });
+    });
+    vi.stubGlobal("fetch", request);
+    try {
+      expect(await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE }))
+        .toMatchObject({ ok: false, reason: expect.stringContaining("signing keys unavailable") });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("accepts a token the service signed for this app and this serviceUrl", async () => {
     stubFetch();
     const verdict = await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE });
@@ -167,6 +231,21 @@ describe("verifying a Bot Framework token", () => {
 });
 
 describe("talking to the Bot Framework", () => {
+  it.each(["not json", "null", "[]", "{}", '{"id":42}', '{"id":"  "}'])("refuses an unusable activity receipt: %s", async (body) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    try {
+      const calls = stubFetch((url) => url.includes("/oauth2/v2.0/token")
+        ? jsonResponse({ access_token: "tok", expires_in: 3600 })
+        : new Response(body, { status: 200 }));
+
+      await expect(teamsClient.sendActivity(CREDS, SERVICE, "conversation", { type: "message", text: "reply" })).rejects.toThrow();
+      expect(calls.filter(call => call.url.endsWith("/activities"))).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("trades the credentials for a token once, and sends activities with it", async () => {
     const calls = stubFetch((url, init) => {
       if (url === "https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token") {

@@ -39,7 +39,7 @@ function request(token?: string): Request {
 }
 
 beforeEach(() => {
-  process.env.SCHEDULE_SCAN_TOKEN = "tick-token";
+  vi.stubEnv("SCHEDULE_SCAN_TOKEN", "tick-token");
   repoConfig.value = { repo: "opspresso/agent-plugins", branch: "main", token: "gh-token" };
   syncPluginsFromRepo.mockResolvedValue(EMPTY_REPORT);
   pluginsRepoHeadSha.mockResolvedValue("sha-2");
@@ -47,13 +47,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete process.env.SCHEDULE_SCAN_TOKEN;
+  vi.unstubAllEnvs();
   vi.clearAllMocks();
 });
 
 describe("POST /api/plugins/sync/scan", () => {
   it("answers 503 with no tick token, without syncing", async () => {
-    delete process.env.SCHEDULE_SCAN_TOKEN;
+    vi.stubEnv("SCHEDULE_SCAN_TOKEN", undefined);
     expect((await POST(request("tick-token"))).status).toBe(503);
     expect(syncPluginsFromRepo).not.toHaveBeenCalled();
   });

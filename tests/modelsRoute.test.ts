@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { offeredModels } from "@/domain/llm/models";
+import type { ModelsResponse } from "@/app/api/models/route";
 
 const { getLlmProviderConfigs, getDefaultModel, modelPreferenceUseCases } = vi.hoisted(() => ({
   getLlmProviderConfigs: vi.fn(),
@@ -25,14 +25,14 @@ function provider(name: string) {
 async function listedIds(): Promise<string[]> {
   const res = await GET();
   expect(res.status).toBe(200);
-  const { models } = (await res.json()) as { models: Array<{ id: string }> };
+  const { models } = (await res.json()) as ModelsResponse;
   return models.map((model) => model.id);
 }
 
-async function listedModels(): Promise<Array<{ id: string; favorite: boolean }>> {
+async function listedModels(): Promise<ModelsResponse["models"]> {
   const res = await GET();
   expect(res.status).toBe(200);
-  return ((await res.json()) as { models: Array<{ id: string; favorite: boolean }> }).models;
+  return ((await res.json()) as ModelsResponse).models;
 }
 
 beforeEach(() => {
@@ -43,8 +43,8 @@ beforeEach(() => {
 });
 
 describe("GET /api/models", () => {
-  it("lists every visible execution model with no provider channels and no hidden override", async () => {
-    expect(await listedIds()).toEqual(offeredModels([], undefined).map((model) => model.id));
+  it("offers no execution models when no provider connections are configured", async () => {
+    expect(await listedIds()).toEqual([]);
   });
 
   it("orders the selected default first and narrows to registered connections", async () => {

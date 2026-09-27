@@ -249,10 +249,9 @@ test("a vertical merge's continuation row does not add a cell of its own", () =>
     "<w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc>" +
     "<w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl>";
   const table = documentXmlToBlocks(xml).blocks.find((block) => block.kind === "table");
-  if (table?.kind === "table") {
-    assert.equal(table.columns, 2);
-    assert.equal(table.rows[1]?.cells.length, 1);
-  }
+  assert.ok(table, "The vertically merged table must be present");
+  assert.equal(table.columns, 2);
+  assert.equal(table.rows[1]?.cells.length, 1);
 });
 
 test("a header row the document marked is the table's header", () => {
@@ -263,9 +262,8 @@ test("a header row the document marked is the table's header", () => {
     "<w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>" +
     "<w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl>";
   const table = documentXmlToBlocks(xml).blocks.find((block) => block.kind === "table");
-  if (table?.kind === "table") {
-    assert.deepEqual(table.rows.map((row) => row.header === true), [true, false]);
-  }
+  assert.ok(table, "The table with its marked header must be present");
+  assert.deepEqual(table.rows.map((row) => row.header === true), [true, false]);
 });
 
 test("a picture leaves a mark saying it was there, and what it was called", () => {

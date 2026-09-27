@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 
 /**
  * The signer is the one piece of the Bedrock channel that is not the ordinary
@@ -24,19 +25,81 @@ const { AWS_SIGNING_SERVICE, createSignedFetch } = await import("@/infrastructur
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-27T00:00:00Z"));
 });
 
 /** The last request the stubbed global fetch was handed. */
-function captureFetch(): { calls: Array<{ url: string; init: RequestInit }> } {
-  const captured = { calls: [] as Array<{ url: string; init: RequestInit }> };
-  vi.stubGlobal("fetch", async (url: URL | string, init: RequestInit) => {
-    captured.calls.push({ url: String(url), init });
+function captureFetch(): { calls: Array<{ url: string; init: RequestInit; signal: AbortSignal; body: Buffer }> } {
+  const captured = { calls: [] as Array<{ url: string; init: RequestInit; signal: AbortSignal; body: Buffer }> };
+  vi.stubGlobal("fetch", async (input: URL | string | Request, init: RequestInit) => {
+    const request = new Request(input, init);
+    captured.calls.push({ url: request.url, init: { ...init, method: request.method, headers: request.headers }, signal: request.signal,
+      body: Buffer.from(await request.arrayBuffer()) });
     return new Response("{}", { status: 200 });
   });
   return captured;
 }
 
 describe("createSignedFetch", () => {
+  it("preserves a Request method, headers and cancellation", async () => {
+    const captured = captureFetch();
+    const caller = new AbortController();
+    await createSignedFetch(AWS_SIGNING_SERVICE)(new Request("https://bedrock-mantle.us-east-1.api.aws/v1/models", {
+      method: "HEAD", headers: { "x-probe": "request-header" }, signal: caller.signal,
+    }));
+    expect(captured.calls[0]?.init.method).toBe("HEAD");
+    expect(new Headers(captured.calls[0]?.init.headers).get("x-probe")).toBe("request-header");
+    caller.abort();
+    expect(captured.calls[0]?.signal.aborted).toBe(true);
+  });
+
+  it("refuses a Request body that cannot be signed without draining it", async () => {
+    const captured = captureFetch();
+    await expect(createSignedFetch(AWS_SIGNING_SERVICE)(new Request("https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions", {
+      method: "POST", body: "{}",
+    }))).rejects.toThrow(/cannot sign a ReadableStream body/);
+    expect(captured.calls).toHaveLength(0);
+  });
+
+  it("signs common HTTP methods after fetch normalization", async () => {
+    const captured = captureFetch();
+    const signedFetch = createSignedFetch(AWS_SIGNING_SERVICE);
+    const url = "https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions";
+    await signedFetch(url, { method: "post", body: "{}" });
+    await signedFetch(url, { method: "POST", body: "{}" });
+    expect(new Headers(captured.calls[0]?.init.headers).get("authorization"))
+      .toBe(new Headers(captured.calls[1]?.init.headers).get("authorization"));
+  });
+
+  it("signs the transmitted bytes when the caller changes its buffer while credentials resolve", async () => {
+    const captured = captureFetch();
+    const body = new Uint8Array([1, 2, 3]);
+    const sending = createSignedFetch(AWS_SIGNING_SERVICE)("https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions", {
+      method: "POST", body,
+    });
+    body.fill(9);
+    await sending;
+    const sent = captured.calls[0]!;
+    expect([...sent.body]).toEqual([1, 2, 3]);
+    expect(new Headers(sent.init.headers).get("x-amz-content-sha256"))
+      .toBe(createHash("sha256").update(sent.body).digest("hex"));
+  });
+
+  it("includes prototype-named query parameters in the signature", async () => {
+    const captured = captureFetch();
+    const signedFetch = createSignedFetch(AWS_SIGNING_SERVICE);
+    const base = "https://bedrock-mantle.us-east-1.api.aws/v1/models";
+    await signedFetch(`${base}?__proto__=one`);
+    await signedFetch(`${base}?__proto__=two`);
+    expect(new Headers(captured.calls[0]?.init.headers).get("authorization"))
+      .not.toBe(new Headers(captured.calls[1]?.init.headers).get("authorization"));
+  });
+
   it("signs with the region named by the host, not the app's region", async () => {
     const captured = captureFetch();
     const signedFetch = createSignedFetch(AWS_SIGNING_SERVICE);

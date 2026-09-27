@@ -171,16 +171,7 @@ export type ImageEditor = (params: {
   quality?: string;
 }) => Promise<ImageToolResult>;
 
-/**
- * Read a URL the model named.
- *
- * One tool rather than the `fetch_image`/`fetch_document` pair the MCP server
- * split it into. That split existed because a server has to decide before
- * fetching what `Accept` to send and which block type to answer with; inside the
- * app it does not, and the cost of it was real — the model had to guess the
- * target's type, and a wrong guess burned a turn. The sibling server grew a
- * `crossToolHint` to patch exactly that.
- */
+/** Read a URL into text/notes or image bytes without requiring the model to guess its type first. */
 export type UrlFetcher = (url: string) => Promise<{
   text: string;
   note?: string;
@@ -220,7 +211,7 @@ export interface AgentCapabilityDeps {
   workspaceTool?: (args: Record<string, unknown>, callId: string) => Promise<McpToolResult>;
   /**
    * Serves the Slack read tools, or absent when this run has no workspace
-   * to look at. One function rather than four deps: the tools differ only in
+   * to look at. The tools differ only in
    * which Slack call they make, and the reader already holds the token that
    * decides *which* workspace — a choice the model must not get to make.
    */
@@ -357,8 +348,7 @@ function skillToolDef(skills: SkillInfo[]): ChannelToolDef {
         properties: {
           skill_name: {
             type: "string",
-            // Enumerated like the transfer tool's `agent_name`: a free-text name
-            // is the main source of "skill is not connected" round trips.
+            // Offer only connected Skill names.
             enum: skills.map((s) => s.name),
             description: "The name of the skill to load.",
           },
@@ -473,27 +463,7 @@ export function runClockBlock(now: Date): string {
   return `Current date and time: ${formatRunClock(now)}. Resolve anything relative — "today", "yesterday", "last week", "this quarter" — from this line rather than from what you remember.`;
 }
 
-/**
- * Who this run is answering, when the surface knows and the Agent asked for it.
- *
- * A fact about the run in the same sense the clock is: the model is told, it
- * cannot go looking. Without it a Slack thread reaches the model as anonymous
- * text and the answer cannot address anybody — which is what a conversational
- * agent is for.
- *
- * The avatar is a URL rather than an image part: a face is almost never what the
- * question is about, and encoding one would spend a turn's image budget on it.
- *
- * But a URL nobody said was reachable is a URL nobody reaches. Asked to redraw
- * their own profile picture, a run with every capability switched on invented a
- * face instead — the address was sitting in this block, `FetchUrl` was offered
- * and returns an image as an editable handle, and nothing connected the two.
- * `FetchUrl`'s own description names requests, search results and tool output as
- * where an address turns up, which is every place except this one; and
- * `EditImage` points at the handle list, which the avatar is not in. So the
- * block says it, and only where the run can actually act on it — advice a run
- * cannot take is worse than none.
- */
+/** Caller context is opt-in; avatar retrieval instructions are added only when FetchUrl is available. */
 export function callerBlock(caller: RunCaller, canFetchUrl = false): string {
   const lines = [`You are answering ${caller.displayName}.`];
   if (caller.timezone) {
@@ -770,7 +740,7 @@ const SLACK_TOOL_DEFS: readonly ChannelToolDef[] = [
     function: {
       name: SLACK_THREAD_TOOL_NAME,
       description:
-        "Read a Slack thread in full, oldest first. Use it when a channel message has replies and the decision is in them — a channel read shows only the message that started the thread.",
+        "Read a bounded Slack thread, oldest first, including the root message. Defaults to 20 messages, at most 100. Use it when the answer depends on replies; a channel read shows only the message that started the thread.",
       parameters: {
         type: "object",
         properties: {
@@ -779,7 +749,7 @@ const SLACK_TOOL_DEFS: readonly ChannelToolDef[] = [
             type: "string",
             description: "The timestamp of the message that started the thread.",
           },
-          limit: { type: "number", description: "How many replies to read. Defaults to 20." },
+          limit: { type: "number", description: "Total messages including the root. Defaults to 20, at most 100." },
         },
         required: ["channel", "thread_ts"],
       },
@@ -921,9 +891,8 @@ export interface AgentToolsInput {
   /** Whether this run may read the Slack workspace its agent's bot is in. */
   withSlackTools: boolean;
   /**
-   * Whether fan-out is offered. False for a subagent run: a child that could
-   * dispatch would multiply the run count by depth, and these children run
-   * outside the concurrency and cost guards (see {@link MAX_DISPATCH_TASKS}).
+   * Whether Agent-as-Tool delegation is offered. Child runs receive handoffs
+   * only, preventing fan-out from multiplying with transfer depth.
    */
   canDispatch?: boolean;
 }
@@ -1032,11 +1001,8 @@ export interface AgentRunAssembly {
   /** Builtin names actually offered; the tool loop intercepts exactly these. */
   builtinNames: Set<string>;
   /**
-   * The agents this run actually offered — the prompt's table and both transfer
-   * tools' enums are built from exactly this list, and so is the check that a
-   * requested target was one of them. Returned for the same reason
-   * {@link builtinNames} is: what was offered and what is served must come from
-   * one value, not from two readings of the input that a dep can make disagree.
+   * Agents behind the offered delegation tools, shared with the prompt table.
+   * Public tool names identify each target; arguments carry only task input and image IDs.
    */
   subagents: SubagentInfo[];
   canEdit: boolean;
@@ -1070,33 +1036,14 @@ export interface AssembleAgentRunInput {
   canDispatch?: boolean;
 }
 
-/**
- * Everything a run is assembled with, decided in one place.
- *
- * The two builders below have always had one owner each; what did not was the
- * *argument assembly*. `runAgent` and the Playground preview each spelled out
- * eight and seven positional arguments, and they had already drifted: the
- * preview omitted the eighth, so an Agent that opted into `callerContext`
- * previewed a prompt without the caller block every real run carries. A field
- * added to either builder is now a type error at both sites rather than a
- * silently-missing positional.
- *
- * Which builtins are offered is derived from the **deps**, never from the
- * Agent: a capability the run cannot actually perform must not be advertised,
- * and the preview and the run have to agree about that without asking twice.
- */
+/** Shared execution/preview assembly; injected capabilities gate both offered tools and prompt sections. */
 export function assembleAgentRun(
   deps: AgentCapabilityDeps,
   input: AssembleAgentRunInput,
 ): AgentRunAssembly {
   const canLoadSkills = Boolean(deps.loadSkillContent);
   const skills = canLoadSkills ? (input.skills ?? []) : [];
-  // Delegation is described and offered only where it can actually reach a
-  // child. Without a runner the transfer tool was still advertised and the
-  // prompt still explained it, and a call came back "requires agent_name and
-  // message" — a message about the arguments when the reason was that nothing
-  // could carry them. Emptying the list here gates the prompt section and both
-  // tools at once, which is what keeps them from disagreeing.
+  // One dependency gate controls both delegation tools and their prompt section.
   const subagents = deps.canDelegate ? (input.subagents ?? []) : [];
   const { canEdit, canTransfer } = imagePromptUses(deps, subagents);
   // Fan-out additionally needs the facade to have admitted this as a top-level

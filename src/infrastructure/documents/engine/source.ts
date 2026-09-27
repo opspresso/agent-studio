@@ -1,4 +1,4 @@
-/** Bytes and provenance supplied by the caller; the engine performs no I/O. */
+/** Source bytes and provenance supplied by the caller; readers do not fetch remote files. */
 export interface DocumentSource {
   bytes: Uint8Array;
   mimeType: string;

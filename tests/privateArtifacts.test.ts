@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerSourceArtifact } from "@/application/artifact/storeArtifact";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { toArtifactViews } from "@/app/api/artifacts/_lib/query";
@@ -22,7 +22,12 @@ function fixture() {
   const agents = { get: async () => ({ name: "collector", ownerEmail: file.userEmail }) } as unknown as AgentRepository;
   return { rows, objects, privateFiles, api: createArtifactUseCases(rows, objects, agents, privateFiles) };
 }
-beforeEach(() => { setAdminCheck(async () => false); });
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-09-10T00:00:00.000Z");
+  setAdminCheck(async () => false);
+});
+afterEach(() => vi.useRealTimers());
 describe("private files in the Artifact inventory", () => {
   it("reports a retirement race as a conflict instead of an upstream retry", async () => {
     const f = fixture();

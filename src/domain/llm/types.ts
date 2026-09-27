@@ -75,7 +75,7 @@ export interface ChatMessageInput {
 }
 
 /**
- * Why a run's stream ended. The four endings are distinct values, not
+ * Why a run's stream ended. The endings are distinct values, not
  * inferences: a consumer that reasons "no `done` seen → stopped at a limit"
  * misreads a cancellation and a mid-stream error as a length stop, which is
  * exactly the bug this type exists to make un-writable.
@@ -106,7 +106,7 @@ export function chunkAuthorPath(chunk: {
   return chunk.authorPath ?? (chunk.author ? [chunk.author] : undefined);
 }
 
-/** Tool ids identify calls only within their run, independently of trace sampling. */
+/** Tool ids identify calls only within their run, independently of Trace recording. */
 export function toolCallKey(
   chunk: Pick<EngineChunk, "author" | "authorPath" | "transferId">,
   callId: string,
@@ -118,11 +118,11 @@ export function toolCallKey(
 export interface EngineChunk {
   approval?: { pending: true };
   /**
-   * The trace this chunk belongs to, when the run was sampled. A top-level
-   * chunk carries its own run's trace; an authored chunk carries the child's.
+   * App Trace ID supplied by the producer. Native SDK child spans belong to
+   * the parent execution Trace rather than requiring a separate child Trace.
    */
   traceId?: string;
-  /** Stable identity of one delegation call, present whether traces are sampled or not. */
+  /** Stable identity of one delegation call, independent of Trace recording. */
   transferId?: string;
   /**
    * Subagent that authored this chunk — the *innermost* one, so a nested
@@ -377,16 +377,15 @@ export interface McpToolResult {
   files?: Array<{ b64: string; mimeType: string; name: string; artifactId?: string; derivedFrom?: string }>;
 }
 
-/** Result of a single-shot (non-agent) run. */
+/** Base collected result; usage may aggregate several model calls. */
 export interface RunResult {
   content: string;
-  /** The model actually used (may be the fallback model). */
+  /** Producer model label; collected Agent runs retain their configured root model. */
   model: string;
   usage: UsageInfo;
   toolCalls?: ChannelToolCall[];
   /**
-   * Why the run ended — for a single-shot run, `completed` or `output-limit`
-   * (the provider cut the response at its output cap rather than finishing).
+   * Why the stream ended, independently of its collected text and usage.
    */
   termination?: RunTerminationReason;
 }

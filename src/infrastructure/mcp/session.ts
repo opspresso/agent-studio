@@ -155,11 +155,15 @@ export interface McpDiscovery {
 function boundedFetch(
   loopback: boolean,
   runSignal: () => AbortSignal | undefined,
+  defaultHeaders: Readonly<Record<string, string>>,
 ): FetchLike {
   const send = loopback ? fetchSameOrigin : fetchPublicUrl;
   return async (url, init) => {
+    const headers = new Headers(init?.headers ?? (url instanceof Request ? url.headers : undefined));
+    // Preserve configured defaults at the wire boundary; SDK-generated protocol headers win.
+    for (const [name, value] of Object.entries(defaultHeaders)) if (!headers.has(name)) headers.set(name, value);
     const response = await send(url, withSignal(
-      init,
+      { ...init, headers },
       runSignal(),
       url instanceof Request ? url.signal : undefined,
     ));
@@ -277,6 +281,7 @@ export class McpSession {
       fetch: boundedFetch(
         this.loopback,
         () => (this.tearingDown ? undefined : this.signal),
+        this.headers,
       ),
       // This deployment owns OAuth outside the SDK. Let the transport parse
       // the exact response's challenge and return it as a typed error; a

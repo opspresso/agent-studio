@@ -14,7 +14,7 @@ import type { ExecutionDeps } from "./deps";
  * discovering that.
  *
  * The Agent's opt-in is checked first, so a run that did not ask for Slack
- * costs no extran agent read.
+ * costs no extra Agent read.
  *
  * Which token the reader holds is decided by `deps.slackWorkspace`, bound by
  * the composition root: a bot token can be rotated or the integration switched

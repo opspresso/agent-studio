@@ -20,15 +20,9 @@ const TOOL_KIND: Record<ToolKind, { label: string; color: string }> = {
 };
 
 /**
- * One tool's traffic: what was asked, and what came back, in a single row that
- * opens. Two rows for one call is what this replaced — see `pairToolTraffic`.
- *
- * The header says *what kind* of thing ran and *which one*, without being
- * opened. Every skill in the system is one `Skill` call and every hand-off is
- * one native delegation, so a row labelled with the tool's own name told the
- * reader a skill had been loaded and never which — the answer was in the
- * arguments, behind a click. Shared by the chat and the playground, which had
- * each grown their own rendering of the same wire format.
+ * Shared Chat and Playground row for one paired tool call and result.
+ * Its header names the Skill, delegated or handoff Agent, image tool or MCP
+ * server/tool; expanding reveals the arguments and returned content.
  */
 export function ToolRow({ pair }: { pair: ToolPair }) {
   const t = useT();

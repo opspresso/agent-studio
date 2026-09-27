@@ -134,11 +134,7 @@ describe("fetchPublicUrl", () => {
 
 describe("fetchPublicUrl transport pairing", () => {
   it("sends through undici's own fetch, never the runtime's global one", async () => {
-    // The regression this file exists to prevent. The global `fetch` is the
-    // runtime's *bundled* undici, a different copy from the `Agent` above it:
-    // pairing them made every outbound request fail with a bare
-    // `TypeError: fetch failed` on a Node whose bundled major had drifted, and
-    // passed on one where it happened to match.
+    // The dispatcher and fetch must come from the same undici package.
     const globalFetch = vi.fn(async () => new Response("global"));
     vi.stubGlobal("fetch", globalFetch);
     undiciFetch.mockResolvedValue(new Response("ok"));

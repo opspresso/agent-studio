@@ -40,14 +40,8 @@ export interface VectorMatch {
 }
 
 /**
- * Which side of a search a text is on.
- *
- * Not a hint. Some models embed a question and the thing that answers it into
- * *different* spaces on purpose, and asking for the wrong one costs real
- * accuracy — measured on Cohere v4, a Korean query against an English
- * description scores 0.39 when typed and materially worse when not. Models that
- * make no distinction ignore it, so the caller always states which it means and
- * the adapter decides whether that matters.
+ * Identify the query or document side of a search. Adapters pass the purpose
+ * when supported; models without distinct input modes ignore it.
  */
 export type EmbeddingPurpose = "document" | "query";
 

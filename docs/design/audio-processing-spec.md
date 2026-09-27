@@ -156,6 +156,7 @@ Slack 조회·이미지·파일 생성 능력은 실행 경계에서 차단하�
 Agent별 `AudioJobConfig`에 `enabled`, `model`, `language`, `postprocess?`,
 `destination?`, `retention`, `maxActive`, `maxPerOccurrence`, `revision`을 둔다.
 `postprocess`는 후처리 Agent를, `destination`은 저장할 결과와 MCP binding을 참조한다.
+현재 후처리 대상은 같은 소유자의 설정된 Agent이며 등록 모델의 `structuredOutput` 지원이 필요하다.
 source 연결·사용자 문맥은 기존 Agent 연결과 자동화 설정을 사용한다. 작업 접수 시 후처리
 Agent와 전달 대상의 현재 설정을 snapshot으로 고정해 이후 설정 변경은 새 작업에만 적용한다.
 설정 저장은 대상 Agent가 존재하고 같은 소유자의 설정된 Agent인지 transaction에서 확인한다.
@@ -172,18 +173,18 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 
 | 도구 | 계약 |
 | --- | --- |
-| `ImportFile` | 접근 가능한 `artifact_id`, `file_id`, `source_ref` 중 하나로 job ID 반환. 완료 후 status의 `artifacts.source`로 원본 Artifact 확인 |
-| `TranscribeAudio` | 원본 Artifact ID·모델 선택으로 비동기 전사를 제출하고 job ID 반환. `artifacts.transcript`가 결과 Artifact ID |
-| `AudioJob` `submit` | source ref 또는 file ID·설정 참조 → accepted/busy/duplicate/blocked와 job ID |
+| `ImportFile` | `{source:{kind,id}, retention, processing_revision}`로 가져오기 작업 접수. 완료 후 status의 `artifacts.source`로 원본 확인 |
+| `TranscribeAudio` | 같은 source·retention과 model·선택적 language로 전사 작업 접수. `artifacts.transcript`가 결과 Artifact ID |
+| `AudioJob` `submit` | `{source:{kind,id}, config_revision, processing_revision}`로 설정된 전체 처리 접수. source kind는 artifact/file/source |
 | `AudioJob` `postprocess` | 기존 전사 Artifact·후처리 Agent·retention으로 요약만 실행. model·language·destination·config_revision은 받지 않는다 |
 | `AudioJob` `config` | 본인 Agent 작업 설정과 revision 또는 null |
 | `AudioJob` `status` | job ID → 단계·처리 범위·오류·retry 시각·결과 참조 |
 | `AudioJob` `list`의 작업 구분 | `task`와 비밀이 아닌 `sourceIdentity`로 완료된 다운로드·전사·후처리를 연결하고 이미 처리한 입력을 구분한다 |
 | `AudioJob` `read` | job ID·결과 종류·cursor·limit → bounded 본문과 nextCursor |
 
-`ImportFile`의 다운로드와 `TranscribeAudio`도 동일한 영속 task 실행기를 사용한다. 제한된 시간에
-완료되지 않으면 task ID를 반환하고 `AudioJob status`로 진행을 확인한다. `AudioJob submit`은 이
-공통 기능에 선택적 후처리·저장을 연결하는 편의 계약이며 다운로드·전사 로직을 복제하지 않는다.
+세 제출 도구는 처리를 기다리지 않고 accepted/duplicate와 job을 반환한다. 접수 한도·경합은
+`Error:`로 알리며 job의 blocked 상태와 구분한다. `AudioJob status`로 실제 완료를 확인한다.
+다운로드·전사는 같은 영속 실행기를 사용하며 configured submit은 선택적 후처리·저장을 함께 고정한다.
 
 `artifact_id`는 현재 사용자가 소유한 비공개 Artifact를 가리킨다. 다른 Agent에서 만든
 파일도 입력으로 사용할 수 있다. 접수 시 실제 파일 위치로 고정하고 양쪽 Agent의 소유 권한을
@@ -196,8 +197,8 @@ Markdown, `artifacts.structured`는 원문 근거와 경고가 포함된 JSON Ar
 구간 목록이 불완전해도 전체 전사문을 함께 보존한다. 대화 내용의 Markdown·HTML은 문자 그대로 표시한다.
 
 `source_ref`는 서버가 발급한 불투명 참조다. 등록된 MCP tool의 파일 URL을
-메인 Agent의 Agent에 보관한다. 하위 Agent가 조회한 경우에도 작업과 참조의 보관 범위는
-같으며, 재조회 recipe는 하위 Agent의 Agent·현재 binding·OAuth 연결을 별도로 고정한다.
+메인 Agent에 보관한다. 하위 Agent가 조회한 경우에도 작업과 참조의 보관 범위는
+같으며, 재조회 recipe는 호출한 하위 Agent·현재 binding·OAuth 연결을 별도로 고정한다.
 재조회 전후에 해당 Agent의 소유 권한과 연결 세대를 확인한다.
 
 plugin.json의 `extensions.org.opspresso.agent-studio.mcpSourceOutputs`는 서버별 기본 파일 응답 매핑이다.

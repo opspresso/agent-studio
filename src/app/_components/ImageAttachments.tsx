@@ -307,14 +307,8 @@ export function useFileDrop(onFiles: (files: File[]) => void, disabled = false) 
  * what they copied and attach something they never asked for. So a clipboard
  * carrying text stays a text paste.
  *
- * Every other type beside the file is a *description* of that file, not
- * something anybody can paste as words — Chrome's "Copy image", and the same
- * gesture in Slack or Notion, put an `<img>` tag in `text/html` next to the
- * bytes and no `text/plain` at all. Refusing those (which reading any `text/*`
- * as text did) made the paste do **nothing whatsoever**: no attachment,
- * because we returned, and no text either, because there was none to insert.
- * A screenshot and a copied file arrive with no text type at all and have
- * always worked; this is the same gesture with a caption attached.
+ * `text/html` alone does not override file bytes: copied images may carry an
+ * HTML description without any plain text. Those still become attachments.
  */
 export function onFilePaste(onFiles: (files: File[]) => void, disabled = false) {
   return (event: React.ClipboardEvent) => {

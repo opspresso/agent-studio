@@ -1,12 +1,8 @@
 /**
  * What a tool result does with a non-image `resource.blob`.
  *
- * The bug this pins: the decode sat inside a `try/catch` whose catch could never
- * run. `Buffer.toString("utf-8")` does not throw on arbitrary bytes — invalid
- * sequences become U+FFFD — so a PDF returned by an MCP server reached the model
- * as a page of replacement characters, presented as a successful result. The
- * "Unsupported binary resource" message the catch was supposed to produce had
- * never once been emitted.
+ * Valid UTF-8 becomes model text. Binary bytes are delivered as a file with a
+ * bounded textual placeholder; `Buffer.toString("utf-8")` cannot validate them.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -68,12 +64,11 @@ describe("a resource blob that is not an image", () => {
       },
     ]);
 
-    // The original defect, still pinned: a decode that cannot fail turned this
-    // into a page of U+FFFD presented as a successful result.
+    // Binary bytes must not become replacement-character model text.
     expect(result.text).not.toContain("\uFFFD");
-    // And now it is carried rather than dropped — the file is the answer.
+    // File bytes remain available to the user.
     expect(result.files).toEqual([
-      // Named from the resource's own uri, which it now carries.
+      // The resource URI owns the filename.
       { b64: pdf, mimeType: "application/pdf", name: "doc.pdf" },
     ]);
     expect(result.text).toContain("14 bytes");

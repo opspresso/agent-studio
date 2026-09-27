@@ -11,10 +11,8 @@ import { log } from "@/shared/logger";
 export type AgentConfigurationInput = Omit<AgentConfiguration, "agentName">;
 
 /**
- * Registry lookups an Agent's references are checked against. A dangling
- * reference degrades silently at run time (an unknown skill loads as an empty
- * description, an unknown subagent yields a tool error), so a typo would only
- * surface as a subtly worse answer — catch it at the write boundary instead.
+ * Registry lookups for new bindings. Reject missing references at the write
+ * boundary; execution reports losses for references removed after saving.
  */
 export interface ConfigurationRefRepos {
   skills: Pick<SkillRepository, "get">;
@@ -160,20 +158,19 @@ export function assertValidImageModel(parameters: AgentParameters): void {
   }
 }
 
-/** Warn (non-blocking) when an Agent references a model missing from the catalog. */
-export function warnUnknownCatalogModel(agentName: string, model: string): void {
+/** Saving is permitted, but execution still requires an administrator-selected model. */
+export function warnUnselectedModel(agentName: string, model: string): void {
   if (!getModelConfig(model)) {
     log.warn(
       "agent",
-      `${agentName}: model "${model}" is not in the catalog; usage will be recorded with $0 cost`,
+      `${agentName}: model "${model}" is not selected for this installation; register it in Settings before execution`,
     );
   }
 }
 
 /**
- * Reject capability mismatches for catalog models. Unknown/custom ids stay on
- * the warn-only path — a mismatch on a KNOWN model is a misconfiguration, not
- * a catalog lag.
+ * Reject capability mismatches for selected model facts. Missing registration
+ * is left to the execution gate; storing settings does not enable a model.
  */
 export function assertAgentModelType(model: string): void {
   const cfg = getModelConfig(model);

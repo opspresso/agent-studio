@@ -1,10 +1,13 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { beginRun, endRun, resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
 import { GET } from "@/app/api/metrics/route";
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
   resetRunMetrics();
 });
+afterEach(() => { vi.useRealTimers(); resetRunMetrics(); });
 
 describe("run metrics", () => {
   it("tracks concurrent runs as a gauge and arrivals as a total", () => {

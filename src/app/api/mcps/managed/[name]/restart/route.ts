@@ -6,9 +6,7 @@ import { managedMcpUnavailable } from "../../_unavailable";
 type RouteContext = { params: Promise<{ name: string }> };
 
 /**
- * Re-creates one managed container against the network namespace this app has
- * now. The recovery an operator needs when a redeploy stranded it: without this
- * the only way back is deleting the entry and typing it again.
+ * Re-create a managed container from its stored spec and publish its host port.
  *
  * POST, not GET: it stops and starts a container. 202, not 200: the restart
  * outlives this response — starting a container polls the runtime for minutes,

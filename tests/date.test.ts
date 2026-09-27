@@ -56,13 +56,7 @@ describe("formatDateTime", () => {
   });
 });
 
-/**
- * The locale argument is what keeps the server and the browser writing the same
- * string, and what makes a reader's chosen language decide the date format
- * rather than their browser's. Asserted through the *difference* between two
- * locales rather than against a literal, because the exact text is the
- * platform's ICU data and the timezone is the host's — neither is ours to pin.
- */
+/** Explicit locale controls language; display timezone still comes from the runtime. */
 describe("the locale argument", () => {
   const iso = "2026-07-23T01:08:42.000Z";
 

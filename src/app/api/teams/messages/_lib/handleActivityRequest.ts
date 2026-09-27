@@ -29,15 +29,10 @@ const teamsEventDeps: TeamsEventDeps = {
 };
 
 /**
- * The Teams messaging pipeline: check the Bot Framework's token → gate →
- * exactly-once claim → ack immediately and process in the background. The Bot
- * Framework gives an endpoint fifteen seconds and then retries, so the ack is
- * what keeps a slow model from turning one question into several.
- *
- * The token is checked *against the activity*: it must have been issued for
- * the `serviceUrl` the activity names, because that is the address every reply
- * — with the app's own token attached — is sent to. Everything the endpoint
- * trusts rests on that check.
+ * Verify the token against the App ID and activity serviceUrl before gating
+ * engagement and claiming a delivery lease. Replies use that authenticated
+ * serviceUrl. Accepted work runs after the ack; failed or expired attempts
+ * may be claimed again.
  */
 export async function handleTeamsActivityRequest(
   request: Request,

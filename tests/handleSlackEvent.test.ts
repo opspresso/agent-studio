@@ -51,18 +51,9 @@ function configurationFixture(): AgentConfiguration {
  * and editing one message.
  */
 /**
- * The two rules Slack enforces on one stream, which the fakes enforce because
- * not enforcing them is exactly how both shipped:
- *
- * - `markdown_text` and `chunks` on the same request is
- *   `cannot_provide_both_markdown_text_and_chunks`;
- * - the mode a stream opens in is the mode it stays in — the other one later is
- *   `streaming_mode_mismatch`. A channel's progress rows are chunks and they
- *   open the message, so on a channel the answer must travel as a
- *   `markdown_text` *chunk*.
- *
- * Passing tests accepted calls Slack rejects, twice, and `push` swallows a
- * failed append — so every channel run silently dropped its whole answer.
+ * Enforce Slack stream mode constraints in the fake: text and chunks are
+ * mutually exclusive, and a stream keeps its opening mode. Channel progress
+ * opens chunk mode, so the answer uses markdown_text chunks too.
  */
 function streamModeGuard() {
   let mode: "text" | "chunks" | undefined;
@@ -429,6 +420,7 @@ describe("stopping Slack runs", () => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   engagements.length = 0;
   mutes.length = 0;
@@ -1152,10 +1144,9 @@ describe("handleSlackEvent", () => {
 });
 
 /**
- * Slack's agent surface expects a streamed reply: the message is opened once
- * and grown with deltas, which it renders as text arriving rather than as a
- * message being rewritten. That is the DM transport — a channel thread opens
- * with a progress note instead, which only an edit can replace.
+ * Both DM and channel replies prefer Slack streaming. Channel progress uses
+ * task chunks; DMs use a status line. Unsupported streaming falls back to
+ * posting and editing one message.
  */
 describe("streaming a Slack reply", () => {
   it("opens the stream once and sends deltas, not the whole answer", async () => {
@@ -1184,16 +1175,11 @@ describe("streaming a Slack reply", () => {
     expect(finalText()).toBe("Once upon a time.");
   });
 
-  it("names the recipient when a channel reply falls through to streaming", async () => {
+  it("names the channel stream recipient", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     const { slack, streamStarts } = makeSlackFake();
-    // With the progress note unpostable the sink stays unopened, so the answer
-    // opens it — the one path left that streams into a channel.
-    slack.postMessage = async () => {
-      throw new Error("nope");
-    };
     const deps = makeDeps([{ delta: { content: "hi" } }, { done: true }], slack);
 
     await handleSlackEvent(
@@ -1298,7 +1284,7 @@ describe("streaming a Slack reply", () => {
   });
 
   it("keeps a subagent's tools off the channel checklist", async () => {
-    // The parent's own transfer row stands for the whole hand-off. Listing the
+    // The parent's native delegate row stands for the child invocation. Listing the
     // child's calls as well is the same thing said again, once per call — which
     // is what made a tool-heavy run unreadable.
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -1307,7 +1293,7 @@ describe("streaming a Slack reply", () => {
     const { slack, tasks } = makeSlackFake();
     const deps = makeDeps(
       [
-        { delta: { toolCalls: [{ id: "c_t", function: { name: "transfer_to_agent" } }] } },
+        { delta: { toolCalls: [{ id: "c_t", function: { name: "delegate_researcher" } }] } },
         {
           author: "researcher",
           delta: { toolCalls: [{ id: "c_1", function: { name: "SlackHistory" } }] },
@@ -1317,7 +1303,7 @@ describe("streaming a Slack reply", () => {
           toolResult: { toolCallId: "c_1", name: "SlackHistory", content: "..." },
         },
         {
-          toolResult: { toolCallId: "c_t", name: "transfer_to_agent: researcher", content: "..." },
+          toolResult: { toolCallId: "c_t", name: "delegate_researcher: researcher", content: "..." },
         },
         { delta: { content: "here it is" } },
         { done: true },
@@ -1329,10 +1315,10 @@ describe("streaming a Slack reply", () => {
 
     const steps = tasks.filter((task) => task.id !== "run-progress");
     expect(steps).toEqual([
-      { id: "transfer_to_agent", title: "transfer_to_agent", status: "in_progress" },
+      { id: "delegate_researcher", title: "delegate_researcher", status: "in_progress" },
       {
-        id: "transfer_to_agent",
-        title: "transfer_to_agent: researcher",
+        id: "delegate_researcher",
+        title: "delegate_researcher: researcher",
         status: "complete",
       },
     ]);
@@ -1861,9 +1847,9 @@ describe("falling back when a workspace cannot stream", () => {
 });
 
 /**
- * Documents attached in Slack. Before this they were dropped with a warning that
- * said the file was "ignored" — a Slack file lives behind `url_private` and needs
- * this bot's token, so no URL-fetching tool could stand in for reading it either.
+ * Slack attachments require the bot-authenticated download path, followed by
+ * document extraction at the receiving surface. A generic URL fetch cannot
+ * replace this authenticated read.
  */
 describe("a document attached to a Slack message", () => {
   it("reaches the run as text, ahead of the question it is about", async () => {
@@ -2061,18 +2047,15 @@ describe("uploading what the run read", () => {
 });
 
 /**
- * Whose gallery a run's output lands in.
- *
- * A Slack actor is a workspace id, and the artifact owner index is keyed by
- * email — so a picture somebody asked the bot to draw was reachable only through
- * its agent, never from their own gallery. The surface can resolve the
- * address, so it does.
+ * A Slack actor groups usage by Slack identity. Separately resolving the
+ * requester email files output in the personal Artifact gallery; failure leaves
+ * it reachable through the Agent.
  */
 describe("filing a Slack run's output under its author", () => {
   it("carries the asker's address to the run", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const { slack, emails } = makeSlackFake();
-    emails.set("U1", "me@nalbam.com");
+    emails.set("U1", "requester@example.test");
     const deps = deps0(slack);
     let seen: { ownerEmail?: string; actor?: { kind: string; id: string } } = {};
     deps.runAgent = async function* (input) {
@@ -2086,7 +2069,7 @@ describe("filing a Slack run's output under its author", () => {
       BINDING,
     );
 
-    expect(seen.ownerEmail).toBe("me@nalbam.com");
+    expect(seen.ownerEmail).toBe("requester@example.test");
     // The actor is untouched: it groups usage by surface and decides which
     // tier's spend cap applies, which is a different question.
     expect(seen.actor).toEqual({ kind: "slack", id: "U1" });
@@ -2124,10 +2107,10 @@ describe("filing a Slack run's output under its author", () => {
   it("does not gate the lookup on callerContext, which decides a different thing", async () => {
     // `callerContext` decides what the *model* is told. This address reaches no
     // prompt and no tool result — a person's own pictures going missing from
-    // their own gallery is not something a version parameter should cause.
+    // their own gallery is not something an Agent configuration parameter should cause.
     vi.spyOn(console, "log").mockImplementation(() => {});
     const { slack, emails } = makeSlackFake();
-    emails.set("U1", "me@nalbam.com");
+    emails.set("U1", "requester@example.test");
     const deps = deps0(slack);
     deps.agents = withConfigurations(deps.agents, async () => ({ ...configurationFixture(), parameters: { piiFiltering: false } }));
     let seen: { ownerEmail?: string; caller?: unknown } = {};
@@ -2139,7 +2122,7 @@ describe("filing a Slack run's output under its author", () => {
     await handleSlackEvent(deps, { ...EVENT, event: { ...EVENT.event, user: "U1" } }, BINDING);
 
     expect(seen.caller).toBeUndefined();
-    expect(seen.ownerEmail).toBe("me@nalbam.com");
+    expect(seen.ownerEmail).toBe("requester@example.test");
   });
 });
 
@@ -2197,7 +2180,7 @@ describe("what the bot remembers about a channel thread", () => {
     const deps = makeDeps([{ delta: { content: "here you go" } }, { done: true }], slack);
     deps.threads = {
       markEngaged: async () => {
-        throw new Error("dynamo is down");
+        throw new Error("thread store unavailable");
       },
       isEngaged: async () => false,
       setMuted: async () => {},
@@ -2212,9 +2195,8 @@ describe("what the bot remembers about a channel thread", () => {
 });
 
 /**
- * A command is answered here rather than by a run: the answer is a constant, and
- * two of the three change *whether the bot speaks again* — which no amount of
- * prompting makes reliable. A person silencing a thread has to be obeyed.
+ * Fixed commands bypass model execution. Mute controls future channel replies;
+ * Stop cancels the current run through the persisted stop state.
  */
 describe("commands", () => {
   /** `@bot !mute` sent as a reply inside an existing thread. */
@@ -2310,7 +2292,7 @@ describe("commands", () => {
       markEngaged: async () => {},
       isEngaged: async () => false,
       setMuted: async () => {
-        throw new Error("dynamo is down");
+        throw new Error("thread store unavailable");
       },
     };
 

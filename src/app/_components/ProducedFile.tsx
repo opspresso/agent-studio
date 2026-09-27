@@ -7,17 +7,12 @@ import { formatBytes } from "@/app/_lib/formatBytes";
 import { useT } from "@/app/_i18n/provider";
 
 /**
- * A file the run produced, offered as a download.
+ * Shared file card with a filename, known byte size and download link.
+ * Viewable artifacts also offer the app's isolated preview.
  *
- * Not a `GeneratedImage` with a different icon: there is nothing to draw, and
- * the reader's whole interaction is deciding whether to fetch it — which is why
- * the size is on the row rather than discovered by clicking.
- *
- * Rendered with no `href` only where the address genuinely arrives later: a
- * chat's is signed when the finished turn is read back, not put on the wire
- * frame by frame. The row keeps its shape across that swap, so the reply does
- * not jump the moment the answer lands. Every other surface reading a run's
- * chunks gets the address on the frame and never draws this state.
+ * Chat can render the card before its address is signed on a finished-turn
+ * read. Keep the same shape when the download link arrives; raw chunk routes
+ * address files before sending their frames.
  *
  * Chat and Playground share this presentation so filenames, sizes and download
  * links remain consistent across both surfaces.

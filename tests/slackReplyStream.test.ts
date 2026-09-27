@@ -1,8 +1,13 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createReplySink, type ReplyTarget } from "@/application/slack/replyStream";
 import type { SlackChunk, SlackClientPort } from "@/application/slack/types";
 
 const NOW = 1_750_000_000_000;
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
 
 const DM: ReplyTarget = { channel: "D1", threadTs: "1.0", assistantThread: true };
 
@@ -319,8 +324,7 @@ describe("progress in a channel thread that cannot stream", () => {
 
 /** A channel surface that can stream, which is the ordinary one. */
 /**
- * The two rules Slack enforces on one stream, which the fakes enforce because
- * not enforcing them is exactly how both shipped:
+ * The fixture enforces two stream contracts:
  *
  * - `markdown_text` and `chunks` on the same request is
  *   `cannot_provide_both_markdown_text_and_chunks`;
@@ -329,8 +333,6 @@ describe("progress in a channel thread that cannot stream", () => {
  *   open the message, so on a channel the answer must travel as a
  *   `markdown_text` *chunk*.
  *
- * Passing tests accepted calls Slack rejects, twice, and `push` swallows a
- * failed append — so every channel run silently dropped its whole answer.
  */
 function streamModeGuard() {
   let mode: "text" | "chunks" | undefined;
@@ -560,11 +562,8 @@ describe("progress on a channel stream's task axis", () => {
 });
 
 /**
- * The checklist. Claude Tag's defining progress surface is a list that
- * accumulates — steps ticked off behind, one in flight — rather than a single
- * line that keeps being rewritten. The constraint that shapes it: a step may
- * only be ticked off at a *real* boundary, and the only one a run has is a tool
- * result coming back.
+ * Top-level tool results close checklist calls. Repeated tools share a counted
+ * row, and delegated tools remain inside their parent's row.
  */
 describe("a channel's checklist", () => {
   const rows = (chunks: Array<{ chunk: SlackChunk }>) =>
@@ -632,15 +631,15 @@ describe("a channel's checklist", () => {
     const { slack, chunks } = makeStreamingChannelFake();
     const sink = createReplySink(slack, "tok", CHANNEL);
 
-    await sink.step("c1", "dispatch_agents");
+    await sink.step("c1", "delegate_researcher");
     await sink.step("c2", "researcher: SlackUser", { nested: true });
     await sink.step("c3", "researcher: FetchUrl", { nested: true });
-    await sink.stepDone("c1", "dispatch_agents: researcher");
+    await sink.stepDone("c1", "delegate_researcher: researcher");
     await sink.finish("done", "");
 
     expect(rows(chunks)).toEqual([
-      "dispatch_agents/dispatch_agents/in_progress",
-      "dispatch_agents/dispatch_agents: researcher/complete",
+      "delegate_researcher/delegate_researcher/in_progress",
+      "delegate_researcher/delegate_researcher: researcher/complete",
     ]);
   });
 
@@ -651,9 +650,9 @@ describe("a channel's checklist", () => {
     const sink = createReplySink(slack, "tok", CHANNEL);
 
     await sink.step("c1", "search");
-    await sink.finish("gave up", ":warning: Agent run timed out");
+    await sink.finish("gave up", ":warning: Agent run timed out", "failed");
 
-    expect(rows(chunks)).toEqual(["search/search/in_progress", "search/search/complete"]);
+    expect(rows(chunks)).toEqual(["search/search/in_progress", "search/search/error"]);
   });
 
   it("ticks nothing off for a step that never opened", async () => {
@@ -733,14 +732,7 @@ describe("a checklist that would grow past reading", () => {
 });
 
 /**
- * The defect that shipped in v0.63.0 and was found in production: a channel run
- * finished, produced its answer, and the reader saw "is thinking…" forever.
- *
- * `chat.stopStream` refuses `markdown_text` and `chunks` on the same request, so
- * a close that carried both threw — after which the stream was never stopped and
- * the answer was never delivered. It needed *both* to fire, which is why it hid:
- * the text has to be non-empty (the last delta, unflushed because pushes are
- * paced at a second) and a row has to still be open.
+ * Stream close flushes owed text and progress rows within the opened stream mode.
  */
 describe("closing a stream that still owes both text and rows", () => {
   it("delivers the answer", async () => {

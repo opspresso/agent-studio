@@ -23,7 +23,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 export interface RunContext {
   /** Stable for the whole run, including its subagent transfers. */
   runId: string;
-  /** The run's trace, once one exists. Absent when the run was not sampled. */
+  /** The run's Trace once linked; absent before Trace creation and on model-free tasks. */
   traceId?: string;
 }
 

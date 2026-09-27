@@ -1,23 +1,8 @@
 /**
- * Spend guard for one agent, over the UTC day and the UTC month.
- *
- * The usage aggregates were already there; nothing read them back. A runaway
- * tool loop, or a caller hammering the shared agent catalog, could spend
- * without limit inside the per-run bounds (10 minutes, 50 turns) because those
- * bound one run and nothing bounded the day — and a slow burn under the daily
- * threshold every day was bounded by nothing at all, which is what the monthly
- * window exists for.
- *
- * **This is a backstop, not an exact cap.** An agent run buffers its usage in
- * `createUsageAggregator` and flushes once at the end, so the pre-check cannot
- * see what runs already in flight have spent, and runs that start together all
- * pass it. The block becomes true on the post-check that follows the flush.
- * Short-timescale suppression is a different mechanism (see the abuse-control
- * milestone) and must not be assumed from this one.
- *
- * Every failure here is fail-open: an agent must not stop running because the
- * guard's own read failed. The one exception is the block decision itself,
- * which is only ever reached on a successful read.
+ * Agent spend backstop over UTC day/month windows. Usage flushes at run end,
+ * so concurrent admitted runs can exceed thresholds before later runs block.
+ * Accounting failures are fail-open; database concurrency leases provide the
+ * independent short-term admission limit.
  */
 
 import { costAlertDestinations, type Agent } from "@/domain/agent/types";

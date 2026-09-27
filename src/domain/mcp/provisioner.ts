@@ -1,9 +1,7 @@
 /**
  * Starting and stopping the containers behind managed MCP servers.
  *
- * A port, not a runtime. The only adapter that exists runs Docker on this
- * app's own host, but nothing above this file may know that: the
- * milestone's rule is one adapter now and a contract for the rest.
+ * The port exposes workload lifecycle, independent of the Docker adapter.
  *
  * What a provisioner may be asked for is deliberately small. It takes an
  * approved image and returns the loopback address it bound — never a shell
@@ -28,18 +26,9 @@ export interface ManagedWorkloadSpec {
   /** Image reference. An artifact, not a command. */
   image: string;
   /**
-   * Port the container listens on inside itself — a request, and only an
-   * adapter that publishes a mapping can grant it.
-   *
-   * An adapter that instead puts the container in this app's network namespace
-   * has no mapping to translate with: the address is literally shared, so the
-   * container must bind the very port the entry's url names, and it is told so
-   * through `PORT`. There, this value cannot be honoured and is ignored.
-   *
-   * Optional because a restart has nobody to ask: an entry created before it
-   * was persisted carries none, and an adapter without a value falls back to
-   * the port it binds anyway — which is what a container told `PORT=<that
-   * port>` already listens on.
+   * Container listen port. The Docker adapter publishes a host-loopback mapping
+   * and sets PORT plus {{PORT}} arguments to this value. If absent, it uses
+   * the host port derived from the workload name as the container port too.
    */
   containerPort?: number;
   /** Plaintext values passed only from the lifecycle boundary to the runtime adapter. */

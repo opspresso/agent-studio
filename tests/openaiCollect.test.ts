@@ -1,7 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { toChatCompletion, toChatCompletionChunks } from "@/app/api/agents/_lib/openai";
 import { collectRun } from "@/application/execution/runAgent";
 import type { EngineChunk } from "@/domain/llm/types";
+
+let idSequence = 0;
+beforeEach(() => {
+  idSequence = 0;
+  vi.spyOn(globalThis.crypto, "randomUUID")
+    .mockImplementation(() => `00000000-0000-4000-8000-${String(++idSequence).padStart(12, "0")}`);
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+});
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 async function* stream(chunks: EngineChunk[]): AsyncGenerator<EngineChunk> {
   for (const chunk of chunks) {
@@ -49,7 +60,12 @@ describe("collectRun images", () => {
       { b64: "aGk=", mimeType: "image/png", prompt: "a cat" },
       { b64: "Ynll", mimeType: "image/png" },
     ]);
-    expect(toChatCompletion(result).images).toEqual(result.images);
+    const completion = toChatCompletion(result);
+    expect(completion.images).toEqual(result.images);
+    expect(completion).toMatchObject({
+      id: "chatcmpl-00000000000040008000000000000001",
+      created: 1767225600,
+    });
   });
 
   it("omits the images field when a run produced none", async () => {
@@ -86,8 +102,7 @@ describe("toChatCompletionChunks images", () => {
   });
 
   it("streams an image a subagent drew", async () => {
-    // Delegating to an image subagent is how an agent draws, so the
-    // picture arrives authored — it is still the answer.
+    // Authored image outputs remain part of the response.
     const frames: Record<string, unknown>[] = [];
     for await (const frame of toChatCompletionChunks(
       stream([
@@ -114,9 +129,8 @@ describe("toChatCompletionChunks images", () => {
  *
  * The bytes are gone by the time a surface sees the chunk — the bracket stored
  * them and stripped the payload — so what travels is a reference, and what a
- * caller receives is an address. Both OpenAI shapes carry it, because a run
- * that renders a report and answers "here is your report" with no report was
- * this endpoint's behaviour until they did.
+ * caller receives is an address. Collected and streamed OpenAI responses both
+ * carry the addressed file extension.
  */
 describe("a file a run produced, on the OpenAI surface", () => {
   const rendered: EngineChunk = {
@@ -220,8 +234,7 @@ describe("a file a run produced, on the OpenAI surface", () => {
 
 /**
  * The OpenAI schema has no field for what a run lost, which is the same problem
- * `images` has — so it takes the same answer. The two shapes have to agree:
- * `finish_reason` is here because they once did not.
+ * `images` has — so warnings are an extension on both response shapes.
  */
 describe("what a run lost, on the OpenAI surface", () => {
   it("carries warnings as an extension on the collected completion", async () => {
@@ -410,9 +423,7 @@ describe("collected termination", () => {
   });
 
   it("fails a collected run whose stream announced nothing", async () => {
-    // The stream path already refuses this; minting a `stop` here kept the
-    // same producer defect invisible on the collected surface — which is how
-    // an image dispatch that ended its stream bare once shipped unnoticed.
+    // Both response shapes require an explicit top-level termination.
     const result = await collectRun(stream([{ delta: { content: "partial" } }]), "m");
     expect(result.termination).toBeUndefined();
     expect(() => toChatCompletion(result)).toThrow("without announcing a termination");

@@ -1,27 +1,12 @@
 /**
- * Writing a run down so a reader who left can catch up.
+ * Persist bounded replay frames after the initiating reader detaches.
  *
- * The tee sits **outside** `runAndPersist`, which is what makes the log's
- * ordering worth anything:
+ * The tee wraps `runAndPersist` so termination follows:
+ * display persistence → terminal replay entry → lease release.
  *
- *   persist → terminal entry → release the lease
- *
- * A reader that sees the terminal entry can fetch the chat and find the
- * assistant message already there; a reader that sees the lease gone has
- * therefore already seen the terminal entry. Inside `runAndPersist` the terminal
- * entry would land before the S3 uploads and the message writes, and a reader
- * following it would read a turn with no reply. That is also why the lease
- * release lives here rather than in `runAndPersist` — with it there, "no lease,
- * no terminal entry" is a real state for one write's worth of time, and a tail
- * that lands in it reports a finished run as lost.
- *
- * **Nothing is written while someone is reading.** They are already seeing every
- * frame; writing them down as well would cost a database write every half-second
- * of every run, to serve the few that get abandoned. The frames are buffered
- * instead, and the whole run so far is flushed the moment the reader leaves.
- * The cost of that choice: while a reader is attached the log is empty, so a
- * second window cannot watch the same run live — see `replayRunLog`, which says
- * so rather than showing a blank.
+ * A connected run buffers frames without writing replay rows. Detachment flushes
+ * that buffer and then collects writes every 500ms. A second window cannot watch
+ * a connected run through this log; `replayRunLog` reports that condition.
  */
 
 import { isTopLevelChunk, type EngineChunk } from "@/domain/llm/types";
@@ -51,11 +36,7 @@ const BUFFER_LOW_WATER_BYTES = 280_000;
 /** Bound each persisted replay row's size. */
 const MAX_ROW_BYTES = 300_000;
 
-/**
- * A single frame's ceiling. A tool result is the only thing here that can be
- * arbitrarily large, and one of them must not be able to push a row past the
- * item limit on its own.
- */
+/** Bound a single payload so it cannot exceed the persisted replay-row budget. */
 const MAX_FRAME_BYTES = 100_000;
 
 export interface RunLogTee {
@@ -71,15 +52,7 @@ function warningFrame(message: string): string {
   return JSON.stringify({ warning: message });
 }
 
-/**
- * A frame's size in bytes, as storage counts it.
- *
- * `String.length` counts UTF-16 units, and `JSON.stringify` leaves non-ASCII
- * text alone — so a Korean run measured that way is three times the size it
- * reports, and a row built to a 300,000-"character" budget is a 900KB item the
- * service refuses. `run.ts` weighs its own budget the same way, for the same
- * reason.
- */
+/** Count serialized UTF-8 bytes; UTF-16 string length understates non-ASCII data. */
 function frameBytes(frame: string): number {
   return Buffer.byteLength(frame, "utf8");
 }

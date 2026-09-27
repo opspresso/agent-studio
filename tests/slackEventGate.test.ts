@@ -1,11 +1,9 @@
 import { createHmac } from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * The gate decides which Slack events reach a handler at all, so a wrong
- * condition here drops a whole surface silently — the agent container would
- * open with no prompts and nothing would say why. The two handlers are mocked:
- * what is under test is the routing, not what they do.
+ * Signed Slack events are validated and classified before claim and handler
+ * dispatch. Handler mocks isolate the routing contract.
  */
 const { handled, claim, settle, isEngaged } = vi.hoisted(() => ({
   handled: [] as Array<{ handler: "run" | "threadStart" | "stop"; type?: string }>,
@@ -95,11 +93,14 @@ const channelMessage = (over: Record<string, unknown> = {}) => ({
 });
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
   handled.length = 0;
   vi.clearAllMocks();
   claim.mockResolvedValue("claim-token");
   isEngaged.mockResolvedValue(false);
 });
+afterEach(() => vi.useRealTimers());
 
 describe("which Slack events reach a handler", () => {
   it.each([
@@ -161,7 +162,7 @@ describe("which Slack events reach a handler", () => {
     ]);
   });
 
-  it("greets rather than runs when the agent container is opened", async () => {
+  it("greets when the Slack assistant surface opens", async () => {
     await deliver({
       type: "event_callback",
       event_id: "Ev3",
@@ -251,7 +252,7 @@ describe("which Slack events reach a handler", () => {
 
     it("stays silent rather than answering when the engagement lookup fails", async () => {
       vi.spyOn(console, "error").mockImplementation(() => {});
-      isEngaged.mockRejectedValue(new Error("dynamo is down"));
+      isEngaged.mockRejectedValue(new Error("database unavailable"));
 
       await deliver(channelMessage({ thread_ts: "1.0" }));
 

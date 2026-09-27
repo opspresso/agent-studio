@@ -10,7 +10,7 @@ import { resolveMcpBindings } from "./mcpBindingSettings";
 import {
   assertModelSupports, assertAgentModelType, assertReferencesExist,
   assertSubavailableAgentsAccessible, assertUniqueReferences, assertValidImageModel,
-  warnUnknownCatalogModel, type AgentConfigurationInput, type ConfigurationRefRepos,
+  warnUnselectedModel, type AgentConfigurationInput, type ConfigurationRefRepos,
 } from "./configurationPolicy";
 
 export type { AgentConfigurationInput } from "./configurationPolicy";
@@ -69,7 +69,7 @@ export async function putAgentConfiguration(
   assertValidImageModel(input.parameters);
   assertModelSupports(input.model, input.parameters);
   if (input.fallbackModel) assertAgentModelType(input.fallbackModel);
-  warnUnknownCatalogModel(name, input.model);
+  warnUnselectedModel(name, input.model);
   assertUniqueReferences(input);
   await assertReferencesExist(deps.refs, input, agent.configuration);
   await assertSubavailableAgentsAccessible(deps.refs, input, userEmail, agent.configuration);

@@ -2,10 +2,9 @@
  * The outbound `Authorization` for an agent's OAuth connection, refreshed when
  * a run could outlive the stored token.
  *
- * Everything a run needs to know about OAuth is answered here in one shape:
- * headers to send, or a reason there are none. A missing or broken connection
- * is never an error — it costs that server's tools and says why, exactly as a
- * deregistered or unreachable server already does.
+ * Returns headers or an unavailable reason for a missing/incompatible grant
+ * or a failed refresh. Store and live-token decryption failures may propagate;
+ * the tool-resolution caller owns reporting that loss.
  */
 
 import type { McpConnection, McpConnectionRepository } from "@/domain/mcp/connection";
@@ -61,8 +60,8 @@ function bearer(token: string): Record<string, string> {
  *
  * Two axes, both checked: `issuer` is who issued the client credentials
  * (SEP-2352), `resource` is the RFC 8707 audience the tokens are bound to.
- * A row that predates either field is read as belonging to the entry it was
- * already being used against, so existing connections keep working.
+ * Connections without either identity are unusable; no current registry value
+ * is substituted for a missing credential binding.
  *
  * @returns why the connection may not be used, or undefined when it may.
  */

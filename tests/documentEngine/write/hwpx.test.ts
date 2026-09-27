@@ -1,12 +1,6 @@
 /**
- * HWPX generation, checked by reading it back.
- *
- * The round trip is what it is elsewhere. What is different here is how much
- * these tests are *not* able to say: HWPX has one reader that matters, and
- * nothing in this file knows whether 한글 opens the result. So the assertions
- * cover the parts a wrong file gets wrong in a way that is checkable — the
- * package layout, the id references resolving against the header, a cell
- * holding a paragraph — and the rest is a manual step the README names.
+ * HWPX writer checks cover package order, header references, cell structure and
+ * content round trips. Native 한글 rendering and reflow are not run here.
  */
 
 import { strict as assert } from "node:assert";

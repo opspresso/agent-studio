@@ -1,15 +1,6 @@
 /**
- * PPTX generation, checked by reading it back.
- *
- * The same round trip the DOCX tests use, with one thing more to check: a deck
- * is a sequence of boxes, so *how many slides* and *what landed on which* are
- * part of the output rather than a detail of it. `read/pptx.ts` numbers the
- * slides it finds, which makes the assertion a plain string comparison.
- *
- * What it cannot check is whether PowerPoint calls the file valid — a manual
- * step. The structural assertions below stand in for the parts of it that
- * actually go wrong: a cell with no paragraph, a hyperlink with no relationship,
- * a slide with no layout behind it.
+ * PPTX writer checks cover package relationships, slide count/order, content
+ * round trips and shape bounds. Native PowerPoint rendering is not run here.
  */
 
 import { strict as assert } from "node:assert";
@@ -655,7 +646,7 @@ test("a referenced asset that was not provided is refused by name", () => {
   );
 });
 
-test("an image inside prose stays a link, as every image used to be", () => {
+test("an image inside prose remains a link", () => {
   const rendered = renderPptx(
     parseMarkdown("## 본문\n\n설명이 있고 ![그림](asset://d.png) 이어진다\n\n다음 문단"),
     { title: "t", created: CREATED, assets: { "d.png": { mimeType: "image/png", bytes: pngFixture() } } },

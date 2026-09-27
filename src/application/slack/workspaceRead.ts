@@ -228,7 +228,7 @@ function channelLines(channels: SlackChannelInfo[]): string {
 }
 
 /**
- * Bind the four tools to one workspace.
+ * Bind the six read-only tools to one workspace.
  *
  * The token is captured here rather than passed per call: which workspace a run
  * may read is a property of the run, and a tool argument naming it would let the
@@ -342,9 +342,7 @@ export function createSlackWorkspaceReader(
         return channelLines(matched);
       }
       default:
-        // Unreachable through the engine, which only routes the four names
-        // above; answered rather than thrown so a future miswiring degrades to
-        // one bad tool result instead of a failed run.
+        // Unknown names are tool errors rather than run failures.
         return `Error: ${tool} is not a Slack tool.`;
     }
   };

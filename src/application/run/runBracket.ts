@@ -20,16 +20,13 @@ import { log } from "@/shared/logger";
 export type RunBracketDeps = CostGuardDeps &
   ConcurrencyGuardDeps & {
     /**
-     * Whether an unregistered model may run. Injected rather than read, like
-     * every other runtime setting an application module needs — the resolution
-     * order lives in `src/lib/runtime-settings.ts`, which this layer may not
-     * import. Absent explicitly means `allow` for a caller that does not supply
-     * an unknown-model policy.
+     * Whether a selected model with unknown pricing may run. Inject the
+     * deployment policy; a missing policy uses the default allow behavior.
      */
     unknownModelPolicy?: () => Promise<UnknownModelPolicy>;
     /**
      * Where a run's output is kept. Absent in a deployment with no object
-     * storage, and then a run behaves exactly as it did — the bytes reach the
+     * storage, and then the bytes reach the
      * surface and stop there.
      */
     artifacts?: ArtifactStorage;
@@ -55,7 +52,7 @@ export interface RunBracket {
   readonly runId: string;
   /**
    * Where this run's output goes, with the run's own identity already bound —
-   * agent, Agent, actor, transfer chain, correlation id.
+   * Agent, actor, transfer chain and correlation id.
    *
    * It is built here for the same reason the guards are: four entry points admit
    * a top-level run, and every one of them produces bytes. Binding the context

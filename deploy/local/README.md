@@ -22,9 +22,7 @@
 셸 환경변수 우선순위를 그대로 따르며, 자격증명 값은 로그에 출력하지 않는다.
 GitHub·Notion·AWS Knowledge는 plugin에 선언된 외부 MCP로 연결하므로 로컬 컨테이너를 만들지 않는다.
 
-문서 처리는 Studio 내장 기능이다. 장기 메모리는 Agent Memory 연동으로 구성한다.
-이 Compose에는 mcp-document·mcp-memory·mcp-youtube가 없다. 기존 `mcp_memory`
-DB와 볼륨은 제거하지 않으며, 이전 MCP 바인딩과 메모리 데이터 이전은 별도 작업이다.
+문서 처리는 Studio 내장 기능이다. 장기 메모리는 별도의 Agent Memory에 연결한다.
 
 ## 설정과 실행
 

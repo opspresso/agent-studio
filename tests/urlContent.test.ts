@@ -6,10 +6,7 @@ import { MAX_IMAGE_BYTES } from "@/domain/llm/imageLimits";
 import { MAX_DOCUMENT_CHARS } from "@/domain/llm/documentLimits";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 
-/**
- * The use case runs on two ports and nothing else, so these need no network and
- * no parser — which is the point of the ports.
- */
+/** Fake HTTP responses exercise the use case with the real document extractor. */
 function ports(resource: Partial<HttpResource> & { throws?: Error }) {
   const asked: Array<{ url: string; accept: string; maxBytes: number }> = [];
   return {
@@ -29,8 +26,7 @@ function ports(resource: Partial<HttpResource> & { throws?: Error }) {
           };
         },
       },
-      // The real extractor: this is the seam the design is about — a fetched
-      // page and an attached file become text through one owner.
+      // Fetched pages and attachments share the same text extraction owner.
       documents: documentExtractor,
     },
   };
@@ -95,7 +91,7 @@ describe("reading a URL", () => {
     expect(read.text).toBe("");
   });
 
-  it("refuses an image the provider would not take, by the provider's own cap", async () => {
+  it("refuses an image above the shared image byte cap", async () => {
     const { ports: p } = ports({
       bytes: Buffer.alloc(MAX_IMAGE_BYTES + 1),
       mimeType: "image/png",

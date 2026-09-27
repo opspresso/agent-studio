@@ -1,11 +1,4 @@
-/**
- * The shared parser for page sizes across list endpoints.
- *
- * The cases below are the three the copies disagreed about, and each of them
- * reaches a reader as a page that is wrong without looking wrong: a gallery of
- * one tile reported as the page that was asked for, or a "load more" button
- * against a list that cannot grow.
- */
+/** Shared page sizes preserve caller intent while bounding repository reads. */
 import { describe, expect, it } from "vitest";
 import { boundedPageLimit, MAX_PAGE_LIMIT, parsePageLimit } from "@/shared/pageLimit";
 
@@ -19,9 +12,7 @@ describe("parsePageLimit", () => {
   });
 
   it("treats an empty `?limit=` as absent rather than as zero", () => {
-    // `?limit=` is what a query string built from a value that turned out to be
-    // absent produces. `Number("")` is 0, and clamped up it answered with a
-    // single row — a gallery of one tile, reported as the page asked for.
+    // Empty and whitespace-only values use the fallback before numeric coercion.
     expect(parsePageLimit("", { fallback: 24 })).toEqual({ wanted: 24, limit: 24 });
     expect(parsePageLimit("   ", { fallback: 24 })).toEqual({ wanted: 24, limit: 24 });
   });
@@ -37,14 +28,12 @@ describe("parsePageLimit", () => {
   });
 
   it("refuses to floor a fraction into an empty page", () => {
-    // `Math.floor(0.5)` is 0, and a zero-length page is trivially "full" — the
-    // reader was offered "load more" against a list that could not grow.
+    // A fraction below one cannot produce a nonempty page.
     expect(parsePageLimit("0.5", { fallback: 24 })).toEqual({ wanted: 24, limit: 24 });
   });
 
   it("keeps what was asked for beside what may be read", () => {
-    // The uncapped size is what "is there another page" is answered against;
-    // comparing against the ceiling is what made the button never settle.
+    // Pagination compares against the requested size, including values above the cap.
     expect(parsePageLimit("900", { fallback: 50, max: 500 })).toEqual({
       wanted: 900,
       limit: 500,
@@ -52,9 +41,7 @@ describe("parsePageLimit", () => {
   });
 
   it("never hands back an empty page, whatever default it was given", () => {
-    // A zero-length page is trivially "full", which is how the sidebar came to
-    // offer "load more" against a list that could not grow. The reading above
-    // cannot produce one; a bad default should not either.
+    // Invalid defaults still yield a nonempty bounded read.
     expect(parsePageLimit(null, { fallback: 0 }).limit).toBe(1);
   });
 
@@ -78,9 +65,7 @@ describe("boundedPageLimit", () => {
   });
 
   it("reads an unreadable size as unstated, not as one row", () => {
-    // The repositories clamp defensively, and `LIMIT NaN` would reach the
-    // store as a query error. A page of one row is the worse of the two
-    // recoveries: it looks like the end of the list.
+    // An unspecified numeric bound uses the ceiling rather than a one-row page.
     expect(boundedPageLimit(Number.NaN)).toBe(MAX_PAGE_LIMIT);
     expect(boundedPageLimit(Number.POSITIVE_INFINITY, 500)).toBe(500);
   });

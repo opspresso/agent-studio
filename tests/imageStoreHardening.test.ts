@@ -122,11 +122,13 @@ describe("resolveMessageImages", () => {
   it("bounds signer concurrency across the full transcript", async () => {
     let active = 0;
     let maxActive = 0;
-    const release: Array<() => void> = [];
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
     const signer = async (key: string) => {
       active += 1;
       maxActive = Math.max(maxActive, active);
-      await new Promise<void>((resolve) => release.push(resolve));
+      if (active === MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS) started.resolve();
+      await release.promise;
       active -= 1;
       return `https://signed.example/${key}`;
     };
@@ -136,11 +138,9 @@ describe("resolveMessageImages", () => {
     );
 
     const pending = resolveMessageImages(messages, signer, VIEW_URL_TTL_SECONDS);
-    await expect.poll(() => active).toBe(MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS);
-    while (release.length > 0) {
-      release.shift()?.();
-      await Promise.resolve();
-    }
+    await started.promise;
+    expect(active).toBe(MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS);
+    release.resolve();
     await pending;
 
     expect(maxActive).toBe(MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS);

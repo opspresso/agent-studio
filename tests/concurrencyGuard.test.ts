@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   acquireRunSlot,
   ConcurrencyLimitError,
@@ -13,6 +13,18 @@ import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { UsageRepository } from "@/domain/usage/repository";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers();
+  vi.setSystemTime("2026-07-29T12:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 const LIMITS: ConcurrencyLimits = { perActor: 2 };
 
@@ -139,8 +151,7 @@ describe("acquireRunSlot", () => {
 
   it("reclaims a slot whose lease has expired", async () => {
     // The instance holding it died without releasing; nothing else can free it.
-    // The clock starts at the real epoch because the lease the guard writes is
-    // derived from `Date.now()` — a fake scale would never reach it.
+    // Start the repository clock at the same fixed instant the guard uses.
     let clock = Math.floor(Date.now() / 1000);
     const slots = memorySlots(() => clock);
     const d = { runSlots: slots.repo, limits: { perActor: 1 } };
@@ -213,7 +224,7 @@ describe("acquireRunSlot", () => {
       runSlots: {
         renew: async () => false,
         acquire: async () => {
-          throw new Error("dynamo down");
+          throw new Error("slot store unavailable");
         },
         release: async () => {},
       },
@@ -332,9 +343,11 @@ describe("openRun with a concurrency limit", () => {
   it("releases the slot when the run closes", async () => {
     const d = { usage, ...deps() };
     const first = await openRun(d, agent, configuration, user);
-    await openRun(d, agent, configuration, user);
+    const second = await openRun(d, agent, configuration, user);
     await first.close();
-    await expect(openRun(d, agent, configuration, user)).resolves.toBeDefined();
+    const third = await openRun(d, agent, configuration, user);
+    await second.close();
+    await third.close();
   });
 
   it("releases a slot only once, however the generator unwinds", async () => {

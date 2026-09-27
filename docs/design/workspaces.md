@@ -177,6 +177,8 @@ GitHub App의 private key는 서버에만 두고 Git 작업에는 저장소·권
 installation token을 잠시 전달한다. 토큰은 Git 설정이나 체크포인트에 쓰지 않는다. PR 생성은
 같은 작업 브랜치의 기존 PR을 재사용하며 Draft/Ready 전환도 명시적 승인을 따른다.
 main 병합은 소유한 PR·정확한 head를 확인하고 merge API의 `sha` 조건으로 실행한다.
+`merged:true`와 유효한 결과 commit SHA를 받은 경우만 완료로 기록한다. 불완전한 응답은
+`uncertain`으로 남기며 운영자가 실제 PR 상태를 확인하기 전 자동 재실행하지 않는다.
 실행 중·실패한 검사는 병합을 막는다. 보고된 검사가 없는 커밋은 `none`으로 구분하고 승인 화면에
 CI 증거가 없음을 표시하며 GitHub 브랜치 규칙을 따른다. `none`을 CI 성공으로 기록하지 않는다.
 `push-main`은 이미 게시된 작업 브랜치의 커밋을 PR 없이 main에 fast-forward한다. 검토한 main SHA와

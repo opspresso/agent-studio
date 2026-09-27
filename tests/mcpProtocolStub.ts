@@ -7,12 +7,9 @@
  * verbs, which revision `2026-07-28` requires rather than offers). A legacy stub
  * answers the probe with "no such method", then completes the `initialize`
  * handshake, hands back a session id and omits both of those fields. Mixing the
- * two scripts a server that does not exist, which was a whole test file's worth
- * of failures each time.
+ * two produces a result the client refuses.
  *
- * Most stubs here are modern, because that is what the deployment's own servers
- * are; the legacy ones exist because a registry entry may point at anybody's
- * server, and that is exactly what must not silently stop working.
+ * Modern and legacy fixtures exercise the registry client's supported modes.
  */
 
 /** A tool as a script gives it: everything but what the spec insists on. */

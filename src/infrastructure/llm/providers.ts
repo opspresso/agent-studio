@@ -10,7 +10,7 @@ export type { ProviderChannelConfig };
 export type TargetResolver = (modelId: string) => Promise<ResolvedTarget>;
 
 export interface ResolvedTarget {
-  /** null means the default channel. */
+  /** Adapter provider kind. Registered targets always supply it. */
   providerName: string | null;
   baseUrl: string;
   /** Empty when `auth` is `sigv4`. */
@@ -37,10 +37,7 @@ export function parseProviderConfigs(env: Record<string, string | undefined>): P
     // key check below instead, which says what is missing.
     const auth: ChannelAuth =
       optionalEnv(env[`LLM_PROVIDER_${upperName}_AUTH`]) === "sigv4" ? "sigv4" : "bearer";
-    // A `sigv4` channel has no key to require: AWS signs with the pod's own
-    // credentials. Demanding one here is what kept Bedrock from registering at
-    // all — silently, since an unregistered provider just falls through to the
-    // default channel and 404s there.
+    // SigV4 uses the AWS credential chain instead of a provider API key.
     if (auth === "bearer" && !apiKey) {
       continue;
     }

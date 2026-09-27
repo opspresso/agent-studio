@@ -14,13 +14,13 @@ import { keys } from "@/infrastructure/db/keys";
 import { ConflictError } from "@/application/errors";
 import type { FakeStore } from "./fakeStore";
 
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
 vi.mock("node:crypto", async (original) => {
   const real = await original<typeof import("node:crypto")>();
-  let sequence = 0;
   return {
     ...real,
-    randomBytes: (size: number) => Buffer.alloc(size, ++sequence % 256),
-    randomUUID: () => `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`,
+    randomBytes: (size: number) => Buffer.alloc(size, ++entropy.sequence % 256),
+    randomUUID: () => `00000000-0000-4000-8000-${String(++entropy.sequence).padStart(12, "0")}`,
   };
 });
 const mocks = vi.hoisted(() => ({
@@ -92,6 +92,7 @@ function harness() {
 }
 
 beforeEach(async () => {
+  entropy.sequence = 0;
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
   vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"));

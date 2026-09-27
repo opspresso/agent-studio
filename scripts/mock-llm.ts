@@ -1,19 +1,17 @@
 /**
  * Standalone mock OpenAI-compatible server for local development without a
  * real LLM provider. Responds to POST {base}/chat/completions in both stream
- * and non-stream modes; requests a Skill tool call once when tools are offered
- * and the version mentions a skill, then answers.
+ * and non-stream modes. Streaming requests ask for a Skill tool call once when
+ * tools are offered and the request mentions a skill, then answer.
  *
  *   pnpm tsx scripts/mock-llm.ts   # listens on 127.0.0.1:8002
  *
- * Two knobs for looking at a chat window rather than testing a run. The
- * defaults reproduce the old behaviour exactly — one short answer, every chunk
- * at once — because the integration check wants an answer, not a performance:
+ * Defaults send one short answer without delay. To inspect chat rendering
+ * during a long streamed reply, configure padding and inter-chunk delay:
  *
  *   MOCK_LLM_CHUNKS=400 MOCK_LLM_DELAY_MS=40 pnpm tsx scripts/mock-llm.ts
  *
- * Nothing about a scrolling, streaming reply can be reproduced by an answer
- * that arrives complete before the first paint.
+ * The padded reply includes headings, code fences and lists.
  */
 import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";

@@ -84,8 +84,8 @@ export async function buildMcpTools(
         const loopback = skipsUrlGuard(mcp, deps.internalHostSuffixes);
         if (!loopback) {
           try {
-            // Re-check at dispatch (like remote subagents) to narrow the DNS-rebinding
-            // window; a blocked server is skipped, not fatal to the run. The URL is
+            // Re-check at dispatch to narrow the DNS-rebinding window; a blocked
+            // server is skipped, not fatal to the run. The URL is
             // always the registry's — a binding may redefine headers, never the host.
             await deps.urlPolicy.assertAllowed(mcp.url);
           } catch (error) {
@@ -260,16 +260,8 @@ export async function buildMcpTools(
           ]
         : []),
     ],
-    // Refused rather than routed. The cap above decides what this run *offers*,
-    // but the alias map inside the manager still holds every discovered tool, so
-    // a name that reaches here having been cut executed anyway and reported a
-    // normal result — which the warning's "were not offered" says did not
-    // happen. The model does not have to invent the name for that to matter: a
-    // chat replays an earlier run's top-level tool calls, and the earlier run
-    // may have had room for a tool this one does not.
-    // Only what this run offers: an alias past the cap above is one the model
-    // was told nothing about, and a run addressing it by server and tool name
-    // would call a tool it said it did not have.
+    // The session manager knows uncapped aliases. Restrict both lookup and
+    // dispatch to the tools offered by this run, including replayed names.
     aliasFor: (serverName, toolName) => {
       const alias = toolManager.aliasFor(serverName, toolName);
       return alias && offered.has(alias) ? alias : undefined;

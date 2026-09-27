@@ -222,8 +222,11 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       const current = await forge.pullRequest(repository, number);
       if (current.headSha !== headSha || current.state !== "open" || current.draft || !codingCiAllowsPublication(current.ci)) throw new CodingMutationRejectedError("Pull request head or CI changed since approval");
       const access = await token(repository.repository, { contents: "write" });
-      const result = await request<{ merged: boolean; sha: string }>(`${repoPath(repository.repository)}/pulls/${number}/merge`, access.token, "PUT", { sha: headSha, merge_method: "merge" });
-      if (!result.merged) throw new CodingMutationRejectedError("GitHub refused to merge the pull request");
+      const result = await request<{ merged: unknown; sha: unknown } | null>(`${repoPath(repository.repository)}/pulls/${number}/merge`, access.token, "PUT", { sha: headSha, merge_method: "merge" });
+      if (result?.merged === false) throw new CodingMutationRejectedError("GitHub refused to merge the pull request");
+      if (result?.merged !== true || typeof result.sha !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(result.sha)) {
+        throw new Error("GitHub did not confirm the pull request merge; inspect its state before preparing another action");
+      }
       return result.sha;
     },
     async reviewMainPush(repository, headSha) {

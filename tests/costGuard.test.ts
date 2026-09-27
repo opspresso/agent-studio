@@ -1,5 +1,5 @@
 import { withConfigurations } from "./agentConfigurations";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assertWithinCostLimit,
   CostLimitExceededError,
@@ -21,9 +21,19 @@ import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import type { UsageRow } from "@/domain/usage/types";
 import { fakeSkillRepository } from "./fakeSkills";
 
-// A getter, not a module-load constant: the guard computes its own current
-// date at call time, and a suite that loads this module before UTC midnight
-// and runs the test after it would compare two different days.
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers();
+  vi.setSystemTime("2026-07-29T12:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
+
+// Fixtures and guard reads share the fixed UTC test clock.
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -43,10 +53,10 @@ function agent(costLimits?: CostLimits, slackEnabled = false): Agent {
   };
 }
 
-function row(costUsd: Record<string, number>): UsageRow {
+function row(costUsd: Record<string, number>, date = today()): UsageRow {
   return {
     agentName: "proj",
-    date: today(),
+    date,
     calls: {},
     inputTokens: {},
     outputTokens: {},
@@ -197,7 +207,7 @@ describe("assertWithinCostLimit", () => {
   });
 
   it("a monthly refusal waits for the month, not midnight", async () => {
-    const { deps } = fixture({ day: row({ m: 20 }), month: [row({ m: 20 })] });
+    const { deps } = fixture({ day: row({ m: 20 }, "2026-08-09"), month: [row({ m: 20 }, "2026-08-09")] });
     const now = new Date("2026-08-09T12:00:00Z");
     // Both windows are crossed; the monthly Retry-After is the one that is true.
     const refusal = await assertWithinCostLimit(
@@ -225,7 +235,7 @@ describe("assertWithinCostLimit", () => {
 
   it("fails open when the usage read fails", async () => {
     const warn = vi.spyOn(console, "error").mockImplementation(() => {});
-    const f = fixture({ dayError: new Error("dynamo down") });
+    const f = fixture({ dayError: new Error("usage store unavailable") });
     await expect(
       assertWithinCostLimit(f.deps, agent({ blockThresholdUsd: 1 })),
     ).resolves.toBeUndefined();
@@ -413,12 +423,7 @@ describe("settleCostLimit", () => {
 });
 
 describe("every top-level entry point is guarded", () => {
-  /**
-   * The six route-level entry points (predict, chat/completions, agent, chat,
-   * Slack) all reach one of these four functions, and image generation is
-   * the fifth. Every other dependency rejects, so a run that got past the guard
-   * fails loudly rather than quietly succeeding on a fake.
-   */
+  /** Facade entry points share admission; other dependencies fail if reached first. */
   function blockedDeps() {
     const reject = () => Promise.reject(new Error("the guard should have refused first"));
     const f = fixture({ day: row({ m: 100 }) });

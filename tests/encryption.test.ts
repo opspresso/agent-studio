@@ -1,7 +1,7 @@
 // A 32-byte key must be present before the encryption module reads config.
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { agentMcpHeadersContext } from "@/domain/security/secretContext";
 import {
   decryptHeadersForOutbound,
@@ -18,6 +18,9 @@ import {
   mergeHeaderUpdate,
   mergeOutboundHeaders,
 } from "@/infrastructure/crypto/secretEncryption";
+
+vi.mock("node:crypto", async importOriginal => ({ ...await importOriginal<typeof import("node:crypto")>(),
+  randomBytes: vi.fn((size: number) => Buffer.alloc(size, 0xa5)) }));
 
 describe("header encryption round-trip", () => {
   it("encrypts header values and decrypts them back for outbound calls", () => {
@@ -287,6 +290,36 @@ describe("header names that name an Object.prototype member", () => {
     const stored = encryptHeaders({ [name]: "Bearer real" });
     const merged = mergeHeaderUpdate(stored, { [name]: maskSecret(stored[name]!) });
     expect(decryptHeadersForOutbound(merged)).toEqual({ [name]: "Bearer real" });
+  });
+  it.each(["__proto__", "constructor", "toString"])("stores, masks and updates the %s registry header", name => {
+    const context = "mcp:alpha:headers";
+    const stored = mergeHeaderUpdate({}, { [name]: "registry-secret" }, context);
+    expect(Object.hasOwn(stored, name)).toBe(true);
+    const preserved = mergeHeaderUpdate(stored, maskHeaders(stored, context), context);
+    expect(preserved[name]).toBe(stored[name]);
+    const changed = mergeHeaderUpdate(preserved, { [name]: "replacement-secret" }, context);
+    expect(new Headers(Object.entries(decryptHeadersForOutbound(changed, context))).get(name)).toBe("replacement-secret");
+  });
+  it.each(["__proto__", "constructor", "toString"])("preserves and rebinds the %s override", name => {
+    const source = agentMcpHeadersContext("first", "server");
+    const target = agentMcpHeadersContext("second", "server");
+    const stored = mergeHeaderOverrideUpdate({}, { [name]: "agent-secret" }, source);
+    expect(Object.hasOwn(stored, name)).toBe(true);
+    const copied = mergeHeaderOverrideUpdate(stored, maskHeaderOverrides(stored, source), target, source);
+    expect(Object.hasOwn(copied, name)).toBe(true);
+    expect(new Headers(Object.entries(mergeOutboundHeaders({}, copied, undefined, target))).get(name)).toBe("agent-secret");
+    const removed = mergeHeaderOverrideUpdate(copied, { [name]: null }, target);
+    expect(Object.hasOwn(removed, name)).toBe(true);
+    expect(removed[name]).toBeNull();
+    expect(new Headers(Object.entries(mergeOutboundHeaders(encryptHeaders({ [name]: "default" }), removed, undefined, target))).get(name)).toBeNull();
+  });
+  it("adds and replaces a __proto__ header at outbound dispatch", () => {
+    const overrides = encryptHeaderOverrides({ ["__proto__"]: "agent-secret" });
+    for (const registry of [{}, encryptHeaders({ ["__proto__"]: "registry-secret" })]) {
+      const outbound = mergeOutboundHeaders(registry, overrides);
+      expect(Object.hasOwn(outbound, "__proto__")).toBe(true);
+      expect(new Headers(Object.entries(outbound)).get("__proto__")).toBe("agent-secret");
+    }
   });
 });
 

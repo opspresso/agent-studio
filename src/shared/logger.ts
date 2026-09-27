@@ -15,7 +15,7 @@
 
 import { currentRunContext } from "./runContext";
 
-/** Subsystem the line belongs to. Free-form, but reuse an existing one. */
+/** Closed subsystem vocabulary for operational log lines. */
 export type LogScope =
   | "api"
   | "artifact"

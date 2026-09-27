@@ -1,9 +1,6 @@
 /**
- * The bounded-concurrency primitive the engine's tool dispatch and the Slack
- * transcript reader both run on. What is under test is that it returns one
- * result per item whatever the inputs are: the engine pairs results back to
- * calls by index and skips an empty slot, so a short return is not an error
- * there — it is a tool call answered with silence.
+ * Bounded mapping preserves one result slot per input in the original order,
+ * including undefined results, while limiting concurrent callbacks.
  */
 import { describe, expect, it } from "vitest";
 import { mapWithLimit } from "@/shared/mapWithLimit";

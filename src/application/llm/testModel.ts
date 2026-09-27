@@ -1,7 +1,7 @@
 /**
  * A one-shot "does this model answer" probe for the /models console. Text models
  * use a small completion and image models generate through the image channel;
- * rerank models use their injected specialized-endpoint probe. It reports an
+ * rerank and decision models use their injected specialized-endpoint probes. It reports an
  * endpoint failure as a result rather than throwing, because turning failure
  * into a report is this function's job.
  *
@@ -38,9 +38,7 @@ const REASONING_TEST_MAX_TOKENS = 256;
 
 export function createTestModel(models: ModelProvider, deps: TestModelDeps = {}): TestModel {
   return async (modelId) => {
-    // Enabled or not is irrelevant — the point is testing a model *before*
-    // enabling it — but an id the registry cannot price is a caller mistake,
-    // not a test finding.
+    // Diagnostics require a registered ID, but do not require default selection or known pricing.
     const model = getModelConfig(modelId);
     if (model === undefined) {
       throw new ValidationError(`Unknown model "${modelId}"`);

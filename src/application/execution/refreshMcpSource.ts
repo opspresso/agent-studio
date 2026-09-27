@@ -22,7 +22,7 @@ export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps,
     };
     const { configuration, binding } = await check();
     let refreshed: Parameters<RegisterMcpSource>[0] | undefined;
-    // Agent before the model-facing result cap; a large provider response may
+    // Capture before the model-facing result cap; a large provider response may
     // otherwise lose the closing JSON delimiter. This callback persists nothing.
     const client = await buildMcpTools({ ...deps, registerMcpSource: async (source) => {
       refreshed = source;

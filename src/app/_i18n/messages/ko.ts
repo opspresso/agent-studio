@@ -1,13 +1,7 @@
 /**
- * Every string the console shows a person, in Korean.
- *
- * Typed as `Messages` rather than inferred, which is what makes a key missing
- * here a compile error instead of a blank spot on a page. `en.ts` says why the
- * catalogue is TypeScript, and why the product nouns below are still English.
- *
- * Controls and short descriptions use the polite-formal register (`~합니다` /
- * `~하세요`). The guide's long-form documentation follows the plain style of
- * this repository's prose documents.
+ * Korean console translations, typed against the English Messages contract.
+ * Controls and short descriptions use `~합니다` / `~하세요`; the Guide follows
+ * the plain style of the repository's prose documents. Product nouns remain English.
  */
 import type { Messages } from "./en";
 
@@ -543,7 +537,7 @@ export const ko: Messages = {
   "routing.maxCalls": "Run당 최대 주 모델·ModelTask 호출 수",
   "routing.unlimitedHint": "0은 무제한",
   "routing.minOutputChars": "답변 최소 글자 수",
-  "routing.qualityHint": "ModelTask는 빈 답변·출력 잘림·잘못된 분류 JSON을 상위 모델로 승격하며 최대 네 번 시도합니다. 주 모델은 바로 스트리밍하며 출력이 시작되면 재호출하지 않습니다. 사실 정확성을 보장하는 검사는 아닙니다.",
+  "routing.qualityHint": "ModelTask는 빈 답변·짧은 답변·출력 잘림·잘못된 분류 JSON을 상위 모델로 승격하며 최대 네 번 시도합니다. 주 모델은 바로 스트리밍하며 출력이 시작되면 재호출하지 않습니다. 사실 정확성을 보장하는 검사는 아닙니다.",
   "usage.none": "이 기간에는 사용량이 없습니다.",
   "usage.loadFailed": "사용량을 불러오지 못했습니다.",
   "usage.groupBy.agent": "Agent",
@@ -630,6 +624,8 @@ export const ko: Messages = {
     "Playground에서 Agent의 현재 설정을 편집하고 저장한다. 독립적으로 실험하려면 Agent를 복제해 복제본을 설정한다.",
   "guide.configuration.model": "모델과 대체 모델",
   "guide.configuration.modelBody": "도구 호출을 지원하는 텍스트 모델을 선택한다. 그림을 읽는 작업에는 이미지 입력 지원도 필요하다. 필요하면 호환되는 대체 모델을 지정한다. 이미지 생성·편집은 별도로 설정한 이미지 도구 모델을 사용한다.",
+  "guide.configuration.routing": "응답 모델 자동 선택",
+  "guide.configuration.routingBody": "관리자가 Settings → Models → Model 사용 설정에서 전역 tier 모델·작업별 정책·예산을 배정한다. 결정 모델은 tier 선택에 사용할 수 있다. Agent의 모델 라우팅을 켜고 저장하면 첫 답변 전에 모델을 선택한다. 결정이 없거나 실패하면 필요한 기능·예산을 만족하는 주 모델을 사용한다. 라우팅을 끄면 주 모델을 유지하고 기본값 복원은 ModelTask도 제거한다. Traces와 Usage에서 선택한 모델과 라우팅 결정을 확인한다.",
   "guide.configuration.prompt": "프롬프트 미리보기와 저장 구분",
   "guide.configuration.promptBody": "Prompt preview는 현재 초안의 프롬프트를 조립한다. 답변을 생성하지 않지만 Memory 회상과 역량 검색은 설정된 서비스에 요청할 수 있다. Run 패널은 저장된 설정을 사용하므로 실행 전에 저장한다.",
   "guide.configuration.limits": "실행 범위와 한도 설정",
@@ -648,8 +644,7 @@ export const ko: Messages = {
   "guide.capabilities.toolsBody":
     "관리자가 Tools에서 서버를 등록하고 discovery 결과에 필요한 도구가 나타나는지 확인한다. Agent에 서버를 연결하고 제공할 도구를 선택한 뒤 설정을 저장한다. 호출이 실패하면 서버 상태·필수 헤더·실행 경고를 확인한다. 서버에 접속할 수 있어도 사용할 도구가 없거나 별도 인증이 필요할 수 있다.",
   "guide.capabilities.oauth": "MCP 설정의 저장 범위",
-  "guide.capabilities.oauthBody":
-    "도구 선택과 헤더 오버라이드는 Agent 설정에 속하며 Save가 필요하다. 헤더를 바꾼 뒤 도구 목록을 새로 조회한다. 마스킹된 값은 기존 시크릿을 유지하며 빈 맵은 오버라이드를 지운다. 관리자는 Tools에서 OAuth 앱을 구성하고 소유자는 Agent 계정을 연결한다. 도구에 연결됐다고 그 자원에 접근할 수 있는 것은 아니다.",
+  "guide.capabilities.oauthBody": "도구 선택·헤더 오버라이드·파일 응답 매핑은 Agent 설정과 함께 Save로 저장한다. 헤더를 바꾼 뒤 도구 목록을 새로 조회한다. 마스킹된 값은 기존 시크릿을 유지하고 빈 맵은 오버라이드를 제거한다. OAuth 연결·해제는 즉시 저장된다. 필요한 OAuth 앱은 관리자가 Tools에서 설정하고 소유자가 Agent 계정을 인증한다.",
   "guide.capabilities.agents": "다른 에이전트에 작업 위임",
   "guide.capabilities.agentsBody": "전문 역할 분리가 필요한 작업에는 설정된 다른 Agent를 연결한다. 각 하위 Agent가 받을 요청과 결과를 설명한다. 하위 활동에는 실행 주체가 표시되며 사용량은 원래 실행에 귀속된다.",
   "guide.capabilities.plugins": "Plugins 가져오기와 동기화",
@@ -665,8 +660,7 @@ export const ko: Messages = {
   "guide.chat.body":
     "Chats에는 Agent와 주고받은 Chat 기록이 보관된다. 설정 시험에는 Playground를, 여러 메시지에 걸쳐 이어가는 작업에는 Chat을 사용한다.",
   "guide.chat.configuration": "Chat에 사용할 Agent 선택",
-  "guide.chat.configurationBody":
-    "Chats에서 접근 가능한 설정된 Agent를 선택해 Chat을 시작한다. 각 새 턴은 현재 저장된 설정을 사용하므로 설정 변경은 기존 Chat의 이후 턴에도 적용된다.",
+  "guide.chat.configurationBody": "접근 가능한 설정된 Agent를 선택한다. Settings → Models → Model 사용 설정에 결정 모델이 있으면 새 Chat·Workspace 화면에서 입력한 요청으로 Agent를 추천한다. 인식된 PII 패턴을 가린 뒤 요청과 후보 설명을 그 프로바이더에 전달한다. 추천은 선택을 자동 변경하지 않으므로 Agent 선택을 누르거나 목록에서 직접 고른다. 입력을 바꾸는 동안 마지막 성공한 추천은 유지된다. 각 Chat 턴은 해당 Agent의 현재 저장된 설정을 사용한다.",
   "guide.chat.context": "Chat 맥락의 한계",
   "guide.chat.contextBody":
     "화면 메시지와 모델의 암호화된 SDK Session은 별개다. Session은 제한된 이전 턴·도구 결과·최근 이미지를 제공하고 Memory는 선택적인 장기 자료다. 이력이 생략되면 경고하며 Session이 만료된 경우 보이는 메시지로 모델 이력을 다시 만들지 않는다. 새 문맥으로 시작할 때 필요한 제약을 다시 전달한다.",
@@ -808,7 +802,7 @@ export const ko: Messages = {
   "guide.admin.settings": "Settings 재정의와 배포 설정",
   "guide.admin.settingsBody": "Settings는 Service·Access·Plugins·Models 탭으로 나눈다. Service에서 브랜드·공개 주소·Artifact 전달·동시 실행 한도·Slack 표시를 관리한다. Access는 관리자와 허용 도메인, Plugins는 GitHub 저장소와 토큰을 관리한다. Models는 프로바이더 연결·등록 모델·사용 모델·검색 점수·가격 미지정 모델 정책을 관리한다. 변경한 항목만 저장한다. DB·암호화·로그인 공급자·스토리지 연결·보존 기간은 배포 설정에서 관리한다.",
   "guide.admin.models": "모델 연결과 검증",
-  "guide.admin.modelsBody": "Settings → Models → 프로바이더에서 종류·고유 연결 이름·API base URL·키를 등록한다. Self-hosted도 같은 흐름을 사용하며 키를 생략할 수 있다. 인증 대상 주소를 바꾸면 새 키가 필요하다. 모델 사용 설정에서는 등록된 호환 모델 중 기본·Workspace·검색 모델을 선택한다.",
+  "guide.admin.modelsBody": "Settings → Models → 프로바이더에서 종류·고유 이름·API base URL·키를 등록한다. Self-hosted는 키를 생략할 수 있고 인증 대상 주소를 바꾸면 새 키가 필요하다. 모델 사용 설정은 기본·결정·Workspace·검색 모델을 배정한다. 결정 모델은 Agent 추천과 라우팅에 사용한다. 라우팅 tier·작업별 정책·예산은 이를 켠 Agent들이 공유한다.",
   "guide.admin.modelSelection": "모델 조회·선택·관리",
   "guide.admin.modelSelectionBody": "Model 조회·등록은 항상 Provider의 전체 목록을 조회한다. 출력 유형과 독립적인 Tools·Vision·Reasoning 배지, 컨텍스트 한도와 가격을 비교하고 이름순·가격순으로 정렬한다. 모델 추가는 즉시 등록한다. 선택된 모델만 보기로 목록을 좁히고 삭제하며, 등록 모델 관리에서 수정·제공 상태를 확인한다. Provider·검색어·필터·정렬은 이 브라우저에 저장한다. Models는 저장된 선택의 읽기 전용 목록이다. 목록 조회 성공이 추론 성공을 뜻하지 않으므로 짧은 Agent 실행으로 확인한다.",
   "guide.admin.offline": "폐쇄망의 카탈로그와 검색 모델",
@@ -824,8 +818,7 @@ export const ko: Messages = {
   "guide.install.body":
     "배포 담당자를 위한 절차다. 콘솔 사용자는 앱 주소와 계정으로 접속한다. 패키지 공급자로부터 릴리스 이미지와 해당 환경의 실행·secret·ingress·backup 설정을 받는다.",
   "guide.install.prepare": "1. 서비스와 이미지 준비",
-  "guide.install.prepareBody":
-    "버전이 지정된 릴리스 이미지, pgvector가 있는 PostgreSQL(배포 기준 PostgreSQL 18), 접근 가능한 OpenAI 호환 LLM 엔드포인트를 준비한다. 폐쇄망에는 진입 전에 이미지를 내부 registry로 반입한다. 파일 영속 보관이 필요하면 S3 호환 저장소를 추가한다. 서비스 주소·자격 증명·볼륨·TLS·라우팅은 배포 환경에서 구성한다.",
+  "guide.install.prepareBody": "버전이 지정된 릴리스 이미지와 pgvector가 있는 PostgreSQL(배포 기준 PostgreSQL 18)을 준비한다. 폐쇄망에는 이미지를 내부 registry로 반입한다. Agent 실행에는 접근 가능한 지원 모델 프로바이더를 로그인 후 등록해야 한다. 파일 영속 보관에는 S3 호환 저장소를 추가한다. 자격 증명·볼륨·TLS·라우팅은 배포 환경이 관리한다.",
   "guide.install.environment": "2. 필수 설정 주입",
   "guide.install.environmentBody":
     "배포 환경의 secret·설정 주입 방식으로 DATABASE_URL·AES_ENCRYPTION_KEY를 제공한다. AES_ENCRYPTION_KEY는 32바이트의 base64 값이어야 하고 재시작 후에도 유지해야 한다. 모델 연결은 로그인 후 등록한다. STAGE를 명시하며 운영 배포는 prod를 사용한다. alpha/prod는 ADMIN_EMAILS와 로그인 방식도 필요하다. 콜백 구성 전에 배포 환경의 BETTER_AUTH_SECRET에 유지할 세션 secret을, BETTER_AUTH_URL과 PUBLIC_BASE_URL에 사용자가 접속하는 앱 주소를 설정한다.",
@@ -843,8 +836,7 @@ export const ko: Messages = {
   "guide.operations.body":
     "배포 담당자가 모니터링·주기 호출·백업·rollout을 구성한다. 콘솔 설정을 저장하면 외부 인프라까지 자동으로 시작된다고 가정하지 않는다.",
   "guide.operations.health": "상태 점검과 모델 실행 구분",
-  "guide.operations.healthBody":
-    "GET /api/health는 프로세스 생존을 확인한다. GET /api/ready는 DB와 기본 LLM의 도달 가능성을 확인하며 연결 불가나 draining 중에는 503을 반환한다. LLM 도달 검사는 HTTP 응답 여부를 보므로 models 엔드포인트의 401·404도 통과할 수 있다. 자격 증명과 모델 지원은 Models의 Test와 실제 Agent 실행으로 검증한다.",
+  "guide.operations.healthBody": "GET /api/health는 프로세스 생존을 확인한다. GET /api/ready는 DB와 기본 LLM의 도달 가능성을 확인하며 연결 불가나 draining 중에는 503을 반환한다. models 엔드포인트의 401·404도 HTTP 응답이므로 도달 검사를 통과할 수 있다. 추론과 자격 증명은 짧은 Agent 실행으로 검증한다.",
   "guide.operations.ticker": "외부 티커 구성",
   "guide.operations.tickerBody":
     "SCHEDULE_SCAN_TOKEN을 설정하고 외부 스케줄러가 최소 매분 한 번 X-Scan-Token 헤더로 POST /api/triggers/scan을 호출하도록 구성한다. 토큰 설정만으로 주기 작업이 시작되지는 않는다. 이 호출이 스케줄과 만료 DB 행 정리를 수행한다. 배포 토큰 미설정은 503, 요청 토큰 누락·불일치는 401이다. 활성화 후 scan 결과와 트리거 이력을 확인하며 장시간 중단 시 놓친 모든 발생분이 재실행되지는 않는다.",
@@ -872,11 +864,9 @@ export const ko: Messages = {
   "guide.trouble.limitsBody":
     "429는 동시 실행·Agent 일간 및 월간 차단·개인 등급 사용량을 확인하고 API 응답의 Retry-After를 따른다. 시간 초과나 스트림 오류는 공급자·느린 도구·배포 실행 시간 한도를 확인한다. turn-limit·output-limit·length는 작업을 좁히거나 저장된 설정의 해당 한도를 조정한다. 도구가 이미 외부 데이터를 바꿨을 수 있으므로 확인 없이 재시도를 반복하지 않는다.",
   "guide.trouble.tools": "도구·메모리를 사용하지 않음",
-  "guide.trouble.toolsBody":
-    "저장된 설정에 기능이 연결되어 있고 Prompt preview에 표시되는지 확인한다. 도구 선택·discovery·OAuth 연결·실행 경고를 점검하고 실제로 해당 도구가 필요한 질문으로 시험한다. 내부 호스트 차단은 배포 담당자에게 확인하고 메모리는 연결 서버에 recall이 있는지 확인한다. 문서 읽기 도구는 검색 가능 상태만으로 부족하며 명시적으로 연결해야 한다.",
+  "guide.trouble.toolsBody": "저장된 바인딩·도구 선택·Prompt preview·OAuth 연결·실행 경고를 확인하고 해당 도구가 필요한 요청으로 시험한다. Memory에는 recall을 제공하는 MCP 서버를 명시적으로 연결해야 한다. File은 내장 기능이며 저장소 구성이 필요하고 별도 MCP 연결은 필요하지 않다. 내부 호스트 차단은 운영자에게 확인한다.",
   "guide.trouble.automation": "봇·스케줄이 응답하지 않음",
-  "guide.trouble.automationBody":
-    "Webhook 202는 accepted·duplicate·disabled·busy·Agent 설정 없음·ping일 수 있으므로 응답과 Trigger 이력을 확인한다. GitHub는 Secret으로 X-Hub-Signature-256을 만들고 일반 발신자는 X-Trigger-Secret을 사용한다. 전달 성공은 Workspace 실행 권한이 아니다. 스케줄은 ticker, Workspace 승인·CI 재개는 해당 worker가 필요하다. 각 결과가 기록되는 창구에서 상태를 확인한다.",
+  "guide.trouble.automationBody": "Webhook 202는 완료가 아닌 접수 응답이다. status와 Trigger 이력을 확인한다: accepted·duplicate·disabled·busy·no-configuration·ping·ignored. PR 리뷰 모드는 GitHub 서명이 필요하고 일반 모드의 발신자는 X-Trigger-Secret을 사용한다. 스케줄은 ticker, Workspace 승인·CI 재개는 해당 worker가 필요하다.",
   "guide.trouble.files": "첨부·다운로드 실패",
   "guide.trouble.filesBody":
     "파일 형식과 첨부 한도를 먼저 확인한다. 이미지는 이미지 입력 모델이 필요하고 Office 읽기는 내장 엔진이 처리한다. 암호화 파일, OCR이 필요한 스캔본, 지원되지 않는 편집은 다른 작업 방식이 필요하다. File 도구가 없거나 원본이 보관되지 않았다면 관리자에게 저장소 구성을 확인한다. 다운로드 실패는 Artifacts를 다시 열고 저장 경고·접근 모드·공개 주소·연결·보존 기간을 점검한다.",
@@ -966,6 +956,7 @@ export const ko: Messages = {
   "agent.tab.traces": "트레이스",
   "trace.inConversation": "Chat",
   "trace.openDetail": "전체 트레이스 열기",
+  "trace.empty": "이 기간에 Trace가 없습니다. 이미지 도구 호출도 Agent 실행 Trace에 포함됩니다.",
   "agent.tab.apiReference": "API 레퍼런스",
   "apiReference.intro": "이 Agent 주소는 현재 저장된 Agent 설정을 실행합니다. 연동 → API 토큰에서 Agent 토큰을 발급하세요.",
   "apiReference.environmentHint": "호출 프로세스에 AGENT_API_TOKEN과 CONVERSATION_ID 환경변수를 설정하세요. curl은 $…를 치환하고 Python·Node.js는 환경변수를 읽습니다. 자격 증명은 호출 서버에 보관하세요.",
@@ -999,8 +990,8 @@ export const ko: Messages = {
   "bindings.refreshTools": "도구 새로고침",
   "bindings.loadingTools": "도구를 불러오는 중…",
   "bindings.noTools": "이 서버는 도구를 제공하지 않습니다.",
-  "bindings.allToolsOffered": "모든 도구를 제공합니다. 일부만 골라 모델에게 보일 범위를 좁힐 수 있습니다.",
-  "bindings.someToolsOffered": "도구 {total} 개 중 {chosen} 개를 제공합니다.",
+  "bindings.allToolsOffered": "선택한 도구로 제한하지 않은 바인딩입니다. 실행 도구 한도와 정책은 적용되며 일부 도구를 선택해 제공 범위를 좁힐 수 있습니다.",
+  "bindings.someToolsOffered": "도구 {total}개 중 {chosen}개를 선택했습니다. 실행 한도와 정책은 적용됩니다.",
   "bindings.toolGone": "더 이상 제공되지 않음",
   "bindings.addHeaderOverride": "+ 헤더 재정의 추가",
   "bindings.noOverridesNoDefaults":
@@ -1060,22 +1051,18 @@ export const ko: Messages = {
     "에이전트가 그림을 그리고, 사용자가 첨부했거나 앞서 그린 이미지를 고칠 수 있게 합니다.",
   "configuration.imageModel": "이미지 모델",
   "configuration.fetchUrl": "URL 읽기 (FetchUrl 도구)",
-  "configuration.fetchUrlHint":
-    "에이전트가 스스로 지정한 주소 — 웹 페이지·PDF·데이터 파일·이미지 — 를 읽게 합니다. 기본은 꺼짐입니다. 다른 모든 외부 요청은 운영자가 등록한 곳으로만 가지만, 이것은 모델이 정한 곳으로 갑니다.",
+  "configuration.fetchUrlHint": "모델이 지정한 웹 페이지·PDF·데이터 파일·이미지를 플랫폼 URL 검증을 거쳐 읽습니다. 기본은 꺼짐이며 외부 읽기가 필요한 작업에 사용하세요.",
   "configuration.slackWorkspace": "Slack 읽기 (SlackHistory, SlackThread, SlackUser, SlackChannels)",
-  "configuration.slackWorkspaceHint":
-    "이 Agent의 봇이 설치된 Slack 워크스페이스를 에이전트가 읽게 합니다 — 채널 히스토리, 스레드, 사용자 id 조회. 읽기 전용이라 글을 쓸 수는 없습니다. 기본은 꺼짐이고, Agent에 활성화된 Slack 봇이 없으면 켜도 동작하지 않습니다. Agent는 공유 카탈로그이므로, 이 Agent를 실행할 수 있는 사람은 봇이 읽을 수 있는 것을 모두 읽을 수 있습니다.",
+  "configuration.slackWorkspaceHint": "이 Agent의 활성화된 Slack 봇으로 채널 기록·스레드·사용자 ID를 읽습니다. 이 도구들은 메시지를 게시하지 않습니다. Agent를 실행할 수 있는 사용자는 봇이 읽을 수 있는 자료에 접근할 수 있습니다.",
 
   "configuration.skills": "Skills",
   "configuration.pickerLoadFailed": "{items} 목록을 불러오지 못했습니다. 선택 가능한 항목이 누락되었을 수 있습니다.",
   "configuration.searchSkills": "등록된 Skill 검색",
   "configuration.dynamicCapabilities": "요청마다 필요한 기능 찾기",
-  "configuration.dynamicCapabilitiesHint":
-    "최근 사용자 요청으로 기능 이름과 설명을 검색해(요청 없는 미리보기는 시스템 프롬프트 사용), 일치하는 Skill·MCP 서버/도구를 위 바인딩에 더해 제공합니다. 설명의 첫 500자가 색인되므로 구현 세부보다 어떤 요청을 처리하는지 먼저 쓰세요. 바인딩은 언제나 전부 제공되며, 자체 로그인이 필요한 MCP 서버는 이 Agent가 연결한 뒤에만 제공됩니다.",
+  "configuration.dynamicCapabilitiesHint": "최근 사용자 요청으로 Skill·MCP 서버/도구를 찾으며, 요청 없는 미리보기는 시스템 프롬프트를 사용합니다. 설명의 첫 500자를 색인합니다. 명시적 바인딩은 유지하지만 사용할 수 없거나 한도를 넘은 도구는 경고합니다. OAuth 서버는 이 Agent가 연결한 뒤에만 추가합니다.",
 
   "configuration.memoryRecall": "런마다 먼저 메모리 회상",
-  "configuration.memoryRecallHint":
-    "첫 토큰 전에, “recall” 도구를 제공하는 바인딩된 MCP 서버(mcp-memory)마다 들어온 요청을 물어 기억하는 내용을 시스템 프롬프트에 넣습니다 — 모델이 물어볼 생각을 해야 하는 대신 Agent가 이미 아는 것에서 시작합니다. recall 도구는 그대로 제공됩니다. 런당 호출 한 번이 들고, 제공하는 서버가 없으면 경고와 함께 아무 일도 하지 않습니다.",
+  "configuration.memoryRecallHint": "첫 토큰 전에 실행 가능한 바인딩된 MCP 서버마다 recall을 한 번 호출하고 결과를 시스템 프롬프트에 추가합니다. 차단되거나 승인이 필요한 도구는 자동 호출에서 제외합니다. 대상 없음·호출 실패·시간 초과는 경고합니다. Agent는 도구 정책에 따라 recall을 직접 호출할 수도 있습니다.",
   "configuration.memoryRecallUnbound":
     "회상을 켰지만 이 Agent의 MCP 바인딩 중 “recall” 도구를 제공할 수 있는 것이 없습니다 — 바인딩이 없거나, 모든 바인딩의 도구 선택에서 빠져 있습니다. 메모리 서버(mcp-memory)를 바인딩하거나 회상을 끄세요. 그때까지 모든 런은 메모리 없이 시작하며 매번 경고합니다.",
 
@@ -1130,8 +1117,7 @@ export const ko: Messages = {
   "preview.discovered": "이 미리보기에서 바인딩 외에 추가로 찾은 것: {names}",
   "preview.noPrompt": "미리 볼 시스템 지시문이나 역량이 없습니다. 작업은 메시지로 전달하세요.",
   "preview.toolsOffered": "제공하는 도구 ({count})",
-  "preview.blurb":
-    "실행과 같은 방식으로 시스템 프롬프트를 만듭니다 — 회상한 문맥, Skill 표, 연결된 MCP 서버와 도구 이름, 전환 지시 — 이를 위해 설정된 서비스에 필요할 때 실제로 접속합니다.",
+  "preview.blurb": "초안의 시스템 프롬프트에 회상한 문맥·Skill·MCP 도구·로컬 위임을 조립합니다. 설정된 서비스에 필요할 때 접속합니다.",
 
   "mcpConn.connected": "연결됨",
   "mcpConn.needsAuth": "인증되지 않음",
@@ -1218,13 +1204,12 @@ export const ko: Messages = {
   "tools.contentPlaceholder": "설치 단계, 주의사항, 링크…",
   "tools.descriptionPlaceholder": "이미지 URL 을 가져와 바이트를 돌려줍니다",
 
-  "plugins.lede":
-    "GitHub 에서 동기화한 Agent Plugins 패키지입니다. 각 패키지는 Skill 과 MCP 서버를 묶으며, 패키지가 선언한 모든 이름은 저장소가 소유합니다.",
+  "plugins.lede": "GitHub 저장소나 checkout archive에서 가져온 Agent Plugins입니다. 각 패키지는 Skill·MCP 서버를 묶으며 선언된 이름은 원본에서 관리합니다.",
   "plugins.descriptionTitle": "컴포넌트 설명이 런타임 사용을 결정합니다",
   "plugins.descriptionRole":
     "Plugin 설명은 사람이 패키지를 찾고 구분할 때만 쓰이며 런타임은 Plugin 자체를 검색하지 않습니다. 동적 검색은 Plugin 안의 Skill·MCP 서버·MCP 도구 설명을 검색합니다. 각 컴포넌트 설명에 언제 사용해야 하는지 쓰세요.",
   "plugins.filter": "Plugins 검색…",
-  "plugins.empty": "아직 Plugin이 없습니다. 설정에서 저장소와 토큰을 등록한 뒤 동기화하세요.",
+  "plugins.empty": "아직 Plugin이 없습니다. GitHub 저장소와 토큰을 설정하거나 checkout archive를 업로드하세요.",
   "plugins.noSkills": "이 Plugin은 Skill을 선언하지 않습니다.",
   "plugins.noServers": "이 Plugin은 MCP 서버를 선언하지 않습니다.",
   "plugins.uploadArchive": "아카이브 업로드",
@@ -1270,10 +1255,7 @@ export const ko: Messages = {
   "artifacts.documentAlt": "{type} 문서",
   "artifacts.producedBy": "제작: {name}",
   "artifacts.deleteTitle": "Artifact 삭제",
-  // 조사는 `하나` 에 붙인다 — 보간되는 명사가 아니라. `를`/`을` 은 앞 글자의 받침이
-  // 정하는데, 그 명사는 `ArtifactKind` 가 자라면 바뀐다: `이 {kind}를` 로 두면 받침
-  // 있는 종류가 추가되는 순간 "오디오 파일를" 이 된다. 영어는 `the {kind}` 라 아무
-  // 일도 없어 리뷰에서 놓치고, 타입도 잡아 주지 못하는 자리다.
+  // 조사를 고정 명사 `하나`에 붙여 보간된 종류의 받침과 무관하게 읽히도록 한다.
   "artifacts.deleteBody":
     "{kind} 하나를 스토리지에서 제거합니다. 이것이 표시됐던 모든 곳 — Chat 메시지, Slack 스레드 — 에서 사용할 수 없음으로 표시됩니다. 되돌릴 수 없습니다.",
   "artifacts.kindImage": "이미지",
@@ -1294,7 +1276,7 @@ export const ko: Messages = {
   "managed.nameHint": "컨테이너 이름으로도 쓰이므로 둘을 함께 찾을 수 있습니다.",
   "managed.image": "이미지",
   "managed.imagePlaceholder": "…dkr.ecr.ap-northeast-2.amazonaws.com/mcp-image-fetch:v1.0.1",
-  "managed.imageHint": "호스트가 pull 할 수 있는 레지스트리면 됩니다. 자체 ECR 은 자격 증명이 필요 없습니다.",
+  "managed.imageHint": "호스트의 로컬 이미지나 Docker가 pull할 수 있는 registry를 사용하세요. ECR을 포함한 비공개 registry에는 Docker registry 인증이 필요합니다.",
   "managed.port": "컨테이너 포트",
   "managed.envVars": "환경변수",
   "managed.envVarsEmpty": "직접 지정한 환경변수가 없습니다.",
@@ -1323,9 +1305,9 @@ export const ko: Messages = {
   "pset.deleteHint": "Agent를 삭제하면 설정과 Agent 소유 기록을 제거합니다. Chat과 Artifact는 각각의 보존 규칙을 따르며 Agent 이름은 재사용할 수 없습니다.",
   "pset.visibility": "공개 범위",
   "pset.visibilityPublic": "공개",
-  "pset.visibilityPublicHint": "로그인한 모든 멤버가 이 Agent를 보고, 실행하고, 복제할 수 있습니다.",
+  "pset.visibilityPublicHint": "로그인한 사용자가 이 Agent를 보고 실행할 수 있습니다. 복제에는 Agent 생성 권한도 필요합니다.",
   "pset.visibilityPrivate": "비공개",
-  "pset.visibilityPrivateHint": "소유자와 아래에 초대된 멤버만 보고, 실행하고, 복제할 수 있습니다.",
+  "pset.visibilityPrivateHint": "소유자·초대 이메일·관리자가 보고 실행할 수 있습니다. 복제에는 Agent 생성 권한도 필요합니다.",
   "pset.invitedMembers": "초대된 멤버",
   "pset.invitedMembersHint": "이메일 주소를 태그로 입력합니다. Enter, 쉼표, 공백으로 추가합니다.",
   "pset.visibilitySave": "공개 범위 저장",
@@ -1361,16 +1343,14 @@ export const ko: Messages = {
   "pset.shortcutLabel": "라벨",
   "pset.shortcutSends": "눌렀을 때 보낼 내용",
   "pset.telegramBot": "Telegram 봇",
-  "pset.telegramIntro":
-    "@BotFather 로 봇을 만들고 토큰을 여기에 붙여 넣어 저장합니다. 저장할 때 토큰을 Telegram 에 확인하고 봇의 username 을 알아냅니다. 활성화하면 이 배포에 웹훅이 등록되고 끄면 삭제됩니다. 주소가 바뀐 뒤에는 웹훅 등록 버튼으로 다시 가리킵니다. 개인 채팅에서는 모든 메시지에, 그룹에서는 멘션되거나 답장을 받았을 때 답합니다.",
+  "pset.telegramIntro": "@BotFather로 봇을 만들고 토큰을 저장하면 토큰과 봇 username을 확인합니다. 활성화하면 Webhook을 등록하고 끄면 제거합니다. 앱 주소 변경 후에는 Webhook 등록을 사용하세요. 발신자를 식별한 메시지는 개인 Chat에서 직접, 그룹에서는 봇 멘션·답장으로 실행을 시작합니다.",
   "pset.telegramEnable": "이 URL 에서 메시지 처리 활성화",
   "pset.telegramRegisterWebhook": "웹훅 등록",
   "pset.telegramWebhookRegistered": "웹훅 등록 주소",
   "pset.telegramGroupHint":
     "그룹에서는 봇을 멘션하거나 봇의 메시지에 답장한 것에만 답합니다. BotFather 의 privacy mode 는 켜 둔 채로 두어도 됩니다.",
   "pset.teamsBot": "Microsoft Teams 봇",
-  "pset.teamsIntro":
-    "Teams 채널을 켠 Azure Bot(Bot Framework)을 등록하고, 그 Microsoft App ID 와 클라이언트 시크릿을 여기에 붙여 넣은 뒤, Azure 에서 봇의 messaging endpoint 를 아래 URL 로 설정합니다. 개인 채팅에서는 모든 메시지에, 채널·그룹 채팅에서는 @멘션되었을 때 답합니다. 연결 테스트는 저장된 자격 증명으로 토큰을 받아 봅니다.",
+  "pset.teamsIntro": "Azure Bot의 Teams 채널을 켜고 App ID·client secret을 저장한 뒤 이 URL을 messaging endpoint로 설정하세요. 발신자를 식별한 메시지는 개인 Chat에서 직접, 채널·그룹에서는 @멘션으로 실행을 시작합니다. 연결 테스트는 저장된 자격 증명으로 토큰 발급을 확인합니다.",
   "pset.teamsAppId": "Microsoft App ID",
   "pset.teamsAppPassword": "클라이언트 시크릿",
   "pset.teamsTenantId": "테넌트 id (단일 테넌트 앱만)",
@@ -1438,8 +1418,7 @@ export const ko: Messages = {
   "members.joined": "가입일",
   "members.lastLogin": "마지막 로그인",
   "members.neverRecorded": "기록 없음",
-  "models.lede":
-    "이 배포의 AI 프로바이더를 통해 사용할 수 있는 Text, Image, Embedding, Rerank, Transcription 모델입니다.",
+  "models.lede": "이 배포에 등록된 Text·Image·Embedding·Rerank·Transcription·Decision 모델입니다.",
   "models.filter": "Models 검색…",
   "models.type": "Model type",
   "models.allTypes": "모든 type",

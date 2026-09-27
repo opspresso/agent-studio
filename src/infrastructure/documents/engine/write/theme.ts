@@ -1,35 +1,7 @@
 /**
- * The one place a colour, size or spacing is decided.
- *
- * The four renderers read the same tokens so a profile retains its hierarchy,
- * rhythm and contrast when the delivery format changes.
- *
- * **The profiles are deliberately nobody's brand.** A document handed to a
- * customer, a partner or a public office should not arrive dressed in its
- * tooling's colours. Each profile instead makes a small set of editorial
- * decisions for a specific reading context: restrained blues and teals for
- * structure, neutral near-black ink, quiet grey rules, and geometry that
- * ranges from formal to presentation-led. The result should look designed and
- * belong to no one.
- *
- * What that means concretely:
- *
- * - *White pages.* A tinted ground is kept for the two surfaces that can carry
- *   a full-bleed field for free — a cover slide, a section divider — and body
- *   pages stay white: a tint under a whole document is ink somebody pays for
- *   and an artefact in every photocopy.
- * - *No decoration for its own sake.* The identity is hierarchy, spacing and
- *   a few hairlines; every colour below earns a WCAG ratio in `theme.test.ts`
- *   or it does not ship.
- * - *Pure black is still never used* — near-black reads as ink, full black on
- *   a screen glares.
- *
- * **No font is named, in any format.** `write/docx.ts` reached this conclusion
- * on its own — a face named here is a face the reader's machine may not have,
- * and the substitute is then chosen by nobody. The identity is carried by
- * colour and layout, which survive every substitution. The PDF is the
- * exception it always was: it embeds Nanum Gothic because PDF has no system
- * stack to fall back to.
+ * Shared colors, type scales and spacing for document profiles. Font selection
+ * belongs to each format: DOCX/PPTX use theme prose fonts and named code faces,
+ * HWPX names its prose/code faces, and PDF embeds bundled Nanum Gothic.
  */
 
 /* --------------------------------------------------------------- palette */
@@ -234,17 +206,7 @@ export const PALETTE = designFor().palette;
 
 export type ColourName = keyof Palette;
 
-/**
- * A categorical chart palette, validated for colour-vision
- * deficiency and for contrast on a light surface.
- *
- * Nothing in this repository draws a chart. It is here because a PPTX carries a
- * theme, and that theme is the swatch list a reader sees when they add a shape
- * or a chart to the deck we handed them — leaving Office's defaults there means
- * their first edit is off-brand. Six of the eight fit the theme's six accent
- * slots; `#008300` is dropped for being a second green, and the order is kept
- * otherwise.
- */
+/** Categorical swatches; PPTX themes use the first six as Office accent colors. */
 export const CHART = designFor().chart;
 
 /** `#RRGGBB`, which is the form HWPX and the OOXML `srgbClr` attribute want. */
@@ -256,7 +218,7 @@ export function hashed(name: ColourName, palette: Palette = PALETTE): string {
  * Channels as floats in 0-1, for `pdf-lib`'s `rgb()`.
  *
  * Returned as a plain object rather than a `RGB`: this module is imported by
- * three renderers that have no business loading `pdf-lib`, and the PDF one
+ * renderers that do not load `pdf-lib`; the PDF renderer
  * wraps it in a single call at the point of use.
  */
 export function rgbOf(name: ColourName, palette: Palette = PALETTE): { r: number; g: number; b: number } {

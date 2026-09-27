@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createManagedMcpUseCases,
   MAX_MANAGED_MCP_SERVERS,
@@ -12,6 +12,18 @@ import type { ManagedWorkload, ManagedWorkloadSpec, McpProvisioner } from "@/dom
 // The store module is the in-memory fake (tests/setup.ts), which raises the
 // same error the real one does for a lost precondition.
 import { ConditionalWriteError } from "@/infrastructure/db/store";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+});
+afterEach(() => { vi.useRealTimers(); setAuditSink(undefined); });
 
 const REACHABLE: ListToolsResult = { ok: true, tools: [] };
 const REFUSED: ListToolsResult = { ok: false, error: "fetch failed" };
@@ -57,6 +69,7 @@ function fixture(
   const stopped: string[] = [];
   const started: string[] = [];
   const startedSpecs: ManagedWorkloadSpec[] = [];
+  const startEntered = Promise.withResolvers<void>();
   let releaseStart = (): void => {};
   const held = opts.holdStart
     ? new Promise<void>((resolve) => {
@@ -67,6 +80,7 @@ function fixture(
     async start(spec) {
       started.push(spec.name);
       startedSpecs.push(spec);
+      startEntered.resolve();
       if (held) {
         await held;
       }
@@ -184,6 +198,7 @@ function fixture(
     stopped,
     started,
     startedSpecs,
+    startEntered: startEntered.promise,
     invalidated,
     probeCalls,
     sleeps,
@@ -354,7 +369,8 @@ describe("managed MCP lifecycle", () => {
     }
 
     const last = f.useCases.create(input);
-    await vi.waitFor(() => expect(f.started).toEqual(["image-fetch"]));
+    await f.startEntered;
+    expect(f.started).toEqual(["image-fetch"]);
     await expect(
       f.useCases.create({ ...input, name: "other-tool" }),
     ).rejects.toThrow(/lifecycle operation/);
@@ -369,7 +385,8 @@ describe("managed MCP lifecycle", () => {
   it("claims a name before starting so concurrent creates cannot replace each other's container", async () => {
     const f = fixture({ holdStart: true });
     const first = f.useCases.create(input);
-    await vi.waitFor(() => expect(f.started).toEqual(["image-fetch"]));
+    await f.startEntered;
+    expect(f.started).toEqual(["image-fetch"]);
 
     await expect(
       f.useCases.create({ ...input, image: "ecr/img:rival" }),
@@ -552,18 +569,9 @@ describe("managed MCP status", () => {
 });
 
 /**
- * The regression suite for the failure this feature actually had in production.
- *
- * A managed container joins this app's network namespace, which Docker pins to
- * the app container's id at `docker run`. Redeploying the app replaced that
- * container, and the managed one kept running — healthy, restart-policy
- * satisfied, and stranded in a namespace nothing could address. `--restart
- * unless-stopped` cannot notice, and neither could `docker inspect`.
- *
- * `tests/ssmProvisioner.test.ts` already asserted the `--network container:…`
- * flag and passed throughout. Asserting the flag was never going to catch this;
- * the bug is in the lifetime it creates, so these tests live at the level that
- * owns the repair.
+ * Reconcile tests distinguish container state from protocol reachability.
+ * Running but unreachable workloads restart once; reachable and unauthorized
+ * responses leave the workload intact. Remote entries are outside this sweep.
  */
 describe("managed MCP reconcile", () => {
   it("restarts a container that is running but unreachable", async () => {
@@ -729,7 +737,8 @@ describe("managed MCP reconcile", () => {
     });
     f.answerWith(() => REFUSED);
     const reconciling = f.useCases.reconcile();
-    await vi.waitFor(() => expect(f.started).toEqual(["image-fetch"]));
+    await f.startEntered;
+    expect(f.started).toEqual(["image-fetch"]);
     f.rows.delete("image-fetch");
     f.releaseStart();
 
@@ -764,17 +773,7 @@ describe("managed MCP reconcile", () => {
   });
 });
 
-/**
- * `restart` answers when the work is accepted, not when it is finished, so an
- * assertion about what it did has to let the queued work run first.
- *
- * Microtask turns rather than a timer: nothing in the fixture waits on the clock
- * — `sleep` is injected and records instead of sleeping — so the queued chain
- * finishes in a bounded number of turns, and the repo's rule against real timers
- * in tests holds. The deepest chain here — a restart plus five settle attempts —
- * needs fewer than twenty turns, so the bound has room to spare; falling short
- * of it fails the assertions loudly rather than passing on unfinished work.
- */
+/** Drain queued restart work through microtasks; fixture sleeps never wait on a timer. */
 const FLUSH_TURNS = 500;
 const flush = async () => {
   for (let turn = 0; turn < FLUSH_TURNS; turn += 1) {

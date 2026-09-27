@@ -2,14 +2,9 @@ import { describe, expect, it } from "vitest";
 import { scriptJson } from "@/app/api/mcps/oauth/callback/route";
 
 /**
- * The one page in this app served as `text/html`, and the one place an
- * authorization server's own words are put on it.
- *
- * `abandonAuthorization` relays `error_description` verbatim once the redirect
- * is attributable — that is what attributing it is *for* — so the string in this
- * outcome belongs to whoever runs that server. The `<p>` beside this has been
- * escaped since the file was written; the `<script>` was not, so one value
- * reached two sinks with one of them defended.
+ * The OAuth callback renders attributable provider errors in HTML and sends
+ * the outcome to its opener. Script JSON must preserve the outcome without
+ * letting provider-controlled text terminate or alter the script element.
  */
 describe("the callback page's script payload", () => {
   it("cannot end the script element that carries it", () => {
@@ -38,9 +33,9 @@ describe("the callback page's script payload", () => {
     expect(out).toContain("\\u2029");
   });
 
-  it("delivers the same message it always did", () => {
+  it("preserves the outcome through the script literal and JSON payload", () => {
     // The escapes are a JS string-literal encoding: what the opener receives has
-    // to be byte-for-byte the outcome, or this fix has changed the contract.
+    // to be byte-for-byte the outcome.
     const outcome = { ok: false, error: "</script>\u2028 <b>bold</b> & 'quoted'" } as const;
 
     const decoded = JSON.parse(JSON.parse(scriptJson(outcome)) as string) as typeof outcome;

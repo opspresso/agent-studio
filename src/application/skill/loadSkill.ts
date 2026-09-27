@@ -2,16 +2,8 @@ import type { Skill, SkillFile } from "@/domain/skill/types";
 import { describeSkillFileReject, resolveSkillFile } from "@/domain/skill/files";
 
 /**
- * What a skill's attachments are called, as one line the model can act on.
- *
- * Progressive disclosure only works if the second step is reachable: the prompt
- * names the skill, the body is loaded on demand, and the attachments were the
- * one level nothing announced — a skill whose SKILL.md happens not to mention
- * `references/api.md` had that file stored, indexed and unreachable, because
- * `file_path` is a free-text guess. Every other unreachable reference in a run
- * answers by naming the alternatives (an unknown agent lists the agents, an
- * unknown image id lists the ids, an unknown skill lists the skills); this is
- * the same answer for the level below a skill.
+ * Attachment paths the model can load through `file_path`, even when SKILL.md
+ * does not list them. Returned with the body and with rejected file requests.
  *
  * Bounded by construction: `MAX_SKILL_FILES` caps a skill at 20 paths, so the
  * line has no budget of its own to spend.

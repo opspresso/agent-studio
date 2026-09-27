@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isDeclaredInternalHost } from "@/domain/security/internalHosts";
 import { skipsUrlGuard, type McpServer } from "@/domain/mcp/types";
 import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
@@ -198,13 +198,13 @@ describe("the two internal-host lists", () => {
   });
 });
 
-/**
- * The predicate above is only useful if the list actually reaches it. Registering
- * is where that failed in practice — the run path would have called the address
- * happily, but the entry could not be saved — so the wiring is pinned here
- * rather than left to the composition root being read correctly.
- */
+/** Registration applies the configured internal-host list before the URL guard. */
 describe("registering an entry on a declared internal host", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-27T00:00:00Z"));
+  });
+  afterEach(() => vi.useRealTimers());
   /** Stands in for the real guard: refuses localhost and the cluster domain. */
   const policy: UrlPolicy = {
     async assertAllowed(url) {

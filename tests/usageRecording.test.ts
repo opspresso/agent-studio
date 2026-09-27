@@ -1,8 +1,21 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
 import type { EngineChunk } from "@/domain/llm/types";
 import type { EngineDeps } from "@/application/runtime";
 import { runAgent } from "@/application/runtime";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
+
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
   const out: EngineChunk[] = [];
@@ -13,7 +26,7 @@ async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]>
 }
 
 const failingUsage: EngineDeps["recordUsage"] = async () => {
-  throw new Error("dynamo down");
+  throw new Error("database unavailable");
 };
 
 describe("cached prompt tokens", () => {

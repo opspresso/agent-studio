@@ -30,15 +30,7 @@ export interface ChatWithMessages {
   activeRun?: { runId: string };
 }
 
-/**
- * A document's extracted text is server-side data.
- *
- * The reader sees the file's name and how much of it was read; the text itself
- * exists so a *later turn* still has the document, and the replay that needs it
- * reads the stored rows directly. Sending it to the browser would put up to
- * 40,000 characters per turn on the wire on every chat open, for a view that
- * renders neither.
- */
+/** Display document names, notes and file links; native SDK Session retains the framed input text. */
 function forReading(message: ChatMessage): ChatMessage {
   if (message.role !== "user" || !message.documents) {
     return message;
@@ -92,8 +84,7 @@ export async function getChat(
     // picture go" with something other than a guess.
     log.warn("chat", `${resolved.dropped} image(s) of chat ${chatId} could not be addressed`);
   }
-  // Files, signed only here. The replay resolves images and not these on
-  // purpose — see `resolveFiles.ts`.
+  // Display download links are separate from native SDK model history.
   const withFiles = await resolveMessageFiles(
     resolved.messages,
     deps.artifacts?.objects.sign,

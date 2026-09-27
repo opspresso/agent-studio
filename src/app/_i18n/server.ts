@@ -1,14 +1,6 @@
 /**
- * Resolving the request's language on the server.
- *
- * Split from `translate.ts` because this is the only file in `_i18n` that
- * imports `next/headers`, and a client component that imported it would fail at
- * build time rather than at the layer test. The catalogue, the translator and
- * the locale type stay importable from anywhere.
- *
- * Reading `headers()` opts the tree into dynamic rendering. That costs nothing
- * here: the root layout already resolves a per-viewer session, so no route in
- * this console was prerendered to begin with (see `src/app/layout.tsx`).
+ * Server-only locale resolution. Keep next/headers here so clients can import
+ * the pure translator and locale contracts without server dependencies.
  */
 import { cookies, headers } from "next/headers";
 import { isLocale, negotiateLocale, LOCALE_COOKIE, type Locale } from "./locale";

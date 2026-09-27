@@ -1,12 +1,24 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ChannelMessage, ChannelParams } from "@/domain/llm/channel";
 import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/runtime";
 import { FETCH_URL_TOOL_NAME } from "@/application/llm/agentAssembly";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers();
+  vi.setSystemTime("2026-09-12T00:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
@@ -40,7 +52,7 @@ function toolMessages(channel: FakeChannel): ChannelMessage[] {
 
 describe("offering the tool", () => {
   it("is not offered when nothing was injected", async () => {
-    // Capability comes from the deps, never from the version — so the preview
+    // Capability comes from the injected deps — so the preview
     // and the run cannot disagree about what a run can reach.
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     await collect(runAgent({ createToolSchemaValidator, channel, recordUsage: async () => {} }, input()));
@@ -92,8 +104,7 @@ describe("reading a page", () => {
   });
 
   it("reports a failed read as an answer rather than tearing the run down", async () => {
-    // Unlike an MCP dispatcher throwing — a transport fault — this is the tool
-    // saying the address did not work.
+    // A failed URL read becomes a tool result so the parent can still answer.
     const channel = new FakeChannel([
       [toolCallChunk(0, "c1", FETCH_URL_TOOL_NAME, '{"url":"http://10.0.0.1/"}'), usageChunk(10, 5)],
       [contentChunk("told the user"), usageChunk(8, 4)],
@@ -127,7 +138,7 @@ describe("reading a page", () => {
 });
 
 describe("fetching a picture", () => {
-  it("shares the turn's image budget with MCP images rather than keeping its own", async () => {
+  it("shares one image budget across URL tools in the same turn", async () => {
     // A separate budget would be double spending: both end up in the same
     // follow-up user message.
     const calls = Array.from({ length: MAX_IMAGES_PER_TURN + 1 }, (_, i) =>
@@ -151,6 +162,32 @@ describe("fetching a picture", () => {
     );
     const parts = Array.isArray(imagesMessage?.content) ? imagesMessage.content : [];
     expect(parts.filter((p) => p.type === "image_url")).toHaveLength(MAX_IMAGES_PER_TURN);
+  });
+
+  it.each(["fetch-first", "mcp-first"])("shares the image cap between FetchUrl and MCP: %s", async order => {
+    const fetchIndex = order === "fetch-first" ? 0 : 1;
+    const fetch = toolCallChunk(fetchIndex, "fetch", FETCH_URL_TOOL_NAME, '{"url":"https://example.test/image.png"}');
+    const mcp = toolCallChunk(1 - fetchIndex, "mcp", "screenshot", "{}");
+    const channel = new FakeChannel([
+      order === "fetch-first" ? [fetch, mcp] : [mcp, fetch],
+      [contentChunk("done")],
+    ]);
+    const pictures = Array.from({ length: MAX_IMAGES_PER_TURN }, () => ({ b64: PNG, mimeType: "image/png" }));
+    const chunks = await collect(runAgent({ createToolSchemaValidator, channel,
+      fetchUrl: async () => ({ text: "", image: pictures[0] }),
+      callMcpTool: async () => ({ text: "captured", images: pictures }),
+    }, input({ mcpTools: [{ type: "function", function: { name: "screenshot", parameters: {} } }] })));
+    expect(chunks.filter(chunk => chunk.image)).toHaveLength(MAX_IMAGES_PER_TURN);
+    expect(new Set(chunks.filter(chunk => chunk.toolResult).map(chunk => chunk.toolResult!.toolCallId)))
+      .toEqual(new Set(["fetch", "mcp"]));
+    const follow = channel.seenParams[1]?.messages ?? [];
+    const requested = follow.find(message => message.role === "assistant" && message.tool_calls?.length);
+    expect(requested?.tool_calls?.map(call => call.id))
+      .toEqual(order === "fetch-first" ? ["fetch", "mcp"] : ["mcp", "fetch"]);
+    const imageCount = follow.flatMap(message => Array.isArray(message.content) ? message.content : [])
+      .filter(part => part.type === "image_url").length;
+    expect(imageCount).toBe(MAX_IMAGES_PER_TURN);
+    expect(chunks.some(chunk => chunk.toolResult?.content.includes("more were dropped"))).toBe(true);
   });
 
   it("streams the picture to the surface as an image chunk", async () => {

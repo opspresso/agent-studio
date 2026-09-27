@@ -49,7 +49,7 @@ describe("which Slack events are for the bot", () => {
     ).toEqual({ kind: "run", trigger: "dm" });
   });
 
-  it("greets rather than runs when the agent container is opened", () => {
+  it("greets when the Slack assistant surface opens", () => {
     expect(
       classifySlackEvent(envelope({ type: "app_home_opened", tab: "messages", channel: "D1" })),
     ).toEqual({ kind: "threadStart" });

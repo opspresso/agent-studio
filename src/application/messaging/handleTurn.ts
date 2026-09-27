@@ -7,7 +7,7 @@ import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/ac
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import { documentKind } from "@/domain/llm/documentLimits";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
-import { collectedWarning, isTopLevelChunk, toolCallKey } from "@/domain/llm/types";
+import { collectedWarning, isTopLevelChunk, runTermination, toolCallKey } from "@/domain/llm/types";
 import type { ChatMessageInput, ContentPart, EngineChunk } from "@/domain/llm/types";
 import type { HistoryTurn, InboundAttachment } from "@/domain/messaging/inbound";
 import type { ReplyChannel, ReplyEndState, ReplyImage } from "@/domain/messaging/reply";
@@ -229,6 +229,10 @@ export async function handleTurn(
           break;
         }
         continue;
+      }
+      const termination = runTermination(chunk);
+      if (termination === "turn-limit" || termination === "output-limit") {
+        endState = "failed";
       }
       // A binding the run could not use. It rides out with the answer rather
       // than replacing it — the run still produced one. `collectedWarning`

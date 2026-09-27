@@ -1,7 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 
 const DAY = 86_400;
+
+beforeEach(() => {
+  for (const key of ["TRACE_RETENTION_DAYS", "USAGE_RETENTION_DAYS", "CHAT_RETENTION_DAYS"]) vi.stubEnv(key, undefined);
+});
+afterEach(() => vi.unstubAllEnvs());
 
 describe("expiresAtSeconds", () => {
   it("is retentionDays after the base timestamp, in unix seconds", () => {
@@ -35,10 +40,6 @@ describe("isExpired", () => {
 });
 
 describe("RETENTION", () => {
-  afterEach(() => {
-    delete process.env.TRACE_RETENTION_DAYS;
-  });
-
   it("uses safe defaults (usage kept past the 184-day dashboard window)", () => {
     expect(RETENTION.traceDays).toBe(30);
     expect(RETENTION.usageDays).toBeGreaterThan(184);
@@ -46,14 +47,14 @@ describe("RETENTION", () => {
   });
 
   it("honors a positive env override", () => {
-    process.env.TRACE_RETENTION_DAYS = "7";
+    vi.stubEnv("TRACE_RETENTION_DAYS", "7");
     expect(RETENTION.traceDays).toBe(7);
   });
 
   it("ignores a non-positive or invalid override", () => {
-    process.env.TRACE_RETENTION_DAYS = "0";
+    vi.stubEnv("TRACE_RETENTION_DAYS", "0");
     expect(RETENTION.traceDays).toBe(30);
-    process.env.TRACE_RETENTION_DAYS = "nope";
+    vi.stubEnv("TRACE_RETENTION_DAYS", "nope");
     expect(RETENTION.traceDays).toBe(30);
   });
 });

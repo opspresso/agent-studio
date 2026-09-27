@@ -1,18 +1,12 @@
 /**
- * Embeddings over an OpenAI-compatible channel.
- *
- * A deployment may give embeddings their own endpoint and credential, or omit
- * that pair to reuse the default LLM channel. The model is separate because it
- * has to be — an embedding model is not a chat model, and its dimension has to
- * match the index the vectors go into.
- *
- * Runtime settings resolve the selected model's provider channel as one
- * endpoint/credential/model tuple. Self-hosted models use the dedicated
- * embedding endpoint, which may differ from their chat endpoint.
+ * OpenAI-compatible embeddings for the selected registered retrieval model.
+ * Runtime settings resolve its endpoint, credential and wire ID together;
+ * there is no dedicated-endpoint or default-chat-channel fallback.
  */
 
 import OpenAI from "openai";
 import { createLlmClientCache, llmClientCacheKey } from "./clientCache";
+import { OPENAI_MAX_HTTP_RETRIES } from "./openaiClient";
 import type { EmbeddingPort } from "@/domain/vector/types";
 import { getEmbeddingTarget, getEmbeddingModel } from "@/lib/runtime-settings";
 import { config } from "@/lib/config";
@@ -24,7 +18,7 @@ function getClient(baseUrl: string, apiKey: string): OpenAI {
   const key = llmClientCacheKey(baseUrl, apiKey);
   let client = clients.get(key);
   if (!client) {
-    client = new OpenAI({ baseURL: baseUrl, apiKey });
+    client = new OpenAI({ baseURL: baseUrl, apiKey, maxRetries: OPENAI_MAX_HTTP_RETRIES });
     clients.set(key, client);
   }
   return client;
@@ -55,15 +49,8 @@ export const openAiEmbeddings: EmbeddingPort = {
       const response = await client.embeddings.create({
         model,
         input: batch as string[],
-        // Asked for explicitly, like both Bedrock adapters, because the index
-        // fixes its dimension at creation and this model's native width is not
-        // it: `text-embedding-3-small` is 1536, while every instruction for
-        // creating the index says 1024. Left to the default, the documented
-        // configuration produced vectors the index rejected outright — the
-        // catalog stayed empty and the failure only ever appeared in a
-        // background log line. The v3 models take this; a `dimensions` a model
-        // or a router does not support is an error at the boundary, which is
-        // where a mismatched index would have surfaced anyway.
+        // Explicit dimensions keep indexing and queries in the same vector
+        // space. Native mode omits the parameter for models that reject it.
         ...(config.embeddingDimensions !== undefined
           ? { dimensions: config.embeddingDimensions }
           : {}),

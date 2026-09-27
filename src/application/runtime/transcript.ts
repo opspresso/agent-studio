@@ -42,8 +42,7 @@ function transcriptLine(content: ChatMessageInput["content"]): string {
  * own system prompt: handed the parent's `assistant` turns it reads them as its
  * own ("as I already said"), and the parent's `tool_calls` would arrive naming
  * tools the child never declared. A labelled block inside the child's single
- * user turn has neither problem, and it is the one form a remote child —
- * which can only be sent text — can receive too.
+ * user turn has neither problem.
  *
  * Spent newest-first, because a follow-up is usually about the turn just before
  * it, then flipped back into reading order.
@@ -76,8 +75,7 @@ export function buildTransferTranscript(
       // loses the *question* along with whatever made it long — a turn carrying
       // an attached document is a single line of tens of thousands of
       // characters. Keeping its head preserves what the turn was about.
-      // Keeping its head keeps what the turn was about; the budget is spent
-      // either way, so nothing older fits after this.
+      // The remaining budget is spent here, so nothing older fits.
       if (budget > MIN_TRANSFER_LINE_CHARS) {
         lines.push(`${cutCodePoints(line, budget)}…[truncated]`);
         budget = 0;

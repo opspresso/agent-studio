@@ -57,7 +57,7 @@ export function parseFrontmatter(raw: string): Frontmatter {
 
 /**
  * Fallback description for a document whose frontmatter declares none: its
- * first heading, or failing that its first non-empty line. Capped because both
+ * first non-empty line without a heading marker. Capped because both
  * consumers put the result somewhere a single line is expected — a skill's
  * listing entry, a tool's row in the model's server table.
  */

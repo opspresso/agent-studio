@@ -42,7 +42,7 @@ export interface Artifact {
    * Whose gallery this belongs in, when the surface knows a mailbox the actor
    * does not name.
    *
-   * A Slack actor is a workspace id, so the owner index — which is keyed by
+   * A Slack actor is a user id, so the owner index — which is keyed by
    * email — had nothing to key on, and a picture somebody asked the bot to draw
    * was reachable only through its agent. The surface can resolve the address,
    * so it does, and files the output under the person who asked for it.

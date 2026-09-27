@@ -1,5 +1,3 @@
-process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 3).toString("base64");
-
 /**
  * The embedding adapter's one non-obvious job: pairing a vector back to the text
  * it came from.
@@ -23,18 +21,6 @@ import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
 import { encryptSecret } from "@/infrastructure/crypto/secretEncryption";
 
-const ORIGINAL_EMBEDDING_BASE_URL = process.env.EMBEDDING_BASE_URL;
-const ORIGINAL_EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY;
-const ORIGINAL_EMBEDDING_DIM = process.env.EMBEDDING_DIM;
-
-function set(name: string, value: string | undefined): void {
-  if (value === undefined) {
-    delete process.env[name];
-  } else {
-    process.env[name] = value;
-  }
-}
-
 function respondWith(body: unknown): void {
   vi.stubGlobal("fetch", async () =>
     new Response(JSON.stringify(body), {
@@ -46,13 +32,25 @@ function respondWith(body: unknown): void {
 
 // The adapter caches one client per credential fingerprint, and a client binds the
 // `fetch` that was global when it was built — so a test reusing an address would
-// keep talking to the previous test's stub. A fresh address per test is what
-// `channelAdapter.test.ts` does for the same reason.
+// keep talking to the previous test's stub. A fresh address isolates each stub.
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+}));
 let address = 0;
 beforeEach(() => {
-  delete process.env.EMBEDDING_BASE_URL;
-  delete process.env.EMBEDDING_API_KEY;
-  delete process.env.EMBEDDING_DIM;
+  entropy.sequence = 0;
+  vi.useFakeTimers();
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 3).toString("base64"));
+  vi.stubEnv("EMBEDDING_BASE_URL", undefined);
+  vi.stubEnv("EMBEDDING_API_KEY", undefined);
+  vi.stubEnv("EMBEDDING_DIM", undefined);
   invalidateSettingsCache();
   address += 1;
   vi.mocked(settingsRepository.get).mockResolvedValue({
@@ -64,10 +62,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  set("EMBEDDING_BASE_URL", ORIGINAL_EMBEDDING_BASE_URL);
-  set("EMBEDDING_API_KEY", ORIGINAL_EMBEDDING_API_KEY);
-  set("EMBEDDING_DIM", ORIGINAL_EMBEDDING_DIM);
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
+  invalidateSettingsCache();
 });
 
 describe("openAiEmbeddings", () => {
@@ -132,7 +130,7 @@ describe("openAiEmbeddings", () => {
   });
 
   it("omits dimensions when the model requires its native width", async () => {
-    process.env.EMBEDDING_DIM = "native";
+    vi.stubEnv("EMBEDDING_DIM", "native");
     let sent: Record<string, unknown> = {};
     vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
       sent = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
@@ -147,7 +145,7 @@ describe("openAiEmbeddings", () => {
   });
 
   it("ignores legacy embedding endpoints and uses the selected provider", async () => {
-    process.env.EMBEDDING_BASE_URL = `https://embedding-${address}.example/v1`;
+    vi.stubEnv("EMBEDDING_BASE_URL", `https://embedding-${address}.example/v1`);
     let request: { url?: string; authorization?: string | null } = {};
     vi.stubGlobal("fetch", async (url: string | URL | Request, init?: RequestInit) => {
       request = {
@@ -172,7 +170,7 @@ describe("openAiEmbeddings", () => {
   });
 
   it("routes a public model through its provider even with a self-hosted embedding endpoint", async () => {
-    process.env.EMBEDDING_BASE_URL = "http://spark.test:8001/v1";
+    vi.stubEnv("EMBEDDING_BASE_URL", "http://spark.test:8001/v1");
     vi.mocked(settingsRepository.get).mockResolvedValue({
       registeredModels: fixtureRegistrations(),
       embeddingModel: "openrouter/text-embedding-3-small",

@@ -1,21 +1,7 @@
 /**
- * How a caller's page size is read off a request, and how large a page may get.
- *
- * Four list endpoints wrote this out for themselves, and the copies disagreed
- * about the same three inputs. `?limit=` — a query string built from a value
- * that turned out to be absent, which is how it is usually produced — is `""`
- * rather than `null`, so `??` does not reach the default and `Number("")` is
- * `0`; clamped up to one, three of the four answered a gallery request with a
- * single row and reported it as the page that was asked for. `?limit=1.5`
- * fell back to the default in three and floored in the fourth. `?limit=0.5`
- * floored to a page of zero and then, because a zero-length page is trivially
- * "full", offered "load more" against a list that could not grow.
- *
- * The reading below is the chats endpoint's, which is the one that was right:
- * anything that is not a whole page size at least one is *absent*, not zero.
- * It is here rather than in `app/api/_lib` because the repositories bound the
- * same number on the way in, and `shared` is the one floor all three layers
- * that touch a page can reach.
+ * Shared request/repository page bounds. Blank, non-finite or sub-one request
+ * values use the caller's fallback; other fractional values are floored.
+ * Keep wanted separate from the capped limit so pagination can detect its cap.
  */
 
 /**

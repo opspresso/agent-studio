@@ -5,6 +5,7 @@ import { Alert, Avatar, Group, Select, Stack, Table, Text } from "@mantine/core"
 import { IconUsers } from "@tabler/icons-react";
 import { MEMBER_TIERS, type MemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
+import type { MembersResponse } from "@/app/api/members/route";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { DataTable } from "@/app/_components/DataTable";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
@@ -14,7 +15,7 @@ import { useViewer } from "@/app/_lib/useViewer";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
 
-type MemberView = Member & { tierLocked: boolean };
+type MemberView = MembersResponse["members"][number];
 
 export default function MembersPage() {
   const t = useT();
@@ -24,10 +25,11 @@ export default function MembersPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set());
 
   async function changeTier(member: MemberView, tier: MemberTier) {
-    setSavingId(member.id);
+    if (savingIds.has(member.id)) return;
+    setSavingIds(previous => new Set(previous).add(member.id));
     setSaveError(null);
     try {
       const updated = await readJson<Member>(
@@ -41,7 +43,11 @@ export default function MembersPage() {
     } catch (cause) {
       setSaveError(reportError(cause, "Failed to update tier"));
     } finally {
-      setSavingId(null);
+      setSavingIds(previous => {
+        const remaining = new Set(previous);
+        remaining.delete(member.id);
+        return remaining;
+      });
     }
   }
 
@@ -49,7 +55,7 @@ export default function MembersPage() {
     if (!viewer?.isAdmin) return;
     let cancelled = false;
     fetch("/api/members")
-      .then((res) => readJson<{ members: MemberView[] }>(res))
+      .then((res) => readJson<MembersResponse>(res))
       .then((data) => !cancelled && setMembers(data.members))
       .catch((error) => !cancelled && setLoadError(error instanceof Error ? error.message : "Failed to load members"))
       .finally(() => !cancelled && setLoading(false));
@@ -103,7 +109,7 @@ export default function MembersPage() {
                       w={110}
                       data={[...MEMBER_TIERS]}
                       value={member.tier}
-                      disabled={member.tierLocked || savingId === member.id}
+                      disabled={member.tierLocked || savingIds.has(member.id)}
                       allowDeselect={false}
                       aria-label={`Tier of ${member.email}`}
                       onChange={(value) => {

@@ -26,8 +26,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
     return invalidRequest(parsed.error);
   }
   try {
-    // The response carries the secret in the clear — the only time it is
-    // readable, like a freshly issued agent API token.
+    // Webhook creation returns the secret; owners/admins can also reveal it later.
     return Response.json(await triggerUseCases.create(name, parsed.data, user.email), {
       status: 201,
     });

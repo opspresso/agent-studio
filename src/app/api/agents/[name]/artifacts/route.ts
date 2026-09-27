@@ -1,11 +1,4 @@
-/**
- * An agent's output.
- *
- * Not an alternative view of the personal gallery but the only route that
- * reaches some of these rows at all: a Slack or trigger run names no
- * mailbox, so its artifacts are invisible to the owner index and this is where
- * they are listed — and therefore the only place they can be deleted from.
- */
+/** Agent output index, including runs without a resolved personal owner email. */
 
 import { withAuth } from "@/lib/session";
 import { artifactUseCases, signArtifactUrl } from "@/lib/container";

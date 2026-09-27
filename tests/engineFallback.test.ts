@@ -1,6 +1,6 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ChannelChunk,
   ChannelCompletion,
@@ -10,6 +10,18 @@ import type {
 import type { EngineChunk } from "@/domain/llm/types";
 import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/runtime";
 import { contentChunk, usageChunk } from "./fakeChannel";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers();
+  vi.setSystemTime("2026-09-12T00:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
@@ -75,7 +87,7 @@ function agentInput(overrides: Partial<RunAgentInput> = {}): RunAgentInput {
   };
 }
 
-describe("runAgent streamWithFallback", () => {
+describe("native model fallback", () => {
   it("retries with the fallback model when the primary fails retryably before the first chunk", async () => {
     const channel = new ScriptedChannel([
       { kind: "throw", error: httpError(429) },

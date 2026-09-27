@@ -10,21 +10,8 @@ import { signOut } from "@/lib/auth-client";
 import { SignInButton, type SignInProviders } from "./SignInButton";
 
 /**
- * The account control, third in the header beside language and colour scheme.
- *
- * It is a menu for the same reason those two are: the header holds one control
- * per kind of choice, and the account's choices are "who am I signed in as",
- * "my page", and "leave". As a bare pair — an email link and a sign-out button
- * — the most destructive of the three was the most prominent thing in the
- * chrome, and the email was `visibleFrom="lg"`, so on a laptop nothing said
- * which account the workspace belonged to. The address now lives inside the
- * dropdown, where it is legible at every width and does not have to be
- * truncated.
- *
- * `email` comes from the root layout's server-resolved viewer, not from
- * `useSession()`. The hook has no cookie during SSR, so this rendered a
- * loading skeleton on the client over a server-rendered sign-out button —
- * a hydration mismatch on every page. See `src/app/layout.tsx`.
+ * Header account menu with email, Profile and sign-out controls at every width.
+ * The root layout supplies the resolved email so SSR and hydration agree.
  */
 export function UserMenu({
   email,

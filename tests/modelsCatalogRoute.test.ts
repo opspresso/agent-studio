@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getVisibleModels } from "@/domain/llm/models";
+import type { ModelsCatalogResponse } from "@/app/api/models/catalog/route";
 
 const {
   getLlmProviderConfigs,
@@ -48,29 +49,10 @@ vi.mock("@/lib/config", () => ({ config }));
 
 const { GET } = await import("@/app/api/models/catalog/route");
 
-interface CatalogBody {
-  providers: Array<{ name: string; available: boolean; dedicated: boolean }>;
-  models: Array<{
-    id: string;
-    type: "text" | "image" | "embedding" | "rerank" | "transcription";
-    selectionHidden: boolean;
-    favorite: boolean;
-  }>;
-  source: "override" | "default";
-  selections: {
-    embedding: { model: string; source: string };
-    rerank?: { model: string; source: string };
-  };
-  selectionAvailable: { embedding: boolean; rerank: boolean };
-  rerankerMinScore: { value: number; source: "override" | "env" | "default" };
-  catalogMinScore: { value: number; source: "override" | "env" | "default" };
-  unknownModelPolicy: { value: "allow" | "refuse"; source: "override" | "env" | "default" };
-}
-
-async function catalog(): Promise<CatalogBody> {
+async function catalog(): Promise<ModelsCatalogResponse> {
   const res = await GET();
   expect(res.status).toBe(200);
-  return (await res.json()) as CatalogBody;
+  return (await res.json()) as ModelsCatalogResponse;
 }
 
 beforeEach(() => {
@@ -156,5 +138,11 @@ describe("GET /api/models/catalog", () => {
   it("allows selecting a registered reranker when the catalog is enabled", async () => {
     config.catalogEnabled = true;
     expect((await catalog()).selectionAvailable.rerank).toBe(true);
+  });
+
+  it("exposes the active decision selection under its model type", async () => {
+    const decision = { model: "router/~typesafe/jev-latest", source: "override" };
+    getDecisionModelSelection.mockResolvedValue(decision);
+    expect((await catalog()).selections.decision).toEqual(decision);
   });
 });

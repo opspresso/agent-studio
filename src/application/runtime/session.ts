@@ -16,6 +16,7 @@ import { ImageRegistry, type ImageHandle } from "@/application/llm/agentAssembly
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { MS_PER_DAY } from "@/shared/date";
 import { historyImages } from "./historyImages";
+import { boundCompletedToolArguments } from "./arguments";
 
 export const MAX_RUNTIME_STATE_BYTES = 64 * 1024 * 1024;
 const MAX_SESSION_ITEMS = 256;
@@ -167,7 +168,8 @@ export async function openRuntimeSession(
       });
       const { signal: _signal, runtime: _runtime, now, ...rest } = input;
       void _signal; void _runtime;
-      const restoredItems = filter ? restoreValues(filter, items) as AgentInputItem[] : items;
+      const boundedItems = boundCompletedToolArguments(items, text => filter?.restore(text) ?? text);
+      const restoredItems = filter ? restoreValues(filter, boundedItems) as AgentInputItem[] : boundedItems;
       const retained = new ImageRegistry({ next: Math.max(images.nextId, graph.nextImageId ?? 1) });
       retained.restore([...images.list(), ...Object.values(graph.agents).flatMap((entry) => [...entry.images])]);
       await write({ format: 1, items: restoredItems, images: retained.list().slice(-MAX_IMAGES_PER_TURN), nextImageId: retained.nextId, ...(approvals.length ? {

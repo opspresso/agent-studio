@@ -160,12 +160,7 @@ export function offeredModels(
   ).sort((a, b) => Number(b.id === defaultModel) - Number(a.id === defaultModel));
 }
 
-/**
- * The model name to send to a provider's own API, for a `provider/model` id
- * whose prefix is being stripped for a provider-direct channel. Defaults to the
- * bare id, which is also what an id missing from the registry gets — a model
- * this app does not know is passed through rather than rewritten.
- */
+/** Registered wire ID, or the ID after its first provider separator. Selection is checked before dispatch. */
 export function wireModelId(modelId: string): string {
   const slash = modelId.indexOf("/");
   const bare = slash > 0 ? modelId.slice(slash + 1) : modelId;
@@ -226,7 +221,7 @@ unknownSlot[UNKNOWN_MODEL_SLOT] ??= { warned: new Set<string>(), calls: 0 };
 const unknownModels = unknownSlot[UNKNOWN_MODEL_SLOT];
 
 /**
- * Record a model id missing from the catalog.
+ * Record a model with missing registration or unknown pricing.
  *
  * Every occurrence is counted, because every one of them books that call's
  * usage at $0 — the count is the size of the under-reporting, not just a
@@ -264,7 +259,7 @@ export function resetUnknownModelMetrics(): void {
   unknownModels.calls = 0;
 }
 
-/** Compute USD cost for one call from registry pricing. Unknown model → warn + 0. */
+/** Compute one call from registry pricing. Missing/unknown pricing warns and returns 0. */
 export function calculateCost(modelId: string, tokens: CostTokens): number {
   const cfg = getModelConfig(modelId);
   if (!cfg || cfg.pricingKnown === false) {
@@ -330,7 +325,7 @@ export function calculateImageCost(modelId: string, tokens: ImageCostTokens): nu
     return 0;
   }
   const { inputPer1M, imageInputPer1M, imageOutputPer1M, perImage, perInputImage } = cfg.pricing;
-  if (!imageOutputPer1M && perImage) {
+  if (!imageOutputPer1M && perImage !== undefined) {
     return perImage + (tokens.sourceImages ?? 0) * (perInputImage ?? 0);
   }
   return (

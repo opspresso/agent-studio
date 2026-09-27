@@ -1,12 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * `PUT /api/settings` validates with its own zod schema before anything reaches
- * `settingsUseCases.update`, so a key missing from that schema is silently
- * stripped even though `SettingsUpdate` is typed over every `SettingKey`. That
- * happened once to the repo-sync keys: the view exposed them and the runtime
- * read the stored override, but no request could set it. This pins the schema
- * against the keys this general editor owns. Embedding and reranker selections
+ * `PUT /api/settings` validates editable fields with a strict schema before
+ * `settingsUseCases.update`; unknown keys are refused. Embedding and reranker selections
  * intentionally use `/api/models/selection`, where type checks and migration
  * approval cannot be bypassed. The embedding score uses the same route.
  */
@@ -67,9 +63,7 @@ describe("PUT /api/settings", () => {
   });
 
   it("forwards unknownModelPolicy, which the run bracket reads", async () => {
-    // The same trap the repo keys fell into: the field exists on AppSettings and
-    // the bracket reads it, so a schema that forgets it makes "refuse" an
-    // unreachable setting — a 200 that changed nothing.
+    // The schema forwards the price policy that run admission reads.
     const res = await put({ unknownModelPolicy: "refuse" });
     expect(res.status).toBe(200);
     expect(useCases.update).toHaveBeenCalledWith({ unknownModelPolicy: "refuse" }, "admin@example.com");

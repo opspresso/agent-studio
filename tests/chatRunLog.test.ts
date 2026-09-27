@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ChatRunLogRepository, RunLogEntry } from "@/domain/chat/runLog";
@@ -13,6 +13,12 @@ import {
   SUPERSEDED_NOTICE,
   SUPERSEDED_REASON,
 } from "@/application/chat/cancelRun";
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime("2026-01-02T00:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 const CHAT: Chat = {
   chatId: "c1",
@@ -116,8 +122,8 @@ async function run(
 
 describe("teeToRunLog", () => {
   /**
-   * The whole cost argument for this design: a run nobody abandoned pays no
-   * persistent DB writes at all, because the reader saw every frame as it happened.
+   * A connected run writes no replay log. Display-message persistence still
+   * happens when the run ends.
    */
   it("writes nothing while a reader is still there", async () => {
     const { deps, appended } = recordingDeps();
@@ -192,9 +198,8 @@ describe("teeToRunLog", () => {
   });
 
   /**
-   * Bytes an item cannot hold, and — without object storage — a picture the
-   * original connection was the only place to see. Either way the reader is told
-   * rather than shown a gap.
+   * Replay excludes image bytes and reports where the reader can find them.
+   * Without object storage, those images existed only on the original stream.
    */
   it("keeps a note in place of an image, never its bytes", async () => {
     const withStorage = recordingDeps({
@@ -271,7 +276,7 @@ describe("teeToRunLog", () => {
     expect(frames()).toEqual([{ delta: { reasoningContent: "thought", content: "said" } }]);
   });
 
-  it("replaces a frame too large for a row with a note about it", async () => {
+  it("replaces a frame exceeding the replay budget with a note about it", async () => {
     const { deps, frames } = recordingDeps();
     await run(
       deps,
@@ -380,25 +385,18 @@ describe("teeToRunLog", () => {
     }
   });
 
-  /**
-   * The replay-row budget counts bytes; `String.length` counts UTF-16 units, and
-   * `JSON.stringify` leaves non-ASCII alone. Measured the wrong way a Korean run
-   * builds a row three times the size it reports — past the stored-row budget,
-   * where the append fails, the sequence has already moved on, and the reader
-   * gets a hole no gap check can see.
-   */
+  /** Four sub-100KB frames fit the buffer but must span the 300KB row budget. */
   it("sizes rows by bytes, so a multi-byte run does not build one past the limit", async () => {
     const { deps, appended } = recordingDeps();
-    // 40,000 characters of Korean is 120,000 bytes; ten of them are 1.2MB, which
-    // is one row if length is what counts and five if bytes are.
-    const chunks = Array.from({ length: 10 }, () => ({
-      delta: { content: "가".repeat(40_000) },
+    const chunks = Array.from({ length: 4 }, () => ({
+      delta: { content: "가".repeat(26_000) },
     }));
     await run(deps, chunks, { leaveAfter: chunks.length });
 
-    expect(appended.length).toBeGreaterThan(1);
+    expect(appended.filter(entry => !entry.terminal).length).toBeGreaterThan(1);
+    expect(appended.flatMap(entry => JSON.parse(entry.payload))).toEqual(chunks);
     for (const entry of appended) {
-      expect(Buffer.byteLength(entry.payload, "utf8")).toBeLessThanOrEqual(400_000);
+      expect(Buffer.byteLength(entry.payload, "utf8")).toBeLessThanOrEqual(300_000);
     }
   });
 
@@ -498,7 +496,7 @@ describe("teeToRunLog", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { deps } = recordingDeps();
     deps.chats.releaseRun = async () => {
-      throw new Error("dynamo is down");
+      throw new Error("item store unavailable");
     };
     // The answer streamed and persisted; the run has to end that way.
     await expect(run(deps, [{ delta: { content: "the answer" } }])).resolves.toBeUndefined();
@@ -539,7 +537,7 @@ describe("teeToRunLog", () => {
     const { deps } = recordingDeps({
       runLog: {
         async append() {
-          throw new Error("dynamo is down");
+          throw new Error("item store unavailable");
         },
         async read() {
           return [];

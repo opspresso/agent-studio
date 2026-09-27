@@ -107,18 +107,8 @@ export function ChatThread({ chatId }: { chatId: string }) {
    */
   const [consumedId, setConsumedId] = useState<number | null>(null);
   /**
-   * Who owns the viewport while a reply streams.
-   *
-   * Not an effect that scrolls on every render, which is what this replaced: the
-   * store hands out a new entry per stream frame, so a `scrollIntoView` keyed on
-   * it ran dozens of times a second, dragged the reader back down every time
-   * they tried to leave, and — being `smooth` — restarted its own animation
-   * before the last one finished, which is the juddering that was reported.
-   *
-   * `instant` on both counts is deliberate. On resize it is what pins the last
-   * line to the bottom edge instead of animating after it; on the initial render
-   * it lands at the bottom rather than scrolling the whole history past the
-   * reader to get there.
+   * The viewport follows the bottom through use-stick-to-bottom. Initial
+   * landing and resize are instant; scrolling away leaves control with the reader.
    */
   const { scrollRef, contentRef, isNearBottom, scrollToBottom } = useLatestScroll(status === "ready", chatId);
   const syncSeq = useRef(0);
@@ -131,11 +121,8 @@ export function ChatThread({ chatId }: { chatId: string }) {
   /**
    * The conversation as it is drawn, rebuilt only when it actually changes.
    *
-   * Substituting this session's images inline — `{...message, images: pinned}`
-   * in the render — minted a new object for those messages on every pass, which
-   * is every stream frame, and a memoised `MessageView` cannot hold against a
-   * new prop. Doing it here means the array and its entries keep their identity
-   * for the whole of a reply.
+   * Memoize image substitutions so stored MessageView props remain stable
+   * while another reply streams.
    */
   const drawn = useMemo(
     () =>
@@ -204,12 +191,8 @@ export function ChatThread({ chatId }: { chatId: string }) {
       } catch {
         return failed();
       }
-      // Checked again, after the body: the first check only proves no fresher
-      // request had *started* when the headers arrived. A mount's full read
-      // parked on `res.json()` while a retire's tail read overtook it would
-      // otherwise land here and replace the merged thread with its own older
-      // copy — and rewind `held` with it, so the next tail asks for rows
-      // already on screen.
+      // Recheck after decoding: another read can overtake a response body even
+      // after its headers passed the first ticket check.
       if (ticket !== syncSeq.current) {
         return null;
       }

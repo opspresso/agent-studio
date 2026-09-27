@@ -25,6 +25,12 @@ import type { AuditEvent } from "@/domain/audit/types";
 import { findRegistryBindings } from "@/application/plugin/bindingIndex";
 import type { Agent } from "@/domain/agent/types";
 
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+
 const REPO = "opspresso/agent-plugins";
 const NOW = "2026-02-02T00:00:00.000Z";
 const BEFORE = "2025-01-01T00:00:00.000Z";
@@ -32,6 +38,7 @@ const BEFORE = "2025-01-01T00:00:00.000Z";
 const ACTOR = "admin@example.com";
 
 beforeEach(() => {
+  ids.sequence = 0;
   vi.useFakeTimers();
   vi.setSystemTime(new Date(NOW));
 });
@@ -1146,7 +1153,7 @@ describe("syncPluginsFromSnapshot", () => {
     expect(mcps.created).toEqual([]);
   });
 
-  it("annotates orphans with the versions that bind them", async () => {
+  it("annotates orphans with the agents that bind them", async () => {
     const { deps } = makeDeps({
       skills: [storedSkill("kept", { source: `github:${REPO}#devops` })],
     });
@@ -1154,7 +1161,7 @@ describe("syncPluginsFromSnapshot", () => {
       {
         ...deps,
         findBindings: async (skillNames) => ({
-          skills: new Map(skillNames.map((name) => [name, ["bot/v1", "bot/v2"]])),
+          skills: new Map(skillNames.map((name) => [name, ["bot-a", "bot-b"]])),
           mcpServers: new Map(),
         }),
       },
@@ -1162,7 +1169,7 @@ describe("syncPluginsFromSnapshot", () => {
       ACTOR,
     );
     expect(section(result, "devops").skills.orphaned).toEqual([
-      { name: "kept", boundTo: ["bot/v1", "bot/v2"] },
+      { name: "kept", boundTo: ["bot-a", "bot-b"] },
     ]);
   });
 

@@ -1,12 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setAdminCheck } from "@/application/agent/agentUseCases";
 
-// Route-handler tests for the agent token reveal endpoint.
-// `withAuth`/`withAdminAuth` are stubbed so the caller and their admin status
-// are drivable from `state`; the real *owner* gate runs inside the use case.
-// These guard the blast radius: a reveal endpoint that answers the wrong caller
-// hands over a working key.
-const { state, agentRepo } = vi.hoisted(() => ({
-  state: { email: "owner@example.com", admin: true },
+// The session wrapper supplies the caller; the real use case enforces owner/admin access.
+const { state, agentRepo, admins } = vi.hoisted(() => ({
+  state: { email: "owner@example.com" },
+  admins: [] as string[],
   agentRepo: { get: vi.fn(), getApiToken: vi.fn() },
 }));
 
@@ -15,18 +13,9 @@ vi.mock("@/lib/session", () => ({
     (handler: (user: unknown, ...args: never[]) => unknown) =>
     (...args: never[]) =>
       handler({ id: "u1", email: state.email, name: "U", image: null }, ...args),
-  withAdminAuth:
-    (handler: (user: unknown, ...args: never[]) => unknown) =>
-    (...args: never[]) => {
-      if (!state.admin) {
-        return Response.json({ error: "Only admins can modify this resource" }, { status: 403 });
-      }
-      return handler({ id: "u1", email: state.email, name: "U", image: null }, ...args);
-    },
 }));
 
-// Only the cipher methods these two routes reach — the port makes that possible
-// without standing up AES or the whole secretEncryption surface.
+// Reversible cipher stand-in keeps the authorization boundary under test.
 const cipher = {
   decrypt: (value: string) => value.replace("enc:v1:", ""),
   encrypt: (value: string) => `enc:v1:${value}`,
@@ -37,19 +26,6 @@ vi.mock("@/lib/container", async () => ({
     await import("@/application/agent/apiTokenUseCases")
   ).createApiTokenUseCases(agentRepo as never, cipher as never),
 }));
-vi.mock("@/lib/runtime-settings", () => ({
-  // The agent token route is owner-gated; no admin list is configured here,
-  // so the owner check stands on its own. `isAdminEmail` is deliberately absent:
-  // `withAdminAuth` is stubbed above, so nothing reaches it, and a stub of it
-  // returning `true` would quietly neutralise the non-admin rejection below if
-  // that stub were ever removed.
-  isConfiguredAdmin: async () => false,
-}));
-vi.mock("@/infrastructure/crypto/secretEncryption", () => ({
-  decryptSecret: (value: string) => value.replace("enc:v1:", ""),
-  encryptSecret: (value: string) => `enc:v1:${value}`,
-  maskSecret: () => "ast_••••wxyz",
-}));
 
 const { POST: revealToken } = await import("@/app/api/agents/[name]/token/reveal/route");
 
@@ -59,11 +35,15 @@ const req = () => new Request("https://studio.example.com/x", { method: "POST" }
 const agent = { name: "proj", displayName: "Proj", ownerEmail: "owner@example.com" };
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+  admins.length = 0;
+  setAdminCheck(async email => admins.includes(email));
   vi.clearAllMocks();
   vi.spyOn(console, "warn").mockImplementation(() => {});
   state.email = "owner@example.com";
-  state.admin = true;
 });
+afterEach(() => { vi.useRealTimers(); setAdminCheck(async () => false); });
 
 describe("POST /api/agents/[name]/token/reveal", () => {
   it("returns the token to the agent owner", async () => {
@@ -92,6 +72,18 @@ describe("POST /api/agents/[name]/token/reveal", () => {
     const res = await revealToken(req(), ctx());
     expect(res.status).toBe(403);
     expect(JSON.stringify(await res.json())).not.toContain("ast_realtoken");
+  });
+
+  it("allows a configured admin to reveal another owner's token", async () => {
+    state.email = "admin@example.com";
+    admins.push(state.email);
+    agentRepo.get.mockResolvedValue(agent);
+    agentRepo.getApiToken.mockResolvedValue({ token: "enc:v1:ast_testtoken", createdAt: "2026-01-01T00:00:00.000Z" });
+
+    const response = await revealToken(req(), ctx());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ token: "ast_testtoken", createdAt: "2026-01-01T00:00:00.000Z" });
   });
 
   it("explains a legacy hashed token with 400 instead of failing obscurely", async () => {

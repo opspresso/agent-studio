@@ -20,9 +20,8 @@
  * - `word/_rels/document.xml.rels` — where a hyperlink points and which part a
  *   picture is. Both are `r:id` references, resolvable nowhere else.
  *
- * Each is *enrichment*: a missing, malformed or self-contradicting part leaves
- * the reader exactly where it was, never guessing. `undefined` means "a flat
- * paragraph", not "level 1".
+ * Missing or unrecognized style/numbering metadata leaves flat paragraphs.
+ * XML safety and work budgets still apply to metadata parts.
  *
  * **WordprocessingML is distinguished by namespace, not just local tag names.**
  * `word/document.xml` can carry DrawingML inside `mc:AlternateContent`, where

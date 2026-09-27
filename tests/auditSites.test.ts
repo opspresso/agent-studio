@@ -34,14 +34,18 @@ import type { AppSettings } from "@/domain/settings/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import type { Trigger, WebhookTrigger } from "@/domain/trigger/types";
 
-/**
- * Every act the audit trail claims to cover, proved to leave a row.
- *
- * The gap this closes was uneven rather than total: reveals and the admin
- * override already wrote a log line, while a settings write and a deletion left
- * nothing at all — so "who changed the admin list, and when" had no answer, and
- * a deleted agent took the row that would have named its owner.
- */
+/** Audit-covered mutations leave a row; reads and unchanged secrets do not. */
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++ids.sequence);
+    return bytes;
+  },
+}));
 
 const OWNER = "owner@example.com";
 const ADMIN = "admin@example.com";
@@ -99,12 +103,16 @@ function agents(overrides: Partial<AgentRepository> = {}): AgentRepository {
 const actions = () => rows.map((row) => row.action);
 
 beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-02T00:00:00.000Z");
   rows = [];
   setAuditSink(sink());
   setAdminCheck(async () => false);
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   setAuditSink(undefined);
   setAdminCheck(async () => false);
 });
@@ -230,9 +238,7 @@ describe("app settings", () => {
   });
 
   it("names what changed, not what the form submitted", async () => {
-    // The settings page posts all ten fields on every save. Keys-carried made
-    // the detail a constant listing them all, which says only "the form was
-    // saved" — and "who changed the admin list last quarter" then has no answer.
+    // A full form submission records only fields whose effective values changed.
     const cases = useCases();
     await cases.update({ pluginsRepo: "org/plugins", pluginsRepoBranch: "next" }, ADMIN);
     rows = [];

@@ -33,7 +33,7 @@ describe("registered MCP source replay", () => {
     await expect(f.run(f.job, f.recipe, new AbortController().signal)).rejects.toThrow("source_agent_access_changed");
     expect(f.close).toHaveBeenCalledTimes(2);
   });
-  it("uses the fixed read tool and agents privately before model-facing truncation without persisting a new reference", async () => {
+  it("uses the fixed read tool and captures privately before model-facing truncation without persisting a new reference", async () => {
     const f = fixture();
     const value = await f.run(f.job, f.recipe, new AbortController().signal);
     expect(value).toMatchObject({ itemId: "42", url: "https://files.example.test/fresh" });

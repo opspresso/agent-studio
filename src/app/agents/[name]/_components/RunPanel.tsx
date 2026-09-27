@@ -14,8 +14,9 @@ import { ToolRow } from "@/app/_components/ToolRow";
 import {
   chunkAuthorPath,
   mergeVisitedPath,
-  removeActivePath,
-  trackActivePath,
+  activeAuthorPaths,
+  foldActiveAuthors,
+  type ActiveAuthor,
 } from "@/app/_lib/authorPaths";
 import { toRequestImages } from "@/app/_lib/imageAttachments";
 import { onModEnter } from "@/app/_lib/modEnter";
@@ -86,15 +87,11 @@ export function RunPanel({
   const [startedAt, setStartedAt] = useState(0);
   const [toolCalls, setToolCalls] = useState<ToolCallView[]>([]);
   const [toolResults, setToolResults] = useState<ToolResultView[]>([]);
-  // The chain currently producing chunks (outermost first), or undefined while the
-  // top-level agent itself is answering.
-  // A set, not one chain: SDK delegation has several children running at once.
-  const [activePaths, setActivePaths] = useState<string[][]>([]);
+  const [activeAuthors, setActiveAuthors] = useState<ActiveAuthor[]>([]);
+  const activePaths = useMemo(() => activeAuthorPaths(activeAuthors), [activeAuthors]);
   const [visitedPaths, setVisitedPaths] = useState<string[][]>([]);
   const [error, setError] = useState<string | null>(null);
-  // What the run reported alongside its answer — an unusable binding, a turn
-  // or budget limit. The other surfaces already show these; the playground was
-  // the one that stayed silent.
+  // Run losses and limits reported alongside the answer.
   const [warnings, setWarnings] = useState<string[]>([]);
   const [cost, setCost] = useState<number | null>(null);
   const [agentImages, setAgentImages] = useState<Array<{ src: string; prompt?: string }>>([]);
@@ -159,7 +156,7 @@ export function RunPanel({
     setStartedAt(Date.now());
     setToolCalls([]);
     setToolResults([]);
-    setActivePaths([]);
+    setActiveAuthors([]);
     setVisitedPaths([]);
     setError(null);
     setWarnings([]);
@@ -204,18 +201,8 @@ export function RunPanel({
           const reported = collectedWarning(chunk, prev);
           return reported === undefined ? prev : [...prev, reported];
         });
-        // Track who is running: an authored chunk names a chain that is running
-        // now and joins the set; an unauthored one means control is back at the
-        // top level and none of them is still going.
         const path = chunkAuthorPath(chunk);
-        // Two different questions: what is running now, and what this run reached.
-        setActivePaths((prev) =>
-          path && chunk.authorDone
-            ? removeActivePath(prev, path)
-            : path
-              ? trackActivePath(prev, path)
-              : [],
-        );
+        setActiveAuthors(prev => foldActiveAuthors(prev, chunk));
         if (path && !chunk.authorDone) {
           setVisitedPaths((prev) => mergeVisitedPath(prev, path));
         }
@@ -280,13 +267,13 @@ export function RunPanel({
       reasoningPacer.flush();
       if (isCurrent()) {
         activeRequest.current = null;
+        setActiveAuthors([]);
         setRunning(false);
       }
     }
   }
 
-  // The panel's own attachments are the source images an `image` agent edits,
-  // so a screenshot pasted into the prompt is the gesture this surface is for.
+  // Pasted and dropped images become inputs for image understanding or EditImage.
   const attach = useCallback((files: File[]) => void addFiles(files), [addFiles]);
   const { dragging, handlers } = useFileDrop(attach, running);
   const onPaste = useMemo(() => onFilePaste(attach, running), [attach, running]);
@@ -452,10 +439,7 @@ export function RunPanel({
         <ProducedFile key={`file-${i}`} name={file.name} byteSize={file.byteSize} url={file.url} />
       ))}
 
-      {/* The same paired rows the chat draws — one row per call, badged by what
-          kind of thing ran, named with what it actually did. Two accordion
-          lists (calls, then results) were this surface's own rendering of the
-          same wire format, and they had already drifted from the chat's. */}
+      {/* Share Chat's paired tool rows: one row per call, with its result. */}
       {(toolCalls.length > 0 || toolResults.length > 0) && (
         <Stack gap={0}>
           {pairToolTraffic(toolCalls, toolResults).map((pair, i) => (

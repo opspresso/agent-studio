@@ -5,11 +5,8 @@ import classes from "./StatCard.module.css";
 /**
  * One headline number with its label and a line of context.
  *
- * Lifted out of the overview once the profile page needed the same thing and
- * grew its own: a bare `Group` with an `fz="xl"` number, which is how a second
- * type scale for the most-read number on a page starts. The value arrives
- * already formatted — a cost through `formatUsd`, a count through
- * `toLocaleString` — because this component cannot know which.
+ * Callers format the value for its unit and locale; this component owns the
+ * shared visual hierarchy.
  */
 export function StatCard({
   label,

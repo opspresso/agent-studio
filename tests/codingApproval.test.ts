@@ -15,6 +15,7 @@ import type { WorktreeReview } from "@/domain/coding/worktree";
 import type { Workspace } from "@/domain/workspace/types";
 import type { PullRequestInfo } from "@/domain/coding/types";
 import { CodingMutationRejectedError } from "@/domain/coding/types";
+import { createCodingGitHub } from "@/infrastructure/github/codingForge";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
@@ -358,6 +359,34 @@ describe("explicit coding action approvals", () => {
     expect(deps.forge.merge).toHaveBeenCalledTimes(1);
     expect(deps.forge.merge).toHaveBeenCalledWith(expect.objectContaining({ repository: "company/repo" }), 7, head);
     expect((await repository.get(workspace.id))?.pullRequest?.state).toBe("merged");
+  });
+  it("retains an uncertain merge approval when GitHub omits the resulting commit", async () => {
+    review.treeSha = review.headTreeSha;
+    let mergeCalls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: URL) => {
+      const path = String(url);
+      if (path.endsWith("/merge")) { mergeCalls++; return Response.json({ merged: true }); }
+      if (path.includes("/check-runs?")) return Response.json({ total_count: 0, check_runs: [] });
+      if (path.includes("/status?")) return Response.json({ total_count: 0, state: "pending" });
+      if (path.endsWith("/pulls/7")) return Response.json({ ...pull, html_url: pull.url,
+        head: { sha: head, ref: workspace.coding!.branch, repo: { full_name: workspace.coding!.repository } },
+        base: { ref: "main", repo: { full_name: workspace.coding!.repository } },
+      });
+      throw new Error("Unexpected test request");
+    }));
+    try {
+      deps.forge = createCodingGitHub({ apiUrl: "https://example.test/api/v3", webUrl: "https://example.test",
+        internalHosts: ["example.test"], getToken: async () => "test-account-token" }, () => now).forge;
+      await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, revision: workspace.revision + 1, pullRequest: pull } });
+      const api = createCodingUseCases(deps);
+      const pending = await api.request(workspace.id, owner, { kind: "merge", pullRequestNumber: 7, headSha: head });
+      const result = await api.decide(workspace.id, owner, pending.id, true);
+      expect(result.status).toBe("uncertain");
+      expect((await repository.get(workspace.id))?.activeActionId).toBe(pending.id);
+      expect((await repository.get(workspace.id))?.pullRequest?.state).toBe("open");
+      expect(await api.decide(workspace.id, owner, pending.id, true)).toEqual(result);
+      expect(mergeCalls).toBe(1);
+    } finally { vi.unstubAllGlobals(); }
   });
   it("serializes concurrent approval requests before either side effect", async () => {
     const api = createCodingUseCases(deps);

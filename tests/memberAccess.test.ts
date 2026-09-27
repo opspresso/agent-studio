@@ -27,28 +27,22 @@ const member = (tier: string) => ({
   lastLoginAt: null,
 });
 
-const savedAdminEmails = process.env.ADMIN_EMAILS;
-
 const setAdminEmails = (emails: string[]) => {
-  if (emails.length === 0) {
-    delete process.env.ADMIN_EMAILS;
-  } else {
-    process.env.ADMIN_EMAILS = emails.join(",");
-  }
+  vi.stubEnv("ADMIN_EMAILS", emails.length === 0 ? undefined : emails.join(","));
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
   invalidateMemberTierCache();
   setAdminEmails([]);
 });
 
 afterEach(() => {
-  if (savedAdminEmails === undefined) {
-    delete process.env.ADMIN_EMAILS;
-  } else {
-    process.env.ADMIN_EMAILS = savedAdminEmails;
-  }
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+  invalidateMemberTierCache();
 });
 
 describe("isEffectiveAdmin", () => {

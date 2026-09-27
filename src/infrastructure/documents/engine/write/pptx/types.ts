@@ -1,12 +1,4 @@
-/**
- * The presentation AST — what sits between the Markdown document and the XML.
- *
- * The planner produces this and the renderer consumes it, and neither sees the
- * other. The split exists because the two jobs change for different reasons: a
- * new slide archetype is a planning decision (what does this content *mean*?)
- * and a rendering decision (what shapes say that?), and holding both in one
- * module is how the original single-file renderer reached a thousand lines.
- */
+/** Presentation AST shared by the planner and XML renderer; content decisions and shape layout stay separate. */
 
 import type { Align, Run } from "../../markdown";
 import type { Card, CompareColumn, Metric, Milestone } from "../semantics";

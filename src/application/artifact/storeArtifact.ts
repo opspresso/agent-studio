@@ -1,11 +1,4 @@
-/**
- * The one place an artifact row is written.
- *
- * Every stored byte goes through here — a generated image, a rendered document,
- * an attachment a person brought — the way `recordAudit` is the only writer of
- * an audit row. A second writer would spell the provenance its own way, and a
- * gallery filtering on it would silently show nothing for half the rows.
- */
+/** Inventory generated/attached outputs and existing private files with their provenance. */
 
 import { randomUUID } from "node:crypto";
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";

@@ -60,8 +60,7 @@ export default function TracesPage() {
         </Text>
       ) : traces.length === 0 ? (
         <EmptyState>
-          No traces in this range. Agent runs are always traced; prompt and image runs are
-          sampled.
+          {t("trace.empty")}
         </EmptyState>
       ) : (
         <Accordion variant="separated" radius="md" multiple>

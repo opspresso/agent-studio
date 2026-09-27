@@ -45,14 +45,8 @@ import { redirectToLogin } from "@/app/_lib/authRedirect";
 import { isPublicPagePath } from "@/shared/pageAccess";
 
 /*
- * Labels are message keys, resolved at render. `key` is separate from `label`
- * because the admin-only filter below keys on the group's identity, and a
- * translated string is not one — matching on `"System"` would have stopped
- * matching the moment the sidebar spoke Korean, silently showing every reader
- * the admin section.
- *
- * `satisfies` rather than a bare `as const`: it is what makes a mistyped key a
- * compile error here instead of an English fallback at render.
+ * Translate labels at render, but gate navigation by stable group keys.
+ * `satisfies` checks every message key against the catalogue.
  */
 const NAV_GROUPS = [
   {
@@ -93,14 +87,7 @@ const NAV_GROUPS = [
 }>;
 
 /**
- * The reader's own two pages, kept out of the groups above and pinned to the
- * foot of the sidebar.
- *
- * Neither is a thing the workspace holds: one is the account looking at it and
- * the other is how to use it. Sitting in the work group they pushed the
- * registries down and read as more work to do. The profile link stays here
- * rather than moving into the header entirely, because the header's own link
- * to it is `visibleFrom="lg"` and would disappear on a laptop.
+ * Profile and Guide stay pinned below the scrollable work and registry groups.
  */
 const PERSONAL_ITEMS = [
   { href: "/profile", label: "nav.profile", Icon: IconUser },
@@ -191,15 +178,8 @@ export function AppLayout({
     return null;
   }
 
-  /*
-   * Every nav target is behind the sign-in gate, so offering them to a
-   * signed-out visitor is a row of links that only bounce back to /login.
-   *
-   * This is a prop rather than `useSession()` because the answer has to be the
-   * same on both sides of hydration: the hook has no cookie during SSR, so it
-   * said `isPending`, the server drew the whole nav for everyone, and a
-   * signed-out visitor watched it vanish. The root layout says why.
-   */
+  // Resolve navigation from the server-supplied viewer so initial SSR and
+  // hydration agree. Signed-out visitors receive no workspace navigation.
   const showNav = viewer !== null;
 
   const navLink = ({
@@ -291,12 +271,7 @@ export function AppLayout({
           </Group>
       </AppShell.Header>
 
-      {/*
-       * Collapsing it is not enough: a collapsed navbar is still in the
-       * document, so a signed-out visitor was shipped every link in the studio
-       * and only CSS kept them out of sight. `src/proxy.ts` turns that visitor
-       * away precisely so the shape of the workspace does not reach them.
-       */}
+      {/* Omit signed-out navigation from the DOM; CSS collapse alone is insufficient. */}
       <AppShell.Navbar className={classes.navbar} p="md">
         {showNav && (
         <>

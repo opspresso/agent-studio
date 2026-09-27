@@ -1,11 +1,4 @@
-/**
- * Turning a stored image reference into an address something can fetch.
- *
- * The single owner of the compatibility rule: a row carries either an object
- * `key` (signed on read) or a legacy public `url` (used as-is). The chat view
- * applies that compatibility rule; model replay restores object bytes through
- * the object-store port instead of resolving an address.
- */
+/** Resolve display image references: use a stored public URL or sign an object key. */
 
 import type { ChatMessageImage } from "./types";
 
@@ -13,9 +6,8 @@ import type { ChatMessageImage } from "./types";
 export type SignImageUrl = (key: string, expiresInSeconds: number) => Promise<string>;
 
 /**
- * Resolve one reference. A legacy `url` is returned unchanged; a `key` is
- * signed. Returns undefined when neither is present, or when signing failed —
- * callers drop the image rather than render a broken one.
+ * Return a stored public URL or sign its object key. Missing key/signer returns
+ * undefined; signing errors propagate so the caller can report the loss.
  */
 export async function resolveImageUrl(
   image: ChatMessageImage,

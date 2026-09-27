@@ -15,7 +15,7 @@
 
 import { listEntries, looksLikeZip } from "./zip";
 
-/** What this server parses. PDF and plain text belong to the caller. */
+/** Office formats parsed here; PDF, HTML and plain text use DocumentExtractor paths. */
 export type Format =
   | "docx"
   | "hwpx"
@@ -25,12 +25,7 @@ export type Format =
   | "odf"
   | "rtf";
 
-/**
- * What a type *claims* to be, including the two kinds this server no longer
- * reads. Kept in the tables so a refusal can name the format rather than
- * shrugging — "this is a PDF, which the caller reads for itself" beats "not a
- * document format this tool recognises".
- */
+/** Declared types also identify formats handled by the surrounding extractor. */
 type DeclaredKind = Format | "pdf" | "text";
 
 export type Detection = { format: Format } | { format: "unsupported"; reason: string };
@@ -178,14 +173,7 @@ function refuse(reason: string): Detection {
   return { format: "unsupported", reason };
 }
 
-/**
- * A format the caller already reads.
- *
- * PDF and plain text need nothing this server has that Agent Studio does not: the
- * app extracts both in-process, so routing one here would be a network round
- * trip to reach the same `unpdf`. Saying which formats *do* belong here is what
- * stops a caller from concluding the document is unreadable.
- */
+/** Explain the extraction boundary without reporting a supported format as unreadable. */
 function READ_THERE(what: string): string {
   return `this is ${what}, which the caller reads for itself rather than sending here. ${READS}`;
 }
@@ -242,9 +230,7 @@ export function detect(
     return refuse("the document is empty");
   }
   if (looksLikePdf(bytes)) {
-    // Read by the caller, not here. This server is the office-format parser now:
-    // PDF and plain text need no dependency Agent Studio does not already carry, so
-    // sending them over MCP would be a network round trip to reach `unpdf`.
+    // PDF text extraction is handled outside the Office parser.
     return refuse(READ_THERE("a PDF"));
   }
   if (looksLikeZip(bytes)) {

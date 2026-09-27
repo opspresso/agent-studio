@@ -283,7 +283,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             name: "warnings",
             type: "array[string]",
             description:
-              "What the run lost on the way to this answer — a binding no longer in the registry, a blocked MCP server, a clipped transfer transcript. Present only when something was lost; a stream says each of these in a warning frame instead.",
+              "Loss warnings, such as unavailable bindings, blocked MCP servers or truncated tool results. Streaming responses use warning frames instead.",
           },
           ...OUTPUT_FIELDS,
         ],
@@ -397,7 +397,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             { name: "messages", type: "array[object]", required: true, description: "Conversation so far." },
             DOCUMENTS_FIELD,
           ],
-          errorCodes: [400, 401, 403, 404, 413, 429, 500, 503],
+          errorCodes: [400, 401, 403, 404, 413, 429, 500, 502, 503, 504],
           codeExamples: [
             curlExample({
               method: "POST",
@@ -426,8 +426,8 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       title: "Agent webhook",
       description:
         "Starts a run of the current Agent configuration from outside. Generic senders use X-Trigger-Secret. GitHub uses the same secret in its Secret setting to sign X-Hub-Signature-256, with X-GitHub-Delivery and X-GitHub-Event headers; the JSON body (up to 1MB) becomes the run's input — serialised into the user message. " +
-        "It answers 202 immediately and runs in the background, because a run can take minutes and no sender waits that long: the answer lands on the delivery's history row under Settings → Webhook, not in this response. " +
-        "Generic senders use Idempotency-Key; GitHub redeliveries are deduplicated by X-GitHub-Delivery for 24 hours. Signed GitHub ping deliveries return status=ping without starting a run.",
+        "It acknowledges admission with 202 and executes in the background. Read the result under Settings → Webhook; 202 does not mean execution completed. " +
+        "Generic senders use Idempotency-Key; GitHub redeliveries are deduplicated by X-GitHub-Delivery for 24 hours. Signed GitHub ping deliveries return status=ping without a run. When PR review is configured, generic authentication is refused; unsupported PR events return status=ignored with a reason.",
       auth: "trigger-secret",
       streaming: false,
       responseFields: [
@@ -436,13 +436,14 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           name: "status",
           type: "string",
           description:
-            '"accepted" when a run started; "disabled", "duplicate", "busy" (overlap is off), "no-configuration" or "ping" when no run starts. These acknowledgements return 202.',
+            '"accepted" when admitted for background execution; "disabled", "duplicate", "busy" (overlap is off), "no-configuration", "ping" or "ignored" when no run starts. All return 202.',
         },
         {
           name: "runId",
           type: "string",
           description: 'Present on "accepted" — the id of the history row this delivery opened.',
         },
+        { name: "reason", type: "string", description: 'Present on "ignored" — why a PR review delivery was not selected.' },
       ],
       responseExample: pretty({ ok: true, status: "accepted", runId: "9f1c…" }),
       errorCodes: [400, 401, 404, 413],
@@ -470,7 +471,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         "Slack delivers app_mention, message.im and message.channels/message.groups events here. Requests are verified with this Agent's Slack signing secret (HMAC) — it is not called manually. Most channel messages are answered with ok and nothing else: only a mention, a DM, a follow-up in a thread the bot answered in, or an Agent keyword starts a run.",
       auth: "slack-signature",
       streaming: false,
-      errorCodes: [401],
+      errorCodes: [400, 401, 404, 413],
       codeExamples: [
         curlExample({
           method: "POST",
@@ -494,7 +495,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         "Telegram delivers message updates here once the bot is enabled on the Integrations tab. Requests are verified with the secret token this platform registered the webhook with — it is not called manually. A private-chat message with a sender ID starts a run; in a group only a message from an identified sender that mentions the bot or replies to one of its messages does, and /start and /help are answered without one.",
       auth: "telegram-secret",
       streaming: false,
-      errorCodes: [401],
+      errorCodes: [400, 401, 404, 413],
       codeExamples: [
         curlExample({
           method: "POST",
@@ -521,7 +522,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         "The Bot Framework delivers Teams activities here — set this URL as the Azure Bot's messaging endpoint. Requests are verified with the token the Bot Framework signs for this bot's App ID and serviceUrl — it is not called manually. A personal-chat message with a sender ID starts a run; in a channel or group chat only a message from an identified sender that @mentions the bot does.",
       auth: "teams-token",
       streaming: false,
-      errorCodes: [401],
+      errorCodes: [400, 401, 404, 413],
       codeExamples: [
         curlExample({
           method: "POST",

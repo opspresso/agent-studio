@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   editorBody,
   LARGE_TURN_BODY_BYTES,
@@ -12,11 +12,8 @@ import { MAX_IMAGE_BYTES, MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { MAX_DOCUMENT_BYTES, MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
 
 /**
- * `body.ts` already said why an unbounded body is a problem — "several hundred
- * megabytes of resident memory per request, from any signed-in caller, before a
- * single validator has looked at it" — and then only the chat routes asked for
- * the bound. `/predict` took the same attachments through `request.json()`, so
- * its `attachedImagesSchema` checked the size once the string was resident.
+ * Turn bodies are bounded before JSON parsing. Large bodies retain their byte
+ * charge through response consumption or detached work; small requests remain available.
  */
 function post(body: string, headers: Record<string, string> = {}): Request {
   return new Request("https://x.test/api/thing", { method: "POST", body, headers });
@@ -88,14 +85,17 @@ describe("withTurnBody", () => {
     });
     let started = 0;
     const concurrent = 8;
+    const consumersStarted = Promise.withResolvers<void>();
     const pending = Array.from({ length: concurrent }, () =>
       withTurnBody(post(largeBody), async (body) => {
         started += 1;
+        if (started === concurrent) consumersStarted.resolve();
         await held;
         return body;
       }),
     );
-    await vi.waitFor(() => expect(started).toBe(concurrent));
+    await consumersStarted.promise;
+    expect(started).toBe(concurrent);
 
     releaseConsumers();
     await Promise.all(pending);
@@ -108,15 +108,18 @@ describe("withTurnBody", () => {
       releaseConsumers = resolve;
     });
     let started = 0;
+    const consumersStarted = Promise.withResolvers<void>();
     const largeBody = largeTurnBody();
     const pending = Array.from({ length: 2 }, () =>
       withTurnBody(post(largeBody), async (body) => {
         started += 1;
+        if (started === 2) consumersStarted.resolve();
         await held;
         return body;
       }),
     );
-    await vi.waitFor(() => expect(started).toBe(2));
+    await consumersStarted.promise;
+    expect(started).toBe(2);
 
     await expect(parseTurn(post('{"prompt":"small requests remain available"}'))).resolves.toEqual({
       prompt: "small requests remain available",

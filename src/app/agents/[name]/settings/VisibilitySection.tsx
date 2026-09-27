@@ -8,9 +8,8 @@ import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
 
 /**
- * Who may see and run the agent. Public is what every agent was before
- * visibility existed; private narrows access to the owner and the invited
- * emails, which only matter — and are only shown — while private is selected.
+ * Agent access mode. Invited emails apply only to private Agents and their
+ * editor is shown only while private is selected.
  */
 export function VisibilitySection({
   agentName,

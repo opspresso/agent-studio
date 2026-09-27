@@ -1,17 +1,6 @@
 /**
- * Run `fn` over `items` with at most `limit` in flight; results keep input order.
- *
- * Here rather than beside either caller because neither owns it: the engine
- * bounds a turn's tool dispatch with it, and the Slack reader bounds a
- * transcript's profile lookups — the same shape, no shared subject. A second
- * copy is how the two would drift on the one thing that matters, which is that
- * a rejection inside `fn` must reject the whole call rather than stall the
- * remaining workers.
- *
- * Every item is run, and a missing result is not a shape this can produce. That
- * is load-bearing rather than obvious: the engine pairs results back to calls by
- * index and skips a slot it finds empty, so anything that returns short here
- * does not fail — it silently answers a tool call with nothing.
+ * Map with bounded concurrency and preserve input positions, including undefined
+ * values. Rejections propagate; callers own cancellation of work already running.
  */
 export async function mapWithLimit<T, R>(
   items: readonly T[],

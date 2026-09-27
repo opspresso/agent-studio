@@ -129,9 +129,8 @@ export function ManagedMcpModal({
         required
         description={
           <>
-            What it listens on inside itself. The deployed runtime shares this app&apos;s
-            network namespace rather than mapping ports, so the container is told which port
-            to bind and has to honour <Code>PORT</Code>.
+            The port the server listens on inside the container. The platform publishes it
+            on the host&apos;s loopback address and sets <Code>PORT</Code> to this value.
           </>
         }
         inputWrapperOrder={["label", "input", "description", "error"]}

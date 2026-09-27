@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
 import { actorKey, descend, type RunActor } from "@/domain/execution/actor";
 import { principalActor } from "@/app/api/agents/_lib/executionAuth";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
@@ -6,6 +12,13 @@ import { TraceRecorder } from "@/application/trace/recorder";
 import type { Trace } from "@/domain/trace/types";
 import type { UsageDelta } from "@/domain/usage/types";
 import type { UsageRepository } from "@/domain/usage/repository";
+
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 function fakeUsage() {
   const writes: UsageDelta[] = [];

@@ -16,7 +16,7 @@ import type { ResolvedTarget, TargetResolver } from "./providers";
 /** Studio owns routing and credentials; the Agents SDK owns the model protocol. */
 export function createAgentModelProvider(
   resolveTarget: TargetResolver,
-  clientForTarget: (target: ResolvedTarget) => OpenAI = (target) => getOpenAIClient(target, 0),
+  clientForTarget: (target: ResolvedTarget) => OpenAI = getOpenAIClient,
 ): ModelProvider {
   return {
     getModel(name) {

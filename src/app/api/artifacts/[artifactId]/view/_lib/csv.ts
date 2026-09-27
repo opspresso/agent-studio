@@ -1,16 +1,4 @@
-/**
- * Delimiter-separated rows, per RFC 4180.
- *
- * Hand-written rather than a dependency because the grammar is three rules and
- * the failure a naive `split(",")` produces is silent: a quoted field holding a
- * comma — which is most of why anyone quotes one — splits into two columns, and
- * the table renders as if that were the data. A field may be quoted, `""`
- * inside a quoted field is one literal quote, and a newline inside one is part
- * of the value rather than the end of the row.
- *
- * Nothing is coerced. A cell is the text it was, because this parses a file for
- * a reader to look at, not for anything to compute with.
- */
+/** CSV rows with quoted fields, doubled quotes and embedded newlines; values remain strings. */
 
 /** Rows in order; every row is its own length, since a ragged file is still a file. */
 export function parseCsv(text: string): string[][] {
@@ -21,15 +9,7 @@ export function parseCsv(text: string): string[][] {
   // Set by the first character of a field, so an unquoted field keeps a quote
   // that appears in the middle of it (`a"b`) as the character it is.
   let atFieldStart = true;
-  /**
-   * Whether anything has been read toward the row in hand.
-   *
-   * Not the same question as "is `field` or `row` non-empty", and that is the
-   * whole reason it exists: after a closing quote, a `""` field has left both
-   * back at their initial state, so a file ending in one dropped its last row
-   * entirely — and a file ending in a blank line grew one that was not there.
-   * Both silently: the view showed a table that was not the file.
-   */
+  /** Track row input separately so quoted empty fields survive and blank lines are skipped. */
   let started = false;
 
   const endField = () => {
@@ -77,9 +57,7 @@ export function parseCsv(text: string): string[][] {
       if (char === "\r" && text[i + 1] === "\n") {
         i += 1;
       }
-      // A blank line is not a row of one empty field. Skipping it is what keeps
-      // a file that ends `\r\n\r\n` from drawing an empty `<tr>` under its data,
-      // and it is the reading every other CSV tool gives a blank line.
+      // Blank lines are skipped; a quoted empty field is a row.
       if (started) {
         endRow();
       }
@@ -87,15 +65,11 @@ export function parseCsv(text: string): string[][] {
     }
     atFieldStart = false;
     field += char;
-    // Set here rather than above the branches: a newline is a character too,
-    // and marking the row started before reading it is what made a trailing
-    // blank line look like a row with something in it.
+    // Newline delimiters do not start a row.
     started = true;
   }
 
-  // A file ending in a newline has already closed its last row; one that does
-  // not still has a row in hand — including a row that reads as empty, which is
-  // why this asks `started` rather than looking at `field` and `row`.
+  // Keep a final row without a line break, including a quoted empty field.
   if (started) {
     endRow();
   }

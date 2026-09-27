@@ -1,15 +1,9 @@
 "use client";
 
 /**
- * The active language and service name, handed to the client tree by the root layout.
- *
- * Catalogues are imported on both sides (`translate.ts` says why); only the
- * locale and deployment name cross the server/client boundary.
- *
- * There is no loading state and no mismatch to avoid: the server resolved the
- * cookie before rendering, so the first client render already agrees with the
- * HTML. That is the difference between this and `ThemeToggle`, whose preference
- * lives only in `localStorage` and has to wait for mount.
+ * The root layout supplies the resolved locale and service name before render,
+ * keeping initial server and client copy aligned. Catalogues stay in the shared
+ * translator; only these settings cross the server/client boundary.
  */
 import { createContext, useContext, useMemo } from "react";
 import { DEFAULT_LOCALE, type Locale } from "./locale";

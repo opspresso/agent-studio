@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { log } from "@/shared/logger";
 import {
   assertWithinMemberCostLimit,
   memberMonthToDate,
@@ -10,6 +11,7 @@ import type { UsageRepository } from "@/domain/usage/repository";
 import type { MemberUsageRow } from "@/domain/usage/types";
 
 const now = new Date("2026-08-13T12:00:00Z");
+afterEach(() => vi.restoreAllMocks());
 const user: RunActor = { kind: "user", id: "a@x.com" };
 
 const guestCap = TIER_LIMITS.guest.monthlyCostCapUsd!;
@@ -112,13 +114,14 @@ describe("assertWithinMemberCostLimit", () => {
     await expect(assertWithinMemberCostLimit({ usage }, user, undefined, now)).resolves.toBeUndefined();
   });
 
-  it("fails open when the read fails", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("logs a failed budget read while allowing the run", async () => {
+    const spy = vi.spyOn(log, "error").mockImplementation(() => {});
     const usage = usageWith([]);
+    const failure = new Error("database unavailable");
     usage.listMemberDays = async () => {
-      throw new Error("dynamo down");
+      throw failure;
     };
     await expect(assertWithinMemberCostLimit({ usage }, user, "guest", now)).resolves.toBeUndefined();
-    spy.mockRestore();
+    expect(spy).toHaveBeenCalledWith("cost-guard", "could not read month spend for a@x.com; allowing the run", failure);
   });
 });

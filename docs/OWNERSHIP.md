@@ -21,9 +21,10 @@
 | 실행의 첫 응답을 확인한 뒤 경고를 먼저 전달하고 조기 종료 시 원본 실행을 닫기 | `src/application/run/leadingWarnings.ts` 의 `withLeadingWarnings`. Chat과 실행 API가 같은 첫 응답·종료 계약을 사용한다 | 구조 |
 | 이미지 Model 의 세 가지 토큰 수를 usage 행 하나로 합치기 | `src/domain/llm/models.ts` | 구조 |
 | 한 런이 파일을 몇 개까지 쓸 수 있는가 | `src/application/runtime/tools.ts` 의 `MAX_SAVED_FILES_PER_RUN`. 이 플랫폼이 고른 루프 한도라 그것을 강제하는 루프 옆에 산다 | 구조 |
-| 한 호출의 인자를 얼마나 보관하고 되풀이하는가 (알려지는 쪽과 프로바이더로 돌아가는 쪽 둘 다) | `src/application/runtime/arguments.ts` 의 `MAX_TOOL_ARG_BYTES` / `boundToolArgsPair` / `boundArgumentText` | 구조 |
+| 도구 인자 표시·완료 이력의 보관 한도 | `src/application/runtime/arguments.ts`의 `MAX_TOOL_ARG_BYTES` / `boundCompletedToolArguments`. 표시·완료·거절 이력은 제한하고 승인 대기 원본은 유지 | 구조 |
 | Embedding/Rerank 선택 모델의 endpoint·credential·wire ID 결정 | `src/lib/runtime-settings.ts`의 `getEmbeddingTarget` / `getRerankerTarget`. 등록 모델의 provider 연결을 사용한다 | 구조 |
 | provider 에 embedding 을 요청하기 | `src/infrastructure/llm/embeddings.ts` | 구조 |
+| OpenAI 호환 SDK의 유료 HTTP 요청 자동 재시도 정책 | `src/infrastructure/llm/openaiClient.ts`의 `OPENAI_MAX_HTTP_RETRIES`; text·image·embedding client가 함께 사용한다 | 구조 |
 | 전사 모델의 endpoint·credential·wire ID·응답 형식 결정 | `src/lib/runtime-settings.ts`의 `getTranscriptionTarget` | 구조 |
 | 전사 사용량의 시간/토큰 단위 비용 계산 | `src/domain/llm/models.ts`의 `calculateTranscriptionCost`. 누락된 과금 단위는 unknown이다 | 구조 |
 | 배포 전역 Embedding/Rerank 모델 선택과 Embedding 변경 시 vector migration | `src/application/llm/modelSelection.ts`; DB의 모델 선택·미설정 상태 해석은 `src/lib/runtime-settings.ts` | 구조 |
@@ -44,6 +45,7 @@
 | Model 의 window 로부터 런의 컨텍스트 예산을 도출하기 | `src/application/llm/contextBudget.ts` | 구조 |
 | Agent 실행 Trace의 생성과 종료 | `src/application/run/traceLifecycle.ts` | 코드 |
 | 사람이 읽을 경과·소요 시간 | `src/app/_lib/duration.ts` 의 `formatSeconds`/`formatDuration`. 단위는 `common.duration*` 카탈로그가 가지므로 어느 페이지든 그대로 쓴다. 진행 중 시계와 끝난 뒤 배지가 같은 규칙(내림)으로 읽히는 것이 이 소유의 요점이다 | 구조 |
+| 실행 중 Agent 배지와 참여 경로 | `src/app/_lib/authorPaths.ts`의 `foldActiveAuthors`/`activeAuthorPaths`는 위임 호출별 완료를 추적하고 표시 경로를 합친다. `mergeVisitedPath`는 참여 기록을 별도로 유지한다. Chat과 Playground가 공유한다 | 코드 |
 | top-level 런을 감싸는 것 | `src/application/run/runBracket.ts` | 구조 |
 | Agent 실행과 완료 응답 수집 | `src/application/execution/runAgent.ts` | 코드 |
 | 런의 프롬프트가 자기 caller 를 이름으로 불러도 되는가 | `src/application/execution/deps.ts` 의 `callerFor` | 구조 |
@@ -229,7 +231,7 @@
 | 감사 기록의 날짜 범위·페이지 상한·cursor | `src/application/audit/auditUseCases.ts`; 날짜별 조회는 `src/infrastructure/db/repositories/auditRepository.ts` | 코드 |
 | Agent 관리 자료·산출물·Trace·호출자별 Usage를 읽을 수 있는 사람. 쓰기와 같은 규칙, 쓰기 감사 행은 남기지 않는다 | `src/application/agent/agentUseCases.ts` 의 `assertAgentOwnerOrAdminReadable` | 구조 |
 | Capability catalog reindex의 설치 전역 직렬화 lease | `src/domain/catalog/reindexLock.ts` 계약과 `src/infrastructure/db/repositories/catalogReindexLock.ts` 구현 | 구조 |
-| Bedrock 에 닿기 | `src/infrastructure/llm/bedrockClient.ts` | 구조 |
+| Bedrock SigV4의 AWS credential chain | `src/infrastructure/llm/bedrockClient.ts` | 구조 |
 | 호출자가 요청한 페이지 크기를 읽는 법과, 한 페이지가 커질 수 있는 상한 | `src/shared/pageLimit.ts`의 `parsePageLimit` / `boundedPageLimit` / `MAX_PAGE_LIMIT`. 각 자원은 자기 상한을 전달한다. 전체 열거는 repository별 자연 키·시간·seq cursor로 페이지를 순회한다 | 구조 |
 | UTC 날짜를 시각으로 읽는 법, 하루의 길이, 그리고 날짜 범위를 걸어가는 법 | `src/shared/date.ts`의 `isUtcDay` / `daySpan` / `daysBetween`. 날짜 유효성·범위 계산을 공유하고 순회 방향은 호출자가 선택한다 | 구조 |
 | presence penalty의 허용 범위 | `src/domain/llm/channel.ts`의 `PRESENCE_PENALTY_RANGE`. Agent 설정 API 검증과 편집기가 함께 사용한다 | 구조 |
@@ -237,7 +239,6 @@
 | Agent 의 webhook 이 어디로 전달되는가 | `src/domain/trigger/types.ts` 의 `agentWebhookPath` | 구조 |
 | Agent optimistic update 가 경쟁에서 졌을 때의 오류 계약 | `src/application/agent/agentUpdate.ts` 의 `persistAgentUpdate` | 구조 |
 | managed workload 이름 규칙 | `src/domain/naming.ts` 의 `MANAGED_NAME` | 구조 |
-| 동시에 도는 generator 를 병합하기 | `src/shared/mergeGenerators.ts` | 구조 |
 | 사람이 읽을 달러 금액 | `src/app/_lib/formatUsd.ts` 의 `formatUsd`. `SINGLE_OWNERS` 행이 아니라 그 자체가 하나의 규칙으로 강제된다: `app` 안 어디에도 `${…toFixed(…)}` 는 없고 두 `_lib` 포매터만 있다 | 구조 |
 | 저장된 시각 문자열을 밀리초로 읽기 | `src/shared/date.ts` 의 `parsedInstant`. 읽을 수 없는 `createdAt` 은 값이 없는 것이라는 판단을 포매터들과 나눠 갖는다 | 구조 |
 | 런이 왜 끝났는지를 그 chunk 들로부터 도출하기 | `src/domain/llm/types.ts` 의 `chunkTermination`/`runTermination` | 구조 |
@@ -249,7 +250,7 @@
 | SDK span 부모 관계의 OTLP 변환 | `src/infrastructure/telemetry/otelTraceExport.ts`; 완료 순서와 무관하게 저장된 부모 관계를 사용한다 | 코드 |
 | 실행 전 도구 JSON Schema 검증 | `src/domain/llm/toolSchema.ts`의 포트, `src/infrastructure/llm/toolSchema.ts`의 검증기; 선언은 기존 도구 소유자가 유지한다 | 코드 |
 | 아이템 테이블에 쓰는 방법. 행 잠금 아래에서 평가되는 조건, 키 순서로 잠그는 트랜잭션, 접두사 쿼리의 상한(U+10FFFF), 만료 행의 sweep | `src/infrastructure/db/store.ts`. 리포지토리는 이 계약을 통해 조건부 쓰기·키 순서 잠금·접두사 범위·만료 삭제를 수행한다 | 코드 |
-| 떠나 버린 소비자로부터 스트림을 떼어내기 | `src/shared/detachOnReturn.ts` | 코드 |
+| 떠나 버린 소비자로부터 스트림을 떼어내기 | `src/shared/detachOnReturn.ts` | 구조 |
 | 바이트 상한 아래에서 HTTP 본문 읽기 | `src/shared/httpBody.ts` | 코드 |
 | 백그라운드 타이머가 프로세스를 붙잡아 두지 않게 하기 | `src/shared/unrefTimer.ts` | 코드 |
 | 목록 읽기. 매치 전체를 답하고, 경계는 호출자의 `limit`, 만료 필터는 `LIMIT` 보다 먼저 도는 `notExpiredAt`, 호출자가 가져온 값·속성 유무 필터도 같은 자리에서 도는 `filter` / `jsonContains` / `attributePresence` | `src/infrastructure/db/store.ts`의 `queryItems`. 호출자의 limit과 만료·조건 필터를 같은 쿼리에 적용한다 | 코드 |

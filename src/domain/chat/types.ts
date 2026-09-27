@@ -129,11 +129,8 @@ export interface AssistantChatMessage extends ChatMessageBase {
    * (`parameters.reasoningTrace`). Flattened exactly as `content` is: one block
    * per run, with a blank line between turns.
    *
-   * Shown, never replayed. A run writes one assistant message carrying every
-   * turn's text, so a `reasoning_content` on it would claim a single block of
-   * thinking belonged to a message whose `tool_calls` came from several
-   * different turns — a shape the provider never produced. `displayOnly` tool
-   * rows are refused replay for the same reason.
+   * Display only. Native reasoning remains attached to its own provider turn
+   * in the SDK Session instead of being rebuilt from this aggregate.
    */
   reasoning?: string;
   /**
@@ -153,10 +150,8 @@ export interface ToolChatMessage extends ChatMessageBase {
   /** The subagent that ran the tool, when it was not this conversation's own run. */
   author?: string;
   /**
-   * Kept to show the reader what the run did, never replayed into context — a
-   * subagent's result belongs to the child's conversation, and a transfer's is
-   * a marker rather than the answer (which returns as a separate message).
-   * Replaying either would claim a result this turn never produced.
+   * Marks child results and transfer markers for display grouping. All chat
+   * display rows stay separate from the SDK Session's native model history.
    */
   displayOnly?: boolean;
 }

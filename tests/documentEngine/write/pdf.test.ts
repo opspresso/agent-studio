@@ -11,33 +11,14 @@
  */
 
 import { strict as assert } from "node:assert";
-import { test } from "vitest";
+import { test, vi } from "vitest";
 import { parseMarkdown } from "@/infrastructure/documents/engine/markdown";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, PDFPage } from "pdf-lib";
 import { columnWidths, renderPdf, usesBold } from "@/infrastructure/documents/engine/write/pdf";
 
 const CREATED = new Date("2026-08-05T00:00:00Z");
 
-/**
- * `unpdf` directly, rather than through a reader of ours.
- *
- * The PDF *reader* left with the URL side — the caller extracts PDFs in-process
- * and routing one here would have been a network round trip to reach this same
- * library. The round trip is still the only honest check that what this writes
- * is a PDF something can read, so the test keeps the dependency the source no
- * longer needs.
- */
-/**
- * `Math.sumPrecise` is a TC39 proposal no Node this runs on has. The PDF.js
- * build inside `unpdf` calls it while rebuilding an embedded font's glyph
- * tables, so every font throws a TypeError it catches and reports as a warning —
- * one line per font, which buries everything else in the test output. Neumaier
- * summation is more than enough for glyph byte counts, and it is installed only
- * if absent so a future runtime's own wins.
- *
- * It lived beside the PDF *reader* until that left with the URL side; only this
- * round trip still needs it.
- */
+/** Supply sumPrecise when absent so PDF.js can reconstruct embedded font tables. */
 const math = Math as unknown as { sumPrecise?: (values: Iterable<number>) => number };
 if (typeof math.sumPrecise !== "function") {
   math.sumPrecise = (values) => {
@@ -53,10 +34,7 @@ if (typeof math.sumPrecise !== "function") {
   };
 }
 
-/**
- * Page by page, joined the way the reader that used to live here did — a merged
- * extract loses the line structure one of these tests is entirely about.
- */
+/** Extract with unpdf independently of the renderer, preserving page and line boundaries. */
 async function extractLines(bytes: Uint8Array): Promise<string> {
   const { extractText, getDocumentProxy } = await import("unpdf");
   const pdf = await getDocumentProxy(new Uint8Array(bytes));
@@ -169,6 +147,23 @@ test("tables, code, quotes and rules all render without losing their text", asyn
   for (const expected of ["이름", "값", "가", "1", "const a = 1;", "인용문", "끝"]) {
     assert.ok(text.includes(expected), `expected ${JSON.stringify(expected)} in the output`);
   }
+});
+
+test("quote decoration does not reuse coordinates across pages", async () => {
+  const border = vi.spyOn(PDFPage.prototype, "drawRectangle");
+  try {
+    const short = await renderPdf(parseMarkdown("> A short quote."), { title: "Quote", created: CREATED });
+    assert.equal(short.pages, 1);
+    assert.equal(border.mock.calls.length, 1, "a quote on one page keeps its border");
+    border.mockClear();
+    const source = "quoted-word ".repeat(800) + "QUOTE_END";
+    const long = await renderPdf(parseMarkdown(`> ${source}`), { title: "Quote", created: CREATED });
+    assert.ok(long.pages > 1);
+    assert.equal(border.mock.calls.length, 0, "a quote spanning pages has no border based on another page's top");
+    const text = await extractLines(long.bytes);
+    assert.equal(text.match(/quoted-word/g)?.length, 800);
+    assert.ok(text.includes("QUOTE_END"));
+  } finally { border.mockRestore(); }
 });
 
 test("a link is one clickable annotation, not one per word", async () => {

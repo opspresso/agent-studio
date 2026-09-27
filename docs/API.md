@@ -311,9 +311,10 @@ Agent 메타데이터나 설정의 동시 수정이 먼저 저장되면 409를 �
 `temperature?`, `presencePenalty?`, `maxTokens?`, `reasoningEffort?`, `piiFiltering`,
 `structuredOutput?`, `jsonSchema?`, `imageGeneration?`, `imageModel?`, `callerContext?`,
 `urlFetch?`, `slackWorkspace?`, `audioProcessing?`, `workspaceTools?`, `dynamicCapabilities?`,
-`memoryRecall?`, `reasoningTrace?`, `policy?`, `modelRouting?`를 갖는다. 카탈로그에 있는 모델의 능력과
-설정이 충돌하면 400이다. 카탈로그에 없는 사용자 모델은 경고 대상으로 둔다.
-`imageModel`은 이미지 생성 능력이 있는 카탈로그 모델이어야 한다.
+`memoryRecall?`, `reasoningTrace?`, `policy?`, `modelRouting?`를 갖는다. 등록된 모델의 능력과
+설정이 충돌하면 400이다. 미등록 모델 이름은 저장할 수 있지만 경고를 기록하며,
+실행하려면 관리자가 Settings에 해당 모델과 provider를 등록해야 한다.
+`imageModel`은 이미지 생성 능력이 있는 등록 모델이어야 한다.
 
 `modelRouting`은 선택적 boolean이다. `true`면 [전역 라우팅 정책](#models)의 후보 중 첫 SDK 응답에 적절한 모델을 선택한다. `false`면 주 호출과 ModelTask 모두 이 Agent의 설정 모델을 사용한다. 미설정이면 ModelTask를 제공하지
 않는다. Agent별 tier·예산·정책 객체는 받지 않는다.
@@ -322,7 +323,8 @@ ModelTask의 선택적 `require_different_model: true`는 해당 턴의 실제 p
 주 모델 선택·우선순위·승격·trace·승인 재개는 [호출 단위 라우팅](design/execution.md#호출-단위-모델-라우팅)을 따른다.
 
 `mcpList[{name, headers?, tools?, sourceOutputs?}]`, `skillList[]`,
-`subagentList[{name, type: "local"|"remote"}]`는 전체 목록을 저장한다.
+`subagentList[{name}]`는 전체 목록을 저장한다. 하위 Agent는 이 설치의 다른 Agent이며
+`type` 같은 추가 필드는 거절한다.
 새 참조는 존재·접근 권한을 검사하며, 이미 연결한 항목이 사라져도 다른 설정을 수정할 수 있다.
 동일한 MCP·Skill·Agent 이름의 중복은 거절한다. 선택 필드 `fallbackModel`·`maxTurn`은 생략해
 해제하며 `null`을 받지 않는다. 응답의 MCP 헤더는 마스킹하고 내부 endpoint fingerprint는 숨긴다.
@@ -415,7 +417,7 @@ MCP 서버의 이름을 담는다. `guest` 가 거절당하는 바로 그 레지
 ```
 GET /api/settings → 200 { fields: { <key>: { value, source, secret } },
                           serviceLogos: string[],
-                          llmProviders: { source, items: [ { name, baseUrl, apiKey, keepModelPrefix, auth } ] },
+                          llmProviders: { source, items: [ { name, kind, baseUrl, apiKey, keepModelPrefix, auth } ] },
                           updatedAt? }
 PUT /api/settings → 200 {…same shape…} | 400
 ```
@@ -527,7 +529,8 @@ PUT /api/members/{id}/tier
 ```
 
 admin 전용이다. 멤버는 이 워크스페이스에 로그인한 적이 있는 Better Auth 사용자이고,
-`joinedAt` 최신순으로 정렬된다. `lastLoginAt` 은 새 세션이 만들어질 때 갱신된다. 로그인 추적이
+`lastLoginAt` 최신순으로 정렬되며 로그인 기록이 없으면 뒤에 온다. `joinedAt`은 가입 시각이다.
+`lastLoginAt`은 새 세션이 만들어질 때 갱신된다. 로그인 추적이
 도입되기 전에 만들어진 사용자는 다음 로그인에 성공할 때까지 `null` 이다.
 
 `tier` 는 모든 가입에 대해 `guest` 가 기본값이다 (tier 가 존재하기 전에 쓰인 행도 `guest` 로
@@ -772,8 +775,9 @@ plugin 행의 `branch` 는 `archive`, `commitSha` 는 아카이브의 sha256 이
 
 `/sync/scan` 은 CronJob 의 tick 이다: 브랜치 head 를 마지막 리포트와 비교해, 머지된 것이 없으면
 스냅샷 비용을 치르지 않고 `upToDate` 로 답한다. 마지막 리포트가 아카이브 업로드의 것이면 `held` 로
-답하고 GitHub 를 보지 않는다. 사람이 올린 것은 다음 `POST /api/plugins/sync` 까지 선다 (그 리포트가 `write-failed` skip 을 싣고 있었다면
-예외다. 그것은 다시 돌려야만 복구된다). tick 은 `scheduler` 로서 sync 하고, 절대 삭제하지
+답하고 GitHub를 보지 않는다. 아카이브 리포트의 실패 여부와 무관하게 다음 명시적
+`POST /api/plugins/sync`까지 자동 GitHub sync를 보류한다. GitHub 리포트에 쓰기 실패가 있으면
+같은 head라도 upToDate로 생략하지 않고 다시 sync한다. tick은 `scheduler`로서 실행하고 삭제하지
 않으며 (제거 선택은 콘솔에만 있다), schedule ticker 의 토큰을 공유한다. 배포당 CronJob 인증
 정보는 하나다.
 
@@ -847,11 +851,11 @@ plugin 루트 안에 중첩된 plugin 루트, 두 루트가 주장하는 plugin 
 더 이상 갖고 있지 않은 plugin 행을 나열한다. 그중 하나를 제거하면 (`remove.plugins` 로) 그 행만
 지워진다. 구성 요소는 각각 orphan 으로 따로 드러나며, 저마다 별개의 결정이다.
 
-쓰기는 문서가 소유한 것만 대체한다. skill 의 description·content·첨부, MCP 항목의 `url`,
-`description`, `content` (plugin 의 `org.opspresso.agent-studio/mcp/<name>.md` 확장 문서에서
-온다), `source`. 암호화된 헤더, 발견된 OAuth 블록, managed 항목의 프로비저닝된 주소는 절대
-건드리지 않고, 문서가 싣지 않은 필드는 저장된 것을 그대로 둔다. MCP 항목의 주소를 옮기면 옛
-주소에서 읽었던 OAuth 블록이 버려지므로 Discover 를 다시 돌려야 한다.
+sync는 Skill의 description·content·참고 파일과 MCP의 URL·description·content·sourceOutputs·
+provenance를 적용한다. 현재 Plugin 소유 MCP에서 확장 문서나 sourceOutputs 선언이 사라지면
+기존 노트·매핑을 지운다. 다른 출처를 인수할 때는 새 선언이 없는 노트를 보존한다.
+header는 가져오지 않으며 managed 주소는 옮기지 않는다. 원격 URL을 옮기면 기존 header와
+OAuth를 제거하므로 새 주소의 credential 입력과 Discover가 필요하다.
 
 상류 실패(GitHub 도달 불가, 잘린 트리)는 다른 모든 라우트와 마찬가지로 `apiError` 를 통해
 `502` 로 답한다. `PLUGINS_REPO` 나 `GITHUB_TOKEN` 이 없으면 `503` 이다.
@@ -878,10 +882,9 @@ Slack 읽기는 마스킹된 인증 정보 상태와 함께 `configured`, `event
 `suggestedPrompts`, `channelKeywords`, 그리고 생성된 앱 manifest를 돌려준다.
 설정 경로의 GET·PUT·DELETE가 이 뷰로 답하며 test·channels는 아래의 별도 응답을 사용한다.
 다섯 엔드포인트 모두 소유자와 effective admin 으로 제한된다 (그 외에는 403). 마스킹된 뷰도 봇
-토큰 / signing secret 의 양끝은 드러내기 때문이다. 마스킹되거나 생략된 secret 은 업데이트에서
-보존되고, agent 가 아닌 agent 에 대한 `PUT` 은 400 이다. Slack 봇은 agent 에만
-붙는다. 저장된 것도 보낸 것도 없는 상태에서 봇 토큰과 signing secret 없이 `enabled: true` 를
-보내는 `PUT` 도 마찬가지다: 켤 것이 없다.
+토큰 / signing secret 의 양끝은 드러내기 때문이다. 마스킹되거나 생략된 secret은 업데이트에서
+보존하며 Agent가 없으면 404다. 저장되거나 전달된 봇 토큰과 signing secret 없이
+`enabled: true`로 활성화하면 400이다.
 테스트 엔드포인트는 `{ ok: true, team, botUser }` 를 돌려주고, 그 agent 에 Slack 이 설정되지
 않았거나 꺼져 있으면 `400`, Slack API 실패면 `502` 다.
 채널 엔드포인트는 `{ channels: [{ id, name, isPrivate?, isMember? }] }` 를 돌려준다. 설정되고
@@ -906,13 +909,12 @@ Telegram(`getMe`)으로 확인하고, Telegram 이 거부하면 400 이다. 마�
 것을 유지한다. webhook secret 은 첫 토큰과 함께 이 플랫폼이 발행하며 절대 돌려주지 않는다.
 그것이 필요한 쪽은 Telegram 뿐이다. **webhook 은 `PUT` 이 스위치를 따라 관리한다**: `enabled`
 가 켜지면 이 배포의 URL 에 등록하고, 꺼지면 삭제하며, 토큰이 바뀌면 이전 봇의 webhook 을 물리고
-secret 을 새로 발행한 뒤 켜져 있으면 새 봇을 등록한다. 그 Telegram 호출이 실패하면 저장은 그대로
-되고 응답에 `warnings: string[]` 로 말한다. `POST …/telegram/webhook` 은 같은 등록을 명시적으로
+secret을 새로 발행한 뒤 켜져 있으면 새 봇을 등록한다. 자동 등록 실패는 저장을 유지하고
+`warnings: string[]`로 알리며, Webhook 삭제 실패는 로그로 확인한다. `POST …/telegram/webhook`은 같은 등록을 명시적으로
 다시 하는 것이고(`PUBLIC_BASE_URL` 이 바뀐 뒤 옮길 때) `{ ok: true, url }` 로 답한다. `DELETE`
 는 Telegram 에 webhook 을 없애라고 최선을 다해 알리고, 어느 쪽이든 인증 정보는 잊는다. agent
-를 지울 때도 행이 사라지기 전에 webhook 을 물린다. Slack 처럼
-agent 가 아닌 agent 에 대한 `PUT` 은 400 이고, 저장되거나 전달된 토큰 없이 켜는 것도
-마찬가지다. `test` 는 `{ ok: true, botId, botUsername }` 을 돌려주고, Telegram 이 설정되지
+를 지울 때도 행이 사라지기 전에 webhook을 물린다. Agent가 없으면 404이며,
+token 없이 활성화하면 400이다. `test`는 `{ ok: true, botId, botUsername }`을 돌려주고, Telegram이 설정되지
 않았거나 꺼져 있으면 `400`, Bot API 실패면 `502` 다. `webhook` 도 같은 방식으로 답한다.
 `chats` 는 현재 설정된 봇이 실제로 응답 대상으로 받은 chat 과 포럼 topic 을 최근에 본 순서로
 최근 100개까지 `{ chats: [{ chatId, chatType, title, threadId?, lastSeenAt }] }` 에 담아 돌려준다. Telegram Bot API
@@ -941,7 +943,7 @@ App ID 와 테넌트 id 가 GUID 인지만 확인하고 Microsoft 에는 아무�
 동작한다는 증거는 `test` 가 저장된 자격 증명으로 토큰을 받아 보는 것이고(`{ ok: true, appId,
 expiresInSeconds }`, 설정되지 않았거나 꺼져 있으면 `400`, Microsoft 가 거절하면 `502`), 저장이
 아니라 운영자가 요청하는 네트워크 호출이다. 마스킹되거나 빈 secret 은 저장된 것을 유지하고,
-agent 가 아닌 agent 에 대한 `PUT` 과 자격 증명 없이 켜는 것은 400 이다. `DELETE` 는 등록을
+Agent가 없으면 404이며 자격 증명 없이 활성화하면 400이다. `DELETE`는 등록을
 잊는다. Azure 쪽 endpoint 는 운영자가 지운다.
 
 messaging 엔드포인트 자체인 `POST /api/teams/messages/{agent}` 는 Bot Framework 가 호출하는
@@ -1065,8 +1067,9 @@ POST   /api/agents/{name}/mcp-connections/{server}/tools
 - `status` 는 `needs_auth` | `connected` | `needs_reauth` 다. 연결을 `needs_reauth` 로 옮기는
   것은 **거부된 grant** 뿐이다. 5xx 나 타임아웃은 그대로 둔다.
 - `clientSecret` 은 읽을 때 마스킹되고 **토큰은 절대 돌려주지 않는다**. agent API 토큰과 달리 reveal 경로가 없는데, 토큰은 표시될 이유가 없기 때문이다. 쓰기에서 생략되거나
-  마스킹된 값은 저장된 것을 유지한다. **빈** 값은 그것을 지우며, 이것이 confidential 클라이언트에서
-  public 클라이언트로 돌아가는 유일한 길이다.
+  마스킹된 값은 같은 Client ID·issuer의 Secret만 유지한다. Client ID나 issuer가 달라졌으면
+  이전 Secret은 제거한다. 빈 값도 Secret을 제거한다. 저장 시 resource가 달라졌으면 같은
+  issuer의 client Secret은 유지할 수 있지만 이전 access/refresh token을 지우고 재인가한다.
 - `clientRegistered` 는 인증 정보가 손으로 입력된 것이 아니라 RFC 7591 동적 등록에서 왔을 때
   `true` 다.
 - `/authorize` 는 `3xx` 를 내는 대신 프로바이더 URL 을 **돌려준다**: 호출자는 콘솔의 `fetch` 이고,
@@ -1220,6 +1223,9 @@ Slack 답글은 `slack:{channel}:{threadTs}`다.
 }
 ```
 
+응답의 `model`은 Agent에 설정한 루트 모델이다. 라우팅·fallback·이미지·위임으로 실제 호출
+모델이 달라질 수 있으며 `usage`는 전체 호출의 합계다. 모델별 사용량은 Usage와 Trace에서 확인한다.
+
 `files` 는 도구가 만들어 낸 문서다. 바이트는 artifact 로 보관되고 런의 스트림에서 제거되므로,
 여기 실리는 것은 파일이 아니라 **서명된 다운로드 주소**다. 서명은 수명이 짧다 (API 응답에는 15분,
 메시징 답변처럼 링크가 지속되는 기록에는 7일). artifact 자체는
@@ -1295,7 +1301,7 @@ artifact id 대신 다운로드용 서명 `url`과 후속 `File` 도구 호출�
 저장소 키는 외부에 노출하지 않으며 `fileId` 자체는 접근 권한이 아니다. 서명할 수 없었던 파일은, 아무것도 가져올 수 없는 문서를
 지목하는 `file` 프레임 대신 `warning` 프레임으로 도착한다.
 
-모든 Agent는 Agent이며 이 경로는 현재 저장된 설정을 사용한다.
+이 경로는 현재 저장된 Agent 설정을 사용한다.
 
 이미 현재 transfer 사슬에 있는 agent 로의 transfer, 또는 5단계 중첩을 넘는 transfer 는 재귀하는
 대신 author 가 붙은 error chunk 로 거절된다.
@@ -1407,6 +1413,8 @@ POST /api/webhook/{agent}
   { "any": "json payload" }
 → 202 { ok: true, status: "accepted", runId }
 → 202 { ok: true, status: "duplicate" | "disabled" | "busy" | "no-configuration" }
+→ 202 { ok: true, status: "ping" }
+→ 202 { ok: true, status: "ignored", reason } (PR review event not selected)
 → 401 (wrong or missing secret/signature) | 404 (no webhook on this agent) | 400 (bad JSON or GitHub metadata) | 413 (>1MB)
 ```
 
@@ -1472,10 +1480,9 @@ POST /api/catalog/reindex
 ```
 
 전역 capability 인덱스를 레지스트리에서 다시 만든다. 모든 Skill과 MCP 서버·도구를 색인하고
-레지스트리에서 사라진 항목은 지운다. 작업은 배경에서 돌아가므로 결과는
-응답 본문이 아니라 로그 한 줄(`indexed`, `removed`, `undiscovered`)이다. 두 번 ticking 해도
-안전하다: 키가 항목에서 유도되므로 두 번째 패스는 같은 레코드를 쓴다. 시간당 한 번이면 충분하다.
-더 빠른 tick 은 모든 MCP 서버를 더 자주 찔러 볼 뿐이다.
+레지스트리에서 사라진 항목은 지운다. `{started:true}`는 배경 작업 예약을 뜻하며 완료 응답이 아니다.
+설치 전체 DB lease가 겹치는 재색인을 거절한다. 완료는 로그의 `indexed`·`removed`·`undiscovered`로,
+실패·lease 경합은 오류 로그로 확인한다. 기본 ticker 주기는 1시간이다.
 [OPERATIONS.md](OPERATIONS.md#카탈로그-재색인) 를 보라.
 
 ## Artifacts
@@ -1715,6 +1722,7 @@ file은 해당 Agent의 업로드·보관 파일이다. 원본 URL과 외부 녹
 - import는 보관만, transcribe는 전사까지 수행한다. transcribe와 process에는 등록된 Transcription model이 필요하다.
 - postprocess는 전사 Artifact와 `{agentName}` 후처리 대상을 받아 ASR 없이 처리한다.
   model·language·destination·configRevision을 함께 보낼 수 없다.
+  후처리 Agent는 같은 소유자의 설정된 Agent이며 등록 모델이 `structuredOutput`을 지원해야 한다.
 
 retention은 `{unit:"days"|"months", value:양의 정수, timezone:IANA 시간대}`다.
 language는 전사에 사용하는 선택적 2–3자 언어 코드다. 같은 Agent·사용자·source identity·
@@ -1737,7 +1745,9 @@ Agent의 admission 한도는 요청별 설정에도 적용한다. 설정 소유�
 AudioJobView는 id·task·sourceIdentity·status·stage·model·createdAt·updatedAt·dueAt·attempt·failures·
 revision과 선택적인 configRevision·fileId·fileInfo·transcriptionProgress·postprocessProgress·transcriptRef·draftRef·
 movedTo·receipts·errorCode를 반환한다. `artifacts`는 source·transcript·processed·structured·dialogue의
-Artifact ID를 제공한다. `transcriptAgentName`은 전사 파일을 읽을 Agent다.
+현재 사용자가 읽을 수 있는 ready·미만료 Artifact ID를 제공한다. `artifactLinks`는 해당 파일의
+다운로드·미리보기 경로이며 누락·미준비·삭제·만료 파일은 `unavailableArtifacts`에 구분한다.
+완료 이력과 내부 참조는 파일 만료 후에도 유지한다. `transcriptAgentName`은 전사 파일을 읽을 Agent다.
 fileInfo는 filename·byteSize·expiresAt, transcriptionProgress는 processedSeconds·totalSeconds·completedSegments다.
 postprocessProgress는 phase(`extract`·`reduce`·`saving`)·round·completed·total이다.
 건수는 현재 추출·통합 회차 또는 결과 파일 저장 단계 기준이며 전체 작업의 퍼센트가 아니다.
@@ -1773,8 +1783,8 @@ submit은 source `{kind:"artifact"|"file"|"source",id}`·config_revision·proces
 postprocess는 artifact_id·postprocess·retention·processing_revision을 받고, process는 source와 명시적 처리 옵션을 받는다.
 선택값은 null로 지정하며 선택하지 않은 작업의 필드나 빈 문자열을 넣지 않는다.
 ImportFile·TranscribeAudio도 source `{kind,id}`를 사용한다. HTTP 작업 API의 source·task 계약은 별도다.
-각 도구는 현재 사용자·Agent·발생 ID에 바인딩된다. source 인수는 artifact_id·file_id·source_ref 중
-하나이고 원본 URL·임의 email은 받지 않는다. 세 제출 도구 모두 processing_revision을 지원한다.
+각 도구는 현재 사용자·Agent·발생 ID에 바인딩된다. source의 id는 kind에 맞는 Artifact ID·file ID·
+source_ref이며 원본 URL·임의 email은 받지 않는다. 세 제출 도구 모두 processing_revision을 지원한다.
 AudioJob read는 최대 20,000자씩 전사문을 반환하고 nextCursor로 이어 읽는다.
 `result_kind:"processed"`는 후처리 본문이다. 로컬 본문 참조 없이 외부 복사 정보만 있는 작업에서만
 `{status:"moved", destination:movedTo, jobStatus}`를 반환한다. 원본 JSON에는 text·segments·model·

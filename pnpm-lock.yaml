@@ -10,6 +10,9 @@ overrides:
   sharp: '>=0.35.0'
   postcss@<8.5.10: '>=8.5.10'
 
+patchedDependencies:
+  '@smithy/signature-v4@5.7.3': baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb
+
 importers:
 
   .:
@@ -40,7 +43,7 @@ importers:
         version: 2.0.0
       '@openai/agents':
         specifier: 0.18.0
-        version: 0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
+        version: 0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
@@ -57,8 +60,8 @@ importers:
         specifier: ^1.1.1
         version: 1.1.1
       '@smithy/signature-v4':
-        specifier: ^5.7.0
-        version: 5.7.3
+        specifier: 5.7.3
+        version: 5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb)
       '@swc/helpers':
         specifier: 0.5.23
         version: 0.5.23
@@ -82,7 +85,7 @@ importers:
         version: 16.3.5(@opentelemetry/api@1.9.1)(@playwright/test@1.63.0)(@types/node@26.6.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       openai:
         specifier: ^7.4.0
-        version: 7.20.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
+        version: 7.20.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
@@ -2519,7 +2522,7 @@ snapshots:
       '@aws-sdk/xml-builder': 3.972.40
       '@aws/lambda-invoke-store': 0.3.0
       '@smithy/core': 3.33.3
-      '@smithy/signature-v4': 5.7.3
+      '@smithy/signature-v4': 5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb)
       '@smithy/types': 4.17.2
       bowser: 2.14.1
       tslib: 2.8.1
@@ -2637,7 +2640,7 @@ snapshots:
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.33.3
       '@smithy/fetch-http-handler': 5.8.0
-      '@smithy/signature-v4': 5.7.3
+      '@smithy/signature-v4': 5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb)
       '@smithy/types': 4.17.2
       tslib: 2.8.1
 
@@ -2664,7 +2667,7 @@ snapshots:
   '@aws-sdk/signature-v4-multi-region@3.996.46':
     dependencies:
       '@aws-sdk/types': 3.974.5
-      '@smithy/signature-v4': 5.7.3
+      '@smithy/signature-v4': 5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb)
       '@smithy/types': 4.17.2
       tslib: 2.8.1
 
@@ -3056,11 +3059,11 @@ snapshots:
 
   '@noble/hashes@2.4.0': {}
 
-  '@openai/agents-core@0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)':
+  '@openai/agents-core@0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)':
     dependencies:
       '@standard-schema/spec': 1.1.0
       debug: 4.4.3
-      openai: 7.20.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
+      openai: 7.20.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
     optionalDependencies:
       '@modelcontextprotocol/client': 2.0.0
       zod: 4.6.5
@@ -3072,11 +3075,11 @@ snapshots:
       - undici
       - ws
 
-  '@openai/agents-openai@0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)':
+  '@openai/agents-openai@0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)':
     dependencies:
-      '@openai/agents-core': 0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
+      '@openai/agents-core': 0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
       debug: 4.4.3
-      openai: 7.20.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
+      openai: 7.20.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
       zod: 4.6.5
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -3086,9 +3089,9 @@ snapshots:
       - undici
       - ws
 
-  '@openai/agents-realtime@0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(zod@4.6.5)':
+  '@openai/agents-realtime@0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(zod@4.6.5)':
     dependencies:
-      '@openai/agents-core': 0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
+      '@openai/agents-core': 0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
       '@types/ws': 8.18.1
       debug: 4.4.3
       ws: 8.21.3
@@ -3102,13 +3105,13 @@ snapshots:
       - undici
       - utf-8-validate
 
-  '@openai/agents@0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)':
+  '@openai/agents@0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)':
     dependencies:
-      '@openai/agents-core': 0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
-      '@openai/agents-openai': 0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
-      '@openai/agents-realtime': 0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(zod@4.6.5)
+      '@openai/agents-core': 0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
+      '@openai/agents-openai': 0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
+      '@openai/agents-realtime': 0.18.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(zod@4.6.5)
       debug: 4.4.3
-      openai: 7.20.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
+      openai: 7.20.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
       zod: 4.6.5
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -3309,7 +3312,7 @@ snapshots:
       '@smithy/types': 4.17.2
       tslib: 2.8.1
 
-  '@smithy/signature-v4@5.7.3':
+  '@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb)':
     dependencies:
       '@smithy/core': 3.33.3
       '@smithy/types': 4.17.2
@@ -4232,10 +4235,10 @@ snapshots:
 
   obug@2.2.1: {}
 
-  openai@7.20.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5):
+  openai@7.20.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb))(undici@8.10.2)(ws@8.21.3)(zod@4.6.5):
     optionalDependencies:
       '@aws-sdk/credential-provider-node': 3.972.83
-      '@smithy/signature-v4': 5.7.3
+      '@smithy/signature-v4': 5.7.3(patch_hash=baa34a1f1ea9add39ed7efc6557f14adb0fdb013c1b1b4f02ba0340ae78f1ffb)
       undici: 8.10.2
       ws: 8.21.3
       zod: 4.6.5

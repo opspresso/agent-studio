@@ -26,7 +26,7 @@ function units(...codes: number[]): Uint8Array {
 }
 
 function chars(value: string): number[] {
-  return [...value].map((character) => character.charCodeAt(0));
+  return value.split("").map((character) => character.charCodeAt(0));
 }
 
 /** A control that occupies eight units: the character, six of data, the character again. */
@@ -49,6 +49,11 @@ function record(tag: number, payload: Uint8Array): Uint8Array {
 
 test("ordinary characters come through as themselves", () => {
   assert.equal(decodeParaText(units(...chars("한글 문서"))), "한글 문서");
+});
+
+test("supplementary Unicode characters retain both UTF-16 units", () => {
+  const text = "한글 😀 and 𝄞";
+  assert.equal(decodeParaText(units(...chars(text))), text);
 });
 
 test("a paragraph end and a forced line break are newlines, and take one unit", () => {

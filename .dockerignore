@@ -3,14 +3,12 @@ node_modules
 build
 .git
 .env
-.env.local
-.env.*.local
+.env.*
 coverage
 *.log
 .DS_Store
 docs
 tests
 scripts/mock-llm.ts
-# Deployment config, and on a host that ran fetch-env.sh, filled-in secrets.
-# Nothing in the image reads them.
+# Local deployment configuration and credentials are not image inputs.
 deploy

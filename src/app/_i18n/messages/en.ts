@@ -1,34 +1,11 @@
 /**
- * Every string the console shows a person, in English.
+ * Localized console copy. English keys are authoritative; `ko.ts` implements
+ * the typed Messages contract. Add translated keys in both catalogues and use
+ * `useT` in clients or `getT` in server components.
  *
- * This file is the source of truth and `ko.ts` is typed against it, so a key
- * added here without a Korean counterpart fails `pnpm typecheck` rather than
- * rendering an English string inside a Korean page. That is the whole reason
- * the catalogue is TypeScript instead of JSON: the check is the compiler's, and
- * there is no second tool to keep in step.
- *
- * Keys are flat and namespaced `area.thing`. Flat because `keyof typeof en` is
- * then the key type with no path-walking generic behind it, and because
- * grepping a key finds both its definition and its uses.
- *
- * **Error messages are deliberately absent.** `AppError` carries its message as
- * a string through `application` and `domain`, neither of which may import a
- * framework, so translating them means giving every error a code and rewriting
- * well over a hundred throw sites. The console is internal and its errors are
- * read by operators, so they stay in English; this catalogue covers what a page
- * renders on its own.
- *
- * **Product nouns are not translated**, in either catalogue — Agent, Skill,
- * Tool, Plugin, Chat, Model, MCP. The console and guide use these names
- * consistently. What gets translated is
- * the prose around them: descriptions, actions, states and empty messages.
- *
- * **Operator maintenance surfaces may stay English** — the tools detail page,
- * integration sections, and similar admin-only screens whose action buttons
- * ("Save", "Test connection", "Disconnect") sit beside English error text and
- * API vocabulary anyway. That is a policy, not drift: a screen is either in
- * this catalogue or it is not, and a screen being migrated should move whole,
- * never one label at a time.
+ * Keys are flat `area.thing` names. Product nouns and propagated error messages
+ * remain English. API Reference content and some operator-maintenance captions
+ * also remain English; integration settings are owner/admin surfaces.
  */
 export const en = {
   "secrets.resetConfirm": "The saved override will be removed. Requests using the current key may stop authenticating; the deployment environment value will be used instead.",
@@ -671,6 +648,8 @@ export const en = {
     "Edit the Agent’s current settings in the Playground and save them. To experiment independently, clone the Agent and configure the copy.",
   "guide.configuration.model": "Model and fallback",
   "guide.configuration.modelBody": "Select a text model with tool calling support. Reading pictures also requires image input. Configure a compatible fallback if needed. Image generation and editing use the separately configured image tool model.",
+  "guide.configuration.routing": "Automatic model selection",
+  "guide.configuration.routingBody": "An administrator assigns shared tier models, task policies and budgets in Settings → Models → Model usage. A decision model can choose among those tiers. Enable model routing in the Agent and save; selection occurs before the first response. Missing or failed decisions use its main model when that model satisfies the required capabilities and budget. Turning routing off keeps the main model; Restore default also removes ModelTask. Inspect the chosen model and routing decisions in Traces and Usage.",
   "guide.configuration.prompt": "Preview and save are different",
   "guide.configuration.promptBody": "Prompt preview assembles the current draft. It does not generate an answer, but memory recall and capability discovery can contact configured services. Save before running; the Run panel uses saved settings.",
   "guide.configuration.limits": "Control run size",
@@ -690,8 +669,7 @@ export const en = {
   "guide.capabilities.toolsBody":
     "Have an administrator register the server on Tools and check that discovery lists the expected tools. Bind the server to the Agent, select the tools to expose, and save the settings. If calls fail, inspect the server status, required headers, and run warnings. A reachable server can still return no usable tools or require authorization.",
   "guide.capabilities.oauth": "MCP connection settings have different scopes",
-  "guide.capabilities.oauthBody":
-    "Tool selections and header overrides belong to the Agent settings and require Save. Refresh tools after changing headers. Masked values preserve stored secrets; clearing the map removes overrides. Administrators configure the OAuth app in Tools and owners connect the Agent account. A reachable tool does not prove access to its resources.",
+  "guide.capabilities.oauthBody": "Tool selections, header overrides and file-response mappings require Save with Agent settings. Refresh tools after changing headers. Masked values preserve saved secrets; an empty map removes overrides. OAuth connect/disconnect actions save immediately. Administrators configure any required OAuth app in Tools; owners authorize the Agent account.",
   "guide.capabilities.agents": "Delegate to another agent",
   "guide.capabilities.agentsBody":
     "Bind another configured Agent when the task benefits from a specialist. Give each delegate a precise description. Delegated activity is labelled by author, with usage attributed to the originating run.",
@@ -709,8 +687,7 @@ export const en = {
   "guide.chat.body":
     "The Chats page keeps your Chat history with Agents. Use Playground for configuration tests and a Chat for work that continues over multiple messages.",
   "guide.chat.configuration": "Choose an Agent",
-  "guide.chat.configurationBody":
-    "Start a Chat and select an accessible configured Agent. Each new turn uses its current saved settings; changes can affect later turns in an existing Chat.",
+  "guide.chat.configurationBody": "Choose an accessible configured Agent. With a decision model selected in Settings → Models → Model usage, new Chat and Workspace forms can suggest an Agent from your typed request. Recognized PII patterns are masked before the request and candidate descriptions reach that provider. Suggestions never change your selection automatically. Click Use Agent or choose manually. The last successful suggestion stays visible while editing. Each Chat turn uses its Agent’s current saved settings.",
   "guide.chat.context": "Chat history has limits",
   "guide.chat.contextBody":
     "Display messages and the model’s encrypted SDK Session are separate. The Session supplies bounded prior turns, tool results and recent images; Memory is an optional long-term source. Omitted history produces a warning. If the Session has expired, visible messages are not rebuilt into model history. Restate essential constraints when starting again.",
@@ -853,7 +830,7 @@ export const en = {
   "guide.admin.settings": "Settings overrides and deployment values",
   "guide.admin.settingsBody": "Settings groups Service, Access, Plugins and Models. Service manages branding, public addresses, artifact delivery, run limits and Slack progress text. Access manages administrators and allowed domains. Plugins manages its GitHub repository and token. Models manages provider connections, registered models, assignments, search score floors and model pricing policy. Only changed fields are saved. Deployment settings still own the database, encryption, sign-in providers, storage connections and retention.",
   "guide.admin.models": "Connect and verify models",
-  "guide.admin.modelsBody": "In Settings → Models → Providers, register the provider type, a unique connection name, its API base URL and key. Self-hosted connections use the same flow and may omit a key. A changed credential destination requires a matching new key. In Model usage, choose the default, Workspace and search models from registered compatible models.",
+  "guide.admin.modelsBody": "In Settings → Models → Providers, register its type, unique name, API base URL and key. Self-hosted connections may omit a key. A changed credential destination requires a matching new key. Model usage assigns default, decision, Workspace and search models. The decision model supports Agent suggestions and routing; routing tiers, task policies and budgets are shared across Agents that enable routing.",
   "guide.admin.modelSelection": "Browse, select and maintain models",
   "guide.admin.modelSelectionBody": "Discover models loads the provider’s complete list. Compare output types, independent Tools/Vision/Reasoning badges, context limits and prices; sort by name or price. Add model registers immediately. Selected models only narrows the view and allows deletion; Registered models offers editing and availability checks. Provider, search, filters and ordering are remembered in this browser. Models is the read-only list of saved selections. A successful listing does not prove that inference will succeed; verify with a short Agent run.",
   "guide.admin.offline": "Catalog and retrieval in an offline deployment",
@@ -869,8 +846,7 @@ export const en = {
   "guide.install.body":
     "This section is for the deployment operator. Console users need the application address and an account. Obtain the release image and the deployment-specific launch, secret, ingress, and backup settings from the package provider.",
   "guide.install.prepare": "1. Prepare the services and image",
-  "guide.install.prepareBody":
-    "Use a versioned release image, PostgreSQL with pgvector (the deployment baseline is PostgreSQL 18), and a reachable OpenAI-compatible LLM endpoint. Mirror the image into an internal registry before entering an isolated network. Add an S3-compatible object store if files must persist. The deployment owns service addresses, credentials, volumes, TLS, and routing.",
+  "guide.install.prepareBody": "Prepare a versioned release image and PostgreSQL with pgvector (the deployment baseline is PostgreSQL 18). Mirror the image into an internal registry for isolated operation. Agent execution additionally needs a reachable, supported model provider registered after sign-in. Add S3-compatible storage for persistent files. The deployment owns credentials, volumes, TLS and routing.",
   "guide.install.environment": "2. Supply required configuration",
   "guide.install.environmentBody":
     "Supply DATABASE_URL and AES_ENCRYPTION_KEY through the deployment's secret/configuration mechanism. AES_ENCRYPTION_KEY must encode 32 bytes in base64 and remain stable across restarts. Model connections are registered after sign-in. Set STAGE explicitly (prod for production); alpha/prod also requires ADMIN_EMAILS and a sign-in method. Set BETTER_AUTH_SECRET to a stable session secret and BETTER_AUTH_URL and PUBLIC_BASE_URL to the user-facing application address in the deployment environment before configuring callbacks.",
@@ -888,8 +864,7 @@ export const en = {
   "guide.operations.body":
     "The deployment operator owns monitoring, scheduled calls, backups, and rollouts. Configure these alongside the application rather than assuming that saving a console setting starts background infrastructure.",
   "guide.operations.health": "Health is not a successful model run",
-  "guide.operations.healthBody":
-    "GET /api/health checks process liveness. GET /api/ready checks database and default LLM reachability and returns 503 when unavailable or draining. LLM reachability only requires an HTTP response, so even a 401 or 404 from its models endpoint can pass. Verify credentials and model support with Models Test and a real Agent run.",
+  "guide.operations.healthBody": "GET /api/health checks process liveness. GET /api/ready checks database and default LLM reachability and returns 503 when unavailable or draining. An HTTP response, including 401 or 404 from the models endpoint, can pass the reachability check. Verify inference and credentials with a short Agent run.",
   "guide.operations.ticker": "Run the external ticker",
   "guide.operations.tickerBody":
     "Set SCHEDULE_SCAN_TOKEN and configure an external scheduler to POST /api/triggers/scan with X-Scan-Token at least once per minute. Setting the token alone starts nothing. This call drives schedules and expired database-row cleanup. A missing deployment token returns 503; an absent or incorrect request token returns 401. Check scan results and trigger histories after enabling it; long outages do not replay every missed occurrence.",
@@ -918,11 +893,9 @@ export const en = {
   "guide.trouble.limitsBody":
     "For 429, inspect concurrent runs, Agent daily/monthly blocks, and personal tier usage; follow Retry-After on API responses. For a timeout or stream error, inspect the provider, slow tools, and deployment deadline. For turn-limit, output-limit, or length, narrow the task or adjust the saved settings's appropriate limit. Avoid blind retries when a tool may already have changed external data.",
   "guide.trouble.tools": "A tool or memory is not used",
-  "guide.trouble.toolsBody":
-    "Confirm the capability is bound to the saved settings and visible in Prompt preview. Check tool selection, discovery, OAuth connection, and run warnings. Ask a question that actually requires the tool. For internal-host blocks, involve the deployment operator; for memory, verify a bound server offers recall. A document reader must be explicitly bound, not merely discoverable.",
+  "guide.trouble.toolsBody": "Check saved bindings, tool selection, Prompt preview, OAuth connections and run warnings. Test a request that needs the tool. Memory requires an explicitly bound server offering recall. File is built in and requires configured storage; it needs no MCP binding. Ask the operator about blocked internal hosts.",
   "guide.trouble.automation": "A bot or schedule is silent",
-  "guide.trouble.automationBody":
-    "A webhook 202 may mean accepted, duplicate, disabled, busy, no Agent configuration or ping; inspect the response and trigger history. GitHub uses its Secret field to produce X-Hub-Signature-256, while generic callers use X-Trigger-Secret. A successful delivery does not grant Workspace execution. Schedules require a running ticker; Workspace approval/CI continuation requires its worker. Check each result at the surface that owns it.",
+  "guide.trouble.automationBody": "A webhook 202 acknowledges admission, not completion. Inspect status and Trigger history: accepted, duplicate, disabled, busy, no-configuration, ping or ignored. PR review mode requires a GitHub signature; generic callers use X-Trigger-Secret only in ordinary mode. Schedules require the ticker; Workspace approval/CI continuation requires its worker.",
   "guide.trouble.files": "Attachments or downloads fail",
   "guide.trouble.filesBody":
     "Check the file type and upload limits first. An image needs an image-capable model; Office reading uses the built-in engine. Password-protected files, scans needing OCR, and unsupported edits require another workflow. If File is unavailable or the original was not kept, ask the operator to check storage configuration. For download failures, reopen Artifacts and check storage warnings, access mode, public base URL, connectivity, and retention.",
@@ -1021,6 +994,7 @@ export const en = {
   "agent.tab.traces": "Traces",
   "trace.inConversation": "conversation",
   "trace.openDetail": "Open full trace",
+  "trace.empty": "No traces in this range. Image tool calls are included in Agent run traces.",
   "agent.tab.apiReference": "API Reference",
   "apiReference.intro": "These Agent URLs run the current saved Agent settings. Create an Agent token in Integrations → API token.",
   "apiReference.environmentHint": "Set AGENT_API_TOKEN and CONVERSATION_ID in the calling process environment. curl expands $… placeholders; Python and Node.js read environment variables. Keep credentials on your server.",
@@ -1057,8 +1031,8 @@ export const en = {
   "bindings.refreshTools": "Refresh tools",
   "bindings.loadingTools": "Loading tools…",
   "bindings.noTools": "This server exposes no tools.",
-  "bindings.allToolsOffered": "Every tool is offered. Select some to narrow what the model sees.",
-  "bindings.someToolsOffered": "{chosen} of {total} tools offered.",
+  "bindings.allToolsOffered": "No tool selection restricts this binding. Run tool caps and policies still apply; select tools to narrow the offered set.",
+  "bindings.someToolsOffered": "{chosen} of {total} tools selected; run caps and policies still apply.",
   "bindings.toolGone": "no longer exposed",
   "bindings.addHeaderOverride": "+ Add header override",
   "bindings.noOverridesNoDefaults":
@@ -1126,26 +1100,22 @@ export const en = {
     "Lets the agent draw a picture and change an existing one — an image the user attached, or one it drew earlier.",
   "configuration.imageModel": "Image model",
   "configuration.fetchUrl": "Read URLs (FetchUrl tool)",
-  "configuration.fetchUrlHint":
-    "Lets the agent read a web address it names — a page, a PDF, a data file or an image. Off by default: every other outbound request goes somewhere an operator registered, while this one goes wherever the model decides.",
+  "configuration.fetchUrlHint": "Read a model-selected web page, PDF, data file or image through the platform URL guard. Off by default; enable it when the task needs outbound reading.",
   "configuration.slackWorkspace": "Read Slack (SlackHistory, SlackThread, SlackUser, SlackChannels)",
-  "configuration.slackWorkspaceHint":
-    "Lets the agent read the Slack workspace this Agent's bot is installed in: channel history, threads, and who a user id is. Read-only — it can never post. Off by default, and inert unless the Agent has an enabled Slack bot. Note that Agents are a shared catalog, so anyone who can run this Agent can read anything the bot can.",
+  "configuration.slackWorkspaceHint": "Read channel history, threads and user IDs with this Agent’s enabled Slack bot. These tools do not post messages. Anyone allowed to run this Agent can access the data its bot can read.",
 
   "configuration.skills": "Skills",
   "configuration.pickerLoadFailed": "Could not load {items}. Available choices may be incomplete.",
   "configuration.searchSkills": "Search registered skills",
   "configuration.dynamicCapabilities": "Find capabilities for each request",
-  "configuration.dynamicCapabilitiesHint":
-    "Searches capability names and descriptions with recent user requests (or the system prompt in a request-free preview), then offers the matching skills and MCP servers/tools on top of the bindings above. The opening 500 characters of each description are indexed, so say what request the capability handles before implementation details. Bindings are always offered in full. An MCP server that needs its own sign-in is offered only after this Agent connects it.",
+  "configuration.dynamicCapabilitiesHint": "Match recent user requests to Skills and MCP servers/tools; request-free previews use the system prompt. The first 500 description characters are indexed. Discovery preserves explicit bindings; unavailable or capped tools produce warnings. OAuth servers are added only after this Agent connects them.",
 
   "configuration.memoryRecall": "Recall memory before each run",
-  "configuration.memoryRecallHint":
-    "Before the first token, the run asks every bound MCP server that offers a “recall” tool (mcp-memory) about the incoming request and adds what it remembers to the system prompt — so the model starts from what this Agent already knows instead of having to think of asking. The recall tools stay available as before. Costs one call per run; inert, with a warning, when no bound server offers one.",
+  "configuration.memoryRecallHint": "Before the first token, call recall once per eligible bound MCP server and add its text to the system prompt. Blocked tools and tools requiring approval are skipped automatically. Missing targets, failed calls and timeouts produce warnings. Recall remains available for the Agent to call under its tool policy.",
   "configuration.memoryRecallUnbound":
     "Recall is on, but none of this Agent’s MCP bindings can offer a “recall” tool — none is bound, or every binding’s tool selection leaves it out. Bind a memory server (mcp-memory) or turn recall off; until then every run starts without a memory and says so.",
 
-  // The three tabs of one binding's settings dialog.
+  // Agent MCP binding settings; source mappings use the audio namespace.
   "mcpSettings.tools": "Tools",
   "mcpSettings.toolsNote":
     "Which of this server’s tools this Agent offers the model. Saved with the Agent settings.",
@@ -1200,8 +1170,7 @@ export const en = {
   "preview.noPrompt":
     "This Agent has no system instructions or capabilities to preview; send its task as a message.",
   "preview.toolsOffered": "Tools offered ({count})",
-  "preview.blurb":
-    "Builds the system prompt the way a run does — recalled context, skill table, connected MCP servers and their tool names, transfer instructions — by contacting the configured services on demand.",
+  "preview.blurb": "Assembles the draft system prompt with recalled context, Skills, MCP tools and local delegation, contacting configured services on demand.",
 
   // An agent's OAuth authorization for one MCP server.
   "mcpConn.connected": "Connected",
@@ -1293,13 +1262,12 @@ export const en = {
   "tools.descriptionPlaceholder": "Fetches an image URL and returns its bytes",
 
   // Agent Plugins.
-  "plugins.lede":
-    "Agent Plugins packages synced from GitHub — each bundles skills and MCP servers, and the repo owns every name it declares.",
+  "plugins.lede": "Agent Plugins imported from a GitHub repository or checkout archive. Each bundles Skills and MCP servers whose declared names are maintained at the source.",
   "plugins.descriptionTitle": "Component descriptions drive runtime use",
   "plugins.descriptionRole":
     "A plugin description helps people browse and filter packages; the runtime does not search plugins. Dynamic discovery searches the descriptions of the skills, MCP servers, and MCP tools inside the plugin. Make each component description say when it should be used.",
   "plugins.filter": "Filter Plugins…",
-  "plugins.empty": "No Plugins yet. Add the repository and token in Settings, then sync.",
+  "plugins.empty": "No Plugins yet. Configure a GitHub repository and token, or upload its checkout archive.",
   "plugins.noSkills": "This Plugin declares no Skills.",
   "plugins.noServers": "This Plugin declares no MCP servers.",
   "plugins.uploadArchive": "Upload archive",
@@ -1375,7 +1343,7 @@ export const en = {
   "managed.nameHint": "Also the container’s name, so the two stay findable together.",
   "managed.image": "Image",
   "managed.imagePlaceholder": "…dkr.ecr.ap-northeast-2.amazonaws.com/mcp-image-fetch:v1.0.1",
-  "managed.imageHint": "Any registry the host can pull from — its own ECR needs no credentials.",
+  "managed.imageHint": "Use a host-local image or a registry the host’s Docker client can pull from. Private registries, including ECR, require Docker registry authentication.",
   "managed.port": "Container port",
   "managed.envVars": "Environment variables",
   "managed.envVarsEmpty": "No direct environment variables.",
@@ -1405,9 +1373,9 @@ export const en = {
   "pset.deleteHint": "Agent deletion removes its settings and Agent-owned records. Chats and artifacts follow their own retention rules; the Agent name remains reserved.",
   "pset.visibility": "Visibility",
   "pset.visibilityPublic": "Public",
-  "pset.visibilityPublicHint": "Every signed-in member can view, run and clone this Agent.",
+  "pset.visibilityPublicHint": "Signed-in users can view and run this Agent. Cloning also requires permission to create Agents.",
   "pset.visibilityPrivate": "Private",
-  "pset.visibilityPrivateHint": "Only you and the invited members below can view, run and clone it.",
+  "pset.visibilityPrivateHint": "The owner, invited emails and administrators can view and run it. Cloning also requires permission to create Agents.",
   "pset.invitedMembers": "Invited members",
   "pset.invitedMembersHint": "Email addresses, one per tag. Press Enter, comma or space to add.",
   "pset.visibilitySave": "Save visibility",
@@ -1443,16 +1411,14 @@ export const en = {
   "pset.shortcutLabel": "Label",
   "pset.shortcutSends": "What clicking it sends",
   "pset.telegramBot": "Telegram bot",
-  "pset.telegramIntro":
-    "Create a bot with @BotFather, paste its token here and save — the token is checked with Telegram and the bot's username is learned from it. Enabling registers the webhook at this deployment and disabling removes it; Register webhook re-points it after a URL change. In a private chat the bot answers every message; in a group it answers when mentioned or replied to.",
+  "pset.telegramIntro": "Create a bot with @BotFather and save its token; saving verifies it and reads the bot username. Enable to register its webhook; disable to remove it. Use Register webhook after an application URL change. Messages with an identified sender can start a run: directly in private chats, or by mentioning/replying to the bot in groups.",
   "pset.telegramEnable": "Enable message handling at this URL",
   "pset.telegramRegisterWebhook": "Register webhook",
   "pset.telegramWebhookRegistered": "Webhook registered at",
   "pset.telegramGroupHint":
     "In a group the bot answers only a message that mentions it or replies to one of its own; BotFather's privacy mode can stay on.",
   "pset.teamsBot": "Microsoft Teams bot",
-  "pset.teamsIntro":
-    "Register an Azure Bot (Bot Framework) with the Teams channel enabled, paste its Microsoft App ID and client secret here, and set the bot's messaging endpoint in Azure to the URL below. In a personal chat the bot answers every message; in a channel or group chat it answers when @mentioned. Test connection acquires a token with the stored credentials.",
+  "pset.teamsIntro": "Enable the Teams channel on an Azure Bot, save its App ID and client secret, and set its messaging endpoint to this URL. Messages with an identified sender can start a run: directly in personal chats, or by @mention in channels/groups. Test connection checks the stored credentials by acquiring a token.",
   "pset.teamsAppId": "Microsoft App ID",
   "pset.teamsAppPassword": "Client secret",
   "pset.teamsTenantId": "Tenant id (single-tenant apps only)",
@@ -1523,8 +1489,7 @@ export const en = {
   "members.joined": "Joined",
   "members.lastLogin": "Last login",
   "members.neverRecorded": "Never recorded",
-  "models.lede":
-    "Text, image, embedding, rerank, and transcription models available through this deployment's AI providers.",
+  "models.lede": "Text, image, embedding, rerank, transcription and decision models registered for this deployment.",
   "models.filter": "Filter Models…",
   "models.type": "Model type",
   "models.allTypes": "All types",

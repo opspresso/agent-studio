@@ -1,6 +1,6 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChannelParams, LlmChannel } from "./channelFixtures";
 import type { ContentPart, EngineChunk } from "@/domain/llm/types";
 import {
@@ -17,6 +17,18 @@ import {
   toolCallChunk,
   usageChunk,
 } from "./fakeChannel";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers();
+  vi.setSystemTime("2026-09-12T00:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
@@ -329,7 +341,7 @@ describe("runAgent tool loop", () => {
 
     const chunks = await collect(runAgent(deps, input));
 
-    // turn 0 and turn 1 run; turn 2 hits the guard and returns with no answer.
+    // Two model calls exhaust the turn budget; no further tool can dispatch.
     expect(recorded).toHaveLength(2);
     expect(chunks.some((c) => c.done)).toBe(false);
     // The guard is not silent: the user is told why there is no answer, and
@@ -338,24 +350,7 @@ describe("runAgent tool loop", () => {
     expect(chunks.some((c) => c.warning?.includes("turn limit (2 turns)"))).toBe(true);
     expect(chunks.at(-1)).toEqual({ author: undefined, finishReason: "turn-limit" });
   });
-
-
-
-  /**
-   * The tool's `agent_name` is an enum, but an enum is advisory — a model that
-   * invents a name would have the transfer attempted, refused a layer down as
-   * an authored `error`, and reported to the reader as a delegation that came
-   * back empty. It is a call the model can retry, so it is answered like an
-   * unloadable skill: a tool error naming what it could have asked for.
-   */
-
-
-
 });
-
-
-
-
 
 describe("tools + reasoning_effort provider constraint", () => {
   const TOOL = { type: "function" as const, function: { name: "lookup", parameters: {} } };
@@ -1037,7 +1032,7 @@ describe("runAgent image input", () => {
 
   it("drops a fallback model that cannot read the images", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    // First script rejects with a retryable error so a live fallback would be used.
+    // Fallback eligibility is checked before the primary model request.
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
 
     await collect(
@@ -1488,14 +1483,3 @@ describe("empty provider errors", () => {
     expect(chunks.at(-1)?.error).toBe("unknown error");
   });
 });
-
-/**
- * What a filtered transfer is allowed to swallow.
- *
- * `runSubagentWithPii` re-emits a child's chunks after restoring the masked
- * values, and it decides what to re-emit by listing the axes a chunk can carry
- * on its own. A chunk carrying only an axis nobody listed is dropped, and
- * nothing says so: the run finishes, the prose describes a report, and the
- * report is not there. Turning the filter off makes the same run work, which is
- * the shape that makes it hard to see.
- */

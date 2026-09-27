@@ -1,19 +1,7 @@
 /**
- * Port for turning an attached document into the text a turn carries.
- *
- * Text rather than provider-native file parts, and that is a decision about this
- * deployment rather than a simplification. A model id here may be served by the
- * default router or by its own provider's OpenAI-compatible endpoint
- * (`LLM_PROVIDER_<NAME>_BASE_URL`), and those disagree about how — or whether —
- * a file part may be sent. The registry models capability per *model*
- * (`ModelCapabilities`), which cannot express a difference that belongs to the
- * channel, and sending a part the endpoint rejects fails the whole turn. Text
- * costs a capability gate nothing: it works on every channel, survives chat
- * persistence and replay unchanged, and is masked by the PII filter like any
- * other text.
- *
- * Extraction is behind a port because it needs a PDF parser, which is a library
- * and therefore infrastructure.
+ * Non-image attachments become bounded text for all registered model channels.
+ * Provider-native file formats are not part of the model contract. The injected
+ * extractor owns parsing; extracted text follows normal PII and Session rules.
  */
 
 /** A document read successfully. `text` may be empty only if the file was. */

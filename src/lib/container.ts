@@ -277,11 +277,7 @@ export const proxiedObjects = artifactStorage
  * How a stored object becomes an address a reader can follow — or `undefined`,
  * which is this deployment keeping nothing.
  *
- * Eight routes reached into `artifactStorage.objects.sign` for it, which is a
- * route deciding *which* signer addresses a file: the same composition choice
- * the repositories were taken out of the app layer for. Two of them did it
- * beside a guard on `artifactUseCases`, re-deriving from the store a fact the
- * use case they had just called was built from.
+ * Routes receive the bound signer rather than choosing an object-store adapter.
  */
 export const signArtifactUrl: SignObjectUrl | undefined = artifactStorage?.objects.sign;
 
@@ -395,10 +391,7 @@ const runTraceRepository = otelEndpoint
     })
   : traceRepository;
 
-// The narrow raw surface: the Slack event wiring site takes the two
-// repositories. Everything
-// else leaves this file already composed — a singleton nothing imports is a
-// door with nothing behind it, and five of them stood open here.
+// Raw Agent reads are available to wiring sites; routes otherwise use bound use cases.
 export { agentRepository };
 
 /**
@@ -482,15 +475,9 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
         const result = await mcpUseCases.testConnection(serverName);
         return result.ok ? result.tools : undefined;
       },
-      // Wrapped so an Agent's system prompt — the same text on every run of
-      // that Agent — is embedded once per process rather than once per run.
-      // Only queries are cached; a reindex's documents pass straight through.
-      //
-      // The space a cached vector belongs to is the model *and*, for the
-      // OpenAI-compatible adapter, the endpoint it resolves from runtime
-      // settings — which an admin can repoint without restarting anything. Both
-      // reads are already cached where they live, so this costs nothing per
-      // call and makes a repoint a cache miss instead of a wrong answer.
+      // Reuse exact query vectors within this process. The selected model,
+      // endpoint and wire ID identify the embedding space; reindex documents
+      // bypass the cache and a model/channel change produces a cache miss.
       embeddings: cacheQueryEmbeddings(openAiEmbeddings, async () => {
         const model = await getEmbeddingModel();
         const target = await getEmbeddingTarget(model);
@@ -528,9 +515,7 @@ export async function reindexCatalogNow(): Promise<
  * than holding one long lock.
  */
 export async function sweepExpiredRows(now: Date = new Date()): Promise<number> {
-  // Two tables expire rows: the item table by its unix-second `expiresAt`,
-  // and Better Auth's `session` by its own timestamp — which the library
-  // itself purges only when that session's cookie is presented again.
+  // Each table owns its expiry representation and per-sweep bound.
   const items = await deleteExpired(Math.floor(now.getTime() / 1000));
   const sessions = await deleteExpiredSessions(now);
   const runtime = await runtimeSessionRepository.sweepExpired(now);
@@ -697,34 +682,10 @@ export const syncPluginsFromArchive = async (
   );
 
 /**
- * Refresh the capability catalog once a sync has applied the repository.
- *
- * The catalog is otherwise rebuilt only by its own hourly tick, and a sync is
- * the single event that moves the most of it at once — a merge to the plugins
- * repo can add, rename or retire a dozen skills and servers together. Waiting
- * up to an hour to notice would mean a run discovering a skill the registry no
- * longer has, or missing one it just gained.
- *
- * This is the one exception to "indexing is never hooked to a write", and the
- * difference is what a failure would cost. Hanging it off a single registry
- * save would make an operator's 200 depend on an embedding call; here the sync
- * has already committed, its report is already persisted, and a failed reindex
- * changes none of that — the next tick repairs it. So the failure is logged and
- * swallowed rather than raised.
- *
- * Also the only way a **local** deployment refreshes at all: there is no
- * CronJob outside the cluster, so `pnpm` a sync and the index follows.
- *
- * **Scheduled, not awaited**, which is why this returns `void` rather than a
- * promise — an `await` on it would be a no-op, and the signature is what says
- * so. A reindex probes every registered MCP server, embeds the whole registry
- * and rewrites the index; awaiting it put all of that between the admin pressing
- * Sync and their answer, on a deployment that has already lost a response to a
- * 60-second proxy idle timeout — for work whose outcome that answer does not
- * depend on. It also ran *inside* `pluginSyncLock`'s five-minute lease, so a
- * slow one could outlive the lease, let a second sync acquire it, and then have
- * the first release someone else's. Deferring past the response fixes both: the
- * `finally` below releases the lease before this callback is ever entered.
+ * Schedule a catalog refresh after the sync report is persisted. The request
+ * receives its result and the plugin lease is released before discovery and
+ * embedding begin. Reindex failures leave the committed sync intact, are
+ * logged, and are repaired by the deployment's next reindex tick.
  */
 const reindexAfterSync = (): void => {
   if (!catalogDeps) {
@@ -864,11 +825,8 @@ export const usageUseCases = createUsageUseCases({
 });
 
 /**
- * Registry lookups an Agent's mcp/skill/subagent references are validated
- * against. Module-local: the configuration slice below is the only consumer, and an
- * exported bundle of repositories is the door the factory just closed —
- * `REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE` bans the two names, not a object
- * holding them.
+ * Registry lookups for validating configuration edits and cloned Agent bindings.
+ * Module-local so presentation modules cannot choose repository dependencies.
  */
 const configurationRefRepos = {
   skills: skillRepository,

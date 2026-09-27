@@ -5,7 +5,8 @@ import { assertLocalDatabase } from "./local-database";
  * print a signed session cookie for exercising authenticated API routes
  * without an identity-provider round-trip. Local development only.
  *
- *   pnpm tsx scripts/dev-session.ts        # dev database on :5432
+ *   pnpm tsx --env-file=.env.local scripts/dev-session.ts
+ *   pnpm tsx scripts/dev-session.ts        # process env or local DB default on :5432
  */
 process.env.STAGE ??= "local";
 process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@localhost:5432/agent_studio";

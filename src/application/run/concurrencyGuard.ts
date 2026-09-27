@@ -1,15 +1,9 @@
 /**
  * How many runs one caller may have in flight at once.
  *
- * The daily cost guard reacts to money already spent; nothing reacted on the
- * timescale a runaway caller actually operates on. The per-run bounds (a ten
- * minute wall clock, fifty turns, tool-result caps) bound one run, and the chat
- * run lease bounds one chat — neither stops the same person opening twenty
- * chats or calling `/predict` in a loop.
- *
- * State is shared rather than per process. `runMetrics` counts this instance's
- * runs, so a limit built on it would multiply by the number of instances and
- * mean nothing on a horizontally scaled deployment.
+ * DB leases bound one caller across chats, API requests and app instances.
+ * Per-run deadlines and cost limits apply independently; process-local metrics
+ * cannot enforce this deployment-wide admission limit.
  */
 
 import { actorKey, type RunActor } from "@/domain/execution/actor";
@@ -60,12 +54,8 @@ const UNLIMITED: AcquiredSlot = { release: async () => {} };
  * Take a concurrency slot for this run, or refuse it.
  *
  * **Fails closed**, unlike the cost guard beside it, and deliberately so. The
- * cost guard protects money: a storage blip must not stop the platform, so it
- * opens. This one protects the platform itself, and opening it when the store
- * is failing adds load at exactly the moment the store cannot take it. A 429
- * with a short `Retry-After` is also a better answer than the 500 the run would
- * have produced anyway — every run reads its agent and Agent from the same
- * table, so a store that cannot answer here was about to fail the run regardless.
+ * cost guard permits execution when accounting reads fail. Concurrency refuses
+ * admission with 429 when slot storage fails, avoiding more load on that store.
  */
 export async function acquireRunSlot(
   deps: ConcurrencyGuardDeps,

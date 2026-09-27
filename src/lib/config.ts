@@ -33,11 +33,8 @@ function authIssuer(name: "KEYCLOAK_ISSUER" | "OIDC_ISSUER", issuer: string): st
 }
 
 /**
- * Environment variables required for any real operation (LLM dispatch + secret
- * encryption). Validated once at boot (see instrumentation.ts) so a misconfig
- * fails fast instead of surfacing as a 500 on the first request that needs it.
- * Google OAuth creds are intentionally excluded — the local dev-session flow
- * bypasses OAuth.
+ * Required at boot in every stage. Model and identity-provider connections
+ * are configured separately; local development may use a generated session.
  */
 const BOOT_REQUIRED_ENV = [
   "DATABASE_URL",
@@ -101,14 +98,8 @@ export function assertAccessControlConfig(): void {
 }
 
 /**
- * Say once per setting, per value, that a configured value could not be used.
- *
- * These readers are getters, and their callers are hot: a retention window is
- * read on every row write — once per model call for usage — and an MCP cache TTL
- * on every discovery write. One misconfigured variable would put a line in the
- * log for each of them, which buries the message it is trying to deliver in
- * exactly the deployments that most need to read it. Keyed by value as well as
- * name so a setting corrected at runtime still reports its next mistake.
+ * Report each invalid setting/value once to avoid flooding hot getter paths.
+ * A changed invalid value gets its own warning.
  */
 const warnedSettings = new Set<string>();
 
@@ -127,14 +118,9 @@ export function resetConfigWarnings(): void {
 }
 
 /**
- * A non-negative integer setting, falling back to `fallback` on anything else.
- * A misconfigured value degrades to the default with a warning rather than
- * silently disabling a limit — `Number("abc") || 0` would read as "off".
- *
- * Exported for the one other numeric env read (`runtime-settings`' cache TTL),
- * which once kept a near-identical parser of its own; `min` is for values
- * where zero is not a configuration but an off-switch nothing intends, and
- * `max` is for a storage or protocol ceiling.
+ * Integer settings outside [min, max] use fallback and warn. Invalid values
+ * must not become zero, because zero disables some limits. Retention and
+ * runtime settings reuse this parser with their own bounds.
  */
 export function positiveIntEnv(
   name: string,
@@ -155,11 +141,8 @@ export function positiveIntEnv(
 }
 
 /**
- * A `0`–`1` setting. Out of range **clamps** rather than falling back — a rate
- * of `2` means "as much as possible", and refusing it would be pedantry — while
- * a value that is not a number at all has no intent to honour and takes the
- * default. Both say so; a sampling rate that quietly became something else is
- * how a deployment ends up reasoning from traces it never recorded.
+ * Clamp finite fractions to [0, 1]; non-finite values use fallback. Both
+ * adjustments warn so operators can verify the effective search threshold.
  */
 export function fractionEnv(name: string, fallback: number): number {
   const raw = optionalEnv(process.env[name]);
@@ -240,14 +223,9 @@ export const config = {
     return process.env.AWS_REGION ?? "ap-northeast-2";
   },
   /**
-   * The bucket holding what runs produce, on any S3-compatible store. Unset
-   * disables artifact persistence.
-   *
-   * `S3_ENDPOINT` names a store other than AWS (MinIO, Garage, Ceph RGW — an
-   * on-premises install's own), addressed path-style because a self-hosted
-   * endpoint rarely resolves bucket subdomains. Credentials come from the
-   * standard `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` pair every S3 client
-   * reads, or from the instance role where there is one.
+   * Shared S3-compatible bucket for generated artifacts and private files.
+   * Unset disables persistence. S3_* credentials take precedence over the AWS
+   * SDK credential chain; a configured endpoint uses path-style addressing.
    */
   get objectBucketName(): string | undefined {
     return optionalEnv(process.env.S3_BUCKET_NAME);
@@ -320,12 +298,8 @@ export const config = {
     return positiveIntEnv("EMBEDDING_DIM", 1024, 1);
   },
   /**
-   * The catalog's relevance floor, in `[0, 1]`. Belongs to the **embedding
-   * model** rather than to the search: measured on Titan v2 a correct answer
-   * scores 0.34–0.41 and an unrelated one under 0.12, and a threshold tuned for
-   * a model whose correct answers sit near 0.8 would return nothing at all.
-   * Changing the selected embedding model means re-measuring this — the same
-   * warning `mcp-memory` carries on `RECALL_MIN_SIMILARITY`.
+   * Catalog relevance floor in [0, 1]. Re-measure on representative queries
+   * when changing the embedding model; score scales differ between models.
    */
   get catalogMinScore(): number {
     return fractionEnv("CATALOG_MIN_SCORE", DEFAULT_MIN_SCORE);
@@ -385,12 +359,8 @@ export const config = {
     return parseList(process.env.TRUSTED_PROXY_CIDRS ?? "");
   },
   /**
-   * The token the schedule ticker presents (SCHEDULE_SCAN_TOKEN). Unset means
-   * this deployment has no ticker and the scan endpoint answers 503 — the
-   * feature is off rather than open. The trim `optionalEnv` applies is what
-   * this setting needed first: a Kubernetes Secret built from a file routinely
-   * carries a trailing newline the header never can, and untrimmed that would
-   * 401 every tick forever.
+   * Shared credential for schedule scan, plugin sync scan and catalog reindex.
+   * Unset disables those endpoints with 503. Trim mounted-secret newlines.
    */
   get scheduleScanToken(): string | undefined {
     return optionalEnv(process.env.SCHEDULE_SCAN_TOKEN);
@@ -606,9 +576,9 @@ export const config = {
     return optionalEnv(process.env.AUTH_PASSWORD) === "true";
   },
   /**
-   * An administrator account created on first boot when password sign-in is
-   * on and no user with that email exists. The email should also be in
-   * `ADMIN_EMAILS` — the account is an ordinary user otherwise.
+   * Password bootstrap account. Boot creates a missing user or adds a missing
+   * credential; it never replaces an existing password. ADMIN_EMAILS grants
+   * administrator privileges independently.
    */
   get bootstrapAdmin(): { email: string; password: string } | undefined {
     const email = optionalEnv(process.env.BOOTSTRAP_ADMIN_EMAIL);

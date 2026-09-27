@@ -45,7 +45,7 @@ reasoning 수치는 UsageInfo·Trace에 쓰고 일일 Usage의 독립 과금 축
 | `agent-token` | **소유자의** 이메일 | 토큰은 그 사람으로 인증한다. 기계의 지출을 그 사람 자신의 런과 떼어 놓는 것은 *kind* 이며 — `user` 행만 채우는 그 사람의 개인 tier 예산에서도 빼 놓는다 |
 | `slack` | Slack user id | Slack 은 이메일을 넘겨주지 않고, 매핑을 추측하면 엉뚱한 사람에게 비용을 물린다 |
 | `telegram` | Telegram user id | 같은 이유다. Telegram 은 이름과 username 을 넘겨주는데 둘 다 주소가 아니다 |
-| `teams` | 보낸 사람의 Entra(Azure AD) object id | 대화마다 달라지는 `from.id` 와 달리 사람을 가로질러 같다. Teams 는 봇에게 email 을 주지 않는다 |
+| `teams` | `from.aadObjectId`, 없으면 `from.id` | Entra object ID를 우선한다. fallback ID는 대화별로 달라질 수 있으며 이메일로 해석하지 않는다 |
 | `webhook` | `{agent}:{triggerId}` | — |
 | `schedule` | `{agent}:{triggerId}` | — |
 

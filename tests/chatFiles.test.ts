@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Chat, ChatMessage, ChatMessageFile } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { AgentRepository } from "@/domain/agent/repository";
@@ -15,11 +15,13 @@ import { reduceChunk } from "@/app/chats/_lib/stream";
 import { EMPTY_TURN } from "@/app/chats/_lib/types";
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 
-/**
- * A run rendered a PDF, the bracket stored it, and the chat had nowhere to put
- * the reference — so the transcript said a file had been delivered and offered
- * no way to get it. These pin the path from the chunk to the download.
- */
+/** Stored output references survive persistence and become per-reader downloads. */
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-08-12T15:15:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 const CHAT: Chat = {
   chatId: "c1",
@@ -101,11 +103,13 @@ describe("resolveMessageFiles", () => {
   it("bounds signer concurrency across the full transcript", async () => {
     let active = 0;
     let maxActive = 0;
-    const release: Array<() => void> = [];
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
     const signer = async (key: string) => {
       active += 1;
       maxActive = Math.max(maxActive, active);
-      await new Promise<void>((resolve) => release.push(resolve));
+      if (active === MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS) started.resolve();
+      await release.promise;
       active -= 1;
       return `https://signed.example/${key}`;
     };
@@ -118,11 +122,9 @@ describe("resolveMessageFiles", () => {
     );
 
     const pending = resolveMessageFiles(messages, signer, VIEW_URL_TTL_SECONDS);
-    await vi.waitFor(() => expect(active).toBe(MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS));
-    while (release.length > 0) {
-      release.shift()?.();
-      await Promise.resolve();
-    }
+    await started.promise;
+    expect(active).toBe(MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS);
+    release.resolve();
     await pending;
 
     expect(maxActive).toBe(MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS);

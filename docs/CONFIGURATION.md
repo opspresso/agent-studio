@@ -20,59 +20,40 @@ SETTINGS#app 행의 override (데이터베이스)   →   environment variable  
 덮어쓰는 값이다. **boot**는 시작 시 구성하는 갱신기 설정이고 **—**는 환경 전용이다.
 DB를 읽기 전 필요한 키·DB 주소·로그인 설정과 Sandbox 인프라는 재배포 설정으로 관리한다.
 
-읽기는 `src/lib/runtime-settings.ts` 를 지나가며, dispatch 시점에 `process.env` 를 직접
-읽는 일은 결코 없다. 그러지 않으면 오버라이드가 settings 페이지에서만 적용되고 다른
-어디에도 적용되지 않는다. 값은 `SETTINGS_CACHE_TTL_MS` 동안 메모리에 캐시되고 쓰기 시
-캐시가 무효화되지만 무효화는 프로세스 로컬이다. 다른 인스턴스는 TTL까지 이전 설정을 사용할 수 있다.
-멤버 tier의 email 조회는 별도 30초 캐시이며 자세한 권한 전파는 [SECURITY](SECURITY.md#인가-모델)를 따른다.
+지원되는 override는 `src/lib/runtime-settings.ts`에서 읽고 dispatch에 주입한다.
+설정 캐시는 `SETTINGS_CACHE_TTL_MS`(기본 5초)이며 쓰기 시 해당 프로세스에서 무효화한다.
+다른 인스턴스에는 TTL 뒤에 전파된다. 멤버 tier의 email 조회 캐시는 별도 30초다.
+권한 전파는 [SECURITY](SECURITY.md#인가-모델)를 따른다.
 
-settings 쓰기는 최신 `SETTINGS#app` 행을 row lock 아래에서 읽고 patch를 합친 뒤 같은 transaction
-에서 저장한다. 일반 설정 저장과 Embedding/Rerank 선택이 동시에 도착해도 한 요청의
-오래된 full-row snapshot이 다른 요청의 필드를 되돌리지 않는다. Embedding migration 동안의
-vector/query model 일치는 별도의 reindex lease generation이 지킨다. 검색은 시작 전·vector 조회
-후·반환 직전에 generation을 비교하고, migration과 겹쳤으면 결과를 버린다.
+설정 저장은 최신 행에 patch를 row lock 아래에서 합친다. 동시 저장이 다른 필드를 되돌리지
+않는다. Embedding 변경 중에는 reindex lease generation으로 검색과 모델을 맞추고,
+변경과 겹친 검색 결과는 반환하지 않는다.
 
-오버라이드와 환경변수는 *"설정돼 있는가?"* 에 같은 방식으로 답한다: 비어 있거나 공백뿐인
-값은 **설정되지 않음**으로 치고, 유효 값이 되는 대신 다음 계층으로 떨어진다.
-`/settings` 에서 빈 칸을 저장하면 오버라이드가 제거되고, 공백뿐인 시크릿은 키가 아니다. 부팅
-시점도 포함해서이며, 거기서는 없는 것으로 보고된다. 이것이 가장 중요한 곳은 파일에서
-마운트된 시크릿이다. 헤더가 나를 수 없는 개행이 끝에 붙어 오기 때문이다. 규칙은
-`src/shared/env.ts` 가 소유하고, 거기서 돌려주는 값은 trim 돼 있다. `STAGE` 와
-`AWS_REGION` 은 예외로, 빈 값을 문자 그대로 받는다. `STAGE` 에서
-그것은 의도적이다: 빈 값은 throw 하는데, `local` 로 폴백하면 배포된 stage 에서
-`assertAccessControlConfig` 를 건너뛰게 되기 때문이다. `ARTIFACT_ACCESS_MODE` 도 trim 한 뒤
-읽으며, `public` 이나 `proxied` 가 아닌 값은 `authenticated` 로 읽힌다.
-다만 프로덕션 Node 프로세스에서 `STAGE` 를 비워 두는 것은 그 자체로 부팅 에러다. 로컬
-컨테이너는 `STAGE=local` 로 명시적으로 남고, 배포된 이미지가 변수 하나가 빠졌다는 이유로
-fail-open 이 될 수는 없다.
+문자열 환경값은 `src/shared/env.ts`에서 trim하며 빈 값은 미설정으로 읽는다. Settings의
+빈 입력은 해당 override를 제거한다. `STAGE`·`AWS_REGION`은 trim 규칙의 예외다.
+빈 `STAGE`는 오류이며 production에서 변수를 생략해도 부팅을 거부한다.
+`ARTIFACT_ACCESS_MODE`는 trim 후 `public`·`proxied` 외의 값을 `authenticated`로 읽는다.
 
 ## 부팅 시 검증
 
-`src/instrumentation.ts` 는 서버가 연결을 받기 전에 검사 두 개를 돌린다. 설정 오류가 그
-값을 필요로 하는 첫 요청에서 500 으로 나타나는 대신 시작 시점에 실패하게 하기 위해서다.
+`src/instrumentation.ts`가 연결을 받기 전에 다음 검사를 수행한다.
 
 | 검사 | 규칙 |
 |---|---|
-| `assertRequiredConfig` | `DATABASE_URL`, `AES_ENCRYPTION_KEY` 가 모든 stage 에서 설정돼 있어야 한다. 암호화 키는 canonical base64 로 인코딩한 정확히 32바이트여야 한다. |
-| `assertAccessControlConfig` | `NODE_ENV=production` 은 명시적인 `STAGE` 를 요구한다. `STAGE=alpha` 또는 `prod` 는 추가로 `ADMIN_EMAILS` 와 **로그인 수단 하나 이상**(Keycloak, 표준 OIDC, Google의 필수 변수 묶음 또는 `AUTH_PASSWORD=true`)을 요구한다. 각 묶음은 [인증과 접근 제어](#인증과-접근-제어)를 따른다. 빈 `ALLOWED_EMAIL_DOMAINS` 는 모든 도메인을 허용하는 정상 설정이다. |
+| `assertRequiredConfig` | 모든 stage에 `DATABASE_URL`과 canonical base64로 인코딩한 정확히 32바이트 `AES_ENCRYPTION_KEY`가 필요하다. 모델 카탈로그 갱신 모드와 브랜드 자산도 검증한다. |
+| `assertAccessControlConfig` | production은 명시적인 `STAGE`가 필요하다. `alpha`·`prod`는 추가로 환경의 `ADMIN_EMAILS`와 로그인 수단 하나 이상을 요구한다. |
 
-두 검사 뒤에 부팅 경로는 스키마를 적용하고(`migrate`, advisory lock 아래에서, 인스턴스가
-여럿이어도 한 번) `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` 가 있으면 그 계정을
-만든다. 데이터베이스에 닿지 못하는 부팅은 치명적이다. 서빙할 것이 없다.
+로그인 수단은 Keycloak·표준 OIDC·Google의 필수 변수 묶음 또는 `AUTH_PASSWORD=true`다.
+빈 `ALLOWED_EMAIL_DOMAINS`는 모든 도메인 허용 정책이며 정상 부팅한다. 빈 `ADMIN_EMAILS`는
+공유 레지스트리·설정 작업의 관리자 제한을 없애므로 `local`에서만 허용한다.
+Agent 소유권을 넘는 관리자 권한과는 구분한다. [인증과 접근 제어](#인증과-접근-제어)를 따른다.
 
-두 번째 검사가 있는 이유는 두 목록 모두 비어 있을 때 fail-open 이기 때문이다.
-`ADMIN_EMAILS` 가 설정되지 않으면 로그인한 모든 사용자가 공유 레지스트리에 대한 admin 이
-되고, `ALLOWED_EMAIL_DOMAINS` 가 설정되지 않으면 설정된 신원 제공자의 아무 계정이나 로그인할
-수 있다.
-앞의 것은 무설정 로컬 개발에만 옳은 기본값이라 `local` 은 그대로 두고 배포된 stage 들이
-부팅을 거부한다. 뒤의 것은 배포가 고르는 것이다. 열린 가입을 의도한 배포가 있고, 이
-검사가 읽는 것은 env 인 반면 `getAllowedEmailDomains` 는 여기서 보이지 않는 저장된
-오버라이드를 우선하므로 거부는 콘솔에서 도메인을 설정한 배포까지 함께 막는다. 빈 값은
-모든 도메인을 허용하는 명시적인 정책으로 취급하고 정상 부팅한다.
+부팅은 이어서 advisory lock 아래 스키마를 준비하고 비밀번호 bootstrap 계정·감사 sink·
+등록 모델을 초기화한다. DB 또는 필수 초기화 실패는 부팅 실패다. 공개 모델 가격 갱신과
+관리형 MCP 복구는 선택적 백그라운드 작업이며 서버의 listen을 기다리게 하지 않는다.
 
-`STAGE=local` 에서는 로그인 수단이 하나도 없어도 부팅한다: 로컬 dev-session 흐름
-(`scripts/dev-session.ts`)이 신원 제공자를 통째로 우회한다. 어느 제공자를 켜는지는
-[인증과 접근 제어](#인증과-접근-제어).
+`STAGE=local`은 로그인 수단 없이 부팅할 수 있다. 이때 로컬 검증에는
+[`scripts/dev-session.ts`](../scripts/dev-session.ts)를 사용한다.
 
 ## 핵심
 
@@ -83,7 +64,7 @@ fail-open 이 될 수는 없다.
 | `SERVICE_LOGO` | `agent-studio` | **runtime** | `public/brands/<값>/` 자산 폴더 선택자. 내장 폴더는 `agent-studio`, `agentops`다. 소문자·숫자·하이픈만 허용하며 `logo.png`, `favicon.ico`, `favicon-32.png`, `icon-192.png`, `apple-touch-icon.png`가 모두 없으면 부팅을 거부한다. 새 브랜드도 같은 파일을 추가해 선택한다. 예: `SERVICE_NAME=AgentOps`, `SERVICE_LOGO=agentops`. |
 | `DATABASE_URL` | — (필수) | — | PostgreSQL 접속 문자열 (`postgres://user:pass@host:5432/db`). 이 앱의 모든 행. 아이템 테이블, Better Auth 의 테이블, capability 카탈로그의 벡터. 이 여기 있다. 서버에 `pgvector` 확장을 *만들 수 있어야* 한다 (`CREATE EXTENSION IF NOT EXISTS vector` 를 부팅 때 앱이 실행한다). 스키마는 부팅 때 마이그레이션된다. |
 | `DATABASE_POOL_SIZE` | `10` | — | 프로세스 하나의 최대 DB connection 수, 하한 1. 웹 replica와 worker별 pool을 합산해 DB의 접속 한도 안에 배치한다. 모델 응답을 기다리는 동안 DB connection을 계속 점유하지 않는다. |
-| `AWS_REGION` | `ap-northeast-2` | — | AWS 를 쓰는 기능. Bedrock 임베딩, `S3_ENDPOINT` 없이 AWS S3 자체를 쓸 때의 클라이언트. 이 쓰는 리전. 그 밖에는 읽히지 않는다. |
+| `AWS_REGION` | `ap-northeast-2` | — | AWS SDK client·credential 설정과 S3 주소에 사용하는 리전. Bedrock SigV4의 실제 서명 리전은 요청 endpoint에서 읽는다. |
 | `AES_ENCRYPTION_KEY` | — (필수) | — | 32바이트 base64. 저장되는 모든 시크릿을 암호화하고, proxied 오브젝트 주소의 서명 키도 여기서 HKDF 로 파생된다. [SECURITY.md](SECURITY.md#저장된-시크릿) 를 보라. |
 | `S3_BUCKET_NAME` | 미설정 | — | Artifacts의 공통 버킷. 일반 생성 파일은 `artifacts/<kind>/`, 비공개 오디오·전사·요약은 `source-files/`에 저장한다. 어느 S3 호환 스토어든 된다 (MinIO, Garage, Ceph RGW, AWS S3). 행에는 오브젝트 키가 저장되고 URL 은 절대 저장되지 않는다. 자격증명은 스토어 자신의 `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` 쌍이고, 비어 있으면 SDK 기본 체인(`AWS_*`, 인스턴스 역할, AWS 자신에는 이것이 맞다)이다; 그 주체에게는 (레거시 `images/*` 만이 아니라) **`artifacts/*`와 `source-files/*`**의 put·get·delete와 비공개 파일의 multipart 업로드 권한이 있어야 한다. 설정하지 않으면 영속화가 통째로 꺼진다: 런은 여전히 그림을 그리고, 바이트는 표면까지 도달했다가 거기서 멈추며, artifact 갤러리는 404 로 답한다. |
 | `S3_ENDPOINT` | 미설정 | — | AWS 가 아닌 스토어의 주소 (`http://minio:9000`). 설정되면 path-style 로 주소를 만든다. 자체 호스팅 엔드포인트는 버킷 서브도메인을 해석하지 못하는 것이 보통이다. 비어 있으면 SDK 자신의 리전·자격증명 해석으로 AWS S3 에 간다. |
@@ -142,7 +123,8 @@ URL·목록·비밀값·선택값은 각각 주소 입력·태그 입력·비밀
 `openai`, `anthropic`, `google`, `xai`, `openrouter`, `bedrock`, `selfhosted`다.
 같은 종류를 여러 이름으로 등록할 수 있으므로 서로 다른 사내 서버도 별도 연결로 관리한다.
 URL에는 API 버전 경로를 포함한다. 예를 들어 OpenAI 호환 서버는 `/v1`, Google은
-`/v1beta/openai`를 사용한다. Discovery는 Google·Anthropic의 native 목록 계약을 해석한다.
+`/v1beta/openai`를 사용한다. 공개 Provider 목록은 공개 모델 카탈로그에서 읽고,
+self-hosted 목록은 등록한 내부 연결의 `/models`에서 읽는다.
 
 키는 endpoint 문맥에 묶어 암호화하며 조회 응답은 마스킹한다. 빈 입력 또는 마스크는 같은
 주소·종류·인증 방식의 기존 키를 유지한다. 주소나 인증 대상을 바꾸면 새 키를 입력한다.
@@ -299,10 +281,9 @@ Agent별 Slack 설정. 봇 토큰, signing secret, 추천 프롬프트, 그리�
 **채널 키워드**. 는 환경이 아니라 Agent에 산다 (`/agents/{name}/settings`). Agent의
 런이 워크스페이스를 *읽어도* 되는지는 Agent 파라미터(`slackWorkspace`)이고 기본은 꺼짐이다.
 
-**생성되는 매니페스트는 릴리즈와 함께 바뀐다.** 이제 `message.channels` 와
-`message.groups` 를 구독하고 `channels:read` 를 요청한다. 그 이전에 설치된 앱은 설치 당시의 scope 와 이벤트를
-유지하므로, 매니페스트를 다시 적용하고 앱을 재설치하기 전까지 채널 후속 응답과 `SlackChannels`
-도구는 작동하지 않는 채로 남는다.
+채널 후속 응답과 `SlackChannels`에는 생성 매니페스트의 `message.channels`·
+`message.groups` 이벤트와 `channels:read` 권한이 필요하다. 저장된 앱 설정만으로 Slack의
+권한·구독은 바뀌지 않으므로 매니페스트를 적용하고 권한 변경 시 재설치한다.
 
 ## Telegram
 
@@ -451,7 +432,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | 카탈로그 검색어 (요청 없을 때의 시스템 프롬프트 / 최근 사용자 턴 / 최신 요청 + 관련 기억) | `2,000` 자 / `3` 턴 / `2,000` 자(각 절반 최대 `1,000` 자) | `src/application/execution/bindings.ts` |
 | 메모리 recall (`memoryRecall`): 보내는 질의 / 프롬프트에 유지하는 텍스트 / 첫 토큰이 그것을 기다리는 시간 | `2,000` 자 / `4,000` 자 / `10s` | `src/application/execution/memoryRecall.ts` |
 | 인코딩된 대화 id (그것을 넘으면 대화가 없고, API 헤더는 400 으로 답한다) | `512` 자 | `src/domain/execution/actor.ts` 의 `MAX_CONVERSATION_ID_LENGTH` |
-| 런당 MCP 도구 준비 상한 (= 128 − 예약 builtin 16개) | `112`; 최종 도구 집합은 위임을 포함해 `128`개 이하 | `src/domain/llm/toolLimits.ts` |
+| 런당 MCP 도구 준비 상한 | `128 − BUILTIN_TOOL_NAMES.length`; 위임을 포함한 최종 도구 집합은 `128`개 이하 | `src/domain/llm/toolLimits.ts` |
 | MCP 도구 결과 하나 | `100,000` 자 | `src/infrastructure/mcp/toolManager.ts` |
 | MCP 서버의 HTTP 응답 | `14.5MB` | `src/infrastructure/mcp/session.ts` |
 | MCP 서버 하나에서 읽는 `tools/list` 페이지 수 (상한에 닿으면 그 discovery 는 실패한다, SDK 는 부분 카탈로그를 남기지 않는다) | `64` | `src/infrastructure/mcp/session.ts` |

@@ -1,17 +1,16 @@
+import { chunkAuthorPath, isTopLevelChunk, runTermination } from "@/domain/llm/types";
+import type { EngineChunk } from "@/domain/llm/types";
+
 /**
- * Which transfer chains a run is producing chunks from.
+ * Shared Chat and Playground tracking for Agent participation and activity.
  *
- * One owner for both consumers — the chat stream reducer and the Playground run
- * panel — because they read the same `authorPath` off the same chunks, and a
- * second copy of these rules would drift as soon as one of them was fixed.
- *
- * Two *different* questions, so two functions. Answering them with one is how a
- * finished agent ended up still being shown as running:
+ * Shared by Chat and Playground. Visited paths describe participation; active
+ * paths describe current execution, so they use different collapse rules:
  *
  * - **visited** — every chain this run reached, for "agents involved". Grows, and
  *   a deeper chain absorbs the shallower one it extends.
- * - **active** — the chains producing chunks *now*, for the running badge. A
- *   chain replaces whatever it is nested with, in either direction.
+ * - **active** — current chains scoped to each native invocation. A chain
+ *   replaces nested paths within that invocation; completion cannot remove siblings.
  */
 
 /** The trailing separator keeps comparisons on whole names: without it `img` reads
@@ -33,16 +32,9 @@ export function mergeVisitedPath(seen: string[][], path: string[]): string[][] {
 }
 
 /**
- * Move the active set to the chain that just spoke.
- *
- * A chain evicts any chain it is nested with, **in either direction**: a parent
- * speaking again means its child returned (a transfer blocks until it does), and
- * a child speaking means the parent is waiting on it. Chains that are not nested
- * all stay — SDK delegation has several children running at once, and a set
- * that kept only the last one to speak would flicker between them.
- *
- * This is where the visited rule cannot be reused: keeping the deeper chain would
- * leave a finished subagent on screen until the whole dispatch returned.
+ * Update one invocation's paths. A parent path replaces its nested child and a
+ * child path replaces its waiting parent; independent chains remain visible.
+ * `foldActiveAuthors` isolates invocations before applying this rule.
  */
 export function trackActivePath(active: string[][], path: string[]): string[][] {
   const incoming = key(path);
@@ -61,4 +53,46 @@ export function removeActivePath(active: string[][], path: string[]): string[][]
   return active.filter((existing) => !key(existing).startsWith(completed));
 }
 
-export { chunkAuthorPath } from "@/domain/llm/types";
+export { chunkAuthorPath };
+
+/** An active invocation; two calls of one Agent keep separate completion state. */
+export interface ActiveAuthor {
+  path: string[];
+  transferId?: string;
+}
+
+type ActivityChunk = Pick<EngineChunk,
+  "author" | "authorPath" | "transferId" | "authorDone" | "done" | "finishReason" | "error"
+> & { delta?: { content?: string; reasoningContent?: string } };
+
+/**
+ * Fold activity by invocation. Tool results and warnings can arrive while sibling
+ * tools still run; only parent model output or termination clears the whole set.
+ */
+export function foldActiveAuthors(active: ActiveAuthor[], chunk: ActivityChunk): ActiveAuthor[] {
+  const path = chunkAuthorPath(chunk);
+  if (!path) {
+    const parentOutput = isTopLevelChunk(chunk) &&
+      (runTermination(chunk) !== undefined || chunk.delta?.content !== undefined ||
+        chunk.delta?.reasoningContent !== undefined);
+    return parentOutput ? [] : active;
+  }
+  const invocation = active.filter(entry => entry.transferId === chunk.transferId);
+  const paths = invocation.map(entry => entry.path);
+  const updated = chunk.authorDone ? removeActivePath(paths, path) : trackActivePath(paths, path);
+  return [
+    ...active.filter(entry => entry.transferId !== chunk.transferId),
+    ...updated.map(path => ({ path, ...(chunk.transferId === undefined ? {} : { transferId: chunk.transferId }) })),
+  ];
+}
+
+/** Show each active chain once while preserving its independent invocations. */
+export function activeAuthorPaths(active: ActiveAuthor[]): string[][] {
+  const seen = new Set<string>();
+  return active.flatMap(entry => {
+    const id = key(entry.path);
+    if (seen.has(id)) return [];
+    seen.add(id);
+    return [entry.path];
+  });
+}

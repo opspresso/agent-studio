@@ -1,29 +1,9 @@
 /**
- * Finish the history rows a lost instance left in `running`.
- *
- * Both trigger kinds acknowledge first and run in `after()`, so an instance
- * killed mid-firing leaves a row claiming a run is in flight when nothing is.
- * The crash policy is the same for both and is deliberately *not* re-execution:
- * a run is not idempotent — its tools have side effects — so what a repair
- * corrects is the ledger, not the work. An operator has to be able to tell
- * "still running" from "nobody is coming back", and only this can say so.
- *
- * **Two callers, because one tick is not a guarantee.** The scheduler's scan
- * sweeps every agent on a gated tick, and a webhook delivery sweeps its own
- * trigger as it finishes. The second exists because the ticker is optional —
- * a deployment can serve webhooks and configure no CronJob at all — and a
- * durability fix that only runs where a scheduler happens to be pointed is not
- * one.
- *
- * **Enumeration walks agents rather than a cross-agent index.** Schedule
- * rows carry one (`TYPE#SCHEDULE`) because the tick fires them every minute, so
- * listing them is that scan's hot path. Repair is not: it runs on a gated tick
- * and only to find wreckage. Granting webhook rows the same index would cover
- * only rows written after the index existed, and a webhook trigger that predates
- * this repair is precisely the one most likely to have stranded a row already —
- * a durability fix that skips the rows it was written for is the wrong shape.
- * Walking `listAgents()` reads every row that exists today in bounded pages,
- * needs no backfill, and costs one query per agent on a repair tick only.
+ * Finish expired queued/running history without replaying tool side effects.
+ * Gated schedule ticks walk every Agent and trigger in bounded pages; webhook
+ * completion also repairs its own trigger. Without either caller no automatic
+ * repair runs. Agent enumeration covers both kinds, while TYPE#SCHEDULE serves
+ * only the frequent schedule-admission scan.
  */
 
 import type { Trigger, TriggerRun } from "@/domain/trigger/types";
@@ -118,13 +98,8 @@ export async function repairLostRuns(deps: FiringDeps, at: Date): Promise<Repair
 }
 
 /**
- * One trigger's stranded rows, fenced so a throw costs only that trigger.
- *
- * Exported because a webhook delivery sweeps its own trigger on the way out. The
- * scheduler's tick is the only *periodic* caller there is, and a deployment that
- * serves webhooks with no ticker configured — which the operations guide says is
- * a supported shape — would otherwise get none of this: its stranded rows would
- * read `running` forever, which is the one state this module exists to remove.
+ * Repair one trigger's stranded rows, isolating repository failures. Called by
+ * the periodic sweep and by completion of that trigger's webhook delivery.
  */
 export async function repairTriggerRuns(
   deps: FiringDeps,

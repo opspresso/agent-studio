@@ -1,12 +1,7 @@
 /**
- * What a pile of bytes is, and — when it is nothing this reads — what the
- * refusal says.
- *
- * The refusals are tested as carefully as the successes. A model that is told
- * "unsupported" spends another turn guessing; one that is told "this is an
- * Excel workbook" or "use fetch_document for web pages" does not. Every case
- * below is a wrong answer somebody would otherwise have to debug from a tool
- * result that said nothing.
+ * Native format detection uses bytes and package parts. Text, HTML and PDF
+ * are delegated to the receiving adapter with a format-specific reason.
+ * Unsupported Office variants identify their format or required conversion.
  */
 
 import { strict as assert } from "node:assert";

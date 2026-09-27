@@ -1,7 +1,4 @@
-/**
- * Reading the audit trail. Admin-only at the route, because the rows name who
- * did what and a shared catalog is not a shared conscience.
- */
+/** Read the audit trail through admin-only routes; events identify their actors. */
 
 import { ValidationError } from "@/application/errors";
 import type { AuditRepository } from "@/domain/audit/repository";
@@ -79,12 +76,7 @@ export function createAuditUseCases(repo: AuditRepository): AuditUseCases {
     async list(query) {
       const from = query.from;
       const to = query.to ?? from;
-      // The shape check is not the same question as the calendar one, and only
-      // the second is load-bearing here: `2026-13-01` would make the range walk
-      // produce nothing and answer `200 {events: []}` — an audit reader told
-      // "that is everything" by a query that never ran — and `2026-02-31` would
-      // silently widen the range past the month that was asked for. `isUtcDay`
-      // owns the distinction.
+      // Validate calendar dates, not just their shape, before walking the range.
       if (!isUtcDay(from) || !isUtcDay(to)) {
         throw new ValidationError("from and to must be a real UTC day, as YYYY-MM-DD");
       }
@@ -94,11 +86,7 @@ export function createAuditUseCases(repo: AuditRepository): AuditUseCases {
       if (to < from) {
         throw new ValidationError("to must not be earlier than from");
       }
-      // Counted, not enumerated. `daysInRange` allocates a Date and a string per
-      // day, so a range of a few thousand years would spend seconds of the one
-      // event loop and hundreds of megabytes before this line got to refuse it —
-      // a rejected query that costs more than an accepted one is a way to take
-      // the instance down through an endpoint that answers 400.
+      // Reject oversized ranges before allocating one entry per day.
       const dayCount = daySpan(from, to);
       if (dayCount > MAX_AUDIT_RANGE_DAYS) {
         throw new ValidationError(

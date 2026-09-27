@@ -1,12 +1,5 @@
 /*
- * The reading column.
- *
- * Messages used to be laid out as a fraction of whatever width the window
- * happened to be — `maw="80%"` — so a line of prose ran to 1,400 pixels on a
- * wide screen and the conversation sat lopsided against the left edge. A fixed
- * measure, centred, is what every reading surface settles on for the same
- * reason: past roughly ninety characters the eye loses the start of the next
- * line. The composer takes the same column so the two line up.
+ * A centered reading measure shared by messages and the composer.
  */
 .column {
   width: 100%;

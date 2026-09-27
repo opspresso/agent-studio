@@ -1,15 +1,7 @@
 /**
- * Turning a key into the string a reader sees.
- *
- * A plain function rather than a hook, because a server component cannot call a
- * hook and five pages plus the root layout are server components. `provider.tsx`
- * wraps this for the client; `server.ts` calls it directly. One implementation
- * either way, so the two sides cannot drift on how a placeholder is filled.
- *
- * Both catalogues are imported statically, which puts roughly 10KB gzipped of
- * the other language in the browser bundle. The alternative — shipping only the
- * active one — means serialising the catalogue through the server component
- * boundary on every navigation, and this console has two languages, not twenty.
+ * Shared server/client translation and interpolation. Both catalogues are
+ * statically imported; the root passes locale and branding rather than
+ * serializing message data for each page.
  */
 import type { Locale } from "./locale";
 import { DEFAULT_SERVICE_NAME } from "@/shared/branding";

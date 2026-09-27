@@ -110,7 +110,7 @@ interface ServerScript {
 interface RecordedCall {
   url: string;
   /** JSON-RPC method; absent on a bodyless request such as the session DELETE. */
-  method: string;
+  method?: string;
   /** HTTP verb, which is what distinguishes a session release from a request. */
   httpMethod: string;
   /** The Mcp-Session-Id the request carried, if any. */
@@ -124,6 +124,7 @@ interface RecordedCall {
   paramHeaders?: Record<string, string>;
   params?: Record<string, unknown>;
   hasSignal: boolean;
+  prototypeHeader?: string;
 }
 
 function framedResponse(payload: RpcEnvelope, script: ServerScript): Response {
@@ -172,6 +173,7 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       url,
       method: body.method,
       httpMethod: init?.method ?? "GET",
+      ...(sent.has("__proto__") ? { prototypeHeader: sent.get("__proto__")! } : {}),
       ...(sentSession ? { sessionId: sentSession } : {}),
       ...(sentVersion ? { protocolVersion: sentVersion } : {}),
       ...(sentMcpMethod ? { mcpMethod: sentMcpMethod } : {}),
@@ -369,13 +371,17 @@ function textBlock(text: string): { type: "text"; text: string } {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
   // Discovery is cached process-wide, so one test's tool list would otherwise
   // answer the next test's init and swallow its requests.
   clearMcpDiscoveryCache();
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
+  clearMcpDiscoveryCache();
 });
 
 // --- tests ------------------------------------------------------------------
@@ -392,7 +398,7 @@ describe("ToolManager tool-name collision aliasing", () => {
     expect(transform).not.toHaveBeenCalled();
     await manager.close();
   });
-  it("agents a source response before truncating large text", async () => {
+  it("captures a source response before truncating large text", async () => {
     const original = JSON.stringify({ padding: "x".repeat(110_000), url: "https://files.test/?signature=private" });
     stubMcpFetch({ "https://a.test/mcp": { listTools: [{ name: "get_file" }], callContent: [textBlock(original)] } });
     const transform = vi.fn(async (raw: unknown) => {
@@ -529,7 +535,7 @@ describe("ToolManager reserved-name seeding", () => {
     });
     const manager = new ToolManager(
       [server("a", "https://a.test/mcp")],
-      ["Skill", "transfer_to_agent"],
+      ["Skill", "delegate_child"],
     );
 
     await manager.init();
@@ -610,7 +616,7 @@ describe("ToolManager result truncation", () => {
     stubMcpFetch({
       "https://emoji.test/mcp": {
         listTools: [{ name: "dump" }],
-        callContent: [textBlock("\u{1F600}".repeat(80_000))],
+        callContent: [textBlock("x" + "\u{1F600}".repeat(80_000))],
       },
     });
     const manager = new ToolManager([server("emoji", "https://emoji.test/mcp")]);
@@ -618,9 +624,8 @@ describe("ToolManager result truncation", () => {
 
     const result = await manager.callTool("dump", {});
 
-    // A well-formed string survives a UTF-8 round trip; one with a lone
-    // surrogate comes back with U+FFFD where the half was.
-    expect(Buffer.from(result.text, "utf-8").toString("utf-8")).toBe(result.text);
+    // The odd prefix places the cut inside an emoji's surrogate pair.
+    expect(result.text.isWellFormed()).toBe(true);
   });
 
   it("marks a result the server flagged as isError", async () => {
@@ -859,11 +864,7 @@ describe("ToolManager era negotiation", () => {
 });
 
 /**
- * Streamable HTTP answers a request carrying an unknown `Mcp-Session-Id` with
- * 404 and requires the client to start a new session. Runs here last up to ten
- * minutes, so a session expiring mid-run is not hypothetical — and left
- * unhandled it takes every remaining tool call down with it. None of this
- * exists on a `2026-07-28` connection, which mints no session at all.
+ * Legacy session expiry reconnects once; modern connections have no session to renew.
  */
 describe("ToolManager expired-session recovery", () => {
   it("re-handshakes and completes the call the expired session refused", async () => {
@@ -1451,13 +1452,6 @@ describe("ToolManager image results", () => {
   });
 });
 
-/**
- * Streamable HTTP answers a request carrying an unknown `Mcp-Session-Id` with
- * 404 and requires the client to start a new session. Runs here last up to ten
- * minutes, so a session expiring mid-run is not hypothetical — and left
- * unhandled it takes every remaining tool call down with it.
- */
-
 describe("ToolManager protocol version", () => {
   it("states the negotiated revision on every request to a modern server", async () => {
     // The probe carries the newest revision this client speaks, which is what
@@ -1730,6 +1724,7 @@ describe("ToolManager init concurrency", () => {
     // `a` hangs until we release it. `b` must still get its requests out —
     // sequential init would leave b untouched while a is pending.
     let releaseA: (() => void) | undefined;
+    const fastReached = Promise.withResolvers<void>();
     const aBlocked = new Promise<void>((resolve) => {
       releaseA = resolve;
     });
@@ -1739,6 +1734,7 @@ describe("ToolManager init concurrency", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         reached.push(url);
+        if (url.includes("fast")) fastReached.resolve();
         if (url.includes("slow")) {
           await aBlocked;
         }
@@ -1766,9 +1762,8 @@ describe("ToolManager init concurrency", () => {
     const init = manager.init();
     // `fast` must get its requests out while `slow` is still hanging —
     // sequential init would leave it untouched.
-    await vi.waitFor(() => {
-      expect(reached.some((url) => url.includes("fast"))).toBe(true);
-    });
+    await fastReached.promise;
+    expect(reached.some((url) => url.includes("fast"))).toBe(true);
 
     releaseA?.();
     await init;
@@ -1797,6 +1792,14 @@ describe("ToolManager teardown", () => {
 });
 
 describe("MCP request metadata headers", () => {
+  it.each([false, true])("carries a prototype-named credential on every protocol request (legacy=%s)", async legacy => {
+    const calls = stubMcpFetch({ "https://a.test/mcp": { legacy, listTools: [{ name: "echo" }] } });
+    const manager = new ToolManager([{ ...server("a", "https://a.test/mcp"), headers: { ["__proto__"]: "test-credential" } }]);
+    try { await manager.init(); await manager.callTool("echo", {}); }
+    finally { await manager.close(); }
+    expect(calls.length).toBeGreaterThan(2);
+    expect(calls.every(call => call.prototypeHeader === "test-credential")).toBe(true);
+  });
   it("mirrors the method on every request and the name on the one that has one", async () => {
     const calls = stubMcpFetch({
       "https://a.test/mcp": {
@@ -1903,7 +1906,7 @@ describe("ToolManager multi round-trip requests", () => {
 
   it("reads a result carrying no resultType as an ordinary one", async () => {
     stubMcpFetch({
-      "https://a.test/mcp": { listTools: [{ name: "search" }], callContent: [textBlock("ok")] },
+      "https://a.test/mcp": { legacy: true, listTools: [{ name: "search" }], callContent: [textBlock("ok")] },
     });
     const manager = new ToolManager([server("a", "https://a.test/mcp")]);
     await manager.init();
@@ -2021,7 +2024,7 @@ describe("ToolManager structured content", () => {
     expect(result.text).toContain("search_unavailable");
   });
 
-  it("reads structuredContent when the server sent no text block", async () => {
+  it("refuses a structuredContent-only result missing the required content field", async () => {
     stubMcpFetch({
       "https://a.test/mcp": {
         listTools: [{ name: "weather" }],

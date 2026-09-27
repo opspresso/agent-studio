@@ -35,6 +35,6 @@ export interface ConversationTranscriptRepository {
    * carries as history. Expired rows are not returned.
    */
   recent(agentName: string, conversationKey: string, limit: number): Promise<TranscriptTurn[]>;
-  /** Write one turn down. Never throws for a full or slow store's sake — the caller decides that. */
+  /** Write one turn; callers decide how to handle storage failures. */
   append(agentName: string, conversationKey: string, turn: TranscriptTurn): Promise<void>;
 }

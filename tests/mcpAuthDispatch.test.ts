@@ -1,8 +1,11 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
-// A 32-byte key must be present before the encryption module reads config.
-process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
 
 // MCP dispatch goes through the SSRF-guarded fetch; forward it to the stubbed
 // global so a scripted JSON-RPC server can answer without DNS or undici.
@@ -26,6 +29,7 @@ import { keys } from "@/infrastructure/db/keys";
 import type { FakeStore } from "./fakeStore";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
+import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 
 const MCP_URL = "https://oauth-mcp.test/mcp";
 const store = await import("@/infrastructure/db/store") as unknown as FakeStore;
@@ -212,12 +216,14 @@ describe("resolving the Authorization for an agent's connection", () => {
     expect((await h.headersFor()).unavailable).toMatch(/different authorization server/);
   });
 
-  it("serves a connection written before either field was recorded", async () => {
-    // Those credentials were already being used against this entry; inventing a
-    // mismatch would break every existing connection on deploy.
-    const h = providerHarness({ connection: connectionFixture() });
+  it.each(["issuer", "resource"] as const)("refuses a connection without its %s binding", async (field) => {
+    const h = providerHarness({ connection: connectionFixture({ [field]: undefined }) });
 
-    expect((await h.headersFor()).headers).toEqual({ Authorization: "Bearer live-token" });
+    const result = await h.headersFor();
+
+    expect(result.headers).toEqual({});
+    expect(result.unavailable).toContain(field === "issuer" ? "different authorization server" : "different resource");
+    expect(h.refreshCalls).toHaveLength(0);
   });
 
   it("refreshes a token whose stored expiry cannot be parsed", async () => {
@@ -305,12 +311,9 @@ describe("resolving the Authorization for an agent's connection", () => {
 
 describe("a refresh racing a reconnect", () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     store.rows.clear();
     store.seed([{ ...keys.agent("p"), entityType: "AGENT", name: "p" }]);
   });
-  afterEach(() => vi.useRealTimers());
 
   it("keeps an unrotated refresh token usable and replaces it when the provider rotates", async () => {
     await mcpConnectionRepository.put(connectionFixture({
@@ -504,10 +507,10 @@ function stubMcpServer(opts: { rejectUnauthorized?: boolean } = {}) {
         });
       }
       const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
-      if (body.method === "notifications/initialized") {
-        return new Response("", { status: 202 });
-      }
-      const result = body.method === "tools/list" ? { tools: [{ name: "search" }] } : {};
+      const preamble = protocolPreamble(body.method, body.id, init?.method);
+      if (preamble) return preamble;
+      const result = modernResult(body.method,
+        body.method === "tools/list" ? { tools: conforming([{ name: "search" }]) } : {});
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
         headers: { "content-type": "application/json" },
       });
@@ -529,8 +532,16 @@ async function runOnce(deps: ExecutionDeps): Promise<EngineChunk[]> {
 }
 
 beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
   // Discovery is cached process-wide; a stale entry would answer the next
   // test's init and hide the request it is asserting on.
+  clearMcpDiscoveryCache();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
   clearMcpDiscoveryCache();
 });
 
@@ -538,14 +549,17 @@ describe("a run against an OAuth-required server", () => {
   it("sends the agent's bearer token", async () => {
     const seen = stubMcpServer();
     try {
+      const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
       const chunks = await runOnce(
-        runDeps(new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]), {
+        runDeps(channel, {
           headersFor: async () => ({ headers: { Authorization: "Bearer agent-token" } }),
           markUnauthorized: async () => {},
         }),
       );
       expect(chunks.some((c) => c.error)).toBe(false);
       expect(seen[0]?.authorization).toBe("Bearer agent-token");
+      expect(channel.seenParams[0]?.tools?.map((tool) => tool.function.name)).toEqual(["search"]);
+      expect(chunks.some((c) => c.warning)).toBe(false);
     } finally {
       vi.unstubAllGlobals();
     }

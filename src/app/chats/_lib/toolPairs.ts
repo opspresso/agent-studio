@@ -5,15 +5,12 @@ import type { ChatMessage } from "./types";
  * The arguments behind each stored tool row, keyed by the row's `seq`.
  *
  * A stored tool row carries what came back and the tool's own name; the
- * arguments — which skill, which agent — live on the assistant message that
- * declared the call. So a reloaded conversation could only ever say that *a*
- * skill was loaded. This puts the two back together for display.
+ * arguments live on the assistant message that declared the call. Pair them
+ * for display without rebuilding the model's native Session history.
  *
  * Pairing is scoped to one run, the messages a user turn delimits, for the same
- * reason `toEngineMessages` scopes it: a call id is unique only within the run
- * that produced it — the engine synthesizes ids for providers that omit them and
- * the counter restarts — so a chat-wide map would let a later run's call name a
- * earlier run's row. Within a run the order is `tool… → assistant`, the reverse
+ * reason live tool pairs are scoped: call ids are not chat-wide identifiers.
+ * Within a run the order is `tool… → assistant`, the reverse
  * of the wire, which is why the calls are collected before they are applied.
  *
  * The live half of this problem — putting a call beside the result that answered

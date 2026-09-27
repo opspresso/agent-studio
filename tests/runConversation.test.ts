@@ -5,10 +5,13 @@
  * Each surface builds the same kind of key, normalised in one place.
  */
 
-// The API surface keys its caller digest with the deployment's own secret.
-process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { describe, expect, it } from "vitest";
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
 import {
   conversationKey,
   conversationOf,
@@ -21,6 +24,14 @@ import { createTraceRecorder } from "@/application/run/traceLifecycle";
 import type { Trace } from "@/domain/trace/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
+
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
+});
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 describe("conversationOf", () => {
   it("keeps a plain id as it is, under its surface", () => {
@@ -107,15 +118,10 @@ describe("requestConversation", () => {
   });
 
   it("scopes the caller with this deployment's key, so the digest means nothing elsewhere", () => {
-    const key = process.env.AES_ENCRYPTION_KEY;
     const before = requestConversation(request("t"), { kind: "user", id: "alice@x.test" });
-    process.env.AES_ENCRYPTION_KEY = Buffer.from("fedcba9876543210fedcba9876543210").toString("base64");
-    try {
-      const after = requestConversation(request("t"), { kind: "user", id: "alice@x.test" });
-      expect(before?.id).not.toBe(after?.id);
-    } finally {
-      process.env.AES_ENCRYPTION_KEY = key;
-    }
+    vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 6).toString("base64"));
+    const after = requestConversation(request("t"), { kind: "user", id: "alice@x.test" });
+    expect(before?.id).not.toBe(after?.id);
   });
 });
 

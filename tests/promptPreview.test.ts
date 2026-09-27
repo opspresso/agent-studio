@@ -1,6 +1,12 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+
 // MCP requests go through the SSRF-guarded fetch; forward it to the stubbed
 // global so a scripted JSON-RPC server can answer without DNS or undici.
 vi.mock("@/infrastructure/net/publicFetch", () => ({
@@ -142,13 +148,18 @@ async function drain(gen: AsyncGenerator<EngineChunk>): Promise<void> {
 }
 
 beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(TEST_NOW);
   // Discovery is cached process-wide; one test's tool list would otherwise
   // answer the next test's preview.
   clearMcpDiscoveryCache();
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
+  clearMcpDiscoveryCache();
 });
 
 describe("previewPrompt", () => {
@@ -247,8 +258,7 @@ describe("previewPrompt", () => {
       configuration: boundConfiguration(),
     });
 
-    // `dispatch_agents` rides along with the transfer tool: a preview stands for
-    // a top-level run, and that is the only kind offered fan-out.
+    // A top-level preview offers both native handoff and delegation tools.
     expect(preview.toolNames).toEqual([
       "query",
       "Skill",
@@ -263,9 +273,7 @@ describe("previewPrompt", () => {
   });
 
   it("closes the MCP connection it opened without talking to the server", async () => {
-    // Preview is the first path that opens a connection outside a run. There is
-    // no session to release in this revision, so what teardown must not do is
-    // put a request on the wire nobody asked for.
+    // Modern transport has no server session to release during preview teardown.
     const deps = executionDepsFixture(new FakeChannel([]));
     wireRegistry(deps);
     const server = stubMcpServer(["query"]);

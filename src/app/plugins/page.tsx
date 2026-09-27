@@ -149,19 +149,7 @@ export default function PluginsPage() {
         </Text>
       )}
 
-      {/*
-       * The report belongs to the press that produced it. It is the account of
-       * an action the operator just took, so it lives as long as they stay on
-       * the page and no longer — leaving the page, or coming back to it, is
-       * done with it.
-       *
-       * The persisted report is deliberately *not* replayed here. It reads as a
-       * fresh result while being days old, and there is nothing on it to act on
-       * that pressing Sync would not show again: the run is cheap, idempotent,
-       * and reports the same skips and the same orphans. `syncConfig.last` still
-       * dates the last run in the caption above, and `GET /api/plugins/sync`
-       * still carries the whole report for anything that wants it.
-       */}
+      {/* Show only this page's current action report; the caption dates the persisted last sync. */}
       {syncResult && <PluginSyncSummary result={syncResult} onApply={runSync} />}
 
       {error && (

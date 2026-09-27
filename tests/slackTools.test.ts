@@ -1,5 +1,11 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
 import { createSlackWorkspaceReader, type SlackReaderPort } from "@/application/slack/workspaceRead";
 import {
   buildAgentTools,
@@ -17,8 +23,15 @@ import type {
   SlackUserDetail,
 } from "@/domain/slack/types";
 
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
+
 /**
- * The four workspace reads a run may be offered.
+ * Workspace reads offered through the shared Slack reader.
  *
  * Two things are load-bearing beyond "it returns the messages": what the tools
  * are *not* allowed to hand back (an email, which the bot's scopes would
@@ -325,10 +338,7 @@ describe("what a run is offered", () => {
     expect(toolNames(false)).toEqual([]);
   });
 
-  it("claims the names even when the tools are off", () => {
-    // An MCP server that happens to expose a tool called `SlackUser` must be
-    // aliased whether or not this run has the builtin, so aliases remain stable
-    // across Agent settings.
+  it("reports the active Slack builtin names", () => {
     const { builtinNames } = buildAgentTools({
       skills: [],
       subagents: [],
@@ -346,7 +356,7 @@ describe("what a run is offered", () => {
 });
 
 /**
- * The engine's side of it. The four names route to one injected reader, so what
+ * The runtime's Slack tool names route to one injected reader, so what
  * is under test here is the routing and the failure rule — the reader's own
  * output is covered above.
  */
@@ -402,9 +412,7 @@ describe("dispatching a Slack tool", () => {
   });
 
   it("answers with the failure rather than tearing the run down", async () => {
-    // Slack refusing — a channel the bot is not in, a scope that was revoked —
-    // is something the model can act on. An MCP dispatcher throwing is a
-    // transport fault and does end the run; this is not that.
+    // A Slack read refusal becomes a tool result that the model can act on.
     const channel = new FakeChannel([
       [toolCallChunk(0, "c1", "SlackChannels", "{}"), usageChunk(10, 5)],
       [contentChunk("I could not look"), usageChunk(8, 4)],

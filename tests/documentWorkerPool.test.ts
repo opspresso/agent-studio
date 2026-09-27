@@ -19,7 +19,10 @@ function reply(child: Child) {
   child.emit("message", { ok: true, result: { text: "hello" } });
   child.emit("exit", 0);
 }
-beforeEach(() => vi.useFakeTimers());
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime("2026-09-07T00:00:00.000Z");
+});
 afterEach(() => vi.useRealTimers());
 
 describe("document worker pool", () => {

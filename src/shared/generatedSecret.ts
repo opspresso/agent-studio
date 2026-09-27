@@ -14,7 +14,7 @@ import { timingSafeEqualString } from "./timingSafe";
  *   asg_…   Telegram webhook secret (per agent; minted here, handed only to Telegram)
  *
  * The random part is 32 bytes — 256 bits — so the prefix costs no entropy that
- * matters. Verification compares hashes and never looks at the prefix, so
+ * matters. Verification compares full values or hashes, never just the prefix, so
  * secrets issued under an older one keep working.
  */
 

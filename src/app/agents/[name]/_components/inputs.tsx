@@ -142,7 +142,7 @@ function PickedChip({
  *
  * `Autocomplete` rather than `MultiSelect` because the picked values are not
  * plain strings at every call site — a bound MCP server carries header
- * overrides and a tool selection, a subagent carries its type — and rendering
+ * overrides, source mappings and a tool selection — and rendering
  * those as `MultiSelect` pills would drop everything but the name.
  */
 function OptionPicker<T extends PickerOption>({
@@ -291,7 +291,7 @@ export function SearchSelectInput({
  * Pick which of a server's tools this Agent offers. The list is fetched from
  * the server itself (the same probe the registry's "Test connection" uses), so
  * the choices are what the model would actually be given. No selection means
- * every tool, which is what a binding meant before it could be narrowed.
+ * every tool, subject to the run's tool cap and policy.
  */
 function ToolSelector({
   selected,
@@ -525,7 +525,7 @@ export function McpBindingInput({
    * whose header name is still blank has no place in an override map, so
    * deriving rows from the binding would delete a freshly added row before it
    * could be typed into. Same split as the registry header editor, which keeps
-   * its rows in the form and only agents them on submit.
+   * its rows in the form and encodes them on submit.
    */
   const [rowsByName, setRowsByName] = useState<Record<string, OverrideRow[]>>({});
 
@@ -569,7 +569,7 @@ export function McpBindingInput({
     setSettingsFor((current) => (current === name ? null : current));
   }
 
-  /** An empty selection is stored as "all tools", the shape a binding had before. */
+  /** An empty selection omits `tools`, meaning all tools from the server. */
   function setTools(name: string, tools: string[]) {
     onChange(
       values.map((binding) => {
@@ -593,9 +593,7 @@ export function McpBindingInput({
         if (binding.name !== name) {
           return binding;
         }
-        // Rebuild from the binding, not from its name: writing `{ name, headers }`
-        // dropped whatever else it carried, so editing a header silently reset
-        // the tool selection sitting in the same dialog.
+        // Replace headers while preserving tool selections and source mappings.
         const { headers: _previous, ...rest } = binding;
         const headers = rowsToOverrides(rows);
         return { ...rest, headers: headers ?? {} };

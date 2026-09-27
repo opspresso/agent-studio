@@ -1,29 +1,8 @@
 /**
- * One document in, one reading out.
- *
- * The dispatch is here rather than in `tools.ts` so that the note each format
- * produces is written next to the reader that knows what it means. "All 12
- * pages" and "the whole body, without headers or footers" answer the same
- * question — did this reach the end of the document — in the only units their
- * format has.
- *
- * Every path returns something or raises. None of them returns an empty
- * success: an empty string reads as "the document is empty", which is a
- * different and much more damaging claim than "I could not read it".
- *
- * **The cut is the serializer's, not this file's.** Slicing a finished string
- * is unsafe against GFM — a table cut between its header and its divider is not
- * a table any more — so `blocksToMarkdown` spends the budget on block
- * boundaries and, inside a table, on row boundaries, and reports what did not
- * fit. Every block reader goes through `wrote()`; XLSX is the one exception,
- * because a worksheet budgets in whole rows of its own.
- *
- * **`omissions` is static plus observed.** The per-format list says what this
- * reader never looks at; `observed` says what *this document* actually lost —
- * a merged cell, a picture inside a table, a deck reordered after its slides
- * were named. The first is a property of the code and the second of the file,
- * and running them together is what lets a caller tell "never supported" from
- * "was here and could not be carried".
+ * Dispatch Office readers and combine static limitations with observed loss.
+ * Markdown serialization spends its text budget at block/row boundaries;
+ * XLSX budgets complete rows directly. Counts and completeness describe the
+ * retained content rather than claiming a truncated read reached the end.
  */
 
 import { detect, type Format } from "../detect";
@@ -56,7 +35,7 @@ export interface ReadResult {
   counts?: Record<string, number>;
 }
 
-/** The same read, before it is written — what `inspect_document` describes. */
+/** Office block structure for DocumentEditor inspection. */
 export interface ReadBlocks {
   blocks: ReadBlock[];
   format: Format;
@@ -187,9 +166,6 @@ export async function readDocument(source: DocumentSource): Promise<ReadResult> 
     return {
       format,
       ...written,
-      // The last four were never a decision until the text gate: the reader
-      // returned tracked deletions, comment bodies, footnotes and an ODP's
-      // speaker notes as body text while this list said otherwise.
       omissions: [
         "headers",
         "footers",
@@ -242,14 +218,7 @@ export async function readDocument(source: DocumentSource): Promise<ReadResult> 
   };
 }
 
-/**
- * The same read, stopped before it is written.
- *
- * `inspect_document` describes blocks rather than writing them, so it needs the
- * tree the serializer would have consumed. XLSX has no entry here on purpose:
- * a workbook's structure is `inspect_spreadsheet`'s question, and two tools
- * answering it differently is worse than one refusal that costs a sentence.
- */
+/** Read block structure before Markdown serialization; XLSX uses cell inspection. */
 export async function readBlocks(source: DocumentSource): Promise<ReadBlocks> {
   const detection = detect(source.bytes, source.mimeType, source.filename);
   if (detection.format === "unsupported") {
@@ -258,8 +227,7 @@ export async function readBlocks(source: DocumentSource): Promise<ReadBlocks> {
   const format = detection.format;
   if (format === "xlsx") {
     throw new UnsupportedDocument(
-      "a workbook's structure is inspect_spreadsheet's question — it returns addressed cells, " +
-        "formulas and sheet state, which is what a spreadsheet has instead of blocks",
+      "workbooks use cell inspection: addressed cells, formulas and sheet state instead of blocks",
     );
   }
   if (format === "docx") {

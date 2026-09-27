@@ -1,6 +1,14 @@
-process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 9).toString("base64");
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+}));
 import { fixtureRegistrations } from "./modelFixtures";
 import type { AppSettings } from "@/domain/settings/types";
 import { calculateCost, getModelConfig } from "@/domain/llm/models";
@@ -73,29 +81,25 @@ const ENV_KEYS = [
   "RERANKER_MIN_SCORE",
   "PUBLISHED_MODELS_REFRESH",
 ] as const;
-const savedEnv: Record<string, string | undefined> = {};
-
 beforeEach(() => {
+  entropy.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-09-24T00:00:00.000Z");
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 9).toString("base64"));
   invalidateSettingsCache();
   mockGet.mockReset();
   catalogPricing.mockReset().mockReturnValue(undefined);
   refreshCatalog.mockReset().mockResolvedValue(false);
   for (const key of ENV_KEYS) {
-    savedEnv[key] = process.env[key];
-    delete process.env[key];
+    vi.stubEnv(key, undefined);
   }
 });
 
 afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
   invalidateSettingsCache();
   mockGet.mockReset();
-  for (const key of ENV_KEYS) {
-    if (savedEnv[key] === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = savedEnv[key];
-    }
-  }
 });
 
 describe("runtime settings precedence", () => {

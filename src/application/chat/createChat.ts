@@ -114,8 +114,7 @@ export async function createChat(
     const source = deps.runAgent({
       agent,
       configuration,
-      // The attachment bytes go straight to the engine; the stored URLs are for
-      // replay on later turns.
+      // Inline bytes enter the SDK Session; stored keys serve the display record.
       messages: [
         { role: "user", content: userTurnContent(input.firstMessage, attachments, read.stored) },
       ],

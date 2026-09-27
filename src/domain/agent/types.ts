@@ -20,7 +20,7 @@ export type AgentVisibility = "public" | "private";
  * key. Exactly one of the two forms below is present.
  */
 export interface AgentApiToken {
-  /** The token, `enc:v1:`-encrypted. Decryptable by the owner-gated read path. */
+  /** Context-bound AES-256-GCM ciphertext, decryptable by the owner-gated read path. */
   token?: string;
   /**
    * SHA-256 hash — the only form tokens issued before revealing existed have.
@@ -240,35 +240,11 @@ export interface AgentParameters {
    */
   memoryRecall?: boolean;
   /**
-   * Whether a run's own thinking is kept for a person to read back.
-   *
-   * A reasoning model bills for tokens it spends before the first visible word,
-   * and until this is on those tokens leave nothing behind: the engine emits
-   * them and every consumer drops them. With it on, the console renders the
-   * thinking — the chat thread and the Playground — and a chat run keeps
-   * it on the assistant message beside the answer.
-   *
-   * The console is where it is *rendered*, not the boundary it stops at: the
-   * two raw-chunk routes (`/agent` and streaming `/predict`) forward engine
-   * chunks verbatim, so anyone holding an agent API token receives the
-   * reasoning frames too. Nothing else republishes it — the OpenAI shapes,
-   * the messaging bots and the trace recorder all read the answer beside it,
-   * and the trace keeps the token count without the words.
-   *
-   * **Inert on an agent reached only as a subagent.** A child's parameters are
-   * its own, so this switches its emission on — but a child's thinking is
-   * dropped everywhere it lands, exactly as its answer is: several children
-   * dispatched at once interleave on the wire with nothing saying whose thought
-   * is whose. Running that agent directly is where its reasoning is read.
-   *
-   * Opt-in, and off for everything written before it existed, because it
-   * changes who can read the thinking rather than what the run can do: reasoning
-   * restates the request in the model's own words, so it lands in storage and on
-   * a reader's screen with whatever the request carried. Inert on a model with
-   * no reasoning, and the Agent editor offers it only where the model has it.
-   *
-   * It does not change what the *model* is sent: a turn's thinking goes back to
-   * the provider attached to that turn either way.
+   * Emit restored reasoning for display. Chat/Playground fold top-level
+   * reasoning; raw Agent/predict streams also carry authored child reasoning.
+   * Other response surfaces omit its text but retain usage accounting.
+   * Opt-in because stored reasoning can contain PII. Provider replay keeps
+   * each model turn's reasoning regardless of this display setting.
    */
   reasoningTrace?: boolean;
 }

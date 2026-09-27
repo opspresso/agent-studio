@@ -11,7 +11,7 @@ Agent의 현재 설정, SDK 도구 실행, 이미지 도구와 실행 기록의 
 
 ## Agent와 현재 설정
 
-Agent는 이름으로 호출하는 Agent다. 공개 범위·소유권·연동·비용 정책과 현재
+Agent는 이름으로 호출하는 실행 단위다. 공개 범위·소유권·연동·비용 정책과 현재
 `AgentConfiguration`을 같은 Agent 행에 보관한다. 설정에는 모델·fallback·system prompt·
 생성 파라미터·Skill·MCP·하위 Agent·실행 정책이 들어간다. 이미지 생성·편집은 Agent 도구다.
 
@@ -98,6 +98,8 @@ credential을 다시 해석하며 bearer와 AWS SigV4를 지원한다. `store: f
 conversation state에 의존하지 않는다. 숨은 HTTP 재시도는 없으며, 첫 출력 전 429/5xx에만
 설정된 fallback 모델로 한 번 전환한다. 출력이 시작된 뒤에는 실패한 요청을 반복하지 않는다.
 `/models` 진단도 같은 SDK 모델 어댑터를 사용한다.
+SigV4 fetch는 `Request`의 메서드·헤더·취소 신호와 명시적 init override를 보존한다.
+서명 본문은 문자열·바이트여야 하며 `Request`의 스트림 본문과 multipart는 전송 전에 거절한다.
 
 SDK usage와 provider의 실제 청구 비용을 보존한다. 청구 비용이 없으면 모델 카탈로그의
 가격으로 계산하고, agent 실행은 `createUsageAggregator`가 모델 호출별 값을 모아 종료 시
@@ -115,6 +117,9 @@ SDK function tool 동시성은 5다. 실제 실행에 진입한 도구만 결과
 마스킹 → 예산 차감 → 복원한 화면 출력 순으로 처리하고 SDK에는 마스킹된 결과를 돌려준다.
 파일 bytes는 모델 문맥에 넣지 않으며, 이미지는 domain 한도 내 inline bytes만 허용한다.
 스트림 소비자의 backpressure와 취소는 자식 실행과 MCP 연결의 정리까지 기다린다.
+호출자 취소와 플랫폼 deadline은 먼저 합성 signal을 중단한 원인으로 구분한다.
+호출자가 먼저 취소했다면 정리 중 deadline이 만료되어도 취소로 유지한다. deadline이 먼저
+만료했다면 이후 연결 종료가 504 실패를 취소로 바꾸지 않는다.
 
 ### 호출 단위 모델 라우팅
 
@@ -283,6 +288,8 @@ ModelTask는 청구된 generation span을 직접 소유하며 어댑터의 중�
 
 SigV4 image 채널은 지원하지 않는다. 응답 크기·base64·MIME·이미지 한도를 검사하고
 이미지 모델의 endpoint와 credential은 함께 해석한다.
+이미지 생성·편집도 SDK의 자동 HTTP 재시도를 끈다. 실패 응답만으로 이미 처리된 유료 작업을
+다시 보내지 않으며, 새 시도는 Agent의 별도 도구 호출로 기록한다.
 회귀 검사는 `tests/imageChannelAdapter.test.ts`가 각 wire 형태를 고정한다.
 
 `toImageUsageRecord`가 text input·image input·image output을 Usage의 형태로 변환한다.
@@ -292,6 +299,7 @@ provider가 입력 종류를 구분하지 않으면 분할을 추측하지 않�
 generation span을 도구 span 아래에 기록한다. 이미지 bytes는 별도의 `image` 축으로 전달한다.
 토큰 사용량이 없는 모델은 카탈로그의 장당 가격을 사용할 수 있으며, 이미지 비용은
 provider 청구액을 그대로 보관하는 텍스트 경로와 다르다.
+장당 출력 가격이 `0`이어도 편집에 제공한 원본 이미지의 `perInputImage` 요금은 합산한다.
 가격의 정본과 미등록 정책은 [CONFIGURATION](../CONFIGURATION.md#모델-등록과-사용)을 따른다.
 
 이미지는 공통 chunk로 표면에 전달된다. Chat은 저장 참조와 라이브 bytes를 사용하고,

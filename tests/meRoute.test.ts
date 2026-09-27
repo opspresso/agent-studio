@@ -16,8 +16,6 @@ const { GET } = await import("@/app/api/me/route");
 const USER = "someone@example.com";
 const ADMIN = "boss@example.com";
 
-const savedAdminEmails = process.env.ADMIN_EMAILS;
-
 function signedInAs(email: string) {
   authMock.getSession.mockResolvedValue({
     user: { id: "u1", email, name: "U", image: null },
@@ -37,16 +35,10 @@ async function me(): Promise<{
 
 beforeEach(() => {
   vi.clearAllMocks();
-  delete process.env.ADMIN_EMAILS;
+  vi.stubEnv("ADMIN_EMAILS", undefined);
 });
 
-afterEach(() => {
-  if (savedAdminEmails === undefined) {
-    delete process.env.ADMIN_EMAILS;
-    return;
-  }
-  process.env.ADMIN_EMAILS = savedAdminEmails;
-});
+afterEach(() => vi.unstubAllEnvs());
 
 describe("GET /api/me", () => {
   it("401s without a session", async () => {
@@ -67,7 +59,7 @@ describe("GET /api/me", () => {
   });
 
   it("gives a listed admin both, and an unlisted user neither", async () => {
-    process.env.ADMIN_EMAILS = ADMIN;
+    vi.stubEnv("ADMIN_EMAILS", ADMIN);
 
     signedInAs(ADMIN);
     expect(await me()).toEqual({

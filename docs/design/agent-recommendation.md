@@ -58,6 +58,5 @@ Chat·Workspace는 같은 추천 큐를 사용한다. 입력이 멈추면 200ms 
 마지막 유효한 추천은 다음 유효한 추천까지 유지한다. 429 응답은 화면에 오류로 표시하며,
 `Retry-After` 동안 새 입력의 평가도 기다린다. 실패한 동일 입력을 자동으로 재시도하지 않는다.
 
-`domain/llm/decision.ts`는 특정 Agent에 묶이지 않은 Choice 포트다. 다른 닫힌 선택지
-결정에도 같은 provider adapter를 사용할 수 있으며, Agent 실행 모델을 사용자 요청에 따라
-고르는 기능을 추가할 때도 그 선택지·권한·검증 규칙은 별도 유스케이스가 소유한다.
+`domain/llm/decision.ts`는 특정 Agent에 묶이지 않은 Choice 포트다. 선택지·권한·응답 검증은
+각 유스케이스가 소유하며 provider adapter는 Choice 요청·응답 프로토콜을 담당한다.

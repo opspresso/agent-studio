@@ -2,9 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeChannel, contentChunk, toolCallChunk } from "./fakeChannel";
 import { runtimeSessionFixture } from "./runtimeSessionFixture";
 import { runAgent } from "@/application/runtime";
-import { pendingRuntimeApproval } from "@/application/runtime/session";
+import { pendingRuntimeApproval, readRuntimeSession } from "@/application/runtime/session";
+import { randomUUID } from "node:crypto";
+
+vi.mock("node:crypto", async importOriginal => ({ ...await importOriginal<typeof import("node:crypto")>(), randomUUID: vi.fn() }));
 
 beforeEach(() => {
+  let id = 0;
+  vi.mocked(randomUUID).mockImplementation(() => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`);
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-13T00:00:00Z"));
 });
@@ -95,6 +100,51 @@ describe("SDK runtime validation boundaries", () => {
       expect(JSON.stringify(next.seenParams)).not.toContain("person@example.com");
     }
     expect(effect).toHaveBeenCalledExactlyOnceWith("lookup", { email: "person@example.com" });
+  });
+
+  it("bounds rejected tool arguments before the next model call without dispatching them", async () => {
+    const f = runtimeSessionFixture();
+    const effect = vi.fn(async () => ({ text: "must not run" }));
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "invalid", "lookup", JSON.stringify({ content: "x".repeat(20_000) }))],
+      [contentChunk("recovered")],
+    ]);
+    const chunks = await f.run(channel, "lookup", undefined, { callMcpTool: effect }, {
+      mcpTools: [{ type: "function", function: { name: "lookup", parameters: {
+        type: "object", properties: { content: { type: "string", maxLength: 4 } }, required: ["content"],
+      } } }],
+    });
+    expect(effect).not.toHaveBeenCalled();
+    const call = channel.seenParams[1]!.messages.flatMap(message => message.tool_calls ?? [])[0]!;
+    expect(call.function!.arguments!.length).toBeLessThan(1000);
+    expect(JSON.parse(call.function!.arguments!).content).toContain("20000 bytes, elided");
+    expect(chunks.at(-1)).toMatchObject({ done: true });
+  });
+
+  it("keeps full arguments pending approval, dispatches them once, then bounds completed history", async () => {
+    const f = runtimeSessionFixture({ approvalTools: ["lookup"] });
+    const content = "x".repeat(20_000);
+    const effect = vi.fn(async () => ({ text: "done" }));
+    const input = { mcpTools: [{ type: "function" as const, function: { name: "lookup", parameters: {
+      type: "object", properties: { content: { type: "string" } }, required: ["content"],
+    } } }] };
+    await f.run(new FakeChannel([[toolCallChunk(0, "pending", "lookup", JSON.stringify({ content }))]]),
+      "lookup", undefined, { callMcpTool: effect }, input);
+    const pending = (await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail))!;
+    expect(JSON.parse(pending.approvals[0]!.arguments).content).toBe(content);
+    expect(effect).not.toHaveBeenCalled();
+    const next = new FakeChannel([[contentChunk("finished")]]);
+    await f.run(next, "", { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] },
+      { callMcpTool: effect }, input);
+    expect(effect).toHaveBeenCalledExactlyOnceWith("lookup", { content });
+    const call = next.seenParams[0]!.messages.flatMap(message => message.tool_calls ?? [])[0]!;
+    expect(call.function!.arguments!.length).toBeLessThan(1000);
+    expect(JSON.parse(call.function!.arguments!).content).toContain("20000 bytes, elided");
+    const saved = (await readRuntimeSession(f.services, "chat-1", f.scope.ownerEmail))!.document.items;
+    const stored = saved.find(item => item.type === "function_call");
+    if (stored?.type !== "function_call") throw new Error("Expected a stored completed call");
+    expect(stored.arguments.length).toBeLessThan(1000);
+    expect(JSON.parse(stored.arguments).content).toContain("20000 bytes, elided");
   });
 
   it("rejects an invalid delegation before returning an approval", async () => {

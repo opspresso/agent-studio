@@ -277,8 +277,8 @@ function toConnectionView(cipher: SecretCipher, connection: McpConnection): McpC
 export interface SaveClientCredentialsInput {
   clientId: string;
   /**
-   * An omitted or masked-echo value keeps what is stored; an empty one clears
-   * it, which is the only way back from a confidential client to a public one.
+   * An omitted or masked echo preserves only this client ID's secret at the same
+   * issuer. An empty value clears it, returning to a public client.
    * Unlike the console's other secret fields this one arrives prefilled with the
    * mask, so emptying it is a deliberate act rather than "I typed nothing".
    */
@@ -689,14 +689,13 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       await assertAgentWritable(deps.agents, agentName, userEmail);
       const server = await requireOAuthServer(serverName);
       const existing = await deps.connections.get(agentName, serverName);
-
-      // An omitted or masked secret keeps what is stored, matching how every
-      // other stored secret in this codebase behaves on update. An empty one
-      // clears it — see SaveClientCredentialsInput for why this field differs.
+      const issuer = server.auth.issuer;
+      const sameClient = existing?.clientId === input.clientId && existing.issuer === issuer;
+      // A mask cannot transfer another client's or issuer's credential.
       const submitted = input.clientSecret;
       const clientSecret =
         submitted === undefined || deps.cipher.isMasked(submitted)
-          ? existing?.clientSecret
+          ? sameClient ? existing?.clientSecret : undefined
           : submitted === ""
             ? undefined
             : deps.cipher.encrypt(
@@ -704,8 +703,6 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
                 mcpConnectionSecretContext(agentName, serverName, "client-secret"),
               );
       const scopes = input.scopes ?? existing?.scopes ?? server.auth.scopesSupported ?? [];
-
-      const issuer = server.auth.issuer;
 
       // Saving credentials that did not change is a no-op, not a reset. Both
       // boxes arrive prefilled from the stored connection, so pressing Save
@@ -716,7 +713,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         existing.clientId === input.clientId &&
         existing.clientSecret === clientSecret &&
         sameScopes(existing.scopes, scopes) &&
-        existing.issuer === issuer
+        existing.issuer === issuer &&
+        existing.resource === server.auth.resource
       ) {
         return toConnectionView(deps.cipher, existing);
       }
@@ -949,8 +947,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const server = await requireOAuthServer(pending.serverName);
       // The entry may have been repointed while the user was at the provider.
       // Redeeming at the new server's token endpoint would send it a code its
-      // authorization server never issued. Skipped for a state that predates the
-      // recorded issuer, which has nothing to compare.
+      // authorization server never issued. Compare the stored issuer exactly.
       if (server.auth.issuer !== pending.issuer) {
         throw new ValidationError(
           `The authorization server configured for "${pending.serverName}" changed while this authorization was in progress. Please connect it again.`,
@@ -987,10 +984,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       void _accessToken, _refreshToken, _expiresAt;
       const completed: McpConnection = {
         ...credentials,
-        // Stamped here too, so a row that predates the binding acquires both
-        // halves the first time it is authorized rather than staying unbound
-        // forever. `resource` is what these very tokens were minted for — the
-        // RFC 8707 audience sent on the exchange just above.
+        // Store the issuer and resource used for this exact exchange.
         issuer: server.auth.issuer,
         resource: server.auth.resource,
         accessToken: deps.cipher.encrypt(

@@ -1,18 +1,4 @@
-/**
- * A planned slide to its XML part.
- *
- * Everything here is shape arithmetic: the planner has already decided what is
- * on the slide, and this module decides what DrawingML says it. Runs of text
- * sit in one box; a table is a frame of its own, so a body is stacked rather
- * than being a single shape.
- *
- * What is *not* here is decoration. The cover's ground and band, the section
- * slide's brand field, the content footer — those live on the slide layouts in
- * `package.ts`, which is where PowerPoint itself keeps a template's design.
- * A slide carries its content and nothing else, which is what lets a reader
- * edit the deck without stepping around furniture, and keeps the decoration
- * out of every text extractor's way.
- */
+/** Render planned content and semantic decoration; layouts own fixed backgrounds and footer furniture. */
 
 import { escapeXml } from "../../xml";
 import type { Run } from "../../markdown";
@@ -307,16 +293,7 @@ export class Renderer {
     );
   }
 
-  /**
-   * The slide number, bottom right.
-   *
-   * A `slidenum` field rather than a digit, so a deck that gets a slide inserted
-   * renumbers itself. It carries **no `a:t`** — the element is optional, and the
-   * literal it would hold is what every text extractor picks up: this server's
-   * own reader would then return "7" as a line of the slide's content. The empty
-   * paragraph it leaves behind lands at the end of the slide, where `normalize`
-   * drops it.
-   */
+  /** Cached slide-number field; PowerPoint updates it and the text reader skips field content. */
   private slideNumber(ordinal: number, colour: string): string {
     const id = this.nextId;
     this.nextId += 1;

@@ -86,8 +86,8 @@ const EMPTY: HwpxHeader = {
 /**
  * `Contents/header.xml`, read before the sections that point into it.
  *
- * Nothing here throws: a missing, malformed or self-contradicting header leaves
- * the reader exactly where it was, which is flat paragraphs.
+ * Unrecognized properties leave flat paragraphs. A missing part is handled
+ * by the caller; XML safety and work budgets still apply to supplied metadata.
  */
 export function headerXmlOf(xml: string): HwpxHeader {
   const paragraphs = new Map<string, HwpxHeading>();

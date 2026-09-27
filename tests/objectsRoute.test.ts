@@ -1,5 +1,3 @@
-process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 9).toString("base64");
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ObjectNotFoundError } from "@/domain/artifact/objectStore";
 import nextConfig from "../next.config";
@@ -40,6 +38,7 @@ const signed = (claims: { exp?: number; downloadAs?: string } = {}) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 9).toString("base64"));
   vi.useFakeTimers();
   vi.setSystemTime(NOW * 1000);
   store.read.mockResolvedValue({ bytes: Uint8Array.from([37, 80, 68, 70]), mimeType: "application/pdf" });
@@ -47,6 +46,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
+  invalidateSettingsCache();
 });
 
 describe("GET /api/objects/[...key]", () => {
@@ -143,17 +144,9 @@ describe("GET /api/objects/[...key]", () => {
 });
 
 describe("the proxied access mode", () => {
-  const saved = process.env.ARTIFACT_ACCESS_MODE;
-
-  afterEach(() => {
-    if (saved === undefined) delete process.env.ARTIFACT_ACCESS_MODE;
-    else process.env.ARTIFACT_ACCESS_MODE = saved;
-    invalidateSettingsCache();
-  });
-
   it("is a value the runtime setting resolves to", async () => {
     invalidateSettingsCache();
-    process.env.ARTIFACT_ACCESS_MODE = "proxied";
+    vi.stubEnv("ARTIFACT_ACCESS_MODE", "proxied");
     await expect(getArtifactAccessMode()).resolves.toBe("proxied");
   });
 

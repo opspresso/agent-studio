@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
 import { captureRunArtifacts, createArtifactRecorder } from "@/application/artifact/runArtifacts";
 import { MAX_ARTIFACT_PROMPT_CHARS, storeArtifact } from "@/application/artifact/storeArtifact";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { Artifact } from "@/domain/artifact/types";
 import type { EngineChunk } from "@/domain/llm/types";
+
+vi.mock("node:crypto", async importOriginal => ({ ...await importOriginal<typeof import("node:crypto")>(), randomUUID: vi.fn() }));
 
 const NOW = "2026-08-12T04:00:00.000Z";
 const CONTEXT = {
@@ -47,7 +50,7 @@ function fakeStorage(over: { putFails?: boolean; rowFails?: boolean; error?: Err
       async put(artifact) {
         fake.calls.push("row.put");
         if (over.rowFails) {
-          throw new Error("dynamo down");
+          throw new Error("item store down");
         }
         fake.rowsWritten.push(artifact);
       },
@@ -84,6 +87,8 @@ const PNG = Buffer.from("fake-png-bytes").toString("base64");
 const DOCX = Buffer.from("fake-docx-bytes").toString("base64");
 
 beforeEach(() => {
+  let id = 0;
+  vi.mocked(randomUUID).mockImplementation(() => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`);
   vi.useFakeTimers();
   vi.setSystemTime(new Date(NOW));
 });
@@ -243,9 +248,7 @@ describe("captureRunArtifacts", () => {
   });
 
   it("records the model the producer named, not the run's", async () => {
-    // The version this run answers on is `poster-bot/v3`; the picture was drawn
-    // by a child on its own model. Deriving the model from the run instead would
-    // file the child's work under the parent's name with nothing saying so.
+    // A child image model must not be attributed to the parent text model.
     const storage = fakeStorage();
     const recorder = createArtifactRecorder(storage, CONTEXT);
     await collect(
@@ -292,9 +295,7 @@ describe("captureRunArtifacts", () => {
   });
 
   it("names the category of failure, so a reader knows where to look", async () => {
-    // The first real failure was a policy granting PutObject on the old prefix
-    // while the code had moved to a new one. "Could not be stored" alone sent
-    // that to the logs and nowhere else.
+    // Give an actionable category without exposing provider diagnostics.
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const denied = Object.assign(new Error("User is not authorized to perform: s3:PutObject"), {
       name: "AccessDenied",
@@ -320,7 +321,7 @@ describe("captureRunArtifacts", () => {
       captureRunArtifacts(recorder, stream({ image: { b64: PNG, mimeType: "image/png" } })),
     );
     const warning = out.find((c) => c.warning)?.warning ?? "";
-    expect(warning).toContain("could not be stored, so it is shown here");
+    expect(warning).toContain("could not be stored, so it is not kept.");
     expect(warning).not.toContain("connection reset");
   });
 

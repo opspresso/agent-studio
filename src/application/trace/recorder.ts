@@ -113,24 +113,17 @@ export class TraceRecorder {
   }
 
   /**
-   * A stage that ran before the first token, with what it produced.
-   *
-   * It also moves where the next model span starts: preparation is the model's
-   * *wait*, not its work, and the recorder is constructed before it (on purpose
-   * — a resolve that throws must still leave a trace). Without this the first
-   * model span opened at run start and every second spent opening MCP sessions
-   * or asking memory was reported at the model's name.
+   * Record preparation separately from model time. The recorder exists before
+   * preparation so failures still leave a trace; each stage moves the next
+   * model span's start past that stage's wait.
    */
   observePrepare(
     name: string,
     startedAt: Date,
     detail?: { status?: "ok" | "error"; output?: Record<string, unknown> },
   ): void {
-    // Bounded here rather than by whoever calls: every other cap on this item
-    // (spans, warnings, previews) is the recorder's, and one caller handing an
-    // unbounded payload overflows the 400KB row — at which point `put` throws
-    // and the *whole* trace is lost, which is what the dropped-span accounting
-    // exists to make impossible.
+    // The recorder owns payload bounds as well as span and warning counts.
+    // Stage metadata must remain small when traces are stored and read whole.
     const now = new Date();
     this.addSpan({
       spanId: randomUUID(),
@@ -188,11 +181,8 @@ export class TraceRecorder {
         output: { contentChars: chunk.toolResult.content.length },
       });
       this.pendingTools.delete(key);
-      // Where the next model call starts. Without this the tool's own duration
-      // was counted twice — on its span and again inside the model span that
-      // follows it — which is the misreading `prepare` was added to remove, in
-      // the place an agent run does most of its waiting. Every result moves it,
-      // so a response's concurrent calls leave it at the last one to land.
+      // Exclude tool time from the next model span. Concurrent results move
+      // this boundary to the last completed tool.
       this.modelStartedAt = now;
     }
 

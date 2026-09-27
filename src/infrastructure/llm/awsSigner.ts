@@ -4,16 +4,11 @@
  *
  * Bedrock's chat-completions endpoint speaks the same wire protocol as every
  * other channel and differs in one thing: it takes AWS credentials instead of a
- * bearer key. That is a *transport* difference, so it is handled by swapping the
- * SDK's `fetch` rather than by writing a second channel adapter — the request
- * body, the streaming, and the response mapping stay the one implementation in
- * `channel.ts`.
+ * bearer key. The SDK model protocol stays in agentModels.ts; this adapter
+ * replaces only fetch and preserves the request's transport properties.
  *
- * The pod carries no key: its Pod Identity association is the credential, which
- * is the whole reason to sign rather than to mint a long-lived Bedrock API key.
- * Credentials come from the Bedrock client that already exists for embeddings,
- * so refresh is the SDK's problem and there is exactly one credential chain in
- * the process.
+ * Credentials use the Bedrock client's AWS SDK chain: environment, profile or
+ * workload role. Signing region comes from the target host, not the app region.
  */
 
 import { createHash, createHmac } from "node:crypto";
@@ -60,11 +55,8 @@ const REGION_LABEL = /^[a-z]{2}(-[a-z]+)+-\d$/;
 /**
  * The region a host is in, read off the host itself.
  *
- * Deliberately *not* `AWS_REGION`: the app runs in ap-northeast-2, where the
- * OpenAI-compatible Bedrock endpoint does not exist, so the channel's base URL
- * names a different region than the rest of the deployment. Signing for the
- * app's region would fail every request with a signature error that says
- * nothing about which of the two regions is wrong.
+ * Use the endpoint's region because the application and selected channel may
+ * be deployed in different regions.
  */
 function regionOf(host: string): string {
   const label = host.split(".").find((part) => REGION_LABEL.test(part));
@@ -91,10 +83,10 @@ function payloadOf(body: BodyInit | null | undefined): string | Uint8Array {
     return body;
   }
   if (ArrayBuffer.isView(body)) {
-    return new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+    return new Uint8Array(body.buffer, body.byteOffset, body.byteLength).slice();
   }
   if (body instanceof ArrayBuffer) {
-    return new Uint8Array(body);
+    return new Uint8Array(body).slice();
   }
   throw new Error(`SigV4 channel cannot sign a ${body.constructor.name} body`);
 }
@@ -125,15 +117,17 @@ export function createSignedFetch(service: string): typeof fetch {
   });
 
   return async (input, init) => {
-    const url = new URL(input instanceof Request ? input.url : String(input));
-    const method = init?.method ?? "GET";
-    const headers = new Headers(init?.headers);
-    const body = payloadOf(init?.body);
+    const body = payloadOf(init?.body ?? (input instanceof Request ? input.body : undefined));
+    // Normalize once so method/header overrides match what fetch sends.
+    const request = new Request(input, init);
+    const url = new URL(request.url);
+    const method = request.method;
+    const headers = request.headers;
 
     // Repeated keys stay repeated: `Object.fromEntries(url.searchParams)`
     // would fold them to the last value, and a signature over fewer
     // parameters than the wire carries is an opaque 403.
-    const query: Record<string, string | string[]> = {};
+    const query: Record<string, string | string[]> = Object.create(null) as Record<string, string | string[]>;
     for (const key of new Set(url.searchParams.keys())) {
       const values = url.searchParams.getAll(key);
       query[key] = values.length === 1 ? (values[0] ?? "") : values;
@@ -156,6 +150,6 @@ export function createSignedFetch(service: string): typeof fetch {
       { signingRegion: regionOf(url.hostname) },
     );
 
-    return fetch(url, { ...init, method, headers: signed.headers });
+    return fetch(request, { headers: signed.headers });
   };
 }

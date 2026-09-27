@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { parseMarkdown } from "@/infrastructure/documents/engine/markdown";
 import { renderDocx } from "@/infrastructure/documents/engine/write/docx";
@@ -8,6 +8,12 @@ import { renderXlsx } from "@/infrastructure/documents/engine/write/xlsx";
 
 const meta = { title: "Quarterly report", created: "2026-09-07T00:00:00.000Z" };
 const markdown = parseMarkdown("# Revenue\n\nQuarterly revenue rose.");
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(meta.created);
+});
+afterEach(() => vi.useRealTimers());
 
 describe("native Office attachment extraction", () => {
   it.each([

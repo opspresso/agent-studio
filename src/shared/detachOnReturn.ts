@@ -9,8 +9,8 @@
  * consumer's `return()` from "stop" into "I am leaving": the source keeps being
  * pulled to completion in the background, and `drained` says when that finished.
  *
- * **Not an `async function*`.** `src/shared/mergeGenerators.ts` documents why: a
- * generator suspended at an `await` cannot be resumed by `return()` at all — the
+ * **Not an `async function*`.** A generator suspended at an `await` cannot be
+ * resumed by `return()` at all — the
  * language does not deliver the request until that await settles, and a run
  * waiting on a model response can sit there for minutes. A wrapper written as a
  * generator would therefore make `cancel()` hang for the rest of the run, which
