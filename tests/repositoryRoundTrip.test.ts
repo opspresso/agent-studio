@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FakeStore } from "./fakeStore";
 
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+
 // --- The item store, in memory: every adapter under test writes through it, and
 // a test asserts on what it left in `rows` rather than on the statements sent.
 
@@ -24,6 +30,7 @@ const NOW = "2026-01-01T00:00:00.000Z";
 const NOW_SECONDS = Math.floor(Date.parse(NOW) / 1000);
 
 beforeEach(() => {
+  ids.sequence = 0;
   store.rows.clear();
 });
 
@@ -146,9 +153,7 @@ describe("Agent atomic writes", () => {
   };
 
   it("round-trips visibility and the invite list", async () => {
-    // The write spreads the whole entity, but the read maps fields by name —
-    // which is exactly how these two were stored and then dropped on every
-    // read: the console saved visibility with a 200 and got "public" back.
+    // Visibility and invitations must survive the reader's explicit field mapping.
     seedAgent(agent.name);
     await agentRepository.update(
       { ...agent, visibility: "private", memberEmails: ["invited@example.com"] },
@@ -580,9 +585,7 @@ describe("chatRepository message round-trip", () => {
 
   it("preserves every role's fields through appendMessage + listMessages", async () => {
     store.seed([{ ...keys.chat("c1"), entityType: "Chat" }]);
-    // A user turn carries the images it attached. Reading them back is what
-    // makes an attachment survive a reload — dropping them here left the upload
-    // succeeding, the item holding the urls, and the chat showing nothing.
+    // User attachment references must survive display-history reads.
     const userMessage: ChatMessage = {
       chatId: "c1",
       seq: 2,

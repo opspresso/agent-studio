@@ -214,9 +214,8 @@ describe("chat TTL", () => {
 });
 
 /**
- * The replay log is a buffer, not a record: it expires within the hour, and its
- * window is derived from the run lease rather than configured — a log that
- * outlived its run by less would leave a resume with a hole in the middle.
+ * Replay logs expire after the run lease plus a reconnect margin. The window
+ * follows the configured run duration; reads also filter expired entries.
  */
 describe("chat run log TTL", () => {
   it("expires a run log entry a fixed window from when it was written", async () => {
