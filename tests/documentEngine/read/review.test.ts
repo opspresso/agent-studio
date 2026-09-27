@@ -1,11 +1,6 @@
 /**
- * What a review found, pinned.
- *
- * Every case here returned something the document did not say, and each one is
- * written so that undoing its fix fails it. They share a shape: a counter that
- * did not come back down, a value read after it was cleared, or a delimiter the
- * parser could not tell from the text around it — the class this whole change
- * exists to remove, found once more inside it.
+ * Cross-format reader contracts: nested markup keeps state scoped, literal
+ * delimiters survive serialization, and budgets report any omitted content.
  */
 
 import { strict as assert } from "node:assert";
