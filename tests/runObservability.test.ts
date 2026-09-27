@@ -1,4 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
 import { log } from "@/shared/logger";
 import { currentRunContext, linkTrace, withRunContext } from "@/shared/runContext";
 import { openRun } from "@/application/run/runBracket";
@@ -12,6 +18,13 @@ import {
 import { GET as metricsRoute } from "@/app/api/metrics/route";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { UsageRepository } from "@/domain/usage/repository";
+
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+});
+afterEach(() => { vi.useRealTimers(); resetRunMetrics(); });
 
 const agent: Agent = {
   name: "p",
@@ -60,9 +73,7 @@ describe("run correlation", () => {
     expect(lines).toEqual(["[mcp run=run-1] first", "[engine run=run-1] second"]);
   });
 
-  it("works for a run with no trace, which sampling makes the common case", () => {
-    // The reason the correlation id is not the trace id: nine out of ten prompt
-    // and image runs are not sampled, and would have nothing to correlate on.
+  it("correlates a scope before a trace is linked", () => {
     const lines: string[] = [];
     const warn = vi.spyOn(console, "warn").mockImplementation((line: string) => {
       lines.push(line);
@@ -76,8 +87,7 @@ describe("run correlation", () => {
   it("links a trace once one exists, and keeps the first", () => {
     withRunContext({ runId: "run-3" }, () => {
       linkTrace("trace-a");
-      // A subagent's recorder is constructed later; the run's own trace is the
-      // one worth carrying.
+      // A later link must not replace the run's original trace identity.
       linkTrace("trace-b");
       expect(currentRunContext()?.traceId).toBe("trace-a");
     });
@@ -101,10 +111,7 @@ describe("run correlation", () => {
   });
 
   /**
-   * The bug this pins: `openRun` entered the store *after* its first await, so
-   * it bound to the bracket's own continuation and the caller — every line the
-   * run actually produces — saw nothing. Every test here passed anyway, because
-   * they all entered the store themselves. Assert from the caller's side.
+   * The bracket's context must be visible from its caller after asynchronous admission.
    */
   it("is visible to the caller after openRun returns", async () => {
     resetRunMetrics();
