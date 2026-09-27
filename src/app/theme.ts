@@ -2,18 +2,18 @@
 
 import { createTheme, type MantineColorsTuple } from "@mantine/core";
 
-/** Brand palette and component defaults shared by every console surface. */
+/** Shared blue palette follows both public/brands icon sets. */
 const brand: MantineColorsTuple = [
-  "#f4f3fe",
-  "#e9e7fd",
-  "#d5d1fb",
-  "#c0b8f9",
-  "#ab9df8",
-  "#957ef5",
-  "#805fe9",
-  "#6b3dd8",
-  "#5b33b8",
-  "#4b2a99",
+  "#eff6ff",
+  "#dbeafe",
+  "#bfdbfe",
+  "#93c5fd",
+  "#60a5fa",
+  "#3b82f6",
+  "#2563eb",
+  "#1d4ed8",
+  "#1e40af",
+  "#1e3a8a",
 ];
 
 export const theme = createTheme({

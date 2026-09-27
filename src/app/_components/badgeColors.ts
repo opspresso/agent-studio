@@ -54,7 +54,7 @@ export const HTTP_METHOD_COLOR: Record<"GET" | "POST", string> = {
 };
 
 /** An endpoint that streams, marked next to its method. */
-export const STREAMING_COLOR = "violet";
+export const STREAMING_COLOR = "cyan";
 
 /** A subagent, wherever a run's path is drawn. */
-export const SUBAGENT_COLOR = "violet";
+export const SUBAGENT_COLOR = "brand";

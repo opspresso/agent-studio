@@ -8,7 +8,7 @@
   --surface-highlight: var(--mantine-color-brand-0);
   --surface-shadow: 0 1px 2px color-mix(in oklab, var(--mantine-color-gray-9) 3%, transparent);
   --surface-shadow-lifted: 0 4px 14px color-mix(in oklab, var(--mantine-color-gray-9) 7%, transparent);
-  --ai-gradient: linear-gradient(135deg, var(--mantine-color-brand-7), var(--mantine-color-brand-5));
+  --ai-gradient: linear-gradient(135deg, var(--mantine-color-brand-7), var(--mantine-color-cyan-5));
   /* Categorical chart palette — validated for CVD/contrast on the light surface. */
   --chart-1: #2a78d6;
   --chart-2: #eb6834;

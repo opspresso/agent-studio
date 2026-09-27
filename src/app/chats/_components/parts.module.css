@@ -45,7 +45,7 @@
   width: 100%;
 }
 
-/* The global selection colour is the same brand violet as the user bubble. */
+/* The global selection colour is the same brand colour as the user bubble. */
 .userBubble ::selection {
   color: var(--mantine-color-black);
   background-color: var(--mantine-color-yellow-4);
