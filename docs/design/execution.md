@@ -98,6 +98,8 @@ credential을 다시 해석하며 bearer와 AWS SigV4를 지원한다. `store: f
 conversation state에 의존하지 않는다. 숨은 HTTP 재시도는 없으며, 첫 출력 전 429/5xx에만
 설정된 fallback 모델로 한 번 전환한다. 출력이 시작된 뒤에는 실패한 요청을 반복하지 않는다.
 `/models` 진단도 같은 SDK 모델 어댑터를 사용한다.
+SigV4 fetch는 `Request`의 메서드·헤더·취소 신호와 명시적 init override를 보존한다.
+서명 본문은 문자열·바이트여야 하며 `Request`의 스트림 본문과 multipart는 전송 전에 거절한다.
 
 SDK usage와 provider의 실제 청구 비용을 보존한다. 청구 비용이 없으면 모델 카탈로그의
 가격으로 계산하고, agent 실행은 `createUsageAggregator`가 모델 호출별 값을 모아 종료 시

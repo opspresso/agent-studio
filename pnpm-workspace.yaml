@@ -12,3 +12,6 @@ overrides:
   # sharp <0.35 libvips CVEs (GHSA-f88m-g3jw-g9cj), postcss <8.5.10 XSS (GHSA-qx2v-qp2m-jg93).
   sharp: ">=0.35.0"
   "postcss@<8.5.10": ">=8.5.10"
+
+patchedDependencies:
+  '@smithy/signature-v4@5.7.3': patches/@smithy__signature-v4@5.7.3.patch

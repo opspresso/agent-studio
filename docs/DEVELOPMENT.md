@@ -22,6 +22,10 @@ pnpm install --frozen-lockfile
 막는다. `ERR_PNPM_VERIFY_DEPS_BEFORE_RUN`이면 `pnpm install --frozen-lockfile`로
 설치 상태를 맞춘 뒤 같은 명령을 다시 실행한다. 버전만 바뀐 manifest도 이 검사를 유발할 수 있다.
 
+`patchedDependencies`는 `patches/`의 SDK 수정을 설치 시 적용한다. SigV4 query의
+`__proto__` 이름도 서명에 포함하도록 고정한 Smithy 버전을 보정하며 CJS·ESM에 같은 수정을
+적용한다. 의존성 갱신 시 패치·잠금 파일·Docker의 설치 입력을 함께 검토하고 회귀 검사를 실행한다.
+
 ## 환경
 
 ```bash
