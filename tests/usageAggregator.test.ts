@@ -1,7 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createUsageAggregator } from "@/application/usage/recordUsage";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { UsageDelta } from "@/domain/usage/types";
+
+beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime("2026-01-01T00:00:00.000Z"); });
+afterEach(() => vi.useRealTimers());
 
 function fakeUsageRepo(onRecord?: (delta: UsageDelta) => void) {
   const writes: UsageDelta[] = [];
@@ -97,7 +100,7 @@ describe("createUsageAggregator", () => {
   it("flush is best-effort: a write failure is logged, not thrown", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { repo } = fakeUsageRepo(() => {
-      throw new Error("dynamo down");
+      throw new Error("database unavailable");
     });
     const agg = createUsageAggregator(repo);
     await agg.record({ agentName: "p", model: "m", inputTokens: 1, outputTokens: 1, costUsd: 0.01 });
@@ -111,11 +114,7 @@ describe("createUsageAggregator", () => {
   });
 
   /**
-   * A transfer spends on an agent the run bracket never admitted, and
-   * `settleCostLimit` — the only thing that claims the block and alert
-   * notifications — is called for the agent the bracket opened. Without this
-   * list an agent reached only through transfers accrued spend, began refusing
-   * at its threshold, and told nobody.
+   * Flushed Agent names identify every set of spend thresholds the bracket settles.
    */
   it("reports every distinct agent it wrote for, once each", async () => {
     const { repo } = fakeUsageRepo();

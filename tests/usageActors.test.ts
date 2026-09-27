@@ -1,4 +1,14 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+}));
 import {
   MAX_ACTOR_USAGE_ROWS,
   MAX_ACTOR_VIEWS,
@@ -13,9 +23,11 @@ import type { UsageRepository } from "@/domain/usage/repository";
 import type { ActorUsageRow } from "@/domain/usage/types";
 import { slackSecretContext } from "@/domain/security/secretContext";
 
-beforeAll(() => {
-  process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
+beforeEach(() => {
+  entropy.sequence = 0;
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 7).toString("base64"));
 });
+afterEach(() => vi.unstubAllEnvs());
 
 function makeAgent(withSlack: boolean): Agent {
   return {
