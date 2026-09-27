@@ -1742,7 +1742,9 @@ Agent의 admission 한도는 요청별 설정에도 적용한다. 설정 소유�
 AudioJobView는 id·task·sourceIdentity·status·stage·model·createdAt·updatedAt·dueAt·attempt·failures·
 revision과 선택적인 configRevision·fileId·fileInfo·transcriptionProgress·postprocessProgress·transcriptRef·draftRef·
 movedTo·receipts·errorCode를 반환한다. `artifacts`는 source·transcript·processed·structured·dialogue의
-Artifact ID를 제공한다. `transcriptAgentName`은 전사 파일을 읽을 Agent다.
+현재 사용자가 읽을 수 있는 ready·미만료 Artifact ID를 제공한다. `artifactLinks`는 해당 파일의
+다운로드·미리보기 경로이며 누락·미준비·삭제·만료 파일은 `unavailableArtifacts`에 구분한다.
+완료 이력과 내부 참조는 파일 만료 후에도 유지한다. `transcriptAgentName`은 전사 파일을 읽을 Agent다.
 fileInfo는 filename·byteSize·expiresAt, transcriptionProgress는 processedSeconds·totalSeconds·completedSegments다.
 postprocessProgress는 phase(`extract`·`reduce`·`saving`)·round·completed·total이다.
 건수는 현재 추출·통합 회차 또는 결과 파일 저장 단계 기준이며 전체 작업의 퍼센트가 아니다.
