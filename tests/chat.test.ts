@@ -1,6 +1,6 @@
 import { withConfigurations } from "./agentConfigurations";
 import { withLeadingWarnings } from "@/application/run/leadingWarnings";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
@@ -23,6 +23,18 @@ import { cancelChatRun, watchChatCancel } from "@/application/chat/cancelRun";
 import { teeToRunLog } from "@/application/chat/runLog";
 import { createChatSchema, sendMessageSchema } from "@/app/api/chats/_lib/schemas";
 import { withReplayFrames, withRunFrames } from "@/app/api/chats/_lib/frames";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers();
+  vi.setSystemTime("2026-01-02T00:00:00.000Z");
+});
+afterEach(() => vi.useRealTimers());
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -168,11 +180,8 @@ function makeRunLog() {
 }
 
 /**
- * Somewhere for a chat's images to go.
- *
- * One bundle rather than the store-and-signer pair it replaces: those had to be
- * wired together — a stored key with no signer is an image nothing can display —
- * and only a comment said so.
+ * Artifact rows and object storage are injected together. The run bracket
+ * captures output bytes; these fixtures exercise display references and signing.
  */
 function fakeArtifacts(over: { putFails?: boolean } = {}) {
   const puts: Array<{ key: string; mimeType: string; bytes: Uint8Array }> = [];
@@ -618,8 +627,8 @@ describe("runAndPersist keeps the run's reasoning", () => {
     const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
     const content = assistant?.content ?? "";
     const reasoning = (assistant as { reasoning?: string } | undefined)?.reasoning ?? "";
-    // Two 350KB fields would be a 700KB item, which the write refuses whole —
-    // taking the answer the reader already watched stream with it.
+    // Answer and reasoning share the display-message cap; they cannot each
+    // spend it independently.
     expect(Buffer.byteLength(content, "utf8") + Buffer.byteLength(reasoning, "utf8")).toBeLessThanOrEqual(
       350_000,
     );
@@ -685,9 +694,8 @@ describe("runAndPersist keeps the run's reasoning", () => {
   });
 
   it("keeps a reasoning-only turn in the display record", async () => {
-    // `{ role: "assistant", content: "" }` with no tool calls is rejected by the
-    // gateways in front of Anthropic and Bedrock: one such turn would fail the
-    // next send and every one after it.
+    // A reasoning-only turn remains visible. Model replay is owned by the
+    // native Session and is never reconstructed from this display row.
     const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
       message({ seq: 0, role: "user", content: "hi" }),
     ]);
@@ -915,16 +923,13 @@ describe("chat image attachments", () => {
   });
 
   /**
-   * The lease is claimed before the turn is written, so a write that throws
-   * between the two leaves it held. Nothing released it in a test until now, and
-   * the failure is directly visible: the chat reads as "running" for the whole
-   * lease window, refuses new messages, and cannot be freed by the stop button
-   * because there is no run to stop.
+   * Setup failures after claiming the run lease must release it before returning
+   * the error; no executable run exists for a Stop request to cancel.
    */
   it("releases the run lease when setup fails after claiming it", async () => {
     const { repo, state } = makeChatRepo(chatFixture("owner@x.com"));
     repo.reserveMessageSeq = async () => {
-      throw new Error("dynamo down");
+      throw new Error("item store unavailable");
     };
 
     await expect(
@@ -933,7 +938,7 @@ describe("chat image attachments", () => {
         content: "hey",
         userEmail: "owner@x.com",
       }),
-    ).rejects.toThrow("dynamo down");
+    ).rejects.toThrow("item store unavailable");
 
     expect(state.activeRunId).toBeUndefined();
   });
@@ -1134,9 +1139,8 @@ describe("chat run lease", () => {
 });
 
 /**
- * Closing the tab would be the stop button. Now that a run outlives its
- * reader, stopping one is a deliberate act — and a persisted one, because the
- * instance answering the press is not necessarily the one running the answer.
+ * Explicit Stop is persisted so the instance running the chat can observe it.
+ * Disconnecting the initiating client does not cancel the run.
  */
 describe("stopping a run", () => {
   it("records the stop, and treats one aimed at a finished run as nothing to do", async () => {
@@ -1356,10 +1360,9 @@ describe("run stream frames", () => {
 });
 
 /**
- * Documents in a chat. The file is never stored — only the text read out of it —
- * and storing that text is what lets the *next* question still have the
- * document. A turn that only sent it to the engine would answer "summarise this"
- * and then fail "what does section 3 say?".
+ * Document attachments are extracted at admission. The framed text enters
+ * native SDK Session history; display rows keep document metadata/text separately.
+ * Original-file storage is optional and is not configured in these cases.
  */
 describe("attached documents", () => {
   const availableAgents: AgentRepository = {
