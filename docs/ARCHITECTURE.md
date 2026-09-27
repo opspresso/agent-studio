@@ -164,6 +164,7 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 | 런 동시성 슬롯 | `RUNSLOT#{kind}:{id}` | `SLOT#{index zero-padded 3}` | — | — |
 | Slack 이벤트 중복 제거 | `SLACKEVENT#{eventId}` | `META` | — | — |
 | Slack 스레드 참여 (봇이 답한, 또는 음소거된 스레드) | `SLACKTHREAD#{agentName}#{channel}#{threadTs}` | `META` | — | — |
+| Slack 스레드 실행 lease / 중단 시각 | `AGENT#{name}` | `SLACKRUN#{channel}#{threadTs}` / `SLACKSTOP#{channel}#{threadTs}` | — | — |
 | Telegram 업데이트 중복 제거 (`update_id` 는 봇마다의 카운터이므로 봇으로 한정한다) | `AGENT#{name}` | `TELEGRAMUPDATE#{botId}#{updateId}` | — | — |
 | Telegram 앨범 claim (한 `media_group_id` 에 한 번 답한다) | `AGENT#{name}` | `TELEGRAMALBUM#{botId}#{mediaGroupId}` | — | — |
 | Telegram destination | `AGENT#{name}` | `TELEGRAMDESTINATION#{botId}#{chatId}#{threadId}` | — | — |
@@ -176,6 +177,7 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 | 앱 설정 (환경변수 오버라이드) | `SETTINGS#app` | `META` | — | — |
 | Capability catalog reindex lease + 영구 generation (in-place rebuild와 겹친 검색은 결과를 버린다) | `CATALOGREINDEX#global` | `LOCK` | — | — |
 | 사용자별 모델 즐겨찾기 | `MODELPREFERENCES#{userId}` | `META` | — | — |
+| 사용자별 Agent 추천 사용량 | `AGENTRECOMMENDATION#{email lowercased}` | `DATE#{yyyy-MM-dd}` | — | — |
 
 두 번째 인덱스는 다음 목록을 담당한다:
 
