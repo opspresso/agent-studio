@@ -1,4 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++entropy.sequence).padStart(12, "0")}`,
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+}));
 import { createHmac } from "node:crypto";
 import {
   admitDelivery,
@@ -21,7 +32,13 @@ import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import { triggerSecretContext } from "@/domain/security/secretContext";
 import { encryptSecret } from "@/infrastructure/crypto/secretEncryption";
 
-process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 3).toString("base64");
+beforeEach(() => {
+  entropy.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 3).toString("base64"));
+});
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 const SECRET = "asw_test-secret-value";
 
@@ -136,6 +153,7 @@ function fixture(
       rows
         .filter((r) => r.triggerId === triggerId)
         .filter((r) => !listOpts.startedBefore || (r.startedAt ?? "") < listOpts.startedBefore)
+        .filter((r) => !listOpts.status || r.status === listOpts.status)
         .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""))
         .slice(0, limit),
   };
@@ -572,7 +590,7 @@ describe("executeDelivery", () => {
     const f = fixture();
     const admitted = await accept(f);
     f.deps.triggers.finishRun = async () => {
-      throw new Error("dynamo down");
+      throw new Error("database unavailable");
     };
     await expect(executeDelivery(f.deps, admitted, {})).resolves.toBeUndefined();
     error.mockRestore();
