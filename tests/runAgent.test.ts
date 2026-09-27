@@ -1,7 +1,22 @@
 import { withConfigurations } from "./agentConfigurations";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const entropy = vi.hoisted(() => ({ sequence: 0, seed: 0x12345678 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++entropy.sequence).padStart(12, "0")}`,
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+  randomInt: (max: number) => {
+    entropy.seed = (Math.imul(entropy.seed, 1664525) + 1013904223) >>> 0;
+    return Math.floor(entropy.seed / 0x1_0000_0000 * max);
+  },
+}));
 
 import {
   collectRun,
@@ -67,6 +82,13 @@ function configurationFixture(parameters: AgentParameters): AgentConfiguration {
 
 /** Pinned so the clock line a prompt carries is deterministic. */
 const TEST_NOW = new Date("2026-07-30T06:12:00Z");
+beforeEach(() => {
+  entropy.sequence = 0;
+  entropy.seed = 0x12345678;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(TEST_NOW);
+});
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 function executionDepsFixture(channel: LlmChannel) {
   const reject = () => Promise.reject(new Error("not used in this test"));
   const recorded: UsageDelta[] = [];
@@ -173,7 +195,7 @@ describe("sampling parameters", () => {
 describe("withRunDeadline", () => {
   it("composes a caller signal so its abort still propagates", () => {
     const controller = new AbortController();
-    const composed = withRunDeadline(controller.signal);
+    const composed = withRunDeadline(controller.signal, new AbortController().signal);
     expect(composed).toBeInstanceOf(AbortSignal);
     expect(composed).not.toBe(controller.signal);
     expect(composed.aborted).toBe(false);
@@ -182,7 +204,7 @@ describe("withRunDeadline", () => {
   });
 
   it("returns a live (not-yet-aborted) deadline signal when there is no caller signal", () => {
-    const composed = withRunDeadline(undefined);
+    const composed = withRunDeadline(undefined, new AbortController().signal);
     expect(composed).toBeInstanceOf(AbortSignal);
     expect(composed.aborted).toBe(false);
   });
@@ -617,9 +639,7 @@ describe("executeAgent image transfer to a subagent", () => {
   };
 
   /**
-   * The fake channel now throws on an aborted signal, because the real one does
-   * — the SDK raises `APIUserAbortError`. Until it did, the engine's
-   * cancellation checkpoints could all have been deleted with the suite green.
+   * The scripted provider checks cancellation between chunks, as the runtime requires.
    */
   it("stops a run when the caller aborts mid-stream", async () => {
     const controller = new AbortController();
@@ -648,12 +668,7 @@ describe("executeAgent image transfer to a subagent", () => {
   });
 
   /**
-   * A transfer is a whole run on another agent, with its own thresholds. The
-   * bracket settles the agent it admitted and knows about no other, and
-   * `settleCostLimit` is the only thing that claims the alert — so an agent
-   * reached only through transfers accrued spend, began refusing at its limit
-   * (its own admission check sees to that) and told nobody, because the one
-   * announcement its owner could have received was never sent.
+   * Delegation settles the admitted child's own spend thresholds as well as the parent's.
    */
   it("settles the thresholds of an agent it transferred to, not just its own", async () => {
     const channel = new FakeChannel(
@@ -791,9 +806,7 @@ describe("executeAgent image transfer to a subagent", () => {
   });
 
   it("reports a child that cannot accept the handed-over image without failing the run", async () => {
-    // The child's model is not vision-capable, so engine.runAgent throws on entry
-    // instead of streaming. That must reach the parent as a tool error like every
-    // other refused transfer — not tear down the whole run.
+    // Child image admission failure becomes a tool error; the parent can continue.
     const channel = new FakeChannel(
       transferScript('{"agent_name":"text-child","message":"look","image_ids":["img_1"]}'),
     );
@@ -938,12 +951,12 @@ describe("executeAgent nested transfer identity", () => {
   }
 
   const chainScript = [
-    // bruce-bot hands off…
+    // bruce-bot delegates to sample-agent.
     [
       toolCallChunk(0, "t1", "delegate_sample-agent", "{\"input\":\"draw\",\"image_ids\":[]}"),
       usageChunk(1, 1),
     ],
-    // …sample-agent hands off again…
+    // sample-agent hands off within the delegated Runner.
     [
       toolCallChunk(0, "t2", "handoff_simple-image", "{\"input\":\"a fox\",\"image_ids\":[]}"),
       usageChunk(2, 2),
@@ -1383,9 +1396,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
   });
 
   it("records the child's failure when its tool resolution throws", async () => {
-    // A recorder writes its row in `finish()` and nowhere else, so a resolve
-    // that threw outside the try left the child with no trace at all — while
-    // the identical failure one level up recorded a `failed` one.
+    // A failed child tool resolution marks its delegation span in the shared trace.
     const channel = new FakeChannel(transferThenAnswer("summarize this"));
     const { deps } = chainDeps(channel);
     // The child binds a skill and the fixture's skill repository rejects every
@@ -1659,10 +1670,7 @@ describe("execution tracing policy", () => {
   });
 
   it("stamps the run's own traceId on its top-level chunks", async () => {
-    // The one place a consumer can join "this run" to "its trace" from the
-    // stream alone — the trigger firing row does exactly that. A child's
-    // chunks carry the child's trace, so without this the first authored
-    // chunk's id was the only candidate, and it was the wrong trace.
+    // Top-level chunks carry the facade's trace identity for response consumers.
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
     const traces = captureTraces(deps);
@@ -1980,11 +1988,7 @@ describe("executeAgent retrieval usage", () => {
 });
 
 /**
- * The chunk-stream entry point, for a surface that can render whatever a run
- * produces. Its image branch lived in the composition root, where nothing could
- * reach it: the webhook runner is assembled from `container.ts`, so the one
- * place the trigger path's image dispatch existed was a file the tests do not
- * construct. That is also where its `done` chunk went missing once.
+ * Chunk consumers receive text, image output, usage and termination through the facade.
  */
 describe("streamAgentRun", () => {
   it("streams Agent text, image output, usage and completion through one facade", async () => {
@@ -2071,10 +2075,7 @@ describe("collectAgentRun dispatch carries the caller", () => {
 });
 
 /**
- * A transfer is not a second person's request — `RunOrigin` has said the caller
- * travels the chain since it was written. Nothing populated or read the field,
- * so a child configuration that had asked to be told who is asking ran anonymously:
- * the checkbox on, the block missing, and nothing anywhere saying so.
+ * Caller identity travels through RunOrigin; each child's callerContext gates its own prompt.
  */
 describe("a transfer carries who is asking", () => {
   const CALLER = { displayName: "Bruce", timezone: "Asia/Seoul" };
