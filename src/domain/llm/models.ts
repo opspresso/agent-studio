@@ -330,7 +330,7 @@ export function calculateImageCost(modelId: string, tokens: ImageCostTokens): nu
     return 0;
   }
   const { inputPer1M, imageInputPer1M, imageOutputPer1M, perImage, perInputImage } = cfg.pricing;
-  if (!imageOutputPer1M && perImage) {
+  if (!imageOutputPer1M && perImage !== undefined) {
     return perImage + (tokens.sourceImages ?? 0) * (perInputImage ?? 0);
   }
   return (

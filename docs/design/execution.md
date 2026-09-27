@@ -295,6 +295,7 @@ provider가 입력 종류를 구분하지 않으면 분할을 추측하지 않�
 generation span을 도구 span 아래에 기록한다. 이미지 bytes는 별도의 `image` 축으로 전달한다.
 토큰 사용량이 없는 모델은 카탈로그의 장당 가격을 사용할 수 있으며, 이미지 비용은
 provider 청구액을 그대로 보관하는 텍스트 경로와 다르다.
+장당 출력 가격이 `0`이어도 편집에 제공한 원본 이미지의 `perInputImage` 요금은 합산한다.
 가격의 정본과 미등록 정책은 [CONFIGURATION](../CONFIGURATION.md#모델-등록과-사용)을 따른다.
 
 이미지는 공통 chunk로 표면에 전달된다. Chat은 저장 참조와 라이브 bytes를 사용하고,

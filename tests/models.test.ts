@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { snapshot, loadTestCatalog } from "./modelFixtures";
+import { snapshot, loadTestCatalog, addTestModels } from "./modelFixtures";
 import {
   applyModelConstraints,
   calculateCost,
@@ -195,6 +195,20 @@ describe("registry misses", () => {
     expect(body).toContain("# TYPE agent_studio_unknown_model_calls_total counter");
     expect(body).toContain("agent_studio_unknown_model_calls_total 1");
     expect(body).toContain("agent_studio_unknown_models 1");
+  });
+});
+
+describe("flat image pricing", () => {
+  it("charges source images when the generated image is explicitly free", () => {
+    addTestModels([{
+      id: "selfhosted/free-image-output", provider: "selfhosted", family: "free-image-output",
+      maker: "selfhosted", displayName: "Free image output", contextWindow: 0, maxTokens: 0,
+      capabilities: { tools: false, structuredOutput: false, imageInput: true, reasoning: false, imageGeneration: true },
+      pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0, perInputImage: 0.05 },
+    }]);
+    expect(calculateImageCost("selfhosted/free-image-output", {
+      textInputTokens: 0, imageInputTokens: 0, imageOutputTokens: 0, sourceImages: 3,
+    })).toBeCloseTo(0.15);
   });
 });
 
