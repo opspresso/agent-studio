@@ -26,17 +26,7 @@ export interface ArtifactRecorder {
   takeWarning(): string | undefined;
 }
 
-/**
- * Why the write failed, in words safe to hand a reader.
- *
- * The provider's own message is not: it names the bucket, the key and often the
- * role, which is deployment shape nobody in a chat should be shown. But "could
- * not be stored" alone sent the first real failure — a policy granting
- * `PutObject` on the old `images/` prefix while the code had moved to
- * `artifacts/` — to the logs and nowhere else, and it took a log dig to find.
- * A category is the middle: enough for whoever runs this to know where to look,
- * nothing about the network or the account.
- */
+/** Report a storage failure category without exposing provider bucket, key or role text. */
 function failureHint(error: unknown): string | undefined {
   const text = `${error instanceof Error ? error.name : ""} ${
     error instanceof Error ? error.message : String(error)
@@ -92,8 +82,8 @@ export function createArtifactRecorder(
       reported = true;
       const because = hint ? ` — ${hint}` : "";
       return failures === 1
-        ? `One file this run produced could not be stored${because}, so it is shown here but not kept.`
-        : `${failures} files this run produced could not be stored${because}, so they are shown here but not kept.`;
+        ? `One file this run produced could not be stored${because}, so it is not kept.`
+        : `${failures} files this run produced could not be stored${because}, so they are not kept.`;
     },
   };
 }
