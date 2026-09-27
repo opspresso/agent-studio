@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import { setAdminCheck } from "@/application/agent/agentUseCases";
@@ -7,6 +7,12 @@ import type { AuditEvent } from "@/domain/audit/types";
 import type { Artifact } from "@/domain/artifact/types";
 import type { Agent } from "@/domain/agent/types";
 import type { AgentRepository } from "@/domain/agent/repository";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
 
 const OWNER = "owner@x.com";
 const OTHER = "other@x.com";
@@ -70,7 +76,7 @@ function setup(stored: Artifact | null, over: { rowDeleteFails?: boolean } = {})
     async delete() {
       calls.push("row.delete");
       if (over.rowDeleteFails) {
-        throw new Error("dynamo down");
+        throw new Error("item store unavailable");
       }
       current = null;
     },
@@ -96,6 +102,9 @@ function setup(stored: Artifact | null, over: { rowDeleteFails?: boolean } = {})
 const audited: AuditEvent[] = [];
 
 beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-08-22T12:00:00.000Z");
   audited.length = 0;
   setAuditSink({
     async append(event) {
@@ -107,6 +116,12 @@ beforeEach(() => {
   });
   setAdminCheck(async (email) => email === ADMIN);
   vi.spyOn(console, "warn").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  setAuditSink(undefined);
+  setAdminCheck(async () => false);
 });
 
 describe("deleting an artifact", () => {
@@ -121,7 +136,7 @@ describe("deleting an artifact", () => {
 
   it("converges when a retry follows a half-finished delete", async () => {
     const { useCases, calls } = setup(artifact(), { rowDeleteFails: true });
-    await expect(useCases.remove("a1", OWNER)).rejects.toThrow("dynamo down");
+    await expect(useCases.remove("a1", OWNER)).rejects.toThrow("item store unavailable");
     // The object is already gone; the second attempt must not trip over that.
     const retry = setup(artifact());
     await retry.useCases.remove("a1", OWNER);

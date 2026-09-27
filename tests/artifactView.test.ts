@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import { setAdminCheck } from "@/application/agent/agentUseCases";
@@ -12,6 +12,12 @@ import {
 import type { Artifact } from "@/domain/artifact/types";
 import type { Agent } from "@/domain/agent/types";
 import type { AgentRepository } from "@/domain/agent/repository";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
 
 const OWNER = "owner@x.com";
 const OTHER = "other@x.com";
@@ -88,8 +94,17 @@ function setup(stored: Artifact | null) {
 }
 
 beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-08-22T12:00:00.000Z");
   setAdminCheck(async (email) => email === ADMIN);
   vi.spyOn(console, "warn").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  setAuditSink(undefined);
+  setAdminCheck(async () => false);
 });
 
 describe("what may be viewed rather than downloaded", () => {
@@ -206,13 +221,5 @@ describe("the type a rule is written against", () => {
   it("is the type without its parameters", () => {
     expect(baseMimeType("text/html; charset=euc-kr")).toBe("text/html");
     expect(baseMimeType("  TEXT/HTML  ")).toBe("text/html");
-  });
-
-  it("is what the served header is built from, not the stored string", () => {
-    // A row an MCP tool wrote may name a charset of its own, and
-    // `text/html; charset=euc-kr; charset=utf-8` is read by the first one —
-    // Korean text arriving as mojibake through the header meant to stop it.
-    const served = `${baseMimeType("text/html; charset=euc-kr")}; charset=utf-8`;
-    expect(served).toBe("text/html; charset=utf-8");
   });
 });

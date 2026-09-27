@@ -38,6 +38,18 @@ describe("artifact view route policy", () => {
     expect(await response.text()).not.toContain("<script>");
   });
 
+  it("serves decoded legacy HTML through a UTF-8 response", async () => {
+    state.read.mockResolvedValue({
+      artifact: { filename: "legacy.html", mimeType: "text/html; charset=windows-1252" },
+      view: "html",
+      bytes: Uint8Array.from([...Buffer.from("<p>"), 0xe9, ...Buffer.from("</p>")]),
+    });
+    const response = await GET(request, context);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+    expect(await response.text()).toContain("&lt;p&gt;é&lt;/p&gt;");
+  });
+
   it("rejects invalid HTML encoding without returning a script-capable error", async () => {
     state.read.mockResolvedValue({ artifact: { filename: "bad.html", mimeType: "text/html" }, view: "html", bytes: Uint8Array.of(0xff) });
     const response = await GET(request, context);
