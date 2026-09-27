@@ -343,11 +343,10 @@ test("a spanning cell says how far it reaches", () => {
     `<table:table-cell><text:p>b</text:p></table:table-cell>` +
     `<table:table-cell><text:p>c</text:p></table:table-cell></table:table-row></table:table>`;
   const table = body(xml, "spreadsheet").find((block) => block.kind === "table");
-  if (table?.kind === "table") {
-    assert.equal(table.columns, 3);
-    assert.equal(table.merged, true);
-    assert.equal(table.rows[0]?.cells[0]?.colspan, 2);
-  }
+  assert.ok(table, "The spanning spreadsheet table must be present");
+  assert.equal(table.columns, 3);
+  assert.equal(table.merged, true);
+  assert.equal(table.rows[0]?.cells[0]?.colspan, 2);
 });
 
 test("a self-closing frame does not lend its name to the next picture", () => {
