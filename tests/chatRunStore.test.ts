@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRunStore, type PendingUser, type RunStore } from "@/app/chats/_lib/runStore";
 
 const PENDING: PendingUser = { content: "hi", attachments: [], documents: [] };
@@ -90,6 +90,11 @@ async function settle(): Promise<void> {
 function fresh(): RunStore {
   return createRunStore();
 }
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime("2026-08-21T00:00:00.000Z");
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -532,12 +537,10 @@ describe("runStore", () => {
   });
 
   /**
-   * The budget counts *consecutive* failures. Counted over the turn's lifetime
-   * instead, a ten-minute reply that survived three cuts — a proxy recycling, a
-   * laptop waking, wifi changing hands — was reported as lost on the third with
-   * every reconnect before it having worked and delivered.
+   * Delivered frames reset the consecutive-failure count. Total reconnects
+   * remain independently bounded even when each attempt delivers something.
    */
-  it("keeps reconnecting for as long as each reconnect delivers something", async () => {
+  it("resets the consecutive-failure count after a reconnect delivers frames", async () => {
     const cut = () => sseCut([{ runId: "run-1" }, { delta: { content: "half" } }]);
     stubFetch([
       cut,
@@ -562,6 +565,36 @@ describe("runStore", () => {
       status: "finished",
       live: { text: "half and half" },
     });
+  });
+
+  it("stops after the total reconnect budget even when every stream delivers frames", async () => {
+    let streams = 0;
+    let probes = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/runs/run-1")) {
+        probes += 1;
+        return Response.json({ active: true });
+      }
+      streams += 1;
+      // Keep a broken implementation from spinning forever in microtasks.
+      if (streams > 30) throw new Error("Fixture stream ceiling exceeded");
+      return sseCut([{ runId: "run-1" }, { delta: { content: "piece" } }]);
+    }));
+    const store = fresh();
+    const finished = Promise.withResolvers<void>();
+    const unsubscribe = store.subscribe(() => {
+      if (store.get("c1")?.status === "failed") finished.resolve();
+    });
+    try {
+      store.startTurn("c1", PENDING);
+      await finished.promise;
+      expect(store.get("c1")).toMatchObject({ status: "failed", error: "network error", live: { text: "piece" } });
+      expect(streams).toBe(21);
+      expect(probes).toBe(20);
+    } finally {
+      unsubscribe();
+      store.abort("c1");
+    }
   });
 
   it("reports the cut once the attempts run out, with what went wrong", async () => {
