@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTeamsReplyChannel, MAX_MESSAGE_CHARS } from "@/application/teams/replyChannel";
 import type { TeamsClientPort, TeamsOutboundActivity } from "@/domain/teams/client";
 
 const NOW = 1_750_000_000_000;
+
+beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
 const CREDS = { appId: "app", appPassword: "secret" };
 const TARGET = { serviceUrl: "https://smba.trafficmanager.net/emea/", conversationId: "a:1", replyToId: "7" };
 const NO_SLEEP = { sleep: async () => {} };
@@ -44,6 +46,7 @@ function makeTeamsFake() {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
