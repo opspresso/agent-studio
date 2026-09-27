@@ -838,6 +838,7 @@ class Writer {
         return;
       case "quote": {
         this.space(PARAGRAPH_SPACE / 2);
+        const page = this.page;
         const top = this.y;
         this.paragraph(
           block.runs.map((run) => ({ ...run, italic: true })),
@@ -850,7 +851,7 @@ class Writer {
         );
         // Only when the quote stayed on one page: a bar drawn from a `top` that
         // belongs to the previous page runs the length of this one.
-        if (this.y < top) {
+        if (this.page === page && this.y < top) {
           this.page.drawRectangle({
             x: MARGIN,
             y: this.y,

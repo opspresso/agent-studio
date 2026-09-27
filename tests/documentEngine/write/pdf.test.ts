@@ -11,9 +11,9 @@
  */
 
 import { strict as assert } from "node:assert";
-import { test } from "vitest";
+import { test, vi } from "vitest";
 import { parseMarkdown } from "@/infrastructure/documents/engine/markdown";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, PDFPage } from "pdf-lib";
 import { columnWidths, renderPdf, usesBold } from "@/infrastructure/documents/engine/write/pdf";
 
 const CREATED = new Date("2026-08-05T00:00:00Z");
@@ -169,6 +169,23 @@ test("tables, code, quotes and rules all render without losing their text", asyn
   for (const expected of ["이름", "값", "가", "1", "const a = 1;", "인용문", "끝"]) {
     assert.ok(text.includes(expected), `expected ${JSON.stringify(expected)} in the output`);
   }
+});
+
+test("quote decoration does not reuse coordinates across pages", async () => {
+  const border = vi.spyOn(PDFPage.prototype, "drawRectangle");
+  try {
+    const short = await renderPdf(parseMarkdown("> A short quote."), { title: "Quote", created: CREATED });
+    assert.equal(short.pages, 1);
+    assert.equal(border.mock.calls.length, 1, "a quote on one page keeps its border");
+    border.mockClear();
+    const source = "quoted-word ".repeat(800) + "QUOTE_END";
+    const long = await renderPdf(parseMarkdown(`> ${source}`), { title: "Quote", created: CREATED });
+    assert.ok(long.pages > 1);
+    assert.equal(border.mock.calls.length, 0, "a quote spanning pages has no border based on another page's top");
+    const text = await extractLines(long.bytes);
+    assert.equal(text.match(/quoted-word/g)?.length, 800);
+    assert.ok(text.includes("QUOTE_END"));
+  } finally { border.mockRestore(); }
 });
 
 test("a link is one clickable annotation, not one per word", async () => {
