@@ -15,6 +15,17 @@ import { runAgent } from "@/application/runtime";
 import { FakeChannel, contentChunk, toolCallChunk } from "./fakeChannel";
 import type { CodingApproval, CodingAction, PullRequestInfo } from "@/domain/coding/types";
 
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++entropy.sequence).padStart(12, "0")}`,
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+}));
+
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const now = new Date("2026-09-14T00:00:00Z");
@@ -32,6 +43,7 @@ const makeTool = (agentName = "demo", ownerEmail = owner, sourceChatId?: string,
 const invoke = async (request: Record<string, unknown>, callId = "call-start") => JSON.parse((await makeTool()({ request }, callId)).text);
 const start = { operation: "start", runtime: "command", repository: null, base_branch: null, task: "printf report > report.txt" };
 beforeEach(() => {
+  entropy.sequence = 0;
   vi.useFakeTimers(); vi.setSystemTime(now); vi.clearAllMocks(); serial = 0; fake.rows.clear();
   fake.seed([{ ...keys.agent("demo"), entityType: "AGENT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner, visibility: "public", createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
 });

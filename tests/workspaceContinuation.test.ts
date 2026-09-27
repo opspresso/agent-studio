@@ -17,9 +17,20 @@ import type { ChatDeps } from "@/application/chat/deps";
 import type { PullRequestInfo } from "@/domain/coding/types";
 import { ForbiddenError } from "@/application/errors";
 
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++entropy.sequence).padStart(12, "0")}`,
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+}));
+
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
-beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-09-15T00:00:00Z")); fake.rows.clear(); });
+beforeEach(() => { entropy.sequence = 0; vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-09-15T00:00:00Z")); fake.rows.clear(); });
 afterEach(() => vi.useRealTimers());
 
 async function fixture() {
