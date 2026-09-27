@@ -63,7 +63,7 @@ const LEGACY_THREAD_STARTED: SlackEventBody = {
 };
 
 describe("handleThreadStart", () => {
-  it("pins the prompts when the agent container is opened", async () => {
+  it("pins prompts when Slack's Messages tab opens", async () => {
     const { deps, posted, prompts } = makeDeps(agentFixture());
 
     await handleThreadStart(deps, HOME_OPENED, BINDING);
