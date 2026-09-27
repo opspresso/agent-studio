@@ -16,7 +16,7 @@ describe("selected model runtime registry", () => {
     expect(offeredModels([], undefined)).toEqual([]);
     expect(offeredModels(["office"], undefined)).toHaveLength(1);
   });
-  it("maps all six selected types to their runtime capability", () => {
+  it("maps the five specialized model types to their runtime capabilities", () => {
     for (const [type, capability] of [["image", "imageGeneration"], ["embedding", "embedding"], ["rerank", "rerank"], ["transcription", "transcription"], ["decision", "decision"]] as const) {
       expect(registeredModelConfig({ ...selected, type }, "openai").capabilities[capability]).toBe(true);
     }

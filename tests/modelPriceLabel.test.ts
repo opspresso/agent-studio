@@ -7,10 +7,8 @@ import {
 import { getModelConfig, listModels, modelType } from "@/domain/llm/models";
 
 /**
- * The label reports what a call will cost, next to the model someone is about
- * to pick. It read the text-token pair only, so every image model whose output
- * is billed as image tokens advertised `$0.00 out` — GPT Image 2 bills $30.00
- * per 1M image tokens and the picker said its output was free.
+ * Price labels distinguish unknown and free pricing and show each model's
+ * applicable token, image, search or audio unit rates.
  */
 describe("modelPriceLabel", () => {
   it("preserves published fractional-cent unit rates instead of rounding them away", () => {
@@ -34,9 +32,7 @@ describe("modelPriceLabel", () => {
   });
 
   /**
-   * Zero on both sides is a self-hosted model's stated price — the registry
-   * refuses it for every other provider — and `$0.00 in · $0.00 out` reads
-   * like missing data rather than a free channel.
+   * Explicit zero rates are known free pricing, distinct from absent pricing.
    */
   it("reads an explicit zero-priced text model as free", () => {
     expect(modelPriceLabel({ inputPer1M: 0, outputPer1M: 0 })).toBe("Free");
