@@ -1,10 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 /**
- * The bootstrap administrator is the break-glass account, so the allowed-domain
- * list does not apply to it — otherwise a first boot whose `BOOTSTRAP_ADMIN_EMAIL`
- * sits outside `ALLOWED_EMAIL_DOMAINS` crashed in the create-user hook, and the
- * same person could never sign in. Everyone else is still held to the list.
+ * The password-enabled bootstrap administrator bypasses the email-domain list.
+ * All other accounts remain subject to it.
  */
 const ENV = {
   AUTH_PASSWORD: "true",
@@ -48,7 +46,7 @@ describe("bootstrap administrator and the allowed-domain list", () => {
     const { auth } = await import("@/lib/auth");
     const before = auth.options.databaseHooks?.user?.create?.before;
     expect(before).toBeTypeOf("function");
-    const user = { id: "u", name: "", emailVerified: true, createdAt: new Date(), updatedAt: new Date() };
+    const user = { id: "u", name: "", emailVerified: true, createdAt: new Date("2026-01-01T00:00:00Z"), updatedAt: new Date("2026-01-01T00:00:00Z") };
     await expect(before!({ ...user, email: "admin@localhost" })).resolves.toBeTruthy();
     await expect(before!({ ...user, email: "other@else.example" })).rejects.toThrow();
   });
