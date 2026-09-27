@@ -65,6 +65,7 @@ const SECTIONS: readonly GuideSection[] = [
     Icon: IconRoute,
     entries: [
       { title: "guide.configuration.model", body: "guide.configuration.modelBody" },
+      { title: "guide.configuration.routing", body: "guide.configuration.routingBody" },
       { title: "guide.configuration.prompt", body: "guide.configuration.promptBody" },
       { title: "guide.configuration.limits", body: "guide.configuration.limitsBody" },
       { title: "guide.configuration.apply", body: "guide.configuration.applyBody" },

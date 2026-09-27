@@ -671,6 +671,8 @@ export const en = {
     "Edit the Agent’s current settings in the Playground and save them. To experiment independently, clone the Agent and configure the copy.",
   "guide.configuration.model": "Model and fallback",
   "guide.configuration.modelBody": "Select a text model with tool calling support. Reading pictures also requires image input. Configure a compatible fallback if needed. Image generation and editing use the separately configured image tool model.",
+  "guide.configuration.routing": "Automatic model selection",
+  "guide.configuration.routingBody": "An administrator assigns shared tier models, task policies and budgets in Settings → Models → Model usage. A decision model can choose among those tiers. Enable model routing in the Agent and save; selection occurs before the first response. Missing or failed decisions use its main model when that model satisfies the required capabilities and budget. Turning routing off keeps the main model; Restore default also removes ModelTask. Inspect the chosen model and routing decisions in Traces and Usage.",
   "guide.configuration.prompt": "Preview and save are different",
   "guide.configuration.promptBody": "Prompt preview assembles the current draft. It does not generate an answer, but memory recall and capability discovery can contact configured services. Save before running; the Run panel uses saved settings.",
   "guide.configuration.limits": "Control run size",
@@ -708,8 +710,7 @@ export const en = {
   "guide.chat.body":
     "The Chats page keeps your Chat history with Agents. Use Playground for configuration tests and a Chat for work that continues over multiple messages.",
   "guide.chat.configuration": "Choose an Agent",
-  "guide.chat.configurationBody":
-    "Start a Chat and select an accessible configured Agent. Each new turn uses its current saved settings; changes can affect later turns in an existing Chat.",
+  "guide.chat.configurationBody": "Choose an accessible configured Agent. With a decision model selected in Settings → Models → Model usage, new Chat and Workspace forms can suggest an Agent from your typed request. Recognized PII patterns are masked before the request and candidate descriptions reach that provider. Suggestions never change your selection automatically. Click Use Agent or choose manually. The last successful suggestion stays visible while editing. Each Chat turn uses its Agent’s current saved settings.",
   "guide.chat.context": "Chat history has limits",
   "guide.chat.contextBody":
     "Display messages and the model’s encrypted SDK Session are separate. The Session supplies bounded prior turns, tool results and recent images; Memory is an optional long-term source. Omitted history produces a warning. If the Session has expired, visible messages are not rebuilt into model history. Restate essential constraints when starting again.",
@@ -852,7 +853,7 @@ export const en = {
   "guide.admin.settings": "Settings overrides and deployment values",
   "guide.admin.settingsBody": "Settings groups Service, Access, Plugins and Models. Service manages branding, public addresses, artifact delivery, run limits and Slack progress text. Access manages administrators and allowed domains. Plugins manages its GitHub repository and token. Models manages provider connections, registered models, assignments, search score floors and model pricing policy. Only changed fields are saved. Deployment settings still own the database, encryption, sign-in providers, storage connections and retention.",
   "guide.admin.models": "Connect and verify models",
-  "guide.admin.modelsBody": "In Settings → Models → Providers, register the provider type, a unique connection name, its API base URL and key. Self-hosted connections use the same flow and may omit a key. A changed credential destination requires a matching new key. In Model usage, choose the default, Workspace and search models from registered compatible models.",
+  "guide.admin.modelsBody": "In Settings → Models → Providers, register its type, unique name, API base URL and key. Self-hosted connections may omit a key. A changed credential destination requires a matching new key. Model usage assigns default, decision, Workspace and search models. The decision model supports Agent suggestions and routing; routing tiers, task policies and budgets are shared across Agents that enable routing.",
   "guide.admin.modelSelection": "Browse, select and maintain models",
   "guide.admin.modelSelectionBody": "Discover models loads the provider’s complete list. Compare output types, independent Tools/Vision/Reasoning badges, context limits and prices; sort by name or price. Add model registers immediately. Selected models only narrows the view and allows deletion; Registered models offers editing and availability checks. Provider, search, filters and ordering are remembered in this browser. Models is the read-only list of saved selections. A successful listing does not prove that inference will succeed; verify with a short Agent run.",
   "guide.admin.offline": "Catalog and retrieval in an offline deployment",

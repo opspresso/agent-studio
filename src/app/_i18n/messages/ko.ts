@@ -630,6 +630,8 @@ export const ko: Messages = {
     "Playground에서 Agent의 현재 설정을 편집하고 저장한다. 독립적으로 실험하려면 Agent를 복제해 복제본을 설정한다.",
   "guide.configuration.model": "모델과 대체 모델",
   "guide.configuration.modelBody": "도구 호출을 지원하는 텍스트 모델을 선택한다. 그림을 읽는 작업에는 이미지 입력 지원도 필요하다. 필요하면 호환되는 대체 모델을 지정한다. 이미지 생성·편집은 별도로 설정한 이미지 도구 모델을 사용한다.",
+  "guide.configuration.routing": "응답 모델 자동 선택",
+  "guide.configuration.routingBody": "관리자가 Settings → Models → Model 사용 설정에서 전역 tier 모델·작업별 정책·예산을 배정한다. 결정 모델은 tier 선택에 사용할 수 있다. Agent의 모델 라우팅을 켜고 저장하면 첫 답변 전에 모델을 선택한다. 결정이 없거나 실패하면 필요한 기능·예산을 만족하는 주 모델을 사용한다. 라우팅을 끄면 주 모델을 유지하고 기본값 복원은 ModelTask도 제거한다. Traces와 Usage에서 선택한 모델과 라우팅 결정을 확인한다.",
   "guide.configuration.prompt": "프롬프트 미리보기와 저장 구분",
   "guide.configuration.promptBody": "Prompt preview는 현재 초안의 프롬프트를 조립한다. 답변을 생성하지 않지만 Memory 회상과 역량 검색은 설정된 서비스에 요청할 수 있다. Run 패널은 저장된 설정을 사용하므로 실행 전에 저장한다.",
   "guide.configuration.limits": "실행 범위와 한도 설정",
@@ -664,8 +666,7 @@ export const ko: Messages = {
   "guide.chat.body":
     "Chats에는 Agent와 주고받은 Chat 기록이 보관된다. 설정 시험에는 Playground를, 여러 메시지에 걸쳐 이어가는 작업에는 Chat을 사용한다.",
   "guide.chat.configuration": "Chat에 사용할 Agent 선택",
-  "guide.chat.configurationBody":
-    "Chats에서 접근 가능한 설정된 Agent를 선택해 Chat을 시작한다. 각 새 턴은 현재 저장된 설정을 사용하므로 설정 변경은 기존 Chat의 이후 턴에도 적용된다.",
+  "guide.chat.configurationBody": "접근 가능한 설정된 Agent를 선택한다. Settings → Models → Model 사용 설정에 결정 모델이 있으면 새 Chat·Workspace 화면에서 입력한 요청으로 Agent를 추천한다. 인식된 PII 패턴을 가린 뒤 요청과 후보 설명을 그 프로바이더에 전달한다. 추천은 선택을 자동 변경하지 않으므로 Agent 선택을 누르거나 목록에서 직접 고른다. 입력을 바꾸는 동안 마지막 성공한 추천은 유지된다. 각 Chat 턴은 해당 Agent의 현재 저장된 설정을 사용한다.",
   "guide.chat.context": "Chat 맥락의 한계",
   "guide.chat.contextBody":
     "화면 메시지와 모델의 암호화된 SDK Session은 별개다. Session은 제한된 이전 턴·도구 결과·최근 이미지를 제공하고 Memory는 선택적인 장기 자료다. 이력이 생략되면 경고하며 Session이 만료된 경우 보이는 메시지로 모델 이력을 다시 만들지 않는다. 새 문맥으로 시작할 때 필요한 제약을 다시 전달한다.",
@@ -807,7 +808,7 @@ export const ko: Messages = {
   "guide.admin.settings": "Settings 재정의와 배포 설정",
   "guide.admin.settingsBody": "Settings는 Service·Access·Plugins·Models 탭으로 나눈다. Service에서 브랜드·공개 주소·Artifact 전달·동시 실행 한도·Slack 표시를 관리한다. Access는 관리자와 허용 도메인, Plugins는 GitHub 저장소와 토큰을 관리한다. Models는 프로바이더 연결·등록 모델·사용 모델·검색 점수·가격 미지정 모델 정책을 관리한다. 변경한 항목만 저장한다. DB·암호화·로그인 공급자·스토리지 연결·보존 기간은 배포 설정에서 관리한다.",
   "guide.admin.models": "모델 연결과 검증",
-  "guide.admin.modelsBody": "Settings → Models → 프로바이더에서 종류·고유 연결 이름·API base URL·키를 등록한다. Self-hosted도 같은 흐름을 사용하며 키를 생략할 수 있다. 인증 대상 주소를 바꾸면 새 키가 필요하다. 모델 사용 설정에서는 등록된 호환 모델 중 기본·Workspace·검색 모델을 선택한다.",
+  "guide.admin.modelsBody": "Settings → Models → 프로바이더에서 종류·고유 이름·API base URL·키를 등록한다. Self-hosted는 키를 생략할 수 있고 인증 대상 주소를 바꾸면 새 키가 필요하다. 모델 사용 설정은 기본·결정·Workspace·검색 모델을 배정한다. 결정 모델은 Agent 추천과 라우팅에 사용한다. 라우팅 tier·작업별 정책·예산은 이를 켠 Agent들이 공유한다.",
   "guide.admin.modelSelection": "모델 조회·선택·관리",
   "guide.admin.modelSelectionBody": "Model 조회·등록은 항상 Provider의 전체 목록을 조회한다. 출력 유형과 독립적인 Tools·Vision·Reasoning 배지, 컨텍스트 한도와 가격을 비교하고 이름순·가격순으로 정렬한다. 모델 추가는 즉시 등록한다. 선택된 모델만 보기로 목록을 좁히고 삭제하며, 등록 모델 관리에서 수정·제공 상태를 확인한다. Provider·검색어·필터·정렬은 이 브라우저에 저장한다. Models는 저장된 선택의 읽기 전용 목록이다. 목록 조회 성공이 추론 성공을 뜻하지 않으므로 짧은 Agent 실행으로 확인한다.",
   "guide.admin.offline": "폐쇄망의 카탈로그와 검색 모델",
