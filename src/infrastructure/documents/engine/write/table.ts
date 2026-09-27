@@ -1,17 +1,4 @@
-/**
- * How wide each column of a table should be, as a share of the whole.
- *
- * Shared by the three renderers because it is the one table decision that is
- * about the *content* rather than about the format: an id column next to a
- * column of prose should not get half the table, and which unit the answer is
- * expressed in — points, twentieths of a point, HWPUNIT — is the only thing
- * that differs between them.
- *
- * Character counts rather than measured text: the three renderers measure in
- * three different fonts, and a column layout that changed with the format would
- * make the same document look like three documents. The clamp is what stops one
- * long cell from squeezing every other column down to a character per line.
- */
+/** Content-weighted column shares for DOCX, HWPX, PDF and PPTX; demand clamps prevent a long cell dominating. */
 
 import type { Run } from "../markdown";
 

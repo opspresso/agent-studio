@@ -2,20 +2,9 @@ import { DocumentError } from "./errors";
 import { MAX_XML_DEPTH, MAX_XML_EVENTS } from "./limits";
 
 /**
- * A tag walker, which is all that reading DOCX and HWPX needs.
- *
- * Not a DOM parser, for the same reason `mcp-url-fetch` does not parse HTML: a
- * real one is a dependency with its own attack surface, and the job here is
- * narrow. Both formats put their prose inside one element (`w:t`, `hp:t`) and
- * mark their structure with others, so a scan that reports opens, closes and
- * the characters between them is the whole interface — a handler decides which
- * of those mean something.
- *
- * It handles what these two formats actually contain: declarations, comments,
- * CDATA, self-closing tags, attributes with `>` inside quotes. It does not
- * validate: an unbalanced document is read as far as it goes rather than
- * refused, because half a document's text is worth more than an error about
- * markup nobody will look at.
+ * Bounded Office XML tag walker with entity decoding, spans, comments, CDATA
+ * and quoted attributes. It is a best-effort reader, not a validating DOM.
+ * DTD/entity declarations are refused; editing adds balance checks separately.
  */
 
 export interface XmlHandler {

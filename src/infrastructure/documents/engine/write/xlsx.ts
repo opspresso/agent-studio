@@ -1,13 +1,4 @@
-/**
- * Named rows and explicit formula cells to an XLSX workbook.
- *
- * The fifth renderer, and the one that used to be outside the design system:
- * its header band was a hand-typed `FF1F4E78`, one digit off the palette entry
- * it was copied from, which is the drift `theme.ts` exists to make impossible.
- * A workbook has no `profile` argument — a grid carries no cover, no type scale
- * and no card geometry to vary — so it reads the default design's own table
- * treatment, which is the same pair the other four set a header row with.
- */
+/** Explicit scalar/formula cells to XLSX, using the default design table style without profiles. */
 
 import { DocumentError } from "../errors";
 import { MAX_SPREADSHEET_CELLS, MAX_SPREADSHEET_COLUMNS, MAX_SPREADSHEET_ROWS } from "../limits";
