@@ -1,17 +1,14 @@
 /**
- * The palette, checked for the one property a colour choice can actually fail.
- *
- * Everything else about a design system is taste and cannot be asserted. Contrast
- * is not: text below the WCAG AA ratio is text somebody cannot read, and a
- * palette is exactly the kind of thing that gets nudged one shade "for looks"
- * without anybody re-measuring. These tests are what makes that nudge fail
- * loudly rather than ship.
+ * Document profiles meet text contrast thresholds and preserve typography/unit
+ * contracts. The chart palette has a separate visibility floor.
  */
 
 import { strict as assert } from "node:assert";
 import { test } from "vitest";
 import {
   CHART,
+  DOC,
+  DECK,
   DEFAULT_PROFILE,
   DOCUMENT_PROFILES,
   LEADING,
@@ -26,11 +23,11 @@ import {
   twips,
 } from "@/infrastructure/documents/engine/write/theme";
 
-/** WCAG's relative luminance, which is not the same as perceived lightness. */
+/** WCAG 2.2 relative luminance: https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html#dfn-relative-luminance */
 function luminance(hex: string): number {
   const channel = (value: number): number => {
     const c = value / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
   };
   const r = channel(parseInt(hex.slice(0, 2), 16));
   const g = channel(parseInt(hex.slice(2, 4), 16));
@@ -45,7 +42,7 @@ function contrast(a: string, b: string): number {
 
 /** Body text and anything small. */
 const AA = 4.5;
-/** 18pt and up, or 14pt bold — which every heading in both scales is. */
+/** Large text: at least 18pt, or 14pt bold. */
 const AA_LARGE = 3;
 
 test("body text clears AA on every ground it is set on", () => {
@@ -70,14 +67,21 @@ test("white on the brand fill clears AA, which is what a table header needs", ()
   assert.ok(ratio >= AA, `white on brand is ${ratio.toFixed(2)}:1, under ${AA}:1`);
 });
 
-test("headings clear the large-text threshold on white", () => {
-  const ratio = contrast(PALETTE.brand, PALETTE.onBrand);
-  assert.ok(ratio >= AA_LARGE, `brand on white is ${ratio.toFixed(2)}:1, under ${AA_LARGE}:1`);
+test("headings meet the contrast threshold for their actual point size", () => {
+  const sizes = [...DOC.headings, DECK.title, ...DECK.subheadings];
+  for (const profile of DOCUMENT_PROFILES) {
+    const { palette } = designFor(profile);
+    const ratio = contrast(palette.brand, palette.onBrand);
+    for (const points of sizes) {
+      // Headings are bold; the 11–13pt document levels still require 4.5:1.
+      const threshold = points >= 14 ? AA_LARGE : AA;
+      assert.ok(ratio >= threshold, `${profile} ${points}pt heading is ${ratio.toFixed(2)}:1, under ${threshold}:1`);
+    }
+  }
 });
 
 test("every categorical chart colour is distinguishable from the page", () => {
-  // Not a text ratio — a fill only has to be visible. 1.5:1 is the floor below
-  // which a swatch disappears into white on a projector.
+  // A palette visibility floor, separate from the WCAG text thresholds.
   for (const colour of CHART) {
     const ratio = contrast(colour, PALETTE.onBrand);
     assert.ok(ratio >= 1.5, `chart colour ${colour} is ${ratio.toFixed(2)}:1 against white`);
