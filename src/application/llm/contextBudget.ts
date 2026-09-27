@@ -1,44 +1,9 @@
 /**
- * The run-level context budget — the single owner of "how much may this run
- * accumulate in context".
- *
- * Every other bound is per item or per turn (tool results per turn, images per
- * turn, one transfer's transcript), so nothing watched the sum: the loop's
- * `messages` array grows every turn, a transfer's answer entered with no bound
- * at all, and the first symptom of overflow was the provider's 400 — after the
- * first chunk, an unretryable `{error}`. The budget derives a ceiling from the
- * model's own `contextWindow`, charges everything the run adds, and lets the
- * engine truncate *with a report* instead of dying without one.
- *
- * ## The approximation, recorded
- *
- * Exact token counts need each provider's tokenizer. This module deliberately
- * uses a conservative character-class estimate instead:
- *
- * - ASCII: 3 chars per token (real English averages ~4 — overestimates usage).
- * - Everything else: 1.5 tokens per char — above what modern tokenizers charge
- *   for Hangul/CJK (~0.7–1.5), below the worst legacy case (~2–3). The worst
- *   case was tried first and rejected by what it did to legitimate input: a
- *   chat replaying 67,000 Korean characters (well inside a 200k window) was
- *   estimated over the whole budget, and every tool call of a run that used
- *   to work answered "budget exhausted" from turn 0.
- * - An image part: a flat {@link IMAGE_PART_TOKENS}, because its `data:` URL's
- *   base64 length says nothing about what the provider charges for the image.
- *
- * Both classes round *against* the run on purpose: an overestimate truncates
- * tool output a little early and says so; an underestimate is a provider 400
- * that kills the run mid-stream. Everything inserted is charged — truncation
- * markers are reserved *inside* a fit, wrappers and omission strings are
- * charged where they are appended — so {@link PROTOCOL_HEADROOM_TOKENS}
- * covers only what no string measurement can see: message framing, tool-call
- * envelopes, provider protocol overhead.
- *
- * A model absent from the registry gets **no budget** (`undefined`): there is
- * no window to derive one from, and inventing a number would truncate runs
- * against a limit nobody configured. When a `fallbackModel` is configured the
- * budget is the **minimum of the two capacities**, each taken from its own
- * window — see {@link createRunContextBudget} for why "each from its own" is the
- * part that has to be said.
+ * Context accounting from registered model windows and output reserves.
+ * Estimate ASCII at three UTF-16 units per token, non-ASCII at 1.5 tokens per
+ * unit, plus flat image and protocol charges. This is a heuristic, not a
+ * provider tokenizer. Fits reserve truncation markers; forced protocol text
+ * remains charged after exhaustion. Fallback uses the smaller input capacity.
  */
 
 import { getModelConfig, type ModelConfig } from "@/domain/llm/models";
@@ -48,12 +13,7 @@ import { cutCodePoints } from "@/shared/utf8Text";
 const ASCII_CHARS_PER_TOKEN = 3;
 /** Applied as ×3/2 so the arithmetic stays in integers. */
 const NON_ASCII_TOKENS_PER_2_CHARS = 3;
-/**
- * Flat token charge for one image content part, whatever its byte size. At the
- * top of the published provider range (OpenAI high-detail ~2,500; Anthropic
- * ~1,600), rounding against the run so screenshot-heavy context cannot claim
- * headroom up to a provider 400.
- */
+/** Flat platform estimate for an image part; actual provider token usage can differ. */
 export const IMAGE_PART_TOKENS = 2_500;
 /** Reserve for everything the character estimate cannot see. */
 export const PROTOCOL_HEADROOM_TOKENS = 2_000;
@@ -231,24 +191,9 @@ function inputCapacity(config: ModelConfig, maxOutputTokens: number | undefined)
 }
 
 /**
- * The budget for one run, or `undefined` when the model is not in the registry
- * (no window to derive from — such a run stays unbudgeted, exactly as every
- * run was before the budget existed).
- *
- * With a fallback configured the budget is the **smaller of the two capacities**,
- * because a mid-run switch must still fit what the other model had already
- * accumulated. Each capacity subtracts that model's own output cap from its own
- * window; mixing the minimum window with the maximum cap can reduce a valid
- * context to a small fraction of either model's capacity.
- *
- * The invariant it enforces is per model and always was: whichever one serves a
- * call, what has accumulated plus what that model may generate has to fit inside
- * that model's window. That is the whole reason, and it is worth resisting a
- * shorter one: "a bigger output cap comes with a bigger window" sounds like it
- * explains the same thing and is **false here** — `bedrock/minimax-m2.5` may
- * generate 196,608 tokens into a 204,800-token window while
- * `openrouter/nemotron-3-super-120b` generates 16,384 into 1,000,000. Only the
- * capacities can be compared, which is what this does.
+ * Return a budget for registered model capacity minus protocol headroom.
+ * Each model reserves its own output cap before fallback capacities are
+ * compared. Missing facts or non-positive capacity leave no derived budget.
  */
 export function createRunContextBudget(
   model: string,

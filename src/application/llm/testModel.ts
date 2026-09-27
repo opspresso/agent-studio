@@ -38,9 +38,7 @@ const REASONING_TEST_MAX_TOKENS = 256;
 
 export function createTestModel(models: ModelProvider, deps: TestModelDeps = {}): TestModel {
   return async (modelId) => {
-    // Enabled or not is irrelevant — the point is testing a model *before*
-    // enabling it — but an id the registry cannot price is a caller mistake,
-    // not a test finding.
+    // Diagnostics require a registered ID, but do not require default selection or known pricing.
     const model = getModelConfig(modelId);
     if (model === undefined) {
       throw new ValidationError(`Unknown model "${modelId}"`);

@@ -26,18 +26,7 @@ import { HttpResourceError } from "@/domain/net/httpResource";
  */
 export const MAX_FETCH_BYTES = 5 * 1024 * 1024;
 
-/**
- * How much of the text is kept.
- *
- * Far above the attachment cap on purpose — `documentLimits.ts` says why: an
- * attachment is inlined into a turn and stored as one row every later turn replays, while this
- * is a transient tool result. Matched to what the `mcp-url-fetch` server
- * returned, so replacing it is a replacement rather than a downgrade.
- *
- * Cut here rather than left to the per-turn tool-result budget above it: that
- * one truncates with a generic marker, which would replace the note saying
- * "the first 12 of 40 pages" with one saying nothing.
- */
+/** Bound URL extraction text separately from attachment display/context budgets, retaining extractor notes. */
 export const MAX_FETCHED_TEXT_CHARS = 90_000;
 
 /** The types worth asking for, in the order they are worth having. */
