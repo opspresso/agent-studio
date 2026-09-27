@@ -1,12 +1,6 @@
 /**
- * Whether a run may execute a model the registry cannot price.
- *
- * The value and its parsing live in the domain, one layer below the rule that
- * enforces them (`assertModelsPriceable`, in `application/execution`). They were
- * together in `application` and `src/lib/runtime-settings.ts` reached up for the
- * parser — the one place `lib` imported a use-case module. That direction had no
- * rule against it and no reason to exist: reading a stored string into the two
- * values it can mean is a fact about the setting, not a use case.
+ * Whether a selected model with unknown pricing may run. The domain owns
+ * parsing; application/run/modelPolicy.ts enforces the policy before spending.
  */
 
 export type UnknownModelPolicy = "allow" | "refuse";

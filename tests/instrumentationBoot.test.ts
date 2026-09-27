@@ -1,19 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * The boot path, executed rather than grepped.
- *
- * Source-text `toContain` assertions are insufficient for the audit guarantee:
- * a commented-out call or a branch that no
- * longer runs would satisfy just as well. Since `assertAuditSinkWired` proves
- * something narrow — that the push took, not that a duplicate module exists —
- * the part worth pinning is that `register()` actually reaches it and actually
- * refuses.
- *
- * Everything else the hook does is mocked away: the config guardrails, signal
- * handling, the model-catalog fetch, and the floating composition-root import
- * that reconciles managed MCP containers. What is left is the audit wiring in
- * its real order.
+ * Execute register() to verify audit wiring and boot refusal. Other boot
+ * dependencies are mocked to isolate the required audit wiring.
  */
 const { state } = vi.hoisted(() => ({
   state: { repository: undefined as unknown },

@@ -18,21 +18,19 @@ describe("transcription model configuration", () => {
     expect(target).toMatchObject({ baseUrl: "http://asr.test/v1", wireId: "whisper-1", apiKey: "not-required" });
   });
 
-  it("uses a declared provider channel when a dedicated ASR endpoint is absent", async () => {
-    vi.stubEnv("TRANSCRIPTION_BASE_URL", ""); vi.stubEnv("TRANSCRIPTION_API_KEY", "");
+  it("uses the selected transcription model provider connection", async () => {
     vi.stubEnv("LLM_PROVIDER_OPENAI_BASE_URL", "http://provider.test/v1");
     vi.stubEnv("LLM_PROVIDER_OPENAI_API_KEY", "provider-key");
     expect(await getTranscriptionTarget("openai/whisper-1")).toMatchObject({ baseUrl: "http://provider.test/v1", apiKey: "provider-key" });
   });
 
   it("refuses a text model or missing ASR channel", async () => {
-    vi.stubEnv("TRANSCRIPTION_BASE_URL", ""); vi.stubEnv("TRANSCRIPTION_API_KEY", "");
     vi.stubEnv("LLM_PROVIDER_OPENAI_BASE_URL", "");
     await expect(getTranscriptionTarget("openai/whisper-1")).rejects.toThrow("not a registered transcription");
     await expect(getTranscriptionTarget("openai/gpt-5-mini")).rejects.toThrow("not a registered transcription");
   });
 
-  it("validates transcription response format independently of legacy endpoint settings", async () => {
+  it("validates the transcription response format", async () => {
     vi.stubEnv("LLM_PROVIDER_OPENAI_BASE_URL", "http://provider.test/v1");
     vi.stubEnv("LLM_PROVIDER_OPENAI_API_KEY", "provider-key");
     vi.stubEnv("TRANSCRIPTION_RESPONSE_FORMAT", "xml");

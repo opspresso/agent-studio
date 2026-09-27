@@ -66,8 +66,8 @@ export async function register(): Promise<void> {
       import("@/infrastructure/db/repositories/auditRepository"),
     ]);
     setAuditSink(auditRepository);
-    // Fail boot if this module instance has no sink. Duplicate module instances
-    // must be prevented by the build; this assertion cannot detect them.
+    // The process-global sink is shared by instrumentation and route bundles.
+    // Fail boot if neither can record audited actions.
     assertAuditSinkWired();
     // Required boot paths read only the deployment's persisted model selections.
     const { getLlmProviderConfigs, startPublishedModelRefresh } = await import("@/lib/runtime-settings");

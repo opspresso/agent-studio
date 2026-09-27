@@ -162,11 +162,8 @@ export const auth = betterAuth({
 });
 
 /**
- * Create the bootstrap administrator when password sign-in is on and nobody
- * by that email exists yet. Called once at boot, after the schema is in
- * place; a second boot finds the user and does nothing, and a later change
- * to the variable changes nothing either — the account is the person's to
- * manage from then on.
+ * Ensure the configured password account after schema initialization. Create
+ * a missing user or add a missing credential, preserving an existing password.
  */
 export async function ensureBootstrapAdmin(): Promise<void> {
   const bootstrap = config.bootstrapAdmin;

@@ -26,7 +26,7 @@ export const RETENTION = {
   get workspaceDays(): number {
     return retentionDays("WORKSPACE_RETENTION_DAYS", 180);
   },
-  /** Debug traces (sampled) — short-lived. */
+  /** Every Agent run is traced; retain these diagnostic records briefly. */
   get traceDays(): number {
     return retentionDays("TRACE_RETENTION_DAYS", 30);
   },
@@ -50,13 +50,9 @@ export const RETENTION = {
   /**
    * Artifact rows — the inventory of what runs produced.
    *
-   * Matched to chats by default because that is already the effective lifetime
-   * of a generated image: the deployment checklist points the bucket's
-   * lifecycle rule at `CHAT_RETENTION_DAYS`. Shorter than chats and an image
-   * still visible in a conversation disappears from its own gallery first;
-   * longer, and the gallery lists rows whose bytes the bucket already swept.
-   * The row TTL and the bucket rule are two independent settings and the app
-   * cannot enforce agreement — see docs/OPERATIONS.md.
+   * Keep at least as long as chats and align the object lifecycle with this
+   * window. DB sweep does not delete bytes; the app cannot enforce agreement
+   * with the bucket policy. See docs/OPERATIONS.md.
    */
   get artifactDays(): number {
     return retentionDays("ARTIFACT_RETENTION_DAYS", 180);
