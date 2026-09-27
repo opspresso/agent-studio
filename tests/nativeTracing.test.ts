@@ -1,11 +1,23 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+  randomUUID: () => `00000000-0000-4000-8000-${String(++entropy.sequence).padStart(12, "0")}`,
+}));
 import { runAgent } from "@/application/runtime";
 import { TraceRecorder } from "@/application/trace/recorder";
 import type { Trace } from "@/domain/trace/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import { FakeChannel, contentChunk, toolCallChunk, usageChunk, reasoningChunk, finishReasonChunk } from "./fakeChannel";
 
+beforeEach(() => { entropy.sequence = 0; });
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 function recorder() {
