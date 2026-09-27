@@ -24,6 +24,7 @@
 | 한 호출의 인자를 얼마나 보관하고 되풀이하는가 (알려지는 쪽과 프로바이더로 돌아가는 쪽 둘 다) | `src/application/runtime/arguments.ts` 의 `MAX_TOOL_ARG_BYTES` / `boundToolArgsPair` / `boundArgumentText` | 구조 |
 | Embedding/Rerank 선택 모델의 endpoint·credential·wire ID 결정 | `src/lib/runtime-settings.ts`의 `getEmbeddingTarget` / `getRerankerTarget`. 등록 모델의 provider 연결을 사용한다 | 구조 |
 | provider 에 embedding 을 요청하기 | `src/infrastructure/llm/embeddings.ts` | 구조 |
+| OpenAI 호환 SDK의 유료 HTTP 요청 자동 재시도 정책 | `src/infrastructure/llm/openaiClient.ts`의 `OPENAI_MAX_HTTP_RETRIES`; text·image·embedding client가 함께 사용한다 | 구조 |
 | 전사 모델의 endpoint·credential·wire ID·응답 형식 결정 | `src/lib/runtime-settings.ts`의 `getTranscriptionTarget` | 구조 |
 | 전사 사용량의 시간/토큰 단위 비용 계산 | `src/domain/llm/models.ts`의 `calculateTranscriptionCost`. 누락된 과금 단위는 unknown이다 | 구조 |
 | 배포 전역 Embedding/Rerank 모델 선택과 Embedding 변경 시 vector migration | `src/application/llm/modelSelection.ts`; DB의 모델 선택·미설정 상태 해석은 `src/lib/runtime-settings.ts` | 구조 |

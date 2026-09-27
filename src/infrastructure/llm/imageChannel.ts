@@ -16,6 +16,7 @@
 
 import OpenAI, { toFile } from "openai";
 import { createLlmClientCache, llmClientCacheKey } from "./clientCache";
+import { OPENAI_MAX_HTTP_RETRIES } from "./openaiClient";
 import type { ResolvedTarget, TargetResolver } from "./providers";
 import {
   base64ByteLength,
@@ -58,7 +59,7 @@ function getClient(target: ResolvedTarget): OpenAI {
   const key = llmClientCacheKey(target.baseUrl, target.apiKey);
   let client = clients.get(key);
   if (!client) {
-    client = new OpenAI({ baseURL: target.baseUrl, apiKey: target.apiKey });
+    client = new OpenAI({ baseURL: target.baseUrl, apiKey: target.apiKey, maxRetries: OPENAI_MAX_HTTP_RETRIES });
     clients.set(key, client);
   }
   return client;

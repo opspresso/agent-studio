@@ -288,6 +288,8 @@ ModelTask는 청구된 generation span을 직접 소유하며 어댑터의 중�
 
 SigV4 image 채널은 지원하지 않는다. 응답 크기·base64·MIME·이미지 한도를 검사하고
 이미지 모델의 endpoint와 credential은 함께 해석한다.
+이미지 생성·편집도 SDK의 자동 HTTP 재시도를 끈다. 실패 응답만으로 이미 처리된 유료 작업을
+다시 보내지 않으며, 새 시도는 Agent의 별도 도구 호출로 기록한다.
 회귀 검사는 `tests/imageChannelAdapter.test.ts`가 각 wire 형태를 고정한다.
 
 `toImageUsageRecord`가 text input·image input·image output을 Usage의 형태로 변환한다.

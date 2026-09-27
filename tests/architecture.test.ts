@@ -1052,6 +1052,11 @@ interface SingleOwner {
 
 const SINGLE_OWNERS: SingleOwner[] = [
   {
+    what: "paid OpenAI-compatible SDK HTTP retry policy",
+    pattern: /OPENAI_MAX_HTTP_RETRIES\s*=/,
+    owner: "src/infrastructure/llm/openaiClient.ts",
+  },
+  {
     what: "model call tiers and purposes",
     pattern: /(?:MODEL_TIERS|CALL_PURPOSES|CALL_ROUTING_LIMITS|MODEL_ROUTING_POLICY_BINDING)\s*=/,
     owner: "src/domain/llm/callRouting.ts",
