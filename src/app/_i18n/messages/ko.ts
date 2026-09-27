@@ -1,13 +1,7 @@
 /**
- * Every string the console shows a person, in Korean.
- *
- * Typed as `Messages` rather than inferred, which is what makes a key missing
- * here a compile error instead of a blank spot on a page. `en.ts` says why the
- * catalogue is TypeScript, and why the product nouns below are still English.
- *
- * Controls and short descriptions use the polite-formal register (`~합니다` /
- * `~하세요`). The guide's long-form documentation follows the plain style of
- * this repository's prose documents.
+ * Korean console translations, typed against the English Messages contract.
+ * Controls and short descriptions use `~합니다` / `~하세요`; the Guide follows
+ * the plain style of the repository's prose documents. Product nouns remain English.
  */
 import type { Messages } from "./en";
 
@@ -1261,10 +1255,7 @@ export const ko: Messages = {
   "artifacts.documentAlt": "{type} 문서",
   "artifacts.producedBy": "제작: {name}",
   "artifacts.deleteTitle": "Artifact 삭제",
-  // 조사는 `하나` 에 붙인다 — 보간되는 명사가 아니라. `를`/`을` 은 앞 글자의 받침이
-  // 정하는데, 그 명사는 `ArtifactKind` 가 자라면 바뀐다: `이 {kind}를` 로 두면 받침
-  // 있는 종류가 추가되는 순간 "오디오 파일를" 이 된다. 영어는 `the {kind}` 라 아무
-  // 일도 없어 리뷰에서 놓치고, 타입도 잡아 주지 못하는 자리다.
+  // 조사를 고정 명사 `하나`에 붙여 보간된 종류의 받침과 무관하게 읽히도록 한다.
   "artifacts.deleteBody":
     "{kind} 하나를 스토리지에서 제거합니다. 이것이 표시됐던 모든 곳 — Chat 메시지, Slack 스레드 — 에서 사용할 수 없음으로 표시됩니다. 되돌릴 수 없습니다.",
   "artifacts.kindImage": "이미지",

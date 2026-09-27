@@ -1,14 +1,7 @@
 /**
- * Which languages the console speaks, and how a request's language is named.
- *
- * Deliberately not a route segment. A `[locale]` prefix would move all 29 pages
- * and 14 layouts, and rewrite `src/proxy.ts`'s matcher and the public-page rule
- * in `src/shared/pageAccess.ts` — to buy a shareable per-language URL
- * that an internal console has no use for. A cookie leaves the route tree and
- * the sign-in gate untouched.
- *
- * Pure TS with no framework import, because both sides read it: the root layout
- * resolves the cookie on the server, and the toggle writes it in the browser.
+ * Supported languages and request negotiation. Locale is a cookie preference,
+ * preserving the route tree and sign-in paths. Both server resolution and the
+ * browser toggle use this dependency-free contract.
  */
 import { parseList } from "@/shared/parseList";
 

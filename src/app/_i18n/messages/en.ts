@@ -1,34 +1,11 @@
 /**
- * Every string the console shows a person, in English.
+ * Localized console copy. English keys are authoritative; `ko.ts` implements
+ * the typed Messages contract. Add translated keys in both catalogues and use
+ * `useT` in clients or `getT` in server components.
  *
- * This file is the source of truth and `ko.ts` is typed against it, so a key
- * added here without a Korean counterpart fails `pnpm typecheck` rather than
- * rendering an English string inside a Korean page. That is the whole reason
- * the catalogue is TypeScript instead of JSON: the check is the compiler's, and
- * there is no second tool to keep in step.
- *
- * Keys are flat and namespaced `area.thing`. Flat because `keyof typeof en` is
- * then the key type with no path-walking generic behind it, and because
- * grepping a key finds both its definition and its uses.
- *
- * **Error messages are deliberately absent.** `AppError` carries its message as
- * a string through `application` and `domain`, neither of which may import a
- * framework, so translating them means giving every error a code and rewriting
- * well over a hundred throw sites. The console is internal and its errors are
- * read by operators, so they stay in English; this catalogue covers what a page
- * renders on its own.
- *
- * **Product nouns are not translated**, in either catalogue — Agent, Skill,
- * Tool, Plugin, Chat, Model, MCP. The console and guide use these names
- * consistently. What gets translated is
- * the prose around them: descriptions, actions, states and empty messages.
- *
- * **Operator maintenance surfaces may stay English** — the tools detail page,
- * integration sections, and similar admin-only screens whose action buttons
- * ("Save", "Test connection", "Disconnect") sit beside English error text and
- * API vocabulary anyway. That is a policy, not drift: a screen is either in
- * this catalogue or it is not, and a screen being migrated should move whole,
- * never one label at a time.
+ * Keys are flat `area.thing` names. Product nouns and propagated error messages
+ * remain English. API Reference content and some operator-maintenance captions
+ * also remain English; integration settings are owner/admin surfaces.
  */
 export const en = {
   "secrets.resetConfirm": "The saved override will be removed. Requests using the current key may stop authenticating; the deployment environment value will be used instead.",
@@ -1138,7 +1115,7 @@ export const en = {
   "configuration.memoryRecallUnbound":
     "Recall is on, but none of this Agent’s MCP bindings can offer a “recall” tool — none is bound, or every binding’s tool selection leaves it out. Bind a memory server (mcp-memory) or turn recall off; until then every run starts without a memory and says so.",
 
-  // The three tabs of one binding's settings dialog.
+  // Agent MCP binding settings; source mappings use the audio namespace.
   "mcpSettings.tools": "Tools",
   "mcpSettings.toolsNote":
     "Which of this server’s tools this Agent offers the model. Saved with the Agent settings.",
