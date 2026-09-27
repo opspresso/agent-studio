@@ -6,7 +6,27 @@ import { runAgent } from "@/application/runtime";
 import type { AgentDeps } from "@/application/runtime/types";
 import { FakeChannel, contentChunk, toolCallChunk, usageChunk } from "./fakeChannel";
 
-beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-09-12T00:00:00Z")); });
+const entropy = vi.hoisted(() => ({ sequence: 0, seed: 0x12345678 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++entropy.sequence).padStart(12, "0")}`,
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+  randomInt: (max: number) => {
+    entropy.seed = (Math.imul(entropy.seed, 1664525) + 1013904223) >>> 0;
+    return Math.floor(entropy.seed / 0x1_0000_0000 * max);
+  },
+}));
+
+beforeEach(() => {
+  entropy.sequence = 0;
+  entropy.seed = 0x12345678;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-09-12T00:00:00Z");
+});
 afterEach(() => { vi.useRealTimers(); });
 
 describe("durable native SDK Session", () => {
