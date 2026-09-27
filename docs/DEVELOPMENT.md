@@ -175,8 +175,8 @@ discovery·PKCE·콜백·세션 생성·재로그인을 확인한다. audience·
 |---|---|
 | `scripts/db-migrate.ts` | 빈 `DATABASE_URL` 데이터베이스를 현재 스키마로 초기화한다. 앱이 부팅 때 하는 것과 같은 경로이며, 알 수 없는 기존 스키마는 거부한다. |
 | `scripts/dev-session.ts` | 개발용 사용자와 세션을 Better Auth 의 테이블에 바로 써 넣고 서명된 세션 쿠키를 출력한다. 신원 제공자 왕복 없이 인증이 필요한 라우트를 시험한다. 로컬이 아닌 `DATABASE_URL` 은 거부한다. |
-| `scripts/mock-llm.ts` | `127.0.0.1:8002` (`MOCK_LLM_PORT`) 에서 도는 독립 실행형 OpenAI 호환 mock 서버. 스트리밍과 비스트리밍을 모두 지원하고, 도구가 제공되고 *동시에* 메시지가 `skill named "<slug>"` 를 언급할 때 `Skill` 도구 호출을 한 번 요청한다. `MOCK_LLM_CHUNKS` 와 `MOCK_LLM_DELAY_MS` 는 답변을 부풀리고 늦춰 긴 스트리밍 응답으로 만든다. 답이 도착하는 동안 chat 창이 무엇을 하는지 볼 수 있는 유일한 방법이다. 기본값은 통합 체크가 기대하는 한 줄 답변을 유지한다. |
-| `scripts/seed-skills.ts` | 샘플 Skill 을 멱등하게 시드한다. |
+| `scripts/mock-llm.ts` | `127.0.0.1:8002`에서 모델 목록과 스트리밍·비스트리밍 completion을 제공한다. 도구가 제공되고 메시지가 `skill named "<slug>"`를 언급하면 스트리밍 응답에서 `Skill` 호출을 한 번 요청한다. `MOCK_LLM_PORT`로 포트를, `MOCK_LLM_CHUNKS`와 `MOCK_LLM_DELAY_MS`로 긴 응답과 지연을 설정한다. 기본값은 지연 없는 짧은 답변이다. |
+| `scripts/seed-skills.ts` | 로컬 DB에 샘플 Skill을 추가하고 같은 이름의 기존 항목은 보존한다. 이미지 Skill을 바인딩해도 모델 등록과 Agent의 이미지 생성 활성화가 필요하다. |
 | `scripts/seed-integration-history.local.ts` | 로컬 `sample-agent`의 API 토큰·봇 Trace와 Webhook·Schedule 실행 이력에 명시적인 테스트 행을 추가한다. 실제 Agent 실행이나 외부 전송은 하지 않으며, `STAGE=local`과 로컬 PostgreSQL만 허용한다. 다시 실행하면 새 예시 행이 추가된다. |
 | `scripts/integration-check.ts` | 저장소 왕복, 현재 스키마, SDK 모델·도구 실행과 영속 Session 승인·재개를 검증한다. 아래 helper를 함께 호출한다. |
 | `scripts/schema-baseline-check.ts` | 테스트 DB의 임시 스키마에서 신규 설치, 멱등 부팅, 다른 스키마 거부를 검증한다. |
