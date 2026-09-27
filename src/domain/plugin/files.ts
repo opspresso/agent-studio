@@ -117,8 +117,7 @@ export function excludeSubtrees(
  * The plugin's skills: immediate child directories of `<root>/skills/`
  * holding a SKILL.md — the spec's fixed discovery rule, deliberately narrower
  * than a match-anywhere walk. Whether a directory name may become a registry
- * entry name is the caller's question (the slug rule lives in `shared/`,
- * which the domain does not import); everything discovered is returned.
+ * entry name is the caller's question (the slug rule lives in `domain/naming.ts`); everything discovered is returned.
  */
 export function selectPluginSkillRoots(
   root: PluginRoot,
