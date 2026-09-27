@@ -1,6 +1,12 @@
 import { memberUseCases, usageUseCases } from "@/lib/container";
 import { withAuth } from "@/lib/session";
 import { apiError } from "@/app/api/_lib/http";
+import type { Member } from "@/domain/member/types";
+
+export interface ProfileResponse {
+  member: Member;
+  monthToDateUsd: number;
+}
 
 /**
  * The signed-in user's own row, and what they have spent this UTC month.
@@ -21,7 +27,7 @@ export const GET = withAuth(async (user) => {
       memberUseCases.me(user.email),
       usageUseCases.memberMonthToDate(user.email),
     ]);
-    return Response.json({ member, monthToDateUsd });
+    return Response.json({ member, monthToDateUsd } satisfies ProfileResponse);
   } catch (error) {
     return apiError(error);
   }

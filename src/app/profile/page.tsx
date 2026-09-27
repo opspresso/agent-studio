@@ -14,7 +14,7 @@ import {
 } from "@mantine/core";
 import { IconActivity, IconCoins, IconUser } from "@tabler/icons-react";
 import { TIER_LIMITS } from "@/domain/member/tiers";
-import type { Member } from "@/domain/member/types";
+import type { ProfileResponse } from "@/app/api/me/profile/route";
 import type { MemberUsageRow } from "@/domain/usage/types";
 import { MEMBER_TIER_COLOR } from "@/app/_components/badgeColors";
 import { CardHeading } from "@/app/_components/CardHeading";
@@ -38,16 +38,10 @@ import { useLocale, useT } from "@/app/_i18n/provider";
  */
 const GROUP_OPTIONS: GroupBy[] = ["agent", "model", "provider"];
 
-interface ProfileAccount {
-  member: Member;
-  /** Spend since the first of the UTC month — what the tier cap bounds. */
-  monthToDateUsd: number;
-}
-
 export default function ProfilePage() {
   const t = useT();
   const locale = useLocale();
-  const [account, setAccount] = useState<ProfileAccount | null>(null);
+  const [account, setAccount] = useState<ProfileResponse | null>(null);
   const [range, setRange] = useState(defaultDateRange);
   const [groupBy, setGroupBy] = useState<GroupBy>("agent");
   const [rows, setRows] = useState<MemberUsageRow[]>([]);
@@ -58,7 +52,7 @@ export default function ProfilePage() {
   useEffect(() => {
     let cancelled = false;
     fetch("/api/me/profile")
-      .then((res) => readJson<ProfileAccount>(res))
+      .then((res) => readJson<ProfileResponse>(res))
       .then((data) => !cancelled && setAccount(data))
       .catch((loadError) =>
         !cancelled &&
