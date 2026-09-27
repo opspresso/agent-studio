@@ -3,10 +3,19 @@ import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import {
   MAX_REGISTERED_MODELS, providerKind, registeredModelId, registeredModelProblem,
   type ProviderModelDiscovery, type RegisteredModel,
+  registeredModelConfig,
 } from "@/domain/llm/providerModels";
 import type { ModelPricing } from "@/domain/llm/models";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings, ProviderChannelConfig } from "@/domain/settings/types";
+import { DEFAULT_CALL_ROUTING_POLICY, type CallRoutingPolicy } from "@/domain/llm/callRouting";
+import { assertCallRoutingPolicy } from "./callRoutingPolicy";
+
+export interface ModelRoutingView { policy: CallRoutingPolicy; configured: boolean; decisionModel: string | null }
+
+function routingView(settings: AppSettings | null): ModelRoutingView {
+  return { policy: structuredClone(settings?.modelRouting ?? DEFAULT_CALL_ROUTING_POLICY), configured: settings?.modelRouting !== undefined, decisionModel: settings?.decisionModel ?? null };
+}
 
 export interface ModelRegistryDeps {
   repository: SettingsRepository;
@@ -26,6 +35,7 @@ function usage(settings: AppSettings, id: string): string[] {
     ...(settings.embeddingModel === id ? ["embedding"] : []),
     ...(settings.rerankerModel === id ? ["rerank"] : []),
     ...(settings.decisionModel === id ? ["decision"] : []),
+    ...Object.entries(settings.modelRouting?.tiers ?? {}).filter(([, model]) => model === id).map(([tier]) => `routing:${tier}`),
     ...Object.entries(settings.workspaceModels ?? {}).filter(([, model]) => model === id).map(([runtime]) => runtime),
   ];
 }
@@ -43,6 +53,26 @@ export function createModelRegistryUseCases(deps: ModelRegistryDeps) {
     await recordAudit({ actorEmail, action: "settings.update", target: auditTarget("settings", "models"), detail });
   }
   return {
+    async getRouting(): Promise<ModelRoutingView> {
+      return routingView(await deps.repository.get());
+    },
+    async saveRouting(policy: CallRoutingPolicy, actorEmail: string): Promise<ModelRoutingView> {
+      const providers = await deps.providers();
+      const { after } = await deps.repository.update((stored) => {
+        const settings = stored ?? { updatedAt: "" };
+        const connections = settings.llmProviders ?? providers;
+        const models = (settings.registeredModels ?? []).flatMap(model => {
+          const provider = connections.find(connection => connection.name === model.provider);
+          if (!provider) return [];
+          const pricing = deps.catalogPricing(provider, model.wireId) ?? model.pricing;
+          return [registeredModelConfig({ ...model, ...(pricing ? { pricing } : {}) }, providerKind(provider))];
+        });
+        assertCallRoutingPolicy(policy, models);
+        return { ...settings, modelRouting: structuredClone(policy), updatedAt: new Date().toISOString() };
+      });
+      await committed(actorEmail, "modelRouting");
+      return routingView(after);
+    },
     async list(): Promise<RegisteredModelView[]> {
       return views((await deps.repository.get())?.registeredModels ?? [], await deps.providers());
     },

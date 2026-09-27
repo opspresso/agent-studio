@@ -1,5 +1,6 @@
 import type { ChoiceDecision, DecisionModel } from "@/domain/llm/decision";
 import type { TargetResolver } from "./providers";
+import { calculateCost } from "@/domain/llm/models";
 
 function endpoint(baseUrl: string, provider: string | null): string {
   const url = new URL(baseUrl);
@@ -52,7 +53,20 @@ export function createDecisionClient(resolveTarget: TargetResolver): DecisionMod
       try { body = await response.json(); }
       catch { throw new Error("Decision provider returned invalid JSON"); }
       const answers = body && typeof body === "object" ? (body as Record<string, unknown>).answers : null;
-      return choiceAnswer(answers && typeof answers === "object" ? (answers as Record<string, unknown>).selection : null, criteria);
+      const answer = choiceAnswer(answers && typeof answers === "object" ? (answers as Record<string, unknown>).selection : null, criteria);
+      const raw = body && typeof body === "object" ? (body as Record<string, unknown>).usage : null;
+      if (raw && typeof raw === "object") {
+        const usage = raw as Record<string, unknown>;
+        const inputTokens = usage.input_tokens ?? usage.prompt_tokens;
+        const outputTokens = usage.output_tokens ?? usage.completion_tokens;
+        if (typeof inputTokens === "number" && Number.isSafeInteger(inputTokens) && inputTokens >= 0 &&
+            typeof outputTokens === "number" && Number.isSafeInteger(outputTokens) && outputTokens >= 0) {
+          answer.usage = { model, inputTokens, outputTokens,
+            costUsd: typeof usage.cost === "number" && Number.isFinite(usage.cost) && usage.cost >= 0
+              ? usage.cost : calculateCost(model, { inputTokens, outputTokens }) };
+        }
+      }
+      return answer;
     },
   };
 }

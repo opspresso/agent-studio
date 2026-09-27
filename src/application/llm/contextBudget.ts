@@ -56,7 +56,7 @@ const NON_ASCII_TOKENS_PER_2_CHARS = 3;
  */
 export const IMAGE_PART_TOKENS = 2_500;
 /** Reserve for everything the character estimate cannot see. */
-const PROTOCOL_HEADROOM_TOKENS = 2_000;
+export const PROTOCOL_HEADROOM_TOKENS = 2_000;
 
 /** Conservative token estimate for a piece of text (see the module doc). */
 export function estimateContextTokens(text: string): number {

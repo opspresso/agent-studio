@@ -40,8 +40,10 @@ export interface AppSettings {
   workspaceModels?: import("../workspace/types").WorkspaceRuntimeModels;
   /** Active capability-catalog reranker; absent disables reranking. */
   rerankerModel?: string;
-  /** Decision model used to suggest an Agent for a new Chat or Workspace. */
+  /** Shared decision model for Agent suggestions and focused-call model routing. */
   decisionModel?: string;
+  /** Shared tier assignments and execution constraints; Agents store only an opt-in. */
+  modelRouting?: import("../llm/callRouting").CallRoutingPolicy;
   /** Reranker relevance floor; absent falls back to RERANKER_MIN_SCORE. */
   rerankerMinScore?: string;
   pluginsRepo?: string;

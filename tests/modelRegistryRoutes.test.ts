@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConflictError } from "@/application/errors";
+import { DEFAULT_CALL_ROUTING_POLICY } from "@/domain/llm/callRouting";
 
 const { useCases, role, getDefaultModel, getDecisionModelSelection } = vi.hoisted(() => ({
-  useCases: { list: vi.fn(), save: vi.fn(), remove: vi.fn(), discover: vi.fn(), selectDefault: vi.fn(), selectDecision: vi.fn() },
-  role: { admin: true }, getDefaultModel: vi.fn(), getDecisionModelSelection: vi.fn(),
+  useCases: { list: vi.fn(), save: vi.fn(), remove: vi.fn(), discover: vi.fn(), selectDefault: vi.fn(), selectDecision: vi.fn(), getRouting: vi.fn(), saveRouting: vi.fn() },
+  role: { admin: true, authenticated: true }, getDefaultModel: vi.fn(), getDecisionModelSelection: vi.fn(),
 }));
 vi.mock("@/lib/container", () => ({ modelRegistryUseCases: useCases }));
 vi.mock("@/lib/runtime-settings", () => ({ getDefaultModel, getDecisionModelSelection }));
 vi.mock("@/lib/session", () => ({
+  withAuth: (handler: () => unknown) => () => role.authenticated ? handler() : Response.json({ error: "Unauthorized" }, { status: 401 }),
   withAdminAuth: (handler: (user: { email: string }, request: Request) => unknown) => (request: Request) => role.admin ? handler({ email: "admin@example.test" }, request) : Response.json({ error: "Forbidden" }, { status: 403 }),
   withMemberAuth: (handler: () => unknown) => () => handler(),
 }));
@@ -15,11 +17,32 @@ const registry = await import("@/app/api/models/registry/route");
 const discovery = await import("@/app/api/models/discover/route");
 const defaults = await import("@/app/api/models/default/route");
 const decisions = await import("@/app/api/models/decision/route");
+const routing = await import("@/app/api/models/routing/route");
 const model = { id: "office/model", provider: "office", wireId: "model", displayName: "Model", type: "decision", contextWindow: 0, maxTokens: 0, capabilities: { tools: false, structuredOutput: true, imageInput: false, reasoning: false } };
 const request = (method: string, path = "registry", body?: unknown) => new Request(`https://studio.example.test/api/models/${path}`, { method, ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }) });
 
-beforeEach(() => { vi.clearAllMocks(); role.admin = true; });
+beforeEach(() => { vi.clearAllMocks(); role.admin = true; role.authenticated = true; });
 describe("model registry routes", () => {
+  it("allows authenticated routing summaries but restricts policy writes to admins", async () => {
+    const view = { policy: DEFAULT_CALL_ROUTING_POLICY, configured: false, decisionModel: null };
+    useCases.getRouting.mockResolvedValue(view);
+    useCases.saveRouting.mockResolvedValue(view);
+    role.admin = false;
+    expect(await (await routing.GET()).json()).toEqual(view);
+    expect((await routing.PUT(request("PUT", "routing", { policy: DEFAULT_CALL_ROUTING_POLICY }))).status).toBe(403);
+    expect(useCases.saveRouting).not.toHaveBeenCalled();
+    role.admin = true;
+    expect((await routing.PUT(request("PUT", "routing", { policy: DEFAULT_CALL_ROUTING_POLICY }))).status).toBe(200);
+    expect(useCases.saveRouting).toHaveBeenCalledWith(DEFAULT_CALL_ROUTING_POLICY, "admin@example.test");
+    role.authenticated = false;
+    expect((await routing.GET()).status).toBe(401);
+  });
+  it("rejects Agent-style policies and malformed shared budgets before mutation", async () => {
+    for (const policy of [{ ...DEFAULT_CALL_ROUTING_POLICY, enabled: true }, { ...DEFAULT_CALL_ROUTING_POLICY, maxCallCostUsd: 2, maxRunCostUsd: 1 }]) {
+      expect((await routing.PUT(request("PUT", "routing", { policy }))).status).toBe(400);
+    }
+    expect(useCases.saveRouting).not.toHaveBeenCalled();
+  });
   it("returns stored selections and accepts all six model types", async () => {
     useCases.list.mockResolvedValue([model]);
     expect(await (await registry.GET()).json()).toEqual({ models: [model] });

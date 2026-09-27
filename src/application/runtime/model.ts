@@ -1,31 +1,16 @@
-import { getCurrentSpan, type AgentOutputItem, type Model, type ModelRequest, type ModelResponse, type ResponseStreamEvent } from "@openai/agents";
-import { applyModelConstraints, calculateCost, describeImageInputReject } from "@/domain/llm/models";
-import type { UsageInfo } from "@/domain/llm/types";
-import { createRunContextBudget, type RunContextBudget } from "@/application/llm/contextBudget";
-import { createToolResultBudget, MAX_TOOL_RESULT_CHARS_PER_TURN, type ToolResultBudget } from "@/application/llm/toolResultBudget";
+import { getCurrentSpan, ModelBehaviorError, type AgentOutputItem, type Model, type ModelRequest, type ModelResponse, type ResponseStreamEvent } from "@openai/agents";
+import { routePrimaryModel, primaryRoutingInstructions, primaryReasoningEffort } from "./modelRouting";
+import { applyModelConstraints, describeImageInputReject } from "@/domain/llm/models";
+import { modelResponseUsage, modelResponseIsTruncated, modelResponseHasOutput, type ResponseUsage } from "./modelUsage";
+import { createRunContextBudget } from "@/application/llm/contextBudget";
+import { createToolResultBudget, MAX_TOOL_RESULT_CHARS_PER_TURN } from "@/application/llm/toolResultBudget";
 import { PiiFilter } from "@/application/llm/pii";
 import { log } from "@/shared/logger";
 import { maskValues } from "./messages";
 import { conversationMessages } from "./messages";
-import type { ChatMessageInput } from "@/domain/llm/types";
 import { boundToolArgsPair, boundArgumentText } from "./arguments";
-import type { EngineDeps, RunAgentInput } from "./types";
+import type { EngineDeps, RunAgentInput, RuntimeTurn } from "./types";
 import type { RuntimeEmitter } from "./output";
-
-export interface RuntimeTurn {
-  conversation?: ChatMessageInput[];
-  resources?: { urls: number; files: number; imageTurn: number; imagesUsed: number };
-  number: number;
-  maxTurns: number;
-  finalTurn: boolean;
-  outputCut: boolean;
-  answered?: boolean;
-  model: string;
-  contextBudget?: RunContextBudget;
-  results: ToolResultBudget;
-  handoffTools?: Set<string>;
-  toolOrder?: Map<string, { previous: Promise<void>; finished: Promise<void>; complete: () => void }>;
-}
 
 export interface RuntimeCallIds {
   prefix?: string;
@@ -48,6 +33,7 @@ export function createRunModel(
   let reportedForcedReasoning = false;
   let reportedWithheldReasoning = false;
   let reportedIneligibleFallback = false;
+  let routed: Awaited<ReturnType<typeof routePrimaryModel>>;
   const traceReasoning = input.parameters?.reasoningTrace === true;
 
   function prepare(request: ModelRequest, model: string): ModelRequest {
@@ -58,20 +44,22 @@ export function createRunModel(
       ...(toolNames.length ? { tools: toolNames.map((name) => ({ type: "function" as const, function: { name } })) } : {}),
       temperature: configured?.temperature,
       presencePenalty: configured?.presencePenalty,
-      maxTokens: configured?.maxTokens,
-      reasoningEffort: configured?.reasoningEffort,
+      maxTokens: configured?.maxTokens ?? routed?.maxOutputTokens,
+      reasoningEffort: configured?.reasoningEffort ?? (routed ? primaryReasoningEffort(routed.purpose, routed.tier) : undefined),
     });
     if (traceReasoning && params.reasoningEffort === "none" && !reportedForcedReasoning) {
       reportedForcedReasoning = true;
       emit({ warning: "This model does not reason while it can call tools, so reasoning is disabled for this run." });
     }
+    const systemInstructions = request.systemInstructions ? filter?.mask(request.systemInstructions) ?? request.systemInstructions : undefined;
+    const routingHint = routed ? primaryRoutingInstructions(routed.purpose) : "";
     return {
       ...request,
+      systemInstructions: `${systemInstructions ?? ""}${routingHint}` || undefined,
       ...(filter ? {
         input: maskValues(filter, request.input) as ModelRequest["input"],
-        systemInstructions: request.systemInstructions ? filter.mask(request.systemInstructions) : undefined,
       } : {}),
-      ...(turn.finalTurn ? { tools: [], handoffs: [], systemInstructions: `${filter?.mask(request.systemInstructions ?? "") ?? request.systemInstructions ?? ""}\n\nThis is the final turn. Answer from the information already available; no further tools can run.` } : {}),
+      ...(turn.finalTurn ? { tools: [], handoffs: [], systemInstructions: `${systemInstructions ?? ""}${routingHint}\n\nThis is the final turn. Answer from the information already available; no further tools can run.` } : {}),
       modelSettings: {
         ...request.modelSettings,
         temperature: params.temperature,
@@ -82,16 +70,18 @@ export function createRunModel(
     };
   }
 
-  function begin(request: ModelRequest) {
+  function begin(request: ModelRequest, model: string) {
     if (Array.isArray(request.input)) turn.conversation = conversationMessages(request.input);
     turn.number += 1;
     turn.finalTurn = (request.tools.length > 0 || request.handoffs.length > 0) && turn.number >= turn.maxTurns;
     turn.outputCut = false;
     turn.answered = false;
-    const budget = createRunContextBudget(input.model, fallbackFor(request), input.parameters?.maxTokens);
+    const budget = createRunContextBudget(model, input.parameters?.modelRouting === true ? undefined : fallbackFor(request), input.parameters?.maxTokens ?? routed?.maxOutputTokens);
     budget?.chargeText(request.systemInstructions);
+    if (routed) budget?.chargeText(primaryRoutingInstructions(routed.purpose));
     budget?.chargeText(JSON.stringify(request.tools));
     budget?.chargeText(JSON.stringify(request.handoffs));
+    budget?.chargeText(JSON.stringify(request.outputType));
     if (Array.isArray(request.input)) {
       for (const item of request.input) {
         budget?.chargeText(JSON.stringify(item, (_key, value: unknown) => {
@@ -108,23 +98,16 @@ export function createRunModel(
     turn.results = createToolResultBudget(MAX_TOOL_RESULT_CHARS_PER_TURN, turn.contextBudget);
   }
 
-  async function record(model: string, response: {
-    usage: { inputTokens: number; outputTokens: number; inputTokensDetails?: Record<string, number> | Record<string, number>[]; outputTokensDetails?: Record<string, number> | Record<string, number>[] };
-    rawUsage?: Record<string, unknown>;
-  }) {
-    const { inputTokens, outputTokens } = response.usage;
-    const sum = (details: Record<string, number> | Record<string, number>[] | undefined, key: string) =>
-      Array.isArray(details) ? details.reduce((total, entry) => total + (entry[key] ?? 0), 0) : details?.[key] ?? 0;
-    const cachedTokens = sum(response.usage.inputTokensDetails, "cached_tokens");
-    const reasoningTokens = sum(response.usage.outputTokensDetails, "reasoning_tokens");
-    const billed = response.rawUsage?.cost ?? response.rawUsage?.cost_usd;
-    const usage: UsageInfo = {
-      model, inputTokens, outputTokens,
-      costUsd: typeof billed === "number" && Number.isFinite(billed)
-        ? billed : calculateCost(model, { inputTokens, outputTokens, cachedTokens }),
-      ...(cachedTokens > 0 ? { cachedTokens } : {}),
-      ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
-    };
+  function beginFallbackBudget(request: ModelRequest, model: string) {
+    if (input.parameters?.modelRouting !== true) return;
+    turn.number -= 1;
+    begin(request, model);
+  }
+
+  async function record(model: string, response: ResponseUsage) {
+    const usage = modelResponseUsage(model, response);
+    routed?.settle(usage);
+    const { inputTokens, outputTokens, cachedTokens = 0, reasoningTokens = 0 } = usage;
     const span = getCurrentSpan();
     if (span?.spanData.type === "generation") {
       span.spanData.model = model;
@@ -169,8 +152,9 @@ export function createRunModel(
     return turn.finalTurn ? normalized.filter((item) => item.type !== "function_call") : normalized;
   }
 
-  function fallbackFor(request: ModelRequest): string | undefined {
-    const fallback = input.fallbackModel;
+  function fallbackFor(request: ModelRequest, currentModel = input.model): string | undefined {
+    const fallback = input.fallbackModel && input.fallbackModel !== currentModel ? input.fallbackModel
+      : input.parameters?.modelRouting === true && input.model !== currentModel ? input.model : undefined;
     if (!fallback) return undefined;
     const hasImages = Array.isArray(request.input) && request.input.some((item) => {
       const content = item.type === "function_call_result" ? item.output
@@ -188,24 +172,32 @@ export function createRunModel(
 
   return {
     async getResponse(request) {
-      begin(request);
-      let model = input.model;
+      routed = await routePrimaryModel(deps, input, turn, request, emit);
+      let model = routed?.model ?? input.model;
+      begin(request, model);
       let response: ModelResponse;
-      try { response = await (await deps.channel.getModel(model)).getResponse(prepare(request, model)); }
+      let prepared = prepare(request, model);
+      try { response = await (await deps.channel.getModel(model)).getResponse(prepared); }
       catch (error) {
         request.signal?.throwIfAborted();
-        const fallback = fallbackFor(request);
-        if (!fallback || !isRetryable(error)) throw error;
-        model = fallback;
-        response = await (await deps.channel.getModel(model)).getResponse(prepare(request, model));
+        const fallback = fallbackFor(request, model);
+        if (!fallback || fallback === model || !isRetryable(error)) throw error;
+        routed = await routePrimaryModel(deps, input, turn, request, emit, fallback);
+        model = routed?.model ?? fallback;
+        beginFallbackBudget(request, model);
+        prepared = prepare(request, model);
+        response = await (await deps.channel.getModel(model)).getResponse(prepared);
       }
       turn.model = model;
-      turn.outputCut = response.providerData?.choices?.[0]?.finish_reason === "length";
+      turn.outputCut = modelResponseIsTruncated(response, prepared.modelSettings.maxTokens);
       await record(model, response);
+      if (turn.outputCut && !modelResponseHasOutput(response)) throw new ModelBehaviorError("The model exhausted its output limit without a final answer");
       return { ...response, output: output(response.output) };
     },
     async *getStreamedResponse(request): AsyncIterable<ResponseStreamEvent> {
-      begin(request);
+      routed = await routePrimaryModel(deps, input, turn, request, emit);
+      const primaryModel = routed?.model ?? input.model;
+      begin(request, primaryModel);
       const contentRestorer = filter?.createStreamRestorer();
       const reasoningRestorer = filter?.createStreamRestorer();
       let contentThisTurn = false;
@@ -220,7 +212,8 @@ export function createRunModel(
       const consume = async function* (model: string): AsyncIterable<ResponseStreamEvent> {
         turn.model = model;
         const source = await deps.channel.getModel(model);
-        for await (const event of source.getStreamedResponse(prepare(request, model))) {
+        const prepared = prepare(request, model);
+        for await (const event of source.getStreamedResponse(prepared)) {
           started = true;
           if (event.type === "output_text_delta" && event.delta) {
             turn.answered = turn.answered || event.delta.trim().length > 0;
@@ -243,12 +236,14 @@ export function createRunModel(
             }
           }
           if (event.type === "response_done") {
+            turn.outputCut ||= modelResponseIsTruncated(event.response, prepared.modelSettings.maxTokens);
             flush();
             await record(model, event.response);
             if (turn.outputCut && !reportedCut) {
               reportedCut = true;
               emit({ warning: "The model's response was cut at its output limit." });
             }
+            if (turn.outputCut && !modelResponseHasOutput(event.response)) throw new ModelBehaviorError("The model exhausted its output limit without a final answer");
             if ((turn.finalTurn || !event.response.output.some((item) => item.type === "function_call")) && !saidContent && saidReasoning) {
               emit({ warning: traceReasoning
                 ? "This model answered inside its reasoning, so the reply is empty and the answer is in the recorded reasoning."
@@ -260,12 +255,15 @@ export function createRunModel(
         }
       };
       try {
-        try { yield* consume(input.model); }
+        try { yield* consume(primaryModel); }
         catch (error) {
           request.signal?.throwIfAborted();
-          const fallback = fallbackFor(request);
-          if (started || !fallback || !isRetryable(error)) throw error;
-          yield* consume(fallback);
+          const fallback = fallbackFor(request, primaryModel);
+          if (started || !fallback || fallback === primaryModel || !isRetryable(error)) throw error;
+          routed = await routePrimaryModel(deps, input, turn, request, emit, fallback);
+          const model = routed?.model ?? fallback;
+          beginFallbackBudget(request, model);
+          yield* consume(model);
         }
       } finally { flush(); }
     },

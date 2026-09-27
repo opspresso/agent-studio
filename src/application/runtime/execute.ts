@@ -12,7 +12,7 @@ import { withNativeTracing } from "./tracing";
 
 /** SDK Runner is the only owner of model/tool turns. This generator carries Studio output. */
 export async function* runAgent(deps: AgentDeps, input: RunAgentInput): AsyncGenerator<EngineChunk> {
-  if (input.messages.some(hasImageParts)) {
+  if (input.parameters?.modelRouting !== true && input.messages.some(hasImageParts)) {
     const refusal = describeImageInputReject(input.model);
     if (refusal) throw new ValidationError(refusal);
   }

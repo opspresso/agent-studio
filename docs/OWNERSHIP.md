@@ -14,6 +14,10 @@
 
 | 결정 | 소유자 | 확인 |
 |---|---|---|
+| 호출 단위 모델 tier·작업 목적·전역 정책 형태와 기본값 | `src/domain/llm/callRouting.ts`; Agent는 boolean 사용 여부만 저장한다 | 구조 |
+| 전역 라우팅 정책 저장·검증과 모델 삭제 가드 | `src/application/llm/modelRegistry.ts`, `callRoutingPolicy.ts` | 코드 |
+| 주·보조 호출 모델 우선순위·후보 중복 제거·확률 비교·권한·기능·예산·출력 구조·승격·fallback | `src/application/llm/callModelRouter.ts`; context 추정은 기존 `contextBudget.ts`를 사용한다 | 코드 |
+| 주 호출 목적·전체 context 측정·기본 출력 한도·결정 trace와 ModelTask SDK 호출·청구 | `src/application/runtime/modelRouting.ts`, `model.ts`, `modelTask.ts`; 모델 usage·출력 한도 해석은 `modelUsage.ts`, 로컬 span 변환은 `tracing.ts` | 코드 |
 | 실행의 첫 응답을 확인한 뒤 경고를 먼저 전달하고 조기 종료 시 원본 실행을 닫기 | `src/application/run/leadingWarnings.ts` 의 `withLeadingWarnings`. Chat과 실행 API가 같은 첫 응답·종료 계약을 사용한다 | 구조 |
 | 이미지 Model 의 세 가지 토큰 수를 usage 행 하나로 합치기 | `src/domain/llm/models.ts` | 구조 |
 | 한 런이 파일을 몇 개까지 쓸 수 있는가 | `src/application/runtime/tools.ts` 의 `MAX_SAVED_FILES_PER_RUN`. 이 플랫폼이 고른 루프 한도라 그것을 강제하는 루프 옆에 산다 | 구조 |

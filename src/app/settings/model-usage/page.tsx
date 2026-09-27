@@ -10,6 +10,7 @@ import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
 import { ModelSelectionSection } from "@/app/models/ModelSelectionSection";
 import { ModelExecutionPolicySection } from "@/app/models/ModelExecutionPolicySection";
 import { WorkspaceModelsSection } from "@/app/models/WorkspaceModelsSection";
+import { ModelRoutingSection } from "@/app/models/ModelRoutingSection";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import type { ModelsCatalogResponse } from "@/app/api/models/catalog/route";
 import type { DefaultModelResponse } from "@/app/api/models/default/route";
@@ -85,6 +86,7 @@ export default function ModelUsagePage() {
           ? [{ value: view.catalog.selections.decision.model, label: view.catalog.selections.decision.model }] : []}
         onChange={model => void selectDecision(model)} />
       </Stack></CollapsibleSection>
+      <ModelRoutingSection models={view.catalog.models.filter(model => model.type === "text" && !model.selectionHidden)} />
       <WorkspaceModelsSection />
       <ModelSelectionSection models={view.catalog.models} selections={view.catalog.selections}
         catalogMinScore={view.catalog.catalogMinScore} rerankerMinScore={view.catalog.rerankerMinScore}
