@@ -49,13 +49,9 @@ export interface SlackReaderPort {
    */
   userDetail(token: string, userId: string): Promise<SlackUserDetail | null>;
   /**
-   * The address behind a Slack id — for attribution, never for a prompt.
-   *
-   * A Slack actor is a workspace id, so the artifact owner index (keyed by
-   * email) had nothing to key on and a picture somebody asked the bot to draw
-   * was reachable only through its agent. `null` when the workspace does not
-   * share it or the scope is missing, and the output is then filed by agent
-   * exactly as before.
+   * Resolve the address behind a Slack user ID for artifact ownership, never
+   * for a prompt. Return null when email is unavailable; the Agent index still
+   * keeps unattributed outputs accessible to their managers.
    */
   userEmail(token: string, userId: string): Promise<string | null>;
   /**
@@ -78,11 +74,8 @@ export interface SlackReaderPort {
 }
 
 /**
- * Serves one Slack tool call, already bound to a workspace.
- *
- * A string in, a string out: the engine routes four tool names here and none of
- * them needs a richer shape, while binding the token at construction keeps
- * *which* workspace out of the model's reach.
+ * Serve a read-only Slack tool with the bot token bound at construction,
+ * so model arguments cannot select a different workspace or credential.
  */
 export type SlackWorkspaceReader = (
   tool: string,

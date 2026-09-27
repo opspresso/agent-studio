@@ -1,18 +1,6 @@
 /**
- * Turning a stored file reference into an address a person can download.
- *
- * The sibling of `imageRefs.ts`, and deliberately not the same function. The two
- * differ in both halves of the job:
- *
- * - An image has two stored forms to reconcile — a legacy public `url` and a
- *   signed `key`. A file has one. There was never a moment when files were
- *   written unsigned, so a compatibility branch here would be a branch nothing
- *   can reach, which is worse than none: the next reader would take it as
- *   evidence that such rows exist.
- * - An image is *shown*; a file is *taken away*. So the address names the file
- *   it should be saved as. Without that a browser saves the object key, and the
- *   key is a UUID — the reader gets `c74d33ff-94bd-4008-b95f-065bc3ab2113.pdf`
- *   and no idea which document it is.
+ * Stored file references need a download URL carrying their filename.
+ * Unlike image display references, they have no permanent public URL form.
  */
 
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";

@@ -13,9 +13,8 @@ import type { ChatMessageImage } from "./types";
 export type SignImageUrl = (key: string, expiresInSeconds: number) => Promise<string>;
 
 /**
- * Resolve one reference. A legacy `url` is returned unchanged; a `key` is
- * signed. Returns undefined when neither is present, or when signing failed —
- * callers drop the image rather than render a broken one.
+ * Return a stored public URL or sign its object key. Missing key/signer returns
+ * undefined; signing errors propagate so the caller can report the loss.
  */
 export async function resolveImageUrl(
   image: ChatMessageImage,
