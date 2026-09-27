@@ -775,8 +775,9 @@ plugin 행의 `branch` 는 `archive`, `commitSha` 는 아카이브의 sha256 이
 
 `/sync/scan` 은 CronJob 의 tick 이다: 브랜치 head 를 마지막 리포트와 비교해, 머지된 것이 없으면
 스냅샷 비용을 치르지 않고 `upToDate` 로 답한다. 마지막 리포트가 아카이브 업로드의 것이면 `held` 로
-답하고 GitHub 를 보지 않는다. 사람이 올린 것은 다음 `POST /api/plugins/sync` 까지 선다 (그 리포트가 `write-failed` skip 을 싣고 있었다면
-예외다. 그것은 다시 돌려야만 복구된다). tick 은 `scheduler` 로서 sync 하고, 절대 삭제하지
+답하고 GitHub를 보지 않는다. 아카이브 리포트의 실패 여부와 무관하게 다음 명시적
+`POST /api/plugins/sync`까지 자동 GitHub sync를 보류한다. GitHub 리포트에 쓰기 실패가 있으면
+같은 head라도 upToDate로 생략하지 않고 다시 sync한다. tick은 `scheduler`로서 실행하고 삭제하지
 않으며 (제거 선택은 콘솔에만 있다), schedule ticker 의 토큰을 공유한다. 배포당 CronJob 인증
 정보는 하나다.
 
@@ -850,11 +851,11 @@ plugin 루트 안에 중첩된 plugin 루트, 두 루트가 주장하는 plugin 
 더 이상 갖고 있지 않은 plugin 행을 나열한다. 그중 하나를 제거하면 (`remove.plugins` 로) 그 행만
 지워진다. 구성 요소는 각각 orphan 으로 따로 드러나며, 저마다 별개의 결정이다.
 
-쓰기는 문서가 소유한 것만 대체한다. skill 의 description·content·첨부, MCP 항목의 `url`,
-`description`, `content` (plugin 의 `org.opspresso.agent-studio/mcp/<name>.md` 확장 문서에서
-온다), `source`. 암호화된 헤더, 발견된 OAuth 블록, managed 항목의 프로비저닝된 주소는 절대
-건드리지 않고, 문서가 싣지 않은 필드는 저장된 것을 그대로 둔다. MCP 항목의 주소를 옮기면 옛
-주소에서 읽었던 OAuth 블록이 버려지므로 Discover 를 다시 돌려야 한다.
+sync는 Skill의 description·content·참고 파일과 MCP의 URL·description·content·sourceOutputs·
+provenance를 적용한다. 현재 Plugin 소유 MCP에서 확장 문서나 sourceOutputs 선언이 사라지면
+기존 노트·매핑을 지운다. 다른 출처를 인수할 때는 새 선언이 없는 노트를 보존한다.
+header는 가져오지 않으며 managed 주소는 옮기지 않는다. 원격 URL을 옮기면 기존 header와
+OAuth를 제거하므로 새 주소의 credential 입력과 Discover가 필요하다.
 
 상류 실패(GitHub 도달 불가, 잘린 트리)는 다른 모든 라우트와 마찬가지로 `apiError` 를 통해
 `502` 로 답한다. `PLUGINS_REPO` 나 `GITHUB_TOKEN` 이 없으면 `503` 이다.
@@ -881,10 +882,9 @@ Slack 읽기는 마스킹된 인증 정보 상태와 함께 `configured`, `event
 `suggestedPrompts`, `channelKeywords`, 그리고 생성된 앱 manifest를 돌려준다.
 설정 경로의 GET·PUT·DELETE가 이 뷰로 답하며 test·channels는 아래의 별도 응답을 사용한다.
 다섯 엔드포인트 모두 소유자와 effective admin 으로 제한된다 (그 외에는 403). 마스킹된 뷰도 봇
-토큰 / signing secret 의 양끝은 드러내기 때문이다. 마스킹되거나 생략된 secret 은 업데이트에서
-보존되고, agent 가 아닌 agent 에 대한 `PUT` 은 400 이다. Slack 봇은 agent 에만
-붙는다. 저장된 것도 보낸 것도 없는 상태에서 봇 토큰과 signing secret 없이 `enabled: true` 를
-보내는 `PUT` 도 마찬가지다: 켤 것이 없다.
+토큰 / signing secret 의 양끝은 드러내기 때문이다. 마스킹되거나 생략된 secret은 업데이트에서
+보존하며 Agent가 없으면 404다. 저장되거나 전달된 봇 토큰과 signing secret 없이
+`enabled: true`로 활성화하면 400이다.
 테스트 엔드포인트는 `{ ok: true, team, botUser }` 를 돌려주고, 그 agent 에 Slack 이 설정되지
 않았거나 꺼져 있으면 `400`, Slack API 실패면 `502` 다.
 채널 엔드포인트는 `{ channels: [{ id, name, isPrivate?, isMember? }] }` 를 돌려준다. 설정되고
@@ -909,13 +909,12 @@ Telegram(`getMe`)으로 확인하고, Telegram 이 거부하면 400 이다. 마�
 것을 유지한다. webhook secret 은 첫 토큰과 함께 이 플랫폼이 발행하며 절대 돌려주지 않는다.
 그것이 필요한 쪽은 Telegram 뿐이다. **webhook 은 `PUT` 이 스위치를 따라 관리한다**: `enabled`
 가 켜지면 이 배포의 URL 에 등록하고, 꺼지면 삭제하며, 토큰이 바뀌면 이전 봇의 webhook 을 물리고
-secret 을 새로 발행한 뒤 켜져 있으면 새 봇을 등록한다. 그 Telegram 호출이 실패하면 저장은 그대로
-되고 응답에 `warnings: string[]` 로 말한다. `POST …/telegram/webhook` 은 같은 등록을 명시적으로
+secret을 새로 발행한 뒤 켜져 있으면 새 봇을 등록한다. 자동 등록 실패는 저장을 유지하고
+`warnings: string[]`로 알리며, Webhook 삭제 실패는 로그로 확인한다. `POST …/telegram/webhook`은 같은 등록을 명시적으로
 다시 하는 것이고(`PUBLIC_BASE_URL` 이 바뀐 뒤 옮길 때) `{ ok: true, url }` 로 답한다. `DELETE`
 는 Telegram 에 webhook 을 없애라고 최선을 다해 알리고, 어느 쪽이든 인증 정보는 잊는다. agent
-를 지울 때도 행이 사라지기 전에 webhook 을 물린다. Slack 처럼
-agent 가 아닌 agent 에 대한 `PUT` 은 400 이고, 저장되거나 전달된 토큰 없이 켜는 것도
-마찬가지다. `test` 는 `{ ok: true, botId, botUsername }` 을 돌려주고, Telegram 이 설정되지
+를 지울 때도 행이 사라지기 전에 webhook을 물린다. Agent가 없으면 404이며,
+token 없이 활성화하면 400이다. `test`는 `{ ok: true, botId, botUsername }`을 돌려주고, Telegram이 설정되지
 않았거나 꺼져 있으면 `400`, Bot API 실패면 `502` 다. `webhook` 도 같은 방식으로 답한다.
 `chats` 는 현재 설정된 봇이 실제로 응답 대상으로 받은 chat 과 포럼 topic 을 최근에 본 순서로
 최근 100개까지 `{ chats: [{ chatId, chatType, title, threadId?, lastSeenAt }] }` 에 담아 돌려준다. Telegram Bot API
@@ -944,7 +943,7 @@ App ID 와 테넌트 id 가 GUID 인지만 확인하고 Microsoft 에는 아무�
 동작한다는 증거는 `test` 가 저장된 자격 증명으로 토큰을 받아 보는 것이고(`{ ok: true, appId,
 expiresInSeconds }`, 설정되지 않았거나 꺼져 있으면 `400`, Microsoft 가 거절하면 `502`), 저장이
 아니라 운영자가 요청하는 네트워크 호출이다. 마스킹되거나 빈 secret 은 저장된 것을 유지하고,
-agent 가 아닌 agent 에 대한 `PUT` 과 자격 증명 없이 켜는 것은 400 이다. `DELETE` 는 등록을
+Agent가 없으면 404이며 자격 증명 없이 활성화하면 400이다. `DELETE`는 등록을
 잊는다. Azure 쪽 endpoint 는 운영자가 지운다.
 
 messaging 엔드포인트 자체인 `POST /api/teams/messages/{agent}` 는 Bot Framework 가 호출하는
@@ -1068,8 +1067,9 @@ POST   /api/agents/{name}/mcp-connections/{server}/tools
 - `status` 는 `needs_auth` | `connected` | `needs_reauth` 다. 연결을 `needs_reauth` 로 옮기는
   것은 **거부된 grant** 뿐이다. 5xx 나 타임아웃은 그대로 둔다.
 - `clientSecret` 은 읽을 때 마스킹되고 **토큰은 절대 돌려주지 않는다**. agent API 토큰과 달리 reveal 경로가 없는데, 토큰은 표시될 이유가 없기 때문이다. 쓰기에서 생략되거나
-  마스킹된 값은 저장된 것을 유지한다. **빈** 값은 그것을 지우며, 이것이 confidential 클라이언트에서
-  public 클라이언트로 돌아가는 유일한 길이다.
+  마스킹된 값은 같은 Client ID·issuer의 Secret만 유지한다. Client ID나 issuer가 달라졌으면
+  이전 Secret은 제거한다. 빈 값도 Secret을 제거한다. 저장 시 resource가 달라졌으면 같은
+  issuer의 client Secret은 유지할 수 있지만 이전 access/refresh token을 지우고 재인가한다.
 - `clientRegistered` 는 인증 정보가 손으로 입력된 것이 아니라 RFC 7591 동적 등록에서 왔을 때
   `true` 다.
 - `/authorize` 는 `3xx` 를 내는 대신 프로바이더 URL 을 **돌려준다**: 호출자는 콘솔의 `fetch` 이고,
