@@ -45,18 +45,21 @@ function request(token?: string): Request {
 }
 
 beforeEach(() => {
-  process.env.SCHEDULE_SCAN_TOKEN = "tick-token";
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-08-01T00:30:30Z");
+  vi.stubEnv("SCHEDULE_SCAN_TOKEN", "tick-token");
   scanSchedules.mockResolvedValue({ summary: SUMMARY, firings: [FIRING] });
 });
 
 afterEach(() => {
-  delete process.env.SCHEDULE_SCAN_TOKEN;
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
   vi.clearAllMocks();
 });
 
 describe("POST /api/triggers/scan", () => {
   it("answers 503 when no ticker is configured, without scanning", async () => {
-    delete process.env.SCHEDULE_SCAN_TOKEN;
+    vi.stubEnv("SCHEDULE_SCAN_TOKEN", undefined);
     const response = await POST(request("tick-token"));
     expect(response.status).toBe(503);
     expect(scanSchedules).not.toHaveBeenCalled();
@@ -76,7 +79,7 @@ describe("POST /api/triggers/scan", () => {
   });
 
   it("survives the trailing newline a file-built Kubernetes Secret carries", async () => {
-    process.env.SCHEDULE_SCAN_TOKEN = "tick-token\n";
+    vi.stubEnv("SCHEDULE_SCAN_TOKEN", "tick-token\n");
     const response = await POST(request("tick-token"));
     expect(response.status).toBe(200);
   });
