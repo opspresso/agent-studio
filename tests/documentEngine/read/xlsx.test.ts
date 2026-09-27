@@ -310,6 +310,33 @@ test("the 1900 leap-year bug and the 1904 epoch are both accounted for", () => {
   assert.equal(serialToIso(-1, false), undefined);
 });
 
+test("the fictional 1900 leap day keeps its serial in text and inspection", () => {
+  const bytes = buildZip({
+    "xl/workbook.xml": utf8(workbook("Sheet1")),
+    "xl/_rels/workbook.xml.rels": utf8(RELS),
+    "xl/styles.xml": utf8('<styleSheet><cellXfs><xf numFmtId="14"/></cellXfs></styleSheet>'),
+    "xl/worksheets/sheet1.xml": utf8(sheet('<row>' +
+      '<c s="0"><v>59</v></c><c s="0"><v>60</v></c>' +
+      '<c s="0"><v>60.5</v></c><c s="0"><v>61</v></c></row>')),
+  });
+  assert.equal(read(bytes).text, "## Sheet1\n1900-02-28 | 60 | 60.5 | 1900-03-01");
+  assert.deepEqual(inspectXlsx(bytes).sheets[0]!.cells.map(cell => cell.value),
+    ["1900-02-28", "60", "60.5", "1900-03-01"]);
+  for (const serial of [60, 60.5, 60.999]) assert.equal(serialToIso(serial, false), undefined);
+  assert.equal(serialToIso(60, true), "1904-03-01");
+  assert.equal(serialToIso(60.5, true), "1904-03-01 12:00:00");
+});
+
+test("date conversion keeps the final supported day and refuses expanded-year dates", () => {
+  assert.equal(serialToIso(2_958_465, false), "9999-12-31");
+  assert.equal(serialToIso(2_958_465.5, false), "9999-12-31 12:00:00");
+  assert.equal(serialToIso(2_957_003, true), "9999-12-31");
+  assert.equal(serialToIso(2_957_003.5, true), "9999-12-31 12:00:00");
+  assert.equal(serialToIso(2_957_004, true), undefined);
+  assert.equal(serialToIso(2_958_465, true), undefined);
+  assert.equal(serialToIso(2_958_466, false), undefined);
+});
+
 test("only an unambiguous format is read as a date", () => {
   // Emulating currency, separators or a conditional format would be a
   // plausible-but-wrong generator; a raw value is honest where a guess is not.
