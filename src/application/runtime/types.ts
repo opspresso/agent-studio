@@ -31,7 +31,7 @@ export interface EngineDeps {
 }
 
 /**
- * The four injected abilities live in {@link AgentCapabilityDeps}
+ * Optional injected capabilities live in {@link AgentCapabilityDeps}
  * (`agentAssembly.ts`), because their *presence* is what the assembly derives
  * the prompt and tool set from; the MCP dispatcher stays here — it serves
  * calls, but which MCP tools are offered arrives as run input, not off a dep.
@@ -68,7 +68,7 @@ export interface RunAgentInput {
   systemPrompt?: string;
   messages: ChatMessageInput[];
   parameters?: EngineParameters;
-  /** The run clock is injected; the runtime does not read wall-clock time. */
+  /** The prompt assembly clock is injected by the execution facade. */
   now?: Date;
   /** The caller display identity, already gated by the Agent configuration. */
   caller?: RunCaller;
