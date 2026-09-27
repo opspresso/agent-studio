@@ -195,7 +195,7 @@ describe("onFilePaste", () => {
     } as unknown as React.ClipboardEvent;
     return { event, prevented };
   };
-  const png = () => new File(["x"], "s.png", { type: "image/png" });
+  const png = () => new File(["x"], "s.png", { type: "image/png", lastModified: 0 });
 
   it("attaches a screenshot, which arrives as files and nothing else", () => {
     const staged: File[][] = [];

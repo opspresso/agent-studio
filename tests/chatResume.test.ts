@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActiveChatRun, Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ChatRunLogRepository, RunLogEntry } from "@/domain/chat/runLog";
@@ -9,6 +9,12 @@ import { getChat } from "@/application/chat/getChat";
 import { ChatNotFoundError } from "@/application/chat/errors";
 
 const NOW = Date.parse("2026-08-05T00:00:00.000Z");
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+});
+afterEach(() => vi.useRealTimers());
+
 const LIVE_LEASE = Math.floor(NOW / 1000) + 600;
 const DEAD_LEASE = Math.floor(NOW / 1000) - 1;
 
@@ -274,10 +280,8 @@ describe("openRunLogReplay", () => {
   });
 
   /**
-   * Liveness is asked only when the log is quiet. A batch just delivered means
-   * the run was alive to write it, and the claim is a strongly-consistent read
-   * per poll — paid beside every batch, it doubled the cost of exactly the
-   * iterations that were going well.
+   * Read the live claim only after the replay log goes quiet. Deliver already
+   * recorded batches without adding a claim lookup to each page.
    */
   it("does not read the claim while the log is delivering", async () => {
     const { deps, activeReads } = makeDeps({
