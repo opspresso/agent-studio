@@ -132,6 +132,37 @@ afterEach(() => {
 });
 
 describe("handleTurn", () => {
+  it.each(["turn-limit", "output-limit"] as const)("closes an incomplete %s run as failed while preserving its reply", async (finishReason) => {
+    vi.useFakeTimers();
+    const deps = makeDeps([
+      { delta: { toolCalls: [{ id: "pending", function: { name: "Search", arguments: "{}" } }] } },
+      { delta: { content: "Partial findings" } },
+      { finishReason, warning: "The run reached its limit." },
+    ]);
+    const reply = makeReply();
+    const finish = vi.spyOn(reply.reply, "finish");
+
+    await handleTurn(deps, turn(), reply.reply);
+
+    expect(finish).toHaveBeenCalledWith("Partial findings", "! The run reached its limit.", "failed");
+    expect(reply.done).toEqual([]);
+  });
+
+  it("keeps a child's limited termination separate from a completed parent", async () => {
+    vi.useFakeTimers();
+    const deps = makeDeps([
+      { author: "child", finishReason: "turn-limit", warning: "Child reached its limit." },
+      { delta: { content: "Parent recovered" } },
+      { done: true },
+    ]);
+    const reply = makeReply();
+    const finish = vi.spyOn(reply.reply, "finish");
+
+    await handleTurn(deps, turn(), reply.reply);
+
+    expect(finish).toHaveBeenCalledWith("Parent recovered", "! Child reached its limit.", "completed");
+  });
+
   it("reports cancellation-state failures during delivery and withholds pending files", async () => {
     vi.useFakeTimers();
     const controller = new AbortController();
