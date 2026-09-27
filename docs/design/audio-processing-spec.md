@@ -156,6 +156,7 @@ Slack 조회·이미지·파일 생성 능력은 실행 경계에서 차단하�
 Agent별 `AudioJobConfig`에 `enabled`, `model`, `language`, `postprocess?`,
 `destination?`, `retention`, `maxActive`, `maxPerOccurrence`, `revision`을 둔다.
 `postprocess`는 후처리 Agent를, `destination`은 저장할 결과와 MCP binding을 참조한다.
+현재 후처리 대상은 같은 소유자의 설정된 Agent이며 등록 모델의 `structuredOutput` 지원이 필요하다.
 source 연결·사용자 문맥은 기존 Agent 연결과 자동화 설정을 사용한다. 작업 접수 시 후처리
 Agent와 전달 대상의 현재 설정을 snapshot으로 고정해 이후 설정 변경은 새 작업에만 적용한다.
 설정 저장은 대상 Agent가 존재하고 같은 소유자의 설정된 Agent인지 transaction에서 확인한다.

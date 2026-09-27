@@ -1720,6 +1720,7 @@ file은 해당 Agent의 업로드·보관 파일이다. 원본 URL과 외부 녹
 - import는 보관만, transcribe는 전사까지 수행한다. transcribe와 process에는 등록된 Transcription model이 필요하다.
 - postprocess는 전사 Artifact와 `{agentName}` 후처리 대상을 받아 ASR 없이 처리한다.
   model·language·destination·configRevision을 함께 보낼 수 없다.
+  후처리 Agent는 같은 소유자의 설정된 Agent이며 등록 모델이 `structuredOutput`을 지원해야 한다.
 
 retention은 `{unit:"days"|"months", value:양의 정수, timezone:IANA 시간대}`다.
 language는 전사에 사용하는 선택적 2–3자 언어 코드다. 같은 Agent·사용자·source identity·
