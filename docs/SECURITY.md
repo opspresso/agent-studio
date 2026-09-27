@@ -636,6 +636,10 @@ registry URL 변경은 이전 `auth`를 폐기한다. 새 주소의 Discover가 
 공유 앱은 `clientFromRegistry`와 Client ID를 기록하고 code 교환·refresh 때 현재 Secret을 읽는다.
 Secret 회전은 기존 grant에 반영하지만 Client ID의 교체·제거는 기존 grant를 차단한다.
 개별 동적 등록 Secret은 해당 Agent connection에 보관한다.
+개별 client credential 저장에서 생략·마스크는 Client ID와 issuer가 같은 경우에만 Secret을
+유지한다. 다른 client나 issuer에서 Secret이 필요하면 새로 입력한다. 저장 시 resource가
+달라졌다면 같은 issuer의 client Secret은 유지할 수 있지만 이전 access/refresh token은
+제거하고 다시 인가한다.
 
 ### 공개 Client ID 문서
 

@@ -1022,6 +1022,50 @@ describe("client credentials bound to their issuer", () => {
 });
 
 describe("saveClientCredentials", () => {
+  it.each([
+    ["client-2", SERVER.auth!.issuer, undefined],
+    ["client-2", SERVER.auth!.issuer, maskSecret("enc:original")],
+    ["client-1", "https://previous-issuer.example.test", undefined],
+    ["client-1", "https://previous-issuer.example.test", maskSecret("enc:original")],
+  ])("does not carry a preserved secret into a different client or issuer (%s, %s, %s)", async (clientId, previousIssuer, submittedSecret) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    try {
+      const h = harness({ connection: { clientSecret: "enc:original", issuer: previousIssuer, status: "connected", accessToken: "enc:old-token" } });
+      const uc = createMcpAuthUseCases(h.deps);
+
+      const view = await uc.saveClientCredentials("p", "slack", { clientId, clientSecret: submittedSecret }, OWNER);
+
+      expect(view.clientSecret).toBeUndefined();
+      expect(view.status).toBe("needs_auth");
+      expect(h.connections.get("p/slack")?.accessToken).toBeUndefined();
+      h.states.set("fresh-state", { state: "fresh-state", agentName: "p", serverName: "slack", userEmail: OWNER,
+        codeVerifier: "enc:verifier", issuer: SERVER.auth!.issuer, clientId, resource: SERVER.auth!.resource,
+        createdAt: "2026-01-01T00:00:00Z" });
+      await uc.completeAuthorization({ state: "fresh-state", code: "fresh-code", userEmail: OWNER });
+      expect(h.exchanges[0]?.target.clientSecret).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the same issuer's client secret but retires a grant for a different resource", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    try {
+      const h = harness({ connection: { resource: "https://previous-resource.example.test", clientSecret: "enc:original", status: "connected", accessToken: "enc:old-token" } });
+      const uc = createMcpAuthUseCases(h.deps);
+
+      const view = await uc.saveClientCredentials("p", "slack", { clientId: "client-1", clientSecret: maskSecret("enc:original") }, OWNER);
+
+      expect(view.status).toBe("needs_auth");
+      expect(h.connections.get("p/slack")).toMatchObject({ resource: SERVER.auth!.resource, clientSecret: "enc:original" });
+      expect(h.connections.get("p/slack")?.accessToken).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps the stored secret when the submitted one is a mask", async () => {
     const h = harness({ connection: { clientSecret: "enc:original" } });
     const uc = createMcpAuthUseCases(h.deps);

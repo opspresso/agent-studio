@@ -129,6 +129,8 @@ access/refresh token과 연결 revision은 Agent별 연결 행에 보관하며 A
 실행 경로는 well-known 문서를 다시 가져오지 않는다. 저장된 메타데이터로 grant를 해석하고
 필요하면 갱신한다. 공유 client secret은 registry에서 읽어 회전을 반영하고,
 Client ID가 달라지면 기존 grant를 거절한다. 개별 등록 client secret은 해당 connection에 남는다.
+개별 credential 저장의 마스크·생략은 같은 Client ID·issuer에만 유효하다. 이전 Secret을
+다른 client나 issuer에 옮기지 않으며, 저장 시 resource가 달라졌으면 기존 token도 제거한다.
 
 credential 선택은 기존 client, 사용할 수 있는 Client ID Metadata Document,
 dynamic registration 순서다. Agent별 공개 metadata URL은 설정한 공개 base로만 만든다.
