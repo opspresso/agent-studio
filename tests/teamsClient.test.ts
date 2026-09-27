@@ -133,14 +133,20 @@ describe("verifying a Bot Framework token", () => {
   });
 
   it.each(["openidconfiguration", "keys"])("refuses a failed %s response even with usable JSON", async (failedDocument) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     const request = vi.fn(async (url: string) => {
       const configuration = url.includes("openidconfiguration");
       return jsonResponse(configuration ? { jwks_uri: "https://login.botframework.com/keys" } : { keys: [JWK] },
         { status: (configuration ? "openidconfiguration" : "keys") === failedDocument ? 503 : 200 });
     });
     vi.stubGlobal("fetch", request);
-    expect(await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE }))
-      .toMatchObject({ ok: false, reason: expect.stringContaining("signing keys unavailable") });
+    try {
+      expect(await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE }))
+        .toMatchObject({ ok: false, reason: expect.stringContaining("signing keys unavailable") });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("accepts a token the service signed for this app and this serviceUrl", async () => {
