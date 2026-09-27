@@ -2008,10 +2008,10 @@ describe("folding a run's reasoning", () => {
       .filter((file) => folds(stripComments(file.text)))
       .map((file) => file.path)
       .filter((path) => !REASONING_FOLD_SITES.includes(path));
-    // Three name the field without folding a run's thinking: the client's wire
-    // shape declares it, the run log substitutes a note for it, and the API
-    // reference lists it among the frames `/agent` sends.
+    // These sites name reasoning without accumulating it: activity tracking,
+    // the wire shape, the run-log notice and the API reference.
     expect(found).toEqual([
+      "src/app/_lib/authorPaths.ts",
       "src/app/agents/[name]/api-reference/endpoints.ts",
       "src/app/chats/_lib/types.ts",
       "src/application/chat/runLog.ts",

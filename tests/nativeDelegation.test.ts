@@ -5,6 +5,8 @@ import { runAgent } from "@/application/runtime";
 import type { AgentDeps, RunAgentInput } from "@/application/runtime/types";
 import type { EngineChunk } from "@/domain/llm/types";
 import { randomUUID } from "node:crypto";
+import { reduceChunk } from "@/app/chats/_lib/stream";
+import { EMPTY_TURN } from "@/app/chats/_lib/types";
 
 vi.mock("node:crypto", async importOriginal => ({ ...await importOriginal<typeof import("node:crypto")>(), randomUUID: vi.fn() }));
 
@@ -99,6 +101,51 @@ describe("native SDK delegation", () => {
     expect(chunks.filter((chunk) => chunk.authorDone).map((chunk) => chunk.transferId)).toEqual(expect.arrayContaining(["call_0", "call_1"]));
     expect(chunks.at(-1)).toMatchObject({ done: true });
     expect(f.requests.filter((body) => body.model === CHILD)).toHaveLength(2);
+  });
+
+  it.each([
+    ["alpha", "beta"],
+    ["child", "child"],
+  ])("keeps the second %s/%s invocation active after the first result", async (first, second) => {
+    const f = fixture((body, index) => index === 0
+      ? calls({ name: `delegate_${first}`, input: "first" }, { name: `delegate_${second}`, input: "second" })
+      : body.model === CHILD ? answer("child result") : answer("parent synthesis"));
+    f.input.subagents = [...new Set([first, second])].map(name => ({ name, description: "Specialist" }));
+    const secondClosing = Promise.withResolvers<void>();
+    const finishSecond = Promise.withResolvers<void>();
+    f.loadAgent.mockImplementation(async (name, task) => ({
+      deps: { createToolSchemaValidator, channel: f.models }, warnings: [],
+      input: { agentName: name, model: CHILD, maxTurn: 4,
+        messages: [{ role: "user", content: task.message }], signal: task.signal },
+      close: async () => {
+        if (task.message === "second") {
+          secondClosing.resolve();
+          await finishSecond.promise;
+        } else {
+          await secondClosing.promise;
+        }
+        f.closed();
+      },
+    }));
+    let turn = EMPTY_TURN;
+    let sawFirstResult = false;
+    try {
+      for await (const chunk of runAgent(f.deps, f.input)) {
+        turn = reduceChunk(turn, chunk);
+        if (chunk.toolResult?.toolCallId === "call_0") {
+          sawFirstResult = true;
+          const active = turn.authorPaths;
+          finishSecond.resolve();
+          expect(active).toEqual([[second]]);
+        }
+      }
+    } finally {
+      finishSecond.resolve();
+    }
+    expect(sawFirstResult).toBe(true);
+    expect(turn.authorPaths).toEqual([]);
+    expect(turn.text).toBe("parent synthesis");
+    expect(f.closed).toHaveBeenCalledTimes(2);
   });
 
   it("preserves a hyphenated local Agent tool name", async () => {

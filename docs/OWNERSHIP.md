@@ -45,6 +45,7 @@
 | Model 의 window 로부터 런의 컨텍스트 예산을 도출하기 | `src/application/llm/contextBudget.ts` | 구조 |
 | Agent 실행 Trace의 생성과 종료 | `src/application/run/traceLifecycle.ts` | 코드 |
 | 사람이 읽을 경과·소요 시간 | `src/app/_lib/duration.ts` 의 `formatSeconds`/`formatDuration`. 단위는 `common.duration*` 카탈로그가 가지므로 어느 페이지든 그대로 쓴다. 진행 중 시계와 끝난 뒤 배지가 같은 규칙(내림)으로 읽히는 것이 이 소유의 요점이다 | 구조 |
+| 실행 중 Agent 배지와 참여 경로 | `src/app/_lib/authorPaths.ts`의 `foldActiveAuthors`/`activeAuthorPaths`는 위임 호출별 완료를 추적하고 표시 경로를 합친다. `mergeVisitedPath`는 참여 기록을 별도로 유지한다. Chat과 Playground가 공유한다 | 코드 |
 | top-level 런을 감싸는 것 | `src/application/run/runBracket.ts` | 구조 |
 | Agent 실행과 완료 응답 수집 | `src/application/execution/runAgent.ts` | 코드 |
 | 런의 프롬프트가 자기 caller 를 이름으로 불러도 되는가 | `src/application/execution/deps.ts` 의 `callerFor` | 구조 |

@@ -14,8 +14,9 @@ import { ToolRow } from "@/app/_components/ToolRow";
 import {
   chunkAuthorPath,
   mergeVisitedPath,
-  removeActivePath,
-  trackActivePath,
+  activeAuthorPaths,
+  foldActiveAuthors,
+  type ActiveAuthor,
 } from "@/app/_lib/authorPaths";
 import { toRequestImages } from "@/app/_lib/imageAttachments";
 import { onModEnter } from "@/app/_lib/modEnter";
@@ -86,10 +87,8 @@ export function RunPanel({
   const [startedAt, setStartedAt] = useState(0);
   const [toolCalls, setToolCalls] = useState<ToolCallView[]>([]);
   const [toolResults, setToolResults] = useState<ToolResultView[]>([]);
-  // The chain currently producing chunks (outermost first), or undefined while the
-  // top-level agent itself is answering.
-  // A set, not one chain: SDK delegation has several children running at once.
-  const [activePaths, setActivePaths] = useState<string[][]>([]);
+  const [activeAuthors, setActiveAuthors] = useState<ActiveAuthor[]>([]);
+  const activePaths = useMemo(() => activeAuthorPaths(activeAuthors), [activeAuthors]);
   const [visitedPaths, setVisitedPaths] = useState<string[][]>([]);
   const [error, setError] = useState<string | null>(null);
   // Run losses and limits reported alongside the answer.
@@ -157,7 +156,7 @@ export function RunPanel({
     setStartedAt(Date.now());
     setToolCalls([]);
     setToolResults([]);
-    setActivePaths([]);
+    setActiveAuthors([]);
     setVisitedPaths([]);
     setError(null);
     setWarnings([]);
@@ -202,18 +201,8 @@ export function RunPanel({
           const reported = collectedWarning(chunk, prev);
           return reported === undefined ? prev : [...prev, reported];
         });
-        // Track who is running: an authored chunk names a chain that is running
-        // now and joins the set; an unauthored one means control is back at the
-        // top level and none of them is still going.
         const path = chunkAuthorPath(chunk);
-        // Two different questions: what is running now, and what this run reached.
-        setActivePaths((prev) =>
-          path && chunk.authorDone
-            ? removeActivePath(prev, path)
-            : path
-              ? trackActivePath(prev, path)
-              : [],
-        );
+        setActiveAuthors(prev => foldActiveAuthors(prev, chunk));
         if (path && !chunk.authorDone) {
           setVisitedPaths((prev) => mergeVisitedPath(prev, path));
         }

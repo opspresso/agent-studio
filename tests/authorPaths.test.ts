@@ -117,16 +117,16 @@ describe("reduceChunk author tracking", () => {
     expect(turn.authorPaths).toEqual([["parent", "child"]]);
   });
 
-  it("renders a dispatched group's tool result while its children are still listed", () => {
+  it("keeps active children listed while rendering a parent tool result", () => {
     let turn = reduceChunk(EMPTY_TURN, { author: "alpha", delta: { content: "a" } });
     turn = reduceChunk(turn, { author: "beta", delta: { content: "b" } });
     turn = reduceChunk(turn, {
-      toolResult: { name: "dispatch_agents", content: "### alpha\ndone" },
+      toolResult: { name: "delegate_alpha", content: "alpha done" },
     });
 
     expect(turn.tools).toHaveLength(1);
-    expect(turn.tools[0]?.name).toBe("dispatch_agents");
-    // The result is the parent's, but it arrives unauthored — control is back.
-    expect(turn.authorPaths).toEqual([]);
+    expect(turn.tools[0]?.name).toBe("delegate_alpha");
+    // A parent tool result does not prove that sibling tools have finished.
+    expect(turn.authorPaths).toEqual([["alpha"], ["beta"]]);
   });
 });

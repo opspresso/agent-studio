@@ -1,6 +1,6 @@
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
-import { removeActivePath, trackActivePath } from "@/app/_lib/authorPaths";
-import { chunkAuthorPath, collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
+import { activeAuthorPaths, foldActiveAuthors } from "@/app/_lib/authorPaths";
+import { collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
 import type { LiveTurn, StreamChunk } from "./types";
 
 /** Render a tool result payload to a readable string for a collapsible block. */
@@ -28,19 +28,10 @@ function toolResultField(toolResult: unknown, field: string): string | undefined
  * results, and generated images all render live regardless of author.
  */
 export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
-  let { text, reasoning, reasoningTokens, toolCalls, tools, images, files, warnings, authorPaths } =
+  let { text, reasoning, reasoningTokens, toolCalls, tools, images, files, warnings } =
     prev;
-  // Follow the stream: an authored chunk names a chain that is running now and
-  // joins the set — several children speak at once under SDK delegation, while
-  // a chain it is nested with has evidently finished. An unauthored chunk means
-  // the top-level agent has control again, and none of them is still running.
-  const path = chunkAuthorPath(chunk);
-  authorPaths =
-    path && chunk.authorDone
-      ? removeActivePath(authorPaths, path)
-      : path
-        ? trackActivePath(authorPaths, path)
-        : [];
+  const activeAuthors = foldActiveAuthors(prev.activeAuthors, chunk);
+  const authorPaths = activeAuthorPaths(activeAuthors);
   if (typeof chunk.delta?.content === "string" && isTopLevelChunk(chunk)) {
     text += chunk.delta.content;
   }
@@ -104,6 +95,7 @@ export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
     images,
     files,
     warnings,
+    activeAuthors,
     authorPaths,
   };
 }

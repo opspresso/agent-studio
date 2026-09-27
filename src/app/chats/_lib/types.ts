@@ -1,4 +1,5 @@
 import type { Chat, ChatMessage } from "@/domain/chat/types";
+import type { ActiveAuthor } from "@/app/_lib/authorPaths";
 
 export type { Chat, ChatMessage };
 
@@ -123,14 +124,9 @@ export interface LiveTurn {
   files: LiveFile[];
   /** Run losses and limits reported at any point in the stream. */
   warnings: string[];
-  /**
-   * The chains currently producing chunks, each outermost first — cleared when
-   * the top-level agent takes over again, so a badge never claims a subagent is
-   * still running after it returned.
-   *
-   * A set rather than one chain: SDK delegation has several children speaking
-   * at the same time, and a single slot would flicker between them.
-   */
+  /** Completion state is scoped to the native invocation, including repeated Agent calls. */
+  activeAuthors: ActiveAuthor[];
+  /** Distinct active chains displayed as badges, outermost first. */
   authorPaths: string[][];
 }
 
@@ -149,5 +145,6 @@ export const EMPTY_TURN: LiveTurn = {
   images: [],
   files: [],
   warnings: [],
+  activeAuthors: [],
   authorPaths: [],
 };
