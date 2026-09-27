@@ -5,8 +5,7 @@
  *
  * The boundaries themselves are one file per segment — Next resolves them by
  * name and position, so `error.tsx` cannot be shared by importing it — but the
- * copy and the shape are one thing and live here. Two of them existed for a
- * day and had already disagreed about whether the digest is shown.
+ * copy, layout and digest display are shared here.
  */
 
 import { useEffect } from "react";

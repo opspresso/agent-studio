@@ -1,45 +1,14 @@
 "use client";
 
 /**
- * The one modal a picture opens in — from the artifacts gallery, a chat
- * message or an agent's run panel.
+ * Shared full-screen image viewer for the gallery, Chat and Playground.
+ * Fit caps the image at its natural size; Actual preserves its pixels and
+ * allows two-axis scrolling. Flex auto margins keep an oversized image's
+ * top-left corner reachable while centering images that fit.
  *
- * **The frame is the screen.** The dialog is full-screen over a dark ground and
- * everything that is not the picture floats on top of it: no header row, no
- * caption column. A 90vw × 90dvh frame with a title bar above the image and the
- * prompt below it spent a fixed share of every screen on two lines of text, and
- * the picture — the only reason the dialog opens — got what was left.
- *
- * What floats: the controls at the top right, and the details panel along the
- * bottom, which is a *toggle*. Folded away it takes nothing, so a paragraph-long
- * prompt costs the picture no height until somebody asks to read it. The toggle
- * is kept for the life of the provider rather than reset per picture: a reader
- * who wants the prompt wants it for the next one too.
- *
- * The picture itself behaves as it always has: it opens scaled down to fit, a
- * click draws it at its own pixel size — scrolling in both directions when it is
- * bigger than the screen — and another click fits it again. The frame never
- * changes shape across that toggle.
- *
- * "Actual" really is the image's own size: `<Image w="auto">` inside a `Stack`
- * is stretched to the container by `align-items: stretch`, which is how an
- * earlier "original" mode ended up blowing a 1024px picture up to the width of
- * the monitor. The frame is a flex row and the picture a `flex-shrink: 0` item
- * with `margin: auto` — centred while it fits, and with its top-left corner
- * still reachable once it scrolls, which `align-items: center` would have
- * clipped.
- *
- * "Fit" never scales *up*: `max-width`/`max-height` cap a small picture at its
- * natural size rather than smearing it across the screen.
- *
- * A click on the ground closes; a click on the picture zooms; a click on a
- * control does what the control says and nothing else — hence the
- * `stopPropagation` on each, and the `target === currentTarget` check on the
- * ground, which is what keeps a click that lands on a child from closing.
- *
- * One provider for the app, at the root: a chat thread renders as many images
- * as it has turns, and each mounting its own portal to show at most one of
- * them is what this replaces.
+ * The ground closes, the image toggles zoom, and controls act independently.
+ * Overlay controls and a collapsible details panel leave the image its full
+ * viewport. The root provider retains the details preference across images.
  */
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";

@@ -71,9 +71,8 @@ export function Overview({
 }: {
   userEmail: string;
   /**
-   * Arrives as a prop for the same reason the email does: `useViewer()` answers
-   * after hydration, so the catalogue links would render and then vanish for
-   * the one reader who is not allowed to see they exist.
+   * Resolved by the server page, so the first render gates catalog links using
+   * the same authenticated tier as the rest of the console.
    */
   tier: MemberTier;
 }) {
