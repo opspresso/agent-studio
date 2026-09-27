@@ -1,19 +1,4 @@
-/**
- * The shape extracted text comes out in, shared by every reader.
- *
- * One owner because the shape is a contract: a caller comparing two documents,
- * or a test asserting a round trip, is comparing this normalisation as much as
- * it is comparing the text. Two readers that trimmed differently would make
- * "the same document" depend on which one read it.
- *
- * It used to be `normalize`, over lines. Two of its three jobs moved here and
- * the third was **deleted**: it stripped a trailing `|` from every line,
- * because the readers glued cells together with `" | "` and the last one left a
- * dangling separator behind. Cells are `ReadCell`s now, so the artifact it
- * removed does not occur — and it could not have survived either way, since it
- * would eat the closing pipe of every GFM row. Blank-line spacing between
- * blocks belongs to `blocksToMarkdown`, which knows where a block ends.
- */
+/** Shared run whitespace normalization; block spacing belongs to blocksToMarkdown. */
 
 import { mergeRuns, type Run } from "../markdown";
 

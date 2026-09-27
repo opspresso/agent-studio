@@ -1,31 +1,7 @@
 /**
- * A read document described rather than written.
- *
- * **A line grammar, not JSON**, and the reason is the cut. The caller bounds a
- * tool result at 100,000 characters; a truncated JSON document is a total loss,
- * because nothing before the cut can be read without repairing it, while a
- * truncated line grammar loses its last line and nothing else. Under a hard
- * ceiling the format whose *prefixes are valid* is the one to pick. The second
- * reason is the provenance header — `asUntrustedContent` prepends a paragraph
- * of prose, and prose in front of JSON is not JSON, so carrying it would mean
- * dropping the one injection mitigation this server states.
- *
- * The shape is `inspect_spreadsheet`'s, generalised from a scalar at an address
- * to a block at an ordinal:
- *
- *     0 break unit=slide n=1 name="Overview" part="ppt/slides/slide1.xml"
- *     1 heading level=1 style="제목1" chars=12 "2026년 사업 계획"
- *     3 list ordered items=4
- *     4   item depth=0 chars=18 "시장 점유율 확대"
- *     6 table rows=5 cols=3 header=stated align=left,right,right merged
- *     7   row header
- *     9     cell colspan=2 "2026년"
- *     11 image alt="조직도" target="word/media/image1.png"
- *
- * `chars` is the block's **true** length even when the preview was cut — the
- * per-block form of the `totalCells` the spreadsheet inspection has always
- * reported. A preview is JSON-quoted, so a newline or a quote inside it cannot
- * break the line it sits on.
+ * Bounded line-oriented structure previews with block ordinals and true counts.
+ * JSON-quoted values keep embedded newlines and quotes inside one preview line.
+ * DocumentEditor and File own the surrounding response and provenance framing.
  */
 
 import { MAX_BLOCK_PREVIEW_CHARS, MAX_INSPECTED_BLOCKS, MAX_TEXT_CHARS } from "../limits";

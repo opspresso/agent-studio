@@ -57,8 +57,6 @@ import {
 /**
  * The four layouts, in part order: a slide names its archetype's layout, and
  * PowerPoint's "New Slide" gallery offers the same four back to the reader.
- * Cover and content keep parts 1 and 2, which is where every earlier release
- * put them.
  */
 export const LAYOUT_COUNT = 4;
 

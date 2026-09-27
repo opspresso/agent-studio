@@ -1,32 +1,12 @@
 /**
- * What a document said, before it is written as anything.
- *
- * Not `markdown.ts`'s `Block`, and the difference is the direction. That union
- * is the greatest common denominator of what four renderers can *draw* — its
- * own header says so — and a reader's subject is what a file *contained*, which
- * no renderer bounds. Three of the kinds below prove it: a cell that spans
- * columns has no GFM syntax so `parseMarkdown` could never produce one, an
- * image is deliberately a link on that side (`tools.ts` refuses assets for HWPX
- * because "hwpx renders an image as a link"), and a slide boundary is a fact
- * about a deck rather than a thing to lay out.
- *
- * So the five kinds where a document and a renderer agree are imported by name
- * and used unchanged, and the shared inline vocabulary — `Run`, `ListItem`,
- * `Align` — is imported rather than restated. The two models meet at Markdown
- * text, which they already both speak: `blocksToMarkdown` writes `![alt](x)`
- * and `parseMarkdown` reads it back. Neither imports the other's union.
+ * Read-document blocks retain cell spans, images and format boundaries beyond
+ * the Markdown render AST. Shared block/run types are imported; the models
+ * meet through Markdown serialization rather than importing each other.
  */
 
 import type { Align, Code, Heading, List, Paragraph, Quote, Rule, Run } from "../markdown";
 
-/**
- * What a document said about a block that Markdown has no place for.
- *
- * Never written into text — `read_document` cannot say any of it, which is the
- * whole reason `inspect_document` exists. Each field is read from an attribute
- * the walker already passes through, so carrying it costs a field rather than a
- * second pass over the part.
- */
+/** Format metadata shown by structure inspection but omitted from extracted Markdown. */
 export interface Marks {
   /** The style the document named: `Heading 1`, `제목 1`, a house style. */
   style?: string;

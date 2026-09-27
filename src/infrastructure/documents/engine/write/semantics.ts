@@ -300,8 +300,7 @@ export function timelineOf(blocks: readonly Block[]): Semantic | undefined {
 
 /**
  * A process: three to five short ordered steps, each of which fits in a node.
- * The numbers the author wrote become the numbers in the nodes, so nothing is
- * renumbered and nothing is lost if the section falls back to a plain list.
+ * Nodes use sequential markers, matching the generated list renderers.
  */
 export function processOf(blocks: readonly Block[]): Semantic | undefined {
   const items = orderedItems(blocks, 5);

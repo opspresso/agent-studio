@@ -17,7 +17,7 @@ import type { Piece } from "./types";
 /** EMU, which is what every DrawingML measurement is in: 914,400 to the inch. */
 export const EMU_PER_POINT = 12700;
 
-/** 16:9, which is what every deck has been since PowerPoint 2013. */
+/** The generated deck uses a 16:9 canvas. */
 export const SLIDE_WIDTH = 12192000;
 export const SLIDE_HEIGHT = 6858000;
 

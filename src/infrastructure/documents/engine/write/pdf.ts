@@ -1,36 +1,8 @@
 /**
- * A document AST to PDF.
- *
- * PDF has no idea what a paragraph is, so unlike the other two renderers this
- * one is a layout engine: it measures, breaks lines, and decides where a page
- * ends. Everything here follows from that.
- *
- * **The Korean font is embedded whole, and that is not optional.** PDF's
- * built-in fonts cover Latin-1 and nothing else, so a document with a single
- * Hangul syllable in it needs a real font in the file. Nanum Gothic ships in
- * this repository (`assets/fonts`, SIL OFL). Noto Sans KR would be the more
- * obvious choice and is not here for a mechanical reason: Google Fonts now
- * publishes it as a variable font, and putting one of those through fontkit is
- * a path with more ways to go wrong than a static TTF has.
- *
- * Whole, rather than subset, because `@pdf-lib/fontkit`'s subsetter **silently
- * drops most Hangul glyphs**. It does not fail: the text layer is intact, so
- * extraction returns the document perfectly, and the page shows blanks where
- * two thirds of the characters should be — "2026년 1분기 보고서" renders as
- * "6년 서". A document that reads correctly to a machine and is unreadable to a
- * person is the worst shape this could take, so the ~750KB a Flate-compressed
- * face costs is paid on every PDF. The bold face is embedded only when
- * something is bold, which is what keeps a plain document to one of them.
- *
- * **Line breaking is per script.** Latin breaks at spaces; CJK breaks between
- * any two characters, because Korean and Chinese prose has no spaces to break
- * at and a line breaker that waits for one produces a single line running off
- * the page. So the text is split into atoms — a word, or one CJK character —
- * and lines are filled greedily.
- *
- * **Italic is synthetic.** Nanum Gothic has no italic face, and shipping a
- * third file to slant some text is not a trade worth making; the text is
- * sheared instead. Bold is a real face, because a faked one is visibly wrong.
+ * PDF layout measures glyphs, wraps text and paginates tables and figures.
+ * Nanum Gothic from assets/document-fonts is embedded without subsetting to
+ * preserve Hangul glyphs. Bold is embedded when used; ASCII code uses Courier
+ * and italic text is sheared because Nanum Gothic has no italic face.
  */
 
 import { readFileSync } from "node:fs";
@@ -907,22 +879,7 @@ export interface RenderedPdf {
   pages: number;
 }
 
-/**
- * Whether anything in the document is set in bold.
- *
- * Asked so the bold face can be left out when it is not used, which halves the
- * font weight of a plain document. Headings and table headers are bolded by
- * this renderer rather than by the parser, so they count here even though no
- * run in them says so.
- *
- * **Over the blocks the renderer draws, not the ones the parser returned.** A
- * `:::cards` fence has no treatment on a page, so `block()` renders its
- * contents where the fence stood — and this walk did not look inside one. A
- * document whose headings or `**bold**` all sat in a directive answered `false`
- * here, so no bold face was embedded, `fontFor` fell back to the regular one,
- * and every heading in the file came out at body weight. Nothing errors and the
- * text extracts perfectly; it is only wrong to look at.
- */
+/** Check drawn blocks, including unwrapped directives, before embedding the bold face. */
 export function usesBold(document: MarkdownDocument): boolean {
   return withoutDirectives(document).blocks.some(
     (block) =>

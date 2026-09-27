@@ -97,7 +97,7 @@ function fenceBlock(text: string, language: string | undefined): string {
  * A spanning cell keeps its value in the first column it covers and leaves the
  * rest empty. Repeating the value into every covered column would invent data
  * the document does not hold, and the loss is not silent: `ReadTable.merged`
- * puts it in `omissions` and `inspect_document` carries the real `colspan`.
+ * puts it in `omissions` and structure inspection carries the real `colspan`.
  */
 function gridOf(rows: readonly ReadRow[], columns: number): string[][] {
   const grid: string[][] = rows.map(() => Array.from({ length: columns }, () => ""));

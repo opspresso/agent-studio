@@ -15,7 +15,7 @@
  * read, and the literal form is what survives being extracted back to text,
  * which is how this server's own round trip checks itself.
  *
- * **No font is named.** The theme's default already carries an east-Asian face
+ * **Prose uses theme fonts; code names Consolas.** The theme carries an east-Asian face
  * on every platform Word runs on, and naming one — `Malgun Gothic`, say — is a
  * Windows font that a Mac substitutes for something else. Substitution chosen
  * by Word is better than substitution chosen here.
@@ -594,7 +594,7 @@ function documentXml(document: MarkdownDocument, renderer: Renderer): string {
 /**
  * `settings.xml`, present only for a document with Korean in it.
  *
- * This is the no-name font policy finished, not bent: no face is ever named,
+ * Prose uses theme fonts rather than an explicit face,
  * but a document that does not say its east-Asian text is Korean leaves a
  * non-Korean Word to guess — and Word's guess is its *locale's* CJK default,
  * which on an English or Japanese machine is a Chinese or Japanese face
