@@ -267,6 +267,7 @@ export function RunPanel({
       reasoningPacer.flush();
       if (isCurrent()) {
         activeRequest.current = null;
+        setActiveAuthors([]);
         setRunning(false);
       }
     }

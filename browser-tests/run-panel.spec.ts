@@ -16,13 +16,16 @@ test.beforeAll(async () => {
     define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
   });
   server = createServer((request, response) => {
-    if (request.url === "/finish") {
+    if (request.url === "/finish" || request.url === "/fail" || request.url === "/interrupt") {
       if (!pending) { response.writeHead(409); response.end(); return; }
       const held = pending;
       pending = undefined;
-      write(held.response, { author: held.second, transferId: "call_1", authorDone: true });
-      write(held.response, { delta: { content: "Parent synthesis" } });
-      write(held.response, { done: true });
+      if (request.url === "/fail") write(held.response, { error: "Synthetic provider failure" });
+      else if (request.url === "/finish") {
+        write(held.response, { author: held.second, transferId: "call_1", authorDone: true });
+        write(held.response, { delta: { content: "Parent synthesis" } });
+        write(held.response, { done: true });
+      }
       held.response.end();
       response.end("finished");
       return;
@@ -73,5 +76,21 @@ for (const same of [false, true]) {
     const finished = page.getByText("ran:", { exact: true }).locator("..");
     await expect(finished.getByText(same ? "child" : "beta", { exact: true })).toHaveCount(0);
     expect(errors).toEqual([]);
+  });
+}
+
+for (const ending of ["fail", "interrupt"] as const) {
+  test(`clears active invocation badges when the stream ends through ${ending}`, async ({ page }) => {
+    await page.goto(base);
+    await page.getByRole("textbox").fill("different");
+    await page.getByRole("button", { name: "Run", exact: true }).click();
+    const activity = page.getByText("running:", { exact: true }).locator("..");
+    await expect(activity.getByText("beta", { exact: true })).toBeVisible();
+    expect((await page.request.get(`${base}/${ending}`)).status()).toBe(200);
+    const finished = page.getByText("ran:", { exact: true }).locator("..");
+    await expect(finished).toBeVisible();
+    await expect(finished.getByText("beta", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("agents involved: alpha, beta", { exact: true })).toBeVisible();
+    if (ending === "fail") await expect(page.getByText("Synthetic provider failure", { exact: true })).toBeVisible();
   });
 }
