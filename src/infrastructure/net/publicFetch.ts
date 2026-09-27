@@ -96,21 +96,14 @@ function asGlobalResponse(response: UndiciResponse): Response {
 }
 
 /**
- * Fetch an operator-controlled URL through one outbound security boundary.
+ * Fetch an outbound URL through one security boundary, including registered
+ * endpoints, model-selected URLs and attachment/source addresses.
  * Every hop is DNS-checked, redirects may not cross origins (which prevents
  * forwarding stored credentials to another host), and native auto-following
  * is disabled so redirect targets cannot bypass validation.
  *
- * The request goes through **undici's own `fetch`, never the global one**, and
- * that pairing is load-bearing rather than a preference: a `dispatcher` is a
- * private contract between a fetch implementation and its `Agent`, and undici
- * rewrote it between majors. The global fetch is the runtime's *bundled* undici
- * — 7.x on Node 24 — so handing it an `Agent` from the 8.x in `package.json`
- * had it build a 7-era handler that 8's dispatcher refused (`invalid
- * onRequestStart method`), surfacing as a bare `TypeError: fetch failed` on
- * every outbound request. It passed locally because a newer Node happened to
- * bundle the matching major, which is the whole problem: the pairing must not
- * depend on which Node the deployment runs.
+ * Use fetch and Agent from the same installed undici package: dispatcher
+ * contracts can differ from the version bundled with Node's global fetch.
  */
 export async function fetchPublicUrl(
   input: string | URL | Request,

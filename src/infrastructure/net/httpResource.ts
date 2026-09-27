@@ -1,29 +1,10 @@
 /**
- * {@link HttpResourceReader} over the outbound boundary.
- *
- * **This is the only place an address the *model* chose is fetched.** Every
- * other caller of `fetchPublicUrl` passes a URL an operator registered, where
- * the guard is the second of two controls — the registration check is the first,
- * and `docs/SECURITY.md` says as much. Here there is no first control, so the
- * rules below are load-bearing rather than defence in depth:
- *
- * - **The MCP internal-host exemption is never consulted.** `skipsUrlGuard` exists
- *   so this app can reach its own cluster MCP services; honouring it here would
- *   let one prompt injection read `http://mcp-argocd.agent-mcps.svc.cluster.local/`.
- *   `tests/architecture.test.ts` fails if this file so much as imports it, or
- *   reads the MCP list. The list this adapter *does* honour is its own —
- *   `URL_FETCH_INTERNAL_HOST_SUFFIXES`, injected by the composition root and
- *   widened only by a deploy — for an on-premises install where the pages a
- *   model should read are private by construction. A host under one of those
- *   suffixes is fetched without the address guard, but with the same timeout,
- *   the same headers, the same redirect cap, and a redirect that leaves the
- *   declared set or its origin refused.
- * - **Nothing authenticates.** No tenant header, no MCP OAuth token, no Slack
- *   token, no caller headers forwarded. Always GET, never a body.
- * - **Refusals are generalised on the way out.** `PublicFetchError` names the
- *   host it refused, and handing that to a model turns this into an oracle for
- *   which internal names exist. The detail goes to the log; the caller gets a
- *   sentence that says nothing about the network's shape.
+ * FetchUrl's model-selected addresses pass through the outbound boundary.
+ * Only the injected URL_FETCH_INTERNAL_HOST_SUFFIXES may admit internal hosts;
+ * the MCP exemption is never consulted. Both paths share timeout, body limits
+ * and same-origin redirect rules. Requests are unauthenticated GETs with only
+ * Accept/User-Agent headers. Network refusal details stay in logs while the
+ * model receives a general error that does not expose internal host names.
  */
 
 import {

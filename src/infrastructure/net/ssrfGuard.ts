@@ -1,12 +1,11 @@
 /**
- * SSRF guard for operator-registered outbound URLs (MCP servers, external
- * agents). Rejects non-http(s) schemes and hosts that resolve to private,
+ * Resolve and validate outbound URLs. Rejects non-http(s) schemes and hosts that resolve to private,
  * loopback, link-local (incl. the 169.254.169.254 cloud metadata address), or
  * otherwise reserved ranges.
  *
  * The DNS resolver is injectable so the check stays deterministic in tests. The
- * guard is applied both at registration and at dispatch; the dispatch check
- * narrows (but cannot fully close) the DNS-rebinding window between the two.
+ * guard is applied at registration and dispatch. Validation alone does not pin
+ * DNS; fetchPublicUrl uses the returned addresses to pin its transport per hop.
  */
 
 import { lookup } from "node:dns/promises";
