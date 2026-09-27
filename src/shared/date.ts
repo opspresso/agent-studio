@@ -98,10 +98,9 @@ export const MS_PER_DAY = 86_400_000;
  * few thousand years of days is refused, and a check that had to build the
  * list first would spend the seconds and the memory it is there to prevent.
  *
- * A day that cannot be read yields `NaN`, which is false against any budget —
- * the refusal, which is the safe direction. Callers that also need the range
- * to be real check it with {@link isUtcDay} first, since `NaN` and "too wide"
- * deserve different sentences.
+ * Invalid dates yield NaN. Validate external inputs with isUtcDay before
+ * comparing a range to a budget; an invalid date and a wide range are distinct
+ * errors.
  */
 export function daySpan(from: string, to: string): number {
   const start = Date.parse(`${from}T00:00:00Z`);

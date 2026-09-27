@@ -16,20 +16,6 @@
 /** U+FEFF at the start of a decoded string; a byte-order mark, not content. */
 const BOM = "﻿";
 
-/**
- * The text, or `null` when `bytes` are not UTF-8 text.
- *
- * Validity alone is not quite the whole question. UTF-16 that happens to be
- * ASCII — `68 00 69 00` for "hi" — is *valid* UTF-8: it decodes to `h\0i\0`
- * without a single replacement character, and a caller would go on to hand a
- * model a string interleaved with NULs. A NUL byte is the long-standing signal
- * that a file is not text (it is how `git` decides the same thing), and real
- * text does not contain one, so it settles the case validity leaves open.
- *
- * A leading BOM is dropped: it is an encoding artifact, and every caller wants
- * the text a reader would see. An empty input is text — the empty string — which
- * is a different answer from "not text", and callers rely on telling them apart.
- */
 /** The high half of a surrogate pair — a character that is only half of one. */
 function isHighSurrogate(code: number): boolean {
   return code >= 0xd800 && code <= 0xdbff;
@@ -79,6 +65,11 @@ export function cutUtf8Bytes(text: string, maxBytes: number): string {
   return bytes.subarray(0, end).toString("utf-8");
 }
 
+/**
+ * Decode valid UTF-8 without NUL bytes, or return null. Reject NUL-containing
+ * UTF-16/binary even when its bytes also form valid UTF-8. Drop a leading BOM;
+ * empty input remains the empty string rather than a decoding failure.
+ */
 export function decodeUtf8Text(bytes: Uint8Array): string | null {
   const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (buffer.includes(0)) {
