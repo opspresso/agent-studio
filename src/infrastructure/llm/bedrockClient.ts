@@ -1,6 +1,7 @@
 /**
- * Shared lazy Bedrock client for Titan and Cohere embedding adapters.
- * Region comes from deployment config; credentials use the AWS SDK chain.
+ * Lazy AWS credential-chain binding for the Bedrock SigV4 transport.
+ * Client configuration uses the deployment region; each request's signing
+ * region is derived from its endpoint by awsSigner.ts.
  */
 
 import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
