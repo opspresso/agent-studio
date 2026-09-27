@@ -21,7 +21,7 @@ export interface CallRoutingSettings extends CallRoutingPolicy { enabled: boolea
 
 export const DEFAULT_CALL_ROUTING_POLICY: CallRoutingPolicy = {
   tiers: {}, policies: {}, localOnly: false,
-  maxCallCostUsd: 0.1, maxRunCostUsd: 1, maxCalls: 10, minOutputChars: 1,
+  maxCallCostUsd: 0.2, maxRunCostUsd: 1, maxCalls: 10, minOutputChars: 1,
 };
 export const DEFAULT_CALL_ROUTING: CallRoutingSettings = { ...DEFAULT_CALL_ROUTING_POLICY, enabled: false };
 
