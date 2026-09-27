@@ -3,6 +3,7 @@ import { PRESENCE_PENALTY_RANGE } from "@/domain/llm/channel";
 import { isMcpSourceMapping, MAX_MCP_SOURCE_MAPPINGS } from "@/domain/mcp/sourceMapping";
 import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { attachedDocumentsSchema } from "@/app/api/_lib/attachments";
+import { headerRecordSchema } from "@/app/api/_lib/headerRecord";
 import {
   isInlineImageDataUrl,
   MAX_IMAGE_SIZE_LABEL,
@@ -166,7 +167,7 @@ export const subagentRefSchema = z.object({
  */
 export const mcpBindingSchema: z.ZodType<McpBinding> = z.object({
     name: z.string().min(1),
-    headers: z.record(z.string().min(1), z.string().nullable()).optional(),
+    headers: headerRecordSchema(z.string().nullable(), z.string().min(1)).optional(),
     /** Omitted or empty means "every tool this server offers". */
     tools: z.array(z.string().min(1)).optional(),
     sourceOutputs: z.array(z.object({

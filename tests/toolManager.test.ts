@@ -124,6 +124,7 @@ interface RecordedCall {
   paramHeaders?: Record<string, string>;
   params?: Record<string, unknown>;
   hasSignal: boolean;
+  prototypeHeader?: string;
 }
 
 function framedResponse(payload: RpcEnvelope, script: ServerScript): Response {
@@ -172,6 +173,7 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       url,
       method: body.method,
       httpMethod: init?.method ?? "GET",
+      ...(sent.has("__proto__") ? { prototypeHeader: sent.get("__proto__")! } : {}),
       ...(sentSession ? { sessionId: sentSession } : {}),
       ...(sentVersion ? { protocolVersion: sentVersion } : {}),
       ...(sentMcpMethod ? { mcpMethod: sentMcpMethod } : {}),
@@ -1797,6 +1799,14 @@ describe("ToolManager teardown", () => {
 });
 
 describe("MCP request metadata headers", () => {
+  it.each([false, true])("carries a prototype-named credential on every protocol request (legacy=%s)", async legacy => {
+    const calls = stubMcpFetch({ "https://a.test/mcp": { legacy, listTools: [{ name: "echo" }] } });
+    const manager = new ToolManager([{ ...server("a", "https://a.test/mcp"), headers: { ["__proto__"]: "test-credential" } }]);
+    try { await manager.init(); await manager.callTool("echo", {}); }
+    finally { await manager.close(); }
+    expect(calls.length).toBeGreaterThan(2);
+    expect(calls.every(call => call.prototypeHeader === "test-credential")).toBe(true);
+  });
   it("mirrors the method on every request and the name on the one that has one", async () => {
     const calls = stubMcpFetch({
       "https://a.test/mcp": {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { headerRecordSchema } from "@/app/api/_lib/headerRecord";
 import type {
   CreateManagedInput,
   UpdateManagedInput,
@@ -26,7 +27,7 @@ const workloadSchema = z.object({
   endpointPath: z.string().trim().regex(MANAGED_ENDPOINT_PATH).optional(),
   description: z.string().optional(),
   content: z.string().optional(),
-  headers: z.record(z.string(), z.string()).optional(),
+  headers: headerRecordSchema(z.string()).optional(),
 }).strict();
 
 export const createManagedMcpSchema: z.ZodType<CreateManagedInput> = workloadSchema.extend({

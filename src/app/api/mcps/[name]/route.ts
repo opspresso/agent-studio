@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { headerRecordSchema } from "@/app/api/_lib/headerRecord";
 import { mcpUseCases } from "@/lib/container";
 import { withAdminAuth, withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
@@ -11,7 +12,7 @@ const updateSchema = z.object({
   url: z.url().optional(),
   description: z.string().optional(),
   content: z.string().optional(),
-  headers: z.record(z.string(), z.string()).optional(),
+  headers: headerRecordSchema(z.string()).optional(),
 });
 
 export const GET = withMemberAuth(async (_user, _request: Request, ctx: RouteContext) => {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { headerRecordSchema } from "@/app/api/_lib/headerRecord";
 import { mcpAuthUseCases } from "@/lib/container";
 import { withAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
@@ -8,7 +9,7 @@ type RouteContext = { params: Promise<{ name: string; server: string }> };
 
 const bodySchema = z.object({
   /** The binding's own header layer, so the answer matches what a run offers. */
-  headerOverrides: z.record(z.string(), z.string().nullable()).optional(),
+  headerOverrides: headerRecordSchema(z.string().nullable()).optional(),
 });
 
 /**

@@ -145,7 +145,8 @@ export function mergeHeaderUpdate(
   update: Record<string, string>,
   context?: string,
 ): Record<string, string> {
-  const merged: Record<string, string> = {};
+  // Header names are data, including Object.prototype setter names.
+  const merged: Record<string, string> = Object.create(null);
   for (const [key, value] of Object.entries(update)) {
     if (isMasked(value) || value === "") {
       // Own keys only. A header may be named anything an operator types, and a
@@ -219,7 +220,7 @@ export function mergeHeaderOverrideUpdate(
   context?: string,
   storedContext: string | undefined = context,
 ): HeaderOverrides {
-  const merged: HeaderOverrides = {};
+  const merged: HeaderOverrides = Object.create(null);
   for (const [key, value] of Object.entries(update)) {
     if (value === null) {
       merged[key] = null;
@@ -264,7 +265,7 @@ export function mergeOutboundHeaders(
   registryContext?: string,
   overrideContext?: string,
 ): Record<string, string> {
-  const merged = decryptHeadersForOutbound(registryHeaders, registryContext);
+  const merged: Record<string, string> = Object.assign(Object.create(null), decryptHeadersForOutbound(registryHeaders, registryContext));
   for (const [key, value] of Object.entries(overrides ?? {})) {
     // A mask is a display artifact a form echoed back, never a credential.
     // Sending one is wrong twice over: `fetch` rejects it outright, because the
