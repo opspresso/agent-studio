@@ -1301,7 +1301,7 @@ artifact id 대신 다운로드용 서명 `url`과 후속 `File` 도구 호출�
 저장소 키는 외부에 노출하지 않으며 `fileId` 자체는 접근 권한이 아니다. 서명할 수 없었던 파일은, 아무것도 가져올 수 없는 문서를
 지목하는 `file` 프레임 대신 `warning` 프레임으로 도착한다.
 
-모든 Agent는 Agent이며 이 경로는 현재 저장된 설정을 사용한다.
+이 경로는 현재 저장된 Agent 설정을 사용한다.
 
 이미 현재 transfer 사슬에 있는 agent 로의 transfer, 또는 5단계 중첩을 넘는 transfer 는 재귀하는
 대신 author 가 붙은 error chunk 로 거절된다.
@@ -1478,10 +1478,9 @@ POST /api/catalog/reindex
 ```
 
 전역 capability 인덱스를 레지스트리에서 다시 만든다. 모든 Skill과 MCP 서버·도구를 색인하고
-레지스트리에서 사라진 항목은 지운다. 작업은 배경에서 돌아가므로 결과는
-응답 본문이 아니라 로그 한 줄(`indexed`, `removed`, `undiscovered`)이다. 두 번 ticking 해도
-안전하다: 키가 항목에서 유도되므로 두 번째 패스는 같은 레코드를 쓴다. 시간당 한 번이면 충분하다.
-더 빠른 tick 은 모든 MCP 서버를 더 자주 찔러 볼 뿐이다.
+레지스트리에서 사라진 항목은 지운다. `{started:true}`는 배경 작업 예약을 뜻하며 완료 응답이 아니다.
+설치 전체 DB lease가 겹치는 재색인을 거절한다. 완료는 로그의 `indexed`·`removed`·`undiscovered`로,
+실패·lease 경합은 오류 로그로 확인한다. 기본 ticker 주기는 1시간이다.
 [OPERATIONS.md](OPERATIONS.md#카탈로그-재색인) 를 보라.
 
 ## Artifacts
@@ -1779,8 +1778,8 @@ submit은 source `{kind:"artifact"|"file"|"source",id}`·config_revision·proces
 postprocess는 artifact_id·postprocess·retention·processing_revision을 받고, process는 source와 명시적 처리 옵션을 받는다.
 선택값은 null로 지정하며 선택하지 않은 작업의 필드나 빈 문자열을 넣지 않는다.
 ImportFile·TranscribeAudio도 source `{kind,id}`를 사용한다. HTTP 작업 API의 source·task 계약은 별도다.
-각 도구는 현재 사용자·Agent·발생 ID에 바인딩된다. source 인수는 artifact_id·file_id·source_ref 중
-하나이고 원본 URL·임의 email은 받지 않는다. 세 제출 도구 모두 processing_revision을 지원한다.
+각 도구는 현재 사용자·Agent·발생 ID에 바인딩된다. source의 id는 kind에 맞는 Artifact ID·file ID·
+source_ref이며 원본 URL·임의 email은 받지 않는다. 세 제출 도구 모두 processing_revision을 지원한다.
 AudioJob read는 최대 20,000자씩 전사문을 반환하고 nextCursor로 이어 읽는다.
 `result_kind:"processed"`는 후처리 본문이다. 로컬 본문 참조 없이 외부 복사 정보만 있는 작업에서만
 `{status:"moved", destination:movedTo, jobStatus}`를 반환한다. 원본 JSON에는 text·segments·model·
