@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { managedPortFor } from "@/infrastructure/mcp/managedPort";
 
-/**
- * The same dashboard showed three formats: a chart widening to four decimals
- * under a cent, a total pinned at two, and per-row figures asking for four by
- * hand. The total read `$0.00` above rows that added to `$0.0043`.
- */
+/** Dollar displays use shared precision rules, including sub-cent amounts. */
 describe("formatUsd", () => {
   it("widens below a cent, which is where LLM costs live", () => {
     expect(formatUsd(0.0043)).toBe("$0.0043");
@@ -26,12 +22,7 @@ describe("formatUsd", () => {
   });
 });
 
-/**
- * The two provisioners derived this identically, doc comment included. They do
- * not merely behave alike — they have to *agree*: a managed server provisioned
- * by one adapter is reached by name, so a different port would start a healthy
- * container that nothing can talk to, with no error anywhere.
- */
+/** Managed workload names map deterministically into the reserved port range. */
 describe("managedPortFor", () => {
   it("is deterministic, so a restart re-derives the port it bound", () => {
     expect(managedPortFor("memory")).toBe(managedPortFor("memory"));
@@ -45,7 +36,7 @@ describe("managedPortFor", () => {
     }
   });
 
-  it("separates the names a deployment actually runs", () => {
+  it("maps these representative names to distinct ports", () => {
     const names = ["memory", "notion", "slack", "document", "url-fetch"];
     expect(new Set(names.map(managedPortFor)).size).toBe(names.length);
   });
