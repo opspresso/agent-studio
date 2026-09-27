@@ -1,5 +1,3 @@
-process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
-
 /**
  * The authorization flow: begin, callback, and what each refuses.
  *
@@ -11,7 +9,17 @@ process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef")
  */
 
 import { createHash } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+}));
 import {
   createMcpAuthUseCases,
   MCP_OAUTH_CALLBACK_PATH,
@@ -29,6 +37,17 @@ import { mcpOAuthStateContext, agentMcpHeadersContext } from "@/domain/security/
 import type { AgentConfiguration } from "@/domain/agent/types";
 import { mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+
+beforeEach(() => {
+  entropy.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 const OWNER = "owner@example.com";
 const BASE_URL = "https://studio.example.com";
@@ -258,9 +277,7 @@ describe("beginAuthorization", () => {
   });
 
   it("registers a client dynamically when the server offers it and none is stored", async () => {
-    // The 2025-era path, and the reason it is still here: such a server offers
-    // no metadata document, so without this the only way in is an owner
-    // registering an app by hand for a connection that would just work.
+    // DCR supplies credentials when neither an operator client nor CIMD is available.
     const h = harness({
       server: {
         ...SERVER,
@@ -404,11 +421,7 @@ describe("beginAuthorization", () => {
   });
 
   it("registers instead when a document could not be fetched from this deployment", async () => {
-    // Notion, from a dev machine. It advertises both routes, and the document
-    // one cannot work: a metadata `client_id` is a URL the *provider* retrieves,
-    // and `http://localhost:3000/...` resolves to nothing from where it runs.
-    // Taking it anyway dead-ends after the user approves, as `Unknown OAuth
-    // client` — a message about a client, for a problem with a URL.
+    // The provider retrieves a metadata client ID; localhost cannot serve it.
     const h = harness({
       baseUrl: "http://localhost:3000",
       server: {
@@ -452,11 +465,7 @@ describe("beginAuthorization", () => {
   });
 
   it("rebuilds a stored document client whose address this deployment no longer serves", async () => {
-    // Without this the mistake is permanent rather than transient: the row still
-    // has a `clientId`, so the next attempt sails past every branch and presents
-    // the same unfetchable URL. Nothing is lost by rebuilding — such a client
-    // holds no secret, and whatever it authorized was granted to an address that
-    // no longer resolves.
+    // A stored CIMD URL is rebuilt when this deployment can no longer serve it.
     const h = harness({
       baseUrl: "http://localhost:3000",
       server: {
@@ -625,9 +634,7 @@ describe("completeAuthorization", () => {
   });
 
   it("splits a comma-delimited scope list, as Slack returns one", async () => {
-    // RFC 6749 delimits `scope` with spaces and Slack delimits it with commas.
-    // Splitting on spaces alone stored the whole list as a single "scope" — one
-    // token with nothing to wrap on, which ran the connection card off-screen.
+    // Scope responses accept both space and comma delimiters.
     const { h, uc, state } = await started({
       tokens: { accessToken: "at-1", scope: "channels:history,groups:history,chat:write" },
     });
@@ -1292,9 +1299,7 @@ describe("listing a server's tools as the agent", () => {
   });
 
   it("falls back to the entry's own headers when the agent has not connected", async () => {
-    // Discovering OAuth on an entry adds a way to authenticate it, not a veto on
-    // the one already configured: an entry carrying a static credential kept
-    // working for every agent until an admin pressed Discover on it.
+    // Registry credentials remain usable when OAuth is discovered but unconnected.
     const h = harness({
       connection: {},
       server: { ...SERVER, headers: { Authorization: "enc:Bearer registry-pat" } },
