@@ -18,6 +18,10 @@ corepack enable && corepack prepare pnpm@11.24.0 --activate
 pnpm install --frozen-lockfile
 ```
 
+`pnpm-workspace.yaml`의 `verifyDepsBeforeRun: error`는 실행·검사 명령의 자동 재설치를
+막는다. `ERR_PNPM_VERIFY_DEPS_BEFORE_RUN`이면 `pnpm install --frozen-lockfile`로
+설치 상태를 맞춘 뒤 같은 명령을 다시 실행한다. 버전만 바뀐 manifest도 이 검사를 유발할 수 있다.
+
 ## 환경
 
 ```bash
