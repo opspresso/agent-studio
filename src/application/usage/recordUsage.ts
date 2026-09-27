@@ -57,7 +57,7 @@ export interface UsageAggregator {
   /**
    * Write one atomic increment per (agent, date, model). Best-effort.
    *
-   * Returns the distinct agents it wrote for. A run spends on more than
+   * Returns the distinct agents whose writes were attempted. A run spends on more than
    * one whenever it transfers, and the caller is the only thing that can
    * settle a *child* agent's thresholds — the run bracket settles the
    * agent it admitted and knows nothing about the rest.

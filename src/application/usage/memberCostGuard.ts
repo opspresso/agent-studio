@@ -1,18 +1,7 @@
 /**
- * Spend guard for one member, over the UTC month — the tier cost cap.
- *
- * The agent guard beside it bounds what a *agent* may cost; nothing
- * bounded what one *person* could spend across the shared catalog, which is
- * the axis a tier prices. The cap comes from `TIER_LIMITS` and the spend from
- * the member's own daily rows, summed from the first of the UTC month — the
- * same bounded query over one partition that the agent guard's monthly
- * window already runs, and the same rows the profile page reads.
- *
- * Same contract as the agent guard, deliberately: **a backstop, not an
- * exact cap** (usage flushes at run end, so runs that start together all pass
- * the pre-check), and every read failure is fail-open — a person must not
- * stop working because the guard's own read failed. No Slack notification: a
- * person has no alert channel, and the 429 they get *is* the notification.
+ * User actors spend against their member tier's UTC monthly cap across Agents.
+ * Machine actors and Agent tokens spend against Agent limits instead. Like the
+ * Agent guard, this is a post-accounting backstop and read failures are fail-open.
  */
 
 import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
