@@ -1,4 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+}));
 import {
   TRIGGER_LIST_PAGE_SIZE,
   createTriggerUseCases,
@@ -12,7 +22,13 @@ import type { Agent } from "@/domain/agent/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import { AGENT_WEBHOOK_ID, type Trigger, type WebhookTrigger } from "@/domain/trigger/types";
 
-process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 5).toString("base64");
+beforeEach(() => {
+  entropy.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
+});
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 const agent: Agent = {
   name: "p",
