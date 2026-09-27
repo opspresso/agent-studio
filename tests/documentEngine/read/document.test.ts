@@ -1,20 +1,7 @@
 /**
- * The one claim every reader makes about itself: whether what came back is all
- * of it.
- *
- * `complete`, the note and `counts` are the only way a caller can tell a short
- * document from a long one that was cut, and the failure mode is silent in both
- * directions — a document that fits is reported the same way whether the reader
- * measured or guessed. The HWP path guessed: it serialized its own text against
- * the same budget, threw away what the serializer said about the cut, and then
- * had the truncation checked again on a string that could no longer be over the
- * limit. A 200,000-character document came back at 90,000 saying `complete:
- * true`, "all 1 section(s)" and "400 of 400 blocks" — four statements, none of
- * them true, and nothing downstream able to notice.
- *
- * So this asserts the contract from the outside, on a document built to be
- * larger than the budget, for the reader that had it wrong and for one that
- * always had it right.
+ * Readers report completeness and counts from the original document, even when
+ * the text budget cuts output. Both short and oversized HWP/DOCX inputs exercise
+ * the public reader result.
  */
 
 import { strict as assert } from "node:assert";
@@ -30,11 +17,7 @@ const HWPTAG_PARA_TEXT = 0x010 + 51;
 
 /** UTF-16LE, which is how HWP stores a paragraph's characters. */
 function units(text: string): Uint8Array {
-  const codes = [...text].map((character) => character.charCodeAt(0));
-  const out = new Uint8Array(codes.length * 2);
-  const view = new DataView(out.buffer);
-  codes.forEach((code, index) => view.setUint16(index * 2, code, true));
-  return out;
+  return Buffer.from(text, "utf16le");
 }
 
 /** Tag in the low 10 bits, level in the next 10, size in the top 12. */
@@ -89,6 +72,13 @@ test("a short HWP is reported as all of it, in the format's own units", async ()
   assert.match(result.note ?? "", /^all 1 section\(s\) of an HWP 5\.0\.3\.0 document$/);
   assert.deepEqual(result.counts, { blocks: 2, totalBlocks: 2, sections: 1 });
   assert.equal(result.text, "첫 문단\n\n둘째 문단");
+});
+
+test("an HWP reader preserves supplementary Unicode alongside Korean text", async () => {
+  const text = "한글 😀 and 𝄞";
+  const result = await readDocument(source(hwp([text]), "unicode.hwp"));
+  assert.equal(result.text, text);
+  assert.equal(result.complete, true);
 });
 
 test("an HWP past the character budget says how much of it came back", async () => {
