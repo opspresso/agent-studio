@@ -1,12 +1,6 @@
 /**
- * DOCX generation, checked by reading it back.
- *
- * The round trip is the strongest end-to-end check available without opening
- * Word: it runs the real zip, the real OOXML and the real extractor, and it
- * fails if either side stops agreeing with the other. What it cannot check is
- * whether Word calls the file valid — that is a manual step, and the structural
- * assertions below stand in for the parts of it that have actually gone wrong
- * (a cell with no paragraph in it, a hyperlink with no relationship).
+ * DOCX writer checks cover package declarations, OOXML structure and content
+ * round trips. Layout metadata is asserted; native Word rendering is not run.
  */
 
 import { strict as assert } from "node:assert";
