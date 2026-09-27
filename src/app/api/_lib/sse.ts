@@ -5,32 +5,14 @@
 
 const encoder = new TextEncoder();
 
-/**
- * Idle middleboxes cut silent connections — the ALB in front of the deployed
- * app kills any connection with no bytes for 60s, which is shorter than one
- * image generation or a long tool call, during which the engine yields nothing.
- * SSE comments keep bytes flowing without entering the protocol: spec parsers
- * and `readSse` both discard frames that do not start with `data:`.
- */
+/** SSE comments keep idle connections active without entering the data protocol. */
 const KEEPALIVE_INTERVAL_MS = 15_000;
 const KEEPALIVE_FRAME = encoder.encode(": keepalive\n\n");
 
 /**
- * How long the first chunk may take before the response is built without it.
- *
- * Two different things happen before an agent run's first chunk, and they are
- * nothing like the same length. The guards are settings and database reads —
- * milliseconds. `resolveRunTools` is not: it opens every bound MCP server and
- * lists its tools, which `CONFIGURATION.md` bounds at ~20s for one slow server,
- * and with `dynamicCapabilities` on it also embeds and searches the catalog. A
- * failure from either half is a status while this is still waiting and an
- * `{error}` frame afterwards, so the bound has to clear the slow half or it
- * trades away the 4xx that says what went wrong — which is why it is not the
- * few seconds the guards alone would need.
- *
- * The ceiling is the 60s idle budget the keepalive exists to defend: nothing
- * flows until the response is built, so this is spent from that budget, and
- * what is left has to cover a 15s keepalive interval with room over.
+ * Allow admission and tool discovery failures to preserve HTTP status before
+ * committing to SSE. After this grace, start the response and its keepalive
+ * while the same first pull remains pending.
  */
 const FIRST_CHUNK_GRACE_MS = 25_000;
 
@@ -59,26 +41,10 @@ async function awaitFirstChunkBriefly(pending: Promise<unknown>): Promise<void> 
 }
 
 /**
- * Pull the first chunk before the response exists — but not indefinitely.
- *
- * A run is refused — over its daily cost limit, out of concurrency slots — on
- * the generator's *first* `next()`, which is before it has produced anything.
- * Constructing the `Response` first would send `200 text/event-stream` and then
- * deliver the refusal as a data frame, so the caller never sees the status or
- * the `Retry-After` that says when to come back. Awaiting one chunk here lets
- * that throw reach the route's `apiError`, which is what turns it into a 429.
- *
- * The wait is bounded because the keepalive above cannot start until the
- * response exists, so every second spent here is a second of the 60s idle
- * budget spent in silence. Two runs routinely produce nothing for longer than
- * that: an image, whose bytes arrive in one chunk at the end, and a reasoning
- * model whose thinking an Agent did not opt into recording — that stream's
- * first chunk is the end-of-turn usage. The grace must not cut either run while
- * it is working silently.
- *
- * It costs nothing for a run that starts normally: the chunk is held and
- * emitted first, so the stream is byte-identical. Nothing is buffered beyond
- * that one chunk.
+ * Pull once before creating the response, bounded by FIRST_CHUNK_GRACE_MS.
+ * Early failures reach apiError with their HTTP status and Retry-After; later
+ * failures become error frames. Keep the pending pull so no chunk is lost and
+ * silent reasoning/tool work can continue with keepalives.
  */
 async function createSseResponse(
   generator: AsyncGenerator<unknown>,

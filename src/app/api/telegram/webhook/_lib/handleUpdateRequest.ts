@@ -33,15 +33,9 @@ const telegramEventDeps: TelegramEventDeps = {
 };
 
 /**
- * The Telegram webhook pipeline: check the secret → gate → exactly-once claim
- * → ack immediately and process in the background. Telegram retries a delivery
- * that is not answered 2xx promptly, and delivers updates in order one at a
- * time per webhook, so a slow handler would stall every chat behind it — the
- * ack is what keeps that from happening.
- *
- * **The gate is ahead of the claim.** A bot in a group with privacy mode off
- * receives everything the group says; deciding that a message is not for the
- * bot before the claim is what keeps it from costing a write.
+ * Verify the secret and gate engagement before claiming a delivery lease.
+ * Ignored updates cost no claim write. Accepted work runs after the ack;
+ * failed or expired attempts may be claimed again.
  */
 export async function handleTelegramUpdateRequest(
   request: Request,
