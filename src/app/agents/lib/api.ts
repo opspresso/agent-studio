@@ -17,9 +17,7 @@ import type { Trace } from "@/domain/trace/types";
 /**
  * The shapes the server answers with are taken from the module that produces
  * each, never restated here: a type-only import is erased, so the browser
- * bundle is unchanged and the two ends of the wire cannot drift. Restating them
- * had already cost a crash — the Slack settings page rendered a manifest a
- * mutation's narrower response did not carry.
+ * bundle contains no server implementation and producers own the wire shapes.
  */
 import type { McpConnectionView } from "@/application/mcp/mcpAuthUseCases";
 import type { ActorUsageView, AgentActorUsage } from "@/application/usage/listActors";
@@ -305,7 +303,7 @@ export async function disconnectAgentTelegram(name: string): Promise<void> {
   await assertOk(await fetch(`/api/agents/${name}/telegram`, { method: "DELETE" }));
 }
 
-/** Throws with the server's reason when the test could not run; a failed test itself is the body. */
+/** Returns verified bot identity; unsuccessful tests reject with the server's error. */
 export async function testAgentTelegram(
   name: string,
 ): Promise<{ ok: true; botId: number; botUsername?: string }> {

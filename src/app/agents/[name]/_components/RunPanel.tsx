@@ -92,9 +92,7 @@ export function RunPanel({
   const [activePaths, setActivePaths] = useState<string[][]>([]);
   const [visitedPaths, setVisitedPaths] = useState<string[][]>([]);
   const [error, setError] = useState<string | null>(null);
-  // What the run reported alongside its answer — an unusable binding, a turn
-  // or budget limit. The other surfaces already show these; the playground was
-  // the one that stayed silent.
+  // Run losses and limits reported alongside the answer.
   const [warnings, setWarnings] = useState<string[]>([]);
   const [cost, setCost] = useState<number | null>(null);
   const [agentImages, setAgentImages] = useState<Array<{ src: string; prompt?: string }>>([]);
@@ -285,8 +283,7 @@ export function RunPanel({
     }
   }
 
-  // The panel's own attachments are the source images an `image` agent edits,
-  // so a screenshot pasted into the prompt is the gesture this surface is for.
+  // Pasted and dropped images become inputs for image understanding or EditImage.
   const attach = useCallback((files: File[]) => void addFiles(files), [addFiles]);
   const { dragging, handlers } = useFileDrop(attach, running);
   const onPaste = useMemo(() => onFilePaste(attach, running), [attach, running]);
@@ -452,10 +449,7 @@ export function RunPanel({
         <ProducedFile key={`file-${i}`} name={file.name} byteSize={file.byteSize} url={file.url} />
       ))}
 
-      {/* The same paired rows the chat draws — one row per call, badged by what
-          kind of thing ran, named with what it actually did. Two accordion
-          lists (calls, then results) were this surface's own rendering of the
-          same wire format, and they had already drifted from the chat's. */}
+      {/* Share Chat's paired tool rows: one row per call, with its result. */}
       {(toolCalls.length > 0 || toolResults.length > 0) && (
         <Stack gap={0}>
           {pairToolTraffic(toolCalls, toolResults).map((pair, i) => (

@@ -1021,6 +1021,7 @@ export const en = {
   "agent.tab.traces": "Traces",
   "trace.inConversation": "conversation",
   "trace.openDetail": "Open full trace",
+  "trace.empty": "No traces in this range. Image tool calls are included in Agent run traces.",
   "agent.tab.apiReference": "API Reference",
   "apiReference.intro": "These Agent URLs run the current saved Agent settings. Create an Agent token in Integrations → API token.",
   "apiReference.environmentHint": "Set AGENT_API_TOKEN and CONVERSATION_ID in the calling process environment. curl expands $… placeholders; Python and Node.js read environment variables. Keep credentials on your server.",

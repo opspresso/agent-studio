@@ -966,6 +966,7 @@ export const ko: Messages = {
   "agent.tab.traces": "트레이스",
   "trace.inConversation": "Chat",
   "trace.openDetail": "전체 트레이스 열기",
+  "trace.empty": "이 기간에 Trace가 없습니다. 이미지 도구 호출도 Agent 실행 Trace에 포함됩니다.",
   "agent.tab.apiReference": "API 레퍼런스",
   "apiReference.intro": "이 Agent 주소는 현재 저장된 Agent 설정을 실행합니다. 연동 → API 토큰에서 Agent 토큰을 발급하세요.",
   "apiReference.environmentHint": "호출 프로세스에 AGENT_API_TOKEN과 CONVERSATION_ID 환경변수를 설정하세요. curl은 $…를 치환하고 Python·Node.js는 환경변수를 읽습니다. 자격 증명은 호출 서버에 보관하세요.",

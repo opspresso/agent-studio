@@ -3,12 +3,8 @@
 /**
  * Everything configurable about one bound MCP server, in one place.
  *
- * The three sections do not save the same way, and saying so is the point of
- * splitting them: tools and header overrides are part of the Agent settings and land
- * with its Save — the footer button, which is the page's own — while the
- * connection belongs to the agent and is written the moment its own buttons
- * are pressed. One "Save" over all three would have to lie about one of them,
- * so the footer names what it commits.
+ * Tools, header overrides and source mappings save with Agent configuration
+ * through the footer. OAuth connection actions save independently when pressed.
  */
 
 import { Button, Group, Modal, Stack, Text } from "@mantine/core";

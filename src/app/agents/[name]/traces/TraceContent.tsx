@@ -11,13 +11,8 @@ function subagentLink(span: Trace["spans"][number]): { agent: string; traceId: s
 }
 
 /**
- * Why a span failed, as the recorder stored it (`output.error`).
- *
- * Rendered because `status` alone said only *that* something failed. A failed
- * transfer is recorded on the parent's subagent span rather than on the run
- * (the parent may still answer), so for a run that ended in a guess this string
- * was the only account of what went wrong — and reading it meant opening the
- * child's own trace, or the table it is stored in.
+ * Stored span failure details. A failed subagent can coexist with a successful
+ * parent run, so show its error beside the span rather than as a run failure.
  */
 function spanError(span: Trace["spans"][number]): string | null {
   const error = span.output?.error;
@@ -25,13 +20,8 @@ function spanError(span: Trace["spans"][number]): string | null {
 }
 
 /**
- * What a stage came back with, as one line under its name.
- *
- * A `prepare` span's whole content is its `output` — how many tools the resolve
- * offered, what a search added by name, how much memory came back — and none of
- * it was rendered, so the console showed a duration and nothing to explain it.
- * The names are the point: they are the only part of a run's plan that changes
- * per request.
+ * Preparation metadata under its span name: routing decisions, resolved tool
+ * counts, discovered names and recalled context size.
  */
 function prepareDetail(span: Trace["spans"][number]): string | null {
   if (span.kind !== "prepare" || !span.output) {
