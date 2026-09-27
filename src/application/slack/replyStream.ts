@@ -882,26 +882,10 @@ export function createReplySink(
           await slack.deleteMessage(token, { channel: messageChannel, ts: messageTs });
         } else if (mode === "stream") {
           const remaining = withSuffix(fullText.slice(flushed), suffix);
-          // **Two calls, and it has to be two.** Slack refuses `markdown_text`
-          // and `chunks` on the same request
-          // (`cannot_provide_both_markdown_text_and_chunks`), and sending both
-          // to `chat.stopStream` threw — which left the stream open and the
-          // answer undelivered, so a channel showed "is thinking…" forever on a
-          // run that had already finished.
-          //
-          // The rows are closed first because a stopped stream cannot take an
-          // append, and on their own call because they are the half that may be
-          // lost: a run that loses its tick-offs still answered, one that loses
-          // `stopStream` did not. Every unfinished row rides out here — a step
-          // left `in_progress` on a finished message reads as a run that never
-          // came back, and the ambient row is one of them when no step replaced it.
-          // One call, because both halves are chunks in this mode: the rows the
-          // run never closed, then whatever text Slack has not taken. A stream
-          // that has been stopped can take neither, so nothing may be left for
-          // afterwards.
-          // Split, because what is left here is unbounded: every append that
-          // Slack refused is still owed, so a run whose writes all failed
-          // arrives at the close holding the entire answer.
+          // Channel rows and remaining text share one chunks-mode stop call.
+          // DM text uses only markdown_text, with overflow posted separately.
+          // Split the remaining text because failed appends may leave the
+          // entire answer outstanding; a stopped stream takes no further data.
           if (payload === "chunks") {
             const closing: SlackChunk[] = [...closingChunks, ...textChunks(remaining)];
             await slack.stopStream(token, {

@@ -104,7 +104,8 @@ DM의 세부 진행 문구는 `assistant.threads.setStatus`의 호환 경로를 
 
 `!help`·`!stop`·`!mute`·`!unmute`는 단독 명령일 때 모델 없이 처리한다.
 `!mute this thread please`는 명령으로 추측하지 않는다.
-mute는 thread 참여를 비활성화하고 직접 mention 이후 답변은 참여를 다시 켠다.
+mute는 mention 없는 thread 참여를 비활성화한다. 직접 mention에는 답하지만 mute는 유지하며,
+`!unmute`가 참여를 다시 켠다.
 최상위 메시지의 mute에는 사용 위치를, DM에는 DM 동작을 안내한다.
 
 명령은 현재 설정 조회 전에 처리하지만 private Agent의 접근 검사는 유지한다.
