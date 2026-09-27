@@ -8,7 +8,7 @@ import { PiiFilter } from "@/application/llm/pii";
 import { log } from "@/shared/logger";
 import { maskValues } from "./messages";
 import { conversationMessages } from "./messages";
-import { boundToolArgsPair, boundArgumentText } from "./arguments";
+import { boundCompletedToolArguments, boundToolArgumentTextPair } from "./arguments";
 import type { EngineDeps, RunAgentInput, RuntimeTurn } from "./types";
 import type { RuntimeEmitter } from "./output";
 
@@ -35,6 +35,11 @@ export function createRunModel(
   let reportedIneligibleFallback = false;
   let routed: Awaited<ReturnType<typeof routePrimaryModel>>;
   const traceReasoning = input.parameters?.reasoningTrace === true;
+
+  function boundedRequest(request: ModelRequest): ModelRequest {
+    const items = filter ? maskValues(filter, request.input) as ModelRequest["input"] : request.input;
+    return { ...request, input: Array.isArray(items) ? boundCompletedToolArguments(items, text => filter?.restore(text) ?? text) : items };
+  }
 
   function prepare(request: ModelRequest, model: string): ModelRequest {
     const configured = input.parameters;
@@ -138,15 +143,9 @@ export function createRunModel(
       callIds.add(callId);
       const args = filter?.mask(item.arguments) ?? item.arguments;
       const display = filter?.restore(args) ?? args;
-      let shown = display;
-      let recorded = args;
-      try {
-        const bounded = boundToolArgsPair(JSON.parse(args) as Record<string, unknown>, JSON.parse(display) as Record<string, unknown>);
-        shown = JSON.stringify(bounded.display);
-        recorded = JSON.stringify(bounded.wire);
-      } catch { shown = boundArgumentText(display); recorded = boundArgumentText(args); }
-      turn.contextBudget?.chargeText(JSON.stringify({ ...item, callId, arguments: recorded }));
-      if (!turn.finalTurn) emit({ delta: { toolCalls: [{ id: callId, type: "function", function: { name: item.name, arguments: shown } }] } });
+      const bounded = boundToolArgumentTextPair(args, display);
+      turn.contextBudget?.chargeText(JSON.stringify({ ...item, callId, arguments: bounded.wire }));
+      if (!turn.finalTurn) emit({ delta: { toolCalls: [{ id: callId, type: "function", function: { name: item.name, arguments: bounded.display } }] } });
       return { ...item, callId, arguments: args };
     });
     return turn.finalTurn ? normalized.filter((item) => item.type !== "function_call") : normalized;
@@ -172,6 +171,7 @@ export function createRunModel(
 
   return {
     async getResponse(request) {
+      request = boundedRequest(request);
       routed = await routePrimaryModel(deps, input, turn, request, emit);
       let model = routed?.model ?? input.model;
       begin(request, model);
@@ -195,6 +195,7 @@ export function createRunModel(
       return { ...response, output: output(response.output) };
     },
     async *getStreamedResponse(request): AsyncIterable<ResponseStreamEvent> {
+      request = boundedRequest(request);
       routed = await routePrimaryModel(deps, input, turn, request, emit);
       const primaryModel = routed?.model ?? input.model;
       begin(request, primaryModel);

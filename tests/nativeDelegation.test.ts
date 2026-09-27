@@ -4,12 +4,17 @@ import { createAgentModelProvider } from "@/infrastructure/llm/agentModels";
 import { runAgent } from "@/application/runtime";
 import type { AgentDeps, RunAgentInput } from "@/application/runtime/types";
 import type { EngineChunk } from "@/domain/llm/types";
+import { randomUUID } from "node:crypto";
+
+vi.mock("node:crypto", async importOriginal => ({ ...await importOriginal<typeof import("node:crypto")>(), randomUUID: vi.fn() }));
 
 const ROOT = "openai/gpt-5-mini";
 const CHILD = "google/gemini-2.5-flash";
 let testId = 0;
 
 beforeEach(() => {
+  let id = 0;
+  vi.mocked(randomUUID).mockImplementation(() => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`);
   testId += 1;
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-12T00:00:00Z"));
@@ -70,6 +75,20 @@ describe("native SDK delegation", () => {
     expect(f.requests[2]?.messages).toEqual(expect.arrayContaining([expect.objectContaining({ role: "tool", content: "research result" })]));
     expect(chunks.some((chunk) => chunk.author === "child" && chunk.authorDone)).toBe(true);
     expect(f.closed).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends the full delegated task once and bounds the parent's completed call history", async () => {
+    const task = "x".repeat(20_000);
+    const f = fixture((body, index) => index === 0 ? calls({ name: "delegate_child", input: task })
+      : body.model === CHILD ? answer("research result") : answer("parent synthesis"));
+    const chunks = await collect(runAgent(f.deps, f.input));
+    expect(f.loadAgent.mock.calls[0]?.[1].message).toBe(task);
+    expect(JSON.stringify(f.requests[1]?.messages)).toContain(task);
+    const parentHistory = f.requests[2]!.messages as Array<{ tool_calls?: Array<{ function: { arguments: string } }> }>;
+    const call = parentHistory.flatMap(message => message.tool_calls ?? [])[0]!;
+    expect(call.function.arguments.length).toBeLessThan(1000);
+    expect(JSON.parse(call.function.arguments).input).toContain("20000 bytes, elided");
+    expect(chunks.at(-1)).toMatchObject({ done: true });
   });
 
   it("prepares independent native invocations when the same agent is requested twice", async () => {

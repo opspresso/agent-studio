@@ -27,8 +27,11 @@ budgets, artifacts and persistence around that runtime. Do not add a second agen
   claim has an uncertain outcome and must never be automatically replayed.
 - Rebuild native agent identities before deserializing a saved RunState. Preserve tool
   schemas, binding fingerprints, image handles, call IDs and already-spent resource budgets.
-- Chat display records are not model replay. SDK Session items carry the exact model/tool
-  traffic; Memory recall remains an independent Context capability.
+- Chat display records are not model replay. SDK Session owns native model/tool items with
+  bounded completed arguments; Memory recall remains an independent Context capability.
+- `arguments.ts` owns argument elision for display and completed/rejected history. Provider
+  requests and persisted Session items use the same bound. Keep unresolved calls intact so
+  approval resumes and actual dispatch receive their original arguments.
 - Respect output backpressure and cancellation. A consumer leaving must not leave a child
   generator or MCP connection running; chat connection detachment stays outside this layer.
 - Capture output bytes through the existing run bracket. File bytes never enter model

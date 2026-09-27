@@ -21,7 +21,7 @@
 | 실행의 첫 응답을 확인한 뒤 경고를 먼저 전달하고 조기 종료 시 원본 실행을 닫기 | `src/application/run/leadingWarnings.ts` 의 `withLeadingWarnings`. Chat과 실행 API가 같은 첫 응답·종료 계약을 사용한다 | 구조 |
 | 이미지 Model 의 세 가지 토큰 수를 usage 행 하나로 합치기 | `src/domain/llm/models.ts` | 구조 |
 | 한 런이 파일을 몇 개까지 쓸 수 있는가 | `src/application/runtime/tools.ts` 의 `MAX_SAVED_FILES_PER_RUN`. 이 플랫폼이 고른 루프 한도라 그것을 강제하는 루프 옆에 산다 | 구조 |
-| 한 호출의 인자를 얼마나 보관하고 되풀이하는가 (알려지는 쪽과 프로바이더로 돌아가는 쪽 둘 다) | `src/application/runtime/arguments.ts` 의 `MAX_TOOL_ARG_BYTES` / `boundToolArgsPair` / `boundArgumentText` | 구조 |
+| 도구 인자 표시·완료 이력의 보관 한도 | `src/application/runtime/arguments.ts`의 `MAX_TOOL_ARG_BYTES` / `boundCompletedToolArguments`. 표시·완료·거절 이력은 제한하고 승인 대기 원본은 유지 | 구조 |
 | Embedding/Rerank 선택 모델의 endpoint·credential·wire ID 결정 | `src/lib/runtime-settings.ts`의 `getEmbeddingTarget` / `getRerankerTarget`. 등록 모델의 provider 연결을 사용한다 | 구조 |
 | provider 에 embedding 을 요청하기 | `src/infrastructure/llm/embeddings.ts` | 구조 |
 | OpenAI 호환 SDK의 유료 HTTP 요청 자동 재시도 정책 | `src/infrastructure/llm/openaiClient.ts`의 `OPENAI_MAX_HTTP_RETRIES`; text·image·embedding client가 함께 사용한다 | 구조 |
