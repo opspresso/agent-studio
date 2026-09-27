@@ -1,20 +1,9 @@
 import type { SkillRepository } from "@/domain/skill/repository";
 
 /**
- * A skill repository whose `describe` answers from its own `get`.
- *
- * A run reads a skill's description and its body through different methods now —
- * the prompt's table takes descriptions, the `Skill` tool takes the body — and a
- * fixture that stubbed one of them would let a test pass against a registry no
- * run could have seen. Tests set `get` (before or after construction, as several
- * do) and `describe` follows it.
- *
- * What that buys is a *self-consistent* fake, not a faithful one: the real
- * `describe` issues its own projected read and cannot be checked here for
- * agreeing with `get`. That is the integration check's job — it exercises both
- * against a real table — and it is why a test that cares which read a run made
- * (`runAgent.test.ts`, "describes without reading a body") stubs the two
- * separately instead of using this.
+ * A consistent skill fixture: `describe` follows the current `repo.get`, including
+ * replacements made after construction. Tests needing independent projected
+ * reads stub the two methods separately; SQL projection is an integration check.
  */
 export function fakeSkillRepository(
   get: SkillRepository["get"] = async () => {

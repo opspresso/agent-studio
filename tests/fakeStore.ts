@@ -1,9 +1,7 @@
 /**
- * An in-memory stand-in for `src/infrastructure/db/store.ts`, with the same
- * surface and the same semantics a test can observe: byte-ordered sort keys,
- * conditions evaluated against the row as stored, the same error names for a
- * lost precondition, the same text the column keeps (`storedJson.ts`). A repository test mocks the store module with this and
- * asserts on what the repository left in `rows`.
+ * In-memory item-store boundary for repository unit tests. Sort keys use UTF-8
+ * byte order, conditions inspect stored rows, and writes use `storedJson.ts`.
+ * SQL adapter behavior is checked by `scripts/integration-check.ts`.
  *
  *   vi.mock("@/infrastructure/db/store", () => createFakeStore());
  */
@@ -69,7 +67,7 @@ function containsJson(value: unknown, fragment: unknown): boolean {
 }
 
 export interface FakeStore {
-  /** Every stored row, keyed by `PK SK` (one space between). Seed or inspect directly. */
+  /** Every stored row, keyed by PK + NUL + SK. Seed or inspect directly. */
   rows: Map<string, Item>;
   seed(items: Item[]): void;
   /** Rows as a list, in key order — for assertions. */
@@ -107,8 +105,8 @@ export function createFakeStore(): FakeStore {
     if (typeof key.PK !== "string" || typeof key.SK !== "string") {
       throw new Error("an item needs string PK and SK attributes");
     }
-    // What the column would hold, not what the caller wrote: a NUL or a lone
-    // surrogate comes back as U+FFFD here the way it does from PostgreSQL.
+    // Use the production serializer's replacement of NUL and lone surrogates
+    // before storing JSON, matching the adapter's stored values.
     rows.set(id(key), JSON.parse(toStoredJson(item)) as Item);
   };
 
