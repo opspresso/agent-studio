@@ -10,10 +10,13 @@ import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
  * the engine, which is handed the text like the caller.
  */
 
-// A 32-byte key must be present before the encryption module reads config.
-process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
 import {
   MAX_RECALLED_CHARS,
   prepareMemoryForRun,
@@ -29,7 +32,6 @@ import { previewPrompt } from "@/application/execution/promptPreview";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
-import { encryptHeaders } from "@/infrastructure/crypto/secretEncryption";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
@@ -42,6 +44,18 @@ import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
 }));
+
+beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-08-17T00:00:00.000Z");
+  clearMcpDiscoveryCache();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  clearMcpDiscoveryCache();
+});
 
 describe("bindingsMayOfferRecall", () => {
   // The editor's inline warning reads this: certain about what the bindings
@@ -290,7 +304,7 @@ const registryServer = {
   name: "memory",
   url: MCP_URL,
   description: "what the agent remembers",
-  headers: encryptHeaders({}),
+  headers: {},
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -381,9 +395,6 @@ function stubMemoryServer(toolNames: (url: string) => string[] = () => ["recall"
 }
 
 describe("a configuration that opted in recalls before the first token", () => {
-  beforeEach(() => clearMcpDiscoveryCache());
-  afterEach(() => vi.unstubAllGlobals());
-
   async function run(memoryRecall: boolean) {
     const seen = stubMemoryServer();
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
