@@ -1,14 +1,8 @@
 /**
- * The language a timestamp is written in.
- *
- * Passing it is what makes the server and the browser agree: left to the
- * runtime's own default, Node writes `8/14/2026` while a Korean browser writes
- * `2026. 8. 14.` for the same instant, and React throws away the tree it
- * hydrated. It also means a reader who chose Korean gets Korean dates whatever
- * their browser is set to — which is the point of the choice.
- *
- * Optional because the non-UI callers here (`utcDay` and friends) have no
- * locale and want none; omitting it keeps the old runtime-default behaviour.
+ * Date formatting accepts an explicit locale so console language does not
+ * depend on the runtime default. Date/time display uses the runtime timezone;
+ * a locale alone does not align server and browser timezones. UTC helpers
+ * below ignore locale, while the prompt clock uses a fixed UTC/en-US format.
  */
 type DateLocale = Intl.LocalesArgument;
 
@@ -18,12 +12,8 @@ function parsedDate(value: string): Date | null {
 }
 
 /**
- * A stored timestamp as milliseconds, or `null` when it cannot be read.
- *
- * The same judgement the formatters above make, published for a caller that
- * wants to measure with the value rather than print it: an unreadable
- * `createdAt` yields nothing, and deciding that twice is how one reader comes
- * to treat `""` as the epoch while its neighbour renders an empty string.
+ * Parse a stored timestamp for calculations using the same missing/invalid
+ * rule as display formatting. An empty string yields null, never the epoch.
  */
 export function parsedInstant(value: string): number | null {
   return parsedDate(value)?.getTime() ?? null;
@@ -63,22 +53,16 @@ export function formatDateTime(iso: string, locale?: DateLocale): string {
 }
 
 /**
- * YYYY-MM-DD in UTC — the day a usage row is keyed by. The writer (the usage
- * repository's atomic ADD) and the readers (the dashboard's date pickers) must
- * resolve the same instant to the same day, so both sides import it from here
- * rather than each spelling the truncation out.
+ * UTC day (`YYYY-MM-DD`) shared by usage keys, date ranges and readers.
  */
 export function utcDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
 /**
- * True when `day` names a real UTC calendar day, `YYYY-MM-DD`. The shape check
- * alone is not the calendar one: `2026-13-01` parses to NaN, and `2026-02-31`
- * parses — to March 3rd, silently widening whatever range it bounds.
- * Round-tripping through {@link utcDay} rejects both. Every reader that
- * accepts a day from outside validates through this, so three of them cannot
- * disagree about which days exist — two of the three already did.
+ * Validate a real UTC calendar day, `YYYY-MM-DD`. Shape validation alone
+ * accepts impossible dates; round-tripping rejects normalization into another
+ * day as well as invalid parsing.
  */
 export function isUtcDay(day: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
@@ -91,16 +75,9 @@ export function isUtcDay(day: string): boolean {
 export const MS_PER_DAY = 86_400_000;
 
 /**
- * How many UTC days `[from, to]` spans, both endpoints counted.
- *
- * The arithmetic behind every "that range is too wide" refusal, and it has to
- * be *counted* rather than enumerated: the audit and usage budgets exist so a
- * few thousand years of days is refused, and a check that had to build the
- * list first would spend the seconds and the memory it is there to prevent.
- *
- * Invalid dates yield NaN. Validate external inputs with isUtcDay before
- * comparing a range to a budget; an invalid date and a wide range are distinct
- * errors.
+ * Count UTC days in `[from, to]`, including both endpoints, without allocating
+ * a list. Invalid dates yield NaN. Validate external inputs with isUtcDay
+ * before comparing a range against its budget.
  */
 export function daySpan(from: string, to: string): number {
   const start = Date.parse(`${from}T00:00:00Z`);
@@ -109,19 +86,10 @@ export function daySpan(from: string, to: string): number {
 }
 
 /**
- * Every UTC day of `[from, to]`, oldest first, both endpoints included.
- *
- * Three readers walked a range for themselves — the audit trail, the usage
- * rows' per-day partitions, and the console's cost chart — and a day the
- * three do not agree on is a partition queried under a key nothing was
- * written to, or a gap in a chart that reads as a day with no spend. Ordering
- * is the one thing a caller does own: an audit reads newest first, a chart
- * oldest first, so the direction is a `reverse()` at the call site and not a
- * second walk.
- *
- * Unbounded by design, like the partition reads it feeds: the endpoints that
- * accept a range from outside refuse a wide one with {@link daySpan} before
- * they get here.
+ * Enumerate UTC days in `[from, to]`, oldest first, including both endpoints.
+ * Callers validate external days and enforce a range budget before enumerating.
+ * Consumers needing reverse order reverse this result rather than reimplementing
+ * calendar arithmetic.
  */
 export function daysBetween(from: string, to: string): string[] {
   const start = Date.parse(`${from}T00:00:00Z`);
@@ -142,17 +110,9 @@ export function utcMonth(date: Date): string {
 
 
 /**
- * A run's wall clock for a system prompt — `2026-07-30 (Thursday) 06:12 UTC`.
- *
- * UTC, and labelled as such. A model that knows the zone can convert; an
- * unlabelled local time is worse than no time at all, because it reads as
- * authoritative while being wrong for most readers. Displaying an operator's
- * timezone instead would mean a new setting, and nothing yet asks for one.
- *
- * The weekday is spelled out because deriving it from a date is exactly the
- * arithmetic a model gets wrong, and relative dates ("last Tuesday", "this
- * Friday") are resolved from it. Minute precision: a prompt that changed every
- * second would defeat provider prompt caching for no gain.
+ * UTC prompt clock with an explicit timezone and weekday. Minute precision
+ * gives relative-date reasoning a current reference while preserving prompt
+ * cache stability within the minute.
  */
 export function formatRunClock(date: Date): string {
   const iso = date.toISOString();
