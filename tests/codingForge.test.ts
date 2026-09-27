@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createHmac } from "node:crypto";
 import { createCodingGitHub } from "@/infrastructure/github/codingForge";
+import { CodingMutationRejectedError } from "@/domain/coding/types";
 
 vi.mock("node:crypto", async importOriginal => ({ ...await importOriginal<typeof import("node:crypto")>(),
   sign: vi.fn(() => Buffer.from("deterministic-test-signature")) }));
@@ -21,12 +22,14 @@ let refusal: number;
 let branchNames: string[];
 let repositoryStatus: number;
 let branchStatus: number;
+let mergeReceipt: unknown;
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(now);
   requests = []; existing = false; dispatchCount = 0;
   mainSha = "e".repeat(40); branchSha = sha; comparison = "ahead"; refusal = 0;
   branchNames = ["main", "feature/change"]; repositoryStatus = 200; branchStatus = 200;
+  mergeReceipt = { merged: true, sha: "b".repeat(40) };
   checks = [{ status: "completed", conclusion: "success" }];
   pull = { number: 7, node_id: "PR_node", html_url: "http://localhost:9009/company/repo/pull/7", draft: false, state: "open",
     head: { sha, ref: repository.branch, repo: { full_name: repository.repository } },
@@ -47,7 +50,7 @@ beforeEach(() => {
       const draft = String(request.body.query).includes("convertPullRequestToDraft");
       return Response.json({ data: { [draft ? "convertPullRequestToDraft" : "markPullRequestReadyForReview"]: { pullRequest: { isDraft: draft } } } });
     }
-    if (request.url.endsWith("/merge")) return Response.json({ merged: true, sha: "b".repeat(40) });
+    if (request.url.endsWith("/merge")) return Response.json(mergeReceipt);
     if (request.url.endsWith("/dispatches")) { dispatchCount++; return Response.json({ workflow_run_id: 99, html_url: "http://localhost:9009/company/repo/actions/runs/99" }); }
     if (request.url.includes("/pulls")) return Response.json(pull);
     throw new Error("Unexpected test request");
@@ -147,6 +150,25 @@ describe("coding GitHub App adapter", () => {
     expect(requests.find(request => request.url.endsWith("/merge"))?.body).toEqual({ sha, merge_method: "merge" });
     pull.head.ref = "other-branch";
     await expect(forge.pullRequest(repository, 7)).rejects.toThrow("does not belong");
+  });
+  it.each([
+    { merged: true }, { merged: true, sha: "" }, { merged: true, sha: "not-a-commit" },
+    { merged: true, sha: "b".repeat(41) }, { merged: "true", sha }, { merged: 1, sha },
+  ])("keeps an invalid merge receipt uncertain (%j)", async receipt => {
+    mergeReceipt = receipt;
+    await expect(createCodingGitHub(config, () => now).forge.merge(repository, 7, sha))
+      .rejects.toThrow("did not confirm the pull request merge");
+    expect(requests.filter(request => request.url.endsWith("/merge"))).toHaveLength(1);
+  });
+  it("distinguishes a confirmed merge refusal from an invalid receipt", async () => {
+    mergeReceipt = { merged: false, sha: "" };
+    await expect(createCodingGitHub(config, () => now).forge.merge(repository, 7, sha))
+      .rejects.toBeInstanceOf(CodingMutationRejectedError);
+  });
+  it.each([40, 64])("returns a confirmed %i-character merge commit", async length => {
+    mergeReceipt = { merged: true, sha: "b".repeat(length) };
+    await expect(createCodingGitHub(config, () => now).forge.merge(repository, 7, sha))
+      .resolves.toBe("b".repeat(length));
   });
   it("reuses a draft PR and explicitly marks it ready for review", async () => {
     existing = true; pull.draft = true;
