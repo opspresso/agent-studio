@@ -56,11 +56,7 @@ describe("MCP override row encoding", () => {
   });
 
   it("does NOT round-trip a row whose header name is still blank", () => {
-    // The editor must therefore own its rows rather than deriving them from the
-    // saved binding: a freshly added (blank) row has no representation in an
-    // override map, so a derive-from-props editor deletes it before it can be
-    // typed into — which is exactly how "+ Add header override" appeared to do
-    // nothing.
+    // The editor owns draft rows: blank names have no saved-map representation.
     const rows = [
       { key: "Authorization", value: "Bearer x", remove: false },
       { key: "", value: "", remove: false },

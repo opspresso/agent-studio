@@ -9,16 +9,17 @@
  * its secret the way a server does not expect simply never authenticates.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-// The SSRF boundary has its own tests and resolves DNS for real; here it stands
-// aside so the stubbed fetch is what the client talks to.
+// SSRF has separate coverage; these tests send OAuth requests to stubbed fetch.
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
 }));
 
 import { oauthClient } from "@/infrastructure/mcp/oauthClient";
 import { OAuthGrantError, type TokenRequestTarget } from "@/domain/mcp/oauth";
+
+afterEach(() => vi.unstubAllGlobals());
 
 interface Sent {
   url: string;
@@ -93,11 +94,7 @@ describe("token requests", () => {
   });
 
   it("puts the secret where the server's metadata said to", async () => {
-    // The last column is RFC 6749 §2.3's one-method rule: with Basic, the
-    // header alone carries the client's identity, and a body `client_id`
-    // beside it is a second authentication method — Notion's token endpoint
-    // rejects the pair outright, which cost every connection to it its
-    // exchange. Everywhere else the body `client_id` is required (§3.2.1).
+    // Basic carries client identity in the header; other methods carry it in the body.
     for (const [method, secretInBody, inHeader, idInBody] of [
       ["client_secret_post", true, false, true],
       ["client_secret_basic", false, true, false],
@@ -214,8 +211,8 @@ describe("dynamic client registration", () => {
     clientName: "Agent Studio — p",
     redirectUri: "https://studio.example.com/api/mcps/oauth/callback",
     scopes: ["chat:write"],
-  tokenEndpointAuthMethod: "client_secret_post" as const,
-};
+    tokenEndpointAuthMethod: "client_secret_post" as const,
+  };
 
   it("declares application_type so the server does not apply its own default", async () => {
     // SEP-837. The redirect is always this deployment's https callback, never a

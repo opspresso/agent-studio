@@ -1,11 +1,8 @@
 /**
  * Which outbound path a metadata read takes, and what a failed read is.
  *
- * "May this address be dialed" has one owner (`skipsUrlGuard`), and every other
- * caller — a run, the tool probe — carries its answer through. Discovery would
- * reach for the guard directly instead, so a Kubernetes Service this deployment
- * declared internal could be registered and called by an agent, and never
- * discovered.
+ * `skipsUrlGuard` owns internal-host classification. Declared internal resource
+ * metadata may use direct fetch; authorization metadata always uses the guard.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -166,8 +163,7 @@ describe("reading protected resource metadata", () => {
       .fetchProtectedResource(INTERNAL_URL)
       .catch((caught: unknown) => caught);
 
-    // Typed, so the caller can give it a status. As a bare Error this reached a
-    // route with nothing to map and answered 500.
+    // A typed metadata failure lets the route map the refused read.
     expect(error).toBeInstanceOf(McpMetadataError);
     expect((error as Error).message).toContain("private or reserved address");
     expect((error as Error).message).toContain("/.well-known/oauth-protected-resource/mcp");
@@ -202,18 +198,8 @@ describe("reading authorization server metadata", () => {
 });
 
 /**
- * What the adapter reads *out* of an authorization server's document.
- *
- * Untested until now, and it is the seam that decides how an agent gets an
- * OAuth client: `client_id_metadata_document_supported` and
- * `registration_endpoint` are what `beginAuthorization` branches on, and both
- * are spelled in exactly one place. Every test above this stubs the port rather
- * than the wire, so a misspelling here would take the whole branch out — a
- * document route that never engages, or a registration fallback that never
- * does — with nothing failing to say so.
- *
- * The document below is the shape Notion actually publishes, which is the case
- * that turned this up: it offers both routes.
+ * Wire metadata drives `beginAuthorization`: CIMD support and the DCR endpoint
+ * must both survive parsing. The fixture advertises both client mechanisms.
  */
 describe("what an authorization server's document says", () => {
   const NOTION_DOC = {
