@@ -1,5 +1,6 @@
+import { getEventListeners } from "node:events";
 import { describe, expect, it, vi } from "vitest";
-import { parseMaxRunDuration, runDeadlineExceeded, withRunDeadline } from "@/shared/runDeadline";
+import { disposeRunDeadline, parseMaxRunDuration, runDeadlineExceeded, withRunDeadline } from "@/shared/runDeadline";
 import { runEnding } from "@/application/run/runDeadline";
 import { RunDeadlineError } from "@/application/errors";
 
@@ -53,6 +54,31 @@ describe("which limit stopped a run", () => {
     expect(runDeadlineExceeded(run)).toBe(false);
   });
 
+  it("keeps caller cancellation when the deadline fires during cleanup", () => {
+    const caller = new AbortController();
+    const deadline = new AbortController();
+    const run = withRunDeadline(caller.signal, deadline.signal);
+    const cancelled = new Error("caller stopped the run");
+    caller.abort(cancelled);
+    deadline.abort();
+
+    expect(run.reason).toBe(cancelled);
+    expect(runDeadlineExceeded(run)).toBe(false);
+    expect(runEnding(cancelled, run)).toBe(cancelled);
+  });
+
+  it.each([
+    { callerAborted: true, deadlineAborted: false, expected: false },
+    { callerAborted: false, deadlineAborted: true, expected: true },
+    { callerAborted: true, deadlineAborted: true, expected: false },
+  ])("classifies pre-aborted sources: $callerAborted / $deadlineAborted", ({ callerAborted, deadlineAborted, expected }) => {
+    const caller = new AbortController();
+    const deadline = new AbortController();
+    if (callerAborted) caller.abort("shared reason");
+    if (deadlineAborted) deadline.abort("shared reason");
+    expect(runDeadlineExceeded(withRunDeadline(caller.signal, deadline.signal))).toBe(expected);
+  });
+
   it("recognises its own deadline, however the run signal was composed", () => {
     const deadline = new AbortController();
     const caller = new AbortController();
@@ -61,6 +87,20 @@ describe("which limit stopped a run", () => {
     deadline.abort();
     expect(runDeadlineExceeded(withCaller)).toBe(true);
     expect(runDeadlineExceeded(alone)).toBe(true);
+  });
+
+  it("releases classification resources without removing consumer listeners", () => {
+    const caller = new AbortController();
+    const deadline = new AbortController();
+    const run = withRunDeadline(caller.signal, deadline.signal);
+    const consumer = vi.fn();
+    run.addEventListener("abort", consumer);
+    disposeRunDeadline(run);
+    disposeRunDeadline(run);
+
+    expect(getEventListeners(run, "abort")).toEqual([consumer]);
+    caller.abort();
+    expect(consumer).toHaveBeenCalledOnce();
   });
 });
 

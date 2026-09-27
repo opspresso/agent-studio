@@ -20,7 +20,7 @@ import { UpstreamError, ValidationError } from "@/application/errors";
 import { settleCostLimit } from "@/application/usage/costGuard";
 import { createUsageAggregator } from "@/application/usage/recordUsage";
 import * as engine from "@/application/runtime";
-import { runDeadlineExceeded, withRunDeadline } from "@/shared/runDeadline";
+import { disposeRunDeadline, runDeadlineExceeded, withRunDeadline } from "@/shared/runDeadline";
 import { runEnding } from "@/application/run/runDeadline";
 import { log } from "@/shared/logger";
 import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor";
@@ -450,6 +450,7 @@ export async function* executeAgent(
     }
     throw error;
   } finally {
+    disposeRunDeadline(runSignal);
     await closeMcp(closeMcpSessions);
     // The flush comes first: an agent run's usage is buffered until here, so a
     // settle before it would be reading a total that excludes this whole run.

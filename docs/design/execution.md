@@ -11,7 +11,7 @@ Agent의 현재 설정, SDK 도구 실행, 이미지 도구와 실행 기록의 
 
 ## Agent와 현재 설정
 
-Agent는 이름으로 호출하는 Agent다. 공개 범위·소유권·연동·비용 정책과 현재
+Agent는 이름으로 호출하는 실행 단위다. 공개 범위·소유권·연동·비용 정책과 현재
 `AgentConfiguration`을 같은 Agent 행에 보관한다. 설정에는 모델·fallback·system prompt·
 생성 파라미터·Skill·MCP·하위 Agent·실행 정책이 들어간다. 이미지 생성·편집은 Agent 도구다.
 
@@ -115,6 +115,9 @@ SDK function tool 동시성은 5다. 실제 실행에 진입한 도구만 결과
 마스킹 → 예산 차감 → 복원한 화면 출력 순으로 처리하고 SDK에는 마스킹된 결과를 돌려준다.
 파일 bytes는 모델 문맥에 넣지 않으며, 이미지는 domain 한도 내 inline bytes만 허용한다.
 스트림 소비자의 backpressure와 취소는 자식 실행과 MCP 연결의 정리까지 기다린다.
+호출자 취소와 플랫폼 deadline은 먼저 합성 signal을 중단한 원인으로 구분한다.
+호출자가 먼저 취소했다면 정리 중 deadline이 만료되어도 취소로 유지한다. deadline이 먼저
+만료했다면 이후 연결 종료가 504 실패를 취소로 바꾸지 않는다.
 
 ### 호출 단위 모델 라우팅
 
