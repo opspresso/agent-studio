@@ -1,6 +1,3 @@
-// A 32-byte key must be present before the encryption module reads config.
-process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
@@ -82,12 +79,16 @@ function entry(patch: Partial<McpServer>): McpServer {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
   clearMcpDiscoveryCache();
   stubMcpServer();
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
+  clearMcpDiscoveryCache();
 });
 
 describe("managed loopback dispatch", () => {
@@ -123,7 +124,7 @@ describe("managed loopback dispatch", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("still guards a row written before managed servers existed", async () => {
+  it("guards an entry with no runtime classification", async () => {
     const policy = strictPolicy();
     const resolved = await buildMcpTools(depsFor(entry({}), policy), configuration);
 

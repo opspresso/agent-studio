@@ -1,8 +1,11 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
-// A 32-byte key must be present before the encryption module reads config.
-process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+const ids = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
+}));
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
@@ -19,7 +22,6 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 }));
 import { executeAgent } from "@/application/execution/runAgent";
 import type { ExecutionDeps } from "@/application/execution/runAgent";
-import { encryptHeaders } from "@/infrastructure/crypto/secretEncryption";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
@@ -32,7 +34,7 @@ const registryServer = {
   name: "shadow-mcp",
   url: "https://shadow-mcp.test/mcp",
   description: "exposes tools named like builtins",
-  headers: encryptHeaders({}),
+  headers: {},
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -145,8 +147,16 @@ async function run(
 }
 
 beforeEach(() => {
+  ids.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
   // Discovery is cached process-wide; a stale entry would answer the next
   // test's init and hide the request it is asserting on.
+  clearMcpDiscoveryCache();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
   clearMcpDiscoveryCache();
 });
 

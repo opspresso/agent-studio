@@ -1,8 +1,16 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
-// A 32-byte key must be present before the encryption module reads config.
-process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+const entropy = vi.hoisted(() => ({ sequence: 0 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  randomBytes: (size: number) => {
+    const bytes = Buffer.alloc(size);
+    bytes.writeUInt32BE(++entropy.sequence);
+    return bytes;
+  },
+  randomUUID: () => `00000000-0000-4000-8000-${String(++entropy.sequence).padStart(12, "0")}`,
+}));
 import { MAX_MCP_TOOLS_PER_RUN } from "@/domain/llm/toolLimits";
 import { BUILTIN_TOOL_NAMES } from "@/application/llm/agentAssembly";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
@@ -44,10 +52,7 @@ const registryServer = {
   name: "shared-mcp",
   url: MCP_URL,
   description: "shared",
-  headers: encryptHeaders({
-    Authorization: "Bearer registry-default",
-    "X-Shared": "shared-value",
-  }),
+  headers: {} as Record<string, string>,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -168,8 +173,22 @@ async function dispatchHeaders(
 }
 
 beforeEach(() => {
+  entropy.sequence = 0;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
+  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
+  registryServer.headers = encryptHeaders({
+    Authorization: "Bearer registry-default",
+    "X-Shared": "shared-value",
+  });
   // Discovery is cached process-wide; a stale entry would answer the next
   // test's init and hide the request it is asserting on.
+  clearMcpDiscoveryCache();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   clearMcpDiscoveryCache();
 });
 
@@ -327,10 +346,7 @@ describe("per-agent MCP header overrides at dispatch", () => {
   });
 
   it("still sends the registry headers when the entry has OAuth the agent has not connected", async () => {
-    // Discovering OAuth on an entry adds a way to authenticate it. It would
-    // take one away: any `auth` block made the run drop the server outright,
-    // so an entry that had been working on a static Authorization header went
-    // dark the moment an admin pressed Discover on it.
+    // An unconnected OAuth grant does not disable stored registry credentials.
     const oauthServer = {
       ...registryServer,
       auth: { type: "oauth2", resource: "https://shared-mcp.test" },
@@ -549,9 +565,7 @@ describe("what a run may offer from a bound server", () => {
   });
 
   it("leaves the builtins room inside the provider's own limit", async () => {
-    // The cap is 128 minus the builtins, so it moves when they do. At 120 with
-    // thirteen builtins a full run declared 133 and the provider rejected it
-    // outright — the failure the cap exists to prevent, caused by the cap.
+    // MCP declarations leave room for every reserved builtin inside the provider cap.
     expect(MAX_MCP_TOOLS_PER_RUN + BUILTIN_TOOL_NAMES.length).toBeLessThanOrEqual(128);
   });
 });

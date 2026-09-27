@@ -55,11 +55,15 @@ function stubMcpServer(options: { listFails?: boolean; ttlMs?: number } = {}): s
 const server = (headers: Record<string, string> = {}) => ({ name: "a", url: URL_A, headers });
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-01-01T00:00:00.000Z");
   clearMcpDiscoveryCache();
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
+  clearMcpDiscoveryCache();
 });
 
 describe("MCP discovery cache keying", () => {
