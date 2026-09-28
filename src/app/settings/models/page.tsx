@@ -62,9 +62,11 @@ export default function ModelManagementPage() {
     setBusy(true); setError(undefined);
     try {
       const result = await discoverProviderModels(connection.name);
+      if (request !== generation.current) return;
+      // Provider discovery remains usable even when the registry refresh fails.
+      setCatalogs(previous => new Map(previous).set(connection.name, result));
       const selection = await listRegisteredModels();
       if (request === generation.current) {
-        setCatalogs(previous => new Map(previous).set(connection.name, result));
         setRegistered(selection);
       }
     } catch (error) { if (request === generation.current) setError(error instanceof Error ? error.message : "Could not discover models"); }
@@ -153,7 +155,7 @@ export default function ModelManagementPage() {
               onClick={() => void register({ ...model, type: model.type ?? chosenTypes.get(model.wireId) })}>{t("modelAdmin.add")}</Button>}
           </>} />
       </>
-      {editing && <ModelEditor key={editing.id} model={editing} onSaved={models => { setRegistered(models); setEditing(undefined); }} onCancel={() => setEditing(undefined)} />}
+      {editing && <ModelEditor key={editing.id} model={editing} onSaved={models => { setRegistered(models); setEditing(undefined); setError(undefined); }} onCancel={() => setEditing(undefined)} />}
     </>}
   </Stack>;
 }

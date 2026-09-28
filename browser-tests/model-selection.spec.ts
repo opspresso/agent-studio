@@ -24,6 +24,7 @@ let selfHosted: boolean;
 let holdRegistryRead: boolean;
 let releaseRegistryRead: (() => void) | undefined;
 let noProviders: boolean;
+let failRegistryRead: boolean;
 
 test.beforeAll(async () => {
   discovered = [
@@ -57,7 +58,7 @@ test.beforeEach(async ({ page }) => {
   selected = []; saves = []; blockDeletion = false; failDiscovery = false; failFavorites = false; discoveryQueries = []; favorites = [];
   holdFirstFavoritePatch = false; releaseFirstFavoritePatch = undefined; favoritePatchCount = 0;
   failFavoritePatchModel = undefined;
-  selfHosted = false; holdRegistryRead = false; releaseRegistryRead = undefined; noProviders = false;
+  selfHosted = false; holdRegistryRead = false; releaseRegistryRead = undefined; noProviders = false; failRegistryRead = false;
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/settings") return route.fulfill({ json: { llmProviders: { items: noProviders ? [] : [{ name: "fixture", kind: selfHosted ? "selfhosted" : "openrouter" }, { name: "other", kind: "openrouter" }] } } });
@@ -81,6 +82,7 @@ test.beforeEach(async ({ page }) => {
       return route.fulfill({ json: { models: favorites } });
     }
     if (path === "/api/models/registry") {
+      if (route.request().method() === "GET" && failRegistryRead) return route.fulfill({ status: 503, json: { error: "Registered models unavailable" } });
       if (route.request().method() === "DELETE") {
         if (blockDeletion) return route.fulfill({ status: 409, json: { error: "Change model usage before deleting this model" } });
         const id = new URL(route.request().url()).searchParams.get("id");
@@ -467,4 +469,22 @@ test("keeps saved models manageable when their provider connection is no longer 
   await zeta.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
   await expect.poll(() => selected.length).toBe(0);
+});
+
+test("retains successful provider discovery when the registered-model refresh fails", async ({ page }) => {
+  await modelRows(page).filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
+  await expect.poll(() => selected.length).toBe(1);
+  const previous = discovered;
+  discovered = [...discovered, { wireId: "fresh-model", displayName: "Fresh Model", type: "text" }];
+  failRegistryRead = true;
+  try {
+    await page.getByRole("button", { name: "Discover Models", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText("Registered models unavailable");
+    await expect(modelRows(page).filter({ hasText: "Fresh Model" })).toBeVisible();
+    await expect(modelRows(page)).toHaveCount(5);
+    await modelRows(page).filter({ hasText: "Zeta" }).getByRole("button", { name: "Edit", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  } finally { discovered = previous; }
 });
