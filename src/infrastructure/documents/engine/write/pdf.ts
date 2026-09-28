@@ -947,13 +947,9 @@ export async function renderPdf(
   pdf.setCreationDate(options.created);
   pdf.setModificationDate(options.created);
 
-  const { cover, inlineTitle, body, toc } = pageStructureOf(document.blocks, documentLayoutFor("pdf", options.layout)!);
+  const { cover, body, toc, chapters } = pageStructureOf(document.blocks, documentLayoutFor("pdf", options.layout)!);
 
   const writer = new Writer(pdf, fonts, images, designFor(options.profile, options.theme, options.colors));
-  if (inlineTitle) {
-    writer.block({ kind: "heading", level: 1, runs: inlineTitle.title });
-    if (inlineTitle.subtitle) writer.block({ kind: "paragraph", runs: inlineTitle.subtitle });
-  }
   if (cover) {
     writer.cover(cover.title, cover.subtitle);
     if (toc) {
@@ -965,7 +961,7 @@ export async function renderPdf(
   }
   let ordinal = 0;
   for (const block of body) {
-    if (block.kind === "heading" && block.level === 1) {
+    if (chapters && block.kind === "heading" && block.level === 1) {
       ordinal += 1;
       writer.chapterOpener(ordinal);
     }

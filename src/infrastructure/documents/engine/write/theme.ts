@@ -198,6 +198,8 @@ export function designFor(
       throw new DocumentError(`Invalid document color ${name}; use a supported role and six hex digits without #`);
     }
   }
+  if (!Object.hasOwn(TREATMENTS, profileName)) throw new DocumentError("Unsupported document profile");
+  if (!Object.hasOwn(THEMES, theme)) throw new DocumentError("Unsupported document theme");
   const treatment = TREATMENTS[profileName];
   const overrides = Object.fromEntries(Object.entries(colors ?? {}).map(([name, color]) => [name, color.toUpperCase()]));
   const palette = { ...THEMES[theme], ...overrides };
@@ -213,7 +215,8 @@ export function designFor(
   for (const [foreground, background] of [
     [palette.ink, PAPER_COLOR], [palette.ink, palette.brandTint], [palette.ink, palette.surfaceTint],
     [palette.inkMuted, PAPER_COLOR], [palette.inkMuted, palette.brandTint], [palette.inkMuted, palette.surfaceTint],
-    [palette.brandDeep, PAPER_COLOR], [palette.brandDeep, palette.brandTint], [palette.brand, PAPER_COLOR],
+    [palette.brandDeep, PAPER_COLOR], [palette.brandDeep, palette.brandTint], [palette.brandDeep, palette.surfaceTint],
+    [palette.brand, PAPER_COLOR], [palette.onBrand, palette.brand],
     [palette.positive, PAPER_COLOR], [palette.negative, PAPER_COLOR],
     [design.table.headerText, design.table.headerFill],
   ]) {

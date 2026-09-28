@@ -560,12 +560,8 @@ function comparisonTable(semantic: Extract<Semantic, { kind: "comparison" }>): E
 }
 
 function documentXml(document: MarkdownDocument, renderer: Renderer, layout: DocumentStyleOptions["layout"]): string {
-  const { cover, inlineTitle, body, toc } = pageStructureOf(document.blocks, documentLayoutFor("docx", layout)!);
+  const { cover, body, toc, chapters } = pageStructureOf(document.blocks, documentLayoutFor("docx", layout)!);
   let out = cover ? renderer.cover(cover.title, cover.subtitle) : "";
-  if (inlineTitle) {
-    out += renderer.block({ kind: "heading", level: 1, runs: inlineTitle.title });
-    if (inlineTitle.subtitle) out += renderer.block({ kind: "paragraph", runs: inlineTitle.subtitle });
-  }
   // Contents are opt-in through report layout and require useful heading structure.
   const entries = tocEntriesOf(body);
   if (cover && toc) {
@@ -573,10 +569,10 @@ function documentXml(document: MarkdownDocument, renderer: Renderer, layout: Doc
     out += renderer.tocPage(korean ? "목차" : "Contents", entries);
   }
   /** Whether a page break before the next chapter has anything to move past. */
-  let rendered = cover !== undefined || inlineTitle !== undefined;
+  let rendered = cover !== undefined;
   let ordinal = 0;
   for (const block of body) {
-    if (block.kind === "heading" && block.level === 1) {
+    if (chapters && block.kind === "heading" && block.level === 1) {
       ordinal += 1;
       out += renderer.chapterOpener(ordinal, rendered);
     }

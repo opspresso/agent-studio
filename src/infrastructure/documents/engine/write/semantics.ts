@@ -361,12 +361,11 @@ export const TOC_THRESHOLD = 3;
 
 /** A compact page keeps its opening title in the flow and spends no pages on front matter. */
 export function pageStructureOf(blocks: readonly Block[], layout: DocumentLayout): {
-  cover?: Cover; inlineTitle?: Cover; body: readonly Block[]; toc: boolean;
+  cover?: Cover; body: readonly Block[]; toc: boolean; chapters: boolean;
 } {
+  if (layout === "compact") return { body: blocks, toc: false, chapters: false };
   const { cover, body } = coverOf(blocks);
-  return layout === "compact"
-    ? { inlineTitle: cover, body, toc: false }
-    : { cover, body, toc: cover !== undefined && tocEntriesOf(body).length >= TOC_THRESHOLD };
+  return { cover, body, toc: cover !== undefined && tocEntriesOf(body).length >= TOC_THRESHOLD, chapters: true };
 }
 
 /** The level 1-2 headings a contents page lists, in order. */

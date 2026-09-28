@@ -789,20 +789,16 @@ class Renderer {
 
 function sectionXml(document: MarkdownDocument, design: DesignProfile, layout: DocumentStyleOptions["layout"]): string {
   const renderer = new Renderer(design);
-  const { cover, inlineTitle, body, toc } = pageStructureOf(document.blocks, documentLayoutFor("hwpx", layout)!);
+  const { cover, body, toc, chapters } = pageStructureOf(document.blocks, documentLayoutFor("hwpx", layout)!);
   const entries = tocEntriesOf(body);
   let out = cover ? renderer.cover(cover) : "";
-  if (inlineTitle) {
-    out += renderer.block({ kind: "heading", level: 1, runs: inlineTitle.title });
-    if (inlineTitle.subtitle) out += renderer.block({ kind: "paragraph", runs: inlineTitle.subtitle });
-  }
   if (cover && toc) {
     out += renderer.toc(HANGUL.test(plainOf(cover.title)) ? "목차" : "Contents", entries);
   }
   let ordinal = 0;
-  let rendered = cover !== undefined || inlineTitle !== undefined;
+  let rendered = cover !== undefined;
   for (const block of body) {
-    if (block.kind === "heading" && block.level === 1) {
+    if (chapters && block.kind === "heading" && block.level === 1) {
       ordinal += 1;
       out += renderer.chapterOpener(ordinal, rendered);
     }

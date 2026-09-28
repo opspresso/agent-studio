@@ -237,11 +237,12 @@ function argb(hex: string): string {
 }
 
 function stylesXml(options: DocumentStyleOptions): string {
-  const { headerFill, headerText } = designFor(undefined, options.theme, options.colors).table;
+  const design = designFor(undefined, options.theme, options.colors);
+  const { headerFill, headerText } = design.table;
   return (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-    `<fonts count="2"><font><name val="${DOCUMENT_FONT}"/><sz val="${DOC.body}"/></font><font><name val="${DOCUMENT_FONT}"/><b/><color rgb="${argb(headerText)}"/><sz val="${DOC.body}"/></font></fonts>` +
+    `<fonts count="2"><font><name val="${DOCUMENT_FONT}"/><color rgb="${argb(design.palette.ink)}"/><sz val="${DOC.body}"/></font><font><name val="${DOCUMENT_FONT}"/><b/><color rgb="${argb(headerText)}"/><sz val="${DOC.body}"/></font></fonts>` +
     `<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="${argb(headerFill)}"/><bgColor indexed="64"/></patternFill></fill></fills>` +
     '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
