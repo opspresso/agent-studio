@@ -69,25 +69,32 @@ export function createCapabilityVisibility(deps: VisibilityDeps) {
     },
   };
   const mcps: McpRepository = { ...deps.mcps, ...visibleReads(deps.mcps, "tools", read) };
-  const pluginReads = visibleReads(deps.plugins, "plugins", read);
-  const projectPlugin = async (plugin: Plugin) => {
-    const [hidden, described, servers] = await Promise.all([
-      read(), deps.skills.describe(plugin.skills),
-      Promise.all(plugin.mcpServers.map(name => deps.mcps.get(name))),
+  const projectPlugins = async (rows: Plugin[], hidden: CapabilityVisibility): Promise<Plugin[]> => {
+    if (rows.length === 0) return [];
+    const skillNames = [...new Set(rows.flatMap(plugin => plugin.skills))];
+    const serverNames = [...new Set(rows.flatMap(plugin => plugin.mcpServers))];
+    const [described, servers] = await Promise.all([
+      deps.skills.describe(skillNames),
+      Promise.all(serverNames.map(name => deps.mcps.get(name))),
     ]);
     const skillSources = new Map(described.map(skill => [skill.name, skill.source]));
     const serverSources = new Map(servers.flatMap(server => server ? [[server.name, server.source] as const] : []));
-    return { ...plugin, skills: plugin.skills.filter(name => isCapabilityVisible(hidden, "skills", name, skillSources.get(name))),
-      mcpServers: plugin.mcpServers.filter(name => isCapabilityVisible(hidden, "tools", name, serverSources.get(name))) };
+    return rows.map(plugin => ({ ...plugin,
+      skills: plugin.skills.filter(name => isCapabilityVisible(hidden, "skills", name, skillSources.get(name))),
+      mcpServers: plugin.mcpServers.filter(name => isCapabilityVisible(hidden, "tools", name, serverSources.get(name))) }));
   };
   const plugins: PluginRepository = {
     ...deps.plugins,
     async get(name) {
-      const plugin = await pluginReads.get(name);
-      return plugin ? projectPlugin(plugin) : null;
+      const [plugin, hidden] = await Promise.all([deps.plugins.get(name), read()]);
+      if (!plugin || !isCapabilityVisible(hidden, "plugins", name)) return null;
+      return (await projectPlugins([plugin], hidden))[0]!;
     },
     async list(limit, after) {
-      return Promise.all((await pluginReads.list(limit, after)).map(projectPlugin));
+      if (limit <= 0) return [];
+      const hidden = await read();
+      const reads = visibleReads(deps.plugins, "plugins", async () => hidden);
+      return projectPlugins(await reads.list(limit, after), hidden);
     },
   };
 

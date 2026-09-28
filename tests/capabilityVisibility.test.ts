@@ -50,6 +50,18 @@ beforeEach(async () => {
 afterEach(() => { setAuditSink(undefined); vi.useRealTimers(); });
 
 describe("deployment capability visibility", () => {
+  it("projects a Plugin page with one policy read and one lookup per shared component", async () => {
+    for (let index = 0; index < 99; index++) await pluginRepository.put({ ...plugin, name: `plugin-${index}` });
+    const settingsRead = vi.spyOn(settingsRepository, "get");
+    const descriptions = vi.spyOn(rawSkills, "describe");
+    const serverRead = vi.spyOn(mcpRepository, "get");
+    const page = await access.plugins.list(100);
+    expect(page).toHaveLength(100);
+    expect(page.every(entry => entry.skills[0] === "deploy" && entry.mcpServers[0] === "cluster")).toBe(true);
+    expect(settingsRead).toHaveBeenCalledTimes(1);
+    expect(descriptions).toHaveBeenCalledTimes(1);
+    expect(serverRead).toHaveBeenCalledTimes(1);
+  });
   it("preserves another administrator's changes when an older page saves a different selection", async () => {
     const first = (await access.getView()).hidden;
     const second = (await access.getView()).hidden;
