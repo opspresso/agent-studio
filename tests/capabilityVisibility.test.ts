@@ -2,16 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCapabilityVisibility } from "@/application/plugin/capabilityVisibility";
 import { createPluginUseCases } from "@/application/plugin/pluginUseCases";
 import { createSkillUseCases } from "@/application/skill/skillUseCases";
+import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
+import { syncPluginsFromSnapshot } from "@/application/plugin/syncPlugins";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import { reindexCatalog } from "@/application/catalog/reindexCatalog";
 import { searchCapabilitiesByKind } from "@/application/catalog/searchCatalog";
 import { buildSkillLoader, createSkillReader, resolveSkills } from "@/application/execution/bindings";
 import { emptyCapabilityVisibility, MAX_HIDDEN_CAPABILITIES } from "@/domain/plugin/visibility";
-import { pluginSource } from "@/domain/plugin/types";
+import { pluginSource, MCP_JSON_SCHEMA, PLUGIN_MANIFEST_SCHEMA } from "@/domain/plugin/types";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { pluginRepository } from "@/infrastructure/db/repositories/pluginRepository";
 import { skillRepository } from "@/infrastructure/db/repositories/skillRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { fakeSkillRepository } from "./fakeSkills";
 import type { FakeStore } from "./fakeStore";
 import type { VectorRecord, VectorStorePort } from "@/domain/vector/types";
@@ -99,6 +102,29 @@ describe("deployment capability visibility", () => {
     expect(await access.skills.get("deploy")).toBeNull();
     expect(await access.mcps.get("cluster")).not.toBeNull();
     expect(await settingsRepository.get()).toMatchObject({ pluginsRepo: "org/repo", embeddingModel: "embedding" });
+  });
+
+  it("syncs hidden registry rows through raw use cases without resetting the deployment policy", async () => {
+    const hidden = { plugins: ["devops"], skills: ["manual"], tools: [] };
+    await access.update(hidden, "admin@example.test");
+    const mcps = createMcpUseCases(mcpRepository, secretCipher, { async assertAllowed() {} }, {
+      async listTools() { throw new Error("sync does not probe MCP tools"); }, invalidateDiscovery() {},
+    });
+    const snapshot = { repo: "org/repo", branch: "main", commitSha: "updated", nestedRoots: [], plugins: [{
+      rootPath: "", manifestRaw: JSON.stringify({ $schema: PLUGIN_MANIFEST_SCHEMA, name: "devops" }),
+      mcpJsonRaw: JSON.stringify({ $schema: MCP_JSON_SCHEMA, mcpServers: { cluster: { type: "streamable-http", url: "https://example.test/mcp" } } }),
+      skills: [{ name: "deploy", path: "skills/deploy/SKILL.md", content: "---\nname: deploy\ndescription: Updated deployment\n---\nNew deployment instructions", files: [] }],
+      mcpDocs: [], skippedAttachments: [], badSkillDirs: [],
+    }] };
+    const report = await syncPluginsFromSnapshot({ plugins: pluginRepository, pluginRows: createPluginUseCases(pluginRepository),
+      skillRepo: rawSkills, skills: createSkillUseCases(rawSkills), mcps }, snapshot, "admin@example.test");
+    expect(report.plugins[0]?.skills.overwritten).toContainEqual(expect.objectContaining({ name: "deploy" }));
+    expect((await pluginRepository.get("devops"))?.commitSha).toBe("updated");
+    expect((await rawSkills.get("deploy"))?.content).toBe("New deployment instructions");
+    expect((await settingsRepository.get())?.capabilityVisibility).toEqual(hidden);
+    expect(await access.skills.get("deploy")).toBeNull();
+    expect(await access.mcps.get("cluster")).toBeNull();
+    expect(await access.plugins.list(100)).toEqual([]);
   });
 
   it("rejects malformed names and oversized selections without changing settings", async () => {
