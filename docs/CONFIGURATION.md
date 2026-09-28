@@ -159,6 +159,10 @@ Settings → Models → Model 사용 설정의 **자동 모델 라우팅**에서
 3. `/settings/model-usage`에서 기본 모델, Agent 추천·라우팅용 결정 모델, Workspace Runtime별 모델, 검색의 Embedding·Rerank를 선택한다.
 4. 같은 모델 관리 화면의 **선택된 모델만 보기**로 저장된 모델을 모아 수정·삭제·상태 확인을 수행한다. Provider를 조회하지 않아도 저장된 선택을 표시하고, 조회 후에도 저장된 설정을 우선 표시한다. `/models`는 선택·등록된 모델의 조회와 검색만 제공한다.
 
+연결이 사라진 프로바이더의 등록 모델도 관리 화면에서 선택·삭제할 수 있다.
+새 모델 조회·등록은 현재 설정된 프로바이더 연결이 있어야 수행한다. 조회 중에는 등록·수정·삭제를
+함께 잠가 이전 조회 응답이 최신 등록 목록을 덮어쓰지 않게 한다.
+
 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decision`이다.
 `decision`은 판단·분류용 텍스트 모델이며 Agent 실행 모델로 사용하지 않는다. Agent 추천에는
 [TypeSafe Choice](https://docs.typesafe.ai/primitives/choice)의 구조화된 결정 계약을 사용한다.

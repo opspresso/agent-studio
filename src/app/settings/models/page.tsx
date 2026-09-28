@@ -22,12 +22,15 @@ export default function ModelManagementPage() {
   const [savedProvider, setProvider] = useLocalStorage<string | null>({
     key: MODEL_BROWSER_KEYS.activeProvider, defaultValue: null, deserialize: deserializeModelProvider, sync: false,
   });
-  const provider = providers?.some(item => item.name === savedProvider) ? savedProvider : providers?.[0]?.name ?? null;
-  const manualAllowed = providers?.some(item => item.name === provider && providerKind(item) === "selfhosted") ?? false;
   // Each entry is a complete provider response. UI filters never mutate this source.
   const [catalogs, setCatalogs] = useState(() => new Map<string, DiscoveredModel[]>());
-  const models = provider ? catalogs.get(provider) : undefined;
   const [registered, setRegistered] = useState<RegisteredModelView[]>([]);
+  const connections = new Map(providers?.map(item => [item.name, item]));
+  const providerNames = [...new Set([...connections.keys(), ...registered.map(model => model.provider)])];
+  const provider = savedProvider && providerNames.includes(savedProvider) ? savedProvider : providerNames[0] ?? null;
+  const connection = provider ? connections.get(provider) : undefined;
+  const manualAllowed = connection !== undefined && providerKind(connection) === "selfhosted";
+  const models = provider ? catalogs.get(provider) : undefined;
   const [chosenTypes, setChosenTypes] = useState(() => new Map<string, RegistryModelType>());
   const [manual, setManual] = useState(false);
   const [manualId, setManualId] = useState("");
@@ -39,7 +42,7 @@ export default function ModelManagementPage() {
   const [checking, setChecking] = useState<string>();
   const [statuses, setStatuses] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<RegisteredModelView>();
-  const pending = !!adding || !!removing || !!checking || !!editing;
+  const pending = busy || !!adding || !!removing || !!checking || !!editing;
   const { confirm, confirmModal } = useConfirm();
   const generation = useRef(0);
   useEffect(() => {
@@ -54,24 +57,24 @@ export default function ModelManagementPage() {
     return () => { current = false; generation.current++; };
   }, []);
   async function discover() {
-    if (!provider || busy || pending) return;
+    if (!connection || pending) return;
     const request = ++generation.current;
     setBusy(true); setError(undefined);
     try {
-      const result = await discoverProviderModels(provider);
+      const result = await discoverProviderModels(connection.name);
       const selection = await listRegisteredModels();
       if (request === generation.current) {
-        setCatalogs(previous => new Map(previous).set(provider, result));
+        setCatalogs(previous => new Map(previous).set(connection.name, result));
         setRegistered(selection);
       }
     } catch (error) { if (request === generation.current) setError(error instanceof Error ? error.message : "Could not discover models"); }
     finally { if (request === generation.current) setBusy(false); }
   }
   async function register(model: DiscoveredModel) {
-    if (!provider || pending) return;
+    if (!connection || pending) return;
     setAdding(model.wireId); setError(undefined);
     try {
-      const result = await saveRegisteredModel(registrationFromDiscovery(provider, model));
+      const result = await saveRegisteredModel(registrationFromDiscovery(connection.name, model));
       setRegistered(result); setManual(false); setManualId("");
     } catch (error) { setError(error instanceof Error ? error.message : "Could not register model"); }
     finally { setAdding(undefined); }
@@ -109,21 +112,24 @@ export default function ModelManagementPage() {
     <SectionHeading title={t("modelAdmin.selection")} description={t("modelAdmin.selectionHint")} />
     {error && <Alert color="red">{error}</Alert>}
     {!providers && !error && <LoadingText />}
-    {providers && !providers.length && <EmptyState>{t("modelAdmin.emptyProviders")}</EmptyState>}
-    {!!providers?.length && <>
+    {providers && !providerNames.length && <EmptyState>{t("modelAdmin.emptyProviders")}</EmptyState>}
+    {!!providerNames.length && <>
       <Group align="flex-end">
         <Select label={t("modelAdmin.providers")} value={provider} allowDeselect={false} disabled={pending}
-          data={providers.map(item => ({ value: item.name, label: `${item.name} (${item.kind})` }))}
+          data={providerNames.map(name => {
+            const item = connections.get(name);
+            return { value: name, label: item ? `${name} (${item.kind})` : name };
+          })}
           onChange={value => { generation.current++; setProvider(value); setBusy(false); setError(undefined); setChosenTypes(new Map()); setManual(false); }} />
-        <Button onClick={() => void discover()} loading={busy} disabled={pending}>{t("modelAdmin.discover")}</Button>
-        {manualAllowed && <Button variant="default" disabled={!provider || pending} onClick={() => setManual(!manual)}>{t("modelAdmin.manual")}</Button>}
+        <Button onClick={() => void discover()} loading={busy} disabled={!connection || pending}>{t("modelAdmin.discover")}</Button>
+        {manualAllowed && <Button variant="default" disabled={pending} onClick={() => setManual(!manual)}>{t("modelAdmin.manual")}</Button>}
       </Group>
       {manual && <Card><form onSubmit={event => { event.preventDefault(); void register({ wireId: manualId.trim(), displayName: manualId.trim(), type: manualType }); }}>
-        <Stack gap="md"><TextInput label={t("modelAdmin.wireId")} value={manualId} required onChange={event => setManualId(event.currentTarget.value)} disabled={!!adding} />
-          <Select label={t("models.type")} value={manualType} data={types} allowDeselect={false} onChange={value => { if (value) setManualType(value as RegistryModelType); }} disabled={!!adding} />
+        <Stack gap="md"><TextInput label={t("modelAdmin.wireId")} value={manualId} required onChange={event => setManualId(event.currentTarget.value)} disabled={pending} />
+          <Select label={t("models.type")} value={manualType} data={types} allowDeselect={false} onChange={value => { if (value) setManualType(value as RegistryModelType); }} disabled={pending} />
           <Text size="sm" c="dimmed">{t("modelAdmin.manualHint")}</Text>
-          <Group><Button type="submit" loading={!!adding} disabled={!manualId.trim()}>{t("modelAdmin.add")}</Button>
-            <Button variant="default" disabled={!!adding} onClick={() => setManual(false)}>{t("common.cancel")}</Button></Group>
+          <Group><Button type="submit" loading={!!adding} disabled={pending || !manualId.trim()}>{t("modelAdmin.add")}</Button>
+            <Button variant="default" disabled={pending} onClick={() => setManual(false)}>{t("common.cancel")}</Button></Group>
         </Stack>
       </form></Card>}
       <>
