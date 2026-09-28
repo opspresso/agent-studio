@@ -33,7 +33,11 @@ test.beforeAll(async () => {
     { wireId: "constructor", displayName: "Unknown" },
   ];
   const bundle = await build({ entryPoints: ["browser-tests/fixtures/model-selection.tsx"], bundle: true, write: false,
-    outdir: "/tmp/agent-studio-model-fixture", platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' } });
+    outdir: "/tmp/agent-studio-model-fixture", platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
+    plugins: [{ name: "next-navigation", setup(build) {
+      build.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: "navigation", namespace: "next-stub" }));
+      build.onLoad({ filter: /.*/, namespace: "next-stub" }, () => ({ contents: "export const usePathname = () => location.pathname;", loader: "js" }));
+    } }] });
   server = createServer((request, response) => {
     const file = bundle.outputFiles.find(file => request.url === `/${file.path.split("/").at(-1)}`);
     response.setHeader("Content-Type", `${file ? file.path.endsWith(".css") ? "text/css" : "text/javascript" : "text/html"}; charset=utf-8`);
@@ -44,6 +48,7 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 test.beforeEach(async ({ page }) => {
+  page.on("pageerror", error => { throw error; });
   discovered[0] = { ...discovered[0]!, pricing: { inputPer1M: 10, outputPer1M: 20, cachedInputPer1M: 1 } };
   selected = []; saves = []; blockDeletion = false; failDiscovery = false; failFavorites = false; discoveryQueries = []; favorites = [];
   holdFirstFavoritePatch = false; releaseFirstFavoritePatch = undefined; favoritePatchCount = 0;
@@ -81,8 +86,12 @@ test.beforeEach(async ({ page }) => {
         const model = route.request().postDataJSON() as RegisteredModel;
         saves.push(model); selected = [...selected.filter(item => item.id !== model.id), model];
       }
-      return route.fulfill({ json: { models: selected } });
+      return route.fulfill({ json: { models: selected.map(model => {
+        const published = discovered.find(candidate => candidate.id === model.id);
+        return published ? { ...model, pricing: published.pricing, pricingSource: "catalog" } : model;
+      }) } });
     }
+    if (path === "/api/models/status") return route.fulfill({ json: { available: true } });
     return route.abort();
   });
   await page.goto(base);
@@ -386,7 +395,6 @@ test("a removed provider preference cannot hide the remaining registered models"
 test("editing uses the registration rules without retaining obsolete output types", async ({ page }) => {
   await modelRows(page).filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
   await expect.poll(() => selected.length).toBe(1);
-  await page.goto(`${base}/registered`);
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByRole("dialog").getByRole("textbox", { name: "Name", exact: true }).fill("Edited model");
   await page.getByRole("dialog").getByRole("combobox", { name: "Model type", exact: true }).click();
@@ -395,4 +403,21 @@ test("editing uses the registration rules without retaining obsolete output type
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(selected[0]).toMatchObject({ id: "openrouter/zeta", wireId: "vendor/zeta", displayName: "Edited model", type: "embedding", maxTokens: 0, pricing: { cachedInputPer1M: 1 } });
   expect(selected[0]?.outputModalities).toBeUndefined();
+  await expect(modelRows(page).filter({ hasText: "Edited model" })).toHaveCount(1);
+});
+
+test("manages saved models without discovery and shows the unified Settings navigation", async ({ page }) => {
+  await modelRows(page).filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
+  await expect.poll(() => selected.length).toBe(1);
+  await page.goto(`${base}/settings/models`);
+  const section = page.getByRole("tablist", { name: "Models", exact: true });
+  await expect(section.getByRole("tab")).toHaveCount(3);
+  await expect(section.getByRole("tab", { name: "Model management", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(section.getByRole("tab", { name: "Usage settings", exact: true })).toHaveAttribute("href", "/settings/model-usage");
+  const zeta = modelRows(page).filter({ hasText: "Zeta" });
+  await zeta.getByRole("button", { name: "Check status", exact: true }).click();
+  await expect(zeta.getByRole("status")).toHaveText("Listed");
+  await expect(zeta.getByRole("button", { name: "Edit", exact: true })).toBeEnabled();
+  await expect(zeta.getByRole("button", { name: "Delete", exact: true })).toBeEnabled();
+  await page.screenshot({ path: "/tmp/agent-studio-model-settings-tabs.png", fullPage: true });
 });

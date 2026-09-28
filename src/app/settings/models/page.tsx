@@ -9,12 +9,14 @@ import { useConfirm } from "@/app/_components/useConfirm";
 import { useT } from "@/app/_i18n/provider";
 import { readJson } from "@/app/_lib/httpClient";
 import { ModelCollection } from "@/app/models/ModelCollection";
+import { ModelEditor } from "@/app/models/ModelEditor";
 import { MODEL_BROWSER_KEYS, deserializeModelProvider } from "@/app/models/modelTable";
 import { REGISTRY_MODEL_TYPES, providerKind, registrationFromDiscovery, type DiscoveredModel, type RegisteredModel, type RegistryModelType } from "@/domain/llm/providerModels";
 import type { SettingsView } from "@/application/settings/settingsUseCases";
-import { deleteRegisteredModel, discoverProviderModels, listRegisteredModels, saveRegisteredModel } from "@/app/models/api";
+import type { RegisteredModelView } from "@/application/llm/modelRegistry";
+import { checkRegisteredModel, deleteRegisteredModel, discoverProviderModels, listRegisteredModels, saveRegisteredModel } from "@/app/models/api";
 
-export default function ModelSelectionPage() {
+export default function ModelManagementPage() {
   const t = useT();
   const [providers, setProviders] = useState<SettingsView["llmProviders"]["items"]>();
   const [savedProvider, setProvider] = useLocalStorage<string | null>({
@@ -25,7 +27,7 @@ export default function ModelSelectionPage() {
   // Each entry is a complete provider response. UI filters never mutate this source.
   const [catalogs, setCatalogs] = useState(() => new Map<string, DiscoveredModel[]>());
   const models = provider ? catalogs.get(provider) : undefined;
-  const [registered, setRegistered] = useState<RegisteredModel[]>([]);
+  const [registered, setRegistered] = useState<RegisteredModelView[]>([]);
   const [chosenTypes, setChosenTypes] = useState(() => new Map<string, RegistryModelType>());
   const [manual, setManual] = useState(false);
   const [manualId, setManualId] = useState("");
@@ -34,7 +36,10 @@ export default function ModelSelectionPage() {
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState<string>();
   const [removing, setRemoving] = useState<string>();
-  const pending = !!adding || !!removing;
+  const [checking, setChecking] = useState<string>();
+  const [statuses, setStatuses] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState<RegisteredModelView>();
+  const pending = !!adding || !!removing || !!checking || !!editing;
   const { confirm, confirmModal } = useConfirm();
   const generation = useRef(0);
   useEffect(() => {
@@ -54,7 +59,11 @@ export default function ModelSelectionPage() {
     setBusy(true); setError(undefined);
     try {
       const result = await discoverProviderModels(provider);
-      if (request === generation.current) setCatalogs(previous => new Map(previous).set(provider, result));
+      const selection = await listRegisteredModels();
+      if (request === generation.current) {
+        setCatalogs(previous => new Map(previous).set(provider, result));
+        setRegistered(selection);
+      }
     } catch (error) { if (request === generation.current) setError(error instanceof Error ? error.message : "Could not discover models"); }
     finally { if (request === generation.current) setBusy(false); }
   }
@@ -76,15 +85,22 @@ export default function ModelSelectionPage() {
     } catch (error) { setError(error instanceof Error ? error.message : "Could not delete model"); }
     finally { setRemoving(undefined); }
   }
+  async function check(model: RegisteredModelView) {
+    if (pending) return;
+    setChecking(model.id); setError(undefined);
+    try {
+      const result = await checkRegisteredModel(model.id);
+      setStatuses(previous => ({ ...previous, [model.id]: result.available ? t("modelAdmin.available") : t("modelAdmin.missing") }));
+    } catch (error) {
+      setStatuses(previous => ({ ...previous, [model.id]: error instanceof Error ? error.message : "Status check failed" }));
+    } finally { setChecking(undefined); }
+  }
   const selectedModels = registered.filter(model => model.provider === provider);
   const selectedById = new Map(selectedModels.map(model => [model.id, model]));
   const selected = new Set(selectedById.keys());
   const identity = (model: DiscoveredModel) => model.id ?? `${provider}/${model.wireId}`;
   const catalogRows: DiscoveredModel[] = [
-    ...(models ?? []).map(model => {
-      const savedType = selectedById.get(identity(model))?.type;
-      return !model.type && savedType ? { ...model, type: savedType } : model;
-    }),
+    ...(models ?? []).map(model => selectedById.get(identity(model)) ?? model),
     ...selectedModels.filter(model => !models?.some(item => identity(item) === model.id)),
   ];
   const types = REGISTRY_MODEL_TYPES.map(value => ({ value, label: t(`models.type.${value}`) }));
@@ -115,7 +131,12 @@ export default function ModelSelectionPage() {
         <ModelCollection scope="discovery" models={catalogRows} provider={provider ?? undefined} emptyText={t(models ? "modelAdmin.discoveryEmpty" : "modelAdmin.discoverHint")}
           isSelected={model => selected.has(identity(model))}
           renderActions={model => selected.has(identity(model)) ? <>
+            {statuses[identity(model)] && <Text size="xs" role="status" w="100%">{statuses[identity(model)]}</Text>}
             <Badge color="teal">{t("modelAdmin.enabled")}</Badge>
+            <Button variant="default" disabled={pending} loading={checking === identity(model)}
+              onClick={() => { const item = selectedById.get(identity(model)); if (item) void check(item); }}>{t("modelAdmin.check")}</Button>
+            <Button variant="default" disabled={pending}
+              onClick={() => setEditing(selectedById.get(identity(model)))}>{t("modelAdmin.edit")}</Button>
             <Button color="red" variant="subtle" disabled={pending} loading={removing === identity(model)}
               onClick={() => { const item = selectedById.get(identity(model)); if (item) void remove(item); }}>{t("modelAdmin.delete")}</Button>
           </> : <>
@@ -126,6 +147,7 @@ export default function ModelSelectionPage() {
               onClick={() => void register({ ...model, type: model.type ?? chosenTypes.get(model.wireId) })}>{t("modelAdmin.add")}</Button>}
           </>} />
       </>
+      {editing && <ModelEditor key={editing.id} model={editing} onSaved={models => { setRegistered(models); setEditing(undefined); }} onCancel={() => setEditing(undefined)} />}
     </>}
   </Stack>;
 }

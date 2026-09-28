@@ -7,7 +7,7 @@ import { PageHeader } from "@/app/_components/PageHeader";
 import { PageTabs } from "@/app/_components/PageTabs";
 import { useT } from "@/app/_i18n/provider";
 import { useViewer } from "@/app/_lib/useViewer";
-import { ModelSettingsNav } from "./ModelSettingsNav";
+import { SettingsSectionNav } from "./SettingsSectionNav";
 import { SETTINGS_TABS, SETTINGS_TAB_PATHS, settingsTabFor } from "./tabs";
 
 export function SettingsShell({ children }: { children: React.ReactNode }) {
@@ -19,7 +19,7 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
     {viewer?.isAdmin ? <>
       <PageTabs value={SETTINGS_TAB_PATHS[tab]} label={t("nav.settings")}
         items={SETTINGS_TABS.map(value => ({ href: SETTINGS_TAB_PATHS[value], label: t(`settings.tab.${value}`) }))} />
-      {tab === "models" && <ModelSettingsNav />}
+      {(tab === "models" || tab === "plugins") && <SettingsSectionNav section={tab} />}
       {children}
     </> : <Alert color="gray">{t("settings.adminOnly")}</Alert>}
   </Stack>;

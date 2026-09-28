@@ -47,6 +47,12 @@ beforeEach(async () => {
 afterEach(() => { setAuditSink(undefined); vi.useRealTimers(); });
 
 describe("deployment capability visibility", () => {
+  it("enables all installed Plugins, Skills and Tools when no usage policy has been saved", async () => {
+    expect((await access.getView()).hidden).toEqual(emptyCapabilityVisibility());
+    expect((await access.plugins.list(100)).map(plugin => plugin.name)).toEqual(["devops"]);
+    expect((await access.skills.list(100)).map(skill => skill.name)).toEqual(["deploy", "manual"]);
+    expect((await access.mcps.list(100)).map(server => server.name)).toEqual(["cluster"]);
+  });
   it("hides a plugin and its current components across list, detail and runtime description reads", async () => {
     await access.update({ plugins: ["devops"], skills: [], tools: [] }, "admin@example.test");
     expect(await access.plugins.list(100)).toEqual([]);
