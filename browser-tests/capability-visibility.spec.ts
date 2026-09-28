@@ -151,3 +151,17 @@ test("preserves an administrator's Tool change while saving edits from an older 
   expect(view.hidden).toEqual({ plugins: ["devops"], skills: ["deploy", "retired"], tools: ["cluster"] });
   expect(writes).toEqual([[{ kind: "plugins", name: "devops", enabled: false }]]);
 });
+
+test("associates every capability tab with its controls through a labelled panel", async ({ page }) => {
+  await page.goto(base);
+  const tabs = page.getByRole("tablist", { name: "Capability types", exact: true });
+  for (const name of ["Plugins", "Skills", "Tools"]) {
+    const tab = tabs.getByRole("tab", { name, exact: true });
+    await tab.click();
+    const panel = page.getByRole("tabpanel", { name, exact: true });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole("textbox", { name: "Search capabilities", exact: true })).toBeVisible();
+    await expect(tab).toHaveAttribute("aria-controls", (await panel.getAttribute("id"))!);
+    await expect(panel).toHaveAttribute("aria-labelledby", (await tab.getAttribute("id"))!);
+  }
+});

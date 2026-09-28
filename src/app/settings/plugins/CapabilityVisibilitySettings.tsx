@@ -71,32 +71,36 @@ export function CapabilityVisibilitySettings() {
     {loading ? <LoadingText /> : view ? <Card component="form" onSubmit={save}>
       <Stack renderRoot={props => <fieldset {...props} disabled={saving} />} gap="md"
         style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-        <Tabs value={kind} onChange={value => {
+        <Tabs keepMounted={false} value={kind} onChange={value => {
           if (CAPABILITY_KINDS.some(key => key === value)) { setKind(value as keyof CapabilityVisibility); setFilter(""); }
         }}>
           <Tabs.List aria-label={t("settings.visibility.kinds")}>{CAPABILITY_KINDS.map(key => <Tabs.Tab key={key} value={key}>{t(`nav.${key}`)}</Tabs.Tab>)}</Tabs.List>
+          {CAPABILITY_KINDS.map(panelKind => <Tabs.Panel key={panelKind} value={panelKind} pt="md">
+            {panelKind === kind && <Stack gap="md">
+              <TextInput aria-label={t("settings.visibility.filter")} placeholder={t("settings.visibility.filter")}
+                leftSection={<IconSearch size={16} />} value={filter} onChange={event => setFilter(event.currentTarget.value)} />
+              {items.length === 0 ? <Text size="sm" c="dimmed">{t("catalog.noResults")}</Text> : <Table>
+                <Table.Thead><Table.Tr><Table.Th>{t("settings.visibility.enabled")}</Table.Th><Table.Th>{t("settings.visibility.capability")}</Table.Th></Table.Tr></Table.Thead>
+                <Table.Tbody>{items.map(item => {
+                  const inherited = kind !== "plugins" && item.plugin !== undefined && !isCapabilityVisible(hidden, "plugins", item.plugin);
+                  const checked = !inherited && isCapabilityVisible(hidden, kind, item.name);
+                  return <Table.Tr key={item.name}>
+                    <Table.Td w={70}><Checkbox aria-label={t("settings.visibility.use", { name: item.name })}
+                      checked={checked} disabled={inherited} onChange={event => {
+                        const checked = event.currentTarget.checked;
+                        setHidden(previous => ({ ...previous, [kind]: checked
+                          ? previous[kind].filter(name => name !== item.name) : [...new Set([...previous[kind], item.name])].sort() }));
+                        setSaved(false);
+                      }} /></Table.Td>
+                    <Table.Td><Group gap="xs"><Text size="sm" fw={500} style={{ overflowWrap: "anywhere" }}>{item.name}</Text>
+                      {inherited && <Badge color="gray" variant="light">{t("settings.visibility.inherited", { name: item.plugin! })}</Badge>}
+                    </Group>{item.description && <Text size="xs" c="dimmed" lineClamp={2}>{item.description}</Text>}</Table.Td>
+                  </Table.Tr>;
+                })}</Table.Tbody>
+              </Table>}
+            </Stack>}
+          </Tabs.Panel>)}
         </Tabs>
-        <TextInput aria-label={t("settings.visibility.filter")} placeholder={t("settings.visibility.filter")}
-          leftSection={<IconSearch size={16} />} value={filter} onChange={event => setFilter(event.currentTarget.value)} />
-        {items.length === 0 ? <Text size="sm" c="dimmed">{t("catalog.noResults")}</Text> : <Table>
-          <Table.Thead><Table.Tr><Table.Th>{t("settings.visibility.enabled")}</Table.Th><Table.Th>{t("settings.visibility.capability")}</Table.Th></Table.Tr></Table.Thead>
-          <Table.Tbody>{items.map(item => {
-            const inherited = kind !== "plugins" && item.plugin !== undefined && !isCapabilityVisible(hidden, "plugins", item.plugin);
-            const checked = !inherited && isCapabilityVisible(hidden, kind, item.name);
-            return <Table.Tr key={item.name}>
-              <Table.Td w={70}><Checkbox aria-label={t("settings.visibility.use", { name: item.name })}
-                checked={checked} disabled={inherited} onChange={event => {
-                  const checked = event.currentTarget.checked;
-                  setHidden(previous => ({ ...previous, [kind]: checked
-                    ? previous[kind].filter(name => name !== item.name) : [...new Set([...previous[kind], item.name])].sort() }));
-                  setSaved(false);
-                }} /></Table.Td>
-              <Table.Td><Group gap="xs"><Text size="sm" fw={500} style={{ overflowWrap: "anywhere" }}>{item.name}</Text>
-                {inherited && <Badge color="gray" variant="light">{t("settings.visibility.inherited", { name: item.plugin! })}</Badge>}
-              </Group>{item.description && <Text size="xs" c="dimmed" lineClamp={2}>{item.description}</Text>}</Table.Td>
-            </Table.Tr>;
-          })}</Table.Tbody>
-        </Table>}
         <Group><Button type="submit" loading={saving} disabled={!dirty}>{t("modelAdmin.save")}</Button>
           {saved && <Text size="sm" c="teal">{t("modelAdmin.saved")}</Text>}</Group>
       </Stack>
