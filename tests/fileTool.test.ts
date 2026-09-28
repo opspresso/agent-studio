@@ -63,6 +63,18 @@ describe("private Artifact inputs", () => {
 });
 
 describe("native File tool", () => {
+  it("forwards independent brand and layout choices and reports the effective design", async () => {
+    const run = setup();
+    const created = await run.call({ operation: "create", format: "docx", title: "운영 요약", content: "# 운영 요약\n\n본문",
+      theme: "classic", colors: { brand: "224466" }, layout: "compact" });
+    expect(created.files).toHaveLength(1);
+    expect(created.text).toContain("theme=classic; profile=standard; layout=compact; font=NanumGothic");
+    await run.capture(created);
+    const styledEdit = await run.call({ operation: "edit", file_id: created.files![0]!.artifactId, theme: "corporate",
+      edits: [{ operation: "replace_text", part: "word/document.xml", index: 0, text: "운영 요약", replacement: "수정본" }] });
+    expect(styledEdit.text).toContain("preserve their original style");
+    expect(styledEdit.files).toBeUndefined();
+  });
   it("bounds intermediate text edits before allocating an oversized result", async () => {
     const run = setup();
     const created = await buildFileSaver(run.deps)!({ name: "text.txt", mimeType: "text/plain", content: "ab" });

@@ -1,3 +1,5 @@
+import { documentLayoutFor } from "@/domain/document/processor";
+import type { DocumentStyleOptions } from "@/domain/document/processor";
 /**
  * A document AST to PPTX.
  *
@@ -40,7 +42,7 @@ import { extensionOf, imageSize, type ImageAsset } from "../image";
 import { plan } from "./planner";
 import { Renderer, type MediaEntry } from "./render";
 import type { Slide } from "./types";
-import { designFor, type DocumentProfile } from "../theme";
+import { designFor } from "../theme";
 
 /**
  * Which layout part carries each archetype's design.
@@ -63,11 +65,10 @@ const LAYOUT_OF: Record<Slide["type"], LayoutIndex> = {
   closing: 4,
 };
 
-export interface PptxOptions {
+export interface PptxOptions extends DocumentStyleOptions {
   title: string;
   /** ISO 8601, passed in so the bytes are a function of the input alone. */
   created: string;
-  profile?: DocumentProfile;
   /** Keyed by the name `asset://name` references. */
   assets?: Record<string, ImageAsset>;
 }
@@ -81,8 +82,11 @@ export interface RenderedPptx {
 }
 
 export function renderPptx(document: MarkdownDocument, options: PptxOptions): RenderedPptx {
-  const design = designFor(options.profile);
-  const { slides } = plan(document, design);
+  const design = designFor(options.profile, options.theme, options.colors);
+  const layout = documentLayoutFor("pptx", options.layout);
+  const blocks = layout === "compact" && document.blocks[0]?.kind === "heading" && document.blocks[0].level === 1
+    ? [{ ...document.blocks[0], level: 2 as const }, ...document.blocks.slice(1)] : document.blocks;
+  const { slides } = plan({ ...document, blocks }, design);
 
   /**
    * One media part per referenced asset, numbered in first-use order. A

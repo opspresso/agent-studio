@@ -11,7 +11,7 @@ import { detect } from "@/infrastructure/documents/engine/detect";
 import { listEntries, readEntries } from "@/infrastructure/documents/engine/zip";
 import { renderHwpx } from "@/infrastructure/documents/engine/write/hwpx";
 
-const OPTIONS = { title: "test", created: "2026-08-05T00:00:00Z" };
+const OPTIONS = { title: "test", created: "2026-08-05T00:00:00Z", layout: "report" as const };
 
 function build(markdown: string): Uint8Array {
   return renderHwpx(parseMarkdown(markdown), OPTIONS);
@@ -85,8 +85,8 @@ test("a formal profile carries its light table treatment into the HWPX header", 
     profile: "formal",
   });
   const header = partOf(bytes, "Contents/header.xml");
-  assert.ok(header.includes('faceColor="#EDF1F4"'));
-  assert.ok(header.includes('textColor="#334E68"'));
+  assert.ok(header.includes('faceColor="#EAF1F3"'));
+  assert.ok(header.includes('textColor="#17324D"'));
 });
 
 test("body, headings and cover use role-based leading with native kerning", () => {
@@ -103,7 +103,7 @@ test("the HWPX cover carries the same short profile rule as the other page forma
   const header = partOf(bytes, "Contents/header.xml");
   const section = partOf(bytes, "Contents/section0.xml");
   assert.ok(header.includes('width="1.0 mm" color="#17324D"'));
-  assert.ok(header.includes('<hc:right value="43390" unit="HWPUNIT"/>'));
+  assert.ok(header.includes('<hc:right value="42188" unit="HWPUNIT"/>'));
   assert.match(section, /<hp:p[^>]*paraPrIDRef="\d+"[^>]*><hp:run[^>]*><hp:secPr[\s\S]*?<hp:t><\/hp:t><\/hp:run>/);
 });
 

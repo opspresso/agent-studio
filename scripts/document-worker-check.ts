@@ -7,9 +7,13 @@ async function main() {
   for (const format of DOCUMENT_FORMATS) {
     const output = await pool.execute("create", {
       format, title: "분기 보고서", created: "2026-09-07T00:00:00.000Z",
+      theme: "ocean", colors: { brand: "224466" },
       ...(format === "xlsx" ? { sheets: [{ name: "Summary", rows: [["매출 증가"]] }] } : { content: "# 분기 보고서\n\n매출 증가" }),
     });
     assert.ok(output.bytes instanceof Uint8Array);
+    assert.equal(output.style?.theme, "ocean");
+    assert.equal(output.style?.colors.brand, "224466");
+    assert.equal(output.style?.profile, format === "xlsx" ? null : "standard");
     const file = { bytes: output.bytes, mimeType: output.mimeType, name: `report.${format}` };
     const read = await pool.execute("extract", { ...file, maxChars: 20_000 });
     assert.ok(read.text.includes("매출 증가"), format);

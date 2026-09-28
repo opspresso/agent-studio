@@ -1,8 +1,4 @@
-/**
- * Shared colors, type scales and spacing for document profiles. Font selection
- * belongs to each format: DOCX/PPTX use theme prose fonts and named code faces,
- * HWPX names its prose/code faces, and PDF embeds bundled Nanum Gothic.
- */
+/** Shared brand, role-based typography and page geometry. PDF embeds NanumGothic; editable clients need it installed. */
 
 /* --------------------------------------------------------------- palette */
 
@@ -14,27 +10,18 @@
  * so the values themselves are stated once.
  */
 export { DOCUMENT_PROFILES } from "@/domain/document/processor";
-import type { DocumentProfile } from "@/domain/document/processor";
+import { DEFAULT_DOCUMENT_PROFILE, DEFAULT_DOCUMENT_THEME, DOCUMENT_COLOR_NAMES, DOCUMENT_FONT_FAMILY } from "@/domain/document/processor";
+import type { DocumentColors, DocumentProfile, DocumentTheme } from "@/domain/document/processor";
+import { DocumentError } from "../errors";
 export type { DocumentProfile } from "@/domain/document/processor";
 
-export const DEFAULT_PROFILE: DocumentProfile = "executive";
+export const DEFAULT_PROFILE = DEFAULT_DOCUMENT_PROFILE;
 
-export interface Palette {
-  readonly brand: string;
-  readonly brandLight: string;
-  readonly brandDeep: string;
-  readonly brandTint: string;
-  readonly surfaceTint: string;
-  readonly ink: string;
-  readonly inkMuted: string;
-  readonly rule: string;
-  readonly onBrand: string;
-  readonly positive: string;
-  readonly negative: string;
-}
+export type Palette = DocumentColors;
 
 export interface DesignProfile {
   readonly profile: DocumentProfile;
+  readonly theme: DocumentTheme;
   readonly label: string;
   readonly description: string;
   readonly palette: Palette;
@@ -52,7 +39,7 @@ export interface DesignProfile {
   };
 }
 
-const STANDARD_PALETTE: Palette = {
+const CLASSIC_PALETTE: Palette = {
   brand: "1F4E79",
   brandLight: "4472C4",
   brandDeep: "0563C1",
@@ -62,11 +49,11 @@ const STANDARD_PALETTE: Palette = {
   inkMuted: "595959",
   rule: "D9DEE5",
   onBrand: "FFFFFF",
-  positive: "1BAF7A",
-  negative: "E34948",
+  positive: "147D64",
+  negative: "B8433F",
 };
 
-const EXECUTIVE_PALETTE: Palette = {
+const CORPORATE_PALETTE: Palette = {
   brand: "17324D",
   brandLight: "2D6A78",
   brandDeep: "0B5D7A",
@@ -80,7 +67,7 @@ const EXECUTIVE_PALETTE: Palette = {
   negative: "B8433F",
 };
 
-const CONSULTING_PALETTE: Palette = {
+const OCEAN_PALETTE: Palette = {
   brand: "0B2D4D",
   brandLight: "007481",
   brandDeep: "005A8D",
@@ -94,7 +81,7 @@ const CONSULTING_PALETTE: Palette = {
   negative: "B8433F",
 };
 
-const FORMAL_PALETTE: Palette = {
+const SLATE_PALETTE: Palette = {
   brand: "334E68",
   brandLight: "627D98",
   brandDeep: "245B78",
@@ -108,7 +95,7 @@ const FORMAL_PALETTE: Palette = {
   negative: "A94743",
 };
 
-const TECHNICAL_PALETTE: Palette = {
+const TEAL_PALETTE: Palette = {
   brand: "0F4C5C",
   brandLight: "147D75",
   brandDeep: "075A72",
@@ -133,74 +120,131 @@ const CATEGORICAL = [
   "898781",
 ] as const;
 
+type ProfileTreatment = Omit<DesignProfile, "theme" | "palette" | "chart" | "table"> & { tableTone: "solid" | "light" };
+
 function profile(
   name: DocumentProfile,
   label: string,
   description: string,
-  palette: Palette,
   options: {
     header: "solid" | "light";
     coverRulePoints: number;
     coverBandPoints: number;
     cardRadius: number;
   },
-): DesignProfile {
+): ProfileTreatment {
   return {
     profile: name,
     label,
     description,
-    palette,
-    chart: CATEGORICAL,
-    table: {
-      headerFill: options.header === "solid" ? palette.brand : palette.brandTint,
-      headerText: options.header === "solid" ? palette.onBrand : palette.brand,
-    },
+    tableTone: options.header,
     doc: { coverRulePoints: options.coverRulePoints },
     deck: { coverBandPoints: options.coverBandPoints, cardRadius: options.cardRadius },
   };
 }
 
-export const DESIGNS: Readonly<Record<DocumentProfile, DesignProfile>> = {
+const TREATMENTS: Readonly<Record<DocumentProfile, ProfileTreatment>> = {
   executive: profile(
     "executive",
     "Executive",
     "Leadership decisions, board reports and approval documents.",
-    EXECUTIVE_PALETTE,
     { header: "solid", coverRulePoints: 48, coverBandPoints: 12, cardRadius: 1500 },
   ),
   consulting: profile(
     "consulting",
     "Consulting",
     "Strategy proposals and conclusion-led presentations.",
-    CONSULTING_PALETTE,
     { header: "solid", coverRulePoints: 72, coverBandPoints: 36, cardRadius: 5000 },
   ),
   formal: profile(
     "formal",
     "Formal",
     "Public-sector and external submissions designed first for print.",
-    FORMAL_PALETTE,
     { header: "light", coverRulePoints: 36, coverBandPoints: 0, cardRadius: 0 },
   ),
   technical: profile(
     "technical",
     "Technical",
     "Architecture, RFC and engineering documents with restrained structure.",
-    TECHNICAL_PALETTE,
     { header: "light", coverRulePoints: 42, coverBandPoints: 6, cardRadius: 1000 },
   ),
   standard: profile(
     "standard",
     "Standard",
-    "The classic neutral corporate document style.",
-    STANDARD_PALETTE,
+    "General-purpose business documents with a neutral layout.",
     { header: "solid", coverRulePoints: 60, coverBandPoints: 21.6, cardRadius: 8000 },
   ),
 };
 
-export function designFor(profileName: DocumentProfile = DEFAULT_PROFILE): DesignProfile {
-  return DESIGNS[profileName];
+export const THEMES: Readonly<Record<DocumentTheme, Palette>> = {
+  corporate: CORPORATE_PALETTE,
+  classic: CLASSIC_PALETTE,
+  ocean: OCEAN_PALETTE,
+  slate: SLATE_PALETTE,
+  teal: TEAL_PALETTE,
+};
+
+/** Purpose controls treatments; theme and explicit brand colors control identity. */
+export function designFor(
+  profileName: DocumentProfile = DEFAULT_PROFILE,
+  theme: DocumentTheme = DEFAULT_DOCUMENT_THEME,
+  colors?: Partial<Palette>,
+): DesignProfile {
+  if (colors !== undefined && (!colors || typeof colors !== "object" || Array.isArray(colors))) {
+    throw new DocumentError("Document colors must be an object of six-digit hex values");
+  }
+  for (const [name, color] of Object.entries(colors ?? {})) {
+    if (!(DOCUMENT_COLOR_NAMES as readonly string[]).includes(name) || typeof color !== "string" || !/^[0-9A-Fa-f]{6}$/.test(color)) {
+      throw new DocumentError(`Invalid document color ${name}; use a supported role and six hex digits without #`);
+    }
+  }
+  const treatment = TREATMENTS[profileName];
+  const overrides = Object.fromEntries(Object.entries(colors ?? {}).map(([name, color]) => [name, color.toUpperCase()]));
+  const palette = { ...THEMES[theme], ...overrides };
+  const { tableTone, ...treatmentFields } = treatment;
+  const light = tableTone === "light";
+  const design = {
+    ...treatmentFields, theme, palette, chart: CATEGORICAL,
+    table: {
+      headerFill: light ? palette.brandTint : palette.brand,
+      headerText: light ? palette.brand : palette.onBrand,
+    },
+  };
+  for (const [foreground, background] of [
+    [palette.ink, PAPER_COLOR], [palette.ink, palette.brandTint], [palette.ink, palette.surfaceTint],
+    [palette.inkMuted, PAPER_COLOR], [palette.inkMuted, palette.brandTint], [palette.inkMuted, palette.surfaceTint],
+    [palette.brandDeep, PAPER_COLOR], [palette.brandDeep, palette.brandTint], [palette.brand, PAPER_COLOR],
+    [palette.positive, PAPER_COLOR], [palette.negative, PAPER_COLOR],
+    [design.table.headerText, design.table.headerFill],
+  ]) {
+    if (contrastRatio(foreground!, background!) < 4.5) {
+      throw new DocumentError("Document text colors must provide at least 4.5:1 contrast on their backgrounds");
+    }
+  }
+  return design;
 }
+
+function contrastRatio(a: string, b: string): number {
+  function luminance(hex: string): number {
+    const channels = [0, 2, 4].map(offset => {
+      const value = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722;
+  }
+  const x = luminance(a), y = luminance(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/** Embedded in PDF; editable clients need this same freely licensed face installed. */
+export const DOCUMENT_FONT = DOCUMENT_FONT_FAMILY;
+export const PAPER_COLOR = "FFFFFF";
+export const PAGE_GEOMETRY = {
+  width: 595.28, height: 841.89, margin: 56.7, header: 28.35, footer: 28.35,
+} as const;
+
+/** Web type is in CSS pixels; page and deck type is in points. The role names are shared. */
+export const WEB = { body: 17, coverTitle: 40, title: 24, subtitle: 20, caption: 13, code: 14.875 } as const;
 
 export const PALETTE = designFor().palette;
 

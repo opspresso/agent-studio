@@ -88,13 +88,13 @@ test("every categorical chart colour is distinguishable from the page", () => {
   }
 });
 
-test("the five document profiles are explicit and executive is the default", () => {
+test("the five document profiles are explicit and standard is the default", () => {
   assert.deepEqual(DOCUMENT_PROFILES, ["executive", "consulting", "formal", "technical", "standard"]);
-  assert.equal(DEFAULT_PROFILE, "executive");
-  assert.equal(PALETTE, designFor(DEFAULT_PROFILE).palette);
+  assert.equal(DEFAULT_PROFILE, "standard");
+  assert.deepEqual(PALETTE, designFor(DEFAULT_PROFILE).palette);
 });
 
-test("every profile keeps its text legible and carries a distinct visual system", () => {
+test("every purpose keeps the same brand while retaining its layout treatment", () => {
   const brands = new Set<string>();
   for (const profile of DOCUMENT_PROFILES) {
     const design = designFor(profile);
@@ -105,7 +105,7 @@ test("every profile keeps its text legible and carries a distinct visual system"
     assert.ok(design.deck.coverBandPoints >= 0 && design.deck.coverBandPoints <= 36);
     assert.ok(design.doc.coverRulePoints >= 36 && design.doc.coverRulePoints <= 72);
   }
-  assert.equal(brands.size, DOCUMENT_PROFILES.length);
+  assert.equal(brands.size, 1);
 });
 
 test("formal and technical profiles use restrained light table headers", () => {

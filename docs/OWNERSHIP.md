@@ -130,6 +130,7 @@
 | 바이트가 UTF-8 텍스트인지 판정하기 | `src/shared/utf8Text.ts` | 구조 |
 | 사용자 문서의 상한 | `src/domain/llm/documentLimits.ts` | 구조 |
 | Office 문서 파싱과 렌더링 | `src/infrastructure/documents/engine/` — 프로토콜·저장소와 독립적인 내부 엔진. 첨부 추출은 `src/infrastructure/llm/documentExtractor.ts`가 연결한다 | 구조 |
+| 문서 목적·브랜드·layout의 wire 선택과 기본값, 폰트 이름·허용 색 역할 | `src/domain/document/processor.ts`; 실제 팔레트·지면·활자와 색 대비는 `engine/write/theme.ts`, 스킬 배포용 투영은 `engine/write/catalog.ts`가 소유한다 | 코드 |
 | 첨부된 문서가 턴 안에서 어떻게 감싸이는가 | `src/application/llm/documentParts.ts` | 구조 |
 | 모든 행 키 문자열. 아이템 테이블의 `PK`/`SK`/GSI 주소 (파티션 키 전부, 그리고 어댑터 밖으로 나가지 않는 정렬 키. 아티팩트 목록의 정렬 키만 예외, 위 `artifactCursor`) | `src/infrastructure/db/keys.ts` | 코드 |
 | tool 의 파일이 실려 다니는 이름과 media type | `src/infrastructure/mcp/toolManager.ts` 의 `safeFileName`/`baseMediaType` | 코드 |
