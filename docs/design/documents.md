@@ -43,6 +43,31 @@ PNG·JPEG는 문서 생성의 이미지 asset으로 사용한다. OCR과 원본 
 Markdown을 받고 XLSX는 이름이 있는 시트와 셀 배열을 받는다. 수식은 명시적인
 `formula` 셀로만 생성하며 `cachedValue`를 계산하거나 검증하지 않는다.
 
+### 디자인 계약
+
+작성 목적 `profile`과 브랜드 `theme`를 따로 받는다. 기본값은 `standard`와 `corporate`이며
+목적만 바꿔 브랜드를 바꾸지 않는다. `formal`·`technical`은 같은 브랜드의 light 표 머리,
+나머지는 solid 표 머리를 사용한다. theme 목록과 기본값·허용 색 역할은
+`domain/document/processor.ts`, 실제 팔레트·활자·지면은 `engine/write/theme.ts`가 소유한다.
+colors는 확인된 브랜드 역할을 6자리 hex(`#` 없이)로 덮어쓰며 잘못된 역할·색과 부족한 텍스트 대비는 거절한다.
+
+페이지 문서는 기본 `compact`로 제목과 문단을 본문 흐름에 두며 `#` 제목에도 장 번호·강제 페이지 나눔을 넣지 않는다.
+`report`는 첫 `#`를 표지로 사용하고 이후 `#`를 새 페이지의 번호 있는 장으로 처리하며,
+본문 레벨 1~2 제목이 세 개 이상이면 목차를 만든다. 덱은 report가 기본이고
+compact를 명시하면 첫 제목을 일반 내용 슬라이드로 처리한다. XLSX는 theme·colors를 받지만
+profile·페이지 layout은 받지 않는다. 사용자 템플릿의 원본 편집은 새 디자인을 적용하지 않고 기존 서식을 유지한다.
+
+본문은 NanumGothic을 지정한다. PDF는 번들 폰트를 포함하며 DOCX·PPTX·HWPX·XLSX의 수신
+환경에는 같은 글꼴을 설치해야 한다. 코드의 고정폭 글꼴은 매체에 맞게 유지한다.
+페이지 형식은 공통 A4·20mm 여백을 각 포맷 단위로 변환하고, 덱은 16:9 지면을 사용한다.
+생성 결과의 style과 File 응답의 Design 줄은 실제 선택한 theme·profile·layout·font를 나타내며
+기존 파일 편집에는 원본 스타일을 다시 추정해 붙이지 않는다.
+
+`pnpm export:document-design <output paths...>`는 실제 렌더러의 기본값·theme·profile·활자·
+폰트·지면을 JSON으로 내보낸다. agent-plugins의 문서·스프레드시트·HTML 보고서·다이어그램
+스킬은 각각 자기 번들에 이 결과를 넣는다. 배포된 File schema와 카탈로그가 다르면 없는 옵션을
+호출하지 않는다. 기본 토큰 변경 뒤에는 이 내보내기와 생성 파일의 스타일 회귀를 함께 확인한다.
+
 생성은 바이트와 MIME, 개수 정보, 검증 결과를 반환한다. 저장하거나 공개하지 않는다.
 결과 파일은 다시 열어 구조를 검증하고, 지원하는 형식은 내부 reader로 내용도 읽는다.
 `visual: not_run`은 시각 검증을 하지 않았음을 명시한다.

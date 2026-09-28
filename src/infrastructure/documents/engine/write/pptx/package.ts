@@ -13,6 +13,8 @@ import { escapeXml } from "../../xml";
 import { HANGUL } from "../semantics";
 import {
   DECK,
+  DOCUMENT_FONT,
+  PAPER_COLOR,
   LEADING,
   TYPOGRAPHY,
   centiPoints,
@@ -195,9 +197,8 @@ export function presentationRelsXml(slides: number): string {
  *
  * PowerPoint refuses a package whose master has no theme behind it, and the
  * schema wants three entries in each of the four format lists whether or not
- * anything refers to them. No east-Asian face is named, for the reason
- * `write/docx.ts` names none: the substitute PowerPoint picks on the reader's
- * machine beats one picked here from a font that may not be installed.
+ * anything refers to them. Both prose slots name the shared NanumGothic face;
+ * editable clients need it installed to preserve font metrics.
  */
 export function themeXml(design: DesignProfile): string {
   const accents = design.chart.slice(0, 6);
@@ -211,8 +212,8 @@ export function themeXml(design: DesignProfile): string {
     `<a:theme xmlns:a="${A}" name="Office">` +
     "<a:themeElements>" +
     '<a:clrScheme name="Office">' +
-    `<a:dk1><a:sysClr val="windowText" lastClr="${palette.ink}"/></a:dk1>` +
-    `<a:lt1><a:sysClr val="window" lastClr="${palette.onBrand}"/></a:lt1>` +
+    `<a:dk1><a:srgbClr val="${palette.ink}"/></a:dk1>` +
+    `<a:lt1><a:srgbClr val="${PAPER_COLOR}"/></a:lt1>` +
     `<a:dk2><a:srgbClr val="${palette.brand}"/></a:dk2>` +
     `<a:lt2><a:srgbClr val="${palette.brandTint}"/></a:lt2>` +
     accents
@@ -222,8 +223,8 @@ export function themeXml(design: DesignProfile): string {
     `<a:folHlink><a:srgbClr val="${palette.brandDeep}"/></a:folHlink>` +
     "</a:clrScheme>" +
     '<a:fontScheme name="Office">' +
-    '<a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>' +
-    '<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont>' +
+    `<a:majorFont><a:latin typeface="${DOCUMENT_FONT}"/><a:ea typeface="${DOCUMENT_FONT}"/><a:cs typeface=""/></a:majorFont>` +
+    `<a:minorFont><a:latin typeface="${DOCUMENT_FONT}"/><a:ea typeface="${DOCUMENT_FONT}"/><a:cs typeface=""/></a:minorFont>` +
     "</a:fontScheme>" +
     '<a:fmtScheme name="Office">' +
     `<a:fillStyleLst>${fill}${fill}${fill}</a:fillStyleLst>` +
@@ -373,7 +374,7 @@ export function slideLayoutXml(
       // Content: white ground, the deck's name quietly in the footer. The
       // accent bar under the title stays on the slide, which knows whether
       // there is a title to underline.
-      return wrap("obj", "Title and Content", undefined, [
+      return wrap("obj", "Title and Content", background(PAPER_COLOR), [
         decorText(
           2,
           "Footer",

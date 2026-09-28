@@ -1,3 +1,5 @@
+import { documentLayoutFor } from "@/domain/document/processor";
+import type { DocumentStyleOptions } from "@/domain/document/processor";
 /**
  * A document AST to HWPX.
  *
@@ -29,15 +31,17 @@ import { escapeXml } from "../xml";
 import { buildZip, stored } from "../zip";
 import type { Block, MarkdownDocument, Run } from "../markdown";
 import { columnShares } from "./table";
-import { HANGUL, TOC_THRESHOLD, coverOf, tocEntriesOf, type Cover } from "./semantics";
+import { HANGUL, pageStructureOf, tocEntriesOf, type Cover } from "./semantics";
 import {
   DOC,
+  DOCUMENT_FONT,
+  PAGE_GEOMETRY,
   LEADING,
   centiPoints,
+  hwpunit,
   designFor,
   hashed,
   type DesignProfile,
-  type DocumentProfile,
 } from "./theme";
 import { PRODUCER, SERVER_NAME, SERVER_VERSION } from "../version";
 
@@ -59,8 +63,12 @@ const NS = {
  * HWPUNIT is 1/7200 inch, so A4 is 59,528 x 84,188 and a 20mm margin is 5,669.
  * Character sizes are in hundredths of a point: 1000 is 10pt.
  */
-const PAGE = { width: 59528, height: 84188 } as const;
-const MARGIN = { left: 5669, right: 5669, top: 5669, bottom: 4252, header: 4252, footer: 4252 } as const;
+const PAGE = { width: hwpunit(PAGE_GEOMETRY.width), height: hwpunit(PAGE_GEOMETRY.height) } as const;
+const MARGIN = {
+  left: hwpunit(PAGE_GEOMETRY.margin), right: hwpunit(PAGE_GEOMETRY.margin),
+  top: hwpunit(PAGE_GEOMETRY.margin), bottom: hwpunit(PAGE_GEOMETRY.margin),
+  header: hwpunit(PAGE_GEOMETRY.header), footer: hwpunit(PAGE_GEOMETRY.footer),
+} as const;
 /** What is left for text once the margins are taken out — a table's width. */
 const TEXT_WIDTH = PAGE.width - MARGIN.left - MARGIN.right;
 
@@ -142,15 +150,8 @@ function charIdOf(run: Run): number {
 
 const FONT_LANGUAGES = ["HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"] as const;
 
-/**
- * Two faces, referred to by index: 0 for prose and 1 for code.
- *
- * Both ship with 한글 itself, which is the only guarantee available — a font
- * named here and absent on the reader's machine is substituted by something
- * with different metrics, and for the code face that means a listing that no
- * longer lines up.
- */
-const FONTS = ["함초롬바탕", "굴림체"];
+/** The common prose face and a monospace face available with 한글. */
+const FONTS = [DOCUMENT_FONT, "굴림체"];
 
 function fontfaces(): string {
   const face = (name: string, id: number): string =>
@@ -438,7 +439,7 @@ const WIDE =
 /**
  * How much of the stated width the estimator lets a line claim.
  *
- * The half-width approximation runs a few percent narrow of 함초롬바탕's real
+ * The half-width approximation runs a few percent narrow of the selected prose font's real
  * metrics — bold runs, an em dash counted as half — and a paragraph estimated
  * onto one line that 한글 wraps onto two is the shape its checker flags as
  * depending on non-standard reflow. Under-claiming nudges the boundary the
@@ -786,18 +787,18 @@ class Renderer {
   }
 }
 
-function sectionXml(document: MarkdownDocument, design: DesignProfile): string {
+function sectionXml(document: MarkdownDocument, design: DesignProfile, layout: DocumentStyleOptions["layout"]): string {
   const renderer = new Renderer(design);
-  const { cover, body } = coverOf(document.blocks);
+  const { cover, body, toc, chapters } = pageStructureOf(document.blocks, documentLayoutFor("hwpx", layout)!);
   const entries = tocEntriesOf(body);
   let out = cover ? renderer.cover(cover) : "";
-  if (cover && entries.length >= TOC_THRESHOLD) {
+  if (cover && toc) {
     out += renderer.toc(HANGUL.test(plainOf(cover.title)) ? "목차" : "Contents", entries);
   }
   let ordinal = 0;
   let rendered = cover !== undefined;
   for (const block of body) {
-    if (block.kind === "heading" && block.level === 1) {
+    if (chapters && block.kind === "heading" && block.level === 1) {
       ordinal += 1;
       out += renderer.chapterOpener(ordinal, rendered);
     }
@@ -885,15 +886,14 @@ function settingsXml(): string {
   );
 }
 
-export interface HwpxOptions {
+export interface HwpxOptions extends DocumentStyleOptions {
   title: string;
   /** ISO 8601, passed in so the bytes are a function of the input alone. */
   created: string;
-  profile?: DocumentProfile;
 }
 
 export function renderHwpx(document: MarkdownDocument, options: HwpxOptions): Uint8Array {
-  const design = designFor(options.profile);
+  const design = designFor(options.profile, options.theme, options.colors);
   return buildZip({
     // First, and stored rather than deflated: the same rule ODF packaging uses,
     // and a reader that checks for it checks at a fixed offset.
@@ -904,6 +904,6 @@ export function renderHwpx(document: MarkdownDocument, options: HwpxOptions): Ui
     "META-INF/manifest.xml": part(manifestXml()),
     "Contents/content.hpf": part(contentHpf(options.title, options.created)),
     "Contents/header.xml": part(headerXml(design)),
-    "Contents/section0.xml": part(sectionXml(document, design)),
+    "Contents/section0.xml": part(sectionXml(document, design, options.layout)),
   });
 }

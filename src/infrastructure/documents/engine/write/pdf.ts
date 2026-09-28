@@ -1,3 +1,5 @@
+import { documentLayoutFor } from "@/domain/document/processor";
+import type { DocumentStyleOptions } from "@/domain/document/processor";
 /**
  * PDF layout measures glyphs, wraps text and paginates tables and figures.
  * Nanum Gothic from assets/document-fonts is embedded without subsetting to
@@ -27,29 +29,27 @@ import { plainTextOf, withoutDirectives } from "../markdown";
 import { columnShares } from "./table";
 import {
   HANGUL,
-  TOC_THRESHOLD,
-  coverOf,
+  pageStructureOf,
   figureOf,
-  tocEntriesOf,
   type Figure,
 } from "./semantics";
 import {
   DOC,
+  PAGE_GEOMETRY,
   LEADING,
   designFor,
   rgbOf,
   type ColourName,
   type DesignProfile,
-  type DocumentProfile,
   type Palette,
 } from "./theme";
 import { PRODUCER } from "../version";
 import { imageSize, pdfPngSize, type ImageAsset } from "./image";
 
 /** A4 in points, and a 2cm margin. */
-const PAGE_WIDTH = 595.28;
-const PAGE_HEIGHT = 841.89;
-const MARGIN = 56.7;
+const PAGE_WIDTH = PAGE_GEOMETRY.width;
+const PAGE_HEIGHT = PAGE_GEOMETRY.height;
+const MARGIN = PAGE_GEOMETRY.margin;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 
 const BODY_SIZE = DOC.body;
@@ -865,11 +865,10 @@ export function columnWidths(rows: readonly Run[][][], columns: number): number[
   return columnShares(rows, columns).map((share) => share * CONTENT_WIDTH);
 }
 
-export interface PdfOptions {
+export interface PdfOptions extends DocumentStyleOptions {
   title: string;
   /** Passed in rather than read from the clock, so the bytes follow from the input. */
   created: Date;
-  profile?: DocumentProfile;
   /** Keyed by the name `asset://name` references. */
   assets?: Record<string, ImageAsset>;
 }
@@ -948,10 +947,9 @@ export async function renderPdf(
   pdf.setCreationDate(options.created);
   pdf.setModificationDate(options.created);
 
-  const { cover, body } = coverOf(document.blocks);
-  const toc = cover !== undefined && tocEntriesOf(body).length >= TOC_THRESHOLD;
+  const { cover, body, toc, chapters } = pageStructureOf(document.blocks, documentLayoutFor("pdf", options.layout)!);
 
-  const writer = new Writer(pdf, fonts, images, designFor(options.profile));
+  const writer = new Writer(pdf, fonts, images, designFor(options.profile, options.theme, options.colors));
   if (cover) {
     writer.cover(cover.title, cover.subtitle);
     if (toc) {
@@ -963,7 +961,7 @@ export async function renderPdf(
   }
   let ordinal = 0;
   for (const block of body) {
-    if (block.kind === "heading" && block.level === 1) {
+    if (chapters && block.kind === "heading" && block.level === 1) {
       ordinal += 1;
       writer.chapterOpener(ordinal);
     }

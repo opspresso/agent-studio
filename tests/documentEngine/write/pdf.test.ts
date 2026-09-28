@@ -58,8 +58,8 @@ test("what goes in comes back out", async () => {
   assert.match(text, /two/);
 });
 
-test("profiles change the rendered PDF without changing its text", async () => {
-  const document = parseMarkdown("# 보고서\n\n## 결론\n\n진행한다.");
+test("profiles change table treatment without changing the selected brand or text", async () => {
+  const document = parseMarkdown("# 보고서\n\n## 결론\n\n진행한다.\n\n| 이름 | 값 |\n|---|---|\n| 처리량 | 42 |");
   const executive = await renderPdf(document, { title: "test", created: CREATED, profile: "executive" });
   const formal = await renderPdf(document, { title: "test", created: CREATED, profile: "formal" });
   assert.notDeepEqual(executive.bytes, formal.bytes);
@@ -305,7 +305,7 @@ test("a report gets a cover, a contents page with real page numbers, and numbere
     "본문\n\n# 둘째 장\n\n## 절\n\n내용";
   const { bytes, pages } = await renderPdf(parseMarkdown(report), {
     title: "t",
-    created: CREATED,
+    created: CREATED, layout: "report",
   });
   assert.ok(pages >= 4, `cover, contents and two chapter pages: got ${pages}`);
   const { extractText, getDocumentProxy } = await import("unpdf");
@@ -384,7 +384,7 @@ test("a table header larger than a page is preserved without endless repetition"
 test("multi-page contents keep every heading and point to the shifted body pages", async () => {
   const titles = Array.from({ length: 50 }, (_, i) => `Topic${String(i).padStart(2, "0")} ` + "extended heading ".repeat(6) + `END${i}`);
   const source = "# Report\n\nSubtitle\n\n" + titles.map((title, i) => `## ${title}\n\nBODY${i}`).join("\n\n");
-  const { bytes } = await renderPdf(parseMarkdown(source), { title: "Contents", created: CREATED });
+  const { bytes } = await renderPdf(parseMarkdown(source), { title: "Contents", created: CREATED, layout: "report" });
   const { extractText, getDocumentProxy } = await import("unpdf");
   const pdf = await getDocumentProxy(new Uint8Array(bytes));
   const { text } = await extractText(pdf, { mergePages: false });

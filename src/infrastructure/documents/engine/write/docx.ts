@@ -1,3 +1,5 @@
+import { documentLayoutFor } from "@/domain/document/processor";
+import type { DocumentStyleOptions } from "@/domain/document/processor";
 /**
  * A document AST to DOCX.
  *
@@ -15,10 +17,8 @@
  * read, and the literal form is what survives being extracted back to text,
  * which is how this server's own round trip checks itself.
  *
- * **Prose uses theme fonts; code names Consolas.** The theme carries an east-Asian face
- * on every platform Word runs on, and naming one — `Malgun Gothic`, say — is a
- * Windows font that a Mac substitutes for something else. Substitution chosen
- * by Word is better than substitution chosen here.
+ * Prose names the shared Nanum Gothic face; code keeps Consolas. Editable
+ * readers need the prose face installed. PDF embeds the same licensed font.
  */
 
 import { escapeXml } from "../xml";
@@ -35,8 +35,7 @@ import {
 } from "./image";
 import {
   HANGUL,
-  TOC_THRESHOLD,
-  coverOf,
+  pageStructureOf,
   figureOf,
   forceSemantic,
   tocEntriesOf,
@@ -46,17 +45,22 @@ import {
 } from "./semantics";
 import {
   DOC,
+  DOCUMENT_FONT,
+  PAGE_GEOMETRY,
   LEADING,
   TYPOGRAPHY,
   designFor,
   halfPoints,
+  twips,
   type DesignProfile,
-  type DocumentProfile,
 } from "./theme";
 import { PRODUCER } from "../version";
 
-/** A4, in twentieths of a point, with a 2.5cm margin. */
-const PAGE = '<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1418" w:right="1418" w:bottom="1418" w:left="1418" w:header="709" w:footer="709" w:gutter="0"/>';
+/** The same A4 geometry as PDF and HWPX, expressed in twentieths of a point. */
+const PAGE = `<w:pgSz w:w="${twips(PAGE_GEOMETRY.width)}" w:h="${twips(PAGE_GEOMETRY.height)}"/>` +
+  `<w:pgMar w:top="${twips(PAGE_GEOMETRY.margin)}" w:right="${twips(PAGE_GEOMETRY.margin)}" ` +
+  `w:bottom="${twips(PAGE_GEOMETRY.margin)}" w:left="${twips(PAGE_GEOMETRY.margin)}" ` +
+  `w:header="${twips(PAGE_GEOMETRY.header)}" w:footer="${twips(PAGE_GEOMETRY.footer)}" w:gutter="0"/>`;
 
 const DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -73,7 +77,7 @@ const SETTINGS_RELATIONSHIP = "rId4";
 const FIRST_LINK_RELATIONSHIP = 5;
 
 /** What is left of the page once the margins are taken out — a full-width table. */
-const TABLE_WIDTH = 11906 - 1418 * 2;
+const TABLE_WIDTH = twips(PAGE_GEOMETRY.width - PAGE_GEOMETRY.margin * 2);
 
 /** How far down the page the cover's title sits: a third, in twentieths. */
 const COVER_DROP = 4200;
@@ -555,14 +559,12 @@ function comparisonTable(semantic: Extract<Semantic, { kind: "comparison" }>): E
   };
 }
 
-function documentXml(document: MarkdownDocument, renderer: Renderer): string {
-  const { cover, body } = coverOf(document.blocks);
+function documentXml(document: MarkdownDocument, renderer: Renderer, layout: DocumentStyleOptions["layout"]): string {
+  const { cover, body, toc, chapters } = pageStructureOf(document.blocks, documentLayoutFor("docx", layout)!);
   let out = cover ? renderer.cover(cover.title, cover.subtitle) : "";
-  // A contents page, when there is a cover to follow and enough structure to
-  // list. A memo gets none; a report gets one whether or not it asked, because
-  // a reader deciding whether to read is what a contents page is for.
+  // Contents are opt-in through report layout and require useful heading structure.
   const entries = tocEntriesOf(body);
-  if (cover && entries.length >= TOC_THRESHOLD) {
+  if (cover && toc) {
     const korean = HANGUL.test(cover.title.map((run) => run.text).join(""));
     out += renderer.tocPage(korean ? "목차" : "Contents", entries);
   }
@@ -570,7 +572,7 @@ function documentXml(document: MarkdownDocument, renderer: Renderer): string {
   let rendered = cover !== undefined;
   let ordinal = 0;
   for (const block of body) {
-    if (block.kind === "heading" && block.level === 1) {
+    if (chapters && block.kind === "heading" && block.level === 1) {
       ordinal += 1;
       out += renderer.chapterOpener(ordinal, rendered);
     }
@@ -591,18 +593,7 @@ function documentXml(document: MarkdownDocument, renderer: Renderer): string {
   );
 }
 
-/**
- * `settings.xml`, present only for a document with Korean in it.
- *
- * Prose uses theme fonts rather than an explicit face,
- * but a document that does not say its east-Asian text is Korean leaves a
- * non-Korean Word to guess — and Word's guess is its *locale's* CJK default,
- * which on an English or Japanese machine is a Chinese or Japanese face
- * rendering 한글 through the wrong font's fallback. `themeFontLang` states the
- * language; the face is still the reader's system default for it (맑은 고딕 on
- * Windows, Apple SD Gothic Neo on a Mac). Note what this part does *not*
- * carry: `updateFields`, which put a dialog in front of every reader once.
- */
+/** Korean language metadata preserves spellchecking and script interpretation; no field-update dialog. */
 function settingsXml(): string {
   return `<w:settings xmlns:w="${W}"><w:themeFontLang w:val="en-US" w:eastAsia="ko-KR"/></w:settings>`;
 }
@@ -657,15 +648,7 @@ function stylesXml(korean: boolean, design: DesignProfile): string {
   return (
     `<w:styles xmlns:w="${W}">` +
     "<w:docDefaults><w:rPrDefault><w:rPr>" +
-    // A Korean document sets its Latin through the east-Asian theme slot too —
-    // still no face named, but the *same* system face for both scripts. Left
-    // alone, Word splits a Korean sentence across two fonts: 한글 in the EA
-    // default and the Latin words beside it in Calibri, which is the mixed
-    // look every Korean house style exists to prevent. Code keeps Consolas:
-    // the Code styles carry their own rFonts, which beat this default.
-    (korean
-      ? '<w:rFonts w:asciiTheme="minorEastAsia" w:hAnsiTheme="minorEastAsia" w:eastAsiaTheme="minorEastAsia"/>'
-      : "") +
+    `<w:rFonts w:ascii="${DOCUMENT_FONT}" w:hAnsi="${DOCUMENT_FONT}" w:eastAsia="${DOCUMENT_FONT}"/>` +
     `<w:color w:val="${design.palette.ink}"/>` +
     `<w:sz w:val="${halfPoints(DOC.body)}"/>` +
     `<w:spacing w:val="${TYPOGRAPHY.tracking}"/><w:kern w:val="${halfPoints(TYPOGRAPHY.kerningFromPoints)}"/>` +
@@ -786,21 +769,20 @@ function corePropertiesXml(title: string, created: string): string {
   );
 }
 
-export interface DocxOptions {
+export interface DocxOptions extends DocumentStyleOptions {
   title: string;
   /** ISO 8601, passed in so the bytes are a function of the input alone. */
   created: string;
-  profile?: DocumentProfile;
   /** Keyed by the name `asset://name` references. */
   assets?: Record<string, ImageAsset>;
 }
 
 export function renderDocx(document: MarkdownDocument, options: DocxOptions): Uint8Array {
-  const design = designFor(options.profile);
+  const design = designFor(options.profile, options.theme, options.colors);
   const renderer = new Renderer(options.assets, design);
   // Before the relationships and media parts: rendering is what discovers
   // the hyperlinks and the pictures.
-  const body = documentXml(document, renderer);
+  const body = documentXml(document, renderer, options.layout);
   // The rendered body is the whole of the document's text, so it is what
   // decides whether the language parts say Korean.
   const korean = HANGUL.test(body) || HANGUL.test(options.title);

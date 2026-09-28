@@ -1,4 +1,4 @@
-import { DOCUMENT_FORMATS, DOCUMENT_PROFILES } from "@/domain/document/processor";
+import { DOCUMENT_FORMATS, DOCUMENT_PROFILES, DOCUMENT_THEMES, DOCUMENT_LAYOUTS, DOCUMENT_COLOR_NAMES, DEFAULT_DOCUMENT_PROFILE, DEFAULT_DOCUMENT_THEME, DOCUMENT_FONT_FAMILY } from "@/domain/document/processor";
 /** Shared capability and prompt assembly for SDK execution and preview. */
 
 import type { ChannelToolDef } from "@/domain/llm/channel";
@@ -619,6 +619,10 @@ const FILE_TOOL_DEF: ChannelToolDef = {
     name: FILE_TOOL_NAME,
     description: "Read, inspect, create or edit files using stable file IDs from attachments and earlier outputs. " +
       "For create, provide format and Markdown content (DOCX/PDF/PPTX/HWPX), or sheets with named rows of scalar cells (XLSX). " +
+      `Profile selects purpose (default ${DEFAULT_DOCUMENT_PROFILE}); theme selects brand independently (default ${DEFAULT_DOCUMENT_THEME}). ` +
+      "Page layout defaults compact with an inline title; report promotes an opening # to a cover and adds contents when there are enough headings. Decks default report. " +
+      "XLSX accepts theme/colors but no profile/layout. Colors override named roles with six-digit hex without # and must keep text contrast. " +
+      `New documents use ${DOCUMENT_FONT_FAMILY}; PDF embeds it and editable clients need it installed. ` +
       "XLSX formulas are explicit objects {formula, cachedValue?}; strings starting with = stay literal. No formulas are calculated. " +
       "Inspect before editing: DOCX/PPTX/HWPX text targets carry part, index and original text; use replace_text with replacement. " +
       "XLSX uses set_cell with sheet, cell and value. Plain text uses replace_text, part=text, index=0 and an original substring that occurs once. " +
@@ -635,6 +639,9 @@ const FILE_TOOL_DEF: ChannelToolDef = {
         content: { type: "string", description: "Markdown for a newly created document." },
         title: { type: "string" }, name: { type: "string", description: "Output filename." },
         profile: { type: "string", enum: [...DOCUMENT_PROFILES] },
+        theme: { type: "string", enum: [...DOCUMENT_THEMES] },
+        layout: { type: "string", enum: [...DOCUMENT_LAYOUTS] },
+        colors: { type: "object", properties: Object.fromEntries(DOCUMENT_COLOR_NAMES.map(name => [name, { type: "string", pattern: "^[0-9A-Fa-f]{6}$" }])), additionalProperties: false },
         sheets: { type: "array", items: { type: "object", properties: { name: { type: "string" }, rows: { type: "array", items: { type: "array", items: {} } } }, required: ["name", "rows"] } },
         assets: { type: "object", additionalProperties: { type: "string" } },
         from: { type: "integer", minimum: 0 },

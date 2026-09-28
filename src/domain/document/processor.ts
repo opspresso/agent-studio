@@ -10,6 +10,26 @@ export type DocumentFormat = (typeof DOCUMENT_FORMATS)[number];
 export const DOCUMENT_PROFILES = ["executive", "consulting", "formal", "technical", "standard"] as const;
 export type DocumentProfile = (typeof DOCUMENT_PROFILES)[number];
 
+export const DEFAULT_DOCUMENT_PROFILE: DocumentProfile = "standard";
+export const DOCUMENT_THEMES = ["corporate", "classic", "ocean", "slate", "teal"] as const;
+export type DocumentTheme = (typeof DOCUMENT_THEMES)[number];
+export const DEFAULT_DOCUMENT_THEME: DocumentTheme = "corporate";
+export const DOCUMENT_FONT_FAMILY = "NanumGothic";
+export const DOCUMENT_LAYOUTS = ["compact", "report"] as const;
+export type DocumentLayout = (typeof DOCUMENT_LAYOUTS)[number];
+
+export function documentLayoutFor(format: DocumentFormat, requested?: DocumentLayout): DocumentLayout | null {
+  if (format === "xlsx") return null;
+  return requested ?? (format === "pptx" ? "report" : "compact");
+}
+
+export const DOCUMENT_COLOR_NAMES = [
+  "brand", "brandLight", "brandDeep", "brandTint", "surfaceTint", "ink",
+  "inkMuted", "rule", "onBrand", "positive", "negative",
+] as const;
+export type DocumentColorName = (typeof DOCUMENT_COLOR_NAMES)[number];
+export type DocumentColors = Readonly<Record<DocumentColorName, string>>;
+
 export const DOCUMENT_MIME_TYPES: Record<DocumentFormat, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   pdf: "application/pdf",
@@ -30,15 +50,31 @@ export interface DocumentAsset {
   mimeType: "image/png" | "image/jpeg";
 }
 
-export interface CreateDocumentInput {
+export interface DocumentStyleOptions {
+  profile?: DocumentProfile;
+  /** Brand palette is independent of document purpose. Colors are six-digit hex without #. */
+  theme?: DocumentTheme;
+  colors?: Partial<DocumentColors>;
+  /** Page documents default to compact; decks default to report. Not applicable to XLSX. */
+  layout?: DocumentLayout;
+}
+
+export interface CreateDocumentInput extends DocumentStyleOptions {
   format: DocumentFormat;
   title: string;
   created: string;
   /** Markdown for document formats. XLSX takes explicit sheet rows instead. */
   content?: string;
   sheets?: unknown;
-  profile?: DocumentProfile;
   assets?: Record<string, DocumentAsset>;
+}
+
+export interface EffectiveDocumentStyle {
+  theme: DocumentTheme;
+  profile: DocumentProfile | null;
+  layout: DocumentLayout | null;
+  colors: DocumentColors;
+  fontFamily: string;
 }
 
 export interface DocumentValidation {
@@ -54,6 +90,7 @@ export interface CreatedDocument {
   mimeType: string;
   validation: DocumentValidation;
   counts: Record<string, number>;
+  style?: EffectiveDocumentStyle;
 }
 
 export interface DocumentRenderer {

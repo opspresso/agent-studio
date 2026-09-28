@@ -2,6 +2,9 @@ import {
   DOCUMENT_FORMATS,
   DOCUMENT_MIME_TYPES,
   DOCUMENT_PROFILES,
+  DOCUMENT_THEMES,
+  DOCUMENT_LAYOUTS,
+  documentLayoutFor,
   type CreateDocumentInput,
   type CreatedDocument,
   type DocumentRenderer,
@@ -11,6 +14,7 @@ import { MAX_ASSET_COUNT, MAX_ASSET_TOTAL_BYTES, MAX_MARKDOWN_CHARS, MAX_RENDERE
 import { parseMarkdown } from "./engine/markdown";
 import { validateRenderedDocument } from "./engine/validate";
 import { imageSize } from "./engine/write/image";
+import { designFor, DOCUMENT_FONT } from "./engine/write/theme";
 
 function validateInput(input: CreateDocumentInput): void {
   if (!DOCUMENT_FORMATS.includes(input.format)) {
@@ -19,6 +23,13 @@ function validateInput(input: CreateDocumentInput): void {
   if (input.profile !== undefined && !DOCUMENT_PROFILES.includes(input.profile)) {
     throw new DocumentError("Unsupported document profile");
   }
+  if (input.theme !== undefined && !DOCUMENT_THEMES.includes(input.theme)) {
+    throw new DocumentError("Unsupported document theme");
+  }
+  if (input.layout !== undefined && !DOCUMENT_LAYOUTS.includes(input.layout)) {
+    throw new DocumentError("Unsupported document layout");
+  }
+  designFor(input.profile, input.theme, input.colors);
   if (!input.title.trim() || input.title.length > 500) {
     throw new DocumentError("Document title must contain 1–500 characters");
   }
@@ -26,8 +37,8 @@ function validateInput(input: CreateDocumentInput): void {
     throw new DocumentError("Document creation time must be an ISO date");
   }
   if (input.format === "xlsx") {
-    if (input.content !== undefined || input.profile !== undefined) {
-      throw new DocumentError("XLSX takes sheets, not Markdown or a document profile");
+    if (input.content !== undefined || input.profile !== undefined || input.layout !== undefined) {
+      throw new DocumentError("XLSX takes sheets and a theme, not Markdown, a document profile or page layout");
     }
   } else if (typeof input.content !== "string" || !input.content.trim() || input.content.length > MAX_MARKDOWN_CHARS) {
     throw new DocumentError(`Document Markdown must contain 1–${MAX_MARKDOWN_CHARS} characters`);
@@ -99,11 +110,16 @@ export async function createDocument(input: CreateDocumentInput): Promise<Create
     throw new DocumentError(`The rendered document exceeds ${MAX_RENDERED_BYTES} bytes; split it into smaller files`);
   }
   const validation = await validateRenderedDocument(input.format, bytes, counts.pages);
+  const design = designFor(input.profile, input.theme, input.colors);
   return {
     bytes,
     mimeType: DOCUMENT_MIME_TYPES[input.format],
     counts,
     validation: { ...validation, warnings: [...validation.warnings, ...warnings] },
+    style: {
+      theme: design.theme, profile: input.format === "xlsx" ? null : design.profile,
+      layout: documentLayoutFor(input.format, input.layout), colors: design.palette, fontFamily: DOCUMENT_FONT,
+    },
   };
 }
 

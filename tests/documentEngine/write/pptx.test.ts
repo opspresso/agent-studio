@@ -197,13 +197,13 @@ test("a deck has the scaffolding its content types declare", () => {
   }
 });
 
-test("profiles change the deck theme and cover geometry", () => {
+test("profiles change cover geometry while retaining the selected brand theme", () => {
   const consulting = renderPptx(parseMarkdown("# 전략 제안"), {
     title: "test",
     created: CREATED,
     profile: "consulting",
   }).bytes;
-  assert.ok(partOf(consulting, "ppt/theme/theme1.xml").includes('<a:dk2><a:srgbClr val="0B2D4D"/></a:dk2>'));
+  assert.ok(partOf(consulting, "ppt/theme/theme1.xml").includes('<a:dk2><a:srgbClr val="17324D"/></a:dk2>'));
   assert.ok(partOf(consulting, "ppt/slideLayouts/slideLayout1.xml").includes('cx="457200"'));
 
   const formal = renderPptx(parseMarkdown("# 공식 보고서"), {

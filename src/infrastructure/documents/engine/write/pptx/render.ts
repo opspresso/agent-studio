@@ -93,10 +93,7 @@ const QUOTE_SIZE = centiPoints(DECK.quote);
 /** A chip is a pill: the radius maxes out at half the height. */
 const CHIP_RADIUS = 50000;
 
-// No face is ever named for prose, so the run's language is the one signal
-// PowerPoint has for choosing its east-Asian default — a run of 한글 labelled
-// `en-US` is rendered through whatever CJK face the *reader's locale* prefers,
-// which on a Japanese or English machine is not a Korean one.
+// Run language remains explicit for spellchecking and CJK interpretation.
 
 /** `sz` and the rest of `a:rPr`, for one run inside a paragraph of a given style. */
 function runProperties(run: Run, style: Style, palette: Palette, linkId?: string): string {
@@ -113,10 +110,7 @@ function runProperties(run: Run, style: Style, palette: Palette, linkId?: string
     `spc="${TYPOGRAPHY.tracking}"${bold ? ' b="1"' : ""}${italic ? ' i="1"' : ""}` +
     `${run.href ? ' u="sng"' : ""} dirty="0">` +
     `<a:solidFill>${fill}</a:solidFill>` +
-    // Only the Latin face is named, and only for code. Naming a face for prose
-    // is what `write/docx.ts` refuses to do for the same reason: a font chosen
-    // here is a font the reader's machine may not have, and the substitute is
-    // then chosen by nobody.
+    // Prose inherits the common theme font; code has its own monospace face.
     (mono ? '<a:latin typeface="Consolas"/><a:cs typeface="Consolas"/>' : "") +
     (linkId ? `<a:hlinkClick xmlns:r="${R}" r:id="${linkId}"/>` : "") +
     "</a:rPr>"

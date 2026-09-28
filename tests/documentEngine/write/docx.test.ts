@@ -14,7 +14,7 @@ import { PALETTE } from "@/infrastructure/documents/engine/write/theme";
 const CREATED = "2026-08-05T00:00:00Z";
 
 function build(markdown: string): Uint8Array {
-  return renderDocx(parseMarkdown(markdown), { title: "test", created: CREATED });
+  return renderDocx(parseMarkdown(markdown), { title: "test", created: CREATED, layout: "report" });
 }
 
 function roundTrip(markdown: string): string {
@@ -127,8 +127,8 @@ test("a technical profile uses its restrained light table header", () => {
     profile: "technical",
   });
   const body = partOf(bytes, "word/document.xml");
-  assert.ok(body.includes('<w:shd w:val="clear" w:color="auto" w:fill="E8F3F1"/>'));
-  assert.ok(body.includes('<w:color w:val="0F4C5C"/>'));
+  assert.ok(body.includes('<w:shd w:val="clear" w:color="auto" w:fill="EAF1F3"/>'));
+  assert.ok(body.includes('<w:color w:val="17324D"/>'));
 });
 
 test("a column asked to be set right is set right, and a plain one is untouched", () => {
@@ -327,7 +327,7 @@ test("a memo gets no contents page", () => {
 test("a Korean document states its language; an English one adds no parts for it", () => {
   const korean = build("# 보고서\n\n한국어 본문");
   // themeFontLang and the run default are what point a non-Korean Word at its
-  // Korean system face — no font is named, in keeping with the house rule.
+  // Language remains explicit even with the shared named font.
   assert.ok(partOf(korean, "word/settings.xml").includes('<w:themeFontLang w:val="en-US" w:eastAsia="ko-KR"/>'));
   assert.ok(partOf(korean, "word/styles.xml").includes('<w:lang w:val="en-US" w:eastAsia="ko-KR"/>'));
   assert.equal(partOf(korean, "word/settings.xml").includes("updateFields"), false, "no dialog");
@@ -336,12 +336,10 @@ test("a Korean document states its language; an English one adds no parts for it
   assert.equal(partOf(english, "word/styles.xml").includes("<w:lang"), false);
 });
 
-test("in a Korean document the Latin follows the east-Asian face, still unnamed", () => {
-  // Word otherwise splits a Korean sentence across two fonts — 한글 in the EA
-  // default, "MCP" beside it in Calibri. The theme slot unifies them without
-  // naming a face; an English document keeps Word's own split defaults.
+test("Korean and Latin name the same shared prose face", () => {
+  // Both scripts use the same named face instead of reader-dependent theme slots.
   const korean = partOf(build("# 보고서\n\nMCP 기반 자동화"), "word/styles.xml");
-  assert.ok(korean.includes('w:asciiTheme="minorEastAsia"'));
+  assert.ok(korean.includes('w:ascii="NanumGothic" w:hAnsi="NanumGothic" w:eastAsia="NanumGothic"'));
   const english = partOf(build("# Report\n\nplain body"), "word/styles.xml");
-  assert.equal(english.includes("w:asciiTheme"), false);
+  assert.ok(english.includes('w:ascii="NanumGothic"'));
 });

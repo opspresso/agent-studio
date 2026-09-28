@@ -18,6 +18,7 @@
 
 import type { Block, Run } from "../markdown";
 import { plainTextOf } from "../markdown";
+import type { DocumentLayout } from "@/domain/document/processor";
 
 /** One card: a sub-heading and at most a line or two under it. */
 export interface Card {
@@ -357,6 +358,15 @@ export function coverOf(blocks: readonly Block[]): { cover?: Cover; body: readon
 
 /** How many level 1-2 headings a body needs before a contents page earns its paper. */
 export const TOC_THRESHOLD = 3;
+
+/** A compact page keeps its opening title in the flow and spends no pages on front matter. */
+export function pageStructureOf(blocks: readonly Block[], layout: DocumentLayout): {
+  cover?: Cover; body: readonly Block[]; toc: boolean; chapters: boolean;
+} {
+  if (layout === "compact") return { body: blocks, toc: false, chapters: false };
+  const { cover, body } = coverOf(blocks);
+  return { cover, body, toc: cover !== undefined && tocEntriesOf(body).length >= TOC_THRESHOLD, chapters: true };
+}
 
 /** The level 1-2 headings a contents page lists, in order. */
 export function tocEntriesOf(

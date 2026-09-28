@@ -4,7 +4,7 @@ import type { McpToolResult } from "@/domain/llm/types";
 import type { RunOrigin } from "@/domain/execution/actor";
 import { artifactOwnerEmail, baseMimeType, MAX_SAVED_FILE_BYTES, savedFileName } from "@/domain/artifact/types";
 import { MAX_DOCUMENT_BYTES, documentKind } from "@/domain/llm/documentLimits";
-import { DOCUMENT_FORMATS, DOCUMENT_PROFILES, DocumentProcessingError, type DocumentEdit, type DocumentAsset } from "@/domain/document/processor";
+import { DOCUMENT_FORMATS, DOCUMENT_PROFILES, DOCUMENT_THEMES, DOCUMENT_LAYOUTS, DocumentProcessingError, type DocumentEdit, type DocumentAsset, type DocumentColors, type EffectiveDocumentStyle } from "@/domain/document/processor";
 import { createArtifactId } from "@/application/artifact/storeArtifact";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
@@ -66,12 +66,14 @@ export function buildFileTool(
     return { artifact, file: { bytes: read.bytes, mimeType: artifact.mimeType, name: artifact.filename ?? "file" } };
   }
 
-  function output(bytes: Uint8Array, mimeType: string, name: string, warnings: string[], derivedFrom?: string): McpToolResult {
+  function output(bytes: Uint8Array, mimeType: string, name: string, warnings: string[], derivedFrom?: string, style?: EffectiveDocumentStyle): McpToolResult {
     const artifactId = createArtifactId();
     issued.add(artifactId);
     const filename = savedFileName(name, mimeType);
     return {
-      text: `Created ${JSON.stringify(filename)} (file ID: ${artifactId}).${warnings.length ? `\n${warnings.join("\n")}` : ""}`,
+      text: `Created ${JSON.stringify(filename)} (file ID: ${artifactId}).` +
+        (style ? `\nDesign: theme=${style.theme}; profile=${style.profile ?? "spreadsheet"}; layout=${style.layout ?? "grid"}; font=${style.fontFamily}.` : "") +
+        `${warnings.length ? `\n${warnings.join("\n")}` : ""}`,
       files: [{ b64: Buffer.from(bytes).toString("base64"), mimeType, name: filename, artifactId, ...(derivedFrom ? { derivedFrom } : {}) }],
     };
   }
@@ -79,11 +81,21 @@ export function buildFileTool(
   return async (args) => {
     try {
       signal?.throwIfAborted();
+      if (args.operation !== "create" && ["profile", "theme", "colors", "layout"].some(name => args[name] !== undefined)) {
+        throw new DocumentProcessingError("Design options apply only to newly created files; existing-file edits preserve their original style");
+      }
       if (args.operation === "create") {
         const format = DOCUMENT_FORMATS.find((format) => format === args.format);
         if (!format) throw new DocumentProcessingError(`format must be one of ${DOCUMENT_FORMATS.join(", ")}`);
         const profile = args.profile === undefined ? undefined : DOCUMENT_PROFILES.find((profile) => profile === args.profile);
         if (args.profile !== undefined && !profile) throw new DocumentProcessingError("Unknown document profile");
+        const theme = args.theme === undefined ? undefined : DOCUMENT_THEMES.find(theme => theme === args.theme);
+        if (args.theme !== undefined && !theme) throw new DocumentProcessingError("Unknown document theme");
+        const layout = args.layout === undefined ? undefined : DOCUMENT_LAYOUTS.find(layout => layout === args.layout);
+        if (args.layout !== undefined && !layout) throw new DocumentProcessingError("Unknown document layout");
+        if (args.colors !== undefined && (!args.colors || typeof args.colors !== "object" || Array.isArray(args.colors))) {
+          throw new DocumentProcessingError("colors must map supported roles to six-digit hex values");
+        }
         const title = typeof args.title === "string" && args.title.trim() ? args.title : "Document";
         const assets: Record<string, DocumentAsset> = {};
         if (args.assets !== undefined) {
@@ -104,9 +116,11 @@ export function buildFileTool(
           ...(args.content !== undefined ? { content: requiredString(args.content, "content") } : {}),
           ...(args.sheets !== undefined ? { sheets: args.sheets } : {}),
           ...(profile ? { profile } : {}),
+          ...(theme ? { theme } : {}), ...(layout ? { layout } : {}),
+          ...(args.colors !== undefined ? { colors: args.colors as Partial<DocumentColors> } : {}),
           ...(Object.keys(assets).length ? { assets } : {}),
         }, signal);
-        return output(created.bytes, created.mimeType, typeof args.name === "string" ? args.name : title, created.validation.warnings);
+        return output(created.bytes, created.mimeType, typeof args.name === "string" ? args.name : title, created.validation.warnings, undefined, created.style);
       }
       const { artifact, file } = await source(args.file_id, args.operation === "read" || args.operation === "inspect");
       const svg = baseMimeType(file.mimeType) === "image/svg+xml";

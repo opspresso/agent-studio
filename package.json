@@ -30,7 +30,8 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:migrate:test": "DATABASE_URL=postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test tsx scripts/db-migrate.ts",
     "build:documents": "node scripts/build-document-worker.mjs",
-    "test:documents": "pnpm build:documents && tsx scripts/document-worker-check.ts"
+    "test:documents": "pnpm build:documents && tsx scripts/document-worker-check.ts",
+    "export:document-design": "tsx scripts/export-document-design.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1106.0",

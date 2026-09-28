@@ -1,3 +1,4 @@
+import type { DocumentStyleOptions } from "@/domain/document/processor";
 /** Explicit scalar/formula cells to XLSX, using the default design table style without profiles. */
 
 import { DocumentError } from "../errors";
@@ -5,7 +6,7 @@ import { MAX_SPREADSHEET_CELLS, MAX_SPREADSHEET_COLUMNS, MAX_SPREADSHEET_ROWS } 
 import { PRODUCER } from "../version";
 import { escapeXml } from "../xml";
 import { buildZip } from "../zip";
-import { designFor } from "./theme";
+import { designFor, DOCUMENT_FONT, DOC } from "./theme";
 
 import type { SpreadsheetScalar, SpreadsheetCell } from "@/domain/document/processor";
 export type { SpreadsheetScalar, SpreadsheetCell } from "@/domain/document/processor";
@@ -235,12 +236,13 @@ function argb(hex: string): string {
   return `FF${hex}`;
 }
 
-function stylesXml(): string {
-  const { headerFill, headerText } = designFor().table;
+function stylesXml(options: DocumentStyleOptions): string {
+  const design = designFor(undefined, options.theme, options.colors);
+  const { headerFill, headerText } = design.table;
   return (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-    `<fonts count="2"><font><sz val="11"/></font><font><b/><color rgb="${argb(headerText)}"/><sz val="11"/></font></fonts>` +
+    `<fonts count="2"><font><name val="${DOCUMENT_FONT}"/><color rgb="${argb(design.palette.ink)}"/><sz val="${DOC.body}"/></font><font><name val="${DOCUMENT_FONT}"/><b/><color rgb="${argb(headerText)}"/><sz val="${DOC.body}"/></font></fonts>` +
     `<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="${argb(headerFill)}"/><bgColor indexed="64"/></patternFill></fill></fills>` +
     '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
@@ -266,7 +268,7 @@ const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 
 export function renderXlsx(
   rawSheets: unknown,
-  options: { title: string; created: string },
+  options: { title: string; created: string } & DocumentStyleOptions,
 ): RenderedXlsx {
   const sheets = sheetsOf(rawSheets);
   const parts: Record<string, Uint8Array> = {
@@ -285,7 +287,7 @@ export function renderXlsx(
     ),
     "xl/workbook.xml": utf8(workbookXml(sheets)),
     "xl/_rels/workbook.xml.rels": utf8(workbookRelsXml(sheets.length)),
-    "xl/styles.xml": utf8(stylesXml()),
+    "xl/styles.xml": utf8(stylesXml(options)),
   };
   sheets.forEach((sheet, index) => {
     parts[`xl/worksheets/sheet${index + 1}.xml`] = utf8(worksheetXml(sheet));
