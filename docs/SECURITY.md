@@ -13,6 +13,13 @@ Better Auth의 `advanced.cookiePrefix`는 `agent-studio`다. 기본 세션 쿠�
 접두어를 사용한다. Agent Memory의 `agent-memory` 쿠키와 분리하며 이전 `better-auth` 쿠키는
 읽지 않는다. 접두어 변경을 배포하면 기존 브라우저 세션은 다시 로그인해야 한다.
 
+멀티 도메인 로그인은 `BETTER_AUTH_ALLOWED_HOSTS`의 정확한 호스트만 허용한다.
+`config.authBaseUrl`이 `BETTER_AUTH_URL`의 프로토콜과 허용 목록을 Better Auth에 전달하고,
+요청의 보존된 `Host`(없으면 request URL)로 콜백을 결정한다. 전달된 호스트·프로토콜 헤더는
+신뢰하지 않는다. 세션·OAuth state 쿠키는 host-only이며 HTTPS이면 Secure다. 로그인 실패의
+상대 `Location: /login?error=`도 콜백 도메인을 유지한다. 설정·provider 등록은
+[설치 절차](INSTALL.md#멀티-도메인-로그인)를 따른다.
+
 Better Auth 1.7은 앱의 커넥션 풀 위에서 라이브러리 자신의 Postgres 어댑터로 돈다.
 `user`, `session`, `account`, `verification` 은 그것이 소유하는 테이블이고(`migrations.ts` 가
 만든다), email·token 의 유일성은 테이블의 유니크 제약이다.
@@ -349,15 +356,16 @@ JSON 본문은 schema 검증 전에 bounded reader를 지난다. 관리·편집 
 ## Session mutation과 CSRF
 
 Cookie session으로 인증하는 `POST`·`PUT`·`PATCH`·`DELETE`는 `Origin`이 request origin 또는
-설정된 `PUBLIC_BASE_URL` origin과 정확히 같아야 한다. Origin이 없거나 `null`이거나 URL로
+설정된 `PUBLIC_BASE_URL` origin과 정확히 같아야 한다. 멀티 도메인에서는 허용 목록에 있는
+요청 `Host`와 인증 설정의 프로토콜로 만든 origin과 정확히 같아야 하며, 다른 허용 도메인의
+origin도 거부한다. Origin이 없거나 `null`이거나 URL로
 해석되지 않으면 403이다. 세 session wrapper가 일반 console API를 한 번에 보호하고, agent
 실행 API는 bearer agent token을 먼저 검증한 뒤 cookie session으로 fallback할 때 같은 검사를
 적용한다. bearer token, webhook signature처럼 cookie를 쓰지 않는 머신 호출에는 CSRF
 검사를 적용하지 않는다.
 
-리버스 프록시 밖의 origin과 앱이 보는 request origin이 다르면 `PUBLIC_BASE_URL`을 반드시
-설정하라. 이 값은 외부 callback URL뿐 아니라 어떤 browser origin이 session cookie를 쓸 수
-있는지 결정한다.
+리버스 프록시 밖의 origin과 앱이 보는 request origin이 다르면 단일 도메인은 `PUBLIC_BASE_URL`을
+설정하고, 멀티 도메인은 `BETTER_AUTH_ALLOWED_HOSTS`를 설정한 뒤 원래 `Host`를 전달한다.
 
 ## 응답 헤더
 

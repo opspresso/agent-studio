@@ -5,6 +5,7 @@ import { auth } from "./auth";
 import { isEffectiveAdmin } from "./memberAccess";
 import { isConfiguredAdmin } from "./runtime-settings";
 import { resolvePublicBaseUrl } from "./public-url";
+import { config } from "./config";
 
 export interface SessionUser {
   id: string;
@@ -38,10 +39,11 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
  * Whether a browser request may spend a session cookie on a mutation.
  *
  * Bearer- and signature-authenticated routes do not call this. For a session
- * route the browser-supplied Origin must name this deployment exactly; absent
+ * route the browser-supplied Origin must name the serving host exactly; absent
  * Origin is refused because HTML forms can spend cookies without custom
  * headers. The public URL covers a reverse proxy whose external origin differs
- * from the server-side request URL.
+ * from the server-side request URL. Multi-domain installs instead compare the
+ * preserved Host against the sign-in allowlist and its configured protocol.
  */
 export async function isSameOriginMutation(
   request: Request,
@@ -61,6 +63,11 @@ export async function isSameOriginMutation(
     // header that no browser emits.
     if (rawOrigin !== origin) {
       return false;
+    }
+    const authBaseUrl = config.authBaseUrl;
+    if (authBaseUrl && typeof authBaseUrl === "object") {
+      const host = (request.headers.get("host") ?? new URL(request.url).host).toLowerCase();
+      return authBaseUrl.allowedHosts.includes(host) && origin === `${authBaseUrl.protocol}://${host}`;
     }
     const requestOrigin = new URL(request.url).origin;
     if (origin === requestOrigin) {

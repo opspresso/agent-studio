@@ -57,6 +57,7 @@ const oidc = config.oidc;
 const keycloakConfig = config.keycloak;
 
 export const auth = betterAuth({
+  baseURL: config.authBaseUrl,
   // The library's own Postgres adapter over this app's pool: the auth tables
   // are the one part of the schema it owns, and `memberRepository` reads
   // them as tables rather than through the adapter.
@@ -122,11 +123,10 @@ export const auth = betterAuth({
      * `error` parameter back through `signInErrorMessage` and still has the
      * sign-in button on it.
      *
-     * Absolute once the deployment knows its public address — behind a proxy
-     * the request URL reflects the bind address, which is why `publicBaseUrl`
-     * exists at all.
+     * A relative Location keeps failures on the host that received the callback,
+     * including failures before OAuth state can be read.
      */
-    errorURL: `${config.publicBaseUrl ?? ""}/login`,
+    errorURL: "/login",
   },
   advanced: {
     cookiePrefix: AUTH_COOKIE_PREFIX,

@@ -477,10 +477,36 @@ export const config = {
   /**
    * Public base URL of this deployment (scheme + host). Behind a reverse
    * proxy the request URL reflects the bind address, so externally visible
-   * URLs (Slack manifests, OAuth callbacks) must come from configuration.
+   * URLs (Slack manifests, MCP OAuth callbacks) must come from configuration.
    */
   get publicBaseUrl(): string | undefined {
     return optionalEnv(process.env.PUBLIC_BASE_URL) ?? optionalEnv(process.env.BETTER_AUTH_URL);
+  },
+  /** Sign-in hosts are deployment-owned; the canonical URL fixes the protocol behind TLS proxies. */
+  get authBaseUrl(): string | { allowedHosts: string[]; protocol: "http" | "https" } | undefined {
+    const baseUrl = optionalEnv(process.env.BETTER_AUTH_URL);
+    const allowedHosts = parseList(process.env.BETTER_AUTH_ALLOWED_HOSTS ?? "");
+    if (allowedHosts.length === 0) return baseUrl;
+
+    let url: URL;
+    try {
+      url = new URL(required("BETTER_AUTH_URL"));
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password ||
+          url.pathname !== "/" || url.search || url.hash) {
+        throw new Error("invalid auth origin");
+      }
+    } catch {
+      throw new Error("BETTER_AUTH_ALLOWED_HOSTS requires BETTER_AUTH_URL to be an HTTP(S) origin");
+    }
+    for (const host of allowedHosts) {
+      try {
+        const origin = `${url.protocol}//${host}`;
+        if (host.includes("*") || new URL(origin).origin !== origin) throw new Error("invalid auth host");
+      } catch {
+        throw new Error("BETTER_AUTH_ALLOWED_HOSTS must contain exact hosts with optional ports, without schemes, paths, or wildcards");
+      }
+    }
+    return { allowedHosts, protocol: url.protocol === "https:" ? "https" : "http" };
   },
   /** GitHub Agent Plugins source repo, e.g. "opspresso/agent-plugins". */
   get pluginsRepo(): string | undefined {

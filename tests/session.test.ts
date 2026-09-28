@@ -34,6 +34,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-27T00:00:00Z"));
   vi.clearAllMocks();
+  vi.stubEnv("BETTER_AUTH_ALLOWED_HOSTS", undefined);
   adminEmails.value = [];
 });
 
@@ -105,6 +106,27 @@ describe("session mutation origin", () => {
     ]) {
       await expect(isSameOriginMutation(request("POST", origin), publicBase)).resolves.toBe(false);
     }
+  });
+
+  it.each(["studio.opspresso.com", "agentops.demo.clush.net"])(
+    "allows same-host mutations on %s behind a reverse proxy",
+    async (host) => {
+      vi.stubEnv("BETTER_AUTH_URL", "https://studio.opspresso.com");
+      vi.stubEnv("BETTER_AUTH_ALLOWED_HOSTS", "studio.opspresso.com,agentops.demo.clush.net");
+      const req = new Request("http://127.0.0.1:3000/api/settings", {
+        method: "PUT", headers: { host, origin: `https://${host}` },
+      });
+      await expect(isSameOriginMutation(req, publicBase)).resolves.toBe(true);
+    },
+  );
+
+  it("does not let one allowed domain mutate the other domain's session", async () => {
+    vi.stubEnv("BETTER_AUTH_URL", "https://studio.opspresso.com");
+    vi.stubEnv("BETTER_AUTH_ALLOWED_HOSTS", "studio.opspresso.com,agentops.demo.clush.net");
+    const req = new Request("http://127.0.0.1:3000/api/settings", {
+      method: "PUT", headers: { host: "agentops.demo.clush.net", origin: "https://studio.opspresso.com" },
+    });
+    await expect(isSameOriginMutation(req, async () => "https://studio.opspresso.com")).resolves.toBe(false);
   });
 });
 

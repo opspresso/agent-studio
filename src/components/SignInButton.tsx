@@ -16,8 +16,8 @@ export type SignInProviders = typeof config.authProviders;
  *
  * `callbackURL` is where a provider returns the user. `/login` passes the
  * page they were turned away from, so the round trip ends where it started;
- * it has already been through `safeNextPath`, and Better Auth only accepts
- * same-origin values.
+ * it has already been through `safeNextPath`, and Better Auth validates it
+ * against the deployment's trusted origins.
  */
 export function SignInButton({
   providers,

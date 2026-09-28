@@ -26,6 +26,32 @@ backup, rollout, ticker는 각 배포 저장소에서 관리한다.
 전체 환경변수와 고정 한계는 [CONFIGURATION.md](CONFIGURATION.md), 운영 계약은
 [OPERATIONS.md](OPERATIONS.md)를 보라.
 
+## 멀티 도메인 로그인
+
+동일한 설치를 여러 도메인으로 제공할 때는 앱 환경에 로그인 허용 호스트를 설정하고 재시작한다.
+prod의 두 도메인을 사용하는 예시는 다음과 같다.
+
+```dotenv
+BETTER_AUTH_URL=https://studio.opspresso.com
+BETTER_AUTH_ALLOWED_HOSTS=studio.opspresso.com,agentops.demo.clush.net
+```
+
+`BETTER_AUTH_URL`의 프로토콜과 요청의 허용 호스트로 OAuth 콜백을 만든다. 리버스 프록시는
+브라우저가 접속한 `Host` 헤더를 앱에 보존해서 전달해야 한다. TLS를 프록시에서 종료해도 위
+설정에서는 HTTPS 콜백과 Secure 쿠키를 사용한다. 전달 헤더로 호스트나 프로토콜을 바꾸지 않는다.
+
+Google Cloud의 해당 OAuth client에서 **Authorized redirect URIs**에 두 주소를 각각 등록한다.
+
+- `https://studio.opspresso.com/api/auth/callback/google`
+- `https://agentops.demo.clush.net/api/auth/callback/google`
+
+Google은 요청의 redirect URI가 등록값과 정확히 일치해야 한다
+([공식 문서](https://developers.google.com/identity/protocols/oauth2/web-server#creatingcred)).
+Keycloak·표준 OIDC도 각 도메인의 `/api/auth/callback/keycloak`·`/api/auth/callback/oidc`를
+해당 client에 등록한다. 로그인 성공은 접속 도메인의 원래 경로로, 실패는 같은 도메인의
+`/login?error=`로 돌아간다. 세션 쿠키는 도메인별로 발급하므로 도메인을 바꾸면 다시 로그인한다.
+Artifact·Slack·MCP 등의 외부 URL에 사용하는 대표 주소는 `PUBLIC_BASE_URL`로 별도 설정할 수 있다.
+
 ## Keycloak 로그인
 
 Google 없이 사내 Keycloak만으로 로그인할 수 있다. 다음 값을 애플리케이션 환경에 설정하고

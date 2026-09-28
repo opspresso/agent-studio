@@ -214,6 +214,7 @@
 | 만료 행을 지우는 틱 | `src/lib/container.ts`의 `sweepExpiredRows`: items, Better Auth session, runtime_sessions를 정리한다. 호출은 `src/app/api/triggers/scan/route.ts`가 담당한다 | 코드 |
 | Better Auth 의 `user` 행을 멤버로 읽기. 스토어가 소유하지 않는 테이블에 대한 plain SQL | `src/infrastructure/db/repositories/memberRepository.ts` | 코드 |
 | 어떤 로그인 수단이 켜져 있는가 | `src/lib/config.ts` 의 `authProviders`. `auth.ts` 가 그대로 조립하고 로그인 페이지가 그대로 그린다 | 코드 |
+| 로그인 허용 호스트와 프록시 뒤의 인증 프로토콜 | `src/lib/config.ts`의 `authBaseUrl`. Better Auth의 콜백·쿠키와 session mutation의 origin 검사가 같은 설정을 사용한다 | 코드 |
 | 앱 인증 쿠키의 접두어 | `src/shared/authCookies.ts` 의 `AUTH_COOKIE_PREFIX`. Better Auth 설정과 페이지 게이트가 함께 사용하며 개발 세션은 Better Auth context의 쿠키 이름을 사용한다 | 코드 |
 | 어떤 페이지가 공개인가 | `src/shared/pageAccess.ts` 의 `isPublicPagePath` | 코드 |
 
