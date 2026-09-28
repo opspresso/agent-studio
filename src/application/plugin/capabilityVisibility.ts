@@ -1,7 +1,7 @@
 import type { CapabilityEntry } from "@/domain/catalog/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { PluginRepository } from "@/domain/plugin/repository";
-import { emptyCapabilityVisibility, isCapabilityVisibility, isCapabilityVisible, type CapabilityVisibility } from "@/domain/plugin/visibility";
+import { CAPABILITY_KINDS, emptyCapabilityVisibility, isCapabilityUsageChanges, isCapabilityVisibility, isCapabilityVisible, type CapabilityUsageChange, type CapabilityVisibility } from "@/domain/plugin/visibility";
 import { parsePluginSource, type Plugin } from "@/domain/plugin/types";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { SkillRepository } from "@/domain/skill/repository";
@@ -119,15 +119,25 @@ export function createCapabilityVisibility(deps: VisibilityDeps) {
       });
     },
     getView,
-    async update(hidden: CapabilityVisibility, actorEmail: string): Promise<CapabilityVisibilityView> {
-      if (!isCapabilityVisibility(hidden)) throw new ValidationError("Invalid capability visibility");
-      const normalized: CapabilityVisibility = {
-        plugins: [...new Set(hidden.plugins)].sort(),
-        skills: [...new Set(hidden.skills)].sort(),
-        tools: [...new Set(hidden.tools)].sort(),
-      };
-      await deps.settings.update(stored => ({ ...(stored ?? { updatedAt: "" }),
-        capabilityVisibility: normalized, updatedAt: new Date().toISOString() }));
+    async update(changes: CapabilityUsageChange[], actorEmail: string): Promise<CapabilityVisibilityView> {
+      if (!isCapabilityUsageChanges(changes)) throw new ValidationError("Invalid capability usage changes");
+      if (changes.length === 0) return getView();
+      await deps.settings.update(stored => {
+        const current = stored?.capabilityVisibility ?? emptyCapabilityVisibility();
+        const next = emptyCapabilityVisibility();
+        for (const kind of CAPABILITY_KINDS) {
+          const excluded = new Set(current[kind]);
+          for (const change of changes) {
+            if (change.kind === kind) {
+              if (change.enabled) excluded.delete(change.name);
+              else excluded.add(change.name);
+            }
+          }
+          next[kind] = [...excluded].sort();
+        }
+        if (!isCapabilityVisibility(next)) throw new ValidationError("Too many disabled capabilities");
+        return { ...(stored ?? { updatedAt: "" }), capabilityVisibility: next, updatedAt: new Date().toISOString() };
+      });
       await recordAudit({ actorEmail, action: "settings.update", target: auditTarget("settings", "app"), detail: "capabilityVisibility" });
       return getView();
     },

@@ -51,6 +51,8 @@ sync로 서버 URL이 바뀌면 이전 주소의 header·OAuth를 새 주소로 
 
 Settings → Plugins → 사용 설정에서 사용할 Plugin·Skill·Tool(MCP 서버)을 선택한다.
 기본값은 모두 사용이며 체크를 해제한 항목은 일반 목록과 실행에서 제외한다.
+저장은 명시적으로 편집한 항목만 최신 DB 정책에 원자적으로 병합한다. 오래 열린 화면이
+다른 관리자가 바꾼 항목을 재활성화하지 않는다.
 저장소·브랜치·GitHub token은 같은 하위 탭의 동기화 설정에서 관리한다.
 `capabilityVisibility`는 미사용 이름 목록을 배포 설정에 저장하며 sync가 덮어쓰지 않는다. Plugin 미사용은 현재
 `source`가 해당 Plugin인 Skill과 MCP 서버에 상속한다. 개별 사용 설정은 별도로 보존하므로

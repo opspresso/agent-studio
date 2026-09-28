@@ -3,12 +3,12 @@ import type { AddressInfo } from "node:net";
 import { build } from "esbuild";
 import { test, expect } from "@playwright/test";
 import type { CapabilityVisibilityView } from "../src/application/plugin/capabilityVisibility";
-import type { CapabilityVisibility } from "../src/domain/plugin/visibility";
+import type { CapabilityUsageChange } from "../src/domain/plugin/visibility";
 
 let server: Server;
 let base: string;
 let view: CapabilityVisibilityView;
-let writes: CapabilityVisibility[];
+let writes: CapabilityUsageChange[][];
 let failLoad: boolean;
 let failSave: boolean;
 
@@ -42,10 +42,15 @@ test.beforeEach(async ({ page }) => {
     serviceLogos: [], llmProviders: { source: "override", items: [] },
   } }));
   await page.route("**/api/settings/plugins/visibility", route => {
-    if (route.request().method() === "PUT") {
+    if (route.request().method() === "PATCH") {
       if (failSave) return route.fulfill({ status: 503, json: { error: "Settings unavailable" } });
-      view.hidden = route.request().postDataJSON() as CapabilityVisibility;
-      writes.push(view.hidden);
+      const { changes } = route.request().postDataJSON() as { changes: CapabilityUsageChange[] };
+      writes.push(changes);
+      for (const change of changes) {
+        view.hidden[change.kind] = change.enabled
+          ? view.hidden[change.kind].filter(name => name !== change.name)
+          : [...new Set([...view.hidden[change.kind], change.name])];
+      }
     } else if (failLoad) return route.fulfill({ status: 503, json: { error: "Settings unavailable" } });
     return route.fulfill({ json: view });
   });
@@ -76,8 +81,8 @@ test("saves Plugin usage changes, restores them on reload, and preserves indepen
   await expect(page.getByRole("checkbox", { name: "Use deploy", exact: true })).not.toBeChecked();
   await page.getByRole("checkbox", { name: "Use retired", exact: true }).check();
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  expect(writes).toEqual([{ plugins: ["devops"], skills: ["deploy", "retired"], tools: [] },
-    { plugins: [], skills: ["deploy"], tools: ["cluster"] }]);
+  expect(writes).toEqual([[{ kind: "plugins", name: "devops", enabled: false }],
+    [{ kind: "plugins", name: "devops", enabled: true }, { kind: "skills", name: "retired", enabled: true }, { kind: "tools", name: "cluster", enabled: false }]]);
   expect(errors).toEqual([]);
 });
 
@@ -135,4 +140,14 @@ test("checks all Plugin, Skill and Tool usage controls by default", async ({ pag
   await page.getByRole("tab", { name: "Tools", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "Use cluster", exact: true })).toBeChecked();
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+});
+
+test("preserves an administrator's Tool change while saving edits from an older Plugin page", async ({ page }) => {
+  await page.goto(base);
+  await page.getByRole("checkbox", { name: "Use devops", exact: true }).uncheck();
+  view.hidden.tools = ["cluster"];
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+  expect(view.hidden).toEqual({ plugins: ["devops"], skills: ["deploy", "retired"], tools: ["cluster"] });
+  expect(writes).toEqual([[{ kind: "plugins", name: "devops", enabled: false }]]);
 });

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Alert, Badge, Button, Card, Checkbox, Group, Stack, Table, Tabs, Text, TextInput } from "@mantine/core";
 import { IconSearch } from "@tabler/icons-react";
 import type { CapabilityVisibilityView } from "@/application/plugin/capabilityVisibility";
-import { emptyCapabilityVisibility, isCapabilityVisible, type CapabilityVisibility } from "@/domain/plugin/visibility";
+import { CAPABILITY_KINDS, capabilityUsageChanges, emptyCapabilityVisibility, isCapabilityVisible, type CapabilityVisibility } from "@/domain/plugin/visibility";
 import { useT } from "@/app/_i18n/provider";
 import { LoadingText } from "@/app/_components/PageState";
 import { SectionHeading } from "@/app/_components/SectionHeading";
@@ -13,7 +13,6 @@ import { reportError } from "@/app/_lib/reportError";
 import { matchesFilter } from "@/app/_components/CatalogSearch";
 
 const ENDPOINT = "/api/settings/plugins/visibility";
-const KINDS = ["plugins", "skills", "tools"] as const;
 
 export function CapabilityVisibilitySettings() {
   const t = useT();
@@ -42,15 +41,15 @@ export function CapabilityVisibilitySettings() {
     return () => { cancelled = true; };
   }, [reloadKey]);
 
-  const dirty = view !== null && KINDS.some(key =>
-    JSON.stringify([...hidden[key]].sort()) !== JSON.stringify([...view.hidden[key]].sort()));
+  const changes = view ? capabilityUsageChanges(view.hidden, hidden) : [];
+  const dirty = changes.length > 0;
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
     setSaving(true); setError(null); setSaved(false);
     try {
       const next = await readJson<CapabilityVisibilityView>(await fetch(ENDPOINT, {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(hidden),
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ changes }),
       }));
       setView(next); setHidden(next.hidden); setSaved(true);
     } catch (error) {
@@ -61,7 +60,8 @@ export function CapabilityVisibilitySettings() {
   }
 
   // Keep saved names selectable even if a subsequent sync removed their registry rows.
-  const items = view ? [...view[kind], ...[...new Set([...view.hidden[kind], ...hidden[kind]])].filter(name => !view[kind].some(item => item.name === name))
+  const registeredNames = new Set(view?.[kind].map(item => item.name));
+  const items = view ? [...view[kind], ...[...new Set([...view.hidden[kind], ...hidden[kind]])].filter(name => !registeredNames.has(name))
     .map(name => ({ name, description: "", plugin: undefined }))]
     .filter(item => matchesFilter(filter, item.name, item.description, item.plugin)) : [];
 
@@ -72,9 +72,9 @@ export function CapabilityVisibilitySettings() {
       <Stack renderRoot={props => <fieldset {...props} disabled={saving} />} gap="md"
         style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         <Tabs value={kind} onChange={value => {
-          if (KINDS.some(key => key === value)) { setKind(value as keyof CapabilityVisibility); setFilter(""); }
+          if (CAPABILITY_KINDS.some(key => key === value)) { setKind(value as keyof CapabilityVisibility); setFilter(""); }
         }}>
-          <Tabs.List aria-label={t("settings.visibility.kinds")}>{KINDS.map(key => <Tabs.Tab key={key} value={key}>{t(`nav.${key}`)}</Tabs.Tab>)}</Tabs.List>
+          <Tabs.List aria-label={t("settings.visibility.kinds")}>{CAPABILITY_KINDS.map(key => <Tabs.Tab key={key} value={key}>{t(`nav.${key}`)}</Tabs.Tab>)}</Tabs.List>
         </Tabs>
         <TextInput aria-label={t("settings.visibility.filter")} placeholder={t("settings.visibility.filter")}
           leftSection={<IconSearch size={16} />} value={filter} onChange={event => setFilter(event.currentTarget.value)} />

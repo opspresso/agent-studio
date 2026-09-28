@@ -332,6 +332,18 @@ async function main() {
     );
     pass("skill describe projected SQL read");
 
+    const { capabilityVisibilityUseCases } = await import("@/lib/container");
+    const previousVisibility = (await settingsRepository.get())?.capabilityVisibility;
+    await Promise.all([
+      capabilityVisibilityUseCases.update([{ kind: "plugins", name: "integration", enabled: false }], "first@example.test"),
+      capabilityVisibilityUseCases.update([{ kind: "skills", name: "integration-skill", enabled: false }], "second@example.test"),
+    ]);
+    const concurrentVisibility = (await settingsRepository.get())?.capabilityVisibility;
+    assert.ok(concurrentVisibility?.plugins.includes("integration"), "first administrator's change survives");
+    assert.ok(concurrentVisibility?.skills.includes("integration-skill"), "second administrator's change survives");
+    await settingsRepository.update(current => ({ ...current!, capabilityVisibility: previousVisibility }));
+    pass("capability usage: concurrent administrator changes merge atomically");
+
     // ---------- pgvector adapter ----------
     await withTransaction(async (client) => {
       await client.query(
