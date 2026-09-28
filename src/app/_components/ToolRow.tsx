@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Badge, Code, Group, Paper, Stack, Text, UnstyledButton } from "@mantine/core";
-import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
+import { IconCheck, IconChevronDown, IconChevronRight, IconDots, IconX } from "@tabler/icons-react";
 import { describeTool, type ToolKind } from "@/app/_lib/toolCalls";
 import { useT } from "@/app/_i18n/provider";
 import type { ToolPair } from "@/app/_lib/toolPairs";
@@ -29,6 +29,8 @@ export function ToolRow({ pair }: { pair: ToolPair }) {
   const [open, setOpen] = useState(false);
   const done = pair.content !== undefined;
   const failed = pair.content !== undefined && isToolErrorText(pair.content);
+  const StatusIcon = failed ? IconX : done ? IconCheck : IconDots;
+  const statusLabel = t(failed ? "tool.status.failed" : done ? "tool.status.completed" : "tool.status.running");
   const described = describeTool(pair.name ?? "tool", pair.args);
   const kind = TOOL_KIND[described.kind] ?? TOOL_KIND.tool;
   return (
@@ -59,8 +61,16 @@ export function ToolRow({ pair }: { pair: ToolPair }) {
               {t("chat.via", { path: pair.author })}
             </Text>
           )}
-          <Text fz="xs" c={failed ? "red" : "dimmed"} ml="auto" style={{ whiteSpace: "nowrap" }}>
-            {failed ? "❌" : done ? "✅" : "…"}
+          <Text
+            component="span"
+            role="img"
+            aria-label={statusLabel}
+            title={statusLabel}
+            c={failed ? "red" : done ? "teal" : "dimmed"}
+            ml="auto"
+            style={{ display: "flex", flexShrink: 0 }}
+          >
+            <StatusIcon size={14} aria-hidden="true" />
           </Text>
         </Group>
       </UnstyledButton>
