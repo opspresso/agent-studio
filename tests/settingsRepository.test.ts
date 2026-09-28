@@ -40,6 +40,7 @@ describe("settingsRepository", () => {
       rerankerMinScore: "0.02",
       pluginsRepo: "opspresso/agent-plugins",
       pluginsRepoBranch: "main",
+      capabilityVisibility: { plugins: ["hidden"], skills: ["hidden-skill"], tools: ["hidden-server"] },
       githubToken: "enc:v1:token",
       publicBaseUrl: "https://studio.example.com",
       artifactAccessMode: "public",

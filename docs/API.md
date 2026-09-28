@@ -126,6 +126,7 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/skills/{name}`, `/api/mcps/{name}` | `GET` `PUT` `DELETE` | member / admin |
 | `/api/plugins` | `GET` | member |
 | `/api/plugins/{name}` | `GET` | member |
+| `/api/settings/plugins/visibility` | `GET` `PATCH` | admin |
 | `/api/plugins/sync` | `GET` `POST` | member / admin |
 | `/api/plugins/sync/upload` | `POST` | admin |
 | `/api/mcps/{name}/tools` | `POST` | member |
@@ -732,6 +733,20 @@ Git 동작은 `commit`, `commit-and-push`, `push`, `pull-request`(`draft` 선택
 ## 레지스트리·연동 오퍼레이션
 
 이 엔드포인트들은 리소스 CRUD 외에 콘솔의 운영 행동을 뒷받침한다:
+
+`GET /api/settings/plugins/visibility`는 미사용 항목을 포함하는 관리자 전용 사용 설정을 반환한다.
+응답은 `{ hidden: { plugins: string[], skills: string[], tools: string[] }, plugins, skills, tools }`이며
+각 목록 항목은 `{ name, description, plugin? }`이다. `tools`는 MCP 서버이며 URL·credential·본문은
+포함하지 않는다. `PATCH`는 `{ changes: [{ kind: "plugins" | "skills" | "tools", name, enabled: boolean }] }`을 받아
+변경한 항목만 최신 설정에 원자적으로 병합하고 같은 view를 반환한다. 다른 관리자가 바꾼 미편집 항목을
+이전 화면의 값으로 되돌리지 않는다. 비어 있는 미사용 목록은 모두 사용이며 UI는 사용 항목을 체크한다.
+목록별 미사용 이름은 최대 500개이며 변경 요청은 최대 3,000개다. 이름 규칙을 검증하고
+같은 항목의 중복 변경을 거절한다. 설치되지 않은 이름도 유지하여 sync로 재등장해도 정책이 적용된다.
+저장 시 `settings.update` 감사를 남기며 재색인을 즉시 실행하지 않는다.
+
+일반 Plugin·Skill·MCP 목록과 상세는 관리자에게도 숨긴 항목을 표시하지 않는다(직접 조회는 404).
+Plugin 숨김 상속·실행 차단과 sync 후 벡터 반영은
+[케이퍼빌리티 설계](design/capabilities.md#관리자-사용-설정)를 따른다.
 
 ```
 GET  /api/plugins
@@ -1663,7 +1678,7 @@ UI의 추가 버튼은 조회한 facts를 즉시 저장한다. 공개 모델은 
 우선한다. 갱신이 활성화된 웹 서버·오디오·Workspace worker는 실행 중 15분 간격으로 공개 가격을 다시 조회하며,
 오류 시 마지막으로 검증된 가격을 유지한다. Provider가 호출 비용을 직접 보고하면 그 값을 우선한다.
 카탈로그의 `discount`가 있더라도 표시된 단가는 이미 할인이 반영된 금액이므로 다시 할인하지 않는다.
-카탈로그 관리 가격은 Registered models 화면에서 읽기 전용으로 표시한다.
+카탈로그 관리 가격은 모델 관리 화면에서 읽기 전용으로 표시한다.
 
 ## 플랫폼 엔드포인트
 

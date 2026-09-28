@@ -1,5 +1,6 @@
 import { WORKSPACE_MODEL_RUNTIMES } from "@/domain/workspace/runtimeModels";
 import { isCallRoutingPolicy } from "@/domain/llm/callRouting";
+import { isCapabilityVisibility } from "@/domain/plugin/visibility";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type {
   AppSettings,
@@ -33,6 +34,10 @@ const FIELDS = [
 
 function fromItem(item: Record<string, unknown>): AppSettings {
   const settings: AppSettings = { updatedAt: item.updatedAt as string };
+  if (item.capabilityVisibility !== undefined) {
+    if (!isCapabilityVisibility(item.capabilityVisibility)) throw new Error("Stored capability visibility is invalid");
+    settings.capabilityVisibility = item.capabilityVisibility;
+  }
   if (item.modelRouting !== undefined) {
     if (!isCallRoutingPolicy(item.modelRouting)) throw new Error("Stored model routing policy is invalid");
     settings.modelRouting = item.modelRouting;

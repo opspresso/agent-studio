@@ -11,6 +11,7 @@
  */
 
 import {
+  capabilityKey,
   capabilityText,
   DEFAULT_MIN_SCORE,
   DEFAULT_RERANKER_MIN_SCORE,
@@ -27,6 +28,8 @@ import type {
 import type { CatalogReindexState } from "@/domain/catalog/reindexLock";
 
 export interface CatalogSearchDeps {
+  /** Current registry visibility, applied before ranking and again before returning stale vectors. */
+  filterEntries?: (entries: readonly CapabilityEntry[]) => Promise<CapabilityEntry[]>;
   embeddings: EmbeddingPort;
   catalog: VectorStorePort;
   reranker?: RerankerPort;
@@ -211,6 +214,12 @@ export async function searchCapabilitiesByKind(
   if (reindexOverlapped(started, indexed)) {
     return emptySearch(requests);
   }
+  if (deps.filterEntries) {
+    const entries = candidatesByRequest.flat(2).map(candidate => candidate.entry);
+    const allowed = new Set((await deps.filterEntries(entries)).map(capabilityKey));
+    candidatesByRequest = candidatesByRequest.map(perQuery => perQuery.map(candidates =>
+      candidates.filter(candidate => allowed.has(candidate.key))));
+  }
   // One rerank request per query, not per kind. The model scores each document
   // independently against the same query, so kind is a partition for the
   // result limits and cuts rather than a reason to pay another network round
@@ -267,6 +276,10 @@ export async function searchCapabilitiesByKind(
     ),
     rerank,
   };
+  if (deps.filterEntries) {
+    const allowed = new Set((await deps.filterEntries(result.matches.flat())).map(capabilityKey));
+    result.matches = result.matches.map(matches => matches.filter(match => allowed.has(capabilityKey(match))));
+  }
   const finished = (await deps.reindexState?.()) ?? indexed;
   return reindexOverlapped(started, finished)
     ? { matches: requests.map(() => []), rerank }

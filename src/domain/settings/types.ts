@@ -25,6 +25,7 @@ export interface LlmProviderSetting {
 export type ArtifactAccessMode = "authenticated" | "public" | "proxied";
 
 export interface AppSettings {
+  capabilityVisibility?: import("../plugin/visibility").CapabilityVisibility;
   /** Display branding; absent values fall back to SERVICE_NAME/SERVICE_LOGO. */
   serviceName?: string;
   serviceLogo?: string;

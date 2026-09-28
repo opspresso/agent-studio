@@ -73,7 +73,7 @@ Agent 소유권을 넘는 관리자 권한과는 구분한다. [인증과 접근
 | `ARTIFACT_ACCESS_MODE` | `authenticated` | **runtime** | 독자가 저장된 오브젝트에 어떻게 닿는가. **`proxied`**. 앱 자신의 주소 `PUBLIC_BASE_URL/api/objects/<key>?exp=&sig=[&dl=]` 를 건네고 앱이 바이트로 답한다(`PUBLIC_BASE_URL` 이 없으면 경로만, 콘솔은 같은 origin 이라 닿지만 Slack 같은 외부 독자에게는 주소가 아니다). 모델 입력 이미지는 URL이 아니라 저장소에서 읽은 bounded inline bytes로 전달된다. 스토어는 앱에게만 닿으면 되므로 설치형의 선택이다. 토큰이 증명하는 것과 수명은 [SECURITY.md](SECURITY.md#데이터-노출과-보존). **`authenticated`**. 유효 기간이 있는 스토어의 pre-signed URL. 브라우저가 스토어에 직접 닿을 수 있어야 한다. **`public`**. 영구적인 직접 URL. 버킷 정책이 `artifacts/*` 와 레거시 `images/*` 의 공개 읽기를 허용할 때만 동작한다. **다운로드 링크는 `public` 에서도 pre-signed 다**: 브라우저가 저장할 파일명이 요청 서명에 실려 가는데 S3 는 익명 GET 에서 `response-*` 오버라이드를 거부하기 때문이다. 그래서 `public` 모드에서 문서의 주소는 유효 기간이 있고 이미지의 주소는 영구로 남는다. public 모드는 갤러리 메타데이터와 삭제가 인증을 유지하더라도 URL 을 손에 넣은 누구에게나 오브젝트를 노출한다. 모르는 값은 `authenticated` 로 fail-closed 된다. |
 | `CATALOG_ENABLED` | `false` | — | `true` 면 이 배포가 capability 카탈로그를 갖는다. 벡터는 데이터베이스의 `catalog_vectors` 에 있고 따로 가리킬 것은 없다. 설정하지 않으면 `POST /api/catalog/reindex` 는 503 으로 답하고, 런은 자기 설정에 바인딩한 것만 제공한다. 그 503 에는 원인이 둘 있고 토큰 검사가 먼저 돌므로, `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우에도 메시지만 다른 같은 상태 코드가 나온다. 기본이 꺼짐인 이유: 카탈로그에는 배포의 채널이 서빙하는 임베딩 모델이 필요한데 부팅 때 그것을 확인할 길이 없다. 켜는 것은 그 모델이 있다는 선언이다. |
 | `EMBEDDING_DIM` | `1024` | — | provider 에 요청하는 폭. `native` 는 폭 파라미터를 생략해 모델의 native dimension을 쓴다. 테이블의 모든 행이 같은 폭이어야 pgvector 가 거리를 계산하므로 값을 바꾼 뒤 반드시 재색인하라. Cohere v4, Titan v2, OpenAI v3처럼 폭 선택을 지원하는 모델은 명시값을 사용하고, 폭 파라미터를 거부하는 모델은 `native` 를 사용한다. |
-| `CATALOG_MIN_SCORE` | `0.25` | **models** | vector 검색의 절대 하한. 유한한 숫자는 0–1로 clamp하고 그 밖에는 기본값을 사용하며 경고한다. query별 최고 점수의 상대 하한과 함께 적용한다. Settings → Models → Model usage에서 활성 Embedding 모델과 함께 저장한다. 점수만 바꾸면 재색인하지 않으며, 모델·질의 언어가 바뀌면 [선택 절차](#임베딩-모델-선택)로 다시 확인한다. |
+| `CATALOG_MIN_SCORE` | `0.25` | **models** | vector 검색의 절대 하한. 유한한 숫자는 0–1로 clamp하고 그 밖에는 기본값을 사용하며 경고한다. query별 최고 점수의 상대 하한과 함께 적용한다. Settings → Models → 사용 설정에서 활성 Embedding 모델과 함께 저장한다. 점수만 바꾸면 재색인하지 않으며, 모델·질의 언어가 바뀌면 [선택 절차](#임베딩-모델-선택)로 다시 확인한다. |
 | `RERANKER_MIN_SCORE` | `0.01` | **models** | activation된 reranker relevance score의 noise floor. 각 query에서 최고 점수의 10%와 이 값 중 높은 쪽을 최종 하한으로 쓴다. 범위 밖 env 값은 `0`–`1`로 clamp한다. capability 설명은 답 자체가 아니라 답을 만들 도구이므로 adapter는 전용 instruction을 함께 보낸다. 모델을 바꾸면 다시 측정하고 `/settings/model-usage`에서 함께 저장하라. DB override가 env보다 우선하며 다음 검색부터 적용된다. |
 | `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`; 일반 URL 조립은 요청 origin, 없으면 `http://localhost:3000` | **runtime** | 바깥을 향하는 URL (Slack 매니페스트, MCP OAuth 콜백, MCP client ID 메타데이터 문서)을 만들 때 쓰는 scheme + host. 리버스 프록시 뒤에서는 요청 URL 이 bind 주소를 반영하므로 이 값은 설정에서 와야 한다. 요청 origin 단계는 요청이 손에 있는 일반 URL 조립에서만 적용된다. 로그인 콜백은 인증 설정이 결정하며, 로그인 실패는 콜백을 받은 도메인의 `/login?error=`로 이동한다. **MCP client ID 메타데이터 문서는 예외다**: 설정된 base 가 없으면 요청 origin 이나 localhost 를 추측하지 않고 503 으로 답한다. 그 URL 이 곧 OAuth `client_id` 이고 authorization server 가 가져가므로, loopback 이나 평문 http 값이면 흐름이 시작되기 전에 거부되고 provider 가 제공하는 경우 연결은 dynamic registration 으로 폴백한다. [SECURITY.md](SECURITY.md#mcp-oauth) 를 보라. |
 
@@ -157,7 +157,12 @@ Settings → Models → Model 사용 설정의 **자동 모델 라우팅**에서
 1. `/settings/models`에서 등록한 프로바이더를 선택하고 **Model 조회**를 실행한다.
 2. 사용할 항목의 유형·기능·한도·가격을 비교하고 **모델 추가**를 누르면 즉시 등록된다. 이름순·가격순 정렬과 기능 필터를 제공한다. 직접 등록은 화면 안의 입력 폼을 사용한다.
 3. `/settings/model-usage`에서 기본 모델, Agent 추천·라우팅용 결정 모델, Workspace Runtime별 모델, 검색의 Embedding·Rerank를 선택한다.
-4. 선택 화면의 **선택된 모델만 보기**로 저장된 모델을 모아 보고 바로 삭제할 수 있다. Provider를 조회하지 않아도 저장된 선택을 표시한다. 등록 모델 관리에서는 수정·삭제·상태 확인을 수행한다. `/models`는 선택·등록된 모델의 조회와 검색만 제공한다.
+4. 같은 모델 관리 화면의 **선택된 모델만 보기**로 저장된 모델을 모아 수정·삭제·상태 확인을 수행한다. Provider를 조회하지 않아도 저장된 선택을 표시하고, 조회 후에도 저장된 설정을 우선 표시한다. `/models`는 선택·등록된 모델의 조회와 검색만 제공한다.
+
+연결이 사라진 프로바이더의 등록 모델도 관리 화면에서 선택·삭제할 수 있다.
+새 모델 조회·등록은 현재 설정된 프로바이더 연결이 있어야 수행한다. 조회 중에는 등록·수정·삭제를
+함께 잠가 이전 조회 응답이 최신 등록 목록을 덮어쓰지 않게 한다.
+성공한 Provider 조회 결과는 등록 목록 갱신이 실패해도 유지하며, 갱신 오류는 화면에 표시한다.
 
 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decision`이다.
 `decision`은 판단·분류용 텍스트 모델이며 Agent 실행 모델로 사용하지 않는다. Agent 추천에는
@@ -201,7 +206,7 @@ Rerank 변경은 실제 query/document probe가 성공한 뒤 저장한다. 검�
 포함하여 선택한 모델의 프로바이더 URL·키·전송 ID를 함께 사용한다.
 
 `UNKNOWN_MODEL_POLICY=allow|refuse`는 선택한 모델의 가격 미확인을 허용할지 정한다.
-Settings → Models → Model usage의 **가격 정보가 없는 모델**에서 이 정책을 재정의할 수 있다.
+Settings → Models → 사용 설정의 **가격 정보가 없는 모델**에서 이 정책을 재정의할 수 있다.
 기본값은 `allow`다. 미등록 모델의 실행은 이 값과 무관하게 거부된다. 제공자가 실제 비용을
 반환하면 우선 사용하고, 가격을 계산할 수 없으면 비용 누락 경고·지표를 남긴다.
 
@@ -262,6 +267,10 @@ Docker 를 호출하기 직전에만 0600 임시 env file 로 복호화된다. �
 | `GITHUB_TOKEN` | 미설정 | **runtime** | plugins 저장소에 대한 contents 읽기 권한이 필요하다. |
 | `GITHUB_API_URL` | `https://api.github.com` | — | GitHub REST API 가 답하는 곳. GitHub Enterprise Server 나 미러라면 `https://<host>/api/v3`. 끝의 슬래시는 떼어 낸다. |
 | `GITHUB_WEB_URL` | public GitHub 또는 표준 GHES API 주소에서 도출 | — | plugin 상세의 repository·commit 링크가 향하는 web base. API mirror나 비표준 경로처럼 도출할 수 없으면 명시하라. 없고 도출할 수도 없으면 잘못된 링크를 만드는 대신 텍스트만 표시한다. |
+
+Settings → Plugins → 사용 설정은 기본값이 모두 사용이며 미사용 이름을 DB 전용 `capabilityVisibility`에 저장한다. Plugin·Skill·Tool(MCP 서버)
+목록마다 최대 500개 이름을 저장하며 환경 변수 fallback이 없다. Sync가 이 설정을 변경하지 않는다.
+[가시성 계약](design/capabilities.md#관리자-사용-설정)을 따른다.
 
 GitHub에 닿지 않는 배포는 `/plugins`에서 checkout의 tar 아카이브를 올린다.
 원격과 업로드 경로는 같은 snapshot·sync 로직을 사용한다. provenance는 설정된 저장소,

@@ -62,14 +62,14 @@ export const skillRepository: SkillRepository = {
     if (names.length === 0) {
       return [];
     }
-    const rows = await sql<{ pk: string; description: string | null }>(
-      "SELECT pk, data->>'description' AS description FROM items WHERE sk = $1 AND pk = ANY($2::text[])",
+    const rows = await sql<{ pk: string; description: string | null; source: string | null }>(
+      "SELECT pk, data->>'description' AS description, data->>'source' AS source FROM items WHERE sk = $1 AND pk = ANY($2::text[])",
       [keys.skill("").SK, names.map((name) => keys.skill(name).PK)],
     );
-    const byPk = new Map(rows.map((row) => [row.pk, row.description ?? ""]));
+    const byPk = new Map(rows.map((row) => [row.pk, row]));
     return names.flatMap((name): SkillDescription[] => {
-      const description = byPk.get(keys.skill(name).PK);
-      return description === undefined ? [] : [{ name, description }];
+      const row = byPk.get(keys.skill(name).PK);
+      return row === undefined ? [] : [{ name, description: row.description ?? "", ...(row.source ? { source: row.source } : {}) }];
     });
   },
 };

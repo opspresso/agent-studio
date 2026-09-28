@@ -1,4 +1,4 @@
-import { managedMcpUseCases } from "@/lib/container";
+import { managedMcpUseCases, mcpUseCases } from "@/lib/container";
 import { withAdminAuth } from "@/lib/session";
 import { apiError, parseName } from "@/app/api/_lib/http";
 import { managedMcpUnavailable } from "../../_unavailable";
@@ -19,6 +19,7 @@ export const POST = withAdminAuth(async (_user, _request: Request, ctx: RouteCon
   }
   const { name } = await ctx.params;
   try {
+    await mcpUseCases.get(parseName(name));
     await managedMcpUseCases.restart(parseName(name));
     // No body: the entry as stored carries encrypted header values, and this is
     // not a read path that masks them.

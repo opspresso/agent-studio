@@ -14,6 +14,7 @@ import { SETTINGS_FIELDS, settingsPatch, type SettingsSection } from "./fields";
 
 export function SettingsForm({ section }: { section: SettingsSection }) {
   const t = useT();
+  const title = t(section === "plugins" ? "settings.plugins.sync" : `settings.tab.${section}`);
   const [view, setView] = useState<SettingsView | null>(null);
   const [values, setValues] = useState<Partial<Record<SettingKey, string>>>({});
   const [loading, setLoading] = useState(true);
@@ -96,7 +97,7 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
 
   if (view === null) {
     return <Stack gap="lg" maw={860}>
-      <SectionHeading title={t(`settings.tab.${section}`)} description={t(`settings.section.${section}`)} />
+      <SectionHeading title={title} description={t(`settings.section.${section}`)} />
       <Alert color="red">{error ?? t("settings.loadFailed")}</Alert>
       <Group><Button variant="default" onClick={() => { setError(null); setLoading(true); setReloadKey(key => key + 1); }}>{t("error.retry")}</Button></Group>
     </Stack>;
@@ -105,7 +106,7 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
   const dirty = Object.keys(settingsPatch(section, values, view)).length > 0;
   const change = (key: SettingKey, value: string) => { setValues(previous => ({ ...previous, [key]: value })); setSaved(false); };
   return <Stack gap="lg" maw={860}>
-    <SectionHeading title={t(`settings.tab.${section}`)} description={t(`settings.section.${section}`)} />
+    <SectionHeading title={title} description={t(`settings.section.${section}`)} />
     {error && <Alert color="red">{error}</Alert>}
     <Card><form onSubmit={save}>
       <Stack renderRoot={props => <fieldset {...props} disabled={saving} />} gap="lg" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>

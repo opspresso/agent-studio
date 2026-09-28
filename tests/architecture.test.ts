@@ -498,6 +498,7 @@ describe("the client bundle", () => {
     expect(entries.length).toBe(123);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/agents/[name]/_components/ModelRoutingEditor.tsx",
+      "src/app/settings/plugins/CapabilityVisibilitySettings.tsx",
       "src/app/models/ModelRoutingPolicyEditor.tsx",
       "src/app/models/ModelRoutingSection.tsx",
       "src/app/chats/_components/PendingApproval.tsx",
@@ -515,7 +516,7 @@ describe("the client bundle", () => {
       "src/app/agents/[name]/integrations/IntegrationHistory.tsx",
       "src/app/models/ModelSelectionSection.tsx",
       "src/app/models/ModelExecutionPolicySection.tsx",
-      "src/app/settings/ModelSettingsNav.tsx",
+      "src/app/settings/SettingsSectionNav.tsx",
       "src/app/settings/SettingsShell.tsx",
       "src/app/settings/SettingsForm.tsx",
       "src/app/agents/[name]/integrations/BotIntegrationSection.tsx",
@@ -523,7 +524,6 @@ describe("the client bundle", () => {
       "src/app/_components/CatalogView.tsx",
       "src/app/_components/SecretInput.tsx",
       "src/app/_components/SecretControl.tsx",
-      "src/app/settings/models/registered/page.tsx",
       "src/app/settings/providers/page.tsx",
       "src/app/settings/models/page.tsx",
       "src/app/settings/model-usage/page.tsx",

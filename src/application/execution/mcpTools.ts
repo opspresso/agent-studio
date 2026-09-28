@@ -236,6 +236,8 @@ export async function buildMcpTools(
   );
   const droppedTools = toolManager.tools.length - capped.length;
   const offered = new Set(capped.map((tool) => tool.function.name));
+  const serverByAlias = new Map([...toolManager.toolNamesByServer].flatMap(([server, names]) =>
+    names.map(name => [name, server] as const)));
   const mcpServers: engine.McpServerInfo[] = [];
   for (const [serverName, toolNames] of toolManager.toolNamesByServer) {
     const visible = toolNames.filter((name) => offered.has(name));
@@ -269,6 +271,10 @@ export async function buildMcpTools(
     callMcpTool: async (name, args) => {
       if (!offered.has(name)) return { text: `Error: '${name}' is not available on this run. At most ` +
         `${MAX_MCP_TOOLS_PER_RUN} MCP tools are offered and this one was past that. Use one of the tools listed for you.` };
+      const server = serverByAlias.get(name);
+      if (!server || !await deps.mcps.get(server)) {
+        return { text: "Error: this MCP server is no longer available." };
+      }
       return toolManager.callTool(name, args);
     },
     close: async () => {

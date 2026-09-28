@@ -1,5 +1,5 @@
-import { SettingsForm } from "../SettingsForm";
+import { CapabilityVisibilitySettings } from "./CapabilityVisibilitySettings";
 
 export default function SettingsPage() {
-  return <SettingsForm section="plugins" />;
+  return <CapabilityVisibilitySettings />;
 }

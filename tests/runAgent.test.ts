@@ -1073,7 +1073,7 @@ describe("executeAgent registry bindings that no longer resolve", () => {
     expect(systemPrompt).toContain("| alive | still here |");
     expect(systemPrompt).not.toContain("deleted");
     // Both bindings asked about together, and neither cost a body.
-    expect(reads.described).toEqual([["alive", "deleted"]]);
+    expect(reads.described).toEqual([["alive", "deleted"], ["alive"]]);
     // Two calls for the same skill, one body read: the loader's cache still holds.
     expect(reads.bodies).toEqual(["alive"]);
     expect(chunks.filter((c) => c.toolResult).map((c) => c.toolResult?.content)).toEqual([

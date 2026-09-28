@@ -47,6 +47,28 @@ sync로 서버 URL이 바뀌면 이전 주소의 header·OAuth를 새 주소로 
 등록 URL에는 수동 등록과 같은 정책을 적용한다.
 저장소별 lease·예약 실행·아카이브 우선권은 [운영](../OPERATIONS.md#plugins-sync-티커)을 따른다.
 
+### 관리자 사용 설정
+
+Settings → Plugins → 사용 설정에서 사용할 Plugin·Skill·Tool(MCP 서버)을 선택한다.
+기본값은 모두 사용이며 체크를 해제한 항목은 일반 목록과 실행에서 제외한다.
+저장은 명시적으로 편집한 항목만 최신 DB 정책에 원자적으로 병합한다. 오래 열린 화면이
+다른 관리자가 바꾼 항목을 재활성화하지 않는다.
+저장소·브랜치·GitHub token은 같은 하위 탭의 동기화 설정에서 관리한다.
+`capabilityVisibility`는 미사용 이름 목록을 배포 설정에 저장하며 sync가 덮어쓰지 않는다. Plugin 미사용은 현재
+`source`가 해당 Plugin인 Skill과 MCP 서버에 상속한다. 개별 사용 설정은 별도로 보존하므로
+Plugin 사용을 다시 켜도 직접 사용을 끈 컴포넌트는 계속 제외된다. 출처가 다른 Plugin으로
+인수된 항목은 새 출처의 정책을 따른다.
+
+관리용 사용 설정 API는 미사용 항목도 이름·설명·부모 Plugin만 반환한다. 일반 목록·상세·설정
+binding 검증·OAuth·실행·preview·자동 recall은 공통 가시성 조회를 사용하며 미사용 항목은
+없는 항목으로 처리한다. Plugin 상세의 컴포넌트 목록도 숨긴 항목을 제외한다. 이미 준비된
+Skill 본문 캐시와 MCP 세션은 도구 호출 직전에 가시성을 다시 확인한다.
+
+Sync는 미사용 항목도 최신 내용으로 갱신하며 orphan 제거 계약을 유지한다. 다음 성공한
+Plugin sync의 재색인은 사용하는 항목만 넣고 기존 미사용 벡터를 제거한다. 사용 재활성화는 즉시
+명시적 binding을 복구하며 검색 벡터는 다음 sync·ticker·수동 재색인에서 다시 넣는다.
+그 사이 남아 있는 벡터도 검색 시 현재 가시성을 확인하여 순위 계산과 결과에서 제외한다.
+
 ## 케이퍼빌리티 카탈로그
 
 `catalog_vectors`는 설치 전역의 Skill·MCP 서버·MCP 도구를 색인한다.
@@ -78,7 +100,7 @@ Embedding 선택 변경은 새 모델로 재색인을 끝까지 수행하고 실
 lease의 generation은 해제 후에도 유지한다. 검색은 시작·vector 조회 후·반환 직전에 generation과
 활성 상태를 비교해 재색인과 겹친 결과를 사용하지 않는다.
 Rerank는 저장 벡터를 바꾸지 않으므로 semantic probe 후 선택만 저장한다.
-Settings → Models → Model usage에서 Embedding의 벡터 점수 하한(`CATALOG_MIN_SCORE`)과
+Settings → Models → 사용 설정에서 Embedding의 벡터 점수 하한(`CATALOG_MIN_SCORE`)과
 Rerank의 relevance 점수 하한(`RERANKER_MIN_SCORE`)을 각각 활성 모델 옆에서 조정한다.
 점수만 바꿀 때는 재색인하지 않는다. Embedding 모델과 점수를 함께 바꾸다 재색인이 실패하면
 두 선택을 이전 값으로 복원한 뒤 이전 모델로 다시 색인한다.

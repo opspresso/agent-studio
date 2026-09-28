@@ -20,6 +20,11 @@ let holdFirstFavoritePatch: boolean;
 let releaseFirstFavoritePatch: (() => void) | undefined;
 let favoritePatchCount: number;
 let failFavoritePatchModel: string | undefined;
+let selfHosted: boolean;
+let holdRegistryRead: boolean;
+let releaseRegistryRead: (() => void) | undefined;
+let noProviders: boolean;
+let failRegistryRead: boolean;
 
 test.beforeAll(async () => {
   discovered = [
@@ -33,7 +38,11 @@ test.beforeAll(async () => {
     { wireId: "constructor", displayName: "Unknown" },
   ];
   const bundle = await build({ entryPoints: ["browser-tests/fixtures/model-selection.tsx"], bundle: true, write: false,
-    outdir: "/tmp/agent-studio-model-fixture", platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' } });
+    outdir: "/tmp/agent-studio-model-fixture", platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
+    plugins: [{ name: "next-navigation", setup(build) {
+      build.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: "navigation", namespace: "next-stub" }));
+      build.onLoad({ filter: /.*/, namespace: "next-stub" }, () => ({ contents: "export const usePathname = () => location.pathname;", loader: "js" }));
+    } }] });
   server = createServer((request, response) => {
     const file = bundle.outputFiles.find(file => request.url === `/${file.path.split("/").at(-1)}`);
     response.setHeader("Content-Type", `${file ? file.path.endsWith(".css") ? "text/css" : "text/javascript" : "text/html"}; charset=utf-8`);
@@ -44,13 +53,15 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 test.beforeEach(async ({ page }) => {
+  page.on("pageerror", error => { throw error; });
   discovered[0] = { ...discovered[0]!, pricing: { inputPer1M: 10, outputPer1M: 20, cachedInputPer1M: 1 } };
   selected = []; saves = []; blockDeletion = false; failDiscovery = false; failFavorites = false; discoveryQueries = []; favorites = [];
   holdFirstFavoritePatch = false; releaseFirstFavoritePatch = undefined; favoritePatchCount = 0;
   failFavoritePatchModel = undefined;
+  selfHosted = false; holdRegistryRead = false; releaseRegistryRead = undefined; noProviders = false; failRegistryRead = false;
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
-    if (path === "/api/settings") return route.fulfill({ json: { llmProviders: { items: [{ name: "fixture", kind: "openrouter" }, { name: "other", kind: "openrouter" }] } } });
+    if (path === "/api/settings") return route.fulfill({ json: { llmProviders: { items: noProviders ? [] : [{ name: "fixture", kind: selfHosted ? "selfhosted" : "openrouter" }, { name: "other", kind: "openrouter" }] } } });
     if (path === "/api/models/discover") {
       discoveryQueries.push(new URL(route.request().url()).search);
       return failDiscovery ? route.fulfill({ status: 502, json: { error: "Provider discovery failed" } }) : route.fulfill({ json: { models: discovered } });
@@ -71,6 +82,7 @@ test.beforeEach(async ({ page }) => {
       return route.fulfill({ json: { models: favorites } });
     }
     if (path === "/api/models/registry") {
+      if (route.request().method() === "GET" && failRegistryRead) return route.fulfill({ status: 503, json: { error: "Registered models unavailable" } });
       if (route.request().method() === "DELETE") {
         if (blockDeletion) return route.fulfill({ status: 409, json: { error: "Change model usage before deleting this model" } });
         const id = new URL(route.request().url()).searchParams.get("id");
@@ -81,8 +93,17 @@ test.beforeEach(async ({ page }) => {
         const model = route.request().postDataJSON() as RegisteredModel;
         saves.push(model); selected = [...selected.filter(item => item.id !== model.id), model];
       }
-      return route.fulfill({ json: { models: selected } });
+      const response = { models: selected.map(model => {
+        const published = discovered.find(candidate => candidate.id === model.id);
+        return published ? { ...model, pricing: published.pricing, pricingSource: "catalog" } : model;
+      }) };
+      if (route.request().method() === "GET" && holdRegistryRead) {
+        holdRegistryRead = false;
+        await new Promise<void>(resolve => { releaseRegistryRead = resolve; });
+      }
+      return route.fulfill({ json: response });
     }
+    if (path === "/api/models/status") return route.fulfill({ json: { available: true } });
     return route.abort();
   });
   await page.goto(base);
@@ -386,7 +407,6 @@ test("a removed provider preference cannot hide the remaining registered models"
 test("editing uses the registration rules without retaining obsolete output types", async ({ page }) => {
   await modelRows(page).filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
   await expect.poll(() => selected.length).toBe(1);
-  await page.goto(`${base}/registered`);
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByRole("dialog").getByRole("textbox", { name: "Name", exact: true }).fill("Edited model");
   await page.getByRole("dialog").getByRole("combobox", { name: "Model type", exact: true }).click();
@@ -395,4 +415,76 @@ test("editing uses the registration rules without retaining obsolete output type
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(selected[0]).toMatchObject({ id: "openrouter/zeta", wireId: "vendor/zeta", displayName: "Edited model", type: "embedding", maxTokens: 0, pricing: { cachedInputPer1M: 1 } });
   expect(selected[0]?.outputModalities).toBeUndefined();
+  await expect(modelRows(page).filter({ hasText: "Edited model" })).toHaveCount(1);
+});
+
+test("manages saved models without discovery and shows the unified Settings navigation", async ({ page }) => {
+  await modelRows(page).filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
+  await expect.poll(() => selected.length).toBe(1);
+  await page.goto(`${base}/settings/models`);
+  const section = page.getByRole("tablist", { name: "Models", exact: true });
+  await expect(section.getByRole("tab")).toHaveCount(3);
+  await expect(section.getByRole("tab", { name: "Model management", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(section.getByRole("tab", { name: "Usage settings", exact: true })).toHaveAttribute("href", "/settings/model-usage");
+  const zeta = modelRows(page).filter({ hasText: "Zeta" });
+  await zeta.getByRole("button", { name: "Check status", exact: true }).click();
+  await expect(zeta.getByRole("status")).toHaveText("Listed");
+  await expect(zeta.getByRole("button", { name: "Edit", exact: true })).toBeEnabled();
+  await expect(zeta.getByRole("button", { name: "Delete", exact: true })).toBeEnabled();
+  await page.screenshot({ path: "/tmp/agent-studio-model-settings-tabs.png", fullPage: true });
+});
+
+test("serializes discovery and registry mutations, including manual registration", async ({ page }) => {
+  await modelRows(page).filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
+  await expect.poll(() => selected.length).toBe(1);
+  selfHosted = true;
+  await page.reload();
+  await page.getByRole("button", { name: "Discover Models", exact: true }).click();
+  await expect(modelRows(page)).toHaveCount(4);
+  await page.getByRole("button", { name: "Register Model", exact: true }).click();
+  await page.getByRole("textbox", { name: "Provider model ID", exact: true }).fill("custom/new");
+  holdRegistryRead = true;
+  await page.getByRole("button", { name: "Discover Models", exact: true }).click();
+  await expect.poll(() => Boolean(releaseRegistryRead)).toBe(true);
+  try {
+    await expect(page.locator("form").getByRole("button", { name: "Add Model", exact: true })).toBeDisabled();
+    const zeta = modelRows(page).filter({ hasText: "Zeta" });
+    for (const name of ["Edit", "Delete", "Check status"]) await expect(zeta.getByRole("button", { name, exact: true })).toBeDisabled();
+    await expect(modelRows(page).filter({ hasText: "Jev" }).getByRole("button", { name: "Add Model", exact: true })).toBeDisabled();
+  } finally { releaseRegistryRead?.(); }
+  await expect(page.locator("form").getByRole("button", { name: "Add Model", exact: true })).toBeEnabled();
+  await page.locator("form").getByRole("button", { name: "Add Model", exact: true }).click();
+  await expect.poll(() => selected.length).toBe(2);
+  await expect(modelRows(page).filter({ hasText: "custom/new" })).toContainText("Selected");
+});
+
+test("keeps saved models manageable when their provider connection is no longer configured", async ({ page }) => {
+  await modelRows(page).filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
+  await expect.poll(() => selected.length).toBe(1);
+  noProviders = true;
+  await page.reload();
+  const zeta = modelRows(page).filter({ hasText: "Zeta" });
+  await expect(zeta).toBeVisible();
+  await expect(page.getByRole("button", { name: "Discover Models", exact: true })).toBeDisabled();
+  await zeta.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
+  await expect.poll(() => selected.length).toBe(0);
+});
+
+test("retains successful provider discovery when the registered-model refresh fails", async ({ page }) => {
+  await modelRows(page).filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
+  await expect.poll(() => selected.length).toBe(1);
+  const previous = discovered;
+  discovered = [...discovered, { wireId: "fresh-model", displayName: "Fresh Model", type: "text" }];
+  failRegistryRead = true;
+  try {
+    await page.getByRole("button", { name: "Discover Models", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText("Registered models unavailable");
+    await expect(modelRows(page).filter({ hasText: "Fresh Model" })).toBeVisible();
+    await expect(modelRows(page)).toHaveCount(5);
+    await modelRows(page).filter({ hasText: "Zeta" }).getByRole("button", { name: "Edit", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  } finally { discovered = previous; }
 });

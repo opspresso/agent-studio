@@ -29,6 +29,7 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
 }));
 import { executeAgent } from "@/application/execution/runAgent";
+import { buildMcpTools } from "@/application/execution/mcpTools";
 import type { ExecutionDeps } from "@/application/execution/runAgent";
 import { encryptHeaderOverrides, encryptHeaders } from "@/infrastructure/crypto/secretEncryption";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
@@ -171,6 +172,21 @@ async function dispatchHeaders(
     vi.unstubAllGlobals();
   }
 }
+
+it("rechecks registry access before calling a tool from an already opened session", async () => {
+  const seen = stubMcpServer();
+  const deps = depsFixture(new FakeChannel([]));
+  const resolved = await buildMcpTools(deps, configurationFixture("agent", [{ name: registryServer.name }]));
+  try {
+    expect(resolved.mcpTools.map(tool => tool.function.name)).toContain("search");
+    const before = seen.length;
+    deps.mcps.get = async () => null;
+    expect(await resolved.callMcpTool?.("search", {})).toEqual({ text: "Error: this MCP server is no longer available." });
+    expect(seen).toHaveLength(before);
+  } finally {
+    await resolved.close?.();
+  }
+});
 
 beforeEach(() => {
   entropy.sequence = 0;
