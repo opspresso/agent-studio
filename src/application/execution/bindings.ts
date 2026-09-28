@@ -32,10 +32,11 @@ export type SkillReader = (name: string) => Promise<Skill | null>;
 
 export function createSkillReader(deps: Pick<ExecutionDeps, "skills">): SkillReader {
   const cache = new Map<string, Promise<Skill | null>>();
-  return (name) => {
+  return async (name) => {
     const hit = cache.get(name);
     if (hit) {
-      return hit;
+      // Recheck the small projection so a cached body cannot bypass an administrator's hide action.
+      return (await deps.skills.describe([name])).length > 0 ? hit : null;
     }
     const pending = deps.skills.get(name);
     cache.set(name, pending);

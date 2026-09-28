@@ -15,6 +15,7 @@ export const GET = withAdminAuth(async (_user, _request: Request, ctx: RouteCont
   }
   const { name } = await ctx.params;
   try {
+    await mcpUseCases.get(parseName(name));
     return Response.json(await managedMcpUseCases.status(parseName(name)));
   } catch (error) {
     return apiError(error);
@@ -36,11 +37,12 @@ export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteConte
   }
   const { name } = await ctx.params;
   try {
+    const existing = await mcpUseCases.get(parseName(name));
     // A synced managed entry splits ownership: the repo owns the document
     // fields, this console owns the workload (image, ports, env) and the
     // credentials. Only the former are refused.
     if (parsed.data.description !== undefined || parsed.data.content !== undefined) {
-      const refused = repoOwnedRefusal(await mcpUseCases.get(parseName(name)), REPO_OWNED.edit);
+      const refused = repoOwnedRefusal(existing, REPO_OWNED.edit);
       if (refused) {
         return refused;
       }

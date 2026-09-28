@@ -126,6 +126,7 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/skills/{name}`, `/api/mcps/{name}` | `GET` `PUT` `DELETE` | member / admin |
 | `/api/plugins` | `GET` | member |
 | `/api/plugins/{name}` | `GET` | member |
+| `/api/settings/plugins/visibility` | `GET` `PUT` | admin |
 | `/api/plugins/sync` | `GET` `POST` | member / admin |
 | `/api/plugins/sync/upload` | `POST` | admin |
 | `/api/mcps/{name}/tools` | `POST` | member |
@@ -732,6 +733,18 @@ Git 동작은 `commit`, `commit-and-push`, `push`, `pull-request`(`draft` 선택
 ## 레지스트리·연동 오퍼레이션
 
 이 엔드포인트들은 리소스 CRUD 외에 콘솔의 운영 행동을 뒷받침한다:
+
+`GET /api/settings/plugins/visibility`는 숨긴 항목을 포함하는 관리자 전용 목록을 반환한다.
+응답은 `{ hidden: { plugins: string[], skills: string[], tools: string[] }, plugins, skills, tools }`이며
+각 목록 항목은 `{ name, description, plugin? }`이다. `tools`는 MCP 서버이며 URL·credential·본문은
+포함하지 않는다. `PUT`은 `{ plugins: string[], skills: string[], tools: string[] }`를 받아 숨김
+목록 전체를 교체하고 같은 view를 반환한다. 목록별 최대 500개이며 이름 규칙을 검증하고
+중복을 제거한다. 설치되지 않은 이름도 유지하여 sync로 재등장해도 정책이 적용된다.
+저장 시 `settings.update` 감사를 남기며 재색인을 즉시 실행하지 않는다.
+
+일반 Plugin·Skill·MCP 목록과 상세는 관리자에게도 숨긴 항목을 표시하지 않는다(직접 조회는 404).
+Plugin 숨김 상속·실행 차단과 sync 후 벡터 반영은
+[케이퍼빌리티 설계](design/capabilities.md#관리자-숨김)를 따른다.
 
 ```
 GET  /api/plugins

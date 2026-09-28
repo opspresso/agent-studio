@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NotFoundError } from "@/application/errors";
 
 /**
  * The console's refusal to mutate repo-owned entries (`repoOwnedRefusal`,
@@ -10,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { skillUseCases, mcpUseCases, managedMcpUseCases } = vi.hoisted(() => ({
   skillUseCases: { get: vi.fn(), update: vi.fn(), remove: vi.fn() },
   mcpUseCases: { get: vi.fn(), update: vi.fn(), remove: vi.fn() },
-  managedMcpUseCases: { update: vi.fn(), remove: vi.fn(), status: vi.fn() },
+  managedMcpUseCases: { update: vi.fn(), remove: vi.fn(), status: vi.fn(), restart: vi.fn() },
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -28,6 +29,7 @@ vi.mock("@/lib/container", () => ({ skillUseCases, mcpUseCases, managedMcpUseCas
 const skillsRoute = await import("@/app/api/skills/[name]/route");
 const mcpsRoute = await import("@/app/api/mcps/[name]/route");
 const managedRoute = await import("@/app/api/mcps/managed/[name]/route");
+const restartRoute = await import("@/app/api/mcps/managed/[name]/restart/route");
 
 const SOURCE = "github:opspresso/agent-plugins#devops";
 
@@ -38,6 +40,7 @@ const del = new Request("https://studio.example.com/api/x", { method: "DELETE" }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mcpUseCases.get.mockResolvedValue({ name: "memory", source: SOURCE, runtime: "managed" });
   skillUseCases.update.mockResolvedValue({ name: "s" });
   mcpUseCases.update.mockResolvedValue({ name: "m" });
   managedMcpUseCases.update.mockResolvedValue({ name: "m" });
@@ -114,7 +117,7 @@ describe("managed mcps — the console keeps the workload, the repo keeps the do
   it("lets a workload-only patch through", async () => {
     const res = await managedRoute.PUT(req({ image: "ghcr.io/x/y:2" }), ctx("memory"));
     expect(res.status).toBe(200);
-    expect(mcpUseCases.get).not.toHaveBeenCalled();
+    expect(mcpUseCases.get).toHaveBeenCalledWith("memory");
     expect(managedMcpUseCases.update).toHaveBeenCalledWith("memory", { image: "ghcr.io/x/y:2" });
   });
 
@@ -123,5 +126,15 @@ describe("managed mcps — the console keeps the workload, the repo keeps the do
     const res = await managedRoute.DELETE(del, ctx("memory"));
     expect(res.status).toBe(403);
     expect(managedMcpUseCases.remove).not.toHaveBeenCalled();
+  });
+
+  it("refuses direct status, workload edits and restart when the registry hides the server", async () => {
+    mcpUseCases.get.mockRejectedValue(new NotFoundError("MCP server not found: memory"));
+    expect((await managedRoute.GET(req({}), ctx("memory"))).status).toBe(404);
+    expect((await managedRoute.PUT(req({ image: "ghcr.io/x/y:2" }), ctx("memory"))).status).toBe(404);
+    expect((await restartRoute.POST(req({}), ctx("memory"))).status).toBe(404);
+    expect(managedMcpUseCases.status).not.toHaveBeenCalled();
+    expect(managedMcpUseCases.update).not.toHaveBeenCalled();
+    expect(managedMcpUseCases.restart).not.toHaveBeenCalled();
   });
 });

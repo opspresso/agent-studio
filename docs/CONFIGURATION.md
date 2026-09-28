@@ -263,6 +263,10 @@ Docker 를 호출하기 직전에만 0600 임시 env file 로 복호화된다. �
 | `GITHUB_API_URL` | `https://api.github.com` | — | GitHub REST API 가 답하는 곳. GitHub Enterprise Server 나 미러라면 `https://<host>/api/v3`. 끝의 슬래시는 떼어 낸다. |
 | `GITHUB_WEB_URL` | public GitHub 또는 표준 GHES API 주소에서 도출 | — | plugin 상세의 repository·commit 링크가 향하는 web base. API mirror나 비표준 경로처럼 도출할 수 없으면 명시하라. 없고 도출할 수도 없으면 잘못된 링크를 만드는 대신 텍스트만 표시한다. |
 
+Settings → Plugins의 숨김 목록은 DB 전용 `capabilityVisibility` 설정이다. Plugin·Skill·Tool(MCP 서버)
+목록마다 최대 500개 이름을 저장하며 환경 변수 fallback이 없다. Sync가 이 설정을 변경하지 않는다.
+[가시성 계약](design/capabilities.md#관리자-숨김)을 따른다.
+
 GitHub에 닿지 않는 배포는 `/plugins`에서 checkout의 tar 아카이브를 올린다.
 원격과 업로드 경로는 같은 snapshot·sync 로직을 사용한다. provenance는 설정된 저장소,
 없으면 `archive`로 기록한다. 아카이브 sync에는 GitHub token이 필요 없다.

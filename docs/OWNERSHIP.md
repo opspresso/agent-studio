@@ -135,6 +135,7 @@
 | 모든 행 키 문자열. 아이템 테이블의 `PK`/`SK`/GSI 주소 (파티션 키 전부, 그리고 어댑터 밖으로 나가지 않는 정렬 키. 아티팩트 목록의 정렬 키만 예외, 위 `artifactCursor`) | `src/infrastructure/db/keys.ts` | 코드 |
 | tool 의 파일이 실려 다니는 이름과 media type | `src/infrastructure/mcp/toolManager.ts` 의 `safeFileName`/`baseMediaType` | 코드 |
 | 저장소 트리 하나를 plugins 스냅샷으로. 어느 디렉터리가 plugin·skill·확장 문서인가 | `src/infrastructure/plugin/snapshot.ts` 의 `collectRepoPlugins`. GitHub 클라이언트와 업로드 아카이브는 파일을 어떻게 나열하고 읽는지만 건넨다 | 코드 |
+| Plugin·Skill·Tool 숨김과 부모 Plugin 상속 | `src/domain/plugin/visibility.ts`의 `isCapabilityVisible`. `application/plugin/capabilityVisibility.ts`가 설정 저장과 가시성 조회를 제공하고 sync는 원본 저장소를 사용한다 | 코드·회귀 테스트 |
 | 사용자 이미지의 상한 | `src/domain/llm/imageLimits.ts` | 코드 |
 | inline payload의 base64 문법과 decoded byte 길이 계산 | `src/domain/llm/base64.ts`. 이미지 data URL과 일반 첨부가 같은 판정을 읽는다 | 코드 |
 | `data:` 이미지 인코딩 | `src/domain/llm/imageLimits.ts`의 `imageDataUrl` / `parseImageDataUrl`; `types.ts`가 재노출한다 | 코드 |

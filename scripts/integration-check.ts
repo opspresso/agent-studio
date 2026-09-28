@@ -314,6 +314,7 @@ async function main() {
       name: "integration-skill",
       description: "Integration testing behavior",
       content: "# Skill\nAlways answer concisely.",
+      source: "github:integration/plugins#integration",
       createdAt: now,
       updatedAt: now,
     });
@@ -326,7 +327,7 @@ async function main() {
     const described = await skillRepository.describe(["integration-skill", "no-such-skill"]);
     assert.deepStrictEqual(
       described,
-      [{ name: "integration-skill", description: "Integration testing behavior" }],
+      [{ name: "integration-skill", description: "Integration testing behavior", source: "github:integration/plugins#integration" }],
       "skill describe returns the description and omits what is not there",
     );
     pass("skill describe projected SQL read");

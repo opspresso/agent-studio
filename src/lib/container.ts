@@ -131,6 +131,7 @@ import { createMcpAuthUseCases } from "@/application/mcp/mcpAuthUseCases";
 import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
 import { createSkillUseCases } from "@/application/skill/skillUseCases";
 import { createPluginUseCases } from "@/application/plugin/pluginUseCases";
+import { createCapabilityVisibility } from "@/application/plugin/capabilityVisibility";
 import { syncPluginsFromSnapshot } from "@/application/plugin/syncPlugins";
 import { findRegistryBindings } from "@/application/plugin/bindingIndex";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
@@ -399,12 +400,19 @@ export { agentRepository };
  * factory; the instance is composed here so a repository or port implementation
  * has exactly one wiring site.
  */
-export const mcpUseCases = createMcpUseCases(
+const capabilityAccess = createCapabilityVisibility({
+  settings: settingsRepository, plugins: pluginRepository, skills: skillRepository, mcps: mcpRepository,
+});
+export const capabilityVisibilityUseCases = { getView: capabilityAccess.getView, update: capabilityAccess.update };
+const syncMcpUseCases = createMcpUseCases(
   mcpRepository,
   secretCipher,
   urlPolicy,
   mcpToolProbe,
   config.mcpInternalHostSuffixes,
+);
+export const mcpUseCases = createMcpUseCases(
+  capabilityAccess.mcps, secretCipher, urlPolicy, mcpToolProbe, config.mcpInternalHostSuffixes,
 );
 
 /**
@@ -436,7 +444,7 @@ const mcpAuthProvider = createMcpAuthProvider({
 });
 export const mcpAuthUseCases = createMcpAuthUseCases({
   serviceName: async () => (await getServiceBranding()).name,
-  mcps: mcpRepository,
+  mcps: capabilityAccess.mcps,
   agents: agentRepository,
   connections: mcpConnectionRepository,
   states: mcpOAuthStateRepository,
@@ -450,7 +458,8 @@ export const mcpAuthUseCases = createMcpAuthUseCases({
   internalHostSuffixes: config.mcpInternalHostSuffixes,
   allowUnadvertisedPkce: config.mcpOauthAllowUnadvertisedPkce,
 });
-export const skillUseCases = createSkillUseCases(skillRepository);
+const syncSkillUseCases = createSkillUseCases(skillRepository);
+export const skillUseCases = createSkillUseCases(capabilityAccess.skills);
 
 /**
  * The capability catalog, when this deployment turned it on. Undefined where
@@ -466,8 +475,9 @@ export const skillUseCases = createSkillUseCases(skillRepository);
  */
 export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = config.catalogEnabled
   ? {
-      skills: skillRepository,
-      mcps: mcpRepository,
+      skills: capabilityAccess.skills,
+      mcps: capabilityAccess.mcps,
+      filterEntries: capabilityAccess.filterCatalogEntries,
       // The console's "test connection" probe, which already answers exactly
       // this question. A server that refuses is not an error here — it is
       // indexed at server level and reported as undiscovered.
@@ -521,7 +531,8 @@ export async function sweepExpiredRows(now: Date = new Date()): Promise<number> 
   const runtime = await runtimeSessionRepository.sweepExpired(now);
   return items + sessions + runtime;
 }
-export const pluginUseCases = createPluginUseCases(pluginRepository);
+const syncPluginUseCases = createPluginUseCases(pluginRepository);
+export const pluginUseCases = createPluginUseCases(capabilityAccess.plugins);
 /**
  * The agent slice, composed once so routes receive bound use cases rather
  * than importing a repository and choosing dependencies themselves.
@@ -605,10 +616,10 @@ const runPluginSync = async (
     const result = await syncPluginsFromSnapshot(
       {
         plugins: pluginRepository,
-        pluginRows: pluginUseCases,
+        pluginRows: syncPluginUseCases,
         skillRepo: skillRepository,
-        skills: skillUseCases,
-        mcps: mcpUseCases,
+        skills: syncSkillUseCases,
+        mcps: syncMcpUseCases,
         ...(managedMcpUseCases ? { managedMcps: managedMcpUseCases } : {}),
         findBindings: (skills, mcpServers) =>
           findRegistryBindings(
@@ -829,8 +840,8 @@ export const usageUseCases = createUsageUseCases({
  * Module-local so presentation modules cannot choose repository dependencies.
  */
 const configurationRefRepos = {
-  skills: skillRepository,
-  mcps: mcpRepository,
+  skills: capabilityAccess.skills,
+  mcps: capabilityAccess.mcps,
   agents: agentRepository,
 };
 
@@ -962,8 +973,8 @@ export const executionDeps: ExecutionDeps = {
   runtimeSessions: runtimeSessions,
   agents: agentRepository,
 
-  skills: skillRepository,
-  mcps: mcpRepository,
+  skills: capabilityAccess.skills,
+  mcps: capabilityAccess.mcps,
   usage: usageRepository,
   channel: agentModels,
   callRouting: {

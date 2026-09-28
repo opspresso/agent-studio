@@ -21,7 +21,7 @@ export function fakeSkillRepository(
       // `name` has drifted from its key is still the skill that was asked for.
       return names.flatMap((name, index) => {
         const skill = found[index];
-        return skill ? [{ name, description: skill.description }] : [];
+        return skill ? [{ name, description: skill.description, ...(skill.source ? { source: skill.source } : {}) }] : [];
       });
     },
     list: unused,

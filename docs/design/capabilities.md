@@ -47,6 +47,24 @@ sync로 서버 URL이 바뀌면 이전 주소의 header·OAuth를 새 주소로 
 등록 URL에는 수동 등록과 같은 정책을 적용한다.
 저장소별 lease·예약 실행·아카이브 우선권은 [운영](../OPERATIONS.md#plugins-sync-티커)을 따른다.
 
+### 관리자 숨김
+
+Settings → Plugins에서 Plugin·Skill·Tool(MCP 서버)의 숨김 목록을 관리한다.
+`capabilityVisibility`는 배포 설정에 저장하며 sync가 덮어쓰지 않는다. Plugin 숨김은 현재
+`source`가 해당 Plugin인 Skill과 MCP 서버에 상속한다. 개별 숨김은 별도로 보존하므로
+Plugin 숨김을 해제해도 직접 숨긴 컴포넌트는 계속 숨겨진다. 출처가 다른 Plugin으로
+인수된 항목은 새 출처의 정책을 따른다.
+
+관리용 숨김 설정 API는 숨긴 항목도 이름·설명·부모 Plugin만 반환한다. 일반 목록·상세·설정
+binding 검증·OAuth·실행·preview·자동 recall은 공통 가시성 조회를 사용하며 숨긴 항목은
+없는 항목으로 처리한다. Plugin 상세의 컴포넌트 목록도 숨긴 항목을 제외한다. 이미 준비된
+Skill 본문 캐시와 MCP 세션은 도구 호출 직전에 가시성을 다시 확인한다.
+
+Sync는 숨긴 항목도 최신 내용으로 갱신하며 orphan 제거 계약을 유지한다. 다음 성공한
+Plugin sync의 재색인은 보이는 항목만 넣고 기존 숨김 벡터를 제거한다. 숨김 해제는 즉시
+명시적 binding을 복구하며 검색 벡터는 다음 sync·ticker·수동 재색인에서 다시 넣는다.
+그 사이 남아 있는 벡터도 검색 시 현재 가시성을 확인하여 순위 계산과 결과에서 제외한다.
+
 ## 케이퍼빌리티 카탈로그
 
 `catalog_vectors`는 설치 전역의 Skill·MCP 서버·MCP 도구를 색인한다.

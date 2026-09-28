@@ -4,6 +4,8 @@ import type { Skill } from "./types";
 export interface SkillDescription {
   name: string;
   description: string;
+  /** Plugin provenance, used to enforce inherited visibility without loading the body. */
+  source?: string;
 }
 
 export interface SkillRepository {
