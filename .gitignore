@@ -1,3 +1,9 @@
+# misc
+.DS_Store
+*.pem
+*.tsbuildinfo
+next-env.d.ts
+
 # dependencies
 node_modules/
 .pnpm-store/
@@ -17,12 +23,6 @@ build/
 
 # Local kubeconfig; credentials are covered by the env rules above.
 deploy/idc/kubeconfig
-
-# misc
-.DS_Store
-*.pem
-*.tsbuildinfo
-next-env.d.ts
 
 # testing
 coverage/
