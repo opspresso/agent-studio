@@ -65,7 +65,6 @@ describe("Workspace runtime model selection", () => {
     await api.select("codex", openai.id, "admin@test");
     vi.stubEnv("LLM_PROVIDER_OPENAI_BASE_URL", channels[0]!.baseUrl);
     vi.stubEnv("LLM_PROVIDER_OPENAI_API_KEY", "test-key");
-    vi.stubEnv("LLM_PROVIDER_OPENAI_KEEP_MODEL_PREFIX", "true");
     expect(await getWorkspaceRuntimeConfig("codex")).toMatchObject({ model: openai.id, environment: { CODEX_API_KEY: "test-key", OPENAI_BASE_URL: channels[0]!.baseUrl } });
     vi.stubEnv("LLM_PROVIDER_OPENAI_API_KEY", "");
     expect(await getWorkspaceRuntimeConfig("codex")).toBeUndefined();
