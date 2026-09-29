@@ -1637,8 +1637,8 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 | API | 계약 |
 |---|---|
 | `GET /api/models/discover?provider=<name>` | 등록한 공개 Provider의 모델을 `models.opspresso.com/models.json`에서 조회한다. 실패·폐쇄망에서는 내장 스냅샷을 사용한다. `selfhosted`는 해당 내부 연결의 목록을 조회한다. `{ models: [{ id?, wireId, displayName, family?, maker?, type?, inputModalities?, outputModalities?, contextWindow?, maxTokens?, capabilities?, pricing? }] }`. 공개 모델의 `id`는 API의 키다. 조회는 모델을 활성화하지 않는다 |
-| `GET /api/models/registry` | `{ models: RegisteredModelView[] }`. 관리자가 선택하거나 직접 등록한 모델만 반환한다. 공개 가격이 적용되면 현재 가격과 `pricingSource: "catalog"`를 표시한다 |
-| `POST /api/models/registry` | `{ id, provider, wireId, displayName, family?, maker?, type, inputModalities?, outputModalities?, contextWindow, maxTokens, capabilities, pricing? }`를 저장하고 갱신된 목록을 반환한다. 공개 모델의 `id`는 models API의 키와 일치해야 하고 `wireId`는 실제 전송 ID다. 내부 모델 ID는 `provider/wireId`다. 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decision`이다 |
+| `GET /api/models/registry` | `{ models: RegisteredModelView[] }`. 관리자가 선택하거나 직접 등록한 모델만 반환한다. 공개 가격이 적용되면 현재 가격과 `pricingSource: "catalog"`를 표시한다. `selfhosted`는 관리자가 저장한 요율을 반환하며 가격이 없으면 모든 과금 단위의 기본 요율 0을 적용한다 |
+| `POST /api/models/registry` | `{ id, provider, wireId, displayName, family?, maker?, type, inputModalities?, outputModalities?, contextWindow, maxTokens, capabilities, pricing? }`를 저장하고 갱신된 목록을 반환한다. 공개 모델의 `id`는 models API의 키와 일치해야 하고 `wireId`는 실제 전송 ID다. 내부 모델 ID는 `provider/모델명`이며 모델명은 `wireId`의 마지막 `/` 뒤 부분이다. 내부 모델의 같은 ID에 다른 `wireId`를 등록하면 409다. 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decision`이다 |
 | `DELETE /api/models/registry?id=<id>` | 미사용 모델을 삭제한다. 성공 204, 현재 기본·결정·검색·Workspace·전역 라우팅 tier에서 사용하면 409 |
 | `GET /api/models/status?id=<id>` | 등록 모델이 공개 카탈로그 또는 내부 `selfhosted` 목록에 있는지 `{ available }`로 반환한다. 실제 추론 성공을 뜻하지 않는다 |
 | `GET /api/models/default` | `{ model: string | null }` |
@@ -1676,6 +1676,8 @@ Agent의 모델 설정을 자동 변경하지 않는다. 입력 중인 요청과
 거쳐 선택한 provider로 전달된다.
 
 등록 모델은 최대 500개다. 가격 미제공은 `pricingKnown: false`로 표시하며 명시적 0과 구별한다.
+`selfhosted` 모델은 가격이 없으면 모든 과금 단위의 기본 요율 0을 적용하고 `pricingKnown: true`로
+처리한다. 관리 화면에서 요율을 수정할 수 있으며 저장한 요율이 조회·실행·비용 계산에 우선 적용된다.
 모델 선택기는 표시 이름·등록 ID·provider·유형별 가격을 공통으로 보여준다. 개인 즐겨찾기는
 `/models`에서 변경하며, 선택기에서는 provider 그룹보다 먼저 표시한다.
 선택 옵션 응답에서는 개인 즐겨찾기 조회가 실패해도 모델 목록을 반환하며 `favorite: false`로 표시한다.

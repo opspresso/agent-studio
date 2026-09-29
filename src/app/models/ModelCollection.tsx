@@ -9,7 +9,7 @@ import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView
 import { formatModelPrice, modelPriceLabel } from "@/app/_components/modelOptions";
 import { useT } from "@/app/_i18n/provider";
 import { contextWindowLabel } from "@/domain/llm/models";
-import { REGISTRY_MODEL_TYPES } from "@/domain/llm/providerModels";
+import { REGISTRY_MODEL_TYPES, registeredModelId } from "@/domain/llm/providerModels";
 import { activeModelProvider, DEFAULT_MODEL_BROWSER_STATE, MODEL_BROWSER_KEYS, MODEL_FILTER_CAPABILITIES, deserializeModelBrowserState, filterModelRows, modelOutputTypes, nextSort, type ModelBrowserState, type ModelRow } from "./modelTable";
 import classes from "./ModelCollection.module.css";
 import layout from "@/app/_components/CatalogLayout.module.css";
@@ -79,7 +79,7 @@ export function ModelCollection<T extends ModelRow>({ models, provider, emptyTex
                 <Text fw={650} className={classes.identityName}>{model.displayName}</Text>
                 {renderTitleAction?.(model)}
               </div>
-              <Text className={classes.modelId} ff="monospace">{model.id ?? model.wireId}</Text>
+              <Text className={classes.modelId} ff="monospace">{model.id ?? (provider ? registeredModelId(provider, model.wireId) : model.wireId)}</Text>
               <Group gap={5} mt={8}>
                 {(model.provider || provider) && <Badge color="gray">{model.provider || provider}</Badge>}
                 {modelOutputTypes(model).length ? modelOutputTypes(model).map(type => <Badge key={type} color="gray">

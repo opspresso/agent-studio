@@ -18,6 +18,7 @@ export function ModelEditor({ model, onSaved, onCancel }: {
   const [priced, setPriced] = useState(model.pricing !== undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const pricingLocked = model.pricingSource === "catalog";
   async function save() {
     if (busy) return;
     setBusy(true); setError(undefined);
@@ -47,17 +48,17 @@ export function ModelEditor({ model, onSaved, onCancel }: {
     <Checkbox label={t("modelAdmin.reasoningWithTools")} checked={form.capabilities.reasoningWithTools} disabled={busy}
       onChange={event => setForm({ ...form, capabilities: { ...form.capabilities, reasoningWithTools: event.currentTarget.checked } })} />
     {model.pricingSource === "catalog" && <Text size="xs" c="dimmed">{t("modelAdmin.catalogPrice")}</Text>}
-    <Checkbox label={t("modelAdmin.priced")} checked={priced} disabled={busy || model.pricingSource === "catalog"} onChange={event => setPriced(event.currentTarget.checked)} />
+    <Checkbox label={t("modelAdmin.priced")} checked={priced} disabled={busy || pricingLocked} onChange={event => setPriced(event.currentTarget.checked)} />
     {priced && <SimpleGrid cols={2}>
-      <NumberInput label={t("modelAdmin.inputPrice")} description={t("modelAdmin.price")} value={form.pricing.inputPer1M} min={0} disabled={busy || model.pricingSource === "catalog"} onChange={value => setForm({ ...form, pricing: { ...form.pricing, inputPer1M: Number(value) } })} />
-      <NumberInput label={t("modelAdmin.outputPrice")} description={t("modelAdmin.price")} value={form.pricing.outputPer1M} min={0} disabled={busy || model.pricingSource === "catalog"} onChange={value => setForm({ ...form, pricing: { ...form.pricing, outputPer1M: Number(value) } })} />
+      <NumberInput label={t("modelAdmin.inputPrice")} description={t("modelAdmin.price")} value={form.pricing.inputPer1M} min={0} disabled={busy || pricingLocked} onChange={value => setForm({ ...form, pricing: { ...form.pricing, inputPer1M: Number(value) } })} />
+      <NumberInput label={t("modelAdmin.outputPrice")} description={t("modelAdmin.price")} value={form.pricing.outputPer1M} min={0} disabled={busy || pricingLocked} onChange={value => setForm({ ...form, pricing: { ...form.pricing, outputPer1M: Number(value) } })} />
     </SimpleGrid>}
     {priced && ([
       ["transcription", "perAudioMinute", "modelAdmin.perMinute"],
       ["image", "perImage", "modelAdmin.perImage"],
       ["rerank", "perSearch", "modelAdmin.perSearch"],
     ] as const).filter(([type]) => type === form.type).map(([, key, label]) => <NumberInput key={key}
-      label={t(label)} value={form.pricing[key] ?? ""} min={0} disabled={busy || model.pricingSource === "catalog"}
+      label={t(label)} value={form.pricing[key] ?? ""} min={0} disabled={busy || pricingLocked}
       onChange={value => setForm({ ...form, pricing: { ...form.pricing, [key]: value === "" ? undefined : Number(value) } })} />)}
   </FormModal>;
 }

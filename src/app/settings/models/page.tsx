@@ -11,7 +11,7 @@ import { readJson } from "@/app/_lib/httpClient";
 import { ModelCollection } from "@/app/models/ModelCollection";
 import { ModelEditor } from "@/app/models/ModelEditor";
 import { MODEL_BROWSER_KEYS, deserializeModelProvider } from "@/app/models/modelTable";
-import { REGISTRY_MODEL_TYPES, providerKind, registrationFromDiscovery, type DiscoveredModel, type RegisteredModel, type RegistryModelType } from "@/domain/llm/providerModels";
+import { REGISTRY_MODEL_TYPES, providerKind, registeredModelId, registrationFromDiscovery, type DiscoveredModel, type RegisteredModel, type RegistryModelType } from "@/domain/llm/providerModels";
 import type { SettingsView } from "@/application/settings/settingsUseCases";
 import type { RegisteredModelView } from "@/application/llm/modelRegistry";
 import { checkRegisteredModel, deleteRegisteredModel, discoverProviderModels, listRegisteredModels, saveRegisteredModel } from "@/app/models/api";
@@ -102,11 +102,11 @@ export default function ModelManagementPage() {
   }
   const selectedModels = registered.filter(model => model.provider === provider);
   const selectedById = new Map(selectedModels.map(model => [model.id, model]));
-  const selected = new Set(selectedById.keys());
-  const identity = (model: DiscoveredModel) => model.id ?? `${provider}/${model.wireId}`;
+  const identity = (model: DiscoveredModel) => model.id ?? registeredModelId(provider ?? "", model.wireId);
+  const isSelected = (model: DiscoveredModel) => selectedById.get(identity(model))?.wireId === model.wireId;
   const catalogRows: DiscoveredModel[] = [
-    ...(models ?? []).map(model => selectedById.get(identity(model)) ?? model),
-    ...selectedModels.filter(model => !models?.some(item => identity(item) === model.id)),
+    ...(models ?? []).map(model => isSelected(model) ? selectedById.get(identity(model))! : model),
+    ...selectedModels.filter(model => !models?.some(item => identity(item) === model.id && item.wireId === model.wireId)),
   ];
   const types = REGISTRY_MODEL_TYPES.map(value => ({ value, label: t(`models.type.${value}`) }));
   return <Stack gap="lg">
@@ -137,8 +137,8 @@ export default function ModelManagementPage() {
       <>
         <Text size="xs" c="dimmed">{t("modelAdmin.factsHint")}</Text>
         <ModelCollection scope="discovery" models={catalogRows} provider={provider ?? undefined} emptyText={t(models ? "modelAdmin.discoveryEmpty" : "modelAdmin.discoverHint")}
-          isSelected={model => selected.has(identity(model))}
-          renderActions={model => selected.has(identity(model)) ? <>
+          isSelected={isSelected}
+          renderActions={model => isSelected(model) ? <>
             {statuses[identity(model)] && <Text size="xs" role="status" w="100%">{statuses[identity(model)]}</Text>}
             <Badge color="teal">{t("modelAdmin.enabled")}</Badge>
             <Button variant="default" disabled={pending} loading={checking === identity(model)}

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createModelRegistryUseCases } from "@/application/llm/modelRegistry";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
-import { registeredModelConfig, registeredModelProblem, registrationFromDiscovery, type RegisteredModel } from "@/domain/llm/providerModels";
-import { modelType } from "@/domain/llm/models";
+import { registeredModelConfig, registeredModelId, registeredModelProblem, registrationFromDiscovery, type RegisteredModel } from "@/domain/llm/providerModels";
+import { modelType, replaceModelRegistry, DEFAULT_SELF_HOSTED_MODEL_PRICING } from "@/domain/llm/models";
+import { resolveProviderTarget } from "@/infrastructure/llm/providers";
 import { DEFAULT_CALL_ROUTING_POLICY } from "@/domain/llm/callRouting";
 import type { FakeStore } from "./fakeStore";
 
@@ -20,7 +21,7 @@ function setup(catalogPricing: () => { inputPer1M: number; outputPer1M: number }
   const useCases = createModelRegistryUseCases({
     repository: settingsRepository, discovery, changed,
     providers: async () => [{ name: "openai", baseUrl: "https://provider.test/v1", apiKey: "secret", auth: "bearer", keepModelPrefix: false }],
-    catalogModelId: (provider, wireId) => `${provider.name}/${wireId}`,
+    catalogModelId: (provider, wireId) => registeredModelId(provider.name, wireId),
     catalogPricing,
   });
   return { useCases, discovery, changed };
@@ -108,6 +109,8 @@ describe("deployment model registry", () => {
     expect(registeredModelConfig(selected, "openrouter").family).toBe("gpt-6-sol");
     await expect(useCases.save({ ...selected, id: `${connection.name}/${wireId}` }, "admin@example.test"))
       .rejects.toThrow("Invalid registered model ID");
+    await useCases.save({ ...selected, wireId: "openai/gpt-6-sol-v2" }, "admin@example.test");
+    expect((await useCases.list())[0]).toMatchObject({ id: catalogId, wireId: "openai/gpt-6-sol-v2" });
   });
 
   it("refuses public models absent from the published catalog", async () => {
@@ -117,6 +120,40 @@ describe("deployment model registry", () => {
       catalogModelId: () => undefined, catalogPricing: () => undefined,
     });
     await expect(useCases.save(model, "admin@example.test")).rejects.toThrow("not in the published catalog");
+  });
+
+  it("registers self-hosted models as provider/model while preserving their native dispatch IDs", async () => {
+    const connection = { name: "selfhosted", kind: "selfhosted" as const, baseUrl: "http://inside.test/v1", apiKey: "", auth: "bearer" as const, keepModelPrefix: false };
+    const useCases = createModelRegistryUseCases({
+      repository: settingsRepository, discovery: { list: async () => [] }, changed: async () => {},
+      providers: async () => [connection], catalogModelId: () => undefined, catalogPricing: () => undefined,
+    });
+    const wireId = "nvidia/Qwen3.6-35B-A3B-NVFP4";
+    const selected = registrationFromDiscovery(connection.name, { wireId, displayName: wireId, type: "text", capabilities: { tools: true } });
+    expect(selected).toMatchObject({ id: "selfhosted/Qwen3.6-35B-A3B-NVFP4", displayName: "Qwen3.6-35B-A3B-NVFP4", wireId });
+    await useCases.save(selected, "admin@example.test");
+    await useCases.selectDefault(selected.id, "admin@example.test");
+    const [stored] = await useCases.list();
+    expect(stored).toEqual({ ...selected, pricing: DEFAULT_SELF_HOSTED_MODEL_PRICING });
+    replaceModelRegistry([registeredModelConfig(stored!, "selfhosted")]);
+    expect(resolveProviderTarget(selected.id, [connection])).toMatchObject({ providerName: "selfhosted", model: wireId });
+    await expect(useCases.save({ ...selected, id: `selfhosted/${wireId}` }, "admin@example.test"))
+      .rejects.toThrow("Invalid registered model ID");
+    await expect(useCases.save({ ...selected, wireId: "other/Qwen3.6-35B-A3B-NVFP4" }, "admin@example.test"))
+      .rejects.toThrow("Model ID already uses another provider model");
+    const pricing = { inputPer1M: 4, outputPer1M: 12 };
+    await useCases.save({ ...selected, pricing }, "admin@example.test");
+    expect((await settingsRepository.get())?.registeredModels?.[0]?.pricing).toEqual(pricing);
+    expect(await useCases.list()).toEqual([{ ...selected, pricing }]);
+    await useCases.save(selected, "admin@example.test");
+    expect(await useCases.list()).toEqual([{ ...selected, pricing: DEFAULT_SELF_HOSTED_MODEL_PRICING }]);
+    await expect(useCases.saveRouting({ ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: selected.id }, localOnly: true }, "admin@example.test"))
+      .resolves.toMatchObject({ configured: true });
+  });
+
+  it("preserves explicit display names when deriving a self-hosted registration ID", () => {
+    expect(registrationFromDiscovery("office", { wireId: "vendor/model", displayName: "Office Assistant", type: "text" }))
+      .toMatchObject({ id: "office/model", displayName: "Office Assistant", wireId: "vendor/model" });
   });
 
   it("rejects a provider removed between the initial read and the locked update", async () => {
@@ -157,6 +194,7 @@ describe("deployment model registry", () => {
 
   it("carries decisions and all capabilities through selection, storage and runtime projection", async () => {
     const selected = registrationFromDiscovery("openai", {
+      id: "openai/jev-latest",
       wireId: "~typesafe/jev-latest", displayName: "TypeSafe: Jev Latest", type: "decision",
       inputModalities: ["text"], outputModalities: ["decision"], contextWindow: 32000, maxTokens: 28800,
       capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false },

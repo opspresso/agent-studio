@@ -1,6 +1,6 @@
 import snapshot from "./data/publishedModels.json";
 import { modelType, type ModelConfig, type ModelPricing, type SupportedProvider } from "@/domain/llm/models";
-import { registeredModelId, registeredModelProblem, type DiscoveredModel } from "@/domain/llm/providerModels";
+import { registeredModelProblem, type DiscoveredModel } from "@/domain/llm/providerModels";
 import { readBodyBytes } from "@/shared/httpBody";
 
 const SOURCE = "https://models.opspresso.com/models.json";
@@ -27,8 +27,7 @@ export function parsePublishedModelFacts(value: unknown): PublishedFacts {
       (model.hidden !== undefined && typeof model.hidden !== "boolean") || !model.capabilities || !model.pricing) {
       throw new Error("Invalid published model facts");
     }
-    const id = registeredModelId(model.provider, wireId(model));
-    const problem = registeredModelProblem({ ...model, id, wireId: wireId(model), type: modelType(model) });
+    const problem = registeredModelProblem({ ...model, wireId: wireId(model), type: modelType(model) }, model.id);
     if (problem || keys.has(model.id)) throw new Error(`Invalid published model ${model.id}: ${problem ?? "duplicate model ID"}`);
     keys.add(model.id);
   }
@@ -39,14 +38,19 @@ function wireId(model: ModelConfig): string {
   return model.wireId ?? model.id.slice(model.provider.length + 1);
 }
 
+/** Catalog facts match the full provider wire ID, including maker namespaces. */
+function providerWireKey(provider: string, id: string): string {
+  return `${provider}/${id}`;
+}
+
 function indexCanonicalIds(models: ModelConfig[]): Map<string, string> {
   const ids = new Map<string, string>();
   for (const model of models.filter(model => !model.hidden)) {
-    const key = registeredModelId(model.provider, wireId(model));
+    const key = providerWireKey(model.provider, wireId(model));
     if (!ids.has(key)) ids.set(key, model.id);
   }
   for (const model of models) {
-    const key = registeredModelId(model.provider, wireId(model));
+    const key = providerWireKey(model.provider, wireId(model));
     if (!ids.has(key)) ids.set(key, model.id);
   }
   return ids;
@@ -77,11 +81,11 @@ export function createPublishedModelCatalog(
       });
     },
     pricing(provider: SupportedProvider, id: string): ModelPricing | undefined {
-      const catalogId = canonicalIds.get(registeredModelId(provider, id));
+      const catalogId = canonicalIds.get(providerWireKey(provider, id));
       return catalogId ? byId.get(catalogId)?.pricing : undefined;
     },
     modelId(provider: SupportedProvider, id: string): string | undefined {
-      return canonicalIds.get(registeredModelId(provider, id));
+      return canonicalIds.get(providerWireKey(provider, id));
     },
     async refreshIfDue(now = Date.now()): Promise<boolean> {
       if (pending) return pending;

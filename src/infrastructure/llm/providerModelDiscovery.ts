@@ -1,6 +1,6 @@
-import type { ModelCapabilities } from "@/domain/llm/models";
+import { DEFAULT_SELF_HOSTED_MODEL_PRICING, type ModelCapabilities } from "@/domain/llm/models";
 import {
-  providerBaseUrl, providerKind,
+  providerBaseUrl, providerKind, providerModelDisplayName,
   REGISTRY_MODEL_TYPES,
   type DiscoveredModel, type ProviderModelDiscovery, type RegistryModelType,
 } from "@/domain/llm/providerModels";
@@ -82,13 +82,14 @@ function toModel(value: unknown): DiscoveredModel | undefined {
   const contextWindow = count(entry.context_length ?? entry.inputTokenLimit ?? entry.max_input_tokens ?? entry.max_model_len);
   const maxTokens = count(entry.outputTokenLimit ?? entry.max_tokens ?? record(entry.top_provider).max_completion_tokens);
   return {
-    wireId, displayName: label(entry.display_name) ?? label(entry.displayName) ?? (entry.id ? label(entry.name) : undefined) ?? wireId,
+    wireId, displayName: providerModelDisplayName(wireId, label(entry.display_name) ?? label(entry.displayName) ?? (entry.id ? label(entry.name) : undefined)),
     ...(type ? { type } : {}),
     ...(inputs.length ? { inputModalities: inputs } : {}),
     ...(outputs.length ? { outputModalities: outputs } : {}),
     ...(contextWindow !== undefined ? { contextWindow } : {}),
     ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(Object.keys(capabilities).length ? { capabilities } : {}),
+    pricing: { ...DEFAULT_SELF_HOSTED_MODEL_PRICING },
   };
 }
 

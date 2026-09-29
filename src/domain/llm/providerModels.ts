@@ -1,5 +1,5 @@
 import type { ModelCapabilities, ModelConfig, ModelPricing, ModelType, SupportedProvider } from "./models";
-import { modelTokenLimitsProblem, MODEL_TYPES as REGISTRY_MODEL_TYPES } from "./models";
+import { modelTokenLimitsProblem, MODEL_TYPES as REGISTRY_MODEL_TYPES, DEFAULT_SELF_HOSTED_MODEL_PRICING } from "./models";
 
 export type ChannelAuth = "bearer" | "sigv4";
 
@@ -49,7 +49,7 @@ export interface RegisteredModel {
   contextWindow: number;
   maxTokens: number;
   capabilities: ModelCapabilities;
-  /** Missing means unknown, including when the provider bills outside token usage. */
+  /** Missing uses zero defaults for self-hosted connections; other provider prices remain unknown. */
   pricing?: ModelPricing;
 }
 
@@ -70,8 +70,17 @@ export function providerBaseUrl(value: string): string {
   return url.href.replace(/\/+$/, "");
 }
 
+/** Provider namespaces belong to the wire ID, not the Studio model name. */
+export function modelNameFromWireId(wireId: string): string {
+  return wireId.slice(wireId.lastIndexOf("/") + 1);
+}
+
+export function providerModelDisplayName(wireId: string, displayName = wireId): string {
+  return displayName === wireId ? modelNameFromWireId(wireId) : displayName;
+}
+
 export function registeredModelId(provider: string, wireId: string): string {
-  return `${provider}/${wireId}`;
+  return `${provider}/${modelNameFromWireId(wireId)}`;
 }
 
 /** Selection carries facts intact; an absent classification requires an explicit choice. */
@@ -80,7 +89,8 @@ export function registrationFromDiscovery(provider: string, model: DiscoveredMod
   const type = model.type;
   return {
     id: model.id ?? registeredModelId(provider, model.wireId), provider, wireId: model.wireId,
-    displayName: model.displayName, ...(model.family ? { family: model.family } : {}), ...(model.maker ? { maker: model.maker } : {}), type,
+    displayName: providerModelDisplayName(model.wireId, model.displayName),
+    ...(model.family ? { family: model.family } : {}), ...(model.maker ? { maker: model.maker } : {}), type,
     ...(model.inputModalities ? { inputModalities: model.inputModalities } : {}),
     ...(model.outputModalities ? { outputModalities: model.outputModalities } : {}),
     contextWindow: model.contextWindow ?? 0,
@@ -96,7 +106,8 @@ export function registeredModelConfig(model: RegisteredModel, kind: SupportedPro
     id: model.id, provider: model.provider, providerKind: kind, family: model.family ?? model.wireId,
     maker: model.maker ?? kind, displayName: model.displayName, wireId: model.wireId,
     contextWindow: model.contextWindow, maxTokens: model.maxTokens,
-    pricing: model.pricing ?? { inputPer1M: 0, outputPer1M: 0 }, pricingKnown: model.pricing !== undefined,
+    pricing: model.pricing ?? (kind === "selfhosted" ? { ...DEFAULT_SELF_HOSTED_MODEL_PRICING } : { inputPer1M: 0, outputPer1M: 0 }),
+    pricingKnown: kind === "selfhosted" || model.pricing !== undefined,
     capabilities: {
       tools: model.capabilities.tools, structuredOutput: model.capabilities.structuredOutput,
       imageInput: model.capabilities.imageInput, reasoning: model.capabilities.reasoning,
@@ -112,7 +123,7 @@ export function registeredModelConfig(model: RegisteredModel, kind: SupportedPro
 
 export function registeredModelProblem(model: RegisteredModel, expectedId = registeredModelId(model.provider, model.wireId)): string | undefined {
   if (!/^[a-z][a-z0-9_-]{0,63}$/.test(model.provider)) return "Invalid provider name";
-  if (!model.wireId.trim() || model.wireId !== model.wireId.trim() || model.wireId.length > 200 || /[\x00-\x1f\x7f]/.test(model.wireId)) return "Invalid provider model ID";
+  if (!modelNameFromWireId(model.wireId).trim() || model.wireId !== model.wireId.trim() || model.wireId.length > 200 || /[\x00-\x1f\x7f]/.test(model.wireId)) return "Invalid provider model ID";
   if (model.id !== expectedId || model.id.length > 200) return "Invalid registered model ID";
   if (!model.displayName.trim() || model.displayName.length > 200) return "A model display name is required";
   if (model.family !== undefined && (!model.family.trim() || model.family.length > 200)) return "Invalid model family";

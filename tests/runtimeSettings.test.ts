@@ -12,6 +12,7 @@ vi.mock("node:crypto", async importOriginal => ({
 import { fixtureRegistrations } from "./modelFixtures";
 import type { AppSettings } from "@/domain/settings/types";
 import { calculateCost, getModelConfig } from "@/domain/llm/models";
+import { registrationFromDiscovery } from "@/domain/llm/providerModels";
 import { config } from "@/lib/config";
 
 const { catalogPricing, refreshCatalog } = vi.hoisted(() => ({
@@ -103,6 +104,22 @@ afterEach(() => {
 });
 
 describe("runtime settings precedence", () => {
+  it.each([undefined, { inputPer1M: 3, outputPer1M: 9 }])("uses self-hosted saved rates or zero defaults instead of public catalog pricing: %j", async pricing => {
+    const registered = registrationFromDiscovery("office", {
+      wireId: "nvidia/local-model", displayName: "Local Model", type: "text",
+      pricing,
+    });
+    catalogPricing.mockReturnValue({ inputPer1M: 5, outputPer1M: 15 });
+    stub({
+      llmProviders: [{ name: "office", kind: "selfhosted", baseUrl: "http://inside.test/v1", apiKey: "" }],
+      registeredModels: [registered], updatedAt: "2026-09-24T00:00:00Z",
+    });
+    await getLlmProviderConfigs();
+    expect(getModelConfig(registered.id)).toMatchObject({ pricingKnown: true, pricing: pricing ?? { inputPer1M: 0, outputPer1M: 0 } });
+    expect(calculateCost(registered.id, { inputTokens: 1000, outputTokens: 1000 })).toBeCloseTo(pricing ? 0.012 : 0);
+    expect(catalogPricing).not.toHaveBeenCalled();
+  });
+
   it("applies saved search and run limits and restores env values when cleared", async () => {
     process.env.CATALOG_MIN_SCORE = "0.2";
     process.env.MAX_CONCURRENT_RUNS_PER_ACTOR = "9";

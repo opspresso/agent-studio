@@ -107,7 +107,9 @@ describe("models table", () => {
 
   it("finds discovered models by provider-qualified ID before registration", () => {
     const discovered = [{ wireId: "vendor/example", displayName: "Example" }];
-    expect(filterModelRows(discovered, { ...DEFAULT_MODEL_BROWSER_STATE, query: "office/vendor/example" }, undefined, "office"))
+    expect(filterModelRows(discovered, { ...DEFAULT_MODEL_BROWSER_STATE, query: "office/example" }, undefined, "office"))
+      .toEqual(discovered);
+    expect(filterModelRows(discovered, { ...DEFAULT_MODEL_BROWSER_STATE, query: "vendor/example" }, undefined, "office"))
       .toEqual(discovered);
   });
 

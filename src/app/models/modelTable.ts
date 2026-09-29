@@ -1,5 +1,5 @@
 import { MODEL_TYPES as ALL_MODEL_TYPES, type ModelConfig, type ModelType } from "@/domain/llm/models";
-import type { DiscoveredModel } from "@/domain/llm/providerModels";
+import { registeredModelId, type DiscoveredModel } from "@/domain/llm/providerModels";
 import { matchesFilter } from "@/app/_components/CatalogSearch";
 
 export type ModelSortKey = "name" | "price";
@@ -103,7 +103,7 @@ export function filterModelRows<T extends ModelRow>(models: T[], state: ModelBro
     (!isSelected || !state.selectedOnly || isSelected(model)) &&
     state.capabilities.every(flag => model.capabilities?.[flag] === true) &&
     matchesFilter(state.query, model.displayName, model.id, model.wireId, model.provider,
-      providerName && `${providerName}/${model.wireId}`, model.maker),
+      providerName && registeredModelId(providerName, model.wireId), model.maker),
   ), state.sortKey, state.direction);
 }
 
