@@ -44,9 +44,7 @@ export function AgentSuggestion({ surface, request, candidates, selected, onSele
         const body = await readJson<AgentRecommendationResponse>(response);
         if (!signal.aborted) {
           const name = body.recommendation?.name;
-          if (name && candidates.some(candidate => candidate.name === name)) {
-            setResult({ surface, name });
-          }
+          setResult(name && candidates.some(candidate => candidate.name === name) ? { surface, name } : null);
           setErrorKey(null);
         }
       } catch {

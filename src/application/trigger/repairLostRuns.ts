@@ -15,15 +15,12 @@ import type { FiringDeps } from "./deps";
 import { listAgentTriggers } from "./triggerUseCases";
 
 /**
- * How far past a run's lease a `running` row must sit before it is declared
- * lost. Schedule `startedAt` is stamped at dispatch. Webhook acknowledgement
- * still precedes background execution, so the margin covers that delay.
- * Repairing late is cosmetic; repairing a
- * live run brands a healthy instance as lost.
+ * How far past the last execution owner's lease a running row must sit
+ * before repair. Live renewals are authoritative regardless of startedAt.
  */
 export const REPAIR_MARGIN_SECONDS = 10 * 60;
 
-/** When a row stuck in `running` is surely dead. */
+/** Start-time bound only for history with no execution-owner lease. */
 export const REPAIR_AFTER_SECONDS = RUN_LEASE_SECONDS + REPAIR_MARGIN_SECONDS;
 
 /**
@@ -126,31 +123,36 @@ export async function repairTriggerRuns(
   }
   let rows: TriggerRun[];
   try {
-    rows = await deps.triggers.listRuns(trigger.agentName, trigger.triggerId, REPAIR_SCAN_LIMIT, {
-      // Ask for the rows that could be dead rather than the rows that are
-      // recent. On a busy trigger those sets do not overlap at all.
-      startedBefore: new Date(cutoff).toISOString(),
-      status: "running",
-    });
+    const [owned, unowned] = await Promise.all([
+      deps.triggers.listRuns(trigger.agentName, trigger.triggerId, REPAIR_SCAN_LIMIT, {
+        runningLeaseBefore: new Date(at.getTime() - REPAIR_MARGIN_SECONDS * 1000).toISOString(), status: "running",
+      }),
+      deps.triggers.listRuns(trigger.agentName, trigger.triggerId, REPAIR_SCAN_LIMIT, {
+        startedBefore: new Date(cutoff).toISOString(), status: "running", unownedRunning: true,
+      }),
+    ]);
+    rows = [...owned, ...unowned];
   } catch (error) {
     log.warn("trigger", `could not read runs of '${trigger.triggerId}' for repair`, error);
     return { repaired: summary.repaired, errors: summary.errors + 1 };
   }
   for (const row of rows) {
-    // The bound is on the stored `startedAt` string, and a row whose value does
-    // not parse cannot prove the run is fresh — so it repairs too. If the run is
-    // somehow still alive, its own finish overwrites this.
-    if (row.status !== "running" || Date.parse(row.startedAt ?? "") > cutoff) {
+    // The repository filters expiry before the page limit; the write still
+    // compares the returned ownership snapshot against any intervening renewal.
+    const expires = row.runningLeaseToken ? Date.parse(row.runningLeaseUntil ?? "") + REPAIR_MARGIN_SECONDS * 1000
+      : Date.parse(row.startedAt ?? "") + REPAIR_AFTER_SECONDS * 1000;
+    if (row.status !== "running" || expires > at.getTime()) {
       continue;
     }
     try {
-      await deps.triggers.finishRun({
-        ...row,
+      const { runningLeaseToken: _token, runningLeaseUntil: _lease, ...run } = row;
+      void _token; void _lease;
+      if (await deps.triggers.updateRunningRun(row, {
+        ...run,
         status: "failed",
         endedAt: at.toISOString(),
         error: LOST_RUN_ERROR,
-      });
-      summary.repaired += 1;
+      })) summary.repaired += 1;
     } catch (error) {
       log.error("trigger", "could not repair a lost firing", error);
       summary.errors += 1;

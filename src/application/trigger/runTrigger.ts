@@ -34,6 +34,8 @@ import { verifyGitHubSignature, isGitHubDeliveryId } from "@/shared/githubWebhoo
 import { holdQueuedFiring, queueLeaseUntil } from "./queuedFiring";
 import { selectPullRequestReview, type PullRequestReviewTarget } from "@/domain/trigger/pullRequestReview";
 import { preparePullRequestReview, type ReviewPublication } from "./reviewPullRequest";
+import { reviewSetupIssue } from "./reviewRequirements";
+import { holdRunningFiring, runningLease, type RunningFiring } from "./firingLease";
 
 /** Bounded preview of a run's answer, kept on the firing row. */
 const MAX_RESULT_CHARS = 2_000;
@@ -41,14 +43,12 @@ const MAX_RESULT_CHARS = 2_000;
 const MAX_PAYLOAD_CHARS = 20_000;
 
 /** An admitted firing: everything `executeFiring` needs to proceed. */
-export interface AdmittedFiring<T extends Trigger = Trigger> {
+export interface AdmittedFiring<T extends Trigger = Trigger> extends RunningFiring {
   status: "accepted";
   runId: string;
   trigger: T;
   agent: Agent;
   configuration: AgentConfiguration;
-  run: TriggerRun;
-  release: () => Promise<void>;
   /** Queued schedules fence their owner and record the real start before any effects. */
   start?: () => Promise<boolean>;
 }
@@ -77,6 +77,7 @@ export type AdmitResult =
   | { status: "invalid-delivery" }
   | { status: "ping" }
   | { status: "ignored"; reason: string }
+  | { status: "review-not-ready"; reason: string }
   | { status: "busy" }
   | { status: "no-configuration" };
 
@@ -130,6 +131,7 @@ function overlapKey(agentName: string, triggerId: string): string {
 interface FiringExtra {
   idempotencyKey?: string;
   scheduledFor?: string;
+  review?: TriggerRun["review"];
 }
 
 /** A webhook payload is framed as user data for the Agent. */
@@ -203,6 +205,18 @@ export async function admitDelivery(
   // optional generic key turn a redelivery into another model invocation.
   if (github) idempotencyKey = `github-delivery:${github.deliveryId}`;
   if (reviewTarget) idempotencyKey = `github-review:${reviewTarget.repository}:${reviewTarget.number}:${reviewTarget.headSha}`;
+  let reviewAgent: Agent | null | undefined;
+  if (reviewTarget) {
+    reviewAgent = await deps.agents.get(agentName);
+    let reason = reviewAgent ? reviewSetupIssue(trigger, reviewAgent) : "Agent not found.";
+    if (!reason && (!deps.reviewForge || !deps.openReviewWorkspace)) reason = "PR review requires configured GitHub and Workspace integrations.";
+    if (!reason && reviewAgent && !await executionUserAllowed(deps, trigger, reviewAgent)) reason = EXECUTION_USER_UNAUTHORIZED;
+    if (reason) {
+      log.warn("trigger", "PR review setup is incomplete", { agentName, triggerId: trigger.triggerId, ...reviewTarget, reason });
+      await recordSkip(deps, trigger, { review: { ...reviewTarget, status: "skipped", reason } }, reason);
+      return { status: "review-not-ready", reason };
+    }
+  }
   if (idempotencyKey) {
     const claimed = await deps.triggers.claimIdempotencyKey(
       agentName,
@@ -213,7 +227,7 @@ export async function admitDelivery(
       return { status: "duplicate" };
     }
   }
-  const admitted = await admitRun(deps, trigger, idempotencyKey ? { idempotencyKey } : {});
+  const admitted = await admitRun(deps, trigger, idempotencyKey ? { idempotencyKey } : {}, { agent: reviewAgent });
   return admitted.status === "accepted" && github
     ? { ...admitted, github: { event: github.event!, deliveryId: github.deliveryId! }, ...(reviewTarget ? { reviewTarget } : {}) } : admitted;
 }
@@ -226,14 +240,15 @@ export async function admitRun<T extends Trigger>(
   deps: FiringDeps,
   trigger: T,
   extra: FiringExtra,
-  queued = false,
+  options: { queued?: boolean; agent?: Agent | null } = {},
 ): Promise<
   | AdmittedFiring<T>
   | { status: "not-configured" }
   | { status: "busy" }
   | { status: "no-configuration" }
 > {
-  const agent = await deps.agents.get(trigger.agentName);
+  const { queued = false } = options;
+  const agent = options.agent === undefined ? await deps.agents.get(trigger.agentName) : options.agent;
   if (!agent) {
     // A row too, like every refusal below: a schedule can outlive its agent,
     // and "skipped: 1" in a scan summary with nothing in the history explaining
@@ -291,16 +306,18 @@ export async function admitRun<T extends Trigger>(
     ...(extra.idempotencyKey ? { idempotencyKey: extra.idempotencyKey } : {}),
     ...(extra.scheduledFor ? { scheduledFor: extra.scheduledFor } : {}),
     ...(queued ? { queuedAt: new Date().toISOString(), queueLeaseUntil: queueLeaseUntil() } : { startedAt: new Date().toISOString() }),
+    ...(!queued ? runningLease() : {}),
   };
   try {
     await deps.triggers.appendRun(run);
   } catch (error) {
-    if (queued) { await release(); throw error; }
-    // History is a log; losing a row must not cost the firing.
-    log.error("trigger", "could not record the start of a firing", error);
+    // Durable ownership must exist before any execution effect is allowed.
+    await release();
+    throw error;
   }
   const firing: AdmittedFiring<T> = { status: "accepted", runId: run.runId, trigger, agent, configuration, run, release };
   if (queued) holdQueuedFiring(deps, firing, renewSlot);
+  else holdRunningFiring(deps, firing, renewSlot);
   return firing;
 }
 
@@ -320,6 +337,7 @@ export async function recordSkip(
       status: "skipped",
       ...(extra.idempotencyKey ? { idempotencyKey: extra.idempotencyKey } : {}),
       ...(extra.scheduledFor ? { scheduledFor: extra.scheduledFor } : {}),
+      ...(extra.review ? { review: extra.review } : {}),
       startedAt: now,
       endedAt: now,
       error: reason,
@@ -339,16 +357,16 @@ export async function executeDelivery(
     let input: { message?: string; backgroundTask?: boolean; reviewSource?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewSource"]; reviewWorkspace?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewWorkspace"] };
     let publication: ReviewPublication | undefined;
     try {
+      await admitted.check?.();
       if (admitted.reviewTarget) {
         const prepared = await preparePullRequestReview(deps, admitted.agent.name, admitted.trigger.triggerId,
-          admitted.configuration, admitted.reviewTarget);
+          admitted.configuration, admitted.reviewTarget, admitted.check);
         if (prepared.status === "skipped") {
-          await admitted.release();
-          await finishFiring(deps, admitted.run, { skipped: true, text: prepared.reason,
+          await settleFiring(admitted, { skipped: true, text: prepared.reason,
             review: { ...admitted.reviewTarget, status: "skipped", reason: prepared.reason } });
           return;
         }
-        admitted = { ...admitted, configuration: prepared.configuration };
+        admitted.configuration = prepared.configuration;
         input = { message: prepared.message, backgroundTask: true, reviewSource: prepared.readSource, reviewWorkspace: prepared.reviewWorkspace };
         publication = prepared.publication;
       } else input = payloadInput(payload);
@@ -360,8 +378,7 @@ export async function executeDelivery(
       // (deep nesting overflows JSON.stringify) must finish the row and release
       // the overlap slot like any other failure, or the trigger reads busy for a
       // whole lease and the row stays running forever.
-      await admitted.release();
-      await finishFiring(deps, admitted.run, {
+      await settleFiring(admitted, {
         error: caught instanceof Error ? caught.message : String(caught),
         ...(admitted.reviewTarget ? { review: { ...admitted.reviewTarget, status: "failed" as const,
           reason: "Pull request context could not be prepared; no review was published." } } : {}),
@@ -389,7 +406,7 @@ export async function executeFiring(
   publication?: ReviewPublication,
 ): Promise<void> {
   if (admitted.start && !await admitted.start()) { await publication?.close(); return; }
-  const { trigger, agent, configuration, run } = admitted;
+  const { trigger, agent, configuration } = admitted;
   let text = "";
   let error: string | undefined;
   let traceId: string | undefined;
@@ -416,6 +433,7 @@ export async function executeFiring(
   // anyone would have read either.
   let produced = 0;
   try {
+    await admitted.check?.();
     if (trigger.executionEmail) {
       const current = await deps.agents.get(agent.name);
       const currentTrigger = await deps.triggers.get(agent.name, trigger.triggerId);
@@ -430,7 +448,9 @@ export async function executeFiring(
       ...input,
       actor: triggerActor(trigger),
       ...(trigger.executionEmail ? { userEmail: trigger.executionEmail } : {}),
+      ...(admitted.signal ? { signal: admitted.signal } : {}),
     })) {
+      admitted.signal?.throwIfAborted();
       // Top-level only for the answer, like every other consumer: a subagent's
       // text is not the run's answer (see `isTopLevelChunk`). What a child
       // *lost* is the run's loss, though — `collectedWarning` keeps authored
@@ -476,38 +496,44 @@ export async function executeFiring(
   } catch (caught) {
     error = caught instanceof Error ? caught.message : String(caught);
   } finally {
-    await admitted.release();
     try { await publication?.close(); }
     catch (caught) { error = [error, caught instanceof Error ? caught.message : String(caught)].filter(Boolean).join("; "); }
   }
   if (publication && error && review?.status !== "posted") review = { ...publication.target, status: "failed", reason: cutCodePoints(error, 500) };
   const deliveryResults: ScheduleDeliveryResult[] = [];
-  if (!error && trigger.kind === "schedule" && trigger.deliveries?.length) {
-    const report = text || (images > 0 ? imagesOnlyResult(images) : "");
-    if (report) {
-      const attempted = await Promise.all(
-        trigger.deliveries.map(async (delivery): Promise<ScheduleDeliveryResult> => {
-          try {
-            if (!deps.deliverReport) {
-              throw new Error("Schedule report delivery is unavailable");
+  try {
+    await admitted.check?.();
+    if (!error && trigger.kind === "schedule" && trigger.deliveries?.length) {
+      const report = text || (images > 0 ? imagesOnlyResult(images) : "");
+      if (report) {
+        const attempted = await Promise.all(
+          trigger.deliveries.map(async (delivery): Promise<ScheduleDeliveryResult> => {
+            try {
+              if (!deps.deliverReport) {
+                throw new Error("Schedule report delivery is unavailable");
+              }
+              await admitted.check?.();
+              await deps.deliverReport(agent, delivery, report);
+              return { kind: delivery.kind, status: "sent" };
+            } catch (caught) {
+              const message = caught instanceof Error ? caught.message : String(caught);
+              warnings.push(`${delivery.kind} delivery failed: ${message}`);
+              return {
+                kind: delivery.kind,
+                status: "failed",
+                error: cutCodePoints(message, 500),
+              };
             }
-            await deps.deliverReport(agent, delivery, report);
-            return { kind: delivery.kind, status: "sent" };
-          } catch (caught) {
-            const message = caught instanceof Error ? caught.message : String(caught);
-            warnings.push(`${delivery.kind} delivery failed: ${message}`);
-            return {
-              kind: delivery.kind,
-              status: "failed",
-              error: cutCodePoints(message, 500),
-            };
-          }
-        }),
-      );
-      deliveryResults.push(...attempted);
+          }),
+        );
+        deliveryResults.push(...attempted);
+      }
     }
+    await admitted.check?.();
+  } catch (caught) {
+    error = [error, caught instanceof Error ? caught.message : String(caught)].filter(Boolean).join("; ");
   }
-  await finishFiring(deps, run, {
+  await settleFiring(admitted, {
     // A picture is said only when the run produced nothing else to say: one
     // beside an answer is already accounted for by the answer, and one
     // *instead* of an answer is what would otherwise close as an empty success.
@@ -559,7 +585,7 @@ function producedNote(text: string, produced: number, files: readonly string[]):
   if (!text) {
     return line;
   }
-  // The answer yields the space, not the note. `finishFiring` cuts the whole
+  // The answer yields the space, not the note. `settleFiring` cuts the whole
   // row at `MAX_RESULT_CHARS`, and this line is appended last — so on any run
   // whose answer is long enough to be cut, the one part naming the deliverable
   // would be the part that disappeared.
@@ -568,10 +594,9 @@ function producedNote(text: string, produced: number, files: readonly string[]):
   return body ? `${body}\n\n${line}` : line;
 }
 
-/** Close a firing's history row with whatever the attempt produced. */
-async function finishFiring(
-  deps: FiringDeps,
-  run: TriggerRun,
+/** Hold the reservation through cleanup, delivery and terminal history persistence. */
+async function settleFiring(
+  admitted: AdmittedFiring,
   outcome: {
     text?: string;
     error?: string;
@@ -582,6 +607,7 @@ async function finishFiring(
     skipped?: boolean;
   },
 ): Promise<void> {
+  const { run } = admitted;
   const finished: TriggerRun = {
     ...run,
     status: outcome.error ? "failed" : outcome.skipped ? "skipped" : "succeeded",
@@ -595,9 +621,18 @@ async function finishFiring(
     ...(outcome.deliveryResults ? { deliveryResults: outcome.deliveryResults } : {}),
     ...(outcome.review ? { review: outcome.review } : {}),
   };
+  if (outcome.error) {
+    // Correlate the failure with stored details without logging provider text or source data.
+    log.error("trigger", "firing failed; see trigger history", { agentName: run.agentName, triggerId: run.triggerId,
+      runId: run.runId, ...(outcome.traceId ? { traceId: outcome.traceId } : {}),
+      ...(outcome.review ? { repository: outcome.review.repository, number: outcome.review.number, headSha: outcome.review.headSha } : {}) });
+  }
   try {
-    await deps.triggers.finishRun(finished);
+    if (!admitted.finish) throw new Error("Trigger execution ownership is not configured");
+    if (!await admitted.finish(finished)) log.warn("trigger", "firing settlement lost its execution owner", { agentName: run.agentName, triggerId: run.triggerId, runId: run.runId });
   } catch (writeError) {
     log.error("trigger", "could not record the end of a firing", writeError);
+  } finally {
+    await admitted.release();
   }
 }

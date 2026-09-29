@@ -196,9 +196,9 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     const outputOffset = run.outputOffset ?? 0;
     const output = await state.effect(() => deps.provider.output(sandbox.externalId, operationId, outputOffset));
     const drained = terminal && output.frames.length === 0;
-    const folded = foldWorkspaceOutput(runtime, run, output, drained);
+    const folded = foldWorkspaceOutput(runtime, run, output, drained, operation);
     const events = [...folded.events];
-    if (operation.truncated && drained) events.push({ kind: "warning", text: "Sandbox output limit reached; output was truncated" });
+    if (operation.truncated && drained) events.push({ kind: "warning", text: "Sandbox output limit reached; output was truncated", outputLoss: true });
     const children = folded.nativeSessionId && folded.nativeSessionId !== session.nativeSessionId
       ? { session: { ...session, nativeSessionId: folded.nativeSessionId, updatedAt: deps.now().toISOString() } } : {};
     let patch = folded.patch;

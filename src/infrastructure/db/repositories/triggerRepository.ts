@@ -89,6 +89,8 @@ function toRun(item: Record<string, unknown>): TriggerRun {
     ...(item.startedAt ? { startedAt: String(item.startedAt) } : {}),
     ...(item.queuedAt ? { queuedAt: String(item.queuedAt) } : {}),
     ...(item.queueLeaseUntil ? { queueLeaseUntil: String(item.queueLeaseUntil) } : {}),
+    ...(item.runningLeaseToken ? { runningLeaseToken: String(item.runningLeaseToken) } : {}),
+    ...(item.runningLeaseUntil ? { runningLeaseUntil: String(item.runningLeaseUntil) } : {}),
     ...(item.endedAt ? { endedAt: String(item.endedAt) } : {}),
     ...(item.result ? { result: String(item.result) } : {}),
     ...(item.error ? { error: String(item.error) } : {}),
@@ -107,6 +109,7 @@ function runItem(run: TriggerRun): Record<string, unknown> {
   return {
     ...keys.triggerRun(run.agentName, run.triggerId, at, run.runId),
     ...(run.status === "queued" && run.queueLeaseUntil ? keys.queuedTriggerRunIndex(run.agentName, run.triggerId, run.queueLeaseUntil, run.runId) : {}),
+    ...(run.status === "running" && run.runningLeaseUntil ? keys.runningTriggerRunIndex(run.agentName, run.triggerId, run.runningLeaseUntil, run.runId) : {}),
     ...run,
     entityType: TRIGGER_RUN_ENTITY,
     expiresAt: expiresAtSeconds(at, RETENTION.triggerRunDays),
@@ -196,8 +199,7 @@ export const triggerRepository: TriggerRepository = {
   },
 
   async finishRun(run) {
-    // A plain overwrite of the same key: the row was written when the run
-    // started, and only this run's own completion ever rewrites it.
+    // History-only writes; live execution and recovery use updateRunningRun.
     await putAgentItem(run.agentName, runItem(run));
   },
 
@@ -222,7 +224,37 @@ export const triggerRepository: TriggerRepository = {
     }
   },
 
+  async updateRunningRun(previous, next, options = {}) {
+    const oldItem = runItem(previous);
+    const nextItem = runItem(next);
+    if (oldItem.PK !== nextItem.PK || oldItem.SK !== nextItem.SK || previous.status !== "running" || next.status === "queued") {
+      throw new Error("Running trigger ownership cannot change its row identity");
+    }
+    if (next.status === "running" && (!next.runningLeaseToken || next.runningLeaseToken !== previous.runningLeaseToken || !next.runningLeaseUntil)) {
+      throw new Error("A running trigger renewal must retain its owner");
+    }
+    const condition = (row: Record<string, unknown> | null) => row?.status === "running" &&
+      row.runningLeaseToken === previous.runningLeaseToken && row.runningLeaseUntil === previous.runningLeaseUntil &&
+      (!(next.status === "running" || options.requireLiveOwner) || Date.parse(String(row.runningLeaseUntil)) > Date.now());
+    try {
+      await transact([
+        { kind: "check", key: keys.agent(previous.agentName), condition: agentIsLive },
+        { kind: "put", item: nextItem, condition },
+      ]);
+      return true;
+    } catch (error) {
+      if (error instanceof Error && [CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED].includes(error.name)) return false;
+      throw error;
+    }
+  },
+
   async listRuns(agentName, triggerId, limit, opts = {}) {
+    if (opts.runningLeaseBefore) {
+      const items = await queryItems({ index: "GSI1", pk: keys.runningTriggerRunPartition(agentName, triggerId),
+        sk: { between: ["", opts.runningLeaseBefore] }, limit,
+        notExpiredAt: Math.floor(Date.now() / 1000), filter: { status: "running" } });
+      return items.map(toRun);
+    }
     if (opts.status === "queued") {
       const items = await queryItems({ index: "GSI1", pk: keys.queuedTriggerRunPartition(agentName, triggerId),
         ...(opts.queueLeaseBefore ? { sk: { between: ["", opts.queueLeaseBefore] as [string, string] } } : {}),
@@ -247,6 +279,7 @@ export const triggerRepository: TriggerRepository = {
       limit,
       notExpiredAt: Math.floor(Date.now() / 1000),
       ...(opts.status ? { filter: { status: opts.status } } : {}),
+      ...(opts.unownedRunning ? { attributePresence: { attribute: "runningLeaseToken", exists: false } } : {}),
     });
     return items.map(toRun);
   },

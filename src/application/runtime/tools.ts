@@ -133,7 +133,7 @@ export function createRuntimeTools(
         const slot = claimToolSlot(turn, callId);
         if (name === SKILL_TOOL_NAME && string(display.skill_name)) displayNames.set(callId, `${name}: ${string(display.skill_name)}`);
         if (details?.toolCall) details.toolCall.arguments = JSON.stringify(boundToolArgsPair(args, display).wire);
-        const action = () => invoke(name, args, display, callId);
+        const action = () => { input.signal?.throwIfAborted(); return invoke(name, args, display, callId); };
         const sequential = [MODEL_TASK_TOOL_NAME, IMAGE_TOOL_NAME, EDIT_IMAGE_TOOL_NAME, SKILL_TOOL_NAME, ...SLACK_TOOL_NAMES].includes(name);
         const task = sequential ? serial.then(action) : action();
         if (sequential) serial = task.then(() => {}, () => {});

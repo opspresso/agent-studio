@@ -28,6 +28,7 @@ import { drawnMarker, type ReadBlock, type ReadCell, type ReadRow } from "./bloc
 import { partOfTarget, relationshipsOf } from "./docx";
 import { collapseRuns } from "./lines";
 import { blocksToMarkdown } from "./serialize";
+import { assertTableGeometry, tableCellSpan } from "./tableBudget";
 
 export class PptxError extends DocumentError {}
 
@@ -104,6 +105,7 @@ interface Building {
   rows: ReadRow[];
   cells: ReadCell[];
   columns: number;
+  rowColumns: number;
   merged: boolean;
   span: number;
   down: number;
@@ -385,6 +387,7 @@ class Extractor implements XmlHandler {
           rows: [],
           cells: [],
           columns: 0,
+          rowColumns: 0,
           merged: false,
           span: 1,
           down: 1,
@@ -394,10 +397,8 @@ class Extractor implements XmlHandler {
       case "tc": {
         const table = this.table;
         if (table && this.cellDepth === 0) {
-          const across = Number(attributeOf(attributes, "gridSpan") ?? "1");
-          const down = Number(attributeOf(attributes, "rowSpan") ?? "1");
-          table.span = Number.isInteger(across) && across > 1 ? across : 1;
-          table.down = Number.isInteger(down) && down > 1 ? down : 1;
+          table.span = tableCellSpan(attributeOf(attributes, "gridSpan"));
+          table.down = tableCellSpan(attributeOf(attributes, "rowSpan"));
           // `hMerge`/`vMerge` mark the position a span already claimed, which
           // the serializer's grid reserves from the span itself.
           table.covered =
@@ -489,6 +490,8 @@ class Extractor implements XmlHandler {
           this.observed.add("merged table cells");
         }
         if (!covered) {
+          assertTableGeometry(table.rows.length + 1, Math.max(table.columns, table.rowColumns + span));
+          table.rowColumns += span;
           table.cells.push({
             runs,
             ...(span > 1 ? { colspan: span } : {}),
@@ -502,10 +505,11 @@ class Extractor implements XmlHandler {
         if (!table) {
           return;
         }
-        const width = table.cells.reduce((total, cell) => total + (cell.colspan ?? 1), 0);
-        table.columns = Math.max(table.columns, width);
+        table.columns = Math.max(table.columns, table.rowColumns);
+        assertTableGeometry(table.rows.length + 1, table.columns);
         table.rows.push({ cells: table.cells });
         table.cells = [];
+        table.rowColumns = 0;
         return;
       }
       case "tbl":

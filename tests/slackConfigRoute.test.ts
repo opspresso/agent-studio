@@ -23,7 +23,7 @@ vi.mock("@/lib/container", async () => ({
     cipher: (await import("@/infrastructure/crypto/secretCipher")).secretCipher,
     // Reached only by the sibling `test` route, which this file does not import.
     authTest: async () => ({}),
-    listChannels: async () => [],
+    listChannels: async () => ({ channels: [], truncated: true }),
   }),
 }));
 vi.mock("@/lib/public-url", () => ({
@@ -31,6 +31,7 @@ vi.mock("@/lib/public-url", () => ({
 }));
 
 const { GET, PUT, DELETE } = await import("@/app/api/agents/[name]/slack/route");
+const { GET: GET_CHANNELS } = await import("@/app/api/agents/[name]/slack/channels/route");
 
 const BOT_TOKEN = "xoxb-1234567890abcdef1234";
 const SIGNING_SECRET = "abcdef1234567890abcdef12";
@@ -57,6 +58,12 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 describe("GET /api/agents/[name]/slack (owner-gated)", () => {
+  it("preserves an incomplete channel listing for the notification selector", async () => {
+    agentRepo.get.mockResolvedValue(agent);
+    const response = await GET_CHANNELS(req(), ctx());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ channels: [], truncated: true });
+  });
   it("returns the masked config and manifest to the agent owner", async () => {
     agentRepo.get.mockResolvedValue(agent);
     const res = await GET(req(), ctx());

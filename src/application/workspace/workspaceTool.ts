@@ -248,15 +248,29 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       run = detail.runs.find(current => current.id === runId) ?? run;
     }
     const events = await deps.useCases.events(id, context.ownerEmail, runId, Number(after));
-    const selected = events.slice(0, 20);
-    const raw = selected.flatMap(event => event.data.kind === "output" ? [event.data.text] : event.data.kind === "message" || event.data.kind === "warning" ? [`\n${event.data.text}\n`] : []).join("");
+    const selected: typeof events = [];
+    let raw = "";
+    let outputBytes = 0;
+    for (const event of events.slice(0, 20)) {
+      const fragment = event.data.kind === "output" ? event.data.text
+        : event.data.kind === "message" || event.data.kind === "warning" ? `\n${event.data.text}\n` : "";
+      const bytes = Buffer.byteLength(fragment);
+      // Leave the next whole event behind the cursor for the following page.
+      // An individually oversized event still advances with explicit truncation.
+      if (selected.length && outputBytes + bytes > OUTPUT_BYTES) break;
+      selected.push(event);
+      raw += fragment;
+      outputBytes += bytes;
+      if (outputBytes > OUTPUT_BYTES) break;
+    }
     const output = boundedWorkspaceText(raw, OUTPUT_BYTES);
     const diff = boundedWorkspaceText(run.diff ?? "", OUTPUT_BYTES);
     return reply({ ...location(detail.workspace), workspace_status: detail.workspace.status,
       run_id: run.id, status: run.status, error: run.error,
       ...git,
       checks: run.checks.map(({ output: _output, ...check }) => { void _output; return check; }),
-      output: output.text, diff: diff.text, truncated: output.truncated || diff.truncated || !!run.diffTruncated,
+      output: output.text, diff: diff.text, output_loss: !!run.outputLoss,
+      truncated: !!run.outputLoss || output.truncated || diff.truncated || !!run.diffTruncated,
       next_seq: selected.at(-1)?.seq ?? after, has_more: events.length > selected.length || (selected.at(-1)?.seq ?? Number(after)) < run.lastEventSeq,
       next: isTerminalWorkspaceRun(run.status) ? "review results" : "wait" });
   };

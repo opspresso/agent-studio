@@ -34,6 +34,7 @@ import { DocumentError } from "../errors";
 import { drawnMarker, type ReadBlock, type ReadCell, type ReadRow } from "./blocks";
 import { collapseRuns } from "./lines";
 import { blocksToMarkdown } from "./serialize";
+import { assertTableGeometry } from "./tableBudget";
 
 export class RtfError extends DocumentError {}
 
@@ -263,6 +264,7 @@ class Reader {
     this.cut();
     const runs = collapseRuns(this.runs);
     this.runs = [];
+    assertTableGeometry(this.rows.length + 1, Math.max(this.columns, this.cells.length + 1));
     this.cells.push({ runs });
   }
 
@@ -271,6 +273,7 @@ class Reader {
       this.endCell();
     }
     this.columns = Math.max(this.columns, this.cells.length);
+    assertTableGeometry(this.rows.length + 1, this.columns);
     this.rows.push({ cells: this.cells });
     this.cells = [];
   }

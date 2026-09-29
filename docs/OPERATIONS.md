@@ -224,6 +224,8 @@ provider 보고 비용을 사용하는 텍스트 호출은 이 계산을 거치�
 ```
 
 Webhook·메신저 접수 작업은 delivery/event ID도 문맥으로 사용한다.
+Trigger 실패 로그는 Agent·trigger·run ID와 리뷰 대상 커밋을 기록하며 상세 오류는 Trigger 이력에서
+확인한다. PR 리뷰 필수 설정 누락은 claim 전에 warning과 skipped 이력을 남기고 HTTP 409로 반환한다.
 `apiError`는 알 수 없는 예외를 error, 설명 가능한 5xx를 warn으로 기록하고 4xx는 일반적으로
 기록하지 않는다. scan token 거절처럼 별도 운영 신호가 필요한 경계는 자체 경고를 남긴다.
 비스트리밍 호출자가 응답 전에 떠난 것은 info이며 upstream 실패로 분류하지 않는다.
@@ -377,7 +379,7 @@ caller 당 Settings → Service의 동시 실행 한도(`MAX_CONCURRENT_RUNS_PER
 - 한 tick의 admission과 실행은 각각 최대 8건을 동시에 처리한다. 여러 tick·전체 배포의
   전역 동시 실행 상한은 아니며, 전체 접수 수를 8건으로 제한하지 않는다.
 - 응답·로그의 `fired`는 queued 접수 수다. 실행 시작·성공은 trigger 이력에서 확인한다.
-  `repaired`는 만료된 queued lease 또는 실행 lease와 여유 시간이 지난 running 이력을
+  `repaired`는 만료된 queued lease 또는 마지막 소유 lease와 여유 시간이 지난 running 이력을
   failed로 마감한 수다. `invalid`는 cron·시간대 오류, `errors`는 복구·admission 처리 오류 수다.
   저장소 페이지 조회 실패는 요청을 실패시킨다.
 - scan token 미설정은 `503`, 잘못된 token은 `401`과 서버 경고로 확인한다.
@@ -385,6 +387,12 @@ caller 당 Settings → Service의 동시 실행 한도(`MAX_CONCURRENT_RUNS_PER
 복구는 UTC 분이 5의 배수인 scan에서 모든 trigger를 확인하며, Webhook 전달 완료 시에도
 자기 trigger를 확인한다. ticker와 다음 Webhook 전달이 모두 없으면 자동 복구가 진행되지 않는다.
 복구는 이력만 마감하고 불확실한 모델·도구 실행을 재시도하지 않는다.
+running heartbeat는 준비·모델·Workspace 정리·결과 전송·완료 저장까지 소유 lease와 겹침 예약을
+갱신한다. 오래된 `startedAt`만으로 살아 있는 실행을 유실로 판정하지 않는다. 소유권 검사 실패는
+기존 실행을 취소하고 새 외부 효과를 차단하며, 완료 저장과 복구는 같은 소유 CAS로 보호한다.
+running 시작부터 모델 실행 상한에 준비·완료 여유 5분을 더한 전체 수명 상한에 도달하면
+소유권 갱신을 중단한다. 정리·전송·저장 요청이 멈춰도 마지막 lease 이후 이력 복구가 가능하며
+불확실한 요청을 자동 재실행하지 않는다.
 
 ## 카탈로그 재색인
 

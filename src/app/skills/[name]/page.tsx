@@ -29,9 +29,12 @@ import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
 
 export default function SkillDetailPage() {
+  const { name } = useParams<{ name: string }>();
+  return <SkillDetail key={name} name={name} />;
+}
+
+function SkillDetail({ name }: { name: string }) {
   const t = useT();
-  const params = useParams<{ name: string }>();
-  const name = params.name;
   const router = useRouter();
   const viewer = useViewer();
 

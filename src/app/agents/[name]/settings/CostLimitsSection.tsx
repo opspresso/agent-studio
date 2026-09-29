@@ -60,6 +60,7 @@ export function CostLimitsSection({
   const [slackChannels, setSlackChannels] = useState<SlackChannelInfo[]>([]);
   const [telegramChats, setTelegramChats] = useState<TelegramDestination[]>([]);
   const [slackChannelsUnavailable, setSlackChannelsUnavailable] = useState(false);
+  const [slackChannelsTruncated, setSlackChannelsTruncated] = useState(false);
   const [slackChannelsLoading, setSlackChannelsLoading] = useState(true);
   const [availableDestinations, setAvailableDestinations] = useState<
     MessageDestinationKind[]
@@ -78,7 +79,7 @@ export function CostLimitsSection({
       const telegramOn = Boolean(agent.telegram?.configured && agent.telegram.enabled);
       const teamsOn = Boolean(agent.teams?.configured && agent.teams.enabled);
       const [slack, telegramDestinations] = await Promise.allSettled([
-        slackOn ? listAgentSlackChannels(agentName) : Promise.resolve({ channels: [] }),
+        slackOn ? listAgentSlackChannels(agentName) : Promise.resolve({ channels: [], truncated: false }),
         telegramOn ? listAgentTelegramChats(agentName) : Promise.resolve({ chats: [] }),
       ]);
       if (cancelled) {
@@ -86,6 +87,7 @@ export function CostLimitsSection({
       }
       const channels = slack.status === "fulfilled" ? slack.value.channels : [];
       setSlackChannels(channels);
+      setSlackChannelsTruncated(slack.status === "fulfilled" && slack.value.truncated);
       setTelegramChats(
         telegramDestinations.status === "fulfilled" ? telegramDestinations.value.chats : [],
       );
@@ -210,6 +212,7 @@ export function CostLimitsSection({
       badge={<Badge color={stateColor(configured)} radius="xl">{configured ? summary : "none"}</Badge>}
     >
       <Stack gap="md">
+        {slackChannelsTruncated && <Alert color="yellow">{t("slack.channelsTruncated")}</Alert>}
         <Text fz="sm" c="dimmed">
           Spend is measured per UTC day and per UTC month across every model this agent runs.
           Leave a field empty for no limit. A blocked agent refuses every run — API, chat,

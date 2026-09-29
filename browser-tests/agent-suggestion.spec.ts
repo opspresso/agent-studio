@@ -75,6 +75,39 @@ test("keeps the previous suggestion while a changed request waits for another re
   }
 });
 
+for (const recommendation of [null, { name: "removed-agent", confidence: 0.8 }]) {
+  test(`clears the previous suggestion when a completed response has ${recommendation ? "an unavailable Agent" : "no recommendation"}`, async ({ page }) => {
+    let nextRequested!: () => void;
+    const nextSeen = new Promise<void>(resolve => { nextRequested = resolve; });
+    let releaseNext!: () => void;
+    const held = new Promise<void>(resolve => { releaseNext = resolve; });
+    await page.route("**/api/agent-recommendations", async route => {
+      const { request } = route.request().postDataJSON() as { request: string };
+      if (request === "Please fix this code") {
+        return route.fulfill({ json: { recommendation: { name: "coder", confidence: 0.8 } } });
+      }
+      nextRequested();
+      await held;
+      return route.fulfill({ json: { recommendation } });
+    });
+    try {
+      await page.goto(base);
+      const request = page.getByRole("textbox", { name: "Request" });
+      await request.fill("Please fix this code");
+      await expect(page.getByRole("status")).toContainText("Coder");
+      await request.fill("Please do an unrelated task");
+      await nextSeen;
+      await expect(page.getByRole("status")).toContainText("Coder");
+      releaseNext();
+      await expect(page.getByRole("status")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Use Agent" })).toHaveCount(0);
+      await expect(page.getByText("Selected: writer")).toBeVisible();
+    } finally {
+      releaseNext();
+    }
+  });
+}
+
 for (const surface of ["chat", "workspace"] as const) {
   test(`suggests within 200ms and keeps evaluating continuous input on ${surface}`, async ({ page }) => {
     const seen: Array<{ surface: string; request: string }> = [];

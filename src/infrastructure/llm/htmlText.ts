@@ -193,10 +193,17 @@ function titleOf(html: string): string | undefined {
  */
 export const MAX_HTML_SOURCE_CHARS = 500_000;
 
-export function htmlToText(source: string): string {
-  // Cut before the passes rather than after: the work below is linear in what it
-  // is given, and the tail of a very long page contributes nothing once the text
-  // budget is spent anyway. Element scans tolerate input cut mid-element. Not through a
+export interface HtmlTextResult {
+  text: string;
+  complete: boolean;
+  sourceChars: number;
+  readChars: number;
+}
+
+export function htmlToText(source: string): HtmlTextResult {
+  // Bound markup scanning before the passes, even when the readable text is short.
+  // Report unread source separately from the extracted text budget.
+  // Element scans tolerate input cut mid-element. Not through a
   // character, though: what comes out of here is what a model reads, and a cut
   // between the halves of a non-BMP character goes on the wire as a lone
   // surrogate escape that a provider may refuse the whole request over.
@@ -219,7 +226,12 @@ export function htmlToText(source: string): string {
 
   // The title is prepended rather than merged: it came from `<head>`, so it is
   // not part of the body's own flow and should not read as its first sentence.
-  return title && !body.startsWith(title) ? `${title}\n\n${body}`.trim() : body;
+  return {
+    text: title && !body.startsWith(title) ? `${title}\n\n${body}`.trim() : body,
+    complete: html.length === source.length,
+    sourceChars: source.length,
+    readChars: html.length,
+  };
 }
 
 /** Trim each line, drop leading/trailing blanks, and never allow two in a row. */

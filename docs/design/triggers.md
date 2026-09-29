@@ -34,6 +34,13 @@ skipped 이력을 남긴다. 시작한 실행은 running에서 succeeded 또는 
 `repositories`는 지정한 정확한 `owner/repo` 목록만 허용한다. 기본은 비활성이다.
 리뷰 설정 변경은 공유 GitHub 자격 증명을 위임하므로 Agent 쓰기 권한에 더해 관리자를 검사한다.
 시크릿을 가진 송신자는 선택 범위의 리뷰를 요청할 수 있으므로 등록할 저장소에만 시크릿을 제공한다.
+활성 리뷰 생성·리뷰 모드 저장·Webhook 재활성화는 현재 소유자의 실행 위임, Workspace 도구 활성화와
+비대화식 실행 정책을 검사하며 누락은 400으로 거절한다. GitHub 연결과 Sandbox backend도 필요하다.
+읽기 응답의 `reviewIssue`는 현재 설정의 누락을 설명한다. 권한 철회와 비활성화는 항상 가능하며
+철회한 권한을 리뷰 설정 저장이나 읽기로 자동 복구하지 않는다. 리뷰 저장은 겹침 허용을 바꾸지 않는다.
+서명된 대상 PR 전달은 필수 설정과 실행 사용자 권한을 멱등 claim 전에 검사한다. 누락은
+`409 review-not-ready`와 skipped 이력으로 기록한다. 설정을 명시적으로 고친 뒤 같은 HEAD의 이벤트를
+다시 전달할 수 있다. 이미 접수·실행·게시한 작업의 멱등 claim은 유지하며 불확실한 작업을 재실행하지 않는다.
 
 GitHub의 Pull requests 이벤트를 구독한다. HMAC이 유효한 `pull_request`의
 `opened`, `synchronize`, `reopened`, `ready_for_review`만 처리하며 draft·closed·대상 불일치는
@@ -56,7 +63,13 @@ Agent의 Workspace 도구, 저장소 정책, Sandbox·worker와 Webhook의 명�
 PR 자료가 게시 대상이나 권한을 선택하지 않는다. 임의 MCP·외부 쓰기·파일 생성·위임은 제공하지 않는다.
 Workspace는 이 리뷰의 저장소·커밋·command 런타임으로 제한한다. 다른 Workspace 선택,
 저장소 연결·생성, Git commit·push·merge·배포는 거절한다. 검사 결과를 읽지 않았거나 큐 작업이
-남아 있으면 리뷰를 게시하지 않는다. 실행한 검사와 관측한 CI를 구분해 본문에 보고한다.
+남아 있으면 리뷰를 게시하지 않는다. 종료 상태만으로 결과를 읽었다고 처리하지 않으며,
+`after_seq`·`next_seq` 출력 페이지를 처음부터 누락 없이 읽고 `has_more: false`를 확인해야 한다.
+잘린 출력 범위는 읽은 범위로 계산하지 않는다. 실행한 검사와 관측한 CI를 구분해 본문에 보고한다.
+`output_loss`가 있는 실행은 남은 출력 페이지를 모두 읽어도 전체 리뷰를 게시하지 않는다.
+검사 접수 요청의 응답·해석이 실패하거나 실행 ID를 받지 못하면 접수 결과가 불명확한 상태로
+유지한다. worker가 끝났거나 다른 실행의 결과를 읽어도 이 리뷰의 게시를 허용하지 않으며,
+불명확한 명령을 자동 재실행하지 않는다.
 게시 전 실제 Git HEAD와 현재 tree를 검증해 소스가 바뀐 실행을 거절한다. 임시 재현 스크립트는
 저장소 밖 `/tmp`에 두며 Git-ignored 의존성·빌드 캐시는 변경 자료에 포함하지 않는다.
 게시 결과를 기록한 뒤 Workspace를 닫고 worker의 실제 Sandbox 정리를 확인한다. 모델·게시·준비
@@ -83,6 +96,19 @@ admission·실행 직전에 현재 Agent 소유권과 member 상태를 다시 �
 실행 출력은 Trigger 이력과 Artifact에 기록한다. 이력은 제한된 텍스트·오류·경고를 담으며
 이미지 bytes를 넣지 않고 생성 사실을 적는다. 별도 객체 저장소가 있으면 결과 파일을 보관한다.
 Schedule의 플랫폼 전송 결과는 아래의 `deliveryResults`로 구분한다.
+겹침 금지 슬롯은 결과 전송·리뷰 Workspace 정리와 완료 이력 저장까지 유지한 뒤 해제한다.
+준비 실패·skip도 이력을 먼저 마감하고 슬롯을 해제하며, 이력 저장 실패에도 해제는 시도한다.
+접수한 Webhook과 실행을 시작한 Schedule은 영속 running 소유 token·lease를 가지며,
+같은 heartbeat가 겹침 예약과 running lease를 갱신한다. 준비·모델·정리·전송·완료 저장까지
+갱신하고, 소유권 검사 실패는 기존 실행 signal을 중단한다. 이후 새 모델·도구·게시·전송을
+시작하지 않으며 이미 보낸 외부 작업이나 결과가 불명확한 요청은 재실행하지 않는다.
+갱신 응답이 없어도 마지막 확인된 running lease 만료 시각에 독립 감시가 signal을 중단한다.
+만료 전에 확인한 갱신 응답만 이 시각을 연장하며 늦은 응답은 중단된 실행을 되살리지 않는다.
+running 시작부터 소유권의 전체 수명은 `MAX_RUN_DURATION_MS`에 준비·완료 처리 여유 5분을
+더한 상한으로 제한한다. 갱신된 lease도 이 상한을 넘지 않으며, 정리·전송·완료 저장이
+멈춰도 상한에서 signal과 갱신을 중단해 유실 복구가 가능하다. Schedule 대기 시간은 제외한다.
+완료 저장도 같은 token·lease를 조건으로 수행하고, 완료 또는 소유권 유실 뒤 타이머를 정리한다.
+running 소유 token·lease는 서버 제어 상태이며 콘솔 이력 응답에는 포함하지 않는다.
 
 콘솔의 Integrations에서 이력 아이콘을 누르면 오른쪽에 Webhook 또는 전체 Schedule 이력이
 표시된다. Schedule은 각 트리거에서 같은 페이지 크기를 읽고 실제 시작 시각(대기 중이면
@@ -124,7 +150,8 @@ schedule 인덱스는 페이지로 순회하며 admission과 실제 발화에 �
 tick 응답의 `fired`는 접수한 수이며 실제 시작·완료 수가 아니다. 대기 중에도 겹침 금지 예약을
 유지하고 lease의 1/3 간격으로 소유 token을 확인해 갱신한다. 실행 worker가 자리를 얻으면
 예약을 다시 갱신하고 정확한 queued lease를 조건부로 `running`으로 바꾸며 `startedAt`을 기록한다.
-대기 시간은 실행 lease와 running 복구 시계에 포함하지 않는다. `runId`와 `scheduledFor`는
+대기 heartbeat는 dispatch CAS 뒤 종료하고 running heartbeat 하나로 전환한다.
+대기 시간은 모델 실행 deadline에 포함하지 않는다. `runId`와 `scheduledFor`는
 접수부터 완료까지 같다. 저장 key는 실행 시작 시각으로 원자적으로 옮겨 이력 정렬과 running
 복구의 시각 범위를 유지한다. 아직 시작하지 않은 이력의 `startedAt`은 없으며 콘솔은 `—`로 표시한다.
 
@@ -140,7 +167,9 @@ Teams serviceUrl을 사용자 입력으로 받지 않는다.
 ## 유실된 발화 복구
 
 Webhook·Schedule은 ACK 후 웹 프로세스에서 실행하므로 급사하면 running 이력이 남을 수 있다.
-`repairLostRuns.ts`는 실행 lease와 추가 여유가 지난 running 행을 failed로 마감한다.
+`repairLostRuns.ts`는 마지막 running 소유 lease가 만료되고 추가 여유가 지난 행을 failed로 마감한다.
+시작 시각이 오래됐어도 갱신 중인 실행은 복구 대상이 아니다. 복구와 heartbeat·완료 저장은
+같은 token·lease를 비교하는 CAS를 사용하므로 먼저 갱신·마감된 행을 덮어쓰지 않는다.
 도구의 외부효과를 알 수 없으므로 작업을 재실행하지 않는다.
 queued 행은 별도 lease 만료 인덱스로 읽고 해당 lease가 여전히 같은 경우에만 failed로 바꾼다.
 정상 heartbeat나 실행 시작이 먼저 반영되면 오래된 복구 쓰기는 거절된다. 프로세스가 유실된
@@ -150,7 +179,8 @@ queued 행은 별도 lease 만료 인덱스로 읽고 해당 lease가 여전히 
 Webhook 전달이 끝날 때도 자기 trigger의 과거 실행을 정리하므로 ticker가 없는 설치는
 다음 전달에서 정리할 수 있다. ticker도 다음 전달도 없으면 자동 정리가 진행되지 않는다.
 
-복구 query는 running의 시작 시각 또는 queued의 lease 만료 시각·상태·보존 만료 조건을 limit 전에 적용한다.
+복구 query는 running·queued의 lease 만료 시각·상태·보존 만료 조건을 limit 전에 적용한다.
+소유 lease가 없는 이력은 별도의 제한된 시작 시각 조회로만 마감하며 실행 상태를 복원하지 않는다.
 완료 행이 복구 대상의 자리를 차지하지 않으며 한 번에 읽을 행 수와 Agent 병렬 처리 수를 제한한다.
 비활성 trigger의 이전 실행도 확인하고 개별 파티션 오류는 다른 복구를 중단시키지 않는다.
 마감 기준·주기는 [고정 제한](../CONFIGURATION.md#코드에-고정된-제한)이 소유한다.

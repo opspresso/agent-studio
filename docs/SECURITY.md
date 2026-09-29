@@ -534,7 +534,7 @@ capability를 모두 버리며 `no-new-privileges`로 실행된다. root filesys
 | Header | 의미·범위 |
 |---|---|
 | `X-Tenant-Id` | 실행 Agent 이름. Agent별 도구 목록과 discovery cache를 구분한다 |
-| `X-User-Email` | user·agent-token의 정규화 이메일 또는 Slack이 확인한 이메일. 신원 cache key에 포함한다 |
+| `X-User-Email` | 표면이 검증한 사용자·토큰 소유자 이메일 또는 현재 Agent 소유자의 명시적 실행 위임 이메일. 메신저·Webhook·Schedule도 같은 신원 검증과 현재 위임을 적용하며 신원 cache key에 포함한다 |
 | `X-Conversation-Id` | 대화 주소. 요청의 context header이며 discovery cache key에 포함하지 않는다 |
 
 이메일은 MCP discovery부터 평문으로 전송하며 PII 필터가 가리지 않는다.

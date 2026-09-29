@@ -290,6 +290,7 @@ describe("webhook trigger secrets", () => {
       appendRun: async () => {},
       finishRun: async () => {},
       updateQueuedRun: async () => { throw new Error("CRUD does not dispatch queued runs"); },
+      updateRunningRun: async () => { throw new Error("CRUD does not dispatch running executions"); },
       listRuns: async () => [],
     };
     return createTriggerUseCases({ triggers, agents: agents(), cipher });

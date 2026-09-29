@@ -330,16 +330,14 @@ export function createSlackWorkspaceReader(
       }
       case SLACK_CHANNELS_TOOL_NAME: {
         const query = stringArg(args, "query").toLowerCase().replace(/^#/, "");
-        const channels = await slack.listChannels(token, { limit: MAX_CHANNELS });
-        const matched = query
-          ? channels.filter((channel) => channel.name.toLowerCase().includes(query))
-          : channels;
-        if (matched.length === 0) {
+        const { channels, truncated } = await slack.listChannels(token, { limit: MAX_CHANNELS, ...(query ? { query } : {}) });
+        if (channels.length === 0) {
+          if (truncated) return `No channel${query ? ` matching "${query}"` : ""} was found in the inspected pages; this workspace has more channels that were not inspected.`;
           return query
             ? `No channel matching "${query}" is visible to this bot.`
             : "No channels are visible to this bot.";
         }
-        return channelLines(matched);
+        return [channelLines(channels), ...(truncated ? ["(More channels may match; this listing reached its result or page limit.)"] : [])].join("\n");
       }
       default:
         // Unknown names are tool errors rather than run failures.

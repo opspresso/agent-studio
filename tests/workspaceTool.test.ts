@@ -226,6 +226,29 @@ describe("Workspace Agent capability", () => {
     expect(result.has_more).toBe(false);
     expect(sleep).toHaveBeenCalledTimes(8);
   });
+  it("pages bounded output without advancing the cursor past undelivered frames", async () => {
+    const first = await invoke(start);
+    const workspace = (await repository.get(first.workspace_id))!;
+    const run = (await repository.run(workspace.id, first.run_id))!;
+    const events = Array.from({ length: 12 }, (_, index) => ({ workspaceId: workspace.id, runId: run.id,
+      seq: index + 1, createdAt: now.toISOString(), data: { kind: "output" as const, stream: "stdout" as const,
+        text: `frame ${index}: ${"한".repeat(1000)}\n` } }));
+    await repository.write({ expectedRevision: workspace.revision,
+      workspace: { ...workspace, activeRunId: undefined, revision: workspace.revision + 1 },
+      run: { ...run, status: "succeeded", lastEventSeq: events.length }, events });
+    let after = 0;
+    let output = "";
+    for (let page = 0; page < events.length; page++) {
+      const result = await invoke({ operation: "status", workspace_id: workspace.id, run_id: run.id, after_seq: after }, "read");
+      expect(result.truncated).toBe(false);
+      expect(result.next_seq).toBeGreaterThan(after);
+      output += result.output;
+      after = result.next_seq;
+      if (!result.has_more) break;
+    }
+    expect(after).toBe(events.length);
+    expect(output).toBe(events.map(event => event.data.text).join(""));
+  });
   it("continues a completed task in the same Workspace and native Session", async () => {
     const first = await invoke(start);
     const workspace = (await repository.get(first.workspace_id))!;

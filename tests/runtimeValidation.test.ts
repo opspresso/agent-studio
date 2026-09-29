@@ -16,6 +16,26 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("SDK runtime validation boundaries", () => {
+  it("does not start a serialized tool that waited across caller cancellation", async () => {
+    const f = runtimeSessionFixture();
+    const controller = new AbortController();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const loadSkillContent = vi.fn(async () => { entered.resolve(); await release.promise; return "Instructions"; });
+    const channel = new FakeChannel([[
+      toolCallChunk(0, "first", "Skill", '{"skill_name":"first"}'),
+      toolCallChunk(1, "second", "Skill", '{"skill_name":"second"}'),
+    ]]);
+    const execution = f.run(channel, "Read two skills", undefined, { loadSkillContent }, {
+      signal: controller.signal, skills: [{ name: "first", description: "First" }, { name: "second", description: "Second" }],
+    }).catch(error => error);
+    await entered.promise;
+    controller.abort(new Error("Execution ownership lost"));
+    release.resolve();
+    await execution;
+    expect(loadSkillContent).toHaveBeenCalledTimes(1);
+  });
+
   it("fails closed when tool schema validation was not wired", async () => {
     const channel = new FakeChannel([]);
     const chunks = [];

@@ -5,6 +5,7 @@ import type { TriggerRunnerDeps } from "@/application/trigger/deps";
 import type { TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
 import type { EngineChunk } from "@/domain/llm/types";
 import { reviewInput } from "@/application/trigger/reviewPullRequest";
+import { runningRunUpdater } from "./fakeTriggerRuns";
 
 vi.mock("node:crypto", async original => ({ ...await original<typeof import("node:crypto")>(), randomUUID: () => "test-run" }));
 const sha = "a".repeat(40);
@@ -30,7 +31,7 @@ function fixture(chunks: EngineChunk[] = [{ delta: { content: "확인된 결함�
     tool: async () => ({ text: "{}" }), ensureIdle, close: closeWorkspace }));
   const deps = {
     cipher: { decrypt: (secret: string) => secret, decryptEquals: (a: string, b: string) => a === b },
-    triggers: { get: async () => trigger, claimIdempotencyKey: async (_p: string, _t: string, key: string) => {
+    triggers: { get: async () => trigger, updateRunningRun: runningRunUpdater(rows), claimIdempotencyKey: async (_p: string, _t: string, key: string) => {
       if (claimed.has(key)) return false; claimed.add(key); return true;
     }, appendRun: async (row: TriggerRun) => { rows.push(row); }, finishRun: async (row: TriggerRun) => { rows[0] = row; }, listRuns: async () => [] },
     agents: { get: async () => ({ name: "review", ownerEmail: "owner@example.test", configuration: { agentName: "review", systemPrompt: "Review", model: "test",
@@ -45,24 +46,44 @@ function fixture(chunks: EngineChunk[] = [{ delta: { content: "확인된 결함�
     const body = JSON.stringify(input);
     return { kind: "github" as const, body, deliveryId, event: "pull_request", signature: "sha256=" + createHmac("sha256", "test-secret").update(body).digest("hex") };
   }
-  return { deps, load, read, reply, calls, rows, claimed, credential, openWorkspace, closeWorkspace, ensureIdle, disable: () => { trigger = { ...trigger, enabled: false }; } };
+  return { deps, load, read, reply, calls, rows, claimed, credential, openWorkspace, closeWorkspace, ensureIdle,
+    grant: (email?: string) => { trigger = { ...trigger, executionEmail: email }; }, disable: () => { trigger = { ...trigger, enabled: false }; } };
 }
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-23T00:00:00Z")); });
 afterEach(() => vi.useRealTimers());
 
 describe("signed PR review firing", () => {
+  it("rejects a missing owner grant before consuming the HEAD, then admits the same delivery after explicit setup", async () => {
+    const f = fixture();
+    f.grant();
+    const refused = await admitDelivery(f.deps, "review", f.credential(), null);
+    expect(refused).toMatchObject({ status: "review-not-ready", reason: expect.stringContaining("Run with my permissions") });
+    expect(f.claimed.size).toBe(0);
+    expect(f.load).not.toHaveBeenCalled();
+    expect(f.rows[0]).toMatchObject({ status: "skipped", review: { ...target, status: "skipped" } });
+    f.grant("owner@example.test");
+    expect((await admitDelivery(f.deps, "review", f.credential(), null)).status).toBe("accepted");
+    expect(f.claimed.size).toBe(1);
+  });
+  it("does not consume a PR HEAD when the granted owner is no longer a member", async () => {
+    const f = fixture();
+    f.deps.executionUserActive = async () => false;
+    expect((await admitDelivery(f.deps, "review", f.credential(), null)).status).toBe("review-not-ready");
+    expect(f.claimed.size).toBe(0);
+    expect(f.openWorkspace).not.toHaveBeenCalled();
+  });
   it.each(["blockedTools", "approvalTools"] as const)("does not bootstrap a Workspace excluded by %s", async policy => {
     const f = fixture();
     const agent = (await f.deps.agents.get("review"))!;
     agent.configuration!.parameters.policy = { [policy]: ["Workspace"] };
     f.deps.agents.get = async () => agent;
     const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
-    if (admitted.status !== "accepted") throw new Error("not admitted");
-    await executeDelivery(f.deps, admitted, payload);
+    expect(admitted.status).toBe("review-not-ready");
+    expect(f.claimed.size).toBe(0);
     expect(f.openWorkspace).not.toHaveBeenCalled();
     expect(f.reply).not.toHaveBeenCalled();
-    expect(f.rows[0]?.status).toBe("failed");
+    expect(f.rows[0]?.status).toBe("skipped");
   });
   it("opens the verified PR Workspace before review, reports to GitHub, and closes it before recording completion", async () => {
     const f = fixture();
@@ -75,6 +96,38 @@ describe("signed PR review firing", () => {
     expect(f.closeWorkspace.mock.invocationCallOrder[0]).toBeGreaterThan(f.reply.mock.invocationCallOrder[0]!);
     expect(f.closeWorkspace).toHaveBeenCalledOnce();
     expect(f.rows[0]).toMatchObject({ status: "succeeded", review: { status: "posted" } });
+  });
+  it("holds the overlap reservation until Sandbox cleanup and terminal history persistence finish", async () => {
+    const f = fixture();
+    const trigger = (await f.deps.triggers.get("review", "webhook"))!;
+    trigger.allowConcurrent = false;
+    let held = false;
+    f.deps.runSlots = {
+      acquire: async () => { if (held) return null; held = true; return { index: 0, token: "owned" }; },
+      renew: async () => held,
+      release: async () => { held = false; },
+    };
+    const next = (head: string) => f.credential({ ...payload, pull_request: { ...payload.pull_request, head: { sha: head.repeat(40) } } });
+    let cleanupStatus: string | undefined;
+    let persistenceStatus: string | undefined;
+    f.closeWorkspace.mockImplementation(async () => {
+      cleanupStatus = (await admitDelivery(f.deps, "review", next("b"), null)).status;
+    });
+    const update = f.deps.triggers.updateRunningRun;
+    f.deps.triggers.updateRunningRun = async (previous, row) => {
+      if (row.status !== "running") persistenceStatus = (await admitDelivery(f.deps, "review", next("c"), null)).status;
+      return update(previous, row);
+    };
+    const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
+    if (admitted.status !== "accepted") throw new Error("not admitted");
+    await executeDelivery(f.deps, admitted, payload);
+    expect(cleanupStatus).toBe("busy");
+    expect(persistenceStatus).toBe("busy");
+    expect(f.rows[0]?.status).toBe("succeeded");
+    expect(held).toBe(false);
+    const later = await admitDelivery(f.deps, "review", next("d"), null);
+    expect(later.status).toBe("accepted");
+    if (later.status === "accepted") await later.release();
   });
 
   it("refuses an unfinished Workspace report and still closes the Sandbox", async () => {

@@ -561,6 +561,7 @@ export const triggerUseCases = createTriggerUseCases({
   authorizeReview: async (email) => {
     if (!await isEffectiveConfiguredAdminByEmail(email)) throw new ForbiddenError("Only administrators can configure GitHub review publication");
     if (!getWorkspaceGitHubConfig()) throw new ValidationError("GitHub review integration is not configured");
+    if (!getWorkspaceConfig()) throw new ValidationError("PR review requires a configured Workspace Sandbox backend");
   },
 });
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs, availableServiceLogos());
@@ -747,8 +748,8 @@ export const pluginsRepoHeadSha = async (
 const slackAuthTest = async (botToken: string) =>
   (await import("@/infrastructure/slack/client")).slackClient.authTest(botToken);
 
-const slackListChannels = async (botToken: string) =>
-  (await import("@/infrastructure/slack/client")).slackClient.listChannels(botToken);
+const slackListChannels: SlackReaderPort["listChannels"] = async (botToken, args) =>
+  (await import("@/infrastructure/slack/client")).slackClient.listChannels(botToken, args);
 
 /**
  * The agent-Slack surface, composed here rather than at each of the three
@@ -1111,6 +1112,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       configuration: input.configuration,
       messages: input.message ? [{ role: "user", content: input.message }] : [],
       actor: input.actor,
+      ...(input.signal ? { signal: input.signal } : {}),
       ...(input.backgroundTask ? { backgroundTask: true } : {}),
       ...(input.reviewSource ? { reviewSource: input.reviewSource } : {}),
       ...(input.reviewWorkspace ? { reviewWorkspace: input.reviewWorkspace } : {}),

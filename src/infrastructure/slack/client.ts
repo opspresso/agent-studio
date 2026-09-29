@@ -14,6 +14,7 @@ import { log } from "@/shared/logger";
 import { readBodyBytes } from "@/shared/httpBody";
 import { neutralizeSlackMentions } from "@/domain/slack/outboundText";
 import { getCachedProfile, rememberProfile, type CachedSlackProfile } from "./profileCache";
+import type { SlackChannelListing, SlackChannelQuery } from "@/domain/slack/reader";
 export type { SlackMessage };
 
 /** The slice of `users.info`'s user object a profile is built from. */
@@ -91,6 +92,7 @@ function firstNonEmpty(...values: Array<string | undefined | null>): string | un
 
 /** Per-page size for paginated reads; Slack's recommended maximum. */
 const PAGE_SIZE = 200;
+const MAX_CHANNEL_LIST_PAGES = 5;
 /**
  * Hosts a file download may target. The URL comes from an event payload, so it
  * is untrusted input: only Slack's own file hosts are fetched with the bot token.
@@ -641,35 +643,46 @@ export const slackClient = {
    * them Slack actually returns depends on the granted scopes, and a workspace
    * that granted only one gets that one rather than an error.
    */
-  async listChannels(token: string, args?: { limit?: number }): Promise<SlackChannelInfo[]> {
-    const params = new URLSearchParams({
-      types: "public_channel,private_channel",
-      exclude_archived: "true",
-      limit: String(args?.limit ?? PAGE_SIZE),
-    });
-    const data = await slackGet<{
-      channels?: Array<{
-        id?: string;
-        name?: string;
-        is_private?: boolean;
-        is_member?: boolean;
-        topic?: { value?: string };
-        purpose?: { value?: string };
-      }>;
-    }>(token, "conversations.list", params);
-    return (data.channels ?? [])
-      .filter((channel): channel is { id: string; name: string } & typeof channel =>
-        Boolean(channel.id && channel.name),
-      )
-      .map((channel) => ({
-        id: channel.id,
-        name: channel.name,
+  async listChannels(token: string, args?: SlackChannelQuery): Promise<SlackChannelListing> {
+    const limit = args?.limit ?? PAGE_SIZE;
+    if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error("Slack channel limit must be a positive integer");
+    const needle = args?.query?.trim().toLowerCase() ?? "";
+    const channels: SlackChannelInfo[] = [];
+    const seen = new Set<string>();
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    // Slack filters after selecting a page, so even an empty page can have a cursor.
+    // A bounded scan cannot prove absence past its final inspected page.
+    for (let page = 0; page < MAX_CHANNEL_LIST_PAGES; page += 1) {
+      const params = new URLSearchParams({ types: "public_channel,private_channel", exclude_archived: "true", limit: String(PAGE_SIZE) });
+      if (cursor) params.set("cursor", cursor);
+      const data = await slackGet<{
+        channels?: Array<{ id?: string; name?: string; is_private?: boolean; is_member?: boolean;
+          topic?: { value?: string }; purpose?: { value?: string } }>;
+        response_metadata?: { next_cursor?: string };
+      }>(token, "conversations.list", params);
+      const matching = (data.channels ?? [])
+        .filter((channel): channel is { id: string; name: string } & typeof channel => {
+          if (!channel.id || !channel.name || seen.has(channel.id)) return false;
+          seen.add(channel.id);
+          return (!args?.memberOnly || channel.is_member === true) && (!needle || channel.name.toLowerCase().includes(needle));
+        });
+      const room = limit - channels.length;
+      channels.push(...matching.slice(0, room).map((channel) => ({
+        id: channel.id, name: channel.name,
         ...(firstNonEmpty(channel.topic?.value) ? { topic: channel.topic?.value?.trim() } : {}),
-        ...(firstNonEmpty(channel.purpose?.value)
-          ? { purpose: channel.purpose?.value?.trim() }
-          : {}),
+        ...(firstNonEmpty(channel.purpose?.value) ? { purpose: channel.purpose?.value?.trim() } : {}),
         ...(channel.is_private === undefined ? {} : { isPrivate: channel.is_private }),
         ...(channel.is_member === undefined ? {} : { isMember: channel.is_member }),
-      }));
+      })));
+      cursor = firstNonEmpty(data.response_metadata?.next_cursor);
+      if (cursor) {
+        if (cursors.has(cursor)) throw new Error("Slack returned a repeated channel pagination cursor");
+        cursors.add(cursor);
+      }
+      if (channels.length >= limit) return { channels, truncated: matching.length > room || Boolean(cursor) };
+      if (!cursor) return { channels, truncated: false };
+    }
+    return { channels, truncated: true };
   },
 };

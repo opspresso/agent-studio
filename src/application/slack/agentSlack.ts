@@ -6,7 +6,8 @@ import { assertAgentOwnerOrAdminReadable, assertAgentWritable } from "@/applicat
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Agent, SlackIntegration } from "@/domain/agent/types";
 import type { AgentRepository } from "@/domain/agent/repository";
-import type { SlackChannelInfo, SlackSuggestedPrompt } from "@/domain/slack/types";
+import type { SlackSuggestedPrompt } from "@/domain/slack/types";
+import type { SlackChannelListing, SlackReaderPort } from "@/domain/slack/reader";
 import {
   MAX_AGENT_DESCRIPTION_LENGTH,
   MAX_APP_DESCRIPTION_LENGTH,
@@ -42,6 +43,9 @@ export interface AgentSlackUpdate {
   suggestedPrompts?: SlackSuggestedPrompt[];
   channelKeywords?: string[];
 }
+
+/** Bound notification selectors independently of the provider's page size. */
+const MAX_SLACK_DESTINATIONS = 200;
 
 export function eventsPathFor(agentName: string): string {
   return `/api/slack/events/${agentName}`;
@@ -409,7 +413,7 @@ export interface AgentSlackUseCases {
   update(name: string, update: AgentSlackUpdate, userEmail: string): Promise<AgentSlackResult>;
   disconnect(name: string, userEmail: string): Promise<AgentSlackResult>;
   test(name: string, userEmail: string): Promise<{ ok: true; team?: string; botUser?: string } | { ok: false }>;
-  channels(name: string, userEmail: string): Promise<SlackChannelInfo[]>;
+  channels(name: string, userEmail: string): Promise<SlackChannelListing>;
   /** No session involved — the request signature is the authentication. */
   resolveEventBinding(agentName: string): Promise<SlackEventBinding | null>;
 }
@@ -418,7 +422,7 @@ export function createAgentSlackUseCases(deps: {
   agents: AgentRepository;
   cipher: SecretCipher;
   authTest: (botToken: string) => Promise<{ team?: string; user?: string }>;
-  listChannels: (botToken: string) => Promise<SlackChannelInfo[]>;
+  listChannels: SlackReaderPort["listChannels"];
 }): AgentSlackUseCases {
   return {
     get: (name, userEmail) => getAgentSlack(deps.agents, name, userEmail, deps.cipher),
@@ -434,9 +438,8 @@ export function createAgentSlackUseCases(deps: {
       if (!runtime) {
         throw new ValidationError("Slack is not configured or not enabled for this agent");
       }
-      return (await deps.listChannels(runtime.botToken))
-        .filter((channel) => channel.isMember === true)
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const listing = await deps.listChannels(runtime.botToken, { limit: MAX_SLACK_DESTINATIONS, memberOnly: true });
+      return { channels: listing.channels.toSorted((a, b) => a.name.localeCompare(b.name)), truncated: listing.truncated };
     },
     resolveEventBinding: (agentName) =>
       resolveSlackEventBinding(deps.agents, agentName, deps.cipher),

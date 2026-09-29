@@ -19,8 +19,8 @@ import {
 const utf8 = (value: string) => new TextEncoder().encode(value);
 
 const RELS = `<?xml version="1.0"?><Relationships>
-  <Relationship Id="rId1" Target="worksheets/sheet1.xml"/>
-  <Relationship Id="rId2" Target="worksheets/sheet2.xml"/>
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
 </Relationships>`;
 
 function workbook(...names: string[]): string {
@@ -184,6 +184,43 @@ test("every sheet is named, in workbook order", () => {
   assert.equal(text, "## First\n1\n\n## Second\n2");
   assert.equal(sheets, 2);
   assert.equal(totalSheets, 2);
+});
+
+test("worksheet targets resolve relative paths instead of reporting missing content as complete", () => {
+  for (const target of ["worksheets/./sheet1.xml", "worksheets/../worksheets/sheet1.xml", "/xl/worksheets/sheet1.xml"]) {
+    const bytes = buildZip({
+      "xl/workbook.xml": utf8(workbook("Sheet1")),
+      "xl/_rels/workbook.xml.rels": utf8(RELS.replace("worksheets/sheet1.xml", target)),
+      "xl/worksheets/sheet1.xml": utf8(sheet('<row><c r="A1"><v>42</v></c></row>')),
+    });
+    assert.equal(read(bytes).text, "## Sheet1\n42");
+    const inspection = inspectXlsx(bytes);
+    assert.equal(inspection.complete, true);
+    assert.deepEqual(inspection.sheets[0]?.cells, [{ address: "A1", value: "42" }]);
+  }
+});
+
+test("declared worksheets cannot disappear from successful text or inspection results", () => {
+  const parts = {
+    "xl/workbook.xml": utf8(workbook("First", "Missing")),
+    "xl/_rels/workbook.xml.rels": utf8(RELS),
+    "xl/worksheets/sheet1.xml": utf8(sheet('<row><c><v>1</v></c></row>')),
+  };
+  const missingPart = buildZip(parts);
+  assert.throws(() => read(missingPart), /missing package part/);
+  assert.throws(() => inspectXlsx(missingPart), /missing package part/);
+  const missingRelationships = buildZip({
+    "xl/workbook.xml": utf8(workbook("First")),
+    "xl/worksheets/sheet1.xml": parts["xl/worksheets/sheet1.xml"],
+  });
+  assert.throws(() => read(missingRelationships), /relationships are required/);
+  assert.throws(() => inspectXlsx(missingRelationships), /relationships are required/);
+  for (const rels of ["<Relationships/>", RELS.replace('Id="rId1"', 'Id="other"'),
+    RELS.replace("/worksheet", "/styles"), RELS.replace('Target="worksheets/sheet1.xml"', 'Target="https://example.com/sheet.xml" TargetMode="External"')]) {
+    const bytes = buildZip({ ...parts, "xl/workbook.xml": utf8(workbook("First")), "xl/_rels/workbook.xml.rels": utf8(rels) });
+    assert.throws(() => read(bytes), XlsxError);
+    assert.throws(() => inspectXlsx(bytes), XlsxError);
+  }
 });
 
 test("the budget is spent in whole rows, and what was left is counted", () => {

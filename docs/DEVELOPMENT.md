@@ -33,7 +33,7 @@ test -f .env.local || cp .env.example .env.local
 ```
 
 부팅에 필요한 최소값은 `DATABASE_URL`과 `AES_ENCRYPTION_KEY`(32바이트 base64,
-`openssl rand -hex 32`)다. `src/instrumentation.ts`가 부팅 시점에 검증한다.
+`openssl rand -base64 32`)다. `src/instrumentation.ts`가 부팅 시점에 검증한다.
 실행하려면 Settings에서 프로바이더 연결과 사용할 모델을 등록한다. 기본 LLM 환경변수만
 설정해도 모델이 등록되거나 실행 채널로 선택되는 것은 아니다.
 신원 제공자(Keycloak · 표준 OIDC · Google · 비밀번호)는 실제 로그인에만 필요하다. `STAGE=local` 은 하나도
@@ -195,6 +195,11 @@ pnpm test:integration
 `DATABASE_URL` 을 스스로 갖고 있고, 호스트가 로컬이 아니거나 이름이 `_test` 로 끝나지 않는
 데이터베이스는 실행을 거부한다. 스키마는 검사가 시작할 때 스스로 적용한다(`migrate()`), 그래서
 `init` 단계가 따로 없다.
+
+mock LLM은 loopback의 임시 포트를 직접 할당받아 Provider 설정에 전달하므로 개발용 mock과
+포트를 공유하지 않는다. 검사 성공·실패 모두에서 변경한 Settings를 복원하고 생성한 Agent와
+SDK Session 픽스처를 정리한다. 정리 오류도 검사 실패로 보고하며, 원래 검사가 실패했다면
+그 실패를 유지하고 정리 오류를 별도로 보고한다.
 
 이 검사가 vitest 밖에 사는 이유는 실제 네트워크와 실제 스토리지가 필요하기 때문이고, 그 둘은 모든
 단위 테스트가 건드리는 것이 금지된 대상이다.

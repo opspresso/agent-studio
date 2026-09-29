@@ -13,6 +13,10 @@ import type { SandboxOperation, SandboxProvider, SandboxCommand } from "@/domain
 import type { WorkspaceAgentPolicy } from "@/domain/workspace/policy";
 import type { WebhookTrigger } from "@/domain/trigger/types";
 import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
+import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
+import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
+import { openReviewWorkspace } from "@/application/workspace/reviewWorkspace";
+import { boundWorkspaceEvent } from "@/application/workspace/output";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
@@ -81,7 +85,107 @@ async function start(runtime: "command" | "codex" = "command") {
   return { api, workspace, run };
 }
 
+async function reviewResult(workspaceId: string, runId: string) {
+  const target = { repository: "company/repo", number: 1, headSha: "a".repeat(40) };
+  const workspace = (await repository.get(workspaceId))!;
+  await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, revision: workspace.revision + 1,
+    coding: { repository: target.repository, baseBranch: "main", branch: "review", sourceRevision: target.headSha, headSha: target.headSha } } });
+  const tool = createWorkspaceTool({ useCases: createWorkspaceUseCases(deps), authorize: async () => {}, policy: () => policy,
+    sleep: deps.sleep, requestGit: async () => { throw new Error("unused"); }, pullRequest: async () => undefined,
+    attachRepository: async () => { throw new Error("unused"); }, workdir: "/workspace/repo", publicBaseUrl: "https://studio.example.test" },
+  { agentName: "demo", ownerEmail: owner, occurrence: "review" });
+  const session = await openReviewWorkspace({ tool: async (args, callId) => (args.request as { operation: string }).operation === "start"
+    ? { text: JSON.stringify({ workspace_id: workspaceId, workspace_url: "https://studio.example.test/chats/review",
+      run_id: "bootstrap", status: "succeeded", head_sha: target.headSha }) } : tool(args, callId),
+    state: () => repository.get(workspaceId), close: async () => {}, sleep: deps.sleep,
+    verify: async () => ({ headSha: target.headSha, treeSha: "b".repeat(40), headTreeSha: "b".repeat(40), diff: "", truncated: false, fingerprint: "fixture" }) }, target);
+  const results: { output: string; output_loss: boolean; truncated: boolean; next_seq: number; has_more: boolean }[] = [];
+  let after = 0;
+  for (;;) {
+    const result = JSON.parse((await session.tool({ request: { operation: "status", workspace_id: workspaceId, run_id: runId, after_seq: after } }, "read")).text) as typeof results[number];
+    results.push(result);
+    if (!result.has_more) break;
+    expect(result.next_seq).toBeGreaterThan(after);
+    after = result.next_seq;
+  }
+  return { session, results };
+}
+
 describe("durable workspace worker", () => {
+  it.each(["command", "codex"] as const)("keeps permanent %s event loss through storage, tool paging and the review publication guard", async runtime => {
+    const { workspace, run } = await start(runtime);
+    const original = vi.mocked(provider.start).getMockImplementation()!;
+    vi.mocked(provider.start).mockImplementationOnce(async (...args) => {
+      await original(...args);
+      operations.get(run.id)!.frames = [{ stream: "stdout", text: runtime === "command" ? "x".repeat(40_000)
+        : JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "x".repeat(40_000) } }) + "\n" }];
+    });
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, run.id))!).toMatchObject({ status: "succeeded", outputLoss: true });
+    const events = await repository.events(workspace.id, run.id, 0, 20);
+    expect(events.find(event => event.data.kind === (runtime === "command" ? "output" : "message"))?.data)
+      .toMatchObject({ text: "x".repeat(4000), outputLoss: true });
+    const { session, results } = await reviewResult(workspace.id, run.id);
+    expect(results.at(-1)).toMatchObject({ output_loss: true, truncated: true, has_more: false });
+    await expect(session.ensureIdle()).rejects.toThrow("output was permanently omitted");
+  });
+  it("records provider log loss even when the process exits successfully and its retained output is fully paged", async () => {
+    const { workspace, run } = await start();
+    const original = vi.mocked(provider.operation).getMockImplementation()!;
+    vi.mocked(provider.operation).mockImplementation(async (...args) => {
+      const operation = await original(...args);
+      return operation.status === "succeeded" ? { ...operation, truncated: true } : operation;
+    });
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, run.id))!).toMatchObject({ status: "succeeded", outputLoss: true });
+    const { session, results } = await reviewResult(workspace.id, run.id);
+    expect(results.at(-1)?.output_loss).toBe(true);
+    await expect(session.ensureIdle()).rejects.toThrow("output was permanently omitted");
+  });
+  it("persists raw event-limit loss after the warning slot is full and all later writes contain no events", async () => {
+    const { workspace, run } = await start();
+    const current = (await repository.get(workspace.id))!;
+    await repository.write({ expectedRevision: current.revision, workspace: { ...current, revision: current.revision + 1 },
+      run: { ...run, lastEventSeq: WORKSPACE_LIMITS.eventsPerRun - 2 } });
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, run.id))!).toMatchObject({ status: "succeeded", outputLoss: true,
+      lastEventSeq: WORKSPACE_LIMITS.eventsPerRun });
+    expect((await repository.events(workspace.id, run.id, WORKSPACE_LIMITS.eventsPerRun - 1, 20))[0]?.data)
+      .toMatchObject({ kind: "warning", outputLoss: true });
+    const { session, results } = await reviewResult(workspace.id, run.id);
+    expect(results.at(-1)).toMatchObject({ output_loss: true, has_more: false });
+    await expect(session.ensureIdle()).rejects.toThrow("output was permanently omitted");
+  });
+  it("marks an omitted native protocol line as permanent output loss", async () => {
+    const { workspace, run } = await start("codex");
+    const original = vi.mocked(provider.start).getMockImplementation()!;
+    vi.mocked(provider.start).mockImplementationOnce(async (...args) => {
+      await original(...args);
+      operations.get(run.id)!.frames = [{ stream: "stdout", text: "x".repeat(WORKSPACE_LIMITS.diffBytes + 1) }];
+    });
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, run.id))?.outputLoss).toBe(true);
+  });
+  it("allows complete raw check output despite a shortened summary cache", async () => {
+    policy.checks = [{ name: "test", command: "true" }];
+    const { workspace, run } = await start();
+    const source = "CHECK RAW ".repeat(8000);
+    const original = vi.mocked(provider.start).getMockImplementation()!;
+    vi.mocked(provider.start).mockImplementation(async (...args) => {
+      await original(...args);
+      if (args[1].includes("-check-")) operations.get(args[1])!.frames = Array.from({ length: 40 }, (_, index) =>
+        ({ stream: "stdout", text: source.slice(index * 2000, (index + 1) * 2000) }));
+    });
+    await processWorkspace(deps, workspace.id);
+    const result = (await repository.run(workspace.id, run.id))!;
+    expect(result.outputLoss).toBeUndefined();
+    expect(result.checks[0]).toMatchObject({ status: "passed", truncated: true });
+    expect(boundWorkspaceEvent({ kind: "check", check: result.checks[0]! })[0]).toMatchObject({ kind: "check", check: { output: "", truncated: true } });
+    const { session, results } = await reviewResult(workspace.id, run.id);
+    expect(results.map(page => page.output).join("")).toContain(source);
+    expect(results.every(page => !page.output_loss && !page.truncated)).toBe(true);
+    await session.ensureIdle();
+  });
   it("persists a messenger permission grant and refuses queued work after its revocation", async () => {
     const at = new Date(time).toISOString();
     await agents.update({ ...((await agents.get("demo"))!), telegram: { enabled: true, botToken: "fixture",

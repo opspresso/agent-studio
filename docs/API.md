@@ -910,9 +910,10 @@ Slack 읽기는 마스킹된 인증 정보 상태와 함께 `configured`, `event
 `enabled: true`로 활성화하면 400이다.
 테스트 엔드포인트는 `{ ok: true, team, botUser }` 를 돌려주고, 그 agent 에 Slack 이 설정되지
 않았거나 꺼져 있으면 `400`, Slack API 실패면 `502` 다.
-채널 엔드포인트는 `{ channels: [{ id, name, isPrivate?, isMember? }] }` 를 돌려준다. 설정되고
+채널 엔드포인트는 `{ channels: [{ id, name, isPrivate?, isMember? }], truncated: boolean }` 을 돌려준다. 설정되고
 활성화된 agent bot의 token으로 읽으며, 보고서를 실제로 쓸 수 있도록 bot이 참가한 채널만
-이름순으로 제공한다.
+최대 200개를 이름순으로 제공한다. `truncated: true`는 결과·조회 페이지 상한으로 목록에 없는
+참가 채널이 더 있을 수 있음을 뜻한다.
 
 agent 별 Telegram 설정은 이 엔드포인트들을 쓴다:
 
@@ -1420,6 +1421,10 @@ webhook·schedule로 유지하며 검증된 email만 MCP·Workspace 실행에 �
 `{scope:"repositories", repositories:["owner/repo"]}`를 전달할 수 있다. 수정의 `null`은 리뷰를
 끄고 생략은 기존 선택을 유지한다. 저장소 목록은 최대 20개이며 wildcard·URL은 받지 않는다.
 설치의 GitHub 연결이 필요하고 일반 소유자는 리뷰 권한을 새로 위임할 수 없다.
+활성 리뷰 설정 저장과 Webhook 재활성화는 현재 소유자의 `runAsOwner` 위임, Workspace 도구 활성화,
+차단·대화형 승인 없는 Workspace 정책을 요구하고 누락은 400으로 거절한다. 설정 읽기의 선택적
+`reviewIssue`는 현재 누락을 설명한다. 권한 철회와 비활성화는 가능하며 저장은 실행 권한이나
+`allowConcurrent`를 자동으로 켜지 않는다.
 리뷰 모드는 GitHub HMAC만 받아 PR의 repository·number·HEAD를 검증한다. 비대상 이벤트는
 `202 {ok:true,status:"ignored",reason}`이며 모델을 실행하지 않는다. 정상 접수는 기존 accepted
 형태를 유지하고 완료 이력의 `review`에 repository·number·headSha·posted/skipped/failed와
@@ -1443,6 +1448,7 @@ POST /api/webhook/{agent}
 → 202 { ok: true, status: "accepted", runId }
 → 202 { ok: true, status: "duplicate" | "disabled" | "busy" | "no-configuration" }
 → 202 { ok: true, status: "ping" }
+→ 409 { status: "review-not-ready", error } (PR 리뷰 필수 설정 누락; 접수·멱등 claim 전 거절)
 → 202 { ok: true, status: "ignored", reason } (PR review event not selected)
 → 401 (wrong or missing secret/signature) | 404 (no webhook on this agent) | 400 (bad JSON or GitHub metadata) | 413 (>1MB)
 ```
@@ -1487,6 +1493,7 @@ POST /api/triggers/scan
 접수 시 `queuedAt`·`queueLeaseUntil`을 가지며, 실제 실행 시작 시 `running`과 `startedAt`을
 기록하고 `queueLeaseUntil`을 제거한다. 시작하지 못한 `queued`·실패 이력에는 `startedAt`이
 없을 수 있다. `runId`와 `scheduledFor`는 상태 전이 중 유지한다.
+running 실행의 소유 token·lease는 서버 제어 상태이며 이력 응답의 `TriggerRunView`에서는 제거한다.
 
 배포 환경의 ticker가 1분에 한 번 호출하는 것이다. ticker 는 상태를 쥐지 않는다: 어느 발생분이
 도래했는지와 각각을 누가 차지하는지는 조건부 쓰기로 발생분마다 서버 측에서 결정된다. 그래서 두 번

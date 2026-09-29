@@ -19,6 +19,7 @@ export interface SandboxOperation {
   id: string;
   status: "not-started" | "starting" | "running" | "succeeded" | "failed" | "missing";
   exitCode?: number;
+  /** Provider log bytes were permanently omitted, rather than awaiting another output page. */
   truncated?: boolean;
 }
 

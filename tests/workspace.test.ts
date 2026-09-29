@@ -299,6 +299,23 @@ describe("workspace admission and persistence", () => {
         createdAt: now.toISOString(), data: { kind: "message", text: "x".repeat(WORKSPACE_LIMITS.eventBytes) } }] }))
       .rejects.toThrow("invalid workspace event");
   });
+  it("stores raw output loss with its event and cannot clear the durable run fact", async () => {
+    const workspace = await create();
+    const run = await useCases.enqueue(workspace.id, owner, { kind: "command", script: "true" }, "request-0001");
+    const active = (await repository.get(workspace.id))!;
+    const event = { workspaceId: workspace.id, runId: run.id, seq: 1, createdAt: now.toISOString(),
+      data: { kind: "output" as const, stream: "stdout" as const, text: "retained prefix", outputLoss: true as const } };
+    const change = { expectedRevision: active.revision, workspace: { ...active, revision: active.revision + 1 },
+      run: { ...run, lastEventSeq: 1 }, events: [event] };
+    await expect(repository.write(change)).rejects.toThrow("output loss must be recorded");
+    await repository.write({ ...change, run: { ...change.run, outputLoss: true } });
+    expect((await useCases.get(workspace.id, owner)).runs[0]?.outputLoss).toBe(true);
+    expect((await repository.events(workspace.id, run.id, 0, 20))[0]?.data.outputLoss).toBe(true);
+    const updated = (await repository.get(workspace.id))!;
+    await expect(repository.write({ expectedRevision: updated.revision, workspace: { ...updated, revision: updated.revision + 1 },
+      run: { ...change.run, outputLoss: undefined } })).rejects.toMatchObject({ name: "TransactionCancelled" });
+    expect((await repository.run(workspace.id, run.id))?.outputLoss).toBe(true);
+  });
 });
 
 describe("workspace checkpoints", () => {

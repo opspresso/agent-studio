@@ -25,6 +25,7 @@ import {
   type Run,
 } from "../markdown";
 import type { ReadBlock, ReadRow, ReadTable } from "./blocks";
+import { assertTableGeometry } from "./tableBudget";
 
 export interface Serialized {
   text: string;
@@ -100,6 +101,7 @@ function fenceBlock(text: string, language: string | undefined): string {
  * puts it in `omissions` and structure inspection carries the real `colspan`.
  */
 function gridOf(rows: readonly ReadRow[], columns: number): string[][] {
+  assertTableGeometry(rows.length, columns);
   const grid: string[][] = rows.map(() => Array.from({ length: columns }, () => ""));
   const taken: boolean[][] = rows.map(() => Array.from({ length: columns }, () => false));
   rows.forEach((row, r) => {

@@ -32,8 +32,8 @@ export const MAX_INSPECTED_CELLS = 10_000;
 export const MAX_SPREADSHEET_COLUMNS = 16_384;
 export const MAX_SPREADSHEET_ROW_INDEX = 1_048_576;
 
-/** ODF merged-cell geometry bound; repeated content uses the spreadsheet budgets above. */
-export const MAX_ODF_CELL_SPAN = 256;
+/** Office merged-cell geometry bound; table grids share the row/column/cell budgets above. */
+export const MAX_TABLE_CELL_SPAN = 256;
 
 /** Bound each structure window and each block preview inside MAX_TEXT_CHARS. */
 export const MAX_INSPECTED_BLOCKS = 500;

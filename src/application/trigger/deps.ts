@@ -20,6 +20,7 @@ export interface FiringDeps {
     message?: string;
     actor: RunActor;
     userEmail?: string;
+    signal?: AbortSignal;
     /** Bound skills only; verified PRs additionally receive their private source and Workspace callbacks. */
     backgroundTask?: boolean;
     reviewSource?: (args: Record<string, unknown>) => Promise<McpToolResult>;

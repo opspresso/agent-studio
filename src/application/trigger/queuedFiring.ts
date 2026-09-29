@@ -3,9 +3,10 @@ import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
 import type { FiringDeps } from "./deps";
+import { FIRING_HEARTBEAT_MS, holdRunningFiring, runningLease, type RunningFiring } from "./firingLease";
 
 /** Keep the admission reservation alive without spending the execution deadline. */
-export const QUEUE_HEARTBEAT_MS = Math.floor(RUN_LEASE_SECONDS * 1000 / 3);
+export const QUEUE_HEARTBEAT_MS = FIRING_HEARTBEAT_MS;
 
 export function queueLeaseUntil(): string {
   return new Date(Date.now() + RUN_LEASE_SECONDS * 1000).toISOString();
@@ -13,7 +14,7 @@ export function queueLeaseUntil(): string {
 
 export function holdQueuedFiring(
   deps: FiringDeps,
-  firing: { run: TriggerRun; release: () => Promise<void>; start?: () => Promise<boolean> },
+  firing: RunningFiring & { start?: () => Promise<boolean> },
   renewSlot: () => Promise<boolean>,
 ): void {
   const releaseSlot = firing.release;
@@ -62,10 +63,11 @@ export function holdQueuedFiring(
     if (lost) return false;
     const { queueLeaseUntil: _lease, ...previous } = firing.run;
     void _lease;
-    const run: TriggerRun = { ...previous, status: "running", startedAt: new Date().toISOString() };
+    const run: TriggerRun = { ...previous, ...runningLease(), status: "running", startedAt: new Date().toISOString() };
     try {
       if (!await deps.triggers.updateQueuedRun(firing.run, run)) throw new Error("The queued firing was closed before dispatch.");
       firing.run = run;
+      holdRunningFiring(deps, firing, renewSlot);
       return true;
     } catch (error) {
       await close(error instanceof Error ? error.message : String(error));

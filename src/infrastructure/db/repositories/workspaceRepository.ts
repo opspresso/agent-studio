@@ -112,6 +112,7 @@ export const workspaceRepository: WorkspaceRepository = {
   async write(change: WorkspaceWrite) {
     const { workspace, expectedRevision, session, sandbox, run, approval, request, delivery, events = [] } = change;
     if (workspace.revision !== expectedRevision + 1) throw new Error("workspace revision must advance once");
+    if (events.some(event => event.data.outputLoss) && !run?.outputLoss) throw new Error("Workspace output loss must be recorded on its run");
     const operations: TransactOp[] = [{ kind: "put", item: workspaceItem(workspace), condition: row => {
       const previous = row?.value as Workspace | undefined;
       return row?.revision === expectedRevision && previous?.ownerEmail === workspace.ownerEmail &&
@@ -130,7 +131,9 @@ export const workspaceRepository: WorkspaceRepository = {
       if (!child) continue;
       assertChild(workspace.id, child);
       operations.push({ kind: "put", item: { ...keys.workspaceChild(workspace.id, kind, child.id), value: child,
-        expiresAt: expiry(workspace.updatedAt) } });
+        expiresAt: expiry(workspace.updatedAt) }, ...(kind === "RUN" ? {
+          condition: (row: Item | null) => !(row?.value as WorkspaceRun | undefined)?.outputLoss || child.outputLoss === true,
+        } : {}) });
     }
     if (approval?.sourceChatId && isTerminalCodingApproval(approval.status)) {
       const notification: WorkspaceContinuation = { workspaceId: workspace.id, approvalId: approval.id,

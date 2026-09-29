@@ -239,7 +239,7 @@ Chat의 SDK `runtime_sessions`와 수명을 공유하지 않는다.
 | Webhook trigger | `POST /api/webhook/[agent]` → `executeDelivery` | `streamAgentRun` (`triggerRunnerDeps.run`). JSON payload를 사용자 메시지로 전달한다 |
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamAgentRun` (같은 `triggerRunnerDeps.run`) |
 | Audio 후처리 | audio worker가 고정한 Agent와 현재 설정으로 실행 | `streamAgentRun` + `collectRun` (`backgroundTask: true`) |
-| Workspace | 별도 worker가 DB 큐와 native operation을 이어받는다 | `executeWorkspaceTask` + 공통 `openTaskRun`. 일반 명령과 외부 CLI runtime은 앱 모델 설정 없이 실행한다 |
+| Workspace | 별도 worker가 DB 큐와 native operation을 이어받는다 | `executeWorkspaceTask` + 공통 `openTaskRun`. command에는 모델 설정이 없으며 native CLI는 Agent 대화 설정과 별도로 Models의 Workspace Runtime 선택을 사용한다 |
 
 오디오 전사 호출은 worker가 `openModelCall`로 모델 정책·비용·동시성을 적용하고,
 후처리는 표의 Agent 실행 경로를 사용한다. 같은 Agent 설정이라도 사용자·token·메신저·자동화가

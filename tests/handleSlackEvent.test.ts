@@ -161,7 +161,7 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     },
     async listChannels() {
       calls.push("listChannels");
-      return [];
+      return { channels: [], truncated: false };
     },
     async threadReplies() {
       calls.push("threadReplies");

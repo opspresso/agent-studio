@@ -4,8 +4,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import { gzipSync } from "node:zlib";
 import { createWorkspaceRuntimeAdapter, withWorkspaceModelChannel } from "@/infrastructure/workspace/runtimeAdapters";
 import { createDockerSandboxBackend } from "@/infrastructure/workspace/dockerProvider";
+import { foldWorkspaceOutput } from "@/application/workspace/output";
 import type { SandboxProvider } from "@/domain/workspace/ports";
-import type { Workspace } from "@/domain/workspace/types";
+import type { Workspace, WorkspaceRun } from "@/domain/workspace/types";
 
 /** Exercise compilers and package managers through the real, unprivileged command boundary. */
 async function checkToolchains(provider: SandboxProvider, id: string) {
@@ -204,6 +205,22 @@ printf 'org.gradle.daemon=false\\n' > "$HOME/.gradle/gradle.properties"
     for (const frame of unicode.frames) {
       assert.equal(Buffer.from(frame.text, "utf8").toString("utf8"), frame.text, "every persisted frame contains complete Unicode characters");
     }
+
+    const overflowId = "overflow-operation";
+    await provider.start(id, overflowId, { argv: ["node", "-e", "process.stdout.write(String.fromCharCode(120).repeat(17 * 1024 * 1024))"], timeoutMs: 10_000 });
+    let overflow = await provider.operation(id, overflowId);
+    for (let attempt = 0; attempt < 30 && ["running", "starting"].includes(overflow.status); attempt++) {
+      await delay(100);
+      overflow = await provider.operation(id, overflowId);
+    }
+    assert.equal(overflow.status, "succeeded", "the overflow fixture must finish successfully before inspecting source loss");
+    assert.equal(overflow.truncated, true, "the real Sandbox log bound must record omitted output");
+    const overflowOutput = await provider.output(id, overflowId, 0);
+    assert.ok(overflowOutput.frames.length > 0, "the log preserves an observable output prefix");
+    const overflowRun: WorkspaceRun = { id: overflowId, workspaceId, sessionId: "overflow-session", requestKey: overflowId,
+      input: { kind: "command", script: "overflow fixture" }, status: "running", createdAt: "", lastEventSeq: 0, checks: [] };
+    assert.equal(foldWorkspaceOutput(createWorkspaceRuntimeAdapter("command"), overflowRun, overflowOutput, false, overflow).patch.outputLoss,
+      true, "permanent provider loss must reach durable worker output metadata even while retained pages remain");
 
     await provider.start(id, "next-operation", { argv: ["/bin/sh", "-s"], stdin: "sleep 1; echo next", timeoutMs: 10_000 });
     await provider.cancel(id, operationId);

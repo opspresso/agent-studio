@@ -38,9 +38,11 @@ const agent: Agent = {
   ownerEmail: "owner@example.com",
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
+  configuration: { agentName: "p", systemPrompt: "Review", model: "test", skillList: [], mcpList: [], subagentList: [],
+    parameters: { piiFiltering: false, workspaceTools: true } },
 };
 
-function fixture(authorizeReview?: (email: string) => Promise<void>) {
+function fixture(authorizeReview?: (email: string) => Promise<void>, currentAgent: Agent = agent) {
   const stored = new Map<string, Trigger>();
   const triggers: TriggerRepository = {
     get: async (_p, id) => stored.get(id) ?? null,
@@ -58,9 +60,10 @@ function fixture(authorizeReview?: (email: string) => Promise<void>) {
     appendRun: async () => {},
     finishRun: async () => {},
     updateQueuedRun: async () => { throw new Error("CRUD does not dispatch queued runs"); },
+    updateRunningRun: async () => { throw new Error("CRUD does not dispatch running executions"); },
     listRuns: async () => [],
   };
-  const agents = { get: async () => agent } as unknown as AgentRepository;
+  const agents = { get: async () => currentAgent } as unknown as AgentRepository;
   const storedWebhook = (id: string): WebhookTrigger => {
     const trigger = stored.get(id);
     if (trigger?.kind !== "webhook") {
@@ -80,7 +83,7 @@ describe("GitHub review trigger configuration", () => {
   it("requires administrator authorization, preserves selection, and allows disabling reviews", async () => {
     const authorize = vi.fn(async () => {});
     const f = fixture(authorize);
-    const input = { triggerId: "webhook", githubReview: { scope: "accessible" as const } };
+    const input = { triggerId: "webhook", githubReview: { scope: "accessible" as const }, runAsOwner: true };
     await expect(fixture().useCases.create("p", input, agent.ownerEmail)).rejects.toThrow("administrator");
     const created = await f.useCases.create("p", input, agent.ownerEmail);
     expect(authorize).toHaveBeenCalledExactlyOnceWith(agent.ownerEmail);
@@ -100,6 +103,36 @@ describe("GitHub review trigger configuration", () => {
       githubReview: { scope: "accessible" } }, agent.ownerEmail)).rejects.toThrow("only available for webhooks");
     expect(createTriggerSchema.safeParse({ triggerId: "webhook", githubReview: { scope: "accessible", repositories: ["org/repo"] } }).success).toBe(false);
     expect(updateTriggerSchema.safeParse({ githubReview: { scope: "repositories", repositories: [] } }).success).toBe(false);
+  });
+  it("refuses enabling PR reviews without the owner's explicit execution grant", async () => {
+    const f = fixture(async () => {});
+    await expect(f.useCases.create("p", { triggerId: "webhook", githubReview: { scope: "accessible" } }, agent.ownerEmail))
+      .rejects.toThrow("Run with my permissions");
+    expect(f.stored.size).toBe(0);
+    await f.useCases.create("p", { triggerId: "webhook" }, agent.ownerEmail);
+    await expect(f.useCases.update("p", "webhook", { githubReview: { scope: "accessible" } }, agent.ownerEmail))
+      .rejects.toThrow("Run with my permissions");
+    expect(f.storedWebhook("webhook").githubReview).toBeUndefined();
+  });
+  it.each(["disabled", "blockedTools", "approvalTools"] as const)("refuses PR review setup with %s Workspace tools", async issue => {
+    const configured: Agent = { ...agent, configuration: { ...agent.configuration!, parameters: {
+      piiFiltering: false, workspaceTools: issue !== "disabled", ...(issue !== "disabled" ? { policy: { [issue]: ["Workspace"] } } : {}),
+    } } };
+    const f = fixture(async () => {}, configured);
+    await expect(f.useCases.create("p", { triggerId: "webhook", githubReview: { scope: "accessible" }, runAsOwner: true }, agent.ownerEmail))
+      .rejects.toThrow("Workspace");
+    expect(f.stored.size).toBe(0);
+  });
+  it("reports incomplete stored setup and permits revocation without silently granting permissions", async () => {
+    const f = fixture(async () => {});
+    await f.useCases.create("p", { triggerId: "webhook", githubReview: { scope: "accessible" }, runAsOwner: true }, agent.ownerEmail);
+    const revoked = await f.useCases.update("p", "webhook", { runAsOwner: false }, agent.ownerEmail);
+    expect(revoked.executionEmail).toBeUndefined();
+    expect(revoked.reviewIssue).toContain("Run with my permissions");
+    expect((await f.useCases.list("p", agent.ownerEmail))[0]?.reviewIssue).toBe(revoked.reviewIssue);
+    await expect(f.useCases.update("p", "webhook", { enabled: true }, agent.ownerEmail)).rejects.toThrow("Run with my permissions");
+    expect((await f.useCases.update("p", "webhook", { enabled: false }, agent.ownerEmail)).enabled).toBe(false);
+    expect((await f.useCases.update("p", "webhook", { githubReview: null }, agent.ownerEmail)).reviewIssue).toBeUndefined();
   });
 });
 

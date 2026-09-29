@@ -115,6 +115,9 @@ export interface TriggerRun {
   queuedAt?: string;
   /** Queue owner's renewable lease, present only before dispatch. */
   queueLeaseUntil?: string;
+  /** Private execution ownership; renewal and terminal writes compare both values. */
+  runningLeaseToken?: string;
+  runningLeaseUntil?: string;
   startedAt?: string;
   endedAt?: string;
   /** Bounded preview of the answer — a run's whole output does not belong here. */

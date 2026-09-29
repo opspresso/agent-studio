@@ -228,9 +228,38 @@ function inlineLinkReader(source: string) {
   };
 }
 
+/** Index unescaped closing markers once, including the non-whitespace boundary emphasis requires. */
+function inlineEmphasisReader(source: string) {
+  const endings = new Map<string, number[]>([["*", []], ["**", []], ["_", []], ["__", []]]);
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (character === "\\") { index += 1; continue; }
+    if ((character !== "*" && character !== "_") || index === 0 || /\s/.test(source[index - 1]!)) continue;
+    endings.get(character)!.push(index);
+    if (source[index + 1] === character) endings.get(character + character)!.push(index);
+  }
+  return (index: number, marker: string): { text: string; end: number } | undefined => {
+    if (!source.startsWith(marker, index)) return undefined;
+    const from = index + marker.length;
+    if (from >= source.length || /\s/.test(source[from]!)) return undefined;
+    const positions = endings.get(marker)!;
+    let low = 0;
+    let high = positions.length;
+    // The body must contain at least one character, as well as a valid closing boundary.
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (positions[middle]! <= from) low = middle + 1;
+      else high = middle;
+    }
+    const close = positions[low];
+    return close === undefined ? undefined : { text: source.slice(from, close), end: close + marker.length };
+  };
+}
+
 export function parseInline(source: string, style: Style = {}, depth = 0): Run[] {
   const runs: Run[] = [];
   const readLink = inlineLinkReader(source);
+  const readEmphasis = inlineEmphasisReader(source);
   let plain = "";
   const flush = (): void => {
     if (plain !== "") {
@@ -291,25 +320,18 @@ export function parseInline(source: string, style: Style = {}, depth = 0): Run[]
 
     if ((here === "*" || here === "_") && depth < MAX_INLINE_DEPTH) {
       const opens = here === "*" || underscoreOpensEmphasis(source, index);
-      // `(?:\\[\s\S]|[^\\])` rather than `[\s\S]`: a backslash always takes the
-      // character after it, so an *escaped* delimiter can never be read as the
-      // closing one. Without it `*SELECT \\* FROM t*` closed on the escaped
-      // asterisk — the run came back as `SELECT \\` with ` FROM t*` beside it,
-      // a backslash in the prose and the asterisk moved to the end. Every
-      // reader here produces italic runs, so a document holding an asterisk in
-      // an italic phrase reached it.
-      const strong = opens ? /^(\*\*|__)(?=\S)((?:\\[\s\S]|[^\\])+?)(?<=\S)\1/.exec(rest) : null;
-      if (strong?.[2]) {
+      const strong = opens ? readEmphasis(index, here + here) : undefined;
+      if (strong) {
         flush();
-        runs.push(...parseInline(strong[2], { ...style, bold: true }, depth + 1));
-        index += strong[0].length;
+        runs.push(...parseInline(strong.text, { ...style, bold: true }, depth + 1));
+        index = strong.end;
         continue;
       }
-      const emphasis = opens ? /^(\*|_)(?=\S)((?:\\[\s\S]|[^\\])+?)(?<=\S)\1/.exec(rest) : null;
-      if (emphasis?.[2]) {
+      const emphasis = opens ? readEmphasis(index, here) : undefined;
+      if (emphasis) {
         flush();
-        runs.push(...parseInline(emphasis[2], { ...style, italic: true }, depth + 1));
-        index += emphasis[0].length;
+        runs.push(...parseInline(emphasis.text, { ...style, italic: true }, depth + 1));
+        index = emphasis.end;
         continue;
       }
     }

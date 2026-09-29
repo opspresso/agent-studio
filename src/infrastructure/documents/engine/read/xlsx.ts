@@ -23,6 +23,7 @@ import { MS_PER_DAY } from "@/shared/date";
 import { attributeOf, localName, walkXml, type XmlHandler } from "../xml";
 import { openZip } from "../zip";
 import { DocumentError } from "../errors";
+import { partOfTarget } from "./docx";
 import {
   MAX_INSPECTED_CELLS,
   MAX_SPREADSHEET_CELLS,
@@ -451,34 +452,26 @@ function columnName(column: number): string {
 export function sheetParts(
   workbook: string | undefined,
   rels: string | undefined,
-  requireRelationships = false,
+  editing = false,
 ): Array<{ name: string; path: string; state: "visible" | "hidden" | "veryHidden" }> {
-  if (!workbook) {
-    return [];
-  }
-  const targets = new Map<string, string>();
-  if (rels) {
-    walkXml(rels, { text() {}, close() {}, open(name, attributes) {
-      if (localName(name) !== "Relationship") return;
-      const id = attributeOf(attributes, "Id");
-      const target = attributeOf(attributes, "Target");
-      if (id && target) {
-        if (targets.has(id)) throw new XlsxError("Duplicate workbook relationship ID");
-        if (attributeOf(attributes, "TargetMode") === "External") {
-          if (requireRelationships) throw new XlsxError("Cannot edit external workbook relationships");
-          targets.set(id, "");
-          return;
-        }
-        // Targets are relative to `xl/`, and some writers make that explicit.
-        targets.set(id, `xl/${target.replace(/^\/?(xl\/)?/, "")}`);
-      }
-    } });
-  }
+  if (!workbook || !rels) throw new XlsxError("The workbook and its relationships are required");
+  const targets = new Map<string, { target?: string; type?: string; external: boolean }>();
+  walkXml(rels, { text() {}, close() {}, open(name, attributes) {
+    if (localName(name) !== "Relationship") return;
+    const id = attributeOf(attributes, "Id");
+    if (id) {
+      if (targets.has(id)) throw new XlsxError("Duplicate workbook relationship ID");
+      const external = attributeOf(attributes, "TargetMode") === "External";
+      if (editing && external) throw new XlsxError("Cannot edit external workbook relationships");
+      targets.set(id, { target: attributeOf(attributes, "Target"), type: attributeOf(attributes, "Type"), external });
+    }
+  } });
   const sheets: Array<{
     name: string;
     path: string;
     state: "visible" | "hidden" | "veryHidden";
   }> = [];
+  const usedParts = new Set<string>();
   walkXml(workbook, { text() {}, close() {}, open(tag, attributes) {
     if (localName(tag) !== "sheet") return;
     const name = attributeOf(attributes, "name");
@@ -489,14 +482,36 @@ export function sheetParts(
     const declaredState = attributeOf(attributes, "state");
     const state =
       declaredState === "hidden" || declaredState === "veryHidden" ? declaredState : "visible";
-    if (requireRelationships && (!id || !targets.has(id))) {
+    const relationship = id ? targets.get(id) : undefined;
+    if (!relationship?.target || !relationship.type?.endsWith("/worksheet")) {
       throw new XlsxError(`Worksheet ${JSON.stringify(name)} has no resolved relationship`);
     }
-    // Reading may recover a conventional path; editing must never guess a target.
-    const path = (id ? targets.get(id) : undefined) ?? `xl/worksheets/sheet${sheets.length + 1}.xml`;
+    if (relationship.external) throw new XlsxError("Cannot read external worksheet relationships");
+    const path = partOfTarget("xl", relationship.target);
+    if (path === ".." || path.startsWith("../") || usedParts.has(path)) {
+      throw new XlsxError("Worksheet relationships must resolve to distinct package parts");
+    }
+    usedParts.add(path);
     sheets.push({ name, path, state });
   } });
   return sheets;
+}
+
+/** A declared worksheet is either present in full or the workbook is unreadable. */
+function readWorksheets(
+  sheets: readonly { name: string; path: string }[],
+  names: readonly string[],
+  read: (names: readonly string[]) => Map<string, Uint8Array>,
+): Map<string, Uint8Array> {
+  const available = new Set(names);
+  for (const sheet of sheets) {
+    if (!available.has(sheet.path)) throw new XlsxError(`Worksheet ${JSON.stringify(sheet.name)} points to a missing package part`);
+  }
+  const parts = read(sheets.map(sheet => sheet.path));
+  for (const sheet of sheets) {
+    if (!parts.has(sheet.path)) throw new XlsxError(`Worksheet ${JSON.stringify(sheet.name)} could not be read`);
+  }
+  return parts;
 }
 
 /** Remove empty grid cells before joining, so literal pipes remain data. */
@@ -542,8 +557,7 @@ export function xlsxToText(bytes: Uint8Array, maxChars: number): XlsxText {
 
   const visibleSheets = sheets.filter((sheet) => sheet.state === "visible");
   const hiddenSheets = sheets.length - visibleSheets.length;
-  const wanted = visibleSheets.map((sheet) => sheet.path).filter((path) => names.includes(path));
-  const parts = read(wanted);
+  const parts = readWorksheets(visibleSheets, names, read);
 
   const lines: string[] = [];
   let length = 0;
@@ -554,10 +568,7 @@ export function xlsxToText(bytes: Uint8Array, maxChars: number): XlsxText {
   let full = true;
 
   for (const sheet of visibleSheets) {
-    const part = parts.get(sheet.path);
-    if (!part) {
-      continue;
-    }
+    const part = parts.get(sheet.path)!;
     if (full) {
       const heading = `${lines.length > 0 ? "\n" : ""}## ${sheet.name}`;
       const cost = heading.length + (lines.length > 0 ? 1 : 0);
@@ -635,8 +646,7 @@ export function inspectXlsx(bytes: Uint8Array, includeHidden = false): XlsxInspe
   );
 
   const visible = includeHidden ? sheets : sheets.filter((sheet) => sheet.state === "visible");
-  const wanted = visible.map((sheet) => sheet.path).filter((path) => names.includes(path));
-  const parts = read(wanted);
+  const parts = readWorksheets(visible, names, read);
   const inspected: InspectedSheet[] = [];
   let remaining = MAX_INSPECTED_CELLS;
   let complete = true;
@@ -645,10 +655,7 @@ export function inspectXlsx(bytes: Uint8Array, includeHidden = false): XlsxInspe
       complete = false;
       break;
     }
-    const part = parts.get(sheet.path);
-    if (!part) {
-      continue;
-    }
+    const part = parts.get(sheet.path)!;
     const reader = new Sheet(strings, undefined, remaining, dates, epoch1904);
     walkXml(decoder.decode(part), reader);
     const result = reader.inspection();

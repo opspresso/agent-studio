@@ -97,6 +97,14 @@ test("a backslash escapes the punctuation Markdown gives meaning to", () => {
   assert.deepEqual(parseInline("2 \\* 3 \\*\\* 4"), [{ text: "2 * 3 ** 4" }]);
 });
 
+test("unmatched emphasis retains a full bounded document rather than repeatedly searching its tail", () => {
+  const source = "*a ".repeat(166_666);
+  assert.deepEqual(parseInline(source), [{ text: source }]);
+  assert.deepEqual(parseInline("**SELECT \\* FROM t** _done_"), [
+    { text: "SELECT * FROM t", bold: true }, { text: " " }, { text: "done", italic: true },
+  ]);
+});
+
 test("a fenced block keeps its lines and its language", () => {
   const parsed = blocks("```ts\nconst a = 1;\n\n  indented\n```\nafter");
   assert.deepEqual(parsed[0], { kind: "code", text: "const a = 1;\n\n  indented", language: "ts" });

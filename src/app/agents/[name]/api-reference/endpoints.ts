@@ -427,11 +427,11 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       description:
         "Starts a run of the current Agent configuration from outside. Generic senders use X-Trigger-Secret. GitHub uses the same secret in its Secret setting to sign X-Hub-Signature-256, with X-GitHub-Delivery and X-GitHub-Event headers; the JSON body (up to 1MB) becomes the run's input — serialised into the user message. " +
         "It acknowledges admission with 202 and executes in the background. Read the result under Settings → Webhook; 202 does not mean execution completed. " +
-        "Generic senders use Idempotency-Key; GitHub redeliveries are deduplicated by X-GitHub-Delivery for 24 hours. Signed GitHub ping deliveries return status=ping without a run. When PR review is configured, generic authentication is refused; unsupported PR events return status=ignored with a reason.",
+        "Generic senders use Idempotency-Key; GitHub redeliveries are deduplicated by X-GitHub-Delivery for 24 hours. Signed GitHub ping deliveries return status=ping without a run. When PR review is configured, generic authentication is refused; unsupported PR events return status=ignored with a reason. Missing PR review setup returns 409 review-not-ready before admission or an idempotency claim, so the same event can be redelivered after explicit setup.",
       auth: "trigger-secret",
       streaming: false,
       responseFields: [
-        { name: "ok", type: "boolean", description: "Always true — the delivery was understood." },
+        { name: "ok", type: "boolean", description: "True on 202 responses — the delivery was understood." },
         {
           name: "status",
           type: "string",
@@ -446,7 +446,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         { name: "reason", type: "string", description: 'Present on "ignored" — why a PR review delivery was not selected.' },
       ],
       responseExample: pretty({ ok: true, status: "accepted", runId: "9f1c…" }),
-      errorCodes: [400, 401, 404, 413],
+      errorCodes: [400, 401, 404, 409, 413],
       codeExamples: [
         curlExample({
           method: "POST",

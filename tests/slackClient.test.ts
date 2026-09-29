@@ -62,6 +62,79 @@ describe("how a Slack call fails", () => {
 });
 
 describe("how long a Slack call may take", () => {
+  it("continues channel listings through short and empty pages while a cursor remains", async () => {
+    const request = vi.fn(async (url: string) => {
+      const cursor = new URL(url).searchParams.get("cursor");
+      return jsonResponse({ ok: true,
+        channels: cursor === null ? [{ id: "C1", name: "one" }]
+          : cursor === "next" ? [] : [{ id: "C2", name: "two" }],
+        response_metadata: { next_cursor: cursor === null ? "next" : cursor === "next" ? "last" : "" },
+      });
+    });
+    vi.stubGlobal("fetch", request);
+
+    expect(await slackClient.listChannels(TOKEN, { limit: 3 })).toEqual({ channels: [
+      { id: "C1", name: "one" }, { id: "C2", name: "two" },
+    ], truncated: false });
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it("finds joined channels on later pages before spending the matching-result limit", async () => {
+    const request = vi.fn(async (url: string) => {
+      const first = !new URL(url).searchParams.has("cursor");
+      return jsonResponse({ ok: true,
+        channels: first ? [{ id: "C1", name: "deploy-public", is_member: false }, { id: "C2", name: "random", is_member: true }]
+          : [{ id: "C3", name: "Deploy-team", is_member: true, is_private: true }],
+        response_metadata: { next_cursor: first ? "next" : "" },
+      });
+    });
+    vi.stubGlobal("fetch", request);
+
+    expect(await slackClient.listChannels(TOKEN, { limit: 1, query: "deploy", memberOnly: true })).toEqual({
+      channels: [{ id: "C3", name: "Deploy-team", isMember: true, isPrivate: true }], truncated: false,
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds matching results and reports unread matches without fetching another page", async () => {
+    const request = vi.fn(async () => jsonResponse({ ok: true,
+      channels: [{ id: "C1", name: "one" }, { id: "C2", name: "two" }, { id: "C3", name: "three" }],
+      response_metadata: { next_cursor: "next" },
+    }));
+    vi.stubGlobal("fetch", request);
+
+    expect(await slackClient.listChannels(TOKEN, { limit: 2 })).toEqual({
+      channels: [{ id: "C1", name: "one" }, { id: "C2", name: "two" }], truncated: true,
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([{ cursors: ["next", "next"] }, { cursors: ["first", "second", "first"] }])("rejects repeated channel pagination cursors $cursors", async ({ cursors }) => {
+    let page = 0;
+    const request = vi.fn(async () => jsonResponse({ ok: true, channels: [], response_metadata: { next_cursor: cursors[page++] } }));
+    vi.stubGlobal("fetch", request);
+    await expect(slackClient.listChannels(TOKEN)).rejects.toThrow("repeated channel pagination cursor");
+    expect(request).toHaveBeenCalledTimes(cursors.length);
+  });
+
+  it("reports a bounded page scan as incomplete even when no channel matched", async () => {
+    let page = 0;
+    const request = vi.fn(async () => jsonResponse({ ok: true, channels: [], response_metadata: { next_cursor: `page-${++page}` } }));
+    vi.stubGlobal("fetch", request);
+
+    expect(await slackClient.listChannels(TOKEN, { query: "unseen" })).toEqual({ channels: [], truncated: true });
+    expect(request).toHaveBeenCalledTimes(5);
+  });
+
+  it("does not return partial channel results as success after a later page fails", async () => {
+    const request = vi.fn(async (url: string) => !new URL(url).searchParams.has("cursor")
+      ? jsonResponse({ ok: true, channels: [{ id: "C1", name: "one" }], response_metadata: { next_cursor: "next" } })
+      : new Response("", { status: 503 }));
+    vi.stubGlobal("fetch", request);
+
+    await expect(slackClient.listChannels(TOKEN)).rejects.toThrow("Slack conversations.list failed: HTTP 503");
+  });
+
   it("bounds an explicit thread limit across pages and stops fetching once full", async () => {
     const request = vi.fn(async (url: string) => {
       const cursor = new URL(url).searchParams.get("cursor");

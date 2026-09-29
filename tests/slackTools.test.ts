@@ -62,6 +62,7 @@ function makeSlackFake(
     history?: SlackMessage[];
     thread?: SlackMessage[];
     channels?: SlackChannelInfo[];
+    channelsTruncated?: boolean;
     reactions?: SlackReaction[];
     findUsers?: { users: SlackUserDetail[]; truncated: boolean };
   } = {},
@@ -78,7 +79,11 @@ function makeSlackFake(
     },
     async listChannels(_token, args) {
       calls.push({ method: "listChannels", args });
-      return over.channels ?? [];
+      const matching = (over.channels ?? []).filter(channel =>
+        (!args?.memberOnly || channel.isMember === true) &&
+        (!args?.query || channel.name.toLowerCase().includes(args.query.toLowerCase())));
+      const channels = matching.slice(0, args?.limit);
+      return { channels, truncated: over.channelsTruncated === true || matching.length > channels.length };
     },
     // Derived from the detail, exactly as the adapter does — one lookup, two
     // views, so a test cannot pass on a shape the real client never produces.
@@ -317,6 +322,20 @@ describe("listing channels", () => {
 
     expect(await read("SlackChannels", { query: "billing" })).toMatch(/No channel matching/);
   });
+
+  it("asks the channel reader to filter before applying the result limit", async () => {
+    const { read, calls } = makeSlackFake({ channels: CHANNELS });
+    await read("SlackChannels", { query: "#DePlOy" });
+    expect(calls).toEqual([{ method: "listChannels", args: { query: "deploy", limit: 200 } }]);
+  });
+
+  it("reports an incomplete listing without declaring an unmatched channel absent", async () => {
+    const { read } = makeSlackFake({ channels: CHANNELS, channelsTruncated: true });
+    expect(await read("SlackChannels", { query: "deploy" })).toContain("this listing reached its result or page limit");
+    const missing = await read("SlackChannels", { query: "billing" });
+    expect(missing).toContain("more channels that were not inspected");
+    expect(missing).not.toContain("is visible to this bot");
+  });
 });
 
 describe("what a run is offered", () => {
@@ -537,7 +556,7 @@ describe("resolving a crowd of names", () => {
         return [];
       },
       async listChannels() {
-        return [];
+        return { channels: [], truncated: false };
       },
       async userDetail() {
         return null;
