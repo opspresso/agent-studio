@@ -10,5 +10,7 @@ coverage
 docs
 tests
 scripts/mock-llm.ts
+# Verification harness depends on test fixtures and is not a runtime entrypoint.
+scripts/pr-review-workspace-check.ts
 # Local deployment configuration and credentials are not image inputs.
 deploy
