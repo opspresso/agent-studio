@@ -11,31 +11,48 @@ export async function checkRuntimeSessions(): Promise<void> {
   const owner = "runtime-integration@example.test";
   const configuration: AgentConfiguration = { agentName: "runtime-integration",  model: "openai/gpt-5-mini", systemPrompt: "",  parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] };
   const services = { repository, cipher: secretCipher, retentionDays: 1 };
-  await openRuntimeSession(services, { sessionId: id, ownerEmail: owner, agentName: configuration.agentName, configuration });
-  const row = await repository.get(id, owner);
-  assert.ok(row);
-  assert.ok(row.payload.startsWith("enc:v2:"));
-  assert.equal(await repository.get(id, "someone-else@example.test"), null);
-  assert.deepEqual((await readRuntimeSession(services, id, owner))?.document.items, []);
+  const sessionIds = [id];
+  let checksFailed = false;
+  try {
+    await openRuntimeSession(services, { sessionId: id, ownerEmail: owner, agentName: configuration.agentName, configuration });
+    const row = await repository.get(id, owner);
+    assert.ok(row);
+    assert.ok(row.payload.startsWith("enc:v2:"));
+    assert.equal(await repository.get(id, "someone-else@example.test"), null);
+    assert.deepEqual((await readRuntimeSession(services, id, owner))?.document.items, []);
 
-  const update = { sessionId: id, ownerEmail: owner, agentName: row.agentName, payload: row.payload, expiresAt: row.expiresAt };
-  const raced = await Promise.all([repository.save(update, row.revision), repository.save(update, row.revision)]);
-  assert.equal(raced.filter((value) => value !== null).length, 1, "only one session CAS may win");
-  const current = (await repository.get(id, owner))!;
-  await repository.delete(id, owner);
-  assert.equal(await repository.get(id, owner), null);
-  assert.equal(await repository.save(update, current.revision), null, "deleted sessions reject late commits");
-  assert.equal(await repository.save(update, null), null, "a tombstone prevents resurrection by an old first run");
+    const update = { sessionId: id, ownerEmail: owner, agentName: row.agentName, payload: row.payload, expiresAt: row.expiresAt };
+    const raced = await Promise.all([repository.save(update, row.revision), repository.save(update, row.revision)]);
+    assert.equal(raced.filter((value) => value !== null).length, 1, "only one session CAS may win");
+    const current = (await repository.get(id, owner))!;
+    await repository.delete(id, owner);
+    assert.equal(await repository.get(id, owner), null);
+    assert.equal(await repository.save(update, current.revision), null, "deleted sessions reject late commits");
+    assert.equal(await repository.save(update, null), null, "a tombstone prevents resurrection by an old first run");
 
-  const copied = randomUUID();
-  const copiedRow = { ...update, sessionId: copied };
-  assert.ok(await repository.save(copiedRow, null));
-  await assert.rejects(readRuntimeSession(services, copied, owner), "ciphertext is bound to its session identity");
-  await repository.delete(copied, owner);
+    const copied = randomUUID();
+    sessionIds.push(copied);
+    const copiedRow = { ...update, sessionId: copied };
+    assert.ok(await repository.save(copiedRow, null));
+    await assert.rejects(readRuntimeSession(services, copied, owner), "ciphertext is bound to its session identity");
+    await repository.delete(copied, owner);
 
-  const expired = randomUUID();
-  await repository.save({ ...update, sessionId: expired, expiresAt: new Date(Date.now() - 1000).toISOString() }, null);
-  assert.equal(await repository.get(expired, owner), null, "expiry is enforced on reads before the sweep");
-  assert.ok(await repository.sweepExpired(new Date()) >= 1);
+    const expired = randomUUID();
+    sessionIds.push(expired);
+    await repository.save({ ...update, sessionId: expired, expiresAt: new Date(Date.now() - 1000).toISOString() }, null);
+    assert.equal(await repository.get(expired, owner), null, "expiry is enforced on reads before the sweep");
+    assert.ok(await repository.sweepExpired(new Date()) >= 1);
+  } catch (error) {
+    checksFailed = true;
+    throw error;
+  } finally {
+    const settled = await Promise.allSettled(sessionIds.map(sessionId => repository.delete(sessionId, owner)));
+    const failures: unknown[] = settled.flatMap(result => result.status === "rejected" ? [result.reason] : []);
+    if (failures.length > 0) {
+      const error = new AggregateError(failures, "Runtime Session fixture cleanup failed");
+      if (checksFailed) console.error("RUNTIME SESSION CLEANUP FAILURE:", error);
+      else throw error;
+    }
+  }
   console.log("[ok] encrypted SDK Session CAS, ownership, expiry and deletion fencing");
 }
