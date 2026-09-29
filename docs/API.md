@@ -910,9 +910,10 @@ Slack 읽기는 마스킹된 인증 정보 상태와 함께 `configured`, `event
 `enabled: true`로 활성화하면 400이다.
 테스트 엔드포인트는 `{ ok: true, team, botUser }` 를 돌려주고, 그 agent 에 Slack 이 설정되지
 않았거나 꺼져 있으면 `400`, Slack API 실패면 `502` 다.
-채널 엔드포인트는 `{ channels: [{ id, name, isPrivate?, isMember? }] }` 를 돌려준다. 설정되고
+채널 엔드포인트는 `{ channels: [{ id, name, isPrivate?, isMember? }], truncated: boolean }` 을 돌려준다. 설정되고
 활성화된 agent bot의 token으로 읽으며, 보고서를 실제로 쓸 수 있도록 bot이 참가한 채널만
-이름순으로 제공한다.
+최대 200개를 이름순으로 제공한다. `truncated: true`는 결과·조회 페이지 상한으로 목록에 없는
+참가 채널이 더 있을 수 있음을 뜻한다.
 
 agent 별 Telegram 설정은 이 엔드포인트들을 쓴다:
 

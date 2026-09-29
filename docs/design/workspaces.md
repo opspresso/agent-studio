@@ -234,13 +234,15 @@ API token은 Agent 소유자로 인증하고 MCP에 소유자 email을 전달한
 Agent 설정의 `parameters.workspaceTools`를 켜면 확인된 member 이상 실행 사용자의 해당 Agent에
 `Workspace` 빌트인을 제공한다. `options`, `start`, `run`, `status`, `wait`, `cancel`, `close`로
 설정 조회·작업 접수·후속 실행·결과 확인·정리를 수행한다. 호출마다 현재 멤버 권한과 Agent
-접근을 확인하며 다른 Agent의 Workspace ID는 거절한다. 비인간 실행과 background Task에는
-이 도구를 제공하지 않는다. 프롬프트 미리보기에도 같은 사용자 기준으로 제공 여부를 표시한다.
+접근을 확인하며 다른 Agent의 Workspace ID는 거절한다. 비인간 실행의 제공 여부는 확인된
+실행 신원·현재 위임과 [창구별 계약](#실행-창구별-계약)을 따른다. 일반 background Task에는
+제공하지 않으며 PR 리뷰는 검증된 대상에 고정된 도구를 사용한다. 프롬프트 미리보기에도 같은 사용자 기준으로 제공 여부를 표시한다.
 
 Agent가 만든 Workspace는 자신의 Chat을 가진다. 요청을 조율하는 SDK 대화 이력과 native Session을
 섞지 않고, 반환된 `workspace_id`로 후속 요청을 연결한다. SDK run과 tool call ID가 접수 중복을
 막는다. `wait`는 최대 8초만 기다리고, 실행 중이면 반환된 Workspace 경로에서 계속 확인한다.
-도구 출력은 cursor로 읽으며 생략된 출력·Diff는 표시한다. `prepare_git`는 Commit·Push·Commit & push·PR·main 병합·main 직접 Push·배포의
+도구 출력은 cursor로 읽으며 페이지에 들어가는 전체 이벤트까지만 cursor를 진행한다.
+단일 이벤트 자체가 상한을 넘는 경우와 생략된 Diff는 잘림을 표시한다. `prepare_git`는 Commit·Push·Commit & push·PR·main 병합·main 직접 Push·배포의
 검토를 준비하고 `approval_path`를 반환한다. Agent는 링크를 전달하고 승인까지 멈춘다.
 배포는 `options.deployment_workflows`의 workflow와 `ref: "main"`을 사용하며 도구의 `inputs`는
 중복 없는 `{name, value}` 배열이다. 서버가 이를 승인 동작의 입력 객체로 변환하고 기존 배포 정책을
