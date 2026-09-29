@@ -17,6 +17,7 @@
     "test:sandbox": "tsx scripts/workspace-sandbox-check.ts",
     "test:workspace": "tsx scripts/workspace-worker-check.ts",
     "test:workspace:git": "tsx scripts/workspace-git-check.ts",
+    "test:workspace:codex": "tsx scripts/workspace-codex-check.ts",
     "test:review:workspace": "tsx scripts/pr-review-workspace-check.ts",
     "worker:workspace": "tsx scripts/workspace-worker.ts",
     "build:workspace": "node scripts/build-workspace-worker.mjs",

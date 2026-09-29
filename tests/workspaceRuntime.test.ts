@@ -26,7 +26,8 @@ describe("native workspace runtime adapters", () => {
   it("binds a configured model channel without copying unrelated host credentials", () => {
     const channel = { name: "openai", baseUrl: "https://model.example/v1", apiKey: "test-model-key" };
     const codex = withWorkspaceModelChannel("codex", { model: "model-id" }, channel);
-    expect(codex.environment).toEqual({ CODEX_API_KEY: channel.apiKey, OPENAI_BASE_URL: channel.baseUrl });
+    expect(codex.environment).toEqual({ CODEX_API_KEY: channel.apiKey });
+    expect(codex.baseUrl).toBe(channel.baseUrl);
     const claude = withWorkspaceModelChannel("claude", {}, { ...channel, name: "anthropic" });
     expect(claude.environment?.ANTHROPIC_BASE_URL).toBe("https://model.example");
     const opencode = withWorkspaceModelChannel("opencode", { model: "model-id" }, channel);

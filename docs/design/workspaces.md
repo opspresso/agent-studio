@@ -47,6 +47,14 @@ Workspace 옵션 목록은 접근 가능한 Agent의 현재 도구 설정을 한
 
 설치된 CLI의 `--help`도 함께 확인한다. 배포 이미지는 검증한 CLI 버전을 고정한다.
 
+Codex의 provider는 실행 인자의 `model_provider`·`model_providers.studio`로 명시한다.
+등록된 endpoint는 `base_url`, 키는 `env_key=CODEX_API_KEY`로 연결하며 키 값을 CLI 인자나
+사용자 설정 파일에 쓰지 않는다. 새 실행과 native Session 재개 모두 같은 현재 채널 설정을 받는다.
+환경변수만으로 endpoint를 추론하지 않는다. Codex 채널은 Responses API를 지원해야 한다.
+설정 키는 [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)를 따른다.
+`pnpm test:workspace:codex`는 `network=none` Sandbox 안의 loopback fixture와 실제 CLI로
+처음 실행·이력 재개·대상 URL·모델 ID·인증 헤더 전달을 검증한다.
+
 ## Docker 실행 계약
 
 `sandbox/Dockerfile`은 Java JDK·Maven·Gradle, Python·pip·venv·uv·Poetry·build·pytest·Ruff,
