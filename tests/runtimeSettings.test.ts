@@ -104,7 +104,7 @@ afterEach(() => {
 
 describe("runtime settings precedence", () => {
   it("applies saved search and run limits and restores env values when cleared", async () => {
-    process.env.CATALOG_MIN_SCORE = "0.3";
+    process.env.CATALOG_MIN_SCORE = "0.2";
     process.env.MAX_CONCURRENT_RUNS_PER_ACTOR = "9";
     stub({ catalogMinScore: "0.4", maxConcurrentRunsPerActor: "2", updatedAt: "2026-09-24T00:00:00Z" });
     await expect(getCatalogMinScore()).resolves.toBe(0.4);
