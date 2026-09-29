@@ -1,7 +1,5 @@
 "use client";
 
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { memo, useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -13,7 +11,6 @@ import {
   Paper,
   Stack,
   Text,
-  Typography,
   UnstyledButton,
   VisuallyHidden,
 } from "@mantine/core";
@@ -25,6 +22,7 @@ import { useLocale, useT } from "@/app/_i18n/provider";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { useImageViewer } from "@/app/_components/ImageViewer";
 import { ProducedFile } from "@/app/_components/ProducedFile";
+import { MarkdownContent } from "@/app/_components/MarkdownContent";
 import { ReasoningRow } from "@/app/_components/ReasoningRow";
 import { ToolRow } from "@/app/_components/ToolRow";
 import { pairToolTraffic } from "@/app/_lib/toolPairs";
@@ -64,18 +62,6 @@ function AnswerDuration({ durationMs }: { durationMs: number }) {
       {"· "}
       {formatted}
     </Text>
-  );
-}
-
-/**
- * Markdown inside a message. Mantine's `Typography` owns element styles; only
- * the wrapping and outer margin collapse are ours.
- */
-function MarkdownContent({ content }: { content: string }) {
-  return (
-    <Typography className={classes.markdown}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-    </Typography>
   );
 }
 
