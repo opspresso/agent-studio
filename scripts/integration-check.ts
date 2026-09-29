@@ -1,4 +1,5 @@
 import { assertLocalDatabase } from "./local-database";
+import { withCheckLifecycle, type RegisterCheckCleanup } from "./check-lifecycle";
 
 /**
  * Integration checks against local PostgreSQL and mock provider transports.
@@ -27,44 +28,22 @@ try {
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 
 async function main() {
-  const cleanups: Array<() => Promise<unknown>> = [];
-  let checksFailed = false;
-  let checksPassed: number;
-  try {
-    checksPassed = await runChecks(cleanups);
-  } catch (error) {
-    checksFailed = true;
-    throw error;
-  } finally {
-    const failures: unknown[] = [];
-    // Unwind owners in order: fixture rows and Settings still need the pool.
-    for (const cleanup of cleanups.toReversed()) {
-      try {
-        await cleanup();
-      } catch (error) {
-        failures.push(error);
-      }
-    }
-    if (failures.length > 0) {
-      const error = new AggregateError(failures, "Integration fixture cleanup failed");
-      if (checksFailed) console.error("INTEGRATION CLEANUP FAILURE:", error);
-      else throw error;
-    }
-  }
+  const checksPassed = await withCheckLifecycle(runChecks);
   console.log(`\n${checksPassed} integration checks passed`);
 }
 
-async function runChecks(cleanups: Array<() => Promise<unknown>>) {
-  const { closePool } = await import("@/infrastructure/db/client");
-  cleanups.push(closePool);
+async function runChecks(cleanup: RegisterCheckCleanup) {
+  const { closePool, withTransaction } = await import("@/infrastructure/db/client");
+  cleanup(closePool);
   // ---------- mock LLM server ----------
   const llmCalls: Array<Record<string, unknown>> = [];
   const decisionCalls: Array<Record<string, unknown>> = [];
   let onNextRoutingRequest: (() => Promise<void>) | undefined;
+  let mockFailure: unknown;
   const mock = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
-    req.on("end", async () => {
+    const respond = async () => {
       const body = JSON.parse(raw) as {
         stream?: boolean;
         model?: string;
@@ -152,9 +131,16 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
           }),
         );
       }
-    });
+    };
+    const failed = (error: unknown) => {
+      if (mockFailure === undefined) mockFailure = error;
+      if (!res.headersSent) res.writeHead(500);
+      res.end();
+    };
+    req.on("error", failed);
+    req.on("end", () => { void respond().catch(failed); });
   });
-  cleanups.push(async () => {
+  cleanup(async () => {
     if (mock.listening) {
       await new Promise<void>((resolve, reject) => {
         mock.close((error) => (error ? reject(error) : resolve()));
@@ -179,7 +165,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
   const { registeredModelConfig } = await import("@/domain/llm/providerModels");
   const { replaceModelRegistry } = await import("@/domain/llm/models");
   const previousSettings = await settingsRepository.get();
-  cleanups.push(async () => {
+  cleanup(async () => {
     if (previousSettings) await settingsRepository.update(() => previousSettings);
     else {
       const { deleteItem } = await import("@/infrastructure/db/store");
@@ -257,6 +243,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
     mcpOAuthStateContext,
   } = await import("@/domain/security/secretContext");
   const { keys: dbKeys } = await import("@/infrastructure/db/keys");
+  const { deleteItem, getItem } = await import("@/infrastructure/db/store");
 
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
@@ -271,25 +258,15 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
   const integrationMemberId = `it-member-${suffix}`;
   const integrationMemberEmail = `${integrationMemberId}@example.com`;
   const vectorTable = `it_vectors_${suffix}`;
-  // Audit rows are the one fixture no repository can remove: the entity is
-  // append-only on purpose — a record its subject could erase would not be one —
-  // and it lives outside the agent partition the cascade clears. Their keys
-  // are collected here so the `finally` can delete them through the client,
-  // since this table is shared with every other agent on the machine.
-  const auditFixtures: Array<{ day: string; createdAt: string; eventId: string }> = [];
-  // Artifacts are not in the agent partition either — they outlive the agent
-  // the way chats do — so the cascade never reaches them.
-  const artifactFixtures: string[] = [];
-  // A member's daily rows are keyed by email in their own partition — outside
-  // the cascade, and an atomic ADD, so a leftover would accumulate across runs.
-  const memberDayFixtures: Array<{ email: string; date: string; agent: string }> = [];
+  const registerChat = (chatId: string) => cleanup(async () => {
+    // A failed create may not have written META; delete also fences partial rows.
+    if (await getItem(dbKeys.chat(chatId))) await chatRepository.delete(chatId);
+  });
 
   try {
     const { checkManagedMcpTransport } = await import("./managed-mcp-check");
     await checkManagedMcpTransport();
     pass("managed MCP provision, registration and real loopback transport");
-    const { withTransaction } = await import("@/infrastructure/db/client");
-    const { getItem } = await import("@/infrastructure/db/store");
 
     // ---------- agent + current settings ----------
     await agentRepository.create({
@@ -301,7 +278,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
       updatedAt: now,
     });
     let agentNeedsCleanup = true;
-    cleanups.push(async () => {
+    cleanup(async () => {
       if (agentNeedsCleanup) await agentRepository.delete(agentName);
     });
     const agent = await agentRepository.get(agentName);
@@ -363,6 +340,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
     pass("agent optimistic write conflict");
 
     // ---------- skill ----------
+    cleanup(() => skillRepository.delete("integration-skill"));
     await skillRepository.put({
       name: "integration-skill",
       description: "Integration testing behavior",
@@ -398,6 +376,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
     pass("capability usage: concurrent administrator changes merge atomically");
 
     // ---------- pgvector adapter ----------
+    cleanup(() => withTransaction(async client => { await client.query(`DROP TABLE IF EXISTS ${vectorTable}`); }));
     await withTransaction(async (client) => {
       await client.query(
         `CREATE TABLE ${vectorTable} (key text PRIMARY KEY, embedding vector NOT NULL, metadata jsonb NOT NULL DEFAULT '{}'::jsonb)`,
@@ -425,6 +404,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
     pass("pgvector upsert/query/filter/list/delete");
 
     // ---------- Better Auth member adapter ----------
+    cleanup(() => withTransaction(async client => { await client.query(`DELETE FROM "user" WHERE "id" = $1`, [integrationMemberId]); }));
     await withTransaction(async (client) => {
       await client.query(
         `INSERT INTO "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt") VALUES ($1, $2, $3, true, $4, $4)`,
@@ -459,6 +439,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
     );
     const sourceOutputs = [{ tool: "get_file", namespace: "plaud", urlPath: ["presigned_url"],
       idPath: ["id"], namePath: ["name"], mimeType: "audio/mpeg", refreshArgument: "file_id" }];
+    cleanup(() => mcpRepository.delete(serverName));
     await mcpRepository.put({
       name: serverName,
       url: "http://localhost:9999/mcp",
@@ -648,6 +629,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
 
     // ---------- chat ----------
     const chatId = `it-chat-${suffix}`;
+    registerChat(chatId);
     await chatRepository.create({
       chatId,
       title: "Integration chat",
@@ -683,6 +665,8 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
     const listOwner = `it-chat-list-${suffix}@example.com`;
     const ordinaryListChatId = `it-chat-list-ordinary-${suffix}`;
     const workspaceListChatId = `it-chat-list-workspace-${suffix}`;
+    registerChat(workspaceListChatId);
+    registerChat(ordinaryListChatId);
     await chatRepository.create({ chatId: workspaceListChatId, title: "Workspace list item", ownerEmail: listOwner,
       workspaceId: `it-workspace-${suffix}`, createdAt: now, updatedAt: new Date(Date.parse(now) - 1000).toISOString() });
     await chatRepository.create({ chatId: ordinaryListChatId, title: "Chat list item", ownerEmail: listOwner,
@@ -781,6 +765,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
     // sweeps everything but `META` without knowing the log exists, which is the
     // property worth pinning — a future row type inherits it for free.
     const sweptChatId = `it-chat-swept-${suffix}`;
+    registerChat(sweptChatId);
     await chatRepository.create({
       chatId: sweptChatId,
       title: "Swept",
@@ -868,6 +853,8 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
     pass("usage atomic ADD accumulation + range query");
 
     // ---------- usage attribution (per-caller rows) ----------
+    cleanup(() => deleteItem(dbKeys.usageMember("it@example.com", today, agentName)));
+    cleanup(() => deleteItem(dbKeys.usageMember("it@example.com", new Date().toISOString().slice(0, 10), agentName)));
     await usageRepository.record({ ...usageDelta, actor: "user:it@example.com" });
     await usageRepository.record({ ...usageDelta, actor: "agent-token:it@example.com" });
     const actorRows = await usageRepository.listActorsByAgent(agentName, today, today, 100);
@@ -887,13 +874,9 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
     pass("usage attribution: per-caller rows, agent totals unaffected");
 
     // ---------- member day rows (one history per email, across actor kinds) ----------
-    // The attribution block above also wrote member rows for its fixed address;
-    // register it for cleanup, but assert on a per-run address — the row is an
-    // atomic ADD keyed by email alone, so a leftover from an interrupted run
-    // would otherwise inflate the count.
-    memberDayFixtures.push({ email: "it@example.com", date: today, agent: agentName });
+    // A per-run address isolates atomic ADD counts from interrupted checks.
     const memberEmail = `it-member-${suffix}@example.com`;
-    memberDayFixtures.push({ email: memberEmail, date: today, agent: agentName });
+    cleanup(() => deleteItem(dbKeys.usageMember(memberEmail, today, agentName)));
     await usageRepository.record({ ...usageDelta, actor: `user:${memberEmail}` });
     await usageRepository.record({ ...usageDelta, actor: `agent-token:${memberEmail}` });
     // The agent follows the date in the sort key, so this range only returns
@@ -1214,8 +1197,9 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
       },
     ];
     for (const row of auditRows) {
+      // Audit rows are append-only and outside the Agent cascade.
+      cleanup(() => deleteItem(dbKeys.auditEvent(row.createdAt.slice(0, 10), row.createdAt, row.eventId)));
       await auditRepository.append(row);
-      auditFixtures.push({ day: auditDay, createdAt: row.createdAt, eventId: row.eventId });
     }
     const dayRows = await auditRepository.listByDay(auditDay, 100);
     const mine = dayRows.filter((row) => row.eventId.endsWith(suffix));
@@ -1271,8 +1255,8 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
       },
     ];
     for (const row of artifactRows) {
+      cleanup(() => artifactRepository.delete(row.artifactId));
       await artifactRepository.put(row);
-      artifactFixtures.push(row.artifactId);
     }
     const storedArtifact = await artifactRepository.get(artifactIds[1]!);
     assert.equal(storedArtifact?.filename, "보고서.docx", "a Korean filename round-trips");
@@ -1331,6 +1315,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
     const filterBase = Date.parse(now);
     for (let i = 0; i < 40; i += 1) {
       const id = `it-art-fill-${i}-${suffix}`;
+      cleanup(() => artifactRepository.delete(id));
       await artifactRepository.put({
         artifactId: id,
         kind: "image" as const,
@@ -1342,9 +1327,9 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
         actor: { kind: "user" as const, id: "it@example.com" },
         createdAt: new Date(filterBase + 1000 + i * 1000).toISOString(),
       });
-      artifactFixtures.push(id);
     }
     const buriedId = `it-art-buried-${suffix}`;
+    cleanup(() => artifactRepository.delete(buriedId));
     await artifactRepository.put({
       artifactId: buriedId,
       kind: "document" as const,
@@ -1356,7 +1341,6 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
       actor: { kind: "user" as const, id: "it@example.com" },
       createdAt: new Date(filterBase).toISOString(),
     });
-    artifactFixtures.push(buriedId);
     assert.deepEqual(
       (await artifactRepository.listByAgent(filterAgent, { limit: 24, kind: "document" })).map(
         (a) => a.artifactId,
@@ -1432,6 +1416,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
       const agentKey = keys.agent(agentName);
       const probeKey = keys.trace(`lock-probe-${suffix}`);
       const probe = { ...probeKey, entityType: "TRACE", agentName, createdAt: now };
+      cleanup(() => deleteItem(probeKey));
       const holder = await getPool().connect();
       let writer: Promise<void> | undefined;
       const waited = <T,>(promise: Promise<T>) =>
@@ -1439,7 +1424,10 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
           promise.then(() => "done" as const),
           new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 1_500)),
         ]);
-      try {
+      await withCheckLifecycle(async release => {
+        release(async () => { await writer; });
+        release(() => holder.release(true));
+        release(() => holder.query("ROLLBACK"));
         await holder.query("BEGIN");
         await holder.query(
           "SELECT pg_advisory_xact_lock_shared(hashtext($1::text), hashtext($2::text))",
@@ -1466,16 +1454,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
           { kind: "update", key: agentKey, patch: (row) => ({ ...(row ?? {}) }) },
         ]);
         assert.equal(await waited(writer), "waiting", "a write on the key still waits on a reader");
-      } finally {
-        try {
-          await holder.query("ROLLBACK");
-        } finally {
-          holder.release(true);
-        }
-      }
-      await writer;
-      const { deleteItem } = await import("@/infrastructure/db/store");
-      await deleteItem(probeKey).catch(() => {});
+      });
       pass("transact: a checked key locks share-mode, a written one exclusively");
     }
 
@@ -1504,26 +1483,22 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
     {
       const event = { idempotencyKey: `asr-${suffix}`, agentName, date: today, model: "asr-integration",
         calls: 1, inputTokens: 10, outputTokens: 2, costUsd: 0.01, actor: "user:audio-integration@example.com" };
-      try {
-        await Promise.all(Array.from({ length: 8 }, () => usageRepository.record(event)));
-        assert.equal((await usageRepository.getDay(agentName, today))?.calls["asr-integration"], 1);
-        // PostgreSQL JSONB reorders object keys; replay compares values, not serialized order.
-        await usageRepository.record(event);
-        await assert.rejects(usageRepository.record({ ...event, costUsd: 2 }));
-        assert.equal((await usageRepository.getDay(agentName, today))?.costUsd["asr-integration"], 0.01);
-        pass("usage receipts: concurrent replay bills once and rejects conflicting payloads");
-      } finally {
-        const { deleteItem } = await import("@/infrastructure/db/store");
-        await deleteItem(dbKeys.usageMember("audio-integration@example.com", today, agentName));
-      }
+      cleanup(() => deleteItem(dbKeys.usageMember("audio-integration@example.com", today, agentName)));
+      await Promise.all(Array.from({ length: 8 }, () => usageRepository.record(event)));
+      assert.equal((await usageRepository.getDay(agentName, today))?.calls["asr-integration"], 1);
+      // PostgreSQL JSONB reorders object keys; replay compares values, not serialized order.
+      await usageRepository.record(event);
+      await assert.rejects(usageRepository.record({ ...event, costUsd: 2 }));
+      assert.equal((await usageRepository.getDay(agentName, today))?.costUsd["asr-integration"], 0.01);
+      pass("usage receipts: concurrent replay bills once and rejects conflicting payloads");
     }
 
     // ---------- source inventory (completion recovery + deletion fencing) ----------
     {
       const { sourceFileRepository: files } = await import("@/infrastructure/db/repositories/sourceFileRepository");
-      const { deleteItem } = await import("@/infrastructure/db/store");
       const id = `source-${suffix}`;
-      try {
+      await withCheckLifecycle(async release => {
+        release(() => deleteItem(dbKeys.sourceFile(id)));
         const pending = await files.create({ id, agentName, userEmail: "integration@example.com",
           filename: "sample.mp3", mimeType: "audio/mpeg", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
           revision: 1, status: "pending", createdAt: now, retireAt: now });
@@ -1542,18 +1517,17 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
         assert.equal((await files.get(agentName, id))?.status, "deleted");
         assert.equal((await files.expired(now, 100)).some((file) => file.id === id), false);
         pass("source inventory: atomic completion, agent isolation and deletion fencing");
-      } finally {
-        await deleteItem(dbKeys.sourceFile(id));
-      }
+      });
     }
 
     // ---------- private artifact publication/retirement fence ----------
     {
       const { sourceFileRepository: files } = await import("@/infrastructure/db/repositories/sourceFileRepository");
       const { registerSourceArtifact } = await import("@/application/artifact/storeArtifact");
-      const { deleteItem } = await import("@/infrastructure/db/store");
       const id = `source-artifact-${suffix}`;
-      try {
+      await withCheckLifecycle(async release => {
+        release(() => deleteItem(dbKeys.sourceFile(id)));
+        release(() => artifactRepository.delete(id));
         const pending = await files.create({ id, agentName, userEmail: "integration@example.com",
           filename: "sample.mp3", mimeType: "audio/mpeg", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
           revision: 1, status: "pending", createdAt: now, retireAt: now });
@@ -1571,10 +1545,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
         await assert.rejects(registerSourceArtifact(artifactRepository, ready));
         assert.equal(await artifactRepository.get(id), null, "delayed publication cannot restore a deleted private artifact");
         pass("private artifacts: publication is fenced against source retirement");
-      } finally {
-        await artifactRepository.delete(id);
-        await deleteItem(dbKeys.sourceFile(id));
-      }
+      });
     }
 
     // ---------- durable audio work (admission + worker fencing) ----------
@@ -1644,7 +1615,8 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
       const { deleteItem } = await import("@/infrastructure/db/store");
       const email = `recommend-${suffix}@example.com`;
       const quota = createAgentRecommendationQuota(() => new Date(now));
-      try {
+      await withCheckLifecycle(async release => {
+        release(() => deleteItem(dbKeys.agentRecommendationQuota(email, today)));
         const admissions = await Promise.all(Array.from(
           { length: MAX_AGENT_RECOMMENDATIONS_PER_MINUTE + 1 },
           () => quota.admit(email),
@@ -1653,16 +1625,16 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
         assert.equal(admissions.filter(value => value !== undefined).length, 1);
         assert.equal((await getItem(dbKeys.agentRecommendationQuota(email, today)))?.dayCount, MAX_AGENT_RECOMMENDATIONS_PER_MINUTE);
         pass("Agent recommendation quota: concurrent admission is exact");
-      } finally {
-        await deleteItem(dbKeys.agentRecommendationQuota(email, today));
-      }
+      });
     }
 
     // ---------- concurrency slots (conditional claim + lease reclaim) ----------
     const slotActor = `user:slots-${suffix}@example.com`;
     const nowSeconds = Math.floor(Date.now() / 1000);
     const firstSlot = await runSlotRepository.acquire(slotActor, 2, nowSeconds + 600);
+    if (firstSlot) cleanup(() => runSlotRepository.release(slotActor, firstSlot));
     const secondSlot = await runSlotRepository.acquire(slotActor, 2, nowSeconds + 600);
+    if (secondSlot) cleanup(() => runSlotRepository.release(slotActor, secondSlot));
     assert.ok(firstSlot && secondSlot, "slots up to the limit are granted");
     assert.notEqual(firstSlot?.index, secondSlot?.index, "each run gets its own index");
     assert.equal(
@@ -1673,19 +1645,18 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
     assert.equal(await runSlotRepository.renew(slotActor, firstSlot, nowSeconds + 900), true);
     await runSlotRepository.release(slotActor, firstSlot!);
     assert.equal(await runSlotRepository.renew(slotActor, firstSlot, nowSeconds + 1200), false, "released holders cannot renew");
-    assert.ok(
-      await runSlotRepository.acquire(slotActor, 2, nowSeconds + 600),
-      "a released slot is reusable",
-    );
+    const reusedSlot = await runSlotRepository.acquire(slotActor, 2, nowSeconds + 600);
+    if (reusedSlot) cleanup(() => runSlotRepository.release(slotActor, reusedSlot));
+    assert.ok(reusedSlot, "a released slot is reusable");
     // An instance that died holds a slot only until its lease runs out.
     const expiredActor = `user:expired-${suffix}@example.com`;
     const expiredSlot = await runSlotRepository.acquire(expiredActor, 1, nowSeconds - 1);
+    if (expiredSlot) cleanup(() => runSlotRepository.release(expiredActor, expiredSlot));
     assert.ok(expiredSlot);
     assert.equal(await runSlotRepository.renew(expiredActor, expiredSlot, nowSeconds + 600), false, "expired holders cannot renew");
-    assert.ok(
-      await runSlotRepository.acquire(expiredActor, 1, nowSeconds + 600),
-      "an expired lease is reclaimable",
-    );
+    const reclaimedSlot = await runSlotRepository.acquire(expiredActor, 1, nowSeconds + 600);
+    if (reclaimedSlot) cleanup(() => runSlotRepository.release(expiredActor, reclaimedSlot));
+    assert.ok(reclaimedSlot, "an expired lease is reclaimable");
     pass("concurrency slots: exact limit, owned renewal, release and lease reclaim");
 
     // ---------- Agent: collected completion ----------
@@ -1726,8 +1697,17 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
       const modelRouting = { ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: "integration/fast",general:"integration/model" }, localOnly: true };
       const { modelRegistryUseCases } = await import("@/lib/container");
       const routingActor = `it-routing-${suffix}@example.test`;
-      await modelRegistryUseCases.saveRouting(modelRouting, routingActor);
       const routingAuditDay = new Date().toISOString().slice(0, 10);
+      cleanup(async () => {
+        await withCheckLifecycle(async remove => {
+          for (const day of new Set([routingAuditDay, new Date().toISOString().slice(0, 10)])) {
+            for (const row of (await auditRepository.listByDay(day, 100)).filter(row => row.actorEmail === routingActor)) {
+              remove(() => deleteItem(dbKeys.auditEvent(day, row.createdAt, row.eventId)));
+            }
+          }
+        });
+      });
+      await modelRegistryUseCases.saveRouting(modelRouting, routingActor);
       assert.deepEqual((await modelRegistryUseCases.getRouting()).policy, modelRouting);
       const routedConfiguration = { ...configuration, parameters: { ...configuration.parameters, modelRouting: true } };
       const current = (await agentRepository.get(agentName))!;
@@ -1782,9 +1762,10 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
       const { pendingRuntimeApproval } = await import("@/application/runtime/session");
       const sessionId = `integration-routing-approval-${suffix}`;
       const owner = "it@example.com";
+      cleanup(() => executionDeps.runtimeSessions!.repository.delete(sessionId, owner));
       const approvalConfiguration = { ...routedConfiguration, parameters: { ...routedConfiguration.parameters, policy: { approvalTools: ["Skill"] } } };
       const scope = { agent, configuration: approvalConfiguration, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
-      try {
+      {
         for await (const chunk of executeAgent(executionDeps, { ...scope, messages: [{ role: "user", content: "use your skill" }] })) assert.equal(chunk.error, undefined);
         const pending = await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner);
         assert.ok(pending?.approvals.length);
@@ -1796,9 +1777,6 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
         assert.equal(llmCalls.length, callsBeforeResume, "changed policy cannot execute an approved call");
         assert.equal((await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner))?.revision, pending.revision, "policy refusal happens before claiming pending work");
         pass("shared routing policy: approval changes rejected before pending claim");
-      } finally { await executionDeps.runtimeSessions!.repository.delete(sessionId, owner); }
-      for (const row of (await auditRepository.listByDay(routingAuditDay, 100)).filter(row => row.actorEmail === routingActor)) {
-        auditFixtures.push({ day: routingAuditDay, createdAt: row.createdAt, eventId: row.eventId });
       }
       const restoreAt = new Date(Date.parse(routedAt) + 1).toISOString();
       await agentRepository.update({ ...current, configuration, updatedAt: restoreAt }, routedAt);
@@ -1828,7 +1806,7 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
       const { pendingRuntimeApproval } = await import("@/application/runtime/session");
       const sessionId = `integration-session-${suffix}`;
       const owner = "it@example.com";
-      cleanups.push(() => executionDeps.runtimeSessions!.repository.delete(sessionId, owner));
+      cleanup(() => executionDeps.runtimeSessions!.repository.delete(sessionId, owner));
       const approvalConfiguration = { ...configuration, parameters: { ...configuration.parameters, policy: { approvalTools: ["Skill"] } } };
       const base = { agent, configuration: approvalConfiguration, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
       const first = [];
@@ -1870,41 +1848,12 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
       "transcript turns deleted with the agent",
     );
     pass("agent cascade delete (name tombstone + settings + usage + transcript)");
-  } finally {
-    // cleanup non-cascading fixtures
-    await skillRepository.delete("integration-skill").catch(() => {});
-    await mcpRepository.delete(`it-mcp-${suffix}`).catch(() => {});
-    await chatRepository.delete(`it-chat-${suffix}`).catch(() => {});
-    await chatRepository.delete(`it-chat-list-ordinary-${suffix}`).catch(() => {});
-    await chatRepository.delete(`it-chat-list-workspace-${suffix}`).catch(() => {});
-    await chatRepository.delete(`it-chat-swept-${suffix}`).catch(() => {});
-    await import("@/infrastructure/db/client")
-      .then(({ withTransaction }) =>
-        withTransaction(async (client) => {
-          await client.query(`DROP TABLE IF EXISTS ${vectorTable}`);
-          await client.query(`DELETE FROM "user" WHERE "id" = $1`, [integrationMemberId]);
-        }),
-      )
-      .catch(() => {});
-    for (const artifactId of artifactFixtures) {
-      await artifactRepository.delete(artifactId).catch(() => {});
-    }
-    if (auditFixtures.length > 0 || memberDayFixtures.length > 0) {
-      const { deleteItem } = await import("@/infrastructure/db/store");
-      const { keys } = await import("@/infrastructure/db/keys");
-      for (const fixture of auditFixtures) {
-        await deleteItem(keys.auditEvent(fixture.day, fixture.createdAt, fixture.eventId)).catch(
-          () => {},
-        );
-      }
-      for (const fixture of memberDayFixtures) {
-        await deleteItem(keys.usageMember(fixture.email, fixture.date, fixture.agent)).catch(
-          () => {},
-        );
-      }
-    }
+  } catch (error) {
+    if (mockFailure !== undefined) throw mockFailure;
+    throw error;
   }
 
+  if (mockFailure !== undefined) throw mockFailure;
   return results.length;
 }
 

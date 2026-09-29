@@ -4,6 +4,8 @@ import { runtimeSessionRepository as repository } from "@/infrastructure/db/repo
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { openRuntimeSession, readRuntimeSession } from "@/application/runtime/session";
 import type { AgentConfiguration } from "@/domain/agent/types";
+import { withCheckLifecycle } from "./check-lifecycle";
+import { withTransaction } from "@/infrastructure/db/client";
 
 /** Called only by integration-check after its dedicated-test-database guard. */
 export async function checkRuntimeSessions(): Promise<void> {
@@ -11,9 +13,8 @@ export async function checkRuntimeSessions(): Promise<void> {
   const owner = "runtime-integration@example.test";
   const configuration: AgentConfiguration = { agentName: "runtime-integration",  model: "openai/gpt-5-mini", systemPrompt: "",  parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] };
   const services = { repository, cipher: secretCipher, retentionDays: 1 };
-  const sessionIds = [id];
-  let checksFailed = false;
-  try {
+  await withCheckLifecycle(async cleanup => {
+    cleanup(() => repository.delete(id, owner));
     await openRuntimeSession(services, { sessionId: id, ownerEmail: owner, agentName: configuration.agentName, configuration });
     const row = await repository.get(id, owner);
     assert.ok(row);
@@ -31,28 +32,19 @@ export async function checkRuntimeSessions(): Promise<void> {
     assert.equal(await repository.save(update, null), null, "a tombstone prevents resurrection by an old first run");
 
     const copied = randomUUID();
-    sessionIds.push(copied);
+    cleanup(() => repository.delete(copied, owner));
     const copiedRow = { ...update, sessionId: copied };
     assert.ok(await repository.save(copiedRow, null));
     await assert.rejects(readRuntimeSession(services, copied, owner), "ciphertext is bound to its session identity");
     await repository.delete(copied, owner);
 
     const expired = randomUUID();
-    sessionIds.push(expired);
-    await repository.save({ ...update, sessionId: expired, expiresAt: new Date(Date.now() - 1000).toISOString() }, null);
+    cleanup(() => repository.delete(expired, owner));
+    // Expiry reads use PostgreSQL's clock, which need not match the host clock.
+    const databaseNow = await withTransaction(async db => (await db.query<{ now: Date }>("SELECT clock_timestamp() AS now")).rows[0]!.now);
+    await repository.save({ ...update, sessionId: expired, expiresAt: new Date(databaseNow.getTime() - 1000).toISOString() }, null);
     assert.equal(await repository.get(expired, owner), null, "expiry is enforced on reads before the sweep");
-    assert.ok(await repository.sweepExpired(new Date()) >= 1);
-  } catch (error) {
-    checksFailed = true;
-    throw error;
-  } finally {
-    const settled = await Promise.allSettled(sessionIds.map(sessionId => repository.delete(sessionId, owner)));
-    const failures: unknown[] = settled.flatMap(result => result.status === "rejected" ? [result.reason] : []);
-    if (failures.length > 0) {
-      const error = new AggregateError(failures, "Runtime Session fixture cleanup failed");
-      if (checksFailed) console.error("RUNTIME SESSION CLEANUP FAILURE:", error);
-      else throw error;
-    }
-  }
+    assert.ok(await repository.sweepExpired(databaseNow) >= 1);
+  });
   console.log("[ok] encrypted SDK Session CAS, ownership, expiry and deletion fencing");
 }
