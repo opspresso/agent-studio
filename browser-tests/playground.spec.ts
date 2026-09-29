@@ -32,7 +32,7 @@ test.afterAll(async () => {
 });
 
 for (const width of [1200, 390]) {
-  test(`renders streamed Markdown and safe links at ${width}px`, async ({ page }) => {
+  test(`renders streamed Markdown and safe links at ${width}px`, async ({ page }, testInfo) => {
     page.on("pageerror", error => { throw error; });
     await page.setViewportSize({ width, height: 900 });
     const content = "# Result\n\n**Verified**\n\n| Item | Value |\n|---|---:|\n| Total | 300 |\n\n```python\n" + "assert total == 300 # " + "x".repeat(180) + "\n```\n\n[Workspace](/chats/ws-fixture)\n\n[Unsafe](javascript:alert(1))\n\n<script>alert(1)</script>";
@@ -59,5 +59,6 @@ for (const width of [1200, 390]) {
     expect(geometry.overflowY).toBe("hidden");
     expect(geometry.overflow).not.toBe("auto");
     expect(geometry.pageWidth).toBeLessThanOrEqual(geometry.viewportWidth);
+    await page.screenshot({ path: testInfo.outputPath(`playground-${width}.png`), fullPage: true });
   });
 }
