@@ -17,6 +17,7 @@ import { teamsActivitySchema } from "./activitySchema";
 
 const teamsEventDeps: TeamsEventDeps = {
   runAgent: (params) => executeAgent(executionDeps, params),
+  authorizeExecutionGrant: executionDeps.authorizeExecutionGrant,
   agents: agentRepository,
   teams: teamsClient,
   documents: executionDeps.documents,

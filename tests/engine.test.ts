@@ -41,6 +41,23 @@ async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]>
 const MODEL = "google/gemini-2.5-flash";
 
 describe("runAgent tool loop", () => {
+  it("rechecks delegated permissions before each MCP effect and blocks later calls after revocation", async () => {
+    let allowed = true;
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "first", "getWeather", '{}')],
+      [toolCallChunk(0, "second", "getWeather", '{}')],
+      [contentChunk("done")],
+    ]);
+    const callMcpTool = vi.fn(async () => { allowed = false; return { text: "first result" }; });
+    const authorizeTools = vi.fn(async () => { if (!allowed) throw new Error("permission revoked"); });
+    const chunks = await collect(runAgent({ createToolSchemaValidator, channel, callMcpTool, authorizeTools }, {
+      agentName: "p", model: MODEL, messages: [{ role: "user", content: "go" }],
+      mcpTools: [{ type: "function", function: { name: "getWeather", parameters: {} } }],
+    }));
+    expect(callMcpTool).toHaveBeenCalledTimes(1);
+    expect(authorizeTools).toHaveBeenCalledTimes(2);
+    expect(chunks.find(chunk => chunk.toolResult?.toolCallId === "second")?.toolResult?.content).toContain("permission revoked");
+  });
   it("executes a tool call, feeds the result back, and returns the final answer", async () => {
     const channel = new FakeChannel([
       [toolCallChunk(0, "call_1", "getWeather", '{"city":"Seoul"}'), usageChunk(10, 5)],

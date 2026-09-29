@@ -117,7 +117,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     return;
   }
   await assertAgentAccessible(deps.agents, workspace.agentName, workspace.ownerEmail);
-  await deps.authorize?.(workspace.agentName, workspace.ownerEmail, run.actor);
+  await deps.authorize?.(workspace.agentName, workspace.ownerEmail, run.actor, run.executionGrant);
   const policy = await workspacePolicy(deps, workspace.agentName);
   if (!policy.runtimes.includes(workspace.runtime) || (workspace.coding && !workspaceAllowsRepository(policy, workspace.coding.repository))) {
     throw new Error("Workspace runtime or repository configuration changed");

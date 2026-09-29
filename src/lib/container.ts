@@ -12,6 +12,7 @@ import { runWorkspaceWorker } from "@/application/workspace/service";
 import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
 import { workspaceCaller } from "@/application/workspace/workspaceCaller";
 import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
+import { assertMessagingExecutionGrant } from "@/application/messaging/executionGrant";
 import { executeWorkspaceTask, executeAgent } from "@/application/execution/runAgent";
 import { runWorkspaceContinuations } from "@/application/chat/workspaceContinuation";
 import type { ChatDeps } from "@/application/chat/deps";
@@ -970,6 +971,7 @@ const deliverAgentMessage: PostCostAlert = async (agent, destination, text) => {
 
 /** Repository and channel dependencies for the execution facade. */
 export const executionDeps: ExecutionDeps = {
+  authorizeExecutionGrant: grant => assertMessagingExecutionGrant({ agents: agentRepository, memberTier: getMemberTier }, grant),
   getCallRoutingPolicy: getCallRoutingPolicy,
   createToolSchemaValidator,
   runtimeSessions: runtimeSessions,
@@ -1009,7 +1011,7 @@ export const executionDeps: ExecutionDeps = {
     const caller = workspaceCaller(origin);
     if (!caller || !getWorkspaceConfig() || !await workspaceRepositoryPolicyUseCases.enabled(agentName)) return undefined;
     const email = caller.ownerEmail;
-    const authorize = () => authorizeWorkspaceTools(email, agentName, caller.actor);
+    const authorize = () => authorizeWorkspaceTools(email, agentName, caller.actor, caller.executionGrant);
     if (!await optionalToolAccessible(authorize)) return undefined;
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
       ...(getWorkspaceGitHubConfig() ? { createRepository: workspaceRepositoryCreationUseCases.create } : {}),
@@ -1023,7 +1025,7 @@ export const executionDeps: ExecutionDeps = {
         return policy ? { ...policy, runtimes: (await workspaceRuntimeModelUseCases.getView()).available } : undefined;
       },
       sleep: async ms => { await workspaceSleep(ms); },
-    }, { agentName, ownerEmail: email, actor: caller.actor, occurrence: currentRunContext()?.runId ?? randomUUID(),
+    }, { agentName, ownerEmail: email, actor: caller.actor, executionGrant: caller.executionGrant, occurrence: currentRunContext()?.runId ?? randomUUID(),
       sourceChatId: origin.conversation?.surface === "chat" ? origin.conversation.id : undefined });
   },
   sourceRefreshIdentity,
@@ -1298,7 +1300,7 @@ export async function runAudioWorkerService(signal: AbortSignal): Promise<void> 
 const workspaceDeps: WorkspaceDeps = {
   repository: workspaceRepository, chats: chatRepository, agents: agentRepository,
   policy: getWorkspaceAgentPolicy,
-  authorize: (agentName, email, actor) => authorizeWorkspaceTools(email, agentName, actor),
+  authorize: (agentName, email, actor, grant) => authorizeWorkspaceTools(email, agentName, actor, grant),
   assertRuntime: async kind => { if (!await getWorkspaceRuntimeConfig(kind)) throw new ValidationError("Select a Workspace runtime model in Models before starting work"); },
   now: () => new Date(), newId: randomUUID,
   checkRepository: async (repository, baseBranch) => {
@@ -1328,10 +1330,10 @@ export const workspaceRepositoryCreationUseCases = createWorkspaceRepositoryCrea
   },
 });
 
-async function authorizeWorkspaceTools(email: string, agentName: string, actor?: RunActor): Promise<void> {
+async function authorizeWorkspaceTools(email: string, agentName: string, actor?: RunActor, grant?: import("@/domain/execution/actor").ExecutionGrant): Promise<void> {
   await authorizeWorkspaceExecution({ agents: agentRepository, triggers: triggerRepository, memberTier: getMemberTier,
     backendReady: () => !!getWorkspaceConfig(), enabled: name => workspaceRepositoryPolicyUseCases.enabled(name),
-  }, agentName, email, actor);
+  }, agentName, email, actor, grant);
 }
 
 function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {

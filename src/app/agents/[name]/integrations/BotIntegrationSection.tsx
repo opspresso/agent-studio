@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Badge, Button, Stack, Text } from "@mantine/core";
+import { Alert, Badge, Button, Stack, Switch, Text } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { LoadingText } from "@/app/_components/PageState";
 import { stateColor } from "@/app/_components/badgeColors";
@@ -14,6 +14,9 @@ export function BotIntegrationSection({
   onRetry,
   onSelect,
   selected,
+  runAsOwner,
+  onRunAsOwnerChange,
+  busy,
   children,
 }: {
   title: string;
@@ -22,6 +25,9 @@ export function BotIntegrationSection({
   onRetry: () => void;
   onSelect?: () => void;
   selected?: boolean;
+  runAsOwner?: boolean;
+  onRunAsOwnerChange?: (value: boolean) => void;
+  busy?: boolean;
   children?: React.ReactNode;
 }) {
   const t = useT();
@@ -34,7 +40,12 @@ export function BotIntegrationSection({
       : undefined;
   return <CollapsibleSection title={title} badge={badge} onSelect={onSelect} selected={selected}
     selectLabel={onSelect ? t("pint.historyView") : undefined}>
-    {view ? children : error ? <Alert color="red"><Stack gap="xs" align="flex-start">
+    {view ? <Stack gap="md">
+      {onRunAsOwnerChange && <Switch label={t("trigger.runAsOwner")} description={t("integrations.runAsOwnerHint")}
+        checked={runAsOwner ?? false} disabled={busy}
+        onChange={event => onRunAsOwnerChange(event.currentTarget.checked)} />}
+      {children}
+    </Stack> : error ? <Alert color="red"><Stack gap="xs" align="flex-start">
       <Text size="sm">{error}</Text>
       <Button size="xs" variant="light" onClick={onRetry}>{t("error.retry")}</Button>
     </Stack></Alert> : <LoadingText />}

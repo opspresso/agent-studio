@@ -82,6 +82,24 @@ async function start(runtime: "command" | "codex" = "command") {
 }
 
 describe("durable workspace worker", () => {
+  it("persists a messenger permission grant and refuses queued work after its revocation", async () => {
+    const at = new Date(time).toISOString();
+    await agents.update({ ...((await agents.get("demo"))!), telegram: { enabled: true, botToken: "fixture",
+      webhookSecret: "fixture", executionEmail: owner }, updatedAt: at }, at);
+    deps.authorize = (agentName, email, actor, grant) => authorizeWorkspaceExecution({ agents,
+      triggers: { get: async () => null }, memberTier: async () => "member", backendReady: () => true,
+      enabled: async () => true }, agentName, email, actor, grant);
+    const first = await createWorkspaceUseCases(deps).start({ agentName: "demo", runtime: "command",
+      actor: { kind: "telegram", id: "1" }, executionGrant: { agentName: "demo", kind: "telegram", email: owner },
+      input: { kind: "command", script: "echo task" } }, owner, "messenger-0001");
+    expect((await repository.run(first.workspace.id, first.run.id))?.executionGrant?.kind).toBe("telegram");
+    expect(first.run).not.toHaveProperty("executionGrant");
+    const current = (await agents.get("demo"))!;
+    await agents.update({ ...current, telegram: { ...current.telegram!, executionEmail: undefined } }, current.updatedAt);
+    await processWorkspace(deps, first.workspace.id);
+    expect(provider.ensure).not.toHaveBeenCalled();
+    expect((await repository.run(first.workspace.id, first.run.id))?.status).toBe("failed");
+  });
   it("rechecks a Webhook's owner grant after queue admission and refuses revoked work", async () => {
     let grant: WebhookTrigger = { agentName: "demo", triggerId: "webhook", kind: "webhook", enabled: true,
       executionEmail: owner, description: "", secret: "encrypted-fixture", allowConcurrent: false,

@@ -881,7 +881,7 @@ agent 별 Slack 설정은 이 엔드포인트들을 쓴다:
 
 ```
 GET    /api/agents/{name}/slack
-PUT    /api/agents/{name}/slack   { botToken?, signingSecret?, enabled?, suggestedPrompts?, channelKeywords? }
+PUT    /api/agents/{name}/slack   { botToken?, signingSecret?, enabled?, suggestedPrompts?, channelKeywords?, runAsOwner? }
 DELETE /api/agents/{name}/slack
 POST   /api/agents/{name}/slack/test
 GET    /api/agents/{name}/slack/channels
@@ -894,6 +894,12 @@ GET    /api/agents/{name}/slack/channels
 ([design/slack.md](design/slack.md#어떤-이벤트가-봇에게-온-것인가) 참조): 최대 20개, 저장 시 각각
 공백을 정리하고 소문자로 바꾸며, 2–50자다. 빈 값과 중복은 버려지고, 그 길이를 벗어난 키워드는
 400 이다. `PUT` 에서 이 필드를 생략하면 저장된 목록을 유지한다.
+
+세 메신저 연동의 `runAsOwner`는 기본 꺼짐이며 현재 소유자만 `true`로 저장할 수 있다.
+실행 email은 서버가 소유자 신원에서 저장하며 클라이언트가 지정하지 않는다. 생략은 기존 위임을
+보존하고 `false`는 해제한다. 읽기는 현재 소유자에게 유효한 위임 여부를 boolean으로 반환한다.
+위임한 호출은 원래 플랫폼 actor를 유지하고 소유자의 설정된 개인 도구·Workspace 권한을 사용한다.
+실행 전·도구 호출 직전·Workspace 큐 실행 직전에 현재 소유권·멤버·연동·위임을 다시 검사한다.
 
 Slack 읽기는 마스킹된 인증 정보 상태와 함께 `configured`, `eventsPath`, `eventsUrl`,
 `suggestedPrompts`, `channelKeywords`, 그리고 생성된 앱 manifest를 돌려준다.
@@ -913,7 +919,7 @@ agent 별 Telegram 설정은 이 엔드포인트들을 쓴다:
 ```
 GET    /api/agents/{name}/telegram
 GET    /api/agents/{name}/telegram/chats
-PUT    /api/agents/{name}/telegram          { botToken?, enabled? }
+PUT    /api/agents/{name}/telegram          { botToken?, enabled?, runAsOwner? }
 DELETE /api/agents/{name}/telegram
 POST   /api/agents/{name}/telegram/test
 POST   /api/agents/{name}/telegram/webhook
@@ -948,7 +954,7 @@ Agent별 Teams 설정은 이 엔드포인트들을 쓴다:
 
 ```
 GET    /api/agents/{name}/teams
-PUT    /api/agents/{name}/teams          { appId?, appPassword?, tenantId?, enabled? }
+PUT    /api/agents/{name}/teams          { appId?, appPassword?, tenantId?, enabled?, runAsOwner? }
 DELETE /api/agents/{name}/teams
 POST   /api/agents/{name}/teams/test
 ```

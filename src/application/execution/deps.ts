@@ -26,7 +26,7 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { HttpResourceReader } from "@/domain/net/httpResource";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import type { RunActor, RunCaller, RunConversation, RunOrigin } from "@/domain/execution/actor";
+import type { RunActor, RunCaller, RunConversation, RunOrigin, ExecutionGrant } from "@/domain/execution/actor";
 import type { RunBracketDeps } from "@/application/run/runBracket";
 import type { SlackWorkspaceReader } from "@/domain/slack/reader";
 import type { RuntimeSessionServices } from "@/application/runtime/session";
@@ -39,6 +39,7 @@ import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession"
  * a policy that silently stops applying to text runs.
  */
 export interface ExecutionDeps extends RunBracketDeps {
+  authorizeExecutionGrant?: (grant: ExecutionGrant) => Promise<void>;
   getCallRoutingPolicy?: () => Promise<import("@/domain/llm/callRouting").CallRoutingPolicy>;
   callRouting?: import("@/application/llm/callModelRouter").CallRoutingDeps;
   createToolSchemaValidator: () => ToolSchemaValidator;
@@ -122,6 +123,7 @@ export interface ExecutionDeps extends RunBracketDeps {
 }
 
 export interface ExecuteAgentInput {
+  executionGrant?: ExecutionGrant;
   resumeApproval?: { revision: number; decisions: RuntimeApprovalDecision[] };
   backgroundTask?: boolean;
   agent: Agent;
@@ -149,6 +151,7 @@ export interface ExecuteAgentInput {
 // --- Agent-level dispatch --------------------------------------------------
 
 export interface AgentRunInput {
+  executionGrant?: ExecutionGrant;
   backgroundTask?: boolean;
   agent: Agent;
   configuration: AgentConfiguration;
@@ -180,13 +183,14 @@ export function toRunInput(
   input: AgentRunInput,
 ): Pick<
   ExecuteAgentInput,
-  "agent" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "signal" | "ownerEmail" | "backgroundTask"
+  "agent" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "signal" | "ownerEmail" | "backgroundTask" | "executionGrant"
 > {
   return {
     agent: input.agent,
     configuration: input.configuration,
     messages: input.messages,
     ...(input.actor ? { actor: input.actor } : {}),
+    ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
     ...(input.caller ? { caller: input.caller } : {}),
     ...(input.conversation ? { conversation: input.conversation } : {}),
     ...(input.ownerEmail ? { ownerEmail: input.ownerEmail } : {}),

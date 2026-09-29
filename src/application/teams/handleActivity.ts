@@ -150,7 +150,8 @@ export async function handleTeamsActivity(
     text: disposition.text,
     attachments: attachmentsOf(deps, binding, activity),
     // The Entra object id, not an email: Teams hands a bot no address.
-    ...(userId ? { actor: { kind: "teams" as const, id: userId }, userId } : {}),
+    actor: { kind: "teams", id: userId ?? `conversation:${conversationId}` },
+    ...(userId ? { userId } : {}),
     callerOf: () => callerOf(activity),
     arrivedAt: Number.isNaN(arrivedAt.getTime()) ? new Date() : arrivedAt,
     warnings: [],

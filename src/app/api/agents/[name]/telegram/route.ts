@@ -12,6 +12,7 @@ import { editorBody } from "@/app/api/_lib/body";
 type RouteContext = { params: Promise<{ name: string }> };
 
 const updateSchema = z.object({
+  runAsOwner: z.boolean().optional(),
   botToken: z.string().optional(),
   enabled: z.boolean().optional(),
 });

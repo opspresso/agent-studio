@@ -19,6 +19,7 @@ import { telegramUpdateSchema } from "./updateSchema";
 
 const telegramEventDeps: TelegramEventDeps = {
   runAgent: (params) => executeAgent(executionDeps, params),
+  authorizeExecutionGrant: executionDeps.authorizeExecutionGrant,
   agents: agentRepository,
   telegram: telegramClient,
   destinations: telegramDestinationRepository,

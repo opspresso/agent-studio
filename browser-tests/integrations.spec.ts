@@ -13,6 +13,8 @@ let runs: Record<string, TriggerRun[]>;
 let webhook: TriggerView | undefined;
 let executionUpdates: boolean[];
 let refuseExecutionGrant: boolean;
+let botPermissions: Record<"slack" | "telegram" | "teams", boolean>;
+let botPermissionUpdates: Array<{ kind: "slack" | "telegram" | "teams"; runAsOwner: boolean }>;
 const agentName = "fixture-agent";
 const at = "2026-09-26T00:00:00Z";
 
@@ -42,21 +44,30 @@ test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject
 test.beforeEach(async ({ page }) => {
   connected = false; channelReads = 0; runs = { daily: [], weekly: [] };
   webhook = undefined; executionUpdates = []; refuseExecutionGrant = false;
+  botPermissions = { slack: false, telegram: false, teams: false }; botPermissionUpdates = [];
   await page.route("**/api/**", route => {
     const url = new URL(route.request().url());
     const path = url.pathname;
     const prefix = `/api/agents/${agentName}`;
+    const botKind = path === `${prefix}/slack` ? "slack" : path === `${prefix}/telegram` ? "telegram" : path === `${prefix}/teams` ? "teams" : undefined;
+    if (botKind && route.request().method() === "PUT") {
+      const body = route.request().postDataJSON() as { runAsOwner?: boolean };
+      if (body.runAsOwner !== undefined) {
+        botPermissions[botKind] = body.runAsOwner;
+        botPermissionUpdates.push({ kind: botKind, runAsOwner: body.runAsOwner });
+      }
+    }
     if (path === prefix) return route.fulfill({ json: { name: agentName, displayName: "Fixture", ownerEmail: "admin@example.test", createdAt: at, updatedAt: at,
       slack: { configured: connected, enabled: connected } } });
     if (path === `${prefix}/token`) return route.fulfill({ json: { configured: false } });
     if (path === `${prefix}/slack`) {
       if (route.request().method() === "PUT") connected = true;
       if (route.request().method() === "DELETE") { connected = false; return route.fulfill({ status: 204 }); }
-      return route.fulfill({ json: { configured: connected, enabled: connected, botToken: connected ? "••••" : "", signingSecret: connected ? "••••" : "",
+      return route.fulfill({ json: { runAsOwner: botPermissions.slack, configured: connected, enabled: connected, botToken: connected ? "••••" : "", signingSecret: connected ? "••••" : "",
         eventsUrl: `${base}/events`, suggestedPrompts: [], channelKeywords: [], manifest: {} } });
     }
-    if (path === `${prefix}/telegram`) return route.fulfill({ json: { configured: false, enabled: false, botToken: "", botUsername: "", webhookUrl: `${base}/telegram` } });
-    if (path === `${prefix}/teams`) return route.fulfill({ json: { configured: false, enabled: false, appId: "", appPassword: "", tenantId: "", messagingUrl: `${base}/teams` } });
+    if (path === `${prefix}/telegram`) return route.fulfill({ json: { runAsOwner: botPermissions.telegram, configured: false, enabled: false, botToken: "", botUsername: "", webhookUrl: `${base}/telegram` } });
+    if (path === `${prefix}/teams`) return route.fulfill({ json: { runAsOwner: botPermissions.teams, configured: false, enabled: false, appId: "", appPassword: "", tenantId: "", messagingUrl: `${base}/teams` } });
     if (path === `${prefix}/slack/channels`) {
       channelReads += 1;
       return route.fulfill({ json: { channels: [{ id: "channel", name: `reports-${channelReads}` }] } });
@@ -77,6 +88,28 @@ test.beforeEach(async ({ page }) => {
     return route.abort();
   });
 });
+
+for (const [kind, label] of [["slack", "Slack bot"], ["telegram", "Telegram bot"], ["teams", "Microsoft Teams bot"]] as const) {
+  test(`${label} execution permissions require Save and can be revoked`, async ({ page }) => {
+    await page.goto(base);
+    await page.getByRole("button", { name: `${label} Not connected`, exact: true }).click();
+    const region = page.getByRole("region", { name: `${label} Not connected`, exact: true });
+    const permission = region.getByRole("switch", { name: /^Run with my permissions/ });
+    await expect(permission).not.toBeChecked();
+    await permission.click();
+    expect(botPermissionUpdates).toEqual([]);
+    await region.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => botPermissionUpdates).toEqual([{ kind, runAsOwner: true }]);
+    const updatedRegion = page.getByRole("region", { name: new RegExp(`^${label}`) });
+    const updatedPermission = updatedRegion.getByRole("switch", { name: /^Run with my permissions/ });
+    await expect(updatedPermission).toBeChecked();
+    await expect(updatedPermission).toBeEnabled();
+    await updatedPermission.click();
+    await updatedRegion.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => botPermissionUpdates).toEqual([{ kind, runAsOwner: true }, { kind, runAsOwner: false }]);
+    await expect(updatedPermission).not.toBeChecked();
+  });
+}
 
 test("Webhook execution permissions are off by default and can be explicitly granted and revoked", async ({ page }, testInfo) => {
   page.on("pageerror", error => { throw error; });

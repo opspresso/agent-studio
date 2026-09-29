@@ -41,6 +41,8 @@ export interface AgentApiToken {
 
 /** Per-agent Slack bot credentials. Secrets are AES-encrypted at rest. */
 export interface SlackIntegration {
+  /** Captured from the authenticated owner; never accepted as a client-supplied email. */
+  executionEmail?: string;
   botToken: string;
   signingSecret: string;
   enabled: boolean;
@@ -111,6 +113,7 @@ export function costAlertDestinations(limits: CostLimits): MessageDestination[] 
  * platform's to keep — the token is Telegram's, the secret is minted here.
  */
 export interface TelegramIntegration {
+  executionEmail?: string;
   botToken: string;
   webhookSecret: string;
   enabled: boolean;
@@ -134,6 +137,7 @@ export interface TelegramIntegration {
  * platform — Azure offers no call for it.
  */
 export interface TeamsIntegration {
+  executionEmail?: string;
   appId: string;
   appPassword: string;
   /** A single-tenant registration's tenant id; absent for a multi-tenant app. */

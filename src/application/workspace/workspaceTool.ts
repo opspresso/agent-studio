@@ -5,7 +5,7 @@ import type { WorkspaceAgentPolicy } from "@/domain/workspace/policy";
 import { isRepositoryName, workspaceRepositories, workspaceAllowsRepository, workspaceAllowsRepositoryCreation, workspaceRepositoryMode } from "@/domain/workspace/policy";
 import type { createWorkspaceRepositoryCreationUseCases } from "./createRepository";
 import type { WorkspaceRuntime, WorkspaceInput } from "@/domain/workspace/types";
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunActor, ExecutionGrant } from "@/domain/execution/actor";
 import { WORKSPACE_RUNTIMES, isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import type { createWorkspaceUseCases, WorkspaceView } from "./workspaceUseCases";
@@ -24,7 +24,7 @@ interface WorkspaceToolDeps {
   workdir: string;
   publicBaseUrl?: string;
 }
-interface WorkspaceToolContext { agentName: string; ownerEmail: string; actor?: RunActor; occurrence: string; sourceChatId?: string }
+interface WorkspaceToolContext { agentName: string; ownerEmail: string; actor?: RunActor; executionGrant?: ExecutionGrant; occurrence: string; sourceChatId?: string }
 const WAIT_STEPS = 8;
 const OUTPUT_BYTES = 12_000;
 
@@ -128,6 +128,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
         if (request.title !== undefined && typeof request.title !== "string") throw new ValidationError("Invalid workspace title");
         const startInput = { agentName: context.agentName, runtime,
           ...(context.actor ? { actor: context.actor } : {}),
+          ...(context.executionGrant ? { executionGrant: context.executionGrant } : {}),
           ...(request.title !== undefined ? { title: request.title } : {}),
           ...(request.repository !== null ? { repository: String(request.repository), baseBranch: String(request.base_branch) } : {}), input: input(runtime, request.task) };
         let started;
@@ -154,7 +155,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
         (request.base_branch != null && request.base_branch !== detail.workspace.coding?.baseBranch)) {
         throw new ValidationError("run keeps the selected Workspace's runtime and repository. Read options; use attach_repository to connect a Git-free Workspace");
       }
-      const run = await deps.useCases.enqueue(detail.workspace.id, context.ownerEmail, input(detail.workspace.runtime, request.task), key, context.actor);
+      const run = await deps.useCases.enqueue(detail.workspace.id, context.ownerEmail, input(detail.workspace.runtime, request.task), key, context.actor, context.executionGrant);
       return reply({ ...location(detail.workspace), run_id: run.id, status: run.status, next: "wait", after_seq: 0 });
     }
     if (!["status", "wait", "attach_repository", "prepare_git", "cancel", "close"].includes(String(operation))) throw new ValidationError("Unknown Workspace operation");

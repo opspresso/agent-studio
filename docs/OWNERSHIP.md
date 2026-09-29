@@ -78,6 +78,7 @@
 | 일반 작업과 코딩 작업의 Workspace·Sandbox·Runtime Session·Run 계약 | `src/domain/workspace/`; Git 저장소와 PR·승인 형태는 `src/domain/coding/types.ts` | 코드 |
 | Workspace Agent 설정·저장소 범위·기본값 | `src/domain/workspace/policy.ts`; 읽기·소유자/관리자 쓰기는 `application/workspace/repositoryPolicy.ts`, 도구 활성 여부는 `domain/agent/workspaceAccess.ts` | 코드 |
 | Workspace의 확인된 관리 사용자와 실행 호출자의 구분 | `application/workspace/workspaceCaller.ts`; `WorkspaceRun.actor`를 작업 실행의 run bracket까지 유지한다. member·Agent·Trigger 위임의 현재 접근은 `application/workspace/workspaceAuthorization.ts`가 접수와 실행 직전에 검사한다 | 코드 |
+| 메신저의 명시적 소유자 실행 위임과 철회 | `application/messaging/executionGrant.ts`가 저장·현재 소유권·멤버 상태·연동 활성 여부를 판단한다. `ExecutionGrant`는 실행·하위 Agent·Workspace 큐로 전달하며 `application/runtime/tools.ts`는 도구 효과 직전에 위임을 다시 검사한다 | 코드 |
 | 사용자에게 제시할 Workspace Agent 옵션과 정책 조회 상한 | `src/application/workspace/workspaceOptions.ts`; 접근 가능한 Agent 목록과 정책 repository는 조립 지점에서 주입한다 | 코드 |
 | 신규 저장소 생성과 자동 등록의 증거·중복 방지 | `application/workspace/createRepository.ts`; GitHub 201 응답 검증은 `infrastructure/github/codingForge.ts`, 결과와 정책 transaction은 `workspaceRepositoryCreationStore.ts` | 코드 |
 | 도구 결과의 실패 표시와 trace 오류 판정 | `src/shared/toolResultStatus.ts`의 `isToolErrorText`. Runtime의 `Error:` 결과를 Chat·Playground에도 실패로 표시한다 | 코드 |
