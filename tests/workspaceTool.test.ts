@@ -37,10 +37,11 @@ const useCases = createWorkspaceUseCases({ repository, chats, agents, now: () =>
   policy: () => policy, idleTtlSeconds: 60, checkRepository: async () => {} });
 const authorize = vi.fn(async () => {});
 const sleep = vi.fn(async (_ms: number) => {});
+const publishGit = vi.fn<(...args: unknown[]) => Promise<CodingApproval>>();
 const requestGit = vi.fn<(...args: unknown[]) => Promise<CodingApproval>>();
 const attachRepository = vi.fn<(...args: unknown[]) => Promise<WorkspaceView>>();
 const pullRequest = vi.fn<(...args: unknown[]) => Promise<PullRequestInfo | undefined>>();
-const makeTool = (agentName = "demo", ownerEmail = owner, sourceChatId?: string, occurrence = "parent-run") => createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, publicBaseUrl: "https://studio.example.test", policy: () => policy }, { agentName, ownerEmail, sourceChatId, occurrence });
+const makeTool = (agentName = "demo", ownerEmail = owner, sourceChatId?: string, occurrence = "parent-run") => createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, publicBaseUrl: "https://studio.example.test", policy: () => policy }, { agentName, ownerEmail, sourceChatId, occurrence });
 const invoke = async (request: Record<string, unknown>, callId = "call-start") => JSON.parse((await makeTool()({ request }, callId)).text);
 const start = { operation: "start", runtime: "command", repository: null, base_branch: null, task: "printf report > report.txt" };
 beforeEach(() => {
@@ -60,7 +61,7 @@ describe("Workspace Agent capability", () => {
   });
   it("seals a review Workspace to its provider-verified commit and refuses other workspaces and Git effects", async () => {
     const target = { repository: "org/repo", number: 130, headSha: "a".repeat(40) };
-    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY,
+    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY,
       publicBaseUrl: "https://studio.example.test", policy: () => policy }, { agentName: "demo", ownerEmail: owner, occurrence: "review", reviewTarget: target });
     const result = JSON.parse((await tool({ request: start }, "bootstrap")).text);
     expect((await repository.get(result.workspace_id))?.coding).toMatchObject({ repository: target.repository, sourceRevision: target.headSha, baseBranch: `review/${target.headSha}` });
@@ -79,7 +80,7 @@ describe("Workspace Agent capability", () => {
     await repository.write({ expectedRevision: workspace.revision,
       workspace: { ...workspace, activeRunId: undefined, revision: workspace.revision + 1 }, run: { ...run, status: "succeeded" } });
     const caller = workspaceCaller({ ancestry: ["demo"], actor: { kind: "slack", id: "U1" }, userEmail: owner })!;
-    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest,
+    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest,
       workdir: WORKSPACE_DIRECTORY, policy: () => policy }, { agentName: "demo", ...caller, occurrence: "later-external-run" });
     expect(JSON.parse((await tool({ request: { operation: "use_workspace", workspace_id: workspace.id } }, "select")).text))
       .toMatchObject({ workspace_id: workspace.id, selected: true, task_queued: false });
@@ -95,7 +96,7 @@ describe("Workspace Agent capability", () => {
 
   it.each(["agent-token", "slack", "telegram", "teams", "schedule", "webhook"] as const)("persists %s provenance while the verified member manages the Workspace", async kind => {
     const caller = workspaceCaller({ ancestry: ["demo"], actor: { kind, id: kind === "agent-token" ? owner : "external-caller" }, userEmail: owner })!;
-    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest,
+    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest,
       workdir: WORKSPACE_DIRECTORY, policy: () => policy }, { agentName: "demo", ...caller, occurrence: "external-run" });
     const first = JSON.parse((await tool({ request: start }, "first")).text);
     const workspace = (await repository.get(first.workspace_id))!;
@@ -122,7 +123,7 @@ describe("Workspace Agent capability", () => {
   it("distinguishes new-repository permission from existing access and routes creation through the server", async () => {
     const createRepository = vi.fn(async () => ({ repository: "org/new", status: "created" as const, allowed: true, reused: false,
       result: { repository: "org/new", repositoryId: 42, url: "https://github.example.test/org/new", baseBranch: "main", private: true } }));
-    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, createRepository,
+    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest, createRepository,
       workdir: WORKSPACE_DIRECTORY, publicBaseUrl: "https://studio.example.test", policy: () => ({ ...policy, mode: "new" }) },
     { agentName: "demo", ownerEmail: owner, occurrence: "creation-test" });
     const access = JSON.parse((await tool({ request: { operation: "check_repository_access", repository: "org/new" } }, "check")).text);
@@ -192,7 +193,7 @@ describe("Workspace Agent capability", () => {
     authorize.mockRejectedValueOnce(new Error("Access revoked"));
     await expect(invoke(start)).rejects.toThrow("Access revoked");
     expect(await repository.list(owner, 10)).toHaveLength(0);
-    const disabled = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, policy: () => undefined }, { agentName: "demo", ownerEmail: owner, occurrence: "parent" });
+    const disabled = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, policy: () => undefined }, { agentName: "demo", ownerEmail: owner, occurrence: "parent" });
     await expect(disabled({ request: { operation: "options" } }, "read")).rejects.toThrow("not enabled");
   });
   it("queues a Git-free task once for a repeated SDK call and reports admission honestly", async () => {
@@ -268,9 +269,9 @@ describe("Workspace Agent capability", () => {
     expect(assembleAgentRun({ workspaceTool: makeTool() }, {}).tools.some(tool => tool.function.name === "Workspace")).toBe(true);
   });
   it.each<CodingAction>([
-    { kind: "commit-and-push", message: "feat: change" },
-    { kind: "pull-request", title: "Change", body: "Reviewed work", draft: false },
     { kind: "merge", pullRequestNumber: 7, headSha: "a".repeat(40) },
+    { kind: "tag", tag: "v1.0.0" },
+    { kind: "release", tag: "v1.0.0", title: "Release", body: "Verified", draft: false, prerelease: false },
     { kind: "push-main" },
     { kind: "deploy", workflow: "deploy.yml", ref: "main", inputs: { environment: "preview" } },
   ])("prepares $kind through the actual tool schema and reuses its pending review without native tasks", async action => {
@@ -300,8 +301,27 @@ describe("Workspace Agent capability", () => {
     await expect(makeTool("demo", "foreign@example.com")({ request }, "git-call")).rejects.toMatchObject({ status: 404 });
     expect(requestGit).toHaveBeenCalledTimes(1);
   });
+  it.each<CodingAction>([
+    { kind: "commit", message: "feat: change" }, { kind: "commit-and-push", message: "feat: change" },
+    { kind: "push" }, { kind: "pull-request", title: "Change", body: "Verified", draft: false },
+  ])("executes $kind inline and returns no approval link", async action => {
+    const workspace = await useCases.create({ agentName: "demo", chatId: "publish-chat", createChat: true,
+      title: "Publish", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
+    publishGit.mockResolvedValueOnce({ id: "publication", workspaceId: workspace.id, action, requestedBy: owner,
+      requestedAt: now.toISOString(), status: "succeeded", authorization: "coding-request", result: "Published",
+      fingerprint: "tree", review: { headSha: "a".repeat(40), treeSha: "b".repeat(40), diff: "", truncated: false } });
+    const request = { operation: "prepare_git", workspace_id: workspace.id, action };
+    createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!)({ request });
+    const result = await invoke(request, "publish");
+    expect(result).toMatchObject({ status: "succeeded", result: "Published", action_id: "publication" });
+    expect(result.approval_url).toBeUndefined();
+    expect(publishGit).toHaveBeenCalledExactlyOnceWith(workspace.id, owner, action, undefined);
+    expect(requestGit).not.toHaveBeenCalled();
+    await expect(makeTool("demo", "foreign@example.com")({ request }, "foreign")).rejects.toMatchObject({ status: 404 });
+    expect(publishGit).toHaveBeenCalledTimes(1);
+  });
   it("exposes current deployment choices without creating a workspace", async () => {
-    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest,
+    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest,
       workdir: WORKSPACE_DIRECTORY, policy: () => ({ ...policy, deploymentWorkflows: ["deploy.yml"] }) },
     { agentName: "demo", ownerEmail: owner, occurrence: "options" });
     expect(JSON.parse((await tool({ request: { operation: "options" } }, "options")).text).deployment_workflows).toEqual(["deploy.yml"]);

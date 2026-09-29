@@ -718,12 +718,20 @@ Chat에도 저장한다. 생략하면 자연어 작업은 요청에서 제목을
 다른 내용으로 키를 재사용하면 409다. Git 작업은 `repository`와 `baseBranch`를 함께 지정한다. 둘 다 없으면 Git 없는 Workspace다.
 lease·operation handle·체크포인트 bytes와 주소는 사용자 응답에 넣지 않는다.
 
-Git 동작은 `commit`, `commit-and-push`, `push`, `pull-request`(`draft` 선택), `merge`, `push-main`, `deploy`다.
+Workspace 도구의 `prepare_git`는 작업 브랜치 Commit·Push·PR을 추가 확인 없이 실행하고
+`action_id`, `status`, `result`를 반환한다. main 반영·태그·릴리즈·배포는 승인 링크로 확인한다.
+화면의 `/actions` API는 요청한 동작을 검토한 뒤 별도 결정 API로 실행한다.
+
+Git 동작은 `commit`, `commit-and-push`, `push`, `pull-request`(`draft` 선택), `merge`, `push-main`, `tag`, `release`, `deploy`다.
 `commit`·`commit-and-push`는 `message`를 받고 `push`·`push-main`은 추가 인자가 없다. 자세한 승인 조건은
 [Workspace 설계](design/workspaces.md#git과-승인)를 따른다. 승인 요청과 실제 실행 모두
 현재 파일 fingerprint를 확인한다. main 병합은 정확한 PR head를 요구하며 대기 중·실패한 검사를 거절한다.
 `push-main`은 게시된 작업 브랜치와 검토한 main SHA를 확인하고 fast-forward만 실행한다.
 검사가 없는 커밋은 `ci: "none"`으로 표시하며 성공으로 간주하지 않는다. GitHub 브랜치 규칙은 유지한다.
+`tag`는 `{kind:"tag", tag:"v1.0.0"}`로 현재 원격 main의 태그를 준비한다.
+`release`는 `{kind:"release", tag:"v1.0.0", title:"...", body:"...", draft:false, prerelease:false}`로
+기존 태그의 릴리즈를 준비한다. 대상 커밋은 `approval.review.targetSha`로 반환하고 확인 시 다시 검사한다.
+태그 덮어쓰기·자동 태그 생성·릴리즈 수정은 수행하지 않는다.
 새 Workspace Run의 접수는 아직 승인하지 않은 Git 검토를 원자적으로 거절한다. 실행 중이거나
 결과가 불확실한 Git 동작에는 새 Run을 접수하지 않는다.
 

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { McpToolResult } from "@/domain/llm/types";
 import type { WorkspaceAgentPolicy } from "@/domain/workspace/policy";
-import { isRepositoryName, workspaceRepositories, workspaceAllowsRepository, workspaceAllowsRepositoryCreation, workspaceRepositoryMode } from "@/domain/workspace/policy";
+import { isGitBranch, isRepositoryName, workspaceRepositories, workspaceAllowsRepository, workspaceAllowsRepositoryCreation, workspaceRepositoryMode } from "@/domain/workspace/policy";
 import type { createWorkspaceRepositoryCreationUseCases } from "./createRepository";
 import type { WorkspaceRuntime, WorkspaceInput } from "@/domain/workspace/types";
 import type { RunActor, ExecutionGrant } from "@/domain/execution/actor";
@@ -10,6 +10,7 @@ import { WORKSPACE_RUNTIMES, isTerminalWorkspaceRun } from "@/domain/workspace/t
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import type { createWorkspaceUseCases, WorkspaceView } from "./workspaceUseCases";
 import type { CodingApproval, CodingAction, PullRequestInfo } from "@/domain/coding/types";
+import { codingActionRequiresConfirmation } from "@/domain/coding/types";
 import { boundedWorkspaceText } from "./output";
 import type { PullRequestReviewTarget } from "@/domain/trigger/pullRequestReview";
 
@@ -20,6 +21,7 @@ interface WorkspaceToolDeps {
   authorize(): Promise<void>;
   sleep(ms: number): Promise<void>;
   requestGit(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string): Promise<CodingApproval>;
+  publishGit(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string): Promise<CodingApproval>;
   pullRequest(id: string, ownerEmail: string): Promise<PullRequestInfo | undefined>;
   attachRepository(id: string, ownerEmail: string, repository: string, baseBranch: string): Promise<WorkspaceView>;
   workdir: string;
@@ -29,7 +31,7 @@ interface WorkspaceToolContext { agentName: string; ownerEmail: string; actor?: 
 const WAIT_STEPS = 8;
 const OUTPUT_BYTES = 12_000;
 
-/** The model can manage owned compute, but never consume Git/deployment approvals. */
+/** Work-branch publication is included in coding; protected actions retain confirmation. */
 export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceToolContext) {
   const startKey = createHash("sha256").update(JSON.stringify([context.occurrence, context.agentName, "workspace-start"])).digest("hex");
   const input = (runtime: WorkspaceRuntime, task: string): WorkspaceInput => runtime === "command"
@@ -93,7 +95,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       repository_policy_url: repositoryPolicyUrl, checks: policy.checks, deployment_workflows: policy.deploymentWorkflows,
       repository_setup: "Check repository access for the exact owner/name before creation. selected permits listed names; owners also permits listed owners; all permits any name the GitHub account can access; new permits listed names plus repositories created by this agent's Workspace create_repository operation. In new mode, creation_allowed may be true while allowed is false. For a user-requested NEW repository use Workspace create_repository; it initializes a README and automatically registers a successful creation. Do not use an MCP create tool or claim an existing repository is new to obtain registration. Then check_repository with the returned base_branch before clone. If both access and creation are blocked, return repository_policy_url. Never create another name to bypass policy.",
       workspace_selection: "A chat keeps one selected Workspace per agent. Outside a chat, use_workspace selects an owned Workspace for this Agent run; select it again on a later request. Repeated start returns the selected Workspace without queueing work. Use run for follow-ups. Both repository and base_branch must be selected for a clone; null means deliberately Git-free. workspace_path is a browser link; task files belong in workdir, using relative paths.",
-      git_actions: "Use prepare_git for commit, commit-and-push, push (work branch), pull-request (title/body/draft), merge (pullRequestNumber/headSha from status.pull_request), push-main (already published work branch, fast-forward only), or deploy (workflow from deployment_workflows, ref main, inputs as name/value pairs). Deployment approval only dispatches the workflow; use its run and application health to verify completion. Return approval_url verbatim and pause this turn. When requested from a chat, the decision outcome returns there automatically and the agent resumes the remaining request. Read status and prepare the next requested action for its own review. Closed Workspaces resume for Git review; never close or create another Workspace to publish. Only the user's Workspace approval UI executes these actions. Native tasks cannot write /control/git; do not retry Git writes with a temporary index, changed permissions or GitHub tools." });
+      git_actions: "A coding request includes implementation, checks, commit, push to the Workspace branch and a pull request unless the user limits the scope. Use prepare_git for every Git action. commit, commit-and-push, push and pull-request execute immediately and return actual results; continue until the PR exists without asking for another approval. merge, push-main, tag, release and deploy require a separate user request and confirmation: return approval_url and pause only for pending actions. Use merge with pullRequestNumber/headSha from status.pull_request; push-main requires a published branch and fast-forward. tag creates a named tag on the reviewed current main commit. release publishes an existing tag with title/body/draft/prerelease. Never overwrite tags. Deployment uses a configured workflow, ref main and inputs as name/value pairs; verify the workflow and service afterward. Closed Workspaces resume for Git actions. Native tasks cannot write /control/git; never bypass this with GitHub tools or credentials." });
     }
     if (operation === "check_repository_access") {
       if (typeof request.repository !== "string" || !isRepositoryName(request.repository)) throw new ValidationError("Repository must use owner/repository");
@@ -200,6 +202,13 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       } else if (value.kind === "commit" || value.kind === "commit-and-push") {
         if (typeof value.message !== "string") throw new ValidationError("A commit message is required");
         action = { kind: value.kind, message: value.message };
+      } else if (value.kind === "tag" || value.kind === "release") {
+        if (typeof value.tag !== "string" || !isGitBranch(value.tag)) throw new ValidationError("Invalid Git tag");
+        if (value.kind === "tag") action = { kind: "tag", tag: value.tag };
+        else {
+          if (typeof value.title !== "string" || typeof value.body !== "string" || typeof value.draft !== "boolean" || typeof value.prerelease !== "boolean") throw new ValidationError("Release title, body, draft and prerelease are required");
+          action = { kind: "release", tag: value.tag, title: value.title, body: value.body, draft: value.draft, prerelease: value.prerelease };
+        }
       } else if (value.kind === "deploy") {
         if (typeof value.workflow !== "string" || value.ref !== "main" || !Array.isArray(value.inputs)) {
           throw new ValidationError("Deployment requires a workflow, ref main and an inputs array");
@@ -211,7 +220,18 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
           entries.push([entry.name, entry.value]);
         }
         action = { kind: "deploy", workflow: value.workflow, ref: value.ref, inputs: Object.fromEntries(entries) };
-      } else throw new ValidationError("Unsupported Git action. Use commit, commit-and-push, push, pull-request, merge, push-main or deploy; do not use a native task or another Workspace");
+      } else throw new ValidationError("Unsupported Git action. Use commit, commit-and-push, push, pull-request, merge, push-main, tag, release or deploy; do not use a native task or another Workspace");
+      if (!codingActionRequiresConfirmation(action)) {
+        const publication = await deps.publishGit(id, context.ownerEmail, action, context.sourceChatId);
+        const updated = await owned(id);
+        return reply({ ...location(updated.workspace), action_id: publication.id, action: publication.action,
+          status: publication.status, result: publication.result,
+          ...(publication.ciWatch ? { ci_watch: publication.ciWatch } : {}),
+          next: publication.ciWatch ? "The pull request is published. Its exact HEAD checks are watched for up to 30 minutes; pause this turn. The CI result will resume this chat for the remaining user request. Do not repeat publication or poll repeatedly."
+            : publication.status === "succeeded"
+            ? "Continue the coding request through a pull request without asking for commit or work-branch push approval. Merge, main publication, tags, releases and deployment need a separate user request and confirmation. Never repeat completed actions."
+            : "Report this outcome. Do not repeat an uncertain action or continue dependent publication; inspect status first." }, publication.status !== "succeeded");
+      }
       const pending = detail.approvals.find(item => item.id === detail.workspace.activeActionId && item.status === "pending");
       const same = pending && isDeepStrictEqual(pending.action, action);
       const approval = same && pending && pending.sourceChatId === context.sourceChatId ? pending

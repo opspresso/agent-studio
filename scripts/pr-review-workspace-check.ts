@@ -127,7 +127,7 @@ async function main() {
     run: input => streamAgentRun(execution, { ...input, messages: [{ role: "user", content: input.message ?? "" }], ownerEmail: input.userEmail }),
     openReviewWorkspace: async target => {
       const tool = createWorkspaceTool({ useCases: api, authorize: async () => {}, policy: () => worker.policy(agentName), sleep: pump, workdir: WORKSPACE_DIRECTORY, publicBaseUrl: baseUrl,
-        requestGit: async () => { throw new Error("Git publication must be unavailable"); }, pullRequest: async () => undefined, attachRepository: async () => { throw new Error("Repository must remain pinned"); } },
+        publishGit: async () => { throw new Error("Git publication unavailable"); }, requestGit: async () => { throw new Error("Git publication must be unavailable"); }, pullRequest: async () => undefined, attachRepository: async () => { throw new Error("Repository must remain pinned"); } },
         { agentName, ownerEmail, actor, occurrence: randomUUID(), reviewTarget: target });
       const wrapped = async (...args: Parameters<typeof tool>) => { const result = await tool(...args); const value = JSON.parse(result.text); workspaceId ??= value.workspace_id; return result; };
       return openReviewWorkspace({ tool: wrapped, state: repository.get, close: id => api.close(id, ownerEmail), sleep: pump, verify: async id => {

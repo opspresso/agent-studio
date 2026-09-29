@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import type { CodingAction, CodingApproval, CodingRepository, PullRequestInfo } from "@/domain/coding/types";
-import { codingCiAllowsPublication, CodingMutationRejectedError } from "@/domain/coding/types";
+import { codingActionRequiresConfirmation, codingCiAllowsPublication, CodingMutationRejectedError } from "@/domain/coding/types";
 import type { CodingForge } from "@/domain/coding/forge";
 import type { CodingWorktree, WorktreeReview } from "@/domain/coding/worktree";
 import type { Workspace } from "@/domain/workspace/types";
@@ -9,6 +9,7 @@ import { ownedWorkspace, workspacePolicy, workspaceView, checkWorkspaceRepositor
 import { ensureWorkspaceSandbox, saveWorkspaceCheckpoint, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { WorkspaceWorkerState, WORKSPACE_LEASE_MS } from "@/application/workspace/workerState";
 import { boundedWorkspaceText } from "@/application/workspace/output";
+import { codingCiWatch } from "@/application/chat/workspaceCiWatch";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { isGitBranch, isRepositoryName, workspaceAllowsRepository } from "@/domain/workspace/policy";
 
@@ -50,7 +51,7 @@ async function release(deps: CodingDeps, state: WorkspaceWorkerState, approval?:
     dueAt: workspace.status === "closing" || approval?.status === "uncertain" ? deps.now().toISOString() : new Date(deps.now().getTime() + workspace.idleTtlSeconds * 1000).toISOString() }, undefined, [], approval ? { approval } : {});
 }
 
-async function validateAction(deps: CodingDeps, workspace: Workspace, action: CodingAction, review: WorktreeReview): Promise<{ pullRequest?: PullRequestInfo; main?: { baseSha: string; ci: PullRequestInfo["ci"] } }> {
+async function validateAction(deps: CodingDeps, workspace: Workspace, action: CodingAction, review: WorktreeReview): Promise<{ pullRequest?: PullRequestInfo; main?: { baseSha: string; ci: PullRequestInfo["ci"] }; release?: { headSha: string; ci: PullRequestInfo["ci"] } }> {
   const repo = repository(workspace);
   if (action.kind === "commit" || action.kind === "commit-and-push") {
     if (!action.message.trim() || action.message.length > 8000) throw new ValidationError("Invalid commit message");
@@ -74,6 +75,14 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
     }
     if (review.treeSha !== review.headTreeSha) throw new ConflictError("Workspace has uncommitted changes");
     return { pullRequest: current };
+  } else if (action.kind === "tag" || action.kind === "release") {
+    if (!isGitBranch(action.tag)) throw new ValidationError("Invalid Git tag");
+    if (action.kind === "release" && (!action.title.trim() || action.title.length > 200 || action.body.length > 40_000 ||
+      typeof action.draft !== "boolean" || typeof action.prerelease !== "boolean")) throw new ValidationError("Invalid release details");
+    if (review.treeSha !== review.headTreeSha) throw new ConflictError("Workspace has uncommitted changes");
+    const release = await deps.forge.releaseTarget(repo, action.kind === "release" ? action.tag : undefined);
+    if (!codingCiAllowsPublication(release.ci)) throw new ConflictError("Tag and release publication requires completed, non-failing checks");
+    return { release };
   } else {
     const policy = await workspacePolicy(deps, workspace.agentName);
     if (!policy.deploymentWorkflows.includes(action.workflow) || action.ref !== "main") throw new ValidationError("Deployment must use an allowed workflow on main");
@@ -84,9 +93,15 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
   return {};
 }
 
-/** Every write effect is explicitly requested, reviewed, and claimed before execution. */
+/** All effects share ownership, tree review, action claims and uncertainty handling. */
 export function createCodingUseCases(deps: CodingDeps) {
   return {
+    async publish(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string): Promise<CodingApproval> {
+      if (codingActionRequiresConfirmation(action)) throw new ValidationError("This action requires explicit confirmation");
+      // The action result stays inline; PRs can schedule a later CI-only update.
+      const approval = await this.request(id, ownerEmail, action, action.kind === "pull-request" ? sourceChatId : undefined, "coding-request");
+      return this.decide(id, ownerEmail, approval.id, true);
+    },
     async pullRequest(id: string, ownerEmail: string): Promise<PullRequestInfo | undefined> {
       const workspace = await ownedWorkspace(deps, id, ownerEmail);
       if (!workspace.pullRequest) return undefined;
@@ -125,7 +140,8 @@ export function createCodingUseCases(deps: CodingDeps) {
         } catch (error) { await release(deps, state); throw error; }
       });
     },
-    async request(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string): Promise<CodingApproval> {
+    async request(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string, authorization: CodingApproval["authorization"] = "confirmation"): Promise<CodingApproval> {
+      if (authorization === "coding-request" && codingActionRequiresConfirmation(action)) throw new ValidationError("This action requires explicit confirmation");
       if (sourceChatId) {
         const workspace = await ownedWorkspace(deps, id, ownerEmail);
         const chat = await deps.chats.get(sourceChatId);
@@ -139,12 +155,12 @@ export function createCodingUseCases(deps: CodingDeps) {
           const sandbox = await ensureWorkspaceSandbox(deps, state);
           const { workspace } = await state.read();
           const review = await state.effect(() => deps.coding.review(sandbox.externalId));
-          const { pullRequest, main } = await state.effect(() => validateAction(deps, workspace, action, review));
+          const { pullRequest, main, release: target } = await state.effect(() => validateAction(deps, workspace, action, review));
           const approval: CodingApproval = { id: approvalId, workspaceId: id, requestedBy: ownerEmail,
             ...(sourceChatId ? { sourceChatId } : {}),
-            requestedAt: deps.now().toISOString(), action, fingerprint: review.fingerprint, status: "pending",
+            requestedAt: deps.now().toISOString(), authorization, action, fingerprint: review.fingerprint, status: "pending",
             review: { headSha: review.headSha, treeSha: review.treeSha, diff: review.diff, truncated: review.truncated,
-              ...(main ? { mainHeadSha: main.baseSha, ci: main.ci } : pullRequest ? { ci: pullRequest.ci } : {}) } };
+              ...(main ? { mainHeadSha: main.baseSha, ci: main.ci } : pullRequest ? { ci: pullRequest.ci } : target ? { targetSha: target.headSha, ci: target.ci } : {}) } };
           await release(deps, state, approval, true, pullRequest ? { pullRequest } : {});
           return approval;
         } catch (error) {
@@ -179,6 +195,7 @@ export function createCodingUseCases(deps: CodingDeps) {
           if (review.fingerprint !== previous.fingerprint) throw new ConflictError("Workspace changed since the action was reviewed");
           const checked = await state.effect(() => validateAction(deps, workspace, previous.action, review));
           if (previous.action.kind === "push-main" && checked.main?.baseSha !== previous.review.mainHeadSha) throw new ConflictError("Main changed since review; prepare a new approval");
+          if (checked.release && checked.release.headSha !== previous.review.targetSha) throw new ConflictError("Publication target changed since review; prepare a new approval");
           await state.save({}, undefined, [], { approval: { ...decision, status: "executing", operationId: approvalId } });
           executing = true;
           let result: string;
@@ -205,15 +222,20 @@ export function createCodingUseCases(deps: CodingDeps) {
             patch.pullRequest = { ...checked.pullRequest!, state: "merged" };
           } else if (action.kind === "push-main") {
             result = await state.effect(() => deps.forge.pushMain(repo, review.headSha, previous.review.mainHeadSha!));
+          } else if (action.kind === "tag") {
+            result = await state.effect(() => deps.forge.createTag(repo, action.tag, previous.review.targetSha!));
+          } else if (action.kind === "release") {
+            result = await state.effect(() => deps.forge.createRelease(repo, action, previous.review.targetSha!));
           } else {
             const dispatched = await state.effect(() => deps.forge.dispatch(repo.repository, action.workflow, action.ref, action.inputs));
             result = dispatched.url ?? (dispatched.runId ? `Workflow run ${dispatched.runId}` : "Workflow dispatch accepted");
           }
-          const completed: CodingApproval = { ...decision, operationId: approvalId, status: "succeeded", result };
+          const ciWatch = decision.authorization === "coding-request" && decision.sourceChatId ? codingCiWatch(patch.pullRequest, deps.now()) : undefined;
+          const completed: CodingApproval = { ...decision, operationId: approvalId, status: "succeeded", result, ...(ciWatch ? { ciWatch } : {}) };
           await release(deps, state, completed, false, patch);
           return completed;
         } catch (error) {
-          const uncertain = executing && !(error instanceof CodingMutationRejectedError && ["merge", "push-main"].includes(previous.action.kind));
+          const uncertain = executing && !(error instanceof CodingMutationRejectedError && ["merge", "push-main", "tag", "release"].includes(previous.action.kind));
           const failed: CodingApproval = { ...decision, status: uncertain ? "uncertain" : "failed",
             result: boundedWorkspaceText(error instanceof Error ? error.message : "Coding action failed", WORKSPACE_LIMITS.errorBytes).text };
           await release(deps, state, failed, uncertain);

@@ -59,7 +59,9 @@ async function fixture() {
     coding: { prepare: async (_id, repo) => ({ ...repo, headSha: head, baseSha: head }),
       review: async () => ({ headSha: head, treeSha: "c".repeat(40), headTreeSha: (dirty ? "d" : "c").repeat(40), fingerprint: `review-${head}-${dirty}`, diff: dirty ? "+change" : "", truncated: false }),
       commit: vi.fn(async () => { dirty = false; head = "b".repeat(40); return head; }), push: vi.fn(async () => {}) },
-    forge: { checkRepository: async () => {}, branches: async () => ({ names: ["main"], hasMore: false }), pullRequest: async () => ({ ...pull }),
+    forge: { releaseTarget: vi.fn(async () => ({ headSha: "e".repeat(40), ci: "passed" as const })),
+      createTag: vi.fn(async () => "e".repeat(40)), createRelease: vi.fn(async () => "https://example.test/company/repo/releases/tag/v1.0.0"),
+      checkRepository: async () => {}, branches: async () => ({ names: ["main"], hasMore: false }), pullRequest: async () => ({ ...pull }),
       openPullRequest: vi.fn(async () => ({ ...pull })), merge: vi.fn(async () => { pull.state = "merged"; return "c".repeat(40); }),
       reviewMainPush: async () => ({ baseSha: head, ci: "passed" }), pushMain: async () => head, dispatch: async () => ({}) },
   };
@@ -69,7 +71,7 @@ async function fixture() {
   const git = createCodingUseCases(coding);
   const workspaceTool = createWorkspaceTool({ useCases, authorize: async () => {}, policy: () => coding.policy("agent"),
     workdir: "/workspace/repo", publicBaseUrl: "https://studio.example.test", sleep: async () => {},
-    requestGit: git.request, pullRequest: git.pullRequest, attachRepository: git.attachRepository },
+    publishGit: (id, owner, action, sourceChatId) => git.publish(id, owner, action, sourceChatId), requestGit: git.request, pullRequest: git.pullRequest, attachRepository: git.attachRepository },
   { sourceChatId: f.scope.sessionId, agentName: "agent", ownerEmail: owner, occurrence: "continuation" });
   let channel = new FakeChannel([[contentChunk("Result received")]]);
   const runAgent = vi.fn<ChatDeps["runAgent"]>(async function* (input) {
@@ -88,6 +90,40 @@ async function fixture() {
 }
 
 describe("Workspace decisions returning to their source chat", () => {
+  it("watches inline PR publication without repeating its action result, then resumes only for CI", async () => {
+    const f = await fixture();
+    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.drain();
+    f.runAgent.mockClear();
+    f.pull.ci = "pending";
+    const pr = await f.git.publish(f.workspace.id, f.owner, { kind: "pull-request", title: "Change", body: "Verified", draft: false }, f.scope.sessionId);
+    expect(pr).toMatchObject({ status: "succeeded", authorization: "coding-request", ciWatch: { number: 1, headSha: f.pull.headSha } });
+    expect(await repository.continuation(f.workspace.id, pr.id)).toMatchObject({ phase: "ci", status: "waiting-ci", ciWatch: pr.ciWatch });
+    await f.drain();
+    expect(f.runAgent).not.toHaveBeenCalled();
+    f.pull.ci = "passed";
+    vi.setSystemTime(Date.now() + 16_000);
+    await f.drain();
+    expect(f.runAgent).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(f.runAgent.mock.calls[0]![0].messages[1]!.content as string)).toMatchObject({ event: "workspace_ci_result", status: "succeeded" });
+    const messages = await chats.listMessages(f.scope.sessionId);
+    expect(messages.filter(row => row.role === "assistant" && row.workspaceAction?.approvalId === pr.id)).toHaveLength(1);
+    expect(f.coding.forge.openPullRequest).toHaveBeenCalledTimes(1);
+    expect(f.coding.forge.merge).not.toHaveBeenCalled();
+    await f.drain();
+    expect(f.runAgent).toHaveBeenCalledTimes(1);
+  });
+  it("does not enqueue duplicate continuation for an inline PR whose checks are already settled", async () => {
+    const f = await fixture();
+    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.drain();
+    f.runAgent.mockClear();
+    const pr = await f.git.publish(f.workspace.id, f.owner, { kind: "pull-request", title: "Change", body: "Verified", draft: false }, f.scope.sessionId);
+    expect(pr.ciWatch).toBeUndefined();
+    expect(await repository.continuation(f.workspace.id, pr.id)).toBeNull();
+    await f.drain();
+    expect(f.runAgent).not.toHaveBeenCalled();
+  });
   async function waitingForCi() {
     const f = await fixture();
     await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
@@ -158,22 +194,21 @@ describe("Workspace decisions returning to their source chat", () => {
     expect((await repository.continuation(f.workspace.id, f.pr.id))?.status).toBe("cancelled");
   });
 
-  it("continues commit/push → PR → merge in the same native Session, one approval per action", async () => {
+  it("continues a confirmed commit into inline PR publication and a separate merge review in the same Session", async () => {
     const f = await fixture();
     const pr = { request: { operation: "prepare_git", action: { kind: "pull-request", title: "Implement", body: "Validated", draft: false } } };
-    const prChannel = new FakeChannel([[toolCallChunk(0, "pr-call", "Workspace", JSON.stringify(pr))], [contentChunk("PR review is ready")]]);
+    const merge = { request: { operation: "prepare_git", action: { kind: "merge", pullRequestNumber: 1, headSha: "b".repeat(40) } } };
+    const prChannel = new FakeChannel([[toolCallChunk(0, "pr-call", "Workspace", JSON.stringify(pr))],
+      [toolCallChunk(0, "merge-call", "Workspace", JSON.stringify(merge))], [contentChunk("Merge review is ready")]]);
     f.setChannel(prChannel);
     await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
     await f.drain();
     expect(JSON.stringify(prChannel.seenParams[0]?.messages)).toContain("Commit and push, create a PR, then merge it to main");
     expect(JSON.stringify(prChannel.seenParams[0]?.messages)).toContain("workspace_action_result");
     const prApproval = (await repository.approvals(f.workspace.id, 10)).find(row => row.action.kind === "pull-request")!;
-    expect(prApproval).toMatchObject({ status: "pending", sourceChatId: f.scope.sessionId });
-    expect(f.coding.forge.openPullRequest).not.toHaveBeenCalled();
-    const merge = { request: { operation: "prepare_git", action: { kind: "merge", pullRequestNumber: 1, headSha: "b".repeat(40) } } };
-    f.setChannel(new FakeChannel([[toolCallChunk(0, "merge-call", "Workspace", JSON.stringify(merge))], [contentChunk("Merge review is ready")]]));
-    await f.git.decide(f.workspace.id, f.owner, prApproval.id, true);
-    await f.drain();
+    expect(prApproval).toMatchObject({ status: "succeeded", authorization: "coding-request" });
+    expect(prApproval.sourceChatId).toBe(f.scope.sessionId);
+    expect(f.coding.forge.openPullRequest).toHaveBeenCalledTimes(1);
     const mergeApproval = (await repository.approvals(f.workspace.id, 10)).find(row => row.action.kind === "merge")!;
     expect(mergeApproval.status).toBe("pending");
     expect(f.coding.forge.merge).not.toHaveBeenCalled();
@@ -185,7 +220,7 @@ describe("Workspace decisions returning to their source chat", () => {
     expect(f.coding.forge.merge).toHaveBeenCalledTimes(1);
     expect(await repository.list(f.owner, 20)).toHaveLength(1);
     const messages = await chats.listMessages(f.scope.sessionId);
-    expect(messages.filter(row => row.role === "assistant" && row.workspaceAction)).toHaveLength(3);
+    expect(messages.filter(row => row.role === "assistant" && row.workspaceAction)).toHaveLength(2);
     expect(messages.some(row => row.content === "Merged to main")).toBe(true);
     expect(messages.some(row => row.role === "user")).toBe(false);
   });

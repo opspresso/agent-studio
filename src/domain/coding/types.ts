@@ -26,11 +26,20 @@ export type CodingGitAction =
   | { kind: "push" }
   | { kind: "push-main" }
   | { kind: "pull-request"; title: string; body: string; draft: boolean }
-  | { kind: "merge"; pullRequestNumber: number; headSha: string };
+  | { kind: "merge"; pullRequestNumber: number; headSha: string }
+  | { kind: "tag"; tag: string }
+  | { kind: "release"; tag: string; title: string; body: string; draft: boolean; prerelease: boolean };
 
 export type CodingAction =
   | CodingGitAction
   | { kind: "deploy"; workflow: string; ref: string; inputs: Record<string, string> };
+
+export interface CodingCiWatch { number: number; headSha: string; deadline: string }
+
+/** A coding request includes publication of its work branch and pull request. */
+export function codingActionRequiresConfirmation(action: CodingAction): boolean {
+  return !["commit", "commit-and-push", "push", "pull-request"].includes(action.kind);
+}
 
 /** User intent and approval bind to one workspace revision and exact Git head/diff. */
 export interface CodingApproval {
@@ -38,8 +47,12 @@ export interface CodingApproval {
   workspaceId: string;
   requestedBy: string;
   requestedAt: string;
+  /** Distinguishes the coding request from a separate confirmation in the UI. */
+  authorization?: "coding-request" | "confirmation";
   /** Set by the Workspace tool's trusted conversation context, never action arguments. */
   sourceChatId?: string;
+  /** Inline PR publication needs only a later CI result, not a duplicate action result. */
+  ciWatch?: CodingCiWatch;
   action: CodingAction;
   fingerprint: string;
   status: "pending" | "approved" | "rejected" | "executing" | "succeeded" | "failed" | "uncertain";
@@ -47,7 +60,7 @@ export interface CodingApproval {
   decidedAt?: string;
   operationId?: string;
   result?: string;
-  review: { headSha: string; treeSha: string; diff: string; truncated: boolean; mainHeadSha?: string; ci?: PullRequestInfo["ci"] };
+  review: { headSha: string; treeSha: string; diff: string; truncated: boolean; mainHeadSha?: string; targetSha?: string; ci?: PullRequestInfo["ci"] };
 }
 
 /** No reported checks is distinct from passing CI; GitHub still enforces branch rules. */

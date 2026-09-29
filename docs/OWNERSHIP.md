@@ -84,11 +84,13 @@
 | 사용자에게 제시할 Workspace Agent 옵션과 정책 조회 상한 | `src/application/workspace/workspaceOptions.ts`; 접근 가능한 Agent 목록과 정책 repository는 조립 지점에서 주입한다 | 코드 |
 | 신규 저장소 생성과 자동 등록의 증거·중복 방지 | `application/workspace/createRepository.ts`; GitHub 201 응답 검증은 `infrastructure/github/codingForge.ts`, 결과와 정책 transaction은 `workspaceRepositoryCreationStore.ts` | 코드 |
 | 도구 결과의 실패 표시와 trace 오류 판정 | `src/shared/toolResultStatus.ts`의 `isToolErrorText`. Runtime의 `Error:` 결과를 Chat·Playground에도 실패로 표시한다 | 코드 |
+| 코딩 요청에 포함되는 Git 게시와 별도 확인의 구분 | `domain/coding/types.ts`의 `codingActionRequiresConfirmation`; 실행은 `application/coding/codingUseCases.ts`의 공통 검토·claim 경로 | 코드 |
 | Native 코딩 턴에 전달하는 Workspace Git 승인 경계 지침 | `src/application/workspace/taskInput.ts` | 코드 |
 | Workspace admission과 중복 요청의 동일성 | `src/application/workspace/workspaceUseCases.ts`; revision·receipt·이벤트의 원자적 쓰기는 `src/infrastructure/db/repositories/workspaceRepository.ts` | 코드 |
 | 원래 Chat의 Agent별 Workspace 선택과 동시 생성 차단 | `Chat.linkedWorkspaces`; `workspaceUseCases.startForChat`과 `workspaceRepository`의 source Chat transaction | 코드 |
 | GitHub Webhook HMAC-SHA256 서명과 delivery ID 형식 | `src/shared/githubWebhook.ts`; Agent Trigger와 Workspace 메타데이터 Webhook은 각자 시크릿을 해석하고 같은 검증을 사용한다 | 코드 |
 | Workspace 승인 결과의 원래 Chat 전달과 단일 후속 실행 | `CodingApproval.sourceChatId`, `domain/workspace/continuation.ts`; `workspaceRepository`의 원자적 알림과 `application/chat/workspaceContinuation.ts` 소비자 | 코드 |
+| Workspace PR의 CI 대기 대상·기한 | `application/chat/workspaceCiWatch.ts`; 자동 게시와 승인 후속 실행이 같은 정책을 사용한다 | 코드 |
 | Workspace 명령과 검사에 공통인 셸 실패 처리 | `src/shared/workspaceShell.ts` | 코드 |
 | Workspace 체크포인트의 저장 상한과 암호화 주소 | `src/domain/workspace/limits.ts`, `src/domain/security/secretContext.ts`; 청크·manifest 저장과 무결성 검사는 `src/infrastructure/db/repositories/workspaceCheckpointStore.ts` | 코드 |
 | 저장된 이미지 참조를 주소로 바꾸기 | `src/domain/chat/imageRefs.ts` 의 `resolveImageUrl` | 코드 |

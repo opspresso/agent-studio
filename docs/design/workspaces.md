@@ -47,6 +47,14 @@ Workspace 옵션 목록은 접근 가능한 Agent의 현재 도구 설정을 한
 
 설치된 CLI의 `--help`도 함께 확인한다. 배포 이미지는 검증한 CLI 버전을 고정한다.
 
+Codex의 provider는 실행 인자의 `model_provider`·`model_providers.studio`로 명시한다.
+등록된 endpoint는 `base_url`, 키는 `env_key=CODEX_API_KEY`로 연결하며 키 값을 CLI 인자나
+사용자 설정 파일에 쓰지 않는다. 새 실행과 native Session 재개 모두 같은 현재 채널 설정을 받는다.
+환경변수만으로 endpoint를 추론하지 않는다. Codex 채널은 Responses API를 지원해야 한다.
+설정 키는 [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)를 따른다.
+`pnpm test:workspace:codex`는 `network=none` Sandbox 안의 loopback fixture와 실제 CLI로
+처음 실행·이력 재개·대상 URL·모델 ID·인증 헤더 전달을 검증한다.
+
 ## Docker 실행 계약
 
 `sandbox/Dockerfile`은 Java JDK·Maven·Gradle, Python·pip·venv·uv·Poetry·build·pytest·Ruff,
@@ -177,6 +185,10 @@ Git 디렉터리는 root 소유 `/control/git`이며, Agent의 파일 쓰기 권
 바꿀 수 없다. Git hook·외부 diff·textconv·credential helper를 사용하지 않는다. 공개 Git 호스트는
 DNS 검증 결과를 `http.curloptResolve`로 고정하고 redirect를 거절한다. 내부 Git 호스트는 배포가 선언한다.
 
+일반 코딩 요청은 구현·검사·작업 브랜치 Commit·Push·PR까지 포함하며 사용자가 제한한 범위는 따른다.
+`prepare_git`의 Commit·Commit & push·Push·PR은 `coding-request` 권한 근거로 즉시 실행한다.
+main 반영·태그·릴리즈·배포는 별도 사용자 요청과 확인이 필요하다. 직접 Workspace 화면의 검토 API는 명시적 확인을 유지한다.
+
 `CodingApproval`은 요청자·결정자·작업 인자와 검토한 전체 Git tree/HEAD의 fingerprint를 보관한다.
 화면용 Diff가 잘려도 승인 fingerprint는 전체 tree에서 계산한다. 승인은 Workspace를 잠그고
 실제 tree를 다시 확인한 뒤 `executing`으로 기록한다. 종료·삭제와 경합한 승인은 효과 전에 거절한다.
@@ -187,7 +199,7 @@ operation ID는 Git receipt로 중복 생성되지 않는다.
 
 GitHub App의 private key는 서버에만 두고 Git 작업에는 저장소·권한을 한정한 1시간 이내의
 installation token을 잠시 전달한다. 토큰은 Git 설정이나 체크포인트에 쓰지 않는다. PR 생성은
-같은 작업 브랜치의 기존 PR을 재사용하며 Draft/Ready 전환도 명시적 승인을 따른다.
+같은 작업 브랜치의 기존 PR을 재사용하며 Draft/Ready 전환도 요청한 PR 상태를 따른다.
 main 병합은 소유한 PR·정확한 head를 확인하고 merge API의 `sha` 조건으로 실행한다.
 `merged:true`와 유효한 결과 commit SHA를 받은 경우만 완료로 기록한다. 불완전한 응답은
 `uncertain`으로 남기며 운영자가 실제 PR 상태를 확인하기 전 자동 재실행하지 않는다.
@@ -199,6 +211,13 @@ CI 증거가 없음을 표시하며 GitHub 브랜치 규칙을 따른다. `none`
 기록해 잠금을 해제하고, 응답 소실은 `uncertain`으로 남겨 자동 재실행을 막는다.
 배포는 허용한 workflow의 `main` 실행과 검토한 inputs만 사용하며 Sandbox에서 배포하지 않는다.
 응답이 소실된 외부 효과는 `uncertain`으로 남기고 같은 승인을 자동 재실행하지 않는다.
+
+`tag`는 Workspace의 현재 원격 main 커밋에 새 태그를 만든다. `release`는 이미 존재하는 태그의
+커밋으로 제목·본문·Draft·Prerelease 상태를 지정해 GitHub Release를 생성한다. 릴리즈 전에 태그를
+먼저 생성·확인한다. 태그 생성과 릴리즈는 별도 동작이며 각 확인 화면의 `review.targetSha`가 대상이다.
+준비·실행 시 대상 SHA와 CI를 확인한다. 같은 커밋의 태그는 재사용하고 다른 커밋의 태그는 덮어쓰지 않는다.
+Annotated tag는 최대 8단계까지 commit을 해석하고 순환·비커밋 참조를 거절한다. GitHub의 HTTP 거절은
+실패, 응답 소실·불완전한 생성 영수증·생성 중 태그 변경은 결과 불명으로 기록한다. 릴리즈 게시 자체는 배포 완료가 아니다.
 
 계정 토큰 모드는 서버의 GitHub 설정을 재사용한다. 인증된 clone과 push는 서버의 임시 bare
 저장소에서 수행하며, Sandbox에는 자격증명이 없는 Git bundle만 전달한다. 서버는 저장소
@@ -230,7 +249,7 @@ Agent의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외�
 
 API token은 Agent 소유자로 인증하고 MCP에 소유자 email을 전달한다. 이것은 브라우저 사용자
 세션이나 SDK 승인 UI를 만들지는 않는다. Workspace 실행은 별도로 현재 member·Agent·저장소
-권한을 검사하고 Git 승인 결정은 소유자의 Workspace 화면에서만 받는다. Skill이나 system prompt로 이 경계를 바꾸지 않는다.
+권한을 검사하고 별도 확인이 필요한 Git 승인 결정은 소유자의 Workspace 화면에서 받는다. Skill이나 system prompt로 이 경계를 바꾸지 않는다.
 
 ## 사용자 화면과 API
 
@@ -245,8 +264,9 @@ Agent가 만든 Workspace는 자신의 Chat을 가진다. 요청을 조율하는
 섞지 않고, 반환된 `workspace_id`로 후속 요청을 연결한다. SDK run과 tool call ID가 접수 중복을
 막는다. `wait`는 최대 8초만 기다리고, 실행 중이면 반환된 Workspace 경로에서 계속 확인한다.
 도구 출력은 cursor로 읽으며 페이지에 들어가는 전체 이벤트까지만 cursor를 진행한다.
-단일 이벤트 자체가 상한을 넘는 경우와 생략된 Diff는 잘림을 표시한다. `prepare_git`는 Commit·Push·Commit & push·PR·main 병합·main 직접 Push·배포의
-검토를 준비하고 `approval_path`를 반환한다. Agent는 링크를 전달하고 승인까지 멈춘다.
+단일 이벤트 자체가 상한을 넘는 경우와 생략된 Diff는 잘림을 표시한다.
+`prepare_git`의 작업 브랜치 Commit·Push·Commit & push·PR은 결과를 바로 반환한다. Agent는 PR까지 계속 진행한다.
+main 병합·main 직접 Push·태그·릴리즈·배포는 검토를 준비하고 `approval_path`를 반환하며 이때만 확인까지 멈춘다.
 배포는 `options.deployment_workflows`의 workflow와 `ref: "main"`을 사용하며 도구의 `inputs`는
 중복 없는 `{name, value}` 배열이다. 서버가 이를 승인 동작의 입력 객체로 변환하고 기존 배포 정책을
 검증한다. 승인 성공은 workflow 접수이며 실제 배포 완료는 해당 실행과 서비스 상태로 확인한다.
@@ -255,7 +275,10 @@ Chat에서 요청한 승인은 `sourceChatId`를 보관한다. 승인 성공·�
 원래 Chat의 소유권·Agent 접근·현재 Workspace 선택을 다시 확인하고 Chat run lease를 잡는다.
 알림 claim과 채팅의 승인 결과 표시는 원자적으로 저장한다. 원래 SDK Session을 사용해 공통
 `executeAgent` facade로 남은 요청을 이어가며, 새 사용자 메시지를 저장하거나 Git 동작을 재실행하지 않는다.
-커밋·푸시 → PR → main 병합은 각각의 승인 결과가 다음 검토를 준비한다. 한 승인으로 뒤의 동작까지 승인하지 않는다.
+자동 게시 결과는 현재 도구 호출로 전달하며 중복 동작 결과로 Chat을 재개하지 않는다.
+자동 PR의 CI가 pending이면 성공 레코드와 CI 전용 알림을 원자적으로 저장하고 `ci_watch`를 도구에 반환한다.
+Worker는 이미 전달한 게시 결과를 반복하지 않고 검사 결과로만 Chat을 재개한다.
+main 반영·태그·릴리즈·배포의 승인 결과는 다음에 요청된 단계를 이어가지만 다른 보호 동작의 확인까지 대신하지 않는다.
 
 PR 성공 결과의 검사 상태가 `pending`이면 `ci_watch`에 PR 번호·정확한 HEAD·30분 기한을 기록한다.
 첫 후속 응답을 저장한 뒤 알림을 `waiting-ci`로 바꾸며, Worker는 15초 간격으로 원격 상태만 읽는다.

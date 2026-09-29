@@ -135,10 +135,12 @@ export const workspaceRepository: WorkspaceRepository = {
           condition: (row: Item | null) => !(row?.value as WorkspaceRun | undefined)?.outputLoss || child.outputLoss === true,
         } : {}) });
     }
-    if (approval?.sourceChatId && isTerminalCodingApproval(approval.status)) {
+    if (approval?.sourceChatId && isTerminalCodingApproval(approval.status) &&
+      (approval.authorization !== "coding-request" || (approval.status === "succeeded" && approval.ciWatch))) {
       const notification: WorkspaceContinuation = { workspaceId: workspace.id, approvalId: approval.id,
         chatId: approval.sourceChatId, ownerEmail: approval.requestedBy, agentName: workspace.agentName, revision: 0, status: "pending",
-        createdAt: workspace.updatedAt, dueAt: workspace.updatedAt };
+        createdAt: workspace.updatedAt, dueAt: workspace.updatedAt,
+        ...(approval.ciWatch ? { phase: "ci", status: "waiting-ci", ciWatch: approval.ciWatch } : {}) };
       // The effect result and its delivery are one transaction. Re-saving an outcome
       // must not reset a notification already claimed by a chat worker.
       operations.push({ kind: "update", key: keys.workspaceChild(workspace.id, "CONTINUATION", approval.id),

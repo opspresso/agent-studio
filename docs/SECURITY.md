@@ -704,7 +704,9 @@ GitHub App의 private key는 서버에 남고 clone/push에 발행하는 token�
 전달한다. 서버에서는 저장소 checkout·hook·build script를 실행하지 않는다.
 공개 Git endpoint는 HTTPS와 DNS pinning을 사용하고 내부 호스트 예외는 배포의 별도 목록을 따른다.
 
-효과는 검토한 tree/HEAD와 사용자 결정에 묶인 승인 레코드를 먼저 claim한 뒤 실행한다.
+효과는 검토한 tree/HEAD와 권한 근거를 가진 동작 레코드를 먼저 claim한 뒤 실행한다.
+코딩 요청의 작업 브랜치 Commit·Push·PR은 추가 확인 없이 실행하며 `authorization: coding-request`로 기록한다.
+main 반영·태그·릴리즈·배포는 별도 사용자 확인을 유지한다. 자동 게시도 소유권·현재 정책·fingerprint·lease를 다시 검사한다.
 종료·삭제가 먼저 기록되면 pending/실행 claim을 거절한다. 종료된 Workspace의 새 Git 검토는
 소유자·살아 있는 Chat·Agent와 action lease를 원자적으로 확인한 뒤 복원하며 삭제는 되돌리지 않는다.
 main 병합은 PR 소유 범위와 CI를
@@ -713,6 +715,8 @@ main 병합은 PR 소유 범위와 CI를
 main 직접 푸시는 검토한 main SHA와 게시된 작업 HEAD를 대조하고 `force: false`로 실행한다.
 검사 미보고는 `none`으로 승인 화면에 표시하고, 대기 중·실패한 검사와 구분한다. 모든 main 반영은
 GitHub 브랜치 규칙을 따르며 권한·보호 규칙을 우회하는 옵션을 제공하지 않는다.
+태그는 검토한 원격 main, 릴리즈는 검토한 기존 태그의 정확한 commit을 사용한다. 태그를 덮어쓰지 않으며
+GitHub의 저장소 범위 contents 쓰기 권한으로 실행하고 생성 응답과 릴리즈 태그를 검증한다.
 `/api/workspaces/github/webhook`은 서명과 delivery ID로 PR 메타데이터만 갱신하며 승인 권한이 없다.
 Agent Trigger인 `/api/webhook/{agent}`는 별도 Agent 시크릿으로 실행을 시작한다.
 관리자가 `githubReview`를 활성화하면 서명된 PR 이벤트에 대해 설치의 GitHub 연결로 리뷰 댓글을

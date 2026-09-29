@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Alert, Anchor, Button, Code, Group, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
+import { Alert, Anchor, Button, Checkbox, Code, Group, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import type { CodingApprovalResponse } from "@/app/api/workspaces/[id]/actions/route";
@@ -13,6 +13,9 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
   const [kind, setKind] = useState("commit");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [tag, setTag] = useState("");
+  const [draft, setDraft] = useState(false);
+  const [prerelease, setPrerelease] = useState(false);
   const [workflow, setWorkflow] = useState<string | null>(null);
   const [inputs, setInputs] = useState("{}");
   const [busy, setBusy] = useState(false);
@@ -28,6 +31,8 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
     if (action.kind === "push-main") return t("workspace.pushMain");
     if (action.kind === "merge") return t("workspace.merge");
     if (action.kind === "deploy") return t("workspace.deploy");
+    if (action.kind === "tag") return t("workspace.tag");
+    if (action.kind === "release") return t("workspace.release");
     return action.draft ? "Draft PR" : "PR";
   }
 
@@ -44,6 +49,8 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
         if (kind === "commit" || kind === "commit-and-push") action = { kind, message: title };
         else if (kind === "push" || kind === "push-main") action = { kind };
         else if (kind === "pr" || kind === "draft") action = { kind: "pull-request", title, body, draft: kind === "draft" };
+        else if (kind === "tag") action = { kind, tag };
+        else if (kind === "release") action = { kind, tag, title, body, draft, prerelease };
         else if (kind === "merge") {
           if (!detail.workspace.pullRequest) throw new Error("Create a pull request first");
           action = { kind: "merge", pullRequestNumber: detail.workspace.pullRequest.number, headSha: detail.workspace.pullRequest.headSha };
@@ -71,6 +78,7 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
       <Code block style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", overflow: "visible" }}>{JSON.stringify(pending.action, null, 2)}</Code>
       <Text size="xs" c="dimmed">HEAD: {pending.review.headSha}</Text>
       {pending.review.mainHeadSha && <Text size="xs" c="dimmed">main: {pending.review.mainHeadSha} → {pending.review.headSha}</Text>}
+      {pending.review.targetSha && <Text size="xs" c="dimmed">{t("workspace.releaseTarget")}: {pending.review.targetSha}</Text>}
       {pending.review.ci === "none" && <Alert color="yellow">{t("workspace.noCi")}</Alert>}
       {pending.action.kind === "push-main" && <Alert color="orange">{t("workspace.pushMainHint")}</Alert>}
       {pending.review.truncated && <Alert color="yellow">{t("workspace.diffTruncated")}</Alert>}
@@ -84,14 +92,22 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
         { value: "draft", label: "Draft PR" }, { value: "pr", label: "PR" },
         { value: "merge", label: t("workspace.merge"), disabled: !detail.workspace.pullRequest },
         { value: "push-main", label: t("workspace.pushMain"), disabled: detail.workspace.coding?.baseBranch !== "main" },
+        { value: "tag", label: t("workspace.tag"), disabled: detail.workspace.coding?.baseBranch !== "main" },
+        { value: "release", label: t("workspace.release") },
         { value: "deploy", label: t("workspace.deploy"), disabled: !workflows.length },
       ]} disabled={busy || disabled || !!pending} />
       {(needsMessage || ["draft", "pr"].includes(kind)) && <TextInput label={needsMessage ? t("workspace.commitMessage") : t("workspace.prTitle")} value={title} onChange={event => setTitle(event.currentTarget.value)} />}
       {["draft", "pr"].includes(kind) && <Textarea label={t("workspace.prBody")} value={body} onChange={event => setBody(event.currentTarget.value)} minRows={3} autosize />}
+      {["tag", "release"].includes(kind) && <><TextInput label={t("workspace.tagName")} value={tag} onChange={event => setTag(event.currentTarget.value)} />
+        <Text size="sm" c="dimmed">{t(kind === "tag" ? "workspace.tagHint" : "workspace.releaseHint")}</Text></>}
+      {kind === "release" && <><TextInput label={t("workspace.releaseTitle")} value={title} onChange={event => setTitle(event.currentTarget.value)} />
+        <Textarea label={t("workspace.releaseBody")} value={body} onChange={event => setBody(event.currentTarget.value)} minRows={3} autosize />
+        <Checkbox label={t("workspace.releaseDraft")} checked={draft} onChange={event => setDraft(event.currentTarget.checked)} />
+        <Checkbox label={t("workspace.prerelease")} checked={prerelease} onChange={event => setPrerelease(event.currentTarget.checked)} /></>}
       {kind === "merge" && <Alert color="orange">{t("workspace.mergeHint")}</Alert>}
       {kind === "push-main" && <Alert color="orange">{t("workspace.pushMainHint")}</Alert>}
       {kind === "deploy" && <><Select label={t("workspace.workflow")} value={workflow ?? workflows[0] ?? null} onChange={setWorkflow} data={workflows} /><Textarea label={t("workspace.workflowInputs")} value={inputs} onChange={event => setInputs(event.currentTarget.value)} minRows={3} /><Text size="sm" c="dimmed">{t("workspace.deployHint")}</Text></>}
-      <Button loading={busy} disabled={disabled || !!pending || ((needsMessage || ["draft", "pr"].includes(kind)) && !title.trim())} onClick={() => { void perform(); }}>{t("workspace.prepareAction")}</Button>
+      <Button loading={busy} disabled={disabled || !!pending || ((needsMessage || ["draft", "pr", "release"].includes(kind)) && !title.trim()) || (["tag", "release"].includes(kind) && !tag.trim())} onClick={() => { void perform(); }}>{t("workspace.prepareAction")}</Button>
       {latest && <Text size="sm" c="dimmed">{latest.action.kind}: {latest.status}{latest.result ? ` — ${latest.result}` : ""}</Text>}
     </>}
   </Stack>;

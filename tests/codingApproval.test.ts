@@ -42,7 +42,9 @@ beforeEach(async () => {
     checkpoints: { put: vi.fn(async () => {}), get: async () => new Uint8Array([1]), delete: async () => {} },
     coding: { prepare: async (_externalId, repo) => ({ ...repo, baseSha: head, headSha: head }), review: async () => ({ ...review }),
       commit: vi.fn(async () => "d".repeat(40)), push: vi.fn(async () => {}) },
-    forge: { checkRepository: async () => {}, branches: async () => ({ names: ["main"], hasMore: false }), pullRequest: vi.fn(async () => ({ ...pull })),
+    forge: { releaseTarget: vi.fn(async () => ({ headSha: "e".repeat(40), ci: "passed" as const })),
+      createTag: vi.fn(async () => "e".repeat(40)), createRelease: vi.fn(async () => "https://example.test/company/repo/releases/tag/v1.0.0"),
+      checkRepository: async () => {}, branches: async () => ({ names: ["main"], hasMore: false }), pullRequest: vi.fn(async () => ({ ...pull })),
       reviewMainPush: vi.fn(async () => ({ baseSha: "e".repeat(40), ci: "none" as const })), pushMain: vi.fn(async () => head),
       openPullRequest: vi.fn(async () => ({ ...pull })), merge: vi.fn(async () => "merged-sha"), dispatch: vi.fn(async () => ({ runId: 99 })) },
   };
@@ -57,6 +59,74 @@ afterEach(() => {
 });
 
 describe("explicit coding action approvals", () => {
+  it("publishes a coding request through commit and PR without another decision or duplicate chat continuation", async () => {
+    const api = createCodingUseCases(deps);
+    const commit = await api.publish(workspace.id, owner, { kind: "commit-and-push", message: "feat: implement request" });
+    expect(commit).toMatchObject({ status: "succeeded", authorization: "coding-request", decidedBy: owner });
+    expect(deps.coding.push).toHaveBeenCalledExactlyOnceWith("sandbox-1", expect.objectContaining({ headSha: "d".repeat(40) }));
+    review.headSha = "d".repeat(40);
+    review.treeSha = review.headTreeSha;
+    pull.headSha = review.headSha;
+    const pr = await api.publish(workspace.id, owner, { kind: "pull-request", title: "Implement request", body: "Verified", draft: false });
+    expect(pr).toMatchObject({ status: "succeeded", result: pull.url, authorization: "coding-request" });
+    expect((await repository.get(workspace.id))?.pullRequest).toEqual(pull);
+    expect((await repository.get(workspace.id))?.activeActionId).toBeUndefined();
+    expect(await repository.dueContinuations(now.toISOString(), 20)).toEqual([]);
+  });
+  it.each([
+    { kind: "merge" as const, pullRequestNumber: 7, headSha: head },
+    { kind: "push-main" as const },
+    { kind: "tag" as const, tag: "v1.0.0" },
+    { kind: "release" as const, tag: "v1.0.0", title: "Release", body: "", draft: false, prerelease: false },
+    { kind: "deploy" as const, workflow: "deploy.yml", ref: "main", inputs: {} },
+  ])("never grants $kind through the coding-request publication path", async action => {
+    await expect(createCodingUseCases(deps).publish(workspace.id, owner, action)).rejects.toThrow("explicit confirmation");
+    expect(await repository.approvals(workspace.id, 20)).toEqual([]);
+    expect(deps.forge.merge).not.toHaveBeenCalled();
+    expect(deps.forge.pushMain).not.toHaveBeenCalled();
+    expect(deps.forge.dispatch).not.toHaveBeenCalled();
+    expect(deps.forge.createTag).not.toHaveBeenCalled();
+    expect(deps.forge.createRelease).not.toHaveBeenCalled();
+  });
+  it.each(["tag", "release"] as const)("confirms %s against the reviewed remote commit and consumes the decision once", async kind => {
+    review.treeSha = review.headTreeSha;
+    const api = createCodingUseCases(deps);
+    const action = kind === "tag" ? { kind, tag: "v1.0.0" } : { kind, tag: "v1.0.0", title: "Release", body: "Verified", draft: false, prerelease: false };
+    const pending = await api.request(workspace.id, owner, action);
+    expect(pending).toMatchObject({ status: "pending", review: { targetSha: "e".repeat(40), ci: "passed" } });
+    expect(deps.forge.createTag).not.toHaveBeenCalled();
+    expect(deps.forge.createRelease).not.toHaveBeenCalled();
+    const result = await api.decide(workspace.id, owner, pending.id, true);
+    expect(result.status).toBe("succeeded");
+    expect(await api.decide(workspace.id, owner, pending.id, true)).toEqual(result);
+    if (kind === "tag") expect(deps.forge.createTag).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ repository: "company/repo" }), action.tag, "e".repeat(40));
+    else expect(deps.forge.createRelease).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ repository: "company/repo" }), action, "e".repeat(40));
+  });
+  it.each(["changed", "failed", "pending"] as const)("blocks tag publication when the target becomes %s after review", async state => {
+    review.treeSha = review.headTreeSha;
+    const api = createCodingUseCases(deps);
+    const pending = await api.request(workspace.id, owner, { kind: "tag", tag: "v1.0.0" });
+    vi.mocked(deps.forge.releaseTarget).mockResolvedValue({ headSha: (state === "changed" ? "f" : "e").repeat(40), ci: state === "changed" ? "passed" : state });
+    expect((await api.decide(workspace.id, owner, pending.id, true)).status).toBe("failed");
+    expect(deps.forge.createTag).not.toHaveBeenCalled();
+  });
+  it.each(["refused", "lost-response"] as const)("distinguishes %s during release creation", async mode => {
+    review.treeSha = review.headTreeSha;
+    const api = createCodingUseCases(deps);
+    const pending = await api.request(workspace.id, owner, { kind: "release", tag: "v1.0.0", title: "Release", body: "", draft: false, prerelease: false });
+    vi.mocked(deps.forge.createRelease).mockRejectedValueOnce(mode === "refused" ? new CodingMutationRejectedError("Refused") : new Error("Lost response"));
+    expect((await api.decide(workspace.id, owner, pending.id, true)).status).toBe(mode === "refused" ? "failed" : "uncertain");
+    expect((await repository.get(workspace.id))?.activeActionId).toBe(mode === "refused" ? undefined : pending.id);
+  });
+  it("retains an uncertain automatic push and refuses to replay it", async () => {
+    review.treeSha = review.headTreeSha;
+    vi.mocked(deps.coding.push).mockRejectedValueOnce(new Error("Lost response"));
+    const api = createCodingUseCases(deps);
+    const result = await api.publish(workspace.id, owner, { kind: "push" });
+    expect(result.status).toBe("uncertain");
+    await expect(api.publish(workspace.id, owner, { kind: "push" })).rejects.toThrow("busy");
+    expect(deps.coding.push).toHaveBeenCalledTimes(1);
+  });
   it.each(["review", "commit"] as const)("keeps the action lease during a slow %s without changing approval requirements", async phase => {
     deps.now = () => new Date();
     const api = createCodingUseCases(deps);

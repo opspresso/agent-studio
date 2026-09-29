@@ -6,6 +6,8 @@ export const WORKSPACE_DIRECTORY = "/workspace/repo";
 
 export interface WorkspaceRuntimeConfig {
   model?: string;
+  /** Codex provider routing is a CLI config override, never inferred from its environment. */
+  baseUrl?: string;
   environment?: Record<string, string>;
 }
 
@@ -15,7 +17,7 @@ export function withWorkspaceModelChannel(kind: WorkspaceRuntime, config: Worksp
   if (!channel.apiKey || channel.auth === "sigv4") throw new Error("Workspace model channel requires an API key");
   let environment: Record<string, string>;
   let model = config.model;
-  if (kind === "codex") environment = { CODEX_API_KEY: channel.apiKey, OPENAI_BASE_URL: channel.baseUrl };
+  if (kind === "codex") environment = { CODEX_API_KEY: channel.apiKey };
   else if (kind === "claude") environment = { ANTHROPIC_API_KEY: channel.apiKey, ANTHROPIC_BASE_URL: channel.baseUrl.replace(/\/v1\/?$/, "") };
   else if (kind === "opencode") {
     if (!model) throw new Error("Workspace OpenCode requires a selected model");
@@ -30,7 +32,7 @@ export function withWorkspaceModelChannel(kind: WorkspaceRuntime, config: Worksp
       },
     } }) };
   } else throw new Error("The command runtime does not use a model channel");
-  return { ...config, model, environment: { ...environment, ...config.environment } };
+  return { ...config, model, ...(kind === "codex" ? { baseUrl: channel.baseUrl } : {}), environment: { ...environment, ...config.environment } };
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -113,6 +115,9 @@ export function createWorkspaceRuntimeAdapter(kind: WorkspaceRuntime, config: Wo
       if (kind === "codex") return {
         argv: ["codex", "exec", ...(resume ? ["resume"] : []), "--json", "--dangerously-bypass-approvals-and-sandbox",
           "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
+          ...(config.baseUrl ? ["-c", 'model_provider="studio"', "-c", 'model_providers.studio.name="Studio"',
+            "-c", `model_providers.studio.base_url=${JSON.stringify(config.baseUrl)}`,
+            "-c", 'model_providers.studio.env_key="CODEX_API_KEY"', "-c", 'model_providers.studio.wire_api="responses"'] : []),
           ...["plugins", "remote_plugin", "apps", "hooks", "skill_mcp_dependency_install"].flatMap(feature => ["--disable", feature]),
           ...model, ...(resume ? [resume] : []), "-"],
         stdin: input.prompt, cwd, timeoutMs, environment,
