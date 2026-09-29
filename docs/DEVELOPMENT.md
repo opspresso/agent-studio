@@ -33,7 +33,7 @@ test -f .env.local || cp .env.example .env.local
 ```
 
 부팅에 필요한 최소값은 `DATABASE_URL`과 `AES_ENCRYPTION_KEY`(32바이트 base64,
-`openssl rand -hex 32`)다. `src/instrumentation.ts`가 부팅 시점에 검증한다.
+`openssl rand -base64 32`)다. `src/instrumentation.ts`가 부팅 시점에 검증한다.
 실행하려면 Settings에서 프로바이더 연결과 사용할 모델을 등록한다. 기본 LLM 환경변수만
 설정해도 모델이 등록되거나 실행 채널로 선택되는 것은 아니다.
 신원 제공자(Keycloak · 표준 OIDC · Google · 비밀번호)는 실제 로그인에만 필요하다. `STAGE=local` 은 하나도
