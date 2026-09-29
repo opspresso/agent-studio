@@ -96,6 +96,37 @@ describe("signed PR review firing", () => {
     expect(f.closeWorkspace).toHaveBeenCalledOnce();
     expect(f.rows[0]).toMatchObject({ status: "succeeded", review: { status: "posted" } });
   });
+  it("holds the overlap reservation until Sandbox cleanup and terminal history persistence finish", async () => {
+    const f = fixture();
+    const trigger = (await f.deps.triggers.get("review", "webhook"))!;
+    trigger.allowConcurrent = false;
+    let held = false;
+    f.deps.runSlots = {
+      acquire: async () => { if (held) return null; held = true; return { index: 0, token: "owned" }; },
+      renew: async () => held,
+      release: async () => { held = false; },
+    };
+    const next = (head: string) => f.credential({ ...payload, pull_request: { ...payload.pull_request, head: { sha: head.repeat(40) } } });
+    let cleanupStatus: string | undefined;
+    let persistenceStatus: string | undefined;
+    f.closeWorkspace.mockImplementation(async () => {
+      cleanupStatus = (await admitDelivery(f.deps, "review", next("b"), null)).status;
+    });
+    f.deps.triggers.finishRun = async row => {
+      persistenceStatus = (await admitDelivery(f.deps, "review", next("c"), null)).status;
+      f.rows[0] = row;
+    };
+    const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
+    if (admitted.status !== "accepted") throw new Error("not admitted");
+    await executeDelivery(f.deps, admitted, payload);
+    expect(cleanupStatus).toBe("busy");
+    expect(persistenceStatus).toBe("busy");
+    expect(f.rows[0]?.status).toBe("succeeded");
+    expect(held).toBe(false);
+    const later = await admitDelivery(f.deps, "review", next("d"), null);
+    expect(later.status).toBe("accepted");
+    if (later.status === "accepted") await later.release();
+  });
 
   it("refuses an unfinished Workspace report and still closes the Sandbox", async () => {
     const f = fixture();

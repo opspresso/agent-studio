@@ -360,8 +360,7 @@ export async function executeDelivery(
         const prepared = await preparePullRequestReview(deps, admitted.agent.name, admitted.trigger.triggerId,
           admitted.configuration, admitted.reviewTarget);
         if (prepared.status === "skipped") {
-          await admitted.release();
-          await finishFiring(deps, admitted.run, { skipped: true, text: prepared.reason,
+          await settleFiring(deps, admitted, { skipped: true, text: prepared.reason,
             review: { ...admitted.reviewTarget, status: "skipped", reason: prepared.reason } });
           return;
         }
@@ -377,8 +376,7 @@ export async function executeDelivery(
       // (deep nesting overflows JSON.stringify) must finish the row and release
       // the overlap slot like any other failure, or the trigger reads busy for a
       // whole lease and the row stays running forever.
-      await admitted.release();
-      await finishFiring(deps, admitted.run, {
+      await settleFiring(deps, admitted, {
         error: caught instanceof Error ? caught.message : String(caught),
         ...(admitted.reviewTarget ? { review: { ...admitted.reviewTarget, status: "failed" as const,
           reason: "Pull request context could not be prepared; no review was published." } } : {}),
@@ -406,7 +404,7 @@ export async function executeFiring(
   publication?: ReviewPublication,
 ): Promise<void> {
   if (admitted.start && !await admitted.start()) { await publication?.close(); return; }
-  const { trigger, agent, configuration, run } = admitted;
+  const { trigger, agent, configuration } = admitted;
   let text = "";
   let error: string | undefined;
   let traceId: string | undefined;
@@ -493,7 +491,6 @@ export async function executeFiring(
   } catch (caught) {
     error = caught instanceof Error ? caught.message : String(caught);
   } finally {
-    await admitted.release();
     try { await publication?.close(); }
     catch (caught) { error = [error, caught instanceof Error ? caught.message : String(caught)].filter(Boolean).join("; "); }
   }
@@ -524,7 +521,7 @@ export async function executeFiring(
       deliveryResults.push(...attempted);
     }
   }
-  await finishFiring(deps, run, {
+  await settleFiring(deps, admitted, {
     // A picture is said only when the run produced nothing else to say: one
     // beside an answer is already accounted for by the answer, and one
     // *instead* of an answer is what would otherwise close as an empty success.
@@ -576,7 +573,7 @@ function producedNote(text: string, produced: number, files: readonly string[]):
   if (!text) {
     return line;
   }
-  // The answer yields the space, not the note. `finishFiring` cuts the whole
+  // The answer yields the space, not the note. `settleFiring` cuts the whole
   // row at `MAX_RESULT_CHARS`, and this line is appended last — so on any run
   // whose answer is long enough to be cut, the one part naming the deliverable
   // would be the part that disappeared.
@@ -585,10 +582,10 @@ function producedNote(text: string, produced: number, files: readonly string[]):
   return body ? `${body}\n\n${line}` : line;
 }
 
-/** Close a firing's history row with whatever the attempt produced. */
-async function finishFiring(
+/** Hold the reservation through cleanup, delivery and terminal history persistence. */
+async function settleFiring(
   deps: FiringDeps,
-  run: TriggerRun,
+  admitted: AdmittedFiring,
   outcome: {
     text?: string;
     error?: string;
@@ -599,6 +596,7 @@ async function finishFiring(
     skipped?: boolean;
   },
 ): Promise<void> {
+  const { run } = admitted;
   const finished: TriggerRun = {
     ...run,
     status: outcome.error ? "failed" : outcome.skipped ? "skipped" : "succeeded",
@@ -622,5 +620,7 @@ async function finishFiring(
     await deps.triggers.finishRun(finished);
   } catch (writeError) {
     log.error("trigger", "could not record the end of a firing", writeError);
+  } finally {
+    await admitted.release();
   }
 }

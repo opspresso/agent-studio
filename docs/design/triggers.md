@@ -90,6 +90,8 @@ admission·실행 직전에 현재 Agent 소유권과 member 상태를 다시 �
 실행 출력은 Trigger 이력과 Artifact에 기록한다. 이력은 제한된 텍스트·오류·경고를 담으며
 이미지 bytes를 넣지 않고 생성 사실을 적는다. 별도 객체 저장소가 있으면 결과 파일을 보관한다.
 Schedule의 플랫폼 전송 결과는 아래의 `deliveryResults`로 구분한다.
+겹침 금지 슬롯은 결과 전송·리뷰 Workspace 정리와 완료 이력 저장까지 유지한 뒤 해제한다.
+준비 실패·skip도 이력을 먼저 마감하고 슬롯을 해제하며, 이력 저장 실패에도 해제는 시도한다.
 
 콘솔의 Integrations에서 이력 아이콘을 누르면 오른쪽에 Webhook 또는 전체 Schedule 이력이
 표시된다. Schedule은 각 트리거에서 같은 페이지 크기를 읽고 실제 시작 시각(대기 중이면
