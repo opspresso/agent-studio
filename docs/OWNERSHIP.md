@@ -234,7 +234,7 @@
 | 감사 기록의 날짜 범위·페이지 상한·cursor | `src/application/audit/auditUseCases.ts`; 날짜별 조회는 `src/infrastructure/db/repositories/auditRepository.ts` | 코드 |
 | Agent 관리 자료·산출물·Trace·호출자별 Usage를 읽을 수 있는 사람. 쓰기와 같은 규칙, 쓰기 감사 행은 남기지 않는다 | `src/application/agent/agentUseCases.ts` 의 `assertAgentOwnerOrAdminReadable` | 구조 |
 | Capability catalog reindex의 설치 전역 직렬화 lease | `src/domain/catalog/reindexLock.ts` 계약과 `src/infrastructure/db/repositories/catalogReindexLock.ts` 구현 | 구조 |
-| Bedrock SigV4의 AWS credential chain | `src/infrastructure/llm/bedrockClient.ts` | 구조 |
+| Bedrock SigV4의 AWS credential chain | `src/infrastructure/llm/awsCredentials.ts`; SDK의 lazy provider를 공유하고 갱신은 SDK가 소유한다 | 구조 |
 | 호출자가 요청한 페이지 크기를 읽는 법과, 한 페이지가 커질 수 있는 상한 | `src/shared/pageLimit.ts`의 `parsePageLimit` / `boundedPageLimit` / `MAX_PAGE_LIMIT`. 각 자원은 자기 상한을 전달한다. 전체 열거는 repository별 자연 키·시간·seq cursor로 페이지를 순회한다 | 구조 |
 | UTC 날짜를 시각으로 읽는 법, 하루의 길이, 그리고 날짜 범위를 걸어가는 법 | `src/shared/date.ts`의 `isUtcDay` / `daySpan` / `daysBetween`. 날짜 유효성·범위 계산을 공유하고 순회 방향은 호출자가 선택한다 | 구조 |
 | presence penalty의 허용 범위 | `src/domain/llm/channel.ts`의 `PRESENCE_PENALTY_RANGE`. Agent 설정 API 검증과 편집기가 함께 사용한다 | 구조 |

@@ -1091,13 +1091,10 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/infrastructure/llm/embeddings.ts",
   },
   {
-    // Two adapters invoke Bedrock — Titan and Cohere — and they differ only in
-    // the body they send. Reaching the service is one question with one answer
-    // (which region, and that the pod's credentials come from its Pod Identity
-    // association rather than a key), so the client is built once.
-    what: "talking to Bedrock",
-    pattern: /new BedrockRuntimeClient\(/,
-    owner: "src/infrastructure/llm/bedrockClient.ts",
+    // SigV4 channels share a lazy SDK chain; the SDK owns credential refresh.
+    what: "constructing the AWS credential chain",
+    pattern: /defaultProvider\(/,
+    owner: "src/infrastructure/llm/awsCredentials.ts",
   },
   {
     // One place knows that an index fixes its dimension and its distance
