@@ -672,7 +672,7 @@ export const ko: Messages = {
   "guide.chat.body":
     "Chats에는 Agent와 주고받은 Chat 기록이 보관된다. 설정 시험에는 Playground를, 여러 메시지에 걸쳐 이어가는 작업에는 Chat을 사용한다.",
   "guide.chat.configuration": "Chat에 사용할 Agent 선택",
-  "guide.chat.configurationBody": "접근 가능한 설정된 Agent를 선택한다. 설정 → Models → 사용 설정에 결정 모델이 있으면 새 Chat·Workspace 화면에서 입력한 요청으로 Agent를 추천한다. 인식된 PII 패턴을 가린 뒤 요청과 후보 설명을 그 프로바이더에 전달한다. 추천은 선택을 자동 변경하지 않으므로 Agent 선택을 누르거나 목록에서 직접 고른다. 입력을 바꾸는 동안 마지막 성공한 추천은 유지된다. 각 Chat 턴은 해당 Agent의 현재 저장된 설정을 사용한다.",
+  "guide.chat.configurationBody": "접근 가능한 설정된 Agent를 선택한다. 설정 → Models → 사용 설정에 결정 모델이 있으면 새 Chat·Workspace 화면에서 입력한 요청으로 Agent를 추천한다. 인식된 PII 패턴을 가린 뒤 요청과 후보 설명을 그 프로바이더에 전달한다. 추천은 선택을 자동 변경하지 않으므로 Agent 선택을 누르거나 목록에서 직접 고른다. 새 결과를 기다리는 동안 이전 추천을 유지하며, 완료된 결과에 사용 가능한 Agent가 없으면 추천을 지운다. 각 Chat 턴은 해당 Agent의 현재 저장된 설정을 사용한다.",
   "guide.chat.context": "Chat 맥락의 한계",
   "guide.chat.contextBody":
     "화면 메시지와 모델의 암호화된 SDK Session은 별개다. Session은 제한된 이전 턴·도구 결과·최근 이미지를 제공하고 Memory는 선택적인 장기 자료다. 이력이 생략되면 경고하며 Session이 만료된 경우 보이는 메시지로 모델 이력을 다시 만들지 않는다. 새 문맥으로 시작할 때 필요한 제약을 다시 전달한다.",
@@ -714,11 +714,11 @@ export const ko: Messages = {
   "guide.surfaces.chat": "Chats: 영속 이력과 승인 결과",
   "guide.surfaces.chatBody": "로그인한 Chat 소유자는 영속 SDK Session과 도구 승인 화면을 사용한다. 활성화된 Workspace의 승인 결과와 CI 갱신은 원래 Chat으로 돌아온다. Workspace Runtime의 Session과 파일은 별도이며 상위 Agent의 모든 Skill·계정 연결을 자동 상속하지 않는다.",
   "guide.surfaces.api": "Playground와 API: 저장된 설정과 호출자 이력",
-  "guide.surfaces.apiBody": "Playground는 저장한 설정을 실행한다. 로그인한 member는 활성화된 Workspace 도구를 사용할 수 있지만 원래 Chat이 없으면 승인 후 자동 재개를 받지 못한다. HTTP 클라이언트는 자신의 이력을 전달한다. Agent API 토큰은 서비스 actor를 사용하고 소유자 이메일을 MCP에 전달하지만 브라우저 세션은 아니며 Workspace 도구나 영속 Chat 승인 화면을 활성화하지 않는다.",
+  "guide.surfaces.apiBody": "Playground는 저장한 설정을 실행한다. 로그인한 member와 현재 소유자가 member/admin인 Agent API 토큰은 Agent 정책에 따라 활성화된 Workspace 도구를 사용할 수 있다. HTTP 클라이언트는 자신의 이력을 전달한다. 토큰은 서비스 actor를 유지하고 소유자 이메일을 MCP에 전달하지만 브라우저 세션이나 영속 Chat 승인 화면을 만들지는 않는다. 원래 Chat이 없는 요청의 Git 승인은 소유자가 Workspace 링크에서 결정하며 요청을 자동 재개하지 않는다.",
   "guide.surfaces.bots": "메신저: 플랫폼 식별자와 응답",
-  "guide.surfaces.botsBody": "Slack·Telegram·Teams는 각 플랫폼의 actor 식별자로 실행하고 그곳에 답한다. 개인 MCP 문맥은 해당 창구가 검증한 이메일을 해석할 수 있을 때만 제공한다. 봇 호출에는 user 전용 Workspace 빌트인이나 브라우저 Chat 승인 화면이 제공되지 않는다. 봇 자격 증명 검사와 실제 이벤트 전달을 별도로 확인한다.",
+  "guide.surfaces.botsBody": "Slack·Telegram·Teams는 각 플랫폼의 actor 식별자를 유지하고 그곳에 답한다. 개인 MCP 문맥과 활성화된 Workspace 도구에는 확인된 호출자 이메일 또는 현재 Agent 소유자의 명시적 실행 위임을 사용한다. 현재 멤버 권한과 Agent 정책을 다시 확인한다. Git 승인은 소유자의 Workspace 화면에서 결정하며 봇 호출에는 브라우저 Chat 승인 화면이나 원래 Chat 자동 재개가 제공되지 않는다. 자격 증명 검사와 실제 이벤트 전달을 별도로 확인한다.",
   "guide.surfaces.automation": "Webhook과 스케줄: 기계 호출자",
-  "guide.surfaces.automationBody": "유효한 Webhook 서명은 전달을 인증하며 발신자에게 개인 세션이나 Workspace 접근을 부여하지 않는다. 결과는 Chat이 아니라 Trigger 이력에 남는다. 스케줄은 소유자가 명시적으로 개인 문맥을 켜고 권한을 재확인한 경우 지원되는 MCP·오디오 기능에 그 문맥을 사용할 수 있다. 이때도 schedule actor이며 Workspace 도구를 얻지 않는다. 오디오 후처리는 별도의 제한된 worker 절차를 따른다.",
+  "guide.surfaces.automationBody": "유효한 Webhook 서명은 전달을 인증한다. 개인 도구와 활성화된 Workspace를 사용하려면 현재 Agent 소유자의 명시적 실행 위임, 현재 member/admin 권한과 Agent 정책도 필요하다. 스케줄에도 같은 소유자 실행 문맥을 승인해야 한다. webhook/schedule actor를 유지하고 결과는 Trigger 이력에 남는다. Git 승인은 소유자가 Workspace 링크에서 결정하며 원래 Chat으로 자동 재개하지 않는다. 오디오 후처리는 제한된 worker 절차를 유지한다.",
 
   "guide.audio.title": "오디오 처리와 개인 기록",
   "guide.audio.body": "Agent 하나가 재사용 가능한 skill을 읽고 수집·전사·요약·요청한 기록을 수행할 수 있다. 긴 작업은 별도 worker가 이어가므로 Agent 응답이 끝나거나 화면을 닫아도 계속된다.",
@@ -744,7 +744,7 @@ export const ko: Messages = {
     "각 Agent의 API Reference는 해당 Agent 주소를 채워 보여 준다. 요청 필드·응답 형식·오류 코드·curl 또는 SDK 예제가 포함되어 있다. 아래 절차와 함께 사용하며 소스 checkout은 필요하지 않다.",
   "guide.api.token": "Agent와 인증 정보 준비",
   "guide.api.tokenBody":
-    "검증한 Agent 설정을 저장하고 Integrations에서 Agent 토큰을 발급한다. 소유자 tier가 API 토큰을 허용해야 한다. Authorization: Bearer <token>으로 보내며 해당 Agent 실행으로 범위가 제한된다. 서비스 actor로 실행하고 연결된 MCP 서버에는 소유자 이메일을 전달하므로 해당 도구에 접근하는 자격 증명으로 취급한다. 브라우저 로그인이나 Workspace 도구를 얻는 수단은 아니다.",
+    "검증한 Agent 설정을 저장하고 Integrations에서 Agent 토큰을 발급한다. 소유자 tier가 API 토큰을 허용해야 한다. Authorization: Bearer <token>으로 보내며 해당 Agent 실행으로 범위가 제한된다. 서비스 actor를 유지하고 MCP에는 소유자 이메일을 전달한다. 현재 member/admin 권한과 Agent의 Workspace 도구가 활성화돼 있으면 저장소 정책에 따라 소유자의 Workspace도 사용할 수 있다. Git 승인은 소유자가 Workspace 링크에서 결정한다. 토큰은 브라우저 세션이나 영속 Chat 승인 화면을 만들지 않는다.",
   "guide.api.address": "Agent 주소 사용하기",
   "guide.api.addressBody":
     "실행 URL은 /api/agents/{name}/으로 시작하며 Agent의 현재 저장된 설정을 사용한다. 작업은 messages로 보낸다. 호출 시스템에서 접근 가능한 {serviceName} 주소를 사용한다.",
