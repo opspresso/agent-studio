@@ -40,15 +40,24 @@ export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: Pul
     const unfinished = new Set<string>();
     const outputLoss = new Set<string>();
     const readRanges = new Map<string, Array<[number, number]>>();
+    let unconfirmedAdmission = false;
     return {
       id, url: started.workspace_url, close,
       async tool(args, callId) {
         const request = args.request as Record<string, unknown> | undefined;
         if (request?.operation === "start") throw new Error("The review Workspace is already prepared; use run for source reads and checks");
+        const startsRun = request?.operation === "run";
+        // A lost response can follow a committed enqueue and outlive activeRunId.
+        if (startsRun) {
+          if (unconfirmedAdmission) throw new Error("Review Workspace check admission was not confirmed; no further commands can be queued");
+          unconfirmedAdmission = true;
+        }
         const result = await deps.tool(args, callId);
         const value = decode(result);
+        if (startsRun && (typeof value.run_id !== "string" || !value.run_id)) throw new Error("Review Workspace check admission returned no run identity");
         if (typeof value.run_id === "string") {
           unfinished.add(value.run_id);
+          if (startsRun) unconfirmedAdmission = false;
           if (value.output_loss === true) outputLoss.add(value.run_id);
           const after = request?.after_seq ?? 0;
           const next = value.next_seq;
@@ -71,6 +80,7 @@ export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: Pul
         return result;
       },
       async ensureIdle() {
+        if (unconfirmedAdmission) throw new Error("Review Workspace check admission was not confirmed; no review was published");
         const workspace = await deps.state(id);
         if (!workspace || workspace.status !== "active" || workspace.coding?.sourceRevision !== target.headSha ||
           workspace.coding.repository !== target.repository || workspace.coding.headSha !== target.headSha) throw new Error("Review Workspace no longer matches its verified commit");

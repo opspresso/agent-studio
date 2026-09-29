@@ -64,6 +64,45 @@ describe("review Workspace lifecycle", () => {
     await session.tool({ request: { operation: "wait" } }, "truncated");
     await expect(session.ensureIdle()).rejects.toThrow("results were not read");
   });
+  it.each([
+    { name: "lost admission response", reply: async () => { throw new Error("Admission response lost after commit"); } },
+    { name: "error tool result", reply: async () => ({ text: "Error: admission response lost" }) },
+    { name: "malformed tool result", reply: async () => ({ text: "{" }) },
+    { name: "missing run identity", reply: async () => ({ text: JSON.stringify({ status: "succeeded" }) }) },
+  ])("blocks publication after $name even when the worker has completed the check", async ({ reply }) => {
+    const f = fixture();
+    const session = await openReviewWorkspace(f.deps, target);
+    const workspace = await f.deps.state();
+    f.tool.mockClear();
+    f.tool.mockImplementationOnce(async () => {
+      workspace.activeRunId = "unobserved-check";
+      // Completion clears the active pointer without proving delivery of its result.
+      delete workspace.activeRunId;
+      return reply();
+    });
+    await session.tool({ request: { operation: "run", task: "check" } }, "uncertain").catch(() => {});
+    await expect(session.ensureIdle()).rejects.toThrow("admission was not confirmed");
+    expect(f.tool).toHaveBeenCalledOnce();
+    expect(f.verify).not.toHaveBeenCalled();
+    await expect(session.tool({ request: { operation: "run", task: "check" } }, "retry")).rejects.toThrow("no further commands");
+    expect(f.tool).toHaveBeenCalledOnce();
+    // An unrelated complete result cannot account for the uncertain admission.
+    await session.tool({ request: { operation: "wait", run_id: "check" } }, "other-check");
+    await expect(session.ensureIdle()).rejects.toThrow("admission was not confirmed");
+  });
+  it("keeps pending admissions fenced until their identity and output are observed", async () => {
+    const f = fixture();
+    const session = await openReviewWorkspace(f.deps, target);
+    let respond!: (value: { text: string }) => void;
+    f.tool.mockReturnValueOnce(new Promise(resolve => { respond = resolve; }));
+    const pending = session.tool({ request: { operation: "run", task: "check" } }, "pending");
+    await expect(session.ensureIdle()).rejects.toThrow("admission was not confirmed");
+    respond({ text: JSON.stringify({ run_id: "check", status: "queued" }) });
+    await pending;
+    await expect(session.ensureIdle()).rejects.toThrow("results were not read");
+    await session.tool({ request: { operation: "wait", run_id: "check" } }, "completed");
+    await session.ensureIdle();
+  });
   it("rejects permanent raw output loss even after a complete terminal page is delivered", async () => {
     const f = fixture();
     const session = await openReviewWorkspace(f.deps, target);
