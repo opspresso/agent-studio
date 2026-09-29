@@ -109,6 +109,7 @@ describe("parseProviderConfigs", () => {
       parseProviderConfigs({
         LLM_PROVIDER_OPENAI_BASE_URL: " https://api.openai.com/v1\n",
         LLM_PROVIDER_OPENAI_API_KEY: "sk-1\n",
+        LLM_PROVIDER_OPENAI_KEEP_MODEL_PREFIX: "true\n",
       }),
     ).toEqual([
       {
