@@ -47,7 +47,8 @@ for (const width of [1200, 390]) {
     await expect(page.locator("strong")).toHaveText("Verified");
     await expect(page.getByRole("cell", { name: "300", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Workspace" })).toHaveAttribute("href", "/chats/ws-fixture");
-    await expect(page.getByText("Unsafe", { exact: true })).not.toHaveAttribute("href", /^javascript:/);
+    await expect(page.getByText("Unsafe", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Unsafe", exact: true })).toHaveCount(0);
     await expect(page.locator("main script")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Run", exact: true })).toBeEnabled();
     const geometry = await page.locator("pre").evaluate(element => ({
