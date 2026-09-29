@@ -8,6 +8,8 @@ import { RunPanel } from "../../src/app/agents/[name]/_components/RunPanel";
 
 createRoot(document.getElementById("root")!).render(
   <MantineProvider theme={theme}><I18nProvider locale="en"><ImageViewerProvider>
+    {/* The Next layout supplies these variables in the application. */}
+    <style>{":root { --font-sans: system-ui; --font-mono: monospace; }"}</style>
     <main style={{ maxWidth: 760, margin: "auto", padding: 16 }}>
       <RunPanel agentName="fixture" configured />
     </main>
