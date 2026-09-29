@@ -148,6 +148,11 @@ export function WebhookSection({ agentName, onSelect, selected }: { agentName: s
           <>
             <CopyableUrl url={url} />
             <Text fz="sm" c="dimmed">{t("webhook.githubHint")}</Text>
+            <Switch label={t("trigger.runAsOwner")} description={t("webhook.runAsOwnerHint")}
+              checked={Boolean(webhook.executionEmail)} disabled={busy}
+              onChange={event => { const runAsOwner = event.currentTarget.checked; void act(async () => {
+                await updateTrigger(agentName, AGENT_WEBHOOK_ID, { runAsOwner });
+              }); }} />
             <Select label={t("webhook.reviewMode")} value={reviewScope} allowDeselect={false} disabled={busy}
               onChange={(value) => setReviewScope(value ?? "off")}
               data={[{ value: "off", label: t("webhook.generic") },

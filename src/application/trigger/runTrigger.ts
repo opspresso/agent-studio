@@ -113,10 +113,10 @@ export function triggerActor(
   return { kind: trigger.kind, id: `${trigger.agentName}:${trigger.triggerId}` };
 }
 
-const EXECUTION_USER_UNAUTHORIZED = "The schedule execution user is no longer authorized.";
+const EXECUTION_USER_UNAUTHORIZED = "The trigger execution user is no longer authorized.";
 
 async function executionUserAllowed(deps: FiringDeps, trigger: Trigger, agent: Agent): Promise<boolean> {
-  if (trigger.kind !== "schedule" || !trigger.executionEmail) return true;
+  if (!trigger.executionEmail) return true;
   return trigger.executionEmail === agent.ownerEmail && !!deps.executionUserActive &&
     await deps.executionUserActive(trigger.executionEmail);
 }
@@ -416,16 +416,20 @@ export async function executeFiring(
   // anyone would have read either.
   let produced = 0;
   try {
-    if (trigger.kind === "schedule" && trigger.executionEmail) {
+    if (trigger.executionEmail) {
       const current = await deps.agents.get(agent.name);
-      if (!current || !await executionUserAllowed(deps, trigger, current)) throw new Error(EXECUTION_USER_UNAUTHORIZED);
+      const currentTrigger = await deps.triggers.get(agent.name, trigger.triggerId);
+      if (!current || !currentTrigger?.enabled || currentTrigger.kind !== trigger.kind ||
+        currentTrigger.executionEmail !== trigger.executionEmail || !await executionUserAllowed(deps, currentTrigger, current)) {
+        throw new Error(EXECUTION_USER_UNAUTHORIZED);
+      }
     }
     for await (const chunk of deps.run({
       agent,
       configuration,
       ...input,
       actor: triggerActor(trigger),
-      ...(trigger.kind === "schedule" && trigger.executionEmail ? { userEmail: trigger.executionEmail } : {}),
+      ...(trigger.executionEmail ? { userEmail: trigger.executionEmail } : {}),
     })) {
       // Top-level only for the answer, like every other consumer: a subagent's
       // text is not the run's answer (see `isTopLevelChunk`). What a child

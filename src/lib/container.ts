@@ -11,6 +11,7 @@ import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/worksp
 import { runWorkspaceWorker } from "@/application/workspace/service";
 import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
 import { workspaceCaller } from "@/application/workspace/workspaceCaller";
+import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
 import { executeWorkspaceTask, executeAgent } from "@/application/execution/runAgent";
 import { runWorkspaceContinuations } from "@/application/chat/workspaceContinuation";
 import type { ChatDeps } from "@/application/chat/deps";
@@ -1008,7 +1009,7 @@ export const executionDeps: ExecutionDeps = {
     const caller = workspaceCaller(origin);
     if (!caller || !getWorkspaceConfig() || !await workspaceRepositoryPolicyUseCases.enabled(agentName)) return undefined;
     const email = caller.ownerEmail;
-    const authorize = () => authorizeWorkspaceTools(email, agentName);
+    const authorize = () => authorizeWorkspaceTools(email, agentName, caller.actor);
     if (!await optionalToolAccessible(authorize)) return undefined;
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
       ...(getWorkspaceGitHubConfig() ? { createRepository: workspaceRepositoryCreationUseCases.create } : {}),
@@ -1297,7 +1298,7 @@ export async function runAudioWorkerService(signal: AbortSignal): Promise<void> 
 const workspaceDeps: WorkspaceDeps = {
   repository: workspaceRepository, chats: chatRepository, agents: agentRepository,
   policy: getWorkspaceAgentPolicy,
-  authorize: (agentName, email) => authorizeWorkspaceTools(email, agentName),
+  authorize: (agentName, email, actor) => authorizeWorkspaceTools(email, agentName, actor),
   assertRuntime: async kind => { if (!await getWorkspaceRuntimeConfig(kind)) throw new ValidationError("Select a Workspace runtime model in Models before starting work"); },
   now: () => new Date(), newId: randomUUID,
   checkRepository: async (repository, baseBranch) => {
@@ -1327,12 +1328,10 @@ export const workspaceRepositoryCreationUseCases = createWorkspaceRepositoryCrea
   },
 });
 
-async function authorizeWorkspaceTools(email: string, agentName: string): Promise<void> {
-  const tier = await getMemberTier(email);
-  if (tier !== "member" && tier !== "admin") throw new ValidationError("Workspace tools require member access");
-  await agentUseCases.assertAccessible(agentName, email);
-  if (!getWorkspaceConfig()) throw new ValidationError("Workspace Sandbox backend is not configured");
-  if (!await workspaceRepositoryPolicyUseCases.enabled(agentName)) throw new ValidationError("Workspace tools are disabled in the current Agent settings");
+async function authorizeWorkspaceTools(email: string, agentName: string, actor?: RunActor): Promise<void> {
+  await authorizeWorkspaceExecution({ agents: agentRepository, triggers: triggerRepository, memberTier: getMemberTier,
+    backendReady: () => !!getWorkspaceConfig(), enabled: name => workspaceRepositoryPolicyUseCases.enabled(name),
+  }, agentName, email, actor);
 }
 
 function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {

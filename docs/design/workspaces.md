@@ -18,7 +18,7 @@ Workspace 옵션 목록은 접근 가능한 Agent의 현재 도구 설정을 한
 ## 경계와 운영 조건
 
 - Workspace 도구는 호출 채널이 아니라 확인된 사용자와 Agent 정책으로 접근을 판단한다.
-  API 토큰은 인증된 소유자, 메신저는 서버가 확인한 이메일, Schedule은 명시적으로 승인된
+  API 토큰은 인증된 소유자, 메신저는 서버가 확인한 이메일, Trigger는 명시적으로 승인된
   실행 사용자로 member·Agent 접근을 다시 검사한다. 확인된 사용자 문맥이 없으면 제공하지 않는다.
   Workspace의 관리 사용자와 작업 호출자는 별개다. `WorkspaceRun.actor`는 원래 연동 호출자로
   보관하고 실제 Sandbox 작업의 비용·실행 제한에도 같은 actor를 적용한다.
@@ -216,7 +216,7 @@ Agent의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외�
 | 로그인한 member/admin의 Playground·Agent 실행 API | Agent의 Workspace 도구가 활성화되면 제공 | source Chat이 없으므로 자동 재개 없음 |
 | Agent API token | 인증된 소유자가 member/admin이고 Agent 도구가 활성화되면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
 | Slack·Telegram·Teams | 확인된 이메일의 member/admin 권한과 Agent 도구 설정에 따라 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
-| Webhook | 확인된 실행 사용자 문맥이 없으므로 미제공 | Trigger 이력으로 결과 확인 |
+| Webhook | 현재 소유자가 실행 권한을 명시적으로 부여했고 member/admin이면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
 | Schedule | 개인 실행 문맥을 명시적으로 승인한 현재 소유자가 member/admin이면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
 | Workspace 화면의 직접 작업·Git 검토 | 전용 API로 소유한 공간을 조작 | Agent가 만든 source Chat 연결이 있는 승인만 전달 |
 

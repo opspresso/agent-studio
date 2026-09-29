@@ -1376,6 +1376,9 @@ export const ko: Messages = {
   "webhook.reviewRepositories": "저장소 (한 줄에 owner/repo 하나)",
   "webhook.reviewHint": "관리자가 설치의 GitHub 연결로 자동 리뷰 댓글을 활성화합니다. GitHub에서 Pull requests를 구독하세요. 서명된 opened·synchronize·reopened·ready_for_review 이벤트의 열린 일반 PR을 검토합니다. Agent는 제공된 diff와 연결된 Skill을 읽으며 저장소 코드나 다른 도구를 실행하지 않습니다. 검증한 PR과 커밋에만 댓글을 남깁니다. 서로 다른 PR은 동시에 처리할 수 있습니다.",
   "webhook.reviewSave": "리뷰 설정 저장",
+  "trigger.runAsOwner": "내 권한으로 실행",
+  "trigger.runAsOwnerHint": "Agent 소유자만 켤 수 있습니다. 확인된 본인 신원으로 설정된 개인 도구와 Workspace를 사용하며, 현재 권한과 Agent 정책을 적용합니다.",
+  "webhook.runAsOwnerHint": "Agent 소유자만 켤 수 있습니다. 인증된 Webhook 발신자가 Agent 정책에 따라 본인의 개인 도구와 Workspace를 사용할 수 있으므로, 해당 접근을 허용할 발신자에게만 켜세요.",
   "webhook.secretHint": "일반 발신자는 X-Trigger-Secret 헤더로 전송합니다. GitHub에서는 같은 값을 Secret에 입력해 전달에 서명합니다. 이 값을 가진 쪽은 Agent의 현재 설정을 실행할 수 있습니다.",
   "webhook.intro":
     "Agent마다 주소 하나가 있고, 켜기 전까지는 꺼져 있습니다. 외부 시스템은 X-Trigger-Secret 또는 GitHub HMAC-SHA256 서명으로 인증한 JSON을 POST해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 오른쪽 이력에 남습니다. Webhook은 항상 Agent의 현재 설정을 실행합니다.",

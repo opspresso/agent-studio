@@ -182,6 +182,50 @@ function fixture(
   };
 }
 
+describe("Webhook execution permissions", () => {
+  it("carries the explicitly granted identity without changing the actor or trusting payload identity fields", async () => {
+    const f = fixture({ stored: trigger({ executionEmail: agent.ownerEmail }) });
+    f.deps.executionUserActive = async () => true;
+    let email: string | undefined;
+    const original = f.deps.run;
+    f.deps.run = async function* (input) { email = input.userEmail; yield* original(input); };
+    const admitted = await admitDelivery(f.deps, "p", SECRET, null);
+    expect(admitted.status).toBe("accepted");
+    if (admitted.status !== "accepted") throw new Error("Webhook was not admitted");
+    await executeDelivery(f.deps, admitted, { userEmail: "other@example.com", actor: { kind: "user" }, runAsOwner: true });
+    expect(email).toBe(agent.ownerEmail);
+    expect(f.runs[0]?.actorKind).toBe("webhook");
+    expect(f.rows.at(-1)?.status).toBe("succeeded");
+  });
+  it("does not derive an execution grant from a payload", async () => {
+    const f = fixture();
+    let email: string | undefined;
+    const original = f.deps.run;
+    f.deps.run = async function* (input) { email = input.userEmail; yield* original(input); };
+    const admitted = await admitDelivery(f.deps, "p", SECRET, null);
+    if (admitted.status !== "accepted") throw new Error("Webhook was not admitted");
+    await executeDelivery(f.deps, admitted, { userEmail: agent.ownerEmail, runAsOwner: true });
+    expect(email).toBeUndefined();
+    expect(f.rows.at(-1)?.status).toBe("succeeded");
+  });
+  it("refuses an inactive execution user at admission", async () => {
+    const f = fixture({ stored: trigger({ executionEmail: agent.ownerEmail }) });
+    f.deps.executionUserActive = async () => false;
+    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe("not-configured");
+    expect(f.runs).toHaveLength(0);
+  });
+  it("refuses a grant revoked between admission and execution", async () => {
+    const f = fixture({ stored: trigger({ executionEmail: agent.ownerEmail }) });
+    f.deps.executionUserActive = async () => true;
+    const admitted = await admitDelivery(f.deps, "p", SECRET, null);
+    if (admitted.status !== "accepted") throw new Error("Webhook was not admitted");
+    f.deps.triggers.get = async () => trigger();
+    await executeDelivery(f.deps, admitted, { task: "do work" });
+    expect(f.runs).toHaveLength(0);
+    expect(f.rows.at(-1)?.status).toBe("failed");
+  });
+});
+
 describe("payloadInput", () => {
   it("preserves scalar and nested payload fields in the user message", () => {
     const payload = { who: "payload", count: 3, ok: true, nested: { a: 1 } };

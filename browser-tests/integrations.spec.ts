@@ -3,12 +3,16 @@ import type { AddressInfo } from "node:net";
 import { build } from "esbuild";
 import { test, expect } from "@playwright/test";
 import type { TriggerRun } from "../src/domain/trigger/types";
+import type { TriggerView } from "../src/application/trigger/triggerUseCases";
 
 let server: Server;
 let base: string;
 let connected: boolean;
 let channelReads: number;
 let runs: Record<string, TriggerRun[]>;
+let webhook: TriggerView | undefined;
+let executionUpdates: boolean[];
+let refuseExecutionGrant: boolean;
 const agentName = "fixture-agent";
 const at = "2026-09-26T00:00:00Z";
 
@@ -37,6 +41,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 test.beforeEach(async ({ page }) => {
   connected = false; channelReads = 0; runs = { daily: [], weekly: [] };
+  webhook = undefined; executionUpdates = []; refuseExecutionGrant = false;
   await page.route("**/api/**", route => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -56,14 +61,54 @@ test.beforeEach(async ({ page }) => {
       channelReads += 1;
       return route.fulfill({ json: { channels: [{ id: "channel", name: `reports-${channelReads}` }] } });
     }
-    if (path === `${prefix}/triggers`) return route.fulfill({ json: { triggers: ["daily", "weekly"].map(triggerId => ({ agentName, triggerId,
-      kind: "schedule", enabled: true, allowConcurrent: false, cron: "0 9 * * *", timezone: "UTC", createdAt: at, updatedAt: at })) } });
+    if (path === `${prefix}/triggers`) return route.fulfill({ json: { triggers: [...["daily", "weekly"].map(triggerId => ({ agentName, triggerId,
+      kind: "schedule", enabled: true, allowConcurrent: false, cron: "0 9 * * *", timezone: "UTC", createdAt: at, updatedAt: at })), ...(webhook ? [webhook] : [])] } });
+    if (path === `${prefix}/triggers/webhook` && route.request().method() === "PUT") {
+      const body = route.request().postDataJSON() as { runAsOwner: boolean };
+      executionUpdates.push(body.runAsOwner);
+      if (refuseExecutionGrant) return route.fulfill({ status: 403, json: { error: "Only the owner can enable personal execution" } });
+      webhook = { ...webhook!, executionEmail: body.runAsOwner ? "admin@example.test" : undefined };
+      return route.fulfill({ json: webhook });
+    }
     if (path.endsWith("/runs")) {
       const triggerId = path.split("/").at(-2)!;
       return route.fulfill({ json: { runs: (runs[triggerId] ?? []).slice(0, Number(url.searchParams.get("limit") ?? 20)) } });
     }
     return route.abort();
   });
+});
+
+test("Webhook execution permissions are off by default and can be explicitly granted and revoked", async ({ page }, testInfo) => {
+  page.on("pageerror", error => { throw error; });
+  webhook = { agentName, triggerId: "webhook", kind: "webhook", enabled: true, allowConcurrent: false,
+    description: "", secretMasked: "••••", createdAt: at, updatedAt: at };
+  await page.goto(base);
+  await page.getByRole("button", { name: "Webhook enabled", exact: true }).click();
+  const permission = page.getByRole("switch", { name: /^Run with my permissions/ });
+  await expect(permission).not.toBeChecked();
+  await expect(page.getByText(/Authorized webhook senders can use your configured personal tools and Workspaces/)).toBeVisible();
+  await permission.click();
+  await expect(permission).toBeChecked();
+  await expect(permission).toBeEnabled();
+  expect(executionUpdates).toEqual([true]);
+  await page.screenshot({ path: testInfo.outputPath("webhook-execution-permissions.png"), fullPage: true, animations: "disabled" });
+  await permission.click();
+  await expect(permission).not.toBeChecked();
+  await expect(permission).toBeEnabled();
+  expect(executionUpdates).toEqual([true, false]);
+});
+
+test("Webhook execution permission stays off when the server refuses the grant", async ({ page }) => {
+  webhook = { agentName, triggerId: "webhook", kind: "webhook", enabled: true, allowConcurrent: false,
+    description: "", secretMasked: "••••", createdAt: at, updatedAt: at };
+  refuseExecutionGrant = true;
+  await page.goto(base);
+  await page.getByRole("button", { name: "Webhook enabled", exact: true }).click();
+  const permission = page.getByRole("switch", { name: /^Run with my permissions/ });
+  await permission.click();
+  await expect(page.getByRole("alert")).toContainText("Only the owner can enable personal execution");
+  await expect(permission).not.toBeChecked();
+  await expect(permission).toBeEnabled();
 });
 
 test("a saved bot connection becomes a schedule destination without reloading the page", async ({ page }) => {

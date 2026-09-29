@@ -23,7 +23,7 @@ export interface WorkspaceDeps {
   now(): Date;
   newId(): string;
   idleTtlSeconds: number;
-  authorize?(agentName: string, email: string): Promise<void>;
+  authorize?(agentName: string, email: string, actor?: RunActor): Promise<void>;
   assertRuntime?(runtime: WorkspaceRuntime): Promise<void>;
   checkRepository?(repository: string, baseBranch: string): Promise<void>;
 }
@@ -272,7 +272,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
 
     async enqueue(id: string, ownerEmail: string, input: WorkspaceInput, requestKey: string, actor?: RunActor): Promise<WorkspaceRun> {
       const workspace = await ownedWorkspace(deps, id, ownerEmail);
-      await deps.authorize?.(workspace.agentName, ownerEmail);
+      await deps.authorize?.(workspace.agentName, ownerEmail, actor);
       await deps.assertRuntime?.(workspace.runtime);
       const policy = await workspacePolicy(deps, workspace.agentName);
       if (!policy.runtimes.includes(workspace.runtime)) throw new ValidationError("Workspace runtime is not enabled");

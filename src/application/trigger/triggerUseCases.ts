@@ -216,7 +216,6 @@ export function createTriggerUseCases(deps: TriggerDeps) {
     ): Promise<TriggerView> {
       const agent = await assertAgentWritable(deps.agents, agentName, userEmail);
       if (input.runAsOwner && agent.ownerEmail !== userEmail) throw new ForbiddenError("Only the owner can enable personal execution");
-      if (input.runAsOwner !== undefined && input.kind !== "schedule") throw new ValidationError("Personal execution is only available for schedules");
       if (input.githubReview !== undefined && input.kind === "schedule") throw new ValidationError("GitHub reviews are only available for webhooks");
       const githubReview = await reviewConfig(input.githubReview, userEmail);
       // An agent has exactly one webhook and it answers at `/api/webhook/{agent}`,
@@ -242,6 +241,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         // Overlap is off unless asked for: a firing that comes faster than the
         // run takes would otherwise pile runs up until the cost guard notices.
         allowConcurrent: input.allowConcurrent ?? false,
+        ...(input.runAsOwner ? { executionEmail: userEmail } : {}),
         createdAt: now,
         updatedAt: now,
       };
@@ -255,7 +255,6 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         trigger = {
           ...base,
           kind: "schedule",
-          ...(input.runAsOwner ? { executionEmail: userEmail } : {}),
           cron: input.cron,
           timezone: input.timezone,
           ...(input.message ? { message: input.message } : {}),
@@ -304,7 +303,6 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       if (input.runAsOwner && agent.ownerEmail !== userEmail) throw new ForbiddenError("Only the owner can enable personal execution");
       const existing = await load(agentName, triggerId);
       if (input.githubReview !== undefined && existing.kind !== "webhook") throw new ValidationError("GitHub reviews are only available for webhooks");
-      if (input.runAsOwner !== undefined && existing.kind !== "schedule") throw new ValidationError("Personal execution is only available for schedules");
       const shared = {
         description: input.description ?? existing.description,
         enabled: input.enabled ?? existing.enabled,
@@ -347,11 +345,13 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         throw new ValidationError("Only a schedule trigger has cron, timezone, message or deliveries");
       }
       const rotated = input.rotateSecret ? newSecret() : undefined;
-      const { githubReview: previousReview, ...storedWebhook } = existing;
+      const { githubReview: previousReview, executionEmail: storedEmail, ...storedWebhook } = existing;
+      const executionEmail = input.runAsOwner === undefined ? storedEmail : input.runAsOwner ? userEmail : undefined;
       const githubReview = input.githubReview === undefined ? previousReview : await reviewConfig(input.githubReview, userEmail);
       const updated: WebhookTrigger = {
         ...storedWebhook,
         ...shared,
+        ...(executionEmail ? { executionEmail } : {}),
         ...(githubReview ? { githubReview } : {}),
         ...(rotated
           ? { secret: deps.cipher.encrypt(rotated, triggerSecretContext(agentName, triggerId)) }

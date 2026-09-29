@@ -1446,6 +1446,9 @@ export const en = {
   "webhook.reviewRepositories": "Repositories (one owner/repo per line)",
   "webhook.reviewHint": "An administrator can enable automatic review comments using the installation's GitHub connection. Subscribe to Pull requests. Signed opened, synchronize, reopened and ready_for_review events review non-draft open PRs. The Agent reads the supplied diff with bound skills; it cannot execute repository code or other tools. Comments stay on the verified PR and commit. Different PRs may run concurrently.",
   "webhook.reviewSave": "Save review settings",
+  "trigger.runAsOwner": "Run with my permissions",
+  "trigger.runAsOwnerHint": "Only the Agent owner can enable this. Use your verified identity for configured personal tools and Workspace execution; current access and Agent policies still apply.",
+  "webhook.runAsOwnerHint": "Only the Agent owner can enable this. Authorized webhook senders can use your configured personal tools and Workspaces under the Agent's policies. Keep this off unless those senders should have that access.",
   "webhook.secretHint": "Generic senders use X-Trigger-Secret. GitHub uses this same value in its Secret field to sign deliveries. Anyone holding it can start the Agent’s current settings.",
   "webhook.intro":
     "One address per Agent, off until you turn it on. An outside system starts a run by posting JSON with X-Trigger-Secret or a GitHub HMAC-SHA256 signature; the delivery is acknowledged immediately and its outcome appears in the history on the right. The webhook always runs the Agent’s current configuration.",

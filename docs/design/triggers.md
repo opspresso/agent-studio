@@ -56,11 +56,12 @@ PR 자료가 게시 대상이나 권한을 선택하지 않는다. 이 리뷰는
 ## 실행 문맥과 결과
 
 Webhook actor는 `webhook`이며 payload의 이메일을 사용자 권한으로 사용하지 않는다.
-Schedule은 소유자가 `runAsOwner`를 명시적으로 켰을 때만 확인한 `executionEmail`을 저장하고
+Webhook·Schedule은 소유자가 `runAsOwner`를 명시적으로 켰을 때만 확인한 `executionEmail`을 저장하고
 admission·실행 직전에 현재 Agent 소유권과 member 상태를 다시 검사한다.
 
-이메일은 개인 MCP·오디오 문맥에 사용할 수 있지만 actor는 `schedule`로 유지한다.
-Webhook·Schedule은 user 전용 Workspace 도구와 영속 Chat 승인 화면을 얻지 않는다.
+이메일은 개인 MCP·오디오 문맥에 사용할 수 있지만 actor는 원래 `webhook`·`schedule`로 유지한다.
+확인된 실행 사용자가 있는 Webhook·Schedule은 Agent 정책에 따라 Workspace 도구를 얻는다.
+사용자 Chat의 SDK 승인 화면은 만들지 않으며 Git 결정은 Workspace 승인 링크로 전달한다.
 [창구별 계약](workspaces.md#실행-창구별-계약)을 따른다.
 
 실행 출력은 Trigger 이력과 Artifact에 기록한다. 이력은 제한된 텍스트·오류·경고를 담으며

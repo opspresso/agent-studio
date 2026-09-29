@@ -9,5 +9,6 @@ import IntegrationsPage from "../../src/app/agents/[name]/integrations/page";
 createRoot(document.getElementById("root")!).render(
   <MantineProvider theme={theme}><I18nProvider locale="en"><ViewerProvider viewer={{
     email: "admin@example.test", tier: "admin", isAdmin: true, isConfiguredAdmin: true,
-  }}><div style={{ padding: 24 }}><IntegrationsPage /></div></ViewerProvider></I18nProvider></MantineProvider>,
+  }}><style>{":root { --font-sans: system-ui; --font-mono: monospace; }"}</style>
+  <div style={{ padding: 24 }}><IntegrationsPage /></div></ViewerProvider></I18nProvider></MantineProvider>,
 );

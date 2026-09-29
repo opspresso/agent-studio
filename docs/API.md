@@ -1401,10 +1401,12 @@ GET    /api/agents/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ …
 (`^[a-z0-9-]+$`) 을 따른다. 콘솔은 입력한 것을 agent 폼이 쓰는 것과 같은 `toSlug` 헬퍼로
 정규화하고, API 는 클라이언트가 무엇이든 그 밖의 것을 거절한다.
 
-Schedule 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email을 `executionEmail`로 저장한다.
+Webhook·Schedule 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email을 `executionEmail`로 저장한다.
 관리자도 다른 소유자를 대신해 켤 수 없다. `false`는 저장한 email을 지우고, 생략은 기존 값을
-유지한다. Webhook에는 이 옵션을 사용할 수 없다. Admission과 실행 직전에 현재 소유권과 member
-상태를 확인한다. actor는 schedule로 유지하며 검증된 email만 MCP `X-User-Email`로 전달한다.
+유지한다. 기본은 꺼짐이며 Webhook에서는 인증된 외부 발신자에게 해당 실행 권한을 부여하는
+결정이다. Admission과 실행 직전에 현재 위임·소유권과 member 상태를 확인한다. actor는 원래
+webhook·schedule로 유지하며 검증된 email만 MCP·Workspace 실행에 사용한다. Workspace는
+도구 호출과 큐 작업 실행 직전에도 현재 Trigger 위임을 다시 검사한다.
 
 평범한 읽기는 `secretMasked` 만 돌려준다 (webhook 에 한한다. schedule 에는 secret 이 없다).
 
@@ -1441,7 +1443,8 @@ GitHub도 같은 URL을 사용한다. GitHub Webhook의 Content type은 `applica
 있으면 서명 방식을 선택하고 누락·잘못된 서명에서 일반 시크릿 방식으로 폴백하지 않는다.
 `X-GitHub-Delivery`와 `X-GitHub-Event`를 요구하며 delivery ID를 중복 방지 키로 쓴다.
 서명된 `ping`은 `202 {ok:true,status:"ping"}`으로 연결만 확인하고 모델을 실행하지 않는다.
-이 인증은 원래의 webhook actor를 유지하며 사용자 OAuth·Workspace 실행 권한을 부여하지 않는다.
+이 인증만으로 사용자 OAuth·Workspace 실행 권한을 부여하지 않는다. 소유자가 `runAsOwner`를
+별도로 승인한 경우에만 확인된 신원으로 설정된 개인 도구와 Workspace를 제공하며 webhook actor는 유지한다.
 Workspace PR 메타데이터 전용 `/api/workspaces/github/webhook`과는 목적과 시크릿이 다르다.
 
 이것이 **유일한** 전달 주소다. `admitDelivery` 는 agent 이름 자체에서 그 행을 해석하고 trigger

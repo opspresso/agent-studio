@@ -147,7 +147,7 @@ function fixture(
   // the scan's own index read stays schedules-only.
   const stored: Trigger[] = [...schedules, ...(opts.webhooks ?? [])];
   const triggers: TriggerRepository = {
-    get: async () => null,
+    get: async (agentName, triggerId) => stored.find(trigger => trigger.agentName === agentName && trigger.triggerId === triggerId) ?? null,
     listByAgent: async (agentName, limit, after) => stored
       .filter((trigger) => trigger.agentName === agentName && (!after || trigger.triggerId > after))
       .sort((left, right) => left.triggerId < right.triggerId ? -1 : left.triggerId > right.triggerId ? 1 : 0)
@@ -413,6 +413,16 @@ describe("scanSchedules", () => {
     expect(result.firings).toHaveLength(1);
     f.deps.agents.get = async () => ({ ...agent, ownerEmail: "new-owner@example.com" });
     const firing = result.firings[0]!;
+    await executeFiring(f.deps, firing, scheduleInput(firing.trigger));
+    expect(f.runs).toHaveLength(0);
+    expect(f.rows.at(-1)?.status).toBe("failed");
+  });
+  it("refuses personal execution when its grant is removed after queue admission", async () => {
+    const f = fixture({ schedules: [schedule({ executionEmail: agent.ownerEmail })] });
+    f.deps.executionUserActive = async () => true;
+    const { firings } = await scanSchedules(f.deps, AT);
+    f.deps.triggers.get = async () => schedule();
+    const firing = firings[0]!;
     await executeFiring(f.deps, firing, scheduleInput(firing.trigger));
     expect(f.runs).toHaveLength(0);
     expect(f.rows.at(-1)?.status).toBe("failed");

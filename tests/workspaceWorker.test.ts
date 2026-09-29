@@ -11,6 +11,8 @@ import { claimWorkspace, WORKSPACE_HEARTBEAT_MS, WORKSPACE_LEASE_MS, WORKSPACE_R
 import { createWorkspaceRuntimeAdapter } from "@/infrastructure/workspace/runtimeAdapters";
 import type { SandboxOperation, SandboxProvider, SandboxCommand } from "@/domain/workspace/ports";
 import type { WorkspaceAgentPolicy } from "@/domain/workspace/policy";
+import type { WebhookTrigger } from "@/domain/trigger/types";
+import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
@@ -80,6 +82,21 @@ async function start(runtime: "command" | "codex" = "command") {
 }
 
 describe("durable workspace worker", () => {
+  it("rechecks a Webhook's owner grant after queue admission and refuses revoked work", async () => {
+    let grant: WebhookTrigger = { agentName: "demo", triggerId: "webhook", kind: "webhook", enabled: true,
+      executionEmail: owner, description: "", secret: "encrypted-fixture", allowConcurrent: false,
+      createdAt: new Date(time).toISOString(), updatedAt: new Date(time).toISOString() };
+    deps.authorize = (agentName, email, actor) => authorizeWorkspaceExecution({ agents,
+      triggers: { get: async () => grant }, memberTier: async () => "member", backendReady: () => true,
+      enabled: async () => true }, agentName, email, actor);
+    const first = await createWorkspaceUseCases(deps).start({ agentName: "demo", runtime: "command",
+      actor: { kind: "webhook", id: "demo:webhook" }, input: { kind: "command", script: "echo task" } }, owner, "webhook-0001");
+    grant = { ...grant, executionEmail: undefined };
+    await processWorkspace(deps, first.workspace.id);
+    expect(provider.ensure).not.toHaveBeenCalled();
+    expect((await repository.run(first.workspace.id, first.run.id))?.status).toBe("failed");
+  });
+
   it("refuses revoked execution rights before provisioning an admitted task", async () => {
     const { workspace, run } = await start();
     deps.authorize = vi.fn(async () => { throw new Error("Member access revoked"); });

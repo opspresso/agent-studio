@@ -278,8 +278,8 @@ export function SchedulesSection({
                     }
                   />
                   <Switch
-                    label={t("audio.runAsOwner")}
-                    description={t("audio.runAsOwnerHint")}
+                    label={t("trigger.runAsOwner")}
+                    description={t("trigger.runAsOwnerHint")}
                     checked={Boolean(schedule.executionEmail)}
                     disabled={busy}
                     onChange={(e) => { const runAsOwner = e.currentTarget.checked; act(async () => { await updateTrigger(agentName, schedule.triggerId, { runAsOwner }); }); }}
