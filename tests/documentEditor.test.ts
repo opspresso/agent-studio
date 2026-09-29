@@ -214,7 +214,7 @@ describe("workbook editing", () => {
     parts.set(name, new TextEncoder().encode(new TextDecoder().decode(parts.get(name))
       .replace('Id="rId1"', 'Id="rId1" TargetMode="External"')));
     const external = { ...file, bytes: buildZip(Object.fromEntries(parts)) };
-    expect((await documentEditor.inspect(external)).text).not.toContain('"sheet":"Summary"');
+    await expect(documentEditor.inspect(external)).rejects.toThrow("external worksheet relationships");
     await expect(documentEditor.edit(external, [
       { operation: "set_cell", sheet: "Summary", cell: "A1", value: "Local overwrite" },
     ])).rejects.toThrow("external workbook relationships");
