@@ -66,8 +66,6 @@ async function main() {
   process.env.TRANSCRIPTION_BASE_URL = `http://127.0.0.1:${address.port}/v1`;
   process.env.TRANSCRIPTION_API_KEY = "test";
   process.env.TRANSCRIPTION_RESPONSE_FORMAT = "json";
-  process.env.LLM_BASE_URL = process.env.TRANSCRIPTION_BASE_URL;
-  process.env.LLM_API_KEY = "test";
   process.env.LLM_PROVIDER_OPENAI_BASE_URL = process.env.TRANSCRIPTION_BASE_URL;
   process.env.LLM_PROVIDER_OPENAI_API_KEY = "test";
   const { migrate } = await import("@/infrastructure/db/migrations");
