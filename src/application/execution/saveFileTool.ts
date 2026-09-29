@@ -1,4 +1,5 @@
 import { createArtifactId } from "@/application/artifact/storeArtifact";
+import { FILE_DELIVERY_INSTRUCTION } from "@/application/artifact/fileDelivery";
 /** The SaveFile builtin: text a run wrote, kept as a file the reader receives. */
 
 import type * as engine from "@/application/runtime";
@@ -63,7 +64,7 @@ export function saveFileResult(input: {
     // has it. The address is the surface's business — it is minted per reader,
     // and a model that had one would only be able to repeat it into the answer,
     // where it would outlive the turn and belong to whoever read the transcript.
-    text: `Saved ${filename} (${kb(bytes.byteLength)}). The reader receives an attached file card with its download action. Name the file without inventing a URL or a sandbox:/mnt/data path; do not repeat its contents in your answer.` +
+    text: `Saved ${filename} (${kb(bytes.byteLength)}). ${FILE_DELIVERY_INSTRUCTION}` +
       (mimeType === "text/html" ? " HTML runs immediately in an isolated iframe; web requests are restricted. Its scripts and interactions have not been browser-tested by SaveFile." : ""),
     files: [{ b64: bytes.toString("base64"), mimeType, name: filename }],
   };

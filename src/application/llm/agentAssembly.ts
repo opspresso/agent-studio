@@ -1,6 +1,7 @@
 import { DOCUMENT_FORMATS, DOCUMENT_PROFILES, DOCUMENT_THEMES, DOCUMENT_LAYOUTS, DOCUMENT_COLOR_NAMES, DEFAULT_DOCUMENT_PROFILE, DEFAULT_DOCUMENT_THEME, DOCUMENT_FONT_FAMILY } from "@/domain/document/processor";
 /** Shared capability and prompt assembly for SDK execution and preview. */
 
+import { FILE_DELIVERY_INSTRUCTION } from "@/application/artifact/fileDelivery";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import { MODEL_TASK_TOOL_NAME } from "@/domain/llm/toolNames";
 import { MODEL_TASK_TOOL_DEF } from "./modelTaskDefinition";
@@ -629,7 +630,8 @@ const FILE_TOOL_DEF: ChannelToolDef = {
       "Edits create a new file and preserve the source. Document text edits cannot add paragraphs or line breaks. " +
       "If editing is unsupported, report it; rebuilding from extracted text does not preserve original formatting. " +
       "Use mode=structure to inspect document layout information, or edit_targets for text targets. " +
-      "Use SaveFile to create plain text, Markdown, CSV, JSON, HTML or SVG. Assets map names to PNG/JPEG file IDs and are referenced as asset://name in Markdown.",
+      "Use SaveFile to create plain text, Markdown, CSV, JSON, HTML or SVG. Assets map names to PNG/JPEG file IDs and are referenced as asset://name in Markdown. " +
+      FILE_DELIVERY_INSTRUCTION,
     parameters: {
       type: "object",
       properties: {
@@ -666,7 +668,7 @@ const SAVE_FILE_TOOL_DEF: ChannelToolDef = {
       "Keep text you wrote as a file the person receives — a report, a page, a dataset, a note. " +
       "Use it when the answer *is* a document rather than a reply: a long HTML report, a CSV of results, " +
       "a Markdown write-up somebody will file or send on. The file is delivered on its own; " +
-      "say what you made and do not repeat its contents in the answer. Refer to the attached file card; do not invent a download URL or a sandbox:/mnt/data path. " +
+      FILE_DELIVERY_INSTRUCTION + " " +
       "HTML previews run immediately in an isolated iframe and support inline CSS, JavaScript, buttons, inputs, SVG and canvas. " +
       "Make HTML self-contained: no CDN, external scripts, imports, eval, fetch, storage, workers, form submissions or page navigation. " +
       "Use DOM updates for tabs and steps, keep all content reachable, and use border-box sizing, responsive layouts and a viewport meta tag for mobile. " +

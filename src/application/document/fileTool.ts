@@ -6,6 +6,7 @@ import { artifactOwnerEmail, baseMimeType, MAX_SAVED_FILE_BYTES, savedFileName }
 import { MAX_DOCUMENT_BYTES, documentKind } from "@/domain/llm/documentLimits";
 import { DOCUMENT_FORMATS, DOCUMENT_PROFILES, DOCUMENT_THEMES, DOCUMENT_LAYOUTS, DocumentProcessingError, type DocumentEdit, type DocumentAsset, type DocumentColors, type EffectiveDocumentStyle } from "@/domain/document/processor";
 import { createArtifactId } from "@/application/artifact/storeArtifact";
+import { FILE_DELIVERY_INSTRUCTION } from "@/application/artifact/fileDelivery";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { DocumentRenderer, DocumentEditor } from "@/domain/document/processor";
@@ -72,6 +73,7 @@ export function buildFileTool(
     const filename = savedFileName(name, mimeType);
     return {
       text: `Created ${JSON.stringify(filename)} (file ID: ${artifactId}).` +
+        `\n${FILE_DELIVERY_INSTRUCTION}` +
         (style ? `\nDesign: theme=${style.theme}; profile=${style.profile ?? "spreadsheet"}; layout=${style.layout ?? "grid"}; font=${style.fontFamily}.` : "") +
         `${warnings.length ? `\n${warnings.join("\n")}` : ""}`,
       files: [{ b64: Buffer.from(bytes).toString("base64"), mimeType, name: filename, artifactId, ...(derivedFrom ? { derivedFrom } : {}) }],
