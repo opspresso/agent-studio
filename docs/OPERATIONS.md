@@ -379,7 +379,7 @@ caller 당 Settings → Service의 동시 실행 한도(`MAX_CONCURRENT_RUNS_PER
 - 한 tick의 admission과 실행은 각각 최대 8건을 동시에 처리한다. 여러 tick·전체 배포의
   전역 동시 실행 상한은 아니며, 전체 접수 수를 8건으로 제한하지 않는다.
 - 응답·로그의 `fired`는 queued 접수 수다. 실행 시작·성공은 trigger 이력에서 확인한다.
-  `repaired`는 만료된 queued lease 또는 실행 lease와 여유 시간이 지난 running 이력을
+  `repaired`는 만료된 queued lease 또는 마지막 소유 lease와 여유 시간이 지난 running 이력을
   failed로 마감한 수다. `invalid`는 cron·시간대 오류, `errors`는 복구·admission 처리 오류 수다.
   저장소 페이지 조회 실패는 요청을 실패시킨다.
 - scan token 미설정은 `503`, 잘못된 token은 `401`과 서버 경고로 확인한다.
@@ -387,6 +387,9 @@ caller 당 Settings → Service의 동시 실행 한도(`MAX_CONCURRENT_RUNS_PER
 복구는 UTC 분이 5의 배수인 scan에서 모든 trigger를 확인하며, Webhook 전달 완료 시에도
 자기 trigger를 확인한다. ticker와 다음 Webhook 전달이 모두 없으면 자동 복구가 진행되지 않는다.
 복구는 이력만 마감하고 불확실한 모델·도구 실행을 재시도하지 않는다.
+running heartbeat는 준비·모델·Workspace 정리·결과 전송·완료 저장까지 소유 lease와 겹침 예약을
+갱신한다. 오래된 `startedAt`만으로 살아 있는 실행을 유실로 판정하지 않는다. 소유권 검사 실패는
+기존 실행을 취소하고 새 외부 효과를 차단하며, 완료 저장과 복구는 같은 소유 CAS로 보호한다.
 
 ## 카탈로그 재색인
 

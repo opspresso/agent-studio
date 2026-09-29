@@ -1112,6 +1112,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       configuration: input.configuration,
       messages: input.message ? [{ role: "user", content: input.message }] : [],
       actor: input.actor,
+      ...(input.signal ? { signal: input.signal } : {}),
       ...(input.backgroundTask ? { backgroundTask: true } : {}),
       ...(input.reviewSource ? { reviewSource: input.reviewSource } : {}),
       ...(input.reviewWorkspace ? { reviewWorkspace: input.reviewWorkspace } : {}),

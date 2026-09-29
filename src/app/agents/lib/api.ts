@@ -453,7 +453,9 @@ export async function listAgentMcpTools(
 
 // --- Triggers --------------------------------------------------------------
 
-export type { TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
+export type { WebhookTrigger } from "@/domain/trigger/types";
+export type { TriggerRunView as TriggerRun } from "@/application/trigger/triggerUseCases";
+import type { TriggerRunsResponse } from "@/app/api/agents/[name]/triggers/[trigger]/runs/route";
 
 // The server's own view and input types, re-exported type-only so the client
 // cannot drift from what the API actually accepts and returns.
@@ -510,8 +512,8 @@ export function listTriggerRuns(
   triggerId: string,
   limit?: number,
   signal?: AbortSignal,
-): Promise<{ runs: import("@/domain/trigger/types").TriggerRun[] }> {
+): Promise<TriggerRunsResponse> {
   return fetch(`/api/agents/${name}/triggers/${triggerId}/runs${limit === undefined ? "" : `?limit=${limit}`}`, { signal }).then((r) =>
-    readJson<{ runs: import("@/domain/trigger/types").TriggerRun[] }>(r),
+    readJson<TriggerRunsResponse>(r),
   );
 }

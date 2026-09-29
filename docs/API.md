@@ -1493,6 +1493,7 @@ POST /api/triggers/scan
 접수 시 `queuedAt`·`queueLeaseUntil`을 가지며, 실제 실행 시작 시 `running`과 `startedAt`을
 기록하고 `queueLeaseUntil`을 제거한다. 시작하지 못한 `queued`·실패 이력에는 `startedAt`이
 없을 수 있다. `runId`와 `scheduledFor`는 상태 전이 중 유지한다.
+running 실행의 소유 token·lease는 서버 제어 상태이며 이력 응답의 `TriggerRunView`에서는 제거한다.
 
 배포 환경의 ticker가 1분에 한 번 호출하는 것이다. ticker 는 상태를 쥐지 않는다: 어느 발생분이
 도래했는지와 각각을 누가 차지하는지는 조건부 쓰기로 발생분마다 서버 측에서 결정된다. 그래서 두 번

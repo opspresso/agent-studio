@@ -1112,6 +1112,41 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
     );
     pass("trigger run history: newest-first, startedBefore window, finish in place");
 
+    // ---------- live trigger owner CAS and bounded expiry reads ----------
+    const ownerTrigger = `it-owner-${suffix}`;
+    const ownerNow = Date.now();
+    const leasedRun = { agentName, triggerId: ownerTrigger, runId: "owned", status: "running" as const,
+      startedAt: new Date(ownerNow - 3_600_000).toISOString(), runningLeaseToken: `owner-${suffix}`,
+      runningLeaseUntil: new Date(ownerNow + 60_000).toISOString() };
+    await triggerRepository.appendRun(leasedRun);
+    assert.deepEqual(await triggerRepository.listRuns(agentName, ownerTrigger, 10), [leasedRun]);
+    const renewedOwner = { ...leasedRun, runningLeaseUntil: new Date(ownerNow + 120_000).toISOString() };
+    assert.equal(await triggerRepository.updateRunningRun(leasedRun, renewedOwner), true);
+    const { runningLeaseToken: _ownerToken, runningLeaseUntil: _ownerDeadline, ...ownerIdentity } = leasedRun;
+    void _ownerToken; void _ownerDeadline;
+    assert.equal(await triggerRepository.updateRunningRun(leasedRun, { ...ownerIdentity, status: "failed", endedAt: now }), false,
+      "a stale repair cannot settle a renewed execution owner");
+    const expiredOwner = { ...leasedRun, runId: "expired-owner", runningLeaseToken: `expired-${suffix}`,
+      runningLeaseUntil: new Date(ownerNow - 1).toISOString() };
+    await triggerRepository.appendRun(expiredOwner);
+    await triggerRepository.appendRun({ ...expiredOwner, runId: "expired-retention", startedAt: "1970-01-01T00:00:00.000Z" });
+    assert.deepEqual(await triggerRepository.listRuns(agentName, ownerTrigger, 1, {
+      status: "running", runningLeaseBefore: new Date(ownerNow).toISOString(),
+    }), [expiredOwner], "retention and confirmed owner expiry filter before the running repair limit");
+    const expiredIdentity = { ...ownerIdentity, runId: expiredOwner.runId };
+    assert.equal(await triggerRepository.updateRunningRun(expiredOwner, { ...expiredIdentity, status: "succeeded", endedAt: now },
+      { requireLiveOwner: true }), false, "an expired owner cannot record successful completion");
+    assert.equal(await triggerRepository.updateRunningRun(expiredOwner, { ...expiredIdentity, status: "failed", endedAt: now }), true);
+    assert.equal(await triggerRepository.updateRunningRun(renewedOwner, { ...ownerIdentity, status: "succeeded", endedAt: now },
+      { requireLiveOwner: true }), true);
+    assert.deepEqual(await triggerRepository.listRuns(agentName, ownerTrigger, 10, {
+      status: "running", runningLeaseBefore: new Date(ownerNow + 180_000).toISOString(),
+    }), [], "terminal writes remove the running owner index");
+    const ownerHistory = await triggerRepository.listRuns(agentName, ownerTrigger, 10);
+    assert.equal(ownerHistory.length, 2);
+    assert.ok(ownerHistory.every(row => row.runningLeaseToken === undefined && row.runningLeaseUntil === undefined));
+    pass("trigger execution owner: PostgreSQL renewal CAS, stale repair, live completion and expiry-before-limit");
+
     {
       const reviewTrigger = { agentName, triggerId: "webhook", kind: "webhook" as const, secret: "integration-encrypted-secret",
         description: "PR reviews", enabled: true, allowConcurrent: true, executionEmail: "reviewer@example.test", createdAt: now, updatedAt: now,
@@ -1137,7 +1172,8 @@ async function runChecks(cleanups: Array<() => Promise<unknown>>) {
       "stale repair cannot close a renewed queue owner");
     const { queueLeaseUntil: _queueLease, ...queueIdentity } = renewedQueue;
     void _queueLease;
-    const runningQueue = { ...queueIdentity, status: "running" as const, startedAt: new Date().toISOString() };
+    const runningQueue = { ...queueIdentity, status: "running" as const, startedAt: new Date().toISOString(),
+      runningLeaseToken: `queued-owner-${suffix}`, runningLeaseUntil: new Date(queueNow + 120_000).toISOString() };
     const starts = await Promise.all([
       triggerRepository.updateQueuedRun(renewedQueue, runningQueue),
       triggerRepository.updateQueuedRun(renewedQueue, runningQueue),

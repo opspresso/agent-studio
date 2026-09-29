@@ -5,6 +5,7 @@ import type { TriggerRunnerDeps } from "@/application/trigger/deps";
 import type { TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
 import type { EngineChunk } from "@/domain/llm/types";
 import { reviewInput } from "@/application/trigger/reviewPullRequest";
+import { runningRunUpdater } from "./fakeTriggerRuns";
 
 vi.mock("node:crypto", async original => ({ ...await original<typeof import("node:crypto")>(), randomUUID: () => "test-run" }));
 const sha = "a".repeat(40);
@@ -30,7 +31,7 @@ function fixture(chunks: EngineChunk[] = [{ delta: { content: "확인된 결함�
     tool: async () => ({ text: "{}" }), ensureIdle, close: closeWorkspace }));
   const deps = {
     cipher: { decrypt: (secret: string) => secret, decryptEquals: (a: string, b: string) => a === b },
-    triggers: { get: async () => trigger, claimIdempotencyKey: async (_p: string, _t: string, key: string) => {
+    triggers: { get: async () => trigger, updateRunningRun: runningRunUpdater(rows), claimIdempotencyKey: async (_p: string, _t: string, key: string) => {
       if (claimed.has(key)) return false; claimed.add(key); return true;
     }, appendRun: async (row: TriggerRun) => { rows.push(row); }, finishRun: async (row: TriggerRun) => { rows[0] = row; }, listRuns: async () => [] },
     agents: { get: async () => ({ name: "review", ownerEmail: "owner@example.test", configuration: { agentName: "review", systemPrompt: "Review", model: "test",
@@ -112,9 +113,10 @@ describe("signed PR review firing", () => {
     f.closeWorkspace.mockImplementation(async () => {
       cleanupStatus = (await admitDelivery(f.deps, "review", next("b"), null)).status;
     });
-    f.deps.triggers.finishRun = async row => {
-      persistenceStatus = (await admitDelivery(f.deps, "review", next("c"), null)).status;
-      f.rows[0] = row;
+    const update = f.deps.triggers.updateRunningRun;
+    f.deps.triggers.updateRunningRun = async (previous, row) => {
+      if (row.status !== "running") persistenceStatus = (await admitDelivery(f.deps, "review", next("c"), null)).status;
+      return update(previous, row);
     };
     const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
     if (admitted.status !== "accepted") throw new Error("not admitted");

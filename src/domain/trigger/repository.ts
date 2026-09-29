@@ -30,8 +30,10 @@ export interface TriggerRepository {
   finishRun(run: TriggerRun): Promise<void>;
   /** Atomically renew, start or close this exact queued lease; a stale owner cannot dispatch. */
   updateQueuedRun(previous: TriggerRun, next: TriggerRun): Promise<boolean>;
+  /** Renew or settle the exact running owner; repair uses the same token/deadline CAS. */
+  updateRunningRun(previous: TriggerRun, next: TriggerRun, options?: { requireLiveOwner?: boolean }): Promise<boolean>;
   /**
-   * Most recent history first. Queued repair reads use queue-lease order instead.
+   * Most recent history first. Owner repair reads use their lease index instead.
    *
    * `startedBefore` narrows the window to rows that started before that instant.
    * The console wants the newest N; a repair sweep wants the newest N *that are
@@ -40,11 +42,13 @@ export interface TriggerRepository {
    * those are not the same rows — a firing stranded twenty minutes ago sits
    * under two hundred newer ones and would never appear in an unbounded page.
    * `queueLeaseBefore` applies to the queued lease index before its limit.
+   * `runningLeaseBefore` applies to the running owner lease index; `unownedRunning`
+   * selects only history without a running owner token before its limit.
    */
   listRuns(
     agentName: string,
     triggerId: string,
     limit: number,
-    opts?: { startedBefore?: string; queueLeaseBefore?: string; status?: TriggerRun["status"] },
+    opts?: { startedBefore?: string; queueLeaseBefore?: string; runningLeaseBefore?: string; unownedRunning?: boolean; status?: TriggerRun["status"] },
   ): Promise<TriggerRun[]>;
 }

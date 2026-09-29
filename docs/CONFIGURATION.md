@@ -533,9 +533,10 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | schedule 따라잡기 창 (장애가 한 번에 발화시킬 수 있는 양에 한계를 둔다) | `10` 분 | `src/application/trigger/scanSchedules.ts` |
 | scan tick 하나가 동시에 굴리는 schedule 발화 수 | `8` | `src/application/trigger/scanSchedules.ts` |
 | 대기 중 schedule 예약 갱신 간격 / 유실 판정 | 실행 lease의 `1/3` / 마지막 queue lease 만료 | `src/application/trigger/queuedFiring.ts`, `repairLostRuns.ts` |
+| Webhook·실행 중 Schedule 소유·겹침 예약 갱신 | `MAX_RUN_DURATION_MS` 실행 상한 + `60초`의 `1/3` 간격; 준비부터 완료 저장까지 갱신하며 모델 deadline은 늘리지 않는다. 갱신 응답을 기다려도 마지막 확인된 running lease 만료 시각에 signal을 중단한다 | `src/application/trigger/firingLease.ts` |
 | schedule 복구 스윕 주기 (잃어버린 런 회수) | `5` 분마다 | `src/application/trigger/scanSchedules.ts` |
 | 복구 스윕 하나가 훑는 행 수 | `50` | `src/application/trigger/repairLostRuns.ts` |
-| 트리거 런을 유실로 판정하는 시점 | 런 lease 만료 + `10` 분 | `src/application/trigger/repairLostRuns.ts` |
+| 트리거 런을 유실로 판정하는 시점 | 마지막 running 소유 lease 만료 + `10` 분; 소유 lease가 없는 이력만 시작 시각 + 런 lease + `10` 분 | `src/application/trigger/repairLostRuns.ts` |
 | SSE 응답이 첫 chunk 를 기다리는 유예 | `25s` | `src/app/api/_lib/sse.ts` 의 `FIRST_CHUNK_GRACE_MS` |
 
 ### 런 전체의 컨텍스트 예산

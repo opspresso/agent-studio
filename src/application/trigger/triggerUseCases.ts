@@ -100,6 +100,9 @@ export interface TriggerView {
   deliveries?: ScheduleDelivery[];
 }
 
+/** Console history excludes the execution owner's private control state. */
+export type TriggerRunView = Omit<TriggerRun, "runningLeaseToken" | "runningLeaseUntil">;
+
 function toView(trigger: Trigger, cipher: SecretCipher, agent: Agent, plaintext?: string): TriggerView {
   if (trigger.kind === "schedule") {
     return { ...trigger };
@@ -450,10 +453,13 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       triggerId: string,
       limit: number,
       userEmail: string,
-    ): Promise<TriggerRun[]> {
+    ): Promise<TriggerRunView[]> {
       // Owner/admin like traces: a delivery's result preview is runtime output.
       await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
-      return deps.triggers.listRuns(agentName, triggerId, limit);
+      return (await deps.triggers.listRuns(agentName, triggerId, limit)).map(({ runningLeaseToken: _token, runningLeaseUntil: _lease, ...run }) => {
+        void _token; void _lease;
+        return run;
+      });
     },
   };
 }

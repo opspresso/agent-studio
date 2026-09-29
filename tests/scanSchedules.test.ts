@@ -28,6 +28,7 @@ import type {
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { QUEUE_HEARTBEAT_MS } from "@/application/trigger/queuedFiring";
+import { runningRunUpdater } from "./fakeTriggerRuns";
 
 const ids = vi.hoisted(() => ({ sequence: 0 }));
 vi.mock("node:crypto", async importOriginal => ({
@@ -147,6 +148,7 @@ function fixture(
   // the scan's own index read stays schedules-only.
   const stored: Trigger[] = [...schedules, ...(opts.webhooks ?? [])];
   const triggers: TriggerRepository = {
+    updateRunningRun: runningRunUpdater(rows),
     get: async (agentName, triggerId) => stored.find(trigger => trigger.agentName === agentName && trigger.triggerId === triggerId) ?? null,
     listByAgent: async (agentName, limit, after) => stored
       .filter((trigger) => trigger.agentName === agentName && (!after || trigger.triggerId > after))
@@ -203,6 +205,8 @@ function fixture(
         .filter((r) => !listOpts.startedBefore || (r.startedAt ?? "") < listOpts.startedBefore)
         .filter((r) => !listOpts.queueLeaseBefore || (r.queueLeaseUntil ?? "") < listOpts.queueLeaseBefore)
         .filter((r) => !listOpts.status || r.status === listOpts.status)
+        .filter(r => !listOpts.runningLeaseBefore || !!r.runningLeaseUntil && r.runningLeaseUntil < listOpts.runningLeaseBefore)
+        .filter(r => !listOpts.unownedRunning || !r.runningLeaseToken)
         .sort((a, b) => (b.startedAt ?? b.queuedAt ?? "").localeCompare(a.startedAt ?? a.queuedAt ?? ""))
         .slice(0, limit),
   };
@@ -311,8 +315,8 @@ describe("scanSchedules", () => {
     expect(f.runs).toHaveLength(0);
     expect(f.rows.find((row) => row.runId === firings[0]!.runId)?.error).toContain("queue lease expired");
     expect(await admitRun(f.deps, schedule(), {})).toMatchObject({ status: "busy" });
-    expect(vi.getTimerCount()).toBe(0);
     if (replacement.status === "accepted") await replacement.release();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("releases queued admissions when a later schedule page cannot be read", async () => {
@@ -757,7 +761,7 @@ describe("scanSchedules", () => {
     // AT's minute is 30 — a repair tick; one minute later is not.
     await scanSchedules(f.deps, AT);
     await scanSchedules(f.deps, new Date(AT.getTime() + 60_000));
-    expect(reads).toBe(2);
+    expect(reads).toBe(3);
   });
 
   it("counts an unusable stored cron instead of killing the tick", async () => {

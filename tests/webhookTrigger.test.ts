@@ -31,6 +31,7 @@ import {
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import { triggerSecretContext } from "@/domain/security/secretContext";
 import { encryptSecret } from "@/infrastructure/crypto/secretEncryption";
+import { runningRunUpdater } from "./fakeTriggerRuns";
 
 beforeEach(() => {
   entropy.sequence = 0;
@@ -122,6 +123,7 @@ function fixture(
   const claimed = new Set<string>();
   const runs: Fixture["runs"] = [];
   const triggers: TriggerRepository = {
+    updateRunningRun: runningRunUpdater(rows),
     get: async () => (opts.stored === undefined ? trigger() : opts.stored),
     listByAgent: async () => [],
     listSchedules: async () => [],
@@ -154,6 +156,8 @@ function fixture(
         .filter((r) => r.triggerId === triggerId)
         .filter((r) => !listOpts.startedBefore || (r.startedAt ?? "") < listOpts.startedBefore)
         .filter((r) => !listOpts.status || r.status === listOpts.status)
+        .filter(r => !listOpts.runningLeaseBefore || !!r.runningLeaseUntil && r.runningLeaseUntil < listOpts.runningLeaseBefore)
+        .filter(r => !listOpts.unownedRunning || !r.runningLeaseToken)
         .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""))
         .slice(0, limit),
   };
@@ -633,10 +637,15 @@ describe("executeDelivery", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const f = fixture();
     const admitted = await accept(f);
-    f.deps.triggers.finishRun = async () => {
-      throw new Error("database unavailable");
+    const update = f.deps.triggers.updateRunningRun;
+    f.deps.triggers.updateRunningRun = async (previous, next, options) => {
+      if (next.status !== "running") throw new Error("database unavailable");
+      return update(previous, next, options);
     };
     await expect(executeDelivery(f.deps, admitted, {})).resolves.toBeUndefined();
+    const next = await admitDelivery(f.deps, "p", SECRET, null);
+    expect(next.status).toBe("accepted");
+    if (next.status === "accepted") await next.release();
     error.mockRestore();
   });
 });

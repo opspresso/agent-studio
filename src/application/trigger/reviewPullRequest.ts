@@ -53,6 +53,7 @@ export async function preparePullRequestReview(
   triggerId: string,
   configuration: AgentConfiguration,
   target: PullRequestReviewTarget,
+  checkOwnership?: () => Promise<void>,
 ): Promise<{ status: "skipped"; reason: string } | {
   status: "ready"; message: string; configuration: AgentConfiguration; publication: ReviewPublication;
   readSource(args: Record<string, unknown>): Promise<McpToolResult>;
@@ -67,6 +68,7 @@ export async function preparePullRequestReview(
   const capturedEmail = executionTrigger?.executionEmail;
   const executionEmail = capturedEmail!;
   async function currentAuthorization() {
+    await checkOwnership?.();
     const current = await deps.triggers.get(agentName, triggerId);
     const agent = await deps.agents.get(agentName);
     return current?.kind === "webhook" && current.enabled && current.executionEmail === executionEmail && agent?.ownerEmail === executionEmail &&

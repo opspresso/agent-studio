@@ -60,6 +60,7 @@ function fixture(authorizeReview?: (email: string) => Promise<void>, currentAgen
     appendRun: async () => {},
     finishRun: async () => {},
     updateQueuedRun: async () => { throw new Error("CRUD does not dispatch queued runs"); },
+    updateRunningRun: async () => { throw new Error("CRUD does not dispatch running executions"); },
     listRuns: async () => [],
   };
   const agents = { get: async () => currentAgent } as unknown as AgentRepository;

@@ -244,6 +244,7 @@
 | presence penalty의 허용 범위 | `src/domain/llm/channel.ts`의 `PRESENCE_PENALTY_RANGE`. Agent 설정 API 검증과 편집기가 함께 사용한다 | 구조 |
 | schedule 이 언제 발화하는지 판정하기 | `src/domain/trigger/cron.ts` | 구조 |
 | Agent 의 webhook 이 어디로 전달되는가 | `src/domain/trigger/types.ts` 의 `agentWebhookPath` | 구조 |
+| Trigger 실행 소유권과 완료까지 겹침 예약 유지 | `application/trigger/firingLease.ts`가 running heartbeat·signal·완료 CAS·release를 소유하고 `queuedFiring.ts`가 queue→running 전환을 소유한다. 복구는 같은 `TriggerRepository.updateRunningRun` token·deadline CAS를 사용한다. 서버 제어 필드는 `TriggerRunView`에서 제거한다 | 코드 |
 | Agent optimistic update 가 경쟁에서 졌을 때의 오류 계약 | `src/application/agent/agentUpdate.ts` 의 `persistAgentUpdate` | 구조 |
 | managed workload 이름 규칙 | `src/domain/naming.ts` 의 `MANAGED_NAME` | 구조 |
 | 사람이 읽을 달러 금액 | `src/app/_lib/formatUsd.ts` 의 `formatUsd`. `SINGLE_OWNERS` 행이 아니라 그 자체가 하나의 규칙으로 강제된다: `app` 안 어디에도 `${…toFixed(…)}` 는 없고 두 `_lib` 포매터만 있다 | 구조 |

@@ -95,6 +95,14 @@ admission·실행 직전에 현재 Agent 소유권과 member 상태를 다시 �
 Schedule의 플랫폼 전송 결과는 아래의 `deliveryResults`로 구분한다.
 겹침 금지 슬롯은 결과 전송·리뷰 Workspace 정리와 완료 이력 저장까지 유지한 뒤 해제한다.
 준비 실패·skip도 이력을 먼저 마감하고 슬롯을 해제하며, 이력 저장 실패에도 해제는 시도한다.
+접수한 Webhook과 실행을 시작한 Schedule은 영속 running 소유 token·lease를 가지며,
+같은 heartbeat가 겹침 예약과 running lease를 갱신한다. 준비·모델·정리·전송·완료 저장까지
+갱신하고, 소유권 검사 실패는 기존 실행 signal을 중단한다. 이후 새 모델·도구·게시·전송을
+시작하지 않으며 이미 보낸 외부 작업이나 결과가 불명확한 요청은 재실행하지 않는다.
+갱신 응답이 없어도 마지막 확인된 running lease 만료 시각에 독립 감시가 signal을 중단한다.
+만료 전에 확인한 갱신 응답만 이 시각을 연장하며 늦은 응답은 중단된 실행을 되살리지 않는다.
+완료 저장도 같은 token·lease를 조건으로 수행하고, 완료 또는 소유권 유실 뒤 타이머를 정리한다.
+running 소유 token·lease는 서버 제어 상태이며 콘솔 이력 응답에는 포함하지 않는다.
 
 콘솔의 Integrations에서 이력 아이콘을 누르면 오른쪽에 Webhook 또는 전체 Schedule 이력이
 표시된다. Schedule은 각 트리거에서 같은 페이지 크기를 읽고 실제 시작 시각(대기 중이면
@@ -136,7 +144,8 @@ schedule 인덱스는 페이지로 순회하며 admission과 실제 발화에 �
 tick 응답의 `fired`는 접수한 수이며 실제 시작·완료 수가 아니다. 대기 중에도 겹침 금지 예약을
 유지하고 lease의 1/3 간격으로 소유 token을 확인해 갱신한다. 실행 worker가 자리를 얻으면
 예약을 다시 갱신하고 정확한 queued lease를 조건부로 `running`으로 바꾸며 `startedAt`을 기록한다.
-대기 시간은 실행 lease와 running 복구 시계에 포함하지 않는다. `runId`와 `scheduledFor`는
+대기 heartbeat는 dispatch CAS 뒤 종료하고 running heartbeat 하나로 전환한다.
+대기 시간은 모델 실행 deadline에 포함하지 않는다. `runId`와 `scheduledFor`는
 접수부터 완료까지 같다. 저장 key는 실행 시작 시각으로 원자적으로 옮겨 이력 정렬과 running
 복구의 시각 범위를 유지한다. 아직 시작하지 않은 이력의 `startedAt`은 없으며 콘솔은 `—`로 표시한다.
 
@@ -152,7 +161,9 @@ Teams serviceUrl을 사용자 입력으로 받지 않는다.
 ## 유실된 발화 복구
 
 Webhook·Schedule은 ACK 후 웹 프로세스에서 실행하므로 급사하면 running 이력이 남을 수 있다.
-`repairLostRuns.ts`는 실행 lease와 추가 여유가 지난 running 행을 failed로 마감한다.
+`repairLostRuns.ts`는 마지막 running 소유 lease가 만료되고 추가 여유가 지난 행을 failed로 마감한다.
+시작 시각이 오래됐어도 갱신 중인 실행은 복구 대상이 아니다. 복구와 heartbeat·완료 저장은
+같은 token·lease를 비교하는 CAS를 사용하므로 먼저 갱신·마감된 행을 덮어쓰지 않는다.
 도구의 외부효과를 알 수 없으므로 작업을 재실행하지 않는다.
 queued 행은 별도 lease 만료 인덱스로 읽고 해당 lease가 여전히 같은 경우에만 failed로 바꾼다.
 정상 heartbeat나 실행 시작이 먼저 반영되면 오래된 복구 쓰기는 거절된다. 프로세스가 유실된
@@ -162,7 +173,8 @@ queued 행은 별도 lease 만료 인덱스로 읽고 해당 lease가 여전히 
 Webhook 전달이 끝날 때도 자기 trigger의 과거 실행을 정리하므로 ticker가 없는 설치는
 다음 전달에서 정리할 수 있다. ticker도 다음 전달도 없으면 자동 정리가 진행되지 않는다.
 
-복구 query는 running의 시작 시각 또는 queued의 lease 만료 시각·상태·보존 만료 조건을 limit 전에 적용한다.
+복구 query는 running·queued의 lease 만료 시각·상태·보존 만료 조건을 limit 전에 적용한다.
+소유 lease가 없는 이력은 별도의 제한된 시작 시각 조회로만 마감하며 실행 상태를 복원하지 않는다.
 완료 행이 복구 대상의 자리를 차지하지 않으며 한 번에 읽을 행 수와 Agent 병렬 처리 수를 제한한다.
 비활성 trigger의 이전 실행도 확인하고 개별 파티션 오류는 다른 복구를 중단시키지 않는다.
 마감 기준·주기는 [고정 제한](../CONFIGURATION.md#코드에-고정된-제한)이 소유한다.
