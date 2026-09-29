@@ -8,7 +8,7 @@ import { keys } from "@/infrastructure/db/keys";
 import { triggerRepository as triggers } from "@/infrastructure/db/repositories/triggerRepository";
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { admitDelivery, admitRun, executeDelivery, executeFiring } from "@/application/trigger/runTrigger";
-import { FIRING_HEARTBEAT_MS } from "@/application/trigger/firingLease";
+import { FIRING_HEARTBEAT_MS, FIRING_MAX_LIFETIME_MS } from "@/application/trigger/firingLease";
 import { repairTriggerRuns, REPAIR_AFTER_SECONDS, REPAIR_MARGIN_SECONDS } from "@/application/trigger/repairLostRuns";
 import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
@@ -67,6 +67,26 @@ async function fixture(review = true) {
 }
 
 describe("trigger execution owner lifetime", () => {
+  it("stops renewing a stalled cleanup so the firing remains recoverable", async () => {
+    const f = await fixture();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    f.close.mockImplementation(async () => { entered.resolve(); await release.promise; });
+    const admitted = await f.accept();
+    const execution = executeDelivery(f.deps, admitted, {});
+    await entered.promise;
+    try {
+      // The model budget plus five minutes bounds preparation and completion.
+      await vi.advanceTimersByTimeAsync(FIRING_MAX_LIFETIME_MS + 1);
+      expect(admitted.signal?.aborted).toBe(true);
+      expect(Date.parse(admitted.run.runningLeaseUntil!)).toBeLessThanOrEqual(Date.parse(admitted.run.startedAt!) + FIRING_MAX_LIFETIME_MS);
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(REPAIR_MARGIN_SECONDS * 1000);
+      expect(await repairTriggerRuns(f.deps, f.webhook, new Date())).toEqual({ repaired: 1, errors: 0 });
+      expect(f.reply).toHaveBeenCalledTimes(1);
+      expect(f.close).toHaveBeenCalledTimes(1);
+    } finally { release.resolve(); await execution; }
+  });
   it("keeps a PR reservation through preparation, model output and Sandbox cleanup beyond the admission lease", async () => {
     const f = await fixture();
     f.open.mockImplementation(async () => {
@@ -92,7 +112,7 @@ describe("trigger execution owner lifetime", () => {
   it("keeps an old acknowledged generic webhook alive for repair and hides its ownership controls from history views", async () => {
     const f = await fixture(false);
     const admitted = await f.accept();
-    await vi.advanceTimersByTimeAsync((REPAIR_AFTER_SECONDS + 1) * 1000);
+    await vi.advanceTimersByTimeAsync(FIRING_MAX_LIFETIME_MS - 1);
     expect(await repairTriggerRuns(f.deps, f.webhook, new Date())).toEqual({ repaired: 0, errors: 0 });
     expect((await admitDelivery(f.deps, agent.name, "fixture-secret", "next-event")).status).toBe("busy");
     const useCases = createTriggerUseCases({ triggers, agents: f.deps.agents, cipher: f.deps.cipher });

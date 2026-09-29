@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { TriggerRun } from "@/domain/trigger/types";
-import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
+import { MAX_RUN_DURATION_MS, RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { unrefTimer } from "@/shared/unrefTimer";
 import type { FiringDeps } from "./deps";
 
 /** Admission, execution and settlement share one owner lifetime. */
 export const FIRING_HEARTBEAT_MS = Math.floor(RUN_LEASE_SECONDS * 1000 / 3);
+/** Preparation and completion have a finite allowance beyond the model budget. */
+export const FIRING_COMPLETION_ALLOWANCE_MS = 5 * 60_000;
+export const FIRING_MAX_LIFETIME_MS = MAX_RUN_DURATION_MS + FIRING_COMPLETION_ALLOWANCE_MS;
 
 export function runningLease(): Required<Pick<TriggerRun, "runningLeaseToken" | "runningLeaseUntil">> {
   return { runningLeaseToken: randomUUID(), runningLeaseUntil: new Date(Date.now() + RUN_LEASE_SECONDS * 1000).toISOString() };
@@ -27,6 +30,7 @@ export function holdRunningFiring(deps: FiringDeps, firing: RunningFiring, renew
   let timer: ReturnType<typeof setTimeout> | undefined;
   let expiryTimer: ReturnType<typeof setTimeout> | undefined;
   let confirmedUntil = Date.parse(firing.run.runningLeaseUntil ?? "");
+  const lifetimeUntil = Date.parse(firing.run.startedAt ?? "") + FIRING_MAX_LIFETIME_MS;
   let updating: Promise<void> = Promise.resolve();
   const stop = () => {
     stopped = true;
@@ -39,6 +43,9 @@ export function holdRunningFiring(deps: FiringDeps, firing: RunningFiring, renew
   };
   const requireLiveOwner = () => {
     controller.signal.throwIfAborted();
+    if (!Number.isFinite(lifetimeUntil) || lifetimeUntil <= Date.now()) {
+      throw new Error("The firing's execution owner lifetime exceeded its limit.");
+    }
     if (!Number.isFinite(confirmedUntil) || confirmedUntil <= Date.now()) {
       throw new Error("The firing's execution owner lease expired.");
     }
@@ -49,7 +56,7 @@ export function holdRunningFiring(deps: FiringDeps, firing: RunningFiring, renew
     if (expiryTimer !== undefined) clearTimeout(expiryTimer);
     // A pending database request cannot extend the last acknowledged lease.
     // Split long waits using the heartbeat interval to stay within timer limits.
-    expiryTimer = setTimeout(scheduleExpiry, Math.min(confirmedUntil - Date.now(), FIRING_HEARTBEAT_MS));
+    expiryTimer = setTimeout(scheduleExpiry, Math.min(confirmedUntil - Date.now(), lifetimeUntil - Date.now(), FIRING_HEARTBEAT_MS));
     unrefTimer(expiryTimer);
   };
   const renew = async () => {
@@ -61,7 +68,7 @@ export function holdRunningFiring(deps: FiringDeps, firing: RunningFiring, renew
       if (!await renewSlot()) throw new Error("The firing lost its overlap reservation.");
       requireLiveOwner();
       if (stopped) return;
-      const next = { ...previous, runningLeaseUntil: new Date(Date.now() + RUN_LEASE_SECONDS * 1000).toISOString() };
+      const next = { ...previous, runningLeaseUntil: new Date(Math.min(Date.now() + RUN_LEASE_SECONDS * 1000, lifetimeUntil)).toISOString() };
       if (!await deps.triggers.updateRunningRun(previous, next)) throw new Error("The firing is no longer owned by this worker.");
       requireLiveOwner();
       if (stopped) return;
