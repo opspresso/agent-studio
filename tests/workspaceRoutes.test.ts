@@ -22,6 +22,26 @@ const request = (path: string, method = "GET", body?: unknown) => new Request(`h
 beforeEach(() => { vi.clearAllMocks(); f.events.mockResolvedValue([]); });
 
 describe("Workspace HTTP contract", () => {
+  it("does not let a public request supply execution provenance or a managing identity", async () => {
+    const body = { agentName: "demo", runtime: "command", input: { kind: "command", script: "echo task" } };
+    for (const extra of [{ actor: { kind: "user", id: "other@example.com" } }, { ownerEmail: "other@example.com" }, { sourceRevision: "a".repeat(40) }]) {
+      expect((await start.POST(request("", "POST", { ...body, ...extra }))).status).toBe(400);
+    }
+    expect(f.start).not.toHaveBeenCalled();
+  });
+
+  it("accepts a separate title and rejects invalid titles before admission", async () => {
+    const body = { agentName: "demo", runtime: "command", title: "합계 검증", input: { kind: "command", script: "printf 300" } };
+    f.start.mockResolvedValue({ workspace: { title: body.title }, run: {} });
+    expect((await start.POST(request("", "POST", body))).status).toBe(202);
+    expect(f.start).toHaveBeenCalledWith(body, "owner@example.com", "stable-request-key");
+    f.start.mockClear();
+    for (const title of ["", "  ", "invalid\0title", "x".repeat(201), 42]) {
+      expect((await start.POST(request("", "POST", { ...body, title }))).status).toBe(400);
+    }
+    expect(f.start).not.toHaveBeenCalled();
+  });
+
   it.each(["selected", "owners", "all", "new"])("accepts the explicit %s repository mode", async mode => {
     const body = { revision: null, rules: { mode, repositories: [], repositoryOwners: [], defaultRuntime: "command", idleTtlSeconds: 1800, checks: [], deploymentWorkflows: [] } };
     f.update.mockResolvedValue({ agentName: "demo", rules: body.rules, revision: 1 });

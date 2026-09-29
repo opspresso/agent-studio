@@ -1,6 +1,6 @@
 import { sign } from "node:crypto";
 import type { CodingForge } from "@/domain/coding/forge";
-import type { PullRequestReviewForge, PullRequestReviewTarget } from "@/domain/trigger/pullRequestReview";
+import type { PullRequestReviewForge, PullRequestReviewTarget, PullRequestReviewFile, ReviewSourceResult } from "@/domain/trigger/pullRequestReview";
 import type { CodingRepository, PullRequestInfo } from "@/domain/coding/types";
 import { codingCiAllowsPublication, CodingMutationRejectedError, CodingRepositoryNotReadyError } from "@/domain/coding/types";
 import { GITHUB_PAGE_SIZE } from "@/domain/coding/limits";
@@ -10,6 +10,7 @@ import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { fetchSameOrigin } from "@/infrastructure/net/redirectPolicy";
 import { resolvePublicUrl } from "@/infrastructure/net/ssrfGuard";
 import { readBodyText } from "@/shared/httpBody";
+import { decodeUtf8Text } from "@/shared/utf8Text";
 import { verifyGitHubSignature } from "@/shared/githubWebhook";
 import { githubHeaders, GITHUB_TIMEOUT_MS } from "./client";
 
@@ -29,7 +30,7 @@ interface Pull {
   number: number; node_id: string; html_url: string; draft: boolean; state: "open" | "closed";
   merged?: boolean; merge_commit_sha?: string;
   head: { sha: string; ref: string; repo: { full_name: string } };
-  base: { ref: string; repo: { full_name: string } };
+  base: { ref: string; sha: string; repo: { full_name: string } };
 }
 type Permissions = Record<string, "read" | "write">;
 class GitHubReadError extends Error {
@@ -165,10 +166,16 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
         !isGitBranch(created.default_branch) || created.private !== input.private) throw new Error("GitHub returned an unexpected repository creation result");
       return { repository: created.full_name.toLowerCase(), repositoryId: created.id, url: url.href, baseBranch: created.default_branch, private: created.private };
     },
-    async checkRepository(repository, baseBranch) {
+    async checkRepository(repository, baseBranch, sourceRevision) {
       if (!isGitBranch(baseBranch)) throw new Error("Invalid Git base branch");
       const access = await token(repository, { contents: "read" });
       const path = repoPath(repository);
+      if (sourceRevision !== undefined) {
+        if (!/^[a-f0-9]{40,64}$/.test(sourceRevision)) throw new Error("Invalid review commit");
+        const commit = await request<{ sha: string }>(`${path}/commits/${sourceRevision}`, access.token);
+        if (commit.sha !== sourceRevision) throw new Error("Review commit changed");
+        return;
+      }
       let branches: { name: string }[];
       try { branches = await request<{ name: string }[]>(`${path}/branches?per_page=1`, access.token); }
       catch (error) {
@@ -277,27 +284,88 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     return pull.state === "open" && pull.draft === false && pull.head?.sha === target.headSha ? pull : null;
   }
   const staleReview = () => ({ status: "skipped" as const, reason: "Pull request closed, became a draft, or changed HEAD." });
+  type ReviewFile = { filename: string; previous_filename?: string; status: string; patch?: string };
+  function reviewFiles(value: unknown): PullRequestReviewFile[] {
+    if (!Array.isArray(value) || value.length > GITHUB_PAGE_SIZE || value.some(file =>
+      !file || typeof file.filename !== "string" || !file.filename || typeof file.status !== "string" ||
+      (file.previous_filename !== undefined && typeof file.previous_filename !== "string") ||
+      (file.patch !== undefined && typeof file.patch !== "string"))) throw new Error("GitHub returned invalid pull request files");
+    return (value as ReviewFile[]).map(file => ({ path: file.filename, status: file.status,
+      ...(file.previous_filename ? { previousPath: file.previous_filename } : {}), ...(file.patch !== undefined ? { patch: file.patch } : {}) }));
+  }
+  function sourcePage(text: string, offset = 0): ReviewSourceResult {
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > text.length) throw new Error("Invalid review source offset");
+    if (offset > 0 && /[\uDC00-\uDFFF]/.test(text[offset]!)) throw new Error("Review source offset splits a Unicode character");
+    let end = Math.min(text.length, offset + 12_000);
+    if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1]!)) end -= 1;
+    return { text: text.slice(offset, end), offset, totalChars: text.length, nextOffset: end < text.length ? end : null };
+  }
   const reviews: PullRequestReviewForge = {
     async load(target) {
       const access = await token(target.repository, { contents: "read", pull_requests: "read" });
       const pull = await currentReviewPull(target, access.token);
       if (!pull) return staleReview();
-      if (typeof pull.title !== "string" || (pull.body !== null && typeof pull.body !== "string") ||
+      if (!/^[a-f0-9]{40,64}$/.test(pull.base.sha) || typeof pull.title !== "string" || (pull.body !== null && typeof pull.body !== "string") ||
         !Number.isSafeInteger(pull.changed_files) || pull.changed_files < 0) throw new Error("GitHub returned invalid pull request metadata");
-      const files = await request<Array<{ filename: string; previous_filename?: string; status: string; patch?: string }>>(
+      const files = reviewFiles(await request<ReviewFile[]>(
         `${reviewPath(target)}/files?per_page=${GITHUB_PAGE_SIZE}`, access.token,
-      );
-      if (!Array.isArray(files) || files.length > GITHUB_PAGE_SIZE || files.length > pull.changed_files || files.some(file =>
-        typeof file.filename !== "string" || !file.filename || typeof file.status !== "string" ||
-        (file.previous_filename !== undefined && typeof file.previous_filename !== "string") ||
-        (file.patch !== undefined && typeof file.patch !== "string"))) throw new Error("GitHub returned invalid pull request files");
+      ));
+      if (files.length > pull.changed_files) throw new Error("GitHub returned invalid pull request files");
       // The files endpoint is mutable; do not review a page from a newer head.
-      if (!await currentReviewPull(target, access.token)) return staleReview();
-      return { status: "ready", context: { ...target, title: pull.title, body: pull.body ?? "", url: pull.html_url,
-        totalFiles: pull.changed_files, files: files.map(file => ({ path: file.filename, status: file.status,
-          ...(file.previous_filename ? { previousPath: file.previous_filename } : {}),
-          ...(file.patch !== undefined ? { patch: file.patch } : {}),
-        })) } };
+      const after = await currentReviewPull(target, access.token);
+      if (!after || after.base.sha !== pull.base.sha) return staleReview();
+      return { status: "ready", context: { ...target, baseSha: pull.base.sha, title: pull.title, body: pull.body ?? "", url: pull.html_url,
+        totalFiles: pull.changed_files, files } };
+    },
+    async read(target, input) {
+      if (!/^[a-f0-9]{40,64}$/.test(target.baseSha)) throw new Error("Invalid review base revision");
+      const access = await token(target.repository, readPermissions);
+      const pull = await currentReviewPull(target, access.token);
+      if (!pull || pull.base.sha !== target.baseSha) throw new Error("Pull request revisions changed; review source is no longer current");
+      const pageNumber = input.operation === "files" ? input.page ?? 1 : 1;
+      const pageLimit = input.operation === "files" ? input.limit ?? 20 : GITHUB_PAGE_SIZE;
+      if (!Number.isSafeInteger(pageLimit) || pageLimit < 1 || pageLimit > GITHUB_PAGE_SIZE ||
+        !Number.isSafeInteger(pageNumber) || pageNumber < 1 || pageNumber > Math.ceil(3000 / pageLimit)) throw new Error("Invalid review files page");
+      let result: ReviewSourceResult;
+      if (input.operation === "checks") {
+        result = sourcePage(JSON.stringify({ headSha: target.headSha, state: await ci(target.repository, target.headSha, access.token) }));
+      } else if (input.operation === "files") {
+        const files = reviewFiles(await request<ReviewFile[]>(`${reviewPath(target)}/files?per_page=${pageLimit}&page=${pageNumber}`, access.token));
+        const metadata = files.map(({ patch: _patch, ...file }) => file);
+        const text = JSON.stringify({ page: pageNumber, limit: pageLimit, totalFiles: pull.changed_files, files: metadata,
+          nextPage: pageNumber * pageLimit < pull.changed_files ? pageNumber + 1 : null });
+        if (text.length > 12_000) throw new Error("Review file metadata exceeds this page's text limit; request a smaller limit");
+        result = { text, offset: 0, totalChars: text.length, nextOffset: null, files, totalFiles: pull.changed_files };
+      } else {
+        const path = input.path;
+        if (!path || path.length > 512 || path.startsWith("/") || path.includes("\\") || /[\u0000-\u001f]/.test(path) ||
+          path.split("/").some(part => !part || part === "." || part === "..")) throw new Error("Invalid review source path");
+        if (input.operation === "patch") {
+          let match: PullRequestReviewFile | undefined;
+          for (let page = 1; page <= Math.min(30, Math.ceil(pull.changed_files / GITHUB_PAGE_SIZE)); page += 1) {
+            const files = reviewFiles(await request<ReviewFile[]>(`${reviewPath(target)}/files?per_page=${GITHUB_PAGE_SIZE}&page=${page}`, access.token));
+            match = files.find(file => file.path === path);
+            if (match) break;
+          }
+          if (!match || match.patch === undefined) throw new Error("A complete textual patch is unavailable; inspect the pinned files or Workspace and report that limitation");
+          result = sourcePage(match.patch, input.offset);
+        } else {
+          const revision = input.revision === "base" ? target.baseSha : target.headSha;
+          const content = await request<{ type: string; path: string; sha: string; encoding: string; content: string; size: number }>(
+            `${repoPath(target.repository)}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${revision}`, access.token);
+          if (content.type !== "file" || content.path !== path || content.encoding !== "base64" || typeof content.content !== "string" ||
+            !Number.isSafeInteger(content.size) || content.size < 0 || content.size > 1024 * 1024) throw new Error("Review source is not a supported bounded text file");
+          const bytes = Buffer.from(content.content, "base64");
+          if (bytes.byteLength !== content.size || bytes.toString("base64") !== content.content.replace(/\s/g, "")) throw new Error("GitHub returned incomplete review source content");
+          const text = decodeUtf8Text(bytes);
+          result = text === null ? { ...sourcePage(JSON.stringify({ path, sha: content.sha, bytes: content.size,
+            note: "Binary metadata only; visual or content validation was not performed." })), kind: "binary" }
+            : { ...sourcePage(text, input.offset), kind: "text" };
+        }
+      }
+      const after = await currentReviewPull(target, access.token);
+      if (!after || after.base.sha !== target.baseSha) throw new Error("Pull request revisions changed while reading review source");
+      return result;
     },
     async reply(target, body) {
       if (!body.trim()) throw new Error("Cannot publish an empty pull request review");

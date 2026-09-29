@@ -495,7 +495,7 @@ describe("the client bundle", () => {
   // The exact count detects missing entry points. Update it deliberately when
   // adding or removing a client component.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(123);
+    expect(entries.length).toBe(124);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/agents/[name]/_components/ModelRoutingEditor.tsx",
       "src/app/settings/plugins/CapabilityVisibilitySettings.tsx",
@@ -521,6 +521,7 @@ describe("the client bundle", () => {
       "src/app/settings/SettingsForm.tsx",
       "src/app/agents/[name]/integrations/BotIntegrationSection.tsx",
       "src/app/_components/PageTabs.tsx",
+      "src/app/_components/MarkdownContent.tsx",
       "src/app/_components/CatalogView.tsx",
       "src/app/_components/SecretInput.tsx",
       "src/app/_components/SecretControl.tsx",
@@ -1090,13 +1091,10 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/infrastructure/llm/embeddings.ts",
   },
   {
-    // Two adapters invoke Bedrock — Titan and Cohere — and they differ only in
-    // the body they send. Reaching the service is one question with one answer
-    // (which region, and that the pod's credentials come from its Pod Identity
-    // association rather than a key), so the client is built once.
-    what: "talking to Bedrock",
-    pattern: /new BedrockRuntimeClient\(/,
-    owner: "src/infrastructure/llm/bedrockClient.ts",
+    // SigV4 channels share a lazy SDK chain; the SDK owns credential refresh.
+    what: "constructing the AWS credential chain",
+    pattern: /defaultProvider\(/,
+    owner: "src/infrastructure/llm/awsCredentials.ts",
   },
   {
     // One place knows that an index fixes its dimension and its distance

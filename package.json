@@ -1,6 +1,6 @@
 {
   "name": "agent-studio",
-  "version": "0.132.0",
+  "version": "0.133.0",
   "private": true,
   "packageManager": "pnpm@11.24.0+sha512.bd27e345e976dcb0be0b7a1228217b049a817e21b1f355c90dbe7dc46671895a8bc1e6d06c24554505ea93ea0b45f489a27ec1bfbc8de6a9659fca0f16fa0000",
   "engines": {
@@ -17,6 +17,7 @@
     "test:sandbox": "tsx scripts/workspace-sandbox-check.ts",
     "test:workspace": "tsx scripts/workspace-worker-check.ts",
     "test:workspace:git": "tsx scripts/workspace-git-check.ts",
+    "test:review:workspace": "tsx scripts/pr-review-workspace-check.ts",
     "worker:workspace": "tsx scripts/workspace-worker.ts",
     "build:workspace": "node scripts/build-workspace-worker.mjs",
     "test:storage": "tsx scripts/source-storage-check.ts",
@@ -34,7 +35,7 @@
     "export:document-design": "tsx scripts/export-document-design.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.1106.0",
+    "@aws-sdk/credential-provider-node": "3.972.83",
     "@aws-sdk/client-s3": "^3.1091.0",
     "@aws-sdk/s3-request-presigner": "^3.1101.0",
     "@mantine/charts": "^9.5.0",

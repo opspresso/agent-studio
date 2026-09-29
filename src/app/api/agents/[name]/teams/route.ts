@@ -9,6 +9,7 @@ import { editorBody } from "@/app/api/_lib/body";
 type RouteContext = { params: Promise<{ name: string }> };
 
 const updateSchema = z.object({
+  runAsOwner: z.boolean().optional(),
   appId: z.string().optional(),
   appPassword: z.string().optional(),
   tenantId: z.string().optional(),

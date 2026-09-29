@@ -28,6 +28,13 @@ export interface RunActor {
   id: string;
 }
 
+/** A server-captured delegation by the owner of a registered messaging integration. */
+export interface ExecutionGrant {
+  agentName: string;
+  kind: "slack" | "telegram" | "teams";
+  email: string;
+}
+
 /**
  * What a run may tell the model about the person asking.
  *
@@ -121,6 +128,7 @@ function sanitizeCallerName(value: string | undefined): string | undefined {
  * threaded side by side through eight signatures.
  */
 export interface RunOrigin {
+  executionGrant?: ExecutionGrant;
   /** Source processing may read bound skills; its calling use case owns all external effects. */
   backgroundTask?: boolean;
   actor?: RunActor;

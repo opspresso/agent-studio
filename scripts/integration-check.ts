@@ -1061,7 +1061,7 @@ async function main() {
 
     {
       const reviewTrigger = { agentName, triggerId: "webhook", kind: "webhook" as const, secret: "integration-encrypted-secret",
-        description: "PR reviews", enabled: true, allowConcurrent: true, createdAt: now, updatedAt: now,
+        description: "PR reviews", enabled: true, allowConcurrent: true, executionEmail: "reviewer@example.test", createdAt: now, updatedAt: now,
         githubReview: { scope: "repositories" as const, repositories: ["example/agent"] } };
       await triggerRepository.create(reviewTrigger);
       assert.deepEqual((await triggerRepository.get(agentName, "webhook")), reviewTrigger);
@@ -1069,7 +1069,7 @@ async function main() {
         url: "https://github.com/example/agent/pull/42#pullrequestreview-1" };
       await triggerRepository.finishRun({ ...recentRun, status: "succeeded", endedAt: now, review });
       assert.deepEqual((await triggerRepository.listRuns(agentName, triggerId, 1))[0]?.review, review);
-      pass("PR review scope and publication receipt persist through PostgreSQL");
+      pass("PR review scope, Webhook execution grant and publication receipt persist through PostgreSQL");
     }
 
     // ---------- queued schedule ownership and atomic dispatch ----------

@@ -22,6 +22,7 @@ import { slackEventSchema } from "./eventSchema";
 
 const slackEventDeps: SlackEventDeps = {
   runAgent: (params) => executeAgent(executionDeps, params),
+  authorizeExecutionGrant: executionDeps.authorizeExecutionGrant,
   agents: agentRepository,
   slack: slackClient,
   threads: slackThreadRepository,

@@ -125,7 +125,7 @@ SDK function tool 동시성은 5다. 실제 실행에 진입한 도구만 결과
 
 Agent 설정의 `parameters.modelRouting`은 boolean 사용 여부만 저장한다. 모델 배정·작업별
 정책·보안·예산·품질 기준은 Settings의 `modelRouting` 한 곳에 저장하며
-Settings → Models → Model 사용 설정에서 관리한다. Agent 화면에는 스위치와 읽기 전용
+설정 → Models → 사용 설정에서 관리한다. Agent 화면에는 스위치와 읽기 전용
 tier 요약과 보조 호출을 제거하는 기본값 복원만 보인다. 미설정 Agent는 기존 도구와 주 모델을 그대로 사용한다.
 활성화한 Agent는 첫 SDK 호출 전에 사용자의 최신 요청을 `general`, `summary`, `classification`,
 `coding`, `reasoning`, `vision` 목적의 고정 용어로 분류하고 전역 후보 중 주 모델을 선택한다.

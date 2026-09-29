@@ -678,7 +678,7 @@ Workspace 사용자 API는 `withMemberAuth`로 보호한다. 조회·실행·승
 |---|---|---|
 | `/api/workspaces/options` | GET | `{enabled, gitEnabled, agents}`. 각 Agent에 Runtime·`defaultRuntime`·`mode`·`repositories`·`repositoryOwners`·workflow 선택지 |
 | `/api/workspaces/branches?agent={name}&repository={owner/repo}` | GET | 명시한 저장소의 브랜치 최대 100개와 `hasMore`. `agent`와 `repository`가 필요 |
-| `/api/workspaces` | POST | `{agentName, runtime, repository?, baseBranch?, input}`으로 Chat·Workspace·첫 Run을 만들고 `{workspace, run}`과 202 반환 |
+| `/api/workspaces` | POST | `{agentName, runtime, title?, repository?, baseBranch?, input}`으로 Chat·Workspace·첫 Run을 만들고 `{workspace, run}`과 202 반환 |
 | `/api/workspaces/{id}` | GET | `{workspace, session, runs, approvals}`. 실행·승인은 최근 50개, `tail=1`이면 각각 1개 |
 | `/api/workspaces/{id}` | DELETE | 체크포인트 저장과 Sandbox 정리를 요청하고 204 반환 |
 | `/api/workspaces/{id}/runs` | POST | `input`으로 후속 Run을 접수하고 `{run}`과 202 반환 |
@@ -712,6 +712,8 @@ Run을 만들지 않는다. 같은 완료 요청은 재사용하고 불명확한
 
 Runtime은 `command`, `codex`, `claude`, `opencode`다. `input`은 일반 명령의
 `{kind:"command", script}` 또는 Agent의 `{kind:"task", prompt}`이며 각각 40,000자까지 받는다.
+선택적 `title`은 공백이 아닌 최대 200자의 표시 제목이며 실행되지 않는다. 같은 제목을 연결
+Chat에도 저장한다. 생략하면 자연어 작업은 요청에서 제목을 만들고 command는 `Command workspace`로 표시한다.
 생성과 후속 Run은 `Idempotency-Key`를 요구한다. 같은 키·같은 내용은 기존 결과를 반환하며
 다른 내용으로 키를 재사용하면 409다. Git 작업은 `repository`와 `baseBranch`를 함께 지정한다. 둘 다 없으면 Git 없는 Workspace다.
 lease·operation handle·체크포인트 bytes와 주소는 사용자 응답에 넣지 않는다.
@@ -879,7 +881,7 @@ agent 별 Slack 설정은 이 엔드포인트들을 쓴다:
 
 ```
 GET    /api/agents/{name}/slack
-PUT    /api/agents/{name}/slack   { botToken?, signingSecret?, enabled?, suggestedPrompts?, channelKeywords? }
+PUT    /api/agents/{name}/slack   { botToken?, signingSecret?, enabled?, suggestedPrompts?, channelKeywords?, runAsOwner? }
 DELETE /api/agents/{name}/slack
 POST   /api/agents/{name}/slack/test
 GET    /api/agents/{name}/slack/channels
@@ -892,6 +894,12 @@ GET    /api/agents/{name}/slack/channels
 ([design/slack.md](design/slack.md#어떤-이벤트가-봇에게-온-것인가) 참조): 최대 20개, 저장 시 각각
 공백을 정리하고 소문자로 바꾸며, 2–50자다. 빈 값과 중복은 버려지고, 그 길이를 벗어난 키워드는
 400 이다. `PUT` 에서 이 필드를 생략하면 저장된 목록을 유지한다.
+
+세 메신저 연동의 `runAsOwner`는 기본 꺼짐이며 현재 소유자만 `true`로 저장할 수 있다.
+실행 email은 서버가 소유자 신원에서 저장하며 클라이언트가 지정하지 않는다. 생략은 기존 위임을
+보존하고 `false`는 해제한다. 읽기는 현재 소유자에게 유효한 위임 여부를 boolean으로 반환한다.
+위임한 호출은 원래 플랫폼 actor를 유지하고 소유자의 설정된 개인 도구·Workspace 권한을 사용한다.
+실행 전·도구 호출 직전·Workspace 큐 실행 직전에 현재 소유권·멤버·연동·위임을 다시 검사한다.
 
 Slack 읽기는 마스킹된 인증 정보 상태와 함께 `configured`, `eventsPath`, `eventsUrl`,
 `suggestedPrompts`, `channelKeywords`, 그리고 생성된 앱 manifest를 돌려준다.
@@ -911,7 +919,7 @@ agent 별 Telegram 설정은 이 엔드포인트들을 쓴다:
 ```
 GET    /api/agents/{name}/telegram
 GET    /api/agents/{name}/telegram/chats
-PUT    /api/agents/{name}/telegram          { botToken?, enabled? }
+PUT    /api/agents/{name}/telegram          { botToken?, enabled?, runAsOwner? }
 DELETE /api/agents/{name}/telegram
 POST   /api/agents/{name}/telegram/test
 POST   /api/agents/{name}/telegram/webhook
@@ -946,7 +954,7 @@ Agent별 Teams 설정은 이 엔드포인트들을 쓴다:
 
 ```
 GET    /api/agents/{name}/teams
-PUT    /api/agents/{name}/teams          { appId?, appPassword?, tenantId?, enabled? }
+PUT    /api/agents/{name}/teams          { appId?, appPassword?, tenantId?, enabled?, runAsOwner? }
 DELETE /api/agents/{name}/teams
 POST   /api/agents/{name}/teams/test
 ```
@@ -1399,10 +1407,12 @@ GET    /api/agents/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ …
 (`^[a-z0-9-]+$`) 을 따른다. 콘솔은 입력한 것을 agent 폼이 쓰는 것과 같은 `toSlug` 헬퍼로
 정규화하고, API 는 클라이언트가 무엇이든 그 밖의 것을 거절한다.
 
-Schedule 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email을 `executionEmail`로 저장한다.
+Webhook·Schedule 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email을 `executionEmail`로 저장한다.
 관리자도 다른 소유자를 대신해 켤 수 없다. `false`는 저장한 email을 지우고, 생략은 기존 값을
-유지한다. Webhook에는 이 옵션을 사용할 수 없다. Admission과 실행 직전에 현재 소유권과 member
-상태를 확인한다. actor는 schedule로 유지하며 검증된 email만 MCP `X-User-Email`로 전달한다.
+유지한다. 기본은 꺼짐이며 Webhook에서는 인증된 외부 발신자에게 해당 실행 권한을 부여하는
+결정이다. Admission과 실행 직전에 현재 위임·소유권과 member 상태를 확인한다. actor는 원래
+webhook·schedule로 유지하며 검증된 email만 MCP·Workspace 실행에 사용한다. Workspace는
+도구 호출과 큐 작업 실행 직전에도 현재 Trigger 위임을 다시 검사한다.
 
 평범한 읽기는 `secretMasked` 만 돌려준다 (webhook 에 한한다. schedule 에는 secret 이 없다).
 
@@ -1413,7 +1423,11 @@ Schedule 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email
 리뷰 모드는 GitHub HMAC만 받아 PR의 repository·number·HEAD를 검증한다. 비대상 이벤트는
 `202 {ok:true,status:"ignored",reason}`이며 모델을 실행하지 않는다. 정상 접수는 기존 accepted
 형태를 유지하고 완료 이력의 `review`에 repository·number·headSha·posted/skipped/failed와
-확인된 url 또는 reason을 담는다. [PR 리뷰 계약](design/triggers.md#github-pr-리뷰)을 따른다.
+확인된 url 또는 reason을 담는다. 자동 리뷰에는 Agent Workspace 활성화와 저장소 정책,
+command 런타임·worker 및 소유자가 캡처한 `runAsOwner` 위임이 필요하다. 플랫폼이 검증한
+HEAD의 Workspace를 준비한 뒤 실행·COMMENT 게시·보고를 완료하고 Workspace 정리를 확인한다.
+`sourceRevision`은 내부 리뷰 입력이며 공개 Workspace 생성·시작 body에서 받지 않는다.
+[PR 리뷰 계약](design/triggers.md#github-pr-리뷰)을 따른다.
 secret 은 해시가 아니라 AES 로 암호화해 저장되므로. agent API 토큰과 정확히 같이.
 `POST …/reveal` 로 **다시 읽을 수 있다** (본문이 살아 있는 인증 정보라서 POST 다. 소유자/admin
 전용이고, 모든 reveal 은 호출자의 이메일과 함께 로그된다). `rotateSecret: true` 를 담은 `PUT` 은
@@ -1439,7 +1453,8 @@ GitHub도 같은 URL을 사용한다. GitHub Webhook의 Content type은 `applica
 있으면 서명 방식을 선택하고 누락·잘못된 서명에서 일반 시크릿 방식으로 폴백하지 않는다.
 `X-GitHub-Delivery`와 `X-GitHub-Event`를 요구하며 delivery ID를 중복 방지 키로 쓴다.
 서명된 `ping`은 `202 {ok:true,status:"ping"}`으로 연결만 확인하고 모델을 실행하지 않는다.
-이 인증은 원래의 webhook actor를 유지하며 사용자 OAuth·Workspace 실행 권한을 부여하지 않는다.
+이 인증만으로 사용자 OAuth·Workspace 실행 권한을 부여하지 않는다. 소유자가 `runAsOwner`를
+별도로 승인한 경우에만 확인된 신원으로 설정된 개인 도구와 Workspace를 제공하며 webhook actor는 유지한다.
 Workspace PR 메타데이터 전용 `/api/workspaces/github/webhook`과는 목적과 시크릿이 다르다.
 
 이것이 **유일한** 전달 주소다. `admitDelivery` 는 agent 이름 자체에서 그 행을 해석하고 trigger

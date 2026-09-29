@@ -55,10 +55,17 @@ export function createGitBundleTransport(getToken: () => Promise<string>) {
     try { return await run(directory); } finally { await rm(directory, { recursive: true, force: true }); }
   }
   return {
-    async download(remote: GitBundleRemote, baseBranch: string): Promise<string> {
+    async download(remote: GitBundleRemote, baseBranch: string, sourceRevision?: string): Promise<string> {
       if (!isGitBranch(baseBranch)) throw new Error("Invalid Git base branch");
+      if (sourceRevision !== undefined && !/^[a-f0-9]{40,64}$/.test(sourceRevision)) throw new Error("Invalid review commit");
       return temporary(async directory => {
-        await git(directory, ["clone", "--bare", "--no-tags", "--single-branch", "--branch", baseBranch, "--", remote.url, "objects"], remote);
+        if (sourceRevision) {
+          await git(directory, ["init", "--bare", "objects"]);
+          await git(directory, ["--git-dir=objects", "fetch", "--no-tags", "--", remote.url, sourceRevision], remote);
+          const fetched = await git(directory, ["--git-dir=objects", "rev-parse", "FETCH_HEAD"]);
+          if (fetched !== sourceRevision) throw new Error("Fetched review commit differs from the verified HEAD");
+          await git(directory, ["--git-dir=objects", "update-ref", `refs/heads/${baseBranch}`, sourceRevision]);
+        } else await git(directory, ["clone", "--bare", "--no-tags", "--single-branch", "--branch", baseBranch, "--", remote.url, "objects"], remote);
         await git(directory, ["--git-dir=objects", "bundle", "create", "source.bundle", `refs/heads/${baseBranch}`]);
         const file = join(directory, "source.bundle");
         if ((await stat(file)).size > WORKSPACE_LIMITS.checkpointBytes) throw new Error("Repository bundle exceeds Workspace storage limit");

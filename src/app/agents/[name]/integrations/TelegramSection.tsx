@@ -36,6 +36,7 @@ export function TelegramSection({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [runAsOwner, setRunAsOwner] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const { confirm, confirmModal } = useConfirm();
 
@@ -47,6 +48,7 @@ export function TelegramSection({
       .then((v) => {
         if (!cancelled) {
           setView(v);
+          setRunAsOwner(Boolean(v.runAsOwner));
           setBotToken(v.botToken);
           setEnabled(v.enabled);
         }
@@ -67,8 +69,9 @@ export function TelegramSection({
     setStatus(null);
     setError(null);
     try {
-      const next = await updateAgentTelegram(agentName, { botToken, enabled });
+      const next = await updateAgentTelegram(agentName, { botToken, enabled, ...(runAsOwner !== Boolean(view?.runAsOwner) ? { runAsOwner } : {}) });
       setView(next);
+      setRunAsOwner(Boolean(next.runAsOwner));
       setBotToken(next.botToken);
       setEnabled(next.enabled);
       setStatus(next.botUsername ? `Saved — @${next.botUsername}` : "Saved");
@@ -128,6 +131,7 @@ export function TelegramSection({
       await disconnectAgentTelegram(agentName);
       const next = await getAgentTelegram(agentName);
       setView(next);
+      setRunAsOwner(Boolean(next.runAsOwner));
       setBotToken("");
       setEnabled(false);
       setStatus("Disconnected");
@@ -142,6 +146,7 @@ export function TelegramSection({
 
   return (
     <BotIntegrationSection title={t("pset.telegramBot")} view={view} error={error} onSelect={onSelect} selected={selected}
+      runAsOwner={runAsOwner} onRunAsOwnerChange={setRunAsOwner} busy={busy}
       onRetry={() => setReloadKey(key => key + 1)}>
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>

@@ -13,7 +13,7 @@
 
 import { createHash, createHmac } from "node:crypto";
 import { SignatureV4 } from "@smithy/signature-v4";
-import { bedrockRuntime } from "./bedrockClient";
+import { awsCredentials } from "./awsCredentials";
 
 /**
  * The hash SigV4 needs, over `node:crypto`.
@@ -112,7 +112,7 @@ export function createSignedFetch(service: string): typeof fetch {
     // Resolved per request by the signer; the region is per URL (see regionOf),
     // so this one is a placeholder the sign call overrides.
     region: "us-east-1",
-    credentials: bedrockRuntime().config.credentials,
+    credentials: awsCredentials(),
     sha256: NodeHash,
   });
 

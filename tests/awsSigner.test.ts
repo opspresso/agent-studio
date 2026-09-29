@@ -6,18 +6,14 @@ import { createHash } from "node:crypto";
  * OpenAI wire protocol, so it is tested directly: a wrong region or an unsigned
  * body reaches AWS as a 403 that names neither.
  *
- * Credentials are stubbed at the Bedrock client, which is where the real ones
+ * Credentials are stubbed at the SDK provider, which is where the real ones
  * come from (Pod Identity in the cluster, the profile locally) — nothing here
  * touches AWS.
  */
-vi.mock("@/infrastructure/llm/bedrockClient", () => ({
-  bedrockRuntime: () => ({
-    config: {
-      credentials: async () => ({
-        accessKeyId: "AKIAEXAMPLE",
-        secretAccessKey: "secret-example",
-      }),
-    },
+vi.mock("@/infrastructure/llm/awsCredentials", () => ({
+  awsCredentials: () => async () => ({
+    accessKeyId: "AKIAEXAMPLE",
+    secretAccessKey: "secret-example",
   }),
 }));
 

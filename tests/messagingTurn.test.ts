@@ -132,6 +132,39 @@ afterEach(() => {
 });
 
 describe("handleTurn", () => {
+  it.each(["slack", "telegram", "teams"] as const)("uses explicitly delegated permissions for %s while retaining the original caller", async kind => {
+    const deps = makeDeps([]);
+    const source = agentFixture();
+    const agent: Agent = { ...source,
+      slack: { enabled: true, botToken: "fixture", signingSecret: "fixture", executionEmail: source.ownerEmail },
+      telegram: { enabled: true, botToken: "fixture", webhookSecret: "fixture", executionEmail: source.ownerEmail },
+      teams: { enabled: true, appId: "fixture", appPassword: "fixture", executionEmail: source.ownerEmail } };
+    const actor = { kind, id: "platform-caller" };
+    const authorize = vi.fn(async () => {});
+    deps.authorizeExecutionGrant = authorize;
+    let received: Parameters<MessagingDeps["runAgent"]>[0] | undefined;
+    deps.runAgent = async function* (input) { received = input; yield { delta: { content: "done" } }; };
+    await handleTurn(deps, turn({ agent, actor, conversation: { surface: kind, id: "thread" } }), makeReply().reply);
+    expect(authorize).toHaveBeenCalledWith({ agentName: agent.name, kind, email: agent.ownerEmail });
+    expect(received).toMatchObject({ ownerEmail: agent.ownerEmail, actor,
+      executionGrant: { agentName: agent.name, kind, email: agent.ownerEmail } });
+  });
+  it("does not dispatch delegated work without a live validator or after permission revocation", async () => {
+    const source = agentFixture();
+    const agent = { ...source, telegram: { enabled: true, botToken: "fixture", webhookSecret: "fixture", executionEmail: source.ownerEmail } };
+    for (const validator of [undefined, async () => { throw new Error("permission revoked"); }]) {
+      const deps = makeDeps([]);
+      deps.authorizeExecutionGrant = validator;
+      const run = vi.spyOn(deps, "runAgent");
+      const reply = makeReply();
+      const finish = vi.spyOn(reply.reply, "finish");
+      const result = await handleTurn(deps, turn({ agent, actor: { kind: "telegram", id: "1" },
+        conversation: { surface: "telegram", id: "thread" } }), reply.reply);
+      expect(run).not.toHaveBeenCalled();
+      expect(result.warnings).toHaveLength(1);
+      expect(finish).toHaveBeenCalledWith("", expect.any(String), "failed");
+    }
+  });
   it.each(["turn-limit", "output-limit"] as const)("closes an incomplete %s run as failed while preserving its reply", async (finishReason) => {
     vi.useFakeTimers();
     const deps = makeDeps([

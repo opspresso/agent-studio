@@ -10,6 +10,10 @@ import { createWorkspaceRepositoryCreationUseCases } from "@/application/workspa
 import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { runWorkspaceWorker } from "@/application/workspace/service";
 import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
+import { openReviewWorkspace } from "@/application/workspace/reviewWorkspace";
+import { workspaceCaller } from "@/application/workspace/workspaceCaller";
+import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
+import { assertMessagingExecutionGrant } from "@/application/messaging/executionGrant";
 import { executeWorkspaceTask, executeAgent } from "@/application/execution/runAgent";
 import { runWorkspaceContinuations } from "@/application/chat/workspaceContinuation";
 import type { ChatDeps } from "@/application/chat/deps";
@@ -968,6 +972,10 @@ const deliverAgentMessage: PostCostAlert = async (agent, destination, text) => {
 
 /** Repository and channel dependencies for the execution facade. */
 export const executionDeps: ExecutionDeps = {
+  // A verified PR prepares its own scoped reader; ordinary runs never receive one.
+  reviewSource: undefined,
+  reviewWorkspace: undefined,
+  authorizeExecutionGrant: grant => assertMessagingExecutionGrant({ agents: agentRepository, memberTier: getMemberTier }, grant),
   getCallRoutingPolicy: getCallRoutingPolicy,
   createToolSchemaValidator,
   runtimeSessions: runtimeSessions,
@@ -1003,10 +1011,11 @@ export const executionDeps: ExecutionDeps = {
   documentRenderer: workerDocumentRenderer,
   documentEditor: workerDocumentEditor,
   registerMcpSource: async (input) => getAudioRuntime().references.register(input),
-  workspaceTool: async (agentName, origin) => {
-    if (origin.actor?.kind !== "user" || !getWorkspaceConfig() || !await workspaceRepositoryPolicyUseCases.enabled(agentName)) return undefined;
-    const email = origin.actor.id;
-    const authorize = () => authorizeWorkspaceTools(email, agentName);
+  workspaceTool: async (agentName, origin, reviewTarget) => {
+    const caller = workspaceCaller(origin);
+    if (!caller || !getWorkspaceConfig() || !await workspaceRepositoryPolicyUseCases.enabled(agentName)) return undefined;
+    const email = caller.ownerEmail;
+    const authorize = () => authorizeWorkspaceTools(email, agentName, caller.actor, caller.executionGrant);
     if (!await optionalToolAccessible(authorize)) return undefined;
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
       ...(getWorkspaceGitHubConfig() ? { createRepository: workspaceRepositoryCreationUseCases.create } : {}),
@@ -1020,7 +1029,8 @@ export const executionDeps: ExecutionDeps = {
         return policy ? { ...policy, runtimes: (await workspaceRuntimeModelUseCases.getView()).available } : undefined;
       },
       sleep: async ms => { await workspaceSleep(ms); },
-    }, { agentName, ownerEmail: email, occurrence: currentRunContext()?.runId ?? randomUUID(),
+    }, { agentName, ownerEmail: email, actor: caller.actor, executionGrant: caller.executionGrant, occurrence: currentRunContext()?.runId ?? randomUUID(),
+      ...(reviewTarget ? { reviewTarget } : {}),
       sourceChatId: origin.conversation?.surface === "chat" ? origin.conversation.id : undefined });
   },
   sourceRefreshIdentity,
@@ -1064,6 +1074,21 @@ export const executionDeps: ExecutionDeps = {
  * Agent execution and image output use that shared path.
  */
 export const triggerRunnerDeps: TriggerRunnerDeps = {
+  openReviewWorkspace: async (target, agentName, triggerId, ownerEmail) => {
+    if (!ownerEmail) throw new ValidationError("PR review Workspace requires an explicit trigger owner execution grant");
+    const tool = await executionDeps.workspaceTool?.(agentName, { ancestry: [agentName], actor: { kind: "webhook", id: `${agentName}:${triggerId}` }, userEmail: ownerEmail }, target);
+    if (!tool) throw new ValidationError("PR review Workspace is unavailable; check the Agent's Workspace enablement, repository policy and Sandbox backend");
+    return openReviewWorkspace({ tool, state: async id => {
+      const workspace = await workspaceRepository.get(id);
+      return workspace?.ownerEmail === ownerEmail ? workspace : null;
+    }, close: id => workspaceUseCases.close(id, ownerEmail), sleep: workspaceSleep, verify: async id => {
+      const workspace = await workspaceRepository.get(id);
+      const sandbox = workspace?.sandboxId ? await workspaceRepository.sandbox(id, workspace.sandboxId) : null;
+      const coding = getWorkspaceWorkerDeps().coding;
+      if (!workspace || workspace.ownerEmail !== ownerEmail || workspace.activeRunId || !sandbox || !coding) throw new ValidationError("Review Workspace cannot be verified");
+      return coding.review(sandbox.externalId);
+    } }, target);
+  },
   reviewForge: () => {
     const settings = getWorkspaceGitHubConfig();
     if (!settings) throw new ValidationError("GitHub review integration is not configured");
@@ -1087,6 +1112,8 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       messages: input.message ? [{ role: "user", content: input.message }] : [],
       actor: input.actor,
       ...(input.backgroundTask ? { backgroundTask: true } : {}),
+      ...(input.reviewSource ? { reviewSource: input.reviewSource } : {}),
+      ...(input.reviewWorkspace ? { reviewWorkspace: input.reviewWorkspace } : {}),
       ...(input.userEmail ? { ownerEmail: input.userEmail } : {}),
     });
   },
@@ -1295,13 +1322,13 @@ export async function runAudioWorkerService(signal: AbortSignal): Promise<void> 
 const workspaceDeps: WorkspaceDeps = {
   repository: workspaceRepository, chats: chatRepository, agents: agentRepository,
   policy: getWorkspaceAgentPolicy,
-  authorize: (agentName, email) => authorizeWorkspaceTools(email, agentName),
+  authorize: (agentName, email, actor, grant) => authorizeWorkspaceTools(email, agentName, actor, grant),
   assertRuntime: async kind => { if (!await getWorkspaceRuntimeConfig(kind)) throw new ValidationError("Select a Workspace runtime model in Models before starting work"); },
   now: () => new Date(), newId: randomUUID,
-  checkRepository: async (repository, baseBranch) => {
+  checkRepository: async (repository, baseBranch, sourceRevision) => {
     const settings = getWorkspaceGitHubConfig();
     if (!settings) throw new ValidationError("Workspace GitHub integration is not configured");
-    await createCodingGitHub(settings).forge.checkRepository(repository, baseBranch);
+    await createCodingGitHub(settings).forge.checkRepository(repository, baseBranch, sourceRevision);
   },
   idleTtlSeconds: 1800,
 };
@@ -1325,12 +1352,10 @@ export const workspaceRepositoryCreationUseCases = createWorkspaceRepositoryCrea
   },
 });
 
-async function authorizeWorkspaceTools(email: string, agentName: string): Promise<void> {
-  const tier = await getMemberTier(email);
-  if (tier !== "member" && tier !== "admin") throw new ValidationError("Workspace tools require member access");
-  await agentUseCases.assertAccessible(agentName, email);
-  if (!getWorkspaceConfig()) throw new ValidationError("Workspace Sandbox backend is not configured");
-  if (!await workspaceRepositoryPolicyUseCases.enabled(agentName)) throw new ValidationError("Workspace tools are disabled in the current Agent settings");
+async function authorizeWorkspaceTools(email: string, agentName: string, actor?: RunActor, grant?: import("@/domain/execution/actor").ExecutionGrant): Promise<void> {
+  await authorizeWorkspaceExecution({ agents: agentRepository, triggers: triggerRepository, memberTier: getMemberTier,
+    backendReady: () => !!getWorkspaceConfig(), enabled: name => workspaceRepositoryPolicyUseCases.enabled(name),
+  }, agentName, email, actor, grant);
 }
 
 function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
@@ -1355,7 +1380,7 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
       internalHosts: githubConfig.internalHosts,
       ...("getToken" in githubConfig ? { serverToken: githubConfig.getToken } : { credential: github.credential }) }) } : {}),
     runTimeoutMs: MAX_RUN_DURATION_MS,
-    execute: (workspace, work) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work),
+    execute: (workspace, work, actor) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work, actor),
     sleep: async (ms, signal) => { await workspaceSleep(ms, undefined, { signal }); },
   };
 }

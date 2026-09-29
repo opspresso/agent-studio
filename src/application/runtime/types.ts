@@ -37,6 +37,8 @@ export interface EngineDeps {
  * calls, but which MCP tools are offered arrives as run input, not off a dep.
  */
 export interface AgentDeps extends EngineDeps, AgentCapabilityDeps {
+  /** Recheck server-attested delegated permissions immediately before a tool effect. */
+  authorizeTools?: () => Promise<void>;
   /** Required whenever an agent exposes tools; text-only runs need no compiler. */
   createToolSchemaValidator?: () => ToolSchemaValidator;
   /** Dispatch an MCP tool by its (aliased) name. */

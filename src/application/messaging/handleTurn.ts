@@ -3,7 +3,9 @@ import { loadFileHistory, rememberFiles } from "./fileHistory";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { ExecuteAgentInput } from "@/application/execution/deps";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
-import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
+import type { RunActor, RunCaller, RunConversation, ExecutionGrant } from "@/domain/execution/actor";
+import { messagingExecutionGrant } from "./executionGrant";
+import { executionGrantCheck } from "@/application/execution/executionGrant";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import { documentKind } from "@/domain/llm/documentLimits";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
@@ -49,6 +51,7 @@ import {
 
 /** Injected dependencies a messaging adapter's bag carries. */
 export interface MessagingDeps {
+  authorizeExecutionGrant?: (grant: ExecutionGrant) => Promise<void>;
   artifacts?: ArtifactStorage;
   fileHistory?: ConversationTranscriptRepository;
   /** Bound wrapper over `executeAgent(executionDeps, params)`. */
@@ -131,6 +134,8 @@ export async function handleTurn(
   reply: ReplyChannel,
 ): Promise<TurnOutcome> {
   const { agent, configuration, warnings } = input;
+  const executionGrant = messagingExecutionGrant(agent, input.actor);
+  const ownerEmail = executionGrant?.email ?? input.ownerEmail;
   let text = "";
   // `fetched` rides along: what the run read is delivered only when it is all
   // the run has to show (see below).
@@ -172,6 +177,7 @@ export async function handleTurn(
   let readDocuments: ReadDocument[] = [];
   let history: ChatMessageInput[] = [];
   try {
+    await executionGrantCheck(deps, executionGrant)?.();
     endState = await refreshCancellation();
     signal.throwIfAborted();
     const attached = input.attachments;
@@ -180,7 +186,7 @@ export async function handleTurn(
     const documentCandidates = [...attached, ...historyTurns.flatMap((turn) => turn.message.role === "user" ? turn.attachments : [])];
     if (documentCandidates.some((attachment) => documentKind(attachment.mimeType, attachment.name) !== null)) {
       const persistence = { storage: deps.artifacts, context: {
-        agentName: agent.name, actor: input.actor, ownerEmail: input.ownerEmail,
+        agentName: agent.name, actor: input.actor, ownerEmail,
       } };
       readDocuments = await collectDocuments(deps.documents, attached, warnings, persistence);
       historyTurns = await withHistoryDocuments(deps.documents, historyTurns, attached, readDocuments, warnings, persistence);
@@ -215,7 +221,8 @@ export async function handleTurn(
       ...(input.actor ? { actor: input.actor } : {}),
       ...(input.caller ? { caller: input.caller } : {}),
       conversation: input.conversation,
-      ...(input.ownerEmail ? { ownerEmail: input.ownerEmail } : {}),
+      ...(ownerEmail ? { ownerEmail } : {}),
+      ...(executionGrant ? { executionGrant } : {}),
       signal,
     })) {
       signal.throwIfAborted();

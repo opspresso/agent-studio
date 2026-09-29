@@ -113,10 +113,10 @@ export function triggerActor(
   return { kind: trigger.kind, id: `${trigger.agentName}:${trigger.triggerId}` };
 }
 
-const EXECUTION_USER_UNAUTHORIZED = "The schedule execution user is no longer authorized.";
+const EXECUTION_USER_UNAUTHORIZED = "The trigger execution user is no longer authorized.";
 
 async function executionUserAllowed(deps: FiringDeps, trigger: Trigger, agent: Agent): Promise<boolean> {
-  if (trigger.kind !== "schedule" || !trigger.executionEmail) return true;
+  if (!trigger.executionEmail) return true;
   return trigger.executionEmail === agent.ownerEmail && !!deps.executionUserActive &&
     await deps.executionUserActive(trigger.executionEmail);
 }
@@ -336,7 +336,7 @@ export async function executeDelivery(
   payload: unknown,
 ): Promise<void> {
   try {
-    let input: { message?: string; backgroundTask?: boolean };
+    let input: { message?: string; backgroundTask?: boolean; reviewSource?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewSource"]; reviewWorkspace?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewWorkspace"] };
     let publication: ReviewPublication | undefined;
     try {
       if (admitted.reviewTarget) {
@@ -349,7 +349,7 @@ export async function executeDelivery(
           return;
         }
         admitted = { ...admitted, configuration: prepared.configuration };
-        input = { message: prepared.message, backgroundTask: true };
+        input = { message: prepared.message, backgroundTask: true, reviewSource: prepared.readSource, reviewWorkspace: prepared.reviewWorkspace };
         publication = prepared.publication;
       } else input = payloadInput(payload);
       if (admitted.github && input.message && !publication) {
@@ -385,10 +385,10 @@ export async function executeDelivery(
 export async function executeFiring(
   deps: FiringDeps,
   admitted: AdmittedFiring,
-  input: { message?: string; backgroundTask?: boolean },
+  input: { message?: string; backgroundTask?: boolean; reviewSource?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewSource"]; reviewWorkspace?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewWorkspace"] },
   publication?: ReviewPublication,
 ): Promise<void> {
-  if (admitted.start && !await admitted.start()) return;
+  if (admitted.start && !await admitted.start()) { await publication?.close(); return; }
   const { trigger, agent, configuration, run } = admitted;
   let text = "";
   let error: string | undefined;
@@ -416,16 +416,20 @@ export async function executeFiring(
   // anyone would have read either.
   let produced = 0;
   try {
-    if (trigger.kind === "schedule" && trigger.executionEmail) {
+    if (trigger.executionEmail) {
       const current = await deps.agents.get(agent.name);
-      if (!current || !await executionUserAllowed(deps, trigger, current)) throw new Error(EXECUTION_USER_UNAUTHORIZED);
+      const currentTrigger = await deps.triggers.get(agent.name, trigger.triggerId);
+      if (!current || !currentTrigger?.enabled || currentTrigger.kind !== trigger.kind ||
+        currentTrigger.executionEmail !== trigger.executionEmail || !await executionUserAllowed(deps, currentTrigger, current)) {
+        throw new Error(EXECUTION_USER_UNAUTHORIZED);
+      }
     }
     for await (const chunk of deps.run({
       agent,
       configuration,
       ...input,
       actor: triggerActor(trigger),
-      ...(trigger.kind === "schedule" && trigger.executionEmail ? { userEmail: trigger.executionEmail } : {}),
+      ...(trigger.executionEmail ? { userEmail: trigger.executionEmail } : {}),
     })) {
       // Top-level only for the answer, like every other consumer: a subagent's
       // text is not the run's answer (see `isTopLevelChunk`). What a child
@@ -473,8 +477,10 @@ export async function executeFiring(
     error = caught instanceof Error ? caught.message : String(caught);
   } finally {
     await admitted.release();
+    try { await publication?.close(); }
+    catch (caught) { error = [error, caught instanceof Error ? caught.message : String(caught)].filter(Boolean).join("; "); }
   }
-  if (publication && error) review = { ...publication.target, status: "failed", reason: cutCodePoints(error, 500) };
+  if (publication && error && review?.status !== "posted") review = { ...publication.target, status: "failed", reason: cutCodePoints(error, 500) };
   const deliveryResults: ScheduleDeliveryResult[] = [];
   if (!error && trigger.kind === "schedule" && trigger.deliveries?.length) {
     const report = text || (images > 0 ? imagesOnlyResult(images) : "");

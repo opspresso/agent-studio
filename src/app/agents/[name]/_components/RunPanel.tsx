@@ -8,6 +8,7 @@ import { pairToolTraffic } from "@/app/_lib/toolPairs";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { useImageViewer } from "@/app/_components/ImageViewer";
 import { ProducedFile } from "@/app/_components/ProducedFile";
+import { MarkdownContent } from "@/app/_components/MarkdownContent";
 import { createTextPacer } from "@/app/_lib/textPacer";
 import { ReasoningRow } from "@/app/_components/ReasoningRow";
 import { ToolRow } from "@/app/_components/ToolRow";
@@ -401,8 +402,8 @@ export function RunPanel({
         streaming={running && text === "" && reasoning !== ""}
       />
 
-      <Paper withBorder p="sm" mih={96} style={{ whiteSpace: "pre-wrap" }}>
-        {text || (
+      <Paper withBorder p="sm" mih={96}>
+        {text ? <MarkdownContent content={text} /> : (
           <Text fz="sm" c="dimmed">
             {t("run.outputWillStream")}
           </Text>

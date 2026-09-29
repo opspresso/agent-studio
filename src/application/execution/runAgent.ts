@@ -24,6 +24,7 @@ import { openRun } from "@/application/run/runBracket";
 import { captureRunArtifacts } from "@/application/artifact/runArtifacts";
 import { fileRefOf, type ProducedFileRef } from "@/application/artifact/producedFiles";
 import type { ExecuteAgentInput, AgentRunInput, ExecutionDeps } from "./deps";
+import { executionGrantCheck } from "./executionGrant";
 import { discoveryQueries, recentUserQueries, resolveRunTools, toolsPrepared } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./agentBindings";
@@ -203,12 +204,17 @@ export async function* executeAgent(
   deps: ExecutionDeps,
   input: ExecuteAgentInput,
 ): AsyncGenerator<EngineChunk> {
+  if (input.executionGrant && (input.ownerEmail !== input.executionGrant.email || input.actor?.kind !== input.executionGrant.kind)) {
+    throw new ValidationError("Execution identity does not match its permission grant");
+  }
+  await executionGrantCheck(deps, input.executionGrant)?.();
   // A multi-turn agent run makes many LLM calls; accumulate their usage and
   // flush once (per agent/date/model) when the run ends, even on error.
   // The actor is the run's, not the turn's: every model call this loop makes —
   // including the ones a subagent transfer makes on another agent — was caused
   // by whoever started it.
   const origin: RunOrigin = {
+    ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
     ...(input.backgroundTask ? { backgroundTask: true } : {}),
     ancestry: [input.agent.name],
     ...(input.actor ? { actor: input.actor } : {}),
@@ -253,7 +259,7 @@ export async function* executeAgent(
     if (input.resumeApproval && !runtime) throw new ValidationError("Approval resumption requires a persisted chat session");
     const messages = runtime?.checkpoint?.input.messages ?? input.messages;
     const startedAt = runtime?.checkpoint?.input.now ? new Date(runtime.checkpoint.input.now) : runClock(deps);
-    const runDeps: ExecutionDeps = { ...deps, callRouting: pinnedCallRouting, now: () => startedAt, getCallRoutingPolicy: async () => routingPolicy };
+    const runDeps: ExecutionDeps = { ...deps, reviewWorkspace: input.reviewWorkspace, reviewSource: input.reviewSource, callRouting: pinnedCallRouting, now: () => startedAt, getCallRoutingPolicy: async () => routingPolicy };
     // Recall explicit bindings before discovery, so remembered associations can
     // help find the sources needed to answer the request.
     const recallStartedAt = new Date();

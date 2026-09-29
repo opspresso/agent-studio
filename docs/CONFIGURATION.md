@@ -92,7 +92,7 @@ Agent 소유권을 넘는 관리자 권한과는 구분한다. [인증과 접근
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
-| `BETTER_AUTH_SECRET` | — | — | 세션 서명 시크릿 (`openssl rand -base64 32`). |
+| `BETTER_AUTH_SECRET` | — | — | 세션 서명 시크릿 (`openssl rand -hex 32`). |
 | `BETTER_AUTH_URL` | — | — | 단일 도메인에서는 Better Auth 콜백의 base URL. `BETTER_AUTH_ALLOWED_HOSTS`를 설정하면 HTTP(S) origin이어야 하며 모든 허용 호스트의 프로토콜을 결정한다. 예: `https://studio.opspresso.com`. |
 | `BETTER_AUTH_ALLOWED_HOSTS` | 비어 있음 | — | 로그인할 정확한 호스트의 쉼표 구분 목록. scheme·경로·wildcard·기본 포트의 중복 표기는 거부하며, 로컬의 `localhost:3000` 같은 포트는 포함할 수 있다. 예: `studio.opspresso.com,agentops.demo.clush.net`. 설정하면 Better Auth가 보존된 `Host` 헤더(없으면 request URL)의 허용 호스트로 OAuth 콜백을 만들고 등록되지 않은 호스트는 거부한다. 프록시는 원래 `Host`를 전달해야 하며 `X-Forwarded-Host`·`X-Forwarded-Proto`는 사용하지 않는다. 각 origin의 provider 콜백을 모두 등록한다. [설치 절차](INSTALL.md#멀티-도메인-로그인)를 따른다. |
 | `KEYCLOAK_ISSUER` / `KEYCLOAK_CLIENT_ID` / `KEYCLOAK_CLIENT_SECRET` | — | — | Keycloak 로그인. 셋이 모두 비어 있지 않을 때 켜지며 Google·표준 OIDC와 병행할 수 있다. issuer는 `https://sso.example.com/realms/corp` 같은 HTTP(S) realm URL이며 끝의 `/`는 제거한다. 사용자명·비밀번호·query·fragment가 포함된 URL은 거부한다. 콜백은 인증 origin의 `/api/auth/callback/keycloak`이다. PKCE와 ID 토큰 검증을 사용한다. [설치 절차](INSTALL.md#keycloak-로그인)를 따른다. |
@@ -140,7 +140,7 @@ Self-hosted는 키를 생략할 수 있다. 프로바이더 목록은 최대 50�
 
 Agent 설정의 **모델 라우팅**은 사용 여부만 선택한다. 켜면 첫 응답 전에 적절한 주 모델을 선택하며,
 독립적인 보조 작업에는 같은 Run 안의 `ModelTask`를 사용할 수 있다.
-Settings → Models → Model 사용 설정의 **자동 모델 라우팅**에서 fast/general/coding/reasoning/vision에
+설정 → Models → 사용 설정의 **자동 모델 라우팅**에서 fast/general/coding/reasoning/vision에
 등록 text 모델을 한 번 배정한다. 작업별 tier 정책·보안·예산·품질 기준은 접힌 고급 설정에서
 관리하며 모든 사용 Agent가 같은 전역 정책을 따른다. 작업 정책이 없으면 같은 모델 후보를
 합친 뒤 Settings의 결정 모델로 Jev Choice를 요청한다. 단일 후보면 Jev 호출을 생략하고,
@@ -346,6 +346,8 @@ Codex는 Responses 호환 채널, Claude는 Anthropic 채널, OpenCode는 지원
 CLI에 제공하지 않는다. 모델을 해제하면 새 native 작업은 거절하지만 이미 시작한 operation의 조회·복구는
 유지한다. 일반 명령에는 모델이 필요 없다. Git·클라우드·운영 환경변수는 Sandbox에 상속하지 않는다.
 Workspace 실행 시간은 `MAX_RUN_DURATION_MS`를 사용하며 재시작해도 최초 시작 시각에서 계산한다.
+PR 자동 리뷰의 Agent 실행과 Workspace 검사 작업은 같은 webhook actor에 별도 실행 슬롯을 사용한다.
+리뷰 중 검사를 실행하려면 해당 actor의 동시 실행 한도를 2 이상으로 설정한다(0은 한도 비활성).
 일반 명령은 앱 모델 설정 없이 공통 비용·동시성·메트릭 bracket을 사용한다. CLI 모델 사용량은
 앱의 SDK 모델 usage와 별개이며 CLI/provider의 사용량 기록을 따른다.
 

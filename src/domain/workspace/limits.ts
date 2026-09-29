@@ -6,6 +6,7 @@ export const WORKSPACE_LIMITS = {
   policyRepositories: 100,
   policyOwners: 100,
   repositoryDescriptionChars: 350,
+  titleChars: 200,
   promptChars: 40_000,
   scriptChars: 40_000,
   eventBytes: 32_000,

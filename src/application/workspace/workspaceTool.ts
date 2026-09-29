@@ -5,11 +5,13 @@ import type { WorkspaceAgentPolicy } from "@/domain/workspace/policy";
 import { isRepositoryName, workspaceRepositories, workspaceAllowsRepository, workspaceAllowsRepositoryCreation, workspaceRepositoryMode } from "@/domain/workspace/policy";
 import type { createWorkspaceRepositoryCreationUseCases } from "./createRepository";
 import type { WorkspaceRuntime, WorkspaceInput } from "@/domain/workspace/types";
+import type { RunActor, ExecutionGrant } from "@/domain/execution/actor";
 import { WORKSPACE_RUNTIMES, isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import type { createWorkspaceUseCases, WorkspaceView } from "./workspaceUseCases";
 import type { CodingApproval, CodingAction, PullRequestInfo } from "@/domain/coding/types";
 import { boundedWorkspaceText } from "./output";
+import type { PullRequestReviewTarget } from "@/domain/trigger/pullRequestReview";
 
 interface WorkspaceToolDeps {
   useCases: ReturnType<typeof createWorkspaceUseCases>;
@@ -23,7 +25,7 @@ interface WorkspaceToolDeps {
   workdir: string;
   publicBaseUrl?: string;
 }
-interface WorkspaceToolContext { agentName: string; ownerEmail: string; occurrence: string; sourceChatId?: string }
+interface WorkspaceToolContext { agentName: string; ownerEmail: string; actor?: RunActor; executionGrant?: ExecutionGrant; occurrence: string; sourceChatId?: string; reviewTarget?: PullRequestReviewTarget }
 const WAIT_STEPS = 8;
 const OUTPUT_BYTES = 12_000;
 
@@ -35,15 +37,18 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
   const reply = (value: unknown, failed = false): McpToolResult => ({ text: `${failed ? "Error: " : ""}${JSON.stringify(value)}` });
   const url = (path: string) => deps.publicBaseUrl ? new URL(path, deps.publicBaseUrl).href : path;
   const repositoryPolicyUrl = url(`/agents/${encodeURIComponent(context.agentName)}/workspace`);
-  const location = (workspace: WorkspaceView) => ({ workspace_id: workspace.id, workspace_path: `/chats/${workspace.chatId}`,
+  let selectedWorkspaceId: string | undefined;
+  const location = (workspace: WorkspaceView) => ({ workspace_id: workspace.id, title: workspace.title, workspace_path: `/chats/${workspace.chatId}`,
     workspace_url: url(`/chats/${workspace.chatId}`),
     workdir: deps.workdir, runtime: workspace.runtime, repository: workspace.coding?.repository ?? null,
     base_branch: workspace.coding?.baseBranch ?? null, branch: workspace.coding?.branch ?? null,
     head_sha: workspace.coding?.headSha ?? null, workspace_status: workspace.status, pull_request: workspace.pullRequest ?? null });
-  const current = () => context.sourceChatId
+  const current = async () => context.sourceChatId
     ? deps.useCases.forSourceChat(context.sourceChatId, context.agentName, context.ownerEmail)
-    : deps.useCases.forStartRequest(context.agentName, context.ownerEmail, startKey);
+    : selectedWorkspaceId ? (await owned(selectedWorkspaceId)).workspace
+      : deps.useCases.forStartRequest(context.agentName, context.ownerEmail, startKey);
   async function owned(id: string) {
+    if (context.reviewTarget && id !== (await deps.useCases.forStartRequest(context.agentName, context.ownerEmail, startKey))?.id) throw new NotFoundError("Review Workspace not found");
     const detail = await deps.useCases.get(id, context.ownerEmail, true);
     if (detail.workspace.agentName !== context.agentName) throw new NotFoundError("Workspace not found");
     return detail;
@@ -52,7 +57,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     const selected = (!request.workspace_id || mutate) ? await current() : null;
     const id = typeof request.workspace_id === "string" ? request.workspace_id : selected?.id;
     if (!id) throw new ValidationError("No Workspace is selected. Read options and start a Workspace first");
-    if (mutate && selected && selected.id !== id) throw new ConflictError(`This chat uses Workspace ${selected.id}. Use use_workspace to explicitly select another existing Workspace`);
+    if (mutate && selected && selected.id !== id) throw new ConflictError(`This request uses Workspace ${selected.id}. Use use_workspace to explicitly select another existing Workspace`);
     const detail = await owned(id);
     if (mutate && !selected && context.sourceChatId) await deps.useCases.selectForChat(context.sourceChatId, id, context.agentName, context.ownerEmail);
     return detail;
@@ -61,9 +66,24 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     await deps.authorize();
     const policy = await deps.policy();
     if (!policy) throw new ValidationError("Workspace tools are not enabled for this agent");
-    const request = args.request as Record<string, unknown>;
+    let request = args.request as Record<string, unknown>;
     if (!request || typeof request !== "object" || Array.isArray(request)) throw new ValidationError("Workspace requires a request");
     const operation = request.operation;
+    if (context.reviewTarget) {
+      if (!["options", "start", "run", "status", "wait"].includes(String(operation))) throw new ValidationError("Review Workspace supports only source reads and isolated checks; lifecycle and publication belong to the platform");
+      const target = context.reviewTarget;
+      const baseBranch = `review/${target.headSha}`;
+      if ((request.repository != null && request.repository !== target.repository) ||
+        (request.base_branch != null && request.base_branch !== baseBranch) ||
+        (request.runtime != null && request.runtime !== "command")) throw new ValidationError("Review Workspace is fixed to the verified PR repository, commit and command runtime");
+      if (operation === "start") request = { ...request, repository: target.repository, base_branch: baseBranch, runtime: "command", title: `PR #${target.number} review` };
+      if (operation === "options") {
+        const selected = await current();
+        return reply({ agent: context.agentName, runtimes: ["command"], default_runtime: "command", workdir: deps.workdir,
+        current_workspace: selected ? location(selected) : null, repository: target.repository, head_sha: target.headSha,
+        base_branch: baseBranch, operations: ["options", "run", "status", "wait"], message: "Read files and run isolated checks at this verified commit. The platform closes the Workspace after posting the review. Git publication and other Workspaces are unavailable." });
+      }
+    }
     if (operation === "options") {
       const selected = await current();
       return reply({ agent: context.agentName, runtimes: policy.runtimes, workdir: deps.workdir,
@@ -72,7 +92,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       default_runtime: policy.defaultRuntime ?? "command", repositories: workspaceRepositories(policy), repository_owners: policy.repositoryOwners ?? [],
       repository_policy_url: repositoryPolicyUrl, checks: policy.checks, deployment_workflows: policy.deploymentWorkflows,
       repository_setup: "Check repository access for the exact owner/name before creation. selected permits listed names; owners also permits listed owners; all permits any name the GitHub account can access; new permits listed names plus repositories created by this agent's Workspace create_repository operation. In new mode, creation_allowed may be true while allowed is false. For a user-requested NEW repository use Workspace create_repository; it initializes a README and automatically registers a successful creation. Do not use an MCP create tool or claim an existing repository is new to obtain registration. Then check_repository with the returned base_branch before clone. If both access and creation are blocked, return repository_policy_url. Never create another name to bypass policy.",
-      workspace_selection: "A chat keeps one selected Workspace per agent. Repeated start returns it without queueing work. Use run for follow-ups. Both repository and base_branch must be selected for a clone; null means deliberately Git-free. workspace_path is a browser link; task files belong in workdir, using relative paths.",
+      workspace_selection: "A chat keeps one selected Workspace per agent. Outside a chat, use_workspace selects an owned Workspace for this Agent run; select it again on a later request. Repeated start returns the selected Workspace without queueing work. Use run for follow-ups. Both repository and base_branch must be selected for a clone; null means deliberately Git-free. workspace_path is a browser link; task files belong in workdir, using relative paths.",
       git_actions: "Use prepare_git for commit, commit-and-push, push (work branch), pull-request (title/body/draft), merge (pullRequestNumber/headSha from status.pull_request), push-main (already published work branch, fast-forward only), or deploy (workflow from deployment_workflows, ref main, inputs as name/value pairs). Deployment approval only dispatches the workflow; use its run and application health to verify completion. Return approval_url verbatim and pause this turn. When requested from a chat, the decision outcome returns there automatically and the agent resumes the remaining request. Read status and prepare the next requested action for its own review. Closed Workspaces resume for Git review; never close or create another Workspace to publish. Only the user's Workspace approval UI executes these actions. Native tasks cannot write /control/git; do not retry Git writes with a temporary index, changed permissions or GitHub tools." });
     }
     if (operation === "check_repository_access") {
@@ -93,9 +113,11 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
         next: outcome.status === "created" && outcome.allowed ? "check_repository with base_branch, then start the requested work" : "inspect the reported outcome and policy; never repeat an uncertain creation" }, outcome.status !== "created" || !outcome.allowed);
     }
     if (operation === "use_workspace") {
-      if (!context.sourceChatId) throw new ValidationError("Workspace selection requires a chat");
       const detail = await owned(String(request.workspace_id));
-      const selected = await deps.useCases.selectForChat(context.sourceChatId, detail.workspace.id, context.agentName, context.ownerEmail);
+      const selected = context.sourceChatId
+        ? await deps.useCases.selectForChat(context.sourceChatId, detail.workspace.id, context.agentName, context.ownerEmail)
+        : detail.workspace;
+      if (!context.sourceChatId) selectedWorkspaceId = selected.id;
       return reply({ ...location(selected), selected: true, task_queued: false, next: "run" });
     }
     if (operation === "check_repository") {
@@ -109,13 +131,23 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       if (!callId || typeof request.task !== "string") throw new ValidationError("Workspace task identity is missing");
       const key = createHash("sha256").update(JSON.stringify([context.occurrence, context.agentName, callId])).digest("hex");
       if (operation === "start") {
+        if (!context.sourceChatId && selectedWorkspaceId) {
+          const selected = (await owned(selectedWorkspaceId)).workspace;
+          return reply({ ...location(selected), reused: true, task_queued: false, run_id: selected.activeRunId ?? null,
+            workspace_status: selected.status, next: selected.activeRunId ? "wait" : "run", after_seq: 0 });
+        }
         const runtime = (request.runtime ?? policy.defaultRuntime ?? "command") as WorkspaceRuntime;
         if (!WORKSPACE_RUNTIMES.includes(runtime)) throw new ValidationError("Invalid Workspace runtime");
         if ((request.repository !== null && typeof request.repository !== "string") ||
           (request.base_branch !== null && typeof request.base_branch !== "string")) throw new ValidationError("Invalid repository selection");
         if (request.repository !== null && !workspaceAllowsRepository(policy, request.repository as string)) throw new ValidationError(`Repository is not allowed by Workspace policy. The agent owner can update ${repositoryPolicyUrl}`);
         if ((request.repository === null) !== (request.base_branch === null)) throw new ValidationError("Repository work requires both repository and base_branch");
+        if (request.title !== undefined && typeof request.title !== "string") throw new ValidationError("Invalid workspace title");
         const startInput = { agentName: context.agentName, runtime,
+          ...(context.reviewTarget ? { sourceRevision: context.reviewTarget.headSha } : {}),
+          ...(context.actor ? { actor: context.actor } : {}),
+          ...(context.executionGrant ? { executionGrant: context.executionGrant } : {}),
+          ...(request.title !== undefined ? { title: request.title } : {}),
           ...(request.repository !== null ? { repository: String(request.repository), baseBranch: String(request.base_branch) } : {}), input: input(runtime, request.task) };
         let started;
         if (context.sourceChatId) started = await deps.useCases.startForChat(startInput, context.ownerEmail, context.sourceChatId);
@@ -141,7 +173,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
         (request.base_branch != null && request.base_branch !== detail.workspace.coding?.baseBranch)) {
         throw new ValidationError("run keeps the selected Workspace's runtime and repository. Read options; use attach_repository to connect a Git-free Workspace");
       }
-      const run = await deps.useCases.enqueue(detail.workspace.id, context.ownerEmail, input(detail.workspace.runtime, request.task), key);
+      const run = await deps.useCases.enqueue(detail.workspace.id, context.ownerEmail, input(detail.workspace.runtime, request.task), key, context.actor, context.executionGrant);
       return reply({ ...location(detail.workspace), run_id: run.id, status: run.status, next: "wait", after_seq: 0 });
     }
     if (!["status", "wait", "attach_repository", "prepare_git", "cancel", "close"].includes(String(operation))) throw new ValidationError("Unknown Workspace operation");

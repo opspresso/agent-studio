@@ -33,7 +33,7 @@ test -f .env.local || cp .env.example .env.local
 ```
 
 부팅에 필요한 최소값은 `DATABASE_URL`과 `AES_ENCRYPTION_KEY`(32바이트 base64,
-`openssl rand -base64 32`)다. `src/instrumentation.ts`가 부팅 시점에 검증한다.
+`openssl rand -hex 32`)다. `src/instrumentation.ts`가 부팅 시점에 검증한다.
 실행하려면 Settings에서 프로바이더 연결과 사용할 모델을 등록한다. 기본 LLM 환경변수만
 설정해도 모델이 등록되거나 실행 채널로 선택되는 것은 아니다.
 신원 제공자(Keycloak · 표준 OIDC · Google · 비밀번호)는 실제 로그인에만 필요하다. `STAGE=local` 은 하나도
@@ -327,3 +327,12 @@ PR workflow에는 Release 생성·registry 게시·GitOps 전달 job이 없다.
 
 문서는 변경 이력이 아니라 **현재** 상태를 기록한다: 완료된 마일스톤은 `MILESTONES.md` 에서
 삭제하고, 이력은 git log 와 태그별 GitHub Release 가 남긴다.
+
+## PR 리뷰 Workspace 통합 검증
+
+`pnpm test:review:workspace`는 전용 로컬 `_test` DB와 Docker Sandbox에서 서명된 PR 접수,
+실제 Git HTTP bundle·고정 SHA 체크아웃, SDK의 Workspace 검사, COMMENT 영수증, Workspace·Sandbox
+종료와 같은 HEAD의 중복 거절을 검증한다. 모델 응답과 GitHub API는 결정적 fixture이며
+실제 외부 리뷰를 게시하지 않는다. 기본 이미지는 다른 Workspace 검사와 같은
+`agent-studio-workspace:agents`이고 `WORKSPACE_SANDBOX_IMAGE`로 검증 이미지를 선택할 수 있다.
+테스트가 만든 Agent·Chat·Workspace·체크포인트·컴퓨팅 자원과 bare fixture를 정리한다.

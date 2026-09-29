@@ -1,4 +1,14 @@
 import { isRepositoryName } from "@/domain/workspace/policy";
+import type { McpToolResult } from "@/domain/llm/types";
+
+export type ReviewWorkspaceTool = (args: Record<string, unknown>, callId: string) => Promise<McpToolResult>;
+export interface ReviewWorkspaceSession {
+  id: string;
+  url: string;
+  tool: ReviewWorkspaceTool;
+  ensureIdle(): Promise<void>;
+  close(): Promise<void>;
+}
 
 export const MAX_REVIEW_REPOSITORIES = 20;
 
@@ -21,11 +31,29 @@ export interface PullRequestReviewFile {
 }
 
 export interface PullRequestReviewContext extends PullRequestReviewTarget {
+  baseSha: string;
   title: string;
   body: string;
   url: string;
   files: PullRequestReviewFile[];
   totalFiles: number;
+}
+
+export type ReviewSourceRequest =
+  | { operation: "files"; page?: number; limit?: number }
+  | { operation: "patch"; path: string; offset?: number }
+  | { operation: "file"; path: string; revision?: "head" | "base"; offset?: number }
+  | { operation: "checks" };
+
+export interface ReviewSourceResult {
+  kind?: "text" | "binary";
+  text: string;
+  offset: number;
+  totalChars: number;
+  nextOffset: number | null;
+  /** Files pages carry metadata separately so material coverage can be tracked by the host. */
+  files?: PullRequestReviewFile[];
+  totalFiles?: number;
 }
 
 export type PullRequestReviewDelivery =
@@ -37,6 +65,8 @@ export interface PullRequestReviewForge {
   load(target: PullRequestReviewTarget): Promise<
     { status: "ready"; context: PullRequestReviewContext } | { status: "skipped"; reason: string }
   >;
+  /** Reads only the provider-verified PR and immutable revisions, never a model-selected repository or URL. */
+  read(target: PullRequestReviewTarget & { baseSha: string }, request: ReviewSourceRequest): Promise<ReviewSourceResult>;
   /** Rechecks current HEAD and posts a COMMENT review anchored to target.headSha. */
   reply(target: PullRequestReviewTarget, body: string): Promise<PullRequestReviewDelivery>;
 }

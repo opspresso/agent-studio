@@ -4,6 +4,10 @@ Workspace는 채팅과 독립적으로 파일과 실행 상태를 유지하는 �
 Workspace를 실행하는 일시적 컴퓨팅 자원이다. 저장소를 다루지 않는 일반 명령·스크립트 작업과
 Codex·Claude·OpenCode를 사용하는 코딩 작업이 같은 생명주기와 저장소 계약을 사용한다.
 기존 OpenAI Agents SDK의 대화 이력은 Workspace의 Runtime Session과 분리한다.
+신규 접수의 선택적 `title`은 작업 목적을 나타내는 표시 이름이며 실행 입력과 분리한다.
+명시한 제목은 Workspace와 연결 Chat에 같은 값으로 저장한다. 제목이 없으면 자연어 작업은
+첫 요청에서 제목을 만들고 command 작업은 `Command workspace`로 표시한다. 셸 스크립트는
+제목으로 복사하지 않으며 실행 입력과 출력 화면에서 확인한다.
 새 Workspace의 작업 입력에 대한 Agent 추천은 실행 가능한 Workspace 정책을 가진 Agent만
 후보로 삼는다. 추천 적용 시 그 Agent의 기본 Runtime을 선택하고 저장소 선택을 초기화하며,
 실제 작업 접수는 기존 권한·정책 검증을 다시 거친다.
@@ -13,6 +17,11 @@ Workspace 옵션 목록은 접근 가능한 Agent의 현재 도구 설정을 한
 
 ## 경계와 운영 조건
 
+- Workspace 도구는 호출 채널이 아니라 확인된 사용자와 Agent 정책으로 접근을 판단한다.
+  API 토큰은 인증된 소유자, 메신저는 확인된 이메일 또는 명시적으로 위임한 소유자, Trigger는 승인된
+  실행 사용자로 member·Agent 접근을 다시 검사한다. 확인된 사용자 문맥이 없으면 제공하지 않는다.
+  Workspace의 관리 사용자와 작업 호출자는 별개다. `WorkspaceRun.actor`는 원래 연동 호출자로
+  보관하고 실제 Sandbox 작업의 비용·실행 제한에도 같은 actor를 적용한다.
 - `domain/workspace`는 공통 상태·포트와 한도를 소유한다. Git 정보와 승인 동작은
   `domain/coding`에 둔다. 일반 Workspace에는 저장소나 Git 브랜치가 필요하지 않다.
 - application은 주입된 provider/runtime을 사용한다. Docker 명령과 CLI 프로토콜은
@@ -103,7 +112,7 @@ native Session의 활동·보존 기한을 갱신한다. 완료 시 미결 승�
 Agent 설정에서 `parameters.workspaceTools`를 켜면 `/agents/{name}/workspace`에 전용 도구 탭이 나타난다.
 탭과 실행 모두 현재 Agent 설정의 개별 opt-in을 확인한다.
 Agent 소유자·관리자가 저장소, 접근 모드, 기본 Runtime, 유휴 시간, 검사 명령과 배포 workflow를 관리한다.
-기본 저장소는 없으며 Git 작업은 저장소와 기준 브랜치를 명시한다. 모델이 필요한 Runtime은 Settings → Models → 모델 사용 설정의
+기본 저장소는 없으며 Git 작업은 저장소와 기준 브랜치를 명시한다. 모델이 필요한 Runtime은 설정 → Models → 사용 설정의
 전역 Runtime별 선택을 사용한다. Agent 설정과 모델 설정은 환경변수로 관리하지 않는다.
 `repositoryOwners`는 정확한 계정·조직 이름을 대소문자 없이 비교하며 현재·향후 저장소를 허용한다.
 GitHub MCP 연결과 Workspace 서버 Git 자격증명은 별도이고, 정책 허용이 그 계정의 권한을 늘리지는 않는다.
@@ -197,25 +206,32 @@ CI 증거가 없음을 표시하며 GitHub 브랜치 규칙을 따른다. `none`
 
 ## 실행 창구별 계약
 
+외부 연동은 반환된 Workspace ID를 `use_workspace`에 보내 현재 Agent 실행에서 선택할 수 있다.
+선택 후 `options`·`status`·`run`은 그 공간을 사용하며 `start`는 재사용만 하고 새 작업을 접수하지 않는다.
+선택은 이번 실행에 한정되므로 다음 외부 요청에서도 명시적으로 선택한다. 사용자 Chat의 선택은
+기존처럼 저장한다. 두 경로 모두 관리 사용자·Agent 접근을 다시 확인하며 다른 사람의 공간을 선택할 수 없다.
+
 같은 Agent라도 모든 진입점에 같은 도구·이력·승인이 제공되는 것은 아니다.
-`container.ts`의 Workspace 도구 바인딩은 `actor.kind=user`와 현재 member 권한, Agent의
-현재 설정의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외부 효과 도구를 제공하지 않는다.
+`workspaceCaller`는 표면이 확인한 실행 사용자를 해석하며, 바인딩은 현재 member 권한과
+Agent의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외부 효과 도구를 제공하지 않는다.
 
 | 창구 | Workspace 빌트인 | 원래 Chat으로 승인 결과 전달 |
 |---|---|---|
 | 로그인한 member/admin의 Agent Chat | Agent의 Workspace 도구가 활성화되면 제공 | 같은 Chat의 SDK Session으로 자동 재개 |
 | 로그인한 member/admin의 Playground·Agent 실행 API | Agent의 Workspace 도구가 활성화되면 제공 | source Chat이 없으므로 자동 재개 없음 |
-| Agent API token | 미제공. actor는 `agent-token` | Chat Session·승인 UI 없음 |
-| Slack·Telegram·Teams | 플랫폼 actor이므로 미제공 | 플랫폼 응답이며 Chat 승인 UI 없음 |
-| Webhook·Schedule | machine actor이므로 미제공. Schedule의 개인 문맥 옵션도 actor를 바꾸지 않음 | Trigger 이력으로 결과 확인 |
+| Agent API token | 인증된 소유자가 member/admin이고 Agent 도구가 활성화되면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
+| Slack·Telegram·Teams | 확인된 이메일 또는 명시적으로 위임한 현재 소유자의 member/admin 권한과 Agent 정책에 따라 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
+| Webhook | 현재 소유자가 실행 권한을 명시적으로 부여했고 member/admin이면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
+| Schedule | 개인 실행 문맥을 명시적으로 승인한 현재 소유자가 member/admin이면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
 | Workspace 화면의 직접 작업·Git 검토 | 전용 API로 소유한 공간을 조작 | Agent가 만든 source Chat 연결이 있는 승인만 전달 |
 
 API token은 Agent 소유자로 인증하고 MCP에 소유자 email을 전달한다. 이것은 브라우저 사용자
-세션, Workspace 실행 자격, SDK 승인 UI와는 별개다. Skill이나 system prompt로 이 경계를 바꾸지 않는다.
+세션이나 SDK 승인 UI를 만들지는 않는다. Workspace 실행은 별도로 현재 member·Agent·저장소
+권한을 검사하고 Git 승인 결정은 소유자의 Workspace 화면에서만 받는다. Skill이나 system prompt로 이 경계를 바꾸지 않는다.
 
 ## 사용자 화면과 API
 
-Agent 설정의 `parameters.workspaceTools`를 켜면 로그인한 member 이상 사용자의 해당 Agent에
+Agent 설정의 `parameters.workspaceTools`를 켜면 확인된 member 이상 실행 사용자의 해당 Agent에
 `Workspace` 빌트인을 제공한다. `options`, `start`, `run`, `status`, `wait`, `cancel`, `close`로
 설정 조회·작업 접수·후속 실행·결과 확인·정리를 수행한다. 호출마다 현재 멤버 권한과 Agent
 접근을 확인하며 다른 Agent의 Workspace ID는 거절한다. 비인간 실행과 background Task에는

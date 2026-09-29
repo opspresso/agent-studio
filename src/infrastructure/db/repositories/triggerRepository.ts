@@ -43,12 +43,12 @@ function toTrigger(item: Record<string, unknown>): Trigger {
     allowConcurrent: Boolean(item.allowConcurrent),
     createdAt: String(item.createdAt ?? ""),
     updatedAt: String(item.updatedAt ?? ""),
+    ...(item.executionEmail ? { executionEmail: String(item.executionEmail) } : {}),
   };
   if (item.kind === "schedule") {
     return {
       ...base,
       kind: "schedule",
-      ...(item.executionEmail ? { executionEmail: String(item.executionEmail) } : {}),
       cron: String(item.cron ?? ""),
       timezone: String(item.timezone ?? ""),
       ...(item.message ? { message: String(item.message) } : {}),

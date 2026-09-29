@@ -52,7 +52,7 @@ Agent 소유자·관리자는 설정·연동·Trace를 관리한다. 봇·토큰
 | 로컬 위임 | 설정된 Agent를 명시적으로 바인딩한다 | Handoff 또는 Agent-as-Tool로 실행한다. 하위 활동은 author로 표시하며 같은 실행·비용·Artifact 계약을 따른다 |
 | 동적 역량 검색 | 활성 capability catalog와 등록 Embedding 모델; Rerank는 선택적이다 | 최근 요청으로 Skill·MCP 서버/도구를 찾아 명시적 바인딩에 추가한다. 발견은 경고가 아니며, 사용할 수 없거나 잘린 역량은 경고한다 |
 | Memory recall | Agent에서 켜고 recall을 제공하는 MCP를 명시적으로 바인딩한다 | 실행 가능한 서버마다 사전 recall을 호출한다. 차단·승인 도구는 자동 호출에서 제외하며 실패·시간 초과는 경고한다. 장기 Memory는 MCP가 소유한다 |
-| 자동 모델 라우팅 | Settings → Models → Model 사용 설정의 전역 tier·작업 정책·예산과 Agent별 스위치. 결정 모델은 후보 선택에 사용한다 | 첫 응답 전 주 모델을 선택한다. ModelTask는 보조 추론을 수행하며 출력·품질·예산을 검사한다. 기본값 복원은 ModelTask를 제거한다. 선택 근거는 Trace에서 확인한다 |
+| 자동 모델 라우팅 | 설정 → Models → 사용 설정의 전역 tier·작업 정책·예산과 Agent별 스위치. 결정 모델은 후보 선택에 사용한다 | 첫 응답 전 주 모델을 선택한다. ModelTask는 보조 추론을 수행하며 출력·품질·예산을 검사한다. 기본값 복원은 ModelTask를 제거한다. 선택 근거는 Trace에서 확인한다 |
 | Agent 추천 | 관리자 선택 결정 모델, 새 Chat·Workspace의 입력 요청 | 접근 가능한 후보에서 추천한다. 선택은 사용자가 적용하며 마지막 성공한 추천은 입력 중 유지한다. 요청·후보 설명의 인식된 PII 패턴을 가린 뒤 결정 프로바이더에 전달한다 |
 
 모든 Agent 실행은 같은 facade·SDK 루프·run bracket을 사용한다. 진행 중 Agent 실행과 접수된

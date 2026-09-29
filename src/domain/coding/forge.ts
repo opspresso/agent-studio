@@ -3,7 +3,7 @@ import type { CreateWorkspaceRepositoryInput, CreatedWorkspaceRepository } from 
 
 export interface CodingForge {
   createRepository?(input: CreateWorkspaceRepositoryInput): Promise<CreatedWorkspaceRepository>;
-  checkRepository(repository: string, baseBranch: string): Promise<void>;
+  checkRepository(repository: string, baseBranch: string, sourceRevision?: string): Promise<void>;
   branches(repository: string): Promise<{ names: string[]; hasMore: boolean }>;
   pullRequest(repository: CodingRepository, number: number): Promise<PullRequestInfo>;
   openPullRequest(repository: CodingRepository, input: { title: string; body: string; draft: boolean }): Promise<PullRequestInfo>;

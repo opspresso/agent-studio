@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { assertLocalDatabase } from "./local-database";
 import type { WorkspaceWorkerDeps } from "@/application/workspace/worker";
+import type { RunActor } from "@/domain/execution/actor";
 
 process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@127.0.0.1:5432/agent_studio_test";
 assertLocalDatabase(process.env.DATABASE_URL, true);
@@ -35,13 +36,15 @@ async function main() {
   let offset = 0;
   let workspaceId: string | undefined;
   const containers = new Set<string>();
+  const actor: RunActor = { kind: "agent-token", id: ownerEmail };
+  const executedActors: Array<RunActor | undefined> = [];
   const deps: WorkspaceWorkerDeps = {
     repository, chats, agents, provider: { ...provider, ensure: async id => {
       const result = await provider.ensure(id); containers.add(result.externalId); return result;
     } }, checkpoints, now: () => new Date(Date.now() + offset), newId: randomUUID, idleTtlSeconds: 60, runTimeoutMs: 60_000,
     policy: () => ({ agentName, runtimes: ["command"], checks: [{ name: "test", command: "test -s executions.txt" }], deploymentWorkflows: [] }),
     runtime: kind => createWorkspaceRuntimeAdapter(kind),
-    execute: (workspace, work) => executeWorkspaceTask({ usage }, agents, workspace, work),
+    execute: (workspace, work, caller) => { executedActors.push(caller); return executeWorkspaceTask({ usage }, agents, workspace, work, caller); },
     sleep: async (ms, signal) => { await delay(ms, undefined, { signal }); },
   };
   const api = createWorkspaceUseCases(deps);
@@ -51,7 +54,7 @@ async function main() {
     await chats.create({ chatId, agentName, title: "Workspace worker check", ownerEmail, createdAt: at, updatedAt: at });
     const workspace = await api.create({ chatId, agentName, title: "General work", runtime: "command" }, ownerEmail);
     workspaceId = workspace.id;
-    const first = await api.enqueue(workspace.id, ownerEmail, { kind: "command", script: "printf once >> executions.txt; sleep 1; printf complete" }, "worker-request-0001");
+    const first = await api.enqueue(workspace.id, ownerEmail, { kind: "command", script: "printf once >> executions.txt; sleep 1; printf complete" }, "worker-request-0001", actor);
     const stopping = new AbortController();
     const interrupted: WorkspaceWorkerDeps = { ...deps, provider: { ...deps.provider, start: async (...args) => {
       await provider.start(...args);
@@ -60,7 +63,10 @@ async function main() {
     await processWorkspace(interrupted, workspace.id, stopping.signal);
     assert.equal((await repository.run(workspace.id, first.id))?.status, "running", "worker stop is not native execution completion");
     await processWorkspace(deps, workspace.id);
-    assert.equal((await repository.run(workspace.id, first.id))?.status, "succeeded");
+    const resumed = await repository.run(workspace.id, first.id);
+    assert.equal(resumed?.status, "succeeded", resumed?.error ?? "Workspace task did not succeed");
+    assert.deepEqual((await repository.run(workspace.id, first.id))?.actor, actor);
+    assert.deepEqual(executedActors, [actor, actor], "worker restart keeps the original integration actor");
     let current = (await repository.get(workspace.id))!;
     let sandbox = (await repository.sandbox(workspace.id, current.sandboxId!))!;
     const read = () => provider.execute(sandbox.externalId, { argv: ["cat", "executions.txt"], timeoutMs: 5000 });
@@ -72,6 +78,7 @@ async function main() {
     await processWorkspace(deps, workspace.id);
     assert.equal((await read()).stdout, "oncetwice");
     assert.equal((await repository.run(workspace.id, second.id))?.sessionId, first.sessionId);
+    assert.equal(executedActors.at(-1), undefined, "a console follow-up does not inherit the previous integration actor");
     const oldContainer = sandbox.externalId;
     offset += 61_000;
     await processWorkspace(deps, workspace.id);
@@ -96,7 +103,7 @@ async function main() {
     assert.equal((await repository.get(workspace.id))?.status, "closed");
     assert.equal(await provider.inspect(sandbox.externalId), "missing");
     assert.equal(await checkpoints.get(workspace.id, finished.checkpointId), null, "deleting a finished Workspace removes its saved state");
-    console.log("[ok] Workspace worker with Docker + PostgreSQL: restart adoption, follow-up, checks, TTL, encrypted restore and chat cleanup");
+    console.log("[ok] Workspace worker with Docker + PostgreSQL: integration provenance, restart adoption, console follow-up, checks, TTL, encrypted restore and chat cleanup");
   } finally {
     for (const id of containers) await provider.destroy(id);
     if (workspaceId) { await checkpoints.delete(workspaceId); await deletePartition(keys.workspacePartition(workspaceId)); }

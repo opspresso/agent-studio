@@ -26,11 +26,12 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { HttpResourceReader } from "@/domain/net/httpResource";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import type { RunActor, RunCaller, RunConversation, RunOrigin } from "@/domain/execution/actor";
+import type { RunActor, RunCaller, RunConversation, RunOrigin, ExecutionGrant } from "@/domain/execution/actor";
 import type { RunBracketDeps } from "@/application/run/runBracket";
 import type { SlackWorkspaceReader } from "@/domain/slack/reader";
 import type { RuntimeSessionServices } from "@/application/runtime/session";
 import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession";
+import type { PullRequestReviewTarget, ReviewWorkspaceTool } from "@/domain/trigger/pullRequestReview";
 
 /**
  * Extends the run bracket's deps rather than restating them: every entry point
@@ -39,6 +40,9 @@ import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession"
  * a policy that silently stops applying to text runs.
  */
 export interface ExecutionDeps extends RunBracketDeps {
+  reviewWorkspace?: ReviewWorkspaceTool;
+  reviewSource?: (args: Record<string, unknown>) => Promise<McpToolResult>;
+  authorizeExecutionGrant?: (grant: ExecutionGrant) => Promise<void>;
   getCallRoutingPolicy?: () => Promise<import("@/domain/llm/callRouting").CallRoutingPolicy>;
   callRouting?: import("@/application/llm/callModelRouter").CallRoutingDeps;
   createToolSchemaValidator: () => ToolSchemaValidator;
@@ -69,7 +73,7 @@ export interface ExecutionDeps extends RunBracketDeps {
   audioTools?: (agentName: string, origin: RunOrigin) => Promise<
     ((tool: string, args: Record<string, unknown>) => Promise<McpToolResult>) | undefined
   >;
-  workspaceTool?: (agentName: string, origin: RunOrigin) => Promise<
+  workspaceTool?: (agentName: string, origin: RunOrigin, reviewTarget?: PullRequestReviewTarget) => Promise<
     ((args: Record<string, unknown>, callId: string) => Promise<McpToolResult>) | undefined
   >;
   registerMcpSource?: RegisterMcpSource;
@@ -122,6 +126,10 @@ export interface ExecutionDeps extends RunBracketDeps {
 }
 
 export interface ExecuteAgentInput {
+  reviewWorkspace?: ReviewWorkspaceTool;
+  /** Prepared by the verified PR use case; never accepted from public execution bodies. */
+  reviewSource?: ExecutionDeps["reviewSource"];
+  executionGrant?: ExecutionGrant;
   resumeApproval?: { revision: number; decisions: RuntimeApprovalDecision[] };
   backgroundTask?: boolean;
   agent: Agent;
@@ -149,6 +157,9 @@ export interface ExecuteAgentInput {
 // --- Agent-level dispatch --------------------------------------------------
 
 export interface AgentRunInput {
+  reviewWorkspace?: ReviewWorkspaceTool;
+  reviewSource?: ExecutionDeps["reviewSource"];
+  executionGrant?: ExecutionGrant;
   backgroundTask?: boolean;
   agent: Agent;
   configuration: AgentConfiguration;
@@ -180,13 +191,16 @@ export function toRunInput(
   input: AgentRunInput,
 ): Pick<
   ExecuteAgentInput,
-  "agent" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "signal" | "ownerEmail" | "backgroundTask"
+  "agent" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "signal" | "ownerEmail" | "backgroundTask" | "executionGrant" | "reviewSource" | "reviewWorkspace"
 > {
   return {
     agent: input.agent,
     configuration: input.configuration,
     messages: input.messages,
     ...(input.actor ? { actor: input.actor } : {}),
+    ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
+    ...(input.reviewSource ? { reviewSource: input.reviewSource } : {}),
+    ...(input.reviewWorkspace ? { reviewWorkspace: input.reviewWorkspace } : {}),
     ...(input.caller ? { caller: input.caller } : {}),
     ...(input.conversation ? { conversation: input.conversation } : {}),
     ...(input.ownerEmail ? { ownerEmail: input.ownerEmail } : {}),

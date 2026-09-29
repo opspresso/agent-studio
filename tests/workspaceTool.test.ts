@@ -14,6 +14,7 @@ import { assembleAgentRun } from "@/application/llm/agentAssembly";
 import { runAgent } from "@/application/runtime";
 import { FakeChannel, contentChunk, toolCallChunk } from "./fakeChannel";
 import type { CodingApproval, CodingAction, PullRequestInfo } from "@/domain/coding/types";
+import { workspaceCaller } from "@/application/workspace/workspaceCaller";
 
 const entropy = vi.hoisted(() => ({ sequence: 0 }));
 vi.mock("node:crypto", async importOriginal => ({
@@ -50,6 +51,74 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("Workspace Agent capability", () => {
+  it("requests cleanup if a newly created review Workspace cannot admit its first task", async () => {
+    const enqueue = vi.spyOn(useCases, "enqueue").mockRejectedValueOnce(new Error("admission refused"));
+    try {
+      await expect(useCases.start({ agentName: "demo", runtime: "command", repository: "org/repo", baseBranch: "review/head", sourceRevision: "a".repeat(40), input: { kind: "command", script: "true" } }, owner, "review-admission")).rejects.toThrow("admission refused");
+      expect((await repository.list(owner, 20))[0]?.status).toBe("closing");
+    } finally { enqueue.mockRestore(); }
+  });
+  it("seals a review Workspace to its provider-verified commit and refuses other workspaces and Git effects", async () => {
+    const target = { repository: "org/repo", number: 130, headSha: "a".repeat(40) };
+    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY,
+      publicBaseUrl: "https://studio.example.test", policy: () => policy }, { agentName: "demo", ownerEmail: owner, occurrence: "review", reviewTarget: target });
+    const result = JSON.parse((await tool({ request: start }, "bootstrap")).text);
+    expect((await repository.get(result.workspace_id))?.coding).toMatchObject({ repository: target.repository, sourceRevision: target.headSha, baseBranch: `review/${target.headSha}` });
+    for (const operation of ["prepare_git", "attach_repository", "create_repository", "use_workspace", "close"]) {
+      await expect(tool({ request: { operation } }, "unsafe")).rejects.toThrow("only source reads");
+    }
+    await expect(tool({ request: { operation: "run", repository: "other/repo", task: "true" } }, "other")).rejects.toThrow("fixed to the verified");
+    const unrelated = await invoke(start, "unrelated");
+    await expect(tool({ request: { operation: "status", workspace_id: unrelated.workspace_id } }, "read")).rejects.toMatchObject({ status: 404 });
+    expect(requestGit).not.toHaveBeenCalled();
+  });
+  it("selects an owned Workspace for an external run and uses it for options, status and follow-up work", async () => {
+    const first = await invoke(start);
+    const workspace = (await repository.get(first.workspace_id))!;
+    const run = (await repository.run(workspace.id, first.run_id))!;
+    await repository.write({ expectedRevision: workspace.revision,
+      workspace: { ...workspace, activeRunId: undefined, revision: workspace.revision + 1 }, run: { ...run, status: "succeeded" } });
+    const caller = workspaceCaller({ ancestry: ["demo"], actor: { kind: "slack", id: "U1" }, userEmail: owner })!;
+    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest,
+      workdir: WORKSPACE_DIRECTORY, policy: () => policy }, { agentName: "demo", ...caller, occurrence: "later-external-run" });
+    expect(JSON.parse((await tool({ request: { operation: "use_workspace", workspace_id: workspace.id } }, "select")).text))
+      .toMatchObject({ workspace_id: workspace.id, selected: true, task_queued: false });
+    expect(JSON.parse((await tool({ request: { operation: "options" } }, "options")).text).current_workspace.workspace_id).toBe(workspace.id);
+    expect(JSON.parse((await tool({ request: start }, "start-again")).text)).toMatchObject({ workspace_id: workspace.id, reused: true, task_queued: false });
+    const next = JSON.parse((await tool({ request: { operation: "run", task: "echo next" } }, "run")).text);
+    expect(next.workspace_id).toBe(workspace.id);
+    expect((await repository.run(workspace.id, next.run_id))?.actor).toEqual(caller.actor);
+    expect(await repository.list(owner, 20)).toHaveLength(1);
+    expect(await repository.runs(workspace.id, 20)).toHaveLength(2);
+    await expect(makeTool("demo", "other@example.com")({ request: { operation: "use_workspace", workspace_id: workspace.id } }, "select")).rejects.toMatchObject({ status: 404 });
+  });
+
+  it.each(["agent-token", "slack", "telegram", "teams", "schedule", "webhook"] as const)("persists %s provenance while the verified member manages the Workspace", async kind => {
+    const caller = workspaceCaller({ ancestry: ["demo"], actor: { kind, id: kind === "agent-token" ? owner : "external-caller" }, userEmail: owner })!;
+    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest,
+      workdir: WORKSPACE_DIRECTORY, policy: () => policy }, { agentName: "demo", ...caller, occurrence: "external-run" });
+    const first = JSON.parse((await tool({ request: start }, "first")).text);
+    const workspace = (await repository.get(first.workspace_id))!;
+    expect(workspace.ownerEmail).toBe(owner);
+    const run = (await repository.run(workspace.id, first.run_id))!;
+    expect(run.actor).toEqual(caller.actor);
+    await repository.write({ expectedRevision: workspace.revision,
+      workspace: { ...workspace, activeRunId: undefined, revision: workspace.revision + 1 }, run: { ...run, status: "succeeded" } });
+    const next = JSON.parse((await tool({ request: { operation: "run", task: "echo next" } }, "next")).text);
+    expect((await repository.run(workspace.id, next.run_id))?.actor).toEqual(caller.actor);
+    expect(authorize).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses a purpose label for history and keeps the script in the queued input", async () => {
+    const request = { ...start, title: "보고서 파일 작성" };
+    expect(() => createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!)({ request })).not.toThrow();
+    const result = await invoke(request);
+    expect(result.title).toBe(request.title);
+    expect((await repository.get(result.workspace_id))?.title).toBe(request.title);
+    expect((await chats.get(result.workspace_path.slice("/chats/".length)))?.title).toBe(request.title);
+    expect((await repository.run(result.workspace_id, result.run_id))?.input).toEqual({ kind: "command", script: start.task });
+  });
+
   it("distinguishes new-repository permission from existing access and routes creation through the server", async () => {
     const createRepository = vi.fn(async () => ({ repository: "org/new", status: "created" as const, allowed: true, reused: false,
       result: { repository: "org/new", repositoryId: 42, url: "https://github.example.test/org/new", baseBranch: "main", private: true } }));

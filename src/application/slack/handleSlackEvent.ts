@@ -561,7 +561,7 @@ export async function handleSlackEvent(
         history: turns.map((turn) => toHistoryTurn(deps, token, turn)),
         // The Slack user id, not an email: Slack does not hand one over, and
         // guessing at a mapping would attribute spend to the wrong person.
-        ...(event.user ? { actor: { kind: "slack" as const, id: event.user } } : {}),
+        actor: { kind: "slack", id: event.user ?? (event.bot_id ? `bot:${event.bot_id}` : `channel:${event.channel}`) },
         ...(named.caller ? { caller: named.caller } : {}),
         // The thread is the conversation — the same address the engagement row and
         // the reply itself use, so a follow-up here is one for every consumer.

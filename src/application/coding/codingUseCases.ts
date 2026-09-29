@@ -24,6 +24,7 @@ function repository(workspace: Workspace): CodingRepository {
 
 async function reserve(deps: CodingDeps, id: string, ownerEmail: string, actionId: string | undefined, resuming = false, attachRepository?: string, authorizeEffect = true): Promise<WorkspaceWorkerState> {
   const workspace = await ownedWorkspace(deps, id, ownerEmail);
+  if (workspace.coding?.sourceRevision) throw new ValidationError("Review Workspaces cannot publish or change Git history");
   if (authorizeEffect) await deps.authorize?.(workspace.agentName, ownerEmail);
   if (!["active", "suspended", "closed"].includes(workspace.status) || workspace.activeRunId ||
     (workspace.leaseToken && Date.parse(workspace.leaseUntil ?? "") > deps.now().getTime()) ||

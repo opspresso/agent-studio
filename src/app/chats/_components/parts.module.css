@@ -1,38 +1,4 @@
 /*
- * What `TypographyStylesProvider` does not decide for a chat message: the
- * message's own edges, and how an unbroken token behaves inside one.
- */
-.markdown {
-  overflow-wrap: anywhere;
-}
-
-.markdown > :first-child {
-  margin-top: 0;
-}
-
-.markdown > :last-child {
-  margin-bottom: 0;
-}
-
-/*
- * Wrapped, and deliberately **not** a scroll container on both axes.
- *
- * The thread sticks to the bottom by watching wheel events, and that watch walks
- * up from whatever the pointer is over until it finds the first element whose
- * computed `overflow` shorthand is `auto` or `scroll` — a code block that is one
- * on both axes stops the walk dead, so scrolling up over the code in an answer
- * never registered as the reader leaving. Naming the axes separately keeps the
- * horizontal safety valve for an unbreakable token while making the shorthand
- * `auto hidden`, which the walk passes through.
- */
-.markdown pre {
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-/*
  * An assistant answer is body text, not a speech bubble.
  *
  * A bordered box around every reply fought the markdown inside it — headings,
