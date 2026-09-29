@@ -704,7 +704,7 @@ export const ko: Messages = {
   "guide.workspaces.repository": "5. clone 전에 저장소 준비",
   "guide.workspaces.repositoryBody": "기존 저장소는 Agent의 Workspace 도구 탭에 등록한다. 기본 저장소는 없다. 기본 모드는 등록 + 신규이며 Workspace의 create_repository 도구가 실제로 만든 저장소를 자동 등록한다. 소유자·관리자는 저장소 고정·소유자 지정·모든 저장소 모드도 선택할 수 있다. 반환된 기준 브랜치를 검사하고 Git 작업에는 저장소와 브랜치를 함께 지정한다.",
   "guide.workspaces.approvals": "6. 게시 단계를 각각 검토",
-  "guide.workspaces.approvalsBody": "Commit, commit-and-push, PR 생성, 병합과 main 직접 푸시는 서로 다른 검토다. 각 승인은 검토한 동작과 정확한 변경에만 적용된다. 결과가 원래 Chat으로 돌아오면 다음에 요청한 검토를 준비한다. PR의 CI 대기가 등록되면 해당 HEAD의 검사를 최대 30분 관찰하고 결과에 따라 Chat을 재개한다. 검사 실패·HEAD 변경·결과 불명은 게시 권한이 아니다. main 직접 푸시는 fast-forward만 가능하며 브랜치 보호 규칙을 따른다.",
+  "guide.workspaces.approvalsBody": "코딩 요청은 커밋·작업 브랜치 푸시·PR 생성까지 추가 승인 없이 진행한다. main 병합·main 직접 푸시·배포는 별도 요청과 정확한 변경에 대한 확인이 필요하다. 확인한 동작의 결과는 원래 Chat으로 돌아온다. main 직접 푸시는 fast-forward만 가능하며 브랜치 보호 규칙을 따른다.",
   "guide.workspaces.results": "7. 실행·검사·산출물 구분",
   "guide.workspaces.resultsBody": "대기·실행 중은 완료가 아니다. 최종 실행 상태·출력·Diff를 확인한다. Workspace에 설정한 검사, 코딩 Runtime이 직접 실행한 검사, GitHub 검사와 배포 상태는 서로 다른 근거다. Workspace 파일이 자동으로 다운로드 Artifact나 공개 미리보기가 되지는 않는다. 실행하지 못한 검사를 밝히고 실제 반환된 Workspace·저장소·Artifact 링크만 사용한다.",
   "guide.workspaces.lifecycle": "8. 중지·종료·복구",

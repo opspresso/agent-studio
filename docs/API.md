@@ -718,6 +718,10 @@ Chat에도 저장한다. 생략하면 자연어 작업은 요청에서 제목을
 다른 내용으로 키를 재사용하면 409다. Git 작업은 `repository`와 `baseBranch`를 함께 지정한다. 둘 다 없으면 Git 없는 Workspace다.
 lease·operation handle·체크포인트 bytes와 주소는 사용자 응답에 넣지 않는다.
 
+Workspace 도구의 `prepare_git`는 작업 브랜치 Commit·Push·PR을 추가 확인 없이 실행하고
+`action_id`, `status`, `result`를 반환한다. main 반영·배포만 승인 링크로 확인한다.
+화면의 `/actions` API는 요청한 동작을 검토한 뒤 별도 결정 API로 실행한다.
+
 Git 동작은 `commit`, `commit-and-push`, `push`, `pull-request`(`draft` 선택), `merge`, `push-main`, `deploy`다.
 `commit`·`commit-and-push`는 `message`를 받고 `push`·`push-main`은 추가 인자가 없다. 자세한 승인 조건은
 [Workspace 설계](design/workspaces.md#git과-승인)를 따른다. 승인 요청과 실제 실행 모두

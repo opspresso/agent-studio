@@ -91,7 +91,7 @@ async function reviewResult(workspaceId: string, runId: string) {
   await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, revision: workspace.revision + 1,
     coding: { repository: target.repository, baseBranch: "main", branch: "review", sourceRevision: target.headSha, headSha: target.headSha } } });
   const tool = createWorkspaceTool({ useCases: createWorkspaceUseCases(deps), authorize: async () => {}, policy: () => policy,
-    sleep: deps.sleep, requestGit: async () => { throw new Error("unused"); }, pullRequest: async () => undefined,
+    sleep: deps.sleep, publishGit: async () => { throw new Error("Git publication unavailable"); }, requestGit: async () => { throw new Error("unused"); }, pullRequest: async () => undefined,
     attachRepository: async () => { throw new Error("unused"); }, workdir: "/workspace/repo", publicBaseUrl: "https://studio.example.test" },
   { agentName: "demo", ownerEmail: owner, occurrence: "review" });
   const session = await openReviewWorkspace({ tool: async (args, callId) => (args.request as { operation: string }).operation === "start"

@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import type { CodingAction, CodingApproval, CodingRepository, PullRequestInfo } from "@/domain/coding/types";
-import { codingCiAllowsPublication, CodingMutationRejectedError } from "@/domain/coding/types";
+import { codingActionRequiresConfirmation, codingCiAllowsPublication, CodingMutationRejectedError } from "@/domain/coding/types";
 import type { CodingForge } from "@/domain/coding/forge";
 import type { CodingWorktree, WorktreeReview } from "@/domain/coding/worktree";
 import type { Workspace } from "@/domain/workspace/types";
@@ -84,9 +84,15 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
   return {};
 }
 
-/** Every write effect is explicitly requested, reviewed, and claimed before execution. */
+/** All effects share ownership, tree review, action claims and uncertainty handling. */
 export function createCodingUseCases(deps: CodingDeps) {
   return {
+    async publish(id: string, ownerEmail: string, action: CodingAction): Promise<CodingApproval> {
+      if (codingActionRequiresConfirmation(action)) throw new ValidationError("This action requires explicit confirmation");
+      // Inline tool results already continue the chat. Do not enqueue a second continuation.
+      const approval = await this.request(id, ownerEmail, action, undefined, "coding-request");
+      return this.decide(id, ownerEmail, approval.id, true);
+    },
     async pullRequest(id: string, ownerEmail: string): Promise<PullRequestInfo | undefined> {
       const workspace = await ownedWorkspace(deps, id, ownerEmail);
       if (!workspace.pullRequest) return undefined;
@@ -125,7 +131,8 @@ export function createCodingUseCases(deps: CodingDeps) {
         } catch (error) { await release(deps, state); throw error; }
       });
     },
-    async request(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string): Promise<CodingApproval> {
+    async request(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string, authorization: CodingApproval["authorization"] = "confirmation"): Promise<CodingApproval> {
+      if (authorization === "coding-request" && codingActionRequiresConfirmation(action)) throw new ValidationError("This action requires explicit confirmation");
       if (sourceChatId) {
         const workspace = await ownedWorkspace(deps, id, ownerEmail);
         const chat = await deps.chats.get(sourceChatId);
@@ -142,7 +149,7 @@ export function createCodingUseCases(deps: CodingDeps) {
           const { pullRequest, main } = await state.effect(() => validateAction(deps, workspace, action, review));
           const approval: CodingApproval = { id: approvalId, workspaceId: id, requestedBy: ownerEmail,
             ...(sourceChatId ? { sourceChatId } : {}),
-            requestedAt: deps.now().toISOString(), action, fingerprint: review.fingerprint, status: "pending",
+            requestedAt: deps.now().toISOString(), authorization, action, fingerprint: review.fingerprint, status: "pending",
             review: { headSha: review.headSha, treeSha: review.treeSha, diff: review.diff, truncated: review.truncated,
               ...(main ? { mainHeadSha: main.baseSha, ci: main.ci } : pullRequest ? { ci: pullRequest.ci } : {}) } };
           await release(deps, state, approval, true, pullRequest ? { pullRequest } : {});

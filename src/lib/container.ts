@@ -1021,6 +1021,7 @@ export const executionDeps: ExecutionDeps = {
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
       ...(getWorkspaceGitHubConfig() ? { createRepository: workspaceRepositoryCreationUseCases.create } : {}),
       requestGit: (id, ownerEmail, action, sourceChatId) => getCodingUseCases().request(id, ownerEmail, action, sourceChatId),
+      publishGit: (id, ownerEmail, action) => getCodingUseCases().publish(id, ownerEmail, action),
       pullRequest: (id, ownerEmail) => getCodingUseCases().pullRequest(id, ownerEmail),
       attachRepository: (id, ownerEmail, repository, baseBranch) => getCodingUseCases().attachRepository(id, ownerEmail, repository, baseBranch),
       workdir: WORKSPACE_DIRECTORY,

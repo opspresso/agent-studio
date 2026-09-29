@@ -704,7 +704,9 @@ GitHub App의 private key는 서버에 남고 clone/push에 발행하는 token�
 전달한다. 서버에서는 저장소 checkout·hook·build script를 실행하지 않는다.
 공개 Git endpoint는 HTTPS와 DNS pinning을 사용하고 내부 호스트 예외는 배포의 별도 목록을 따른다.
 
-효과는 검토한 tree/HEAD와 사용자 결정에 묶인 승인 레코드를 먼저 claim한 뒤 실행한다.
+효과는 검토한 tree/HEAD와 권한 근거를 가진 동작 레코드를 먼저 claim한 뒤 실행한다.
+코딩 요청의 작업 브랜치 Commit·Push·PR은 추가 확인 없이 실행하며 `authorization: coding-request`로 기록한다.
+main 반영·배포는 별도 사용자 확인을 유지한다. 자동 게시도 소유권·현재 정책·fingerprint·lease를 다시 검사한다.
 종료·삭제가 먼저 기록되면 pending/실행 claim을 거절한다. 종료된 Workspace의 새 Git 검토는
 소유자·살아 있는 Chat·Agent와 action lease를 원자적으로 확인한 뒤 복원하며 삭제는 되돌리지 않는다.
 main 병합은 PR 소유 범위와 CI를

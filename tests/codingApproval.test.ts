@@ -57,6 +57,40 @@ afterEach(() => {
 });
 
 describe("explicit coding action approvals", () => {
+  it("publishes a coding request through commit and PR without another decision or duplicate chat continuation", async () => {
+    const api = createCodingUseCases(deps);
+    const commit = await api.publish(workspace.id, owner, { kind: "commit-and-push", message: "feat: implement request" });
+    expect(commit).toMatchObject({ status: "succeeded", authorization: "coding-request", decidedBy: owner });
+    expect(deps.coding.push).toHaveBeenCalledExactlyOnceWith("sandbox-1", expect.objectContaining({ headSha: "d".repeat(40) }));
+    review.headSha = "d".repeat(40);
+    review.treeSha = review.headTreeSha;
+    pull.headSha = review.headSha;
+    const pr = await api.publish(workspace.id, owner, { kind: "pull-request", title: "Implement request", body: "Verified", draft: false });
+    expect(pr).toMatchObject({ status: "succeeded", result: pull.url, authorization: "coding-request" });
+    expect((await repository.get(workspace.id))?.pullRequest).toEqual(pull);
+    expect((await repository.get(workspace.id))?.activeActionId).toBeUndefined();
+    expect(await repository.dueContinuations(now.toISOString(), 20)).toEqual([]);
+  });
+  it.each([
+    { kind: "merge" as const, pullRequestNumber: 7, headSha: head },
+    { kind: "push-main" as const },
+    { kind: "deploy" as const, workflow: "deploy.yml", ref: "main", inputs: {} },
+  ])("never grants $kind through the coding-request publication path", async action => {
+    await expect(createCodingUseCases(deps).publish(workspace.id, owner, action)).rejects.toThrow("explicit confirmation");
+    expect(await repository.approvals(workspace.id, 20)).toEqual([]);
+    expect(deps.forge.merge).not.toHaveBeenCalled();
+    expect(deps.forge.pushMain).not.toHaveBeenCalled();
+    expect(deps.forge.dispatch).not.toHaveBeenCalled();
+  });
+  it("retains an uncertain automatic push and refuses to replay it", async () => {
+    review.treeSha = review.headTreeSha;
+    vi.mocked(deps.coding.push).mockRejectedValueOnce(new Error("Lost response"));
+    const api = createCodingUseCases(deps);
+    const result = await api.publish(workspace.id, owner, { kind: "push" });
+    expect(result.status).toBe("uncertain");
+    await expect(api.publish(workspace.id, owner, { kind: "push" })).rejects.toThrow("busy");
+    expect(deps.coding.push).toHaveBeenCalledTimes(1);
+  });
   it.each(["review", "commit"] as const)("keeps the action lease during a slow %s without changing approval requirements", async phase => {
     deps.now = () => new Date();
     const api = createCodingUseCases(deps);

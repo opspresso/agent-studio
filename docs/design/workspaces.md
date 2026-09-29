@@ -177,6 +177,10 @@ Git 디렉터리는 root 소유 `/control/git`이며, Agent의 파일 쓰기 권
 바꿀 수 없다. Git hook·외부 diff·textconv·credential helper를 사용하지 않는다. 공개 Git 호스트는
 DNS 검증 결과를 `http.curloptResolve`로 고정하고 redirect를 거절한다. 내부 Git 호스트는 배포가 선언한다.
 
+일반 코딩 요청은 구현·검사·작업 브랜치 Commit·Push·PR까지 포함하며 사용자가 제한한 범위는 따른다.
+`prepare_git`의 Commit·Commit & push·Push·PR은 `coding-request` 권한 근거로 즉시 실행한다.
+main 반영과 배포는 별도 사용자 요청과 확인이 필요하다. 직접 Workspace 화면의 검토 API는 명시적 확인을 유지한다.
+
 `CodingApproval`은 요청자·결정자·작업 인자와 검토한 전체 Git tree/HEAD의 fingerprint를 보관한다.
 화면용 Diff가 잘려도 승인 fingerprint는 전체 tree에서 계산한다. 승인은 Workspace를 잠그고
 실제 tree를 다시 확인한 뒤 `executing`으로 기록한다. 종료·삭제와 경합한 승인은 효과 전에 거절한다.
@@ -187,7 +191,7 @@ operation ID는 Git receipt로 중복 생성되지 않는다.
 
 GitHub App의 private key는 서버에만 두고 Git 작업에는 저장소·권한을 한정한 1시간 이내의
 installation token을 잠시 전달한다. 토큰은 Git 설정이나 체크포인트에 쓰지 않는다. PR 생성은
-같은 작업 브랜치의 기존 PR을 재사용하며 Draft/Ready 전환도 명시적 승인을 따른다.
+같은 작업 브랜치의 기존 PR을 재사용하며 Draft/Ready 전환도 요청한 PR 상태를 따른다.
 main 병합은 소유한 PR·정확한 head를 확인하고 merge API의 `sha` 조건으로 실행한다.
 `merged:true`와 유효한 결과 commit SHA를 받은 경우만 완료로 기록한다. 불완전한 응답은
 `uncertain`으로 남기며 운영자가 실제 PR 상태를 확인하기 전 자동 재실행하지 않는다.
@@ -230,7 +234,7 @@ Agent의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외�
 
 API token은 Agent 소유자로 인증하고 MCP에 소유자 email을 전달한다. 이것은 브라우저 사용자
 세션이나 SDK 승인 UI를 만들지는 않는다. Workspace 실행은 별도로 현재 member·Agent·저장소
-권한을 검사하고 Git 승인 결정은 소유자의 Workspace 화면에서만 받는다. Skill이나 system prompt로 이 경계를 바꾸지 않는다.
+권한을 검사하고 별도 확인이 필요한 Git 승인 결정은 소유자의 Workspace 화면에서 받는다. Skill이나 system prompt로 이 경계를 바꾸지 않는다.
 
 ## 사용자 화면과 API
 
@@ -245,8 +249,9 @@ Agent가 만든 Workspace는 자신의 Chat을 가진다. 요청을 조율하는
 섞지 않고, 반환된 `workspace_id`로 후속 요청을 연결한다. SDK run과 tool call ID가 접수 중복을
 막는다. `wait`는 최대 8초만 기다리고, 실행 중이면 반환된 Workspace 경로에서 계속 확인한다.
 도구 출력은 cursor로 읽으며 페이지에 들어가는 전체 이벤트까지만 cursor를 진행한다.
-단일 이벤트 자체가 상한을 넘는 경우와 생략된 Diff는 잘림을 표시한다. `prepare_git`는 Commit·Push·Commit & push·PR·main 병합·main 직접 Push·배포의
-검토를 준비하고 `approval_path`를 반환한다. Agent는 링크를 전달하고 승인까지 멈춘다.
+단일 이벤트 자체가 상한을 넘는 경우와 생략된 Diff는 잘림을 표시한다.
+`prepare_git`의 작업 브랜치 Commit·Push·Commit & push·PR은 결과를 바로 반환한다. Agent는 PR까지 계속 진행한다.
+main 병합·main 직접 Push·배포는 검토를 준비하고 `approval_path`를 반환하며 이때만 확인까지 멈춘다.
 배포는 `options.deployment_workflows`의 workflow와 `ref: "main"`을 사용하며 도구의 `inputs`는
 중복 없는 `{name, value}` 배열이다. 서버가 이를 승인 동작의 입력 객체로 변환하고 기존 배포 정책을
 검증한다. 승인 성공은 workflow 접수이며 실제 배포 완료는 해당 실행과 서비스 상태로 확인한다.
@@ -255,7 +260,8 @@ Chat에서 요청한 승인은 `sourceChatId`를 보관한다. 승인 성공·�
 원래 Chat의 소유권·Agent 접근·현재 Workspace 선택을 다시 확인하고 Chat run lease를 잡는다.
 알림 claim과 채팅의 승인 결과 표시는 원자적으로 저장한다. 원래 SDK Session을 사용해 공통
 `executeAgent` facade로 남은 요청을 이어가며, 새 사용자 메시지를 저장하거나 Git 동작을 재실행하지 않는다.
-커밋·푸시 → PR → main 병합은 각각의 승인 결과가 다음 검토를 준비한다. 한 승인으로 뒤의 동작까지 승인하지 않는다.
+자동 게시 결과는 현재 도구 호출로 전달하며 중복 Chat 재개를 예약하지 않는다.
+main 반영·배포의 승인 결과는 다음에 요청된 단계를 이어가지만 다른 보호 동작의 확인까지 대신하지 않는다.
 
 PR 성공 결과의 검사 상태가 `pending`이면 `ci_watch`에 PR 번호·정확한 HEAD·30분 기한을 기록한다.
 첫 후속 응답을 저장한 뒤 알림을 `waiting-ci`로 바꾸며, Worker는 15초 간격으로 원격 상태만 읽는다.

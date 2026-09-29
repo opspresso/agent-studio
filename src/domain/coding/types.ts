@@ -32,12 +32,19 @@ export type CodingAction =
   | CodingGitAction
   | { kind: "deploy"; workflow: string; ref: string; inputs: Record<string, string> };
 
+/** A coding request includes publication of its work branch and pull request. */
+export function codingActionRequiresConfirmation(action: CodingAction): boolean {
+  return !["commit", "commit-and-push", "push", "pull-request"].includes(action.kind);
+}
+
 /** User intent and approval bind to one workspace revision and exact Git head/diff. */
 export interface CodingApproval {
   id: string;
   workspaceId: string;
   requestedBy: string;
   requestedAt: string;
+  /** Distinguishes the coding request from a separate confirmation in the UI. */
+  authorization?: "coding-request" | "confirmation";
   /** Set by the Workspace tool's trusted conversation context, never action arguments. */
   sourceChatId?: string;
   action: CodingAction;
