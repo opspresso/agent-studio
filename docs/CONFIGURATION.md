@@ -140,7 +140,7 @@ Self-hosted는 키를 생략할 수 있다. 프로바이더 목록은 최대 50�
 
 Agent 설정의 **모델 라우팅**은 사용 여부만 선택한다. 켜면 첫 응답 전에 적절한 주 모델을 선택하며,
 독립적인 보조 작업에는 같은 Run 안의 `ModelTask`를 사용할 수 있다.
-Settings → Models → Model 사용 설정의 **자동 모델 라우팅**에서 fast/general/coding/reasoning/vision에
+설정 → Models → 사용 설정의 **자동 모델 라우팅**에서 fast/general/coding/reasoning/vision에
 등록 text 모델을 한 번 배정한다. 작업별 tier 정책·보안·예산·품질 기준은 접힌 고급 설정에서
 관리하며 모든 사용 Agent가 같은 전역 정책을 따른다. 작업 정책이 없으면 같은 모델 후보를
 합친 뒤 Settings의 결정 모델로 Jev Choice를 요청한다. 단일 후보면 Jev 호출을 생략하고,

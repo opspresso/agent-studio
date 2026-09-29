@@ -148,7 +148,7 @@ Agent 설정의 `parameters.audioProcessing=true`로 Agent 도구를 켠다. 저
 
 Workspace는 선택 기능이다. `sandbox/Dockerfile`로 별도 실행 이미지를 만들고, 아래처럼
 실행 이미지와 네트워크를 연결한다. Agent 설정에서 워크스페이스 도구를 켜고 Agent의 전용 탭에서
-설정한다. 네이티브 Runtime 모델은 Settings → Models → 모델 사용 설정에서 선택한다. 일반 작업에는 저장소가 필요하지 않다.
+설정한다. 네이티브 Runtime 모델은 설정 → Models → 사용 설정에서 선택한다. 일반 작업에는 저장소가 필요하지 않다.
 
 ```bash
 docker build -t agent-studio-workspace:local sandbox
@@ -259,11 +259,11 @@ pnpm dev
 `minio-init`이 `agent-studio` bucket을 만든다. 실행에 사용할 프로바이더 연결과 모델은
 로그인 후 Settings에서 등록한다.
 Chat·Workspace 입력의 Agent 추천을 사용하려면 OpenRouter 또는 System One 호환 내부
-provider에서 Decisions 모델을 등록하고 Settings → Models → 모델 사용 설정에서 결정 모델로
+provider에서 Decisions 모델을 등록하고 설정 → Models → 사용 설정에서 결정 모델로
 선택한다. 선택하지 않으면 추천만 비활성화된다. 요청 텍스트는 PII 필터를 거쳐 선택한 provider에 전달되므로
 폐쇄망 설치에서는 내부 endpoint를 사용한다.
 
-호출 단위 자동 라우팅도 같은 결정 모델을 사용한다. Settings → Models → Model 사용 설정에서
+호출 단위 자동 라우팅도 같은 결정 모델을 사용한다. 설정 → Models → 사용 설정에서
 내부 text 모델을 전역 tier에 배정하고 self-hosted 연결 제한을 설정한 뒤 필요한 Agent에서
 사용 스위치를 켜면 사내 구성으로 사용할 수 있다. 공개 Jev 연결을
 사용할 때 전달되는 정보는 작업 목적·제한된 요약·기능·예산·tier·예상 비용·주 모델 사용 여부다. 결정 모델이 없거나
