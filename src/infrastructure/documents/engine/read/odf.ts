@@ -19,7 +19,7 @@
  * least.
  */
 
-import { MAX_ODF_CELL_SPAN, MAX_SPREADSHEET_CELLS, MAX_SPREADSHEET_COLUMNS, MAX_SPREADSHEET_ROWS, MAX_TEXT_CHARS, MAX_ZIP_ENTRY_BYTES } from "../limits";
+import { MAX_SPREADSHEET_CELLS, MAX_SPREADSHEET_COLUMNS, MAX_SPREADSHEET_ROWS, MAX_TEXT_CHARS, MAX_ZIP_ENTRY_BYTES } from "../limits";
 import type { Align, Run } from "../markdown";
 import { attributeOf, localName, walkXml, type XmlHandler } from "../xml";
 import { openZip } from "../zip";
@@ -27,6 +27,7 @@ import { DocumentError } from "../errors";
 import type { ReadBlock, ReadCell, ReadRow } from "./blocks";
 import { collapseRuns } from "./lines";
 import { blocksToMarkdown } from "./serialize";
+import { tableCellSpan } from "./tableBudget";
 
 export class OdfError extends DocumentError {}
 
@@ -82,8 +83,7 @@ function repeatOf(attributes: string, name = "table:number-columns-repeated"): n
 }
 
 function spanOf(attributes: string, name: string): number {
-  const count = Number(attributeOf(attributes, name) ?? "1");
-  return Number.isInteger(count) && count > 1 ? Math.min(count, MAX_ODF_CELL_SPAN) : 1;
+  return tableCellSpan(attributeOf(attributes, name));
 }
 
 /** A table being built, one per open `table:table` so a nested one nests. */

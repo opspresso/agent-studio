@@ -38,6 +38,7 @@ import { DocumentError } from "../errors";
 import { drawnMarker, type ReadBlock, type ReadCell, type ReadRow } from "./blocks";
 import { collapseRuns } from "./lines";
 import { blocksToMarkdown } from "./serialize";
+import { assertTableGeometry, tableCellSpan } from "./tableBudget";
 
 const DOCUMENT_PART = "word/document.xml";
 const STYLES_PART = "word/styles.xml";
@@ -755,10 +756,7 @@ class Extractor implements XmlHandler {
         }
         return;
       case "w:gridSpan": {
-        const declared = Number(values.get("w:val") ?? "");
-        if (this.table && Number.isInteger(declared) && declared > 1) {
-          this.table.span = declared;
-        }
+        if (this.table) this.table.span = tableCellSpan(values.get("w:val"));
         return;
       }
       case "w:vMerge":
@@ -866,6 +864,7 @@ class Extractor implements XmlHandler {
         const set = this.cellAlign;
         this.cellAlign = undefined;
         const start = table.column;
+        assertTableGeometry(table.rows.length + 1, start + span);
         table.column += span;
         if (continues) {
           // The cell above already covers this position; it is given the row
@@ -890,6 +889,7 @@ class Extractor implements XmlHandler {
           return;
         }
         table.columns = Math.max(table.columns, table.column);
+        assertTableGeometry(table.rows.length + 1, table.columns);
         table.rows.push({ cells: table.cells, ...(table.header ? { header: true } : {}) });
         // A header row's own setting is not the column's: a heading is often
         // centred over figures that are not.
