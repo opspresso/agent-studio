@@ -62,6 +62,7 @@ async function main() {
     assert.equal(calls.length, 2);
     assert.ok(calls.every(call => call.path === "/v1/responses" && call.model === config.model && call.authorized));
     assert.ok(JSON.stringify(calls[1]!.input).includes("First routing check"), "resume retains native history at the same configured endpoint");
+    assert.ok(JSON.stringify(calls[1]!.input).includes("Continue the routing check"), "resume includes the follow-up prompt");
     console.log("[ok] Codex start/resume use the configured Responses endpoint and environment credential offline");
   } finally { await provider.destroy(externalId); }
 }
