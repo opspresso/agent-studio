@@ -67,6 +67,14 @@ describe("selected model runtime registry", () => {
     replaceModelRegistry([registeredModelConfig({ ...selected, type: "image", pricing: { ...pricing, perImage: 0.1, perInputImage: 0.02 } }, "selfhosted")]);
     expect(calculateImageCost(selected.id, { textInputTokens: 0, imageInputTokens: 0, imageOutputTokens: 0, sourceImages: 2 })).toBeCloseTo(0.14);
   });
+  it.each(["text", "rerank", "transcription"] as const)("applies edited token prices to a self-hosted %s model initialized with defaults", type => {
+    const defaults = registeredModelConfig({ ...selected, type }, "selfhosted").pricing;
+    const pricing = { ...defaults, inputPer1M: 4, outputPer1M: 12 };
+    replaceModelRegistry([registeredModelConfig({ ...selected, type, pricing }, "selfhosted")]);
+    expect(calculateCost(selected.id, { inputTokens: 1000, outputTokens: 1000, cachedTokens: 1000 })).toBe(0.016);
+    if (type === "rerank") expect(calculateRerankCost(selected.id, 1000)).toBe(0.004);
+    if (type === "transcription") expect(calculateTranscriptionCost(selected.id, { inputTokens: 1000, outputTokens: 1000 })).toBe(0.016);
+  });
   it("preserves provider constraints when installing an administrator's declaration", () => {
     const model = registeredModelConfig({ ...selected, capabilities: { ...selected.capabilities, reasoningWithTools: false } }, "openai");
     expect(model.capabilities.reasoningWithTools).toBe(false);

@@ -8,6 +8,11 @@ export const MODEL_FILTER_CAPABILITIES = ["tools", "imageInput", "reasoning", "s
 export type FilterCapability = typeof MODEL_FILTER_CAPABILITIES[number];
 export type ModelRow = DiscoveredModel & { id?: string; provider?: string };
 
+/** A display ID can collapse namespaces; row identity retains the original wire ID. */
+export function modelRowKey(model: ModelRow, provider?: string): string {
+  return JSON.stringify([model.provider ?? provider ?? model.id, model.wireId]);
+}
+
 /** Output tags can overlap; the primary type separately chooses an execution path. */
 export function modelOutputTypes(model: Pick<DiscoveredModel, "type" | "outputModalities">): string[] {
   return [...new Set([...(model.type ? [model.type] : []), ...(model.outputModalities ?? []).map(value => value === "embeddings" ? "embedding" : value)])];

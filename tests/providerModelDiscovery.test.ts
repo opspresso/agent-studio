@@ -76,6 +76,21 @@ describe("model discovery", () => {
       { wireId: "plain-model", displayName: "plain-model" },
     ]);
   });
+  it("preserves valid self-hosted listing prices instead of replacing them with zero defaults", async () => {
+    const pricing = { inputPer1M: 0.1, outputPer1M: 0.3, perSearch: 0.02 };
+    const fetch = vi.fn(async () => Response.json({ data: [{ id: "vendor/model", type: "rerank", pricing: { ...pricing, internalNote: "private" } }] }));
+    const [model] = await createProviderModelDiscovery(fetch as unknown as typeof globalThis.fetch).list(provider("office"));
+    expect(model?.pricing).toEqual(pricing);
+  });
+  it.each([
+    { inputPer1M: -1, outputPer1M: 0 },
+    { inputPer1M: "0.1", outputPer1M: 0 },
+    { inputPer1M: 0.1, outputPer1M: 0.3, cachedInputPer1M: 0.2 },
+  ])("rejects invalid self-hosted listing pricing without silently marking the model free: %j", async pricing => {
+    const fetch = vi.fn(async () => Response.json({ data: [{ id: "vendor/model", pricing }] }));
+    await expect(createProviderModelDiscovery(fetch as unknown as typeof globalThis.fetch).list(provider("office")))
+      .rejects.toThrow("Provider model discovery returned invalid pricing");
+  });
 
   it("preserves explicit output modalities ahead of name guesses for self-hosted models", async () => {
     const fetch = vi.fn(async () => Response.json({ data: [

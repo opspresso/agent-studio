@@ -54,11 +54,16 @@ export function ModelEditor({ model, onSaved, onCancel }: {
       <NumberInput label={t("modelAdmin.outputPrice")} description={t("modelAdmin.price")} value={form.pricing.outputPer1M} min={0} disabled={busy || pricingLocked} onChange={value => setForm({ ...form, pricing: { ...form.pricing, outputPer1M: Number(value) } })} />
     </SimpleGrid>}
     {priced && ([
+      ["all", "cachedInputPer1M", "modelAdmin.cachedInputPrice"],
+      ["image", "imageInputPer1M", "modelAdmin.imageInputPrice"],
+      ["image", "imageOutputPer1M", "modelAdmin.imageOutputPrice"],
+      ["image", "perInputImage", "modelAdmin.perInputImage"],
       ["transcription", "perAudioMinute", "modelAdmin.perMinute"],
       ["image", "perImage", "modelAdmin.perImage"],
       ["rerank", "perSearch", "modelAdmin.perSearch"],
-    ] as const).filter(([type]) => type === form.type).map(([, key, label]) => <NumberInput key={key}
+    ] as const).filter(([type]) => type === "all" || type === form.type).map(([, key, label]) => <NumberInput key={key}
       label={t(label)} value={form.pricing[key] ?? ""} min={0} disabled={busy || pricingLocked}
+      description={key.endsWith("Per1M") ? t("modelAdmin.price") : undefined}
       onChange={value => setForm({ ...form, pricing: { ...form.pricing, [key]: value === "" ? undefined : Number(value) } })} />)}
   </FormModal>;
 }

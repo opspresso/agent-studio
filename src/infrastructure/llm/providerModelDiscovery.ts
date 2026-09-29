@@ -1,6 +1,6 @@
-import { DEFAULT_SELF_HOSTED_MODEL_PRICING, type ModelCapabilities } from "@/domain/llm/models";
+import { DEFAULT_SELF_HOSTED_MODEL_PRICING, type ModelCapabilities, type ModelPricing } from "@/domain/llm/models";
 import {
-  providerBaseUrl, providerKind, providerModelDisplayName,
+  modelPricingProblem, providerBaseUrl, providerKind, providerModelDisplayName,
   REGISTRY_MODEL_TYPES,
   type DiscoveredModel, type ProviderModelDiscovery, type RegistryModelType,
 } from "@/domain/llm/providerModels";
@@ -19,6 +19,19 @@ const record = (value: unknown): RecordValue => value !== null && typeof value =
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 const count = (value: unknown): number | undefined => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 const label = (value: unknown): string | undefined => typeof value === "string" && value.trim() ? value : undefined;
+
+function pricingOf(value: unknown): ModelPricing {
+  if (value === undefined) return { ...DEFAULT_SELF_HOSTED_MODEL_PRICING };
+  const source = record(value);
+  const fields = [
+    "inputPer1M", "outputPer1M", "cachedInputPer1M", "imageInputPer1M", "imageOutputPer1M",
+    "perImage", "perInputImage", "perSearch", "perAudioMinute", "discount",
+  ] as const satisfies readonly (keyof ModelPricing)[];
+  const pricing = Object.fromEntries(fields.filter(key => source[key] !== undefined).map(key => [key, source[key]])) as unknown as ModelPricing;
+  const problem = modelPricingProblem(pricing);
+  if (problem) throw new Error(`Provider model discovery returned invalid pricing: ${problem}`);
+  return pricing;
+}
 
 function modalities(entry: RecordValue, axis: "input" | "output"): string[] {
   const architecture = record(entry.architecture);
@@ -89,7 +102,7 @@ function toModel(value: unknown): DiscoveredModel | undefined {
     ...(contextWindow !== undefined ? { contextWindow } : {}),
     ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(Object.keys(capabilities).length ? { capabilities } : {}),
-    pricing: { ...DEFAULT_SELF_HOSTED_MODEL_PRICING },
+    pricing: pricingOf(entry.pricing),
   };
 }
 

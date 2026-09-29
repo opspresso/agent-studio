@@ -10,7 +10,7 @@ import { formatModelPrice, modelPriceLabel } from "@/app/_components/modelOption
 import { useT } from "@/app/_i18n/provider";
 import { contextWindowLabel } from "@/domain/llm/models";
 import { REGISTRY_MODEL_TYPES, registeredModelId } from "@/domain/llm/providerModels";
-import { activeModelProvider, DEFAULT_MODEL_BROWSER_STATE, MODEL_BROWSER_KEYS, MODEL_FILTER_CAPABILITIES, deserializeModelBrowserState, filterModelRows, modelOutputTypes, nextSort, type ModelBrowserState, type ModelRow } from "./modelTable";
+import { activeModelProvider, DEFAULT_MODEL_BROWSER_STATE, MODEL_BROWSER_KEYS, MODEL_FILTER_CAPABILITIES, deserializeModelBrowserState, filterModelRows, modelOutputTypes, modelRowKey, nextSort, type ModelBrowserState, type ModelRow } from "./modelTable";
 import classes from "./ModelCollection.module.css";
 import layout from "@/app/_components/CatalogLayout.module.css";
 
@@ -73,7 +73,7 @@ export function ModelCollection<T extends ModelRow>({ models, provider, emptyTex
           {renderActions && <span role="columnheader">{t("models.column.actions")}</span>}
         </div>
         {filtered.slice((currentPage - 1) * 24, currentPage * 24).map(model => (
-          <div className={classes.row} role="row" key={model.id ?? `${provider}/${model.wireId}`}>
+          <div className={classes.row} role="row" key={modelRowKey(model, provider)}>
             <div className={classes.identity} role="cell">
               <div className={classes.identityTop}>
                 <Text fw={650} className={classes.identityName}>{model.displayName}</Text>

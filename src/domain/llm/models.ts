@@ -29,9 +29,7 @@ export interface ModelPricing {
 
 /** Default self-hosted rates; administrator-saved pricing takes precedence. */
 export const DEFAULT_SELF_HOSTED_MODEL_PRICING = Object.freeze({
-  inputPer1M: 0, outputPer1M: 0, cachedInputPer1M: 0,
-  imageInputPer1M: 0, imageOutputPer1M: 0, perImage: 0, perInputImage: 0,
-  perSearch: 0, perAudioMinute: 0,
+  inputPer1M: 0, outputPer1M: 0,
 } satisfies ModelPricing);
 
 export interface ModelCapabilities {

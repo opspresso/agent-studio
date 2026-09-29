@@ -121,6 +121,15 @@ export function registeredModelConfig(model: RegisteredModel, kind: SupportedPro
   };
 }
 
+export function modelPricingProblem(pricing: ModelPricing): string | undefined {
+  if (typeof pricing.inputPer1M !== "number" || typeof pricing.outputPer1M !== "number") return "Input and output prices are required";
+  for (const rate of Object.values(pricing)) {
+    if (typeof rate !== "number" || !Number.isFinite(rate) || rate < 0) return "Model prices must be finite and nonnegative";
+  }
+  if ((pricing.cachedInputPer1M ?? 0) > pricing.inputPer1M) return "Cached input price exceeds input price";
+  return undefined;
+}
+
 export function registeredModelProblem(model: RegisteredModel, expectedId = registeredModelId(model.provider, model.wireId)): string | undefined {
   if (!/^[a-z][a-z0-9_-]{0,63}$/.test(model.provider)) return "Invalid provider name";
   if (!modelNameFromWireId(model.wireId).trim() || model.wireId !== model.wireId.trim() || model.wireId.length > 200 || /[\x00-\x1f\x7f]/.test(model.wireId)) return "Invalid provider model ID";
@@ -134,12 +143,5 @@ export function registeredModelProblem(model: RegisteredModel, expectedId = regi
     if (typeof model.capabilities[flag] !== "boolean") return `Invalid capability: ${flag}`;
   }
   if (model.capabilities.reasoningWithTools !== undefined && typeof model.capabilities.reasoningWithTools !== "boolean") return "Invalid capability: reasoningWithTools";
-  if (model.pricing) {
-    if (typeof model.pricing.inputPer1M !== "number" || typeof model.pricing.outputPer1M !== "number") return "Input and output prices are required";
-    for (const rate of Object.values(model.pricing)) {
-      if (typeof rate !== "number" || !Number.isFinite(rate) || rate < 0) return "Model prices must be finite and nonnegative";
-    }
-    if ((model.pricing.cachedInputPer1M ?? 0) > model.pricing.inputPer1M) return "Cached input price exceeds input price";
-  }
-  return undefined;
+  return model.pricing ? modelPricingProblem(model.pricing) : undefined;
 }

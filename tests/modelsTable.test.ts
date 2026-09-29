@@ -7,6 +7,7 @@ import {
   type ModelBrowserState,
   sortModelRows,
   modelOutputTypes,
+  modelRowKey,
   DEFAULT_MODEL_BROWSER_STATE,
   deserializeModelBrowserState,
   deserializeModelProvider,
@@ -49,6 +50,15 @@ const models = [
 const visible = (rows: typeof models, state: Partial<ModelBrowserState>) => filterModelRows(rows, { ...DEFAULT_MODEL_BROWSER_STATE, ...state });
 
 describe("models table", () => {
+  it("keeps namespaced and bare model rows distinct when their display IDs collide", () => {
+    const selected = { id: "selfhosted/model", wireId: "nvidia/model", displayName: "Model", provider: "selfhosted" };
+    const bare = { wireId: "model", displayName: "Model" };
+    expect(modelRowKey(selected, "selfhosted")).not.toBe(modelRowKey(bare, "selfhosted"));
+    expect(modelRowKey(selected, "selfhosted"))
+      .toBe(modelRowKey({ wireId: selected.wireId, displayName: "Model" }, "selfhosted"));
+    expect(modelRowKey({ ...bare, id: "openai/model" }))
+      .not.toBe(modelRowKey({ ...bare, id: "selfhosted/model" }));
+  });
   it("restores browser filters and ordering while rejecting malformed saved preferences", () => {
     expect(deserializeModelBrowserState(JSON.stringify({ query: "Jev", type: "decision", selectedOnly: true, capabilities: ["tools", "invalid"], sortKey: "price", direction: "desc", page: 3 })))
       .toMatchObject({ query: "Jev", type: "decision", selectedOnly: true, capabilities: ["tools"], sortKey: "price", direction: "desc", page: 3 });
