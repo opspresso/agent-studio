@@ -50,6 +50,16 @@ describe("published model catalog", () => {
     });
   });
 
+  it("matches public models and prices by exact wire ID even when their model names are identical", () => {
+    const first = { ...base, id: "openrouter/vendor-a-example", provider: "openrouter", wireId: "vendor-a/example" };
+    const second = { ...base, id: "openrouter/vendor-b-example", provider: "openrouter", wireId: "vendor-b/example", pricing: { inputPer1M: 7, outputPer1M: 21 } };
+    const catalog = createPublishedModelCatalog(document("2026-09-24T00:00:00Z", [first, second]));
+    expect(catalog.modelId("openrouter", "vendor-a/example")).toBe(first.id);
+    expect(catalog.modelId("openrouter", "vendor-b/example")).toBe(second.id);
+    expect(catalog.pricing("openrouter", "vendor-b/example")).toEqual(second.pricing);
+    expect(catalog.modelId("openrouter", "example")).toBeUndefined();
+  });
+
   it("refreshes prices once per interval and coalesces concurrent readers", async () => {
     const next = document("2026-09-24T01:00:00Z", [{ ...base, pricing: { inputPer1M: 3, outputPer1M: 15 } }]);
     let release!: (value: Response) => void;

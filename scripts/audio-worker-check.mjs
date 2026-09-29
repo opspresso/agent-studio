@@ -14,7 +14,6 @@ const child = spawn(process.execPath, [join(process.cwd(), "build/audio-worker.c
     NODE_ENV: "production", STAGE: "local",
     DATABASE_URL: `postgres://test:test@127.0.0.1:${port}/audio_worker_test`,
     S3_BUCKET_NAME: "audio-worker-check", S3_ENDPOINT: `http://127.0.0.1:${port}`,
-    LLM_BASE_URL: `http://127.0.0.1:${port}/v1`, LLM_API_KEY: "test",
     AES_ENCRYPTION_KEY: Buffer.alloc(32).toString("base64"),
   },
   stdio: ["ignore", "pipe", "pipe"],

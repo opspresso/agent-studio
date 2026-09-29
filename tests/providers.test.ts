@@ -66,15 +66,6 @@ describe("parseProviderConfigs", () => {
     });
     expect(configs[0]?.auth).toBe("bearer");
   });
-
-  it("ignores unrelated env vars", () => {
-    const configs = parseProviderConfigs({
-      LLM_BASE_URL: "https://router.example/v1",
-      LLM_API_KEY: "x",
-      SOME_OTHER: "y",
-    });
-    expect(configs).toHaveLength(0);
-  });
 });
 
 describe("resolveProviderTarget", () => {

@@ -71,7 +71,7 @@ async function loadSettings(): Promise<AppSettings | null> {
             if (!provider) return [];
             const kind = providerKind(provider);
             const config = registeredModelConfig(model, kind);
-            const pricing = publishedModelCatalog.pricing(kind, model.wireId);
+            const pricing = kind === "selfhosted" ? undefined : publishedModelCatalog.pricing(kind, model.wireId);
             return [{ ...config, ...(pricing ? { pricing, pricingKnown: true } : {}) }];
           });
           replaceModelRegistry(models, value?.updatedAt ?? "");

@@ -1,5 +1,5 @@
 import { MODEL_TYPES as ALL_MODEL_TYPES, type ModelConfig, type ModelType } from "@/domain/llm/models";
-import type { DiscoveredModel } from "@/domain/llm/providerModels";
+import { registeredModelId, type DiscoveredModel } from "@/domain/llm/providerModels";
 import { matchesFilter } from "@/app/_components/CatalogSearch";
 
 export type ModelSortKey = "name" | "price";
@@ -7,6 +7,11 @@ export type SortDirection = "asc" | "desc";
 export const MODEL_FILTER_CAPABILITIES = ["tools", "imageInput", "reasoning", "structuredOutput"] as const;
 export type FilterCapability = typeof MODEL_FILTER_CAPABILITIES[number];
 export type ModelRow = DiscoveredModel & { id?: string; provider?: string };
+
+/** A display ID can collapse namespaces; row identity retains the original wire ID. */
+export function modelRowKey(model: ModelRow, provider?: string): string {
+  return JSON.stringify([model.provider ?? provider ?? model.id, model.wireId]);
+}
 
 /** Output tags can overlap; the primary type separately chooses an execution path. */
 export function modelOutputTypes(model: Pick<DiscoveredModel, "type" | "outputModalities">): string[] {
@@ -103,7 +108,7 @@ export function filterModelRows<T extends ModelRow>(models: T[], state: ModelBro
     (!isSelected || !state.selectedOnly || isSelected(model)) &&
     state.capabilities.every(flag => model.capabilities?.[flag] === true) &&
     matchesFilter(state.query, model.displayName, model.id, model.wireId, model.provider,
-      providerName && `${providerName}/${model.wireId}`, model.maker),
+      providerName && registeredModelId(providerName, model.wireId), model.maker),
   ), state.sortKey, state.direction);
 }
 

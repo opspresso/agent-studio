@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createProviderModelDiscovery } from "@/infrastructure/llm/providerModelDiscovery";
 import type { ProviderChannelConfig } from "@/domain/settings/types";
 import type { DiscoveredModel } from "@/domain/llm/providerModels";
+import { DEFAULT_SELF_HOSTED_MODEL_PRICING } from "@/domain/llm/models";
 
 const provider = (name: string, kind: ProviderChannelConfig["kind"] = "selfhosted", baseUrl = "https://provider.test/v1"): ProviderChannelConfig =>
   ({ name, kind, baseUrl, apiKey: "test-key", auth: "bearer", keepModelPrefix: false });
@@ -50,15 +51,45 @@ describe("model discovery", () => {
     const models = await createProviderModelDiscovery(fetch as unknown as typeof globalThis.fetch, published)
       .list(provider("local", "selfhosted", "http://localhost:1234/v1"));
     expect(models).toEqual([{
-      wireId: "local/model", displayName: "local/model", type: "image", contextWindow: 8000,
+      wireId: "local/model", displayName: "model", type: "image", contextWindow: 8000,
       inputModalities: ["text", "image"], outputModalities: ["image"],
       capabilities: { tools: false, structuredOutput: true, reasoning: false, imageInput: true },
+      pricing: DEFAULT_SELF_HOSTED_MODEL_PRICING,
     }]);
     expect(fetch).toHaveBeenCalledWith("http://localhost:1234/v1/models", expect.objectContaining({
       headers: { accept: "application/json", authorization: "Bearer test-key" },
       redirect: "error",
     }));
     expect(published.refreshIfDue).not.toHaveBeenCalled();
+  });
+
+  it("shows model names without maker namespaces and preserves explicit provider labels", async () => {
+    const fetch = vi.fn(async () => Response.json({ data: [
+      { id: "nvidia/Qwen3.6-35B-A3B-NVFP4", name: "nvidia/Qwen3.6-35B-A3B-NVFP4", type: "text" },
+      { id: "sentence-transformers/all-minilm-l12-v2", display_name: "all-MiniLM-L12-v2", type: "embedding" },
+      { id: "plain-model", type: "text" },
+    ] }));
+    const models = await createProviderModelDiscovery(fetch as unknown as typeof globalThis.fetch).list(provider("selfhosted"));
+    expect(models).toMatchObject([
+      { wireId: "nvidia/Qwen3.6-35B-A3B-NVFP4", displayName: "Qwen3.6-35B-A3B-NVFP4" },
+      { wireId: "sentence-transformers/all-minilm-l12-v2", displayName: "all-MiniLM-L12-v2" },
+      { wireId: "plain-model", displayName: "plain-model" },
+    ]);
+  });
+  it("preserves valid self-hosted listing prices instead of replacing them with zero defaults", async () => {
+    const pricing = { inputPer1M: 0.1, outputPer1M: 0.3, perSearch: 0.02 };
+    const fetch = vi.fn(async () => Response.json({ data: [{ id: "vendor/model", type: "rerank", pricing: { ...pricing, internalNote: "private" } }] }));
+    const [model] = await createProviderModelDiscovery(fetch as unknown as typeof globalThis.fetch).list(provider("office"));
+    expect(model?.pricing).toEqual(pricing);
+  });
+  it.each([
+    { inputPer1M: -1, outputPer1M: 0 },
+    { inputPer1M: "0.1", outputPer1M: 0 },
+    { inputPer1M: 0.1, outputPer1M: 0.3, cachedInputPer1M: 0.2 },
+  ])("rejects invalid self-hosted listing pricing without silently marking the model free: %j", async pricing => {
+    const fetch = vi.fn(async () => Response.json({ data: [{ id: "vendor/model", pricing }] }));
+    await expect(createProviderModelDiscovery(fetch as unknown as typeof globalThis.fetch).list(provider("office")))
+      .rejects.toThrow("Provider model discovery returned invalid pricing");
   });
 
   it("preserves explicit output modalities ahead of name guesses for self-hosted models", async () => {

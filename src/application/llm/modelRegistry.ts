@@ -5,7 +5,7 @@ import {
   type ProviderModelDiscovery, type RegisteredModel,
   registeredModelConfig,
 } from "@/domain/llm/providerModels";
-import type { ModelPricing } from "@/domain/llm/models";
+import { DEFAULT_SELF_HOSTED_MODEL_PRICING, type ModelPricing } from "@/domain/llm/models";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings, ProviderChannelConfig } from "@/domain/settings/types";
 import { DEFAULT_CALL_ROUTING_POLICY, type CallRoutingPolicy } from "@/domain/llm/callRouting";
@@ -44,6 +44,9 @@ export function createModelRegistryUseCases(deps: ModelRegistryDeps) {
   function views(models: RegisteredModel[], providers: Pick<ProviderChannelConfig, "name" | "kind">[]): RegisteredModelView[] {
     return models.map(model => {
       const provider = providers.find(item => item.name === model.provider);
+      if (provider && providerKind(provider) === "selfhosted") {
+        return { ...model, pricing: model.pricing ?? { ...DEFAULT_SELF_HOSTED_MODEL_PRICING } };
+      }
       const pricing = provider && deps.catalogPricing(provider, model.wireId);
       return pricing ? { ...model, pricing, pricingSource: "catalog" } : model;
     });
@@ -64,8 +67,9 @@ export function createModelRegistryUseCases(deps: ModelRegistryDeps) {
         const models = (settings.registeredModels ?? []).flatMap(model => {
           const provider = connections.find(connection => connection.name === model.provider);
           if (!provider) return [];
-          const pricing = deps.catalogPricing(provider, model.wireId) ?? model.pricing;
-          return [registeredModelConfig({ ...model, ...(pricing ? { pricing } : {}) }, providerKind(provider))];
+          const kind = providerKind(provider);
+          const pricing = kind === "selfhosted" ? model.pricing : deps.catalogPricing(provider, model.wireId) ?? model.pricing;
+          return [registeredModelConfig({ ...model, ...(pricing ? { pricing } : {}) }, kind)];
         });
         assertCallRoutingPolicy(policy, models);
         return { ...settings, modelRouting: structuredClone(policy), updatedAt: new Date().toISOString() };
@@ -89,18 +93,22 @@ export function createModelRegistryUseCases(deps: ModelRegistryDeps) {
         const available = settings.llmProviders ?? providers;
         const provider = available.find(item => item.name === input.provider);
         if (!provider) throw new ValidationError("Provider is not registered");
+        const kind = providerKind(provider);
         const catalogId = deps.catalogModelId(provider, input.wireId);
-        if (providerKind(provider) !== "selfhosted" && !catalogId) throw new ValidationError("Model is not in the published catalog");
+        if (kind !== "selfhosted" && !catalogId) throw new ValidationError("Model is not in the published catalog");
         const expectedId = catalogId ?? registeredModelId(input.provider, input.wireId);
         const problem = registeredModelProblem(input, expectedId);
         if (problem) throw new ValidationError(problem);
         const previous = settings.registeredModels ?? [];
         const existing = previous.find((model) => model.id === input.id);
         if (existing && existing.provider !== input.provider) throw new ConflictError("Model ID already uses another provider connection");
+        if (kind === "selfhosted" && existing && existing.wireId !== input.wireId) throw new ConflictError("Model ID already uses another provider model");
         if (existing && usage(settings, input.id).length && (existing.type !== input.type || existing.capabilities.tools !== input.capabilities.tools)) {
           throw new ConflictError("Change model usage before changing the selected model's type or tool capability");
         }
-        const saved = existing && deps.catalogPricing(provider, input.wireId)
+        const saved = kind === "selfhosted"
+          ? { ...input, pricing: input.pricing ?? { ...DEFAULT_SELF_HOSTED_MODEL_PRICING } }
+          : existing && deps.catalogPricing(provider, input.wireId)
           ? { ...input, pricing: existing.pricing }
           : input;
         const models = existing ? previous.map((model) => model.id === input.id ? saved : model) : [...previous, saved];

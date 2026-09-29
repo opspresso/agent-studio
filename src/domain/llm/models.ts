@@ -27,6 +27,11 @@ export interface ModelPricing {
   discount?: number;
 }
 
+/** Default self-hosted rates; administrator-saved pricing takes precedence. */
+export const DEFAULT_SELF_HOSTED_MODEL_PRICING = Object.freeze({
+  inputPer1M: 0, outputPer1M: 0,
+} satisfies ModelPricing);
+
 export interface ModelCapabilities {
   decision?: boolean;
   tools: boolean;
