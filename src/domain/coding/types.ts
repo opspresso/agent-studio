@@ -34,6 +34,8 @@ export type CodingAction =
   | CodingGitAction
   | { kind: "deploy"; workflow: string; ref: string; inputs: Record<string, string> };
 
+export interface CodingCiWatch { number: number; headSha: string; deadline: string }
+
 /** A coding request includes publication of its work branch and pull request. */
 export function codingActionRequiresConfirmation(action: CodingAction): boolean {
   return !["commit", "commit-and-push", "push", "pull-request"].includes(action.kind);
@@ -49,6 +51,8 @@ export interface CodingApproval {
   authorization?: "coding-request" | "confirmation";
   /** Set by the Workspace tool's trusted conversation context, never action arguments. */
   sourceChatId?: string;
+  /** Inline PR publication needs only a later CI result, not a duplicate action result. */
+  ciWatch?: CodingCiWatch;
   action: CodingAction;
   fingerprint: string;
   status: "pending" | "approved" | "rejected" | "executing" | "succeeded" | "failed" | "uncertain";

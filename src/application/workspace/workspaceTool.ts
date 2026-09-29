@@ -21,7 +21,7 @@ interface WorkspaceToolDeps {
   authorize(): Promise<void>;
   sleep(ms: number): Promise<void>;
   requestGit(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string): Promise<CodingApproval>;
-  publishGit(id: string, ownerEmail: string, action: CodingAction): Promise<CodingApproval>;
+  publishGit(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string): Promise<CodingApproval>;
   pullRequest(id: string, ownerEmail: string): Promise<PullRequestInfo | undefined>;
   attachRepository(id: string, ownerEmail: string, repository: string, baseBranch: string): Promise<WorkspaceView>;
   workdir: string;
@@ -222,11 +222,13 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
         action = { kind: "deploy", workflow: value.workflow, ref: value.ref, inputs: Object.fromEntries(entries) };
       } else throw new ValidationError("Unsupported Git action. Use commit, commit-and-push, push, pull-request, merge, push-main, tag, release or deploy; do not use a native task or another Workspace");
       if (!codingActionRequiresConfirmation(action)) {
-        const publication = await deps.publishGit(id, context.ownerEmail, action);
+        const publication = await deps.publishGit(id, context.ownerEmail, action, context.sourceChatId);
         const updated = await owned(id);
         return reply({ ...location(updated.workspace), action_id: publication.id, action: publication.action,
           status: publication.status, result: publication.result,
-          next: publication.status === "succeeded"
+          ...(publication.ciWatch ? { ci_watch: publication.ciWatch } : {}),
+          next: publication.ciWatch ? "The pull request is published. Its exact HEAD checks are watched for up to 30 minutes; pause this turn. The CI result will resume this chat for the remaining user request. Do not repeat publication or poll repeatedly."
+            : publication.status === "succeeded"
             ? "Continue the coding request through a pull request without asking for commit or work-branch push approval. Merge, main publication, tags, releases and deployment need a separate user request and confirmation. Never repeat completed actions."
             : "Report this outcome. Do not repeat an uncertain action or continue dependent publication; inspect status first." }, publication.status !== "succeeded");
       }

@@ -71,7 +71,7 @@ async function fixture() {
   const git = createCodingUseCases(coding);
   const workspaceTool = createWorkspaceTool({ useCases, authorize: async () => {}, policy: () => coding.policy("agent"),
     workdir: "/workspace/repo", publicBaseUrl: "https://studio.example.test", sleep: async () => {},
-    publishGit: (id, owner, action) => git.publish(id, owner, action), requestGit: git.request, pullRequest: git.pullRequest, attachRepository: git.attachRepository },
+    publishGit: (id, owner, action, sourceChatId) => git.publish(id, owner, action, sourceChatId), requestGit: git.request, pullRequest: git.pullRequest, attachRepository: git.attachRepository },
   { sourceChatId: f.scope.sessionId, agentName: "agent", ownerEmail: owner, occurrence: "continuation" });
   let channel = new FakeChannel([[contentChunk("Result received")]]);
   const runAgent = vi.fn<ChatDeps["runAgent"]>(async function* (input) {
@@ -90,6 +90,40 @@ async function fixture() {
 }
 
 describe("Workspace decisions returning to their source chat", () => {
+  it("watches inline PR publication without repeating its action result, then resumes only for CI", async () => {
+    const f = await fixture();
+    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.drain();
+    f.runAgent.mockClear();
+    f.pull.ci = "pending";
+    const pr = await f.git.publish(f.workspace.id, f.owner, { kind: "pull-request", title: "Change", body: "Verified", draft: false }, f.scope.sessionId);
+    expect(pr).toMatchObject({ status: "succeeded", authorization: "coding-request", ciWatch: { number: 1, headSha: f.pull.headSha } });
+    expect(await repository.continuation(f.workspace.id, pr.id)).toMatchObject({ phase: "ci", status: "waiting-ci", ciWatch: pr.ciWatch });
+    await f.drain();
+    expect(f.runAgent).not.toHaveBeenCalled();
+    f.pull.ci = "passed";
+    vi.setSystemTime(Date.now() + 16_000);
+    await f.drain();
+    expect(f.runAgent).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(f.runAgent.mock.calls[0]![0].messages[1]!.content as string)).toMatchObject({ event: "workspace_ci_result", status: "succeeded" });
+    const messages = await chats.listMessages(f.scope.sessionId);
+    expect(messages.filter(row => row.role === "assistant" && row.workspaceAction?.approvalId === pr.id)).toHaveLength(1);
+    expect(f.coding.forge.openPullRequest).toHaveBeenCalledTimes(1);
+    expect(f.coding.forge.merge).not.toHaveBeenCalled();
+    await f.drain();
+    expect(f.runAgent).toHaveBeenCalledTimes(1);
+  });
+  it("does not enqueue duplicate continuation for an inline PR whose checks are already settled", async () => {
+    const f = await fixture();
+    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.drain();
+    f.runAgent.mockClear();
+    const pr = await f.git.publish(f.workspace.id, f.owner, { kind: "pull-request", title: "Change", body: "Verified", draft: false }, f.scope.sessionId);
+    expect(pr.ciWatch).toBeUndefined();
+    expect(await repository.continuation(f.workspace.id, pr.id)).toBeNull();
+    await f.drain();
+    expect(f.runAgent).not.toHaveBeenCalled();
+  });
   async function waitingForCi() {
     const f = await fixture();
     await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
@@ -173,7 +207,7 @@ describe("Workspace decisions returning to their source chat", () => {
     expect(JSON.stringify(prChannel.seenParams[0]?.messages)).toContain("workspace_action_result");
     const prApproval = (await repository.approvals(f.workspace.id, 10)).find(row => row.action.kind === "pull-request")!;
     expect(prApproval).toMatchObject({ status: "succeeded", authorization: "coding-request" });
-    expect(prApproval.sourceChatId).toBeUndefined();
+    expect(prApproval.sourceChatId).toBe(f.scope.sessionId);
     expect(f.coding.forge.openPullRequest).toHaveBeenCalledTimes(1);
     const mergeApproval = (await repository.approvals(f.workspace.id, 10)).find(row => row.action.kind === "merge")!;
     expect(mergeApproval.status).toBe("pending");

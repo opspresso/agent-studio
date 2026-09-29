@@ -315,7 +315,7 @@ describe("Workspace Agent capability", () => {
     const result = await invoke(request, "publish");
     expect(result).toMatchObject({ status: "succeeded", result: "Published", action_id: "publication" });
     expect(result.approval_url).toBeUndefined();
-    expect(publishGit).toHaveBeenCalledExactlyOnceWith(workspace.id, owner, action);
+    expect(publishGit).toHaveBeenCalledExactlyOnceWith(workspace.id, owner, action, undefined);
     expect(requestGit).not.toHaveBeenCalled();
     await expect(makeTool("demo", "foreign@example.com")({ request }, "foreign")).rejects.toMatchObject({ status: 404 });
     expect(publishGit).toHaveBeenCalledTimes(1);

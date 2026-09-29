@@ -9,6 +9,7 @@ import { ownedWorkspace, workspacePolicy, workspaceView, checkWorkspaceRepositor
 import { ensureWorkspaceSandbox, saveWorkspaceCheckpoint, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { WorkspaceWorkerState, WORKSPACE_LEASE_MS } from "@/application/workspace/workerState";
 import { boundedWorkspaceText } from "@/application/workspace/output";
+import { codingCiWatch } from "@/application/chat/workspaceCiWatch";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { isGitBranch, isRepositoryName, workspaceAllowsRepository } from "@/domain/workspace/policy";
 
@@ -95,10 +96,10 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
 /** All effects share ownership, tree review, action claims and uncertainty handling. */
 export function createCodingUseCases(deps: CodingDeps) {
   return {
-    async publish(id: string, ownerEmail: string, action: CodingAction): Promise<CodingApproval> {
+    async publish(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string): Promise<CodingApproval> {
       if (codingActionRequiresConfirmation(action)) throw new ValidationError("This action requires explicit confirmation");
-      // Inline tool results already continue the chat. Do not enqueue a second continuation.
-      const approval = await this.request(id, ownerEmail, action, undefined, "coding-request");
+      // The action result stays inline; PRs can schedule a later CI-only update.
+      const approval = await this.request(id, ownerEmail, action, action.kind === "pull-request" ? sourceChatId : undefined, "coding-request");
       return this.decide(id, ownerEmail, approval.id, true);
     },
     async pullRequest(id: string, ownerEmail: string): Promise<PullRequestInfo | undefined> {
@@ -229,7 +230,8 @@ export function createCodingUseCases(deps: CodingDeps) {
             const dispatched = await state.effect(() => deps.forge.dispatch(repo.repository, action.workflow, action.ref, action.inputs));
             result = dispatched.url ?? (dispatched.runId ? `Workflow run ${dispatched.runId}` : "Workflow dispatch accepted");
           }
-          const completed: CodingApproval = { ...decision, operationId: approvalId, status: "succeeded", result };
+          const ciWatch = decision.authorization === "coding-request" && decision.sourceChatId ? codingCiWatch(patch.pullRequest, deps.now()) : undefined;
+          const completed: CodingApproval = { ...decision, operationId: approvalId, status: "succeeded", result, ...(ciWatch ? { ciWatch } : {}) };
           await release(deps, state, completed, false, patch);
           return completed;
         } catch (error) {
