@@ -92,7 +92,7 @@ Agent 소유권을 넘는 관리자 권한과는 구분한다. [인증과 접근
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
-| `BETTER_AUTH_SECRET` | — | — | 세션 서명 시크릿 (`openssl rand -base64 32`). |
+| `BETTER_AUTH_SECRET` | — | — | 세션 서명 시크릿 (`openssl rand -hex 32`). |
 | `BETTER_AUTH_URL` | — | — | 단일 도메인에서는 Better Auth 콜백의 base URL. `BETTER_AUTH_ALLOWED_HOSTS`를 설정하면 HTTP(S) origin이어야 하며 모든 허용 호스트의 프로토콜을 결정한다. 예: `https://studio.opspresso.com`. |
 | `BETTER_AUTH_ALLOWED_HOSTS` | 비어 있음 | — | 로그인할 정확한 호스트의 쉼표 구분 목록. scheme·경로·wildcard·기본 포트의 중복 표기는 거부하며, 로컬의 `localhost:3000` 같은 포트는 포함할 수 있다. 예: `studio.opspresso.com,agentops.demo.clush.net`. 설정하면 Better Auth가 보존된 `Host` 헤더(없으면 request URL)의 허용 호스트로 OAuth 콜백을 만들고 등록되지 않은 호스트는 거부한다. 프록시는 원래 `Host`를 전달해야 하며 `X-Forwarded-Host`·`X-Forwarded-Proto`는 사용하지 않는다. 각 origin의 provider 콜백을 모두 등록한다. [설치 절차](INSTALL.md#멀티-도메인-로그인)를 따른다. |
 | `KEYCLOAK_ISSUER` / `KEYCLOAK_CLIENT_ID` / `KEYCLOAK_CLIENT_SECRET` | — | — | Keycloak 로그인. 셋이 모두 비어 있지 않을 때 켜지며 Google·표준 OIDC와 병행할 수 있다. issuer는 `https://sso.example.com/realms/corp` 같은 HTTP(S) realm URL이며 끝의 `/`는 제거한다. 사용자명·비밀번호·query·fragment가 포함된 URL은 거부한다. 콜백은 인증 origin의 `/api/auth/callback/keycloak`이다. PKCE와 ID 토큰 검증을 사용한다. [설치 절차](INSTALL.md#keycloak-로그인)를 따른다. |
