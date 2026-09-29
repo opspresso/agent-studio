@@ -51,6 +51,27 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("Workspace Agent capability", () => {
+  it("requests cleanup if a newly created review Workspace cannot admit its first task", async () => {
+    const enqueue = vi.spyOn(useCases, "enqueue").mockRejectedValueOnce(new Error("admission refused"));
+    try {
+      await expect(useCases.start({ agentName: "demo", runtime: "command", repository: "org/repo", baseBranch: "review/head", sourceRevision: "a".repeat(40), input: { kind: "command", script: "true" } }, owner, "review-admission")).rejects.toThrow("admission refused");
+      expect((await repository.list(owner, 20))[0]?.status).toBe("closing");
+    } finally { enqueue.mockRestore(); }
+  });
+  it("seals a review Workspace to its provider-verified commit and refuses other workspaces and Git effects", async () => {
+    const target = { repository: "org/repo", number: 130, headSha: "a".repeat(40) };
+    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY,
+      publicBaseUrl: "https://studio.example.test", policy: () => policy }, { agentName: "demo", ownerEmail: owner, occurrence: "review", reviewTarget: target });
+    const result = JSON.parse((await tool({ request: start }, "bootstrap")).text);
+    expect((await repository.get(result.workspace_id))?.coding).toMatchObject({ repository: target.repository, sourceRevision: target.headSha, baseBranch: `review/${target.headSha}` });
+    for (const operation of ["prepare_git", "attach_repository", "create_repository", "use_workspace", "close"]) {
+      await expect(tool({ request: { operation } }, "unsafe")).rejects.toThrow("only source reads");
+    }
+    await expect(tool({ request: { operation: "run", repository: "other/repo", task: "true" } }, "other")).rejects.toThrow("fixed to the verified");
+    const unrelated = await invoke(start, "unrelated");
+    await expect(tool({ request: { operation: "status", workspace_id: unrelated.workspace_id } }, "read")).rejects.toMatchObject({ status: 404 });
+    expect(requestGit).not.toHaveBeenCalled();
+  });
   it("selects an owned Workspace for an external run and uses it for options, status and follow-up work", async () => {
     const first = await invoke(start);
     const workspace = (await repository.get(first.workspace_id))!;

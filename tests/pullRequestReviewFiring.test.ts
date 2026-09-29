@@ -17,35 +17,85 @@ const reviewContext = { ...target, baseSha: "b".repeat(40), title: "Change", bod
 function fixture(chunks: EngineChunk[] = [{ delta: { content: "확인된 결함은 없습니다." } }, { done: true }]) {
   let trigger: WebhookTrigger = { agentName: "review", triggerId: "webhook", kind: "webhook", description: "",
     secret: "test-secret", enabled: true, allowConcurrent: true, createdAt: "2026-09-23T00:00:00Z", updatedAt: "2026-09-23T00:00:00Z",
-    githubReview: { scope: "accessible" } };
+    githubReview: { scope: "accessible" }, executionEmail: "owner@example.test" };
   const claimed = new Set<string>();
   const rows: TriggerRun[] = [];
   const calls: Parameters<TriggerRunnerDeps["run"]>[0][] = [];
   const load = vi.fn(async () => ({ status: "ready" as const, context: reviewContext }));
   const reply = vi.fn(async () => ({ status: "posted" as const, url: reviewContext.url + "#pullrequestreview-1" }));
   const read = vi.fn(async (_target: unknown, _request: unknown) => ({ text: "", offset: 0, totalChars: 0, nextOffset: null as number | null }));
+  const closeWorkspace = vi.fn(async () => {});
+  const ensureIdle = vi.fn(async () => {});
+  const openWorkspace = vi.fn(async () => ({ id: "review-workspace", url: "https://studio.example.test/chats/review-workspace",
+    tool: async () => ({ text: "{}" }), ensureIdle, close: closeWorkspace }));
   const deps = {
     cipher: { decrypt: (secret: string) => secret, decryptEquals: (a: string, b: string) => a === b },
     triggers: { get: async () => trigger, claimIdempotencyKey: async (_p: string, _t: string, key: string) => {
       if (claimed.has(key)) return false; claimed.add(key); return true;
     }, appendRun: async (row: TriggerRun) => { rows.push(row); }, finishRun: async (row: TriggerRun) => { rows[0] = row; }, listRuns: async () => [] },
-    agents: { get: async () => ({ name: "review", configuration: { agentName: "review", systemPrompt: "Review", model: "test",
+    agents: { get: async () => ({ name: "review", ownerEmail: "owner@example.test", configuration: { agentName: "review", systemPrompt: "Review", model: "test",
       skillList: ["code-review"], mcpList: [{ name: "dangerous" }], subagentList: [],
-      parameters: { piiFiltering: false, structuredOutput: true, dynamicCapabilities: true } } }) },
+      parameters: { piiFiltering: false, structuredOutput: true, dynamicCapabilities: true, workspaceTools: true } } }) },
     async *run(input: Parameters<TriggerRunnerDeps["run"]>[0]) { calls.push(input); yield* chunks; },
     reviewForge: () => ({ load, reply, read }),
+    openReviewWorkspace: openWorkspace,
+    executionUserActive: async () => true,
   } as unknown as TriggerRunnerDeps;
   function credential(input = payload, deliveryId = "11111111-1111-4111-8111-111111111111") {
     const body = JSON.stringify(input);
     return { kind: "github" as const, body, deliveryId, event: "pull_request", signature: "sha256=" + createHmac("sha256", "test-secret").update(body).digest("hex") };
   }
-  return { deps, load, read, reply, calls, rows, claimed, credential, disable: () => { trigger = { ...trigger, enabled: false }; } };
+  return { deps, load, read, reply, calls, rows, claimed, credential, openWorkspace, closeWorkspace, ensureIdle, disable: () => { trigger = { ...trigger, enabled: false }; } };
 }
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-23T00:00:00Z")); });
 afterEach(() => vi.useRealTimers());
 
 describe("signed PR review firing", () => {
+  it.each(["blockedTools", "approvalTools"] as const)("does not bootstrap a Workspace excluded by %s", async policy => {
+    const f = fixture();
+    const agent = (await f.deps.agents.get("review"))!;
+    agent.configuration!.parameters.policy = { [policy]: ["Workspace"] };
+    f.deps.agents.get = async () => agent;
+    const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
+    if (admitted.status !== "accepted") throw new Error("not admitted");
+    await executeDelivery(f.deps, admitted, payload);
+    expect(f.openWorkspace).not.toHaveBeenCalled();
+    expect(f.reply).not.toHaveBeenCalled();
+    expect(f.rows[0]?.status).toBe("failed");
+  });
+  it("opens the verified PR Workspace before review, reports to GitHub, and closes it before recording completion", async () => {
+    const f = fixture();
+    const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
+    if (admitted.status !== "accepted") throw new Error("not admitted");
+    await executeDelivery(f.deps, admitted, payload);
+    expect(f.openWorkspace).toHaveBeenCalledExactlyOnceWith(target, "review", "webhook", "owner@example.test");
+    expect(f.calls[0]?.reviewWorkspace).toBeTypeOf("function");
+    expect(f.reply.mock.invocationCallOrder[0]).toBeGreaterThan(f.openWorkspace.mock.invocationCallOrder[0]!);
+    expect(f.closeWorkspace.mock.invocationCallOrder[0]).toBeGreaterThan(f.reply.mock.invocationCallOrder[0]!);
+    expect(f.closeWorkspace).toHaveBeenCalledOnce();
+    expect(f.rows[0]).toMatchObject({ status: "succeeded", review: { status: "posted" } });
+  });
+
+  it("refuses an unfinished Workspace report and still closes the Sandbox", async () => {
+    const f = fixture();
+    f.ensureIdle.mockRejectedValue(new Error("checks are unfinished"));
+    const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
+    if (admitted.status !== "accepted") throw new Error("not admitted");
+    await executeDelivery(f.deps, admitted, payload);
+    expect(f.reply).not.toHaveBeenCalled();
+    expect(f.closeWorkspace).toHaveBeenCalledOnce();
+    expect(f.rows[0]?.status).toBe("failed");
+  });
+
+  it("keeps the posted review receipt when Workspace cleanup fails", async () => {
+    const f = fixture();
+    f.closeWorkspace.mockRejectedValue(new Error("cleanup failed"));
+    const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
+    if (admitted.status !== "accepted") throw new Error("not admitted");
+    await executeDelivery(f.deps, admitted, payload);
+    expect(f.rows[0]).toMatchObject({ status: "failed", review: { status: "posted" }, error: "cleanup failed" });
+  });
   it("does not publish while a required diff remains truncated, then accepts a fully read patch", async () => {
     const incomplete = fixture();
     incomplete.load.mockResolvedValue({ status: "ready", context: { ...reviewContext,

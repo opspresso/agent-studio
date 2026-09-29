@@ -80,6 +80,17 @@ describe("Studio prepares native SDK agent bindings", () => {
     expect((await buildAgentDeps(f.deps, f.parent, "parent", async () => {}, f.origin)).workspaceTool).toBeUndefined();
     expect(f.deps.workspaceTool).not.toHaveBeenCalled();
   });
+  it("binds only the server-scoped Workspace callback for an opted-in PR background run", async () => {
+    const handler = vi.fn(async () => ({ text: "ready" }));
+    const f = fixture();
+    f.deps.reviewWorkspace = handler;
+    f.parent.parameters.workspaceTools = true;
+    const bound = await buildAgentDeps(f.deps, f.parent, "parent", async () => {}, { ...f.origin, backgroundTask: true });
+    expect(bound.workspaceTool).toBe(handler);
+    expect(bound.callMcpTool).toBeUndefined();
+    expect(bound.generateImage).toBeUndefined();
+    expect(bound.saveFile).toBeUndefined();
+  });
   it("loads the current configuration from the Agent", async () => {
     const f = fixture();
     const prepared = await f.prepare();

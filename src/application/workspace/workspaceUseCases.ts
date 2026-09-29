@@ -25,12 +25,15 @@ export interface WorkspaceDeps {
   idleTtlSeconds: number;
   authorize?(agentName: string, email: string, actor?: RunActor, grant?: ExecutionGrant): Promise<void>;
   assertRuntime?(runtime: WorkspaceRuntime): Promise<void>;
-  checkRepository?(repository: string, baseBranch: string): Promise<void>;
+  checkRepository?(repository: string, baseBranch: string, sourceRevision?: string): Promise<void>;
 }
 
-export async function checkWorkspaceRepository(deps: WorkspaceDeps, repository: string, baseBranch: string): Promise<void> {
+export async function checkWorkspaceRepository(deps: WorkspaceDeps, repository: string, baseBranch: string, sourceRevision?: string): Promise<void> {
   if (!deps.checkRepository) throw new ValidationError("Workspace repository validation is not configured");
-  try { await deps.checkRepository(repository, baseBranch); }
+  try {
+    if (sourceRevision === undefined) await deps.checkRepository(repository, baseBranch);
+    else await deps.checkRepository(repository, baseBranch, sourceRevision);
+  }
   catch (error) {
     if (error instanceof CodingRepositoryNotReadyError) throw new ValidationError(error.message);
     if (error instanceof ValidationError) throw error;
@@ -39,6 +42,7 @@ export async function checkWorkspaceRepository(deps: WorkspaceDeps, repository: 
 }
 
 export interface CreateWorkspaceInput {
+  sourceRevision?: string;
   chatId: string;
   agentName: string;
   runtime: WorkspaceRuntime;
@@ -51,6 +55,8 @@ export interface CreateWorkspaceInput {
 }
 
 export interface StartWorkspaceInput {
+  /** Internal review checkout; omitted from every public request schema. */
+  sourceRevision?: string;
   agentName: string;
   title?: string;
   runtime: WorkspaceRuntime;
@@ -160,7 +166,8 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       if (idleTtlSeconds < WORKSPACE_LIMITS.minIdleTtlSeconds || idleTtlSeconds > WORKSPACE_LIMITS.maxIdleTtlSeconds) {
         throw new ValidationError("Invalid workspace idle TTL");
       }
-      if (input.baseBranch) await checkWorkspaceRepository(deps, repository!, input.baseBranch);
+      if (input.sourceRevision && (!input.baseBranch || input.runtime !== "command" || !/^[a-f0-9]{40,64}$/.test(input.sourceRevision))) throw new ValidationError("Invalid review checkout");
+      if (input.baseBranch) await checkWorkspaceRepository(deps, repository!, input.baseBranch, input.sourceRevision);
       const now = deps.now().toISOString();
       const id = deps.newId();
       const session: RuntimeSession = { id: deps.newId(), workspaceId: id, runtime: input.runtime, createdAt: now, updatedAt: now };
@@ -170,7 +177,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
         runtime: input.runtime, sessionId: session.id, revision: 0, status: "active",
         createdAt: now, updatedAt: now, dueAt: new Date(deps.now().getTime() + idleTtlSeconds * 1000).toISOString(),
         idleTtlSeconds,
-        ...(input.baseBranch ? { coding: { repository: repository!, baseBranch: input.baseBranch, branch: `agent/${id}` } } : {}),
+        ...(input.baseBranch ? { coding: { repository: repository!, baseBranch: input.baseBranch, branch: `agent/${id}`, ...(input.sourceRevision ? { sourceRevision: input.sourceRevision } : {}) } } : {}),
       };
       try { await deps.repository.create(workspace, session, input.createChat ? { chatId: input.chatId, agentName: input.agentName,
         ownerEmail, title: workspace.title, createdAt: now, updatedAt: now } : undefined, input.sourceChatId); }
@@ -198,12 +205,13 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       validateInput({ runtime: input.runtime }, input.input);
       const title = normalizedTitle(input.title ?? (input.input.kind === "task" ? titleFromMessage(input.input.prompt) : "Command workspace"));
       const creationFingerprint = createHash("sha256").update(JSON.stringify([input.agentName, input.runtime, input.repository ?? null, input.baseBranch ?? null, input.input,
-        ...(input.title === undefined ? [] : [title]), ...(input.actor ? [input.actor] : []), ...(input.executionGrant ? [input.executionGrant] : [])])).digest("hex");
+        ...(input.title === undefined ? [] : [title]), ...(input.actor ? [input.actor] : []), ...(input.executionGrant ? [input.executionGrant] : []), ...(input.sourceRevision ? [input.sourceRevision] : [])])).digest("hex");
       const chatId = workspaceChatId(ownerEmail, requestKey);
       let workspace = await deps.repository.forChat(chatId);
+      let created = false;
       if (!workspace) {
         try { workspace = await this.create({ chatId, agentName: input.agentName, runtime: input.runtime, baseBranch: input.baseBranch, repository: input.repository,
-          title, createChat: true, creationFingerprint, sourceChatId }, ownerEmail); }
+          title, createChat: true, creationFingerprint, sourceChatId, sourceRevision: input.sourceRevision }, ownerEmail); created = true; }
         catch (error) {
           if (!(error instanceof ConflictError)) throw error;
           workspace = await deps.repository.forChat(chatId);
@@ -211,7 +219,15 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
         }
       }
       if (workspace.ownerEmail !== ownerEmail || workspace.creationFingerprint !== creationFingerprint) throw new ConflictError("Idempotency-Key was used for a different workspace request");
-      const run = await this.enqueue(workspace.id, ownerEmail, input.input, requestKey, input.actor, input.executionGrant);
+      let run: WorkspaceRun;
+      try { run = await this.enqueue(workspace.id, ownerEmail, input.input, requestKey, input.actor, input.executionGrant); }
+      catch (error) {
+        if (created && input.sourceRevision) {
+          try { await this.close(workspace.id, ownerEmail); }
+          catch (cleanup) { throw new AggregateError([error, cleanup], "Review Workspace admission and cleanup failed"); }
+        }
+        throw error;
+      }
       return { workspace: workspaceView(await ownedWorkspace(deps, workspace.id, ownerEmail)), run: workspaceRunView(run) };
     },
 
@@ -293,7 +309,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       if (workspace.leaseToken && Date.parse(workspace.leaseUntil ?? "") > deps.now().getTime()) throw new ConflictError("Workspace is busy");
       const pending = workspace.activeActionId ? await deps.repository.approval(id, workspace.activeActionId) : null;
       if (workspace.activeActionId && pending?.status !== "pending") throw new ConflictError("Workspace has an executing or uncertain action");
-      if (workspace.coding && !workspace.coding.baseSha) await checkWorkspaceRepository(deps, workspace.coding.repository, workspace.coding.baseBranch);
+      if (workspace.coding && !workspace.coding.baseSha) await checkWorkspaceRepository(deps, workspace.coding.repository, workspace.coding.baseBranch, workspace.coding.sourceRevision);
       const now = deps.now().toISOString();
       const run: WorkspaceRun = {
         id: `${deps.now().getTime()}-${deps.newId()}`, workspaceId: id, sessionId: workspace.sessionId,

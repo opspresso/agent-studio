@@ -1,4 +1,14 @@
 import { isRepositoryName } from "@/domain/workspace/policy";
+import type { McpToolResult } from "@/domain/llm/types";
+
+export type ReviewWorkspaceTool = (args: Record<string, unknown>, callId: string) => Promise<McpToolResult>;
+export interface ReviewWorkspaceSession {
+  id: string;
+  url: string;
+  tool: ReviewWorkspaceTool;
+  ensureIdle(): Promise<void>;
+  close(): Promise<void>;
+}
 
 export const MAX_REVIEW_REPOSITORIES = 20;
 

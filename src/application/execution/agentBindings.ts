@@ -35,7 +35,7 @@ export async function buildAgentDeps(
     authorizeTools: executionGrantCheck(deps, origin.executionGrant),
     modelRoutingPolicy,
     createToolSchemaValidator: deps.createToolSchemaValidator, recordUsage, loadSkillContent: buildSkillLoader(createSkillReader(deps)) };
-  if (origin.backgroundTask) return common;
+  if (origin.backgroundTask) return { ...common, workspaceTool: configuration.parameters.workspaceTools ? deps.reviewWorkspace : undefined };
   const imageModel = resolveImageModel(configuration, agentName);
   return {
     ...common,

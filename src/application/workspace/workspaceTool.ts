@@ -11,6 +11,7 @@ import { ConflictError, NotFoundError, ValidationError } from "@/application/err
 import type { createWorkspaceUseCases, WorkspaceView } from "./workspaceUseCases";
 import type { CodingApproval, CodingAction, PullRequestInfo } from "@/domain/coding/types";
 import { boundedWorkspaceText } from "./output";
+import type { PullRequestReviewTarget } from "@/domain/trigger/pullRequestReview";
 
 interface WorkspaceToolDeps {
   useCases: ReturnType<typeof createWorkspaceUseCases>;
@@ -24,7 +25,7 @@ interface WorkspaceToolDeps {
   workdir: string;
   publicBaseUrl?: string;
 }
-interface WorkspaceToolContext { agentName: string; ownerEmail: string; actor?: RunActor; executionGrant?: ExecutionGrant; occurrence: string; sourceChatId?: string }
+interface WorkspaceToolContext { agentName: string; ownerEmail: string; actor?: RunActor; executionGrant?: ExecutionGrant; occurrence: string; sourceChatId?: string; reviewTarget?: PullRequestReviewTarget }
 const WAIT_STEPS = 8;
 const OUTPUT_BYTES = 12_000;
 
@@ -47,6 +48,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     : selectedWorkspaceId ? (await owned(selectedWorkspaceId)).workspace
       : deps.useCases.forStartRequest(context.agentName, context.ownerEmail, startKey);
   async function owned(id: string) {
+    if (context.reviewTarget && id !== (await deps.useCases.forStartRequest(context.agentName, context.ownerEmail, startKey))?.id) throw new NotFoundError("Review Workspace not found");
     const detail = await deps.useCases.get(id, context.ownerEmail, true);
     if (detail.workspace.agentName !== context.agentName) throw new NotFoundError("Workspace not found");
     return detail;
@@ -64,9 +66,24 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     await deps.authorize();
     const policy = await deps.policy();
     if (!policy) throw new ValidationError("Workspace tools are not enabled for this agent");
-    const request = args.request as Record<string, unknown>;
+    let request = args.request as Record<string, unknown>;
     if (!request || typeof request !== "object" || Array.isArray(request)) throw new ValidationError("Workspace requires a request");
     const operation = request.operation;
+    if (context.reviewTarget) {
+      if (!["options", "start", "run", "status", "wait"].includes(String(operation))) throw new ValidationError("Review Workspace supports only source reads and isolated checks; lifecycle and publication belong to the platform");
+      const target = context.reviewTarget;
+      const baseBranch = `review/${target.headSha}`;
+      if ((request.repository != null && request.repository !== target.repository) ||
+        (request.base_branch != null && request.base_branch !== baseBranch) ||
+        (request.runtime != null && request.runtime !== "command")) throw new ValidationError("Review Workspace is fixed to the verified PR repository, commit and command runtime");
+      if (operation === "start") request = { ...request, repository: target.repository, base_branch: baseBranch, runtime: "command", title: `PR #${target.number} review` };
+      if (operation === "options") {
+        const selected = await current();
+        return reply({ agent: context.agentName, runtimes: ["command"], default_runtime: "command", workdir: deps.workdir,
+        current_workspace: selected ? location(selected) : null, repository: target.repository, head_sha: target.headSha,
+        base_branch: baseBranch, operations: ["options", "run", "status", "wait"], message: "Read files and run isolated checks at this verified commit. The platform closes the Workspace after posting the review. Git publication and other Workspaces are unavailable." });
+      }
+    }
     if (operation === "options") {
       const selected = await current();
       return reply({ agent: context.agentName, runtimes: policy.runtimes, workdir: deps.workdir,
@@ -127,6 +144,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
         if ((request.repository === null) !== (request.base_branch === null)) throw new ValidationError("Repository work requires both repository and base_branch");
         if (request.title !== undefined && typeof request.title !== "string") throw new ValidationError("Invalid workspace title");
         const startInput = { agentName: context.agentName, runtime,
+          ...(context.reviewTarget ? { sourceRevision: context.reviewTarget.headSha } : {}),
           ...(context.actor ? { actor: context.actor } : {}),
           ...(context.executionGrant ? { executionGrant: context.executionGrant } : {}),
           ...(request.title !== undefined ? { title: request.title } : {}),

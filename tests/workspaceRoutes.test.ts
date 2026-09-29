@@ -24,7 +24,7 @@ beforeEach(() => { vi.clearAllMocks(); f.events.mockResolvedValue([]); });
 describe("Workspace HTTP contract", () => {
   it("does not let a public request supply execution provenance or a managing identity", async () => {
     const body = { agentName: "demo", runtime: "command", input: { kind: "command", script: "echo task" } };
-    for (const extra of [{ actor: { kind: "user", id: "other@example.com" } }, { ownerEmail: "other@example.com" }]) {
+    for (const extra of [{ actor: { kind: "user", id: "other@example.com" } }, { ownerEmail: "other@example.com" }, { sourceRevision: "a".repeat(40) }]) {
       expect((await start.POST(request("", "POST", { ...body, ...extra }))).status).toBe(400);
     }
     expect(f.start).not.toHaveBeenCalled();

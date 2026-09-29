@@ -43,7 +43,10 @@ GitHub의 Pull requests 이벤트를 구독한다. HMAC이 유효한 `pull_reque
 
 GitHub 어댑터가 고정된 API 주소로 PR과 최대 100개 변경 파일의 diff를 읽고 HEAD를 재검사한다.
 최초 입력은 파일당 12,000자, 전체 파일 문맥 80,000자로 제한하고 전달한 파일·완전한 diff 수를 표시한다.
-PR 실행은 Skill과 해당 PR에 고정된 `ReviewSource`를 사용한다. 빠진 파일 목록·잘린 patch는 페이지로
+PR 실행 전에 command Workspace를 생성하고, 서버 Git bundle로 검증된 HEAD SHA를 체크아웃한다.
+Agent의 Workspace 도구, 저장소 정책, Sandbox·worker와 Webhook의 명시적 소유자 실행 위임이 필요하다.
+준비가 실패하면 리뷰를 실행하거나 게시하지 않는다. PR 실행은 Skill, 해당 PR에 고정된 `ReviewSource`,
+준비된 Workspace의 읽기·격리 검사 도구를 사용한다. 빠진 파일 목록·잘린 patch는 페이지로
 이어 읽고, 관련 파일은 검증한 head/base SHA의 원문을 조회한다. CI는 head의 관측 상태이며 직접
 실행한 검사와 구분한다. 직접 작성한 URL, 다른 저장소, 쓰기 작업은 이 도구에 전달할 수 없다.
 공급자 조회 전후에 HEAD·base를 재검사하고, 연동이 비활성화되거나 저장소 위임이 철회되면 거절한다.
@@ -51,6 +54,14 @@ PR 실행은 Skill과 해당 PR에 고정된 `ReviewSource`를 사용한다. 빠
 갖춰지기 전에는 전체 리뷰를 게시하지 않는다. 자료 전달 수는 실제 코드 이해나 테스트 실행을 뜻하지 않는다.
 일반 오디오 `backgroundTask`에는 해당 PR reader가 없으며 기존 Skill 전용 처리를 유지한다.
 PR 자료가 게시 대상이나 권한을 선택하지 않는다. 임의 MCP·외부 쓰기·파일 생성·위임은 제공하지 않는다.
+Workspace는 이 리뷰의 저장소·커밋·command 런타임으로 제한한다. 다른 Workspace 선택,
+저장소 연결·생성, Git commit·push·merge·배포는 거절한다. 검사 결과를 읽지 않았거나 큐 작업이
+남아 있으면 리뷰를 게시하지 않는다. 실행한 검사와 관측한 CI를 구분해 본문에 보고한다.
+게시 전 실제 Git HEAD와 현재 tree를 검증해 소스가 바뀐 실행을 거절한다. 임시 재현 스크립트는
+저장소 밖 `/tmp`에 두며 Git-ignored 의존성·빌드 캐시는 변경 자료에 포함하지 않는다.
+게시 결과를 기록한 뒤 Workspace를 닫고 worker의 실제 Sandbox 정리를 확인한다. 모델·게시·준비
+실패도 정리하며, 게시 성공 후 정리 실패는 게시 영수증을 유지한 채 실행 실패로 기록한다.
+종료된 Workspace 기록과 체크포인트는 기존 보존 정책을 따른다.
 
 모델의 정상 완료·비어 있지 않은 20,000자 이하 응답·경고 없음을 확인한 뒤,
 현재 Webhook 활성 상태와 저장소 권한 설정을 다시 읽는다. 어댑터가 PR의 열린 상태·draft·HEAD를

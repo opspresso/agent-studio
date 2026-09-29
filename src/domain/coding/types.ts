@@ -3,6 +3,8 @@ export interface CodingRepository {
   repository: string;
   baseBranch: string;
   branch: string;
+  /** Server-selected immutable checkout for a review; Git publication is forbidden. */
+  sourceRevision?: string;
   baseSha?: string;
   headSha?: string;
   remoteUrl?: string;

@@ -10,6 +10,7 @@ import { createWorkspaceRepositoryCreationUseCases } from "@/application/workspa
 import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { runWorkspaceWorker } from "@/application/workspace/service";
 import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
+import { openReviewWorkspace } from "@/application/workspace/reviewWorkspace";
 import { workspaceCaller } from "@/application/workspace/workspaceCaller";
 import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
 import { assertMessagingExecutionGrant } from "@/application/messaging/executionGrant";
@@ -973,6 +974,7 @@ const deliverAgentMessage: PostCostAlert = async (agent, destination, text) => {
 export const executionDeps: ExecutionDeps = {
   // A verified PR prepares its own scoped reader; ordinary runs never receive one.
   reviewSource: undefined,
+  reviewWorkspace: undefined,
   authorizeExecutionGrant: grant => assertMessagingExecutionGrant({ agents: agentRepository, memberTier: getMemberTier }, grant),
   getCallRoutingPolicy: getCallRoutingPolicy,
   createToolSchemaValidator,
@@ -1009,7 +1011,7 @@ export const executionDeps: ExecutionDeps = {
   documentRenderer: workerDocumentRenderer,
   documentEditor: workerDocumentEditor,
   registerMcpSource: async (input) => getAudioRuntime().references.register(input),
-  workspaceTool: async (agentName, origin) => {
+  workspaceTool: async (agentName, origin, reviewTarget) => {
     const caller = workspaceCaller(origin);
     if (!caller || !getWorkspaceConfig() || !await workspaceRepositoryPolicyUseCases.enabled(agentName)) return undefined;
     const email = caller.ownerEmail;
@@ -1028,6 +1030,7 @@ export const executionDeps: ExecutionDeps = {
       },
       sleep: async ms => { await workspaceSleep(ms); },
     }, { agentName, ownerEmail: email, actor: caller.actor, executionGrant: caller.executionGrant, occurrence: currentRunContext()?.runId ?? randomUUID(),
+      ...(reviewTarget ? { reviewTarget } : {}),
       sourceChatId: origin.conversation?.surface === "chat" ? origin.conversation.id : undefined });
   },
   sourceRefreshIdentity,
@@ -1071,6 +1074,21 @@ export const executionDeps: ExecutionDeps = {
  * Agent execution and image output use that shared path.
  */
 export const triggerRunnerDeps: TriggerRunnerDeps = {
+  openReviewWorkspace: async (target, agentName, triggerId, ownerEmail) => {
+    if (!ownerEmail) throw new ValidationError("PR review Workspace requires an explicit trigger owner execution grant");
+    const tool = await executionDeps.workspaceTool?.(agentName, { ancestry: [agentName], actor: { kind: "webhook", id: `${agentName}:${triggerId}` }, userEmail: ownerEmail }, target);
+    if (!tool) throw new ValidationError("PR review Workspace is unavailable; check the Agent's Workspace enablement, repository policy and Sandbox backend");
+    return openReviewWorkspace({ tool, state: async id => {
+      const workspace = await workspaceRepository.get(id);
+      return workspace?.ownerEmail === ownerEmail ? workspace : null;
+    }, close: id => workspaceUseCases.close(id, ownerEmail), sleep: workspaceSleep, verify: async id => {
+      const workspace = await workspaceRepository.get(id);
+      const sandbox = workspace?.sandboxId ? await workspaceRepository.sandbox(id, workspace.sandboxId) : null;
+      const coding = getWorkspaceWorkerDeps().coding;
+      if (!workspace || workspace.ownerEmail !== ownerEmail || workspace.activeRunId || !sandbox || !coding) throw new ValidationError("Review Workspace cannot be verified");
+      return coding.review(sandbox.externalId);
+    } }, target);
+  },
   reviewForge: () => {
     const settings = getWorkspaceGitHubConfig();
     if (!settings) throw new ValidationError("GitHub review integration is not configured");
@@ -1095,6 +1113,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       actor: input.actor,
       ...(input.backgroundTask ? { backgroundTask: true } : {}),
       ...(input.reviewSource ? { reviewSource: input.reviewSource } : {}),
+      ...(input.reviewWorkspace ? { reviewWorkspace: input.reviewWorkspace } : {}),
       ...(input.userEmail ? { ownerEmail: input.userEmail } : {}),
     });
   },
@@ -1306,10 +1325,10 @@ const workspaceDeps: WorkspaceDeps = {
   authorize: (agentName, email, actor, grant) => authorizeWorkspaceTools(email, agentName, actor, grant),
   assertRuntime: async kind => { if (!await getWorkspaceRuntimeConfig(kind)) throw new ValidationError("Select a Workspace runtime model in Models before starting work"); },
   now: () => new Date(), newId: randomUUID,
-  checkRepository: async (repository, baseBranch) => {
+  checkRepository: async (repository, baseBranch, sourceRevision) => {
     const settings = getWorkspaceGitHubConfig();
     if (!settings) throw new ValidationError("Workspace GitHub integration is not configured");
-    await createCodingGitHub(settings).forge.checkRepository(repository, baseBranch);
+    await createCodingGitHub(settings).forge.checkRepository(repository, baseBranch, sourceRevision);
   },
   idleTtlSeconds: 1800,
 };

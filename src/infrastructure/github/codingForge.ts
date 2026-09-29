@@ -166,10 +166,16 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
         !isGitBranch(created.default_branch) || created.private !== input.private) throw new Error("GitHub returned an unexpected repository creation result");
       return { repository: created.full_name.toLowerCase(), repositoryId: created.id, url: url.href, baseBranch: created.default_branch, private: created.private };
     },
-    async checkRepository(repository, baseBranch) {
+    async checkRepository(repository, baseBranch, sourceRevision) {
       if (!isGitBranch(baseBranch)) throw new Error("Invalid Git base branch");
       const access = await token(repository, { contents: "read" });
       const path = repoPath(repository);
+      if (sourceRevision !== undefined) {
+        if (!/^[a-f0-9]{40,64}$/.test(sourceRevision)) throw new Error("Invalid review commit");
+        const commit = await request<{ sha: string }>(`${path}/commits/${sourceRevision}`, access.token);
+        if (commit.sha !== sourceRevision) throw new Error("Review commit changed");
+        return;
+      }
       let branches: { name: string }[];
       try { branches = await request<{ name: string }[]>(`${path}/branches?per_page=1`, access.token); }
       catch (error) {

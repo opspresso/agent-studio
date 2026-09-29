@@ -43,6 +43,7 @@ beforeEach(() => {
     if (request.url.endsWith("/access_tokens")) return Response.json({ token: "short-lived-test-token", expires_at: "2026-09-14T01:00:00Z" });
     if (request.url.includes("/branches?")) return Response.json(branchNames.map(name => ({ name })), { status: repositoryStatus });
     if (request.url.includes("/branches/")) return Response.json({}, { status: branchStatus });
+    if (request.url.endsWith(`/commits/${sha}`)) return Response.json({ sha });
     if (request.url.includes("/check-runs?")) return Response.json({ total_count: checks.length, check_runs: checks });
     if (request.url.includes("/status?")) return Response.json({ total_count: 0, state: "pending" });
     if (request.url.includes("/pulls?")) return Response.json(existing ? [pull] : []);
@@ -59,6 +60,13 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("coding GitHub App adapter", () => {
+  it("checks the immutable review commit with scoped read access rather than a mutable branch", async () => {
+    const { forge } = createCodingGitHub(config);
+    await forge.checkRepository(repository.repository, `review/${sha}`, sha);
+    expect(requests.some(request => request.url.endsWith(`/commits/${sha}`))).toBe(true);
+    expect(requests.some(request => request.url.includes("/branches"))).toBe(false);
+    await expect(forge.checkRepository(repository.repository, "main", "../main")).rejects.toThrow("Invalid review commit");
+  });
   it.each([401, 403, 404])("reports unavailable repository access before clone (%s)", async status => {
     repositoryStatus = status;
     await expect(createCodingGitHub(config, () => now).forge.checkRepository(repository.repository, "main"))

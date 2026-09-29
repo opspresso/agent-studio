@@ -134,6 +134,7 @@ export async function handleGit(action, request) {
         await git(["remote", "set-url", "origin", request.url]);
       } finally { await fs.rm(bundleFile, { force: true }); }
       const baseSha = await scalar(["rev-parse", "HEAD"]);
+      if (request.sourceRevision && request.sourceRevision !== baseSha) throw new Error("Review bundle differs from the verified commit");
       await git(["checkout", "-B", branch, baseSha]);
       await git(["config", "agentStudio.baseSha", baseSha]);
       await git(["config", "core.hooksPath", "/dev/null"]);

@@ -336,7 +336,7 @@ export async function executeDelivery(
   payload: unknown,
 ): Promise<void> {
   try {
-    let input: { message?: string; backgroundTask?: boolean; reviewSource?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewSource"] };
+    let input: { message?: string; backgroundTask?: boolean; reviewSource?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewSource"]; reviewWorkspace?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewWorkspace"] };
     let publication: ReviewPublication | undefined;
     try {
       if (admitted.reviewTarget) {
@@ -349,7 +349,7 @@ export async function executeDelivery(
           return;
         }
         admitted = { ...admitted, configuration: prepared.configuration };
-        input = { message: prepared.message, backgroundTask: true, reviewSource: prepared.readSource };
+        input = { message: prepared.message, backgroundTask: true, reviewSource: prepared.readSource, reviewWorkspace: prepared.reviewWorkspace };
         publication = prepared.publication;
       } else input = payloadInput(payload);
       if (admitted.github && input.message && !publication) {
@@ -385,10 +385,10 @@ export async function executeDelivery(
 export async function executeFiring(
   deps: FiringDeps,
   admitted: AdmittedFiring,
-  input: { message?: string; backgroundTask?: boolean; reviewSource?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewSource"] },
+  input: { message?: string; backgroundTask?: boolean; reviewSource?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewSource"]; reviewWorkspace?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewWorkspace"] },
   publication?: ReviewPublication,
 ): Promise<void> {
-  if (admitted.start && !await admitted.start()) return;
+  if (admitted.start && !await admitted.start()) { await publication?.close(); return; }
   const { trigger, agent, configuration, run } = admitted;
   let text = "";
   let error: string | undefined;
@@ -477,8 +477,10 @@ export async function executeFiring(
     error = caught instanceof Error ? caught.message : String(caught);
   } finally {
     await admitted.release();
+    try { await publication?.close(); }
+    catch (caught) { error = [error, caught instanceof Error ? caught.message : String(caught)].filter(Boolean).join("; "); }
   }
-  if (publication && error) review = { ...publication.target, status: "failed", reason: cutCodePoints(error, 500) };
+  if (publication && error && review?.status !== "posted") review = { ...publication.target, status: "failed", reason: cutCodePoints(error, 500) };
   const deliveryResults: ScheduleDeliveryResult[] = [];
   if (!error && trigger.kind === "schedule" && trigger.deliveries?.length) {
     const report = text || (images > 0 ? imagesOnlyResult(images) : "");

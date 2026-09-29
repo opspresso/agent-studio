@@ -1423,7 +1423,11 @@ webhook·schedule로 유지하며 검증된 email만 MCP·Workspace 실행에 �
 리뷰 모드는 GitHub HMAC만 받아 PR의 repository·number·HEAD를 검증한다. 비대상 이벤트는
 `202 {ok:true,status:"ignored",reason}`이며 모델을 실행하지 않는다. 정상 접수는 기존 accepted
 형태를 유지하고 완료 이력의 `review`에 repository·number·headSha·posted/skipped/failed와
-확인된 url 또는 reason을 담는다. [PR 리뷰 계약](design/triggers.md#github-pr-리뷰)을 따른다.
+확인된 url 또는 reason을 담는다. 자동 리뷰에는 Agent Workspace 활성화와 저장소 정책,
+command 런타임·worker 및 소유자가 캡처한 `runAsOwner` 위임이 필요하다. 플랫폼이 검증한
+HEAD의 Workspace를 준비한 뒤 실행·COMMENT 게시·보고를 완료하고 Workspace 정리를 확인한다.
+`sourceRevision`은 내부 리뷰 입력이며 공개 Workspace 생성·시작 body에서 받지 않는다.
+[PR 리뷰 계약](design/triggers.md#github-pr-리뷰)을 따른다.
 secret 은 해시가 아니라 AES 로 암호화해 저장되므로. agent API 토큰과 정확히 같이.
 `POST …/reveal` 로 **다시 읽을 수 있다** (본문이 살아 있는 인증 정보라서 POST 다. 소유자/admin
 전용이고, 모든 reveal 은 호출자의 이메일과 함께 로그된다). `rotateSecret: true` 를 담은 `PUT` 은

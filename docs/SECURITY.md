@@ -722,6 +722,11 @@ Agent Trigger인 `/api/webhook/{agent}`는 별도 Agent 시크릿으로 실행�
 고정된 `ReviewSource`를 제공한다. 파일 경로는 상대 경로로 검증하고 공급자 API만 호출하며,
 반환된 download URL·submodule URL을 따라가지 않는다. 읽기 요청 전후에 커밋과 현재 연동 위임을 확인한다.
 완전한 변경 자료가 확보되지 않은 실행은 전체 리뷰로 게시하지 않는다.
+PR 리뷰 Workspace는 소유자가 명시적으로 위임한 현재 권한과 Agent 저장소 정책으로 생성한다.
+검증된 커밋의 bare bundle만 Sandbox에 전달하고 서버 Git 자격 증명은 넣지 않는다.
+command 런타임과 이 리뷰의 Workspace만 제공하며 저장소 생성·연결, 다른 Workspace 선택,
+Git publication·배포를 거절한다. 끝나지 않았거나 결과를 읽지 않은 검사는 게시를 막는다.
+성공·실패 모두 Workspace 정리를 요청하고 실제 종료를 확인하며 게시 영수증은 정리 실패에도 보존한다.
 Agent Webhook Secret은 선택 범위의 리뷰를 요청할 권한이므로 승인한 GitHub 저장소에만 등록한다.
 Workspace는 actor 종류와 별도로 표면이 확인한 관리 사용자의 현재 member·Agent 접근과
 저장소 정책을 검사한다. API token은 인증된 소유자를, 메신저는 확인한 email 또는 명시적으로 위임한 소유자를, 개인 실행을

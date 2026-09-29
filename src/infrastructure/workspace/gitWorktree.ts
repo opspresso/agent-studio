@@ -40,9 +40,11 @@ export function createDockerCodingWorktree(sandbox: DockerSandboxConfig, config:
       const expectedUrl = `${config.webUrl.replace(/\/+$/, "")}/${repository.repository}.git`;
       if (repository.remoteUrl && repository.remoteUrl !== expectedUrl) throw new Error("Workspace repository origin changed");
       const remote = repository.baseSha ? { url: expectedUrl } : await network(repository.repository, "read", repository.remoteUrl);
-      const bundle = transport && !repository.baseSha ? await transport.download(remote, repository.baseBranch) : undefined;
+      if (repository.sourceRevision && !transport) throw new Error("Review checkout requires credential-free Git bundle transport");
+      const bundle = transport && !repository.baseSha ? await transport.download(remote, repository.baseBranch, repository.sourceRevision) : undefined;
       const result = await control<{ baseSha: string; headSha: string }>(externalId, "git-prepare", { ...remote, ...repository, ...(bundle ? { bundle } : {}), existingOnly: !!repository.baseSha });
       if (repository.baseSha && repository.baseSha !== result.baseSha) throw new Error("Workspace Git base changed");
+      if (repository.sourceRevision && (repository.sourceRevision !== result.baseSha || repository.sourceRevision !== result.headSha)) throw new Error("Review Workspace differs from the verified commit");
       return { ...repository, ...result, remoteUrl: remote.url };
     },
     review: externalId => control(externalId, "git-review", {}),

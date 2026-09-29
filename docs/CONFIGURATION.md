@@ -346,6 +346,8 @@ Codex는 Responses 호환 채널, Claude는 Anthropic 채널, OpenCode는 지원
 CLI에 제공하지 않는다. 모델을 해제하면 새 native 작업은 거절하지만 이미 시작한 operation의 조회·복구는
 유지한다. 일반 명령에는 모델이 필요 없다. Git·클라우드·운영 환경변수는 Sandbox에 상속하지 않는다.
 Workspace 실행 시간은 `MAX_RUN_DURATION_MS`를 사용하며 재시작해도 최초 시작 시각에서 계산한다.
+PR 자동 리뷰의 Agent 실행과 Workspace 검사 작업은 같은 webhook actor에 별도 실행 슬롯을 사용한다.
+리뷰 중 검사를 실행하려면 해당 actor의 동시 실행 한도를 2 이상으로 설정한다(0은 한도 비활성).
 일반 명령은 앱 모델 설정 없이 공통 비용·동시성·메트릭 bracket을 사용한다. CLI 모델 사용량은
 앱의 SDK 모델 usage와 별개이며 CLI/provider의 사용량 기록을 따른다.
 

@@ -1,0 +1,69 @@
+import type { McpToolResult } from "@/domain/llm/types";
+import type { PullRequestReviewTarget, ReviewWorkspaceSession, ReviewWorkspaceTool } from "@/domain/trigger/pullRequestReview";
+import type { Workspace } from "@/domain/workspace/types";
+import type { WorktreeReview } from "@/domain/coding/worktree";
+
+interface ReviewWorkspaceDeps {
+  tool: ReviewWorkspaceTool;
+  state(id: string): Promise<Workspace | null>;
+  close(id: string): Promise<void>;
+  verify(id: string): Promise<WorktreeReview>;
+  sleep(ms: number): Promise<void>;
+}
+
+/** The review owns one pinned Sandbox and closes it on both publication and failure. */
+export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: PullRequestReviewTarget): Promise<ReviewWorkspaceSession> {
+  const decode = (result: McpToolResult): Record<string, unknown> => {
+    if (result.text.startsWith("Error:")) throw new Error(result.text);
+    return JSON.parse(result.text) as Record<string, unknown>;
+  };
+  const started = decode(await deps.tool({ request: { operation: "start", runtime: "command", repository: null, base_branch: null,
+    task: "git rev-parse HEAD" } }, "review-bootstrap"));
+  if (typeof started.workspace_id !== "string" || typeof started.workspace_url !== "string") throw new Error("Review Workspace creation returned no identity");
+  const id = started.workspace_id;
+  const close = async () => {
+    await deps.close(id);
+    for (let step = 0; step < 120; step++) {
+      const workspace = await deps.state(id);
+      if (!workspace || workspace.status === "closed") return;
+      await deps.sleep(1000);
+    }
+    throw new Error("Review Workspace did not close before its cleanup deadline");
+  };
+  try {
+    let ready = started;
+    for (let step = 0; step < 24 && (ready.status === "queued" || ready.status === "running"); step++) {
+      ready = decode(await deps.tool({ request: { operation: "wait", workspace_id: id, run_id: started.run_id } }, "review-bootstrap-wait"));
+    }
+    if (ready.status !== "succeeded" || ready.head_sha !== target.headSha) throw new Error("Review Workspace could not check out the verified PR commit");
+    const unfinished = new Set<string>();
+    return {
+      id, url: started.workspace_url, close,
+      async tool(args, callId) {
+        const request = args.request as Record<string, unknown> | undefined;
+        if (request?.operation === "start") throw new Error("The review Workspace is already prepared; use run for source reads and checks");
+        const result = await deps.tool(args, callId);
+        const value = decode(result);
+        if (typeof value.run_id === "string") {
+          if (value.status === "queued" || value.status === "running") unfinished.add(value.run_id);
+          else unfinished.delete(value.run_id);
+        }
+        return result;
+      },
+      async ensureIdle() {
+        const workspace = await deps.state(id);
+        if (!workspace || workspace.status !== "active" || workspace.coding?.sourceRevision !== target.headSha ||
+          workspace.coding.repository !== target.repository || workspace.coding.headSha !== target.headSha) throw new Error("Review Workspace no longer matches its verified commit");
+        if (workspace.activeRunId || unfinished.size) throw new Error("Review Workspace checks are unfinished or their results were not read; no review was published");
+        const review = await deps.verify(id);
+        if (review.headSha !== target.headSha || !/^[a-f0-9]{40,64}$/.test(review.treeSha) || review.treeSha !== review.headTreeSha) {
+          throw new Error("Review Workspace source changed; checks must use the verified PR tree and temporary files outside the repository");
+        }
+      },
+    };
+  } catch (error) {
+    try { await close(); }
+    catch (cleanup) { throw new AggregateError([error, cleanup], "Review Workspace preparation and cleanup failed"); }
+    throw error;
+  }
+}
