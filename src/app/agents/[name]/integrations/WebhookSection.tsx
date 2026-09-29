@@ -148,6 +148,9 @@ export function WebhookSection({ agentName, onSelect, selected }: { agentName: s
           <>
             <CopyableUrl url={url} />
             <Text fz="sm" c="dimmed">{t("webhook.githubHint")}</Text>
+            {webhook.reviewIssue && <Alert color="yellow" title={t("webhook.reviewSetupRequired")}>
+              {webhook.reviewIssue}
+            </Alert>}
             <Switch label={t("trigger.runAsOwner")} description={t("webhook.runAsOwnerHint")}
               checked={Boolean(webhook.executionEmail)} disabled={busy}
               onChange={event => { const runAsOwner = event.currentTarget.checked; void act(async () => {
@@ -158,14 +161,16 @@ export function WebhookSection({ agentName, onSelect, selected }: { agentName: s
               data={[{ value: "off", label: t("webhook.generic") },
                 { value: "accessible", label: t("webhook.reviewAccessible") },
                 { value: "repositories", label: t("webhook.reviewSelected") }]} />
-            {reviewScope !== "off" && <Text size="sm" c="dimmed">{t("webhook.reviewHint")}</Text>}
+            {reviewScope !== "off" && <>
+              <Text size="sm" c="dimmed">{t("webhook.reviewHint")}</Text>
+              {!webhook.executionEmail && <Alert color="yellow">{t("webhook.reviewOwnerRequired")}</Alert>}
+            </>}
             {reviewScope === "repositories" && <Textarea label={t("webhook.reviewRepositories")} value={repositories}
               placeholder="owner/repository" minRows={2} disabled={busy} onChange={event => setRepositories(event.currentTarget.value)} />}
-            <Button variant="light" disabled={busy} onClick={() => act(async () => {
+            <Button variant="light" disabled={busy || (reviewScope !== "off" && !webhook.executionEmail)} onClick={() => act(async () => {
               await updateTrigger(agentName, AGENT_WEBHOOK_ID, {
                 githubReview: reviewScope === "off" ? null : reviewScope === "accessible" ? { scope: "accessible" }
                   : { scope: "repositories", repositories: repositories.split(/[\n,]/).map(value => value.trim()).filter(Boolean) },
-                ...(reviewScope !== "off" ? { allowConcurrent: true } : {}),
               });
             })}>{t("webhook.reviewSave")}</Button>
             <SecretControl key={agentName} label={t("webhook.section")} configured masked={webhook.secretMasked} initialValue={revealed ?? undefined}

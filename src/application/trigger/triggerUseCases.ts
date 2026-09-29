@@ -5,6 +5,7 @@
  */
 
 import type { AgentRepository } from "@/domain/agent/repository";
+import type { Agent } from "@/domain/agent/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { isValidTimezone, parseCron } from "@/domain/trigger/cron";
 import type { TriggerRepository } from "@/domain/trigger/repository";
@@ -30,6 +31,7 @@ import { log } from "@/shared/logger";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { triggerSecretContext } from "@/domain/security/secretContext";
 import { reviewRepositories, type GitHubReviewConfig } from "@/domain/trigger/pullRequestReview";
+import { reviewSetupIssue } from "./reviewRequirements";
 
 export interface TriggerDeps {
   triggers: TriggerRepository;
@@ -76,6 +78,8 @@ export interface UpdateTriggerInput {
  */
 export interface TriggerView {
   githubReview?: GitHubReviewConfig;
+  /** Current setup problem; configuration reads do not grant execution permissions. */
+  reviewIssue?: string;
   executionEmail?: string;
   agentName: string;
   triggerId: string;
@@ -96,13 +100,15 @@ export interface TriggerView {
   deliveries?: ScheduleDelivery[];
 }
 
-function toView(trigger: Trigger, cipher: SecretCipher, plaintext?: string): TriggerView {
+function toView(trigger: Trigger, cipher: SecretCipher, agent: Agent, plaintext?: string): TriggerView {
   if (trigger.kind === "schedule") {
     return { ...trigger };
   }
   const { secret: _stored, ...rest } = trigger;
+  const reviewIssue = trigger.githubReview ? reviewSetupIssue(trigger, agent) : undefined;
   return {
     ...rest,
+    ...(reviewIssue ? { reviewIssue } : {}),
     secretMasked: cipher.mask(_stored, triggerSecretContext(trigger.agentName, trigger.triggerId)),
     ...(plaintext ? { secret: plaintext } : {}),
   };
@@ -204,9 +210,9 @@ export function createTriggerUseCases(deps: TriggerDeps) {
 
   return {
     async list(agentName: string, userEmail: string): Promise<TriggerView[]> {
-      await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
+      const agent = await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
       const triggers = await listAgentTriggers(deps.triggers, agentName);
-      return triggers.map((trigger) => toView(trigger, deps.cipher));
+      return triggers.map((trigger) => toView(trigger, deps.cipher, agent));
     },
 
     async create(
@@ -282,6 +288,10 @@ export function createTriggerUseCases(deps: TriggerDeps) {
           ...(githubReview ? { githubReview } : {}),
         };
       }
+      if (trigger.kind === "webhook" && trigger.githubReview && trigger.enabled) {
+        const issue = reviewSetupIssue(trigger, agent);
+        if (issue) throw new ValidationError(issue);
+      }
       try {
         await deps.triggers.create(trigger);
       } catch (error) {
@@ -290,7 +300,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         }
         throw error;
       }
-      return toView(trigger, deps.cipher, secret);
+      return toView(trigger, deps.cipher, agent, secret);
     },
 
     async update(
@@ -334,7 +344,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
           ...(deliveries.length > 0 ? { deliveries } : {}),
         };
         await deps.triggers.put(updated);
-        return toView(updated, deps.cipher);
+        return toView(updated, deps.cipher, agent);
       }
       if (
         input.cron !== undefined ||
@@ -357,6 +367,11 @@ export function createTriggerUseCases(deps: TriggerDeps) {
           ? { secret: deps.cipher.encrypt(rotated, triggerSecretContext(agentName, triggerId)) }
           : {}),
       };
+      // Revocation and disabling always remain available, including broken stored setups.
+      if (updated.githubReview && updated.enabled && (input.githubReview != null || input.enabled === true)) {
+        const issue = reviewSetupIssue(updated, agent);
+        if (issue) throw new ValidationError(issue);
+      }
       await deps.triggers.put(updated);
       if (rotated) {
         await recordAudit({
@@ -366,7 +381,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
           detail: `webhook trigger secret '${triggerId}' reissued; the previous secret stopped working`,
         });
       }
-      return toView(updated, deps.cipher, rotated);
+      return toView(updated, deps.cipher, agent, rotated);
     },
 
     /**

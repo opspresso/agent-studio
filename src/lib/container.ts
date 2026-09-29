@@ -561,6 +561,7 @@ export const triggerUseCases = createTriggerUseCases({
   authorizeReview: async (email) => {
     if (!await isEffectiveConfiguredAdminByEmail(email)) throw new ForbiddenError("Only administrators can configure GitHub review publication");
     if (!getWorkspaceGitHubConfig()) throw new ValidationError("GitHub review integration is not configured");
+    if (!getWorkspaceConfig()) throw new ValidationError("PR review requires a configured Workspace Sandbox backend");
   },
 });
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs, availableServiceLogos());

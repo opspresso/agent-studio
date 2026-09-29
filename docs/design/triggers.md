@@ -34,6 +34,10 @@ skipped 이력을 남긴다. 시작한 실행은 running에서 succeeded 또는 
 `repositories`는 지정한 정확한 `owner/repo` 목록만 허용한다. 기본은 비활성이다.
 리뷰 설정 변경은 공유 GitHub 자격 증명을 위임하므로 Agent 쓰기 권한에 더해 관리자를 검사한다.
 시크릿을 가진 송신자는 선택 범위의 리뷰를 요청할 수 있으므로 등록할 저장소에만 시크릿을 제공한다.
+활성 리뷰 생성·리뷰 모드 저장·Webhook 재활성화는 현재 소유자의 실행 위임, Workspace 도구 활성화와
+비대화식 실행 정책을 검사하며 누락은 400으로 거절한다. GitHub 연결과 Sandbox backend도 필요하다.
+읽기 응답의 `reviewIssue`는 현재 설정의 누락을 설명한다. 권한 철회와 비활성화는 항상 가능하며
+철회한 권한을 리뷰 설정 저장이나 읽기로 자동 복구하지 않는다. 리뷰 저장은 겹침 허용을 바꾸지 않는다.
 
 GitHub의 Pull requests 이벤트를 구독한다. HMAC이 유효한 `pull_request`의
 `opened`, `synchronize`, `reopened`, `ready_for_review`만 처리하며 draft·closed·대상 불일치는

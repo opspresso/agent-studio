@@ -1420,6 +1420,10 @@ webhook·schedule로 유지하며 검증된 email만 MCP·Workspace 실행에 �
 `{scope:"repositories", repositories:["owner/repo"]}`를 전달할 수 있다. 수정의 `null`은 리뷰를
 끄고 생략은 기존 선택을 유지한다. 저장소 목록은 최대 20개이며 wildcard·URL은 받지 않는다.
 설치의 GitHub 연결이 필요하고 일반 소유자는 리뷰 권한을 새로 위임할 수 없다.
+활성 리뷰 설정 저장과 Webhook 재활성화는 현재 소유자의 `runAsOwner` 위임, Workspace 도구 활성화,
+차단·대화형 승인 없는 Workspace 정책을 요구하고 누락은 400으로 거절한다. 설정 읽기의 선택적
+`reviewIssue`는 현재 누락을 설명한다. 권한 철회와 비활성화는 가능하며 저장은 실행 권한이나
+`allowConcurrent`를 자동으로 켜지 않는다.
 리뷰 모드는 GitHub HMAC만 받아 PR의 repository·number·HEAD를 검증한다. 비대상 이벤트는
 `202 {ok:true,status:"ignored",reason}`이며 모델을 실행하지 않는다. 정상 접수는 기존 accepted
 형태를 유지하고 완료 이력의 `review`에 repository·number·headSha·posted/skipped/failed와

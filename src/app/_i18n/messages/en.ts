@@ -1450,6 +1450,8 @@ export const en = {
   "webhook.reviewRepositories": "Repositories (one owner/repo per line)",
   "webhook.reviewHint": "An administrator enables review comments for authorized GitHub repositories. The Agent reads bound skills and pinned PR source through ReviewSource, including missing patches and CI state. Unavailable material prevents a complete review publication. Comments stay on the verified PR and commit; observed CI is separate from tests the Agent ran.",
   "webhook.reviewSave": "Save review settings",
+  "webhook.reviewSetupRequired": "PR review setup is incomplete",
+  "webhook.reviewOwnerRequired": "The Agent owner must enable Run with my permissions before saving PR reviews. Enable Workspace tools and allow the repositories in the Agent settings; a configured Sandbox worker and GitHub connection are required.",
   "trigger.runAsOwner": "Run with my permissions",
   "integrations.runAsOwnerHint": "Only the Agent owner can enable this. Save to let authorized bot callers use the owner's configured personal tools and Workspaces. Current member access and Agent policies still apply.",
   "trigger.runAsOwnerHint": "Only the Agent owner can enable this. Use your verified identity for configured personal tools and Workspace execution; current access and Agent policies still apply.",
