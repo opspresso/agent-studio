@@ -646,7 +646,7 @@ const FILE_TOOL_DEF: ChannelToolDef = {
         colors: { type: "object", properties: Object.fromEntries(DOCUMENT_COLOR_NAMES.map(name => [name, { type: "string", pattern: "^[0-9A-Fa-f]{6}$" }])), additionalProperties: false },
         sheets: { type: "array", items: { type: "object", properties: { name: { type: "string" }, rows: { type: "array", items: { type: "array", items: {} } } }, required: ["name", "rows"] } },
         assets: { type: "object", additionalProperties: { type: "string" } },
-        from: { type: "integer", minimum: 0 },
+        from: { type: "integer", minimum: 0, description: "Zero-based inspection offset for supported document/spreadsheet formats. read and plain text/HTML/SVG inspect return bounded text without pagination." },
         mode: { type: "string", enum: ["structure", "edit_targets"] },
         include_hidden: { type: "boolean" },
         edits: { type: "array", items: { type: "object", properties: {
