@@ -259,7 +259,7 @@ export async function* executeAgent(
     if (input.resumeApproval && !runtime) throw new ValidationError("Approval resumption requires a persisted chat session");
     const messages = runtime?.checkpoint?.input.messages ?? input.messages;
     const startedAt = runtime?.checkpoint?.input.now ? new Date(runtime.checkpoint.input.now) : runClock(deps);
-    const runDeps: ExecutionDeps = { ...deps, callRouting: pinnedCallRouting, now: () => startedAt, getCallRoutingPolicy: async () => routingPolicy };
+    const runDeps: ExecutionDeps = { ...deps, reviewSource: input.reviewSource, callRouting: pinnedCallRouting, now: () => startedAt, getCallRoutingPolicy: async () => routingPolicy };
     // Recall explicit bindings before discovery, so remembered associations can
     // help find the sources needed to answer the request.
     const recallStartedAt = new Date();

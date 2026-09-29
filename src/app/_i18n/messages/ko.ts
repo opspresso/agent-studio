@@ -1374,7 +1374,7 @@ export const ko: Messages = {
   "webhook.reviewAccessible": "접근 가능한 GitHub 저장소의 PR 리뷰",
   "webhook.reviewSelected": "지정한 GitHub 저장소의 PR 리뷰",
   "webhook.reviewRepositories": "저장소 (한 줄에 owner/repo 하나)",
-  "webhook.reviewHint": "관리자가 설치의 GitHub 연결로 자동 리뷰 댓글을 활성화합니다. GitHub에서 Pull requests를 구독하세요. 서명된 opened·synchronize·reopened·ready_for_review 이벤트의 열린 일반 PR을 검토합니다. Agent는 제공된 diff와 연결된 Skill을 읽으며 저장소 코드나 다른 도구를 실행하지 않습니다. 검증한 PR과 커밋에만 댓글을 남깁니다. 서로 다른 PR은 동시에 처리할 수 있습니다.",
+  "webhook.reviewHint": "관리자가 허용된 GitHub 저장소의 자동 리뷰를 활성화합니다. Agent는 Skill과 ReviewSource로 검증된 PR·커밋의 코드, 빠진 diff와 CI 상태를 조회합니다. 변경 자료가 부족하면 전체 리뷰를 게시하지 않습니다. 댓글은 검증된 PR·커밋에만 남기며, 관측한 CI와 직접 실행한 검사를 구분합니다.",
   "webhook.reviewSave": "리뷰 설정 저장",
   "trigger.runAsOwner": "내 권한으로 실행",
   "integrations.runAsOwnerHint": "Agent 소유자만 켤 수 있습니다. 저장하면 인증된 봇 호출자가 소유자의 개인 도구와 Workspace를 사용할 수 있으며, 현재 멤버 권한과 Agent 정책을 적용합니다.",

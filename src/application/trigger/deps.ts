@@ -1,6 +1,6 @@
 import type { RunActor } from "@/domain/execution/actor";
 import type { RunSlotRepository } from "@/domain/execution/runSlot";
-import type { EngineChunk } from "@/domain/llm/types";
+import type { EngineChunk, McpToolResult } from "@/domain/llm/types";
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
@@ -21,6 +21,7 @@ export interface FiringDeps {
     userEmail?: string;
     /** Server-owned source processing: bound skills only, no other capabilities. */
     backgroundTask?: boolean;
+    reviewSource?: (args: Record<string, unknown>) => Promise<McpToolResult>;
   }) => AsyncGenerator<EngineChunk>;
   /**
    * Reused to enforce `allowConcurrent: false` — "at most one in flight, and a

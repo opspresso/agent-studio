@@ -39,6 +39,7 @@ import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession"
  * a policy that silently stops applying to text runs.
  */
 export interface ExecutionDeps extends RunBracketDeps {
+  reviewSource?: (args: Record<string, unknown>) => Promise<McpToolResult>;
   authorizeExecutionGrant?: (grant: ExecutionGrant) => Promise<void>;
   getCallRoutingPolicy?: () => Promise<import("@/domain/llm/callRouting").CallRoutingPolicy>;
   callRouting?: import("@/application/llm/callModelRouter").CallRoutingDeps;
@@ -123,6 +124,8 @@ export interface ExecutionDeps extends RunBracketDeps {
 }
 
 export interface ExecuteAgentInput {
+  /** Prepared by the verified PR use case; never accepted from public execution bodies. */
+  reviewSource?: ExecutionDeps["reviewSource"];
   executionGrant?: ExecutionGrant;
   resumeApproval?: { revision: number; decisions: RuntimeApprovalDecision[] };
   backgroundTask?: boolean;
@@ -151,6 +154,7 @@ export interface ExecuteAgentInput {
 // --- Agent-level dispatch --------------------------------------------------
 
 export interface AgentRunInput {
+  reviewSource?: ExecutionDeps["reviewSource"];
   executionGrant?: ExecutionGrant;
   backgroundTask?: boolean;
   agent: Agent;
@@ -183,7 +187,7 @@ export function toRunInput(
   input: AgentRunInput,
 ): Pick<
   ExecuteAgentInput,
-  "agent" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "signal" | "ownerEmail" | "backgroundTask" | "executionGrant"
+  "agent" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "signal" | "ownerEmail" | "backgroundTask" | "executionGrant" | "reviewSource"
 > {
   return {
     agent: input.agent,
@@ -191,6 +195,7 @@ export function toRunInput(
     messages: input.messages,
     ...(input.actor ? { actor: input.actor } : {}),
     ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
+    ...(input.reviewSource ? { reviewSource: input.reviewSource } : {}),
     ...(input.caller ? { caller: input.caller } : {}),
     ...(input.conversation ? { conversation: input.conversation } : {}),
     ...(input.ownerEmail ? { ownerEmail: input.ownerEmail } : {}),

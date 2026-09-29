@@ -5,6 +5,7 @@ import { describeImageInputReject } from "@/domain/llm/models";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { AUDIO_TOOL_NAMES, FILE_TOOL_NAME, WORKSPACE_TOOL_NAME } from "@/domain/llm/toolNames";
 import { MODEL_TASK_TOOL_NAME } from "@/domain/llm/toolNames";
+import { REVIEW_SOURCE_TOOL_NAME } from "@/domain/llm/toolNames";
 import { createRuntimeModelTask } from "./modelTask";
 import {
   SKILL_TOOL_NAME, IMAGE_TOOL_NAME, EDIT_IMAGE_TOOL_NAME, FETCH_URL_TOOL_NAME,
@@ -86,6 +87,7 @@ export function createRuntimeTools(
     }
     if (AUDIO_TOOL_NAMES.includes(name)) return deps.audioTools!(name, display);
     if (name === WORKSPACE_TOOL_NAME) return deps.workspaceTool!(display, callId);
+    if (name === REVIEW_SOURCE_TOOL_NAME) return deps.reviewSource!(display);
     if (SLACK_TOOL_NAMES.includes(name)) return { text: await deps.readSlack!(name, display) };
     return { text: `Error: Tool '${name}' cannot be executed in this context.`, bounded: true };
   }

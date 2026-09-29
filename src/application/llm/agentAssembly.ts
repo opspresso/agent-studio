@@ -11,6 +11,8 @@ import type { ChatMessageInput, McpToolResult, UsageInfo } from "@/domain/llm/ty
 import { SAVABLE_TYPES } from "@/domain/artifact/types";
 import { AUDIO_TOOL_DEFS } from "@/application/audio/toolDefinitions";
 import { WORKSPACE_TOOL_DEF } from "./workspaceToolDefinition";
+import { REVIEW_SOURCE_TOOL_DEF } from "./reviewSourceDefinition";
+import { REVIEW_SOURCE_TOOL_NAME } from "@/domain/llm/toolNames";
 import { WORKSPACE_TOOL_NAME } from "@/domain/llm/toolNames";
 import { AUDIO_TOOL_NAMES } from "@/domain/llm/toolNames";
 import { agentToolName } from "@/domain/llm/toolNames";
@@ -200,6 +202,7 @@ export type FileSaver = (input: {
  * anything satisfying it by shape previews exactly what it would run.
  */
 export interface AgentCapabilityDeps {
+  reviewSource?: (args: Record<string, unknown>) => Promise<McpToolResult>;
   callRouting?: CallRoutingDeps;
   loadSkillContent?: SkillContentLoader;
   canDelegate?: boolean;
@@ -896,6 +899,7 @@ export interface AgentToolsInput {
   withFileTool?: boolean;
   withAudioTools?: boolean;
   withWorkspaceTool?: boolean;
+  withReviewSource?: boolean;
   withModelTasks?: boolean;
   /** Whether this run may read the Slack workspace its agent's bot is in. */
   withSlackTools: boolean;
@@ -965,6 +969,10 @@ export function buildAgentTools(input: AgentToolsInput): {
   if (input.withWorkspaceTool) {
     tools.push(WORKSPACE_TOOL_DEF);
     builtinNames.add(WORKSPACE_TOOL_NAME);
+  }
+  if (input.withReviewSource) {
+    tools.push(REVIEW_SOURCE_TOOL_DEF);
+    builtinNames.add(REVIEW_SOURCE_TOOL_NAME);
   }
   if (input.withSlackTools) {
     tools.push(...SLACK_TOOL_DEFS);
@@ -1079,6 +1087,7 @@ export function assembleAgentRun(
     withFileTool: Boolean(deps.fileTool),
     withAudioTools: Boolean(deps.audioTools),
     withWorkspaceTool: Boolean(deps.workspaceTool),
+    withReviewSource: Boolean(deps.reviewSource),
     withModelTasks: Boolean(deps.callRouting),
     withImageTool: Boolean(deps.generateImage),
     withEditTool: canEdit,

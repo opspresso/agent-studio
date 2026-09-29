@@ -336,7 +336,7 @@ export async function executeDelivery(
   payload: unknown,
 ): Promise<void> {
   try {
-    let input: { message?: string; backgroundTask?: boolean };
+    let input: { message?: string; backgroundTask?: boolean; reviewSource?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewSource"] };
     let publication: ReviewPublication | undefined;
     try {
       if (admitted.reviewTarget) {
@@ -349,7 +349,7 @@ export async function executeDelivery(
           return;
         }
         admitted = { ...admitted, configuration: prepared.configuration };
-        input = { message: prepared.message, backgroundTask: true };
+        input = { message: prepared.message, backgroundTask: true, reviewSource: prepared.readSource };
         publication = prepared.publication;
       } else input = payloadInput(payload);
       if (admitted.github && input.message && !publication) {
@@ -385,7 +385,7 @@ export async function executeDelivery(
 export async function executeFiring(
   deps: FiringDeps,
   admitted: AdmittedFiring,
-  input: { message?: string; backgroundTask?: boolean },
+  input: { message?: string; backgroundTask?: boolean; reviewSource?: Parameters<TriggerRunnerDeps["run"]>[0]["reviewSource"] },
   publication?: ReviewPublication,
 ): Promise<void> {
   if (admitted.start && !await admitted.start()) return;

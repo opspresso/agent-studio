@@ -41,6 +41,15 @@ async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]>
 const MODEL = "google/gemini-2.5-flash";
 
 describe("runAgent tool loop", () => {
+  it("executes a scoped ReviewSource through the native SDK tool loop", async () => {
+    const channel = new FakeChannel([[toolCallChunk(0, "source", "ReviewSource", '{"request":{"operation":"file","path":"AGENTS.md"}}')], [contentChunk("review done")]]);
+    const reviewSource = vi.fn(async () => ({ text: "Pinned repository instructions" }));
+    const chunks = await collect(runAgent({ createToolSchemaValidator, channel, reviewSource }, {
+      agentName: "review", model: MODEL, messages: [{ role: "user", content: "review" }],
+    }));
+    expect(reviewSource).toHaveBeenCalledWith({ request: { operation: "file", path: "AGENTS.md" } });
+    expect(chunks.find(chunk => chunk.toolResult)?.toolResult?.content).toBe("Pinned repository instructions");
+  });
   it("rechecks delegated permissions before each MCP effect and blocks later calls after revocation", async () => {
     let allowed = true;
     const channel = new FakeChannel([

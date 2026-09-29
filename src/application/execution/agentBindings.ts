@@ -31,6 +31,7 @@ export async function buildAgentDeps(
   const modelRoutingPolicy = routingConfigured ? await deps.getCallRoutingPolicy?.() ?? structuredClone(DEFAULT_CALL_ROUTING_POLICY) : undefined;
   if (modelRoutingPolicy) runtime?.checkBinding(MODEL_ROUTING_POLICY_BINDING, modelRoutingPolicyFingerprint(modelRoutingPolicy, await deps.callRouting?.selectedDecisionModel()));
   const common = { channel: deps.channel, callRouting: routingConfigured ? deps.callRouting : undefined,
+    ...(deps.reviewSource ? { reviewSource: deps.reviewSource } : {}),
     authorizeTools: executionGrantCheck(deps, origin.executionGrant),
     modelRoutingPolicy,
     createToolSchemaValidator: deps.createToolSchemaValidator, recordUsage, loadSkillContent: buildSkillLoader(createSkillReader(deps)) };

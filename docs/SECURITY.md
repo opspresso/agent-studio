@@ -718,7 +718,10 @@ Agent Trigger인 `/api/webhook/{agent}`는 별도 Agent 시크릿으로 실행�
 관리자가 `githubReview`를 활성화하면 서명된 PR 이벤트에 대해 설치의 GitHub 연결로 리뷰 댓글을
 게시할 수 있다. 공유 자격 증명 위임 설정은 관리자만 변경하며, 접근 가능한 저장소 전체 또는
 명시적 저장소 목록으로 한정한다. PR의 본문·URL이 게시 목적지를 결정하지 않는다. 공급자 API가
-확인한 base repository·PR 번호·commit_id에 COMMENT만 게시하고 모델에는 Skill 읽기만 제공한다.
+확인한 base repository·PR 번호·commit_id에 COMMENT만 게시한다. 모델에는 Skill과 검증된 PR·HEAD·base에
+고정된 `ReviewSource`를 제공한다. 파일 경로는 상대 경로로 검증하고 공급자 API만 호출하며,
+반환된 download URL·submodule URL을 따라가지 않는다. 읽기 요청 전후에 커밋과 현재 연동 위임을 확인한다.
+완전한 변경 자료가 확보되지 않은 실행은 전체 리뷰로 게시하지 않는다.
 Agent Webhook Secret은 선택 범위의 리뷰를 요청할 권한이므로 승인한 GitHub 저장소에만 등록한다.
 Workspace는 actor 종류와 별도로 표면이 확인한 관리 사용자의 현재 member·Agent 접근과
 저장소 정책을 검사한다. API token은 인증된 소유자를, 메신저는 확인한 email 또는 명시적으로 위임한 소유자를, 개인 실행을

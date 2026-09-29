@@ -971,6 +971,8 @@ const deliverAgentMessage: PostCostAlert = async (agent, destination, text) => {
 
 /** Repository and channel dependencies for the execution facade. */
 export const executionDeps: ExecutionDeps = {
+  // A verified PR prepares its own scoped reader; ordinary runs never receive one.
+  reviewSource: undefined,
   authorizeExecutionGrant: grant => assertMessagingExecutionGrant({ agents: agentRepository, memberTier: getMemberTier }, grant),
   getCallRoutingPolicy: getCallRoutingPolicy,
   createToolSchemaValidator,
@@ -1092,6 +1094,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       messages: input.message ? [{ role: "user", content: input.message }] : [],
       actor: input.actor,
       ...(input.backgroundTask ? { backgroundTask: true } : {}),
+      ...(input.reviewSource ? { reviewSource: input.reviewSource } : {}),
       ...(input.userEmail ? { ownerEmail: input.userEmail } : {}),
     });
   },

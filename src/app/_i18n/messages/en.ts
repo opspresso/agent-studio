@@ -1444,7 +1444,7 @@ export const en = {
   "webhook.reviewAccessible": "Review PRs in accessible GitHub repositories",
   "webhook.reviewSelected": "Review PRs in selected GitHub repositories",
   "webhook.reviewRepositories": "Repositories (one owner/repo per line)",
-  "webhook.reviewHint": "An administrator can enable automatic review comments using the installation's GitHub connection. Subscribe to Pull requests. Signed opened, synchronize, reopened and ready_for_review events review non-draft open PRs. The Agent reads the supplied diff with bound skills; it cannot execute repository code or other tools. Comments stay on the verified PR and commit. Different PRs may run concurrently.",
+  "webhook.reviewHint": "An administrator enables review comments for authorized GitHub repositories. The Agent reads bound skills and pinned PR source through ReviewSource, including missing patches and CI state. Unavailable material prevents a complete review publication. Comments stay on the verified PR and commit; observed CI is separate from tests the Agent ran.",
   "webhook.reviewSave": "Save review settings",
   "trigger.runAsOwner": "Run with my permissions",
   "integrations.runAsOwnerHint": "Only the Agent owner can enable this. Save to let authorized bot callers use the owner's configured personal tools and Workspaces. Current member access and Agent policies still apply.",
