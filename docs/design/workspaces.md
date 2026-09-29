@@ -17,6 +17,11 @@ Workspace 옵션 목록은 접근 가능한 Agent의 현재 도구 설정을 한
 
 ## 경계와 운영 조건
 
+- Workspace 도구는 호출 채널이 아니라 확인된 사용자와 Agent 정책으로 접근을 판단한다.
+  API 토큰은 인증된 소유자, 메신저는 서버가 확인한 이메일, Schedule은 명시적으로 승인된
+  실행 사용자로 member·Agent 접근을 다시 검사한다. 확인된 사용자 문맥이 없으면 제공하지 않는다.
+  Workspace의 관리 사용자와 작업 호출자는 별개다. `WorkspaceRun.actor`는 원래 연동 호출자로
+  보관하고 실제 Sandbox 작업의 비용·실행 제한에도 같은 actor를 적용한다.
 - `domain/workspace`는 공통 상태·포트와 한도를 소유한다. Git 정보와 승인 동작은
   `domain/coding`에 둔다. 일반 Workspace에는 저장소나 Git 브랜치가 필요하지 않다.
 - application은 주입된 provider/runtime을 사용한다. Docker 명령과 CLI 프로토콜은
@@ -202,24 +207,26 @@ CI 증거가 없음을 표시하며 GitHub 브랜치 규칙을 따른다. `none`
 ## 실행 창구별 계약
 
 같은 Agent라도 모든 진입점에 같은 도구·이력·승인이 제공되는 것은 아니다.
-`container.ts`의 Workspace 도구 바인딩은 `actor.kind=user`와 현재 member 권한, Agent의
-현재 설정의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외부 효과 도구를 제공하지 않는다.
+`workspaceCaller`는 표면이 확인한 실행 사용자를 해석하며, 바인딩은 현재 member 권한과
+Agent의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외부 효과 도구를 제공하지 않는다.
 
 | 창구 | Workspace 빌트인 | 원래 Chat으로 승인 결과 전달 |
 |---|---|---|
 | 로그인한 member/admin의 Agent Chat | Agent의 Workspace 도구가 활성화되면 제공 | 같은 Chat의 SDK Session으로 자동 재개 |
 | 로그인한 member/admin의 Playground·Agent 실행 API | Agent의 Workspace 도구가 활성화되면 제공 | source Chat이 없으므로 자동 재개 없음 |
-| Agent API token | 미제공. actor는 `agent-token` | Chat Session·승인 UI 없음 |
-| Slack·Telegram·Teams | 플랫폼 actor이므로 미제공 | 플랫폼 응답이며 Chat 승인 UI 없음 |
-| Webhook·Schedule | machine actor이므로 미제공. Schedule의 개인 문맥 옵션도 actor를 바꾸지 않음 | Trigger 이력으로 결과 확인 |
+| Agent API token | 인증된 소유자가 member/admin이고 Agent 도구가 활성화되면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
+| Slack·Telegram·Teams | 확인된 이메일의 member/admin 권한과 Agent 도구 설정에 따라 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
+| Webhook | 확인된 실행 사용자 문맥이 없으므로 미제공 | Trigger 이력으로 결과 확인 |
+| Schedule | 개인 실행 문맥을 명시적으로 승인한 현재 소유자가 member/admin이면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
 | Workspace 화면의 직접 작업·Git 검토 | 전용 API로 소유한 공간을 조작 | Agent가 만든 source Chat 연결이 있는 승인만 전달 |
 
 API token은 Agent 소유자로 인증하고 MCP에 소유자 email을 전달한다. 이것은 브라우저 사용자
-세션, Workspace 실행 자격, SDK 승인 UI와는 별개다. Skill이나 system prompt로 이 경계를 바꾸지 않는다.
+세션이나 SDK 승인 UI를 만들지는 않는다. Workspace 실행은 별도로 현재 member·Agent·저장소
+권한을 검사하고 Git 승인 결정은 소유자의 Workspace 화면에서만 받는다. Skill이나 system prompt로 이 경계를 바꾸지 않는다.
 
 ## 사용자 화면과 API
 
-Agent 설정의 `parameters.workspaceTools`를 켜면 로그인한 member 이상 사용자의 해당 Agent에
+Agent 설정의 `parameters.workspaceTools`를 켜면 확인된 member 이상 실행 사용자의 해당 Agent에
 `Workspace` 빌트인을 제공한다. `options`, `start`, `run`, `status`, `wait`, `cancel`, `close`로
 설정 조회·작업 접수·후속 실행·결과 확인·정리를 수행한다. 호출마다 현재 멤버 권한과 Agent
 접근을 확인하며 다른 Agent의 Workspace ID는 거절한다. 비인간 실행과 background Task에는

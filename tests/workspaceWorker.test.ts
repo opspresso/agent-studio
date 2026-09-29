@@ -80,6 +80,31 @@ async function start(runtime: "command" | "codex" = "command") {
 }
 
 describe("durable workspace worker", () => {
+  it("refuses revoked execution rights before provisioning an admitted task", async () => {
+    const { workspace, run } = await start();
+    deps.authorize = vi.fn(async () => { throw new Error("Member access revoked"); });
+    await processWorkspace(deps, workspace.id);
+    expect(provider.ensure).not.toHaveBeenCalled();
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("failed");
+    expect((await repository.run(workspace.id, run.id))?.error).toContain("Member access revoked");
+  });
+
+  it("retains the queued integration actor through execution, then attributes a console follow-up separately", async () => {
+    const api = createWorkspaceUseCases(deps);
+    const actor = { kind: "slack" as const, id: "U1" };
+    const first = await api.start({ agentName: "demo", runtime: "command", actor,
+      input: { kind: "command", script: "echo task" } }, owner, "external-0001");
+    const seen: unknown[] = [];
+    deps.execute = async (_workspace, work, executionActor) => { seen.push(executionActor); await work(); };
+    await processWorkspace(deps, first.workspace.id);
+    expect((await repository.run(first.workspace.id, first.run.id))?.status).toBe("succeeded");
+    expect(seen).toEqual([actor]);
+    const next = await api.enqueue(first.workspace.id, owner, { kind: "command", script: "echo console" }, "console-0001");
+    await processWorkspace(deps, first.workspace.id);
+    expect((await repository.run(first.workspace.id, next.id))?.status).toBe("succeeded");
+    expect(seen).toEqual([actor, undefined]);
+  });
+
   it("rechecks asynchronous repository access before provisioning a queued Git task", async () => {
     policy.mode = "owners";
     policy.repositoryOwners = ["company"];

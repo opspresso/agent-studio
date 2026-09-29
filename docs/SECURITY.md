@@ -720,7 +720,11 @@ Agent Trigger인 `/api/webhook/{agent}`는 별도 Agent 시크릿으로 실행�
 명시적 저장소 목록으로 한정한다. PR의 본문·URL이 게시 목적지를 결정하지 않는다. 공급자 API가
 확인한 base repository·PR 번호·commit_id에 COMMENT만 게시하고 모델에는 Skill 읽기만 제공한다.
 Agent Webhook Secret은 선택 범위의 리뷰를 요청할 권한이므로 승인한 GitHub 저장소에만 등록한다.
-Webhook·Schedule·메신저·agent-token actor에는 user 전용 Workspace 빌트인을 제공하지 않는다.
+Workspace는 actor 종류와 별도로 표면이 확인한 관리 사용자의 현재 member·Agent 접근과
+저장소 정책을 검사한다. API token은 인증된 소유자를, 메신저는 확인한 email을, 개인 실행을
+명시적으로 승인한 Schedule은 현재 소유자를 사용한다. 사용자가 없는 Webhook은 제공하지 않는다.
+작업의 actor는 원래 연동 호출자로 유지해 비용·실행 제한을 적용하며, 큐 작업 실행 직전에도
+관리 사용자의 권한을 다시 확인한다. 외부 호출은 Git 승인을 직접 소비할 수 없다.
 승인·CI 결과의 Chat 재개는 원래 소유자·Agent 접근·Workspace 선택과 SDK Session을 다시 확인한다.
 그 결과 이벤트는 새 사용자 요청이나 다음 Git 동작에 대한 승인으로 취급하지 않는다.
 

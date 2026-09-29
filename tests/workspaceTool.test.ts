@@ -14,6 +14,7 @@ import { assembleAgentRun } from "@/application/llm/agentAssembly";
 import { runAgent } from "@/application/runtime";
 import { FakeChannel, contentChunk, toolCallChunk } from "./fakeChannel";
 import type { CodingApproval, CodingAction, PullRequestInfo } from "@/domain/coding/types";
+import { workspaceCaller } from "@/application/workspace/workspaceCaller";
 
 const entropy = vi.hoisted(() => ({ sequence: 0 }));
 vi.mock("node:crypto", async importOriginal => ({
@@ -50,6 +51,22 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("Workspace Agent capability", () => {
+  it.each(["agent-token", "slack", "telegram", "teams", "schedule", "webhook"] as const)("persists %s provenance while the verified member manages the Workspace", async kind => {
+    const caller = workspaceCaller({ ancestry: ["demo"], actor: { kind, id: kind === "agent-token" ? owner : "external-caller" }, userEmail: owner })!;
+    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest,
+      workdir: WORKSPACE_DIRECTORY, policy: () => policy }, { agentName: "demo", ...caller, occurrence: "external-run" });
+    const first = JSON.parse((await tool({ request: start }, "first")).text);
+    const workspace = (await repository.get(first.workspace_id))!;
+    expect(workspace.ownerEmail).toBe(owner);
+    const run = (await repository.run(workspace.id, first.run_id))!;
+    expect(run.actor).toEqual(caller.actor);
+    await repository.write({ expectedRevision: workspace.revision,
+      workspace: { ...workspace, activeRunId: undefined, revision: workspace.revision + 1 }, run: { ...run, status: "succeeded" } });
+    const next = JSON.parse((await tool({ request: { operation: "run", task: "echo next" } }, "next")).text);
+    expect((await repository.run(workspace.id, next.run_id))?.actor).toEqual(caller.actor);
+    expect(authorize).toHaveBeenCalledTimes(2);
+  });
+
   it("uses a purpose label for history and keeps the script in the queued input", async () => {
     const request = { ...start, title: "보고서 파일 작성" };
     expect(() => createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!)({ request })).not.toThrow();

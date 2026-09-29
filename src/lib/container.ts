@@ -10,6 +10,7 @@ import { createWorkspaceRepositoryCreationUseCases } from "@/application/workspa
 import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { runWorkspaceWorker } from "@/application/workspace/service";
 import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
+import { workspaceCaller } from "@/application/workspace/workspaceCaller";
 import { executeWorkspaceTask, executeAgent } from "@/application/execution/runAgent";
 import { runWorkspaceContinuations } from "@/application/chat/workspaceContinuation";
 import type { ChatDeps } from "@/application/chat/deps";
@@ -1004,8 +1005,9 @@ export const executionDeps: ExecutionDeps = {
   documentEditor: workerDocumentEditor,
   registerMcpSource: async (input) => getAudioRuntime().references.register(input),
   workspaceTool: async (agentName, origin) => {
-    if (origin.actor?.kind !== "user" || !getWorkspaceConfig() || !await workspaceRepositoryPolicyUseCases.enabled(agentName)) return undefined;
-    const email = origin.actor.id;
+    const caller = workspaceCaller(origin);
+    if (!caller || !getWorkspaceConfig() || !await workspaceRepositoryPolicyUseCases.enabled(agentName)) return undefined;
+    const email = caller.ownerEmail;
     const authorize = () => authorizeWorkspaceTools(email, agentName);
     if (!await optionalToolAccessible(authorize)) return undefined;
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
@@ -1020,7 +1022,7 @@ export const executionDeps: ExecutionDeps = {
         return policy ? { ...policy, runtimes: (await workspaceRuntimeModelUseCases.getView()).available } : undefined;
       },
       sleep: async ms => { await workspaceSleep(ms); },
-    }, { agentName, ownerEmail: email, occurrence: currentRunContext()?.runId ?? randomUUID(),
+    }, { agentName, ownerEmail: email, actor: caller.actor, occurrence: currentRunContext()?.runId ?? randomUUID(),
       sourceChatId: origin.conversation?.surface === "chat" ? origin.conversation.id : undefined });
   },
   sourceRefreshIdentity,
@@ -1355,7 +1357,7 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
       internalHosts: githubConfig.internalHosts,
       ...("getToken" in githubConfig ? { serverToken: githubConfig.getToken } : { credential: github.credential }) }) } : {}),
     runTimeoutMs: MAX_RUN_DURATION_MS,
-    execute: (workspace, work) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work),
+    execute: (workspace, work, actor) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work, actor),
     sleep: async (ms, signal) => { await workspaceSleep(ms, undefined, { signal }); },
   };
 }

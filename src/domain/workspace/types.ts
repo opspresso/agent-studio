@@ -1,4 +1,5 @@
 import type { CodingRepository, PullRequestInfo } from "@/domain/coding/types";
+import type { RunActor } from "@/domain/execution/actor";
 
 export const WORKSPACE_RUNTIMES = ["command", "codex", "claude", "opencode"] as const;
 export type WorkspaceRuntime = (typeof WORKSPACE_RUNTIMES)[number];
@@ -67,6 +68,8 @@ export interface WorkspaceRun {
   sessionId: string;
   requestKey: string;
   input: WorkspaceInput;
+  /** The authenticated caller remains distinct from the Workspace's managing member. */
+  actor?: RunActor;
   status: WorkspaceRunStatus;
   createdAt: string;
   startedAt?: string;

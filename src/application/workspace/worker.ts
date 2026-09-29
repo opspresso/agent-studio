@@ -1,5 +1,6 @@
 import type { SandboxProvider, WorkspaceCheckpointStore, WorkspaceRuntimeAdapter } from "@/domain/workspace/ports";
 import type { Sandbox, Workspace, WorkspaceRun } from "@/domain/workspace/types";
+import type { RunActor } from "@/domain/execution/actor";
 import type { CodingWorktree } from "@/domain/coding/worktree";
 import { isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
@@ -20,7 +21,7 @@ export interface WorkspaceWorkerDeps extends WorkspaceDeps {
   coding?: CodingWorktree;
   runTimeoutMs: number;
   /** Composition binds the execution facade, which opens the shared run bracket. */
-  execute(workspace: Workspace, work: () => Promise<boolean>): Promise<void>;
+  execute(workspace: Workspace, work: () => Promise<boolean>, actor?: RunActor): Promise<void>;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
 }
 
@@ -116,6 +117,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     return;
   }
   await assertAgentAccessible(deps.agents, workspace.agentName, workspace.ownerEmail);
+  await deps.authorize?.(workspace.agentName, workspace.ownerEmail);
   const policy = await workspacePolicy(deps, workspace.agentName);
   if (!policy.runtimes.includes(workspace.runtime) || (workspace.coding && !workspaceAllowsRepository(policy, workspace.coding.repository))) {
     throw new Error("Workspace runtime or repository configuration changed");
@@ -242,7 +244,7 @@ export async function processWorkspace(deps: WorkspaceWorkerDeps, id: string, si
 
 async function processClaimedWorkspace(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, signal?: AbortSignal): Promise<boolean> {
   try {
-    let { workspace } = await state.read();
+    let { workspace, run } = await state.read();
     if (workspace.activeActionId && !workspace.activeRunId) {
       const approval = await deps.repository.approval(workspace.id, workspace.activeActionId);
       if (workspace.status === "closing" && approval?.status === "pending") {
@@ -264,7 +266,7 @@ async function processClaimedWorkspace(deps: WorkspaceWorkerDeps, state: Workspa
       await executeRun(deps, state, signal);
       const finished = workspace.activeRunId ? await deps.repository.run(workspace.id, workspace.activeRunId) : null;
       return finished?.status === "failed" || finished?.status === "interrupted";
-    });
+    }, run?.actor);
   } catch (error) {
     if (error instanceof WorkspaceLeaseLost) return true;
     const { workspace, run } = await state.read();

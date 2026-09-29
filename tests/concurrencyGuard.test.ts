@@ -6,6 +6,9 @@ import {
   type ConcurrencyLimits,
 } from "@/application/run/concurrencyGuard";
 import { openRun, openTaskRun } from "@/application/run/runBracket";
+import { executeWorkspaceTask } from "@/application/execution/workspaceRun";
+import type { Workspace } from "@/domain/workspace/types";
+import type { AgentRepository } from "@/domain/agent/repository";
 import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
 import { type RunActor } from "@/domain/execution/actor";
 import { TIER_LIMITS } from "@/domain/member/tiers";
@@ -317,6 +320,23 @@ describe("openRun with a tier resolver", () => {
 });
 
 describe("openRun with a concurrency limit", () => {
+  it.each(["agent-token", "slack", "webhook"] as const)("attributes a Workspace task to its %s caller rather than its managing member", async kind => {
+    const actor = { kind, id: kind === "agent-token" ? agent.ownerEmail : "external-caller" };
+    const workspace: Workspace = { id: "ws", chatId: "chat", agentName: agent.name, ownerEmail: agent.ownerEmail,
+      title: "Task", runtime: "command", sessionId: "session", status: "active", revision: 0,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), dueAt: new Date().toISOString(), idleTtlSeconds: 60 };
+    const repository = { get: vi.fn(async () => agent) } as unknown as AgentRepository;
+    const d = { usage, runSlots: memorySlots().repo, limits: { perActor: 1 } };
+    await executeWorkspaceTask(d, repository, workspace, async () => {
+      await expect(openTaskRun(d, agent, actor)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+      const consoleRun = await openTaskRun(d, agent, { kind: "user", id: workspace.ownerEmail });
+      await consoleRun.close();
+      return false;
+    }, actor);
+    const released = await openTaskRun(d, agent, actor);
+    await released.close();
+  });
+
   it("shares slots with Workspace tasks that have no Agent model", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-14T00:00:00Z"));

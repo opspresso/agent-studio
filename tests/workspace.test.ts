@@ -42,6 +42,16 @@ async function create(runtime: "command" | "codex" = "command", coding = false) 
 }
 
 describe("workspace admission and persistence", () => {
+  it("rejects an idempotent replay attributed to a different execution actor", async () => {
+    const input = { agentName: "demo", runtime: "command" as const, actor: { kind: "slack" as const, id: "U1" },
+      input: { kind: "command" as const, script: "echo task" } };
+    const first = await useCases.start(input, owner, "actor-start-01");
+    expect((await useCases.start(input, owner, "actor-start-01")).run.id).toBe(first.run.id);
+    await expect(useCases.start({ ...input, actor: { kind: "slack", id: "U2" } }, owner, "actor-start-01")).rejects.toMatchObject({ status: 409 });
+    await expect(useCases.enqueue(first.workspace.id, owner, input.input, "actor-start-01", { kind: "slack", id: "U2" })).rejects.toMatchObject({ status: 409 });
+    expect(await repository.runs(first.workspace.id, 20)).toHaveLength(1);
+  });
+
   it("stores a purpose title in the Workspace and Chat without changing the command", async () => {
     const input = { agentName: "demo", runtime: "command" as const, title: "  합계 검증  ", input: { kind: "command" as const, script: "printf '300\\n'\n" } };
     const first = await useCases.start(input, owner, "named-start-01");
