@@ -51,6 +51,27 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("Workspace Agent capability", () => {
+  it("selects an owned Workspace for an external run and uses it for options, status and follow-up work", async () => {
+    const first = await invoke(start);
+    const workspace = (await repository.get(first.workspace_id))!;
+    const run = (await repository.run(workspace.id, first.run_id))!;
+    await repository.write({ expectedRevision: workspace.revision,
+      workspace: { ...workspace, activeRunId: undefined, revision: workspace.revision + 1 }, run: { ...run, status: "succeeded" } });
+    const caller = workspaceCaller({ ancestry: ["demo"], actor: { kind: "slack", id: "U1" }, userEmail: owner })!;
+    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest,
+      workdir: WORKSPACE_DIRECTORY, policy: () => policy }, { agentName: "demo", ...caller, occurrence: "later-external-run" });
+    expect(JSON.parse((await tool({ request: { operation: "use_workspace", workspace_id: workspace.id } }, "select")).text))
+      .toMatchObject({ workspace_id: workspace.id, selected: true, task_queued: false });
+    expect(JSON.parse((await tool({ request: { operation: "options" } }, "options")).text).current_workspace.workspace_id).toBe(workspace.id);
+    expect(JSON.parse((await tool({ request: start }, "start-again")).text)).toMatchObject({ workspace_id: workspace.id, reused: true, task_queued: false });
+    const next = JSON.parse((await tool({ request: { operation: "run", task: "echo next" } }, "run")).text);
+    expect(next.workspace_id).toBe(workspace.id);
+    expect((await repository.run(workspace.id, next.run_id))?.actor).toEqual(caller.actor);
+    expect(await repository.list(owner, 20)).toHaveLength(1);
+    expect(await repository.runs(workspace.id, 20)).toHaveLength(2);
+    await expect(makeTool("demo", "other@example.com")({ request: { operation: "use_workspace", workspace_id: workspace.id } }, "select")).rejects.toMatchObject({ status: 404 });
+  });
+
   it.each(["agent-token", "slack", "telegram", "teams", "schedule", "webhook"] as const)("persists %s provenance while the verified member manages the Workspace", async kind => {
     const caller = workspaceCaller({ ancestry: ["demo"], actor: { kind, id: kind === "agent-token" ? owner : "external-caller" }, userEmail: owner })!;
     const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest,

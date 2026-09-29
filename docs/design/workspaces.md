@@ -206,6 +206,11 @@ CI 증거가 없음을 표시하며 GitHub 브랜치 규칙을 따른다. `none`
 
 ## 실행 창구별 계약
 
+외부 연동은 반환된 Workspace ID를 `use_workspace`에 보내 현재 Agent 실행에서 선택할 수 있다.
+선택 후 `options`·`status`·`run`은 그 공간을 사용하며 `start`는 재사용만 하고 새 작업을 접수하지 않는다.
+선택은 이번 실행에 한정되므로 다음 외부 요청에서도 명시적으로 선택한다. 사용자 Chat의 선택은
+기존처럼 저장한다. 두 경로 모두 관리 사용자·Agent 접근을 다시 확인하며 다른 사람의 공간을 선택할 수 없다.
+
 같은 Agent라도 모든 진입점에 같은 도구·이력·승인이 제공되는 것은 아니다.
 `workspaceCaller`는 표면이 확인한 실행 사용자를 해석하며, 바인딩은 현재 member 권한과
 Agent의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외부 효과 도구를 제공하지 않는다.
