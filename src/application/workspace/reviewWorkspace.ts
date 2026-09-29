@@ -1,6 +1,6 @@
 import type { McpToolResult } from "@/domain/llm/types";
 import type { PullRequestReviewTarget, ReviewWorkspaceSession, ReviewWorkspaceTool } from "@/domain/trigger/pullRequestReview";
-import type { Workspace } from "@/domain/workspace/types";
+import { isTerminalWorkspaceRun, type Workspace, type WorkspaceRun } from "@/domain/workspace/types";
 import type { WorktreeReview } from "@/domain/coding/worktree";
 
 interface ReviewWorkspaceDeps {
@@ -37,6 +37,7 @@ export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: Pul
     }
     if (ready.status !== "succeeded" || ready.head_sha !== target.headSha) throw new Error("Review Workspace could not check out the verified PR commit");
     const unfinished = new Set<string>();
+    const readRanges = new Map<string, Array<[number, number]>>();
     return {
       id, url: started.workspace_url, close,
       async tool(args, callId) {
@@ -45,8 +46,24 @@ export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: Pul
         const result = await deps.tool(args, callId);
         const value = decode(result);
         if (typeof value.run_id === "string") {
-          if (value.status === "queued" || value.status === "running") unfinished.add(value.run_id);
-          else unfinished.delete(value.run_id);
+          unfinished.add(value.run_id);
+          const after = request?.after_seq ?? 0;
+          const next = value.next_seq;
+          const ranges = readRanges.get(value.run_id) ?? [];
+          if (value.truncated === false && typeof after === "number" && Number.isSafeInteger(after) && after >= 0 &&
+              typeof next === "number" && Number.isSafeInteger(next) && next >= after) {
+            ranges.push([after, next]);
+            ranges.sort((a, b) => a[0] - b[0]);
+            const merged: Array<[number, number]> = [];
+            for (const range of ranges) {
+              const previous = merged.at(-1);
+              if (previous && range[0] <= previous[1]) previous[1] = Math.max(previous[1], range[1]);
+              else merged.push(range);
+            }
+            readRanges.set(value.run_id, merged);
+            if (isTerminalWorkspaceRun(value.status as WorkspaceRun["status"]) && value.has_more === false &&
+                merged[0]?.[0] === 0 && merged[0][1] === next) unfinished.delete(value.run_id);
+          }
         }
         return result;
       },

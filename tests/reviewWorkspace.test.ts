@@ -8,7 +8,8 @@ function fixture(bootstrap = "succeeded") {
   const tool = vi.fn(async (args: Record<string, unknown>) => {
     const request = args.request as { operation: string };
     return { text: JSON.stringify({ workspace_id: workspace.id, workspace_url: "https://studio.example.test/chats/review", run_id: "check",
-      status: request.operation === "start" ? "queued" : request.operation === "run" ? "queued" : bootstrap, head_sha: target.headSha }) };
+      status: request.operation === "start" ? "queued" : request.operation === "run" ? "queued" : bootstrap,
+      head_sha: target.headSha, next_seq: 0, has_more: false, truncated: false }) };
   });
   const close = vi.fn(async () => { workspace = { ...workspace, status: "closing" }; });
   const sleep = vi.fn(async () => { workspace = { ...workspace, status: "closed" }; });
@@ -40,5 +41,27 @@ describe("review Workspace lifecycle", () => {
     await expect(session.ensureIdle()).rejects.toThrow("source changed");
     await session.close();
     expect(f.close).toHaveBeenCalledOnce();
+  });
+  it("requires every output page of a terminal check to be delivered without gaps", async () => {
+    const f = fixture();
+    const session = await openReviewWorkspace(f.deps, target);
+    await session.tool({ request: { operation: "run" } }, "check");
+    f.tool.mockResolvedValueOnce({ text: JSON.stringify({ run_id: "check", status: "succeeded", next_seq: 21, has_more: false, truncated: false }) });
+    await session.tool({ request: { operation: "wait", after_seq: 20 } }, "last-page-first");
+    await expect(session.ensureIdle()).rejects.toThrow("results were not read");
+    f.tool.mockResolvedValueOnce({ text: JSON.stringify({ run_id: "check", status: "succeeded", next_seq: 20, has_more: true, truncated: false }) });
+    await session.tool({ request: { operation: "status", after_seq: 0 } }, "first-page");
+    await expect(session.ensureIdle()).rejects.toThrow("results were not read");
+    f.tool.mockResolvedValueOnce({ text: JSON.stringify({ run_id: "check", status: "succeeded", next_seq: 21, has_more: false, truncated: false }) });
+    await session.tool({ request: { operation: "status", after_seq: 20 } }, "last-page");
+    await session.ensureIdle();
+  });
+  it("does not mark a truncated check result as fully read", async () => {
+    const f = fixture();
+    const session = await openReviewWorkspace(f.deps, target);
+    await session.tool({ request: { operation: "run" } }, "check");
+    f.tool.mockResolvedValueOnce({ text: JSON.stringify({ run_id: "check", status: "succeeded", next_seq: 1, has_more: false, truncated: true }) });
+    await session.tool({ request: { operation: "wait" } }, "truncated");
+    await expect(session.ensureIdle()).rejects.toThrow("results were not read");
   });
 });
