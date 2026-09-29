@@ -10,6 +10,7 @@ Agent binding 없이 동작하며 파일 ID, 사용자 권한, 저장소, 다운
 `workerAdapters.ts`를 통해 작업을 자식 프로세스로 보내고, 그 안에서
 `src/infrastructure/llm/documentExtractor.ts`가 형식별 추출을 수행한다.
 PDF는 텍스트 레이어를 추출하고 HTML은 활성 내용을 제거하며 평문은 UTF-8을 검증한다.
+HTML은 최대 500,000자의 원문을 검사하며 원문 검사나 추출문이 잘리면 `note`로 범위를 알린다.
 Office 문서는 내부 `engine/read/`로 전달한다. DOCX, XLSX, PPTX, HWP 5.x, HWPX,
 ODT/ODS/ODP, RTF를 지원한다. 암호화 파일, HWP 3.0, 구형 DOC/XLS/PPT는 지원하지 않는다.
 

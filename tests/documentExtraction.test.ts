@@ -148,6 +148,25 @@ describe("extracting a document", () => {
     expect(result.note).toContain("10");
   });
 
+  it("reports unread HTML source even when its visible prefix fits the output budget", async () => {
+    const source = "<p>FIRST</p><!--" + "x".repeat(500_001) + "--><p>LAST</p>";
+    const input = { bytes: Buffer.from(source), mimeType: "text/html", name: "page.html" };
+    const read = await documentExtractor.extract({ ...input, maxChars: 20_000 });
+    expect(read).toEqual({
+      text: "FIRST",
+      note: "the first 500,000 of 500,031 HTML source characters; remaining markup was not read",
+    });
+    const outputCut = await documentExtractor.extract({ ...input, maxChars: 2 });
+    expect(outputCut.text).toBe("FI");
+    expect(outputCut.note).toBe(`${read.note}; the first 2 of 5 extracted characters`);
+  });
+
+  it("does not call an unscanned HTML body empty when no readable prefix fitted", async () => {
+    const source = "<!--" + "x".repeat(500_001) + "--><p>unread body</p>";
+    await expect(documentExtractor.extract({ bytes: Buffer.from(source), mimeType: "text/html", name: "page.html", maxChars: 20_000 }))
+      .rejects.toThrow("remaining markup was not read");
+  });
+
   it("refuses a text file that is not UTF-8 rather than handing back mojibake", async () => {
     await expect(
       documentExtractor.extract({

@@ -148,21 +148,25 @@ function htmlToPlainText(
       "it is not UTF-8 text — if it is in another encoding, save it as UTF-8 and attach it again",
     );
   }
-  const text = htmlToText(source);
+  const read = htmlToText(source);
+  const text = read.text;
+  const sourceNote = read.complete ? undefined
+    : `the first ${read.readChars.toLocaleString("en-US")} of ${read.sourceChars.toLocaleString("en-US")} HTML source characters; remaining markup was not read`;
   if (text.trim() === "") {
     // An empty answer would read as "the page said nothing", which is a
     // different claim from "there was nothing here a reader could use".
     throw new DocumentExtractionError(
-      "it has no readable text — the page may be built entirely by scripts, which are not run here",
+      sourceNote ? `no readable text was found in ${sourceNote}`
+        : "it has no readable text — the page may be built entirely by scripts, which are not run here",
     );
   }
   if (text.length <= maxChars) {
-    return { text };
+    return { text, ...(sourceNote ? { note: sourceNote } : {}) };
   }
   const cut = cutCodePoints(text, maxChars);
   return {
     text: cut,
-    note: `the first ${cut.length.toLocaleString("en-US")} of ${text.length.toLocaleString("en-US")} characters`,
+    note: [sourceNote, `the first ${cut.length.toLocaleString("en-US")} of ${text.length.toLocaleString("en-US")} extracted characters`].filter(Boolean).join("; "),
   };
 }
 
