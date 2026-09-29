@@ -24,100 +24,39 @@ try {
   console.error(error instanceof Error ? error.message : "Invalid database configuration");
   process.exit(1);
 }
-// Overridable so the check can run beside a `scripts/mock-llm.ts` already
-// holding the default port; CI leaves it unset.
-const MOCK_PORT = Number(process.env.INTEGRATION_MOCK_PORT ?? 8002);
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 
-let restoreModelSettings: (() => Promise<unknown>) | undefined;
 async function main() {
-  const { migrate } = await import("@/infrastructure/db/migrations");
-  await migrate();
-  const { settingsRepository } = await import("@/infrastructure/db/repositories/settingsRepository");
-  const { registeredModelConfig } = await import("@/domain/llm/providerModels");
-  const { replaceModelRegistry } = await import("@/domain/llm/models");
-  const previousSettings = await settingsRepository.get();
-  restoreModelSettings = () => settingsRepository.update(() => previousSettings ?? { updatedAt: "" });
-  const registeredModels = [...["openai/gpt-5-mini", "integration/model", "integration/fast"].map(id => ({
-    id, provider: id.split("/")[0]!, wireId: id.split("/")[1]!, displayName: id, type: "text" as const,
-    contextWindow: 128000, maxTokens: 4000,
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: false },
-    pricing: { inputPer1M: 0, outputPer1M: 0 },
-  })), { id: "integration/jev", provider: "integration", wireId: "jev", displayName: "Jev fixture", type: "decision" as const,
-    contextWindow: 32000, maxTokens: 28800, capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false },
-    pricing: { inputPer1M: 0, outputPer1M: 0 } }];
-  const { encryptSecret: encryptProviderKey } = await import("@/infrastructure/crypto/secretEncryption");
-  const { llmProviderApiKeyContext } = await import("@/domain/security/secretContext");
-  const baseUrl = `http://127.0.0.1:${MOCK_PORT}/v1`;
-  await settingsRepository.update(current => ({ ...current, registeredModels, decisionModel: "integration/jev",
-    llmProviders: ["openai", "integration"].map(name => ({ name, kind: "selfhosted" as const, baseUrl,
-      apiKey: encryptProviderKey("test", llmProviderApiKeyContext(name, baseUrl)) })), updatedAt: new Date().toISOString() }));
-  replaceModelRegistry(registeredModels.map(model => registeredModelConfig(model, "selfhosted")));
+  const cleanups: Array<() => Promise<unknown>> = [];
+  let checksFailed = false;
+  let checksPassed: number;
+  try {
+    checksPassed = await runChecks(cleanups);
+  } catch (error) {
+    checksFailed = true;
+    throw error;
+  } finally {
+    const failures: unknown[] = [];
+    // Unwind owners in order: fixture rows and Settings still need the pool.
+    for (const cleanup of cleanups.toReversed()) {
+      try {
+        await cleanup();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length > 0) {
+      const error = new AggregateError(failures, "Integration fixture cleanup failed");
+      if (checksFailed) console.error("INTEGRATION CLEANUP FAILURE:", error);
+      else throw error;
+    }
+  }
+  console.log(`\n${checksPassed} integration checks passed`);
+}
 
-  const { checkSchemaBaseline } = await import("./schema-baseline-check");
-  await checkSchemaBaseline();
-  const { checkRuntimeSessions } = await import("./runtime-session-check");
-  await checkRuntimeSessions();
-  const { checkWorkspaces } = await import("./workspace-check");
-  await checkWorkspaces();
-  const { checkAuthSchema } = await import("./auth-schema-check");
-  await checkAuthSchema();
-  // Isolate the auth singleton and its environment in a child process.
-  execFileSync(process.execPath, ["--import", "tsx", "scripts/keycloak-auth-check.ts"], { stdio: "inherit" });
-  const { agentRepository } = await import("@/infrastructure/db/repositories/agentRepository");
-  const { workspacePolicyRepository } = await import("@/infrastructure/db/repositories/workspacePolicyRepository");
-  const { workspaceRepositoryCreationStore } = await import("@/infrastructure/db/repositories/workspaceRepositoryCreationStore");
-  const { createWorkspaceRepositoryCreationUseCases } = await import("@/application/workspace/createRepository");
-  const { listAgents } = await import("@/application/agent/agentUseCases");
-  const { skillRepository } = await import("@/infrastructure/db/repositories/skillRepository");
-  const { mcpRepository } = await import("@/infrastructure/db/repositories/mcpRepository");
-  const { chatRepository } = await import("@/infrastructure/db/repositories/chatRepository");
-  const { chatRunLogRepository } = await import(
-    "@/infrastructure/db/repositories/chatRunLogRepository"
-  );
-  const { mcpConnectionRepository } = await import(
-    "@/infrastructure/db/repositories/mcpConnectionRepository"
-  );
-  const { listAgentMcpConnections } = await import("@/application/mcp/listConnections");
-  const { mcpOAuthStateRepository } = await import(
-    "@/infrastructure/db/repositories/mcpOAuthStateRepository"
-  );
-  const { usageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
-  const { memberRepository } = await import("@/infrastructure/db/repositories/memberRepository");
-  const { createPgVectorStore } = await import("@/infrastructure/vector/pgVectorStore");
-  const { runSlotRepository } = await import("@/infrastructure/db/repositories/runSlotRepository");
-  const { triggerRepository } = await import("@/infrastructure/db/repositories/triggerRepository");
-  const { auditRepository } = await import("@/infrastructure/db/repositories/auditRepository");
-  const { artifactRepository } = await import(
-    "@/infrastructure/db/repositories/artifactRepository"
-  );
-  const { artifactCursor } = await import("@/domain/artifact/repository");
-  const { telegramUpdateRepository } = await import(
-    "@/infrastructure/db/repositories/telegramUpdateRepository"
-  );
-  const { transcriptRepository } = await import(
-    "@/infrastructure/db/repositories/transcriptRepository"
-  );
-  const { executionDeps } = await import("@/lib/container");
-  const { collectAgentRun, executeAgent } = await import("@/application/execution/runAgent");
-  const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
-    "@/infrastructure/crypto/secretEncryption"
-  );
-  const {
-    mcpConnectionSecretContext,
-    mcpHeadersContext,
-    mcpOAuthStateContext,
-  } = await import("@/domain/security/secretContext");
-  const { keys: dbKeys } = await import("@/infrastructure/db/keys");
-
-  const now = new Date().toISOString();
-  const today = now.slice(0, 10);
-  const results: string[] = [];
-  const pass = (label: string) => {
-    results.push(`PASS ${label}`);
-    console.log(`PASS ${label}`);
-  };
-
+async function runChecks(cleanups: Array<() => Promise<unknown>>) {
+  const { closePool } = await import("@/infrastructure/db/client");
+  cleanups.push(closePool);
   // ---------- mock LLM server ----------
   const llmCalls: Array<Record<string, unknown>> = [];
   const decisionCalls: Array<Record<string, unknown>> = [];
@@ -215,7 +154,117 @@ async function main() {
       }
     });
   });
-  await new Promise<void>((resolve) => mock.listen(MOCK_PORT, "127.0.0.1", resolve));
+  cleanups.push(async () => {
+    if (mock.listening) {
+      await new Promise<void>((resolve, reject) => {
+        mock.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => reject(error);
+    mock.once("error", onError);
+    mock.listen(0, "127.0.0.1", () => {
+      mock.off("error", onError);
+      resolve();
+    });
+  });
+  const address = mock.address();
+  assert.ok(address && typeof address !== "string", "mock listener address");
+  const baseUrl = `http://127.0.0.1:${address.port}/v1`;
+
+  const { migrate } = await import("@/infrastructure/db/migrations");
+  await migrate();
+  const { settingsRepository } = await import("@/infrastructure/db/repositories/settingsRepository");
+  const { registeredModelConfig } = await import("@/domain/llm/providerModels");
+  const { replaceModelRegistry } = await import("@/domain/llm/models");
+  const previousSettings = await settingsRepository.get();
+  cleanups.push(async () => {
+    if (previousSettings) await settingsRepository.update(() => previousSettings);
+    else {
+      const { deleteItem } = await import("@/infrastructure/db/store");
+      const { keys } = await import("@/infrastructure/db/keys");
+      await deleteItem(keys.settings());
+    }
+  });
+  const registeredModels = [...["openai/gpt-5-mini", "integration/model", "integration/fast"].map(id => ({
+    id, provider: id.split("/")[0]!, wireId: id.split("/")[1]!, displayName: id, type: "text" as const,
+    contextWindow: 128000, maxTokens: 4000,
+    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: false },
+    pricing: { inputPer1M: 0, outputPer1M: 0 },
+  })), { id: "integration/jev", provider: "integration", wireId: "jev", displayName: "Jev fixture", type: "decision" as const,
+    contextWindow: 32000, maxTokens: 28800, capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false },
+    pricing: { inputPer1M: 0, outputPer1M: 0 } }];
+  const { encryptSecret: encryptProviderKey } = await import("@/infrastructure/crypto/secretEncryption");
+  const { llmProviderApiKeyContext } = await import("@/domain/security/secretContext");
+  await settingsRepository.update(current => ({ ...current, registeredModels, decisionModel: "integration/jev",
+    llmProviders: ["openai", "integration"].map(name => ({ name, kind: "selfhosted" as const, baseUrl,
+      apiKey: encryptProviderKey("test", llmProviderApiKeyContext(name, baseUrl)) })), updatedAt: new Date().toISOString() }));
+  replaceModelRegistry(registeredModels.map(model => registeredModelConfig(model, "selfhosted")));
+
+  const { checkSchemaBaseline } = await import("./schema-baseline-check");
+  await checkSchemaBaseline();
+  const { checkRuntimeSessions } = await import("./runtime-session-check");
+  await checkRuntimeSessions();
+  const { checkWorkspaces } = await import("./workspace-check");
+  await checkWorkspaces();
+  const { checkAuthSchema } = await import("./auth-schema-check");
+  await checkAuthSchema();
+  // Isolate the auth singleton and its environment in a child process.
+  execFileSync(process.execPath, ["--import", "tsx", "scripts/keycloak-auth-check.ts"], { stdio: "inherit" });
+  const { agentRepository } = await import("@/infrastructure/db/repositories/agentRepository");
+  const { workspacePolicyRepository } = await import("@/infrastructure/db/repositories/workspacePolicyRepository");
+  const { workspaceRepositoryCreationStore } = await import("@/infrastructure/db/repositories/workspaceRepositoryCreationStore");
+  const { createWorkspaceRepositoryCreationUseCases } = await import("@/application/workspace/createRepository");
+  const { listAgents } = await import("@/application/agent/agentUseCases");
+  const { skillRepository } = await import("@/infrastructure/db/repositories/skillRepository");
+  const { mcpRepository } = await import("@/infrastructure/db/repositories/mcpRepository");
+  const { chatRepository } = await import("@/infrastructure/db/repositories/chatRepository");
+  const { chatRunLogRepository } = await import(
+    "@/infrastructure/db/repositories/chatRunLogRepository"
+  );
+  const { mcpConnectionRepository } = await import(
+    "@/infrastructure/db/repositories/mcpConnectionRepository"
+  );
+  const { listAgentMcpConnections } = await import("@/application/mcp/listConnections");
+  const { mcpOAuthStateRepository } = await import(
+    "@/infrastructure/db/repositories/mcpOAuthStateRepository"
+  );
+  const { usageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
+  const { memberRepository } = await import("@/infrastructure/db/repositories/memberRepository");
+  const { createPgVectorStore } = await import("@/infrastructure/vector/pgVectorStore");
+  const { runSlotRepository } = await import("@/infrastructure/db/repositories/runSlotRepository");
+  const { triggerRepository } = await import("@/infrastructure/db/repositories/triggerRepository");
+  const { auditRepository } = await import("@/infrastructure/db/repositories/auditRepository");
+  const { artifactRepository } = await import(
+    "@/infrastructure/db/repositories/artifactRepository"
+  );
+  const { artifactCursor } = await import("@/domain/artifact/repository");
+  const { telegramUpdateRepository } = await import(
+    "@/infrastructure/db/repositories/telegramUpdateRepository"
+  );
+  const { transcriptRepository } = await import(
+    "@/infrastructure/db/repositories/transcriptRepository"
+  );
+  const { executionDeps } = await import("@/lib/container");
+  const { collectAgentRun, executeAgent } = await import("@/application/execution/runAgent");
+  const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
+    "@/infrastructure/crypto/secretEncryption"
+  );
+  const {
+    mcpConnectionSecretContext,
+    mcpHeadersContext,
+    mcpOAuthStateContext,
+  } = await import("@/domain/security/secretContext");
+  const { keys: dbKeys } = await import("@/infrastructure/db/keys");
+
+  const now = new Date().toISOString();
+  const today = now.slice(0, 10);
+  const results: string[] = [];
+  const pass = (label: string) => {
+    results.push(`PASS ${label}`);
+    console.log(`PASS ${label}`);
+  };
 
   const suffix = Date.now().toString(36);
   const agentName = `it-proj-${suffix}`;
@@ -250,6 +299,10 @@ async function main() {
       ownerEmail: "it@example.com",
       createdAt: now,
       updatedAt: now,
+    });
+    let agentNeedsCleanup = true;
+    cleanups.push(async () => {
+      if (agentNeedsCleanup) await agentRepository.delete(agentName);
     });
     const agent = await agentRepository.get(agentName);
     assert.ok(agent, "agent get");
@@ -1739,6 +1792,7 @@ async function main() {
       const { pendingRuntimeApproval } = await import("@/application/runtime/session");
       const sessionId = `integration-session-${suffix}`;
       const owner = "it@example.com";
+      cleanups.push(() => executionDeps.runtimeSessions!.repository.delete(sessionId, owner));
       const approvalConfiguration = { ...configuration, parameters: { ...configuration.parameters, policy: { approvalTools: ["Skill"] } } };
       const base = { agent, configuration: approvalConfiguration, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
       const first = [];
@@ -1755,12 +1809,12 @@ async function main() {
       const before = llmCalls.length;
       for await (const chunk of executeAgent(executionDeps, { ...base, messages: [{ role: "user", content: "continue" }] })) assert.equal(chunk.error, undefined);
       assert.equal(llmCalls.length, before + 1, "the Session replay avoids executing the previous Skill call again");
-      await executionDeps.runtimeSessions!.repository.delete(sessionId, owner);
       pass("SDK Session approval persistence, restart-style resume and exact continuation");
     }
 
     // ---------- cascade delete ----------
     await agentRepository.delete(agentName);
+    agentNeedsCleanup = false;
     assert.equal(await agentRepository.get(agentName), null, "agent deleted");
     await assert.rejects(
       () => agentRepository.create(agent),
@@ -1813,20 +1867,12 @@ async function main() {
         );
       }
     }
-    await new Promise<void>((resolve, reject) => {
-      mock.close((error) => (error ? reject(error) : resolve()));
-    });
-    await restoreModelSettings?.();
-    restoreModelSettings = undefined;
-    const { closePool } = await import("@/infrastructure/db/client");
-    await closePool();
   }
 
-  console.log(`\n${results.length} integration checks passed`);
+  return results.length;
 }
 
-main().catch(async (error) => {
-  await restoreModelSettings?.();
+main().catch((error) => {
   console.error("INTEGRATION FAILURE:", error);
   process.exit(1);
 });

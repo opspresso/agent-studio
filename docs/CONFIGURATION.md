@@ -412,7 +412,6 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | `MOCK_LLM_PORT` | `8002` | `scripts/mock-llm.ts` 의 리슨 포트. |
 | `MOCK_LLM_DELAY_MS` | `0` | 스트리밍되는 chunk 사이의 밀리초. `0` 은 소켓이 받아 주는 만큼 빠르게 보낸다. 스크롤이 생기는 답변을 재현하려면 아래 행과 함께 이 값을 올려라. |
 | `MOCK_LLM_CHUNKS` | `0` | 답변이 대략 몇 개의 chunk 로 채워지는지. `0` 은 한 줄짜리 답변을 그대로 둔다. |
-| `INTEGRATION_MOCK_PORT` | `8002` | `scripts/integration-check.ts` 가 쓰는 mock LLM 포트. 기본 포트를 이미 점유한 mock 옆에서 검사를 돌릴 수 있도록 오버라이드 가능하다. CI 는 이 값을 설정하지 않는다. |
 
 ## 코드에 고정된 제한
 
