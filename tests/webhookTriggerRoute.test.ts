@@ -49,4 +49,12 @@ describe("agent GitHub webhook delivery route", () => {
     expect(f.admit).not.toHaveBeenCalled();
     expect(f.after).not.toHaveBeenCalled();
   });
+  it("returns an actionable setup conflict without starting background work", async () => {
+    f.admit.mockResolvedValueOnce({ status: "review-not-ready", reason: "Enable the owner's execution grant" });
+    const res = await POST(request({}), context);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "Enable the owner's execution grant", status: "review-not-ready" });
+    expect(f.after).not.toHaveBeenCalled();
+    expect(f.execute).not.toHaveBeenCalled();
+  });
 });

@@ -38,6 +38,9 @@ skipped 이력을 남긴다. 시작한 실행은 running에서 succeeded 또는 
 비대화식 실행 정책을 검사하며 누락은 400으로 거절한다. GitHub 연결과 Sandbox backend도 필요하다.
 읽기 응답의 `reviewIssue`는 현재 설정의 누락을 설명한다. 권한 철회와 비활성화는 항상 가능하며
 철회한 권한을 리뷰 설정 저장이나 읽기로 자동 복구하지 않는다. 리뷰 저장은 겹침 허용을 바꾸지 않는다.
+서명된 대상 PR 전달은 필수 설정과 실행 사용자 권한을 멱등 claim 전에 검사한다. 누락은
+`409 review-not-ready`와 skipped 이력으로 기록한다. 설정을 명시적으로 고친 뒤 같은 HEAD의 이벤트를
+다시 전달할 수 있다. 이미 접수·실행·게시한 작업의 멱등 claim은 유지하며 불확실한 작업을 재실행하지 않는다.
 
 GitHub의 Pull requests 이벤트를 구독한다. HMAC이 유효한 `pull_request`의
 `opened`, `synchronize`, `reopened`, `ready_for_review`만 처리하며 draft·closed·대상 불일치는

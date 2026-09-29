@@ -249,7 +249,7 @@ async function fireDueOccurrences(
         summary.skipped += 1;
         continue;
       }
-      const admitted = await admitRun(deps, trigger, { scheduledFor }, true);
+      const admitted = await admitRun(deps, trigger, { scheduledFor }, { queued: true });
       if (admitted.status === "accepted") {
         summary.fired += 1;
         winner = true;

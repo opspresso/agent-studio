@@ -1447,6 +1447,7 @@ POST /api/webhook/{agent}
 → 202 { ok: true, status: "accepted", runId }
 → 202 { ok: true, status: "duplicate" | "disabled" | "busy" | "no-configuration" }
 → 202 { ok: true, status: "ping" }
+→ 409 { status: "review-not-ready", error } (PR 리뷰 필수 설정 누락; 접수·멱등 claim 전 거절)
 → 202 { ok: true, status: "ignored", reason } (PR review event not selected)
 → 401 (wrong or missing secret/signature) | 404 (no webhook on this agent) | 400 (bad JSON or GitHub metadata) | 413 (>1MB)
 ```

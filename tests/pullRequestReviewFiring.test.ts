@@ -45,24 +45,44 @@ function fixture(chunks: EngineChunk[] = [{ delta: { content: "확인된 결함�
     const body = JSON.stringify(input);
     return { kind: "github" as const, body, deliveryId, event: "pull_request", signature: "sha256=" + createHmac("sha256", "test-secret").update(body).digest("hex") };
   }
-  return { deps, load, read, reply, calls, rows, claimed, credential, openWorkspace, closeWorkspace, ensureIdle, disable: () => { trigger = { ...trigger, enabled: false }; } };
+  return { deps, load, read, reply, calls, rows, claimed, credential, openWorkspace, closeWorkspace, ensureIdle,
+    grant: (email?: string) => { trigger = { ...trigger, executionEmail: email }; }, disable: () => { trigger = { ...trigger, enabled: false }; } };
 }
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-23T00:00:00Z")); });
 afterEach(() => vi.useRealTimers());
 
 describe("signed PR review firing", () => {
+  it("rejects a missing owner grant before consuming the HEAD, then admits the same delivery after explicit setup", async () => {
+    const f = fixture();
+    f.grant();
+    const refused = await admitDelivery(f.deps, "review", f.credential(), null);
+    expect(refused).toMatchObject({ status: "review-not-ready", reason: expect.stringContaining("Run with my permissions") });
+    expect(f.claimed.size).toBe(0);
+    expect(f.load).not.toHaveBeenCalled();
+    expect(f.rows[0]).toMatchObject({ status: "skipped", review: { ...target, status: "skipped" } });
+    f.grant("owner@example.test");
+    expect((await admitDelivery(f.deps, "review", f.credential(), null)).status).toBe("accepted");
+    expect(f.claimed.size).toBe(1);
+  });
+  it("does not consume a PR HEAD when the granted owner is no longer a member", async () => {
+    const f = fixture();
+    f.deps.executionUserActive = async () => false;
+    expect((await admitDelivery(f.deps, "review", f.credential(), null)).status).toBe("review-not-ready");
+    expect(f.claimed.size).toBe(0);
+    expect(f.openWorkspace).not.toHaveBeenCalled();
+  });
   it.each(["blockedTools", "approvalTools"] as const)("does not bootstrap a Workspace excluded by %s", async policy => {
     const f = fixture();
     const agent = (await f.deps.agents.get("review"))!;
     agent.configuration!.parameters.policy = { [policy]: ["Workspace"] };
     f.deps.agents.get = async () => agent;
     const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
-    if (admitted.status !== "accepted") throw new Error("not admitted");
-    await executeDelivery(f.deps, admitted, payload);
+    expect(admitted.status).toBe("review-not-ready");
+    expect(f.claimed.size).toBe(0);
     expect(f.openWorkspace).not.toHaveBeenCalled();
     expect(f.reply).not.toHaveBeenCalled();
-    expect(f.rows[0]?.status).toBe("failed");
+    expect(f.rows[0]?.status).toBe("skipped");
   });
   it("opens the verified PR Workspace before review, reports to GitHub, and closes it before recording completion", async () => {
     const f = fixture();

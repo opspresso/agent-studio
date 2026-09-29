@@ -224,6 +224,8 @@ provider 보고 비용을 사용하는 텍스트 호출은 이 계산을 거치�
 ```
 
 Webhook·메신저 접수 작업은 delivery/event ID도 문맥으로 사용한다.
+Trigger 실패 로그는 Agent·trigger·run ID와 리뷰 대상 커밋을 기록하며 상세 오류는 Trigger 이력에서
+확인한다. PR 리뷰 필수 설정 누락은 claim 전에 warning과 skipped 이력을 남기고 HTTP 409로 반환한다.
 `apiError`는 알 수 없는 예외를 error, 설명 가능한 5xx를 warn으로 기록하고 4xx는 일반적으로
 기록하지 않는다. scan token 거절처럼 별도 운영 신호가 필요한 경계는 자체 경고를 남긴다.
 비스트리밍 호출자가 응답 전에 떠난 것은 info이며 upstream 실패로 분류하지 않는다.

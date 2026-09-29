@@ -66,6 +66,8 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
       return Response.json({ ok: true, status: "ping" }, { status: 202 });
     case "ignored":
       return Response.json({ ok: true, status: "ignored", reason: admitted.reason }, { status: 202 });
+    case "review-not-ready":
+      return Response.json({ error: admitted.reason, status: admitted.status }, { status: 409 });
     case "not-configured":
       // Deliberately the same answer a wrong secret would get for an agent that
       // does have a webhook would not be — but an agent with no webhook at all

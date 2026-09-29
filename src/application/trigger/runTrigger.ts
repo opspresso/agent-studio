@@ -34,6 +34,7 @@ import { verifyGitHubSignature, isGitHubDeliveryId } from "@/shared/githubWebhoo
 import { holdQueuedFiring, queueLeaseUntil } from "./queuedFiring";
 import { selectPullRequestReview, type PullRequestReviewTarget } from "@/domain/trigger/pullRequestReview";
 import { preparePullRequestReview, type ReviewPublication } from "./reviewPullRequest";
+import { reviewSetupIssue } from "./reviewRequirements";
 
 /** Bounded preview of a run's answer, kept on the firing row. */
 const MAX_RESULT_CHARS = 2_000;
@@ -77,6 +78,7 @@ export type AdmitResult =
   | { status: "invalid-delivery" }
   | { status: "ping" }
   | { status: "ignored"; reason: string }
+  | { status: "review-not-ready"; reason: string }
   | { status: "busy" }
   | { status: "no-configuration" };
 
@@ -130,6 +132,7 @@ function overlapKey(agentName: string, triggerId: string): string {
 interface FiringExtra {
   idempotencyKey?: string;
   scheduledFor?: string;
+  review?: TriggerRun["review"];
 }
 
 /** A webhook payload is framed as user data for the Agent. */
@@ -203,6 +206,18 @@ export async function admitDelivery(
   // optional generic key turn a redelivery into another model invocation.
   if (github) idempotencyKey = `github-delivery:${github.deliveryId}`;
   if (reviewTarget) idempotencyKey = `github-review:${reviewTarget.repository}:${reviewTarget.number}:${reviewTarget.headSha}`;
+  let reviewAgent: Agent | null | undefined;
+  if (reviewTarget) {
+    reviewAgent = await deps.agents.get(agentName);
+    let reason = reviewAgent ? reviewSetupIssue(trigger, reviewAgent) : "Agent not found.";
+    if (!reason && (!deps.reviewForge || !deps.openReviewWorkspace)) reason = "PR review requires configured GitHub and Workspace integrations.";
+    if (!reason && reviewAgent && !await executionUserAllowed(deps, trigger, reviewAgent)) reason = EXECUTION_USER_UNAUTHORIZED;
+    if (reason) {
+      log.warn("trigger", "PR review setup is incomplete", { agentName, triggerId: trigger.triggerId, ...reviewTarget, reason });
+      await recordSkip(deps, trigger, { review: { ...reviewTarget, status: "skipped", reason } }, reason);
+      return { status: "review-not-ready", reason };
+    }
+  }
   if (idempotencyKey) {
     const claimed = await deps.triggers.claimIdempotencyKey(
       agentName,
@@ -213,7 +228,7 @@ export async function admitDelivery(
       return { status: "duplicate" };
     }
   }
-  const admitted = await admitRun(deps, trigger, idempotencyKey ? { idempotencyKey } : {});
+  const admitted = await admitRun(deps, trigger, idempotencyKey ? { idempotencyKey } : {}, { agent: reviewAgent });
   return admitted.status === "accepted" && github
     ? { ...admitted, github: { event: github.event!, deliveryId: github.deliveryId! }, ...(reviewTarget ? { reviewTarget } : {}) } : admitted;
 }
@@ -226,14 +241,15 @@ export async function admitRun<T extends Trigger>(
   deps: FiringDeps,
   trigger: T,
   extra: FiringExtra,
-  queued = false,
+  options: { queued?: boolean; agent?: Agent | null } = {},
 ): Promise<
   | AdmittedFiring<T>
   | { status: "not-configured" }
   | { status: "busy" }
   | { status: "no-configuration" }
 > {
-  const agent = await deps.agents.get(trigger.agentName);
+  const { queued = false } = options;
+  const agent = options.agent === undefined ? await deps.agents.get(trigger.agentName) : options.agent;
   if (!agent) {
     // A row too, like every refusal below: a schedule can outlive its agent,
     // and "skipped: 1" in a scan summary with nothing in the history explaining
@@ -320,6 +336,7 @@ export async function recordSkip(
       status: "skipped",
       ...(extra.idempotencyKey ? { idempotencyKey: extra.idempotencyKey } : {}),
       ...(extra.scheduledFor ? { scheduledFor: extra.scheduledFor } : {}),
+      ...(extra.review ? { review: extra.review } : {}),
       startedAt: now,
       endedAt: now,
       error: reason,
@@ -595,6 +612,12 @@ async function finishFiring(
     ...(outcome.deliveryResults ? { deliveryResults: outcome.deliveryResults } : {}),
     ...(outcome.review ? { review: outcome.review } : {}),
   };
+  if (outcome.error) {
+    // Correlate the failure with stored details without logging provider text or source data.
+    log.error("trigger", "firing failed; see trigger history", { agentName: run.agentName, triggerId: run.triggerId,
+      runId: run.runId, ...(outcome.traceId ? { traceId: outcome.traceId } : {}),
+      ...(outcome.review ? { repository: outcome.review.repository, number: outcome.review.number, headSha: outcome.review.headSha } : {}) });
+  }
   try {
     await deps.triggers.finishRun(finished);
   } catch (writeError) {
