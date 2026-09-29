@@ -649,6 +649,7 @@ export const slackClient = {
     const needle = args?.query?.trim().toLowerCase() ?? "";
     const channels: SlackChannelInfo[] = [];
     const seen = new Set<string>();
+    const cursors = new Set<string>();
     let cursor: string | undefined;
     // Slack filters after selecting a page, so even an empty page can have a cursor.
     // A bounded scan cannot prove absence past its final inspected page.
@@ -675,6 +676,10 @@ export const slackClient = {
         ...(channel.is_member === undefined ? {} : { isMember: channel.is_member }),
       })));
       cursor = firstNonEmpty(data.response_metadata?.next_cursor);
+      if (cursor) {
+        if (cursors.has(cursor)) throw new Error("Slack returned a repeated channel pagination cursor");
+        cursors.add(cursor);
+      }
       if (channels.length >= limit) return { channels, truncated: matching.length > room || Boolean(cursor) };
       if (!cursor) return { channels, truncated: false };
     }

@@ -109,8 +109,17 @@ describe("how long a Slack call may take", () => {
     expect(request).toHaveBeenCalledTimes(1);
   });
 
+  it.each([{ cursors: ["next", "next"] }, { cursors: ["first", "second", "first"] }])("rejects repeated channel pagination cursors $cursors", async ({ cursors }) => {
+    let page = 0;
+    const request = vi.fn(async () => jsonResponse({ ok: true, channels: [], response_metadata: { next_cursor: cursors[page++] } }));
+    vi.stubGlobal("fetch", request);
+    await expect(slackClient.listChannels(TOKEN)).rejects.toThrow("repeated channel pagination cursor");
+    expect(request).toHaveBeenCalledTimes(cursors.length);
+  });
+
   it("reports a bounded page scan as incomplete even when no channel matched", async () => {
-    const request = vi.fn(async () => jsonResponse({ ok: true, channels: [], response_metadata: { next_cursor: "next" } }));
+    let page = 0;
+    const request = vi.fn(async () => jsonResponse({ ok: true, channels: [], response_metadata: { next_cursor: `page-${++page}` } }));
     vi.stubGlobal("fetch", request);
 
     expect(await slackClient.listChannels(TOKEN, { query: "unseen" })).toEqual({ channels: [], truncated: true });
