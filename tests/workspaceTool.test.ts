@@ -50,6 +50,16 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("Workspace Agent capability", () => {
+  it("uses a purpose label for history and keeps the script in the queued input", async () => {
+    const request = { ...start, title: "보고서 파일 작성" };
+    expect(() => createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!)({ request })).not.toThrow();
+    const result = await invoke(request);
+    expect(result.title).toBe(request.title);
+    expect((await repository.get(result.workspace_id))?.title).toBe(request.title);
+    expect((await chats.get(result.workspace_path.slice("/chats/".length)))?.title).toBe(request.title);
+    expect((await repository.run(result.workspace_id, result.run_id))?.input).toEqual({ kind: "command", script: start.task });
+  });
+
   it("distinguishes new-repository permission from existing access and routes creation through the server", async () => {
     const createRepository = vi.fn(async () => ({ repository: "org/new", status: "created" as const, allowed: true, reused: false,
       result: { repository: "org/new", repositoryId: 42, url: "https://github.example.test/org/new", baseBranch: "main", private: true } }));

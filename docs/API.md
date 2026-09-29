@@ -678,7 +678,7 @@ Workspace 사용자 API는 `withMemberAuth`로 보호한다. 조회·실행·승
 |---|---|---|
 | `/api/workspaces/options` | GET | `{enabled, gitEnabled, agents}`. 각 Agent에 Runtime·`defaultRuntime`·`mode`·`repositories`·`repositoryOwners`·workflow 선택지 |
 | `/api/workspaces/branches?agent={name}&repository={owner/repo}` | GET | 명시한 저장소의 브랜치 최대 100개와 `hasMore`. `agent`와 `repository`가 필요 |
-| `/api/workspaces` | POST | `{agentName, runtime, repository?, baseBranch?, input}`으로 Chat·Workspace·첫 Run을 만들고 `{workspace, run}`과 202 반환 |
+| `/api/workspaces` | POST | `{agentName, runtime, title?, repository?, baseBranch?, input}`으로 Chat·Workspace·첫 Run을 만들고 `{workspace, run}`과 202 반환 |
 | `/api/workspaces/{id}` | GET | `{workspace, session, runs, approvals}`. 실행·승인은 최근 50개, `tail=1`이면 각각 1개 |
 | `/api/workspaces/{id}` | DELETE | 체크포인트 저장과 Sandbox 정리를 요청하고 204 반환 |
 | `/api/workspaces/{id}/runs` | POST | `input`으로 후속 Run을 접수하고 `{run}`과 202 반환 |
@@ -712,6 +712,8 @@ Run을 만들지 않는다. 같은 완료 요청은 재사용하고 불명확한
 
 Runtime은 `command`, `codex`, `claude`, `opencode`다. `input`은 일반 명령의
 `{kind:"command", script}` 또는 Agent의 `{kind:"task", prompt}`이며 각각 40,000자까지 받는다.
+선택적 `title`은 공백이 아닌 최대 200자의 표시 제목이며 실행되지 않는다. 같은 제목을 연결
+Chat에도 저장한다. 생략하면 자연어 작업은 요청에서 제목을 만들고 command는 `Command workspace`로 표시한다.
 생성과 후속 Run은 `Idempotency-Key`를 요구한다. 같은 키·같은 내용은 기존 결과를 반환하며
 다른 내용으로 키를 재사용하면 409다. Git 작업은 `repository`와 `baseBranch`를 함께 지정한다. 둘 다 없으면 Git 없는 Workspace다.
 lease·operation handle·체크포인트 bytes와 주소는 사용자 응답에 넣지 않는다.

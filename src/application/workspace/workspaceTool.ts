@@ -35,7 +35,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
   const reply = (value: unknown, failed = false): McpToolResult => ({ text: `${failed ? "Error: " : ""}${JSON.stringify(value)}` });
   const url = (path: string) => deps.publicBaseUrl ? new URL(path, deps.publicBaseUrl).href : path;
   const repositoryPolicyUrl = url(`/agents/${encodeURIComponent(context.agentName)}/workspace`);
-  const location = (workspace: WorkspaceView) => ({ workspace_id: workspace.id, workspace_path: `/chats/${workspace.chatId}`,
+  const location = (workspace: WorkspaceView) => ({ workspace_id: workspace.id, title: workspace.title, workspace_path: `/chats/${workspace.chatId}`,
     workspace_url: url(`/chats/${workspace.chatId}`),
     workdir: deps.workdir, runtime: workspace.runtime, repository: workspace.coding?.repository ?? null,
     base_branch: workspace.coding?.baseBranch ?? null, branch: workspace.coding?.branch ?? null,
@@ -115,7 +115,9 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
           (request.base_branch !== null && typeof request.base_branch !== "string")) throw new ValidationError("Invalid repository selection");
         if (request.repository !== null && !workspaceAllowsRepository(policy, request.repository as string)) throw new ValidationError(`Repository is not allowed by Workspace policy. The agent owner can update ${repositoryPolicyUrl}`);
         if ((request.repository === null) !== (request.base_branch === null)) throw new ValidationError("Repository work requires both repository and base_branch");
+        if (request.title !== undefined && typeof request.title !== "string") throw new ValidationError("Invalid workspace title");
         const startInput = { agentName: context.agentName, runtime,
+          ...(request.title !== undefined ? { title: request.title } : {}),
           ...(request.repository !== null ? { repository: String(request.repository), baseBranch: String(request.base_branch) } : {}), input: input(runtime, request.task) };
         let started;
         if (context.sourceChatId) started = await deps.useCases.startForChat(startInput, context.ownerEmail, context.sourceChatId);

@@ -42,6 +42,31 @@ async function create(runtime: "command" | "codex" = "command", coding = false) 
 }
 
 describe("workspace admission and persistence", () => {
+  it("stores a purpose title in the Workspace and Chat without changing the command", async () => {
+    const input = { agentName: "demo", runtime: "command" as const, title: "  합계 검증  ", input: { kind: "command" as const, script: "printf '300\\n'\n" } };
+    const first = await useCases.start(input, owner, "named-start-01");
+    expect(first.workspace.title).toBe("합계 검증");
+    expect((await chats.get(first.workspace.chatId))?.title).toBe("합계 검증");
+    expect(first.run.input).toEqual(input.input);
+    expect((await useCases.start({ ...input, title: "합계 검증" }, owner, "named-start-01")).run.id).toBe(first.run.id);
+    await expect(useCases.start({ ...input, title: "다른 작업" }, owner, "named-start-01")).rejects.toMatchObject({ status: 409 });
+    expect(await repository.runs(first.workspace.id, 10)).toHaveLength(1);
+  });
+
+  it("keeps shell contents out of command titles when no purpose title was supplied", async () => {
+    const result = await useCases.start({ agentName: "demo", runtime: "command", input: { kind: "command", script: "cat > pricing.py <<'PY'\nprint(300)\nPY" } }, owner, "plain-start-01");
+    expect(result.workspace.title).toBe("Command workspace");
+    expect((await chats.get(result.workspace.chatId))?.title).toBe(result.workspace.title);
+    const task = await useCases.start({ agentName: "demo", runtime: "codex", input: { kind: "task", prompt: "Verify pricing" } }, owner, "task-start-01");
+    expect(task.workspace.title).toBe("Verify pricing");
+  });
+
+  it.each(["", "   ", "invalid\0title", "x".repeat(WORKSPACE_LIMITS.titleChars + 1)])("rejects an invalid start title before writing", async title => {
+    const before = fake.rows.size;
+    await expect(useCases.start({ agentName: "demo", runtime: "command", title, input: { kind: "command", script: "pwd" } }, owner, "invalid-title-01")).rejects.toMatchObject({ status: 400 });
+    expect(fake.rows.size).toBe(before);
+  });
+
   it("does not create a Workspace or source binding for an unavailable repository", async () => {
     checkRepository.mockRejectedValueOnce(new CodingRepositoryNotReadyError("unavailable", "Repository is missing or inaccessible"));
     await expect(useCases.startForChat({ agentName: "demo", runtime: "codex", repository: "company/demo", baseBranch: "main",
