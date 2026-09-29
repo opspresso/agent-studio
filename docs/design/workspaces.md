@@ -85,6 +85,9 @@ native Session 이력과 SQLite 상태는 보관한다. Codex의 자동 plugin·
 쓰기만 이벤트·Session·Run을 바꿀 수 있다. 취소·종료 의도는 쓰기마다 다시 읽어 보존한다.
 worker 중단은 실행 중단으로 기록하지 않는다. 다시 시작하면 같은 operation ID를 관찰하며,
 전송 오류에는 Run을 유지하고 실제 핸들 소실에는 `interrupted`를 기록한다.
+원문 출력이 provider·이벤트 크기·이벤트 수 제한으로 영구 생략되면 `WorkspaceRun.outputLoss`를
+보관하고 `status`·`wait`의 `output_loss`·`truncated`로 알린다. 원문 이벤트가 남아 있는
+`check.output` 요약 캐시의 잘림은 영구 출력 손실이 아니다.
 
 Worker와 Git 작업은 adapter를 기다리는 동안에도 3분 lease를 1분마다 갱신한다. 갱신과 진행
 저장은 같은 큐에서 revision CAS를 수행하며, lease 해제 시 갱신을 멈추고 진행 중인 갱신을

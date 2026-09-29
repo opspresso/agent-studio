@@ -64,4 +64,20 @@ describe("review Workspace lifecycle", () => {
     await session.tool({ request: { operation: "wait" } }, "truncated");
     await expect(session.ensureIdle()).rejects.toThrow("results were not read");
   });
+  it("rejects permanent raw output loss even after a complete terminal page is delivered", async () => {
+    const f = fixture();
+    const session = await openReviewWorkspace(f.deps, target);
+    f.tool.mockResolvedValueOnce({ text: JSON.stringify({ run_id: "check", status: "succeeded", next_seq: 1,
+      has_more: false, truncated: false, output_loss: true }) });
+    await session.tool({ request: { operation: "status", after_seq: 0 } }, "lost-output");
+    await expect(session.ensureIdle()).rejects.toThrow("output was permanently omitted");
+    expect(f.verify).not.toHaveBeenCalled();
+  });
+  it("closes a checkout with permanently missing output before opening review", async () => {
+    const f = fixture();
+    f.tool.mockResolvedValueOnce({ text: JSON.stringify({ workspace_id: "review", workspace_url: "https://studio.example.test/chats/review",
+      run_id: "bootstrap", status: "succeeded", head_sha: target.headSha, output_loss: true }) });
+    await expect(openReviewWorkspace(f.deps, target)).rejects.toThrow("checkout output was permanently omitted");
+    expect(f.close).toHaveBeenCalledOnce();
+  });
 });

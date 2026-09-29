@@ -86,6 +86,8 @@ export interface WorkspaceRun {
   checkIndex?: number;
   runtimeFailed?: boolean;
   lastEventSeq: number;
+  /** Raw runtime/check output was permanently omitted; reading later pages cannot recover it. */
+  outputLoss?: true;
   exitCode?: number;
   error?: string;
   diff?: string;
@@ -99,17 +101,22 @@ export interface WorkspaceCheck {
   status: "pending" | "running" | "passed" | "failed" | "skipped";
   exitCode?: number;
   output: string;
+  /** Only this summary cache was shortened; raw events may still provide the complete output. */
   truncated?: boolean;
 }
 
-export type WorkspaceEventData =
+export type WorkspaceEventData = (
   | { kind: "output"; stream: "stdout" | "stderr"; text: string }
   | { kind: "message"; text: string }
   | { kind: "session"; nativeSessionId: string }
   | { kind: "diff"; text: string; truncated: boolean }
   | { kind: "check"; check: WorkspaceCheck }
   | { kind: "status"; status: WorkspaceRunStatus; text?: string }
-  | { kind: "warning"; text: string };
+  | { kind: "warning"; text: string }
+) & {
+  /** Permanent loss of raw output, distinct from a shortened summary cache. */
+  outputLoss?: true;
+};
 
 export interface WorkspaceEvent {
   workspaceId: string;

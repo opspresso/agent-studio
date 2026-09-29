@@ -110,15 +110,19 @@ export class WorkspaceWorkerState {
       const leaseUntil = new Date(this.deps.now().getTime() + WORKSPACE_LEASE_MS).toISOString();
       const available = Math.max(0, WORKSPACE_LIMITS.eventsPerRun - 1 - (run?.lastEventSeq ?? 0));
       const batch = events.slice(0, available);
+      const outputLoss = run?.outputLoss || runPatch?.outputLoss || events.some(event => event.outputLoss) ||
+        events.slice(available).some(event => event.kind === "output" || event.kind === "message");
       if (events.length > available && (run?.lastEventSeq ?? 0) < WORKSPACE_LIMITS.eventsPerRun) {
-        batch.push({ kind: "warning", text: "Workspace event limit reached; further output is omitted" });
+        batch.push({ kind: "warning", text: "Workspace event limit reached; further output is omitted",
+          ...(outputLoss ? { outputLoss: true } : {}) });
       }
       const records = run ? batch.map((data, index) => ({ workspaceId: this.id, runId: run.id,
         seq: run.lastEventSeq + index + 1, createdAt: now, data })) : [];
       try {
         await this.deps.repository.write({ expectedRevision: workspace.revision,
           workspace: { ...workspace, updatedAt: now, dueAt: leaseUntil, leaseUntil, ...patch, revision: workspace.revision + 1 },
-          ...(run ? { run: { ...run, leaseToken: this.token, leaseUntil, ...runPatch, lastEventSeq: run.lastEventSeq + records.length } } : {}),
+          ...(run ? { run: { ...run, leaseToken: this.token, leaseUntil, ...runPatch,
+            ...(outputLoss ? { outputLoss: true } : {}), lastEventSeq: run.lastEventSeq + records.length } } : {}),
           events: records, ...children });
         // A terminal/retry write releases ownership before its outer run bracket
         // finishes. Never let a queued renewal bring that lease back.

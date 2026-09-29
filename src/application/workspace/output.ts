@@ -1,5 +1,5 @@
 import type { WorkspaceEventData, WorkspaceRun } from "@/domain/workspace/types";
-import type { SandboxOutput, WorkspaceRuntimeAdapter } from "@/domain/workspace/ports";
+import type { SandboxOperation, SandboxOutput, WorkspaceRuntimeAdapter } from "@/domain/workspace/ports";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { cutUtf8Bytes } from "@/shared/utf8Text";
 
@@ -12,11 +12,12 @@ export function boundWorkspaceEvent(event: WorkspaceEventData): WorkspaceEventDa
   if (Buffer.byteLength(JSON.stringify(event)) <= WORKSPACE_LIMITS.eventBytes) return [event];
   if ("text" in event) {
     const bounded = boundedWorkspaceText(event.text ?? "", Math.floor(WORKSPACE_LIMITS.eventBytes / 8));
-    return [{ ...event, text: bounded.text, ...(event.kind === "diff" ? { truncated: true } : {}) },
+    return [{ ...event, text: bounded.text, ...(event.kind === "diff" ? { truncated: true } : {}),
+      ...(event.kind === "output" || event.kind === "message" ? { outputLoss: true as const } : {}) },
       { kind: "warning", text: "Workspace event output was truncated" }];
   }
   if (event.kind === "check") return [{ ...event, check: { ...event.check, output: "", truncated: true } }];
-  return [{ kind: "warning", text: "Oversized workspace event was omitted" }];
+  return [{ kind: "warning", text: "Oversized workspace event was omitted", outputLoss: true }];
 }
 
 /** Provider output framing and native runtime framing are separate, durable cursors. */
@@ -25,6 +26,7 @@ export function foldWorkspaceOutput(
   run: WorkspaceRun,
   output: SandboxOutput,
   terminal: boolean,
+  operation: Pick<SandboxOperation, "truncated">,
 ): { events: WorkspaceEventData[]; patch: Partial<WorkspaceRun>; nativeSessionId?: string } {
   const events: WorkspaceEventData[] = [];
   let pending = run.protocolBuffer ?? "";
@@ -38,7 +40,7 @@ export function foldWorkspaceOutput(
       pending = lines.pop() ?? "";
       for (const line of lines) if (line) events.push(...runtime.events(line));
       if (Buffer.byteLength(pending) > WORKSPACE_LIMITS.diffBytes) {
-        events.push({ kind: "warning", text: "Oversized native runtime event was omitted" });
+        events.push({ kind: "warning", text: "Oversized native runtime event was omitted", outputLoss: true });
         pending = "";
       }
     }
@@ -57,5 +59,7 @@ export function foldWorkspaceOutput(
         truncated: current.truncated || appended.truncated } : check);
     }
   }
-  return { events: events.flatMap(boundWorkspaceEvent), patch, ...(nativeSessionId ? { nativeSessionId } : {}) };
+  const bounded = events.flatMap(boundWorkspaceEvent);
+  if (operation.truncated || bounded.some(event => event.outputLoss)) patch.outputLoss = true;
+  return { events: bounded, patch, ...(nativeSessionId ? { nativeSessionId } : {}) };
 }

@@ -36,7 +36,9 @@ export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: Pul
       ready = decode(await deps.tool({ request: { operation: "wait", workspace_id: id, run_id: started.run_id } }, "review-bootstrap-wait"));
     }
     if (ready.status !== "succeeded" || ready.head_sha !== target.headSha) throw new Error("Review Workspace could not check out the verified PR commit");
+    if (ready.output_loss === true) throw new Error("Review Workspace checkout output was permanently omitted");
     const unfinished = new Set<string>();
+    const outputLoss = new Set<string>();
     const readRanges = new Map<string, Array<[number, number]>>();
     return {
       id, url: started.workspace_url, close,
@@ -47,10 +49,11 @@ export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: Pul
         const value = decode(result);
         if (typeof value.run_id === "string") {
           unfinished.add(value.run_id);
+          if (value.output_loss === true) outputLoss.add(value.run_id);
           const after = request?.after_seq ?? 0;
           const next = value.next_seq;
           const ranges = readRanges.get(value.run_id) ?? [];
-          if (value.truncated === false && typeof after === "number" && Number.isSafeInteger(after) && after >= 0 &&
+          if (value.output_loss !== true && value.truncated === false && typeof after === "number" && Number.isSafeInteger(after) && after >= 0 &&
               typeof next === "number" && Number.isSafeInteger(next) && next >= after) {
             ranges.push([after, next]);
             ranges.sort((a, b) => a[0] - b[0]);
@@ -71,6 +74,7 @@ export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: Pul
         const workspace = await deps.state(id);
         if (!workspace || workspace.status !== "active" || workspace.coding?.sourceRevision !== target.headSha ||
           workspace.coding.repository !== target.repository || workspace.coding.headSha !== target.headSha) throw new Error("Review Workspace no longer matches its verified commit");
+        if (outputLoss.size) throw new Error("Review Workspace output was permanently omitted; no review was published");
         if (workspace.activeRunId || unfinished.size) throw new Error("Review Workspace checks are unfinished or their results were not read; no review was published");
         const review = await deps.verify(id);
         if (review.headSha !== target.headSha || !/^[a-f0-9]{40,64}$/.test(review.treeSha) || review.treeSha !== review.headTreeSha) {

@@ -269,7 +269,8 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       run_id: run.id, status: run.status, error: run.error,
       ...git,
       checks: run.checks.map(({ output: _output, ...check }) => { void _output; return check; }),
-      output: output.text, diff: diff.text, truncated: output.truncated || diff.truncated || !!run.diffTruncated,
+      output: output.text, diff: diff.text, output_loss: !!run.outputLoss,
+      truncated: !!run.outputLoss || output.truncated || diff.truncated || !!run.diffTruncated,
       next_seq: selected.at(-1)?.seq ?? after, has_more: events.length > selected.length || (selected.at(-1)?.seq ?? Number(after)) < run.lastEventSeq,
       next: isTerminalWorkspaceRun(run.status) ? "review results" : "wait" });
   };
