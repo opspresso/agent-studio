@@ -1,5 +1,6 @@
 import { assertLocalDatabase } from "./local-database";
 import { withCheckLifecycle, type RegisterCheckCleanup } from "./check-lifecycle";
+import { utcDay } from "@/shared/date";
 
 /**
  * Integration checks against local PostgreSQL and mock provider transports.
@@ -35,6 +36,21 @@ async function main() {
 async function runChecks(cleanup: RegisterCheckCleanup) {
   const { closePool, withTransaction } = await import("@/infrastructure/db/client");
   cleanup(closePool);
+  const { auditRepository } = await import("@/infrastructure/db/repositories/auditRepository");
+  const { keys: dbKeys } = await import("@/infrastructure/db/keys");
+  const { deleteItem, getItem } = await import("@/infrastructure/db/store");
+  const auditKeys = new Map<string, ReturnType<typeof dbKeys.auditEvent>>();
+  const appendAudit = auditRepository.append;
+  auditRepository.append = async event => {
+    const key = dbKeys.auditEvent(utcDay(new Date(event.createdAt)), event.createdAt, event.eventId);
+    auditKeys.set(JSON.stringify(key), key);
+    await appendAudit(event);
+  };
+  cleanup(() => { auditRepository.append = appendAudit; });
+  // Register before other owners: their releases can also append audit records.
+  cleanup(() => withCheckLifecycle(async remove => {
+    for (const key of auditKeys.values()) remove(() => deleteItem(key));
+  }));
   // ---------- mock LLM server ----------
   const llmCalls: Array<Record<string, unknown>> = [];
   const decisionCalls: Array<Record<string, unknown>> = [];
@@ -221,7 +237,6 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   const { createPgVectorStore } = await import("@/infrastructure/vector/pgVectorStore");
   const { runSlotRepository } = await import("@/infrastructure/db/repositories/runSlotRepository");
   const { triggerRepository } = await import("@/infrastructure/db/repositories/triggerRepository");
-  const { auditRepository } = await import("@/infrastructure/db/repositories/auditRepository");
   const { artifactRepository } = await import(
     "@/infrastructure/db/repositories/artifactRepository"
   );
@@ -242,8 +257,6 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     mcpHeadersContext,
     mcpOAuthStateContext,
   } = await import("@/domain/security/secretContext");
-  const { keys: dbKeys } = await import("@/infrastructure/db/keys");
-  const { deleteItem, getItem } = await import("@/infrastructure/db/store");
 
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
@@ -1197,8 +1210,6 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       },
     ];
     for (const row of auditRows) {
-      // Audit rows are append-only and outside the Agent cascade.
-      cleanup(() => deleteItem(dbKeys.auditEvent(row.createdAt.slice(0, 10), row.createdAt, row.eventId)));
       await auditRepository.append(row);
     }
     const dayRows = await auditRepository.listByDay(auditDay, 100);
@@ -1697,16 +1708,6 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       const modelRouting = { ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: "integration/fast",general:"integration/model" }, localOnly: true };
       const { modelRegistryUseCases } = await import("@/lib/container");
       const routingActor = `it-routing-${suffix}@example.test`;
-      const routingAuditDay = new Date().toISOString().slice(0, 10);
-      cleanup(async () => {
-        await withCheckLifecycle(async remove => {
-          for (const day of new Set([routingAuditDay, new Date().toISOString().slice(0, 10)])) {
-            for (const row of (await auditRepository.listByDay(day, 100)).filter(row => row.actorEmail === routingActor)) {
-              remove(() => deleteItem(dbKeys.auditEvent(day, row.createdAt, row.eventId)));
-            }
-          }
-        });
-      });
       await modelRegistryUseCases.saveRouting(modelRouting, routingActor);
       assert.deepEqual((await modelRegistryUseCases.getRouting()).policy, modelRouting);
       const routedConfiguration = { ...configuration, parameters: { ...configuration.parameters, modelRouting: true } };
