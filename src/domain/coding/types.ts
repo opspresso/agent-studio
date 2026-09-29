@@ -26,7 +26,9 @@ export type CodingGitAction =
   | { kind: "push" }
   | { kind: "push-main" }
   | { kind: "pull-request"; title: string; body: string; draft: boolean }
-  | { kind: "merge"; pullRequestNumber: number; headSha: string };
+  | { kind: "merge"; pullRequestNumber: number; headSha: string }
+  | { kind: "tag"; tag: string }
+  | { kind: "release"; tag: string; title: string; body: string; draft: boolean; prerelease: boolean };
 
 export type CodingAction =
   | CodingGitAction
@@ -54,7 +56,7 @@ export interface CodingApproval {
   decidedAt?: string;
   operationId?: string;
   result?: string;
-  review: { headSha: string; treeSha: string; diff: string; truncated: boolean; mainHeadSha?: string; ci?: PullRequestInfo["ci"] };
+  review: { headSha: string; treeSha: string; diff: string; truncated: boolean; mainHeadSha?: string; targetSha?: string; ci?: PullRequestInfo["ci"] };
 }
 
 /** No reported checks is distinct from passing CI; GitHub still enforces branch rules. */

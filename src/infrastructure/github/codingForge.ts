@@ -33,6 +33,7 @@ interface Pull {
   base: { ref: string; sha: string; repo: { full_name: string } };
 }
 type Permissions = Record<string, "read" | "write">;
+type GitRef = { ref: string; object: { type: string; sha: string } };
 class GitHubReadError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
@@ -71,7 +72,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     }
     if (expectedStatus !== undefined && response.status !== expectedStatus) {
       await response.body?.cancel();
-      throw new Error("GitHub did not confirm repository creation");
+      throw new Error("GitHub did not confirm the requested creation");
     }
     if (response.status === 204) return undefined as T;
     return JSON.parse(await readBodyText(response, 2 * 1024 * 1024)) as T;
@@ -129,6 +130,22 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       state: pull.merged ? "merged" : pull.state, ci: await ci(repository.repository, pull.head.sha, accessToken) };
   }
   const readPermissions: Permissions = { contents: "read", pull_requests: "read", checks: "read", statuses: "read" };
+  async function tagCommit(repository: string, tag: string, accessToken: string): Promise<string> {
+    if (!isGitBranch(tag)) throw new CodingMutationRejectedError("Invalid Git tag");
+    const ref = await request<GitRef>(`${repoPath(repository)}/git/ref/tags/${encodeURIComponent(tag)}`, accessToken);
+    if (ref.ref !== `refs/tags/${tag}`) throw new Error("GitHub returned an unexpected tag reference");
+    let object = ref.object;
+    const seen = new Set<string>();
+    // Annotated tags may point to other tags; never follow an unbounded chain.
+    for (let depth = 0; depth < 8; depth++) {
+      if (!object || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(object.sha) || seen.has(object.sha)) break;
+      if (object.type === "commit") return object.sha;
+      if (object.type !== "tag") break;
+      seen.add(object.sha);
+      object = (await request<{ object: GitRef["object"] }>(`${repoPath(repository)}/git/tags/${object.sha}`, accessToken)).object;
+    }
+    throw new CodingMutationRejectedError("Tag does not resolve to a supported commit");
+  }
   const forge: CodingForge = {
     async createRepository(input) {
       if (!isRepositoryName(input.repository)) throw new CodingMutationRejectedError("Invalid repository name");
@@ -257,6 +274,58 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       const result = await request<{ object: { sha: string } }>(`${repoPath(repository.repository)}/git/refs/heads/main`, access.token, "PATCH", { sha: headSha, force: false });
       if (result.object.sha !== headSha) throw new Error("GitHub did not confirm the reviewed main head");
       return result.object.sha;
+    },
+    async releaseTarget(repository, tag) {
+      const access = await token(repository.repository, readPermissions);
+      let headSha: string;
+      if (tag !== undefined) {
+        try { headSha = await tagCommit(repository.repository, tag, access.token); }
+        catch (error) {
+          if (error instanceof GitHubReadError && error.status === 404) throw new CodingMutationRejectedError("Create the requested tag before preparing a release");
+          throw error;
+        }
+      } else {
+        if (repository.baseBranch !== "main") throw new CodingMutationRejectedError("Tag publication requires a Workspace based on main");
+        const main = await request<GitRef>(`${repoPath(repository.repository)}/git/ref/heads/main`, access.token);
+        if (main.ref !== "refs/heads/main" || main.object?.type !== "commit" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(main.object.sha)) throw new Error("GitHub returned an invalid main head");
+        headSha = main.object.sha;
+      }
+      return { headSha, ci: await ci(repository.repository, headSha, access.token) };
+    },
+    async createTag(repository, tag, headSha) {
+      if (!isGitBranch(tag)) throw new CodingMutationRejectedError("Invalid Git tag");
+      const current = await forge.releaseTarget(repository);
+      if (current.headSha !== headSha || !codingCiAllowsPublication(current.ci)) throw new CodingMutationRejectedError("Main head or CI changed since tag approval");
+      const access = await token(repository.repository, { contents: "write" });
+      try {
+        const existing = await tagCommit(repository.repository, tag, access.token);
+        if (existing !== headSha) throw new CodingMutationRejectedError("Tag already exists on a different commit; tags are never overwritten");
+        return headSha;
+      } catch (error) {
+        if (!(error instanceof GitHubReadError && error.status === 404)) throw error;
+      }
+      const result = await request<GitRef>(`${repoPath(repository.repository)}/git/refs`, access.token, "POST", { ref: `refs/tags/${tag}`, sha: headSha }, false, 201);
+      if (result?.ref !== `refs/tags/${tag}` || result.object?.type !== "commit" || result.object.sha !== headSha) throw new Error("GitHub did not confirm the requested tag");
+      return headSha;
+    },
+    async createRelease(repository, input, headSha) {
+      const current = await forge.releaseTarget(repository, input.tag);
+      if (current.headSha !== headSha || !codingCiAllowsPublication(current.ci)) throw new CodingMutationRejectedError("Tag target or CI changed since release approval");
+      const access = await token(repository.repository, { contents: "write" });
+      const result = await request<{ id: number; html_url: string; tag_name: string; name: string; body: string | null; draft: boolean; prerelease: boolean }>(
+        `${repoPath(repository.repository)}/releases`, access.token, "POST", { tag_name: input.tag, target_commitish: headSha,
+          name: input.title, body: input.body, draft: input.draft, prerelease: input.prerelease }, false, 201);
+      if (!result || !Number.isSafeInteger(result.id) || result.id <= 0 || result.tag_name !== input.tag || result.name !== input.title ||
+        (result.body ?? "") !== input.body || result.draft !== input.draft || result.prerelease !== input.prerelease) throw new Error("GitHub did not confirm the requested release");
+      const url = new URL(result.html_url);
+      if (url.origin !== web.origin || url.username || url.password || url.search || url.hash ||
+        !url.pathname.startsWith(`${web.pathname.replace(/\/$/, "")}/${repository.repository}/releases/`)) throw new Error("GitHub returned an unexpected release URL");
+      // Release creation can race with a tag update outside Studio.
+      let confirmedHead: string;
+      try { confirmedHead = await tagCommit(repository.repository, input.tag, access.token); }
+      catch { throw new Error("Release was created but its tag could not be verified; inspect the release before another action"); }
+      if (confirmedHead !== headSha) throw new Error("Release tag changed during publication; inspect the release before another action");
+      return url.href;
     },
     async dispatch(repository, workflow, ref, inputs) {
       const access = await token(repository, { actions: "write" });

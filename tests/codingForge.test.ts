@@ -23,6 +23,9 @@ let branchNames: string[];
 let repositoryStatus: number;
 let branchStatus: number;
 let mergeReceipt: unknown;
+let tagSha: string | undefined;
+let tagType: string;
+let releaseReceipt: Record<string, unknown>;
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(now);
@@ -30,6 +33,9 @@ beforeEach(() => {
   mainSha = "e".repeat(40); branchSha = sha; comparison = "ahead"; refusal = 0;
   branchNames = ["main", "feature/change"]; repositoryStatus = 200; branchStatus = 200;
   mergeReceipt = { merged: true, sha: "b".repeat(40) };
+  tagSha = undefined; tagType = "commit";
+  releaseReceipt = { id: 10, html_url: "http://localhost:9009/company/repo/releases/tag/v1.0.0", tag_name: "v1.0.0",
+    name: "First release", body: "Verified changes", draft: false, prerelease: false };
   checks = [{ status: "completed", conclusion: "success" }];
   pull = { number: 7, node_id: "PR_node", html_url: "http://localhost:9009/company/repo/pull/7", draft: false, state: "open",
     head: { sha, ref: repository.branch, repo: { full_name: repository.repository } },
@@ -37,7 +43,15 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(async (url: URL, init: RequestInit) => {
     const request = { url: String(url), method: init.method ?? "GET", headers: new Headers(init.headers), body: init.body ? JSON.parse(String(init.body)) : {} };
     requests.push(request);
-    if (request.url.includes("/git/ref/heads/")) return Response.json({ object: { type: "commit", sha: request.url.endsWith("/main") ? mainSha : branchSha } });
+    if (request.url.includes("/git/ref/heads/")) return Response.json({ ref: "refs/heads/main", object: { type: "commit", sha: request.url.endsWith("/main") ? mainSha : branchSha } });
+    if (request.url.includes("/git/ref/tags/")) return tagSha ? Response.json({ ref: "refs/tags/v1.0.0", object: { type: tagType, sha: tagSha } }) : new Response(null, { status: 404 });
+    if (request.url.includes("/git/tags/")) return Response.json({ object: { type: "commit", sha: mainSha } });
+    if (request.url.endsWith("/git/refs")) {
+      if (refusal) return new Response(null, { status: refusal });
+      tagSha = String(request.body.sha);
+      return Response.json({ ref: request.body.ref, object: { type: "commit", sha: tagSha } }, { status: 201 });
+    }
+    if (request.url.endsWith("/releases")) return refusal ? new Response(null, { status: refusal }) : Response.json(releaseReceipt, { status: 201 });
     if (request.url.includes("/compare/")) return Response.json({ status: comparison });
     if (request.url.includes("/git/refs/heads/main")) return refusal ? new Response("refused", { status: refusal }) : Response.json({ object: { sha: request.body.sha } });
     if (request.url.endsWith("/access_tokens")) return Response.json({ token: "short-lived-test-token", expires_at: "2026-09-14T01:00:00Z" });
@@ -60,6 +74,64 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("coding GitHub App adapter", () => {
+  const release = { kind: "release" as const, tag: "v1.0.0", title: "First release", body: "Verified changes", draft: false, prerelease: false };
+  it("creates an exact main tag and releases it with contents-only write permission", async () => {
+    const { forge } = createCodingGitHub(config);
+    const target = await forge.releaseTarget(repository);
+    expect(target).toEqual({ headSha: mainSha, ci: "passed" });
+    expect(await forge.createTag(repository, release.tag, target.headSha)).toBe(mainSha);
+    expect(await forge.createRelease(repository, release, target.headSha)).toBe(releaseReceipt.html_url);
+    expect(requests.find(row => row.url.endsWith("/git/refs"))?.body).toEqual({ ref: "refs/tags/v1.0.0", sha: mainSha });
+    expect(requests.find(row => row.url.endsWith("/releases"))?.body).toEqual({ tag_name: release.tag, target_commitish: mainSha,
+      name: release.title, body: release.body, draft: false, prerelease: false });
+    expect(requests.filter(row => row.url.endsWith("/access_tokens")).at(-1)?.body.permissions).toEqual({ contents: "write" });
+  });
+  it("reuses a matching tag and refuses tag overwrite, stale main and failed checks", async () => {
+    const { forge } = createCodingGitHub(config);
+    tagSha = mainSha;
+    expect(await forge.createTag(repository, release.tag, mainSha)).toBe(mainSha);
+    tagSha = sha;
+    await expect(forge.createTag(repository, release.tag, mainSha)).rejects.toThrow("never overwritten");
+    await expect(forge.createTag(repository, release.tag, sha)).rejects.toThrow("changed since tag approval");
+    checks = [{ status: "completed", conclusion: "failure" }];
+    await expect(forge.createTag(repository, release.tag, mainSha)).rejects.toThrow("CI changed");
+    expect(requests.filter(row => row.url.endsWith("/git/refs"))).toEqual([]);
+  });
+  it("resolves annotated tags and requires an existing exact tag before release", async () => {
+    const { forge } = createCodingGitHub(config);
+    await expect(forge.releaseTarget(repository, release.tag)).rejects.toThrow("Create the requested tag");
+    tagSha = sha; tagType = "tag";
+    expect((await forge.releaseTarget(repository, release.tag)).headSha).toBe(mainSha);
+    tagType = "commit";
+    await expect(forge.createRelease(repository, release, mainSha)).rejects.toThrow("changed since release approval");
+    expect(requests.some(row => row.url.endsWith("/releases"))).toBe(false);
+  });
+  it.each([403, 422])("classifies HTTP %i as a definitive publication refusal", async status => {
+    const { forge } = createCodingGitHub(config);
+    refusal = status;
+    await expect(forge.createTag(repository, release.tag, mainSha)).rejects.toBeInstanceOf(CodingMutationRejectedError);
+    tagSha = mainSha;
+    await expect(forge.createRelease(repository, release, mainSha)).rejects.toBeInstanceOf(CodingMutationRejectedError);
+  });
+  it.each([{ id: 0 }, { tag_name: "other" }, { draft: true }, { html_url: "https://unrelated.test/release" }])("rejects an unconfirmed release receipt %j", async patch => {
+    tagSha = mainSha;
+    Object.assign(releaseReceipt, patch);
+    await expect(createCodingGitHub(config).forge.createRelease(repository, release, mainSha)).rejects.toThrow();
+  });
+  it("keeps a release outcome uncertain if its tag becomes invalid after creation", async () => {
+    tagSha = mainSha;
+    const fetch = vi.mocked(globalThis.fetch);
+    const original = fetch.getMockImplementation()!;
+    fetch.mockImplementation(async (...args) => {
+      const response = await original(...args);
+      if (String(args[0]).endsWith("/releases")) tagType = "tree";
+      return response;
+    });
+    const result = await createCodingGitHub(config).forge.createRelease(repository, release, mainSha).catch(error => error);
+    expect(result).toBeInstanceOf(Error);
+    expect(result).not.toBeInstanceOf(CodingMutationRejectedError);
+    expect(result.message).toContain("Release was created");
+  });
   it("checks the immutable review commit with scoped read access rather than a mutable branch", async () => {
     const { forge } = createCodingGitHub(config);
     await forge.checkRepository(repository.repository, `review/${sha}`, sha);

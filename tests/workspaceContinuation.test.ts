@@ -59,7 +59,9 @@ async function fixture() {
     coding: { prepare: async (_id, repo) => ({ ...repo, headSha: head, baseSha: head }),
       review: async () => ({ headSha: head, treeSha: "c".repeat(40), headTreeSha: (dirty ? "d" : "c").repeat(40), fingerprint: `review-${head}-${dirty}`, diff: dirty ? "+change" : "", truncated: false }),
       commit: vi.fn(async () => { dirty = false; head = "b".repeat(40); return head; }), push: vi.fn(async () => {}) },
-    forge: { checkRepository: async () => {}, branches: async () => ({ names: ["main"], hasMore: false }), pullRequest: async () => ({ ...pull }),
+    forge: { releaseTarget: vi.fn(async () => ({ headSha: "e".repeat(40), ci: "passed" as const })),
+      createTag: vi.fn(async () => "e".repeat(40)), createRelease: vi.fn(async () => "https://example.test/company/repo/releases/tag/v1.0.0"),
+      checkRepository: async () => {}, branches: async () => ({ names: ["main"], hasMore: false }), pullRequest: async () => ({ ...pull }),
       openPullRequest: vi.fn(async () => ({ ...pull })), merge: vi.fn(async () => { pull.state = "merged"; return "c".repeat(40); }),
       reviewMainPush: async () => ({ baseSha: head, ci: "passed" }), pushMain: async () => head, dispatch: async () => ({}) },
   };

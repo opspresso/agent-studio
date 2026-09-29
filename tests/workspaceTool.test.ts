@@ -270,6 +270,8 @@ describe("Workspace Agent capability", () => {
   });
   it.each<CodingAction>([
     { kind: "merge", pullRequestNumber: 7, headSha: "a".repeat(40) },
+    { kind: "tag", tag: "v1.0.0" },
+    { kind: "release", tag: "v1.0.0", title: "Release", body: "Verified", draft: false, prerelease: false },
     { kind: "push-main" },
     { kind: "deploy", workflow: "deploy.yml", ref: "main", inputs: { environment: "preview" } },
   ])("prepares $kind through the actual tool schema and reuses its pending review without native tasks", async action => {

@@ -18,6 +18,9 @@ export const codingActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("push-main") }).strict(),
   z.object({ kind: z.literal("pull-request"), title: z.string().trim().min(1).max(200), body: z.string().max(40_000), draft: z.boolean() }).strict(),
   z.object({ kind: z.literal("merge"), pullRequestNumber: z.number().int().positive(), headSha: z.string().regex(/^[a-f0-9]{40,64}$/) }).strict(),
+  z.object({ kind: z.literal("tag"), tag: z.string().refine(isGitBranch) }).strict(),
+  z.object({ kind: z.literal("release"), tag: z.string().refine(isGitBranch), title: z.string().trim().min(1).max(200),
+    body: z.string().max(40_000), draft: z.boolean(), prerelease: z.boolean() }).strict(),
   z.object({ kind: z.literal("deploy"), workflow: z.string().min(1).max(200), ref: z.literal("main"), inputs: z.record(z.string().regex(/^[\w-]{1,100}$/), z.string().max(4000)) }).strict(),
 ]);
 export const codingDecisionSchema = z.object({ approve: z.boolean() }).strict();
