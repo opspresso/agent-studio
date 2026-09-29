@@ -55,6 +55,7 @@ export function SchedulesSection({
   const [newTimezone, setNewTimezone] = useState("UTC");
   const [newMessage, setNewMessage] = useState("");
   const [slackChannels, setSlackChannels] = useState<SlackChannelInfo[]>([]);
+  const [slackChannelsTruncated, setSlackChannelsTruncated] = useState(false);
   const [telegramChats, setTelegramChats] = useState<TelegramDestination[]>([]);
   const [slackChannelsError, setSlackChannelsError] = useState<string | null>(null);
   const [telegramChatsError, setTelegramChatsError] = useState<string | null>(null);
@@ -112,10 +113,16 @@ export function SchedulesSection({
   useEffect(() => {
     let cancelled = false;
     setSlackChannels([]);
+    setSlackChannelsTruncated(false);
     setSlackChannelsError(null);
     if (agent.slack?.configured && agent.slack.enabled) {
       void listAgentSlackChannels(agentName)
-        .then(({ channels }) => { if (!cancelled) setSlackChannels(channels); })
+        .then(({ channels, truncated }) => {
+          if (!cancelled) {
+            setSlackChannels(channels);
+            setSlackChannelsTruncated(truncated);
+          }
+        })
         .catch(reason => { if (!cancelled) setSlackChannelsError(reason instanceof Error ? reason.message : "Failed to load Slack destinations"); });
     }
     return () => { cancelled = true; };
@@ -178,6 +185,7 @@ export function SchedulesSection({
           </Alert>
         )}
         {slackChannelsError && <Alert color="red">{slackChannelsError}</Alert>}
+        {slackChannelsTruncated && <Alert color="yellow">{t("slack.channelsTruncated")}</Alert>}
         {telegramChatsError && <Alert color="red">{telegramChatsError}</Alert>}
 
         <Stack gap="sm">

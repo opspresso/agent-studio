@@ -1338,6 +1338,7 @@ export const ko: Messages = {
   "pset.monthlyBlockHint": "그달 남은 실행을 거절합니다",
   "pset.slackChannel": "Slack 채널",
   "pset.slackChannelUnavailable": "Agent 봇을 활성화하고 채널에 먼저 초대하세요",
+  "slack.channelsTruncated": "일부 Slack 채널만 표시됩니다. 이 목록에 없는 채널도 존재할 수 있습니다.",
   "pset.notificationDestinations": "알림 목적지",
   "pset.notificationDestinationsHint":
     "활성화된 연동을 선택하면 비용 경고 목적지 입력란이 바로 표시됩니다.",

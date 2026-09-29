@@ -1406,6 +1406,7 @@ export const en = {
   "pset.monthlyBlockHint": "Refuse runs for the rest of the month",
   "pset.slackChannel": "Slack channel",
   "pset.slackChannelUnavailable": "Enable the Agent bot and invite it to a channel first",
+  "slack.channelsTruncated": "Only part of the Slack channel list is shown. Additional channels may be missing from this list.",
   "pset.notificationDestinations": "Notification destinations",
   "pset.notificationDestinationsHint":
     "Select an enabled integration to configure where it receives cost alerts.",

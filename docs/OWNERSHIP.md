@@ -71,6 +71,7 @@
 | 결정 | 소유자 | 확인 |
 |---|---|---|
 | Slack 읽기 하나가 동시에 조회할 프로필 수 | `src/domain/slack/reader.ts` 의 `MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS`. thread caller context와 workspace read tool이 함께 적용한다 | 구조 |
+| Slack 채널 목록의 검색·참가 여부·전체 결과 limit과 생략 계약 | `domain/slack/reader.ts`의 `SlackChannelQuery`·`SlackChannelListing`; cursor·provider 페이지 크기·최대 조회 페이지는 `infrastructure/slack/client.ts`, 도구·연동 결과 상한은 각 application 호출자가 소유한다 | 코드 |
 | 어댑터가 정규화를 마친 뒤 chat-bot 턴이 어떻게 도는가. 첨부는 턴 안으로, chunk 는 sink 위로, 꼬리는 한 가지 순서로 | `src/application/messaging/handleTurn.ts` 의 `handleTurn`. Slack·Telegram·Teams 핸들러는 정규화하고 렌더할 뿐, 어느 쪽도 chunk 를 직접 접어 넣지 않는다 | 구조 |
 | 모든 chat-bot 표면에서의 첨부 한도와, 버려진 첨부마다 얻는 문장 | `src/application/messaging/attachments.ts`. 플랫폼이 기여하는 것은 `InboundAttachment.download` 를 통한 바이트뿐이고 그 외에는 없다 | 구조 |
 | 모든 chat-bot 표면이 구현하는 답변 port | `src/domain/messaging/reply.ts` 의 `ReplySink` / `ReplyChannel`. 파이프라인이 그것을 호출하고, 각 어댑터가 그것을 렌더하며, 어느 쪽도 다른 쪽을 import 하지 않는다 | 구조 |

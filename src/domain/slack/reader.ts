@@ -9,6 +9,19 @@ import type {
 /** Cold `users.info` requests allowed in flight from one Slack read. */
 export const MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS = 5;
 
+export interface SlackChannelQuery {
+  /** Maximum matching channels across all inspected pages. */
+  limit?: number;
+  query?: string;
+  memberOnly?: boolean;
+}
+
+export interface SlackChannelListing {
+  channels: SlackChannelInfo[];
+  /** More matches or uninspected pages remain beyond this bounded read. */
+  truncated: boolean;
+}
+
 /**
  * The reads a run's Slack tools are served from.
  *
@@ -30,7 +43,8 @@ export interface SlackReaderPort {
     token: string,
     args: { channel: string; ts: string; limit?: number },
   ): Promise<SlackMessage[]>;
-  listChannels(token: string, args?: { limit?: number }): Promise<SlackChannelInfo[]>;
+  /** Filter before the result limit; the adapter bounds page inspection and reports omissions. */
+  listChannels(token: string, args?: SlackChannelQuery): Promise<SlackChannelListing>;
   /**
    * Who a Slack user id is, as the *caller block* needs them — a name, a
    * timezone, an avatar, made prompt-safe by `callerFrom`. Resolves to `null`

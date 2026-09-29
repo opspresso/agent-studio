@@ -748,8 +748,8 @@ export const pluginsRepoHeadSha = async (
 const slackAuthTest = async (botToken: string) =>
   (await import("@/infrastructure/slack/client")).slackClient.authTest(botToken);
 
-const slackListChannels = async (botToken: string) =>
-  (await import("@/infrastructure/slack/client")).slackClient.listChannels(botToken);
+const slackListChannels: SlackReaderPort["listChannels"] = async (botToken, args) =>
+  (await import("@/infrastructure/slack/client")).slackClient.listChannels(botToken, args);
 
 /**
  * The agent-Slack surface, composed here rather than at each of the three

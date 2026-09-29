@@ -6,6 +6,7 @@ import {
   updateAgentSlack as updateAgentSlackImpl,
 } from "@/application/slack/agentSlack";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import { slackClient } from "@/infrastructure/slack/client";
 
 // Exercise the production cipher through the injected boundary.
 type Upd = Parameters<typeof updateAgentSlackImpl>;
@@ -43,6 +44,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {
@@ -203,26 +205,46 @@ describe("schedule channel choices", () => {
       { botToken: "xoxb-live", signingSecret: "sig-live", enabled: true },
       OWNER,
     );
-    const tokens: string[] = [];
+    const calls: unknown[] = [];
     const useCases = createAgentSlackUseCases({
       agents: repo,
       cipher: secretCipher,
       authTest: async () => ({}),
-      listChannels: async (token) => {
-        tokens.push(token);
-        return [
+      listChannels: async (token, args) => {
+        calls.push({ token, args });
+        return { channels: [
           { id: "C2", name: "zeta", isMember: true },
-          { id: "C3", name: "hidden", isMember: false },
           { id: "C1", name: "alpha", isMember: true },
-        ];
+        ], truncated: true };
       },
     });
-    expect(await useCases.channels("bot-proj", OWNER)).toEqual([
+    expect(await useCases.channels("bot-proj", OWNER)).toEqual({ channels: [
       { id: "C1", name: "alpha", isMember: true },
       { id: "C2", name: "zeta", isMember: true },
-    ]);
-    expect(tokens).toEqual(["xoxb-live"]);
+    ], truncated: true });
+    expect(calls).toEqual([{ token: "xoxb-live", args: { limit: 200, memberOnly: true } }]);
     await expect(useCases.channels("bot-proj", OTHER)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("keeps later-page joined channels available to notification selectors", async () => {
+    const { repo } = fakeRepo(makeAgent());
+    await updateAgentSlack(repo, "bot-proj", { botToken: "xoxb-live", signingSecret: "sig-live", enabled: true }, OWNER);
+    const request = vi.fn(async (url: string) => {
+      const first = !new URL(url).searchParams.has("cursor");
+      return new Response(JSON.stringify({ ok: true,
+        channels: first ? [{ id: "C1", name: "unjoined", is_member: false }]
+          : [{ id: "C2", name: "alerts", is_member: true }],
+        response_metadata: { next_cursor: first ? "next" : "" },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", request);
+    const useCases = createAgentSlackUseCases({ agents: repo, cipher: secretCipher,
+      authTest: async () => ({}), listChannels: slackClient.listChannels });
+
+    expect(await useCases.channels("bot-proj", OWNER)).toEqual({
+      channels: [{ id: "C2", name: "alerts", isMember: true }], truncated: false,
+    });
+    expect(request).toHaveBeenCalledTimes(2);
   });
 });
 
