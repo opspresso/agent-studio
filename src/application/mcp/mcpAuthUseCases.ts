@@ -723,10 +723,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const connections = await listAgentMcpConnections(deps.connections, agentName);
       // Existing grants can supply their provider identity without reconnecting. Limit
       // optional network reads; resolved identities survive subsequent token refreshes.
-      const views = await mapWithLimit(connections, 4, async (connection) => {
-        if (connection.status !== "connected" || !connection.accessToken) {
-          return toConnectionView(deps.cipher, connection);
-        }
+      async function viewConnection(connection: McpConnection, lookupAllowed: boolean): Promise<McpConnectionView | undefined> {
         const server = await deps.mcps.get(connection.serverName);
         const lookupId = server?.auth && accountLookupId(server.auth, server.url);
         const withoutAccount = { ...connection, connectedAccount: undefined };
@@ -736,6 +733,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           return toConnectionView(deps.cipher, withoutAccount, "unavailable");
         }
         if (connection.connectedAccount && connection.accountLookupId === lookupId) return toConnectionView(deps.cipher, connection);
+        if (!lookupAllowed || connection.status !== "connected" || !connection.accessToken) {
+          return toConnectionView(deps.cipher, withoutAccount, "unavailable");
+        }
         // Display reads never rotate a grant or spend an expired token.
         if (connection.expiresAt && !(Date.parse(connection.expiresAt) > Date.now())) return toConnectionView(deps.cipher, withoutAccount, "unavailable");
         const accessToken = deps.cipher.decrypt(connection.accessToken,
@@ -746,8 +746,11 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         if (await deps.connections.updateAccount(connection, identity.account, lookupId)) return toConnectionView(deps.cipher, identified);
         // Do not display the old account over a newer grant or resurrect a disconnect.
         const latest = await deps.connections.get(agentName, connection.serverName);
-        return latest ? toConnectionView(deps.cipher, latest) : undefined;
-      });
+        // Revalidate the winning snapshot against current registry settings, without
+        // retrying a lookup that already lost its grant revision.
+        return latest ? viewConnection(latest, false) : undefined;
+      }
+      const views = await mapWithLimit(connections, 4, connection => viewConnection(connection, true));
       return views.filter((view): view is McpConnectionView => view !== undefined);
     },
 

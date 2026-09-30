@@ -148,6 +148,7 @@ client registration과 authorization 모두에 적용한다. 추가 scope는 다
 조회 실패와 클라이언트의 조회 미지원은 구분해 표시하고 연결 상태와 token은 유지한다.
 계정 조회 계약 없음과 명시적 비활성화도 구분한다. cache는 issuer·resource·조회 계약·MCP URL의
 fingerprint에 묶이며 설정 변경 후 이전 계정 표시를 재사용하지 않는다.
+재인증이 필요한 연결과 backfill 경합에서 이긴 연결도 현재 설정으로 cache를 검증한다.
 계정 정보가 없다는 이유만으로 재인증을 요구하지 않으며 추가 동의 없이 기존 유효한 grant를 사용한다.
 
 실행 경로는 well-known 문서를 다시 가져오지 않는다. 저장된 메타데이터로 grant를 해석하고

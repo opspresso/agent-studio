@@ -761,6 +761,27 @@ describe("completeAuthorization", () => {
 });
 
 describe("provider accounts for existing Agent connections", () => {
+  it.each(["disabled", "different_client", "different_lookup"] as const)(
+    "validates cached identities for a connection needing reauthorization after %s",
+    async (change) => {
+      const server: McpServer = { ...SERVER, auth: { ...GITHUB_AUTH, clientId: "app-one" } };
+      const h = harness({ server, connection: { status: "connected", accessToken: "enc:token", clientFromRegistry: true, clientId: "app-one" } });
+      const read = vi.fn(async () => ({ status: "resolved" as const, account: { provider: "github" as const, label: "old-account" } }));
+      h.deps.accounts.read = read;
+      const uc = createMcpAuthUseCases(h.deps);
+      expect((await uc.listConnections("p", OWNER))[0]?.connectedAccount?.label).toBe("old-account");
+      h.connections.set("p/slack", { ...h.connections.get("p/slack")!, status: "needs_reauth" });
+      server.auth = change === "disabled" ? { ...server.auth!, accountLookup: { kind: "none" } }
+        : change === "different_client" ? { ...server.auth!, clientId: "app-two" }
+        : { ...server.auth!, accountLookup: { kind: "http", endpoint: "https://identity.example.com/me", labelPath: "/username" } };
+      const view = (await uc.listConnections("p", OWNER))[0];
+      expect(view?.connectedAccount).toBeUndefined();
+      expect(view?.accountUnavailableReason).toBe(change === "disabled" ? "disabled" : "unavailable");
+      expect(view?.status).toBe("needs_reauth");
+      expect(read).toHaveBeenCalledOnce();
+    },
+  );
+
   it("refuses a cached identity after the shared OAuth client changes", async () => {
     const server: McpServer = { ...SERVER, auth: { ...GITHUB_AUTH, clientId: "app-one" } };
     const h = harness({ server, connection: { status: "connected", accessToken: "enc:token", clientFromRegistry: true, clientId: "app-one" } });
@@ -796,6 +817,23 @@ describe("provider accounts for existing Agent connections", () => {
     expect(h.registrations[0]?.scopes).toEqual(["chat:write", "users:read", "openid", "email"]);
     expect(url.searchParams.get("scope")).toBe("chat:write users:read openid email");
   });
+
+  it("does not return the previous lookup's cached account when a concurrent refresh wins the backfill write", async () => {
+    const server: McpServer = { ...SERVER, auth: { ...GITHUB_AUTH } };
+    const h = harness({ server, connection: { status: "connected", accessToken: "enc:token" } });
+    h.deps.accounts.read = async () => ({ status: "resolved", account: { provider: "github", label: "old-account" } });
+    const uc = createMcpAuthUseCases(h.deps);
+    await uc.listConnections("p", OWNER);
+    server.auth = { ...GITHUB_AUTH, accountLookup: { kind: "http", endpoint: "https://identity.example.com/me", labelPath: "/username" } };
+    h.deps.accounts.read = async () => {
+      h.connections.set("p/slack", { ...h.connections.get("p/slack")!, revision: "refreshed", accessToken: "enc:renewed-token" });
+      return { status: "resolved", account: { provider: "http", label: "new-account" } };
+    };
+    const view = (await uc.listConnections("p", OWNER))[0];
+    expect(view?.connectedAccount).toBeUndefined();
+    expect(view?.accountUnavailableReason).toBe("unavailable");
+    expect(h.connections.get("p/slack")?.accessToken).toBe("enc:renewed-token");
+  });
   const connected = () => harness({ server: { ...SERVER, auth: GITHUB_AUTH }, connection: {
     status: "connected", accessToken: "enc:existing-token", connectedBy: OWNER,
   } });
@@ -816,12 +854,16 @@ describe("provider accounts for existing Agent connections", () => {
 
   it.each(["disconnect", "reconnect"])("does not restore the old account over a concurrent %s", async (operation) => {
     const h = connected();
+    h.deps.accounts.read = async () => ({ status: "resolved", account: { provider: "github", label: "old-account" } });
+    const uc = createMcpAuthUseCases(h.deps);
+    await uc.listConnections("p", OWNER);
+    h.connections.set("p/slack", { ...h.connections.get("p/slack")!, connectedAccount: undefined });
     h.deps.accounts.read = async () => {
       if (operation === "disconnect") h.connections.delete("p/slack");
       else h.connections.set("p/slack", { ...h.connections.get("p/slack")!, revision: "newer", connectedAccount: { provider: "github", label: "new-account" } });
       return { status: "resolved", account: { provider: "github", label: "old-account" } };
     };
-    const views = await createMcpAuthUseCases(h.deps).listConnections("p", OWNER);
+    const views = await uc.listConnections("p", OWNER);
     expect(JSON.stringify(views)).not.toContain("old-account");
     if (operation === "disconnect") expect(views).toEqual([]);
     else expect(views[0]?.connectedAccount?.label).toBe("new-account");
