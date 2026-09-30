@@ -178,6 +178,11 @@ export function AppLayout({
     return null;
   }
 
+  // The public home owns its navigation and full-width presentation.
+  if (viewer === null && pathname === "/") {
+    return <>{children}</>;
+  }
+
   // Resolve navigation from the server-supplied viewer so initial SSR and
   // hydration agree. Signed-out visitors receive no workspace navigation.
   const showNav = viewer !== null;
