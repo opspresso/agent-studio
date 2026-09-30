@@ -114,6 +114,7 @@ pnpm exec playwright install chromium # HTML 실행 미리보기 테스트용 �
 pnpm test:html-preview # 로컬 HTTP fixture에서 실제 Chromium 기능·격리 검사
 pnpm exec playwright test --config playwright.preview.config.ts browser-tests/credentials.spec.ts # 합성 키로 공통 입력·표시·교체·폐기 UI 검사
 pnpm exec playwright test --config playwright.preview.config.ts browser-tests/model-selection.spec.ts # Provider 응답 분류·다중 기능·정렬·즉시 등록 UI 검사
+LANDING_BASE_URL=http://localhost:3000 pnpm exec playwright test --config playwright.preview.config.ts browser-tests/landing.spec.ts # 실행 중인 앱의 공개 첫 화면·파티클·반응형·키보드·언어 전환 검사
 pnpm sync-models       # 공개 모델 API의 커밋된 오프라인 스냅샷 갱신 (실행 모델을 등록하지 않는다)
 pnpm test:integration # 로컬 PostgreSQL(agent_studio_test), 인증 스키마와 SDK 실행·Session 검사
 pnpm test:storage     # 로컬 MinIO 임시 bucket의 원본 파일 streaming·조건부 저장·삭제 검사
