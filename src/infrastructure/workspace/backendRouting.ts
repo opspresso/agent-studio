@@ -12,6 +12,7 @@ export function routeSandboxBackend(primary: SandboxBackend, legacyDocker?: Sand
   const control: SandboxControl = (id, action, request, maxBytes) => backend(id).control(id, action, request, maxBytes);
   const provider: SandboxProvider = {
     kind: primary.provider.kind, ensure: id => primary.provider.ensure(id),
+    provision: id => primary.provider.provision ? primary.provider.provision(id) : primary.provider.ensure(id),
     inspect: id => backend(id).provider.inspect(id), execute: (id, command) => backend(id).provider.execute(id, command),
     start: (id, operationId, command) => backend(id).provider.start(id, operationId, command),
     operation: (id, operationId) => backend(id).provider.operation(id, operationId),

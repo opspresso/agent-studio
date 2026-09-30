@@ -13,7 +13,7 @@ export interface SandboxBackend {
 
 export function createControlledSandboxBackend(
   kind: string,
-  lifecycle: Pick<SandboxProvider, "ensure" | "inspect" | "destroy">,
+  lifecycle: Pick<SandboxProvider, "ensure" | "inspect" | "destroy" | "provision">,
   control: SandboxControl,
 ): SandboxBackend {
   return { control, provider: {

@@ -101,6 +101,8 @@ native Session 이력과 SQLite 상태는 보관한다. Codex의 자동 plugin·
 두 데이터 볼륨과 tmp·로그 여유 512 MiB의 합이다. `emptyDir.sizeLimit`은 파일시스템 quota가
 아니므로 kubelet의 사용량 계측·퇴거와 namespace ResourceQuota·NetworkPolicy를 함께 구성한다.
 Pod는 `restartPolicy=Never`이며 native 작업 소실을 새 프로세스 실행으로 감추지 않는다.
+Pod 생성 직후 UID 핸들을 DB에 기록하며 노드·이미지 준비 중에도 취소와 worker 재시작을 처리한다.
+준비 대기는 작업의 원래 실행 기한에 포함한다.
 
 핸들은 namespace·이름·Pod UID를 포함한다. 삭제는 UID precondition으로 보호하며, exec는
 root 제어 프로세스가 downward API의 UID와 요청 UID를 재검사해 이름 재사용 경쟁을 차단한다.

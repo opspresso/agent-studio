@@ -22,6 +22,18 @@ beforeEach(() => {
 const backend = () => createKubernetesSandboxBackend(config, { api, now: () => time, sleep: async () => {} });
 
 describe("Kubernetes Sandbox lifecycle and security", () => {
+  it("returns a durable handle for a pending Pod without waiting for image pull or node provisioning", async () => {
+    const original = vi.mocked(api.create).getMockImplementation()!;
+    vi.mocked(api.create).mockImplementation(async spec => {
+      const result = await original(spec);
+      result.status = { phase: "Pending" };
+      return result;
+    });
+    const current = backend();
+    const { externalId } = await current.provider.provision!("workspace-1");
+    expect(await current.provider.inspect(externalId)).toBe("provisioning");
+    expect(api.exec).not.toHaveBeenCalled();
+  });
   it("adopts one workspace Pod and keeps the root supervisor isolated from the workload", async () => {
     const current = backend();
     const first = await current.provider.ensure("workspace-1");
@@ -122,6 +134,15 @@ describe("Kubernetes Sandbox lifecycle and security", () => {
     expect(api.remove).not.toHaveBeenCalled();
     expect(await current.sweepOrphans(async () => false)).toBe(1);
     expect(api.remove).toHaveBeenCalledWith(expect.any(String), "uid-1");
+  });
+  it("starts a fresh bounded inventory after an expired Kubernetes continuation token", async () => {
+    const current = backend();
+    vi.mocked(api.list).mockResolvedValueOnce({ items: [], metadata: { _continue: "page-2" } });
+    await current.sweepOrphans(async () => true);
+    vi.mocked(api.list).mockRejectedValueOnce({ code: 410 });
+    await expect(current.sweepOrphans(async () => true)).rejects.toEqual({ code: 410 });
+    await current.sweepOrphans(async () => true);
+    expect(vi.mocked(api.list).mock.calls.map(call => call[1])).toEqual([undefined, "page-2", undefined]);
   });
 });
 

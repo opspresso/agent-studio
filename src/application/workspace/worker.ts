@@ -29,6 +29,7 @@ export interface WorkspaceWorkerDeps extends WorkspaceDeps {
 
 class WorkerStopping extends Error {}
 class WorkspaceInterrupted extends Error {}
+class WorkspaceProvisionStopped extends Error {}
 
 async function sandboxFor(deps: WorkspaceWorkerDeps, workspace: Workspace): Promise<Sandbox | null> {
   return workspace.sandboxId ? deps.repository.sandbox(workspace.id, workspace.sandboxId) : null;
@@ -40,13 +41,38 @@ export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: W
   const status = previous ? await state.effect(() => deps.provider.inspect(previous.externalId)) : "missing";
   if (previous && status === "ready" && previous.status === "ready") return previous;
   if (previous && run?.phase) throw new WorkspaceInterrupted("Sandbox was lost during execution; the run will not be replayed automatically");
-  if (previous && status !== "missing") await state.effect(() => deps.provider.destroy(previous.externalId));
-  await state.read();
-  const created = await state.effect(() => deps.provider.ensure(workspace.id));
-  const now = deps.now().toISOString();
-  const sandbox: Sandbox = { id: deps.newId(), workspaceId: workspace.id, provider: deps.provider.kind,
-    externalId: created.externalId, status: "provisioning", createdAt: now, updatedAt: now };
-  await state.save({ sandboxId: sandbox.id }, undefined, [], { sandbox });
+  let sandbox = previous?.status === "provisioning" && status === "provisioning" ? previous : undefined;
+  if (!sandbox) {
+    if (previous && status !== "missing") await state.effect(() => deps.provider.destroy(previous.externalId));
+    const created = await state.effect(() => deps.provider.provision ? deps.provider.provision(workspace.id) : deps.provider.ensure(workspace.id));
+    const now = deps.now().toISOString();
+    sandbox = { id: deps.newId(), workspaceId: workspace.id, provider: deps.provider.kind,
+      externalId: created.externalId, status: "provisioning", createdAt: now, updatedAt: now };
+    await state.save({ sandboxId: sandbox.id }, undefined, [], { sandbox });
+  }
+  const pending = sandbox;
+  const deadline = (run?.startedAt ? Date.parse(run.startedAt) : deps.now().getTime()) + deps.runTimeoutMs;
+  for (;;) {
+    const current = await state.read();
+    if (current.workspace.status === "closing") {
+      await cleanupWorkspace(deps, state);
+      throw new WorkspaceProvisionStopped();
+    }
+    if (current.run?.cancelRequestedAt || deps.now().getTime() >= deadline) {
+      await state.effect(() => deps.provider.destroy(pending.externalId));
+      await state.save({ sandboxId: undefined }, undefined, [], { sandbox: { ...pending, status: "deleted" } });
+      if (current.run) {
+        await finishRun(deps, state, current.run.cancelRequestedAt ? "cancelled" : "failed",
+          current.run.cancelRequestedAt ? "Stopped by user" : "Workspace provisioning deadline exceeded");
+        throw new WorkspaceProvisionStopped();
+      }
+      throw new Error("Workspace provisioning deadline exceeded");
+    }
+    const status = await state.effect(() => deps.provider.inspect(pending.externalId));
+    if (status === "ready") break;
+    if (status !== "provisioning") throw new Error("Sandbox stopped or disappeared during provisioning");
+    await deps.sleep(WORKSPACE_POLL_MS);
+  }
   const checkpointId = workspace.checkpointId;
   if (checkpointId) {
     const checkpoint = await state.effect(() => deps.checkpoints.get(workspace.id, checkpointId));
@@ -55,7 +81,7 @@ export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: W
     if (workspace.coding) await state.save({}, undefined, [{ kind: "warning", text: "Workspace restored; Git-ignored dependencies and build outputs must be regenerated" }]);
   }
   const session = await deps.repository.session(workspace.id, workspace.sessionId);
-  if (session && (workspace.checkpointSession || (!checkpointId && previous))) {
+  if (session && (workspace.checkpointSession || (!checkpointId && previous?.status === "ready"))) {
     const nativeSessionId = checkpointId ? workspace.checkpointSession?.nativeSessionId : undefined;
     const events = !checkpointId ? [{ kind: "warning" as const,
       text: "Workspace has no recovery checkpoint; a fresh workspace and native session will be used" }]
@@ -140,7 +166,9 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     await state.save({}, { startedAt: deps.now().toISOString(), status: "running" }, [{ kind: "status", status: "running" }],
       session ? { session: { ...session, updatedAt: deps.now().toISOString() } } : {});
   }
-  const sandbox = await ensureWorkspaceSandbox(deps, state);
+  let sandbox: Sandbox;
+  try { sandbox = await ensureWorkspaceSandbox(deps, state); }
+  catch (error) { if (error instanceof WorkspaceProvisionStopped) return; throw error; }
   const runtime = await deps.runtime(workspace.runtime);
   let nextReview = 0;
   for (;;) {

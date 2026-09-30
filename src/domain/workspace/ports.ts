@@ -32,7 +32,9 @@ export interface SandboxOutput {
 export interface SandboxProvider {
   readonly kind: string;
   ensure(workspaceId: string): Promise<{ externalId: string }>;
-  inspect(externalId: string): Promise<"ready" | "missing" | "stopped">;
+  /** Allocate before waiting for readiness so a worker can durably track and cancel cold cluster provisioning. */
+  provision?(workspaceId: string): Promise<{ externalId: string }>;
+  inspect(externalId: string): Promise<"ready" | "missing" | "stopped" | "provisioning">;
   execute(externalId: string, command: SandboxCommand): Promise<SandboxCommandResult>;
   start(externalId: string, operationId: string, command: SandboxCommand): Promise<void>;
   operation(externalId: string, operationId: string): Promise<SandboxOperation>;

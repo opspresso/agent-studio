@@ -67,60 +67,66 @@ export function createKubernetesSandboxBackend(config: KubernetesSandboxConfig, 
       JSON.stringify({ ...(request as object), podUid: pod.metadata!.uid }), maxBytes);
     return JSON.parse(result) as T;
   };
-  const backend = createControlledSandboxBackend("kubernetes", {
-    async ensure(workspaceId) {
-      if (!/^[a-zA-Z0-9_-]{1,100}$/.test(workspaceId)) throw new SandboxProviderError("Invalid workspace id");
-      const name = `studio-ws-${createHash("sha256").update(workspaceId).digest("hex").slice(0,40)}`;
-      let pod = await api.get(name);
-      if (pod) {
-        owned(pod);
-        if (pod.metadata?.annotations?.[workspaceKey] !== workspaceId || pod.spec?.containers?.length !== 1 ||
-          pod.spec.containers[0]?.image !== config.image) throw new SandboxProviderError("Existing Kubernetes Sandbox configuration mismatch");
-        // Provisioning may have ended before its handle reached the DB. Only terminal owned compute is replaceable.
-        if (["Failed", "Succeeded"].includes(pod.status?.phase ?? "")) {
-          await backend.provider.destroy(handle(pod));
-          pod = null;
-        }
-      }
-      if (!pod) {
-        const disk = `${config.diskMb}Mi`;
-        // Requests cover both emptyDirs, tmp and log headroom; image cache is node-owned.
-        const storage = `${config.diskMb * 2 + 512}Mi`;
-        const resources = { cpu: String(config.cpus), memory: `${config.memoryMb}Mi`, "ephemeral-storage": storage };
-        const spec: V1Pod = { apiVersion: "v1", kind: "Pod", metadata: { name, namespace: config.namespace,
-          labels: { "app.kubernetes.io/name": "agent-studio-sandbox", [ownerKey]: config.instance },
-          annotations: { [workspaceKey]: workspaceId, "sidecar.istio.io/inject": "false" } }, spec: {
-          restartPolicy: "Never", terminationGracePeriodSeconds: 30, serviceAccountName: "sandbox", automountServiceAccountToken: false,
-          enableServiceLinks: false,
-          ...(config.imagePullSecret ? { imagePullSecrets: [{ name: config.imagePullSecret }] } : {}),
-          ...(config.nodePool ? { nodeSelector: { "karpenter.sh/nodepool": config.nodePool },
-            tolerations: [{ key: "agent-studio/workspace", operator: "Equal", value: "true", effect: "NoSchedule" }] } : {}),
-          securityContext: { seccompProfile: { type: "RuntimeDefault" } },
-          volumes: [{ name: "workspace", emptyDir: { sizeLimit: disk } }, { name: "control", emptyDir: { sizeLimit: disk } },
-            { name: "tmp", emptyDir: { sizeLimit: "256Mi" } }],
-          containers: [{ name: "sandbox", image: config.image, imagePullPolicy: "IfNotPresent",
-            command: ["tini", "-s", "--", "prlimit", "--nproc=256", "--", "node", "/opt/workspace/control.mjs", "serve"],
-            env: [{ name: "WORKSPACE_POD_UID", valueFrom: { fieldRef: { fieldPath: "metadata.uid" } } }],
-            securityContext: { runAsUser: 0, runAsGroup: 0, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true,
-              capabilities: { drop: ["ALL"], add: ["SETUID", "SETGID", "CHOWN", "FOWNER", "DAC_OVERRIDE", "KILL"] } },
-            resources: { requests: resources, limits: resources },
-            volumeMounts: [{ name: "workspace", mountPath: "/workspace" }, { name: "control", mountPath: "/control" }, { name: "tmp", mountPath: "/tmp" }],
-            readinessProbe: { exec: { command: ["node", "-e", "require('node:fs').accessSync('/control/operations')"] },
-              initialDelaySeconds: 1, periodSeconds: 2, timeoutSeconds: 2 },
-          }],
-        } };
-        try { pod = await api.create(spec); }
-        catch (error) {
-          // Only a name conflict is safe to adopt; an uncertain API write is never replayed.
-          if (kubernetesStatusCode(error) !== 409) throw error;
-          pod = await api.get(name);
-          if (!pod) throw error;
-        }
-      }
+  async function provision(workspaceId: string) {
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(workspaceId)) throw new SandboxProviderError("Invalid workspace id");
+    const name = `studio-ws-${createHash("sha256").update(workspaceId).digest("hex").slice(0,40)}`;
+    let pod = await api.get(name);
+    if (pod) {
       owned(pod);
       if (pod.metadata?.annotations?.[workspaceKey] !== workspaceId || pod.spec?.containers?.length !== 1 ||
         pod.spec.containers[0]?.image !== config.image) throw new SandboxProviderError("Existing Kubernetes Sandbox configuration mismatch");
-      const id = handle(pod);
+      // Provisioning may have ended before its handle reached the DB. Only terminal owned compute is replaceable.
+      if (["Failed", "Succeeded"].includes(pod.status?.phase ?? "")) {
+        await backend.provider.destroy(handle(pod));
+        pod = null;
+      }
+    }
+    if (!pod) {
+      const disk = `${config.diskMb}Mi`;
+      // Requests cover both emptyDirs, tmp and log headroom; image cache is node-owned.
+      const storage = `${config.diskMb * 2 + 512}Mi`;
+      const resources = { cpu: String(config.cpus), memory: `${config.memoryMb}Mi`, "ephemeral-storage": storage };
+      const spec: V1Pod = { apiVersion: "v1", kind: "Pod", metadata: { name, namespace: config.namespace,
+        labels: { "app.kubernetes.io/name": "agent-studio-sandbox", [ownerKey]: config.instance },
+        annotations: { [workspaceKey]: workspaceId, "sidecar.istio.io/inject": "false" } }, spec: {
+        restartPolicy: "Never", terminationGracePeriodSeconds: 30, serviceAccountName: "sandbox", automountServiceAccountToken: false,
+        enableServiceLinks: false,
+        ...(config.imagePullSecret ? { imagePullSecrets: [{ name: config.imagePullSecret }] } : {}),
+        ...(config.nodePool ? { nodeSelector: { "karpenter.sh/nodepool": config.nodePool },
+          tolerations: [{ key: "agent-studio/workspace", operator: "Equal", value: "true", effect: "NoSchedule" }] } : {}),
+        securityContext: { seccompProfile: { type: "RuntimeDefault" } },
+        volumes: [{ name: "workspace", emptyDir: { sizeLimit: disk } }, { name: "control", emptyDir: { sizeLimit: disk } },
+          { name: "tmp", emptyDir: { sizeLimit: "256Mi" } }],
+        containers: [{ name: "sandbox", image: config.image, imagePullPolicy: "IfNotPresent",
+          command: ["tini", "-s", "--", "prlimit", "--nproc=256", "--", "node", "/opt/workspace/control.mjs", "serve"],
+          env: [{ name: "WORKSPACE_POD_UID", valueFrom: { fieldRef: { fieldPath: "metadata.uid" } } }],
+          securityContext: { runAsUser: 0, runAsGroup: 0, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true,
+            capabilities: { drop: ["ALL"], add: ["SETUID", "SETGID", "CHOWN", "FOWNER", "DAC_OVERRIDE", "KILL"] } },
+          resources: { requests: resources, limits: resources },
+          volumeMounts: [{ name: "workspace", mountPath: "/workspace" }, { name: "control", mountPath: "/control" }, { name: "tmp", mountPath: "/tmp" }],
+          readinessProbe: { exec: { command: ["node", "-e", "require('node:fs').accessSync('/control/ready')"] },
+            initialDelaySeconds: 1, periodSeconds: 2, timeoutSeconds: 2 },
+        }],
+      } };
+      try { pod = await api.create(spec); }
+      catch (error) {
+        // Only a name conflict is safe to adopt; an uncertain API write is never replayed.
+        if (kubernetesStatusCode(error) !== 409) throw error;
+        pod = await api.get(name);
+        if (!pod) throw error;
+      }
+    }
+    owned(pod);
+    if (pod.metadata?.annotations?.[workspaceKey] !== workspaceId || pod.spec?.containers?.length !== 1 ||
+      pod.spec.containers[0]?.image !== config.image) throw new SandboxProviderError("Existing Kubernetes Sandbox configuration mismatch");
+    return { externalId: handle(pod) };
+  }
+  const backend = createControlledSandboxBackend("kubernetes", {
+    provision,
+    async ensure(workspaceId) {
+      const { externalId: id } = await provision(workspaceId);
+      let pod = await lookup(id);
+      if (!pod) throw new SandboxProviderError("Kubernetes Sandbox disappeared during provisioning");
       const deadline = now() + 120_000;
       while (!ready(pod)) {
         if (["Failed", "Succeeded"].includes(pod.status?.phase ?? "") || pod.metadata?.deletionTimestamp) {
@@ -135,7 +141,7 @@ export function createKubernetesSandboxBackend(config: KubernetesSandboxConfig, 
       await control(id, "ready", {});
       return { externalId: id };
     },
-    async inspect(id) { const pod = await lookup(id); return !pod ? "missing" : ready(pod) ? "ready" : "stopped"; },
+    async inspect(id) { const pod = await lookup(id); return !pod ? "missing" : ready(pod) ? "ready" : !pod.metadata?.deletionTimestamp && ["Pending", "Running"].includes(pod.status?.phase ?? "") ? "provisioning" : "stopped"; },
     async destroy(id) {
       const pod = await lookup(id);
       if (!pod) return;
@@ -152,7 +158,12 @@ export function createKubernetesSandboxBackend(config: KubernetesSandboxConfig, 
     health: async () => { await api.list(selector); },
     /** One bounded page per sweep; DB errors leave compute untouched. */
     async sweepOrphans(keep: (workspaceId: string, externalId: string) => Promise<boolean>): Promise<number> {
-      const page = await api.list(selector, cursor);
+      let page;
+      try { page = await api.list(selector, cursor); }
+      catch (error) {
+        if (kubernetesStatusCode(error) === 410) cursor = undefined;
+        throw error;
+      }
       cursor = page.metadata?._continue;
       let removed = 0;
       for (const pod of page.items) {

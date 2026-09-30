@@ -113,6 +113,37 @@ async function reviewResult(workspaceId: string, runId: string) {
 }
 
 describe("durable workspace worker", () => {
+  it("tracks and cancels a cold Pod before it becomes ready without starting native work", async () => {
+    const { api, workspace, run } = await start();
+    provider.provision = provider.ensure;
+    vi.mocked(provider.inspect).mockResolvedValue("provisioning");
+    onSleep = async () => {
+      onSleep = undefined;
+      const current = (await repository.get(workspace.id))!;
+      expect(current.sandboxId).toBeDefined();
+      await api.cancel(workspace.id, owner);
+    };
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("cancelled");
+    expect(provider.start).not.toHaveBeenCalled();
+    expect(provider.destroy).toHaveBeenCalledTimes(1);
+    expect((await repository.get(workspace.id))!.sandboxId).toBeUndefined();
+  });
+  it("adopts a pending Pod after worker shutdown rather than allocating another Pod", async () => {
+    const { workspace, run } = await start();
+    provider.provision = provider.ensure;
+    let pending = true;
+    vi.mocked(provider.inspect).mockImplementation(async () => pending ? "provisioning" : "ready");
+    const stop = new AbortController();
+    onSleep = async () => { onSleep = undefined; stop.abort(); };
+    await processWorkspace(deps, workspace.id, stop.signal);
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("running");
+    onSleep = async () => { onSleep = undefined; pending = false; };
+    await processWorkspace(deps, workspace.id);
+    expect(provider.ensure).toHaveBeenCalledTimes(1);
+    expect(provider.destroy).not.toHaveBeenCalled();
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("succeeded");
+  });
   it("continues queue polling and heartbeat while sandbox maintenance waits on an external service", async () => {
     let release!: () => void;
     const pending = new Promise<void>(resolve => { release = resolve; });
