@@ -129,15 +129,21 @@ async function main() {
     assert.equal(restored.exitCode, 0, restored.stderr);
     assert.equal(restored.stdout, "continuitynative-history");
     if (manifestPath) {
-      await backend.provider.start(second.externalId, "disk-overflow", { ...command, timeoutMs: 120_000,
-        stdin: "head -c 268435456 /dev/zero > disk-overflow; sleep 120" });
+      await backend.provider.start(second.externalId, "disk-overflow", { ...command, timeoutMs: 240_000,
+        stdin: "head -c 268435456 /dev/zero > disk-overflow; sleep 240" });
       let evicted = false;
-      for (let attempt = 0; attempt < 120; attempt++) {
+      let lastStatus = "";
+      // Kubelet volume stats default to 1 minute. Allow two collection cycles plus Pod termination/reporting.
+      for (let attempt = 0; attempt < 180; attempt++) {
         const current = await api.readNamespacedPod({ namespace, name });
-        if (current.status?.phase === "Failed" && current.status.reason === "Evicted") { evicted = true; break; }
+        lastStatus = `${current.status?.phase}: ${current.status?.reason ?? ""} ${current.status?.message ?? ""}`;
+        if (current.status?.phase === "Failed" && current.status.reason === "Evicted") {
+          assert.match(current.status.message ?? "", /EmptyDir.*workspace.*exceeds/i);
+          evicted = true; break;
+        }
         await delay(1000);
       }
-      assert.ok(evicted, "Kubelet must evict a Pod exceeding its emptyDir limit");
+      assert.ok(evicted, `Kubelet must evict a Pod exceeding its emptyDir limit: ${lastStatus}`);
       assert.equal(await backend.provider.inspect(second.externalId), "stopped");
       await backend.provider.destroy(second.externalId);
       const recovered = await backend.provider.ensure("workspace-1");
