@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import Image from "next/image";
 import {
-  IconArrowDown, IconArrowRight, IconArrowUpRight, IconCheck, IconChevronUp,
-  IconCode, IconCpu, IconFileText, IconGitBranch, IconLock, IconMenu2,
-  IconMessageCircle, IconMicrophone, IconPlayerPlay, IconPlugConnected,
-  IconServer, IconShieldCheck, IconSparkles, IconUsers, IconWaveSine, IconX,
+  IconArrowRight, IconArrowUpRight, IconCheck, IconChevronUp,
+  IconCode, IconCpu, IconFileText, IconLock, IconMenu2,
+  IconMicrophone, IconPlayerPlay, IconPlugConnected,
+  IconServer, IconShieldCheck, IconUsers, IconWaveSine, IconX,
 } from "@tabler/icons-react";
 import { LocaleToggle } from "@/components/LocaleToggle";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import type { Branding } from "@/shared/branding";
 import { useT } from "../../_i18n/provider";
 import { ParticleField } from "./ParticleField";
 import classes from "../../page.module.css";
@@ -19,10 +22,10 @@ const NAVIGATION = [
   { id: "deployment", label: "home.nav.install" },
 ] as const;
 const FEATURES = [
-  { id: "configure", Icon: IconPlugConnected, tag: "CONFIGURE" },
-  { id: "execute", Icon: IconPlayerPlay, tag: "EXECUTE" },
-  { id: "share", Icon: IconUsers, tag: "COLLABORATE" },
-  { id: "observe", Icon: IconWaveSine, tag: "OBSERVE" },
+  { id: "configure", Icon: IconPlugConnected },
+  { id: "execute", Icon: IconPlayerPlay },
+  { id: "share", Icon: IconUsers },
+  { id: "observe", Icon: IconWaveSine },
 ] as const;
 const CASES = [
   { id: "documents", Icon: IconFileText },
@@ -31,34 +34,28 @@ const CASES = [
   { id: "development", Icon: IconCode },
 ] as const;
 
-function Mark({ className = "" }: { className?: string }) {
-  return <svg viewBox="0 0 40 40" fill="none" className={className} aria-hidden="true">
-    <path d="M20 3 25 15 37 20 25 25 20 37 15 25 3 20 15 15Z" fill="currentColor" />
-    <path d="m8 8 12 5 12-5-5 12 5 12-12-5-12 5 5-12Z" fill="currentColor" opacity=".65" />
-  </svg>;
+type LandingBranding = Pick<Branding, "name" | "logoUrl">;
+
+function Brand({ branding }: { branding: LandingBranding }) {
+  return <span className={classes.brand}>
+    <Image src={branding.logoUrl} alt="" width={32} height={32} priority />
+    <span>{branding.name}</span>
+  </span>;
 }
 
-function Brand() {
-  return <span className={classes.brand}><Mark /><span>AXLEON<span className={classes.brandProduct}>AgentOps</span></span></span>;
-}
-
-function FeatureArt({ id }: { id: (typeof FEATURES)[number]["id"] }) {
-  if (id === "configure") return <div className={classes.configureArt} aria-hidden="true">
-    <span>MODEL</span><span>INSTRUCTIONS</span><span>SKILLS</span><span>MCP</span>
-    <div className={classes.artConnector} /><div className={classes.miniAgent}><Mark /> AGENT</div>
-  </div>;
-  if (id === "execute") return <div className={classes.executeArt} aria-hidden="true">
-    <span><IconFileText /> DOCX</span><span><IconMicrophone /> AUDIO</span><span><IconCode /> CODE</span>
-    <i className={classes.executionLine} /><span className={classes.artCheck}><IconCheck /></span>
-  </div>;
-  if (id === "share") return <div className={classes.shareArt} aria-hidden="true">
-    <div className={classes.avatarGroup}>{["YK", "JL", "SH", "MK"].map(name => <span key={name}>{name}</span>)}</div>
-    <span className={classes.approvalPill}><IconShieldCheck size={16} /> HUMAN IN THE LOOP</span>
-  </div>;
-  return <div className={classes.observeArt} aria-hidden="true">
-    {[20, 34, 25, 45, 32, 51, 43, 62, 52, 75, 61, 86, 71, 96, 80, 100, 88, 115].map((height, i) => <i key={i} style={{ height: `${height}px`, animationDelay: `${i * 35}ms` }} />)}
-    <span className={classes.chartLine} />
-  </div>;
+function Capabilities() {
+  const t = useT();
+  const [active, setActive] = useState(0);
+  return <div className={classes.capabilityList}>{FEATURES.map(({ id, Icon }, index) => (
+    <article key={id} className={classes.capability} data-active={active === index}>
+      <h3><button type="button" aria-expanded={active === index} aria-controls={`capability-${id}`} onClick={() => setActive(active === index ? -1 : index)}>
+        <span>0{index + 1}</span>{t(`home.features.${id}.title`)}<IconArrowUpRight size={24} aria-hidden="true" />
+      </button></h3>
+      <div id={`capability-${id}`} hidden={active !== index} className={classes.capabilityBody}>
+        <p>{t(`home.features.${id}.body`)}</p><Icon size={56} stroke={1} aria-hidden="true" />
+      </div>
+    </article>
+  ))}</div>;
 }
 
 function UseCases() {
@@ -67,7 +64,7 @@ function UseCases() {
   const selected = CASES[active]!;
   const tabsRef = useRef<HTMLDivElement>(null);
 
-  return <div className={classes.caseExplorer}>
+  return <div>
     <div className={classes.caseTabs} role="tablist" aria-label={t("home.nav.useCases")} ref={tabsRef} onKeyDown={event => {
       const directions: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1 };
       const direction = directions[event.key];
@@ -102,34 +99,12 @@ function UseCases() {
   </div>;
 }
 
-export function LandingPage() {
+export function LandingPage({ branding }: { branding: LandingBranding }) {
   const t = useT();
   const [menuOpen, setMenuOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const observer = new IntersectionObserver(entries => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        entry.target.setAttribute("data-revealed", "true");
-        observer.unobserve(entry.target);
-      }
-    }, { threshold: 0.08 });
-    root.querySelectorAll<HTMLElement>("[data-reveal]").forEach(element => {
-      // Only upcoming sections are hidden; content remains readable without JS.
-      if (!media.matches && element.getBoundingClientRect().top > window.innerHeight) {
-        element.setAttribute("data-revealed", "false");
-        observer.observe(element);
-      }
-    });
-    return () => observer.disconnect();
-  }, []);
-
-  return <div className={classes.landing} ref={rootRef} id="top">
+  return <div className={classes.landing} id="top">
     <a className={classes.skipLink} href="#main-content" onClick={() => document.getElementById("main-content")?.focus()}>{t("chrome.skipToContent")}</a>
     <header className={classes.header} onKeyDown={event => {
       if (event.key === "Escape" && menuOpen) {
@@ -138,10 +113,11 @@ export function LandingPage() {
       }
     }}>
       <div className={classes.headerInner}>
-        <a href="#top" aria-label="AXLEON AgentOps" className={classes.brandLink}><Brand /></a>
+        <a href="#top" aria-label={branding.name} className={classes.brandLink}><Brand branding={branding} /></a>
         <nav aria-label={t("home.nav.platform")} className={classes.desktopNav}>{NAVIGATION.map(({ id, label }) => <a href={`#${id}`} key={id}>{t(label)}</a>)}</nav>
         <div className={classes.headerActions}>
           <LocaleToggle />
+          <ThemeToggle />
           <a className={classes.headerCta} href="/login">{t("home.start")}<IconArrowUpRight size={16} /></a>
           <button ref={menuButtonRef} className={classes.menuButton} type="button" aria-controls="landing-navigation" aria-expanded={menuOpen} aria-label={t(menuOpen ? "chrome.closeNavigation" : "chrome.openNavigation")} onClick={() => setMenuOpen(value => !value)}>{menuOpen ? <IconX size={22} /> : <IconMenu2 size={22} />}</button>
         </div>
@@ -151,75 +127,41 @@ export function LandingPage() {
 
     <main id="main-content" tabIndex={-1}>
       <section className={`${classes.hero} ${classes.container}`} aria-labelledby="hero-title">
-        <div className={classes.heroCopy}>
-          <p className={classes.eyebrow}><span />{t("home.eyebrow")}</p>
+        <p className={classes.eyebrow}>{t("home.eyebrow")}</p>
+        <div className={classes.heroIntroduction}>
           <h1 id="hero-title">{t("home.headline")}<span>{t("home.headlineAccent")}</span></h1>
-          <p className={classes.lede}>{t("home.lede")}</p>
-          <div className={classes.actions}>
-            <a href="/login" className={classes.primaryButton}>{t("home.start")}<IconArrowUpRight size={20} /></a>
-            <a href="/guide" className={classes.textButton}>{t("home.guide")}<IconArrowRight size={18} /></a>
+          <div className={classes.heroAside}>
+            <p className={classes.lede}>{t("home.lede")}</p>
+            <div className={classes.actions}>
+              <a href="/login" className={classes.primaryButton}>{t("home.start")}<IconArrowUpRight size={20} /></a>
+              <a href="/guide" className={classes.textButton}>{t("home.guide")}<IconArrowRight size={18} /></a>
+            </div>
           </div>
-          <div className={classes.heroSignature}><span /><p>BUILT FOR YOUR PEOPLE.<br /><strong>CONNECTED TO YOUR WORK.</strong></p></div>
-        </div>
-        <ParticleField />
-        <div className={classes.heroBottom}>
-          <a href="#platform"><span className={classes.scrollIcon}><IconArrowDown size={16} /></span>{t("home.hero.scroll")}</a>
-          <span>{t("home.hero.caption")}</span>
         </div>
       </section>
 
-      <div className={classes.channelStrip}><div className={classes.container}>
-        <p><span />{t("home.hero.tag")}</p>
-        <div><span>Web Chat</span><span>Slack</span><span>Teams</span><span>Telegram</span><span>API</span><span>Webhook</span></div>
-      </div></div>
-
-      <section id="platform" className={`${classes.section} ${classes.container}`} aria-labelledby="platform-title" data-reveal>
-        <div className={classes.sectionHeading}>
-          <div><p className={classes.sectionLabel}>{t("home.platform.label")}</p><h2 id="platform-title">{t("home.platform.title")}</h2></div>
-          <p>{t("home.platform.body")}</p>
-        </div>
-        <div className={classes.network}>
-          <div className={classes.networkColumn}><p className={classes.microLabel}>{t("home.platform.channels")}</p>
-            <div className={classes.networkNode}><IconMessageCircle /><div><h3>{t("home.platform.chat")}</h3><p>{t("home.platform.chatDetail")}</p></div></div>
-            <div className={classes.networkNode}><IconUsers /><div><h3>{t("home.platform.messenger")}</h3><p>Slack · Teams · Telegram</p></div></div>
-            <div className={classes.networkNode}><IconGitBranch /><div><h3>{t("home.platform.automation")}</h3><p>{t("home.platform.automationDetail")}</p></div></div>
-          </div>
-          <div className={classes.networkCenter}>
-            <svg className={classes.networkLines} viewBox="0 0 360 320" preserveAspectRatio="none" aria-hidden="true"><path d="M0 55 C90 55 75 160 180 160 S270 55 360 55 M0 160 H360 M0 265 C90 265 75 160 180 160 S270 265 360 265" /></svg>
-            <div className={classes.networkCore}><Mark /><strong>AXLEON<span>AgentOps</span></strong><span>{t("home.platform.core")}</span></div>
-          </div>
-          <div className={classes.networkColumn}><p className={classes.microLabel}>{t("home.platform.resources")}</p>
-            <div className={classes.networkNode}><IconCpu /><div><h3>{t("home.platform.models")}</h3><p>{t("home.platform.modelsDetail")}</p></div></div>
-            <div className={classes.networkNode}><IconPlugConnected /><div><h3>{t("home.platform.tools")}</h3><p>{t("home.platform.toolsDetail")}</p></div></div>
-            <div className={classes.networkNode}><IconFileText /><div><h3>{t("home.platform.work")}</h3><p>{t("home.platform.workDetail")}</p></div></div>
-          </div>
-        </div>
+      <section id="platform" className={`${classes.platformSection} ${classes.container}`} aria-label={t("home.nav.platform")}>
+        <ParticleField branding={branding} />
         <div className={classes.governance}><p><IconShieldCheck size={18} />{t("home.platform.governance")}</p><div>{(["access", "approval", "history", "usage"] as const).map(key => <span key={key}>{t(`home.platform.${key}`)}</span>)}</div></div>
       </section>
 
-      <section id="capabilities" className={classes.featuresSection} aria-labelledby="features-title">
-        <div className={`${classes.section} ${classes.container}`}>
-          <div className={classes.sectionHeading} data-reveal><div><p className={classes.sectionLabel}>{t("home.features.label")}</p><h2 id="features-title">{t("home.features.title")}</h2></div><p>{t("home.features.body")}</p></div>
-          <div className={classes.featureGrid}>{FEATURES.map(({ id, Icon, tag }, index) => <article key={id} className={classes.featureCard} data-reveal>
-            <div className={classes.featureTop}><span>0{index + 1} / {tag}</span><Icon size={21} stroke={1.5} /></div>
-            <FeatureArt id={id} />
-            <div className={classes.featureCopy}><p className={classes.featureCaption}>{t(`home.features.${id}.visual`)}</p><h3>{t(`home.features.${id}.title`)}</h3><p>{t(`home.features.${id}.body`)}</p></div>
-          </article>)}</div>
-        </div>
+      <section id="capabilities" className={`${classes.capabilitiesSection} ${classes.section} ${classes.container}`} aria-labelledby="features-title">
+        <div className={classes.capabilitiesIntro}><p className={classes.sectionLabel}>{t("home.features.label")}</p><h2 id="features-title">{t("home.features.title")}</h2><p>{t("home.features.body")}</p></div>
+        <Capabilities />
       </section>
 
-      <section id="use-cases" className={`${classes.section} ${classes.container}`} aria-labelledby="cases-title" data-reveal>
+      <section id="use-cases" className={`${classes.section} ${classes.container}`} aria-labelledby="cases-title">
         <div className={classes.sectionHeading}><div><p className={classes.sectionLabel}>{t("home.cases.label")}</p><h2 id="cases-title">{t("home.cases.title")}</h2></div><p>{t("home.cases.body")}</p></div>
         <UseCases />
       </section>
 
-      <section id="deployment" className={`${classes.deployment} ${classes.container}`} aria-labelledby="install-title" data-reveal>
+      <section id="deployment" className={`${classes.deployment} ${classes.container}`} aria-labelledby="install-title">
         <div className={classes.installCopy}><p className={classes.sectionLabel}>{t("home.install.label")}</p><h2 id="install-title">{t("home.install.title")}</h2><p>{t("home.install.body")}</p><a href="/guide#install" className={classes.textButton}>{t("home.guide")}<IconArrowUpRight size={18} /></a></div>
-        <div className={classes.installDiagram}><div className={classes.boundaryLabel}><IconLock size={14} />{t("home.install.boundary")}</div><div className={classes.installCore}><Mark /><span>AXLEON AgentOps</span></div><div className={classes.installNodes}>{[{ key: "network", Icon: IconServer }, { key: "auth", Icon: IconShieldCheck }, { key: "models", Icon: IconCpu }].map(({ key, Icon }) => <div key={key}><Icon size={23} stroke={1.5} /><span>{t(`home.install.${key}` as "home.install.network" | "home.install.auth" | "home.install.models")}</span></div>)}</div><p><i />{t("home.install.private")}</p></div>
+        <div className={classes.installDiagram}><div className={classes.boundaryLabel}><IconLock size={14} />{t("home.install.boundary")}</div><div className={classes.installCore}><Image src={branding.logoUrl} alt="" width={26} height={26} /><span>{branding.name}</span></div><div className={classes.installNodes}>{[{ key: "network", Icon: IconServer }, { key: "auth", Icon: IconShieldCheck }, { key: "models", Icon: IconCpu }].map(({ key, Icon }) => <div key={key}><Icon size={23} stroke={1.5} /><span>{t(`home.install.${key}` as "home.install.network" | "home.install.auth" | "home.install.models")}</span></div>)}</div><p><i />{t("home.install.private")}</p></div>
       </section>
 
-      <section className={classes.closing} aria-labelledby="cta-title" data-reveal><div className={classes.closingOrbit} aria-hidden="true" /><div className={classes.container}><p className={classes.sectionLabel}>THE NEXT WAY TO WORK</p><h2 id="cta-title">{t("home.cta.title")}</h2><p>{t("home.cta.body")}</p><div className={classes.actions}><a href="/login" className={classes.primaryButton}>{t("home.start")}<IconArrowUpRight size={20} /></a><a href="/guide" className={classes.textButton}>{t("home.guide")}<IconArrowRight size={18} /></a></div></div><IconSparkles className={classes.closingSpark} size={42} stroke={1} aria-hidden="true" /></section>
+      <section className={classes.closing} aria-labelledby="cta-title"><div className={classes.container}><h2 id="cta-title">{t("home.cta.title")}</h2><p>{t("home.cta.body")}</p><div className={classes.actions}><a href="/login" className={classes.primaryButton}>{t("home.start")}<IconArrowUpRight size={20} /></a><a href="/guide" className={classes.textButton}>{t("home.guide")}<IconArrowRight size={18} /></a></div></div></section>
     </main>
-    <footer className={`${classes.footer} ${classes.container}`}><div className={classes.footerTop}><a href="#top" aria-label="AXLEON AgentOps"><Brand /></a><p>{t("home.footer.description")}</p><a href="#top" className={classes.backToTop}>{t("home.footer.top")}<IconChevronUp size={18} /></a></div><div className={classes.footerBottom}><span>© CLUSH. All rights reserved.</span><span>DESIGNED FOR COLLECTIVE INTELLIGENCE.</span><a href="/guide">{t("home.guide")}<IconArrowUpRight size={14} /></a></div></footer>
+    <footer className={`${classes.footer} ${classes.container}`}><div className={classes.footerTop}><a href="#top" aria-label={branding.name}><Brand branding={branding} /></a><p>{t("home.footer.description")}</p><a href="#top" className={classes.backToTop}>{t("home.footer.top")}<IconChevronUp size={18} /></a></div><div className={classes.footerBottom}><span>© CLUSH. All rights reserved.</span><a href="/guide">{t("home.guide")}<IconArrowUpRight size={14} /></a></div></footer>
   </div>;
 }

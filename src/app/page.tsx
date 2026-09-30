@@ -1,4 +1,5 @@
 import { getSessionUser } from "@/lib/session";
+import { getServiceBranding } from "@/lib/runtime-settings";
 import { Overview } from "./_components/Overview";
 import { LandingPage } from "./_components/landing/LandingPage";
 
@@ -6,5 +7,5 @@ export default async function Home() {
   const user = await getSessionUser();
   return user
     ? <Overview userEmail={user.email} tier={user.tier} />
-    : <LandingPage />;
+    : <LandingPage branding={await getServiceBranding()} />;
 }
