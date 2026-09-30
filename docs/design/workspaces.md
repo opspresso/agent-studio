@@ -25,7 +25,7 @@ Workspace 옵션 목록은 접근 가능한 Agent의 현재 도구 설정을 한
 - `domain/workspace`는 공통 상태·포트와 한도를 소유한다. Git 정보와 승인 동작은
   `domain/coding`에 둔다. 일반 Workspace에는 저장소나 Git 브랜치가 필요하지 않다.
 - application은 주입된 provider/runtime을 사용한다. Docker 명령과 CLI 프로토콜은
-  infrastructure가 소유한다. 향후 Kubernetes provider는 같은 포트를 구현한다.
+  infrastructure가 소유한다. Docker와 Kubernetes provider는 같은 포트와 root 제어 프로토콜을 구현한다.
 - 기능은 배포 설정으로 활성화한다. 비활성 상태의 기존 부팅·로그인·Agent 실행·콘솔에는
   새 네트워크 의존성을 추가하지 않는다. 폐쇄망은 내부 이미지·GitHub Enterprise·모델 endpoint를 사용한다.
 - Sandbox에는 Docker socket, 호스트 경로, 운영 환경변수, 장기 Git 자격증명을 넘기지 않는다.
@@ -87,6 +87,38 @@ Maven `settings.xml`과 Gradle `gradle.properties` 등 사용자 설정은 보�
 native Session 이력과 SQLite 상태는 보관한다. Codex의 자동 plugin·App·hook 로딩은 끈다.
 
 ## Worker와 복구
+
+### Kubernetes 실행 계약
+
+`WORKSPACE_PROVIDER=kubernetes`는 Workspace마다 단일 Pod를 만든다. 앱과 worker는 같은
+전용 실행 namespace와 설치 identity를 사용하며 그 namespace의 Pod 조회·생성·삭제·exec만
+필요하다. Sandbox 서비스 계정에는 권한과 토큰이 없고 운영 환경변수·Secret·호스트 볼륨을
+전달하지 않는다. root 감독 프로세스는 기존 capability 집합과 읽기 전용 root를 유지하고,
+명령은 uid/gid 1000으로 실행한다. `tini`가 고아 프로세스를 회수하고 `prlimit`이 프로세스 수를 제한한다.
+
+`/workspace`와 보호된 `/control`에는 각각 `WORKSPACE_DISK_MB` 크기의 디스크 `emptyDir`를,
+`/tmp`에는 256 MiB를 사용한다. CPU·메모리 requests/limits는 설정값, ephemeral-storage는
+두 데이터 볼륨과 tmp·로그 여유 512 MiB의 합이다. `emptyDir.sizeLimit`은 파일시스템 quota가
+아니므로 kubelet의 사용량 계측·퇴거와 namespace ResourceQuota·NetworkPolicy를 함께 구성한다.
+Pod는 `restartPolicy=Never`이며 native 작업 소실을 새 프로세스 실행으로 감추지 않는다.
+
+핸들은 namespace·이름·Pod UID를 포함한다. 삭제는 UID precondition으로 보호하며, exec는
+root 제어 프로세스가 downward API의 UID와 요청 UID를 재검사해 이름 재사용 경쟁을 차단한다.
+Kubernetes API·exec 전송 오류는 핸들 소실과 구분한다. Pod·노드 소실이나 디스크 퇴거로
+진행 중인 작업을 잃으면 `interrupted`로 기록한다. 다음 사용자 요청은 마지막 성공한
+체크포인트와 native Session을 복원한다. 마지막 체크포인트 이후 파일·출력은 복구되지 않는다.
+
+worker는 1분마다 설치 label로 제한한 Pod 목록을 50건씩 순회한다. 생성 후 10분이 지난
+Pod만 DB의 Workspace·Sandbox·lease와 대조하고 소유자가 없는 자원을 정리한다. DB·API 조회
+실패에는 자원을 보존한다. 정상 유휴 종료는 기존 체크포인트 저장 → 삭제 순서를 사용한다.
+
+Docker에서 전환할 때 `WORKSPACE_LEGACY_DOCKER=true`와 기존 daemon 연결을 유지하면
+기존 Docker 핸들의 실행·Git·체크포인트·종료는 Docker로 라우팅된다. 새 Sandbox는 Kubernetes로
+만든다. 기존 작업과 복구 checkpoint를 확인한 뒤 별도 승인으로 DinD 리소스를 철거한다.
+실행기의 고아 정리는 PVC·Secret·ECR 인증 리소스나 다른 설치의 Pod를 삭제하지 않는다.
+
+
+### Worker 처리
 
 `application/workspace/worker.ts`는 native 실행 → 검사 → 체크포인트 단계를 기록한다. Runtime
 출력의 cursor와 미완성 JSONL 줄은 Run에 함께 남긴다. workspace lease와 revision을 확인한

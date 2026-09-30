@@ -6,8 +6,14 @@ import { processWorkspace, type WorkspaceWorkerDeps } from "./worker";
 export async function runWorkspaceWorker(deps: WorkspaceWorkerDeps, signal: AbortSignal, concurrency = 4, heartbeat?: () => Promise<void>): Promise<void> {
   if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > WORKSPACE_LIMITS.maxPage) throw new Error("Invalid workspace worker concurrency");
   const active = new Map<string, Promise<void>>();
+  let nextMaintenance = 0;
   try {
     while (!signal.aborted) {
+      if (deps.maintainSandboxes && deps.now().getTime() >= nextMaintenance) {
+        nextMaintenance = deps.now().getTime() + 60_000;
+        try { await deps.maintainSandboxes(); }
+        catch { log.error("workspace-worker", "Sandbox resource maintenance failed; resources were retained for the next sweep"); }
+      }
       try {
         const due = await deps.repository.due(deps.now().toISOString(), WORKSPACE_LIMITS.page);
         await heartbeat?.();

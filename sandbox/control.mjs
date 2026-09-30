@@ -241,6 +241,7 @@ try {
   else if (command === "run") await run(process.argv[3]);
   else {
     const request = await input();
+    if (process.env.WORKSPACE_POD_UID && request.podUid !== process.env.WORKSPACE_POD_UID) throw new Error("Sandbox Pod identity changed");
     let result;
     if (command === "ready") { await init(); result = { ready: true }; }
     else if (command === "execute") {

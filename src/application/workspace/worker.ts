@@ -23,6 +23,8 @@ export interface WorkspaceWorkerDeps extends WorkspaceDeps {
   /** Composition binds the execution facade, which opens the shared run bracket. */
   execute(workspace: Workspace, work: () => Promise<boolean>, actor?: RunActor): Promise<void>;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
+  /** Bounded provider resource maintenance, bound to repository ownership at composition. */
+  maintainSandboxes?: () => Promise<void>;
 }
 
 class WorkerStopping extends Error {}

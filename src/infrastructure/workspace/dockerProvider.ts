@@ -82,7 +82,7 @@ export function createDockerSandboxBackend(config: DockerSandboxConfig) {
     return JSON.parse(await call(["exec", "-i", "--user", "0", id, ...lock, "node", "/opt/workspace/control.mjs", action], JSON.stringify(request), maxBytes)) as T;
   }
 
-  return createControlledSandboxBackend("docker", {
+  const backend = createControlledSandboxBackend("docker", {
     async ensure(workspaceId) {
       if (!/^[a-zA-Z0-9_-]{1,100}$/.test(workspaceId)) throw new SandboxProviderError("Invalid workspace id");
       const name = `agent-studio-workspace-${workspaceId}`;
@@ -119,6 +119,12 @@ export function createDockerSandboxBackend(config: DockerSandboxConfig) {
       if (await lookup(checkedId(id))) await call(["rm", "-f", id]);
     },
   }, control);
+  return { ...backend, async health() {
+    const info = JSON.parse(await call(["info", "--format", "{{json .}}"])) as { MemoryLimit?: boolean; PidsLimit?: boolean; CpuCfsQuota?: boolean };
+    if (!info.MemoryLimit || !info.PidsLimit || !info.CpuCfsQuota) throw new SandboxProviderError("Workspace Docker resource limits are unavailable");
+    await call(["image", "inspect", config.image, "--format", "{{.Id}}"]);
+    if (config.network !== "none") await call(["network", "inspect", config.network, "--format", "{{.Id}}"]);
+  } };
 }
 
 export function createDockerSandboxProvider(config: DockerSandboxConfig): SandboxProvider {

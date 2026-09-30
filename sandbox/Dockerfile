@@ -6,7 +6,7 @@ FROM ghcr.io/astral-sh/uv:0.12.19 AS uv
 
 FROM node:24.21.0-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git ca-certificates ripgrep curl unzip zip build-essential pkg-config \
+      git ca-certificates ripgrep curl unzip zip build-essential pkg-config tini util-linux \
       libbz2-1.0 libdb5.3 libffi8 libgdbm6 libgdbm-compat4 liblzma5 \
       libncursesw6 libreadline8 libsqlite3-0 libssl3 libuuid1 libzstd1 zlib1g netbase tzdata \
     && usermod --home /workspace/home node \

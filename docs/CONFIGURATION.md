@@ -332,10 +332,17 @@ Codex·Claude·OpenCode의 모델은 **Model 사용 설정 → 워크스페이�
 
 | 변수 | 기본값 | 계약 |
 |---|---|---|
+| `WORKSPACE_PROVIDER` | `docker` | `docker` 또는 `kubernetes` |
+| `WORKSPACE_NAMESPACE` | 미설정 | Kubernetes 전용 실행 namespace. Kubernetes 모드에서 필수 |
+| `WORKSPACE_INSTANCE` | 미설정 | 설치 소유권 label. Kubernetes 모드에서 필수이며 변경 전 기존 자원을 정리한다 |
+| `WORKSPACE_KUBERNETES_CONTEXT` | in-cluster | 로컬 클러스터 검사에서만 kubeconfig context를 명시한다 |
+| `WORKSPACE_NODE_POOL` | 미설정 | EKS Auto Mode의 전용 Workspace NodePool. k3s에서는 미설정 |
+| `WORKSPACE_IMAGE_PULL_SECRET` | 미설정 | 실행 namespace의 imagePullSecret 이름. Secret bytes는 Pod에 mount하지 않는다 |
+| `WORKSPACE_LEGACY_DOCKER` | `false` | Kubernetes 전환 동안 기존 Docker 핸들을 관찰·종료한다. 기존 daemon 연결을 유지해야 한다 |
 | `WORKSPACE_IMAGE` | 미설정 | `sandbox/Dockerfile`로 만든 이미지. 미설정이면 새 실행을 거절한다 |
 | `WORKSPACE_NETWORK` | `none` | egress를 제한한 Docker 네트워크. `host`, `bridge`, `default`는 거절한다 |
 | `WORKSPACE_DOCKER_CONTEXT` | Docker 기본 context | 앱과 worker가 공유하는 전용 Docker daemon의 context |
-| `WORKSPACE_MEMORY_MB`, `WORKSPACE_DISK_MB`, `WORKSPACE_CPUS` | `2048`, `2048`, `2` | 메모리·각 tmpfs·CPU 상한 |
+| `WORKSPACE_MEMORY_MB`, `WORKSPACE_DISK_MB`, `WORKSPACE_CPUS` | `2048`, `2048`, `2` | 메모리·각 데이터 볼륨(Docker tmpfs/Kubernetes emptyDir)·CPU 상한 |
 | `WORKSPACE_WORKER_CONCURRENCY` | `4` | worker process의 동시 실행 수, 1~32 |
 
 Agent 저장소·소유자 목록은 각각 최대 100개다. `selected`는 등록한 저장소만,

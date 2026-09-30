@@ -566,6 +566,37 @@ describe("durable workspace worker", () => {
     expect(provider.start).toHaveBeenCalledTimes(1);
     expect((await repository.run(workspace.id, run.id))?.status).toBe("interrupted");
   });
+  it.each(["missing", "stopped"] as const)("interrupts a %s Pod and restores the prior native session on the next request", async lostStatus => {
+    const { api, workspace } = await start("codex");
+    await processWorkspace(deps, workspace.id);
+    const checkpointId = (await repository.get(workspace.id))!.checkpointId;
+    const next = await api.enqueue(workspace.id, owner, { kind: "task", prompt: "continue" }, "request-0002");
+    const originalOutput = vi.mocked(provider.output).getMockImplementation()!;
+    let lost = false;
+    vi.mocked(provider.output).mockImplementationOnce(async () => { lost = true; throw new Error("Pod connection lost"); });
+    const originalOperation = vi.mocked(provider.operation).getMockImplementation()!;
+    vi.mocked(provider.operation).mockImplementation(async (...args) => {
+      if (lost) throw new Error("Pod unavailable");
+      return originalOperation(...args);
+    });
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, next.id))?.status).toBe("running");
+    time += WORKSPACE_RETRY_MS; vi.setSystemTime(time);
+    vi.mocked(provider.inspect).mockResolvedValueOnce(lostStatus);
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, next.id))?.status).toBe("interrupted");
+    expect((await repository.get(workspace.id))!.checkpointId).toBe(checkpointId);
+    expect(provider.start).toHaveBeenCalledTimes(2);
+    lost = false;
+    vi.mocked(provider.inspect).mockResolvedValueOnce(lostStatus);
+    vi.mocked(provider.output).mockImplementation(originalOutput);
+    await api.enqueue(workspace.id, owner, { kind: "task", prompt: "recover" }, "request-0003");
+    await processWorkspace(deps, workspace.id);
+    expect(provider.restore).toHaveBeenCalledWith(expect.any(String), new Uint8Array([1, 2, 3]));
+    expect((await repository.session(workspace.id, workspace.sessionId))?.nativeSessionId).toBe("native-session");
+    expect(provider.start).toHaveBeenCalledTimes(3);
+    expect(provider.ensure).toHaveBeenCalledTimes(2);
+  });
   it("repeats cancellation when close races native process startup", async () => {
     const { api, workspace, run } = await start();
     const original = vi.mocked(provider.start).getMockImplementation()!;

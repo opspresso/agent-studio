@@ -24,6 +24,8 @@ import { chatRepository } from "@/infrastructure/db/repositories/chatRepository"
 import { chatRunLogRepository } from "@/infrastructure/db/repositories/chatRunLogRepository";
 import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
 import { createDockerSandboxBackend } from "@/infrastructure/workspace/dockerProvider";
+import { createKubernetesSandboxBackend } from "@/infrastructure/workspace/kubernetesProvider";
+import { routeSandboxBackend } from "@/infrastructure/workspace/backendRouting";
 import { createWorkspaceRuntimeAdapter, WORKSPACE_DIRECTORY } from "@/infrastructure/workspace/runtimeAdapters";
 import { workspaceAllowsRepository } from "@/domain/workspace/policy";
 import { createCodingWorktree } from "@/infrastructure/workspace/gitWorktree";
@@ -1368,10 +1370,22 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
   if (!settings) throw new ValidationError("Workspaces are not configured");
   const githubConfig = getWorkspaceGitHubConfig();
   const github = githubConfig ? createCodingGitHub(githubConfig) : undefined;
-  const backend = createDockerSandboxBackend(settings);
+  const kubernetes = settings.provider === "kubernetes" ? createKubernetesSandboxBackend(settings) : undefined;
+  const docker = settings.provider === "docker" || settings.legacyDocker ? createDockerSandboxBackend(settings) : undefined;
+  const backend = routeSandboxBackend(kubernetes ?? docker!, kubernetes ? docker : undefined);
   return {
     ...workspaceDeps,
     provider: backend.provider,
+    ...(kubernetes ? { maintainSandboxes: async () => {
+      const removed = await kubernetes.sweepOrphans(async (id, externalId) => {
+        const workspace = await workspaceRepository.get(id);
+        if (!workspace || workspace.status === "closed") return false;
+        if (workspace.leaseToken && Date.parse(workspace.leaseUntil ?? "") > Date.now()) return true;
+        const sandbox = workspace.sandboxId ? await workspaceRepository.sandbox(id, workspace.sandboxId) : null;
+        return sandbox?.externalId === externalId && sandbox.status !== "deleted";
+      });
+      if (removed) log.info("workspace-worker", `Removed ${removed} orphan Sandbox Pods`);
+    } } : {}),
     checkpoints: createWorkspaceCheckpointStore(secretCipher),
     runtime: async kind => {
       const runtime = await getWorkspaceRuntimeConfig(kind);
