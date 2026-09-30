@@ -93,9 +93,10 @@ export interface McpConnection {
   authorizationEpoch?: string;
   updatedAt: string;
   /**
-   * Identity of the last repository write, independent of token rotation and
+   * Identity of the last client/grant write, independent of token rotation and
    * timestamps. An unversioned snapshot may only update an unversioned row;
-   * every successful put or token update assigns a fresh revision.
+   * every successful put or token update assigns a fresh revision. Display-only
+   * account updates retain it so they cannot discard a concurrently rotated token.
    */
   revision?: string;
 }
@@ -144,9 +145,11 @@ export interface McpConnectionRepository {
   put(connection: McpConnection): Promise<void>;
   /** Replace only the snapshot read by a use case, or create only if still absent. */
   putIfCurrent(connection: McpConnection, current: McpConnection | null): Promise<boolean>;
+  /** Update only verified display metadata for the same grant, without advancing its revision. */
+  updateAccount(current: McpConnection, account: McpConnectedAccount): Promise<boolean>;
   /**
    * Replace the tokens only if the connection still has the revision read by
-   * the caller. Every successful connection write changes that revision,
+   * the caller. Every successful client/grant write changes that revision,
    * including reconnects with unchanged refresh tokens or timestamps.
    *
    * Providers that rotate refresh tokens revoke the previous one, so two

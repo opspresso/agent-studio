@@ -147,6 +147,22 @@ export const mcpConnectionRepository: McpConnectionRepository = {
     }
   },
 
+  async updateAccount(current, account) {
+    try {
+      await updateItem(
+        keys.mcpConnection(current.agentName, current.serverName),
+        (row) => ({ ...row, connectedAccount: account }),
+        // Account display does not change the grant. A refresh using this revision
+        // must still save its issued tokens, while reconnects/deletes remain fenced.
+        (row) => row !== null && row.revision === current.revision,
+      );
+      return true;
+    } catch (error) {
+      if ((error as { name?: string }).name === CONDITIONAL_WRITE_FAILED) return false;
+      throw error;
+    }
+  },
+
   /**
    * Compare-and-set on the whole grant's write identity. Token values and
    * timestamps may stay unchanged across reconnects; the revision never does.

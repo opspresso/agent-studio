@@ -1157,7 +1157,8 @@ export const ko: Messages = {
   "mcpConn.noClientDocument":
     "이 프로바이더는 OAuth 앱 수동 등록이 필요합니다. 관리자가 Tools의 MCP OAuth 설정에 Client ID와 Secret을 저장해야 Agent를 연결할 수 있습니다.",
   "mcpConn.connectedAccount": "{account} 계정에 연결됨",
-  "mcpConn.accountUnavailable": "연결된 계정을 확인할 수 없습니다. 다시 인증해 주세요.",
+  "mcpConn.accountUnavailable": "연결된 계정 정보를 불러오지 못했습니다.",
+  "mcpConn.accountUnsupported": "이 MCP 서버의 연결 계정 조회는 지원되지 않습니다.",
   "mcpConn.connectedAt": "{when} 에 연결함",
   "mcpConn.saveCredentials": "자격 증명 저장",
   "mcpConn.disconnect": "연결 해제",

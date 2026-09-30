@@ -57,9 +57,11 @@ Artifact·Slack·MCP 등의 외부 URL에 사용하는 대표 주소는 `PUBLIC_
 MCP OAuth는 Agent의 MCP 서버 설정에서 연결한다. 연결 화면의 서비스 계정 표시에는
 공식 GitHub OAuth의 `https://api.github.com/user`, 공식 Google OAuth의
 `https://openidconnect.googleapis.com/v1/userinfo`를 선택적으로 조회한다.
+공식 Notion·Plaud 연결은 해당 MCP의 현재 사용자 조회 도구로 계정을 표시한다.
+별도 REST API 토큰이나 추가 계정 연결은 필요하지 않다.
 Google 연결에서는 이메일 표시를 위한 `openid`·`email` 동의를 함께 요청한다.
 기존 Google grant에 이메일 권한이 없으면 Agent에서 다시 인증한다.
-폐쇄망·미지원 제공자·조회 실패 시에는 계정 확인 불가를 표시하며 기존 grant를 폐기하지 않는다.
+폐쇄망·조회 실패와 계정 조회 미지원은 구분해 표시하며 기존 grant를 폐기하지 않는다.
 
 ## Keycloak 로그인
 

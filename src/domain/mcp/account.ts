@@ -2,7 +2,7 @@ import type { McpServerAuth } from "./types";
 
 /** Provider identity used only for the connection display, never for authorization. */
 export interface McpConnectedAccount {
-  provider: "github" | "google";
+  provider: "github" | "google" | "notion" | "plaud";
   label: string;
 }
 
@@ -10,7 +10,7 @@ export interface McpConnectedAccount {
 export function readMcpConnectedAccount(value: unknown): McpConnectedAccount | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const { provider, label } = value as Record<string, unknown>;
-  if (provider !== "github" && provider !== "google") return undefined;
+  if (provider !== "github" && provider !== "google" && provider !== "notion" && provider !== "plaud") return undefined;
   if (typeof label !== "string" || !label.trim() || label.length > 320 || /[\u0000-\u001f\u007f]/.test(label)) return undefined;
   return { provider, label: label.trim() };
 }
@@ -27,6 +27,18 @@ export function mcpAccountProvider(auth: McpServerAuth): McpConnectedAccount["pr
     auth.authorizationEndpoint === "https://accounts.google.com/o/oauth2/v2/auth" &&
     auth.tokenEndpoint === "https://oauth2.googleapis.com/token"
   ) return "google";
+  if (
+    (auth.issuer === "https://mcp.notion.com" || auth.issuer === "https://mcp.notion.com/") &&
+    auth.authorizationEndpoint === "https://mcp.notion.com/authorize" &&
+    auth.tokenEndpoint === "https://mcp.notion.com/token" &&
+    auth.resource === "https://mcp.notion.com/mcp"
+  ) return "notion";
+  if (
+    auth.issuer === "https://mcp.plaud.ai/" &&
+    auth.authorizationEndpoint === "https://mcp.plaud.ai/authorize" &&
+    auth.tokenEndpoint === "https://mcp.plaud.ai/token" &&
+    auth.resource === "https://mcp.plaud.ai/mcp"
+  ) return "plaud";
   return undefined;
 }
 

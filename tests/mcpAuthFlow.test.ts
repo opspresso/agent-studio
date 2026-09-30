@@ -192,6 +192,13 @@ function harness(
         connections.set(key, { ...connection, revision: `revision-${++revision}` });
         return true;
       },
+      updateAccount: async (current, account) => {
+        const key = `${current.agentName}/${current.serverName}`;
+        const stored = connections.get(key);
+        if (!stored || stored.revision !== current.revision) return false;
+        connections.set(key, { ...stored, connectedAccount: account });
+        return true;
+      },
       delete: async (agent: string, srv: string) => {
         connections.delete(`${agent}/${srv}`);
       },
@@ -610,6 +617,16 @@ describe("completeAuthorization", () => {
     expect(h.connections.get("p/slack")?.status).toBe("connected");
   });
 
+  it("does not extend token expiry by the time spent querying the provider identity", async () => {
+    const { h, uc, state } = await started({ tokens: { accessToken: "token", expiresInSeconds: 60 } });
+    h.deps.accounts.read = async () => {
+      vi.setSystemTime("2026-01-01T00:00:05.000Z");
+      return { status: "unavailable" };
+    };
+    await uc.completeAuthorization({ state, code: "code", userEmail: OWNER });
+    expect(h.connections.get("p/slack")?.expiresAt).toBe("2026-01-01T00:01:00.000Z");
+  });
+
   it.each<TokenSet>([
     { accessToken: "new-access" },
     { accessToken: "new-access", refreshToken: "new-refresh" },
@@ -801,7 +818,18 @@ describe("provider accounts for existing Agent connections", () => {
     const views = await createMcpAuthUseCases(h.deps).listConnections("p", OWNER);
     expect(views[0]?.status).toBe("connected");
     expect(views[0]?.connectedAccount).toBeUndefined();
+    expect(views[0]?.accountUnavailableReason).toBe("unavailable");
     expect(h.connections.get("p/slack")?.accessToken).toBe("enc:existing-token");
+  });
+
+  it("reports unsupported identity lookup without asking the owner to reconnect", async () => {
+    const h = harness({ connection: { status: "connected", accessToken: "enc:token" } });
+    const read = vi.fn();
+    h.deps.accounts.read = read;
+    const views = await createMcpAuthUseCases(h.deps).listConnections("p", OWNER);
+    expect(views[0]?.accountUnavailableReason).toBe("unsupported");
+    expect(views[0]?.status).toBe("connected");
+    expect(read).not.toHaveBeenCalled();
   });
 
   it("requests Google's identity scopes and persists them only after the completed authorization", async () => {

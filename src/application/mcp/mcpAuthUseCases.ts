@@ -25,7 +25,7 @@ import type {
   McpOAuthStateRepository,
 } from "@/domain/mcp/connection";
 import type { AgentRepository } from "@/domain/agent/repository";
-import { mcpAccountProvider, mcpAccountScopes, type McpAccountClient } from "@/domain/mcp/account";
+import { mcpAccountProvider, mcpAccountScopes, type McpAccountClient, type McpAccountResult } from "@/domain/mcp/account";
 import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCipher";
 import {
   mcpConnectionSecretContext,
@@ -249,11 +249,16 @@ export interface McpConnectionView {
   scopes: string[];
   connectedBy?: string;
   connectedAccount?: McpConnection["connectedAccount"];
+  accountUnavailableReason?: Exclude<McpAccountResult["status"], "resolved">;
   connectedAt?: string;
   expiresAt?: string;
 }
 
-function toConnectionView(cipher: SecretCipher, connection: McpConnection): McpConnectionView {
+function toConnectionView(
+  cipher: SecretCipher,
+  connection: McpConnection,
+  accountUnavailableReason?: McpConnectionView["accountUnavailableReason"],
+): McpConnectionView {
   return {
     serverName: connection.serverName,
     status: connection.status,
@@ -274,6 +279,7 @@ function toConnectionView(cipher: SecretCipher, connection: McpConnection): McpC
     scopes: connection.scopes,
     ...(connection.connectedBy ? { connectedBy: connection.connectedBy } : {}),
     ...(connection.connectedAccount ? { connectedAccount: connection.connectedAccount } : {}),
+    ...(accountUnavailableReason ? { accountUnavailableReason } : {}),
     ...(connection.connectedAt ? { connectedAt: connection.connectedAt } : {}),
     ...(connection.expiresAt ? { expiresAt: connection.expiresAt } : {}),
   };
@@ -694,7 +700,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           return toConnectionView(deps.cipher, connection);
         }
         const server = await deps.mcps.get(connection.serverName);
-        if (!server?.auth || !mcpAccountProvider(server.auth)) return toConnectionView(deps.cipher, connection);
+        if (!server?.auth || !mcpAccountProvider(server.auth)) return toConnectionView(deps.cipher, connection, "unsupported");
         // Display reads never rotate a grant or spend an expired token.
         if (mcpConnectionAuthMismatch(connection, connection.serverName, server.auth) ||
           (connection.expiresAt && !(Date.parse(connection.expiresAt) > Date.now()))) {
@@ -703,9 +709,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         const accessToken = deps.cipher.decrypt(connection.accessToken,
           mcpConnectionSecretContext(agentName, connection.serverName, "access-token"));
         const identity = await deps.accounts.read(server.auth, accessToken);
-        if (identity.status !== "resolved") return toConnectionView(deps.cipher, connection);
+        if (identity.status !== "resolved") return toConnectionView(deps.cipher, connection, identity.status);
         const identified = { ...connection, connectedAccount: identity.account };
-        if (await deps.connections.putIfCurrent(identified, connection)) return toConnectionView(deps.cipher, identified);
+        if (await deps.connections.updateAccount(connection, identity.account)) return toConnectionView(deps.cipher, identified);
         // Do not display the old account over a newer grant or resurrect a disconnect.
         const latest = await deps.connections.get(agentName, connection.serverName);
         return latest ? toConnectionView(deps.cipher, latest) : undefined;
@@ -1003,9 +1009,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           mcpOAuthStateContext(pending.state),
         ),
       });
-      const identity = await deps.accounts.read(server.auth, tokens.accessToken);
-
       const now = new Date();
+      const identity = await deps.accounts.read(server.auth, tokens.accessToken);
       const {
         accessToken: _accessToken,
         refreshToken: _refreshToken,

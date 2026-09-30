@@ -1211,7 +1211,8 @@ export const en = {
   "mcpConn.noClientDocument":
     "This provider requires a manually registered OAuth app. An administrator must save its client ID and secret in the MCP server’s Tools OAuth settings before an Agent can connect.",
   "mcpConn.connectedAccount": "Connected as {account}",
-  "mcpConn.accountUnavailable": "Connected account could not be verified. Try reauthorizing.",
+  "mcpConn.accountUnavailable": "Could not load the connected account information.",
+  "mcpConn.accountUnsupported": "Connected account lookup is not supported for this MCP server.",
   "mcpConn.connectedAt": "Connected on {when}",
   "mcpConn.saveCredentials": "Save credentials",
   "mcpConn.disconnect": "Disconnect",

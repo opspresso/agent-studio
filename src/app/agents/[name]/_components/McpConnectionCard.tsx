@@ -66,7 +66,7 @@ export function McpConnectionIdentity({ connection }: { connection: McpConnectio
       <Text fz="xs">
         {connection.connectedAccount
           ? t("mcpConn.connectedAccount", { account: connection.connectedAccount.label })
-          : t("mcpConn.accountUnavailable")}
+          : t(connection.accountUnavailableReason === "unsupported" ? "mcpConn.accountUnsupported" : "mcpConn.accountUnavailable")}
       </Text>
       {connection.connectedAt && (
         <Text fz="xs" c="dimmed">

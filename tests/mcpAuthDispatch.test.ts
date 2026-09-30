@@ -107,6 +107,7 @@ function providerHarness(opts: {
         stored = stored ? { ...stored, ...(next as object) } : stored;
         return true;
       },
+      updateAccount: async () => { throw new Error("Unexpected account update during token authentication"); },
     },
     oauth: {
       register: async () => ({ clientId: "x" }),
@@ -253,6 +254,7 @@ describe("resolving the Authorization for an agent's connection", () => {
           stored = { ...stored, accessToken: "enc:winner-token", status: "connected" };
           return false;
         },
+        updateAccount: async () => { throw new Error("Unexpected account update during token authentication"); },
       },
       oauth: {
         register: async () => ({ clientId: "x" }),
@@ -370,6 +372,19 @@ describe("a refresh racing a reconnect", () => {
     expect((await pending.result).headers).toEqual({ Authorization: "Bearer reconnected" });
     expect(await mcpConnectionRepository.get("p", "slack")).toMatchObject(reconnected);
     expect(pending.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("saves rotated refresh credentials when account display is backfilled during the exchange", async () => {
+    const pending = await pendingRefresh();
+    const snapshot = (await mcpConnectionRepository.get("p", "slack"))!;
+    const account = { provider: "notion" as const, label: "connected@example.test" };
+    expect(await mcpConnectionRepository.updateAccount(snapshot, account)).toBe(true);
+    expect((await mcpConnectionRepository.get("p", "slack"))?.revision).toBe(snapshot.revision);
+    pending.exchange.resolve({ accessToken: "renewed", refreshToken: "rotated-refresh", expiresInSeconds: 3600 });
+    expect((await pending.result).headers).toEqual({ Authorization: "Bearer renewed" });
+    expect(await mcpConnectionRepository.get("p", "slack")).toMatchObject({
+      accessToken: "enc:renewed", refreshToken: "enc:rotated-refresh", status: "connected", connectedAccount: account,
+    });
   });
 
   it("does not revoke a reconnect when the old refresh grant is refused", async () => {
@@ -635,6 +650,7 @@ describe("markUnauthorized with a scope challenge", () => {
           stored = { ...stored, ...(next as object) };
           return true;
         },
+        updateAccount: async () => { throw new Error("Unexpected account update during token authentication"); },
       },
       oauth: {
         register: async () => ({ clientId: "x" }),

@@ -23,6 +23,8 @@ describe("Agent MCP connection account display", () => {
   it.each([
     { provider: "github" as const, label: "octocat" },
     { provider: "google" as const, label: "connected@example.test" },
+    { provider: "notion" as const, label: "notion@example.test" },
+    { provider: "plaud" as const, label: "plaud@example.test" },
   ])("shows the actual $provider account instead of the Studio account", (connectedAccount) => {
     const html = render({ connectedAccount });
     expect(html).toContain(`${connectedAccount.label} 계정에 연결됨`);
@@ -32,8 +34,16 @@ describe("Agent MCP connection account display", () => {
 
   it("explicitly shows an unknown identity without substituting the Studio user's email", () => {
     const html = render({});
-    expect(html).toContain("연결된 계정을 확인할 수 없습니다.");
+    expect(html).toContain("연결된 계정 정보를 불러오지 못했습니다.");
     expect(html).not.toContain(connection.connectedBy);
+    expect(html).not.toContain("다시 인증해 주세요");
+  });
+
+  it("distinguishes unsupported account lookup from a failed lookup", () => {
+    const html = render({ accountUnavailableReason: "unsupported" });
+    expect(html).toContain("이 MCP 서버의 연결 계정 조회는 지원되지 않습니다.");
+    expect(html).not.toContain("불러오지 못했습니다");
+    expect(html).not.toContain("다시 인증해 주세요");
   });
 
   it("renders the English account label and escapes provider-controlled markup", () => {

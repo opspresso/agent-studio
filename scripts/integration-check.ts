@@ -543,6 +543,8 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     // Compare-and-set on the grant revision: only the first writer can replace
     // the connection snapshot both callers read.
     const stored = conn.revision;
+    assert.equal(await mcpConnectionRepository.updateAccount(conn, { provider: "notion", label: "verified-account" }), true);
+    assert.equal((await mcpConnectionRepository.get(agentName, serverName))?.revision, stored, "account display preserves the grant revision");
     assert.equal(
       await mcpConnectionRepository.updateTokens(agentName, serverName, stored, {
         accessToken: encryptSecret(
@@ -560,6 +562,8 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       true,
       "refresh with the current grant revision wins",
     );
+    assert.deepEqual((await mcpConnectionRepository.get(agentName, serverName))?.connectedAccount,
+      { provider: "notion", label: "verified-account" }, "token rotation preserves verified account display");
     assert.equal(
       await mcpConnectionRepository.updateTokens(agentName, serverName, stored, {
         accessToken: encryptSecret(
