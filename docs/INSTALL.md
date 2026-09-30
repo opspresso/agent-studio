@@ -200,7 +200,7 @@ Go의 자동 toolchain 다운로드는 기본적으로 끈다.
 
 앱과 worker는 같은 PostgreSQL, `AES_ENCRYPTION_KEY`, Sandbox 인프라 설정을 사용한다. Agent·모델 설정은 공유 DB에서 읽는다. DB는 기존
 migration 명령으로 먼저 준비한다. 배포 이미지는 `node build/workspace-worker.cjs`를 제공하며
-Docker CLI도 포함한다. 실행 worker와 Git 승인 API가 있는 앱 서버는 같은 Docker daemon에
+Docker CLI도 포함한다. Docker 모드에서 실행 worker와 Git 승인 API가 있는 앱 서버는 같은 Docker daemon에
 접근해야 한다. 이 제어 프로세스에는 전용 daemon 또는 Docker context를 사용한다. Sandbox에는 socket,
 호스트 디렉터리나 운영 자격증명을 mount하지 않는다. 별도 worker의 HTTP healthcheck는 사용하지 않는다.
 
@@ -216,7 +216,20 @@ worker는 실행 핸들, 출력 cursor, native Session, 검사 단계와 체크�
 별도 큐가 Git 승인 결과와 CI 상태를 원래 Chat에 전달하고 SDK 이력으로 후속 실행을 시작한다. 중단된
 worker는 동일 핸들을 이어서 관찰하며 불확실한 작업을 자동으로 다시 실행하지 않는다. TTL에는
 체크포인트를 저장한 뒤 Sandbox를 삭제한다. worker를 중지하거나 설정을 제거하면 자동 TTL
-정리가 실행되지 않으므로, 설정·Docker context 변경 전에 기존 Workspace를 종료하라.
+정리가 실행되지 않으므로, namespace·설치 identity·Docker context 변경 전에 기존 Workspace를 종료하라.
+
+Kubernetes 배포는 `WORKSPACE_PROVIDER=kubernetes`와 실행 전용 `WORKSPACE_NAMESPACE`,
+`WORKSPACE_INSTANCE`를 지정한다. Kubernetes 1.31 이상의 exec v5 프로토콜이 필요하다.
+앱·worker에는 실행 namespace의 Pod get/list/create/delete와 pods/exec get/create만 허용한다.
+실행 namespace에 `sandbox` 서비스 계정(토큰 자동 mount 없음), ResourceQuota, 기본 거부 NetworkPolicy와
+필요한 DNS·모델·패키지 endpoint 허용 정책을 먼저 준비한다. k3s에서도 CPU·메모리·디스크 한도를
+가진 실행 Pod를 사용한다. EKS에서는 `WORKSPACE_NODE_POOL`로 Auto Mode 전용 pool을 선택할 수 있다.
+private registry는 실행 namespace에 imagePullSecret을 준비하고 `WORKSPACE_IMAGE_PULL_SECRET`로 참조한다.
+설정과 장애 복구 계약은 [Workspace 설계](design/workspaces.md#kubernetes-실행-계약)를 따른다.
+
+Docker 전환 동안 `WORKSPACE_LEGACY_DOCKER=true`와 기존 daemon 연결을 유지한다.
+기존 작업·Git 승인·idle checkpoint가 끝나기 전에 DinD Deployment·PVC·ECR 인증 리소스를 제거하지 않는다.
+전환 배포와 기존 리소스 철거는 각각 검토·승인을 거친다.
 
 `pnpm test:sandbox`는 Docker만, `pnpm test:workspace`는 Docker와 로컬 `_test` 데이터베이스를 사용한다.
 Sandbox 검사는 네트워크 없이 uid 1000·읽기 전용 root에서 Java·Python·Go·Node.js 프로젝트의

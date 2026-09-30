@@ -2,7 +2,7 @@ import type { CodingWorktree } from "@/domain/coding/worktree";
 import { isGitBranch, isRepositoryName } from "@/domain/workspace/policy";
 import { isDeclaredInternalHost } from "@/domain/security/internalHosts";
 import { resolvePublicUrl } from "@/infrastructure/net/ssrfGuard";
-import { createDockerSandboxBackend, type DockerSandboxConfig } from "./dockerProvider";
+import type { SandboxControl } from "./sandboxBackend";
 import { createGitBundleTransport } from "./gitBundleTransport";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 
@@ -14,8 +14,7 @@ export interface GitWorktreeConfig {
   serverToken?: () => Promise<string>;
 }
 
-export function createDockerCodingWorktree(sandbox: DockerSandboxConfig, config: GitWorktreeConfig): CodingWorktree {
-  const { control } = createDockerSandboxBackend(sandbox);
+export function createCodingWorktree(control: SandboxControl, config: GitWorktreeConfig): CodingWorktree {
   const transport = config.serverToken ? createGitBundleTransport(config.serverToken) : undefined;
   async function network(repository: string, access: "read" | "write", expectedUrl?: string) {
     if (!isRepositoryName(repository)) throw new Error("Invalid coding repository");

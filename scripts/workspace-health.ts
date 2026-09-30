@@ -1,9 +1,9 @@
-import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { getWorkspaceConfig, getWorkspaceGitHubConfig, getGitHubToken, getWorkspaceRuntimeConfig } from "@/lib/runtime-settings";
 import { WORKSPACE_MODEL_RUNTIMES } from "@/domain/workspace/runtimeModels";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { createDockerSandboxBackend } from "@/infrastructure/workspace/dockerProvider";
+import { createKubernetesSandboxBackend } from "@/infrastructure/workspace/kubernetesProvider";
 import { closePool } from "@/infrastructure/db/client";
 import { WORKSPACE_HEARTBEAT_FILE, WORKSPACE_HEARTBEAT_MAX_AGE_MS } from "./workspace-heartbeat";
 
@@ -22,16 +22,8 @@ async function main() {
   }
   const config = getWorkspaceConfig();
   if (!config) throw new Error("Workspace Sandbox backend is not configured");
-  createDockerSandboxBackend(config);
-  const docker = (args: string[]) => execFileSync("docker", [...(config.context ? ["--context", config.context] : []), ...args],
-    { encoding: "utf8", timeout: 10_000, maxBuffer: 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
-  stage = "Docker engine and resource limits";
-  const info = JSON.parse(docker(["info", "--format", "{{json .}}"]));
-  if (!info.MemoryLimit || !info.PidsLimit || !info.CpuCfsQuota) throw new Error("Workspace Docker resource limits are unavailable");
-  stage = "Sandbox image";
-  docker(["image", "inspect", config.image, "--format", "{{.Id}}"]);
-  stage = "Sandbox network";
-  if (config.network !== "none") docker(["network", "inspect", config.network, "--format", "{{.Id}}"]);
+  stage = `${config.provider} Sandbox backend`;
+  await (config.provider === "kubernetes" ? createKubernetesSandboxBackend(config) : createDockerSandboxBackend(config)).health();
   stage = "model channels";
   const selections = (await settingsRepository.get())?.workspaceModels ?? {};
   for (const kind of WORKSPACE_MODEL_RUNTIMES) {
@@ -43,6 +35,6 @@ async function main() {
   if (process.argv.includes("--worker")) {
     await checkHeartbeat();
   }
-  console.log("OK Workspace configuration, Docker, image, network and model channels");
+  console.log("OK Workspace configuration, Sandbox backend and model channels");
 }
 main().catch(() => { console.error(`Workspace health check failed: ${stage}`); process.exitCode = 1; }).finally(closePool);

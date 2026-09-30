@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import type { SandboxCommand, SandboxCommandResult, SandboxProvider } from "@/domain/workspace/ports";
-import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
+import type { SandboxProvider } from "@/domain/workspace/ports";
+import { createControlledSandboxBackend, SandboxProviderError } from "./sandboxBackend";
 
 export interface DockerSandboxConfig {
   image: string;
@@ -19,10 +18,8 @@ interface ContainerInfo {
   State: { Running: boolean };
 }
 
-export class SandboxProviderError extends Error {}
-
 /** No shell on the host and no inherited secrets in a Docker command line. */
-export function dockerCall(args: string[], input = "", maxBytes = 1024 * 1024): Promise<string> {
+export function dockerCall(args: string[], input = "", maxBytes = 1024 * 1024, timeoutMs = 120_000): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("docker", args, { stdio: ["pipe", "pipe", "pipe"] });
     const chunks: Buffer[] = [];
@@ -31,7 +28,7 @@ export function dockerCall(args: string[], input = "", maxBytes = 1024 * 1024): 
     // Docker failures can echo arguments. Credentials and task prompts travel only on stdin.
     const errors: Buffer[] = [];
     let errorBytes = 0;
-    const timer = setTimeout(() => { child.kill("SIGKILL"); }, 120_000);
+    const timer = setTimeout(() => { child.kill("SIGKILL"); }, timeoutMs);
     child.stdout.on("data", (chunk: Buffer) => {
       bytes += chunk.length;
       if (bytes > maxBytes) { overflow = true; child.kill("SIGKILL"); }
@@ -62,8 +59,8 @@ export function createDockerSandboxBackend(config: DockerSandboxConfig) {
     !Number.isFinite(config.cpus) || config.cpus < 0.1 || config.cpus > 64) {
     throw new SandboxProviderError("Invalid Docker sandbox configuration");
   }
-  const call = (args: string[], input?: string, maxBytes?: number) =>
-    dockerCall([...(config.context ? ["--context", config.context] : []), ...args], input, maxBytes);
+  const call = (args: string[], input?: string, maxBytes?: number, timeoutMs?: number) =>
+    dockerCall([...(config.context ? ["--context", config.context] : []), ...args], input, maxBytes, timeoutMs);
   async function lookup(id: string): Promise<ContainerInfo | null> {
     // `container ls` distinguishes absence from a disconnected daemon without parsing error text.
     const ids = await call(["container", "ls", "-aq", "--no-trunc", "--filter", `id=${id}`]);
@@ -85,8 +82,7 @@ export function createDockerSandboxBackend(config: DockerSandboxConfig) {
     return JSON.parse(await call(["exec", "-i", "--user", "0", id, ...lock, "node", "/opt/workspace/control.mjs", action], JSON.stringify(request), maxBytes)) as T;
   }
 
-  const provider: SandboxProvider = {
-    kind: "docker",
+  const backend = createControlledSandboxBackend("docker", {
     async ensure(workspaceId) {
       if (!/^[a-zA-Z0-9_-]{1,100}$/.test(workspaceId)) throw new SandboxProviderError("Invalid workspace id");
       const name = `agent-studio-workspace-${workspaceId}`;
@@ -119,37 +115,16 @@ export function createDockerSandboxBackend(config: DockerSandboxConfig) {
       return { externalId: id };
     },
     async inspect(id) { const info = await lookup(checkedId(id)); return !info ? "missing" : info.State.Running ? "ready" : "stopped"; },
-    async start(id, operationId, command) { await control(id, "start", { id: operationId, command }); },
-    async operation(id, operationId) { return control(id, "operation", { id: operationId }); },
-    async output(id, operationId, offset) {
-      const result = await control<{ text: string; nextOffset: number }>(id, "output", { id: operationId, offset });
-      return { frames: result.text.split("\n").filter(Boolean).map(line => {
-        const frame = JSON.parse(line) as { stream: "stdout" | "stderr"; text: string };
-        if (!["stdout", "stderr"].includes(frame.stream) || typeof frame.text !== "string") throw new SandboxProviderError("Invalid sandbox output");
-        return frame;
-      }), nextOffset: result.nextOffset };
-    },
-    async cancel(id, operationId) { await control(id, "cancel", { id: operationId }); },
-    async execute(id, command: SandboxCommand): Promise<SandboxCommandResult> {
-      // One isolated control invocation waits for its own finite command. Long tasks use start/operation instead.
-      return control(id, "execute", { id: `exec-${randomUUID()}`, command });
-    },
-    async checkpoint(id) {
-      const result = await control<{ bytes: string }>(id, "checkpoint", {}, Math.ceil(WORKSPACE_LIMITS.checkpointBytes * 4 / 3) + 1000);
-      if (typeof result.bytes !== "string" || Buffer.byteLength(result.bytes, "base64") > WORKSPACE_LIMITS.checkpointBytes) {
-        throw new SandboxProviderError("Invalid sandbox checkpoint");
-      }
-      return Buffer.from(result.bytes, "base64");
-    },
-    async restore(id, checkpoint) {
-      if (checkpoint.byteLength > WORKSPACE_LIMITS.checkpointBytes) throw new SandboxProviderError("Workspace checkpoint exceeds storage limit");
-      await control(id, "restore", { bytes: Buffer.from(checkpoint).toString("base64") });
-    },
     async destroy(id) {
       if (await lookup(checkedId(id))) await call(["rm", "-f", id]);
     },
-  };
-  return { provider, control };
+  }, control);
+  return { ...backend, async health() {
+    const info = JSON.parse(await call(["info", "--format", "{{json .}}"], undefined, undefined, 10_000)) as { MemoryLimit?: boolean; PidsLimit?: boolean; CpuCfsQuota?: boolean };
+    if (!info.MemoryLimit || !info.PidsLimit || !info.CpuCfsQuota) throw new SandboxProviderError("Workspace Docker resource limits are unavailable");
+    await call(["image", "inspect", config.image, "--format", "{{.Id}}"], undefined, undefined, 10_000);
+    if (config.network !== "none") await call(["network", "inspect", config.network, "--format", "{{.Id}}"], undefined, undefined, 10_000);
+  } };
 }
 
 export function createDockerSandboxProvider(config: DockerSandboxConfig): SandboxProvider {

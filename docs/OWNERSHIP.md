@@ -92,6 +92,7 @@
 | Workspace 승인 결과의 원래 Chat 전달과 단일 후속 실행 | `CodingApproval.sourceChatId`, `domain/workspace/continuation.ts`; `workspaceRepository`의 원자적 알림과 `application/chat/workspaceContinuation.ts` 소비자 | 코드 |
 | Workspace PR의 CI 대기 대상·기한 | `application/chat/workspaceCiWatch.ts`; 자동 게시와 승인 후속 실행이 같은 정책을 사용한다 | 코드 |
 | Workspace 명령과 검사에 공통인 셸 실패 처리 | `src/shared/workspaceShell.ts` | 코드 |
+| Sandbox 제어 프로토콜·Pod identity·고아 grace | `src/infrastructure/workspace/sandboxBackend.ts`, `kubernetesProvider.ts`; 기존 Docker 핸들 라우팅은 `backendRouting.ts` | 코드 |
 | Workspace 체크포인트의 저장 상한과 암호화 주소 | `src/domain/workspace/limits.ts`, `src/domain/security/secretContext.ts`; 청크·manifest 저장과 무결성 검사는 `src/infrastructure/db/repositories/workspaceCheckpointStore.ts` | 코드 |
 | 저장된 이미지 참조를 주소로 바꾸기 | `src/domain/chat/imageRefs.ts` 의 `resolveImageUrl` | 코드 |
 | 저장된 파일 참조를 다운로드 주소로 바꾸기 | `src/domain/chat/fileRefs.ts` 의 `resolveFileUrl` | 코드 |

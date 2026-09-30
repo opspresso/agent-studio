@@ -30,6 +30,8 @@ export interface Workspace {
   activeActionId?: string;
   sandboxId?: string;
   checkpointId?: string;
+  /** Native identity captured with the checkpoint's files, independent of later streamed session metadata. */
+  checkpointSession?: { nativeSessionId?: string };
   coding?: CodingRepository;
   pullRequest?: PullRequestInfo;
   /** Tombstone intent is durable before chat deletion and rejects new work. */

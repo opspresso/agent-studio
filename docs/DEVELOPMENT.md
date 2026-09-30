@@ -122,6 +122,7 @@ pnpm test:audio:pipeline # PostgreSQL test DB·MinIO·ffmpeg·로컬 ASR mock을
 pnpm worker:workspace # 환경변수가 주입된 별도 Workspace·승인 후속 실행 worker
 pnpm test:sandbox     # 무통신 Docker 격리·체크포인트 검사
 pnpm test:workspace   # Docker + PostgreSQL *_test 실행·복구 검사
+pnpm test:workspace:kubernetes # 일회용 loopback k3s에서 Kubernetes 실행·복구 검사
 pnpm test:workspace:git # 무통신 Git fixture와 승인·게시 검사
 pnpm test:workspace:codex # agents 이미지의 실제 Codex 시작·재개와 내부 Responses endpoint 전달 검사
 pnpm worker:audio     # 환경변수가 주입된 별도 오디오 worker. 앱이 DB를 초기화한 뒤 실행
@@ -342,3 +343,24 @@ PR workflow에는 Release 생성·registry 게시·GitOps 전달 job이 없다.
 실제 외부 리뷰를 게시하지 않는다. 기본 이미지는 다른 Workspace 검사와 같은
 `agent-studio-workspace:agents`이고 `WORKSPACE_SANDBOX_IMAGE`로 검증 이미지를 선택할 수 있다.
 테스트가 만든 Agent·Chat·Workspace·체크포인트·컴퓨팅 자원과 bare fixture를 정리한다.
+
+### Kubernetes Workspace 통합 검사
+
+`pnpm test:workspace:kubernetes`는 `WORKSPACE_KUBERNETES_TEST_CONTEXT`를 명시해야 하고
+API 주소가 loopback인 일회용 클러스터만 허용한다. 검사가 만든 namespace만 정리하며 production context를 사용하지 않는다.
+검증 이미지를 클러스터에 미리 반입하고 `WORKSPACE_SANDBOX_IMAGE`로 지정한다.
+`WORKSPACE_KUBERNETES_TEST_MANIFEST`에 `argocd-env-demo`의 k3s Agent Studio Helm 렌더 파일을
+지정하면 실제 RBAC·통신 차단·DNS·Pod quota와 emptyDir 초과 퇴거를 검증한다.
+`WORKSPACE_KUBERNETES_TEST_NODE_CONTAINER`에 검사를 위해 만든 `studio-k8s-check-*` k3s 컨테이너를
+지정하면 해당 로컬 노드만 재시작하여 핸들 소실·복원·실행 재생 방지를 검증한다.
+
+```bash
+KUBECONFIG=/path/to/disposable-kubeconfig.yaml \
+WORKSPACE_KUBERNETES_TEST_CONTEXT=studio-local-test \
+WORKSPACE_KUBERNETES_TEST_MANIFEST=/path/to/rendered-studio-k3s.yaml \
+WORKSPACE_SANDBOX_IMAGE=agent-studio-workspace:kubernetes-check \
+pnpm test:workspace:kubernetes
+```
+
+EKS의 NodeClass/NodePool schema는 server dry-run으로 확인할 수 있다. 실제 EKS·alpha 배포와
+노드 장애 주입은 별도 승인 후 수행하며 로컬 시험을 운영 클러스터 검증으로 보고하지 않는다.

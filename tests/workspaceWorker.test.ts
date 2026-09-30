@@ -7,6 +7,7 @@ import { chatRepository as chats } from "@/infrastructure/db/repositories/chatRe
 import { agentRepository as agents } from "@/infrastructure/db/repositories/agentRepository";
 import { createWorkspaceUseCases } from "@/application/workspace/workspaceUseCases";
 import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
+import { runWorkspaceWorker } from "@/application/workspace/service";
 import { claimWorkspace, WORKSPACE_HEARTBEAT_MS, WORKSPACE_LEASE_MS, WORKSPACE_RETRY_MS } from "@/application/workspace/workerState";
 import { createWorkspaceRuntimeAdapter } from "@/infrastructure/workspace/runtimeAdapters";
 import type { SandboxOperation, SandboxProvider, SandboxCommand } from "@/domain/workspace/ports";
@@ -112,6 +113,46 @@ async function reviewResult(workspaceId: string, runId: string) {
 }
 
 describe("durable workspace worker", () => {
+  it("tracks and cancels a cold Pod before it becomes ready without starting native work", async () => {
+    const { api, workspace, run } = await start();
+    provider.provision = provider.ensure;
+    vi.mocked(provider.inspect).mockResolvedValue("provisioning");
+    onSleep = async () => {
+      onSleep = undefined;
+      const current = (await repository.get(workspace.id))!;
+      expect(current.sandboxId).toBeDefined();
+      await api.cancel(workspace.id, owner);
+    };
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("cancelled");
+    expect(provider.start).not.toHaveBeenCalled();
+    expect(provider.destroy).toHaveBeenCalledTimes(1);
+    expect((await repository.get(workspace.id))!.sandboxId).toBeUndefined();
+  });
+  it("adopts a pending Pod after worker shutdown rather than allocating another Pod", async () => {
+    const { workspace, run } = await start();
+    provider.provision = provider.ensure;
+    let pending = true;
+    vi.mocked(provider.inspect).mockImplementation(async () => pending ? "provisioning" : "ready");
+    const stop = new AbortController();
+    onSleep = async () => { onSleep = undefined; stop.abort(); };
+    await processWorkspace(deps, workspace.id, stop.signal);
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("running");
+    onSleep = async () => { onSleep = undefined; pending = false; };
+    await processWorkspace(deps, workspace.id);
+    expect(provider.ensure).toHaveBeenCalledTimes(1);
+    expect(provider.destroy).not.toHaveBeenCalled();
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("succeeded");
+  });
+  it("continues queue polling and heartbeat while sandbox maintenance waits on an external service", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    deps.maintainSandboxes = () => pending;
+    const controller = new AbortController();
+    const heartbeat = vi.fn(async () => { controller.abort(); release(); });
+    await runWorkspaceWorker(deps, controller.signal, 1, heartbeat);
+    expect(heartbeat).toHaveBeenCalledTimes(1);
+  });
   it.each(["command", "codex"] as const)("keeps permanent %s event loss through storage, tool paging and the review publication guard", async runtime => {
     const { workspace, run } = await start(runtime);
     const original = vi.mocked(provider.start).getMockImplementation()!;
@@ -565,6 +606,64 @@ describe("durable workspace worker", () => {
     await processWorkspace(deps, workspace.id);
     expect(provider.start).toHaveBeenCalledTimes(1);
     expect((await repository.run(workspace.id, run.id))?.status).toBe("interrupted");
+  });
+  it.each(["missing", "stopped"] as const)("interrupts a %s Pod and restores the prior native session on the next request", async lostStatus => {
+    const { api, workspace } = await start("codex");
+    await processWorkspace(deps, workspace.id);
+    const checkpointId = (await repository.get(workspace.id))!.checkpointId;
+    const next = await api.enqueue(workspace.id, owner, { kind: "task", prompt: "continue" }, "request-0002");
+    const originalOutput = vi.mocked(provider.output).getMockImplementation()!;
+    let lost = false;
+    vi.mocked(provider.output).mockImplementationOnce(async () => { lost = true; throw new Error("Pod connection lost"); });
+    const originalOperation = vi.mocked(provider.operation).getMockImplementation()!;
+    vi.mocked(provider.operation).mockImplementation(async (...args) => {
+      if (lost) throw new Error("Pod unavailable");
+      return originalOperation(...args);
+    });
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, next.id))?.status).toBe("running");
+    time += WORKSPACE_RETRY_MS; vi.setSystemTime(time);
+    vi.mocked(provider.inspect).mockResolvedValueOnce(lostStatus);
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, next.id))?.status).toBe("interrupted");
+    expect((await repository.get(workspace.id))!.checkpointId).toBe(checkpointId);
+    expect(provider.start).toHaveBeenCalledTimes(2);
+    lost = false;
+    vi.mocked(provider.inspect).mockResolvedValueOnce(lostStatus);
+    vi.mocked(provider.output).mockImplementation(originalOutput);
+    await api.enqueue(workspace.id, owner, { kind: "task", prompt: "recover" }, "request-0003");
+    await processWorkspace(deps, workspace.id);
+    expect(provider.restore).toHaveBeenCalledWith(expect.any(String), new Uint8Array([1, 2, 3]));
+    expect((await repository.session(workspace.id, workspace.sessionId))?.nativeSessionId).toBe("native-session");
+    expect(provider.start).toHaveBeenCalledTimes(3);
+    expect(provider.ensure).toHaveBeenCalledTimes(2);
+  });
+  it("resumes the native session matching restored files rather than newer uncheckpointed metadata", async () => {
+    const { api, workspace } = await start("codex");
+    await processWorkspace(deps, workspace.id);
+    const current = (await repository.get(workspace.id))!;
+    const session = (await repository.session(workspace.id, workspace.sessionId))!;
+    await repository.write({ expectedRevision: current.revision, workspace: { ...current, revision: current.revision + 1 },
+      session: { ...session, nativeSessionId: "uncheckpointed-session" } });
+    existing.clear();
+    await api.enqueue(workspace.id, owner, { kind: "task", prompt: "recover" }, "request-0002");
+    await processWorkspace(deps, workspace.id);
+    const command = vi.mocked(provider.start).mock.calls.at(-1)![2];
+    expect(command.argv).toContain("native-session");
+    expect(command.argv).not.toContain("uncheckpointed-session");
+  });
+  it("starts a fresh requested native session with a loss warning when compute was lost before its first checkpoint", async () => {
+    const { api, workspace } = await start("codex");
+    vi.mocked(deps.checkpoints.put).mockRejectedValueOnce(new Error("Checkpoint storage unavailable"));
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.get(workspace.id))!.checkpointId).toBeUndefined();
+    expect((await repository.session(workspace.id, workspace.sessionId))!.nativeSessionId).toBe("native-session");
+    existing.clear();
+    const requested = await api.enqueue(workspace.id, owner, { kind: "task", prompt: "new request" }, "request-0002");
+    await processWorkspace(deps, workspace.id);
+    expect(vi.mocked(provider.start).mock.calls.at(-1)![2].argv).not.toContain("resume");
+    expect((await repository.events(workspace.id, requested.id, 0, 20)).some(event =>
+      event.data.kind === "warning" && event.data.text.includes("no recovery checkpoint"))).toBe(true);
   });
   it("repeats cancellation when close races native process startup", async () => {
     const { api, workspace, run } = await start();

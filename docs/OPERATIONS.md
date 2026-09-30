@@ -63,9 +63,11 @@ DB·기존 `S3_BUCKET_NAME`의 비공개 Artifacts 저장소·암호화 키·전
 
 ## Workspace와 승인 후속 실행 운영
 
-HTTP 앱과 Workspace worker는 같은 DB·암호화 키·Workspace 설정과 Docker daemon을 사용한다.
+HTTP 앱과 Workspace worker는 같은 DB·암호화 키·Workspace 설정과 Sandbox 백엔드를 사용한다.
+Docker는 같은 daemon, Kubernetes는 같은 실행 namespace·설치 identity와 namespaced RBAC가 필요하다.
 worker는 native 작업 큐와 Chat 후속 실행 큐를 별도로 처리하며 각 큐에 workerConcurrency 상한을
-적용한다. `node build/workspace-health.cjs --worker`로 Docker·이미지·채널과 heartbeat를 확인한다.
+적용한다. `node build/workspace-health.cjs --worker`로 백엔드·채널과 heartbeat를 확인한다.
+Kubernetes readiness는 Pod list 접근을 확인하고 liveness는 외부 API 장애로 재시작하지 않도록 heartbeat만 검사한다.
 프로세스가 살아 있다는 사실만으로 특정 작업의 성공을 판단하지 않고 Run·승인·전달 상태를 확인한다.
 
 승인 결과의 알림은 DB에 남으므로 브라우저를 닫아도 대기한다. pending은 아직 소비하지 않은 알림,
@@ -73,7 +75,7 @@ waiting-ci는 등록된 PR HEAD의 검사 대기, running은 claim한 Chat 실�
 결과를 확인하기 전 자동 재실행하지 않는다. worker가 없으면 작업·TTL·승인 전달·CI 대기가 진행되지 않는다.
 잘못된 저장소 이름·빈 저장소·접근 거절을 새 Workspace 생성으로 우회하지 않는다.
 
-Sandbox 이미지는 전용 Docker daemon에도 저장된다. rootless daemon을 쓰면 앱 daemon의 이미지
+Sandbox 이미지는 Docker 모드에서 전용 Docker daemon에도 저장된다. rootless daemon을 쓰면 앱 daemon의 이미지
 정리만으로 그 디스크가 비워지지 않는다. 해당 daemon의 image/container 목록과 여유 공간을 확인하고
 사용 중인 이미지와 복구용 버전은 보존한다. 다시 받을 수 있는 미사용 이미지·빌드 캐시만 정리하며,
 Workspace 체크포인트·DB·오브젝트 volume을 이미지 캐시와 함께 삭제하지 않는다.
