@@ -23,10 +23,10 @@ import { workspaceRepositoryCreationStore } from "@/infrastructure/db/repositori
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
 import { chatRunLogRepository } from "@/infrastructure/db/repositories/chatRunLogRepository";
 import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
-import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerProvider";
+import { createDockerSandboxBackend } from "@/infrastructure/workspace/dockerProvider";
 import { createWorkspaceRuntimeAdapter, WORKSPACE_DIRECTORY } from "@/infrastructure/workspace/runtimeAdapters";
 import { workspaceAllowsRepository } from "@/domain/workspace/policy";
-import { createDockerCodingWorktree } from "@/infrastructure/workspace/gitWorktree";
+import { createCodingWorktree } from "@/infrastructure/workspace/gitWorktree";
 import { createCodingGitHub } from "@/infrastructure/github/codingForge";
 import { createCodingUseCases } from "@/application/coding/codingUseCases";
 import { handleCodingWebhook } from "@/application/coding/webhook";
@@ -1368,9 +1368,10 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
   if (!settings) throw new ValidationError("Workspaces are not configured");
   const githubConfig = getWorkspaceGitHubConfig();
   const github = githubConfig ? createCodingGitHub(githubConfig) : undefined;
+  const backend = createDockerSandboxBackend(settings);
   return {
     ...workspaceDeps,
-    provider: createDockerSandboxProvider(settings),
+    provider: backend.provider,
     checkpoints: createWorkspaceCheckpointStore(secretCipher),
     runtime: async kind => {
       const runtime = await getWorkspaceRuntimeConfig(kind);
@@ -1381,7 +1382,7 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
         return adapter.command(...args);
       } };
     },
-    ...(github && githubConfig ? { coding: createDockerCodingWorktree(settings, { webUrl: githubConfig.webUrl,
+    ...(github && githubConfig ? { coding: createCodingWorktree(backend.control, { webUrl: githubConfig.webUrl,
       internalHosts: githubConfig.internalHosts,
       ...("getToken" in githubConfig ? { serverToken: githubConfig.getToken } : { credential: github.credential }) }) } : {}),
     runTimeoutMs: MAX_RUN_DURATION_MS,

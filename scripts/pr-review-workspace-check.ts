@@ -86,8 +86,8 @@ async function main() {
   const { usageRepository: usage } = await import("@/infrastructure/db/repositories/usageRepository");
   const { secretCipher: cipher } = await import("@/infrastructure/crypto/secretCipher");
   const { createWorkspaceCheckpointStore } = await import("@/infrastructure/db/repositories/workspaceCheckpointStore");
-  const { createDockerSandboxProvider } = await import("@/infrastructure/workspace/dockerProvider");
-  const { createDockerCodingWorktree } = await import("@/infrastructure/workspace/gitWorktree");
+  const { createDockerSandboxBackend } = await import("@/infrastructure/workspace/dockerProvider");
+  const { createCodingWorktree } = await import("@/infrastructure/workspace/gitWorktree");
   const { createCodingGitHub } = await import("@/infrastructure/github/codingForge");
   const { createWorkspaceRuntimeAdapter, WORKSPACE_DIRECTORY } = await import("@/infrastructure/workspace/runtimeAdapters");
   const { createWorkspaceUseCases } = await import("@/application/workspace/workspaceUseCases");
@@ -104,10 +104,10 @@ async function main() {
   const configuration = { agentName, model: "openai/gpt-5-mini", systemPrompt: "Review the verified PR", parameters: { piiFiltering: false, workspaceTools: true }, skillList: [], mcpList: [], subagentList: [] };
   const agents = { ...storedAgents, get: async (name: string) => { const agent = await storedAgents.get(name); return agent ? { ...agent, configuration } : null; } };
   const sandbox = { image: process.env.WORKSPACE_SANDBOX_IMAGE || "agent-studio-workspace:agents", network: "none", memoryMb: 512, diskMb: 256, cpus: 1 };
-  const nativeProvider = createDockerSandboxProvider(sandbox); const containers = new Set<string>();
+  const backend = createDockerSandboxBackend(sandbox); const nativeProvider = backend.provider; const containers = new Set<string>();
   const provider = { ...nativeProvider, ensure: async (id: string) => { const value = await nativeProvider.ensure(id); containers.add(value.externalId); return value; } };
   const checkpoints = createWorkspaceCheckpointStore(cipher);
-  const coding = createDockerCodingWorktree(sandbox, { webUrl: baseUrl, internalHosts: ["localhost"], serverToken: async () => "fixture-token" });
+  const coding = createCodingWorktree(backend.control, { webUrl: baseUrl, internalHosts: ["localhost"], serverToken: async () => "fixture-token" });
   const github = createCodingGitHub({ apiUrl: `${baseUrl}/api`, webUrl: baseUrl, internalHosts: ["localhost"], getToken: async () => "fixture-token" });
   let workspaceId: string | undefined;
   const worker: WorkspaceWorkerDeps = { repository, chats, agents, provider, checkpoints, coding, now: () => new Date(), newId: randomUUID,
