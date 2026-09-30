@@ -114,7 +114,7 @@ test("pauses, scrubs and resumes the workflow without background rendering", asy
 test("honors reduced motion while keeping particle controls and content usable", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.getByText("Reduced motion enabled")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Pause animation", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Play animation", exact: true })).toBeDisabled();
   const canvas = page.locator("canvas");
   const still = await canvas.evaluate((element: HTMLCanvasElement) => element.toDataURL());
   await page.waitForTimeout(150);
@@ -180,4 +180,31 @@ test("opens capabilities without moving focus or hiding unrelated content", asyn
   await expect(page.locator("#capability-execute")).toBeHidden();
   await page.getByRole("button", { name: /Understand every run/ }).click();
   await expect(page.locator("#capability-observe")).toBeVisible();
+});
+
+test("matches particle direction to the layout at the exact responsive boundary", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const canvas = page.locator("canvas");
+  const center = () => canvas.evaluate((element: HTMLCanvasElement) => {
+    const { width, height } = element;
+    const pixels = element.getContext("2d")!.getImageData(0, 0, width, height).data;
+    let mass = 0;
+    let x = 0;
+    let y = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      const alpha = pixels[index + 3]!;
+      mass += alpha;
+      x += (index / 4 % width) * alpha;
+      y += Math.floor(index / 4 / width) * alpha;
+    }
+    return { x: x / mass / width, y: y / mass / height };
+  });
+  await expect.poll(async () => (await center()).x).toBeLessThan(0.4);
+  await page.setViewportSize({ width: 674, height: 1000 });
+  await expect(canvas).toHaveCSS("width", "600px");
+  await expect(canvas).toHaveCSS("height", "430px");
+  await expect.poll(async () => (await center()).y).toBeLessThan(0.4);
+  expect((await center()).x).toBeGreaterThan(0.4);
+  await page.setViewportSize({ width: 768, height: 1000 });
+  await expect.poll(async () => (await center()).x).toBeLessThan(0.4);
 });

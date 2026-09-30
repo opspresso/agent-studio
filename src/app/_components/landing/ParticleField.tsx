@@ -24,6 +24,7 @@ export function ParticleField({ branding }: { branding: Pick<Branding, "name" | 
   const reducedMotion = useReducedMotion(false);
   const [progress, setProgress] = useState(0);
   const [paused, setPaused] = useState(false);
+  const animationPaused = paused || reducedMotion;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const target = useRef(0);
   const scene = useRef({ time: 0, progress: 0, redraw: () => {} });
@@ -63,7 +64,7 @@ export function ParticleField({ branding }: { branding: Pick<Branding, "name" | 
         ? target.current
         : scene.current.progress + (target.current - scene.current.progress) * Math.min(1, delta * 0.004);
       const { time, progress: position } = scene.current;
-      const narrow = width < 600;
+      const narrow = width <= 600;
       const length = narrow ? height : width;
       const breadth = narrow ? width : height;
       context.clearRect(0, 0, width, height);
@@ -172,8 +173,8 @@ export function ParticleField({ branding }: { branding: Pick<Branding, "name" | 
         {STAGES.map((key, index) => <button type="button" key={key} aria-pressed={stage === index} onClick={() => seek(index)}><span>0{index + 1}</span>{t(`home.flow.${key}`)}{index < 2 && <IconArrowRight size={16} aria-hidden="true" />}</button>)}
       </div>
       <input type="range" min={0} max={2} step={0.01} value={progress} onChange={event => seek(Number(event.currentTarget.value))} aria-label={t("home.flow.control")} aria-valuetext={t(`home.flow.${STAGES[stage]!}`)} />
-      <button className={classes.motionButton} type="button" onClick={() => setPaused(value => !value)} disabled={reducedMotion} aria-pressed={paused || reducedMotion} aria-label={t(paused ? "home.particles.play" : "home.particles.pause")}>
-        {paused || reducedMotion ? <IconPlayerPlay size={16} /> : <IconPlayerPause size={16} />}
+      <button className={classes.motionButton} type="button" onClick={() => setPaused(value => !value)} disabled={reducedMotion} aria-pressed={animationPaused} aria-label={t(animationPaused ? "home.particles.play" : "home.particles.pause")}>
+        {animationPaused ? <IconPlayerPlay size={16} /> : <IconPlayerPause size={16} />}
       </button>
     </div>
     <div className={classes.flowCaption}><p aria-live="polite">{t(`home.flow.${STAGES[stage]!}Body`)}</p><span>{t(reducedMotion ? "home.particles.static" : "home.flow.hint")}</span></div>
