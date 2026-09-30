@@ -1082,7 +1082,7 @@ RFC 9728 protected-resource 메타데이터 → RFC 8414 authorization-server �
 ```
 GET    /api/agents/{name}/mcp-connections
 → 200 { connections: [ { serverName, status, clientId, clientSecret?, clientRegistered,
-                         scopes, connectedBy?, connectedAt?, expiresAt? } ] }
+                         scopes, connectedBy?, connectedAccount?, connectedAt?, expiresAt? } ] }
 
 PUT    /api/agents/{name}/mcp-connections/{server}
        { clientId, clientSecret?, scopes?: [] }        → 200 { …connection view… }
@@ -1104,6 +1104,11 @@ POST   /api/agents/{name}/mcp-connections/{server}/tools
   issuer의 client Secret은 유지할 수 있지만 이전 access/refresh token을 지우고 재인가한다.
 - `clientRegistered` 는 인증 정보가 손으로 입력된 것이 아니라 RFC 7591 동적 등록에서 왔을 때
   `true` 다.
+- `connectedAccount`는 실제 OAuth grant로 조회한 `{ provider: "github" | "google", label }`이다.
+  GitHub는 사용자명, Google은 이메일을 표시한다. `connectedBy`는 인가를 완료한 Studio 사용자이며
+  연결 계정의 대체 값으로 표시하지 않는다. 기존 연결의 계정 조회는 유효한 token과 현재
+  issuer·resource·client 일치를 확인하고 revision CAS로 저장한다. 계정 조회가 불가능하면
+  `connectedAccount`를 생략하며 grant를 폐기하지 않는다.
 - `/authorize` 는 `3xx` 를 내는 대신 프로바이더 URL 을 **돌려준다**: 호출자는 콘솔의 `fetch` 이고,
   그것은 사용자를 보내는 대신 리다이렉트를 자기가 따라가 버릴 것이기 때문이다.
 - `auth` 블록이 없는 레지스트리 항목은 연결할 대상이 없으므로 `PUT` 과 `/authorize` 는 `400` 으로

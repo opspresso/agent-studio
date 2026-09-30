@@ -648,6 +648,10 @@ registry URL 변경은 이전 `auth`를 폐기한다. 새 주소의 Discover가 
 공유 앱은 `clientFromRegistry`와 Client ID를 기록하고 code 교환·refresh 때 현재 Secret을 읽는다.
 Secret 회전은 기존 grant에 반영하지만 Client ID의 교체·제거는 기존 grant를 차단한다.
 개별 동적 등록 Secret은 해당 Agent connection에 보관한다.
+연결 화면의 서비스 계정은 인증·접근 판정에 사용하지 않는다. 공식 GitHub·Google OAuth endpoint
+조합에만 해당 제공자의 고정 계정 API로 token을 보내며, 모든 요청은 공개 URL 가드와 동일 origin
+redirect 정책을 따른다. 계정 조회 응답은 필요한 login·email만 보관하고 오류 원문이나 token은
+화면·로그에 전달하지 않는다. Studio 사용자 이메일을 서비스 계정으로 추정하지 않는다.
 개별 client credential 저장에서 생략·마스크는 Client ID와 issuer가 같은 경우에만 Secret을
 유지한다. 다른 client나 issuer에서 Secret이 필요하면 새로 입력한다. 저장 시 resource가
 달라졌다면 같은 issuer의 client Secret은 유지할 수 있지만 이전 access/refresh token은

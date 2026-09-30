@@ -126,6 +126,14 @@ running과 reachable을 별도로 확인한다. [운영](../OPERATIONS.md#재배
 Agent 소유자는 그 앱으로 자기 계정의 grant를 연결한다.
 access/refresh token과 연결 revision은 Agent별 연결 행에 보관하며 Agent 실행 설정과 분리한다.
 
+Agent의 MCP 연결 화면은 Studio에서 인가를 완료한 사용자 대신 실제 서비스 계정을 표시한다.
+공식 GitHub OAuth grant는 사용자 API의 login, 공식 Google OAuth grant는 UserInfo의 email로
+계정을 확인한다. Google 인가 요청에는 `openid`·`email`을 추가하고 실제 요청 scopes를 pending
+state에 보관한다. callback에서 받은 새 계정은 기존 표시를 대체하고 token refresh는 계정 표시를 유지한다.
+기존 연결은 소유자용 목록 조회에서 아직 계정 정보가 없을 때만 확인하며 동시 조회는 4개로 제한한다.
+만료됐거나 issuer·resource·client가 달라진 grant는 이 표시 조회에 사용하지 않는다.
+조회 실패·미지원은 화면에 계정 확인 불가로 표시하고 연결 상태와 token은 유지한다.
+
 실행 경로는 well-known 문서를 다시 가져오지 않는다. 저장된 메타데이터로 grant를 해석하고
 필요하면 갱신한다. 공유 client secret은 registry에서 읽어 회전을 반영하고,
 Client ID가 달라지면 기존 grant를 거절한다. 개별 등록 client secret은 해당 connection에 남는다.

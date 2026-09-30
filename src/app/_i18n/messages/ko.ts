@@ -1156,7 +1156,9 @@ export const ko: Messages = {
     "이 서버는 인증이 필요 없습니다. 필요한 자격 증명은 레지스트리 항목의 헤더와 위의 재정의에서 옵니다.",
   "mcpConn.noClientDocument":
     "이 프로바이더는 OAuth 앱 수동 등록이 필요합니다. 관리자가 Tools의 MCP OAuth 설정에 Client ID와 Secret을 저장해야 Agent를 연결할 수 있습니다.",
-  "mcpConn.authorizedBy": "{who} 님이 {when} 에 인증함",
+  "mcpConn.connectedAccount": "{account} 계정에 연결됨",
+  "mcpConn.accountUnavailable": "연결된 계정을 확인할 수 없습니다. 다시 인증해 주세요.",
+  "mcpConn.connectedAt": "{when} 에 연결함",
   "mcpConn.saveCredentials": "자격 증명 저장",
   "mcpConn.disconnect": "연결 해제",
   "mcpOAuth.automatic": "OAuth 앱을 직접 등록하지 않고 Agent를 연결할 수 있습니다. 접근 가능한 클라이언트 메타데이터 문서를 우선 사용하고, 제공되는 경우 동적 등록을 사용합니다.",

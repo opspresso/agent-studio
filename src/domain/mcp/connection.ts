@@ -1,4 +1,5 @@
 import type { TokenEndpointAuthMethod } from "./types";
+import type { McpConnectedAccount } from "./account";
 /**
  * One agent's OAuth connection to a shared registry MCP server, and the
  * short-lived record of an authorization still in flight.
@@ -85,6 +86,8 @@ export interface McpConnection {
   status: McpConnectionStatus;
   /** Email of the owner who completed the authorization. */
   connectedBy?: string;
+  /** The service account returned by the provider for this grant. */
+  connectedAccount?: McpConnectedAccount;
   connectedAt?: string;
   /** Identity of the completed OAuth flow; preserved across access-token refreshes. */
   authorizationEpoch?: string;
@@ -119,6 +122,8 @@ export interface McpOAuthState {
   clientId?: string;
   clientFromRegistry?: boolean;
   resource?: string;
+  /** Exact scopes requested, including provider identity scopes for the console. */
+  scopes?: string[];
   /**
    * The issuer this flow was started against, recorded here rather than read
    * back off the registry entry: RFC 9207 requires the expected issuer to live

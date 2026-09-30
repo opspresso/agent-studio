@@ -514,11 +514,13 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
       status: "connected",
       connectedBy: "owner@example.com",
+      connectedAccount: { provider: "github", label: "connected-account" },
       connectedAt: now,
       updatedAt: now,
     });
     const conn = await mcpConnectionRepository.get(agentName, serverName);
     assert.ok(conn, "mcp connection get");
+    assert.deepEqual(conn.connectedAccount, { provider: "github", label: "connected-account" }, "provider account round-trip");
     assert.equal(
       decryptSecret(
         conn.clientSecret ?? "",
@@ -618,6 +620,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
         userEmail: "owner@example.com",
         issuer: "https://auth.example.com",
         issParameterSupported: true,
+        scopes: ["drive.file", "openid", "email"],
         createdAt: now,
       },
       600,
@@ -628,6 +631,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     // the callback has nothing to compare against and fails the flow closed.
     assert.equal(consumed?.issuer, "https://auth.example.com", "expected issuer round-trips");
     assert.equal(consumed?.issParameterSupported, true, "iss advertisement round-trips");
+    assert.deepEqual(consumed?.scopes, ["drive.file", "openid", "email"], "requested identity scopes round-trip");
     assert.equal(
       decryptSecret(consumed?.codeVerifier ?? "", mcpOAuthStateContext(oauthState)),
       "verifier",

@@ -95,6 +95,7 @@ function useCases(
     connections: {} as never,
     states: {} as never,
     oauth: {} as never,
+    accounts: {} as never,
     cipher: {} as never,
     probe: {} as never,
     authProvider: {} as never,

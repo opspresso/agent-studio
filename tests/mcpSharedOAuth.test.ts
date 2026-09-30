@@ -73,6 +73,7 @@ function harness() {
     mcps: mcpRepository, connections: mcpConnectionRepository, states: mcpOAuthStateRepository,
     agents: { get: async (name: string) => ({ name, ownerEmail: OWNER }) } as never,
     oauth, cipher: secretCipher, metadata, urlPolicy: policy, probe, authProvider: provider,
+    accounts: { read: async () => ({ status: "unsupported" }) },
     publicBaseUrl: async () => baseUrl, lifecycleClaims: new Set(),
   });
   return {
@@ -139,11 +140,13 @@ describe("shared MCP OAuth app", () => {
   });
 
   it("round-trips pending callback and client identity through the real repository", async () => {
+    await mcpRepository.put({ ...server, auth: { ...auth, scopesSupported: ["repo"] } });
     const h = harness();
     await h.save();
     const state = await h.begin();
     expect(await mcpOAuthStateRepository.consume(state)).toMatchObject({
       redirectUri: CALLBACK, clientId: "shared-app", clientFromRegistry: true, resource: auth.resource,
+      scopes: ["repo"],
     });
     expect(await mcpOAuthStateRepository.consume(state)).toBeNull();
     const connection = await mcpConnectionRepository.get("p", "github");

@@ -25,6 +25,7 @@ import type {
   McpOAuthStateRepository,
 } from "@/domain/mcp/connection";
 import type { AgentRepository } from "@/domain/agent/repository";
+import { mcpAccountProvider, mcpAccountScopes, type McpAccountClient } from "@/domain/mcp/account";
 import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCipher";
 import {
   mcpConnectionSecretContext,
@@ -45,8 +46,10 @@ import { skipsUrlGuard } from "@/domain/mcp/types";
 import { createOAuthState, createPkcePair } from "@/shared/pkce";
 import { log } from "@/shared/logger";
 import { DEFAULT_SERVICE_NAME } from "@/shared/branding";
+import { mapWithLimit } from "@/shared/mapWithLimit";
 import { maskedMcpAuth } from "./mcpViews";
 import { mcpTokenTarget, registryClientMismatch } from "./mcpOAuthClient";
+import { mcpConnectionAuthMismatch } from "./mcpAuthProvider";
 
 /**
  * Discovery either finishes, or stops to ask which authorization server to use.
@@ -245,6 +248,7 @@ export interface McpConnectionView {
   clientRegistered: boolean;
   scopes: string[];
   connectedBy?: string;
+  connectedAccount?: McpConnection["connectedAccount"];
   connectedAt?: string;
   expiresAt?: string;
 }
@@ -269,6 +273,7 @@ function toConnectionView(cipher: SecretCipher, connection: McpConnection): McpC
     clientRegistered: connection.clientRegistered === true,
     scopes: connection.scopes,
     ...(connection.connectedBy ? { connectedBy: connection.connectedBy } : {}),
+    ...(connection.connectedAccount ? { connectedAccount: connection.connectedAccount } : {}),
     ...(connection.connectedAt ? { connectedAt: connection.connectedAt } : {}),
     ...(connection.expiresAt ? { expiresAt: connection.expiresAt } : {}),
   };
@@ -326,6 +331,7 @@ export interface McpAuthUseCasesDeps {
   states: McpOAuthStateRepository;
   metadata: OAuthMetadataClient;
   oauth: OAuthClient;
+  accounts: McpAccountClient;
   cipher: SecretCipher;
   urlPolicy: UrlPolicy;
   /** One-shot tool listing, shared with the registry's own probe. */
@@ -680,9 +686,31 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
 
     async listConnections(agentName, userEmail) {
       await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
-      return (await listAgentMcpConnections(deps.connections, agentName)).map((connection) =>
-        toConnectionView(deps.cipher, connection),
-      );
+      const connections = await listAgentMcpConnections(deps.connections, agentName);
+      // Existing grants can supply their provider identity without reconnecting. Limit
+      // optional network reads; resolved identities survive subsequent token refreshes.
+      const views = await mapWithLimit(connections, 4, async (connection) => {
+        if (connection.status !== "connected" || connection.connectedAccount || !connection.accessToken) {
+          return toConnectionView(deps.cipher, connection);
+        }
+        const server = await deps.mcps.get(connection.serverName);
+        if (!server?.auth || !mcpAccountProvider(server.auth)) return toConnectionView(deps.cipher, connection);
+        // Display reads never rotate a grant or spend an expired token.
+        if (mcpConnectionAuthMismatch(connection, connection.serverName, server.auth) ||
+          (connection.expiresAt && !(Date.parse(connection.expiresAt) > Date.now()))) {
+          return toConnectionView(deps.cipher, connection);
+        }
+        const accessToken = deps.cipher.decrypt(connection.accessToken,
+          mcpConnectionSecretContext(agentName, connection.serverName, "access-token"));
+        const identity = await deps.accounts.read(server.auth, accessToken);
+        if (identity.status !== "resolved") return toConnectionView(deps.cipher, connection);
+        const identified = { ...connection, connectedAccount: identity.account };
+        if (await deps.connections.putIfCurrent(identified, connection)) return toConnectionView(deps.cipher, identified);
+        // Do not display the old account over a newer grant or resurrect a disconnect.
+        const latest = await deps.connections.get(agentName, connection.serverName);
+        return latest ? toConnectionView(deps.cipher, latest) : undefined;
+      });
+      return views.filter((view): view is McpConnectionView => view !== undefined);
     },
 
     async saveClientCredentials(agentName, serverName, input, userEmail) {
@@ -884,6 +912,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         connection = fresh;
       }
 
+      const scopes = mcpAccountScopes(server.auth, connection.scopes);
       const pkce = createPkcePair();
       const state = createOAuthState();
       await deps.states.put(
@@ -897,6 +926,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           clientId: connection.clientId,
           ...(connection.clientFromRegistry ? { clientFromRegistry: true } : {}),
           resource: server.auth.resource,
+          scopes,
           // Recorded alongside the verifier, as RFC 9207 requires: the registry
           // entry is exactly what may change while the user is at the provider,
           // so reading the expected issuer back off it would compare the
@@ -919,8 +949,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       // it is what binds the token to this server and stops it being replayed
       // against another.
       url.searchParams.set("resource", server.auth.resource);
-      if (connection.scopes.length > 0) {
-        url.searchParams.set("scope", connection.scopes.join(" "));
+      if (scopes.length > 0) {
+        url.searchParams.set("scope", scopes.join(" "));
       }
       return { authorizeUrl: url.toString() };
     },
@@ -973,15 +1003,17 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           mcpOAuthStateContext(pending.state),
         ),
       });
+      const identity = await deps.accounts.read(server.auth, tokens.accessToken);
 
       const now = new Date();
       const {
         accessToken: _accessToken,
         refreshToken: _refreshToken,
         expiresAt: _expiresAt,
+        connectedAccount: _connectedAccount,
         ...credentials
       } = connection;
-      void _accessToken, _refreshToken, _expiresAt;
+      void _accessToken, _refreshToken, _expiresAt, _connectedAccount;
       const completed: McpConnection = {
         ...credentials,
         // Store the issuer and resource used for this exact exchange.
@@ -1011,9 +1043,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           ? { expiresAt: new Date(now.getTime() + tokens.expiresInSeconds * 1000).toISOString() }
           : {}),
         // What the server actually granted, which may be narrower than asked.
-        scopes: tokens.scope ? parseGrantedScopes(tokens.scope) : connection.scopes,
+        scopes: tokens.scope ? parseGrantedScopes(tokens.scope) : pending.scopes ?? connection.scopes,
         status: "connected",
         connectedBy: userEmail,
+        ...(identity.status === "resolved" ? { connectedAccount: identity.account } : {}),
         connectedAt: now.toISOString(),
         authorizationEpoch: createHash("sha256").update(pending.state).digest("hex"),
         updatedAt: now.toISOString(),

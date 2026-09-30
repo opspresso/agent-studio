@@ -1210,7 +1210,9 @@ export const en = {
     "This server does not require authorization. Whatever credentials it needs come from the registry entry’s own headers, plus any override above.",
   "mcpConn.noClientDocument":
     "This provider requires a manually registered OAuth app. An administrator must save its client ID and secret in the MCP server’s Tools OAuth settings before an Agent can connect.",
-  "mcpConn.authorizedBy": "Authorized by {who} on {when}",
+  "mcpConn.connectedAccount": "Connected as {account}",
+  "mcpConn.accountUnavailable": "Connected account could not be verified. Try reauthorizing.",
+  "mcpConn.connectedAt": "Connected on {when}",
   "mcpConn.saveCredentials": "Save credentials",
   "mcpConn.disconnect": "Disconnect",
   "mcpOAuth.automatic": "Agents can connect without a manually registered OAuth app. A reachable client metadata document is used first, then dynamic registration when available.",

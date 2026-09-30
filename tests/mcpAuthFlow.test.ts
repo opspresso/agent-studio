@@ -52,6 +52,14 @@ afterEach(() => {
 const OWNER = "owner@example.com";
 const BASE_URL = "https://studio.example.com";
 const CALLBACK = `${BASE_URL}${MCP_OAUTH_CALLBACK_PATH}`;
+const GITHUB_AUTH = {
+  type: "oauth2" as const, issuer: "https://github.com/login/oauth",
+  authorizationServer: "https://github.com/login/oauth",
+  authorizationEndpoint: "https://github.com/login/oauth/authorize",
+  tokenEndpoint: "https://github.com/login/oauth/access_token",
+  resource: "https://api.githubcopilot.com/mcp/", tokenEndpointAuthMethod: "client_secret_post" as const,
+  discoveredAt: "2026-01-01T00:00:00.000Z",
+};
 
 const SERVER: McpServer = {
   name: "slack",
@@ -217,6 +225,7 @@ function harness(
       },
       refresh: async () => ({ accessToken: "at-2" }),
     } as never,
+    accounts: { read: async () => ({ status: "unsupported" }) },
     cipher,
     // The real guard's verdict, narrowed to what these tests turn on: a
     // loopback or plain-http address is one no authorization server can reach.
@@ -581,6 +590,26 @@ describe("completeAuthorization", () => {
     expect(Date.parse(connection?.expiresAt ?? "")).toBeGreaterThan(Date.now());
   });
 
+  it("stores the provider account independently of the Studio user who authorized it", async () => {
+    const { h, uc, state } = await started();
+    const read = vi.fn(async () => ({ status: "resolved" as const, account: { provider: "github" as const, label: "octocat" } }));
+    h.deps.accounts.read = read;
+    await uc.completeAuthorization({ state, code: "code", userEmail: OWNER });
+    expect(read).toHaveBeenCalledWith(SERVER.auth, "at-1");
+    expect(h.connections.get("p/slack")?.connectedAccount?.label).toBe("octocat");
+    expect((await uc.listConnections("p", OWNER))[0]).toMatchObject({
+      connectedBy: OWNER, connectedAccount: { provider: "github", label: "octocat" },
+    });
+  });
+
+  it("clears the old service account when a reconnect cannot resolve the new identity", async () => {
+    const { h, uc, state } = await started({ connection: { connectedAccount: { provider: "google", label: "old@example.test" } } });
+    h.deps.accounts.read = async () => ({ status: "unavailable" });
+    await uc.completeAuthorization({ state, code: "code", userEmail: OWNER });
+    expect(h.connections.get("p/slack")?.connectedAccount).toBeUndefined();
+    expect(h.connections.get("p/slack")?.status).toBe("connected");
+  });
+
   it.each<TokenSet>([
     { accessToken: "new-access" },
     { accessToken: "new-access", refreshToken: "new-refresh" },
@@ -711,6 +740,85 @@ describe("completeAuthorization", () => {
       uc.completeAuthorization({ state: "made-up", code: "c", userEmail: OWNER }),
     ).rejects.toThrow(ValidationError);
     expect(h.exchanges).toHaveLength(0);
+  });
+});
+
+describe("provider accounts for existing Agent connections", () => {
+  const connected = () => harness({ server: { ...SERVER, auth: GITHUB_AUTH }, connection: {
+    status: "connected", accessToken: "enc:existing-token", connectedBy: OWNER,
+  } });
+
+  it("backfills the service account and caches it without returning tokens", async () => {
+    const h = connected();
+    const read = vi.fn(async () => ({ status: "resolved" as const, account: { provider: "github" as const, label: "octocat" } }));
+    h.deps.accounts.read = read;
+    const uc = createMcpAuthUseCases(h.deps);
+    const view = await uc.listConnections("p", OWNER);
+    expect(view[0]?.connectedAccount?.label).toBe("octocat");
+    expect(JSON.stringify(view)).not.toContain("existing-token");
+    expect(h.connections.get("p/slack")?.connectedAccount?.label).toBe("octocat");
+    await uc.listConnections("p", OWNER);
+    expect(read).toHaveBeenCalledOnce();
+    expect(read).toHaveBeenCalledWith(GITHUB_AUTH, "existing-token");
+  });
+
+  it.each(["disconnect", "reconnect"])("does not restore the old account over a concurrent %s", async (operation) => {
+    const h = connected();
+    h.deps.accounts.read = async () => {
+      if (operation === "disconnect") h.connections.delete("p/slack");
+      else h.connections.set("p/slack", { ...h.connections.get("p/slack")!, revision: "newer", connectedAccount: { provider: "github", label: "new-account" } });
+      return { status: "resolved", account: { provider: "github", label: "old-account" } };
+    };
+    const views = await createMcpAuthUseCases(h.deps).listConnections("p", OWNER);
+    expect(JSON.stringify(views)).not.toContain("old-account");
+    if (operation === "disconnect") expect(views).toEqual([]);
+    else expect(views[0]?.connectedAccount?.label).toBe("new-account");
+  });
+
+  it.each([
+    { issuer: "https://old-issuer.test" }, { resource: "https://old-resource.test" },
+    { clientFromRegistry: true, clientId: "removed-app" }, { expiresAt: "2025-01-01T00:00:00.000Z" },
+  ])("does not spend a mismatched or expired grant for display: %j", async (override) => {
+    const h = connected();
+    h.connections.set("p/slack", { ...h.connections.get("p/slack")!, ...override });
+    const read = vi.fn();
+    h.deps.accounts.read = read;
+    await createMcpAuthUseCases(h.deps).listConnections("p", OWNER);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("does not query private provider identity for a non-owner", async () => {
+    const h = connected();
+    const read = vi.fn();
+    h.deps.accounts.read = read;
+    await expect(createMcpAuthUseCases(h.deps).listConnections("p", "other@example.test")).rejects.toThrow(ForbiddenError);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("keeps a usable grant connected when the optional account lookup is unavailable", async () => {
+    const h = connected();
+    h.deps.accounts.read = async () => ({ status: "unavailable" });
+    const views = await createMcpAuthUseCases(h.deps).listConnections("p", OWNER);
+    expect(views[0]?.status).toBe("connected");
+    expect(views[0]?.connectedAccount).toBeUndefined();
+    expect(h.connections.get("p/slack")?.accessToken).toBe("enc:existing-token");
+  });
+
+  it("requests Google's identity scopes and persists them only after the completed authorization", async () => {
+    const googleAuth = { ...GITHUB_AUTH,
+      issuer: "https://accounts.google.com", authorizationServer: "https://accounts.google.com/",
+      authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth", tokenEndpoint: "https://oauth2.googleapis.com/token",
+      resource: "https://drivemcp.googleapis.com/mcp/v1",
+    };
+    const h = harness({ server: { ...SERVER, auth: googleAuth }, connection: { scopes: ["drive.file", "email"] } });
+    const uc = createMcpAuthUseCases(h.deps);
+    const url = new URL((await uc.beginAuthorization("p", "slack", OWNER)).authorizeUrl);
+    expect(url.searchParams.get("scope")).toBe("drive.file email openid");
+    expect(h.connections.get("p/slack")?.scopes).toEqual(["drive.file", "email"]);
+    const state = url.searchParams.get("state")!;
+    expect(h.states.get(state)?.scopes).toEqual(["drive.file", "email", "openid"]);
+    await uc.completeAuthorization({ state, code: "code", userEmail: OWNER });
+    expect(h.connections.get("p/slack")?.scopes).toEqual(["drive.file", "email", "openid"]);
   });
 });
 
