@@ -4,6 +4,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { assertLocalDatabase } from "./local-database";
 import type { WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import type { RunActor } from "@/domain/execution/actor";
+import { CoreV1Api, KubeConfig } from "@kubernetes/client-node";
+import { createKubernetesSandboxBackend } from "@/infrastructure/workspace/kubernetesProvider";
 
 process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@127.0.0.1:5432/agent_studio_test";
 assertLocalDatabase(process.env.DATABASE_URL, true);
@@ -26,8 +28,23 @@ async function main() {
   const { deleteItem, deletePartition } = await import("@/infrastructure/db/store");
   const { closePool } = await import("@/infrastructure/db/client");
   const { keys } = await import("@/infrastructure/db/keys");
-  const provider = createDockerSandboxProvider({ image: process.env.WORKSPACE_SANDBOX_IMAGE || "agent-studio-workspace:agents",
-    network: "none", memoryMb: 512, diskMb: 256, cpus: 1 });
+  const kubeContext = process.env.WORKSPACE_KUBERNETES_TEST_CONTEXT;
+  const kube = new KubeConfig();
+  const namespace = `studio-workspace-test-worker-${randomUUID().slice(0, 8)}`;
+  let kubeApi: CoreV1Api | undefined;
+  if (kubeContext) {
+    kube.loadFromDefault(); kube.setCurrentContext(kubeContext);
+    if (!["127.0.0.1", "localhost", "[::1]"].includes(new URL(kube.getCurrentCluster()!.server).hostname)) {
+      throw new Error("Kubernetes worker checks require a disposable loopback cluster");
+    }
+    kubeApi = kube.makeApiClient(CoreV1Api);
+    await kubeApi.createNamespace({ body: { metadata: { name: namespace } } });
+    await kubeApi.createNamespacedServiceAccount({ namespace, body: { metadata: { name: "sandbox" }, automountServiceAccountToken: false } });
+  }
+  const image = process.env.WORKSPACE_SANDBOX_IMAGE || "agent-studio-workspace:agents";
+  const provider = kubeContext ? createKubernetesSandboxBackend({ image, namespace, instance: "worker-check", kubeContext,
+    memoryMb: 512, diskMb: 256, cpus: 1 }).provider
+    : createDockerSandboxProvider({ image, network: "none", memoryMb: 512, diskMb: 256, cpus: 1 });
   const checkpoints = createWorkspaceCheckpointStore(secretCipher);
   const agentName = `worker-${randomUUID()}`;
   const chatId = randomUUID();
@@ -103,7 +120,7 @@ async function main() {
     assert.equal((await repository.get(workspace.id))?.status, "closed");
     assert.equal(await provider.inspect(sandbox.externalId), "missing");
     assert.equal(await checkpoints.get(workspace.id, finished.checkpointId), null, "deleting a finished Workspace removes its saved state");
-    console.log("[ok] Workspace worker with Docker + PostgreSQL: integration provenance, restart adoption, console follow-up, checks, TTL, encrypted restore and chat cleanup");
+    console.log(`[ok] Workspace worker with ${provider.kind} + PostgreSQL: integration provenance, restart adoption, console follow-up, checks, TTL, encrypted restore and chat cleanup`);
   } finally {
     for (const id of containers) await provider.destroy(id);
     if (workspaceId) { await checkpoints.delete(workspaceId); await deletePartition(keys.workspacePartition(workspaceId)); }
@@ -111,6 +128,7 @@ async function main() {
     if (await chats.get(chatId)) await chats.delete(chatId);
     if (await agents.get(agentName)) await agents.delete(agentName);
     await closePool();
+    if (kubeApi) await kubeApi.deleteNamespace({ name: namespace });
   }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

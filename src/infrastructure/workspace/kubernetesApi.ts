@@ -15,14 +15,16 @@ export function kubernetesStatusCode(error: unknown): number | undefined {
   return error && typeof error === "object" && "code" in error && typeof error.code === "number" ? error.code : undefined;
 }
 
-export function createKubernetesSandboxApi(namespace: string, context?: string): KubernetesSandboxApi {
+export function createKubernetesSandboxApi(namespace: string, context?: string, configuration?: KubeConfig): KubernetesSandboxApi {
   // Loading credentials is deferred until Workspace actually uses this backend.
   let connection: { core: CoreV1Api; exec: Exec } | undefined;
   const clients = () => {
     if (!connection) {
-      const kube = new KubeConfig();
-      if (context) { kube.loadFromDefault(); kube.setCurrentContext(context); }
-      else kube.loadFromCluster();
+      const kube = configuration ?? new KubeConfig();
+      if (!configuration) {
+        if (context) { kube.loadFromDefault(); kube.setCurrentContext(context); }
+        else kube.loadFromCluster();
+      }
       connection = { core: kube.makeApiClient(CoreV1Api), exec: new Exec(kube) };
     }
     return connection;
