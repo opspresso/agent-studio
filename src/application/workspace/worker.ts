@@ -54,6 +54,15 @@ export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: W
     await state.effect(() => deps.provider.restore(sandbox.externalId, checkpoint));
     if (workspace.coding) await state.save({}, undefined, [{ kind: "warning", text: "Workspace restored; Git-ignored dependencies and build outputs must be regenerated" }]);
   }
+  const session = await deps.repository.session(workspace.id, workspace.sessionId);
+  if (session && (workspace.checkpointSession || (!checkpointId && previous))) {
+    const nativeSessionId = checkpointId ? workspace.checkpointSession?.nativeSessionId : undefined;
+    const events = !checkpointId ? [{ kind: "warning" as const,
+      text: "Workspace has no recovery checkpoint; a fresh workspace and native session will be used" }]
+      : session.nativeSessionId !== nativeSessionId ? [{ kind: "warning" as const,
+        text: "Native session restored from the checkpoint; later session history was not retained" }] : [];
+    await state.save({}, undefined, events, { session: { ...session, nativeSessionId, updatedAt: deps.now().toISOString() } });
+  }
   let coding = workspace.coding;
   if (coding) {
     const worktree = deps.coding;
@@ -74,7 +83,9 @@ export async function saveWorkspaceCheckpoint(deps: WorkspaceWorkerDeps, state: 
   await state.read();
   const id = deps.newId();
   await state.effect(() => deps.checkpoints.put(state.id, id, bytes, deps.now().toISOString()));
-  await state.save({ checkpointId: id });
+  const { workspace } = await state.read();
+  const session = await deps.repository.session(workspace.id, workspace.sessionId);
+  await state.save({ checkpointId: id, checkpointSession: { ...(session?.nativeSessionId ? { nativeSessionId: session.nativeSessionId } : {}) } });
 }
 
 async function cleanupWorkspace(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState): Promise<void> {
@@ -104,7 +115,7 @@ async function cleanupWorkspace(deps: WorkspaceWorkerDeps, state: WorkspaceWorke
   const session = await deps.repository.session(workspace.id, workspace.sessionId);
   const status = workspace.status === "closing" ? "closed" : "suspended";
   await state.save({ status, sandboxId: undefined, activeRunId: undefined, leaseToken: undefined, leaseUntil: undefined,
-    ...(workspace.deleteRequestedAt ? { checkpointId: undefined } : {}), error: undefined },
+    ...(workspace.deleteRequestedAt ? { checkpointId: undefined, checkpointSession: undefined } : {}), error: undefined },
   run && !isTerminalWorkspaceRun(run.status) ? { status: "cancelled", finishedAt: deps.now().toISOString() } : undefined,
   run && !isTerminalWorkspaceRun(run.status) ? [{ kind: "status", status: "cancelled", text: "Workspace closed" }] : [],
   { ...(sandbox ? { sandbox: { ...sandbox, status: "deleted", updatedAt: deps.now().toISOString() } } : {}),

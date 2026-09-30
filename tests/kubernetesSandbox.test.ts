@@ -74,6 +74,30 @@ describe("Kubernetes Sandbox lifecycle and security", () => {
     expect(await current.provider.inspect(externalId)).toBe("missing");
     expect(api.create).toHaveBeenCalledTimes(1);
   });
+  it("waits for deletion before returning so restoration cannot race a terminating Pod", async () => {
+    let clock = time;
+    const pause = vi.fn(async (ms: number) => { clock += ms; });
+    const current = createKubernetesSandboxBackend(config, { api, now: () => clock, sleep: pause });
+    const { externalId } = await current.provider.ensure("workspace-1");
+    let deleting = false;
+    let reads = 0;
+    vi.mocked(api.remove).mockImplementation(async () => { deleting = true; });
+    vi.mocked(api.get).mockImplementation(async () => {
+      if (deleting && ++reads === 3) pod = null;
+      return pod;
+    });
+    await current.provider.destroy(externalId);
+    expect(pause).toHaveBeenCalledTimes(2);
+    expect(await current.provider.inspect(externalId)).toBe("missing");
+  });
+  it("replaces an owned terminal Pod whose provisioning handle never reached storage", async () => {
+    const current = backend();
+    await current.provider.ensure("workspace-1");
+    pod!.status = { phase: "Failed", reason: "Evicted" };
+    await current.provider.ensure("workspace-1");
+    expect(api.remove).toHaveBeenCalledTimes(1);
+    expect(api.create).toHaveBeenCalledTimes(2);
+  });
   it("does not adopt another installation or a changed image", async () => {
     await backend().provider.ensure("workspace-1");
     pod!.metadata!.labels!["agent-studio/instance"] = "other-studio";

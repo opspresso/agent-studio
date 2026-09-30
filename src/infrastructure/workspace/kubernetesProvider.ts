@@ -72,6 +72,16 @@ export function createKubernetesSandboxBackend(config: KubernetesSandboxConfig, 
       if (!/^[a-zA-Z0-9_-]{1,100}$/.test(workspaceId)) throw new SandboxProviderError("Invalid workspace id");
       const name = `studio-ws-${createHash("sha256").update(workspaceId).digest("hex").slice(0,40)}`;
       let pod = await api.get(name);
+      if (pod) {
+        owned(pod);
+        if (pod.metadata?.annotations?.[workspaceKey] !== workspaceId || pod.spec?.containers?.length !== 1 ||
+          pod.spec.containers[0]?.image !== config.image) throw new SandboxProviderError("Existing Kubernetes Sandbox configuration mismatch");
+        // Provisioning may have ended before its handle reached the DB. Only terminal owned compute is replaceable.
+        if (["Failed", "Succeeded"].includes(pod.status?.phase ?? "")) {
+          await backend.provider.destroy(handle(pod));
+          pod = null;
+        }
+      }
       if (!pod) {
         const disk = `${config.diskMb}Mi`;
         // Requests cover both emptyDirs, tmp and log headroom; image cache is node-owned.
@@ -126,7 +136,16 @@ export function createKubernetesSandboxBackend(config: KubernetesSandboxConfig, 
       return { externalId: id };
     },
     async inspect(id) { const pod = await lookup(id); return !pod ? "missing" : ready(pod) ? "ready" : "stopped"; },
-    async destroy(id) { const pod = await lookup(id); if (pod) await api.remove(pod.metadata!.name!, pod.metadata!.uid!); },
+    async destroy(id) {
+      const pod = await lookup(id);
+      if (!pod) return;
+      await api.remove(pod.metadata!.name!, pod.metadata!.uid!);
+      const deadline = now() + 120_000;
+      while (await lookup(id)) {
+        if (now() >= deadline) throw new SandboxProviderError("Kubernetes Sandbox deletion deadline exceeded; compute may still be running");
+        await pause(500);
+      }
+    },
   }, control);
   let cursor: string | undefined;
   return { ...backend,
@@ -142,7 +161,10 @@ export function createKubernetesSandboxBackend(config: KubernetesSandboxConfig, 
         const created = pod.metadata?.creationTimestamp?.getTime();
         if (!workspaceId || created === undefined || !Number.isFinite(created) || now() - created < orphanGraceMs) continue;
         const id = handle(pod);
-        if (!await keep(workspaceId, id)) { await backend.provider.destroy(id); removed++; }
+        if (!await keep(workspaceId, id)) {
+          const current = await lookup(id);
+          if (current) { await api.remove(current.metadata!.name!, current.metadata!.uid!); removed++; }
+        }
       }
       return removed;
     },

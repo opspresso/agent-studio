@@ -1384,7 +1384,7 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
         const sandbox = workspace.sandboxId ? await workspaceRepository.sandbox(id, workspace.sandboxId) : null;
         return sandbox?.externalId === externalId && sandbox.status !== "deleted";
       });
-      if (removed) log.info("workspace-worker", `Removed ${removed} orphan Sandbox Pods`);
+      if (removed) log.info("workspace-worker", `Requested deletion of ${removed} orphan Sandbox Pods`);
     } } : {}),
     checkpoints: createWorkspaceCheckpointStore(secretCipher),
     runtime: async kind => {

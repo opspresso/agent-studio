@@ -107,6 +107,9 @@ root 제어 프로세스가 downward API의 UID와 요청 UID를 재검사해 �
 Kubernetes API·exec 전송 오류는 핸들 소실과 구분한다. Pod·노드 소실이나 디스크 퇴거로
 진행 중인 작업을 잃으면 `interrupted`로 기록한다. 다음 사용자 요청은 마지막 성공한
 체크포인트와 native Session을 복원한다. 마지막 체크포인트 이후 파일·출력은 복구되지 않는다.
+체크포인트 주소와 그 파일에 대응하는 native Session ID는 한 revision 쓰기로 저장한다.
+복원은 같은 ID를 사용하며, 이후 스트림에서 관찰했지만 체크포인트에 저장되지 않은 ID로 재개하지 않는다.
+첫 체크포인트 전에 컴퓨팅을 잃으면 새 사용자 요청에서 새 native Session을 시작하고 복구 상태가 없다는 경고를 남긴다.
 
 worker는 1분마다 설치 label로 제한한 Pod 목록을 50건씩 순회한다. 생성 후 10분이 지난
 Pod만 DB의 Workspace·Sandbox·lease와 대조하고 소유자가 없는 자원을 정리한다. DB·API 조회
