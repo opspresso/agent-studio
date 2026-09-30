@@ -30,6 +30,10 @@ const STATUS_COLOR: Record<McpConnectionView["status"], string> = {
   needs_auth: "dimmed",
   needs_reauth: "orange",
 };
+const ACCOUNT_LOOKUP_LABEL: Record<NonNullable<McpConnectionView["accountUnavailableReason"]>, MessageKey> = {
+  not_configured: "mcpConn.accountNotConfigured", disabled: "mcpConn.accountDisabled",
+  unsupported: "mcpConn.accountUnsupported", unavailable: "mcpConn.accountUnavailable",
+};
 
 interface AuthorizationPopup {
   location: { href: string };
@@ -66,7 +70,7 @@ export function McpConnectionIdentity({ connection }: { connection: McpConnectio
       <Text fz="xs">
         {connection.connectedAccount
           ? t("mcpConn.connectedAccount", { account: connection.connectedAccount.label })
-          : t(connection.accountUnavailableReason === "unsupported" ? "mcpConn.accountUnsupported" : "mcpConn.accountUnavailable")}
+          : t(ACCOUNT_LOOKUP_LABEL[connection.accountUnavailableReason ?? "unavailable"])}
       </Text>
       {connection.connectedAt && (
         <Text fz="xs" c="dimmed">

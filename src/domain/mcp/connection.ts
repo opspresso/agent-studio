@@ -88,6 +88,8 @@ export interface McpConnection {
   connectedBy?: string;
   /** The service account returned by the provider for this grant. */
   connectedAccount?: McpConnectedAccount;
+  /** Identity lookup configuration used to obtain the cached label. */
+  accountLookupId?: string;
   connectedAt?: string;
   /** Identity of the completed OAuth flow; preserved across access-token refreshes. */
   authorizationEpoch?: string;
@@ -146,7 +148,7 @@ export interface McpConnectionRepository {
   /** Replace only the snapshot read by a use case, or create only if still absent. */
   putIfCurrent(connection: McpConnection, current: McpConnection | null): Promise<boolean>;
   /** Update only verified display metadata for the same grant, without advancing its revision. */
-  updateAccount(current: McpConnection, account: McpConnectedAccount): Promise<boolean>;
+  updateAccount(current: McpConnection, account: McpConnectedAccount, lookupId?: string): Promise<boolean>;
   /**
    * Replace the tokens only if the connection still has the revision read by
    * the caller. Every successful client/grant write changes that revision,

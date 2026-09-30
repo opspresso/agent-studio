@@ -495,9 +495,10 @@ describe("the client bundle", () => {
   // The exact count detects missing entry points. Update it deliberately when
   // adding or removing a client component.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(124);
+    expect(entries.length).toBe(125);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/agents/[name]/_components/ModelRoutingEditor.tsx",
+      "src/app/tools/_components/McpAccountLookupEditor.tsx",
       "src/app/settings/plugins/CapabilityVisibilitySettings.tsx",
       "src/app/models/ModelRoutingPolicyEditor.tsx",
       "src/app/models/ModelRoutingSection.tsx",

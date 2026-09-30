@@ -12,6 +12,7 @@ import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { mcpOAuthClientSecretContext, mcpConnectionSecretContext } from "@/domain/security/secretContext";
 import { keys } from "@/infrastructure/db/keys";
 import { ConflictError } from "@/application/errors";
+import { ValidationError } from "@/application/errors";
 import type { FakeStore } from "./fakeStore";
 
 const entropy = vi.hoisted(() => ({ sequence: 0 }));
@@ -107,6 +108,37 @@ beforeEach(async () => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe("shared MCP OAuth app", () => {
+  it("saves and clears a generic account contract without changing shared client credentials or the Agent's grant", async () => {
+    const h = harness();
+    await h.save();
+    await h.uc.completeAuthorization({ state: await h.begin(), code: "c", userEmail: OWNER });
+    const before = await mcpConnectionRepository.get("p", "github");
+    const saved = await h.uc.saveOAuthClientCredentials("github", { accountLookup: { kind: "http", endpoint: "https://identity.example.test/me", labelPath: "/email" } });
+    expect(saved.accountLookup).toEqual({ kind: "http", endpoint: "https://identity.example.test/me", labelPath: "/email" });
+    expect(saved.clientId).toBe("shared-app");
+    expect(await mcpConnectionRepository.get("p", "github")).toEqual(before);
+    expect((await h.uc.saveOAuthClientCredentials("github", { accountLookup: null })).accountLookup).toBeUndefined();
+  });
+
+  it("validates a custom account endpoint through the URL policy before saving", async () => {
+    const h = harness();
+    const previous = await h.currentAuth();
+    policy.assertAllowed.mockImplementationOnce(async () => { throw new Error("blocked endpoint"); });
+    await expect(h.uc.saveOAuthClientCredentials("github", { accountLookup: { kind: "http", endpoint: "https://blocked.example.test/me", labelPath: "/email" } })).rejects.toThrow("blocked endpoint");
+    expect(await h.currentAuth()).toEqual(previous);
+    await expect(h.uc.saveOAuthClientCredentials("github", { accountLookup: { kind: "http", endpoint: "http://unsafe.example.test/me", labelPath: "/email" } })).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("uses the admin OAuth API to register an unknown provider's account mapping", async () => {
+    const h = harness();
+    mocks.saveOAuthClientCredentials.mockImplementation(h.uc.saveOAuthClientCredentials);
+    const mapping = { kind: "mcp" as const, toolName: "who_am_i", arguments: {}, labelPath: "/email" };
+    const response = await PUT(new Request(`${BASE}/api/mcps/github/auth`, {
+      method: "PUT", headers: { "content-type": "application/json", origin: BASE }, body: JSON.stringify({ accountLookup: mapping }),
+    }), { params: Promise.resolve({ name: "github" }) });
+    expect(response.status).toBe(200);
+    expect((await response.json()).accountLookup).toEqual(mapping);
+  });
   it("persists an encrypted app once and preserves omitted, empty and masked secret updates", async () => {
     const h = harness();
     const view = await h.save();

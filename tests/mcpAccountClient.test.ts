@@ -62,7 +62,7 @@ describe("MCP connected provider account", () => {
   ])("never sends another issuer's token to a known provider", async (auth) => {
     const fetcher = vi.fn();
     vi.stubGlobal("fetch", fetcher);
-    expect(await mcpAccountClient.read(auth, "other-provider-token")).toEqual({ status: "unsupported" });
+    expect(await mcpAccountClient.read(auth, "other-provider-token")).toEqual({ status: "not_configured" });
     expect(fetcher).not.toHaveBeenCalled();
   });
 
@@ -91,9 +91,10 @@ describe("MCP connected provider account", () => {
 
 interface AccountRpcCall { url: string; headers: Headers; method?: string; params?: Record<string, unknown> }
 
-function stubAccountMcp(provider: "notion" | "plaud", result: Record<string, unknown>, missingTool = false) {
+function stubAccountMcp(provider: "notion" | "plaud", result: Record<string, unknown>, missingTool = false,
+  custom?: { name: string; annotations?: { readOnlyHint?: boolean } }) {
   const calls: AccountRpcCall[] = [];
-  const toolName = provider === "notion" ? "notion-get-users" : "get_current_user";
+  const toolName = custom?.name ?? (provider === "notion" ? "notion-get-users" : "get_current_user");
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const { id, method, params } = JSON.parse(String(init?.body ?? "{}")) as {
       id?: number; method?: string; params?: Record<string, unknown>;
@@ -102,7 +103,7 @@ function stubAccountMcp(provider: "notion" | "plaud", result: Record<string, unk
     const preamble = protocolPreamble(method, id, init?.method);
     if (preamble) return preamble;
     const response = method === "tools/list"
-      ? { tools: conforming(missingTool ? [] : [{ name: toolName }]) }
+      ? { tools: conforming(missingTool ? [] : [{ name: toolName, ...(custom?.annotations ? { annotations: custom.annotations } : {}) }]) }
       : result;
     return new Response(JSON.stringify({ jsonrpc: "2.0", id, result: modernResult(method, response) }), {
       headers: { "content-type": "application/json" },
@@ -114,6 +115,80 @@ function stubAccountMcp(provider: "notion" | "plaud", result: Record<string, unk
 describe("provider identity through its MCP resource", () => {
   beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime("2026-09-30T00:00:00.000Z"); });
   afterEach(() => vi.useRealTimers());
+
+  const customAuth: McpServerAuth = { ...githubAuth,
+    issuer: "https://new-identity.example.test", authorizationServer: "https://new-identity.example.test",
+    authorizationEndpoint: "https://new-identity.example.test/authorize", tokenEndpoint: "https://new-identity.example.test/token",
+    resource: "https://new-resource.example.test",
+  };
+
+  it.each(["company", "another-provider"])("automatically reads a newly registered %s OIDC provider", async name => {
+    const auth = { ...customAuth, issuer: `https://${name}.example.test`, userInfoEndpoint: `https://${name}.example.test/userinfo`, userInfoScopes: ["openid", "email"] };
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify({ sub: "actual-subject", email: "actual@example.test" })));
+    vi.stubGlobal("fetch", fetcher);
+    expect(await mcpAccountClient.read(auth, "oidc-token")).toEqual({ status: "resolved", account: { provider: "oidc", label: "actual@example.test" } });
+    expect(fetcher.mock.calls[0]?.[0]).toBe(auth.userInfoEndpoint);
+    expect(mcpAccountScopes(auth, ["resource.read"])).toEqual(["resource.read", "openid", "email"]);
+  });
+
+  it("uses the OIDC subject when optional identity claims are withheld", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response('{"sub":"actual-subject"}')));
+    expect(await mcpAccountClient.read({ ...customAuth, userInfoEndpoint: "https://new-identity.example.test/userinfo" }, "token"))
+      .toEqual({ status: "resolved", account: { provider: "oidc", label: "actual-subject" } });
+  });
+
+  it("does not accept a nonconforming OIDC response without a subject", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response('{"email":"unbound@example.test"}')));
+    expect(await mcpAccountClient.read({ ...customAuth, userInfoEndpoint: "https://new-identity.example.test/userinfo" }, "token"))
+      .toEqual({ status: "unavailable" });
+  });
+
+  it("reads a new nonstandard HTTP account contract with an escaped JSON Pointer", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => new Response('{"user/details":{"account~id":12345}}'));
+    vi.stubGlobal("fetch", fetcher);
+    expect(await mcpAccountClient.read({ ...customAuth, accountLookup: { kind: "http", endpoint: "https://new-identity.example.test/me", labelPath: "/user~1details/account~0id" } }, "token"))
+      .toEqual({ status: "resolved", account: { provider: "http", label: "12345" } });
+    expect(fetcher.mock.calls[0]?.[0]).toBe("https://new-identity.example.test/me");
+  });
+
+  it.each([
+    { body: '[{"email":"actual@example.test"}]', path: "/0/email", label: "actual@example.test" },
+    { body: '"actual-username"', path: "", label: "actual-username" },
+  ])("supports an explicit account selector for any JSON response root", async ({ body, path, label }) => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body)));
+    expect(await mcpAccountClient.read({ ...customAuth, accountLookup: { kind: "http", endpoint: "https://new-identity.example.test/me", labelPath: path } }, "credential-value"))
+      .toEqual({ status: "resolved", account: { provider: "http", label } });
+  });
+
+  it("reads an arbitrary configured MCP current-user tool at the server URL rather than the resource identifier", async () => {
+    const calls = stubAccountMcp("plaud", { structuredContent: { current: { username: "actual-user" } }, content: [] }, false,
+      { name: "who_am_i", annotations: { readOnlyHint: true } });
+    const auth: McpServerAuth = { ...customAuth, accountLookup: { kind: "mcp", toolName: "who_am_i", arguments: { view: "self" }, labelPath: "/current/username" } };
+    expect(await mcpAccountClient.read(auth, "mcp-token", { mcpUrl: "https://new-resource.example.test/mcp" }))
+      .toEqual({ status: "resolved", account: { provider: "mcp", label: "actual-user" } });
+    expect(calls.every(call => call.url === "https://new-resource.example.test/mcp")).toBe(true);
+    expect(calls.find(call => call.method === "tools/call")?.params?.arguments).toEqual({ view: "self" });
+  });
+
+  it.each([undefined, { readOnlyHint: false }])("never automatically dispatches a configured MCP tool that is not declared read-only", async annotations => {
+    const calls = stubAccountMcp("plaud", {}, false, { name: "write_profile", annotations });
+    expect(await mcpAccountClient.read({ ...customAuth, accountLookup: { kind: "mcp", toolName: "write_profile", arguments: {}, labelPath: "/email" } }, "token", { mcpUrl: "https://new-resource.example.test/mcp" }))
+      .toEqual({ status: "unsupported" });
+    expect(calls.some(call => call.method === "tools/call")).toBe(false);
+  });
+
+  it("honors an explicit disabled lookup over discovered UserInfo", async () => {
+    const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+    expect(await mcpAccountClient.read({ ...customAuth, userInfoEndpoint: "https://new-identity.example.test/userinfo", accountLookup: { kind: "none" } }, "token"))
+      .toEqual({ status: "disabled" });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it.each(["credential-value", "Bearer credential-value"])("never displays an echoed bearer credential as an account", async email => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ sub: "actual-user", email }))));
+    expect(await mcpAccountClient.read({ ...customAuth, userInfoEndpoint: "https://new-identity.example.test/userinfo" }, "credential-value"))
+      .toEqual({ status: "unavailable" });
+  });
 
   it.each([
     { provider: "notion" as const, auth: notionAuth, body: { results: [{ id: "current-user", type: "person", name: "Current user", email: "notion@example.test" }], has_more: false }, label: "notion@example.test", name: "notion-get-users", args: { user_id: "self" } },

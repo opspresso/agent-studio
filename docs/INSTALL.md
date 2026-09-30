@@ -59,9 +59,14 @@ MCP OAuth는 Agent의 MCP 서버 설정에서 연결한다. 연결 화면의 서
 `https://openidconnect.googleapis.com/v1/userinfo`를 선택적으로 조회한다.
 공식 Notion·Plaud 연결은 해당 MCP의 현재 사용자 조회 도구로 계정을 표시한다.
 별도 REST API 토큰이나 추가 계정 연결은 필요하지 않다.
+새 OIDC 제공자는 Discover가 찾은 `userinfo_endpoint`로 자동 조회한다. 비표준 제공자는
+Tools → 해당 MCP → OAuth → 연결 계정 조회에서 현재 사용자 GET API 또는 MCP 도구를 설정한다.
+MCP 도구는 `readOnlyHint: true`를 표시해야 하며 응답의 계정 필드를 JSON Pointer로 지정한다.
+UserInfo나 현재 사용자 조회 계약을 제공하지 않는 서비스는 계정명·이메일을 자동으로 알아낼 수 없다.
+그 경우 연결은 유지하고 계정 조회 설정이 필요하다고 표시한다.
 Google 연결에서는 이메일 표시를 위한 `openid`·`email` 동의를 함께 요청한다.
 기존 Google grant에 이메일 권한이 없으면 Agent에서 다시 인증한다.
-폐쇄망·조회 실패와 계정 조회 미지원은 구분해 표시하며 기존 grant를 폐기하지 않는다.
+폐쇄망·조회 실패·계약 부재·조회 비활성화를 구분해 표시하며 기존 grant를 폐기하지 않는다.
 
 ## Keycloak 로그인
 

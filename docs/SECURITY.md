@@ -649,10 +649,15 @@ registry URL 변경은 이전 `auth`를 폐기한다. 새 주소의 Discover가 
 Secret 회전은 기존 grant에 반영하지만 Client ID의 교체·제거는 기존 grant를 차단한다.
 개별 동적 등록 Secret은 해당 Agent connection에 보관한다.
 연결 화면의 서비스 계정은 인증·접근 판정에 사용하지 않는다. 공식 OAuth endpoint 조합의
-GitHub·Google token만 해당 제공자의 고정 계정 API로 보낸다. Notion·Plaud token은 발급된 MCP
-resource의 현재 사용자 조회 도구에만 사용한다. 모든 요청은 공개 URL 가드와 동일 origin
-redirect 정책을 따른다. 계정 조회 응답은 필요한 login·email만 보관하고 오류 원문이나 token은
+GitHub·Google 기본 조회는 해당 제공자의 고정 계정 API를 사용한다. 일반 OIDC는 검증한 discovery의
+UserInfo endpoint를 사용하며, 관리자 지정 HTTP 계약도 HTTPS·URL 정책으로 저장과 dispatch 때 검증한다.
+Notion·Plaud token과 수동 MCP 계약은 발급된 resource에 해당하는 현재 registry URL의 현재 사용자
+조회 도구에만 사용한다. 수동 MCP 계약은 서버가 `readOnlyHint: true`로 선언한 도구만 호출한다.
+lookup 설정은 관리자 전용이며 자동 선택으로 임의의 도구나 쓰기 작업을 실행하지 않는다.
+모든 요청은 공개 URL 가드와 동일 origin redirect 정책을 따른다. 계정 조회 응답은 선택한 계정 label만 보관하고 오류 원문이나 token은
 화면·로그에 전달하지 않는다. Studio 사용자 이메일을 서비스 계정으로 추정하지 않는다.
+수동 JSON Pointer와 도구 인자에 token·password 등 자격 증명 필드를 허용하지 않으며, 서버 응답이
+조회 token을 label에 포함해 반사하더라도 계정 표시·저장으로 넘어가지 않는다.
 개별 client credential 저장에서 생략·마스크는 Client ID와 issuer가 같은 경우에만 Secret을
 유지한다. 다른 client나 issuer에서 Secret이 필요하면 새로 입력한다. 저장 시 resource가
 달라졌다면 같은 issuer의 client Secret은 유지할 수 있지만 이전 access/refresh token은

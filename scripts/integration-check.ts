@@ -478,6 +478,9 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       authorizationServer: "https://auth.example.com",
       authorizationEndpoint: "https://auth.example.com/authorize",
       tokenEndpoint: "https://auth.example.com/token",
+      userInfoEndpoint: "https://auth.example.com/userinfo",
+      userInfoScopes: ["openid", "email"],
+      accountLookup: { kind: "mcp" as const, toolName: "who_am_i", arguments: {}, labelPath: "/email" },
       tokenEndpointAuthMethod: "none" as const,
       discoveredAt: now,
     };
@@ -543,8 +546,9 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     // Compare-and-set on the grant revision: only the first writer can replace
     // the connection snapshot both callers read.
     const stored = conn.revision;
-    assert.equal(await mcpConnectionRepository.updateAccount(conn, { provider: "notion", label: "verified-account" }), true);
+    assert.equal(await mcpConnectionRepository.updateAccount(conn, { provider: "notion", label: "verified-account" }, "lookup-contract-1"), true);
     assert.equal((await mcpConnectionRepository.get(agentName, serverName))?.revision, stored, "account display preserves the grant revision");
+    assert.equal((await mcpConnectionRepository.get(agentName, serverName))?.accountLookupId, "lookup-contract-1", "lookup fingerprint survives JSONB round-trip");
     assert.equal(
       await mcpConnectionRepository.updateTokens(agentName, serverName, stored, {
         accessToken: encryptSecret(

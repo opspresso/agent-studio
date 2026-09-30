@@ -1052,7 +1052,7 @@ POST   /api/mcps/{name}/auth   { "authorizationServer": "https://…"? }
 → 200 { status: "choose", resource: "…", authorizationServers: ["…", "…"] }
 DELETE /api/mcps/{name}/auth   → 204     (return the entry to static-header behaviour)
 GET    /api/mcps/{name}/auth   → 200 { auth: {…}, defaultRedirectUri }
-PUT    /api/mcps/{name}/auth   { clientId?, clientSecret?, redirectUri? }
+PUT    /api/mcps/{name}/auth   { clientId?, clientSecret?, redirectUri?, accountLookup? }
 → 200 { …masked auth… }
 ```
 
@@ -1105,14 +1105,17 @@ POST   /api/agents/{name}/mcp-connections/{server}/tools
   issuer의 client Secret은 유지할 수 있지만 이전 access/refresh token을 지우고 재인가한다.
 - `clientRegistered` 는 인증 정보가 손으로 입력된 것이 아니라 RFC 7591 동적 등록에서 왔을 때
   `true` 다.
-- `connectedAccount`는 실제 OAuth grant로 조회한 `{ provider: "github" | "google" | "notion" | "plaud", label }`이다.
+- `connectedAccount`는 실제 OAuth grant로 조회한 `{ provider, label }`이다. `provider`는 기존 제공자
+  `github`·`google`·`notion`·`plaud` 또는 공통 조회 방식 `oidc`·`http`·`mcp`다.
   GitHub는 사용자명, Google·Notion·Plaud는 제공자가 반환한 이메일을 표시한다. Notion·Plaud가
   이메일을 제공하지 않으면 현재 사용자 이름을 사용한다. `connectedBy`는 인가를 완료한 Studio 사용자이며
   연결 계정의 대체 값으로 표시하지 않는다. 기존 연결의 계정 조회는 유효한 token과 현재
   issuer·resource·client 일치를 확인하고 revision CAS로 저장한다. 계정 조회가 불가능하면
   `connectedAccount`를 생략하며 grant를 폐기하지 않는다.
-- `accountUnavailableReason`은 계정 조회 미지원인 `unsupported`와 조회 실패인 `unavailable`을
-  구분한다. 이 값만으로 재인증을 요구하거나 연결 상태를 변경하지 않는다.
+- `accountUnavailableReason`은 조회 계약 없음(`not_configured`), 명시적 비활성화(`disabled`),
+  현재 사용자 도구 부재·읽기 전용 조건 미충족(`unsupported`), 조회 실패(`unavailable`)를 구분한다.
+  이 값만으로 재인증을 요구하거나 연결 상태를 변경하지 않는다.
+
 - `/authorize` 는 `3xx` 를 내는 대신 프로바이더 URL 을 **돌려준다**: 호출자는 콘솔의 `fetch` 이고,
   그것은 사용자를 보내는 대신 리다이렉트를 자기가 따라가 버릴 것이기 때문이다.
 - `auth` 블록이 없는 레지스트리 항목은 연결할 대상이 없으므로 `PUT` 과 `/authorize` 는 `400` 으로
@@ -1130,6 +1133,32 @@ POST   /api/agents/{name}/mcp-connections/{server}/tools
   보내지 않으므로 tenant별 도구 목록은 실제 런과 다를 수 있다.
   소유자 게이트인 이유도 같다: 그 agent 의 연결을 소비한다. 그 `502` 는 서버에 아예 닿지 않는
   두 거절도 포함한다. 아웃바운드 가드가 막는 URL, 그리고 인증 정보를 해석할 수 없는 연결이다.
+
+### 범용 계정 조회 설정 (admin)
+
+OAuth discovery는 OIDC `userinfo_endpoint`와 제공자가 지원하는 identity scopes를 저장한다.
+OAuth 문서가 `openid`를 지원하지만 UserInfo가 없으면 동일 issuer·authorization endpoint·token endpoint의
+OpenID discovery를 읽어 보완한다. 자동 조회는 관리자 override → 발견한 UserInfo → 기존 제공자 기본값 순서다.
+UserInfo는 `sub`를 요구하며 email·preferred_username·name·sub 순서로 표시 가능한 값을 선택한다.
+이메일 등 선택 claim을 제공자가 생략해도 subject로 연결 계정을 식별할 수 있다.
+
+`PUT /api/mcps/{name}/auth`는 기존 client 설정과 별개로 `accountLookup`만 갱신할 수 있다.
+생략은 보존, `null`은 자동 조회 복원이다.
+
+```json
+{ "accountLookup": { "kind": "http", "endpoint": "https://identity.example.com/me", "labelPath": "/data/email", "scopes": ["profile.read"] } }
+```
+
+```json
+{ "accountLookup": { "kind": "mcp", "toolName": "who_am_i", "arguments": {}, "labelPath": "/user/name" } }
+```
+
+HTTP 계약은 검증한 HTTPS 주소에 Bearer token을 담은 GET만 보낸다. MCP 계약은 현재 registry URL에
+현재 사용자 조회 도구를 호출하며 `readOnlyHint: true`를 요구한다. `labelPath`는 JSON Pointer이며
+표현식·wildcard를 실행하지 않는다. 빈 pointer는 JSON 응답 전체를 선택하며 object·array·scalar 응답을 지원한다.
+`{ "accountLookup": { "kind": "none" } }`은 조회를 끈다. 수동 계약은 인증된 현재 계정만 반환하는 API·도구를
+지정해야 하며 인자는 일반 설정으로 저장된다. 자격 증명 필드 선택·인자는 거절하고 조회 token이 응답에
+반사되어도 표시하지 않는다. 조회 계약 변경은 기존 계정 cache를 무효화하지만 OAuth client credential·grant는 변경하지 않는다.
 
 ### 콜백
 

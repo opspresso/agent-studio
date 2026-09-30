@@ -82,6 +82,7 @@ function fromItem(item: Record<string, unknown>): McpConnection | null {
     status: item.status as McpConnection["status"],
     connectedBy: optionalString(item.connectedBy),
     ...(connectedAccount ? { connectedAccount } : {}),
+    accountLookupId: optionalString(item.accountLookupId),
     connectedAt: optionalString(item.connectedAt),
     authorizationEpoch: optionalString(item.authorizationEpoch),
     updatedAt: item.updatedAt as string,
@@ -147,11 +148,11 @@ export const mcpConnectionRepository: McpConnectionRepository = {
     }
   },
 
-  async updateAccount(current, account) {
+  async updateAccount(current, account, lookupId) {
     try {
       await updateItem(
         keys.mcpConnection(current.agentName, current.serverName),
-        (row) => ({ ...row, connectedAccount: account }),
+        (row) => ({ ...row, connectedAccount: account, accountLookupId: lookupId }),
         // Account display does not change the grant. A refresh using this revision
         // must still save its issued tokens, while reconnects/deletes remain fenced.
         (row) => row !== null && row.revision === current.revision,
