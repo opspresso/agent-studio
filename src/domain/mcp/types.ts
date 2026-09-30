@@ -1,4 +1,5 @@
 import type { McpSourceMapping } from "./sourceMapping";
+import type { McpAccountLookup } from "./accountLookup";
 import { isDeclaredInternalHost } from "@/domain/security/internalHosts";
 
 /** A tool a bound MCP server offers. `inputSchema` is the JSON Schema the
@@ -9,6 +10,7 @@ export interface McpTool {
   title?: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
+  annotations?: { readOnlyHint?: boolean };
 }
 
 /** How a token-endpoint request proves which client it is. From AS metadata. */
@@ -57,6 +59,11 @@ export interface McpServerAuth {
   issParameterSupported?: boolean;
   authorizationEndpoint: string;
   tokenEndpoint: string;
+  /** OIDC discovery's identity endpoint and its supported identity scopes. */
+  userInfoEndpoint?: string;
+  userInfoScopes?: string[];
+  /** Admin-owned identity contract; absent uses discovery or a known service preset. */
+  accountLookup?: McpAccountLookup;
   /**
    * RFC 7591. Absent means the provider requires a manually registered app.
    *

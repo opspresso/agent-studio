@@ -1,4 +1,5 @@
 import type { TokenEndpointAuthMethod } from "./types";
+import type { McpConnectedAccount } from "./account";
 /**
  * One agent's OAuth connection to a shared registry MCP server, and the
  * short-lived record of an authorization still in flight.
@@ -85,14 +86,19 @@ export interface McpConnection {
   status: McpConnectionStatus;
   /** Email of the owner who completed the authorization. */
   connectedBy?: string;
+  /** The service account returned by the provider for this grant. */
+  connectedAccount?: McpConnectedAccount;
+  /** Identity lookup configuration used to obtain the cached label. */
+  accountLookupId?: string;
   connectedAt?: string;
   /** Identity of the completed OAuth flow; preserved across access-token refreshes. */
   authorizationEpoch?: string;
   updatedAt: string;
   /**
-   * Identity of the last repository write, independent of token rotation and
+   * Identity of the last client/grant write, independent of token rotation and
    * timestamps. An unversioned snapshot may only update an unversioned row;
-   * every successful put or token update assigns a fresh revision.
+   * every successful put or token update assigns a fresh revision. Display-only
+   * account updates retain it so they cannot discard a concurrently rotated token.
    */
   revision?: string;
 }
@@ -119,6 +125,8 @@ export interface McpOAuthState {
   clientId?: string;
   clientFromRegistry?: boolean;
   resource?: string;
+  /** Exact scopes requested, including provider identity scopes for the console. */
+  scopes?: string[];
   /**
    * The issuer this flow was started against, recorded here rather than read
    * back off the registry entry: RFC 9207 requires the expected issuer to live
@@ -139,9 +147,11 @@ export interface McpConnectionRepository {
   put(connection: McpConnection): Promise<void>;
   /** Replace only the snapshot read by a use case, or create only if still absent. */
   putIfCurrent(connection: McpConnection, current: McpConnection | null): Promise<boolean>;
+  /** Update only verified display metadata for the same grant, without advancing its revision. */
+  updateAccount(current: McpConnection, account: McpConnectedAccount, lookupId?: string): Promise<boolean>;
   /**
    * Replace the tokens only if the connection still has the revision read by
-   * the caller. Every successful connection write changes that revision,
+   * the caller. Every successful client/grant write changes that revision,
    * including reconnects with unchanged refresh tokens or timestamps.
    *
    * Providers that rotate refresh tokens revoke the previous one, so two

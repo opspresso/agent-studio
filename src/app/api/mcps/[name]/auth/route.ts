@@ -3,6 +3,7 @@ import { mcpAuthUseCases } from "@/lib/container";
 import { withAdminAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
+import { readMcpAccountLookup, type McpAccountLookup } from "@/domain/mcp/account";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -15,6 +16,7 @@ const clientSchema = z.object({
   clientId: z.string().optional(),
   clientSecret: z.string().optional(),
   redirectUri: z.string().optional(),
+  accountLookup: z.custom<McpAccountLookup>(value => readMcpAccountLookup(value) !== undefined).nullable().optional(),
 }).strict().refine((input) => Object.keys(input).length > 0, "No OAuth client settings supplied");
 
 /** The callback uses configured deployment settings, never a request host. */

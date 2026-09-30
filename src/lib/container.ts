@@ -106,6 +106,7 @@ import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
 import { availableServiceLogos, config } from "./config";
 import { oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
 import { oauthClient } from "@/infrastructure/mcp/oauthClient";
+import { mcpAccountClient } from "@/infrastructure/mcp/accountClient";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { artifactRepository } from "@/infrastructure/db/repositories/artifactRepository";
@@ -453,6 +454,7 @@ export const mcpAuthUseCases = createMcpAuthUseCases({
   connections: mcpConnectionRepository,
   states: mcpOAuthStateRepository,
   metadata: oauthMetadataClient,
+  accounts: mcpAccountClient,
   oauth: oauthClient,
   cipher: secretCipher,
   urlPolicy,

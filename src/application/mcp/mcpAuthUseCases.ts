@@ -25,6 +25,7 @@ import type {
   McpOAuthStateRepository,
 } from "@/domain/mcp/connection";
 import type { AgentRepository } from "@/domain/agent/repository";
+import { resolveMcpAccountLookup, readMcpAccountLookup, isMcpAccountEndpoint, mcpAccountScopes, type McpAccountClient, type McpAccountResult, type McpAccountLookup } from "@/domain/mcp/account";
 import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCipher";
 import {
   mcpConnectionSecretContext,
@@ -45,8 +46,10 @@ import { skipsUrlGuard } from "@/domain/mcp/types";
 import { createOAuthState, createPkcePair } from "@/shared/pkce";
 import { log } from "@/shared/logger";
 import { DEFAULT_SERVICE_NAME } from "@/shared/branding";
+import { mapWithLimit } from "@/shared/mapWithLimit";
 import { maskedMcpAuth } from "./mcpViews";
 import { mcpTokenTarget, registryClientMismatch } from "./mcpOAuthClient";
+import { mcpConnectionAuthMismatch } from "./mcpAuthProvider";
 
 /**
  * Discovery either finishes, or stops to ask which authorization server to use.
@@ -245,11 +248,17 @@ export interface McpConnectionView {
   clientRegistered: boolean;
   scopes: string[];
   connectedBy?: string;
+  connectedAccount?: McpConnection["connectedAccount"];
+  accountUnavailableReason?: Exclude<McpAccountResult["status"], "resolved">;
   connectedAt?: string;
   expiresAt?: string;
 }
 
-function toConnectionView(cipher: SecretCipher, connection: McpConnection): McpConnectionView {
+function toConnectionView(
+  cipher: SecretCipher,
+  connection: McpConnection,
+  accountUnavailableReason?: McpConnectionView["accountUnavailableReason"],
+): McpConnectionView {
   return {
     serverName: connection.serverName,
     status: connection.status,
@@ -269,9 +278,19 @@ function toConnectionView(cipher: SecretCipher, connection: McpConnection): McpC
     clientRegistered: connection.clientRegistered === true,
     scopes: connection.scopes,
     ...(connection.connectedBy ? { connectedBy: connection.connectedBy } : {}),
+    ...(connection.connectedAccount ? { connectedAccount: connection.connectedAccount } : {}),
+    ...(accountUnavailableReason ? { accountUnavailableReason } : {}),
     ...(connection.connectedAt ? { connectedAt: connection.connectedAt } : {}),
     ...(connection.expiresAt ? { expiresAt: connection.expiresAt } : {}),
   };
+}
+
+function accountLookupId(auth: McpServerAuth, mcpUrl: string): string | undefined {
+  const resolved = resolveMcpAccountLookup(auth);
+  return resolved ? createHash("sha256").update(JSON.stringify({
+    issuer: auth.issuer, resource: auth.resource, resolved,
+    ...(resolved.lookup.kind === "mcp" ? { mcpUrl } : {}),
+  })).digest("hex") : undefined;
 }
 
 export interface SaveClientCredentialsInput {
@@ -293,6 +312,8 @@ export interface SaveOAuthClientCredentialsInput {
   clientSecret?: string;
   /** Must equal the configured deployment callback; empty restores that default. */
   redirectUri?: string;
+  /** Null restores automatic discovery/presets; omission preserves the operator choice. */
+  accountLookup?: McpAccountLookup | null;
 }
 
 export interface McpOAuthClientSettings {
@@ -326,6 +347,7 @@ export interface McpAuthUseCasesDeps {
   states: McpOAuthStateRepository;
   metadata: OAuthMetadataClient;
   oauth: OAuthClient;
+  accounts: McpAccountClient;
   cipher: SecretCipher;
   urlPolicy: UrlPolicy;
   /** One-shot tool listing, shared with the registry's own probe. */
@@ -587,6 +609,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           "Registration endpoint",
         );
       }
+      if (asMetadata.userInfoEndpoint) {
+        if (!isMcpAccountEndpoint(asMetadata.userInfoEndpoint)) throw new ValidationError("UserInfo endpoint must be HTTPS without embedded credentials or a fragment.");
+        await assertAuthEndpoint(deps.urlPolicy, asMetadata.userInfoEndpoint, "UserInfo endpoint");
+      }
       // The spec's MUST (2026-07-28, authorization security considerations):
       // a server that does not advertise `code_challenge_methods_supported`
       // may be one that ignores `code_challenge`, and proceeding against it
@@ -618,6 +644,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         ...(asMetadata.issParameterSupported ? { issParameterSupported: true } : {}),
         authorizationEndpoint: asMetadata.authorizationEndpoint,
         tokenEndpoint: asMetadata.tokenEndpoint,
+        ...(asMetadata.userInfoEndpoint ? {
+          userInfoEndpoint: asMetadata.userInfoEndpoint,
+          userInfoScopes: ["openid", ...["email", "profile"].filter(scope => asMetadata.scopesSupported?.includes(scope))],
+        } : {}),
         ...(asMetadata.registrationEndpoint
           ? { registrationEndpoint: asMetadata.registrationEndpoint }
           : {}),
@@ -635,6 +665,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         ...(server.auth?.issuer === asMetadata.issuer && server.auth.redirectUri
           ? { redirectUri: server.auth.redirectUri }
           : {}),
+        ...(server.auth?.issuer === asMetadata.issuer && server.auth.accountLookup
+          ? { accountLookup: server.auth.accountLookup } : {}),
         discoveredAt: new Date().toISOString(),
       };
       await saveAuth(server, auth);
@@ -660,6 +692,13 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const clientId = input.clientId === undefined ? previousId : input.clientId.trim();
       const redirect = input.redirectUri === undefined ? previousRedirect : input.redirectUri.trim();
       if (redirect) await redirectUri(redirect);
+      let accountLookup = server.auth.accountLookup;
+      if (input.accountLookup === null) accountLookup = undefined;
+      else if (input.accountLookup !== undefined) {
+        accountLookup = readMcpAccountLookup(input.accountLookup);
+        if (!accountLookup) throw new ValidationError("Invalid account lookup contract.");
+        if (accountLookup.kind === "http") await assertAuthEndpoint(deps.urlPolicy, accountLookup.endpoint, "Account endpoint");
+      }
       const submitted = input.clientSecret;
       const preserveSecret = submitted === undefined || submitted === "" || deps.cipher.isMasked(submitted);
       // A mask confirms only a secret held for this same client, never a new app.
@@ -670,6 +709,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         : undefined;
       const nextAuth: McpServerAuth = {
         ...metadata,
+        accountLookup,
         ...(clientId ? { clientId } : {}),
         ...(clientSecret ? { clientSecret } : {}),
         ...(redirect ? { redirectUri: redirect } : {}),
@@ -680,9 +720,38 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
 
     async listConnections(agentName, userEmail) {
       await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
-      return (await listAgentMcpConnections(deps.connections, agentName)).map((connection) =>
-        toConnectionView(deps.cipher, connection),
-      );
+      const connections = await listAgentMcpConnections(deps.connections, agentName);
+      // Existing grants can supply their provider identity without reconnecting. Limit
+      // optional network reads; resolved identities survive subsequent token refreshes.
+      async function viewConnection(connection: McpConnection, lookupAllowed: boolean): Promise<McpConnectionView | undefined> {
+        const server = await deps.mcps.get(connection.serverName);
+        const lookupId = server?.auth && accountLookupId(server.auth, server.url);
+        const withoutAccount = { ...connection, connectedAccount: undefined };
+        if (!server?.auth || !lookupId) return toConnectionView(deps.cipher, withoutAccount,
+          server?.auth?.accountLookup?.kind === "none" ? "disabled" : "not_configured");
+        if (mcpConnectionAuthMismatch(connection, connection.serverName, server.auth)) {
+          return toConnectionView(deps.cipher, withoutAccount, "unavailable");
+        }
+        if (connection.connectedAccount && connection.accountLookupId === lookupId) return toConnectionView(deps.cipher, connection);
+        if (!lookupAllowed || connection.status !== "connected" || !connection.accessToken) {
+          return toConnectionView(deps.cipher, withoutAccount, "unavailable");
+        }
+        // Display reads never rotate a grant or spend an expired token.
+        if (connection.expiresAt && !(Date.parse(connection.expiresAt) > Date.now())) return toConnectionView(deps.cipher, withoutAccount, "unavailable");
+        const accessToken = deps.cipher.decrypt(connection.accessToken,
+          mcpConnectionSecretContext(agentName, connection.serverName, "access-token"));
+        const identity = await deps.accounts.read(server.auth, accessToken, { mcpUrl: server.url, loopback: skipsUrlGuard(server, deps.internalHostSuffixes) });
+        if (identity.status !== "resolved") return toConnectionView(deps.cipher, withoutAccount, identity.status);
+        const identified = { ...connection, connectedAccount: identity.account, accountLookupId: lookupId };
+        if (await deps.connections.updateAccount(connection, identity.account, lookupId)) return toConnectionView(deps.cipher, identified);
+        // Do not display the old account over a newer grant or resurrect a disconnect.
+        const latest = await deps.connections.get(agentName, connection.serverName);
+        // Revalidate the winning snapshot against current registry settings, without
+        // retrying a lookup that already lost its grant revision.
+        return latest ? viewConnection(latest, false) : undefined;
+      }
+      const views = await mapWithLimit(connections, 4, connection => viewConnection(connection, true));
+      return views.filter((view): view is McpConnectionView => view !== undefined);
     },
 
     async saveClientCredentials(agentName, serverName, input, userEmail) {
@@ -811,7 +880,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         ? connection?.clientFromRegistry !== true || connection.clientId !== server.auth.clientId
         : connection?.clientFromRegistry === true;
       if (!connection?.clientId || staleCredentials || staleDocument || configuredClientChanged) {
-        const scopes = connection?.scopes ?? server.auth.scopesSupported ?? [];
+        const scopes = mcpAccountScopes(server.auth, connection?.scopes ?? server.auth.scopesSupported ?? []);
         // Rebuilt rather than merged in either branch: whatever the previous
         // client authorized was granted by a different server, and must not
         // survive into this one.
@@ -884,6 +953,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         connection = fresh;
       }
 
+      const scopes = mcpAccountScopes(server.auth, connection.scopes);
       const pkce = createPkcePair();
       const state = createOAuthState();
       await deps.states.put(
@@ -897,6 +967,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           clientId: connection.clientId,
           ...(connection.clientFromRegistry ? { clientFromRegistry: true } : {}),
           resource: server.auth.resource,
+          scopes,
           // Recorded alongside the verifier, as RFC 9207 requires: the registry
           // entry is exactly what may change while the user is at the provider,
           // so reading the expected issuer back off it would compare the
@@ -919,8 +990,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       // it is what binds the token to this server and stops it being replayed
       // against another.
       url.searchParams.set("resource", server.auth.resource);
-      if (connection.scopes.length > 0) {
-        url.searchParams.set("scope", connection.scopes.join(" "));
+      if (scopes.length > 0) {
+        url.searchParams.set("scope", scopes.join(" "));
       }
       return { authorizeUrl: url.toString() };
     },
@@ -973,15 +1044,17 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           mcpOAuthStateContext(pending.state),
         ),
       });
-
       const now = new Date();
+      const identity = await deps.accounts.read(server.auth, tokens.accessToken, { mcpUrl: server.url, loopback: skipsUrlGuard(server, deps.internalHostSuffixes) });
       const {
         accessToken: _accessToken,
         refreshToken: _refreshToken,
         expiresAt: _expiresAt,
+        connectedAccount: _connectedAccount,
+        accountLookupId: _accountLookupId,
         ...credentials
       } = connection;
-      void _accessToken, _refreshToken, _expiresAt;
+      void _accessToken, _refreshToken, _expiresAt, _connectedAccount, _accountLookupId;
       const completed: McpConnection = {
         ...credentials,
         // Store the issuer and resource used for this exact exchange.
@@ -1011,9 +1084,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           ? { expiresAt: new Date(now.getTime() + tokens.expiresInSeconds * 1000).toISOString() }
           : {}),
         // What the server actually granted, which may be narrower than asked.
-        scopes: tokens.scope ? parseGrantedScopes(tokens.scope) : connection.scopes,
+        scopes: tokens.scope ? parseGrantedScopes(tokens.scope) : pending.scopes ?? connection.scopes,
         status: "connected",
         connectedBy: userEmail,
+        ...(identity.status === "resolved" ? { connectedAccount: identity.account, accountLookupId: accountLookupId(server.auth, server.url) } : {}),
         connectedAt: now.toISOString(),
         authorizationEpoch: createHash("sha256").update(pending.state).digest("hex"),
         updatedAt: now.toISOString(),

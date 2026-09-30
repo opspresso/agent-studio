@@ -95,6 +95,7 @@ function useCases(
     connections: {} as never,
     states: {} as never,
     oauth: {} as never,
+    accounts: {} as never,
     cipher: {} as never,
     probe: {} as never,
     authProvider: {} as never,
@@ -122,6 +123,25 @@ const SLACK_AS = {
 };
 
 describe("discovering a server's authorization configuration", () => {
+  it("stores UserInfo and identity scopes from an arbitrary authorization server independently of resource scopes", async () => {
+    const { useCases: uc, stored } = useCases({
+      fetchProtectedResource: async () => ({ resource: "https://new-mcp.example.com", authorizationServers: ["https://new-identity.example.com"], scopesSupported: ["resource.read"] }),
+      fetchAuthorizationServer: async () => ({
+        issuer: "https://new-identity.example.com", authorizationEndpoint: "https://new-identity.example.com/authorize", tokenEndpoint: "https://new-identity.example.com/token",
+        userInfoEndpoint: "https://new-identity.example.com/userinfo", scopesSupported: ["openid", "email", "profile"], codeChallengeMethodsSupported: ["S256"],
+      }),
+    });
+    await uc.discover("slack");
+    expect(stored[0]?.auth).toMatchObject({ scopesSupported: ["resource.read"], userInfoEndpoint: "https://new-identity.example.com/userinfo", userInfoScopes: ["openid", "email", "profile"] });
+  });
+
+  it.each(["http://identity.example.com/userinfo", "https://secret@identity.example.com/userinfo", "https://identity.example.com/userinfo#fragment"])(
+    "refuses unsafe discovered identity endpoint %s", async userInfoEndpoint => {
+      const { useCases: uc, stored } = useCases({ fetchProtectedResource: async () => SLACK_RESOURCE, fetchAuthorizationServer: async () => ({ ...SLACK_AS, userInfoEndpoint }) });
+      await expect(uc.discover("slack")).rejects.toBeInstanceOf(ValidationError);
+      expect(stored).toHaveLength(0);
+    },
+  );
   it.each(["discover", "clearAuth"] as const)("does not %s across a managed lifecycle write", async (operation) => {
     const claims = new Set([SERVER.name]);
     const { useCases: uc, stored } = useCases({

@@ -27,6 +27,7 @@ export interface AuthorizationServerMetadata {
   issuer: string;
   authorizationEndpoint: string;
   tokenEndpoint: string;
+  userInfoEndpoint?: string;
   registrationEndpoint?: string;
   tokenEndpointAuthMethodsSupported?: string[];
   codeChallengeMethodsSupported?: string[];

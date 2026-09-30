@@ -45,6 +45,8 @@ export const mcpOAuthStateRepository: McpOAuthStateRepository = {
       ...(typeof item.clientId === "string" ? { clientId: item.clientId } : {}),
       ...(item.clientFromRegistry === true ? { clientFromRegistry: true } : {}),
       ...(typeof item.resource === "string" ? { resource: item.resource } : {}),
+      ...(Array.isArray(item.scopes) && item.scopes.every((scope) => typeof scope === "string")
+        ? { scopes: item.scopes as string[] } : {}),
       issuer: item.issuer,
       issParameterSupported: item.issParameterSupported === true,
       createdAt: item.createdAt as string,

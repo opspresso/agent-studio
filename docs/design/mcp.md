@@ -126,6 +126,31 @@ running과 reachable을 별도로 확인한다. [운영](../OPERATIONS.md#재배
 Agent 소유자는 그 앱으로 자기 계정의 grant를 연결한다.
 access/refresh token과 연결 revision은 Agent별 연결 행에 보관하며 Agent 실행 설정과 분리한다.
 
+Agent의 MCP 연결 화면은 Studio에서 인가를 완료한 사용자 대신 실제 서비스 계정을 표시한다.
+계정 조회는 제공자 이름 목록에 제한되지 않는다. OIDC discovery가 UserInfo를 제공하면 임의의
+authorization server에서도 공통 조회를 사용한다. `sub`를 확인하고 email·preferred_username·name·sub
+중 표시할 값을 선택하며 토큰을 decoding해서 계정을 추측하지 않는다.
+OAuth 문서가 `openid`만 광고하면 동일한 issuer·authorization endpoint·token endpoint의 OpenID
+discovery에서 UserInfo와 identity scopes를 보완한다. 다른 OAuth authority의 문서는 합치지 않는다.
+비표준 서버는 Tools의 OAuth 설정에서 HTTPS GET API 또는 읽기 전용 MCP 현재 사용자 도구와
+JSON Pointer를 지정한다. 수동 설정이 discovery와 아래 제공자 기본값보다 우선하며 `none`은 조회를 끈다.
+공식 GitHub OAuth grant는 사용자 API의 login, 공식 Google OAuth grant는 UserInfo의 email로
+계정을 확인한다. 공식 Notion·Plaud의 grant는 MCP resource에만 사용하고 각각
+`notion-get-users({ user_id: "self" })`, `get_current_user({})`로 현재 계정을 읽는다.
+공유 `McpSession`으로 도구 정의를 확인하고 그대로 호출·종료하며 별도 REST API에 token을 보내지 않는다.
+Notion의 self 결과는 하나일 때만 사용하며 workspace 회원 목록에서 임의의 사용자를 고르지 않는다.
+Google 인가 요청에는 `openid`·`email`을 추가하고 실제 요청 scopes를 pending
+state에 보관한다. callback에서 받은 새 계정은 기존 표시를 대체하고 token refresh는 계정 표시를 유지한다.
+일반 OIDC는 discovery에서 지원을 확인한 identity scopes를, 수동 HTTP 계약은 관리자가 지정한 scopes를
+client registration과 authorization 모두에 적용한다. 추가 scope는 다음 사용자 인가에서 동의를 받는다.
+기존 연결은 소유자용 목록 조회에서 아직 계정 정보가 없을 때만 확인하며 동시 조회는 4개로 제한한다.
+만료됐거나 issuer·resource·client가 달라진 grant는 이 표시 조회에 사용하지 않는다.
+조회 실패와 클라이언트의 조회 미지원은 구분해 표시하고 연결 상태와 token은 유지한다.
+계정 조회 계약 없음과 명시적 비활성화도 구분한다. cache는 issuer·resource·조회 계약·MCP URL의
+fingerprint에 묶이며 설정 변경 후 이전 계정 표시를 재사용하지 않는다.
+재인증이 필요한 연결과 backfill 경합에서 이긴 연결도 현재 설정으로 cache를 검증한다.
+계정 정보가 없다는 이유만으로 재인증을 요구하지 않으며 추가 동의 없이 기존 유효한 grant를 사용한다.
+
 실행 경로는 well-known 문서를 다시 가져오지 않는다. 저장된 메타데이터로 grant를 해석하고
 필요하면 갱신한다. 공유 client secret은 registry에서 읽어 회전을 반영하고,
 Client ID가 달라지면 기존 grant를 거절한다. 개별 등록 client secret은 해당 connection에 남는다.
@@ -138,6 +163,8 @@ dynamic registration 순서다. Agent별 공개 metadata URL은 설정한 공개
 
 refresh는 남은 실행 시간을 고려한 여유 구간에서 수행한다.
 갱신은 revision CAS로 저장하고 경쟁에서 진 호출은 동일 issuer·resource의 유효한 승자 grant만 사용한다.
+계정 표시 backfill은 같은 grant revision을 조건으로 그 필드만 갱신하며 revision을 바꾸지 않는다.
+표시 저장이 진행 중인 refresh의 새 token을 버리게 해서는 안 되며 reconnect·삭제 후에는 표시 저장도 거절한다.
 자격 증명 저장·인증 시작 중 새 연결 저장·콜백 완료·연결 해제도 읽은 연결 revision을 조건으로 쓴다.
 그 사이 다른 연결이 저장되거나 삭제되면 충돌을 반환하며 이전 grant를 되살리거나 덮지 않는다.
 일시 5xx·timeout은 grant를 폐기하지 않으며 실제 인증 거절은 재연결이 필요한 상태로 바꾼다.

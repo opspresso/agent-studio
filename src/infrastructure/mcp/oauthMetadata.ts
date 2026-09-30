@@ -240,13 +240,33 @@ export const oauthMetadataClient: OAuthMetadataClient = {
   },
 
   async fetchAuthorizationServer(issuer) {
-    return firstUsable(
-      authorizationServerCandidates(issuer),
-      parseAuthorizationServer(issuer),
+    const candidates = authorizationServerCandidates(issuer);
+    const parse = parseAuthorizationServer(issuer);
+    const metadata = await firstUsable(
+      candidates,
+      parse,
       "authorization server metadata",
       // Never the loopback path: see the port's note on this method.
       false,
     );
+    if (metadata.userInfoEndpoint || !metadata.scopesSupported?.includes("openid")) return metadata;
+    // RFC 8414 can omit OIDC identity fields even when the same issuer publishes
+    // them in OpenID discovery. Supplement only an identical OAuth authority.
+    try {
+      const oidc = await firstUsable(candidates.filter(url => url.includes("openid-configuration")), doc => {
+        const extra = parse(doc);
+        return extra?.userInfoEndpoint && extra.issuer === metadata.issuer &&
+          extra.authorizationEndpoint === metadata.authorizationEndpoint && extra.tokenEndpoint === metadata.tokenEndpoint
+          ? extra : null;
+      }, "OpenID identity metadata", false);
+      return { ...metadata, userInfoEndpoint: oidc.userInfoEndpoint,
+        scopesSupported: [...new Set([...(metadata.scopesSupported ?? []), ...(oidc.scopesSupported ?? [])])] };
+    } catch (error) {
+      // The OAuth document remains valid without this optional identity contract.
+      // No account is inferred when OpenID discovery cannot supply it.
+      if (error instanceof McpMetadataError) return metadata;
+      throw error;
+    }
   },
 };
 
@@ -292,6 +312,7 @@ const parseAuthorizationServer =
       return null;
     }
     const registrationEndpoint = asString(doc.registration_endpoint);
+    const userInfoEndpoint = asString(doc.userinfo_endpoint);
     const tokenEndpointAuthMethodsSupported = asStringArray(doc.token_endpoint_auth_methods_supported);
     const codeChallengeMethodsSupported = asStringArray(doc.code_challenge_methods_supported);
     const scopesSupported = asStringArray(doc.scopes_supported);
@@ -301,6 +322,7 @@ const parseAuthorizationServer =
       authorizationEndpoint,
       tokenEndpoint,
       ...(registrationEndpoint ? { registrationEndpoint } : {}),
+      ...(userInfoEndpoint ? { userInfoEndpoint } : {}),
       ...(tokenEndpointAuthMethodsSupported ? { tokenEndpointAuthMethodsSupported } : {}),
       ...(codeChallengeMethodsSupported ? { codeChallengeMethodsSupported } : {}),
       ...(scopesSupported ? { scopesSupported } : {}),

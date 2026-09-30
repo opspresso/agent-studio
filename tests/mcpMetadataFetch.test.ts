@@ -318,10 +318,29 @@ describe("where an authorization server's document is looked for", () => {
 });
 
 describe("Google Workspace authorization metadata", () => {
+  it("supplements an OAuth document's missing UserInfo from the same issuer's OpenID discovery", async () => {
+    guardedFetch.mockImplementation(async (input: string) => jsonResponse({
+      ...AS_DOC, scopes_supported: ["openid", "email"],
+      ...(String(input).includes("openid-configuration") ? { userinfo_endpoint: "https://auth.example.com/userinfo", scopes_supported: ["openid", "email", "profile"] } : {}),
+    }));
+    const metadata = await oauthMetadataClient.fetchAuthorizationServer(AS_DOC.issuer);
+    expect(metadata.userInfoEndpoint).toBe("https://auth.example.com/userinfo");
+    expect(metadata.scopesSupported).toEqual(["openid", "email", "profile"]);
+    expect(guardedFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("never combines identity discovery from a different token endpoint", async () => {
+    guardedFetch.mockImplementation(async (input: string) => jsonResponse({
+      ...AS_DOC, scopes_supported: ["openid"],
+      ...(String(input).includes("openid-configuration") ? { token_endpoint: "https://other.example.com/token", userinfo_endpoint: "https://other.example.com/userinfo" } : {}),
+    }));
+    expect((await oauthMetadataClient.fetchAuthorizationServer(AS_DOC.issuer)).userInfoEndpoint).toBeUndefined();
+  });
   const GOOGLE_DOC = {
     issuer: "https://accounts.google.com",
     authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
     token_endpoint: "https://oauth2.googleapis.com/token",
+    userinfo_endpoint: "https://openidconnect.googleapis.com/v1/userinfo",
     code_challenge_methods_supported: ["S256"],
     authorization_response_iss_parameter_supported: true,
   };
@@ -341,6 +360,7 @@ describe("Google Workspace authorization metadata", () => {
         issuer: "https://accounts.google.com",
         authorizationEndpoint: GOOGLE_DOC.authorization_endpoint,
         tokenEndpoint: GOOGLE_DOC.token_endpoint,
+        userInfoEndpoint: GOOGLE_DOC.userinfo_endpoint,
         codeChallengeMethodsSupported: ["S256"],
         issParameterSupported: true,
       });

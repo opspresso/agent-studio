@@ -3,6 +3,7 @@ import { CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED, deleteItem, getItem, q
 import { keys } from "../keys";
 import { putAgentItem } from "../agentLifecycle";
 import type { McpConnection, McpConnectionRepository } from "@/domain/mcp/connection";
+import { readMcpConnectedAccount } from "@/domain/mcp/account";
 import type { TokenEndpointAuthMethod } from "@/domain/mcp/types";
 import { boundedPageLimit } from "@/shared/pageLimit";
 
@@ -54,6 +55,7 @@ function fromItem(item: Record<string, unknown>): McpConnection | null {
   if (!issuer || !resource) {
     return null;
   }
+  const connectedAccount = readMcpConnectedAccount(item.connectedAccount);
   return {
     agentName: item.agentName as string,
     serverName: item.serverName as string,
@@ -79,6 +81,8 @@ function fromItem(item: Record<string, unknown>): McpConnection | null {
     expiresAt: optionalString(item[EXPIRES_AT_ISO] ?? item.expiresAt),
     status: item.status as McpConnection["status"],
     connectedBy: optionalString(item.connectedBy),
+    ...(connectedAccount ? { connectedAccount } : {}),
+    accountLookupId: optionalString(item.accountLookupId),
     connectedAt: optionalString(item.connectedAt),
     authorizationEpoch: optionalString(item.authorizationEpoch),
     updatedAt: item.updatedAt as string,
@@ -140,6 +144,22 @@ export const mcpConnectionRepository: McpConnectionRepository = {
       return true;
     } catch (error) {
       if ((error as { name?: string }).name === TRANSACTION_CANCELLED) return false;
+      throw error;
+    }
+  },
+
+  async updateAccount(current, account, lookupId) {
+    try {
+      await updateItem(
+        keys.mcpConnection(current.agentName, current.serverName),
+        (row) => ({ ...row, connectedAccount: account, accountLookupId: lookupId }),
+        // Account display does not change the grant. A refresh using this revision
+        // must still save its issued tokens, while reconnects/deletes remain fenced.
+        (row) => row !== null && row.revision === current.revision,
+      );
+      return true;
+    } catch (error) {
+      if ((error as { name?: string }).name === CONDITIONAL_WRITE_FAILED) return false;
       throw error;
     }
   },

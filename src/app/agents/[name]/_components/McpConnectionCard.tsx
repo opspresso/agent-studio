@@ -30,6 +30,10 @@ const STATUS_COLOR: Record<McpConnectionView["status"], string> = {
   needs_auth: "dimmed",
   needs_reauth: "orange",
 };
+const ACCOUNT_LOOKUP_LABEL: Record<NonNullable<McpConnectionView["accountUnavailableReason"]>, MessageKey> = {
+  not_configured: "mcpConn.accountNotConfigured", disabled: "mcpConn.accountDisabled",
+  unsupported: "mcpConn.accountUnsupported", unavailable: "mcpConn.accountUnavailable",
+};
 
 interface AuthorizationPopup {
   location: { href: string };
@@ -58,6 +62,26 @@ export async function openMcpAuthorizationPopup(
   }
 }
 
+export function McpConnectionIdentity({ connection }: { connection: McpConnectionView }) {
+  const t = useT();
+  const locale = useLocale();
+  return (
+    <Stack gap={4} style={{ overflowWrap: "anywhere" }}>
+      <Text fz="xs">
+        {connection.connectedAccount
+          ? t("mcpConn.connectedAccount", { account: connection.connectedAccount.label })
+          : t(ACCOUNT_LOOKUP_LABEL[connection.accountUnavailableReason ?? "unavailable"])}
+      </Text>
+      {connection.connectedAt && (
+        <Text fz="xs" c="dimmed">
+          {t("mcpConn.connectedAt", { when: formatDateTime(connection.connectedAt, locale) })}
+          {connection.scopes.length > 0 ? ` · ${connection.scopes.join(", ")}` : ""}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
 export function McpConnectionCard({
   agentName,
   serverName,
@@ -80,7 +104,6 @@ export function McpConnectionCard({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const t = useT();
-  const locale = useLocale();
   // Held in a ref so the listener below does not depend on the callback's
   // identity: callers pass an inline arrow, and re-registering the popup
   // listener every render opens a window where the message lands on nothing.
@@ -221,19 +244,11 @@ export function McpConnectionCard({
         </Text>
       )}
 
-      {connection?.connectedAt && (
+      {connection && (connection.connectedAt || connection.status === "connected") && (
         // Wrapped because a granted scope list is unbounded and comes from the
         // provider: one long token with nothing to break on must fold rather
         // than push the dialog off the viewport.
-        <Text fz="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-          {t("mcpConn.authorizedBy", {
-            // Optional on the view; an absent one renders as it did before —
-            // the sentence without a name, rather than the word "undefined".
-            who: connection.connectedBy ?? "",
-            when: formatDateTime(connection.connectedAt, locale),
-          })}
-          {connection.scopes.length > 0 ? ` · ${connection.scopes.join(", ")}` : ""}
-        </Text>
+        <McpConnectionIdentity connection={connection} />
       )}
 
       <Group gap="xs" wrap="wrap">

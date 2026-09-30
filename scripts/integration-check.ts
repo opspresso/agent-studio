@@ -478,6 +478,9 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       authorizationServer: "https://auth.example.com",
       authorizationEndpoint: "https://auth.example.com/authorize",
       tokenEndpoint: "https://auth.example.com/token",
+      userInfoEndpoint: "https://auth.example.com/userinfo",
+      userInfoScopes: ["openid", "email"],
+      accountLookup: { kind: "mcp" as const, toolName: "who_am_i", arguments: {}, labelPath: "/email" },
       tokenEndpointAuthMethod: "none" as const,
       discoveredAt: now,
     };
@@ -514,11 +517,13 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
       status: "connected",
       connectedBy: "owner@example.com",
+      connectedAccount: { provider: "github", label: "connected-account" },
       connectedAt: now,
       updatedAt: now,
     });
     const conn = await mcpConnectionRepository.get(agentName, serverName);
     assert.ok(conn, "mcp connection get");
+    assert.deepEqual(conn.connectedAccount, { provider: "github", label: "connected-account" }, "provider account round-trip");
     assert.equal(
       decryptSecret(
         conn.clientSecret ?? "",
@@ -541,6 +546,9 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     // Compare-and-set on the grant revision: only the first writer can replace
     // the connection snapshot both callers read.
     const stored = conn.revision;
+    assert.equal(await mcpConnectionRepository.updateAccount(conn, { provider: "notion", label: "verified-account" }, "lookup-contract-1"), true);
+    assert.equal((await mcpConnectionRepository.get(agentName, serverName))?.revision, stored, "account display preserves the grant revision");
+    assert.equal((await mcpConnectionRepository.get(agentName, serverName))?.accountLookupId, "lookup-contract-1", "lookup fingerprint survives JSONB round-trip");
     assert.equal(
       await mcpConnectionRepository.updateTokens(agentName, serverName, stored, {
         accessToken: encryptSecret(
@@ -558,6 +566,8 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       true,
       "refresh with the current grant revision wins",
     );
+    assert.deepEqual((await mcpConnectionRepository.get(agentName, serverName))?.connectedAccount,
+      { provider: "notion", label: "verified-account" }, "token rotation preserves verified account display");
     assert.equal(
       await mcpConnectionRepository.updateTokens(agentName, serverName, stored, {
         accessToken: encryptSecret(
@@ -618,6 +628,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
         userEmail: "owner@example.com",
         issuer: "https://auth.example.com",
         issParameterSupported: true,
+        scopes: ["drive.file", "openid", "email"],
         createdAt: now,
       },
       600,
@@ -628,6 +639,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     // the callback has nothing to compare against and fails the flow closed.
     assert.equal(consumed?.issuer, "https://auth.example.com", "expected issuer round-trips");
     assert.equal(consumed?.issParameterSupported, true, "iss advertisement round-trips");
+    assert.deepEqual(consumed?.scopes, ["drive.file", "openid", "email"], "requested identity scopes round-trip");
     assert.equal(
       decryptSecret(consumed?.codeVerifier ?? "", mcpOAuthStateContext(oauthState)),
       "verifier",

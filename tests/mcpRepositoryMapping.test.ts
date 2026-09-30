@@ -92,12 +92,14 @@ describe("mcp connection mapping", () => {
     const second = (await mcpConnectionRepository.get("p", "slack"))!;
 
     expect(await mcpConnectionRepository.putIfCurrent({ ...connection, clientId: "stale" }, first)).toBe(false);
+    expect(await mcpConnectionRepository.updateAccount(first, { provider: "notion", label: "old@example.test" })).toBe(false);
     expect(await mcpConnectionRepository.deleteIfCurrent(first)).toBe(false);
     expect((await mcpConnectionRepository.get("p", "slack"))?.clientId).toBe("second");
 
     expect(await mcpConnectionRepository.deleteIfCurrent(second)).toBe(true);
     expect(await mcpConnectionRepository.putIfCurrent(connection, second)).toBe(false);
     expect(await mcpConnectionRepository.get("p", "slack")).toBeNull();
+    expect(await mcpConnectionRepository.updateAccount(second, { provider: "plaud", label: "old@example.test" })).toBe(false);
   });
 
   it.each([undefined, "enc:unchanged-refresh"])(
@@ -113,6 +115,8 @@ describe("mcp connection mapping", () => {
         accessToken: "enc:unchanged-access",
         refreshToken,
         status: "connected",
+        connectedAccount: { provider: "github", label: "octocat" },
+        accountLookupId: "lookup-contract-1",
         updatedAt: "2026-01-01T00:00:00.000Z",
       };
       await mcpConnectionRepository.put(connection);

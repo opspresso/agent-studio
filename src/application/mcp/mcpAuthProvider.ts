@@ -65,7 +65,7 @@ function bearer(token: string): Record<string, string> {
  *
  * @returns why the connection may not be used, or undefined when it may.
  */
-function mismatchReason(
+export function mcpConnectionAuthMismatch(
   connection: McpConnection,
   serverName: string,
   auth: McpServerAuth,
@@ -87,7 +87,7 @@ function unavailableReason(
   serverName: string,
   auth: McpServerAuth,
 ): string | undefined {
-  const mismatch = mismatchReason(connection, serverName, auth);
+  const mismatch = mcpConnectionAuthMismatch(connection, serverName, auth);
   if (mismatch) {
     return mismatch;
   }

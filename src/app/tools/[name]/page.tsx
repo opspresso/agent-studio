@@ -45,6 +45,7 @@ import {
 import { monoInput } from "@/app/_components/monoInput";
 import { MCP_RUNTIME_COLOR, PLUGIN_COLOR } from "@/app/_components/badgeColors";
 import { CredentialBadges } from "../_components/CredentialBadges";
+import { McpAccountLookupEditor } from "../_components/McpAccountLookupEditor";
 import { parsePluginSource } from "@/domain/plugin/types";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
@@ -711,6 +712,11 @@ function OAuthSection({
             {t("mcpOAuth.automatic")}
           </Text>
         )}
+        {editable && <McpAccountLookupEditor key={JSON.stringify(server.auth.accountLookup ?? null)} value={server.auth.accountLookup} userInfoEndpoint={server.auth.userInfoEndpoint}
+          disabled={busy || !clientSettingsLoaded} onSave={async accountLookup => {
+            await saveMcpOAuthClient(server.name, { accountLookup });
+            onChanged();
+          }} />}
         {editable && (
           <details open={showManualClient || undefined}>
           <summary>{t("mcpOAuth.manual")}</summary>
