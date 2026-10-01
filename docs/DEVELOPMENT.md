@@ -144,6 +144,8 @@ DB poll 실패 후 대기와 SIGTERM 종료를 확인하는 별도 smoke 검사�
 별도 화자 서비스는 `docker build -f deploy/diarization/Dockerfile -t agent-studio-diarization:check .`으로 빌드한다.
 `docker run --rm --network none --entrypoint python -v "$PWD/deploy/diarization:/checks:ro" agent-studio-diarization:check -B -m unittest discover -s /checks`
 는 인증·본문 제한·오류 redaction·임시 파일 정리와 실제 ffmpeg decode를 검사한다. 모델 추론은 결정적 fixture다.
+같은 Docker 옵션으로 `-B /checks/check_worker.py`를 실행하면 실제 spawn process의 추론 시간 초과·
+강제 종료·reap과 다음 요청 복구를 검사한다. 실제 모델 weight는 필요하지 않다.
 실제 화자 정확도·한국어 전사 품질은 반입한 weight와 검수된 녹음으로 별도 평가한다.
 
 `test:audio:pipeline`은 선택적으로 실제 Agent Memory MCP까지 검증한다. 별도 폐기 가능한

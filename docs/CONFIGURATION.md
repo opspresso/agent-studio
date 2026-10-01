@@ -594,7 +594,10 @@ worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것
 응답 형식은 `json`, provider chunking strategy는 미설정으로 둔다. 화자 분석은 해당 모델과 별개다.
 서비스의 설치·모델 반입은 [설치 안내](INSTALL.md#별도-화자-분리)를 따른다.
 `DIARIZATION_BASE_URL`은 LLM·사용자가 선택하는 주소가 아니며 운영자가 신뢰하는 내부 서비스만 지정한다.
-서비스 요청은 1시간으로 제한한다. revision이나 전사 설정이 바뀐 기존 checkpoint는 거부하므로
+서비스는 모델 process의 시작을 2분, 디코딩·화자 추론을 요청마다 1시간으로 제한한다. 시간 초과 시
+해당 process group을 종료하고 504를 반환하며 다음 요청에서 모델 process를 다시 시작한다.
+클라이언트는 모델 시작·추론 제한과 응답 여유 1분을 합친 63분 후 요청을 중단한다. 서버의 업로드
+소켓에는 별도의 60초 유휴 제한이 있다. revision이나 전사 설정이 바뀐 기존 checkpoint는 거부하므로
 같은 모델 revision을 유지해 재시도하거나 새로운 processing_revision으로 재처리한다.
 
 전사 모델은 카탈로그의 Transcription 타입이어야 한다. HTTP multipart를 지원하지 않는 SigV4

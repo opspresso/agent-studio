@@ -1,7 +1,9 @@
 """Private, offline whole-recording pyannote inference. No audio is persisted."""
 import hmac
 import json
+import multiprocessing
 import os
+import signal
 from pathlib import Path
 import subprocess
 import tempfile
@@ -20,6 +22,98 @@ MAX_SECONDS = limits["maxSeconds"]
 SAMPLE_RATE = 16000
 formats = json.loads(limits_path.with_name("formats.json").read_text())
 DEMUXERS = ",".join(dict.fromkeys(formats.values()))
+
+
+class DiarizationTimeout(Exception):
+    pass
+
+
+def inference_process(connection, model, revision):
+    # Killing this process group also stops a decoder spawned by an active request.
+    os.setsid()
+    os.environ.update(HF_HUB_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1", PYANNOTE_METRICS_ENABLED="0")
+    try:
+        from pyannote.audio import Pipeline
+        pipeline = Pipeline.from_pretrained(str(model))
+        if not callable(pipeline):
+            raise ValueError("Model did not load")
+        connection.send({"status": "ready"})
+        while True:
+            path = Path(connection.recv())
+            try:
+                result = analyze(path, pipeline, revision)
+            except (ValueError, subprocess.SubprocessError):
+                connection.send({"status": "invalid_audio"})
+            except Exception:
+                connection.send({"status": "failed"})
+            else:
+                connection.send({"status": "ok", "timeline": result})
+    except EOFError:
+        pass
+    except Exception:
+        connection.send({"status": "failed"})
+    finally:
+        connection.close()
+
+
+class InferenceWorker:
+    """Persistent model process with a parent-owned deadline and crash recovery."""
+    def __init__(self, model, revision, context=None):
+        self.model = model
+        self.revision = revision
+        self.context = context or multiprocessing.get_context("spawn")
+        self.process = None
+        self.connection = None
+
+    def close(self):
+        if self.connection is not None:
+            self.connection.close()
+            self.connection = None
+        if self.process is not None:
+            if self.process.pid is not None:
+                if self.process.is_alive():
+                    try:
+                        os.killpg(self.process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        self.process.kill()
+                self.process.join(timeout=5)
+                if self.process.is_alive():
+                    raise RuntimeError("Diarization worker could not stop")
+                self.process.close()
+            self.process = None
+
+    def start(self):
+        self.close()
+        self.connection, child = self.context.Pipe()
+        self.process = self.context.Process(target=inference_process, args=(child, self.model, self.revision))
+        try:
+            self.process.start()
+            child.close()
+            if not self.connection.poll(limits["maxDiarizationStartupSeconds"]):
+                raise DiarizationTimeout("Model startup timed out")
+            if self.connection.recv().get("status") != "ready":
+                raise RuntimeError("Diarization model could not load")
+        except Exception:
+            child.close()
+            self.close()
+            raise
+
+    def analyze(self, path):
+        if self.process is None or not self.process.is_alive():
+            self.start()
+        try:
+            self.connection.send(str(path))
+            if not self.connection.poll(limits["maxDiarizationInferenceSeconds"]):
+                raise DiarizationTimeout("Diarization inference timed out")
+            result = self.connection.recv()
+        except Exception:
+            self.close()
+            raise
+        if result.get("status") == "invalid_audio":
+            raise ValueError("Invalid audio")
+        if result.get("status") != "ok":
+            raise RuntimeError("Diarization inference failed")
+        return result["timeline"]
 
 
 def analyze(path, pipeline, revision):
@@ -119,6 +213,8 @@ def handler(token, infer):
                             audio.write(chunk)
                             remaining -= len(chunk)
                     self.reply(200, infer(path))
+            except DiarizationTimeout:
+                self.reply(504, {"error": "diarization_timeout"})
             except (ValueError, subprocess.SubprocessError):
                 self.reply(422, {"error": "audio_invalid"})
             except (BrokenPipeError, ConnectionResetError, TimeoutError):
@@ -141,16 +237,17 @@ class Server(ThreadingHTTPServer):
 
 
 def main():
-    # Force offline operation before importing model libraries. No startup download.
-    os.environ.update(HF_HUB_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1", PYANNOTE_METRICS_ENABLED="0")
     token = os.environ["DIARIZATION_TOKEN"]
     revision = os.environ["DIARIZATION_REVISION"]
     model = Path(os.environ.get("DIARIZATION_MODEL_PATH", "/models/community-1"))
     if not token.strip() or not revision.strip() or len(revision) > 128 or not model.is_dir():
         raise ValueError("Diarization requires a token, revision, and local model directory")
-    from pyannote.audio import Pipeline
-    pipeline = Pipeline.from_pretrained(str(model))
-    Server(("0.0.0.0", 8000), handler(token, lambda path: analyze(path, pipeline, revision))).serve_forever()
+    worker = InferenceWorker(model, revision)
+    try:
+        worker.start()
+        Server(("0.0.0.0", 8000), handler(token, worker.analyze)).serve_forever()
+    finally:
+        worker.close()
 
 
 if __name__ == "__main__":

@@ -47,7 +47,7 @@ describe("private diarization adapter", () => {
       headers: { authorization: "Bearer synthetic-token", "content-type": "audio/mpeg" },
     }));
   });
-  it.each([401, 503, 422])("surfaces service HTTP %i without exposing its body", async status => {
+  it.each([401, 503, 504, 422])("surfaces service HTTP %i without exposing its body", async status => {
     vi.spyOn(AbortSignal, "timeout").mockReturnValue(new AbortController().signal);
     vi.stubGlobal("fetch", vi.fn(async () => new Response("private content", { status })));
     await expect(createDiarizer(config).analyze({ bytes: new Uint8Array([1]), mimeType: "audio/wav" }))

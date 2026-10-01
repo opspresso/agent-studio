@@ -6,8 +6,9 @@ import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import Mock, patch
 
-from server import analyze, handler
+from server import DiarizationTimeout, InferenceWorker, analyze, handler
 
 
 class Socket:
@@ -26,7 +27,7 @@ class Socket:
 
 
 class ServiceTests(unittest.TestCase):
-    def request(self, headers=None, body=b"audio", infer=None, path="/diarize"):
+    def request(self, headers=None, body=b"audio", infer=None, path="/diarize", handler_class=None):
         self.inferred = []
 
         def inference(path):
@@ -39,7 +40,7 @@ class ServiceTests(unittest.TestCase):
         values.update(headers or {})
         lines = [f"POST {path} HTTP/1.1"] + [f"{key}: {value}" for key, value in values.items()]
         socket = Socket(("\r\n".join(lines) + "\r\n\r\n").encode() + body)
-        handler("fixture", inference)(socket, ("127.0.0.1", 1), None)
+        (handler_class or handler("fixture", inference))(socket, ("127.0.0.1", 1), None)
         status, payload = bytes(socket.output).split(b"\r\n\r\n", 1)
         return int(status.split()[1]), json.loads(payload)
 
@@ -82,6 +83,68 @@ class ServiceTests(unittest.TestCase):
         status, result = self.request(infer=infer)
         self.assertEqual(status, 500)
         self.assertEqual(result, {"error": "diarization_failed"})
+
+    def test_timeout_returns_failure_and_releases_the_request_slot(self):
+        paths = []
+
+        def infer(path):
+            paths.append(path)
+            if len(paths) == 1:
+                raise DiarizationTimeout("private details")
+            return {"duration": 1, "revision": "v1", "turns": [], "warnings": []}
+
+        handler_class = handler("fixture", infer)
+        status, result = self.request(handler_class=handler_class)
+        self.assertEqual(status, 504)
+        self.assertEqual(result, {"error": "diarization_timeout"})
+        self.assertFalse(paths[0].exists())
+        status, _ = self.request(handler_class=handler_class)
+        self.assertEqual(status, 200)
+
+
+class WorkerTests(unittest.TestCase):
+    def test_timeout_stops_the_process_group_before_starting_the_next_worker(self):
+        first, second = Mock(), Mock()
+        first.pid, second.pid = 123, 456
+        first.is_alive.side_effect = [True, True, False]
+        second.is_alive.return_value = True
+        pipe1, pipe2, child1, child2 = Mock(), Mock(), Mock(), Mock()
+        pipe1.poll.side_effect = [True, False]
+        pipe1.recv.return_value = {"status": "ready"}
+        pipe2.poll.return_value = True
+        pipe2.recv.side_effect = [{"status": "ready"}, {"status": "ok", "timeline": {"duration": 1}}]
+        context = Mock()
+        context.Pipe.side_effect = [(pipe1, child1), (pipe2, child2)]
+        context.Process.side_effect = [first, second]
+        worker = InferenceWorker(Path("/model"), "v1", context=context)
+        with patch("server.os.killpg") as kill_group:
+            worker.start()
+            with self.assertRaises(DiarizationTimeout):
+                worker.analyze(Path("/source"))
+            kill_group.assert_called_once()
+            self.assertEqual(kill_group.call_args.args[0], 123)
+            first.join.assert_called_once_with(timeout=5)
+            first.close.assert_called_once()
+            pipe1.close.assert_called_once()
+            self.assertIsNone(worker.process)
+            self.assertEqual(worker.analyze(Path("/next")), {"duration": 1})
+            self.assertEqual(context.Process.call_count, 2)
+            pipe2.send.assert_called_once_with("/next")
+
+    def test_failed_model_load_never_leaves_a_worker_ready(self):
+        context = Mock()
+        pipe, child, process = Mock(), Mock(), Mock()
+        process.pid = 123
+        process.is_alive.return_value = False
+        pipe.poll.return_value = True
+        pipe.recv.return_value = {"status": "failed"}
+        context.Pipe.return_value = pipe, child
+        context.Process.return_value = process
+        worker = InferenceWorker(Path("/model"), "v1", context=context)
+        with self.assertRaisesRegex(RuntimeError, "could not load"):
+            worker.start()
+        process.close.assert_called_once()
+        self.assertIsNone(worker.process)
 
 
 class DecoderTests(unittest.TestCase):

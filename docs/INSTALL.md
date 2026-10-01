@@ -188,6 +188,8 @@ Agent 설정의 `parameters.audioProcessing=true`로 Agent 도구를 켠다. 저
 별도 [서비스 이미지](../deploy/diarization/Dockerfile)는 CPU 추론을 사용한다. Compose는 포트를 host
 loopback에만 노출하고 read-only 모델·filesystem, 임시 `/tmp`, 4 CPU·8 GiB 메모리를 사용한다.
 서비스는 한 번에 한 녹음만 처리하고 다른 요청에는 503을 반환한다. worker의 기존 재시도 정책을 사용한다.
+모델은 별도 process에 한 번 로딩해 재사용한다. 추론 시간 초과·process 종료 시 실행 슬롯과 임시 파일을
+정리하고 다음 요청에서 새 process를 시작한다. 시간 제한은 [설정 안내](CONFIGURATION.md#오디오-전사-설정)를 따른다.
 GET `/health`는 모델 로딩 후 준비 상태를 제공한다. POST `/diarize`는 Bearer 인증·Content-Length가 있는
 오디오 bytes를 받아 전체 녹음의 exclusive 타임라인을 반환한다. 원본 상한·길이·지원 decoder는 앱과 동일하며,
 MIME 대소문자와 parameter는 정규화하되 지원 형식을 확장하지 않는다.

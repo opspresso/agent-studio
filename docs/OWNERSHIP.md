@@ -127,7 +127,7 @@
 | plugin snapshot 하나가 동시에 읽을 선택 파일 수 | `src/infrastructure/plugin/snapshot.ts` 의 `MAX_CONCURRENT_PLUGIN_READS` | 구조 |
 | plugin 기본 파일 응답 매핑 선언·검증 | `src/domain/plugin/types.ts`의 `STUDIO_PLUGIN_EXTENSION`, `src/domain/mcp/sourceMapping.ts`의 `isMcpSourceMappings` | 구조 |
 | 오디오 도구의 작업별 입력 shape | `src/application/audio/toolDefinitions.ts`; `AudioJob.request`의 operation별 union | 구조 |
-| 녹음 전체 화자 타임라인 검증·앱과 화자 서비스의 길이·입력·화자 구간 상한 | `src/domain/audio/diarization.ts`, `src/domain/audio/limits.json` (`limits.ts`가 앱에 export) | 코드 |
+| 녹음 전체 화자 타임라인 검증·앱과 화자 서비스의 길이·입력·화자 구간·모델 process 시간 상한 | `src/domain/audio/diarization.ts`, `src/domain/audio/limits.json` (`limits.ts`가 앱에 export) | 코드 |
 | 앱 decoder·화자 분석 클라이언트·서비스의 지원 MIME와 demuxer | `src/domain/audio/formats.json`; `formats.ts`가 앱의 정규화를 소유한다 | 코드 |
 | 화자 전환별 분할·샘플 coverage·동일 화자 pause 병합 | `src/infrastructure/llm/audioSegmenter.ts` | 코드 |
 | 오디오 Agent 큐의 접수 순서·due 인덱스·직렬 claim | `src/infrastructure/db/repositories/audioJobRepository.ts`; 큐 첫 작업만 실행하고 작업 전이와 큐 갱신을 transaction으로 묶는다 | 구조 |

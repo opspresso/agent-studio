@@ -1,11 +1,12 @@
 import { validateSpeakerTimeline, type DiarizationPort, type SpeakerTimeline } from "@/domain/audio/diarization";
 import { TranscriptionError } from "@/domain/llm/transcription";
 import { readBodyText } from "@/shared/httpBody";
-import { MAX_DIARIZATION_INPUT_BYTES } from "@/domain/audio/limits";
+import { MAX_DIARIZATION_INPUT_BYTES, MAX_DIARIZATION_STARTUP_SECONDS, MAX_DIARIZATION_INFERENCE_SECONDS } from "@/domain/audio/limits";
 import { normalizeAudioMimeType } from "@/domain/audio/formats";
 
 export interface DiarizationConfig { baseUrl: string; token: string; revision: string }
-const REQUEST_TIMEOUT_MS = 60 * 60 * 1000;
+// Allow the server's startup/inference deadlines to produce an HTTP failure first.
+const REQUEST_TIMEOUT_MS = (MAX_DIARIZATION_STARTUP_SECONDS + MAX_DIARIZATION_INFERENCE_SECONDS + 60) * 1000;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
 /** Deployment-owned private service; model/tool input can never choose its URL. */
