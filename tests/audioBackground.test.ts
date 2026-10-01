@@ -1,3 +1,4 @@
+import { executionIdentity } from "./runIdentity";
 import { describe, expect, it, vi } from "vitest";
 import { buildAgentDeps } from "@/application/execution/agentBindings";
 import type { ExecutionDeps } from "@/application/execution/deps";
@@ -10,13 +11,13 @@ import { prepareMemoryForRun } from "@/application/execution/memoryRecall";
 describe("background audio recursion guard", () => {
   it("withholds submission tools from the postprocessor and all of its subagents", async () => {
     const audioTools = vi.fn(async () => vi.fn(async () => ({ text: "queued" })));
-    const deps = { channel: new FakeChannel([]), audioTools } as unknown as ExecutionDeps;
+    const deps = { authorizeRun: async () => {}, channel: new FakeChannel([]), audioTools } as unknown as ExecutionDeps;
     const configuration: AgentConfiguration = { agentName: "writer",  model: "openai/gpt-5-mini",
       systemPrompt: "",  parameters: { piiFiltering: false, audioProcessing: true },
       skillList: [], mcpList: [], subagentList: [] };
-    const normal = await buildAgentDeps(deps, configuration, "writer", async () => {}, { ancestry: ["writer"] });
+    const normal = await buildAgentDeps(deps, configuration, "writer", async () => {}, { ...executionIdentity(), ancestry: ["writer"] });
     expect(normal.audioTools).toBeDefined();
-    const origin = { ancestry: ["writer"], backgroundTask: true };
+    const origin = { ...executionIdentity(), ancestry: ["writer"], backgroundTask: true };
     const background = await buildAgentDeps(deps, configuration, "writer", async () => {}, origin);
     const child = await buildAgentDeps(deps, configuration, "child", async () => {}, descend(origin, "child"));
     expect(background.audioTools).toBeUndefined(); expect(child.audioTools).toBeUndefined();
@@ -31,7 +32,7 @@ describe("background audio recursion guard", () => {
 
   it("does not resolve bindings or discover capabilities for source postprocessing", async () => {
     const denied = vi.fn(async () => { throw new Error("Capability must not be resolved"); });
-    const deps = { mcps: { get: denied }, agents: { get: denied },
+    const deps = { authorizeRun: async () => {}, mcps: { get: denied }, agents: { get: denied },
       catalog: { search: denied }, skills: { describe: vi.fn(async () => [{ name: "writer", description: "Writing guidance" }]) } } as unknown as ExecutionDeps;
     const configuration: AgentConfiguration = { agentName: "writer",  model: "openai/gpt-5-mini",
       systemPrompt: "",  parameters: { piiFiltering: false, dynamicCapabilities: true, memoryRecall: true },

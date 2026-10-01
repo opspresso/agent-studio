@@ -37,6 +37,15 @@ Agent의 비용 정책은 [지출 가드](../OPERATIONS.md#지출-가드와-부�
 
 ## Native Agent Runtime
 
+모든 Agent 실행 진입점은 `RunIdentity`의 Studio 사용자 ID·이메일과 호출 출처 actor를 필수로 받는다.
+개인 토큰·메신저·Schedule·Webhook 실행은 해당 출처의 인증 근거도 보존한다.
+`authorizeRunIdentity`는 현재 계정과 대상 Agent 접근, 원래 인증 근거를 검증한다.
+호출자가 없거나 검증기를 연결하지 않은 실행은 모델·도구·사용량 기록 전에 거절한다.
+하위 Agent도 같은 사용자의 접근을 별도로 확인하며 Agent 소유자 권한으로 바꾸지 않는다.
+
+권한 검사는 각 모델 요청과 도구 실행 직전에 반복한다. 스트리밍·일반 응답·fallback·ModelTask와
+라우팅 결정 모델도 같은 검사를 거친다. 앱의 권한·한도 거절은 다른 모델로 재시도하지 않는다.
+
 이 앱은 Agent 운영 Control Plane이며 OpenAI Agents SDK가 기본 Agent Runtime이다.
 앱은 현재 설정·바인딩·권한·자격 증명·한도·저장을 준비하고, SDK의 `Agent`와 `Runner`가
 모델 턴·도구 실행·Handoff·Agent-as-Tool·Guardrail·승인 중단과 재개를 수행한다.

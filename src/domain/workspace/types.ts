@@ -1,5 +1,5 @@
 import type { CodingRepository, PullRequestInfo } from "@/domain/coding/types";
-import type { RunActor, RunUser, ExecutionGrant } from "@/domain/execution/actor";
+import type { RunIdentity } from "@/domain/execution/actor";
 
 export const WORKSPACE_RUNTIMES = ["command", "codex", "claude", "opencode"] as const;
 export type WorkspaceRuntime = (typeof WORKSPACE_RUNTIMES)[number];
@@ -64,16 +64,12 @@ export type WorkspaceInput =
 
 export type WorkspaceRunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted";
 
-export interface WorkspaceRun {
+export interface WorkspaceRun extends RunIdentity {
   id: string;
   workspaceId: string;
   sessionId: string;
   requestKey: string;
   input: WorkspaceInput;
-  /** The authenticated caller remains distinct from the Workspace's managing member. */
-  user: RunUser;
-  actor: RunActor;
-  executionGrant?: ExecutionGrant;
   status: WorkspaceRunStatus;
   createdAt: string;
   startedAt?: string;

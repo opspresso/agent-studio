@@ -164,12 +164,9 @@ function sanitizeCallerName(value: string | undefined): string | undefined {
  * same person as its parent — so they are one value rather than separate parameters
  * threaded side by side through eight signatures.
  */
-export interface RunOrigin {
-  user?: RunUser;
-  executionGrant?: ExecutionGrant;
+export interface RunOrigin extends RunIdentity {
   /** Source processing may read bound skills; its calling use case owns all external effects. */
   backgroundTask?: boolean;
-  actor?: RunActor;
   /**
    * A user email resolved by a surface whose actor id is not an email, such as
    * Slack.

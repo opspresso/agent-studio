@@ -37,8 +37,8 @@ export async function previewPrompt(
      */
     caller?: RunCaller;
     /** The signed-in user whose identity is sent to bound MCP servers. */
-    actor?: RunActor;
-    user?: RunUser;
+    actor: RunActor;
+    user: RunUser;
   },
 ): Promise<PromptPreview> {
   const { agent, configuration } = input;
@@ -58,7 +58,7 @@ export async function previewPrompt(
     );
   }
 
-  const origin = input.actor ? { actor: input.actor, ...(input.user ? { user: input.user } : {}) } : undefined;
+  const origin = { actor: input.actor, user: input.user, userEmail: input.user.email };
   const memory = input.message?.trim()
     ? await prepareMemoryForRun(deps, {
         configuration,

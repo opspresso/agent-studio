@@ -1,3 +1,4 @@
+import { executionIdentity } from "./runIdentity";
 import { withConfigurations } from "./agentConfigurations";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addTestModels } from "./modelFixtures";
@@ -201,11 +202,11 @@ describe("subagent preparation enforces model policy", () => {
   const child: Agent = { ...agent, name: "child" };
   const parent = configuration({ agentName: "parent", subagentList: [{ name: "child" }] });
   function prepare(policy: UnknownModelPolicy | undefined, model: string) {
-    const deps = {
+    const deps = { authorizeRun: async () => {},
       agents: withConfigurations({ get: async () => child }, ({ get: async () => configuration({ agentName: "child", model }) }).get),
       ...(policy ? { unknownModelPolicy: async () => policy } : {}),
     } as unknown as ExecutionDeps;
-    return prepareSubagent(deps, parent, "child", { message: "hi", images: [] }, async () => {}, { ancestry: ["parent"] });
+    return prepareSubagent(deps, parent, "child", { message: "hi", images: [] }, async () => {}, { ...executionIdentity(), ancestry: ["parent"] });
   }
   it("refuses an unselected child before model execution", async () => {
     await expect(prepare("refuse", UNKNOWN)).rejects.toThrow("selected by an administrator");

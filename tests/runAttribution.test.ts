@@ -1,3 +1,4 @@
+import { executionIdentity } from "./runIdentity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ids = vi.hoisted(() => ({ sequence: 0 }));
@@ -80,15 +81,16 @@ describe("verified API execution context", () => {
 
 describe("descend", () => {
   it("extends the chain and keeps the actor", () => {
-    const origin = { actor: { kind: "user", id: "a@example.com" } as RunActor, ancestry: ["top"] };
+    const origin = { ...executionIdentity({ kind: "user", id: "a@example.com" } as RunActor), actor: { kind: "user", id: "a@example.com" } as RunActor, ancestry: ["top"] };
     expect(descend(origin, "child")).toEqual({
+      user: origin.user,
       actor: { kind: "user", id: "a@example.com" },
       ancestry: ["top", "child"],
     });
   });
 
   it("does not mutate the parent's chain", () => {
-    const origin = { ancestry: ["top"] };
+    const origin = { ...executionIdentity(), ancestry: ["top"] };
     descend(origin, "child");
     expect(origin.ancestry).toEqual(["top"]);
   });

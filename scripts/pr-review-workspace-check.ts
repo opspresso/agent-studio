@@ -13,6 +13,7 @@ import type { TriggerRunnerDeps } from "@/application/trigger/deps";
 import { FakeChannel, contentChunk, toolCallChunk } from "../tests/fakeChannel";
 import { createAgentCredentialUseCases } from "@/application/auth/agentCredentialUseCases";
 import { assertExecutionGrant } from "@/application/auth/authorizeExecutionGrant";
+import { authorizeRunIdentity } from "@/application/auth/authorizeRunIdentity";
 import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
 
 process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@127.0.0.1:5432/agent_studio_test";
@@ -129,7 +130,7 @@ async function main() {
     [toolCallChunk(0, "wait", "Workspace", JSON.stringify({ request: { operation: "wait" } }))],
     [contentChunk("[P1] index.js:1 — twice(1)이 2 대신 3을 반환합니다. Workspace 재현 검사가 실패했습니다.")],
   ]);
-  const execution = { authorizeExecutionGrant: (grant: import("@/domain/execution/actor").ExecutionGrant) => assertExecutionGrant(grantDeps, grant), agents, usage, cipher, channel, createToolSchemaValidator, skills: { get: async () => null, describe: async () => [] }, mcps: { get: async () => null } } as unknown as ExecutionDeps;
+  const execution = { authorizeRun: (agent: string, identity: import("@/domain/execution/actor").RunIdentity) => authorizeRunIdentity(grantDeps, agent, identity), agents, usage, cipher, channel, createToolSchemaValidator, skills: { get: async () => null, describe: async () => [] }, mcps: { get: async () => null } } as unknown as ExecutionDeps;
   const actor = { kind: "webhook" as const, id: `${agentName}:webhook` };
   const deps: TriggerRunnerDeps = { members, agents, triggers, webhookCredentials, reviewForge: () => github.reviews,
     run: input => streamAgentRun(execution, { ...input, messages: [{ role: "user", content: input.message ?? "" }], ownerEmail: input.userEmail }),

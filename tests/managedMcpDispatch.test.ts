@@ -56,7 +56,7 @@ function stubMcpServer(): void {
 
 function depsFor(server: McpServer, policy: UrlPolicy): ExecutionDeps {
   const reject = () => Promise.reject(new Error("not used"));
-  return {
+  return { authorizeRun: async () => {},
     mcps: { get: async () => server, list: reject, put: reject, delete: reject },
     cipher: secretCipher,
     urlPolicy: policy,

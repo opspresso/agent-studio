@@ -24,7 +24,7 @@ import { openRun } from "@/application/run/runBracket";
 import { captureRunArtifacts } from "@/application/artifact/runArtifacts";
 import { fileRefOf, type ProducedFileRef } from "@/application/artifact/producedFiles";
 import type { ExecuteAgentInput, AgentRunInput, ExecutionDeps } from "./deps";
-import { executionGrantCheck } from "./executionGrant";
+import { executionAuthorization } from "./executionAuthorization";
 import { discoveryQueries, recentUserQueries, resolveRunTools, toolsPrepared } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./agentBindings";
@@ -204,23 +204,20 @@ export async function* executeAgent(
   deps: ExecutionDeps,
   input: ExecuteAgentInput,
 ): AsyncGenerator<EngineChunk> {
-  if (input.executionGrant && (input.ownerEmail !== input.executionGrant.email || input.actor?.kind !== input.executionGrant.kind ||
-    input.user?.userId !== input.executionGrant.userId || input.user.email !== input.executionGrant.email)) {
-    throw new ValidationError("Execution identity does not match its permission grant");
-  }
-  await executionGrantCheck(deps, input.executionGrant)?.();
+  if (input.ownerEmail && input.ownerEmail !== input.user?.email) throw new ValidationError("Execution owner does not match its authenticated user");
+  await executionAuthorization(deps, input.agent.name, input)();
   // A multi-turn agent run makes many LLM calls; accumulate their usage and
   // flush once (per agent/date/model) when the run ends, even on error.
   // The actor is the run's, not the turn's: every model call this loop makes —
   // including the ones a subagent transfer makes on another agent — was caused
   // by whoever started it.
   const origin: RunOrigin = {
-    ...(input.user ? { user: input.user } : {}),
+    user: input.user,
     ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
     ...(input.backgroundTask ? { backgroundTask: true } : {}),
     ancestry: [input.agent.name],
-    ...(input.actor ? { actor: input.actor } : {}),
-    ...(input.ownerEmail ? { userEmail: input.ownerEmail } : {}),
+    actor: input.actor,
+    userEmail: input.user.email,
     // Carried unconditionally, like the actor: a child is answering the same
     // person as its parent. Whether a *prompt* names them stays a per-Agent
     // question that `callerFor` answers at each engine-input boundary — this
@@ -233,7 +230,7 @@ export async function* executeAgent(
   };
   const usage = createUsageAggregator(deps.usage, input.actor && toActorKey(input.actor));
   const bracket = await openRun(deps, input.agent, input.configuration, input.actor, {
-    ...(input.ownerEmail ? { ownerEmail: input.ownerEmail } : {}),
+    ownerEmail: input.user.email,
   });
   const recorder = deps.traces
     ? createTraceRecorder(deps.traces, input.agent, input.configuration, input.messages.length, origin)
@@ -255,7 +252,7 @@ export async function* executeAgent(
     const decisionModel = await deps.callRouting?.selectedDecisionModel();
     const pinnedCallRouting = deps.callRouting ? { ...deps.callRouting, selectedDecisionModel: async () => decisionModel } : undefined;
     const runtime = deps.runtimeSessions && input.conversation?.surface === "chat" && input.actor?.kind === "user"
-      ? await openRuntimeSession(deps.runtimeSessions, { sessionId: input.conversation.id, userId: input.user?.userId ?? "", ownerEmail: input.actor.id, agentName: input.agent.name, configuration: input.configuration,
+      ? await openRuntimeSession(deps.runtimeSessions, { sessionId: input.conversation.id, userId: input.user.userId, ownerEmail: input.actor.id, agentName: input.agent.name, configuration: input.configuration,
         routingPolicyFingerprint: modelRoutingPolicyFingerprint(routingPolicy, decisionModel) }, input.resumeApproval)
       : undefined;
     if (input.resumeApproval && !runtime) throw new ValidationError("Approval resumption requires a persisted chat session");

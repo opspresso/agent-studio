@@ -26,7 +26,7 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { HttpResourceReader } from "@/domain/net/httpResource";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import type { RunActor, RunCaller, RunConversation, RunOrigin, RunUser, ExecutionGrant } from "@/domain/execution/actor";
+import type { RunCaller, RunConversation, RunOrigin, RunIdentity } from "@/domain/execution/actor";
 import type { RunBracketDeps } from "@/application/run/runBracket";
 import type { SlackWorkspaceReader } from "@/domain/slack/reader";
 import type { RuntimeSessionServices } from "@/application/runtime/session";
@@ -42,7 +42,7 @@ import type { PullRequestReviewTarget, ReviewWorkspaceTool } from "@/domain/trig
 export interface ExecutionDeps extends RunBracketDeps {
   reviewWorkspace?: ReviewWorkspaceTool;
   reviewSource?: (args: Record<string, unknown>) => Promise<McpToolResult>;
-  authorizeExecutionGrant?: (grant: ExecutionGrant) => Promise<void>;
+  authorizeRun: (agentName: string, identity: RunIdentity) => Promise<void>;
   getCallRoutingPolicy?: () => Promise<import("@/domain/llm/callRouting").CallRoutingPolicy>;
   callRouting?: import("@/application/llm/callModelRouter").CallRoutingDeps;
   createToolSchemaValidator: () => ToolSchemaValidator;
@@ -125,19 +125,16 @@ export interface ExecutionDeps extends RunBracketDeps {
   now?: () => Date;
 }
 
-export interface ExecuteAgentInput {
-  user?: RunUser;
+export interface ExecuteAgentInput extends RunIdentity {
   reviewWorkspace?: ReviewWorkspaceTool;
   /** Prepared by the verified PR use case; never accepted from public execution bodies. */
   reviewSource?: ExecutionDeps["reviewSource"];
-  executionGrant?: ExecutionGrant;
   resumeApproval?: { revision: number; decisions: RuntimeApprovalDecision[] };
   backgroundTask?: boolean;
   agent: Agent;
   configuration: AgentConfiguration;
   /** OpenAI-shaped message history from the route/chat boundary. */
   messages: ChatMessageInput[];
-  actor?: RunActor;
   /** Display identity, included only when callerContext is enabled. */
   caller?: RunCaller;
   /** Surface-scoped conversation identity. */
@@ -157,16 +154,13 @@ export interface ExecuteAgentInput {
 
 // --- Agent-level dispatch --------------------------------------------------
 
-export interface AgentRunInput {
-  user?: RunUser;
+export interface AgentRunInput extends RunIdentity {
   reviewWorkspace?: ReviewWorkspaceTool;
   reviewSource?: ExecutionDeps["reviewSource"];
-  executionGrant?: ExecutionGrant;
   backgroundTask?: boolean;
   agent: Agent;
   configuration: AgentConfiguration;
   messages: ChatMessageInput[];
-  actor?: RunActor;
   /** Server-resolved user identity for non-user entry points such as schedules. */
   ownerEmail?: string;
   /** See {@link ExecuteAgentInput.caller}. */
@@ -199,8 +193,8 @@ export function toRunInput(
     agent: input.agent,
     configuration: input.configuration,
     messages: input.messages,
-    ...(input.user ? { user: input.user } : {}),
-    ...(input.actor ? { actor: input.actor } : {}),
+    user: input.user,
+    actor: input.actor,
     ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
     ...(input.reviewSource ? { reviewSource: input.reviewSource } : {}),
     ...(input.reviewWorkspace ? { reviewWorkspace: input.reviewWorkspace } : {}),

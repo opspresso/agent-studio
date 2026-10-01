@@ -1,3 +1,4 @@
+import { executionIdentity } from "./runIdentity";
 import { withConfigurations } from "./agentConfigurations";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
@@ -116,7 +117,7 @@ function executionDepsFixture(channel: LlmChannel) {
       };
     },
   };
-  const deps = {
+  const deps = { authorizeRun: async () => {},
     now: () => TEST_NOW,
     agents: withConfigurations({ get: reject, list: reject, put: reject, delete: reject }, ({ get: reject, list: reject, put: reject, delete: reject }).get),
 
@@ -172,6 +173,19 @@ function offersImageTool(channel: FakeChannel): boolean {
 }
 
 describe("sampling parameters", () => {
+  it.each(["user", "actor", "authorizeRun"] as const)("refuses an execution with no %s before model or usage effects", async missing => {
+    const channel = new FakeChannel([[contentChunk("must not run")]]);
+    const fixture = executionDepsFixture(channel);
+    const input = { ...executionIdentity(), agent: agentFixture(), configuration: configurationFixture({ piiFiltering: false }), messages: [] };
+    if (missing === "authorizeRun") Reflect.deleteProperty(fixture.deps, missing);
+    else Reflect.deleteProperty(input, missing);
+    await expect((async () => {
+      for await (const _chunk of executeAgent(fixture.deps, input)) { /* drain */ }
+    })()).rejects.toThrow(/authenticated Studio caller|permission validation/);
+    expect(channel.calls).toBe(0);
+    expect(fixture.recorded).toEqual([]);
+  });
+
   it("forwards presence penalties through the execution facade", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(TEST_NOW);
@@ -179,7 +193,7 @@ describe("sampling parameters", () => {
       for (const presencePenalty of [undefined, 0, 1.5]) {
         const channel = new FakeChannel([[contentChunk("Done"), usageChunk(1, 1)]]);
         const { deps } = executionDepsFixture(channel);
-        await collectAgentRun(deps, {
+        await collectAgentRun(deps, { ...executionIdentity(),
           agent: agentFixture(),
           configuration: configurationFixture({ piiFiltering: false, presencePenalty }),
           messages: [{ role: "user", content: "Answer briefly" }],
@@ -221,7 +235,7 @@ describe("execution cancellation", () => {
     const { deps } = executionDepsFixture(channel);
     const traces = captureTraces(deps);
 
-    const stream = streamAgentExecution(deps, {
+    const stream = streamAgentExecution(deps, { ...executionIdentity(),
       agent: agentFixture(),
       configuration: configurationFixture({ piiFiltering: false }),
       messages: [{ role: "user", content: "hello" }],
@@ -240,7 +254,7 @@ describe("execution cancellation", () => {
     const { deps } = executionDepsFixture(channel);
     const abortController = new AbortController();
 
-    await collectAgentRun(deps, {
+    await collectAgentRun(deps, { ...executionIdentity(),
       messages: [{ role: "user", content: "hello" }],
       agent: agentFixture(),
       configuration: configurationFixture({ piiFiltering: false }),
@@ -274,7 +288,7 @@ describe("execution cancellation", () => {
     const traces = captureTraces(deps);
 
     await expect(
-      collectAgentRun(deps, {
+      collectAgentRun(deps, { ...executionIdentity(),
       messages: [{ role: "user", content: "hello" }],
         agent: { ...agentFixture() },
         configuration: configurationFixture({ piiFiltering: false }),
@@ -297,7 +311,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({ piiFiltering: false, imageGeneration: true }),
         messages: [{ role: "user", content: "hi" }],
@@ -310,7 +324,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({ piiFiltering: false }),
         messages: [{ role: "user", content: "hi" }],
@@ -323,7 +337,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({ piiFiltering: false, imageGeneration: false }),
         messages: [{ role: "user", content: "hi" }],
@@ -337,7 +351,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     const { deps, recorded, imageModels } = executionDepsFixture(channel);
     const traces = captureTraces(deps);
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({
           piiFiltering: false,
@@ -364,7 +378,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     const channel = new FakeChannel(imageCallScript);
     const { deps, imageModels } = executionDepsFixture(channel);
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({ piiFiltering: false, imageGeneration: true }),
         messages: [{ role: "user", content: "draw a fox" }],
@@ -377,7 +391,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     const { deps, recorded } = executionDepsFixture(new FakeChannel(imageCallScript));
     const traces = captureTraces(deps);
     deps.imageChannel.generateImage = async () => { throw new Error("image provider failed"); };
-    const chunks = await collect(executeAgent(deps, {
+    const chunks = await collect(executeAgent(deps, { ...executionIdentity(),
       agent: agentFixture(),
       configuration: configurationFixture({ piiFiltering: false, imageGeneration: true }),
       messages: [{ role: "user", content: "draw a fox" }],
@@ -395,7 +409,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     const channel = new FakeChannel(imageCallScript);
     const { deps, imageModels } = executionDepsFixture(channel);
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({
           piiFiltering: false,
@@ -427,7 +441,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     ]);
     const { deps, imageModels, edits } = executionDepsFixture(channel);
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({
           piiFiltering: false,
@@ -472,7 +486,7 @@ describe("executeAgent EditImage", () => {
     const traces = captureTraces(deps);
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: visionConfiguration({ piiFiltering: false, imageGeneration: true }),
         messages: [
@@ -509,7 +523,7 @@ describe("executeAgent EditImage", () => {
     const { deps } = executionDepsFixture(channel);
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: visionConfiguration({ piiFiltering: false, imageGeneration: true }),
         messages: [
@@ -534,7 +548,7 @@ describe("executeAgent EditImage", () => {
     const { deps, edits } = executionDepsFixture(channel);
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: visionConfiguration({ piiFiltering: false, imageGeneration: true }),
         messages: [
@@ -554,7 +568,7 @@ describe("executeAgent EditImage", () => {
     const { deps } = executionDepsFixture(channel);
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: visionConfiguration({ piiFiltering: false, imageGeneration: false }),
         messages: [{ role: "user", content: "hi" }],
@@ -576,7 +590,7 @@ describe("executeAgent EditImage", () => {
     const { deps, edits } = executionDepsFixture(channel);
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: visionConfiguration({ piiFiltering: false, imageGeneration: true }),
         messages: [{ role: "user", content: "draw a fox, then make it night" }],
@@ -651,7 +665,7 @@ describe("executeAgent image transfer to a subagent", () => {
     const chunks: EngineChunk[] = [];
     await expect(
       (async () => {
-        for await (const chunk of executeAgent(deps, {
+        for await (const chunk of executeAgent(deps, { ...executionIdentity(),
           agent: agentFixture(),
           configuration: configurationFixture({ piiFiltering: false }),
           messages: [{ role: "user", content: "hi" }],
@@ -695,7 +709,7 @@ describe("executeAgent image transfer to a subagent", () => {
     } as unknown as ExecutionDeps;
 
     await collect(
-      executeAgent(guarded, {
+      executeAgent(guarded, { ...executionIdentity(),
         agent: fixture.parent,
         configuration: parentConfiguration(),
         messages: [{ role: "user", content: "draw a fox" }],
@@ -723,7 +737,7 @@ describe("executeAgent image transfer to a subagent", () => {
       throw new Error("Image call should have been cancelled");
     });
     fixture.deps.imageChannel.generateImage = generate;
-    await expect(collect(executeAgent(fixture.deps, {
+    await expect(collect(executeAgent(fixture.deps, { ...executionIdentity(),
       agent: fixture.parent, configuration: parentConfiguration(), signal: controller.signal,
       messages: [{ role: "user", content: "draw a fox" }],
     }))).rejects.toThrow();
@@ -738,7 +752,7 @@ describe("executeAgent image transfer to a subagent", () => {
     const { deps, edits, imageModels, parent } = imageAgentDeps(channel);
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: parent,
         configuration: parentConfiguration(),
         messages: [
@@ -771,7 +785,7 @@ describe("executeAgent image transfer to a subagent", () => {
     const { deps, edits, imageModels, parent } = imageAgentDeps(channel);
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: parent,
         configuration: parentConfiguration(),
         messages: [{ role: "user", content: "draw a fox" }],
@@ -789,7 +803,7 @@ describe("executeAgent image transfer to a subagent", () => {
     const { deps, edits, imageModels, parent } = imageAgentDeps(channel);
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: parent,
         configuration: parentConfiguration(),
         messages: [
@@ -824,7 +838,7 @@ describe("executeAgent image transfer to a subagent", () => {
     } as unknown as ExecutionDeps;
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: { ...agentFixture(), name: "sample-agent" },
         configuration: { ...parentConfiguration(), subagentList: [{ name: "text-child" }] },
         messages: [
@@ -846,7 +860,7 @@ describe("executeAgent image transfer to a subagent", () => {
     const { deps, parent } = imageAgentDeps(channel);
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: parent,
         configuration: parentConfiguration(),
         messages: [
@@ -874,7 +888,7 @@ describe("executeAgent image transfer to a subagent", () => {
     const { deps, parent } = imageAgentDeps(channel);
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: parent,
         configuration: parentConfiguration(),
         messages: [{ role: "user", content: "draw me a cat" }],
@@ -896,7 +910,7 @@ describe("executeAgent image transfer to a subagent", () => {
     const { deps, parent } = imageAgentDeps(channel);
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: parent,
         configuration: { ...parentConfiguration(), parameters: { piiFiltering: false, imageGeneration: true } },
         messages: [{ role: "user", content: "draw me a cat" }],
@@ -971,7 +985,7 @@ describe("executeAgent nested transfer identity", () => {
     const channel = new FakeChannel(chainScript);
     const { deps, top, configuration } = chainDeps(channel);
 
-    const chunks = await collect(executeAgent(deps, { agent: top, configuration, messages: [{ role: "user", content: "draw a fox" }] }));
+    const chunks = await collect(executeAgent(deps, { ...executionIdentity(), agent: top, configuration, messages: [{ role: "user", content: "draw a fox" }] }));
 
     // Handoff changes the active Agent inside the same delegated Runner.
     const imageChunk = chunks.find((c) => c.image);
@@ -993,7 +1007,7 @@ describe("executeAgent nested transfer identity", () => {
     const channel = new FakeChannel(chainScript);
     const { deps, traces, top, configuration } = chainDeps(channel);
 
-    await collect(executeAgent(deps, { agent: top, configuration, messages: [{ role: "user", content: "draw a fox" }] }));
+    await collect(executeAgent(deps, { ...executionIdentity(), agent: top, configuration, messages: [{ role: "user", content: "draw a fox" }] }));
 
     // Agent handoffs and image tools stay in the parent Trace hierarchy.
     expect(traces.map((trace) => trace.agentName).sort()).toEqual(["bruce-bot"]);
@@ -1056,7 +1070,7 @@ describe("executeAgent registry bindings that no longer resolve", () => {
     const reads = countSkillReads(deps);
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: boundToTwoSkills(),
         messages: [{ role: "user", content: "use a skill" }],
@@ -1091,7 +1105,7 @@ describe("executeAgent registry bindings that no longer resolve", () => {
     const reads = countSkillReads(deps);
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: boundToTwoSkills(),
         messages: [{ role: "user", content: "hi" }],
@@ -1110,7 +1124,7 @@ describe("executeAgent registry bindings that no longer resolve", () => {
     deps.agents = withConfigurations(deps.agents, async () => ({ ...configurationFixture({ piiFiltering: false }), agentName: "alive-agent" })) as ExecutionDeps["agents"];
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: {
           ...configurationFixture({ piiFiltering: false }),
@@ -1142,7 +1156,7 @@ describe("executeAgent reports the bindings it could not use", () => {
     deps.agents.get = (async () => null) as ExecutionDeps["agents"]["get"];
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: {
           ...configurationFixture({ piiFiltering: false }),
@@ -1177,7 +1191,7 @@ describe("executeAgent reports the bindings it could not use", () => {
     deps.mcps.get = (async () => null) as ExecutionDeps["mcps"]["get"];
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: {
           ...configurationFixture({ piiFiltering: false }),
@@ -1205,7 +1219,7 @@ describe("executeAgent reports the bindings it could not use", () => {
     })) as ExecutionDeps["skills"]["get"];
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: { ...configurationFixture({ piiFiltering: false }), skillList: ["here"] },
         messages: [{ role: "user", content: "hi" }],
@@ -1221,7 +1235,7 @@ describe("executeAgent PII filtering", () => {
     const channel = new FakeChannel([[contentChunk("Contact the masked value."), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({ piiFiltering }),
         messages: [{ role: "user", content: "email@example.com or 010-1234-5678" }],
@@ -1260,7 +1274,7 @@ describe("executeAgent MCP dispatch SSRF re-check", () => {
       })) as ExecutionDeps["mcps"]["get"];
 
       const chunks = await collect(
-        executeAgent(deps, {
+        executeAgent(deps, { ...executionIdentity(),
           agent: agentFixture(),
           configuration: { ...configurationFixture({ piiFiltering: false }), mcpList: [{ name: "internal-mcp" }] },
           messages: [{ role: "user", content: "hi" }],
@@ -1319,7 +1333,7 @@ describe("executeAgent local subagent dispatch", () => {
         : null) as ExecutionDeps["agents"];
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: {
           ...configurationFixture({ piiFiltering: false }),
@@ -1372,7 +1386,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     const { deps } = chainDeps(channel);
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: parentConfiguration(),
         messages: [
@@ -1412,7 +1426,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     const traces = captureTraces(deps);
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: parentConfiguration(),
         messages: [{ role: "user", content: "hi" }],
@@ -1430,7 +1444,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     const { deps } = chainDeps(channel);
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: parentConfiguration(),
         messages: [{ role: "user", content: "draw a cat" }],
@@ -1473,7 +1487,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
           : null) as ExecutionDeps["agents"];
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: parentConfiguration(),
         messages: [
@@ -1525,7 +1539,7 @@ describe("executeAgent subagent turn budget", () => {
         : null) as ExecutionDeps["agents"];
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: {
           ...configurationFixture({ piiFiltering: false }),
@@ -1585,7 +1599,7 @@ describe("executeAgent subagent recursion guards", () => {
     const { deps } = mutualDeps(channel, (name) => (name === "painter" ? "child" : "painter"));
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: {
           ...configurationFixture({ piiFiltering: false }),
@@ -1636,7 +1650,7 @@ describe("executeAgent subagent recursion guards", () => {
     }) as ExecutionDeps["agents"];
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: {
           ...configurationFixture({ piiFiltering: false }),
@@ -1658,7 +1672,7 @@ describe("execution tracing policy", () => {
     const traces = captureTraces(deps);
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({ piiFiltering: false }),
         messages: [{ role: "user", content: "hi" }],
@@ -1676,7 +1690,7 @@ describe("execution tracing policy", () => {
     const traces = captureTraces(deps);
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({ piiFiltering: false }),
         messages: [{ role: "user", content: "hi" }],
@@ -1696,7 +1710,7 @@ describe("execution tracing policy", () => {
     const traces = captureTraces(deps);
 
     const chunks = await collect(
-      streamAgentExecution(deps, {
+      streamAgentExecution(deps, { ...executionIdentity(),
         agent: { ...agentFixture() },
         configuration: configurationFixture({ piiFiltering: false }),
         messages: [{ role: "user", content: "hi" }],
@@ -1716,7 +1730,7 @@ describe("execution tracing policy", () => {
     const traces = captureTraces(deps);
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({ piiFiltering: false }),
         messages: [{ role: "user", content: "hi" }],
@@ -1735,7 +1749,7 @@ describe("execution tracing policy", () => {
     const traces = captureTraces(deps);
 
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({ piiFiltering: false, memoryRecall: true }),
         messages: [{ role: "user", content: "what did we decide?" }],
@@ -1762,7 +1776,7 @@ describe("collectAgentRun non-streaming dispatch", () => {
     ]);
     const { deps, recorded } = executionDepsFixture(channel);
     const traces = captureTraces(deps);
-    const run = await collectAgentRun(deps, {
+    const run = await collectAgentRun(deps, { ...executionIdentity(),
       agent: agentFixture(),
       configuration: configurationFixture({ piiFiltering: false, imageGeneration: true }),
       messages: [{ role: "user", content: "draw a fox and make it night" }],
@@ -1786,7 +1800,7 @@ describe("collectAgentRun non-streaming dispatch", () => {
     const channel = new FakeChannel([[contentChunk("agent answer"), usageChunk(3, 5)]]);
     const { deps } = executionDepsFixture(channel);
 
-    const run = await collectAgentRun(deps, {
+    const run = await collectAgentRun(deps, { ...executionIdentity(),
       agent: agentFixture(),
       configuration: configurationFixture({ piiFiltering: false }),
       messages: [{ role: "user", content: "hi" }],
@@ -1811,7 +1825,7 @@ describe("collectAgentRun non-streaming dispatch", () => {
     deps.skills.get = (async () => null) as ExecutionDeps["skills"]["get"];
     deps.agents.get = (async () => null) as ExecutionDeps["agents"]["get"];
 
-    const run = await collectAgentRun(deps, {
+    const run = await collectAgentRun(deps, { ...executionIdentity(),
       agent: agentFixture(),
       configuration: {
         ...configurationFixture({ piiFiltering: false }),
@@ -1833,7 +1847,7 @@ describe("collectAgentRun non-streaming dispatch", () => {
     const channel = new FakeChannel([[contentChunk("clean"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
 
-    const run = await collectAgentRun(deps, {
+    const run = await collectAgentRun(deps, { ...executionIdentity(),
       agent: agentFixture(),
       configuration: configurationFixture({ piiFiltering: false }),
       messages: [{ role: "user", content: "hi" }],
@@ -1925,7 +1939,7 @@ describe("executeAgent", () => {
     const { deps } = executionDepsFixture(channel);
 
     const chunks = await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({ piiFiltering: false }),
         messages: [{ role: "user", content: "hi" }],
@@ -1968,13 +1982,14 @@ describe("executeAgent retrieval usage", () => {
       },
     };
 
-    await collect(executeAgent(deps, {
+    await collect(executeAgent(deps, { ...executionIdentity(),
       agent: agentFixture(),
       configuration: configurationFixture({ piiFiltering: false, dynamicCapabilities: true }),
       messages: [{ role: "user", content: "find the AWS docs" }],
     }));
 
     expect(recorded).toContainEqual({
+      actor: "user:owner@example.com",
       agentName: "painter",
       date: expect.any(String),
       model: "openrouter/rerank-v3.5",
@@ -1994,7 +2009,7 @@ describe("streamAgentRun", () => {
   it("streams Agent text, image output, usage and completion through one facade", async () => {
     const channel = new FakeChannel(imageCallScript);
     const { deps, imageModels, recorded } = executionDepsFixture(channel);
-    const chunks = await collect(streamAgentRun(deps, {
+    const chunks = await collect(streamAgentRun(deps, { ...executionIdentity(),
       agent: agentFixture(), configuration: configurationFixture({ piiFiltering: false, imageGeneration: true }),
       messages: [{ role: "user", content: "Draw a red fox" }],
     }));
@@ -2024,7 +2039,7 @@ describe("collectAgentRun dispatch carries the caller", () => {
 
     const prompt = await systemPromptOf(channel, () =>
       collect(
-        streamAgentExecution(deps, {
+        streamAgentExecution(deps, { ...executionIdentity(),
           agent: agentFixture(),
           configuration: configurationFixture({ piiFiltering: false, callerContext: true }),
           messages: [{ role: "user", content: "hi" }],
@@ -2041,7 +2056,7 @@ describe("collectAgentRun dispatch carries the caller", () => {
     const { deps } = executionDepsFixture(channel);
 
     const prompt = await systemPromptOf(channel, () =>
-      collectAgentRun(deps, {
+      collectAgentRun(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture({ piiFiltering: false, callerContext: true }),
         messages: [{ role: "user", content: "hi" }],
@@ -2061,7 +2076,7 @@ describe("collectAgentRun dispatch carries the caller", () => {
 
     const prompt = await systemPromptOf(channel, () =>
       collect(
-        streamAgentExecution(deps, {
+        streamAgentExecution(deps, { ...executionIdentity(),
           agent: agentFixture(),
           configuration: configurationFixture({ piiFiltering: false }),
           messages: [{ role: "user", content: "hi" }],
@@ -2113,7 +2128,7 @@ describe("a transfer carries who is asking", () => {
 
   async function childPrompt(channel: FakeChannel, deps: ExecutionDeps, parentOptedIn: boolean) {
     await collect(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: {
           ...configurationFixture({ piiFiltering: false, callerContext: parentOptedIn }),

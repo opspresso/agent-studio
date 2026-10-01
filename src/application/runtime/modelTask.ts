@@ -45,6 +45,7 @@ export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, tu
             ...(purpose === "reasoning" ? { reasoning: { effort: input.parameters?.reasoningEffort ?? "medium" } } : {}),
           },
         };
+        await deps.authorizeExecution?.();
         const native = await withoutNativeTracing(async () => (await deps.channel.getModel(model)).getResponse(request));
         const usage = modelResponseUsage(model, native);
         generation.spanData.usage = { input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, cost_usd: usage.costUsd,

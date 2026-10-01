@@ -401,7 +401,7 @@ describe("scanSchedules", () => {
     expect(received?.user).toEqual({ userId: "registrar-id", email: "registrar@example.test" });
     expect(received?.userEmail).toBe("registrar@example.test");
     expect(f.runs[0]?.actorKind).toBe("schedule");
-    expect(toRunInput({ agent, configuration, messages: [], user: received?.user }).user).toEqual(received?.user);
+    expect(toRunInput({ agent, configuration, messages: [], user: received!.user, actor: received!.actor, executionGrant: received!.executionGrant }).user).toEqual(received?.user);
     expect(f.rows[0]?.userId).toBe("registrar-id");
   });
 

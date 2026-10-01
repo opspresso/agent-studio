@@ -13,7 +13,7 @@ describe("Workspace execution identity", () => {
 
   it.each(["slack", "telegram", "teams", "schedule", "webhook"] as const)("keeps the %s actor and uses only a surface-resolved execution identity", kind => {
     const actor = { kind, id: "external-caller" };
-    const origin: RunOrigin = { ancestry: [], actor };
+    const origin: Partial<RunOrigin> = { ancestry: [], actor };
     expect(workspaceCaller(origin)).toBeUndefined();
     expect(workspaceCaller({ ...origin, user, userEmail: "owner@example.com" }))
       .toEqual({ user, ownerEmail: "owner@example.com", actor });

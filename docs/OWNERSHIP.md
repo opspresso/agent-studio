@@ -12,6 +12,10 @@
 
 ## 실행·모델·검색
 
+실행 신원의 구조 검증과 현재 접근 검사는 `application/auth/authorizeRunIdentity.ts`가 소유한다.
+`domain/execution/actor.ts`의 `RunIdentity`는 사용자 ID와 호출 출처를 함께 운반한다.
+실행 facade가 필수 검증기를 바인딩하며 runtime은 모델 시도·도구 실행 직전에 이를 호출한다.
+
 | 결정 | 소유자 | 확인 |
 |---|---|---|
 | 호출 단위 모델 tier·작업 목적·전역 정책 형태와 기본값 | `src/domain/llm/callRouting.ts`; Agent는 boolean 사용 여부만 저장한다 | 구조 |

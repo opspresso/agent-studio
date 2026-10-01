@@ -34,7 +34,7 @@ export async function buildMcpTools(
   configuration: AgentConfiguration,
   signal?: AbortSignal,
   /** Where the run came from; its email actor and conversation reach the server as headers. */
-  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation"> & Partial<Pick<RunOrigin, "ancestry">>,
+  origin?: Partial<Pick<RunOrigin, "actor" | "userEmail" | "conversation">> & Partial<Pick<RunOrigin, "ancestry">>,
 ): Promise<{
   signature: string;
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];

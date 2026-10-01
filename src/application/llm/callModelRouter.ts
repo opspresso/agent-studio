@@ -6,6 +6,7 @@ import {
 } from "@/domain/llm/callRouting";
 import { createRunContextBudget, estimateContextTokens, IMAGE_PART_TOKENS, PROTOCOL_HEADROOM_TOKENS } from "./contextBudget";
 import type { UsageInfo } from "@/domain/llm/types";
+import { AppError } from "@/application/errors";
 
 export interface RoutedModelResult {
   text: string;
@@ -202,8 +203,9 @@ export function createCallModelRouter(
                 }
               } else observe({ purpose: task.purpose, source: "jev", outcome: "rejected", attempt: 0, reason: "invalid-decision" });
             }
-          } catch {
+          } catch (error) {
             signal?.throwIfAborted();
+            if (error instanceof AppError && error.status < 500) throw error;
             observe({ purpose: task.purpose, source: "jev", outcome: "failed", attempt: 0, reason: "decision-failed" });
           }
         }
@@ -269,7 +271,11 @@ export function createCallModelRouter(
             return result;
           }
           lastError = new Error("ModelTask output did not meet its quality criteria");
-        } catch (error) { signal?.throwIfAborted(); lastError = error; }
+        } catch (error) {
+          signal?.throwIfAborted();
+          if (error instanceof AppError && error.status < 500) throw error;
+          lastError = error;
+        }
         observe({ purpose: task.purpose, model: selected, ...(tier ? { tier } : {}), source, outcome: qualityFailed ? "quality-rejected" : "failed", attempt });
         state.failures[selected] = (state.failures[selected] ?? 0) + 1;
         if (source === "default") throw lastError;

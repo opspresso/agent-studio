@@ -260,7 +260,10 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     mcpOAuthStateContext,
   } = await import("@/domain/security/secretContext");
 
+  const suffix = Date.now().toString(36);
   const now = new Date().toISOString();
+  const executionUser = { userId: "execution-" + suffix, email: "it@example.com" };
+  const executionIdentity = { user: executionUser, actor: { kind: "user" as const, id: executionUser.email } };
   const today = now.slice(0, 10);
   const results: string[] = [];
   const pass = (label: string) => {
@@ -268,7 +271,6 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     console.log(`PASS ${label}`);
   };
 
-  const suffix = Date.now().toString(36);
   const agentName = `it-proj-${suffix}`;
   const integrationMemberId = `it-member-${suffix}`;
   const integrationMemberEmail = `${integrationMemberId}@example.com`;
@@ -1809,8 +1811,12 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.ok(reclaimedSlot, "an expired lease is reclaimable");
     pass("concurrency slots: exact limit, owned renewal, release and lease reclaim");
 
+    cleanup(() => withTransaction(async db => { await db.query('DELETE FROM "user" WHERE "id" = $1', [executionUser.userId]); }));
+    await withTransaction(async db => { await db.query(
+      'INSERT INTO "user" ("id", "name", "email", "emailVerified", "tier", "createdAt", "updatedAt") VALUES ($1, $2, $3, true, $4, $5, $5)',
+      [executionUser.userId, "Execution Test", executionUser.email, "member", now]); });
     // ---------- Agent: collected completion ----------
-    const runResult = await collectAgentRun(executionDeps, {
+    const runResult = await collectAgentRun(executionDeps, { ...executionIdentity,
       agent,
       configuration,
       messages: [{ role: "user", content: "Hello world" }],
@@ -1822,7 +1828,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     // ---------- engine: agent loop with Skill tool ----------
     const chunks: Array<{ delta?: { content?: string }; toolResult?: unknown; error?: string }> =
       [];
-    for await (const chunk of executeAgent(executionDeps, {
+    for await (const chunk of executeAgent(executionDeps, { ...executionIdentity,
       agent,
       configuration,
       messages: [{ role: "user", content: "use your skill" }],
@@ -1858,7 +1864,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       const routed = [];
       const nextPolicy = { ...modelRouting, tiers: { fast: "integration/model",general:"integration/model" } };
       onNextRoutingRequest = async () => { await modelRegistryUseCases.saveRouting(nextPolicy, routingActor); };
-      for await (const chunk of executeAgent(executionDeps, {
+      for await (const chunk of executeAgent(executionDeps, { ...executionIdentity,
         agent, configuration: routedConfiguration, messages: [{ role: "user", content: "route model task" }],
         actor: { kind: "user", id: "it@example.com" },
       })) routed.push(chunk);
@@ -1886,14 +1892,14 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       assert.deepEqual(trace?.spans.filter(span => span.kind === "model").map(span => span.name), ["integration/jev", "integration/fast", "integration/jev", "integration/fast", "integration/fast"], "each actual inference has exactly one billed span");
       assert.ok(!JSON.stringify(trace).includes("ROUTING_PRIVATE_SOURCE"), "routing trace stores no source prompt");
       const nextBefore = llmCalls.length;
-      for await (const chunk of executeAgent(executionDeps, {
+      for await (const chunk of executeAgent(executionDeps, { ...executionIdentity,
         agent, configuration: routedConfiguration, messages: [{ role: "user", content: "route model task" }], actor: { kind: "user", id: "it@example.com" },
       })) assert.equal(chunk.error, undefined);
       assert.deepEqual(llmCalls.slice(nextBefore).map(call => call.model), ["model", "model", "model"], "next Run uses the new shared policy");
       assert.equal(decisionCalls.length, 2,"one physical candidate does not need a paid decision");
       pass("shared routing policy: in-flight snapshot stability and next-Run adoption");
       const disabledBefore = llmCalls.length;
-      for await (const chunk of executeAgent(executionDeps, {
+      for await (const chunk of executeAgent(executionDeps, { ...executionIdentity,
         agent, configuration: { ...routedConfiguration, parameters: { ...routedConfiguration.parameters, modelRouting: false } },
         messages: [{ role: "user", content: "route model task" }], actor: { kind: "user", id: "it@example.com" },
       })) assert.equal(chunk.error, undefined);
@@ -1904,15 +1910,15 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       const owner = "it@example.com";
       cleanup(() => executionDeps.runtimeSessions!.repository.delete(sessionId, owner));
       const approvalConfiguration = { ...routedConfiguration, parameters: { ...routedConfiguration.parameters, policy: { approvalTools: ["Skill"] } } };
-      const scope = { agent, configuration: approvalConfiguration, user: { userId: "integration-user", email: owner }, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
+      const scope = { agent, configuration: approvalConfiguration, user: executionUser, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
       {
-        for await (const chunk of executeAgent(executionDeps, { ...scope, messages: [{ role: "user", content: "use your skill" }] })) assert.equal(chunk.error, undefined);
+        for await (const chunk of executeAgent(executionDeps, { ...executionIdentity, ...scope, messages: [{ role: "user", content: "use your skill" }] })) assert.equal(chunk.error, undefined);
         const pending = await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner);
         assert.ok(pending?.approvals.length);
         await modelRegistryUseCases.saveRouting({ ...nextPolicy, maxCalls: 9 }, routingActor);
         const callsBeforeResume = llmCalls.length;
         await assert.rejects(async () => {
-          for await (const chunk of executeAgent(executionDeps, { ...scope, messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) assert.equal(chunk.error, undefined);
+          for await (const chunk of executeAgent(executionDeps, { ...executionIdentity, ...scope, messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) assert.equal(chunk.error, undefined);
         }, /routing policy changed/);
         assert.equal(llmCalls.length, callsBeforeResume, "changed policy cannot execute an approved call");
         assert.equal((await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner))?.revision, pending.revision, "policy refusal happens before claiming pending work");
@@ -1927,7 +1933,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     {
       const before=llmCalls.length;
       const chunks=[];
-      for await(const chunk of executeAgent(executionDeps,{agent,configuration:{...configuration,parameters:{...configuration.parameters,maxTokens:32}},
+      for await(const chunk of executeAgent(executionDeps,{ ...executionIdentity,agent,configuration:{...configuration,parameters:{...configuration.parameters,maxTokens:32}},
         messages:[{role:"user",content:"integration-empty-at-cap"}],actor:{kind:"user",id:"it@example.com"}})) chunks.push(chunk);
       assert.equal(llmCalls.length-before,1,"an exhausted reasoning response cannot launch another paid SDK turn");
       assert.ok(chunks.some(chunk=>chunk.finishReason==="output-limit"));
@@ -1948,27 +1954,27 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       const owner = "it@example.com";
       cleanup(() => executionDeps.runtimeSessions!.repository.delete(sessionId, owner));
       const approvalConfiguration = { ...configuration, parameters: { ...configuration.parameters, policy: { approvalTools: ["Skill"] } } };
-      const base = { agent, configuration: approvalConfiguration, user: { userId: "integration-user", email: owner }, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
+      const base = { agent, configuration: approvalConfiguration, user: executionUser, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
       const first = [];
-      for await (const chunk of executeAgent(executionDeps, { ...base, messages: [{ role: "user", content: "use your skill" }] })) first.push(chunk);
+      for await (const chunk of executeAgent(executionDeps, { ...executionIdentity, ...base, messages: [{ role: "user", content: "use your skill" }] })) first.push(chunk);
       assert.ok(first.some((chunk) => chunk.approval), "approval is persisted before notifying the client");
       assert.ok(!first.some((chunk) => chunk.toolResult), "a pending Skill call has not executed");
       const pending = await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner);
       assert.ok(pending && pending.approvals.length === 1);
       const callsBeforeWrongUser = llmCalls.length;
       await assert.rejects(async () => {
-        for await (const _chunk of executeAgent(executionDeps, { ...base, user: { ...base.user, userId: "another-user" },
+        for await (const _chunk of executeAgent(executionDeps, { ...executionIdentity, ...base, user: { ...base.user, userId: "another-user" },
           messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) { /* drain */ }
-      }, /authenticated user/);
+      }, /no longer active/);
       assert.equal(llmCalls.length, callsBeforeWrongUser, "another account cannot consume a pending approval");
       assert.equal((await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner))?.status, "pending");
       const resumed = [];
-      for await (const chunk of executeAgent(executionDeps, { ...base, messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) resumed.push(chunk);
+      for await (const chunk of executeAgent(executionDeps, { ...executionIdentity, ...base, messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) resumed.push(chunk);
       assert.ok(!resumed.some((chunk) => chunk.error), "approved SDK execution resumes successfully");
       assert.ok(resumed.some((chunk) => chunk.toolResult?.name === "Skill: integration-skill"));
       assert.equal(await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner), null);
       const before = llmCalls.length;
-      for await (const chunk of executeAgent(executionDeps, { ...base, messages: [{ role: "user", content: "continue" }] })) assert.equal(chunk.error, undefined);
+      for await (const chunk of executeAgent(executionDeps, { ...executionIdentity, ...base, messages: [{ role: "user", content: "continue" }] })) assert.equal(chunk.error, undefined);
       assert.equal(llmCalls.length, before + 1, "the Session replay avoids executing the previous Skill call again");
       pass("SDK Session approval persistence, restart-style resume and exact continuation");
     }

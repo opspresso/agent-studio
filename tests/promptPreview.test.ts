@@ -1,3 +1,4 @@
+import { executionIdentity } from "./runIdentity";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
@@ -83,7 +84,7 @@ function executionDepsFixture(channel: FakeChannel) {
       throw new Error("not used in this test");
     },
   } as unknown as ImageChannel;
-  return {
+  return { authorizeRun: async () => {},
     agents: { get: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: reject },
@@ -193,7 +194,7 @@ describe("previewPrompt", () => {
             : [],
       },
     };
-    const preview = await previewPrompt(deps, {
+    const preview = await previewPrompt(deps, { ...executionIdentity({ kind: "user", id: "reader@example.com" }),
       agent: agentFixture(),
       configuration: {
         ...configurationFixture(),
@@ -224,9 +225,9 @@ describe("previewPrompt", () => {
     stubMcpServer(["query", "update"]);
     const configuration = boundConfiguration();
 
-    const preview = await previewPrompt(deps, { agent: agentFixture(), configuration });
+    const preview = await previewPrompt(deps, { ...executionIdentity(), agent: agentFixture(), configuration });
     await drain(
-      executeAgent(deps, {
+      executeAgent(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration,
         messages: [{ role: "user", content: "hi" }],
@@ -253,7 +254,7 @@ describe("previewPrompt", () => {
     wireRegistry(deps);
     stubMcpServer(["query"]);
 
-    const preview = await previewPrompt(deps, {
+    const preview = await previewPrompt(deps, { ...executionIdentity(),
       agent: agentFixture(),
       configuration: boundConfiguration(),
     });
@@ -278,7 +279,7 @@ describe("previewPrompt", () => {
     wireRegistry(deps);
     const server = stubMcpServer(["query"]);
 
-    await previewPrompt(deps, { agent: agentFixture(), configuration: boundConfiguration() });
+    await previewPrompt(deps, { ...executionIdentity(), agent: agentFixture(), configuration: boundConfiguration() });
 
     expect(server.verbs).not.toContain("DELETE");
     expect(server.verbs.every((verb) => verb === "POST")).toBe(true);
@@ -292,7 +293,7 @@ describe("previewPrompt", () => {
       stubMcpServer(["query"]);
       deps.skills.get = (async () => null) as ExecutionDeps["skills"]["get"];
 
-      const preview = await previewPrompt(deps, {
+      const preview = await previewPrompt(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: boundConfiguration(),
       });
@@ -307,7 +308,7 @@ describe("previewPrompt", () => {
   it("says so when PII filtering will rewrite what is sent", async () => {
     const deps = executionDepsFixture(new FakeChannel([]));
 
-    const preview = await previewPrompt(deps, {
+    const preview = await previewPrompt(deps, { ...executionIdentity(),
       agent: { ...agentFixture() },
       configuration: { ...configurationFixture(), parameters: { piiFiltering: true } },
     });
@@ -349,7 +350,7 @@ describe("previewPrompt", () => {
       wireRegistry(deps);
       deps.catalog = catalogFor(queries);
 
-      const preview = await previewPrompt(deps, {
+      const preview = await previewPrompt(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: {
           ...configurationFixture(),
@@ -375,7 +376,7 @@ describe("previewPrompt", () => {
       wireRegistry(deps);
       deps.catalog = catalogFor(queries);
 
-      await previewPrompt(deps, {
+      await previewPrompt(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: {
           ...configurationFixture(),
@@ -393,7 +394,7 @@ describe("previewPrompt", () => {
       wireRegistry(deps);
       deps.catalog = catalogFor(queries);
 
-      const preview = await previewPrompt(deps, {
+      const preview = await previewPrompt(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: {
           ...configurationFixture(),
@@ -411,7 +412,7 @@ describe("previewPrompt", () => {
       wireRegistry(deps);
       deps.catalog = catalogFor(queries);
 
-      const preview = await previewPrompt(deps, {
+      const preview = await previewPrompt(deps, { ...executionIdentity(),
         agent: agentFixture(),
         configuration: configurationFixture(),
         message: "say hello to the customer",

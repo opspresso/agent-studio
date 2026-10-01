@@ -1,3 +1,4 @@
+import { executionIdentity } from "./runIdentity";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -94,7 +95,7 @@ function depsFixture(
   const reject = () => Promise.reject(new Error("not used in this test"));
   const imageChannel = { generateImage: reject } as unknown as ImageChannel;
   const server = overrides.server ?? registryServer;
-  return {
+  return { authorizeRun: async () => {},
     ...(overrides.mcpAuth ? { mcpAuth: overrides.mcpAuth } : {}),
     agents: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
@@ -155,7 +156,7 @@ async function dispatchHeaders(
   try {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     const chunks: EngineChunk[] = [];
-    for await (const chunk of executeAgent(depsFixture(channel, overrides), {
+    for await (const chunk of executeAgent(depsFixture(channel, overrides), { ...executionIdentity(overrides.actor, overrides.ownerEmail),
       agent: agentFixture(agentName),
       configuration: configurationFixture(agentName, mcpList),
       messages: [{ role: "user", content: "hi" }],
@@ -282,7 +283,7 @@ describe("per-agent MCP header overrides at dispatch", () => {
     expect(headers["x-user-email"]).toBe("member@example.com");
   });
 
-  it("removes configured user email when the run actor has none", async () => {
+  it("replaces configured user email with the authenticated messaging user", async () => {
     const headers = await dispatchHeaders(
       "painter",
       [
@@ -294,7 +295,7 @@ describe("per-agent MCP header overrides at dispatch", () => {
       { actor: { kind: "slack", id: "U123" } },
     );
 
-    expect(headers["x-user-email"]).toBeUndefined();
+    expect(headers["x-user-email"]).toBe("owner@example.com");
   });
 
   it("uses a user email resolved separately from a non-email actor", async () => {
@@ -322,6 +323,7 @@ describe("per-agent MCP header overrides at dispatch", () => {
         Authorization: "Bearer registry-default",
         "X-Shared": "shared-value",
         "X-Tenant-Id": "painter",
+        "X-User-Email": "owner@example.com",
       }),
     ).toMatchObject({ kind: "tools" });
   });
@@ -414,7 +416,7 @@ describe("per-agent MCP header overrides at dispatch", () => {
             markUnauthorized: async () => {},
           },
         }),
-        {
+        { ...executionIdentity(),
           agent: agentFixture("no-connection"),
           configuration: configurationFixture("no-connection", [{ name: "shared-mcp" }]),
           messages: [{ role: "user", content: "hi" }],
@@ -513,7 +515,7 @@ describe("per-agent MCP header overrides at dispatch", () => {
     try {
       const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
       const fetchMock = globalThis.fetch as unknown as { mock: { calls: unknown[][] } };
-      for await (const _chunk of executeAgent(depsFixture(channel), {
+      for await (const _chunk of executeAgent(depsFixture(channel), { ...executionIdentity(),
         agent: agentFixture("url-check"),
         configuration: configurationFixture("url-check", [
           {
@@ -542,7 +544,7 @@ describe("what a run may offer from a bound server", () => {
     try {
       const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
       const chunks: EngineChunk[] = [];
-      for await (const chunk of executeAgent(depsFixture(channel), {
+      for await (const chunk of executeAgent(depsFixture(channel), { ...executionIdentity(),
         agent: agentFixture("p"),
         configuration: configurationFixture("p", mcpList),
         messages: [{ role: "user", content: "hi" }],

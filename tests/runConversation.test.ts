@@ -1,3 +1,4 @@
+import { executionIdentity } from "./runIdentity";
 /**
  * `RunOrigin.conversation` — the key that lets a run say which thread it is in.
  *
@@ -140,11 +141,11 @@ describe("a trace records the conversation key", () => {
     const agent = { name: "p" } as Agent;
     const configuration = { agentName: "p", model: "openai/gpt-4o", systemPrompt: "", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] } satisfies AgentConfiguration;
 
-    await createTraceRecorder(traces, agent, configuration, 1, {
+    await createTraceRecorder(traces, agent, configuration, 1, { ...executionIdentity(),
       ancestry: ["p"],
       conversation: { surface: "chat", id: "c-1" },
     }).finish();
-    await createTraceRecorder(traces, agent, configuration, 1, { ancestry: ["p"] }).finish();
+    await createTraceRecorder(traces, agent, configuration, 1, { ...executionIdentity(), ancestry: ["p"] }).finish();
 
     expect(written[0]?.conversation).toBe("chat:c-1");
     expect(written[1]).not.toHaveProperty("conversation");

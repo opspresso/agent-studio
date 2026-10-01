@@ -1,3 +1,4 @@
+import { executionIdentity } from "./runIdentity";
 import { isolatedMcpRefresh } from "./fakeMcpRefresh";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -538,7 +539,7 @@ function runDeps(
   mcpAuth: { headersFor: unknown; markUnauthorized: unknown },
 ): ExecutionDeps {
   const reject = () => Promise.reject(new Error("not used in this test"));
-  return {
+  return { authorizeRun: async () => {},
     agents: { get: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => OAUTH_SERVER },
@@ -582,7 +583,7 @@ function stubMcpServer(opts: { rejectUnauthorized?: boolean } = {}) {
 
 async function runOnce(deps: ExecutionDeps): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
-  for await (const chunk of executeAgent(deps, {
+  for await (const chunk of executeAgent(deps, { ...executionIdentity(),
     agent: agentFixture(),
     configuration: configurationFixture(),
     messages: [{ role: "user", content: "hi" }],

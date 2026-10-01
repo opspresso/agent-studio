@@ -1,3 +1,4 @@
+import { executionIdentity } from "./runIdentity";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -78,7 +79,7 @@ function depsFixture(channel: FakeChannel) {
     },
     editImage: reject,
   } as unknown as ImageChannel;
-  return {
+  return { authorizeRun: async () => {},
     agents: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => registryServer, list: reject, put: reject, delete: reject },
@@ -136,7 +137,7 @@ async function run(
   configuration: AgentConfiguration,
 ): Promise<{ chunks: EngineChunk[]; toolNames: string[] }> {
   const chunks: EngineChunk[] = [];
-  for await (const chunk of executeAgent(depsFixture(channel), {
+  for await (const chunk of executeAgent(depsFixture(channel), { ...executionIdentity(),
     agent: agentFixture(),
     configuration,
     messages: [{ role: "user", content: "go" }],

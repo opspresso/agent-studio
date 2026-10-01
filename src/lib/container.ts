@@ -18,7 +18,6 @@ import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
 import { openReviewWorkspace } from "@/application/workspace/reviewWorkspace";
 import { workspaceCaller } from "@/application/workspace/workspaceCaller";
 import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
-import { assertExecutionGrant } from "@/application/auth/authorizeExecutionGrant";
 import { resolveRunUser } from "@/application/auth/resolveRunUser";
 import { executeWorkspaceTask, executeAgent } from "@/application/execution/runAgent";
 import { runWorkspaceContinuations } from "@/application/chat/workspaceContinuation";
@@ -1018,7 +1017,7 @@ export const executionDeps: ExecutionDeps = {
   // A verified PR prepares its own scoped reader; ordinary runs never receive one.
   reviewSource: undefined,
   reviewWorkspace: undefined,
-  authorizeExecutionGrant: grant => assertExecutionGrant({ members: { getById: getExecutionMemberById }, apiCredentials: apiTokenUseCases, agents: agentRepository, messagingIdentities: messagingIdentityUseCases, triggers: triggerRepository, webhookCredentials: webhookTokenUseCases }, grant),
+  authorizeRun: authorizeAgentRun,
   getCallRoutingPolicy: getCallRoutingPolicy,
   createToolSchemaValidator,
   runtimeSessions: runtimeSessions,
@@ -1150,7 +1149,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       configuration: input.configuration,
       messages: input.message ? [{ role: "user", content: input.message }] : [],
       actor: input.actor,
-      ...(input.user ? { user: input.user } : {}),
+      user: input.user,
       ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
       ...(input.backgroundTask ? { backgroundTask: true } : {}),

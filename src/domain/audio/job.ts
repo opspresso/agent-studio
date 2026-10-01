@@ -1,5 +1,5 @@
 import type { FileRetention } from "@/domain/artifact/retention";
-import type { RunActor, RunUser, ExecutionGrant } from "@/domain/execution/actor";
+import type { RunIdentity } from "@/domain/execution/actor";
 import type { AgentConfiguration } from "@/domain/agent/types";
 import type { SourceRefresh } from "@/domain/artifact/sourceReference";
 
@@ -15,13 +15,10 @@ export function audioSourceAgent(job: Pick<AudioJobInput, "source" | "agentName"
 }
 
 /** Stable input: retries never choose a different model, identity, or destination. */
-export interface AudioJobInput {
+export interface AudioJobInput extends RunIdentity {
   task?: AudioJobTask;
   agentName: string;
   userEmail: string;
-  user: RunUser;
-  actor: RunActor;
-  executionGrant?: ExecutionGrant;
   /** Server-bound Agent that submitted the work; storage remains in agentName. */
   producedBy?: string;
   source: AudioSource;
