@@ -1,6 +1,7 @@
 import type { ChatDeps } from "./deps";
 import type { WorkspaceRepository } from "@/domain/workspace/repository";
 import type { WorkspaceContinuation } from "@/domain/workspace/continuation";
+import type { RunUser } from "@/domain/execution/actor";
 import { codingCiWatch } from "@/application/chat/workspaceCiWatch";
 import { isTerminalCodingApproval, type PullRequestInfo } from "@/domain/coding/types";
 import { chatConversation } from "@/domain/chat/conversation";
@@ -19,7 +20,7 @@ import { ForbiddenError, ValidationError } from "@/application/errors";
 export interface WorkspaceContinuationDeps {
   chat: ChatDeps;
   workspaces: WorkspaceRepository;
-  authorize(ownerEmail: string, agentName: string): Promise<void>;
+  authorize(user: RunUser, agentName: string): Promise<void>;
   pullRequest(workspaceId: string, ownerEmail: string): Promise<PullRequestInfo | undefined>;
   now(): Date;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
@@ -59,14 +60,25 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     await save({ status: "cancelled", error: "The source agent is no longer accessible." });
     return;
   }
-  try { await deps.authorize(item.ownerEmail, item.agentName); }
+  let saved = deps.chat.runtimeSessions ? await readRuntimeSession(deps.chat.runtimeSessions, chat.chatId, item.ownerEmail) : null;
+  if (saved && !saved.document.userId) {
+    await save({ status: "cancelled", error: "The saved session does not identify the requesting user. Start a new chat." });
+    return;
+  }
+  const user = saved ? { userId: saved.document.userId, email: item.ownerEmail } : undefined;
+  try {
+    if (user) {
+      await deps.authorize(user, item.agentName);
+      if (chat.agentName !== item.agentName) await deps.authorize(user, chat.agentName);
+    }
+  }
   catch (error) {
     if (!(error instanceof ForbiddenError || error instanceof ValidationError)) throw error;
     await save({ status: "cancelled", error: "The requesting account can no longer run this agent." }); return;
   }
   let pullRequest: PullRequestInfo | undefined;
   let ciFailure: string | undefined;
-  if (item.phase === "ci") {
+  if (user && item.phase === "ci") {
     // A newer action or native task supersedes this wait; it must not publish
     // a changed tree or drive the same workflow alongside the newer request.
     const latest = (await deps.workspaces.approvals(workspace.id, 1))[0];
@@ -89,7 +101,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
       }
       ciFailure = "PR checks are still pending after the 30-minute CI wait.";
     }
-  } else if (approval.status === "succeeded" && approval.action.kind === "pull-request") {
+  } else if (user && approval.status === "succeeded" && approval.action.kind === "pull-request") {
     // The first event still reports publication immediately. The subsequent
     // wait is a read-only event, independent of browser and model polling.
     try { pullRequest = await deps.pullRequest(workspace.id, item.ownerEmail); }
@@ -107,7 +119,8 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
   let started = false;
   let stopCancel = () => {};
   try {
-    const saved = deps.chat.runtimeSessions ? await readRuntimeSession(deps.chat.runtimeSessions, chat.chatId, item.ownerEmail) : null;
+    // The chat may have completed another turn before this worker acquired its lease.
+    saved = deps.chat.runtimeSessions ? await readRuntimeSession(deps.chat.runtimeSessions, chat.chatId, item.ownerEmail, user?.userId) : null;
     if (saved?.document.checkpoint) {
       await save({ dueAt: new Date(deps.now().getTime() + RETRY_MS).toISOString() });
       return;
@@ -117,8 +130,8 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     const running: WorkspaceContinuation = { ...item, revision: item.revision + 1, status: "running", runId,
       ...(ciWatch ? { ciWatch } : {}),
       dueAt: new Date(now.getTime() + RUN_LEASE_SECONDS * 1000).toISOString() };
-    const outcome = item.phase === "ci" ? (ciFailure || pullRequest?.ci === "failed" ? "failed" : "succeeded") : approval.status;
-    const result = item.phase === "ci" ? (ciFailure ?? `PR #${pullRequest!.number} checks: ${pullRequest!.ci}`) : approval.result;
+    const outcome = item.phase === "ci" ? (!pullRequest || ciFailure || pullRequest.ci === "failed" ? "failed" : "succeeded") : approval.status;
+    const result = item.phase === "ci" ? (ciFailure ?? (pullRequest ? `PR #${pullRequest.number} checks: ${pullRequest.ci}` : MISSING_SESSION)) : approval.result;
     const event = { event: item.phase === "ci" ? "workspace_ci_result" : "workspace_action_result", workspace_id: workspace.id, workspace_agent: workspace.agentName, approval_id: approval.id,
       action: approval.action.kind, status: outcome, result: result ?? null, ...(pullRequest ? { pull_request: pullRequest } : {}),
       ...(ciWatch && !item.phase ? { ci_watch: ciWatch } : {}) };
@@ -131,14 +144,14 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     });
     if (!claimed) return;
     item = running;
-    if (!saved) {
+    if (!saved || !user) {
       await save({ status: "failed", error: MISSING_SESSION });
       return;
     }
     const controller = new AbortController();
     const runSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     stopCancel = watchChatCancel(deps.chat.chats, chat.chatId, runId, controller);
-    const source = deps.chat.runAgent({ agent, configuration, actor: { kind: "user", id: item.ownerEmail },
+    const source = deps.chat.runAgent({ user, agent, configuration, actor: { kind: "user", id: user.email },
       conversation: chatConversation(chat.chatId), signal: runSignal,
       messages: [{ role: "system", content: CONTINUATION_INSTRUCTION }, { role: "user", content: JSON.stringify(event) }] });
     const tee = teeToRunLog(deps.chat, chat.chatId, runId, runAndPersist(deps.chat, chat, source, runSignal));

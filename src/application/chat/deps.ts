@@ -1,4 +1,4 @@
-import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
+import type { RunActor, RunCaller, RunConversation, RunUser } from "@/domain/execution/actor";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ChatRunLogRepository } from "@/domain/chat/runLog";
 import type { AgentRepository } from "@/domain/agent/repository";
@@ -10,6 +10,7 @@ import type { RuntimeSessionServices } from "@/application/runtime/session";
 import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession";
 
 export interface AgentRunParams {
+  user: RunUser;
   resumeApproval?: { revision: number; decisions: RuntimeApprovalDecision[] };
   agent: Agent;
   configuration: AgentConfiguration;

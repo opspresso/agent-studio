@@ -41,15 +41,35 @@ async function fixture() {
     },
   } as unknown as ChatDeps;
   const pending = (await getChatApproval(deps, chat.chatId, chat.ownerEmail))!;
-  const input = { chatId: chat.chatId, userEmail: chat.ownerEmail, revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] };
+  const input = { chatId: chat.chatId, user: { userId: f.scope.userId, email: chat.ownerEmail }, revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] };
   return { ...f, chat, agent, deps, chats, messages, order, effect, channel, input };
 }
 
 describe("chat approval ownership and lifecycle", () => {
+  it("refuses an approval from a different account with the same email before claiming a run", async () => {
+    const f = await fixture();
+    await expect(resumeChatApproval(f.deps, { ...f.input, user: { ...f.input.user, userId: "replacement-account" } }))
+      .rejects.toMatchObject({ status: 409 });
+    expect(f.chats.claimRun).not.toHaveBeenCalled();
+    expect(f.effect).not.toHaveBeenCalled();
+    expect(f.channel.calls).toBe(0);
+    expect((await getChatApproval(f.deps, f.chat.chatId, f.chat.ownerEmail))?.status).toBe("pending");
+  });
+
+  it("refuses a new turn from a different account before attachments or history writes", async () => {
+    const f = await fixture();
+    await discardChatApproval(f.deps, f.chat.chatId, f.chat.ownerEmail, f.input.revision);
+    await expect(sendMessage(f.deps, { chatId: f.chat.chatId, content: "continue",
+      user: { ...f.input.user, userId: "replacement-account" } })).rejects.toMatchObject({ status: 409 });
+    expect(f.chats.claimRun).not.toHaveBeenCalled();
+    expect(f.chats.reserveMessageSeq).not.toHaveBeenCalled();
+    expect(f.messages).toEqual([]);
+  });
+
   it("reports missing or expired native history when continuing an existing chat", async () => {
     const f = await fixture();
     f.rows.clear();
-    const run = await sendMessage(f.deps, { chatId: f.chat.chatId, userEmail: f.chat.ownerEmail, content: "continue" });
+    const run = await sendMessage(f.deps, { chatId: f.chat.chatId, user: { userId: f.scope.userId, email: f.chat.ownerEmail }, content: "continue" });
     const chunks: unknown[] = [];
     for await (const chunk of run.stream) chunks.push(chunk);
     expect(chunks).toContainEqual({ warning: "Earlier chat records are visible, but this chat has no saved SDK Session. This run starts a new model context." });
@@ -59,7 +79,7 @@ describe("chat approval ownership and lifecycle", () => {
     const f = await fixture();
     const read = vi.spyOn(f.services.repository, "get");
     await expect(getChatApproval(f.deps, f.chat.chatId, "other@example.com")).rejects.toMatchObject({ status: 404 });
-    await expect(resumeChatApproval(f.deps, { ...f.input, userEmail: "other@example.com" })).rejects.toMatchObject({ status: 404 });
+    await expect(resumeChatApproval(f.deps, { ...f.input, user: { userId: "other-user", email: "other@example.com" } })).rejects.toMatchObject({ status: 404 });
     await expect(discardChatApproval(f.deps, f.chat.chatId, "other@example.com", f.input.revision)).rejects.toMatchObject({ status: 404 });
     expect(read).not.toHaveBeenCalled();
     expect(f.chats.claimRun).not.toHaveBeenCalled();

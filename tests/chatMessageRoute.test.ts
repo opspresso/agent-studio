@@ -31,7 +31,7 @@ vi.mock("@/lib/session", async (importOriginal) => {
       (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) =>
       (...args: unknown[]) =>
         handler(
-          { email: "owner@example.com", name: "Owner", image: null, tier: "member" },
+          { id: "studio-user-1", email: "owner@example.com", name: "Owner", image: null, tier: "member" },
           ...args,
         ),
   };
@@ -81,7 +81,8 @@ beforeEach(() => {
 
 describe("POST /api/chats/{chatId}/messages", () => {
   it("detaches the run and retains a large-body admission until it drains", async () => {
-    const response = await POST(request({ content: "hello" }), context);
+    const response = await POST(request({ content: "hello", user: { userId: "attacker", email: "other@example.com" },
+      userEmail: "other@example.com", actor: { kind: "user", id: "other@example.com" } }), context);
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("detached");
@@ -90,7 +91,7 @@ describe("POST /api/chats/{chatId}/messages", () => {
       expect.objectContaining({
         chatId: "chat-1",
         content: "hello",
-        userEmail: "owner@example.com",
+        user: { userId: "studio-user-1", email: "owner@example.com" },
         caller: { displayName: "Owner" },
         signal: expect.any(AbortSignal),
       }),

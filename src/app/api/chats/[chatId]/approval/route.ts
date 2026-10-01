@@ -23,7 +23,7 @@ export const POST = withAuth(async (user, request: Request, context: RouteContex
   const { chatId } = await context.params;
   try {
     const controller = new AbortController();
-    const run = await resumeChatApproval(chatDeps, { chatId, userEmail: user.email, ...parsed.data, signal: controller.signal });
+    const run = await resumeChatApproval(chatDeps, { chatId, user: { userId: user.id, email: user.email }, ...parsed.data, signal: controller.signal });
     const stopWatch = watchChatCancel(chatDeps.chats, chatId, run.runId, controller);
     const detached = await detachedRunResponse({ head: { runId: run.runId, elapsedMs: Date.now() - run.startedAtMs }, stream: run.stream, onClientGone: run.onClientGone, onDrained: stopWatch });
     admission.retainUntil(detached.drained);

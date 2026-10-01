@@ -32,6 +32,7 @@ export interface RuntimeSessionServices {
 
 interface SessionDocument {
   format: 1;
+  userId: string;
   items: AgentInputItem[];
   checkpoint?: RuntimeCheckpoint;
   images?: ImageHandle[];
@@ -85,9 +86,14 @@ export function approvalId(item: RunToolApprovalItem): string {
   return runtimeFingerprint([item.agent.name, item.toolName, item.rawItem]);
 }
 
-export async function readRuntimeSession(services: RuntimeSessionServices, sessionId: string, ownerEmail: string) {
+export async function readRuntimeSession(services: RuntimeSessionServices, sessionId: string, ownerEmail: string, userId?: string) {
   const row = await services.repository.get(sessionId, ownerEmail);
-  return row ? { row, document: await decode(row, services) } : null;
+  if (!row) return null;
+  const document = await decode(row, services);
+  if (userId !== undefined && (!userId || document.userId !== userId)) {
+    throw new ConflictError("This runtime session does not belong to the authenticated user; start a new chat");
+  }
+  return { row, document };
 }
 
 export async function pendingRuntimeApproval(services: RuntimeSessionServices, sessionId: string, ownerEmail: string) {
@@ -112,13 +118,14 @@ function boundedHistory(items: AgentInputItem[]): { items: AgentInputItem[]; dro
 
 export async function openRuntimeSession(
   services: RuntimeSessionServices,
-  scope: { sessionId: string; ownerEmail: string; agentName: string; configuration: AgentConfiguration; routingPolicyFingerprint?: string },
+  scope: { sessionId: string; userId: string; ownerEmail: string; agentName: string; configuration: AgentConfiguration; routingPolicyFingerprint?: string },
   resume?: { revision: number; decisions: RuntimeApprovalDecision[] },
 ): Promise<RuntimeTurnPersistence> {
-  const saved = await readRuntimeSession(services, scope.sessionId, scope.ownerEmail);
+  if (!scope.userId) throw new ValidationError("An authenticated Studio user is required for a runtime session");
+  const saved = await readRuntimeSession(services, scope.sessionId, scope.ownerEmail, scope.userId);
   if (saved && saved.row.agentName !== scope.agentName) throw new ConflictError("Runtime session belongs to another agent");
   let revision = saved?.row.revision ?? null;
-  const document: SessionDocument = saved?.document ?? { format: 1, items: [] };
+  const document: SessionDocument = saved?.document ?? { format: 1, userId: scope.userId, items: [] };
   const checkpoint = document.checkpoint;
   if (checkpoint && !resume) throw new ConflictError("This chat is waiting for an approval decision");
   if (resume && (!checkpoint || checkpoint.status !== "pending" || resume.revision !== revision)) throw new ConflictError("This approval is no longer pending");
@@ -172,7 +179,7 @@ export async function openRuntimeSession(
       const restoredItems = filter ? restoreValues(filter, boundedItems) as AgentInputItem[] : boundedItems;
       const retained = new ImageRegistry({ next: Math.max(images.nextId, graph.nextImageId ?? 1) });
       retained.restore([...images.list(), ...Object.values(graph.agents).flatMap((entry) => [...entry.images])]);
-      await write({ format: 1, items: restoredItems, images: retained.list().slice(-MAX_IMAGES_PER_TURN), nextImageId: retained.nextId, ...(approvals.length ? {
+      await write({ format: 1, userId: scope.userId, items: restoredItems, images: retained.list().slice(-MAX_IMAGES_PER_TURN), nextImageId: retained.nextId, ...(approvals.length ? {
         checkpoint: { status: "pending", state: state.toString(), approvals, input: { ...rest, ...(now ? { now: now.toISOString() } : {}) }, configuration: scope.configuration, pii: filter?.snapshot() ?? [], bindings, previousItemCount, previousImageIds: checkpoint?.previousImageIds ?? images.list().map((image) => image.id), graph },
       } : {}) });
       session.items = items;
@@ -186,7 +193,7 @@ export async function discardRuntimeCheckpoint(services: RuntimeSessionServices,
   if (!saved || saved.row.revision !== revision || !saved.document.checkpoint) throw new ConflictError("This approval is no longer pending");
   const checkpoint = saved.document.checkpoint;
   const images = checkpoint.graph.agents[`root/${saved.row.agentName}`]?.images.filter((image) => checkpoint.previousImageIds?.includes(image.id));
-  const next: SessionDocument = { format: 1, items: saved.document.items.slice(0, checkpoint.previousItemCount), images, nextImageId: saved.document.nextImageId };
+  const next: SessionDocument = { format: 1, userId: saved.document.userId, items: saved.document.items.slice(0, checkpoint.previousItemCount), images, nextImageId: saved.document.nextImageId };
   const { payload: _old, revision: _revision, ...row } = saved.row;
   void _old; void _revision;
   if (await services.repository.save({ ...row, payload: await encode(next, services, sessionId, ownerEmail) }, revision) === null) throw new ConflictError("Runtime session was changed by another run");

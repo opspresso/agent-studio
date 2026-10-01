@@ -255,7 +255,7 @@ export async function* executeAgent(
     const decisionModel = await deps.callRouting?.selectedDecisionModel();
     const pinnedCallRouting = deps.callRouting ? { ...deps.callRouting, selectedDecisionModel: async () => decisionModel } : undefined;
     const runtime = deps.runtimeSessions && input.conversation?.surface === "chat" && input.actor?.kind === "user"
-      ? await openRuntimeSession(deps.runtimeSessions, { sessionId: input.conversation.id, ownerEmail: input.actor.id, agentName: input.agent.name, configuration: input.configuration,
+      ? await openRuntimeSession(deps.runtimeSessions, { sessionId: input.conversation.id, userId: input.user?.userId ?? "", ownerEmail: input.actor.id, agentName: input.agent.name, configuration: input.configuration,
         routingPolicyFingerprint: modelRoutingPolicyFingerprint(routingPolicy, decisionModel) }, input.resumeApproval)
       : undefined;
     if (input.resumeApproval && !runtime) throw new ValidationError("Approval resumption requires a persisted chat session");

@@ -762,6 +762,11 @@ SDK Session 이력과 승인 대기 RunState는 `runtime_sessions`에 별도로 
 원문 상태에는 모델/도구 이력과 각 Agent의 PII 복원 매핑이 포함될 수 있다. DB 접근 권한과
 암호화 키를 분리해 관리하고 백업·복구 시 같은 키를 유지하라.
 
+암호화된 Session에는 최초 실행의 Studio 사용자 ID를 저장한다. 새 턴과 승인 재개는
+로그인 세션의 ID와 일치해야 하며 이메일만으로 다른 계정에 이력을 인계하지 않는다.
+사용자 ID가 없거나 다른 Session은 실행하지 않으며 새 Chat을 시작해야 한다.
+Workspace 후속 실행도 이 ID의 현재 계정·Agent 접근을 다시 검사한다.
+
 승인은 Chat 소유자가 정확한 revision과 항목 ID를 지정한다. 동일 출처 session 변경 검사,
 Agent 접근 재확인, 실행 lease와 Session CAS를 함께 적용한다. 승인 상태는 도구 실행 전에
 pending에서 running으로 선점한다. 중복·낡은 결정, 변경된 설정과 연결은 거부하며 승인 후

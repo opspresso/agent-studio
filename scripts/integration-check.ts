@@ -1904,7 +1904,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       const owner = "it@example.com";
       cleanup(() => executionDeps.runtimeSessions!.repository.delete(sessionId, owner));
       const approvalConfiguration = { ...routedConfiguration, parameters: { ...routedConfiguration.parameters, policy: { approvalTools: ["Skill"] } } };
-      const scope = { agent, configuration: approvalConfiguration, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
+      const scope = { agent, configuration: approvalConfiguration, user: { userId: "integration-user", email: owner }, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
       {
         for await (const chunk of executeAgent(executionDeps, { ...scope, messages: [{ role: "user", content: "use your skill" }] })) assert.equal(chunk.error, undefined);
         const pending = await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner);
@@ -1948,13 +1948,20 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       const owner = "it@example.com";
       cleanup(() => executionDeps.runtimeSessions!.repository.delete(sessionId, owner));
       const approvalConfiguration = { ...configuration, parameters: { ...configuration.parameters, policy: { approvalTools: ["Skill"] } } };
-      const base = { agent, configuration: approvalConfiguration, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
+      const base = { agent, configuration: approvalConfiguration, user: { userId: "integration-user", email: owner }, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
       const first = [];
       for await (const chunk of executeAgent(executionDeps, { ...base, messages: [{ role: "user", content: "use your skill" }] })) first.push(chunk);
       assert.ok(first.some((chunk) => chunk.approval), "approval is persisted before notifying the client");
       assert.ok(!first.some((chunk) => chunk.toolResult), "a pending Skill call has not executed");
       const pending = await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner);
       assert.ok(pending && pending.approvals.length === 1);
+      const callsBeforeWrongUser = llmCalls.length;
+      await assert.rejects(async () => {
+        for await (const _chunk of executeAgent(executionDeps, { ...base, user: { ...base.user, userId: "another-user" },
+          messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) { /* drain */ }
+      }, /authenticated user/);
+      assert.equal(llmCalls.length, callsBeforeWrongUser, "another account cannot consume a pending approval");
+      assert.equal((await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner))?.status, "pending");
       const resumed = [];
       for await (const chunk of executeAgent(executionDeps, { ...base, messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) resumed.push(chunk);
       assert.ok(!resumed.some((chunk) => chunk.error), "approved SDK execution resumes successfully");

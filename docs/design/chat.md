@@ -6,7 +6,8 @@ Chat은 Agent를 실행하는 소유자별 비공개 대화다. 다른 사용자
 결과는 선택 버튼으로만 반영하며 기존 Chat의 실행·모델 이력에는 개입하지 않는다.
 입력 중 추천의 갱신과 요청 대기는 [Agent 추천](agent-recommendation.md#입력-중-추천)을 따른다.
 실행은 공통 `ChatDeps.runAgent`에 바인딩한 `executeAgent`를 사용하고 HTTP self-call 없이
-SSE로 전달한다. HTTP 계약은 [Chat API](../API.md#chats), 변경 불변식은
+SSE로 전달한다. 호출자는 로그인 세션의 사용자 ID와 이메일이며 요청 본문으로 바꿀 수 없다.
+HTTP 계약은 [Chat API](../API.md#chats), 변경 불변식은
 [Chat 지침](../../src/application/chat/AGENTS.md)과 [Runtime 지침](../../src/application/runtime/AGENTS.md)을 따른다.
 
 ## 저장과 실행의 경계
@@ -43,6 +44,9 @@ Session은 오래된 완전한 턴과 이미지를 예산에 맞춰 생략하고
 승인 대기 입력은 보존하며 실제 도구 실행에는 원본을 전달한다. 한도는 `runtime/arguments.ts`가 소유한다.
 모델의 reasoning은 표시 옵션과 무관하게 원래 모델 턴에 붙어 재생된다.
 이력과 승인 체크포인트는 같은 암호화 payload와 revision CAS로 저장한다.
+Session은 최초 실행의 사용자 ID에 묶인다. 새 턴과 승인 재개는 그 ID를 검사하며,
+같은 이메일의 다른 계정이나 사용자 ID가 없는 Session은 실행하지 않는다.
+사용자를 확인할 수 없는 Session은 새 Chat에서 요청을 시작해야 한다.
 
 승인이 필요한 도구는 효과 실행 전에 RunState를 저장한다. 소유자는 Agent·도구·전체 인자를
 검토하고 승인·거절한다. 승인 중에는 새 메시지를 보내지 못하며 승인 재개는 새 user 행을 만들지 않는다.
@@ -150,7 +154,8 @@ SDK Session이 최근 이미지와 편집 핸들을 다음 턴으로 이어 준�
 Workspace use case의 transaction이 이 선택을 관리하고 일반 Chat 갱신은 보존한다.
 
 승인·CI 결과는 `workspaceAction`이 있는 플랫폼 assistant 행으로 표시한다.
-worker는 원래 소유자·Agent·Workspace 선택·SDK Session을 확인한 뒤 검증한 결과 이벤트로
+worker는 SDK Session에 저장된 사용자 ID로 현재 계정·Agent 접근을 재확인하고,
+원래 소유자·Workspace 선택·SDK Session을 확인한 뒤 검증한 결과 이벤트로
 후속 실행을 시작한다. 플랫폼 결과를 새 사용자 요청이나 다음 Git 동작의 승인으로 해석하지 않는다.
 
 연결된 화면은 보이는 동안 실행이 없을 때 tail을 확인하고 새 run을 발견하면 재접속한다.

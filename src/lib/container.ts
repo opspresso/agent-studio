@@ -17,6 +17,7 @@ import { openReviewWorkspace } from "@/application/workspace/reviewWorkspace";
 import { workspaceCaller } from "@/application/workspace/workspaceCaller";
 import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
 import { assertExecutionGrant } from "@/application/auth/authorizeExecutionGrant";
+import { resolveRunUser } from "@/application/auth/resolveRunUser";
 import { executeWorkspaceTask, executeAgent } from "@/application/execution/runAgent";
 import { runWorkspaceContinuations } from "@/application/chat/workspaceContinuation";
 import type { ChatDeps } from "@/application/chat/deps";
@@ -1449,7 +1450,11 @@ export async function runWorkspaceWorkerService(signal: AbortSignal, heartbeat?:
   const concurrency = getWorkspaceConfig()?.workerConcurrency ?? 1;
   await Promise.all([
     runWorkspaceWorker(getWorkspaceWorkerDeps(), signal, concurrency, heartbeat),
-    runWorkspaceContinuations({ chat: chatDeps, workspaces: workspaceRepository, authorize: authorizeWorkspaceTools,
+    runWorkspaceContinuations({ chat: chatDeps, workspaces: workspaceRepository, authorize: async (user, agentName) => {
+      const current = await resolveRunUser({ agents: agentRepository, members: { getById: getExecutionMemberById } }, agentName, user.userId, "user");
+      if (current.email !== user.email) throw new ForbiddenError("The requesting account changed");
+      await authorizeWorkspaceTools(current.email, agentName);
+    },
       pullRequest: (id, owner) => getCodingUseCases().pullRequest(id, owner),
       now: () => new Date(), sleep: async (ms, abort) => { await workspaceSleep(ms, undefined, { signal: abort }); } }, signal, concurrency),
   ]);
@@ -1459,7 +1464,7 @@ export async function runWorkspaceWorkerService(signal: AbortSignal, heartbeat?:
 export const chatDeps: ChatDeps = {
   closeWorkspace: closeChatWorkspace, runtimeSessions, chats: chatRepository, runLog: chatRunLogRepository,
   agents: agentRepository,
-  runAgent: (params) => executeAgent(executionDeps, params), documents: executionDeps.documents,
+  runAgent: (params) => executeAgent(executionDeps, { ...params, ownerEmail: params.user.email }), documents: executionDeps.documents,
   ...(artifactStorage ? { artifacts: artifactStorage } : {}),
 };
 

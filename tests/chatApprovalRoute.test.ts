@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatNotFoundError } from "@/application/chat/errors";
 
 const f = vi.hoisted(() => ({ get: vi.fn(), resume: vi.fn(), discard: vi.fn(), watch: vi.fn(), response: vi.fn(), retainUntil: vi.fn(), gone: vi.fn(), drained: Promise.resolve() }));
-vi.mock("@/lib/session", () => ({ withAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ email: "owner@example.com" }, ...args) }));
+vi.mock("@/lib/session", () => ({ withAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ id: "studio-user-1", email: "owner@example.com" }, ...args) }));
 vi.mock("@/app/api/_lib/body", () => ({ withTurnBody: async (request: Request, consume: (body: unknown, admission: unknown) => Promise<Response>) => consume(await request.json(), { retainUntil: f.retainUntil }) }));
 vi.mock("@/application/chat/approval", () => ({ getChatApproval: f.get, resumeChatApproval: f.resume, discardChatApproval: f.discard }));
 vi.mock("@/application/chat/cancelRun", () => ({ watchChatCancel: f.watch }));
@@ -31,8 +31,8 @@ describe("chat approval route", () => {
   });
 
   it("detaches resumed runs and retains admission until their stream drains", async () => {
-    expect((await POST(request("POST", decision), context)).status).toBe(200);
-    expect(f.resume).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ...decision, chatId: "chat-1", userEmail: "owner@example.com", signal: expect.any(AbortSignal) }));
+    expect((await POST(request("POST", { ...decision, user: { userId: "attacker", email: "other@example.com" } }), context)).status).toBe(200);
+    expect(f.resume).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ...decision, chatId: "chat-1", user: { userId: "studio-user-1", email: "owner@example.com" }, signal: expect.any(AbortSignal) }));
     expect(f.response).toHaveBeenCalledWith(expect.objectContaining({ head: { runId: "resume-1", elapsedMs: 250 }, onClientGone: f.gone, onDrained: expect.any(Function) }));
     expect(f.retainUntil).toHaveBeenCalledWith(f.drained);
   });

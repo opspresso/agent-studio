@@ -236,6 +236,8 @@ describe("Workspace decisions returning to their source chat", () => {
     await f.drain();
     expect(f.coding.coding("agent").commit).toHaveBeenCalledTimes(1);
     expect(f.runAgent).toHaveBeenCalledTimes(1);
+    expect(f.deps.authorize).toHaveBeenCalledWith({ userId: f.scope.userId, email: f.owner }, "agent");
+    expect(f.runAgent).toHaveBeenCalledWith(expect.objectContaining({ user: { userId: f.scope.userId, email: f.owner } }));
     expect((await repository.continuation(f.workspace.id, f.approval.id))?.status).toBe("completed");
     expect(await repository.dueContinuations(new Date().toISOString(), 20)).toEqual([]);
   });

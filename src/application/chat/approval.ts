@@ -1,3 +1,4 @@
+import type { RunUser } from "@/domain/execution/actor";
 import type { ChatDeps } from "./deps";
 import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession";
 import { chatConversation } from "@/domain/chat/conversation";
@@ -28,20 +29,20 @@ export async function discardChatApproval(deps: ChatDeps, chatId: string, email:
 }
 
 export async function resumeChatApproval(deps: ChatDeps, input: {
-  chatId: string; userEmail: string; revision: number; decisions: RuntimeApprovalDecision[]; signal?: AbortSignal;
+  chatId: string; user: RunUser; revision: number; decisions: RuntimeApprovalDecision[]; signal?: AbortSignal;
 }) {
-  const { chat, sessions } = await ownedChat(deps, input.chatId, input.userEmail);
-  const saved = await readRuntimeSession(sessions, input.chatId, input.userEmail);
+  const { chat, sessions } = await ownedChat(deps, input.chatId, input.user.email);
+  const saved = await readRuntimeSession(sessions, input.chatId, input.user.email, input.user.userId);
   if (!saved?.document.checkpoint || saved.row.revision !== input.revision || saved.document.checkpoint.status !== "pending") throw new ChatConflictError("This approval is no longer pending");
   if (!chat.agentName) throw new ChatValidationError("chat is not bound to an agent");
   const agent = await deps.agents.get(chat.agentName);
   if (!agent) throw new ChatValidationError("agent not found");
-  if (!(await userMayAccessAgent(agent, input.userEmail))) throw new ChatForbiddenError();
+  if (!(await userMayAccessAgent(agent, input.user.email))) throw new ChatForbiddenError();
   const configuration = agent.configuration;
   if (!configuration) throw new ChatValidationError("agent has no Agent configuration");
   const runId = await claimChatRun(deps.chats, input.chatId);
   try {
-    const source = deps.runAgent({ agent, configuration, messages: [], actor: { kind: "user", id: input.userEmail },
+    const source = deps.runAgent({ user: input.user, agent, configuration, messages: [], actor: { kind: "user", id: input.user.email },
       conversation: chatConversation(chat.chatId), caller: saved.document.checkpoint.input.caller,
       resumeApproval: { revision: input.revision, decisions: input.decisions }, signal: input.signal });
     const tee = teeToRunLog(deps, chat.chatId, runId, runAndPersist(deps, chat, source, input.signal));

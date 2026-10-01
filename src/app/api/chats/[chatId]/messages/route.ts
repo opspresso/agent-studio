@@ -29,7 +29,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
         content: parsed.data.content,
         ...(parsed.data.images ? { images: parsed.data.images } : {}),
         ...(parsed.data.documents ? { documents: parsed.data.documents } : {}),
-        userEmail: user.email,
+        user: { userId: user.id, email: user.email },
         ...(caller ? { caller } : {}),
         signal: abortController.signal,
       });
