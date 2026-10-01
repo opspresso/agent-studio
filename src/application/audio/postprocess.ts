@@ -44,6 +44,36 @@ function chunks(text: string): string[] {
   return result.length ? result : [""];
 }
 
+/** Each page remains valid JSON, including labels on every part of a long utterance. */
+function transcriptInputs(transcript: AudioTranscript): string[] {
+  if (!transcript.segments.length) return chunks(transcript.text);
+  const pages: string[] = [];
+  let page: string[] = [];
+  let size = 2;
+  const flush = () => { if (page.length) pages.push(`[${page.join(",")}]`); page = []; size = 2; };
+  const append = (text: string, metadata: Record<string, unknown>) => {
+    let remaining = text;
+    do {
+      let part = cutCodePoints(remaining, INPUT_CHARS);
+      let encoded = JSON.stringify({ ...metadata, text: part });
+      while (encoded.length + 2 > INPUT_CHARS) {
+        if (part.length <= 2) throw new AudioJobStepError("postprocess_input_limit", false);
+        part = cutCodePoints(part, Math.floor(part.length / 2));
+        encoded = JSON.stringify({ ...metadata, text: part });
+      }
+      if (size + encoded.length + (page.length ? 1 : 0) > INPUT_CHARS) flush();
+      size += encoded.length + (page.length ? 1 : 0);
+      page.push(encoded);
+      remaining = remaining.slice(part.length);
+    } while (remaining.length);
+  };
+  // Partial provider segments must never replace the complete source text.
+  append(transcript.text, { kind: "full_text" });
+  for (const { text, ...metadata } of transcript.segments) append(text, { kind: "segment", ...metadata });
+  flush();
+  return pages;
+}
+
 export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
   return async (job: AudioJob, context: AudioJobStepContext): Promise<{ draftRef: string; summaryRef: string; dialogueRef: string }> => {
     if (!job.postprocess?.configuration || !job.transcriptRef) throw new AudioJobStepError("postprocess_configuration_missing", false);
@@ -73,7 +103,7 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
     let outputs: AudioPostprocessOutput[] = [];
     const extracted: AudioMemoryCandidate[] = [];
     const warnings: string[] = [...(transcript.warnings ?? [])];
-    const inputs = chunks(transcript.text);
+    const inputs = transcriptInputs(transcript);
     if (inputs.length > MAX_CALLS) throw new AudioJobStepError("postprocess_call_limit", false);
     const record = async (phase: "extract" | "reduce" | "saving", round: number, completed: number, total: number) => {
       const previous = job.postprocessProgress;

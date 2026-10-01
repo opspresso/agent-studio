@@ -32,6 +32,37 @@ function fixture(text = "Fact one.") {
 }
 
 describe("durable Agent postprocessing", () => {
+  it("passes speaker labels and timing to the summarizer without losing unsegmented text", async () => {
+    const f = fixture("Fact one. Additional context.");
+    const segments = [{ text: "Fact one.", speaker: "0:A", start: 0, end: 2 },
+      { text: "Additional", speaker: "1:A", start: 300, end: 302 }];
+    f.saved.set("transcript", new TextEncoder().encode(JSON.stringify({
+      text: "Fact one. Additional context.", model: "asr", segments, warnings: [],
+    })));
+    await f.run(f.job, f.context);
+    const input = vi.mocked(f.deps.run).mock.calls[0]![1];
+    expect(JSON.parse(input)).toEqual([{ kind: "full_text", text: "Fact one. Additional context." },
+      ...segments.map(segment => ({ kind: "segment", ...segment }))]);
+    const output = JSON.parse(new TextDecoder().decode(f.saved.get("job-draft")));
+    expect(output.memories[0].evidence).toEqual(["Fact one."]);
+  });
+  it("keeps long escaped utterances bounded and labelled across valid JSON pages", async () => {
+    const f = fixture();
+    const text = '한국어 "발언"\\\n'.repeat(3000);
+    f.saved.set("transcript", new TextEncoder().encode(JSON.stringify({
+      text, model: "asr", segments: [{ text, speaker: "0:A", start: 1, end: 30 }], warnings: [],
+    })));
+    vi.mocked(f.deps.run).mockResolvedValue(JSON.stringify({ text: "Summary", memories: [], warnings: [] }));
+    await f.run(f.job, f.context);
+    const pages = vi.mocked(f.deps.run).mock.calls.filter(call => call[2] === "extract").map(call => call[1]);
+    expect(pages.every(page => page.length <= 16_000)).toBe(true);
+    const entries = pages.flatMap(page => JSON.parse(page));
+    expect(entries.filter(entry => entry.kind === "full_text").map(entry => entry.text).join("")).toBe(text);
+    const segments = entries.filter(entry => entry.kind === "segment");
+    expect(segments.length).toBeGreaterThan(1);
+    expect(segments.map(entry => entry.text).join("")).toBe(text);
+    expect(segments.every(entry => entry.speaker === "0:A" && entry.start === 1 && entry.end === 30)).toBe(true);
+  });
   it("accepts a final combined summary within the output cap even when it exceeds half its notes", async () => {
     const f = fixture("Fact one. ".repeat(2000));
     const summary = "Combined summary. ".repeat(170);
