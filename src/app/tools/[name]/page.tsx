@@ -870,8 +870,7 @@ function EditMcpForm({
               styles={monoInput}
             />
             <Text fz="xs" c="dimmed">
-              Changing the image, port, environment, arguments, or endpoint automatically
-              restarts the container.
+              {t("tools.restartOnChange")}
             </Text>
           </>
         ) : (
@@ -884,8 +883,8 @@ function EditMcpForm({
             disabled={documentLocked}
             description={
               documentLocked
-                ? "Owned by the plugin repository."
-                : "Changing the URL drops the stored headers and OAuth block — credentials belong to the address they were entered for."
+                ? t("tools.documentOwned")
+                : t("tools.urlCredentialHint")
             }
             inputWrapperOrder={["label", "input", "description", "error"]}
           />

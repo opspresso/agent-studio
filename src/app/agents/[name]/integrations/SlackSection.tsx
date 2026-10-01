@@ -214,7 +214,7 @@ export function SlackSection({
 
         <Stack gap="xs">
           <Text fz="sm" fw={500}>
-            Suggested prompts
+            {t("pset.suggestedPrompts")}
           </Text>
           <Text fz="xs" c="dimmed" lh={1.6}>
             {t("pset.slackPromptsHint", { max: MAX_SUGGESTED_PROMPTS })}
@@ -251,16 +251,13 @@ export function SlackSection({
 
         <Stack gap="xs">
           <Text fz="sm" fw={500}>
-            Channel keywords
+            {t("pset.channelKeywords")}
           </Text>
           <Text fz="xs" c="dimmed" lh={1.6}>
-            Words that wake this bot in a channel without an @mention, separated by commas. Leave
-            empty and the bot answers only when it is mentioned — or when someone replies in a
-            thread it already answered in, which needs no configuration and lasts a day. Matching
-            ignores case and matches inside words, so short or common words wake the bot often.
+            {t("pset.channelKeywordsHint")}
           </Text>
           <TextInput
-            aria-label="Channel keywords"
+            aria-label={t("pset.channelKeywords")}
             placeholder="deploy, incident, 배포"
             value={keywords}
             onChange={(e) => setKeywords(e.currentTarget.value)}

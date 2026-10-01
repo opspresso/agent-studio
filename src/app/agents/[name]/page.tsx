@@ -11,6 +11,7 @@ import { tierMayEdit } from "@/domain/member/tiers";
 import { modelType } from "@/domain/llm/models";
 import { LoadingText } from "@/app/_components/PageState";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { SectionHeading } from "@/app/_components/SectionHeading";
 import { AgentConfigurationEditor, parseConfigurationDraft } from "./_components/AgentConfigurationEditor";
 import { PromptPreview } from "./_components/PromptPreview";
 import { RunPanel } from "./_components/RunPanel";
@@ -114,15 +115,14 @@ export default function PlaygroundPage() {
   return <div className={columns.split}>
     <div className={columns.primary}>
       <Stack gap="md">
-        <Group justify="space-between" className={classes.columnHeading}>
-          <Text fw={600}>{t("configuration.title")}</Text>
+        <SectionHeading title={t("configuration.title")}>
           {canEdit ? <Group gap="xs">
             {dirty ? <Text fz="xs" c="orange">{t("playground.unsaved")}</Text>
               : saved ? <Text fz="xs" c="teal">{t("configuration.saved")}</Text> : null}
             <Button onClick={save} loading={saving}
               disabled={saveState.disabled || (configuration !== null && !dirty)}>{t("playground.save")}</Button>
           </Group> : <Text fz="xs" c="dimmed">{t("playground.readOnly")}</Text>}
-        </Group>
+        </SectionHeading>
         {modelError && <Alert color="yellow">{t("playground.modelRegistryWarning", { error: modelError })}</Alert>}
         {saveError && <Alert color="red">{saveError}</Alert>}
         <fieldset disabled={!canEdit || saving} className={canEdit ? undefined : classes.readonlyEditor}
@@ -136,7 +136,7 @@ export default function PlaygroundPage() {
       </Stack>
     </div>
     <div className={columns.secondary}>
-      <Stack gap="md" className={classes.sidePanels}>
+      <Stack gap="md">
         {canPreview && <CollapsibleSection title={t("playground.preview")}>
           <PromptPreview agentName={name} draft={parsed ?? draft} validationError={schemaError} />
         </CollapsibleSection>}

@@ -143,14 +143,14 @@ test("finds a discovered model by its published ID", async ({ page }) => {
 });
 
 test("adds Jev immediately without a dialog and retains decision type after reload", async ({ page }) => {
-  const jev = modelRows(page).filter({ hasText: "~typesafe/jev-latest" });
+  const jev = modelRows(page).filter({ hasText: "fixture/jev-latest" });
   await expect(jev).toContainText("Decision");
   await expect(jev).toContainText("32K");
   await jev.getByRole("button", { name: "Add model" }).click();
   await expect(jev).toContainText("Selected");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(saves).toHaveLength(1);
-  expect(saves[0]).toMatchObject({ id: "fixture/~typesafe/jev-latest", type: "decision", contextWindow: 32000, maxTokens: 28800, outputModalities: ["decision"], pricing: { inputPer1M: expect.closeTo(0.042), outputPer1M: 0 } });
+  expect(saves[0]).toMatchObject({ id: "fixture/jev-latest", wireId: "~typesafe/jev-latest", type: "decision", contextWindow: 32000, maxTokens: 28800, outputModalities: ["decision"], pricing: { inputPer1M: expect.closeTo(0.042), outputPer1M: 0 } });
   await page.reload();
   await page.getByRole("button", { name: "Discover Models", exact: true }).click();
   await expect(jev).toContainText("Selected");
@@ -173,7 +173,7 @@ test("requires an inline type choice for missing metadata instead of defaulting 
 });
 
 test("shows saved selections before discovery and deletes from the selected-only view", async ({ page }) => {
-  const jev = modelRows(page).filter({ hasText: "~typesafe/jev-latest" });
+  const jev = modelRows(page).filter({ hasText: "fixture/jev-latest" });
   await jev.getByRole("button", { name: "Add model" }).click();
   await expect(jev).toContainText("Selected");
   await page.getByRole("checkbox", { name: "Selected Models only" }).check();
@@ -196,11 +196,11 @@ test("shows saved selections before discovery and deletes from the selected-only
 });
 
 test("saves personal favorites from selected models and restores them after reload", async ({ page }) => {
-  const jev = modelRows(page).filter({ hasText: "~typesafe/jev-latest" });
+  const jev = modelRows(page).filter({ hasText: "fixture/jev-latest" });
   await jev.getByRole("button", { name: "Add model" }).click();
   await page.goto(`${base}/selected`);
-  const selectedCard = modelRows(page).filter({ hasText: "fixture/~typesafe/jev-latest" });
-  await page.getByRole("textbox", { name: "Search models" }).fill("fixture/~typesafe/jev-latest");
+  const selectedCard = modelRows(page).filter({ hasText: "fixture/jev-latest" });
+  await page.getByRole("textbox", { name: "Search models" }).fill("fixture/jev-latest");
   await expect(modelRows(page)).toHaveCount(1);
   const identity = selectedCard.getByRole("cell").first();
   const addFavorite = identity.getByRole("button", { name: "Add to favorites" });
@@ -209,7 +209,7 @@ test("saves personal favorites from selected models and restores them after relo
   const removeFavorite = identity.getByRole("button", { name: "Remove from favorites" });
   await expect(removeFavorite).toHaveAttribute("aria-pressed", "true");
   await expect(removeFavorite).toHaveText("");
-  expect(favorites).toEqual(["fixture/~typesafe/jev-latest"]);
+  expect(favorites).toEqual(["fixture/jev-latest"]);
   await page.reload();
   await expect(identity.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
   await identity.getByRole("button", { name: "Remove from favorites" }).click();
@@ -218,31 +218,31 @@ test("saves personal favorites from selected models and restores them after relo
 
 test("keeps other stars active and preserves persisted changes from another tab across queued saves", async ({ page }) => {
   await modelRows(page).filter({ hasText: "openrouter/zeta" }).getByRole("button", { name: "Add model" }).click();
-  await modelRows(page).filter({ hasText: "~typesafe/jev-latest" }).getByRole("button", { name: "Add model" }).click();
-  await modelRows(page).filter({ hasText: "vendor/alpha" }).getByRole("button", { name: "Add model" }).click();
+  await modelRows(page).filter({ hasText: "fixture/jev-latest" }).getByRole("button", { name: "Add model" }).click();
+  await modelRows(page).filter({ hasText: "fixture/alpha" }).getByRole("button", { name: "Add model" }).click();
   await page.goto(`${base}/selected`);
   const zeta = modelRows(page).filter({ hasText: "openrouter/zeta" }).getByRole("cell").first();
-  const jev = modelRows(page).filter({ hasText: "fixture/~typesafe/jev-latest" }).getByRole("cell").first();
+  const jev = modelRows(page).filter({ hasText: "fixture/jev-latest" }).getByRole("cell").first();
   holdFirstFavoritePatch = true;
   await zeta.getByRole("button", { name: "Add to favorites" }).click();
   await expect.poll(() => Boolean(releaseFirstFavoritePatch)).toBe(true);
   await expect(zeta.getByRole("button", { name: "Add to favorites" })).toBeDisabled();
   await expect(jev.getByRole("button", { name: "Add to favorites" })).toBeEnabled();
-  favorites = [...favorites, "fixture/vendor/alpha"].sort();
+  favorites = [...favorites, "fixture/alpha"].sort();
   await jev.getByRole("button", { name: "Add to favorites" }).click();
   releaseFirstFavoritePatch?.();
   await expect(zeta.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
   await expect(jev.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
-  await expect(modelRows(page).filter({ hasText: "fixture/vendor/alpha" }).getByRole("button", { name: "Remove from favorites" })).toBeVisible();
-  expect(favorites).toEqual(["fixture/vendor/alpha", "fixture/~typesafe/jev-latest", "openrouter/zeta"]);
+  await expect(modelRows(page).filter({ hasText: "fixture/alpha" }).getByRole("button", { name: "Remove from favorites" })).toBeVisible();
+  expect(favorites).toEqual(["fixture/alpha", "fixture/jev-latest", "openrouter/zeta"]);
 });
 
 test("reports a failed favorite save and continues a separately queued change", async ({ page }) => {
   await modelRows(page).filter({ hasText: "openrouter/zeta" }).getByRole("button", { name: "Add model" }).click();
-  await modelRows(page).filter({ hasText: "~typesafe/jev-latest" }).getByRole("button", { name: "Add model" }).click();
+  await modelRows(page).filter({ hasText: "fixture/jev-latest" }).getByRole("button", { name: "Add model" }).click();
   await page.goto(`${base}/selected`);
   const zeta = modelRows(page).filter({ hasText: "openrouter/zeta" });
-  const jev = modelRows(page).filter({ hasText: "fixture/~typesafe/jev-latest" });
+  const jev = modelRows(page).filter({ hasText: "fixture/jev-latest" });
   holdFirstFavoritePatch = true;
   failFavoritePatchModel = "openrouter/zeta";
   await zeta.getByRole("button", { name: "Add to favorites" }).click();
@@ -252,11 +252,11 @@ test("reports a failed favorite save and continues a separately queued change", 
   await expect(page.getByRole("alert")).toContainText("Favorite save unavailable");
   await expect(jev.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
   await expect(zeta.getByRole("button", { name: "Add to favorites" })).toBeEnabled();
-  expect(favorites).toEqual(["fixture/~typesafe/jev-latest"]);
+  expect(favorites).toEqual(["fixture/jev-latest"]);
 });
 
 test("keeps registered models visible when favorites cannot be loaded", async ({ page }) => {
-  const jev = modelRows(page).filter({ hasText: "~typesafe/jev-latest" });
+  const jev = modelRows(page).filter({ hasText: "fixture/jev-latest" });
   await jev.getByRole("button", { name: "Add model" }).click();
   failFavorites = true;
   await page.goto(`${base}/selected`);
@@ -266,7 +266,7 @@ test("keeps registered models visible when favorites cannot be loaded", async ({
 });
 
 test("retains the selected model and surfaces the API's in-use deletion refusal", async ({ page }) => {
-  const jev = modelRows(page).filter({ hasText: "~typesafe/jev-latest" });
+  const jev = modelRows(page).filter({ hasText: "fixture/jev-latest" });
   await jev.getByRole("button", { name: "Add model" }).click();
   await expect(jev).toContainText("Selected");
   blockDeletion = true;
@@ -346,7 +346,7 @@ test("shared model picker shows the selected identity, favorite group and per-mo
 });
 
 test("always queries the complete provider catalog even while selected-only is active", async ({ page }) => {
-  const jev = modelRows(page).filter({ hasText: "~typesafe/jev-latest" });
+  const jev = modelRows(page).filter({ hasText: "fixture/jev-latest" });
   await jev.getByRole("button", { name: "Add model" }).click();
   await expect(jev).toContainText("Selected");
   await page.getByRole("checkbox", { name: "Selected Models only" }).check();
@@ -455,7 +455,8 @@ test("serializes discovery and registry mutations, including manual registration
   await expect(page.locator("form").getByRole("button", { name: "Add Model", exact: true })).toBeEnabled();
   await page.locator("form").getByRole("button", { name: "Add Model", exact: true }).click();
   await expect.poll(() => selected.length).toBe(2);
-  await expect(modelRows(page).filter({ hasText: "custom/new" })).toContainText("Selected");
+  await expect(modelRows(page).filter({ hasText: "fixture/new" })).toContainText("Selected");
+  expect(selected).toContainEqual(expect.objectContaining({ id: "fixture/new", wireId: "custom/new" }));
 });
 
 test("keeps saved models manageable when their provider connection is no longer configured", async ({ page }) => {

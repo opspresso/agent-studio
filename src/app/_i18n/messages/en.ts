@@ -641,6 +641,11 @@ export const en = {
   "schedule.deleteHint": "Delete schedule \"{id}\"?",
   "schedule.deleteWebhookTitle": "Delete webhook",
   "schedule.deleteWebhookHint": "Delete the retired webhook \"{id}\"? Its secret stops existing.",
+  "pset.suggestedPrompts": "Suggested prompts",
+  "pset.channelKeywords": "Channel keywords",
+  "pset.channelKeywordsHint": "Comma-separated words that wake this bot in a channel without an @mention. Leave empty to respond only to mentions or replies in a thread it answered within the last day. Matching ignores case and includes partial words.",
+  "tools.documentOwned": "Owned by the plugin repository.",
+  "tools.urlCredentialHint": "Changing the URL drops the stored headers and OAuth block — credentials belong to the address they were entered for.",
   "common.loading": "Loading…",
   "common.cancel": "Cancel",
   "common.copy": "Copy",
@@ -1178,7 +1183,7 @@ export const en = {
   "configuration.saved": "Saved",
   "configuration.saveToRun": "Save the Agent settings before running it.",
   "playground.save": "Save",
-  "playground.readOnly": "Read-only — the owner or an admin can edit",
+  "playground.readOnly": "Read-only — you do not have permission to edit this Agent.",
 
   "playground.preview": "Preview",
   "playground.run": "Run",
@@ -1544,7 +1549,7 @@ export const en = {
   // The agent's Integrations tab: how other systems reach it.
   "pint.lede":
     "Connect this Agent through its API token, chat bots, webhook and schedules. Choose an integration to inspect its recent activity.",
-  "pint.ownerOnly": "Only the Agent owner ({owner}) or an admin can change these integrations.",
+  "pint.ownerOnly": "Only the Agent owner ({owner}) with editing permission or an admin can change these integrations.",
   "pint.historyTitle": "Delivery history",
   "pint.historyChoose": "Select an integration to see its recent activity.",
   "pint.historyRefresh": "Refresh",

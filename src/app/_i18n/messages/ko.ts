@@ -461,7 +461,7 @@ export const ko: Messages = {
   "nav.tools": "Tools",
   "nav.agents": "Agents",
   "nav.members": "Members",
-  "nav.audits": "감사 로그",
+  "nav.audits": "Audits",
   "nav.models": "Models",
   "nav.settings": "설정",
 
@@ -631,6 +631,11 @@ export const ko: Messages = {
   "schedule.deleteHint": "스케줄 \"{id}\"을 삭제할까요?",
   "schedule.deleteWebhookTitle": "Webhook 삭제",
   "schedule.deleteWebhookHint": "사용을 중단한 Webhook \"{id}\"을 삭제할까요? 연결된 시크릿도 제거됩니다.",
+  "pset.suggestedPrompts": "추천 프롬프트",
+  "pset.channelKeywords": "채널 키워드",
+  "pset.channelKeywordsHint": "채널에서 @멘션 없이 봇을 호출할 단어를 쉼표로 구분해 입력합니다. 비워 두면 멘션하거나 최근 하루 동안 봇이 답한 스레드에 응답할 때만 동작합니다. 대소문자를 구분하지 않으며 단어 일부가 일치해도 호출됩니다.",
+  "tools.documentOwned": "Plugin 저장소에서 관리합니다.",
+  "tools.urlCredentialHint": "URL을 변경하면 저장된 헤더와 OAuth 설정을 제거합니다. 인증 정보는 등록한 주소에만 적용됩니다.",
   "common.loading": "불러오는 중…",
   "common.cancel": "취소",
   "common.copy": "복사",
@@ -1139,7 +1144,7 @@ export const ko: Messages = {
   "configuration.saved": "저장됨",
   "configuration.saveToRun": "Agent 설정을 저장한 뒤 실행할 수 있습니다.",
   "playground.save": "저장",
-  "playground.readOnly": "읽기 전용 — 소유자나 관리자만 수정할 수 있습니다",
+  "playground.readOnly": "읽기 전용 — 이 Agent를 수정할 권한이 없습니다.",
 
   "playground.preview": "미리보기",
   "playground.run": "실행",
@@ -1477,7 +1482,7 @@ export const ko: Messages = {
   // Agent의 연동 탭: 다른 시스템이 이 Agent에 닿는 방법.
   "pint.lede":
     "API 토큰, 채팅 봇, Webhook과 Schedules로 이 Agent를 연결합니다. 연동을 선택해 최근 활동을 확인하세요.",
-  "pint.ownerOnly": "Agent 소유자({owner})나 admin 만 이 연동을 바꿀 수 있습니다.",
+  "pint.ownerOnly": "편집 권한이 있는 Agent 소유자({owner}) 또는 관리자만 이 연동을 변경할 수 있습니다.",
   "pint.historyTitle": "전송 이력",
   "pint.historyChoose": "연동을 선택하면 최근 활동을 볼 수 있습니다.",
   "pint.historyRefresh": "새로고침",
