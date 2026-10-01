@@ -6,7 +6,7 @@
  */
 
 import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
-import { TIER_LIMITS, type MemberTier } from "@/domain/member/tiers";
+import type { TierLimits } from "@/domain/member/tiers";
 import type { UsageRepository } from "@/domain/usage/repository";
 import { RateLimitedError } from "@/application/errors";
 import { utcDay, utcMonth } from "@/shared/date";
@@ -42,13 +42,13 @@ export class MemberCostLimitExceededError extends RateLimitedError {
 export async function assertWithinMemberCostLimit(
   deps: MemberCostGuardDeps,
   actor: RunActor | undefined,
-  tier: MemberTier | undefined,
+  limits: TierLimits | undefined,
   now: Date = new Date(),
 ): Promise<void> {
-  if (!actor || !tier) {
+  if (!actor || !limits) {
     return;
   }
-  const cap = TIER_LIMITS[tier].monthlyCostCapUsd;
+  const cap = limits.monthlyCostCapUsd;
   if (cap === undefined) {
     return;
   }

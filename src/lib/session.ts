@@ -1,9 +1,9 @@
-import { toMemberTier, tierAtLeast, type MemberTier } from "@/domain/member/tiers";
+import { toMemberTier, tierMayEdit, type MemberTier } from "@/domain/member/tiers";
 import { unauthorized } from "@/shared/unauthorized";
 import { headers } from "next/headers";
 import { auth } from "./auth";
 import { isEffectiveAdmin } from "./memberAccess";
-import { isConfiguredAdmin } from "./runtime-settings";
+import { getMemberTierDefinitions, isConfiguredAdmin } from "./runtime-settings";
 import { resolvePublicBaseUrl } from "./public-url";
 import { config } from "./config";
 
@@ -29,7 +29,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     image: user.image ?? null,
     tier: (await isConfiguredAdmin(user.email))
       ? "admin"
-      : toMemberTier((user as { tier?: unknown }).tier),
+      : toMemberTier((user as { tier?: unknown }).tier, await getMemberTierDefinitions()),
   };
 }
 
@@ -117,7 +117,7 @@ export function withMemberAuth<T extends unknown[]>(
   handler: (user: SessionUser, ...args: T) => Promise<Response>,
 ): (...args: T) => Promise<Response> {
   return withAuth(async (user, ...args: T) => {
-    if (!tierAtLeast(user.tier, "member")) {
+    if (!tierMayEdit(user.tier)) {
       return Response.json(
         { error: "This resource is not available to your account" },
         { status: 403 },

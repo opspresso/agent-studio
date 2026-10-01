@@ -420,6 +420,17 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | `MOCK_LLM_DELAY_MS` | `0` | 스트리밍되는 chunk 사이의 밀리초. `0` 은 소켓이 받아 주는 만큼 빠르게 보낸다. 스크롤이 생기는 답변을 재현하려면 아래 행과 함께 이 값을 올려라. |
 | `MOCK_LLM_CHUNKS` | `0` | 답변이 대략 몇 개의 chunk 로 채워지는지. `0` 은 한 줄짜리 답변을 그대로 둔다. |
 
+## 사용자 등급과 월 한도
+
+Settings → Access에서 등급 추가·삭제와 사용자별 UTC 월 USD 한도를 설정한다. 저장 위치는
+Settings의 `memberTiers`이며 환경변수는 없다. Chat과 Workspace 비용은 같은 개인 한도에 합산한다.
+처음에는 admin(무제한), member($20), guest($2)가 있다. admin·guest는 삭제할 수 없고
+admin의 무제한 정책은 수정할 수 없다. guest와 사용자 정의 등급은 0 이상의 금액을 지정하며,
+0은 새 실행을 차단한다. 사용자 정의 등급은 member 권한이다. 사용자가 없는 등급만 삭제할 수 있다.
+Members의 선택 목록과 Profile 한도도 같은 설정을 읽는다. guest 동시 실행 1개 제한은 고정이고,
+다른 등급은 `MAX_CONCURRENT_RUNS_PER_ACTOR`를 따른다. 월 한도는 완료 후 집계된 지출을 기준으로
+다음 실행 전에 검사하므로 진행 중인 작업이 잔액을 초과할 수 있다.
+
 ## 코드에 고정된 제한
 
 이들은 런에 한계를 두며 환경으로 설정할 수 **없다**. 각각 소유 파일이 하나씩 있고, 사본이
@@ -428,7 +439,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | 제한 | 값 | 소유자 |
 |---|---|---|
 | agent 런당 턴 수 (Agent 설정 `maxTurn` 기본값) | `50` | `src/application/runtime/execute.ts` |
-| 멤버 tier 제한. 멤버당 동시 런 수 / 월 USD 상한 (`admin` —/—, `member` —/`20`, `guest` `1`/`2`. "—" 는 env 제한을 물려받거나 상한이 없다는 뜻). `guest` 는 member와 같은 메뉴를 읽기 전용으로 보며 Agent 생성·설정 변경·API 토큰을 사용할 수 없다. 본인 Chat·Workspace 실행은 합산 월 비용과 동시 실행 한도를 따른다 | `TIER_LIMITS` | `src/domain/member/tiers.ts` |
+| 멤버 등급 목록 상한 / guest 동시 실행 수. 월 금액은 Settings 정책에서 변경한다 | `50` / `1` | `src/domain/member/tiers.ts` |
 | SDK function tool 동시 실행 수 | `5` | `src/application/runtime/runner.ts` |
 | ModelTask 작업당 최대 시도 / 승격 전 같은 모델의 실패 수 | `4` / `2` | `src/application/llm/callModelRouter.ts` |
 | 턴당 도구 결과 텍스트 | `200,000` 자 | `src/application/llm/toolResultBudget.ts` |

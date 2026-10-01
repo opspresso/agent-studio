@@ -1,7 +1,8 @@
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
-import { ForbiddenError, NotFoundError } from "@/application/errors";
+import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import type { MemberRepository } from "@/domain/member/repository";
-import type { MemberTier } from "@/domain/member/tiers";
+import { DEFAULT_MEMBER_TIERS, toMemberTier, type MemberTier, type MemberTierDefinition } from "@/domain/member/tiers";
+import type { MemberTierAdministration } from "@/domain/member/tierAdministration";
 import type { Member } from "@/domain/member/types";
 import { mapWithLimit } from "@/shared/mapWithLimit";
 
@@ -49,6 +50,8 @@ export function createMemberUseCases(
   repository: MemberRepository,
   isAdminEmail: AdminEmailCheck = async () => false,
   readAdminEmails?: AdminEmailsReader,
+  administration?: MemberTierAdministration,
+  readTiers: () => Promise<readonly MemberTierDefinition[]> = async () => DEFAULT_MEMBER_TIERS,
 ): MemberUseCases {
   const effectiveMember = async (
     member: Member,
@@ -68,10 +71,14 @@ export function createMemberUseCases(
       const configuredAdmins = readAdminEmails
         ? new Set((await readAdminEmails()).map((email) => email.toLowerCase()))
         : undefined;
+      const tiers = await readTiers();
       const members = await mapWithLimit(
         await listMembers(repository),
         MEMBER_RECONCILE_CONCURRENCY,
-        (member) => effectiveMember(member, configuredAdmins),
+        async (member) => {
+          const effective = await effectiveMember(member, configuredAdmins);
+          return { ...effective, tier: toMemberTier(effective.tier, tiers) };
+        },
       );
       return members.sort((a, b) => (b.lastLoginAt ?? "").localeCompare(a.lastLoginAt ?? ""));
     },
@@ -81,7 +88,8 @@ export function createMemberUseCases(
       if (!member) {
         throw new NotFoundError(`No member with email "${email}"`);
       }
-      return effectiveMember(member);
+      const effective = await effectiveMember(member);
+      return { ...effective, tier: toMemberTier(effective.tier, await readTiers()) };
     },
 
     async setTier({ id, tier, actorEmail }) {
@@ -92,7 +100,13 @@ export function createMemberUseCases(
       if (await isAdminEmail(member.email)) {
         throw new ForbiddenError(`The tier for ADMIN_EMAILS member "${member.email}" is fixed to admin`);
       }
-      const result = await repository.setTier(id, tier);
+      const assign = async (members: MemberRepository, tiers: readonly MemberTierDefinition[]) => {
+        if (!tiers.some(entry => entry.id === tier)) throw new ValidationError("Unknown member tier");
+        return members.setTier(id, tier);
+      };
+      const result = administration
+        ? await administration.withLock(async ({ members, settings }) => assign(members, (await settings.get())?.memberTiers?.tiers ?? DEFAULT_MEMBER_TIERS))
+        : await assign(repository, await readTiers());
       if (!result) {
         throw new NotFoundError(`No member with id "${id}"`);
       }

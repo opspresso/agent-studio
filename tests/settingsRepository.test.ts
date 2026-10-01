@@ -21,6 +21,7 @@ describe("settingsRepository", () => {
     // Required<AppSettings> catches missing fixture fields at typecheck; equality
     // catches fields omitted by the repository reader.
     const stored: Required<import("@/domain/settings/types").AppSettings> = {
+      memberTiers: { revision: 1, tiers: (await import("@/domain/member/tiers")).DEFAULT_MEMBER_TIERS },
       serviceName: "Studio",
       serviceLogo: "agentops",
       registeredModels: [{

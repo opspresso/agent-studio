@@ -443,6 +443,9 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.equal(tierChange?.previousTier, "guest");
     assert.equal(tierChange?.member.tier, "member");
     pass("member get/list/atomic tier update");
+    const { checkMemberTiers } = await import("./member-tiers-check");
+    await checkMemberTiers(integrationMemberId, integrationMemberEmail);
+    pass("member tier catalog, assignment/deletion serialization and shared rollback");
 
     // ---------- MCP encrypted headers ----------
     const serverName = `it-mcp-${suffix}`;

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MEMBER_TIER,
-  MEMBER_TIERS,
-  TIER_LIMITS,
-  tierAtLeast,
+  DEFAULT_MEMBER_TIERS,
+  memberTierLimits,
+  tierMayEdit,
+  isMemberTierDefinitions,
+  storedMemberTier,
   tierMayCreateAgents,
   tierMayUseApiTokens,
   toMemberTier,
@@ -12,7 +14,7 @@ import { memberEmailFromActorKey } from "@/domain/execution/actor";
 
 describe("toMemberTier", () => {
   it("returns a recognized tier unchanged", () => {
-    for (const tier of MEMBER_TIERS) {
+    for (const { id: tier } of DEFAULT_MEMBER_TIERS) {
       expect(toMemberTier(tier)).toBe(tier);
     }
   });
@@ -25,13 +27,27 @@ describe("toMemberTier", () => {
   );
 });
 
-describe("TIER_LIMITS", () => {
-  it("names every tier exactly once", () => {
-    expect(Object.keys(TIER_LIMITS).sort()).toEqual([...MEMBER_TIERS].sort());
+describe("member tier catalog", () => {
+  const tiers = [...DEFAULT_MEMBER_TIERS, { id: "premium", monthlyCostCapUsd: 75 }];
+  it("resolves custom tiers and their configured caps, retaining member permissions", () => {
+    expect(storedMemberTier("premium")).toBe("premium");
+    expect(toMemberTier("premium", tiers)).toBe("premium");
+    expect(memberTierLimits("premium", tiers)).toEqual({ monthlyCostCapUsd: 75 });
+    expect(tierMayEdit("premium")).toBe(true);
+    expect(tierMayUseApiTokens("premium")).toBe(true);
+    expect(tierMayCreateAgents("premium")).toBe(true);
+    expect(memberTierLimits("admin", tiers)).toEqual({});
+    expect(toMemberTier("deleted", tiers)).toBe("guest");
+    expect(memberTierLimits("deleted", tiers)).toEqual(memberTierLimits("guest", tiers));
   });
-
-  it("leaves admin uncapped", () => {
-    expect(TIER_LIMITS.admin).toEqual({});
+  it("allows removing member but requires fixed admin and guest and finite non-admin caps", () => {
+    expect(isMemberTierDefinitions(tiers.filter(tier => tier.id !== "member"))).toBe(true);
+    for (const id of ["admin", "guest"]) expect(isMemberTierDefinitions(tiers.filter(tier => tier.id !== id))).toBe(false);
+    expect(isMemberTierDefinitions([...tiers, tiers[1]])).toBe(false);
+    for (const cap of [-1, null, NaN, Infinity]) {
+      expect(isMemberTierDefinitions(tiers.map(tier => tier.id === "guest" ? { ...tier, monthlyCostCapUsd: cap } : tier))).toBe(false);
+    }
+    expect(isMemberTierDefinitions(tiers.map(tier => tier.id === "admin" ? { ...tier, monthlyCostCapUsd: 20 } : tier))).toBe(false);
   });
 });
 
@@ -68,24 +84,12 @@ describe("tier capabilities", () => {
 
 });
 
-describe("tierAtLeast", () => {
-  it("holds every tier to be at least itself", () => {
-    for (const tier of MEMBER_TIERS) {
-      expect(tierAtLeast(tier, tier)).toBe(true);
-    }
-  });
-
-  it("orders admin above member above guest", () => {
-    expect(tierAtLeast("admin", "member")).toBe(true);
-    expect(tierAtLeast("member", "guest")).toBe(true);
-    expect(tierAtLeast("member", "admin")).toBe(false);
-    expect(tierAtLeast("guest", "member")).toBe(false);
-  });
-
-  it("puts a row that predates tiers below member", () => {
-    // Worth stating rather than leaving to `toMemberTier`: a member row written
-    // before the attribute existed carries no tier, and the `member` rung is
-    // the first gate whose default answer removes previously visible access.
-    expect(tierAtLeast(toMemberTier(undefined), "member")).toBe(false);
+describe("tier editing", () => {
+  it("treats every configurable tier as a member and keeps guests read-only", () => {
+    expect(tierMayEdit("admin")).toBe(true);
+    expect(tierMayEdit("member")).toBe(true);
+    expect(tierMayEdit("premium")).toBe(true);
+    expect(tierMayEdit("guest")).toBe(false);
+    expect(tierMayEdit(toMemberTier(undefined))).toBe(false);
   });
 });

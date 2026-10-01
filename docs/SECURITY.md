@@ -175,10 +175,13 @@ Chat·Workspace는 본인 소유권과 tier별 비용·동시 실행 제한 안�
 핸들러에 도달한다. 요청마다 새로 읽는다. 세션을 볼 일이 없는 이음매들(agent 쓰기
 오버라이드, 런 브래킷의 가드)은 email → tier 를 30초짜리 인스턴스별 캐시로 해석하고, 그 캐시는
 tier 변경을 처리한 인스턴스에서 무효화된다. 각 tier 가 동시에 몇 개를 진행할 수 있는지, UTC
-월 기준으로 얼마를 쓸 수 있는지, 무엇을 할 수 있는지(agent 생성, API token 사용)는
-`src/domain/member/tiers.ts` 의 `TIER_LIMITS` 다. 게이트는 tier 이름 비교가 아니라 그 파일의
+월 기준으로 얼마를 쓸 수 있는지는 Settings → Access의 `memberTiers`와
+`src/domain/member/tiers.ts`의 `memberTierLimits`가 결정한다. admin·guest는 고정 등급이고
+나머지 등록 등급은 member 권한이다. admin의 월 한도는 항상 무제한이며 guest는 동시 실행 1개다.
+등급별 월 금액은 관리자 설정이며 0이면 새 실행을 거절한다. 미등록 저장 등급은 guest로 해석한다. 게이트는 tier 이름 비교가 아니라 그 파일의
 `tierMay*` 술어를 거친다. agent 생성도 별도의 effective-admin 우회 없이 그 tier capability 를
-따른다.
+따른다. 등급 삭제와 사용자 배정은 공통 transaction lock을 사용하며, 사용자가 남은 등급은
+삭제할 수 없다. 월 한도 변경은 설정 캐시 TTL(기본 5초)에 따라 다른 인스턴스로 전파된다.
 
 월 상한은 Chat·Workspace를 포함한 멤버 자신의 일별 행을 UTC 월 1일부터 합산한다.
 실행 전에 이미 한도에 도달하면 새 실행을 거절한다. 등급·사용량 조회 실패도 실행을 중단한다.

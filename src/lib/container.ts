@@ -1,3 +1,5 @@
+import { createMemberTierUseCases } from "@/application/member/tierUseCases";
+import { memberTierAdministration } from "@/infrastructure/db/repositories/memberTierAdministration";
 import { createWorkspaceRuntimeModelUseCases } from "@/application/workspace/runtimeModels";
 import { createWorkspaceOptionsUseCase } from "@/application/workspace/workspaceOptions";
 import { optionalToolAccessible } from "@/application/execution/optionalToolAccess";
@@ -217,6 +219,8 @@ import {
   getEmbeddingTarget,
   getDefaultModel,
   getDecisionModelSelection,
+  getMemberTierDefinitions,
+  getMemberTierLimits,
   getCallRoutingPolicy,
   getEmbeddingModel,
   getEmbeddingModelSelection,
@@ -237,7 +241,7 @@ import {
 } from "./runtime-settings";
 import { getMemberTier, isEffectiveConfiguredAdminByEmail } from "./memberAccess";
 import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
-import { DEFAULT_MEMBER_TIER, type MemberTier } from "@/domain/member/tiers";
+import { DEFAULT_MEMBER_TIER, tierMayEdit, type TierLimits } from "@/domain/member/tiers";
 import { offeredModels } from "@/domain/llm/models";
 import { composeCreateAgent } from "@/application/agent/createAgentFlow";
 import { composeCloneAgent } from "@/application/agent/cloneAgentFlow";
@@ -294,7 +298,10 @@ export const memberUseCases = createMemberUseCases(
   memberRepository,
   isConfiguredAdmin,
   getAdminEmails,
+  memberTierAdministration,
+  getMemberTierDefinitions,
 );
+export const memberTierUseCases = createMemberTierUseCases({ settings: settingsRepository, members: memberRepository, administration: memberTierAdministration });
 
 /**
  * Reading and removing what runs produced. Undefined when this deployment keeps
@@ -898,20 +905,20 @@ export const readinessReport = () =>
   } });
 
 /**
- * The member tier behind an actor, for the run bracket's tier policies. Only
- * a `user` actor resolves one — machine callers *and agent tokens* answer
+ * The effective limits behind an actor, for the shared run bracket. Only
+ * a `user` actor resolves personal limits — machine callers *and agent tokens* answer
  * `undefined` and keep the deployment-wide limits: a token is a service
  * credential bounded by its agent, and whether a tier may hold one at all
  * is decided where the bearer token authenticates. A missing row still
  * answers the default tier rather than none: a `user` email exists by signing
  * in, so "no row" is the degenerate case, not the machine one.
  */
-const actorTierResolver = async (actor: RunActor): Promise<MemberTier | undefined> => {
+const actorLimitsResolver = async (actor: RunActor): Promise<TierLimits | undefined> => {
   const email = memberEmailFromActorKey(actorKey(actor));
   if (!email) {
     return undefined;
   }
-  return (await getMemberTier(email)) ?? DEFAULT_MEMBER_TIER;
+  return getMemberTierLimits((await getMemberTier(email)) ?? DEFAULT_MEMBER_TIER);
 };
 
 /**
@@ -1071,7 +1078,7 @@ export const executionDeps: ExecutionDeps = {
   runSlots: runSlotRepository,
   limits: async () => ({ perActor: await getMaxConcurrentRunsPerActor() }),
   unknownModelPolicy: getUnknownModelPolicy,
-  resolveActorTier: actorTierResolver,
+  resolveActorLimits: actorLimitsResolver,
   ...(artifactStorage ? { artifacts: artifactStorage } : {}),
 };
 
@@ -1101,8 +1108,8 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
     return createCodingGitHub(settings).reviews;
   },
   executionUserActive: async (email) => {
-    const member = await memberRepository.getByEmail(email);
-    return !!member && member.tier !== "guest";
+    const tier = await getMemberTier(email);
+    return !!tier && tierMayEdit(tier);
   },
   triggers: triggerRepository,
   agents: agentRepository,
@@ -1142,8 +1149,8 @@ export function getAudioRuntime() {
     publish: (file) => registerSourceArtifact(artifactRepository, file) });
   const authorize = async (agentName: string, email: string) => {
     const agent = await agentRepository.get(agentName);
-    const member = await memberRepository.getByEmail(email);
-    if (!agent || agent.ownerEmail !== email || !member || member.tier === "guest") {
+    const tier = await getMemberTier(email);
+    if (!agent || agent.ownerEmail !== email || !tier || !tierMayEdit(tier)) {
       throw new ForbiddenError("Audio processing requires the agent owner's member account");
     }
     return agent;

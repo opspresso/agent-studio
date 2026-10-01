@@ -20,7 +20,7 @@
 | Artifact | 첨부 원본·생성·수정 결과 파일. 개인 귀속과 Agent 접근 범위에 따라 조회한다. 비공개 Audio 파일은 소유자만 읽고 삭제한다 |
 
 Agent 조회·실행·복제 권한과 편집 권한은 다르다. 초대는 편집 권한을 주지 않으며,
-복제에는 Agent 생성 권한도 필요하다. 공유 레지스트리는 member 이상이 조회하고 관리자가 변경한다.
+복제에는 Agent 생성 권한도 필요하다. 공유 레지스트리는 guest도 조회하며 관리자가 변경한다. guest는 member와 같은 메뉴를 읽기 전용으로 본다.
 Agent 소유자·관리자는 설정·연동·Trace를 관리한다. 봇·토큰·자동화의 인증은 사용자 세션을 대신하지 않는다.
 
 근거: [Agent 접근](../src/application/agent/agentUseCases.ts),
@@ -32,6 +32,7 @@ Agent 소유자·관리자는 설정·연동·Trace를 관리한다. 봇·토큰
 |---|---|---|
 | 로그인 | Keycloak·표준 OIDC·Google 또는 선택적 비밀번호 로그인. 허용 이메일 도메인과 초기 관리자 설정은 배포가 관리한다 | 로그인 후 원래 페이지로 돌아간다. 로그아웃은 앱 세션을 종료한다 |
 | Members | 관리자 전용 사용자 목록·tier 변경. 설정에 지정한 관리자는 tier를 잠근다 | 이름·이메일·가입·마지막 로그인과 tier를 확인한다. 동시 변경은 사용자별 요청이 끝날 때까지 해당 입력을 잠근다 |
+| 등급 설정 | Settings → Access에서 등급 추가·삭제와 월 USD 한도 관리 | admin·guest는 고정이고 admin은 무제한이다. 배정된 사용자가 있으면 삭제를 막는다. Chat·Workspace·Profile이 같은 한도를 사용한다 |
 | Profile | 본인 계정·등급별 동시 실행·월 비용 정책 | 날짜 필터의 개인 사용량과 현재 UTC 월의 한도 사용률을 구분한다 |
 | Overview | 최근 Agent·Chat·Workspace, 카탈로그 수, 비용 요약과 최초 사용 안내 | 목록 조회 실패를 빈 목록·0 비용으로 표시하지 않는다 |
 | 공통 화면 | 공개 소개·로그인 없는 Guide, 한국어/영어, Light/Dark/System, 반응형 메뉴·계정 메뉴 | locale은 cookie로 유지하며 URL을 바꾸지 않는다. 필요한 정적 자산은 앱에서 제공한다 |
@@ -71,7 +72,7 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 | FetchUrl | Agent의 URL 읽기 opt-in. URL guard를 거쳐 웹·PDF·데이터·이미지를 읽는다 |
 | SaveFile / File | Artifact 저장소. 텍스트 파일 저장과 지원 문서 읽기·검사·생성·편집. 문서 엔진에 MCP 바인딩은 필요하지 않다 |
 | ImportFile / TranscribeAudio / AudioJob | Agent의 Audio 기능과 소유자의 member 이상 문맥. 파일은 비공개 저장소에 보관하고 worker가 작업을 처리한다. 전사는 등록된 전사 채널을 추가로 요구한다 |
-| Workspace | Agent의 Workspace 기능, 로그인한 member 이상, Sandbox·worker·실행 정책. 토큰·봇·예약 실행에는 자동 제공하지 않는다 |
+| Workspace | Agent의 Workspace 기능, 로그인한 사용자(guest 포함), Sandbox·worker·실행 정책. 개인 월 한도를 적용한다. 토큰·봇·예약 실행에는 자동 제공하지 않는다 |
 | Slack 읽기 | Agent의 Slack 읽기 기능과 활성 봇. History·Thread·User(s)·Channels·Reactions를 봇 권한으로 읽으며 이 도구들은 게시하지 않는다 |
 | ModelTask | Agent의 명시적 모델 라우팅 설정. 다른 도구나 두 번째 Agent 루프를 실행하지 않는 보조 모델 호출 |
 
@@ -121,7 +122,7 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 
 | 기능 | 조건·사용 위치 | 확인할 결과 |
 |---|---|---|
-| Models | member 이상이 관리자가 등록한 Text·Image·Embedding·Rerank·Transcription·Decision 모델을 조회한다 | provider·ID·capability·문맥·유형별 가격을 검색·필터·정렬하고 개인 즐겨찾기를 선택기에 반영한다 |
+| Models | guest를 포함한 로그인 사용자가 관리자가 등록한 Text·Image·Embedding·Rerank·Transcription·Decision 모델을 조회한다 | provider·ID·capability·문맥·유형별 가격을 검색·필터·정렬하고 개인 즐겨찾기를 선택기에 반영한다 |
 | 모델 관리 | Settings → Models에서 provider 이름·종류·주소·키와 모델을 등록한다. Self-hosted는 같은 흐름이며 직접 등록도 지원한다 | 전체 provider 목록 조회와 등록을 구분한다. 등록 모델 수정·삭제·제공 상태를 검사하며 listing 성공은 추론 성공을 보장하지 않는다 |
 | 모델 사용 설정 | 기본·결정·Workspace·Embedding·Rerank 모델, 검색 점수, 전역 라우팅과 가격 미지정 정책 | 선택된 모델만 실행한다. 공개 catalog·가격은 오프라인 snapshot과 선택적 갱신을 사용하며 자동 등록하지 않는다. Embedding 변경은 확인 후 재색인한다 |
 | Skills | 관리자 수동 생성·본문 편집·삭제, Plugin 출처와 참고 파일 조회 | 이름·설명이 검색과 모델 선택을 안내하며 본문은 로드 후 전달한다. Plugin 소유 본문·참고 파일은 원본에서 수정한다 |

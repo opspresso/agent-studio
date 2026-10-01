@@ -47,7 +47,7 @@ import { MCP_RUNTIME_COLOR, PLUGIN_COLOR } from "@/app/_components/badgeColors";
 import { CredentialBadges } from "../_components/CredentialBadges";
 import { McpAccountLookupEditor } from "../_components/McpAccountLookupEditor";
 import { parsePluginSource } from "@/domain/plugin/types";
-import { tierAtLeast } from "@/domain/member/tiers";
+import { tierMayEdit } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
@@ -424,7 +424,7 @@ function McpDetail({ name }: { name: string }) {
                 {t("tools.connectionAndDescriptions")}
               </Text>
               <Button variant="default" size="compact-sm" onClick={runTest} loading={testing}
-                disabled={!viewer || !tierAtLeast(viewer.tier, "member")}>
+                disabled={!viewer || !tierMayEdit(viewer.tier)}>
                 Test connection
               </Button>
             </Group>

@@ -46,7 +46,7 @@ import {
   type ArtifactFileType,
 } from "@/app/artifacts/_lib/fileType";
 import { isInlineViewable, MAX_INLINE_VIEW_BYTES } from "@/domain/artifact/types";
-import { tierAtLeast } from "@/domain/member/tiers";
+import { tierMayEdit } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
 import { reportError } from "@/app/_lib/reportError";
 
@@ -81,7 +81,7 @@ export function ArtifactGallery({
 }) {
   const t = useT();
   const viewer = useViewer();
-  const canDelete = viewer !== null && tierAtLeast(viewer.tier, "member");
+  const canDelete = viewer !== null && tierMayEdit(viewer.tier);
   const [catalogView, setCatalogView] = useCatalogView();
   const [artifacts, setArtifacts] = useState<ArtifactView[]>([]);
   const [nextBefore, setNextBefore] = useState<string | undefined>(undefined);

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_MEMBER_TIERS, memberTierLimits } from "@/domain/member/tiers";
 import { NotFoundError } from "@/application/errors";
 
 const { me, memberUsage, memberMonthToDate } = vi.hoisted(() => ({
@@ -36,7 +37,7 @@ describe("GET /api/me/profile", () => {
     const response = await profile();
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ member, monthToDateUsd: 1.25 });
+    expect(await response.json()).toEqual({ member, monthToDateUsd: 1.25, limits: memberTierLimits("guest", DEFAULT_MEMBER_TIERS) });
     expect(me).toHaveBeenCalledWith("u@x.com");
     expect(memberMonthToDate).toHaveBeenCalledWith("u@x.com");
   });

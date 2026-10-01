@@ -4,10 +4,10 @@
  * Explicitly configured admins are promoted to tier admin at session resolution.
  */
 
-import { tierAtLeast, type MemberTier } from "@/domain/member/tiers";
+import { tierMayEdit, toMemberTier, type MemberTier } from "@/domain/member/tiers";
 import { memberRepository } from "@/infrastructure/db/repositories/memberRepository";
 import { log } from "@/shared/logger";
-import { isAdminEmail, isConfiguredAdmin } from "./runtime-settings";
+import { getMemberTierDefinitions, isAdminEmail, isConfiguredAdmin } from "./runtime-settings";
 
 /** What the effective predicates need to know about the caller. */
 export interface TieredUser {
@@ -17,7 +17,7 @@ export interface TieredUser {
 
 /** May mutate shared registries and app settings — `withAdminAuth`'s question. */
 export async function isEffectiveAdmin(user: TieredUser): Promise<boolean> {
-  return user.tier === "admin" || (tierAtLeast(user.tier, "member") && await isAdminEmail(user.email));
+  return user.tier === "admin" || (tierMayEdit(user.tier) && await isAdminEmail(user.email));
 }
 
 /** May write an agent owned by someone else — `assertAgentWritable`'s question. */
@@ -70,11 +70,12 @@ export function invalidateMemberTierCache(email?: string): void {
  * authorization, where "unknown" must not mean "allowed".
  */
 export async function getMemberTier(email: string): Promise<MemberTier | null> {
+  const resolved = async (tier: MemberTier | null) => tier === null ? null : toMemberTier(tier, await getMemberTierDefinitions());
   const key = email.toLowerCase();
   const now = Date.now();
   const cached = tierCache.get(key);
   if (cached && cached.expiresAt > now) {
-    return cached.tier;
+    return resolved(cached.tier);
   }
   const generation = tierCacheGeneration;
   const keyGeneration = tierCacheGenerations.get(key) ?? 0;
@@ -88,7 +89,7 @@ export async function getMemberTier(email: string): Promise<MemberTier | null> {
     });
   }
   if (generation !== tierCacheGeneration || keyGeneration !== (tierCacheGenerations.get(key) ?? 0)) {
-    return tier;
+    return resolved(tier);
   }
   if (tierCache.size >= TIER_CACHE_MAX_ENTRIES) {
     tierCacheGeneration += 1;
@@ -96,5 +97,5 @@ export async function getMemberTier(email: string): Promise<MemberTier | null> {
     tierCache.clear();
   }
   tierCache.set(key, { tier, expiresAt: now + TIER_CACHE_TTL_MS });
-  return tier;
+  return resolved(tier);
 }

@@ -4,7 +4,7 @@ import {
   memberMonthToDate,
   MemberCostLimitExceededError,
 } from "@/application/usage/memberCostGuard";
-import { TIER_LIMITS } from "@/domain/member/tiers";
+import { DEFAULT_MEMBER_TIERS, memberTierLimits } from "@/domain/member/tiers";
 import type { RunActor } from "@/domain/execution/actor";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { MemberUsageRow } from "@/domain/usage/types";
@@ -13,7 +13,7 @@ const now = new Date("2026-08-13T12:00:00Z");
 afterEach(() => vi.restoreAllMocks());
 const user: RunActor = { kind: "user", id: "a@x.com" };
 
-const guestCap = TIER_LIMITS.guest.monthlyCostCapUsd!;
+const guestCap = memberTierLimits("guest", DEFAULT_MEMBER_TIERS).monthlyCostCapUsd!;
 
 const day = (date: string, cost: number, agentName = "p"): MemberUsageRow => ({
   email: "a@x.com",
@@ -64,7 +64,7 @@ describe("memberMonthToDate", () => {
 describe("assertWithinMemberCostLimit", () => {
   it("refuses a member at their tier's cap, with the month's Retry-After", async () => {
     const usage = usageWith([day("2026-08-02", guestCap - 1), day("2026-08-13", 1)]);
-    const thrown = await assertWithinMemberCostLimit({ usage }, user, "guest", now).then(
+    const thrown = await assertWithinMemberCostLimit({ usage }, user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now).then(
       () => null,
       (error: unknown) => error as MemberCostLimitExceededError,
     );
@@ -76,18 +76,18 @@ describe("assertWithinMemberCostLimit", () => {
 
   it("allows a member under their cap", async () => {
     const usage = usageWith([day("2026-08-13", guestCap - 0.01)]);
-    await expect(assertWithinMemberCostLimit({ usage }, user, "guest", now)).resolves.toBeUndefined();
+    await expect(assertWithinMemberCostLimit({ usage }, user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now)).resolves.toBeUndefined();
   });
 
   it("treats no rows as nothing spent", async () => {
     await expect(
-      assertWithinMemberCostLimit({ usage: usageWith([]) }, user, "guest", now),
+      assertWithinMemberCostLimit({ usage: usageWith([]) }, user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now),
     ).resolves.toBeUndefined();
   });
 
   it("never reads for an uncapped tier", async () => {
     const read = vi.fn();
-    await assertWithinMemberCostLimit({ usage: usageWith([], read) }, user, "admin", now);
+    await assertWithinMemberCostLimit({ usage: usageWith([], read) }, user, memberTierLimits("admin", DEFAULT_MEMBER_TIERS), now);
     expect(read).not.toHaveBeenCalled();
   });
 
@@ -102,14 +102,14 @@ describe("assertWithinMemberCostLimit", () => {
       // token authentication is what keeps this from being a bypass.
       { kind: "agent-token", id: "a@x.com" },
     ] as RunActor[]) {
-      await expect(assertWithinMemberCostLimit({ usage }, actor, "guest", now)).resolves.toBeUndefined();
+      await expect(assertWithinMemberCostLimit({ usage }, actor, memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now)).resolves.toBeUndefined();
     }
     expect(read).not.toHaveBeenCalled();
   });
 
   it("is a no-op without an actor or a tier", async () => {
     const usage = usageWith([day("2026-08-13", guestCap * 10)]);
-    await expect(assertWithinMemberCostLimit({ usage }, undefined, "guest", now)).resolves.toBeUndefined();
+    await expect(assertWithinMemberCostLimit({ usage }, undefined, memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now)).resolves.toBeUndefined();
     await expect(assertWithinMemberCostLimit({ usage }, user, undefined, now)).resolves.toBeUndefined();
   });
 
@@ -119,6 +119,6 @@ describe("assertWithinMemberCostLimit", () => {
     usage.listMemberDays = async () => {
       throw failure;
     };
-    await expect(assertWithinMemberCostLimit({ usage }, user, "guest", now)).rejects.toBe(failure);
+    await expect(assertWithinMemberCostLimit({ usage }, user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now)).rejects.toBe(failure);
   });
 });

@@ -230,6 +230,9 @@ PR workflow에는 Release 생성·registry 게시·GitOps 전달 job이 없다.
 
 ## 테스트
 
+통합 검사에는 등급 설정 저장·사용자 배정과 삭제의 경합·설정과 사용자 행의 공동 rollback도 포함한다
+(`scripts/member-tiers-check.ts`). 같은 `_test` 데이터베이스의 임시 사용자만 사용한다.
+
 단위 테스트는 `tests/` 아래에 산다. 관례:
 
 - **경계에서 mock 한다.** `fetch` 는 `vi.stubGlobal` 로, 아이템 스토어는

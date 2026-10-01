@@ -9,7 +9,7 @@ import { useT } from "@/app/_i18n/provider";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import type { ModelFavoritesResponse } from "@/app/api/models/favorites/route";
 import type { RegisteredModel } from "@/domain/llm/providerModels";
-import { tierAtLeast } from "@/domain/member/tiers";
+import { tierMayEdit } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
 import { listRegisteredModels } from "./api";
 import { ModelCollection } from "./ModelCollection";
@@ -17,7 +17,7 @@ import { ModelCollection } from "./ModelCollection";
 export default function ModelsPage() {
   const t = useT();
   const viewer = useViewer();
-  const canEdit = viewer !== null && tierAtLeast(viewer.tier, "member");
+  const canEdit = viewer !== null && tierMayEdit(viewer.tier);
   const [models, setModels] = useState<RegisteredModel[]>();
   const [favorites, setFavorites] = useState<string[]>();
   const [savingIds, setSavingIds] = useState<string[]>([]);

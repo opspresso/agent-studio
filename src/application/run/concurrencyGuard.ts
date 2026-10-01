@@ -8,7 +8,7 @@
 
 import { actorKey, type RunActor } from "@/domain/execution/actor";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
-import { TIER_LIMITS, type MemberTier } from "@/domain/member/tiers";
+import type { TierLimits } from "@/domain/member/tiers";
 import { RateLimitedError } from "@/application/errors";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
@@ -53,14 +53,13 @@ const UNLIMITED: AcquiredSlot = { release: async () => {} };
 /**
  * Take a concurrency slot for this run, or refuse it.
  *
- * **Fails closed**, unlike the cost guard beside it, and deliberately so. The
- * cost guard permits execution when accounting reads fail. Concurrency refuses
- * admission with 429 when slot storage fails, avoiding more load on that store.
+ * Refuses admission with 429 when slot storage fails, avoiding more load on
+ * that store. Personal monthly budgets also fail closed.
  */
 export async function acquireRunSlot(
   deps: ConcurrencyGuardDeps,
   actor: RunActor | undefined,
-  tier?: MemberTier,
+  tierLimits?: TierLimits,
 ): Promise<AcquiredSlot> {
   // No repository, no limits, or a run with no identifiable caller: there is
   // nothing to count against. An unattributed run is rare (every current entry
@@ -72,7 +71,7 @@ export async function acquireRunSlot(
   // one inherits it. Only a `user` actor ever arrives with a tier — the
   // bracket's resolver answers `undefined` for machine callers and agent
   // tokens alike, so a token stays a service credential bounded by the env number.
-  const tierLimit = tier ? TIER_LIMITS[tier].maxConcurrentRuns : undefined;
+  const tierLimit = tierLimits?.maxConcurrentRuns;
   const limit = tierLimit ?? (typeof deps.limits === "function" ? await deps.limits() : deps.limits).perActor;
   if (limit <= 0) {
     return UNLIMITED;

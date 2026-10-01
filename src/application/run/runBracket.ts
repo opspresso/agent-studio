@@ -5,7 +5,7 @@
  */
 
 import type { RunActor } from "@/domain/execution/actor";
-import type { MemberTier } from "@/domain/member/tiers";
+import type { TierLimits } from "@/domain/member/tiers";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import { beginRun, endRun } from "@/lib/runMetrics";
 import { enterRunContext } from "@/shared/runContext";
@@ -31,12 +31,12 @@ export type RunBracketDeps = CostGuardDeps &
      */
     artifacts?: ArtifactStorage;
     /**
-     * The tier of the member behind this actor, or `undefined` for the kinds
+     * The current limits of the member behind this actor, or `undefined` for the kinds
      * no member backs (slack, webhook, schedule) — those keep the
      * deployment-wide limits. Injected rather than read, like every other
      * runtime lookup here; absent means no tier policy at all.
      */
-    resolveActorTier?: (actor: RunActor) => Promise<MemberTier | undefined>;
+    resolveActorLimits?: (actor: RunActor) => Promise<TierLimits | undefined>;
   };
 
 export interface RunBracket {
@@ -119,12 +119,12 @@ async function openExecutionBracket(
   }
   await assertWithinCostLimit(deps, agent);
   // Both personal policies require a successful tier lookup before any work.
-  const tier = actor ? await deps.resolveActorTier?.(actor) : undefined;
+  const tierLimits = actor ? await deps.resolveActorLimits?.(actor) : undefined;
   // Before the slot for the same reason cost precedes concurrency: a member
   // over budget should be told so rather than queue for a slot the run would
   // be refused on anyway.
-  await assertWithinMemberCostLimit(deps, actor, tier);
-  const slot = await acquireRunSlot(deps, actor, tier);
+  await assertWithinMemberCostLimit(deps, actor, tierLimits);
+  const slot = await acquireRunSlot(deps, actor, tierLimits);
   const startedAt = Date.now();
   const runMetric = beginRun(startedAt);
   let closed = false;

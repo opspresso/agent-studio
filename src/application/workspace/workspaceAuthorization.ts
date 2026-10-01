@@ -1,6 +1,6 @@
 import type { RunActor, ExecutionGrant } from "@/domain/execution/actor";
 import type { AgentRepository } from "@/domain/agent/repository";
-import { tierAtLeast, type MemberTier } from "@/domain/member/tiers";
+import { tierMayEdit, type MemberTier } from "@/domain/member/tiers";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import { assertAgentAccessible } from "@/application/agent/agentUseCases";
 import { ValidationError } from "@/application/errors";
@@ -22,7 +22,7 @@ export async function authorizeWorkspaceExecution(
   if (!tier) throw new ValidationError("Workspace tools require an active account");
   // Guest tasks must spend the authenticated user's budget. Automation grants
   // retain the member gate because their actors do not spend a personal budget.
-  if (!tierAtLeast(tier, "member") && (grant || (actor && (actor.kind !== "user" || actor.id !== email)))) {
+  if (!tierMayEdit(tier) && (grant || (actor && (actor.kind !== "user" || actor.id !== email)))) {
     throw new ValidationError("Workspace automation requires member access");
   }
   await assertAgentAccessible(deps.agents, agentName, email);

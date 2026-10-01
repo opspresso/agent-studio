@@ -78,7 +78,7 @@
 
 ## 라우트 색인
 
-`session` = Better Auth 세션 쿠키. `member` = 세션 + `member` tier 이상
+`session` = Better Auth 세션 쿠키. `member` = 세션 + admin 또는 등록된 사용자 정의 tier (기본값 `member`)
 (`withMemberAuth`. `guest` 는 403 을 받는다). `admin` = 세션 + 저장된 `admin` tier 이거나 유효
 admin 목록에 속함(목록이 비면 member 이상). `owner` = 그 agent 의 소유자, 저장된
 `admin` tier, 또는 설정된 admin.
@@ -172,6 +172,7 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 그 agent 의 
 | `/api/members` | `GET` | admin |
 | `/api/members/{id}/tier` | `PUT` | admin |
 | `/api/settings` | `GET` `PUT` | admin |
+| `/api/settings/member-tiers` | `GET` `PUT` | admin |
 | `/api/audit` | `GET` | admin |
 
 ### 비인증 / 기계 표면
@@ -497,7 +498,7 @@ GET /api/me → 200 { email, isAdmin, isConfiguredAdmin, tier }
 ```
 GET /api/me/profile
   → 200 { member: { id, name, email, image, tier, joinedAt, lastLoginAt },
-          monthToDateUsd }
+          monthToDateUsd, limits: { monthlyCostCapUsd?, maxConcurrentRuns? } }
 
 GET /api/me/usage?from=2026-08-01&to=2026-08-13
   → 200 { items: [ { email, agentName, date, calls, inputTokens, outputTokens, cachedTokens, costUsd } ] }
@@ -512,19 +513,19 @@ GET /api/me/usage?from=2026-08-01&to=2026-08-13
 지표는 모델별 맵, 그리고 사용량 요약이 쓰는 것과 같은 범위 검증(`from`/`to` 필수, 최대 184일)이다.
 행에 agent 가 있으므로 프로필은 한 사람 자신의 지출을 agent·모델·프로바이더별로 묶을 수 있다.
 개요와 agent 의 사용량 탭이 갖는 것과 같은 컨트롤이다. 여기 세는 지출은 그 멤버 자신의 콘솔
-런(`user:` actor)이다. agent 토큰 런은 이 예산이 아니라 자기 agent 에 지출한다. tier 가
-무엇을 상한 짓는지는 `src/domain/member/tiers.ts` 의 `TIER_LIMITS` 이고, 클라이언트가 그것을
-직접 import 한다.
+런(`user:` actor)이다. agent 토큰 런은 이 예산이 아니라 자기 agent 에 지출한다.
+월 한도는 Settings → Access의 `memberTiers`에 저장한다. `memberTierLimits`가 실행과 Profile의
+`limits`를 같은 규칙으로 계산하며, admin의 `monthlyCostCapUsd`는 항상 생략한다.
 
 ## 멤버
 
 ```
 GET /api/members
   → 200 { members: [ { id, name, email, image, tier, joinedAt, lastLoginAt,
-                       tierLocked } ] }
+                       tierLocked } ], tiers: ["admin", "member", "guest", …] }
 
 PUT /api/members/{id}/tier
-  { tier: "admin" | "member" | "guest" }
+  { tier: "<등록된 등급 ID>" }
   → 200 { id, name, email, image, tier, joinedAt, lastLoginAt }
   → 400 unknown tier · 403 ADMIN_EMAILS tier is locked · 404 no such member
 ```
@@ -539,8 +540,24 @@ admin 전용이다. 멤버는 이 워크스페이스에 로그인한 적이 있�
 `admin` 으로 승격된다. 목록에 남아 있는 동안 `tierLocked` 는 true 이고 업데이트 라우트는 변경을
 거절한다. 주소를 목록에서 빼도 자동으로 강등되는 일은 없다. 평범한 tier 변경은 이전 → 이후를
 기록하는 `member.set-tier` 감사 행을 쓴다. tier 가 무엇을 허용하고 상한 짓는지는
-`src/domain/member/tiers.ts` 의 `TIER_LIMITS` 이고, tier `admin` 이 `ADMIN_EMAILS` 와 어떻게
+`src/domain/member/tiers.ts`의 `tierMay*`·`memberTierLimits`이며 월 금액은 Settings가 소유한다.
+tier `admin` 이 `ADMIN_EMAILS` 와 어떻게
 합쳐지는지는 [SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin) 에 있다.
+
+### 등급과 월 한도 설정
+
+`GET /api/settings/member-tiers`는 `{revision, tiers: [{id, monthlyCostCapUsd}], assignedMembers}`를
+반환한다. `PUT`은 `{revision, tiers}`로 전체 목록을 저장한다. `revision`이 현재 값과 다르면 409다.
+`admin`·`guest`는 반드시 있어야 하며 이름 변경·삭제를 할 수 없다. admin의 한도는 `null`로 고정하고,
+그 외 등급은 0 이상의 유한한 USD 금액을 지정한다. 0은 새 실행 차단이며 guest의 금액도 수정할 수 있다.
+초기 목록은 admin(무제한), member($20), guest($2)다. 사용자 정의 등급은 member와 같은 권한이며,
+사용자가 없는 등급만 삭제할 수 있다. 기본 `member`도 같은 조건으로 삭제 가능하다.
+등급은 최대 50개다. ID는 영문 소문자로 시작하는 1–40자의 소문자·숫자·하이픈·밑줄이다.
+
+등급 삭제와 사용자 배정은 공통 DB transaction lock으로 직렬화한다. 배정된 등급을 삭제하면 409,
+존재하지 않는 등급으로 배정하면 400이다. 저장은 `settings.update`로 감사하고 설정·등급 캐시를
+무효화한다. 다른 인스턴스는 설정 cache TTL(기본 5초) 이내에 새 월 한도를 읽는다.
+등록되지 않은 저장 등급은 인증·실행·사용자 표시에서 guest로 해석한다.
 
 ## Chats
 
@@ -673,8 +690,8 @@ Agent의 `parameters.policy`에는 `maxInputChars`(1–1,000,000), `blockedTools
 
 Workspace 사용자 API는 `withAuth`로 보호하며 guest도 사용할 수 있다. 조회·실행·승인은 Chat 소유자만 가능하며
 현재 Agent 접근 권한도 확인한다. 다른 소유자의 Workspace는 404로 응답한다.
-Chat과 Workspace는 `user` actor의 UTC 월 비용을 합산해 `TIER_LIMITS`를 적용한다
-(guest $2, member $20, admin 무제한). 실행 전 이미 한도에 도달하면 새 작업을 실행하지 않는다.
+Chat과 Workspace는 `user` actor의 UTC 월 비용을 합산해 Settings의 등급별 월 한도를 적용한다
+(초기 guest $2, member $20, admin은 항상 무제한). 실행 전 이미 한도에 도달하면 새 작업을 실행하지 않는다.
 비용은 완료 후 집계되므로 진행 중인 작업이 마지막 잔액을 넘길 수 있다. 등급·사용량 조회가
 실패해도 새 실행을 허용하지 않으며, 기존 작업 조회·취소·종료는 계속 가능하다.
 guest의 Workspace는 본인 `user` actor만 허용하고 자동화·서비스 자격 증명 실행은 member 이상을 요구한다.
@@ -1218,7 +1235,7 @@ DELETE /api/agents/{name}/token          → 204
 (요청 경로의 `{name}` 에 대해 검증된다).
 
 생성에는 **소유자의 tier** 게이트가 추가로 걸린다: API 토큰을 쓸 수 없는 tier
-(`src/domain/member/tiers.ts` 의 `TIER_LIMITS`, 오늘로는 `guest`) 는 admin 을 포함해 누가
+(`src/domain/member/tiers.ts`의 `tierMayUseApiTokens`, `guest`) 는 admin 을 포함해 누가
 요청하든 `403` 으로 답한다. 그 토큰이 그 소유자로서 인증하게 되기 때문이다. 인증 시점의 대응
 게이트는 아래 실행 엔드포인트에 있다.
 

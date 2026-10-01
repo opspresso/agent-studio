@@ -214,7 +214,8 @@
 | 쉼표로 구분된 설정 목록의 파싱 | `src/shared/parseList.ts` | 구조 |
 | 설정된 값이 비어 있는지 여부 | `src/shared/env.ts` | 구조 |
 | Schedule 연동 화면이 동시에 읽을 최근 실행 목록 수 | `src/app/agents/[name]/integrations/scheduleRuns.ts` 의 `MAX_CONCURRENT_SCHEDULE_RUN_READS` | 구조 |
-| 각 member tier 가 쓸 수 있는 금액 | `src/domain/member/tiers.ts` 의 `TIER_LIMITS` | 구조 |
+| 각 member tier의 실행 한도 해석 | `src/domain/member/tiers.ts`의 `memberTierLimits`. 월 금액은 Settings `memberTiers`, admin은 무제한, guest 동시 실행은 1개 | 구조 |
+| 등급 추가·삭제·월 한도 검증과 배정 경합 | `application/member/tierUseCases.ts`·`memberUseCases.ts`, `memberTierAdministration`의 공통 DB transaction lock | 코드 |
 | `undici` 에 직접 닿기 | `src/infrastructure/net/publicFetch.ts`. dispatcher와 fetch는 같은 undici 구현을 사용한다 | 구조 |
 | chunk 가 거쳐 온 transfer 사슬을 도출하기 | `src/domain/llm/types.ts` 의 `chunkAuthorPath` | 구조 |
 | 같은 도구 call ID를 실행·위임별로 구분하는 내부 키 | `src/domain/llm/types.ts` 의 `toolCallKey`. 트레이스와 UI가 author 경로·transfer ID·call ID를 함께 사용한다 | 구조 |

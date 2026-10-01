@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { NotFoundError } from "@/application/errors";
+import { NotFoundError, ValidationError } from "@/application/errors";
 
 const { list, setTier, invalidate, isConfiguredAdmin } = vi.hoisted(() => ({
   list: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock("@/lib/session", () => ({
 }));
 vi.mock("@/lib/container", () => ({ memberUseCases: { list, setTier } }));
 vi.mock("@/lib/memberAccess", () => ({ invalidateMemberTierCache: invalidate }));
-vi.mock("@/lib/runtime-settings", () => ({ isConfiguredAdmin }));
+vi.mock("@/lib/runtime-settings", async () => ({ isConfiguredAdmin, getMemberTierDefinitions: async () => (await import("@/domain/member/tiers")).DEFAULT_MEMBER_TIERS }));
 
 const { GET } = await import("@/app/api/members/route");
 const { PUT } = await import("@/app/api/members/[id]/tier/route");
@@ -56,6 +56,7 @@ describe("GET /api/members", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
+      tiers: ["admin", "member", "guest"],
       members: members.map((member) => ({ ...member, tierLocked: false })),
     });
   });
@@ -75,7 +76,7 @@ describe("GET /api/members", () => {
 
     const response = await GET();
 
-    expect(await response.json()).toEqual({ members: [{ ...member, tierLocked: true }] });
+    expect(await response.json()).toEqual({ members: [{ ...member, tierLocked: true }], tiers: ["admin", "member", "guest"] });
   });
 });
 
@@ -96,10 +97,11 @@ describe("PUT /api/members/[id]/tier", () => {
     expect(invalidate).toHaveBeenCalledWith("m@example.com");
   });
 
-  it("400s an unknown tier without touching the use case", async () => {
+  it("400s a tier rejected by the current catalog", async () => {
+    setTier.mockRejectedValue(new ValidationError("Unknown member tier"));
     const response = await PUT(putRequest({ tier: "owner" }), ctx);
     expect(response.status).toBe(400);
-    expect(setTier).not.toHaveBeenCalled();
+    expect(setTier).toHaveBeenCalledWith({ id: "u2", tier: "owner", actorEmail: "admin@example.com" });
   });
 
   it("400s a body that is not JSON", async () => {

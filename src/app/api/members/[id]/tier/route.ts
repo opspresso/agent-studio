@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MEMBER_TIERS } from "@/domain/member/tiers";
+import { MEMBER_TIER_ID } from "@/domain/member/tiers";
 import { memberUseCases } from "@/lib/container";
 import { invalidateMemberTierCache } from "@/lib/memberAccess";
 import { withAdminAuth } from "@/lib/session";
@@ -9,7 +9,7 @@ import { editorBody } from "@/app/api/_lib/body";
 type RouteContext = { params: Promise<{ id: string }> };
 
 const updateSchema = z.object({
-  tier: z.enum(MEMBER_TIERS),
+  tier: z.string().regex(MEMBER_TIER_ID),
 });
 
 export const PUT = withAdminAuth(async (user, request: Request, ctx: RouteContext) => {
