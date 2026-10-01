@@ -10,6 +10,22 @@ beforeEach(() => { invalidateSettingsCache(); vi.mocked(settingsRepository.get).
 afterEach(() => { vi.unstubAllEnvs(); });
 
 describe("transcription model configuration", () => {
+  it("applies protocol overrides only to the selected registered model", async () => {
+    vi.stubEnv("LLM_PROVIDER_OPENAI_BASE_URL", "http://provider.test/v1");
+    vi.stubEnv("LLM_PROVIDER_OPENAI_API_KEY", "provider-key");
+    vi.stubEnv("TRANSCRIPTION_MODEL_OPTIONS", JSON.stringify({ "openai/whisper-1": {
+      responseFormat: "verbose_json", preferOriginal: true, segmentSeconds: 600,
+      providerOptions: { azure: { diarization: { enabled: true } } },
+    } }));
+    expect(await getTranscriptionTarget("openai/whisper-1")).toMatchObject({ responseFormat: "verbose_json",
+      preferOriginal: true, segmentSeconds: 600, providerOptions: { azure: { diarization: { enabled: true } } } });
+    expect(config.transcription.responseFormat).toBe("json");
+  });
+  it.each(['[]', '{"model":{"baseUrl":"http://unapproved.test"}}', '{"model":{"segmentSeconds":0}}'])
+    ("rejects invalid model protocol configuration without printing values: %s", value => {
+      vi.stubEnv("TRANSCRIPTION_MODEL_OPTIONS", value);
+      expect(() => config.transcription).toThrow("Invalid TRANSCRIPTION_MODEL_OPTIONS");
+    });
   it("requires a private token and immutable revision when whole-recording diarization is enabled", () => {
     vi.stubEnv("DIARIZATION_BASE_URL", "http://diarization.test");
     vi.stubEnv("DIARIZATION_TOKEN", ""); vi.stubEnv("DIARIZATION_REVISION", "");

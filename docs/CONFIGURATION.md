@@ -585,6 +585,7 @@ worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것
 | `TRANSCRIPTION_CHUNKING_STRATEGY` | 미설정 | provider가 지원할 때만 `auto` 사용 |
 | `TRANSCRIPTION_MAX_INPUT_BYTES` | `26214400` | 변환된 구간 하나의 provider 전송 상한. 원본 파일 상한과 별개 |
 | `TRANSCRIPTION_SEGMENT_SECONDS` | `300` | 구간 길이 상한. byte 상한이 더 작으면 그에 맞춰 분할 |
+| `TRANSCRIPTION_MODEL_OPTIONS` | 미설정 | 등록 모델 ID별 JSON override. `responseFormat`, `chunkingStrategy`, `providerOptions`, `timestampGranularities`, `preferOriginal`, `segmentSeconds`만 허용. 최대 16 KiB |
 | `FFMPEG_PATH` | `ffmpeg` | 운영 이미지에 설치된 오디오 decoder 실행 파일 |
 | `DIARIZATION_BASE_URL` | 미설정 | 녹음 전체 화자 분석 서비스의 운영자 지정 내부 주소. 설정하면 모든 전사에 화자 분석을 먼저 수행하며 실패 시 일반 전사로 대체하지 않음 |
 | `DIARIZATION_TOKEN` | 미설정 | 화자 분석 서비스 Bearer secret. URL을 설정하면 필수이며 앱·worker·서비스에 같은 값을 주입 |
@@ -599,6 +600,21 @@ worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것
 클라이언트는 모델 시작·추론 제한과 응답 여유 1분을 합친 63분 후 요청을 중단한다. 서버의 업로드
 소켓에는 별도의 60초 유휴 제한이 있다. revision이나 전사 설정이 바뀐 기존 checkpoint는 거부하므로
 같은 모델 revision을 유지해 재시도하거나 새로운 processing_revision으로 재처리한다.
+
+OpenRouter의 내장 화자 분리를 사용할 때 `providerOptions`는 endpoint의 provider tag로 지정한다.
+이 옵션을 전달하는 요청은 base64 JSON을 사용하고, 다른 모델은 기존 multipart를 유지한다.
+override는 지정한 등록 모델에만 적용하며 전사 checkpoint의 설정 키에 포함한다.
+
+```dotenv
+TRANSCRIPTION_MODEL_OPTIONS={"openrouter/gemini-3.5-transcribe":{"responseFormat":"verbose_json","providerOptions":{"google-ai-studio":{"diarization_mode":"speaker"}},"preferOriginal":true,"segmentSeconds":1800},"openrouter/mai-transcribe-2":{"responseFormat":"verbose_json","providerOptions":{"azure":{"diarization":{"enabled":true}}},"timestampGranularities":["segment","word"],"preferOriginal":true,"segmentSeconds":1800}}
+```
+
+`preferOriginal`은 decoder로 형식·길이를 검증한 원본이 시간·byte 상한 안에 들어올 때 한 요청으로
+제출한다. 그 외에는 WAV 구간으로 분할하고 화자 라벨은 요청마다 별도 scope를 유지한다.
+위 예제의 1800초는 선택한 분할 설정이며, provider의 실제 길이·처리 시간·파일 크기 제한도 확인해야 한다.
+일부 제공자는 단어에만 숫자 화자 ID를 반환한다. 어댑터가 이를 문자열 라벨과 발화 구간으로
+정규화하며, 시작보다 종료가 빠른 단어 시간은 제외하고 원문·화자·사용량을 보존한 경고를 남긴다.
+실명이나 서로 다른 요청의 동일 인물 여부를 추정하지 않는다.
 
 전사 모델은 카탈로그의 Transcription 타입이어야 한다. HTTP multipart를 지원하지 않는 SigV4
 채널과 미설정 채널은 거절한다. 비용 계산에 필요한 사용량이 없으면 결과는 unknown이며 0이 아니다.

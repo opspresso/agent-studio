@@ -15,6 +15,15 @@ const WAV_HEADER_BYTES = 44;
 const MERGE_PAUSE_SECONDS = 0.5;
 const ALLOWED_DEMUXERS = [...new Set(Object.values(AUDIO_DECODERS))].join(",");
 
+function originalMimeType(bytes: Uint8Array): string | undefined {
+  const prefix = Buffer.from(bytes.subarray(0, 12));
+  if (prefix.toString("ascii", 0, 4) === "OggS") return "audio/ogg";
+  if (prefix.toString("ascii", 0, 4) === "fLaC") return "audio/flac";
+  if (prefix.toString("ascii", 0, 4) === "RIFF" && prefix.toString("ascii", 8, 12) === "WAVE") return "audio/wav";
+  if (prefix.toString("ascii", 0, 3) === "ID3" || (bytes[0] === 0xff && (bytes[1]! & 0xe0) === 0xe0)) return "audio/mpeg";
+  return undefined;
+}
+
 function decode(binary: string, args: string[], searchPath: string | undefined, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     execFile(binary, args, { signal, timeout: 600_000, killSignal: "SIGKILL", maxBuffer: 64 * 1024,
@@ -64,6 +73,13 @@ export function createAudioSegmenter(options: { binary?: string; searchPath?: st
         const size = (await stat(decoded)).size;
         if (!size || size % 2 !== 0 || size > MAX_AUDIO_SECONDS * BYTES_PER_SECOND) {
           throw new TranscriptionError("invalid_input", "Decoded audio is empty or exceeds the duration limit");
+        }
+        const originalMime = originalMimeType(input.bytes);
+        if (input.preferOriginal && !input.timeline && originalMime && input.bytes.length <= input.maxSegmentBytes &&
+          size / BYTES_PER_SECOND <= input.segmentSeconds) {
+          yield { index: 0, start: 0, end: size / BYTES_PER_SECOND, totalSeconds: size / BYTES_PER_SECOND,
+            bytes: input.bytes, mimeType: originalMime, filename: `recording.${AUDIO_DECODERS[originalMime]}` };
+          return;
         }
         const file = await open(decoded, "r");
         try {

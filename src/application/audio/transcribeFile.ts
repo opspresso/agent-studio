@@ -29,6 +29,7 @@ export interface AudioTranscriptionDeps {
   resolve(model: string): Promise<{
     transcriber: TranscriptionPort; segmentSeconds: number; maxSegmentBytes: number; settingsKey: string;
     diarization?: { port: DiarizationPort; revision: string };
+    preferOriginal?: boolean;
   }>;
   /** The run budget owner checks each new provider request, not cached segments. */
   beforeTranscribe(job: AudioJob, audioSeconds: number): Promise<(failed: boolean) => Promise<void>>;
@@ -101,7 +102,8 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
     let processedSeconds = 0;
     let checkpointBytes = 0;
     for await (const segment of deps.segmenter.split({ bytes: source.bytes, mimeType: source.mimeType,
-      segmentSeconds: config.segmentSeconds, maxSegmentBytes: config.maxSegmentBytes, ...(timeline ? { timeline } : {}) }, context.signal)) {
+      segmentSeconds: config.segmentSeconds, maxSegmentBytes: config.maxSegmentBytes,
+      ...(config.preferOriginal ? { preferOriginal: true } : {}), ...(timeline ? { timeline } : {}) }, context.signal)) {
       context.signal.throwIfAborted();
       if (!parts.length && !job.transcriptionProgress) {
         await context.record({ transcriptionProgress: { processedSeconds: 0, totalSeconds: segment.totalSeconds, completedSegments: 0 } });
@@ -156,6 +158,8 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
       totalSeconds: parts[0]!.totalSeconds,
       coverage: parts.map(({ start, end }) => ({ start, end })),
       warnings: [...new Set([...parts.flatMap((part) => part.result.warnings), ...(timeline?.warnings ?? []),
+        ...(config.preferOriginal && !timeline && parts.length > 1 && segments.some(segment => segment.speaker !== undefined)
+          ? ["The recording required multiple transcription requests; speaker labels do not establish the same person across requests."] : []),
         ...(timeline && parts.some(part => !part.speaker) ? ["Some audio intervals have no detected speaker; attribution is unknown."] : [])])],
       usageReceipts: parts.map((part) => `${job.id}-asr-${part.index}`),
       ...(timeline ? { diarizationRevision: timeline.revision } : {}),

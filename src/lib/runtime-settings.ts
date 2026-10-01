@@ -191,16 +191,17 @@ export async function getRerankerTarget(model: string): Promise<{ baseUrl: strin
 }
 
 /** ASR requires an explicit channel; never fall through to an unrelated text provider. */
-export async function getTranscriptionTarget(model: string): Promise<TranscriptionConfig & { segmentSeconds: number }> {
+export async function getTranscriptionTarget(model: string): Promise<TranscriptionConfig & { segmentSeconds: number; preferOriginal?: boolean }> {
   await getLlmProviderConfigs();
   const registered = getModelConfig(model);
   if (!registered?.capabilities.transcription) throw new Error("The selected model is not a registered transcription model");
   const settings = config.transcription;
   const target = await selectedTarget(model);
+  const options = Object.hasOwn(settings.modelOptions, model) ? settings.modelOptions[model]! : {};
   return { baseUrl: target.baseUrl, apiKey: target.apiKey, id: model, wireId: target.model,
     maxInputBytes: settings.maxInputBytes, responseFormat: settings.responseFormat,
     ...(settings.chunkingStrategy ? { chunkingStrategy: settings.chunkingStrategy } : {}),
-    segmentSeconds: settings.segmentSeconds };
+    segmentSeconds: settings.segmentSeconds, ...options };
 }
 
 export interface ModelSelection {

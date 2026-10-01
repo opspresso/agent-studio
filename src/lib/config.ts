@@ -8,6 +8,7 @@ import { optionalEnv } from "@/shared/env";
 import { log } from "@/shared/logger";
 import { decodeAes256Key } from "@/shared/aesKey";
 import { parseWorkspaceConfig } from "./workspaceConfig";
+import { parseTranscriptionModelOptions } from "./transcriptionOptions";
 
 export type Stage = "local" | "alpha" | "prod";
 
@@ -250,6 +251,7 @@ export const config = {
       segmentSeconds: positiveIntEnv("TRANSCRIPTION_SEGMENT_SECONDS", 300),
       ffmpegPath: optionalEnv(process.env.FFMPEG_PATH) ?? "ffmpeg",
       searchPath: process.env.PATH,
+      modelOptions: parseTranscriptionModelOptions(process.env.TRANSCRIPTION_MODEL_OPTIONS),
       ...(diarizationUrl ? { diarization: { baseUrl: diarizationUrl, token: diarizationToken!, revision: diarizationRevision! } } : {}),
     } as const;
   },

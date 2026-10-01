@@ -1210,9 +1210,12 @@ export function getAudioRuntime() {
       const target = await getTranscriptionTarget(model);
       const provider = createTranscriber(target);
       return { segmentSeconds: target.segmentSeconds, maxSegmentBytes: target.maxInputBytes,
+        ...(target.preferOriginal ? { preferOriginal: true } : {}),
         ...(diarizer ? { diarization: { port: diarizer, revision: settings.diarization!.revision } } : {}),
         settingsKey: createHash("sha256").update(JSON.stringify({ id: target.id, wireId: target.wireId,
           baseUrl: target.baseUrl, responseFormat: target.responseFormat, chunkingStrategy: target.chunkingStrategy,
+          providerOptions: target.providerOptions, preferOriginal: target.preferOriginal,
+          timestampGranularities: target.timestampGranularities,
           diarization: settings.diarization ? { baseUrl: settings.diarization.baseUrl, revision: settings.diarization.revision } : undefined })).digest("hex"),
         transcriber: { async transcribe(input, signal) {
           const result = await provider.transcribe(input, signal);

@@ -6,7 +6,7 @@ export interface AudioSegment {
   end: number;
   totalSeconds: number;
   bytes: Uint8Array;
-  mimeType: "audio/wav";
+  mimeType: string;
   filename: string;
   /** Whole-recording label supplied by the independent diarizer. */
   speaker?: string;
@@ -19,5 +19,7 @@ export interface AudioSegmenter {
     segmentSeconds: number;
     maxSegmentBytes: number;
     timeline?: SpeakerTimeline;
+    /** Prefer one original request when both duration and byte limits permit it. */
+    preferOriginal?: boolean;
   }, signal?: AbortSignal): AsyncGenerator<AudioSegment>;
 }

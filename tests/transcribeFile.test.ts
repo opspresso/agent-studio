@@ -50,12 +50,20 @@ function fixture() {
 }
 
 describe("resumable file transcription", () => {
+  it("warns when a preferred whole-recording request must still be split", async () => {
+    const f = fixture();
+    f.deps.resolve = async () => ({ ...f.config, preferOriginal: true });
+    await createAudioTranscriptionStep(f.deps)(f.job, f.context);
+    const result = JSON.parse(new TextDecoder().decode(f.saved.get("job-1-transcript")));
+    expect(result.segments.map((segment: { speaker: string }) => segment.speaker)).toEqual(["0:A", "1:A"]);
+    expect(result.warnings).toContain("The recording required multiple transcription requests; speaker labels do not establish the same person across requests.");
+  });
   it("reuses whole-recording diarization and keeps global labels when ASR returns only text", async () => {
     const f = fixture();
     const analyze = vi.fn(async () => ({ duration: 2, revision: "v1", turns: [
       { start: 0, end: 1, speaker: "SPEAKER_00" }, { start: 1, end: 2, speaker: "SPEAKER_00" },
     ], warnings: ["Overlap warning"] }));
-    f.deps.resolve = async () => ({ ...f.config, diarization: { port: { analyze }, revision: "v1" } });
+    f.deps.resolve = async () => ({ ...f.config, preferOriginal: true, diarization: { port: { analyze }, revision: "v1" } });
     f.deps.segmenter = { async *split(input) {
       expect(input.timeline?.turns).toHaveLength(2);
       for (let index = 0; index < 2; index++) yield {

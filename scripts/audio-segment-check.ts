@@ -26,6 +26,13 @@ async function main() {
     assert.equal(segments[0]?.start, 0);
     assert.equal(segments.at(-1)?.end, 1.5);
     assert.equal(segments[1]?.start, segments[0]?.end);
+    const original = [];
+    for await (const part of segmenter.split({ bytes, mimeType: "audio/mpeg", segmentSeconds: 2,
+      maxSegmentBytes: bytes.length, preferOriginal: true })) original.push(part);
+    assert.equal(original.length, 1);
+    assert.equal(original[0]?.mimeType, "audio/mpeg");
+    assert.equal(original[0]?.bytes, bytes, "eligible compressed recordings are submitted once without re-encoding");
+    assert.equal(original[0]?.end, 1.5);
     const diarized = [];
     for await (const segment of segmenter.split({ bytes, mimeType: "audio/mpeg", segmentSeconds: 0.5, maxSegmentBytes: 16_044,
       timeline: { duration: 1.5, revision: "fixture", warnings: [], turns: [
@@ -59,6 +66,10 @@ async function main() {
     await promisify(execFile)(binary, ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
       "sine=frequency=440:duration=1.5", "-c:a", "libopus", "-f", "ogg", oggPath]);
     const oggBytes = await readFile(oggPath);
+    const originalOgg = [];
+    for await (const part of segmenter.split({ bytes: oggBytes, mimeType: "audio/mpeg", segmentSeconds: 2,
+      maxSegmentBytes: oggBytes.length, preferOriginal: true })) originalOgg.push(part);
+    assert.equal(originalOgg[0]?.mimeType, "audio/ogg", "the retained container type comes from decoded bytes, not a source MIME hint");
     const mislabeled = [];
     for await (const segment of segmenter.split({ bytes: oggBytes, mimeType: "audio/mpeg", segmentSeconds: 0.5, maxSegmentBytes: 16_044 })) {
       mislabeled.push(segment);

@@ -160,6 +160,16 @@ Agent 설정의 `parameters.audioProcessing=true`로 Agent 도구를 켠다. 저
 비공개 Artifacts이며 외부 기록은 명시적으로 요청하거나 선택한 경우에만 수행한다. Memory delivery에는 수신 서버의
 문서 수집·멱등 저장 도구가 필요하다. 오디오 처리 화면에서 작업 설정과 한도를 revision으로 저장한다.
 
+### 제공자 내장 화자 분리
+
+등록한 OpenRouter 전사 모델이 화자 분리를 제공하면 별도 모델 weight 없이 사용할 수 있다.
+Gemini 3.5 Transcribe는 `google-ai-studio.diarization_mode=speaker`, MAI-Transcribe 2는
+`azure.diarization.enabled=true` provider 옵션을 사용한다. 설정 예시는
+[CONFIGURATION](CONFIGURATION.md#오디오-전사-설정)의 `TRANSCRIPTION_MODEL_OPTIONS`를 따른다.
+앱과 오디오 worker에 같은 override를 주입하고 모델은 Settings에서 명시적으로 등록·선택한다.
+원본 전체를 한 요청으로 보낼 수 있어도 제공자의 시간·크기·처리 시간 제한 안에 있어야 한다.
+한도를 넘어서 나누면 요청 사이의 화자 ID는 같은 인물을 보장하지 않는다.
+
 ### 별도 화자 분리
 
 `gpt-4o-transcribe`는 텍스트 전사를 담당하고, 선택적 내부 pyannote 서비스가 녹음 전체의 화자를
