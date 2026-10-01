@@ -16,6 +16,9 @@ export type ArtifactKind = "image" | "document" | "audio";
 export type ArtifactSource = "generated" | "attachment";
 
 export interface Artifact {
+  /** An unlisted alias preserves a producer's reserved ID when identical bytes already exist. */
+  canonicalArtifactId?: string;
+  checksum?: string;
   /** Original artifact from which an edited file was derived. */
   derivedFrom?: string;
   /** Private file inventory owns bytes and expiration; never sign through the public artifact store. */

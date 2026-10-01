@@ -246,6 +246,10 @@ export function createFakeStore(): FakeStore {
         const { attribute, exists } = input.attributePresence;
         matches = matches.filter((row) => Object.hasOwn(row, attribute) === exists);
       }
+      if (input.exclude) {
+        const { jsonContains, attributePresent } = input.exclude;
+        matches = matches.filter(row => !(containsJson(row, jsonContains) && Object.hasOwn(row, attributePresent)));
+      }
       matches.sort(
         (a, b) =>
           compareBytes(String(a[skAttr] ?? ""), String(b[skAttr] ?? "")) ||

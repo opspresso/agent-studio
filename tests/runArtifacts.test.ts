@@ -5,6 +5,7 @@ import { MAX_ARTIFACT_PROMPT_CHARS, storeArtifact } from "@/application/artifact
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { Artifact } from "@/domain/artifact/types";
 import type { EngineChunk } from "@/domain/llm/types";
+import { fakeArtifactContent } from "./fakeArtifactContent";
 
 vi.mock("node:crypto", async importOriginal => ({ ...await importOriginal<typeof import("node:crypto")>(), randomUUID: vi.fn() }));
 
@@ -28,6 +29,7 @@ function fakeStorage(over: { putFails?: boolean; rowFails?: boolean; error?: Err
     puts: [],
     rowsWritten: [],
     calls: [],
+    content: fakeArtifactContent(),
     objects: {
       async put(input) {
         fake.calls.push("object.put");
@@ -54,8 +56,8 @@ function fakeStorage(over: { putFails?: boolean; rowFails?: boolean; error?: Err
         }
         fake.rowsWritten.push(artifact);
       },
-      async get() {
-        return null;
+      async get(id) {
+        return fake.rowsWritten.find(row => row.artifactId === id) ?? null;
       },
       async listByAgent() {
         return [];
@@ -99,6 +101,58 @@ afterEach(() => {
 });
 
 describe("storeArtifact", () => {
+  it("serializes different-content writes to one reserved ID without publishing a wrong content reference", async () => {
+    const storage = fakeStorage();
+    const input = { artifactId: "racing-id", kind: "document" as const, source: "generated" as const, mimeType: "text/plain" };
+    const outcomes = await Promise.allSettled([new Uint8Array([1]), new Uint8Array([2])].map(bytes => storeArtifact(storage, CONTEXT, { ...input, bytes })));
+    expect(outcomes.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter(result => result.status === "rejected")).toHaveLength(1);
+    expect(storage.puts).toHaveLength(1);
+    for (const value of [1, 2]) {
+      const bytes = new Uint8Array([value]);
+      const result = await storeArtifact(storage, CONTEXT, { ...input, artifactId: `verified-${value}`, bytes });
+      expect(storage.puts.find(row => row.key === result.key)?.bytes).toEqual(bytes);
+    }
+  });
+  it("refuses to overwrite a reserved identity with different bytes", async () => {
+    const storage = fakeStorage();
+    const input = { artifactId: "reserved", kind: "document" as const, source: "generated" as const,
+      bytes: new Uint8Array([1]), mimeType: "text/plain" };
+    await storeArtifact(storage, CONTEXT, input);
+    await expect(storeArtifact(storage, CONTEXT, { ...input, bytes: new Uint8Array([2]) })).rejects.toMatchObject({ status: 409 });
+    expect(storage.puts).toHaveLength(1);
+  });
+  it("reuses identical content across filenames and concurrent writes, preserving reserved file IDs", async () => {
+    const storage = fakeStorage();
+    const input = { kind: "document" as const, source: "generated" as const, bytes: new TextEncoder().encode("same content"), mimeType: "text/plain" };
+    const [first, second] = await Promise.all([
+      storeArtifact(storage, CONTEXT, { ...input, artifactId: "reserved-1", filename: "first.txt" }),
+      storeArtifact(storage, CONTEXT, { ...input, artifactId: "reserved-2", filename: "second.txt" }),
+    ]);
+    expect(second.artifactId).toBe(first.artifactId);
+    expect(first.checksum).toMatch(/^[a-f0-9]{64}$/);
+    expect(storage.puts).toHaveLength(1);
+    expect(storage.rowsWritten).toEqual([first, { ...first, artifactId: "reserved-2", canonicalArtifactId: first.artifactId }]);
+  });
+  it("keeps different owners, Agents, media types and bytes separate", async () => {
+    const storage = fakeStorage();
+    const input = { kind: "document" as const, source: "generated" as const, bytes: new Uint8Array([1]), mimeType: "text/plain" };
+    await storeArtifact(storage, CONTEXT, input);
+    await storeArtifact(storage, { ...CONTEXT, agentName: "other-agent" }, input);
+    await storeArtifact(storage, { ...CONTEXT, actor: { kind: "user", id: "other@example.test" } }, input);
+    await storeArtifact(storage, CONTEXT, { ...input, mimeType: "text/markdown" });
+    await storeArtifact(storage, CONTEXT, { ...input, bytes: new Uint8Array([2]) });
+    expect(storage.puts).toHaveLength(5);
+  });
+  it("stores fresh content after the canonical inventory is removed", async () => {
+    const storage = fakeStorage();
+    const input = { kind: "image" as const, source: "generated" as const, bytes: new Uint8Array([1]), mimeType: "image/png" };
+    const first = await storeArtifact(storage, CONTEXT, input);
+    storage.rowsWritten.length = 0;
+    const next = await storeArtifact(storage, CONTEXT, input);
+    expect(next.artifactId).not.toBe(first.artifactId);
+    expect(storage.puts).toHaveLength(2);
+  });
   it("writes the object before the row", async () => {
     // The reverse order can leave a row naming bytes that were never written —
     // an artifact whose preview is broken forever, and which the caller has

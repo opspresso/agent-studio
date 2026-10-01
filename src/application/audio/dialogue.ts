@@ -4,6 +4,7 @@ interface DialogueInput {
   text: string;
   segments?: TranscriptSegment[];
   language?: string;
+  diarizationRevision?: string;
 }
 
 function literal(text: string): string {
@@ -21,8 +22,11 @@ export function renderDialogue(input: DialogueInput): string {
   const ko = input.language === "ko";
   const unknown = ko ? "화자 미상" : "Unknown speaker";
   const lines = [ko ? "# 대화 내용" : "# Conversation",
-    ko ? "화자 표시는 ASR 제공 라벨이며 실명 확인 결과가 아니다. 구간별 라벨만으로 동일 인물인지 판단하지 않는다."
-      : "Speaker labels are supplied by ASR, not verified identities. Labels from separate chunks do not establish the same person."];
+    input.diarizationRevision
+      ? (ko ? "화자 표시는 녹음 전체의 음성 분석 라벨이며 실명 확인 결과가 아니다. 동일 라벨은 이 녹음 안에서만 같은 화자를 나타낸다. 시간은 전사에 사용한 오디오 구간이다."
+        : "Speaker labels come from whole-recording audio analysis, not verified identities. Matching labels refer to the same detected speaker only within this recording. Times identify submitted audio intervals.")
+      : (ko ? "화자 표시는 ASR 제공 라벨이며 실명 확인 결과가 아니다. 구간별 라벨만으로 동일 인물인지 판단하지 않는다."
+        : "Speaker labels are supplied by ASR, not verified identities. Labels from separate chunks do not establish the same person.")];
   if (input.segments?.length) {
     lines.push(ko ? "## 제공된 발화 구간" : "## Supplied segments");
     for (const segment of input.segments) {

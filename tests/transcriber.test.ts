@@ -15,6 +15,59 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("OpenAI-compatible transcription adapter", () => {
+  it.each([{ start: -0.01, end: 1 }, { start: 0 }, { end: 1 }, { start: "unknown", end: 1 }])("keeps labelled segments and usage when optional word timestamps are invalid: %j", async (timing) => {
+    const segments = [{ text: "Complete phrase.", start: 0, end: 2, speaker: "A" }];
+    respond({ text: "Complete phrase.", segments, words: [{ word: "Complete", speaker: "A", ...timing }], usage: { seconds: 2 } });
+    const result = await createTranscriber(config).transcribe(input);
+    expect(result).toMatchObject({ text: "Complete phrase.", segments, usage: { audioSeconds: 2 } });
+    expect(result.warnings).toContain("Transcription provider returned invalid word timestamps; those timestamps were omitted while preserving text and speaker labels.");
+  });
+  it("keeps word-only text and labels when timestamps are missing", async () => {
+    respond({ text: "Hello there", words: [{ word: "Hello", speaker: 0 }, { word: "there", speaker: 1, start: -1, end: 1 }], usage: { seconds: 2 } });
+    const result = await createTranscriber(config).transcribe(input);
+    expect(result.segments).toEqual([{ text: "Hello", speaker: "0" }, { text: "there", speaker: "1" }]);
+    expect(result.text).toBe("Hello there");
+    expect(result.usage).toEqual({ audioSeconds: 2 });
+  });
+  it("sends provider-native options as JSON and derives segments from numeric word speakers", async () => {
+    const fetcher = vi.fn(async (_url: URL, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      expect(body.input_audio).toEqual({ data: "AQID", format: "mp3" });
+      expect(body.provider).toEqual({ options: { "google-ai-studio": { diarization_mode: "speaker" } } });
+      expect(body.response_format).toBe("verbose_json");
+      return Response.json({ text: "안녕 하세요. 네.", segments: [{ text: "안녕 하세요. 네.", start: 0, end: 3 }], words: [
+        { word: "안녕", start: 0, end: 1, speaker: 0 }, { word: "하세요.", start: 1, end: 2, speaker: 0 },
+        { word: "네.", start: 2, end: 3, speaker: 1 },
+      ], usage: { input_tokens: 7, output_tokens: 0 } });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const result = await createTranscriber({ ...config, responseFormat: "verbose_json",
+      providerOptions: { "google-ai-studio": { diarization_mode: "speaker" } } }).transcribe(input);
+    expect(result.segments).toEqual([{ text: "안녕 하세요.", start: 0, end: 2, speaker: "0" },
+      { text: "네.", start: 2, end: 3, speaker: "1" }]);
+    expect(result.text).toBe("안녕 하세요. 네.");
+    expect(new Headers(fetcher.mock.calls[0]![1].headers).get("content-type")).toBe("application/json");
+  });
+  it("preserves complete provider phrase text and numeric labels when words are also supplied", async () => {
+    respond({ text: "Hello, there.", segments: [{ text: "Hello, there.", start: 0, end: 2, speaker: 0 }],
+      words: [{ word: "Hello", start: 0, end: 1, speaker: 0 }, { word: "there", start: 1, end: 2, speaker: 0 }] });
+    expect((await createTranscriber(config).transcribe(input)).segments).toEqual([
+      { text: "Hello, there.", start: 0, end: 2, speaker: "0" },
+    ]);
+  });
+  it("reports invalid word timing without dropping utterances, speaker labels or billing usage", async () => {
+    respond({ text: "A B C", words: [
+      { word: "A", start: 0, end: 1, speaker: 0 },
+      { word: "B", start: 2, end: 1.5, speaker: 0 },
+      { word: "C", start: 3, end: 4, speaker: 0 },
+    ], usage: { input_tokens: 10, output_tokens: 0 } });
+    const result = await createTranscriber(config).transcribe(input);
+    expect(result.segments).toEqual([{ text: "A", start: 0, end: 1, speaker: "0" },
+      { text: "B", speaker: "0" }, { text: "C", start: 3, end: 4, speaker: "0" }]);
+    expect(result.text).toBe("A B C");
+    expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 0 });
+    expect(result.warnings).toEqual(["Transcription provider returned invalid word timestamps; those timestamps were omitted while preserving text and speaker labels."]);
+  });
   it("sends binary multipart audio and the deployment wire model without following redirects", async () => {
     const fetcher = vi.fn(async (_url: URL, init: RequestInit) => {
       const form = init.body as FormData;

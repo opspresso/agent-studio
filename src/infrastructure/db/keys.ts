@@ -345,6 +345,7 @@ export const keys = {
    * without reading someone else's agent.
    */
   artifact: (artifactId: string) => ({ PK: `ARTIFACT#${artifactId}`, SK: "META" }),
+  artifactContent: (hash: string) => ({ PK: `ARTIFACTCONTENT#${hash}`, SK: "META" }),
   artifactAgentPartition: (agentName: string) => `ARTIFACTAGENT#${agentName}`,
   /** Sparse: only rows whose actor names an email carry the GSI2 attributes. */
   artifactOwnerPartition: (email: string) => `ARTIFACTOWNER#${email}`,

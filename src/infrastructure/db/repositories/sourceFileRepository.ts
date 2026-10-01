@@ -3,7 +3,7 @@ import type { AudioJob } from "@/domain/audio/job";
 import { keys } from "../keys";
 import { agentIsLive } from "../agentLifecycle";
 import { conditions, getItem, queryItems, transact, updateItem,
-  CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED, type Item } from "../store";
+  CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED, type Item, type TransactOp } from "../store";
 
 function value(item: Item | null): SourceFile | null { return item ? item.file as SourceFile : null; }
 function row(file: SourceFile): Item {
@@ -15,15 +15,22 @@ function lostCondition(error: unknown) {
   return error instanceof Error && [CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED].includes(error.name);
 }
 
+function creationChecks(file: Pick<SourceFile, "agentName" | "userEmail" | "derived">): TransactOp[] {
+  return [
+    { kind: "check", key: keys.agent(file.agentName), condition: agentIsLive },
+    ...(file.derived ? [{ kind: "check" as const, key: keys.audioJob(file.agentName, file.derived.jobId), condition: (item: Item | null) => {
+      const job = item?.job as AudioJob | undefined;
+      return job?.status === "running" && job.userEmail === file.userEmail && ["transcribing", "postprocessing"].includes(job.stage);
+    } }] : []),
+  ];
+}
+
 export const sourceFileRepository: SourceFileRepository = {
+  async assertWritable(file) { await transact(creationChecks(file)); },
   async create(file) {
     try {
       await transact([
-        { kind: "check", key: keys.agent(file.agentName), condition: agentIsLive },
-        ...(file.derived ? [{ kind: "check" as const, key: keys.audioJob(file.agentName, file.derived.jobId), condition: (item: Item | null) => {
-          const job = item?.job as AudioJob | undefined;
-          return job?.status === "running" && job.userEmail === file.userEmail && ["transcribing", "postprocessing"].includes(job.stage);
-        } }] : []),
+        ...creationChecks(file),
         { kind: "put", item: row(file), condition: conditions.notExists },
       ]);
       return file;

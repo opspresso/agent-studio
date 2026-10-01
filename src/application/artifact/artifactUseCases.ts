@@ -136,7 +136,7 @@ export function createArtifactUseCases(
         if (!privateFiles || !isOwnRow(artifact, actorEmail)) throw new NotFoundError("Private artifact not found");
         await privateFiles.remove(artifact.agentName, artifact.privateFileId, actorEmail);
       } else await objects.delete(artifact.key);
-      await repo.delete(artifactId);
+      await repo.delete(artifact.artifactId);
       // Only when it was not the person's own. A gallery tidy-up recorded row by
       // row would bury the trail this table exists for; reaching into someone
       // else's output is the act worth keeping.

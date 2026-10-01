@@ -50,6 +50,66 @@ function fixture() {
 }
 
 describe("resumable file transcription", () => {
+  it("warns when a preferred whole-recording request must still be split", async () => {
+    const f = fixture();
+    f.deps.resolve = async () => ({ ...f.config, preferOriginal: true });
+    await createAudioTranscriptionStep(f.deps)(f.job, f.context);
+    const result = JSON.parse(new TextDecoder().decode(f.saved.get("job-1-transcript")));
+    expect(result.segments.map((segment: { speaker: string }) => segment.speaker)).toEqual(["0:A", "1:A"]);
+    expect(result.warnings).toContain("The recording required multiple transcription requests; speaker labels do not establish the same person across requests.");
+  });
+  it("reuses whole-recording diarization and keeps global labels when ASR returns only text", async () => {
+    const f = fixture();
+    const analyze = vi.fn(async () => ({ duration: 2, revision: "v1", turns: [
+      { start: 0, end: 1, speaker: "SPEAKER_00" }, { start: 1, end: 2, speaker: "SPEAKER_00" },
+    ], warnings: ["Overlap warning"] }));
+    f.deps.resolve = async () => ({ ...f.config, preferOriginal: true, diarization: { port: { analyze }, revision: "v1" } });
+    f.deps.segmenter = { async *split(input) {
+      expect(input.timeline?.turns).toHaveLength(2);
+      for (let index = 0; index < 2; index++) yield {
+        index, start: index, end: index + 1, totalSeconds: 2, bytes: new Uint8Array([index]),
+        mimeType: "audio/wav" as const, filename: `segment-${index}.wav`, speaker: "SPEAKER_00",
+      };
+    } };
+    f.transcribe.mockResolvedValue({ text: "안녕", segments: [], model: f.job.model, usage: { audioSeconds: 1 }, warnings: [] });
+    const run = createAudioTranscriptionStep(f.deps);
+    await run(f.job, f.context); await run(f.job, f.context);
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(f.transcribe).toHaveBeenCalledTimes(2);
+    const result = JSON.parse(new TextDecoder().decode(f.saved.get("job-1-transcript")));
+    expect(result.segments).toEqual([
+      { text: "안녕", start: 0, end: 1, speaker: "SPEAKER_00" },
+      { text: "안녕", start: 1, end: 2, speaker: "SPEAKER_00" },
+    ]);
+    expect(result.warnings).toEqual(["Overlap warning"]);
+    f.deps.resolve = async () => ({ ...f.config, settingsKey: "changed", diarization: { port: { analyze }, revision: "v1" } });
+    await expect(run(f.job, f.context)).rejects.toThrow("diarization_checkpoint_mismatch");
+    expect(analyze).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not silently transcribe without diarization when the service fails", async () => {
+    const f = fixture();
+    f.deps.resolve = async () => ({ ...f.config, diarization: {
+      port: { analyze: async () => { throw new Error("diarization unavailable"); } }, revision: "v1",
+    } });
+    await expect(createAudioTranscriptionStep(f.deps)(f.job, f.context)).rejects.toThrow("diarization unavailable");
+    expect(f.transcribe).not.toHaveBeenCalled();
+  });
+  it("keeps unattributed audio and surfaces its missing speaker rather than inventing one", async () => {
+    const f = fixture();
+    f.deps.resolve = async () => ({ ...f.config, diarization: { revision: "v1", port: {
+      analyze: async () => ({ duration: 2, revision: "v1", turns: [], warnings: [] }),
+    } } });
+    f.transcribe.mockResolvedValue({ text: "안녕", segments: [], model: f.job.model, usage: { audioSeconds: 1 }, warnings: [] });
+    const imported = vi.spyOn(f.deps.files, "import");
+    await createAudioTranscriptionStep(f.deps)(f.job, f.context);
+    const result = JSON.parse(new TextDecoder().decode(f.saved.get("job-1-transcript")));
+    expect(result.segments).toEqual([{ text: "안녕", start: 0, end: 1 }, { text: "안녕", start: 1, end: 2 }]);
+    expect(result.coverage).toEqual([{ start: 0, end: 1 }, { start: 1, end: 2 }]);
+    expect(result.diarizationRevision).toBe("v1");
+    expect(result.warnings).toContain("Some audio intervals have no detected speaker; attribution is unknown.");
+    expect(imported.mock.calls.every(([input]) => input.retainUntil === "2026-12-08T00:00:00.000Z")).toBe(true);
+  });
   it("reads a previous Agent's Artifact while storing derived output under the transcribing Agent", async () => {
     const f = fixture();
     f.job.source = { kind: "file", fileId: "input", agentName: "downloader" };
@@ -66,12 +126,13 @@ describe("resumable file transcription", () => {
     const f = fixture();
     const imported = vi.spyOn(f.deps.files, "import");
     await createAudioTranscriptionStep(f.deps)(f.job, f.context);
-    expect(imported).toHaveBeenCalledTimes(3);
+    expect(imported).toHaveBeenCalledTimes(4);
     expect(imported.mock.calls.every(([input]) => input.retainUntil === "2026-12-08T00:00:00.000Z")).toBe(true);
   });
   it("combines source-relative timing while keeping speaker labels scoped to each request", async () => {
     const f = fixture();
-    expect(await createAudioTranscriptionStep(f.deps)(f.job, f.context)).toEqual({ transcriptRef: "job-1-transcript" });
+    expect(await createAudioTranscriptionStep(f.deps)(f.job, f.context)).toEqual({ transcriptRef: "job-1-transcript", dialogueRef: "job-1-dialogue" });
+    expect(new TextDecoder().decode(f.saved.get("job-1-dialogue"))).toContain("**0:A (00:00:00.000–00:00:01.000):**");
     const result = JSON.parse(new TextDecoder().decode(f.saved.get("job-1-transcript")));
     expect(result.text).toBe("안녕\n안녕");
     expect(result.segments).toEqual([

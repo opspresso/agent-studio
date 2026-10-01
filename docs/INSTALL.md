@@ -160,6 +160,53 @@ Agent 설정의 `parameters.audioProcessing=true`로 Agent 도구를 켠다. 저
 비공개 Artifacts이며 외부 기록은 명시적으로 요청하거나 선택한 경우에만 수행한다. Memory delivery에는 수신 서버의
 문서 수집·멱등 저장 도구가 필요하다. 오디오 처리 화면에서 작업 설정과 한도를 revision으로 저장한다.
 
+### 제공자 내장 화자 분리
+
+등록한 OpenRouter 전사 모델이 화자 분리를 제공하면 별도 모델 weight 없이 사용할 수 있다.
+Gemini 3.5 Transcribe는 `google-ai-studio.diarization_mode=speaker`, MAI-Transcribe 2는
+`azure.diarization.enabled=true` provider 옵션을 사용한다. 설정 예시는
+[CONFIGURATION](CONFIGURATION.md#오디오-전사-설정)의 `TRANSCRIPTION_MODEL_OPTIONS`를 따른다.
+앱과 오디오 worker에 같은 override를 주입하고 모델은 Settings에서 명시적으로 등록·선택한다.
+원본 전체를 한 요청으로 보낼 수 있어도 제공자의 시간·크기·처리 시간 제한 안에 있어야 한다.
+한도를 넘어서 나누면 요청 사이의 화자 ID는 같은 인물을 보장하지 않는다.
+
+### 별도 화자 분리
+
+`gpt-4o-transcribe`는 텍스트 전사를 담당하고, 선택적 내부 pyannote 서비스가 녹음 전체의 화자를
+구분한다. 모델을 자동 등록하거나 원격 다운로드하지 않는다. Settings에서 OpenAI 또는 OpenRouter의
+`gpt-4o-transcribe`를 등록하고 오디오 설정의 전사 모델로 선택한다. 응답 형식과 앱·worker 환경변수는
+[CONFIGURATION](CONFIGURATION.md#오디오-전사-설정)을 따른다.
+
+1. 네트워크가 허용된 반입 환경에서
+   [community-1 모델 조건](https://huggingface.co/pyannote/speaker-diarization-community-1)을 수락하고,
+   Git LFS로 모델 저장소 전체를 받아 모든 참조 weight와 함께 내부에 반입한다. Hugging Face token은
+   반입에만 사용하며 서비스에는 전달하지 않는다. 모델은 CC-BY-4.0이고 pyannote.audio는 MIT다.
+2. 불변 weight revision을 정하고 모델 디렉터리와 컨테이너 이미지를 내부에 보관한다. 앱·worker·서비스에
+   같은 `DIARIZATION_REVISION`, 앱·worker·서비스의 secret 저장소에 같은 `DIARIZATION_TOKEN`을 설정한다.
+   weight를 바꾸면 revision도 바꾼다. 모델 디렉터리에는 외부 다운로드가 필요한 누락 파일이 없어야 한다.
+3. 로컬 서비스는 다음 명령으로 실행한다. `DIARIZATION_MODEL_DIR`은 반입한 모델의 절대 경로이며
+   `config.yaml`과 weight가 있는 directory를 지정한다. Compose 변수는 환경 또는 `.env.local`로 제공한다.
+
+   ```bash
+   docker compose --env-file .env.local -f deploy/diarization/compose.yaml up -d --build
+   ```
+
+4. 호스트에서 실행하는 앱과 오디오 worker에 `DIARIZATION_BASE_URL=http://127.0.0.1:8003`을 설정하고
+   재시작한다. 컨테이너 배포에서는 localhost 대신 내부 서비스 DNS와 TCP 8000을 사용한다. worker의
+   내부 서비스 접근을 허용하고 인터넷 ingress·egress는 차단한다. 모델을 찾지 못하면 서비스는 부팅하지 않는다.
+
+별도 [서비스 이미지](../deploy/diarization/Dockerfile)는 CPU 추론을 사용한다. Compose는 포트를 host
+loopback에만 노출하고 read-only 모델·filesystem, 임시 `/tmp`, 4 CPU·8 GiB 메모리를 사용한다.
+서비스는 한 번에 한 녹음만 처리하고 다른 요청에는 503을 반환한다. worker의 기존 재시도 정책을 사용한다.
+모델은 별도 process에 한 번 로딩해 재사용한다. 추론 시간 초과·process 종료 시 실행 슬롯과 임시 파일을
+정리하고 다음 요청에서 새 process를 시작한다. 시간 제한은 [설정 안내](CONFIGURATION.md#오디오-전사-설정)를 따른다.
+GET `/health`는 모델 로딩 후 준비 상태를 제공한다. POST `/diarize`는 Bearer 인증·Content-Length가 있는
+오디오 bytes를 받아 전체 녹음의 exclusive 타임라인을 반환한다. 원본 상한·길이·지원 decoder는 앱과 동일하며,
+MIME 대소문자와 parameter는 정규화하되 지원 형식을 확장하지 않는다.
+임시 오디오는 완료·오류 후 제거한다. 컨테이너 강제 종료 시 tmpfs도 제거된다.
+HF offline 모드와 pyannote telemetry 비활성화를 강제한다. 실제 가중치 로딩·추론은 public internet 없이 동작해야 한다.
+외부 OpenAI/OpenRouter 전사는 별도 outbound 연결이 필요하며 서비스 추가가 전사를 오프라인으로 바꾸지는 않는다.
+
 ## Workspace worker
 
 Workspace는 선택 기능이다. `sandbox/Dockerfile`로 별도 실행 이미지를 만들고, 아래처럼

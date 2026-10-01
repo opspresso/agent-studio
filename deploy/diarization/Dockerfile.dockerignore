@@ -1,0 +1,9 @@
+**
+!deploy/
+!deploy/diarization/
+!deploy/diarization/server.py
+!src/
+!src/domain/
+!src/domain/audio/
+!src/domain/audio/limits.json
+!src/domain/audio/formats.json

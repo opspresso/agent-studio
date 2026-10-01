@@ -1,0 +1,20 @@
+name: agent-studio-diarization
+services:
+  diarization:
+    build:
+      context: ../..
+      dockerfile: deploy/diarization/Dockerfile
+    ports:
+      - "127.0.0.1:8003:8000"
+    environment:
+      DIARIZATION_TOKEN: ${DIARIZATION_TOKEN:?Provide a private service token}
+      DIARIZATION_REVISION: ${DIARIZATION_REVISION:?Provide the immutable model revision}
+    volumes:
+      - ${DIARIZATION_MODEL_DIR:?Provide the local model directory}:/models/community-1:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g,mode=1777
+    mem_limit: 8g
+    cpus: 4
+    pids_limit: 128
+    restart: unless-stopped

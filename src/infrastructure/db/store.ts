@@ -339,6 +339,8 @@ export interface QueryInput {
   jsonContains?: Record<string, unknown>;
   /** Test a top-level JSONB attribute's presence before `limit` counts. */
   attributePresence?: { attribute: string; exists: boolean };
+  /** Exclude a matching fragment only when the named attribute exists, before limit counts. */
+  exclude?: { jsonContains: Record<string, unknown>; attributePresent: string };
 }
 
 const INDEX_COLUMNS = {
@@ -391,6 +393,9 @@ function queryWhere(input: QueryInput): {
   if (input.attributePresence) {
     const { attribute, exists } = input.attributePresence;
     where.push(`${exists ? "" : "NOT "}(data ? ${bind(attribute)}::text)`);
+  }
+  if (input.exclude) {
+    where.push(`NOT (data @> ${bind(JSON.stringify(input.exclude.jsonContains))}::jsonb AND data ? ${bind(input.exclude.attributePresent)}::text)`);
   }
   return { columns, where, params };
 }

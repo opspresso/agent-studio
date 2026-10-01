@@ -2,17 +2,27 @@ import { execFile } from "node:child_process";
 import { mkdtemp, open, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MAX_AUDIO_SECONDS, type AudioSegmenter } from "@/domain/audio/segmenter";
+import type { AudioSegmenter } from "@/domain/audio/segmenter";
+import { MAX_AUDIO_SECONDS } from "@/domain/audio/limits";
 import { TranscriptionError } from "@/domain/llm/transcription";
+import { validateSpeakerTimeline } from "@/domain/audio/diarization";
+import { AUDIO_DECODERS, normalizeAudioMimeType } from "@/domain/audio/formats";
 
 const SAMPLE_RATE = 16_000;
 const BYTES_PER_SECOND = SAMPLE_RATE * 2;
 const WAV_HEADER_BYTES = 44;
-const DEMUXERS: Readonly<Record<string, string>> = {
-  "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
-  "audio/flac": "flac", "audio/ogg": "ogg",
-};
-const ALLOWED_DEMUXERS = [...new Set(Object.values(DEMUXERS))].join(",");
+/** Keep short pauses inside consecutive turns of the same detected speaker. */
+const MERGE_PAUSE_SECONDS = 0.5;
+const ALLOWED_DEMUXERS = [...new Set(Object.values(AUDIO_DECODERS))].join(",");
+
+function originalMimeType(bytes: Uint8Array): string | undefined {
+  const prefix = Buffer.from(bytes.subarray(0, 12));
+  if (prefix.toString("ascii", 0, 4) === "OggS") return "audio/ogg";
+  if (prefix.toString("ascii", 0, 4) === "fLaC") return "audio/flac";
+  if (prefix.toString("ascii", 0, 4) === "RIFF" && prefix.toString("ascii", 8, 12) === "WAVE") return "audio/wav";
+  if (prefix.toString("ascii", 0, 3) === "ID3" || (bytes[0] === 0xff && (bytes[1]! & 0xe0) === 0xe0)) return "audio/mpeg";
+  return undefined;
+}
 
 function decode(binary: string, args: string[], searchPath: string | undefined, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -40,7 +50,7 @@ export function createAudioSegmenter(options: { binary?: string; searchPath?: st
   return {
     async *split(input, signal) {
       signal?.throwIfAborted();
-      if (!Object.hasOwn(DEMUXERS, input.mimeType)) throw new TranscriptionError("unsupported", "Audio format is not supported by the decoder");
+      if (!normalizeAudioMimeType(input.mimeType)) throw new TranscriptionError("unsupported", "Audio format is not supported by the decoder");
       if (!input.bytes.byteLength || !Number.isFinite(input.segmentSeconds) || input.segmentSeconds <= 0 ||
         !Number.isSafeInteger(input.maxSegmentBytes) || input.maxSegmentBytes <= WAV_HEADER_BYTES + 1) {
         throw new TranscriptionError("invalid_input", "Audio segment limits or input are invalid");
@@ -64,19 +74,52 @@ export function createAudioSegmenter(options: { binary?: string; searchPath?: st
         if (!size || size % 2 !== 0 || size > MAX_AUDIO_SECONDS * BYTES_PER_SECOND) {
           throw new TranscriptionError("invalid_input", "Decoded audio is empty or exceeds the duration limit");
         }
+        const originalMime = originalMimeType(input.bytes);
+        if (input.preferOriginal && !input.timeline && originalMime && input.bytes.length <= input.maxSegmentBytes &&
+          size / BYTES_PER_SECOND <= input.segmentSeconds) {
+          yield { index: 0, start: 0, end: size / BYTES_PER_SECOND, totalSeconds: size / BYTES_PER_SECOND,
+            bytes: input.bytes, mimeType: originalMime, filename: `recording.${AUDIO_DECODERS[originalMime]}` };
+          return;
+        }
         const file = await open(decoded, "r");
         try {
-          for (let offset = 0, index = 0; offset < size; offset += segmentBytes, index += 1) {
-            signal?.throwIfAborted();
-            const pcm = Buffer.alloc(Math.min(segmentBytes, size - offset));
-            let received = 0;
-            while (received < pcm.length) {
-              const { bytesRead } = await file.read(pcm, received, pcm.length - received, offset + received);
-              if (!bytesRead) throw new TranscriptionError("invalid_input", "Decoded audio ended before its declared size");
-              received += bytesRead;
+          const ranges: Array<{ start: number; end: number; speaker?: string }> = [];
+          if (input.timeline) {
+            const timeline = validateSpeakerTimeline(input.timeline);
+            if (Math.abs(timeline.duration - size / BYTES_PER_SECOND) > 0.05) {
+              throw new TranscriptionError("invalid_response", "Speaker timeline duration does not match decoded audio");
             }
-            yield { index, start: offset / BYTES_PER_SECOND, end: (offset + pcm.length) / BYTES_PER_SECOND,
-              totalSeconds: size / BYTES_PER_SECOND, bytes: wav(pcm), mimeType: "audio/wav", filename: `segment-${index}.wav` };
+            let offset = 0;
+            for (const turn of timeline.turns) {
+              const start = Math.min(size, Math.round(turn.start * SAMPLE_RATE) * 2);
+              const end = Math.min(size, Math.round(turn.end * SAMPLE_RATE) * 2);
+              if (end <= start) throw new TranscriptionError("invalid_response", "Speaker turn is shorter than one sample");
+              const previous = ranges.at(-1);
+              if (previous?.speaker === turn.speaker && start - previous.end <= MERGE_PAUSE_SECONDS * BYTES_PER_SECOND) {
+                previous.end = end;
+              } else {
+                if (start > offset) ranges.push({ start: offset, end: start });
+                ranges.push({ start, end, speaker: turn.speaker });
+              }
+              offset = end;
+            }
+            if (offset < size) ranges.push({ start: offset, end: size });
+          } else ranges.push({ start: 0, end: size });
+          let index = 0;
+          for (const range of ranges) {
+            for (let offset = range.start; offset < range.end; offset += segmentBytes, index += 1) {
+              signal?.throwIfAborted();
+              const pcm = Buffer.alloc(Math.min(segmentBytes, range.end - offset));
+              let received = 0;
+              while (received < pcm.length) {
+                const { bytesRead } = await file.read(pcm, received, pcm.length - received, offset + received);
+                if (!bytesRead) throw new TranscriptionError("invalid_input", "Decoded audio ended before its declared size");
+                received += bytesRead;
+              }
+              yield { index, start: offset / BYTES_PER_SECOND, end: (offset + pcm.length) / BYTES_PER_SECOND,
+                totalSeconds: size / BYTES_PER_SECOND, bytes: wav(pcm), mimeType: "audio/wav", filename: `segment-${index}.wav`,
+                ...(range.speaker ? { speaker: range.speaker } : {}) };
+            }
           }
         } finally { await file.close(); }
       } finally { await rm(directory, { recursive: true, force: true }); }

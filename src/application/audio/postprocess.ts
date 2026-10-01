@@ -9,6 +9,7 @@ import { MAX_TRANSCRIPT_BYTES } from "./transcribeFile";
 import type { AudioTranscript } from "./transcribeFile";
 import { renderDialogue } from "./dialogue";
 import { validateTranscription } from "@/domain/llm/transcription";
+import { savedFileName } from "@/domain/artifact/types";
 
 const INPUT_CHARS = 16_000;
 const OUTPUT_CHARS = 6_000;
@@ -44,6 +45,38 @@ function chunks(text: string): string[] {
   return result.length ? result : [""];
 }
 
+/** Each page remains valid JSON, including labels on every part of a long utterance. */
+function transcriptInputs(transcript: AudioTranscript): string[] {
+  if (!transcript.segments.length) return chunks(transcript.text);
+  const pages: string[] = [];
+  let page: string[] = [];
+  let size = 2;
+  const flush = () => { if (page.length) pages.push(`[${page.join(",")}]`); page = []; size = 2; };
+  const append = (text: string, metadata: Record<string, unknown>) => {
+    let remaining = text;
+    do {
+      let part = cutCodePoints(remaining, INPUT_CHARS);
+      let encoded = JSON.stringify({ ...metadata, text: part });
+      while (encoded.length + 2 > INPUT_CHARS) {
+        if (part.length <= 2) throw new AudioJobStepError("postprocess_input_limit", false);
+        part = cutCodePoints(part, Math.floor(part.length / 2));
+        encoded = JSON.stringify({ ...metadata, text: part });
+      }
+      if (size + encoded.length + (page.length ? 1 : 0) > INPUT_CHARS) flush();
+      size += encoded.length + (page.length ? 1 : 0);
+      page.push(encoded);
+      remaining = remaining.slice(part.length);
+    } while (remaining.length);
+  };
+  // Partial provider segments must never replace the complete source text.
+  if (transcript.segments.map(segment => segment.text).join("\n") !== transcript.text) {
+    append(transcript.text, { kind: "full_text" });
+  }
+  for (const { text, ...metadata } of transcript.segments) append(text, { kind: "segment", ...metadata });
+  flush();
+  return pages;
+}
+
 export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
   return async (job: AudioJob, context: AudioJobStepContext): Promise<{ draftRef: string; summaryRef: string; dialogueRef: string }> => {
     if (!job.postprocess?.configuration || !job.transcriptRef) throw new AudioJobStepError("postprocess_configuration_missing", false);
@@ -73,7 +106,7 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
     let outputs: AudioPostprocessOutput[] = [];
     const extracted: AudioMemoryCandidate[] = [];
     const warnings: string[] = [...(transcript.warnings ?? [])];
-    const inputs = chunks(transcript.text);
+    const inputs = transcriptInputs(transcript);
     if (inputs.length > MAX_CALLS) throw new AudioJobStepError("postprocess_call_limit", false);
     const record = async (phase: "extract" | "reduce" | "saving", round: number, completed: number, total: number) => {
       const previous = job.postprocessProgress;
@@ -117,26 +150,26 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
     await record("saving", 0, 0, 3);
     const bytes = new TextEncoder().encode(JSON.stringify(final));
     const id = `${job.id}-draft`;
-    await deps.files.import({ id, agentName: job.agentName, userEmail: job.userEmail,
+    const draft = await deps.files.import({ id, agentName: job.agentName, userEmail: job.userEmail,
       filename: "result.json", mimeType: "application/json", retention: job.retention, retainUntil: file.file.retireAt,
       derivedFrom: job.transcriptRef, model: job.postprocess.configuration.model, producedBy: job.postprocess.agentName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield bytes; })(), context.signal);
     await record("saving", 0, 1, 3);
-    const summaryRef = `${job.id}-summary`;
-    await deps.files.import({ id: summaryRef, agentName: job.agentName, userEmail: job.userEmail,
-      filename: "summary.md", mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
+    const title = file.file.filename.replace(/(?:\.transcript)?\.json$/, "");
+    const summary = await deps.files.import({ id: `${job.id}-summary`, agentName: job.agentName, userEmail: job.userEmail,
+      filename: savedFileName(`${title}.summary.md`, "text/markdown"), mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
       derivedFrom: job.transcriptRef, model: job.postprocess.configuration.model, producedBy: job.postprocess.agentName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield new TextEncoder().encode(final.text); })(), context.signal);
     await record("saving", 0, 2, 3);
-    const dialogueRef = `${job.id}-dialogue`;
-    await deps.files.import({ id: dialogueRef, agentName: job.agentName, userEmail: job.userEmail,
-      filename: "dialogue.md", mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
+    const dialogue = job.dialogueRef ? await deps.files.metadata(job.agentName, job.dialogueRef, job.userEmail)
+      : await deps.files.import({ id: `${job.id}-dialogue`, agentName: job.agentName, userEmail: job.userEmail,
+      filename: savedFileName(`${title}.transcript.md`, "text/markdown"), mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
       derivedFrom: job.transcriptRef, model: transcript.model, producedBy: job.postprocess.agentName,
-      derived: { jobId: job.id, kind: "draft" } },
+      derived: { jobId: job.id, kind: "transcript" } },
     async () => (async function* () { yield new TextEncoder().encode(renderDialogue(transcript)); })(), context.signal);
     await record("saving", 0, 3, 3);
-    return { draftRef: id, summaryRef, dialogueRef };
+    return { draftRef: draft.id, summaryRef: summary.id, dialogueRef: dialogue.id };
   };
 }
