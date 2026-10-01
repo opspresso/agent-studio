@@ -15,6 +15,20 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("OpenAI-compatible transcription adapter", () => {
+  it.each([{ start: -0.01, end: 1 }, { start: 0 }, { end: 1 }, { start: "unknown", end: 1 }])("keeps labelled segments and usage when optional word timestamps are invalid: %j", async (timing) => {
+    const segments = [{ text: "Complete phrase.", start: 0, end: 2, speaker: "A" }];
+    respond({ text: "Complete phrase.", segments, words: [{ word: "Complete", speaker: "A", ...timing }], usage: { seconds: 2 } });
+    const result = await createTranscriber(config).transcribe(input);
+    expect(result).toMatchObject({ text: "Complete phrase.", segments, usage: { audioSeconds: 2 } });
+    expect(result.warnings).toContain("Transcription provider returned invalid word timestamps; those timestamps were omitted while preserving text and speaker labels.");
+  });
+  it("keeps word-only text and labels when timestamps are missing", async () => {
+    respond({ text: "Hello there", words: [{ word: "Hello", speaker: 0 }, { word: "there", speaker: 1, start: -1, end: 1 }], usage: { seconds: 2 } });
+    const result = await createTranscriber(config).transcribe(input);
+    expect(result.segments).toEqual([{ text: "Hello", speaker: "0" }, { text: "there", speaker: "1" }]);
+    expect(result.text).toBe("Hello there");
+    expect(result.usage).toEqual({ audioSeconds: 2 });
+  });
   it("sends provider-native options as JSON and derives segments from numeric word speakers", async () => {
     const fetcher = vi.fn(async (_url: URL, init: RequestInit) => {
       const body = JSON.parse(init.body as string);
@@ -52,7 +66,7 @@ describe("OpenAI-compatible transcription adapter", () => {
       { text: "B", speaker: "0" }, { text: "C", start: 3, end: 4, speaker: "0" }]);
     expect(result.text).toBe("A B C");
     expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 0 });
-    expect(result.warnings).toEqual(["Transcription provider returned reversed word timestamps; those timestamps were omitted while preserving text and speaker labels."]);
+    expect(result.warnings).toEqual(["Transcription provider returned invalid word timestamps; those timestamps were omitted while preserving text and speaker labels."]);
   });
   it("sends binary multipart audio and the deployment wire model without following redirects", async () => {
     const fetcher = vi.fn(async (_url: URL, init: RequestInit) => {

@@ -28,6 +28,7 @@ const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 const nonnegative = z.number().finite().nonnegative();
 const tokens = nonnegative.int().max(Number.MAX_SAFE_INTEGER);
 const speaker = z.union([z.string().min(1), tokens.transform(value => String(value))]);
+const wordTiming = z.object({ start: nonnegative, end: nonnegative }).refine(value => value.end >= value.start);
 const responseSchema = z.object({
   text: z.string(),
   model: z.string().optional(),
@@ -37,7 +38,7 @@ const responseSchema = z.object({
     end: nonnegative.optional(),
     speaker: speaker.optional(),
   })).optional(),
-  words: z.array(z.object({ word: z.string(), start: nonnegative, end: nonnegative, speaker: speaker.optional() })).optional(),
+  words: z.array(z.object({ word: z.string(), start: z.unknown().optional(), end: z.unknown().optional(), speaker: speaker.optional() })).optional(),
   usage: z.object({
     type: z.string().optional(),
     input_tokens: tokens.optional(),
@@ -62,18 +63,26 @@ function normalizeResponse(body: unknown, config: TranscriptionConfig) {
     ...(value.usage?.seconds !== undefined ? { audioSeconds: value.usage.seconds } : {}),
   };
   const knownUsage = Object.keys(usage).length > 0;
+  let invalidWordTiming = false;
+  const words = value.words?.map(word => {
+    const timing = wordTiming.safeParse({ start: word.start, end: word.end });
+    if (!timing.success) invalidWordTiming = true;
+    return { word: word.word, ...(word.speaker !== undefined ? { speaker: word.speaker } : {}),
+      ...(timing.success ? timing.data : {}) };
+  });
   // Some providers label only words; retain those boundaries rather than assigning
   // one speaker to a whole unlabelled paragraph. The complete text stays separate.
   const labelledSegments = value.segments?.length && value.segments.every(segment => !segment.text.trim() || segment.speaker !== undefined);
-  const segments = !labelledSegments && value.words?.some(word => word.speaker !== undefined)
-    ? value.words.reduce<TranscriptSegment[]>((result, word) => {
-      const timed = word.end >= word.start;
+  const segments = !labelledSegments && words?.some(word => word.speaker !== undefined)
+    ? words.reduce<TranscriptSegment[]>((result, word) => {
+      const { start, end } = word;
+      const timed = start !== undefined && end !== undefined;
       const previous = result.at(-1);
       if (previous && previous.speaker === word.speaker &&
-        (timed ? previous.end !== undefined && previous.end <= word.start : previous.start === undefined)) {
+        (timed ? previous.end !== undefined && previous.end <= start : previous.start === undefined)) {
         previous.text += ` ${word.word}`;
-        if (timed) previous.end = word.end;
-      } else result.push({ text: word.word, ...(timed ? { start: word.start, end: word.end } : {}),
+        if (timed) previous.end = end;
+      } else result.push({ text: word.word, ...(timed ? { start, end } : {}),
         ...(word.speaker !== undefined ? { speaker: word.speaker } : {}) });
       return result;
     }, []) : value.segments ?? [];
@@ -84,8 +93,8 @@ function normalizeResponse(body: unknown, config: TranscriptionConfig) {
     ...(knownUsage ? { usage } : {}),
     warnings: [
       ...(knownUsage ? [] : ["Transcription provider did not report usage; cost is unknown."]),
-      ...(!labelledSegments && value.words?.some(word => word.end < word.start)
-        ? ["Transcription provider returned reversed word timestamps; those timestamps were omitted while preserving text and speaker labels."] : []),
+      ...(invalidWordTiming
+        ? ["Transcription provider returned invalid word timestamps; those timestamps were omitted while preserving text and speaker labels."] : []),
     ],
   });
 }
