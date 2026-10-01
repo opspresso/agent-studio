@@ -72,9 +72,9 @@ function SkillDetail({ name }: { name: string }) {
   async function onDelete() {
     if (
       !(await confirm({
-        title: "Delete skill",
-        message: `Delete skill "${name}"? This cannot be undone.`,
-        confirmLabel: "Delete",
+        title: t("skills.deleteTitle"),
+        message: t("skills.deleteHint", { name }),
+        confirmLabel: t("common.delete"),
       }))
     ) {
       return;
@@ -137,10 +137,10 @@ function SkillDetail({ name }: { name: string }) {
         {!editing && viewer?.isAdmin && !skill.source && (
           <Group gap="xs" wrap="nowrap">
             <Button variant="default" onClick={() => setEditing(true)}>
-              Edit
+              {t("common.edit")}
             </Button>
             <Button variant="default" color="red" onClick={onDelete}>
-              Delete
+              {t("common.delete")}
             </Button>
           </Group>
         )}
@@ -199,7 +199,7 @@ function SkillDetail({ name }: { name: string }) {
               Attachment files ({skill.files?.length ?? 0})
             </Text>
             {!skill.files?.length ? (
-              <Text fz="sm" c="dimmed">None.</Text>
+              <Text fz="sm" c="dimmed">{t("common.none")}</Text>
             ) : (
               <Stack gap="xs">
                 {skill.files.map((file) => (
@@ -276,10 +276,10 @@ function EditSkillForm({
 
         <Group justify="flex-end" gap="xs">
           <Button variant="default" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button type="submit" loading={submitting}>
-            Save
+            {t("common.save")}
           </Button>
         </Group>
       </Stack>

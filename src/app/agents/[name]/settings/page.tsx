@@ -81,9 +81,9 @@ export default function SettingsPage() {
 
   async function remove() {
     const ok = await confirm({
-      title: "Delete agent",
+      title: t("pset.delete"),
       message: t("pset.deleteConfirm", { name }),
-      confirmLabel: "Delete agent",
+      confirmLabel: t("pset.delete"),
       requireText: name,
     });
     if (!ok) {
@@ -121,7 +121,7 @@ export default function SettingsPage() {
     return (
       <div className={columns.split}>
         <Alert variant="light" color="gray" className={columns.primary}>
-          Only the agent owner ({agent.ownerEmail ?? "unknown"}) or an admin can change these settings.
+          {t("pset.ownerOnly", { owner: agent.ownerEmail ?? "—" })}
         </Alert>
       </div>
     );
@@ -161,11 +161,11 @@ export default function SettingsPage() {
           />
           <Group gap="sm">
             <Button type="submit" loading={saving}>
-              Save changes
+              {t("common.saveChanges")}
             </Button>
             {saved && (
               <Text fz="sm" c="teal">
-                Saved
+                {t("common.saved")}
               </Text>
             )}
           </Group>
@@ -182,7 +182,7 @@ export default function SettingsPage() {
             {t("pset.deleteHint")}
           </Text>
           <Button variant="default" color="red" onClick={remove} loading={deleting}>
-            Delete agent
+            {t("pset.delete")}
           </Button>
         </Stack>
       </CollapsibleSection>

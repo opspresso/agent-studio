@@ -74,7 +74,7 @@ export function TelegramSection({
       setRunAsOwner(Boolean(next.runAsOwner));
       setBotToken(next.botToken);
       setEnabled(next.enabled);
-      setStatus(next.botUsername ? `Saved — @${next.botUsername}` : "Saved");
+      setStatus(next.botUsername ? t("integrations.savedBot", { bot: next.botUsername }) : t("common.saved"));
       onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
       // Saved, but Telegram refused the webhook: said here rather than hidden
       // behind a green "Saved" — the operator has a button to try it again.
@@ -94,7 +94,7 @@ export function TelegramSection({
     setError(null);
     try {
       const result = await testAgentTelegram(agentName);
-      setStatus(`Connected: @${result.botUsername ?? result.botId}`);
+      setStatus(t("integrations.telegramConnected", { bot: result.botUsername ?? result.botId }));
     } catch (e) {
       setError(reportError(e, "Connection test failed"));
     } finally {
@@ -119,9 +119,9 @@ export function TelegramSection({
   async function disconnect() {
     if (
       !(await confirm({
-        title: "Remove Telegram credentials",
-        message: "Remove the Telegram bot token for this agent and unregister its webhook?",
-        confirmLabel: "Remove",
+        title: t("integrations.removeCredentialsTitle", { service: "Telegram" }),
+        message: t("integrations.removeTelegramHint"),
+        confirmLabel: t("common.remove"),
       }))
     ) {
       return;
@@ -134,7 +134,7 @@ export function TelegramSection({
       setRunAsOwner(Boolean(next.runAsOwner));
       setBotToken("");
       setEnabled(false);
-      setStatus("Disconnected");
+      setStatus(t("integrations.disconnected"));
       onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
     } catch (e) {
       setError(reportError(e, "Disconnect failed"));
@@ -191,17 +191,17 @@ export function TelegramSection({
 
         <Group gap="xs">
           <Button onClick={save} loading={busy}>
-            Save
+            {t("common.save")}
           </Button>
           <Button variant="default" onClick={test} disabled={busy || !view.enabled}>
-            Test connection
+            {t("common.testConnection")}
           </Button>
           <Button variant="default" onClick={registerWebhook} disabled={busy || !view.enabled}>
             {t("pset.telegramRegisterWebhook")}
           </Button>
           {view.configured && (
             <Button variant="default" color="red" onClick={disconnect} disabled={busy} ml="auto">
-              Disconnect
+              {t("common.disconnect")}
             </Button>
           )}
         </Group>

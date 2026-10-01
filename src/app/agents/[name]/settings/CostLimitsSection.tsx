@@ -24,6 +24,7 @@ import {
   telegramDestinationLabel,
   telegramDestinationValue,
 } from "../_components/telegramDestinations";
+import { formatUsd } from "@/app/_lib/formatUsd";
 import { reportError } from "@/app/_lib/reportError";
 
 export function costLimitsForSave(limits: CostLimits): CostLimits | null {
@@ -140,12 +141,12 @@ export function CostLimitsSection({
   // Readable while collapsed: each configured window as `alert / block` with
   // its period, a dash for a threshold left open, `none` when the guard is off.
   // A monthly-only guard must not read as `– / –`, which says "off".
-  const usd = (value: number | "") => (value === "" ? "–" : `$${value}`);
+  const usd = (value: number | "") => (value === "" ? "–" : formatUsd(value));
   const windowSummary = (alert: number | "", block: number | "", period: string) =>
     alert === "" && block === "" ? null : `${usd(alert)} / ${usd(block)}${period}`;
   const summary = [
-    windowSummary(alertUsd, blockUsd, "/day"),
-    windowSummary(monthlyAlertUsd, monthlyBlockUsd, "/mo"),
+    windowSummary(alertUsd, blockUsd, t("pset.perDay")),
+    windowSummary(monthlyAlertUsd, monthlyBlockUsd, t("pset.perMonth")),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -209,15 +210,12 @@ export function CostLimitsSection({
   return (
     <CollapsibleSection
       title={t("pset.costLimits")}
-      badge={<Badge color={stateColor(configured)} radius="xl">{configured ? summary : "none"}</Badge>}
+      badge={<Badge color={stateColor(configured)} radius="xl">{configured ? summary : t("common.none")}</Badge>}
     >
       <Stack gap="md">
         {slackChannelsTruncated && <Alert color="yellow">{t("slack.channelsTruncated")}</Alert>}
         <Text fz="sm" c="dimmed">
-          Spend is measured per UTC day and per UTC month across every model this agent runs.
-          Leave a field empty for no limit. A blocked agent refuses every run — API, chat,
-          Slack and triggers alike — until the window rolls over: 00:00 UTC for the day, the first
-          of the next month for the month.
+          {t("pset.costLimitsHint")}
         </Text>
         {error && (
           <Alert color="red" variant="light">
@@ -412,18 +410,18 @@ export function CostLimitsSection({
                   )
                 }
               >
-                Remove
+                {t("common.remove")}
               </Button>
             </Group>
           ))}
         </Stack>
         <Group gap="sm">
           <Button onClick={save} loading={saving} disabled={!destinationsValid}>
-            Save cost limits
+            {t("pset.saveCostLimits")}
           </Button>
           {saved && (
             <Text fz="sm" c="teal">
-              Saved
+              {t("common.saved")}
             </Text>
           )}
         </Group>

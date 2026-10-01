@@ -113,7 +113,7 @@ export function SlackSection({
       setPrompts(emptyPrompts(next.suggestedPrompts));
       // What came back, not what was typed — the use case normalized it.
       setKeywords(next.channelKeywords.join(", "));
-      setStatus("Saved");
+      setStatus(t("common.saved"));
       onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
     } catch (e) {
       setError(reportError(e, "Save failed"));
@@ -128,7 +128,7 @@ export function SlackSection({
     setError(null);
     try {
       const result = await testAgentSlack(agentName);
-      setStatus(`Connected: ${result.team} (bot: ${result.botUser})`);
+      setStatus(t("integrations.slackConnected", { team: result.team ?? "—", bot: result.botUser ?? "—" }));
     } catch (e) {
       setError(reportError(e, "Connection test failed"));
     } finally {
@@ -139,9 +139,9 @@ export function SlackSection({
   async function disconnect() {
     if (
       !(await confirm({
-        title: "Remove Slack credentials",
-        message: "Remove the Slack bot credentials for this agent?",
-        confirmLabel: "Remove",
+        title: t("integrations.removeCredentialsTitle", { service: "Slack" }),
+        message: t("integrations.removeSlackHint"),
+        confirmLabel: t("common.remove"),
       }))
     ) {
       return;
@@ -156,7 +156,7 @@ export function SlackSection({
       setSigningSecret("");
       setEnabled(false);
       setPrompts(emptyPrompts([]));
-      setStatus("Disconnected");
+      setStatus(t("integrations.disconnected"));
       onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
     } catch (e) {
       setError(reportError(e, "Disconnect failed"));
@@ -280,14 +280,14 @@ export function SlackSection({
 
         <Group gap="xs">
           <Button onClick={save} loading={busy}>
-            Save
+            {t("common.save")}
           </Button>
           <Button variant="default" onClick={test} disabled={busy || !view.configured}>
-            Test connection
+            {t("common.testConnection")}
           </Button>
           {view.configured && (
             <Button variant="default" color="red" onClick={disconnect} disabled={busy} ml="auto">
-              Disconnect
+              {t("common.disconnect")}
             </Button>
           )}
         </Group>

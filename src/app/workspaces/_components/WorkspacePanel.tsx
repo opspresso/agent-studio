@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { PageHeader } from "@/app/_components/PageHeader";
+import { LoadingText } from "@/app/_components/PageState";
 import { useLatestScroll } from "@/app/_lib/useLatestScroll";
-import { Alert, Anchor, Badge, Box, Button, Code, Group, Loader, ScrollArea, Select, Stack, Tabs, Text, Textarea, Title } from "@mantine/core";
-import { IconArrowDown, IconPlayerStop, IconSend } from "@tabler/icons-react";
+import { Alert, Anchor, Badge, Box, Button, Code, Group, Loader, ScrollArea, Select, Stack, Tabs, Text, Textarea } from "@mantine/core";
+import { IconArrowDown, IconPlayerStop, IconSend, IconTerminal2 } from "@tabler/icons-react";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDateTime } from "@/shared/date";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
@@ -69,7 +71,7 @@ export function WorkspacePanel({ id }: { id: string }) {
     finally { setBusy(false); }
   }
 
-  if (!detail) return loadError ? <Alert color="red">{loadError}</Alert> : <Group p="lg"><Loader size="sm" /><Text>{t("common.loading")}</Text></Group>;
+  if (!detail) return loadError ? <Alert color="red">{loadError}</Alert> : <LoadingText />;
   const workspace = detail.workspace;
   const run = detail.runs.find(run => run.id === runId);
   const pending = detail.approvals.find(approval => approval.id === workspace.activeActionId && approval.status === "pending");
@@ -78,10 +80,11 @@ export function WorkspacePanel({ id }: { id: string }) {
   const workflows = options?.agents.find(agent => agent.agentName === workspace.agentName)?.deploymentWorkflows ?? [];
 
   return <Stack h="100%" gap="sm">
-    <Group justify="space-between" wrap="wrap">
-      <div><Title order={2} size="h4">{workspace.title}</Title><Group gap="xs" mt={4}><Badge variant="outline" color="cyan">{t("workspace.kind")}</Badge><Text size="xs" c="dimmed">{workspace.agentName} · {workspace.runtime}</Text><Badge variant="light">{status(workspace.status)}</Badge></Group></div>
+    <PageHeader compact title={workspace.title} Icon={IconTerminal2} details={
+      <Group gap="xs"><Badge variant="outline" color="cyan">{t("workspace.kind")}</Badge><Text size="xs" c="dimmed">{workspace.agentName} · {workspace.runtime}</Text><Badge variant="light">{status(workspace.status)}</Badge></Group>
+    }>
       <Button size="xs" variant="default" disabled={busy || workspace.status === "closed" || workspace.status === "closing"} onClick={() => { void stop(true); }}>{t("workspace.finish")}</Button>
-    </Group>
+    </PageHeader>
     {workspace.coding && <Group gap="xs"><Code>{workspace.coding.branch}</Code><Text size="xs" c="dimmed">← {workspace.coding.baseBranch}</Text>
       {workspace.pullRequest && <Anchor href={workspace.pullRequest.url} target="_blank" rel="noreferrer" size="sm">{workspace.pullRequest.draft ? "Draft PR" : "PR"} #{workspace.pullRequest.number} · {workspace.pullRequest.ci}</Anchor>}</Group>}
     {(error || loadError || workspace.error) && <Alert color="red" py="xs">{error ?? loadError ?? workspace.error}</Alert>}

@@ -25,6 +25,10 @@
 .details { margin-top: var(--mantine-spacing-xs); overflow-wrap: anywhere; }
 .actions { flex-shrink: 0; }
 
+.header[data-compact] { padding-block: 0 var(--mantine-spacing-sm); }
+.header[data-compact] .title { font-size: var(--mantine-font-size-lg); line-height: 1.35; }
+.header[data-compact] .icon { margin-top: 2px; }
+
 @media (max-width: $mantine-breakpoint-xs) {
   .actions { width: 100%; }
 }

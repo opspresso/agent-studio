@@ -1,7 +1,7 @@
 "use client";
 
 import { PageHeader } from "@/app/_components/PageHeader";
-import { IconPuzzle } from "@tabler/icons-react";
+import { IconPackage } from "@tabler/icons-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -93,7 +93,7 @@ export default function PluginDetailPage() {
     <Stack gap="lg">
       <BackLink href="/plugins" label={t("nav.plugins")} />
 
-      <PageHeader title={plugin.name} Icon={IconPuzzle} description={plugin.description}
+      <PageHeader title={plugin.name} Icon={IconPackage} description={plugin.description}
         badges={<>
           {plugin.version && (
             <Badge size="sm" variant="light">
