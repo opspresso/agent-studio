@@ -25,6 +25,18 @@ describe("whole-recording speaker timelines", () => {
 });
 
 describe("private diarization adapter", () => {
+  it("canonicalizes supported media types and refuses unsupported audio before upload", async () => {
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(new AbortController().signal);
+    const fetch = vi.fn(async () => Response.json(timeline)); vi.stubGlobal("fetch", fetch);
+    const bytes = new Uint8Array([1]);
+    await createDiarizer(config).analyze({ bytes, mimeType: "Audio/MPEG; charset=utf-8" });
+    expect(fetch).toHaveBeenCalledWith(expect.any(URL), expect.objectContaining({
+      headers: { authorization: "Bearer synthetic-token", "content-type": "audio/mpeg" },
+    }));
+    fetch.mockClear();
+    await expect(createDiarizer(config).analyze({ bytes, mimeType: "audio/webm" })).rejects.toThrow("Diarization audio is invalid");
+    expect(fetch).not.toHaveBeenCalled();
+  });
   it("sends the entire source with authentication and refuses redirects", async () => {
     vi.spyOn(AbortSignal, "timeout").mockReturnValue(new AbortController().signal);
     const fetch = vi.fn(async () => Response.json(timeline)); vi.stubGlobal("fetch", fetch);

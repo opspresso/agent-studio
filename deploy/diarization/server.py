@@ -18,7 +18,8 @@ limits = json.loads(limits_path.read_text())
 MAX_BYTES = limits["maxDiarizationInputBytes"]
 MAX_SECONDS = limits["maxSeconds"]
 SAMPLE_RATE = 16000
-DEMUXERS = "mp3,wav,flac,ogg"
+formats = json.loads(limits_path.with_name("formats.json").read_text())
+DEMUXERS = ",".join(dict.fromkeys(formats.values()))
 
 
 def analyze(path, pipeline, revision):
@@ -98,7 +99,8 @@ def handler(token, infer):
             except ValueError:
                 self.reply(400, {"error": "content_length_invalid"})
                 return
-            if self.headers.get("Content-Type") not in {"audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/flac", "audio/ogg"}:
+            content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+            if content_type not in formats:
                 self.reply(415, {"error": "audio_format_unsupported"})
                 return
             if not busy.acquire(blocking=False):

@@ -6,3 +6,4 @@
 !src/domain/
 !src/domain/audio/
 !src/domain/audio/limits.json
+!src/domain/audio/formats.json

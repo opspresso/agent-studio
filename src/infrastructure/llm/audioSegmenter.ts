@@ -6,17 +6,14 @@ import type { AudioSegmenter } from "@/domain/audio/segmenter";
 import { MAX_AUDIO_SECONDS } from "@/domain/audio/limits";
 import { TranscriptionError } from "@/domain/llm/transcription";
 import { validateSpeakerTimeline } from "@/domain/audio/diarization";
+import { AUDIO_DECODERS, normalizeAudioMimeType } from "@/domain/audio/formats";
 
 const SAMPLE_RATE = 16_000;
 const BYTES_PER_SECOND = SAMPLE_RATE * 2;
 const WAV_HEADER_BYTES = 44;
 /** Keep short pauses inside consecutive turns of the same detected speaker. */
 const MERGE_PAUSE_SECONDS = 0.5;
-const DEMUXERS: Readonly<Record<string, string>> = {
-  "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
-  "audio/flac": "flac", "audio/ogg": "ogg",
-};
-const ALLOWED_DEMUXERS = [...new Set(Object.values(DEMUXERS))].join(",");
+const ALLOWED_DEMUXERS = [...new Set(Object.values(AUDIO_DECODERS))].join(",");
 
 function decode(binary: string, args: string[], searchPath: string | undefined, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -44,7 +41,7 @@ export function createAudioSegmenter(options: { binary?: string; searchPath?: st
   return {
     async *split(input, signal) {
       signal?.throwIfAborted();
-      if (!Object.hasOwn(DEMUXERS, input.mimeType)) throw new TranscriptionError("unsupported", "Audio format is not supported by the decoder");
+      if (!normalizeAudioMimeType(input.mimeType)) throw new TranscriptionError("unsupported", "Audio format is not supported by the decoder");
       if (!input.bytes.byteLength || !Number.isFinite(input.segmentSeconds) || input.segmentSeconds <= 0 ||
         !Number.isSafeInteger(input.maxSegmentBytes) || input.maxSegmentBytes <= WAV_HEADER_BYTES + 1) {
         throw new TranscriptionError("invalid_input", "Audio segment limits or input are invalid");

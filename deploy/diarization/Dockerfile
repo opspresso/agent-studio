@@ -8,6 +8,7 @@ ENV HF_HUB_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 PYANNOTE_METRICS_ENABLED=0 AUDIO
 WORKDIR /service
 COPY deploy/diarization/server.py .
 COPY src/domain/audio/limits.json ./audio-limits.json
+COPY src/domain/audio/formats.json ./formats.json
 RUN useradd --uid 10001 --create-home diarization
 USER diarization
 EXPOSE 8000

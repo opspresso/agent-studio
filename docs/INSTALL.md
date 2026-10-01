@@ -190,6 +190,7 @@ loopback에만 노출하고 read-only 모델·filesystem, 임시 `/tmp`, 4 CPU·
 서비스는 한 번에 한 녹음만 처리하고 다른 요청에는 503을 반환한다. worker의 기존 재시도 정책을 사용한다.
 GET `/health`는 모델 로딩 후 준비 상태를 제공한다. POST `/diarize`는 Bearer 인증·Content-Length가 있는
 오디오 bytes를 받아 전체 녹음의 exclusive 타임라인을 반환한다. 원본 상한·길이·지원 decoder는 앱과 동일하며,
+MIME 대소문자와 parameter는 정규화하되 지원 형식을 확장하지 않는다.
 임시 오디오는 완료·오류 후 제거한다. 컨테이너 강제 종료 시 tmpfs도 제거된다.
 HF offline 모드와 pyannote telemetry 비활성화를 강제한다. 실제 가중치 로딩·추론은 public internet 없이 동작해야 한다.
 외부 OpenAI/OpenRouter 전사는 별도 outbound 연결이 필요하며 서비스 추가가 전사를 오프라인으로 바꾸지는 않는다.

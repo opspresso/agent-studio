@@ -61,6 +61,11 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.inferred, [b"audio"])
         self.assertFalse(paths[0].exists())
 
+    def test_supported_media_types_accept_casing_and_parameters(self):
+        status, _ = self.request({"Content-Type": "Audio/MPEG; charset=utf-8"})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.inferred, [b"audio"])
+
     def test_limits_and_protocol_before_inference(self):
         for headers, expected in [({"Content-Length": "536870913"}, 413),
                                   ({"Content-Length": "invalid"}, 400),

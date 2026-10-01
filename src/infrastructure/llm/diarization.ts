@@ -2,6 +2,7 @@ import { validateSpeakerTimeline, type DiarizationPort, type SpeakerTimeline } f
 import { TranscriptionError } from "@/domain/llm/transcription";
 import { readBodyText } from "@/shared/httpBody";
 import { MAX_DIARIZATION_INPUT_BYTES } from "@/domain/audio/limits";
+import { normalizeAudioMimeType } from "@/domain/audio/formats";
 
 export interface DiarizationConfig { baseUrl: string; token: string; revision: string }
 const REQUEST_TIMEOUT_MS = 60 * 60 * 1000;
@@ -18,14 +19,15 @@ export function createDiarizer(config: DiarizationConfig): DiarizationPort {
   } catch { throw new TranscriptionError("invalid_input", "Diarization service configuration is invalid"); }
   return { async analyze(input, signal) {
     signal?.throwIfAborted();
-    if (!input.bytes.length || input.bytes.length > MAX_DIARIZATION_INPUT_BYTES || !/^audio\/[a-z0-9.+-]+$/i.test(input.mimeType)) {
+    const mimeType = normalizeAudioMimeType(input.mimeType);
+    if (!input.bytes.length || input.bytes.length > MAX_DIARIZATION_INPUT_BYTES || !mimeType) {
       throw new TranscriptionError("invalid_input", "Diarization audio is invalid");
     }
     const operationSignal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
     let response: Response;
     try {
       response = await fetch(endpoint, { method: "POST", redirect: "error", signal: operationSignal,
-        headers: { "content-type": input.mimeType, authorization: `Bearer ${config.token}` },
+        headers: { "content-type": mimeType, authorization: `Bearer ${config.token}` },
         body: new Uint8Array(input.bytes) });
     } catch {
       operationSignal.throwIfAborted();
