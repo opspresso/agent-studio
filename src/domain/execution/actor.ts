@@ -50,7 +50,13 @@ export interface WebhookExecutionGrant extends RunUser {
   credentialId: string;
 }
 
-export type ExecutionGrant = MessagingExecutionGrant | WebhookExecutionGrant;
+export interface ApiExecutionGrant extends RunUser {
+  kind: "agent-token";
+  agentName: string;
+  credentialId: string;
+}
+
+export type ExecutionGrant = MessagingExecutionGrant | WebhookExecutionGrant | ApiExecutionGrant;
 
 /**
  * What a run may tell the model about the person asking.

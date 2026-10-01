@@ -10,7 +10,7 @@ import { resolveProducedFiles, withAddressedFiles } from "@/application/artifact
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { collectAgentRun, streamAgentExecution } from "@/application/execution/runAgent";
 import { predictSchema } from "@/app/api/agents/_lib/schemas";
-import { authenticateExecution, principalActor } from "@/app/api/agents/_lib/executionAuth";
+import { authenticateExecution, principalRunContext } from "@/app/api/agents/_lib/executionAuth";
 import { requestConversation } from "@/app/api/agents/_lib/conversation";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { withTurnBody } from "@/app/api/_lib/body";
@@ -35,15 +35,15 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     try {
       const agent = await agentUseCases.get(name);
       const configuration = requireAgentConfiguration(agent);
-      const actor = principalActor(principal);
-      const conversation = requestConversation(request, actor);
+      const context = principalRunContext(principal, agent.name);
+      const { actor } = context;
+      const conversation = requestConversation(request, principal.userId);
       const read = await readExecutionDocuments(executionDeps, { agentName: agent.name, actor }, parsed.data.documents);
       const params = {
         agent,
         configuration,
         messages: attachDocumentsToMessages(parsed.data.messages ?? [], read.documents),
-        actor,
-        ...(principal.caller ? { caller: principal.caller } : {}),
+        ...context,
         ...(conversation ? { conversation } : {}),
       };
       // The facade owns execution; this route chooses the response representation.

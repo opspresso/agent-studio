@@ -15,7 +15,7 @@ const grant: WebhookTrigger = { agentName: "demo", triggerId: "webhook", kind: "
 
 function fixture() {
   const identity = webhookCredentialFixture("demo", "fixture-token", email);
-  return { messagingIdentities: { resolve: async () => null }, identity, webhookCredentials: identity.credentials, members: { getById: vi.fn(async id => memberFixture({ id, email })) }, agents: { get: vi.fn(async () => agent) } as unknown as AgentRepository,
+  return { apiCredentials: { authorize: async () => null }, messagingIdentities: { resolve: async () => null }, identity, webhookCredentials: identity.credentials, members: { getById: vi.fn(async id => memberFixture({ id, email })) }, agents: { get: vi.fn(async () => agent) } as unknown as AgentRepository,
     triggers: { get: vi.fn(async (): Promise<Trigger | null> => ({ ...grant })) },
     memberTier: vi.fn(async () => "member" as const), backendReady: vi.fn(() => true), enabled: vi.fn(async () => true) };
 }
@@ -33,6 +33,18 @@ describe("Workspace execution authorization", () => {
     for (const actor of [{ kind: "user", id: "other@example.com" }, { kind: "agent-token", id: email }, { kind: "slack", id: "U1" }] as const) {
       await expect(authorizeWorkspaceExecution({ ...fixture(), memberTier: async () => "guest" as const }, "demo", email, actor)).rejects.toThrow("member access");
     }
+  });
+  it("requires the exact personal API credential before Workspace execution", async () => {
+    const deps = fixture();
+    const actor = { kind: "agent-token" as const, id: email };
+    await expect(authorizeWorkspaceExecution(deps, "demo", email, actor)).rejects.toThrow("authenticated personal API");
+    const grant = { kind: "agent-token" as const, agentName: "demo", userId: "api-user", email, credentialId: "api-token" };
+    const authorize = vi.fn(async () => ({ userId: grant.userId, email, credentialId: grant.credentialId }));
+    const current = { ...deps, apiCredentials: { authorize } };
+    await authorizeWorkspaceExecution(current, "demo", email, actor, grant);
+    expect(authorize).toHaveBeenCalledWith("demo", "api-token", "api-user");
+    await expect(authorizeWorkspaceExecution({ ...current, apiCredentials: { authorize: async () => null } }, "demo", email, actor, grant)).rejects.toThrow("no longer authorized");
+    expect(deps.triggers.get).not.toHaveBeenCalled();
   });
   it("rechecks the personal Webhook credential before queued effects", async () => {
     const deps = fixture();

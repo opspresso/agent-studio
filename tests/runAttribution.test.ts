@@ -6,7 +6,7 @@ vi.mock("node:crypto", async importOriginal => ({
   randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
 }));
 import { actorKey, descend, type RunActor } from "@/domain/execution/actor";
-import { principalActor } from "@/app/api/agents/_lib/executionAuth";
+import { principalActor, principalRunContext } from "@/app/api/agents/_lib/executionAuth";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import { TraceRecorder } from "@/application/trace/recorder";
 import type { Trace } from "@/domain/trace/types";
@@ -65,6 +65,16 @@ describe("principalActor", () => {
       kind: "agent-token",
       id: "a@example.com",
     });
+  });
+});
+
+describe("verified API execution context", () => {
+  it("keeps the stable user and original credential through a transfer", () => {
+    const context = principalRunContext({ userId: "stable-user", email: "current@example.test", viaToken: true, credentialId: "credential" }, "parent");
+    const origin = { ...context, ancestry: ["parent"] };
+    const child = descend(origin, "child");
+    expect(child.user).toEqual({ userId: "stable-user", email: "current@example.test" });
+    expect(child.executionGrant).toEqual({ kind: "agent-token", agentName: "parent", userId: "stable-user", email: "current@example.test", credentialId: "credential" });
   });
 });
 

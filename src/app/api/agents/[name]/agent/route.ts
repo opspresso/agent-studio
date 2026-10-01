@@ -6,7 +6,7 @@ import { withAddressedFiles } from "@/application/artifact/producedFiles";
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { executeAgent } from "@/application/execution/runAgent";
 import { agentSchema } from "@/app/api/agents/_lib/schemas";
-import { authenticateExecution, principalActor } from "@/app/api/agents/_lib/executionAuth";
+import { authenticateExecution, principalRunContext } from "@/app/api/agents/_lib/executionAuth";
 import { requestConversation } from "@/app/api/agents/_lib/conversation";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { withTurnBody } from "@/app/api/_lib/body";
@@ -31,8 +31,9 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     try {
       const agent = await agentUseCases.get(name);
       const configuration = requireAgentConfiguration(agent);
-      const actor = principalActor(principal);
-      const conversation = requestConversation(request, actor);
+      const context = principalRunContext(principal, agent.name);
+      const { actor } = context;
+      const conversation = requestConversation(request, principal.userId);
       const read = await readExecutionDocuments(executionDeps, { agentName: agent.name, actor }, parsed.data.documents);
       const abortController = new AbortController();
       return await sseResponse(
@@ -44,8 +45,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
               agent,
               configuration,
               messages: attachDocumentsToMessages(parsed.data.messages, read.documents),
-              actor,
-              ...(principal.caller ? { caller: principal.caller } : {}),
+              ...context,
               ...(conversation ? { conversation } : {}),
               signal: abortController.signal,
             }),

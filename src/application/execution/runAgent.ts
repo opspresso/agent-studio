@@ -204,7 +204,8 @@ export async function* executeAgent(
   deps: ExecutionDeps,
   input: ExecuteAgentInput,
 ): AsyncGenerator<EngineChunk> {
-  if (input.executionGrant && (input.ownerEmail !== input.executionGrant.email || input.actor?.kind !== input.executionGrant.kind)) {
+  if (input.executionGrant && (input.ownerEmail !== input.executionGrant.email || input.actor?.kind !== input.executionGrant.kind ||
+    input.user?.userId !== input.executionGrant.userId || input.user.email !== input.executionGrant.email)) {
     throw new ValidationError("Execution identity does not match its permission grant");
   }
   await executionGrantCheck(deps, input.executionGrant)?.();

@@ -21,6 +21,7 @@ Workspace 옵션 목록은 접근 가능한 Agent의 현재 도구 설정을 한
   API·Webhook 토큰은 발급 사용자, 메신저는 연결 사용자, Schedule은 등록자로 member·Agent 접근을 다시 검사한다. 확인된 사용자 문맥이 없으면 제공하지 않는다.
   guest도 본인 `user` actor로 Workspace를 실행할 수 있으며 Chat과 합산한 UTC 월 비용·동시 실행
   한도를 적용한다. 개인 한도가 적용되지 않는 자동화 actor는 member 이상으로 제한한다.
+  개인 API·Webhook 호출은 검증한 사용자 ID와 credential ID를 큐에 함께 보관하고 실행 직전에 다시 검사한다.
   Workspace의 관리 사용자와 작업 호출자는 별개다. `WorkspaceRun.actor`는 원래 연동 호출자로
   보관하고 실제 Sandbox 작업의 비용·실행 제한에도 같은 actor를 적용한다.
 - `domain/workspace`는 공통 상태·포트와 한도를 소유한다. Git 정보와 승인 동작은

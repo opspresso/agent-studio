@@ -1009,7 +1009,7 @@ export const executionDeps: ExecutionDeps = {
   // A verified PR prepares its own scoped reader; ordinary runs never receive one.
   reviewSource: undefined,
   reviewWorkspace: undefined,
-  authorizeExecutionGrant: grant => assertExecutionGrant({ agents: agentRepository, messagingIdentities: messagingIdentityUseCases, triggers: triggerRepository, webhookCredentials: webhookTokenUseCases }, grant),
+  authorizeExecutionGrant: grant => assertExecutionGrant({ apiCredentials: apiTokenUseCases, agents: agentRepository, messagingIdentities: messagingIdentityUseCases, triggers: triggerRepository, webhookCredentials: webhookTokenUseCases }, grant),
   getCallRoutingPolicy: getCallRoutingPolicy,
   createToolSchemaValidator,
   runtimeSessions: runtimeSessions,
@@ -1389,7 +1389,7 @@ export const workspaceRepositoryCreationUseCases = createWorkspaceRepositoryCrea
 });
 
 async function authorizeWorkspaceTools(email: string, agentName: string, actor?: RunActor, grant?: import("@/domain/execution/actor").ExecutionGrant): Promise<void> {
-  await authorizeWorkspaceExecution({ messagingIdentities: messagingIdentityUseCases, agents: agentRepository, triggers: triggerRepository, memberTier: getMemberTier, webhookCredentials: webhookTokenUseCases,
+  await authorizeWorkspaceExecution({ apiCredentials: apiTokenUseCases, messagingIdentities: messagingIdentityUseCases, agents: agentRepository, triggers: triggerRepository, memberTier: getMemberTier, webhookCredentials: webhookTokenUseCases,
     members: { getById: getExecutionMemberById },
     backendReady: () => !!getWorkspaceConfig(), enabled: name => workspaceRepositoryPolicyUseCases.enabled(name),
   }, agentName, email, actor, grant);

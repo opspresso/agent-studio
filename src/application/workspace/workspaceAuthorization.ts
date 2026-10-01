@@ -5,12 +5,12 @@ import type { TriggerRepository } from "@/domain/trigger/repository";
 import { assertAgentAccessible } from "@/application/agent/agentUseCases";
 import { ValidationError } from "@/application/errors";
 import type { MessagingAuthorizationDeps } from "@/application/auth/messagingGrant";
-import { assertExecutionGrant } from "@/application/auth/authorizeExecutionGrant";
+import { assertExecutionGrant, type ExecutionGrantDeps } from "@/application/auth/authorizeExecutionGrant";
 import type { WebhookAuthorizationDeps } from "@/application/auth/webhookAuthorization";
 import type { MemberRepository } from "@/domain/member/repository";
 import { resolveRunUser } from "@/application/auth/resolveRunUser";
 
-interface WorkspaceAuthorizationDeps extends WebhookAuthorizationDeps, MessagingAuthorizationDeps {
+interface WorkspaceAuthorizationDeps extends WebhookAuthorizationDeps, MessagingAuthorizationDeps, Pick<ExecutionGrantDeps, "apiCredentials"> {
   agents: AgentRepository;
   members: Pick<MemberRepository, "getById">;
   triggers: Pick<TriggerRepository, "get">;
@@ -36,6 +36,10 @@ export async function authorizeWorkspaceExecution(
   if (grant) {
     if (grant.email !== email || grant.kind !== actor?.kind) throw new ValidationError("Workspace execution identity does not match its permission grant");
     await assertExecutionGrant(deps, grant);
+  }
+  if (actor?.kind === "agent-token") {
+    if (grant?.kind !== "agent-token") throw new ValidationError("Workspace execution requires the authenticated personal API credential");
+    return;
   }
   if (actor?.kind === "webhook") {
     if (grant?.kind !== "webhook") throw new ValidationError("Workspace execution requires the authenticated personal Webhook credential");

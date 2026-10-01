@@ -87,40 +87,44 @@ describe("requestConversation", () => {
     });
 
   it("is absent when the caller declared none", () => {
-    expect(requestConversation(request(), { kind: "user", id: "a@x.test" })).toBeNull();
-    expect(requestConversation(request("   "), { kind: "user", id: "a@x.test" })).toBeNull();
+    expect(requestConversation(request(), "a-user-id")).toBeNull();
+    expect(requestConversation(request("   "), "a-user-id")).toBeNull();
   });
 
   it("qualifies the caller's id by the caller, without exposing who they are", () => {
-    const alice = requestConversation(request("thread-1"), { kind: "user", id: "alice@x.test" });
-    const bob = requestConversation(request("thread-1"), { kind: "user", id: "bob@x.test" });
+    const alice = requestConversation(request("thread-1"), "alice-user-id");
+    const bob = requestConversation(request("thread-1"), "bob-user-id");
     expect(alice?.surface).toBe("api");
     expect(alice?.id.endsWith(":thread-1")).toBe(true);
     // Two callers, one header value: two conversations.
     expect(alice?.id).not.toBe(bob?.id);
-    // And neither carries the email it was derived from.
+    // Neither exposes the internal user ID.
     expect(conversationKey(alice!)).not.toContain("alice");
     // Stable: the same caller gets the same key next request.
-    expect(requestConversation(request("thread-1"), { kind: "user", id: "alice@x.test" })).toEqual(
+    expect(requestConversation(request("thread-1"), "alice-user-id")).toEqual(
       alice,
     );
+  });
+
+  it("refuses a namespace without an authenticated user ID", () => {
+    expect(() => requestConversation(request("thread"), "")).toThrow("authenticated API caller");
   });
 
   it("refuses an oversized header out loud rather than dropping the conversation", () => {
     // A caller that declared a conversation and silently ran without one would
     // have no way to know; the loss is a 400 like any other bad input.
     expect(() =>
-      requestConversation(request("x".repeat(600)), { kind: "user", id: "a@x.test" }),
+      requestConversation(request("x".repeat(600)), "a-user-id"),
     ).toThrow(ValidationError);
     expect(
-      requestConversation(request("x".repeat(495)), { kind: "user", id: "a@x.test" })?.id,
+      requestConversation(request("x".repeat(495)), "a-user-id")?.id,
     ).toHaveLength(512);
   });
 
   it("scopes the caller with this deployment's key, so the digest means nothing elsewhere", () => {
-    const before = requestConversation(request("t"), { kind: "user", id: "alice@x.test" });
+    const before = requestConversation(request("t"), "alice-user-id");
     vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 6).toString("base64"));
-    const after = requestConversation(request("t"), { kind: "user", id: "alice@x.test" });
+    const after = requestConversation(request("t"), "alice-user-id");
     expect(before?.id).not.toBe(after?.id);
   });
 });

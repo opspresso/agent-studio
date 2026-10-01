@@ -1,4 +1,4 @@
-import type { RunActor, RunCaller } from "@/domain/execution/actor";
+import type { RunActor, RunCaller, RunUser, ApiExecutionGrant } from "@/domain/execution/actor";
 import { sessionCaller } from "@/app/api/_lib/caller";
 import { unauthorized } from "@/shared/unauthorized";
 import { crossOriginForbidden, getSessionUser, isSameOriginMutation } from "@/lib/session";
@@ -30,6 +30,24 @@ export type ExecutionPrincipal = ExecutionPrincipalBase & (
  */
 export function principalActor(principal: ExecutionPrincipal): RunActor {
   return { kind: principal.viaToken ? "agent-token" : "user", id: principal.email };
+}
+
+export interface AuthenticatedRunContext {
+  user: RunUser;
+  actor: RunActor;
+  ownerEmail: string;
+  caller?: RunCaller;
+  executionGrant?: ApiExecutionGrant;
+}
+
+/** One trusted identity projection for every public Agent execution endpoint. */
+export function principalRunContext(principal: ExecutionPrincipal, agentName: string): AuthenticatedRunContext {
+  const user = { userId: principal.userId, email: principal.email };
+  return {
+    user, actor: principalActor(principal), ownerEmail: principal.email,
+    ...(principal.caller ? { caller: principal.caller } : {}),
+    ...(principal.viaToken ? { executionGrant: { ...user, kind: "agent-token" as const, agentName, credentialId: principal.credentialId } } : {}),
+  };
 }
 
 /**
