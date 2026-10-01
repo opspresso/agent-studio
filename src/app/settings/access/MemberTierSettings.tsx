@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Badge, Button, Card, Group, NumberInput, Stack, Table, Text, TextInput } from "@mantine/core";
+import { ActionIcon, Alert, Badge, Button, Card, Group, NumberInput, Stack, Table, Text, TextInput } from "@mantine/core";
+import { IconGripVertical } from "@tabler/icons-react";
 import type { MemberTiersResponse } from "@/app/api/settings/member-tiers/route";
-import { MAX_MEMBER_TIERS, MEMBER_TIER_ID, type MemberTierDefinition } from "@/domain/member/tiers";
+import { MAX_MEMBER_TIERS, MEMBER_TIER_ID, moveMemberTier, orderMemberTiers, type MemberTierDefinition } from "@/domain/member/tiers";
 import { SectionHeading } from "@/app/_components/SectionHeading";
 import { LoadingText } from "@/app/_components/PageState";
 import { useT } from "@/app/_i18n/provider";
@@ -21,6 +22,8 @@ export function MemberTierSettings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [reload, setReload] = useState(0);
+  const [draggedTier, setDraggedTier] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -31,6 +34,7 @@ export function MemberTierSettings() {
   }, [reload]);
 
   function change(next: DraftTier[]) { setTiers(next); setSaved(false); }
+  function endDrag() { setDraggedTier(null); setDropTarget(null); }
   async function save() {
     if (!view) return;
     setSaving(true); setError(null); setSaved(false);
@@ -56,15 +60,47 @@ export function MemberTierSettings() {
         <Table.ScrollContainer minWidth={540}>
           <Table>
             <Table.Thead><Table.Tr>
+              <Table.Th w={40}><Text component="span" size="xs">{t("settings.tiers.order")}</Text></Table.Th>
               <Table.Th>{t("members.tier")}</Table.Th>
               <Table.Th>{t("settings.tiers.monthlyCap")}</Table.Th>
               <Table.Th>{t("settings.tiers.members")}</Table.Th>
               <Table.Th>{t("settings.tiers.actions")}</Table.Th>
             </Table.Tr></Table.Thead>
-            <Table.Tbody>{tiers.map(tier => {
+            <Table.Tbody>{tiers.map((tier, index) => {
               const fixed = tier.id === "admin" || tier.id === "guest";
               const assigned = Object.hasOwn(view.assignedMembers, tier.id) ? view.assignedMembers[tier.id]! : 0;
-              return <Table.Tr key={tier.id}>
+              return <Table.Tr key={tier.id}
+                style={{ backgroundColor: dropTarget === tier.id ? "var(--mantine-color-blue-light)" : undefined }}
+                onDragOver={event => {
+                  if (!draggedTier) return;
+                  event.preventDefault();
+                  const allowed = !fixed && !saving && draggedTier !== tier.id;
+                  event.dataTransfer.dropEffect = allowed ? "move" : "none";
+                  setDropTarget(allowed ? tier.id : null);
+                }}
+                onDragLeave={() => setDropTarget(current => current === tier.id ? null : current)}
+                onDrop={event => {
+                  if (!draggedTier) return;
+                  event.preventDefault();
+                  if (!fixed && !saving) change(moveMemberTier(tiers, draggedTier, tier.id));
+                  endDrag();
+                }}>
+                <Table.Td>{!fixed && <ActionIcon variant="subtle" color="gray" draggable={!saving}
+                  style={{ cursor: draggedTier === tier.id ? "grabbing" : "grab" }}
+                  aria-label={t("settings.tiers.reorder", { tier: tier.id })} aria-describedby="member-tier-order-hint"
+                  onDragStart={event => {
+                    if (saving) { event.preventDefault(); return; }
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", tier.id);
+                    setDraggedTier(tier.id);
+                  }}
+                  onDragEnd={endDrag}
+                  onKeyDown={event => {
+                    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+                    event.preventDefault();
+                    const target = tiers[index + (event.key === "ArrowUp" ? -1 : 1)];
+                    if (target) change(moveMemberTier(tiers, tier.id, target.id));
+                  }}><IconGripVertical size={16} /></ActionIcon>}</Table.Td>
                 <Table.Td><Group gap="xs"><Text size="sm">{tier.id}</Text>{fixed && <Badge color="gray" size="xs">{t("settings.tiers.fixed")}</Badge>}</Group></Table.Td>
                 <Table.Td>{tier.id === "admin" ? <Text size="sm">{t("profile.uncapped")}</Text> :
                   <NumberInput min={0} value={tier.monthlyCostCapUsd ?? ""} aria-label={t("settings.tiers.capFor", { tier: tier.id })}
@@ -77,10 +113,11 @@ export function MemberTierSettings() {
           </Table>
         </Table.ScrollContainer>
         <Text size="xs" c="dimmed">{t("settings.tiers.deleteHint")}</Text>
+        <Text id="member-tier-order-hint" size="xs" c="dimmed">{t("settings.tiers.orderHint")}</Text>
         <Group align="flex-end">
           <TextInput label={t("settings.tiers.newName")} description={t("settings.tiers.nameHint")} value={name} maxLength={40} onChange={event => setName(event.currentTarget.value)} />
           <NumberInput label={t("settings.tiers.monthlyCap")} min={0} value={newCap} onChange={setNewCap} />
-          <Button variant="default" disabled={!canAdd} onClick={() => { change([...tiers, { id: name, monthlyCostCapUsd: newCap }]); setName(""); setNewCap(""); }}>{t("settings.tiers.add")}</Button>
+          <Button variant="default" disabled={!canAdd} onClick={() => { change(orderMemberTiers([...tiers, { id: name, monthlyCostCapUsd: newCap }])); setName(""); setNewCap(""); }}>{t("settings.tiers.add")}</Button>
         </Group>
         <Group><Button disabled={!dirty || !valid} loading={saving} onClick={() => void save()}>{t("modelAdmin.save")}</Button>
           {saved && <Text size="sm" c="teal">{t("modelAdmin.saved")}</Text>}</Group>

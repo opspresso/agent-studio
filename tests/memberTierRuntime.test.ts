@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_MEMBER_TIERS, type MemberTierDefinition } from "@/domain/member/tiers";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
-import { getMemberTierLimits, invalidateSettingsCache } from "@/lib/runtime-settings";
+import { getMemberTierDefinitions, getMemberTierLimits, invalidateSettingsCache } from "@/lib/runtime-settings";
 import { getMemberTier, invalidateMemberTierCache } from "@/lib/memberAccess";
 import { getSessionUser, withMemberAuth } from "@/lib/session";
 import { openRun, openTaskRun } from "@/application/run/runBracket";
@@ -37,6 +37,15 @@ beforeEach(async () => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); invalidateMemberTierCache(); invalidateSettingsCache(); });
 
 describe("runtime member tier settings", () => {
+  it("supplies Members with fixed endpoints and the stored custom tier order", async () => {
+    await catalog([
+      { id: "guest", monthlyCostCapUsd: 2 },
+      { id: "premium", monthlyCostCapUsd: 10 },
+      { id: "admin", monthlyCostCapUsd: null },
+      { id: "member", monthlyCostCapUsd: 20 },
+    ]);
+    expect((await getMemberTierDefinitions()).map(tier => tier.id)).toEqual(["admin", "premium", "member", "guest"]);
+  });
   it("uses custom tiers for sessions and member APIs and demotes unknown stored IDs to guest", async () => {
     expect((await getSessionUser())?.tier).toBe("premium");
     expect((await withMemberAuth(async () => Response.json({ ok: true }))()).status).toBe(200);

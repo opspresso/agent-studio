@@ -12,6 +12,7 @@ export interface MemberTierDefinition {
 
 export interface MemberTierSettings {
   revision: number;
+  /** Display order only; admin is first and guest is last. */
   tiers: MemberTierDefinition[];
 }
 
@@ -21,6 +22,26 @@ export const DEFAULT_MEMBER_TIERS: MemberTierDefinition[] = [
   { id: "member", monthlyCostCapUsd: 20 },
   { id: "guest", monthlyCostCapUsd: 2 },
 ];
+
+/** Pin fixed roles while preserving the chosen order of configurable tiers. */
+export function orderMemberTiers<T extends { id: MemberTier }>(tiers: readonly T[]): T[] {
+  return [
+    ...tiers.filter(tier => tier.id === "admin"),
+    ...tiers.filter(tier => tier.id !== "admin" && tier.id !== "guest"),
+    ...tiers.filter(tier => tier.id === "guest"),
+  ];
+}
+
+/** Move within the configurable tiers without crossing either fixed role. */
+export function moveMemberTier<T extends { id: MemberTier }>(tiers: readonly T[], id: MemberTier, targetId: MemberTier): T[] {
+  const ordered = orderMemberTiers(tiers);
+  const index = ordered.findIndex(tier => tier.id === id);
+  const target = ordered.findIndex(tier => tier.id === targetId);
+  if (index <= 0 || index >= ordered.length - 1 || target <= 0 || target >= ordered.length - 1) return ordered;
+  const [tier] = ordered.splice(index, 1);
+  ordered.splice(target, 0, tier!);
+  return ordered;
+}
 
 export function isMemberTierDefinitions(value: unknown): value is MemberTierDefinition[] {
   if (!Array.isArray(value) || value.length < 2 || value.length > MAX_MEMBER_TIERS) return false;

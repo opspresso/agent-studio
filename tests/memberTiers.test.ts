@@ -3,6 +3,8 @@ import {
   DEFAULT_MEMBER_TIER,
   DEFAULT_MEMBER_TIERS,
   memberTierLimits,
+  moveMemberTier,
+  orderMemberTiers,
   tierMayEdit,
   isMemberTierDefinitions,
   storedMemberTier,
@@ -25,6 +27,32 @@ describe("toMemberTier", () => {
       expect(toMemberTier(value)).toBe(DEFAULT_MEMBER_TIER);
     },
   );
+});
+
+describe("member tier order", () => {
+  const tiers = [
+    { id: "admin", monthlyCostCapUsd: null },
+    { id: "premium", monthlyCostCapUsd: 75 },
+    { id: "member", monthlyCostCapUsd: 20 },
+    { id: "guest", monthlyCostCapUsd: 2 },
+  ];
+  it("pins admin and guest while preserving custom order and input data", () => {
+    const input = [tiers[2]!, tiers[3]!, tiers[1]!, tiers[0]!];
+    const before = [...input];
+    expect(orderMemberTiers(input)).toEqual([tiers[0], tiers[2], tiers[1], tiers[3]]);
+    expect(input).toEqual(before);
+  });
+  it("moves a configurable tier in either direction without changing its limits", () => {
+    const moved = moveMemberTier(tiers, "member", "premium");
+    expect(moved).toEqual([tiers[0], tiers[2], tiers[1], tiers[3]]);
+    expect(moveMemberTier(moved, "member", "premium")).toEqual(tiers);
+    expect(tiers.map(tier => tier.id)).toEqual(["admin", "premium", "member", "guest"]);
+  });
+  it.each([
+    ["admin", "member"], ["guest", "premium"], ["premium", "admin"], ["member", "guest"], ["missing", "member"], ["member", "missing"],
+  ] as const)("does not move %s beyond its allowed position", (id, targetId) => {
+    expect(moveMemberTier(tiers, id, targetId)).toEqual(tiers);
+  });
 });
 
 describe("member tier catalog", () => {

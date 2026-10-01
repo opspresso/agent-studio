@@ -30,6 +30,24 @@ async function fixture() {
 }
 
 describe("deployment member tiers", () => {
+  it("reads fixed endpoints and persists custom display order without altering limits", async () => {
+    const f = await fixture();
+    const unordered = [
+      { id: "guest", monthlyCostCapUsd: 2 },
+      { id: "premium", monthlyCostCapUsd: 75 },
+      { id: "admin", monthlyCostCapUsd: null },
+      { id: "member", monthlyCostCapUsd: 20 },
+    ];
+    await settingsRepository.update(stored => ({ ...stored!, memberTiers: { revision: 3, tiers: unordered } }));
+    const initial = await f.tiers.getView();
+    expect(initial.revision).toBe(3);
+    expect(initial.tiers.map(tier => tier.id)).toEqual(["admin", "premium", "member", "guest"]);
+    const submitted = [unordered[3]!, unordered[0]!, unordered[1]!, unordered[2]!];
+    const saved = await f.tiers.update({ revision: 3, tiers: submitted }, "admin@example.test");
+    expect(saved.tiers).toEqual([unordered[2], unordered[3], unordered[1], unordered[0]]);
+    expect((await settingsRepository.get())?.memberTiers).toEqual({ revision: 4, tiers: saved.tiers });
+    expect((await f.tiers.getView()).tiers).toEqual(saved.tiers);
+  });
   it("adds a configurable tier, assigns it, and removes it only after users move away", async () => {
     const f = await fixture();
     const initial = await f.tiers.getView();

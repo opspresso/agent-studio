@@ -1,6 +1,6 @@
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { ConflictError, ValidationError } from "@/application/errors";
-import { DEFAULT_MEMBER_TIERS, isMemberTierDefinitions, type MemberTierSettings } from "@/domain/member/tiers";
+import { DEFAULT_MEMBER_TIERS, isMemberTierDefinitions, orderMemberTiers, type MemberTierSettings } from "@/domain/member/tiers";
 import type { MemberTierAdministration } from "@/domain/member/tierAdministration";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { MemberRepository } from "@/domain/member/repository";
@@ -20,7 +20,8 @@ export function createMemberTierUseCases(deps: {
       const [settings, members] = await Promise.all([deps.settings.get(), listMembers(deps.members)]);
       const assignedMembers: Record<string, number> = Object.create(null);
       for (const member of members) assignedMembers[member.tier] = (assignedMembers[member.tier] ?? 0) + 1;
-      return { ...(settings?.memberTiers ?? { revision: 0, tiers: DEFAULT_MEMBER_TIERS }), assignedMembers };
+      const catalog = settings?.memberTiers ?? { revision: 0, tiers: DEFAULT_MEMBER_TIERS };
+      return { ...catalog, tiers: orderMemberTiers(catalog.tiers), assignedMembers };
     },
     async update(input: MemberTierSettings, actorEmail: string): Promise<MemberTiersView> {
       if (!isMemberTierDefinitions(input.tiers)) throw new ValidationError("Tiers must have unique valid IDs, fixed admin/guest entries, unlimited admin and nonnegative monthly limits for all other tiers");
@@ -33,7 +34,7 @@ export function createMemberTierUseCases(deps: {
           const assigned = (await listMembers(members)).find(member => removed.has(member.tier));
           if (assigned) throw new ConflictError(`Move members from tier "${assigned.tier}" before deleting it`);
         }
-        await settings.update(stored => ({ ...stored, memberTiers: { revision: current.revision + 1, tiers: input.tiers }, updatedAt: new Date().toISOString() }));
+        await settings.update(stored => ({ ...stored, memberTiers: { revision: current.revision + 1, tiers: orderMemberTiers(input.tiers) }, updatedAt: new Date().toISOString() }));
       });
       await recordAudit({ actorEmail, action: "settings.update", target: auditTarget("settings", "app"), detail: "memberTiers" });
       return this.getView();

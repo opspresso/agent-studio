@@ -215,6 +215,7 @@
 | 설정된 값이 비어 있는지 여부 | `src/shared/env.ts` | 구조 |
 | Schedule 연동 화면이 동시에 읽을 최근 실행 목록 수 | `src/app/agents/[name]/integrations/scheduleRuns.ts` 의 `MAX_CONCURRENT_SCHEDULE_RUN_READS` | 구조 |
 | 각 member tier의 실행 한도 해석 | `src/domain/member/tiers.ts`의 `memberTierLimits`. 월 금액은 Settings `memberTiers`, admin은 무제한, guest 동시 실행은 1개 | 구조 |
+| 등급 표시 순서와 고정 위치 | `src/domain/member/tiers.ts`의 `orderMemberTiers`·`moveMemberTier`. admin은 처음, guest는 마지막이며 사용자 정의 등급의 상대 순서를 보존한다 | 코드 |
 | 등급 추가·삭제·월 한도 검증과 배정 경합 | `application/member/tierUseCases.ts`·`memberUseCases.ts`, `memberTierAdministration`의 공통 DB transaction lock | 코드 |
 | `undici` 에 직접 닿기 | `src/infrastructure/net/publicFetch.ts`. dispatcher와 fetch는 같은 undici 구현을 사용한다 | 구조 |
 | chunk 가 거쳐 온 transfer 사슬을 도출하기 | `src/domain/llm/types.ts` 의 `chunkAuthorPath` | 구조 |
