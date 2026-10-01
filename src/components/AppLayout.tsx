@@ -118,6 +118,7 @@ export function AppLayout({
   branding,
   version,
   viewer,
+  userName,
   userImage,
   signInProviders,
   children,
@@ -126,6 +127,8 @@ export function AppLayout({
   version: string;
   /** Resolved by the root layout; `null` when nobody is signed in. */
   viewer: Viewer | null;
+  /** Display name from the same session as the viewer. */
+  userName: string | null;
   /**
    * The identity provider's picture for this account, or `null`. It rides
    * beside the viewer rather than inside it: `Viewer` is what `GET /api/me`
@@ -256,6 +259,8 @@ export function AppLayout({
               <ThemeToggle />
               <UserMenu
                 email={viewer?.email ?? null}
+                name={userName}
+                tier={viewer?.tier ?? null}
                 image={userImage}
                 signInProviders={signInProviders}
               />

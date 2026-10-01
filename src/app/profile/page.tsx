@@ -15,7 +15,7 @@ import {
 import { IconActivity, IconCoins, IconUser } from "@tabler/icons-react";
 import type { ProfileResponse } from "@/app/api/me/profile/route";
 import type { MemberUsageRow } from "@/domain/usage/types";
-import { MEMBER_TIER_COLOR } from "@/app/_components/badgeColors";
+import { memberTierColor } from "@/app/_components/badgeColors";
 import { CardHeading } from "@/app/_components/CardHeading";
 import { CostBarChart } from "@/app/_components/CostBarChart";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
@@ -117,7 +117,7 @@ export default function ProfilePage() {
           <div style={{ minWidth: 0, flex: 1 }}>
             <Group gap="xs" wrap="nowrap">
               <Text fw={600} truncate>{member.name}</Text>
-              <Badge variant="light" color={Object.hasOwn(MEMBER_TIER_COLOR, member.tier) ? MEMBER_TIER_COLOR[member.tier] : "blue"}>{member.tier}</Badge>
+              <Badge variant="light" color={memberTierColor(member.tier)}>{member.tier}</Badge>
             </Group>
             <Text fz="sm" c="dimmed" truncate>{member.email}</Text>
             <Group gap="xl" mt="sm">

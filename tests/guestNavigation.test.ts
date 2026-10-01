@@ -15,7 +15,7 @@ const viewer = (tier: Viewer["tier"]): Viewer => ({ email: "user@example.test", 
 function navigation(tier: Viewer["tier"]) {
   const html = renderToStaticMarkup(createElement(MantineProvider, {
     children: createElement(I18nProvider, { locale: "en", children: createElement(AppLayout, {
-      branding: resolveBranding(), version: "test", viewer: viewer(tier), userImage: null,
+      branding: resolveBranding(), version: "test", viewer: viewer(tier), userName: "Test User", userImage: null,
       signInProviders: { google: false, password: false, keycloak: false, oidc: undefined }, children: "content",
     }) }),
   }));
