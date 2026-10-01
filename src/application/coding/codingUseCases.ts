@@ -1,10 +1,13 @@
+import type { RunUser } from "@/domain/execution/actor";
+import type { MemberRepository } from "@/domain/member/repository";
+import { resolveRunUser } from "@/application/auth/resolveRunUser";
 import { isDeepStrictEqual } from "node:util";
 import type { CodingAction, CodingApproval, CodingRepository, PullRequestInfo } from "@/domain/coding/types";
 import { codingActionRequiresConfirmation, codingCiAllowsPublication, CodingMutationRejectedError } from "@/domain/coding/types";
 import type { CodingForge } from "@/domain/coding/forge";
 import type { CodingWorktree, WorktreeReview } from "@/domain/coding/worktree";
 import type { Workspace } from "@/domain/workspace/types";
-import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { ownedWorkspace, workspacePolicy, workspaceView, checkWorkspaceRepository } from "@/application/workspace/workspaceUseCases";
 import { ensureWorkspaceSandbox, saveWorkspaceCheckpoint, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { WorkspaceWorkerState, WORKSPACE_LEASE_MS } from "@/application/workspace/workerState";
@@ -14,6 +17,7 @@ import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { isGitBranch, isRepositoryName, workspaceAllowsRepository } from "@/domain/workspace/policy";
 
 export interface CodingDeps extends WorkspaceWorkerDeps {
+  members: Pick<MemberRepository, "getById">;
   coding(agentName: string): CodingWorktree;
   forge(agentName: string): CodingForge;
 }
@@ -93,14 +97,21 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
   return {};
 }
 
+async function authorizeGitUser(deps: CodingDeps, id: string, user: RunUser) {
+  const workspace = await ownedWorkspace(deps, id, user.email);
+  const current = await resolveRunUser(deps, workspace.agentName, user.userId, "user");
+  if (current.email !== user.email) throw new ForbiddenError("The requesting account changed");
+  return workspace;
+}
+
 /** All effects share ownership, tree review, action claims and uncertainty handling. */
 export function createCodingUseCases(deps: CodingDeps) {
   return {
-    async publish(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string): Promise<CodingApproval> {
+    async publish(id: string, user: RunUser, action: CodingAction, sourceChatId?: string): Promise<CodingApproval> {
       if (codingActionRequiresConfirmation(action)) throw new ValidationError("This action requires explicit confirmation");
       // The action result stays inline; PRs can schedule a later CI-only update.
-      const approval = await this.request(id, ownerEmail, action, action.kind === "pull-request" ? sourceChatId : undefined, "coding-request");
-      return this.decide(id, ownerEmail, approval.id, true);
+      const approval = await this.request(id, user, action, action.kind === "pull-request" ? sourceChatId : undefined, "coding-request");
+      return this.decide(id, user, approval.id, true);
     },
     async pullRequest(id: string, ownerEmail: string): Promise<PullRequestInfo | undefined> {
       const workspace = await ownedWorkspace(deps, id, ownerEmail);
@@ -140,10 +151,11 @@ export function createCodingUseCases(deps: CodingDeps) {
         } catch (error) { await release(deps, state); throw error; }
       });
     },
-    async request(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string, authorization: CodingApproval["authorization"] = "confirmation"): Promise<CodingApproval> {
+    async request(id: string, user: RunUser, action: CodingAction, sourceChatId?: string, authorization: CodingApproval["authorization"] = "confirmation"): Promise<CodingApproval> {
       if (authorization === "coding-request" && codingActionRequiresConfirmation(action)) throw new ValidationError("This action requires explicit confirmation");
+      const ownerEmail = user.email;
+      const workspace = await authorizeGitUser(deps, id, user);
       if (sourceChatId) {
-        const workspace = await ownedWorkspace(deps, id, ownerEmail);
         const chat = await deps.chats.get(sourceChatId);
         if (!chat || chat.ownerEmail !== ownerEmail || chat.workspaceId || !chat.agentName ||
           chat.linkedWorkspaces?.[workspace.agentName] !== id) throw new NotFoundError("Source chat not found");
@@ -156,7 +168,7 @@ export function createCodingUseCases(deps: CodingDeps) {
           const { workspace } = await state.read();
           const review = await state.effect(() => deps.coding(workspace.agentName).review(sandbox.externalId));
           const { pullRequest, main, release: target } = await state.effect(() => validateAction(deps, workspace, action, review));
-          const approval: CodingApproval = { id: approvalId, workspaceId: id, requestedBy: ownerEmail,
+          const approval: CodingApproval = { id: approvalId, workspaceId: id, requestedBy: ownerEmail, requestedByUserId: user.userId,
             ...(sourceChatId ? { sourceChatId } : {}),
             requestedAt: deps.now().toISOString(), authorization, action, fingerprint: review.fingerprint, status: "pending",
             review: { headSha: review.headSha, treeSha: review.treeSha, diff: review.diff, truncated: review.truncated,
@@ -171,11 +183,13 @@ export function createCodingUseCases(deps: CodingDeps) {
       });
     },
 
-    async decide(id: string, ownerEmail: string, approvalId: string, approve: boolean): Promise<CodingApproval> {
+    async decide(id: string, user: RunUser, approvalId: string, approve: boolean): Promise<CodingApproval> {
+      const ownerEmail = user.email;
       await ownedWorkspace(deps, id, ownerEmail);
       const previous = await deps.repository.approval(id, approvalId);
-      if (!previous || previous.requestedBy !== ownerEmail) throw new NotFoundError("Coding approval not found");
+      if (!user.userId || !previous || previous.requestedBy !== ownerEmail || previous.requestedByUserId !== user.userId) throw new NotFoundError("Coding approval not found");
       if (previous.status !== "pending") return previous;
+      if (approve) await authorizeGitUser(deps, id, user);
       const state = await reserve(deps, id, ownerEmail, approvalId, true, undefined, approve);
       return state.withHeartbeat(async () => {
         const decision = { ...previous, decidedBy: ownerEmail, decidedAt: deps.now().toISOString() };

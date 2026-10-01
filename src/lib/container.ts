@@ -1056,8 +1056,8 @@ export const executionDeps: ExecutionDeps = {
     const gitEnabled = !!agent && !!config.workspaceGitHub && await agentGitHubCredentials.configured(agent);
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
       ...(gitEnabled ? { createRepository: workspaceRepositoryCreationUseCases.create } : {}),
-      requestGit: (id, ownerEmail, action, sourceChatId) => getCodingUseCases().request(id, ownerEmail, action, sourceChatId),
-      publishGit: (id, ownerEmail, action, sourceChatId) => getCodingUseCases().publish(id, ownerEmail, action, sourceChatId),
+      requestGit: (id, user, action, sourceChatId) => getCodingUseCases().request(id, user, action, sourceChatId),
+      publishGit: (id, user, action, sourceChatId) => getCodingUseCases().publish(id, user, action, sourceChatId),
       pullRequest: (id, ownerEmail) => getCodingUseCases().pullRequest(id, ownerEmail),
       attachRepository: (id, ownerEmail, repository, baseBranch) => getCodingUseCases().attachRepository(id, ownerEmail, repository, baseBranch),
       workdir: WORKSPACE_DIRECTORY,
@@ -1067,7 +1067,7 @@ export const executionDeps: ExecutionDeps = {
         return policy ? { ...policy, runtimes: (await workspaceRuntimeModelUseCases.getView()).available } : undefined;
       },
       sleep: async ms => { await workspaceSleep(ms); },
-    }, { agentName, ownerEmail: email, actor: caller.actor, executionGrant: caller.executionGrant, occurrence: currentRunContext()?.runId ?? randomUUID(),
+    }, { agentName, user: caller.user, ownerEmail: email, actor: caller.actor, executionGrant: caller.executionGrant, occurrence: currentRunContext()?.runId ?? randomUUID(),
       ...(reviewTarget ? { reviewTarget } : {}),
       sourceChatId: origin.conversation?.surface === "chat" ? origin.conversation.id : undefined });
   },
@@ -1470,7 +1470,7 @@ export const chatDeps: ChatDeps = {
 
 export function getCodingUseCases() {
   const deps = getWorkspaceWorkerDeps();
-  return createCodingUseCases({ ...deps, coding: deps.coding, forge: agentName => agentCodingGitHub(agentName).forge });
+  return createCodingUseCases({ ...deps, members: { getById: getExecutionMemberById }, coding: deps.coding, forge: agentName => agentCodingGitHub(agentName).forge });
 }
 
 export function verifyWorkspaceGitHubWebhook(raw: string, signature: string | null): boolean {

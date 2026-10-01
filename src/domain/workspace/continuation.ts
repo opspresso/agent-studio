@@ -6,6 +6,7 @@ export interface WorkspaceContinuation {
   approvalId: string;
   chatId: string;
   ownerEmail: string;
+  userId: string;
   agentName: string;
   revision: number;
   status: "pending" | "waiting-ci" | "running" | "completed" | "failed" | "cancelled";

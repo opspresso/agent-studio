@@ -51,7 +51,8 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
   if (!chat || chat.ownerEmail !== item.ownerEmail || chat.workspaceId || !chat.agentName ||
     !workspace || workspace.ownerEmail !== item.ownerEmail || workspace.deleteRequestedAt ||
     chat.linkedWorkspaces?.[item.agentName] !== workspace.id ||
-    !approval || approval.sourceChatId !== chat.chatId || approval.requestedBy !== item.ownerEmail || !isTerminalCodingApproval(approval.status)) {
+    !item.userId || !approval || approval.sourceChatId !== chat.chatId || approval.requestedBy !== item.ownerEmail ||
+    approval.requestedByUserId !== item.userId || !isTerminalCodingApproval(approval.status)) {
     await save({ status: "cancelled", error: "The source chat, Workspace or action is no longer available for continuation." });
     return;
   }
@@ -61,16 +62,14 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     return;
   }
   let saved = deps.chat.runtimeSessions ? await readRuntimeSession(deps.chat.runtimeSessions, chat.chatId, item.ownerEmail) : null;
-  if (saved && !saved.document.userId) {
-    await save({ status: "cancelled", error: "The saved session does not identify the requesting user. Start a new chat." });
+  if (saved && saved.document.userId !== item.userId) {
+    await save({ status: "cancelled", error: "The saved session does not belong to the requesting user. Start a new chat." });
     return;
   }
-  const user = saved ? { userId: saved.document.userId, email: item.ownerEmail } : undefined;
+  const user = { userId: item.userId, email: item.ownerEmail };
   try {
-    if (user) {
-      await deps.authorize(user, item.agentName);
-      if (chat.agentName !== item.agentName) await deps.authorize(user, chat.agentName);
-    }
+    await deps.authorize(user, item.agentName);
+    if (chat.agentName !== item.agentName) await deps.authorize(user, chat.agentName);
   }
   catch (error) {
     if (!(error instanceof ForbiddenError || error instanceof ValidationError)) throw error;
@@ -78,7 +77,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
   }
   let pullRequest: PullRequestInfo | undefined;
   let ciFailure: string | undefined;
-  if (user && item.phase === "ci") {
+  if (item.phase === "ci") {
     // A newer action or native task supersedes this wait; it must not publish
     // a changed tree or drive the same workflow alongside the newer request.
     const latest = (await deps.workspaces.approvals(workspace.id, 1))[0];
@@ -101,7 +100,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
       }
       ciFailure = "PR checks are still pending after the 30-minute CI wait.";
     }
-  } else if (user && approval.status === "succeeded" && approval.action.kind === "pull-request") {
+  } else if (approval.status === "succeeded" && approval.action.kind === "pull-request") {
     // The first event still reports publication immediately. The subsequent
     // wait is a read-only event, independent of browser and model polling.
     try { pullRequest = await deps.pullRequest(workspace.id, item.ownerEmail); }
@@ -120,7 +119,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
   let stopCancel = () => {};
   try {
     // The chat may have completed another turn before this worker acquired its lease.
-    saved = deps.chat.runtimeSessions ? await readRuntimeSession(deps.chat.runtimeSessions, chat.chatId, item.ownerEmail, user?.userId) : null;
+    saved = deps.chat.runtimeSessions ? await readRuntimeSession(deps.chat.runtimeSessions, chat.chatId, item.ownerEmail, user.userId) : null;
     if (saved?.document.checkpoint) {
       await save({ dueAt: new Date(deps.now().getTime() + RETRY_MS).toISOString() });
       return;
@@ -144,7 +143,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     });
     if (!claimed) return;
     item = running;
-    if (!saved || !user) {
+    if (!saved) {
       await save({ status: "failed", error: MISSING_SESSION });
       return;
     }

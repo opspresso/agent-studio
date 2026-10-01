@@ -230,7 +230,9 @@ DNS 검증 결과를 `http.curloptResolve`로 고정하고 redirect를 거절한
 `prepare_git`의 Commit·Commit & push·Push·PR은 `coding-request` 권한 근거로 즉시 실행한다.
 main 반영·태그·릴리즈·배포는 별도 사용자 요청과 확인이 필요하다. 직접 Workspace 화면의 검토 API는 명시적 확인을 유지한다.
 
-`CodingApproval`은 요청자·결정자·작업 인자와 검토한 전체 Git tree/HEAD의 fingerprint를 보관한다.
+`CodingApproval`은 요청자의 Studio 사용자 ID·이메일, 결정자·작업 인자와 검토한 전체 Git tree/HEAD의 fingerprint를 보관한다.
+준비와 승인 실행은 요청 계정의 현재 상태와 Agent 접근을 재검사한다.
+승인·거절은 요청자의 사용자 ID가 일치해야 하며 이메일이 같은 다른 계정에 승인을 인계하지 않는다.
 화면용 Diff가 잘려도 승인 fingerprint는 전체 tree에서 계산한다. 승인은 Workspace를 잠그고
 실제 tree를 다시 확인한 뒤 `executing`으로 기록한다. 종료·삭제와 경합한 승인은 효과 전에 거절한다.
 Commit은 로컬 브랜치와 암호화된 체크포인트에 저장한다. Push는 승인한 HEAD만 작업 브랜치에
@@ -312,9 +314,10 @@ main 병합·main 직접 Push·태그·릴리즈·배포는 검토를 준비하�
 배포는 `options.deployment_workflows`의 workflow와 `ref: "main"`을 사용하며 도구의 `inputs`는
 중복 없는 `{name, value}` 배열이다. 서버가 이를 승인 동작의 입력 객체로 변환하고 기존 배포 정책을
 검증한다. 승인 성공은 workflow 접수이며 실제 배포 완료는 해당 실행과 서비스 상태로 확인한다.
-Chat에서 요청한 승인은 `sourceChatId`를 보관한다. 승인 성공·실패·거절·결과 불명 기록과
-`WorkspaceContinuation` 알림을 같은 transaction에 쓴다. 별도 Workspace worker의 알림 소비자는
-원래 Chat의 소유권·Agent 접근·현재 Workspace 선택을 다시 확인하고 Chat run lease를 잡는다.
+Chat에서 요청한 승인은 `sourceChatId`와 호출자 사용자 ID를 보관한다. 승인 성공·실패·거절·결과 불명 기록과
+`WorkspaceContinuation` 알림을 같은 transaction에 쓴다. 별도 Workspace worker가 알림을 소비한다.
+큐의 사용자 ID는 변경할 수 없다. 소비자는 원래 계정·Chat 소유권·Agent 접근·현재 Workspace 선택을
+다시 확인하고 Chat run lease를 잡는다. SDK Session의 사용자 ID가 다르면 후속 실행을 취소한다.
 알림 claim과 채팅의 승인 결과 표시는 원자적으로 저장한다. 원래 SDK Session을 사용해 공통
 `executeAgent` facade로 남은 요청을 이어가며, 새 사용자 메시지를 저장하거나 Git 동작을 재실행하지 않는다.
 자동 게시 결과는 현재 도구 호출로 전달하며 중복 동작 결과로 Chat을 재개하지 않는다.

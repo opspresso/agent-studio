@@ -11,6 +11,6 @@ export const POST = withAuth(async (user, request: Request, context: { params: P
   if (body instanceof Response) return body;
   const parsed = codingActionSchema.safeParse(body);
   if (!parsed.success) return invalidRequest(parsed.error);
-  try { return Response.json({ approval: await getCodingUseCases().request((await context.params).id, user.email, parsed.data) } satisfies CodingApprovalResponse); }
+  try { return Response.json({ approval: await getCodingUseCases().request((await context.params).id, { userId: user.id, email: user.email }, parsed.data) } satisfies CodingApprovalResponse); }
   catch (error) { return apiError(error); }
 });

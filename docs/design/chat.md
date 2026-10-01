@@ -154,7 +154,8 @@ SDK Session이 최근 이미지와 편집 핸들을 다음 턴으로 이어 준�
 Workspace use case의 transaction이 이 선택을 관리하고 일반 Chat 갱신은 보존한다.
 
 승인·CI 결과는 `workspaceAction`이 있는 플랫폼 assistant 행으로 표시한다.
-worker는 SDK Session에 저장된 사용자 ID로 현재 계정·Agent 접근을 재확인하고,
+worker는 승인 요청 때 큐에 저장한 사용자 ID로 현재 계정·Agent 접근을 재확인하고,
+SDK Session의 사용자 ID도 대조한다.
 원래 소유자·Workspace 선택·SDK Session을 확인한 뒤 검증한 결과 이벤트로
 후속 실행을 시작한다. 플랫폼 결과를 새 사용자 요청이나 다음 Git 동작의 승인으로 해석하지 않는다.
 

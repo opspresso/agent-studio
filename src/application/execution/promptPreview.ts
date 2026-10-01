@@ -1,7 +1,7 @@
 /** Rendering what a run would send, without dispatching the model. */
 
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
-import type { RunActor, RunCaller } from "@/domain/execution/actor";
+import type { RunActor, RunCaller, RunUser } from "@/domain/execution/actor";
 import * as engine from "@/application/runtime";
 import type { ExecutionDeps, PromptPreview } from "./deps";
 import { callerFor, runClock } from "./deps";
@@ -38,6 +38,7 @@ export async function previewPrompt(
     caller?: RunCaller;
     /** The signed-in user whose identity is sent to bound MCP servers. */
     actor?: RunActor;
+    user?: RunUser;
   },
 ): Promise<PromptPreview> {
   const { agent, configuration } = input;
@@ -57,7 +58,7 @@ export async function previewPrompt(
     );
   }
 
-  const origin = input.actor ? { actor: input.actor } : undefined;
+  const origin = input.actor ? { actor: input.actor, ...(input.user ? { user: input.user } : {}) } : undefined;
   const memory = input.message?.trim()
     ? await prepareMemoryForRun(deps, {
         configuration,

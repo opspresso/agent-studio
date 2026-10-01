@@ -42,13 +42,16 @@ export async function checkWorkspaces(): Promise<void> {
     assert.equal(later.workspace.id, selectedId);
     assert.equal((await repository.runs(selectedId, 10)).length, 1, "another start does not replay or enqueue work");
     const sourceWorkspace = (await repository.get(selectedId))!;
-    const approval: CodingApproval = { id: "completed-approval", workspaceId: selectedId, requestedBy: owner,
+    const approval: CodingApproval = { id: "completed-approval", workspaceId: selectedId, requestedBy: owner, requestedByUserId: "workspace-check-user",
       requestedAt: now, sourceChatId, action: { kind: "push" }, fingerprint: "review", status: "succeeded", result: "a".repeat(40),
       review: { headSha: "a".repeat(40), treeSha: "b".repeat(40), diff: "", truncated: false } };
     await repository.write({ expectedRevision: sourceWorkspace.revision,
       workspace: { ...sourceWorkspace, revision: sourceWorkspace.revision + 1 }, approval });
     const notification = (await repository.continuation(selectedId, approval.id))!;
     assert.equal(notification.status, "pending", "terminal approval and continuation commit together");
+    assert.equal(notification.userId, approval.requestedByUserId, "the durable continuation retains the requesting account");
+    assert.equal(await repository.updateContinuation({ ...notification, userId: "another-user", revision: 1 }, 0), false,
+      "a continuation revision cannot reassign the caller");
     assert.ok((await repository.dueContinuations(new Date().toISOString(), 50)).some(row => row.approvalId === approval.id));
     const continuationRunId = "continuation-run";
     await chats.claimRun(sourceChatId, continuationRunId, Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000) + 60);

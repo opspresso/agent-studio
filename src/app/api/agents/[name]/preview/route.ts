@@ -56,6 +56,7 @@ export const POST = withMemberAuth(async (user, request: Request, ctx: RouteCont
       // What memory recall and capability discovery search with.
       ...(message ? { message } : {}),
       actor: { kind: "user", id: user.email },
+      user: { userId: user.id, email: user.email },
       // Preview uses the same caller identity as a run started from this page.
       ...(caller ? { caller } : {}),
     });

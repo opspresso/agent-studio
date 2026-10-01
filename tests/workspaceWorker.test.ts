@@ -96,7 +96,7 @@ async function reviewResult(workspaceId: string, runId: string) {
   const tool = createWorkspaceTool({ useCases: createWorkspaceUseCases(deps), authorize: async () => {}, policy: () => policy,
     sleep: deps.sleep, publishGit: async () => { throw new Error("Git publication unavailable"); }, requestGit: async () => { throw new Error("unused"); }, pullRequest: async () => undefined,
     attachRepository: async () => { throw new Error("unused"); }, workdir: "/workspace/repo", publicBaseUrl: "https://studio.example.test" },
-  { agentName: "demo", ownerEmail: owner, occurrence: "review" });
+  { user: { userId: "studio-user-1", email: owner }, agentName: "demo", ownerEmail: owner, occurrence: "review" });
   const session = await openReviewWorkspace({ tool: async (args, callId) => (args.request as { operation: string }).operation === "start"
     ? { text: JSON.stringify({ workspace_id: workspaceId, workspace_url: "https://studio.example.test/chats/review",
       run_id: "bootstrap", status: "succeeded", head_sha: target.headSha }) } : tool(args, callId),

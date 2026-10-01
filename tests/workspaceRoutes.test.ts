@@ -3,8 +3,8 @@ import { NotFoundError } from "@/application/errors";
 
 const f = vi.hoisted(() => ({ start: vi.fn(), enqueue: vi.fn(), cancel: vi.fn(), close: vi.fn(), get: vi.fn(), events: vi.fn(), request: vi.fn(), decide: vi.fn(), getView: vi.fn(), update: vi.fn() }));
 vi.mock("@/lib/session", () => ({
-  withMemberAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ email: "owner@example.com" }, ...args),
-  withAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ email: "owner@example.com" }, ...args),
+  withMemberAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ id: "studio-user-1", email: "owner@example.com" }, ...args),
+  withAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ id: "studio-user-1", email: "owner@example.com" }, ...args),
   withAdminAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ email: "admin@example.com" }, ...args),
 }));
 vi.mock("@/lib/container", () => ({ workspaceUseCases: f, getCodingUseCases: () => f, workspaceRepositoryPolicyUseCases: f }));
@@ -98,11 +98,11 @@ describe("Workspace HTTP contract", () => {
     const action = kind === "push" ? { kind } : { kind, message: "chore: bump release" };
     f.request.mockResolvedValue({ id: "approval-1", status: "pending" });
     expect((await actions.POST(request("/workspace-1/actions", "POST", action), context)).status).toBe(200);
-    expect(f.request).toHaveBeenCalledWith("workspace-1", "owner@example.com", action);
+    expect(f.request).toHaveBeenCalledWith("workspace-1", { userId: "studio-user-1", email: "owner@example.com" }, action);
     expect(f.decide).not.toHaveBeenCalled();
     expect((await decision.POST(request("/workspace-1/actions/approval-1", "POST", { approve: "yes" }), context)).status).toBe(400);
     f.decide.mockResolvedValue({ id: "approval-1", status: "rejected" });
     await decision.POST(request("/workspace-1/actions/approval-1", "POST", { approve: false }), context);
-    expect(f.decide).toHaveBeenCalledWith("workspace-1", "owner@example.com", "approval-1", false);
+    expect(f.decide).toHaveBeenCalledWith("workspace-1", { userId: "studio-user-1", email: "owner@example.com" }, "approval-1", false);
   });
 });

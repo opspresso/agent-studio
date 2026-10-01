@@ -37,6 +37,7 @@ async function fixture() {
   const f = runtimeSessionFixture();
   f.configuration.parameters.piiFiltering = false;
   const owner = f.scope.ownerEmail;
+  const user = { userId: f.scope.userId, email: owner };
   const at = new Date().toISOString();
   fake.seed([{ ...keys.agent("agent"), entityType: "AGENT", name: "agent", displayName: "Agent", description: "",
     ownerEmail: owner, createdAt: at, updatedAt: at }]);
@@ -56,7 +57,7 @@ async function fixture() {
       openPullRequest: vi.fn(async () => ({ ...pull })), merge: vi.fn(async () => { pull.state = "merged"; return "c".repeat(40); }),
       reviewMainPush: async () => ({ baseSha: head, ci: "passed" }), pushMain: async () => head, dispatch: async () => ({}) };
   const coding: CodingDeps = {
-    repository, chats, agents, now: () => new Date(), newId: () => `id-${++serial}`, idleTtlSeconds: 60,
+    members: { getById: async () => ({ id: user.userId, email: owner, name: "Owner", image: null, tier: "member", joinedAt: at, lastLoginAt: null }) }, repository, chats, agents, now: () => new Date(), newId: () => `id-${++serial}`, idleTtlSeconds: 60,
     checkRepository: async () => {}, policy: () => ({ agentName: "agent", repositories: ["company/repo"], runtimes: ["codex"], checks: [], deploymentWorkflows: [] }),
     runtime: kind => createWorkspaceRuntimeAdapter(kind), runTimeoutMs: 1000,
     execute: async (_workspace, work) => { await work(); }, sleep: async () => {},
@@ -72,8 +73,8 @@ async function fixture() {
   const git = createCodingUseCases(coding);
   const workspaceTool = createWorkspaceTool({ useCases, authorize: async () => {}, policy: () => coding.policy("agent"),
     workdir: "/workspace/repo", publicBaseUrl: "https://studio.example.test", sleep: async () => {},
-    publishGit: (id, owner, action, sourceChatId) => git.publish(id, owner, action, sourceChatId), requestGit: git.request, pullRequest: git.pullRequest, attachRepository: git.attachRepository },
-  { sourceChatId: f.scope.sessionId, agentName: "agent", ownerEmail: owner, occurrence: "continuation" });
+    publishGit: (id, caller, action, sourceChatId) => git.publish(id, caller, action, sourceChatId), requestGit: git.request, pullRequest: git.pullRequest, attachRepository: git.attachRepository },
+  { user, sourceChatId: f.scope.sessionId, agentName: "agent", ownerEmail: owner, occurrence: "continuation" });
   let channel = new FakeChannel([[contentChunk("Result received")]]);
   const runAgent = vi.fn<ChatDeps["runAgent"]>(async function* (input) {
     for (const chunk of await f.run(channel, "", undefined, { workspaceTool }, { messages: input.messages })) yield chunk;
@@ -81,23 +82,45 @@ async function fixture() {
   const deps: WorkspaceContinuationDeps = { workspaces: repository, authorize: vi.fn(async () => {}), pullRequest: vi.fn(git.pullRequest), now: () => new Date(), sleep: async () => {},
     chat: { chats, agents: withConfigurations(agents, ({ get: async () => f.configuration }).get),  runtimeSessions: f.services, runAgent,
       runLog: { append: vi.fn(async () => {}), read: async () => [] }, documents: { extract: async () => ({ text: "" }) } } };
-  const approval = await git.request(workspace.id, owner, { kind: "commit-and-push", message: "feat: implement" }, f.scope.sessionId);
+  const approval = await git.request(workspace.id, user, { kind: "commit-and-push", message: "feat: implement" }, f.scope.sessionId);
   const drain = async () => {
     const queued = await repository.dueContinuations(new Date().toISOString(), 20);
     await Promise.all(queued.map(item => processWorkspaceContinuation(deps, item)));
   };
-  return { ...f, deps, coding, workspace, git, approval, owner, drain, runAgent, pull,
+  return { ...f, user, deps, coding, workspace, git, approval, owner, drain, runAgent, pull,
     setChannel: (next: FakeChannel) => { channel = next; } };
 }
 
 describe("Workspace decisions returning to their source chat", () => {
+  it("cancels a durable result when another account has replaced the source Session at the same email", async () => {
+    const f = await fixture();
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
+    const queued = (await repository.continuation(f.workspace.id, f.approval.id))!;
+    expect(queued.userId).toBe(f.user.userId);
+    f.rows.clear();
+    f.scope.userId = "replacement-account";
+    await f.run(new FakeChannel([[contentChunk("new session")]]), "new request");
+    await f.drain();
+    expect((await repository.continuation(f.workspace.id, f.approval.id))?.status).toBe("cancelled");
+    expect(f.runAgent).not.toHaveBeenCalled();
+    expect(f.deps.pullRequest).not.toHaveBeenCalled();
+  });
+
+  it("does not allow a continuation revision to change its captured caller ID", async () => {
+    const f = await fixture();
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
+    const queued = (await repository.continuation(f.workspace.id, f.approval.id))!;
+    expect(await repository.updateContinuation({ ...queued, userId: "replacement-account", revision: queued.revision + 1 }, queued.revision)).toBe(false);
+    expect((await repository.continuation(f.workspace.id, f.approval.id))?.userId).toBe(f.user.userId);
+  });
+
   it("watches inline PR publication without repeating its action result, then resumes only for CI", async () => {
     const f = await fixture();
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
     await f.drain();
     f.runAgent.mockClear();
     f.pull.ci = "pending";
-    const pr = await f.git.publish(f.workspace.id, f.owner, { kind: "pull-request", title: "Change", body: "Verified", draft: false }, f.scope.sessionId);
+    const pr = await f.git.publish(f.workspace.id, f.user, { kind: "pull-request", title: "Change", body: "Verified", draft: false }, f.scope.sessionId);
     expect(pr).toMatchObject({ status: "succeeded", authorization: "coding-request", ciWatch: { number: 1, headSha: f.pull.headSha } });
     expect(await repository.continuation(f.workspace.id, pr.id)).toMatchObject({ phase: "ci", status: "waiting-ci", ciWatch: pr.ciWatch });
     await f.drain();
@@ -116,10 +139,10 @@ describe("Workspace decisions returning to their source chat", () => {
   });
   it("does not enqueue duplicate continuation for an inline PR whose checks are already settled", async () => {
     const f = await fixture();
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
     await f.drain();
     f.runAgent.mockClear();
-    const pr = await f.git.publish(f.workspace.id, f.owner, { kind: "pull-request", title: "Change", body: "Verified", draft: false }, f.scope.sessionId);
+    const pr = await f.git.publish(f.workspace.id, f.user, { kind: "pull-request", title: "Change", body: "Verified", draft: false }, f.scope.sessionId);
     expect(pr.ciWatch).toBeUndefined();
     expect(await repository.continuation(f.workspace.id, pr.id)).toBeNull();
     await f.drain();
@@ -127,11 +150,11 @@ describe("Workspace decisions returning to their source chat", () => {
   });
   async function waitingForCi() {
     const f = await fixture();
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
     await f.drain();
-    const pr = await f.git.request(f.workspace.id, f.owner, { kind: "pull-request", title: "Change", body: "Validated", draft: false }, f.scope.sessionId);
+    const pr = await f.git.request(f.workspace.id, f.user, { kind: "pull-request", title: "Change", body: "Validated", draft: false }, f.scope.sessionId);
     f.pull.ci = "pending";
-    await f.git.decide(f.workspace.id, f.owner, pr.id, true);
+    await f.git.decide(f.workspace.id, f.user, pr.id, true);
     await f.drain();
     expect((await repository.continuation(f.workspace.id, pr.id))?.status).toBe("waiting-ci");
     f.runAgent.mockClear();
@@ -188,7 +211,7 @@ describe("Workspace decisions returning to their source chat", () => {
 
   it("cancels a CI watch when a newer action owns the workflow", async () => {
     const f = await waitingForCi();
-    await f.git.request(f.workspace.id, f.owner, { kind: "push" }, f.scope.sessionId);
+    await f.git.request(f.workspace.id, f.user, { kind: "push" }, f.scope.sessionId);
     vi.setSystemTime(Date.now() + 16_000);
     await f.drain();
     expect(f.runAgent).not.toHaveBeenCalled();
@@ -202,7 +225,7 @@ describe("Workspace decisions returning to their source chat", () => {
     const prChannel = new FakeChannel([[toolCallChunk(0, "pr-call", "Workspace", JSON.stringify(pr))],
       [toolCallChunk(0, "merge-call", "Workspace", JSON.stringify(merge))], [contentChunk("Merge review is ready")]]);
     f.setChannel(prChannel);
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
     await f.drain();
     expect(JSON.stringify(prChannel.seenParams[0]?.messages)).toContain("Commit and push, create a PR, then merge it to main");
     expect(JSON.stringify(prChannel.seenParams[0]?.messages)).toContain("workspace_action_result");
@@ -214,7 +237,7 @@ describe("Workspace decisions returning to their source chat", () => {
     expect(mergeApproval.status).toBe("pending");
     expect(f.coding.forge("agent").merge).not.toHaveBeenCalled();
     f.setChannel(new FakeChannel([[contentChunk("Merged to main")]]));
-    await f.git.decide(f.workspace.id, f.owner, mergeApproval.id, true);
+    await f.git.decide(f.workspace.id, f.user, mergeApproval.id, true);
     await f.drain();
     expect(f.coding.coding("agent").commit).toHaveBeenCalledTimes(1);
     expect(f.coding.forge("agent").openPullRequest).toHaveBeenCalledTimes(1);
@@ -228,9 +251,9 @@ describe("Workspace decisions returning to their source chat", () => {
 
   it("records the outcome atomically and consumes duplicate decisions/deliveries once", async () => {
     const f = await fixture();
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
     const queued = (await repository.dueContinuations(new Date().toISOString(), 20))[0]!;
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
     await Promise.all([processWorkspaceContinuation(f.deps, queued), processWorkspaceContinuation(f.deps, queued)]);
     vi.setSystemTime(Date.now() + 3000);
     await f.drain();
@@ -244,7 +267,7 @@ describe("Workspace decisions returning to their source chat", () => {
 
   it("waits for the source chat's current run before delivering", async () => {
     const f = await fixture();
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
     await chats.claimRun(f.scope.sessionId, "original", 0, Math.floor(Date.now() / 1000) + 100);
     await f.drain();
     expect(f.runAgent).not.toHaveBeenCalled();
@@ -259,7 +282,7 @@ describe("Workspace decisions returning to their source chat", () => {
     const f = await fixture();
     if (status === "failed") f.coding.coding("agent").review = async () => { throw new Error("Review failed"); };
     if (status === "uncertain") vi.mocked(f.coding.coding("agent").push).mockRejectedValueOnce(new Error("Connection lost"));
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, status !== "rejected");
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, status !== "rejected");
     await f.drain();
     const input = f.runAgent.mock.calls[0]![0];
     expect(JSON.parse(input.messages[1]!.content as string).status).toBe(status);
@@ -269,7 +292,7 @@ describe("Workspace decisions returning to their source chat", () => {
 
   it.each(["deleted", "revoked"])("cancels delivery when the source is %s", async mode => {
     const f = await fixture();
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
     if (mode === "deleted") await chats.delete(f.scope.sessionId);
     else vi.mocked(f.deps.authorize).mockRejectedValueOnce(new ForbiddenError("Access revoked"));
     await f.drain();
@@ -279,7 +302,7 @@ describe("Workspace decisions returning to their source chat", () => {
 
   it("never replays a claimed continuation after a worker crash", async () => {
     const f = await fixture();
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
     const queued = (await repository.dueContinuations(new Date().toISOString(), 20))[0]!;
     await repository.updateContinuation({ ...queued, revision: 1, status: "running", runId: "lost", dueAt: new Date().toISOString() }, 0);
     await f.drain();
@@ -290,7 +313,7 @@ describe("Workspace decisions returning to their source chat", () => {
   it("delivers the result without inventing history when the SDK Session is missing", async () => {
     const f = await fixture();
     f.rows.clear();
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
     await f.drain();
     expect(f.runAgent).not.toHaveBeenCalled();
     const notices = (await chats.listMessages(f.scope.sessionId)).filter(row => row.role === "assistant" && row.workspaceAction);
@@ -301,16 +324,16 @@ describe("Workspace decisions returning to their source chat", () => {
 
   it("does not guess a source conversation for directly requested Workspace actions", async () => {
     const f = await fixture();
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, false);
-    const manual = await f.git.request(f.workspace.id, f.owner, { kind: "commit-and-push", message: "feat: manual request" });
-    await f.git.decide(f.workspace.id, f.owner, manual.id, true);
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, false);
+    const manual = await f.git.request(f.workspace.id, f.user, { kind: "commit-and-push", message: "feat: manual request" });
+    await f.git.decide(f.workspace.id, f.user, manual.id, true);
     expect(await repository.continuation(f.workspace.id, manual.id)).toBeNull();
-    await expect(f.git.request(f.workspace.id, f.owner, { kind: "push" }, "foreign-chat")).rejects.toMatchObject({ status: 404 });
+    await expect(f.git.request(f.workspace.id, f.user, { kind: "push" }, "foreign-chat")).rejects.toMatchObject({ status: 404 });
   });
 
   it("does not deliver to a chat that selected a different Workspace", async () => {
     const f = await fixture();
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
     const api = createWorkspaceUseCases(f.coding);
     const other = await api.create({ chatId: "other-workspace-chat", createChat: true, agentName: "agent", runtime: "codex", title: "Other" }, f.owner);
     await api.selectForChat(f.scope.sessionId, other.id, "agent", f.owner);
@@ -321,7 +344,7 @@ describe("Workspace decisions returning to their source chat", () => {
 
   it("keeps unclaimed delivery recoverable after an authorization lookup transport failure", async () => {
     const f = await fixture();
-    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.git.decide(f.workspace.id, f.user, f.approval.id, true);
     vi.mocked(f.deps.authorize).mockRejectedValueOnce(new Error("Database unavailable"));
     await expect(f.drain()).rejects.toThrow("Database unavailable");
     expect((await repository.continuation(f.workspace.id, f.approval.id))?.status).toBe("pending");

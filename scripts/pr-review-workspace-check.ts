@@ -136,7 +136,7 @@ async function main() {
     openReviewWorkspace: async (target, grant) => {
       const tool = createWorkspaceTool({ useCases: api, authorize: () => assertExecutionGrant(grantDeps, grant), policy: () => worker.policy(agentName), sleep: pump, workdir: WORKSPACE_DIRECTORY, publicBaseUrl: baseUrl,
         publishGit: async () => { throw new Error("Git publication unavailable"); }, requestGit: async () => { throw new Error("Git publication must be unavailable"); }, pullRequest: async () => undefined, attachRepository: async () => { throw new Error("Repository must remain pinned"); } },
-        { agentName, ownerEmail, actor, executionGrant: grant, occurrence: randomUUID(), reviewTarget: target });
+        { user: { userId: grant.userId, email: grant.email }, agentName, ownerEmail, actor, executionGrant: grant, occurrence: randomUUID(), reviewTarget: target });
       const wrapped = async (...args: Parameters<typeof tool>) => { const result = await tool(...args); const value = JSON.parse(result.text); workspaceId ??= value.workspace_id; return result; };
       return openReviewWorkspace({ tool: wrapped, state: repository.get, close: id => api.close(id, ownerEmail), sleep: pump, verify: async id => {
         const workspace = (await repository.get(id))!;
