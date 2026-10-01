@@ -461,7 +461,7 @@ export const ko: Messages = {
   "nav.tools": "Tools",
   "nav.agents": "Agents",
   "nav.members": "Members",
-  "nav.audit": "감사 로그",
+  "nav.audits": "감사 로그",
   "nav.models": "Models",
   "nav.settings": "설정",
 

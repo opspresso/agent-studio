@@ -12,7 +12,7 @@ export function PageHeader({
 }: {
   title: React.ReactNode;
   description?: React.ReactNode;
-  Icon?: TablerIcon;
+  Icon: TablerIcon;
   badges?: React.ReactNode;
   details?: React.ReactNode;
   children?: React.ReactNode;
@@ -21,7 +21,7 @@ export function PageHeader({
     <header className={classes.header}>
       <Group justify="space-between" gap="lg" align="flex-start" wrap="wrap">
         <Group gap="sm" wrap="nowrap" align="flex-start" className={classes.identity}>
-          {Icon && <Icon className={classes.icon} size={22} stroke={1.8} aria-hidden="true" />}
+          <Icon className={classes.icon} size={22} stroke={1.8} aria-hidden="true" />
           <div className={classes.content}>
             <Group gap="xs" wrap="wrap"><Title order={1} className={classes.title}>{title}</Title>{badges}</Group>
             {description && <Text fz="sm" c="dimmed" mt={5} maw={720} className={classes.description}>{description}</Text>}

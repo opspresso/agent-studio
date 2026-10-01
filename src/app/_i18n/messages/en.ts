@@ -467,7 +467,7 @@ export const en = {
   "nav.tools": "Tools",
   "nav.agents": "Agents",
   "nav.members": "Members",
-  "nav.audit": "Audit trail",
+  "nav.audits": "Audits",
   "nav.models": "Models",
   "nav.settings": "Settings",
 

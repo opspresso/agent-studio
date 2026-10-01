@@ -360,7 +360,7 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 | Agent 하위 `api-reference`·`integrations`·`settings`·`audio`·`workspace` | 호출 예제·연동·설정·선택적 비동기 작업 |
 | `/chats`, `/chats/[chatId]`, `/artifacts` | 개인 대화·작업·파일 |
 | `/skills`·`/tools`·`/plugins`와 각 상세 | 공유 capability registry |
-| `/models`, `/profile`, `/members`, `/audit`, `/settings` | 모델·개인 한도·관리 화면. 실제 접근은 서버 권한 검사로 제한 |
+| `/models`, `/profile`, `/members`, `/audits`, `/settings` | 모델·개인 한도·관리 화면. 실제 접근은 서버 권한 검사로 제한 |
 
 콘솔 언어는 route가 아닌 locale cookie로 정한다. `en.ts`가 번역 key의 정본이고 `ko.ts`는
 타입 검사로 일치시킨다. 독자에게 보이는 날짜는 명시적 locale을 받는 `shared/date.ts`를 사용한다.

@@ -17,6 +17,7 @@ import {
 } from "@mantine/core";
 import {
   IconArrowRight,
+  IconChartBar,
   IconRobot,
   IconMessageCircle,
   IconPlus,
@@ -165,7 +166,7 @@ export function Overview({
 
   return (
     <Stack gap={36}>
-      <PageHeader title={t("overview.title")} description={t("overview.lede")}>
+      <PageHeader title={t("overview.title")} description={t("overview.lede")} Icon={IconChartBar}>
         <Button component={Link} href="/chats" leftSection={<IconMessageCircle size={16} />}>
           {t("overview.newChat")}
         </Button>
