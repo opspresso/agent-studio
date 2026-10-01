@@ -89,21 +89,14 @@ export default function AuditsPage() {
     }
   }
 
-  if (viewer === null) {
-    return <LoadingText />;
-  }
-
-  if (!viewer.isAdmin) {
-    return <Alert color="gray">{t("admin.adminOnlyAudit")}</Alert>;
-  }
+  const header = <PageHeader title={t("nav.audits")} description={t("audit.lede")} Icon={IconShieldCheck} />;
+  if (viewer === null || !viewer.isAdmin) return <Stack gap="lg">{header}
+    {viewer === null ? <LoadingText /> : <Alert color="gray">{t("admin.adminOnlyAudit")}</Alert>}
+  </Stack>;
 
   return (
     <Stack gap="lg">
-      <PageHeader
-        title={t("nav.audits")}
-        description={t("audit.lede")}
-        Icon={IconShieldCheck}
-      />
+      {header}
 
       <DateRangePicker value={range} onChange={(next) => {
         listGeneration.current += 1;

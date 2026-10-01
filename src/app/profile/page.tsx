@@ -99,19 +99,17 @@ export default function ProfilePage() {
   const usageUnavailable = usageLoading || usageError !== null;
   const usageDetail = usageLoading ? t("common.loading") : usageError ? t("usage.loadFailed") : t("cost.selectedPeriod");
 
-  if (accountError) return <Alert color="red" variant="light">{accountError}</Alert>;
-  if (account === null) return <LoadingText />;
+  const header = <PageHeader title={t("nav.profile")} description={t("profile.lede")} Icon={IconUser} />;
+  if (accountError || account === null) return <Stack gap="lg">{header}
+    {accountError ? <Alert color="red" variant="light">{accountError}</Alert> : <LoadingText />}
+  </Stack>;
 
   const { member, monthToDateUsd, limits } = account;
   const cap = limits.monthlyCostCapUsd;
 
   return (
     <Stack gap="lg">
-      <PageHeader
-        title={t("nav.profile")}
-        description={t("profile.lede")}
-        Icon={IconUser}
-      />
+      {header}
 
       <Card>
         <Group gap="md" wrap="nowrap" align="flex-start">

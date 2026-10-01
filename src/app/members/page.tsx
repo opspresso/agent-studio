@@ -63,16 +63,14 @@ export default function MembersPage() {
     return () => { cancelled = true; };
   }, [viewer?.isAdmin]);
 
-  if (viewer === null) return <LoadingText />;
-  if (!viewer.isAdmin) return <Alert color="gray">{t("admin.adminOnlyMembers")}</Alert>;
+  const header = <PageHeader title={t("nav.members")} description={t("members.lede")} Icon={IconUsers} />;
+  if (viewer === null || !viewer.isAdmin) return <Stack gap="lg">{header}
+    {viewer === null ? <LoadingText /> : <Alert color="gray">{t("admin.adminOnlyMembers")}</Alert>}
+  </Stack>;
 
   return (
     <Stack gap="lg">
-      <PageHeader
-        title={t("nav.members")}
-        description={t("members.lede")}
-        Icon={IconUsers}
-      />
+      {header}
 
       {saveError && <Alert color="red" variant="light">{saveError}</Alert>}
 

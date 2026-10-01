@@ -3,6 +3,8 @@ import type { AddressInfo } from "node:net";
 import { build } from "esbuild";
 import { test, expect } from "@playwright/test";
 import type { Member } from "../src/domain/member/types";
+import type { MembersResponse } from "../src/app/api/members/route";
+import { DEFAULT_MEMBER_TIERS } from "../src/domain/member/tiers";
 
 let server: Server;
 let base: string;
@@ -34,7 +36,8 @@ for (const firstStatus of [200, 500]) {
     await page.route("**/api/members**", route => {
       if (route.request().method() === "GET") return route.fulfill({ json: {
         members: members.map(member => ({ ...member, tierLocked: false })),
-      } });
+        tiers: DEFAULT_MEMBER_TIERS.map(tier => tier.id),
+      } satisfies MembersResponse });
       const id = new URL(route.request().url()).pathname.split("/").at(-2)!;
       const member = members.find(member => member.id === id)!;
       const { tier } = route.request().postDataJSON();

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Anchor, Autocomplete, Button, Group, Loader, Select, Stack, Switch, Text, Textarea, ThemeIcon, Title } from "@mantine/core";
+import { Alert, Anchor, Autocomplete, Button, Group, Select, Stack, Switch, Text, Textarea } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { IconTerminal2 } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
@@ -14,6 +14,8 @@ import type { WorkspaceBranchesResponse } from "@/app/api/workspaces/branches/ro
 import type { StartWorkspaceResponse } from "@/app/api/workspaces/route";
 import type { WorkspaceRuntime } from "@/domain/workspace/types";
 import { workspaceAllowsRepository } from "@/domain/workspace/policy";
+import { PageHeader } from "@/app/_components/PageHeader";
+import { LoadingText } from "@/app/_components/PageState";
 import { AgentSuggestion } from "@/app/_components/AgentSuggestion";
 
 export function NewWorkspaceForm() {
@@ -88,11 +90,11 @@ export function NewWorkspaceForm() {
   }
 
   return <Stack gap="md" maw={640} mx="auto" p={{ base: "sm", sm: "lg" }} h="100%" style={{ overflowY: "auto" }} onKeyDown={onModEnter(() => { void start(); })}>
-    <Group><ThemeIcon size={44} variant="light"><IconTerminal2 /></ThemeIcon><div><Title order={2}>{t("workspace.new")}</Title><Text size="sm" c="dimmed">{t("workspace.intro")}</Text></div></Group>
+    <PageHeader title={t("workspace.new")} description={t("workspace.intro")} Icon={IconTerminal2} />
     {error && <Alert color="red">{error}</Alert>}
     {optionsError && <Alert color="red"><Group justify="space-between" gap="sm"><Text size="sm">{optionsError}</Text>
       <Button size="xs" variant="light" onClick={() => setOptionsRetry(value => value + 1)}>{t("error.retry")}</Button></Group></Alert>}
-    {!options && !optionsError && <Loader size="sm" />}
+    {!options && !optionsError && <LoadingText />}
     {options && !options.agents.length && <Alert>{t("workspace.notConfigured")}</Alert>}
     <Select label={t("chat.agent")} searchable value={agent} data={(options?.agents ?? []).map(option => ({ value: option.agentName, label: option.displayName }))}
       onChange={selectAgent} disabled={busy} />
