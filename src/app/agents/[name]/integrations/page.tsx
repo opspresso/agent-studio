@@ -77,9 +77,10 @@ export default function IntegrationsPage() {
   if (!canEditAgent(viewer, agent.ownerEmail)) {
     return (
       <div className={columns.split}>
-        <Alert variant="light" color="gray" className={columns.primary}>
-          {t("pint.ownerOnly", { owner: agent.ownerEmail })}
-        </Alert>
+        <Stack className={columns.primary}>
+          <TokenSection agentName={name} />
+          <Alert variant="light" color="gray">{t("pint.ownerOnly", { owner: agent.ownerEmail })}</Alert>
+        </Stack>
       </div>
     );
   }

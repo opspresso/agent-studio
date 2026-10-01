@@ -29,13 +29,14 @@ export function TokenSection({ agentName, onSelect, selected }: { agentName: str
     {error ? <Alert color="red">{error}</Alert> : !status ? <LoadingText /> : <SecretControl key={agentName}
       label={t("pset.apiToken")} showHeading={false} configured={status.configured} masked={status.masked}
       description={t("secrets.agentTokenHint")}
-      details={status.revealable === false ? t("secrets.legacyHint") : status.createdAt ? t("secrets.createdAt", { date: formatDate(status.createdAt, locale) }) : undefined}
-      onReveal={status.revealable === false ? undefined : () => revealAgentToken(agentName)}
+      details={status.createdAt ? t("secrets.createdAt", { date: formatDate(status.createdAt, locale) }) : undefined}
+      onReveal={status.canIssue ? () => revealAgentToken(agentName) : undefined}
+      generateDisabled={!status.canIssue}
       onGenerate={async () => {
         const result = await generateAgentToken(agentName);
-        setStatus({ configured: true, masked: result.masked, createdAt: result.createdAt, revealable: true });
+        setStatus({ configured: true, masked: result.masked, createdAt: result.createdAt, canIssue: true });
         return result.token;
       }}
-      onRevoke={async () => { await revokeAgentToken(agentName); setStatus({ configured: false }); }} />}
+      onRevoke={async () => { await revokeAgentToken(agentName); setStatus({ configured: false, canIssue: status.canIssue }); }} />}
   </CollapsibleSection>;
 }

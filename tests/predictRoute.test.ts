@@ -18,7 +18,7 @@ vi.mock("@/lib/container", async () => ({
   // is missing.
   apiTokenUseCases: (
     await import("@/application/agent/apiTokenUseCases")
-  ).createApiTokenUseCases({ getApiToken: async () => null } as never, {} as never),
+  ).createApiTokenUseCases({} as never),
   agentUseCases: (
     await import("@/application/agent/agentUseCases")
   ).createAgentUseCases(agentRepo as never),
@@ -27,7 +27,7 @@ vi.mock("@/lib/container", async () => ({
 
 vi.mock("@/app/api/agents/_lib/executionAuth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/api/agents/_lib/executionAuth")>()),
-  authenticateExecution: async () => ({ email: "owner@example.com", viaToken: false }),
+  authenticateExecution: async () => ({ userId: "fixture-user", email: "owner@example.com", viaToken: false }),
 }));
 
 vi.mock("@/application/execution/runAgent", () => ({

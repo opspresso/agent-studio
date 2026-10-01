@@ -75,11 +75,6 @@ function fakeRepo(initial: Agent): { repo: AgentRepository; current: () => Agent
       stored = p;
     },
     async delete() {},
-    async getApiToken() {
-      return null;
-    },
-    async setApiToken() {},
-    async deleteApiToken() {},
   };
   return { repo, current: () => stored };
 }

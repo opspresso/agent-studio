@@ -1,5 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
-import { timingSafeEqualString } from "./timingSafe";
+import { randomBytes } from "node:crypto";
 
 /**
  * Secrets Agent Studio issues itself, as opposed to credentials an operator
@@ -9,13 +8,12 @@ import { timingSafeEqualString } from "./timingSafe";
  * product and to what it opens, the way `ghp_`/`gho_` do for GitHub: two
  * characters for agent-studio, then one for the kind.
  *
- *   ast_…   agent API token (per agent, owner-managed)
+ *   ast_…   personal API secret (bound to user and agent)
  *   asw_…   webhook trigger secret (per trigger, owner-managed)
  *   asg_…   Telegram webhook secret (per agent; minted here, handed only to Telegram)
  *
  * The random part is 32 bytes — 256 bits — so the prefix costs no entropy that
- * matters. Verification compares full values or hashes, never just the prefix, so
- * secrets issued under an older one keep working.
+ * matters. Verification compares full values, never just the prefix.
  */
 
 const VENDOR = "as";
@@ -39,14 +37,4 @@ export function secretPrefix(kind: GeneratedSecretKind): string {
 /** Generate a fresh opaque secret: prefix + 32 random bytes as URL-safe base64. */
 export function generateSecretValue(kind: GeneratedSecretKind): string {
   return `${secretPrefix(kind)}${randomBytes(32).toString("base64url")}`;
-}
-
-/** SHA-256 hex hash of a secret, as stored at rest. */
-export function hashSecret(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-/** Constant-time comparison of two hashes. */
-export function secretHashEquals(a: string, b: string): boolean {
-  return timingSafeEqualString(a, b);
 }

@@ -65,7 +65,6 @@ function makeAgentRepo(initial: Agent[] = []): AgentRepository {
     create: async agent => { agents = [...agents, agent]; },
     update: async agent => { agents = agents.map(p => p.name === agent.name ? agent : p); },
     delete: async name => { agents = agents.filter(p => p.name !== name); },
-    getApiToken: async () => null, setApiToken: async () => {}, deleteApiToken: async () => {},
   };
 }
 /** Settings shared by the isolated agent-repository fixtures in a scenario. */

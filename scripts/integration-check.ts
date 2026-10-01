@@ -443,6 +443,22 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.equal(tierChange?.previousTier, "guest");
     assert.equal(tierChange?.member.tier, "member");
     pass("member get/list/atomic tier update");
+    const { apiTokenRepository } = await import("@/infrastructure/db/repositories/apiTokenRepository");
+    const { createApiTokenUseCases } = await import("@/application/agent/apiTokenUseCases");
+    const { secretCipher } = await import("@/infrastructure/crypto/secretCipher");
+    const { randomUUID } = await import("node:crypto");
+    const personalApi = createApiTokenUseCases({ agents: agentRepository, tokens: apiTokenRepository,
+      members: memberRepository, cipher: secretCipher, now: () => new Date(now), newId: randomUUID });
+    const issuedToken = await personalApi.generate(agentName, integrationMemberId);
+    assert.deepEqual(await personalApi.verify(agentName, issuedToken.token), { userId: integrationMemberId, email: integrationMemberEmail });
+    const concurrentTokens = await Promise.allSettled([personalApi.generate(agentName, integrationMemberId), personalApi.generate(agentName, integrationMemberId)]);
+    assert.equal(concurrentTokens.filter(result => result.status === "fulfilled").length, 1, "only one concurrent personal rotation succeeds");
+    assert.equal(await personalApi.verify(agentName, issuedToken.token), null, "previous credential is revoked atomically");
+    const tokenWinner = concurrentTokens.find(result => result.status === "fulfilled")! as PromiseFulfilledResult<Awaited<ReturnType<typeof personalApi.generate>>>;
+    assert.deepEqual(await personalApi.verify(agentName, tokenWinner.value.token), { userId: integrationMemberId, email: integrationMemberEmail });
+    await personalApi.revoke(agentName, integrationMemberId);
+    assert.equal(await personalApi.verify(agentName, tokenWinner.value.token), null, "personal revocation removes the credential and reference together");
+    pass("personal API credentials: stable issuer, encrypted scope, PostgreSQL rotation CAS and atomic revocation");
     const { checkMemberTiers } = await import("./member-tiers-check");
     await checkMemberTiers(integrationMemberId, integrationMemberEmail);
     pass("member tier catalog, assignment/deletion serialization and shared rollback");

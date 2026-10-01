@@ -7,7 +7,7 @@ type RouteContext = { params: Promise<{ name: string }> };
 export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
-    return Response.json(await apiTokenUseCases.status(name, user.email));
+    return Response.json(await apiTokenUseCases.status(name, user.id));
   } catch (error) {
     return apiError(error);
   }
@@ -16,18 +16,18 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
 export const POST = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
-    // Returns the raw token. It is stored encrypted, not hashed, so the owner
+    // Returns the raw token. It is stored encrypted, not hashed, so its issuing user
     // can read it back later through the sibling `reveal` route.
-    return Response.json(await apiTokenUseCases.generate(name, user.email));
+    return Response.json(await apiTokenUseCases.generate(name, user.id));
   } catch (error) {
     return apiError(error);
   }
 });
 
-export const DELETE = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
+export const DELETE = withAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
-    await apiTokenUseCases.revoke(name, user.email);
+    await apiTokenUseCases.revoke(name, user.id);
     return new Response(null, { status: 204 });
   } catch (error) {
     return apiError(error);

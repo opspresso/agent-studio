@@ -54,14 +54,14 @@ describe("actorKey", () => {
 
 describe("principalActor", () => {
   it("maps a session principal to a user actor", () => {
-    expect(principalActor({ email: "a@example.com", viaToken: false })).toEqual({
+    expect(principalActor({ userId: "fixture-user", email: "a@example.com", viaToken: false })).toEqual({
       kind: "user",
       id: "a@example.com",
     });
   });
 
   it("maps a token principal to its own kind, carrying the owner's email", () => {
-    expect(principalActor({ email: "a@example.com", viaToken: true })).toEqual({
+    expect(principalActor({ userId: "fixture-user", email: "a@example.com", viaToken: true })).toEqual({
       kind: "agent-token",
       id: "a@example.com",
     });

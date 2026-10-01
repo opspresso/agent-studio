@@ -33,7 +33,8 @@ export const keys = {
   }),
   agent: (name: string) => ({ PK: `AGENT#${name}`, SK: "META" }),
   agentPartition: (name: string) => `AGENT#${name}`,
-  agentApiToken: (name: string) => ({ PK: `AGENT#${name}`, SK: "APITOKEN" }),
+  agentApiToken: (name: string, tokenId: string) => ({ PK: `AGENT#${name}`, SK: `APITOKEN#${tokenId}` }),
+  agentApiTokenUser: (name: string, userId: string) => ({ PK: `AGENT#${name}`, SK: `APITOKENUSER#${userId}` }),
   workspacePolicy: (name: string) => ({ PK: `AGENT#${name}`, SK: "WORKSPACEPOLICY" }),
   workspaceRepositoryCreation: (agent: string, repository: string) => ({ PK: `AGENT#${agent}`, SK: `REPOSITORYCREATE#${repository.toLowerCase()}` }),
 

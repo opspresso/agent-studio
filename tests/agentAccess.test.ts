@@ -59,9 +59,6 @@ function fakeRepo(agents: Agent[]): AgentRepository {
     create: async (p) => void byName.set(p.name, p),
     update: async (p) => void byName.set(p.name, p),
     delete: async (name) => void byName.delete(name),
-    getApiToken: async () => null,
-    setApiToken: async () => {},
-    deleteApiToken: async () => {},
   };
 }
 

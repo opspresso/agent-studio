@@ -108,10 +108,10 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 표면은 이 둘 중 하나를 지나며, `visibility` 나 `memberEmails` 를 직접 비교하는 두 번째
 판정을 만들지 않는다.
 
-**세 부류의 표면이 세 가지로 다르게 게이트된다.** 사람이 세션으로 들어오는 콘솔·chat 은
-`assertAgentAccessible` 로 막는다. API token, trigger, webhook, 그리고
+콘솔·Chat과 개인 API 토큰은 인증된 사용자의 현재 `assertAgentAccessible` 판정을 적용한다.
+개인 토큰은 Agent 소유자가 아니라 발급 사용자 ID에 묶인다. trigger, webhook, 그리고
 소유자가 직접 연결한 Telegram·Teams bot 은 *자격 증명 자체가 접근권* 이라 visibility 를 묻지
-않는다. token 은 소유자로서 행동하고, bot 배선은 소유자의 선택이다. Slack bot 만 그 중간에
+않는다. bot 배선은 소유자의 선택이다. Slack bot 만 그 중간에
 있다: workspace 의 누구나 말을 걸 수 있으므로, private agent 의 bot 은 `users.info` 의
 이메일로 묻는 사람을 식별해 초대 여부를 확인하고, 이메일을 공유하지 않는 workspace 의
 사용자는 거절한다 (`slackSenderMayAccess`, 런, `!mute`·`!stop` 명령, native 중단 이벤트, thread-start 인사가 같은
@@ -131,7 +131,8 @@ visibility 이전처럼 열려 있다: 이름과 지출 집계는 카탈로그 �
 | Agent, Agent 설정 | 접근 가능한 사용자 (`assertAgentAccessible`, public 은 전원, private 은 소유자·초대 멤버·admin) | 소유자 또는 설정된 admin (`assertAgentWritable`) |
 | Agent trace | 소유자 또는 설정된 admin | — |
 | Agent Slack 설정 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
-| Agent API token, trigger, MCP 연결 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
+| 개인 Agent API token | 발급 사용자 본인과 현재 Agent 접근 | 발급 사용자 본인; 생성·reveal은 현재 token 사용 tier도 검사 |
+| trigger, MCP 연결 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
 | 호출자별 usage (`usage/actors`) | 소유자 또는 설정된 admin | — |
 | Agent usage 합계 | 로그인한 모든 사용자 | — |
 | Skill / MCP 서버 / plugin | guest를 포함한 로그인 사용자 (`withAuth`) | admin (`withAdminAuth`) |
@@ -193,14 +194,10 @@ tier 변경을 처리한 인스턴스에서 무효화된다. 각 tier 가 동시
 완료된 사용량을 기준으로 검사하므로 진행 중인 실행이 잔액을 초과할 수 있다. 프로필 페이지가 읽는 것과 같은 창,
 같은 행이다. 집계가 하나뿐이므로 페이지가 가드와 어긋나는 합계를 보고할 수 없다. 사람 모양의
 한도는 `user` actor 에만 적용된다. 기계 호출자(Slack, webhook, schedule)에는 멤버가 없다.
-**agent token** 은 소유자의 email 을 싣지만 의도적으로 소유자의 개인 예산이 아니라 *자기
-agent* 의 한도에서 지출한다. token 은 서비스 자격 증명이다. 그것이 우회가 되지 않게 하는
-것은 token 게이트다. API token 권한이 없는 tier 는 token 을 발급할 수도 없고(소유자 범위,
-admin 포함) 이미 있는 token 으로 인증할 수도 없다. `authenticateExecution` 은 모든 bearer
-요청에서 소유자의 현재 tier 를 다시 확인하고 403 으로 답하므로, 강등은 그 소유자의 token 을
-멈춘다. 다만 이 검사는 `getMemberTier`의 인스턴스별 30초 캐시를 사용하므로 다른 인스턴스에는
-그만큼 전파가 늦을 수 있다. 멤버 행이 없으면 기본 `guest`로 거절하고, 캐시를 갱신할 때 tier 저장소를 읽지 못하면 503으로
-fail-closed 한다. 권한 저장소 장애가 이미 제한된 credential 을 다시 활성화해서는 안 된다.
+개인 API token은 발급 사용자의 안정적인 ID에 묶이며 인증마다 현재 계정·등급·Agent 접근을
+검사한다. 계정 존재 여부와 현재 tier는 이메일 tier 캐시 대신 사용자 ID로 조회한다.
+확인된 사용자의 호출 권한 거절은 403, 잘못된 credential이나 삭제된 발급 계정은 401이다.
+권한 저장소 장애는 인증을 허용하지 않는다.
 
 admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘기는 대신 `assertAgentWritable`
 *안에서* 확인된다. 규칙은 "소유자 또는 admin"이고, 한 호출자가 넘기는 것을 잊은 플래그는 그
@@ -212,8 +209,7 @@ admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘�
 
 - **기록된다**. `agent.admin-override` 감사 행과
   `[authz] admin … is acting on agent …` 라인. Agent 삭제는 수행자를 알려 줬을 행을
-  파괴할 수 있고, agent 의 API token 은 *그 소유자로서* 인증하므로 admin 의 reveal 은 그 둘에
-  더해 `secret.reveal` 행을 남긴다.
+  파괴할 수 있고, 개인 API token의 reveal은 발급 사용자 본인만 가능하고 `secret.reveal` 행을 남긴다.
 - 그것이 필요로 하는 설정 읽기는 **fail-closed** 다. 설정 저장소 장애는 소유자가 아닌 사람의
   결정적인 403 을 500 으로 바꾸는 대신 오버라이드를 거부한다.
 
@@ -230,8 +226,8 @@ Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시�
 v2 는 row 와 field 정체성을 AES-GCM AAD 로 묶으므로 암호문만 다른 위치로 옮기면 인증에
 실패한다. 기존 `enc:v1:` 값은 다시 저장하거나 재발급하기 전까지 그대로 읽는다.
 
-Agent API token 과 webhook trigger secret 은 각각 agent 이름과
-`agent + triggerId` 에 묶인다. Slack 의 bot token·signing secret, Telegram 의 bot
+개인 API token은 `agent + userId + credentialId`, webhook trigger secret은
+`agent + triggerId`에 묶인다. Slack 의 bot token·signing secret, Telegram 의 bot
 token·webhook secret, Teams 의 app password 는 `agent + integration + field` 를 쓴다.
 MCP registry header 는 항목 이름과 header 이름에, managed MCP 의 environment 는
 항목 이름과 변수 이름에 묶인다. HTTP header의 override 병합만 이름의 대소문자를 무시하고,
@@ -276,19 +272,15 @@ Agent별 MCP 문자열 오버라이드는 저장 당시 registry URL 의 fingerp
 
 | 시크릿 | 엔드포인트 | 누가 |
 |---|---|---|
-| Agent API token | `POST /api/agents/{name}/token/reveal` | 소유자 또는 admin |
+| 개인 Agent API token | `POST /api/agents/{name}/token/reveal` | 발급 사용자 본인 |
 | Webhook trigger 시크릿 | `POST /api/agents/{name}/triggers/{trigger}/reveal` | 소유자 또는 admin |
 
-둘 모두 **읽는데도 POST** 다. 응답 본문이 살아 있는 자격 증명이므로 캐시, 브라우저 기록,
-프리페치 바깥에 머물러야 한다. 모든 reveal 은 호출자의 email 과 함께 **감사 행** 을 남기고, 그
-옆에 서버 측 로그 라인도 남긴다. 행은 나중의 질문이 조회하는 것이고, 라인은 감사 저장소 자체가
-불가용할 때 살아남는 것이다.
+둘 모두 읽기에도 POST를 사용한다. 응답 본문이 살아 있는 자격 증명이므로 캐시·브라우저 기록·
+프리페치 바깥에 둔다. 모든 reveal은 실제 수행자의 email과 함께 감사 행을 남긴다.
 
 따라서 둘은 해시가 아니라 **암호화해서** 저장되며, 이는 의도된 트레이드오프다. 데이터스토어만으로는
 하나도 쓸 수 없지만, 데이터스토어 *더하기* `AES_ENCRYPTION_KEY` 면 쓸 수 있다. **그 키를 테이블
-덤프와 살아 있는 agent 자격 증명 사이에 서 있는 것으로 다뤄라.** reveal 이 생기기 전에 발급된
-agent token 은 대신 SHA-256 해시로 저장돼 있다. 검증은 되지만 다시 보여 줄 수는 없으므로
-콘솔이 재발급을 제안한다.
+덤프와 살아 있는 agent 자격 증명 사이에 서 있는 것으로 다뤄라.** 공용 agent token은 개인 credential로 간주하지 않으며 새 사용자별 토큰을 발급해야 한다.
 
 ### 발급한 시크릿의 접두사
 
@@ -297,13 +289,12 @@ agent token 은 대신 SHA-256 해시로 저장돼 있다. 검증은 되지만 �
 
 | 접두사 | 시크릿 |
 |---|---|
-| `ast_` | Agent API token (소유자 관리) |
+| `ast_` | 개인 Agent API token (발급 사용자 관리) |
 | `asw_` | Webhook trigger 시크릿 (소유자 관리) |
 | `asg_` | Telegram webhook 시크릿 (agent 마다 발행. Telegram 에게만 건네고 결코 reveal 하지 않는다) |
 
-랜덤 부분은 32바이트(256비트)이므로 접두사가 잡아먹는 엔트로피는 문제가 되지 않는다. 검증은
-접두사를 결코 보지 않으므로 예전 표기로 발급된 token. `ad*_`, 그 이전의 `sk_proj_`. 도 계속
-동작한다.
+랜덤 secret은 32바이트(256비트)다. 개인 API token은 공개 credential UUID와 secret을 함께
+사용하며 UUID만으로는 인증되지 않는다. 과거 공용 토큰은 개인 사용자를 추정하는 근거로 쓰지 않는다.
 
 agent token 의 표시용 마스크는 생성 시점에 계산돼 암호문 옆에 저장되므로, token 을 나열하는
 데는 복호화 비용이 들지 않는다. 그 마스크는 접두사와 가장자리 문자만 실어 나르며, token 을
@@ -315,7 +306,7 @@ agent token 의 표시용 마스크는 생성 시점에 계산돼 암호문 옆�
 
 | 표면 | 자격 증명 | 검증 |
 |---|---|---|
-| 실행 엔드포인트 (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer ast_…` | 복호화 후 상수 시간 비교(레거시 token 은 해시 비교), 경로의 `{name}` 으로 범위 제한. **agent 소유자로서** 실행된다 (`authenticateExecution`) |
+| 실행 엔드포인트 (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer ast_…` | 개인 credential의 상수 시간 비교, 현재 발급 계정·tier·Agent 접근 검사. **발급 사용자로서** 실행된다 (`authenticateExecution`) |
 | Slack 이벤트 | Slack 서명 시크릿 | HMAC + `timingSafeEqualString`, 5분 리플레이 윈도, agent 별 시크릿 |
 | Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | 이 플랫폼이 webhook 을 등록할 때 쓴 agent 별 시크릿(`asg_…`)과 `timingSafeEqualString` 비교. Telegram 이 배달마다 그대로 되돌려주며, 그 밖에 확인할 서명은 없다 |
 | Teams messaging endpoint | Bot Framework bearer 토큰 (JWT) | RS256 서명을 서비스가 공개한 JWKS(`login.botframework.com`) 로 검증하고, 발급자 `https://api.botframework.com`, audience = 그 봇의 App ID, `exp`/`nbf`(5분 skew), 그리고 **`serviceurl` 클레임 = activity 의 `serviceUrl`** 을 요구한다. 답은 그 주소로 이 앱의 토큰을 붙여 나가므로. Emulator 토큰은 받지 않는다 (`src/infrastructure/teams/client.ts`) |
@@ -372,7 +363,7 @@ Cookie session으로 인증하는 `POST`·`PUT`·`PATCH`·`DELETE`는 `Origin`�
 요청 `Host`와 인증 설정의 프로토콜로 만든 origin과 정확히 같아야 하며, 다른 허용 도메인의
 origin도 거부한다. Origin이 없거나 `null`이거나 URL로
 해석되지 않으면 403이다. 세 session wrapper가 일반 console API를 한 번에 보호하고, agent
-실행 API는 bearer agent token을 먼저 검증한 뒤 cookie session으로 fallback할 때 같은 검사를
+실행 API는 Authorization 헤더가 없을 때만 cookie session을 사용하며 같은 검사를
 적용한다. bearer token, webhook signature처럼 cookie를 쓰지 않는 머신 호출에는 CSRF
 검사를 적용하지 않는다.
 

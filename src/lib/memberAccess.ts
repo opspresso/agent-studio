@@ -6,6 +6,7 @@
 
 import { tierMayEdit, toMemberTier, type MemberTier } from "@/domain/member/tiers";
 import { memberRepository } from "@/infrastructure/db/repositories/memberRepository";
+import type { Member } from "@/domain/member/types";
 import { log } from "@/shared/logger";
 import { getMemberTierDefinitions, isAdminEmail, isConfiguredAdmin } from "./runtime-settings";
 
@@ -98,4 +99,11 @@ export async function getMemberTier(email: string): Promise<MemberTier | null> {
   }
   tierCache.set(key, { tier, expiresAt: now + TIER_CACHE_TTL_MS });
   return resolved(tier);
+}
+
+/** Resolve a credential's stable user ID from the current account row, without the email tier cache. */
+export async function getExecutionMemberById(id: string): Promise<Member | null> {
+  const member = await memberRepository.getById(id);
+  if (!member) return null;
+  return { ...member, tier: await isConfiguredAdmin(member.email) ? "admin" : toMemberTier(member.tier, await getMemberTierDefinitions()) };
 }

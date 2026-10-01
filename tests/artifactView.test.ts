@@ -57,11 +57,6 @@ const agents: AgentRepository = {
   async create() {},
   async update() {},
   async delete() {},
-  async getApiToken() {
-    return null;
-  },
-  async setApiToken() {},
-  async deleteApiToken() {},
 };
 
 function setup(stored: Artifact | null) {

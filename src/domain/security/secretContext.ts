@@ -1,6 +1,6 @@
-/** AES-GCM context for one agent's bearer token. */
-export function agentApiTokenContext(agentName: string): string {
-  return JSON.stringify(["agent", agentName, "api-token"]);
+/** AES-GCM binds a personal bearer credential to its Agent, user and public selector. */
+export function agentApiTokenContext(agentName: string, userId: string, tokenId: string): string {
+  return JSON.stringify(["agent", agentName, "api-token", userId, tokenId]);
 }
 
 export function sourceReferenceContext(agentName: string, id: string): string {

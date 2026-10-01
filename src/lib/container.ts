@@ -184,6 +184,8 @@ import { createAgentUseCases, setAdminCheck } from "@/application/agent/agentUse
 import { createTraceUseCases } from "@/application/trace/traceUseCases";
 import { createUsageUseCases } from "@/application/usage/usageUseCases";
 import { createConfigurationUseCases } from "@/application/agent/configurationUseCases";
+import { apiTokenRepository } from "@/infrastructure/db/repositories/apiTokenRepository";
+import { getExecutionMemberById } from "@/lib/memberAccess";
 import { createApiTokenUseCases } from "@/application/agent/apiTokenUseCases";
 import { createAgentSlackUseCases, resolveAgentSlackRuntime } from "@/application/slack/agentSlack";
 import {
@@ -575,7 +577,7 @@ export const agentUseCases = createAgentUseCases(agentRepository, {
 // `getMemberTier` is the issuance gate's tier source: a token may only exist
 // for an owner whose tier allows one, and the same resolver answers the
 // authentication-time check in `executionAuth.ts`.
-export const apiTokenUseCases = createApiTokenUseCases(agentRepository, secretCipher, getMemberTier);
+export const apiTokenUseCases = createApiTokenUseCases({ agents: agentRepository, tokens: apiTokenRepository, members: { getById: getExecutionMemberById }, cipher: secretCipher, now: () => new Date(), newId: randomUUID });
 export const triggerUseCases = createTriggerUseCases({
   triggers: triggerRepository,
   agents: agentRepository,

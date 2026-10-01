@@ -2,7 +2,6 @@ import { keys } from "@/infrastructure/db/keys";
 import {
   conditions,
   deleteIndexPartition,
-  deleteItem,
   deletePartition,
   getItem,
   putItem,
@@ -10,9 +9,9 @@ import {
   updateItem,
 } from "@/infrastructure/db/store";
 import type { AgentRepository } from "@/domain/agent/repository";
-import type { Agent, AgentApiToken } from "@/domain/agent/types";
+import type { Agent } from "@/domain/agent/types";
 import { boundedPageLimit } from "@/shared/pageLimit";
-import { agentIsLive, putAgentItem } from "@/infrastructure/db/agentLifecycle";
+import { agentIsLive } from "@/infrastructure/db/agentLifecycle";
 import { readAgentConfiguration } from "@/infrastructure/db/agentConfiguration";
 
 const ENTITY_TYPE = "AGENT";
@@ -167,34 +166,4 @@ export const agentRepository: AgentRepository = {
     );
   },
 
-  async getApiToken(name: string): Promise<AgentApiToken | null> {
-    const item = await getItem(keys.agentApiToken(name));
-    if (!item) {
-      return null;
-    }
-    // One of `token` (encrypted, revealable) or `tokenHash` (legacy) is set.
-    return {
-      ...(typeof item.token === "string" ? { token: item.token } : {}),
-      ...(typeof item.tokenHash === "string" ? { tokenHash: item.tokenHash } : {}),
-      masked: item.masked as string | undefined,
-      createdAt: item.createdAt as string,
-    };
-  },
-
-  async setApiToken(name: string, token: AgentApiToken): Promise<void> {
-    await putAgentItem(name, {
-      ...keys.agentApiToken(name),
-      entityType: "APITOKEN",
-      // Written as one whole item, so regenerating an encrypted token over a
-      // legacy hashed one leaves no stale `tokenHash` behind.
-      ...(token.token !== undefined ? { token: token.token } : {}),
-      ...(token.tokenHash !== undefined ? { tokenHash: token.tokenHash } : {}),
-      masked: token.masked,
-      createdAt: token.createdAt,
-    });
-  },
-
-  async deleteApiToken(name: string): Promise<void> {
-    await deleteItem(keys.agentApiToken(name));
-  },
 };

@@ -13,32 +13,6 @@ import type { RuntimePolicy } from "@/domain/execution/runtimeSession";
  */
 export type AgentVisibility = "public" | "private";
 
-/**
- * Per-agent API token. The token is stored AES-256-GCM encrypted so the owner
- * can read it back in the console — a deliberate trade: unlike a hash, stored
- * ciphertext is usable by anyone who obtains both the table and the encryption
- * key. Exactly one of the two forms below is present.
- */
-export interface AgentApiToken {
-  /** Context-bound AES-256-GCM ciphertext, decryptable by the owner-gated read path. */
-  token?: string;
-  /**
-   * SHA-256 hash — the only form tokens issued before revealing existed have.
-   * Verification still accepts them; they can never be shown again, so the
-   * console offers regeneration instead.
-   */
-  tokenHash?: string;
-  /**
-   * The display mask computed at generation time, e.g. `ast_••••••••wXyZ`.
-   * Stored rather than derived so a hash-only token can still be identified,
-   * and so listing one costs no decryption. It holds nothing beyond the prefix
-   * and the few edge characters a mask reveals. Absent on tokens issued before
-   * masks were displayed.
-   */
-  masked?: string;
-  createdAt: string;
-}
-
 /** Per-agent Slack bot credentials. Secrets are AES-encrypted at rest. */
 export interface SlackIntegration {
   /** Captured from the authenticated owner; never accepted as a client-supplied email. */

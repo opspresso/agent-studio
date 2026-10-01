@@ -130,7 +130,7 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 |---|---|---|---|---|
 | Agent | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
 | 삭제된 Agent 이름 tombstone | `AGENT#{name}` | `META` | — | — |
-| Agent API 토큰 | `AGENT#{name}` | `APITOKEN` | — | — |
+| 개인 Agent API 토큰 | `AGENT#{name}` | `APITOKEN#{credentialId}` / `APITOKENUSER#{userId}` | — | — |
 | Workspace 정책 / 저장소 생성 receipt | `AGENT#{name}` | `WORKSPACEPOLICY` / `REPOSITORYCREATE#{repository lowercased}` | — | — |
 | Workspace | `WORKSPACE#{id}` | `META` | `WORKSPACEOWNER#{email}` | `{createdAt}#{id}` |
 | Workspace Chat 역참조 | `WORKSPACECHAT#{chatId}` | `META` | — | — |
@@ -380,7 +380,7 @@ Agents·Plugins·Skills·Tools·Models·Artifacts 카탈로그는 행/그리드 
 너비에 맞춘 최대 4열 배치를 소유한다. 행의 반응형 배치도 본문 컨테이너 너비를 따른다.
 Agent 상세의 Playground·Integrations·Settings는 `AgentPageColumns.module.css`의 동일한
 7:5 가로 비율을 쓴다. Settings처럼 한 영역만 있는 페이지는 왼쪽 영역을 사용하고, 작은 화면에서는 전체 폭으로 쌓인다.
-Agent의 API 토큰·봇·Webhook·Schedules는 Integrations에서 관리하고, 공개 범위·비용 한도·기본 정보는 Settings에서 관리한다.
+본인의 Agent API 토큰과 Agent 소유자용 봇·Webhook·Schedules는 Integrations에서 관리하고, 공개 범위·비용 한도·기본 정보는 Settings에서 관리한다.
 외부에서 발급받는 키는 `SecretInput`으로 입력한다. 저장된 마스킹 값과 교체 초안을 분리하고,
 저장된 키는 앞뒤 4자를 드러낸 서버 마스크로 표시한다(8자 이하는 전부 숨긴다).
 교체를 눌러 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다.

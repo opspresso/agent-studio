@@ -24,7 +24,7 @@ test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/agents/fixture-agent/token", route => {
     if (route.request().method() === "GET") {
-      return route.fulfill({ json: { configured: true, masked: "ast_••••abcd", createdAt: "2026-09-26T00:00:00Z", revealable: true } });
+      return route.fulfill({ json: { configured: true, masked: "ast_••••abcd", createdAt: "2026-09-26T00:00:00Z", canIssue: true } });
     }
     if (route.request().method() === "DELETE") return route.fulfill({ status: 204 });
     if (route.request().method() === "POST") {

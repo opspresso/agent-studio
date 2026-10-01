@@ -23,7 +23,7 @@
   중 배포가 켠 수단으로 로그인한다. 로컬 개발에서는 `scripts/dev-session.ts` 가 하나 출력해 준다). 세션이 없거나 유효하지 않으면 →
   `401 { "error": "Unauthorized" }`. 로그인 플로우 자체는 `/api/auth/*` 아래에 있다
   (Better Auth catch-all). 실행 엔드포인트 셋(`predict`, `chat/completions`,
-  `agent`)은 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 오는 **Agent별 API 토큰**도
+  `agent`)은 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 오는 **사용자별 Agent API 토큰**도
   받는다. 토큰은 Agent 소유자를 대신해 동작하며 해당 Agent 범위로 한정된다
   (참고: [Agent API 토큰](#agent-api-토큰)). 기계 표면은 게이트가 다르다:
   `/api/slack/events/*` 는 Slack signing secret,
@@ -1217,36 +1217,28 @@ URL 이 설정되지 않았으면 `503`, 그리고 `Cache-Control: public, max-a
 
 ## Agent API 토큰
 
-Agent별 토큰은 외부 호출자가 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 실행
-엔드포인트에 닿게 해 준다. 토큰은 해시가 아니라 AES-256-GCM 으로 암호화해 저장되므로, 소유자가
-요청하면 다시 읽어 볼 수 있다.
+각 사용자는 접근 가능한 Agent에 본인 API 토큰을 발급한다. 토큰은 발급한 Studio 사용자 ID와
+Agent에 고정되며 Agent 소유권이 바뀌어도 다른 사용자로 실행되지 않는다. 토큰의 관리 대상은
+항상 로그인한 사용자 본인이다. 관리자도 다른 사용자의 토큰을 조회하거나 재발급하지 않는다.
 
 ```
-GET    /api/agents/{name}/token          → { configured, masked?, createdAt?, revealable? }
-POST   /api/agents/{name}/token          → { token, masked, createdAt }   (raw token)
-POST   /api/agents/{name}/token/reveal   → { token, createdAt }           (raw token)
+GET    /api/agents/{name}/token          → { configured, canIssue, masked?, createdAt? }
+POST   /api/agents/{name}/token          → { token, masked, createdAt }
+POST   /api/agents/{name}/token/reveal   → { token, createdAt }
 DELETE /api/agents/{name}/token          → 204
 ```
 
-토큰은 `ast_` + 랜덤 32바이트(base64url)다. `masked` 는 생성 시점에 기록된 표시용 마스크
-(`ast_••••…••wXyZ`)다. 현재 토큰은 암호화되어 reveal 할 수 있고, 마스크는 routine status
-조회에서 복호화하지 않고 *어느* 토큰이 설정돼 있는지 보여 주기 위해 따로 저장한다. 암호화
-저장과 마스크 기록 전에 발급된 legacy 토큰에는 해시만 있어 복구할 수 없지만 계속 동작한다.
+형식은 `ast_<credential UUID>.<32-byte base64url secret>`이다. 공개 selector는 credential 행을
+직접 조회하는 주소이며 실제 secret은 전체 값의 상수 시간 비교로 검증한다. AES-GCM context는
+Agent·발급 사용자 ID·credential UUID를 모두 포함한다. routine status는 저장한 마스크만 반환한다.
 
-넷 다 소유자와 effective admin 으로 제한된다 (그 외에는 403). `POST` 는 토큰을 생성하거나 재생성한다.
-재생성은 이전 토큰을 덮어쓰고, 그 토큰은 즉시 동작을 멈춘다. 토큰은 자기 agent 범위로 한정된다
-(요청 경로의 `{name}` 에 대해 검증된다).
+GET은 로그인과 현재 Agent 접근을 검사한다. 생성·reveal은 추가로 발급 사용자의 현재
+`tierMayUseApiTokens` 권한을 검사한다. 폐기는 본인 credential에만 적용하며 사용 권한이 철회된
+사용자도 본인 토큰을 폐기할 수 있다. 회전·폐기는 다른 사용자 토큰을 변경하지 않는다.
+동시 회전·Agent 삭제와의 충돌은 409로 반환하며 임의 재발급하지 않는다.
 
-생성에는 **소유자의 tier** 게이트가 추가로 걸린다: API 토큰을 쓸 수 없는 tier
-(`src/domain/member/tiers.ts`의 `tierMayUseApiTokens`, `guest`) 는 admin 을 포함해 누가
-요청하든 `403` 으로 답한다. 그 토큰이 그 소유자로서 인증하게 되기 때문이다. 인증 시점의 대응
-게이트는 아래 실행 엔드포인트에 있다.
-
-`/reveal` 은 읽기인데도 POST 다: 본문이 살아 있는 인증 정보라서 캐시·히스토리·프리페치 밖에
-머물러야 한다. 암호화 저장 이전에 발급된 토큰은 `revealable` 이 `false` 다. 해시만 존재하므로
-`/reveal` 은 재생성하라는 안내와 함께 `400` 으로 답한다. 검증은 두 형태를 모두 받아들인다
-(상수 시간 복호화-비교, 또는 레거시 토큰의 해시 비교). 모든 reveal 은 호출자의 이메일과 함께
-서버 측에 로그된다.
+`/reveal`은 살아 있는 credential을 반환하므로 POST를 사용하고 감사 기록을 남긴다.
+공용 owner token·legacy hash token은 개인 사용자에 임의 귀속하지 않으며 인증에 사용하지 않는다.
 
 ## 실행
 
@@ -1266,10 +1258,11 @@ curl --fail-with-body http://localhost:3000/api/agents/my-agent/predict \
 Bearer 대신 세션 쿠키로 변경 요청을 보내면 동일 출처의 `Origin`도 필요하다.
 API별 요청·응답 형태는 아래 절을 따른다.
 
-아래 세 엔드포인트는 세션 쿠키 또는 agent API 토큰(`Authorization: Bearer <token>`)으로
-인증한다. 토큰은 agent 소유자로서 인증한다. 유효하지만 그 소유자의 *현재* tier 가 API 토큰을
-쓸 수 없는 토큰은 `403` 으로 답한다 (`401` 이 아니다, 인증 정보는 유효하고 정책이 거절하는
-것이다). tier 해석에는 최대 30초의 인스턴스별 캐시가 있으므로 강등 전파가 그만큼 늦을 수 있다.
+아래 세 엔드포인트는 세션 쿠키 또는 개인 Agent API 토큰(`Authorization: Bearer <token>`)으로
+인증한다. 토큰 발급 사용자를 안정적인 사용자 ID로 다시 읽고 현재 계정·등급·Agent 접근을
+검사한다. 사용자 계정 조회에는 이메일 기반 tier 캐시를 사용하지 않는다. 잘못된 credential은
+401, 확인된 사용자의 현재 호출 권한 거절은 403이다. Authorization 헤더가 있으면 해당
+credential만 검증하며 실패·잘못된 scheme을 세션 사용자로 대체하지 않는다.
 
 셋 다 `MAX_RUN_DURATION_MS` 로 한계 지어지고 (거절이 아니라 런을 스트림 도중에 끊는 벽시계
 데드라인이다), 호출자별 동시성 가드와 그 agent 의 비용 가드를 거쳐 admit 된다. 둘 중 어느

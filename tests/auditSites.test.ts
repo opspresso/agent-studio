@@ -5,12 +5,8 @@ import {
   deleteAgent,
   setAdminCheck,
 } from "@/application/agent/agentUseCases";
-import {
-  generateApiToken,
-  getApiTokenStatus,
-  revealApiToken,
-  revokeApiToken,
-} from "@/application/agent/apiTokenUseCases";
+import { createApiTokenUseCases } from "@/application/agent/apiTokenUseCases";
+import type { ApiToken } from "@/domain/auth/apiToken";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { listAgentTraces } from "@/application/trace/traceUseCases";
@@ -89,13 +85,6 @@ function agents(overrides: Partial<AgentRepository> = {}): AgentRepository {
     create: async () => {},
     update: async () => {},
     delete: async () => {},
-    getApiToken: async () => ({
-      token: "enc:v1:tok_secret",
-      masked: "****",
-      createdAt: "2026-01-01T00:00:00Z",
-    }),
-    setApiToken: async () => {},
-    deleteApiToken: async () => {},
     ...overrides,
   };
 }
@@ -127,7 +116,7 @@ describe("agent acts", () => {
       profileReaderFor: () => null }, "p", ADMIN, "2026-01-01", "2026-01-31");
     await createArtifactUseCases({ listByAgent: async () => [] } as never, {} as never, repo)
       .listByAgent("p", ADMIN);
-    await getApiTokenStatus(repo, "p", ADMIN);
+    await personalTokens(repo).status("p", "admin");
     await getAgentSlack(repo, "p", ADMIN, cipher);
     await getAgentTelegram(repo, "p", ADMIN, cipher);
     await getAgentTeams(repo, "p", ADMIN, cipher);
@@ -178,28 +167,33 @@ describe("agent acts", () => {
   });
 });
 
-describe("agent API token", () => {
-  it("records issuing one", async () => {
-    await generateApiToken(agents(), "p", OWNER, cipher);
-    expect(actions()).toEqual(["secret.rotate"]);
+function personalTokens(repo = agents()) {
+  const records = new Map<string, ApiToken>();
+  records.set("owner", { id: "00000000-0000-4000-8000-000000000001", agentName: "p", userId: "owner", token: "enc:v1:own-token", masked: "****", createdAt: "2026-01-01" });
+  records.set("admin", { id: "00000000-0000-4000-8000-000000000002", agentName: "p", userId: "admin", token: "enc:v1:admin-token", masked: "****", createdAt: "2026-01-01" });
+  return createApiTokenUseCases({ agents: repo, cipher, now: () => new Date(), newId: () => "00000000-0000-4000-8000-000000000003",
+    members: { getById: async id => ({ id, email: id === "admin" ? ADMIN : OWNER, name: id, tier: "member", image: null, joinedAt: "2026-01-01", lastLoginAt: "2026-01-01" }) },
+    tokens: { get: async (_name, id) => [...records.values()].find(row => row.id === id) ?? null, forUser: async (_name, id) => records.get(id) ?? null,
+      replace: async token => { records.set(token.userId, token); }, revoke: async (_name, id) => { records.delete(id); } } });
+}
+describe("personal API token audit", () => {
+  it("records personal issuance", async () => {
+    await personalTokens().generate("p", "owner");
+    expect(rows).toMatchObject([{ action: "secret.rotate", actorEmail: OWNER }]);
   });
-
-  it("records revealing one", async () => {
-    await revealApiToken(agents(), "p", OWNER, cipher);
-    expect(rows[0]).toMatchObject({ action: "secret.reveal", target: "agent:p" });
+  it("records revealing one's own token", async () => {
+    await personalTokens().reveal("p", "owner");
+    expect(rows[0]).toMatchObject({ action: "secret.reveal", target: "agent:p", actorEmail: OWNER });
   });
-
-  it("records revoking one", async () => {
-    await revokeApiToken(agents(), "p", OWNER);
-    expect(actions()).toEqual(["secret.revoke"]);
+  it("records personal revocation", async () => {
+    await personalTokens().revoke("p", "owner");
+    expect(rows[0]).toMatchObject({ action: "secret.revoke", actorEmail: OWNER });
   });
-
-  it("records the override *and* the reveal when an admin reads someone else's token", async () => {
-    // The token authenticates as the owner, so this is an admin taking a
-    // credential that acts in another person's name. One row would not say that.
-    setAdminCheck(async (email) => email === ADMIN);
-    await revealApiToken(agents(), "p", ADMIN, cipher);
-    expect(actions()).toEqual(["agent.admin-override", "secret.reveal"]);
+  it("records an administrator's own credential without impersonating the Agent owner", async () => {
+    setAdminCheck(async email => email === ADMIN);
+    await personalTokens().reveal("p", "admin");
+    expect(actions()).toEqual(["secret.reveal"]);
+    expect(rows[0]?.actorEmail).toBe(ADMIN);
   });
 });
 

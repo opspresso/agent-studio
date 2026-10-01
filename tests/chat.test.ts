@@ -142,11 +142,6 @@ const emptyAgents: AgentRepository = {
   async create() {},
   async update() {},
   async delete() {},
-  async getApiToken() {
-    return null;
-  },
-  async setApiToken() {},
-  async deleteApiToken() {},
 };
 
 const emptyConfigurations = {
