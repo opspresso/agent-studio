@@ -99,6 +99,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   branding={branding}
                   version={version}
                   viewer={viewer}
+                  userName={user?.name ?? null}
                   userImage={user?.image ?? null}
                   signInProviders={config.authProviders}
                 >

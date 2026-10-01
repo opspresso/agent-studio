@@ -40,12 +40,14 @@ export const MCP_RUNTIME_COLOR: Record<McpRuntime, string> = {
  */
 export const PLUGIN_COLOR = "blue";
 
-/** A member's tier — a kind, not a state. Shown on the profile page. */
-export const MEMBER_TIER_COLOR: Record<MemberTier, string> = {
-  admin: "grape",
-  member: "blue",
-  guest: "cyan",
-};
+/** A member's tier is a kind, not a state; custom tiers share the member colour. */
+export function memberTierColor(tier: MemberTier): string {
+  switch (tier) {
+    case "admin": return "grape";
+    case "guest": return "cyan";
+    default: return "blue";
+  }
+}
 
 /** Green reads "safe to call", blue "writes something" — the usual convention. */
 export const HTTP_METHOD_COLOR: Record<"GET" | "POST", string> = {
