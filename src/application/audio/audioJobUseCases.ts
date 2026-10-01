@@ -5,7 +5,7 @@ import type { FileRetention } from "@/domain/artifact/retention";
 import type { SourceFile, SourceFileRepository } from "@/domain/artifact/sourceFile";
 import { sourceFileAvailability, type SourceFileAvailability } from "@/domain/artifact/sourceFile";
 import { artifactPath } from "@/domain/artifact/paths";
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunActor, RunUser, RunIdentity, ExecutionGrant } from "@/domain/execution/actor";
 import type { AudioJobConfigRepository } from "@/domain/audio/config";
 import { getModelConfig } from "@/domain/llm/models";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
@@ -31,6 +31,7 @@ export interface AudioJobUseCaseDeps {
   resolveArtifact?(id: string, email: string): Promise<SourceFile>;
   sourceIdentity(agent: string, id: string, email: string): Promise<{ namespace: string; itemId: string; refresh?: AudioJob["sourceRefresh"] }>;
   authorize(agent: string, email: string): Promise<void>;
+  authorizeRun(agent: string, identity: RunIdentity): Promise<void>;
   validateModel(model: string): Promise<void>;
   validateOutputs(input: SubmitAudioJobInput, agent: string, email: string): Promise<Pick<AudioJob, "postprocess" | "destination">>;
   limits(agent: string): Promise<{ maxActive: number; maxPerOccurrence: number }>;
@@ -106,8 +107,10 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       const { userEmail: _email, agentName: _agent, ...view } = config;
       return view;
     },
-    async submit(agentName: string, userEmail: string, input: SubmitAudioJobInput,
-      origin: { occurrence: string; actor?: RunActor; producedBy?: string }) {
+    async submit(agentName: string, user: RunUser, input: SubmitAudioJobInput,
+      origin: { occurrence: string; actor: RunActor; executionGrant?: ExecutionGrant; producedBy?: string }) {
+      const userEmail = user.email;
+      await deps.authorizeRun(agentName, { user, ...origin });
       await deps.authorize(agentName, userEmail);
       if (input.source.kind === "artifact") {
         if (!deps.resolveArtifact) throw new ValidationError("Artifact inputs are unavailable");
@@ -169,10 +172,10 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
         identity = await deps.sourceIdentity(agentName, input.source.sourceRef, userEmail);
       } else throw new ValidationError("Invalid audio source");
       const sourceKey = createHash("sha256").update(JSON.stringify([
-        userEmail, identity.namespace, identity.itemId, task, input.processingRevision ?? "1",
+        user.userId, identity.namespace, identity.itemId, task, input.processingRevision ?? "1",
       ])).digest("hex");
       const limits = config ? { maxActive: config.maxActive, maxPerOccurrence: config.maxPerOccurrence } : await deps.limits(agentName);
-      const result = await deps.jobs.submit({ agentName, userEmail, actor: origin.actor,
+      const result = await deps.jobs.submit({ agentName, userEmail, user, actor: origin.actor, executionGrant: origin.executionGrant,
         ...(origin.producedBy ? { producedBy: origin.producedBy } : {}),
         source, sourceKey, sourceIdentity: { namespace: identity.namespace, itemId: identity.itemId }, sourceRefresh: identity.refresh,
         model: input.model ?? "", task, language: input.language,
@@ -203,8 +206,11 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       if (!await deps.jobs.delete(agent, id, revision)) throw new ConflictError("Audio job changed or is still active; cancel it before deleting");
       return { deleted: true };
     },
-    async retry(agent: string, id: string, email: string, revision: number) {
-      await owned(agent, id, email);
+    async retry(agent: string, id: string, user: RunUser, revision: number) {
+      const email = user.email;
+      const previous = await owned(agent, id, email);
+      if (!user.userId || previous.user?.userId !== user.userId) throw new NotFoundError("Audio job not found");
+      await deps.authorizeRun(agent, previous);
       const config = await deps.configs?.get(agent);
       if (config && (!config.enabled || config.userEmail !== email)) throw new ConflictError("Audio configuration is disabled or requires owner confirmation");
       const limits = config ? { maxActive: config.maxActive } : await deps.limits(agent);

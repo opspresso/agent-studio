@@ -68,7 +68,7 @@ schedule 메시지에 둔다. 시스템 프롬프트에는 skill 선택과 사�
 
 MCP OAuth는 해당 서버를 호출하는 운영 Agent에 연결한다. 위임을 선택한 구성에서도 원본 참조·작업·
 산출물은 메인 Agent에 보관하며, URL 갱신에 사용할 호출 Agent와 연결 세대는 별도로 유지한다.
-schedule은 검증된 owner email 문맥을 사용하고, cron 기본 요청에는 외부 저장을 포함하지 않는다.
+Schedule은 등록한 Studio 사용자의 ID와 현재 이메일을 전달하며, cron 기본 요청에는 외부 저장을 포함하지 않는다.
 
 ## 책임과 재사용 경계
 
@@ -151,15 +151,14 @@ Slack 조회·이미지·파일 생성 능력은 실행 경계에서 차단하�
 `ingestion_identity` 같은 전용 인증 도구는 개발하지 않는다. 여기서 email은 기존 MCP 인증 위에서
 개인 사용자를 결정하는 값이며, 기존 Bearer 검증을 없애는 변경은 아니다.
 
-- 대화 실행은 기존 인증 사용자 email을 사용한다.
-- 무인 실행은 owner가 로그인 상태에서 해당 자동화에 본인 실행 문맥을 설정한다. 서버가 인증된
-  owner email을 저장하고 클라이언트가 임의 email을 지정하는 입력은 받지 않는다.
-- schedule actor는 그대로 유지하고, 이 설정이 있는 실행에만 검증된 email을 `RunOrigin.userEmail`로
-  전달한다. 공용 MCP metadata 조립 함수가 `X-User-Email`을 생성한다. registry·Agent의 수동
-  예약 header override는 계속 제거한다. 설정이 없는 기존 schedule 동작은 유지한다.
-- job은 email과 원래 agent·자동화 설정 revision을 보존한다. worker·후처리·저장 요청에도 같은
-  문맥을 전달한다. 소유자 변경·멤버 비활성·연결 변경 시 현재 권한을 재검증하고 다른 사람으로
-  조용히 전환하지 않는다. 현재 owner와 저장한 주체가 다르면 재설정 전 `blocked`로 처리한다.
+- 대화 실행은 로그인 사용자 ID와 이메일을 사용한다. 자동화는 개인 토큰 발급자, 인증된 메신저
+  연결 사용자 또는 Schedule 등록자를 사용한다. 클라이언트나 모델이 실행 사용자를 지정할 수 없다.
+- job은 사용자 ID·이메일과 원래 actor·인증 근거를 보존한다. Schedule은 등록자와 설정 revision도
+  함께 보관한다. 공용 MCP metadata 조립 함수가 검증된 이메일에서 `X-User-Email`을 생성하며,
+  registry·Agent의 수동 예약 header override는 제거한다.
+- worker는 전사·후처리·외부 저장 전에 현재 계정, Agent 소유 권한, 개인 토큰·메신저 연결·Schedule의
+  유효성을 재검사한다. ID가 없는 작업이나 같은 이메일의 다른 계정으로 바뀐 작업은 실행하지 않는다.
+  수동 retry도 원래 사용자 ID와 인증 근거를 유지하며, 다른 사용자의 권한으로 대체하지 않는다.
 - Memory는 email을 정규화해 설치 조직의 active 사용자로 해석하고 기존 ACL을 적용한다.
   개인 저장은 `scope.kind=user`로 요청하며 사용자 ID는 위임 사용자에서 결정한다.
   email 없음·잘못된 email·비활성 사용자일 때 조직 scope로 fallback하지 않는다.

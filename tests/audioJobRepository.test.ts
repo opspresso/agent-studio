@@ -1,3 +1,4 @@
+import { interactiveIdentity } from "./runIdentity";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeStore } from "./fakeStore";
 import type { AudioJobInput } from "@/domain/audio/job";
@@ -12,13 +13,21 @@ const now = "2026-09-08T00:00:00.000Z";
 const until = "2026-09-08T00:02:00.000Z";
 const later = "2026-09-08T00:03:00.000Z";
 const input: AudioJobInput = {
-  agentName: "audio", userEmail: "owner@example.test", source: { kind: "file", fileId: "file-1" },
+  agentName: "audio", userEmail: "owner@example.test", ...interactiveIdentity("owner@example.test"), source: { kind: "file", fileId: "file-1" },
   sourceKey: "source-1", model: "selfhosted/asr", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
 };
 const admission = { id: "job-1", now, occurrence: "hour-1", maxActive: 1, maxPerOccurrence: 1 };
 beforeEach(() => { fake.rows.clear(); fake.seed([{ ...keys.agent("audio"), entityType: "AGENT" }]); });
 
 describe("durable audio jobs", () => {
+  it("refuses to checkpoint under a substituted caller while retaining the stored identity", async () => {
+    await jobs.submit(input, admission);
+    const leased = (await jobs.claim("audio", admission.id, now, "worker", until))!;
+    expect(await jobs.checkpoint({ ...leased, user: { ...leased.user, userId: "replacement" } },
+      { status: "completed", stage: "cleaning", dueAt: now }, now)).toBeNull();
+    expect((await jobs.get("audio", admission.id))?.user).toEqual(input.user);
+    expect((await jobs.get("audio", admission.id))?.status).toBe("running");
+  });
   it("queues multiple sources but only lets workers claim the FIFO head", async () => {
     const limits = { ...admission, maxActive: 3, maxPerOccurrence: 3 };
     await jobs.submit(input, { ...limits, id: "z-first" });

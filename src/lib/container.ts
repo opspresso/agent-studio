@@ -1,3 +1,5 @@
+import type { RunIdentity } from "@/domain/execution/actor";
+import { authorizeRunIdentity } from "@/application/auth/authorizeRunIdentity";
 import { triggerActor } from "@/application/trigger/runTrigger";
 import { createMemberTierUseCases } from "@/application/member/tierUseCases";
 import { memberTierAdministration } from "@/infrastructure/db/repositories/memberTierAdministration";
@@ -1006,11 +1008,17 @@ const deliverAgentMessage: PostCostAlert = async (agent, destination, text) => {
 };
 
 /** Repository and channel dependencies for the execution facade. */
+function authorizeAgentRun(agentName: string, identity: RunIdentity) {
+  return authorizeRunIdentity({ agents: agentRepository, members: { getById: getExecutionMemberById },
+    apiCredentials: apiTokenUseCases, webhookCredentials: webhookTokenUseCases,
+    messagingIdentities: messagingIdentityUseCases, triggers: triggerRepository }, agentName, identity);
+}
+
 export const executionDeps: ExecutionDeps = {
   // A verified PR prepares its own scoped reader; ordinary runs never receive one.
   reviewSource: undefined,
   reviewWorkspace: undefined,
-  authorizeExecutionGrant: grant => assertExecutionGrant({ apiCredentials: apiTokenUseCases, agents: agentRepository, messagingIdentities: messagingIdentityUseCases, triggers: triggerRepository, webhookCredentials: webhookTokenUseCases }, grant),
+  authorizeExecutionGrant: grant => assertExecutionGrant({ members: { getById: getExecutionMemberById }, apiCredentials: apiTokenUseCases, agents: agentRepository, messagingIdentities: messagingIdentityUseCases, triggers: triggerRepository, webhookCredentials: webhookTokenUseCases }, grant),
   getCallRoutingPolicy: getCallRoutingPolicy,
   createToolSchemaValidator,
   runtimeSessions: runtimeSessions,
@@ -1075,14 +1083,14 @@ export const executionDeps: ExecutionDeps = {
   audioTools: async (agentName, origin) => {
     if (!config.objectBucketName) return undefined;
     const email = mcpUserEmail(origin.actor, origin.userEmail);
-    if (!email) return undefined;
+    if (!email || !origin.user || !origin.actor) return undefined;
     const agent = origin.ancestry[0] ?? agentName;
     const runtime = getAudioRuntime();
     if (!await optionalToolAccessible(() => runtime.authorize(agent, email))) return undefined;
     return createAudioTool({ jobs: runtime.jobs, files: { read: async (sourceAgent, id, user, maxBytes) => {
       await runtime.authorize(sourceAgent, user);
       return runtime.files.read(sourceAgent, id, user, maxBytes);
-    } } }, { agentName: agent, userEmail: email,
+    } } }, { agentName: agent, userEmail: email, user: origin.user, executionGrant: origin.executionGrant,
       occurrence: currentRunContext()?.runId ?? randomUUID(), actor: origin.actor, producedBy: agentName });
   },
   // Bound here because deciding *which* workspace an agent reads means
@@ -1176,6 +1184,8 @@ export function getAudioRuntime() {
     return agent;
   };
   const authorizeJob = async (job: AudioJob) => {
+    await authorizeAgentRun(job.agentName, job);
+    if (job.user.email !== job.userEmail) throw new ForbiddenError("Audio job identity changed");
     const agent = await authorize(job.agentName, job.userEmail);
     if (audioSourceAgent(job) !== job.agentName) await authorize(audioSourceAgent(job), job.userEmail);
     if (job.sourceRefresh?.agentName && job.sourceRefresh.agentName !== job.agentName) {
@@ -1209,7 +1219,7 @@ export function getAudioRuntime() {
     validate: async (input, agent, email) => { await getTranscriptionTarget(input.model); await validateOutputs(input, agent, email); },
     now: () => new Date(),
   });
-  const jobs = createAudioJobUseCases({ jobs: audioJobRepository, configs: audioJobConfigRepository, files: sourceFileRepository,
+  const jobs = createAudioJobUseCases({ authorizeRun: authorizeAgentRun, jobs: audioJobRepository, configs: audioJobConfigRepository, files: sourceFileRepository,
     resolveArtifact: async (id, email) => {
       const artifact = await artifactRepository.get(id);
       if (!artifact?.privateFileId || artifact.ownerEmail !== email) throw new NotFoundError("Private artifact not found");
@@ -1245,7 +1255,7 @@ export function getAudioRuntime() {
     },
     beforeTranscribe: async (job) => {
       const agent = await authorizeJob(job);
-      const bracket = await openModelCall(executionDeps, agent, { model: job.model }, job.actor ?? { kind: "user", id: job.userEmail });
+      const bracket = await openModelCall(executionDeps, agent, { model: job.model }, job.actor);
       return (failed) => bracket.close({ failed });
     },
     recordUsage: async (job, _receiptId, result) => {
@@ -1254,12 +1264,13 @@ export function getAudioRuntime() {
       await usageRepository.record({ agentName: job.agentName, date: accounting.date, model: result.model,
         calls: 1, inputTokens: result.usage?.inputTokens ?? 0, outputTokens: result.usage?.outputTokens ?? 0,
         costUsd: accounting.costUsd, idempotencyKey: accounting.eventId,
-        actor: actorKey(job.actor ?? { kind: "user", id: job.userEmail }) });
+        actor: actorKey(job.actor) });
     },
   });
   const postprocess = createAudioPostprocessStep({ files, run: async (job, text, mode, maxOutputChars, signal) => {
     const snapshot = job.postprocess?.configuration;
     if (!snapshot) throw new AudioJobStepError("postprocess_configuration_missing", false);
+    await authorizeAgentRun(snapshot.agentName, job);
     const agent = await authorize(snapshot.agentName, job.userEmail);
     const { streamAgentRun, collectRun } = await import("@/application/execution/runAgent");
     const extractMemories = Boolean(job.destination?.memories) && mode === "extract";
@@ -1284,11 +1295,11 @@ export function getAudioRuntime() {
           : "Summarize the source in Markdown, including its main points and supported next steps. Return the complete summary, not just a title. Do not invent implementation plans or treat suggestions as confirmed decisions.",
         mode, sourceType: mode === "extract" ? "transcript" : "summary notes", source: text,
       }) }], backgroundTask: true,
-      ownerEmail: job.userEmail, actor: job.actor ?? { kind: "user", id: job.userEmail }, signal }), configuration.model);
+      user: job.user, executionGrant: job.executionGrant, ownerEmail: job.userEmail, actor: job.actor, signal }), configuration.model);
     if (result.termination !== "completed" || result.warnings.length) throw new AudioJobStepError("postprocess_run_incomplete", false);
     return extractMemories ? result.content : JSON.stringify({ text: result.content, memories: [], warnings: [] });
   } });
-  async function openDestination(job: Pick<AudioJob, "agentName" | "userEmail" | "actor" | "destination">, signal?: AbortSignal) {
+  async function openDestination(job: Pick<AudioJob, "agentName" | "userEmail" | "destination"> & Partial<Pick<AudioJob, "user" | "actor" | "executionGrant">>, signal?: AbortSignal) {
     await authorize(job.agentName, job.userEmail);
     const configuration = job.destination?.configuration;
     if (!configuration || !job.destination) throw new AudioJobStepError("delivery_configuration_missing", false);
@@ -1311,6 +1322,9 @@ export function getAudioRuntime() {
     }
     return {
       async call(tool: string, args: Record<string, unknown>) {
+        if (!job.user || !job.actor) throw new ForbiddenError("Audio delivery requires an authenticated caller");
+        await authorizeAgentRun(job.agentName, { user: job.user, actor: job.actor, executionGrant: job.executionGrant });
+        await authorize(job.agentName, job.userEmail);
         const alias = mcp.aliasFor?.(job.destination!.serverName, tool);
         if (!alias || !mcp.callMcpTool) throw new AudioJobStepError("delivery_tool_missing", false);
         const result = await mcp.callMcpTool(alias, args);

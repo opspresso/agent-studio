@@ -1,3 +1,4 @@
+import { interactiveIdentity } from "./runIdentity";
 import { describe, expect, it, vi } from "vitest";
 import { createSourceReferenceUseCases, type SourceReferenceDeps } from "@/application/audio/sourceReferences";
 import type { SourceReference } from "@/domain/artifact/sourceReference";
@@ -48,7 +49,7 @@ describe("encrypted source references", () => {
       for await (const _part of await open(100)) { /* consume */ }
       return { ...input, status: "ready", revision: 2, createdAt: "now", retireAt: "later" };
     });
-    const job: AudioJob = { id: "job", agentName: "audio", userEmail: f.input.userEmail, source: { kind: "source", sourceRef: "ref-1" },
+    const job: AudioJob = { id: "job", agentName: "audio", userEmail: f.input.userEmail, ...interactiveIdentity(f.input.userEmail), source: { kind: "source", sourceRef: "ref-1" },
       sourceKey: "key", sourceIdentity: identity, sourceRefresh: identity.refresh, model: "asr", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
       revision: 1, status: "running", stage: "importing", createdAt: "now", updatedAt: "now", dueAt: "now", attempt: 1, failures: 0, receipts: {} };
     const context = { signal: new AbortController().signal, record: async () => {} };
@@ -106,7 +107,7 @@ describe("encrypted source references", () => {
       createdAt: "2026-09-09T00:00:00Z", retireAt: "2026-12-09T00:00:00Z" };
     vi.mocked(f.deps.files.metadata).mockResolvedValue(file);
     vi.mocked(f.deps.files.import).mockResolvedValue(file);
-    const job: AudioJob = { id: "job-1", agentName: "audio", userEmail: f.input.userEmail,
+    const job: AudioJob = { id: "job-1", agentName: "audio", userEmail: f.input.userEmail, ...interactiveIdentity(f.input.userEmail),
       source: { kind: "source", sourceRef: "ref-1" }, sourceKey: "stable", model: "asr", retention,
       revision: 1, status: "running", stage: "importing", createdAt: file.createdAt, updatedAt: file.createdAt,
       dueAt: file.createdAt, attempt: 1, failures: 0, receipts: {} };

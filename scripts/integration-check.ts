@@ -1702,7 +1702,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     {
       const { audioJobRepository: jobs } = await import("@/infrastructure/db/repositories/audioJobRepository");
       const input = {
-        agentName, userEmail: "integration@example.com", source: { kind: "file" as const, fileId: "audio-file" },
+        agentName, userEmail: "integration@example.com", user: { userId: "integration-user", email: "integration@example.com" }, actor: { kind: "user" as const, id: "integration@example.com" }, source: { kind: "file" as const, fileId: "audio-file" },
         sourceKey: "integration-source", model: "selfhosted/asr",
         retention: { unit: "months" as const, value: 3, timezone: "Asia/Seoul" },
       };

@@ -1,4 +1,4 @@
-import type { RunActor, RunUser, WebhookExecutionGrant } from "@/domain/execution/actor";
+import type { RunActor, RunUser, WebhookExecutionGrant, ScheduleExecutionGrant } from "@/domain/execution/actor";
 import type { AgentCredentialUseCases } from "@/application/auth/agentCredentialUseCases";
 import type { MemberRepository } from "@/domain/member/repository";
 import type { RunSlotRepository } from "@/domain/execution/runSlot";
@@ -23,8 +23,8 @@ export interface FiringDeps {
     message?: string;
     actor: RunActor;
     userEmail?: string;
-    user?: RunUser;
-    executionGrant?: WebhookExecutionGrant;
+    user: RunUser;
+    executionGrant: WebhookExecutionGrant | ScheduleExecutionGrant;
     signal?: AbortSignal;
     /** Bound skills only; verified PRs additionally receive their private source and Workspace callbacks. */
     backgroundTask?: boolean;

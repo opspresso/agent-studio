@@ -443,7 +443,9 @@ export async function executeFiring(
       ...input,
       actor: triggerActor(trigger),
       user: { userId: user.userId, email: user.email }, userEmail: user.email,
-      ...(admitted.executionGrant ? { executionGrant: admitted.executionGrant } : {}),
+      executionGrant: trigger.kind === "schedule"
+        ? { ...user, kind: "schedule", agentName: trigger.agentName, triggerId: trigger.triggerId, revision: trigger.updatedAt }
+        : admitted.executionGrant!,
       ...(admitted.signal ? { signal: admitted.signal } : {}),
     })) {
       admitted.signal?.throwIfAborted();

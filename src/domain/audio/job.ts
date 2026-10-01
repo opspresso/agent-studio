@@ -1,5 +1,5 @@
 import type { FileRetention } from "@/domain/artifact/retention";
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunActor, RunUser, ExecutionGrant } from "@/domain/execution/actor";
 import type { AgentConfiguration } from "@/domain/agent/types";
 import type { SourceRefresh } from "@/domain/artifact/sourceReference";
 
@@ -19,7 +19,9 @@ export interface AudioJobInput {
   task?: AudioJobTask;
   agentName: string;
   userEmail: string;
-  actor?: RunActor;
+  user: RunUser;
+  actor: RunActor;
+  executionGrant?: ExecutionGrant;
   /** Server-bound Agent that submitted the work; storage remains in agentName. */
   producedBy?: string;
   source: AudioSource;

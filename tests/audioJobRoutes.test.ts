@@ -59,7 +59,7 @@ describe("audio job HTTP contracts", () => {
   it("binds submitted work to the authenticated email and server occurrence", async () => {
     const response = await POST(request(input), context);
     expect(response.status).toBe(202);
-    expect(mocks.submit).toHaveBeenCalledWith("audio", "owner@example.test", input,
+    expect(mocks.submit).toHaveBeenCalledWith("audio", { userId: "owner-1", email: "owner@example.test" }, input,
       { occurrence: "occurrence-1", actor: { kind: "user", id: "owner@example.test" } });
   });
   it("rejects a caller-supplied identity and invalid retention", async () => {

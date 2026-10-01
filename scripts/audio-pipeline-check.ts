@@ -251,7 +251,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   assert.equal(winners.length, 1, "only one concurrent configuration edit may win");
   configuration = winners[0]!.value;
   const submitInput = { source: input.source, configRevision: configuration.revision };
-  const submitted = await runtime.jobs.submit(agentName, email, submitInput, { occurrence: "test" });
+  const submitted = await runtime.jobs.submit(agentName, { userId: id, email }, submitInput, { actor: { kind: "user", id: email }, occurrence: "test" });
   assert.ok("job" in submitted); assert.equal(submitted.status, "accepted");
   let completed = await runtime.process(agentName, submitted.job.id);
   assertMockSucceeded();
@@ -306,7 +306,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   assert.equal(calls, expectedAsrCalls);
   assert.equal(diarizationCalls, diarized ? 1 : 0);
   assert.equal(postprocessCalls, 1);
-  assert.equal((await runtime.jobs.submit(agentName, email, submitInput, { occurrence: "test-again" })).status, "duplicate");
+  assert.equal((await runtime.jobs.submit(agentName, { userId: id, email }, submitInput, { actor: { kind: "user", id: email }, occurrence: "test-again" })).status, "duplicate");
   assert.equal(await runtime.process(agentName, completed.id), null);
   assert.equal(calls, expectedAsrCalls);
   const usage = await usageRepository.getDay(agentName, new Date().toISOString().slice(0, 10));

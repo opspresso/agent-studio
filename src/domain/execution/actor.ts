@@ -56,7 +56,21 @@ export interface ApiExecutionGrant extends RunUser {
   credentialId: string;
 }
 
-export type ExecutionGrant = MessagingExecutionGrant | WebhookExecutionGrant | ApiExecutionGrant;
+export interface ScheduleExecutionGrant extends RunUser {
+  kind: "schedule";
+  agentName: string;
+  triggerId: string;
+  revision: string;
+}
+
+export type ExecutionGrant = MessagingExecutionGrant | WebhookExecutionGrant | ApiExecutionGrant | ScheduleExecutionGrant;
+
+/** Authenticated account and invocation source captured at the ingress boundary. */
+export interface RunIdentity {
+  user: RunUser;
+  actor: RunActor;
+  executionGrant?: ExecutionGrant;
+}
 
 /**
  * What a run may tell the model about the person asking.
