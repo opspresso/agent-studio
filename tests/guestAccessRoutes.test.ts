@@ -10,6 +10,7 @@ vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: f.session } } }));
 vi.mock("@/lib/container", () => ({
   skillUseCases: { list: f.list, get: f.get, create: f.write, update: f.write, remove: f.write },
   mcpUseCases: { list: f.list, get: f.get, create: f.write, update: f.write, remove: f.write },
+  mcpAuthUseCases: { completeAuthorization: f.write, abandonAuthorization: f.write },
   pluginUseCases: { list: f.list }, modelRegistryUseCases: { list: f.list },
   modelPreferenceUseCases: { list: f.list, replace: f.write, setFavorite: f.write },
   agentUseCases: { update: f.write, remove: f.write }, configurationUseCases: { put: f.write },
@@ -33,6 +34,7 @@ const detail = await import("@/app/api/workspaces/[id]/route");
 const runs = await import("@/app/api/workspaces/[id]/runs/route");
 const events = await import("@/app/api/workspaces/[id]/events/route");
 const options = await import("@/app/api/workspaces/options/route");
+const mcpCallback = await import("@/app/api/mcps/oauth/callback/route");
 const context = { params: Promise.resolve({ name: "demo", id: "workspace-1", artifactId: "file-1" }) };
 const request = (method = "GET", body?: unknown) => new Request("https://studio.test/api/test", {
   method, headers: { origin: "https://studio.test", "Content-Type": "application/json", "Idempotency-Key": "request-123" },
@@ -55,6 +57,21 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 describe("guest console access", () => {
+  it("rejects completing or abandoning MCP authorization after downgrade to guest", async () => {
+    f.write.mockResolvedValue({ agentName: "demo", serverName: "tools", error: "Cancelled" });
+    for (const query of ["state=pending&code=fixture", "state=pending&error=access_denied"]) {
+      expect((await mcpCallback.GET(new Request(`https://studio.test/api/mcps/oauth/callback?${query}`))).status).toBe(403);
+    }
+    expect(f.write).not.toHaveBeenCalled();
+  });
+  it("lets a member finish an authorized MCP connection", async () => {
+    f.session.mockResolvedValue({ user: { id: "member-1", email: "member@example.test", name: "Member", tier: "member" } });
+    f.write.mockResolvedValue({ agentName: "demo", serverName: "tools" });
+    const response = await mcpCallback.GET(new Request("https://studio.test/api/mcps/oauth/callback?state=pending&code=fixture"));
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("Connected tools to demo");
+    expect(f.write).toHaveBeenCalledWith({ state: "pending", code: "fixture", userEmail: "member@example.test", iss: undefined });
+  });
   const reads = [
     ["skills", () => skills.GET()], ["skill detail", () => skill.GET(request(), context)],
     ["tools", () => mcps.GET()], ["tool detail", () => mcp.GET(request(), context)],

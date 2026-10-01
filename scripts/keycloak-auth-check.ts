@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   const baseURL = "http://localhost:3300";
   const clientId = "studio-integration";
   const clientSecret = "local-fixture-client-secret";
-  const codes = new Map<string, { nonce: string; challenge: string; email: string; audience: string; provider: string; name: string; picture?: string }>();
+  const codes = new Map<string, { nonce: string; challenge: string; email: string; subject: string; audience: string; provider: string; name: string; picture?: string }>();
   let issuer = "";
   const server = createServer(async (req, res) => {
     const json = (body: unknown) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify(body)); };
@@ -51,7 +51,7 @@ async function main(): Promise<void> {
         const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
         const now = Math.floor(Date.now() / 1000);
         const unsigned = `${encode({ alg: "RS256", kid: "test-key", typ: "JWT" })}.${encode({
-          iss: issuer, aud: entry.audience, sub: entry.email, email: entry.email, email_verified: true,
+          iss: issuer, aud: entry.audience, sub: entry.subject, email: entry.email, email_verified: true,
           name: entry.name, picture: entry.picture, nonce: entry.nonce, iat: now, exp: now + 300,
         })}`;
         json({ access_token: "fixture-access-token", token_type: "Bearer", expires_in: 300,
@@ -91,7 +91,7 @@ async function main(): Promise<void> {
     await ctx.checkSchema?.();
 
     const cookieHeader = (response: Response) => response.headers.getSetCookie().map((cookie) => cookie.split(";")[0]).join("; ");
-    async function login(email: string, overrides: { audience?: string; nonce?: string; state?: string; provider?: "keycloak" | "oidc"; name?: string; picture?: string } = {}) {
+    async function login(email: string, overrides: { audience?: string; nonce?: string; state?: string; provider?: "keycloak" | "oidc"; subject?: string; name?: string; picture?: string } = {}) {
       const provider = overrides.provider ?? "keycloak";
       const start = await auth.handler(new Request(`${baseURL}/api/auth/sign-in/social`, {
         method: "POST", headers: { "content-type": "application/json", origin: baseURL },
@@ -105,7 +105,7 @@ async function main(): Promise<void> {
       assert.ok(authorization.searchParams.get("nonce"));
       const code = randomUUID();
       codes.set(code, {
-        email, audience: overrides.audience ?? clientId, provider,
+        email, subject: overrides.subject ?? email, audience: overrides.audience ?? clientId, provider,
         name: overrides.name ?? "OIDC Test User", picture: overrides.picture,
         nonce: overrides.nonce ?? authorization.searchParams.get("nonce")!,
         challenge: authorization.searchParams.get("code_challenge")!,
@@ -140,6 +140,19 @@ async function main(): Promise<void> {
     const noPictureSession = await auth.api.getSession({ headers: new Headers({ cookie: cookieHeader(withoutPicture) }) });
     assert.equal(noPictureSession?.user.name, "Renamed Keycloak User");
     assert.equal(noPictureSession?.user.image, repeat.user.image, "missing provider picture preserves the stored image");
+    const renamedEmail = await login("renamed@example.test", { subject: "member@example.test", name: "Same Identity", picture: `${issuer}/renamed.png` });
+    const renamedSession = await auth.api.getSession({ headers: new Headers({ cookie: cookieHeader(renamedEmail) }) });
+    assert.equal(renamedSession?.user.id, session.user.id);
+    assert.equal(renamedSession?.user.email, "member@example.test", "profile sync must preserve the ownership email");
+    assert.equal(renamedSession?.user.name, "Same Identity");
+    assert.equal(renamedSession?.user.image, `${issuer}/renamed.png`);
+    assert.equal(renamedSession?.user.tier, "member");
+    const disallowedProfile = await login("renamed@other.test", { subject: "member@example.test", name: "Refused Profile" });
+    assert.match(disallowedProfile.headers.get("location") ?? "", /\/login\?error=EMAIL_DOMAIN_NOT_ALLOWED/);
+    assert.doesNotMatch(cookieHeader(disallowedProfile), /session_token=/);
+    const preserved = await ctx.internalAdapter.findUserById(session.user.id);
+    assert.equal(preserved?.email, "member@example.test");
+    assert.equal(preserved?.name, "Same Identity", "a disallowed profile must not be persisted");
     assert.equal((await db.getPool().query(`SELECT count(*)::int AS count FROM account WHERE "providerId" = 'keycloak'`)).rows[0].count, 1);
     const oidcFirst = await login("oidc-member@example.test", { provider: "oidc", name: "OIDC User", picture: `${issuer}/oidc-before.png` });
     const oidcInitial = await auth.api.getSession({ headers: new Headers({ cookie: cookieHeader(oidcFirst) }) });

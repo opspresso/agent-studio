@@ -89,6 +89,18 @@ export const auth = betterAuth({
           return { data: user };
         },
       },
+      update: {
+        before: async (user, ctx) => {
+          const oauthSignIn = ctx?.path.startsWith("/callback/") || ctx?.path === "/sign-in/social";
+          if (oauthSignIn && ("name" in user || "image" in user)) {
+            if (user.email) await assertAllowedEmailDomain(user.email);
+            // OAuth profile refresh also proposes an email update. Ownership
+            // keys use the existing email, so sync presentation fields only.
+            return { data: { ...user, email: undefined, emailVerified: undefined } };
+          }
+          return { data: user };
+        },
+      },
     },
     session: {
       create: {

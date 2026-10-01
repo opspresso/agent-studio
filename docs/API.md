@@ -135,7 +135,7 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 그 agent 의 
 | `/api/mcps/managed` | `POST` | admin |
 | `/api/mcps/managed/{name}` | `GET` `PUT` `DELETE` | admin |
 | `/api/mcps/managed/{name}/restart` | `POST` | admin |
-| `/api/mcps/oauth/callback` | `GET` | session |
+| `/api/mcps/oauth/callback` | `GET` | member. 자격 증명 저장 전에 현재 등급 재검사 |
 | `/api/mcps/oauth/client-metadata/{agent}` | `GET` | **공개** |
 
 ### Chat·사용량·플랫폼
