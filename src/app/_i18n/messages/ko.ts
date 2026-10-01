@@ -60,6 +60,7 @@ export const ko: Messages = {
   "settings.overview": "서비스, 접근 권한, Plugins와 Models를 관리합니다.",
   "settings.adminOnly": "관리자만 애플리케이션 설정을 관리할 수 있습니다.",
   "settings.loadFailed": "설정을 불러오지 못했습니다.",
+  "integrations.callerAuthenticationHint": "발신자마다 본인의 메신저 계정과 Studio 계정을 연결해야 합니다. 연결한 사용자의 현재 권한으로 Agent를 실행합니다.",
   "integrations.unavailable": "불러오기 실패",
   "integrations.enabled": "사용 중",
   "integrations.configuredOff": "설정됨 (꺼짐)",
@@ -1198,10 +1199,10 @@ export const ko: Messages = {
 
   "configuration.piiHint":
     "이메일·전화번호·주민등록번호·카드번호를 되돌릴 수 있는 토큰으로 가린 뒤 전송합니다. MCP 도구가 받는 값은 가려지지 않습니다.",
-  "configuration.callerContext": "누가 요청했는지 실행에 알려주기 (이름, 타임존)",
+  "configuration.callerContext": "모델에 요청자의 이름·시간대 알려주기",
 
   "configuration.callerHint":
-    "사람이 직접 실행하는 모든 경로 — Chat, Playground, 로그인 상태의 API 호출, Slack — 에 적용됩니다. API 토큰·트리거는 호출자를 담지 않습니다. PII 필터링은 이름을 가리지 않습니다.",
+    "모델에 전달하는 표시 이름을 제어합니다. 사용자 인증과 권한 검사는 별도로 적용됩니다. PII 필터링은 이름을 가리지 않습니다.",
   "configuration.structuredOutput": "구조화 출력 (JSON 스키마)",
   "configuration.aboutStructuredOutput": "구조화 출력 안내",
   "configuration.structuredOutputTitle": "구조화 출력",
@@ -1569,8 +1570,6 @@ export const ko: Messages = {
   "webhook.reviewSetupRequired": "PR 리뷰 설정이 완료되지 않았습니다",
   "trigger.registeredBy": "등록자: {email}",
   "trigger.registrationMissing": "등록자 없음 — 스케줄을 새로 등록하세요",
-  "trigger.runAsOwner": "내 권한으로 실행",
-  "integrations.runAsOwnerHint": "Agent 소유자만 켤 수 있습니다. 저장하면 인증된 봇 호출자가 소유자의 개인 도구와 Workspace를 사용할 수 있으며, 현재 멤버 권한과 Agent 정책을 적용합니다.",
   "webhook.intro":
     "Agent마다 주소 하나가 있고, 켜기 전까지는 꺼져 있습니다. 외부 시스템은 X-Trigger-Secret 또는 GitHub HMAC-SHA256 서명으로 인증한 JSON을 POST해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 오른쪽 이력에 남습니다. Webhook은 항상 Agent의 현재 설정을 실행합니다.",
   "schedule.section": "스케줄",

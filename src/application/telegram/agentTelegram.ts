@@ -1,5 +1,4 @@
 import { ValidationError } from "@/application/errors";
-import { messagingExecutionEmail } from "@/application/auth/messagingGrant";
 import { persistAgentUpdate } from "@/application/agent/agentUpdate";
 import { assertAgentOwnerOrAdminReadable, assertAgentWritable } from "@/application/agent/agentUseCases";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
@@ -31,7 +30,6 @@ import { telegramSecretContext } from "@/domain/security/secretContext";
 const ALLOWED_UPDATES = ["message"] as const;
 
 export interface AgentTelegramView {
-  runAsOwner: boolean;
   enabled: boolean;
   configured: boolean;
   /** Masked. */
@@ -42,7 +40,6 @@ export interface AgentTelegramView {
 }
 
 export interface AgentTelegramUpdate {
-  runAsOwner?: boolean;
   botToken?: string;
   enabled?: boolean;
 }
@@ -63,7 +60,6 @@ export function webhookPathFor(agentName: string): string {
 function maskedView(cipher: SecretCipher, agent: Agent): AgentTelegramView {
   const telegram = agent.telegram;
   return {
-    runAsOwner: telegram?.executionEmail === agent.ownerEmail,
     enabled: telegram?.enabled ?? false,
     configured: Boolean(telegram?.botToken && telegram.webhookSecret),
     botToken: telegram?.botToken
@@ -155,7 +151,6 @@ export async function updateAgentTelegram(
   baseUrl: string,
 ): Promise<AgentTelegramResult> {
   const agent = await assertAgentWritable(repo, name, userEmail);
-  const executionEmail = messagingExecutionEmail(agent, "telegram", update.runAsOwner, userEmail);
   const stored = agent.telegram;
   const previous = resolveAgentTelegramCredentials(cipher, agent);
   let botToken = stored?.botToken ?? "";
@@ -189,7 +184,6 @@ export async function updateAgentTelegram(
     }
   }
   const telegram: TelegramIntegration = {
-    ...(executionEmail ? { executionEmail } : {}),
     botToken,
     webhookSecret,
     enabled: update.enabled ?? stored?.enabled ?? false,

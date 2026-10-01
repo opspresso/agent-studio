@@ -12,10 +12,9 @@ import { editorBody } from "@/app/api/_lib/body";
 type RouteContext = { params: Promise<{ name: string }> };
 
 const updateSchema = z.object({
-  runAsOwner: z.boolean().optional(),
   botToken: z.string().optional(),
   enabled: z.boolean().optional(),
-});
+}).strict();
 
 /**
  * The one shape every verb answers with: the masked view plus the webhook URL

@@ -1,5 +1,4 @@
 import { ValidationError } from "@/application/errors";
-import { messagingExecutionEmail } from "@/application/auth/messagingGrant";
 import { MCP_OAUTH_CALLBACK_PATH } from "@/application/mcp/mcpAuthUseCases";
 import { persistAgentUpdate } from "@/application/agent/agentUpdate";
 import { assertAgentOwnerOrAdminReadable, assertAgentWritable } from "@/application/agent/agentUseCases";
@@ -23,7 +22,6 @@ import { DEFAULT_SERVICE_NAME } from "@/shared/branding";
 import { slackSecretContext } from "@/domain/security/secretContext";
 
 export interface AgentSlackView {
-  runAsOwner: boolean;
   enabled: boolean;
   configured: boolean;
   botToken: string;
@@ -36,7 +34,6 @@ export interface AgentSlackView {
 }
 
 export interface AgentSlackUpdate {
-  runAsOwner?: boolean;
   botToken?: string;
   signingSecret?: string;
   enabled?: boolean;
@@ -54,7 +51,6 @@ export function eventsPathFor(agentName: string): string {
 function maskedView(cipher: SecretCipher, agent: Agent): AgentSlackView {
   const slack = agent.slack;
   return {
-    runAsOwner: slack?.executionEmail === agent.ownerEmail,
     enabled: slack?.enabled ?? false,
     configured: Boolean(slack?.botToken && slack.signingSecret),
     botToken: slack?.botToken
@@ -180,7 +176,6 @@ export async function updateAgentSlack(
   cipher: SecretCipher,
 ): Promise<AgentSlackResult> {
   const agent = await assertAgentWritable(repo, name, userEmail);
-  const executionEmail = messagingExecutionEmail(agent, "slack", update.runAsOwner, userEmail);
   const prompts =
     update.suggestedPrompts !== undefined
       ? cleanPrompts(update.suggestedPrompts)
@@ -190,7 +185,6 @@ export async function updateAgentSlack(
       ? cleanKeywords(update.channelKeywords)
       : (agent.slack?.channelKeywords ?? []);
   const slack: SlackIntegration = {
-    ...(executionEmail ? { executionEmail } : {}),
     botToken: mergeSecret(
       cipher,
       agent.slack?.botToken,

@@ -152,13 +152,11 @@ export async function handleTeamsActivity(
   await runRememberedTurn(deps, {
     agent,
     configuration,
-    ownerEmail: authenticated.email,
+    executionGrant: authenticated,
     reply,
     conversation: teamsConversation(conversationId),
     text: disposition.text,
     attachments: attachmentsOf(deps, binding, activity),
-    // The Entra object id, not an email: Teams hands a bot no address.
-    actor: { kind: "teams", id: externalId },
     ...(userId ? { userId } : {}),
     callerOf: () => callerOf(activity),
     arrivedAt: Number.isNaN(arrivedAt.getTime()) ? new Date() : arrivedAt,

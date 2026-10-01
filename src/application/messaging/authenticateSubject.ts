@@ -2,6 +2,7 @@ import { ForbiddenError, ConflictError, ValidationError } from "@/application/er
 import type { MessagingSubject } from "@/domain/messaging/identity";
 import type { MessagingIdentityUseCases } from "@/application/auth/messagingIdentityUseCases";
 import type { ReplyChannel } from "@/domain/messaging/reply";
+import type { MessagingExecutionGrant } from "@/domain/execution/actor";
 
 const AUTH_COMMAND = /^\s*\/?auth(?:@\w+)?(?:\s|$)/i;
 
@@ -17,7 +18,7 @@ export async function authenticateMessagingSubject(
   text: string,
   privateChat: boolean,
   reply: Pick<ReplyChannel, "say">,
-) {
+): Promise<MessagingExecutionGrant | null> {
   try {
     if (isMessagingAuthenticationCommand(text)) {
       if (!privateChat) {
@@ -33,7 +34,7 @@ export async function authenticateMessagingSubject(
     if (!user) {
       await reply.say("Sign in to Studio, open Profile → Messaging connections, issue a code for this Agent and send auth <code> here in a private chat.");
     }
-    return user;
+    return user ? { ...user, kind: subject.platform, agentName: subject.agentName, realm: subject.realm, externalId: subject.externalId } : null;
   } catch (error) {
     if (error instanceof ForbiddenError || error instanceof ConflictError || error instanceof ValidationError) {
       await reply.say(error.message);

@@ -1,6 +1,6 @@
 import { turnContent } from "@/application/llm/documentParts";
 import { messageText } from "@/domain/llm/types";
-import { conversationKey, type RunActor, type RunCaller, type RunConversation } from "@/domain/execution/actor";
+import { conversationKey, type MessagingExecutionGrant, type RunCaller, type RunConversation } from "@/domain/execution/actor";
 import type { InboundAttachment } from "@/domain/messaging/inbound";
 import type { ReplyChannel } from "@/domain/messaging/reply";
 import type { ConversationTranscriptRepository } from "@/domain/messaging/transcript";
@@ -38,8 +38,7 @@ export interface RememberedTurnInput {
   /** What the person wrote, mention markup already removed; empty when only files came. */
   text: string;
   attachments: InboundAttachment[];
-  actor?: RunActor;
-  ownerEmail: string;
+  executionGrant: MessagingExecutionGrant;
   /** The platform's id for the person, for the transcript and the speaker labels. */
   userId?: string;
   /**
@@ -105,8 +104,7 @@ export async function runRememberedTurn(
       text: askText,
       attachments: input.attachments,
       history,
-      ...(input.actor ? { actor: input.actor } : {}),
-      ownerEmail: input.ownerEmail,
+      executionGrant: input.executionGrant,
       ...(named ? { caller: named } : {}),
       conversation,
       warnings,

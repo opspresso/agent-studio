@@ -34,11 +34,12 @@ export interface RunActor {
   id: string;
 }
 
-/** A server-captured delegation by the owner of a registered messaging integration. */
-export interface MessagingExecutionGrant {
+/** A verified platform sender linked to the Studio caller; Agent ownership is unrelated. */
+export interface MessagingExecutionGrant extends RunUser {
   agentName: string;
   kind: "slack" | "telegram" | "teams";
-  email: string;
+  realm: string;
+  externalId: string;
 }
 
 /** Proof selected by personal Webhook authentication and rechecked before later effects. */

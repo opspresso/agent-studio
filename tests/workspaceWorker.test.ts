@@ -229,30 +229,32 @@ describe("durable workspace worker", () => {
     expect(results.every(page => !page.output_loss && !page.truncated)).toBe(true);
     await session.ensureIdle();
   });
-  it("persists a messenger permission grant and refuses queued work after its revocation", async () => {
-    const at = new Date(time).toISOString();
-    await agents.update({ ...((await agents.get("demo"))!), telegram: { enabled: true, botToken: "fixture",
-      webhookSecret: "fixture", executionEmail: owner }, updatedAt: at }, at);
-    deps.authorize = (agentName, email, actor, grant) => authorizeWorkspaceExecution({ agents, webhookCredentials: { authorize: async () => null }, members: { getById: async id => memberFixture({ id, email: owner }) },
-      triggers: { get: async () => null }, memberTier: async () => "member", backendReady: () => true,
-      enabled: async () => true }, agentName, email, actor, grant);
-    const first = await createWorkspaceUseCases(deps).start({ agentName: "demo", runtime: "command",
-      actor: { kind: "telegram", id: "1" }, executionGrant: { agentName: "demo", kind: "telegram", email: owner },
-      input: { kind: "command", script: "echo task" } }, owner, "messenger-0001");
-    expect((await repository.run(first.workspace.id, first.run.id))?.executionGrant?.kind).toBe("telegram");
-    expect(first.run).not.toHaveProperty("executionGrant");
+  it("rechecks the linked messenger user after queue admission and refuses disconnected work", async () => {
     const current = (await agents.get("demo"))!;
-    await agents.update({ ...current, telegram: { ...current.telegram!, executionEmail: undefined } }, current.updatedAt);
+    await agents.update({ ...current, telegram: { enabled: true, botToken: "fixture", webhookSecret: "fixture" } }, current.updatedAt);
+    let linked = true;
+    const grant = { kind: "telegram" as const, agentName: "demo", realm: "telegram", externalId: "1", userId: "caller-id", email: owner };
+    deps.authorize = (agentName, email, actor, executionGrant) => authorizeWorkspaceExecution({ agents,
+      messagingIdentities: { resolve: async () => linked ? { userId: "caller-id", email: owner } : null },
+      webhookCredentials: { authorize: async () => null }, members: { getById: async id => memberFixture({ id, email: owner }) },
+      triggers: { get: async () => null }, memberTier: async () => "member", backendReady: () => true, enabled: async () => true }, agentName, email, actor, executionGrant);
+    const first = await createWorkspaceUseCases(deps).start({ agentName: "demo", runtime: "command",
+      actor: { kind: "telegram", id: "1" }, executionGrant: grant,
+      input: { kind: "command", script: "echo task" } }, owner, "messaging-0001");
+    expect((await repository.run(first.workspace.id, first.run.id))?.executionGrant).toEqual(grant);
+    expect(first.run).not.toHaveProperty("executionGrant");
+    linked = false;
     await processWorkspace(deps, first.workspace.id);
     expect(provider.ensure).not.toHaveBeenCalled();
     expect((await repository.run(first.workspace.id, first.run.id))?.status).toBe("failed");
   });
+
   it("refuses a queued Webhook task when its personal credential is revoked", async () => {
     const webhook: WebhookTrigger = { agentName: "demo", triggerId: "webhook", kind: "webhook", enabled: true,
       description: "", allowConcurrent: false, createdAt: new Date(time).toISOString(), updatedAt: new Date(time).toISOString() };
     const identity = webhookCredentialFixture("demo", "fixture-token", owner);
     const grant = { kind: "webhook" as const, agentName: "demo", triggerId: "webhook", ...identity.principal };
-    deps.authorize = (agentName, email, actor, executionGrant) => authorizeWorkspaceExecution({ agents, webhookCredentials: identity.credentials,
+    deps.authorize = (agentName, email, actor, executionGrant) => authorizeWorkspaceExecution({ messagingIdentities: { resolve: async () => null }, agents, webhookCredentials: identity.credentials,
       members: { getById: async id => memberFixture({ id, email: owner }) }, triggers: { get: async () => webhook },
       memberTier: async () => "member", backendReady: () => true, enabled: async () => true }, agentName, email, actor, executionGrant);
     const first = await createWorkspaceUseCases(deps).start({ agentName: "demo", runtime: "command", executionGrant: grant,

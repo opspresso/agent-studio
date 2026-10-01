@@ -14,7 +14,6 @@ import { editorBody } from "@/app/api/_lib/body";
 type RouteContext = { params: Promise<{ name: string }> };
 
 const updateSchema = z.object({
-  runAsOwner: z.boolean().optional(),
   botToken: z.string().optional(),
   signingSecret: z.string().optional(),
   enabled: z.boolean().optional(),
@@ -22,7 +21,7 @@ const updateSchema = z.object({
   suggestedPrompts: z.array(z.object({ title: z.string(), message: z.string() })).optional(),
   // Same split: the use case owns the caps, the normalization and the refusals.
   channelKeywords: z.array(z.string()).optional(),
-});
+}).strict();
 
 function resolveBaseUrl(request: Request): Promise<string> {
   return resolvePublicBaseUrl(new URL(request.url).origin);

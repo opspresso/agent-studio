@@ -38,7 +38,6 @@ export function TeamsSection({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [runAsOwner, setRunAsOwner] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const { confirm, confirmModal } = useConfirm();
 
@@ -50,7 +49,6 @@ export function TeamsSection({
       .then((v) => {
         if (!cancelled) {
           setView(v);
-          setRunAsOwner(Boolean(v.runAsOwner));
           setAppId(v.appId);
           setAppPassword(v.appPassword);
           setTenantId(v.tenantId);
@@ -73,9 +71,8 @@ export function TeamsSection({
     setStatus(null);
     setError(null);
     try {
-      const next = await updateAgentTeams(agentName, { appId, appPassword, tenantId, enabled, ...(runAsOwner !== Boolean(view?.runAsOwner) ? { runAsOwner } : {}) });
+      const next = await updateAgentTeams(agentName, { appId, appPassword, tenantId, enabled });
       setView(next);
-      setRunAsOwner(Boolean(next.runAsOwner));
       setAppId(next.appId);
       setAppPassword(next.appPassword);
       setTenantId(next.tenantId);
@@ -118,7 +115,6 @@ export function TeamsSection({
       await disconnectAgentTeams(agentName);
       const next = await getAgentTeams(agentName);
       setView(next);
-      setRunAsOwner(Boolean(next.runAsOwner));
       setAppId("");
       setAppPassword("");
       setTenantId("");
@@ -135,7 +131,6 @@ export function TeamsSection({
 
   return (
     <BotIntegrationSection title={t("pset.teamsBot")} view={view} error={error} onSelect={onSelect} selected={selected}
-      runAsOwner={runAsOwner} onRunAsOwnerChange={setRunAsOwner} busy={busy}
       onRetry={() => setReloadKey(key => key + 1)}>
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>

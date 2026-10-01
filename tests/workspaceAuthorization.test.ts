@@ -15,7 +15,7 @@ const grant: WebhookTrigger = { agentName: "demo", triggerId: "webhook", kind: "
 
 function fixture() {
   const identity = webhookCredentialFixture("demo", "fixture-token", email);
-  return { identity, webhookCredentials: identity.credentials, members: { getById: vi.fn(async id => memberFixture({ id, email })) }, agents: { get: vi.fn(async () => agent) } as unknown as AgentRepository,
+  return { messagingIdentities: { resolve: async () => null }, identity, webhookCredentials: identity.credentials, members: { getById: vi.fn(async id => memberFixture({ id, email })) }, agents: { get: vi.fn(async () => agent) } as unknown as AgentRepository,
     triggers: { get: vi.fn(async (): Promise<Trigger | null> => ({ ...grant })) },
     memberTier: vi.fn(async () => "member" as const), backendReady: vi.fn(() => true), enabled: vi.fn(async () => true) };
 }

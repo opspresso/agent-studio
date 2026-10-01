@@ -4,12 +4,13 @@ import { tierMayEdit, type MemberTier } from "@/domain/member/tiers";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import { assertAgentAccessible } from "@/application/agent/agentUseCases";
 import { ValidationError } from "@/application/errors";
+import type { MessagingAuthorizationDeps } from "@/application/auth/messagingGrant";
 import { assertExecutionGrant } from "@/application/auth/authorizeExecutionGrant";
 import type { WebhookAuthorizationDeps } from "@/application/auth/webhookAuthorization";
 import type { MemberRepository } from "@/domain/member/repository";
 import { resolveRunUser } from "@/application/auth/resolveRunUser";
 
-interface WorkspaceAuthorizationDeps extends WebhookAuthorizationDeps {
+interface WorkspaceAuthorizationDeps extends WebhookAuthorizationDeps, MessagingAuthorizationDeps {
   agents: AgentRepository;
   members: Pick<MemberRepository, "getById">;
   triggers: Pick<TriggerRepository, "get">;

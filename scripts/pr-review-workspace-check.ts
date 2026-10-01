@@ -109,7 +109,7 @@ async function main() {
   const agents = { ...storedAgents, get: async (name: string) => { const agent = await storedAgents.get(name); return agent ? { ...agent, configuration } : null; } };
   const userId = `${agentName}-caller`;
   const webhookCredentials = createAgentCredentialUseCases({ purpose: "webhook", agents, members, tokens, cipher, now: () => new Date(), newId: randomUUID });
-  const grantDeps = { agents, triggers, webhookCredentials, memberTier: async (email: string) => (await members.getByEmail(email))?.tier ?? null };
+  const grantDeps = { messagingIdentities: { resolve: async () => null }, agents, triggers, webhookCredentials, memberTier: async (email: string) => (await members.getByEmail(email))?.tier ?? null };
   const sandbox = { image: process.env.WORKSPACE_SANDBOX_IMAGE || "agent-studio-workspace:agents", network: "none", memoryMb: 512, diskMb: 256, cpus: 1 };
   const backend = createDockerSandboxBackend(sandbox); const nativeProvider = backend.provider; const containers = new Set<string>();
   const provider = { ...nativeProvider, ensure: async (id: string) => { const value = await nativeProvider.ensure(id); containers.add(value.externalId); return value; } };

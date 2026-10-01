@@ -261,13 +261,11 @@ export async function handleTelegramUpdate(
   await runRememberedTurn(deps, {
     agent,
     configuration,
-    ownerEmail: authenticated.email,
+    executionGrant: authenticated,
     reply,
     conversation: telegramConversation(message.chat.id, threadId),
     text: disposition.text,
     attachments: attachmentsOf(deps, token, message),
-    // The Telegram user id, not an email: Telegram has none to hand over.
-    actor: { kind: "telegram", id: userId },
     userId,
     callerOf: () => callerOf(message.from),
     // Telegram stamps the message with when it was sent, to the second.

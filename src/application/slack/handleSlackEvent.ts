@@ -488,11 +488,6 @@ export async function handleSlackEvent(
     const named = configuration.parameters.callerContext
       ? await resolveSpeakers(deps, token, rawTurns, event.user)
       : { caller: undefined, nameByUser: undefined };
-    // Whose gallery this run's output belongs in. Not gated on `callerContext`,
-    // which decides what the *model* is told: this address reaches no prompt and
-    // no tool result, and a person's own pictures going missing from their own
-    // gallery is not something an Agent parameter should be able to cause.
-    const ownerEmail = authenticated.email;
     const turns = withSpeakerLabels(rawTurns, named.nameByUser);
 
     // Labelled on the same terms as the history: leaving the newest turn bare
@@ -519,14 +514,11 @@ export async function handleSlackEvent(
         text: askText,
         attachments: (event.files ?? []).map((file) => toAttachment(deps, token, file)),
         history: turns.map((turn) => toHistoryTurn(deps, token, turn)),
-        // The Slack user id, not an email: Slack does not hand one over, and
-        // guessing at a mapping would attribute spend to the wrong person.
-        actor: { kind: "slack", id: event.user },
+        executionGrant: authenticated,
         ...(named.caller ? { caller: named.caller } : {}),
         // The thread is the conversation — the same address the engagement row and
         // the reply itself use, so a follow-up here is one for every consumer.
         conversation: slackConversation(event.channel, threadTs),
-        ...(ownerEmail ? { ownerEmail } : {}),
         warnings,
         signal: stop.signal,
         checkCancellation: stop.check,

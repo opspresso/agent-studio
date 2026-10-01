@@ -3,7 +3,7 @@ import { loadFileHistory, rememberFiles } from "./fileHistory";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { ExecuteAgentInput } from "@/application/execution/deps";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
-import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
+import type { RunActor, RunCaller, RunConversation, MessagingExecutionGrant } from "@/domain/execution/actor";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import { documentKind } from "@/domain/llm/documentLimits";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
@@ -86,12 +86,10 @@ export interface TurnInput {
   attachments: InboundAttachment[];
   /** Earlier turns, oldest first, already cut to what this surface carries. */
   history: HistoryTurn[];
-  actor?: RunActor;
+  executionGrant: MessagingExecutionGrant;
   /** Who is asking, when the surface resolved it. The facade gates it on the Agent settings. */
   caller?: RunCaller;
   conversation: RunConversation;
-  /** Current email of the authenticated Studio user; independent of prompt display names. */
-  ownerEmail?: string;
   /**
    * What the surface lost before the run — a history it could not read. The
    * pipeline appends its own and every one rides out with the answer.
@@ -131,7 +129,9 @@ export async function handleTurn(
   reply: ReplyChannel,
 ): Promise<TurnOutcome> {
   const { agent, configuration, warnings } = input;
-  const ownerEmail = input.ownerEmail;
+  const ownerEmail = input.executionGrant.email;
+  const user = { userId: input.executionGrant.userId, email: ownerEmail };
+  const actor: RunActor = { kind: input.executionGrant.kind, id: input.executionGrant.externalId };
   let text = "";
   // `fetched` rides along: what the run read is delivered only when it is all
   // the run has to show (see below).
@@ -181,7 +181,7 @@ export async function handleTurn(
     const documentCandidates = [...attached, ...historyTurns.flatMap((turn) => turn.message.role === "user" ? turn.attachments : [])];
     if (documentCandidates.some((attachment) => documentKind(attachment.mimeType, attachment.name) !== null)) {
       const persistence = { storage: deps.artifacts, context: {
-        agentName: agent.name, actor: input.actor, ownerEmail,
+        agentName: agent.name, actor, ownerEmail,
       } };
       readDocuments = await collectDocuments(deps.documents, attached, warnings, persistence);
       historyTurns = await withHistoryDocuments(deps.documents, historyTurns, attached, readDocuments, warnings, persistence);
@@ -205,7 +205,7 @@ export async function handleTurn(
     if (typeof userContent === "string" && userContent === "") {
       throw new EmptyTurnError();
     }
-    const fileHistory = await loadFileHistory(deps.fileHistory, agent.name, input.conversation, input.actor, warnings);
+    const fileHistory = await loadFileHistory(deps.fileHistory, agent.name, input.conversation, actor, warnings);
     const messages: ChatMessageInput[] = [...history, ...(fileHistory ? [{ role: "user" as const, content: fileHistory }] : []), { role: "user", content: userContent }];
     endState = await refreshCancellation();
     signal.throwIfAborted();
@@ -213,7 +213,7 @@ export async function handleTurn(
       agent,
       configuration,
       messages,
-      ...(input.actor ? { actor: input.actor } : {}),
+      actor, user, executionGrant: input.executionGrant,
       ...(input.caller ? { caller: input.caller } : {}),
       conversation: input.conversation,
       ...(ownerEmail ? { ownerEmail } : {}),
@@ -350,7 +350,7 @@ export async function handleTurn(
   // Links first, warnings after: one is what the run made and the other is what
   // it lost, and a reader scanning the end of a reply should meet them in that
   // order.
-  await rememberFiles(deps.fileHistory, agent.name, input.conversation, input.actor, producedRefs.filter((file) => file.key), warnings);
+  await rememberFiles(deps.fileHistory, agent.name, input.conversation, actor, producedRefs.filter((file) => file.key), warnings);
   // A stop can arrive while file URLs or history are being saved, after the model finished.
   endState = await refreshCancellation();
   const filesToDeliver = signal.aborted ? [] : produced.files;

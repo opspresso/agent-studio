@@ -80,15 +80,7 @@ function fakeRepo(initial: Agent): { repo: AgentRepository; current: () => Agent
 }
 
 describe("updateAgentSlack", () => {
-  it("stores only an explicitly granted owner identity, preserves it on ordinary updates and clears it on request", async () => {
-    const { repo, current } = fakeRepo(makeAgent());
-    expect((await updateAgentSlack(repo, "bot-proj", { runAsOwner: true }, OWNER)).view.runAsOwner).toBe(true);
-    expect(current().slack?.executionEmail).toBe(OWNER);
-    await updateAgentSlack(repo, "bot-proj", { channelKeywords: ["review"] }, OWNER);
-    expect(current().slack?.executionEmail).toBe(OWNER);
-    expect((await updateAgentSlack(repo, "bot-proj", { runAsOwner: false }, OWNER)).view.runAsOwner).toBe(false);
-    expect(current().slack?.executionEmail).toBeUndefined();
-  });
+
   it("encrypts new secrets and masks the response", async () => {
     const { repo, current } = fakeRepo(makeAgent());
     const { view } = await updateAgentSlack(

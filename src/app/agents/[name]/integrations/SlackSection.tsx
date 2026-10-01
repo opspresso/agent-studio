@@ -61,7 +61,6 @@ export function SlackSection({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [runAsOwner, setRunAsOwner] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const { confirm, confirmModal } = useConfirm();
 
@@ -73,7 +72,6 @@ export function SlackSection({
       .then((v) => {
         if (!cancelled) {
           setView(v);
-          setRunAsOwner(Boolean(v.runAsOwner));
           setBotToken(v.botToken);
           setSigningSecret(v.signingSecret);
           setEnabled(v.enabled);
@@ -98,7 +96,6 @@ export function SlackSection({
     setError(null);
     try {
       const next = await updateAgentSlack(agentName, {
-        ...(runAsOwner !== Boolean(view?.runAsOwner) ? { runAsOwner } : {}),
         botToken,
         signingSecret,
         enabled,
@@ -106,7 +103,6 @@ export function SlackSection({
         channelKeywords: parseList(keywords),
       });
       setView(next);
-      setRunAsOwner(Boolean(next.runAsOwner));
       setBotToken(next.botToken);
       setSigningSecret(next.signingSecret);
       setEnabled(next.enabled);
@@ -151,7 +147,6 @@ export function SlackSection({
       await disconnectAgentSlack(agentName);
       const next = await getAgentSlack(agentName);
       setView(next);
-      setRunAsOwner(Boolean(next.runAsOwner));
       setBotToken("");
       setSigningSecret("");
       setEnabled(false);
@@ -168,7 +163,6 @@ export function SlackSection({
 
   return (
     <BotIntegrationSection title={t("pset.slackBot")} view={view} error={error} onSelect={onSelect} selected={selected}
-      runAsOwner={runAsOwner} onRunAsOwnerChange={setRunAsOwner} busy={busy}
       onRetry={() => setReloadKey(key => key + 1)}>
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>

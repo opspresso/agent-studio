@@ -63,6 +63,7 @@ export const en = {
   "settings.overview": "Manage service settings, access, plugins and models.",
   "settings.adminOnly": "Only administrators can manage app settings.",
   "settings.loadFailed": "Could not load settings.",
+  "integrations.callerAuthenticationHint": "Each sender must connect their messaging account to their own Studio account. Agent requests use the connected user’s current permissions.",
   "integrations.unavailable": "Unavailable",
   "integrations.enabled": "Enabled",
   "integrations.configuredOff": "Configured (off)",
@@ -1242,10 +1243,10 @@ export const en = {
 
   "configuration.piiHint":
     "Masks emails, phone numbers, Korean registration numbers and card numbers with reversible tokens before dispatch. What an MCP tool receives is not masked.",
-  "configuration.callerContext": "Tell the run who is asking (name, timezone)",
+  "configuration.callerContext": "Tell the model the requester’s name and timezone",
 
   "configuration.callerHint":
-    "Anywhere a person runs it — chat, Playground, a signed-in API call, Slack. An API token and a trigger carry no caller. PII filtering does not mask a name.",
+    "Controls display names in model context. User authentication and permissions are checked independently. PII filtering does not mask names.",
   "configuration.structuredOutput": "Structured output (JSON schema)",
   "configuration.aboutStructuredOutput": "About structured output",
   "configuration.structuredOutputTitle": "Structured output",
@@ -1640,8 +1641,6 @@ export const en = {
   "webhook.reviewSetupRequired": "PR review setup is incomplete",
   "trigger.registeredBy": "Registered by: {email}",
   "trigger.registrationMissing": "Unknown user — register a new schedule",
-  "trigger.runAsOwner": "Run with my permissions",
-  "integrations.runAsOwnerHint": "Only the Agent owner can enable this. Save to let authorized bot callers use the owner's configured personal tools and Workspaces. Current member access and Agent policies still apply.",
   "webhook.intro":
     "One address per Agent, off until you turn it on. An outside system starts a run by posting JSON with X-Trigger-Secret or a GitHub HMAC-SHA256 signature; the delivery is acknowledged immediately and its outcome appears in the history on the right. The webhook always runs the Agent’s current configuration.",
   "schedule.section": "Schedules",

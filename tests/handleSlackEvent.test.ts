@@ -2065,7 +2065,7 @@ describe("verified Slack caller attribution", () => {
     const { slack, emails } = makeSlackFake(); emails.set("U1", "untrusted@example.test");
     const deps = deps0(slack); const run = vi.fn<SlackEventDeps["runAgent"]>(async function* () { yield { done: true }; }); deps.runAgent = run;
     deps.identities.resolve = async () => ({ userId: "verified-user", email: "verified@example.test" });
-    deps.agents = withConfigurations({ get: async () => ({ ...agentFixture(), slack: { enabled: true, botToken: "token", signingSecret: "secret", executionEmail: "owner@x.com" } }) } as never, async () => configurationFixture());
+    deps.agents = withConfigurations({ get: async () => ({ ...agentFixture(), slack: { enabled: true, botToken: "token", signingSecret: "secret" } }) } as never, async () => configurationFixture());
     await handleSlackEvent(deps, EVENT, BINDING);
     expect(run.mock.calls[0]?.[0].ownerEmail).toBe("verified@example.test");
     expect(run.mock.calls[0]?.[0].actor).toEqual({ kind: "slack", id: "U1" });
