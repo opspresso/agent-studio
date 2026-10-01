@@ -170,6 +170,7 @@ refresh는 남은 실행 시간을 고려한 여유 구간에서 수행한다.
 일시 5xx·timeout은 grant를 폐기하지 않으며 실제 인증 거절은 재연결이 필요한 상태로 바꾼다.
 
 OAuth는 credential을 공급한다. 유효한 token이 있으면 정적·binding Authorization보다 우선하고,
+`application/mcp/credentials.ts`가 기존 header 이름의 모든 대소문자 표기를 제거한 뒤 한 값을 적용한다.
 연결이 없더라도 별도 정적 credential이 있으면 사용할 수 있다.
 PKCE·resource·issuer·state·콜백 소유권, Google·Slack metadata의 제한된 예외와 내부 URL 경계는
 [SECURITY의 OAuth 계약](../SECURITY.md#mcp-oauth)을 따른다.

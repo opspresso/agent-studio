@@ -5,8 +5,7 @@ import type { McpAuthProvider } from "@/domain/mcp/oauth";
 import type { McpServerAuth } from "@/domain/mcp/types";
 import { mcpAccountProvider } from "@/domain/mcp/account";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import { agentMcpHeadersContext, mcpHeadersContext } from "@/domain/security/secretContext";
-import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
+import { resolveMcpCredentials } from "@/application/mcp/credentials";
 import { NotFoundError, ValidationError } from "@/application/errors";
 
 interface GitHubCredentialDeps {
@@ -50,19 +49,10 @@ export function createAgentGitHubCredentials(deps: GitHubCredentialDeps) {
       const selected = await bindingFor(agent);
       if (!selected?.server) throw new ValidationError("Connect a GitHub MCP server in this Agent's settings before using Workspace Git operations");
       const { binding, server } = selected;
-      let overrides = binding.headers;
-      if (hasMcpHeaderSecrets(overrides) && binding.headerTarget !== mcpHeaderTarget(server.url)) {
-        // Match MCP dispatch: stale credentials cannot follow a registry entry to a new endpoint.
-        overrides = Object.fromEntries(Object.entries(overrides ?? {}).filter(([, value]) => value === null));
-      }
-      let value = authorization(deps.cipher.mergeOutboundHeaders(server.headers, overrides,
-        mcpHeadersContext(server.name), agentMcpHeadersContext(agentName, server.name)));
-      if (server.auth) {
-        if (!githubAuthority(server.auth, deps.target)) throw new ValidationError("GitHub MCP authorization does not match the Workspace GitHub API endpoint");
-        const resolved = await deps.auth.headersFor(agentName, server.name, server.auth);
-        if (!resolved.unavailable) value = authorization(resolved.headers);
-        else if (!value) throw new ValidationError(resolved.unavailable);
-      }
+      if (server.auth && !githubAuthority(server.auth, deps.target)) throw new ValidationError("GitHub MCP authorization does not match the Workspace GitHub API endpoint");
+      const resolved = await resolveMcpCredentials(deps, agentName, server, binding);
+      if (resolved.unavailable) throw new ValidationError(resolved.unavailable);
+      const value = authorization(resolved.headers);
       const token = /^(?:Bearer|token) ([^\s]+)$/i.exec(value ?? "")?.[1];
       if (!token) throw new ValidationError("The Agent's GitHub MCP requires a valid GitHub Authorization credential for Workspace Git operations");
       return token;

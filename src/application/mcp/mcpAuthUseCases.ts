@@ -29,7 +29,6 @@ import { resolveMcpAccountLookup, readMcpAccountLookup, isMcpAccountEndpoint, mc
 import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCipher";
 import {
   mcpConnectionSecretContext,
-  mcpHeadersContext,
   agentMcpHeadersContext,
   mcpOAuthClientSecretContext,
   mcpOAuthStateContext,
@@ -38,7 +37,8 @@ import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { resolveMcpBindings } from "@/application/agent/mcpBindingSettings";
 import { assertAgentOwnerOrAdminReadable, assertAgentWritable } from "@/application/agent/agentUseCases";
-import { applyMcpUserEmail, stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
+import { applyMcpUserEmail } from "@/application/mcpMetadataHeaders";
+import { resolveMcpCredentials } from "./credentials";
 import { listAgentMcpConnections } from "./listConnections";
 import { processManagedMcpLifecycleClaims } from "./managedMcpUseCases";
 import { assertAllowedUrl } from "@/application/registry/registryUseCases";
@@ -1137,34 +1137,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const [binding] = await resolveMcpBindings(deps.cipher, { get: async () => server },
         [{ name: serverName, ...(headerOverrides === undefined ? {} : { headers: headerOverrides }) }],
         agent.configuration?.mcpList ?? [], name => agentMcpHeadersContext(agentName, name));
-      const resolvedOverrides = binding?.headers;
-      // Assembled exactly as a run assembles it (see execution/mcpTools) — the
-      // binding's overrides layered over the entry, then the agent's
-      // Authorization last so an Agent cannot substitute its own. A list built
-      // any other way would be answering a question nobody asked.
-      const headers = deps.cipher.mergeOutboundHeaders(
-        server.headers,
-        resolvedOverrides,
-        mcpHeadersContext(server.name),
-        agentMcpHeadersContext(agentName, serverName),
-      );
-      // Before the availability check below, exactly as a run strips them: a
-      // stored spelling of a reserved metadata header is not "a way to
-      // authenticate", and this probe must not relay one either.
-      stripMcpMetadataHeaders(headers);
-      if (server.auth) {
-        const resolved = await deps.authProvider.headersFor(agentName, serverName, server.auth);
-        if (!resolved.unavailable) {
-          Object.assign(headers, resolved.headers);
-        } else if (Object.keys(headers).length === 0) {
-          // The same sentence a run would report, so "why are there no tools"
-          // has one answer wherever it is asked. Only when there is nothing else
-          // to authenticate with — an entry with headers of its own still works.
-          // The consequence clause is the caller's: a run says "its tools were
-          // not offered", the console says what an empty selection would mean.
-          return { ok: false, error: resolved.unavailable };
-        }
-      }
+      const credentials = await resolveMcpCredentials({ cipher: deps.cipher, auth: deps.authProvider }, agentName, server, binding);
+      if (credentials.unavailable) return { ok: false, error: credentials.unavailable };
+      const headers = credentials.headers;
       applyMcpUserEmail(headers, userEmail);
       const result = await deps.probe.listTools(server.url, headers, loopback);
       if (!result.ok && result.unauthorized && server.auth) {

@@ -186,6 +186,7 @@
 | MCP OAuth 콜백 기본값과 수동 입력 검증 | `src/application/mcp/mcpAuthUseCases.ts`의 `redirectUri`. Tools와 인가 요청은 같은 서버 설정에서 주소를 얻고 token 교환은 pending state의 주소를 쓴다 | 구조 |
 | MCP 연결 화면의 조회 계약 선택·계정 label 검증·JSON Pointer·추가 identity scopes | `src/domain/mcp/account.ts`. 관리자 계약·OIDC UserInfo·제공자 기본값 순서로 선택하며 Studio 사용자 이메일을 연결 계정으로 추정하지 않는다. 타입 계약은 독립 leaf `accountLookup.ts` | 구조 |
 | 공용 MCP OAuth client 참조와 token endpoint 자격 증명 선택 | `src/application/mcp/mcpOAuthClient.ts`. code 교환과 refresh가 같은 선택을 사용한다 | 구조 |
+| MCP dispatch의 endpoint-bound Agent 헤더·예약 metadata 제거·OAuth 우선순위 | `application/mcp/credentials.ts`; 실행·Agent 도구 조회·Workspace GitHub 자격증명이 같은 판정을 사용한다. HTTP header 이름의 대소문자와 무관하게 OAuth 값 하나만 전송한다 | 코드 |
 | 원격·관리형 MCP의 헤더·환경·OAuth secret 응답 마스킹 | `src/application/mcp/mcpViews.ts` | 구조 |
 | `plugin.json`/`mcp.json` 의 해석, 그리고 Plugin 이 어떤 MCP transport 를 바인딩할 수 있는가 | `src/domain/plugin/types.ts` | 구조 |
 | Agent Plugins 이름 규칙 | `src/domain/plugin/types.ts` 의 `isPluginName` | 구조 |

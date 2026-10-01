@@ -14,17 +14,12 @@ import {
   applyMcpUserEmail,
   CONVERSATION_ID_HEADER,
   mcpUserEmail,
-  stripMcpMetadataHeaders,
   TENANT_ID_HEADER,
 } from "@/application/mcpMetadataHeaders";
-import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
+import { resolveMcpCredentials } from "@/application/mcp/credentials";
 import type { ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
 import { mapMcpSource, MCP_SOURCE_RESULT_DESCRIPTION } from "@/application/audio/mapMcpSource";
-import {
-  mcpHeadersContext,
-  agentMcpHeadersContext,
-} from "@/domain/security/secretContext";
 
 export type ResolvedMcp = Awaited<ReturnType<typeof buildMcpTools>>;
 
@@ -95,20 +90,10 @@ export async function buildMcpTools(
               : `MCP server '${mcp.name}' could not be checked for a safe address; its tools were not offered.` };
           }
         }
-        let overrides = binding.headers;
-        let credentialWarning: string | undefined;
-        if (
-          hasMcpHeaderSecrets(overrides) &&
-          binding.headerTarget !== mcpHeaderTarget(mcp.url)
-        ) {
-          overrides = Object.fromEntries(
-            Object.entries(overrides ?? {}).filter(([, value]) => value === null),
-          );
-          credentialWarning =
-            `MCP server '${mcp.name}' moved since its Agent header credentials were saved; ` +
-            "those credentials were not sent. Re-enter them for the current endpoint.";
-          log.warn("mcp", credentialWarning);
-        }
+        const credentials = await resolveMcpCredentials({ cipher: deps.cipher, auth: deps.mcpAuth }, configuration.agentName, mcp, binding);
+        const credentialWarning = credentials.warning;
+        if (credentialWarning) log.warn("mcp", credentialWarning);
+        if (credentials.unavailable) return { warning: [credentialWarning, `${credentials.unavailable} Its tools were not offered.`].filter(Boolean).join(" ") };
         const sourceOutputs = binding.sourceOutputs ?? mcp.sourceOutputs;
         const defaults = binding.sourceOutputs === undefined && Boolean(sourceOutputs?.length);
         const refreshIdentity = defaults || sourceOutputs?.some((mapping) => mapping.refreshArgument)
@@ -116,46 +101,7 @@ export async function buildMcpTools(
         // Default namespaces belong to the authenticated connection, never to a shared plugin account.
         const mappings = sourceOutputs?.map((mapping) => defaults ? { ...mapping,
           namespace: createHash("sha256").update(JSON.stringify([mapping.namespace, configuration.agentName, refreshIdentity])).digest("hex") } : mapping);
-        const headers = deps.cipher.mergeOutboundHeaders(
-          mcp.headers,
-          overrides,
-          mcpHeadersContext(mcp.name),
-          agentMcpHeadersContext(
-            configuration.agentName,
-            binding.name,
-          ),
-        );
-        // Before the availability check below: a stored spelling of a reserved
-        // metadata header must never count as "a way to authenticate" a server
-        // whose connection is unavailable, and must never impersonate another
-        // agent, user, or conversation.
-        stripMcpMetadataHeaders(headers);
-        if (mcp.auth) {
-          // A per-agent credential, resolved and refreshed by the auth
-          // provider. Applied last on purpose: an Agent must not be able to
-          // substitute its own Authorization for the agent's connection.
-          // The entry's own OAuth block goes with it, so the provider can tell
-          // whether the connection still belongs to what this name points at —
-          // it is already in hand here, which keeps that check off the read path.
-          const resolved = await deps.mcpAuth.headersFor(
-            configuration.agentName,
-            mcp.name,
-            mcp.auth,
-          );
-          if (!resolved.unavailable) {
-            Object.assign(headers, resolved.headers);
-          } else if (Object.keys(headers).length === 0) {
-            // Nothing else to authenticate with, so the server really is out of
-            // reach. With headers of its own it is not: discovering OAuth on an
-            // entry adds a way to authenticate it, and must not take away the
-            // one the operator already configured.
-            return {
-              warning: [credentialWarning, `${resolved.unavailable} Its tools were not offered.`]
-                .filter(Boolean)
-                .join(" "),
-            };
-          }
-        }
+        const headers = credentials.headers;
         // The platform's own values, applied last: the strip above already
         // removed every stored spelling, so nothing merged from the registry
         // or a binding survives to be folded with these.
