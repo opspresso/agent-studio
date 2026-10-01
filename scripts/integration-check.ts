@@ -1440,9 +1440,11 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       const input = { kind: "document" as const, source: "generated" as const, mimeType: "text/plain", bytes };
       let writes = 0;
       let deletes = 0;
+      const blobs = new Map<string, Uint8Array>();
       const storage = { rows: artifactRepository, content, objects: {
-        put: async () => { writes++; }, delete: async () => { deletes++; }, sign: async () => "unused",
-        read: async () => ({ bytes, mimeType: input.mimeType }),
+        put: async (value: { key: string; bytes: Uint8Array }) => { writes++; blobs.set(value.key, value.bytes); },
+        delete: async (key: string) => { deletes++; blobs.delete(key); }, sign: async () => "unused",
+        read: async (key: string) => ({ bytes: blobs.get(key)!, mimeType: input.mimeType }),
       } };
       const contentKey = artifactContentKey({ ...context, ...input }, contentChecksum(bytes));
       cleanup(() => deleteItem(dbKeys.artifactContent(contentKey)));
@@ -1459,6 +1461,22 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       for (const id of ids) assert.equal(await artifactRepository.get(id), null);
       await storeArtifact(storage, context, { ...input, artifactId: `dedup-replacement-${suffix}` });
       assert.equal(writes, 2, "a deleted canonical file is not reused");
+      const racingId = `dedup-race-${suffix}`;
+      cleanup(() => artifactRepository.delete(racingId));
+      const values = [new Uint8Array([1]), new Uint8Array([2])];
+      for (const [index, body] of values.entries()) {
+        cleanup(() => artifactRepository.delete(`dedup-race-verified-${index}-${suffix}`));
+        cleanup(() => deleteItem(dbKeys.artifactContent(artifactContentKey({ ...context, ...input }, contentChecksum(body)))));
+      }
+      const raced = await Promise.allSettled(Array.from({ length: 12 }, (_, index) => storeArtifact(storage, context,
+        { ...input, artifactId: racingId, bytes: values[index % 2]! })));
+      assert.ok(raced.some(result => result.status === "fulfilled"));
+      assert.ok(raced.some(result => result.status === "rejected"));
+      assert.equal(writes, 3, "different-content writes to the same artifact ID cannot overwrite the object");
+      for (const [index, body] of values.entries()) {
+        const saved = await storeArtifact(storage, context, { ...input, artifactId: `dedup-race-verified-${index}-${suffix}`, bytes: body });
+        assert.deepEqual((await storage.objects.read(saved.key)).bytes, body, "content references return the matching bytes after an ID race");
+      }
       pass("artifacts: SHA-256 deduplication across concurrent writes, reserved-ID aliases and canonical deletion");
     }
 

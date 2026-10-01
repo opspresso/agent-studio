@@ -116,7 +116,7 @@ export async function storeArtifact(
     createdAt: new Date().toISOString(),
   };
   const contentKey = artifactContentKey(artifact, artifact.checksum!);
-  return storage.content.exclusive(contentKey, async () => {
+  return storage.content.exclusive([`artifact-id:${artifactId}`, contentKey], async () => {
     const occupied = await storage.rows.get(artifactId);
     if (occupied) {
       if (!occupied.checksum || occupied.checksum !== artifact.checksum || artifactContentKey(occupied, occupied.checksum) !== contentKey) {

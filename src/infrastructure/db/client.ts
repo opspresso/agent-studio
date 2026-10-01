@@ -91,7 +91,7 @@ export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>)
 }
 
 /** Storage locks use their own small pool so waiting uploads cannot exhaust the item-store pool. */
-export async function withContentLock<T>(contentKey: string, operation: () => Promise<T>): Promise<T> {
+export async function withContentLock<T>(keys: string | readonly string[], operation: () => Promise<T>): Promise<T> {
   if (!contentLockPool) {
     contentLockPool = new Pool({ connectionString: config.databaseUrl, max: 4, idleTimeoutMillis: 30_000 });
     contentLockPool.on("error", (error) => log.error("db", "idle content lock error", error));
@@ -100,7 +100,10 @@ export async function withContentLock<T>(contentKey: string, operation: () => Pr
   let broken: Error | undefined;
   try {
     await client.query("BEGIN");
-    await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))", ["artifact-content", contentKey]);
+    // All identities share one connection; ordered acquisition avoids lock cycles.
+    for (const key of [...new Set(typeof keys === "string" ? [keys] : keys)].sort()) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))", ["artifact-content", key]);
+    }
     const result = await operation();
     await client.query("COMMIT");
     return result;

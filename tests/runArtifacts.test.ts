@@ -101,6 +101,19 @@ afterEach(() => {
 });
 
 describe("storeArtifact", () => {
+  it("serializes different-content writes to one reserved ID without publishing a wrong content reference", async () => {
+    const storage = fakeStorage();
+    const input = { artifactId: "racing-id", kind: "document" as const, source: "generated" as const, mimeType: "text/plain" };
+    const outcomes = await Promise.allSettled([new Uint8Array([1]), new Uint8Array([2])].map(bytes => storeArtifact(storage, CONTEXT, { ...input, bytes })));
+    expect(outcomes.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter(result => result.status === "rejected")).toHaveLength(1);
+    expect(storage.puts).toHaveLength(1);
+    for (const value of [1, 2]) {
+      const bytes = new Uint8Array([value]);
+      const result = await storeArtifact(storage, CONTEXT, { ...input, artifactId: `verified-${value}`, bytes });
+      expect(storage.puts.find(row => row.key === result.key)?.bytes).toEqual(bytes);
+    }
+  });
   it("refuses to overwrite a reserved identity with different bytes", async () => {
     const storage = fakeStorage();
     const input = { artifactId: "reserved", kind: "document" as const, source: "generated" as const,

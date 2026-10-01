@@ -7,14 +7,15 @@ export function fakeArtifactContent(): ArtifactContentRepository {
   return {
     get: async key => rows.get(key) ?? null,
     put: async (key, entry) => { rows.set(key, entry); },
-    async exclusive(key, operation) {
-      const prior = locks.get(key) ?? Promise.resolve();
+    async exclusive(input, operation) {
+      const keys = [...new Set(typeof input === "string" ? [input] : input)].sort();
+      const prior = keys.map(key => locks.get(key) ?? Promise.resolve());
       let release!: () => void;
       const next = new Promise<void>(resolve => { release = resolve; });
-      locks.set(key, next);
-      await prior;
+      for (const key of keys) locks.set(key, next);
+      await Promise.all(prior);
       try { return await operation(); }
-      finally { release(); if (locks.get(key) === next) locks.delete(key); }
+      finally { release(); for (const key of keys) if (locks.get(key) === next) locks.delete(key); }
     },
   };
 }

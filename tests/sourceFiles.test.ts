@@ -47,6 +47,18 @@ beforeEach(() => {
 const openBody = async () => open();
 
 describe("private source file lifecycle", () => {
+  it("reuses identical final output across jobs and preserves the canonical file's original provenance", async () => {
+    for (const jobId of ["job-a", "job-b"]) fake.seed([{ ...keys.audioJob("audio", jobId),
+      job: { status: "running", stage: "postprocessing", userEmail: input.userEmail } }]);
+    const api = useCases();
+    const first = await api.import({ ...input, mimeType: "text/markdown", derived: { jobId: "job-a", kind: "draft" },
+      derivedFrom: "raw-a", model: "model-a", producedBy: "writer-a" }, openBody);
+    const second = await api.import({ ...input, id: "job-b-summary", mimeType: "text/markdown", derived: { jobId: "job-b", kind: "draft" },
+      derivedFrom: "raw-b", model: "model-b", producedBy: "writer-b" }, openBody);
+    expect(second).toEqual(first);
+    expect(second).toMatchObject({ derivedFrom: "raw-a", model: "model-a", producedBy: "writer-a" });
+    expect(objects.write).toHaveBeenCalledTimes(1);
+  });
   it("never indexes different bytes under a checksum when uploads race on one immutable file ID", async () => {
     const api = useCases();
     const first = new Uint8Array([1, 2, 3]);
