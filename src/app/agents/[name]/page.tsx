@@ -7,7 +7,7 @@ import { getConfiguration, getAgent, listModels, putConfiguration,
   type AgentConfiguration, type AgentConfigurationInput, type SelectableModel, type SanitizedAgent } from "../lib/api";
 import { useT } from "@/app/_i18n/provider";
 import { canEditAgent, useViewer } from "@/app/_lib/useViewer";
-import { tierAtLeast } from "@/domain/member/tiers";
+import { tierMayEdit } from "@/domain/member/tiers";
 import { modelType } from "@/domain/llm/models";
 import { LoadingText } from "@/app/_components/PageState";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
@@ -106,7 +106,7 @@ export default function PlaygroundPage() {
   if (loading || viewer === null) return <LoadingText />;
   if (error || !agent || agent.name !== name) return <Alert color="red">{error ?? t("playground.notFound")}</Alert>;
   const canEdit = canEditAgent(viewer, agent.ownerEmail);
-  const canPreview = tierAtLeast(viewer.tier, "member");
+  const canPreview = tierMayEdit(viewer.tier);
   const runModel = models.find(model => model.id === configuration?.model);
   const saveState = { run: save, saving, disabled: !draft.model || schemaError !== null,
     error: schemaError ?? saveError, saved: saved && !dirty, label: t("playground.save") };

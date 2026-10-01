@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, createElement, useContext } from "react";
+import { tierMayEdit } from "@/domain/member/tiers";
 import type { Viewer } from "@/lib/viewer";
 
 /**
@@ -52,6 +53,7 @@ export function useViewer(): Viewer | null {
 export function canEditAgent(viewer: Viewer | null, ownerEmail: string | null): boolean {
   return (
     viewer !== null &&
+    tierMayEdit(viewer.tier) &&
     ownerEmail !== null &&
     (viewer.isConfiguredAdmin || viewer.email === ownerEmail)
   );

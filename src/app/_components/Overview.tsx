@@ -28,7 +28,7 @@ import type { Chat } from "@/domain/chat/types";
 import { listAgents, type SanitizedAgent } from "@/app/agents/lib/api";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
-import { tierAtLeast, tierMayCreateAgents, type MemberTier } from "@/domain/member/tiers";
+import { tierMayCreateAgents, type MemberTier } from "@/domain/member/tiers";
 import { formatDate } from "@/shared/date";
 import { OwnerLine } from "./OwnerLine";
 import { PageHeader } from "./PageHeader";
@@ -71,13 +71,11 @@ export function Overview({
 }: {
   userEmail: string;
   /**
-   * Resolved by the server page, so the first render gates catalog links using
-   * the same authenticated tier as the rest of the console.
+   * Resolved by the server page to gate Agent creation before the first render.
    */
   tier: MemberTier;
 }) {
   const viewerEmail = userEmail;
-  const showCatalogs = tierAtLeast(tier, "member");
   const canCreateAgents = tierMayCreateAgents(tier);
   const t = useT();
   const locale = useLocale();
@@ -142,11 +140,6 @@ export function Overview({
   // Independently, so one unreachable registry costs its own count and no more.
   useEffect(() => {
     let cancelled = false;
-    if (!showCatalogs) {
-      // Not merely a hidden link: asking would be refused, and the
-      // count is the fact being withheld.
-      return;
-    }
     for (const catalog of CATALOGS) {
       fetch(catalog.url)
         .then((res) => readJson<unknown[]>(res))
@@ -162,7 +155,7 @@ export function Overview({
     return () => {
       cancelled = true;
     };
-  }, [showCatalogs]);
+  }, []);
 
   const recent = recentAgents(agents ?? [], viewerEmail, RECENT_AGENTS);
   // Only once both have answered, so the first-run panel never flashes over a
@@ -183,7 +176,7 @@ export function Overview({
       </PageHeader>
 
       {isNewWorkspace ? (
-        <GetStarted showCatalogs={showCatalogs} canCreateAgents={canCreateAgents} />
+        <GetStarted canCreateAgents={canCreateAgents} />
       ) : (
         <div className={classes.activityGrid}>
           <Section title={t("overview.recentChats")} description={t("overview.recentChatsNote")}
@@ -236,7 +229,7 @@ export function Overview({
         <Text className={classes.inventoryLabel}>{t("overview.inventory")}</Text>
         <div className={classes.inventoryLinks}>
           <Link href="/agents"><span>{t("nav.agents")}</span><strong>{agents?.length ?? "—"}</strong></Link>
-          {showCatalogs && CATALOGS.map(({ key, href, label }) => (
+          {CATALOGS.map(({ key, href, label }) => (
             <Link href={href} key={key}><span>{t(label)}</span><strong>{counts[key] ?? "—"}</strong></Link>
           ))}
         </div>
@@ -305,7 +298,7 @@ function RowSkeleton({ rows }: { rows: number }) {
  * workspace showing three "nothing here" boxes says what is missing and never
  * what to do about it.
  */
-function GetStarted({ showCatalogs, canCreateAgents }: { showCatalogs: boolean; canCreateAgents: boolean }) {
+function GetStarted({ canCreateAgents }: { canCreateAgents: boolean }) {
   const t = useT();
   return (
     <Paper withBorder p="xl" className={classes.getStarted}>
@@ -322,11 +315,9 @@ function GetStarted({ showCatalogs, canCreateAgents }: { showCatalogs: boolean; 
             <Button component={Link} href={canCreateAgents ? "/agents?create=1" : "/agents"} leftSection={canCreateAgents ? <IconPlus size={16} /> : <IconRobot size={16} />}>
               {t(canCreateAgents ? "overview.newAgent" : "overview.allAgents")}
             </Button>
-            {showCatalogs && (
-              <Button component={Link} href="/skills" variant="default">
-                {t("overview.browseSkills")}
-              </Button>
-            )}
+            <Button component={Link} href="/skills" variant="default">
+              {t("overview.browseSkills")}
+            </Button>
           </Group>
         </Stack>
       </Group>

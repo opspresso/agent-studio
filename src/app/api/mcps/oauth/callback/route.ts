@@ -1,5 +1,5 @@
 import { mcpAuthUseCases } from "@/lib/container";
-import { withAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { AppError } from "@/application/errors";
 
 type CallbackOutcome = { ok: true; agent: string; server: string } | { ok: false; error: string };
@@ -71,11 +71,10 @@ function escapeHtml(value: string): string {
 /**
  * The authorization server's redirect target.
  *
- * `withAuth` is what makes the identity check possible: the browser arrives with
- * its session cookie, so the user who started the flow can be compared to the
- * one finishing it.
+ * Recheck the current tier as well as the session: completing this GET writes
+ * credentials, even if the flow began before the caller was downgraded.
  */
-export const GET = withAuth(async (user, request: Request) => {
+export const GET = withMemberAuth(async (user, request: Request) => {
   const url = new URL(request.url);
   const state = url.searchParams.get("state");
   const code = url.searchParams.get("code");

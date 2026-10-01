@@ -103,7 +103,7 @@ Agent 소유권을 넘는 관리자 권한과는 구분한다. [인증과 접근
 | `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | — | — | `AUTH_PASSWORD=true` 일 때 부팅 시 준비되는 계정 (`ensureBootstrapAdmin`). 같은 이메일의 사용자에게 비밀번호 credential 이 이미 있으면 변경하지 않는다. 사용자는 있지만 credential 이 없으면 기존 사용자 행을 유지하고 비밀번호 credential 을 추가한다. 기존 비밀번호는 환경변수 변경으로 갱신되지 않는다. 이메일은 `ADMIN_EMAILS` 에도 넣어야 admin 이 된다. `ALLOWED_EMAIL_DOMAINS` 는 이 주소에 적용되지 않는다. 제공자나 도메인 목록이 모두를 잠갔을 때의 비상 계정이므로. `AUTH_PASSWORD` 없이 설정하면 경고만 남기고 만들지 않는다. |
 | `ALLOWED_EMAIL_DOMAINS` | 비어 있음 | **runtime** | 로그인이 허용되는 도메인의 쉼표 구분 목록. 모든 로그인 수단에 적용된다(사용자 생성과 세션 생성의 훅). 비어 있으면 아무 도메인이나 허용한다. |
 | `TRUSTED_PROXY_CIDRS` | 비어 있음 | — | 이 배포 앞에 있는 리버스 프록시들의 IP/CIDR 범위, 쉼표 구분 (예: Caddy 와 ingress controller 처럼 두 홉이 `X-Forwarded-For` 에 덧붙일 때). Better Auth 는 rate limiting 의 키로 삼는 클라이언트 IP 를 알아내기 위해 체인 오른쪽에서 이 홉들을 벗겨 낸다. 비어 있으면 값이 하나뿐인 헤더만 신뢰하므로, 프록시 두 개 뒤에서는 모든 요청이 하나의 공유 버킷에 떨어진다. |
-| `ADMIN_EMAILS` | 비어 있음 | **runtime** | 쉼표 구분. 레지스트리·설정 변경 권한과 남이 소유한 Agent에 대한 쓰기 권한을 준다. 목록에 있는 멤버는 저장된 `admin` tier 로 승격되고 거기 고정된다. 목록에서 빼도 자동 강등은 없다. 비어 있으면 레지스트리·설정 변경에는 *제한 없음*, Agent 오버라이드에는 *아무도 아님* 을 뜻한다. 두 질문이 서로 다른 술어로 답해지는 것은 의도적이다 ([SECURITY.md](SECURITY.md#인가-모델)). |
+| `ADMIN_EMAILS` | 비어 있음 | **runtime** | 쉼표 구분. 레지스트리·설정 변경 권한과 남이 소유한 Agent에 대한 쓰기 권한을 준다. 목록에 있는 멤버는 저장된 `admin` tier 로 승격되고 거기 고정된다. 목록에서 빼도 자동 강등은 없다. 비어 있으면 레지스트리·설정 변경에는 *member 이상 허용*(guest는 읽기 전용), Agent 오버라이드에는 *아무도 아님* 을 뜻한다. 두 질문이 서로 다른 술어로 답해지는 것은 의도적이다 ([SECURITY.md](SECURITY.md#인가-모델)). |
 
 ## 설정 화면
 
@@ -420,6 +420,19 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | `MOCK_LLM_DELAY_MS` | `0` | 스트리밍되는 chunk 사이의 밀리초. `0` 은 소켓이 받아 주는 만큼 빠르게 보낸다. 스크롤이 생기는 답변을 재현하려면 아래 행과 함께 이 값을 올려라. |
 | `MOCK_LLM_CHUNKS` | `0` | 답변이 대략 몇 개의 chunk 로 채워지는지. `0` 은 한 줄짜리 답변을 그대로 둔다. |
 
+## 사용자 등급과 월 한도
+
+Settings → Access에서 등급 추가·삭제와 사용자별 UTC 월 USD 한도를 설정한다. 저장 위치는
+Settings의 `memberTiers`이며 환경변수는 없다. Chat과 Workspace 비용은 같은 개인 한도에 합산한다.
+처음에는 admin(무제한), member($20), guest($2)가 있다. admin·guest는 삭제할 수 없고
+admin의 무제한 정책은 수정할 수 없다. guest와 사용자 정의 등급은 0 이상의 금액을 지정하며,
+0은 새 실행을 차단한다. 사용자 정의 등급은 member 권한이다. 사용자가 없는 등급만 삭제할 수 있다.
+admin은 맨 위, guest는 맨 아래에 고정하며 나머지 등급은 핸들을 끌어다 놓아 순서를 변경하고 저장한다. 키보드는 핸들에서 방향키를 사용한다.
+새 등급은 guest 바로 위에 추가된다. 저장한 순서는 Members의 선택 목록에도 적용되며 권한과는 무관하다.
+Members의 선택 목록과 Profile 한도도 같은 설정을 읽는다. guest 동시 실행 1개 제한은 고정이고,
+다른 등급은 `MAX_CONCURRENT_RUNS_PER_ACTOR`를 따른다. 월 한도는 완료 후 집계된 지출을 기준으로
+다음 실행 전에 검사하므로 진행 중인 작업이 잔액을 초과할 수 있다.
+
 ## 코드에 고정된 제한
 
 이들은 런에 한계를 두며 환경으로 설정할 수 **없다**. 각각 소유 파일이 하나씩 있고, 사본이
@@ -428,7 +441,7 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 | 제한 | 값 | 소유자 |
 |---|---|---|
 | agent 런당 턴 수 (Agent 설정 `maxTurn` 기본값) | `50` | `src/application/runtime/execute.ts` |
-| 멤버 tier 제한. 멤버당 동시 런 수 / 월 USD 상한 (`admin` —/—, `member` —/`20`, `guest` `1`/`2`. "—" 는 env 제한을 물려받거나 상한이 없다는 뜻). `guest` 는 추가로 Agent를 만들 수 없고 Agent API 토큰도 쓸 수 없다 | `TIER_LIMITS` | `src/domain/member/tiers.ts` |
+| 멤버 등급 목록 상한 / guest 동시 실행 수. 월 금액은 Settings 정책에서 변경한다 | `50` / `1` | `src/domain/member/tiers.ts` |
 | SDK function tool 동시 실행 수 | `5` | `src/application/runtime/runner.ts` |
 | ModelTask 작업당 최대 시도 / 승격 전 같은 모델의 실패 수 | `4` / `2` | `src/application/llm/callModelRouter.ts` |
 | 턴당 도구 결과 텍스트 | `200,000` 자 | `src/application/llm/toolResultBudget.ts` |

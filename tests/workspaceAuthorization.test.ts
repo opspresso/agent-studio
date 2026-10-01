@@ -18,6 +18,19 @@ function fixture() {
 }
 
 describe("Workspace execution authorization", () => {
+  it("allows a guest's own interactive work while keeping Agent access checks", async () => {
+    const deps = { ...fixture(), memberTier: async () => "guest" as const };
+    await expect(authorizeWorkspaceExecution(deps, "demo", email)).resolves.toBeUndefined();
+    await expect(authorizeWorkspaceExecution(deps, "demo", email, { kind: "user", id: email })).resolves.toBeUndefined();
+    vi.mocked(deps.agents.get).mockResolvedValue({ ...agent, ownerEmail: "other@example.com", visibility: "private" });
+    await expect(authorizeWorkspaceExecution(deps, "demo", email)).rejects.toThrow("private");
+  });
+  it("refuses a removed account and a guest spending under another actor", async () => {
+    await expect(authorizeWorkspaceExecution({ ...fixture(), memberTier: async () => null }, "demo", email)).rejects.toThrow("active account");
+    for (const actor of [{ kind: "user", id: "other@example.com" }, { kind: "agent-token", id: email }, { kind: "slack", id: "U1" }] as const) {
+      await expect(authorizeWorkspaceExecution({ ...fixture(), memberTier: async () => "guest" as const }, "demo", email, actor)).rejects.toThrow("member access");
+    }
+  });
   it("uses the current owner grant for a Webhook and rechecks it on later calls", async () => {
     const deps = fixture();
     const actor = { kind: "webhook" as const, id: "demo:webhook" };

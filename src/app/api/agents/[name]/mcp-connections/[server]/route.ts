@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { mcpAuthUseCases } from "@/lib/container";
-import { withAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
 
@@ -13,7 +13,7 @@ const saveSchema = z.object({
   scopes: z.array(z.string().min(1)).optional(),
 });
 
-export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const PUT = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name, server } = await ctx.params;
   const body = await editorBody(request);
   if (body instanceof Response) {
@@ -37,7 +37,7 @@ export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) =>
   }
 });
 
-export const DELETE = withAuth(async (user, _request: Request, ctx: RouteContext) => {
+export const DELETE = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name, server } = await ctx.params;
   try {
     await mcpAuthUseCases.disconnect(parseName(name), parseName(server), user.email);

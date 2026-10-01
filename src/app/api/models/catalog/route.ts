@@ -18,7 +18,7 @@ import {
   type ModelSelection,
   type ScoreSelection,
 } from "@/lib/runtime-settings";
-import { withMemberAuth } from "@/lib/session";
+import { withAuth } from "@/lib/session";
 import { config } from "@/lib/config";
 
 export interface ModelsCatalogResponse {
@@ -35,7 +35,7 @@ export interface ModelsCatalogResponse {
 }
 
 /** Runtime facts, user favorites and active retrieval selections for the model usage console. */
-export const GET = withMemberAuth(async (user) => {
+export const GET = withAuth(async (user) => {
   const [
     providerConfigs,
     favoriteModels,

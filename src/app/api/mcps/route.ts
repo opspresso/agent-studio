@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { mcpUseCases } from "@/lib/container";
-import { withAdminAuth, withMemberAuth } from "@/lib/session";
+import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
 import { headerRecordSchema } from "@/app/api/_lib/headerRecord";
@@ -14,7 +14,7 @@ const createSchema = z.object({
   headers: headerRecordSchema(z.string()).default({}),
 });
 
-export const GET = withMemberAuth(async () => {
+export const GET = withAuth(async () => {
   return Response.json(await mcpUseCases.list());
 });
 

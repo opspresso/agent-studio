@@ -80,12 +80,24 @@ export const auth = betterAuth({
     enabled: config.passwordAuth,
     disableSignUp: true,
   },
-  ...(google ? { socialProviders: { google } } : {}),
+  ...(google ? { socialProviders: { google: { ...google, overrideUserInfoOnSignIn: true } } } : {}),
   databaseHooks: {
     user: {
       create: {
         before: async (user) => {
           await assertAllowedEmailDomain(user.email);
+          return { data: user };
+        },
+      },
+      update: {
+        before: async (user, ctx) => {
+          const oauthSignIn = ctx?.path.startsWith("/callback/") || ctx?.path === "/sign-in/social";
+          if (oauthSignIn && ("name" in user || "image" in user)) {
+            if (user.email) await assertAllowedEmailDomain(user.email);
+            // OAuth profile refresh also proposes an email update. Ownership
+            // keys use the existing email, so sync presentation fields only.
+            return { data: { ...user, email: undefined, emailVerified: undefined } };
+          }
           return { data: user };
         },
       },
@@ -148,9 +160,10 @@ export const auth = betterAuth({
                 clientSecret: oidc.clientSecret,
                 scopes: oidc.scopes,
                 pkce: true,
+                overrideUserInfo: true,
               }] : []),
               ...(keycloakConfig ? [{
-                ...keycloak({ ...keycloakConfig, pkce: true, disableProviderLogout: true }),
+                ...keycloak({ ...keycloakConfig, pkce: true, disableProviderLogout: true, overrideUserInfo: true }),
                 providerId: KEYCLOAK_PROVIDER_ID,
                 requireIdTokenVerification: true,
               }] : []),

@@ -1,5 +1,5 @@
 import type { MemberRepository } from "@/domain/member/repository";
-import { toMemberTier } from "@/domain/member/tiers";
+import { storedMemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
 import { sql } from "@/infrastructure/db/client";
 import { boundedPageLimit } from "@/shared/pageLimit";
@@ -38,67 +38,71 @@ function toMember(row: UserRow): Member | null {
     name: row.name,
     email: row.email,
     image: row.image,
-    tier: toMemberTier(row.tier ?? undefined),
+    tier: storedMemberTier(row.tier ?? undefined),
     joinedAt,
     lastLoginAt: iso(row.lastLoginAt),
   };
 }
 
-export const memberRepository: MemberRepository = {
-  async list(limit, after) {
-    const bounded = boundedPageLimit(limit);
-    // The cursor's joinedAt is an ISO string with millisecond precision while
-    // the column keeps microseconds, so both the comparison and the order
-    // truncate to the cursor's precision — a sub-ms row on a page boundary
-    // would otherwise repeat as the next page's first row.
-    const rows = await sql<UserRow>(
-      `SELECT ${COLUMNS} FROM "user" ` +
-        (after
-          ? `WHERE (date_trunc('milliseconds', "createdAt"), "id") > ($2::timestamptz, $3) `
-          : "") +
-        `ORDER BY date_trunc('milliseconds', "createdAt"), "id" LIMIT $1`,
-      after ? [bounded, after.joinedAt, after.id] : [bounded],
-    );
-    return rows.flatMap((row): Member[] => {
+export function createMemberRepository(query: typeof sql = sql): MemberRepository {
+  return {
+    async list(limit, after) {
+      const bounded = boundedPageLimit(limit);
+      // The cursor's joinedAt is an ISO string with millisecond precision while
+      // the column keeps microseconds, so both the comparison and the order
+      // truncate to the cursor's precision — a sub-ms row on a page boundary
+      // would otherwise repeat as the next page's first row.
+      const rows = await query<UserRow>(
+        `SELECT ${COLUMNS} FROM "user" ` +
+          (after
+            ? `WHERE (date_trunc('milliseconds', "createdAt"), "id") > ($2::timestamptz, $3) `
+            : "") +
+          `ORDER BY date_trunc('milliseconds', "createdAt"), "id" LIMIT $1`,
+        after ? [bounded, after.joinedAt, after.id] : [bounded],
+      );
+      return rows.flatMap((row): Member[] => {
+        const member = toMember(row);
+        return member ? [member] : [];
+      });
+    },
+
+    async getByEmail(email) {
+      const rows = await query<UserRow>(`SELECT ${COLUMNS} FROM "user" WHERE "email" = $1`, [email]);
+      const row = rows[0];
+      return row ? toMember(row) : null;
+    },
+
+    async getById(id) {
+      const rows = await query<UserRow>(`SELECT ${COLUMNS} FROM "user" WHERE "id" = $1`, [id]);
+      const row = rows[0];
+      return row ? toMember(row) : null;
+    },
+
+    async setTier(id, tier) {
+      // One column, atomically: the auth library's own update is a
+      // read-modify-replace of the whole row, and routing a tier write through
+      // it would let a concurrent `lastLoginAt` write revert the tier.
+      const rows = await query<UserRow & { previousTier: string | null }>(
+        `UPDATE "user" AS u SET "tier" = $2 ` +
+          `FROM (SELECT "id", "tier" AS "previousTier" FROM "user" WHERE "id" = $1 FOR UPDATE) AS before ` +
+          `WHERE u."id" = before."id" ` +
+          `RETURNING u."id", u."name", u."email", u."image", u."tier", u."createdAt", u."lastLoginAt", before."previousTier"`,
+        [id, tier],
+      );
+      const row = rows[0];
+      if (!row) {
+        return null;
+      }
       const member = toMember(row);
-      return member ? [member] : [];
-    });
-  },
+      if (!member) {
+        return null;
+      }
+      return { member, previousTier: storedMemberTier(row.previousTier ?? undefined) };
+    },
+  };
+}
 
-  async getByEmail(email) {
-    const rows = await sql<UserRow>(`SELECT ${COLUMNS} FROM "user" WHERE "email" = $1`, [email]);
-    const row = rows[0];
-    return row ? toMember(row) : null;
-  },
-
-  async getById(id) {
-    const rows = await sql<UserRow>(`SELECT ${COLUMNS} FROM "user" WHERE "id" = $1`, [id]);
-    const row = rows[0];
-    return row ? toMember(row) : null;
-  },
-
-  async setTier(id, tier) {
-    // One column, atomically: the auth library's own update is a
-    // read-modify-replace of the whole row, and routing a tier write through
-    // it would let a concurrent `lastLoginAt` write revert the tier.
-    const rows = await sql<UserRow & { previousTier: string | null }>(
-      `UPDATE "user" AS u SET "tier" = $2 ` +
-        `FROM (SELECT "id", "tier" AS "previousTier" FROM "user" WHERE "id" = $1 FOR UPDATE) AS before ` +
-        `WHERE u."id" = before."id" ` +
-        `RETURNING u."id", u."name", u."email", u."image", u."tier", u."createdAt", u."lastLoginAt", before."previousTier"`,
-      [id, tier],
-    );
-    const row = rows[0];
-    if (!row) {
-      return null;
-    }
-    const member = toMember(row);
-    if (!member) {
-      return null;
-    }
-    return { member, previousTier: toMemberTier(row.previousTier ?? undefined) };
-  },
-};
+export const memberRepository = createMemberRepository();
 
 /**
  * Better Auth deletes an expired session only when its cookie comes back —

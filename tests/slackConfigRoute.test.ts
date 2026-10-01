@@ -13,6 +13,10 @@ vi.mock("@/lib/session", () => ({
     (handler: (user: unknown, ...args: any[]) => unknown) =>
     (...args: any[]) =>
       handler({ id: "u1", email: state.email, name: "U", image: null }, ...args),
+  withMemberAuth:
+    (handler: (user: unknown, ...args: any[]) => unknown) =>
+    (...args: any[]) =>
+      handler({ id: "u1", email: state.email, name: "U", image: null }, ...args),
 }));
 
 vi.mock("@/lib/container", async () => ({

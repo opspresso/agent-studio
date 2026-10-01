@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { modelRegistryUseCases } from "@/lib/container";
-import { withAdminAuth, withMemberAuth } from "@/lib/session";
+import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
 import { REGISTRY_MODEL_TYPES } from "@/domain/llm/providerModels";
@@ -22,7 +22,7 @@ const schema = z.object({
 
 export interface ModelRegistryResponse { models: RegisteredModelView[] }
 
-export const GET = withMemberAuth(async () => {
+export const GET = withAuth(async () => {
   try { return Response.json({ models: await modelRegistryUseCases.list() } satisfies ModelRegistryResponse); }
   catch (error) { return apiError(error); }
 });

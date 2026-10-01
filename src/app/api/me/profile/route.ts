@@ -1,3 +1,5 @@
+import { getMemberTierLimits } from "@/lib/runtime-settings";
+import type { TierLimits } from "@/domain/member/tiers";
 import { memberUseCases, usageUseCases } from "@/lib/container";
 import { withAuth } from "@/lib/session";
 import { apiError } from "@/app/api/_lib/http";
@@ -5,6 +7,7 @@ import type { Member } from "@/domain/member/types";
 
 export interface ProfileResponse {
   member: Member;
+  limits: TierLimits;
   monthToDateUsd: number;
 }
 
@@ -27,7 +30,7 @@ export const GET = withAuth(async (user) => {
       memberUseCases.me(user.email),
       usageUseCases.memberMonthToDate(user.email),
     ]);
-    return Response.json({ member, monthToDateUsd } satisfies ProfileResponse);
+    return Response.json({ member, monthToDateUsd, limits: await getMemberTierLimits(member.tier) } satisfies ProfileResponse);
   } catch (error) {
     return apiError(error);
   }

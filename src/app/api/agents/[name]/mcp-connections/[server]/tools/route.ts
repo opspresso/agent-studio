@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { headerRecordSchema } from "@/app/api/_lib/headerRecord";
 import { mcpAuthUseCases } from "@/lib/container";
-import { withAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
 
@@ -21,7 +21,7 @@ const bodySchema = z.object({
  * reason — it spends the agent's connection, and sends the caller's header
  * overrides alongside it. A non-owner falls back to the registry probe.
  */
-export const POST = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const POST = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name, server } = await ctx.params;
   // An empty body is a valid request: a binding with no overrides sends none.
   const body = await editorBody(request, { empty: {} });

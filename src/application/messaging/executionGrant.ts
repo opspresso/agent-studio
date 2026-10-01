@@ -1,7 +1,7 @@
 import type { Agent } from "@/domain/agent/types";
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { ExecutionGrant, RunActor } from "@/domain/execution/actor";
-import type { MemberTier } from "@/domain/member/tiers";
+import { tierMayEdit, type MemberTier } from "@/domain/member/tiers";
 import { ForbiddenError, ValidationError } from "@/application/errors";
 
 export function messagingExecutionEmail(agent: Agent, kind: ExecutionGrant["kind"], runAsOwner: boolean | undefined, email: string) {
@@ -21,7 +21,7 @@ export async function assertMessagingExecutionGrant(
   const tier = await deps.memberTier(grant.email);
   const agent = await deps.agents.get(grant.agentName);
   const integration = agent?.[grant.kind];
-  if ((tier !== "member" && tier !== "admin") || agent?.ownerEmail !== grant.email ||
+  if ((!tier || !tierMayEdit(tier)) || agent?.ownerEmail !== grant.email ||
     !integration?.enabled || integration.executionEmail !== grant.email) {
     throw new ValidationError("The messaging execution permission is no longer authorized");
   }

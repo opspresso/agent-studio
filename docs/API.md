@@ -38,16 +38,17 @@
   로그인한 누구나 읽고 실행하고, `private` 은 소유자·초대 멤버·admin 만이다
   ([SECURITY.md](SECURITY.md#인가-모델), 그 외에는 `403 { "error": "Agent \"…\" is private" }`).
   변경(수정/삭제, Agent 설정 저장, Slack·Telegram 설정)은 공개 범위와 무관하게
-  소유자와 effective admin(저장된 `admin` tier 또는 설정된 admin) 만 할 수 있고, 그 외에는
+  `member` 이상인 소유자와 effective admin(저장된 `admin` tier 또는 설정된 admin) 만 할 수 있고, 그 외에는
   `403 { "error": "You do not have permission to modify agent \"…\"" }` 이다.
   다른 사용자의 런타임 데이터나 마스킹된 secret 을 드러내는 agent 하위 리소스. 트레이스,
   Slack·Telegram 설정, API 토큰, trigger, 호출자별 사용량, MCP 연결. 은
   *읽기*도 소유자와 admin 으로 제한된다. Chat 은 소유자에게만 비공개다 (소유자가 아닌 읽기·변경은
   모두 404 를 돌려준다 — 403 은 chatId 의 존재를 알려 주는 답이다). MCP/skill/plugin 레지스트리와 모델 카탈로그(`/api/models/catalog`)는
-  **`member` tier 이상**에게 읽기가 공유된다. 모든 가입자가 시작하는 tier 인 `guest` 는
-  `403 { "error": "This resource is not available to your account" }` 을 받는다 (`withMemberAuth`).
+  **guest를 포함한 모든 로그인 사용자**에게 읽기가 공유된다 (`withAuth`).
+  guest는 member와 같은 메뉴를 보지만 Agent·레지스트리·즐겨찾기 변경과 Artifact 삭제는 할 수 없다.
+  본인 Chat·Workspace는 tier별 월 사용 한도 안에서 사용할 수 있다.
   변경은 저장된 `admin` tier 이거나 `ADMIN_EMAILS` 목록에 속해야 한다. 목록이 설정되지 않았으면
-  로그인한 사용자 누구나 허용하며, 그렇지 않으면
+  member 이상에게 허용하며 guest는 계속 읽기 전용이다. 권한이 없으면
   `403 { "error": "Only admins can modify this resource" }` 이다.
   agent 생성도 마찬가지로 tier 능력이다: 그 능력이 없는 tier 는
   `403 { "error": "Your tier does not allow creating agents" }` 을 받는다.
@@ -77,9 +78,9 @@
 
 ## 라우트 색인
 
-`session` = Better Auth 세션 쿠키. `member` = 세션 + `member` tier 이상
+`session` = Better Auth 세션 쿠키. `member` = 세션 + admin 또는 등록된 사용자 정의 tier (기본값 `member`)
 (`withMemberAuth`. `guest` 는 403 을 받는다). `admin` = 세션 + 저장된 `admin` tier 이거나 유효
-admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 agent 의 소유자, 저장된
+admin 목록에 속함(목록이 비면 member 이상). `owner` = 그 agent 의 소유자, 저장된
 `admin` tier, 또는 설정된 admin.
 
 ### Agents (`/api/agents`)
@@ -87,54 +88,54 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | 라우트 | 메서드 | 권한 |
 |---|---|---|
 | `/api/agents` | `GET` `POST` | session / session + Agent를 만들 수 있는 tier |
-| `/api/agents/{name}` | `GET` `PUT` `DELETE` | session / owner |
+| `/api/agents/{name}` | `GET` `PUT` `DELETE` | session / member + owner |
 | `/api/agents/{name}/clone` | `POST` | session + Agent를 만들 수 있는 tier |
-| `/api/agents/{name}/configuration` | `GET` `PUT` | session / owner |
+| `/api/agents/{name}/configuration` | `GET` `PUT` | session / member + owner |
 | `/api/agents/{name}/preview` | `POST` | member |
 | `/api/agents/{name}/predict` | `POST` | session 또는 Agent 토큰 |
 | `/api/agents/{name}/chat/completions` | `POST` | session 또는 Agent 토큰 |
 | `/api/agents/{name}/agent` | `POST` | session 또는 Agent 토큰 |
-| `/api/agents/{name}/token` | `GET` `POST` `DELETE` | owner |
-| `/api/agents/{name}/token/reveal` | `POST` | owner |
+| `/api/agents/{name}/token` | `GET` `POST` `DELETE` | owner / member + owner |
+| `/api/agents/{name}/token/reveal` | `POST` | member + owner |
 | `/api/agents/{name}/artifacts` | `GET` | owner |
 | `/api/agents/{name}/traces` | `GET` | owner |
 | `/api/agents/{name}/traces/{traceId}` | `GET` | owner |
 | `/api/agents/{name}/usage/actors` | `GET` | owner |
-| `/api/agents/{name}/triggers` | `GET` `POST` | owner |
-| `/api/agents/{name}/triggers/{trigger}` | `PUT` `DELETE` | owner |
-| `/api/agents/{name}/triggers/{trigger}/reveal` | `POST` | owner |
+| `/api/agents/{name}/triggers` | `GET` `POST` | owner / member + owner |
+| `/api/agents/{name}/triggers/{trigger}` | `PUT` `DELETE` | member + owner |
+| `/api/agents/{name}/triggers/{trigger}/reveal` | `POST` | member + owner |
 | `/api/agents/{name}/triggers/{trigger}/runs` | `GET` | owner |
-| `/api/agents/{name}/slack` | `GET` `PUT` `DELETE` | owner |
-| `/api/agents/{name}/slack/test` | `POST` | owner |
+| `/api/agents/{name}/slack` | `GET` `PUT` `DELETE` | owner / member + owner |
+| `/api/agents/{name}/slack/test` | `POST` | member + owner |
 | `/api/agents/{name}/slack/channels` | `GET` | owner |
-| `/api/agents/{name}/telegram` | `GET` `PUT` `DELETE` | owner |
+| `/api/agents/{name}/telegram` | `GET` `PUT` `DELETE` | owner / member + owner |
 | `/api/agents/{name}/telegram/chats` | `GET` | owner |
-| `/api/agents/{name}/telegram/test` | `POST` | owner |
-| `/api/agents/{name}/telegram/webhook` | `POST` | owner |
-| `/api/agents/{name}/teams` | `GET` `PUT` `DELETE` | owner |
-| `/api/agents/{name}/teams/test` | `POST` | owner |
+| `/api/agents/{name}/telegram/test` | `POST` | member + owner |
+| `/api/agents/{name}/telegram/webhook` | `POST` | member + owner |
+| `/api/agents/{name}/teams` | `GET` `PUT` `DELETE` | owner / member + owner |
+| `/api/agents/{name}/teams/test` | `POST` | member + owner |
 | `/api/agents/{name}/mcp-connections` | `GET` | owner |
-| `/api/agents/{name}/mcp-connections/{server}` | `PUT` `DELETE` | owner |
-| `/api/agents/{name}/mcp-connections/{server}/authorize` | `POST` | owner |
-| `/api/agents/{name}/mcp-connections/{server}/tools` | `POST` | owner |
+| `/api/agents/{name}/mcp-connections/{server}` | `PUT` `DELETE` | member + owner |
+| `/api/agents/{name}/mcp-connections/{server}/authorize` | `POST` | member + owner |
+| `/api/agents/{name}/mcp-connections/{server}/tools` | `POST` | member + owner |
 
 ### 레지스트리
 
 | 라우트 | 메서드 | 권한 |
 |---|---|---|
-| `/api/skills`, `/api/mcps` | `GET` `POST` | member / admin |
-| `/api/skills/{name}`, `/api/mcps/{name}` | `GET` `PUT` `DELETE` | member / admin |
-| `/api/plugins` | `GET` | member |
-| `/api/plugins/{name}` | `GET` | member |
+| `/api/skills`, `/api/mcps` | `GET` `POST` | session / admin |
+| `/api/skills/{name}`, `/api/mcps/{name}` | `GET` `PUT` `DELETE` | session / admin |
+| `/api/plugins` | `GET` | session |
+| `/api/plugins/{name}` | `GET` | session |
 | `/api/settings/plugins/visibility` | `GET` `PATCH` | admin |
-| `/api/plugins/sync` | `GET` `POST` | member / admin |
+| `/api/plugins/sync` | `GET` `POST` | session / admin |
 | `/api/plugins/sync/upload` | `POST` | admin |
 | `/api/mcps/{name}/tools` | `POST` | member |
 | `/api/mcps/{name}/auth` | `GET` `POST` `PUT` `DELETE` | admin |
 | `/api/mcps/managed` | `POST` | admin |
 | `/api/mcps/managed/{name}` | `GET` `PUT` `DELETE` | admin |
 | `/api/mcps/managed/{name}/restart` | `POST` | admin |
-| `/api/mcps/oauth/callback` | `GET` | session |
+| `/api/mcps/oauth/callback` | `GET` | member. 자격 증명 저장 전에 현재 등급 재검사 |
 | `/api/mcps/oauth/client-metadata/{agent}` | `GET` | **공개** |
 
 ### Chat·사용량·플랫폼
@@ -148,29 +149,30 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/chats/{chatId}/runs/{runId}` | `GET` `DELETE` | 그 chat 의 소유자 |
 | `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | 그 chat 의 소유자 |
 | `/api/artifacts` | `GET` | session |
-| `/api/artifacts/{artifactId}` | `DELETE` | 생성자, agent 소유자, 또는 admin. 비공개 파일은 파일 소유자(member)의 현재 agent 소유 권한 필요 |
+| `/api/artifacts/{artifactId}` | `DELETE` | member 이상인 생성자, agent 소유자, 또는 admin. 비공개 파일은 파일 소유자(member)의 현재 agent 소유 권한 필요 |
 | `/api/artifacts/{artifactId}/view` | `GET` | 생성자, agent 소유자, 또는 admin. 비공개 파일은 파일 소유자(member)의 현재 agent 소유 권한 필요 |
 | `/api/artifacts/{artifactId}/download` | `GET` | 비공개 파일 소유자(member), 현재 agent 소유 권한 필요 |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
-| `/api/models/favorites` | `GET` `PUT` `PATCH` | session |
-| `/api/models/catalog` | `GET` | member |
+| `/api/models/favorites` | `GET` `PUT` `PATCH` | session / member |
+| `/api/models/catalog` | `GET` | session |
 | `/api/models/routing` | `GET` `PUT` | session / admin |
 | `/api/models/discover` | `GET` | admin |
-| `/api/models/registry` | `GET` `POST` `DELETE` | member / admin |
+| `/api/models/registry` | `GET` `POST` `DELETE` | session / admin |
 | `/api/models/status` | `GET` | admin |
 | `/api/models/default` | `GET` `PUT` | admin |
 | `/api/models/test` | `POST` | admin |
 | `/api/models/selection` | `PUT` | admin |
 | `/api/models/decision` | `GET` `PUT` | admin |
-| `/api/agent-recommendations` | `POST` | Chat: session / Workspace: member |
-| `/api/models/workspace` | `GET` `PUT` | member / admin |
+| `/api/agent-recommendations` | `POST` | session |
+| `/api/models/workspace` | `GET` `PUT` | session / admin |
 | `/api/me` | `GET` | session |
 | `/api/me/profile` | `GET` | session |
 | `/api/me/usage` | `GET` | session |
 | `/api/members` | `GET` | admin |
 | `/api/members/{id}/tier` | `PUT` | admin |
 | `/api/settings` | `GET` `PUT` | admin |
+| `/api/settings/member-tiers` | `GET` `PUT` | admin |
 | `/api/audit` | `GET` | admin |
 
 ### 비인증 / 기계 표면
@@ -404,10 +406,9 @@ POST /api/agents/{name}/preview
 도구 선언을 포함한다. 답변 모델은 호출하지 않는다. `message`가 있으면 설정에 따라 read-only memory
 recall과 capability discovery를 실제로 수행하므로 MCP와 embedding·rerank 서비스에는 요청할 수 있다.
 
-소유자 게이트가 아니라 member 게이트다 (`withMemberAuth`): 조립된 텍스트는 해석된 skill 과
-MCP 서버의 이름을 담는다. `guest` 가 거절당하는 바로 그 레지스트리다. 그래서 세션만이 아니라
-그 단 뒤에 놓인다. 초안의 MCP 바인딩은 등록된 서버에 선택한 헤더를 붙일 수 있지만, 그것은 이
-게이트가 따로 챙길 수 있는 권한이 아니다. 어떤 member 든 자기 agent 에서 같은 레지스트리
+소유자 게이트가 아니라 member 게이트다 (`withMemberAuth`). 저장된 카탈로그 조회와 달리
+초안의 MCP 바인딩과 선택한 헤더로 외부 서비스를 조회할 수 있으므로 guest의 읽기 전용 범위에는
+포함되지 않는다. 어떤 member 든 자기 agent 에서 같은 레지스트리
 서버를 같은 헤더로 바인딩한다. 마스킹된 헤더는 같은 서버 이름에 대한 이 agent 의 저장된
 바인딩에 대해서만 해석되므로, 소유자가 아닌 사람의 미리보기는 그가 이미 시작할 수 있는 런이
 보내지 않을 것을 아무것도 보내지 않는다. Memory도 그 agent의 런이 같은 사용자 identity로
@@ -497,7 +498,7 @@ GET /api/me → 200 { email, isAdmin, isConfiguredAdmin, tier }
 ```
 GET /api/me/profile
   → 200 { member: { id, name, email, image, tier, joinedAt, lastLoginAt },
-          monthToDateUsd }
+          monthToDateUsd, limits: { monthlyCostCapUsd?, maxConcurrentRuns? } }
 
 GET /api/me/usage?from=2026-08-01&to=2026-08-13
   → 200 { items: [ { email, agentName, date, calls, inputTokens, outputTokens, cachedTokens, costUsd } ] }
@@ -512,19 +513,19 @@ GET /api/me/usage?from=2026-08-01&to=2026-08-13
 지표는 모델별 맵, 그리고 사용량 요약이 쓰는 것과 같은 범위 검증(`from`/`to` 필수, 최대 184일)이다.
 행에 agent 가 있으므로 프로필은 한 사람 자신의 지출을 agent·모델·프로바이더별로 묶을 수 있다.
 개요와 agent 의 사용량 탭이 갖는 것과 같은 컨트롤이다. 여기 세는 지출은 그 멤버 자신의 콘솔
-런(`user:` actor)이다. agent 토큰 런은 이 예산이 아니라 자기 agent 에 지출한다. tier 가
-무엇을 상한 짓는지는 `src/domain/member/tiers.ts` 의 `TIER_LIMITS` 이고, 클라이언트가 그것을
-직접 import 한다.
+런(`user:` actor)이다. agent 토큰 런은 이 예산이 아니라 자기 agent 에 지출한다.
+월 한도는 Settings → Access의 `memberTiers`에 저장한다. `memberTierLimits`가 실행과 Profile의
+`limits`를 같은 규칙으로 계산하며, admin의 `monthlyCostCapUsd`는 항상 생략한다.
 
 ## 멤버
 
 ```
 GET /api/members
   → 200 { members: [ { id, name, email, image, tier, joinedAt, lastLoginAt,
-                       tierLocked } ] }
+                       tierLocked } ], tiers: ["admin", "member", "guest", …] }
 
 PUT /api/members/{id}/tier
-  { tier: "admin" | "member" | "guest" }
+  { tier: "<등록된 등급 ID>" }
   → 200 { id, name, email, image, tier, joinedAt, lastLoginAt }
   → 400 unknown tier · 403 ADMIN_EMAILS tier is locked · 404 no such member
 ```
@@ -539,8 +540,27 @@ admin 전용이다. 멤버는 이 워크스페이스에 로그인한 적이 있�
 `admin` 으로 승격된다. 목록에 남아 있는 동안 `tierLocked` 는 true 이고 업데이트 라우트는 변경을
 거절한다. 주소를 목록에서 빼도 자동으로 강등되는 일은 없다. 평범한 tier 변경은 이전 → 이후를
 기록하는 `member.set-tier` 감사 행을 쓴다. tier 가 무엇을 허용하고 상한 짓는지는
-`src/domain/member/tiers.ts` 의 `TIER_LIMITS` 이고, tier `admin` 이 `ADMIN_EMAILS` 와 어떻게
+`src/domain/member/tiers.ts`의 `tierMay*`·`memberTierLimits`이며 월 금액은 Settings가 소유한다.
+tier `admin` 이 `ADMIN_EMAILS` 와 어떻게
 합쳐지는지는 [SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin) 에 있다.
+
+### 등급과 월 한도 설정
+
+`GET /api/settings/member-tiers`는 `{revision, tiers: [{id, monthlyCostCapUsd}], assignedMembers}`를
+반환한다. `PUT`은 `{revision, tiers}`로 전체 목록을 저장한다. `revision`이 현재 값과 다르면 409다.
+`admin`·`guest`는 반드시 있어야 하며 이름 변경·삭제를 할 수 없다. admin의 한도는 `null`로 고정하고,
+그 외 등급은 0 이상의 유한한 USD 금액을 지정한다. 0은 새 실행 차단이며 guest의 금액도 수정할 수 있다.
+초기 목록은 admin(무제한), member($20), guest($2)다. 사용자 정의 등급은 member와 같은 권한이며,
+사용자가 없는 등급만 삭제할 수 있다. 기본 `member`도 같은 조건으로 삭제 가능하다.
+등급은 최대 50개다. ID는 영문 소문자로 시작하는 1–40자의 소문자·숫자·하이픈·밑줄이다.
+배열은 표시 순서이며 admin은 첫 번째, guest는 마지막으로 고정한다. 조회·저장 시 두 등급의 위치를
+정규화하고 나머지 등급의 상대 순서는 보존한다. Settings에서 핸들을 끌어다 놓아 순서를 바꿔 저장하면
+Members의 선택 목록에도 적용된다. 표시 순서는 등급의 권한이나 한도를 바꾸지 않는다.
+
+등급 삭제와 사용자 배정은 공통 DB transaction lock으로 직렬화한다. 배정된 등급을 삭제하면 409,
+존재하지 않는 등급으로 배정하면 400이다. 저장은 `settings.update`로 감사하고 설정·등급 캐시를
+무효화한다. 다른 인스턴스는 설정 cache TTL(기본 5초) 이내에 새 월 한도를 읽는다.
+등록되지 않은 저장 등급은 인증·실행·사용자 표시에서 guest로 해석한다.
 
 ## Chats
 
@@ -671,8 +691,13 @@ Agent의 `parameters.policy`에는 `maxInputChars`(1–1,000,000), `blockedTools
 
 ## Workspaces
 
-Workspace 사용자 API는 `withMemberAuth`로 보호한다. 조회·실행·승인은 Chat 소유자만 가능하며
+Workspace 사용자 API는 `withAuth`로 보호하며 guest도 사용할 수 있다. 조회·실행·승인은 Chat 소유자만 가능하며
 현재 Agent 접근 권한도 확인한다. 다른 소유자의 Workspace는 404로 응답한다.
+Chat과 Workspace는 `user` actor의 UTC 월 비용을 합산해 Settings의 등급별 월 한도를 적용한다
+(초기 guest $2, member $20, admin은 항상 무제한). 실행 전 이미 한도에 도달하면 새 작업을 실행하지 않는다.
+비용은 완료 후 집계되므로 진행 중인 작업이 마지막 잔액을 넘길 수 있다. 등급·사용량 조회가
+실패해도 새 실행을 허용하지 않으며, 기존 작업 조회·취소·종료는 계속 가능하다.
+guest의 Workspace는 본인 `user` actor만 허용하고 자동화·서비스 자격 증명 실행은 member 이상을 요구한다.
 
 | 경로 | 메서드 | 계약 |
 |---|---|---|
@@ -694,7 +719,7 @@ idleTtlSeconds, checks, deploymentWorkflows}`다. 기본 저장소와 배포 기
 기본 모드는 `new`, 기본 Runtime은 `command`이며 모델이 필요한 Runtime은 Models에서 먼저 선택한다.
 첫 저장의 revision은 `null`, 이후는 마지막 읽은 값을 사용한다. 동시 편집·삭제 경합은 409다.
 각 저장소·소유자 목록은 100개까지며 URL·wildcard·Sandbox 인프라 설정·알 수 없는 필드는 400이다.
-`GET /api/models/workspace`는 member에게 `{selections, options, available}`을 반환한다.
+`GET /api/models/workspace`는 로그인 사용자에게 `{selections, options, available}`을 반환한다.
 관리자는 `PUT /api/models/workspace`에 `{runtime: "codex" | "claude" | "opencode", model: string | null}`로
 모델을 선택하거나 해제한다. 모델과 호환 채널을 검증하고 변경한 Runtime만 원자적으로 저장한다.
 
@@ -813,7 +838,7 @@ POST /api/mcps/{name}/tools
 
 ```
 
-sync 엔드포인트는 `GET` 은 member 에게 답하고 `POST` 는 admin 권한을 요구한다. 레지스트리 테스트
+sync 엔드포인트는 `GET` 은 로그인 사용자에게 답하고 `POST` 는 admin 권한을 요구한다. 레지스트리 테스트
 오퍼레이션은 `member` tier 를 요구하고, 등록과 dispatch 때 쓰는 것과 같은 SSRF 가드를 적용한다.
 `POST /api/mcps/{name}/tools` 는 테스트를 요청한 사용자의 email 을 `X-User-Email` 로 서버에 보낸다.
 Plugin 에는 생성/수정 라우트가 없다: sync 가 유일한 writer 이고, plugin 행은 sync 자신의
@@ -1213,7 +1238,7 @@ DELETE /api/agents/{name}/token          → 204
 (요청 경로의 `{name}` 에 대해 검증된다).
 
 생성에는 **소유자의 tier** 게이트가 추가로 걸린다: API 토큰을 쓸 수 없는 tier
-(`src/domain/member/tiers.ts` 의 `TIER_LIMITS`, 오늘로는 `guest`) 는 admin 을 포함해 누가
+(`src/domain/member/tiers.ts`의 `tierMayUseApiTokens`, `guest`) 는 admin 을 포함해 누가
 요청하든 `403` 으로 답한다. 그 토큰이 그 소유자로서 인증하게 되기 때문이다. 인증 시점의 대응
 게이트는 아래 실행 엔드포인트에 있다.
 
@@ -1683,7 +1708,7 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 `/models` 화면은 선택·등록된 모델의 목록과 검색, 개인 즐겨찾기 관리를 제공한다. 등록·수정·삭제·상태 확인과
 모델 사용 설정은 Settings → Models에서 관리한다.
 
-모델 등록·선택·기본값·상태 검사는 admin 전용이며 목록은 member부터 읽는다.
+모델 등록·선택·기본값·상태 검사는 admin 전용이며 목록은 guest를 포함한 로그인 사용자가 읽는다.
 `GET /api/models`는 로그인한 사용자에게 등록된 실행 모델(Text·Image)을 제공한다.
 연결이 없는 모델은 제공하지 않으며 기본 모델을 먼저 정렬한다. 즐겨찾기는 사용자별이다.
 

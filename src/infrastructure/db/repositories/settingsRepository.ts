@@ -1,3 +1,5 @@
+import type { PoolClient } from "pg";
+import { isMemberTierSettings } from "@/domain/member/tiers";
 import { WORKSPACE_MODEL_RUNTIMES } from "@/domain/workspace/runtimeModels";
 import { isCallRoutingPolicy } from "@/domain/llm/callRouting";
 import { isCapabilityVisibility } from "@/domain/plugin/visibility";
@@ -34,6 +36,10 @@ const FIELDS = [
 
 function fromItem(item: Record<string, unknown>): AppSettings {
   const settings: AppSettings = { updatedAt: item.updatedAt as string };
+  if (item.memberTiers !== undefined) {
+    if (!isMemberTierSettings(item.memberTiers)) throw new Error("Stored member tiers are invalid");
+    settings.memberTiers = item.memberTiers;
+  }
   if (item.capabilityVisibility !== undefined) {
     if (!isCapabilityVisibility(item.capabilityVisibility)) throw new Error("Stored capability visibility is invalid");
     settings.capabilityVisibility = item.capabilityVisibility;
@@ -71,20 +77,24 @@ function fromItem(item: Record<string, unknown>): AppSettings {
   return settings;
 }
 
-export const settingsRepository: SettingsRepository = {
-  async get() {
-    const item = await getItem(keys.settings());
-    return item ? fromItem(item) : null;
-  },
+export function createSettingsRepository(transaction?: PoolClient): SettingsRepository {
+  return {
+    async get() {
+      const item = await getItem(keys.settings(), transaction);
+      return item ? fromItem(item) : null;
+    },
 
-  async update(mutate) {
-    const result = await updateItem(keys.settings(), (existing) => ({
-      entityType: ENTITY_TYPE,
-      ...mutate(existing ? fromItem(existing) : null),
-    }));
-    return {
-      before: result.before ? fromItem(result.before) : null,
-      after: fromItem(result.after),
-    };
-  },
-};
+    async update(mutate) {
+      const result = await updateItem(keys.settings(), (existing) => ({
+        entityType: ENTITY_TYPE,
+        ...mutate(existing ? fromItem(existing) : null),
+      }), undefined, transaction);
+      return {
+        before: result.before ? fromItem(result.before) : null,
+        after: fromItem(result.after),
+      };
+    },
+  };
+}
+
+export const settingsRepository = createSettingsRepository();

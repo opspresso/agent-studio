@@ -3,7 +3,7 @@ import { modelPreferenceUseCases, workspaceRuntimeModelUseCases } from "@/lib/co
 import { WORKSPACE_MODEL_RUNTIMES, type WorkspaceModelRuntime } from "@/domain/workspace/runtimeModels";
 import type { ModelConfig } from "@/domain/llm/models";
 import type { WorkspaceRuntimeModelsView } from "@/application/workspace/runtimeModels";
-import { withAdminAuth, withMemberAuth } from "@/lib/session";
+import { withAdminAuth, withAuth } from "@/lib/session";
 import { editorBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
@@ -21,7 +21,7 @@ async function personalized(view: WorkspaceRuntimeModelsView, userId: string): P
   return { ...view, options };
 }
 
-export const GET = withMemberAuth(async (user) => {
+export const GET = withAuth(async (user) => {
   try { return Response.json(await personalized(await workspaceRuntimeModelUseCases.getView(), user.id) satisfies WorkspaceRuntimeModelsResponse); }
   catch (error) { return apiError(error); }
 });

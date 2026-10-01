@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { triggerUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
 
@@ -10,7 +10,7 @@ type RouteContext = { params: Promise<{ name: string; trigger: string }> };
  * agent API token's reveal is: the response body is a live credential, and
  * POST keeps it out of prefetches, history and caches.
  */
-export const POST = withAuth(async (user, _request: Request, ctx: RouteContext) => {
+export const POST = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name, trigger } = await ctx.params;
   try {
     return Response.json(await triggerUseCases.reveal(name, trigger, user.email));

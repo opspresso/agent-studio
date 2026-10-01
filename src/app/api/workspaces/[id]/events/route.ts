@@ -1,11 +1,11 @@
-import { withMemberAuth } from "@/lib/session";
+import { withAuth } from "@/lib/session";
 import { workspaceUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
 import type { WorkspaceEvent } from "@/domain/workspace/types";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 
 export interface WorkspaceEventsResponse { events: WorkspaceEvent[]; nextSeq: number; hasMore: boolean }
-export const GET = withMemberAuth(async (user, request: Request, context: { params: Promise<{ id: string }> }) => {
+export const GET = withAuth(async (user, request: Request, context: { params: Promise<{ id: string }> }) => {
   try {
     const query = new URL(request.url).searchParams;
     const afterSeq = Number(query.get("after") ?? 0);

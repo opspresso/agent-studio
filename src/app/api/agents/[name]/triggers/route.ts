@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/session";
+import { withAuth, withMemberAuth } from "@/lib/session";
 import { triggerUseCases } from "@/lib/container";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { createTriggerSchema } from "@/app/api/agents/_lib/schemas";
@@ -15,7 +15,7 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
   }
 });
 
-export const POST = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const POST = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   const body = await editorBody(request);
   if (body instanceof Response) {

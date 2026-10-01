@@ -1,15 +1,15 @@
 /**
  * User actors spend against their member tier's UTC monthly cap across Agents.
  * Machine actors and Agent tokens spend against Agent limits instead. Like the
- * Agent guard, this is a post-accounting backstop and read failures are fail-open.
+ * Agent guard, this is a post-accounting backstop. Unavailable personal limits
+ * refuse new work so a storage outage cannot bypass a tier's budget.
  */
 
 import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
-import { TIER_LIMITS, type MemberTier } from "@/domain/member/tiers";
+import type { TierLimits } from "@/domain/member/tiers";
 import type { UsageRepository } from "@/domain/usage/repository";
 import { RateLimitedError } from "@/application/errors";
 import { utcDay, utcMonth } from "@/shared/date";
-import { log } from "@/shared/logger";
 import { secondsUntilNextUtcMonth } from "./costGuard";
 
 export interface MemberCostGuardDeps {
@@ -42,13 +42,13 @@ export class MemberCostLimitExceededError extends RateLimitedError {
 export async function assertWithinMemberCostLimit(
   deps: MemberCostGuardDeps,
   actor: RunActor | undefined,
-  tier: MemberTier | undefined,
+  limits: TierLimits | undefined,
   now: Date = new Date(),
 ): Promise<void> {
-  if (!actor || !tier) {
+  if (!actor || !limits) {
     return;
   }
-  const cap = TIER_LIMITS[tier].monthlyCostCapUsd;
+  const cap = limits.monthlyCostCapUsd;
   if (cap === undefined) {
     return;
   }
@@ -56,13 +56,7 @@ export async function assertWithinMemberCostLimit(
   if (!email) {
     return;
   }
-  let spent: number;
-  try {
-    spent = await memberMonthToDate(deps, email, now);
-  } catch (error) {
-    log.error("cost-guard", `could not read month spend for ${email}; allowing the run`, error);
-    return;
-  }
+  const spent = await memberMonthToDate(deps, email, now);
   if (spent >= cap) {
     throw new MemberCostLimitExceededError(email, spent, cap, secondsUntilNextUtcMonth(now));
   }

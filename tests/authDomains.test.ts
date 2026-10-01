@@ -82,20 +82,22 @@ describe("multi-domain Google sign-in", () => {
     expect(location.searchParams.get("error")).toBe("state_not_found");
   });
 
-  it.each(hosts)("finishes sign-in on %s with the original path and a host-only session", async (host) => {
+  it.each(hosts)("refreshes the profile on %s while preserving identity, tier, redirect and host-only session", async (host) => {
     const { auth, ctx } = await fixture();
     const now = new Date();
-    const user = { id: "user-1", name: "Member", email: "member@example.test", emailVerified: true, createdAt: now, updatedAt: now };
+    const user = { id: "user-1", name: "Member", image: "https://images.example.test/before.png", email: "member@example.test", emailVerified: true, tier: "member", createdAt: now, updatedAt: now };
+    const profile = { name: "Updated Google User", image: "https://images.example.test/after.png" };
     const account = { id: "account-1", userId: user.id, providerId: "google", accountId: "google-user-1", createdAt: now, updatedAt: now };
     vi.spyOn(ctx.internalAdapter, "findAccountOwnerByKey").mockResolvedValue({ kind: "owned", user, account });
     vi.spyOn(ctx.internalAdapter, "updateAccount").mockResolvedValue(account);
+    const updateUser = vi.spyOn(ctx.internalAdapter, "updateUser").mockResolvedValue({ ...user, ...profile });
     vi.spyOn(ctx.internalAdapter, "createSession").mockResolvedValue({
       id: "session-1", userId: user.id, token: "session-token", expiresAt: new Date(now.getTime() + 3_600_000), createdAt: now, updatedAt: now,
     });
     const jwtPart = (data: object) => Buffer.from(JSON.stringify(data)).toString("base64url");
     vi.mocked(fetch).mockResolvedValue(Response.json({
       access_token: "test-access-token", token_type: "Bearer", expires_in: 3600,
-      id_token: `${jwtPart({ alg: "RS256" })}.${jwtPart({ sub: account.accountId, name: user.name, email: user.email, email_verified: true })}.test-signature`,
+      id_token: `${jwtPart({ alg: "RS256" })}.${jwtPart({ sub: account.accountId, name: profile.name, picture: profile.image, email: user.email, email_verified: true })}.test-signature`,
     }));
     const start = await auth.handler(signInRequest(host));
     const authorization = await start.json() as { url: string };
@@ -106,6 +108,7 @@ describe("multi-domain Google sign-in", () => {
     }));
 
     expect(response.status).toBe(302);
+    expect(updateUser).toHaveBeenCalledExactlyOnceWith(user.id, { ...profile, email: user.email, emailVerified: true });
     expect(new URL(response.headers.get("location")!, `https://${host}`).href).toBe(`https://${host}${next}`);
     expect(response.headers.get("set-cookie")).toContain("__Secure-agent-studio.session_token=");
     expect(response.headers.get("set-cookie")).not.toMatch(/domain=/i);

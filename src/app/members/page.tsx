@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Avatar, Group, Select, Stack, Table, Text } from "@mantine/core";
 import { IconUsers } from "@tabler/icons-react";
-import { MEMBER_TIERS, type MemberTier } from "@/domain/member/tiers";
+import type { MemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
 import type { MembersResponse } from "@/app/api/members/route";
 import { PageHeader } from "@/app/_components/PageHeader";
@@ -21,6 +21,7 @@ export default function MembersPage() {
   const t = useT();
   const locale = useLocale();
   const viewer = useViewer();
+  const [tiers, setTiers] = useState<string[]>([]);
   const [members, setMembers] = useState<MemberView[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -56,7 +57,7 @@ export default function MembersPage() {
     let cancelled = false;
     fetch("/api/members")
       .then((res) => readJson<MembersResponse>(res))
-      .then((data) => !cancelled && setMembers(data.members))
+      .then((data) => { if (!cancelled) { setMembers(data.members); setTiers(data.tiers); } })
       .catch((error) => !cancelled && setLoadError(error instanceof Error ? error.message : "Failed to load members"))
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
@@ -107,14 +108,14 @@ export default function MembersPage() {
                     <Select
                       size="xs"
                       w={110}
-                      data={[...MEMBER_TIERS]}
+                      data={tiers}
                       value={member.tier}
                       disabled={member.tierLocked || savingIds.has(member.id)}
                       allowDeselect={false}
                       aria-label={`Tier of ${member.email}`}
                       onChange={(value) => {
                         if (value && value !== member.tier) {
-                          void changeTier(member, value as MemberTier);
+                          void changeTier(member, value);
                         }
                       }}
                     />

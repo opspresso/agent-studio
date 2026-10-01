@@ -159,7 +159,8 @@ pnpm exec vitest run -t "streamWithFallback"
 
 `pnpm test:integration`은 `scripts/keycloak-auth-check.ts`도 별도 프로세스에서 실행한다.
 로컬 `_test` DB의 임시 스키마와 RS256 토큰을 발행하는 로컬 OIDC fixture로 실제 앱의
-discovery·PKCE·콜백·세션 생성·재로그인을 확인한다. audience·nonce·state 오류와 신규·기존
+discovery·PKCE·콜백·세션 생성·재로그인을 확인한다. Keycloak·표준 OIDC 재로그인에서 이름·이미지
+갱신, 사진 미제공 시 기존 이미지 유지와 등급 보존도 검사한다. audience·nonce·state 오류와 신규·기존
 사용자의 도메인 제한도 검증하고 임시 스키마를 삭제한다. 실제 Keycloak realm은 사용하지 않으므로
 배포의 client 설정·CA·네트워크 도달성은 [설치 절차](INSTALL.md#keycloak-로그인)로 확인한다.
 
@@ -229,6 +230,9 @@ PR workflow에는 Release 생성·registry 게시·GitOps 전달 job이 없다.
 릴리스 권한과 완료 확인은 [OPERATIONS](OPERATIONS.md#릴리스-파이프라인)를 따른다.
 
 ## 테스트
+
+통합 검사에는 등급 설정 저장·사용자 배정과 삭제의 경합·설정과 사용자 행의 공동 rollback도 포함한다
+(`scripts/member-tiers-check.ts`). 같은 `_test` 데이터베이스의 임시 사용자만 사용한다.
 
 단위 테스트는 `tests/` 아래에 산다. 관례:
 

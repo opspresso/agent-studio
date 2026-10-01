@@ -1,5 +1,5 @@
 import { mcpAuthUseCases } from "@/lib/container";
-import { withAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { apiError, parseName } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string; server: string }> };
@@ -9,7 +9,7 @@ type RouteContext = { params: Promise<{ name: string; server: string }> };
  * the console's fetch, and a 3xx here would be followed by the fetch instead of
  * the user.
  */
-export const POST = withAuth(async (user, _request: Request, ctx: RouteContext) => {
+export const POST = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name, server } = await ctx.params;
   try {
     return Response.json(

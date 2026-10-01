@@ -9,11 +9,15 @@ import { useT } from "@/app/_i18n/provider";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import type { ModelFavoritesResponse } from "@/app/api/models/favorites/route";
 import type { RegisteredModel } from "@/domain/llm/providerModels";
+import { tierMayEdit } from "@/domain/member/tiers";
+import { useViewer } from "@/app/_lib/useViewer";
 import { listRegisteredModels } from "./api";
 import { ModelCollection } from "./ModelCollection";
 
 export default function ModelsPage() {
   const t = useT();
+  const viewer = useViewer();
+  const canEdit = viewer !== null && tierMayEdit(viewer.tier);
   const [models, setModels] = useState<RegisteredModel[]>();
   const [favorites, setFavorites] = useState<string[]>();
   const [savingIds, setSavingIds] = useState<string[]>([]);
@@ -32,7 +36,7 @@ export default function ModelsPage() {
     return () => { current = false; };
   }, [t]);
   function toggleFavorite(id: string) {
-    if (favorites === undefined || pendingIds.current.has(id)) return;
+    if (!canEdit || favorites === undefined || pendingIds.current.has(id)) return;
     const favorite = !favorites.includes(id);
     pendingIds.current.add(id);
     setSavingIds(current => [...current, id]);
@@ -64,7 +68,7 @@ export default function ModelsPage() {
         const saving = savingIds.includes(model.id);
         const label = t(favorite ? "models.unfavorite" : "models.favorite");
         return <ActionIcon size="lg" variant="transparent" color="gray"
-          aria-label={label} title={label} aria-pressed={favorite} disabled={saving} loading={saving}
+          aria-label={label} title={label} aria-pressed={favorite} disabled={!canEdit || saving} loading={saving}
           onClick={() => void toggleFavorite(model.id)}>
           <IconStar size={19} fill={favorite ? "var(--mantine-color-yellow-2)" : "none"}
             color={favorite ? "var(--mantine-color-yellow-7)" : undefined} />

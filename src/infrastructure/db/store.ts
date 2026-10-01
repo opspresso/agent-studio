@@ -125,7 +125,12 @@ async function upsert(client: Runner, item: Item): Promise<void> {
   );
 }
 
-export async function getItem(key: Key): Promise<Item | null> {
+/** An optional client joins an adapter-owned transaction with non-item tables. */
+export async function getItem(key: Key, client?: PoolClient): Promise<Item | null> {
+  if (client) {
+    const result = await client.query<{ data: Item }>("SELECT data FROM items WHERE pk = $1 AND sk = $2", [key.PK, key.SK]);
+    return rowData(result.rows);
+  }
   const rows = await sql<{ data: Item }>("SELECT data FROM items WHERE pk = $1 AND sk = $2", [
     key.PK,
     key.SK,
@@ -202,14 +207,16 @@ export async function deleteItem(key: Key, condition?: Condition): Promise<Item 
  * `null`) and answers the row to store; a missing row is created, which is
  * what an update on an absent key did before — the condition is what refuses
  * that when it must. Answers both states so a caller can read what it
- * replaced.
+ * replaced. An explicit transaction shares its lock and rollback with the
+ * adapter's other writes; otherwise the store opens its own transaction.
  */
 export async function updateItem(
   key: Key,
   patch: (existing: Item | null) => Item,
   condition?: Condition,
+  transaction?: PoolClient,
 ): Promise<{ before: Item | null; after: Item }> {
-  return withTransaction(async (client) => {
+  const update = async (client: PoolClient) => {
     const before = await lockRow(client, key);
     if (condition && !condition(before)) {
       throw new ConditionalWriteError(`update ${key.PK}/${key.SK}`);
@@ -217,7 +224,8 @@ export async function updateItem(
     const after = { ...patch(before), PK: key.PK, SK: key.SK };
     await upsert(client, after);
     return { before, after };
-  });
+  };
+  return transaction ? update(transaction) : withTransaction(update);
 }
 
 export type TransactOp =

@@ -13,7 +13,6 @@ import {
   Text,
 } from "@mantine/core";
 import { IconActivity, IconCoins, IconUser } from "@tabler/icons-react";
-import { TIER_LIMITS } from "@/domain/member/tiers";
 import type { ProfileResponse } from "@/app/api/me/profile/route";
 import type { MemberUsageRow } from "@/domain/usage/types";
 import { MEMBER_TIER_COLOR } from "@/app/_components/badgeColors";
@@ -103,8 +102,7 @@ export default function ProfilePage() {
   if (accountError) return <Alert color="red" variant="light">{accountError}</Alert>;
   if (account === null) return <LoadingText />;
 
-  const { member, monthToDateUsd } = account;
-  const limits = TIER_LIMITS[member.tier];
+  const { member, monthToDateUsd, limits } = account;
   const cap = limits.monthlyCostCapUsd;
 
   return (
@@ -121,7 +119,7 @@ export default function ProfilePage() {
           <div style={{ minWidth: 0, flex: 1 }}>
             <Group gap="xs" wrap="nowrap">
               <Text fw={600} truncate>{member.name}</Text>
-              <Badge variant="light" color={MEMBER_TIER_COLOR[member.tier]}>{member.tier}</Badge>
+              <Badge variant="light" color={Object.hasOwn(MEMBER_TIER_COLOR, member.tier) ? MEMBER_TIER_COLOR[member.tier] : "blue"}>{member.tier}</Badge>
             </Group>
             <Text fz="sm" c="dimmed" truncate>{member.email}</Text>
             <Group gap="xl" mt="sm">

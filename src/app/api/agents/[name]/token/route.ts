@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/session";
+import { withAuth, withMemberAuth } from "@/lib/session";
 import { apiTokenUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
 
@@ -13,7 +13,7 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
   }
 });
 
-export const POST = withAuth(async (user, _request: Request, ctx: RouteContext) => {
+export const POST = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
     // Returns the raw token. It is stored encrypted, not hashed, so the owner
@@ -24,7 +24,7 @@ export const POST = withAuth(async (user, _request: Request, ctx: RouteContext) 
   }
 });
 
-export const DELETE = withAuth(async (user, _request: Request, ctx: RouteContext) => {
+export const DELETE = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
     await apiTokenUseCases.revoke(name, user.email);

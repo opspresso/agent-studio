@@ -495,9 +495,10 @@ describe("the client bundle", () => {
   // The exact count detects missing entry points. Update it deliberately when
   // adding or removing a client component.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(127);
+    expect(entries.length).toBe(128);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/_components/landing/LandingPage.tsx",
+      "src/app/settings/access/MemberTierSettings.tsx",
       "src/app/_components/landing/ParticleField.tsx",
       "src/app/agents/[name]/_components/ModelRoutingEditor.tsx",
       "src/app/tools/_components/McpAccountLookupEditor.tsx",
@@ -1260,10 +1261,10 @@ const SINGLE_OWNERS: SingleOwner[] = [
   {
     // Two mechanisms spend these — the concurrency guard in `run` and the
     // member cost guard in `usage` — and the Members console displays them, so
-    // the table lives in domain where all three may import it. A copy beside
-    // either guard would recreate the drift the table exists to prevent.
+    // domain derives effective limits from the deployment catalog. Runtime and
+    // Profile share this derivation, including guest fallback and unlimited admin.
     what: "what each member tier may spend",
-    pattern: /TIER_LIMITS\s*:\s*Record<MemberTier/,
+    pattern: /export function memberTierLimits\(/,
     owner: "src/domain/member/tiers.ts",
   },
   {

@@ -29,7 +29,6 @@ import { CopyButton } from "@/app/_components/CopyButton";
 import { ModelSelect } from "@/app/_components/modelOptions";
 import { monoInput } from "@/app/_components/monoInput";
 import { listAgents } from "../../lib/api";
-import { tierAtLeast } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
 import type { SelectableModel, AgentConfigurationInput, AgentParameters } from "../../lib/api";
 import {
@@ -91,23 +90,16 @@ export function AgentConfigurationEditor({
   const [subagentOptions, setSubagentOptions] = useState<PickerOption[]>([]);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const [pickerRevision, setPickerRevision] = useState(0);
-  // The capability registries are `member`-gated server-side (`withMemberAuth`),
-  // so a guest's picker requests are guaranteed 403s — the same predicate
-  // decides here whether to ask at all. Agents stay: every tier may list them.
   const viewer = useViewer();
-  const mayReadRegistries = viewer !== null && tierAtLeast(viewer.tier, "member");
 
   useEffect(() => {
-    // Wait until the viewer is known rather than firing requests that are
-    // refused for a guest and redundant for everyone else once re-run.
     if (viewer === null) {
       return;
     }
     let cancelled = false;
-    const none: never[] = [];
     void Promise.allSettled([
-      mayReadRegistries ? listMcps() : Promise.resolve(none),
-      mayReadRegistries ? listSkills() : Promise.resolve(none),
+      listMcps(),
+      listSkills(),
       listAgents(),
     ]).then(
       ([mcps, skills, agents]) => {
@@ -142,7 +134,7 @@ export function AgentConfigurationEditor({
     return () => {
       cancelled = true;
     };
-  }, [agentName, viewer, mayReadRegistries, pickerRevision, t]);
+  }, [agentName, viewer, pickerRevision, t]);
   const [schemaHelpOpen, setSchemaHelpOpen] = useState(false);
 
   const selectedModel = models.find((m) => m.id === value.model);
