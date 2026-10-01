@@ -91,6 +91,7 @@ import { after } from "next/server";
 import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
 import { skillRepository } from "@/infrastructure/db/repositories/skillRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
+import { mcpRefreshRepository } from "@/infrastructure/db/repositories/mcpRefreshRepository";
 import { mcpConnectionRepository } from "@/infrastructure/db/repositories/mcpConnectionRepository";
 import { mcpOAuthStateRepository } from "@/infrastructure/db/repositories/mcpOAuthStateRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
@@ -456,6 +457,7 @@ export const managedMcpUseCases =
       })
     : undefined;
 const mcpAuthProvider = createMcpAuthProvider({
+  refreshClaims: mcpRefreshRepository, sleep: ms => workspaceSleep(ms),
   connections: mcpConnectionRepository,
   oauth: oauthClient,
   cipher: secretCipher,

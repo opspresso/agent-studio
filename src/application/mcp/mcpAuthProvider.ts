@@ -8,6 +8,7 @@
  */
 
 import { createHash } from "node:crypto";
+import type { McpRefreshRepository } from "@/domain/mcp/refresh";
 import type { McpConnection, McpConnectionRepository } from "@/domain/mcp/connection";
 import type {
   McpAuthProvider,
@@ -36,12 +37,17 @@ import { mcpTokenTarget, registryClientMismatch } from "./mcpOAuthClient";
  * change the cache key every run and every message would pay a full handshake
  * before its first token.
  */
+const REFRESH_DEADLINE_MS = 30_000;
+const REFRESH_POLL_MS = 250;
+
 export const TOKEN_REFRESH_MARGIN_MS = MAX_RUN_DURATION_MS + 5 * 60_000;
 
 export interface McpAuthProviderDeps {
   connections: McpConnectionRepository;
   oauth: OAuthClient;
-  cipher: SecretCipher;
+  cipher: Pick<SecretCipher, "decrypt" | "encrypt">;
+  refreshClaims: McpRefreshRepository;
+  sleep(ms: number): Promise<void>;
 }
 
 function bearer(token: string): Record<string, string> {
@@ -229,6 +235,53 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
     }
   }
 
+  async function currentCredential(connection: McpConnection, auth: McpServerAuth): Promise<McpAuthResolution> {
+    const current = await deps.connections.get(connection.agentName, connection.serverName);
+    if (!current) return { headers: {}, unavailable: "MCP credentials changed during token refresh" };
+    const unavailable = unavailableReason(current, connection.agentName, connection.serverName, auth);
+    if (unavailable) return { headers: {}, unavailable };
+    if (needsRefresh(current, Date.now()) || !current.accessToken) return { headers: {}, unavailable: "The current MCP credential still requires refresh; read current connection state before retrying" };
+    return authenticated(current, deps.cipher.decrypt(current.accessToken,
+      mcpConnectionSecretContext(current.agentName, current.serverName, "access-token")));
+  }
+
+  async function coordinatedRefresh(connection: McpConnection, target: TokenRequestTarget, auth: McpServerAuth): Promise<McpAuthResolution> {
+    const deadlineAt = new Date(Date.now() + REFRESH_DEADLINE_MS).toISOString();
+    for (;;) {
+      const admission = await deps.refreshClaims.begin(connection, new Date().toISOString(), deadlineAt);
+      if (admission.kind === "changed") return currentCredential(connection, auth);
+      if (admission.kind === "uncertain") {
+        await deps.connections.updateTokens(connection.agentName, connection.serverName, connection.revision, {
+          accessToken: connection.accessToken, refreshToken: connection.refreshToken, expiresAt: connection.expiresAt,
+          status: "needs_reauth", updatedAt: new Date().toISOString(),
+        });
+        return { headers: {}, unavailable: "The MCP refresh outcome is uncertain; reconnect this Agent's server before retrying. The refresh was not repeated." };
+      }
+      if (admission.kind === "pending") {
+        if (new Date().toISOString() >= deadlineAt) return { headers: {}, unavailable: "Another process is refreshing this MCP connection; no duplicate refresh was sent" };
+        await deps.sleep(REFRESH_POLL_MS);
+        continue;
+      }
+      let resolution: McpAuthResolution;
+      try {
+        resolution = new Date().toISOString() >= admission.claim.deadlineAt
+          ? { headers: {}, unavailable: "The MCP refresh claim expired before dispatch; no provider request was sent" }
+          : await refresh(connection, target, auth);
+      } catch (error) {
+        await deps.refreshClaims.finish(admission.claim, "uncertain");
+        throw error;
+      }
+      if (resolution.unavailable) {
+        await deps.refreshClaims.finish(admission.claim, "uncertain");
+        await deps.connections.updateTokens(connection.agentName, connection.serverName, connection.revision, {
+          accessToken: connection.accessToken, refreshToken: connection.refreshToken, expiresAt: connection.expiresAt,
+          status: "needs_reauth", updatedAt: new Date().toISOString(),
+        });
+      } else await deps.refreshClaims.finish(admission.claim, "complete");
+      return resolution;
+    }
+  }
+
   return {
     async headersFor(agentName, serverName, auth) {
       const connection = await deps.connections.get(agentName, serverName);
@@ -256,7 +309,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         connection.accessToken, connection.refreshToken, target])).digest("hex");
       const existing = refreshes.get(key);
       if (existing) return existing;
-      const pending = refresh(connection, target, auth).finally(() => {
+      const pending = coordinatedRefresh(connection, target, auth).finally(() => {
         if (refreshes.get(key) === pending) refreshes.delete(key);
       });
       refreshes.set(key, pending);

@@ -185,6 +185,7 @@
 | 어떤 호스트가 아웃바운드 URL 가드를 건너뛸 수 있는가. 선언된 suffix 에 이름을 맞추는 술어 하나 | `src/domain/security/internalHosts.ts` 의 `isDeclaredInternalHost`. MCP 목록과 `FetchUrl` 목록이 같은 술어를 지나고, provenance(managed 루프백)와 합친 형태는 `src/domain/mcp/types.ts` 의 `skipsUrlGuard` 다 | 구조 |
 | MCP OAuth 콜백 기본값과 수동 입력 검증 | `src/application/mcp/mcpAuthUseCases.ts`의 `redirectUri`. Tools와 인가 요청은 같은 서버 설정에서 주소를 얻고 token 교환은 pending state의 주소를 쓴다 | 구조 |
 | MCP 연결 화면의 조회 계약 선택·계정 label 검증·JSON Pointer·추가 identity scopes | `src/domain/mcp/account.ts`. 관리자 계약·OIDC UserInfo·제공자 기본값 순서로 선택하며 Studio 사용자 이메일을 연결 계정으로 추정하지 않는다. 타입 계약은 독립 leaf `accountLookup.ts` | 구조 |
+| OAuth 갱신의 프로세스 간 효과 claim·결과 대기·불명확한 갱신의 반복 금지 | `application/mcp/mcpAuthProvider.ts`; 포트는 `domain/mcp/refresh.ts`, atomic claim은 `mcpRefreshRepository.ts`. 토큰 교환 전에 claim하고 network 동안 DB lock을 유지하지 않는다 | 코드 |
 | 공용 MCP OAuth client 참조와 token endpoint 자격 증명 선택 | `src/application/mcp/mcpOAuthClient.ts`. code 교환과 refresh가 같은 선택을 사용한다 | 구조 |
 | MCP dispatch의 endpoint-bound Agent 헤더·예약 metadata 제거·OAuth 우선순위 | `application/mcp/credentials.ts`; 실행·Agent 도구 조회·Workspace GitHub 자격증명이 같은 판정을 사용한다. HTTP header 이름의 대소문자와 무관하게 OAuth 값 하나만 전송한다 | 코드 |
 | 원격·관리형 MCP의 헤더·환경·OAuth secret 응답 마스킹 | `src/application/mcp/mcpViews.ts` | 구조 |

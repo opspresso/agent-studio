@@ -163,14 +163,19 @@ dynamic registration 순서다. Agent별 공개 metadata URL은 설정한 공개
 
 refresh는 남은 실행 시간을 고려한 여유 구간에서 수행한다. 같은 프로세스의 동시 요청은
 Agent·서버·연결 revision·현재 token target이 같은 갱신만 공유하며 완료 후 기록을 제거한다.
-갱신은 revision CAS로 저장하고 경쟁에서 진 호출은 동일 issuer·resource의 유효한 승자 grant만 사용한다.
+provider 요청 전에 Agent·서버·connection revision에 묶인 durable claim을 transaction으로 확보한다.
+다른 프로세스는 250ms 간격으로 최대 30초 동안 결과를 확인하며 같은 refresh token을 다시 보내지 않는다.
+provider 네트워크 요청 동안 DB connection이나 transaction을 잡아 두지 않는다. 결과 저장은 connection
+revision CAS를 사용하고 reconnect·삭제가 먼저 완료됐으면 원래 grant로 덮어쓰지 않는다.
 각 요청은 사용한 credential의 불투명 fingerprint를 보관한다. 401·scope challenge는 현재 저장된
 credential과 fingerprint가 같은 경우에만 재인가 상태나 추가 scope로 반영한다.
 계정 표시 backfill은 같은 grant revision을 조건으로 그 필드만 갱신하며 revision을 바꾸지 않는다.
 표시 저장이 진행 중인 refresh의 새 token을 버리게 해서는 안 되며 reconnect·삭제 후에는 표시 저장도 거절한다.
 자격 증명 저장·인증 시작 중 새 연결 저장·콜백 완료·연결 해제도 읽은 연결 revision을 조건으로 쓴다.
 그 사이 다른 연결이 저장되거나 삭제되면 충돌을 반환하며 이전 grant를 되살리거나 덮지 않는다.
-일시 5xx·timeout은 grant를 폐기하지 않으며 실제 인증 거절은 재연결이 필요한 상태로 바꾼다.
+갱신 응답 유실·5xx·timeout·claim 소유 프로세스 중단은 provider 결과를 확정할 수 없으므로
+기존 credential 데이터를 보존한 채 `needs_reauth`로 바꾼다. 불명확한 claim은 자동 반복하지 않는다.
+완료 claim은 보존 sweep에 포함되고, 불명확한 claim은 원래 revision의 재실행을 차단하도록 남긴다.
 
 OAuth는 credential을 공급한다. 유효한 token이 있으면 정적·binding Authorization보다 우선하고,
 `application/mcp/credentials.ts`가 기존 header 이름의 모든 대소문자 표기를 제거한 뒤 한 값을 적용한다.

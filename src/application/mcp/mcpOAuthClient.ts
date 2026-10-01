@@ -11,7 +11,7 @@ export function registryClientMismatch(connection: McpConnection, auth: McpServe
 
 /** Call only after validating the grant's issuer, resource and client identity. */
 export function mcpTokenTarget(
-  cipher: SecretCipher,
+  cipher: Pick<SecretCipher, "decrypt">,
   connection: McpConnection,
   auth: McpServerAuth,
 ): TokenRequestTarget {

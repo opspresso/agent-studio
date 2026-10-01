@@ -178,6 +178,9 @@ export const keys = {
     SK: `MCPCONN#${serverName}`,
   }),
   mcpConnectionPrefix: () => "MCPCONN#",
+  mcpRefresh: (agentName: string, serverName: string, revision: string | undefined) => ({
+    PK: `AGENT#${agentName}`, SK: `MCPREFRESH#${serverName}#${revision ?? "unversioned"}`,
+  }),
   /** An authorization in flight, keyed by the opaque `state` it was started with. */
   mcpOAuthState: (state: string) => ({ PK: `MCPOAUTH#${state}`, SK: "META" }),
 

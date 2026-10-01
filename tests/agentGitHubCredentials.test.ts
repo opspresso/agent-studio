@@ -1,3 +1,4 @@
+import { isolatedMcpRefresh } from "./fakeMcpRefresh";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentGitHubCredentials } from "@/application/coding/githubCredentials";
 import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
@@ -29,7 +30,7 @@ const store = await import("@/infrastructure/db/store") as unknown as FakeStore;
 const now = new Date("2026-10-01T08:00:00Z");
 const target = { apiUrl: "https://api.github.com", webUrl: "https://github.com" };
 const oauth: OAuthClient = { register: vi.fn(), exchangeCode: vi.fn(), refresh: vi.fn() };
-const auth = createMcpAuthProvider({ connections: mcpConnectionRepository, oauth, cipher: secretCipher });
+const auth = createMcpAuthProvider({ ...isolatedMcpRefresh(), connections: mcpConnectionRepository, oauth, cipher: secretCipher });
 const credentials = createAgentGitHubCredentials({ agents: agentRepository, mcps: mcpRepository, auth, cipher: secretCipher, target });
 const github = (agentName: string) => createCodingGitHub({ ...target, internalHosts: [], getToken: () => credentials.token(agentName) }, () => now).forge;
 const creations = createWorkspaceRepositoryCreationUseCases({ policies: workspacePolicyRepository, creations: workspaceRepositoryCreationStore,

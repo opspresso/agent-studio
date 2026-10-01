@@ -1,3 +1,4 @@
+import { isolatedMcpRefresh } from "./fakeMcpRefresh";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMcpAuthUseCases } from "@/application/mcp/mcpAuthUseCases";
 import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
@@ -61,7 +62,7 @@ function harness() {
     }),
     refresh: vi.fn<OAuthClient["refresh"]>().mockResolvedValue({ accessToken: "renewed-access" }),
   };
-  const provider = createMcpAuthProvider({ connections: mcpConnectionRepository, oauth, cipher: secretCipher });
+  const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(), connections: mcpConnectionRepository, oauth, cipher: secretCipher });
   const metadata: OAuthMetadataClient = {
     fetchProtectedResource: async () => ({ resource: auth.resource, authorizationServers: [auth.issuer] }),
     fetchAuthorizationServer: async () => ({

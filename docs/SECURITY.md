@@ -688,7 +688,9 @@ refresh 결과는 connection revision을 비교해 저장한다.
 refresh token을 생략한 응답은 이전 값을 유지하고 새 값이 있으면 교체한다.
 경쟁에서 진 요청은 원래 issuer·resource에 속한 connected 상태의 승자 grant만 사용한다.
 
-인증 거절만 `needs_reauth`로 표시하고 5xx·timeout은 연결을 유지한다.
+회전형 refresh credential은 provider 요청 전에 DB claim을 확보한 프로세스만 사용한다.
+다른 프로세스는 결과를 기다리고, 만료된 claim이나 전송 결과가 불명확한 갱신은 다시 실행하지 않는다.
+기존 credential 데이터는 보존하지만 `needs_reauth`로 표시해 사용자가 다시 인증하도록 한다.
 403 `insufficient_scope`는 그 요청의 typed challenge에서 scope를 얻어 재인가에 보탠다.
 병렬 도구 호출의 결과를 세션 전체의 마지막 challenge로 해석하지 않는다.
 

@@ -138,6 +138,7 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 | Workspace 이벤트 | `WORKSPACE#{id}` | `EVENT#{runId}#{seq zero-padded 8}` | — | — |
 | Workspace checkpoint manifest / chunk | `WORKSPACESTATE#{id}` | `{checkpointId}#META` / `{checkpointId}#{index zero-padded 6}` | — | — |
 | Agent 의 MCP OAuth 연결 | `AGENT#{name}` | `MCPCONN#{server}` | — | — |
+| MCP OAuth 갱신 claim | `AGENT#{name}` | `MCPREFRESH#{server}#{revision}` | — | — |
 | 진행 중인 MCP OAuth 인가 | `MCPOAUTH#{state}` | `META` | — | — |
 | Trigger (webhook / schedule) | `AGENT#{name}` | `TRIGGER#{triggerId}` | schedule 만: `TYPE#SCHEDULE` | schedule 만: `{name}#{triggerId}` |
 | Trigger 런 (delivery / firing) | `AGENT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt 또는 queuedAt}#{runId}` | queued만: `TRIGGERQUEUE#{name}#{triggerId}` | queued만: `{queueLeaseUntil}#{runId}` |

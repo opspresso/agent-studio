@@ -1,3 +1,4 @@
+import { isolatedMcpRefresh } from "./fakeMcpRefresh";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -90,7 +91,7 @@ function providerHarness(opts: {
   let stored = opts.connection === undefined ? connectionFixture() : opts.connection;
   const refreshCalls: string[] = [];
   const updates: Array<Record<string, unknown>> = [];
-  const provider = createMcpAuthProvider({
+  const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
     connections: {
       get: async () => stored,
       listByAgent: async () => (stored ? [stored] : []),
@@ -178,15 +179,15 @@ describe("resolving the Authorization for an agent's connection", () => {
     expect(h.updates).toHaveLength(1);
   });
 
-  it("releases a failed refresh so a later request can authenticate normally", async () => {
+  it("does not repeat a refresh whose provider outcome is uncertain", async () => {
     let calls = 0;
     const h = providerHarness({ connection: connectionFixture({ revision: "same-grant", expiresAt: new Date(Date.now() + 1000).toISOString() }), refresh: async () => {
       if (++calls === 1) throw new Error("Provider temporarily unavailable");
       return { accessToken: "later-token", expiresInSeconds: 3600 };
     } });
     expect((await h.headersFor()).unavailable).toContain("temporarily unavailable");
-    expect((await h.headersFor()).headers.Authorization).toBe("Bearer later-token");
-    expect(h.refreshCalls).toHaveLength(2);
+    expect((await h.headersFor()).unavailable).toContain("reconnected");
+    expect(h.refreshCalls).toHaveLength(1);
   });
 
   it.each([{ agentName: "another-agent" }, { serverName: "another-server" }])("refuses credential rows from another Agent or server before decryption %j", async patch => {
@@ -285,7 +286,7 @@ describe("resolving the Authorization for an agent's connection", () => {
     let stored = connectionFixture({
       expiresAt: new Date(Date.now() + 1_000).toISOString(),
     });
-    const provider = createMcpAuthProvider({
+    const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
       connections: {
         get: async () => stored,
         listByAgent: async () => [stored],
@@ -326,7 +327,7 @@ describe("resolving the Authorization for an agent's connection", () => {
     expect(refused.updates[0]).toMatchObject({ status: "needs_reauth" });
   });
 
-  it("leaves the connection alone when the token endpoint merely failed", async () => {
+  it("preserves credential data but requires reauthentication after an uncertain token endpoint failure", async () => {
     // A 5xx or a timeout must never cost someone their connection.
     const transient = providerHarness({
       connection: connectionFixture({ expiresAt: new Date(Date.now() + 1_000).toISOString() }),
@@ -336,8 +337,8 @@ describe("resolving the Authorization for an agent's connection", () => {
     });
     const result = await transient.headersFor();
     expect(result.unavailable).toMatch(/503/);
-    expect(transient.updates).toHaveLength(0);
-    expect(transient.current()?.status).toBe("connected");
+    expect(transient.updates).toHaveLength(1);
+    expect(transient.current()).toMatchObject({ status: "needs_reauth", accessToken: "enc:live-token", refreshToken: "enc:refresh-1" });
   });
 
   it("explains an unconnected agent instead of sending nothing", async () => {
@@ -369,7 +370,7 @@ describe("a refresh racing a reconnect", () => {
       .mockResolvedValueOnce({ accessToken: "first", expiresInSeconds: 1 })
       .mockResolvedValueOnce({ accessToken: "second", refreshToken: "rotated", expiresInSeconds: 1 })
       .mockResolvedValueOnce({ accessToken: "third", expiresInSeconds: 43_200 });
-    const provider = createMcpAuthProvider({
+    const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
       connections: mcpConnectionRepository,
       oauth: { refresh } as never,
       cipher,
@@ -397,7 +398,7 @@ describe("a refresh racing a reconnect", () => {
     await mcpConnectionRepository.put(connectionFixture({
       expiresAt: new Date(Date.now() + 1000).toISOString(),
     }));
-    const provider = createMcpAuthProvider({
+    const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
       connections: mcpConnectionRepository,
       oauth: { refresh } as never,
       cipher,
@@ -478,7 +479,7 @@ describe("a refresh racing a reconnect", () => {
     await mcpConnectionRepository.put(connectionFixture({ refreshToken: undefined }));
     const read = Promise.withResolvers<void>();
     const resume = Promise.withResolvers<void>();
-    const provider = createMcpAuthProvider({
+    const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
       connections: {
         ...mcpConnectionRepository,
         async get(agentName, serverName) {
@@ -491,7 +492,7 @@ describe("a refresh racing a reconnect", () => {
       oauth: {} as never,
       cipher,
     });
-    const observed = await createMcpAuthProvider({ connections: mcpConnectionRepository, oauth: {} as never, cipher }).headersFor("p", "slack", OAUTH_SERVER.auth!);
+    const observed = await createMcpAuthProvider({ ...isolatedMcpRefresh(), connections: mcpConnectionRepository, oauth: {} as never, cipher }).headersFor("p", "slack", OAUTH_SERVER.auth!);
     const pending = provider.markUnauthorized("p", "slack", observed.credentialFingerprint!, "files:write");
     await read.promise;
     const reconnected = connectionFixture({ accessToken: "enc:reconnected", refreshToken: undefined });
@@ -680,7 +681,7 @@ describe("markUnauthorized with a scope challenge", () => {
     const puts: unknown[] = [];
     const updates: Array<{ expected: unknown; next: Record<string, unknown> }> = [];
     let stored = connectionFixture({ scopes: ["files:read"], status: "connected", revision: "grant-1" });
-    const provider = createMcpAuthProvider({
+    const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
       connections: {
         get: async () => stored,
         listByAgent: async () => [stored],

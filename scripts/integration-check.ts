@@ -210,6 +210,8 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   await checkRuntimeSessions();
   const { checkWorkspaces } = await import("./workspace-check");
   await checkWorkspaces();
+  const { checkMcpRefreshCoordination } = await import("./mcp-refresh-check");
+  await checkMcpRefreshCoordination();
   const { checkAuthSchema } = await import("./auth-schema-check");
   await checkAuthSchema();
   // Isolate the auth singleton and its environment in a child process.
@@ -280,6 +282,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     const { checkManagedMcpTransport } = await import("./managed-mcp-check");
     await checkManagedMcpTransport();
     pass("managed MCP provision, registration and real loopback transport");
+    pass("OAuth rotating refresh: two independent processes share one PostgreSQL claim and provider effect");
 
     // ---------- agent + current settings ----------
     await agentRepository.create({
