@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { getWorkspaceConfig, getWorkspaceGitHubConfig, getGitHubToken, getWorkspaceRuntimeConfig } from "@/lib/runtime-settings";
+import { getWorkspaceConfig, getWorkspaceRuntimeConfig } from "@/lib/runtime-settings";
 import { WORKSPACE_MODEL_RUNTIMES } from "@/domain/workspace/runtimeModels";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { createDockerSandboxBackend } from "@/infrastructure/workspace/dockerProvider";
@@ -29,9 +29,6 @@ async function main() {
   for (const kind of WORKSPACE_MODEL_RUNTIMES) {
     if (selections[kind] && !await getWorkspaceRuntimeConfig(kind)) throw new Error("Workspace runtime model channel is missing");
   }
-  stage = "GitHub configuration";
-  const github = getWorkspaceGitHubConfig();
-  if (github?.auth === "token" && !await getGitHubToken()) throw new Error("Workspace GitHub integration is missing");
   if (process.argv.includes("--worker")) {
     await checkHeartbeat();
   }

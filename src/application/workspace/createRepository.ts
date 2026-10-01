@@ -12,7 +12,7 @@ interface RepositoryCreationDeps {
   policies: WorkspacePolicyRepository;
   creations: WorkspaceRepositoryCreationStore;
   authorize(agentName: string, ownerEmail: string): Promise<void>;
-  forge(): Pick<CodingForge, "createRepository">;
+  forge(agentName: string): Pick<CodingForge, "createRepository">;
   now(): Date;
 }
 
@@ -54,7 +54,7 @@ export function createWorkspaceRepositoryCreationUseCases(deps: RepositoryCreati
       if (!workspaceAllowsRepositoryCreation(current.effective, request.repository)) throw new ValidationError("Repository creation is not allowed by Workspace policy");
       if (workspaceRepositoryMode(current.effective) === "new" && !workspaceAllowsRepository(current.effective, request.repository) &&
         (current.effective.repositories?.length ?? 0) >= WORKSPACE_LIMITS.policyRepositories) throw new ValidationError("The repository access list is full; update the policy before creating another repository");
-      const forge = deps.forge();
+      const forge = deps.forge(agentName);
       if (!forge.createRepository) throw new ValidationError("Workspace repository creation is not configured");
       const at = deps.now().toISOString();
       const started: WorkspaceRepositoryCreation = { agentName, repository: request.repository, requestedBy: ownerEmail, fingerprint,

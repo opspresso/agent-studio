@@ -710,20 +710,22 @@ grant를 사용할 수 없어도 별도의 정적 credential이 있으면 서버
 
 Workspace는 chat 소유자에게만 공개되며 실행·승인은 현재 Agent 접근도 다시 확인한다.
 Workspace 설정 쓰기는 Agent 소유자·관리자에게 한정하고 revision 조건과 Agent 수명 경계로 보호한다.
-Agent의 도구 활성화는 해당 Agent에서 서버 GitHub 계정을 정책 범위 내 사용하는 것을 허용한다.
+Agent의 도구 활성화는 해당 Agent에 명시적으로 연결한 GitHub MCP 계정을 정책 범위 내 사용하는 것을 허용한다.
 Runtime 모델 선택은 관리자에게 한정하며 도구를 끄면 새 실행·Git 승인을 거절한다.
 등록 저장소·정확한 소유자 허용은 DB에서 현재 값을 읽으며 일반 Agent가 수정하지 않는다.
 소유자 허용은 해당 계정의 향후 저장소도 포함하므로 관리 화면에서 그 범위를 명시한다. 조회 실패는
-접근을 거절하고 `selected`의 빈 목록은 모든 Git 대상을 차단한다. `all`은 서버 GitHub 권한
+접근을 거절하고 `selected`의 빈 목록은 모든 Git 대상을 차단한다. `all`은 해당 Agent의 GitHub MCP 권한
 안에서 모든 저장소를 허용한다. `new`의 자동 등록은 서버의 실제 생성 성공에만 적용하고 MCP 결과나
 모델이 주장한 생성 사실·시각을 권한 근거로 사용하지 않는다. 생성 receipt와 등록은 원자적으로 저장하며
 불명확한 생성은 반복하지 않는다. 저장소 정책은 Sandbox 자원·네트워크나
-서버 GitHub 자격증명, 개별 게시 승인을 변경하지 않는다. 변경은 `settings.update` 감사에 기록한다.
+Agent의 GitHub MCP 자격증명, 개별 게시 승인을 변경하지 않는다. 변경은 `settings.update` 감사에 기록한다.
 Sandbox에는 호스트 mount, Docker socket, 배포 자격증명과 장기 Git 자격증명을 전달하지 않는다.
 Git 메타데이터는 root 소유로 두고 Agent의 실행 계정은 작업 파일만 수정한다.
-GitHub App의 private key는 서버에 남고 clone/push에 발행하는 token은 저장소·권한·만료가 제한된다.
-계정 토큰 모드는 서버의 임시 bare Git 저장소에서 인증하고 Sandbox에는 자격증명 없는 bundle만
-전달한다. 서버에서는 저장소 checkout·hook·build script를 실행하지 않는다.
+GitHub API·clone·push는 현재 Agent의 GitHub MCP 인증을 사용하며 Plugin 토큰이나 다른 Agent의
+연결로 폴백하지 않는다. OAuth issuer·resource·client 검사와 갱신은 기존 MCP 인증 제공자가 수행한다.
+OAuth 토큰은 발급한 GitHub authority와 일치하는 API·Git endpoint에만 사용한다.
+서버의 임시 bare Git 저장소에서 인증하고 Sandbox에는 자격증명 없는 bundle만 전달한다.
+서버에서는 저장소 checkout·hook·build script를 실행하지 않는다.
 공개 Git endpoint는 HTTPS와 DNS pinning을 사용하고 내부 호스트 예외는 배포의 별도 목록을 따른다.
 
 효과는 검토한 tree/HEAD와 권한 근거를 가진 동작 레코드를 먼저 claim한 뒤 실행한다.
@@ -741,8 +743,8 @@ GitHub 브랜치 규칙을 따르며 권한·보호 규칙을 우회하는 옵�
 GitHub의 저장소 범위 contents 쓰기 권한으로 실행하고 생성 응답과 릴리즈 태그를 검증한다.
 `/api/workspaces/github/webhook`은 서명과 delivery ID로 PR 메타데이터만 갱신하며 승인 권한이 없다.
 Agent Trigger인 `/api/webhook/{agent}`는 별도 Agent 시크릿으로 실행을 시작한다.
-관리자가 `githubReview`를 활성화하면 서명된 PR 이벤트에 대해 설치의 GitHub 연결로 리뷰 댓글을
-게시할 수 있다. 공유 자격 증명 위임 설정은 관리자만 변경하며, 접근 가능한 저장소 전체 또는
+관리자가 `githubReview`를 활성화하면 서명된 PR 이벤트에 대해 해당 Agent의 GitHub MCP 연결로 리뷰 댓글을
+게시할 수 있다. 자동 리뷰 게시 설정은 관리자만 변경하며, 접근 가능한 저장소 전체 또는
 명시적 저장소 목록으로 한정한다. PR의 본문·URL이 게시 목적지를 결정하지 않는다. 공급자 API가
 확인한 base repository·PR 번호·commit_id에 COMMENT만 게시한다. 모델에는 Skill과 검증된 PR·HEAD·base에
 고정된 `ReviewSource`를 제공한다. 파일 경로는 상대 경로로 검증하고 공급자 API만 호출하며,

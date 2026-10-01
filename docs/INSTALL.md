@@ -238,10 +238,11 @@ Sandbox 검사는 네트워크 없이 uid 1000·읽기 전용 root에서 Java·P
 세 CLI의 비특권 실행과 시작·재개 인자 파싱도 확인한다. 실제 모델 요청은 이 검사에서 보내지 않는다.
 
 코딩을 켜려면 Agent의 Workspace 저장소 접근 정책에 저장소를 등록하고 작업 요청에
-`repository: "owner/repo"`를 지정한다. GitHub App 또는
-`WORKSPACE_GITHUB_AUTH=token`과 서버의 GitHub 계정 토큰을 설정한다. 계정 토큰 모드는 서버에서
-bare Git 저장소와 bundle을 주고받고 저장소 코드를 실행하지 않는다. 배포 이미지에는 Git을
-포함한다. App 설치 범위는 작업할 저장소로 한정한다. webhook URL은
+`repository: "owner/repo"`를 지정한다. 해당 Agent에 GitHub MCP를 명시적으로 바인딩하고
+작업할 GitHub 계정으로 인증한다. Workspace는 그 OAuth 연결 또는 유효한 정적 Authorization
+헤더를 사용하며 Settings의 Plugin 토큰을 사용하지 않는다. 서버에서 bare Git 저장소와 bundle을
+주고받고 저장소 코드를 실행하지 않는다. Sandbox에 GitHub 자격증명을 전달하지 않으며
+배포 이미지에는 Git을 포함한다. webhook URL은
 `/api/workspaces/github/webhook`이며 Pull requests, Check runs, Check suites, Workflow runs
 이벤트와 별도 webhook secret을 설정한다. main의 branch protection과 CI를 유지한다.
 배포할 workflow는 `workflow_dispatch`를 지원해야 하며 `deploymentWorkflows`에 파일명을
@@ -256,12 +257,10 @@ fine-grained 토큰·GitHub App의 Workflows 쓰기 권한도 필요하다. 저�
 
 ## GitHub PR 자동 리뷰
 
-관리자가 Agent 연동의 Webhook을 켜고 PR 리뷰 동작을 선택한다. 위의 서버 GitHub 연결을
-재사용하며 command Sandbox와 Workspace worker가 필요하다. Agent의 Workspace 도구와 저장소
+관리자가 Agent 연동의 Webhook을 켜고 PR 리뷰 동작을 선택한다. 해당 Agent의 GitHub MCP 인증을
+사용하며 command Sandbox와 Workspace worker가 필요하다. Agent의 Workspace 도구와 저장소
 접근 정책을 설정하고 소유자가 Webhook의 `내 권한으로 실행`을 명시적으로 켜야 한다.
-App 인증은 대상 저장소의 Contents 읽기와
-Pull requests 읽기·쓰기 권한이 필요하다. 계정 토큰은 같은 저장소를 읽고 리뷰 댓글을 작성할 수
-있어야 한다. 자격 증명이나 GitHub 연결이 없으면 리뷰 게시를 활성화할 수 없다.
+해당 계정은 대상 저장소의 Contents 읽기와 Pull requests 읽기·쓰기 권한이 필요하다. GitHub MCP 바인딩과 유효한 인증이 있어야 리뷰를 게시할 수 있다.
 
 GitHub 저장소 Webhook에 `/api/webhook/{agent}` URL, `application/json`, 해당 Agent의
 Webhook Secret과 Pull requests 이벤트를 설정한다. Workspace 메타데이터 Webhook과 URL·Secret이

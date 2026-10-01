@@ -105,7 +105,7 @@ export function NewWorkspaceForm() {
       error={selected && !selected.runtimes.includes(runtime) ? t("workspace.modelUnavailable") : undefined}
       data={[...new Set([...(selected?.runtimes ?? []), runtime])].map(value => ({ value, disabled: !selected?.runtimes.includes(value), label: value === "command" ? t("workspace.command") : value === "codex" ? "Codex" : value === "claude" ? "Claude" : "OpenCode" }))} />
     <Switch label={t("workspace.useRepository")} checked={coding} onChange={event => setCoding(event.currentTarget.checked)} disabled={busy || !selected ||
-      (!selected.repositories.length && selected.mode !== "all" && selected.mode !== "new" && !(selected.mode === "owners" && selected.repositoryOwners.length)) || !options?.gitEnabled} />
+      (!selected.repositories.length && selected.mode !== "all" && selected.mode !== "new" && !(selected.mode === "owners" && selected.repositoryOwners.length)) || !selected.gitEnabled} />
     {agent && <Anchor size="sm" href={`/agents/${encodeURIComponent(agent)}/workspace`} target="_blank" rel="noreferrer">{t("workspace.policy.manage")}</Anchor>}
     {coding && <>
       {selected?.mode === "new" && <Text size="sm" c="dimmed">{t("workspace.policy.modeHint.new")}</Text>}

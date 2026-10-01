@@ -18,7 +18,7 @@ export interface WorkspaceWorkerDeps extends WorkspaceDeps {
   provider: SandboxProvider;
   checkpoints: WorkspaceCheckpointStore;
   runtime(kind: Workspace["runtime"]): WorkspaceRuntimeAdapter | Promise<WorkspaceRuntimeAdapter>;
-  coding?: CodingWorktree;
+  coding?: (agentName: string) => CodingWorktree;
   runTimeoutMs: number;
   /** Composition binds the execution facade, which opens the shared run bracket. */
   execute(workspace: Workspace, work: () => Promise<boolean>, actor?: RunActor): Promise<void>;
@@ -91,7 +91,7 @@ export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: W
   }
   let coding = workspace.coding;
   if (coding) {
-    const worktree = deps.coding;
+    const worktree = deps.coding?.(workspace.agentName);
     if (!worktree) throw new Error("Coding worktree adapter is not configured");
     const repository = coding;
     const prepared = await state.effect(() => worktree.prepare(sandbox.externalId, repository));
@@ -198,7 +198,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     }
     if (run.phase === "checkpoint") {
       if (workspace.coding && deps.coding) {
-        const review = await state.effect(() => deps.coding!.review(sandbox.externalId));
+        const review = await state.effect(() => deps.coding!(workspace.agentName).review(sandbox.externalId));
         const diff = boundedWorkspaceText(review.diff, WORKSPACE_LIMITS.diffBytes);
         await state.save({}, { diff: diff.text, diffTruncated: review.truncated || diff.truncated },
           boundWorkspaceEvent({ kind: "diff", text: diff.text, truncated: review.truncated || diff.truncated }));
@@ -244,7 +244,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
       ? { session: { ...session, nativeSessionId: folded.nativeSessionId, updatedAt: deps.now().toISOString() } } : {};
     let patch = folded.patch;
     if (workspace.coding && deps.coding && deps.now().getTime() >= nextReview) {
-      const review = await state.effect(() => deps.coding!.review(sandbox.externalId));
+      const review = await state.effect(() => deps.coding!(workspace.agentName).review(sandbox.externalId));
       const diff = boundedWorkspaceText(review.diff, WORKSPACE_LIMITS.diffBytes);
       patch = { ...patch, diff: diff.text, diffTruncated: review.truncated || diff.truncated };
       events.push(...boundWorkspaceEvent({ kind: "diff", text: diff.text, truncated: review.truncated || diff.truncated }));

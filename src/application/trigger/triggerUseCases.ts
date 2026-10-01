@@ -37,8 +37,8 @@ export interface TriggerDeps {
   triggers: TriggerRepository;
   agents: AgentRepository;
   cipher: SecretCipher;
-  /** Shared GitHub credentials may be delegated only by an installation administrator. */
-  authorizeReview?: (email: string) => Promise<void>;
+  /** Automatic GitHub review publication may be configured only by an installation administrator. */
+  authorizeReview?: (email: string, agentName: string) => Promise<void>;
 }
 
 export interface CreateTriggerInput {
@@ -194,10 +194,10 @@ export async function listAgentTriggers(
 }
 
 export function createTriggerUseCases(deps: TriggerDeps) {
-  async function reviewConfig(value: GitHubReviewConfig | null | undefined, email: string): Promise<GitHubReviewConfig | undefined> {
+  async function reviewConfig(value: GitHubReviewConfig | null | undefined, email: string, agentName: string): Promise<GitHubReviewConfig | undefined> {
     if (!value) return undefined;
     if (!deps.authorizeReview) throw new ForbiddenError("GitHub review configuration requires an administrator");
-    await deps.authorizeReview(email);
+    await deps.authorizeReview(email, agentName);
     if (value.scope === "accessible") return { scope: "accessible" };
     const repositories = value.scope === "repositories" && reviewRepositories(value.repositories);
     if (!repositories) throw new ValidationError("Select accessible repositories or a non-empty list of exact owner/repo names");
@@ -226,7 +226,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       const agent = await assertAgentWritable(deps.agents, agentName, userEmail);
       if (input.runAsOwner && agent.ownerEmail !== userEmail) throw new ForbiddenError("Only the owner can enable personal execution");
       if (input.githubReview !== undefined && input.kind === "schedule") throw new ValidationError("GitHub reviews are only available for webhooks");
-      const githubReview = await reviewConfig(input.githubReview, userEmail);
+      const githubReview = await reviewConfig(input.githubReview, userEmail, agentName);
       // An agent has exactly one webhook and it answers at `/api/webhook/{agent}`,
       // which resolves this id and nothing else. Both halves of that are enforced
       // here, at the only place a row is minted: a webhook under any other name
@@ -360,7 +360,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       const rotated = input.rotateSecret ? newSecret() : undefined;
       const { githubReview: previousReview, executionEmail: storedEmail, ...storedWebhook } = existing;
       const executionEmail = input.runAsOwner === undefined ? storedEmail : input.runAsOwner ? userEmail : undefined;
-      const githubReview = input.githubReview === undefined ? previousReview : await reviewConfig(input.githubReview, userEmail);
+      const githubReview = input.githubReview === undefined ? previousReview : await reviewConfig(input.githubReview, userEmail, agentName);
       const updated: WebhookTrigger = {
         ...storedWebhook,
         ...shared,

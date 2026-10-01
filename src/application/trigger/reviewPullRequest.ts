@@ -76,7 +76,7 @@ export async function preparePullRequestReview(
       !!deps.executionUserActive && await deps.executionUserActive(executionEmail) && reviewAllowsRepository(current.githubReview, target.repository);
   }
   if (!await currentAuthorization()) return { status: "skipped", reason: "Review automation or its owner execution grant is no longer authorized." };
-  const forge = deps.reviewForge();
+  const forge = deps.reviewForge(agentName);
   const loaded = await forge.load(target);
   if (loaded.status === "skipped") return loaded;
   const input = reviewInput(loaded.context);

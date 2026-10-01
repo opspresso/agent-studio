@@ -301,9 +301,10 @@ describe("durable workspace worker", () => {
   });
   it("informs each native coding turn about the enforced Git approval boundary", async () => {
     policy.repositories = ["company/repo"];
-    deps.coding = { prepare: async (_externalId, repo) => ({ ...repo, headSha: "a".repeat(40), baseSha: "a".repeat(40) }),
+    const coding: import("@/domain/coding/worktree").CodingWorktree = { prepare: async (_externalId, repo) => ({ ...repo, headSha: "a".repeat(40), baseSha: "a".repeat(40) }),
       review: async () => ({ headSha: "a".repeat(40), headTreeSha: "b".repeat(40), treeSha: "b".repeat(40), fingerprint: "tree", diff: "", truncated: false }),
       commit: vi.fn(async () => "unexpected"), push: vi.fn(async () => {}) };
+    deps.coding = vi.fn(() => coding);
     const api = createWorkspaceUseCases(deps);
     const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Git work", runtime: "codex", repository: "company/repo", baseBranch: "main" }, owner);
     await api.enqueue(workspace.id, owner, { kind: "task", prompt: "Commit and push the changes" }, "request-0001");
@@ -312,8 +313,9 @@ describe("durable workspace worker", () => {
     expect(command.stdin).toContain("/control/git is intentionally protected");
     expect(command.stdin).toContain("Workspace prepare_git");
     expect(command.stdin).toContain("Commit and push the changes");
-    expect(deps.coding.commit).not.toHaveBeenCalled();
-    expect(deps.coding.push).not.toHaveBeenCalled();
+    expect(deps.coding).toHaveBeenCalledWith("demo");
+    expect(coding.commit).not.toHaveBeenCalled();
+    expect(coding.push).not.toHaveBeenCalled();
   });
   it("finishes an already cancelled admission without provisioning or restoring compute", async () => {
     const { api, workspace, run } = await start();

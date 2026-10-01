@@ -701,7 +701,7 @@ guest의 Workspace는 본인 `user` actor만 허용하고 자동화·서비스 �
 
 | 경로 | 메서드 | 계약 |
 |---|---|---|
-| `/api/workspaces/options` | GET | `{enabled, gitEnabled, agents}`. 각 Agent에 Runtime·`defaultRuntime`·`mode`·`repositories`·`repositoryOwners`·workflow 선택지 |
+| `/api/workspaces/options` | GET | `{enabled, agents}`. 각 Agent에 GitHub MCP 바인딩의 `gitEnabled`·Runtime·`defaultRuntime`·`mode`·`repositories`·`repositoryOwners`·workflow 선택지 |
 | `/api/workspaces/branches?agent={name}&repository={owner/repo}` | GET | 명시한 저장소의 브랜치 최대 100개와 `hasMore`. `agent`와 `repository`가 필요 |
 | `/api/workspaces` | POST | `{agentName, runtime, title?, repository?, baseBranch?, input}`으로 Chat·Workspace·첫 Run을 만들고 `{workspace, run}`과 202 반환 |
 | `/api/workspaces/{id}` | GET | `{workspace, session, runs, approvals}`. 실행·승인은 최근 50개, `tail=1`이면 각각 1개 |
@@ -1491,7 +1491,7 @@ webhook·schedule로 유지하며 검증된 email만 MCP·Workspace 실행에 �
 관리자는 Webhook 생성·수정에 `githubReview: {scope:"accessible"}` 또는
 `{scope:"repositories", repositories:["owner/repo"]}`를 전달할 수 있다. 수정의 `null`은 리뷰를
 끄고 생략은 기존 선택을 유지한다. 저장소 목록은 최대 20개이며 wildcard·URL은 받지 않는다.
-설치의 GitHub 연결이 필요하고 일반 소유자는 리뷰 권한을 새로 위임할 수 없다.
+해당 Agent의 GitHub MCP 인증이 필요하며 자동 리뷰 게시 활성화는 관리자에게 한정한다.
 활성 리뷰 설정 저장과 Webhook 재활성화는 현재 소유자의 `runAsOwner` 위임, Workspace 도구 활성화,
 차단·대화형 승인 없는 Workspace 정책을 요구하고 누락은 400으로 거절한다. 설정 읽기의 선택적
 `reviewIssue`는 현재 누락을 설명한다. 권한 철회와 비활성화는 가능하며 저장은 실행 권한이나

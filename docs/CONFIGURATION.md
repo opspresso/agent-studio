@@ -346,7 +346,7 @@ Codex·Claude·OpenCode의 모델은 **Model 사용 설정 → 워크스페이�
 | `WORKSPACE_WORKER_CONCURRENCY` | `4` | worker process의 동시 실행 수, 1~32 |
 
 Agent 저장소·소유자 목록은 각각 최대 100개다. `selected`는 등록한 저장소만,
-`owners`는 목록과 정확한 소유자 범위를, `all`은 서버 GitHub 계정으로 접근 가능한 전체를 허용한다.
+`owners`는 목록과 정확한 소유자 범위를, `all`은 해당 Agent의 GitHub MCP 계정으로 접근 가능한 전체를 허용한다.
 `new`는 등록 목록을 유지하고 `Workspace.create_repository`의 실제 생성 성공을 자동 등록한다.
 [정책 계약](design/workspaces.md#저장소-정책-관리)을 따른다. 유휴 시간은 기본 1800초, 범위는 60초~7일이다.
 검사는 `test`, `lint`, `build`별 명령을 최대 하나씩 저장하며 각 Run 뒤 실행한다.
@@ -367,22 +367,23 @@ PR 자동 리뷰의 Agent 실행과 Workspace 검사 작업은 같은 webhook ac
 Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐·TTL·승인 결과 전달과 CI 대기가
 진행되지 않는다. Workspace task와 채팅 후속 실행은 각각 workerConcurrency 상한을 적용하는 별도 큐다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.
 
-코딩 작업은 GitHub App 또는 서버 계정 토큰을 사용한다. 기본 `WORKSPACE_GITHUB_AUTH=app`은
-`WORKSPACE_GITHUB_APP_ID`, `WORKSPACE_GITHUB_INSTALLATION_ID`, `WORKSPACE_GITHUB_PRIVATE_KEY`를
-모두 요구한다. `WORKSPACE_GITHUB_AUTH=token`은 설정 화면의 GitHub token을 사용하며, 저장된
-오버라이드가 없으면 `GITHUB_TOKEN`을 읽는다. 이 모드는 Git 인증을 서버에서만 수행하고
-자격증명이 없는 Git bundle을 Sandbox에 전달한다. 서버에 Git 실행 파일과 임시 디스크 공간이
-필요하며 bundle은 체크포인트와 같은 64 MiB 한도를 따른다. API·Git web 주소는 기존 `GITHUB_API_URL`과
-`GITHUB_WEB_URL`을 사용한다. `WORKSPACE_GITHUB_INTERNAL_HOSTS`는 폐쇄망 GitHub Enterprise의
+코딩 작업은 해당 Agent 설정에 명시적으로 연결한 GitHub MCP의 인증을 사용한다. OAuth 연결의
+issuer·resource·공유 client를 기존 MCP 인증 제공자가 검사하고, 만료가 가까우면 같은 Agent의
+토큰을 갱신한다. 정적 인증은 MCP registry 헤더와 Agent의 현재 endpoint에 묶인 헤더 override를
+사용하며 유효한 OAuth 연결이 우선한다. 연결 누락·해제·불일치에는 다른 Agent나 Plugin 토큰을 사용하지 않는다.
+`Settings → Plugins → GitHub 인증`과 `GITHUB_TOKEN`은 Plugin 가져오기에만 사용한다.
+
+Git 인증은 서버에서만 수행하고 자격증명이 없는 Git bundle을 Sandbox에 전달한다. 서버에 Git
+실행 파일과 임시 디스크 공간이 필요하며 bundle은 체크포인트와 같은 64 MiB 한도를 따른다.
+API·Git web 주소는 `GITHUB_API_URL`과 `GITHUB_WEB_URL`을 사용하며 OAuth 제공자와 같은 GitHub
+authority여야 한다. `WORKSPACE_GITHUB_INTERNAL_HOSTS`는 폐쇄망 GitHub Enterprise의
 호스트 접미사를 선언하며, 다른 내부 URL 허용 목록과 공유하지 않는다.
 `WORKSPACE_GITHUB_WEBHOOK_SECRET`은 `/api/workspaces/github/webhook`의 PR 메타데이터 갱신용이다.
 `/api/webhook/{agent}`는 Agent Settings에서 발급한 별도 Trigger 시크릿을 사용한다.
-App에는 Contents, Pull requests, Actions 쓰기와 Checks, Commit statuses 읽기를 부여하되,
-각 요청의 installation token은 실제 작업에 필요한 권한과 저장소로 좁힌다.
-GitHub App·fine-grained 토큰의 저장소 생성에는 Administration 쓰기가 필요하다. classic 토큰은
-공개 저장소에 `public_repo` 또는 `repo`, 비공개 저장소에 `repo` scope가 필요하다. 계정 토큰은 자신의 개인
-저장소 또는 권한 있는 조직에 생성하며, App은 설치된 조직에만 생성한다. 생성용 App token은
-미래 저장소로 범위를 좁힐 수 없으므로 `administration: write`만 요청하고 서버에서만 사용한다.
+필요한 저장소의 Contents·Pull requests·Actions 쓰기와 Checks·Commit statuses 읽기를 GitHub MCP
+연결 계정에 부여한다. fine-grained 토큰의 저장소 생성에는 Administration 쓰기가 필요하다.
+classic 토큰은 공개 저장소에 `public_repo` 또는 `repo`, 비공개 저장소에 `repo` scope가 필요하다.
+개인 저장소는 인증된 계정의 소유로, 조직 저장소는 해당 계정에 생성 권한이 있는 조직에 생성한다.
 
 Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 실행 Agent별 선택을 최대 32개
 보관한다. 이는 Workspace 개수나 동시에 실행할 수 있는 작업 수가 아니다. 저장소 목록·조회는

@@ -19,7 +19,7 @@ const owner = "owner@example.com";
 const policy: WorkspaceAgentPolicy = { agentName: "demo", runtimes: ["command", "codex", "claude", "opencode"],
   repositories: ["company/demo"], checks: [], deploymentWorkflows: [] };
 let nextId: number;
-const checkRepository = vi.fn(async (_repository: string, _baseBranch: string) => {});
+const checkRepository = vi.fn(async (_agentName: string, _repository: string, _baseBranch: string) => {});
 const useCases = createWorkspaceUseCases({ repository, chats, agents, now: () => now,
   newId: () => `id-${++nextId}`, policy: () => policy, idleTtlSeconds: 3600, checkRepository });
 

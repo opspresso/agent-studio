@@ -40,5 +40,5 @@ export interface FiringDeps {
 export interface TriggerRunnerDeps extends FiringDeps {
   openReviewWorkspace?: (target: PullRequestReviewTarget, agentName: string, triggerId: string, ownerEmail?: string) => Promise<ReviewWorkspaceSession>;
   cipher: SecretCipher;
-  reviewForge?: () => PullRequestReviewForge;
+  reviewForge?: (agentName: string) => PullRequestReviewForge;
 }

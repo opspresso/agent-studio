@@ -380,15 +380,6 @@ export async function getWorkspaceRuntimeConfig(kind: WorkspaceRuntime) {
   return withWorkspaceModelChannel(kind, { model: target.model }, { ...target, name: target.providerName ?? channel.name });
 }
 
-export function getWorkspaceGitHubConfig() {
-  const settings = config.workspaceGitHub;
-  return settings?.auth === "token" ? { ...settings, getToken: async () => {
-    const token = await getGitHubToken();
-    if (!token) throw new Error("Workspace GitHub account token is not configured");
-    return token;
-  } } : settings;
-}
-
 /** The deployment-owned tier catalog; read failures never remove personal budgets. */
 export async function getMemberTierDefinitions() {
   return orderMemberTiers((await loadSettings())?.memberTiers?.tiers ?? DEFAULT_MEMBER_TIERS);

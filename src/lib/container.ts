@@ -32,9 +32,11 @@ import { createWorkspaceRuntimeAdapter, WORKSPACE_DIRECTORY } from "@/infrastruc
 import { workspaceAllowsRepository } from "@/domain/workspace/policy";
 import { createCodingWorktree } from "@/infrastructure/workspace/gitWorktree";
 import { createCodingGitHub } from "@/infrastructure/github/codingForge";
+import { createAgentGitHubCredentials } from "@/application/coding/githubCredentials";
+import { verifyGitHubSignature } from "@/shared/githubWebhook";
 import { createCodingUseCases } from "@/application/coding/codingUseCases";
 import { handleCodingWebhook } from "@/application/coding/webhook";
-import { getWorkspaceConfig, getWorkspaceRuntimeConfig, getWorkspaceGitHubConfig } from "@/lib/runtime-settings";
+import { getWorkspaceConfig, getWorkspaceRuntimeConfig } from "@/lib/runtime-settings";
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 import { createAudioConfigUseCases } from "@/application/audio/audioConfig";
 import { resolveAudioPostprocessor } from "@/application/audio/postprocessConfiguration";
@@ -456,6 +458,15 @@ const mcpAuthProvider = createMcpAuthProvider({
   oauth: oauthClient,
   cipher: secretCipher,
 });
+const agentGitHubCredentials = createAgentGitHubCredentials({
+  agents: agentRepository, mcps: capabilityAccess.mcps, auth: mcpAuthProvider, cipher: secretCipher,
+  target: { apiUrl: config.githubApiUrl, webUrl: config.githubWebUrl ?? "" },
+});
+function agentCodingGitHub(agentName: string) {
+  const settings = config.workspaceGitHub;
+  if (!settings) throw new ValidationError("Workspace GitHub API and web endpoints are not configured");
+  return createCodingGitHub({ ...settings, getToken: () => agentGitHubCredentials.token(agentName) });
+}
 export const mcpAuthUseCases = createMcpAuthUseCases({
   serviceName: async () => (await getServiceBranding()).name,
   mcps: capabilityAccess.mcps,
@@ -569,10 +580,11 @@ export const triggerUseCases = createTriggerUseCases({
   triggers: triggerRepository,
   agents: agentRepository,
   cipher: secretCipher,
-  authorizeReview: async (email) => {
+  authorizeReview: async (email, agentName) => {
     if (!await isEffectiveConfiguredAdminByEmail(email)) throw new ForbiddenError("Only administrators can configure GitHub review publication");
-    if (!getWorkspaceGitHubConfig()) throw new ValidationError("GitHub review integration is not configured");
     if (!getWorkspaceConfig()) throw new ValidationError("PR review requires a configured Workspace Sandbox backend");
+    const agent = await agentRepository.get(agentName);
+    if (!agent || !await agentGitHubCredentials.configured(agent)) throw new ValidationError("PR review requires this Agent to bind a GitHub MCP server");
   },
 });
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs, availableServiceLogos());
@@ -1029,8 +1041,10 @@ export const executionDeps: ExecutionDeps = {
     const email = caller.ownerEmail;
     const authorize = () => authorizeWorkspaceTools(email, agentName, caller.actor, caller.executionGrant);
     if (!await optionalToolAccessible(authorize)) return undefined;
+    const agent = await agentRepository.get(agentName);
+    const gitEnabled = !!agent && !!config.workspaceGitHub && await agentGitHubCredentials.configured(agent);
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
-      ...(getWorkspaceGitHubConfig() ? { createRepository: workspaceRepositoryCreationUseCases.create } : {}),
+      ...(gitEnabled ? { createRepository: workspaceRepositoryCreationUseCases.create } : {}),
       requestGit: (id, ownerEmail, action, sourceChatId) => getCodingUseCases().request(id, ownerEmail, action, sourceChatId),
       publishGit: (id, ownerEmail, action, sourceChatId) => getCodingUseCases().publish(id, ownerEmail, action, sourceChatId),
       pullRequest: (id, ownerEmail) => getCodingUseCases().pullRequest(id, ownerEmail),
@@ -1099,14 +1113,10 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       const sandbox = workspace?.sandboxId ? await workspaceRepository.sandbox(id, workspace.sandboxId) : null;
       const coding = getWorkspaceWorkerDeps().coding;
       if (!workspace || workspace.ownerEmail !== ownerEmail || workspace.activeRunId || !sandbox || !coding) throw new ValidationError("Review Workspace cannot be verified");
-      return coding.review(sandbox.externalId);
+      return coding(workspace.agentName).review(sandbox.externalId);
     } }, target);
   },
-  reviewForge: () => {
-    const settings = getWorkspaceGitHubConfig();
-    if (!settings) throw new ValidationError("GitHub review integration is not configured");
-    return createCodingGitHub(settings).reviews;
-  },
+  reviewForge: agentName => agentCodingGitHub(agentName).reviews,
   executionUserActive: async (email) => {
     const tier = await getMemberTier(email);
     return !!tier && tierMayEdit(tier);
@@ -1339,11 +1349,8 @@ const workspaceDeps: WorkspaceDeps = {
   authorize: (agentName, email, actor, grant) => authorizeWorkspaceTools(email, agentName, actor, grant),
   assertRuntime: async kind => { if (!await getWorkspaceRuntimeConfig(kind)) throw new ValidationError("Select a Workspace runtime model in Models before starting work"); },
   now: () => new Date(), newId: randomUUID,
-  checkRepository: async (repository, baseBranch, sourceRevision) => {
-    const settings = getWorkspaceGitHubConfig();
-    if (!settings) throw new ValidationError("Workspace GitHub integration is not configured");
-    await createCodingGitHub(settings).forge.checkRepository(repository, baseBranch, sourceRevision);
-  },
+  checkRepository: (agentName, repository, baseBranch, sourceRevision) =>
+    agentCodingGitHub(agentName).forge.checkRepository(repository, baseBranch, sourceRevision),
   idleTtlSeconds: 1800,
 };
 export const workspaceUseCases = createWorkspaceUseCases(workspaceDeps);
@@ -1359,11 +1366,7 @@ export const workspaceRepositoryPolicyUseCases = createWorkspaceRepositoryPolicy
 export const workspaceRepositoryCreationUseCases = createWorkspaceRepositoryCreationUseCases({
   policies: workspacePolicyRepository, creations: workspaceRepositoryCreationStore,
   authorize: (agentName, ownerEmail) => authorizeWorkspaceTools(ownerEmail, agentName), now: () => new Date(),
-  forge: () => {
-    const settings = getWorkspaceGitHubConfig();
-    if (!settings) throw new ValidationError("Workspace GitHub integration is not configured");
-    return createCodingGitHub(settings).forge;
-  },
+  forge: agentName => agentCodingGitHub(agentName).forge,
 });
 
 async function authorizeWorkspaceTools(email: string, agentName: string, actor?: RunActor, grant?: import("@/domain/execution/actor").ExecutionGrant): Promise<void> {
@@ -1372,11 +1375,9 @@ async function authorizeWorkspaceTools(email: string, agentName: string, actor?:
   }, agentName, email, actor, grant);
 }
 
-function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
+function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps & { coding: NonNullable<WorkspaceWorkerDeps["coding"]> } {
   const settings = getWorkspaceConfig();
   if (!settings) throw new ValidationError("Workspaces are not configured");
-  const githubConfig = getWorkspaceGitHubConfig();
-  const github = githubConfig ? createCodingGitHub(githubConfig) : undefined;
   const kubernetes = settings.provider === "kubernetes" ? createKubernetesSandboxBackend(settings) : undefined;
   const docker = settings.provider === "docker" || settings.legacyDocker ? createDockerSandboxBackend(settings) : undefined;
   const backend = routeSandboxBackend(kubernetes ?? docker!, kubernetes ? docker : undefined);
@@ -1403,9 +1404,12 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
         return adapter.command(...args);
       } };
     },
-    ...(github && githubConfig ? { coding: createCodingWorktree(backend.control, { webUrl: githubConfig.webUrl,
-      internalHosts: githubConfig.internalHosts,
-      ...("getToken" in githubConfig ? { serverToken: githubConfig.getToken } : { credential: github.credential }) }) } : {}),
+    coding: agentName => {
+      const github = config.workspaceGitHub;
+      if (!github) throw new ValidationError("Workspace GitHub API and web endpoints are not configured");
+      return createCodingWorktree(backend.control, { webUrl: github.webUrl, internalHosts: github.internalHosts,
+        serverToken: () => agentGitHubCredentials.token(agentName) });
+    },
     runTimeoutMs: MAX_RUN_DURATION_MS,
     execute: (workspace, work, actor) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work, actor),
     sleep: async (ms, signal) => { await workspaceSleep(ms, undefined, { signal }); },
@@ -1441,20 +1445,15 @@ export const chatDeps: ChatDeps = {
 
 export function getCodingUseCases() {
   const deps = getWorkspaceWorkerDeps();
-  const config = getWorkspaceGitHubConfig();
-  if (!deps.coding || !config) throw new ValidationError("Workspace GitHub integration is not configured");
-  return createCodingUseCases({ ...deps, coding: deps.coding, forge: createCodingGitHub(config).forge });
+  return createCodingUseCases({ ...deps, coding: deps.coding, forge: agentName => agentCodingGitHub(agentName).forge });
 }
 
 export function verifyWorkspaceGitHubWebhook(raw: string, signature: string | null): boolean {
-  const config = getWorkspaceGitHubConfig();
-  return !!config && createCodingGitHub(config).verifyWebhook(raw, signature);
+  return verifyGitHubSignature(config.workspaceGitHub?.webhookSecret, raw, signature);
 }
 
 export async function receiveWorkspaceGitHubWebhook(deliveryId: string, raw: string) {
-  const config = getWorkspaceGitHubConfig();
-  if (!config) throw new ValidationError("Workspace GitHub integration is not configured");
-  return handleCodingWebhook(workspaceRepository, createCodingGitHub(config).forge, deliveryId, raw);
+  return handleCodingWebhook(workspaceRepository, agentName => agentCodingGitHub(agentName).forge, deliveryId, raw);
 }
 
 export const workspaceOptions = createWorkspaceOptionsUseCase({
@@ -1462,7 +1461,7 @@ export const workspaceOptions = createWorkspaceOptionsUseCase({
   policies: workspacePolicyRepository,
   runtimes: async () => (await workspaceRuntimeModelUseCases.getView()).available,
   backendReady: () => !!getWorkspaceConfig(),
-  gitEnabled: () => !!getWorkspaceGitHubConfig(),
+  gitEnabled: async agent => !!config.workspaceGitHub && await agentGitHubCredentials.configured(agent),
 });
 
 export const agentRecommendationUseCases = createAgentRecommendationUseCases({
@@ -1480,8 +1479,7 @@ export async function workspaceBranches(agentName: string, ownerEmail: string, r
   await authorizeWorkspaceTools(ownerEmail, agentName);
   const policy = await getWorkspaceAgentPolicy(agentName);
   const repo = requestedRepository;
-  const config = getWorkspaceGitHubConfig();
-  if (!repo || !policy || !config) throw new ValidationError("Workspace GitHub integration is not configured");
+  if (!repo || !policy) throw new ValidationError("Workspace GitHub integration is not configured");
   if (!workspaceAllowsRepository(policy, repo)) throw new ValidationError("Repository is not enabled for this agent");
-  return createCodingGitHub(config).forge.branches(repo);
+  return agentCodingGitHub(agentName).forge.branches(repo);
 }

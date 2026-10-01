@@ -30,8 +30,8 @@ test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject
 
 test("refreshes Agent suggestions while the Workspace task is still being typed", async ({ page }) => {
   const seen: Array<{ surface: string; request: string }> = [];
-  const options: WorkspaceOptionsResponse = { enabled: true, gitEnabled: false, agents: ["writer", "coder"].map(name => ({
-    agentName: name, displayName: name === "writer" ? "Writer" : "Coder", description: "", runtimes: ["command"],
+  const options: WorkspaceOptionsResponse = { enabled: true, agents: ["writer", "coder"].map(name => ({
+    agentName: name, displayName: name === "writer" ? "Writer" : "Coder", description: "", gitEnabled: false, runtimes: ["command"],
     defaultRuntime: "command", mode: "selected", repositories: [], repositoryOwners: [], deploymentWorkflows: [],
   })) };
   await page.clock.install({ time: new Date("2026-09-26T00:00:00Z") });
@@ -60,8 +60,8 @@ test("refreshes Agent suggestions while the Workspace task is still being typed"
 
 test("clears an options read error on retry while preserving the drafted task", async ({ page }) => {
   let reads = 0;
-  const options: WorkspaceOptionsResponse = { enabled: true, gitEnabled: false, agents: [{
-    agentName: "agent", displayName: "Agent", description: "", runtimes: ["command"],
+  const options: WorkspaceOptionsResponse = { enabled: true, agents: [{
+    agentName: "agent", displayName: "Agent", description: "", gitEnabled: false, runtimes: ["command"],
     defaultRuntime: "command", mode: "selected", repositories: [], repositoryOwners: [], deploymentWorkflows: [],
   }] };
   await page.route("**/api/workspaces/options", route => {
@@ -83,14 +83,14 @@ test("clears an options read error on retry while preserving the drafted task", 
 test("keeps the selected agent after a failed refresh and retry", async ({ page }) => {
   let reads = 0;
   const agents: WorkspaceOptionsResponse["agents"] = ["agent", "other"].map(name => ({
-    agentName: name, displayName: name === "agent" ? "Agent" : "Other", description: "", runtimes: ["command"],
+    agentName: name, displayName: name === "agent" ? "Agent" : "Other", description: "", gitEnabled: false, runtimes: ["command"],
     defaultRuntime: "command", mode: "selected", repositories: [], repositoryOwners: [], deploymentWorkflows: [],
   }));
   await page.route("**/api/workspaces/options", route => {
     reads += 1;
     return reads === 2
       ? route.fulfill({ status: 503, json: { error: "Options store unavailable" } })
-      : route.fulfill({ json: { enabled: true, gitEnabled: false, agents } satisfies WorkspaceOptionsResponse });
+      : route.fulfill({ json: { enabled: true, agents } satisfies WorkspaceOptionsResponse });
   });
   await page.goto(base);
   await page.getByRole("combobox", { name: "Agent" }).click();
@@ -101,4 +101,21 @@ test("keeps the selected agent after a failed refresh and retry", async ({ page 
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByRole("combobox", { name: "Agent" })).toHaveValue("Other");
   expect(reads).toBe(3);
+});
+
+test("enables repository work only for the selected Agent's GitHub MCP binding", async ({ page }) => {
+  const agents: WorkspaceOptionsResponse["agents"] = ["unconnected", "github-agent"].map(name => ({
+    agentName: name, displayName: name, description: "", gitEnabled: name === "github-agent", runtimes: ["command"],
+    defaultRuntime: "command", mode: "all", repositories: [], repositoryOwners: [], deploymentWorkflows: [],
+  }));
+  await page.route("**/api/workspaces/options", route => route.fulfill({ json: { enabled: true, agents } satisfies WorkspaceOptionsResponse }));
+  await page.goto(base);
+  const repository = page.getByRole("switch", { name: "Use a Git repository" });
+  await expect(repository).toBeDisabled();
+  await page.getByRole("combobox", { name: "Agent", exact: true }).click();
+  await page.getByRole("option", { name: "github-agent", exact: true }).click();
+  await expect(repository).toBeEnabled();
+  await page.getByRole("combobox", { name: "Agent", exact: true }).click();
+  await page.getByRole("option", { name: "unconnected", exact: true }).click();
+  await expect(repository).toBeDisabled();
 });

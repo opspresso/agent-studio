@@ -86,7 +86,7 @@ describe("GitHub review trigger configuration", () => {
     const input = { triggerId: "webhook", githubReview: { scope: "accessible" as const }, runAsOwner: true };
     await expect(fixture().useCases.create("p", input, agent.ownerEmail)).rejects.toThrow("administrator");
     const created = await f.useCases.create("p", input, agent.ownerEmail);
-    expect(authorize).toHaveBeenCalledExactlyOnceWith(agent.ownerEmail);
+    expect(authorize).toHaveBeenCalledExactlyOnceWith(agent.ownerEmail, "p");
     expect(created.githubReview).toEqual({ scope: "accessible" });
     const next = await f.useCases.update("p", "webhook", { githubReview: {
       scope: "repositories", repositories: ["Example/Agent", "example/agent"],

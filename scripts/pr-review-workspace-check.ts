@@ -110,9 +110,9 @@ async function main() {
   const coding = createCodingWorktree(backend.control, { webUrl: baseUrl, internalHosts: ["localhost"], serverToken: async () => "fixture-token" });
   const github = createCodingGitHub({ apiUrl: `${baseUrl}/api`, webUrl: baseUrl, internalHosts: ["localhost"], getToken: async () => "fixture-token" });
   let workspaceId: string | undefined;
-  const worker: WorkspaceWorkerDeps = { repository, chats, agents, provider, checkpoints, coding, now: () => new Date(), newId: randomUUID,
+  const worker: WorkspaceWorkerDeps = { repository, chats, agents, provider, checkpoints, coding: () => coding, now: () => new Date(), newId: randomUUID,
     idleTtlSeconds: 60, runTimeoutMs: 30000, policy: () => ({ agentName, runtimes: ["command"], repositories: ["fixture/repo"], checks: [], deploymentWorkflows: [] }),
-    checkRepository: github.forge.checkRepository, runtime: createWorkspaceRuntimeAdapter,
+    checkRepository: (_agentName, repository, branch, revision) => github.forge.checkRepository(repository, branch, revision), runtime: createWorkspaceRuntimeAdapter,
     execute: (workspace, work, actor) => executeWorkspaceTask({ usage }, agents, workspace, work, actor), sleep: ms => delay(ms) };
   const api = createWorkspaceUseCases(worker);
   const pump = async () => { if (workspaceId) await processWorkspace(worker, workspaceId); };

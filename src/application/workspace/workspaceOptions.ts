@@ -12,6 +12,7 @@ export interface WorkspaceOption {
   agentName: string;
   displayName: string;
   description: string;
+  gitEnabled: boolean;
   runtimes: WorkspaceRuntime[];
   defaultRuntime: WorkspaceRuntime;
   mode: ReturnType<typeof workspaceRepositoryMode>;
@@ -22,7 +23,6 @@ export interface WorkspaceOption {
 
 export interface WorkspaceOptionsView {
   enabled: boolean;
-  gitEnabled: boolean;
   agents: WorkspaceOption[];
 }
 
@@ -31,7 +31,7 @@ export function createWorkspaceOptionsUseCase(deps: {
   policies: Pick<WorkspacePolicyRepository, "get">;
   runtimes(): Promise<WorkspaceRuntime[]>;
   backendReady(): boolean;
-  gitEnabled(): boolean;
+  gitEnabled(agent: Agent): Promise<boolean>;
 }) {
   return async (ownerEmail: string): Promise<WorkspaceOptionsView> => {
     const enabled = deps.backendReady();
@@ -46,6 +46,7 @@ export function createWorkspaceOptionsUseCase(deps: {
         agentName: agent.name,
         displayName: agent.displayName,
         description: agent.description,
+        gitEnabled: await deps.gitEnabled(agent),
         runtimes,
         defaultRuntime: policy.defaultRuntime ?? "command",
         mode: workspaceRepositoryMode(policy),
@@ -54,6 +55,6 @@ export function createWorkspaceOptionsUseCase(deps: {
         deploymentWorkflows: policy.deploymentWorkflows,
       };
     });
-    return { enabled, gitEnabled: deps.gitEnabled(), agents: available };
+    return { enabled, agents: available };
   };
 }

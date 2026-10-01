@@ -240,6 +240,9 @@ key, cap, formatter, error identity, or collapse rule, search
   `src/lib/runtime-settings.ts`, never directly from environment variables.
 - Operator URLs are checked at registration and dispatch through `fetchPublicUrl`. Logging goes
   through `src/shared/logger.ts` except the documented domain warning and browser error boundaries.
+- Workspace GitHub API and Git transport use the current Agent's bound GitHub MCP authentication.
+  Settings → Plugins credentials and `GITHUB_TOKEN` are only for fetching Plugins; never fall back
+  to them or another Agent's grant. OAuth tokens stay on the server; Sandbox receives credential-free bundles.
 - A masked or empty secret update preserves stored data; a mask with no stored counterpart is
   dropped. A mask never creates a secret.
 - Treat every `@modelcontextprotocol/client` bump as a protocol change. Verify protocol revision,

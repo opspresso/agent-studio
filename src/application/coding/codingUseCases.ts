@@ -14,8 +14,8 @@ import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { isGitBranch, isRepositoryName, workspaceAllowsRepository } from "@/domain/workspace/policy";
 
 export interface CodingDeps extends WorkspaceWorkerDeps {
-  coding: CodingWorktree;
-  forge: CodingForge;
+  coding(agentName: string): CodingWorktree;
+  forge(agentName: string): CodingForge;
 }
 
 function repository(workspace: Workspace): CodingRepository {
@@ -61,7 +61,7 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
   } else if (action.kind === "push-main") {
     if (repo.baseBranch !== "main") throw new ValidationError("Direct main push requires a Workspace based on main");
     if (review.treeSha !== review.headTreeSha) throw new ValidationError("Commit and push the work branch before publishing to main");
-    const main = await deps.forge.reviewMainPush(repo, review.headSha);
+    const main = await deps.forge(workspace.agentName).reviewMainPush(repo, review.headSha);
     if (!codingCiAllowsPublication(main.ci)) throw new ConflictError("Main push requires completed, non-failing checks");
     return { main };
   } else if (action.kind === "pull-request") {
@@ -69,7 +69,7 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
     if (review.treeSha !== review.headTreeSha) throw new ValidationError("Commit workspace changes before creating a pull request");
   } else if (action.kind === "merge") {
     if (workspace.pullRequest?.number !== action.pullRequestNumber || repo.baseBranch !== "main") throw new ValidationError("Main merge requires this workspace's pull request");
-    const current = await deps.forge.pullRequest(repo, action.pullRequestNumber);
+    const current = await deps.forge(workspace.agentName).pullRequest(repo, action.pullRequestNumber);
     if (current.headSha !== action.headSha || review.headSha !== action.headSha || current.state !== "open" || current.draft || !codingCiAllowsPublication(current.ci)) {
       throw new ConflictError("Merge requires the exact open, ready PR head and completed, non-failing checks");
     }
@@ -80,7 +80,7 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
     if (action.kind === "release" && (!action.title.trim() || action.title.length > 200 || action.body.length > 40_000 ||
       typeof action.draft !== "boolean" || typeof action.prerelease !== "boolean")) throw new ValidationError("Invalid release details");
     if (review.treeSha !== review.headTreeSha) throw new ConflictError("Workspace has uncommitted changes");
-    const release = await deps.forge.releaseTarget(repo, action.kind === "release" ? action.tag : undefined);
+    const release = await deps.forge(workspace.agentName).releaseTarget(repo, action.kind === "release" ? action.tag : undefined);
     if (!codingCiAllowsPublication(release.ci)) throw new ConflictError("Tag and release publication requires completed, non-failing checks");
     return { release };
   } else {
@@ -105,7 +105,7 @@ export function createCodingUseCases(deps: CodingDeps) {
     async pullRequest(id: string, ownerEmail: string): Promise<PullRequestInfo | undefined> {
       const workspace = await ownedWorkspace(deps, id, ownerEmail);
       if (!workspace.pullRequest) return undefined;
-      const pullRequest = await deps.forge.pullRequest(repository(workspace), workspace.pullRequest.number);
+      const pullRequest = await deps.forge(workspace.agentName).pullRequest(repository(workspace), workspace.pullRequest.number);
       if (["active", "suspended"].includes(workspace.status) && !isDeepStrictEqual(workspace.pullRequest, pullRequest)) {
         try {
           await deps.repository.write({ expectedRevision: workspace.revision,
@@ -127,11 +127,11 @@ export function createCodingUseCases(deps: CodingDeps) {
       const state = await reserve(deps, id, ownerEmail, undefined, false, name);
       return state.withHeartbeat(async () => {
         try {
-          await checkWorkspaceRepository(deps, name, baseBranch);
+          await checkWorkspaceRepository(deps, existing.agentName, name, baseBranch);
           const sandbox = await ensureWorkspaceSandbox(deps, state);
           const { workspace } = await state.read();
           if (workspace.status !== "active" || workspace.deleteRequestedAt) throw new ConflictError("Workspace closed before repository attachment");
-          const coding = await state.effect(() => deps.coding.prepare(sandbox.externalId, { repository: name, baseBranch, branch: `agent/${id}` }));
+          const coding = await state.effect(() => deps.coding(workspace.agentName).prepare(sandbox.externalId, { repository: name, baseBranch, branch: `agent/${id}` }));
           // Persist the prepared Git bytes before claiming that the saved Workspace owns them.
           await saveWorkspaceCheckpoint(deps, state, sandbox);
           await state.save({ coding });
@@ -154,7 +154,7 @@ export function createCodingUseCases(deps: CodingDeps) {
         try {
           const sandbox = await ensureWorkspaceSandbox(deps, state);
           const { workspace } = await state.read();
-          const review = await state.effect(() => deps.coding.review(sandbox.externalId));
+          const review = await state.effect(() => deps.coding(workspace.agentName).review(sandbox.externalId));
           const { pullRequest, main, release: target } = await state.effect(() => validateAction(deps, workspace, action, review));
           const approval: CodingApproval = { id: approvalId, workspaceId: id, requestedBy: ownerEmail,
             ...(sourceChatId ? { sourceChatId } : {}),
@@ -191,7 +191,7 @@ export function createCodingUseCases(deps: CodingDeps) {
           const sandbox = await ensureWorkspaceSandbox(deps, state);
           const { workspace } = await state.read();
           const repo = repository(workspace);
-          const review = await state.effect(() => deps.coding.review(sandbox.externalId));
+          const review = await state.effect(() => deps.coding(workspace.agentName).review(sandbox.externalId));
           if (review.fingerprint !== previous.fingerprint) throw new ConflictError("Workspace changed since the action was reviewed");
           const checked = await state.effect(() => validateAction(deps, workspace, previous.action, review));
           if (previous.action.kind === "push-main" && checked.main?.baseSha !== previous.review.mainHeadSha) throw new ConflictError("Main changed since review; prepare a new approval");
@@ -202,32 +202,32 @@ export function createCodingUseCases(deps: CodingDeps) {
           const patch: Partial<Workspace> = {};
           const action = previous.action;
           if (action.kind === "commit" || action.kind === "commit-and-push") {
-            const sha = await state.effect(() => deps.coding.commit(sandbox.externalId, { operationId: approvalId, fingerprint: previous.fingerprint,
+            const sha = await state.effect(() => deps.coding(workspace.agentName).commit(sandbox.externalId, { operationId: approvalId, fingerprint: previous.fingerprint,
               message: action.message, ownerEmail, createdAt: previous.requestedAt }));
             patch.coding = { ...repo, headSha: sha };
             await state.save(patch);
             await saveWorkspaceCheckpoint(deps, state, sandbox);
-            if (action.kind === "commit-and-push") await state.effect(() => deps.coding.push(sandbox.externalId, { ...repo, headSha: sha }));
+            if (action.kind === "commit-and-push") await state.effect(() => deps.coding(workspace.agentName).push(sandbox.externalId, { ...repo, headSha: sha }));
             result = sha;
           } else if (action.kind === "push") {
-            await state.effect(() => deps.coding.push(sandbox.externalId, { ...repo, headSha: review.headSha }));
+            await state.effect(() => deps.coding(workspace.agentName).push(sandbox.externalId, { ...repo, headSha: review.headSha }));
             result = review.headSha;
           } else if (action.kind === "pull-request") {
-            await state.effect(() => deps.coding.push(sandbox.externalId, { ...repo, headSha: review.headSha }));
-            const pullRequest = await state.effect(() => deps.forge.openPullRequest({ ...repo, headSha: review.headSha }, action));
+            await state.effect(() => deps.coding(workspace.agentName).push(sandbox.externalId, { ...repo, headSha: review.headSha }));
+            const pullRequest = await state.effect(() => deps.forge(workspace.agentName).openPullRequest({ ...repo, headSha: review.headSha }, action));
             patch.pullRequest = pullRequest;
             result = pullRequest.url;
           } else if (action.kind === "merge") {
-            result = await state.effect(() => deps.forge.merge(repo, action.pullRequestNumber, action.headSha));
+            result = await state.effect(() => deps.forge(workspace.agentName).merge(repo, action.pullRequestNumber, action.headSha));
             patch.pullRequest = { ...checked.pullRequest!, state: "merged" };
           } else if (action.kind === "push-main") {
-            result = await state.effect(() => deps.forge.pushMain(repo, review.headSha, previous.review.mainHeadSha!));
+            result = await state.effect(() => deps.forge(workspace.agentName).pushMain(repo, review.headSha, previous.review.mainHeadSha!));
           } else if (action.kind === "tag") {
-            result = await state.effect(() => deps.forge.createTag(repo, action.tag, previous.review.targetSha!));
+            result = await state.effect(() => deps.forge(workspace.agentName).createTag(repo, action.tag, previous.review.targetSha!));
           } else if (action.kind === "release") {
-            result = await state.effect(() => deps.forge.createRelease(repo, action, previous.review.targetSha!));
+            result = await state.effect(() => deps.forge(workspace.agentName).createRelease(repo, action, previous.review.targetSha!));
           } else {
-            const dispatched = await state.effect(() => deps.forge.dispatch(repo.repository, action.workflow, action.ref, action.inputs));
+            const dispatched = await state.effect(() => deps.forge(workspace.agentName).dispatch(repo.repository, action.workflow, action.ref, action.inputs));
             result = dispatched.url ?? (dispatched.runId ? `Workflow run ${dispatched.runId}` : "Workflow dispatch accepted");
           }
           const ciWatch = decision.authorization === "coding-request" && decision.sourceChatId ? codingCiWatch(patch.pullRequest, deps.now()) : undefined;
