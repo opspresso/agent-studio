@@ -197,6 +197,17 @@ describe("resolving the Authorization for an agent's connection", () => {
     expect(h.refreshCalls).toEqual([]);
   });
 
+  it.each(["token refresh", "same-value reconnect"])("does not invalidate the current credential after a late 401 from before %s", async kind => {
+    const h = providerHarness({ connection: connectionFixture({ revision: "old-grant" }) });
+    const snapshot = await h.headersFor();
+    h.current()!.revision = "new-grant";
+    if (kind === "token refresh") h.current()!.accessToken = "enc:fresh-token";
+    await h.provider.markUnauthorized("p", "slack", snapshot.credentialFingerprint!, "files:write");
+    expect(h.updates).toEqual([]);
+    expect(h.current()!.status).toBe("connected");
+    expect(h.current()!.scopes).not.toContain("files:write");
+  });
+
   it("will not spend this agent's credentials at an authorization server that did not issue them", async () => {
     // SEP-2352. A refresh is the one thing on the run path that presents the
     // client_id and secret, so an entry repointed by a re-discovery would send
@@ -480,7 +491,8 @@ describe("a refresh racing a reconnect", () => {
       oauth: {} as never,
       cipher,
     });
-    const pending = provider.markUnauthorized("p", "slack", "files:write");
+    const observed = await createMcpAuthProvider({ connections: mcpConnectionRepository, oauth: {} as never, cipher }).headersFor("p", "slack", OAUTH_SERVER.auth!);
+    const pending = provider.markUnauthorized("p", "slack", observed.credentialFingerprint!, "files:write");
     await read.promise;
     const reconnected = connectionFixture({ accessToken: "enc:reconnected", refreshToken: undefined });
     await mcpConnectionRepository.put(reconnected);
@@ -644,7 +656,7 @@ describe("a run against an OAuth-required server", () => {
     try {
       const chunks = await runOnce(
         runDeps(new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]), {
-          headersFor: async () => ({ headers: { Authorization: "Bearer stale" } }),
+          headersFor: async () => ({ headers: { Authorization: "Bearer stale" }, credentialFingerprint: "request-credential" }),
           markUnauthorized: async (_p: string, server: string) => {
             marked.push(server);
           },
@@ -693,7 +705,8 @@ describe("markUnauthorized with a scope challenge", () => {
       cipher,
     });
 
-    await provider.markUnauthorized("p", "slack", "files:write files:read");
+    const observed = await provider.headersFor("p", "slack", OAUTH_SERVER.auth!);
+    await provider.markUnauthorized("p", "slack", observed.credentialFingerprint!, "files:write files:read");
 
     // Never an unconditional put: a reconnect landing between the read and
     // this write would be overwritten with the stale row.

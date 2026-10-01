@@ -167,6 +167,8 @@ export interface TokenRequestTarget {
  * it holds, so only the caller can decide whether this is fatal.
  */
 export interface McpAuthResolution {
+  /** Opaque identity of the exact credential used by the request; never sent to the MCP server. */
+  credentialFingerprint?: string;
   headers: Record<string, string>;
   unavailable?: string;
 }
@@ -188,7 +190,7 @@ export interface McpAuthProvider {
    * Record that the server rejected this connection's token, so the console can
    * offer a reconnect instead of reporting the server as down.
    */
-  markUnauthorized(agentName: string, serverName: string, scope?: string): Promise<void>;
+  markUnauthorized(agentName: string, serverName: string, credentialFingerprint: string, scope?: string): Promise<void>;
 }
 
 export interface OAuthClient {

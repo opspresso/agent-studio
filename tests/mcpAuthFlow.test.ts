@@ -252,7 +252,7 @@ function harness(
       invalidateDiscovery: () => {},
     },
     authProvider: {
-      headersFor: async () => overrides.authHeaders ?? { headers: { Authorization: "Bearer at" } },
+      headersFor: async () => overrides.authHeaders ?? { headers: { Authorization: "Bearer at" }, credentialFingerprint: "request-credential" },
       markUnauthorized: async (_agent: string, serverName: string) => {
         unauthorized.push(serverName);
       },
@@ -1570,6 +1570,13 @@ describe("listing a server's tools as the agent", () => {
       unauthorized: true,
     });
     expect(h.unauthorized).toEqual(["slack"]);
+  });
+
+  it("passes the exact OAuth credential and requested scope when a probe asks for a wider grant", async () => {
+    const h = harness({ connection: { status: "connected" }, probeResult: { ok: false, error: "HTTP 403", unauthorized: true, scope: "files:write" } });
+    const flag = vi.spyOn(h.deps.authProvider, "markUnauthorized");
+    await createMcpAuthUseCases(h.deps).listTools("p", "slack", OWNER);
+    expect(flag).toHaveBeenCalledExactlyOnceWith("p", "slack", "request-credential", "files:write");
   });
 
   it("does not flag a server that was merely unreachable", async () => {

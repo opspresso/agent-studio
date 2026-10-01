@@ -164,6 +164,8 @@ dynamic registration 순서다. Agent별 공개 metadata URL은 설정한 공개
 refresh는 남은 실행 시간을 고려한 여유 구간에서 수행한다. 같은 프로세스의 동시 요청은
 Agent·서버·연결 revision·현재 token target이 같은 갱신만 공유하며 완료 후 기록을 제거한다.
 갱신은 revision CAS로 저장하고 경쟁에서 진 호출은 동일 issuer·resource의 유효한 승자 grant만 사용한다.
+각 요청은 사용한 credential의 불투명 fingerprint를 보관한다. 401·scope challenge는 현재 저장된
+credential과 fingerprint가 같은 경우에만 재인가 상태나 추가 scope로 반영한다.
 계정 표시 backfill은 같은 grant revision을 조건으로 그 필드만 갱신하며 revision을 바꾸지 않는다.
 표시 저장이 진행 중인 refresh의 새 token을 버리게 해서는 안 되며 reconnect·삭제 후에는 표시 저장도 거절한다.
 자격 증명 저장·인증 시작 중 새 연결 저장·콜백 완료·연결 해제도 읽은 연결 revision을 조건으로 쓴다.

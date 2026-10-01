@@ -48,6 +48,15 @@ function bearer(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
 
+function credentialFingerprint(connection: McpConnection): string {
+  return createHash("sha256").update(JSON.stringify([connection.agentName, connection.serverName,
+    connection.revision, connection.issuer, connection.resource, connection.clientId, connection.accessToken])).digest("hex");
+}
+
+function authenticated(connection: McpConnection, token: string): McpAuthResolution {
+  return { headers: bearer(token), credentialFingerprint: credentialFingerprint(connection) };
+}
+
 /**
  * Does this connection still belong to what the entry points at?
  *
@@ -146,7 +155,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         ),
       );
       const now = Date.now();
-      const won = await deps.connections.updateTokens(
+      await deps.connections.updateTokens(
         connection.agentName,
         connection.serverName,
         connection.revision,
@@ -178,9 +187,6 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
           updatedAt: new Date(now).toISOString(),
         },
       );
-      if (won) {
-        return { headers: bearer(tokens.accessToken) };
-      }
       // A refresh or reconnect won. Its grant may belong to a different target
       // or no longer be connected, so validate it against this run's snapshot.
       const current = await deps.connections.get(connection.agentName, connection.serverName);
@@ -191,18 +197,8 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         }
       }
       if (current?.accessToken) {
-        return {
-          headers: bearer(
-            deps.cipher.decrypt(
-              current.accessToken,
-              mcpConnectionSecretContext(
-                current.agentName,
-                current.serverName,
-                "access-token",
-              ),
-            ),
-          ),
-        };
+        return authenticated(current, deps.cipher.decrypt(current.accessToken,
+          mcpConnectionSecretContext(current.agentName, current.serverName, "access-token")));
       }
       return {
         headers: {},
@@ -250,14 +246,8 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         return { headers: {}, unavailable };
       }
       if (!needsRefresh(connection, Date.now())) {
-        return {
-          headers: bearer(
-            deps.cipher.decrypt(
-              connection.accessToken,
-              mcpConnectionSecretContext(agentName, serverName, "access-token"),
-            ),
-          ),
-        };
+        return authenticated(connection, deps.cipher.decrypt(connection.accessToken,
+          mcpConnectionSecretContext(agentName, serverName, "access-token")));
       }
 
       const target = mcpTokenTarget(deps.cipher, connection, auth);
@@ -273,11 +263,10 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       return pending;
     },
 
-    async markUnauthorized(agentName, serverName, scope) {
+    async markUnauthorized(agentName, serverName, expectedFingerprint, scope) {
       const connection = await deps.connections.get(agentName, serverName);
-      if (!connection) {
-        return;
-      }
+      if (!connection || connection.agentName !== agentName || connection.serverName !== serverName ||
+        credentialFingerprint(connection) !== expectedFingerprint) return;
       // A challenge that named scopes is the server saying what the next
       // authorization has to ask for: the union goes on the row, so the
       // reconnect the console offers requests it rather than the same grant

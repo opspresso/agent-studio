@@ -8,6 +8,7 @@ import { stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
 
 export interface McpCredentials {
   headers: Record<string, string>;
+  credentialFingerprint?: string;
   warning?: string;
   unavailable?: string;
 }
@@ -21,6 +22,7 @@ export async function resolveMcpCredentials(
 ): Promise<McpCredentials> {
   let overrides = binding?.headers;
   let warning: string | undefined;
+  let credentialFingerprint: string | undefined;
   if (hasMcpHeaderSecrets(overrides) && binding?.headerTarget !== mcpHeaderTarget(server.url)) {
     overrides = Object.fromEntries(Object.entries(overrides ?? {}).filter(([, value]) => value === null));
     warning = `MCP server '${server.name}' moved since its Agent header credentials were saved; ` +
@@ -34,6 +36,7 @@ export async function resolveMcpCredentials(
     if (resolved.unavailable) {
       if (Object.keys(headers).length === 0) return { headers, warning, unavailable: resolved.unavailable };
     } else {
+      credentialFingerprint = resolved.credentialFingerprint;
       // Fetch folds duplicate case variants into a comma-joined credential. Replace every spelling.
       for (const [name, value] of Object.entries(resolved.headers)) {
         for (const existing of Object.keys(headers)) if (existing.toLowerCase() === name.toLowerCase()) delete headers[existing];
@@ -41,5 +44,5 @@ export async function resolveMcpCredentials(
       }
     }
   }
-  return { headers, warning };
+  return { headers, warning, credentialFingerprint };
 }

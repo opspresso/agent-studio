@@ -1142,10 +1142,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const headers = credentials.headers;
       applyMcpUserEmail(headers, userEmail);
       const result = await deps.probe.listTools(server.url, headers, loopback);
-      if (!result.ok && result.unauthorized && server.auth) {
+      if (!result.ok && result.unauthorized && credentials.credentialFingerprint) {
         // What a run does with the same 401: record it, so the console offers a
         // reconnect instead of leaving the owner to re-diagnose the message.
-        await deps.authProvider.markUnauthorized(agentName, serverName).catch((error: unknown) => {
+        await deps.authProvider.markUnauthorized(agentName, serverName, credentials.credentialFingerprint, result.scope).catch((error: unknown) => {
           log.warn("mcp", `could not flag '${serverName}' as needing reauthorization`, error);
         });
       }

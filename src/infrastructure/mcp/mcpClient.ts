@@ -9,7 +9,7 @@
 import type { McpTool } from "@/domain/mcp/types";
 import type { ListToolsResult } from "@/domain/mcp/toolProbe";
 export type { ListToolsResult };
-import { isTimeout, isUnauthorized, McpSession, MCP_DISCOVERY_TIMEOUT_MS } from "./session";
+import { isTimeout, isUnauthorized, scopeChallengeOf, McpSession, MCP_DISCOVERY_TIMEOUT_MS } from "./session";
 
 export type { McpTool };
 
@@ -43,11 +43,13 @@ export async function listMcpTools(
     if (isTimeout(error)) {
       return { ok: false, error: `Connection timed out after ${deadline / 1000}s` };
     }
+    const challenge = scopeChallengeOf(error);
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Connection failed",
       // The same 401 the run loop treats as "this connection needs redoing".
-      ...(isUnauthorized(error) ? { unauthorized: true } : {}),
+      ...(isUnauthorized(error) || challenge ? { unauthorized: true } : {}),
+      ...(challenge?.scope ? { scope: challenge.scope } : {}),
     };
   } finally {
     // A probe that leaves the session open would strand one per button press.

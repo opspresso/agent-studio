@@ -57,6 +57,7 @@ export async function buildMcpTools(
     return { mcpTools: [], mcpServers: [], warnings: [], signature: runtimeFingerprint([]) };
   }
   const descriptionByName = new Map<string, string>();
+  const credentialByServer = new Map<string, string>();
   // Per-request context, kept apart from the identity headers on purpose — see
   // `CONVERSATION_ID_HEADER` for why it must not reach the discovery cache key.
   const contextHeaders: Record<string, string> | undefined = origin?.conversation
@@ -91,6 +92,7 @@ export async function buildMcpTools(
           }
         }
         const credentials = await resolveMcpCredentials({ cipher: deps.cipher, auth: deps.mcpAuth }, configuration.agentName, mcp, binding);
+        if (credentials.credentialFingerprint) credentialByServer.set(mcp.name, credentials.credentialFingerprint);
         const credentialWarning = credentials.warning;
         if (credentialWarning) log.warn("mcp", credentialWarning);
         if (credentials.unavailable) return { warning: [credentialWarning, `${credentials.unavailable} Its tools were not offered.`].filter(Boolean).join(" ") };
@@ -156,8 +158,10 @@ export async function buildMcpTools(
         continue;
       }
       flagged.add(serverName);
+      const fingerprint = credentialByServer.get(serverName);
+      if (!fingerprint) continue;
       await deps.mcpAuth
-        .markUnauthorized(configuration.agentName, serverName, toolManager.scopeChallenges?.get(serverName))
+        .markUnauthorized(configuration.agentName, serverName, fingerprint, toolManager.scopeChallenges?.get(serverName))
         .catch((error: unknown) => {
           log.warn("mcp", `could not flag '${serverName}' as needing reauthorization`, error);
         });
