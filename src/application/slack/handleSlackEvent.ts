@@ -1,11 +1,10 @@
-import type { Agent } from "@/domain/agent/types";
+import { authenticateMessagingSubject, isMessagingAuthenticationCommand } from "@/application/messaging/authenticateSubject";
+import { ForbiddenError } from "@/application/errors";
 import type { SlackMessage } from "@/domain/slack/types";
 import { slackConversation } from "@/domain/slack/conversation";
 import { slackInputText } from "@/domain/slack/messageText";
 import { slackTimestampValue } from "@/domain/slack/runControl";
 import { watchSlackStop } from "./watchStop";
-import { isAgentPrivate } from "@/domain/agent/access";
-import { userMayAccessAgent } from "@/application/agent/agentUseCases";
 import { createReplySink, type ReplyTarget } from "@/application/slack/replyStream";
 import { parseSlackCommand, selfUserId, slackStopEvent } from "@/application/slack/engagement";
 import { handleSlackCommand } from "@/application/slack/handleCommand";
@@ -123,7 +122,7 @@ export function threadToTurns(
     .filter(({ m, text }) => {
       const ts = slackTimestampValue(m.ts);
       const cutoff = slackTimestampValue(currentTs);
-      return ts !== null && cutoff !== null && ts < cutoff && (text !== "" || (m.files ?? []).length > 0);
+      return !isMessagingAuthenticationCommand(text) && ts !== null && cutoff !== null && ts < cutoff && (text !== "" || (m.files ?? []).length > 0);
     })
     .map(({ m, text }) => {
       const ours = isOurs(m);
@@ -305,42 +304,18 @@ export interface SlackBotBinding {
   botToken: string;
 }
 
-/** The one refusal a private agent's bot gives, on every path that refuses. */
-export const privateAgentRefusal = (agentName: string): string =>
-  `Sorry — agent "${agentName}" is private. Ask its owner to invite you.`;
+/** Control messages use the same verified Studio identity as Agent requests. */
+const senderRefusal = (agentName: string): string =>
+  `Authenticate your messaging account in Studio Profile → Messaging connections and ensure you have access to agent "${agentName}".`;
 
-/**
- * May the sender of this Slack event act on the agent? The gate for every
- * path a Slack event can take — the run, the `!mute` commands, the
- * thread-start greeting — so no path answers someone another path refuses.
- *
- * A Slack id maps to a member by email, the one identity both sides share, so
- * a workspace that shares no address is refused the same way an uninvited
- * member is: an unidentifiable person is not an invited one. An app's message
- * (`botId`, no user) passes instead — the keyword that woke the bot is the
- * owner's own configuration, so an alert's message is owner-wired automation
- * like a trigger, and there is no person to identify; refusing it would post
- * a refusal into the alert thread on every firing while the run the owner
- * configured never executes. The lookup is the cached `users.info` read the
- * gallery attribution shares, and the address never reaches a prompt.
- */
 export async function slackSenderMayAccess(
-  deps: Pick<SlackEventDeps, "slack">,
-  token: string,
-  agent: Agent,
-  sender: { user?: string; botId?: string },
+  deps: Pick<SlackEventDeps, "identities">,
+  agentName: string,
+  sender: { user?: string; botId?: string; teamId?: string },
 ): Promise<boolean> {
-  if (!isAgentPrivate(agent)) {
-    return true;
-  }
-  if (!sender.user) {
-    return Boolean(sender.botId);
-  }
-  const email = await deps.slack.userEmail(token, sender.user).catch((error) => {
-    log.warn("slack", "sender email lookup failed for a private agent", error);
-    return null;
-  });
-  return email !== null && (await userMayAccessAgent(agent, email));
+  if (!sender.user || !sender.teamId || sender.botId) return false;
+  try { return !!await deps.identities.resolve({ agentName, platform: "slack", realm: sender.teamId, externalId: sender.user }); }
+  catch (error) { if (error instanceof ForbiddenError) return false; throw error; }
 }
 
 /**
@@ -383,16 +358,17 @@ export async function handleSlackEvent(
     if (command === "stop" && (!event.user || event.bot_id)) return;
     const commandAgent = await deps.agents.get(agentName);
     if (
-      commandAgent &&
-      !(await slackSenderMayAccess(deps, token, commandAgent, {
+      !commandAgent ||
+      !(await slackSenderMayAccess(deps, agentName, {
         ...(event.user ? { user: event.user } : {}),
+        ...(body.team_id ? { teamId: body.team_id } : {}),
         ...(event.bot_id ? { botId: event.bot_id } : {}),
       }))
     ) {
       await deps.slack.postMessage(token, {
         channel: event.channel,
         thread_ts: threadTs,
-        text: privateAgentRefusal(agentName),
+        text: senderRefusal(agentName),
       });
       return;
     }
@@ -422,23 +398,17 @@ export async function handleSlackEvent(
       : {}),
   };
   const reply = await slackReplyChannel(deps, token, target);
+
+  if (!event.user || !body.team_id || event.bot_id) {
+    await reply.say("A verified Slack user and workspace are required"); return;
+  }
+  const authenticated = await authenticateMessagingSubject(deps.identities, { agentName, platform: "slack", realm: body.team_id, externalId: event.user },
+    message, isAssistantThread, reply);
+  if (!authenticated) return;
   if (!agent || !configuration) {
     await reply.say(
       `Agent not available: ${agentName} (must exist and have current settings)`,
     );
-    return;
-  }
-
-  // The visibility gate, ahead of any acknowledgement — no reaction, no status
-  // line, no thread read happens for someone the agent keeps out. What
-  // passes and why is {@link slackSenderMayAccess}'s.
-  if (
-    !(await slackSenderMayAccess(deps, token, agent, {
-      ...(event.user ? { user: event.user } : {}),
-      ...(event.bot_id ? { botId: event.bot_id } : {}),
-    }))
-  ) {
-    await reply.say(privateAgentRefusal(agentName));
     return;
   }
 
@@ -522,17 +492,7 @@ export async function handleSlackEvent(
     // which decides what the *model* is told: this address reaches no prompt and
     // no tool result, and a person's own pictures going missing from their own
     // gallery is not something an Agent parameter should be able to cause.
-    //
-    // Best effort in both directions — a workspace that does not share addresses,
-    // or a bot without the scope, files by agent exactly as before.
-    const ownerEmail = event.user
-      ? await deps.slack
-          .userEmail(token, event.user)
-          .catch((error) => {
-            log.warn("slack", "owner lookup failed; filing by agent alone", error);
-            return null;
-          })
-      : null;
+    const ownerEmail = authenticated.email;
     const turns = withSpeakerLabels(rawTurns, named.nameByUser);
 
     // Labelled on the same terms as the history: leaving the newest turn bare
@@ -561,7 +521,7 @@ export async function handleSlackEvent(
         history: turns.map((turn) => toHistoryTurn(deps, token, turn)),
         // The Slack user id, not an email: Slack does not hand one over, and
         // guessing at a mapping would attribute spend to the wrong person.
-        actor: { kind: "slack", id: event.user ?? (event.bot_id ? `bot:${event.bot_id}` : `channel:${event.channel}`) },
+        actor: { kind: "slack", id: event.user },
         ...(named.caller ? { caller: named.caller } : {}),
         // The thread is the conversation — the same address the engagement row and
         // the reply itself use, so a follow-up here is one for every consumer.
@@ -608,6 +568,6 @@ export async function handleSlackStop(deps: SlackEventDeps, body: SlackEventBody
   const event = slackStopEvent(body);
   if (!event) return;
   const agent = await deps.agents.get(binding.agentName);
-  if (!agent || !(await slackSenderMayAccess(deps, binding.botToken, agent, { user: event.userId }))) return;
+  if (!agent || !(await slackSenderMayAccess(deps, binding.agentName, { user: event.userId, teamId: body.team_id }))) return;
   await deps.stops.requestStop({ agentName: binding.agentName, channel: event.channel, threadTs: event.threadTs }, event.eventTs);
 }

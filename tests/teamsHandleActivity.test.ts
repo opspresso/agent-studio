@@ -74,6 +74,7 @@ function makeDeps(chunks: EngineChunk[], teams: TeamsClientPort, options: { call
   const remembered: Array<{ key: string; turn: TranscriptTurn }> = [];
   const stored: TranscriptTurn[] = [];
   const deps: TeamsEventDeps = {
+    identities: { connect: async () => ({ userId: "studio-user", email: "user@example.test" }), resolve: async () => ({ userId: "studio-user", email: "user@example.test" }) },
     runAgent: async function* (input) {
       runs.push(input);
       for (const chunk of chunks) {
@@ -101,6 +102,7 @@ function activity(overrides: Partial<TeamsActivity> = {}): TeamsActivity {
     serviceUrl: "https://smba.trafficmanager.net/emea/",
     channelId: "msteams",
     from: { id: "29:user", name: "Bruce Lee", aadObjectId: "aad-1" },
+    channelData: { tenant: { id: "tenant-1" } },
     conversation: { id: "a:1", conversationType: "personal" },
     recipient: { id: "28:bot", name: "Painter" },
     text: "hello",
@@ -124,6 +126,34 @@ afterEach(() => {
 });
 
 describe("handleTeamsActivity", () => {
+  it("consumes authentication before history, attachments or Agent execution", async () => {
+    const { teams, downloads } = makeTeamsFake();
+    const { deps, runs, remembered } = makeDeps([], teams);
+    const connect = vi.spyOn(deps.identities, "connect");
+    const history = vi.spyOn(deps.transcripts!, "recent");
+    await handleTeamsActivity(deps, dispositionOf(activity({ text: "auth synthetic-code", attachments: [{ contentType: "image/png", contentUrl: "https://example.test/secret" }] })), BINDING);
+    expect(connect).toHaveBeenCalledWith({ agentName: "painter", platform: "teams", realm: "tenant-1", externalId: "aad-1" }, "synthetic-code");
+    expect(history).not.toHaveBeenCalled();
+    expect(downloads).toEqual([]);
+    expect(runs).toEqual([]);
+    expect(remembered).toEqual([]);
+  });
+
+  it("requires both a linked user and the authenticated tenant", async () => {
+    const { teams } = makeTeamsFake();
+    const { deps, runs, remembered } = makeDeps([], teams);
+    const resolve = vi.spyOn(deps.identities, "resolve").mockResolvedValue(null);
+    const history = vi.spyOn(deps.transcripts!, "recent");
+    await handleTeamsActivity(deps, dispositionOf(activity()), BINDING);
+    expect(resolve).toHaveBeenCalledWith({ agentName: "painter", platform: "teams", realm: "tenant-1", externalId: "aad-1" });
+    resolve.mockClear();
+    await handleTeamsActivity(deps, dispositionOf(activity({ channelData: undefined })), BINDING);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(history).not.toHaveBeenCalled();
+    expect(runs).toEqual([]);
+    expect(remembered).toEqual([]);
+  });
+
   it("runs the bound agent with the Entra object id as the actor and the Teams conversation as the conversation", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});

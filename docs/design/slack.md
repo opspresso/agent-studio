@@ -84,7 +84,7 @@ DM의 세부 진행 문구는 `assistant.threads.setStatus`의 호환 경로를 
 | 채널 mention의 `message` 사본 | `app_mention`과 중복되므로 무시 |
 | 사람의 thread 답글 | 참여 기록을 조회해 실행 여부 결정 |
 | 다른 앱의 thread 답글·DM | 상호 bot loop를 막기 위해 무시 |
-| thread가 아닌 채널 메시지 | Agent 키워드가 맞으면 실행; 다른 앱의 알림도 가능 |
+| thread가 아닌 채널 메시지 | Agent 키워드가 맞고 연결한 사람의 메시지면 실행 |
 | 나머지 | 무시 |
 
 자기 메시지는 envelope의 `authorizations.user_id`로 판정한다.
@@ -108,12 +108,12 @@ mute는 mention 없는 thread 참여를 비활성화한다. 직접 mention에는
 `!unmute`가 참여를 다시 켠다.
 최상위 메시지의 mute에는 사용 위치를, DM에는 DM 동작을 안내한다.
 
-명령은 현재 설정 조회 전에 처리하지만 private Agent의 접근 검사는 유지한다.
+명령은 현재 설정 조회 전에 처리하지만 Studio 사용자 연결과 현재 Agent 접근 검사는 유지한다.
 Agent 정보를 읽지 못하면 명령도 권한을 열지 않는다.
 
 `agent_session_stopped` 구독으로 Slack 기본 중단 버튼을 제공한다. `!stop`은 DM·채널의
 대상 thread 안에서 보낸다. 첫 답변 전에 참여 기록이 없어도 사람의 `!stop`은 접수하며,
-private Agent의 접근 판정은 중단에도 적용한다.
+Studio 사용자 연결과 현재 Agent 접근 판정은 중단에도 적용한다.
 
 `SlackRunControlRepository`는 Agent·채널·thread별 최신 중단 시각을 DB에 원자적으로 기록한다.
 같은 thread는 갱신 가능한 실행 lease로 한 번에 하나의 요청만 실행한다. 실행 중 추가 요청에는
@@ -132,16 +132,12 @@ private Agent의 접근 판정은 중단에도 적용한다.
 중단 안내만 남긴다. 이미 실행된 외부 도구의 효과는 되돌리지 않는다.
 진행 중인 준비 I/O는 각 호출의 timeout·취소 지원 범위를 따르며, 이후 모델 실행은 중단된다.
 
-## private agent 는 묻는 사람을 이메일로 확인한다
+## 호출자 확인
 
-`slackSenderMayAccess`는 Slack profile의 email을 Agent 소유자·초대 목록·관리자 판정에 사용한다.
-확인할 이메일이 없거나 접근이 없으면 거절하며 런·명령·thread-start 모두 같은 경계를 지난다.
-모델용 caller 블록에는 이메일을 넣지 않는다.
-
-사용자 없이 bot이 보낸 앱 알림은 소유자가 설정한 키워드 자동화로 처리한다.
-private Agent 접근은 접수 리액션·상태 표시 전에 검사한다.
-이메일 조회는 `callerContext`가 꺼져 있어도 접근 판정·파일 귀속에 필요할 수 있다.
-[SECURITY](../SECURITY.md#인가-모델)가 메신저별 권한 차이를 설명한다.
+서명된 workspace ID·사용자 ID를 [Studio 사용자 연결](messaging.md#호출자-인증)로 해석한다.
+`slackSenderMayAccess`는 명령·native 중단·thread-start에도 같은 현재 권한을 적용한다.
+연결되지 않은 사용자와 다른 앱의 알림은 Agent를 실행하지 않는다.
+이메일 프로필 조회는 인증 수단이 아니며 표시 이름은 `callerContext`가 켜진 경우에만 읽는다.
 
 ## 접수했다고 말하기
 

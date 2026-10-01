@@ -248,7 +248,7 @@ DELETE /api/skills/{name}     → 204                     | 404
 제거·소유자 제외로 정규화). 필드가 없는 기존 행은 public 이다. private agent 는 세션
 기반의 모든 읽기·실행 표면에서 소유자·초대 멤버·admin 외에 403 으로 거절되고, 목록
 (`GET /api/agents`) 에서는 보이지 않는다. 누가 게이트를 받고 누가 받지 않는지(API token,
-bot, Slack 의 이메일 판정)는 [SECURITY.md](SECURITY.md#인가-모델) 가 정본이다.
+bot의 Studio 사용자 연결)는 [SECURITY.md](SECURITY.md#인가-모델) 가 정본이다.
 
 `memberEmails` 는 초대받은 사람들의 주소이므로 모든 독자에게 노출하지 않는다. 단일 agent
 GET 은 소유자나 effective configured admin 에게만 이 필드를 포함하고, 초대 멤버와 일반 독자에게는
@@ -1063,6 +1063,18 @@ POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400
 `POST …/restart`는 저장된 workload를 다시 만들도록 접수하고 본문 없는 202로 응답한다.
 완료 여부는 상태 GET으로 확인한다. 주소는 앱 컨테이너의 namespace가 아니라 호스트 loopback의
 포트 매핑이다. [Managed 설계](design/mcp.md#managed-서버)를 따른다.
+
+## 개인 메신저 계정 연결
+
+`/api/me/messaging-identities`는 로그인한 사용자 자신의 연결만 관리한다.
+
+- `GET` → `{ identities: [{ agentName, platform, realm, externalId, userId, linkedAt }] }`, 최대 100개.
+- `POST { agentName, platform }` → `{ code, expiresAt }`. member 등급과 현재 Agent 접근이 필요하다.
+- `DELETE { agentName, platform, realm, externalId }` → `204`. 본인 연결만 해제하며 guest로 변경된 사용자도 가능하다.
+
+`platform`은 `slack`, `telegram`, `teams` 중 하나다. 발급 사용자 ID는 세션에서 정하며
+본문의 이메일·사용자 ID를 받지 않는다. 코드는 10분 안에 해당 Agent와의 개인 대화에서
+`auth <code>`로 소비한다. [연결과 실행 권한 계약](design/messaging.md#호출자-인증)을 따른다.
 
 ## MCP OAuth
 

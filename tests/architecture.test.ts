@@ -495,8 +495,9 @@ describe("the client bundle", () => {
   // The exact count detects missing entry points. Update it deliberately when
   // adding or removing a client component.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(128);
+    expect(entries.length).toBe(129);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
+      "src/app/profile/messaging/page.tsx",
       "src/app/_components/landing/LandingPage.tsx",
       "src/app/settings/access/MemberTierSettings.tsx",
       "src/app/_components/landing/ParticleField.tsx",

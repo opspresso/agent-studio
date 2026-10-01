@@ -3,9 +3,7 @@ import { loadFileHistory, rememberFiles } from "./fileHistory";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { ExecuteAgentInput } from "@/application/execution/deps";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
-import type { RunActor, RunCaller, RunConversation, ExecutionGrant } from "@/domain/execution/actor";
-import { messagingExecutionGrant } from "./executionGrant";
-import { executionGrantCheck } from "@/application/execution/executionGrant";
+import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import { documentKind } from "@/domain/llm/documentLimits";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
@@ -51,7 +49,6 @@ import {
 
 /** Injected dependencies a messaging adapter's bag carries. */
 export interface MessagingDeps {
-  authorizeExecutionGrant?: (grant: ExecutionGrant) => Promise<void>;
   artifacts?: ArtifactStorage;
   fileHistory?: ConversationTranscriptRepository;
   /** Bound wrapper over `executeAgent(executionDeps, params)`. */
@@ -93,7 +90,7 @@ export interface TurnInput {
   /** Who is asking, when the surface resolved it. The facade gates it on the Agent settings. */
   caller?: RunCaller;
   conversation: RunConversation;
-  /** The user's gallery and MCP identity, when the surface knows an email address. */
+  /** Current email of the authenticated Studio user; independent of prompt display names. */
   ownerEmail?: string;
   /**
    * What the surface lost before the run — a history it could not read. The
@@ -134,8 +131,7 @@ export async function handleTurn(
   reply: ReplyChannel,
 ): Promise<TurnOutcome> {
   const { agent, configuration, warnings } = input;
-  const executionGrant = messagingExecutionGrant(agent, input.actor);
-  const ownerEmail = executionGrant?.email ?? input.ownerEmail;
+  const ownerEmail = input.ownerEmail;
   let text = "";
   // `fetched` rides along: what the run read is delivered only when it is all
   // the run has to show (see below).
@@ -177,7 +173,6 @@ export async function handleTurn(
   let readDocuments: ReadDocument[] = [];
   let history: ChatMessageInput[] = [];
   try {
-    await executionGrantCheck(deps, executionGrant)?.();
     endState = await refreshCancellation();
     signal.throwIfAborted();
     const attached = input.attachments;
@@ -222,7 +217,6 @@ export async function handleTurn(
       ...(input.caller ? { caller: input.caller } : {}),
       conversation: input.conversation,
       ...(ownerEmail ? { ownerEmail } : {}),
-      ...(executionGrant ? { executionGrant } : {}),
       signal,
     })) {
       signal.throwIfAborted();

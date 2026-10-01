@@ -1,3 +1,4 @@
+import type { MessagingIdentityUseCases } from "@/application/messaging/identityUseCases";
 import type { MessagingDeps } from "@/application/messaging/handleTurn";
 import type { InboundEventClaims } from "@/domain/messaging/inboundClaims";
 import type { ConversationTranscriptRepository } from "@/domain/messaging/transcript";
@@ -8,6 +9,7 @@ export type { TelegramClientPort };
 
 /** Injected dependencies; wired by the route from the composition root. */
 export interface TelegramEventDeps extends MessagingDeps {
+  identities: Pick<MessagingIdentityUseCases, "connect" | "resolve">;
   telegram: TelegramClientPort;
   /** Chats and forum topics this bot has actually received an admitted message from. */
   destinations?: TelegramDestinationRepository;

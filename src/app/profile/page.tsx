@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Anchor,
   Avatar,
   Badge,
   Card,
@@ -110,6 +111,7 @@ export default function ProfilePage() {
   return (
     <Stack gap="lg">
       {header}
+      <Anchor href="/profile/messaging">{t("messaging.identity.title")}</Anchor>
 
       <Card>
         <Group gap="md" wrap="nowrap" align="flex-start">

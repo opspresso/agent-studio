@@ -5,12 +5,30 @@ Slack·Telegram·Teams는 같은 첨부·Agent 실행·chunk fold·결과 전달
 설정과 수치는 [CONFIGURATION](../CONFIGURATION.md#코드에-고정된-제한),
 HTTP 인증과 중복 처리는 [SECURITY](../SECURITY.md#머신-호출자의-요청-인증)를 따른다.
 
+## 호출자 인증
+
+메신저의 전달 인증과 Studio 사용자의 실행 권한은 별도로 검사한다.
+사용자는 Profile → Messaging connections에서 Agent·플랫폼을 선택하고 인증 코드를 발급한다.
+같은 Agent와의 개인 대화에 `auth <code>`를 보내면 서명된 전달의 발신자 ID와 Studio 사용자 ID를 연결한다.
+코드는 10분 유효한 일회용 값이며 해시만 저장한다. 코드 소비와 연결 저장은 하나의 트랜잭션이다.
+다른 Studio 사용자가 이미 소유한 발신자 연결은 덮어쓰지 않는다.
+
+연결 키는 Agent·플랫폼·발신자 영역·발신자 ID다. Slack은 workspace ID, Teams는 tenant ID를
+사용하고 Telegram은 전역 사용자 ID를 사용한다. 매 요청마다 연결한 Studio 사용자 ID로
+현재 계정·member 등급·Agent 접근을 확인한다. 입력 이메일·플랫폼 표시 이름·Agent 소유자로
+사용자 신원을 대신하지 않는다. 연결 해제는 그 Studio 사용자만 할 수 있으며 다음 요청부터 거절된다.
+
+인증 명령은 첨부 다운로드·모델 입력·대화 기록 전에 처리한다. Slack의 과거 thread에서 읽은
+인증 명령도 문맥에서 제외한다. Agent를 삭제하면 연결과 미사용 코드도 삭제한다.
+메신저별 설정은 전달 자격 증명이고, Agent가 쓰는 외부 도구의 권한은 해당 Agent의 MCP 연결이다.
+
 ## 분할
 
 ```mermaid
 flowchart LR
   gate["플랫폼 인증·참여 판정"] --> claim["delivery claim·ACK"]
-  claim --> adapter["입력·이력·actor·대화 정규화"]
+  claim --> identity["Studio 사용자 연결·현재 권한 검사"]
+  identity --> adapter["입력·이력·actor·대화 정규화"]
   adapter --> turn["handleTurn: 첨부 → 실행 → chunk fold → 전달"]
   turn --> facade["executeAgent"]
   facade --> turn
@@ -26,6 +44,7 @@ ACK 후 실행은 해당 웹 프로세스의 background 작업이다. 실패·�
 |---|---|
 | `app/api/_lib/inboundEvent.ts` | 플랫폼 검증 뒤 이벤트 admission·ACK·background 예약·claim 정산 |
 | `application/<platform>/` | 참여 판정, Agent·현재 설정·actor·caller·conversation 해석, 이력, 플랫폼 bookkeeping |
+| `application/messaging/identityUseCases.ts`·`authenticateSubject.ts` | 일회용 연결 코드·현재 사용자 권한 검사·인증 명령 분리 |
 | `application/messaging/attachments.ts` | 현재 첨부 우선, 남은 예산으로 과거 첨부 수신·추출·생략 warning |
 | `application/messaging/handleTurn.ts` | 실행·출력 fold·파일 주소·미디어 전달·warning·마감 |
 | `application/messaging/editInPlaceReply.ts` | Telegram·Teams의 편집 pacing·메시지 분할·거절·최종 쓰기 처리 |

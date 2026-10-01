@@ -462,6 +462,26 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     await personalApi.revoke(agentName, integrationMemberId);
     assert.equal(await personalApi.verify(agentName, tokenWinner.value.token), null, "personal revocation removes the credential and reference together");
     pass("personal API credentials: stable issuer, encrypted scope, PostgreSQL rotation CAS and atomic revocation");
+    const { messagingIdentityRepository } = await import("@/infrastructure/db/repositories/messagingIdentityRepository");
+    const { createMessagingIdentityUseCases } = await import("@/application/messaging/identityUseCases");
+    const messaging = createMessagingIdentityUseCases({ identities: messagingIdentityRepository,
+      agents: agentRepository, members: memberRepository, now: () => new Date(now) });
+    const messagingCode = await messaging.issue(agentName, "slack", integrationMemberId);
+    const messagingSubject = { agentName, platform: "slack" as const, realm: "integration-workspace", externalId: "sender" };
+    const messagingClaims = await Promise.allSettled([
+      messaging.connect(messagingSubject, messagingCode.code),
+      messaging.connect({ ...messagingSubject, externalId: "other-sender" }, messagingCode.code),
+    ]);
+    assert.equal(messagingClaims.filter(result => result.status === "fulfilled").length, 1);
+    const linkedIdentities = await messaging.list(integrationMemberId);
+    assert.equal(linkedIdentities.length, 1);
+    assert.deepEqual(await messaging.resolve(linkedIdentities[0]!), { userId: integrationMemberId, email: integrationMemberEmail });
+    await memberRepository.setTier(integrationMemberId, "guest");
+    await assert.rejects(messaging.resolve(linkedIdentities[0]!), /member access/);
+    await messaging.unlink(linkedIdentities[0]!, integrationMemberId);
+    assert.equal(await messaging.resolve(linkedIdentities[0]!), null);
+    await memberRepository.setTier(integrationMemberId, "member");
+    pass("messaging identity: PostgreSQL one-time claim, stable issuer, current membership and personal unlink");
     const { checkMemberTiers } = await import("./member-tiers-check");
     await checkMemberTiers(integrationMemberId, integrationMemberEmail);
     pass("member tier catalog, assignment/deletion serialization and shared rollback");

@@ -187,6 +187,8 @@ import { createUsageUseCases } from "@/application/usage/usageUseCases";
 import { createConfigurationUseCases } from "@/application/agent/configurationUseCases";
 import { apiTokenRepository } from "@/infrastructure/db/repositories/apiTokenRepository";
 import { getExecutionMemberById } from "@/lib/memberAccess";
+import { messagingIdentityRepository } from "@/infrastructure/db/repositories/messagingIdentityRepository";
+import { createMessagingIdentityUseCases } from "@/application/messaging/identityUseCases";
 import { createApiTokenUseCases } from "@/application/agent/apiTokenUseCases";
 import { createAgentSlackUseCases, resolveAgentSlackRuntime } from "@/application/slack/agentSlack";
 import {
@@ -576,9 +578,9 @@ export const agentUseCases = createAgentUseCases(agentRepository, {
       (await import("@/infrastructure/telegram/client")).telegramClient.deleteWebhook(botToken),
     ),
 });
-// `getMemberTier` is the issuance gate's tier source: a token may only exist
-// for an owner whose tier allows one, and the same resolver answers the
-// authentication-time check in `executionAuth.ts`.
+// Personal credentials and messaging links always resolve the current issuing user by ID.
+export const messagingIdentityUseCases = createMessagingIdentityUseCases({ identities: messagingIdentityRepository,
+  agents: agentRepository, members: { getById: getExecutionMemberById }, now: () => new Date() });
 export const apiTokenUseCases = createApiTokenUseCases({ agents: agentRepository, tokens: apiTokenRepository, members: { getById: getExecutionMemberById }, cipher: secretCipher, now: () => new Date(), newId: randomUUID });
 export const triggerUseCases = createTriggerUseCases({
   triggers: triggerRepository,

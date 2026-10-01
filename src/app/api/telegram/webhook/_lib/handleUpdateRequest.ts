@@ -1,3 +1,4 @@
+import { messagingIdentityUseCases } from "@/lib/container";
 import { verifyTelegramSecret, TELEGRAM_SECRET_HEADER } from "@/infrastructure/telegram/verify";
 import { telegramClient } from "@/infrastructure/telegram/client";
 import { telegramUpdateRepository } from "@/infrastructure/db/repositories/telegramUpdateRepository";
@@ -18,8 +19,8 @@ import { log } from "@/shared/logger";
 import { telegramUpdateSchema } from "./updateSchema";
 
 const telegramEventDeps: TelegramEventDeps = {
+  identities: messagingIdentityUseCases,
   runAgent: (params) => executeAgent(executionDeps, params),
-  authorizeExecutionGrant: executionDeps.authorizeExecutionGrant,
   agents: agentRepository,
   telegram: telegramClient,
   destinations: telegramDestinationRepository,

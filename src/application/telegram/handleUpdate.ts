@@ -1,3 +1,4 @@
+import { authenticateMessagingSubject } from "@/application/messaging/authenticateSubject";
 import { resolveAgentSummary, runRememberedTurn } from "@/application/messaging/rememberedTurn";
 import { createTelegramReplyChannel } from "@/application/telegram/replyChannel";
 import { botIdFromToken, type TelegramUpdateDisposition } from "@/application/telegram/engagement";
@@ -232,6 +233,10 @@ export async function handleTelegramUpdate(
     return;
   }
 
+  if (!message.from?.id) { await reply.say("A verified messaging sender is required"); return; }
+  const authenticated = await authenticateMessagingSubject(deps.identities, { agentName: binding.agentName, platform: "telegram",
+    realm: "telegram", externalId: String(message.from.id) }, disposition.text, message.chat.type === "private", reply);
+  if (!authenticated) return;
   const runnable = await resolveAgentSummary(deps, binding.agentName, reply);
   if (!runnable) {
     return;
@@ -256,6 +261,7 @@ export async function handleTelegramUpdate(
   await runRememberedTurn(deps, {
     agent,
     configuration,
+    ownerEmail: authenticated.email,
     reply,
     conversation: telegramConversation(message.chat.id, threadId),
     text: disposition.text,

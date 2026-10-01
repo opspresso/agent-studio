@@ -1,6 +1,6 @@
 import { withConfigurations } from "./agentConfigurations";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { handleSlackEvent, handleSlackStop } from "@/application/slack/handleSlackEvent";
+import { threadToTurns, handleSlackEvent, handleSlackStop } from "@/application/slack/handleSlackEvent";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import type {
   SlackChunk,
@@ -274,6 +274,7 @@ const mutes: Array<{ threadTs: string; muted: boolean }> = [];
 function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps {
   let held = false;
   return {
+    identities: { connect: async () => ({ userId: "studio-user", email: "user@example.test" }), resolve: async () => ({ userId: "studio-user", email: "user@example.test" }) },
     stops: {
       acquire: async () => { if (held) return null; held = true; return "lease"; },
       renew: async () => held,
@@ -310,16 +311,17 @@ function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps
 }
 
 const EVENT: SlackEventBody = {
+  team_id: "T1",
   event_id: "Ev1",
   authorizations: [{ user_id: "U0", is_bot: true }],
-  event: { type: "app_mention", channel: "C1", ts: "1.0", text: "<@U0> hello" },
+  event: { type: "app_mention", user: "U1", channel: "C1", ts: "1.0", text: "<@U0> hello" },
 };
 
 /** The agent container / DM surface, where Slack offers a status line and a title. */
 const DM_EVENT: SlackEventBody = {
   event_id: "Ev2",
   team_id: "T1",
-  event: { type: "message", channel_type: "im", channel: "D1", ts: "1.0", text: "hello" },
+  event: { type: "message", user: "U1", channel_type: "im", channel: "D1", ts: "1.0", text: "hello" },
 };
 
 const BINDING = { agentName: "painter", botToken: "tok" };
@@ -369,7 +371,8 @@ describe("stopping Slack runs", () => {
       await first;
     }
   });
-  const stopEvent: SlackEventBody = { type: "event_callback", event: {
+  const stopEvent: SlackEventBody = {
+    team_id: "T1", type: "event_callback", event: {
     type: "agent_session_stopped", channel: "D1", thread_ts: "1.0", event_ts: "2.0", user: "U1",
   } };
 
@@ -388,6 +391,7 @@ describe("stopping Slack runs", () => {
     emails.set("U1", "outsider@example.com");
     const deps = deps0(slack);
     deps.agents.get = async () => ({ ...agentFixture(), visibility: "private" });
+    deps.identities.resolve = async () => null;
     const requestStop = vi.spyOn(deps.stops, "requestStop");
     await handleSlackStop(deps, stopEvent, BINDING);
     await handleSlackEvent(deps, { ...DM_EVENT, event: { ...DM_EVENT.event, thread_ts: "1.0", ts: "2.0", user: "U1", text: "!stop" } }, BINDING);
@@ -427,6 +431,31 @@ afterEach(() => {
 });
 
 describe("handleSlackEvent", () => {
+  it("handles authentication before leases, history, attachments or model work", async () => {
+    const { slack, calls } = makeSlackFake();
+    const deps = makeDeps([], slack);
+    const connect = vi.spyOn(deps.identities, "connect");
+    const run = vi.spyOn(deps, "runAgent");
+    const lease = vi.spyOn(deps.stops, "acquire");
+    await handleSlackEvent(deps, { ...DM_EVENT, event: { ...DM_EVENT.event!, text: "auth synthetic-code" } }, BINDING);
+    expect(connect).toHaveBeenCalledWith({ agentName: BINDING.agentName, platform: "slack", realm: "T1", externalId: "U1" }, "synthetic-code");
+    expect(run).not.toHaveBeenCalled();
+    expect(lease).not.toHaveBeenCalled();
+    expect(calls).not.toContain("threadReplies");
+    expect(calls).not.toContain("downloadFile");
+  });
+
+  it("excludes authentication commands and their attachments from future thread context", () => {
+    const turns = threadToTurns([
+      { ts: "1.0", user: "U1", text: "auth synthetic-code", files: [{ id: "secret" }] },
+      { ts: "2.0", user: "U1", text: "/auth@bot malformed extra words" },
+      { ts: "3.0", user: "U1", text: "auth" },
+      { ts: "4.0", user: "U1", text: "hello" },
+    ], "5.0", "UBOT");
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.message.content).toBe("hello");
+  });
+
   it("always runs the agent bound to the endpoint", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -751,7 +780,7 @@ describe("handleSlackEvent", () => {
       {
         ...EVENT,
         event: {
-          type: "message",
+          type: "message", user: "U1",
           channel_type: "im",
           subtype: "file_share",
           channel: "C1",
@@ -765,20 +794,11 @@ describe("handleSlackEvent", () => {
     expect(ran).toBe(true);
   });
 
-  it("runs an alerting app's keyword message on everything it said, signed with the app's name", async () => {
-    // What reached the route was already classified as a keyword run; what the
-    // handler owes it is the alert itself — title and body live in the
-    // attachment, `text` is empty — and who said it, so the model does not
-    // read an alert as words a person typed.
-    vi.spyOn(Date, "now").mockReturnValue(NOW);
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    const { slack, calls } = makeSlackFake();
+  it("refuses app-authored automation without a verified Studio caller", async () => {
+    const { slack } = makeSlackFake();
     const deps = makeDeps([], slack);
-    let seen: ChatMessageInput[] = [];
-    deps.runAgent = async function* (input) {
-      seen = [...input.messages];
-      yield { done: true };
-    };
+    const runAgent = vi.fn(async function* () { yield { done: true }; });
+    deps.runAgent = runAgent;
 
     await handleSlackEvent(
       deps,
@@ -794,24 +814,13 @@ describe("handleSlackEvent", () => {
           bot_id: "B_GRAFANA",
           username: "Grafana",
           text: "",
-          attachments: [
-            {
-              title: "[FIRING:1] Container OOMKilled (sample-node OOMKilled warning)",
-              text: "container sample-node was OOMKilled",
-              fallback: "[FIRING:1] Container OOMKilled (sample-node OOMKilled warning)",
-            },
-          ],
+          attachments: [{ title: "Container OOMKilled", text: "container sample-node was OOMKilled" }],
         },
       },
       BINDING,
     );
 
-    expect(seen.map((m) => m.content)).toEqual([
-      "Grafana: [FIRING:1] Container OOMKilled (sample-node OOMKilled warning)\ncontainer sample-node was OOMKilled",
-    ]);
-    // Picked up and answered like any channel message: the reaction lands on
-    // the alert, and the reply streams into a thread under it.
-    expect(calls).toEqual(["session:processing", "addReaction", "startStream", "stopStream", "session:active"]);
+    expect(runAgent).not.toHaveBeenCalled();
   });
 
   it("answers without history when the thread read fails", async () => {
@@ -2051,78 +2060,20 @@ describe("uploading what the run read", () => {
  * requester email files output in the personal Artifact gallery; failure leaves
  * it reachable through the Agent.
  */
-describe("filing a Slack run's output under its author", () => {
-  it("carries the asker's address to the run", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    const { slack, emails } = makeSlackFake();
-    emails.set("U1", "requester@example.test");
-    const deps = deps0(slack);
-    let seen: { ownerEmail?: string; actor?: { kind: string; id: string } } = {};
-    deps.runAgent = async function* (input) {
-      seen = input;
-      yield { done: true };
-    };
-
-    await handleSlackEvent(
-      deps,
-      { ...EVENT, event: { ...EVENT.event, user: "U1" } },
-      BINDING,
-    );
-
-    expect(seen.ownerEmail).toBe("requester@example.test");
-    // The actor is untouched: it groups usage by surface and decides which
-    // tier's spend cap applies, which is a different question.
-    expect(seen.actor).toEqual({ kind: "slack", id: "U1" });
-  });
-
-  it("files by agent alone when the workspace shares no address", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    const { slack } = makeSlackFake();
-    const deps = deps0(slack);
-    let seen: { ownerEmail?: string } = {};
-    deps.runAgent = async function* (input) {
-      seen = input;
-      yield { done: true };
-    };
-
-    await handleSlackEvent(deps, { ...EVENT, event: { ...EVENT.event, user: "U1" } }, BINDING);
-
-    expect(seen.ownerEmail).toBeUndefined();
-  });
-
-  it("still answers when the address lookup fails", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { slack, finalText } = makeSlackFake();
-    slack.userEmail = async () => {
-      throw new Error("missing_scope");
-    };
-    const deps = makeDeps([{ delta: { content: "here you go" } }, { done: true }], slack);
-
+describe("verified Slack caller attribution", () => {
+  it("uses the Studio identity rather than a platform-supplied email or owner permission", async () => {
+    const { slack, emails } = makeSlackFake(); emails.set("U1", "untrusted@example.test");
+    const deps = deps0(slack); const run = vi.fn<SlackEventDeps["runAgent"]>(async function* () { yield { done: true }; }); deps.runAgent = run;
+    deps.identities.resolve = async () => ({ userId: "verified-user", email: "verified@example.test" });
+    deps.agents = withConfigurations({ get: async () => ({ ...agentFixture(), slack: { enabled: true, botToken: "token", signingSecret: "secret", executionEmail: "owner@x.com" } }) } as never, async () => configurationFixture());
     await handleSlackEvent(deps, EVENT, BINDING);
-
-    expect(finalText()).toBe("here you go");
+    expect(run.mock.calls[0]?.[0].ownerEmail).toBe("verified@example.test");
+    expect(run.mock.calls[0]?.[0].actor).toEqual({ kind: "slack", id: "U1" });
   });
-
-  it("does not gate the lookup on callerContext, which decides a different thing", async () => {
-    // `callerContext` decides what the *model* is told. This address reaches no
-    // prompt and no tool result — a person's own pictures going missing from
-    // their own gallery is not something an Agent configuration parameter should cause.
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    const { slack, emails } = makeSlackFake();
-    emails.set("U1", "requester@example.test");
-    const deps = deps0(slack);
-    deps.agents = withConfigurations(deps.agents, async () => ({ ...configurationFixture(), parameters: { piiFiltering: false } }));
-    let seen: { ownerEmail?: string; caller?: unknown } = {};
-    deps.runAgent = async function* (input) {
-      seen = input;
-      yield { done: true };
-    };
-
-    await handleSlackEvent(deps, { ...EVENT, event: { ...EVENT.event, user: "U1" } }, BINDING);
-
-    expect(seen.caller).toBeUndefined();
-    expect(seen.ownerEmail).toBe("requester@example.test");
+  it("does not depend on optional Slack email profile lookup", async () => {
+    const { slack, finalText } = makeSlackFake(); slack.userEmail = async () => { throw new Error("missing_scope"); };
+    await handleSlackEvent(makeDeps([{ delta: { content: "linked caller" } }, { done: true }], slack), EVENT, BINDING);
+    expect(finalText()).toBe("linked caller");
   });
 });
 
@@ -2303,170 +2254,37 @@ describe("commands", () => {
   });
 });
 
-describe("private agent visibility gate", () => {
-  const privateAgent = (): Agent => ({
-    ...agentFixture(),
-    configuration: configurationFixture(),
-    visibility: "private",
-    memberEmails: ["invited@x.com"],
-  });
-  const withUser = (user: string): SlackEventBody => ({
-    event_id: "Ev9",
-      authorizations: [{ user_id: "U0", is_bot: true }],
-    event: { type: "app_mention", channel: "C1", ts: "1.0", text: "<@U0> hello", user },
-  });
-  const privateDeps = (slack: SlackClientPort) => {
-    const deps = deps0(slack);
-    deps.agents = { get: async () => privateAgent() } as unknown as AgentRepository;
-    return deps;
-  };
-
-  it("refuses a workspace user the agent does not invite, before any acknowledgement", async () => {
-    const { slack, posted, reactions, emails } = makeSlackFake();
-    emails.set("U2", "stranger@x.com");
-
-    await handleSlackEvent(privateDeps(slack), withUser("U2"), BINDING);
-
-    expect(posted.at(-1)?.text).toContain("private");
-    // Refused before the pickup reaction and before the thread was engaged.
-    expect(reactions).toHaveLength(0);
-    expect(engagements).toHaveLength(0);
-  });
-
-  it("refuses when the workspace shares no email for the asker", async () => {
-    const { slack, posted } = makeSlackFake();
-
-    await handleSlackEvent(privateDeps(slack), withUser("U2"), BINDING);
-
-    expect(posted.at(-1)?.text).toContain("private");
-  });
-
-  it("runs an app-authored message — owner-wired automation, not a person to refuse", async () => {
-    const { slack, posted, reactions } = makeSlackFake();
-    const event: SlackEventBody = {
-      event_id: "Ev9",
-      authorizations: [{ user_id: "U0", is_bot: true }],
-      event: { type: "app_mention", channel: "C1", ts: "1.0", text: "<@U0> hello", bot_id: "B9" },
-    };
-
-    await handleSlackEvent(privateDeps(slack), event, BINDING);
-
-    expect(reactions).toHaveLength(1);
-    expect(posted.every((message) => !message.text.includes("private"))).toBe(true);
-  });
-
-  it("refuses a userless message that no app signed either", async () => {
-    const { slack, posted } = makeSlackFake();
-    const event: SlackEventBody = {
-      event_id: "Ev9",
-      authorizations: [{ user_id: "U0", is_bot: true }],
-      event: { type: "app_mention", channel: "C1", ts: "1.0", text: "<@U0> hello" },
-    };
-
-    await handleSlackEvent(privateDeps(slack), event, BINDING);
-
-    expect(posted.at(-1)?.text).toContain("private");
-  });
-
-  it("refuses an uninvited user's !mute before it writes engagement state", async () => {
-    const { slack, posted, emails } = makeSlackFake();
-    emails.set("U2", "stranger@x.com");
-    const event: SlackEventBody = {
-      event_id: "Ev9",
-      authorizations: [{ user_id: "U0", is_bot: true }],
-      event: {
-        type: "app_mention",
-        channel: "C1",
-        ts: "2.0",
-        thread_ts: "1.0",
-        text: "<@U0> !mute",
-        user: "U2",
-      },
-    };
-
-    await handleSlackEvent(privateDeps(slack), event, BINDING);
-
-    expect(posted.at(-1)?.text).toContain("private");
-    expect(mutes).toHaveLength(0);
-  });
-
-  it("still answers an invited member's !mute", async () => {
-    const { slack, emails } = makeSlackFake();
-    emails.set("U2", "invited@x.com");
-    const event: SlackEventBody = {
-      event_id: "Ev9",
-      authorizations: [{ user_id: "U0", is_bot: true }],
-      event: {
-        type: "app_mention",
-        channel: "C1",
-        ts: "2.0",
-        thread_ts: "1.0",
-        text: "<@U0> !mute",
-        user: "U2",
-      },
-    };
-
-    await handleSlackEvent(privateDeps(slack), event, BINDING);
-
-    expect(mutes).toEqual([{ threadTs: "1.0", muted: true }]);
-  });
-
-  it("does not run a command when the agent visibility cannot be read", async () => {
-    const { slack, posted } = makeSlackFake();
-    const deps = privateDeps(slack);
-    deps.agents = {
-      get: async () => {
-        throw new Error("agent store unavailable");
-      },
-    } as unknown as AgentRepository;
-    const event: SlackEventBody = {
-      event_id: "Ev9",
-      authorizations: [{ user_id: "U0", is_bot: true }],
-      event: {
-        type: "app_mention",
-        channel: "C1",
-        ts: "2.0",
-        thread_ts: "1.0",
-        text: "<@U0> !mute",
-        user: "U2",
-      },
-    };
-
-    await expect(handleSlackEvent(deps, event, BINDING)).rejects.toThrow(
-      "agent store unavailable",
-    );
-
-    expect(mutes).toHaveLength(0);
-    expect(posted).toHaveLength(0);
-  });
-
-  it("answers an invited member, matching email case-insensitively", async () => {
-    const { slack, posted, reactions, emails } = makeSlackFake();
-    emails.set("U2", "Invited@X.com");
-
-    await handleSlackEvent(privateDeps(slack), withUser("U2"), BINDING);
-
-    // The gate let the turn through: the message was acknowledged and no
-    // refusal was posted.
-    expect(reactions).toHaveLength(1);
-    expect(posted.every((message) => !message.text.includes("private"))).toBe(true);
-  });
-
-  it("answers the owner", async () => {
-    const { slack, posted, reactions, emails } = makeSlackFake();
-    emails.set("U2", "owner@x.com");
-
-    await handleSlackEvent(privateDeps(slack), withUser("U2"), BINDING);
-
-    expect(reactions).toHaveLength(1);
-    expect(posted.every((message) => !message.text.includes("private"))).toBe(true);
-  });
-
-  it("leaves a public agent's turns alone — no email lookup at the gate", async () => {
+describe("verified Slack sender gate", () => {
+  it.each(["!mute", "hello"])("fails closed on identity lookup failure for %s", async text => {
     const { slack, reactions } = makeSlackFake();
-
-    await handleSlackEvent(deps0(slack), withUser("U2"), BINDING);
-
-    expect(reactions).toHaveLength(1);
+    const deps = deps0(slack);
+    deps.identities.resolve = async () => { throw new Error("identity store unavailable"); };
+    const run = vi.spyOn(deps, "runAgent");
+    await expect(handleSlackEvent(deps, { ...EVENT, event: { ...EVENT.event, thread_ts: "1.0", text } }, BINDING)).rejects.toThrow("identity store unavailable");
+    expect(run).not.toHaveBeenCalled();
+    expect(reactions).toEqual([]);
+    expect(mutes).toEqual([]);
+  });
+  it("refuses an unlinked sender before acknowledgement or model invocation, even for a public Agent", async () => {
+    const { slack, reactions, posted } = makeSlackFake(); const deps = deps0(slack); deps.identities.resolve = async () => null;
+    const run = vi.spyOn(deps, "runAgent"); await handleSlackEvent(deps, EVENT, BINDING);
+    expect(run).not.toHaveBeenCalled(); expect(reactions).toEqual([]); expect(posted.at(-1)?.text).toContain("Sign in");
+  });
+  it("refuses current Agent access denial from the verified identity boundary", async () => {
+    const { slack, reactions, posted } = makeSlackFake(); const deps = deps0(slack);
+    const { ForbiddenError } = await import("@/application/errors"); deps.identities.resolve = async () => { throw new ForbiddenError("Agent access was revoked"); };
+    const run = vi.spyOn(deps, "runAgent"); await handleSlackEvent(deps, EVENT, BINDING);
+    expect(run).not.toHaveBeenCalled(); expect(reactions).toEqual([]); expect(posted.at(-1)?.text).toContain("revoked");
+  });
+  it.each([{ user: undefined }, { bot_id: "B2", user: undefined }])("never adopts the Agent owner for an unidentified sender %j", async sender => {
+    const { slack, posted } = makeSlackFake(); const deps = deps0(slack); const run = vi.spyOn(deps, "runAgent");
+    await handleSlackEvent(deps, { ...EVENT, event: { ...EVENT.event, ...sender } }, BINDING);
+    expect(run).not.toHaveBeenCalled(); expect(posted.at(-1)?.text).toContain("verified Slack user");
+  });
+  it("resolves the signed workspace and sender before mutating engagement", async () => {
+    const { slack } = makeSlackFake(); const deps = deps0(slack); const resolve = vi.spyOn(deps.identities, "resolve");
+    await handleSlackEvent(deps, { ...EVENT, event: { ...EVENT.event, thread_ts: "1.0", text: "!mute" } }, BINDING);
+    expect(resolve).toHaveBeenCalledWith({ agentName: "painter", platform: "slack", realm: "T1", externalId: "U1" });
+    expect(mutes).toEqual([{ threadTs: "1.0", muted: true }]);
   });
 });

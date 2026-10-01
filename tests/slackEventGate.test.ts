@@ -14,6 +14,7 @@ const { handled, claim, settle, isEngaged } = vi.hoisted(() => ({
 
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 vi.mock("@/lib/container", () => ({
+  messagingIdentityUseCases: { connect: vi.fn(), resolve: vi.fn() },
   executionDeps: {},
   agentRepository: {},
   // No object storage in this deployment, which the wiring site names rather

@@ -162,6 +162,7 @@
 | Slack 메시지가 무엇을 *말하는가*. `text`·attachment·prose block 을 한 텍스트로 | `src/domain/slack/messageText.ts` 의 `slackMessageText`. 키워드 매칭, 런이 답하는 턴, 스레드 히스토리 셋이 이것을 읽는다. 경보 앱은 제목과 본문을 attachment 에 두므로 `text` 만 읽는 쪽은 헤드라인만 받는다 | 구조 |
 | 어떤 메시지가 질문이 아니라 고정된 명령인가 | `src/application/slack/engagement.ts` 의 `parseSlackCommand`. 의도적으로 엄격하다: 명령은 봇이 다시 말할지 여부를 바꾸고, 매칭이 느슨하면 아무도 침묵시켜 달라 하지 않은 스레드를 침묵시킨다 | 구조 |
 | 런이 사용하는 Slack Web API 표면 | `src/application/slack/types.ts` 의 `SlackClientPort`. 스트리밍 chunk와 세션 상태 요청 형태는 `src/domain/slack/types.ts`의 `SlackChunk`·`SlackSessionStatusInput`이며 어댑터도 이를 사용한다 | 구조 |
+| 메신저 발신자를 인증된 Studio 사용자로 연결하고 현재 권한을 확인하는 경계 | `application/messaging/identityUseCases.ts`. 플랫폼·realm·sender ID 계약은 `domain/messaging/identity.ts`, 인증 명령 분리는 `authenticateSubject.ts` | 구조 |
 | 편집으로 답을 전달하는 표면의 장부. 페이싱, 메시지가 넘칠 때 다음으로 잇기, 거부된 쓰기의 재시도 간격, 마감이 독자에게 빚진 것 | `src/application/messaging/editInPlaceReply.ts` 의 `createEditInPlaceReply`. Telegram 과 Teams 는 호출·상한·렌더링(`EditInPlaceTransport`)만 건넨다 | 구조 |
 | 답이 메시지 하나를 넘칠 때 *어디서* 끊는가. 문단 → 줄 → 문장 → 공백 → 서러게이트 쌍을 쪼개지 않는 하드 컷, 그리고 잘린 코드 펜스를 한쪽에서 닫고 다음 쪽에서 다시 여는 것 | `src/shared/messageCut.ts` 의 `cutPoint` / `splitMessages`. 세 표면이 상한만 다르게 건넨다. 끊긴 자리는 독자가 보는 것이고, 사본 둘은 "문장 중간에서 멈추는가" 에 대한 답 둘이다 | 구조 |
 | 플랫폼 히스토리가 없는 표면이 대화를 어떻게 읽고 적는가. 턴 수·문자 예산, 턴 하나의 상한, 텍스트 없는 턴과 답 없는 런의 기록, 화자 라벨의 옵트인 | `src/application/messaging/transcriptHistory.ts` | 구조 |

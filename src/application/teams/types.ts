@@ -1,3 +1,4 @@
+import type { MessagingIdentityUseCases } from "@/application/messaging/identityUseCases";
 import type { MessagingDeps } from "@/application/messaging/handleTurn";
 import type { ConversationTranscriptRepository } from "@/domain/messaging/transcript";
 import type { TeamsClientPort, TeamsCredentials, TeamsOutboundActivity } from "@/domain/teams/client";
@@ -6,6 +7,7 @@ export type { TeamsClientPort, TeamsCredentials, TeamsOutboundActivity };
 
 /** Injected dependencies; wired by the route from the composition root. */
 export interface TeamsEventDeps extends MessagingDeps {
+  identities: Pick<MessagingIdentityUseCases, "connect" | "resolve">;
   teams: TeamsClientPort;
   /**
    * What this surface remembers of a conversation. The Bot Framework hands a

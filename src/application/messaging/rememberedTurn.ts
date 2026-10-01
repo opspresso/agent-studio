@@ -39,6 +39,7 @@ export interface RememberedTurnInput {
   text: string;
   attachments: InboundAttachment[];
   actor?: RunActor;
+  ownerEmail: string;
   /** The platform's id for the person, for the transcript and the speaker labels. */
   userId?: string;
   /**
@@ -105,6 +106,7 @@ export async function runRememberedTurn(
       attachments: input.attachments,
       history,
       ...(input.actor ? { actor: input.actor } : {}),
+      ownerEmail: input.ownerEmail,
       ...(named ? { caller: named } : {}),
       conversation,
       warnings,

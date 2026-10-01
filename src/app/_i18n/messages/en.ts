@@ -8,6 +8,15 @@
  * also remain English; integration settings are owner/admin surfaces.
  */
 export const en = {
+  "messaging.identity.title": "Messaging connections",
+  "messaging.identity.description": "Connect your messaging sender account to your authenticated Studio user.",
+  "messaging.identity.platform": "Messaging platform",
+  "messaging.identity.issue": "Issue authentication code",
+  "messaging.identity.instructions": "Send this command privately to the selected Agent. The code expires in 10 minutes and can be used once.",
+  "messaging.identity.expires": "Expires: {at}",
+  "messaging.identity.refresh": "Refresh connections",
+  "messaging.identity.disconnect": "Disconnect",
+
   "secrets.resetConfirm": "The saved override will be removed. Requests using the current key may stop authenticating; the deployment environment value will be used instead.",
   "secrets.configured": "Configured",
   "secrets.notConfigured": "Not configured",

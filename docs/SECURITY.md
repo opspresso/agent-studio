@@ -109,16 +109,12 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 판정을 만들지 않는다.
 
 콘솔·Chat과 개인 API 토큰은 인증된 사용자의 현재 `assertAgentAccessible` 판정을 적용한다.
-개인 토큰은 Agent 소유자가 아니라 발급 사용자 ID에 묶인다. trigger, webhook, 그리고
-소유자가 직접 연결한 Telegram·Teams bot 은 *자격 증명 자체가 접근권* 이라 visibility 를 묻지
-않는다. bot 배선은 소유자의 선택이다. Slack bot 만 그 중간에
-있다: workspace 의 누구나 말을 걸 수 있으므로, private agent 의 bot 은 `users.info` 의
-이메일로 묻는 사람을 식별해 초대 여부를 확인하고, 이메일을 공유하지 않는 workspace 의
-사용자는 거절한다 (`slackSenderMayAccess`, 런, `!mute`·`!stop` 명령, native 중단 이벤트, thread-start 인사가 같은
-게이트를 지난다). 앱이 서명한 메시지(키워드로 깨운 알림 등)는 통과한다: 그 키워드는
-소유자 자신의 설정이라 trigger 와 같은 소유자-배선 자동화다. 조회된 주소는 판정에만
-쓰이고 프롬프트에는 닿지 않는다. 초대 목록 자체(`memberEmails`)는 제3자 주소의 명부이므로
-응답에서도 소유자·admin 에게만 나간다 (`sanitizeAgent`).
+개인 토큰은 Agent 소유자가 아니라 발급 사용자 ID에 묶인다. Slack·Telegram·Teams는
+전달 인증 후 [연결한 Studio 사용자](design/messaging.md#호출자-인증)의 현재 계정·member 등급·
+Agent 접근을 확인한다. 이메일이나 bot 소유자만으로 호출자를 추정하지 않으며 앱 작성 메시지는
+실행하지 않는다. Slack의 명령·native 중단·thread-start도 같은 연결 검사를 지난다.
+Trigger·Webhook의 전달 인증은 [머신 요청 인증](#머신-호출자의-요청-인증)을 따른다.
+초대 목록(`memberEmails`)은 제3자 주소의 명부이므로 응답에서도 소유자·admin에게만 나간다 (`sanitizeAgent`).
 
 private agent 를 local subagent 로 *바인딩* 하는 것도 읽기다: 편집자가 접근할 수 없는
 agent 는 Agent 설정 저장 시점에 거절된다 (`assertSubavailableAgentsAccessible`). 이미 바인딩된
@@ -291,6 +287,7 @@ Agent별 MCP 문자열 오버라이드는 저장 당시 registry URL 의 fingerp
 |---|---|
 | `ast_` | 개인 Agent API token (발급 사용자 관리) |
 | `asw_` | Webhook trigger 시크릿 (소유자 관리) |
+| `asl_` | 메신저 사용자 연결용 일회용 코드 (10분, 해시만 저장) |
 | `asg_` | Telegram webhook 시크릿 (agent 마다 발행. Telegram 에게만 건네고 결코 reveal 하지 않는다) |
 
 랜덤 secret은 32바이트(256비트)다. 개인 API token은 공개 credential UUID와 secret을 함께

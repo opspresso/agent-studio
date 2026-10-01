@@ -21,12 +21,14 @@ const VENDOR = "as";
 export type GeneratedSecretKind =
   | "agentApiToken"
   | "triggerSecret"
-  | "telegramWebhookSecret";
+  | "telegramWebhookSecret"
+  | "messagingLinkCode";
 
 const KIND_CHAR: Record<GeneratedSecretKind, string> = {
   agentApiToken: "t",
   triggerSecret: "w",
   telegramWebhookSecret: "g",
+  messagingLinkCode: "l",
 };
 
 /** The `as{kind}_` prefix a generated secret of this kind carries. */

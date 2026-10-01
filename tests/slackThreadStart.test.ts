@@ -43,6 +43,7 @@ function makeDeps(agent: Agent | null) {
     },
   } as unknown as SlackClientPort;
   const deps: ThreadStartDeps = {
+    identities: { connect: async () => ({ userId: "studio-user", email: "user@example.test" }), resolve: async () => ({ userId: "studio-user", email: "user@example.test" }) },
     agents: { get: async () => agent } as unknown as AgentRepository,
     slack,
   };
@@ -50,11 +51,13 @@ function makeDeps(agent: Agent | null) {
 }
 
 const HOME_OPENED: SlackEventBody = {
+  team_id: "T1",
   event_id: "Ev1",
   event: { type: "app_home_opened", tab: "messages", channel: "D1", user: "U1" },
 };
 
 const LEGACY_THREAD_STARTED: SlackEventBody = {
+  team_id: "T1",
   event_id: "Ev2",
   event: {
     type: "assistant_thread_started",

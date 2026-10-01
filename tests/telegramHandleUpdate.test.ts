@@ -86,6 +86,7 @@ function makeDeps(chunks: EngineChunk[], telegram: TelegramClientPort, options: 
   const remembered: Array<{ key: string; turn: TranscriptTurn }> = [];
   const stored: TranscriptTurn[] = [];
   const deps: TelegramEventDeps = {
+    identities: { connect: async () => ({ userId: "studio-user", email: "user@example.test" }), resolve: async () => ({ userId: "studio-user", email: "user@example.test" }) },
     runAgent: async function* (input) {
       runs.push(input);
       for (const chunk of chunks) {
@@ -134,6 +135,32 @@ afterEach(() => {
 });
 
 describe("handleTelegramUpdate", () => {
+  it.each(["auth synthetic-code", "/auth@painter_bot synthetic-code"])("consumes %s before history, attachments or Agent execution", async text => {
+    const { telegram, downloads } = makeTelegramFake();
+    const { deps, runs, remembered } = makeDeps([], telegram);
+    const connect = vi.spyOn(deps.identities, "connect");
+    const history = vi.spyOn(deps.transcripts!, "recent");
+    const update = { update_id: 1, message: message({ text, document: { file_id: "secret-doc", file_unique_id: "doc", file_name: "auth.txt" } }) };
+    await handleTelegramUpdate(deps, dispositionOf(update), BINDING);
+    expect(connect).toHaveBeenCalledWith({ agentName: "painter", platform: "telegram", realm: "telegram", externalId: "1" }, "synthetic-code");
+    expect(history).not.toHaveBeenCalled();
+    expect(downloads).toEqual([]);
+    expect(runs).toEqual([]);
+    expect(remembered).toEqual([]);
+  });
+
+  it("rejects an unlinked sender before reading or recording a conversation", async () => {
+    const { telegram, finalText } = makeTelegramFake();
+    const { deps, runs, remembered } = makeDeps([], telegram);
+    deps.identities.resolve = async () => null;
+    const history = vi.spyOn(deps.transcripts!, "recent");
+    await handleTelegramUpdate(deps, dispositionOf({ update_id: 1, message: message() }), BINDING);
+    expect(finalText()).toContain("Sign in to Studio");
+    expect(history).not.toHaveBeenCalled();
+    expect(runs).toEqual([]);
+    expect(remembered).toEqual([]);
+  });
+
   it("remembers an admitted chat and forum topic for later destination selection", async () => {
     const { telegram } = makeTelegramFake();
     const { deps } = makeDeps([{ done: true }], telegram);

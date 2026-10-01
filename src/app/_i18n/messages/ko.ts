@@ -6,6 +6,14 @@
 import type { Messages } from "./en";
 
 export const ko: Messages = {
+  "messaging.identity.title": "메신저 계정 연결",
+  "messaging.identity.description": "메신저 발신자 계정을 인증된 Studio 사용자와 연결합니다.",
+  "messaging.identity.platform": "메신저",
+  "messaging.identity.issue": "인증 코드 발급",
+  "messaging.identity.instructions": "선택한 Agent와의 개인 대화에 이 명령을 보내세요. 코드는 10분 뒤 만료되며 한 번만 사용할 수 있습니다.",
+  "messaging.identity.expires": "만료: {at}",
+  "messaging.identity.refresh": "연결 새로고침",
+  "messaging.identity.disconnect": "연결 해제",
   "secrets.resetConfirm": "저장된 값을 제거하고 배포 환경변수 값을 사용합니다. 현재 키를 사용하는 요청이 인증되지 않을 수 있습니다.",
   "secrets.configured": "설정됨",
   "secrets.notConfigured": "미설정",
