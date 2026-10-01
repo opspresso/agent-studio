@@ -45,6 +45,9 @@ issuer·JWKS가 있어야 등록하며 ID 토큰의 서명·issuer·audience와 
 환경 변수로 지정하며 사내 주소를 허용한다. 브라우저와 서버 모두 그 주소에 접근할 수 있어야 한다.
 Keycloak role을 앱 tier로 매핑하지 않는다. 기존 관리자 설정과 멤버 tier 정책을 적용한다.
 Keycloak으로 로그인한 사용자의 앱 로그아웃은 앱 세션만 종료하며 Keycloak SSO 세션은 유지한다.
+Google·OIDC·Keycloak 로그인은 기존 계정에도 제공자의 최신 사용자 정보를 반영해 이름과
+프로필 이미지를 갱신한다. 제공자가 사진을 반환하지 않으면 저장된 이미지를 유지한다.
+앱의 tier는 제공자 프로필에서 가져오지 않으며 기존 관리자·등급 정책을 따른다.
 
 `STAGE=alpha|prod`는 로그인 수단이 하나도 없으면 부팅을 거부한다(`assertAccessControlConfig`);
 `local` 은 `scripts/dev-session.ts` 가 세션을 만들어 주므로 없어도 된다. 로그인은 수단과

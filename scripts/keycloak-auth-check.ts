@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   const baseURL = "http://localhost:3300";
   const clientId = "studio-integration";
   const clientSecret = "local-fixture-client-secret";
-  const codes = new Map<string, { nonce: string; challenge: string; email: string; audience: string }>();
+  const codes = new Map<string, { nonce: string; challenge: string; email: string; audience: string; provider: string; name: string; picture?: string }>();
   let issuer = "";
   const server = createServer(async (req, res) => {
     const json = (body: unknown) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify(body)); };
@@ -45,14 +45,14 @@ async function main(): Promise<void> {
         codes.delete(code);
         assert.equal(form.get("client_id"), clientId);
         assert.equal(form.get("client_secret"), clientSecret);
-        assert.equal(form.get("redirect_uri"), `${baseURL}/api/auth/callback/keycloak`);
+        assert.equal(form.get("redirect_uri"), `${baseURL}/api/auth/callback/${entry.provider}`);
         assert.equal(form.get("grant_type"), "authorization_code");
         assert.equal(createHash("sha256").update(form.get("code_verifier") ?? "").digest("base64url"), entry.challenge);
         const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
         const now = Math.floor(Date.now() / 1000);
         const unsigned = `${encode({ alg: "RS256", kid: "test-key", typ: "JWT" })}.${encode({
           iss: issuer, aud: entry.audience, sub: entry.email, email: entry.email, email_verified: true,
-          name: "OIDC Test User", nonce: entry.nonce, iat: now, exp: now + 300,
+          name: entry.name, picture: entry.picture, nonce: entry.nonce, iat: now, exp: now + 300,
         })}`;
         json({ access_token: "fixture-access-token", token_type: "Bearer", expires_in: 300,
           id_token: `${unsigned}.${sign("RSA-SHA256", Buffer.from(unsigned), privateKey).toString("base64url")}` });
@@ -79,7 +79,7 @@ async function main(): Promise<void> {
       DATABASE_URL: scopedUrl.toString(), STAGE: "local", BETTER_AUTH_URL: baseURL,
       BETTER_AUTH_SECRET: randomUUID() + randomUUID(), PUBLIC_BASE_URL: baseURL,
       KEYCLOAK_ISSUER: issuer, KEYCLOAK_CLIENT_ID: clientId, KEYCLOAK_CLIENT_SECRET: clientSecret,
-      GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "", OIDC_ISSUER: "", AUTH_PASSWORD: "false",
+      GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "", OIDC_ISSUER: issuer, OIDC_CLIENT_ID: clientId, OIDC_CLIENT_SECRET: clientSecret, AUTH_PASSWORD: "false",
       ALLOWED_EMAIL_DOMAINS: "example.test", ADMIN_EMAILS: "ops@example.test",
     });
     const db = await import("@/infrastructure/db/client");
@@ -91,10 +91,11 @@ async function main(): Promise<void> {
     await ctx.checkSchema?.();
 
     const cookieHeader = (response: Response) => response.headers.getSetCookie().map((cookie) => cookie.split(";")[0]).join("; ");
-    async function login(email: string, overrides: { audience?: string; nonce?: string; state?: string } = {}) {
+    async function login(email: string, overrides: { audience?: string; nonce?: string; state?: string; provider?: "keycloak" | "oidc"; name?: string; picture?: string } = {}) {
+      const provider = overrides.provider ?? "keycloak";
       const start = await auth.handler(new Request(`${baseURL}/api/auth/sign-in/social`, {
         method: "POST", headers: { "content-type": "application/json", origin: baseURL },
-        body: JSON.stringify({ provider: "keycloak", callbackURL: "/agents?tab=mine" }),
+        body: JSON.stringify({ provider, callbackURL: "/agents?tab=mine" }),
       }));
       assert.equal(start.status, 200);
       const authorization = new URL((await start.json()).url);
@@ -104,26 +105,49 @@ async function main(): Promise<void> {
       assert.ok(authorization.searchParams.get("nonce"));
       const code = randomUUID();
       codes.set(code, {
-        email, audience: overrides.audience ?? clientId,
+        email, audience: overrides.audience ?? clientId, provider,
+        name: overrides.name ?? "OIDC Test User", picture: overrides.picture,
         nonce: overrides.nonce ?? authorization.searchParams.get("nonce")!,
         challenge: authorization.searchParams.get("code_challenge")!,
       });
-      const callback = new URL(`${baseURL}/api/auth/callback/keycloak`);
+      const callback = new URL(`${baseURL}/api/auth/callback/${provider}`);
       callback.searchParams.set("code", code);
       callback.searchParams.set("state", overrides.state ?? authorization.searchParams.get("state")!);
       return auth.handler(new Request(callback, { headers: { cookie: cookieHeader(start) } }));
     }
 
-    const first = await login("member@example.test");
+    const first = await login("member@example.test", { picture: `${issuer}/avatar-before.png` });
     assert.equal(first.status, 302);
     assert.equal(first.headers.get("location"), "/agents?tab=mine");
     const session = await auth.api.getSession({ headers: new Headers({ cookie: cookieHeader(first) }) });
     assert.equal(session?.user.email, "member@example.test");
     assert.equal(session?.user.tier, "guest");
-    const second = await login("member@example.test");
+    assert.equal(session.user.name, "OIDC Test User");
+    assert.equal(session.user.image, `${issuer}/avatar-before.png`);
+    await ctx.internalAdapter.updateUser(session.user.id, { tier: "member" });
+    const second = await login("member@example.test", { name: "Updated Keycloak User", picture: `${issuer}/avatar-after.png` });
     const repeat = await auth.api.getSession({ headers: new Headers({ cookie: cookieHeader(second) }) });
     assert.equal(repeat?.user.id, session.user.id);
+    assert.equal(repeat.user.name, "Updated Keycloak User");
+    assert.equal(repeat.user.image, `${issuer}/avatar-after.png`);
+    assert.equal(repeat.user.tier, "member");
+    const stored = (await db.getPool().query(`SELECT name, image, tier FROM "user" WHERE id = $1`, [session.user.id])).rows[0];
+    assert.deepEqual(stored, { name: "Updated Keycloak User", image: `${issuer}/avatar-after.png`, tier: "member" });
+    const earlierSession = await auth.api.getSession({ headers: new Headers({ cookie: cookieHeader(first) }) });
+    assert.equal(earlierSession?.user.name, repeat.user.name);
+    assert.equal(earlierSession?.user.image, repeat.user.image);
+    const withoutPicture = await login("member@example.test", { name: "Renamed Keycloak User" });
+    const noPictureSession = await auth.api.getSession({ headers: new Headers({ cookie: cookieHeader(withoutPicture) }) });
+    assert.equal(noPictureSession?.user.name, "Renamed Keycloak User");
+    assert.equal(noPictureSession?.user.image, repeat.user.image, "missing provider picture preserves the stored image");
     assert.equal((await db.getPool().query(`SELECT count(*)::int AS count FROM account WHERE "providerId" = 'keycloak'`)).rows[0].count, 1);
+    const oidcFirst = await login("oidc-member@example.test", { provider: "oidc", name: "OIDC User", picture: `${issuer}/oidc-before.png` });
+    const oidcInitial = await auth.api.getSession({ headers: new Headers({ cookie: cookieHeader(oidcFirst) }) });
+    const oidcSecond = await login("oidc-member@example.test", { provider: "oidc", name: "Updated OIDC User", picture: `${issuer}/oidc-after.png` });
+    const oidcUpdated = await auth.api.getSession({ headers: new Headers({ cookie: cookieHeader(oidcSecond) }) });
+    assert.equal(oidcUpdated?.user.id, oidcInitial?.user.id);
+    assert.equal(oidcUpdated?.user.name, "Updated OIDC User");
+    assert.equal(oidcUpdated?.user.image, `${issuer}/oidc-after.png`);
     const logout = await auth.handler(new Request(`${baseURL}/api/auth/sign-out`, {
       method: "POST", headers: { cookie: cookieHeader(first), origin: baseURL },
     }));
@@ -144,7 +168,7 @@ async function main(): Promise<void> {
     const existingRefused = await login("member@example.test");
     assert.match(existingRefused.headers.get("location") ?? "", /\/login\?error=EMAIL_DOMAIN_NOT_ALLOWED/);
     assert.doesNotMatch(cookieHeader(existingRefused), /session_token=/);
-    console.log("[ok] Keycloak OIDC: discovery, PKCE, signed callback, session, repeat login, local logout, audience/nonce/state rejection and new/existing domain denial");
+    console.log("[ok] Keycloak/OIDC: discovery, PKCE, signed callback, session, profile refresh on repeat login, tier preservation, local logout, audience/nonce/state rejection and new/existing domain denial");
   } finally {
     await closePool?.();
     server.closeAllConnections();

@@ -80,7 +80,7 @@ export const auth = betterAuth({
     enabled: config.passwordAuth,
     disableSignUp: true,
   },
-  ...(google ? { socialProviders: { google } } : {}),
+  ...(google ? { socialProviders: { google: { ...google, overrideUserInfoOnSignIn: true } } } : {}),
   databaseHooks: {
     user: {
       create: {
@@ -148,9 +148,10 @@ export const auth = betterAuth({
                 clientSecret: oidc.clientSecret,
                 scopes: oidc.scopes,
                 pkce: true,
+                overrideUserInfo: true,
               }] : []),
               ...(keycloakConfig ? [{
-                ...keycloak({ ...keycloakConfig, pkce: true, disableProviderLogout: true }),
+                ...keycloak({ ...keycloakConfig, pkce: true, disableProviderLogout: true, overrideUserInfo: true }),
                 providerId: KEYCLOAK_PROVIDER_ID,
                 requireIdTokenVerification: true,
               }] : []),
