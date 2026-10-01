@@ -5,9 +5,12 @@ import type { TriggerRepository } from "@/domain/trigger/repository";
 import { assertAgentAccessible } from "@/application/agent/agentUseCases";
 import { ValidationError } from "@/application/errors";
 import { assertMessagingExecutionGrant } from "@/application/messaging/executionGrant";
+import type { MemberRepository } from "@/domain/member/repository";
+import { resolveRunUser } from "@/application/execution/resolveRunUser";
 
 interface WorkspaceAuthorizationDeps {
   agents: AgentRepository;
+  members: Pick<MemberRepository, "getById">;
   triggers: Pick<TriggerRepository, "get">;
   memberTier(email: string): Promise<MemberTier | null>;
   backendReady(): boolean;
@@ -37,9 +40,14 @@ export async function authorizeWorkspaceExecution(
   const sourceAgentName = actor.id.slice(0, separator);
   const triggerId = actor.id.slice(separator + 1);
   const trigger = separator > 0 ? await deps.triggers.get(sourceAgentName, triggerId) : null;
-  const sourceAgent = trigger ? await deps.agents.get(sourceAgentName) : null;
   if (!trigger?.enabled || trigger.agentName !== sourceAgentName || trigger.triggerId !== triggerId ||
-    trigger.kind !== actor.kind || trigger.executionEmail !== email || sourceAgent?.ownerEmail !== email) {
+    trigger.kind !== actor.kind) {
+    throw new ValidationError("The trigger's Workspace execution permission is no longer authorized");
+  }
+  if (trigger.kind === "schedule") {
+    const user = await resolveRunUser(deps, sourceAgentName, trigger.createdBy.userId, "schedule");
+    if (user.email !== email) throw new ValidationError("The schedule's Workspace execution identity has changed");
+  } else if (trigger.executionEmail !== email || (await deps.agents.get(sourceAgentName))?.ownerEmail !== email) {
     throw new ValidationError("The trigger's Workspace execution permission is no longer authorized");
   }
 }

@@ -4,6 +4,10 @@
  * The delivery path is `runTrigger.ts`; this module never runs anything.
  */
 
+import type { RunUser } from "@/domain/execution/actor";
+import type { MemberRepository } from "@/domain/member/repository";
+import { tierMayEdit } from "@/domain/member/tiers";
+import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { Agent } from "@/domain/agent/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
@@ -36,6 +40,7 @@ import { reviewSetupIssue } from "./reviewRequirements";
 export interface TriggerDeps {
   triggers: TriggerRepository;
   agents: AgentRepository;
+  members: Pick<MemberRepository, "getById">;
   cipher: SecretCipher;
   /** Automatic GitHub review publication may be configured only by an installation administrator. */
   authorizeReview?: (email: string, agentName: string) => Promise<void>;
@@ -81,6 +86,7 @@ export interface TriggerView {
   /** Current setup problem; configuration reads do not grant execution permissions. */
   reviewIssue?: string;
   executionEmail?: string;
+  createdBy?: RunUser;
   agentName: string;
   triggerId: string;
   kind: TriggerKind;
@@ -221,8 +227,11 @@ export function createTriggerUseCases(deps: TriggerDeps) {
     async create(
       agentName: string,
       input: CreateTriggerInput,
-      userEmail: string,
+      userId: string,
     ): Promise<TriggerView> {
+      const member = userId ? await deps.members.getById(userId) : null;
+      if (!member || member.id !== userId || !tierMayEdit(member.tier)) throw new ForbiddenError("Trigger registration requires an active member account");
+      const userEmail = member.email;
       const agent = await assertAgentWritable(deps.agents, agentName, userEmail);
       if (input.runAsOwner && agent.ownerEmail !== userEmail) throw new ForbiddenError("Only the owner can enable personal execution");
       if (input.githubReview !== undefined && input.kind === "schedule") throw new ValidationError("GitHub reviews are only available for webhooks");
@@ -250,13 +259,13 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         // Overlap is off unless asked for: a firing that comes faster than the
         // run takes would otherwise pile runs up until the cost guard notices.
         allowConcurrent: input.allowConcurrent ?? false,
-        ...(input.runAsOwner ? { executionEmail: userEmail } : {}),
         createdAt: now,
         updatedAt: now,
       };
       let trigger: Trigger;
       let secret: string | undefined;
       if (input.kind === "schedule") {
+        if (input.runAsOwner !== undefined) throw new ValidationError("A schedule always runs as its registering user");
         if (input.cron === undefined || input.timezone === undefined) {
           throw new ValidationError("A schedule trigger needs a cron expression and a timezone");
         }
@@ -264,6 +273,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         trigger = {
           ...base,
           kind: "schedule",
+          createdBy: { userId: member.id, email: member.email },
           cron: input.cron,
           timezone: input.timezone,
           ...(input.message ? { message: input.message } : {}),
@@ -287,6 +297,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         trigger = {
           ...base,
           kind: "webhook",
+          ...(input.runAsOwner ? { executionEmail: userEmail } : {}),
           secret: deps.cipher.encrypt(secret, triggerSecretContext(agentName, input.triggerId)),
           ...(githubReview ? { githubReview } : {}),
         };
@@ -320,9 +331,10 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         description: input.description ?? existing.description,
         enabled: input.enabled ?? existing.enabled,
         allowConcurrent: input.allowConcurrent ?? existing.allowConcurrent,
-        updatedAt: new Date().toISOString(),
+        updatedAt: nextUpdatedAt(existing.updatedAt),
       };
       if (existing.kind === "schedule") {
+        if (input.runAsOwner !== undefined) throw new ValidationError("A schedule always runs as its registering user");
         // Explicit refusal over silent no-op: a caller asking a schedule for a
         // secret rotation is confused about what it is talking to.
         if (input.rotateSecret) {
@@ -330,8 +342,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         }
         assertScheduleFields(input);
         // An empty string clears the message; undefined keeps what is stored.
-        const { message: stored, deliveries: storedDeliveries, executionEmail: storedEmail, ...rest } = existing;
-        const executionEmail = input.runAsOwner === undefined ? storedEmail : input.runAsOwner ? userEmail : undefined;
+        const { message: stored, deliveries: storedDeliveries, ...rest } = existing;
         const message = input.message ?? stored ?? "";
         const deliveries =
           input.deliveries === undefined
@@ -341,7 +352,6 @@ export function createTriggerUseCases(deps: TriggerDeps) {
           ...rest,
           ...shared,
           cron: input.cron ?? existing.cron,
-          ...(executionEmail ? { executionEmail } : {}),
           timezone: input.timezone ?? existing.timezone,
           ...(message ? { message } : {}),
           ...(deliveries.length > 0 ? { deliveries } : {}),

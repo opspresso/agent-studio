@@ -123,7 +123,7 @@ async function main() {
   ]);
   const execution = { agents, usage, cipher, channel, createToolSchemaValidator, skills: { get: async () => null, describe: async () => [] }, mcps: { get: async () => null } } as unknown as ExecutionDeps;
   const actor = { kind: "webhook" as const, id: `${agentName}:webhook` };
-  const deps: TriggerRunnerDeps = { agents, triggers, cipher, executionUserActive: async () => true, reviewForge: () => github.reviews,
+  const deps: TriggerRunnerDeps = { members: { getById: async () => null }, agents, triggers, cipher, executionUserActive: async () => true, reviewForge: () => github.reviews,
     run: input => streamAgentRun(execution, { ...input, messages: [{ role: "user", content: input.message ?? "" }], ownerEmail: input.userEmail }),
     openReviewWorkspace: async target => {
       const tool = createWorkspaceTool({ useCases: api, authorize: async () => {}, policy: () => worker.policy(agentName), sleep: pump, workdir: WORKSPACE_DIRECTORY, publicBaseUrl: baseUrl,
@@ -141,7 +141,8 @@ async function main() {
     const secret = "fixture-webhook-secret";
     await triggers.create({ agentName, triggerId: "webhook", kind: "webhook", description: "", enabled: true, secret: cipher.encrypt(secret, triggerSecretContext(agentName, "webhook")), executionEmail: ownerEmail,
       allowConcurrent: true, githubReview: { scope: "repositories", repositories: ["fixture/repo"] }, createdAt: at, updatedAt: at });
-    assert.equal((await triggers.get(agentName, "webhook"))?.executionEmail, ownerEmail, "Webhook execution delegation must survive the DB round-trip");
+    const storedWebhook = await triggers.get(agentName, "webhook");
+    assert.equal(storedWebhook?.kind === "webhook" && storedWebhook.executionEmail, ownerEmail, "Webhook execution delegation must survive the DB round-trip");
     const body = JSON.stringify({ action: "opened", number: 1, repository: { full_name: "fixture/repo" }, pull_request: pull() });
     const credential = { kind: "github" as const, body, event: "pull_request", deliveryId: randomUUID(), signature: "sha256=" + createHmac("sha256", secret).update(body).digest("hex") };
     const admitted = await admitDelivery(deps, agentName, credential, null);

@@ -1,3 +1,4 @@
+import { memberFixture } from "./memberFixture";
 import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeStore } from "./fakeStore";
@@ -48,7 +49,7 @@ async function fixture(review = true) {
   const open = vi.fn(async () => ({ id: "fixture", url: "https://studio.test/chats/fixture", ensureIdle: async () => {},
     tool: async () => ({ text: "{}" }), close }));
   const run = vi.fn<TriggerRunnerDeps["run"]>(async function* () { yield { delta: { content: "Review" } }; yield { done: true }; });
-  const deps: TriggerRunnerDeps = { triggers, runSlots: runSlotRepository, agents: { get: async () => agent } as never,
+  const deps: TriggerRunnerDeps = { members: { getById: async id => memberFixture({ id }) }, triggers, runSlots: runSlotRepository, agents: { get: async () => agent } as never,
     cipher: { decrypt: (value: string) => value, decryptEquals: (a: string, b: string) => a === b } as never,
     executionUserActive: async () => true, openReviewWorkspace: open,
     reviewForge: () => ({ load, reply, read: async () => ({ text: "", offset: 0, totalChars: 0, nextOffset: null }) }), run };
@@ -115,7 +116,7 @@ describe("trigger execution owner lifetime", () => {
     await vi.advanceTimersByTimeAsync(FIRING_MAX_LIFETIME_MS - 1);
     expect(await repairTriggerRuns(f.deps, f.webhook, new Date())).toEqual({ repaired: 0, errors: 0 });
     expect((await admitDelivery(f.deps, agent.name, "fixture-secret", "next-event")).status).toBe("busy");
-    const useCases = createTriggerUseCases({ triggers, agents: f.deps.agents, cipher: f.deps.cipher });
+    const useCases = createTriggerUseCases({ members: { getById: async () => null }, triggers, agents: f.deps.agents, cipher: f.deps.cipher });
     const visible = (await useCases.runs(agent.name, "webhook", 10, owner)).find(row => row.runId === admitted.runId)!;
     expect(visible).not.toHaveProperty("runningLeaseToken");
     expect(visible).not.toHaveProperty("runningLeaseUntil");
@@ -185,7 +186,7 @@ describe("trigger execution owner lifetime", () => {
 
   it("transfers the queue timer to the running owner and holds a schedule through post-run notification", async () => {
     const f = await fixture(false);
-    const schedule: ScheduleTrigger = { agentName: agent.name, triggerId: "daily", kind: "schedule", description: "", enabled: true,
+    const schedule: ScheduleTrigger = { agentName: agent.name, triggerId: "daily", kind: "schedule", createdBy: { userId: "registrar-id", email: "registrar@example.test" }, description: "", enabled: true,
       allowConcurrent: false, cron: "0 * * * *", timezone: "UTC", deliveries: [{ kind: "slack", channelId: "C1" }],
       createdAt: agent.createdAt, updatedAt: agent.updatedAt };
     await triggers.create(schedule);

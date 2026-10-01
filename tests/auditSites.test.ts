@@ -287,7 +287,7 @@ describe("webhook trigger secrets", () => {
       updateRunningRun: async () => { throw new Error("CRUD does not dispatch running executions"); },
       listRuns: async () => [],
     };
-    return createTriggerUseCases({ triggers, agents: agents(), cipher });
+    return createTriggerUseCases({ members: { getById: async () => null }, triggers, agents: agents(), cipher });
   }
 
   it("does not record a write override for an admin listing triggers or runs", async () => {
@@ -328,7 +328,7 @@ describe("webhook trigger secrets", () => {
     const schedule: Trigger = {
       agentName: "p",
       triggerId: "nightly",
-      kind: "schedule",
+      kind: "schedule", createdBy: { userId: "registrar-id", email: "registrar@example.test" },
       description: "",
       enabled: true,
       cron: "0 9 * * *",

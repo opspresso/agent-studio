@@ -1,3 +1,4 @@
+import { memberFixture } from "./memberFixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const entropy = vi.hoisted(() => ({ sequence: 0 }));
@@ -166,6 +167,7 @@ function fixture(
     claimed,
     runs,
     deps: {
+      members: { getById: async id => memberFixture({ id }) },
       triggers,
       agents: { get: async () => ({ ...agent, configuration: opts.configuration === undefined ? configuration : opts.configuration ?? undefined }), list: async () => [], put: async () => {}, delete: async () => {} } as never,
       cipher: secretCipher,

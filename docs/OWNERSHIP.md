@@ -218,6 +218,7 @@
 | `AES_ENCRYPTION_KEY` 의 base64 해석과 32바이트 검증 | `src/shared/aesKey.ts` 의 `decodeAes256Key` | 구조 |
 | 쉼표로 구분된 설정 목록의 파싱 | `src/shared/parseList.ts` | 구조 |
 | 설정된 값이 비어 있는지 여부 | `src/shared/env.ts` | 구조 |
+| 실행 사용자의 고정 ID 해석과 현재 계정·자동화 등급·Agent 접근 | `application/execution/resolveRunUser.ts`. Schedule은 생성 시 캡처한 `createdBy.userId`를 쓰고 플랫폼 actor와 구분한다 | 구조 |
 | Schedule 연동 화면이 동시에 읽을 최근 실행 목록 수 | `src/app/agents/[name]/integrations/scheduleRuns.ts` 의 `MAX_CONCURRENT_SCHEDULE_RUN_READS` | 구조 |
 | 각 member tier의 실행 한도 해석 | `src/domain/member/tiers.ts`의 `memberTierLimits`. 월 금액은 Settings `memberTiers`, admin은 무제한, guest 동시 실행은 1개 | 구조 |
 | 등급 표시 순서와 고정 위치 | `src/domain/member/tiers.ts`의 `orderMemberTiers`·`moveMemberTier`. admin은 처음, guest는 마지막이며 사용자 정의 등급의 상대 순서를 보존한다 | 코드 |

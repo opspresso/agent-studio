@@ -1637,6 +1637,8 @@ export const en = {
   "webhook.reviewSave": "Save review settings",
   "webhook.reviewSetupRequired": "PR review setup is incomplete",
   "webhook.reviewOwnerRequired": "The Agent owner must enable Run with my permissions before saving PR reviews. Enable Workspace tools and allow the repositories in the Agent settings; a configured Sandbox worker and GitHub connection are required.",
+  "trigger.registeredBy": "Registered by: {email}",
+  "trigger.registrationMissing": "Unknown user — register a new schedule",
   "trigger.runAsOwner": "Run with my permissions",
   "integrations.runAsOwnerHint": "Only the Agent owner can enable this. Save to let authorized bot callers use the owner's configured personal tools and Workspaces. Current member access and Agent policies still apply.",
   "trigger.runAsOwnerHint": "Only the Agent owner can enable this. Use your verified identity for configured personal tools and Workspace execution; current access and Agent policies still apply.",

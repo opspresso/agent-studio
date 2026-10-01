@@ -1484,12 +1484,17 @@ GET    /api/agents/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ …
 (`^[a-z0-9-]+$`) 을 따른다. 콘솔은 입력한 것을 agent 폼이 쓰는 것과 같은 `toSlug` 헬퍼로
 정규화하고, API 는 클라이언트가 무엇이든 그 밖의 것을 거절한다.
 
-Webhook·Schedule 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email을 `executionEmail`로 저장한다.
+Webhook 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email을 `executionEmail`로 저장한다.
 관리자도 다른 소유자를 대신해 켤 수 없다. `false`는 저장한 email을 지우고, 생략은 기존 값을
 유지한다. 기본은 꺼짐이며 Webhook에서는 인증된 외부 발신자에게 해당 실행 권한을 부여하는
 결정이다. Admission과 실행 직전에 현재 위임·소유권과 member 상태를 확인한다. actor는 원래
-webhook·schedule로 유지하며 검증된 email만 MCP·Workspace 실행에 사용한다. Workspace는
+webhook으로 유지하며 검증된 email만 MCP·Workspace 실행에 사용한다. Workspace는
 도구 호출과 큐 작업 실행 직전에도 현재 Trigger 위임을 다시 검사한다.
+
+Schedule은 서버가 로그인한 등록자의 `{ userId, email }`을 `createdBy`에 저장한다.
+본문에서 등록자를 지정·변경할 수 없고 `runAsOwner`도 거절한다. 사용자 ID로 현재 계정·member 등급·
+Agent 접근을 확인하며 이메일은 현재 계정에서 해석한다. 대기 후 실행과 보고서 전송 전에
+등록자 권한과 Schedule 설정을 다시 확인하고 발화 이력에 `userId`를 기록한다.
 
 평범한 읽기는 `secretMasked` 만 돌려준다 (webhook 에 한한다. schedule 에는 secret 이 없다).
 
@@ -1672,8 +1677,8 @@ GET /api/objects/{...key}?exp=<unix>&sig=<hmac>[&dl=<filename>]
 **두 목록은 한 집합의 두 가지 뷰가 아니다.** `/api/artifacts` 는 소유자 인덱스를 읽는데, 여기에는
 actor 가 이메일을 지목하거나 표면이 소유자 이메일을 해석한 행만 들어 있다. Slack 런은 질문한
 사람의 이메일을 해석할 수 있으면 이 목록에도 들어가고, 조회가 실패하면 agent 에만 남는다.
-개인 이메일 문맥이 없는 Webhook·Schedule 결과는 Agent 목록에서 관리한다.
-소유자가 개인 문맥을 설정한 Schedule 결과는 개인 목록에도 귀속될 수 있다. `from`/`to` 는 실재하는 날짜로 검증되는 UTC 일이고, `before` 는 이전 페이지의
+개인 이메일 문맥이 없는 Webhook 결과는 Agent 목록에서 관리한다.
+Schedule 결과는 등록자의 현재 계정에 귀속된다. `from`/`to` 는 실재하는 날짜로 검증되는 UTC 일이고, `before` 는 이전 페이지의
 `nextBefore` 다.
 
 삭제는 생성자, 그 agent 의 소유자, 그리고 effective admin 에게 허용된다. 남의 출력을 지우면
@@ -1907,7 +1912,7 @@ AudioJob read는 최대 20,000자씩 전사문을 반환하고 nextCursor로 이
 `{status:"moved", destination:movedTo, jobStatus}`를 반환한다. 원본 JSON에는 text·segments·model·
 coverage·원본 checksum·사용량 receipt 참조가 포함된다.
 
-개인 문맥 Schedule은 [Triggers](#triggers)의 `runAsOwner` 계약을 따른다.
+Schedule의 개인 문맥은 [Triggers](#triggers)의 등록자 ID와 현재 권한 검사를 따른다.
 
 MCP binding의 `sourceOutputs`는 도구의 JSON 응답을 파일 참조로 변환한다. 항목은
 `{tool, namespace, urlPath, idPath, namePath?, mimeType, refreshArgument?}`이며 경로는 object key 배열이다.

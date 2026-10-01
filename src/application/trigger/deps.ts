@@ -1,4 +1,5 @@
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunActor, RunUser } from "@/domain/execution/actor";
+import type { MemberRepository } from "@/domain/member/repository";
 import type { RunSlotRepository } from "@/domain/execution/runSlot";
 import type { EngineChunk, McpToolResult } from "@/domain/llm/types";
 import type { AgentRepository } from "@/domain/agent/repository";
@@ -13,6 +14,7 @@ import type { PullRequestReviewTarget, ReviewWorkspaceSession, ReviewWorkspaceTo
 export interface FiringDeps {
   triggers: TriggerRepository;
   agents: AgentRepository;
+  members: Pick<MemberRepository, "getById">;
   /** Runs the resolved Agent; the composition root binds the facade. */
   run: (input: {
     agent: Agent;
@@ -20,6 +22,7 @@ export interface FiringDeps {
     message?: string;
     actor: RunActor;
     userEmail?: string;
+    user?: RunUser;
     signal?: AbortSignal;
     /** Bound skills only; verified PRs additionally receive their private source and Workspace callbacks. */
     backgroundTask?: boolean;

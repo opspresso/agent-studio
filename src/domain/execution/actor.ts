@@ -13,6 +13,12 @@ export const RUN_ACTOR_KINDS = [
 ] as const;
 export type RunActorKind = (typeof RUN_ACTOR_KINDS)[number];
 
+/** Studio account identity. Email is current display/context data; userId is the authority. */
+export interface RunUser {
+  userId: string;
+  email: string;
+}
+
 export function isRunActorKind(value: string): value is RunActorKind {
   return RUN_ACTOR_KINDS.some((kind) => kind === value);
 }
@@ -128,6 +134,7 @@ function sanitizeCallerName(value: string | undefined): string | undefined {
  * threaded side by side through eight signatures.
  */
 export interface RunOrigin {
+  user?: RunUser;
   executionGrant?: ExecutionGrant;
   /** Source processing may read bound skills; its calling use case owns all external effects. */
   backgroundTask?: boolean;

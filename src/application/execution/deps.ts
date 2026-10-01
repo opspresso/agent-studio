@@ -26,7 +26,7 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { HttpResourceReader } from "@/domain/net/httpResource";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import type { RunActor, RunCaller, RunConversation, RunOrigin, ExecutionGrant } from "@/domain/execution/actor";
+import type { RunActor, RunCaller, RunConversation, RunOrigin, RunUser, ExecutionGrant } from "@/domain/execution/actor";
 import type { RunBracketDeps } from "@/application/run/runBracket";
 import type { SlackWorkspaceReader } from "@/domain/slack/reader";
 import type { RuntimeSessionServices } from "@/application/runtime/session";
@@ -126,6 +126,7 @@ export interface ExecutionDeps extends RunBracketDeps {
 }
 
 export interface ExecuteAgentInput {
+  user?: RunUser;
   reviewWorkspace?: ReviewWorkspaceTool;
   /** Prepared by the verified PR use case; never accepted from public execution bodies. */
   reviewSource?: ExecutionDeps["reviewSource"];
@@ -157,6 +158,7 @@ export interface ExecuteAgentInput {
 // --- Agent-level dispatch --------------------------------------------------
 
 export interface AgentRunInput {
+  user?: RunUser;
   reviewWorkspace?: ReviewWorkspaceTool;
   reviewSource?: ExecutionDeps["reviewSource"];
   executionGrant?: ExecutionGrant;
@@ -191,12 +193,13 @@ export function toRunInput(
   input: AgentRunInput,
 ): Pick<
   ExecuteAgentInput,
-  "agent" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "signal" | "ownerEmail" | "backgroundTask" | "executionGrant" | "reviewSource" | "reviewWorkspace"
+  "agent" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "signal" | "ownerEmail" | "backgroundTask" | "executionGrant" | "reviewSource" | "reviewWorkspace" | "user"
 > {
   return {
     agent: input.agent,
     configuration: input.configuration,
     messages: input.messages,
+    ...(input.user ? { user: input.user } : {}),
     ...(input.actor ? { actor: input.actor } : {}),
     ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
     ...(input.reviewSource ? { reviewSource: input.reviewSource } : {}),

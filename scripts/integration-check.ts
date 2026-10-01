@@ -482,6 +482,23 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.equal(await messaging.resolve(linkedIdentities[0]!), null);
     await memberRepository.setTier(integrationMemberId, "member");
     pass("messaging identity: PostgreSQL one-time claim, stable issuer, current membership and personal unlink");
+    const scheduleAgentName = `it-schedule-${suffix}`;
+    cleanup(() => agentRepository.delete(scheduleAgentName));
+    await agentRepository.create({ name: scheduleAgentName, displayName: "Schedule identity check", description: "",
+      ownerEmail: integrationMemberEmail, createdAt: now, updatedAt: now });
+    const { createTriggerUseCases } = await import("@/application/trigger/triggerUseCases");
+    const schedules = createTriggerUseCases({ agents: agentRepository, triggers: triggerRepository, members: memberRepository, cipher: secretCipher });
+    const registeredSchedule = await schedules.create(scheduleAgentName, { triggerId: "daily", kind: "schedule", cron: "0 9 * * *", timezone: "UTC" }, integrationMemberId);
+    assert.deepEqual(registeredSchedule.createdBy, { userId: integrationMemberId, email: integrationMemberEmail });
+    await schedules.update(scheduleAgentName, "daily", { message: "Registered user's task" }, integrationMemberEmail);
+    const storedSchedule = await triggerRepository.get(scheduleAgentName, "daily");
+    assert.equal(storedSchedule?.kind, "schedule");
+    assert.deepEqual(storedSchedule?.kind === "schedule" && storedSchedule.createdBy, registeredSchedule.createdBy);
+    const { resolveRunUser } = await import("@/application/execution/resolveRunUser");
+    await memberRepository.setTier(integrationMemberId, "guest");
+    await assert.rejects(resolveRunUser({ agents: agentRepository, members: memberRepository }, scheduleAgentName, integrationMemberId, "schedule"), /member access/);
+    await memberRepository.setTier(integrationMemberId, "member");
+    pass("schedule registration: authenticated stable creator, PostgreSQL round-trip, immutable identity and current member access");
     const { checkMemberTiers } = await import("./member-tiers-check");
     await checkMemberTiers(integrationMemberId, integrationMemberEmail);
     pass("member tier catalog, assignment/deletion serialization and shared rollback");

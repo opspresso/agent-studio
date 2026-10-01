@@ -583,6 +583,7 @@ export const messagingIdentityUseCases = createMessagingIdentityUseCases({ ident
   agents: agentRepository, members: { getById: getExecutionMemberById }, now: () => new Date() });
 export const apiTokenUseCases = createApiTokenUseCases({ agents: agentRepository, tokens: apiTokenRepository, members: { getById: getExecutionMemberById }, cipher: secretCipher, now: () => new Date(), newId: randomUUID });
 export const triggerUseCases = createTriggerUseCases({
+  members: { getById: getExecutionMemberById },
   triggers: triggerRepository,
   agents: agentRepository,
   cipher: secretCipher,
@@ -1107,6 +1108,7 @@ export const executionDeps: ExecutionDeps = {
  * Agent execution and image output use that shared path.
  */
 export const triggerRunnerDeps: TriggerRunnerDeps = {
+  members: { getById: getExecutionMemberById },
   openReviewWorkspace: async (target, agentName, triggerId, ownerEmail) => {
     if (!ownerEmail) throw new ValidationError("PR review Workspace requires an explicit trigger owner execution grant");
     const tool = await executionDeps.workspaceTool?.(agentName, { ancestry: [agentName], actor: { kind: "webhook", id: `${agentName}:${triggerId}` }, userEmail: ownerEmail }, target);
@@ -1140,6 +1142,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       configuration: input.configuration,
       messages: input.message ? [{ role: "user", content: input.message }] : [],
       actor: input.actor,
+      ...(input.user ? { user: input.user } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
       ...(input.backgroundTask ? { backgroundTask: true } : {}),
       ...(input.reviewSource ? { reviewSource: input.reviewSource } : {}),
@@ -1377,6 +1380,7 @@ export const workspaceRepositoryCreationUseCases = createWorkspaceRepositoryCrea
 
 async function authorizeWorkspaceTools(email: string, agentName: string, actor?: RunActor, grant?: import("@/domain/execution/actor").ExecutionGrant): Promise<void> {
   await authorizeWorkspaceExecution({ agents: agentRepository, triggers: triggerRepository, memberTier: getMemberTier,
+    members: { getById: getExecutionMemberById },
     backendReady: () => !!getWorkspaceConfig(), enabled: name => workspaceRepositoryPolicyUseCases.enabled(name),
   }, agentName, email, actor, grant);
 }

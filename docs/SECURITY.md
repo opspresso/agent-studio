@@ -747,17 +747,12 @@ Git publication·배포를 거절한다. 끝나지 않았거나 결과를 읽지
 성공·실패 모두 Workspace 정리를 요청하고 실제 종료를 확인하며 게시 영수증은 정리 실패에도 보존한다.
 Agent Webhook Secret은 선택 범위의 리뷰를 요청할 권한이므로 승인한 GitHub 저장소에만 등록한다.
 Workspace는 actor 종류와 별도로 표면이 확인한 관리 사용자의 현재 계정·Agent 접근과
-저장소 정책을 검사한다. guest는 본인 `user` actor로 실행할 수 있고 자동화는 member 이상이다. API token은 인증된 소유자를, 메신저는 확인한 email 또는 명시적으로 위임한 소유자를, 개인 실행을
-명시적으로 승인한 Webhook·Schedule은 현재 소유자를 사용한다. Trigger의 `runAsOwner`는
-소유자만 활성화할 수 있으며 기본은 꺼짐이다. 외부 payload는 email·actor를 지정할 수 없다.
-작업의 actor는 원래 연동 호출자로 유지해 비용·실행 제한을 적용하며, 큐 작업 실행 직전에도
-관리 사용자의 권한을 다시 확인한다. Trigger 작업은 현재 위임·활성 여부·소유권도 확인하며,
-외부 호출은 Git 승인을 직접 소비할 수 없다.
-메신저 연동의 `runAsOwner`는 현재 소유자만 켤 수 있으며 기본은 꺼짐이다. 공개 설정은 boolean만
-받고 실행 email은 서버가 저장한다. `ExecutionGrant`는 payload나 표시 이름에서 만들지 않는다.
-위임한 소유자의 개인 도구·Workspace 권한으로 실행하되 원래 플랫폼 actor는 유지한다.
-실행 전과 도구 호출 직전, Workspace 큐 실행 직전에 현재 위임·소유권·멤버 상태를 검사한다.
-연동을 끄거나 위임을 철회하거나 소유자가 바뀌면 이전 권한으로 새 효과를 실행하지 않는다.
+저장소 정책을 검사한다. guest는 본인 `user` actor로 실행할 수 있고 자동화는 member 이상이다.
+개인 API token은 발급 사용자를, 메신저는 연결한 Studio 사용자를, Schedule은 등록자를 사용한다.
+Schedule의 등록자 ID는 변경되지 않으며 현재 계정·Agent 접근을 실행 전에 다시 확인한다.
+Webhook의 `runAsOwner`는 소유자만 활성화할 수 있으며 기본은 꺼짐이다.
+외부 payload는 email·actor를 지정할 수 없다. 플랫폼 actor는 원래 연동 호출자로 유지한다.
+큐 작업 실행 직전에도 사용자 권한을 다시 확인하며 외부 호출은 Git 승인을 직접 소비할 수 없다.
 승인·CI 결과의 Chat 재개는 원래 소유자·Agent 접근·Workspace 선택과 SDK Session을 다시 확인한다.
 그 결과 이벤트는 새 사용자 요청이나 다음 Git 동작에 대한 승인으로 취급하지 않는다.
 

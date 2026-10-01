@@ -5,6 +5,7 @@ import type {
   MessageDestinationKind,
 } from "@/domain/messaging/destination";
 import type { GitHubReviewConfig, PullRequestReviewTarget } from "./pullRequestReview";
+import type { RunUser } from "@/domain/execution/actor";
 
 /** The kinds a stored trigger row can be. */
 export type TriggerKind = "webhook" | "schedule";
@@ -62,14 +63,14 @@ interface TriggerBase {
    * cost guard notices.
    */
   allowConcurrent: boolean;
-  /** Captured from the authenticated owner when execution with their identity is explicitly enabled. */
-  executionEmail?: string;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface WebhookTrigger extends TriggerBase {
   kind: "webhook";
+  /** Captured from the authenticated owner when execution with their identity is explicitly enabled. */
+  executionEmail?: string;
   /** AES-encrypted at rest, masked on read, compared in constant time. */
   secret: string;
   githubReview?: GitHubReviewConfig;
@@ -82,6 +83,8 @@ export interface WebhookTrigger extends TriggerBase {
  */
 export interface ScheduleTrigger extends TriggerBase {
   kind: "schedule";
+  /** Immutable registering user ID; email is a registration-time display snapshot. */
+  createdBy: RunUser;
   /** Five-field cron expression, read in `timezone`. `src/domain/trigger/cron.ts` evaluates it. */
   cron: string;
   /** IANA zone the cron fields are read in, e.g. `Asia/Seoul`. */
@@ -105,6 +108,8 @@ export type TriggerRunStatus =
 export interface TriggerRun {
   agentName: string;
   triggerId: string;
+  /** The stable Studio caller captured when a firing is admitted. */
+  userId?: string;
   runId: string;
   status: TriggerRunStatus;
   /** The caller's `Idempotency-Key`, when one was sent. */

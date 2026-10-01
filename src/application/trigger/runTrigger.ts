@@ -14,6 +14,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { ForbiddenError, NotFoundError } from "@/application/errors";
+import { resolveRunUser } from "@/application/execution/resolveRunUser";
 import { cutCodePoints } from "@/shared/utf8Text";
 import type { RunActor } from "@/domain/execution/actor";
 import { collectedWarning, isTopLevelChunk, runTermination, type RunTerminationReason } from "@/domain/llm/types";
@@ -21,6 +23,7 @@ import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import {
   AGENT_WEBHOOK_ID,
   type ScheduleDeliveryResult,
+  type ScheduleTrigger,
   type Trigger,
   type TriggerRun,
   type WebhookTrigger,
@@ -117,9 +120,27 @@ export function triggerActor(
 const EXECUTION_USER_UNAUTHORIZED = "The trigger execution user is no longer authorized.";
 
 async function executionUserAllowed(deps: FiringDeps, trigger: Trigger, agent: Agent): Promise<boolean> {
+  if (trigger.kind === "schedule") {
+    try {
+      await resolveRunUser(deps, trigger.agentName, trigger.createdBy.userId, "schedule");
+      return true;
+    } catch (error) {
+      if (error instanceof ForbiddenError || error instanceof NotFoundError) return false;
+      throw error;
+    }
+  }
   if (!trigger.executionEmail) return true;
   return trigger.executionEmail === agent.ownerEmail && !!deps.executionUserActive &&
     await deps.executionUserActive(trigger.executionEmail);
+}
+
+async function resolveScheduleUser(deps: FiringDeps, schedule: ScheduleTrigger) {
+  const current = await deps.triggers.get(schedule.agentName, schedule.triggerId);
+  if (!current?.enabled || current.kind !== "schedule" ||
+    current.createdBy.userId !== schedule.createdBy.userId || current.updatedAt !== schedule.updatedAt) {
+    throw new ForbiddenError("The schedule changed before execution completed");
+  }
+  return resolveRunUser(deps, schedule.agentName, schedule.createdBy.userId, "schedule");
 }
 
 /** The overlap lease's key. Distinct from the actor's own slot partition. */
@@ -301,6 +322,7 @@ export async function admitRun<T extends Trigger>(
   const run: TriggerRun = {
     agentName: trigger.agentName,
     triggerId: trigger.triggerId,
+    ...(trigger.kind === "schedule" ? { userId: trigger.createdBy.userId } : {}),
     runId: randomUUID(),
     status: queued ? "queued" : "running",
     ...(extra.idempotencyKey ? { idempotencyKey: extra.idempotencyKey } : {}),
@@ -434,11 +456,11 @@ export async function executeFiring(
   let produced = 0;
   try {
     await admitted.check?.();
-    if (trigger.executionEmail) {
+    const user = trigger.kind === "schedule" ? await resolveScheduleUser(deps, trigger) : undefined;
+    if (trigger.kind === "webhook" && trigger.executionEmail) {
       const current = await deps.agents.get(agent.name);
       const currentTrigger = await deps.triggers.get(agent.name, trigger.triggerId);
-      if (!current || !currentTrigger?.enabled || currentTrigger.kind !== trigger.kind ||
-        currentTrigger.executionEmail !== trigger.executionEmail || !await executionUserAllowed(deps, currentTrigger, current)) {
+      if (!current || !currentTrigger?.enabled || currentTrigger.kind !== "webhook" || currentTrigger.executionEmail !== trigger.executionEmail || !await executionUserAllowed(deps, currentTrigger, current)) {
         throw new Error(EXECUTION_USER_UNAUTHORIZED);
       }
     }
@@ -447,7 +469,7 @@ export async function executeFiring(
       configuration,
       ...input,
       actor: triggerActor(trigger),
-      ...(trigger.executionEmail ? { userEmail: trigger.executionEmail } : {}),
+      ...(user ? { user, userEmail: user.email } : trigger.kind === "webhook" && trigger.executionEmail ? { userEmail: trigger.executionEmail } : {}),
       ...(admitted.signal ? { signal: admitted.signal } : {}),
     })) {
       admitted.signal?.throwIfAborted();
@@ -513,6 +535,7 @@ export async function executeFiring(
                 throw new Error("Schedule report delivery is unavailable");
               }
               await admitted.check?.();
+              await resolveScheduleUser(deps, trigger);
               await deps.deliverReport(agent, delivery, report);
               return { kind: delivery.kind, status: "sent" };
             } catch (caught) {

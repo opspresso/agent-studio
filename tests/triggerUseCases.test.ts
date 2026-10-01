@@ -1,3 +1,4 @@
+import { memberFixture } from "./memberFixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const entropy = vi.hoisted(() => ({ sequence: 0 }));
@@ -75,7 +76,7 @@ function fixture(authorizeReview?: (email: string) => Promise<void>, currentAgen
     stored,
     triggers,
     storedWebhook,
-    useCases: createTriggerUseCases({ triggers, agents, cipher: secretCipher, authorizeReview }),
+    useCases: createTriggerUseCases({ members: { getById: async id => memberFixture({ id, email: id === "registrar-id" ? agent.ownerEmail : id }) }, triggers, agents, cipher: secretCipher, authorizeReview }),
   };
 }
 
@@ -137,14 +138,20 @@ describe("GitHub review trigger configuration", () => {
 });
 
 describe("trigger execution permissions", () => {
-  it("captures the authenticated owner's email and can explicitly clear it", async () => {
+  it("captures the registering user ID and preserves it across edits", async () => {
     const f = fixture();
     const created = await f.useCases.create("p", { triggerId: "hourly", kind: "schedule", cron: "0 * * * *",
-      timezone: "Asia/Seoul", runAsOwner: true }, agent.ownerEmail);
-    expect(created.executionEmail).toBe(agent.ownerEmail);
-    expect((await f.useCases.update("p", "hourly", { message: "updated" }, agent.ownerEmail)).executionEmail).toBe(agent.ownerEmail);
-    expect((await f.useCases.update("p", "hourly", { runAsOwner: false }, agent.ownerEmail)).executionEmail).toBeUndefined();
+      timezone: "Asia/Seoul" }, "registrar-id");
+    expect(created.createdBy).toEqual({ userId: "registrar-id", email: agent.ownerEmail });
+    expect(created.executionEmail).toBeUndefined();
+    const edited = await f.useCases.update("p", "hourly", { message: "updated" }, agent.ownerEmail);
+    expect(edited.createdBy).toEqual(created.createdBy);
+    expect(edited.updatedAt).not.toBe(created.updatedAt);
+    await expect(f.useCases.update("p", "hourly", { runAsOwner: false }, agent.ownerEmail)).rejects.toThrow("registering user");
+    expect(createTriggerSchema.safeParse({ triggerId: "x", kind: "schedule", createdBy: { userId: "other" } }).success).toBe(false);
+    expect(updateTriggerSchema.safeParse({ createdBy: { userId: "other" } }).success).toBe(false);
   });
+
   it("requires an explicit owner grant for webhooks and preserves or clears it on update", async () => {
     const f = fixture();
     const ordinary = await f.useCases.create("p", { triggerId: "webhook" }, agent.ownerEmail);
@@ -322,6 +329,7 @@ describe("schedule triggers", () => {
         agentName: "p",
         triggerId,
         kind: "schedule",
+        createdBy: { userId: "registrar-id", email: "registrar@example.test" },
         description: "",
         enabled: true,
         cron: "0 9 * * *",

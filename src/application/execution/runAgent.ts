@@ -214,6 +214,7 @@ export async function* executeAgent(
   // including the ones a subagent transfer makes on another agent — was caused
   // by whoever started it.
   const origin: RunOrigin = {
+    ...(input.user ? { user: input.user } : {}),
     ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
     ...(input.backgroundTask ? { backgroundTask: true } : {}),
     ancestry: [input.agent.name],

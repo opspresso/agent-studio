@@ -85,8 +85,9 @@ Workspace는 이 리뷰의 저장소·커밋·command 런타임으로 제한한�
 ## 실행 문맥과 결과
 
 Webhook actor는 `webhook`이며 payload의 이메일을 사용자 권한으로 사용하지 않는다.
-Webhook·Schedule은 소유자가 `runAsOwner`를 명시적으로 켰을 때만 확인한 `executionEmail`을 저장하고
+Webhook은 소유자가 `runAsOwner`를 명시적으로 켰을 때 확인한 `executionEmail`을 저장하고
 admission·실행 직전에 현재 Agent 소유권과 member 상태를 다시 검사한다.
+Schedule은 등록자의 고정 Studio 사용자 ID로 현재 계정·member 등급·Agent 접근을 확인한다.
 
 이메일은 개인 MCP·오디오 문맥에 사용할 수 있지만 actor는 원래 `webhook`·`schedule`로 유지한다.
 확인된 실행 사용자가 있는 Webhook·Schedule은 Agent 정책에 따라 Workspace 도구를 얻는다.
@@ -117,6 +118,14 @@ running 소유 token·lease는 서버 제어 상태이며 콘솔 이력 응답�
 즉시 반영되며, 목적지 조회 실패는 빈 목록으로 숨기지 않고 표시한다.
 
 ## Schedule
+
+생성 요청의 세션 사용자 ID를 `createdBy.userId`에 저장하며 `createdBy.email`은 등록 시점의 표시값이다.
+수정자는 등록자를 바꿀 수 없고 `runAsOwner`는 허용하지 않는다. 실행 때마다 고정 ID로 현재 이메일과
+권한을 해석한다. Agent 소유자 변경이나 같은 이메일의 계정 재생성은 실행 사용자를 바꾸지 않는다.
+등록자 ID가 없거나 계정·접근이 유효하지 않으면 실행하지 않는다.
+대기 후 dispatch와 보고서 전송 전에는 현재 Schedule 활성 상태·등록자·설정 revision과
+사용자 권한을 재확인한다. Workspace 큐 작업도 등록자의 현재 계정과 Agent 접근을 확인한다.
+발화 이력의 `userId`는 접수 당시 등록자 ID이며 플랫폼 actor는 `schedule`로 유지한다.
 
 외부 ticker가 공유 token으로 `POST /api/triggers/scan`을 호출한다.
 ticker는 cron 상태를 갖지 않고 `scanSchedules`가 발생 판정·claim·admission을 수행한다.

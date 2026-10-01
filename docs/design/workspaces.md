@@ -283,13 +283,13 @@ Agent의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외�
 |---|---|---|
 | 로그인한 member/admin의 Agent Chat | Agent의 Workspace 도구가 활성화되면 제공 | 같은 Chat의 SDK Session으로 자동 재개 |
 | 로그인한 member/admin의 Playground·Agent 실행 API | Agent의 Workspace 도구가 활성화되면 제공 | source Chat이 없으므로 자동 재개 없음 |
-| Agent API token | 인증된 소유자가 member/admin이고 Agent 도구가 활성화되면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
-| Slack·Telegram·Teams | 확인된 이메일 또는 명시적으로 위임한 현재 소유자의 member/admin 권한과 Agent 정책에 따라 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
+| Agent API token | 발급 사용자가 member/admin이고 Agent 도구가 활성화되면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
+| Slack·Telegram·Teams | 연결한 Studio 사용자의 현재 member/admin 권한과 Agent 정책에 따라 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
 | Webhook | 현재 소유자가 실행 권한을 명시적으로 부여했고 member/admin이면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
-| Schedule | 개인 실행 문맥을 명시적으로 승인한 현재 소유자가 member/admin이면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
+| Schedule | 등록한 사용자의 현재 member/admin 등급과 Agent 접근이 유효하면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
 | Workspace 화면의 직접 작업·Git 검토 | 전용 API로 소유한 공간을 조작 | Agent가 만든 source Chat 연결이 있는 승인만 전달 |
 
-API token은 Agent 소유자로 인증하고 MCP에 소유자 email을 전달한다. 이것은 브라우저 사용자
+개인 API token은 발급 사용자 ID로 인증하고 MCP에 현재 사용자 email을 전달한다. 이것은 브라우저 사용자
 세션이나 SDK 승인 UI를 만들지는 않는다. Workspace 실행은 별도로 현재 member·Agent·저장소
 권한을 검사하고 별도 확인이 필요한 Git 승인 결정은 소유자의 Workspace 화면에서 받는다. Skill이나 system prompt로 이 경계를 바꾸지 않는다.
 

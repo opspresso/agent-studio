@@ -73,7 +73,7 @@ test.beforeEach(async ({ page }) => {
       return route.fulfill({ json: { channels: [{ id: "channel", name: `reports-${channelReads}` }] } });
     }
     if (path === `${prefix}/triggers`) return route.fulfill({ json: { triggers: [...["daily", "weekly"].map(triggerId => ({ agentName, triggerId,
-      kind: "schedule", enabled: true, allowConcurrent: false, cron: "0 9 * * *", timezone: "UTC", createdAt: at, updatedAt: at })), ...(webhook ? [webhook] : [])] } });
+      kind: "schedule", createdBy: { userId: "registrar-id", email: "scheduler@example.test" }, enabled: true, allowConcurrent: false, cron: "0 9 * * *", timezone: "UTC", createdAt: at, updatedAt: at })), ...(webhook ? [webhook] : [])] } });
     if (path === `${prefix}/triggers/webhook` && route.request().method() === "PUT") {
       const body = route.request().postDataJSON() as { runAsOwner: boolean };
       executionUpdates.push(body.runAsOwner);
@@ -186,4 +186,12 @@ test("schedule history can show its full page when one schedule supplies the new
   await page.goto(base);
   await page.getByRole("button", { name: "View history" }).nth(5).click();
   await expect(page.getByRole("table").getByRole("row")).toHaveCount(51);
+});
+
+
+test("schedules display their registering user without an owner delegation toggle", async ({ page }) => {
+  await page.goto(base);
+  await page.getByRole("button", { name: /Schedules/ }).first().click();
+  await expect(page.getByText("Registered by: scheduler@example.test")).toHaveCount(2);
+  await expect(page.getByRole("switch", { name: /^Run with my permissions/ })).toHaveCount(0);
 });

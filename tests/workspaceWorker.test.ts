@@ -1,3 +1,4 @@
+import { memberFixture } from "./memberFixture";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createFakeStore } from "./fakeStore";
 import * as store from "@/infrastructure/db/store";
@@ -231,7 +232,7 @@ describe("durable workspace worker", () => {
     const at = new Date(time).toISOString();
     await agents.update({ ...((await agents.get("demo"))!), telegram: { enabled: true, botToken: "fixture",
       webhookSecret: "fixture", executionEmail: owner }, updatedAt: at }, at);
-    deps.authorize = (agentName, email, actor, grant) => authorizeWorkspaceExecution({ agents,
+    deps.authorize = (agentName, email, actor, grant) => authorizeWorkspaceExecution({ agents, members: { getById: async id => memberFixture({ id, email: owner }) },
       triggers: { get: async () => null }, memberTier: async () => "member", backendReady: () => true,
       enabled: async () => true }, agentName, email, actor, grant);
     const first = await createWorkspaceUseCases(deps).start({ agentName: "demo", runtime: "command",
@@ -249,7 +250,7 @@ describe("durable workspace worker", () => {
     let grant: WebhookTrigger = { agentName: "demo", triggerId: "webhook", kind: "webhook", enabled: true,
       executionEmail: owner, description: "", secret: "encrypted-fixture", allowConcurrent: false,
       createdAt: new Date(time).toISOString(), updatedAt: new Date(time).toISOString() };
-    deps.authorize = (agentName, email, actor) => authorizeWorkspaceExecution({ agents,
+    deps.authorize = (agentName, email, actor) => authorizeWorkspaceExecution({ agents, members: { getById: async id => memberFixture({ id, email: owner }) },
       triggers: { get: async () => grant }, memberTier: async () => "member", backendReady: () => true,
       enabled: async () => true }, agentName, email, actor);
     const first = await createWorkspaceUseCases(deps).start({ agentName: "demo", runtime: "command",

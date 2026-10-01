@@ -63,7 +63,8 @@ export async function preparePullRequestReview(
   const executionTrigger = await deps.triggers.get(agentName, triggerId);
   const executionAgent = await deps.agents.get(agentName);
   if (!executionAgent) return { status: "skipped", reason: "Review Agent no longer exists." };
-  const issue = reviewSetupIssue(executionTrigger ?? {}, { ...executionAgent, configuration });
+  if (executionTrigger?.kind !== "webhook") return { status: "skipped", reason: "Review webhook no longer exists." };
+  const issue = reviewSetupIssue(executionTrigger, { ...executionAgent, configuration });
   if (issue) throw new Error(issue);
   const capturedEmail = executionTrigger?.executionEmail;
   const executionEmail = capturedEmail!;
@@ -71,7 +72,7 @@ export async function preparePullRequestReview(
     await checkOwnership?.();
     const current = await deps.triggers.get(agentName, triggerId);
     const agent = await deps.agents.get(agentName);
-    return current?.kind === "webhook" && current.enabled && current.executionEmail === executionEmail && agent?.ownerEmail === executionEmail &&
+    return current?.kind === "webhook" && current.enabled && current.executionEmail === executionEmail && agent !== null && agent.ownerEmail === executionEmail &&
       !reviewSetupIssue(current, agent) &&
       !!deps.executionUserActive && await deps.executionUserActive(executionEmail) && reviewAllowsRepository(current.githubReview, target.repository);
   }

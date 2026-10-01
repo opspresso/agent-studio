@@ -1566,6 +1566,8 @@ export const ko: Messages = {
   "webhook.reviewSave": "리뷰 설정 저장",
   "webhook.reviewSetupRequired": "PR 리뷰 설정이 완료되지 않았습니다",
   "webhook.reviewOwnerRequired": "PR 리뷰를 저장하기 전에 Agent 소유자가 내 권한으로 실행을 켜야 합니다. Agent 설정에서 Workspace 도구와 저장소 접근을 허용하고, Sandbox worker와 GitHub 연결을 준비하세요.",
+  "trigger.registeredBy": "등록자: {email}",
+  "trigger.registrationMissing": "등록자 없음 — 스케줄을 새로 등록하세요",
   "trigger.runAsOwner": "내 권한으로 실행",
   "integrations.runAsOwnerHint": "Agent 소유자만 켤 수 있습니다. 저장하면 인증된 봇 호출자가 소유자의 개인 도구와 Workspace를 사용할 수 있으며, 현재 멤버 권한과 Agent 정책을 적용합니다.",
   "trigger.runAsOwnerHint": "Agent 소유자만 켤 수 있습니다. 확인된 본인 신원으로 설정된 개인 도구와 Workspace를 사용하며, 현재 권한과 Agent 정책을 적용합니다.",

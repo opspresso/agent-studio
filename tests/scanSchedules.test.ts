@@ -1,3 +1,4 @@
+import { memberFixture } from "./memberFixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_CONCURRENT_SCHEDULE_SCANS,
@@ -67,7 +68,7 @@ function schedule(overrides: Partial<ScheduleTrigger> = {}): ScheduleTrigger {
   return {
     agentName: "p",
     triggerId: "nightly",
-    kind: "schedule",
+    kind: "schedule", createdBy: { userId: "registrar-id", email: "registrar@example.test" },
     description: "",
     enabled: true,
     // Due at 09:30 KST = 00:30 UTC, inside AT's catch-up window.
@@ -219,6 +220,7 @@ function fixture(
     claimed,
     runs,
     deps: {
+      members: { getById: async id => memberFixture({ id, email: "registrar@example.test" }) },
       triggers,
       agents: {
         get: async () => (opts.agentMissing ? null : { ...agent, configuration: opts.configuration === undefined ? configuration : opts.configuration ?? undefined }),
@@ -389,47 +391,80 @@ describe("scanSchedules", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("carries an explicitly authorized owner email without changing the schedule actor", async () => {
-    const f = fixture({ schedules: [schedule({ executionEmail: agent.ownerEmail })] });
-    f.deps.executionUserActive = async () => true;
-    let email: string | undefined;
+  it("runs as the registering user with their current email, independently of Agent ownership", async () => {
+    const f = fixture();
+    let received: Parameters<FiringDeps["run"]>[0] | undefined;
     const original = f.deps.run;
-    f.deps.run = async function* (input) { email = input.userEmail; yield* original(input); };
+    f.deps.run = async function* (input) { received = input; yield* original(input); };
     const result = await scanAndExecute(f);
     expect(result.summary.fired).toBe(1);
-    expect(email).toBe(agent.ownerEmail);
+    expect(received?.user).toEqual({ userId: "registrar-id", email: "registrar@example.test" });
+    expect(received?.userEmail).toBe("registrar@example.test");
     expect(f.runs[0]?.actorKind).toBe("schedule");
-    expect(toRunInput({ agent, configuration, messages: [], ownerEmail: email }).ownerEmail).toBe(email);
+    expect(toRunInput({ agent, configuration, messages: [], user: received?.user }).user).toEqual(received?.user);
+    expect(f.rows[0]?.userId).toBe("registrar-id");
   });
 
-  it("does not admit a schedule whose delegated user is inactive", async () => {
-    const f = fixture({ schedules: [schedule({ executionEmail: agent.ownerEmail })] });
-    f.deps.executionUserActive = async () => false;
+  it.each(["missing", "guest"])("refuses a %s registering account at admission", async state => {
+    const f = fixture();
+    f.deps.members.getById = async id => state === "missing" ? null : memberFixture({ id, tier: "guest" });
     const result = await scanAndExecute(f);
     expect(result.firings).toHaveLength(0);
     expect(f.runs).toHaveLength(0);
+    expect(f.rows[0]?.error).toContain("no longer authorized");
   });
 
-  it("rechecks ownership after admission and before dispatch", async () => {
-    const f = fixture({ schedules: [schedule({ executionEmail: agent.ownerEmail })] });
-    f.deps.executionUserActive = async () => true;
+  it("keeps the registering identity when the public Agent changes owner", async () => {
+    const f = fixture();
     const result = await scanSchedules(f.deps, AT);
-    expect(result.firings).toHaveLength(1);
-    f.deps.agents.get = async () => ({ ...agent, ownerEmail: "new-owner@example.com" });
+    f.deps.agents.get = async () => ({ ...agent, configuration, ownerEmail: "new-owner@example.com" });
+    const firing = result.firings[0]!;
+    await executeFiring(f.deps, firing, scheduleInput(firing.trigger));
+    expect(f.runs).toHaveLength(1);
+    expect(f.rows.at(-1)?.status).toBe("succeeded");
+  });
+
+  it("rechecks current private Agent access after admission and before dispatch", async () => {
+    const f = fixture();
+    const result = await scanSchedules(f.deps, AT);
+    f.deps.agents.get = async () => ({ ...agent, configuration, visibility: "private" });
     const firing = result.firings[0]!;
     await executeFiring(f.deps, firing, scheduleInput(firing.trigger));
     expect(f.runs).toHaveLength(0);
     expect(f.rows.at(-1)?.status).toBe("failed");
   });
-  it("refuses personal execution when its grant is removed after queue admission", async () => {
-    const f = fixture({ schedules: [schedule({ executionEmail: agent.ownerEmail })] });
-    f.deps.executionUserActive = async () => true;
+
+  it.each(["creator", "disabled", "changed-input"])("refuses a schedule changed after admission: %s", async change => {
+    const f = fixture();
     const { firings } = await scanSchedules(f.deps, AT);
-    f.deps.triggers.get = async () => schedule();
+    f.deps.triggers.get = async () => schedule(change === "creator"
+      ? { createdBy: { userId: "other-user", email: "registrar@example.test" } }
+      : change === "disabled" ? { enabled: false } : { updatedAt: AT.toISOString(), message: "changed" });
     const firing = firings[0]!;
     await executeFiring(f.deps, firing, scheduleInput(firing.trigger));
     expect(f.runs).toHaveLength(0);
     expect(f.rows.at(-1)?.status).toBe("failed");
+  });
+
+  it("does not infer the registering user from an email when the ID is absent", async () => {
+    const f = fixture({ schedules: [schedule({ createdBy: { userId: "", email: agent.ownerEmail } })] });
+    const result = await scanAndExecute(f);
+    expect(result.firings).toHaveLength(0);
+    expect(f.runs).toHaveLength(0);
+  });
+
+  it("does not deliver a report after the registering user's account is revoked", async () => {
+    const f = fixture({ schedules: [schedule({ deliveries: [{ kind: "slack", channelId: "C1" }] })] });
+    const send = vi.fn(async () => {});
+    f.deps.deliverReport = send;
+    f.deps.run = async function* () {
+      yield { delta: { content: "private report" } };
+      f.deps.members.getById = async () => null;
+      yield { done: true };
+    };
+    await scanAndExecute(f);
+    expect(send).not.toHaveBeenCalled();
+    expect(f.rows.at(-1)?.deliveryResults).toMatchObject([{ kind: "slack", status: "failed" }]);
   });
   it("claims a due occurrence, runs it as the schedule actor, and finishes the row", async () => {
     const f = fixture();

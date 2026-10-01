@@ -5,7 +5,7 @@ const f = vi.hoisted(() => ({ rows: [] as TriggerRun[] }));
 vi.mock("@/lib/session", () => ({ withAuth: (handler: (user: { email: string }, request: Request, context: unknown) => Promise<Response>) =>
   (request: Request, context: unknown) => handler({ email: "owner@example.test" }, request, context) }));
 vi.mock("@/lib/container", async () => ({ triggerUseCases:
-  (await import("@/application/trigger/triggerUseCases")).createTriggerUseCases({
+  (await import("@/application/trigger/triggerUseCases")).createTriggerUseCases({ members: { getById: async () => null },
     agents: { get: async () => ({ name: "agent", ownerEmail: "owner@example.test" }) } as never,
     triggers: { listRuns: async () => f.rows } as never, cipher: {} as never,
   }) }));

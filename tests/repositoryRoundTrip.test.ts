@@ -306,7 +306,7 @@ describe("triggerRepository messaging destination round-trip", () => {
     await triggerRepository.put({
       agentName: "destination-round-trip",
       triggerId: "daily",
-      kind: "schedule",
+      kind: "schedule", createdBy: { userId: "registrar-id", email: "registrar@example.test" },
       description: "",
       enabled: true,
       allowConcurrent: false,

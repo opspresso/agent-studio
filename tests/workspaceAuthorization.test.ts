@@ -1,7 +1,8 @@
+import { memberFixture } from "./memberFixture";
 import { describe, expect, it, vi } from "vitest";
 import type { Agent } from "@/domain/agent/types";
 import type { AgentRepository } from "@/domain/agent/repository";
-import type { WebhookTrigger } from "@/domain/trigger/types";
+import type { Trigger, WebhookTrigger } from "@/domain/trigger/types";
 import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
 
 const email = "owner@example.com";
@@ -12,8 +13,8 @@ const grant: WebhookTrigger = { agentName: "demo", triggerId: "webhook", kind: "
   createdAt: agent.createdAt, updatedAt: agent.updatedAt };
 
 function fixture() {
-  return { agents: { get: vi.fn(async () => agent) } as unknown as AgentRepository,
-    triggers: { get: vi.fn(async (): Promise<WebhookTrigger | null> => ({ ...grant })) },
+  return { members: { getById: vi.fn(async id => memberFixture({ id, email })) }, agents: { get: vi.fn(async () => agent) } as unknown as AgentRepository,
+    triggers: { get: vi.fn(async (): Promise<Trigger | null> => ({ ...grant })) },
     memberTier: vi.fn(async () => "member" as const), backendReady: vi.fn(() => true), enabled: vi.fn(async () => true) };
 }
 
@@ -48,6 +49,19 @@ describe("Workspace execution authorization", () => {
     const actor = { kind: failure === "wrong-kind" ? "schedule" as const : "webhook" as const,
       id: failure === "invalid-actor" ? "invalid" : "demo:webhook" };
     await expect(authorizeWorkspaceExecution(deps, "demo", email, actor)).rejects.toThrow("no longer authorized");
+  });
+  it("keeps a schedule's registering user for queued Workspace effects", async () => {
+    const deps = fixture();
+    const actor = { kind: "schedule" as const, id: "demo:daily" };
+    deps.triggers.get.mockResolvedValue({ kind: "schedule", agentName: "demo", triggerId: "daily", description: "",
+      enabled: true, allowConcurrent: false, createdBy: { userId: "registrar-id", email }, cron: "0 9 * * *", timezone: "UTC",
+      createdAt: agent.createdAt, updatedAt: agent.updatedAt });
+    await authorizeWorkspaceExecution(deps, "demo", email, actor);
+    expect(deps.members.getById).toHaveBeenCalledWith("registrar-id");
+    const deleted = { ...deps, members: { getById: async () => null } };
+    await expect(authorizeWorkspaceExecution(deleted, "demo", email, actor)).rejects.toThrow("no longer active");
+    const reassigned = { ...deps, members: { getById: async () => memberFixture({ id: "different-account", email }) } };
+    await expect(authorizeWorkspaceExecution(reassigned, "demo", email, actor)).rejects.toThrow("no longer active");
   });
   it("does not substitute a trigger grant for member access or Agent opt-in", async () => {
     const disabled = fixture(); disabled.enabled.mockResolvedValue(false);
