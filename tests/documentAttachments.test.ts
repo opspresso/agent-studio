@@ -4,6 +4,7 @@ import { documentContentParts } from "@/application/llm/documentParts";
 import { resolveMessageFiles } from "@/application/chat/resolveFiles";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { Artifact } from "@/domain/artifact/types";
+import { fakeArtifactContent } from "./fakeArtifactContent";
 import { MAX_DOCUMENT_BYTES, MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
 
 const ids = vi.hoisted(() => ({ next: 0 }));
@@ -19,6 +20,7 @@ function storage() {
   const rows = new Map<string, Artifact>();
   const blobs = new Map<string, Uint8Array>();
   const value: ArtifactStorage = {
+    content: fakeArtifactContent(),
     rows: {
       put: async (artifact) => { rows.set(artifact.artifactId, artifact); },
       get: async (id) => rows.get(id) ?? null,
@@ -49,7 +51,8 @@ describe("original document attachments", () => {
     const saved = storage();
     extractor.extract.mockRejectedValueOnce(new Error("unreadable first file"));
     const result = await prepareDocumentAttachments(extractor, saved.value, context, [document(), document()]);
-    expect(result.stored.map((entry) => entry.file?.artifactId?.slice(-1))).toEqual(["1", "2"]);
+    expect(result.stored.map((entry) => entry.file?.artifactId?.slice(-1))).toEqual(["1", "1"]);
+    expect(saved.rows.size).toBe(1);
     expect(result.stored.map((entry) => entry.text)).toEqual(["", "extracted text"]);
   });
 
@@ -59,7 +62,7 @@ describe("original document attachments", () => {
       .mockResolvedValueOnce({ text: "x".repeat(20_000) })
       .mockRejectedValueOnce(new Error("second file failed"));
     const result = await prepareDocumentAttachments(extractor, saved.value, context, Array.from({ length: 4 }, document));
-    expect(result.stored.map((entry) => entry.file?.artifactId?.slice(-1))).toEqual(["1", "2", "3", "4"]);
+    expect(result.stored.map((entry) => entry.file?.artifactId?.slice(-1))).toEqual(["1", "1", "1", "1"]);
     expect(result.stored.map((entry) => entry.text.length)).toEqual([20_000, 0, 20_000, 0]);
     expect(extractor.extract).toHaveBeenCalledTimes(3);
   });
@@ -103,12 +106,13 @@ describe("original document attachments", () => {
     const saved = storage();
     const input = { ...document(), file: { artifactId: "someone-else", key: "private/key", name: "stolen", mimeType: "text/plain" } };
     const result = await prepareDocumentAttachments(extractor, saved.value, context, Array.from({ length: MAX_DOCUMENTS + 1 }, () => input));
-    expect(saved.rows.size).toBe(MAX_DOCUMENTS);
+    expect(saved.rows.size).toBe(1);
+    expect(result.stored).toHaveLength(MAX_DOCUMENTS);
     expect(result.stored.every(({ file }) => file?.artifactId !== "someone-else")).toBe(true);
     expect(input.file.artifactId).toBe("someone-else");
     const oversized = await prepareDocumentAttachments(extractor, saved.value, context, [{ ...document(), bytes: new Uint8Array(MAX_DOCUMENT_BYTES + 1) }]);
     expect(oversized.stored).toEqual([]);
-    expect(saved.rows.size).toBe(MAX_DOCUMENTS);
+    expect(saved.rows.size).toBe(1);
   });
 
   it("resolves original downloads without exposing storage keys or mutating messages", async () => {

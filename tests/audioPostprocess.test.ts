@@ -32,6 +32,18 @@ function fixture(text = "Fact one.") {
 }
 
 describe("durable Agent postprocessing", () => {
+  it("reuses the readable transcript created during ASR and returns actual deduplicated output IDs", async () => {
+    const f = fixture();
+    f.job.dialogueRef = "existing-transcript";
+    f.deps.files.metadata = async () => ({ id: "existing-transcript" } as SourceFile);
+    const original = f.deps.files.import;
+    const imported = vi.spyOn(f.deps.files, "import").mockImplementation(async (input, open, signal) => {
+      const result = await original(input, open, signal);
+      return input.id === "job-summary" ? { ...result, id: "canonical-summary" } : result;
+    });
+    expect(await f.run(f.job, f.context)).toEqual({ draftRef: "job-draft", summaryRef: "canonical-summary", dialogueRef: "existing-transcript" });
+    expect(imported.mock.calls.some(([input]) => input.id === "job-dialogue")).toBe(false);
+  });
   it("passes speaker labels and timing to the summarizer without losing unsegmented text", async () => {
     const f = fixture("Fact one. Additional context.");
     const segments = [{ text: "Fact one.", speaker: "0:A", start: 0, end: 2 },
@@ -136,7 +148,7 @@ describe("durable Agent postprocessing", () => {
     expect(result.dialogueRef).toBe("job-dialogue");
     expect(new TextDecoder().decode(f.saved.get(result.dialogueRef))).toContain("**Unknown speaker:**");
     expect(new TextDecoder().decode(f.saved.get(result.summaryRef))).toBe("Summary");
-    expect(imported).toHaveBeenCalledWith(expect.objectContaining({ filename: "summary.md", mimeType: "text/markdown", derivedFrom: "transcript", producedBy: "writer" }), expect.any(Function), f.context.signal);
+    expect(imported).toHaveBeenCalledWith(expect.objectContaining({ filename: "file.summary.md", mimeType: "text/markdown", derivedFrom: "transcript", producedBy: "writer" }), expect.any(Function), f.context.signal);
   });
   it("inherits transcript expiry through extraction, reduction and final output", async () => {
     const f = fixture("Fact one. ".repeat(3000));

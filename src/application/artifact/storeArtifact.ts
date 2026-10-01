@@ -7,7 +7,9 @@ import { artifactObjectKey } from "@/domain/artifact/types";
 import type { Artifact, ArtifactKind, ArtifactSource } from "@/domain/artifact/types";
 import type { RunActor } from "@/domain/execution/actor";
 import type { SourceFile } from "@/domain/artifact/sourceFile";
-import { sourceFileObjectKey } from "@/domain/artifact/sourceFile";
+import { isSourceArtifact, sourceFileObjectKey } from "@/domain/artifact/sourceFile";
+import type { ArtifactContentRepository } from "@/domain/artifact/contentRepository";
+import { artifactContentKey, contentChecksum } from "./contentIdentity";
 import { cutCodePoints } from "@/shared/utf8Text";
 import { ConflictError, isTransactionCancelled } from "@/application/errors";
 
@@ -23,13 +25,14 @@ export const MAX_ARTIFACT_PROMPT_CHARS = 500;
 
 /** Index an already stored private file without copying its bytes or extending retention. */
 export async function registerSourceArtifact(rows: ArtifactRepository, file: SourceFile): Promise<void> {
-  if (file.status !== "ready" || file.derived?.kind === "checkpoint") return;
+  if (file.status !== "ready" || !isSourceArtifact(file)) return;
   try { await rows.put({ artifactId: file.id, privateFileId: file.id, retireAt: file.retireAt,
     ...(file.derivedFrom ? { derivedFrom: file.derivedFrom } : {}), ...(file.model ? { model: file.model } : {}),
     producedBy: file.producedBy ?? file.agentName,
     kind: file.mimeType.startsWith("audio/") ? "audio" : "document",
     source: file.derived ? "generated" : "attachment", key: sourceFileObjectKey(file.id),
     mimeType: file.mimeType, filename: file.filename, byteSize: file.byteSize!,
+    checksum: file.checksum,
     agentName: file.agentName, ownerEmail: file.userEmail,
     createdAt: file.storedAt ?? file.createdAt }); }
   catch (error) {
@@ -42,6 +45,7 @@ export async function registerSourceArtifact(rows: ArtifactRepository, file: Sou
 export interface ArtifactStorage {
   rows: ArtifactRepository;
   objects: ArtifactObjectStore;
+  content: ArtifactContentRepository;
 }
 
 /** What the run already knows, bound once by the bracket that opened it. */
@@ -90,7 +94,6 @@ export async function storeArtifact(
 ): Promise<Artifact> {
   const artifactId = input.artifactId ?? createArtifactId();
   const key = artifactObjectKey(input.kind, artifactId, input.mimeType);
-  await storage.objects.put({ key, bytes: input.bytes, mimeType: input.mimeType });
   const prompt = input.prompt ? cutCodePoints(input.prompt, MAX_ARTIFACT_PROMPT_CHARS) : undefined;
   const artifact: Artifact = {
     artifactId,
@@ -101,6 +104,7 @@ export async function storeArtifact(
     mimeType: input.mimeType,
     ...(input.filename ? { filename: input.filename } : {}),
     byteSize: input.bytes.byteLength,
+    checksum: contentChecksum(input.bytes),
     agentName: context.agentName,
     ...(context.actor ? { actor: context.actor } : {}),
     ...(context.ownerEmail ? { ownerEmail: context.ownerEmail } : {}),
@@ -111,6 +115,27 @@ export async function storeArtifact(
     ...(prompt ? { prompt } : {}),
     createdAt: new Date().toISOString(),
   };
-  await storage.rows.put(artifact);
-  return artifact;
+  const contentKey = artifactContentKey(artifact, artifact.checksum!);
+  return storage.content.exclusive(contentKey, async () => {
+    const occupied = await storage.rows.get(artifactId);
+    if (occupied) {
+      if (!occupied.checksum || occupied.checksum !== artifact.checksum || artifactContentKey(occupied, occupied.checksum) !== contentKey) {
+        throw new ConflictError("Artifact identity already contains different content");
+      }
+      await storage.content.put(contentKey, { id: occupied.artifactId, kind: "artifact" });
+      return occupied;
+    }
+    const reference = await storage.content.get(contentKey);
+    const existing = reference?.kind === "artifact" ? await storage.rows.get(reference.id) : null;
+    if (existing) {
+      if (input.artifactId && input.artifactId !== existing.artifactId) {
+        await storage.rows.put({ ...existing, artifactId: input.artifactId, canonicalArtifactId: existing.artifactId });
+      }
+      return existing;
+    }
+    await storage.objects.put({ key, bytes: input.bytes, mimeType: input.mimeType });
+    await storage.rows.put(artifact);
+    await storage.content.put(contentKey, { id: artifactId, kind: "artifact" });
+    return artifact;
+  });
 }

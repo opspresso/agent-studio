@@ -9,6 +9,7 @@ import { MAX_TRANSCRIPT_BYTES } from "./transcribeFile";
 import type { AudioTranscript } from "./transcribeFile";
 import { renderDialogue } from "./dialogue";
 import { validateTranscription } from "@/domain/llm/transcription";
+import { savedFileName } from "@/domain/artifact/types";
 
 const INPUT_CHARS = 16_000;
 const OUTPUT_CHARS = 6_000;
@@ -149,26 +150,26 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
     await record("saving", 0, 0, 3);
     const bytes = new TextEncoder().encode(JSON.stringify(final));
     const id = `${job.id}-draft`;
-    await deps.files.import({ id, agentName: job.agentName, userEmail: job.userEmail,
+    const draft = await deps.files.import({ id, agentName: job.agentName, userEmail: job.userEmail,
       filename: "result.json", mimeType: "application/json", retention: job.retention, retainUntil: file.file.retireAt,
       derivedFrom: job.transcriptRef, model: job.postprocess.configuration.model, producedBy: job.postprocess.agentName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield bytes; })(), context.signal);
     await record("saving", 0, 1, 3);
-    const summaryRef = `${job.id}-summary`;
-    await deps.files.import({ id: summaryRef, agentName: job.agentName, userEmail: job.userEmail,
-      filename: "summary.md", mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
+    const title = file.file.filename.replace(/(?:\.transcript)?\.json$/, "");
+    const summary = await deps.files.import({ id: `${job.id}-summary`, agentName: job.agentName, userEmail: job.userEmail,
+      filename: savedFileName(`${title}.summary.md`, "text/markdown"), mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
       derivedFrom: job.transcriptRef, model: job.postprocess.configuration.model, producedBy: job.postprocess.agentName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield new TextEncoder().encode(final.text); })(), context.signal);
     await record("saving", 0, 2, 3);
-    const dialogueRef = `${job.id}-dialogue`;
-    await deps.files.import({ id: dialogueRef, agentName: job.agentName, userEmail: job.userEmail,
-      filename: "dialogue.md", mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
+    const dialogue = job.dialogueRef ? await deps.files.metadata(job.agentName, job.dialogueRef, job.userEmail)
+      : await deps.files.import({ id: `${job.id}-dialogue`, agentName: job.agentName, userEmail: job.userEmail,
+      filename: savedFileName(`${title}.transcript.md`, "text/markdown"), mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
       derivedFrom: job.transcriptRef, model: transcript.model, producedBy: job.postprocess.agentName,
-      derived: { jobId: job.id, kind: "draft" } },
+      derived: { jobId: job.id, kind: "transcript" } },
     async () => (async function* () { yield new TextEncoder().encode(renderDialogue(transcript)); })(), context.signal);
     await record("saving", 0, 3, 3);
-    return { draftRef: id, summaryRef, dialogueRef };
+    return { draftRef: draft.id, summaryRef: summary.id, dialogueRef: dialogue.id };
   };
 }

@@ -21,6 +21,22 @@ function fixture() {
   return { deps, input, api: createAudioJobUseCases(deps) };
 }
 describe("audio job use cases", () => {
+  it("resolves a readable transcript to its private JSON for resummarization and rejects a foreign input", async () => {
+    const f = fixture();
+    const email = "owner@example.test";
+    const raw: SourceFile = { id: "raw", agentName: "audio", userEmail: email, filename: "meeting.transcript.json",
+      mimeType: "application/json", derived: { jobId: "prior", kind: "transcript" }, status: "ready", revision: 1,
+      createdAt: f.deps.now().toISOString(), retireAt: "2026-12-09T00:00:00.000Z", retention: f.input.retention! };
+    const readable = { ...raw, id: "readable", mimeType: "text/markdown", filename: "meeting.transcript.md", derivedFrom: raw.id };
+    f.deps.files.get = async (_agent, id) => id === readable.id ? readable : id === raw.id ? raw : null;
+    const input: SubmitAudioJobInput = { task: "postprocess", source: { kind: "file", fileId: readable.id },
+      postprocess: { agentName: "writer" }, retention: f.input.retention };
+    await f.api.submit("audio", email, input, { occurrence: "first" });
+    expect((await jobs.get("audio", "job-1"))?.source).toEqual({ kind: "file", fileId: raw.id, agentName: "audio" });
+    expect(input.source).toEqual({ kind: "file", fileId: readable.id });
+    raw.userEmail = "other@example.test";
+    await expect(f.api.submit("audio", email, input, { occurrence: "second" })).rejects.toMatchObject({ status: 404 });
+  });
   it("keeps completed history but withdraws deleted or expired output links, including duplicate submissions", async () => {
     const f = fixture();
     const email = "owner@example.test";
@@ -28,7 +44,7 @@ describe("audio job use cases", () => {
     await f.api.submit("audio", email, f.input, { occurrence: "first" });
     const claimed = await jobs.claim("audio", "job-1", now, "worker", "2026-09-09T00:02:00Z");
     await jobs.checkpoint(claimed!, { status: "completed", stage: "cleaning", dueAt: now,
-      fileId: "original", transcriptRef: "transcript", summaryRef: "summary" }, now);
+      fileId: "original", transcriptRef: "internal-json", dialogueRef: "transcript", summaryRef: "summary" }, now);
     const file: SourceFile = { id: "original", agentName: "audio", userEmail: email, filename: "recording.mp3",
       mimeType: "audio/mpeg", status: "ready", revision: 1, createdAt: now,
       retireAt: "2026-12-09T00:00:00Z", retention: f.input.retention! };
@@ -53,7 +69,7 @@ describe("audio job use cases", () => {
     expect(await f.api.list("audio", email, 20)).toEqual([expect.objectContaining(expected)]);
     expect(await f.api.submit("audio", email, f.input, { occurrence: "again" }))
       .toMatchObject({ status: "duplicate", job: expected });
-    expect(await jobs.get("audio", "job-1")).toMatchObject({ status: "completed", transcriptRef: "transcript" });
+    expect(await jobs.get("audio", "job-1")).toMatchObject({ status: "completed", transcriptRef: "internal-json", dialogueRef: "transcript" });
     f.deps.files.get = async () => { throw new Error("file store unavailable"); };
     await expect(f.api.get("audio", "job-1", email)).rejects.toThrow("file store unavailable");
   });
@@ -84,17 +100,20 @@ describe("audio job use cases", () => {
       createdAt: now, retireAt: "2026-12-09T00:00:00Z", retention: f.input.retention!,
       derived: { kind: "transcript", jobId: "prior" } };
     const draft = { ...transcript, id: "draft", agentName: "audio", userEmail: "someone-else@example.test" };
+    const readable = { ...transcript, id: "readable", agentName: "audio", mimeType: "text/markdown" };
     f.deps.files.get = vi.fn(async (agent, id) =>
-      agent === transcript.agentName && id === transcript.id ? transcript : agent === "audio" && id === "draft" ? draft : null);
+      agent === transcript.agentName && id === transcript.id ? transcript : agent === "audio" && id === "draft" ? draft
+        : agent === "audio" && id === "readable" ? readable : null);
     await f.api.submit("audio", email, { task: "postprocess", source: { kind: "file", agentName: "transcriber", fileId: "transcript" },
       postprocess: { agentName: "writer" }, retention: f.input.retention }, { occurrence: "summary" });
     const claimed = await jobs.claim("audio", "job-1", now, "worker", "2026-09-09T00:02:00Z");
     await jobs.checkpoint(claimed!, { status: "completed", stage: "cleaning", dueAt: now,
-      fileId: "transcript", transcriptRef: "transcript", draftRef: "draft" }, now);
+      fileId: "transcript", transcriptRef: "transcript", draftRef: "draft", summaryRef: "draft", dialogueRef: "readable" }, now);
     const result = await f.api.get("audio", "job-1", email);
-    expect(result.artifacts).toEqual({ source: "transcript", transcript: "transcript" });
-    expect(result.unavailableArtifacts).toEqual({ processed: "missing", structured: "missing" });
-    expect(result.artifactLinks).toEqual({ source: "/api/artifacts/transcript/download", transcript: "/api/artifacts/transcript/view" });
+    expect(result.artifacts).toEqual({ transcript: "readable" });
+    expect(result.unavailableArtifacts).toEqual({ processed: "missing" });
+    expect(result.artifactLinks).toEqual({ transcript: "/api/artifacts/readable/view" });
+    expect(f.deps.files.get).toHaveBeenCalledWith("transcriber", "transcript");
   });
   it("allows only the owner to delete terminal history and keeps source files intact", async () => {
     const f = fixture();

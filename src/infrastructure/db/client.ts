@@ -4,6 +4,7 @@ import { log } from "@/shared/logger";
 
 let pool: Pool | undefined;
 let readinessPool: Pool | undefined;
+let contentLockPool: Pool | undefined;
 
 const READINESS_DB_TIMEOUT_MS = 2000;
 
@@ -89,11 +90,35 @@ export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>)
   }
 }
 
+/** Storage locks use their own small pool so waiting uploads cannot exhaust the item-store pool. */
+export async function withContentLock<T>(contentKey: string, operation: () => Promise<T>): Promise<T> {
+  if (!contentLockPool) {
+    contentLockPool = new Pool({ connectionString: config.databaseUrl, max: 4, idleTimeoutMillis: 30_000 });
+    contentLockPool.on("error", (error) => log.error("db", "idle content lock error", error));
+  }
+  const client = await contentLockPool.connect();
+  let broken: Error | undefined;
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))", ["artifact-content", contentKey]);
+    const result = await operation();
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK").catch((failure: unknown) => {
+      broken = failure instanceof Error ? failure : new Error(String(failure));
+    });
+    throw error;
+  } finally { client.release(broken); }
+}
+
 /** Test seam and shutdown hook: drop the pool so the next call builds a new one. */
 export async function closePool(): Promise<void> {
   const current = pool;
   const currentReadiness = readinessPool;
+  const currentContentLocks = contentLockPool;
   pool = undefined;
   readinessPool = undefined;
-  await Promise.all([current?.end(), currentReadiness?.end()]);
+  contentLockPool = undefined;
+  await Promise.all([current?.end(), currentReadiness?.end(), currentContentLocks?.end()]);
 }

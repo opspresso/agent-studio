@@ -11,6 +11,8 @@ import { CreateBucketCommand, DeleteBucketCommand, ListObjectsV2Command } from "
 import { assertLocalDatabase } from "./local-database";
 import { withCheckLifecycle, type RegisterCheckCleanup } from "./check-lifecycle";
 import { sourceFileObjectKey } from "@/domain/artifact/sourceFile";
+import { isSourceArtifact } from "@/domain/artifact/sourceFile";
+import { sourceContentKey } from "@/application/artifact/contentIdentity";
 import type { ArtifactUseCases } from "@/application/artifact/artifactUseCases";
 
 async function main() {
@@ -145,6 +147,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
 
   const { getAudioRuntime, mcpUseCases, artifactUseCases } = await import("@/lib/container");
   const { artifactRepository } = await import("@/infrastructure/db/repositories/artifactRepository");
+  const { sourceFileRepository } = await import("@/infrastructure/db/repositories/sourceFileRepository");
   const { getS3Client, deleteStoredObject } = await import("@/infrastructure/storage/s3ObjectStore");
   const { agentRepository } = await import("@/infrastructure/db/repositories/agentRepository");
   const { getLlmProviderConfigs } = await import("@/lib/runtime-settings");
@@ -194,6 +197,10 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   cleanup(async () => {
     await withCheckLifecycle(async remove => {
       for (const fileId of sourceFileIds) {
+        const metadata = await sourceFileRepository.get(agentName, fileId);
+        if (metadata?.checksum && isSourceArtifact(metadata)) {
+          remove(() => deleteItem(keys.artifactContent(sourceContentKey(metadata, metadata.checksum!))));
+        }
         remove(() => artifactRepository.delete(fileId));
         remove(() => deleteItem(keys.sourceFile(fileId)));
       }
@@ -227,6 +234,10 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   const retention = { unit: "months" as const, value: 3, timezone: "Asia/Seoul" };
   const file = await runtime.files.import({ id: randomUUID(), agentName, userEmail: email,
     filename: "source.mp3", mimeType: "audio/mpeg", retention }, async () => (async function* () { yield bytes; })());
+  const repeated = await Promise.all(Array.from({ length: 6 }, () => runtime.files.import({ id: randomUUID(), agentName,
+    userEmail: email, filename: "repeated.mp3", mimeType: "audio/mpeg", retention },
+  async () => (async function* () { yield bytes; })())));
+  assert.ok(repeated.every(value => value.id === file.id && value.retireAt === file.retireAt), "repeated uploads reuse the original file and lifetime");
   const input = { task: "process" as const, source: { kind: "file" as const, fileId: file.id }, model: `openai/${asrWireId}`, retention,
     postprocess: { agentName },
     ...(memoryUrl ? { destination: { serverName: memoryName, documents: true, memories: true } } : {}) };
@@ -276,10 +287,11 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   }
   assert.ok(completed.summaryRef); assert.ok(completed.dialogueRef); assert.ok(completed.draftRef);
   const finalIds = [file.id, completed.transcriptRef, completed.draftRef, completed.summaryRef, completed.dialogueRef];
+  const visibleIds = [file.id, completed.summaryRef, completed.dialogueRef];
   assert.ok(artifactUseCases);
   const artifacts = await artifactUseCases.listMine(email, { limit: 100 });
-  assert.deepEqual(artifacts.filter((a) => a.agentName === agentName).map((a) => a.artifactId).sort(), [...finalIds].sort());
-  for (const id of finalIds) {
+  assert.deepEqual(artifacts.filter((a) => a.agentName === agentName).map((a) => a.artifactId).sort(), [...visibleIds].sort());
+  for (const id of visibleIds) {
     const result: Awaited<ReturnType<ArtifactUseCases["readPrivateFile"]>> = await artifactUseCases.readPrivateFile(id, email);
     assert.equal(result.artifact.retireAt, file.retireAt);
     assert.ok(result.bytes.length);

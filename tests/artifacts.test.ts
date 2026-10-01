@@ -64,6 +64,25 @@ afterEach(() => {
 });
 
 describe("private artifact persistence", () => {
+  it("excludes legacy processing JSON before pagination while retaining user-facing JSON", async () => {
+    const readable = artifact({ artifactId: "readable", kind: "document", mimeType: "text/markdown" });
+    const userJson = artifact({ artifactId: "user-json", kind: "document", mimeType: "application/json" });
+    store.seed([row(readable), row(userJson), ...Array.from({ length: 50 }, (_, i) => row({ artifactId: `internal-${i}`,
+      createdAt: createdPlus(i + 1), kind: "document", mimeType: "application/json", privateFileId: `private-${i}` }))]);
+    const listed = await artifactRepository.listByOwner("bruce@daangn.com", { limit: 2 });
+    expect(listed.map(value => value.artifactId).sort()).toEqual(["readable", "user-json"]);
+    expect((await artifactRepository.get("internal-0"))?.privateFileId).toBe("private-0");
+  });
+  it("keeps reserved IDs readable while listing only the canonical file", async () => {
+    const canonical = artifact({ checksum: "hash" });
+    await artifactRepository.put(canonical);
+    await artifactRepository.put({ ...canonical, artifactId: "reserved-alias", canonicalArtifactId: canonical.artifactId });
+    expect(await artifactRepository.get("reserved-alias")).toEqual(canonical);
+    expect(await artifactRepository.listByAgent(canonical.agentName)).toEqual([canonical]);
+    expect(await artifactRepository.listByOwner("bruce@daangn.com")).toEqual([canonical]);
+    await artifactRepository.delete(canonical.artifactId);
+    expect(await artifactRepository.get("reserved-alias")).toBeNull();
+  });
   it("round-trips the private file address and excludes it once source retention expires", async () => {
     const stored = artifact({ kind: "audio", privateFileId: "source-id", retireAt: "2026-08-13T00:00:00.000Z" });
     store.seed([{ ...keys.agent(stored.agentName), entityType: "AGENT" },

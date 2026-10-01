@@ -126,12 +126,13 @@ describe("resumable file transcription", () => {
     const f = fixture();
     const imported = vi.spyOn(f.deps.files, "import");
     await createAudioTranscriptionStep(f.deps)(f.job, f.context);
-    expect(imported).toHaveBeenCalledTimes(3);
+    expect(imported).toHaveBeenCalledTimes(4);
     expect(imported.mock.calls.every(([input]) => input.retainUntil === "2026-12-08T00:00:00.000Z")).toBe(true);
   });
   it("combines source-relative timing while keeping speaker labels scoped to each request", async () => {
     const f = fixture();
-    expect(await createAudioTranscriptionStep(f.deps)(f.job, f.context)).toEqual({ transcriptRef: "job-1-transcript" });
+    expect(await createAudioTranscriptionStep(f.deps)(f.job, f.context)).toEqual({ transcriptRef: "job-1-transcript", dialogueRef: "job-1-dialogue" });
+    expect(new TextDecoder().decode(f.saved.get("job-1-dialogue"))).toContain("**0:A (00:00:00.000–00:00:01.000):**");
     const result = JSON.parse(new TextDecoder().decode(f.saved.get("job-1-transcript")));
     expect(result.text).toBe("안녕\n안녕");
     expect(result.segments).toEqual([

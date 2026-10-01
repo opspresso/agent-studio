@@ -1429,6 +1429,39 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     await artifactRepository.delete(artifactIds[0]!);
     pass("artifacts: agent + owner indexes, sparse owner index, kind filter, idempotent delete");
 
+    // ---------- content deduplication (real PostgreSQL locks, aliases and deletion) ----------
+    {
+      const { storeArtifact } = await import("@/application/artifact/storeArtifact");
+      const { artifactContentKey, contentChecksum } = await import("@/application/artifact/contentIdentity");
+      const { artifactContentRepository: content } = await import("@/infrastructure/db/repositories/artifactContentRepository");
+      const { createArtifactUseCases } = await import("@/application/artifact/artifactUseCases");
+      const bytes = new TextEncoder().encode(`deduplication fixture ${suffix}`);
+      const context = { agentName, ownerEmail: "it@example.com" };
+      const input = { kind: "document" as const, source: "generated" as const, mimeType: "text/plain", bytes };
+      let writes = 0;
+      let deletes = 0;
+      const storage = { rows: artifactRepository, content, objects: {
+        put: async () => { writes++; }, delete: async () => { deletes++; }, sign: async () => "unused",
+        read: async () => ({ bytes, mimeType: input.mimeType }),
+      } };
+      const contentKey = artifactContentKey({ ...context, ...input }, contentChecksum(bytes));
+      cleanup(() => deleteItem(dbKeys.artifactContent(contentKey)));
+      const ids = Array.from({ length: 12 }, (_, index) => `dedup-${index}-${suffix}`);
+      for (const id of [...ids, `dedup-replacement-${suffix}`]) cleanup(() => artifactRepository.delete(id));
+      const stored = await Promise.all(ids.map(artifactId => storeArtifact(storage, context, { ...input, artifactId })));
+      assert.equal(writes, 1, "concurrent content saves perform one object write");
+      assert.equal(new Set(stored.map(row => row.artifactId)).size, 1);
+      for (const id of ids) assert.equal((await artifactRepository.get(id))?.artifactId, stored[0]!.artifactId);
+      assert.equal((await artifactRepository.listByAgent(agentName, { limit: 100 })).filter(row => ids.includes(row.artifactId)).length, 1);
+      const api = createArtifactUseCases(artifactRepository, storage.objects, agentRepository);
+      await api.remove(ids[11]!, context.ownerEmail);
+      assert.equal(deletes, 1);
+      for (const id of ids) assert.equal(await artifactRepository.get(id), null);
+      await storeArtifact(storage, context, { ...input, artifactId: `dedup-replacement-${suffix}` });
+      assert.equal(writes, 2, "a deleted canonical file is not reused");
+      pass("artifacts: SHA-256 deduplication across concurrent writes, reserved-ID aliases and canonical deletion");
+    }
+
     // ---------- transact lock modes (a checked key does not serialise) ----------
     // A `check` op asserts something elsewhere is still live; the exclusive
     // lock it used to take made every usage row, trace and agent write in a

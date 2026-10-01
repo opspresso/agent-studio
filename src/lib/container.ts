@@ -49,6 +49,7 @@ import { createTranscriber } from "@/infrastructure/llm/transcription";
 import { createDiarizer } from "@/infrastructure/llm/diarization";
 import { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { registerSourceArtifact } from "@/application/artifact/storeArtifact";
+import { artifactContentRepository } from "@/infrastructure/db/repositories/artifactContentRepository";
 import { createSourceReferenceUseCases } from "@/application/audio/sourceReferences";
 import { createAudioJobUseCases, type SubmitAudioJobInput } from "@/application/audio/audioJobUseCases";
 import { createAudioTool } from "@/application/audio/audioTool";
@@ -273,7 +274,7 @@ setAuditSink(auditRepository);
  * takes when this deployment has the capability catalog disabled.
  */
 const artifactStorage = isObjectStoreConfigured()
-  ? { rows: artifactRepository, objects: withArtifactAccessMode(artifactObjectStore) }
+  ? { rows: artifactRepository, objects: withArtifactAccessMode(artifactObjectStore), content: artifactContentRepository }
   : undefined;
 
 /**
@@ -1143,7 +1144,7 @@ async function sourceRefreshIdentity(input: Parameters<NonNullable<ExecutionDeps
 export function getAudioRuntime() {
   const bucket = config.objectBucketName;
   if (!bucket) throw new ValidationError("S3_BUCKET_NAME is not configured");
-  const files = createSourceFileUseCases({ files: sourceFileRepository, objects: createSourceObjectStore(bucket), now: () => new Date(),
+  const files = createSourceFileUseCases({ files: sourceFileRepository, objects: createSourceObjectStore(bucket), content: artifactContentRepository, now: () => new Date(),
     assertWritable: async () => {
       if (await getArtifactAccessMode() === "public") throw new ValidationError("Private Artifacts require authenticated or proxied storage access");
     },

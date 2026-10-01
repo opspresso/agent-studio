@@ -491,6 +491,7 @@ Members의 선택 목록과 Profile 한도도 같은 설정을 읽는다. guest 
 | 턴당 입력 이미지 수 / 이미지당 바이트(입력·생성·MCP) | `4` / `5 MiB` | `src/domain/llm/imageLimits.ts` |
 | PDF에 삽입하는 PNG의 총 디코딩 픽셀 | `16,777,216` | `src/domain/llm/imageLimits.ts`의 `MAX_PDF_IMAGE_PIXELS` |
 | 앱 프로세스당 문서 워커 동시 실행 / 대기 작업 | `2` / `8` | `src/infrastructure/documents/workerPool.ts` |
+| 앱 프로세스당 파일 내용 중복 저장 lock 전용 PostgreSQL 연결 | `4` | `src/infrastructure/db/client.ts`. 일반 DB pool과 분리해 대기 업로드가 DB 읽기·쓰기를 막지 않는다 |
 | 문서 작업 기한 (대기 포함) / 자식 V8 old-space | `30s` / `256MiB` | `src/infrastructure/documents/workerPool.ts` |
 | 문서 생성 Markdown / 편집 요청 JSON 문자 예산 | `500,000` 자 | `src/infrastructure/documents/engine/limits.ts`, `workerPool.ts` |
 | Office ZIP 엔트리 / 전체 전개 / 단일 엔트리 / 압축비 | `2,000` / `100 MiB` / `25 MiB` / `1,000` | `src/infrastructure/documents/engine/limits.ts` |

@@ -42,6 +42,10 @@ describe("private files in the Artifact inventory", () => {
     expect(f.objects.put).not.toHaveBeenCalled();
     await registerSourceArtifact(f.rows, { ...file, id: "scratch", derived: { jobId: "job", kind: "checkpoint" } });
     expect(await f.rows.get("scratch")).toBeNull();
+    for (const kind of ["transcript", "draft"] as const) {
+      await registerSourceArtifact(f.rows, { ...file, id: kind, mimeType: "application/json", derived: { jobId: "job", kind } });
+      expect(await f.rows.get(kind)).toBeNull();
+    }
   });
   it("never invokes a public signer for a private file, even without regular artifact storage", async () => {
     const f = fixture(); await registerSourceArtifact(f.rows, file);

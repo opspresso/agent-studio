@@ -3,7 +3,7 @@ import type { SourceFile } from "@/domain/artifact/sourceFile";
 import { AudioJobStepError, type AudioJobProcessorDeps } from "./processJob";
 
 /** Only scratch checkpoints are retired; final artifacts survive external copies. */
-export function createAudioCleanup(deps: SourceFileDeps): AudioJobProcessorDeps["clean"] {
+export function createAudioCleanup(deps: Pick<SourceFileDeps, "files" | "objects" | "now">): AudioJobProcessorDeps["clean"] {
   return async (job, context) => {
     const kinds: NonNullable<SourceFile["derived"]>["kind"][] = ["checkpoint"];
     for (const kind of kinds) {

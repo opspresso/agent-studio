@@ -110,7 +110,9 @@
 |---|---|---|
 | Agent 의 client ID 메타데이터 문서가 서빙되는 주소 | `src/application/mcp/mcpAuthUseCases.ts` 의 `clientMetadataUrl`. 여기서 어긋나는 것은 명세상 치명적이다: 문서 자신의 `client_id` 가 그것을 가져온 URL 과 다르면 authorization server 는 거부한다 | 구조 |
 | artifact 행을 어떻게 쓰는가 | `src/application/artifact/storeArtifact.ts` | 구조 |
-| 비공개 파일의 Artifact 등록과 원본 보존 기한 연결 | `src/application/artifact/storeArtifact.ts`의 `registerSourceArtifact`. 바이트 복사 없이 `privateFileId`로 연결하며 checkpoint를 제외한다 | 구조 |
+| 비공개 파일의 Artifact 등록과 원본 보존 기한 연결 | `src/application/artifact/storeArtifact.ts`의 `registerSourceArtifact`. 바이트 복사 없이 `privateFileId`로 연결하며 `domain/artifact/sourceFile.ts`의 `isSourceArtifact`가 checkpoint·처리용 JSON을 제외한다 | 구조 |
+| 파일 내용 해시와 소유자·Agent·형식·보존 정책별 중복 범위 | `src/application/artifact/contentIdentity.ts`. SHA-256으로 내용을 비교하고 이름·작업 ID는 중복 판정에 쓰지 않는다 | 구조 |
+| 동시 파일 저장 직렬화와 내용 인덱스 | `domain/artifact/contentRepository.ts`의 포트와 `infrastructure/db/repositories/artifactContentRepository.ts`. DB lock 전용 pool은 `infrastructure/db/client.ts`가 소유한다 | 구조 |
 | artifact 가 저장되는 오브젝트 키 | `src/domain/artifact/types.ts` 의 `artifactObjectKey` | 구조 |
 | 비공개 파일의 오브젝트 키·경로 판정 | `src/domain/artifact/sourceFile.ts`의 `sourceFileObjectKey`·`isSourceFileObjectKey`. 일반 object 접근 거절은 `domain/artifact/objectStore.ts`의 `assertNotPrivateFileKey` | 구조 |
 | 파일의 달력 일·월 보존 기간과 월말·DST 만료 계산 | `src/application/artifact/fileRetention.ts` 의 `fileExpiresAt`. 시간대 해석은 기존 `domain/trigger/cron.ts`의 `wallClock`을 사용한다 | 구조 |

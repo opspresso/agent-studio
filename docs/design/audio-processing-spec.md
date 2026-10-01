@@ -43,7 +43,7 @@ Agent가 다양한 출처의 파일을 보관하고, 오디오를 지정 모델�
 | 역할 | 호출과 산출물 |
 | --- | --- |
 | 운영 Agent | skill을 읽고 `AudioJob list/status`의 task·sourceIdentity·Artifact 관계로 진행 상태를 확인한다. 새 녹음은 Agent 설정으로 한 작업을 제출한다 |
-| worker | 보관·전사·후처리를 이어가며 원본·전사·summary.md·dialogue.md·구조화 JSON을 비공개 Artifact로 저장한다 |
+| worker | 보관·전사·후처리를 이어가며 원본·읽기용 전사·요약을 비공개 Artifact로 저장하고 처리용 JSON은 내부 파일로 보관한다 |
 | 후처리 실행 | 같은 Agent의 접수 시점 설정을 `backgroundTask`로 실행한다. Skill 읽기만 제공하므로 새 작업 제출·MCP 쓰기·하위 Agent 호출은 수행하지 않는다 |
 | 요청한 기록 | 같은 운영 Agent가 `File read` 후 연결된 MCP의 document_ingest 또는 remember를 호출한다. 개인 scope와 동일한 idempotencyKey를 사용한다 |
 
@@ -208,9 +208,11 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 파일도 입력으로 사용할 수 있다. 접수 시 실제 파일 위치로 고정하고 양쪽 Agent의 소유 권한을
 확인한다. worker와 각 전사 요청에서도 원본 Agent 권한을 재확인하며 바이트는 복사하지 않는다.
 파생 Artifact는 입력의 만료를 상속하고 `derivedFrom`·`model`로 원본과 생성 모델을 기록한다.
-후처리 결과는 구조화 JSON과 `summary.md`로 각각 보관한다. `artifacts.processed`는 읽기용
-Markdown, `artifacts.structured`는 원문 근거와 경고가 포함된 JSON Artifact ID다.
-`artifacts.dialogue`는 `dialogue.md`다. ASR이 제공한 구간·화자 라벨·시간만 표시하고,
+전사·후처리의 구조화 JSON은 재요약·근거 검증·Memory 저장용 내부 파일로 보관한다.
+`artifacts.processed`는 `<원본명>.summary.md`, `artifacts.transcript`는 `<원본명>.transcript.md`다.
+전사 단계에서 읽기용 Markdown을 만들고 후처리는 같은 파일을 재사용한다. 전사 전용 작업에도
+전사문이 제공된다. 이 전사 Artifact로 재요약을 요청하면 내부 JSON을 권한·만료 검증 후 읽는다.
+ASR이 제공한 구간·화자 라벨·시간만 표시하고,
 누락된 화자는 미상으로 표시한다. 구간별 화자 라벨을 같은 인물로 합치거나 실명을 추정하지 않는다.
 구간 목록이 불완전해도 전체 전사문을 함께 보존한다. 대화 내용의 Markdown·HTML은 문자 그대로 표시한다.
 
@@ -401,9 +403,15 @@ retention은 `{unit: days | months, value, timezone}`으로 설정하고 최초 
 설치 환경의 임시 volume 정책으로 보완한다. 복제·백업에도 파일 보존 정책을 적용한다.
 
 원본과 파생 파일은 각각 inventory를 가지며 파생 파일의 만료는 입력보다 늦지 않다. 전사·후처리 checkpoint는 성공 후 cleaning 단계에서 정리한다.
-원본·전사문·후처리 결과는 각각 저장된 비공개 파일을 그대로 참조해 Artifact 목록에 등록한다.
+원본·읽기용 전사문·요약은 저장된 비공개 파일을 그대로 참조해 Artifact 목록에 등록한다.
+처리용 전사·결과 JSON은 등록하지 않으며 기존에 등록된 내부 JSON도 목록에서 제외한다.
 외부 문서·Memory 저장은 복사이며 최종 Artifact를 지우거나 보존 기간을 연장하지 않는다.
-checkpoint는 목록에 공개하지 않는다. Artifact 다운로드·미리보기·삭제는 원본 파일 소유자와
+checkpoint는 목록에 공개하지 않는다. 새 원본·최종 파일은 512 MiB 상한 안에서 비공개 임시
+파일에 SHA-256을 계산한 뒤 내용 인덱스를 확인한다. 동일 소유자·Agent·MIME·파일 역할·보존 정책·
+상속 만료의 파일이 유효하면 기존 파일을 재사용하며 최초 이름·보존 기한을 연장하지 않는다.
+내용별 PostgreSQL lock으로 동시 저장을 직렬화하고 만료·삭제 파일은 재사용하지 않는다.
+정상 완료·실패·취소 시 hash 계산용 임시 파일을 정리한다.
+Artifact 다운로드·미리보기·삭제는 원본 파일 소유자와
 현재 Agent 권한을 확인한다. 일반 Artifact의 읽기·쓰기·삭제·URL 발급과 bearer URL 조회는
 `source-files/` 키를 거절한다. 파일 상태·보존 기한 확인과 Artifact 등록은 같은 transaction으로
 보호하므로 삭제와 경합한 등록이 목록을 되살리지 않는다.
@@ -450,7 +458,7 @@ owner 변경·삭제 시 worker를 중단하고 object 정리를 완료/예약�
   접수하려면 두 접수 한도를 필요한 큐 크기로 설정한다. 한도를 늘려도 Agent 내 실제 실행은 한 건씩이다.
 - 지정 Transcription 모델로 MP3를 전사하고 `meeting-minutes` skill로 후처리한다.
   결정·할 일·미결·담당자·기한·근거 검수는 이 skill과 Agent schema가 결정한다.
-- 전사 JSON·summary.md·dialogue.md를 Artifact에 보관한다. 사용자 요청이 있을 때만 선택한 문서를
+- 읽기용 전사문·요약을 Artifact에 보관하고 전사·결과 JSON은 내부 파일로 유지한다. 사용자 요청이 있을 때만 선택한 문서를
   Agent Memory Documents에, 원문 근거가 있는 내용을 Memory에 기록한다. 기존 MCP 연결과 검증된
   본인 email 문맥으로 개인 scope에 저장하며, 자동 수집 cron은 외부 저장을 호출하지 않는다.
 - 이 사례의 MP3는 MinIO에 보관하고 retention을 `{unit: months, value: 3, timezone: Asia/Seoul}`로 지정한다.

@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeStore } from "./fakeStore";
 import { keys } from "@/infrastructure/db/keys";
 import { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
+import { fakeArtifactContent } from "./fakeArtifactContent";
+import { SourceObjectExistsError } from "@/domain/artifact/sourceObjectStore";
 import type { SourceObjectStore } from "@/domain/artifact/sourceObjectStore";
 import { ValidationError } from "@/application/errors";
 import { createAudioCleanup } from "@/application/audio/cleanup";
@@ -18,9 +20,10 @@ let objects: SourceObjectStore;
 const input = { id: "file-1", agentName: "audio", userEmail: "owner@example.test", filename: "audio.mp3",
   mimeType: "audio/mpeg", retention: { unit: "months" as const, value: 3, timezone: "Asia/Seoul" } };
 const open = vi.fn(async function* () { yield new Uint8Array([1, 2, 3]); });
-const useCases = () => createSourceFileUseCases({ files, objects, now: () => clock });
+let content = fakeArtifactContent();
+const useCases = () => createSourceFileUseCases({ files, objects, content, now: () => clock });
 beforeEach(() => {
-  vi.clearAllMocks(); fake.rows.clear(); fake.seed([
+  content = fakeArtifactContent(); vi.clearAllMocks(); fake.rows.clear(); fake.seed([
     { ...keys.agent("audio"), entityType: "AGENT" }, { ...keys.agent("other"), entityType: "AGENT" },
   ]);
   clock = new Date("2026-11-30T01:00:00.000Z"); contents = new Map();
@@ -29,6 +32,7 @@ beforeEach(() => {
       const chunks: Uint8Array[] = [];
       for await (const part of body) chunks.push(part);
       const bytes = Buffer.concat(chunks);
+      if (contents.has(key)) throw new SourceObjectExistsError();
       contents.set(key, { bytes, mimeType, storedAt: clock.toISOString() });
       return { byteSize: bytes.length, checksum: createHash("sha256").update(bytes).digest("hex") };
     }),
@@ -43,9 +47,45 @@ beforeEach(() => {
 const openBody = async () => open();
 
 describe("private source file lifecycle", () => {
+  it("never indexes different bytes under a checksum when uploads race on one immutable file ID", async () => {
+    const api = useCases();
+    const first = new Uint8Array([1, 2, 3]);
+    const second = new Uint8Array([4, 5, 6]);
+    const body = (bytes: Uint8Array) => async () => (async function* () { yield bytes; })();
+    const raced = await Promise.allSettled([api.import(input, body(first)), api.import(input, body(second))]);
+    expect(raced.some(result => result.status === "fulfilled")).toBe(true);
+    for (const [index, bytes] of [first, second].entries()) {
+      const file = await api.import({ ...input, id: `verified-${index}` }, body(bytes));
+      expect((await api.read(file.agentName, file.id, file.userEmail)).bytes).toEqual(Buffer.from(bytes));
+    }
+    expect(contents.size).toBe(2);
+  });
+  it("stores identical concurrent uploads once and preserves the first file's name and expiry", async () => {
+    const api = useCases();
+    const [first, second] = await Promise.all([
+      api.import(input, openBody),
+      api.import({ ...input, id: "duplicate", filename: "another-title.mp3" }, openBody),
+    ]);
+    expect(second).toEqual(first);
+    expect(objects.write).toHaveBeenCalledTimes(1);
+    expect(contents.size).toBe(1);
+    expect(await files.get(input.agentName, first.id === input.id ? "duplicate" : input.id)).toBeNull();
+    clock = new Date(clock.getTime() + 1000);
+    expect((await api.import({ ...input, id: "again" }, openBody)).retireAt).toBe(first.retireAt);
+  });
+  it("does not share files across owners or retention policies and replaces a removed canonical file", async () => {
+    const api = useCases();
+    const first = await api.import(input, openBody);
+    await api.import({ ...input, id: "owner-2", userEmail: "other@example.test" }, openBody);
+    await api.import({ ...input, id: "retention-2", retention: { ...input.retention, value: 2 } }, openBody);
+    expect(objects.write).toHaveBeenCalledTimes(3);
+    await api.remove(input.agentName, first.id, input.userEmail);
+    expect((await api.import({ ...input, id: "replacement" }, openBody)).id).toBe("replacement");
+    expect(objects.write).toHaveBeenCalledTimes(4);
+  });
   it("stores and publishes a provider title with the audio extension", async () => {
     const publish = vi.fn(async () => {});
-    const api = createSourceFileUseCases({ files, objects, now: () => clock, publish });
+    const api = createSourceFileUseCases({ files, objects, content, now: () => clock, publish });
     const file = await api.import({ ...input, filename: "주간 회의" }, openBody);
     expect(file.filename).toBe("주간 회의.mp3");
     expect((await files.get("audio", input.id))?.filename).toBe("주간 회의.mp3");
@@ -53,7 +93,7 @@ describe("private source file lifecycle", () => {
   });
 
   it("validates shared storage before opening a source or creating inventory", async () => {
-    const api = createSourceFileUseCases({ files, objects, now: () => clock,
+    const api = createSourceFileUseCases({ files, objects, content, now: () => clock,
       assertWritable: async () => { throw new ValidationError("Private storage required"); } });
     await expect(api.import(input, openBody)).rejects.toMatchObject({ status: 400 });
     expect(open).not.toHaveBeenCalled();
@@ -82,7 +122,7 @@ describe("private source file lifecycle", () => {
   });
   it("retries artifact publication without downloading the completed file again", async () => {
     const publish = vi.fn().mockRejectedValueOnce(new Error("inventory unavailable")).mockResolvedValue(undefined);
-    const api = createSourceFileUseCases({ files, objects, now: () => clock, publish });
+    const api = createSourceFileUseCases({ files, objects, content, now: () => clock, publish });
     await expect(api.import(input, openBody)).rejects.toThrow("inventory unavailable");
     const file = await api.import(input, openBody);
     expect(file.status).toBe("ready");

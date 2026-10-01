@@ -5,6 +5,8 @@ import { validateSpeakerTimeline, type DiarizationPort, type SpeakerTimeline } f
 import { validateTranscription, type TranscriptionPort, type TranscriptionResult, type TranscriptSegment } from "@/domain/llm/transcription";
 import type { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { AudioJobStepError, type AudioJobStepContext } from "./processJob";
+import { renderDialogue } from "./dialogue";
+import { savedFileName } from "@/domain/artifact/types";
 
 export const MAX_TRANSCRIPT_BYTES = 10 * 1024 * 1024;
 
@@ -72,7 +74,7 @@ function parseSegment(bytes: Uint8Array, expected: Omit<StoredSegment, "result">
 
 /** Each segment is an immutable file, so retrying a later stage never repeats successful ASR. */
 export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
-  return async (job: AudioJob, context: AudioJobStepContext): Promise<{ transcriptRef: string }> => {
+  return async (job: AudioJob, context: AudioJobStepContext): Promise<{ transcriptRef: string; dialogueRef: string }> => {
     if (!job.fileId) throw new AudioJobStepError("missing_file", false);
     const source = await deps.files.read(audioSourceAgent(job), job.fileId, job.userEmail, undefined, context.signal);
     if (!source.file.checksum) throw new AudioJobStepError("missing_checksum", false);
@@ -167,11 +169,17 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
     const bytes = new TextEncoder().encode(JSON.stringify(output));
     if (bytes.length > MAX_TRANSCRIPT_BYTES) throw new AudioJobStepError("transcript_limit", false);
     const id = `${job.id}-transcript`;
-    await deps.files.import({ id, agentName: job.agentName, userEmail: job.userEmail,
-      filename: "transcript.json", mimeType: "application/json", retention: job.retention, retainUntil: source.file.retireAt,
+    const title = source.file.filename.replace(/\.[^.]+$/, "");
+    const raw = await deps.files.import({ id, agentName: job.agentName, userEmail: job.userEmail,
+      filename: savedFileName(`${title}.transcript.json`, "application/json"), mimeType: "application/json", retention: job.retention, retainUntil: source.file.retireAt,
       derivedFrom: job.fileId, model: job.model, producedBy: job.producedBy,
       derived: { jobId: job.id, kind: "transcript" } },
     async () => (async function* () { yield bytes; })(), context.signal);
-    return { transcriptRef: id };
+    const readable = await deps.files.import({ id: `${job.id}-dialogue`, agentName: job.agentName, userEmail: job.userEmail,
+      filename: savedFileName(`${title}.transcript.md`, "text/markdown"), mimeType: "text/markdown", retention: job.retention,
+      retainUntil: raw.retireAt, derivedFrom: raw.id, model: job.model, producedBy: job.producedBy,
+      derived: { jobId: job.id, kind: "transcript" } },
+    async () => (async function* () { yield new TextEncoder().encode(renderDialogue(output)); })(), context.signal);
+    return { transcriptRef: raw.id, dialogueRef: readable.id };
   };
 }
