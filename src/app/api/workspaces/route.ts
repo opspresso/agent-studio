@@ -13,7 +13,7 @@ export const POST = withAuth(async (user, request: Request) => {
   const parsed = startWorkspaceSchema.safeParse(body);
   if (!parsed.success) return invalidRequest(parsed.error);
   try {
-    const result = await workspaceUseCases.start(parsed.data, user.email, request.headers.get("idempotency-key") ?? "");
+    const result = await workspaceUseCases.start(parsed.data, { userId: user.id, email: user.email }, request.headers.get("idempotency-key") ?? "");
     return Response.json(result satisfies StartWorkspaceResponse, { status: 202 });
   } catch (error) { return apiError(error); }
 });

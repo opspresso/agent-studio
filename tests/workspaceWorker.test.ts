@@ -84,7 +84,7 @@ afterEach(() => {
 async function start(runtime: "command" | "codex" = "command") {
   const api = createWorkspaceUseCases(deps);
   const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime }, owner);
-  const run = await api.enqueue(workspace.id, owner, runtime === "command" ? { kind: "command", script: "echo task" } : { kind: "task", prompt: "do task" }, "request-0001");
+  const run = await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, runtime === "command" ? { kind: "command", script: "echo task" } : { kind: "task", prompt: "do task" }, "request-0001");
   return { api, workspace, run };
 }
 
@@ -234,13 +234,13 @@ describe("durable workspace worker", () => {
     await agents.update({ ...current, telegram: { enabled: true, botToken: "fixture", webhookSecret: "fixture" } }, current.updatedAt);
     let linked = true;
     const grant = { kind: "telegram" as const, agentName: "demo", realm: "telegram", externalId: "1", userId: "caller-id", email: owner };
-    deps.authorize = (agentName, email, actor, executionGrant) => authorizeWorkspaceExecution({ apiCredentials: { authorize: async () => null }, agents,
+    deps.authorize = (agentName, email, actor, executionGrant, user) => authorizeWorkspaceExecution({ apiCredentials: { authorize: async () => null }, agents,
       messagingIdentities: { resolve: async () => linked ? { userId: "caller-id", email: owner } : null },
       webhookCredentials: { authorize: async () => null }, members: { getById: async id => memberFixture({ id, email: owner }) },
-      triggers: { get: async () => null }, memberTier: async () => "member", backendReady: () => true, enabled: async () => true }, agentName, email, actor, executionGrant);
+      triggers: { get: async () => null }, memberTier: async () => "member", backendReady: () => true, enabled: async () => true }, agentName, email, actor, executionGrant, user);
     const first = await createWorkspaceUseCases(deps).start({ agentName: "demo", runtime: "command",
       actor: { kind: "telegram", id: "1" }, executionGrant: grant,
-      input: { kind: "command", script: "echo task" } }, owner, "messaging-0001");
+      input: { kind: "command", script: "echo task" } }, { userId: grant.userId, email: owner }, "messaging-0001");
     expect((await repository.run(first.workspace.id, first.run.id))?.executionGrant).toEqual(grant);
     expect(first.run).not.toHaveProperty("executionGrant");
     linked = false;
@@ -252,13 +252,13 @@ describe("durable workspace worker", () => {
   it("refuses a queued API task after its personal token is revoked", async () => {
     let current = true;
     const grant = { kind: "agent-token" as const, agentName: "demo", userId: "api-user", email: owner, credentialId: "api-token" };
-    deps.authorize = (agentName, email, actor, executionGrant) => authorizeWorkspaceExecution({ agents,
+    deps.authorize = (agentName, email, actor, executionGrant, user) => authorizeWorkspaceExecution({ agents,
       apiCredentials: { authorize: async () => current ? { userId: grant.userId, email: owner, credentialId: grant.credentialId } : null },
       messagingIdentities: { resolve: async () => null }, webhookCredentials: { authorize: async () => null },
       members: { getById: async id => memberFixture({ id, email: owner }) }, triggers: { get: async () => null },
-      memberTier: async () => "member", backendReady: () => true, enabled: async () => true }, agentName, email, actor, executionGrant);
+      memberTier: async () => "member", backendReady: () => true, enabled: async () => true }, agentName, email, actor, executionGrant, user);
     const first = await createWorkspaceUseCases(deps).start({ agentName: "demo", runtime: "command", executionGrant: grant,
-      actor: { kind: "agent-token", id: owner }, input: { kind: "command", script: "echo task" } }, owner, "api-0001");
+      actor: { kind: "agent-token", id: owner }, input: { kind: "command", script: "echo task" } }, { userId: grant.userId, email: owner }, "api-0001");
     expect((await repository.run(first.workspace.id, first.run.id))?.executionGrant).toEqual(grant);
     current = false;
     await processWorkspace(deps, first.workspace.id);
@@ -270,11 +270,11 @@ describe("durable workspace worker", () => {
       description: "", allowConcurrent: false, createdAt: new Date(time).toISOString(), updatedAt: new Date(time).toISOString() };
     const identity = webhookCredentialFixture("demo", "fixture-token", owner);
     const grant = { kind: "webhook" as const, agentName: "demo", triggerId: "webhook", ...identity.principal };
-    deps.authorize = (agentName, email, actor, executionGrant) => authorizeWorkspaceExecution({ apiCredentials: { authorize: async () => null }, messagingIdentities: { resolve: async () => null }, agents, webhookCredentials: identity.credentials,
+    deps.authorize = (agentName, email, actor, executionGrant, user) => authorizeWorkspaceExecution({ apiCredentials: { authorize: async () => null }, messagingIdentities: { resolve: async () => null }, agents, webhookCredentials: identity.credentials,
       members: { getById: async id => memberFixture({ id, email: owner }) }, triggers: { get: async () => webhook },
-      memberTier: async () => "member", backendReady: () => true, enabled: async () => true }, agentName, email, actor, executionGrant);
+      memberTier: async () => "member", backendReady: () => true, enabled: async () => true }, agentName, email, actor, executionGrant, user);
     const first = await createWorkspaceUseCases(deps).start({ agentName: "demo", runtime: "command", executionGrant: grant,
-      actor: { kind: "webhook", id: "demo:webhook" }, input: { kind: "command", script: "echo task" } }, owner, "webhook-0001");
+      actor: { kind: "webhook", id: "demo:webhook" }, input: { kind: "command", script: "echo task" } }, { userId: grant.userId, email: owner }, "webhook-0001");
     expect((await repository.run(first.workspace.id, first.run.id))?.executionGrant).toEqual(grant);
     expect(first.run).not.toHaveProperty("executionGrant");
     identity.revoke();
@@ -292,20 +292,36 @@ describe("durable workspace worker", () => {
     expect((await repository.run(workspace.id, run.id))?.error).toContain("Member access revoked");
   });
 
+  it.each(["deleted", "replaced"] as const)("refuses a queued task when its captured account is %s", async mode => {
+    const { workspace, run } = await start();
+    const lookUp = vi.fn(async () => mode === "deleted" ? null : memberFixture({ id: "replacement-user", email: owner }));
+    deps.authorize = (agentName, email, actor, executionGrant, user) => authorizeWorkspaceExecution({
+      agents, members: { getById: lookUp }, apiCredentials: { authorize: async () => null },
+      messagingIdentities: { resolve: async () => null }, webhookCredentials: { authorize: async () => null },
+      triggers: { get: async () => null }, memberTier: async () => "member", backendReady: () => true, enabled: async () => true,
+    }, agentName, email, actor, executionGrant, user);
+    await processWorkspace(deps, workspace.id);
+    expect(lookUp).toHaveBeenCalledWith(run.user.userId);
+    expect(provider.ensure).not.toHaveBeenCalled();
+    expect(provider.start).not.toHaveBeenCalled();
+    expect(await repository.run(workspace.id, run.id)).toMatchObject({ status: "failed", user: run.user,
+      error: expect.stringContaining("no longer active") });
+  });
+
   it("retains the queued integration actor through execution, then attributes a console follow-up separately", async () => {
     const api = createWorkspaceUseCases(deps);
     const actor = { kind: "slack" as const, id: "U1" };
     const first = await api.start({ agentName: "demo", runtime: "command", actor,
-      input: { kind: "command", script: "echo task" } }, owner, "external-0001");
+      input: { kind: "command", script: "echo task" } }, { userId: "studio-user-1", email: owner }, "external-0001");
     const seen: unknown[] = [];
     deps.execute = async (_workspace, work, executionActor) => { seen.push(executionActor); await work(); };
     await processWorkspace(deps, first.workspace.id);
     expect((await repository.run(first.workspace.id, first.run.id))?.status).toBe("succeeded");
     expect(seen).toEqual([actor]);
-    const next = await api.enqueue(first.workspace.id, owner, { kind: "command", script: "echo console" }, "console-0001");
+    const next = await api.enqueue(first.workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "echo console" }, "console-0001");
     await processWorkspace(deps, first.workspace.id);
     expect((await repository.run(first.workspace.id, next.id))?.status).toBe("succeeded");
-    expect(seen).toEqual([actor, undefined]);
+    expect(seen).toEqual([actor, { kind: "user", id: owner }]);
   });
 
   it("rechecks asynchronous repository access before provisioning a queued Git task", async () => {
@@ -314,13 +330,13 @@ describe("durable workspace worker", () => {
     deps.policy = async () => policy;
     const api = createWorkspaceUseCases(deps);
     const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "New repository", runtime: "codex", repository: "company/new", baseBranch: "main" }, owner);
-    const run = await api.enqueue(workspace.id, owner, { kind: "task", prompt: "Implement feature" }, "request-0001");
+    const run = await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "Implement feature" }, "request-0001");
     policy = { ...policy, mode: "owners", repositoryOwners: [] };
     await processWorkspace(deps, workspace.id);
     expect((await repository.run(workspace.id, run.id))?.status).toBe("failed");
     expect(provider.ensure).not.toHaveBeenCalled();
     expect(provider.start).not.toHaveBeenCalled();
-    await expect(api.enqueue(workspace.id, owner, { kind: "task", prompt: "Try again" }, "request-0002")).rejects.toMatchObject({ status: 409 });
+    await expect(api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "Try again" }, "request-0002")).rejects.toMatchObject({ status: 409 });
   });
   it("informs each native coding turn about the enforced Git approval boundary", async () => {
     policy.repositories = ["company/repo"];
@@ -330,7 +346,7 @@ describe("durable workspace worker", () => {
     deps.coding = vi.fn(() => coding);
     const api = createWorkspaceUseCases(deps);
     const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Git work", runtime: "codex", repository: "company/repo", baseBranch: "main" }, owner);
-    await api.enqueue(workspace.id, owner, { kind: "task", prompt: "Commit and push the changes" }, "request-0001");
+    await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "Commit and push the changes" }, "request-0001");
     await processWorkspace(deps, workspace.id);
     const command = vi.mocked(provider.start).mock.calls[0]![2];
     expect(command.stdin).toContain("/control/git is intentionally protected");
@@ -379,7 +395,7 @@ describe("durable workspace worker", () => {
     await processWorkspace(deps, workspace.id);
     expect(checkpointRows.size).toBe(0);
     expect((await repository.get(workspace.id))?.status).toBe("closed");
-    await expect(api.enqueue(workspace.id, owner, { kind: "command", script: "resume" }, "deleted-request")).rejects.toMatchObject({ status: 404 });
+    await expect(api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "resume" }, "deleted-request")).rejects.toMatchObject({ status: 404 });
   });
   it("runs a general task, saves output and checkpoint before releasing the run", async () => {
     const { workspace, run } = await start();
@@ -397,7 +413,7 @@ describe("durable workspace worker", () => {
     const { api, workspace } = await start("codex");
     await processWorkspace(deps, workspace.id);
     expect((await repository.session(workspace.id, workspace.sessionId))?.nativeSessionId).toBe("native-session");
-    const next = await api.enqueue(workspace.id, owner, { kind: "task", prompt: "follow up" }, "request-0002");
+    const next = await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "follow up" }, "request-0002");
     await processWorkspace(deps, workspace.id);
     expect(provider.ensure).toHaveBeenCalledTimes(1);
     expect(operations.get(next.id)?.command.argv).toContain("native-session");
@@ -420,7 +436,7 @@ describe("durable workspace worker", () => {
     await processWorkspace(deps, workspace.id);
     expect((await repository.get(workspace.id))?.status).toBe("suspended");
     expect(provider.destroy).toHaveBeenCalledTimes(1);
-    await api.enqueue(workspace.id, owner, { kind: "command", script: "continue" }, "request-0002");
+    await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "continue" }, "request-0002");
     await processWorkspace(deps, workspace.id);
     expect(provider.restore).toHaveBeenCalledTimes(1);
     expect(provider.ensure).toHaveBeenCalledTimes(2);
@@ -443,7 +459,7 @@ describe("durable workspace worker", () => {
     await api.close(workspace.id, owner);
     await processWorkspace(deps, workspace.id);
     expect((await repository.get(workspace.id))?.status).toBe("closed");
-    const next = await api.enqueue(workspace.id, owner, { kind: "command", script: "continue finished work" }, "request-0002");
+    const next = await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "continue finished work" }, "request-0002");
     expect(next.sessionId).toBe(workspace.sessionId);
     await processWorkspace(deps, workspace.id);
     expect(provider.restore).toHaveBeenCalledTimes(1);
@@ -453,7 +469,7 @@ describe("durable workspace worker", () => {
     const { api, workspace } = await start();
     await processWorkspace(deps, workspace.id);
     time += 20_000; vi.setSystemTime(time);
-    await api.enqueue(workspace.id, owner, { kind: "command", script: "continue" }, "request-0002");
+    await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "continue" }, "request-0002");
     expect((await chats.get("chat-1"))?.updatedAt).toBe(new Date(time).toISOString());
     await processWorkspace(deps, workspace.id);
     expect((await repository.session(workspace.id, workspace.sessionId))?.updatedAt).toBe(new Date(time).toISOString());
@@ -582,7 +598,7 @@ describe("durable workspace worker", () => {
   it.each(["reclaimed", "renewal-failed", "shutdown"] as const)("starts no further sandbox effects after %s during inspection", async reason => {
     const { api, workspace } = await start();
     await processWorkspace(deps, workspace.id);
-    const run = await api.enqueue(workspace.id, owner, { kind: "command", script: "next" }, "request-0002");
+    const run = await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "next" }, "request-0002");
     deps.now = () => new Date();
     deps.runTimeoutMs = WORKSPACE_LEASE_MS * 3;
     const entered = Promise.withResolvers<void>();
@@ -636,7 +652,7 @@ describe("durable workspace worker", () => {
     const { api, workspace } = await start("codex");
     await processWorkspace(deps, workspace.id);
     const checkpointId = (await repository.get(workspace.id))!.checkpointId;
-    const next = await api.enqueue(workspace.id, owner, { kind: "task", prompt: "continue" }, "request-0002");
+    const next = await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "continue" }, "request-0002");
     const originalOutput = vi.mocked(provider.output).getMockImplementation()!;
     let lost = false;
     vi.mocked(provider.output).mockImplementationOnce(async () => { lost = true; throw new Error("Pod connection lost"); });
@@ -656,7 +672,7 @@ describe("durable workspace worker", () => {
     lost = false;
     vi.mocked(provider.inspect).mockResolvedValueOnce(lostStatus);
     vi.mocked(provider.output).mockImplementation(originalOutput);
-    await api.enqueue(workspace.id, owner, { kind: "task", prompt: "recover" }, "request-0003");
+    await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "recover" }, "request-0003");
     await processWorkspace(deps, workspace.id);
     expect(provider.restore).toHaveBeenCalledWith(expect.any(String), new Uint8Array([1, 2, 3]));
     expect((await repository.session(workspace.id, workspace.sessionId))?.nativeSessionId).toBe("native-session");
@@ -671,7 +687,7 @@ describe("durable workspace worker", () => {
     await repository.write({ expectedRevision: current.revision, workspace: { ...current, revision: current.revision + 1 },
       session: { ...session, nativeSessionId: "uncheckpointed-session" } });
     existing.clear();
-    await api.enqueue(workspace.id, owner, { kind: "task", prompt: "recover" }, "request-0002");
+    await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "recover" }, "request-0002");
     await processWorkspace(deps, workspace.id);
     const command = vi.mocked(provider.start).mock.calls.at(-1)![2];
     expect(command.argv).toContain("native-session");
@@ -684,7 +700,7 @@ describe("durable workspace worker", () => {
     expect((await repository.get(workspace.id))!.checkpointId).toBeUndefined();
     expect((await repository.session(workspace.id, workspace.sessionId))!.nativeSessionId).toBe("native-session");
     existing.clear();
-    const requested = await api.enqueue(workspace.id, owner, { kind: "task", prompt: "new request" }, "request-0002");
+    const requested = await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "new request" }, "request-0002");
     await processWorkspace(deps, workspace.id);
     expect(vi.mocked(provider.start).mock.calls.at(-1)![2].argv).not.toContain("resume");
     expect((await repository.events(workspace.id, requested.id, 0, 20)).some(event =>

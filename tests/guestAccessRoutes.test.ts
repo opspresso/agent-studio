@@ -106,11 +106,11 @@ describe("guest console access", () => {
   it("permits guest Workspace lifecycle requests using only the session owner", async () => {
     expect((await options.GET()).status).toBe(200);
     expect((await workspace.POST(request("POST", { agentName: "demo", runtime: "command", input: { kind: "command", script: "echo hello" } }))).status).toBe(202);
-    expect(f.start).toHaveBeenCalledWith(expect.any(Object), "guest@example.test", "request-123");
+    expect(f.start).toHaveBeenCalledWith(expect.any(Object), { userId: "guest-1", email: "guest@example.test" }, "request-123");
     expect((await detail.GET(request(), context)).status).toBe(200);
     expect((await events.GET(request(), context)).status).toBe(200);
     expect((await runs.POST(request("POST", { kind: "command", script: "echo next" }), context)).status).toBe(202);
-    expect(f.enqueue).toHaveBeenCalledWith("workspace-1", "guest@example.test", expect.any(Object), "request-123");
+    expect(f.enqueue).toHaveBeenCalledWith("workspace-1", { userId: "guest-1", email: "guest@example.test" }, expect.any(Object), "request-123");
     expect((await runs.DELETE(request("DELETE"), context)).status).toBe(204);
     expect((await detail.DELETE(request("DELETE"), context)).status).toBe(204);
     expect(f.cancel).toHaveBeenCalledWith("workspace-1", "guest@example.test");

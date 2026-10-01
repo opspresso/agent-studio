@@ -1050,7 +1050,7 @@ export const executionDeps: ExecutionDeps = {
     const caller = workspaceCaller(origin);
     if (!caller || !getWorkspaceConfig() || !await workspaceRepositoryPolicyUseCases.enabled(agentName)) return undefined;
     const email = caller.ownerEmail;
-    const authorize = () => authorizeWorkspaceTools(email, agentName, caller.actor, caller.executionGrant);
+    const authorize = () => authorizeWorkspaceTools(email, agentName, caller.actor, caller.executionGrant, caller.user);
     if (!await optionalToolAccessible(authorize)) return undefined;
     const agent = await agentRepository.get(agentName);
     const gitEnabled = !!agent && !!config.workspaceGitHub && await agentGitHubCredentials.configured(agent);
@@ -1366,7 +1366,7 @@ export async function runAudioWorkerService(signal: AbortSignal): Promise<void> 
 const workspaceDeps: WorkspaceDeps = {
   repository: workspaceRepository, chats: chatRepository, agents: agentRepository,
   policy: getWorkspaceAgentPolicy,
-  authorize: (agentName, email, actor, grant) => authorizeWorkspaceTools(email, agentName, actor, grant),
+  authorize: (agentName, email, actor, grant, user) => authorizeWorkspaceTools(email, agentName, actor, grant, user),
   assertRuntime: async kind => { if (!await getWorkspaceRuntimeConfig(kind)) throw new ValidationError("Select a Workspace runtime model in Models before starting work"); },
   now: () => new Date(), newId: randomUUID,
   checkRepository: (agentName, repository, baseBranch, sourceRevision) =>
@@ -1389,11 +1389,11 @@ export const workspaceRepositoryCreationUseCases = createWorkspaceRepositoryCrea
   forge: agentName => agentCodingGitHub(agentName).forge,
 });
 
-async function authorizeWorkspaceTools(email: string, agentName: string, actor?: RunActor, grant?: import("@/domain/execution/actor").ExecutionGrant): Promise<void> {
+async function authorizeWorkspaceTools(email: string, agentName: string, actor?: RunActor, grant?: import("@/domain/execution/actor").ExecutionGrant, user?: import("@/domain/execution/actor").RunUser): Promise<void> {
   await authorizeWorkspaceExecution({ apiCredentials: apiTokenUseCases, messagingIdentities: messagingIdentityUseCases, agents: agentRepository, triggers: triggerRepository, memberTier: getMemberTier, webhookCredentials: webhookTokenUseCases,
     members: { getById: getExecutionMemberById },
     backendReady: () => !!getWorkspaceConfig(), enabled: name => workspaceRepositoryPolicyUseCases.enabled(name),
-  }, agentName, email, actor, grant);
+  }, agentName, email, actor, grant, user);
 }
 
 function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps & { coding: NonNullable<WorkspaceWorkerDeps["coding"]> } {
@@ -1432,7 +1432,7 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps & { coding: NonNullable<W
         serverToken: () => agentGitHubCredentials.token(agentName) });
     },
     runTimeoutMs: MAX_RUN_DURATION_MS,
-    execute: (workspace, work, actor) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work, actor),
+    execute: (workspace, work, actor, user) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work, actor, user),
     sleep: async (ms, signal) => { await workspaceSleep(ms, undefined, { signal }); },
   };
 }

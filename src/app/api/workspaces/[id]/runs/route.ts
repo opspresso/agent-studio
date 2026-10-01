@@ -12,7 +12,7 @@ export const POST = withAuth(async (user, request: Request, context: Context) =>
   if (body instanceof Response) return body;
   const parsed = workspaceInputSchema.safeParse(body);
   if (!parsed.success) return invalidRequest(parsed.error);
-  try { return Response.json({ run: workspaceRunView(await workspaceUseCases.enqueue((await context.params).id, user.email, parsed.data, request.headers.get("idempotency-key") ?? "")) } satisfies WorkspaceRunResponse, { status: 202 }); }
+  try { return Response.json({ run: workspaceRunView(await workspaceUseCases.enqueue((await context.params).id, { userId: user.id, email: user.email }, parsed.data, request.headers.get("idempotency-key") ?? "")) } satisfies WorkspaceRunResponse, { status: 202 }); }
   catch (error) { return apiError(error); }
 });
 export const DELETE = withAuth(async (user, _request: Request, context: Context) => {

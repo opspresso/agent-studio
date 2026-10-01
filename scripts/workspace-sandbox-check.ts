@@ -217,7 +217,7 @@ printf 'org.gradle.daemon=false\\n' > "$HOME/.gradle/gradle.properties"
     assert.equal(overflow.truncated, true, "the real Sandbox log bound must record omitted output");
     const overflowOutput = await provider.output(id, overflowId, 0);
     assert.ok(overflowOutput.frames.length > 0, "the log preserves an observable output prefix");
-    const overflowRun: WorkspaceRun = { id: overflowId, workspaceId, sessionId: "overflow-session", requestKey: overflowId,
+    const overflowRun: WorkspaceRun = { user: { userId: "sandbox-user", email: "test@example.test" }, actor: { kind: "user", id: "test@example.test" }, id: overflowId, workspaceId, sessionId: "overflow-session", requestKey: overflowId,
       input: { kind: "command", script: "overflow fixture" }, status: "running", createdAt: "", lastEventSeq: 0, checks: [] };
     assert.equal(foldWorkspaceOutput(createWorkspaceRuntimeAdapter("command"), overflowRun, overflowOutput, false, overflow).patch.outputLoss,
       true, "permanent provider loss must reach durable worker output metadata even while retained pages remain");

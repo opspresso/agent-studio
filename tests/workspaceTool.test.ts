@@ -55,7 +55,7 @@ describe("Workspace Agent capability", () => {
   it("requests cleanup if a newly created review Workspace cannot admit its first task", async () => {
     const enqueue = vi.spyOn(useCases, "enqueue").mockRejectedValueOnce(new Error("admission refused"));
     try {
-      await expect(useCases.start({ agentName: "demo", runtime: "command", repository: "org/repo", baseBranch: "review/head", sourceRevision: "a".repeat(40), input: { kind: "command", script: "true" } }, owner, "review-admission")).rejects.toThrow("admission refused");
+      await expect(useCases.start({ agentName: "demo", runtime: "command", repository: "org/repo", baseBranch: "review/head", sourceRevision: "a".repeat(40), input: { kind: "command", script: "true" } }, { userId: "studio-user-1", email: owner }, "review-admission")).rejects.toThrow("admission refused");
       expect((await repository.list(owner, 20))[0]?.status).toBe("closing");
     } finally { enqueue.mockRestore(); }
   });

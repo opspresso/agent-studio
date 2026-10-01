@@ -1,11 +1,11 @@
 import type { SandboxProvider, WorkspaceCheckpointStore, WorkspaceRuntimeAdapter } from "@/domain/workspace/ports";
 import type { Sandbox, Workspace, WorkspaceRun } from "@/domain/workspace/types";
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunActor, RunUser } from "@/domain/execution/actor";
 import type { CodingWorktree } from "@/domain/coding/worktree";
 import { isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { assertAgentAccessible } from "@/application/agent/agentUseCases";
-import { RateLimitedError } from "@/application/errors";
+import { RateLimitedError, ValidationError } from "@/application/errors";
 import type { WorkspaceDeps } from "./workspaceUseCases";
 import { workspacePolicy } from "./workspaceUseCases";
 import { workspaceAllowsRepository } from "@/domain/workspace/policy";
@@ -21,7 +21,7 @@ export interface WorkspaceWorkerDeps extends WorkspaceDeps {
   coding?: (agentName: string) => CodingWorktree;
   runTimeoutMs: number;
   /** Composition binds the execution facade, which opens the shared run bracket. */
-  execute(workspace: Workspace, work: () => Promise<boolean>, actor?: RunActor): Promise<void>;
+  execute(workspace: Workspace, work: () => Promise<boolean>, actor: RunActor, user: RunUser): Promise<void>;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
   /** Bounded provider resource maintenance, bound to repository ownership at composition. */
   maintainSandboxes?: () => Promise<void>;
@@ -156,7 +156,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     return;
   }
   await assertAgentAccessible(deps.agents, workspace.agentName, workspace.ownerEmail);
-  await deps.authorize?.(workspace.agentName, workspace.ownerEmail, run.actor, run.executionGrant);
+  await deps.authorize?.(workspace.agentName, workspace.ownerEmail, run.actor, run.executionGrant, run.user);
   const policy = await workspacePolicy(deps, workspace.agentName);
   if (!policy.runtimes.includes(workspace.runtime) || (workspace.coding && !workspaceAllowsRepository(policy, workspace.coding.repository))) {
     throw new Error("Workspace runtime or repository configuration changed");
@@ -303,11 +303,14 @@ async function processClaimedWorkspace(deps: WorkspaceWorkerDeps, state: Workspa
       ({ workspace } = await state.read());
     }
     if (workspace.status === "closing" || workspace.status === "suspending") await cleanupWorkspace(deps, state);
-    else await deps.execute(workspace, async () => {
-      await executeRun(deps, state, signal);
-      const finished = workspace.activeRunId ? await deps.repository.run(workspace.id, workspace.activeRunId) : null;
-      return finished?.status === "failed" || finished?.status === "interrupted";
-    }, run?.actor);
+    else {
+      if (!run?.user?.userId || run.user.email !== workspace.ownerEmail || !run.actor?.id) throw new ValidationError("Workspace task has no authenticated caller");
+      await deps.execute(workspace, async () => {
+        await executeRun(deps, state, signal);
+        const finished = workspace.activeRunId ? await deps.repository.run(workspace.id, workspace.activeRunId) : null;
+        return finished?.status === "failed" || finished?.status === "interrupted";
+      }, run.actor, run.user);
+    }
   } catch (error) {
     if (error instanceof WorkspaceLeaseLost) return true;
     const { workspace, run } = await state.read();

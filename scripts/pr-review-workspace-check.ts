@@ -118,10 +118,10 @@ async function main() {
   const github = createCodingGitHub({ apiUrl: `${baseUrl}/api`, webUrl: baseUrl, internalHosts: ["localhost"], getToken: async () => "fixture-token" });
   let workspaceId: string | undefined;
   let userCreated = false;
-  const worker: WorkspaceWorkerDeps = { authorize: (agent, email, actor, grant) => authorizeWorkspaceExecution({ ...grantDeps, members, backendReady: () => true, enabled: async () => true }, agent, email, actor, grant), repository, chats, agents, provider, checkpoints, coding: () => coding, now: () => new Date(), newId: randomUUID,
+  const worker: WorkspaceWorkerDeps = { authorize: (agent, email, actor, grant, user) => authorizeWorkspaceExecution({ ...grantDeps, members, backendReady: () => true, enabled: async () => true }, agent, email, actor, grant, user), repository, chats, agents, provider, checkpoints, coding: () => coding, now: () => new Date(), newId: randomUUID,
     idleTtlSeconds: 60, runTimeoutMs: 30000, policy: () => ({ agentName, runtimes: ["command"], repositories: ["fixture/repo"], checks: [], deploymentWorkflows: [] }),
     checkRepository: (_agentName, repository, branch, revision) => github.forge.checkRepository(repository, branch, revision), runtime: createWorkspaceRuntimeAdapter,
-    execute: (workspace, work, actor) => executeWorkspaceTask({ usage }, agents, workspace, work, actor), sleep: ms => delay(ms) };
+    execute: (workspace, work, actor, user) => executeWorkspaceTask({ usage }, agents, workspace, work, actor, user), sleep: ms => delay(ms) };
   const api = createWorkspaceUseCases(worker);
   const pump = async () => { if (workspaceId) await processWorkspace(worker, workspaceId); };
   const channel = new FakeChannel([

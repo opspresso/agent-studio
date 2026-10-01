@@ -303,7 +303,7 @@ describe("openRun with a tier resolver", () => {
     const work = vi.fn(async () => false);
     const workspace = { agentName: agent.name, ownerEmail: user.id } as Workspace;
     const agents = { get: async () => agent } as unknown as AgentRepository;
-    await expect(executeWorkspaceTask(d, agents, workspace, work)).rejects.toMatchObject({ status: 429 });
+    await expect(executeWorkspaceTask(d, agents, workspace, work, user, { userId: "studio-user-1", email: user.id })).rejects.toMatchObject({ status: 429 });
     expect(work).not.toHaveBeenCalled();
     expect(d.usage.listMemberDays).toHaveBeenCalledWith(user.id, "2026-07-01", "2026-07-29");
   });
@@ -364,7 +364,7 @@ describe("openRun with a concurrency limit", () => {
       const consoleRun = await openTaskRun(d, agent, { kind: "user", id: workspace.ownerEmail });
       await consoleRun.close();
       return false;
-    }, actor);
+    }, actor, { userId: "studio-user-1", email: workspace.ownerEmail });
     const released = await openTaskRun(d, agent, actor);
     await released.close();
   });

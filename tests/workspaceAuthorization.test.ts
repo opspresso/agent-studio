@@ -21,6 +21,16 @@ function fixture() {
 }
 
 describe("Workspace execution authorization", () => {
+  it("uses the captured user ID and refuses account replacement at the same email", async () => {
+    const deps = fixture();
+    const user = { userId: "original-user", email };
+    const actor = { kind: "user" as const, id: email };
+    await authorizeWorkspaceExecution(deps, "demo", email, actor, undefined, user);
+    expect(deps.members.getById).toHaveBeenCalledWith(user.userId);
+    deps.members.getById.mockResolvedValueOnce(memberFixture({ id: "replacement-user", email }));
+    await expect(authorizeWorkspaceExecution(deps, "demo", email, actor, undefined, user)).rejects.toThrow("no longer active");
+  });
+
   it("allows a guest's own interactive work while keeping Agent access checks", async () => {
     const deps = { ...fixture(), memberTier: async () => "guest" as const };
     await expect(authorizeWorkspaceExecution(deps, "demo", email)).resolves.toBeUndefined();
@@ -31,7 +41,7 @@ describe("Workspace execution authorization", () => {
   it("refuses a removed account and a guest spending under another actor", async () => {
     await expect(authorizeWorkspaceExecution({ ...fixture(), memberTier: async () => null }, "demo", email)).rejects.toThrow("active account");
     for (const actor of [{ kind: "user", id: "other@example.com" }, { kind: "agent-token", id: email }, { kind: "slack", id: "U1" }] as const) {
-      await expect(authorizeWorkspaceExecution({ ...fixture(), memberTier: async () => "guest" as const }, "demo", email, actor)).rejects.toThrow("member access");
+      await expect(authorizeWorkspaceExecution({ ...fixture(), memberTier: async () => "guest" as const }, "demo", email, actor)).rejects.toThrow(actor.kind === "user" ? "identity has changed" : "member access");
     }
   });
   it("requires the exact personal API credential before Workspace execution", async () => {

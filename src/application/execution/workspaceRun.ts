@@ -1,6 +1,7 @@
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { Workspace } from "@/domain/workspace/types";
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunActor, RunUser } from "@/domain/execution/actor";
+import { ValidationError } from "@/application/errors";
 import { assertAgentAccessible } from "@/application/agent/agentUseCases";
 import { openTaskRun, type RunBracketDeps } from "@/application/run/runBracket";
 
@@ -10,10 +11,12 @@ export async function executeWorkspaceTask(
   agents: AgentRepository,
   workspace: Workspace,
   work: () => Promise<boolean>,
-  actor?: RunActor,
+  actor: RunActor,
+  user: RunUser,
 ): Promise<void> {
+  if (!user?.userId || user.email !== workspace.ownerEmail || !actor?.id) throw new ValidationError("Workspace task has no authenticated caller");
   const agent = await assertAgentAccessible(agents, workspace.agentName, workspace.ownerEmail);
-  const bracket = await openTaskRun(deps, agent, actor ?? { kind: "user", id: workspace.ownerEmail });
+  const bracket = await openTaskRun(deps, agent, actor);
   let failed = false;
   try { failed = await work(); }
   catch (error) { failed = true; throw error; }

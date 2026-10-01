@@ -1,4 +1,5 @@
 import type { WorkspaceRepository, WorkspaceWrite } from "@/domain/workspace/repository";
+import { isDeepStrictEqual } from "node:util";
 import type { Workspace, WorkspaceRun, WorkspaceEvent } from "@/domain/workspace/types";
 import type { CodingApproval } from "@/domain/coding/types";
 import { mayAdvanceCodingApproval, isTerminalCodingApproval } from "@/domain/coding/types";
@@ -132,7 +133,12 @@ export const workspaceRepository: WorkspaceRepository = {
       assertChild(workspace.id, child);
       operations.push({ kind: "put", item: { ...keys.workspaceChild(workspace.id, kind, child.id), value: child,
         expiresAt: expiry(workspace.updatedAt) }, ...(kind === "RUN" ? {
-          condition: (row: Item | null) => !(row?.value as WorkspaceRun | undefined)?.outputLoss || child.outputLoss === true,
+          condition: (row: Item | null) => {
+            const previous = row?.value as WorkspaceRun | undefined;
+            return !previous || ((!previous.outputLoss || child.outputLoss === true) &&
+              isDeepStrictEqual(previous.user, child.user) && isDeepStrictEqual(previous.actor, child.actor) &&
+              isDeepStrictEqual(previous.executionGrant, child.executionGrant));
+          },
         } : {}) });
     }
     if (approval?.sourceChatId && isTerminalCodingApproval(approval.status) &&

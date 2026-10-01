@@ -22,6 +22,8 @@ Workspace 옵션 목록은 접근 가능한 Agent의 현재 도구 설정을 한
   guest도 본인 `user` actor로 Workspace를 실행할 수 있으며 Chat과 합산한 UTC 월 비용·동시 실행
   한도를 적용한다. 개인 한도가 적용되지 않는 자동화 actor는 member 이상으로 제한한다.
   개인 API·Webhook 호출은 검증한 사용자 ID와 credential ID를 큐에 함께 보관하고 실행 직전에 다시 검사한다.
+  모든 작업은 접수한 Studio 사용자 ID·이메일과 actor를 필수로 저장하며 이후 쓰기로 변경할 수 없다.
+  worker는 저장된 ID로 현재 계정을 다시 확인한다. ID가 없거나 계정이 삭제·교체되었으면 신규 작업을 시작하지 않는다.
   Workspace의 관리 사용자와 작업 호출자는 별개다. `WorkspaceRun.actor`는 원래 연동 호출자로
   보관하고 실제 Sandbox 작업의 비용·실행 제한에도 같은 actor를 적용한다.
 - `domain/workspace`는 공통 상태·포트와 한도를 소유한다. Git 정보와 승인 동작은
@@ -144,6 +146,7 @@ adapter 호출은 결과를 기다리며, 불확실한 효과를 자동으로 �
 실행은 `executeWorkspaceTask` facade와 공통 `openTaskRun` bracket을 지난다. 일반 명령에는
 앱 모델 설정이 없으므로 모델을 임의로 만들지 않는다. 기존 Agent의 비용·멤버 상한,
 동시성 슬롯과 메트릭은 유지한다. Native CLI의 토큰·비용은 SDK 모델 usage와 별개다.
+`executeWorkspaceTask`에는 큐의 user와 actor를 그대로 전달하며 Workspace 소유자에서 호출자를 다시 만들지 않는다.
 
 비활성 Workspace는 `suspending`으로 바꿔 새 접수를 막은 뒤 체크포인트 저장 → Sandbox 삭제 →
 `suspended` 순으로 처리한다. 백업·삭제 실패는 재시도할 상태로 남긴다. 채팅 삭제는 먼저

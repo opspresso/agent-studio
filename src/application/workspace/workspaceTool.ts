@@ -153,9 +153,9 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
           ...(request.title !== undefined ? { title: request.title } : {}),
           ...(request.repository !== null ? { repository: String(request.repository), baseBranch: String(request.base_branch) } : {}), input: input(runtime, request.task) };
         let started;
-        if (context.sourceChatId) started = await deps.useCases.startForChat(startInput, context.ownerEmail, context.sourceChatId);
+        if (context.sourceChatId) started = await deps.useCases.startForChat(startInput, context.user, context.sourceChatId);
         else {
-          try { started = { ...await deps.useCases.start(startInput, context.ownerEmail, startKey), reused: false }; }
+          try { started = { ...await deps.useCases.start(startInput, context.user, startKey), reused: false }; }
           catch (error) {
             if (!(error instanceof ConflictError)) throw error;
             const existing = await current();
@@ -176,7 +176,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
         (request.base_branch != null && request.base_branch !== detail.workspace.coding?.baseBranch)) {
         throw new ValidationError("run keeps the selected Workspace's runtime and repository. Read options; use attach_repository to connect a Git-free Workspace");
       }
-      const run = await deps.useCases.enqueue(detail.workspace.id, context.ownerEmail, input(detail.workspace.runtime, request.task), key, context.actor, context.executionGrant);
+      const run = await deps.useCases.enqueue(detail.workspace.id, context.user, input(detail.workspace.runtime, request.task), key, context.actor, context.executionGrant);
       return reply({ ...location(detail.workspace), run_id: run.id, status: run.status, next: "wait", after_seq: 0 });
     }
     if (!["status", "wait", "attach_repository", "prepare_git", "cancel", "close"].includes(String(operation))) throw new ValidationError("Unknown Workspace operation");

@@ -14,7 +14,7 @@ const detail: WorkspaceDetailResponse = {
     title: "Long running workspace", runtime: "command", sessionId: "session-1", status: "active",
     revision: 1, createdAt: now, updatedAt: now, dueAt: now, idleTtlSeconds: 3600, activeRunId: "run-1" },
   session: null,
-  runs: [{ id: "run-1", workspaceId: "workspace-1", sessionId: "session-1",
+  runs: [{ user: { userId: "browser-user", email: "test@example.test" }, actor: { kind: "user", id: "test@example.test" }, id: "run-1", workspaceId: "workspace-1", sessionId: "session-1",
     input: { kind: "command", script: "make output" }, status: "running", createdAt: now,
     lastEventSeq: 2, checks: [] }],
   approvals: [],

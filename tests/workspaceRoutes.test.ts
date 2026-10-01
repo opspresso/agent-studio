@@ -25,7 +25,7 @@ beforeEach(() => { vi.clearAllMocks(); f.events.mockResolvedValue([]); });
 describe("Workspace HTTP contract", () => {
   it("does not let a public request supply execution provenance or a managing identity", async () => {
     const body = { agentName: "demo", runtime: "command", input: { kind: "command", script: "echo task" } };
-    for (const extra of [{ actor: { kind: "user", id: "other@example.com" } }, { ownerEmail: "other@example.com" }, { sourceRevision: "a".repeat(40) }]) {
+    for (const extra of [{ user: { userId: "another-user", email: "other@example.com" } }, { actor: { kind: "user", id: "other@example.com" } }, { ownerEmail: "other@example.com" }, { sourceRevision: "a".repeat(40) }]) {
       expect((await start.POST(request("", "POST", { ...body, ...extra }))).status).toBe(400);
     }
     expect(f.start).not.toHaveBeenCalled();
@@ -35,7 +35,7 @@ describe("Workspace HTTP contract", () => {
     const body = { agentName: "demo", runtime: "command", title: "합계 검증", input: { kind: "command", script: "printf 300" } };
     f.start.mockResolvedValue({ workspace: { title: body.title }, run: {} });
     expect((await start.POST(request("", "POST", body))).status).toBe(202);
-    expect(f.start).toHaveBeenCalledWith(body, "owner@example.com", "stable-request-key");
+    expect(f.start).toHaveBeenCalledWith(body, { userId: "studio-user-1", email: "owner@example.com" }, "stable-request-key");
     f.start.mockClear();
     for (const title of ["", "  ", "invalid\0title", "x".repeat(201), 42]) {
       expect((await start.POST(request("", "POST", { ...body, title }))).status).toBe(400);
@@ -68,7 +68,7 @@ describe("Workspace HTTP contract", () => {
     const input = { agentName: "demo", runtime: "codex", input: { kind: "task", prompt: "Make a report" } };
     f.start.mockResolvedValue({ workspace: { id: "workspace-1" }, run: { id: "run-1" } });
     expect((await start.POST(request("", "POST", input))).status).toBe(202);
-    expect(f.start).toHaveBeenCalledWith(input, "owner@example.com", "stable-request-key");
+    expect(f.start).toHaveBeenCalledWith(input, { userId: "studio-user-1", email: "owner@example.com" }, "stable-request-key");
     expect((await start.POST(request("", "POST", { ...input, runtime: "host-shell" }))).status).toBe(400);
     expect(f.start).toHaveBeenCalledTimes(1);
   });
@@ -76,7 +76,7 @@ describe("Workspace HTTP contract", () => {
     f.enqueue.mockResolvedValue({ id: "run-1", status: "queued", requestKey: "internal", leaseToken: "lease", operationId: "op", protocolBuffer: "native" });
     const response = await runs.POST(request("/workspace-1/runs", "POST", { kind: "command", script: "echo hello" }), context);
     expect(await response.json()).toEqual({ run: { id: "run-1", status: "queued" } });
-    expect(f.enqueue).toHaveBeenCalledWith("workspace-1", "owner@example.com", { kind: "command", script: "echo hello" }, "stable-request-key");
+    expect(f.enqueue).toHaveBeenCalledWith("workspace-1", { userId: "studio-user-1", email: "owner@example.com" }, { kind: "command", script: "echo hello" }, "stable-request-key");
   });
   it("preserves zero event cursors and refuses invalid cursors before reading", async () => {
     const response = await events.GET(request("/workspace-1/events?run=run-1&after=0"), context);

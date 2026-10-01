@@ -384,7 +384,7 @@ describe("explicit coding action approvals", () => {
   it("atomically rejects an unapproved review when a new editing task is accepted", async () => {
     const api = createCodingUseCases(deps);
     const pending = await api.request(workspace.id, user, { kind: "commit", message: "commit" });
-    const run = await createWorkspaceUseCases(deps).enqueue(workspace.id, owner, { kind: "task", prompt: "change files" }, "request-0001");
+    const run = await createWorkspaceUseCases(deps).enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "change files" }, "request-0001");
     expect((await repository.get(workspace.id))?.activeRunId).toBe(run.id);
     expect((await api.decide(workspace.id, user, pending.id, true)).status).toBe("rejected");
     expect(coding.commit).not.toHaveBeenCalled();
@@ -395,7 +395,7 @@ describe("explicit coding action approvals", () => {
     const pending = await api.request(workspace.id, user, { kind: "commit", message: "commit" });
     const originalReview = coding.review;
     coding.review = async id => {
-      await expect(createWorkspaceUseCases(deps).enqueue(workspace.id, owner, { kind: "task", prompt: "change files" }, "request-0001")).rejects.toThrow("busy");
+      await expect(createWorkspaceUseCases(deps).enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "change files" }, "request-0001")).rejects.toThrow("busy");
       return originalReview(id);
     };
     expect((await api.decide(workspace.id, user, pending.id, true)).status).toBe("succeeded");
@@ -449,7 +449,7 @@ describe("explicit coding action approvals", () => {
     await api.decide(workspace.id, user, pending.id, true);
     expect(forge.dispatch).toHaveBeenCalledTimes(1);
     expect(deps.provider.execute).not.toHaveBeenCalled();
-    await expect(createWorkspaceUseCases(deps).enqueue(workspace.id, owner, { kind: "task", prompt: "more work" }, "request-0001")).rejects.toMatchObject({ status: 409 });
+    await expect(createWorkspaceUseCases(deps).enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "more work" }, "request-0001")).rejects.toMatchObject({ status: 409 });
     await processWorkspace(deps, workspace.id);
     expect((await repository.get(workspace.id))?.status).toBe("suspended");
   });
@@ -540,7 +540,7 @@ describe("explicit coding action approvals", () => {
     await api.close(workspace.id, owner);
     await processWorkspace(deps, workspace.id);
     expect((await repository.approval(workspace.id, pending.id))?.status).toBe("rejected");
-    const next = await api.enqueue(workspace.id, owner, { kind: "task", prompt: "continue" }, "request-0001");
+    const next = await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "continue" }, "request-0001");
     expect(next.sessionId).toBe(workspace.sessionId);
   });
 });
