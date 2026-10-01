@@ -164,6 +164,39 @@ describe("resolving the Authorization for an agent's connection", () => {
     expect(h.updates[0]).toMatchObject({ accessToken: "enc:refreshed-token", status: "connected" });
   });
 
+  it("shares a rotating OAuth refresh across concurrent requests for the same Agent grant", async () => {
+    let finish!: (tokens: TokenSet) => void;
+    const waiting = new Promise<TokenSet>(resolve => { finish = resolve; });
+    const h = providerHarness({ connection: connectionFixture({ revision: "same-grant", expiresAt: new Date(Date.now() + 1000).toISOString() }), refresh: () => waiting });
+    const pending = Promise.all([h.headersFor(), h.headersFor(), h.headersFor()]);
+    await Promise.resolve(); await Promise.resolve();
+    const refreshCount = h.refreshCalls.length;
+    finish({ accessToken: "rotated-once", refreshToken: "next-refresh", expiresInSeconds: 3600 });
+    const results = await pending;
+    expect(refreshCount).toBe(1);
+    expect(results.map(result => result.headers.Authorization)).toEqual(Array(3).fill("Bearer rotated-once"));
+    expect(h.updates).toHaveLength(1);
+  });
+
+  it("releases a failed refresh so a later request can authenticate normally", async () => {
+    let calls = 0;
+    const h = providerHarness({ connection: connectionFixture({ revision: "same-grant", expiresAt: new Date(Date.now() + 1000).toISOString() }), refresh: async () => {
+      if (++calls === 1) throw new Error("Provider temporarily unavailable");
+      return { accessToken: "later-token", expiresInSeconds: 3600 };
+    } });
+    expect((await h.headersFor()).unavailable).toContain("temporarily unavailable");
+    expect((await h.headersFor()).headers.Authorization).toBe("Bearer later-token");
+    expect(h.refreshCalls).toHaveLength(2);
+  });
+
+  it.each([{ agentName: "another-agent" }, { serverName: "another-server" }])("refuses credential rows from another Agent or server before decryption %j", async patch => {
+    const h = providerHarness({ connection: connectionFixture(patch) });
+    const result = await h.headersFor();
+    expect(result.headers).toEqual({});
+    expect(result.unavailable).toContain("does not match");
+    expect(h.refreshCalls).toEqual([]);
+  });
+
   it("will not spend this agent's credentials at an authorization server that did not issue them", async () => {
     // SEP-2352. A refresh is the one thing on the run path that presents the
     // client_id and secret, so an entry repointed by a re-discovery would send

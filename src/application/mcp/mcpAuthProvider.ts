@@ -7,6 +7,7 @@
  * the tool-resolution caller owns reporting that loss.
  */
 
+import { createHash } from "node:crypto";
 import type { McpConnection, McpConnectionRepository } from "@/domain/mcp/connection";
 import type {
   McpAuthProvider,
@@ -84,9 +85,13 @@ export function mcpConnectionAuthMismatch(
 
 function unavailableReason(
   connection: McpConnection,
+  agentName: string,
   serverName: string,
   auth: McpServerAuth,
 ): string | undefined {
+  if (connection.agentName !== agentName || connection.serverName !== serverName) {
+    return "The MCP credential record does not match this Agent and server.";
+  }
   const mismatch = mcpConnectionAuthMismatch(connection, serverName, auth);
   if (mismatch) {
     return mismatch;
@@ -115,6 +120,7 @@ function needsRefresh(connection: McpConnection, nowMs: number): boolean {
 }
 
 export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvider {
+  const refreshes = new Map<string, Promise<McpAuthResolution>>();
   async function refresh(
     connection: McpConnection,
     target: TokenRequestTarget,
@@ -179,7 +185,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       // or no longer be connected, so validate it against this run's snapshot.
       const current = await deps.connections.get(connection.agentName, connection.serverName);
       if (current) {
-        const unavailable = unavailableReason(current, connection.serverName, auth);
+        const unavailable = unavailableReason(current, connection.agentName, connection.serverName, auth);
         if (unavailable) {
           return { headers: {}, unavailable };
         }
@@ -239,7 +245,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       // Ahead of every path that would hand a credential out, including the one
       // that only reads a live token: sending a bearer token to a server it was
       // not minted for is the failure this guards, and that path sends one.
-      const unavailable = unavailableReason(connection, serverName, auth);
+      const unavailable = unavailableReason(connection, agentName, serverName, auth);
       if (unavailable || !connection.accessToken) {
         return { headers: {}, unavailable };
       }
@@ -254,7 +260,17 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         };
       }
 
-      return refresh(connection, mcpTokenTarget(deps.cipher, connection, auth), auth);
+      const target = mcpTokenTarget(deps.cipher, connection, auth);
+      // Rotating refresh credentials are single-use. Share only the same Agent grant and current target.
+      const key = createHash("sha256").update(JSON.stringify([agentName, serverName, connection.revision,
+        connection.accessToken, connection.refreshToken, target])).digest("hex");
+      const existing = refreshes.get(key);
+      if (existing) return existing;
+      const pending = refresh(connection, target, auth).finally(() => {
+        if (refreshes.get(key) === pending) refreshes.delete(key);
+      });
+      refreshes.set(key, pending);
+      return pending;
     },
 
     async markUnauthorized(agentName, serverName, scope) {
