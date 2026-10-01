@@ -1,6 +1,8 @@
+import type { AgentCredentialPurpose } from "@/domain/auth/agentCredential";
+
 /** AES-GCM binds a personal bearer credential to its Agent, user and public selector. */
-export function agentApiTokenContext(agentName: string, userId: string, tokenId: string): string {
-  return JSON.stringify(["agent", agentName, "api-token", userId, tokenId]);
+export function agentCredentialContext(agentName: string, purpose: AgentCredentialPurpose, userId: string, tokenId: string): string {
+  return JSON.stringify(["agent", agentName, "credential", purpose, userId, tokenId]);
 }
 
 export function sourceReferenceContext(agentName: string, id: string): string {

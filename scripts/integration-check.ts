@@ -446,22 +446,39 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.equal(tierChange?.previousTier, "guest");
     assert.equal(tierChange?.member.tier, "member");
     pass("member get/list/atomic tier update");
-    const { apiTokenRepository } = await import("@/infrastructure/db/repositories/apiTokenRepository");
-    const { createApiTokenUseCases } = await import("@/application/agent/apiTokenUseCases");
+    const { agentCredentialRepository } = await import("@/infrastructure/db/repositories/agentCredentialRepository");
+    const { createAgentCredentialUseCases } = await import("@/application/agent/agentCredentialUseCases");
     const { secretCipher } = await import("@/infrastructure/crypto/secretCipher");
     const { randomUUID } = await import("node:crypto");
-    const personalApi = createApiTokenUseCases({ agents: agentRepository, tokens: apiTokenRepository,
+    const personalApi = createAgentCredentialUseCases({ purpose: "api", agents: agentRepository, tokens: agentCredentialRepository,
       members: memberRepository, cipher: secretCipher, now: () => new Date(now), newId: randomUUID });
     const issuedToken = await personalApi.generate(agentName, integrationMemberId);
-    assert.deepEqual(await personalApi.verify(agentName, issuedToken.token), { userId: integrationMemberId, email: integrationMemberEmail });
+    assert.deepEqual(await personalApi.verify(agentName, issuedToken.token), { userId: integrationMemberId, email: integrationMemberEmail, credentialId: issuedToken.credentialId });
     const concurrentTokens = await Promise.allSettled([personalApi.generate(agentName, integrationMemberId), personalApi.generate(agentName, integrationMemberId)]);
     assert.equal(concurrentTokens.filter(result => result.status === "fulfilled").length, 1, "only one concurrent personal rotation succeeds");
     assert.equal(await personalApi.verify(agentName, issuedToken.token), null, "previous credential is revoked atomically");
     const tokenWinner = concurrentTokens.find(result => result.status === "fulfilled")! as PromiseFulfilledResult<Awaited<ReturnType<typeof personalApi.generate>>>;
-    assert.deepEqual(await personalApi.verify(agentName, tokenWinner.value.token), { userId: integrationMemberId, email: integrationMemberEmail });
+    assert.deepEqual(await personalApi.verify(agentName, tokenWinner.value.token), { userId: integrationMemberId, email: integrationMemberEmail, credentialId: tokenWinner.value.credentialId });
     await personalApi.revoke(agentName, integrationMemberId);
     assert.equal(await personalApi.verify(agentName, tokenWinner.value.token), null, "personal revocation removes the credential and reference together");
     pass("personal API credentials: stable issuer, encrypted scope, PostgreSQL rotation CAS and atomic revocation");
+    const personalWebhook = createAgentCredentialUseCases({ purpose: "webhook", agents: agentRepository, tokens: agentCredentialRepository,
+      members: memberRepository, cipher: secretCipher, now: () => new Date(now), newId: randomUUID });
+    const [apiCredential, webhookCredential] = await Promise.all([
+      personalApi.generate(agentName, integrationMemberId), personalWebhook.generate(agentName, integrationMemberId),
+    ]);
+    assert.equal(await personalApi.verify(agentName, webhookCredential.token), null);
+    assert.equal(await personalWebhook.verify(agentName, apiCredential.token), null);
+    const signedBody = '{"event":"integration"}';
+    const { createHmac } = await import("node:crypto");
+    const signature = "sha256=" + createHmac("sha256", webhookCredential.token).update(signedBody).digest("hex");
+    assert.deepEqual(await personalWebhook.verifySignature(agentName, webhookCredential.credentialId, signedBody, signature),
+      { userId: integrationMemberId, email: integrationMemberEmail, credentialId: webhookCredential.credentialId });
+    await personalWebhook.revoke(agentName, integrationMemberId);
+    assert.equal(await personalWebhook.authorize(agentName, webhookCredential.credentialId, integrationMemberId), null);
+    assert.ok(await personalApi.authorize(agentName, apiCredential.credentialId, integrationMemberId));
+    await personalApi.revoke(agentName, integrationMemberId);
+    pass("personal credential purposes: concurrent isolated issuance, signed Webhook identity and independent revocation");
     const { messagingIdentityRepository } = await import("@/infrastructure/db/repositories/messagingIdentityRepository");
     const { createMessagingIdentityUseCases } = await import("@/application/messaging/identityUseCases");
     const messaging = createMessagingIdentityUseCases({ identities: messagingIdentityRepository,

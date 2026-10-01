@@ -5,10 +5,9 @@ import { crossOriginForbidden, getSessionUser, isSameOriginMutation } from "@/li
 import { apiError } from "@/app/api/_lib/http";
 import { apiTokenUseCases, agentUseCases } from "@/lib/container";
 
-export interface ExecutionPrincipal {
+interface ExecutionPrincipalBase {
   userId: string;
   email: string;
-  viaToken: boolean;
   /**
    * Who is asking, in words, when a person is. Absent for a token: it acts on
    * the issuing user's behalf but nobody is at the other end, so naming them in the
@@ -16,6 +15,10 @@ export interface ExecutionPrincipal {
    */
   caller?: RunCaller;
 }
+export type ExecutionPrincipal = ExecutionPrincipalBase & (
+  | { viaToken: false }
+  | { viaToken: true; credentialId: string }
+);
 
 /**
  * The principal as a run actor.

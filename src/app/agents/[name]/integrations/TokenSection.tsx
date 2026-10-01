@@ -5,14 +5,14 @@ import { Alert, Badge } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { SecretControl } from "@/app/_components/SecretControl";
 import { LoadingText } from "@/app/_components/PageState";
-import { generateAgentToken, getAgentToken, revealAgentToken, revokeAgentToken, type ApiTokenStatus } from "../../lib/api";
+import { generateAgentToken, getAgentToken, revealAgentToken, revokeAgentToken, type AgentCredentialStatus } from "../../lib/api";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDate } from "@/shared/date";
 
 export function TokenSection({ agentName, onSelect, selected }: { agentName: string; onSelect?: () => void; selected?: boolean }) {
   const t = useT();
   const locale = useLocale();
-  const [status, setStatus] = useState<ApiTokenStatus | null>(null);
+  const [status, setStatus] = useState<AgentCredentialStatus | null>(null);
   const [error, setError] = useState<string>();
   useEffect(() => {
     let current = true;

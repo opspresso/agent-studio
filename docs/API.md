@@ -1234,15 +1234,15 @@ Agent에 고정되며 Agent 소유권이 바뀌어도 다른 사용자로 실행
 항상 로그인한 사용자 본인이다. 관리자도 다른 사용자의 토큰을 조회하거나 재발급하지 않는다.
 
 ```
-GET    /api/agents/{name}/token          → { configured, canIssue, masked?, createdAt? }
-POST   /api/agents/{name}/token          → { token, masked, createdAt }
-POST   /api/agents/{name}/token/reveal   → { token, createdAt }
+GET    /api/agents/{name}/token          → { configured, canIssue, credentialId?, masked?, createdAt? }
+POST   /api/agents/{name}/token          → { token, credentialId, masked, createdAt }
+POST   /api/agents/{name}/token/reveal   → { token, credentialId, createdAt }
 DELETE /api/agents/{name}/token          → 204
 ```
 
 형식은 `ast_<credential UUID>.<32-byte base64url secret>`이다. 공개 selector는 credential 행을
 직접 조회하는 주소이며 실제 secret은 전체 값의 상수 시간 비교로 검증한다. AES-GCM context는
-Agent·발급 사용자 ID·credential UUID를 모두 포함한다. routine status는 저장한 마스크만 반환한다.
+Agent·용도·발급 사용자 ID·credential UUID를 모두 포함한다. routine status는 저장한 마스크만 반환한다.
 
 GET은 로그인과 현재 Agent 접근을 검사한다. 생성·reveal은 추가로 발급 사용자의 현재
 `tierMayUseApiTokens` 권한을 검사한다. 폐기는 본인 credential에만 적용하며 사용 권한이 철회된

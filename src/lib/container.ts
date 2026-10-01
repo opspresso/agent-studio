@@ -185,11 +185,11 @@ import { createAgentUseCases, setAdminCheck } from "@/application/agent/agentUse
 import { createTraceUseCases } from "@/application/trace/traceUseCases";
 import { createUsageUseCases } from "@/application/usage/usageUseCases";
 import { createConfigurationUseCases } from "@/application/agent/configurationUseCases";
-import { apiTokenRepository } from "@/infrastructure/db/repositories/apiTokenRepository";
+import { agentCredentialRepository } from "@/infrastructure/db/repositories/agentCredentialRepository";
 import { getExecutionMemberById } from "@/lib/memberAccess";
 import { messagingIdentityRepository } from "@/infrastructure/db/repositories/messagingIdentityRepository";
 import { createMessagingIdentityUseCases } from "@/application/messaging/identityUseCases";
-import { createApiTokenUseCases } from "@/application/agent/apiTokenUseCases";
+import { createAgentCredentialUseCases } from "@/application/agent/agentCredentialUseCases";
 import { createAgentSlackUseCases, resolveAgentSlackRuntime } from "@/application/slack/agentSlack";
 import {
   createAgentTelegramUseCases,
@@ -581,7 +581,7 @@ export const agentUseCases = createAgentUseCases(agentRepository, {
 // Personal credentials and messaging links always resolve the current issuing user by ID.
 export const messagingIdentityUseCases = createMessagingIdentityUseCases({ identities: messagingIdentityRepository,
   agents: agentRepository, members: { getById: getExecutionMemberById }, now: () => new Date() });
-export const apiTokenUseCases = createApiTokenUseCases({ agents: agentRepository, tokens: apiTokenRepository, members: { getById: getExecutionMemberById }, cipher: secretCipher, now: () => new Date(), newId: randomUUID });
+export const apiTokenUseCases = createAgentCredentialUseCases({ purpose: "api", agents: agentRepository, tokens: agentCredentialRepository, members: { getById: getExecutionMemberById }, cipher: secretCipher, now: () => new Date(), newId: randomUUID });
 export const triggerUseCases = createTriggerUseCases({
   members: { getById: getExecutionMemberById },
   triggers: triggerRepository,

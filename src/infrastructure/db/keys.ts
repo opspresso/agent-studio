@@ -1,3 +1,4 @@
+import type { AgentCredentialPurpose } from "@/domain/auth/agentCredential";
 /**
  * Item-store key builders: the partition/sort address of every row. Never hand-write key strings outside this module.
  * See docs/ARCHITECTURE.md for the full key map.
@@ -38,8 +39,8 @@ export const keys = {
   }),
   agent: (name: string) => ({ PK: `AGENT#${name}`, SK: "META" }),
   agentPartition: (name: string) => `AGENT#${name}`,
-  agentApiToken: (name: string, tokenId: string) => ({ PK: `AGENT#${name}`, SK: `APITOKEN#${tokenId}` }),
-  agentApiTokenUser: (name: string, userId: string) => ({ PK: `AGENT#${name}`, SK: `APITOKENUSER#${userId}` }),
+  agentCredential: (name: string, purpose: AgentCredentialPurpose, tokenId: string) => ({ PK: `AGENT#${name}`, SK: `CREDENTIAL#${purpose}#${tokenId}` }),
+  agentCredentialUser: (name: string, purpose: AgentCredentialPurpose, userId: string) => ({ PK: `AGENT#${name}`, SK: `CREDENTIALUSER#${purpose}#${userId}` }),
   workspacePolicy: (name: string) => ({ PK: `AGENT#${name}`, SK: "WORKSPACEPOLICY" }),
   workspaceRepositoryCreation: (agent: string, repository: string) => ({ PK: `AGENT#${agent}`, SK: `REPOSITORYCREATE#${repository.toLowerCase()}` }),
 

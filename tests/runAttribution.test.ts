@@ -61,7 +61,7 @@ describe("principalActor", () => {
   });
 
   it("maps a token principal to its own kind, carrying the owner's email", () => {
-    expect(principalActor({ userId: "fixture-user", email: "a@example.com", viaToken: true })).toEqual({
+    expect(principalActor({ userId: "fixture-user", email: "a@example.com", viaToken: true, credentialId: "fixture-token" })).toEqual({
       kind: "agent-token",
       id: "a@example.com",
     });

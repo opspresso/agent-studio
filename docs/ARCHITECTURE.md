@@ -130,7 +130,7 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 |---|---|---|---|---|
 | Agent | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
 | 삭제된 Agent 이름 tombstone | `AGENT#{name}` | `META` | — | — |
-| 개인 Agent API 토큰 | `AGENT#{name}` | `APITOKEN#{credentialId}` / `APITOKENUSER#{userId}` | — | — |
+| 개인 Agent credential | `AGENT#{name}` | `CREDENTIAL#{purpose}#{credentialId}` / `CREDENTIALUSER#{purpose}#{userId}` | — | — |
 | Workspace 정책 / 저장소 생성 receipt | `AGENT#{name}` | `WORKSPACEPOLICY` / `REPOSITORYCREATE#{repository lowercased}` | — | — |
 | Workspace | `WORKSPACE#{id}` | `META` | `WORKSPACEOWNER#{email}` | `{createdAt}#{id}` |
 | Workspace Chat 역참조 | `WORKSPACECHAT#{chatId}` | `META` | — | — |

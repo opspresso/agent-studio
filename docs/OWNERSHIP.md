@@ -211,7 +211,7 @@
 
 | 결정 | 소유자 | 확인 |
 |---|---|---|
-| 개인 API credential의 발급 사용자·Agent 범위와 현재 권한 | `application/agent/apiTokenUseCases.ts`; 저장 포트는 `domain/auth/apiToken.ts`, 회전·폐기 transaction은 `apiTokenRepository.ts`. `getExecutionMemberById`를 주입하며 이메일 tier 캐시로 사용자 존재 여부를 대체하지 않는다 | 코드 |
+| 개인 credential의 용도·발급 사용자·Agent 범위와 현재 권한 | `application/agent/agentCredentialUseCases.ts`; 저장 포트는 `domain/auth/agentCredential.ts`, 회전·폐기 transaction은 `agentCredentialRepository.ts`. `getExecutionMemberById`를 주입하며 이메일 tier 캐시로 사용자 존재 여부를 대체하지 않는다 | 코드 |
 | 아웃바운드 redirect의 출처·횟수·HTTP 메서드 규칙 | `src/infrastructure/net/redirectPolicy.ts` 의 `fetchSameOrigin`. 공개 URL의 DNS 검증·연결 고정은 `publicFetch.ts`가 각 요청에 적용한다 | 구조 |
 | 어떤 응답이 콘솔의 보안 헤더를 받는가. 여기 선언한 헤더는 라우트가 같은 키로 세운 것을 *대체한다* | `next.config.ts` 의 `SECURITY_HEADERS` 와 그 `source` | 구조 |
 | 상수 시간 시크릿 비교 | `src/shared/timingSafe.ts` | 구조 |

@@ -29,7 +29,7 @@ import type { SlackChannelsResponse } from "@/app/api/agents/[name]/slack/channe
 import type { AgentTelegramResponse } from "@/app/api/agents/[name]/telegram/route";
 import type { AgentTeamsResponse } from "@/app/api/agents/[name]/teams/route";
 import type { PromptPreview } from "@/application/execution/deps";
-import type { ApiTokenStatus } from "@/application/agent/apiTokenUseCases";
+import type { AgentCredentialStatus } from "@/application/agent/agentCredentialUseCases";
 import type {
   AgentConfigurationView,
   AgentConfigurationInput,
@@ -346,10 +346,10 @@ export async function testAgentTeams(
   return readJson(await fetch(`/api/agents/${name}/teams/test`, { method: "POST" }));
 }
 
-export type { ApiTokenStatus };
+export type { AgentCredentialStatus };
 
-export async function getAgentToken(name: string): Promise<ApiTokenStatus> {
-  return readJson<ApiTokenStatus>(await fetch(`/api/agents/${name}/token`));
+export async function getAgentToken(name: string): Promise<AgentCredentialStatus> {
+  return readJson<AgentCredentialStatus>(await fetch(`/api/agents/${name}/token`));
 }
 
 /** Generate (or regenerate) the agent API token. Returns the raw token once. */
@@ -368,7 +368,7 @@ export async function generateAgentToken(
 }
 
 /**
- * Read the stored token back in plaintext (owner or admin). A POST, not a GET: the
+ * Read the authenticated user's own stored token in plaintext. A POST, not a GET: the
  * response body is a live credential and must stay out of caches and history.
  */
 export async function revealAgentToken(name: string): Promise<string> {

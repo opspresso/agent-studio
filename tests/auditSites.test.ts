@@ -5,8 +5,8 @@ import {
   deleteAgent,
   setAdminCheck,
 } from "@/application/agent/agentUseCases";
-import { createApiTokenUseCases } from "@/application/agent/apiTokenUseCases";
-import type { ApiToken } from "@/domain/auth/apiToken";
+import { createAgentCredentialUseCases } from "@/application/agent/agentCredentialUseCases";
+import type { AgentCredential } from "@/domain/auth/agentCredential";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { listAgentTraces } from "@/application/trace/traceUseCases";
@@ -168,13 +168,13 @@ describe("agent acts", () => {
 });
 
 function personalTokens(repo = agents()) {
-  const records = new Map<string, ApiToken>();
-  records.set("owner", { id: "00000000-0000-4000-8000-000000000001", agentName: "p", userId: "owner", token: "enc:v1:own-token", masked: "****", createdAt: "2026-01-01" });
-  records.set("admin", { id: "00000000-0000-4000-8000-000000000002", agentName: "p", userId: "admin", token: "enc:v1:admin-token", masked: "****", createdAt: "2026-01-01" });
-  return createApiTokenUseCases({ agents: repo, cipher, now: () => new Date(), newId: () => "00000000-0000-4000-8000-000000000003",
+  const records = new Map<string, AgentCredential>();
+  records.set("owner", { purpose: "api", id: "00000000-0000-4000-8000-000000000001", agentName: "p", userId: "owner", token: "enc:v1:own-token", masked: "****", createdAt: "2026-01-01" });
+  records.set("admin", { purpose: "api", id: "00000000-0000-4000-8000-000000000002", agentName: "p", userId: "admin", token: "enc:v1:admin-token", masked: "****", createdAt: "2026-01-01" });
+  return createAgentCredentialUseCases({ purpose: "api", agents: repo, cipher, now: () => new Date(), newId: () => "00000000-0000-4000-8000-000000000003",
     members: { getById: async id => ({ id, email: id === "admin" ? ADMIN : OWNER, name: id, tier: "member", image: null, joinedAt: "2026-01-01", lastLoginAt: "2026-01-01" }) },
-    tokens: { get: async (_name, id) => [...records.values()].find(row => row.id === id) ?? null, forUser: async (_name, id) => records.get(id) ?? null,
-      replace: async token => { records.set(token.userId, token); }, revoke: async (_name, id) => { records.delete(id); } } });
+    tokens: { get: async (_name, _purpose, id) => [...records.values()].find(row => row.id === id) ?? null, forUser: async (_name, _purpose, id) => records.get(id) ?? null,
+      replace: async token => { records.set(token.userId, token); }, revoke: async (_name, _purpose, id) => { records.delete(id); } } });
 }
 describe("personal API token audit", () => {
   it("records personal issuance", async () => {

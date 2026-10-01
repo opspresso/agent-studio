@@ -222,7 +222,7 @@ Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시�
 v2 는 row 와 field 정체성을 AES-GCM AAD 로 묶으므로 암호문만 다른 위치로 옮기면 인증에
 실패한다. 기존 `enc:v1:` 값은 다시 저장하거나 재발급하기 전까지 그대로 읽는다.
 
-개인 API token은 `agent + userId + credentialId`, webhook trigger secret은
+개인 credential은 `agent + purpose + userId + credentialId`, webhook trigger secret은
 `agent + triggerId`에 묶인다. Slack 의 bot token·signing secret, Telegram 의 bot
 token·webhook secret, Teams 의 app password 는 `agent + integration + field` 를 쓴다.
 MCP registry header 는 항목 이름과 header 이름에, managed MCP 의 environment 는

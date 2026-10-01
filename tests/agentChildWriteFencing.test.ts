@@ -5,7 +5,7 @@ import { keys } from "@/infrastructure/db/keys";
 vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
 const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 
-import { apiTokenRepository } from "@/infrastructure/db/repositories/apiTokenRepository";
+import { agentCredentialRepository } from "@/infrastructure/db/repositories/agentCredentialRepository";
 const { mcpConnectionRepository } = await import(
   "@/infrastructure/db/repositories/mcpConnectionRepository"
 );
@@ -65,14 +65,14 @@ describe("agent child write fencing", () => {
     ]);
 
     await expect(
-      apiTokenRepository.replace({ id: "fixture-token", agentName: "p", userId: "fixture-user", token: "enc:v1:token", masked: "****", createdAt: NOW }, null),
+      agentCredentialRepository.replace({ purpose: "api", id: "fixture-token", agentName: "p", userId: "fixture-user", token: "enc:v1:token", masked: "****", createdAt: NOW }, null),
     ).rejects.toMatchObject({ name: store.TRANSACTION_CANCELLED });
   });
 
   it.each([
     [
       "API token",
-      () => apiTokenRepository.replace({ id: "fixture-token", agentName: "p", userId: "fixture-user", token: "enc:v1:token", masked: "****", createdAt: NOW }, null),
+      () => agentCredentialRepository.replace({ purpose: "api", id: "fixture-token", agentName: "p", userId: "fixture-user", token: "enc:v1:token", masked: "****", createdAt: NOW }, null),
     ],
     [
       "MCP connection",

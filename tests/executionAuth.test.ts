@@ -8,9 +8,9 @@ beforeEach(() => { vi.clearAllMocks(); });
 
 describe("execution request identity", () => {
   it("uses the personal token's verified user and never substitutes a cookie session", async () => {
-    verify.mockResolvedValue({ userId: "token-user", email: "token@example.test" });
+    verify.mockResolvedValue({ userId: "token-user", email: "token@example.test", credentialId: "token-id" });
     getSessionUser.mockResolvedValue({ id: "cookie-user", email: "cookie@example.test" });
-    expect(await authenticateExecution(request("Bearer ast_fixture"), "agent")).toEqual({ userId: "token-user", email: "token@example.test", viaToken: true });
+    expect(await authenticateExecution(request("Bearer ast_fixture"), "agent")).toEqual({ userId: "token-user", email: "token@example.test", credentialId: "token-id", viaToken: true });
     expect(verify).toHaveBeenCalledExactlyOnceWith("agent", "ast_fixture");
     expect(getSessionUser).not.toHaveBeenCalled(); expect(isSameOriginMutation).not.toHaveBeenCalled();
   });
