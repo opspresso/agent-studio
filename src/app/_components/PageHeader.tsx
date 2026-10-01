@@ -6,22 +6,25 @@ export function PageHeader({
   title,
   description,
   Icon,
+  compact = false,
   badges,
   details,
   children,
 }: {
   title: React.ReactNode;
   description?: React.ReactNode;
-  Icon?: TablerIcon;
+  Icon: TablerIcon;
+  /** Task views keep more room for their conversation or live output. */
+  compact?: boolean;
   badges?: React.ReactNode;
   details?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   return (
-    <header className={classes.header}>
+    <header className={classes.header} data-compact={compact || undefined}>
       <Group justify="space-between" gap="lg" align="flex-start" wrap="wrap">
         <Group gap="sm" wrap="nowrap" align="flex-start" className={classes.identity}>
-          {Icon && <Icon className={classes.icon} size={22} stroke={1.8} aria-hidden="true" />}
+          <Icon className={classes.icon} size={22} stroke={1.8} aria-hidden="true" />
           <div className={classes.content}>
             <Group gap="xs" wrap="wrap"><Title order={1} className={classes.title}>{title}</Title>{badges}</Group>
             {description && <Text fz="sm" c="dimmed" mt={5} maw={720} className={classes.description}>{description}</Text>}

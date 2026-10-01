@@ -238,7 +238,7 @@ const SECTIONS: readonly GuideSection[] = [
       { href: "/members", label: "nav.members" },
       { href: "/settings", label: "nav.settings" },
       { href: "/models", label: "nav.models" },
-      { href: "/audit", label: "nav.audit" },
+      { href: "/audits", label: "nav.audits" },
     ],
   },
   {

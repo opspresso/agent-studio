@@ -15,7 +15,7 @@ import { useViewer } from "@/app/_lib/useViewer";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDateTime } from "@/shared/date";
 
-export default function AuditPage() {
+export default function AuditsPage() {
   const t = useT();
   const locale = useLocale();
   const viewer = useViewer();
@@ -44,7 +44,7 @@ export default function AuditPage() {
       setError(null);
       try {
         const query = new URLSearchParams({ from: range.from, to: range.to });
-        const data = await fetch(`/api/audit?${query}`).then((res) =>
+        const data = await fetch(`/api/audits?${query}`).then((res) =>
           readJson<AuditPage>(res),
         );
         if (!cancelled && generation === listGeneration.current) {
@@ -73,7 +73,7 @@ export default function AuditPage() {
     setMoreError(null);
     try {
       const query = new URLSearchParams({ from: range.from, to: range.to, cursor: nextCursor });
-      const page = await fetch(`/api/audit?${query}`).then((res) => readJson<AuditPage>(res));
+      const page = await fetch(`/api/audits?${query}`).then((res) => readJson<AuditPage>(res));
       if (generation !== listGeneration.current) return;
       setEvents((current) => [...current, ...page.events]);
       setNextCursor(page.nextCursor);
@@ -89,21 +89,14 @@ export default function AuditPage() {
     }
   }
 
-  if (viewer === null) {
-    return <LoadingText />;
-  }
-
-  if (!viewer.isAdmin) {
-    return <Alert color="gray">{t("admin.adminOnlyAudit")}</Alert>;
-  }
+  const header = <PageHeader title={t("nav.audits")} description={t("audit.lede")} Icon={IconShieldCheck} />;
+  if (viewer === null || !viewer.isAdmin) return <Stack gap="lg">{header}
+    {viewer === null ? <LoadingText /> : <Alert color="gray">{t("admin.adminOnlyAudit")}</Alert>}
+  </Stack>;
 
   return (
     <Stack gap="lg">
-      <PageHeader
-        title={t("nav.audit")}
-        description={t("audit.lede")}
-        Icon={IconShieldCheck}
-      />
+      {header}
 
       <DateRangePicker value={range} onChange={(next) => {
         listGeneration.current += 1;

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Anchor, Button, Card, Group, Select, Stack, TagsInput, Text, NumberInput, Textarea, Title } from "@mantine/core";
+import { Alert, Anchor, Button, Card, Group, Select, Stack, TagsInput, Text, NumberInput, Textarea } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { useViewer } from "@/app/_lib/useViewer";
+import { SectionHeading } from "@/app/_components/SectionHeading";
 import { LoadingText } from "@/app/_components/PageState";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import type { WorkspacePolicyResponse } from "@/app/api/agents/[name]/workspace-policy/route";
@@ -58,8 +59,7 @@ export function WorkspaceRepositoryPolicySection({ agentName }: { agentName: str
 
   return <Card component="section" id="workspace-repositories" style={{ scrollMarginTop: 80 }}>
     <Stack gap="md">
-      <Title order={3} size="h5">{t("workspace.toolsTitle")}</Title>
-      <Text size="sm" c="dimmed">{t("workspace.policy.description")}</Text>
+      <SectionHeading title={t("workspace.toolsTitle")} description={t("workspace.policy.description")} />
       {error && <Alert color="red">{error}</Alert>}
       {!view && !error && <LoadingText />}
       {view && !view.backendReady && <Alert>{t("workspace.backendUnavailable")}</Alert>}

@@ -113,7 +113,7 @@ export function SlackSection({
       setPrompts(emptyPrompts(next.suggestedPrompts));
       // What came back, not what was typed — the use case normalized it.
       setKeywords(next.channelKeywords.join(", "));
-      setStatus("Saved");
+      setStatus(t("common.saved"));
       onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
     } catch (e) {
       setError(reportError(e, "Save failed"));
@@ -128,7 +128,7 @@ export function SlackSection({
     setError(null);
     try {
       const result = await testAgentSlack(agentName);
-      setStatus(`Connected: ${result.team} (bot: ${result.botUser})`);
+      setStatus(t("integrations.slackConnected", { team: result.team ?? "—", bot: result.botUser ?? "—" }));
     } catch (e) {
       setError(reportError(e, "Connection test failed"));
     } finally {
@@ -139,9 +139,9 @@ export function SlackSection({
   async function disconnect() {
     if (
       !(await confirm({
-        title: "Remove Slack credentials",
-        message: "Remove the Slack bot credentials for this agent?",
-        confirmLabel: "Remove",
+        title: t("integrations.removeCredentialsTitle", { service: "Slack" }),
+        message: t("integrations.removeSlackHint"),
+        confirmLabel: t("common.remove"),
       }))
     ) {
       return;
@@ -156,7 +156,7 @@ export function SlackSection({
       setSigningSecret("");
       setEnabled(false);
       setPrompts(emptyPrompts([]));
-      setStatus("Disconnected");
+      setStatus(t("integrations.disconnected"));
       onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
     } catch (e) {
       setError(reportError(e, "Disconnect failed"));
@@ -214,7 +214,7 @@ export function SlackSection({
 
         <Stack gap="xs">
           <Text fz="sm" fw={500}>
-            Suggested prompts
+            {t("pset.suggestedPrompts")}
           </Text>
           <Text fz="xs" c="dimmed" lh={1.6}>
             {t("pset.slackPromptsHint", { max: MAX_SUGGESTED_PROMPTS })}
@@ -251,16 +251,13 @@ export function SlackSection({
 
         <Stack gap="xs">
           <Text fz="sm" fw={500}>
-            Channel keywords
+            {t("pset.channelKeywords")}
           </Text>
           <Text fz="xs" c="dimmed" lh={1.6}>
-            Words that wake this bot in a channel without an @mention, separated by commas. Leave
-            empty and the bot answers only when it is mentioned — or when someone replies in a
-            thread it already answered in, which needs no configuration and lasts a day. Matching
-            ignores case and matches inside words, so short or common words wake the bot often.
+            {t("pset.channelKeywordsHint")}
           </Text>
           <TextInput
-            aria-label="Channel keywords"
+            aria-label={t("pset.channelKeywords")}
             placeholder="deploy, incident, 배포"
             value={keywords}
             onChange={(e) => setKeywords(e.currentTarget.value)}
@@ -280,14 +277,14 @@ export function SlackSection({
 
         <Group gap="xs">
           <Button onClick={save} loading={busy}>
-            Save
+            {t("common.save")}
           </Button>
           <Button variant="default" onClick={test} disabled={busy || !view.configured}>
-            Test connection
+            {t("common.testConnection")}
           </Button>
           {view.configured && (
             <Button variant="default" color="red" onClick={disconnect} disabled={busy} ml="auto">
-              Disconnect
+              {t("common.disconnect")}
             </Button>
           )}
         </Group>

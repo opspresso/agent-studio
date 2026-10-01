@@ -28,7 +28,7 @@ describe("guest navigation and editing", () => {
     expect(guest).toEqual(navigation("member"));
     expect(guest).toEqual(expect.arrayContaining(["/agents", "/chats", "/artifacts", "/plugins", "/skills", "/tools", "/models", "/profile", "/guide"]));
     expect(guest).not.toContain("/settings");
-    expect(navigation("admin")).toEqual(expect.arrayContaining(["/settings", "/members", "/audit"]));
+    expect(navigation("admin")).toEqual(expect.arrayContaining(["/settings", "/members", "/audits"]));
   });
   it("keeps a downgraded owner read-only without changing member ownership or admin access", () => {
     expect(canEditAgent(viewer("guest"), "user@example.test")).toBe(false);

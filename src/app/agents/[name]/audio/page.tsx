@@ -1,5 +1,6 @@
 "use client";
 
+import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
@@ -24,7 +25,7 @@ export default function AudioPage() {
   const { enabled, error } = useAgentAudio();
   const t = useT();
   if (error) return <Alert color="red">{error}</Alert>;
-  if (enabled === undefined) return <Text c="dimmed">{t("common.loading")}</Text>;
+  if (enabled === undefined) return <LoadingText />;
   if (!enabled) return <Alert color="blue">{t("audio.toolsRequired")}</Alert>;
   return <AudioAgentPage />;
 }
@@ -213,7 +214,8 @@ function AudioWorkspace({ name }: { name: string }) {
     </Stack></Paper>
     <SectionHeading title={t("audio.jobs")}><Button variant="default" loading={loadingJobs} onClick={() => refresh().catch((error) => setError(error.message))}>{t("audio.refresh")}</Button></SectionHeading>
     {jobs.some((job) => !isAudioJobTerminal(job.status)) && <Text size="xs" c="dimmed">{t("audio.pollingHint")}</Text>}
-    {!loadingJobs && !jobs.length && <Text c="dimmed">{t("audio.noJobs")}</Text>}
+    {loadingJobs && !jobs.length && <LoadingText />}
+    {!loadingJobs && !jobs.length && <EmptyState>{t("audio.noJobs")}</EmptyState>}
     {jobs.map((job) => <Paper key={job.id} withBorder p="md"><Stack gap="xs">
       <Group justify="space-between"><Text ff="monospace" size="sm">{job.id}</Text><Badge>{t(`audio.status.${job.status}`)}</Badge></Group>
       <Text size="sm" fw={600}>{t(`audio.task.${job.task ?? "process"}`)} · {t(`audio.stage.${job.stage}`)}</Text>

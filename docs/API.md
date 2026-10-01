@@ -173,7 +173,7 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 그 agent 의 
 | `/api/members/{id}/tier` | `PUT` | admin |
 | `/api/settings` | `GET` `PUT` | admin |
 | `/api/settings/member-tiers` | `GET` `PUT` | admin |
-| `/api/audit` | `GET` | admin |
+| `/api/audits` | `GET` | admin |
 
 ### 비인증 / 기계 표면
 
@@ -457,7 +457,7 @@ PUT /api/settings → 200 {…same shape…} | 400
 ## 감사 기록
 
 ```
-GET /api/audit?from=2026-08-01&to=2026-08-03&limit=50&cursor=<opaque>
+GET /api/audits?from=2026-08-01&to=2026-08-03&limit=50&cursor=<opaque>
   → 200 { events: [ { eventId, actorEmail, action, target, detail?, createdAt } ], nextCursor: string | null }
 ```
 

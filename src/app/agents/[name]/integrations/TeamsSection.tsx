@@ -80,7 +80,7 @@ export function TeamsSection({
       setAppPassword(next.appPassword);
       setTenantId(next.tenantId);
       setEnabled(next.enabled);
-      setStatus("Saved");
+      setStatus(t("common.saved"));
       onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
     } catch (e) {
       setError(reportError(e, "Save failed"));
@@ -95,7 +95,7 @@ export function TeamsSection({
     setError(null);
     try {
       const result = await testAgentTeams(agentName);
-      setStatus(`Connected: token issued for ${result.appId}`);
+      setStatus(t("integrations.teamsConnected", { appId: result.appId }));
     } catch (e) {
       setError(reportError(e, "Connection test failed"));
     } finally {
@@ -106,9 +106,9 @@ export function TeamsSection({
   async function disconnect() {
     if (
       !(await confirm({
-        title: "Remove Teams credentials",
-        message: "Remove the Teams bot registration for this agent? The Azure Bot itself is untouched.",
-        confirmLabel: "Remove",
+        title: t("integrations.removeCredentialsTitle", { service: "Teams" }),
+        message: t("integrations.removeTeamsHint"),
+        confirmLabel: t("common.remove"),
       }))
     ) {
       return;
@@ -123,7 +123,7 @@ export function TeamsSection({
       setAppPassword("");
       setTenantId("");
       setEnabled(false);
-      setStatus("Disconnected");
+      setStatus(t("integrations.disconnected"));
       onConnectionChange?.({ enabled: next.enabled, configured: next.configured });
     } catch (e) {
       setError(reportError(e, "Disconnect failed"));
@@ -185,14 +185,14 @@ export function TeamsSection({
 
         <Group gap="xs">
           <Button onClick={save} loading={busy}>
-            Save
+            {t("common.save")}
           </Button>
           <Button variant="default" onClick={test} disabled={busy || !view.enabled}>
-            Test connection
+            {t("common.testConnection")}
           </Button>
           {view.configured && (
             <Button variant="default" color="red" onClick={disconnect} disabled={busy} ml="auto">
-              Disconnect
+              {t("common.disconnect")}
             </Button>
           )}
         </Group>

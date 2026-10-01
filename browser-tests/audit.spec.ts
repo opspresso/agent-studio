@@ -24,7 +24,7 @@ test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.
 
 test("loads another audit page and keeps the existing rows in order", async ({ page }) => {
   const cursors: Array<string | null> = [];
-  await page.route("**/api/audit?**", (route) => {
+  await page.route("**/api/audits?**", (route) => {
     const cursor = new URL(route.request().url()).searchParams.get("cursor");
     cursors.push(cursor);
     const event = (id: string, createdAt: string) => ({

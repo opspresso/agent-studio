@@ -7,8 +7,6 @@
 
 .section {
   min-width: 0;
-  padding-top: 20px;
-  border-top: 2px solid var(--mantine-color-text);
 }
 
 .chatList,

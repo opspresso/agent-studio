@@ -28,6 +28,7 @@
 }
 
 .agentDescription {
+  display: block;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   max-width: 620px;

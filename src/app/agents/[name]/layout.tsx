@@ -13,6 +13,7 @@ import {
   IconPlugConnected,
   IconRoute,
   IconSparkles,
+  IconRobot,
 } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
@@ -101,7 +102,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
     // so a draft or pending response from one Agent cannot enter another.
     <Stack key={name} gap="lg">
       <BackLink href="/agents" label={t("nav.agents")} />
-      <PageHeader title={currentAgent?.displayName || name} Icon={IconSparkles}
+      <PageHeader title={currentAgent?.displayName || name} Icon={IconRobot}
         details={<Text fz="xs" ff="monospace" c="dimmed">{name}</Text>}>
         {ownerEmail && <OwnerLine ownerEmail={ownerEmail} isMine={viewer?.email === ownerEmail} prefix={t("agent.ownedBy")} />}
         {viewer !== null && tierMayCreateAgents(viewer.tier) && <CloneAgentButton sourceName={name} />}

@@ -4,7 +4,7 @@ import "@mantine/core/styles.css";
 import { theme } from "../../src/app/theme";
 import { I18nProvider } from "../../src/app/_i18n/provider";
 import { ViewerProvider } from "../../src/app/_lib/useViewer";
-import AuditPage from "../../src/app/audit/page";
+import AuditPage from "../../src/app/audits/page";
 
 createRoot(document.getElementById("root")!).render(
   <MantineProvider theme={theme}>

@@ -212,11 +212,9 @@ function McpDetail({ name }: { name: string }) {
     const managed = server?.runtime === "managed";
     if (
       !(await confirm({
-        title: managed ? "Delete server and container" : "Delete MCP server",
-        message: managed
-          ? `Delete "${name}" and stop its container? This cannot be undone.`
-          : `Delete MCP server "${name}"? This cannot be undone.`,
-        confirmLabel: "Delete",
+        title: t(managed ? "tools.deleteManagedTitle" : "tools.deleteTitle"),
+        message: t(managed ? "tools.deleteManagedHint" : "tools.deleteHint", { name }),
+        confirmLabel: t("common.delete"),
       }))
     ) {
       return;
@@ -283,32 +281,31 @@ function McpDetail({ name }: { name: string }) {
             // The repo owns url/description/content and rewrites them on sync;
             // headers, OAuth and a managed address stay this console's.
             <Text fz="xs" c="dimmed" mt={4}>
-              Owned by {server.source} — its URL, description, and notes follow the repo;
-              credentials are set here.
+              {t("tools.sourceOwned", { source: server.source })}
             </Text>
           )}
           {server.runtime === "managed" && (
             <Group gap={6} mt="xs" fz="xs" wrap="wrap">
               <Text fz="xs" c="dimmed">
-                container
+                {t("tools.container")}
               </Text>
               {managedStatus === null ? (
                 <Text fz="xs" c="dimmed">
-                  unknown
+                  {t("tools.stateUnknown")}
                 </Text>
               ) : !managedStatus.running ? (
                 <Text fz="xs" c="red">
-                  not running{managedStatus.detail ? ` — ${managedStatus.detail}` : ""}
+                  {t("tools.notRunning")}{managedStatus.detail ? ` — ${managedStatus.detail}` : ""}
                 </Text>
               ) : managedStatus.reachable ? (
                 <Text fz="xs" c="teal">
-                  running · reachable
+                  {t("tools.runningReachable")}
                 </Text>
               ) : (
                 // The container is up but this app cannot address it.
                 // Restarting rejoins it to the current network namespace.
                 <Text fz="xs" c="red">
-                  running · unreachable
+                  {t("tools.runningUnreachable")}
                 </Text>
               )}
               {server.image && (
@@ -324,7 +321,7 @@ function McpDetail({ name }: { name: string }) {
                   onClick={onRestart}
                   disabled={restarting}
                 >
-                  {restarting ? "Restarting…" : "Restart container"}
+                  {t(restarting ? "tools.restarting" : "tools.restart")}
                 </Anchor>
               )}
             </Group>
@@ -333,13 +330,13 @@ function McpDetail({ name }: { name: string }) {
         {!editing && viewer?.isAdmin && (
           <Group gap="xs" wrap="nowrap">
             <Button variant="default" onClick={() => setEditing(true)}>
-              {server.source ? "Edit credentials" : "Edit"}
+              {t(server.source ? "tools.editCredentials" : "common.edit")}
             </Button>
             {/* A repo-owned entry leaves through the sync's orphan removal,
                 never this button — the API refuses the delete anyway. */}
             {!server.source && (
               <Button variant="default" color="red" onClick={onDelete}>
-                Delete
+                {t("common.delete")}
               </Button>
             )}
           </Group>
@@ -385,11 +382,11 @@ function McpDetail({ name }: { name: string }) {
 
           <section>
             <Text fz="sm" fw={500} c="dimmed" mb="xs">
-              Headers
+              {t("headers.caption")}
             </Text>
             {headerEntries.length === 0 ? (
               <Text fz="sm" c="dimmed">
-                None.
+                {t("common.none")}
               </Text>
             ) : (
               <Card padding={0}>
@@ -425,7 +422,7 @@ function McpDetail({ name }: { name: string }) {
               </Text>
               <Button variant="default" size="compact-sm" onClick={runTest} loading={testing}
                 disabled={!viewer || !tierMayEdit(viewer.tier)}>
-                Test connection
+                {t("common.testConnection")}
               </Button>
             </Group>
             <Text fz="xs" c="dimmed" mb="sm">
@@ -441,7 +438,7 @@ function McpDetail({ name }: { name: string }) {
             {tools && (
               <div>
                 <Text fz="sm" c="dimmed" mb="xs">
-                  {tools.length} tool{tools.length === 1 ? "" : "s"} discovered.
+                  {t("tools.discoveredCount", { count: tools.length })}
                 </Text>
                 <Text fz="xs" c="blue" mb="xs">
                   {t("tools.toolDescriptionsHint")}
@@ -611,7 +608,7 @@ function OAuthSection({
           onClick={() => void discover()}
           loading={busy}
         >
-          {server.auth ? "Rediscover" : "Discover"}
+          {t(server.auth ? "tools.rediscover" : "tools.discover")}
         </Button>}
         {editable && server.auth && (
           <Button
@@ -621,7 +618,7 @@ function OAuthSection({
             onClick={() => void clear()}
             disabled={busy}
           >
-            Clear
+            {t("tools.clearAuth")}
           </Button>
         )}
       </Group>
@@ -635,7 +632,7 @@ function OAuthSection({
       {choices && (
         <Alert color="yellow" variant="light" mb="xs">
           <Text fz="sm">
-            This resource advertises more than one authorization server. Choose one:
+            {t("tools.chooseIssuer")}
           </Text>
           <Group gap="xs" mt="xs">
             {choices.map((issuer) => (
@@ -748,8 +745,7 @@ function OAuthSection({
         </Stack>
       ) : (
         <Text fz="sm" c="dimmed">
-          Not configured. Discovery reads the server&apos;s published metadata; agents then
-          authorize with the OAuth client configured here.
+          {t("tools.authNotConfigured")}
         </Text>
       )}
     </section>
@@ -874,8 +870,7 @@ function EditMcpForm({
               styles={monoInput}
             />
             <Text fz="xs" c="dimmed">
-              Changing the image, port, environment, arguments, or endpoint automatically
-              restarts the container.
+              {t("tools.restartOnChange")}
             </Text>
           </>
         ) : (
@@ -888,8 +883,8 @@ function EditMcpForm({
             disabled={documentLocked}
             description={
               documentLocked
-                ? "Owned by the plugin repository."
-                : "Changing the URL drops the stored headers and OAuth block — credentials belong to the address they were entered for."
+                ? t("tools.documentOwned")
+                : t("tools.urlCredentialHint")
             }
             inputWrapperOrder={["label", "input", "description", "error"]}
           />
@@ -927,7 +922,7 @@ function EditMcpForm({
 
         <HeaderRowsEditor rows={rows} onChange={setRows} />
         <Text fz="xs" c="dimmed">
-          Masked values keep the stored secret. Type a new value to replace it.
+          {t("tools.maskedHint")}
         </Text>
 
         {error && (
@@ -938,10 +933,10 @@ function EditMcpForm({
 
         <Group justify="flex-end" gap="xs">
           <Button variant="default" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button type="submit" loading={submitting}>
-            Save
+            {t("common.save")}
           </Button>
         </Group>
       </Stack>

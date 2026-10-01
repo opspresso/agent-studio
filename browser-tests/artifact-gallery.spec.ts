@@ -58,6 +58,14 @@ test.beforeEach(async ({ page }) => {
 });
 test.afterEach(() => { expect(errors).toEqual([]); });
 
+test("keeps guest artifacts readable without offering deletion", async ({ page }) => {
+  await page.goto(`${base}?role=guest`);
+  await expect(page.getByRole("article")).toHaveCount(6);
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("article", { name: "report.html" }).getByRole("link", { name: "Download", exact: true })).toBeVisible();
+  expect(deletions).toEqual([]);
+});
+
 test("shows compact rows and preserves preview, download, provenance and unavailable states", async ({ page }) => {
   await page.goto(base);
   await expect(page.getByRole("article")).toHaveCount(6);

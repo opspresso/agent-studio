@@ -360,7 +360,7 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 | Agent 하위 `api-reference`·`integrations`·`settings`·`audio`·`workspace` | 호출 예제·연동·설정·선택적 비동기 작업 |
 | `/chats`, `/chats/[chatId]`, `/artifacts` | 개인 대화·작업·파일 |
 | `/skills`·`/tools`·`/plugins`와 각 상세 | 공유 capability registry |
-| `/models`, `/profile`, `/members`, `/audit`, `/settings` | 모델·개인 한도·관리 화면. 실제 접근은 서버 권한 검사로 제한 |
+| `/models`, `/profile`, `/members`, `/audits`, `/settings` | 모델·개인 한도·관리 화면. 실제 접근은 서버 권한 검사로 제한 |
 
 콘솔 언어는 route가 아닌 locale cookie로 정한다. `en.ts`가 번역 key의 정본이고 `ko.ts`는
 타입 검사로 일치시킨다. 독자에게 보이는 날짜는 명시적 locale을 받는 `shared/date.ts`를 사용한다.
@@ -368,7 +368,11 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 로그아웃 상태에서는 내비게이션 내용을 렌더하지 않는다.
 
 Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액션은 `PageHeader`, 하위 섹션은
-`SectionHeading`, 경로 기반 탭은 `PageTabs`를 사용한다. 목록·빈 상태·폼 모달은
+`SectionHeading`, 경로 기반 탭은 `PageTabs`를 사용한다. `PageHeader`의 아이콘은 필수이며
+목록과 상세는 같은 리소스 아이콘을 사용한다. Chat·Workspace 작업창은 같은 헤더의 `compact`
+표현으로 출력 공간을 확보하면서 h1·아이콘·메타데이터·액션 구조를 유지한다.
+제목을 미리 알 수 있는 페이지는 로딩·오류·권한 부족 상태에도 제목을 유지한다.
+저장·수정·삭제·연결 등 조작 문구와 결과 상태는 locale에 따라 표시한다. 목록·빈 상태·폼 모달은
 `DataTable`/`CatalogCollection`, `PageState`, `FormModal`이 공통 표현을 소유한다.
 Agents·Plugins·Skills·Tools·Models·Artifacts 카탈로그는 행/그리드 아이콘으로 보기를 선택하고 `CatalogView`가 브라우저별
 공통 선택을 저장한다. 클라이언트에서 새로 마운트되는 목록은 첫 표시부터 저장된 선택을 읽는다.
@@ -396,7 +400,7 @@ Settings는 Service·Access·Plugins·Models 탭으로 관리하고, `/models`�
 
 개념의 기본 정의는 [시스템 개요](AGENT_STUDIO.md#skilltoolmcpagentmemory)를 따른다.
 콘솔의 화면·유형 이름은 언어와 관계없이 영어로 표시한다. 메뉴·목록·컬렉션은 `Chats`, `Workspaces`,
-`Agents`, `Artifacts`, `Plugins`, `Skills`, `Tools`, `Models`, `Members`처럼 복수형을 쓰고,
+`Agents`, `Artifacts`, `Plugins`, `Skills`, `Tools`, `Models`, `Members`, `Audits`처럼 복수형을 쓰고,
 개별 유형·생성·삭제는 `Chat`, `Workspace`, `Agent`, `Artifact`, `Plugin`, `Skill`, `Tool`,
 `Model`, `Member`처럼 단수형을 쓴다.
 `Agent`는 콘솔에서 설정하고 저장하는 실행 단위이며, `subagent`는 다른 Agent 설정의

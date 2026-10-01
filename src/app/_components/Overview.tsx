@@ -12,11 +12,11 @@ import {
   Stack,
   Text,
   ThemeIcon,
-  Title,
   UnstyledButton,
 } from "@mantine/core";
 import {
   IconArrowRight,
+  IconChartBar,
   IconRobot,
   IconMessageCircle,
   IconPlus,
@@ -32,6 +32,7 @@ import { tierMayCreateAgents, type MemberTier } from "@/domain/member/tiers";
 import { formatDate } from "@/shared/date";
 import { OwnerLine } from "./OwnerLine";
 import { PageHeader } from "./PageHeader";
+import { SectionHeading } from "./SectionHeading";
 import { Dashboard } from "./Dashboard";
 import classes from "./Overview.module.css";
 
@@ -164,8 +165,8 @@ export function Overview({
     agentsLoaded && chatsLoaded && agents !== null && agents.length === 0 && !chatsFailed && chats.length === 0;
 
   return (
-    <Stack gap={36}>
-      <PageHeader title={t("overview.title")} description={t("overview.lede")}>
+    <Stack gap="lg">
+      <PageHeader title={t("overview.title")} description={t("overview.lede")} Icon={IconChartBar}>
         <Button component={Link} href="/chats" leftSection={<IconMessageCircle size={16} />}>
           {t("overview.newChat")}
         </Button>
@@ -255,20 +256,14 @@ function Section({
 }) {
   return (
     <Stack gap="md" component="section" className={classes.section}>
-      <Group justify="space-between" align="flex-end" gap="xs" wrap="wrap">
-        <div>
-          <Title order={2} fz="xl" fw={650}>{title}</Title>
-          <Text fz="sm" c="dimmed" mt={4}>
-            {description}
-          </Text>
-        </div>
+      <SectionHeading title={title} description={description}>
         <Anchor component={Link} href={href} fz="sm" style={{ whiteSpace: "nowrap" }}>
           <Group gap={4} wrap="nowrap">
             {linkLabel}
             <IconArrowRight size={14} />
           </Group>
         </Anchor>
-      </Group>
+      </SectionHeading>
       {children}
     </Stack>
   );

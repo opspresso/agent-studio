@@ -239,7 +239,7 @@ export function SchedulesSection({
                 })
               }
             >
-              Create
+              {t("common.create")}
             </Button>
           </Group>
           <TextInput
@@ -312,9 +312,9 @@ export function SchedulesSection({
                     onClick={async () => {
                       if (
                         !(await confirm({
-                          title: "Delete schedule",
-                          message: `Delete schedule "${schedule.triggerId}"?`,
-                          confirmLabel: "Delete",
+                          title: t("schedule.deleteTitle"),
+                          message: t("schedule.deleteHint", { id: schedule.triggerId }),
+                          confirmLabel: t("common.delete"),
                         }))
                       ) {
                         return;
@@ -322,7 +322,7 @@ export function SchedulesSection({
                       void act(() => deleteTrigger(agentName, schedule.triggerId));
                     }}
                   >
-                    Delete
+                    {t("common.delete")}
                   </Button>
                   </Group>
                 }
@@ -334,7 +334,7 @@ export function SchedulesSection({
 
         {!loading && schedules.length === 0 && (
           <Text fz="sm" c="dimmed">
-            No schedules yet.
+            {t("schedule.empty")}
           </Text>
         )}
 
@@ -361,9 +361,9 @@ export function SchedulesSection({
                     onClick={async () => {
                       if (
                         !(await confirm({
-                          title: "Delete webhook",
-                          message: `Delete the retired webhook "${orphan.triggerId}"? Its secret stops existing.`,
-                          confirmLabel: "Delete",
+                          title: t("schedule.deleteWebhookTitle"),
+                          message: t("schedule.deleteWebhookHint", { id: orphan.triggerId }),
+                          confirmLabel: t("common.delete"),
                         }))
                       ) {
                         return;
@@ -371,7 +371,7 @@ export function SchedulesSection({
                       void act(() => deleteTrigger(agentName, orphan.triggerId));
                     }}
                   >
-                    Delete
+                    {t("common.delete")}
                   </Button>
                 </Group>
               ))}

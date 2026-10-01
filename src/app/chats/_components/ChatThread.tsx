@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PageHeader } from "@/app/_components/PageHeader";
+import { IconMessageCircle } from "@tabler/icons-react";
 import { useLatestScroll } from "@/app/_lib/useLatestScroll";
 import { redirectApiUnauthorized } from "@/app/_lib/authRedirect";
 import { attachmentSrc, type Attachment } from "@/app/_lib/imageAttachments";
@@ -417,18 +419,13 @@ export function ChatThread({ chatId }: { chatId: string }) {
   return (
     <Flex direction="column" h="100%">
       {chat && (
-        <Box
-          pb="xs"
-          mb="sm"
-          style={{ borderBottom: "1px solid var(--studio-border)" }}
-        >
-          <Stack gap={4} className={classes.column}>
-            <Text component="h2" fz="sm" fw={700} m={0} truncate="end" title={chat.title}>{chat.title}</Text>
+        <Box mb="sm" className={classes.column}>
+          <PageHeader compact title={chat.title} Icon={IconMessageCircle} details={
             <Group gap="xs">
               <Badge variant="outline" color="gray">{t("chat.kind")}</Badge>
               {chat.agentName && <Badge color={BADGE.owned} radius="xl">{chat.agentName}</Badge>}
             </Group>
-          </Stack>
+          } />
         </Box>
       )}
       <Box style={{ position: "relative", flex: 1, minHeight: 0 }}>

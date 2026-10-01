@@ -274,7 +274,7 @@
 | usage 행의 키가 되는 UTC 날짜 | `src/shared/date.ts` 의 `utcDay` | 코드 |
 | repo sync 가 무엇을 했고, 무엇을 사람에게 남겼는가 | `src/domain/sync/types.ts` | 코드 |
 | 브랜드 팔레트와 컴포넌트 기본값 | `src/app/theme.ts` | 코드 |
-| 페이지·섹션 제목과 경로 탭 | `src/app/_components/PageHeader.tsx`, `SectionHeading.tsx`, `PageTabs.tsx` | 코드 |
+| 페이지·섹션 제목과 경로 탭 | `src/app/_components/PageHeader.tsx`(페이지 아이콘 필수), `SectionHeading.tsx`, `PageTabs.tsx` | 코드 |
 | Agent 상세의 분할 페이지 가로 비율 | `src/app/agents/[name]/AgentPageColumns.module.css` | 코드 |
 | 카탈로그 행/그리드 보기와 브라우저 저장 키 | `src/app/_components/CatalogView.tsx`; 상태 표현은 `CatalogCollection.tsx`, 컨테이너 기준 열 배치는 `CatalogLayout.module.css`, 항목 스타일은 `CatalogRows.module.css` / `ModelCollection.module.css` | 코드 |
 | 연동 이력의 읽기 수명과 Schedule 이력의 병합·페이지 크기·동시 읽기 상한 | `src/app/agents/[name]/integrations/IntegrationHistory.tsx` / `scheduleRuns.ts` | 코드 |

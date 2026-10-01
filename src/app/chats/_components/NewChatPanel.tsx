@@ -17,6 +17,7 @@ import { Alert, Box, Button, Flex, Group, Loader, ScrollArea, Select, Stack, Tex
 import { IconMessageCircle, IconArrowRight } from "@tabler/icons-react";
 import { useLocalStorage } from "@mantine/hooks";
 import classes from "./ChatThread.module.css";
+import { PageHeader } from "@/app/_components/PageHeader";
 import { AgentSuggestion } from "@/app/_components/AgentSuggestion";
 
 const AGENT_KEY = "agent-studio-chat-agent";
@@ -186,12 +187,9 @@ export function NewChatPanel() {
           <Box className={classes.welcome}>
             <div className={classes.welcomeContent}>
               <Text className={classes.welcomeLabel}>{t("chat.welcomeTitle")}</Text>
-              <Title order={1} fz={{ base: 26, sm: 32 }}>
-                {selectedAgent?.displayName || selectedAgent?.name || t("chat.welcomeTitle")}
-              </Title>
-              <Text fz="sm" c="dimmed" mt="xs" className={classes.agentDescription}>
-                {selectedAgent?.description || t("chat.pickAgent")}
-              </Text>
+              <PageHeader Icon={IconMessageCircle}
+                title={selectedAgent?.displayName || selectedAgent?.name || t("chat.welcomeTitle")}
+                description={<span className={classes.agentDescription}>{selectedAgent?.description || t("chat.pickAgent")}</span>} />
               <Text fz="xs" c="dimmed" mt="md">{t("chat.welcomeHint")}</Text>
             </div>
           </Box>
