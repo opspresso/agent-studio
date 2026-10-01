@@ -68,7 +68,9 @@ function transcriptInputs(transcript: AudioTranscript): string[] {
     } while (remaining.length);
   };
   // Partial provider segments must never replace the complete source text.
-  append(transcript.text, { kind: "full_text" });
+  if (transcript.segments.map(segment => segment.text).join("\n") !== transcript.text) {
+    append(transcript.text, { kind: "full_text" });
+  }
   for (const { text, ...metadata } of transcript.segments) append(text, { kind: "segment", ...metadata });
   flush();
   return pages;
