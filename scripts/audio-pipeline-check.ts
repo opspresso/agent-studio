@@ -11,6 +11,8 @@ import { CreateBucketCommand, DeleteBucketCommand, ListObjectsV2Command } from "
 import { assertLocalDatabase } from "./local-database";
 import { withCheckLifecycle, type RegisterCheckCleanup } from "./check-lifecycle";
 import { sourceFileObjectKey } from "@/domain/artifact/sourceFile";
+import { isSourceArtifact } from "@/domain/artifact/sourceFile";
+import { sourceContentKey } from "@/application/artifact/contentIdentity";
 import type { ArtifactUseCases } from "@/application/artifact/artifactUseCases";
 
 async function main() {
@@ -19,7 +21,11 @@ async function main() {
 }
 
 async function runChecks(cleanup: RegisterCheckCleanup) {
+  const diarized = process.argv.includes("--diarization");
+  const asrWireId = diarized ? "gpt-4o-transcribe" : "whisper-1";
+  const expectedAsrCalls = diarized ? 3 : 1;
   process.env.STAGE = "local";
+  process.env.PUBLISHED_MODELS_REFRESH = "off";
   process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test";
   assertLocalDatabase(process.env.DATABASE_URL, true);
   const { withTransaction, closePool } = await import("@/infrastructure/db/client");
@@ -45,6 +51,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   process.env.S3_BUCKET_NAME = bucket;
   let calls = 0;
   let postprocessCalls = 0;
+  let diarizationCalls = 0;
   let mockFailure: unknown;
   const assertMockSucceeded = () => { if (mockFailure !== undefined) throw mockFailure; };
   const mock = createServer((request, response) => {
@@ -52,8 +59,26 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       const buffers: Buffer[] = [];
       for await (const chunk of request) buffers.push(Buffer.from(chunk));
       const body = Buffer.concat(buffers);
+      if (request.url === "/diarize") {
+        assert.equal(request.headers.authorization, "Bearer synthetic-diarization-token");
+        assert.equal(request.headers["content-type"], "audio/mpeg");
+        assert.ok(body.length > 0);
+        diarizationCalls++;
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({ duration: 1.5, revision: "fixture-v1", warnings: [], turns: [
+          { start: 0, end: 0.5, speaker: "SPEAKER_00" },
+          { start: 0.5, end: 1, speaker: "SPEAKER_01" },
+          { start: 1, end: 1.5, speaker: "SPEAKER_00" },
+        ] }));
+        return;
+      }
       if (request.url === "/v1/chat/completions") {
         const input = JSON.parse(body.toString("utf-8"));
+        if (diarized) {
+          const source = JSON.parse(JSON.parse(input.messages.at(-1).content).source);
+          assert.deepEqual(source.filter((entry: { kind: string }) => entry.kind === "segment")
+            .map((entry: { speaker: string }) => entry.speaker), ["SPEAKER_00", "SPEAKER_01", "SPEAKER_00"]);
+        }
         assert.ok((input.tools ?? []).every((tool: { function: { name: string } }) => tool.function.name === "Skill"), "postprocessing must not receive effectful tools");
         postprocessCalls += 1;
         const content = input.response_format?.type === "json_schema" ? JSON.stringify({ text: "Summary of sample", memories: [
@@ -66,11 +91,12 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
         return;
       }
       assert.ok(request.headers["content-type"]?.startsWith("multipart/form-data"));
-      assert.ok(body.includes(Buffer.from("whisper-1")));
+      assert.ok(body.includes(Buffer.from(asrWireId)));
       assert.ok(body.includes(Buffer.from("RIFF")));
       calls += 1;
       response.setHeader("content-type", "application/json");
-      response.end(JSON.stringify({ text: "Sample transcript", usage: { type: "duration", seconds: 1.5 } }));
+      response.end(JSON.stringify({ text: "Sample transcript", usage: { type: "tokens", seconds: diarized ? 0.5 : 1.5,
+        input_tokens: 10, output_tokens: 5 } }));
     };
     void respond().catch((error: unknown) => {
       if (mockFailure === undefined) mockFailure = error;
@@ -88,6 +114,12 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   });
   const address = mock.address(); assert.ok(address && typeof address !== "string");
   const baseUrl = `http://127.0.0.1:${address.port}/v1`;
+  process.env.TRANSCRIPTION_RESPONSE_FORMAT = "json";
+  process.env.TRANSCRIPTION_CHUNKING_STRATEGY = "";
+  process.env.TRANSCRIPTION_SEGMENT_SECONDS = "300";
+  process.env.DIARIZATION_BASE_URL = diarized ? `http://127.0.0.1:${address.port}` : "";
+  process.env.DIARIZATION_TOKEN = "synthetic-diarization-token";
+  process.env.DIARIZATION_REVISION = "fixture-v1";
   const { migrate } = await import("@/infrastructure/db/migrations");
   await migrate();
   const { settingsRepository } = await import("@/infrastructure/db/repositories/settingsRepository");
@@ -104,17 +136,18 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   const { llmProviderApiKeyContext } = await import("@/domain/security/secretContext");
   await settingsRepository.update(current => ({ ...current,
     llmProviders: [{ name: "openai", baseUrl, apiKey: encryptSecret("test", llmProviderApiKeyContext("openai", baseUrl)) }],
-    registeredModels: ["gpt-5-mini", "whisper-1"].map(wireId => ({
+    registeredModels: ["gpt-5-mini", asrWireId].map(wireId => ({
       id: `openai/${wireId}`, provider: "openai", wireId, displayName: wireId,
-      type: wireId === "whisper-1" ? "transcription" as const : "text" as const,
-      contextWindow: 128000, maxTokens: wireId === "whisper-1" ? 0 : 4000,
-      capabilities: { tools: wireId !== "whisper-1", structuredOutput: true, imageInput: false, reasoning: false },
-      pricing: { inputPer1M: 0, outputPer1M: 0, ...(wireId === "whisper-1" ? { perAudioMinute: 0 } : {}) },
+      type: wireId === asrWireId ? "transcription" as const : "text" as const,
+      contextWindow: 128000, maxTokens: wireId === asrWireId ? 0 : 4000,
+      capabilities: { tools: wireId !== asrWireId, structuredOutput: true, imageInput: false, reasoning: false },
+      pricing: { inputPer1M: diarized ? 2.5 : 0, outputPer1M: diarized ? 10 : 0, ...(wireId === "whisper-1" ? { perAudioMinute: 0 } : {}) },
     })), updatedAt: new Date().toISOString(),
   }));
 
   const { getAudioRuntime, mcpUseCases, artifactUseCases } = await import("@/lib/container");
   const { artifactRepository } = await import("@/infrastructure/db/repositories/artifactRepository");
+  const { sourceFileRepository } = await import("@/infrastructure/db/repositories/sourceFileRepository");
   const { getS3Client, deleteStoredObject } = await import("@/infrastructure/storage/s3ObjectStore");
   const { agentRepository } = await import("@/infrastructure/db/repositories/agentRepository");
   const { getLlmProviderConfigs } = await import("@/lib/runtime-settings");
@@ -164,6 +197,10 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   cleanup(async () => {
     await withCheckLifecycle(async remove => {
       for (const fileId of sourceFileIds) {
+        const metadata = await sourceFileRepository.get(agentName, fileId);
+        if (metadata?.checksum && isSourceArtifact(metadata)) {
+          remove(() => deleteItem(keys.artifactContent(sourceContentKey(metadata, metadata.checksum!))));
+        }
         remove(() => artifactRepository.delete(fileId));
         remove(() => deleteItem(keys.sourceFile(fileId)));
       }
@@ -197,7 +234,11 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   const retention = { unit: "months" as const, value: 3, timezone: "Asia/Seoul" };
   const file = await runtime.files.import({ id: randomUUID(), agentName, userEmail: email,
     filename: "source.mp3", mimeType: "audio/mpeg", retention }, async () => (async function* () { yield bytes; })());
-  const input = { task: "process" as const, source: { kind: "file" as const, fileId: file.id }, model: "openai/whisper-1", retention,
+  const repeated = await Promise.all(Array.from({ length: 6 }, () => runtime.files.import({ id: randomUUID(), agentName,
+    userEmail: email, filename: "repeated.mp3", mimeType: "audio/mpeg", retention },
+  async () => (async function* () { yield bytes; })())));
+  assert.ok(repeated.every(value => value.id === file.id && value.retireAt === file.retireAt), "repeated uploads reuse the original file and lifetime");
+  const input = { task: "process" as const, source: { kind: "file" as const, fileId: file.id }, model: `openai/${asrWireId}`, retention,
     postprocess: { agentName },
     ...(memoryUrl ? { destination: { serverName: memoryName, documents: true, memories: true } } : {}) };
   let configuration = await runtime.configuration.save(agentName, email, { enabled: true, model: input.model, retention,
@@ -224,14 +265,19 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   assert.equal(completed.configRevision, configuration.revision);
   const publicJob = await runtime.jobs.get(agentName, completed.id, email);
   assert.deepEqual(publicJob.fileInfo, { filename: file.filename, byteSize: file.byteSize, expiresAt: file.retireAt });
-  assert.deepEqual(publicJob.transcriptionProgress, { processedSeconds: 1.5, totalSeconds: 1.5, completedSegments: 1 });
+  assert.deepEqual(publicJob.transcriptionProgress, { processedSeconds: 1.5, totalSeconds: 1.5, completedSegments: expectedAsrCalls });
   assert.ok(completed.transcriptRef);
   {
     const result = await runtime.files.read(agentName, completed.transcriptRef, email);
     assert.equal(result.file.retireAt, file.retireAt);
     assert.equal(result.file.retainUntil, file.retireAt);
     const transcript = JSON.parse(new TextDecoder().decode(result.bytes));
-    assert.equal(transcript.text, "Sample transcript");
+    assert.equal(transcript.text, Array(expectedAsrCalls).fill("Sample transcript").join("\n"));
+    if (diarized) assert.deepEqual(transcript.segments, [
+      { text: "Sample transcript", start: 0, end: 0.5, speaker: "SPEAKER_00" },
+      { text: "Sample transcript", start: 0.5, end: 1, speaker: "SPEAKER_01" },
+      { text: "Sample transcript", start: 1, end: 1.5, speaker: "SPEAKER_00" },
+    ]);
     assert.equal(transcript.totalSeconds, 1.5);
     assert.ok(completed.draftRef);
     const draft = await runtime.files.read(agentName, completed.draftRef, email);
@@ -241,10 +287,11 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   }
   assert.ok(completed.summaryRef); assert.ok(completed.dialogueRef); assert.ok(completed.draftRef);
   const finalIds = [file.id, completed.transcriptRef, completed.draftRef, completed.summaryRef, completed.dialogueRef];
+  const visibleIds = [file.id, completed.summaryRef, completed.dialogueRef];
   assert.ok(artifactUseCases);
   const artifacts = await artifactUseCases.listMine(email, { limit: 100 });
-  assert.deepEqual(artifacts.filter((a) => a.agentName === agentName).map((a) => a.artifactId).sort(), [...finalIds].sort());
-  for (const id of finalIds) {
+  assert.deepEqual(artifacts.filter((a) => a.agentName === agentName).map((a) => a.artifactId).sort(), [...visibleIds].sort());
+  for (const id of visibleIds) {
     const result: Awaited<ReturnType<ArtifactUseCases["readPrivateFile"]>> = await artifactUseCases.readPrivateFile(id, email);
     assert.equal(result.artifact.retireAt, file.retireAt);
     assert.ok(result.bytes.length);
@@ -256,13 +303,14 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   const remaining = await client.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1000 }));
   assert.equal(remaining.IsTruncated, false);
   assert.deepEqual((remaining.Contents ?? []).filter((object) => object.Size !== 0).map((object) => object.Key).sort(), finalIds.map(sourceFileObjectKey).sort());
-  assert.equal(calls, 1);
+  assert.equal(calls, expectedAsrCalls);
+  assert.equal(diarizationCalls, diarized ? 1 : 0);
   assert.equal(postprocessCalls, 1);
   assert.equal((await runtime.jobs.submit(agentName, email, submitInput, { occurrence: "test-again" })).status, "duplicate");
   assert.equal(await runtime.process(agentName, completed.id), null);
-  assert.equal(calls, 1);
+  assert.equal(calls, expectedAsrCalls);
   const usage = await usageRepository.getDay(agentName, new Date().toISOString().slice(0, 10));
-  assert.equal(usage?.calls["openai/whisper-1"], 1);
+  assert.equal(usage?.calls[`openai/${asrWireId}`], expectedAsrCalls);
   await assert.rejects(runtime.jobs.get(agentName, completed.id, "other@example.test"));
   if (memoryUrl) {
     assert.ok(completed.receipts["document:transcript"]);

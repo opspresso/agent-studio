@@ -1,4 +1,5 @@
 import type { FileRetention } from "./retention";
+import { baseMimeType } from "./types";
 
 export interface SourceFile {
   id: string;
@@ -27,6 +28,12 @@ export interface SourceFile {
 
 export type SourceFileAvailability = "ready" | "missing" | "expired" | "pending" | "deleting" | "deleted";
 
+/** Pipeline checkpoints and structured JSON are internal inputs, not reader-facing outputs. */
+export const INTERNAL_SOURCE_MIME_TYPE = "application/json";
+export function isSourceArtifact(file: Pick<SourceFile, "derived" | "mimeType">): boolean {
+  return !file.derived || (file.derived.kind !== "checkpoint" && baseMimeType(file.mimeType) !== INTERNAL_SOURCE_MIME_TYPE);
+}
+
 /** File lifetime is independent of a completed job's retained history. */
 export function sourceFileAvailability(file: SourceFile | null, userEmail: string, now: string): SourceFileAvailability {
   if (!file || file.userEmail !== userEmail) return "missing";
@@ -42,6 +49,7 @@ export function sourceFileObjectKey(id: string): string {
 export function isSourceFileObjectKey(key: string): boolean { return key.startsWith(SOURCE_FILE_PREFIX); }
 
 export interface SourceFileRepository {
+  assertWritable(file: Pick<SourceFile, "agentName" | "userEmail" | "derived">): Promise<void>;
   create(file: SourceFile): Promise<SourceFile>;
   get(agentName: string, id: string): Promise<SourceFile | null>;
   finish(file: SourceFile, result: { storedAt: string; retireAt: string; byteSize: number; checksum: string }): Promise<SourceFile | null>;

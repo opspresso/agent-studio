@@ -111,7 +111,9 @@
 |---|---|---|
 | Agent 의 client ID 메타데이터 문서가 서빙되는 주소 | `src/application/mcp/mcpAuthUseCases.ts` 의 `clientMetadataUrl`. 여기서 어긋나는 것은 명세상 치명적이다: 문서 자신의 `client_id` 가 그것을 가져온 URL 과 다르면 authorization server 는 거부한다 | 구조 |
 | artifact 행을 어떻게 쓰는가 | `src/application/artifact/storeArtifact.ts` | 구조 |
-| 비공개 파일의 Artifact 등록과 원본 보존 기한 연결 | `src/application/artifact/storeArtifact.ts`의 `registerSourceArtifact`. 바이트 복사 없이 `privateFileId`로 연결하며 checkpoint를 제외한다 | 구조 |
+| 비공개 파일의 Artifact 등록과 원본 보존 기한 연결 | `src/application/artifact/storeArtifact.ts`의 `registerSourceArtifact`. 바이트 복사 없이 `privateFileId`로 연결하며 `domain/artifact/sourceFile.ts`의 `isSourceArtifact`가 checkpoint·처리용 JSON을 제외한다 | 구조 |
+| 파일 내용 해시와 소유자·Agent·형식·보존 정책별 중복 범위 | `src/application/artifact/contentIdentity.ts`. SHA-256으로 내용을 비교하고 이름·작업 ID는 중복 판정에 쓰지 않는다 | 구조 |
+| 동시 파일 저장 직렬화와 내용 인덱스 | `domain/artifact/contentRepository.ts`의 포트와 `infrastructure/db/repositories/artifactContentRepository.ts`. DB lock 전용 pool은 `infrastructure/db/client.ts`가 소유한다 | 구조 |
 | artifact 가 저장되는 오브젝트 키 | `src/domain/artifact/types.ts` 의 `artifactObjectKey` | 구조 |
 | 비공개 파일의 오브젝트 키·경로 판정 | `src/domain/artifact/sourceFile.ts`의 `sourceFileObjectKey`·`isSourceFileObjectKey`. 일반 object 접근 거절은 `domain/artifact/objectStore.ts`의 `assertNotPrivateFileKey` | 구조 |
 | 파일의 달력 일·월 보존 기간과 월말·DST 만료 계산 | `src/application/artifact/fileRetention.ts` 의 `fileExpiresAt`. 시간대 해석은 기존 `domain/trigger/cron.ts`의 `wallClock`을 사용한다 | 구조 |
@@ -128,6 +130,11 @@
 | plugin snapshot 하나가 동시에 읽을 선택 파일 수 | `src/infrastructure/plugin/snapshot.ts` 의 `MAX_CONCURRENT_PLUGIN_READS` | 구조 |
 | plugin 기본 파일 응답 매핑 선언·검증 | `src/domain/plugin/types.ts`의 `STUDIO_PLUGIN_EXTENSION`, `src/domain/mcp/sourceMapping.ts`의 `isMcpSourceMappings` | 구조 |
 | 오디오 도구의 작업별 입력 shape | `src/application/audio/toolDefinitions.ts`; `AudioJob.request`의 operation별 union | 구조 |
+| 녹음 전체 화자 타임라인 검증·앱과 화자 서비스의 길이·입력·화자 구간·모델 process 시간 상한 | `src/domain/audio/diarization.ts`, `src/domain/audio/limits.json` (`limits.ts`가 앱에 export) | 코드 |
+| 앱 decoder·화자 분석 클라이언트·서비스의 지원 MIME와 demuxer | `src/domain/audio/formats.json`; `formats.ts`가 앱의 정규화를 소유한다 | 코드 |
+| 모델별 전사 protocol override 검증 | `src/lib/transcriptionOptions.ts`; 운영자 환경변수만 읽고 등록 모델 ID로 적용한다 | 코드 |
+| 제공자 숫자 화자·단어 구간 정규화와 잘못된 시간의 손실 경고 | `src/infrastructure/llm/transcription.ts` | 코드 |
+| 화자 전환별 분할·샘플 coverage·동일 화자 pause 병합 | `src/infrastructure/llm/audioSegmenter.ts` | 코드 |
 | 오디오 Agent 큐의 접수 순서·due 인덱스·직렬 claim | `src/infrastructure/db/repositories/audioJobRepository.ts`; 큐 첫 작업만 실행하고 작업 전이와 큐 갱신을 transaction으로 묶는다 | 구조 |
 | 오디오 작업 화면의 동시 상태 조회 수와 갱신 병합 | `src/app/agents/[name]/audio/jobPolling.ts`의 `MAX_CONCURRENT_AUDIO_JOB_READS`와 `mergeAudioJobUpdates` | 구조 |
 | 아웃바운드 MCP 요청의 예약 metadata 헤더 — 철자, 저장된 표기 제거, actor→email 판정 | `src/application/mcpMetadataHeaders.ts` 의 `TENANT_ID_HEADER` / `USER_EMAIL_HEADER` / `CONVERSATION_ID_HEADER` / `stripMcpMetadataHeaders` / `mcpUserEmail` / `applyMcpUserEmail`. API 레이어는 `src/app/api/agents/_lib/conversation.ts` 에서 conversation 철자를 *인바운드* 로 읽고, API Reference 탭(`endpoints.ts`)이 그것을 호출자에게 보여준다. 그 두 파일뿐이다 | 구조 |

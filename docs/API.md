@@ -1614,6 +1614,16 @@ POST /api/catalog/reindex
 
 ## Artifacts
 
+동일 소유자·Agent·종류·출처·MIME에서 SHA-256이 같은 내용은 기존 Artifact를 재사용한다.
+파일명과 run ID가 달라도 바이트를 다시 저장하거나 목록 항목을 추가하지 않는다. 동시 저장은
+파일 ID와 내용의 PostgreSQL lock을 같은 연결에서 정렬된 순서로 획득해 직렬화한다.
+도구가 미리 발급한 파일 ID는 목록에 없는 별칭으로 기존 파일을
+가리키며 다운로드·미리보기 링크를 유지한다. 기존 파일 삭제 시 별칭도 더 이상 읽히지 않는다.
+비공개 오디오 파일은 보존 정책과 상속 만료가 일치할 때 재사용하고 최초 이름·보존 기한을 유지한다.
+재사용한 파일의 `derivedFrom`·`model`·`producedBy`는 최초 저장의 provenance를 유지한다.
+현재 작업의 모델과 내부 전사 참조는 해당 AudioJob이 소유한다.
+처리용 전사·결과 JSON과 checkpoint는 Artifacts 목록에서 제외하고 내부 재처리 입력으로 보관한다.
+
 런이 만들어 낸 것. 이미지와 문서. 을 각각의 주소와 함께 담는다. `S3_BUCKET_NAME` 이 설정돼
 있을 때만 존재한다. 그렇지 않으면 아래 모든 라우트가 빈 목록이 아니라 `404 {error}` 로 답하는데,
 "당신은 만든 것이 없다"와 "애초에 아무것도 보관되고 있지 않았다"는 서로 다른 주장이기 때문이다.
@@ -1875,11 +1885,14 @@ Agent의 admission 한도는 요청별 설정에도 적용한다. 설정 소유�
 
 AudioJobView는 id·task·sourceIdentity·status·stage·model·createdAt·updatedAt·dueAt·attempt·failures·
 revision과 선택적인 configRevision·fileId·fileInfo·transcriptionProgress·postprocessProgress·transcriptRef·draftRef·
-movedTo·receipts·errorCode를 반환한다. `artifacts`는 source·transcript·processed·structured·dialogue의
+movedTo·receipts·errorCode를 반환한다. `artifacts`는 source·transcript·processed의
 현재 사용자가 읽을 수 있는 ready·미만료 Artifact ID를 제공한다. `artifactLinks`는 해당 파일의
 다운로드·미리보기 경로이며 누락·미준비·삭제·만료 파일은 `unavailableArtifacts`에 구분한다.
-완료 이력과 내부 참조는 파일 만료 후에도 유지한다. `transcriptAgentName`은 전사 파일을 읽을 Agent다.
+완료 이력과 내부 참조는 파일 만료 후에도 유지한다. `transcriptAgentName`은 내부 전사 JSON을 읽을 Agent다.
 fileInfo는 filename·byteSize·expiresAt, transcriptionProgress는 processedSeconds·totalSeconds·completedSegments다.
+`artifacts.transcript`는 화자·시간을 포함한 읽기용 Markdown이며 `processed`는 요약 Markdown이다.
+전사 전용 작업도 Markdown을 생성한다. 후처리 전용 작업은 입력 JSON을 원본 링크로 공개하지 않는다.
+Markdown 전사 Artifact로 재요약을 접수하면 소유자·Agent·만료를 검증한 뒤 내부 전사 JSON을 사용한다.
 postprocessProgress는 phase(`extract`·`reduce`·`saving`)·round·completed·total이다.
 건수는 현재 추출·통합 회차 또는 결과 파일 저장 단계 기준이며 전체 작업의 퍼센트가 아니다.
 전사는 첫 구간 요청 전에 전체 길이를 기록하고, 후처리는 각 구간 검증·저장 뒤 완료 건수를 기록한다.

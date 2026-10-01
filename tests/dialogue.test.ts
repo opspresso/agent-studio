@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { renderDialogue } from "@/application/audio/dialogue";
 
 describe("source-grounded dialogue rendering", () => {
+  it("describes whole-recording labels and submitted interval timing without claiming identities", () => {
+    const result = renderDialogue({ text: "안녕", language: "ko", diarizationRevision: "v1",
+      segments: [{ text: "안녕", start: 300, end: 301, speaker: "SPEAKER_00" }] });
+    expect(result).toContain("이 녹음 안에서만 같은 화자");
+    expect(result).toContain("시간은 전사에 사용한 오디오 구간");
+    expect(result).toContain("**SPEAKER\\_00 (00:05:00.000–00:05:01.000):**");
+  });
   it("preserves scoped speaker labels and supplied timings without identifying people", () => {
     const result = renderDialogue({ text: "안녕\n네", language: "ko", segments: [
       { text: "안녕", start: 0.125, end: 1.5, speaker: "0:A" },

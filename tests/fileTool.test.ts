@@ -5,6 +5,7 @@ import { buildFileTool } from "@/application/document/fileTool";
 import { captureRunArtifacts, createArtifactRecorder } from "@/application/artifact/runArtifacts";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { Artifact } from "@/domain/artifact/types";
+import { fakeArtifactContent } from "./fakeArtifactContent";
 import { MAX_SAVED_FILE_BYTES } from "@/domain/artifact/types";
 import type { EngineChunk, McpToolResult } from "@/domain/llm/types";
 import { documentRenderer } from "@/infrastructure/documents/renderer";
@@ -22,6 +23,7 @@ function setup() {
   const bytes = new Map<string, Uint8Array>();
   const read = vi.fn(async (key: string) => ({ bytes: bytes.get(key)!, mimeType: rows.values().next().value?.mimeType ?? "" }));
   const storage: ArtifactStorage = {
+    content: fakeArtifactContent(),
     rows: { put: async (row) => { rows.set(row.artifactId, row); }, get: async (id) => rows.get(id) ?? null,
       listByAgent: async () => [], listByOwner: async () => [], delete: async () => {} },
     objects: { put: async (input) => { bytes.set(input.key, input.bytes); }, read, sign: async () => "https://files.test/download", delete: async () => {} },

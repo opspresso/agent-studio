@@ -492,6 +492,7 @@ Members의 선택 목록과 Profile 한도도 같은 설정을 읽는다. guest 
 | 턴당 입력 이미지 수 / 이미지당 바이트(입력·생성·MCP) | `4` / `5 MiB` | `src/domain/llm/imageLimits.ts` |
 | PDF에 삽입하는 PNG의 총 디코딩 픽셀 | `16,777,216` | `src/domain/llm/imageLimits.ts`의 `MAX_PDF_IMAGE_PIXELS` |
 | 앱 프로세스당 문서 워커 동시 실행 / 대기 작업 | `2` / `8` | `src/infrastructure/documents/workerPool.ts` |
+| 앱 프로세스당 파일 내용 중복 저장 lock 전용 PostgreSQL 연결 | `4` | `src/infrastructure/db/client.ts`. 일반 DB pool과 분리해 대기 업로드가 DB 읽기·쓰기를 막지 않는다 |
 | 문서 작업 기한 (대기 포함) / 자식 V8 old-space | `30s` / `256MiB` | `src/infrastructure/documents/workerPool.ts` |
 | 문서 생성 Markdown / 편집 요청 JSON 문자 예산 | `500,000` 자 | `src/infrastructure/documents/engine/limits.ts`, `workerPool.ts` |
 | Office ZIP 엔트리 / 전체 전개 / 단일 엔트리 / 압축비 | `2,000` / `100 MiB` / `25 MiB` / `1,000` | `src/infrastructure/documents/engine/limits.ts` |
@@ -586,7 +587,36 @@ worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것
 | `TRANSCRIPTION_CHUNKING_STRATEGY` | 미설정 | provider가 지원할 때만 `auto` 사용 |
 | `TRANSCRIPTION_MAX_INPUT_BYTES` | `26214400` | 변환된 구간 하나의 provider 전송 상한. 원본 파일 상한과 별개 |
 | `TRANSCRIPTION_SEGMENT_SECONDS` | `300` | 구간 길이 상한. byte 상한이 더 작으면 그에 맞춰 분할 |
+| `TRANSCRIPTION_MODEL_OPTIONS` | 미설정 | 등록 모델 ID별 JSON override. `responseFormat`, `chunkingStrategy`, `providerOptions`, `timestampGranularities`, `preferOriginal`, `segmentSeconds`만 허용. 최대 16 KiB |
 | `FFMPEG_PATH` | `ffmpeg` | 운영 이미지에 설치된 오디오 decoder 실행 파일 |
+| `DIARIZATION_BASE_URL` | 미설정 | 녹음 전체 화자 분석 서비스의 운영자 지정 내부 주소. 설정하면 모든 전사에 화자 분석을 먼저 수행하며 실패 시 일반 전사로 대체하지 않음 |
+| `DIARIZATION_TOKEN` | 미설정 | 화자 분석 서비스 Bearer secret. URL을 설정하면 필수이며 앱·worker·서비스에 같은 값을 주입 |
+| `DIARIZATION_REVISION` | 미설정 | 반입 모델의 불변 revision, 최대 128자. URL을 설정하면 필수이며 서비스 응답·checkpoint와 일치해야 함 |
+
+`gpt-4o-transcribe`와 별도 화자 분석을 결합할 때 모델은 Settings에서 명시적으로 등록·선택하고
+응답 형식은 `json`, provider chunking strategy는 미설정으로 둔다. 화자 분석은 해당 모델과 별개다.
+서비스의 설치·모델 반입은 [설치 안내](INSTALL.md#별도-화자-분리)를 따른다.
+`DIARIZATION_BASE_URL`은 LLM·사용자가 선택하는 주소가 아니며 운영자가 신뢰하는 내부 서비스만 지정한다.
+서비스는 모델 process의 시작을 2분, 디코딩·화자 추론을 요청마다 1시간으로 제한한다. 시간 초과 시
+해당 process group을 종료하고 504를 반환하며 다음 요청에서 모델 process를 다시 시작한다.
+클라이언트는 모델 시작·추론 제한과 응답 여유 1분을 합친 63분 후 요청을 중단한다. 서버의 업로드
+소켓에는 별도의 60초 유휴 제한이 있다. revision이나 전사 설정이 바뀐 기존 checkpoint는 거부하므로
+같은 모델 revision을 유지해 재시도하거나 새로운 processing_revision으로 재처리한다.
+
+OpenRouter의 내장 화자 분리를 사용할 때 `providerOptions`는 endpoint의 provider tag로 지정한다.
+이 옵션을 전달하는 요청은 base64 JSON을 사용하고, 다른 모델은 기존 multipart를 유지한다.
+override는 지정한 등록 모델에만 적용하며 전사 checkpoint의 설정 키에 포함한다.
+
+```dotenv
+TRANSCRIPTION_MODEL_OPTIONS={"openrouter/gemini-3.5-transcribe":{"responseFormat":"verbose_json","providerOptions":{"google-ai-studio":{"diarization_mode":"speaker"}},"preferOriginal":true,"segmentSeconds":1800},"openrouter/mai-transcribe-2":{"responseFormat":"verbose_json","providerOptions":{"azure":{"diarization":{"enabled":true}}},"timestampGranularities":["segment","word"],"preferOriginal":true,"segmentSeconds":1800}}
+```
+
+`preferOriginal`은 decoder로 형식·길이를 검증한 원본이 시간·byte 상한 안에 들어올 때 한 요청으로
+제출한다. 그 외에는 WAV 구간으로 분할하고 화자 라벨은 요청마다 별도 scope를 유지한다.
+위 예제의 1800초는 선택한 분할 설정이며, provider의 실제 길이·처리 시간·파일 크기 제한도 확인해야 한다.
+일부 제공자는 단어에만 숫자 화자 ID를 반환한다. 어댑터가 이를 문자열 라벨과 발화 구간으로
+정규화하며, 시작보다 종료가 빠른 단어 시간은 제외하고 원문·화자·사용량을 보존한 경고를 남긴다.
+실명이나 서로 다른 요청의 동일 인물 여부를 추정하지 않는다.
 
 전사 모델은 카탈로그의 Transcription 타입이어야 한다. HTTP multipart를 지원하지 않는 SigV4
 채널과 미설정 채널은 거절한다. 비용 계산에 필요한 사용량이 없으면 결과는 unknown이며 0이 아니다.
@@ -597,7 +627,7 @@ worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것
 | 한계 | 값 | 소유 코드 |
 | --- | --- | --- |
 | 원본 파일 크기 / 미완료 업로드 유효 시간 | 512 MiB / 24시간 | `src/application/artifact/sourceFiles.ts` |
-| 원본 오디오 길이 | 6시간 | `src/domain/audio/segmenter.ts` |
+| 원본 오디오 길이 | 6시간 | `src/domain/audio/limits.ts` |
 | 다운로드 / 구간 전사 요청 제한 | 각각 10분 | `src/infrastructure/net/sourceDownloader.ts`, `src/infrastructure/llm/transcription.ts` |
 | 비공개 파일 object 요청 / 삭제·multipart 정리 요청 | 10분 / 30초 | `src/infrastructure/storage/sourceObjectStore.ts` |
 | worker 동시 작업 / poll / 만료 sweep | 2개 / 10초 / 60초 | `src/application/audio/worker.ts` |

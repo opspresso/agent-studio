@@ -1,6 +1,7 @@
 import { withConfigurations } from "./agentConfigurations";
 import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fakeArtifactContent } from "./fakeArtifactContent";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
@@ -182,6 +183,7 @@ function fakeArtifacts(over: { putFails?: boolean } = {}) {
   const puts: Array<{ key: string; mimeType: string; bytes: Uint8Array }> = [];
   const reads: Array<{ key: string; maxBytes: number }> = [];
   const storage = {
+    content: fakeArtifactContent(),
     objects: {
       async put(input: { key: string; mimeType: string; bytes: Uint8Array }) {
         if (over.putFails) {

@@ -41,7 +41,7 @@ export interface AudioJobUseCaseDeps {
 /** Public view: source credentials, ownership data and internal receipt paths stay server-side. */
 export type AudioJobView = Pick<AudioJob, "id" | "task" | "sourceIdentity" | "status" | "stage" | "model" | "createdAt" | "updatedAt" |
   "dueAt" | "attempt" | "failures" | "fileId" | "fileInfo" | "transcriptionProgress" | "postprocessProgress" | "movedTo" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "revision" | "configRevision"> & {
-    artifacts: { source?: string; transcript?: string; processed?: string; structured?: string; dialogue?: string };
+    artifacts: { source?: string; transcript?: string; processed?: string };
     artifactLinks: Partial<Record<AudioArtifactKind, string>>;
     unavailableArtifacts?: Partial<Record<AudioArtifactKind, Exclude<SourceFileAvailability, "ready">>>;
     transcriptAgentName: string;
@@ -49,26 +49,25 @@ export type AudioJobView = Pick<AudioJob, "id" | "task" | "sourceIdentity" | "st
 
 type AudioArtifactKind = keyof AudioJobView["artifacts"];
 
-// Each view can read up to five files. Bound page enrichment independently of
+// Each view can read up to three files. Bound page enrichment independently of
 // the page size so one list cannot send hundreds of reads to the item store.
 const MAX_CONCURRENT_AUDIO_JOB_VIEWS = 4;
 
 async function view(job: AudioJob, deps: Pick<AudioJobUseCaseDeps, "files" | "now">): Promise<AudioJobView> {
   const transcriptAgentName = job.task === "postprocess" ? audioSourceAgent(job) : job.agentName;
   const references: AudioJobView["artifacts"] = {
-    source: job.fileId, transcript: job.transcriptRef, processed: job.summaryRef ?? job.draftRef,
-    structured: job.draftRef, dialogue: job.dialogueRef,
+    source: job.task === "postprocess" ? undefined : job.fileId, transcript: job.dialogueRef, processed: job.summaryRef,
   };
   const artifacts: AudioJobView["artifacts"] = {};
   const artifactLinks: AudioJobView["artifactLinks"] = {};
   const unavailableArtifacts: NonNullable<AudioJobView["unavailableArtifacts"]> = {};
   const now = deps.now().toISOString();
   const reads = new Map<string, Promise<SourceFile | null>>();
-  // At most five output reads per job; shared draft/summary refs read once.
+  // At most three output reads per job.
   await Promise.all((Object.entries(references) as [AudioArtifactKind, string | undefined][]).map(async ([kind, id]) => {
     if (!id) return;
     const agentName = kind === "source" ? audioSourceAgent(job)
-      : kind === "transcript" ? transcriptAgentName : job.agentName;
+      : job.agentName;
     const key = `${agentName}:${id}`;
     let read = reads.get(key);
     if (!read) { read = deps.files.get(agentName, id); reads.set(key, read); }
@@ -143,21 +142,30 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       }
       if (task !== "process" && task !== "postprocess" && (input.postprocess || input.destination)) throw new ValidationError("Only process or postprocess tasks accept output options");
       const outputs = await deps.validateOutputs(input, agentName, userEmail);
+      let source: AudioJob["source"];
       let identity: { namespace: string; itemId: string; refresh?: AudioJob["sourceRefresh"] };
       if (input.source.kind === "file") {
+        source = input.source;
         const sourceAgent = input.source.agentName ?? agentName;
         await deps.authorize(sourceAgent, userEmail);
-        const file = await deps.files.get(sourceAgent, input.source.fileId);
+        let file = await deps.files.get(sourceAgent, input.source.fileId);
         if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
         if (sourceFileAvailability(file, userEmail, now) !== "ready") throw new ConflictError("Source file is unavailable or expired");
         if ((task === "transcribe" || task === "process") && file.derived?.kind === "transcript") {
           throw new ValidationError("This Artifact is already a transcript, not audio. To summarize it, use an AudioJob postprocess request with artifact_id, postprocess and retention; omit config_revision, model, language and destination.");
+        }
+        if (task === "postprocess" && file.derived?.kind === "transcript" && file.mimeType === "text/markdown" && file.derivedFrom) {
+          file = await deps.files.get(sourceAgent, file.derivedFrom);
+          if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source transcript not found");
+          if (sourceFileAvailability(file, userEmail, now) !== "ready") throw new ConflictError("Source transcript is unavailable or expired");
+          source = { kind: "file", fileId: file.id, agentName: sourceAgent };
         }
         if (task === "postprocess" && (file.mimeType !== "application/json" || file.derived?.kind !== "transcript")) {
           throw new ValidationError("Postprocessing input must be a transcription Artifact");
         }
         identity = { namespace: "stored-file", itemId: file.id };
       } else if (input.source.kind === "source") {
+        source = input.source;
         identity = await deps.sourceIdentity(agentName, input.source.sourceRef, userEmail);
       } else throw new ValidationError("Invalid audio source");
       const sourceKey = createHash("sha256").update(JSON.stringify([
@@ -166,7 +174,7 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       const limits = config ? { maxActive: config.maxActive, maxPerOccurrence: config.maxPerOccurrence } : await deps.limits(agentName);
       const result = await deps.jobs.submit({ agentName, userEmail, actor: origin.actor,
         ...(origin.producedBy ? { producedBy: origin.producedBy } : {}),
-        source: input.source, sourceKey, sourceIdentity: { namespace: identity.namespace, itemId: identity.itemId }, sourceRefresh: identity.refresh,
+        source, sourceKey, sourceIdentity: { namespace: identity.namespace, itemId: identity.itemId }, sourceRefresh: identity.refresh,
         model: input.model ?? "", task, language: input.language,
         retention: input.retention, configRevision: input.configRevision, ...outputs },
       { id: deps.id(), now, occurrence: origin.occurrence, ...limits });

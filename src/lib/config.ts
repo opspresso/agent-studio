@@ -8,6 +8,7 @@ import { optionalEnv } from "@/shared/env";
 import { log } from "@/shared/logger";
 import { decodeAes256Key } from "@/shared/aesKey";
 import { parseWorkspaceConfig } from "./workspaceConfig";
+import { parseTranscriptionModelOptions } from "./transcriptionOptions";
 
 export type Stage = "local" | "alpha" | "prod";
 
@@ -223,6 +224,12 @@ export const config = {
     }
     const chunkingStrategy = optionalEnv(process.env.TRANSCRIPTION_CHUNKING_STRATEGY);
     if (chunkingStrategy && chunkingStrategy !== "auto") throw new Error("Invalid TRANSCRIPTION_CHUNKING_STRATEGY");
+    const diarizationUrl = optionalEnv(process.env.DIARIZATION_BASE_URL);
+    const diarizationToken = optionalEnv(process.env.DIARIZATION_TOKEN);
+    const diarizationRevision = optionalEnv(process.env.DIARIZATION_REVISION);
+    if (diarizationUrl && (!diarizationToken || !diarizationRevision)) {
+      throw new Error("DIARIZATION_BASE_URL requires DIARIZATION_TOKEN and DIARIZATION_REVISION");
+    }
     return {
       responseFormat,
       ...(chunkingStrategy ? { chunkingStrategy: "auto" as const } : {}),
@@ -230,6 +237,8 @@ export const config = {
       segmentSeconds: positiveIntEnv("TRANSCRIPTION_SEGMENT_SECONDS", 300),
       ffmpegPath: optionalEnv(process.env.FFMPEG_PATH) ?? "ffmpeg",
       searchPath: process.env.PATH,
+      modelOptions: parseTranscriptionModelOptions(process.env.TRANSCRIPTION_MODEL_OPTIONS),
+      ...(diarizationUrl ? { diarization: { baseUrl: diarizationUrl, token: diarizationToken!, revision: diarizationRevision! } } : {}),
     } as const;
   },
   get s3Endpoint(): string | undefined {

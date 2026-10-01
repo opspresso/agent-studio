@@ -32,6 +32,60 @@ function fixture(text = "Fact one.") {
 }
 
 describe("durable Agent postprocessing", () => {
+  it("reuses the readable transcript created during ASR and returns actual deduplicated output IDs", async () => {
+    const f = fixture();
+    f.job.dialogueRef = "existing-transcript";
+    f.deps.files.metadata = async () => ({ id: "existing-transcript" } as SourceFile);
+    const original = f.deps.files.import;
+    const imported = vi.spyOn(f.deps.files, "import").mockImplementation(async (input, open, signal) => {
+      const result = await original(input, open, signal);
+      return input.id === "job-summary" ? { ...result, id: "canonical-summary" } : result;
+    });
+    expect(await f.run(f.job, f.context)).toEqual({ draftRef: "job-draft", summaryRef: "canonical-summary", dialogueRef: "existing-transcript" });
+    expect(imported.mock.calls.some(([input]) => input.id === "job-dialogue")).toBe(false);
+  });
+  it("passes speaker labels and timing to the summarizer without losing unsegmented text", async () => {
+    const f = fixture("Fact one. Additional context.");
+    const segments = [{ text: "Fact one.", speaker: "0:A", start: 0, end: 2 },
+      { text: "Additional", speaker: "1:A", start: 300, end: 302 }];
+    f.saved.set("transcript", new TextEncoder().encode(JSON.stringify({
+      text: "Fact one. Additional context.", model: "asr", segments, warnings: [],
+    })));
+    await f.run(f.job, f.context);
+    const input = vi.mocked(f.deps.run).mock.calls[0]![1];
+    expect(JSON.parse(input)).toEqual([{ kind: "full_text", text: "Fact one. Additional context." },
+      ...segments.map(segment => ({ kind: "segment", ...segment }))]);
+    const output = JSON.parse(new TextDecoder().decode(f.saved.get("job-draft")));
+    expect(output.memories[0].evidence).toEqual(["Fact one."]);
+  });
+  it("keeps long escaped utterances bounded and labelled across valid JSON pages", async () => {
+    const f = fixture();
+    const text = '한국어 "발언"\\\n'.repeat(3000);
+    const fullText = `${text}Unsegmented tail`;
+    f.saved.set("transcript", new TextEncoder().encode(JSON.stringify({
+      text: fullText, model: "asr", segments: [{ text, speaker: "0:A", start: 1, end: 30 }], warnings: [],
+    })));
+    vi.mocked(f.deps.run).mockResolvedValue(JSON.stringify({ text: "Summary", memories: [], warnings: [] }));
+    await f.run(f.job, f.context);
+    const pages = vi.mocked(f.deps.run).mock.calls.filter(call => call[2] === "extract").map(call => call[1]);
+    expect(pages.every(page => page.length <= 16_000)).toBe(true);
+    const entries = pages.flatMap(page => JSON.parse(page));
+    expect(entries.filter(entry => entry.kind === "full_text").map(entry => entry.text).join("")).toBe(fullText);
+    const segments = entries.filter(entry => entry.kind === "segment");
+    expect(segments.length).toBeGreaterThan(1);
+    expect(segments.map(entry => entry.text).join("")).toBe(text);
+    expect(segments.every(entry => entry.speaker === "0:A" && entry.start === 1 && entry.end === 30)).toBe(true);
+  });
+  it("summarizes complete speaker turns once when they exactly reconstruct the source text", async () => {
+    const f = fixture("Fact one.\nI will review.");
+    const segments = [{ text: "Fact one.", speaker: "SPEAKER_00", start: 0, end: 1 },
+      { text: "I will review.", speaker: "SPEAKER_01", start: 1, end: 2 }];
+    f.saved.set("transcript", new TextEncoder().encode(JSON.stringify({ text: "Fact one.\nI will review.",
+      model: "asr", segments, warnings: [] })));
+    await f.run(f.job, f.context);
+    expect(f.deps.run).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(vi.mocked(f.deps.run).mock.calls[0]![1])).toEqual(segments.map(segment => ({ kind: "segment", ...segment })));
+  });
   it("accepts a final combined summary within the output cap even when it exceeds half its notes", async () => {
     const f = fixture("Fact one. ".repeat(2000));
     const summary = "Combined summary. ".repeat(170);
@@ -94,7 +148,7 @@ describe("durable Agent postprocessing", () => {
     expect(result.dialogueRef).toBe("job-dialogue");
     expect(new TextDecoder().decode(f.saved.get(result.dialogueRef))).toContain("**Unknown speaker:**");
     expect(new TextDecoder().decode(f.saved.get(result.summaryRef))).toBe("Summary");
-    expect(imported).toHaveBeenCalledWith(expect.objectContaining({ filename: "summary.md", mimeType: "text/markdown", derivedFrom: "transcript", producedBy: "writer" }), expect.any(Function), f.context.signal);
+    expect(imported).toHaveBeenCalledWith(expect.objectContaining({ filename: "file.summary.md", mimeType: "text/markdown", derivedFrom: "transcript", producedBy: "writer" }), expect.any(Function), f.context.signal);
   });
   it("inherits transcript expiry through extraction, reduction and final output", async () => {
     const f = fixture("Fact one. ".repeat(3000));

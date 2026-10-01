@@ -2,6 +2,7 @@ import { artifactCursor } from "@/domain/artifact/repository";
 import type { ArtifactRepository, ListArtifactsOptions } from "@/domain/artifact/repository";
 import type { Artifact } from "@/domain/artifact/types";
 import type { SourceFile } from "@/domain/artifact/sourceFile";
+import { INTERNAL_SOURCE_MIME_TYPE, isSourceArtifact } from "@/domain/artifact/sourceFile";
 import { artifactOwnerEmail } from "@/domain/artifact/types";
 import { keys } from "@/infrastructure/db/keys";
 import { deleteItem, getItem, putItem, queryItems, transact, type SortKeyMatch, type Item } from "@/infrastructure/db/store";
@@ -14,6 +15,7 @@ const ARTIFACT_ENTITY = "ARTIFACT";
 function fromItem(item: Record<string, unknown>): Artifact {
   return {
     artifactId: String(item.artifactId ?? ""),
+    ...(typeof item.checksum === "string" ? { checksum: item.checksum } : {}),
     ...(typeof item.privateFileId === "string" ? { privateFileId: item.privateFileId } : {}),
     ...(typeof item.retireAt === "string" ? { retireAt: item.retireAt } : {}),
     ...(typeof item.derivedFrom === "string" ? { derivedFrom: item.derivedFrom } : {}),
@@ -85,6 +87,7 @@ async function list(
     limit: boundedPageLimit(limit),
     ...(before !== undefined ? { after: before } : {}),
     notExpiredAt: Math.floor(Date.now() / 1000),
+    exclude: { jsonContains: { source: "generated", mimeType: INTERNAL_SOURCE_MIME_TYPE }, attributePresent: "privateFileId" },
     ...(kind || source
       ? { filter: { ...(kind ? { kind } : {}), ...(source ? { source } : {}) } }
       : {}),
@@ -99,12 +102,14 @@ export class PostgresArtifactRepository implements ArtifactRepository {
       ...artifact,
       ...keys.artifact(artifact.artifactId),
       entityType: ARTIFACT_ENTITY,
-      GSI1PK: keys.artifactAgentPartition(artifact.agentName),
-      GSI1SK: artifactCursor(artifact),
+      ...(!artifact.canonicalArtifactId ? {
+        GSI1PK: keys.artifactAgentPartition(artifact.agentName),
+        GSI1SK: artifactCursor(artifact),
+      } : {}),
       // Sparse on purpose: a row that names no mailbox writes no GSI2
       // attributes, so a trigger artifact simply is not in the owner
       // index rather than sitting there under a placeholder nobody can query.
-      ...(ownerEmail
+      ...(ownerEmail && !artifact.canonicalArtifactId
         ? {
             GSI2PK: keys.artifactOwnerPartition(ownerEmail),
             GSI2SK: artifactCursor(artifact),
@@ -122,7 +127,7 @@ export class PostgresArtifactRepository implements ArtifactRepository {
           const file = row?.file as SourceFile | undefined;
           return file?.status === "ready" && file.agentName === artifact.agentName &&
             file.userEmail === ownerEmail && file.retireAt === artifact.retireAt &&
-            file.retireAt > new Date().toISOString() && file.derived?.kind !== "checkpoint";
+            file.retireAt > new Date().toISOString() && isSourceArtifact(file);
         } },
         { kind: "put", item },
       ]);
@@ -130,7 +135,8 @@ export class PostgresArtifactRepository implements ArtifactRepository {
   }
 
   async get(artifactId: string): Promise<Artifact | null> {
-    const item = await getItem(keys.artifact(artifactId));
+    let item = await getItem(keys.artifact(artifactId));
+    if (typeof item?.canonicalArtifactId === "string") item = await getItem(keys.artifact(item.canonicalArtifactId));
     if (!item || isExpired(item.expiresAt, Date.now())) {
       return null;
     }
