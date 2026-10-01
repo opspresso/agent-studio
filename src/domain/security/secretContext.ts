@@ -9,11 +9,6 @@ export function sourceReferenceContext(agentName: string, id: string): string {
   return JSON.stringify(["agent", agentName, "source-reference", id, "url"]);
 }
 
-/** AES-GCM context for one agent's webhook trigger secret. */
-export function triggerSecretContext(agentName: string, triggerId: string): string {
-  return JSON.stringify(["agent", agentName, "trigger", triggerId, "secret"]);
-}
-
 export function slackSecretContext(
   agentName: string,
   field: "bot-token" | "signing-secret",

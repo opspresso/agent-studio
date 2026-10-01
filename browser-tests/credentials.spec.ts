@@ -28,7 +28,7 @@ test.beforeEach(async ({ page }) => {
     }
     if (route.request().method() === "DELETE") return route.fulfill({ status: 204 });
     if (route.request().method() === "POST") {
-      return route.fulfill({ json: { token: "synthetic-new-agent-token", masked: "ast_••••wxyz", createdAt: "2026-09-26T00:00:00Z" } });
+      return route.fulfill({ json: { token: "synthetic-new-agent-token", credentialId: "personal-api-selector", masked: "ast_••••wxyz", createdAt: "2026-09-26T00:00:00Z" } });
     }
     return route.abort();
   });

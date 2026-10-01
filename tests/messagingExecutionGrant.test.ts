@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Agent } from "@/domain/agent/types";
 import type { AgentRepository } from "@/domain/agent/repository";
-import { assertMessagingExecutionGrant, messagingExecutionEmail, messagingExecutionGrant } from "@/application/messaging/executionGrant";
+import { assertMessagingExecutionGrant, messagingExecutionEmail, messagingExecutionGrant } from "@/application/auth/messagingGrant";
 
 const email = "owner@example.com";
 const agent: Agent = { name: "demo", displayName: "Demo", description: "", ownerEmail: email,

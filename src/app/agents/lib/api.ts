@@ -1,3 +1,4 @@
+import type { AgentCredentialPurpose } from "@/domain/auth/agentCredential";
 import { notifyConfigurationChange } from "./configurationEvents";
 import type {
   CostLimits,
@@ -29,7 +30,7 @@ import type { SlackChannelsResponse } from "@/app/api/agents/[name]/slack/channe
 import type { AgentTelegramResponse } from "@/app/api/agents/[name]/telegram/route";
 import type { AgentTeamsResponse } from "@/app/api/agents/[name]/teams/route";
 import type { PromptPreview } from "@/application/execution/deps";
-import type { AgentCredentialStatus } from "@/application/agent/agentCredentialUseCases";
+import type { AgentCredentialStatus, IssuedAgentCredential } from "@/application/auth/agentCredentialUseCases";
 import type {
   AgentConfigurationView,
   AgentConfigurationInput,
@@ -348,43 +349,30 @@ export async function testAgentTeams(
 
 export type { AgentCredentialStatus };
 
-export async function getAgentToken(name: string): Promise<AgentCredentialStatus> {
-  return readJson<AgentCredentialStatus>(await fetch(`/api/agents/${name}/token`));
+function credentialPath(name: string, purpose: AgentCredentialPurpose): string {
+  return `/api/agents/${encodeURIComponent(name)}/${purpose === "api" ? "token" : "webhook-token"}`;
 }
 
-/** Generate (or regenerate) the agent API token. Returns the raw token once. */
-export async function generateAgentToken(
-  name: string,
-): Promise<{ token: string; masked: string; createdAt: string }> {
-  const data = await readJson<{
-    token?: string;
-    masked?: string;
-    createdAt?: string;
-  }>(await fetch(`/api/agents/${name}/token`, { method: "POST" }));
-  if (!data.token) {
-    throw new Error("Agent API token response did not include a token");
-  }
-  return { token: data.token, masked: data.masked ?? "", createdAt: data.createdAt ?? "" };
+export async function getAgentToken(name: string, purpose: AgentCredentialPurpose): Promise<AgentCredentialStatus> {
+  return readJson<AgentCredentialStatus>(await fetch(credentialPath(name, purpose)));
 }
 
-/**
- * Read the authenticated user's own stored token in plaintext. A POST, not a GET: the
- * response body is a live credential and must stay out of caches and history.
- */
-export async function revealAgentToken(name: string): Promise<string> {
-  const data = await readJson<{ token?: string }>(
-    await fetch(`/api/agents/${name}/token/reveal`, { method: "POST" }),
-  );
-  if (!data.token) {
-    throw new Error("Agent API token response did not include a token");
-  }
+export async function generateAgentToken(name: string, purpose: AgentCredentialPurpose): Promise<IssuedAgentCredential> {
+  const data = await readJson<IssuedAgentCredential>(await fetch(credentialPath(name, purpose), { method: "POST" }));
+  if (!data.token || !data.credentialId) throw new Error("Personal credential response did not include a token and selector");
+  return data;
+}
+
+/** A POST keeps a user's revealed credential out of browser prefetches and history. */
+export async function revealAgentToken(name: string, purpose: AgentCredentialPurpose): Promise<string> {
+  const data = await readJson<{ token: string }>(await fetch(`${credentialPath(name, purpose)}/reveal`, { method: "POST" }));
+  if (!data.token) throw new Error("Personal credential response did not include a token");
   return data.token;
 }
 
-export async function revokeAgentToken(name: string): Promise<void> {
-  await assertOk(await fetch(`/api/agents/${name}/token`, { method: "DELETE" }));
+export async function revokeAgentToken(name: string, purpose: AgentCredentialPurpose): Promise<void> {
+  await assertOk(await fetch(credentialPath(name, purpose), { method: "DELETE" }));
 }
-
 
 // --- MCP OAuth connections -------------------------------------------------
 
@@ -498,13 +486,6 @@ export function updateTrigger(
 
 export function deleteTrigger(name: string, triggerId: string): Promise<void> {
   return fetch(`/api/agents/${name}/triggers/${triggerId}`, { method: "DELETE" }).then(assertOk);
-}
-
-/** Read a trigger's secret back. POST, not GET — the body is a live credential. */
-export function revealTriggerSecret(name: string, triggerId: string): Promise<string> {
-  return fetch(`/api/agents/${name}/triggers/${triggerId}/reveal`, { method: "POST" })
-    .then((r) => readJson<{ secret: string }>(r))
-    .then((d) => d.secret);
 }
 
 export function listTriggerRuns(

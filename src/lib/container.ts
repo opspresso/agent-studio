@@ -1,3 +1,4 @@
+import { triggerActor } from "@/application/trigger/runTrigger";
 import { createMemberTierUseCases } from "@/application/member/tierUseCases";
 import { memberTierAdministration } from "@/infrastructure/db/repositories/memberTierAdministration";
 import { createWorkspaceRuntimeModelUseCases } from "@/application/workspace/runtimeModels";
@@ -15,7 +16,7 @@ import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
 import { openReviewWorkspace } from "@/application/workspace/reviewWorkspace";
 import { workspaceCaller } from "@/application/workspace/workspaceCaller";
 import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
-import { assertMessagingExecutionGrant } from "@/application/messaging/executionGrant";
+import { assertExecutionGrant } from "@/application/auth/authorizeExecutionGrant";
 import { executeWorkspaceTask, executeAgent } from "@/application/execution/runAgent";
 import { runWorkspaceContinuations } from "@/application/chat/workspaceContinuation";
 import type { ChatDeps } from "@/application/chat/deps";
@@ -188,8 +189,8 @@ import { createConfigurationUseCases } from "@/application/agent/configurationUs
 import { agentCredentialRepository } from "@/infrastructure/db/repositories/agentCredentialRepository";
 import { getExecutionMemberById } from "@/lib/memberAccess";
 import { messagingIdentityRepository } from "@/infrastructure/db/repositories/messagingIdentityRepository";
-import { createMessagingIdentityUseCases } from "@/application/messaging/identityUseCases";
-import { createAgentCredentialUseCases } from "@/application/agent/agentCredentialUseCases";
+import { createMessagingIdentityUseCases } from "@/application/auth/messagingIdentityUseCases";
+import { createAgentCredentialUseCases } from "@/application/auth/agentCredentialUseCases";
 import { createAgentSlackUseCases, resolveAgentSlackRuntime } from "@/application/slack/agentSlack";
 import {
   createAgentTelegramUseCases,
@@ -582,11 +583,11 @@ export const agentUseCases = createAgentUseCases(agentRepository, {
 export const messagingIdentityUseCases = createMessagingIdentityUseCases({ identities: messagingIdentityRepository,
   agents: agentRepository, members: { getById: getExecutionMemberById }, now: () => new Date() });
 export const apiTokenUseCases = createAgentCredentialUseCases({ purpose: "api", agents: agentRepository, tokens: agentCredentialRepository, members: { getById: getExecutionMemberById }, cipher: secretCipher, now: () => new Date(), newId: randomUUID });
+export const webhookTokenUseCases = createAgentCredentialUseCases({ purpose: "webhook", agents: agentRepository, tokens: agentCredentialRepository, members: { getById: getExecutionMemberById }, cipher: secretCipher, now: () => new Date(), newId: randomUUID });
 export const triggerUseCases = createTriggerUseCases({
   members: { getById: getExecutionMemberById },
   triggers: triggerRepository,
   agents: agentRepository,
-  cipher: secretCipher,
   authorizeReview: async (email, agentName) => {
     if (!await isEffectiveConfiguredAdminByEmail(email)) throw new ForbiddenError("Only administrators can configure GitHub review publication");
     if (!getWorkspaceConfig()) throw new ValidationError("PR review requires a configured Workspace Sandbox backend");
@@ -1006,7 +1007,7 @@ export const executionDeps: ExecutionDeps = {
   // A verified PR prepares its own scoped reader; ordinary runs never receive one.
   reviewSource: undefined,
   reviewWorkspace: undefined,
-  authorizeExecutionGrant: grant => assertMessagingExecutionGrant({ agents: agentRepository, memberTier: getMemberTier }, grant),
+  authorizeExecutionGrant: grant => assertExecutionGrant({ agents: agentRepository, memberTier: getMemberTier, triggers: triggerRepository, webhookCredentials: webhookTokenUseCases }, grant),
   getCallRoutingPolicy: getCallRoutingPolicy,
   createToolSchemaValidator,
   runtimeSessions: runtimeSessions,
@@ -1109,9 +1110,10 @@ export const executionDeps: ExecutionDeps = {
  */
 export const triggerRunnerDeps: TriggerRunnerDeps = {
   members: { getById: getExecutionMemberById },
-  openReviewWorkspace: async (target, agentName, triggerId, ownerEmail) => {
-    if (!ownerEmail) throw new ValidationError("PR review Workspace requires an explicit trigger owner execution grant");
-    const tool = await executionDeps.workspaceTool?.(agentName, { ancestry: [agentName], actor: { kind: "webhook", id: `${agentName}:${triggerId}` }, userEmail: ownerEmail }, target);
+  webhookCredentials: webhookTokenUseCases,
+  openReviewWorkspace: async (target, grant) => {
+    const { agentName, triggerId, email: ownerEmail } = grant;
+    const tool = await executionDeps.workspaceTool?.(agentName, { ancestry: [agentName], actor: triggerActor({ kind: "webhook", agentName, triggerId }), userEmail: ownerEmail, user: { userId: grant.userId, email: grant.email }, executionGrant: grant }, target);
     if (!tool) throw new ValidationError("PR review Workspace is unavailable; check the Agent's Workspace enablement, repository policy and Sandbox backend");
     return openReviewWorkspace({ tool, state: async id => {
       const workspace = await workspaceRepository.get(id);
@@ -1125,14 +1127,9 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
     } }, target);
   },
   reviewForge: agentName => agentCodingGitHub(agentName).reviews,
-  executionUserActive: async (email) => {
-    const tier = await getMemberTier(email);
-    return !!tier && tierMayEdit(tier);
-  },
   triggers: triggerRepository,
   agents: agentRepository,
 
-  cipher: secretCipher,
   runSlots: runSlotRepository,
   deliverReport: deliverAgentMessage,
   run: async function* (input) {
@@ -1143,6 +1140,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       messages: input.message ? [{ role: "user", content: input.message }] : [],
       actor: input.actor,
       ...(input.user ? { user: input.user } : {}),
+      ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
       ...(input.backgroundTask ? { backgroundTask: true } : {}),
       ...(input.reviewSource ? { reviewSource: input.reviewSource } : {}),
@@ -1379,7 +1377,7 @@ export const workspaceRepositoryCreationUseCases = createWorkspaceRepositoryCrea
 });
 
 async function authorizeWorkspaceTools(email: string, agentName: string, actor?: RunActor, grant?: import("@/domain/execution/actor").ExecutionGrant): Promise<void> {
-  await authorizeWorkspaceExecution({ agents: agentRepository, triggers: triggerRepository, memberTier: getMemberTier,
+  await authorizeWorkspaceExecution({ agents: agentRepository, triggers: triggerRepository, memberTier: getMemberTier, webhookCredentials: webhookTokenUseCases,
     members: { getById: getExecutionMemberById },
     backendReady: () => !!getWorkspaceConfig(), enabled: name => workspaceRepositoryPolicyUseCases.enabled(name),
   }, agentName, email, actor, grant);

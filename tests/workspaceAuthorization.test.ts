@@ -1,3 +1,4 @@
+import { webhookCredentialFixture } from "./webhookCredentialFixture";
 import { memberFixture } from "./memberFixture";
 import { describe, expect, it, vi } from "vitest";
 import type { Agent } from "@/domain/agent/types";
@@ -9,11 +10,12 @@ const email = "owner@example.com";
 const agent: Agent = { name: "demo", displayName: "Demo", ownerEmail: email, description: "",
   createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
 const grant: WebhookTrigger = { agentName: "demo", triggerId: "webhook", kind: "webhook", description: "",
-  enabled: true, executionEmail: email, secret: "encrypted-fixture", allowConcurrent: false,
+  enabled: true, allowConcurrent: false,
   createdAt: agent.createdAt, updatedAt: agent.updatedAt };
 
 function fixture() {
-  return { members: { getById: vi.fn(async id => memberFixture({ id, email })) }, agents: { get: vi.fn(async () => agent) } as unknown as AgentRepository,
+  const identity = webhookCredentialFixture("demo", "fixture-token", email);
+  return { identity, webhookCredentials: identity.credentials, members: { getById: vi.fn(async id => memberFixture({ id, email })) }, agents: { get: vi.fn(async () => agent) } as unknown as AgentRepository,
     triggers: { get: vi.fn(async (): Promise<Trigger | null> => ({ ...grant })) },
     memberTier: vi.fn(async () => "member" as const), backendReady: vi.fn(() => true), enabled: vi.fn(async () => true) };
 }
@@ -32,23 +34,31 @@ describe("Workspace execution authorization", () => {
       await expect(authorizeWorkspaceExecution({ ...fixture(), memberTier: async () => "guest" as const }, "demo", email, actor)).rejects.toThrow("member access");
     }
   });
-  it("uses the current owner grant for a Webhook and rechecks it on later calls", async () => {
+  it("rechecks the personal Webhook credential before queued effects", async () => {
     const deps = fixture();
     const actor = { kind: "webhook" as const, id: "demo:webhook" };
-    await authorizeWorkspaceExecution(deps, "demo", email, actor);
-    expect(deps.triggers.get).toHaveBeenCalledWith("demo", "webhook");
-    deps.triggers.get.mockResolvedValue({ ...grant, executionEmail: undefined });
-    await expect(authorizeWorkspaceExecution(deps, "demo", email, actor)).rejects.toThrow("no longer authorized");
+    const caller = { kind: "webhook" as const, agentName: "demo", triggerId: "webhook", ...deps.identity.principal };
+    await authorizeWorkspaceExecution(deps, "demo", email, actor, caller);
+    deps.identity.revoke();
+    await expect(authorizeWorkspaceExecution(deps, "demo", email, actor, caller)).rejects.toThrow("no longer authorized");
   });
-  it.each(["disabled", "changed-owner", "wrong-kind", "wrong-trigger", "missing", "invalid-actor"])("refuses a %s automation grant", async failure => {
+  it("does not adopt a different Agent owner for a personal Webhook caller", async () => {
+    const deps = fixture();
+    vi.mocked(deps.agents.get).mockResolvedValue({ ...agent, ownerEmail: "other@example.test" });
+    await expect(authorizeWorkspaceExecution(deps, "demo", email, { kind: "webhook", id: "demo:webhook" },
+      { kind: "webhook", agentName: "demo", triggerId: "webhook", ...deps.identity.principal })).resolves.toBeUndefined();
+  });
+  it.each(["disabled", "wrong-trigger", "missing", "wrong-user"])("refuses a %s Webhook grant", async failure => {
     const deps = fixture();
     if (failure === "disabled") deps.triggers.get.mockResolvedValue({ ...grant, enabled: false });
-    if (failure === "changed-owner") vi.mocked(deps.agents.get).mockResolvedValue({ ...agent, ownerEmail: "other@example.com", visibility: "public" });
     if (failure === "wrong-trigger") deps.triggers.get.mockResolvedValue({ ...grant, triggerId: "other" });
     if (failure === "missing") deps.triggers.get.mockResolvedValue(null);
-    const actor = { kind: failure === "wrong-kind" ? "schedule" as const : "webhook" as const,
-      id: failure === "invalid-actor" ? "invalid" : "demo:webhook" };
-    await expect(authorizeWorkspaceExecution(deps, "demo", email, actor)).rejects.toThrow("no longer authorized");
+    const caller = { kind: "webhook" as const, agentName: "demo", triggerId: "webhook", ...deps.identity.principal,
+      ...(failure === "wrong-user" ? { userId: "another-user" } : {}) };
+    await expect(authorizeWorkspaceExecution(deps, "demo", email, { kind: "webhook", id: "demo:webhook" }, caller)).rejects.toThrow("no longer authorized");
+  });
+  it("requires the verified personal credential even when the actor names a Webhook", async () => {
+    await expect(authorizeWorkspaceExecution(fixture(), "demo", email, { kind: "webhook", id: "demo:webhook" })).rejects.toThrow("authenticated personal Webhook");
   });
   it("keeps a schedule's registering user for queued Workspace effects", async () => {
     const deps = fixture();

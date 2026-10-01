@@ -4,11 +4,12 @@ import { tierMayEdit, type MemberTier } from "@/domain/member/tiers";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import { assertAgentAccessible } from "@/application/agent/agentUseCases";
 import { ValidationError } from "@/application/errors";
-import { assertMessagingExecutionGrant } from "@/application/messaging/executionGrant";
+import { assertExecutionGrant } from "@/application/auth/authorizeExecutionGrant";
+import type { WebhookAuthorizationDeps } from "@/application/auth/webhookAuthorization";
 import type { MemberRepository } from "@/domain/member/repository";
-import { resolveRunUser } from "@/application/execution/resolveRunUser";
+import { resolveRunUser } from "@/application/auth/resolveRunUser";
 
-interface WorkspaceAuthorizationDeps {
+interface WorkspaceAuthorizationDeps extends WebhookAuthorizationDeps {
   agents: AgentRepository;
   members: Pick<MemberRepository, "getById">;
   triggers: Pick<TriggerRepository, "get">;
@@ -33,9 +34,13 @@ export async function authorizeWorkspaceExecution(
   if (!await deps.enabled(agentName)) throw new ValidationError("Workspace tools are disabled in the current Agent settings");
   if (grant) {
     if (grant.email !== email || grant.kind !== actor?.kind) throw new ValidationError("Workspace execution identity does not match its permission grant");
-    await assertMessagingExecutionGrant(deps, grant);
+    await assertExecutionGrant(deps, grant);
   }
-  if (actor?.kind !== "webhook" && actor?.kind !== "schedule") return;
+  if (actor?.kind === "webhook") {
+    if (grant?.kind !== "webhook") throw new ValidationError("Workspace execution requires the authenticated personal Webhook credential");
+    return;
+  }
+  if (actor?.kind !== "schedule") return;
   const separator = actor.id.indexOf(":");
   const sourceAgentName = actor.id.slice(0, separator);
   const triggerId = actor.id.slice(separator + 1);
@@ -47,7 +52,5 @@ export async function authorizeWorkspaceExecution(
   if (trigger.kind === "schedule") {
     const user = await resolveRunUser(deps, sourceAgentName, trigger.createdBy.userId, "schedule");
     if (user.email !== email) throw new ValidationError("The schedule's Workspace execution identity has changed");
-  } else if (trigger.executionEmail !== email || (await deps.agents.get(sourceAgentName))?.ownerEmail !== email) {
-    throw new ValidationError("The trigger's Workspace execution permission is no longer authorized");
   }
 }

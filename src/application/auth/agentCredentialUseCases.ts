@@ -6,7 +6,7 @@ import type { SecretCipher } from "@/domain/security/secretCipher";
 import { agentCredentialContext } from "@/domain/security/secretContext";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { generateSecretValue, secretPrefix } from "@/shared/generatedSecret";
-import { assertAgentAccessible, userMayAccessAgent } from "./agentUseCases";
+import { assertAgentAccessible, userMayAccessAgent } from "@/application/agent/agentUseCases";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { verifyGitHubSignature } from "@/shared/githubWebhook";
 
@@ -29,7 +29,7 @@ interface AgentCredentialDeps {
 }
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
-const SECRET_KIND = { api: "agentApiToken", webhook: "triggerSecret" } as const;
+const SECRET_KIND = { api: "agentApiToken", webhook: "agentWebhookToken" } as const;
 
 /** The public selector addresses one credential; the random secret is verified in constant time. */
 function selector(token: string, purpose: AgentCredentialPurpose): string | undefined {
@@ -134,3 +134,5 @@ export function createAgentCredentialUseCases(deps: AgentCredentialDeps) {
   };
 }
 export type AgentCredentialUseCases = ReturnType<typeof createAgentCredentialUseCases>;
+
+export type IssuedAgentCredential = Awaited<ReturnType<AgentCredentialUseCases["generate"]>>;

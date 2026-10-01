@@ -44,7 +44,7 @@ ACK 후 실행은 해당 웹 프로세스의 background 작업이다. 실패·�
 |---|---|
 | `app/api/_lib/inboundEvent.ts` | 플랫폼 검증 뒤 이벤트 admission·ACK·background 예약·claim 정산 |
 | `application/<platform>/` | 참여 판정, Agent·현재 설정·actor·caller·conversation 해석, 이력, 플랫폼 bookkeeping |
-| `application/messaging/identityUseCases.ts`·`authenticateSubject.ts` | 일회용 연결 코드·현재 사용자 권한 검사·인증 명령 분리 |
+| `application/auth/messagingIdentityUseCases.ts`·`authenticateSubject.ts` | 일회용 연결 코드·현재 사용자 권한 검사·인증 명령 분리 |
 | `application/messaging/attachments.ts` | 현재 첨부 우선, 남은 예산으로 과거 첨부 수신·추출·생략 warning |
 | `application/messaging/handleTurn.ts` | 실행·출력 fold·파일 주소·미디어 전달·warning·마감 |
 | `application/messaging/editInPlaceReply.ts` | Telegram·Teams의 편집 pacing·메시지 분할·거절·최종 쓰기 처리 |

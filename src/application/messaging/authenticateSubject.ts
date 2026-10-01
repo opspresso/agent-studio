@@ -1,6 +1,6 @@
 import { ForbiddenError, ConflictError, ValidationError } from "@/application/errors";
 import type { MessagingSubject } from "@/domain/messaging/identity";
-import type { MessagingIdentityUseCases } from "./identityUseCases";
+import type { MessagingIdentityUseCases } from "@/application/auth/messagingIdentityUseCases";
 import type { ReplyChannel } from "@/domain/messaging/reply";
 
 const AUTH_COMMAND = /^\s*\/?auth(?:@\w+)?(?:\s|$)/i;

@@ -1,3 +1,4 @@
+import { webhookCredentialFixture, WEBHOOK_CREDENTIAL_ID } from "./webhookCredentialFixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHmac } from "node:crypto";
 import { admitDelivery, executeDelivery } from "@/application/trigger/runTrigger";
@@ -17,8 +18,9 @@ const reviewContext = { ...target, baseSha: "b".repeat(40), title: "Change", bod
 
 function fixture(chunks: EngineChunk[] = [{ delta: { content: "확인된 결함은 없습니다." } }, { done: true }]) {
   let trigger: WebhookTrigger = { agentName: "review", triggerId: "webhook", kind: "webhook", description: "",
-    secret: "test-secret", enabled: true, allowConcurrent: true, createdAt: "2026-09-23T00:00:00Z", updatedAt: "2026-09-23T00:00:00Z",
-    githubReview: { scope: "accessible" }, executionEmail: "owner@example.test" };
+    enabled: true, allowConcurrent: true, createdAt: "2026-09-23T00:00:00Z", updatedAt: "2026-09-23T00:00:00Z",
+    githubReview: { scope: "accessible" } };
+  const identity = webhookCredentialFixture("review", "test-secret", "caller@example.test");
   const claimed = new Set<string>();
   const rows: TriggerRun[] = [];
   const calls: Parameters<TriggerRunnerDeps["run"]>[0][] = [];
@@ -30,7 +32,7 @@ function fixture(chunks: EngineChunk[] = [{ delta: { content: "확인된 결함�
   const openWorkspace = vi.fn(async () => ({ id: "review-workspace", url: "https://studio.example.test/chats/review-workspace",
     tool: async () => ({ text: "{}" }), ensureIdle, close: closeWorkspace }));
   const deps = {
-    cipher: { decrypt: (secret: string) => secret, decryptEquals: (a: string, b: string) => a === b },
+    webhookCredentials: identity.credentials,
     triggers: { get: async () => trigger, updateRunningRun: runningRunUpdater(rows), claimIdempotencyKey: async (_p: string, _t: string, key: string) => {
       if (claimed.has(key)) return false; claimed.add(key); return true;
     }, appendRun: async (row: TriggerRun) => { rows.push(row); }, finishRun: async (row: TriggerRun) => { rows[0] = row; }, listRuns: async () => [] },
@@ -40,38 +42,30 @@ function fixture(chunks: EngineChunk[] = [{ delta: { content: "확인된 결함�
     async *run(input: Parameters<TriggerRunnerDeps["run"]>[0]) { calls.push(input); yield* chunks; },
     reviewForge: () => ({ load, reply, read }),
     openReviewWorkspace: openWorkspace,
-    executionUserActive: async () => true,
   } as unknown as TriggerRunnerDeps;
   function credential(input = payload, deliveryId = "11111111-1111-4111-8111-111111111111") {
     const body = JSON.stringify(input);
-    return { kind: "github" as const, body, deliveryId, event: "pull_request", signature: "sha256=" + createHmac("sha256", "test-secret").update(body).digest("hex") };
+    return { kind: "github" as const, credentialId: WEBHOOK_CREDENTIAL_ID, body, deliveryId, event: "pull_request", signature: "sha256=" + createHmac("sha256", "test-secret").update(body).digest("hex") };
   }
-  return { deps, load, read, reply, calls, rows, claimed, credential, openWorkspace, closeWorkspace, ensureIdle,
-    grant: (email?: string) => { trigger = { ...trigger, executionEmail: email }; }, disable: () => { trigger = { ...trigger, enabled: false }; } };
+  return { identity, deps, load, read, reply, calls, rows, claimed, credential, openWorkspace, closeWorkspace, ensureIdle,
+    disable: () => { trigger = { ...trigger, enabled: false }; } };
 }
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-23T00:00:00Z")); });
 afterEach(() => vi.useRealTimers());
 
 describe("signed PR review firing", () => {
-  it("rejects a missing owner grant before consuming the HEAD, then admits the same delivery after explicit setup", async () => {
-    const f = fixture();
-    f.grant();
-    const refused = await admitDelivery(f.deps, "review", f.credential(), null);
-    expect(refused).toMatchObject({ status: "review-not-ready", reason: expect.stringContaining("Run with my permissions") });
-    expect(f.claimed.size).toBe(0);
-    expect(f.load).not.toHaveBeenCalled();
-    expect(f.rows[0]).toMatchObject({ status: "skipped", review: { ...target, status: "skipped" } });
-    f.grant("owner@example.test");
-    expect((await admitDelivery(f.deps, "review", f.credential(), null)).status).toBe("accepted");
-    expect(f.claimed.size).toBe(1);
+  it("rejects a revoked credential before consuming the PR HEAD", async () => {
+    const f = fixture(); f.identity.revoke();
+    expect(await admitDelivery(f.deps, "review", f.credential(), null)).toEqual({ status: "unauthorized" });
+    expect(f.claimed.size).toBe(0); expect(f.load).not.toHaveBeenCalled(); expect(f.rows).toEqual([]);
   });
-  it("does not consume a PR HEAD when the granted owner is no longer a member", async () => {
+  it("does not consume a PR HEAD when the caller has lost member access", async () => {
     const f = fixture();
-    f.deps.executionUserActive = async () => false;
-    expect((await admitDelivery(f.deps, "review", f.credential(), null)).status).toBe("review-not-ready");
-    expect(f.claimed.size).toBe(0);
-    expect(f.openWorkspace).not.toHaveBeenCalled();
+    const { ForbiddenError } = await import("@/application/errors");
+    f.deps.webhookCredentials.verifySignature = async () => { throw new ForbiddenError("Member access revoked"); };
+    expect((await admitDelivery(f.deps, "review", f.credential(), null)).status).toBe("unauthorized");
+    expect(f.claimed.size).toBe(0); expect(f.openWorkspace).not.toHaveBeenCalled();
   });
   it.each(["blockedTools", "approvalTools"] as const)("does not bootstrap a Workspace excluded by %s", async policy => {
     const f = fixture();
@@ -90,12 +84,26 @@ describe("signed PR review firing", () => {
     const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
     if (admitted.status !== "accepted") throw new Error("not admitted");
     await executeDelivery(f.deps, admitted, payload);
-    expect(f.openWorkspace).toHaveBeenCalledExactlyOnceWith(target, "review", "webhook", "owner@example.test");
+    expect(f.openWorkspace).toHaveBeenCalledExactlyOnceWith(target, { kind: "webhook", agentName: "review", triggerId: "webhook", ...f.identity.principal });
     expect(f.calls[0]?.reviewWorkspace).toBeTypeOf("function");
     expect(f.reply.mock.invocationCallOrder[0]).toBeGreaterThan(f.openWorkspace.mock.invocationCallOrder[0]!);
     expect(f.closeWorkspace.mock.invocationCallOrder[0]).toBeGreaterThan(f.reply.mock.invocationCallOrder[0]!);
     expect(f.closeWorkspace).toHaveBeenCalledOnce();
     expect(f.rows[0]).toMatchObject({ status: "succeeded", review: { status: "posted" } });
+  });
+  it("withholds publication after the personal credential is revoked during execution", async () => {
+    const f = fixture();
+    f.deps.run = async function* () {
+      yield { delta: { content: "Review result" } };
+      f.identity.revoke();
+      yield { done: true };
+    };
+    const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
+    if (admitted.status !== "accepted") throw new Error("not admitted");
+    await executeDelivery(f.deps, admitted, payload);
+    expect(f.reply).not.toHaveBeenCalled();
+    expect(f.closeWorkspace).toHaveBeenCalledOnce();
+    expect(f.rows[0]?.review).toMatchObject({ status: "skipped", reason: expect.stringContaining("no longer authorized") });
   });
   it("holds the overlap reservation until Sandbox cleanup and terminal history persistence finish", async () => {
     const f = fixture();

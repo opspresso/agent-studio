@@ -216,14 +216,13 @@ Trace·호출자별 Usage·Agent Artifact 목록과 마스킹된 연동 설정·
 
 저장되는 모든 자격 증명. MCP 서버 헤더, Agent별 헤더 오버라이드, MCP OAuth 의
 access/refresh token·client secret·인가 중인 PKCE verifier, Slack 봇 token 과 서명 시크릿,
-Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿, agent API token, webhook trigger 시크릿, 그리고 시크릿인 앱
+Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿, 개인 API·Webhook token, 그리고 시크릿인 앱
 설정(LLM API 키와 plugins 저장소의 GitHub token)은 `AES_ENCRYPTION_KEY` 로 AES-256-GCM
 암호화된다(`src/infrastructure/crypto/secretEncryption.ts`). 새 값은 모두 `enc:v2:` 로 쓴다.
 v2 는 row 와 field 정체성을 AES-GCM AAD 로 묶으므로 암호문만 다른 위치로 옮기면 인증에
 실패한다. 기존 `enc:v1:` 값은 다시 저장하거나 재발급하기 전까지 그대로 읽는다.
 
-개인 credential은 `agent + purpose + userId + credentialId`, webhook trigger secret은
-`agent + triggerId`에 묶인다. Slack 의 bot token·signing secret, Telegram 의 bot
+개인 credential은 `agent + purpose + userId + credentialId`에 묶인다. Slack 의 bot token·signing secret, Telegram 의 bot
 token·webhook secret, Teams 의 app password 는 `agent + integration + field` 를 쓴다.
 MCP registry header 는 항목 이름과 header 이름에, managed MCP 의 environment 는
 항목 이름과 변수 이름에 묶인다. HTTP header의 override 병합만 이름의 대소문자를 무시하고,
@@ -269,7 +268,7 @@ Agent별 MCP 문자열 오버라이드는 저장 당시 registry URL 의 fingerp
 | 시크릿 | 엔드포인트 | 누가 |
 |---|---|---|
 | 개인 Agent API token | `POST /api/agents/{name}/token/reveal` | 발급 사용자 본인 |
-| Webhook trigger 시크릿 | `POST /api/agents/{name}/triggers/{trigger}/reveal` | 소유자 또는 admin |
+| 개인 Webhook token | `POST /api/agents/{name}/webhook-token/reveal` | 발급 사용자 본인 |
 
 둘 모두 읽기에도 POST를 사용한다. 응답 본문이 살아 있는 자격 증명이므로 캐시·브라우저 기록·
 프리페치 바깥에 둔다. 모든 reveal은 실제 수행자의 email과 함께 감사 행을 남긴다.
@@ -286,11 +285,11 @@ Agent별 MCP 문자열 오버라이드는 저장 당시 registry URL 의 fingerp
 | 접두사 | 시크릿 |
 |---|---|
 | `ast_` | 개인 Agent API token (발급 사용자 관리) |
-| `asw_` | Webhook trigger 시크릿 (소유자 관리) |
+| `asw_` | 개인 Webhook token (발급 사용자 관리) |
 | `asl_` | 메신저 사용자 연결용 일회용 코드 (10분, 해시만 저장) |
 | `asg_` | Telegram webhook 시크릿 (agent 마다 발행. Telegram 에게만 건네고 결코 reveal 하지 않는다) |
 
-랜덤 secret은 32바이트(256비트)다. 개인 API token은 공개 credential UUID와 secret을 함께
+랜덤 secret은 32바이트(256비트)다. 개인 API·Webhook token은 공개 credential UUID와 secret을 함께
 사용하며 UUID만으로는 인증되지 않는다. 과거 공용 토큰은 개인 사용자를 추정하는 근거로 쓰지 않는다.
 
 agent token 의 표시용 마스크는 생성 시점에 계산돼 암호문 옆에 저장되므로, token 을 나열하는
@@ -307,7 +306,7 @@ agent token 의 표시용 마스크는 생성 시점에 계산돼 암호문 옆�
 | Slack 이벤트 | Slack 서명 시크릿 | HMAC + `timingSafeEqualString`, 5분 리플레이 윈도, agent 별 시크릿 |
 | Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | 이 플랫폼이 webhook 을 등록할 때 쓴 agent 별 시크릿(`asg_…`)과 `timingSafeEqualString` 비교. Telegram 이 배달마다 그대로 되돌려주며, 그 밖에 확인할 서명은 없다 |
 | Teams messaging endpoint | Bot Framework bearer 토큰 (JWT) | RS256 서명을 서비스가 공개한 JWKS(`login.botframework.com`) 로 검증하고, 발급자 `https://api.botframework.com`, audience = 그 봇의 App ID, `exp`/`nbf`(5분 skew), 그리고 **`serviceurl` 클레임 = activity 의 `serviceUrl`** 을 요구한다. 답은 그 주소로 이 앱의 토큰을 붙여 나가므로. Emulator 토큰은 받지 않는다 (`src/infrastructure/teams/client.ts`) |
-| Webhook trigger | `X-Trigger-Secret` 또는 GitHub `X-Hub-Signature-256` | Agent 시크릿의 `cipher.decryptEquals` 또는 원본 UTF-8 body의 HMAC-SHA256 상수 시간 비교. GitHub 헤더가 있으면 서명 검증을 강제하고 일반 시크릿으로 폴백하지 않는다. 서명된 ping은 실행하지 않으며 GitHub delivery ID로 중복을 차단한다 |
+| Webhook trigger | `X-Trigger-Secret` 또는 GitHub `X-Hub-Signature-256` | 개인 Webhook 토큰의 상수 시간 비교 또는 공개 credential 식별자로 선택한 토큰의 HMAC-SHA256 검증. 발급 사용자 ID로 현재 계정·Agent 접근을 확인한다. GitHub 헤더가 있으면 서명 검증을 강제하고 일반 시크릿으로 폴백하지 않는다. 서명된 ping은 실행하지 않으며 GitHub delivery ID로 중복을 차단한다 |
 | Workspace GitHub webhook | `X-Hub-Signature-256`과 `X-GitHub-Delivery` | 별도 배포 시크릿으로 검증하고 PR/CI 메타데이터만 갱신한다. Git 실행 승인이 아니다 |
 | CronJob 틱. schedule 스캔(`/api/triggers/scan`), 카탈로그 재색인(`/api/catalog/reindex`), plugins sync(`/api/plugins/sync/scan`) | `X-Scan-Token` | `SCHEDULE_SCAN_TOKEN` 과 `timingSafeEqualString` 비교. 설정돼 있지 않으면 503 으로 답하고, 거부된 token 은 셋 모두에서 경고를 로그에 남긴다 |
 
@@ -534,7 +533,7 @@ capability를 모두 버리며 `no-new-privileges`로 실행된다. root filesys
 | Header | 의미·범위 |
 |---|---|
 | `X-Tenant-Id` | 실행 Agent 이름. Agent별 도구 목록과 discovery cache를 구분한다 |
-| `X-User-Email` | 표면이 검증한 사용자·토큰 소유자 이메일 또는 현재 Agent 소유자의 명시적 실행 위임 이메일. 메신저·Webhook·Schedule도 같은 신원 검증과 현재 위임을 적용하며 신원 cache key에 포함한다 |
+| `X-User-Email` | 표면이 검증한 Studio 사용자의 현재 이메일. 메신저는 연결 사용자, Webhook은 토큰 발급자, Schedule은 등록자 ID로 확인하며 신원 cache key에 포함한다 |
 | `X-Conversation-Id` | 대화 주소. 요청의 context header이며 discovery cache key에 포함하지 않는다 |
 
 이메일은 MCP discovery부터 평문으로 전송하며 PII 필터가 가리지 않는다.
@@ -740,17 +739,17 @@ Agent Trigger인 `/api/webhook/{agent}`는 별도 Agent 시크릿으로 실행�
 고정된 `ReviewSource`를 제공한다. 파일 경로는 상대 경로로 검증하고 공급자 API만 호출하며,
 반환된 download URL·submodule URL을 따라가지 않는다. 읽기 요청 전후에 커밋과 현재 연동 위임을 확인한다.
 완전한 변경 자료가 확보되지 않은 실행은 전체 리뷰로 게시하지 않는다.
-PR 리뷰 Workspace는 소유자가 명시적으로 위임한 현재 권한과 Agent 저장소 정책으로 생성한다.
+PR 리뷰 Workspace는 개인 Webhook 토큰 발급자의 현재 권한과 Agent 저장소 정책으로 생성한다.
 검증된 커밋의 bare bundle만 Sandbox에 전달하고 서버 Git 자격 증명은 넣지 않는다.
 command 런타임과 이 리뷰의 Workspace만 제공하며 저장소 생성·연결, 다른 Workspace 선택,
 Git publication·배포를 거절한다. 끝나지 않았거나 결과를 읽지 않은 검사는 게시를 막는다.
 성공·실패 모두 Workspace 정리를 요청하고 실제 종료를 확인하며 게시 영수증은 정리 실패에도 보존한다.
-Agent Webhook Secret은 선택 범위의 리뷰를 요청할 권한이므로 승인한 GitHub 저장소에만 등록한다.
+개인 Webhook 토큰은 발급 사용자의 권한으로 선택 범위의 리뷰를 요청한다. 토큰·계정 권한 회수는 새 조회·도구 호출·게시·큐 실행에 적용한다.
 Workspace는 actor 종류와 별도로 표면이 확인한 관리 사용자의 현재 계정·Agent 접근과
 저장소 정책을 검사한다. guest는 본인 `user` actor로 실행할 수 있고 자동화는 member 이상이다.
 개인 API token은 발급 사용자를, 메신저는 연결한 Studio 사용자를, Schedule은 등록자를 사용한다.
 Schedule의 등록자 ID는 변경되지 않으며 현재 계정·Agent 접근을 실행 전에 다시 확인한다.
-Webhook의 `runAsOwner`는 소유자만 활성화할 수 있으며 기본은 꺼짐이다.
+Webhook 호출자는 개인 토큰 발급자이며 공유 설정에서 다른 사용자의 권한을 위임하지 않는다.
 외부 payload는 email·actor를 지정할 수 없다. 플랫폼 actor는 원래 연동 호출자로 유지한다.
 큐 작업 실행 직전에도 사용자 권한을 다시 확인하며 외부 호출은 Git 승인을 직접 소비할 수 없다.
 승인·CI 결과의 Chat 재개는 원래 소유자·Agent 접근·Workspace 선택과 SDK Session을 다시 확인한다.

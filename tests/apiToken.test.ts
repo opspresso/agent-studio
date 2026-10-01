@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createAgentCredentialUseCases } from "@/application/agent/agentCredentialUseCases";
+import { createAgentCredentialUseCases } from "@/application/auth/agentCredentialUseCases";
 import { setAdminCheck } from "@/application/agent/agentUseCases";
 import { agentCredentialRepository } from "@/infrastructure/db/repositories/agentCredentialRepository";
 import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
@@ -43,7 +43,7 @@ describe("generated secret values", () => {
     const first = generateSecretValue("agentApiToken"); const second = generateSecretValue("agentApiToken");
     expect(first.startsWith(secretPrefix("agentApiToken"))).toBe(true);
     expect(first).not.toBe(second);
-    expect(secretPrefix("triggerSecret")).not.toBe(secretPrefix("agentApiToken"));
+    expect(secretPrefix("agentWebhookToken")).not.toBe(secretPrefix("agentApiToken"));
     expect(Buffer.from(first.slice(4), "base64url")).toHaveLength(32);
   });
 });

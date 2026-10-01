@@ -78,7 +78,8 @@ export default function IntegrationsPage() {
     return (
       <div className={columns.split}>
         <Stack className={columns.primary}>
-          <TokenSection agentName={name} />
+          <TokenSection key={`api:${name}`} purpose="api" agentName={name} />
+          <TokenSection key={`webhook:${name}`} purpose="webhook" agentName={name} />
           <Alert variant="light" color="gray">{t("pint.ownerOnly", { owner: agent.ownerEmail })}</Alert>
         </Stack>
       </div>
@@ -89,7 +90,8 @@ export default function IntegrationsPage() {
     <div className={columns.split}>
       <Stack gap="xl" className={columns.primary}>
         <SectionHeading title={t("agent.tab.integrations")} description={t("pint.lede")} />
-        <TokenSection agentName={name} selected={selected === "token"} onSelect={() => selectHistory("token")} />
+        <TokenSection key={`api:${name}`} purpose="api" agentName={name} selected={selected === "token"} onSelect={() => selectHistory("token")} />
+        <TokenSection key={`webhook:${name}`} purpose="webhook" agentName={name} />
         <SlackSection agentName={name} selected={selected === "slack"} onSelect={() => selectHistory("slack")}
           onConnectionChange={summary => updateConnection("slack", summary)} />
         <TelegramSection agentName={name} selected={selected === "telegram"} onSelect={() => selectHistory("telegram")}

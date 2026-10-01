@@ -26,7 +26,6 @@ export const POST = withMemberAuth(async (user, request: Request, ctx: RouteCont
     return invalidRequest(parsed.error);
   }
   try {
-    // Webhook creation returns the secret; owners/admins can also reveal it later.
     return Response.json(await triggerUseCases.create(name, parsed.data, user.id), {
       status: 201,
     });

@@ -5,7 +5,7 @@ import {
   deleteAgent,
   setAdminCheck,
 } from "@/application/agent/agentUseCases";
-import { createAgentCredentialUseCases } from "@/application/agent/agentCredentialUseCases";
+import { createAgentCredentialUseCases } from "@/application/auth/agentCredentialUseCases";
 import type { AgentCredential } from "@/domain/auth/agentCredential";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
@@ -259,14 +259,13 @@ describe("app settings", () => {
   });
 });
 
-describe("webhook trigger secrets", () => {
+describe("Webhook settings audit", () => {
   const webhook: WebhookTrigger = {
     agentName: "p",
     triggerId: "inbound",
     kind: "webhook",
     description: "",
     enabled: true,
-    secret: "enc:v1:whsec",
     allowConcurrent: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -287,7 +286,7 @@ describe("webhook trigger secrets", () => {
       updateRunningRun: async () => { throw new Error("CRUD does not dispatch running executions"); },
       listRuns: async () => [],
     };
-    return createTriggerUseCases({ members: { getById: async () => null }, triggers, agents: agents(), cipher });
+    return createTriggerUseCases({ members: { getById: async () => null }, triggers, agents: agents() });
   }
 
   it("does not record a write override for an admin listing triggers or runs", async () => {
@@ -299,47 +298,11 @@ describe("webhook trigger secrets", () => {
     expect(rows).toEqual([]);
   });
 
-  it("records a reveal", async () => {
-    await useCases().reveal("p", "inbound", OWNER);
-    expect(rows[0]).toMatchObject({ action: "secret.reveal", target: "agent:p" });
-    expect(rows[0]?.detail).toContain("inbound");
-  });
-
-  it("records a rotation", async () => {
-    await useCases().update("p", "inbound", { rotateSecret: true }, OWNER);
-    expect(actions()).toEqual(["secret.rotate"]);
-  });
-
-  it("records nothing for an update that did not rotate", async () => {
-    await useCases().update("p", "inbound", { description: "renamed" }, OWNER);
-    expect(rows).toHaveLength(0);
-  });
-
-  it("records a deletion", async () => {
+  it("does not report shared settings deletion as personal credential revocation", async () => {
     await useCases().remove("p", "inbound", OWNER);
-    expect(actions()).toEqual(["secret.revoke"]);
+    expect(actions()).not.toContain("secret.revoke");
   });
 
-  it("records a schedule deletion as no revocation, because there was no secret", async () => {
-    // `secret.revoke` means "a credential was removed". A schedule has none —
-    // revealing one is refused for that exact reason — and filing its deletion
-    // under the action an auditor filters on to enumerate credential removals
-    // makes that filter untrustworthy.
-    const schedule: Trigger = {
-      agentName: "p",
-      triggerId: "nightly",
-      kind: "schedule", createdBy: { userId: "registrar-id", email: "registrar@example.test" },
-      description: "",
-      enabled: true,
-      cron: "0 9 * * *",
-      timezone: "Asia/Seoul",
-      allowConcurrent: false,
-      createdAt: "2026-01-01T00:00:00Z",
-      updatedAt: "2026-01-01T00:00:00Z",
-    };
-    await useCases(schedule).remove("p", "nightly", OWNER);
-    expect(rows).toHaveLength(0);
-  });
 });
 
 describe("shared registry entries", () => {

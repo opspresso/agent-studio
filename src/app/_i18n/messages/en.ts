@@ -1627,7 +1627,9 @@ export const en = {
   // The agent webhook and schedules — the two ways something outside the
   // console starts a run.
   "webhook.section": "Webhook",
-  "webhook.githubHint": "GitHub: use this URL as the Payload URL, choose application/json, and enter this Agent’s webhook secret in GitHub’s Secret field. GitHub sends X-Hub-Signature-256; no custom header is needed. Select only the events this Agent should handle. Signed ping deliveries verify the connection without running the agent.",
+  "webhook.personalToken": "My Webhook token",
+  "webhook.personalTokenHint": "Invocations use your Studio account and current Agent access. Generic senders use X-Trigger-Secret. GitHub uses this token in its Secret field. Rotating or revoking this token affects only your Webhook callers.",
+  "webhook.githubHint": "GitHub: copy this personal URL into Payload URL, select application/json and put your Webhook token in Secret. Signed ping verifies the connection without running the Agent.",
   "webhook.reviewMode": "Webhook behavior",
   "webhook.generic": "Run Agent with the payload",
   "webhook.reviewAccessible": "Review PRs in accessible GitHub repositories",
@@ -1636,14 +1638,10 @@ export const en = {
   "webhook.reviewHint": "An administrator enables review comments for authorized GitHub repositories. The Agent reads bound skills and pinned PR source through ReviewSource, including missing patches and CI state. Unavailable material prevents a complete review publication. Comments stay on the verified PR and commit; observed CI is separate from tests the Agent ran.",
   "webhook.reviewSave": "Save review settings",
   "webhook.reviewSetupRequired": "PR review setup is incomplete",
-  "webhook.reviewOwnerRequired": "The Agent owner must enable Run with my permissions before saving PR reviews. Enable Workspace tools and allow the repositories in the Agent settings; a configured Sandbox worker and GitHub connection are required.",
   "trigger.registeredBy": "Registered by: {email}",
   "trigger.registrationMissing": "Unknown user — register a new schedule",
   "trigger.runAsOwner": "Run with my permissions",
   "integrations.runAsOwnerHint": "Only the Agent owner can enable this. Save to let authorized bot callers use the owner's configured personal tools and Workspaces. Current member access and Agent policies still apply.",
-  "trigger.runAsOwnerHint": "Only the Agent owner can enable this. Use your verified identity for configured personal tools and Workspace execution; current access and Agent policies still apply.",
-  "webhook.runAsOwnerHint": "Only the Agent owner can enable this. Authorized webhook senders can use your configured personal tools and Workspaces under the Agent's policies. Keep this off unless those senders should have that access.",
-  "webhook.secretHint": "Generic senders use X-Trigger-Secret. GitHub uses this same value in its Secret field to sign deliveries. Anyone holding it can start the Agent’s current settings.",
   "webhook.intro":
     "One address per Agent, off until you turn it on. An outside system starts a run by posting JSON with X-Trigger-Secret or a GitHub HMAC-SHA256 signature; the delivery is acknowledged immediately and its outcome appears in the history on the right. The webhook always runs the Agent’s current configuration.",
   "schedule.section": "Schedules",

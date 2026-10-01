@@ -62,8 +62,6 @@ function toTrigger(item: Record<string, unknown>): Trigger {
   return {
     ...base,
     kind: "webhook",
-    ...(item.executionEmail ? { executionEmail: String(item.executionEmail) } : {}),
-    secret: String(item.secret ?? ""),
     ...(item.githubReview ? { githubReview: item.githubReview as GitHubReviewConfig } : {}),
   };
 }

@@ -15,9 +15,9 @@ trigger와 실행 이력은 Agent 파티션에 저장하고 실행 이력에 보
 
 | 경계 | 동작 |
 |---|---|
-| 인증 | enabled 검사 전에 Agent secret을 상수 시간 비교한다 |
+| 인증 | enabled 검사 전에 개인 Webhook 토큰 또는 해당 토큰의 서명을 검증하고 발급 사용자의 현재 권한을 확인한다 |
 | GitHub | 원본 body의 HMAC과 event·delivery header를 검사한다. GitHub 헤더가 있으면 일반 secret 방식으로 후퇴하지 않는다 |
-| 중복 | `Idempotency-Key`, GitHub의 경우 delivery ID를 조건부 claim한다 |
+| 중복 | 일반 `Idempotency-Key`는 발급 사용자 ID로 구분한다. GitHub delivery·PR HEAD 키는 Agent Webhook 범위로 조건부 claim한다 |
 | 겹침 | 기본 `allowConcurrent: false`; DB 실행 슬롯으로 같은 trigger의 겹침을 거절한다 |
 | 입력 | JSON payload를 사용자 메시지로 직렬화한다 |
 | 실행 | 202 접수 후 `after()`에서 실행한다. 202는 성공적인 처리 완료가 아니다 |
@@ -33,8 +33,8 @@ skipped 이력을 남긴다. 시작한 실행은 running에서 succeeded 또는 
 `scope: accessible`은 해당 Agent의 GitHub MCP 계정이 접근 가능한 저장소를, `scope: repositories`와
 `repositories`는 지정한 정확한 `owner/repo` 목록만 허용한다. 기본은 비활성이다.
 자동 리뷰 게시 설정 변경은 Agent 쓰기 권한에 더해 관리자를 검사한다.
-시크릿을 가진 송신자는 선택 범위의 리뷰를 요청할 수 있으므로 등록할 저장소에만 시크릿을 제공한다.
-활성 리뷰 생성·리뷰 모드 저장·Webhook 재활성화는 현재 소유자의 실행 위임, Workspace 도구 활성화와
+개인 Webhook 토큰을 가진 송신자는 발급 사용자의 현재 Agent 접근 권한으로 선택 범위의 리뷰를 요청한다.
+활성 리뷰 생성·리뷰 모드 저장·Webhook 재활성화는 Workspace 도구 활성화와
 비대화식 실행 정책을 검사하며 누락은 400으로 거절한다. 해당 Agent의 GitHub MCP 인증과 Sandbox backend도 필요하다.
 읽기 응답의 `reviewIssue`는 현재 설정의 누락을 설명한다. 권한 철회와 비활성화는 항상 가능하며
 철회한 권한을 리뷰 설정 저장이나 읽기로 자동 복구하지 않는다. 리뷰 저장은 겹침 허용을 바꾸지 않는다.
@@ -51,7 +51,7 @@ GitHub의 Pull requests 이벤트를 구독한다. HMAC이 유효한 `pull_reque
 GitHub 어댑터가 고정된 API 주소로 PR과 최대 100개 변경 파일의 diff를 읽고 HEAD를 재검사한다.
 최초 입력은 파일당 12,000자, 전체 파일 문맥 80,000자로 제한하고 전달한 파일·완전한 diff 수를 표시한다.
 PR 실행 전에 command Workspace를 생성하고, 서버 Git bundle로 검증된 HEAD SHA를 체크아웃한다.
-Agent의 Workspace 도구, 저장소 정책, Sandbox·worker와 Webhook의 명시적 소유자 실행 위임이 필요하다.
+Agent의 Workspace 도구, 저장소 정책, Sandbox·worker와 현재 유효한 개인 Webhook 호출자가 필요하다.
 준비가 실패하면 리뷰를 실행하거나 게시하지 않는다. PR 실행은 Skill, 해당 PR에 고정된 `ReviewSource`,
 준비된 Workspace의 읽기·격리 검사 도구를 사용한다. 빠진 파일 목록·잘린 patch는 페이지로
 이어 읽고, 관련 파일은 검증한 head/base SHA의 원문을 조회한다. CI는 head의 관측 상태이며 직접
@@ -85,8 +85,10 @@ Workspace는 이 리뷰의 저장소·커밋·command 런타임으로 제한한�
 ## 실행 문맥과 결과
 
 Webhook actor는 `webhook`이며 payload의 이메일을 사용자 권한으로 사용하지 않는다.
-Webhook은 소유자가 `runAsOwner`를 명시적으로 켰을 때 확인한 `executionEmail`을 저장하고
-admission·실행 직전에 현재 Agent 소유권과 member 상태를 다시 검사한다.
+Webhook은 개인 토큰이 가리키는 Studio 사용자 ID와 credential ID를 캡처한다. 공유 설정에
+시크릿이나 실행 사용자를 저장하지 않는다. 유효한 토큰·현재 계정·member 등급·Agent 접근을
+실행, 도구 호출, PR 자료 조회·게시, Workspace 큐 처리 전에 다시 확인한다. 재발급·폐기 후
+이전 credential ID를 가진 작업은 새 효과를 실행하지 않는다.
 Schedule은 등록자의 고정 Studio 사용자 ID로 현재 계정·member 등급·Agent 접근을 확인한다.
 
 이메일은 개인 MCP·오디오 문맥에 사용할 수 있지만 actor는 원래 `webhook`·`schedule`로 유지한다.

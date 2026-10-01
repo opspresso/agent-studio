@@ -79,7 +79,7 @@
 | 일반 작업과 코딩 작업의 Workspace·Sandbox·Runtime Session·Run 계약 | `src/domain/workspace/`; Git 저장소와 PR·승인 형태는 `src/domain/coding/types.ts` | 코드 |
 | Workspace Agent 설정·저장소 범위·기본값 | `src/domain/workspace/policy.ts`; 읽기·소유자/관리자 쓰기는 `application/workspace/repositoryPolicy.ts`, 도구 활성 여부는 `domain/agent/workspaceAccess.ts` | 코드 |
 | Workspace의 확인된 관리 사용자와 실행 호출자의 구분 | `application/workspace/workspaceCaller.ts`; `WorkspaceRun.actor`를 작업 실행의 run bracket까지 유지한다. member·Agent·Trigger 위임의 현재 접근은 `application/workspace/workspaceAuthorization.ts`가 접수와 실행 직전에 검사한다 | 코드 |
-| 메신저의 명시적 소유자 실행 위임과 철회 | `application/messaging/executionGrant.ts`가 저장·현재 소유권·멤버 상태·연동 활성 여부를 판단한다. `ExecutionGrant`는 실행·하위 Agent·Workspace 큐로 전달하며 `application/runtime/tools.ts`는 도구 효과 직전에 위임을 다시 검사한다 | 코드 |
+| 메신저의 명시적 소유자 실행 위임과 철회 | `application/auth/messagingGrant.ts`가 저장·현재 소유권·멤버 상태·연동 활성 여부를 판단한다. `ExecutionGrant`는 실행·하위 Agent·Workspace 큐로 전달하며 `application/runtime/tools.ts`는 도구 효과 직전에 위임을 다시 검사한다 | 코드 |
 | PR 리뷰의 고정된 자료 조회와 전달 범위 | `domain/trigger/pullRequestReview.ts`의 읽기 계약; `infrastructure/github/codingForge.ts`가 검증한 PR·커밋만 조회한다. `application/trigger/reviewPullRequest.ts`가 완전한 자료 범위와 게시 조건을 소유한다 | 코드 |
 | 사용자에게 제시할 Workspace Agent 옵션과 정책 조회 상한 | `src/application/workspace/workspaceOptions.ts`; 접근 가능한 Agent 목록과 정책 repository는 조립 지점에서 주입한다 | 코드 |
 | Agent별 Workspace·PR 리뷰의 GitHub MCP 자격증명 선택 | `application/coding/githubCredentials.ts`; 현재 MCP binding·헤더 target·GitHub authority를 확인하며 OAuth 검증·갱신은 `application/mcp/mcpAuthProvider.ts`를 사용한다. Plugin token을 사용하지 않는다 | 구조 |
@@ -162,7 +162,7 @@
 | Slack 메시지가 무엇을 *말하는가*. `text`·attachment·prose block 을 한 텍스트로 | `src/domain/slack/messageText.ts` 의 `slackMessageText`. 키워드 매칭, 런이 답하는 턴, 스레드 히스토리 셋이 이것을 읽는다. 경보 앱은 제목과 본문을 attachment 에 두므로 `text` 만 읽는 쪽은 헤드라인만 받는다 | 구조 |
 | 어떤 메시지가 질문이 아니라 고정된 명령인가 | `src/application/slack/engagement.ts` 의 `parseSlackCommand`. 의도적으로 엄격하다: 명령은 봇이 다시 말할지 여부를 바꾸고, 매칭이 느슨하면 아무도 침묵시켜 달라 하지 않은 스레드를 침묵시킨다 | 구조 |
 | 런이 사용하는 Slack Web API 표면 | `src/application/slack/types.ts` 의 `SlackClientPort`. 스트리밍 chunk와 세션 상태 요청 형태는 `src/domain/slack/types.ts`의 `SlackChunk`·`SlackSessionStatusInput`이며 어댑터도 이를 사용한다 | 구조 |
-| 메신저 발신자를 인증된 Studio 사용자로 연결하고 현재 권한을 확인하는 경계 | `application/messaging/identityUseCases.ts`. 플랫폼·realm·sender ID 계약은 `domain/messaging/identity.ts`, 인증 명령 분리는 `authenticateSubject.ts` | 구조 |
+| 메신저 발신자를 인증된 Studio 사용자로 연결하고 현재 권한을 확인하는 경계 | `application/auth/messagingIdentityUseCases.ts`. 플랫폼·realm·sender ID 계약은 `domain/messaging/identity.ts`, 인증 명령 분리는 `authenticateSubject.ts` | 구조 |
 | 편집으로 답을 전달하는 표면의 장부. 페이싱, 메시지가 넘칠 때 다음으로 잇기, 거부된 쓰기의 재시도 간격, 마감이 독자에게 빚진 것 | `src/application/messaging/editInPlaceReply.ts` 의 `createEditInPlaceReply`. Telegram 과 Teams 는 호출·상한·렌더링(`EditInPlaceTransport`)만 건넨다 | 구조 |
 | 답이 메시지 하나를 넘칠 때 *어디서* 끊는가. 문단 → 줄 → 문장 → 공백 → 서러게이트 쌍을 쪼개지 않는 하드 컷, 그리고 잘린 코드 펜스를 한쪽에서 닫고 다음 쪽에서 다시 여는 것 | `src/shared/messageCut.ts` 의 `cutPoint` / `splitMessages`. 세 표면이 상한만 다르게 건넨다. 끊긴 자리는 독자가 보는 것이고, 사본 둘은 "문장 중간에서 멈추는가" 에 대한 답 둘이다 | 구조 |
 | 플랫폼 히스토리가 없는 표면이 대화를 어떻게 읽고 적는가. 턴 수·문자 예산, 턴 하나의 상한, 텍스트 없는 턴과 답 없는 런의 기록, 화자 라벨의 옵트인 | `src/application/messaging/transcriptHistory.ts` | 구조 |
@@ -211,14 +211,15 @@
 
 | 결정 | 소유자 | 확인 |
 |---|---|---|
-| 개인 credential의 용도·발급 사용자·Agent 범위와 현재 권한 | `application/agent/agentCredentialUseCases.ts`; 저장 포트는 `domain/auth/agentCredential.ts`, 회전·폐기 transaction은 `agentCredentialRepository.ts`. `getExecutionMemberById`를 주입하며 이메일 tier 캐시로 사용자 존재 여부를 대체하지 않는다 | 코드 |
+| 개인 credential의 용도·발급 사용자·Agent 범위와 현재 권한 | `application/auth/agentCredentialUseCases.ts`; 저장 포트는 `domain/auth/agentCredential.ts`, 회전·폐기 transaction은 `agentCredentialRepository.ts`. `getExecutionMemberById`를 주입하며 이메일 tier 캐시로 사용자 존재 여부를 대체하지 않는다 | 코드 |
+| 접수한 개인 Webhook 호출의 토큰 회수·현재 계정·설정 재검사 | `application/auth/webhookAuthorization.ts`. 실행·도구·PR 조회/게시·Workspace 큐가 같은 grant를 사용한다 | 구조 |
 | 아웃바운드 redirect의 출처·횟수·HTTP 메서드 규칙 | `src/infrastructure/net/redirectPolicy.ts` 의 `fetchSameOrigin`. 공개 URL의 DNS 검증·연결 고정은 `publicFetch.ts`가 각 요청에 적용한다 | 구조 |
 | 어떤 응답이 콘솔의 보안 헤더를 받는가. 여기 선언한 헤더는 라우트가 같은 키로 세운 것을 *대체한다* | `next.config.ts` 의 `SECURITY_HEADERS` 와 그 `source` | 구조 |
 | 상수 시간 시크릿 비교 | `src/shared/timingSafe.ts` | 구조 |
 | `AES_ENCRYPTION_KEY` 의 base64 해석과 32바이트 검증 | `src/shared/aesKey.ts` 의 `decodeAes256Key` | 구조 |
 | 쉼표로 구분된 설정 목록의 파싱 | `src/shared/parseList.ts` | 구조 |
 | 설정된 값이 비어 있는지 여부 | `src/shared/env.ts` | 구조 |
-| 실행 사용자의 고정 ID 해석과 현재 계정·자동화 등급·Agent 접근 | `application/execution/resolveRunUser.ts`. Schedule은 생성 시 캡처한 `createdBy.userId`를 쓰고 플랫폼 actor와 구분한다 | 구조 |
+| 실행 사용자의 고정 ID 해석과 현재 계정·자동화 등급·Agent 접근 | `application/auth/resolveRunUser.ts`. Schedule은 생성 시 캡처한 `createdBy.userId`를 쓰고 플랫폼 actor와 구분한다 | 구조 |
 | Schedule 연동 화면이 동시에 읽을 최근 실행 목록 수 | `src/app/agents/[name]/integrations/scheduleRuns.ts` 의 `MAX_CONCURRENT_SCHEDULE_RUN_READS` | 구조 |
 | 각 member tier의 실행 한도 해석 | `src/domain/member/tiers.ts`의 `memberTierLimits`. 월 금액은 Settings `memberTiers`, admin은 무제한, guest 동시 실행은 1개 | 구조 |
 | 등급 표시 순서와 고정 위치 | `src/domain/member/tiers.ts`의 `orderMemberTiers`·`moveMemberTier`. admin은 처음, guest는 마지막이며 사용자 정의 등급의 상대 순서를 보존한다 | 코드 |

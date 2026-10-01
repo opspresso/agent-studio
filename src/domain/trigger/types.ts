@@ -15,16 +15,15 @@ export type TriggerKind = "webhook" | "schedule";
  *
  * An agent has exactly one webhook, addressed by the agent name alone, so
  * nobody names it — the console turns it on and off. It is still a trigger row,
- * because everything a delivery needs already lives there: the secret, the
- * firing history, the idempotency claim, the overlap lease, the agent
+ * because delivery state lives there: the firing history, the idempotency claim, the overlap lease, the agent
  * cascade delete. Reserving one id is what buys all of that without a second
  * entity that would have to re-derive each of them.
  *
- * A schedule may not take this id (`triggerUseCases.create` refuses it); a
- * webhook row that predates this and happens to carry it simply *is* the
- * agent's webhook.
+ * A schedule may not take this id (`triggerUseCases.create` refuses it).
+ * Personal credentials select the caller, independently of this shared trigger.
  */
 export const AGENT_WEBHOOK_ID = "webhook";
+export const WEBHOOK_CREDENTIAL_QUERY = "credential";
 
 /**
  * Where an agent's webhook is delivered — the single owner of that address.
@@ -32,8 +31,9 @@ export const AGENT_WEBHOOK_ID = "webhook";
  * The console shows it, the API reference documents it, and the route serves
  * it; three spellings of one path is how a copied URL stops working.
  */
-export function agentWebhookPath(agentName: string): string {
-  return `/api/webhook/${agentName}`;
+export function agentWebhookPath(agentName: string, credentialId?: string): string {
+  const path = `/api/webhook/${encodeURIComponent(agentName)}`;
+  return credentialId ? `${path}?${WEBHOOK_CREDENTIAL_QUERY}=${encodeURIComponent(credentialId)}` : path;
 }
 
 /** A destination that receives a schedule's completed text report. */
@@ -69,10 +69,6 @@ interface TriggerBase {
 
 export interface WebhookTrigger extends TriggerBase {
   kind: "webhook";
-  /** Captured from the authenticated owner when execution with their identity is explicitly enabled. */
-  executionEmail?: string;
-  /** AES-encrypted at rest, masked on read, compared in constant time. */
-  secret: string;
   githubReview?: GitHubReviewConfig;
 }
 

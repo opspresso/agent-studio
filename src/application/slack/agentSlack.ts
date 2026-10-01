@@ -1,5 +1,5 @@
 import { ValidationError } from "@/application/errors";
-import { messagingExecutionEmail } from "@/application/messaging/executionGrant";
+import { messagingExecutionEmail } from "@/application/auth/messagingGrant";
 import { MCP_OAUTH_CALLBACK_PATH } from "@/application/mcp/mcpAuthUseCases";
 import { persistAgentUpdate } from "@/application/agent/agentUpdate";
 import { assertAgentOwnerOrAdminReadable, assertAgentWritable } from "@/application/agent/agentUseCases";

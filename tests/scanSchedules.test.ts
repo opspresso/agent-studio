@@ -89,7 +89,6 @@ function webhook(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
     kind: "webhook",
     description: "",
     enabled: true,
-    secret: "enc:v1:whatever",
     allowConcurrent: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -220,6 +219,7 @@ function fixture(
     claimed,
     runs,
     deps: {
+      webhookCredentials: { authorize: async () => null },
       members: { getById: async id => memberFixture({ id, email: "registrar@example.test" }) },
       triggers,
       agents: {

@@ -1,3 +1,4 @@
+import { webhookCredentialFixture, WEBHOOK_CREDENTIAL_ID } from "./webhookCredentialFixture";
 import { memberFixture } from "./memberFixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,7 +21,6 @@ import {
 } from "@/application/trigger/runTrigger";
 import type { TriggerRunnerDeps } from "@/application/trigger/deps";
 import { REPAIR_AFTER_SECONDS } from "@/application/trigger/repairLostRuns";
-import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
@@ -30,8 +30,6 @@ import {
   type WebhookTrigger,
 } from "@/domain/trigger/types";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
-import { triggerSecretContext } from "@/domain/security/secretContext";
-import { encryptSecret } from "@/infrastructure/crypto/secretEncryption";
 import { runningRunUpdater } from "./fakeTriggerRuns";
 
 beforeEach(() => {
@@ -73,7 +71,6 @@ function trigger(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
     kind: "webhook",
     description: "",
     enabled: true,
-    secret: secretCipher.encrypt(SECRET, triggerSecretContext("p", AGENT_WEBHOOK_ID)),
     allowConcurrent: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -106,6 +103,7 @@ function memorySlots() {
 }
 
 interface Fixture {
+  identity: ReturnType<typeof webhookCredentialFixture>;
   deps: TriggerRunnerDeps;
   rows: TriggerRun[];
   claimed: Set<string>;
@@ -120,6 +118,7 @@ function fixture(
     runThrows?: Error;
   } = {},
 ): Fixture {
+  const identity = webhookCredentialFixture("p", SECRET);
   const rows: TriggerRun[] = [];
   const claimed = new Set<string>();
   const runs: Fixture["runs"] = [];
@@ -163,14 +162,15 @@ function fixture(
         .slice(0, limit),
   };
   return {
+    identity,
     rows,
     claimed,
     runs,
     deps: {
+      webhookCredentials: identity.credentials,
       members: { getById: async id => memberFixture({ id }) },
       triggers,
       agents: { get: async () => ({ ...agent, configuration: opts.configuration === undefined ? configuration : opts.configuration ?? undefined }), list: async () => [], put: async () => {}, delete: async () => {} } as never,
-      cipher: secretCipher,
       runSlots: memorySlots(),
       async *run(input) {
         runs.push({
@@ -189,43 +189,44 @@ function fixture(
 }
 
 describe("Webhook execution permissions", () => {
-  it("carries the explicitly granted identity without changing the actor or trusting payload identity fields", async () => {
-    const f = fixture({ stored: trigger({ executionEmail: agent.ownerEmail }) });
-    f.deps.executionUserActive = async () => true;
-    let email: string | undefined;
-    const original = f.deps.run;
-    f.deps.run = async function* (input) { email = input.userEmail; yield* original(input); };
-    const admitted = await admitDelivery(f.deps, "p", SECRET, null);
-    expect(admitted.status).toBe("accepted");
-    if (admitted.status !== "accepted") throw new Error("Webhook was not admitted");
-    await executeDelivery(f.deps, admitted, { userEmail: "other@example.com", actor: { kind: "user" }, runAsOwner: true });
-    expect(email).toBe(agent.ownerEmail);
-    expect(f.runs[0]?.actorKind).toBe("webhook");
-    expect(f.rows.at(-1)?.status).toBe("succeeded");
-  });
-  it("does not derive an execution grant from a payload", async () => {
+  it("keeps the authenticated personal caller and ignores payload identity fields", async () => {
     const f = fixture();
-    let email: string | undefined;
+    let input: Parameters<TriggerRunnerDeps["run"]>[0] | undefined;
     const original = f.deps.run;
-    f.deps.run = async function* (input) { email = input.userEmail; yield* original(input); };
+    f.deps.run = async function* (value) { input = value; yield* original(value); };
     const admitted = await admitDelivery(f.deps, "p", SECRET, null);
     if (admitted.status !== "accepted") throw new Error("Webhook was not admitted");
-    await executeDelivery(f.deps, admitted, { userEmail: agent.ownerEmail, runAsOwner: true });
-    expect(email).toBeUndefined();
-    expect(f.rows.at(-1)?.status).toBe("succeeded");
+    await executeDelivery(f.deps, admitted, { userEmail: "owner@example.com", userId: "other-user", runAsOwner: true });
+    expect(input?.user).toEqual({ userId: "webhook-user", email: "caller@example.test" });
+    expect(input?.executionGrant).toMatchObject({ kind: "webhook", credentialId: WEBHOOK_CREDENTIAL_ID, userId: "webhook-user" });
+    expect(input?.actor.kind).toBe("webhook");
+    expect(f.rows.at(-1)).toMatchObject({ status: "succeeded", userId: "webhook-user" });
   });
-  it("refuses an inactive execution user at admission", async () => {
-    const f = fixture({ stored: trigger({ executionEmail: agent.ownerEmail }) });
-    f.deps.executionUserActive = async () => false;
-    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe("not-configured");
-    expect(f.runs).toHaveLength(0);
+  it("scopes a generic idempotency key to the verified user, independently of other callers", async () => {
+    const f = fixture({ stored: trigger({ allowConcurrent: true }) });
+    const second = webhookCredentialFixture("p", "second-token", "second@example.test", "second-user", "00000000-0000-4000-8000-000000000002");
+    f.deps.webhookCredentials = {
+      ...f.identity.credentials,
+      verify: (agent, value) => value === SECRET ? f.identity.credentials.verify(agent, value) : second.credentials.verify(agent, value),
+      authorize: (agent, id, user) => id === WEBHOOK_CREDENTIAL_ID ? f.identity.credentials.authorize(agent, id, user) : second.credentials.authorize(agent, id, user),
+    };
+    const first = await admitDelivery(f.deps, "p", SECRET, "same-event");
+    const other = await admitDelivery(f.deps, "p", "second-token", "same-event");
+    expect(first.status).toBe("accepted"); expect(other.status).toBe("accepted");
+    expect((await admitDelivery(f.deps, "p", SECRET, "same-event")).status).toBe("duplicate");
+    if (first.status === "accepted") await first.release();
+    if (other.status === "accepted") await other.release();
   });
-  it("refuses a grant revoked between admission and execution", async () => {
-    const f = fixture({ stored: trigger({ executionEmail: agent.ownerEmail }) });
-    f.deps.executionUserActive = async () => true;
+  it("refuses an inactive personal credential before admission", async () => {
+    const f = fixture(); f.identity.revoke();
+    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe("unauthorized");
+    expect(f.claimed.size).toBe(0); expect(f.runs).toHaveLength(0);
+  });
+  it.each(["token", "disabled"])("refuses authorization revoked after admission: %s", async reason => {
+    const f = fixture();
     const admitted = await admitDelivery(f.deps, "p", SECRET, null);
     if (admitted.status !== "accepted") throw new Error("Webhook was not admitted");
-    f.deps.triggers.get = async () => trigger();
+    if (reason === "token") f.identity.revoke(); else f.deps.triggers.get = async () => trigger({ enabled: false });
     await executeDelivery(f.deps, admitted, { task: "do work" });
     expect(f.runs).toHaveLength(0);
     expect(f.rows.at(-1)?.status).toBe("failed");
@@ -251,7 +252,7 @@ describe("payloadInput", () => {
 describe("admitDelivery", () => {
   const signed = (overrides: Partial<import("@/application/trigger/runTrigger").GitHubDeliveryCredential> = {}) => {
     const body = '{ "action": "opened", "issue": {"title":"박쥐 🦇"} }\n';
-    return { kind: "github" as const, body, signature: `sha256=${createHmac("sha256", SECRET).update(body).digest("hex")}`,
+    return { kind: "github" as const, credentialId: WEBHOOK_CREDENTIAL_ID, body, signature: `sha256=${createHmac("sha256", SECRET).update(body).digest("hex")}`,
       deliveryId: "87258b0a-b0c4-11f1-9543-0a7acefe4b6c", event: "issues", ...overrides };
   };
   it("accepts GitHub signatures without a plaintext secret and deduplicates GitHub redeliveries", async () => {
@@ -301,18 +302,10 @@ describe("admitDelivery", () => {
     );
   });
 
-  it("refuses a webhook ciphertext moved to another agent", async () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("does not accept another Agent's credential", async () => {
     const f = fixture();
-    expect((await admitDelivery(f.deps, "other-agent", SECRET, null)).status).toBe(
-      "unauthorized",
-    );
-    expect(error).toHaveBeenCalled();
-  });
-
-  it("keeps a legacy v1 encrypted webhook secret usable during migration", async () => {
-    const f = fixture({ stored: trigger({ secret: encryptSecret(SECRET) }) });
-    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe("accepted");
+    expect((await admitDelivery(f.deps, "other", SECRET, null)).status).toBe("unauthorized");
+    expect(f.runs).toHaveLength(0);
   });
 
   it("reports an agent with no webhook as not configured", async () => {

@@ -447,7 +447,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.equal(tierChange?.member.tier, "member");
     pass("member get/list/atomic tier update");
     const { agentCredentialRepository } = await import("@/infrastructure/db/repositories/agentCredentialRepository");
-    const { createAgentCredentialUseCases } = await import("@/application/agent/agentCredentialUseCases");
+    const { createAgentCredentialUseCases } = await import("@/application/auth/agentCredentialUseCases");
     const { secretCipher } = await import("@/infrastructure/crypto/secretCipher");
     const { randomUUID } = await import("node:crypto");
     const personalApi = createAgentCredentialUseCases({ purpose: "api", agents: agentRepository, tokens: agentCredentialRepository,
@@ -480,7 +480,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     await personalApi.revoke(agentName, integrationMemberId);
     pass("personal credential purposes: concurrent isolated issuance, signed Webhook identity and independent revocation");
     const { messagingIdentityRepository } = await import("@/infrastructure/db/repositories/messagingIdentityRepository");
-    const { createMessagingIdentityUseCases } = await import("@/application/messaging/identityUseCases");
+    const { createMessagingIdentityUseCases } = await import("@/application/auth/messagingIdentityUseCases");
     const messaging = createMessagingIdentityUseCases({ identities: messagingIdentityRepository,
       agents: agentRepository, members: memberRepository, now: () => new Date(now) });
     const messagingCode = await messaging.issue(agentName, "slack", integrationMemberId);
@@ -504,14 +504,14 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     await agentRepository.create({ name: scheduleAgentName, displayName: "Schedule identity check", description: "",
       ownerEmail: integrationMemberEmail, createdAt: now, updatedAt: now });
     const { createTriggerUseCases } = await import("@/application/trigger/triggerUseCases");
-    const schedules = createTriggerUseCases({ agents: agentRepository, triggers: triggerRepository, members: memberRepository, cipher: secretCipher });
+    const schedules = createTriggerUseCases({ agents: agentRepository, triggers: triggerRepository, members: memberRepository });
     const registeredSchedule = await schedules.create(scheduleAgentName, { triggerId: "daily", kind: "schedule", cron: "0 9 * * *", timezone: "UTC" }, integrationMemberId);
     assert.deepEqual(registeredSchedule.createdBy, { userId: integrationMemberId, email: integrationMemberEmail });
     await schedules.update(scheduleAgentName, "daily", { message: "Registered user's task" }, integrationMemberEmail);
     const storedSchedule = await triggerRepository.get(scheduleAgentName, "daily");
     assert.equal(storedSchedule?.kind, "schedule");
     assert.deepEqual(storedSchedule?.kind === "schedule" && storedSchedule.createdBy, registeredSchedule.createdBy);
-    const { resolveRunUser } = await import("@/application/execution/resolveRunUser");
+    const { resolveRunUser } = await import("@/application/auth/resolveRunUser");
     await memberRepository.setTier(integrationMemberId, "guest");
     await assert.rejects(resolveRunUser({ agents: agentRepository, members: memberRepository }, scheduleAgentName, integrationMemberId, "schedule"), /member access/);
     await memberRepository.setTier(integrationMemberId, "member");
@@ -1232,8 +1232,8 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     pass("trigger execution owner: PostgreSQL renewal CAS, stale repair, live completion and expiry-before-limit");
 
     {
-      const reviewTrigger = { agentName, triggerId: "webhook", kind: "webhook" as const, secret: "integration-encrypted-secret",
-        description: "PR reviews", enabled: true, allowConcurrent: true, executionEmail: "reviewer@example.test", createdAt: now, updatedAt: now,
+      const reviewTrigger = { agentName, triggerId: "webhook", kind: "webhook" as const,
+        description: "PR reviews", enabled: true, allowConcurrent: true, createdAt: now, updatedAt: now,
         githubReview: { scope: "repositories" as const, repositories: ["example/agent"] } };
       await triggerRepository.create(reviewTrigger);
       assert.deepEqual((await triggerRepository.get(agentName, "webhook")), reviewTrigger);

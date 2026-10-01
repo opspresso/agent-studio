@@ -1,4 +1,4 @@
-import type { MessagingIdentityUseCases } from "@/application/messaging/identityUseCases";
+import type { MessagingIdentityUseCases } from "@/application/auth/messagingIdentityUseCases";
 import type { MessagingDeps } from "@/application/messaging/handleTurn";
 import type { ConversationTranscriptRepository } from "@/domain/messaging/transcript";
 import type { TeamsClientPort, TeamsCredentials, TeamsOutboundActivity } from "@/domain/teams/client";

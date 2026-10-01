@@ -24,12 +24,12 @@
   `401 { "error": "Unauthorized" }`. 로그인 플로우 자체는 `/api/auth/*` 아래에 있다
   (Better Auth catch-all). 실행 엔드포인트 셋(`predict`, `chat/completions`,
   `agent`)은 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 오는 **사용자별 Agent API 토큰**도
-  받는다. 토큰은 Agent 소유자를 대신해 동작하며 해당 Agent 범위로 한정된다
+  받는다. 토큰은 발급한 Studio 사용자로 동작하며 해당 Agent 범위로 한정된다
   (참고: [Agent API 토큰](#agent-api-토큰)). 기계 표면은 게이트가 다르다:
   `/api/slack/events/*` 는 Slack signing secret,
   `/api/telegram/webhook/*` 는 Telegram 이 되돌려 주는 secret token, `/api/teams/messages/*` 는 Bot
   Framework 가 서명한 토큰, `/api/webhook/{agent}` 는
-  그 webhook 자신의 secret, `/api/triggers/scan` 은 배포의 `SCHEDULE_SCAN_TOKEN` 이다. `/api/health`, `/api/ready`, `/api/metrics` 는 열려 있다.
+  발급 사용자의 개인 Webhook token, `/api/triggers/scan` 은 배포의 `SCHEDULE_SCAN_TOKEN` 이다. `/api/health`, `/api/ready`, `/api/metrics` 는 열려 있다.
 - **Origin**: 세션 쿠키로 인증하는 `POST`/`PUT`/`PATCH`/`DELETE` 는 `Origin` 이 요청 origin 또는
   `PUBLIC_BASE_URL` 의 origin 과 정확히 일치해야 한다. 헤더가 없거나 `null` 이거나 다르면
   `403 { "error": "Cross-origin mutation refused" }` 이다. Bearer token 과 서명된 기계 표면은
@@ -95,15 +95,16 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 그 agent 의 
 | `/api/agents/{name}/predict` | `POST` | session 또는 Agent 토큰 |
 | `/api/agents/{name}/chat/completions` | `POST` | session 또는 Agent 토큰 |
 | `/api/agents/{name}/agent` | `POST` | session 또는 Agent 토큰 |
-| `/api/agents/{name}/token` | `GET` `POST` `DELETE` | owner / member + owner |
-| `/api/agents/{name}/token/reveal` | `POST` | member + owner |
+| `/api/agents/{name}/token` | `GET` `POST` `DELETE` | session + 본인 토큰 / 발급은 member |
+| `/api/agents/{name}/token/reveal` | `POST` | member + 본인 토큰 |
+| `/api/agents/{name}/webhook-token` | `GET` `POST` `DELETE` | session + 본인 토큰 / 발급은 member |
+| `/api/agents/{name}/webhook-token/reveal` | `POST` | member + 본인 토큰 |
 | `/api/agents/{name}/artifacts` | `GET` | owner |
 | `/api/agents/{name}/traces` | `GET` | owner |
 | `/api/agents/{name}/traces/{traceId}` | `GET` | owner |
 | `/api/agents/{name}/usage/actors` | `GET` | owner |
 | `/api/agents/{name}/triggers` | `GET` `POST` | owner / member + owner |
 | `/api/agents/{name}/triggers/{trigger}` | `PUT` `DELETE` | member + owner |
-| `/api/agents/{name}/triggers/{trigger}/reveal` | `POST` | member + owner |
 | `/api/agents/{name}/triggers/{trigger}/runs` | `GET` | owner |
 | `/api/agents/{name}/slack` | `GET` `PUT` `DELETE` | owner / member + owner |
 | `/api/agents/{name}/slack/test` | `POST` | member + owner |
@@ -1252,6 +1253,24 @@ GET은 로그인과 현재 Agent 접근을 검사한다. 생성·reveal은 추�
 `/reveal`은 살아 있는 credential을 반환하므로 POST를 사용하고 감사 기록을 남긴다.
 공용 owner token·legacy hash token은 개인 사용자에 임의 귀속하지 않으며 인증에 사용하지 않는다.
 
+## 개인 Webhook 토큰
+
+Agent API 토큰과 별도인 `asw_<credential UUID>.<32-byte base64url secret>`을 사용자별로 발급한다.
+권한과 관리 범위는 [개인 API 토큰](#agent-api-토큰)과 같으며 API·Webhook 토큰은 서로 대신 사용할 수 없다.
+발급·재발급·폐기는 해당 사용자와 해당 용도에만 적용한다.
+
+```
+GET    /api/agents/{name}/webhook-token        → { configured, canIssue, credentialId?, masked?, createdAt? }
+POST   /api/agents/{name}/webhook-token        → { token, credentialId, masked, createdAt }
+POST   /api/agents/{name}/webhook-token/reveal → { token, credentialId, createdAt }
+DELETE /api/agents/{name}/webhook-token        → 204
+```
+
+일반 발신자는 전체 토큰을 `X-Trigger-Secret`에 넣는다. GitHub는
+`/api/webhook/{agent}?credential={credentialId}`를 Payload URL로 쓰고 전체 토큰을 Secret에 넣는다.
+URL의 공개 식별자만으로 인증되지 않는다. 요청 서명·발급 사용자·현재 계정·Agent 접근을 검사한다.
+공유 Webhook 활성화와 리뷰 정책은 소유자/admin이 관리하며 토큰 보유만으로 공유 설정을 수정할 수 없다.
+
 ## 실행
 
 설정된 Agent의 최소 호출 예제다. 로컬 서버의 실제 Agent 이름과 발급한 token을 사용한다.
@@ -1459,50 +1478,45 @@ transfer 해 들어간 agent 가 아니라 런을 시작한 사람에게 귀속�
 한 agent 는 agent 이름만으로 주소가 정해지는 **webhook 하나**와, 각각 이름을 가진 임의 개수의
 **schedule** 을 갖는다. 둘 다 trigger 행이고 아래 내용을 전부 공유한다. webhook 은 예약된 id
 `webhook` (`AGENT_WEBHOOK_ID`) 아래 저장되고, `create` 는 그 양쪽을 400 으로 강제한다.
-webhook 은 다른 id 를 가질 수 없고, schedule 은 이 id 를 가질 수 없다. 앞의 것은 발행된 secret 이
-그것을 쓸 주소도 없이 존재하는 일을 막아 준다. `/api/webhook/{agent}` 가 해석하는 것은 그 id
-하나뿐이기 때문이다. 콘솔에 "webhook 만들기" 단계가 없는 것도 같은 이유다: Settings → Webhook 은
-스위치이고, 그것을 처음 켜는 것이 그 행을 쓴다.
+Webhook은 다른 ID를 가질 수 없고 Schedule은 예약 ID를 사용할 수 없다.
+개인 토큰의 공개 식별자는 호출자를 선택하며 Trigger를 선택하지 않는다.
+Agent 연동 화면의 Webhook 스위치를 처음 켜면 공유 설정 행을 생성한다.
 
 설정 (owner/admin):
 
 ```
 GET    /api/agents/{name}/triggers                     → 200 { triggers: [ … ] }
-POST   /api/agents/{name}/triggers                     → 201 { …, secret? }  | 409
+POST   /api/agents/{name}/triggers                     → 201 { … }           | 409
 PUT    /api/agents/{name}/triggers/{trigger}           → 200 { … }           | 404
 DELETE /api/agents/{name}/triggers/{trigger}           → 204                 | 404
-POST   /api/agents/{name}/triggers/{trigger}/reveal    → 200 { secret, createdAt }
 GET    /api/agents/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ … ] }   (1–100)
 ```
 
-생성 본문: `{ triggerId (slug), kind?, description?, enabled?, allowConcurrent?, cron?, timezone?, message?, deliveries?, runAsOwner?, githubReview? }`. `kind` 의 기본값은 `webhook` 이다. `schedule` 은
+생성 본문: `{ triggerId (slug), kind?, description?, enabled?, allowConcurrent?, cron?, timezone?, message?, deliveries?, githubReview? }`. `kind` 의 기본값은 `webhook` 이다. `schedule` 은
 `cron` (다섯 필드) 과 `timezone` (IANA) 을 요구하고, 각 kind 는 상대의 필드를 무시하는 대신 400
-으로 거절한다. `rotateSecret`은 webhook의 것이고,
+으로 거절한다.
 `cron`/`timezone`/`message`/`deliveries` 는 schedule 의 것이다. `deliveries` 는 최대 3개이고
 플랫폼을 중복할 수 없는 tagged union 이다: `{ kind: "slack", channelId }`,
 `{ kind: "telegram", chatId, threadId? }`, `{ kind: "teams", conversationId }`. `triggerId` 는 agent 이름과 같은 규칙
 (`^[a-z0-9-]+$`) 을 따른다. 콘솔은 입력한 것을 agent 폼이 쓰는 것과 같은 `toSlug` 헬퍼로
 정규화하고, API 는 클라이언트가 무엇이든 그 밖의 것을 거절한다.
 
-Webhook 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email을 `executionEmail`로 저장한다.
-관리자도 다른 소유자를 대신해 켤 수 없다. `false`는 저장한 email을 지우고, 생략은 기존 값을
-유지한다. 기본은 꺼짐이며 Webhook에서는 인증된 외부 발신자에게 해당 실행 권한을 부여하는
-결정이다. Admission과 실행 직전에 현재 위임·소유권과 member 상태를 확인한다. actor는 원래
-webhook으로 유지하며 검증된 email만 MCP·Workspace 실행에 사용한다. Workspace는
-도구 호출과 큐 작업 실행 직전에도 현재 Trigger 위임을 다시 검사한다.
+Webhook 설정은 실행 활성화·겹침·리뷰 정책만 보관한다. 개인 토큰의 발급 사용자 ID가 호출자이며
+입력 payload의 사용자·email·actor는 권한에 사용하지 않는다. 접수한 credential ID·사용자 ID를
+실행 문맥과 Workspace 큐에 보관하고 실행·도구 호출·리뷰 조회·게시·큐 실행 전에 현재 권한을 재검사한다.
 
 Schedule은 서버가 로그인한 등록자의 `{ userId, email }`을 `createdBy`에 저장한다.
 본문에서 등록자를 지정·변경할 수 없고 `runAsOwner`도 거절한다. 사용자 ID로 현재 계정·member 등급·
 Agent 접근을 확인하며 이메일은 현재 계정에서 해석한다. 대기 후 실행과 보고서 전송 전에
 등록자 권한과 Schedule 설정을 다시 확인하고 발화 이력에 `userId`를 기록한다.
 
-평범한 읽기는 `secretMasked` 만 돌려준다 (webhook 에 한한다. schedule 에는 secret 이 없다).
+Trigger 읽기·생성·수정 응답에는 토큰이 없다. 개인 토큰은 위의 별도 API에서 관리한다.
 
 관리자는 Webhook 생성·수정에 `githubReview: {scope:"accessible"}` 또는
 `{scope:"repositories", repositories:["owner/repo"]}`를 전달할 수 있다. 수정의 `null`은 리뷰를
 끄고 생략은 기존 선택을 유지한다. 저장소 목록은 최대 20개이며 wildcard·URL은 받지 않는다.
 해당 Agent의 GitHub MCP 인증이 필요하며 자동 리뷰 게시 활성화는 관리자에게 한정한다.
-활성 리뷰 설정 저장과 Webhook 재활성화는 현재 소유자의 `runAsOwner` 위임, Workspace 도구 활성화,
+활성 리뷰 설정 저장과 Webhook 재활성화는 Workspace 도구 활성화,
 차단·대화형 승인 없는 Workspace 정책을 요구하고 누락은 400으로 거절한다. 설정 읽기의 선택적
 `reviewIssue`는 현재 누락을 설명한다. 권한 철회와 비활성화는 가능하며 저장은 실행 권한이나
 `allowConcurrent`를 자동으로 켜지 않는다.
@@ -1510,16 +1524,11 @@ Agent 접근을 확인하며 이메일은 현재 계정에서 해석한다. 대�
 `202 {ok:true,status:"ignored",reason}`이며 모델을 실행하지 않는다. 정상 접수는 기존 accepted
 형태를 유지하고 완료 이력의 `review`에 repository·number·headSha·posted/skipped/failed와
 확인된 url 또는 reason을 담는다. 자동 리뷰에는 Agent Workspace 활성화와 저장소 정책,
-command 런타임·worker 및 소유자가 캡처한 `runAsOwner` 위임이 필요하다. 플랫폼이 검증한
+command 런타임·worker 및 유효한 개인 Webhook 호출자가 필요하다. 플랫폼이 검증한
 HEAD의 Workspace를 준비한 뒤 실행·COMMENT 게시·보고를 완료하고 Workspace 정리를 확인한다.
 `sourceRevision`은 내부 리뷰 입력이며 공개 Workspace 생성·시작 body에서 받지 않는다.
 [PR 리뷰 계약](design/triggers.md#github-pr-리뷰)을 따른다.
-secret 은 해시가 아니라 AES 로 암호화해 저장되므로. agent API 토큰과 정확히 같이.
-`POST …/reveal` 로 **다시 읽을 수 있다** (본문이 살아 있는 인증 정보라서 POST 다. 소유자/admin
-전용이고, 모든 reveal 은 호출자의 이메일과 함께 로그된다). `rotateSecret: true` 를 담은 `PUT` 은
-그것을 재발급하고 새 것을 돌려준다. 이전 secret 은 즉시 동작을 멈춘다.
-
-전달 (세션 없음, secret 이 인증이다):
+전달 (세션 없음, 개인 Webhook 토큰으로 호출자를 확인한다):
 
 ```
 POST /api/webhook/{agent}
@@ -1534,14 +1543,14 @@ POST /api/webhook/{agent}
 → 401 (wrong or missing secret/signature) | 404 (no webhook on this agent) | 400 (bad JSON or GitHub metadata) | 413 (>1MB)
 ```
 
-GitHub도 같은 URL을 사용한다. GitHub Webhook의 Content type은 `application/json`, Secret은
-이 Agent가 발급한 Webhook 시크릿으로 설정한다. `X-Hub-Signature-256`의 HMAC-SHA256을
+GitHub의 Payload URL은 `/api/webhook/{agent}?credential={credentialId}`다.
+Content type은 `application/json`, Secret은 해당 사용자의 전체 Webhook 토큰으로 설정한다. `X-Hub-Signature-256`의 HMAC-SHA256을
 원본 UTF-8 body로 검증하며, 직접 `X-Trigger-Secret` 헤더를 추가할 필요가 없다. GitHub 헤더가
 있으면 서명 방식을 선택하고 누락·잘못된 서명에서 일반 시크릿 방식으로 폴백하지 않는다.
 `X-GitHub-Delivery`와 `X-GitHub-Event`를 요구하며 delivery ID를 중복 방지 키로 쓴다.
 서명된 `ping`은 `202 {ok:true,status:"ping"}`으로 연결만 확인하고 모델을 실행하지 않는다.
-이 인증만으로 사용자 OAuth·Workspace 실행 권한을 부여하지 않는다. 소유자가 `runAsOwner`를
-별도로 승인한 경우에만 확인된 신원으로 설정된 개인 도구와 Workspace를 제공하며 webhook actor는 유지한다.
+Workspace와 개인 문맥은 토큰 발급자의 현재 계정·Agent 접근을 적용하며 webhook actor는 유지한다.
+일반 멱등 키는 발급 사용자 ID로 구분한다. GitHub delivery·PR HEAD 중복 방지는 Agent Webhook 범위를 유지한다.
 Workspace PR 메타데이터 전용 `/api/workspaces/github/webhook`과는 목적과 시크릿이 다르다.
 
 이것이 **유일한** 전달 주소다. `admitDelivery` 는 agent 이름 자체에서 그 행을 해석하고 trigger
@@ -1677,7 +1686,7 @@ GET /api/objects/{...key}?exp=<unix>&sig=<hmac>[&dl=<filename>]
 **두 목록은 한 집합의 두 가지 뷰가 아니다.** `/api/artifacts` 는 소유자 인덱스를 읽는데, 여기에는
 actor 가 이메일을 지목하거나 표면이 소유자 이메일을 해석한 행만 들어 있다. Slack 런은 질문한
 사람의 이메일을 해석할 수 있으면 이 목록에도 들어가고, 조회가 실패하면 agent 에만 남는다.
-개인 이메일 문맥이 없는 Webhook 결과는 Agent 목록에서 관리한다.
+Webhook 결과는 토큰 발급자의 현재 계정에 귀속된다.
 Schedule 결과는 등록자의 현재 계정에 귀속된다. `from`/`to` 는 실재하는 날짜로 검증되는 UTC 일이고, `before` 는 이전 페이지의
 `nextBefore` 다.
 

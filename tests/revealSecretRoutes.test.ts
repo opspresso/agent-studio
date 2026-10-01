@@ -5,8 +5,8 @@ const { state, agentRepo, tokens } = vi.hoisted(() => ({
   state: { id: "issuer", email: "issuer@example.test" }, agentRepo: { get: vi.fn() },
   tokens: { get: vi.fn(), forUser: vi.fn(), replace: vi.fn(), revoke: vi.fn() },
 }));
-vi.mock("@/lib/session", () => ({ withMemberAuth: (handler: (user: unknown, ...args: never[]) => unknown) => (...args: never[]) => handler({ id: state.id, email: state.email, name: "User", image: null }, ...args) }));
-vi.mock("@/lib/container", async () => ({ apiTokenUseCases: (await import("@/application/agent/agentCredentialUseCases")).createAgentCredentialUseCases({ purpose: "api",
+vi.mock("@/lib/session", () => ({ withAuth: (handler: (user: unknown, ...args: never[]) => unknown) => (...args: never[]) => handler({ id: state.id, email: state.email, name: "User", image: null }, ...args), withMemberAuth: (handler: (user: unknown, ...args: never[]) => unknown) => (...args: never[]) => handler({ id: state.id, email: state.email, name: "User", image: null }, ...args) }));
+vi.mock("@/lib/container", async () => ({ apiTokenUseCases: (await import("@/application/auth/agentCredentialUseCases")).createAgentCredentialUseCases({ purpose: "api",
   agents: agentRepo as never, tokens, members: { getById: async id => ({ id, email: id === "issuer" ? "issuer@example.test" : `${id}@example.test`, name: id, tier: "member", image: null, joinedAt: "2026-01-01", lastLoginAt: "2026-01-01" }) },
   cipher: { decrypt: (value: string) => value.replace("enc:v1:", "") } as never, now: () => new Date("2026-01-01"), newId: () => "unused",
 }) }));

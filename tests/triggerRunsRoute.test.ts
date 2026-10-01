@@ -7,7 +7,7 @@ vi.mock("@/lib/session", () => ({ withAuth: (handler: (user: { email: string }, 
 vi.mock("@/lib/container", async () => ({ triggerUseCases:
   (await import("@/application/trigger/triggerUseCases")).createTriggerUseCases({ members: { getById: async () => null },
     agents: { get: async () => ({ name: "agent", ownerEmail: "owner@example.test" }) } as never,
-    triggers: { listRuns: async () => f.rows } as never, cipher: {} as never,
+    triggers: { listRuns: async () => f.rows } as never,
   }) }));
 import { GET } from "@/app/api/agents/[name]/triggers/[trigger]/runs/route";
 beforeEach(() => { f.rows = []; });

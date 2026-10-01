@@ -9,7 +9,7 @@ import { randomBytes } from "node:crypto";
  * characters for agent-studio, then one for the kind.
  *
  *   ast_…   personal API secret (bound to user and agent)
- *   asw_…   webhook trigger secret (per trigger, owner-managed)
+ *   asw_…   personal Webhook token (bound to user and agent)
  *   asg_…   Telegram webhook secret (per agent; minted here, handed only to Telegram)
  *
  * The random part is 32 bytes — 256 bits — so the prefix costs no entropy that
@@ -20,13 +20,13 @@ const VENDOR = "as";
 
 export type GeneratedSecretKind =
   | "agentApiToken"
-  | "triggerSecret"
+  | "agentWebhookToken"
   | "telegramWebhookSecret"
   | "messagingLinkCode";
 
 const KIND_CHAR: Record<GeneratedSecretKind, string> = {
   agentApiToken: "t",
-  triggerSecret: "w",
+  agentWebhookToken: "w",
   telegramWebhookSecret: "g",
   messagingLinkCode: "l",
 };

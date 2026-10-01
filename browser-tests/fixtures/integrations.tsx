@@ -6,9 +6,11 @@ import { I18nProvider } from "../../src/app/_i18n/provider";
 import { ViewerProvider } from "../../src/app/_lib/useViewer";
 import IntegrationsPage from "../../src/app/agents/[name]/integrations/page";
 
+const member = new URLSearchParams(window.location.search).has("member");
+
 createRoot(document.getElementById("root")!).render(
   <MantineProvider theme={theme}><I18nProvider locale="en"><ViewerProvider viewer={{
-    email: "admin@example.test", tier: "admin", isAdmin: true, isConfiguredAdmin: true,
+    email: member ? "member@example.test" : "admin@example.test", tier: member ? "member" : "admin", isAdmin: !member, isConfiguredAdmin: !member,
   }}><style>{":root { --font-sans: system-ui; --font-mono: monospace; }"}</style>
   <div style={{ padding: 24 }}><IntegrationsPage /></div></ViewerProvider></I18nProvider></MantineProvider>,
 );

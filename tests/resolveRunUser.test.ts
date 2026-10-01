@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resolveRunUser } from "@/application/execution/resolveRunUser";
+import { resolveRunUser } from "@/application/auth/resolveRunUser";
 import { setAdminCheck } from "@/application/agent/agentUseCases";
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { Agent } from "@/domain/agent/types";

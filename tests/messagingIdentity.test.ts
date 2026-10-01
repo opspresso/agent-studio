@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { createMessagingIdentityUseCases } from "@/application/messaging/identityUseCases";
+import { createMessagingIdentityUseCases } from "@/application/auth/messagingIdentityUseCases";
 import { messagingIdentityRepository } from "@/infrastructure/db/repositories/messagingIdentityRepository";
 import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
 import { authenticateMessagingSubject } from "@/application/messaging/authenticateSubject";

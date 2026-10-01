@@ -35,11 +35,21 @@ export interface RunActor {
 }
 
 /** A server-captured delegation by the owner of a registered messaging integration. */
-export interface ExecutionGrant {
+export interface MessagingExecutionGrant {
   agentName: string;
   kind: "slack" | "telegram" | "teams";
   email: string;
 }
+
+/** Proof selected by personal Webhook authentication and rechecked before later effects. */
+export interface WebhookExecutionGrant extends RunUser {
+  kind: "webhook";
+  agentName: string;
+  triggerId: string;
+  credentialId: string;
+}
+
+export type ExecutionGrant = MessagingExecutionGrant | WebhookExecutionGrant;
 
 /**
  * What a run may tell the model about the person asking.

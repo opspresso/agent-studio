@@ -1,3 +1,4 @@
+import { webhookCredentialFixture, WEBHOOK_CREDENTIAL_ID } from "./webhookCredentialFixture";
 import { memberFixture } from "./memberFixture";
 import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -39,7 +40,7 @@ afterEach(() => { try { expect(vi.getTimerCount()).toBe(0); } finally { vi.useRe
 
 async function fixture(review = true) {
   const webhook: WebhookTrigger = { agentName: agent.name, triggerId: "webhook", kind: "webhook", description: "",
-    enabled: true, allowConcurrent: false, secret: "fixture-secret", executionEmail: owner,
+    enabled: true, allowConcurrent: false,
     ...(review ? { githubReview: { scope: "accessible" as const } } : {}), createdAt: agent.createdAt, updatedAt: agent.updatedAt };
   await triggers.create(webhook);
   const load = vi.fn(async (target: { repository: string; number: number; headSha: string }) => ({ status: "ready" as const,
@@ -50,13 +51,12 @@ async function fixture(review = true) {
     tool: async () => ({ text: "{}" }), close }));
   const run = vi.fn<TriggerRunnerDeps["run"]>(async function* () { yield { delta: { content: "Review" } }; yield { done: true }; });
   const deps: TriggerRunnerDeps = { members: { getById: async id => memberFixture({ id }) }, triggers, runSlots: runSlotRepository, agents: { get: async () => agent } as never,
-    cipher: { decrypt: (value: string) => value, decryptEquals: (a: string, b: string) => a === b } as never,
-    executionUserActive: async () => true, openReviewWorkspace: open,
+    webhookCredentials: webhookCredentialFixture(agent.name, "fixture-secret", owner).credentials, openReviewWorkspace: open,
     reviewForge: () => ({ load, reply, read: async () => ({ text: "", offset: 0, totalChars: 0, nextOffset: null }) }), run };
   function credential(head = "a") {
     const body = JSON.stringify({ action: "opened", number: 42, repository: { full_name: "example/agent" },
       pull_request: { number: 42, state: "open", draft: false, base: { repo: { full_name: "example/agent" } }, head: { sha: head.repeat(40) } } });
-    return { kind: "github" as const, body, event: "pull_request", deliveryId: "11111111-1111-4111-8111-111111111111",
+    return { kind: "github" as const, credentialId: WEBHOOK_CREDENTIAL_ID, body, event: "pull_request", deliveryId: "11111111-1111-4111-8111-111111111111",
       signature: "sha256=" + createHmac("sha256", "fixture-secret").update(body).digest("hex") };
   }
   async function accept() {
@@ -116,7 +116,7 @@ describe("trigger execution owner lifetime", () => {
     await vi.advanceTimersByTimeAsync(FIRING_MAX_LIFETIME_MS - 1);
     expect(await repairTriggerRuns(f.deps, f.webhook, new Date())).toEqual({ repaired: 0, errors: 0 });
     expect((await admitDelivery(f.deps, agent.name, "fixture-secret", "next-event")).status).toBe("busy");
-    const useCases = createTriggerUseCases({ members: { getById: async () => null }, triggers, agents: f.deps.agents, cipher: f.deps.cipher });
+    const useCases = createTriggerUseCases({ members: { getById: async () => null }, triggers, agents: f.deps.agents });
     const visible = (await useCases.runs(agent.name, "webhook", 10, owner)).find(row => row.runId === admitted.runId)!;
     expect(visible).not.toHaveProperty("runningLeaseToken");
     expect(visible).not.toHaveProperty("runningLeaseUntil");

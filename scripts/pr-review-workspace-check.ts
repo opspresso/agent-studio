@@ -11,7 +11,9 @@ import type { WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { TriggerRunnerDeps } from "@/application/trigger/deps";
 import { FakeChannel, contentChunk, toolCallChunk } from "../tests/fakeChannel";
-import { triggerSecretContext } from "@/domain/security/secretContext";
+import { createAgentCredentialUseCases } from "@/application/auth/agentCredentialUseCases";
+import { assertExecutionGrant } from "@/application/auth/authorizeExecutionGrant";
+import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
 
 process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@127.0.0.1:5432/agent_studio_test";
 assertLocalDatabase(process.env.DATABASE_URL, true);
@@ -99,10 +101,15 @@ async function main() {
   const { admitDelivery, executeDelivery } = await import("@/application/trigger/runTrigger");
   const { deletePartition } = await import("@/infrastructure/db/store");
   const { keys } = await import("@/infrastructure/db/keys");
-  const { closePool } = await import("@/infrastructure/db/client");
-  const agentName = `review-${randomUUID()}`; const ownerEmail = "review-check@example.test"; const at = new Date().toISOString();
+  const { closePool, withTransaction } = await import("@/infrastructure/db/client");
+  const { memberRepository: members } = await import("@/infrastructure/db/repositories/memberRepository");
+  const { agentCredentialRepository: tokens } = await import("@/infrastructure/db/repositories/agentCredentialRepository");
+  const agentName = `review-${randomUUID()}`; const ownerEmail = `${agentName}@example.test`; const at = new Date().toISOString();
   const configuration = { agentName, model: "openai/gpt-5-mini", systemPrompt: "Review the verified PR", parameters: { piiFiltering: false, workspaceTools: true }, skillList: [], mcpList: [], subagentList: [] };
   const agents = { ...storedAgents, get: async (name: string) => { const agent = await storedAgents.get(name); return agent ? { ...agent, configuration } : null; } };
+  const userId = `${agentName}-caller`;
+  const webhookCredentials = createAgentCredentialUseCases({ purpose: "webhook", agents, members, tokens, cipher, now: () => new Date(), newId: randomUUID });
+  const grantDeps = { agents, triggers, webhookCredentials, memberTier: async (email: string) => (await members.getByEmail(email))?.tier ?? null };
   const sandbox = { image: process.env.WORKSPACE_SANDBOX_IMAGE || "agent-studio-workspace:agents", network: "none", memoryMb: 512, diskMb: 256, cpus: 1 };
   const backend = createDockerSandboxBackend(sandbox); const nativeProvider = backend.provider; const containers = new Set<string>();
   const provider = { ...nativeProvider, ensure: async (id: string) => { const value = await nativeProvider.ensure(id); containers.add(value.externalId); return value; } };
@@ -110,7 +117,8 @@ async function main() {
   const coding = createCodingWorktree(backend.control, { webUrl: baseUrl, internalHosts: ["localhost"], serverToken: async () => "fixture-token" });
   const github = createCodingGitHub({ apiUrl: `${baseUrl}/api`, webUrl: baseUrl, internalHosts: ["localhost"], getToken: async () => "fixture-token" });
   let workspaceId: string | undefined;
-  const worker: WorkspaceWorkerDeps = { repository, chats, agents, provider, checkpoints, coding: () => coding, now: () => new Date(), newId: randomUUID,
+  let userCreated = false;
+  const worker: WorkspaceWorkerDeps = { authorize: (agent, email, actor, grant) => authorizeWorkspaceExecution({ ...grantDeps, members, backendReady: () => true, enabled: async () => true }, agent, email, actor, grant), repository, chats, agents, provider, checkpoints, coding: () => coding, now: () => new Date(), newId: randomUUID,
     idleTtlSeconds: 60, runTimeoutMs: 30000, policy: () => ({ agentName, runtimes: ["command"], repositories: ["fixture/repo"], checks: [], deploymentWorkflows: [] }),
     checkRepository: (_agentName, repository, branch, revision) => github.forge.checkRepository(repository, branch, revision), runtime: createWorkspaceRuntimeAdapter,
     execute: (workspace, work, actor) => executeWorkspaceTask({ usage }, agents, workspace, work, actor), sleep: ms => delay(ms) };
@@ -121,14 +129,14 @@ async function main() {
     [toolCallChunk(0, "wait", "Workspace", JSON.stringify({ request: { operation: "wait" } }))],
     [contentChunk("[P1] index.js:1 — twice(1)이 2 대신 3을 반환합니다. Workspace 재현 검사가 실패했습니다.")],
   ]);
-  const execution = { agents, usage, cipher, channel, createToolSchemaValidator, skills: { get: async () => null, describe: async () => [] }, mcps: { get: async () => null } } as unknown as ExecutionDeps;
+  const execution = { authorizeExecutionGrant: (grant: import("@/domain/execution/actor").ExecutionGrant) => assertExecutionGrant(grantDeps, grant), agents, usage, cipher, channel, createToolSchemaValidator, skills: { get: async () => null, describe: async () => [] }, mcps: { get: async () => null } } as unknown as ExecutionDeps;
   const actor = { kind: "webhook" as const, id: `${agentName}:webhook` };
-  const deps: TriggerRunnerDeps = { members: { getById: async () => null }, agents, triggers, cipher, executionUserActive: async () => true, reviewForge: () => github.reviews,
+  const deps: TriggerRunnerDeps = { members, agents, triggers, webhookCredentials, reviewForge: () => github.reviews,
     run: input => streamAgentRun(execution, { ...input, messages: [{ role: "user", content: input.message ?? "" }], ownerEmail: input.userEmail }),
-    openReviewWorkspace: async target => {
-      const tool = createWorkspaceTool({ useCases: api, authorize: async () => {}, policy: () => worker.policy(agentName), sleep: pump, workdir: WORKSPACE_DIRECTORY, publicBaseUrl: baseUrl,
+    openReviewWorkspace: async (target, grant) => {
+      const tool = createWorkspaceTool({ useCases: api, authorize: () => assertExecutionGrant(grantDeps, grant), policy: () => worker.policy(agentName), sleep: pump, workdir: WORKSPACE_DIRECTORY, publicBaseUrl: baseUrl,
         publishGit: async () => { throw new Error("Git publication unavailable"); }, requestGit: async () => { throw new Error("Git publication must be unavailable"); }, pullRequest: async () => undefined, attachRepository: async () => { throw new Error("Repository must remain pinned"); } },
-        { agentName, ownerEmail, actor, occurrence: randomUUID(), reviewTarget: target });
+        { agentName, ownerEmail, actor, executionGrant: grant, occurrence: randomUUID(), reviewTarget: target });
       const wrapped = async (...args: Parameters<typeof tool>) => { const result = await tool(...args); const value = JSON.parse(result.text); workspaceId ??= value.workspace_id; return result; };
       return openReviewWorkspace({ tool: wrapped, state: repository.get, close: id => api.close(id, ownerEmail), sleep: pump, verify: async id => {
         const workspace = (await repository.get(id))!;
@@ -137,14 +145,21 @@ async function main() {
       } }, target);
     } };
   try {
-    await storedAgents.create({ name: agentName, displayName: "PR review check", description: "", ownerEmail, createdAt: at, updatedAt: at });
-    const secret = "fixture-webhook-secret";
-    await triggers.create({ agentName, triggerId: "webhook", kind: "webhook", description: "", enabled: true, secret: cipher.encrypt(secret, triggerSecretContext(agentName, "webhook")), executionEmail: ownerEmail,
+    await withTransaction(async client => { await client.query(
+      `INSERT INTO "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt") VALUES ($1, $2, $3, true, $4, $4)`,
+      [userId, "Review caller", ownerEmail, at]); });
+    userCreated = true;
+    await members.setTier(userId, "member");
+    await storedAgents.create({ name: agentName, displayName: "PR review check", description: "", ownerEmail: "agent-owner@example.test", createdAt: at, updatedAt: at });
+    const issued = await webhookCredentials.generate(agentName, userId);
+    const secret = issued.token;
+    await triggers.create({ agentName, triggerId: "webhook", kind: "webhook", description: "", enabled: true,
       allowConcurrent: true, githubReview: { scope: "repositories", repositories: ["fixture/repo"] }, createdAt: at, updatedAt: at });
     const storedWebhook = await triggers.get(agentName, "webhook");
-    assert.equal(storedWebhook?.kind === "webhook" && storedWebhook.executionEmail, ownerEmail, "Webhook execution delegation must survive the DB round-trip");
+    assert.equal(storedWebhook?.kind, "webhook");
+    assert.ok(!Object.hasOwn(storedWebhook!, "secret"), "Shared Webhook settings must not contain a credential");
     const body = JSON.stringify({ action: "opened", number: 1, repository: { full_name: "fixture/repo" }, pull_request: pull() });
-    const credential = { kind: "github" as const, body, event: "pull_request", deliveryId: randomUUID(), signature: "sha256=" + createHmac("sha256", secret).update(body).digest("hex") };
+    const credential = { kind: "github" as const, credentialId: issued.credentialId, body, event: "pull_request", deliveryId: randomUUID(), signature: "sha256=" + createHmac("sha256", secret).update(body).digest("hex") };
     const admitted = await admitDelivery(deps, agentName, credential, null);
     assert.equal(admitted.status, "accepted"); if (admitted.status !== "accepted") throw new Error("Webhook not admitted");
     await executeDelivery(deps, admitted, JSON.parse(body));
@@ -161,14 +176,20 @@ async function main() {
     assert.equal(runs.length, 2); assert.equal(runs[0]!.status, "failed"); assert.equal(runs[1]!.status, "succeeded");
     const events = await repository.events(workspace.id, runs[0]!.id, 0, 100);
     assert.ok(events.some(event => event.data.kind === "output" && event.data.text.includes("expected 2, got 3")), "The actual Sandbox must reproduce the arithmetic defect");
-    for (const run of runs) assert.deepEqual(run.actor, actor);
+    for (const run of runs) {
+      assert.deepEqual(run.actor, actor);
+      assert.deepEqual(run.executionGrant, { kind: "webhook", agentName, triggerId: "webhook", userId, email: ownerEmail, credentialId: issued.credentialId });
+    }
     assert.equal((await admitDelivery(deps, agentName, { ...credential, deliveryId: randomUUID() }, null)).status, "duplicate");
-    console.log("PASS signed PR webhook → immutable checkout (main advanced) → real SDK Workspace check → COMMENT at exact HEAD → closed Workspace, cleanup and duplicate refusal");
+    await webhookCredentials.revoke(agentName, userId);
+    assert.equal((await admitDelivery(deps, agentName, credential, null)).status, "unauthorized");
+    console.log("PASS personal signed PR webhook → immutable checkout (main advanced) → real SDK Workspace check → COMMENT at exact HEAD → closed Workspace, cleanup and duplicate refusal");
   } finally {
     if (workspaceId) { await api.close(workspaceId, ownerEmail); await processWorkspace(worker, workspaceId); await checkpoints.delete(workspaceId);
       const workspace = await repository.get(workspaceId); if (workspace) await chats.delete(workspace.chatId); await deletePartition(keys.workspacePartition(workspaceId)); }
     if (await storedAgents.get(agentName)) await storedAgents.delete(agentName);
     for (const id of containers) await nativeProvider.destroy(id);
+    if (userCreated) await withTransaction(async client => { await client.query(`DELETE FROM "user" WHERE "id" = $1`, [userId]); });
     await closePool();
   }
   } finally {
