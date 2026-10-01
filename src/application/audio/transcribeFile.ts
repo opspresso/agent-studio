@@ -1,6 +1,7 @@
 import type { AudioJob } from "@/domain/audio/job";
 import { audioSourceAgent } from "@/domain/audio/job";
 import type { AudioSegmenter } from "@/domain/audio/segmenter";
+import { validateSpeakerTimeline, type DiarizationPort, type SpeakerTimeline } from "@/domain/audio/diarization";
 import { validateTranscription, type TranscriptionPort, type TranscriptionResult, type TranscriptSegment } from "@/domain/llm/transcription";
 import type { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { AudioJobStepError, type AudioJobStepContext } from "./processJob";
@@ -18,6 +19,8 @@ export interface AudioTranscript {
   coverage: Array<{ start: number; end: number }>;
   warnings: string[];
   usageReceipts: string[];
+  /** Whole-recording diarizer provenance; absent for provider/request-scoped labels. */
+  diarizationRevision?: string;
 }
 
 export interface AudioTranscriptionDeps {
@@ -25,6 +28,7 @@ export interface AudioTranscriptionDeps {
   segmenter: AudioSegmenter;
   resolve(model: string): Promise<{
     transcriber: TranscriptionPort; segmentSeconds: number; maxSegmentBytes: number; settingsKey: string;
+    diarization?: { port: DiarizationPort; revision: string };
   }>;
   /** The run budget owner checks each new provider request, not cached segments. */
   beforeTranscribe(job: AudioJob, audioSeconds: number): Promise<(failed: boolean) => Promise<void>>;
@@ -43,6 +47,7 @@ interface StoredSegment {
   maxSegmentBytes: number;
   settingsKey: string;
   language: string | null;
+  speaker?: string;
   result: TranscriptionResult;
 }
 
@@ -71,11 +76,32 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
     const source = await deps.files.read(audioSourceAgent(job), job.fileId, job.userEmail, undefined, context.signal);
     if (!source.file.checksum) throw new AudioJobStepError("missing_checksum", false);
     const config = await deps.resolve(job.model);
+    let timeline: SpeakerTimeline | undefined;
+    if (config.diarization) {
+      const id = `${job.id}-diarization`;
+      await deps.files.import({ id, agentName: job.agentName, userEmail: job.userEmail,
+        filename: "diarization.json", mimeType: "application/json", retention: job.retention,
+        retainUntil: source.file.retireAt, derived: { jobId: job.id, kind: "checkpoint" } }, async () => {
+        const value = validateSpeakerTimeline(await config.diarization!.port.analyze({ bytes: source.bytes, mimeType: source.mimeType }, context.signal));
+        if (value.revision !== config.diarization!.revision) throw new AudioJobStepError("diarization_revision_mismatch", false);
+        const bytes = new TextEncoder().encode(JSON.stringify({ sourceChecksum: source.file.checksum,
+          settingsKey: config.settingsKey, timeline: value }));
+        if (bytes.length > MAX_TRANSCRIPT_BYTES) throw new AudioJobStepError("transcript_limit", false);
+        return (async function* () { yield bytes; })();
+      }, context.signal);
+      const file = await deps.files.read(job.agentName, id, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
+      try {
+        const saved = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes));
+        if (saved.sourceChecksum !== source.file.checksum || saved.settingsKey !== config.settingsKey) throw new Error("Plan changed");
+        timeline = validateSpeakerTimeline(saved.timeline);
+        if (timeline.revision !== config.diarization.revision) throw new Error("Revision changed");
+      } catch { throw new AudioJobStepError("diarization_checkpoint_mismatch", false); }
+    }
     const parts: StoredSegment[] = [];
     let processedSeconds = 0;
     let checkpointBytes = 0;
     for await (const segment of deps.segmenter.split({ bytes: source.bytes, mimeType: source.mimeType,
-      segmentSeconds: config.segmentSeconds, maxSegmentBytes: config.maxSegmentBytes }, context.signal)) {
+      segmentSeconds: config.segmentSeconds, maxSegmentBytes: config.maxSegmentBytes, ...(timeline ? { timeline } : {}) }, context.signal)) {
       context.signal.throwIfAborted();
       if (!parts.length && !job.transcriptionProgress) {
         await context.record({ transcriptionProgress: { processedSeconds: 0, totalSeconds: segment.totalSeconds, completedSegments: 0 } });
@@ -83,7 +109,8 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
       const id = `${job.id}-asr-${segment.index}`;
       const expected = { index: segment.index, start: segment.start, end: segment.end, totalSeconds: segment.totalSeconds,
         sourceChecksum: source.file.checksum, model: job.model, segmentSeconds: config.segmentSeconds,
-        maxSegmentBytes: config.maxSegmentBytes, settingsKey: config.settingsKey, language: job.language ?? null };
+        maxSegmentBytes: config.maxSegmentBytes, settingsKey: config.settingsKey, language: job.language ?? null,
+        ...(segment.speaker ? { speaker: segment.speaker } : {}) };
       let close: ((failed: boolean) => Promise<void>) | undefined;
       let failed = true;
       try {
@@ -112,7 +139,9 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
       } finally { await close?.(failed); }
     }
     if (!parts.length) throw new AudioJobStepError("empty_audio", false);
-    const segments: TranscriptSegment[] = parts.flatMap((part) => part.result.segments.map((segment) => ({
+    const segments: TranscriptSegment[] = parts.flatMap((part) => timeline
+      ? [{ text: part.result.text, start: part.start, end: part.end, ...(part.speaker ? { speaker: part.speaker } : {}) }]
+      : part.result.segments.map((segment) => ({
       ...segment,
       ...(segment.start !== undefined && segment.end !== undefined ? {
         start: part.start + segment.start, end: part.start + segment.end,
@@ -126,8 +155,10 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
       sourceFileId: job.fileId, sourceChecksum: source.file.checksum,
       totalSeconds: parts[0]!.totalSeconds,
       coverage: parts.map(({ start, end }) => ({ start, end })),
-      warnings: [...new Set(parts.flatMap((part) => part.result.warnings))],
+      warnings: [...new Set([...parts.flatMap((part) => part.result.warnings), ...(timeline?.warnings ?? []),
+        ...(timeline && parts.some(part => !part.speaker) ? ["Some audio intervals have no detected speaker; attribution is unknown."] : [])])],
       usageReceipts: parts.map((part) => `${job.id}-asr-${part.index}`),
+      ...(timeline ? { diarizationRevision: timeline.revision } : {}),
     };
     const bytes = new TextEncoder().encode(JSON.stringify(output));
     if (bytes.length > MAX_TRANSCRIPT_BYTES) throw new AudioJobStepError("transcript_limit", false);

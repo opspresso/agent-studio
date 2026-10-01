@@ -586,6 +586,16 @@ worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것
 | `TRANSCRIPTION_MAX_INPUT_BYTES` | `26214400` | 변환된 구간 하나의 provider 전송 상한. 원본 파일 상한과 별개 |
 | `TRANSCRIPTION_SEGMENT_SECONDS` | `300` | 구간 길이 상한. byte 상한이 더 작으면 그에 맞춰 분할 |
 | `FFMPEG_PATH` | `ffmpeg` | 운영 이미지에 설치된 오디오 decoder 실행 파일 |
+| `DIARIZATION_BASE_URL` | 미설정 | 녹음 전체 화자 분석 서비스의 운영자 지정 내부 주소. 설정하면 모든 전사에 화자 분석을 먼저 수행하며 실패 시 일반 전사로 대체하지 않음 |
+| `DIARIZATION_TOKEN` | 미설정 | 화자 분석 서비스 Bearer secret. URL을 설정하면 필수이며 앱·worker·서비스에 같은 값을 주입 |
+| `DIARIZATION_REVISION` | 미설정 | 반입 모델의 불변 revision, 최대 128자. URL을 설정하면 필수이며 서비스 응답·checkpoint와 일치해야 함 |
+
+`gpt-4o-transcribe`와 별도 화자 분석을 결합할 때 모델은 Settings에서 명시적으로 등록·선택하고
+응답 형식은 `json`, provider chunking strategy는 미설정으로 둔다. 화자 분석은 해당 모델과 별개다.
+서비스의 설치·모델 반입은 [설치 안내](INSTALL.md#별도-화자-분리)를 따른다.
+`DIARIZATION_BASE_URL`은 LLM·사용자가 선택하는 주소가 아니며 운영자가 신뢰하는 내부 서비스만 지정한다.
+서비스 요청은 1시간으로 제한한다. revision이나 전사 설정이 바뀐 기존 checkpoint는 거부하므로
+같은 모델 revision을 유지해 재시도하거나 새로운 processing_revision으로 재처리한다.
 
 전사 모델은 카탈로그의 Transcription 타입이어야 한다. HTTP multipart를 지원하지 않는 SigV4
 채널과 미설정 채널은 거절한다. 비용 계산에 필요한 사용량이 없으면 결과는 unknown이며 0이 아니다.
@@ -596,7 +606,7 @@ worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것
 | 한계 | 값 | 소유 코드 |
 | --- | --- | --- |
 | 원본 파일 크기 / 미완료 업로드 유효 시간 | 512 MiB / 24시간 | `src/application/artifact/sourceFiles.ts` |
-| 원본 오디오 길이 | 6시간 | `src/domain/audio/segmenter.ts` |
+| 원본 오디오 길이 | 6시간 | `src/domain/audio/limits.ts` |
 | 다운로드 / 구간 전사 요청 제한 | 각각 10분 | `src/infrastructure/net/sourceDownloader.ts`, `src/infrastructure/llm/transcription.ts` |
 | 비공개 파일 object 요청 / 삭제·multipart 정리 요청 | 10분 / 30초 | `src/infrastructure/storage/sourceObjectStore.ts` |
 | worker 동시 작업 / poll / 만료 sweep | 2개 / 10초 / 60초 | `src/application/audio/worker.ts` |

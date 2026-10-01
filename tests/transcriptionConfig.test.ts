@@ -3,12 +3,20 @@ import { getTranscriptionTarget, invalidateSettingsCache } from "@/lib/runtime-s
 import { fixtureRegistrations } from "./modelFixtures";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { calculateTranscriptionCost, getModelConfig } from "@/domain/llm/models";
+import { config } from "@/lib/config";
 
 vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({ settingsRepository: { get: vi.fn(async () => null) } }));
 beforeEach(() => { invalidateSettingsCache(); vi.mocked(settingsRepository.get).mockResolvedValue({ registeredModels: fixtureRegistrations(), updatedAt: "" }); });
 afterEach(() => { vi.unstubAllEnvs(); });
 
 describe("transcription model configuration", () => {
+  it("requires a private token and immutable revision when whole-recording diarization is enabled", () => {
+    vi.stubEnv("DIARIZATION_BASE_URL", "http://diarization.test");
+    vi.stubEnv("DIARIZATION_TOKEN", ""); vi.stubEnv("DIARIZATION_REVISION", "");
+    expect(() => config.transcription).toThrow("requires DIARIZATION_TOKEN and DIARIZATION_REVISION");
+    vi.stubEnv("DIARIZATION_TOKEN", "synthetic-token"); vi.stubEnv("DIARIZATION_REVISION", "v1");
+    expect(config.transcription.diarization).toEqual({ baseUrl: "http://diarization.test", token: "synthetic-token", revision: "v1" });
+  });
   it("uses an explicitly registered keyless self-hosted ASR connection", async () => {
     vi.mocked(settingsRepository.get).mockResolvedValue({
       registeredModels: [{ ...fixtureRegistrations().find(model => model.id === "openai/whisper-1")!, id: "local/whisper-1", provider: "local" }],

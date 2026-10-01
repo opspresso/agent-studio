@@ -1,0 +1,5 @@
+{
+  "maxSeconds": 21600,
+  "maxSpeakerTurns": 20000,
+  "maxDiarizationInputBytes": 536870912
+}

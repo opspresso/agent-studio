@@ -1,7 +1,9 @@
 name: agent-studio-diarization
 services:
   diarization:
-    build: .
+    build:
+      context: ../..
+      dockerfile: deploy/diarization/Dockerfile
     ports:
       - "127.0.0.1:8003:8000"
     environment:

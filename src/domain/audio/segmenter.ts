@@ -1,3 +1,5 @@
+import type { SpeakerTimeline } from "./diarization";
+
 export interface AudioSegment {
   index: number;
   start: number;
@@ -6,6 +8,8 @@ export interface AudioSegment {
   bytes: Uint8Array;
   mimeType: "audio/wav";
   filename: string;
+  /** Whole-recording label supplied by the independent diarizer. */
+  speaker?: string;
 }
 
 export interface AudioSegmenter {
@@ -14,8 +18,6 @@ export interface AudioSegmenter {
     mimeType: string;
     segmentSeconds: number;
     maxSegmentBytes: number;
+    timeline?: SpeakerTimeline;
   }, signal?: AbortSignal): AsyncGenerator<AudioSegment>;
 }
-
-/** Maximum duration of an audio source processed by the platform. */
-export const MAX_AUDIO_SECONDS = 6 * 60 * 60;

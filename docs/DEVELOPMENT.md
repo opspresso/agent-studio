@@ -120,6 +120,7 @@ pnpm test:integration # 로컬 PostgreSQL(agent_studio_test), 인증 스키마�
 pnpm test:storage     # 로컬 MinIO 임시 bucket의 원본 파일 streaming·조건부 저장·삭제 검사
 pnpm test:audio       # ffmpeg로 실제 MP3 분할·WAV 크기·시간 범위·임시 파일 정리 검사
 pnpm test:audio:pipeline # PostgreSQL test DB·MinIO·ffmpeg·로컬 ASR mock을 통한 전체 전사 경로
+pnpm test:audio:pipeline --diarization # 전체 녹음 화자 분석 → gpt-4o-transcribe → 화자 정보를 유지한 요약 fixture
 pnpm worker:workspace # 환경변수가 주입된 별도 Workspace·승인 후속 실행 worker
 pnpm test:sandbox     # 무통신 Docker 격리·체크포인트 검사
 pnpm test:workspace   # Docker + PostgreSQL *_test 실행·복구 검사
@@ -139,6 +140,11 @@ pnpm db:migrate       # DATABASE_URL 의 데이터베이스를 현재 스키마�
 `scripts/audio-worker-check.mjs`는 저장소 밖에 복사한 standalone 디렉터리에서 worker 번들 로드,
 DB poll 실패 후 대기와 SIGTERM 종료를 확인하는 별도 smoke 검사다. 현재 CI가 자동 실행하지는 않는다.
 실제 DB·스토리지·전사 처리는 `test:audio:pipeline`이 검증한다.
+
+별도 화자 서비스는 `docker build -f deploy/diarization/Dockerfile -t agent-studio-diarization:check .`으로 빌드한다.
+`docker run --rm --network none --entrypoint python -v "$PWD/deploy/diarization:/checks:ro" agent-studio-diarization:check -B -m unittest discover -s /checks`
+는 인증·본문 제한·오류 redaction·임시 파일 정리와 실제 ffmpeg decode를 검사한다. 모델 추론은 결정적 fixture다.
+실제 화자 정확도·한국어 전사 품질은 반입한 weight와 검수된 녹음으로 별도 평가한다.
 
 `test:audio:pipeline`은 선택적으로 실제 Agent Memory MCP까지 검증한다. 별도 폐기 가능한
 Memory 설치를 `localhost`에 띄우고 문서 worker를 켠다. 합성 사용자(`@example.test`)의 개인 계정·검증된 email과

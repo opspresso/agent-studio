@@ -9,8 +9,14 @@ import threading
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-MAX_BYTES = 512 * 1024 * 1024
-MAX_SECONDS = 6 * 60 * 60
+# The app and this service consume the same domain-owned request/timeline limits.
+limits_path = os.environ.get("AUDIO_LIMITS_PATH")
+if limits_path is None:
+    limits_path = Path(__file__).resolve().parents[2] / "src/domain/audio/limits.json"
+limits_path = Path(limits_path)
+limits = json.loads(limits_path.read_text())
+MAX_BYTES = limits["maxDiarizationInputBytes"]
+MAX_SECONDS = limits["maxSeconds"]
 SAMPLE_RATE = 16000
 DEMUXERS = "mp3,wav,flac,ogg"
 
@@ -39,7 +45,7 @@ def analyze(path, pipeline, revision):
     turns = [{"start": max(0.0, float(turn.start)), "end": min(duration, float(turn.end)), "speaker": speaker}
              for turn, speaker in output.exclusive_speaker_diarization]
     turns = [turn for turn in turns if turn["end"] > turn["start"]]
-    if len(turns) > 20000:
+    if len(turns) > limits["maxSpeakerTurns"]:
         raise ValueError("Too many turns")
     warnings = []
     end = 0.0

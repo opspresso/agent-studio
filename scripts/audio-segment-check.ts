@@ -26,6 +26,35 @@ async function main() {
     assert.equal(segments[0]?.start, 0);
     assert.equal(segments.at(-1)?.end, 1.5);
     assert.equal(segments[1]?.start, segments[0]?.end);
+    const diarized = [];
+    for await (const segment of segmenter.split({ bytes, mimeType: "audio/mpeg", segmentSeconds: 0.5, maxSegmentBytes: 16_044,
+      timeline: { duration: 1.5, revision: "fixture", warnings: [], turns: [
+        { start: 0.125, end: 0.625, speaker: "SPEAKER_00" },
+        { start: 0.75, end: 1, speaker: "SPEAKER_01" },
+        { start: 1, end: 1.5, speaker: "SPEAKER_00" },
+      ] } }, undefined)) diarized.push(segment);
+    assert.deepEqual(diarized.map(({ start, end, speaker }) => ({ start, end, speaker })), [
+      { start: 0, end: 0.125, speaker: undefined },
+      { start: 0.125, end: 0.625, speaker: "SPEAKER_00" },
+      { start: 0.625, end: 0.75, speaker: undefined },
+      { start: 0.75, end: 1, speaker: "SPEAKER_01" },
+      { start: 1, end: 1.5, speaker: "SPEAKER_00" },
+    ]);
+    assert.equal(diarized.reduce((sum, part) => sum + part.bytes.length - 44, 0), 1.5 * 32_000,
+      "speaker boundaries and unattributed gaps preserve every decoded sample");
+    const merged = [];
+    for await (const segment of segmenter.split({ bytes, mimeType: "audio/mpeg", segmentSeconds: 0.5, maxSegmentBytes: 16_044,
+      timeline: { duration: 1.5, revision: "fixture", warnings: [], turns: [
+        { start: 0, end: 0.4, speaker: "A" }, { start: 0.5, end: 0.8, speaker: "A" },
+        { start: 0.8, end: 1.5, speaker: "B" },
+      ] } })) merged.push(segment);
+    assert.deepEqual(merged.map(({ start, end, speaker }) => ({ start, end, speaker })), [
+      { start: 0, end: 0.5, speaker: "A" }, { start: 0.5, end: 0.8, speaker: "A" },
+      { start: 0.8, end: 1.3, speaker: "B" }, { start: 1.3, end: 1.5, speaker: "B" },
+    ], "short pauses merge without mixing speakers; size splits retain whole-recording labels");
+    await assert.rejects(segmenter.split({ bytes, mimeType: "audio/mpeg", segmentSeconds: 1, maxSegmentBytes: 32_044,
+      timeline: { duration: 2, revision: "fixture", warnings: [], turns: [] } }).next(),
+    /duration does not match/, "a timeline cannot address a different recording");
     const oggPath = join(directory, "recording.ogg");
     await promisify(execFile)(binary, ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
       "sine=frequency=440:duration=1.5", "-c:a", "libopus", "-f", "ogg", oggPath]);

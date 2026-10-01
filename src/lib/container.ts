@@ -46,6 +46,7 @@ import { createSourceObjectStore } from "@/infrastructure/storage/sourceObjectSt
 import { sourceDownloader } from "@/infrastructure/net/sourceDownloader";
 import { createAudioSegmenter } from "@/infrastructure/llm/audioSegmenter";
 import { createTranscriber } from "@/infrastructure/llm/transcription";
+import { createDiarizer } from "@/infrastructure/llm/diarization";
 import { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { registerSourceArtifact } from "@/application/artifact/storeArtifact";
 import { createSourceReferenceUseCases } from "@/application/audio/sourceReferences";
@@ -1202,14 +1203,17 @@ export function getAudioRuntime() {
     limits: async () => ({ maxActive: 1, maxPerOccurrence: 1 }), now: () => new Date(), id: randomUUID,
   });
   const settings = config.transcription;
+  const diarizer = settings.diarization ? createDiarizer(settings.diarization) : undefined;
   const transcribe = createAudioTranscriptionStep({ files,
     segmenter: createAudioSegmenter({ binary: settings.ffmpegPath, searchPath: settings.searchPath }),
     resolve: async (model) => {
       const target = await getTranscriptionTarget(model);
       const provider = createTranscriber(target);
       return { segmentSeconds: target.segmentSeconds, maxSegmentBytes: target.maxInputBytes,
+        ...(diarizer ? { diarization: { port: diarizer, revision: settings.diarization!.revision } } : {}),
         settingsKey: createHash("sha256").update(JSON.stringify({ id: target.id, wireId: target.wireId,
-          baseUrl: target.baseUrl, responseFormat: target.responseFormat, chunkingStrategy: target.chunkingStrategy })).digest("hex"),
+          baseUrl: target.baseUrl, responseFormat: target.responseFormat, chunkingStrategy: target.chunkingStrategy,
+          diarization: settings.diarization ? { baseUrl: settings.diarization.baseUrl, revision: settings.diarization.revision } : undefined })).digest("hex"),
         transcriber: { async transcribe(input, signal) {
           const result = await provider.transcribe(input, signal);
           return { ...result, accounting: { eventId: randomUUID(), date: utcDay(new Date()),
