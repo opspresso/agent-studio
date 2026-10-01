@@ -19,13 +19,9 @@ type RouteContext = { params: Promise<{ name: string }> };
  * sends anywhere is what any run they may already start sends. The URL always
  * comes from the registry, so the SSRF surface is a run's.
  *
- * The rung is `member` rather than a bare session because of *what the preview
- * is*: the assembled text is the system prompt, the skill table and the tool
- * names — the same capability registry a guest is refused at `withMemberAuth`,
- * only rendered per agent instead of as a catalogue. Leaving this session-
- * gated would hand back through one agent page exactly what the four
- * Intelligence pages withhold. Running the agent stays open to a guest; a run
- * answers, it does not enumerate.
+ * Preview requires member access because arbitrary draft bindings can issue
+ * outbound discovery requests. Guests may read stored registries and run an
+ * accessible Agent, but do not probe external services with editor drafts.
  *
  * When the draft enables memory recall and supplies a preview request, this
  * route also makes the same read-only recall call as a run. That does not widen

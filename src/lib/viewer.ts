@@ -18,7 +18,7 @@ import { isEffectiveAdmin, isEffectiveConfiguredAdmin } from "./memberAccess";
  * 403 on save. The two predicates are split on purpose in `runtime-settings.ts`;
  * they have to stay split across the wire too. A member whose *tier* is `admin`
  * gets both — the composition is `memberAccess.ts`'s — but the split survives
- * that: on a no-`ADMIN_EMAILS` deployment a non-admin tier still reads as
+ * that: on a no-`ADMIN_EMAILS` deployment a member tier still reads as
  * `isAdmin` without `isConfiguredAdmin`.
  *
  * Server-side authorization is unchanged by this; the flags only decide what the
@@ -26,7 +26,7 @@ import { isEffectiveAdmin, isEffectiveConfiguredAdmin } from "./memberAccess";
  */
 export interface Viewer {
   email: string;
-  /** May mutate shared registries and app settings. Empty list = no restriction. */
+  /** May mutate shared registries and app settings. Empty list = members may administer. */
   isAdmin: boolean;
   /** May write an agent owned by someone else. Empty list = nobody. */
   isConfiguredAdmin: boolean;

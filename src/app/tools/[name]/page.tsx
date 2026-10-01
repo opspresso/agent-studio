@@ -47,6 +47,7 @@ import { MCP_RUNTIME_COLOR, PLUGIN_COLOR } from "@/app/_components/badgeColors";
 import { CredentialBadges } from "../_components/CredentialBadges";
 import { McpAccountLookupEditor } from "../_components/McpAccountLookupEditor";
 import { parsePluginSource } from "@/domain/plugin/types";
+import { tierAtLeast } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
@@ -103,7 +104,7 @@ function McpDetail({ name }: { name: string }) {
         return;
       }
       setServer(loaded);
-      if (loaded.runtime === "managed") {
+      if (loaded.runtime === "managed" && viewer?.isAdmin) {
         void refreshStatus();
       }
     } catch (e) {
@@ -422,7 +423,8 @@ function McpDetail({ name }: { name: string }) {
               <Text fz="sm" fw={500} c="dimmed">
                 {t("tools.connectionAndDescriptions")}
               </Text>
-              <Button variant="default" size="compact-sm" onClick={runTest} loading={testing}>
+              <Button variant="default" size="compact-sm" onClick={runTest} loading={testing}
+                disabled={!viewer || !tierAtLeast(viewer.tier, "member")}>
                 Test connection
               </Button>
             </Group>

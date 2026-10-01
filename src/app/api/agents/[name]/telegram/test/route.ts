@@ -1,10 +1,10 @@
-import { withAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { agentTelegramUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
-export const POST = withAuth(async (user, _request: Request, ctx: RouteContext) => {
+export const POST = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
     const result = await agentTelegramUseCases.test(name, user.email);

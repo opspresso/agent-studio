@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { log } from "@/shared/logger";
 import {
   assertWithinMemberCostLimit,
   memberMonthToDate,
@@ -114,14 +113,12 @@ describe("assertWithinMemberCostLimit", () => {
     await expect(assertWithinMemberCostLimit({ usage }, user, undefined, now)).resolves.toBeUndefined();
   });
 
-  it("logs a failed budget read while allowing the run", async () => {
-    const spy = vi.spyOn(log, "error").mockImplementation(() => {});
+  it("refuses new work when the budget cannot be read", async () => {
     const usage = usageWith([]);
     const failure = new Error("database unavailable");
     usage.listMemberDays = async () => {
       throw failure;
     };
-    await expect(assertWithinMemberCostLimit({ usage }, user, "guest", now)).resolves.toBeUndefined();
-    expect(spy).toHaveBeenCalledWith("cost-guard", "could not read month spend for a@x.com; allowing the run", failure);
+    await expect(assertWithinMemberCostLimit({ usage }, user, "guest", now)).rejects.toBe(failure);
   });
 });

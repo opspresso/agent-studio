@@ -4,6 +4,7 @@ import { NotFoundError } from "@/application/errors";
 const f = vi.hoisted(() => ({ start: vi.fn(), enqueue: vi.fn(), cancel: vi.fn(), close: vi.fn(), get: vi.fn(), events: vi.fn(), request: vi.fn(), decide: vi.fn(), getView: vi.fn(), update: vi.fn() }));
 vi.mock("@/lib/session", () => ({
   withMemberAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ email: "owner@example.com" }, ...args),
+  withAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ email: "owner@example.com" }, ...args),
   withAdminAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ email: "admin@example.com" }, ...args),
 }));
 vi.mock("@/lib/container", () => ({ workspaceUseCases: f, getCodingUseCases: () => f, workspaceRepositoryPolicyUseCases: f }));

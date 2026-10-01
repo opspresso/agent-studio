@@ -46,6 +46,8 @@ import {
   type ArtifactFileType,
 } from "@/app/artifacts/_lib/fileType";
 import { isInlineViewable, MAX_INLINE_VIEW_BYTES } from "@/domain/artifact/types";
+import { tierAtLeast } from "@/domain/member/tiers";
+import { useViewer } from "@/app/_lib/useViewer";
 import { reportError } from "@/app/_lib/reportError";
 
 type KindFilter = "all" | ArtifactKind;
@@ -78,6 +80,8 @@ export function ArtifactGallery({
   showAgent?: boolean;
 }) {
   const t = useT();
+  const viewer = useViewer();
+  const canDelete = viewer !== null && tierAtLeast(viewer.tier, "member");
   const [catalogView, setCatalogView] = useCatalogView();
   const [artifacts, setArtifacts] = useState<ArtifactView[]>([]);
   const [nextBefore, setNextBefore] = useState<string | undefined>(undefined);
@@ -249,7 +253,7 @@ export function ArtifactGallery({
             artifact={artifact}
             showAgent={showAgent}
             onPreview={() => openPreview(artifact)}
-            onDelete={() => void remove(artifact)}
+            onDelete={canDelete ? () => void remove(artifact) : undefined}
           />
         ))}
       </CatalogCollection>
@@ -275,7 +279,7 @@ function ArtifactEntry({
   showAgent: boolean;
   /** Images open in the viewer; inline documents use their sandboxed route. */
   onPreview: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }) {
   // Address resolution never checks the object is there, so an expired or
   // already-deleted one fails at fetch time.
@@ -378,9 +382,9 @@ function ArtifactEntry({
             </Anchor>
           </Group>
         )}
-        <ActionIcon variant="subtle" color="red" onClick={onDelete} aria-label={t("artifacts.delete")}>
+        {onDelete && <ActionIcon variant="subtle" color="red" onClick={onDelete} aria-label={t("artifacts.delete")}>
           <IconTrash size={16} aria-hidden="true" />
-        </ActionIcon>
+        </ActionIcon>}
       </Group>
     </article>
   );

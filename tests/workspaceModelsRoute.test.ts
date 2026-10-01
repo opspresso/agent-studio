@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ getView: vi.fn(), select: vi.fn(), favorites: vi.fn() }));
 vi.mock("@/lib/session", () => ({
-  withMemberAuth: (handler: (user: { id: string }) => Promise<Response>) => () => handler({ id: "user-1" }),
+  withAuth: (handler: (user: { id: string }) => Promise<Response>) => () => handler({ id: "user-1" }),
   withAdminAuth: (handler: (user: { id: string; email: string }, request: Request) => Promise<Response>) =>
     (request: Request) => handler({ id: "user-1", email: "admin@example.test" }, request),
 }));

@@ -28,10 +28,10 @@ describe("POST /api/agent-recommendations", () => {
     expect((await post({ surface: "chat", request: "fix code" })).status).toBe(401);
     expect(useCases.recommend).not.toHaveBeenCalled();
   });
-  it("matches Workspace's member gate while allowing a guest's Chat suggestion", async () => {
+  it("allows guest recommendations for both Chat and Workspace", async () => {
     auth.tier = "guest";
-    expect((await post({ surface: "workspace", request: "fix code" })).status).toBe(403);
     useCases.recommend.mockResolvedValue(null);
+    expect((await post({ surface: "workspace", request: "fix code" })).status).toBe(200);
     expect((await post({ surface: "chat", request: "fix code" })).status).toBe(200);
   });
   it("returns a bounded retry interval when recommendation quota is exhausted", async () => {

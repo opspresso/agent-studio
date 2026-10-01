@@ -33,7 +33,6 @@ import {
 } from "@tabler/icons-react";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useT } from "@/app/_i18n/provider";
-import { tierAtLeast } from "@/domain/member/tiers";
 import type { Viewer } from "@/lib/viewer";
 import type { Branding } from "@/shared/branding";
 import type { SignInProviders } from "./SignInButton";
@@ -98,23 +97,11 @@ const PERSONAL_ITEMS = [
   Icon: typeof IconChartBar;
 }>;
 
-/**
- * Which groups this viewer is offered.
- *
- * Both gates key on the group's `key` for the reason the comment above gives —
- * a translated label stops matching the moment the sidebar speaks Korean. The
- * intelligence half names the same rung `withMemberAuth` does, so the sidebar
- * and the routes behind it cannot drift on who may read a registry; the pages
- * are turned away server-side regardless, since a hidden link is not a closed
- * door.
- */
+/** Every signed-in tier shares the work and catalog menus; system pages require admin. */
 function visibleTo(viewer: Viewer | null) {
   return (group: (typeof NAV_GROUPS)[number]): boolean => {
     if (group.key === "system") {
       return viewer?.isAdmin === true;
-    }
-    if (group.key === "intelligence") {
-      return viewer !== null && tierAtLeast(viewer.tier, "member");
     }
     return true;
   };

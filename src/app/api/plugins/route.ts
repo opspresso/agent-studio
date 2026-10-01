@@ -1,4 +1,4 @@
-import { withMemberAuth } from "@/lib/session";
+import { withAuth } from "@/lib/session";
 import { pluginUseCases } from "@/lib/container";
 
 /**
@@ -6,6 +6,6 @@ import { pluginUseCases } from "@/lib/container";
  * console — the sync is its only writer — so there is no POST here, and a row
  * goes away through the sync's own remove selection.
  */
-export const GET = withMemberAuth(async () => {
+export const GET = withAuth(async () => {
   return Response.json(await pluginUseCases.list());
 });

@@ -9,6 +9,10 @@ vi.mock("@/lib/session", () => ({
     (handler: (user: { id: string }, ...args: unknown[]) => unknown) =>
     (...args: unknown[]) =>
       handler({ id: "user-1" }, ...args),
+  withMemberAuth:
+    (handler: (user: { id: string }, ...args: unknown[]) => unknown) =>
+    (...args: unknown[]) =>
+      handler({ id: "user-1" }, ...args),
 }));
 vi.mock("@/lib/container", () => ({ modelPreferenceUseCases }));
 

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { resolvePublicBaseUrl } from "@/lib/public-url";
-import { withAuth } from "@/lib/session";
+import { withAuth, withMemberAuth } from "@/lib/session";
 import { agentTeamsUseCases } from "@/lib/container";
 import type { AgentTeamsResult, AgentTeamsView } from "@/application/teams/agentTeams";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -44,7 +44,7 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
   }
 });
 
-export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const PUT = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   const body = await editorBody(request);
   if (body instanceof Response) {
@@ -61,7 +61,7 @@ export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) =>
   }
 });
 
-export const DELETE = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const DELETE = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
     return await teamsResponse(await agentTeamsUseCases.disconnect(name, user.email), request);

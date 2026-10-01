@@ -1,5 +1,5 @@
 import { resolvePublicBaseUrl } from "@/lib/public-url";
-import { withAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { agentTelegramUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
 
@@ -10,7 +10,7 @@ type RouteContext = { params: Promise<{ name: string }> };
  * webhook per bot, so this is idempotent — and it is what a redeploy under a
  * new public URL needs. The secret goes to Telegram here and nowhere else.
  */
-export const POST = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const POST = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
     const baseUrl = await resolvePublicBaseUrl(new URL(request.url).origin);

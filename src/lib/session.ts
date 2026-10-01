@@ -112,23 +112,7 @@ export function isAdmin(user: SessionUser): Promise<boolean> {
   return isEffectiveAdmin(user);
 }
 
-/**
- * Like {@link withAuth}, but 403s a tier below `member` — today that is
- * `guest`, the tier every sign-up starts as.
- *
- * The middle rung of the three wrappers, one per tier: {@link withAuth} asks
- * only for a session, this asks for `member`, {@link withAdminAuth} asks for
- * `admin`. It gates the capability registries the console's Intelligence
- * section reads — skills, MCP tools, plugins, and the model
- * catalogue — which are a catalogue of what this deployment can reach rather
- * than anything a guest's own work needs. A guest still *runs* agents bound to those capabilities:
- * resolution happens server-side and never consults the reader's tier.
- *
- * Two routes under those paths are deliberately outside it. The OAuth callback
- * belongs to an agent's connection flow rather than the console, and the
- * client-metadata document is fetched by an authorization server that carries
- * no session at all.
- */
+/** Shared-resource writes and operator probes require member or admin tier. */
 export function withMemberAuth<T extends unknown[]>(
   handler: (user: SessionUser, ...args: T) => Promise<Response>,
 ): (...args: T) => Promise<Response> {
@@ -143,17 +127,7 @@ export function withMemberAuth<T extends unknown[]>(
   });
 }
 
-/**
- * Like {@link withAuth}, but additionally 403s non-admins. Used for mutations
- * on shared registries (MCP servers and skills).
- *
- * Not built on {@link withMemberAuth}, though the ladder would suggest it:
- * "admin" here is `isEffectiveAdmin`, which reads an empty `ADMIN_EMAILS` as no
- * restriction, and `memberAccess.ts` keeps that deliberately so a deployment
- * without the list behaves as it did before tiers existed. Stacking the rungs
- * would quietly revoke that. The registry *reads* are gated regardless, so a
- * guest on such a deployment has no console path to a mutation.
- */
+/** Shared registry and system administration. Guests remain read-only even with an empty admin list. */
 export function withAdminAuth<T extends unknown[]>(
   handler: (user: SessionUser, ...args: T) => Promise<Response>,
 ): (...args: T) => Promise<Response> {

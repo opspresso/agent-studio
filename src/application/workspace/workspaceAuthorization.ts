@@ -1,6 +1,6 @@
 import type { RunActor, ExecutionGrant } from "@/domain/execution/actor";
 import type { AgentRepository } from "@/domain/agent/repository";
-import type { MemberTier } from "@/domain/member/tiers";
+import { tierAtLeast, type MemberTier } from "@/domain/member/tiers";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import { assertAgentAccessible } from "@/application/agent/agentUseCases";
 import { ValidationError } from "@/application/errors";
@@ -19,7 +19,12 @@ export async function authorizeWorkspaceExecution(
   deps: WorkspaceAuthorizationDeps, agentName: string, email: string, actor?: RunActor, grant?: ExecutionGrant,
 ): Promise<void> {
   const tier = await deps.memberTier(email);
-  if (tier !== "member" && tier !== "admin") throw new ValidationError("Workspace tools require member access");
+  if (!tier) throw new ValidationError("Workspace tools require an active account");
+  // Guest tasks must spend the authenticated user's budget. Automation grants
+  // retain the member gate because their actors do not spend a personal budget.
+  if (!tierAtLeast(tier, "member") && (grant || (actor && (actor.kind !== "user" || actor.id !== email)))) {
+    throw new ValidationError("Workspace automation requires member access");
+  }
   await assertAgentAccessible(deps.agents, agentName, email);
   if (!deps.backendReady()) throw new ValidationError("Workspace Sandbox backend is not configured");
   if (!await deps.enabled(agentName)) throw new ValidationError("Workspace tools are disabled in the current Agent settings");

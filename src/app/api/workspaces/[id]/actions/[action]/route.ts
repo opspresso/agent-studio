@@ -1,11 +1,11 @@
-import { withMemberAuth } from "@/lib/session";
+import { withAuth } from "@/lib/session";
 import { getCodingUseCases } from "@/lib/container";
 import { editorBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { codingDecisionSchema } from "../../../_schemas";
 import type { CodingApprovalResponse } from "../route";
 
-export const POST = withMemberAuth(async (user, request: Request, context: { params: Promise<{ id: string; action: string }> }) => {
+export const POST = withAuth(async (user, request: Request, context: { params: Promise<{ id: string; action: string }> }) => {
   const body = await editorBody(request);
   if (body instanceof Response) return body;
   const parsed = codingDecisionSchema.safeParse(body);

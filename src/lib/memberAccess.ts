@@ -1,21 +1,10 @@
 /**
- * Where a member's tier composes with the `ADMIN_EMAILS` list — the one
- * derivation of "effective admin".
- *
- * The two list predicates in `runtime-settings.ts` are untouched on purpose:
- * they answer "what does the *list* say" and keep their empty-list semantics
- * (`isAdminEmail` fail-open, `isConfiguredAdmin` fail-closed) as the
- * bootstrap/backstop. Tier `admin` grants what either predicate grants, and a
- * configured admin address is separately promoted and locked by the member
- * use cases. A deployment with no `ADMIN_EMAILS` behaves exactly as it did
- * before tiers.
- *
- * Tier-admin implies *both* predicates: an admin console that could edit
- * settings but not override an agent write would be a third predicate nobody
- * asked for.
+ * Compose stored tiers with operator admin lists. The empty-list bootstrap
+ * permits members to administer shared resources; guests remain read-only.
+ * Explicitly configured admins are promoted to tier admin at session resolution.
  */
 
-import type { MemberTier } from "@/domain/member/tiers";
+import { tierAtLeast, type MemberTier } from "@/domain/member/tiers";
 import { memberRepository } from "@/infrastructure/db/repositories/memberRepository";
 import { log } from "@/shared/logger";
 import { isAdminEmail, isConfiguredAdmin } from "./runtime-settings";
@@ -28,7 +17,7 @@ export interface TieredUser {
 
 /** May mutate shared registries and app settings — `withAdminAuth`'s question. */
 export async function isEffectiveAdmin(user: TieredUser): Promise<boolean> {
-  return user.tier === "admin" || isAdminEmail(user.email);
+  return user.tier === "admin" || (tierAtLeast(user.tier, "member") && await isAdminEmail(user.email));
 }
 
 /** May write an agent owned by someone else — `assertAgentWritable`'s question. */

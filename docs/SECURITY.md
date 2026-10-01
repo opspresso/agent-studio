@@ -129,22 +129,23 @@ visibility 이전처럼 열려 있다: 이름과 지출 집계는 카탈로그 �
 | Agent API token, trigger, MCP 연결 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
 | 호출자별 usage (`usage/actors`) | 소유자 또는 설정된 admin | — |
 | Agent usage 합계 | 로그인한 모든 사용자 | — |
-| Skill / MCP 서버 / plugin | `member` tier 이상 (`withMemberAuth`; `guest` 는 403) | admin (`withAdminAuth`) |
+| Skill / MCP 서버 / plugin | guest를 포함한 로그인 사용자 (`withAuth`) | admin (`withAdminAuth`) |
 | 앱 설정 | admin | admin |
-| 모델 즐겨찾기 | 로그인한 사용자 본인 | 로그인한 사용자 본인 |
+| 모델 즐겨찾기 | 로그인한 사용자 본인 | member 이상인 사용자 본인 |
 | 멤버 디렉터리 | admin | admin (tier 변경, `member.set-tier` 로 감사) |
 | Chat | 소유자만 (소유자가 아니면 404) | 소유자만 |
 | Workspace | 소유자와 현재 Agent 접근 검사 | 소유자; 실행·Git 승인은 활성화·정책·승인 상태도 검사 |
 | 오디오 job·비공개 source 파일 | 작업/파일 소유자와 Agent 접근 검사 | 소유자 범위와 job/file 상태에 따른 조작 |
-| 일반 Artifact | 생성·첨부 소유자 또는 Agent 소유자/admin | 같은 소유권 범위에서 삭제. 비공개 source 파일은 위 전용 경계 |
+| 일반 Artifact | 생성·첨부 소유자 또는 Agent 소유자/admin | member 이상이며 같은 소유권 범위에서 삭제. 비공개 source 파일은 위 전용 경계 |
 
 trace 와 Slack 설정은 *읽기* 도 게이트되는데, 다른 사용자의 런타임 입출력과 마스킹된 자격
 증명의 가장자리를 노출하기 때문이다. agent *합계* 는 카탈로그가 공유되므로 열어 둔다.
 호출자별 내역은 개인을 지목하므로 `usage/actors` 는 그렇지 않다. capability 레지스트리는
-`guest` tier 에서 제외되는데, 그것이 담는 것은 guest 자신의 작업에 필요한 무엇이 아니라 이
-배포가 무엇에 닿을 수 있는지의 목록이기 때문이다. guest 도 그것들에 바인딩된 agent 를
-*실행* 은 하며, 해석(resolution)은 서버 측에서 일어난다. agent 의 `preview` 도 같은 단에
-있다. 레지스트리가 감췄을 해석된 capability 이름을 그대로 렌더링하기 때문이다.
+guest도 member와 같은 메뉴에서 조회한다. guest는 Agent·연동·레지스트리·모델 즐겨찾기를
+변경하거나 Artifact를 삭제할 수 없으며, 강등된 기존 Agent 소유자에게도 같은 제한이 적용된다.
+Agent 변경 API는 `withMemberAuth`와 소유권 검사를 함께 사용한다. 초안 `preview`와 MCP 연결
+테스트는 외부 서비스 요청을 실행하므로 member 이상을 요구한다.
+Chat·Workspace는 본인 소유권과 tier별 비용·동시 실행 제한 안에서 guest도 사용할 수 있다.
 
 ### `isAdminEmail` vs `isConfiguredAdmin`
 
@@ -161,10 +162,11 @@ trace 와 Slack 설정은 *읽기* 도 게이트되는데, 다른 사용자의 �
 콘솔의 게이트가 `assertAgentWritable` 을 정확히 반영해야 하기 때문이다. 거기서 `isAdmin` 을
 읽었더니 모든 사용자에게 모든 agent 의 편집 폼이 열렸고, 저장은 전부 403 이 났다.
 
-**멤버 tier 는 두 번째 소스를 더할 뿐, 두 번째 술어를 만들지 않는다.** 저장된 `tier` 가
+**멤버 tier와 admin 목록은 `memberAccess.ts`에서 합성한다.** 저장된 `tier` 가
 `admin` 인 멤버는 *두* 술어가 부여하는 것을 모두 얻는다. 그 합성은 오직
 `src/lib/memberAccess.ts` 의 것이고(`isEffectiveAdmin` / `isEffectiveConfiguredAdmin`), 위 두
-목록 술어는 빈 목록에 대한 의미를 바이트 단위로 그대로 유지한다. `ADMIN_EMAILS` 에 설정된
+목록 술어 자체의 빈 목록 의미는 유지하지만 `isEffectiveAdmin`은 member 이상에게만
+빈 목록의 관리 권한을 부여한다. guest는 빈 목록에서도 읽기 전용이다. `ADMIN_EMAILS` 에 설정된
 주소는 로그인 시 또는 다음 멤버/프로필 읽기 때 저장된 `admin` tier 로 승격되고, 그 주소가
 설정에 남아 있는 동안 tier 는 잠긴다. 목록에서 빼도 결코 강등되지 않는다. 다른 운영자가
 명시적으로 더 낮은 tier 를 골라야 한다. tier 는 Better Auth 의 user 행에 있고(`input: false`
@@ -178,7 +180,9 @@ tier 변경을 처리한 인스턴스에서 무효화된다. 각 tier 가 동시
 `tierMay*` 술어를 거친다. agent 생성도 별도의 effective-admin 우회 없이 그 tier capability 를
 따른다.
 
-월 상한은 멤버 자신의 일별 행을 UTC 월 1일부터 합산한다. 프로필 페이지가 읽는 것과 같은 창,
+월 상한은 Chat·Workspace를 포함한 멤버 자신의 일별 행을 UTC 월 1일부터 합산한다.
+실행 전에 이미 한도에 도달하면 새 실행을 거절한다. 등급·사용량 조회 실패도 실행을 중단한다.
+완료된 사용량을 기준으로 검사하므로 진행 중인 실행이 잔액을 초과할 수 있다. 프로필 페이지가 읽는 것과 같은 창,
 같은 행이다. 집계가 하나뿐이므로 페이지가 가드와 어긋나는 합계를 보고할 수 없다. 사람 모양의
 한도는 `user` actor 에만 적용된다. 기계 호출자(Slack, webhook, schedule)에는 멤버가 없다.
 **agent token** 은 소유자의 email 을 싣지만 의도적으로 소유자의 개인 예산이 아니라 *자기
@@ -742,8 +746,8 @@ command 런타임과 이 리뷰의 Workspace만 제공하며 저장소 생성·�
 Git publication·배포를 거절한다. 끝나지 않았거나 결과를 읽지 않은 검사는 게시를 막는다.
 성공·실패 모두 Workspace 정리를 요청하고 실제 종료를 확인하며 게시 영수증은 정리 실패에도 보존한다.
 Agent Webhook Secret은 선택 범위의 리뷰를 요청할 권한이므로 승인한 GitHub 저장소에만 등록한다.
-Workspace는 actor 종류와 별도로 표면이 확인한 관리 사용자의 현재 member·Agent 접근과
-저장소 정책을 검사한다. API token은 인증된 소유자를, 메신저는 확인한 email 또는 명시적으로 위임한 소유자를, 개인 실행을
+Workspace는 actor 종류와 별도로 표면이 확인한 관리 사용자의 현재 계정·Agent 접근과
+저장소 정책을 검사한다. guest는 본인 `user` actor로 실행할 수 있고 자동화는 member 이상이다. API token은 인증된 소유자를, 메신저는 확인한 email 또는 명시적으로 위임한 소유자를, 개인 실행을
 명시적으로 승인한 Webhook·Schedule은 현재 소유자를 사용한다. Trigger의 `runAsOwner`는
 소유자만 활성화할 수 있으며 기본은 꺼짐이다. 외부 payload는 email·actor를 지정할 수 없다.
 작업의 actor는 원래 연동 호출자로 유지해 비용·실행 제한을 적용하며, 큐 작업 실행 직전에도

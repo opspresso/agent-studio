@@ -131,9 +131,9 @@ describe("session mutation origin", () => {
 });
 
 describe("withAdminAuth", () => {
-  it("allows any signed-in user when the admin list is empty (fail-open default)", async () => {
+  it("allows a member when the admin list is empty (bootstrap default)", async () => {
     adminEmails.value = [];
-    authMock.getSession.mockResolvedValue(session("anyone@x.com"));
+    authMock.getSession.mockResolvedValue(session("anyone@x.com", "member"));
     expect((await withAdminAuth(okHandler)()).status).toBe(200);
   });
 
@@ -205,14 +205,11 @@ describe("withMemberAuth", () => {
     expect(body.error).not.toMatch(/admin/i);
   });
 
-  it("keeps the admin rung answering the list, not the ladder", async () => {
-    // Deliberate asymmetry, argued at `withAdminAuth`: an empty `ADMIN_EMAILS`
-    // is no restriction, so a guest passes there while being refused here. The
-    // registry reads are what a console path to a mutation goes through.
+  it("keeps a guest read-only when the admin list is empty", async () => {
     adminEmails.value = [];
     authMock.getSession.mockResolvedValue(session("guest@x.com", "guest"));
     expect((await withMemberAuth(okHandler)()).status).toBe(403);
-    expect((await withAdminAuth(okHandler)()).status).toBe(200);
+    expect((await withAdminAuth(okHandler)()).status).toBe(403);
   });
 });
 

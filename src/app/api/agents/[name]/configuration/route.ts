@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/session";
+import { withAuth, withMemberAuth } from "@/lib/session";
 import { configurationUseCases } from "@/lib/container";
 import { putAgentConfigurationSchema } from "@/app/api/agents/_lib/schemas";
 import { editorBody } from "@/app/api/_lib/body";
@@ -15,7 +15,7 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
   }
 });
 
-export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const PUT = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   const body = await editorBody(request);
   if (body instanceof Response) return body;

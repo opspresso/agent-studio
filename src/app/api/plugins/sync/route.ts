@@ -1,4 +1,4 @@
-import { withAdminAuth, withMemberAuth } from "@/lib/session";
+import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError } from "@/app/api/_lib/http";
 import { AppError, UpstreamError } from "@/application/errors";
 import { archiveSyncRepo } from "@/domain/plugin/sync";
@@ -7,7 +7,7 @@ import { lastPluginSync, syncPluginsFromRepo } from "@/lib/container";
 import { selectionSchema } from "./_lib/selection";
 import { editorBody } from "@/app/api/_lib/body";
 
-export const GET = withMemberAuth(async () => {
+export const GET = withAuth(async () => {
   const { repo, branch, token } = await getPluginsRepoConfig();
   return Response.json({
     configured: Boolean(repo && token),

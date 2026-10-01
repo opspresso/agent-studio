@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { headerRecordSchema } from "@/app/api/_lib/headerRecord";
 import { mcpUseCases } from "@/lib/container";
-import { withAdminAuth, withMemberAuth } from "@/lib/session";
+import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
 import { REPO_OWNED, repoOwnedRefusal } from "@/app/api/_lib/repoOwned";
@@ -15,7 +15,7 @@ const updateSchema = z.object({
   headers: headerRecordSchema(z.string()).optional(),
 });
 
-export const GET = withMemberAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
   try {
     const { name } = await ctx.params;
     return Response.json(await mcpUseCases.get(parseName(name)));

@@ -29,7 +29,7 @@ const {
 }));
 
 vi.mock("@/lib/session", () => ({
-  withMemberAuth:
+  withAuth:
     (handler: (user: unknown, ...args: unknown[]) => unknown) =>
     (...args: unknown[]) =>
       handler({ id: "u1", email: "admin@example.com", name: "A", image: null }, ...args),

@@ -118,16 +118,8 @@ async function openExecutionBracket(
     });
   }
   await assertWithinCostLimit(deps, agent);
-  // Resolved once, for both tier policies below. Fail open on the read like
-  // the policy above: `undefined` degrades to the deployment-wide limits.
-  let tier: MemberTier | undefined;
-  if (deps.resolveActorTier && actor) {
-    try {
-      tier = await deps.resolveActorTier(actor);
-    } catch (error) {
-      log.error("cost-guard", "could not resolve the caller's tier; using the deployment limits", error);
-    }
-  }
+  // Both personal policies require a successful tier lookup before any work.
+  const tier = actor ? await deps.resolveActorTier?.(actor) : undefined;
   // Before the slot for the same reason cost precedes concurrency: a member
   // over budget should be told so rather than queue for a slot the run would
   // be refused on anyway.

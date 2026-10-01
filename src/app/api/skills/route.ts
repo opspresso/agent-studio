@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { skillUseCases } from "@/lib/container";
-import { withAdminAuth, withMemberAuth } from "@/lib/session";
+import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
 
@@ -30,7 +30,7 @@ export interface SkillSummary {
   updatedAt: string;
 }
 
-export const GET = withMemberAuth(async () => {
+export const GET = withAuth(async () => {
   const skills = await skillUseCases.list();
   return Response.json(
     skills.map(

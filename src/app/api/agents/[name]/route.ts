@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/session";
+import { withAuth, withMemberAuth } from "@/lib/session";
 import { isEffectiveConfiguredAdmin } from "@/lib/memberAccess";
 import { agentUseCases } from "@/lib/container";
 import { agentNameSchema, updateAgentSchema } from "@/app/api/agents/_lib/schemas";
@@ -23,7 +23,7 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
   }
 });
 
-export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const PUT = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   const body = await editorBody(request);
   if (body instanceof Response) {
@@ -46,7 +46,7 @@ export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) =>
   }
 });
 
-export const DELETE = withAuth(async (user, _request: Request, ctx: RouteContext) => {
+export const DELETE = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   if (!agentNameSchema.safeParse(name).success) {
     return Response.json({ error: "Invalid agent name" }, { status: 400 });

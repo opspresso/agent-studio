@@ -51,8 +51,9 @@ describe("isEffectiveAdmin", () => {
     expect(await isEffectiveAdmin({ email: "u@x.com", tier: "admin" })).toBe(true);
   });
 
-  it("keeps the empty-list fail-open for any tier", async () => {
-    expect(await isEffectiveAdmin({ email: "u@x.com", tier: "guest" })).toBe(true);
+  it("keeps bootstrap administration for members while refusing guests", async () => {
+    expect(await isEffectiveAdmin({ email: "u@x.com", tier: "guest" })).toBe(false);
+    expect(await isEffectiveAdmin({ email: "u@x.com", tier: "member" })).toBe(true);
   });
 
   it("refuses a non-admin tier not on a configured list", async () => {

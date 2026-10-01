@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * `GET /api/me` reports both registry administration and the configured
- * administrator role. With no `ADMIN_EMAILS`, registry access is unrestricted,
+ * administrator role. With no `ADMIN_EMAILS`, members may administer registries,
  * while ownership overrides remain unavailable. The console uses both flags
  * for the Agent settings gate.
  */
@@ -16,14 +16,13 @@ const { GET } = await import("@/app/api/me/route");
 const USER = "someone@example.com";
 const ADMIN = "boss@example.com";
 
-function signedInAs(email: string) {
+function signedInAs(email: string, tier = "guest") {
   authMock.getSession.mockResolvedValue({
-    user: { id: "u1", email, name: "U", image: null },
+    user: { id: "u1", email, name: "U", image: null, tier },
   });
 }
 
-// The mocked session carries no `tier`, which normalizes to the default unless
-// ADMIN_EMAILS makes admin the authoritative stored/effective tier.
+// Configured admins are promoted regardless of the stored tier.
 async function me(): Promise<{
   email: string;
   isAdmin: boolean;
@@ -47,15 +46,20 @@ describe("GET /api/me", () => {
   });
 
   it("reports the two admin flags apart when no admin list is configured", async () => {
-    signedInAs(USER);
+    signedInAs(USER, "member");
 
-    // The whole point: unrestricted registries, no ownership override.
+    // Bootstrap administration does not grant ownership overrides.
     expect(await me()).toEqual({
       email: USER,
       isAdmin: true,
       isConfiguredAdmin: false,
-      tier: "guest",
+      tier: "member",
     });
+  });
+
+  it("keeps guests read-only when no admin list is configured", async () => {
+    signedInAs(USER);
+    expect(await me()).toEqual({ email: USER, tier: "guest", isAdmin: false, isConfiguredAdmin: false });
   });
 
   it("gives a listed admin both, and an unlisted user neither", async () => {

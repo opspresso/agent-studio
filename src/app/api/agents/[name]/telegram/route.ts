@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { resolvePublicBaseUrl } from "@/lib/public-url";
-import { withAuth } from "@/lib/session";
+import { withAuth, withMemberAuth } from "@/lib/session";
 import { agentTelegramUseCases } from "@/lib/container";
 import type {
   AgentTelegramResult,
@@ -48,7 +48,7 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
   }
 });
 
-export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const PUT = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   const body = await editorBody(request);
   if (body instanceof Response) {
@@ -69,7 +69,7 @@ export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) =>
   }
 });
 
-export const DELETE = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const DELETE = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
     return await telegramResponse(await agentTelegramUseCases.disconnect(name, user.email), request);

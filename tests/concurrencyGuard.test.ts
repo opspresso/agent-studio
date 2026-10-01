@@ -219,9 +219,9 @@ describe("acquireRunSlot", () => {
   });
 
   it("fails closed when the slot store is unavailable", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     // Unlike the cost guard: opening this one when the store is failing adds
     // load exactly when the store cannot take it.
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const d: ConcurrencyGuardDeps = {
       limits: LIMITS,
       runSlots: {
@@ -282,6 +282,44 @@ describe("acquireRunSlot with a member tier", () => {
 });
 
 describe("openRun with a tier resolver", () => {
+  it.each(["guest", "member"] as const)("shares the %s monthly cap between Chat and Workspace", async tier => {
+    const cap = TIER_LIMITS[tier].monthlyCostCapUsd!;
+    let spent = cap - 0.01;
+    const d = {
+      usage: { ...usage, listMemberDays: vi.fn(async () => [
+        { email: user.id, agentName: "chat-agent", date: "2026-07-29", calls: {}, inputTokens: {}, outputTokens: {}, costUsd: { m: spent / 2 } },
+        { email: user.id, agentName: "workspace-agent", date: "2026-07-29", calls: {}, inputTokens: {}, outputTokens: {}, costUsd: { m: spent / 2 } },
+      ]) },
+      runSlots: memorySlots().repo,
+      resolveActorTier: async () => tier,
+    };
+    const chat = await openRun(d, agent, configuration, user);
+    await chat.close();
+    const task = await openTaskRun(d, agent, user);
+    await task.close();
+    spent = cap;
+    await expect(openRun(d, agent, configuration, user)).rejects.toMatchObject({ status: 429, limitUsd: cap });
+    await expect(openTaskRun(d, agent, user)).rejects.toMatchObject({ status: 429, limitUsd: cap });
+    const work = vi.fn(async () => false);
+    const workspace = { agentName: agent.name, ownerEmail: user.id } as Workspace;
+    const agents = { get: async () => agent } as unknown as AgentRepository;
+    await expect(executeWorkspaceTask(d, agents, workspace, work)).rejects.toMatchObject({ status: 429 });
+    expect(work).not.toHaveBeenCalled();
+    expect(d.usage.listMemberDays).toHaveBeenCalledWith(user.id, "2026-07-01", "2026-07-29");
+  });
+
+  it("refuses both execution surfaces before acquiring a slot when spend cannot be read", async () => {
+    const acquire = vi.fn();
+    const d = {
+      usage: { ...usage, listMemberDays: async () => { throw new Error("usage unavailable"); } },
+      runSlots: { ...memorySlots().repo, acquire },
+      resolveActorTier: async () => "guest" as const,
+    };
+    await expect(openRun(d, agent, configuration, user)).rejects.toThrow("usage unavailable");
+    await expect(openTaskRun(d, agent, user)).rejects.toThrow("usage unavailable");
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
   it("refuses a guest's run past the tier ceiling", async () => {
     const d = {
       usage,
@@ -299,8 +337,7 @@ describe("openRun with a tier resolver", () => {
     }
   });
 
-  it("falls back to the deployment limits when the resolver fails", async () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("refuses Chat and Workspace execution when the tier lookup fails", async () => {
     const d = {
       usage,
       runSlots: memorySlots().repo,
@@ -309,13 +346,8 @@ describe("openRun with a tier resolver", () => {
         throw new Error("member store down");
       },
     };
-    const first = await openRun(d, agent, configuration, user);
-    const second = await openRun(d, agent, configuration, user);
-    const third = await openRun(d, agent, configuration, user);
-    await first.close();
-    await second.close();
-    await third.close();
-    error.mockRestore();
+    await expect(openRun(d, agent, configuration, user)).rejects.toThrow("member store down");
+    await expect(openTaskRun(d, agent, user)).rejects.toThrow("member store down");
   });
 });
 

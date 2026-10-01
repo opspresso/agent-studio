@@ -9,7 +9,7 @@ const { state, agentRepo, admins } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/session", () => ({
-  withAuth:
+  withMemberAuth:
     (handler: (user: unknown, ...args: never[]) => unknown) =>
     (...args: never[]) =>
       handler({ id: "u1", email: state.email, name: "U", image: null }, ...args),
