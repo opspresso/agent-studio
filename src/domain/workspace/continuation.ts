@@ -1,9 +1,8 @@
 import type { CodingCiWatch } from "@/domain/coding/types";
 
-/** Delivery of one completed approval or CI update to its requesting conversation. */
-export interface WorkspaceContinuation {
+/** Delivery of one completed task, approval or CI update to its requesting conversation. */
+interface WorkspaceContinuationBase {
   workspaceId: string;
-  approvalId: string;
   chatId: string;
   ownerEmail: string;
   userId: string;
@@ -15,6 +14,17 @@ export interface WorkspaceContinuation {
   phase?: "ci";
   createdAt: string;
   dueAt: string;
+  /** Chat execution claim, separate from the completed Workspace task identity. */
   runId?: string;
   error?: string;
+}
+
+export type WorkspaceContinuation = WorkspaceContinuationBase & (
+  | { approvalId: string; taskRunId?: never; sourceUserSeq?: never }
+  | { taskRunId: string; sourceUserSeq: number; approvalId?: never }
+);
+
+/** Task outcomes and action outcomes have separate keys in the same durable queue. */
+export function workspaceContinuationId(item: { approvalId: string; taskRunId?: never } | { taskRunId: string; approvalId?: never }): string {
+  return item.taskRunId === undefined ? item.approvalId : `task-${item.taskRunId}`;
 }

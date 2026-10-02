@@ -10,6 +10,7 @@ import { createWorkspaceUseCases } from "@/application/workspace/workspaceUseCas
 import { keys } from "@/infrastructure/db/keys";
 import { deleteItem, deletePartition, getItem, putItem } from "@/infrastructure/db/store";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
+import { workspaceContinuationId } from "@/domain/workspace/continuation";
 
 /** Runs only after integration-check's local `_test` database guard and migration. */
 export async function checkWorkspaces(): Promise<void> {
@@ -29,6 +30,8 @@ export async function checkWorkspaces(): Promise<void> {
       ownerEmail: owner, createdAt: now, updatedAt: now });
     await chats.create({ chatId, agentName, title: "Workspace integration", ownerEmail: owner, createdAt: now, updatedAt: now });
     await chats.create({ chatId: sourceChatId, agentName, title: "Agent source", ownerEmail: owner, createdAt: now, updatedAt: now });
+    const sourceUserSeq = await chats.reserveMessageSeq(sourceChatId);
+    await chats.appendMessage({ chatId: sourceChatId, seq: sourceUserSeq, role: "user", content: "Implement and create a PR", createdAt: now });
     const starts = await Promise.allSettled(Array.from({ length: 8 }, (_, index) => useCases.startForChat({ agentName, runtime: "command",
       input: { kind: "command", script: `printf request-${index}` } }, { userId: "studio-user-1", email: owner }, sourceChatId)));
     for (const result of starts) if (result.status === "fulfilled") sourceWorkspaces.set(result.value.workspace.id, result.value.workspace.chatId);
@@ -73,6 +76,30 @@ export async function checkWorkspaces(): Promise<void> {
     await repository.write({ expectedRevision: sourceAfterDelivery.revision,
       workspace: { ...sourceAfterDelivery, revision: sourceAfterDelivery.revision + 1 }, approval });
     assert.equal((await repository.continuation(selectedId, approval.id))?.status, "completed", "saving an outcome again cannot redeliver it");
+
+    const task = (await repository.runs(selectedId, 1))[0]!;
+    assert.deepEqual(task.sourceChat, { chatId: sourceChatId, userSeq: sourceUserSeq });
+    const beforeTaskFinish = (await repository.get(selectedId))!;
+    await repository.write({ expectedRevision: beforeTaskFinish.revision,
+      workspace: { ...beforeTaskFinish, revision: beforeTaskFinish.revision + 1, activeRunId: undefined },
+      run: { ...task, status: "succeeded", finishedAt: new Date().toISOString() } });
+    const taskNotificationId = workspaceContinuationId({ taskRunId: task.id });
+    const taskNotification = (await repository.continuation(selectedId, taskNotificationId))!;
+    assert.equal(taskNotification.sourceUserSeq, sourceUserSeq);
+    assert.equal(await repository.updateContinuation({ ...taskNotification, sourceUserSeq: sourceUserSeq + 1, revision: 1 }, 0), false,
+      "task notification cannot change its requesting user turn");
+    const taskChatRun = "task-chat-continuation";
+    assert.equal(await chats.claimRun(sourceChatId, taskChatRun, Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000) + 60), true);
+    const taskNotice = { chatId: sourceChatId, seq: await chats.reserveMessageSeq(sourceChatId), role: "assistant" as const,
+      content: "Workspace task: succeeded", createdAt: now, workspaceRun: { workspaceId: selectedId, runId: task.id, status: "succeeded" as const } };
+    const taskRunning = { ...taskNotification, status: "running" as const, revision: 1, runId: taskChatRun };
+    const taskDeliveries = await Promise.all([repository.updateContinuation(taskRunning, 0, taskNotice), repository.updateContinuation(taskRunning, 0, taskNotice)]);
+    assert.equal(taskDeliveries.filter(Boolean).length, 1, "task completion delivery and Chat notice commit once");
+    assert.equal((await chats.listMessages(sourceChatId)).filter(row => row.role === "assistant" && row.workspaceRun).length, 1);
+    assert.equal(await repository.updateContinuation({ ...taskRunning, status: "completed", revision: 2 }, 1), true);
+    assert.equal(await chats.requestCancel(sourceChatId, taskChatRun), true);
+    await chats.releaseRun(sourceChatId, taskChatRun);
+    assert.equal((await chats.get(sourceChatId))?.lastStoppedUserSeq, sourceUserSeq, "Stop survives lease release");
 
     const workspace = await useCases.create({ chatId, agentName, title: "General task", runtime: "command" }, { userId: "studio-user-1", email: owner });
     workspaceId = workspace.id;

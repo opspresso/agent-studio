@@ -42,7 +42,7 @@ export interface WorkspaceRepository {
   request(workspaceId: string, key: string): Promise<{ fingerprint: string; runId: string } | null>;
   delivery(workspaceId: string, id: string): Promise<string | null>;
   dueContinuations(now: string, limit: number): Promise<WorkspaceContinuation[]>;
-  continuation(workspaceId: string, approvalId: string): Promise<WorkspaceContinuation | null>;
+  continuation(workspaceId: string, continuationId: string): Promise<WorkspaceContinuation | null>;
   /** Compare-and-swap a notification; a claimed notification is never replayed. */
-  updateContinuation(next: WorkspaceContinuation, expectedRevision: number, notice?: AssistantChatMessage): Promise<boolean>;
+  updateContinuation(next: WorkspaceContinuation, expectedRevision: number, notice?: AssistantChatMessage, expectedWorkspaceRevision?: number): Promise<boolean>;
 }

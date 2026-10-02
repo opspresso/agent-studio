@@ -1,9 +1,9 @@
 import type { WorkspaceRepository, WorkspaceWrite } from "@/domain/workspace/repository";
 import { isDeepStrictEqual } from "node:util";
-import type { Workspace, WorkspaceRun, WorkspaceEvent } from "@/domain/workspace/types";
+import { isTerminalWorkspaceRun, type Workspace, type WorkspaceRun, type WorkspaceEvent } from "@/domain/workspace/types";
 import type { CodingApproval } from "@/domain/coding/types";
 import { mayAdvanceCodingApproval, isTerminalCodingApproval } from "@/domain/coding/types";
-import type { WorkspaceContinuation } from "@/domain/workspace/continuation";
+import { workspaceContinuationId, type WorkspaceContinuation } from "@/domain/workspace/continuation";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { keys } from "../keys";
 import { conditions, getItem, queryItems, transact, CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED, type Item, type TransactOp } from "../store";
@@ -43,10 +43,11 @@ function assertChild(workspaceId: string, child: { workspaceId: string }): void 
 }
 
 function continuationItem(item: WorkspaceContinuation): Item {
-  return { ...keys.workspaceChild(item.workspaceId, "CONTINUATION", item.approvalId), value: item,
+  const id = workspaceContinuationId(item);
+  return { ...keys.workspaceChild(item.workspaceId, "CONTINUATION", id), value: item,
     expiresAt: expiry(item.createdAt),
     ...(["pending", "waiting-ci", "running"].includes(item.status) ? {
-      GSI2PK: keys.workspaceContinuationsDue(), GSI2SK: keys.workspaceDueSort(item.dueAt, `${item.workspaceId}#${item.approvalId}`),
+      GSI2PK: keys.workspaceContinuationsDue(), GSI2SK: keys.workspaceDueSort(item.dueAt, `${item.workspaceId}#${id}`),
     } : {}) };
 }
 
@@ -137,9 +138,17 @@ export const workspaceRepository: WorkspaceRepository = {
             const previous = row?.value as WorkspaceRun | undefined;
             return !previous || ((!previous.outputLoss || child.outputLoss === true) &&
               isDeepStrictEqual(previous.user, child.user) && isDeepStrictEqual(previous.actor, child.actor) &&
-              isDeepStrictEqual(previous.executionGrant, child.executionGrant));
+              isDeepStrictEqual(previous.executionGrant, child.executionGrant) && isDeepStrictEqual(previous.sourceChat, child.sourceChat));
           },
         } : {}) });
+    }
+    if (run?.sourceChat && isTerminalWorkspaceRun(run.status)) {
+      const notification: WorkspaceContinuation = { workspaceId: workspace.id, taskRunId: run.id, sourceUserSeq: run.sourceChat.userSeq,
+        chatId: run.sourceChat.chatId, userId: run.user.userId, ownerEmail: run.user.email, agentName: workspace.agentName,
+        revision: 0, status: "pending", createdAt: workspace.updatedAt, dueAt: workspace.updatedAt };
+      operations.push({ kind: "update", key: keys.workspaceChild(workspace.id, "CONTINUATION", workspaceContinuationId(notification)),
+        patch: row => row ?? continuationItem(notification),
+        condition: row => !row || (row.value as WorkspaceContinuation).chatId === notification.chatId });
     }
     if (approval?.sourceChatId && isTerminalCodingApproval(approval.status) &&
       (approval.authorization !== "coding-request" || (approval.status === "succeeded" && approval.ciWatch))) {
@@ -162,6 +171,9 @@ export const workspaceRepository: WorkspaceRepository = {
       if (run?.id !== request.runId || run.status !== "queued" || workspace.activeRunId !== run.id) {
         throw new Error("request receipt must admit its queued run");
       }
+      if (run.sourceChat) operations.push({ kind: "check", key: keys.chat(run.sourceChat.chatId), condition: row => chatIsLive(row) &&
+        row?.ownerEmail === run.user.email && row?.lastUserSeq === run.sourceChat!.userSeq && row.lastStoppedUserSeq !== run.sourceChat!.userSeq && !row.workspaceId &&
+        (row.linkedWorkspaces as Record<string, string> | undefined)?.[workspace.agentName] === workspace.id && !isExpired(row.expiresAt, Date.now()) });
       operations.push({ kind: "put", condition: conditions.notExists,
         item: { ...keys.workspaceChild(workspace.id, "REQUEST", request.key), value: request,
           expiresAt: expiry(workspace.updatedAt) } });
@@ -209,24 +221,29 @@ export const workspaceRepository: WorkspaceRepository = {
     return (await queryItems({ index: "GSI2", pk: keys.workspaceContinuationsDue(), sk: keys.workspaceDueRange(now),
       limit: page(limit), notExpiredAt: expiresAtFromNow(0, Date.parse(now)) })).map(row => row.value as WorkspaceContinuation);
   },
-  async continuation(id, approvalId) { return value(await getItem(keys.workspaceChild(id, "CONTINUATION", approvalId))); },
-  async updateContinuation(next, expectedRevision, notice) {
+  async continuation(id, continuationId) { return value(await getItem(keys.workspaceChild(id, "CONTINUATION", continuationId))); },
+  async updateContinuation(next, expectedRevision, notice, expectedWorkspaceRevision) {
     if (next.revision !== expectedRevision + 1) throw new Error("Continuation revision must advance once");
-    if (notice && (notice.chatId !== next.chatId || notice.workspaceAction?.workspaceId !== next.workspaceId ||
-      notice.workspaceAction.approvalId !== next.approvalId || !next.runId || next.status !== "running")) throw new Error("Invalid continuation notice");
+    const scopedNotice = next.taskRunId !== undefined
+      ? notice?.workspaceRun?.workspaceId === next.workspaceId && notice.workspaceRun.runId === next.taskRunId
+      : notice?.workspaceAction?.workspaceId === next.workspaceId && notice.workspaceAction.approvalId === next.approvalId;
+    if (notice && (notice.chatId !== next.chatId || !scopedNotice || !next.runId || next.status !== "running")) throw new Error("Invalid continuation notice");
     try {
-      await transact([{ kind: "update", key: keys.workspaceChild(next.workspaceId, "CONTINUATION", next.approvalId), patch: () => continuationItem(next), condition: row => {
+      await transact([{ kind: "update", key: keys.workspaceChild(next.workspaceId, "CONTINUATION", workspaceContinuationId(next)), patch: () => continuationItem(next), condition: row => {
         const previous = row?.value as WorkspaceContinuation | undefined;
         return previous?.revision === expectedRevision && previous.chatId === next.chatId &&
-          previous.ownerEmail === next.ownerEmail && previous.userId === next.userId && previous.agentName === next.agentName && !isExpired(row?.expiresAt, Date.now());
+          previous.ownerEmail === next.ownerEmail && previous.userId === next.userId && previous.agentName === next.agentName &&
+          previous.approvalId === next.approvalId && previous.taskRunId === next.taskRunId && previous.sourceUserSeq === next.sourceUserSeq && !isExpired(row?.expiresAt, Date.now());
       } }, ...(notice ? [
         { kind: "check" as const, key: keys.workspace(next.workspaceId), condition: (row: Item | null) => {
           const workspace = row?.value as Workspace | undefined;
           return workspace?.ownerEmail === next.ownerEmail && workspace.agentName === next.agentName &&
-            !workspace.deleteRequestedAt && !isExpired(row?.expiresAt, Date.now());
+            (expectedWorkspaceRevision === undefined || workspace.revision === expectedWorkspaceRevision) &&
+            !workspace.deleteRequestedAt && (next.taskRunId === undefined || workspace.status === "active") && !isExpired(row?.expiresAt, Date.now());
         } },
         { kind: "check" as const, key: keys.chat(next.chatId), condition: (row: Item | null) => chatIsLive(row) &&
           row?.ownerEmail === next.ownerEmail && row?.activeRunId === next.runId &&
+          (next.taskRunId === undefined || (row.lastUserSeq === next.sourceUserSeq && row.lastStoppedUserSeq !== next.sourceUserSeq)) &&
           !isExpired(row?.expiresAt, Date.now()) && (row?.linkedWorkspaces as Record<string, string> | undefined)?.[next.agentName] === next.workspaceId },
         { kind: "put" as const, item: chatMessageItem(notice), condition: conditions.notExists },
       ] : [])]);

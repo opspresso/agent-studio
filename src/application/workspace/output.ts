@@ -1,4 +1,4 @@
-import type { WorkspaceEventData, WorkspaceRun } from "@/domain/workspace/types";
+import { isTerminalWorkspaceRun, type WorkspaceEventData, type WorkspaceRun } from "@/domain/workspace/types";
 import type { SandboxOperation, SandboxOutput, WorkspaceRuntimeAdapter } from "@/domain/workspace/ports";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { cutUtf8Bytes } from "@/shared/utf8Text";
@@ -6,6 +6,22 @@ import { cutUtf8Bytes } from "@/shared/utf8Text";
 export function boundedWorkspaceText(text: string, bytes: number): { text: string; truncated: boolean } {
   const bounded = cutUtf8Bytes(text, bytes);
   return { text: bounded, truncated: bounded !== text };
+}
+
+/** A terminal task is observed only after every uncut output page has been delivered. */
+export function observeWorkspacePage(ranges: Array<[number, number]>, page: {
+  after: number; next: number; status: WorkspaceRun["status"]; hasMore: boolean; truncated: boolean; outputLoss: boolean;
+}): { ranges: Array<[number, number]>; complete: boolean } {
+  if (page.outputLoss || page.truncated || !Number.isSafeInteger(page.after) || page.after < 0 ||
+    !Number.isSafeInteger(page.next) || page.next < page.after) return { ranges, complete: false };
+  const merged: Array<[number, number]> = [];
+  for (const range of [...ranges, [page.after, page.next] as [number, number]].sort((a, b) => a[0] - b[0])) {
+    const previous = merged.at(-1);
+    if (previous && range[0] <= previous[1]) previous[1] = Math.max(previous[1], range[1]);
+    else merged.push([...range]);
+  }
+  return { ranges: merged, complete: isTerminalWorkspaceRun(page.status) && page.hasMore === false &&
+    merged[0]?.[0] === 0 && merged[0][1] === page.next };
 }
 
 export function boundWorkspaceEvent(event: WorkspaceEventData): WorkspaceEventData[] {

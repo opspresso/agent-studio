@@ -2,6 +2,7 @@ import type { McpToolResult } from "@/domain/llm/types";
 import type { PullRequestReviewTarget, ReviewWorkspaceSession, ReviewWorkspaceTool } from "@/domain/trigger/pullRequestReview";
 import { isTerminalWorkspaceRun, type Workspace, type WorkspaceRun } from "@/domain/workspace/types";
 import type { WorktreeReview } from "@/domain/coding/worktree";
+import { observeWorkspacePage } from "./output";
 
 interface ReviewWorkspaceDeps {
   tool: ReviewWorkspaceTool;
@@ -68,23 +69,12 @@ export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: Pul
           statuses.set(value.run_id, value.status as WorkspaceRun["status"]);
           if (startsRun) unconfirmedAdmission = false;
           if (value.output_loss === true) outputLoss.add(value.run_id);
-          const after = request?.after_seq ?? 0;
-          const next = value.next_seq;
-          const ranges = readRanges.get(value.run_id) ?? [];
-          if (value.output_loss !== true && value.truncated === false && typeof after === "number" && Number.isSafeInteger(after) && after >= 0 &&
-              typeof next === "number" && Number.isSafeInteger(next) && next >= after) {
-            ranges.push([after, next]);
-            ranges.sort((a, b) => a[0] - b[0]);
-            const merged: Array<[number, number]> = [];
-            for (const range of ranges) {
-              const previous = merged.at(-1);
-              if (previous && range[0] <= previous[1]) previous[1] = Math.max(previous[1], range[1]);
-              else merged.push(range);
-            }
-            readRanges.set(value.run_id, merged);
-            if (isTerminalWorkspaceRun(value.status as WorkspaceRun["status"]) && value.has_more === false &&
-                merged[0]?.[0] === 0 && merged[0][1] === next) unfinished.delete(value.run_id);
-          }
+          const observed = observeWorkspacePage(readRanges.get(value.run_id) ?? [], {
+            after: (request?.after_seq ?? 0) as number, next: value.next_seq as number, status: value.status as WorkspaceRun["status"],
+            hasMore: value.has_more !== false, truncated: value.truncated !== false, outputLoss: value.output_loss === true,
+          });
+          readRanges.set(value.run_id, observed.ranges);
+          if (observed.complete) unfinished.delete(value.run_id);
         }
         return { ...result, text: JSON.stringify({ ...value, review_pending: pendingReads() }) };
       },

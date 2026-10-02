@@ -97,6 +97,8 @@ export interface WorkspaceRun extends RunIdentity {
   diff?: string;
   diffTruncated?: boolean;
   checks: WorkspaceCheck[];
+  /** A queued Chat task resumes only the user turn that requested it. */
+  sourceChat?: { chatId: string; userSeq: number };
 }
 
 export interface WorkspaceCheck {

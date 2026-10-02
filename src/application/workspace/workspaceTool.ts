@@ -11,7 +11,7 @@ import { ConflictError, NotFoundError, ValidationError } from "@/application/err
 import type { createWorkspaceUseCases, WorkspaceView } from "./workspaceUseCases";
 import type { CodingApproval, CodingAction, PullRequestInfo } from "@/domain/coding/types";
 import { codingActionRequiresConfirmation } from "@/domain/coding/types";
-import { boundedWorkspaceText } from "./output";
+import { boundedWorkspaceText, observeWorkspacePage } from "./output";
 import type { PullRequestReviewTarget } from "@/domain/trigger/pullRequestReview";
 
 interface WorkspaceToolDeps {
@@ -40,6 +40,9 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
   const url = (path: string) => deps.publicBaseUrl ? new URL(path, deps.publicBaseUrl).href : path;
   const repositoryPolicyUrl = url(`/agents/${encodeURIComponent(context.agentName)}/workspace`);
   let selectedWorkspaceId: string | undefined;
+  const readRanges = new Map<string, Array<[number, number]>>();
+  const taskWatch = (sourceChatId?: string) => sourceChatId
+    ? { event: "workspace_task_result", chat_url: url(`/chats/${sourceChatId}`) } : null;
   const location = (workspace: WorkspaceView) => ({ workspace_id: workspace.id, title: workspace.title, workspace_path: `/chats/${workspace.chatId}`,
     workspace_url: url(`/chats/${workspace.chatId}`),
     workdir: deps.workdir, runtime: workspace.runtime, repository: workspace.coding?.repository ?? null,
@@ -168,7 +171,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
           next: started.workspace.activeRunId ? "wait" : "run", after_seq: 0,
           message: "This chat already has a Workspace. No new Workspace or task was created. Use run for follow-up work. To attach a repository to a Git-free Workspace, use attach_repository; do not call start again." });
         return reply({ ...location(started.workspace), run_id: started.run!.id, status: started.run!.status,
-          reused: false, task_queued: true, next: "wait", after_seq: 0 });
+          reused: false, task_queued: true, next: "wait", after_seq: 0, task_watch: taskWatch(started.run!.sourceChatId) });
       }
       const detail = await resolve(request, true);
       if ((request.runtime != null && request.runtime !== detail.workspace.runtime) ||
@@ -176,8 +179,8 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
         (request.base_branch != null && request.base_branch !== detail.workspace.coding?.baseBranch)) {
         throw new ValidationError("run keeps the selected Workspace's runtime and repository. Read options; use attach_repository to connect a Git-free Workspace");
       }
-      const run = await deps.useCases.enqueue(detail.workspace.id, context.user, input(detail.workspace.runtime, request.task), key, context.actor, context.executionGrant);
-      return reply({ ...location(detail.workspace), run_id: run.id, status: run.status, next: "wait", after_seq: 0 });
+      const run = await deps.useCases.enqueue(detail.workspace.id, context.user, input(detail.workspace.runtime, request.task), key, context.actor, context.executionGrant, context.sourceChatId);
+      return reply({ ...location(detail.workspace), run_id: run.id, status: run.status, next: "wait", after_seq: 0, task_watch: taskWatch(run.sourceChat?.chatId) });
     }
     if (!["status", "wait", "attach_repository", "prepare_git", "cancel", "close"].includes(String(operation))) throw new ValidationError("Unknown Workspace operation");
     let detail = await resolve(request, !["status", "wait"].includes(String(operation)));
@@ -289,12 +292,23 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     const nextSeq = selected.at(-1)?.seq ?? Number(after);
     const hasMore = events.length > selected.length || nextSeq < run.lastEventSeq;
     const terminal = isTerminalWorkspaceRun(run.status);
+    const truncated = !!run.outputLoss || output.truncated || diff.truncated || !!run.diffTruncated;
+    let completedInline = false;
+    if (context.sourceChatId && run.sourceChatId === context.sourceChatId) {
+      const observed = observeWorkspacePage(readRanges.get(run.id) ?? [], { after: Number(after), next: nextSeq,
+        status: run.status, hasMore, truncated, outputLoss: !!run.outputLoss });
+      readRanges.set(run.id, observed.ranges);
+      if (observed.complete) {
+        await deps.useCases.acknowledgeTaskResult(id, context.user, run.id, context.sourceChatId);
+        completedInline = true;
+      }
+    }
     return reply({ ...location(detail.workspace), workspace_status: detail.workspace.status,
       run_id: run.id, status: run.status, error: run.error,
       ...git,
       checks: run.checks.map(({ output: _output, ...check }) => { void _output; return check; }),
       output: output.text, diff: diff.text, output_loss: !!run.outputLoss,
-      truncated: !!run.outputLoss || output.truncated || diff.truncated || !!run.diffTruncated,
+      truncated, task_watch: completedInline ? null : taskWatch(run.sourceChatId),
       next_seq: nextSeq, has_more: hasMore,
       next_request: hasMore || !terminal ? { operation: hasMore ? "status" : "wait", workspace_id: id, run_id: run.id, after_seq: nextSeq } : null,
       next: hasMore ? "read remaining output" : terminal ? "review results" : "wait" });

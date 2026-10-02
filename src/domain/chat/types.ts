@@ -10,6 +10,10 @@ export interface Chat {
   workspaceId?: string;
   /** Agent conversations retain one selected Workspace per execution agent. */
   linkedWorkspaces?: Record<string, string>;
+  /** Latest genuine user message; platform continuations never advance it. */
+  lastUserSeq?: number;
+  /** An explicit Stop supersedes callbacks from that user turn. */
+  lastStoppedUserSeq?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -113,6 +117,7 @@ export interface AssistantChatMessage extends ChatMessageBase {
   role: "assistant";
   /** Platform outcome, displayed separately from model-written answers. */
   workspaceAction?: { workspaceId: string; approvalId: string; kind: CodingAction["kind"]; status: CodingApproval["status"]; event?: "ci" };
+  workspaceRun?: { workspaceId: string; runId: string; status: import("../workspace/types").WorkspaceRunStatus };
   /** Present when the turn requested tool calls (persisted for display only). */
   toolCalls?: ChannelToolCall[];
   /**

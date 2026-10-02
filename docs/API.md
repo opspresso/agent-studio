@@ -680,6 +680,12 @@ guest는 대화형·자동화 Workspace 작업을 시작하거나 재개할 수 
 | `/api/workspaces/{id}/actions/{actionId}` | POST | `{approve: boolean}`으로 명시적 승인·거절. 같은 승인은 한 번만 소비 |
 | `/api/agents/{name}/workspace-policy` | GET / PUT | GET은 접근 가능한 member의 설정 조회, PUT은 Agent 소유자 변경. 아래 계약을 따른다 |
 
+Run 조회의 선택적 `sourceChatId`는 작업을 접수한 원래 Chat을 가리킨다. 내부 사용자 턴 seq는
+응답에 포함하지 않는다. Chat의 Workspace 도구는 `task_watch`로 완료 결과를 전달할 Chat URL을
+제공하며, `workspace_task_result` 이벤트가 저장된 SDK 이력으로 남은 요청을 이어간다.
+원래 Chat이 모든 출력 페이지를 읽었거나 사용자 Stop·새 요청·Workspace 종료·후속 작업이 있으면
+별도 재개를 생략한다. 이 이벤트는 Git 게시 권한이나 main 반영 승인을 추가하지 않는다.
+
 Workspace 설정 GET은 `{agentName, enabled, backendReady, canManage, revision, rules, runtimes, updatedAt?}`를
 반환한다. PUT은 `{revision, rules}`이며 `rules`는 `{mode, repositories, repositoryOwners, defaultRuntime,
 idleTtlSeconds, checks, deploymentWorkflows}`다. 기본 저장소와 배포 기본값 복원 필드는 없다.
