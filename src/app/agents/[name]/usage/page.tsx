@@ -79,7 +79,7 @@ function UsageDetail({ name }: { name: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // The per-caller breakdown is owner/admin-only server-side, so the page asks
+  // The per-caller breakdown is owner-only server-side, so the page asks
   // the same question before requesting it — a member on a shared agent used
   // to get a guaranteed 403 on every visit and range change.
   const viewer = useViewer();

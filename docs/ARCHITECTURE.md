@@ -205,7 +205,7 @@ Chat의 SDK `runtime_sessions`와 수명을 공유하지 않는다.
 - 이름 기반 registry의 공통 CRUD는 `createKeyedRepository`를 사용한다. Agent 현재 설정은
   `META.configuration`, Chat 메시지 번호는 `META.nextSeq`가 소유한다.
 - Agent 삭제는 먼저 `deletingAt`으로 자식 쓰기를 차단하고 관련 행을 정리한 뒤
-  소유권을 제거한 tombstone을 남긴다. 중단된 cascade는 같은 owner/admin이 다시 DELETE하여
+  소유권을 제거한 tombstone을 남긴다. 중단된 cascade는 같은 소유자가 다시 DELETE하여
   이어간다. Chat·Artifact처럼 더 오래 남는 참조가 있어 Agent 이름을 재사용하지 않는다.
 - Usage는 행 잠금 아래 모델별 델타를 더한다. 임계값 알림 claim은 Usage 행에 둬
   Agent 편집 revision과 분리한다. 귀속·집계는 [관측성 설계](design/observability.md)를 따른다.
