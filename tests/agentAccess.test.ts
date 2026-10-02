@@ -7,7 +7,6 @@ import type { AgentRepository } from "@/domain/agent/repository";
 import {
   isAgentPrivate,
   mayAccessAgent,
-  normalizeMemberEmails,
 } from "@/domain/agent/access";
 import {
   assertAgentAccessible,
@@ -81,26 +80,9 @@ describe("mayAccessAgent", () => {
     expect(mayAccessAgent(p, "owner@x.com")).toBe(true);
   });
 
-  it("admits an invited member, case-insensitively", () => {
-    const p = agent({ visibility: "private", memberEmails: [MEMBER] });
-    expect(mayAccessAgent(p, "Member@X.com")).toBe(true);
-    expect(mayAccessAgent(p, STRANGER)).toBe(false);
-  });
-
-  it("ignores the invite list while the agent is public", () => {
-    const p = agent({ memberEmails: [MEMBER] });
-    expect(mayAccessAgent(p, STRANGER)).toBe(true);
-  });
-});
-
-describe("normalizeMemberEmails", () => {
-  it("trims, lowercases, dedupes, and drops the owner and empties", () => {
-    expect(
-      normalizeMemberEmails(
-        ["  A@x.com ", "a@x.com", "b@x.com", OWNER.toUpperCase(), "   "],
-        OWNER,
-      ),
-    ).toEqual(["a@x.com", "b@x.com"]);
+  it("does not adopt an obsolete invite list as permission", () => {
+    const stored = { ...agent({ visibility: "private" }), memberEmails: [MEMBER] };
+    expect(mayAccessAgent(stored, MEMBER)).toBe(false);
   });
 });
 
@@ -108,7 +90,7 @@ describe("assertAgentAccessible", () => {
   const repos = () =>
     fakeRepo([
       agent(),
-      agent({ name: "secret", visibility: "private", memberEmails: [MEMBER] }),
+      agent({ name: "secret", visibility: "private" }),
     ]);
 
   it("404s an unknown agent", async () => {
@@ -129,14 +111,14 @@ describe("assertAgentAccessible", () => {
     );
   });
 
-  it("admits the owner and an invited member to a private agent", async () => {
+  it("admits only the owner to a private agent", async () => {
     await expect(assertAgentAccessible(repos(), "secret", OWNER)).resolves.toBeDefined();
-    await expect(assertAgentAccessible(repos(), "secret", MEMBER)).resolves.toBeDefined();
+    await expect(assertAgentAccessible(repos(), "secret", MEMBER)).rejects.toBeInstanceOf(ForbiddenError);
   });
 
-  it("admits a configured admin to a private agent", async () => {
+  it("refuses a configured admin access to another user's private agent", async () => {
     admins.emails = [ADMIN];
-    await expect(assertAgentAccessible(repos(), "secret", ADMIN)).resolves.toBeDefined();
+    await expect(assertAgentAccessible(repos(), "secret", ADMIN)).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 
@@ -145,19 +127,18 @@ describe("listAccessibleAgents", () => {
     fakeRepo([
       agent(),
       agent({ name: "mine", visibility: "private", ownerEmail: STRANGER }),
-      agent({ name: "invited", visibility: "private", memberEmails: [STRANGER] }),
       agent({ name: "hidden", visibility: "private" }),
     ]);
 
-  it("returns public agents plus the private ones owned or invited", async () => {
+  it("returns public agents plus the caller's private agents", async () => {
     const names = (await listAccessibleAgents(repos(), STRANGER)).map((p) => p.name).sort();
-    expect(names).toEqual(["invited", "mine", "proj"]);
+    expect(names).toEqual(["mine", "proj"]);
   });
 
-  it("returns everything to a configured admin", async () => {
+  it("does not show other owners' private agents to a configured admin", async () => {
     admins.emails = [ADMIN];
     const names = (await listAccessibleAgents(repos(), ADMIN)).map((p) => p.name).sort();
-    expect(names).toEqual(["hidden", "invited", "mine", "proj"]);
+    expect(names).toEqual(["proj"]);
   });
 });
 
@@ -181,29 +162,27 @@ describe("listAgents", () => {
 });
 
 describe("updateAgent visibility", () => {
-  it("stores visibility and the normalized invite list", async () => {
+  it("stores visibility", async () => {
     const repo = fakeRepo([agent()]);
     const updated = await updateAgent(
       repo,
       "proj",
-      { visibility: "private", memberEmails: [" Member@X.com ", OWNER] },
+      { visibility: "private" },
       OWNER,
     );
     expect(updated.visibility).toBe("private");
-    expect(updated.memberEmails).toEqual([MEMBER]);
   });
 
-  it("keeps both fields when the update does not mention them", async () => {
+  it("keeps visibility when the update does not mention it", async () => {
     const repo = fakeRepo([
-      agent({ visibility: "private", memberEmails: [MEMBER] }),
+      agent({ visibility: "private" }),
     ]);
     const updated = await updateAgent(repo, "proj", { description: "new" }, OWNER);
     expect(updated.visibility).toBe("private");
-    expect(updated.memberEmails).toEqual([MEMBER]);
   });
 });
 
-describe("sanitizeAgent and the invite list", () => {
+describe("sanitizeAgent", () => {
   it("exposes only capability flags needed by Agent navigation", () => {
     const configuration: AgentConfiguration = {
       agentName: "proj", systemPrompt: "", model: "openai/gpt-5-mini",
@@ -214,14 +193,6 @@ describe("sanitizeAgent and the invite list", () => {
     expect(enabled).toMatchObject({ configured: true, audioToolsEnabled: true, workspaceToolsEnabled: true });
     expect(enabled).not.toHaveProperty("configuration");
     expect(sanitizeAgent(agent())).toMatchObject({ configured: false, audioToolsEnabled: false, workspaceToolsEnabled: false });
-  });
-
-  it("strips memberEmails unless the viewer manages the agent", () => {
-    const p = agent({ visibility: "private", memberEmails: [MEMBER] });
-    expect(sanitizeAgent(p)).not.toHaveProperty("memberEmails");
-    expect(sanitizeAgent(p, { withMemberEmails: true }).memberEmails).toEqual([MEMBER]);
-    // Visibility itself stays: the list badge and settings form read it.
-    expect(sanitizeAgent(p).visibility).toBe("private");
   });
 });
 
@@ -258,9 +229,9 @@ describe("binding a private agent as a local subagent", () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it("lets an invited editor bind it", async () => {
+  it("lets the owner bind a private subagent", async () => {
     const repo = fakeRepo([agent({ name: "mine", ownerEmail: EDITOR })]);
-    const secret = agent({ name: "secret", visibility: "private", memberEmails: [EDITOR] });
+    const secret = agent({ name: "secret", visibility: "private", ownerEmail: EDITOR });
     await putAgentConfiguration({ agents: repo, refs: accessRefs(secret), cipher: await cipher() }, "mine", { ...input, expectedUpdatedAt: (await repo.get("mine"))!.updatedAt }, EDITOR);
     expect((await repo.get("mine"))?.configuration?.subagentList).toEqual([{ name: "secret" }]);
   });

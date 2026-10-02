@@ -4,7 +4,7 @@ import type { SkillRepository } from "@/domain/skill/repository";
 import type { McpRepository } from "@/domain/mcp/repository";
 import { getModelConfig } from "@/domain/llm/models";
 import { ValidationError } from "@/application/errors";
-import { userMayAccessAgent } from "./agentUseCases";
+import { mayAccessAgent } from "@/domain/agent/access";
 import { agentModelRejectReason } from "./modelCompatibility";
 import { log } from "@/shared/logger";
 
@@ -143,9 +143,9 @@ export async function assertSubavailableAgentsAccessible(
       continue;
     }
     const agent = await refs.agents.get(ref.name);
-    if (agent && !(await userMayAccessAgent(agent, userEmail))) {
+    if (agent && !mayAccessAgent(agent, userEmail)) {
       throw new ValidationError(
-        `Agent "${ref.name}" is private; ask its owner for an invite before binding it as an agent.`,
+        `Agent "${ref.name}" is private; only its owner may bind it as an agent.`,
       );
     }
   }

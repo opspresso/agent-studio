@@ -61,8 +61,6 @@ export interface UpdateAgentInput {
   /** Sent whole; `null` removes the guards. Omitted leaves them untouched. */
   costLimits?: CostLimits | null;
   visibility?: AgentVisibility;
-  /** Sent whole; replaces the invite list. Omitted leaves it untouched. */
-  memberEmails?: string[];
 }
 
 // Agent responses are the sanitized shape the routes actually build —

@@ -6,7 +6,8 @@ import type { SecretCipher } from "@/domain/security/secretCipher";
 import { agentCredentialContext } from "@/domain/security/secretContext";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { generateSecretValue, secretPrefix } from "@/shared/generatedSecret";
-import { assertAgentAccessible, userMayAccessAgent } from "@/application/agent/agentUseCases";
+import { assertAgentAccessible } from "@/application/agent/agentUseCases";
+import { mayAccessAgent } from "@/domain/agent/access";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { verifyGitHubSignature } from "@/shared/githubWebhook";
 
@@ -70,7 +71,7 @@ export function createAgentCredentialUseCases(deps: AgentCredentialDeps) {
     ]);
     if (!agent || !member || member.id !== token.userId) return null;
     if (!tierMayUseApiTokens(member.tier)) throw new ForbiddenError(`Your account tier does not allow ${label} tokens`);
-    if (!await userMayAccessAgent(agent, member.email)) throw new ForbiddenError("Your account no longer has access to this Agent");
+    if (!mayAccessAgent(agent, member.email)) throw new ForbiddenError("Your account no longer has access to this Agent");
     return { userId: member.id, email: member.email, credentialId: token.id };
   }
   return {

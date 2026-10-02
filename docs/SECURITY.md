@@ -101,12 +101,9 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 
 **Agent 는 공유 카탈로그이되, 공개 범위(visibility)를 갖는다.** `public`(기본값이자
 `visibility` 필드가 없는 기존 행의 의미)은 로그인한 사용자라면 누구나 읽고 실행하고 복제할
-수 있다. `private` 은 그 범위를 소유자와 `memberEmails` 의 초대 목록으로 좁힌다. 쓰기는
-이 축과 무관하게 언제나 소유자-또는-admin 이다. 판정의 유일한 정의는
-`src/domain/agent/access.ts` (`mayAccessAgent`)이고, admin 오버라이드를 합친 형태가
-`assertAgentAccessible` / `userMayAccessAgent` (`agentUseCases.ts`)다. 새 읽기·실행
-표면은 이 둘 중 하나를 지나며, `visibility` 나 `memberEmails` 를 직접 비교하는 두 번째
-판정을 만들지 않는다.
+수 있다. `private`은 소유자만 접근할 수 있으며 관리자도 실행·복제 권한을 얻지 않는다.
+설정 관리 권한은 별도 검사한다. 공개 범위 판정은 `src/domain/agent/access.ts`의
+`mayAccessAgent`가 소유하고, Agent 조회를 포함한 검사는 `assertAgentAccessible`을 사용한다.
 
 콘솔·Chat과 개인 API 토큰은 인증된 사용자의 현재 `assertAgentAccessible` 판정을 적용한다.
 개인 토큰은 Agent 소유자가 아니라 발급 사용자 ID에 묶인다. Slack·Telegram·Teams는
@@ -114,17 +111,16 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 Agent 접근을 확인한다. 이메일이나 bot 소유자만으로 호출자를 추정하지 않으며 앱 작성 메시지는
 실행하지 않는다. Slack의 명령·native 중단·thread-start도 같은 연결 검사를 지난다.
 Trigger·Webhook의 전달 인증은 [머신 요청 인증](#머신-호출자의-요청-인증)을 따른다.
-초대 목록(`memberEmails`)은 제3자 주소의 명부이므로 응답에서도 소유자·admin에게만 나간다 (`sanitizeAgent`).
 
 private agent 를 local subagent 로 *바인딩* 하는 것도 읽기다: 편집자가 접근할 수 없는
 agent 는 Agent 설정 저장 시점에 거절된다 (`assertSubavailableAgentsAccessible`). 이미 바인딩된
 참조는 agent 가 뒤늦게 private 이 되어도 편집 가능성을 잃지 않는다. 실행 시점의 transfer
-는 소유자의 token 과 같은 플랫폼 자신의 조립이다. 비용 대시보드의 agent *합계* 는
+는 현재 호출자의 Agent 접근 권한을 다시 확인한다. 비용 대시보드의 agent *합계* 는
 visibility 이전처럼 열려 있다: 이름과 지출 집계는 카탈로그 운영의 일부로 남겨 둔 결정이다.
 
 | 리소스 | 읽기 | 쓰기 |
 |---|---|---|
-| Agent, Agent 설정 | 접근 가능한 사용자 (`assertAgentAccessible`, public 은 전원, private 은 소유자·초대 멤버·admin) | 소유자 또는 설정된 admin (`assertAgentWritable`) |
+| Agent, Agent 설정 | 접근 가능한 사용자 (`assertAgentAccessible`, public 은 전원, private 은 소유자) | 소유자 또는 설정된 admin (`assertAgentWritable`) |
 | Agent trace | 소유자 또는 설정된 admin | — |
 | Agent Slack 설정 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
 | 개인 Agent API token | 발급 사용자 본인과 현재 Agent 접근 | 발급 사용자 본인; 생성·reveal은 현재 token 사용 tier도 검사 |

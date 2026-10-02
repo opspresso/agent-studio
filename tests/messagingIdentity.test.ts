@@ -61,7 +61,7 @@ describe("verified Studio-to-messaging identity", () => {
   });
   it("rechecks private Agent access and does not burn a code on denial", async () => {
     const issued = await api.issue("agent", "slack", "second"); const agent = (await agentRepository.get("agent"))!;
-    await agentRepository.update({ ...agent, visibility: "private", memberEmails: [] }, agent.updatedAt);
+    await agentRepository.update({ ...agent, visibility: "private" }, agent.updatedAt);
     await expect(api.connect(subject, issued.code)).rejects.toMatchObject({ status: 403 });
   });
   it("lets only one sender consume a concurrently submitted code", async () => {

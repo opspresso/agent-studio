@@ -1,5 +1,4 @@
 import { withAuth, withMemberAuth } from "@/lib/session";
-import { isEffectiveConfiguredAdmin } from "@/lib/memberAccess";
 import { agentUseCases } from "@/lib/container";
 import { agentNameSchema, updateAgentSchema } from "@/app/api/agents/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -12,12 +11,7 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
   const { name } = await ctx.params;
   try {
     const agent = await agentUseCases.assertAccessible(name, user.email);
-    // The invite list travels only to whoever manages the agent — the same
-    // pair `assertAgentWritable` admits — because it is a roster of other
-    // people's addresses, not part of what "seeing the agent" grants.
-    const manages =
-      agent.ownerEmail === user.email || (await isEffectiveConfiguredAdmin(user));
-    return Response.json(sanitizeAgent(agent, { withMemberEmails: manages }));
+    return Response.json(sanitizeAgent(agent));
   } catch (error) {
     return apiError(error);
   }
@@ -34,13 +28,7 @@ export const PUT = withMemberAuth(async (user, request: Request, ctx: RouteConte
     return invalidRequest(parsed.error);
   }
   try {
-    // The update is owner-or-admin gated, so whoever got this far manages the
-    // agent and may see the normalized invite list they just wrote.
-    return Response.json(
-      sanitizeAgent(await agentUseCases.update(name, parsed.data, user.email), {
-        withMemberEmails: true,
-      }),
-    );
+    return Response.json(sanitizeAgent(await agentUseCases.update(name, parsed.data, user.email)));
   } catch (error) {
     return apiError(error);
   }

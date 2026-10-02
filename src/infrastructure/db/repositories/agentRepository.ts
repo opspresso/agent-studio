@@ -44,16 +44,6 @@ function visibility(value: unknown): Agent["visibility"] {
   throw new Error("agent row has invalid agent visibility");
 }
 
-function memberEmails(value: unknown): string[] | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (Array.isArray(value) && value.every((email) => typeof email === "string")) {
-    return value;
-  }
-  throw new Error("agent row has invalid memberEmails");
-}
-
 function fromItem(item: Record<string, unknown>): Agent {
   return {
     name: requiredString(item, "name"),
@@ -61,7 +51,6 @@ function fromItem(item: Record<string, unknown>): Agent {
     description: typeof item.description === "string" ? item.description : "",
     ownerEmail: requiredString(item, "ownerEmail"),
     visibility: visibility(item.visibility),
-    memberEmails: memberEmails(item.memberEmails),
     departmentCode: item.departmentCode as string | undefined,
     ...(item.configuration === undefined ? {} : {
       configuration: readAgentConfiguration(item.configuration, requiredString(item, "name")),

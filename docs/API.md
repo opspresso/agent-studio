@@ -35,7 +35,7 @@
   `403 { "error": "Cross-origin mutation refused" }` 이다. Bearer token 과 서명된 기계 표면은
   각자의 자격 증명으로 보호되므로 이 검사를 적용하지 않는다.
 - **Authorization**: agent 는 공개 범위를 갖는 공유 카탈로그다. `public`(기본값) 은
-  로그인한 누구나 읽고 실행하고, `private` 은 소유자·초대 멤버·admin 만이다
+  로그인한 누구나 읽고 실행하고, `private` 은 소유자만이다
   ([SECURITY.md](SECURITY.md#인가-모델), 그 외에는 `403 { "error": "Agent \"…\" is private" }`).
   변경(수정/삭제, Agent 설정 저장, Slack·Telegram 설정)은 공개 범위와 무관하게
   `member` 이상인 소유자와 effective admin(저장된 `admin` tier 또는 설정된 admin) 만 할 수 있고, 그 외에는
@@ -244,17 +244,10 @@ DELETE /api/skills/{name}     → 204                     | 404
 
 #### 공개 범위와 복제
 
-`PUT /api/agents/{name}` 은 공개 범위도 싣는다: `visibility: "public" | "private"` 와, private
-일 때 의미를 갖는 초대 목록 `memberEmails: string[]` (통째로 대체, 저장 시 trim·소문자·중복
-제거·소유자 제외로 정규화). 필드가 없는 기존 행은 public 이다. private agent 는 세션
-기반의 모든 읽기·실행 표면에서 소유자·초대 멤버·admin 외에 403 으로 거절되고, 목록
-(`GET /api/agents`) 에서는 보이지 않는다. 누가 게이트를 받고 누가 받지 않는지(API token,
-bot의 Studio 사용자 연결)는 [SECURITY.md](SECURITY.md#인가-모델) 가 정본이다.
-
-`memberEmails` 는 초대받은 사람들의 주소이므로 모든 독자에게 노출하지 않는다. 단일 agent
-GET 은 소유자나 effective configured admin 에게만 이 필드를 포함하고, 초대 멤버와 일반 독자에게는
-필드 자체를 제거한다. agent 목록에서도 항상 제거한다. PUT 응답은 쓰기 권한을 지난 호출자에게
-정규화된 목록을 돌려준다.
+`PUT /api/agents/{name}`은 `visibility: "public" | "private"`로 공개 범위를 설정한다.
+필드가 없으면 public이다. private Agent는 소유자만 조회·실행·복제할 수 있으며 다른 사용자와
+관리자에게는 목록에서 숨기고 접근을 403으로 거절한다. 개인 API token과 bot의 Studio 사용자
+연결도 같은 접근 검사를 적용한다. 상세 계약은 [SECURITY.md](SECURITY.md#인가-모델)를 따른다.
 
 ```
 POST /api/agents/{name}/clone    { "name": "my-copy", "displayName": "My Copy" }
@@ -263,7 +256,7 @@ POST /api/agents/{name}/clone    { "name": "my-copy", "displayName": "My Copy" }
 
 접근 가능한 agent 를 호출자 소유의 새 agent 로 복제한다. tier 게이트는 생성과 같다.
 설명·부서 코드·공개 범위와 현재 Agent 설정을 복사한다. private 원본은 private으로 시작하며
-초대 목록은 복사하지 않는다. MCP 헤더 오버라이드·endpoint fingerprint·bot 연동·비용 한도·
+MCP 헤더 오버라이드·endpoint fingerprint·bot 연동·비용 한도·
 API token도 복사하지 않는다. 설정을 복사할 수 없으면 Agent는 미설정 상태로 만들어지고
 `warning`이 이유를 알린다. 복제본의 설정도 저장되는 즉시 다음 실행에 적용된다.
 

@@ -4,13 +4,7 @@ import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
 import type { RuntimePolicy } from "@/domain/execution/runtimeSession";
 
 
-/**
- * Who may see and run an agent. `public` is the shared catalog: any signed-in
- * user may read, run and clone it. A missing stored field has the same meaning.
- * `private` narrows that to the owner and the emails on
- * `memberEmails`. Writing was never part of this axis — it stays owner-or-admin
- * either way (`assertAgentWritable`).
- */
+/** Public Agents are shared with the organization; private Agents are owner-only. */
 export type AgentVisibility = "public" | "private";
 
 /** Per-agent Slack bot credentials. Secrets are AES-encrypted at rest. */
@@ -120,14 +114,8 @@ export interface Agent {
   displayName: string;
   description: string;
   ownerEmail: string;
-  /** Absent means `public` — the shape every agent had before visibility. */
+  /** Absent means `public`. */
   visibility?: AgentVisibility;
-  /**
-   * Who besides the owner may access a private agent. Stored lowercased;
-   * meaningless (and ignored) while the agent is public. The owner is never
-   * listed — ownership itself is the access.
-   */
-  memberEmails?: string[];
   departmentCode?: string;
   /** Current Agent settings, read as one snapshot with the agent. */
   configuration?: AgentConfiguration;

@@ -96,10 +96,10 @@ describe("current Agent configuration", () => {
 
   it("keeps write ownership and private-agent reads at the existing boundaries", async () => {
     await expect(save({}, NOW, READER)).rejects.toMatchObject({ status: 403 });
-    const adminSave = await save({}, NOW, ADMIN);
+    await save({}, NOW, ADMIN);
     const privateAgent = await updateAgent(agentRepository, agent.name, { visibility: "private" }, OWNER);
     await expect(useCases.getView(agent.name, READER)).rejects.toMatchObject({ status: 403 });
-    expect((await useCases.getView(agent.name, ADMIN)).configuration).toEqual(adminSave.configuration);
+    await expect(useCases.getView(agent.name, ADMIN)).rejects.toMatchObject({ status: 403 });
     expect(privateAgent.configuration).toBeDefined();
     await expect(useCases.getView("missing", OWNER)).rejects.toMatchObject({ status: 404 });
   });
@@ -119,7 +119,6 @@ describe("current Agent configuration", () => {
     expect(JSON.stringify(saved)).not.toContain(SECRET);
     expect(saved.configuration!.mcpList[0]).not.toHaveProperty("headerTarget");
     expect(sanitizeAgent(stored)).not.toHaveProperty("configuration");
-    expect(sanitizeAgent(stored, { withMemberEmails: true })).not.toHaveProperty("configuration");
   });
 
   it("preserves masked and omitted headers, permits explicit clearing, and never creates a secret from a mask", async () => {

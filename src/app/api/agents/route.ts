@@ -7,10 +7,8 @@ import { sanitizeAgent } from "@/app/api/agents/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
 
 export const GET = withAuth(async (user) => {
-  // One argument on purpose: `map` would otherwise pass the index where
-  // sanitizeAgent now takes its options.
   return Response.json(
-    (await agentUseCases.listAccessible(user.email)).map((agent) => sanitizeAgent(agent)),
+    (await agentUseCases.listAccessible(user.email)).map(sanitizeAgent),
   );
 });
 

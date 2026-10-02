@@ -3,7 +3,7 @@ import type { ChatMessage } from "@/domain/chat/types";
 import { chatConversation } from "@/domain/chat/conversation";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError, ChatConflictError } from "./errors";
-import { userMayAccessAgent } from "@/application/agent/agentUseCases";
+import { mayAccessAgent } from "@/domain/agent/access";
 import {
   runAndPersist,
   readMessageDocuments,
@@ -77,7 +77,7 @@ export async function sendMessage(
   }
   // Re-checked every turn, not only at creation: an agent made private after
   // this chat began stops answering people who lost access with it.
-  if (!(await userMayAccessAgent(agent, input.user.email))) {
+  if (!mayAccessAgent(agent, input.user.email)) {
     throw new ChatForbiddenError(`agent "${agent.name}" is private`);
   }
   const configuration = agent.configuration;

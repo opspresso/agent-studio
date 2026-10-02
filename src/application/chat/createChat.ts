@@ -4,7 +4,7 @@ import type { Chat, ChatMessage } from "@/domain/chat/types";
 import { chatConversation } from "@/domain/chat/conversation";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatValidationError } from "./errors";
-import { userMayAccessAgent } from "@/application/agent/agentUseCases";
+import { mayAccessAgent } from "@/domain/agent/access";
 import {
   runAndPersist,
   readMessageDocuments,
@@ -65,7 +65,7 @@ export async function createChat(
   if (!agent) {
     throw new ChatValidationError(`agent not found: ${input.agentName}`);
   }
-  if (!(await userMayAccessAgent(agent, input.user.email))) {
+  if (!mayAccessAgent(agent, input.user.email)) {
     throw new ChatForbiddenError(`agent "${agent.name}" is private`);
   }
 

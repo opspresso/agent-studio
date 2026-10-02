@@ -67,7 +67,7 @@
 | 모델 카드·다중 기능 배지·검색·정렬·원본 wire ID 기반 행 key | `src/app/models/ModelCollection.tsx`, `modelTable.ts`; 단가 표시는 `src/app/_components/modelOptions.tsx` | 코드 |
 | 어떤 모델이 새 선택에 보이는가 | `src/domain/llm/models.ts`의 `offeredModels`. 관리자가 등록한 모델과 연결의 교집합이며 기본 모델을 우선한다 | 코드 |
 | 모델 즐겨찾기의 개인 범위와 상한 | `src/domain/llm/modelPreferences.ts` 의 `ModelPreferencesRepository` / `MAX_FAVORITE_MODELS`. user id 별 한 행이며 picker 그룹화는 `src/app/_components/modelOptions.tsx` 의 `modelSelectData` 가 소유한다 | 코드 |
-| 누가 agent 에 접근할 수 있는가 (공개 범위·초대 목록의 판정) | `src/domain/agent/access.ts` 의 `mayAccessAgent`. admin 오버라이드를 합친 형태는 `agentUseCases.ts` 의 `assertAgentAccessible`/`userMayAccessAgent` 뿐이고, 표면들은 그 둘을 지난다 ([SECURITY.md](SECURITY.md#인가-모델)) | 코드 |
+| 누가 Agent에 접근할 수 있는가 (public 또는 소유자 전용 private) | `src/domain/agent/access.ts` 의 `mayAccessAgent`. 조회와 판정을 결합하는 `agentUseCases.ts`의 `assertAgentAccessible`도 같은 규칙을 따른다 ([SECURITY.md](SECURITY.md#인가-모델)) | 코드 |
 | 모델이 파일 ID로 읽거나 편집할 수 있는 범위 | `src/application/document/fileTool.ts`의 현재 사용자 파일 귀속·자동화의 시작 Agent 범위 검사. ID 자체는 접근 권한이 아니다 | 코드 |
 
 ## Chat·Workspace

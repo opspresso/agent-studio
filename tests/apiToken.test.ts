@@ -35,7 +35,7 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); setAdminCheck(async ()
 
 async function privateAgent() {
   const agent = (await agentRepository.get("bot"))!;
-  await agentRepository.update({ ...agent, visibility: "private", memberEmails: [] }, agent.updatedAt);
+  await agentRepository.update({ ...agent, visibility: "private" }, agent.updatedAt);
 }
 
 describe("generated secret values", () => {

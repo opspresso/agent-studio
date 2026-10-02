@@ -26,21 +26,14 @@ export type SanitizedAgent = Omit<Agent, "slack" | "telegram" | "teams" | "confi
   teams?: IntegrationSummary;
 };
 
-/**
- * Strip bot credentials and configuration. The invite list is included only
- * for a manager; visibility alone does not reveal other members' addresses.
- */
-export function sanitizeAgent(
-  agent: Agent,
-  opts: { withMemberEmails?: boolean } = {},
-): SanitizedAgent {
-  const { slack, telegram, teams, memberEmails, configuration: _configuration, ...rest } = agent;
+/** Strip bot credentials and configuration from catalog responses. */
+export function sanitizeAgent(agent: Agent): SanitizedAgent {
+  const { slack, telegram, teams, configuration: _configuration, ...rest } = agent;
   return {
     ...rest,
     configured: agent.configuration !== undefined,
     audioToolsEnabled: agentHasAudioTools(agent),
     workspaceToolsEnabled: agentHasWorkspaceTools(agent),
-    ...(opts.withMemberEmails && memberEmails !== undefined ? { memberEmails } : {}),
     ...(slack
       ? {
           slack: {

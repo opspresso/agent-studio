@@ -152,16 +152,14 @@ describe("Agent atomic writes", () => {
     updatedAt: "2026-01-01T00:00:01.000Z",
   };
 
-  it("round-trips visibility and the invite list", async () => {
-    // Visibility and invitations must survive the reader's explicit field mapping.
+  it("round-trips visibility", async () => {
     seedAgent(agent.name);
     await agentRepository.update(
-      { ...agent, visibility: "private", memberEmails: ["invited@example.com"] },
+      { ...agent, visibility: "private" },
       NOW,
     );
     const read = await agentRepository.get(agent.name);
     expect(read?.visibility).toBe("private");
-    expect(read?.memberEmails).toEqual(["invited@example.com"]);
   });
 
   it("refuses an invalid stored visibility instead of treating it as public", async () => {

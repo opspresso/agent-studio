@@ -34,13 +34,12 @@ describe("process-wide application wiring", () => {
       displayName: "Private agent",
       description: "",
       visibility: "private" as const,
-      memberEmails: [],
       ownerEmail: "owner@example.com",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     };
 
-    await expect(second.userMayAccessAgent(agent, "admin@example.com")).resolves.toBe(true);
+    await expect(second.assertAgentWritable({ get: async () => agent } as unknown as Parameters<typeof second.assertAgentWritable>[0], agent.name, "admin@example.com")).resolves.toEqual(agent);
   });
 
   it("keeps managed MCP lifecycle claims across duplicate module evaluations", async () => {

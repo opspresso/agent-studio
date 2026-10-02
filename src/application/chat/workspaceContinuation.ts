@@ -11,7 +11,7 @@ import { teeToRunLog } from "./runLog";
 import { watchChatCancel } from "./cancelRun";
 import { ChatConflictError } from "./errors";
 import { readRuntimeSession } from "@/application/runtime/session";
-import { userMayAccessAgent } from "@/application/agent/agentUseCases";
+import { mayAccessAgent } from "@/domain/agent/access";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { log } from "@/shared/logger";
@@ -57,7 +57,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     return;
   }
   const agent = await deps.chat.agents.get(chat.agentName);
-  if (!agent || !(await userMayAccessAgent(agent, item.ownerEmail))) {
+  if (!agent || !mayAccessAgent(agent, item.ownerEmail)) {
     await save({ status: "cancelled", error: "The source agent is no longer accessible." });
     return;
   }

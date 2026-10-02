@@ -91,9 +91,6 @@ export const updateAgentSchema = z.object({
   departmentCode: z.string().max(64).optional(),
   costLimits: costLimitsSchema.nullable().optional(),
   visibility: z.enum(["public", "private"]).optional(),
-  // Replaces the stored invite list; normalization (trim, lowercase, dedupe,
-  // owner dropped) happens in the use case beside the rule that reads it.
-  memberEmails: z.array(z.string().trim().email()).max(200).optional(),
 });
 
 // Cron/timezone validity and which kind may carry which field are enforced in

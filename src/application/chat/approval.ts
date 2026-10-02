@@ -3,7 +3,7 @@ import type { ChatDeps } from "./deps";
 import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession";
 import { chatConversation } from "@/domain/chat/conversation";
 import { isLiveClaim } from "@/domain/chat/types";
-import { userMayAccessAgent } from "@/application/agent/agentUseCases";
+import { mayAccessAgent } from "@/domain/agent/access";
 import { discardRuntimeCheckpoint, pendingRuntimeApproval, readRuntimeSession } from "@/application/runtime/session";
 import { ChatConflictError, ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
 import { runAndPersist } from "./run";
@@ -37,7 +37,7 @@ export async function resumeChatApproval(deps: ChatDeps, input: {
   if (!chat.agentName) throw new ChatValidationError("chat is not bound to an agent");
   const agent = await deps.agents.get(chat.agentName);
   if (!agent) throw new ChatValidationError("agent not found");
-  if (!(await userMayAccessAgent(agent, input.user.email))) throw new ChatForbiddenError();
+  if (!mayAccessAgent(agent, input.user.email)) throw new ChatForbiddenError();
   const configuration = agent.configuration;
   if (!configuration) throw new ChatValidationError("agent has no Agent configuration");
   const runId = await claimChatRun(deps.chats, input.chatId);

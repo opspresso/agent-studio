@@ -34,10 +34,10 @@ describe("current execution user", () => {
       await expect(resolveRunUser(deps, "agent", "registrar", kind)).rejects.toMatchObject({ status: 403 });
     }
   });
-  it("rechecks current private Agent membership", async () => {
-    agent = { ...agent, visibility: "private", memberEmails: ["person@example.test"] };
+  it("rechecks current private Agent ownership", async () => {
+    agent = { ...agent, visibility: "private", ownerEmail: "person@example.test" };
     await expect(resolveRunUser(deps, "agent", "registrar", "schedule")).resolves.toMatchObject({ userId: "registrar" });
-    agent.memberEmails = [];
+    agent.ownerEmail = "other@example.test";
     await expect(resolveRunUser(deps, "agent", "registrar", "schedule")).rejects.toMatchObject({ status: 403 });
   });
 });

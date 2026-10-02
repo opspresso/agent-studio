@@ -1,6 +1,6 @@
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { AgentConfiguration, CostLimits, Agent, AgentVisibility } from "@/domain/agent/types";
-import { mayAccessAgent, normalizeMemberEmails } from "@/domain/agent/access";
+import { mayAccessAgent } from "@/domain/agent/access";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import { persistAgentUpdate } from "./agentUpdate";
@@ -58,8 +58,6 @@ export interface UpdateAgentInput {
   /** Replaces the stored guards; `null` removes them. Absent leaves them alone. */
   costLimits?: CostLimits | null;
   visibility?: AgentVisibility;
-  /** Replaces the invite list; absent leaves it alone. Normalized on write. */
-  memberEmails?: string[];
 }
 
 export const AGENT_LIST_PAGE_SIZE = 100;
@@ -77,20 +75,12 @@ export async function listAgents(repo: Pick<AgentRepository, "list">): Promise<A
   }
 }
 
-/**
- * The agents `userEmail` may see: everything public, plus the private ones
- * they own or are invited to — or everything, for an admin, who could reach
- * each one through the write override anyway and administers the catalog as a
- * whole. One admin check for the whole list, not one per row.
- */
+/** Read the public catalog and the caller's own private Agents. */
 export async function listAccessibleAgents(
   repo: AgentRepository,
   userEmail: string,
 ): Promise<Agent[]> {
   const agents = await listAgents(repo);
-  if (await isAdminOverride(userEmail)) {
-    return agents;
-  }
   return agents.filter((agent) => mayAccessAgent(agent, userEmail));
 }
 
@@ -193,51 +183,17 @@ async function ownerOrAdminAccess(
   throw new ForbiddenError(`You do not have permission to modify agent "${name}"`);
 }
 
-/**
- * Load an agent and assert `userEmail` may access it — the read-and-run
- * sibling of {@link assertAgentWritable}, asked by every console surface
- * that shows or runs an agent on a person's behalf. The domain predicate
- * (`mayAccessAgent`) is the rule; this adds the admin override, allowed for
- * the same reason admins may write: they administer the catalog. Unlike the
- * write override it is logged but not audited — a read changes nothing, so
- * there is no later question only an audit row could answer.
- *
- * API-token and integration paths deliberately never come here: a token is
- * the agent's own credential, and a bot the owner wired to a surface was
- * pointed there by the owner. The person-facing gate for those surfaces is
- * their own (the Slack pipeline checks the asker's email itself).
- */
+/** Visibility applies to every caller, including administrators and automation. */
 export async function assertAgentAccessible(
   repo: AgentRepository,
   name: string,
   userEmail: string,
 ): Promise<Agent> {
   const agent = await getAgent(repo, name);
-  if (await userMayAccessAgent(agent, userEmail)) {
+  if (mayAccessAgent(agent, userEmail)) {
     return agent;
   }
   throw new ForbiddenError(`Agent "${name}" is private`);
-}
-
-/**
- * The access predicate with the admin override folded in, for slices that
- * already hold the agent row — the chat use cases and the messaging
- * pipeline, which load the agent for the run they are about to start and
- * must not read it twice just to ask this. Everything else goes through
- * {@link assertAgentAccessible}.
- */
-export async function userMayAccessAgent(agent: Agent, userEmail: string): Promise<boolean> {
-  if (mayAccessAgent(agent, userEmail)) {
-    return true;
-  }
-  if (await isAdminOverride(userEmail)) {
-    log.warn(
-      "authz",
-      `admin ${userEmail} is accessing private agent "${agent.name}" owned by ${agent.ownerEmail}`,
-    );
-    return true;
-  }
-  return false;
 }
 
 /**
@@ -313,9 +269,6 @@ export async function updateAgent(
         ? { costLimits: undefined }
         : { costLimits: input.costLimits }),
     ...(input.visibility === undefined ? {} : { visibility: input.visibility }),
-    ...(input.memberEmails === undefined
-      ? {}
-      : { memberEmails: normalizeMemberEmails(input.memberEmails, existing.ownerEmail) }),
     updatedAt: nextUpdatedAt(existing.updatedAt),
   };
   await persistAgentUpdate(repo, updated, existing.updatedAt);

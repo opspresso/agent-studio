@@ -816,7 +816,6 @@ describe("chat access to a private agent", () => {
         description: "",
         ownerEmail: "someone-else@x.com",
         visibility: "private",
-        memberEmails: ["invited@x.com"],
 
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
@@ -848,15 +847,15 @@ describe("chat access to a private agent", () => {
     expect(state.activeRunId).toBeUndefined();
   });
 
-  it("lets an invited member chat with a private agent", async () => {
-    const { repo } = makeChatRepo(chatFixture("invited@x.com"));
+  it("lets the owner chat with a private agent", async () => {
+    const { repo } = makeChatRepo(chatFixture("someone-else@x.com"));
     // Access passes; the missing configuration is the next check in line, which is
     // proof the visibility gate is what let the turn through.
     await expect(
       sendMessage(makeDeps(repo, { agents: privateAgents }), {
         chatId: "c1",
         content: "hey",
-        user: { userId: "studio-user-1", email: "invited@x.com" },
+        user: { userId: "studio-user-1", email: "someone-else@x.com" },
       }),
     ).rejects.toThrow("no Agent configuration");
   });
