@@ -25,6 +25,8 @@ import { overridesToRows, rowsToOverrides, type OverrideRow } from "./mcpOverrid
 import { McpBindingSettings, type ConfigurationSave } from "./McpBindingSettings";
 import { SourceMappings } from "./SourceMappings";
 import { HeaderRowsEditor } from "@/app/_components/HeaderRows";
+import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
+import { ConfigurationFields } from "./ConfigurationFields";
 
 /**
  * A named group of controls.
@@ -105,11 +107,13 @@ function PickedChip({
   suffix,
   onRemove,
   action,
+  removeDisabled = false,
 }: {
   label: string;
   suffix?: React.ReactNode;
   onRemove: () => void;
   action?: React.ReactNode;
+  removeDisabled?: boolean;
 }) {
   return (
     <Group
@@ -129,7 +133,7 @@ function PickedChip({
       </Text>
       <Group gap="xs" wrap="nowrap">
         {action}
-        <ActionIcon size="xs" variant="subtle" onClick={onRemove} aria-label={`Remove ${label}`}>
+        <ActionIcon size="xs" variant="subtle" onClick={onRemove} disabled={removeDisabled} aria-label={`Remove ${label}`}>
           <IconX size={14} />
         </ActionIcon>
       </Group>
@@ -499,12 +503,14 @@ function OverrideEditor({
  */
 export function McpBindingInput({
   agentName,
+  canEdit,
   values,
   onChange,
   options,
   save,
 }: {
   agentName: string;
+  canEdit: boolean;
   values: McpBinding[];
   onChange: (values: McpBinding[]) => void;
   options: PickerOption[];
@@ -512,6 +518,8 @@ export function McpBindingInput({
   save: ConfigurationSave;
 }) {
   const t = useT();
+  const mayConnect = canRunAgents(useViewer());
+  const disabled = !canEdit || save.saving;
   /** Which binding's settings modal is open; one at a time. */
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   /**
@@ -628,12 +636,15 @@ export function McpBindingInput({
                 </Anchor>
               }
               onRemove={() => remove(binding.name)}
+              removeDisabled={disabled}
             />
           );
         })}
         {settingsFor && (
           <McpBindingSettings
             agentName={agentName}
+            canEdit={canEdit}
+            mayConnect={mayConnect}
             serverName={settingsFor}
             onClose={() => setSettingsFor(null)}
             save={save}
@@ -641,23 +652,25 @@ export function McpBindingInput({
               onChange={(sourceOutputs) => onChange(values.map((binding) => binding.name === settingsFor ? { ...binding, sourceOutputs } : binding))} />}
             onConnectionChanged={() => setConnectionEpoch((epoch) => epoch + 1)}
             tools={
-              <Stack gap="xs">
+              mayConnect ? <Stack gap="xs">
                 <Button variant="subtle" size="xs" onClick={() => setConnectionEpoch((epoch) => epoch + 1)}>
                   {t("bindings.refreshTools")}
                 </Button>
-                <ToolSelector
-                  selected={values.find((v) => v.name === settingsFor)?.tools}
-                  onChange={(tools) => setTools(settingsFor, tools)}
-                  reloadOn={connectionEpoch}
-                  load={() =>
-                    listAgentMcpTools(
-                      agentName,
-                      settingsFor,
-                      values.find((v) => v.name === settingsFor)?.headers,
-                                        )
-                  }
-                />
-              </Stack>
+                <ConfigurationFields disabled={disabled}>
+                  <ToolSelector
+                    selected={values.find((v) => v.name === settingsFor)?.tools}
+                    onChange={(tools) => setTools(settingsFor, tools)}
+                    reloadOn={connectionEpoch}
+                    load={() =>
+                      listAgentMcpTools(
+                        agentName,
+                        settingsFor,
+                        canEdit ? values.find((v) => v.name === settingsFor)?.headers : undefined,
+                      )
+                    }
+                  />
+                </ConfigurationFields>
+              </Stack> : <Text fz="sm" c="dimmed">{t("common.memberExecutionRequired")}</Text>
             }
             headers={
               <OverrideEditor
@@ -669,15 +682,17 @@ export function McpBindingInput({
           />
         )}
       </Stack>
-      <OptionPicker
-        options={available}
-        placeholder={t("bindings.searchServers")}
-        onPick={(option) => {
-          if (!values.some((v) => v.name === option.value)) {
-            onChange([...values, { name: option.value }]);
-          }
-        }}
-      />
+      <ConfigurationFields disabled={disabled}>
+        <OptionPicker
+          options={available}
+          placeholder={t("bindings.searchServers")}
+          onPick={(option) => {
+            if (!values.some((v) => v.name === option.value)) {
+              onChange([...values, { name: option.value }]);
+            }
+          }}
+        />
+      </ConfigurationFields>
     </Field>
   );
 }

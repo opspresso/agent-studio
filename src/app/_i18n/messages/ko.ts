@@ -817,7 +817,7 @@ export const ko: Messages = {
   "guide.capabilities.toolsBody":
     "관리자가 Tools에서 서버를 등록하고 discovery 결과에 필요한 도구가 나타나는지 확인한다. Agent에 서버를 연결하고 제공할 도구를 선택한 뒤 설정을 저장한다. 호출이 실패하면 서버 상태·필수 헤더·실행 경고를 확인한다. 서버에 접속할 수 있어도 사용할 도구가 없거나 별도 인증이 필요할 수 있다.",
   "guide.capabilities.oauth": "MCP 설정의 저장 범위",
-  "guide.capabilities.oauthBody": "도구 선택·헤더 오버라이드·파일 응답 매핑은 Agent 설정과 함께 Save로 저장한다. 헤더를 바꾼 뒤 도구 목록을 새로 조회한다. 마스킹된 값은 기존 시크릿을 유지하고 빈 맵은 오버라이드를 제거한다. OAuth 연결·해제는 즉시 저장된다. 필요한 OAuth 앱은 관리자가 Tools에서 설정한다. 각 사용자는 Agent의 연동 → 내 MCP 연결에서 본인 계정을 인증하며, 호출자의 연결로 도구를 사용한다.",
+  "guide.capabilities.oauthBody": "도구 선택·헤더 오버라이드·파일 응답 매핑은 Agent 소유자만 변경하며 Agent 설정과 함께 Save로 저장한다. 헤더를 바꾼 뒤 도구 목록을 새로 조회한다. 마스킹된 값은 기존 시크릿을 유지하고 빈 맵은 오버라이드를 제거한다. OAuth 연결·해제는 즉시 저장된다. 필요한 OAuth 앱은 관리자가 Tools에서 설정한다. member는 다른 사람이 만든 Agent에서도 MCP Settings 또는 연동 → 내 MCP 연결을 열어 본인 계정을 인증하며, 호출자의 연결로 도구를 사용한다.",
   "guide.capabilities.agents": "다른 에이전트에 작업 위임",
   "guide.capabilities.agentsBody": "전문 역할 분리가 필요한 작업에는 설정된 다른 Agent를 연결한다. 각 하위 Agent가 받을 요청과 결과를 설명한다. 하위 활동에는 실행 주체가 표시되며 사용량은 원래 실행에 귀속된다.",
   "guide.capabilities.plugins": "Plugins 가져오기와 동기화",

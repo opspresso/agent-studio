@@ -14,7 +14,7 @@ const member = new URLSearchParams(window.location.search).has("member");
 
 function BindingFixture() {
   const [values, onChange] = useState<McpBinding[]>([{ name: "constructor" }]);
-  return <McpBindingInput agentName="fixture-agent" values={values} onChange={onChange} options={[]}
+  return <McpBindingInput agentName="fixture-agent" canEdit={!member} values={values} onChange={onChange} options={[]}
     save={{ run() {}, saving: false, disabled: false, error: null, saved: false, label: "Save" }} />;
 }
 

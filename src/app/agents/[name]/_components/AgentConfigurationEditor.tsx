@@ -41,6 +41,7 @@ import type { PickerOption } from "./inputs";
 import type { ConfigurationSave } from "./McpBindingSettings";
 import { bindingsMayOfferRecall } from "@/domain/agent/memoryRecall";
 import { PRESENCE_PENALTY_RANGE } from "@/domain/llm/channel";
+import { ConfigurationFields } from "./ConfigurationFields";
 
 /** Parse the JSON object the API accepts, without using a type assertion as validation. */
 export function parseJsonObject(text: string): Record<string, unknown> | null {
@@ -64,6 +65,7 @@ export function parseConfigurationDraft(value: AgentConfigurationInput, schemaTe
 
 export function AgentConfigurationEditor({
   agentName,
+  canEdit,
   models,
   imageModels,
   value,
@@ -74,6 +76,7 @@ export function AgentConfigurationEditor({
   save,
 }: {
   agentName: string;
+  canEdit: boolean;
   models: SelectableModel[];
   imageModels: SelectableModel[];
   value: AgentConfigurationInput;
@@ -144,281 +147,285 @@ export function AgentConfigurationEditor({
   const supportsStructured = selectedModel?.capabilities.structuredOutput ?? true;
 
   function patch(next: Partial<AgentConfigurationInput>) {
+    if (!canEdit || save.saving) return;
     onChange({ ...value, ...next });
   }
   function patchParams(next: Partial<AgentParameters>) {
+    if (!canEdit || save.saving) return;
     onChange({ ...value, parameters: { ...value.parameters, ...next } });
   }
 
   return (
     <Stack gap="md">
-      {models.length > 0 ? (
-        <ModelSelect
-          label={t("configuration.model")}
-          value={value.model}
-          onChange={(model) => patch({ model: model ?? "" })}
-          placeholder={t("configuration.selectModel")}
-          searchable
-          models={models}
-          leading={
-            // A stored model unavailable for new selection stays present so an
-            // Agent can be saved without silently losing it.
-            value.model && !selectedModel ? [{ value: value.model, label: value.model }] : []
-          }
-          error={
-            value.model && !selectedModel
-              ? t("configuration.modelUnlisted")
-              : undefined
-          }
-        />
-      ) : (
-        <TextInput
-          label={t("configuration.model")}
-          value={value.model}
-          onChange={(e) => patch({ model: e.currentTarget.value })}
-          placeholder="openai/gpt-5-mini"
-        />
-      )}
-
-      {/* Fallback applies to retryable model failures before the first output. */}
-      {(models.length > 0 ? (
+      <ConfigurationFields disabled={!canEdit || save.saving}>
+        {models.length > 0 ? (
           <ModelSelect
-            label={t("configuration.fallbackModel")}
-            value={value.fallbackModel ?? null}
-            onChange={(fallbackModel) => patch({ fallbackModel: fallbackModel ?? undefined })}
-            placeholder={t("configuration.none")}
-            clearable
+            label={t("configuration.model")}
+            value={value.model}
+            onChange={(model) => patch({ model: model ?? "" })}
+            placeholder={t("configuration.selectModel")}
             searchable
             models={models}
             leading={
-              value.fallbackModel && !fallbackModelConfig
-                ? [{ value: value.fallbackModel, label: value.fallbackModel }]
-                : []
+              // A stored model unavailable for new selection stays present so an
+              // Agent can be saved without silently losing it.
+              value.model && !selectedModel ? [{ value: value.model, label: value.model }] : []
+            }
+            error={
+              value.model && !selectedModel
+                ? t("configuration.modelUnlisted")
+                : undefined
             }
           />
         ) : (
           <TextInput
-            label={t("configuration.fallbackModel")}
-            value={value.fallbackModel ?? ""}
-            onChange={(e) => patch({ fallbackModel: e.currentTarget.value || undefined })}
+            label={t("configuration.model")}
+            value={value.model}
+            onChange={(e) => patch({ model: e.currentTarget.value })}
+            placeholder="openai/gpt-5-mini"
           />
-        ))}
+        )}
 
-      <Textarea
-        label={t("configuration.systemPrompt")}
-        value={value.systemPrompt}
-        onChange={(e) => patch({ systemPrompt: e.currentTarget.value })}
-        placeholder={t("configuration.systemPromptPlaceholder")}
-        autosize
-        minRows={8}
-        maxRows={30}
-        styles={monoInput}
-      />
-      <ModelRoutingEditor value={value.parameters.modelRouting}
-        onChange={(modelRouting) => patchParams({ modelRouting })} />
+        {/* Fallback applies to retryable model failures before the first output. */}
+        {(models.length > 0 ? (
+            <ModelSelect
+              label={t("configuration.fallbackModel")}
+              value={value.fallbackModel ?? null}
+              onChange={(fallbackModel) => patch({ fallbackModel: fallbackModel ?? undefined })}
+              placeholder={t("configuration.none")}
+              clearable
+              searchable
+              models={models}
+              leading={
+                value.fallbackModel && !fallbackModelConfig
+                  ? [{ value: value.fallbackModel, label: value.fallbackModel }]
+                  : []
+              }
+            />
+          ) : (
+            <TextInput
+              label={t("configuration.fallbackModel")}
+              value={value.fallbackModel ?? ""}
+              onChange={(e) => patch({ fallbackModel: e.currentTarget.value || undefined })}
+            />
+          ))}
 
-      <Divider label={t("configuration.group.response")} labelPosition="left" />
-      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-        <NumberField
-          label={t("configuration.temperature")}
-          value={value.parameters.temperature}
-          onChange={(temperature) => patchParams({ temperature })}
-          step={0.1}
-          min={0}
-          max={2}
-          placeholder={t("configuration.defaultPlaceholder")}
+        <Textarea
+          label={t("configuration.systemPrompt")}
+          value={value.systemPrompt}
+          onChange={(e) => patch({ systemPrompt: e.currentTarget.value })}
+          placeholder={t("configuration.systemPromptPlaceholder")}
+          autosize
+          minRows={8}
+          maxRows={30}
+          styles={monoInput}
         />
+        <ModelRoutingEditor value={value.parameters.modelRouting}
+          onChange={(modelRouting) => patchParams({ modelRouting })} />
+
+        <Divider label={t("configuration.group.response")} labelPosition="left" />
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+          <NumberField
+            label={t("configuration.temperature")}
+            value={value.parameters.temperature}
+            onChange={(temperature) => patchParams({ temperature })}
+            step={0.1}
+            min={0}
+            max={2}
+            placeholder={t("configuration.defaultPlaceholder")}
+          />
+          <NumberField
+            label={t("configuration.maxTokens")}
+            value={value.parameters.maxTokens}
+            onChange={(maxTokens) => patchParams({ maxTokens })}
+            step={1}
+            min={1}
+            placeholder={t("configuration.defaultPlaceholder")}
+          />
+          <NumberField
+            label={t("configuration.presencePenalty")}
+            value={value.parameters.presencePenalty}
+            onChange={(presencePenalty) => patchParams({ presencePenalty })}
+            step={0.1}
+            min={PRESENCE_PENALTY_RANGE.min}
+            max={PRESENCE_PENALTY_RANGE.max}
+            placeholder={t("configuration.defaultPlaceholder")}
+          />
+        </SimpleGrid>
+
+        {supportsReasoning && (
+          <Select
+            label={t("configuration.reasoningEffort")}
+            value={value.parameters.reasoningEffort ?? ""}
+            onChange={(effort) =>
+              patchParams({
+                reasoningEffort: (effort || undefined) as AgentParameters["reasoningEffort"],
+              })
+            }
+            allowDeselect={false}
+            data={[
+              { value: "", label: t("configuration.default") },
+              { value: "low", label: "low" },
+              { value: "medium", label: "medium" },
+              { value: "high", label: "high" },
+            ]}
+          />
+        )}
+
+        {/*
+          Stays visible on a stored `true` even where the model has no reasoning,
+          unlike the effort select above it: saving is *rejected* for that pair, so
+          hiding the control would leave an author unable to save anything at all.
+        */}
+        {(supportsReasoning || value.parameters.reasoningTrace) && (
+          <Stack gap={4}>
+            <Checkbox
+              label={t("configuration.reasoningTrace")}
+              description={t("configuration.reasoningTraceHint")}
+              checked={value.parameters.reasoningTrace ?? false}
+              onChange={(e) =>
+                patchParams({ reasoningTrace: e.currentTarget.checked ? true : undefined })
+              }
+            />
+            {/* The same constraint /models badges, said where it costs something:
+                this model refuses to think while it can call tools, so an agent
+                run records its final turn and nothing before it. */}
+            {value.parameters.reasoningTrace === true &&
+              selectedModel?.capabilities.reasoningWithTools === false && (
+                <Text fz="xs" c="yellow.7">
+                  {t("models.reasoningNoTools")}
+                </Text>
+              )}
+          </Stack>
+        )}
+
         <NumberField
-          label={t("configuration.maxTokens")}
-          value={value.parameters.maxTokens}
-          onChange={(maxTokens) => patchParams({ maxTokens })}
+          label={t("configuration.maxTurns")}
+          value={value.maxTurn}
+          onChange={(maxTurn) => patch({ maxTurn })}
           step={1}
           min={1}
-          placeholder={t("configuration.defaultPlaceholder")}
+          placeholder="50"
         />
-        <NumberField
-          label={t("configuration.presencePenalty")}
-          value={value.parameters.presencePenalty}
-          onChange={(presencePenalty) => patchParams({ presencePenalty })}
-          step={0.1}
-          min={PRESENCE_PENALTY_RANGE.min}
-          max={PRESENCE_PENALTY_RANGE.max}
-          placeholder={t("configuration.defaultPlaceholder")}
-        />
-      </SimpleGrid>
 
-      {supportsReasoning && (
-        <Select
-          label={t("configuration.reasoningEffort")}
-          value={value.parameters.reasoningEffort ?? ""}
-          onChange={(effort) =>
-            patchParams({
-              reasoningEffort: (effort || undefined) as AgentParameters["reasoningEffort"],
-            })
-          }
-          allowDeselect={false}
-          data={[
-            { value: "", label: t("configuration.default") },
-            { value: "low", label: "low" },
-            { value: "medium", label: "medium" },
-            { value: "high", label: "high" },
-          ]}
+        <Divider label={t("configuration.group.policy")} labelPosition="left" />
+        <Checkbox
+          label={t("configuration.piiFiltering")}
+          description={t("configuration.piiHint")}
+          checked={value.parameters.piiFiltering}
+          onChange={(e) => patchParams({ piiFiltering: e.currentTarget.checked })}
         />
-      )}
 
-      {/*
-        Stays visible on a stored `true` even where the model has no reasoning,
-        unlike the effort select above it: saving is *rejected* for that pair, so
-        hiding the control would leave an author unable to save anything at all.
-      */}
-      {(supportsReasoning || value.parameters.reasoningTrace) && (
-        <Stack gap={4}>
+        <RuntimePolicyEditor value={value.parameters.policy} onChange={(policy) => patchParams({ policy })} />
+
+        <Checkbox
+          label={t("configuration.callerContext")}
+          description={t("configuration.callerHint")}
+          checked={value.parameters.callerContext ?? false}
+          onChange={(e) => patchParams({ callerContext: e.currentTarget.checked })}
+        />
+
+        {(supportsStructured || value.parameters.structuredOutput || schemaError !== null) && (
+          <Stack gap="xs">
+            <Group gap={6} wrap="nowrap">
+              <Checkbox
+                label={t("configuration.structuredOutput")}
+                checked={value.parameters.structuredOutput ?? false}
+                onChange={(e) => patchParams({ structuredOutput: e.currentTarget.checked })}
+              />
+              <ActionIcon
+                size="sm"
+                aria-label={t("configuration.aboutStructuredOutput")}
+                onClick={() => setSchemaHelpOpen(true)}
+              >
+                <IconHelp size={15} stroke={1.7} />
+              </ActionIcon>
+            </Group>
+            <StructuredOutputHelp
+              opened={schemaHelpOpen}
+              onClose={() => setSchemaHelpOpen(false)}
+            />
+            {value.parameters.structuredOutput && (
+              <Textarea
+                value={schemaText}
+                onChange={(e) => onSchemaChange(e.currentTarget.value)}
+                placeholder='{"type":"object","properties":{}}'
+                autosize
+                minRows={5}
+                maxRows={20}
+                error={schemaError}
+                styles={monoInput}
+              />
+            )}
+          </Stack>
+        )}
+
+        <Divider label={t("configuration.group.builtins")} labelPosition="left" />
+        <Stack gap="xs">
           <Checkbox
-            label={t("configuration.reasoningTrace")}
-            description={t("configuration.reasoningTraceHint")}
-            checked={value.parameters.reasoningTrace ?? false}
+            label={t("configuration.imageTools")}
+            checked={value.parameters.imageGeneration ?? false}
             onChange={(e) =>
-              patchParams({ reasoningTrace: e.currentTarget.checked ? true : undefined })
+              patchParams(
+                e.currentTarget.checked
+                  ? { imageGeneration: true }
+                  : { imageGeneration: undefined, imageModel: undefined },
+              )
             }
           />
-          {/* The same constraint /models badges, said where it costs something:
-              this model refuses to think while it can call tools, so an agent
-              run records its final turn and nothing before it. */}
-          {value.parameters.reasoningTrace === true &&
-            selectedModel?.capabilities.reasoningWithTools === false && (
-              <Text fz="xs" c="yellow.7">
-                {t("models.reasoningNoTools")}
-              </Text>
-            )}
-        </Stack>
-      )}
-
-      <NumberField
-        label={t("configuration.maxTurns")}
-        value={value.maxTurn}
-        onChange={(maxTurn) => patch({ maxTurn })}
-        step={1}
-        min={1}
-        placeholder="50"
-      />
-
-      <Divider label={t("configuration.group.policy")} labelPosition="left" />
-      <Checkbox
-        label={t("configuration.piiFiltering")}
-        description={t("configuration.piiHint")}
-        checked={value.parameters.piiFiltering}
-        onChange={(e) => patchParams({ piiFiltering: e.currentTarget.checked })}
-      />
-
-      <RuntimePolicyEditor value={value.parameters.policy} onChange={(policy) => patchParams({ policy })} />
-
-      <Checkbox
-        label={t("configuration.callerContext")}
-        description={t("configuration.callerHint")}
-        checked={value.parameters.callerContext ?? false}
-        onChange={(e) => patchParams({ callerContext: e.currentTarget.checked })}
-      />
-
-      {(supportsStructured || value.parameters.structuredOutput || schemaError !== null) && (
-        <Stack gap="xs">
-          <Group gap={6} wrap="nowrap">
-            <Checkbox
-              label={t("configuration.structuredOutput")}
-              checked={value.parameters.structuredOutput ?? false}
-              onChange={(e) => patchParams({ structuredOutput: e.currentTarget.checked })}
-            />
-            <ActionIcon
-              size="sm"
-              aria-label={t("configuration.aboutStructuredOutput")}
-              onClick={() => setSchemaHelpOpen(true)}
-            >
-              <IconHelp size={15} stroke={1.7} />
-            </ActionIcon>
-          </Group>
-          <StructuredOutputHelp
-            opened={schemaHelpOpen}
-            onClose={() => setSchemaHelpOpen(false)}
-          />
-          {value.parameters.structuredOutput && (
-            <Textarea
-              value={schemaText}
-              onChange={(e) => onSchemaChange(e.currentTarget.value)}
-              placeholder='{"type":"object","properties":{}}'
-              autosize
-              minRows={5}
-              maxRows={20}
-              error={schemaError}
-              styles={monoInput}
+          <Text fz="xs" c="dimmed">
+            {t("configuration.imageToolsHint")}
+          </Text>
+          {value.parameters.imageGeneration && (
+            <ModelSelect
+              label={t("configuration.imageModel")}
+              value={value.parameters.imageModel ?? ""}
+              onChange={(imageModel) => patchParams({ imageModel: imageModel || undefined })}
+              allowDeselect={false}
+              models={imageModels}
+              leading={
+                [
+                  { value: "", label: t("configuration.default") },
+                  ...(value.parameters.imageModel && !selectedImageModel
+                    ? [{ value: value.parameters.imageModel, label: value.parameters.imageModel }]
+                    : []),
+                ]
+              }
             />
           )}
         </Stack>
-      )}
 
-      <Divider label={t("configuration.group.builtins")} labelPosition="left" />
-      <Stack gap="xs">
-        <Checkbox
-          label={t("configuration.imageTools")}
-          checked={value.parameters.imageGeneration ?? false}
-          onChange={(e) =>
-            patchParams(
-              e.currentTarget.checked
-                ? { imageGeneration: true }
-                : { imageGeneration: undefined, imageModel: undefined },
-            )
-          }
-        />
-        <Text fz="xs" c="dimmed">
-          {t("configuration.imageToolsHint")}
-        </Text>
-        {value.parameters.imageGeneration && (
-          <ModelSelect
-            label={t("configuration.imageModel")}
-            value={value.parameters.imageModel ?? ""}
-            onChange={(imageModel) => patchParams({ imageModel: imageModel || undefined })}
-            allowDeselect={false}
-            models={imageModels}
-            leading={
-              [
-                { value: "", label: t("configuration.default") },
-                ...(value.parameters.imageModel && !selectedImageModel
-                  ? [{ value: value.parameters.imageModel, label: value.parameters.imageModel }]
-                  : []),
-              ]
+        <Checkbox label={t("audio.enableTools")} description={t("audio.enableToolsHint")}
+        checked={value.parameters.audioProcessing ?? false}
+        onChange={(e) => patchParams({ audioProcessing: e.currentTarget.checked ? true : undefined })} />
+        <Checkbox label={t("workspace.enableTools")} description={t("workspace.enableToolsHint")}
+        checked={value.parameters.workspaceTools ?? false}
+        onChange={(e) => patchParams({ workspaceTools: e.currentTarget.checked ? true : undefined })} />
+        <Stack gap="xs">
+          <Checkbox
+            label={t("configuration.fetchUrl")}
+            checked={value.parameters.urlFetch ?? false}
+            onChange={(e) => patchParams({ urlFetch: e.currentTarget.checked ? true : undefined })}
+          />
+          <Text fz="xs" c="dimmed">
+            {t("configuration.fetchUrlHint")}
+          </Text>
+        </Stack>
+
+        <Stack gap="xs">
+          <Checkbox
+            label={t("configuration.slackWorkspace")}
+            checked={value.parameters.slackWorkspace ?? false}
+            onChange={(e) =>
+              patchParams({ slackWorkspace: e.currentTarget.checked ? true : undefined })
             }
           />
-        )}
-      </Stack>
+          <Text fz="xs" c="dimmed">
+            {t("configuration.slackWorkspaceHint")}
+          </Text>
+        </Stack>
 
-      <Checkbox label={t("audio.enableTools")} description={t("audio.enableToolsHint")}
-      checked={value.parameters.audioProcessing ?? false}
-      onChange={(e) => patchParams({ audioProcessing: e.currentTarget.checked ? true : undefined })} />
-      <Checkbox label={t("workspace.enableTools")} description={t("workspace.enableToolsHint")}
-      checked={value.parameters.workspaceTools ?? false}
-      onChange={(e) => patchParams({ workspaceTools: e.currentTarget.checked ? true : undefined })} />
-      <Stack gap="xs">
-        <Checkbox
-          label={t("configuration.fetchUrl")}
-          checked={value.parameters.urlFetch ?? false}
-          onChange={(e) => patchParams({ urlFetch: e.currentTarget.checked ? true : undefined })}
-        />
-        <Text fz="xs" c="dimmed">
-          {t("configuration.fetchUrlHint")}
-        </Text>
-      </Stack>
-
-      <Stack gap="xs">
-        <Checkbox
-          label={t("configuration.slackWorkspace")}
-          checked={value.parameters.slackWorkspace ?? false}
-          onChange={(e) =>
-            patchParams({ slackWorkspace: e.currentTarget.checked ? true : undefined })
-          }
-        />
-        <Text fz="xs" c="dimmed">
-          {t("configuration.slackWorkspaceHint")}
-        </Text>
-      </Stack>
-
+      </ConfigurationFields>
       <Divider label={t("configuration.group.bindings")} labelPosition="left" />
       <Stack gap="sm">
 
@@ -432,48 +439,51 @@ export function AgentConfigurationEditor({
 
         <McpBindingInput
           agentName={agentName}
+          canEdit={canEdit}
           values={value.mcpList}
           onChange={(mcpList) => patch({ mcpList })}
           options={mcpOptions}
           save={save}
         />
-        <SearchSelectInput
-          label={t("configuration.skills")}
-          values={value.skillList}
-          onChange={(skillList) => patch({ skillList })}
-          options={skillOptions}
-          placeholder={t("configuration.searchSkills")}
-        />
-        <SubagentInput
-          values={value.subagentList}
-          onChange={(subagentList) => patch({ subagentList })}
-          options={subagentOptions}
-        />
-        <Checkbox
-          label={t("configuration.dynamicCapabilities")}
-          description={t("configuration.dynamicCapabilitiesHint")}
-          checked={value.parameters.dynamicCapabilities ?? false}
-          onChange={(e) => patchParams({ dynamicCapabilities: e.currentTarget.checked })}
-        />
-        <Checkbox
-          label={t("configuration.memoryRecall")}
-          description={t("configuration.memoryRecallHint")}
-          checked={value.parameters.memoryRecall ?? false}
-          onChange={(e) =>
-            patchParams({ memoryRecall: e.currentTarget.checked ? true : undefined })
-          }
-        />
-        {value.parameters.memoryRecall === true &&
-          !bindingsMayOfferRecall(value.mcpList) && (
-            // The run's own warning, moved up to where the setting is made:
-            // an Agent that recalls with nothing bound to answer would
-            // otherwise say so only once a run has started without a memory.
-            // Only what the bindings alone rule out — a bound server that
-            // turns out not to offer the tool is for the preview to report.
-            <Alert color="yellow" variant="light" fz="xs">
-              {t("configuration.memoryRecallUnbound")}
-            </Alert>
-          )}
+        <ConfigurationFields disabled={!canEdit || save.saving} gap="sm">
+          <SearchSelectInput
+            label={t("configuration.skills")}
+            values={value.skillList}
+            onChange={(skillList) => patch({ skillList })}
+            options={skillOptions}
+            placeholder={t("configuration.searchSkills")}
+          />
+          <SubagentInput
+            values={value.subagentList}
+            onChange={(subagentList) => patch({ subagentList })}
+            options={subagentOptions}
+          />
+          <Checkbox
+            label={t("configuration.dynamicCapabilities")}
+            description={t("configuration.dynamicCapabilitiesHint")}
+            checked={value.parameters.dynamicCapabilities ?? false}
+            onChange={(e) => patchParams({ dynamicCapabilities: e.currentTarget.checked })}
+          />
+          <Checkbox
+            label={t("configuration.memoryRecall")}
+            description={t("configuration.memoryRecallHint")}
+            checked={value.parameters.memoryRecall ?? false}
+            onChange={(e) =>
+              patchParams({ memoryRecall: e.currentTarget.checked ? true : undefined })
+            }
+          />
+          {value.parameters.memoryRecall === true &&
+            !bindingsMayOfferRecall(value.mcpList) && (
+              // The run's own warning, moved up to where the setting is made:
+              // an Agent that recalls with nothing bound to answer would
+              // otherwise say so only once a run has started without a memory.
+              // Only what the bindings alone rule out — a bound server that
+              // turns out not to offer the tool is for the preview to report.
+              <Alert color="yellow" variant="light" fz="xs">
+                {t("configuration.memoryRecallUnbound")}
+              </Alert>
+            )}
+        </ConfigurationFields>
       </Stack>
     </Stack>
   );

@@ -123,7 +123,9 @@ running과 reachable을 별도로 확인한다. [운영](../OPERATIONS.md#재배
 ## OAuth
 
 관리자는 서버에서 discovery한 `auth`와 공유 OAuth 앱을 관리하고,
-member 이상인 사용자는 접근 가능한 Agent의 연동 → 내 MCP 연결에서 본인 계정을 연결한다.
+member 이상인 사용자는 접근 가능한 Agent의 MCP Settings 또는 연동 → 내 MCP 연결에서 본인 계정을 연결한다.
+MCP Settings의 도구 선택·헤더 override·source mapping 저장은 Agent 소유자에게만 허용한다.
+비소유자 member도 설정 창에서 본인 연결을 관리하고 저장된 binding과 본인 인증으로 도구를 조회한다.
 access/refresh token·revision·갱신 claim은 Studio 사용자 ID와 MCP 서버별로 보관한다.
 같은 서버를 사용하는 모든 Agent가 호출자의 연결을 재사용하고, Agent 삭제는 개인 연결을 지우지 않는다.
 Agent 소유자·관리자의 연결을 호출자에게 대신 제공하지 않는다.

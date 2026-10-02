@@ -33,7 +33,7 @@ function ConfigurationFixture() {
   });
   return <ViewerProvider viewer={{ email: "reader@example.test", tier: "member", isAdmin: false }}>
     <div style={{ padding: 24, maxWidth: 800 }}>
-      <AgentConfigurationEditor agentName="agent" models={[]} imageModels={[]} value={value} onChange={setValue}
+      <AgentConfigurationEditor agentName="agent" canEdit models={[]} imageModels={[]} value={value} onChange={setValue}
         schemaText="" onSchemaChange={() => {}} schemaError={null}
         save={{ run: () => {}, saving: false, disabled: false, error: null, saved: false, label: "Save" }} />
     </div>

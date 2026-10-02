@@ -16,7 +16,6 @@ import { AgentConfigurationEditor, parseConfigurationDraft } from "./_components
 import { PromptPreview } from "./_components/PromptPreview";
 import { RunPanel } from "./_components/RunPanel";
 import { createLatestOnly } from "@/app/_lib/latestOnly";
-import classes from "./Playground.module.css";
 import columns from "./AgentPageColumns.module.css";
 
 function editable(configuration: AgentConfiguration): AgentConfigurationInput {
@@ -84,7 +83,7 @@ export default function PlaygroundPage() {
   const dirty = parsed === null || JSON.stringify(parsed) !== snapshot;
 
   async function save() {
-    if (!parsed || saving) return;
+    if (!parsed || saving || !agent || !canEditAgent(viewer, agent.ownerEmail)) return;
     const isCurrent = latestOnly();
     setSaving(true);
     setSaveError(null);
@@ -125,14 +124,11 @@ export default function PlaygroundPage() {
         </SectionHeading>
         {modelError && <Alert color="yellow">{t("playground.modelRegistryWarning", { error: modelError })}</Alert>}
         {saveError && <Alert color="red">{saveError}</Alert>}
-        <fieldset disabled={!canEdit || saving} className={canEdit ? undefined : classes.readonlyEditor}
-          style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-          <AgentConfigurationEditor key={name} agentName={name}
-            models={models.filter(model => modelType(model) === "text")}
-            imageModels={models.filter(model => modelType(model) === "image")}
-            value={draft} onChange={setDraft} schemaText={currentSchema} onSchemaChange={setSchemaText}
-            schemaError={schemaError} save={saveState} />
-        </fieldset>
+        <AgentConfigurationEditor key={name} agentName={name} canEdit={canEdit}
+          models={models.filter(model => modelType(model) === "text")}
+          imageModels={models.filter(model => modelType(model) === "image")}
+          value={draft} onChange={setDraft} schemaText={currentSchema} onSchemaChange={setSchemaText}
+          schemaError={schemaError} save={saveState} />
       </Stack>
     </div>
     <div className={columns.secondary}>
