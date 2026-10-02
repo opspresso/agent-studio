@@ -83,9 +83,15 @@ async function operation(id) {
   const dir = `${root}/operations/${identifier(id)}`;
   if (await exists(`${dir}/result`)) return { id, ...await readJson(`${dir}/result`) };
   if (!(await exists(dir))) return { id, status: "not-started" };
-  if (!(await exists(`${dir}/process`))) return { id, status: Date.now() - (await fs.stat(dir)).mtimeMs < 5000 ? "starting" : "missing" };
-  const record = await readJson(`${dir}/process`);
-  return { id, status: await birth(record.pid) === record.birth ? "running" : "missing" };
+  let status;
+  if (!(await exists(`${dir}/process`))) status = Date.now() - (await fs.stat(dir)).mtimeMs < 5000 ? "starting" : "missing";
+  else {
+    const record = await readJson(`${dir}/process`);
+    status = await birth(record.pid) === record.birth ? "running" : "missing";
+  }
+  // The supervisor commits its result before exiting, after the first existence check may have run.
+  if (status === "missing" && await exists(`${dir}/result`)) return { id, ...await readJson(`${dir}/result`) };
+  return { id, status };
 }
 async function run(id) {
   const dir = `${root}/operations/${identifier(id)}`;
