@@ -1,3 +1,5 @@
+import { tierMayRunAgents } from "@/domain/member/tiers";
+import { ForbiddenError } from "@/application/errors";
 import type { RunActor, RunCaller, RunUser, ApiExecutionGrant } from "@/domain/execution/actor";
 import { sessionCaller } from "@/app/api/_lib/caller";
 import { unauthorized } from "@/shared/unauthorized";
@@ -81,6 +83,7 @@ export async function authenticateExecution(
     return crossOriginForbidden();
   }
   try {
+    if (!tierMayRunAgents(user.tier)) throw new ForbiddenError("Agent execution requires member access");
     // Token invocation applies the same current Agent access gate inside the use case.
     await agentUseCases.assertAccessible(agentName, user.email);
   } catch (error) {

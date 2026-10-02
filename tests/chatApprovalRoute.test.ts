@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatNotFoundError } from "@/application/chat/errors";
 
 const f = vi.hoisted(() => ({ get: vi.fn(), resume: vi.fn(), discard: vi.fn(), watch: vi.fn(), response: vi.fn(), retainUntil: vi.fn(), gone: vi.fn(), drained: Promise.resolve() }));
-vi.mock("@/lib/session", () => ({ withAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ id: "studio-user-1", email: "owner@example.com" }, ...args) }));
+vi.mock("@/lib/session", () => ({ withMemberAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ id: "studio-user-1", email: "owner@example.com" }, ...args), withAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ id: "studio-user-1", email: "owner@example.com" }, ...args) }));
 vi.mock("@/app/api/_lib/body", () => ({ withTurnBody: async (request: Request, consume: (body: unknown, admission: unknown) => Promise<Response>) => consume(await request.json(), { retainUntil: f.retainUntil }) }));
 vi.mock("@/application/chat/approval", () => ({ getChatApproval: f.get, resumeChatApproval: f.resume, discardChatApproval: f.discard }));
 vi.mock("@/application/chat/cancelRun", () => ({ watchChatCancel: f.watch }));

@@ -1,5 +1,6 @@
 "use client";
 
+import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { Alert, Badge, Button, Code, Group, Paper, Stack, Text } from "@mantine/core";
 import { useState } from "react";
 import { useT } from "@/app/_i18n/provider";
@@ -15,6 +16,7 @@ export function PendingApproval({ chatId, pending, disabled, onDecision, onDisca
   onDiscarded: () => void;
 }) {
   const t = useT();
+  const mayRun = canRunAgents(useViewer());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const discard = async () => {
@@ -37,8 +39,8 @@ export function PendingApproval({ chatId, pending, disabled, onDecision, onDisca
           <Group gap="xs"><Badge variant="light">{approval.agent}</Badge><Text fw={500} size="sm">{approval.tool}</Text></Group>
           <Code block style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 220, overflowY: "auto", overflowX: "hidden" }}>{approval.arguments}</Code>
           <Group gap="xs">
-            <Button size="xs" aria-label={`${t("chat.approve")} ${approval.tool} (${approval.agent})`} disabled={disabled || busy} onClick={() => onDecision([{ id: approval.id, approve: true }])}>{t("chat.approve")}</Button>
-            <Button size="xs" aria-label={`${t("chat.reject")} ${approval.tool} (${approval.agent})`} variant="light" color="red" disabled={disabled || busy} onClick={() => onDecision([{ id: approval.id, approve: false }])}>{t("chat.reject")}</Button>
+            <Button size="xs" aria-label={`${t("chat.approve")} ${approval.tool} (${approval.agent})`} disabled={!mayRun || disabled || busy} onClick={() => onDecision([{ id: approval.id, approve: true }])}>{t("chat.approve")}</Button>
+            <Button size="xs" aria-label={`${t("chat.reject")} ${approval.tool} (${approval.agent})`} variant="light" color="red" disabled={!mayRun || disabled || busy} onClick={() => onDecision([{ id: approval.id, approve: false }])}>{t("chat.reject")}</Button>
           </Group>
         </Stack>)}
       </>}

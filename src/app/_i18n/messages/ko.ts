@@ -6,6 +6,7 @@
 import type { Messages } from "./en";
 
 export const ko: Messages = {
+  "common.memberExecutionRequired": "Agent 실행은 member 이상 등급에서 사용할 수 있습니다. 관리자에게 등급 변경을 요청해 주세요.",
   "messaging.identity.title": "메신저 계정 연결",
   "messaging.identity.description": "메신저 발신자 계정을 인증된 Studio 사용자와 연결합니다.",
   "messaging.identity.platform": "메신저",
@@ -774,7 +775,7 @@ export const ko: Messages = {
   "guide.start.body": "요청에 답하고 도구를 사용하는 Agent를 {serviceName}에서 관리한다. 이 가이드는 로그인 없이 읽을 수 있다. Chat을 시작하려면 로그인 후 Chats 페이지에서 Agent를 선택하고, 직접 만들려면 아래 순서로 진행한다.",
   "guide.start.account": "1. 로그인과 권한 확인",
   "guide.start.accountBody":
-    "조직에서 받은 접속 주소를 열고 화면에 표시된 방식으로 로그인한다. Profile에서 내 등급·사용량·한도를 확인한다. 새 계정은 보통 guest로 시작하므로 Agent 생성이 불가능하면 관리자에게 Members에서 등급 변경을 요청한다.",
+    "조직에서 받은 접속 주소를 열고 화면에 표시된 방식으로 로그인한다. Profile에서 내 등급·사용량·한도를 확인한다. 새 계정은 보통 guest로 시작하므로 Agent 생성·실행이 불가능하면 관리자에게 Members에서 등급 변경을 요청한다.",
   "guide.start.create": "2. 첫 Agent 만들기",
   "guide.start.createBody": "Agents에서 새 Agent를 선택하고 식별자와 표시 이름을 입력한다. 도구를 연결하기 전에 답변의 적절성을 판단할 수 있는 짧은 작업부터 시작한다.",
   "guide.start.test": "3. 저장한 뒤 실행하고 확인하기",
@@ -1501,7 +1502,7 @@ export const ko: Messages = {
   "pset.deleteHint": "Agent를 삭제하면 설정과 Agent 소유 기록을 제거합니다. Chat과 Artifact는 각각의 보존 규칙을 따르며 Agent 이름은 재사용할 수 없습니다.",
   "pset.visibility": "공개 범위",
   "pset.visibilityPublic": "공개",
-  "pset.visibilityPublicHint": "로그인한 사용자가 이 Agent를 보고 실행할 수 있습니다. 복제에는 Agent 생성 권한도 필요합니다.",
+  "pset.visibilityPublicHint": "로그인한 사용자가 볼 수 있으며, member 이상이 실행할 수 있습니다. 복제에는 Agent 생성 권한도 필요합니다.",
   "pset.visibilityPrivate": "비공개",
   "pset.visibilityPrivateHint": "소유자만 보고 실행할 수 있습니다. 복제에는 Agent 생성 권한도 필요합니다.",
   "pset.visibilitySave": "공개 범위 저장",

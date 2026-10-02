@@ -35,7 +35,7 @@
   `403 { "error": "Cross-origin mutation refused" }` 이다. Bearer token 과 서명된 기계 표면은
   각자의 자격 증명으로 보호되므로 이 검사를 적용하지 않는다.
 - **Authorization**: agent 는 공개 범위를 갖는 공유 카탈로그다. `public`(기본값) 은
-  로그인한 누구나 읽고 실행하고, `private` 은 소유자만이다
+  로그인한 사용자가 조회하고 member 이상이 실행한다. `private`은 소유자만 접근한다
   ([SECURITY.md](SECURITY.md#인가-모델), 그 외에는 `403 { "error": "Agent \"…\" is private" }`).
   변경(수정/삭제, Agent 설정 저장, Slack·Telegram 설정)은 공개 범위와 무관하게
   `member` 이상인 소유자와 effective admin(저장된 `admin` tier 또는 설정된 admin) 만 할 수 있고, 그 외에는
@@ -46,7 +46,7 @@
   모두 404 를 돌려준다 — 403 은 chatId 의 존재를 알려 주는 답이다). MCP/skill/plugin 레지스트리와 모델 카탈로그(`/api/models/catalog`)는
   **guest를 포함한 모든 로그인 사용자**에게 읽기가 공유된다 (`withAuth`).
   guest는 member와 같은 메뉴를 보지만 Agent·레지스트리·즐겨찾기 변경과 Artifact 삭제는 할 수 없다.
-  본인 Chat·Workspace는 tier별 월 사용 한도 안에서 사용할 수 있다.
+  Chat·Workspace 실행과 승인 재개는 member 이상이다. guest도 본인 기록 조회·중단·종료·승인 폐기는 할 수 있다.
   변경은 저장된 `admin` tier 이거나 `ADMIN_EMAILS` 목록에 속해야 한다. 목록이 설정되지 않았으면
   member 이상에게 허용하며 guest는 계속 읽기 전용이다. 권한이 없으면
   `403 { "error": "Only admins can modify this resource" }` 이다.
@@ -92,9 +92,9 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 그 agent 의 
 | `/api/agents/{name}/clone` | `POST` | session + Agent를 만들 수 있는 tier |
 | `/api/agents/{name}/configuration` | `GET` `PUT` | session / member + owner |
 | `/api/agents/{name}/preview` | `POST` | member |
-| `/api/agents/{name}/predict` | `POST` | session 또는 Agent 토큰 |
-| `/api/agents/{name}/chat/completions` | `POST` | session 또는 Agent 토큰 |
-| `/api/agents/{name}/agent` | `POST` | session 또는 Agent 토큰 |
+| `/api/agents/{name}/predict` | `POST` | member 또는 member가 발급한 Agent 토큰 |
+| `/api/agents/{name}/chat/completions` | `POST` | member 또는 member가 발급한 Agent 토큰 |
+| `/api/agents/{name}/agent` | `POST` | member 또는 member가 발급한 Agent 토큰 |
 | `/api/agents/{name}/token` | `GET` `POST` `DELETE` | session + 본인 토큰 / 발급은 member |
 | `/api/agents/{name}/token/reveal` | `POST` | member + 본인 토큰 |
 | `/api/agents/{name}/webhook-token` | `GET` `POST` `DELETE` | session + 본인 토큰 / 발급은 member |
@@ -143,10 +143,10 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 그 agent 의 
 
 | 라우트 | 메서드 | 권한 |
 |---|---|---|
-| `/api/chats` | `GET` `POST` | session |
+| `/api/chats` | `GET` `POST` | session / member |
 | `/api/chats/{chatId}` | `GET` `DELETE` | 그 chat 의 소유자 |
-| `/api/chats/{chatId}/messages` | `POST` | 그 chat 의 소유자 |
-| `/api/chats/{chatId}/approval` | `GET` `POST` `DELETE` | 그 chat 의 소유자 |
+| `/api/chats/{chatId}/messages` | `POST` | member + 그 chat 의 소유자 |
+| `/api/chats/{chatId}/approval` | `GET` `POST` `DELETE` | 그 chat 의 소유자; POST는 member 이상 |
 | `/api/chats/{chatId}/runs/{runId}` | `GET` `DELETE` | 그 chat 의 소유자 |
 | `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | 그 chat 의 소유자 |
 | `/api/artifacts` | `GET` | session |
@@ -165,7 +165,7 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 그 agent 의 
 | `/api/models/test` | `POST` | admin |
 | `/api/models/selection` | `PUT` | admin |
 | `/api/models/decision` | `GET` `PUT` | admin |
-| `/api/agent-recommendations` | `POST` | session |
+| `/api/agent-recommendations` | `POST` | member |
 | `/api/models/workspace` | `GET` `PUT` | session / admin |
 | `/api/me` | `GET` | session |
 | `/api/me/profile` | `GET` | session |
@@ -685,13 +685,14 @@ Agent의 `parameters.policy`에는 `maxInputChars`(1–1,000,000), `blockedTools
 
 ## Workspaces
 
-Workspace 사용자 API는 `withAuth`로 보호하며 guest도 사용할 수 있다. 조회·실행·승인은 Chat 소유자만 가능하며
+Workspace 조회·중단·종료는 `withAuth`, 새 작업·Git 승인 요청은 `withMemberAuth`로 보호한다.
+조회·실행·승인은 Chat 소유자만 가능하며
 현재 Agent 접근 권한도 확인한다. 다른 소유자의 Workspace는 404로 응답한다.
 Chat과 Workspace는 `user` actor의 UTC 월 비용을 합산해 Settings의 등급별 월 한도를 적용한다
-(초기 guest $2, member $20, admin은 항상 무제한). 실행 전 이미 한도에 도달하면 새 작업을 실행하지 않는다.
+(초기 member $20, admin은 항상 무제한). 실행 전 이미 한도에 도달하면 새 작업을 실행하지 않는다.
 비용은 완료 후 집계되므로 진행 중인 작업이 마지막 잔액을 넘길 수 있다. 등급·사용량 조회가
 실패해도 새 실행을 허용하지 않으며, 기존 작업 조회·취소·종료는 계속 가능하다.
-guest의 Workspace는 본인 `user` actor만 허용하고 자동화·서비스 자격 증명 실행은 member 이상을 요구한다.
+guest는 대화형·자동화 Workspace 작업을 시작하거나 재개할 수 없다.
 
 | 경로 | 메서드 | 계약 |
 |---|---|---|

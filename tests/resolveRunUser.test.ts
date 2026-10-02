@@ -20,24 +20,26 @@ afterEach(() => setAdminCheck(async () => false));
 describe("current execution user", () => {
   it("resolves the captured ID to the current email rather than the Agent owner", async () => {
     users.get("registrar")!.email = "renamed@example.test";
-    expect(await resolveRunUser(deps, "agent", "registrar", "schedule")).toEqual({ userId: "registrar", email: "renamed@example.test" });
+    expect(await resolveRunUser(deps, "agent", "registrar")).toEqual({ userId: "registrar", email: "renamed@example.test" });
   });
   it("does not adopt a new account with the old email after account deletion", async () => {
     users.delete("registrar"); users.set("replacement", memberFixture({ id: "replacement", email: "person@example.test" }));
-    await expect(resolveRunUser(deps, "agent", "registrar", "schedule")).rejects.toMatchObject({ status: 403 });
-    await expect(resolveRunUser(deps, "agent", "", "schedule")).rejects.toMatchObject({ status: 403 });
+    await expect(resolveRunUser(deps, "agent", "registrar")).rejects.toMatchObject({ status: 403 });
+    await expect(resolveRunUser(deps, "agent", "")).rejects.toMatchObject({ status: 403 });
   });
-  it("permits interactive guest work but refuses automated execution", async () => {
+  it("refuses a guest even when they own the Agent", async () => {
     users.get("registrar")!.tier = "guest";
-    expect(await resolveRunUser(deps, "agent", "registrar", "user")).toMatchObject({ userId: "registrar" });
-    for (const kind of ["schedule", "webhook", "agent-token", "slack", "telegram", "teams"] as const) {
-      await expect(resolveRunUser(deps, "agent", "registrar", kind)).rejects.toMatchObject({ status: 403 });
-    }
+    agent.ownerEmail = users.get("registrar")!.email;
+    await expect(resolveRunUser(deps, "agent", "registrar")).rejects.toMatchObject({ status: 403 });
+  });
+  it.each(["member", "admin", "researcher"])("allows the %s tier to run a public Agent", async tier => {
+    users.get("registrar")!.tier = tier;
+    await expect(resolveRunUser(deps, "agent", "registrar")).resolves.toMatchObject({ userId: "registrar" });
   });
   it("rechecks current private Agent ownership", async () => {
     agent = { ...agent, visibility: "private", ownerEmail: "person@example.test" };
-    await expect(resolveRunUser(deps, "agent", "registrar", "schedule")).resolves.toMatchObject({ userId: "registrar" });
+    await expect(resolveRunUser(deps, "agent", "registrar")).resolves.toMatchObject({ userId: "registrar" });
     agent.ownerEmail = "other@example.test";
-    await expect(resolveRunUser(deps, "agent", "registrar", "schedule")).rejects.toMatchObject({ status: 403 });
+    await expect(resolveRunUser(deps, "agent", "registrar")).rejects.toMatchObject({ status: 403 });
   });
 });

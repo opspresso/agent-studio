@@ -39,7 +39,7 @@ Agent의 비용 정책은 [지출 가드](../OPERATIONS.md#지출-가드와-부�
 
 모든 Agent 실행 진입점은 `RunIdentity`의 Studio 사용자 ID·이메일과 호출 출처 actor를 필수로 받는다.
 개인 토큰·메신저·Schedule·Webhook 실행은 해당 출처의 인증 근거도 보존한다.
-`authorizeRunIdentity`는 현재 계정과 대상 Agent 접근, 원래 인증 근거를 검증한다.
+`authorizeRunIdentity`는 현재 계정의 member 이상 등급과 대상 Agent 접근, 원래 인증 근거를 검증한다.
 호출자가 없거나 검증기를 연결하지 않은 실행은 모델·도구·사용량 기록 전에 거절한다.
 하위 Agent도 같은 사용자의 접근을 별도로 확인하며 Agent 소유자 권한으로 바꾸지 않는다.
 

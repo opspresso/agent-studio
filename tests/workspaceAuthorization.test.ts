@@ -31,12 +31,11 @@ describe("Workspace execution authorization", () => {
     await expect(authorizeWorkspaceExecution(deps, "demo", email, actor, undefined, user)).rejects.toThrow("no longer active");
   });
 
-  it("allows a guest's own interactive work while keeping Agent access checks", async () => {
+  it("refuses a guest's interactive Workspace execution", async () => {
     const deps = { ...fixture(), memberTier: async () => "guest" as const };
-    await expect(authorizeWorkspaceExecution(deps, "demo", email)).resolves.toBeUndefined();
-    await expect(authorizeWorkspaceExecution(deps, "demo", email, { kind: "user", id: email })).resolves.toBeUndefined();
-    vi.mocked(deps.agents.get).mockResolvedValue({ ...agent, ownerEmail: "other@example.com", visibility: "private" });
-    await expect(authorizeWorkspaceExecution(deps, "demo", email)).rejects.toThrow("private");
+    await expect(authorizeWorkspaceExecution(deps, "demo", email)).rejects.toThrow("member access");
+    await expect(authorizeWorkspaceExecution(deps, "demo", email, { kind: "user", id: email })).rejects.toThrow("member access");
+    expect(deps.enabled).not.toHaveBeenCalled();
   });
   it("refuses a removed account and a guest spending under another actor", async () => {
     await expect(authorizeWorkspaceExecution({ ...fixture(), memberTier: async () => null }, "demo", email)).rejects.toThrow("active account");

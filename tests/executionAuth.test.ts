@@ -33,10 +33,15 @@ describe("execution request identity", () => {
     expect((response as Response).status).toBe(401); expect(getSessionUser).not.toHaveBeenCalled(); expect(verify).not.toHaveBeenCalled();
   });
   it("uses the authenticated session user ID with current Agent access", async () => {
-    getSessionUser.mockResolvedValue({ id: "user-id", email: "user@example.test", name: "User", image: null, tier: "guest" });
+    getSessionUser.mockResolvedValue({ id: "user-id", email: "user@example.test", name: "User", image: null, tier: "member" });
     const principal = await authenticateExecution(request(), "agent");
     expect(principal).toMatchObject({ userId: "user-id", email: "user@example.test", viaToken: false });
     expect(assertAccessible).toHaveBeenCalledWith("agent", "user@example.test"); expect(isSameOriginMutation).toHaveBeenCalledOnce();
+  });
+  it("refuses guest execution before loading the Agent", async () => {
+    getSessionUser.mockResolvedValue({ id: "guest", email: "guest@example.test", tier: "guest" });
+    expect((await authenticateExecution(request(), "agent") as Response).status).toBe(403);
+    expect(assertAccessible).not.toHaveBeenCalled();
   });
   it("refuses a session without Agent access", async () => {
     getSessionUser.mockResolvedValue({ id: "user-id", email: "user@example.test" });

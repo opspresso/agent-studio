@@ -100,8 +100,7 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 ## 인가 모델
 
 **Agent 는 공유 카탈로그이되, 공개 범위(visibility)를 갖는다.** `public`(기본값이자
-`visibility` 필드가 없는 기존 행의 의미)은 로그인한 사용자라면 누구나 읽고 실행하고 복제할
-수 있다. `private`은 소유자만 접근할 수 있으며 관리자도 실행·복제 권한을 얻지 않는다.
+`visibility` 필드가 없을 때의 의미)은 로그인한 사용자가 조회하고 member 이상이 실행·복제한다. `private`은 소유자만 접근할 수 있으며 관리자도 실행·복제 권한을 얻지 않는다.
 설정 관리 권한은 별도 검사한다. 공개 범위 판정은 `src/domain/agent/access.ts`의
 `mayAccessAgent`가 소유하고, Agent 조회를 포함한 검사는 `assertAgentAccessible`을 사용한다.
 
@@ -143,7 +142,8 @@ guest도 member와 같은 메뉴에서 조회한다. guest는 Agent·연동·레
 변경하거나 Artifact를 삭제할 수 없으며, 강등된 기존 Agent 소유자에게도 같은 제한이 적용된다.
 Agent 변경 API는 `withMemberAuth`와 소유권 검사를 함께 사용한다. 초안 `preview`와 MCP 연결
 테스트는 외부 서비스 요청을 실행하므로 member 이상을 요구한다.
-Chat·Workspace는 본인 소유권과 tier별 비용·동시 실행 제한 안에서 guest도 사용할 수 있다.
+Agent 실행·Chat 전송·승인 재개·Workspace 새 작업은 member 이상에게 허용한다. guest는
+기존 본인 기록을 조회하고 실행 중단·종료·승인 폐기를 할 수 있다. 실행 중 강등도 새 모델·도구 효과를 차단한다.
 
 ### `isAdminEmail` vs `isConfiguredAdmin`
 
@@ -174,7 +174,7 @@ Chat·Workspace는 본인 소유권과 tier별 비용·동시 실행 제한 안�
 email → tier 캐시는 30초이며 변경을 처리한 인스턴스에서 무효화된다. 각 tier 가 동시에 몇 개를 진행할 수 있는지, UTC
 월 기준으로 얼마를 쓸 수 있는지는 Settings → Access의 `memberTiers`와
 `src/domain/member/tiers.ts`의 `memberTierLimits`가 결정한다. admin·guest는 고정 등급이고
-나머지 등록 등급은 member 권한이다. admin의 월 한도는 항상 무제한이며 guest는 동시 실행 1개다.
+나머지 등록 등급은 member 권한이다. admin의 월 한도는 항상 무제한이다. guest는 비용 한도와 무관하게 실행할 수 없다.
 등급별 월 금액은 관리자 설정이며 0이면 새 실행을 거절한다. 미등록 저장 등급은 guest로 해석한다. 게이트는 tier 이름 비교가 아니라 그 파일의
 `tierMay*` 술어를 거친다. agent 생성도 별도의 effective-admin 우회 없이 그 tier capability 를
 따른다. 등급 삭제와 사용자 배정은 공통 transaction lock을 사용하며, 사용자가 남은 등급은
@@ -741,7 +741,7 @@ Git publication·배포를 거절한다. 끝나지 않았거나 결과를 읽지
 성공·실패 모두 Workspace 정리를 요청하고 실제 종료를 확인하며 게시 영수증은 정리 실패에도 보존한다.
 개인 Webhook 토큰은 발급 사용자의 권한으로 선택 범위의 리뷰를 요청한다. 토큰·계정 권한 회수는 새 조회·도구 호출·게시·큐 실행에 적용한다.
 Workspace는 actor 종류와 별도로 표면이 확인한 관리 사용자의 현재 계정·Agent 접근과
-저장소 정책을 검사한다. guest는 본인 `user` actor로 실행할 수 있고 자동화는 member 이상이다.
+저장소 정책을 검사한다. 대화형 실행과 자동화 모두 member 이상이어야 한다.
 개인 API token은 발급 사용자를, 메신저는 연결한 Studio 사용자를, Schedule은 등록자를 사용한다.
 Schedule의 등록자 ID는 변경되지 않으며 현재 계정·Agent 접근을 실행 전에 다시 확인한다.
 Webhook 호출자는 개인 토큰 발급자이며 공유 설정에서 다른 사용자의 권한을 위임하지 않는다.

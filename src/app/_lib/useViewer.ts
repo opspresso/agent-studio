@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, createElement, useContext } from "react";
-import { tierMayEdit } from "@/domain/member/tiers";
+import { tierMayEdit, tierMayRunAgents } from "@/domain/member/tiers";
 import type { Viewer } from "@/lib/viewer";
 
 /**
@@ -57,4 +57,9 @@ export function canEditAgent(viewer: Viewer | null, ownerEmail: string | null): 
     ownerEmail !== null &&
     (viewer.isConfiguredAdmin || viewer.email === ownerEmail)
   );
+}
+
+/** Execution is available to members; visibility is enforced by each Agent's server gate. */
+export function canRunAgents(viewer: Viewer | null): boolean {
+  return viewer !== null && tierMayRunAgents(viewer.tier);
 }

@@ -8,6 +8,7 @@
  * also remain English; integration settings are owner/admin surfaces.
  */
 export const en = {
+  "common.memberExecutionRequired": "Agent execution requires member access. Ask an administrator to update your tier.",
   "messaging.identity.title": "Messaging connections",
   "messaging.identity.description": "Connect your messaging sender account to your authenticated Studio user.",
   "messaging.identity.platform": "Messaging platform",
@@ -799,7 +800,7 @@ export const en = {
   "guide.start.body": "{serviceName} manages Agents that answer requests and use tools. Read this guide without signing in. To start a Chat, sign in and choose an Agent in Chats; to build your own, follow the steps below.",
   "guide.start.account": "1. Sign in and check your access",
   "guide.start.accountBody":
-    "Open the address provided by your organization and use the sign-in method shown. Profile shows your tier, usage, and limits. New accounts normally start as guest; if Agent creation is unavailable, ask an administrator to change your tier in Members.",
+    "Open the address provided by your organization and use the sign-in method shown. Profile shows your tier, usage, and limits. New accounts normally start as guest; if Agent creation or execution is unavailable, ask an administrator to change your tier in Members.",
   "guide.start.create": "2. Create a small first Agent",
   "guide.start.createBody": "In Agents, choose New Agent and enter an identifier and display name. Start with a short task whose expected answer you can judge before adding tools.",
   "guide.start.test": "3. Save, run, and inspect",
@@ -1570,7 +1571,7 @@ export const en = {
   "pset.deleteHint": "Agent deletion removes its settings and Agent-owned records. Chats and artifacts follow their own retention rules; the Agent name remains reserved.",
   "pset.visibility": "Visibility",
   "pset.visibilityPublic": "Public",
-  "pset.visibilityPublicHint": "Signed-in users can view and run this Agent. Cloning also requires permission to create Agents.",
+  "pset.visibilityPublicHint": "Signed-in users can view this Agent; members can run it. Cloning also requires permission to create Agents.",
   "pset.visibilityPrivate": "Private",
   "pset.visibilityPrivateHint": "Only the owner can view and run it. Cloning also requires permission to create Agents.",
   "pset.visibilitySave": "Save visibility",

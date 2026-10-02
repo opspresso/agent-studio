@@ -99,7 +99,7 @@ const EXECUTION_USER_UNAUTHORIZED = "The trigger execution user is no longer aut
 async function executionUserAllowed(deps: FiringDeps, trigger: Trigger, grant?: WebhookExecutionGrant): Promise<boolean> {
   try {
     if (trigger.kind === "schedule") {
-      await resolveRunUser(deps, trigger.agentName, trigger.createdBy.userId, "schedule");
+      await resolveRunUser(deps, trigger.agentName, trigger.createdBy.userId);
     } else {
       if (!grant || grant.agentName !== trigger.agentName || grant.triggerId !== trigger.triggerId) return false;
       await assertWebhookExecutionGrant(deps, grant);
@@ -117,7 +117,7 @@ async function resolveScheduleUser(deps: FiringDeps, schedule: ScheduleTrigger) 
     current.createdBy.userId !== schedule.createdBy.userId || current.updatedAt !== schedule.updatedAt) {
     throw new ForbiddenError("The schedule changed before execution completed");
   }
-  return resolveRunUser(deps, schedule.agentName, schedule.createdBy.userId, "schedule");
+  return resolveRunUser(deps, schedule.agentName, schedule.createdBy.userId);
 }
 
 /** The overlap lease's key. Distinct from the actor's own slot partition. */

@@ -1489,7 +1489,7 @@ export async function runWorkspaceWorkerService(signal: AbortSignal, heartbeat?:
   await Promise.all([
     runWorkspaceWorker(getWorkspaceWorkerDeps(), signal, concurrency, heartbeat),
     runWorkspaceContinuations({ chat: chatDeps, workspaces: workspaceRepository, authorize: async (user, agentName) => {
-      const current = await resolveRunUser({ agents: agentRepository, members: { getById: getExecutionMemberById } }, agentName, user.userId, "user");
+      const current = await resolveRunUser({ agents: agentRepository, members: { getById: getExecutionMemberById } }, agentName, user.userId);
       if (current.email !== user.email) throw new ForbiddenError("The requesting account changed");
       await authorizeWorkspaceTools(current.email, agentName);
     },

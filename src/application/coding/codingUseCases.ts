@@ -102,7 +102,7 @@ async function authorizeGitUser(deps: CodingDeps, id: string, identity: RunIdent
   assertRunIdentity(identity);
   const { user } = identity;
   const workspace = await ownedWorkspace(deps, id, user.email);
-  const current = await resolveRunUser(deps, workspace.agentName, user.userId, identity.actor.kind);
+  const current = await resolveRunUser(deps, workspace.agentName, user.userId);
   await deps.authorize?.(workspace.agentName, user.email, identity.actor, identity.executionGrant, user);
   if (current.email !== user.email) throw new ForbiddenError("The requesting account changed");
   return workspace;

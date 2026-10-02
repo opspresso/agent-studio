@@ -1,6 +1,6 @@
 import type { RunActor, RunUser, ExecutionGrant } from "@/domain/execution/actor";
 import type { AgentRepository } from "@/domain/agent/repository";
-import { tierMayEdit, type MemberTier } from "@/domain/member/tiers";
+import { tierMayRunAgents, type MemberTier } from "@/domain/member/tiers";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import { assertAgentAccessible } from "@/application/agent/agentUseCases";
 import { ValidationError } from "@/application/errors";
@@ -25,7 +25,7 @@ export async function authorizeWorkspaceExecution(
 ): Promise<void> {
   if (user) {
     if (!actor) throw new ValidationError("Workspace execution requires its captured caller");
-    const current = await resolveRunUser(deps, agentName, user.userId, actor.kind);
+    const current = await resolveRunUser(deps, agentName, user.userId);
     if (current.email !== email || user.email !== email || (grant && grant.userId !== user.userId)) {
       throw new ValidationError("Workspace execution identity has changed");
     }
@@ -35,10 +35,8 @@ export async function authorizeWorkspaceExecution(
   }
   const tier = await deps.memberTier(email);
   if (!tier) throw new ValidationError("Workspace tools require an active account");
-  // Interactive guest tasks are allowed; automated sources require a member account.
-  // Every source still spends the authenticated Studio user's personal budget.
-  if (!tierMayEdit(tier) && (grant || (actor && (actor.kind !== "user" || actor.id !== email)))) {
-    throw new ValidationError("Workspace automation requires member access");
+  if (!tierMayRunAgents(tier)) {
+    throw new ValidationError("Workspace execution requires member access");
   }
   await assertAgentAccessible(deps.agents, agentName, email);
   if (!deps.backendReady()) throw new ValidationError("Workspace Sandbox backend is not configured");
@@ -65,7 +63,7 @@ export async function authorizeWorkspaceExecution(
     throw new ValidationError("The trigger's Workspace execution permission is no longer authorized");
   }
   if (trigger.kind === "schedule") {
-    const registrar = await resolveRunUser(deps, sourceAgentName, trigger.createdBy.userId, "schedule");
+    const registrar = await resolveRunUser(deps, sourceAgentName, trigger.createdBy.userId);
     if (registrar.email !== email || (user && registrar.userId !== user.userId)) throw new ValidationError("The schedule's Workspace execution identity has changed");
   }
 }

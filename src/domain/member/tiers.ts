@@ -92,5 +92,6 @@ export function memberTierLimits(tier: MemberTier, tiers: readonly MemberTierDef
 export function tierMayEdit(tier: MemberTier): boolean {
   return tier !== "guest";
 }
+export const tierMayRunAgents = tierMayEdit;
 export const tierMayCreateAgents = tierMayEdit;
 export const tierMayUseApiTokens = tierMayEdit;

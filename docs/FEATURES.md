@@ -11,7 +11,7 @@
 
 | 단위 | 역할·접근 범위 |
 |---|---|
-| Agent | 모델·프롬프트·역량·한도를 저장하는 실행 단위. public은 조직의 로그인 사용자에게 공개하며, private은 소유자·초대 이메일·관리자로 제한한다 |
+| Agent | 모델·프롬프트·역량·한도를 저장하는 실행 단위. public은 조직의 로그인 사용자에게 공개하며, private은 소유자만 접근한다 |
 | Skill | 모델이 이름·설명으로 선택한 뒤 본문과 참고 파일을 읽는 지침 |
 | Tools | MCP 서버 레지스트리. 서버 설명은 모델용이고 운영 메모는 콘솔용이다 |
 | Plugin | Skill·MCP 정의의 원본 묶음. GitHub 저장소 또는 checkout archive에서 동기화한다 |
@@ -19,8 +19,8 @@
 | Workspace / Sandbox | Workspace는 파일·native Session을 유지하고, Sandbox는 작업을 실행하는 일시적 컨테이너다 |
 | Artifact | 첨부 원본·생성·수정 결과 파일. 개인 귀속과 Agent 접근 범위에 따라 조회한다. 비공개 Audio 파일은 소유자만 읽고 삭제한다 |
 
-Agent 조회·실행·복제 권한과 편집 권한은 다르다. 초대는 편집 권한을 주지 않으며,
-복제에는 Agent 생성 권한도 필요하다. 공유 레지스트리는 guest도 조회하며 관리자가 변경한다. guest는 member와 같은 메뉴를 읽기 전용으로 본다.
+Agent 조회와 실행·편집 권한은 다르다. 실행·복제는 member 이상이어야 하며,
+private Agent는 소유자만 사용한다. 공유 레지스트리는 guest도 조회하며 관리자가 변경한다. guest는 member와 같은 메뉴를 읽기 전용으로 본다.
 Agent 소유자·관리자는 설정·연동·Trace를 관리한다. 봇·토큰·자동화의 인증은 사용자 세션을 대신하지 않는다.
 
 근거: [Agent 접근](../src/application/agent/agentUseCases.ts),
@@ -44,7 +44,7 @@ Agent 소유자·관리자는 설정·연동·Trace를 관리한다. 봇·토큰
 
 | 기능 | 조건·사용 위치 | 확인할 결과 |
 |---|---|---|
-| Agent 관리 | 생성 가능한 tier. 목록에서 이름·표시 이름·설명 검색, 생성·복제·메타데이터·부서·공개 범위·초대 관리 | 식별자는 변경하지 않는다. 삭제된 이름은 재사용하지 않으며 Chat·Artifact는 각 보존 규칙을 따른다 |
+| Agent 관리 | 생성 가능한 tier. 목록에서 이름·표시 이름·설명 검색, 생성·복제·메타데이터·부서·공개 범위 관리 | 식별자는 변경하지 않는다. 삭제된 이름은 재사용하지 않으며 Chat·Artifact는 각 보존 규칙을 따른다 |
 | 현재 설정 | Playground에서 하나의 현재 설정을 저장한다. 독립 실험은 복제본을 사용한다 | 초안·미저장 상태를 표시하고 동시 설정 저장 충돌을 거절한다. Run은 저장된 설정을 사용한다 |
 | 모델·출력 설정 | 등록된 도구 호출 가능 텍스트 모델, 선택적 fallback·이미지 도구 모델. Temperature·출력 토큰·Presence penalty·Reasoning effort·JSON Schema | 모델 capability를 검사한다. fallback은 첫 출력 전 재시도 가능한 전송 오류에 한 번 적용한다. 턴·출력 제한은 부분 답변으로 구분한다 |
 | 실행 정책 | 최대 입력·턴 수, 차단·승인 도구 이름, 호출자 문맥·PII filtering | 스키마·위임 깊이·순환·턴 예산을 검사한다. PII filtering은 제한된 패턴 치환이며 완전한 익명화를 보장하지 않는다 |
@@ -72,7 +72,7 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 | FetchUrl | Agent의 URL 읽기 opt-in. URL guard를 거쳐 웹·PDF·데이터·이미지를 읽는다 |
 | SaveFile / File | Artifact 저장소. 텍스트 파일 저장과 지원 문서 읽기·검사·생성·편집. 문서 엔진에 MCP 바인딩은 필요하지 않다 |
 | ImportFile / TranscribeAudio / AudioJob | Agent의 Audio 기능과 소유자의 member 이상 문맥. 파일은 비공개 저장소에 보관하고 worker가 작업을 처리한다. 전사는 등록된 전사 채널을 추가로 요구한다 |
-| Workspace | Agent의 Workspace 기능, 로그인한 사용자(guest 포함), Sandbox·worker·실행 정책. 개인 월 한도를 적용한다. 개인 토큰·연결된 메신저·Schedule 등록자의 현재 권한과 Agent 정책을 검사해 제공한다 |
+| Workspace | Agent의 Workspace 기능, member 이상인 로그인 사용자, Sandbox·worker·실행 정책. 개인 월 한도를 적용한다. 개인 토큰·연결된 메신저·Schedule 등록자의 현재 권한과 Agent 정책을 검사해 제공한다 |
 | Slack 읽기 | Agent의 Slack 읽기 기능과 활성 봇. History·Thread·User(s)·Channels·Reactions를 봇 권한으로 읽으며 이 도구들은 게시하지 않는다 |
 | ModelTask | Agent의 명시적 모델 라우팅 설정. 다른 도구나 두 번째 Agent 루프를 실행하지 않는 보조 모델 호출 |
 

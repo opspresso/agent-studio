@@ -36,6 +36,13 @@ describe("current Studio execution authorization", () => {
     await expect(authorizeRunIdentity(deps, "target", identity)).rejects.toThrow("no longer active");
   });
 
+  it("revokes an interactive run when the caller is downgraded to guest", async () => {
+    const { deps, identity } = fixture();
+    await authorizeRunIdentity(deps, "target", identity);
+    deps.members.getById.mockResolvedValueOnce(memberFixture({ id: identity.user.userId, email: identity.user.email, tier: "guest" }));
+    await expect(authorizeRunIdentity(deps, "target", identity)).rejects.toThrow("member access");
+  });
+
   it("rechecks the exact personal token after a transfer", async () => {
     const { deps, identity } = fixture();
     const caller = { ...identity, actor: { kind: "agent-token" as const, id: identity.user.email },

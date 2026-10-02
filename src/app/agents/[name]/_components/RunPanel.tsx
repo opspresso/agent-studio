@@ -1,5 +1,6 @@
 "use client";
 
+import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EngineChunk } from "../../lib/api";
 import { readSse, streamAgent } from "../../lib/api";
@@ -78,6 +79,7 @@ export function RunPanel({
   /** From the model registry; `undefined` when the model is not in the catalog. */
   modelAcceptsImages?: boolean;
 }) {
+  const mayRun = canRunAgents(useViewer());
   const [message, setMessage] = useState("");
 
   const [running, setRunning] = useState(false);
@@ -116,7 +118,7 @@ export function RunPanel({
 
   // An image-only turn is a legitimate run: "what is in this picture?" needs no words.
   const canRun =
-    configured &&
+    mayRun && configured &&
     !running &&
     !reading &&
     (message.trim() !== "" || attachments.length > 0 || documents.length > 0);
@@ -131,6 +133,7 @@ export function RunPanel({
   );
 
   async function run() {
+    if (!canRun) return;
     if (!configured || activeRequest.current !== null) {
       return;
     }
@@ -276,8 +279,8 @@ export function RunPanel({
 
   // Pasted and dropped images become inputs for image understanding or EditImage.
   const attach = useCallback((files: File[]) => void addFiles(files), [addFiles]);
-  const { dragging, handlers } = useFileDrop(attach, running);
-  const onPaste = useMemo(() => onFilePaste(attach, running), [attach, running]);
+  const { dragging, handlers } = useFileDrop(attach, running || !mayRun);
+  const onPaste = useMemo(() => onFilePaste(attach, running || !mayRun), [attach, running, mayRun]);
 
   return (
     <Stack
@@ -295,6 +298,7 @@ export function RunPanel({
 
       <Textarea
         label={t("run.messageLabel")}
+        readOnly={!mayRun}
         value={message}
         onChange={(e) => setMessage(e.currentTarget.value)}
         onPaste={onPaste}
@@ -321,7 +325,7 @@ export function RunPanel({
           <Group>
             <AttachButton
               onPick={attach}
-              disabled={running}
+              disabled={running || !mayRun}
               documents
             />
           </Group>
@@ -334,6 +338,7 @@ export function RunPanel({
       </Input.Wrapper>
 
       <Group>
+        {!mayRun && <Text size="sm" c="dimmed">{t("common.memberExecutionRequired")}</Text>}
         <Button onClick={run} loading={running || reading} disabled={!canRun}>
           {t("playground.run")}
         </Button>

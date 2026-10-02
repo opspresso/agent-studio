@@ -27,7 +27,7 @@ export async function authorizeRunIdentity(
   deps: RunUserDeps & ExecutionGrantDeps, agentName: string, identity: RunIdentity,
 ): Promise<void> {
   assertRunIdentity(identity);
-  const current = await resolveRunUser(deps, agentName, identity.user.userId, identity.actor.kind);
+  const current = await resolveRunUser(deps, agentName, identity.user.userId);
   if (current.email !== identity.user.email) throw new ForbiddenError("The execution account changed");
   if (identity.executionGrant) await assertExecutionGrant(deps, identity.executionGrant);
 }

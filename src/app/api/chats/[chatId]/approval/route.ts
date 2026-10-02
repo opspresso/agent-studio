@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { withAuth } from "@/lib/session";
+import { withAuth, withMemberAuth } from "@/lib/session";
 import { withTurnBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { getChatApproval, discardChatApproval, resumeChatApproval } from "@/application/chat/approval";
@@ -17,7 +17,7 @@ export const GET = withAuth(async (user, _request: Request, context: RouteContex
   catch (error) { return apiError(error); }
 });
 
-export const POST = withAuth(async (user, request: Request, context: RouteContext) => withTurnBody(request, async (body, admission) => {
+export const POST = withMemberAuth(async (user, request: Request, context: RouteContext) => withTurnBody(request, async (body, admission) => {
   const parsed = decisionsSchema.safeParse(body);
   if (!parsed.success) return invalidRequest(parsed.error);
   const { chatId } = await context.params;

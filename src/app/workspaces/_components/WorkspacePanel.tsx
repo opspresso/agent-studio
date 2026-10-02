@@ -1,5 +1,6 @@
 "use client";
 
+import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { LoadingText } from "@/app/_components/PageState";
@@ -20,6 +21,7 @@ import type { MessageKey } from "@/app/_i18n/messages/en";
 
 export function WorkspacePanel({ id }: { id: string }) {
   const t = useT();
+  const mayRun = canRunAgents(useViewer());
   const locale = useLocale();
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<string | null>("output");
@@ -53,7 +55,7 @@ export function WorkspacePanel({ id }: { id: string }) {
   }, [needsOptions, optionsRevision]);
 
   async function send() {
-    if (!detail || !message.trim() || busy) return;
+    if (!mayRun || !detail || !message.trim() || busy) return;
     setBusy(true); setError(null);
     const body = JSON.stringify(detail.workspace.runtime === "command" ? { kind: "command", script: message } : { kind: "task", prompt: message });
     if (request.current?.body !== body) request.current = { body, key: crypto.randomUUID() };
@@ -75,7 +77,7 @@ export function WorkspacePanel({ id }: { id: string }) {
   const workspace = detail.workspace;
   const run = detail.runs.find(run => run.id === runId);
   const pending = detail.approvals.find(approval => approval.id === workspace.activeActionId && approval.status === "pending");
-  const blocked = busy || !!workspace.activeRunId || (!!workspace.activeActionId && !pending) || ["closing", "suspending"].includes(workspace.status);
+  const blocked = !mayRun || busy || !!workspace.activeRunId || (!!workspace.activeActionId && !pending) || ["closing", "suspending"].includes(workspace.status);
   const status = (value: string) => t(`workspace.status.${value}` as MessageKey);
   const workflows = options?.agents.find(agent => agent.agentName === workspace.agentName)?.deploymentWorkflows ?? [];
 
@@ -123,6 +125,7 @@ export function WorkspacePanel({ id }: { id: string }) {
       </Box>
     </Tabs>
     {workspace.activeActionId && <Text size="xs" c="dimmed">{t(pending ? "workspace.pendingEditHint" : "workspace.pendingActionHint")}</Text>}
+    {!mayRun && <Text size="sm" c="dimmed">{t("common.memberExecutionRequired")}</Text>}
     <Textarea aria-label={t("workspace.followUp")} placeholder={workspace.runtime === "command" ? t("workspace.scriptPlaceholder") : t("workspace.followUp")} value={message} onChange={event => setMessage(event.currentTarget.value)} disabled={blocked} autosize minRows={2} maxRows={6}
       onKeyDown={event => { if (isSubmitEnter(event) && !event.shiftKey) { event.preventDefault(); void send(); } }} />
     <Group justify="space-between"><Text size="xs" c="dimmed">{t("workspace.sessionHint")}</Text>{workspace.activeRunId ? <Button color="red" variant="light" leftSection={<IconPlayerStop size={14} />} onClick={() => { void stop(false); }} loading={busy}>{t("workspace.stop")}</Button>

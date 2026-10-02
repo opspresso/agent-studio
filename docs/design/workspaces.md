@@ -19,8 +19,8 @@ Workspace 옵션 목록은 접근 가능한 Agent의 현재 도구 설정을 한
 
 - Workspace 도구는 호출 채널이 아니라 확인된 사용자와 Agent 정책으로 접근을 판단한다.
   API·Webhook 토큰은 발급 사용자, 메신저는 연결 사용자, Schedule은 등록자로 member·Agent 접근을 다시 검사한다. 확인된 사용자 문맥이 없으면 제공하지 않는다.
-  guest도 본인 `user` actor로 Workspace를 실행할 수 있으며 Chat과 합산한 UTC 월 비용·동시 실행
-  한도를 적용한다. 자동화는 member 이상으로 제한하며 같은 사용자 ID의 개인 한도에 합산한다.
+  대화형 실행과 자동화 모두 member 이상으로 제한한다. Chat과 Workspace가 같은 사용자 ID의
+  UTC 월 비용·동시 실행 한도를 공유한다. guest도 기존 작업 조회·취소·종료는 할 수 있다.
   개인 API·Webhook 호출은 검증한 사용자 ID와 credential ID를 큐에 함께 보관하고 실행 직전에 다시 검사한다.
   모든 작업은 접수한 Studio 사용자 ID·이메일과 actor를 필수로 저장하며 이후 쓰기로 변경할 수 없다.
   worker는 저장된 ID로 현재 계정을 다시 확인한다. ID가 없거나 계정이 삭제·교체되었으면 신규 작업을 시작하지 않는다.
@@ -321,8 +321,8 @@ Agent의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외�
 
 | 창구 | Workspace 빌트인 | 원래 Chat으로 승인 결과 전달 |
 |---|---|---|
-| 로그인한 사용자(guest 포함)의 Agent Chat | Agent의 Workspace 도구가 활성화되면 제공 | 같은 Chat의 SDK Session으로 자동 재개 |
-| 로그인한 사용자(guest 포함)의 Playground·Agent 실행 API | Agent의 Workspace 도구가 활성화되면 제공 | source Chat이 없으므로 자동 재개 없음 |
+| member 이상 사용자의 Agent Chat | Agent의 Workspace 도구가 활성화되면 제공 | 같은 Chat의 SDK Session으로 자동 재개 |
+| member 이상 사용자의 Playground·Agent 실행 API | Agent의 Workspace 도구가 활성화되면 제공 | source Chat이 없으므로 자동 재개 없음 |
 | Agent API token | 발급 사용자가 member/admin이고 Agent 도구가 활성화되면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
 | Slack·Telegram·Teams | 연결한 Studio 사용자의 현재 member/admin 권한과 Agent 정책에 따라 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
 | Webhook | 개인 토큰 발급자의 현재 member/admin 등급과 Agent 접근이 유효하면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |

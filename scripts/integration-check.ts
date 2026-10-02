@@ -515,7 +515,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.deepEqual(storedSchedule?.kind === "schedule" && storedSchedule.createdBy, registeredSchedule.createdBy);
     const { resolveRunUser } = await import("@/application/auth/resolveRunUser");
     await memberRepository.setTier(integrationMemberId, "guest");
-    await assert.rejects(resolveRunUser({ agents: agentRepository, members: memberRepository }, scheduleAgentName, integrationMemberId, "schedule"), /member access/);
+    await assert.rejects(resolveRunUser({ agents: agentRepository, members: memberRepository }, scheduleAgentName, integrationMemberId), /member access/);
     await memberRepository.setTier(integrationMemberId, "member");
     pass("schedule registration: authenticated stable creator, PostgreSQL round-trip, immutable identity and current member access");
     const { checkMemberTiers } = await import("./member-tiers-check");

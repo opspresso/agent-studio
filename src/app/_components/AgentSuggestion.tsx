@@ -1,5 +1,6 @@
 "use client";
 
+import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Group, Text } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
@@ -12,7 +13,7 @@ interface Candidate { name: string; displayName: string }
 interface Result { surface: RecommendationSurface; name: string }
 
 /** A reversible suggestion shared by the new Chat and Workspace forms. */
-export function AgentSuggestion({ surface, request, candidates, selected, onSelect, disabled }: {
+export function AgentSuggestion({ surface, request, candidates, selected, onSelect, disabled: externallyDisabled }: {
   surface: RecommendationSurface;
   request: string;
   candidates: Candidate[];
@@ -21,6 +22,8 @@ export function AgentSuggestion({ surface, request, candidates, selected, onSele
   disabled?: boolean;
 }) {
   const t = useT();
+  const mayRun = canRunAgents(useViewer());
+  const disabled = externallyDisabled || !mayRun;
   const [result, setResult] = useState<Result | null>(null);
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const queueRef = useRef<ReturnType<typeof createAgentSuggestionQueue> | null>(null);

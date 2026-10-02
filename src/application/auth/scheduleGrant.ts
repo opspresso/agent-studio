@@ -11,6 +11,6 @@ export async function assertScheduleExecutionGrant(
     trigger.triggerId !== grant.triggerId || trigger.createdBy.userId !== grant.userId || trigger.updatedAt !== grant.revision) {
     throw new ForbiddenError("The schedule's execution permission changed");
   }
-  const current = await resolveRunUser(deps, grant.agentName, grant.userId, "schedule");
+  const current = await resolveRunUser(deps, grant.agentName, grant.userId);
   if (current.email !== grant.email) throw new ForbiddenError("The schedule's execution account changed");
 }

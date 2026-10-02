@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { workspaceUseCases } from "@/lib/container";
 import { editorBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -7,7 +7,7 @@ import type { StartWorkspaceResult } from "@/application/workspace/workspaceUseC
 
 export type StartWorkspaceResponse = StartWorkspaceResult;
 
-export const POST = withAuth(async (user, request: Request) => {
+export const POST = withMemberAuth(async (user, request: Request) => {
   const body = await editorBody(request);
   if (body instanceof Response) return body;
   const parsed = startWorkspaceSchema.safeParse(body);
