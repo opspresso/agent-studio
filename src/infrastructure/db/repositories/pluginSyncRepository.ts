@@ -5,7 +5,7 @@ import type {
   PluginSyncReportRepository,
 } from "@/domain/plugin/repository";
 import type { PluginSyncResult } from "@/domain/plugin/sync";
-import { CONDITIONAL_WRITE_FAILED, conditions, deleteItem, getItem, putItem } from "../store";
+import { CONDITIONAL_WRITE_FAILED, conditions, deleteItem, getItem, putItem, updateItem, withItemWriteFence } from "../store";
 import { keys } from "../keys";
 
 // The adapter layer may name the storage error it raises; interpreting one is
@@ -45,34 +45,46 @@ export const pluginSyncReportRepository: PluginSyncReportRepository = {
  */
 export const pluginSyncLock: PluginSyncLock = {
   async acquire(repo, leaseMs) {
-    const token = randomUUID();
-    const now = Date.now();
-    try {
-      await putItem(
-        {
-          ...keys.pluginSyncLock(repo),
-          entityType: "PLUGINSYNC",
-          token,
-          leaseUntil: now + leaseMs,
-        },
-        (row) => row === null || Number(row.leaseUntil ?? 0) < now,
-      );
-      return token;
-    } catch (error) {
-      if (lostCondition(error)) {
-        return null;
+    return withItemWriteFence(undefined, async () => {
+      const token = randomUUID();
+      try {
+        await updateItem(keys.pluginSyncLock(repo), () => ({
+          entityType: "PLUGINSYNC", token, leaseUntil: Date.now() + leaseMs,
+        }), row => row === null || Number(row.leaseUntil ?? 0) <= Date.now());
+        return token;
+      } catch (error) {
+        if (lostCondition(error)) return null;
+        throw error;
       }
-      throw error;
-    }
+    });
+  },
+
+  async renew(repo, token, leaseMs) {
+    return withItemWriteFence(undefined, async () => {
+      try {
+        await updateItem(keys.pluginSyncLock(repo), row => ({ ...row, leaseUntil: Date.now() + leaseMs }),
+          row => row?.token === token && Number(row.leaseUntil) > Date.now());
+        return true;
+      } catch (error) {
+        if (lostCondition(error)) return false;
+        throw error;
+      }
+    });
+  },
+
+  withOwnership(repo, token, work) {
+    return withItemWriteFence({ key: keys.pluginSyncLock(repo),
+      condition: row => row?.token === token && Number(row.leaseUntil) > Date.now(),
+    }, work);
   },
 
   async release(repo, token) {
-    try {
-      await deleteItem(keys.pluginSyncLock(repo), conditions.existsWith("token", token));
-    } catch (error) {
-      if (!lostCondition(error)) {
-        throw error;
+    return withItemWriteFence(undefined, async () => {
+      try {
+        await deleteItem(keys.pluginSyncLock(repo), conditions.existsWith("token", token));
+      } catch (error) {
+        if (!lostCondition(error)) throw error;
       }
-    }
+    });
   },
 };

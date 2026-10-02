@@ -11,8 +11,10 @@ import type {
   Key,
   QueryInput,
   TransactOp,
+  ItemWriteFence,
 } from "@/infrastructure/db/store";
 import { toStoredJson } from "@/infrastructure/db/storedJson";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 export const CONDITIONAL_WRITE_FAILED = "ConditionalWriteFailed";
 export const TRANSACTION_CANCELLED = "TransactionCancelled";
@@ -77,6 +79,7 @@ export interface FakeStore {
   ConditionalWriteError: typeof ConditionalWriteError;
   TransactionCancelledError: typeof TransactionCancelledError;
   conditions: typeof conditions;
+  withItemWriteFence<T>(fence: ItemWriteFence | undefined, work: () => Promise<T>): Promise<T>;
   getItem(key: Key): Promise<Item | null>;
   putItem(item: Item, condition?: Condition): Promise<void>;
   deleteItem(key: Key, condition?: Condition): Promise<Item | null>;
@@ -95,6 +98,7 @@ export interface FakeStore {
 
 export function createFakeStore(): FakeStore {
   const rows = new Map<string, Item>();
+  const writeFence = new AsyncLocalStorage<ItemWriteFence | undefined>();
 
   const read = (key: Key): Item | null => {
     const row = rows.get(id(key));
@@ -108,6 +112,10 @@ export function createFakeStore(): FakeStore {
     // Use the production serializer's replacement of NUL and lone surrogates
     // before storing JSON, matching the adapter's stored values.
     rows.set(id(key), JSON.parse(toStoredJson(item)) as Item);
+  };
+  const checkFence = (Failure: typeof ConditionalWriteError | typeof TransactionCancelledError) => {
+    const fence = writeFence.getStore();
+    if (fence && !fence.condition(read(fence.key))) throw new Failure(`check ${fence.key.PK}/${fence.key.SK}`);
   };
 
   const store: FakeStore = {
@@ -130,12 +138,14 @@ export function createFakeStore(): FakeStore {
     ConditionalWriteError,
     TransactionCancelledError,
     conditions,
+    withItemWriteFence: (fence, work) => writeFence.run(fence, work),
 
     async getItem(key) {
       return read(key);
     },
 
     async putItem(item, condition) {
+      checkFence(ConditionalWriteError);
       if (condition && !condition(read(item as Key))) {
         throw new ConditionalWriteError(`put ${(item as Key).PK}/${(item as Key).SK}`);
       }
@@ -143,6 +153,7 @@ export function createFakeStore(): FakeStore {
     },
 
     async deleteItem(key, condition) {
+      checkFence(ConditionalWriteError);
       const existing = read(key);
       if (condition && !condition(existing)) {
         throw new ConditionalWriteError(`delete ${key.PK}/${key.SK}`);
@@ -152,6 +163,7 @@ export function createFakeStore(): FakeStore {
     },
 
     async updateItem(key, patch, condition) {
+      checkFence(ConditionalWriteError);
       const before = read(key);
       if (condition && !condition(before)) {
         throw new ConditionalWriteError(`update ${key.PK}/${key.SK}`);
@@ -162,6 +174,7 @@ export function createFakeStore(): FakeStore {
     },
 
     async transact(ops) {
+      checkFence(TransactionCancelledError);
       const opKey = (op: TransactOp): Key => (op.kind === "put" ? (op.item as Key) : op.key);
       const staged = new Map<string, Item | null>();
       const current = (key: Key): Item | null =>
@@ -269,6 +282,7 @@ export function createFakeStore(): FakeStore {
     },
 
     async deletePartition(pk, options = {}) {
+      checkFence(ConditionalWriteError);
       let n = 0;
       for (const [rowId, row] of [...rows]) {
         if (row.PK !== pk) continue;
@@ -281,6 +295,7 @@ export function createFakeStore(): FakeStore {
     },
 
     async deleteIndexPartition(index, pk) {
+      checkFence(ConditionalWriteError);
       const attr = index === "GSI1" ? "GSI1PK" : "GSI2PK";
       let n = 0;
       for (const [rowId, row] of [...rows]) {
@@ -293,6 +308,7 @@ export function createFakeStore(): FakeStore {
     },
 
     async deleteExpired(nowSeconds, limit = 5_000) {
+      checkFence(ConditionalWriteError);
       let n = 0;
       for (const [rowId, row] of [...rows]) {
         if (n >= limit) break;

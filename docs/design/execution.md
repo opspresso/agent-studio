@@ -106,6 +106,8 @@ OpenAI, OpenAI-compatible gateway와 사내 vLLM은 같은 경로를 사용한�
 credential을 다시 해석하며 bearer와 AWS SigV4를 지원한다. `store: false`를 사용하고 provider
 conversation state에 의존하지 않는다. 숨은 HTTP 재시도는 없으며, 첫 출력 전 429/5xx에만
 설정된 fallback 모델로 한 번 전환한다. 출력이 시작된 뒤에는 실패한 요청을 반복하지 않는다.
+fallback도 설정 저장 시 Agent의 필수 기능을 검사한다. 실행에서는 현재 모델 정보와 실제
+출력 형식을 다시 확인해 부적합한 fallback을 경고와 함께 제외하며 주 모델 실행은 유지한다.
 `/models` 진단도 같은 SDK 모델 어댑터를 사용한다.
 SigV4 fetch는 `Request`의 메서드·헤더·취소 신호와 명시적 init override를 보존한다.
 서명 본문은 문자열·바이트여야 하며 `Request`의 스트림 본문과 multipart는 전송 전에 거절한다.

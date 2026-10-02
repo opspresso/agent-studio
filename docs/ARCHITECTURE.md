@@ -199,6 +199,8 @@ Chat의 SDK `runtime_sessions`와 수명을 공유하지 않는다.
 
 - 아이템 리포지토리는 [`store.ts`](../src/infrastructure/db/store.ts)를 사용한다. 조건부 쓰기는
   행 잠금 아래 평가하고 여러 키는 일정한 순서로 잠근다. 접두사 범위·트랜잭션·만료 삭제도 이 계층이 소유한다.
+  실행 소유권에 묶인 쓰기는 `withItemWriteFence`로 소유권 키를 함께 잠그고 같은 트랜잭션에서
+  검사한다. 소유권 상실 후 재개한 작업은 현재 소유자의 데이터를 덮지 못한다.
   전용 인증·벡터·SDK Session 테이블과 `skillRepository.describe`의 projection은 별도 SQL 경로다.
 - 무한히 늘어나는 목록에는 `limit`을 주고, 만료·조건 필터는 `LIMIT` 전에 적용한다.
   `queryItems`에 넘기는 `notExpiredAt`·`filter`가 그 경계다.

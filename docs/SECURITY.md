@@ -367,7 +367,14 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
 
 이 registry의 공개 주소 디스패치는 `fetchPublicUrl`(`src/infrastructure/net/publicFetch.ts`)을 지난다.
 배포가 지정한 LLM·인증·스토리지·카탈로그 endpoint까지 모두 이 가드로 검사하는 것은 아니다.
-그 주소들은 배포 설정의 신뢰 경계다. 공개 registry 요청에는 다음 검사를 적용한다:
+그 주소들은 배포 설정의 신뢰 경계다.
+
+LLM 제공자 요청은 `src/infrastructure/llm/providerFetch.ts`에서 모든 redirect를 거부한다.
+SDK의 채팅·임베딩·이미지 요청, SigV4, decision·rerank·오디오, Workspace의 native 요청과
+제공자 discovery·연결 probe가 같은 규칙을 적용한다. 따라서 307/308 응답으로 프롬프트·문서·
+오디오·자격 증명을 다른 주소에 다시 보내지 않는다. 제공자는 최종 endpoint로 등록한다.
+
+공개 registry 요청에는 다음 검사를 적용한다:
 
 - DNS는 모든 요청과 redirect 홉에서 다시 확인하고 커넥션을 검증한 주소에 고정한다.
   등록 시 검증만으로 연결의 안전을 보장하지 않는다.

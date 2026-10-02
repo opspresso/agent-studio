@@ -160,7 +160,9 @@
 | inline payload의 base64 문법과 decoded byte 길이 계산 | `src/domain/llm/base64.ts`. 이미지 data URL과 일반 첨부가 같은 판정을 읽는다 | 코드 |
 | `data:` 이미지 인코딩 | `src/domain/llm/imageLimits.ts`의 `imageDataUrl` / `parseImageDataUrl`; `types.ts`가 재노출한다 | 코드 |
 | 런이 만들어 낸 파일을 읽는 사람에게 내주기 | `src/application/artifact/producedFiles.ts`. 테스트가 강제하는 것은 *짝*(출력 축 하나를 읽는 모듈은 다른 축도 읽는다)이고, 이 파일은 이름으로 면제한다. 이 파일의 주제 자체가 그 축이기 때문이다 | 코드 |
+| Playground inline 파일 다운로드와 실행별 보관 바이트 한도 | `src/app/_lib/fileDownloads.ts`. 공통 base64 검증은 `src/domain/llm/base64.ts`를 사용한다 | 코드·회귀 테스트 |
 | AWS 로 나가는 요청에 서명하기 | `src/infrastructure/llm/awsSigner.ts`. 대신 `tests/awsSigner.test.ts` 가 못박는다. 이 파일이 만들어 내는 서명을 고정해 두는 테스트다 | 코드 |
+| LLM 제공자 요청의 redirect 거부 | `src/infrastructure/llm/providerFetch.ts`의 `fetchProvider`. SDK·직접 HTTP·SigV4·Workspace native·제공자 discovery와 probe가 같은 전송 규칙을 사용한다 | 코드·회귀 테스트 |
 | 서명된 오브젝트 URL 이 읽는 주체별로 얼마나 사는가 | `src/shared/artifactUrlTtl.ts` | 코드 |
 
 ## 메시징
@@ -285,7 +287,7 @@ Agent 설정은 binding을 소유하며 개인 연결은 Agent 수명과 독립�
 | 모든 항목이 불리는 이름 | `src/domain/naming.ts` 의 `isSlug` | 구조 |
 | SDK span 부모 관계의 OTLP 변환 | `src/infrastructure/telemetry/otelTraceExport.ts`; 완료 순서와 무관하게 저장된 부모 관계를 사용한다 | 코드 |
 | 실행 전 도구 JSON Schema 검증 | `src/domain/llm/toolSchema.ts`의 포트, `src/infrastructure/llm/toolSchema.ts`의 검증기; 선언은 기존 도구 소유자가 유지한다 | 코드 |
-| 아이템 테이블에 쓰는 방법. 행 잠금 아래에서 평가되는 조건, 키 순서로 잠그는 트랜잭션, 접두사 쿼리의 상한(U+10FFFF), 만료 행의 sweep | `src/infrastructure/db/store.ts`. 리포지토리는 이 계약을 통해 조건부 쓰기·키 순서 잠금·접두사 범위·만료 삭제를 수행한다 | 코드 |
+| 아이템 테이블에 쓰는 방법. 행 잠금 아래에서 평가되는 조건, 키 순서로 잠그는 트랜잭션, 실행 소유권 write fence, 접두사 쿼리의 상한(U+10FFFF), 만료 행의 sweep | `src/infrastructure/db/store.ts`. `withItemWriteFence`의 소유권 조건은 실제 쓰기와 같은 트랜잭션에서 검사한다 | 코드 |
 | 떠나 버린 소비자로부터 스트림을 떼어내기 | `src/shared/detachOnReturn.ts` | 구조 |
 | 바이트 상한 아래에서 HTTP 본문 읽기 | `src/shared/httpBody.ts` | 코드 |
 | 백그라운드 타이머가 프로세스를 붙잡아 두지 않게 하기 | `src/shared/unrefTimer.ts` | 코드 |

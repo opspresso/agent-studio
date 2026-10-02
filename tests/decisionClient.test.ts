@@ -27,6 +27,7 @@ describe("decision provider adapter", () => {
     const [url, options] = fetch.mock.calls[0]!;
     expect(url).toBe("https://router.test/api/alpha/decisions");
     expect(options.headers.Authorization).toBe("Bearer secret");
+    expect(options.redirect).toBe("error");
     expect(JSON.parse(options.body)).toEqual({ model: "~typesafe/jev-latest", state: "Fix code", questions: { selection: { type: "choice", instructions: "Pick an Agent", criteria: input.criteria } } });
   });
 

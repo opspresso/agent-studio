@@ -1566,6 +1566,11 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       pass("artifacts: SHA-256 deduplication across concurrent writes, reserved-ID aliases and canonical deletion");
     }
 
+    // ---------- plugin sync lease fencing ----------
+    const { checkPluginSyncLock } = await import("./plugin-sync-lock-check");
+    await checkPluginSyncLock(suffix);
+    pass("plugin sync lease: owned renewal, stale primitive refusal and atomic row-lock fencing");
+
     // ---------- transact lock modes (a checked key does not serialise) ----------
     // A `check` op asserts something elsewhere is still live; the exclusive
     // lock it used to take made every usage row, trace and agent write in a

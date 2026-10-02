@@ -8,6 +8,7 @@ import {
 } from "@/domain/llm/transcription";
 import { readBodyText } from "@/shared/httpBody";
 import { AUDIO_DECODERS, normalizeAudioMimeType } from "@/domain/audio/formats";
+import { fetchProvider } from "./providerFetch";
 
 export interface TranscriptionConfig {
   baseUrl: string;
@@ -150,10 +151,8 @@ export function createTranscriber(inputConfig: TranscriptionConfig): Transcripti
       }
       let response: Response;
       try {
-        response = await fetch(endpoint, {
+        response = await fetchProvider(endpoint, {
           method: "POST", headers, body, signal: operationSignal,
-          // Never replay private audio or credentials at a provider redirect destination.
-          redirect: "error",
         });
       } catch {
         operationSignal.throwIfAborted();

@@ -8,6 +8,7 @@ import type { ProviderChannelConfig } from "@/domain/settings/types";
 import { readBodyBytes } from "@/shared/httpBody";
 import { log } from "@/shared/logger";
 import { publishedModelCatalog } from "./publishedModelFacts";
+import { fetchProvider } from "./providerFetch";
 
 const MAX_PAGES = 20;
 const MAX_MODELS = 5_000;
@@ -134,9 +135,9 @@ export function createProviderModelDiscovery(
         const url = new URL(`${base}/models`);
         if (cursor) url.searchParams.set("after_id", cursor);
         // Error bodies may echo credentials. Surface only a fixed operation and HTTP status.
-        const response = await fetchFn(url.href, {
-          headers, redirect: "error", cache: "no-store", signal,
-        }).catch(() => { throw new Error("Provider model discovery could not connect"); });
+        const response = await fetchProvider(url.href, {
+          headers, cache: "no-store", signal,
+        }, fetchFn).catch(() => { throw new Error("Provider model discovery could not connect"); });
         if (!response.ok) {
           await response.body?.cancel();
           throw new Error(`Provider model discovery failed (HTTP ${response.status})`);

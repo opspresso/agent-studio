@@ -503,6 +503,7 @@ Members의 선택 목록과 Profile은 같은 유효 등급 설정을 읽는다.
 | Spreadsheet 처리 행 / 셀 / 검사 셀 | `100,000` / `1,000,000` / `10,000` | `src/infrastructure/documents/engine/limits.ts` |
 | 문서 검사 block / block preview 문자 | `500` / `120` | `src/infrastructure/documents/engine/limits.ts` |
 | 생성·편집 문서 출력 | `10,000,000` bytes | `src/infrastructure/documents/engine/limits.ts` |
+| Playground 한 실행의 inline 파일 다운로드 보관 합계 | `16 MiB`; 저장된 파일의 다운로드 URL에는 적용하지 않음 | `src/app/_lib/fileDownloads.ts` |
 | 문서 생성 이미지 asset 수 / 총 바이트 | `12` / `6 MiB` | `src/domain/document/processor.ts` |
 | File 읽기·검사 텍스트 / 한 번의 편집 수 | `90,000` 자 / `100` | `src/domain/document/processor.ts` |
 | XLSX 생성 시트 JSON 입력(UTF-8) | `10 MiB` | `src/infrastructure/documents/workerPool.ts` |

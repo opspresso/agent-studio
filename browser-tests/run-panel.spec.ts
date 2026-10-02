@@ -1,5 +1,6 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { test, expect } from "@playwright/test";
 import type { EngineChunk } from "../src/domain/llm/types";
@@ -56,6 +57,57 @@ test.beforeAll(async () => {
 });
 test.afterEach(() => { pending?.response.end(); pending = undefined; });
 test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
+
+test("offers isolated previews for addressed viewable files", async ({ page }) => {
+  const chunks: EngineChunk[] = [
+    { file: { name: "report.html", mimeType: "text/html", source: "tool", byteSize: 120,
+      fileId: "artifact-html", url: "/download/report.html" } },
+    { file: { name: "report.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      source: "tool", byteSize: 120, fileId: "artifact-docx", url: "/download/report.docx" } },
+  ];
+  await page.route("**/api/agents/root/agent", route => route.fulfill({
+    contentType: "text/event-stream",
+    body: chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n",
+  }));
+  await page.goto(base);
+  await page.getByRole("textbox").fill("Create reports");
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await expect(page.getByRole("link", { name: "report.html", exact: true })).toHaveAttribute("href", "/download/report.html");
+  await expect(page.getByRole("link", { name: "View", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "View", exact: true })).toHaveAttribute("href", "/api/artifacts/artifact-html/view");
+  await expect(page.getByRole("link", { name: "View", exact: true })).toHaveAttribute("target", "_blank");
+});
+
+test("downloads inline files when object storage is unavailable", async ({ page }) => {
+  const content = "Inline report without object storage";
+  const chunk: EngineChunk = { file: { name: "report.html", mimeType: "text/html", source: "tool",
+    b64: Buffer.from(content).toString("base64") } };
+  await page.route("**/api/agents/root/agent", route => route.fulfill({
+    contentType: "text/event-stream", body: `data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`,
+  }));
+  await page.goto(base);
+  await page.getByRole("textbox").fill("Create an inline report");
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await expect(page.getByRole("link", { name: "View", exact: true })).toHaveCount(0);
+  const completed = page.waitForEvent("download");
+  await page.getByRole("link", { name: "report.html", exact: true }).click();
+  const download = await completed;
+  expect(download.suggestedFilename()).toBe("report.html");
+  expect(await readFile((await download.path())!, "utf8")).toBe(content);
+});
+
+test("reports an invalid inline file without promising a later download", async ({ page }) => {
+  const chunk: EngineChunk = { file: { name: "broken.html", mimeType: "text/html", source: "tool", b64: "invalid!" } };
+  await page.route("**/api/agents/root/agent", route => route.fulfill({
+    contentType: "text/event-stream", body: `data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`,
+  }));
+  await page.goto(base);
+  await page.getByRole("textbox").fill("Create a report");
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("invalid base64 bytes");
+  await expect(page.getByRole("link", { name: "broken.html", exact: true })).toHaveCount(0);
+  await expect(page.getByText("available when this reply finishes", { exact: true })).toHaveCount(0);
+});
 
 for (const same of [false, true]) {
   test(`keeps the remaining invocation badge after a sibling result (same Agent: ${same})`, async ({ page }, testInfo) => {

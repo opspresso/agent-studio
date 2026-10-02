@@ -901,6 +901,11 @@ interface SingleOwner {
 
 const SINGLE_OWNERS: SingleOwner[] = [
   {
+    what: "LLM provider redirect refusal transport",
+    pattern: /export function fetchProvider\b/,
+    owner: "src/infrastructure/llm/providerFetch.ts",
+  },
+  {
     what: "paid OpenAI-compatible SDK HTTP retry policy",
     pattern: /OPENAI_MAX_HTTP_RETRIES\s*=/,
     owner: "src/infrastructure/llm/openaiClient.ts",

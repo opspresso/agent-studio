@@ -26,6 +26,7 @@ import {
 } from "@/domain/llm/imageLimits";
 import { imageDataUrl } from "@/domain/llm/types";
 import { readBodyText } from "@/shared/httpBody";
+import { fetchProvider } from "./providerFetch";
 import { log } from "@/shared/logger";
 import type {
   ImageBytes,
@@ -59,7 +60,7 @@ function getClient(target: ResolvedTarget): OpenAI {
   const key = llmClientCacheKey(target.baseUrl, target.apiKey);
   let client = clients.get(key);
   if (!client) {
-    client = new OpenAI({ baseURL: target.baseUrl, apiKey: target.apiKey, maxRetries: OPENAI_MAX_HTTP_RETRIES });
+    client = new OpenAI({ baseURL: target.baseUrl, apiKey: target.apiKey, fetch: fetchProvider, maxRetries: OPENAI_MAX_HTTP_RETRIES });
     clients.set(key, client);
   }
   return client;
@@ -176,10 +177,8 @@ async function jsonImageRequest(
   parse: (payload: unknown, what: string) => ImageGenerationResult,
   signal?: AbortSignal,
 ): Promise<ImageGenerationResult> {
-  const response = await fetch(`${target.baseUrl.replace(/\/$/, "")}/${path}`, {
+  const response = await fetchProvider(`${target.baseUrl.replace(/\/$/, "")}/${path}`, {
     method: "POST",
-    // A 307/308 could replay the prompt and inline source images at another URL.
-    redirect: "error",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${target.apiKey}`,

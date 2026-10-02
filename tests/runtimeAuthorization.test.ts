@@ -63,6 +63,62 @@ describe("runtime authorization before paid model attempts", () => {
     expect(authorizeExecution).toHaveBeenCalledTimes(2);
   });
 
+  it.each(["response", "stream"] as const)("rechecks structured output before the %s fallback after model facts change", async mode => {
+    const unavailable = () => {
+      replaceModelRegistry(listModels().map(model => model.id === input.fallbackModel
+        ? { ...model, capabilities: { ...model.capabilities, structuredOutput: false } } : model));
+      throw Object.assign(new Error("Unavailable"), { status: 503 });
+    };
+    const getModel = vi.fn(() => ({
+      getResponse: async () => unavailable(),
+      getStreamedResponse: async function* () { unavailable(); yield* []; },
+    }));
+    const model = createRunModel({ channel: { getModel } }, {
+      ...input, parameters: { structuredOutput: true, jsonSchema: { type: "object" } },
+    }, turn(), () => {});
+    const structuredRequest: ModelRequest = { ...request,
+      outputType: { type: "json_schema", name: "response", strict: false, schema: { type: "object", properties: {}, required: [], additionalProperties: false } } };
+    await expect(withTrace(new NoopTrace(), async () => {
+      if (mode === "response") await model.getResponse(structuredRequest);
+      else for await (const _event of model.getStreamedResponse(structuredRequest)) { /* drain */ }
+    })).rejects.toThrow("Unavailable");
+    expect(getModel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["response", "stream"] as const)("keeps a healthy %s primary when the saved fallback no longer supports structured output", async mode => {
+    replaceModelRegistry(listModels().map(model => model.id === input.fallbackModel
+      ? { ...model, capabilities: { ...model.capabilities, structuredOutput: false } } : model));
+    const channel = new FakeChannel([[contentChunk('{"answer":"ok"}')]]);
+    const warnings: string[] = [];
+    const model = createRunModel({ channel }, input, turn(), chunk => { if (chunk.warning) warnings.push(chunk.warning); });
+    const structuredRequest: ModelRequest = { ...request,
+      outputType: { type: "json_schema", name: "response", strict: false, schema: { type: "object", properties: {}, required: [], additionalProperties: false } } };
+    await withTrace(new NoopTrace(), async () => {
+      if (mode === "response") await model.getResponse(structuredRequest);
+      else for await (const _event of model.getStreamedResponse(structuredRequest)) { /* drain */ }
+    });
+    expect(channel.calls).toBe(1);
+    expect(warnings).toEqual([expect.stringContaining("does not support structured output")]);
+  });
+
+  it.each(["response", "stream"] as const)("preserves a nonretryable %s primary error when the fallback is incompatible", async mode => {
+    replaceModelRegistry(listModels().map(model => model.id === input.fallbackModel
+      ? { ...model, capabilities: { ...model.capabilities, structuredOutput: false } } : model));
+    const originalError = Object.assign(new Error("Invalid primary request"), { status: 400 });
+    const getModel = vi.fn(() => ({
+      getResponse: async () => { throw originalError; },
+      getStreamedResponse: async function* () { throw originalError; yield* []; },
+    }));
+    const model = createRunModel({ channel: { getModel } }, input, turn(), () => {});
+    const structuredRequest: ModelRequest = { ...request,
+      outputType: { type: "json_schema", name: "response", strict: false, schema: { type: "object", properties: {}, required: [], additionalProperties: false } } };
+    await expect(withTrace(new NoopTrace(), async () => {
+      if (mode === "response") await model.getResponse(structuredRequest);
+      else for await (const _event of model.getStreamedResponse(structuredRequest)) { /* drain */ }
+    })).rejects.toBe(originalError);
+    expect(getModel).toHaveBeenCalledTimes(1);
+  });
+
   it("rechecks ModelTask attempts after an empty provider response", async () => {
     let allowed = true;
     const channel = new FakeChannel([[], [contentChunk("must not run")]]);

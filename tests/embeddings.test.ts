@@ -22,17 +22,15 @@ import { invalidateSettingsCache } from "@/lib/runtime-settings";
 import { encryptSecret } from "@/infrastructure/crypto/secretEncryption";
 
 function respondWith(body: unknown): void {
-  vi.stubGlobal("fetch", async () =>
+  vi.stubGlobal("fetch", vi.fn(async () =>
     new Response(JSON.stringify(body), {
       status: 200,
       headers: { "content-type": "application/json" },
     }),
-  );
+  ));
 }
 
-// The adapter caches one client per credential fingerprint, and a client binds the
-// `fetch` that was global when it was built — so a test reusing an address would
-// keep talking to the previous test's stub. A fresh address isolates each stub.
+// Distinct endpoints isolate each test's SDK client cache and provider settings.
 const entropy = vi.hoisted(() => ({ sequence: 0 }));
 vi.mock("node:crypto", async importOriginal => ({
   ...await importOriginal<typeof import("node:crypto")>(),
@@ -84,6 +82,7 @@ describe("openAiEmbeddings", () => {
       [0.2],
       [0.3],
     ]);
+    expect(vi.mocked(fetch).mock.calls[0]?.[1]?.redirect).toBe("error");
   });
 
   it("refuses a response that answers a different number of inputs", async () => {

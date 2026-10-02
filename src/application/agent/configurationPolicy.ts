@@ -169,37 +169,31 @@ export function warnUnselectedModel(agentName: string, model: string): void {
 }
 
 /**
- * Reject capability mismatches for selected model facts. Missing registration
+ * Explain capability mismatches using current selected model facts. Missing registration
  * is left to the execution gate; storing settings does not enable a model.
  */
-export function assertAgentModelType(model: string): void {
+export function modelSupportProblem(model: string, parameters: Pick<AgentParameters, "structuredOutput" | "reasoningTrace">): string | undefined {
   const cfg = getModelConfig(model);
   if (!cfg) {
-    return;
+    return undefined;
   }
   const reason = agentModelRejectReason(cfg);
   if (reason === "tools") {
-    throw new ValidationError(
-      `Model does not support tool calling required by agents: ${model}`,
-    );
+    return `Model does not support tool calling required by agents: ${model}`;
   }
   if (reason === "type") {
-    throw new ValidationError(
-      `Model type does not support Agents: ${model}`,
-    );
+    return `Model type does not support Agents: ${model}`;
   }
+  if (parameters.structuredOutput && !cfg.capabilities.structuredOutput) {
+    return `Model does not support structured output: ${model}`;
+  }
+  if (parameters.reasoningTrace && !cfg.capabilities.reasoning) {
+    return `Model does not produce reasoning to record: ${model}`;
+  }
+  return undefined;
 }
 
 export function assertModelSupports(model: string, parameters: AgentParameters): void {
-  const cfg = getModelConfig(model);
-  if (!cfg) {
-    return;
-  }
-  assertAgentModelType(model);
-  if (parameters.structuredOutput && !cfg.capabilities.structuredOutput) {
-    throw new ValidationError(`Model does not support structured output: ${model}`);
-  }
-  if (parameters.reasoningTrace && !cfg.capabilities.reasoning) {
-    throw new ValidationError(`Model does not produce reasoning to record: ${model}`);
-  }
+  const problem = modelSupportProblem(model, parameters);
+  if (problem) throw new ValidationError(problem);
 }

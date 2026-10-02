@@ -10,6 +10,7 @@ import { OPENAI_MAX_HTTP_RETRIES } from "./openaiClient";
 import type { EmbeddingPort } from "@/domain/vector/types";
 import { getEmbeddingTarget, getEmbeddingModel } from "@/lib/runtime-settings";
 import { config } from "@/lib/config";
+import { fetchProvider } from "./providerFetch";
 
 const clients = createLlmClientCache<OpenAI>();
 
@@ -18,7 +19,7 @@ function getClient(baseUrl: string, apiKey: string): OpenAI {
   const key = llmClientCacheKey(baseUrl, apiKey);
   let client = clients.get(key);
   if (!client) {
-    client = new OpenAI({ baseURL: baseUrl, apiKey, maxRetries: OPENAI_MAX_HTTP_RETRIES });
+    client = new OpenAI({ baseURL: baseUrl, apiKey, fetch: fetchProvider, maxRetries: OPENAI_MAX_HTTP_RETRIES });
     clients.set(key, client);
   }
   return client;

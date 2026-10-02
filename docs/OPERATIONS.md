@@ -438,9 +438,14 @@ discovery와 문서 embedding을 반복한다.
 - 결과는 저장된 리포트(`GET /api/plugins/sync`)와 로그 라인에 남는다.
 - **아카이브가 마지막 sync 면 틱은 보류된다.** 사람이 올린 snapshot 을 다음 분의 자동 sync 가
   덮지 않도록 `{ started: false, held: "archive" }` 로 답한다. GitHub 가 다시 소유하게 하려면
-  admin 이 `POST /api/plugins/sync` 를 명시적으로 실행한다.
-- 503 은 `SCHEDULE_SCAN_TOKEN` 이 설정되지 않았거나, `PLUGINS_REPO`/`GITHUB_TOKEN` 이 설정되지
-  않았다는 뜻이다.
+  admin 이 `POST /api/plugins/sync` 를 명시적으로 실행한다. 예약된 자동 실행도 리스를 얻은
+  직후 리포트를 다시 확인하므로 접수 이후 완료된 업로드를 덮지 않는다. 이 조회가 실패하면
+  원격 스냅샷 조회·변경 없이 실행을 중단하고 리스를 해제한다.
+  실행 중에는 100초마다 5분 리스를 갱신하고, 각 레지스트리·리포트 쓰기도 같은 DB 트랜잭션에서
+  현재 소유권을 확인한다. 만료되거나 다른 작업에 넘어간 리스는 되살리지 않으며 남은 변경을 중단한다.
+  재색인 예약은 이 소유권 범위 밖에서 수행한다.
+- 503 은 `SCHEDULE_SCAN_TOKEN` 또는 `PLUGINS_REPO`/`GITHUB_TOKEN`이 설정되지 않았거나,
+  마지막 sync 리포트를 읽을 수 없다는 뜻이다. 보류 상태를 확인할 수 없으면 자동 sync를 시작하지 않는다.
 - **GitHub 에 닿지 않는 배포에는 이 틱이 없다.** 그런 배포는 admin 이 `/plugins` 에서
   체크아웃의 `.tar.gz` 를 올리는 것이 sync 이고(`POST /api/plugins/sync/upload`), 같은 리포트와
   같은 리스를 쓴다. GitHub 쪽 sync 와 동시에 돌 수 없다. 저장된 마지막 리포트는 설정된

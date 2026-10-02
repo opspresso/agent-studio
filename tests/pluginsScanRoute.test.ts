@@ -70,6 +70,27 @@ describe("POST /api/plugins/sync/scan", () => {
     expect(syncPluginsFromRepo).not.toHaveBeenCalled();
   });
 
+  it("keeps an uploaded archive under manual control without reading the remote head", async () => {
+    lastPluginSync.mockResolvedValue({
+      repo: "opspresso/agent-plugins",
+      report: { ...EMPTY_REPORT, commitSha: "a".repeat(64) },
+      actorEmail: "admin@example.com",
+      finishedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const res = await POST(request("tick-token"));
+    expect(await res.json()).toEqual({ started: false, held: "archive" });
+    expect(pluginsRepoHeadSha).not.toHaveBeenCalled();
+    expect(syncPluginsFromRepo).not.toHaveBeenCalled();
+  });
+
+  it("refuses automatic sync when the archive hold state cannot be read", async () => {
+    lastPluginSync.mockRejectedValue(new Error("Report store unavailable"));
+    const res = await POST(request("tick-token"));
+    expect(res.status).toBe(503);
+    expect(pluginsRepoHeadSha).not.toHaveBeenCalled();
+    expect(syncPluginsFromRepo).not.toHaveBeenCalled();
+  });
+
   it("runs the sync as the scheduler when the head moved", async () => {
     lastPluginSync.mockResolvedValue({
       repo: "opspresso/agent-plugins",
@@ -79,7 +100,7 @@ describe("POST /api/plugins/sync/scan", () => {
     });
     const res = await POST(request("tick-token"));
     expect(res.status).toBe(202);
-    expect(syncPluginsFromRepo).toHaveBeenCalledWith(repoConfig.value, "scheduler");
+    expect(syncPluginsFromRepo).toHaveBeenCalledWith(repoConfig.value, "scheduler", undefined, { automatic: true });
   });
 
   it("skips the snapshot entirely when the head matches the last clean report", async () => {

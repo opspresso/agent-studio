@@ -11,6 +11,8 @@ import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { keys } from "@/infrastructure/db/keys";
 import { putAgentConfigurationSchema } from "@/app/api/agents/_lib/schemas";
 import { sanitizeAgent } from "@/app/api/agents/_lib/http";
+import { getModelConfig } from "@/domain/llm/models";
+import { addTestModels } from "./modelFixtures";
 
 vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
 vi.mock("node:crypto", async (original) => ({
@@ -150,6 +152,17 @@ describe("current Agent configuration", () => {
     await expect(save({ mcpList: [{ name: "tools" }, { name: "tools" }] })).rejects.toThrow("more than once");
     await agentRepository.create({ ...agent, name: "private-child", ownerEmail: READER, visibility: "private" });
     await expect(save({ subagentList: [{ name: "private-child" }] })).rejects.toThrow("private");
+    expect((await agentRepository.get(agent.name))!.configuration).toBeUndefined();
+  });
+
+  it.each([
+    ["structuredOutput", "structured output"],
+    ["reasoning", "reasoning to record"],
+  ] as const)("rejects a fallback without the required %s capability before saving", async (capability, message) => {
+    const model = getModelConfig("openai/gpt-5-mini")!;
+    addTestModels([{ ...model, id: "selfhosted/fallback", capabilities: { ...model.capabilities, [capability]: false } }]);
+    await expect(save({ fallbackModel: "selfhosted/fallback", parameters: capability === "structuredOutput"
+      ? { piiFiltering: false, structuredOutput: true } : { piiFiltering: false, reasoningTrace: true } })).rejects.toThrow(message);
     expect((await agentRepository.get(agent.name))!.configuration).toBeUndefined();
   });
 

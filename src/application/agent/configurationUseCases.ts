@@ -8,7 +8,7 @@ import { assertAgentAccessible, assertAgentOwner } from "./agentUseCases";
 import { persistAgentUpdate } from "./agentUpdate";
 import { resolveMcpBindings } from "./mcpBindingSettings";
 import {
-  assertModelSupports, assertAgentModelType, assertReferencesExist,
+  assertModelSupports, assertReferencesExist,
   assertSubavailableAgentsAccessible, assertUniqueReferences, assertValidImageModel,
   warnUnselectedModel, type AgentConfigurationInput, type ConfigurationRefRepos,
 } from "./configurationPolicy";
@@ -68,7 +68,7 @@ export async function putAgentConfiguration(
   }
   assertValidImageModel(input.parameters);
   assertModelSupports(input.model, input.parameters);
-  if (input.fallbackModel) assertAgentModelType(input.fallbackModel);
+  if (input.fallbackModel) assertModelSupports(input.fallbackModel, input.parameters);
   warnUnselectedModel(name, input.model);
   assertUniqueReferences(input);
   await assertReferencesExist(deps.refs, input, agent.configuration);

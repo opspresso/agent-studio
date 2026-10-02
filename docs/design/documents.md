@@ -193,6 +193,10 @@ Agent 실행 API, Slack·Telegram·Teams도 같은 첨부 보관 유스케이스
 그 실행의 첨부 사본으로 보관한다. `File` 도구는 사용자에게 보인 문서의 ID를 받아 작업한다.
 
 생성 파일의 HTTP·OpenAI 응답은 다운로드 URL과 `fileId`를 함께 제공한다.
+Playground는 저장된 파일의 형식과 ID를 유지해 지원하는 파일의 격리 미리보기를 제공한다.
+객체 저장소가 없으면 raw 스트림의 inline bytes를 다운로드로 제공하며, 한 실행에서 보관하는
+inline 파일은 합계 16 MiB로 제한한다. 유효하지 않은 bytes나 한도를 넘는 파일은 경고하고
+다운로드 목록에서 제외한다. inline 파일에는 영속 ID와 미리보기가 없다.
 URL이 만료돼도 원본이
 보관 중이고 호출자의 권한이 맞으면 `File` 도구로 다시 읽을 수 있다.
 비공개 파일 Artifact도 같은 ID로 `read`·`inspect`할 수 있다. 원본 Agent의 현재 권한과

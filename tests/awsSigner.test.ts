@@ -49,6 +49,7 @@ describe("createSignedFetch", () => {
       method: "HEAD", headers: { "x-probe": "request-header" }, signal: caller.signal,
     }));
     expect(captured.calls[0]?.init.method).toBe("HEAD");
+    expect(captured.calls[0]?.init.redirect).toBe("error");
     expect(new Headers(captured.calls[0]?.init.headers).get("x-probe")).toBe("request-header");
     caller.abort();
     expect(captured.calls[0]?.signal.aborted).toBe(true);

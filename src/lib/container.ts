@@ -158,7 +158,7 @@ import { createCapabilityVisibility } from "@/application/plugin/capabilityVisib
 import { syncPluginsFromSnapshot } from "@/application/plugin/syncPlugins";
 import { findRegistryBindings } from "@/application/plugin/bindingIndex";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
-import type { PluginsRepoSnapshot, PluginSyncSelection } from "@/domain/plugin/sync";
+import { isArchiveSync, type PluginsRepoSnapshot, type PluginSyncSelection } from "@/domain/plugin/sync";
 import { pluginRepository } from "@/infrastructure/db/repositories/pluginRepository";
 import {
   pluginSyncLock,
@@ -188,6 +188,7 @@ import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import { cacheQueryEmbeddings } from "@/application/catalog/queryCache";
 import { probeCapabilityReranker } from "@/application/catalog/probeReranker";
 import { log } from "@/shared/logger";
+import { startSequentialPoll } from "@/shared/sequentialPoll";
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createReranker } from "@/infrastructure/llm/reranker";
 import { createPgVectorStore } from "@/infrastructure/vector/pgVectorStore";
@@ -642,6 +643,7 @@ export const modelSelectionUseCases = createModelSelectionUseCases({
  */
 /** How long a crashed sync may hold the door shut. Syncs finish in seconds. */
 const PLUGIN_SYNC_LEASE_MS = 5 * 60_000;
+interface PluginSyncOptions { automatic?: boolean }
 
 /**
  * What both entry points share: the lease, the deps bag, the persisted report
@@ -653,6 +655,7 @@ const runPluginSync = async (
   loadSnapshot: () => Promise<PluginsRepoSnapshot>,
   actorEmail: string,
   selection?: PluginSyncSelection,
+  options: PluginSyncOptions = {},
 ) => {
   // One sync per repo at a time: a second one would double every GitHub read
   // and leave two contradicting reports.
@@ -660,37 +663,68 @@ const runPluginSync = async (
   if (!lease) {
     throw new ConflictError("A plugins sync is already running; wait for it to finish.");
   }
+  let ownershipFailure: unknown;
+  let renewal: Promise<void> = Promise.resolve();
+  const assertOwnership = async () => {
+    if (ownershipFailure !== undefined) throw ownershipFailure;
+    try {
+      if (!await pluginSyncLock.renew(repo, lease, PLUGIN_SYNC_LEASE_MS)) {
+        throw new ConflictError("Plugin sync lost its execution lease; its remaining changes were not applied.");
+      }
+    } catch (error) { ownershipFailure = error; throw error; }
+  };
+  const stopHeartbeat = startSequentialPoll({
+    intervalMs: PLUGIN_SYNC_LEASE_MS / 3,
+    poll: async () => { renewal = assertOwnership(); await renewal; },
+    onError: () => stopHeartbeat(),
+  });
   try {
-    const result = await syncPluginsFromSnapshot(
-      {
-        plugins: pluginRepository,
-        pluginRows: syncPluginUseCases,
-        skillRepo: skillRepository,
-        skills: syncSkillUseCases,
-        mcps: syncMcpUseCases,
-        ...(managedMcpUseCases ? { managedMcps: managedMcpUseCases } : {}),
-        findBindings: (skills, mcpServers) =>
-          findRegistryBindings(
-            { agents: agentRepository },
-            skills,
-            mcpServers,
-          ),
-      },
-      await loadSnapshot(),
-      actorEmail,
-      selection,
-    );
-    // The report outlives the browser that requested the sync — reloads and
-    // load-balancer timeouts must not lose the only copy of what happened.
-    await pluginSyncReportRepository.put({
-      repo,
-      report: result,
-      actorEmail,
-      finishedAt: new Date().toISOString(),
+    const result = await pluginSyncLock.withOwnership(repo, lease, async () => {
+      // The report may change while a tick reads GitHub or waits for its background callback.
+      if (options.automatic) {
+        const last = await pluginSyncReportRepository.get(repo);
+        if (last && isArchiveSync(last.report.commitSha)) {
+          throw new ConflictError("Automatic plugin sync is held by an uploaded archive; run a manual sync to replace it.");
+        }
+      }
+      const snapshot = await loadSnapshot();
+      await assertOwnership();
+      const report = await syncPluginsFromSnapshot(
+        {
+          assertOwnership,
+          plugins: pluginRepository,
+          pluginRows: syncPluginUseCases,
+          skillRepo: skillRepository,
+          skills: syncSkillUseCases,
+          mcps: syncMcpUseCases,
+          ...(managedMcpUseCases ? { managedMcps: managedMcpUseCases } : {}),
+          findBindings: (skills, mcpServers) =>
+            findRegistryBindings(
+              { agents: agentRepository },
+              skills,
+              mcpServers,
+            ),
+        },
+        snapshot,
+        actorEmail,
+        selection,
+      );
+      // Publication shares the lease check with its actual item write.
+      await assertOwnership();
+      await pluginSyncReportRepository.put({
+        repo,
+        report,
+        actorEmail,
+        finishedAt: new Date().toISOString(),
+      });
+      return report;
     });
+    // Deferred reindex work must not inherit a lease that is about to be released.
     reindexAfterSync();
     return result;
   } finally {
+    stopHeartbeat();
+    await renewal.catch(() => {});
     await pluginSyncLock.release(repo, lease);
   }
 };
@@ -699,6 +733,7 @@ export const syncPluginsFromRepo = async (
   repoConfig: Awaited<ReturnType<typeof getPluginsRepoConfig>>,
   actorEmail: string,
   selection?: PluginSyncSelection,
+  options?: PluginSyncOptions,
 ) =>
   runPluginSync(
     repoConfig.repo ?? "",
@@ -706,6 +741,7 @@ export const syncPluginsFromRepo = async (
       (await import("@/infrastructure/github/pluginsRepoClient")).fetchPluginsRepoSnapshot(repoConfig),
     actorEmail,
     selection,
+    options,
   );
 
 /**

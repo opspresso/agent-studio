@@ -2,6 +2,7 @@ import type { WorkspaceModelTransport } from "@/domain/workspace/modelGateway";
 import type { TargetResolver } from "@/infrastructure/llm/providers";
 import { readBodyText } from "@/shared/httpBody";
 import { createNativeUsageObserver } from "./nativeModelUsage";
+import { fetchProvider } from "@/infrastructure/llm/providerFetch";
 
 /** Memory and wire bounds for the transparent native protocol, independent of tool output bounds. */
 const MAX_NATIVE_FRAME_BYTES = 8 * 1024 * 1024;
@@ -40,13 +41,13 @@ export function createWorkspaceModelTransport(resolve: TargetResolver): Workspac
       if (input.protocol === "chat/completions" && body.stream === true) {
         body.stream_options = { ...(body.stream_options && typeof body.stream_options === "object" ? body.stream_options : {}), include_usage: true };
       }
-      request = { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.any([input.signal, controller.signal]), redirect: "error" };
+      request = { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.any([input.signal, controller.signal]) };
     } catch {
       await finish({ complete: true });
       throw new Error("Native model provider configuration is unavailable");
     }
     let upstream: Response;
-    try { upstream = await fetch(endpoint, request); }
+    try { upstream = await fetchProvider(endpoint, request); }
     catch { await finish(); throw new Error("Native model transport failed; request was not replayed"); }
     if (!upstream.ok) {
       await upstream.body?.cancel().catch(() => {});

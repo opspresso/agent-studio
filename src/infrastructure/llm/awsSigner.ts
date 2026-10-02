@@ -13,6 +13,7 @@
 
 import { createHash, createHmac } from "node:crypto";
 import { SignatureV4 } from "@smithy/signature-v4";
+import { fetchProvider } from "./providerFetch";
 import { awsCredentials } from "./awsCredentials";
 
 /**
@@ -150,6 +151,6 @@ export function createSignedFetch(service: string): typeof fetch {
       { signingRegion: regionOf(url.hostname) },
     );
 
-    return fetch(request, { headers: signed.headers });
+    return fetchProvider(request, { headers: signed.headers });
   };
 }

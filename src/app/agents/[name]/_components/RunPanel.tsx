@@ -21,6 +21,7 @@ import {
   type ActiveAuthor,
 } from "@/app/_lib/authorPaths";
 import { toRequestImages } from "@/app/_lib/imageAttachments";
+import { createFileDownloads } from "@/app/_lib/fileDownloads";
 import { onModEnter } from "@/app/_lib/modEnter";
 import {
   AttachButton,
@@ -98,10 +99,9 @@ export function RunPanel({
   const [warnings, setWarnings] = useState<string[]>([]);
   const [cost, setCost] = useState<number | null>(null);
   const [agentImages, setAgentImages] = useState<Array<{ src: string; prompt?: string }>>([]);
-  // Documents a tool rendered. They arrive addressed — `/agent` signs the
-  // reference on its way out — so what this holds is already a download.
+  // Stored files arrive addressed; without storage the stream delivers inline bytes.
   const [agentFiles, setAgentFiles] = useState<
-    Array<{ name: string; byteSize?: number; url?: string }>
+    Array<{ name: string; mimeType: string; byteSize?: number; url?: string; artifactId?: string }>
   >([]);
   const activeRequest = useRef<AbortController | null>(null);
   const {
@@ -167,6 +167,7 @@ export function RunPanel({
     setCost(null);
     setAgentImages([]);
     setAgentFiles([]);
+    const fileDownload = createFileDownloads();
     let totalCost = 0;
 
     try {
@@ -242,12 +243,19 @@ export function RunPanel({
         }
         if (chunk.file) {
           const produced = chunk.file;
-          setAgentFiles((prev) => [
+          const download = fileDownload(produced);
+          if (download.warning) {
+            const warning = download.warning;
+            setWarnings((prev) => prev.includes(warning) ? prev : [...prev, warning]);
+          }
+          if (!download.warning && (download.url || produced.fileId)) setAgentFiles((prev) => [
             ...prev,
             {
               name: produced.name,
+              mimeType: produced.mimeType,
               ...(produced.byteSize !== undefined ? { byteSize: produced.byteSize } : {}),
-              ...(produced.url ? { url: produced.url } : {}),
+              ...(download.url ? { url: download.url } : {}),
+              ...(produced.fileId ? { artifactId: produced.fileId } : {}),
             },
           ]);
         }
@@ -442,7 +450,7 @@ export function RunPanel({
       {/* The same row the chat draws. A rendered document is part of the answer,
           not an invisible side effect beside the image gallery. */}
       {agentFiles.map((file, i) => (
-        <ProducedFile key={`file-${i}`} name={file.name} byteSize={file.byteSize} url={file.url} />
+        <ProducedFile key={`file-${i}`} {...file} />
       ))}
 
       {/* Share Chat's paired tool rows: one row per call, with its result. */}
