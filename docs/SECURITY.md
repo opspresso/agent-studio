@@ -107,8 +107,11 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 콘솔·Chat과 개인 API 토큰은 인증된 사용자의 현재 `assertAgentAccessible` 판정을 적용한다.
 개인 토큰은 Agent 소유자가 아니라 발급 사용자 ID에 묶인다. Slack·Telegram·Teams는
 전달 인증 후 [연결한 Studio 사용자](design/messaging.md#호출자-인증)의 현재 계정·member 등급·
-Agent 접근을 확인한다. 이메일이나 bot 소유자만으로 호출자를 추정하지 않으며 앱 작성 메시지는
-실행하지 않는다. Slack의 명령·native 중단·thread-start도 같은 연결 검사를 지난다.
+Agent 접근을 확인한다. 이메일이나 bot 소유자만으로 호출자를 추정하지 않는다.
+Slack 앱의 채널 키워드 알림은 키워드를 저장한 인증 계정의 사용자 ID와 revision으로 실행한다.
+현재 계정·Agent 접근·연동 활성화·등록 revision을 모델·도구·Workspace 효과 전에 다시 검사하며,
+키워드 변경·삭제로 권한을 철회한다. 다른 앱의 DM·thread 답글과 봇 자신의 메시지는 실행하지 않는다.
+Slack의 명령·native 중단·thread-start는 사람의 연결 검사를 지난다.
 Trigger·Webhook의 전달 인증은 [머신 요청 인증](#머신-호출자의-요청-인증)을 따른다.
 
 private agent 를 local subagent 로 *바인딩* 하는 것도 읽기다: 편집자가 접근할 수 없는

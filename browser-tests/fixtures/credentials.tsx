@@ -5,6 +5,7 @@ import "@mantine/core/styles.css";
 import { I18nProvider } from "../../src/app/_i18n/provider";
 import { SecretControl } from "../../src/app/_components/SecretControl";
 import { TokenSection } from "../../src/app/agents/[name]/integrations/TokenSection";
+import { WebhookSection } from "../../src/app/agents/[name]/integrations/WebhookSection";
 import { SecretInput } from "../../src/app/_components/SecretInput";
 import { HeaderRowsEditor, recordToRows, rowsToRecord } from "../../src/app/_components/HeaderRows";
 import { theme } from "../../src/app/theme";
@@ -21,6 +22,7 @@ function Fixture() {
   const [complete, setComplete] = useState<(() => void) | null>(null);
   const [identity, setIdentity] = useState("Agent token");
   const [historySelected, setHistorySelected] = useState(false);
+  const [webhookOwner, setWebhookOwner] = useState(true);
   const [rows, setRows] = useState(() => recordToRows({ Authorization: mask }));
   async function action(name: string) {
     setEvents(current => [...current, name]);
@@ -45,6 +47,8 @@ function Fixture() {
         onSelect={() => setHistorySelected(true)} />
         <output aria-label="History selected">{String(historySelected)}</output>
       </Card>
+      <Card><WebhookSection key={String(webhookOwner)} agentName="fixture-agent" canManage={webhookOwner} /></Card>
+      <Switch label="Manage shared Webhook settings" checked={webhookOwner} onChange={event => setWebhookOwner(event.currentTarget.checked)} />
       <Card><HeaderRowsEditor rows={rows} onChange={setRows} />
         <output aria-label="Header unchanged">{String(rowsToRecord(rows).Authorization === mask)}</output>
       </Card>

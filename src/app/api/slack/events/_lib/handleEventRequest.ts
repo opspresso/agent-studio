@@ -1,4 +1,5 @@
 import { messagingIdentityUseCases } from "@/lib/container";
+import { getExecutionMemberById } from "@/lib/memberAccess";
 import { transcriptRepository } from "@/infrastructure/db/repositories/transcriptRepository";
 import { verifySlackSignature } from "@/infrastructure/slack/verify";
 import { slackClient } from "@/infrastructure/slack/client";
@@ -22,6 +23,7 @@ import { log } from "@/shared/logger";
 import { slackEventSchema } from "./eventSchema";
 
 const slackEventDeps: SlackEventDeps = {
+  members: { getById: getExecutionMemberById },
   identities: messagingIdentityUseCases,
   runAgent: (params) => executeAgent(executionDeps, params),
   agents: agentRepository,

@@ -898,7 +898,10 @@ GET    /api/agents/{name}/slack/channels
 `channelKeywords` 는 `string[]` 이다. 멘션 없이도 채널 메시지를 봇의 것으로 만드는 단어들이다
 ([design/slack.md](design/slack.md#어떤-이벤트가-봇에게-온-것인가) 참조): 최대 20개, 저장 시 각각
 공백을 정리하고 소문자로 바꾸며, 2–50자다. 빈 값과 중복은 버려지고, 그 길이를 벗어난 키워드는
-400 이다. `PUT` 에서 이 필드를 생략하면 저장된 목록을 유지한다.
+400 이다. `PUT` 에서 이 필드를 생략하면 저장된 목록과 등록 계정을 유지한다.
+비어 있지 않은 목록을 저장하면 인증된 Studio 사용자 ID와 revision을 앱 알림 자동화의 실행 권한으로
+기록한다. 빈 목록은 자동화 권한도 제거한다. 앱 알림은 해당 계정의 현재 권한과 예산을 사용하며,
+등록 계정이 없는 목록은 다시 저장해야 한다. 사용자 ID는 요청 본문에서 받지 않는다.
 
 메신저 설정은 bot의 연결 자격 증명을 관리한다. 발신자는 Profile → Messaging connections에서
 본인의 Studio 계정으로 인증한다. payload 이메일·Agent 소유자 권한을 대신 사용하지 않는다.
@@ -906,7 +909,7 @@ GET    /api/agents/{name}/slack/channels
 계정·Agent 접근을 다시 검사한다. 설정 API는 `runAsOwner`·`executionEmail`을 받지 않는다.
 
 Slack 읽기는 마스킹된 인증 정보 상태와 함께 `configured`, `eventsPath`, `eventsUrl`,
-`suggestedPrompts`, `channelKeywords`, 그리고 생성된 앱 manifest를 돌려준다.
+`suggestedPrompts`, `channelKeywords`, `keywordExecutionConfigured`, 그리고 생성된 앱 manifest를 돌려준다.
 설정 경로의 GET·PUT·DELETE가 이 뷰로 답하며 test·channels는 아래의 별도 응답을 사용한다.
 다섯 엔드포인트 모두 소유자로 제한된다 (그 외에는 403). 마스킹된 뷰도 봇
 토큰 / signing secret 의 양끝은 드러내기 때문이다. 마스킹되거나 생략된 secret은 업데이트에서

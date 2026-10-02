@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Badge, Button, Group, Select, Stack, Switch, Text, Textarea } from "@mantine/core";
+import { Alert, Badge, Button, Divider, Group, Select, Stack, Switch, Text, Textarea } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { stateColor } from "@/app/_components/badgeColors";
 import { AGENT_WEBHOOK_ID } from "@/domain/trigger/types";
@@ -13,9 +13,10 @@ import {
   type TriggerView,
 } from "../../lib/api";
 import { reportError } from "@/app/_lib/reportError";
+import { TokenSection } from "./TokenSection";
 
-/** Shared Agent Webhook settings. Each user manages their own invocation token separately. */
-export function WebhookSection({ agentName, onSelect, selected }: { agentName: string; onSelect?: () => void; selected?: boolean }) {
+/** Personal invocation credentials and owner-managed behavior share one Webhook section. */
+export function WebhookSection({ agentName, onSelect, selected, canManage = true }: { agentName: string; onSelect?: () => void; selected?: boolean; canManage?: boolean }) {
   const t = useT();
   const [webhook, setWebhook] = useState<TriggerView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,6 +40,7 @@ export function WebhookSection({ agentName, onSelect, selected }: { agentName: s
   }, [agentName]);
 
   useEffect(() => {
+    if (!canManage) { setLoading(false); return; }
     let cancelled = false;
     void reload()
       .catch((e: unknown) => {
@@ -54,7 +56,7 @@ export function WebhookSection({ agentName, onSelect, selected }: { agentName: s
     return () => {
       cancelled = true;
     };
-  }, [reload]);
+  }, [reload, canManage]);
 
   async function act(action: () => Promise<void>) {
     setBusy(true);
@@ -93,7 +95,7 @@ export function WebhookSection({ agentName, onSelect, selected }: { agentName: s
       // Readable while collapsed, like the token's set/none: whether an outside
       // system can start this agent at all, before anyone opens the section.
       badge={
-        loading ? undefined : (
+        loading || !canManage ? undefined : (
           <Badge color={stateColor(webhook?.enabled === true)} radius="xl">
             {webhook?.enabled ? "enabled" : "disabled"}
           </Badge>
@@ -101,6 +103,9 @@ export function WebhookSection({ agentName, onSelect, selected }: { agentName: s
       }
     >
       <Stack gap="md">
+        <TokenSection agentName={agentName} purpose="webhook" embedded />
+        {canManage && <>
+        <Divider />
         <Text fz="sm" c="dimmed">
           {t("webhook.intro")}
         </Text>
@@ -156,6 +161,7 @@ export function WebhookSection({ agentName, onSelect, selected }: { agentName: s
 
           </>
         )}
+        </>}
       </Stack>
     </CollapsibleSection>
   );

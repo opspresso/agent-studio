@@ -84,7 +84,7 @@ DM의 세부 진행 문구는 `assistant.threads.setStatus`의 호환 경로를 
 | 채널 mention의 `message` 사본 | `app_mention`과 중복되므로 무시 |
 | 사람의 thread 답글 | 참여 기록을 조회해 실행 여부 결정 |
 | 다른 앱의 thread 답글·DM | 상호 bot loop를 막기 위해 무시 |
-| thread가 아닌 채널 메시지 | Agent 키워드가 맞고 연결한 사람의 메시지면 실행 |
+| thread가 아닌 채널 메시지 | Agent 키워드가 맞으면 호출자 확인 후 실행; 앱 알림은 키워드 등록 계정으로 실행 |
 | 나머지 | 무시 |
 
 자기 메시지는 envelope의 `authorizations.user_id`로 판정한다.
@@ -136,7 +136,15 @@ Studio 사용자 연결과 현재 Agent 접근 판정은 중단에도 적용한�
 
 서명된 workspace ID·사용자 ID를 [Studio 사용자 연결](messaging.md#호출자-인증)로 해석한다.
 `slackSenderMayAccess`는 명령·native 중단·thread-start에도 같은 현재 권한을 적용한다.
-연결되지 않은 사용자와 다른 앱의 알림은 Agent를 실행하지 않는다.
+사람의 메시지는 Studio 사용자 연결이 필요하다. 다른 앱의 채널 알림은 저장된 키워드에
+맞을 때 `keywordExecution`에 기록한 등록자의 Studio 계정으로 실행한다. 키워드에 맞는 최상위
+알림은 `@멘션`을 함께 보내도 같은 권한을 사용하며, 키워드 없는 앱 멘션에는 실행 권한을 부여하지 않는다.
+키워드를 저장할 때
+인증된 사용자 ID와 등록 revision을 기록하며, 계정 삭제·등급·Agent 접근·연동 활성화·등록 revision을
+모델·도구·Workspace 효과 전에 다시 검사한다. 키워드 변경·삭제는 진행 중 실행의 권한도 철회한다.
+등록 계정이 없는 키워드는 다시 저장해야 하며 Agent 소유자나 앱 표시 이름으로 계정을 추정하지 않는다.
+자기 메시지·다른 앱의 DM과 thread 답글은 자동 실행하지 않는다. 앱 알림은 사람 수신자가 없으므로
+native 채널 stream 대신 `chat.postMessage`·`chat.update`로 답한다.
 이메일 프로필 조회는 인증 수단이 아니며 표시 이름은 `callerContext`가 켜진 경우에만 읽는다.
 
 ## 접수했다고 말하기

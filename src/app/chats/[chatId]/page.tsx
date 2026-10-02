@@ -1,4 +1,5 @@
 import { ChatThread } from "../_components/ChatThread";
+import { ChatRouteSelection } from "../_components/ChatRouteSelection";
 import { WorkspacePanel } from "@/app/workspaces/_components/WorkspacePanel";
 import { getSessionUser } from "@/lib/session";
 import { workspaceUseCases } from "@/lib/container";
@@ -12,8 +13,8 @@ export default async function ChatPage({ params }: { params: Promise<{ chatId: s
     if (error instanceof NotFoundError) return null;
     throw error;
   }) : null;
-  if (workspaceId) return <WorkspacePanel key={workspaceId} id={workspaceId} />;
+  if (workspaceId) return <><ChatRouteSelection chatId={chatId} tab="workspaces" /><WorkspacePanel key={workspaceId} id={workspaceId} /></>;
   // Remount per Chat so sequence-scoped image pins, scroll state and pending
   // responses cannot enter another conversation.
-  return <ChatThread key={chatId} chatId={chatId} />;
+  return <><ChatRouteSelection chatId={chatId} tab="chats" /><ChatThread key={chatId} chatId={chatId} /></>;
 }

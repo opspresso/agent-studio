@@ -31,6 +31,7 @@ export interface AgentSlackView {
   suggestedPrompts: SlackSuggestedPrompt[];
   /** Not a secret either. Empty means mentions and follow-ups only. */
   channelKeywords: string[];
+  keywordExecutionConfigured: boolean;
 }
 
 export interface AgentSlackUpdate {
@@ -62,6 +63,7 @@ function maskedView(cipher: SecretCipher, agent: Agent): AgentSlackView {
     eventsPath: eventsPathFor(agent.name),
     suggestedPrompts: slack?.suggestedPrompts ?? [],
     channelKeywords: slack?.channelKeywords ?? [],
+    keywordExecutionConfigured: Boolean(slack?.keywordExecution),
   };
 }
 
@@ -141,7 +143,7 @@ export interface AgentSlackResult {
 }
 
 /**
- * Owner or admin, unlike the shared agent catalog: this exposes the masked bot
+ * Owner-only, unlike the shared agent catalog: this exposes the masked bot
  * token and signing secret. Checked here rather than at the route so no verb can
  * be added without it, and so one read answers both the check and the view.
  */
@@ -174,6 +176,7 @@ export async function updateAgentSlack(
   update: AgentSlackUpdate,
   userEmail: string,
   cipher: SecretCipher,
+  userId?: string,
 ): Promise<AgentSlackResult> {
   const agent = await assertAgentOwner(repo, name, userEmail);
   const prompts =
@@ -184,6 +187,15 @@ export async function updateAgentSlack(
     update.channelKeywords !== undefined
       ? cleanKeywords(update.channelKeywords)
       : (agent.slack?.channelKeywords ?? []);
+  const updatedAt = nextUpdatedAt(agent.updatedAt);
+  let keywordExecution = keywords.length > 0 ? agent.slack?.keywordExecution : undefined;
+  if (update.channelKeywords !== undefined && keywords.length > 0) {
+    if (!userId) throw new ValidationError("An authenticated Studio user is required to register channel keywords");
+    const sameRegistration = keywordExecution?.userId === userId &&
+      keywords.length === agent.slack?.channelKeywords?.length &&
+      keywords.every((keyword, index) => keyword === agent.slack?.channelKeywords?.[index]);
+    if (!sameRegistration) keywordExecution = { userId, revision: updatedAt };
+  }
   const slack: SlackIntegration = {
     botToken: mergeSecret(
       cipher,
@@ -200,11 +212,12 @@ export async function updateAgentSlack(
     enabled: update.enabled ?? agent.slack?.enabled ?? false,
     ...(prompts.length > 0 ? { suggestedPrompts: prompts } : {}),
     ...(keywords.length > 0 ? { channelKeywords: keywords } : {}),
+    ...(keywordExecution ? { keywordExecution } : {}),
   };
   if (slack.enabled && (!slack.botToken || !slack.signingSecret)) {
     throw new ValidationError("Bot token and signing secret are required to enable Slack");
   }
-  const updated: Agent = { ...agent, slack, updatedAt: nextUpdatedAt(agent.updatedAt) };
+  const updated: Agent = { ...agent, slack, updatedAt };
   await persistAgentUpdate(repo, updated, agent.updatedAt);
   return { agent: updated, view: maskedView(cipher, updated) };
 }
@@ -404,7 +417,7 @@ export async function resolveSlackEventBinding(
  */
 export interface AgentSlackUseCases {
   get(name: string, userEmail: string): Promise<AgentSlackResult>;
-  update(name: string, update: AgentSlackUpdate, userEmail: string): Promise<AgentSlackResult>;
+  update(name: string, update: AgentSlackUpdate, userEmail: string, userId: string): Promise<AgentSlackResult>;
   disconnect(name: string, userEmail: string): Promise<AgentSlackResult>;
   test(name: string, userEmail: string): Promise<{ ok: true; team?: string; botUser?: string } | { ok: false }>;
   channels(name: string, userEmail: string): Promise<SlackChannelListing>;
@@ -420,8 +433,8 @@ export function createAgentSlackUseCases(deps: {
 }): AgentSlackUseCases {
   return {
     get: (name, userEmail) => getAgentSlack(deps.agents, name, userEmail, deps.cipher),
-    update: (name, update, userEmail) =>
-      updateAgentSlack(deps.agents, name, update, userEmail, deps.cipher),
+    update: (name, update, userEmail, userId) =>
+      updateAgentSlack(deps.agents, name, update, userEmail, deps.cipher, userId),
     disconnect: (name, userEmail) =>
       disconnectAgentSlack(deps.agents, name, userEmail, deps.cipher),
     test: (name, userEmail) =>

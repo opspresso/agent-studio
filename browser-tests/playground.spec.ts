@@ -35,7 +35,9 @@ for (const width of [1200, 390]) {
   test(`renders streamed Markdown and safe links at ${width}px`, async ({ page }, testInfo) => {
     page.on("pageerror", error => { throw error; });
     await page.setViewportSize({ width, height: 900 });
-    const content = "# Result\n\n**Verified**\n\n| Item | Value |\n|---|---:|\n| Total | 300 |\n\n```python\n" + "assert total == 300 # " + "x".repeat(180) + "\n```\n\n[Workspace](/chats/ws-fixture)\n\n[Unsafe](javascript:alert(1))\n\n<script>alert(1)</script>";
+    const content = "# Result\n\n**Verified**\n\n| Item | Value |\n|---|---:|\n| Total | 300 |\n\n```python\n" + "assert total == 300 # " + "x".repeat(180) + "\n```\n\n[Workspace](/chats/ws-fixture)\n\n" +
+      `[Absolute Workspace](${base}/chats/ws-fixture#actions)\n\n[External](https://outside.example.test/report)\n\n` +
+      "[Unsafe](javascript:alert(1))\n\n<script>alert(1)</script>";
     await page.route("**/api/agents/fixture/agent", route => route.fulfill({
       contentType: "text/event-stream",
       body: `data: ${JSON.stringify({ delta: { content: content.slice(0, 24) } })}\n\ndata: ${JSON.stringify({ delta: { content: content.slice(24) } })}\n\ndata: [DONE]\n\n`,
@@ -46,7 +48,21 @@ for (const width of [1200, 390]) {
     await expect(page.getByRole("heading", { name: "Result" })).toBeVisible();
     await expect(page.locator("strong")).toHaveText("Verified");
     await expect(page.getByRole("cell", { name: "300", exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Workspace" })).toHaveAttribute("href", "/chats/ws-fixture");
+    await expect(page.getByRole("link", { name: "Workspace", exact: true })).toHaveAttribute("href", "/chats/ws-fixture");
+    const internal = page.getByRole("link", { name: "Absolute Workspace" });
+    await expect(internal).toHaveAttribute("href", "/chats/ws-fixture#actions");
+    await expect(internal).not.toHaveAttribute("target", "_blank");
+    const external = page.getByRole("link", { name: "External", exact: true });
+    await expect(external).toHaveAttribute("target", "_blank");
+    await expect(external).toHaveAttribute("rel", "noopener noreferrer");
+    await page.context().route("https://outside.example.test/**", route => route.fulfill({ body: "External fixture" }));
+    const popup = page.waitForEvent("popup");
+    await external.click();
+    const outside = await popup;
+    await outside.waitForLoadState();
+    expect(outside.url()).toBe("https://outside.example.test/report");
+    expect(page.url()).toBe(`${base}/`);
+    await outside.close();
     await expect(page.getByText("Unsafe", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Unsafe", exact: true })).toHaveCount(0);
     await expect(page.locator("main script")).toHaveCount(0);

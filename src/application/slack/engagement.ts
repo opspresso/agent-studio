@@ -1,4 +1,5 @@
 import type { SlackEventBody } from "@/application/slack/types";
+import type { SlackMessageContent } from "@/domain/slack/types";
 import { slackInputText, slackMessageText } from "@/domain/slack/messageText";
 import { slackTimestampValue } from "@/domain/slack/runControl";
 
@@ -159,7 +160,8 @@ function mentionsSelf(body: SlackEventBody): boolean {
  * (`ci` matches `specific`), which is visible immediately and is the operator's
  * to fix: they chose the word.
  */
-function matchesKeyword(text: string, keywords: readonly string[] | undefined): boolean {
+export function matchesSlackChannelKeywords(message: SlackMessageContent, keywords: readonly string[] | undefined): boolean {
+  const text = slackMessageText(message);
   if (!keywords || keywords.length === 0 || !text) {
     return false;
   }
@@ -273,7 +275,7 @@ export function classifySlackEvent(
   // Everything the message says, not `text` alone: an alerting app keeps the
   // title and body in an attachment, and `[FIRING:1]` is registered to be found
   // there.
-  if (matchesKeyword(slackMessageText(event), policy.keywords)) {
+  if (matchesSlackChannelKeywords(event, policy.keywords)) {
     return { kind: "run", trigger: "keyword" };
   }
   return ignore("not addressed to the bot");

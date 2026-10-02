@@ -10,6 +10,7 @@ import { EMPTY_TURN, type AgentSummary } from "../_lib/types";
 import { useRunEntry } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
 import { ChatThread } from "./ChatThread";
+import { ChatRouteSelection } from "./ChatRouteSelection";
 import { LiveAssistant, MessageView, RunningAgents } from "./parts";
 import { Composer } from "./Composer";
 import { onNewChat } from "./ChatSidebar";
@@ -133,7 +134,7 @@ export function NewChatPanel() {
   // Once the chat exists the thread takes over, reading the very same store
   // entry — so the streamed answer keeps painting with no loading gap.
   if (chatId) {
-    return <ChatThread chatId={chatId} />;
+    return <><ChatRouteSelection chatId={chatId} tab="chats" /><ChatThread chatId={chatId} /></>;
   }
 
   if (!agentsLoaded) {

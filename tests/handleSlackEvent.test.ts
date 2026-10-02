@@ -274,6 +274,8 @@ const mutes: Array<{ threadTs: string; muted: boolean }> = [];
 function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps {
   let held = false;
   return {
+    members: { getById: async id => ({ id, name: "Registrant", email: "registrant@example.test", image: null,
+      tier: "member", joinedAt: "2026-01-01T00:00:00Z", lastLoginAt: null }) },
     identities: { connect: async () => ({ userId: "studio-user", email: "user@example.test" }), resolve: async () => ({ userId: "studio-user", email: "user@example.test" }) },
     stops: {
       acquire: async () => { if (held) return null; held = true; return "lease"; },
@@ -794,7 +796,7 @@ describe("handleSlackEvent", () => {
     expect(ran).toBe(true);
   });
 
-  it("refuses app-authored automation without a verified Studio caller", async () => {
+  it("refuses app-authored automation without an explicitly registered Studio account", async () => {
     const { slack } = makeSlackFake();
     const deps = makeDeps([], slack);
     const runAgent = vi.fn(async function* () { yield { done: true }; });
@@ -821,6 +823,33 @@ describe("handleSlackEvent", () => {
     );
 
     expect(runAgent).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, "U_GRAFANA"])("answers a keyword alert with bot sender %s as the registered Studio account", async user => {
+    const { slack, finalText, profileLookups, streamStarts } = makeSlackFake();
+    const deps = makeDeps([], slack);
+    const agent = { ...agentFixture(), slack: { enabled: true, botToken: "encrypted", signingSecret: "encrypted",
+      channelKeywords: ["[firing:"], keywordExecution: { userId: "registrant-id", revision: "r1" } } };
+    deps.agents = withConfigurations({ get: async () => agent } as unknown as AgentRepository,
+      async () => ({ ...configurationFixture(), parameters: { callerContext: true } }));
+    const resolve = vi.spyOn(deps.identities, "resolve");
+    const runAgent = vi.fn<SlackEventDeps["runAgent"]>(async function* () { yield { delta: { content: "Alert analyzed" } }; yield { done: true }; });
+    deps.runAgent = runAgent;
+    await handleSlackEvent(deps, {
+      ...EVENT, type: "event_callback",
+      event: { type: "message", subtype: "bot_message", channel_type: "channel", channel: "C1", ts: "1.0",
+        bot_id: "B_GRAFANA", user, username: "Grafana", attachments: [{ title: "[FIRING:1] OOMKilled", text: "container exceeded memory" }] },
+    }, BINDING);
+    expect(finalText()).toContain("Alert analyzed");
+    expect(runAgent).toHaveBeenCalledWith(expect.objectContaining({
+      user: { userId: "registrant-id", email: "registrant@example.test" },
+      actor: { kind: "slack", id: "B_GRAFANA" },
+      executionGrant: expect.objectContaining({ source: "channel-keyword", revision: "r1" }),
+      messages: [{ role: "user", content: "Grafana: [FIRING:1] OOMKilled\ncontainer exceeded memory" }],
+    }));
+    expect(resolve).not.toHaveBeenCalled();
+    expect(profileLookups).toEqual([]);
+    expect(streamStarts).toEqual([]);
   });
 
   it("answers without history when the thread read fails", async () => {
@@ -2278,7 +2307,8 @@ describe("verified Slack sender gate", () => {
   it.each([{ user: undefined }, { bot_id: "B2", user: undefined }])("never adopts the Agent owner for an unidentified sender %j", async sender => {
     const { slack, posted } = makeSlackFake(); const deps = deps0(slack); const run = vi.spyOn(deps, "runAgent");
     await handleSlackEvent(deps, { ...EVENT, event: { ...EVENT.event, ...sender } }, BINDING);
-    expect(run).not.toHaveBeenCalled(); expect(posted.at(-1)?.text).toContain("verified Slack user");
+    expect(run).not.toHaveBeenCalled();
+    expect(posted.at(-1)?.text).toContain("bot_id" in sender ? "Save the channel keywords" : "verified Slack user");
   });
   it("resolves the signed workspace and sender before mutating engagement", async () => {
     const { slack } = makeSlackFake(); const deps = deps0(slack); const resolve = vi.spyOn(deps.identities, "resolve");

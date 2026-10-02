@@ -3,7 +3,7 @@ import { loadFileHistory, rememberFiles } from "./fileHistory";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { ExecuteAgentInput } from "@/application/execution/deps";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
-import type { RunActor, RunCaller, RunConversation, MessagingExecutionGrant } from "@/domain/execution/actor";
+import type { RunActor, RunCaller, RunConversation, MessagingExecutionGrant, SlackKeywordExecutionGrant } from "@/domain/execution/actor";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import { documentKind } from "@/domain/llm/documentLimits";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
@@ -86,7 +86,7 @@ export interface TurnInput {
   attachments: InboundAttachment[];
   /** Earlier turns, oldest first, already cut to what this surface carries. */
   history: HistoryTurn[];
-  executionGrant: MessagingExecutionGrant;
+  executionGrant: MessagingExecutionGrant | SlackKeywordExecutionGrant;
   /** Who is asking, when the surface resolved it. The facade gates it on the Agent settings. */
   caller?: RunCaller;
   conversation: RunConversation;

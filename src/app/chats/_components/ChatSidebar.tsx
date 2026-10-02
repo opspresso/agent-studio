@@ -23,6 +23,7 @@ import type { Chat } from "../_lib/types";
 import { useRunningKeys } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
 import { ChatSidebarItems, type SidebarTab } from "./ChatSidebarItems";
+import { useChatRouteSelection } from "./ChatRouteSelection";
 import { assertOk, readJson } from "@/app/_lib/httpClient";
 import { reportError } from "@/app/_lib/reportError";
 import classes from "./ChatSidebar.module.css";
@@ -44,6 +45,7 @@ export function ChatSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const t = useT();
+  const { route } = useChatRouteSelection();
   /**
    * Each tab pages its own owner partition subset. "Show more" raises that
    * tab's limit and rereads its rows because updatedAt alone is not a cursor.
@@ -128,9 +130,17 @@ export function ChatSidebar() {
   }, [pathname, closeDrawer]);
 
   const activeId = pathname.startsWith("/chats/") ? pathname.split("/")[2] : undefined;
+  const routeTab = route && route.chatId === activeId ? route.tab : undefined;
+  useEffect(() => {
+    if (!routeTab) return;
+    const selectRoute = () => setTab(routeTab);
+    selectRoute();
+    window.addEventListener("hashchange", selectRoute);
+    return () => window.removeEventListener("hashchange", selectRoute);
+  }, [activeId, routeTab, setTab]);
   const activeChat = pages.chats.chats.find(chat => chat.chatId === activeId) ??
     pages.workspaces.chats.find(chat => chat.chatId === activeId);
-  const activeTab: SidebarTab | undefined = activeChat ? activeChat.workspaceId ? "workspaces" : "chats" : undefined;
+  const activeTab: SidebarTab | undefined = routeTab ?? (activeChat ? activeChat.workspaceId ? "workspaces" : "chats" : undefined);
   const currentTitle = activeChat ? t("chat.currentItem", { title: activeChat.title }) : undefined;
 
   async function handleDelete(chatId: string) {
@@ -153,7 +163,7 @@ export function ChatSidebar() {
     <Button
       component={Link}
       href="/chats"
-      onClick={() => window.dispatchEvent(new CustomEvent(NEW_CHAT_EVENT))}
+      onClick={() => { setTab("chats"); window.dispatchEvent(new CustomEvent(NEW_CHAT_EVENT)); }}
       radius="xl"
       leftSection={<IconPlus size={16} />}
     >
