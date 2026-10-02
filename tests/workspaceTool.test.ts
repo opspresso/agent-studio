@@ -243,6 +243,13 @@ describe("Workspace Agent capability", () => {
       const result = await invoke({ operation: "status", workspace_id: workspace.id, run_id: run.id, after_seq: after }, "read");
       expect(result.truncated).toBe(false);
       expect(result.next_seq).toBeGreaterThan(after);
+      if (result.has_more) {
+        expect(result.next).toBe("read remaining output");
+        expect(result.next_request).toEqual({ operation: "status", workspace_id: workspace.id, run_id: run.id, after_seq: result.next_seq });
+      } else {
+        expect(result.next).toBe("review results");
+        expect(result.next_request).toBeNull();
+      }
       output += result.output;
       after = result.next_seq;
       if (!result.has_more) break;

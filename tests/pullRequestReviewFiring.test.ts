@@ -89,7 +89,7 @@ describe("signed PR review firing", () => {
     expect(f.reply.mock.invocationCallOrder[0]).toBeGreaterThan(f.openWorkspace.mock.invocationCallOrder[0]!);
     expect(f.closeWorkspace.mock.invocationCallOrder[0]).toBeGreaterThan(f.reply.mock.invocationCallOrder[0]!);
     expect(f.closeWorkspace).toHaveBeenCalledOnce();
-    expect(f.rows[0]).toMatchObject({ status: "succeeded", review: { status: "posted" } });
+    expect(f.rows[0]).toMatchObject({ status: "succeeded", review: { status: "posted", workspaceUrl: "https://studio.example.test/chats/review-workspace" } });
   });
   it("withholds publication after the personal credential is revoked during execution", async () => {
     const f = fixture();
@@ -146,7 +146,7 @@ describe("signed PR review firing", () => {
     await executeDelivery(f.deps, admitted, payload);
     expect(f.reply).not.toHaveBeenCalled();
     expect(f.closeWorkspace).toHaveBeenCalledOnce();
-    expect(f.rows[0]?.status).toBe("failed");
+    expect(f.rows[0]).toMatchObject({ status: "failed", review: { status: "failed", workspaceUrl: "https://studio.example.test/chats/review-workspace" } });
   });
 
   it("keeps the posted review receipt when Workspace cleanup fails", async () => {
@@ -155,7 +155,7 @@ describe("signed PR review firing", () => {
     const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
     if (admitted.status !== "accepted") throw new Error("not admitted");
     await executeDelivery(f.deps, admitted, payload);
-    expect(f.rows[0]).toMatchObject({ status: "failed", review: { status: "posted" }, error: "cleanup failed" });
+    expect(f.rows[0]).toMatchObject({ status: "failed", review: { status: "posted", workspaceUrl: "https://studio.example.test/chats/review-workspace" }, error: "cleanup failed" });
   });
   it("does not publish while a required diff remains truncated, then accepts a fully read patch", async () => {
     const incomplete = fixture();

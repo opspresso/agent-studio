@@ -65,6 +65,9 @@ Workspace는 이 리뷰의 저장소·커밋·command 런타임으로 제한한�
 저장소 연결·생성, Git commit·push·merge·배포는 거절한다. 검사 결과를 읽지 않았거나 큐 작업이
 남아 있으면 리뷰를 게시하지 않는다. 종료 상태만으로 결과를 읽었다고 처리하지 않으며,
 `after_seq`·`next_seq` 출력 페이지를 처음부터 누락 없이 읽고 `has_more: false`를 확인해야 한다.
+리뷰의 `run.task`는 자연어 작업 지시가 아닌 정확한 셸 스크립트다. 도구의 `next_request`와
+`review_pending`은 다음 조회 operation·실행 ID·cursor를 제공한다. 종료 상태여도 출력 페이지가
+남아 있으면 이어 읽으며, 이전 실행의 결과를 모두 확인하기 전에는 다음 명령을 접수하지 않는다.
 잘린 출력 범위는 읽은 범위로 계산하지 않는다. 실행한 검사와 관측한 CI를 구분해 본문에 보고한다.
 `output_loss`가 있는 실행은 남은 출력 페이지를 모두 읽어도 전체 리뷰를 게시하지 않는다.
 검사 접수 요청의 응답·해석이 실패하거나 실행 ID를 받지 못하면 접수 결과가 불명확한 상태로
@@ -80,7 +83,8 @@ Workspace는 이 리뷰의 저장소·커밋·command 런타임으로 제한한�
 현재 Webhook 활성 상태와 저장소 권한 설정을 다시 읽는다. 어댑터가 PR의 열린 상태·draft·HEAD를
 재검사하고 해당 commit_id에 `COMMENT` 리뷰만 게시한다. 확인 직후 새 커밋이 생기더라도 리뷰는
 검토한 커밋에 연결된다. 승인·변경 요구·merge는 하지 않는다. 전송 오류나 확인되지 않은 응답을
-자동 재전송하지 않는다. 이력의 `review`는 대상과 posted/skipped/failed·실제 게시 URL을 보관한다.
+자동 재전송하지 않는다. 이력의 `review`는 대상과 posted/skipped/failed·실제 게시 URL·준비한
+Workspace URL을 보관한다. Integrations에서 게시 실패의 Workspace와 Trace를 직접 열 수 있다.
 
 ## 실행 문맥과 결과
 

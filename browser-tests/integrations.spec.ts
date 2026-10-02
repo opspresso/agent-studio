@@ -142,6 +142,27 @@ test("refused personal credential issuance preserves recovery without creating a
   await expect(page.getByText(/\?credential=/)).toHaveCount(0);
 });
 
+test("failed PR review history links its exact Workspace and Trace and displays the failure once", async ({ page }, testInfo) => {
+  const error = "Review Workspace results were not read; no review was published";
+  webhook = { agentName, triggerId: "webhook", kind: "webhook", description: "", enabled: true, allowConcurrent: false, createdAt: at, updatedAt: at };
+  runs.webhook = [{ agentName, triggerId: "webhook", runId: "failed-review", status: "failed", startedAt: at,
+    traceId: "review-trace", error, review: { repository: "fixture/repo", number: 42, headSha: "a".repeat(40),
+      status: "failed", reason: error, workspaceUrl: `${base}/chats/review-workspace` } }];
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.route(`**/api/agents/${agentName}/configuration`, route => route.fulfill({ json: { configuration: null } }));
+  await page.route("**/api/mcps", route => route.fulfill({ json: [] }));
+  await page.goto(base);
+  await page.getByRole("button", { name: "View history" }).nth(4).click();
+  const table = page.getByRole("table");
+  await expect(table.getByText("fixture/repo #42", { exact: true })).toBeVisible();
+  await expect(table.getByRole("link", { name: "Workspace", exact: true })).toHaveAttribute("href", `${base}/chats/review-workspace`);
+  await expect(table.getByRole("link", { name: "Trace", exact: true })).toHaveAttribute("href", `/agents/${agentName}/traces/review-trace`);
+  await expect(table.getByText(error, { exact: true })).toHaveCount(1);
+  await page.screenshot({ path: testInfo.outputPath("failed-review-history.png"), fullPage: true });
+  expect(errors).toEqual([]);
+});
+
 test("a saved bot connection becomes a schedule destination without reloading the page", async ({ page }) => {
   await page.goto(base);
   await page.getByRole("button", { name: "Schedules 2" }).click();

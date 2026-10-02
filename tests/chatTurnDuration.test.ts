@@ -26,6 +26,13 @@ function tool(seq: number, createdAt: string): ChatMessage {
 }
 
 describe("answerDurations", () => {
+  it("starts the resumed answer's duration at the Workspace task result instead of the earlier user request", () => {
+    const notice = { ...assistant(2, "2026-08-21T01:00:00.000Z"),
+      workspaceRun: { workspaceId: "work", runId: "task", status: "succeeded" as const } };
+    const durations = answerDurations([user(1, "2026-08-21T00:00:00.000Z"), notice, assistant(3, "2026-08-21T01:00:05.000Z")]);
+    expect(durations.has(2)).toBe(false);
+    expect(durations.get(3)).toBe(5000);
+  });
   it("measures from the question to the answer", () => {
     const durations = answerDurations([
       user(1, "2026-08-21T00:00:00.000Z"),

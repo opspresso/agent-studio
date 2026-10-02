@@ -157,11 +157,15 @@ SDK Session이 최근 이미지와 편집 핸들을 다음 턴으로 이어 준�
 일반 Agent 대화가 선택한 작업 공간은 `linkedWorkspaces`에 Agent별로 기록한다.
 Workspace use case의 transaction이 이 선택을 관리하고 일반 Chat 갱신은 보존한다.
 
-승인·CI 결과는 `workspaceAction`이 있는 플랫폼 assistant 행으로 표시한다.
-worker는 승인 요청 때 큐에 저장한 사용자 ID로 현재 계정·Agent 접근을 재확인하고,
+일반 Workspace 작업 완료는 `workspaceRun`, 승인·CI 결과는 `workspaceAction`이 있는 플랫폼 assistant 행으로 표시한다.
+worker는 작업·승인 접수 때 큐에 저장한 사용자 ID로 현재 계정·Agent 접근을 재확인하고,
 SDK Session의 사용자 ID도 대조한다.
 원래 소유자·Workspace 선택·SDK Session을 확인한 뒤 검증한 결과 이벤트로
 후속 실행을 시작한다. 플랫폼 결과를 새 사용자 요청이나 다음 Git 동작의 승인으로 해석하지 않는다.
+Chat에서 접수한 작업은 원래 사용자 메시지의 seq를 함께 보관한다. worker가 작업 종료와 알림을
+같은 transaction에 기록하고, 원래 Chat이 끝난 뒤 저장된 SDK 이력으로 남은 요청을 이어간다.
+원래 Chat이 모든 출력 페이지를 이미 읽었으면 별도 재개를 생략한다. 새 사용자 요청, Stop,
+Workspace 종료·선택 변경, 후속 작업·Git 동작은 이전 작업의 자동 재개를 취소한다.
 
 연결된 화면은 보이는 동안 실행이 없을 때 tail을 확인하고 새 run을 발견하면 재접속한다.
 CI 대기는 모델 턴을 소비하지 않으며 결과를 `workspaceAction.event=ci`로 전달한다.

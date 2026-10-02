@@ -6,6 +6,7 @@ import {
   deletePartition,
   getItem,
   queryItems,
+  transact,
   updateItem,
   type Item,
 } from "@/infrastructure/db/store";
@@ -38,6 +39,8 @@ function fromChatItem(item: Item): Chat {
     agentName: item.agentName as string | undefined,
     workspaceId: item.workspaceId as string | undefined,
     linkedWorkspaces: item.linkedWorkspaces as Chat["linkedWorkspaces"],
+    ...(typeof item.lastUserSeq === "number" ? { lastUserSeq: item.lastUserSeq } : {}),
+    ...(typeof item.lastStoppedUserSeq === "number" ? { lastStoppedUserSeq: item.lastStoppedUserSeq } : {}),
     createdAt: item.createdAt as string,
     updatedAt: item.updatedAt as string,
   };
@@ -98,6 +101,7 @@ function fromMessageItem(item: Item): ChatMessage {
       ...base,
       role,
       workspaceAction: item.workspaceAction as Extract<ChatMessage, { role: "assistant" }>["workspaceAction"],
+      workspaceRun: item.workspaceRun as Extract<ChatMessage, { role: "assistant" }>["workspaceRun"],
       toolCalls: item.toolCalls as ChannelToolCall[] | undefined,
       warnings: item.warnings as string[] | undefined,
       images: item.images as ChatMessageImage[] | undefined,
@@ -193,7 +197,12 @@ export const chatRepository: ChatRepository = {
   },
 
   async appendMessage(message) {
-    await putChatItem(message.chatId, chatMessageItem(message), conditions.notExists);
+    if (message.role !== "user") return putChatItem(message.chatId, chatMessageItem(message), conditions.notExists);
+    await transact([
+      { kind: "update", key: keys.chat(message.chatId), condition: chatIsLive,
+        patch: row => ({ ...row, lastUserSeq: Math.max(Number(row?.lastUserSeq ?? -1), message.seq) }) },
+      { kind: "put", item: chatMessageItem(message), condition: conditions.notExists },
+    ]);
   },
 
   async claimRun(chatId, runId, nowSeconds, expiresAtSeconds) {
@@ -258,7 +267,8 @@ export const chatRepository: ChatRepository = {
     try {
       await updateItem(
         keys.chat(chatId),
-        (row) => ({ ...row, cancelRequestedAt: new Date().toISOString() }),
+        (row) => ({ ...row, cancelRequestedAt: new Date().toISOString(),
+          ...(typeof row?.lastUserSeq === "number" ? { lastStoppedUserSeq: row.lastUserSeq } : {}) }),
         // Scoped to the named run: a stop pressed on a run that has since
         // finished must not reach whatever the chat is doing now.
         conditions.existsWith("activeRunId", runId),

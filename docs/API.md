@@ -680,6 +680,12 @@ guest는 대화형·자동화 Workspace 작업을 시작하거나 재개할 수 
 | `/api/workspaces/{id}/actions/{actionId}` | POST | `{approve: boolean}`으로 명시적 승인·거절. 같은 승인은 한 번만 소비 |
 | `/api/agents/{name}/workspace-policy` | GET / PUT | GET은 접근 가능한 member의 설정 조회, PUT은 Agent 소유자 변경. 아래 계약을 따른다 |
 
+Run 조회의 선택적 `sourceChatId`는 작업을 접수한 원래 Chat을 가리킨다. 내부 사용자 턴 seq는
+응답에 포함하지 않는다. Chat의 Workspace 도구는 `task_watch`로 완료 결과를 전달할 Chat URL을
+제공하며, `workspace_task_result` 이벤트가 저장된 SDK 이력으로 남은 요청을 이어간다.
+원래 Chat이 모든 출력 페이지를 읽었거나 사용자 Stop·새 요청·Workspace 종료·후속 작업이 있으면
+별도 재개를 생략한다. 이 이벤트는 Git 게시 권한이나 main 반영 승인을 추가하지 않는다.
+
 Workspace 설정 GET은 `{agentName, enabled, backendReady, canManage, revision, rules, runtimes, updatedAt?}`를
 반환한다. PUT은 `{revision, rules}`이며 `rules`는 `{mode, repositories, repositoryOwners, defaultRuntime,
 idleTtlSeconds, checks, deploymentWorkflows}`다. 기본 저장소와 배포 기본값 복원 필드는 없다.
@@ -1506,7 +1512,9 @@ Trigger 읽기·생성·수정 응답에는 토큰이 없다. 개인 토큰은 �
 리뷰 모드는 GitHub HMAC만 받아 PR의 repository·number·HEAD를 검증한다. 비대상 이벤트는
 `202 {ok:true,status:"ignored",reason}`이며 모델을 실행하지 않는다. 정상 접수는 기존 accepted
 형태를 유지하고 완료 이력의 `review`에 repository·number·headSha·posted/skipped/failed와
-확인된 url 또는 reason을 담는다. 자동 리뷰에는 Agent Workspace 활성화와 저장소 정책,
+확인된 url 또는 reason을 담는다. 준비된 리뷰의 `workspaceUrl`은 게시 실패나 정리 이후에도
+해당 Workspace를 가리킨다. Integrations 이력은 Workspace와 Trace 링크를 함께 제공한다.
+자동 리뷰에는 Agent Workspace 활성화와 저장소 정책,
 command 런타임·worker 및 유효한 개인 Webhook 호출자가 필요하다. 플랫폼이 검증한
 HEAD의 Workspace를 준비한 뒤 실행·COMMENT 게시·보고를 완료하고 Workspace 정리를 확인한다.
 `sourceRevision`은 내부 리뷰 입력이며 공개 Workspace 생성·시작 body에서 받지 않는다.

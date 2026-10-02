@@ -16,6 +16,7 @@ import { FakeChannel, contentChunk, toolCallChunk } from "./fakeChannel";
 import type { ChatDeps } from "@/application/chat/deps";
 import type { PullRequestInfo } from "@/domain/coding/types";
 import { ForbiddenError } from "@/application/errors";
+import { workspaceContinuationId } from "@/domain/workspace/continuation";
 
 const entropy = vi.hoisted(() => ({ sequence: 0 }));
 vi.mock("node:crypto", async importOriginal => ({
@@ -87,11 +88,144 @@ async function fixture() {
     const queued = await repository.dueContinuations(new Date().toISOString(), 20);
     await Promise.all(queued.map(item => processWorkspaceContinuation(deps, item)));
   };
-  return { ...f, user, deps, coding, workspace, git, approval, owner, drain, runAgent, pull,
+  return { ...f, user, deps, coding, workspace, git, approval, owner, drain, runAgent, pull, useCases, workspaceTool,
     setChannel: (next: FakeChannel) => { channel = next; } };
 }
 
 describe("Workspace decisions returning to their source chat", () => {
+  async function completedTask() {
+    const f = await fixture();
+    await f.git.decide(f.workspace.id, { user: f.user, actor: { kind: "user", id: f.user.email } }, f.approval.id, false);
+    await f.drain();
+    f.runAgent.mockClear();
+    const seq = await chats.reserveMessageSeq(f.scope.sessionId);
+    await chats.appendMessage({ chatId: f.scope.sessionId, seq, role: "user", content: "Implement and test, then create a PR. Do not merge.", createdAt: new Date().toISOString() });
+    await f.run(new FakeChannel([[contentChunk("Workspace task is queued")]]), "Implement and test, then create a PR. Do not merge.");
+    const run = await f.useCases.enqueue(f.workspace.id, f.user, { kind: "task", prompt: "Implement and test" }, "task-request", { kind: "user", id: f.user.email }, undefined, f.scope.sessionId);
+    expect(run.sourceChat).toEqual({ chatId: f.scope.sessionId, userSeq: seq });
+    vi.setSystemTime(Date.now() + 1000);
+    const workspace = (await repository.get(f.workspace.id))!;
+    await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, activeRunId: undefined, revision: workspace.revision + 1, updatedAt: new Date().toISOString() },
+      run: { ...run, status: "succeeded", finishedAt: new Date().toISOString(), lastEventSeq: 1 },
+      events: [{ workspaceId: workspace.id, runId: run.id, seq: 1, createdAt: new Date().toISOString(), data: { kind: "output", stream: "stdout", text: "implementation and tests complete" } }] });
+    const id = workspaceContinuationId({ taskRunId: run.id });
+    const notification = (await repository.continuation(workspace.id, id))!;
+    return { ...f, task: run, notification, notificationId: id };
+  }
+
+  it("resumes a completed task in its saved Chat once and carries the exact result request", async () => {
+    const f = await completedTask();
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "task-result", "Workspace", JSON.stringify({ request: { operation: "status", run_id: f.task.id, after_seq: 0 } }))],
+      [toolCallChunk(0, "task-commit", "Workspace", JSON.stringify({ request: { operation: "prepare_git", action: { kind: "commit", message: "feat: completed task" } } }))],
+      [toolCallChunk(0, "task-pr", "Workspace", JSON.stringify({ request: { operation: "prepare_git", action: { kind: "pull-request", title: "Completed task", body: "Checks passed", draft: false } } }))],
+      [contentChunk("The completed task was committed, pushed and published as a PR.")],
+    ]);
+    f.setChannel(channel);
+    await processWorkspaceContinuation(f.deps, f.notification);
+    expect(f.runAgent).toHaveBeenCalledOnce();
+    const event = JSON.parse(f.runAgent.mock.calls[0]![0].messages[1]!.content as string);
+    expect(event).toMatchObject({ event: "workspace_task_result", run_id: f.task.id, status: "succeeded",
+      next_request: { operation: "status", workspace_id: f.workspace.id, run_id: f.task.id, after_seq: 0 } });
+    expect(channel.seenParams.at(-1)?.messages.some(message => typeof message.content === "string" && message.content.includes("Do not merge"))).toBe(true);
+    expect(f.coding.coding("agent", f.user).commit).toHaveBeenCalledOnce();
+    expect(f.coding.coding("agent", f.user).push).toHaveBeenCalledOnce();
+    expect(f.coding.forge("agent", f.user).openPullRequest).toHaveBeenCalledOnce();
+    expect(f.coding.forge("agent", f.user).merge).not.toHaveBeenCalled();
+    expect((await repository.continuation(f.workspace.id, f.notificationId))?.status).toBe("completed");
+    await processWorkspaceContinuation(f.deps, f.notification);
+    expect(f.runAgent).toHaveBeenCalledOnce();
+  });
+
+  it("waits for the initiating Chat to release its lease before starting a task continuation", async () => {
+    const f = await completedTask();
+    const now = Math.floor(Date.now() / 1000);
+    expect(await chats.claimRun(f.scope.sessionId, "parent-run", now, now + 30)).toBe(true);
+    await processWorkspaceContinuation(f.deps, f.notification);
+    expect(f.runAgent).not.toHaveBeenCalled();
+    expect((await repository.continuation(f.workspace.id, f.notificationId))?.status).toBe("pending");
+    await chats.releaseRun(f.scope.sessionId, "parent-run");
+    vi.setSystemTime(Date.now() + 2001);
+    await processWorkspaceContinuation(f.deps, f.notification);
+    expect(f.runAgent).toHaveBeenCalledOnce();
+  });
+
+  it("cancels a task continuation after a newer user request supersedes its source turn", async () => {
+    const f = await completedTask();
+    await chats.appendMessage({ chatId: f.scope.sessionId, seq: await chats.reserveMessageSeq(f.scope.sessionId), role: "user", content: "Stop publication", createdAt: new Date().toISOString() });
+    await processWorkspaceContinuation(f.deps, f.notification);
+    expect(f.runAgent).not.toHaveBeenCalled();
+    expect((await repository.continuation(f.workspace.id, f.notificationId))?.status).toBe("cancelled");
+  });
+
+  it("does not resume a user turn after an explicit Stop and lease release", async () => {
+    const f = await completedTask();
+    const now = Math.floor(Date.now() / 1000);
+    expect(await chats.claimRun(f.scope.sessionId, "stopped-parent", now, now + 30)).toBe(true);
+    expect(await chats.requestCancel(f.scope.sessionId, "stopped-parent")).toBe(true);
+    await chats.releaseRun(f.scope.sessionId, "stopped-parent");
+    await processWorkspaceContinuation(f.deps, f.notification);
+    expect(f.runAgent).not.toHaveBeenCalled();
+    expect((await repository.continuation(f.workspace.id, f.notificationId))?.status).toBe("cancelled");
+  });
+
+  it("cancels completion after the user closes the Workspace", async () => {
+    const f = await completedTask();
+    await f.useCases.close(f.workspace.id, f.owner);
+    await processWorkspaceContinuation(f.deps, f.notification);
+    expect(f.runAgent).not.toHaveBeenCalled();
+    expect((await repository.continuation(f.workspace.id, f.notificationId))?.status).toBe("cancelled");
+  });
+
+  it("does not resume when the source Chat already received the complete task output", async () => {
+    const f = await completedTask();
+    const result = JSON.parse((await f.workspaceTool({ request: { operation: "status", run_id: f.task.id, after_seq: 0 } }, "observed-task")).text);
+    expect(result.has_more).toBe(false);
+    expect(result.truncated).toBe(false);
+    expect((await repository.continuation(f.workspace.id, f.notificationId))?.status).toBe("completed");
+    await processWorkspaceContinuation(f.deps, f.notification);
+    expect(f.runAgent).not.toHaveBeenCalled();
+  });
+
+  it("keeps a task completion pending when the source Chat skipped an output page", async () => {
+    const f = await completedTask();
+    await f.workspaceTool({ request: { operation: "status", run_id: f.task.id, after_seq: 1 } }, "skipped-task-output");
+    expect((await repository.continuation(f.workspace.id, f.notificationId))?.status).toBe("pending");
+  });
+
+  it("rechecks a Workspace revision changed between validation and notification claim", async () => {
+    const f = await completedTask();
+    f.deps.authorize = async () => {
+      const workspace = (await repository.get(f.workspace.id))!;
+      await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, title: "New title", revision: workspace.revision + 1 } });
+    };
+    await processWorkspaceContinuation(f.deps, f.notification);
+    expect(f.runAgent).not.toHaveBeenCalled();
+    expect((await repository.continuation(f.workspace.id, f.notificationId))?.status).toBe("pending");
+    expect(await chats.getActiveRun(f.scope.sessionId)).toBeNull();
+    f.deps.authorize = async () => {};
+    await processWorkspaceContinuation(f.deps, f.notification);
+    expect(f.runAgent).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a task continuation after the requesting account loses Agent access", async () => {
+    const f = await completedTask();
+    f.deps.authorize = async () => { throw new ForbiddenError("Access revoked"); };
+    await processWorkspaceContinuation(f.deps, f.notification);
+    expect(f.runAgent).not.toHaveBeenCalled();
+    expect((await repository.continuation(f.workspace.id, f.notificationId))?.status).toBe("cancelled");
+  });
+
+  it("reports permanent task output loss as a failed event instead of successful publication evidence", async () => {
+    const f = await completedTask();
+    const workspace = (await repository.get(f.workspace.id))!;
+    const run = (await repository.run(workspace.id, f.task.id))!;
+    await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, revision: workspace.revision + 1 },
+      run: { ...run, outputLoss: true } });
+    await processWorkspaceContinuation(f.deps, f.notification);
+    expect(JSON.parse(f.runAgent.mock.calls[0]![0].messages[1]!.content as string)).toMatchObject({ event: "workspace_task_result", status: "failed", output_loss: true });
+  });
+
   it("cancels a durable result when another account has replaced the source Session at the same email", async () => {
     const f = await fixture();
     await f.git.decide(f.workspace.id, { user: f.user, actor: { kind: "user", id: f.user.email } }, f.approval.id, true);

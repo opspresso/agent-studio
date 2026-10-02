@@ -352,7 +352,7 @@ PR workflow에는 Release 생성·registry 게시·GitOps 전달 job이 없다.
 ## PR 리뷰 Workspace 통합 검증
 
 `pnpm test:review:workspace`는 전용 로컬 `_test` DB와 Docker Sandbox에서 서명된 PR 접수,
-실제 Git HTTP bundle·고정 SHA 체크아웃, SDK의 Workspace 검사, COMMENT 영수증, Workspace·Sandbox
+실제 Git HTTP bundle·고정 SHA 체크아웃, SDK의 Workspace 검사·여러 출력 페이지 조회, COMMENT 영수증, Workspace·Sandbox
 종료와 같은 HEAD의 중복 거절을 검증한다. 모델 응답과 GitHub API는 결정적 fixture이며
 실제 외부 리뷰를 게시하지 않는다. 기본 이미지는 다른 Workspace 검사와 같은
 `agent-studio-workspace:agents`이고 `WORKSPACE_SANDBOX_IMAGE`로 검증 이미지를 선택할 수 있다.

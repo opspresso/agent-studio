@@ -96,6 +96,7 @@
 | 원래 Chat의 Agent별 Workspace 선택과 동시 생성 차단 | `Chat.linkedWorkspaces`; `workspaceUseCases.startForChat`과 `workspaceRepository`의 source Chat transaction | 코드 |
 | GitHub Webhook HMAC-SHA256 서명과 delivery ID 형식 | `src/shared/githubWebhook.ts`; Agent Trigger와 Workspace 메타데이터 Webhook은 각자 시크릿을 해석하고 같은 검증을 사용한다 | 코드 |
 | Workspace 승인 결과의 원래 Chat 전달과 단일 후속 실행 | `CodingApproval.sourceChatId`, `domain/workspace/continuation.ts`; `workspaceRepository`의 원자적 알림과 `application/chat/workspaceContinuation.ts` 소비자 | 코드 |
+| 일반 Workspace 작업 완료의 원래 사용자 턴 전달과 중복 재개 방지 | `WorkspaceRun.sourceChat`, `Chat.lastUserSeq`·`lastStoppedUserSeq`; `workspaceRepository`의 완료·알림 transaction과 `workspaceContinuation`의 현재 사용자 턴 검사. 출력 페이지의 완전한 전달 범위는 `application/workspace/output.ts`의 `observeWorkspacePage` | 코드 |
 | Workspace PR의 CI 대기 대상·기한 | `application/chat/workspaceCiWatch.ts`; 자동 게시와 승인 후속 실행이 같은 정책을 사용한다 | 코드 |
 | Workspace 명령과 검사에 공통인 셸 실패 처리 | `src/shared/workspaceShell.ts` | 코드 |
 | Sandbox 제어 프로토콜·Pod identity·고아 grace | `src/infrastructure/workspace/sandboxBackend.ts`, `kubernetesProvider.ts`; 기존 Docker 핸들 라우팅은 `backendRouting.ts` | 코드 |

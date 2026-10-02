@@ -111,6 +111,8 @@ Provider는 Docker CLI에 인자 배열을 넘긴다. API 입력과 모델 설�
 동일 operation ID와 동일 입력은 한 번만 시작하며, 다른 입력으로 ID를 재사용하면 거절한다.
 이전 operation의 취소는 다음 operation에 적용되지 않는다. 재시작 시 PID와 `/proc`의 시작
 시각을 함께 검사하고, 시작 전·시작 중·실행 중·완료·핸들 소실을 구별한다.
+감독 프로세스 종료를 관측하면 영속 완료 결과를 다시 확인한다. 완료 결과가 없는 실제 핸들
+소실만 중단으로 처리하며 명령을 재실행하지 않는다.
 
 체크포인트는 파일·디렉터리·Workspace 내부 symlink와 native Session을 보관한다. 외부 경로,
 경로 탈출, symlink 아래로 쓰는 복원, 특수 파일은 거절한다. 복원은 빈 Sandbox에서만 허용한다.
@@ -346,6 +348,10 @@ Agent 설정의 `parameters.workspaceTools`를 켜면 확인된 member 이상 �
 Agent가 만든 Workspace는 자신의 Chat을 가진다. 요청을 조율하는 SDK 대화 이력과 native Session을
 섞지 않고, 반환된 `workspace_id`로 후속 요청을 연결한다. SDK run과 tool call ID가 접수 중복을
 막는다. `wait`는 최대 8초만 기다리고, 실행 중이면 반환된 Workspace 경로에서 계속 확인한다.
+Chat에서 접수한 일반 작업은 `task_watch`로 완료를 전달할 원래 Chat을 표시한다. Agent는
+작업을 재접수하거나 상태를 계속 반복 조회하지 않고 응답을 마칠 수 있다. worker가 작업 완료를
+영속 알림으로 기록하고 `workspace_task_result`로 같은 SDK 대화를 재개해 결과 확인·남은 게시를
+이어간다. 완료 이벤트는 새 사용자 요청이나 Git 게시 권한을 추가하지 않는다.
 도구 출력은 cursor로 읽으며 페이지에 들어가는 전체 이벤트까지만 cursor를 진행한다.
 단일 이벤트 자체가 상한을 넘는 경우와 생략된 Diff는 잘림을 표시한다.
 `prepare_git`의 작업 브랜치 Commit·Push·Commit & push·PR은 결과를 바로 반환한다. Agent는 PR까지 계속 진행한다.
@@ -373,6 +379,9 @@ PR 성공 결과의 검사 상태가 `pending`이면 `ci_watch`에 PR 번호·�
 알림은 브라우저 연결과 독립적이다. 다른 Chat run이나 SDK 승인이 진행 중이면 대기한다. 이미 claim한
 알림의 lease가 만료되면 실패로 기록하고 자동 재실행하지 않는다. 사용자가 현재 결과를 확인한 뒤 이어가야 한다.
 삭제된 Chat·Workspace, 바뀐 Workspace 선택과 철회된 접근 권한은 후속 실행을 취소한다.
+일반 작업 완료는 접수한 사용자 메시지 seq와 대조한다. 새 요청·Stop·Workspace 종료나
+후속 작업·Git 동작이 있으면 재개하지 않는다. 같은 Chat에서 모든 출력 페이지를 확인한 결과도
+중복 재개하지 않는다. 출력 범위 확인은 PR 리뷰와 같은 `observeWorkspacePage` 규칙을 사용한다.
 Chat이 없는 Playground·직접 Workspace 화면 요청에는 원래 채팅을 추측해서 연결하지 않는다.
 
 이 도구는 Git·배포 승인을 소비하지 않는다. Native 코딩 턴은 보호된 Git 경로와 승인 경계의

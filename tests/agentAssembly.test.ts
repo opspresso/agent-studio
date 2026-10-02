@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 import { assembleAgentRun, type AgentDeps, type SubagentInfo } from "@/application/runtime";
 import type { RunCaller } from "@/domain/execution/actor";
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 
 const CALLER: RunCaller = { displayName: "Bruce", timezone: "Asia/Seoul" };
 const SKILLS = [{ name: "greeting", description: "How to greet" }];
@@ -51,6 +52,19 @@ describe("the caller block", () => {
 });
 
 describe("a builtin is offered only when the run can perform it", () => {
+  it("offers only prepared command/read operations for PR review while retaining ordinary Workspace tasks", () => {
+    const deps = fullDeps({ workspaceTool: async () => ({ text: "{}" }), reviewSource: async () => ({ text: "{}" }) });
+    const review = assembleAgentRun(deps, {}).tools.find(tool => tool.function.name === "Workspace")!;
+    const validate = createToolSchemaValidator().compile(review.function.parameters!);
+    for (const request of [{ operation: "options" }, { operation: "run", task: "git rev-parse HEAD" },
+      { operation: "wait", run_id: "check", after_seq: 20 }]) expect(() => validate({ request })).not.toThrow();
+    for (const request of [{ operation: "start", task: "read files", runtime: "codex", repository: null, base_branch: null },
+      { operation: "run", task: "read files", runtime: "codex" }, { operation: "close" },
+      { operation: "prepare_git", action: { kind: "push" } }]) expect(() => validate({ request })).toThrow();
+    const ordinary = assembleAgentRun(fullDeps({ workspaceTool: deps.workspaceTool }), {}).tools.find(tool => tool.function.name === "Workspace")!;
+    const validateOrdinary = createToolSchemaValidator().compile(ordinary.function.parameters!);
+    expect(() => validateOrdinary({ request: { operation: "start", task: "Implement the change", runtime: "codex", repository: null, base_branch: null } })).not.toThrow();
+  });
   it("offers the Skill tool with a loader", () => {
     const assembly = assembleAgentRun(fullDeps(), { skills: SKILLS });
     expect(assembly.tools.map((tool) => tool.function.name)).toContain("Skill");

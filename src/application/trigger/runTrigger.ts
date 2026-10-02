@@ -489,7 +489,7 @@ export async function executeFiring(
     }
     if (publication && !error) {
       if (termination !== "completed") throw new Error("The review run did not complete; no review was published");
-      review = { ...publication.target, ...await publication.send(text, warnings) };
+      review = { ...publication.target, workspaceUrl: publication.workspaceUrl, ...await publication.send(text, warnings) };
     }
   } catch (caught) {
     error = caught instanceof Error ? caught.message : String(caught);
@@ -497,7 +497,7 @@ export async function executeFiring(
     try { await publication?.close(); }
     catch (caught) { error = [error, caught instanceof Error ? caught.message : String(caught)].filter(Boolean).join("; "); }
   }
-  if (publication && error && review?.status !== "posted") review = { ...publication.target, status: "failed", reason: cutCodePoints(error, 500) };
+  if (publication && error && review?.status !== "posted") review = { ...publication.target, workspaceUrl: publication.workspaceUrl, status: "failed", reason: cutCodePoints(error, 500) };
   const deliveryResults: ScheduleDeliveryResult[] = [];
   try {
     await admitted.check?.();
