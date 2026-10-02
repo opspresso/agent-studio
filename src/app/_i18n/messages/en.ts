@@ -1355,8 +1355,6 @@ export const en = {
   "mcpConn.needsAuth": "Not authorized",
   "mcpConn.needsReauth": "Reconnect required",
   "mcpConn.readFailed": "Could not read this server’s registry entry.",
-  "mcpConn.clientId": "Client ID",
-  "mcpConn.clientSecret": "Client secret",
   "mcpConn.connect": "Connect",
   "mcpConn.reauthorize": "Reauthorize",
   "mcpConn.noAuthNeeded":
@@ -1387,7 +1385,6 @@ export const en = {
   "mcpConn.accountNotConfigured": "Account lookup is not configured. An administrator can select an account API or current-user tool in Tools → OAuth.",
   "mcpConn.accountDisabled": "Account lookup is disabled for this server.",
   "mcpConn.connectedAt": "Connected on {when}",
-  "mcpConn.saveCredentials": "Save credentials",
   "mcpConn.disconnect": "Disconnect",
   "mcpOAuth.automatic": "Users can connect their accounts without a manually registered OAuth app. A reachable client metadata document is used first, then dynamic registration when available.",
   "mcpOAuth.manual": "Manual OAuth app settings",

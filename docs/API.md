@@ -115,7 +115,7 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 해당 Agent�
 | `/api/agents/{name}/teams` | `GET` `PUT` `DELETE` | owner / member + owner |
 | `/api/agents/{name}/teams/test` | `POST` | member + owner |
 | `/api/agents/{name}/mcp-connections` | `GET` | member + 본인 연결 |
-| `/api/agents/{name}/mcp-connections/{server}` | `PUT` `DELETE` | member + 본인 연결 |
+| `/api/agents/{name}/mcp-connections/{server}` | `DELETE` | member + 본인 연결 |
 | `/api/agents/{name}/mcp-connections/{server}/authorize` | `POST` | member + 본인 연결 |
 | `/api/agents/{name}/mcp-connections/{server}/tools` | `POST` | member + 본인 연결 |
 
@@ -1097,16 +1097,14 @@ RFC 9728 protected-resource 메타데이터 → RFC 8414 authorization-server �
 호출자는 세션의 사용자 ID로 결정하고 본문에서 받지 않는다. 현재 계정·등급·Agent 접근을
 검사하며 소유자가 아닌 member도 public Agent에서 본인 MCP를 연결할 수 있다.
 저장은 사용자 ID·서버별이며 다른 Agent에서도 같은 개인 연결을 재사용한다.
-연결 목록·Client Secret 마스크·해제는 본인에게만 적용한다.
+연결 목록·인증·해제는 본인에게만 적용한다. 수동 OAuth 앱 설정은 admin이 Tools에서 관리한다.
 
 ```
 GET    /api/agents/{name}/mcp-connections
-→ 200 { connections: [ { serverName, status, clientId, clientSecret?, clientRegistered,
+→ 200 { connections: [ { serverName, status, clientId,
                          scopes, connectedBy?, connectedAccount?, accountUnavailableReason?,
                          connectedAt?, expiresAt? } ] }
 
-PUT    /api/agents/{name}/mcp-connections/{server}
-       { clientId, clientSecret?, scopes?: [] }        → 200 { …connection view… }
 DELETE /api/agents/{name}/mcp-connections/{server}   → 204
 
 POST   /api/agents/{name}/mcp-connections/{server}/authorize
@@ -1119,12 +1117,7 @@ POST   /api/agents/{name}/mcp-connections/{server}/tools
 
 - `status` 는 `needs_auth` | `connected` | `needs_reauth` 다. 연결을 `needs_reauth` 로 옮기는
   것은 거부된 grant, 또는 회전한 refresh token의 결과를 확정하지 못한 갱신이다. 불확실한 갱신은 자동 재전송하지 않고 다시 인증한다.
-- `clientSecret` 은 읽을 때 마스킹되고 **토큰은 절대 돌려주지 않는다**. agent API 토큰과 달리 reveal 경로가 없는데, 토큰은 표시될 이유가 없기 때문이다. 쓰기에서 생략되거나
-  마스킹된 값은 같은 Client ID·issuer의 Secret만 유지한다. Client ID나 issuer가 달라졌으면
-  이전 Secret은 제거한다. 빈 값도 Secret을 제거한다. 저장 시 resource가 달라졌으면 같은
-  issuer의 client Secret은 유지할 수 있지만 이전 access/refresh token을 지우고 재인가한다.
-- `clientRegistered` 는 인증 정보가 손으로 입력된 것이 아니라 RFC 7591 동적 등록에서 왔을 때
-  `true` 다.
+- 개인 연결 응답에는 Client Secret과 access/refresh token을 포함하지 않는다.
 - `connectedAccount`는 실제 OAuth grant로 조회한 `{ provider, label }`이다. `provider`는 기존 제공자
   `github`·`google`·`notion`·`plaud` 또는 공통 조회 방식 `oidc`·`http`·`mcp`다.
   GitHub는 사용자명, Google·Notion·Plaud는 제공자가 반환한 이메일을 표시한다. Notion·Plaud가
@@ -1138,10 +1131,11 @@ POST   /api/agents/{name}/mcp-connections/{server}/tools
 
 - `/authorize` 는 `3xx` 를 내는 대신 프로바이더 URL 을 **돌려준다**: 호출자는 콘솔의 `fetch` 이고,
   그것은 사용자를 보내는 대신 리다이렉트를 자기가 따라가 버릴 것이기 때문이다.
-- `auth` 블록이 없는 레지스트리 항목은 연결할 대상이 없으므로 `PUT` 과 `/authorize` 는 `400` 으로
-  답한다. `/authorize` 는 공개 base URL 이 설정되지 않았을 때, 서버가 동적 등록을 제공하지 않고
-  손으로 입력한 클라이언트도 없을 때, 그리고 저장된 인증 정보가 지금 그 항목이 지목하는 것과 다른
-  issuer 에서 발급됐을 때도 `400` 이다. `DELETE`는 본인이 그 서버에 연결을 갖고 있지 않으면 `404`로 답한다. `/tools`는 OAuth 서버에 대한 본인 연결이 필요하다. `404`는 레지스트리 항목이 없다는 뜻이다.
+- `auth` 블록이 없거나 공개 base URL이 설정되지 않으면 `/authorize`는 `400`으로 답한다.
+  사용할 수 있는 관리자 공용 앱·Client ID Metadata Document·동적 등록 중 어느 것도 없으면
+  관리자에게 Tools의 OAuth 앱 설정을 요청하는 오류를 반환한다.
+  `DELETE`는 본인의 연결이 없으면 `404`로 답한다. `/tools`는 OAuth 서버에 대한 본인 연결이 필요하다.
+  `404`는 레지스트리 항목이 없다는 뜻이다.
 - `/tools`는 현재 Agent binding과 호출자 자신의 OAuth grant로 도구를 조회한다.
   `headerOverrides`로 미저장 초안을 검사하는 기능은 Agent 소유자에게만 허용한다.
   registry의 `POST /api/mcps/{name}/tools`도 본인의 grant를 쓰지만 Agent binding을 적용하지 않는다.

@@ -8,14 +8,12 @@ export type McpConnectionStatus = "needs_auth" | "connected" | "needs_reauth";
 export interface McpConnection {
   userId: string;
   serverName: string;
-  /** Not a secret; stored in the clear. Issued by RFC 7591 or entered by hand. */
+  /** Not a secret; stored in the clear. Selected from the shared app, metadata document or RFC 7591 registration. */
   clientId: string;
   /** Encrypted. Absent for a public client (`token_endpoint_auth_method: "none"`). */
   clientSecret?: string;
   /** Shared OAuth app; the current secret is read from the registry at exchange/refresh. */
   clientFromRegistry?: boolean;
-  /** True when RFC 7591 issued the credentials, so they can be re-registered. */
-  clientRegistered?: boolean;
   /**
    * How this client proves itself at the token endpoint, when the registration
    * recorded a method of its own. Absent means the entry's discovered method.
@@ -26,7 +24,7 @@ export interface McpConnection {
    * URL rather than something an authorization server issued.
    *
    * It changes what {@link issuer} means for this row. A registered or
-   * hand-entered `client_id` is meaningless away from the server that issued it,
+   * administrator-configured `client_id` is meaningless away from the server that issued it,
    * which is the whole of SEP-2352 and the reason the issuer is recorded. A
    * metadata-document `client_id` is the opposite: it is self-hosted and
    * resolved on demand by *whichever* server is asked, so it stays valid when

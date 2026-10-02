@@ -61,14 +61,8 @@ function fromItem(item: Record<string, unknown>): McpConnection | null {
     clientId: item.clientId as string,
     clientSecret: optionalString(item.clientSecret),
     ...(item.clientFromRegistry === true ? { clientFromRegistry: true } : {}),
-    // Read back explicitly, unlike the write, which spreads the whole
-    // connection: a field added to the type and not to this list is stored and
-    // then silently lost. Both of these decide whether the issuer check applies
-    // to the row — the first exempts a client this deployment hosts, the second
-    // one the app can re-register on the owner's behalf — so losing either turns
-    // a recoverable connection into one that refuses to reconnect.
+    // A metadata-document client can be reused across authorization issuers.
     ...(item.clientFromMetadataDocument === true ? { clientFromMetadataDocument: true } : {}),
-    ...(item.clientRegistered === true ? { clientRegistered: true } : {}),
     // The method the registration recorded, which the token endpoint enforces;
     // lost on the way back, every exchange falls to the entry's discovered one.
     ...(isAuthMethod(item.tokenEndpointAuthMethod) ? { tokenEndpointAuthMethod: item.tokenEndpointAuthMethod } : {}),

@@ -386,18 +386,6 @@ export function listMcpConnections(name: string): Promise<McpConnectionView[]> {
     .then((data) => data.connections);
 }
 
-export function saveMcpClientCredentials(
-  name: string,
-  server: string,
-  input: { clientId: string; clientSecret?: string; scopes?: string[] },
-): Promise<McpConnectionView> {
-  return fetch(`/api/agents/${name}/mcp-connections/${server}`, {
-    method: "PUT",
-    headers: jsonHeaders,
-    body: JSON.stringify(input),
-  }).then((r) => readJson<McpConnectionView>(r));
-}
-
 /** Returns the provider URL to open; the callback finishes the flow. */
 export function beginMcpAuthorization(name: string, server: string): Promise<string> {
   return fetch(`/api/agents/${name}/mcp-connections/${server}/authorize`, { method: "POST" })

@@ -158,8 +158,8 @@ fingerprint에 묶이며 설정 변경 후 이전 계정 표시를 재사용하�
 실행 경로는 well-known 문서를 다시 가져오지 않는다. 저장된 메타데이터로 grant를 해석하고
 필요하면 갱신한다. 공유 client secret은 registry에서 읽어 회전을 반영하고,
 Client ID가 달라지면 기존 grant를 거절한다. 개별 등록 client secret은 해당 connection에 남는다.
-개별 credential 저장의 마스크·생략은 같은 Client ID·issuer에만 유효하다. 이전 Secret을
-다른 client나 issuer에 옮기지 않으며, 저장 시 resource가 달라졌으면 기존 token도 제거한다.
+Client ID·Secret 수동 입력은 관리자 공용 앱 설정에만 제공한다. 개인 연결 응답에는
+client Secret을 포함하지 않는다. issuer·resource가 달라진 grant는 실행에 사용하지 않는다.
 
 credential 선택은 기존 client, 사용할 수 있는 Client ID Metadata Document,
 dynamic registration 순서다. 설치 공용 metadata URL은 설정한 공개 base로만 만든다.
@@ -175,7 +175,7 @@ revision CAS를 사용하고 reconnect·삭제가 먼저 완료됐으면 원래 
 credential과 fingerprint가 같은 경우에만 재인가 상태나 추가 scope로 반영한다.
 계정 표시 backfill은 같은 grant revision을 조건으로 그 필드만 갱신하며 revision을 바꾸지 않는다.
 표시 저장이 진행 중인 refresh의 새 token을 버리게 해서는 안 되며 reconnect·삭제 후에는 표시 저장도 거절한다.
-자격 증명 저장·인증 시작 중 새 연결 저장·콜백 완료·연결 해제도 읽은 연결 revision을 조건으로 쓴다.
+인증 시작 중 새 연결 저장·콜백 완료·연결 해제도 읽은 연결 revision을 조건으로 쓴다.
 그 사이 다른 연결이 저장되거나 삭제되면 충돌을 반환하며 이전 grant를 되살리거나 덮지 않는다.
 갱신 응답 유실·5xx·timeout·claim 소유 프로세스 중단은 provider 결과를 확정할 수 없으므로
 기존 credential 데이터를 보존한 채 `needs_reauth`로 바꾼다. 불명확한 claim은 자동 반복하지 않는다.

@@ -32,7 +32,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: mocks.getSession } } }));
 vi.mock("@/lib/container", () => ({ mcpAuthUseCases: mocks }));
-import { GET, PUT } from "@/app/api/mcps/[name]/auth/route";
+import { GET, PUT, POST, DELETE } from "@/app/api/mcps/[name]/auth/route";
 import { getMcpOAuthClientSettings, saveMcpOAuthClient } from "@/app/tools/api";
 
 const store = await import("@/infrastructure/db/store") as unknown as FakeStore;
@@ -298,5 +298,9 @@ describe("shared MCP OAuth app", () => {
     expect(empty.status).toBe(400);
     mocks.getSession.mockResolvedValue({ user: { id: "member", email: "member@example.test", tier: "member" } });
     expect((await GET(new Request(`${BASE}/api/mcps/github/auth`), { params: Promise.resolve({ name: "github" }) })).status).toBe(403);
+    for (const [method, handler] of [["PUT", PUT], ["POST", POST], ["DELETE", DELETE]] as const) {
+      expect((await handler(new Request(`${BASE}/api/mcps/github/auth`, { method, headers: { origin: BASE } }),
+        { params: Promise.resolve({ name: "github" }) })).status).toBe(403);
+    }
   });
 });

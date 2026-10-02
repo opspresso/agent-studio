@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { build } from "esbuild";
 import { test, expect } from "@playwright/test";
+import type { McpServerAuth } from "../src/domain/mcp/types";
 
 let server: Server;
 let base: string;
@@ -30,6 +31,52 @@ test.beforeAll(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
+
+for (const admin of [true, false]) {
+  test(`${admin ? "admin configures" : "member cannot configure"} the shared OAuth app in Tools`, async ({ page }) => {
+    let auth: McpServerAuth | undefined;
+    const writes: Record<string, unknown>[] = [];
+    const callback = `${base}/api/mcps/oauth/callback`;
+    await page.route("**/api/mcps/**", route => {
+      const request = route.request();
+      if (new URL(request.url()).pathname.endsWith("/auth")) {
+        if (request.method() === "POST") {
+          auth = { type: "oauth2", resource: "https://api.githubcopilot.com/mcp/", issuer: "https://github.com/login/oauth",
+            authorizationServer: "https://github.com/login/oauth", authorizationEndpoint: "https://github.com/login/oauth/authorize",
+            tokenEndpoint: "https://github.com/login/oauth/access_token", tokenEndpointAuthMethod: "client_secret_post",
+            discoveredAt: "2026-10-02T00:00:00Z" };
+          return route.fulfill({ json: { status: "discovered", auth } });
+        }
+        if (request.method() === "PUT") {
+          const body = request.postDataJSON();
+          writes.push(body);
+          auth = { ...auth!, clientId: body.clientId, clientSecret: "••••", redirectUri: body.redirectUri };
+          return route.fulfill({ json: auth });
+        }
+        return route.fulfill({ json: { auth, defaultRedirectUri: callback } });
+      }
+      return route.fulfill({ json: { name: "first", url: "https://api.githubcopilot.com/mcp/", headers: {}, auth } });
+    });
+    await page.goto(`${base}${admin ? "?admin" : ""}`);
+    await expect(page.getByRole("heading", { name: "first", exact: true })).toBeVisible();
+    if (!admin) {
+      await expect(page.getByRole("button", { name: "Discover", exact: true })).toHaveCount(0);
+      await expect(page.getByLabel("Client ID", { exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Save OAuth client", exact: true })).toHaveCount(0);
+      expect(writes).toEqual([]);
+      return;
+    }
+    await page.getByRole("button", { name: "Discover", exact: true }).click();
+    await page.getByLabel("Client ID", { exact: true }).fill("shared-github-app");
+    await page.getByLabel("Client secret", { exact: true }).fill("synthetic-app-secret");
+    await expect(page.getByLabel("Redirect URI", { exact: true })).toHaveValue(callback);
+    await page.getByRole("button", { name: "Save OAuth client", exact: true }).click();
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0]).toEqual({ clientId: "shared-github-app", clientSecret: "synthetic-app-secret", redirectUri: callback });
+    await expect(page.getByLabel("Client ID", { exact: true })).toHaveValue("shared-github-app");
+    await expect(page.getByLabel(/Client secret/)).not.toHaveValue("synthetic-app-secret");
+  });
+}
 
 test("does not show an earlier server's delayed connection test after navigation", async ({ page }) => {
   const at = "2026-09-24T00:00:00Z";

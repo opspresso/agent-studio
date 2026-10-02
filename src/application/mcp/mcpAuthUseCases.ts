@@ -225,22 +225,11 @@ export function clientMetadataDocument(
   };
 }
 
-/**
- * A connection as the console may see it.
- *
- * The client secret is masked the way every other stored secret in this codebase
- * is — length-preserving, edges revealed in proportion to length — so an owner
- * can recognise which credential is stored without it being readable. Tokens are
- * absent entirely: unlike the agent API token there is no
- * reveal path here, and a token has no reason to be displayed at all.
- */
+/** Personal connection status; OAuth app secrets and tokens stay server-side. */
 export interface McpConnectionView {
   serverName: string;
   status: McpConnection["status"];
   clientId: string;
-  /** Masked; absent for a public client that has none. */
-  clientSecret?: string;
-  clientRegistered: boolean;
   scopes: string[];
   connectedBy?: string;
   connectedAccount?: McpConnection["connectedAccount"];
@@ -250,7 +239,6 @@ export interface McpConnectionView {
 }
 
 function toConnectionView(
-  cipher: SecretCipher,
   connection: McpConnection,
   accountUnavailableReason?: McpConnectionView["accountUnavailableReason"],
 ): McpConnectionView {
@@ -258,19 +246,6 @@ function toConnectionView(
     serverName: connection.serverName,
     status: connection.status,
     clientId: connection.clientId,
-    ...(connection.clientSecret
-      ? {
-          clientSecret: cipher.mask(
-            connection.clientSecret,
-            mcpConnectionSecretContext(
-              connection.userId,
-              connection.serverName,
-              "client-secret",
-            ),
-          ),
-        }
-      : {}),
-    clientRegistered: connection.clientRegistered === true,
     scopes: connection.scopes,
     ...(connection.connectedBy ? { connectedBy: connection.connectedBy } : {}),
     ...(connection.connectedAccount ? { connectedAccount: connection.connectedAccount } : {}),
@@ -288,18 +263,6 @@ function accountLookupId(auth: McpServerAuth, mcpUrl: string): string | undefine
   })).digest("hex") : undefined;
 }
 
-export interface SaveClientCredentialsInput {
-  clientId: string;
-  /**
-   * An omitted or masked echo preserves only this client ID's secret at the same
-   * issuer. An empty value clears it, returning to a public client.
-   * Unlike the console's other secret fields this one arrives prefilled with the
-   * mask, so emptying it is a deliberate act rather than "I typed nothing".
-   */
-  clientSecret?: string;
-  scopes?: string[];
-}
-
 export interface SaveOAuthClientCredentialsInput {
   /** Omitted preserves; empty removes the shared app. */
   clientId?: string;
@@ -314,10 +277,6 @@ export interface SaveOAuthClientCredentialsInput {
 export interface McpOAuthClientSettings {
   auth: McpServerAuth;
   defaultRedirectUri: string;
-}
-
-function sameScopes(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((scope, index) => scope === b[index]);
 }
 
 /**
@@ -376,12 +335,6 @@ export interface McpAuthUseCases {
   ): Promise<McpServerAuth>;
 
   listConnections(agentName: string, user: RunUser): Promise<McpConnectionView[]>;
-  saveClientCredentials(
-    agentName: string,
-    serverName: string,
-    input: SaveClientCredentialsInput,
-    user: RunUser,
-  ): Promise<McpConnectionView>;
   /** Returns the URL to send the browser to. */
   beginAuthorization(
     agentName: string,
@@ -720,23 +673,23 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         const server = await deps.mcps.get(connection.serverName);
         const lookupId = server?.auth && accountLookupId(server.auth, server.url);
         const withoutAccount = { ...connection, connectedAccount: undefined };
-        if (!server?.auth || !lookupId) return toConnectionView(deps.cipher, withoutAccount,
+        if (!server?.auth || !lookupId) return toConnectionView(withoutAccount,
           server?.auth?.accountLookup?.kind === "none" ? "disabled" : "not_configured");
         if (mcpConnectionAuthMismatch(connection, connection.serverName, server.auth)) {
-          return toConnectionView(deps.cipher, withoutAccount, "unavailable");
+          return toConnectionView(withoutAccount, "unavailable");
         }
-        if (connection.connectedAccount && connection.accountLookupId === lookupId) return toConnectionView(deps.cipher, connection);
+        if (connection.connectedAccount && connection.accountLookupId === lookupId) return toConnectionView(connection);
         if (!lookupAllowed || connection.status !== "connected" || !connection.accessToken) {
-          return toConnectionView(deps.cipher, withoutAccount, "unavailable");
+          return toConnectionView(withoutAccount, "unavailable");
         }
         // Display reads never rotate a grant or spend an expired token.
-        if (connection.expiresAt && !(Date.parse(connection.expiresAt) > Date.now())) return toConnectionView(deps.cipher, withoutAccount, "unavailable");
+        if (connection.expiresAt && !(Date.parse(connection.expiresAt) > Date.now())) return toConnectionView(withoutAccount, "unavailable");
         const accessToken = deps.cipher.decrypt(connection.accessToken,
           mcpConnectionSecretContext(user.userId, connection.serverName, "access-token"));
         const identity = await deps.accounts.read(server.auth, accessToken, { mcpUrl: server.url, loopback: skipsUrlGuard(server, deps.internalHostSuffixes) });
-        if (identity.status !== "resolved") return toConnectionView(deps.cipher, withoutAccount, identity.status);
+        if (identity.status !== "resolved") return toConnectionView(withoutAccount, identity.status);
         const identified = { ...connection, connectedAccount: identity.account, accountLookupId: lookupId };
-        if (await deps.connections.updateAccount(connection, identity.account, lookupId)) return toConnectionView(deps.cipher, identified);
+        if (await deps.connections.updateAccount(connection, identity.account, lookupId)) return toConnectionView(identified);
         // Do not display the old account over a newer grant or resurrect a disconnect.
         const latest = await deps.connections.get(user.userId, connection.serverName);
         // Revalidate the winning snapshot against current registry settings, without
@@ -745,63 +698,6 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       }
       const views = await mapWithLimit(connections, 4, connection => viewConnection(connection, true));
       return views.filter((view): view is McpConnectionView => view !== undefined);
-    },
-
-    async saveClientCredentials(agentName, serverName, input, user) {
-      await authorizeConnection(agentName, user);
-      const server = await requireOAuthServer(serverName);
-      const existing = await deps.connections.get(user.userId, serverName);
-      const issuer = server.auth.issuer;
-      const sameClient = existing?.clientId === input.clientId && existing.issuer === issuer;
-      // A mask cannot transfer another client's or issuer's credential.
-      const submitted = input.clientSecret;
-      const clientSecret =
-        submitted === undefined || deps.cipher.isMasked(submitted)
-          ? sameClient ? existing?.clientSecret : undefined
-          : submitted === ""
-            ? undefined
-            : deps.cipher.encrypt(
-                submitted,
-                mcpConnectionSecretContext(user.userId, serverName, "client-secret"),
-              );
-      const scopes = input.scopes ?? existing?.scopes ?? server.auth.scopesSupported ?? [];
-
-      // Saving credentials that did not change is a no-op, not a reset. Both
-      // boxes arrive prefilled from the stored connection, so pressing Save
-      // without editing anything is the likeliest press there is — and it must
-      // not cost the agent the tokens those very credentials authorized.
-      if (
-        existing &&
-        existing.clientId === input.clientId &&
-        existing.clientSecret === clientSecret &&
-        sameScopes(existing.scopes, scopes) &&
-        existing.issuer === issuer &&
-        existing.resource === server.auth.resource
-      ) {
-        return toConnectionView(deps.cipher, existing);
-      }
-
-      const next: McpConnection = {
-        userId: user.userId,
-        serverName,
-        clientId: input.clientId,
-        ...(clientSecret ? { clientSecret } : {}),
-        // Whatever the user just typed was registered with the server this
-        // entry points at now; that is what makes it re-checkable later. The
-        // audience goes with it, on the other axis.
-        issuer,
-        resource: server.auth.resource,
-        scopes,
-        // Credentials changing invalidates whatever they authorized. Keeping the
-        // old tokens would leave a connection that reports `connected` while
-        // holding tokens issued to a different client.
-        status: "needs_auth",
-        updatedAt: new Date().toISOString(),
-      };
-      if (!await deps.connections.putIfCurrent(next, existing)) {
-        throw new ConflictError(`The connection to "${serverName}" changed while its credentials were being saved. Reload and retry.`);
-      }
-      return toConnectionView(deps.cipher, next);
     },
 
     async beginAuthorization(agentName, serverName, user) {
@@ -829,14 +725,6 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         // have.
         connection.clientFromMetadataDocument !== true &&
         connection.issuer !== issuer;
-      if (staleCredentials && connection?.clientRegistered !== true &&
-          !server.auth.clientId && connection?.clientFromRegistry !== true) {
-        // Hand-entered credentials cannot be re-issued on the user's behalf.
-        throw new ValidationError(
-          `The client credentials stored for "${serverName}" were registered with a different authorization server (${connection?.issuer}). Register an app with ${issuer} and save its client ID and secret before connecting.`,
-        );
-      }
-
       // Offered *and* fetchable: a document at an address the provider cannot
       // reach is not a route, and taking it anyway dead-ends at the provider
       // with a message about a client rather than about a URL.
@@ -859,16 +747,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const staleDocument =
         connection?.clientFromMetadataDocument === true && connection.clientId !== metadataUrl;
 
-      // No client yet, or one that belongs to a server this entry has moved off,
-      // or a document address this deployment no longer serves. The order is the
-      // spec's: credentials already held (hand-entered ones reach here as
-      // `connection.clientId`), then a metadata document, then registration, then
-      // nothing this app can do on the user's behalf.
-      //
-      // Registration is last because the revision deprecates it — but it is
-      // still here, because a server on a 2025-era release offers no metadata
-      // document and asking its owner to go and register an app by hand is not
-      // an upgrade path, it is a working entry that stopped working.
+      // Reuse a current client; otherwise choose the administrator's shared app,
+      // then a fetchable metadata document, then the server's dynamic registration.
       const configuredClientChanged = server.auth.clientId
         ? connection?.clientFromRegistry !== true || connection.clientId !== server.auth.clientId
         : connection?.clientFromRegistry === true;
@@ -921,7 +801,6 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
                   ),
                 }
               : {}),
-            clientRegistered: true,
             // What the server recorded wins over what was asked for.
             ...(registered.tokenEndpointAuthMethod
               ? { tokenEndpointAuthMethod: registered.tokenEndpointAuthMethod }

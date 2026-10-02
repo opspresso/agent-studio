@@ -196,16 +196,11 @@ describe("mcp connection mapping", () => {
   });
 
   it("survives the round trip for a dynamically registered client too", async () => {
-    // The other exemption on the same axis, and the same failure mode: lost on
-    // the way back, a registered client cannot be re-registered when its entry
-    // moves, so the owner is told to go and register an app by hand for
-    // credentials this app issued itself.
     await mcpConnectionRepository.put({
       userId: "p",
       serverName: "slack",
       clientId: "dcr-1",
       clientSecret: "enc:s",
-      clientRegistered: true,
       issuer: "https://auth.example.com",
       resource: "https://mcp.slack.com",
       scopes: [],
@@ -213,7 +208,7 @@ describe("mcp connection mapping", () => {
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
 
-    expect((await mcpConnectionRepository.get("p", "slack"))?.clientRegistered).toBe(true);
+    expect(await mcpConnectionRepository.get("p", "slack")).toMatchObject({ clientId: "dcr-1", clientSecret: "enc:s" });
   });
 
   it("round-trips the auth method the registration recorded", async () => {
@@ -226,7 +221,6 @@ describe("mcp connection mapping", () => {
       serverName: "slack",
       clientId: "dcr-1",
       clientSecret: "enc:s",
-      clientRegistered: true,
       tokenEndpointAuthMethod: "client_secret_basic",
       issuer: "https://auth.example.com",
       resource: "https://mcp.slack.com",
@@ -238,11 +232,12 @@ describe("mcp connection mapping", () => {
     expect((await mcpConnectionRepository.get("p", "slack"))?.tokenEndpointAuthMethod).toBe("client_secret_basic");
   });
 
-  it("leaves both flags absent for a client the owner entered", async () => {
+  it("preserves a shared app reference without classifying it as a metadata document", async () => {
     await mcpConnectionRepository.put({
       userId: "p",
       serverName: "slack",
-      clientId: "typed-by-hand",
+      clientId: "shared-app",
+      clientFromRegistry: true,
       issuer: "https://auth.example.com",
       resource: "https://mcp.slack.com",
       scopes: [],
@@ -252,7 +247,7 @@ describe("mcp connection mapping", () => {
 
     const read = await mcpConnectionRepository.get("p", "slack");
     expect(read?.clientFromMetadataDocument).toBeUndefined();
-    expect(read?.clientRegistered).toBeUndefined();
+    expect(read?.clientFromRegistry).toBe(true);
   });
 });
 

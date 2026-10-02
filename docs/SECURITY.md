@@ -628,10 +628,9 @@ lookup 설정은 관리자 전용이며 자동 선택으로 임의의 도구나 
 화면·로그에 전달하지 않는다. Studio 사용자 이메일을 서비스 계정으로 추정하지 않는다.
 수동 JSON Pointer와 도구 인자에 token·password 등 자격 증명 필드를 허용하지 않으며, 서버 응답이
 조회 token을 label에 포함해 반사하더라도 계정 표시·저장으로 넘어가지 않는다.
-개별 client credential 저장에서 생략·마스크는 Client ID와 issuer가 같은 경우에만 Secret을
-유지한다. 다른 client나 issuer에서 Secret이 필요하면 새로 입력한다. 저장 시 resource가
-달라졌다면 같은 issuer의 client Secret은 유지할 수 있지만 이전 access/refresh token은
-제거하고 다시 인가한다.
+Client ID·Secret 수동 입력은 관리자 공용 앱 설정에만 제공한다. 개인 연결 목록은
+Client Secret과 access/refresh token을 반환하지 않는다. issuer·resource가 바뀐 grant는
+실행에서 거절하며 사용자는 현재 서버 설정으로 다시 인가한다.
 
 ### 공개 Client ID 문서
 

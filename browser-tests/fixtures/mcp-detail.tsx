@@ -20,8 +20,9 @@ function Fixture() {
   </>;
 }
 
+const admin = new URLSearchParams(location.search).has("admin");
 createRoot(document.getElementById("root")!).render(
   <MantineProvider theme={theme}><I18nProvider locale="en"><ViewerProvider viewer={{
-    email: "reader@example.test", tier: "member", isAdmin: false,
+    email: "reader@example.test", tier: admin ? "admin" : "member", isAdmin: admin,
   }}><Fixture /></ViewerProvider></I18nProvider></MantineProvider>,
 );

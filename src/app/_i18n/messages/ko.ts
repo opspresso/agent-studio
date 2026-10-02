@@ -1300,8 +1300,6 @@ export const ko: Messages = {
   "mcpConn.needsAuth": "인증되지 않음",
   "mcpConn.needsReauth": "다시 연결해야 함",
   "mcpConn.readFailed": "이 서버의 레지스트리 항목을 읽지 못했습니다.",
-  "mcpConn.clientId": "Client ID",
-  "mcpConn.clientSecret": "Client secret",
   "mcpConn.connect": "연결",
   "mcpConn.reauthorize": "다시 인증",
   "mcpConn.noAuthNeeded":
@@ -1332,7 +1330,6 @@ export const ko: Messages = {
   "mcpConn.accountNotConfigured": "계정 조회 방식이 설정되지 않았습니다. 관리자가 Tools → OAuth에서 계정 API 또는 현재 사용자 도구를 지정할 수 있습니다.",
   "mcpConn.accountDisabled": "이 서버의 계정 조회가 비활성화되어 있습니다.",
   "mcpConn.connectedAt": "{when} 에 연결함",
-  "mcpConn.saveCredentials": "자격 증명 저장",
   "mcpConn.disconnect": "연결 해제",
   "mcpOAuth.automatic": "OAuth 앱을 직접 등록하지 않고 내 계정을 연결할 수 있습니다. 접근 가능한 클라이언트 메타데이터 문서를 우선 사용하고, 제공되는 경우 동적 등록을 사용합니다.",
   "mcpOAuth.manual": "수동 OAuth 앱 설정",

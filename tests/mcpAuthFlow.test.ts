@@ -310,8 +310,7 @@ describe("beginAuthorization", () => {
     expect(h.registrations[0]).toMatchObject({ redirectUri: CALLBACK, clientName: "Agent Studio" });
     const connection = h.connections.get("p/slack");
     expect(connection?.clientId).toBe("dcr-client");
-    expect(connection?.clientRegistered).toBe(true);
-    // Whatever the server issued is stored encrypted, exactly like one typed in.
+    // Registration credentials stay encrypted on the personal connection.
     expect(connection?.clientSecret).toBe("enc:dcr-secret");
   });
 
@@ -381,7 +380,6 @@ describe("beginAuthorization", () => {
     expect(connection?.clientFromMetadataDocument).toBe(true);
     // Public by construction: there is no secret to hold, so none is stored.
     expect(connection?.clientSecret).toBeUndefined();
-    expect(connection?.clientRegistered).toBeUndefined();
     expect(new URL(authorizeUrl).searchParams.get("client_id")).toBe(expected);
   });
 
@@ -1159,7 +1157,6 @@ describe("client credentials bound to their issuer", () => {
       server: AT_B,
       connection: {
         clientId: "client-at-a",
-        clientRegistered: true,
         issuer: "https://auth-a.example.com",
         status: "connected",
         accessToken: "enc:at",
@@ -1182,23 +1179,17 @@ describe("client credentials bound to their issuer", () => {
     expect(connection?.refreshToken).toBeUndefined();
   });
 
-  it("refuses hand-entered credentials from another issuer rather than guessing", async () => {
-    // Nothing here can re-issue them, so the only honest move is to say which
-    // server the owner now has to register with.
+  it("uses the administrator's replacement app without carrying over an old client secret", async () => {
     const h = harness({
-      server: AT_B,
-      connection: {
-        clientId: "manual",
-        clientRegistered: false,
-        issuer: "https://auth-a.example.com",
-      },
+      server: { ...AT_B, auth: { ...AT_B.auth!, clientId: "admin-app" } },
+      connection: { clientId: "old-client", clientSecret: "enc:old-secret", issuer: "https://auth-a.example.com" },
     });
     const uc = createMcpAuthUseCases(h.deps);
-
-    await expect(uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER })).rejects.toThrow(
-      /registered with a different authorization server/,
-    );
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
+    expect(new URL(authorizeUrl).searchParams.get("client_id")).toBe("admin-app");
     expect(h.registrations).toHaveLength(0);
+    expect(h.connections.get("p/slack")).toMatchObject({ clientId: "admin-app", clientFromRegistry: true });
+    expect(h.connections.get("p/slack")?.clientSecret).toBeUndefined();
   });
 
   it("leaves credentials alone while the issuer still matches", async () => {
@@ -1206,7 +1197,6 @@ describe("client credentials bound to their issuer", () => {
       server: AT_A,
       connection: {
         clientId: "client-at-a",
-        clientRegistered: true,
         issuer: "https://auth-a.example.com",
       },
     });
@@ -1234,164 +1224,9 @@ describe("client credentials bound to their issuer", () => {
     expect(h.connections.get("p/slack")?.resource).toBe("https://mcp.slack.com");
   });
 
-  it("records the issuer against hand-entered credentials", async () => {
-    const h = harness({ server: AT_A });
-    const uc = createMcpAuthUseCases(h.deps);
-
-    await uc.saveClientCredentials("p", "slack", { clientId: "manual", clientSecret: "s" }, { userId: "p", email: OWNER });
-
-    expect(h.connections.get("p/slack")?.issuer).toBe("https://auth-a.example.com");
-  });
 });
 
-describe("saveClientCredentials", () => {
-  it.each([
-    ["client-2", SERVER.auth!.issuer, undefined],
-    ["client-2", SERVER.auth!.issuer, maskSecret("enc:original")],
-    ["client-1", "https://previous-issuer.example.test", undefined],
-    ["client-1", "https://previous-issuer.example.test", maskSecret("enc:original")],
-  ])("does not carry a preserved secret into a different client or issuer (%s, %s, %s)", async (clientId, previousIssuer, submittedSecret) => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
-    try {
-      const h = harness({ connection: { clientSecret: "enc:original", issuer: previousIssuer, status: "connected", accessToken: "enc:old-token" } });
-      const uc = createMcpAuthUseCases(h.deps);
-
-      const view = await uc.saveClientCredentials("p", "slack", { clientId, clientSecret: submittedSecret }, { userId: "p", email: OWNER });
-
-      expect(view.clientSecret).toBeUndefined();
-      expect(view.status).toBe("needs_auth");
-      expect(h.connections.get("p/slack")?.accessToken).toBeUndefined();
-      h.states.set("fresh-state", { state: "fresh-state", agentName: "p", serverName: "slack", userId: "p", userEmail: OWNER,
-        codeVerifier: "enc:verifier", issuer: SERVER.auth!.issuer, clientId, resource: SERVER.auth!.resource,
-        createdAt: "2026-01-01T00:00:00Z" });
-      await uc.completeAuthorization({ state: "fresh-state", code: "fresh-code", user: { userId: "p", email: OWNER } });
-      expect(h.exchanges[0]?.target.clientSecret).toBeUndefined();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("keeps the same issuer's client secret but retires a grant for a different resource", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
-    try {
-      const h = harness({ connection: { resource: "https://previous-resource.example.test", clientSecret: "enc:original", status: "connected", accessToken: "enc:old-token" } });
-      const uc = createMcpAuthUseCases(h.deps);
-
-      const view = await uc.saveClientCredentials("p", "slack", { clientId: "client-1", clientSecret: maskSecret("enc:original") }, { userId: "p", email: OWNER });
-
-      expect(view.status).toBe("needs_auth");
-      expect(h.connections.get("p/slack")).toMatchObject({ resource: SERVER.auth!.resource, clientSecret: "enc:original" });
-      expect(h.connections.get("p/slack")?.accessToken).toBeUndefined();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("keeps the stored secret when the submitted one is a mask", async () => {
-    const h = harness({ connection: { clientSecret: "enc:original" } });
-    const uc = createMcpAuthUseCases(h.deps);
-
-    // The console shows the stored secret masked and posts it back untouched;
-    // that echo must not overwrite the real value with its own mask. Masked with
-    // the shipped mask, since that is what the console actually sends back.
-    await uc.saveClientCredentials(
-      "p",
-      "slack",
-      { clientId: "client-1", clientSecret: maskSecret("enc:original") },
-      { userId: "p", email: OWNER },
-    );
-
-    expect(h.connections.get("p/slack")?.clientSecret).toBe("enc:original");
-  });
-
-  it("leaves a live connection alone when nothing was edited", async () => {
-    // Both boxes arrive prefilled from the stored connection, so Save without an
-    // edit is the likeliest press there is — and it would reset the whole
-    // connection, costing the agent the tokens those credentials authorized.
-    const h = harness({
-      connection: {
-        status: "connected",
-        clientSecret: "enc:original",
-        accessToken: "enc:at",
-        refreshToken: "enc:rt",
-        connectedAt: "2026-01-01T00:00:00.000Z",
-      },
-    });
-    const uc = createMcpAuthUseCases(h.deps);
-
-    const view = await uc.saveClientCredentials(
-      "p",
-      "slack",
-      { clientId: "client-1", clientSecret: maskSecret("enc:original") },
-      { userId: "p", email: OWNER },
-    );
-
-    expect(view.status).toBe("connected");
-    const stored = h.connections.get("p/slack");
-    expect(stored?.accessToken).toBe("enc:at");
-    expect(stored?.refreshToken).toBe("enc:rt");
-    expect(stored?.status).toBe("connected");
-  });
-
-  it("clears the stored secret when the box is emptied", async () => {
-    // The only way back from a confidential client to a public one. Distinct
-    // from an omitted field precisely because this box arrives prefilled.
-    const h = harness({
-      connection: { status: "connected", clientSecret: "enc:original", accessToken: "enc:at" },
-    });
-    const uc = createMcpAuthUseCases(h.deps);
-
-    const view = await uc.saveClientCredentials(
-      "p",
-      "slack",
-      { clientId: "client-1", clientSecret: "" },
-      { userId: "p", email: OWNER },
-    );
-
-    expect(view.clientSecret).toBeUndefined();
-    const stored = h.connections.get("p/slack");
-    expect(stored?.clientSecret).toBeUndefined();
-    // Credentials really did change, so the tokens they authorized go with them.
-    expect(stored?.status).toBe("needs_auth");
-    expect(stored?.accessToken).toBeUndefined();
-  });
-
-  it("drops the tokens a previous client authorized", async () => {
-    // Otherwise the connection reports `connected` while holding tokens issued
-    // to a client it no longer uses.
-    const h = harness({
-      connection: { status: "connected", accessToken: "enc:at", refreshToken: "enc:rt" },
-    });
-    const uc = createMcpAuthUseCases(h.deps);
-
-    const view = await uc.saveClientCredentials(
-      "p",
-      "slack",
-      { clientId: "client-2", clientSecret: "new" },
-      { userId: "p", email: OWNER },
-    );
-
-    expect(view.status).toBe("needs_auth");
-    expect(h.connections.get("p/slack")?.clientSecret).toBe("enc:new");
-  });
-
-  it("does not restore a connection removed while credentials were saved", async () => {
-    const h = harness({ connection: {} });
-    const get = h.deps.connections.get;
-    h.deps.connections.get = async (agent, server) => {
-      const current = await get(agent, server);
-      h.connections.delete(`${agent}/${server}`);
-      return current;
-    };
-    const uc = createMcpAuthUseCases(h.deps);
-
-    await expect(uc.saveClientCredentials("p", "slack", { clientId: "replacement" }, { userId: "p", email: OWNER }))
-      .rejects.toThrow(ConflictError);
-    expect(h.connections.has("p/slack")).toBe(false);
-  });
-
+describe("listConnections", () => {
   it("never exposes a secret or a token in the view", async () => {
     // There is no reveal path for either of these, unlike the
     // agent API token — so the view is the only thing that could leak them.
@@ -1408,8 +1243,8 @@ describe("saveClientCredentials", () => {
     const serialized = JSON.stringify(await uc.listConnections("p", { userId: "p", email: OWNER }));
 
     const view = JSON.parse(serialized)[0] as { clientSecret?: string };
-    expect(view.clientSecret).toBe(maskSecret("enc:CLIENT-SECRET-VALUE"));
-    expect(isMasked(view.clientSecret ?? "")).toBe(true);
+    expect(view).not.toHaveProperty("clientSecret");
+    expect(view).not.toHaveProperty("clientRegistered");
     // Tokens are absent outright — there is no reveal path and no reason to
     // show them, so masking is not the question for those.
     for (const secret of ["CLIENT-SECRET-VALUE", "ACCESS-TOKEN-VALUE", "REFRESH-TOKEN-VALUE"]) {
@@ -1417,7 +1252,7 @@ describe("saveClientCredentials", () => {
     }
   });
 
-  it("lists every agent connection through bounded repository pages", async () => {
+  it("lists every personal connection through bounded repository pages", async () => {
     const h = harness({});
     for (let index = 0; index < MCP_CONNECTION_LIST_PAGE_SIZE + 2; index += 1) {
       const serverName = `server-${String(index).padStart(3, "0")}`;

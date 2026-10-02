@@ -91,7 +91,7 @@ export function McpConnectionCard({
   serverName: string;
   /**
    * Called whenever the caller's credentials for this server change — an
-   * authorization finishing, credentials saved, a disconnect. What the server
+   * authorization finishing or a disconnect. What the server
    * offers depends on them, so anything showing that has to be told; the card
    * cannot know who is listening, which is why this is a signal rather than a
    * refresh of something it owns.
