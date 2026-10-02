@@ -1370,11 +1370,10 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/shared/unauthorized.ts",
   },
   {
-    // A second copy would inevitably be the naive `toString("utf-8")`, which
-    // never fails and so silently turns a PDF into replacement characters. That
-    // is the bug this exists to make un-writable, not a style preference.
+    // Keep one public text classifier and reject duplicated round-trip validators.
+    // Its UTF-8 acceptance rules are covered by utf8Text.test.ts.
     what: "deciding whether bytes are UTF-8 text",
-    pattern: /Buffer\.from\(text, "utf-8"\)\.equals\(/,
+    pattern: /export function decodeUtf8Text\b|Buffer\.from\(text, "utf-8"\)\.equals\(/,
     owner: "src/shared/utf8Text.ts",
   },
   {
