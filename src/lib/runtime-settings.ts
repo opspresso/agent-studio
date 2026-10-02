@@ -17,7 +17,6 @@
 import { DEFAULT_MEMBER_TIERS, memberTierLimits, orderMemberTiers, type MemberTier } from "@/domain/member/tiers";
 import type { WorkspaceRuntime } from "@/domain/workspace/types";
 import { workspaceModelChannel, workspaceRuntimeModelCompatible } from "@/domain/workspace/runtimeModels";
-import { withWorkspaceModelChannel } from "@/infrastructure/workspace/runtimeAdapters";
 import type { AppSettings, ArtifactAccessMode } from "@/domain/settings/types";
 import { DEFAULT_CALL_ROUTING_POLICY, type CallRoutingPolicy } from "@/domain/llm/callRouting";
 import {
@@ -371,14 +370,15 @@ export async function getUnknownModelPolicySelection(): Promise<{
 /** Docker compute infrastructure is deployment-owned; agent and model settings are stored separately. */
 export function getWorkspaceConfig() { return config.workspace; }
 export async function getWorkspaceRuntimeConfig(kind: WorkspaceRuntime) {
-  if (kind === "command") return {};
+  if (kind === "command") return undefined;
   const selected = (await loadSettings())?.workspaceModels?.[kind];
   const model = selected ? getModelConfig(selected) : undefined;
   const channels = await getLlmProviderConfigs();
   const channel = model ? workspaceModelChannel(model, channels) : undefined;
   if (!model || !channel || !workspaceRuntimeModelCompatible(kind, model)) return undefined;
   const target = resolveProviderTarget(model.id, channels);
-  return withWorkspaceModelChannel(kind, { model: target.model }, { ...target, name: target.providerName ?? channel.name });
+  return { model: model.id, wireModel: target.model, protocol: kind === "claude" ? "messages" as const
+    : kind === "codex" || target.providerName === "openai" ? "responses" as const : "chat/completions" as const };
 }
 
 /** The deployment-owned tier catalog; read failures never remove personal budgets. */

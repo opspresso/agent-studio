@@ -44,6 +44,7 @@ export class ConcurrencyLimitError extends RateLimitedError {
 const RETRY_AFTER_SECONDS = 15;
 
 export interface AcquiredSlot {
+  slot?: RunSlot;
   release(): Promise<void>;
 }
 
@@ -60,6 +61,7 @@ export async function acquireRunSlot(
   deps: ConcurrencyGuardDeps,
   user: RunUser,
   tierLimits?: TierLimits,
+  existing?: RunSlot,
 ): Promise<AcquiredSlot> {
   if (!deps.runSlots || !deps.limits) return UNLIMITED;
   // One account shares its tier ceiling across Chat, tokens, messaging and schedules.
@@ -72,7 +74,7 @@ export async function acquireRunSlot(
   const leaseUntil = Math.floor(Date.now() / 1000) + RUN_LEASE_SECONDS;
   let slot: RunSlot | null;
   try {
-    slot = await deps.runSlots.acquire(key, limit, leaseUntil);
+    slot = existing && await deps.runSlots.renew(key, existing, leaseUntil) ? existing : await deps.runSlots.acquire(key, limit, leaseUntil);
   } catch (error) {
     log.error("concurrency", `slot store unavailable for ${key}; refusing the run`, error);
     throw new ConcurrencyLimitError(limit, RETRY_AFTER_SECONDS);
@@ -80,16 +82,10 @@ export async function acquireRunSlot(
   if (!slot) {
     throw new ConcurrencyLimitError(limit, RETRY_AFTER_SECONDS);
   }
-  const runSlots = deps.runSlots;
-  return {
-    async release() {
-      try {
-        await runSlots.release(key, slot);
-      } catch (error) {
-        // The lease expires on its own, so a failed release costs this caller
-        // one slot for the rest of it — never a permanently wedged limit.
-        log.warn("concurrency", `could not release slot ${slot.index} for ${key}`, error);
-      }
-    },
-  };
+  return { slot, release: () => releaseRunSlot(deps, user, slot!) };
+}
+
+export async function releaseRunSlot(deps: ConcurrencyGuardDeps, user: RunUser, slot: RunSlot): Promise<void> {
+  try { await deps.runSlots?.release(runUserKey(user), slot); }
+  catch (error) { log.warn("concurrency", "could not release the run slot; its lease will expire", error); }
 }

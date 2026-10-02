@@ -121,7 +121,7 @@ async function main() {
   let userCreated = false;
   const worker: WorkspaceWorkerDeps = { authorize: (agent, email, actor, grant, user) => authorizeWorkspaceExecution({ ...grantDeps, members, backendReady: () => true, enabled: async () => true }, agent, email, actor, grant, user), repository, chats, agents, provider, checkpoints, coding: () => coding, now: () => new Date(), newId: randomUUID,
     idleTtlSeconds: 60, runTimeoutMs: 30000, policy: () => ({ agentName, runtimes: ["command"], repositories: ["fixture/repo"], checks: [], deploymentWorkflows: [] }),
-    checkRepository: (_agentName, repository, branch, revision) => github.forge.checkRepository(repository, branch, revision), runtime: createWorkspaceRuntimeAdapter,
+    checkRepository: (_agentName, repository, branch, revision) => github.forge.checkRepository(repository, branch, revision), runtime: kind => createWorkspaceRuntimeAdapter(kind),
     execute: (workspace, work, identity) => executeWorkspaceTask({ usage, resolveUserLimits: async () => ({}) }, agents, workspace, work, identity), sleep: ms => delay(ms) };
   const api = createWorkspaceUseCases(worker);
   const pump = async () => { if (workspaceId) await processWorkspace(worker, workspaceId); };

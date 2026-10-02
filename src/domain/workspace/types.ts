@@ -1,3 +1,4 @@
+import type { RunSlot } from "../execution/runSlot";
 import type { CodingRepository, PullRequestInfo } from "@/domain/coding/types";
 import type { RunIdentity } from "@/domain/execution/actor";
 
@@ -65,6 +66,8 @@ export type WorkspaceInput =
 export type WorkspaceRunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted";
 
 export interface WorkspaceRun extends RunIdentity {
+  /** Studio concurrency lease retained until the durable run reaches a terminal state. */
+  studioSlot?: RunSlot;
   id: string;
   workspaceId: string;
   sessionId: string;

@@ -304,7 +304,7 @@ describe("openRun with a tier resolver", () => {
     const work = vi.fn(async () => false);
     const workspace = { agentName: agent.name, ownerEmail: user.id } as Workspace;
     const agents = { get: async () => agent } as unknown as AgentRepository;
-    await expect(executeWorkspaceTask(withUserLimits(d), agents, workspace, work, executionIdentity(user))).rejects.toMatchObject({ status: 429 });
+    await expect(executeWorkspaceTask(withUserLimits(d), agents, workspace, async admit => { await admit(); return work(); }, executionIdentity(user))).rejects.toMatchObject({ status: 429 });
     expect(work).not.toHaveBeenCalled();
     expect(d.usage.listMemberDays).toHaveBeenCalledWith(executionIdentity(user).user.userId, "2026-07-01", "2026-07-29");
   });
@@ -353,6 +353,15 @@ describe("openRun with a tier resolver", () => {
 });
 
 describe("openRun with a concurrency limit", () => {
+  it("does not release an adopted run slot when a stale worker loses its persistence lease", async () => {
+    const existing = { index: 0, token: "persisted-slot" };
+    const runSlots = { acquire: vi.fn(), renew: vi.fn(async () => true), release: vi.fn(async () => {}) };
+    await expect(openTaskRun(withUserLimits({ usage, runSlots, limits: { perActor: 1 } }), agent, executionIdentity(user),
+      { slot: existing, acquired: async () => { throw new Error("Workspace lease lost"); } })).rejects.toThrow("Workspace lease lost");
+    expect(runSlots.renew).toHaveBeenCalled();
+    expect(runSlots.acquire).not.toHaveBeenCalled();
+    expect(runSlots.release).not.toHaveBeenCalled();
+  });
   it.each(["agent-token", "slack", "webhook"] as const)("attributes a Workspace task to its %s caller rather than its managing member", async kind => {
     const actor = { kind, id: kind === "agent-token" ? agent.ownerEmail : kind === "webhook" ? agent.name + ":webhook" : "external-caller" };
     const workspace: Workspace = { id: "ws", chatId: "chat", agentName: agent.name, ownerEmail: agent.ownerEmail,
@@ -360,7 +369,8 @@ describe("openRun with a concurrency limit", () => {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), dueAt: new Date().toISOString(), idleTtlSeconds: 60 };
     const repository = { get: vi.fn(async () => agent) } as unknown as AgentRepository;
     const d = { usage, runSlots: memorySlots().repo, limits: { perActor: 1 } };
-    await executeWorkspaceTask(withUserLimits(d), repository, workspace, async () => {
+    await executeWorkspaceTask(withUserLimits(d), repository, workspace, async admit => {
+      await admit();
       await expect(openTaskRun(withUserLimits(d), agent, executionIdentity(actor, workspace.ownerEmail))).rejects.toBeInstanceOf(ConcurrencyLimitError);
       await expect(openTaskRun(withUserLimits(d), agent, executionIdentity({ kind: "user", id: workspace.ownerEmail }))).rejects.toBeInstanceOf(ConcurrencyLimitError);
       return false;

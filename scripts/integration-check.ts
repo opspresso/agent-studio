@@ -1646,6 +1646,28 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       pass("usage receipts: concurrent replay bills once and rejects conflicting payloads");
     }
 
+    // ---------- native model admission and recoverable accounting ----------
+    {
+      const { workspaceModelCalls: calls } = await import("@/infrastructure/db/repositories/workspaceModelCalls");
+      const { settleWorkspaceModelCall } = await import("@/application/workspace/modelGateway");
+      const call = { id: `native-${suffix}`, workspaceId: `native-ws-${suffix}`, runId: `native-run-${suffix}`, startedAt: now };
+      const event = { userId: executionUser.userId, idempotencyKey: call.id, agentName, date: today, model: "native-integration",
+        calls: 1, inputTokens: 10, outputTokens: 2, costUsd: 0.02, actor: "user:it@example.com" };
+      cleanup(() => deleteItem(dbKeys.workspaceModelCall(call.workspaceId, call.runId)));
+      cleanup(() => deleteItem(dbKeys.usageReceipt(event.userId, agentName, event.idempotencyKey)));
+      const admitted = await Promise.all(Array.from({ length: 8 }, () => calls.begin(call)));
+      assert.equal(admitted.filter(Boolean).length, 1, "one concurrent native request wins the run claim");
+      await assert.rejects(calls.capture({ ...call, id: "different-request", usage: event }));
+      await calls.capture({ ...call, usage: event });
+      await usageRepository.record(event);
+      // Resume after usage committed but the pending marker was not removed.
+      assert.equal(await settleWorkspaceModelCall({ calls, usage: usageRepository }, call.workspaceId, call.runId), undefined);
+      assert.equal(await calls.get(call.workspaceId, call.runId), null);
+      assert.equal((await usageRepository.getDay(agentName, today))?.calls["native-integration"], 1);
+      assert.equal(await settleWorkspaceModelCall({ calls, usage: usageRepository }, call.workspaceId, call.runId), undefined);
+      pass("native model gateway: concurrent claim and durable once-only accounting recovery");
+    }
+
     // ---------- source inventory (completion recovery + deletion fencing) ----------
     {
       const { sourceFileRepository: files } = await import("@/infrastructure/db/repositories/sourceFileRepository");

@@ -1,4 +1,7 @@
 import { webhookCredentialFixture } from "./webhookCredentialFixture";
+import { executeWorkspaceTask } from "@/application/execution/workspaceRun";
+import { releaseRunSlot } from "@/application/run/concurrencyGuard";
+import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { memberFixture } from "./memberFixture";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createFakeStore } from "./fakeStore";
@@ -21,7 +24,7 @@ import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
 import { openReviewWorkspace } from "@/application/workspace/reviewWorkspace";
 import { boundWorkspaceEvent } from "@/application/workspace/output";
 
-vi.mock("@/infrastructure/db/store", () => createFakeStore());
+vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const owner = "owner@example.test";
 let time: number;
@@ -67,7 +70,7 @@ beforeEach(async () => {
   deps = { repository, chats, agents, provider, policy: () => policy, idleTtlSeconds: 60,
     checkRepository: async () => {},
     now: () => new Date(time), newId: () => `id-${++id}`, runTimeoutMs: 10_000,
-    runtime: kind => createWorkspaceRuntimeAdapter(kind), execute: async (_workspace, work) => { await work(); },
+    runtime: kind => createWorkspaceRuntimeAdapter(kind), execute: async (_workspace, work) => { await work(async () => {}); },
     sleep: async ms => { time += ms; vi.setSystemTime(time); await onSleep?.(); },
     checkpoints: { put: vi.fn(async (_workspaceId, checkpointId, bytes) => { checkpointRows.set(checkpointId, bytes); }),
       get: vi.fn(async (_workspaceId, checkpointId) => checkpointRows.get(checkpointId) ?? null), delete: vi.fn(async () => { checkpointRows.clear(); }) } };
@@ -115,6 +118,35 @@ async function reviewResult(workspaceId: string, runId: string) {
 }
 
 describe("durable workspace worker", () => {
+  it.each([false, true])("observes and settles an admitted operation after budget or access revocation (cancel=%s)", async cancel => {
+    const { workspace, run } = await start();
+    let capped = false;
+    const runSlots = { acquire: vi.fn(async () => ({ index: 0, token: "held-slot" })), renew: vi.fn(async () => true), release: vi.fn(async () => {}) };
+    const bracketDeps = { usage: usageRepository, runSlots, limits: { perActor: 1 }, resolveUserLimits: vi.fn(async () => ({ monthlyCostCapUsd: capped ? 0 : 1 })) };
+    deps.execute = (workspace, work, identity, slot) => executeWorkspaceTask(bracketDeps, agents, workspace, work, identity, slot);
+    deps.releaseSlot = async run => { if (run.studioSlot) await releaseRunSlot(bracketDeps, run.user, run.studioSlot); };
+    deps.settleModelCalls = vi.fn(async () => undefined);
+    const controller = new AbortController();
+    const begin = provider.start;
+    provider.start = vi.fn(async (...args: Parameters<SandboxProvider["start"]>) => { await begin(...args); controller.abort(); });
+    await processWorkspace(deps, workspace.id, controller.signal);
+    expect((await repository.run(workspace.id, run.id))?.studioSlot).toEqual({ index: 0, token: "held-slot" });
+    expect(runSlots.release).not.toHaveBeenCalled();
+    capped = true;
+    deps.authorize = vi.fn(async () => { throw new Error("Caller revoked"); });
+    policy.runtimes = [];
+    if (cancel) {
+      const current = (await repository.get(workspace.id))!;
+      const stored = (await repository.run(workspace.id, run.id))!;
+      await repository.write({ expectedRevision: current.revision, workspace: { ...current, revision: current.revision + 1 }, run: { ...stored, cancelRequestedAt: deps.now().toISOString() } });
+    }
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, run.id))?.status).toBe(cancel ? "cancelled" : "succeeded");
+    expect(bracketDeps.resolveUserLimits).toHaveBeenCalledTimes(1);
+    expect(provider.start).toHaveBeenCalledTimes(1);
+    expect(runSlots.release).toHaveBeenCalledTimes(1);
+    expect(deps.settleModelCalls).toHaveBeenCalledWith(workspace.id, run.id);
+  });
   it("tracks and cancels a cold Pod before it becomes ready without starting native work", async () => {
     const { api, workspace, run } = await start();
     provider.provision = provider.ensure;
@@ -324,7 +356,7 @@ describe("durable workspace worker", () => {
     const first = await api.start({ agentName: "demo", runtime: "command", actor,
       input: { kind: "command", script: "echo task" } }, { userId: "studio-user-1", email: owner }, "external-0001");
     const seen: unknown[] = [];
-    deps.execute = async (_workspace, work, executionActor) => { seen.push(executionActor.actor); await work(); };
+    deps.execute = async (_workspace, work, executionActor) => { seen.push(executionActor.actor); await work(async () => {}); };
     await processWorkspace(deps, first.workspace.id);
     expect((await repository.run(first.workspace.id, first.run.id))?.status).toBe("succeeded");
     expect(seen).toEqual([actor]);

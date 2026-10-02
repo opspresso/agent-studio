@@ -18,13 +18,14 @@ export function withWorkspaceModelChannel(kind: WorkspaceRuntime, config: Worksp
   let environment: Record<string, string>;
   let model = config.model;
   if (kind === "codex") environment = { CODEX_API_KEY: channel.apiKey };
-  else if (kind === "claude") environment = { ANTHROPIC_API_KEY: channel.apiKey, ANTHROPIC_BASE_URL: channel.baseUrl.replace(/\/v1\/?$/, "") };
+  else if (kind === "claude") environment = { ANTHROPIC_API_KEY: channel.apiKey, ANTHROPIC_BASE_URL: channel.baseUrl.replace(/\/v1\/?$/, ""),
+    ...(model ? { ANTHROPIC_DEFAULT_HAIKU_MODEL: model, ANTHROPIC_DEFAULT_SONNET_MODEL: model, ANTHROPIC_DEFAULT_OPUS_MODEL: model } : {}) };
   else if (kind === "opencode") {
     if (!model) throw new Error("Workspace OpenCode requires a selected model");
     const provider = channel.name === "openai" ? "openai" : "studio-workspace";
     const wireModel = model;
     model = `${provider}/${wireModel}`;
-    environment = { OPENAI_API_KEY: channel.apiKey, OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider: {
+    environment = { OPENAI_API_KEY: channel.apiKey, OPENCODE_CONFIG_CONTENT: JSON.stringify({ small_model: model, provider: {
       [provider]: {
         // The built-in openai loader always calls Responses. A separate provider keeps compatible channels on chat/completions.
         ...(provider === "openai" ? {} : { npm: "@ai-sdk/openai-compatible" }),
@@ -114,7 +115,7 @@ export function createWorkspaceRuntimeAdapter(kind: WorkspaceRuntime, config: Wo
       const environment = config.environment;
       if (kind === "codex") return {
         argv: ["codex", "exec", ...(resume ? ["resume"] : []), "--json", "--dangerously-bypass-approvals-and-sandbox",
-          "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
+          "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules", "-c", 'web_search="disabled"',
           ...(config.baseUrl ? ["-c", 'model_provider="studio"', "-c", 'model_providers.studio.name="Studio"',
             "-c", `model_providers.studio.base_url=${JSON.stringify(config.baseUrl)}`,
             "-c", 'model_providers.studio.env_key="CODEX_API_KEY"', "-c", 'model_providers.studio.wire_api="responses"'] : []),

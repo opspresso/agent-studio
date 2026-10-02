@@ -9,6 +9,7 @@ export const CHAT_MESSAGE_MAX_SEQ = 999999;
 export const TELEGRAM_DESTINATION_INDEX_PREFIX = "TELEGRAMDESTINATION#";
 
 export const keys = {
+  workspaceModelCall: (workspaceId: string, runId: string) => ({ PK: `WORKSPACEMODELCALL#${workspaceId}`, SK: `RUN#${runId}` }),
   messagingIdentity: (subject: { agentName: string; platform: string; realm: string; externalId: string }) => ({
     PK: `AGENT#${subject.agentName}`, SK: `MESSAGINGIDENTITY#${JSON.stringify([subject.platform, subject.realm, subject.externalId])}`,
   }),

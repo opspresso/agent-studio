@@ -1,3 +1,4 @@
+import type { RunSlot } from "@/domain/execution/runSlot";
 /**
  * Common admission, accounting and artifact scope for Agent executions.
  * Model and cost policies run before acquiring a slot. Call close only after
@@ -36,6 +37,8 @@ export type RunBracketDeps = CostGuardDeps &
     resolveUserLimits: (user: RunUser) => Promise<TierLimits>;
   };
 
+export interface RunSlotPersistence { slot?: RunSlot; acquired(slot: RunSlot): Promise<void> }
+
 export interface RunBracket {
   /**
    * Ends the run. Call in a `finally`, after any usage flush. Never throws.
@@ -44,7 +47,7 @@ export interface RunBracket {
    * not a failure, and counting it as one turns a page of users navigating away
    * into an outage on the dashboard.
    */
-  close(outcome?: { failed?: boolean }): Promise<void>;
+  close(outcome?: { failed?: boolean; retainSlot?: boolean }): Promise<void>;
   /** The correlation id every log line in this run carries. */
   readonly runId: string;
   /**
@@ -78,6 +81,7 @@ async function openExecutionBracket(
   agent: Agent,
   configuration: Pick<AgentConfiguration, "model" | "fallbackModel"> | undefined,
   identity: RunIdentity,
+  persistentSlot?: RunSlotPersistence,
 ): Promise<Omit<RunBracket, "artifacts">> {
   // Before the first `await`, and therefore before this function leaves the
   // caller's async context. `enterWith` binds the store to the context it runs
@@ -123,7 +127,12 @@ async function openExecutionBracket(
   // over budget should be told so rather than queue for a slot the run would
   // be refused on anyway.
   await assertWithinMemberCostLimit(deps, identity.user, tierLimits);
-  const slot = await acquireRunSlot(deps, identity.user, tierLimits);
+  const slot = await acquireRunSlot(deps, identity.user, tierLimits, persistentSlot?.slot);
+  if (slot.slot && persistentSlot) {
+    // A failed write may have committed before acknowledgement was lost.
+    // Retain the lease for adoption or expiry instead of freeing a possibly live run.
+    await persistentSlot.acquired(slot.slot);
+  }
   const startedAt = Date.now();
   const runMetric = beginRun(startedAt);
   let closed = false;
@@ -139,7 +148,7 @@ async function openExecutionBracket(
       }
       closed = true;
       endRun(runMetric, { durationMs: Date.now() - startedAt, ...outcome });
-      await slot.release();
+      if (!outcome.retainSlot) await slot.release();
       await settleCostLimit(deps, agent);
     },
   };
@@ -159,8 +168,9 @@ export function openTaskRun(
   deps: RunBracketDeps,
   agent: Agent,
   identity: RunIdentity,
+  persistentSlot?: RunSlotPersistence,
 ): Promise<Omit<RunBracket, "artifacts">> {
-  return openExecutionBracket(deps, agent, undefined, identity);
+  return openExecutionBracket(deps, agent, undefined, identity, persistentSlot);
 }
 
 /** Chunk-producing runs add artifact capture to the common metered model-call bracket. */

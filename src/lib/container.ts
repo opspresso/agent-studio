@@ -1,3 +1,9 @@
+import { releaseRunSlot } from "@/application/run/concurrencyGuard";
+import { createWorkspaceModelGateway } from "@/application/workspace/modelGateway";
+import { workspaceModelCalls } from "@/infrastructure/db/repositories/workspaceModelCalls";
+import { createWorkspaceModelTokens } from "@/infrastructure/workspace/modelToken";
+import { createWorkspaceModelTransport } from "@/infrastructure/workspace/modelTransport";
+import { decodeAes256Key } from "@/shared/aesKey";
 import type { RunIdentity } from "@/domain/execution/actor";
 import { authorizeRunIdentity } from "@/application/auth/authorizeRunIdentity";
 import { triggerActor } from "@/application/trigger/runTrigger";
@@ -31,7 +37,7 @@ import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories
 import { createDockerSandboxBackend } from "@/infrastructure/workspace/dockerProvider";
 import { createKubernetesSandboxBackend } from "@/infrastructure/workspace/kubernetesProvider";
 import { routeSandboxBackend } from "@/infrastructure/workspace/backendRouting";
-import { createWorkspaceRuntimeAdapter, WORKSPACE_DIRECTORY } from "@/infrastructure/workspace/runtimeAdapters";
+import { createWorkspaceRuntimeAdapter, withWorkspaceModelChannel, WORKSPACE_DIRECTORY } from "@/infrastructure/workspace/runtimeAdapters";
 import { workspaceAllowsRepository } from "@/domain/workspace/policy";
 import { createCodingWorktree } from "@/infrastructure/workspace/gitWorktree";
 import { createCodingGitHub } from "@/infrastructure/github/codingForge";
@@ -1366,11 +1372,31 @@ export async function runAudioWorkerService(signal: AbortSignal): Promise<void> 
   }, signal);
 }
 
+let nativeModelGateway: ReturnType<typeof createWorkspaceModelGateway> | undefined;
+export function getWorkspaceModelGateway() {
+  return nativeModelGateway ??= createWorkspaceModelGateway({
+    workspaces: workspaceRepository, agents: agentRepository, calls: workspaceModelCalls,
+    tokens: createWorkspaceModelTokens(decodeAes256Key(config.aesEncryptionKey)),
+    transport: createWorkspaceModelTransport(resolveTarget),
+    selection: getWorkspaceRuntimeConfig,
+    authorize: async (agentName, identity) => {
+      await authorizeAgentRun(agentName, identity);
+      await authorizeWorkspaceTools(identity.user.email, agentName, identity.actor, identity.executionGrant, identity.user);
+    },
+    usage: usageRepository, limits: userLimitsResolver, pricingPolicy: getUnknownModelPolicy,
+    now: () => new Date(), newId: randomUUID, runTimeoutMs: MAX_RUN_DURATION_MS,
+  });
+}
+
 const workspaceDeps: WorkspaceDeps = {
   repository: workspaceRepository, chats: chatRepository, agents: agentRepository,
   policy: getWorkspaceAgentPolicy,
   authorize: (agentName, email, actor, grant, user) => authorizeWorkspaceTools(email, agentName, actor, grant, user),
-  assertRuntime: async kind => { if (!await getWorkspaceRuntimeConfig(kind)) throw new ValidationError("Select a Workspace runtime model in Models before starting work"); },
+  assertRuntime: async kind => {
+    if (kind === "command") return;
+    if (!await getWorkspaceRuntimeConfig(kind)) throw new ValidationError("Select a Workspace runtime model in Models before starting work");
+    if (!config.workspace?.modelGatewayUrl) throw new ValidationError("WORKSPACE_MODEL_GATEWAY_URL is required for native model runtimes");
+  },
   now: () => new Date(), newId: randomUUID,
   checkRepository: (agentName, repository, baseBranch, sourceRevision) =>
     agentCodingGitHub(agentName).forge.checkRepository(repository, baseBranch, sourceRevision),
@@ -1419,12 +1445,21 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps & { coding: NonNullable<W
       if (removed) log.info("workspace-worker", `Requested deletion of ${removed} orphan Sandbox Pods`);
     } } : {}),
     checkpoints: createWorkspaceCheckpointStore(secretCipher),
-    runtime: async kind => {
-      const runtime = await getWorkspaceRuntimeConfig(kind);
+    settleModelCalls: (workspaceId, runId) => getWorkspaceModelGateway().settle(workspaceId, runId),
+    releaseSlot: async run => { if (run.studioSlot) await releaseRunSlot(executionDeps, run.user, run.studioSlot); },
+    runtime: async (kind, context) => {
+      if (!context) return createWorkspaceRuntimeAdapter(kind);
+      const selected = await getWorkspaceRuntimeConfig(kind);
+      const gatewayUrl = config.workspace?.modelGatewayUrl;
+      const credential = kind !== "command" && selected && gatewayUrl && context
+        ? await getWorkspaceModelGateway().credential(context.workspace, context.run) : undefined;
+      const runtime = credential ? withWorkspaceModelChannel(kind, { model: credential.selected.wireModel }, {
+        name: credential.selected.protocol === "responses" ? "openai" : "studio",
+        baseUrl: gatewayUrl!.replace(/\/$/, "") + "/api/workspace-model/v1", apiKey: credential.token,
+      }) : undefined;
       const adapter = createWorkspaceRuntimeAdapter(kind, runtime);
-      // A disabled model must not prevent observing an operation already running in the Sandbox.
       return { ...adapter, command: (...args) => {
-        if (!runtime) throw new ValidationError("Workspace runtime model is not configured in Models");
+        if (kind !== "command" && !credential) throw new ValidationError("Workspace runtime model or WORKSPACE_MODEL_GATEWAY_URL is not configured");
         return adapter.command(...args);
       } };
     },
@@ -1435,7 +1470,7 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps & { coding: NonNullable<W
         serverToken: () => agentGitHubCredentials.token(agentName) });
     },
     runTimeoutMs: MAX_RUN_DURATION_MS,
-    execute: (workspace, work, identity) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work, identity),
+    execute: (workspace, work, identity, slot) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work, identity, slot),
     sleep: async (ms, signal) => { await workspaceSleep(ms, undefined, { signal }); },
   };
 }

@@ -69,7 +69,7 @@ export interface StartWorkspaceInput {
 }
 
 export type WorkspaceView = Omit<Workspace, "ownerEmail" | "leaseToken" | "leaseUntil" | "checkpointId" | "creationFingerprint">;
-export type WorkspaceRunView = Omit<WorkspaceRun, "leaseToken" | "leaseUntil" | "requestKey" | "operationId" | "outputOffset" | "protocolBuffer" | "executionGrant">;
+export type WorkspaceRunView = Omit<WorkspaceRun, "leaseToken" | "leaseUntil" | "requestKey" | "operationId" | "outputOffset" | "protocolBuffer" | "executionGrant" | "studioSlot">;
 
 export function workspaceView(workspace: Workspace): WorkspaceView {
   const { ownerEmail: _owner, leaseToken: _token, leaseUntil: _lease, checkpointId: _checkpoint, creationFingerprint: _creation, ...view } = workspace;
@@ -77,7 +77,7 @@ export function workspaceView(workspace: Workspace): WorkspaceView {
   return view;
 }
 export function workspaceRunView(run: WorkspaceRun): WorkspaceRunView {
-  const { leaseToken: _token, leaseUntil: _lease, requestKey: _request, operationId: _operation, outputOffset: _offset, protocolBuffer: _buffer, executionGrant: _grant, ...view } = run;
+  const { leaseToken: _token, leaseUntil: _lease, requestKey: _request, operationId: _operation, outputOffset: _offset, protocolBuffer: _buffer, executionGrant: _grant, studioSlot: _slot, ...view } = run;
   void [_token, _lease, _request, _operation, _offset, _buffer, _grant];
   return view;
 }

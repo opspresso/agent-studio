@@ -47,7 +47,7 @@ beforeEach(async () => {
   deps = { members: { getById: vi.fn(async () => ({ id: user.userId, email: owner, name: "Owner", image: null, tier: "member", joinedAt: now.toISOString(), lastLoginAt: null })) }, repository, chats, agents, now: () => now, newId: () => `id-${++id}`, idleTtlSeconds: 60, runTimeoutMs: 60_000,
     checkRepository: vi.fn(async () => {}),
     policy: () => ({ agentName: "demo", repositories: ["company/repo"], runtimes: ["codex"], checks: [], deploymentWorkflows: ["deploy.yml"] }),
-    runtime: kind => createWorkspaceRuntimeAdapter(kind), execute: async (_workspace, work) => { await work(); }, sleep: async () => {},
+    runtime: kind => createWorkspaceRuntimeAdapter(kind), execute: async (_workspace, work) => { await work(async () => {}); }, sleep: async () => {},
     provider: { kind: "fake", ensure: async () => ({ externalId: "sandbox-1" }), inspect: async () => "ready",
       execute: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })), start: vi.fn(async () => {}), operation: async () => ({ id: "", status: "not-started" }),
       output: async () => ({ frames: [], nextOffset: 0 }), cancel: async () => {}, checkpoint: async () => new Uint8Array([1]), restore: async () => {}, destroy: async () => {} },

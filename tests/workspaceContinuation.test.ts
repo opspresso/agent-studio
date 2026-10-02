@@ -60,7 +60,7 @@ async function fixture() {
     members: { getById: async () => ({ id: user.userId, email: owner, name: "Owner", image: null, tier: "member", joinedAt: at, lastLoginAt: null }) }, repository, chats, agents, now: () => new Date(), newId: () => `id-${++serial}`, idleTtlSeconds: 60,
     checkRepository: async () => {}, policy: () => ({ agentName: "agent", repositories: ["company/repo"], runtimes: ["codex"], checks: [], deploymentWorkflows: [] }),
     runtime: kind => createWorkspaceRuntimeAdapter(kind), runTimeoutMs: 1000,
-    execute: async (_workspace, work) => { await work(); }, sleep: async () => {},
+    execute: async (_workspace, work) => { await work(async () => {}); }, sleep: async () => {},
     provider: { kind: "fake", ensure: async () => ({ externalId: "sandbox-1" }), inspect: async () => "ready",
       execute: async () => ({ exitCode: 0, stdout: "", stderr: "" }), start: async () => {}, operation: async () => ({ id: "", status: "not-started" }),
       output: async () => ({ frames: [], nextOffset: 0 }), cancel: async () => {}, checkpoint: async () => new Uint8Array([1]), restore: async () => {}, destroy: async () => {} },

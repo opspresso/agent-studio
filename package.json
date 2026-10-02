@@ -19,6 +19,7 @@
     "test:workspace:kubernetes": "tsx scripts/workspace-kubernetes-check.ts",
     "test:workspace:git": "tsx scripts/workspace-git-check.ts",
     "test:workspace:codex": "tsx scripts/workspace-codex-check.ts",
+    "test:workspace:models": "tsx scripts/workspace-model-check.ts",
     "test:review:workspace": "tsx scripts/pr-review-workspace-check.ts",
     "worker:workspace": "tsx scripts/workspace-worker.ts",
     "build:workspace": "node scripts/build-workspace-worker.mjs",
