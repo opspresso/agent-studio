@@ -1506,7 +1506,9 @@ Trigger 읽기·생성·수정 응답에는 토큰이 없다. 개인 토큰은 �
 리뷰 모드는 GitHub HMAC만 받아 PR의 repository·number·HEAD를 검증한다. 비대상 이벤트는
 `202 {ok:true,status:"ignored",reason}`이며 모델을 실행하지 않는다. 정상 접수는 기존 accepted
 형태를 유지하고 완료 이력의 `review`에 repository·number·headSha·posted/skipped/failed와
-확인된 url 또는 reason을 담는다. 자동 리뷰에는 Agent Workspace 활성화와 저장소 정책,
+확인된 url 또는 reason을 담는다. 준비된 리뷰의 `workspaceUrl`은 게시 실패나 정리 이후에도
+해당 Workspace를 가리킨다. Integrations 이력은 Workspace와 Trace 링크를 함께 제공한다.
+자동 리뷰에는 Agent Workspace 활성화와 저장소 정책,
 command 런타임·worker 및 유효한 개인 Webhook 호출자가 필요하다. 플랫폼이 검증한
 HEAD의 Workspace를 준비한 뒤 실행·COMMENT 게시·보고를 완료하고 Workspace 정리를 확인한다.
 `sourceRevision`은 내부 리뷰 입력이며 공개 Workspace 생성·시작 body에서 받지 않는다.

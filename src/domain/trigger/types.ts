@@ -138,6 +138,8 @@ export interface TriggerRun {
   review?: PullRequestReviewTarget & {
     status: "posted" | "skipped" | "failed";
     url?: string;
+    /** Prepared Workspace remains addressable on failed publication and after cleanup. */
+    workspaceUrl?: string;
     reason?: string;
   };
 }

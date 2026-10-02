@@ -15,6 +15,7 @@ const MAX_REVIEW_REPLY_CHARS = 20_000;
 
 export interface ReviewPublication {
   target: PullRequestReviewTarget;
+  workspaceUrl: string;
   send(text: string, warnings: readonly string[]): Promise<PullRequestReviewDelivery>;
   close(): Promise<void>;
 }
@@ -126,7 +127,7 @@ export async function preparePullRequestReview(
       return workspace.tool(args, callId);
     },
     configuration: { ...configuration, parameters: { ...configuration.parameters, structuredOutput: false } },
-    publication: { target, close: workspace.close, async send(text, warnings) {
+    publication: { target, workspaceUrl: workspace.url, close: workspace.close, async send(text, warnings) {
       if (!await currentAuthorization()) return { status: "skipped", reason: "Review automation or its personal Webhook caller is no longer authorized." };
       await workspace.ensureIdle();
       if (warnings.length) throw new Error("The review run was incomplete; no review was published");

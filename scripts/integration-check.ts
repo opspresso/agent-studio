@@ -1251,7 +1251,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       await triggerRepository.create(reviewTrigger);
       assert.deepEqual((await triggerRepository.get(agentName, "webhook")), reviewTrigger);
       const review = { repository: "example/agent", number: 42, headSha: "a".repeat(40), status: "posted" as const,
-        url: "https://github.com/example/agent/pull/42#pullrequestreview-1" };
+        url: "https://github.com/example/agent/pull/42#pullrequestreview-1", workspaceUrl: "https://studio.example.test/chats/review-workspace" };
       await triggerRepository.finishRun({ ...recentRun, status: "succeeded", endedAt: now, review });
       assert.deepEqual((await triggerRepository.listRuns(agentName, triggerId, 1))[0]?.review, review);
       pass("PR review scope, Webhook execution grant and publication receipt persist through PostgreSQL");

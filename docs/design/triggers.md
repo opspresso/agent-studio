@@ -83,7 +83,8 @@ Workspace는 이 리뷰의 저장소·커밋·command 런타임으로 제한한�
 현재 Webhook 활성 상태와 저장소 권한 설정을 다시 읽는다. 어댑터가 PR의 열린 상태·draft·HEAD를
 재검사하고 해당 commit_id에 `COMMENT` 리뷰만 게시한다. 확인 직후 새 커밋이 생기더라도 리뷰는
 검토한 커밋에 연결된다. 승인·변경 요구·merge는 하지 않는다. 전송 오류나 확인되지 않은 응답을
-자동 재전송하지 않는다. 이력의 `review`는 대상과 posted/skipped/failed·실제 게시 URL을 보관한다.
+자동 재전송하지 않는다. 이력의 `review`는 대상과 posted/skipped/failed·실제 게시 URL·준비한
+Workspace URL을 보관한다. Integrations에서 게시 실패의 Workspace와 Trace를 직접 열 수 있다.
 
 ## 실행 문맥과 결과
 

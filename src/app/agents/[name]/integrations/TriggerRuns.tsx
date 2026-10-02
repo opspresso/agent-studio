@@ -69,7 +69,11 @@ export function TriggerRuns({ runs, showTriggerId = false }: { runs: TriggerRun[
                     </Badge>
                     {run.review.url ? <Anchor href={run.review.url} target="_blank" rel="noopener noreferrer" size="xs">
                       {run.review.repository} #{run.review.number}
-                    </Anchor> : <Text size="xs">{run.review.reason}</Text>}
+                    </Anchor> : <Text size="xs">{run.review.repository} #{run.review.number}</Text>}
+                  </Group>}
+                  {(run.review?.workspaceUrl || run.traceId) && <Group gap="xs">
+                    {run.review?.workspaceUrl && <Anchor href={run.review.workspaceUrl} size="xs">Workspace</Anchor>}
+                    {run.traceId && <Anchor href={`/agents/${encodeURIComponent(run.agentName)}/traces/${encodeURIComponent(run.traceId)}`} size="xs">Trace</Anchor>}
                   </Group>}
                   {run.deliveryResults && run.deliveryResults.length > 0 && (
                     <Group gap={4}>
@@ -84,7 +88,7 @@ export function TriggerRuns({ runs, showTriggerId = false }: { runs: TriggerRun[
                       ))}
                     </Group>
                   )}
-                  {run.error ??
+                  {(run.error ?? run.review?.reason) !== undefined ? <Text size="xs">{run.error ?? run.review?.reason}</Text> :
                     (run.warning ? (
                       <>
                         <Alert color="yellow" variant="light" p={4}>
