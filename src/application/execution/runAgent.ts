@@ -19,7 +19,7 @@ import * as engine from "@/application/runtime";
 import { disposeRunDeadline, runDeadlineExceeded, withRunDeadline } from "@/shared/runDeadline";
 import { runEnding } from "@/application/run/runDeadline";
 import { log } from "@/shared/logger";
-import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor";
+import { type RunOrigin } from "@/domain/execution/actor";
 import { openRun } from "@/application/run/runBracket";
 import { captureRunArtifacts } from "@/application/artifact/runArtifacts";
 import { fileRefOf, type ProducedFileRef } from "@/application/artifact/producedFiles";
@@ -228,10 +228,8 @@ export async function* executeAgent(
     // that thread's context rather than opening one per hop.
     ...(input.conversation ? { conversation: input.conversation } : {}),
   };
-  const usage = createUsageAggregator(deps.usage, input.actor && toActorKey(input.actor));
-  const bracket = await openRun(deps, input.agent, input.configuration, input.actor, {
-    ownerEmail: input.user.email,
-  });
+  const usage = createUsageAggregator(deps.usage, input);
+  const bracket = await openRun(deps, input.agent, input.configuration, input);
   const recorder = deps.traces
     ? createTraceRecorder(deps.traces, input.agent, input.configuration, input.messages.length, origin)
     : undefined;

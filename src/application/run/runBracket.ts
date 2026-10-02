@@ -4,7 +4,7 @@
  * usage is flushed so settlement includes this run, including delegated work.
  */
 
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunIdentity, RunUser } from "@/domain/execution/actor";
 import type { TierLimits } from "@/domain/member/tiers";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import { beginRun, endRun } from "@/lib/runMetrics";
@@ -16,6 +16,8 @@ import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import { acquireRunSlot, type ConcurrencyGuardDeps } from "./concurrencyGuard";
 import { assertModelsPriceable, type UnknownModelPolicy } from "./modelPolicy";
 import { log } from "@/shared/logger";
+import { assertRunIdentity } from "@/application/auth/authorizeRunIdentity";
+import { ForbiddenError } from "@/application/errors";
 
 export type RunBracketDeps = CostGuardDeps &
   ConcurrencyGuardDeps & {
@@ -30,13 +32,8 @@ export type RunBracketDeps = CostGuardDeps &
      * surface and stop there.
      */
     artifacts?: ArtifactStorage;
-    /**
-     * The current limits of the member behind this actor, or `undefined` for the kinds
-     * no member backs (slack, webhook, schedule) — those keep the
-     * deployment-wide limits. Injected rather than read, like every other
-     * runtime lookup here; absent means no tier policy at all.
-     */
-    resolveActorLimits?: (actor: RunActor) => Promise<TierLimits | undefined>;
+    /** Current personal limits resolved by immutable Studio account ID; lookup errors refuse admission. */
+    resolveUserLimits: (user: RunUser) => Promise<TierLimits>;
   };
 
 export interface RunBracket {
@@ -80,7 +77,7 @@ async function openExecutionBracket(
   deps: RunBracketDeps,
   agent: Agent,
   configuration: Pick<AgentConfiguration, "model" | "fallbackModel"> | undefined,
-  actor?: RunActor,
+  identity: RunIdentity,
 ): Promise<Omit<RunBracket, "artifacts">> {
   // Before the first `await`, and therefore before this function leaves the
   // caller's async context. `enterWith` binds the store to the context it runs
@@ -91,6 +88,7 @@ async function openExecutionBracket(
   // The cost is that a refused run also mints an id. That is the better trade:
   // the refusal's own log line is correlated too.
   const context = enterRunContext();
+  assertRunIdentity(identity);
   // First, because it is the only refusal here that says the *configuration* is
   // wrong rather than that the platform is busy. Costing nothing to check, it
   // should not be reached by way of a queue for a slot the run would be refused
@@ -119,12 +117,13 @@ async function openExecutionBracket(
   }
   await assertWithinCostLimit(deps, agent);
   // Both personal policies require a successful tier lookup before any work.
-  const tierLimits = actor ? await deps.resolveActorLimits?.(actor) : undefined;
+  if (!deps.resolveUserLimits) throw new ForbiddenError("Personal execution limits are not configured");
+  const tierLimits = await deps.resolveUserLimits(identity.user);
   // Before the slot for the same reason cost precedes concurrency: a member
   // over budget should be told so rather than queue for a slot the run would
   // be refused on anyway.
-  await assertWithinMemberCostLimit(deps, actor, tierLimits);
-  const slot = await acquireRunSlot(deps, actor, tierLimits);
+  await assertWithinMemberCostLimit(deps, identity.user, tierLimits);
+  const slot = await acquireRunSlot(deps, identity.user, tierLimits);
   const startedAt = Date.now();
   const runMetric = beginRun(startedAt);
   let closed = false;
@@ -150,18 +149,18 @@ export function openModelCall(
   deps: RunBracketDeps,
   agent: Agent,
   configuration: Pick<AgentConfiguration, "model" | "fallbackModel">,
-  actor?: RunActor,
+  identity: RunIdentity,
 ): Promise<Omit<RunBracket, "artifacts">> {
-  return openExecutionBracket(deps, agent, configuration, actor);
+  return openExecutionBracket(deps, agent, configuration, identity);
 }
 
 /** Non-model workspace jobs share cost, concurrency and metrics without inventing a model. */
 export function openTaskRun(
   deps: RunBracketDeps,
   agent: Agent,
-  actor: RunActor,
+  identity: RunIdentity,
 ): Promise<Omit<RunBracket, "artifacts">> {
-  return openExecutionBracket(deps, agent, undefined, actor);
+  return openExecutionBracket(deps, agent, undefined, identity);
 }
 
 /** Chunk-producing runs add artifact capture to the common metered model-call bracket. */
@@ -169,15 +168,14 @@ export async function openRun(
   deps: RunBracketDeps,
   agent: Agent,
   configuration: AgentConfiguration,
-  actor?: RunActor,
-  opts: { ownerEmail?: string } = {},
+  identity: RunIdentity,
 ): Promise<RunBracket> {
-  const bracket = await openModelCall(deps, agent, configuration, actor);
+  const bracket = await openModelCall(deps, agent, configuration, identity);
   return {
     ...bracket,
     ...(deps.artifacts ? { artifacts: createArtifactRecorder(deps.artifacts, {
       agentName: agent.name,
-      ...(actor ? { actor } : {}), ...(opts.ownerEmail ? { ownerEmail: opts.ownerEmail } : {}),
+      actor: identity.actor, ownerEmail: identity.user.email,
       ancestry: [agent.name], runId: bracket.runId,
     }) } : {}),
   };

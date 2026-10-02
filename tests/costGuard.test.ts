@@ -1,4 +1,4 @@
-import { executionIdentity } from "./runIdentity";
+import { executionIdentity, withUserLimits } from "./runIdentity";
 import { withConfigurations } from "./agentConfigurations";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -428,7 +428,7 @@ describe("every top-level entry point is guarded", () => {
   function blockedDeps() {
     const reject = () => Promise.reject(new Error("the guard should have refused first"));
     const f = fixture({ day: row({ m: 100 }) });
-    return { authorizeRun: async () => {},
+    return { resolveUserLimits: async () => ({}), authorizeRun: async () => {},
       ...f.deps,
       agents: withConfigurations({ get: reject, list: reject, put: reject, delete: reject }, ({ get: reject, list: reject, put: reject, delete: reject }).get),
 
@@ -511,7 +511,7 @@ describe("a subagent transfer is guarded too", () => {
 
   function deps(spentUsd: number) {
     const f = fixture({ day: row({ m: spentUsd }) });
-    return { authorizeRun: async () => {},
+    return { resolveUserLimits: async () => ({}), authorizeRun: async () => {},
       ...f.deps,
       agents: withConfigurations({ get: async () => ({ ...child }) }, ({ get: async () => childConfiguration }).get),
 
@@ -551,7 +551,7 @@ describe("openRun", () => {
   it("does not count a run the guard refused", async () => {
     resetRunMetrics();
     const f = fixture({ day: row({ m: 50 }) });
-    await expect(openRun(f.deps, agent({ blockThresholdUsd: 10 }), configuration)).rejects.toBeInstanceOf(
+    await expect(openRun(withUserLimits(f.deps), agent({ blockThresholdUsd: 10 }), configuration, executionIdentity())).rejects.toBeInstanceOf(
       CostLimitExceededError,
     );
     expect(runMetricsSnapshot()).toMatchObject({ activeRuns: 0, runsStarted: 0 });
@@ -560,7 +560,7 @@ describe("openRun", () => {
   it("counts an admitted run and releases it exactly once", async () => {
     resetRunMetrics();
     const f = fixture({ day: null });
-    const bracket = await openRun(f.deps, agent({ blockThresholdUsd: 10 }), configuration);
+    const bracket = await openRun(withUserLimits(f.deps), agent({ blockThresholdUsd: 10 }), configuration, executionIdentity());
     expect(runMetricsSnapshot().activeRuns).toBe(1);
     await bracket.close();
     // A generator reaches its `finally` through both a return and a consumer's

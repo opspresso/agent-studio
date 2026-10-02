@@ -135,6 +135,7 @@ function harness(
           };
         },
       },
+      sourceRefreshIdentity: async () => "test-authorization-epoch",
       mcpAuth: { headersFor: async () => ({ headers: {} }), markUnauthorized: async () => {} },
     } as unknown as Parameters<typeof resolveRunTools>[0],
   };

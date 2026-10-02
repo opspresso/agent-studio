@@ -42,6 +42,7 @@ export const runSlotRepository: RunSlotRepository = {
           .filter((item) => Number(item.leaseUntil ?? 0) > nowSeconds)
           .map((item) => Number(item.slotIndex ?? -1)),
       );
+      if (held.size >= slotLimit) return null;
       let index = -1;
       for (let candidate = 0; candidate < slotLimit; candidate++) {
         if (!held.has(candidate)) {

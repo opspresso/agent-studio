@@ -96,7 +96,7 @@ async function reviewResult(workspaceId: string, runId: string) {
   const tool = createWorkspaceTool({ useCases: createWorkspaceUseCases(deps), authorize: async () => {}, policy: () => policy,
     sleep: deps.sleep, publishGit: async () => { throw new Error("Git publication unavailable"); }, requestGit: async () => { throw new Error("unused"); }, pullRequest: async () => undefined,
     attachRepository: async () => { throw new Error("unused"); }, workdir: "/workspace/repo", publicBaseUrl: "https://studio.example.test" },
-  { user: { userId: "studio-user-1", email: owner }, agentName: "demo", ownerEmail: owner, occurrence: "review" });
+  { actor: { kind: "user", id: owner }, user: { userId: "studio-user-1", email: owner }, agentName: "demo", ownerEmail: owner, occurrence: "review" });
   const session = await openReviewWorkspace({ tool: async (args, callId) => (args.request as { operation: string }).operation === "start"
     ? { text: JSON.stringify({ workspace_id: workspaceId, workspace_url: "https://studio.example.test/chats/review",
       run_id: "bootstrap", status: "succeeded", head_sha: target.headSha }) } : tool(args, callId),
@@ -292,6 +292,16 @@ describe("durable workspace worker", () => {
     expect((await repository.run(workspace.id, run.id))?.error).toContain("Member access revoked");
   });
 
+  it("rechecks the caller after provisioning before starting native work", async () => {
+    const { workspace, run } = await start();
+    let allowed = true;
+    deps.authorize = vi.fn(async () => { if (!allowed) throw new Error("Caller revoked during provisioning"); });
+    vi.mocked(provider.ensure).mockImplementationOnce(async () => { allowed = false; existing.add("sandbox-1"); return { externalId: "sandbox-1" }; });
+    await processWorkspace(deps, workspace.id);
+    expect(provider.start).not.toHaveBeenCalled();
+    expect((await repository.run(workspace.id, run.id))?.error).toContain("Caller revoked during provisioning");
+  });
+
   it.each(["deleted", "replaced"] as const)("refuses a queued task when its captured account is %s", async mode => {
     const { workspace, run } = await start();
     const lookUp = vi.fn(async () => mode === "deleted" ? null : memberFixture({ id: "replacement-user", email: owner }));
@@ -314,7 +324,7 @@ describe("durable workspace worker", () => {
     const first = await api.start({ agentName: "demo", runtime: "command", actor,
       input: { kind: "command", script: "echo task" } }, { userId: "studio-user-1", email: owner }, "external-0001");
     const seen: unknown[] = [];
-    deps.execute = async (_workspace, work, executionActor) => { seen.push(executionActor); await work(); };
+    deps.execute = async (_workspace, work, executionActor) => { seen.push(executionActor.actor); await work(); };
     await processWorkspace(deps, first.workspace.id);
     expect((await repository.run(first.workspace.id, first.run.id))?.status).toBe("succeeded");
     expect(seen).toEqual([actor]);

@@ -1,3 +1,4 @@
+import { sourceRefreshFingerprint } from "@/application/audio/sourceRefreshIdentity";
 import { createHash } from "node:crypto";
 /** An Agent's MCP bindings resolved into offered tools, and session cleanup. */
 
@@ -58,6 +59,7 @@ export async function buildMcpTools(
   }
   const descriptionByName = new Map<string, string>();
   const credentialByServer = new Map<string, string>();
+  const authorizationByServer = new Map<string, string>();
   // Per-request context, kept apart from the identity headers on purpose — see
   // `CONVERSATION_ID_HEADER` for why it must not reach the discovery cache key.
   const contextHeaders: Record<string, string> | undefined = origin?.conversation
@@ -91,6 +93,7 @@ export async function buildMcpTools(
               : `MCP server '${mcp.name}' could not be checked for a safe address; its tools were not offered.` };
           }
         }
+        const beforeAuthorization = await deps.sourceRefreshIdentity?.({ configuration, binding, server: mcp });
         const credentials = await resolveMcpCredentials({ cipher: deps.cipher, auth: deps.mcpAuth }, configuration.agentName, mcp, binding);
         if (credentials.credentialFingerprint) credentialByServer.set(mcp.name, credentials.credentialFingerprint);
         const credentialWarning = credentials.warning;
@@ -98,8 +101,12 @@ export async function buildMcpTools(
         if (credentials.unavailable) return { warning: [credentialWarning, `${credentials.unavailable} Its tools were not offered.`].filter(Boolean).join(" ") };
         const sourceOutputs = binding.sourceOutputs ?? mcp.sourceOutputs;
         const defaults = binding.sourceOutputs === undefined && Boolean(sourceOutputs?.length);
-        const refreshIdentity = defaults || sourceOutputs?.some((mapping) => mapping.refreshArgument)
-          ? await deps.sourceRefreshIdentity?.({ configuration, binding, server: mcp }) : undefined;
+        const refreshIdentity = deps.sourceRefreshIdentity
+          ? await deps.sourceRefreshIdentity({ configuration, binding, server: mcp })
+          : mcp.auth ? undefined : sourceRefreshFingerprint(mcp, binding, null);
+        if (beforeAuthorization !== undefined && beforeAuthorization !== refreshIdentity) return { warning: `MCP server '${mcp.name}' authentication changed during preparation; its tools were not offered.` };
+        if (mcp.auth && !refreshIdentity) return { warning: `MCP server '${mcp.name}' has no authorization identity; its tools were not offered.` };
+        authorizationByServer.set(mcp.name, refreshIdentity!);
         // Default namespaces belong to the authenticated connection, never to a shared plugin account.
         const mappings = sourceOutputs?.map((mapping) => defaults ? { ...mapping,
           namespace: createHash("sha256").update(JSON.stringify([mapping.namespace, configuration.agentName, refreshIdentity])).digest("hex") } : mapping);
@@ -200,7 +207,7 @@ export async function buildMcpTools(
     }
   }
   return {
-    signature: runtimeFingerprint([servers.map(({ name, url }) => ({ name, url })), capped]),
+    signature: runtimeFingerprint([servers.map(({ name, url }) => ({ name, url, authorization: authorizationByServer.get(name) })), capped]),
     mcpTools: capped,
     mcpServers,
     warnings: [

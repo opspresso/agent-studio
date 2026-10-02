@@ -95,7 +95,7 @@ function depsFixture(
   const reject = () => Promise.reject(new Error("not used in this test"));
   const imageChannel = { generateImage: reject } as unknown as ImageChannel;
   const server = overrides.server ?? registryServer;
-  return { authorizeRun: async () => {},
+  return { sourceRefreshIdentity: async () => "test-authorization-epoch", resolveUserLimits: async () => ({}), authorizeRun: async () => {},
     ...(overrides.mcpAuth ? { mcpAuth: overrides.mcpAuth } : {}),
     agents: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),

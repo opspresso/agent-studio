@@ -4,7 +4,7 @@ import { runtimeFingerprint } from "@/application/runtime/session";
 import type { McpBinding, SubagentRef, AgentConfiguration } from "@/domain/agent/types";
 import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput } from "@/domain/llm/types";
-import type { RunOrigin } from "@/domain/execution/actor";
+import type { RunOrigin, RunIdentity } from "@/domain/execution/actor";
 import type { Skill } from "@/domain/skill/types";
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
 import { listAgentMcpConnections } from "@/application/mcp/listConnections";
@@ -84,8 +84,9 @@ export async function resolveSkills(
 
 /** Same for subagents: an unresolvable target is not offered as a transfer. */
 export async function resolveSubagents(
-  deps: Pick<ExecutionDeps, "agents">,
+  deps: Pick<ExecutionDeps, "agents" | "authorizeRun">,
   subagentList: SubagentRef[] | undefined,
+  identity?: RunIdentity,
 ): Promise<{ subagents: engine.SubagentInfo[]; warnings: string[] }> {
   const resolved = await Promise.all(
     (subagentList ?? []).map(
@@ -99,6 +100,12 @@ export async function resolveSubagents(
           return {
             warning: `Agent '${ref.name}' no longer exists; a transfer to it was not offered.`,
           };
+        }
+        try {
+          if (!identity) throw new Error("Missing authenticated caller");
+          await deps.authorizeRun(ref.name, identity);
+        } catch {
+          return { warning: `Agent '${ref.name}' is unavailable to this caller; a transfer was not offered.` };
         }
         return {
           subagent: { name: ref.name, description: target.description ?? "",
@@ -454,7 +461,7 @@ export function toolsPrepared(resolved: {
  * checks) from needing to know the difference.
  */
 export async function resolveRunTools(
-  deps: Pick<ExecutionDeps, "agents" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
+  deps: Pick<ExecutionDeps, "agents" | "skills" | "catalog" | "mcpConnections" | "authorizeRun"> & McpToolDeps,
   configuration: AgentConfiguration,
   signal?: AbortSignal,
   queries?: readonly string[],
@@ -462,7 +469,7 @@ export async function resolveRunTools(
    * Where the run came from. MCP resolution names an email actor and the
    * conversation to every server as request headers.
    */
-  origin?: Partial<Pick<RunOrigin, "actor" | "userEmail" | "conversation" | "backgroundTask">> & Partial<Pick<RunOrigin, "ancestry">>,
+  origin?: Partial<Pick<RunOrigin, "actor" | "user" | "executionGrant" | "userEmail" | "conversation" | "backgroundTask">> & Partial<Pick<RunOrigin, "ancestry">>,
   /** Records billable Rerank calls for a real run; previews leave it absent. */
   recordRerankUsage?: engine.RecordUsageFn,
 ): Promise<{
@@ -558,7 +565,7 @@ export async function resolveRunTools(
   try {
     const [skills, subagents, settled] = await Promise.all([
       resolveSkills(deps, configuration.skillList),
-      resolveSubagents(deps, configuration.subagentList),
+      resolveSubagents(deps, configuration.subagentList, origin?.user && origin.actor ? { user: origin.user, actor: origin.actor, executionGrant: origin.executionGrant } : undefined),
       mcpSettled,
     ]);
     if ("error" in settled) {

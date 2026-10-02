@@ -7,7 +7,7 @@ import type { AgentDeps, RunAgentInput, RuntimeTurn } from "@/application/runtim
 import { createToolResultBudget, MAX_TOOL_RESULT_CHARS_PER_TURN } from "@/application/llm/toolResultBudget";
 import { ImageRegistry } from "@/application/llm/agentAssembly";
 import { DEFAULT_CALL_ROUTING_POLICY } from "@/domain/llm/callRouting";
-import { ForbiddenError } from "@/application/errors";
+import { ForbiddenError, AppError } from "@/application/errors";
 import { contentChunk, FakeChannel } from "./fakeChannel";
 
 const input: RunAgentInput = { agentName: "agent", model: "local/primary", fallbackModel: "local/fallback", messages: [] };
@@ -26,6 +26,16 @@ afterEach(() => { vi.useRealTimers(); replaceModelRegistry(originalModels); });
 const deny = () => { throw new ForbiddenError("Caller permission revoked"); };
 
 describe("runtime authorization before paid model attempts", () => {
+  it.each([429, 502, 503])("does not fall back after authorization fails with HTTP %s", async status => {
+    const channel = new FakeChannel([[contentChunk("must not run")]]);
+    const authorizeExecution = vi.fn(async () => { throw new AppError("Authorization unavailable", status); });
+    const model = createRunModel({ channel, authorizeExecution }, input, turn(), () => {});
+    await expect(withTrace(new NoopTrace(), async () => {
+      for await (const _event of model.getStreamedResponse(request)) { /* drain */ }
+    })).rejects.toThrow("Authorization unavailable");
+    expect(authorizeExecution).toHaveBeenCalledTimes(1);
+    expect(channel.calls).toBe(0);
+  });
   it.each(["response", "stream"] as const)("refuses %s before calling the provider", async mode => {
     const channel = new FakeChannel([[contentChunk("must not run")]]);
     const model = createRunModel({ channel, authorizeExecution: async () => deny() }, input, turn(), () => {});

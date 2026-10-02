@@ -24,7 +24,7 @@ export const GET = withAuth(async (user, request: Request) => {
     );
   }
   try {
-    const items = await usageUseCases.memberUsage(user.email, parsed.data.from, parsed.data.to);
+    const items = await usageUseCases.memberUsage(user.id, parsed.data.from, parsed.data.to);
     return Response.json({ items });
   } catch (error) {
     return apiError(error);

@@ -1,4 +1,4 @@
-import { executionIdentity } from "./runIdentity";
+import { executionIdentity, withUserLimits } from "./runIdentity";
 import { withConfigurations } from "./agentConfigurations";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addTestModels } from "./modelFixtures";
@@ -149,23 +149,19 @@ describe("the run bracket enforces it", () => {
     expect(costReads).toBe(1);
     costReads = 0;
     await expect(
-      openRun(
-        { usage: counting, unknownModelPolicy: async () => "refuse" },
-        limitedAgent,
-        configuration({ model: UNKNOWN }),
-      ),
+      openRun(withUserLimits({ usage: counting, unknownModelPolicy: async () => "refuse" }), limitedAgent, configuration({ model: UNKNOWN }), executionIdentity()),
     ).rejects.toBeInstanceOf(ValidationError);
     expect(costReads).toBe(0);
   });
 
   it("refuses an unselected model even when unpriced selected models are allowed", async () => {
-    await expect(openRun({ usage, unknownModelPolicy: async () => "allow" }, agent, configuration({ model: UNKNOWN })))
+    await expect(openRun(withUserLimits({ usage, unknownModelPolicy: async () => "allow" }), agent, configuration({ model: UNKNOWN }), executionIdentity()))
       .rejects.toBeInstanceOf(ValidationError);
   });
 
   it("admits it when no policy is injected at all", async () => {
     // The generic bracket applies this policy only when its callback is bound.
-    const bracket = await openRun({ usage }, agent, configuration({ model: UNKNOWN }));
+    const bracket = await openRun(withUserLimits({ usage }), agent, configuration({ model: UNKNOWN }), executionIdentity());
 
     expect(bracket.runId).toMatch(/[0-9a-f-]{36}/);
     await bracket.close();
@@ -181,16 +177,12 @@ describe("the run bracket enforces it", () => {
   it("allows the run when the policy itself cannot be read", async () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const bracket = await openRun(
-      {
+    const bracket = await openRun(withUserLimits({
         usage,
         unknownModelPolicy: async () => {
           throw new Error("database unavailable");
         },
-      },
-      agent,
-      configuration(),
-    );
+      }), agent, configuration(), executionIdentity());
 
     expect(bracket.runId).toBeTruthy();
     expect(errors).toHaveBeenCalled();
@@ -202,7 +194,7 @@ describe("subagent preparation enforces model policy", () => {
   const child: Agent = { ...agent, name: "child" };
   const parent = configuration({ agentName: "parent", subagentList: [{ name: "child" }] });
   function prepare(policy: UnknownModelPolicy | undefined, model: string) {
-    const deps = { authorizeRun: async () => {},
+    const deps = { resolveUserLimits: async () => ({}), authorizeRun: async () => {},
       agents: withConfigurations({ get: async () => child }, ({ get: async () => configuration({ agentName: "child", model }) }).get),
       ...(policy ? { unknownModelPolicy: async () => policy } : {}),
     } as unknown as ExecutionDeps;

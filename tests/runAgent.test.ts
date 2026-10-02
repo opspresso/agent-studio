@@ -117,7 +117,7 @@ function executionDepsFixture(channel: LlmChannel) {
       };
     },
   };
-  const deps = { authorizeRun: async () => {},
+  const deps = { resolveUserLimits: async () => ({}), authorizeRun: async () => {},
     now: () => TEST_NOW,
     agents: withConfigurations({ get: reject, list: reject, put: reject, delete: reject }, ({ get: reject, list: reject, put: reject, delete: reject }).get),
 
@@ -1990,6 +1990,7 @@ describe("executeAgent retrieval usage", () => {
 
     expect(recorded).toContainEqual({
       actor: "user:owner@example.com",
+      userId: executionIdentity().user.userId,
       agentName: "painter",
       date: expect.any(String),
       model: "openrouter/rerank-v3.5",

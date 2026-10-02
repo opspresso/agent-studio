@@ -6,7 +6,7 @@
  * cannot enforce this deployment-wide admission limit.
  */
 
-import { actorKey, type RunActor } from "@/domain/execution/actor";
+import { runUserKey, type RunUser } from "@/domain/execution/actor";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import type { TierLimits } from "@/domain/member/tiers";
 import { RateLimitedError } from "@/application/errors";
@@ -58,25 +58,17 @@ const UNLIMITED: AcquiredSlot = { release: async () => {} };
  */
 export async function acquireRunSlot(
   deps: ConcurrencyGuardDeps,
-  actor: RunActor | undefined,
+  user: RunUser,
   tierLimits?: TierLimits,
 ): Promise<AcquiredSlot> {
-  // No repository, no limits, or a run with no identifiable caller: there is
-  // nothing to count against. An unattributed run is rare (every current entry
-  // point names its caller) and bounded by the cost guard instead.
-  if (!deps.runSlots || !deps.limits || !actor) {
-    return UNLIMITED;
-  }
-  // A tier's own ceiling wins over the deployment-wide number; a tier without
-  // one inherits it. Only a `user` actor ever arrives with a tier — the
-  // bracket's resolver answers `undefined` for machine callers and agent
-  // tokens alike, so a token stays a service credential bounded by the env number.
+  if (!deps.runSlots || !deps.limits) return UNLIMITED;
+  // One account shares its tier ceiling across Chat, tokens, messaging and schedules.
   const tierLimit = tierLimits?.maxConcurrentRuns;
   const limit = tierLimit ?? (typeof deps.limits === "function" ? await deps.limits() : deps.limits).perActor;
   if (limit <= 0) {
     return UNLIMITED;
   }
-  const key = actorKey(actor);
+  const key = runUserKey(user);
   const leaseUntil = Math.floor(Date.now() / 1000) + RUN_LEASE_SECONDS;
   let slot: RunSlot | null;
   try {

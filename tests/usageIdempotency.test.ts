@@ -8,7 +8,7 @@ import * as store from "@/infrastructure/db/store";
 import { PostgresUsageRepository } from "@/infrastructure/db/repositories/usageRepository";
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const usage = new PostgresUsageRepository();
-const delta: UsageDelta = { idempotencyKey: "segment-receipt", agentName: "audio", date: "2026-09-09", model: "asr",
+const delta: UsageDelta = { userId: "fixture-user", idempotencyKey: "segment-receipt", agentName: "audio", date: "2026-09-09", model: "asr",
   calls: 1, inputTokens: 10, outputTokens: 3, costUsd: 0.01, actor: "user:owner@example.test" };
 beforeEach(() => { fake.rows.clear(); fake.seed([{ ...keys.agent("audio"), entityType: "AGENT" }]);
   vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-09T00:00:00Z")); });
@@ -19,7 +19,7 @@ describe("durable usage receipts", () => {
     await Promise.all([usage.record(delta), usage.record(delta)]);
     expect((await usage.getDay("audio", "2026-09-09"))?.calls).toEqual({ asr: 1 });
     expect((await usage.listActorsByAgent("audio", "2026-09-09", "2026-09-09", 10))[0]?.costUsd).toEqual({ asr: 0.01 });
-    expect((await usage.listMemberDays("owner@example.test", "2026-09-09", "2026-09-09"))[0]?.costUsd).toEqual({ asr: 0.01 });
+    expect((await usage.listMemberDays(delta.userId, "2026-09-09", "2026-09-09"))[0]?.costUsd).toEqual({ asr: 0.01 });
   });
   it("compares payload fields independently of JSON key order", async () => {
     await usage.record(delta);
@@ -32,9 +32,22 @@ describe("durable usage receipts", () => {
     await expect(usage.record({ ...delta, costUsd: 2 })).rejects.toThrow("different payload");
     expect((await usage.getDay("audio", "2026-09-09"))?.costUsd.asr).toBe(0.01);
   });
-  it("does not leave a receipt when agent deletion prevents aggregation", async () => {
+  it("settles personal spend during Agent deletion without recreating its projections", async () => {
     fake.seed([{ ...keys.agent("audio"), entityType: "AGENT", deletingAt: "now" }]);
-    await expect(usage.record(delta)).rejects.toThrow();
-    expect(await store.getItem(keys.usageReceipt("audio", "segment-receipt"))).toBeNull();
+    await usage.record(delta);
+    await usage.record(delta);
+    expect(await usage.getDay("audio", delta.date)).toBeNull();
+    expect(await usage.listActorsByAgent("audio", delta.date, delta.date, 10)).toEqual([]);
+    expect((await usage.listMemberDays(delta.userId, delta.date, delta.date))[0]?.costUsd.asr).toBe(0.01);
+    expect(await store.getItem(keys.usageReceipt(delta.userId, "audio", "segment-receipt"))).not.toBeNull();
+  });
+  it("retains replay protection after the Agent partition is removed", async () => {
+    await usage.record(delta);
+    await store.deletePartition(keys.agent("audio").PK);
+    await store.deletePartition(keys.usage("audio", delta.date).PK);
+    await usage.record(delta);
+    expect((await usage.listMemberDays(delta.userId, delta.date, delta.date))[0]?.costUsd.asr).toBe(0.01);
+    expect(await usage.getDay("audio", delta.date)).toBeNull();
+    await expect(usage.record({ ...delta, costUsd: 2 })).rejects.toThrow("different payload");
   });
 });

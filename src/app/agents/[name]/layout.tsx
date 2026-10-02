@@ -87,11 +87,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
       ? [{ href: `${base}/traces`, label: t("agent.tab.traces"), Icon: IconRoute }]
       : []),
     { href: `${base}/api-reference`, label: t("agent.tab.apiReference"), Icon: IconApi },
-    // How other systems reach the agent — bots and the API token. Owner
-    // gated like Settings, which is where these lived until the bots outgrew it.
-    ...(canManage
-      ? [{ href: `${base}/integrations`, label: t("agent.tab.integrations"), Icon: IconPlugConnected }]
-      : []),
+    { href: `${base}/integrations`, label: t("agent.tab.integrations"), Icon: IconPlugConnected },
     ...(canManage
       ? [{ href: `${base}/settings`, label: t("agent.tab.settings"), Icon: IconAdjustments }]
       : []),

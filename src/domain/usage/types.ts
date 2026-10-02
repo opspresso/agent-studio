@@ -29,6 +29,7 @@ export interface UsageRow {
  * them or not. Splitting keeps both reads exactly as wide as their question.
  */
 export interface ActorUsageRow {
+  userId: string;
   agentName: string;
   /** yyyy-MM-dd */
   date: string;
@@ -42,18 +43,9 @@ export interface ActorUsageRow {
   costUsd: Record<string, number>;
 }
 
-/**
- * One member's own spend on one agent for one UTC day. Only `user` actors
- * land here — an agent token spends against its agent, not its owner; see
- * `memberEmailFromActorKey` in `domain/execution/actor.ts`.
- *
- * Per agent rather than summed across them, so the profile can group a
- * person's spend the same three ways the overview groups the workspace's. The
- * tier cap sums whatever the window returns, which is the same number either
- * way.
- */
+/** One Studio account cross-source spend on one Agent for one UTC day. */
 export interface MemberUsageRow {
-  email: string;
+  userId: string;
   agentName: string;
   /** yyyy-MM-dd */
   date: string;
@@ -77,10 +69,8 @@ export interface UsageDelta {
   /** Of `inputTokens`, how many the provider served from its cache. */
   cachedTokens?: number;
   costUsd: number;
-  /**
-   * Who to bill it to, as `kind:id`. Absent means the run had no identifiable
-   * caller, and only the agent total is written — attribution is additive, so
-   * a path that cannot name its actor still records the spend it caused.
-   */
-  actor?: string;
+  /** Captured Studio account, independent of the invocation source. */
+  userId: string;
+  /** Original invocation source as kind:id, retained for audit. */
+  actor: string;
 }

@@ -154,7 +154,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   const { resolveProviderTarget } = await import("@/infrastructure/llm/providers");
   assert.equal(resolveProviderTarget("openai/gpt-5-mini", await getLlmProviderConfigs()).baseUrl,
     baseUrl, "pipeline checks must use the local mock channel");
-  const { deleteItem } = await import("@/infrastructure/db/store");
+  const { deleteItem, deletePartition } = await import("@/infrastructure/db/store");
   const { keys } = await import("@/infrastructure/db/keys");
   const { usageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
   const client = getS3Client();
@@ -219,8 +219,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       dynamicCapabilities: true, memoryRecall: true, urlFetch: true, imageGeneration: true, slackWorkspace: true },
     skillList: [], mcpList: [{ name: "must-not-resolve" }], subagentList: [{ name: "must-not-run" }] } });
   cleanup(() => agentRepository.delete(agentName));
-  cleanup(() => deleteItem(keys.usageMember(email, now.slice(0, 10), agentName)));
-  cleanup(() => deleteItem(keys.usageMember(email, new Date().toISOString().slice(0, 10), agentName)));
+  cleanup(() => deletePartition(keys.usageMemberPartition(id)));
   if (memoryUrl) {
     await mcpUseCases.create({ name: memoryName, url: memoryUrl.href, headers: { Authorization: `Bearer ${memoryToken}` } });
     memoryRegistered = true;

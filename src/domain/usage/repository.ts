@@ -29,7 +29,7 @@ export interface UsageRepository {
    * and the profile page's, read the same way. Bounded pages in that member's
    * own partition, like `listByAgent`.
    */
-  listMemberDays(email: string, from: string, to: string): Promise<MemberUsageRow[]>;
+  listMemberDays(userId: string, from: string, to: string): Promise<MemberUsageRow[]>;
   /**
    * Claim the once-per-day notification for `kind`. Returns true for exactly one
    * caller per (agent, date, kind) and false for every later one, including

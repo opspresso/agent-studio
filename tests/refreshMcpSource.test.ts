@@ -1,3 +1,4 @@
+import { ForbiddenError } from "@/application/errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMcpSourceRefresher } from "@/application/execution/refreshMcpSource";
 import { buildMcpTools } from "@/application/execution/mcpTools";
@@ -12,7 +13,8 @@ function fixture() {
   const configuration = { agentName: "audio", mcpList: [{ name: "files", sourceOutputs: [recipe.mapping] }] };
   const identity = vi.fn(async () => "epoch-1");
   const getAgent = vi.fn(async () => ({ ownerEmail: "owner@example.test", configuration }));
-  const deps = { agents: { get: getAgent }, mcps: { get: async () => ({ name: "files" }) }, sourceRefreshIdentity: identity } as unknown as Parameters<typeof createMcpSourceRefresher>[0];
+  const authorizeRun = vi.fn(async () => {});
+  const deps = { authorizeRun, agents: { get: getAgent }, mcps: { get: async () => ({ name: "files" }) }, sourceRefreshIdentity: identity } as unknown as Parameters<typeof createMcpSourceRefresher>[0];
   const call = vi.fn(async () => {
     await vi.mocked(buildMcpTools).mock.calls[0]?.[0].registerMcpSource?.({ agentName: "audio", userEmail: "owner@example.test", namespace: "account", itemId: "42", url: "https://files.example.test/fresh", filename: "source", mimeType: "audio/mpeg" });
     return { text: "opaque projected result" };
@@ -21,15 +23,22 @@ function fixture() {
   vi.mocked(buildMcpTools).mockResolvedValue({ signature: "test", mcpTools: [{ type: "function", function: { name: "file_read", parameters: { properties: { file_id: { type: "integer" } } } } }],
     mcpServers: [], warnings: [], aliasFor: () => "file_read", callMcpTool: call, close });
   const job = { agentName: "audio", userEmail: "owner@example.test", sourceIdentity: { namespace: "account", itemId: "42" } } as AudioJob;
-  return { run: createMcpSourceRefresher(deps), job, recipe, call, close, identity, configuration, getAgent };
+  return { run: createMcpSourceRefresher(deps), job, recipe, call, close, identity, configuration, getAgent, authorizeRun };
 }
 describe("registered MCP source replay", () => {
-  it("refreshes through the sub-agent binding and rejects ownership changes after the read", async () => {
+  it("preserves transient authorization failures for worker retry classification", async () => {
+    const f = fixture(); const failure = new Error("Member store unavailable");
+    f.authorizeRun.mockRejectedValueOnce(failure);
+    await expect(f.run(f.job, f.recipe, new AbortController().signal)).rejects.toBe(failure);
+    expect(f.call).not.toHaveBeenCalled();
+  });
+  it("refreshes a permitted shared sub-agent and rejects revoked access after the read", async () => {
     const f = fixture(); f.recipe.agentName = "downloader";
     await f.run(f.job, f.recipe, new AbortController().signal);
     expect(f.getAgent).toHaveBeenCalledWith("downloader");
-    expect(f.getAgent).toHaveBeenCalledTimes(2);
-    f.getAgent.mockResolvedValueOnce({ ownerEmail: "owner@example.test", configuration: f.configuration }).mockResolvedValueOnce({ ownerEmail: "new-owner@example.test", configuration: f.configuration });
+    expect(f.getAgent).toHaveBeenCalledTimes(3);
+    f.getAgent.mockResolvedValue({ ownerEmail: "another-owner@example.test", configuration: f.configuration });
+    f.authorizeRun.mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new ForbiddenError("Access revoked"));
     await expect(f.run(f.job, f.recipe, new AbortController().signal)).rejects.toThrow("source_agent_access_changed");
     expect(f.close).toHaveBeenCalledTimes(2);
   });
@@ -47,7 +56,7 @@ describe("registered MCP source replay", () => {
     expect(buildMcpTools).not.toHaveBeenCalled(); expect(f.call).not.toHaveBeenCalled();
   });
   it("rechecks connection identity after the read and closes the session on a concurrent reconnect", async () => {
-    const f = fixture(); f.identity.mockResolvedValueOnce("epoch-1").mockResolvedValueOnce("new-account");
+    const f = fixture(); f.identity.mockResolvedValueOnce("epoch-1").mockResolvedValueOnce("epoch-1").mockResolvedValueOnce("new-account");
     await expect(f.run(f.job, f.recipe, new AbortController().signal)).rejects.toThrow("source_connection_changed");
     expect(f.close).toHaveBeenCalledTimes(1);
   });

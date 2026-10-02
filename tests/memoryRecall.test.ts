@@ -338,7 +338,7 @@ function configurationFixture(memoryRecall: boolean): AgentConfiguration {
 function depsFixture(channel: FakeChannel): ExecutionDeps {
   const reject = () => Promise.reject(new Error("not used in this test"));
   const imageChannel = { generateImage: reject } as unknown as ImageChannel;
-  return { authorizeRun: async () => {},
+  return { resolveUserLimits: async () => ({}), authorizeRun: async () => {},
     agents: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => registryServer, list: reject, put: reject, delete: reject },

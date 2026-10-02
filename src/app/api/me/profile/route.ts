@@ -28,7 +28,7 @@ export const GET = withAuth(async (user) => {
   try {
     const [member, monthToDateUsd] = await Promise.all([
       memberUseCases.me(user.email),
-      usageUseCases.memberMonthToDate(user.email),
+      usageUseCases.memberMonthToDate(user.id),
     ]);
     return Response.json({ member, monthToDateUsd, limits: await getMemberTierLimits(member.tier) } satisfies ProfileResponse);
   } catch (error) {

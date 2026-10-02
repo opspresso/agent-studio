@@ -1,3 +1,4 @@
+import { usageIdentity } from "./runIdentity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createUsageAggregator } from "@/application/usage/recordUsage";
 import type { UsageRepository } from "@/domain/usage/repository";
@@ -41,7 +42,7 @@ function fakeUsageRepo(onRecord?: (delta: UsageDelta) => void) {
 describe("createUsageAggregator", () => {
   it("buffers records and writes nothing until flush", async () => {
     const { repo, writes } = fakeUsageRepo();
-    const agg = createUsageAggregator(repo);
+    const agg = createUsageAggregator(repo, usageIdentity());
     await agg.record({ agentName: "p", model: "m", inputTokens: 10, outputTokens: 5, costUsd: 0.01 });
     expect(writes).toHaveLength(0);
   });
@@ -51,7 +52,7 @@ describe("createUsageAggregator", () => {
     // invisible in every other number: tokens, calls and the answer look the
     // same whether the prompt was cacheable or not.
     const { repo, writes } = fakeUsageRepo();
-    const agg = createUsageAggregator(repo);
+    const agg = createUsageAggregator(repo, usageIdentity());
     const date = "2026-01-01";
     await agg.record({ agentName: "p", model: "m", inputTokens: 10, outputTokens: 5, costUsd: 0.01, date });
     await agg.record({
@@ -70,7 +71,7 @@ describe("createUsageAggregator", () => {
 
   it("collapses repeated same-model records into one summed write", async () => {
     const { repo, writes } = fakeUsageRepo();
-    const agg = createUsageAggregator(repo);
+    const agg = createUsageAggregator(repo, usageIdentity());
     const date = "2026-01-01";
     await agg.record({ agentName: "p", model: "m", inputTokens: 10, outputTokens: 5, costUsd: 0.01, date });
     await agg.record({ agentName: "p", model: "m", inputTokens: 20, outputTokens: 7, costUsd: 0.02, date });
@@ -85,7 +86,7 @@ describe("createUsageAggregator", () => {
 
   it("keeps a separate write per (date, model)", async () => {
     const { repo, writes } = fakeUsageRepo();
-    const agg = createUsageAggregator(repo);
+    const agg = createUsageAggregator(repo, usageIdentity());
     await agg.record({ agentName: "p", model: "a", inputTokens: 1, outputTokens: 1, costUsd: 0.01, date: "2026-01-01" });
     await agg.record({ agentName: "p", model: "b", inputTokens: 2, outputTokens: 2, costUsd: 0.02, date: "2026-01-01" });
     await agg.record({ agentName: "p", model: "a", inputTokens: 3, outputTokens: 3, costUsd: 0.03, date: "2026-01-02" });
@@ -102,7 +103,7 @@ describe("createUsageAggregator", () => {
     const { repo } = fakeUsageRepo(() => {
       throw new Error("database unavailable");
     });
-    const agg = createUsageAggregator(repo);
+    const agg = createUsageAggregator(repo, usageIdentity());
     await agg.record({ agentName: "p", model: "m", inputTokens: 1, outputTokens: 1, costUsd: 0.01 });
     // Still reports the agent it tried to write: the caller settles that
     // agent's thresholds off this list, and a failed write is exactly when
@@ -118,7 +119,7 @@ describe("createUsageAggregator", () => {
    */
   it("reports every distinct agent it wrote for, once each", async () => {
     const { repo } = fakeUsageRepo();
-    const agg = createUsageAggregator(repo);
+    const agg = createUsageAggregator(repo, usageIdentity());
     const call = { model: "m", inputTokens: 1, outputTokens: 1, costUsd: 0.01 };
 
     await agg.record({ agentName: "parent", ...call });
@@ -131,12 +132,12 @@ describe("createUsageAggregator", () => {
   it("reports nothing when it wrote nothing", async () => {
     const { repo } = fakeUsageRepo();
 
-    expect(await createUsageAggregator(repo).flush()).toEqual([]);
+    expect(await createUsageAggregator(repo, usageIdentity()).flush()).toEqual([]);
   });
 
   it("flush clears buffered totals so a second flush writes nothing", async () => {
     const { repo, writes } = fakeUsageRepo();
-    const agg = createUsageAggregator(repo);
+    const agg = createUsageAggregator(repo, usageIdentity());
     await agg.record({ agentName: "p", model: "m", inputTokens: 1, outputTokens: 1, costUsd: 0.01 });
     await agg.flush();
     await agg.flush();

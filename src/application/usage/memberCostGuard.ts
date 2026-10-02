@@ -1,14 +1,9 @@
-/**
- * User actors spend against their member tier's UTC monthly cap across Agents.
- * Machine actors and Agent tokens spend against Agent limits instead. Like the
- * Agent guard, this is a post-accounting backstop. Unavailable personal limits
- * refuse new work so a storage outage cannot bypass a tier's budget.
- */
+/** Personal UTC monthly budgets combine all Agents and invocation sources by Studio user ID. */
 
-import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
+import type { RunUser } from "@/domain/execution/actor";
 import type { TierLimits } from "@/domain/member/tiers";
 import type { UsageRepository } from "@/domain/usage/repository";
-import { RateLimitedError } from "@/application/errors";
+import { ForbiddenError, RateLimitedError } from "@/application/errors";
 import { utcDay, utcMonth } from "@/shared/date";
 import { secondsUntilNextUtcMonth } from "./costGuard";
 
@@ -19,7 +14,7 @@ export interface MemberCostGuardDeps {
 /** This member's month is spent; runs resume on the first of the next UTC month. */
 export class MemberCostLimitExceededError extends RateLimitedError {
   constructor(
-    readonly email: string,
+    readonly userId: string,
     readonly spentUsd: number,
     readonly limitUsd: number,
     retryAfterSeconds: number,
@@ -33,32 +28,21 @@ export class MemberCostLimitExceededError extends RateLimitedError {
   }
 }
 
-/**
- * Refuse the run when the member behind the actor has spent their tier's
- * monthly cap. A no-op for uncapped tiers (no read at all), and for every
- * actor kind that spends no personal budget — machine callers, and agent
- * tokens, whose spend belongs to their agent.
- */
+/** Personal policy reads fail closed; uncapped tiers require no usage query. */
 export async function assertWithinMemberCostLimit(
   deps: MemberCostGuardDeps,
-  actor: RunActor | undefined,
-  limits: TierLimits | undefined,
+  user: RunUser,
+  limits: TierLimits,
   now: Date = new Date(),
 ): Promise<void> {
-  if (!actor || !limits) {
-    return;
-  }
+  if (!user?.userId || !limits) throw new ForbiddenError("Personal execution identity and limits are required");
   const cap = limits.monthlyCostCapUsd;
   if (cap === undefined) {
     return;
   }
-  const email = memberEmailFromActorKey(actorKey(actor));
-  if (!email) {
-    return;
-  }
-  const spent = await memberMonthToDate(deps, email, now);
+  const spent = await memberMonthToDate(deps, user.userId, now);
   if (spent >= cap) {
-    throw new MemberCostLimitExceededError(email, spent, cap, secondsUntilNextUtcMonth(now));
+    throw new MemberCostLimitExceededError(user.userId, spent, cap, secondsUntilNextUtcMonth(now));
   }
 }
 
@@ -70,10 +54,10 @@ export async function assertWithinMemberCostLimit(
  */
 export async function memberMonthToDate(
   deps: MemberCostGuardDeps,
-  email: string,
+  userId: string,
   now: Date = new Date(),
 ): Promise<number> {
-  const rows = await deps.usage.listMemberDays(email, `${utcMonth(now)}-01`, utcDay(now));
+  const rows = await deps.usage.listMemberDays(userId, `${utcMonth(now)}-01`, utcDay(now));
   return rows.reduce(
     (total, row) => total + Object.values(row.costUsd).reduce((sum, v) => sum + (v || 0), 0),
     0,

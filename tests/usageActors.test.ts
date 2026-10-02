@@ -59,7 +59,7 @@ function row(actor: string, calls = 2, cost = 0.5): ActorUsageRow {
   return {
     agentName: "painter",
     date: "2026-07-30",
-    actor,
+    actor, userId: "fixture-user",
     calls: { "gpt-5": calls },
     inputTokens: { "gpt-5": 100 },
     outputTokens: { "gpt-5": 50 },

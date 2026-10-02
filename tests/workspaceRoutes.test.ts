@@ -98,11 +98,11 @@ describe("Workspace HTTP contract", () => {
     const action = kind === "push" ? { kind } : { kind, message: "chore: bump release" };
     f.request.mockResolvedValue({ id: "approval-1", status: "pending" });
     expect((await actions.POST(request("/workspace-1/actions", "POST", action), context)).status).toBe(200);
-    expect(f.request).toHaveBeenCalledWith("workspace-1", { userId: "studio-user-1", email: "owner@example.com" }, action);
+    expect(f.request).toHaveBeenCalledWith("workspace-1", { user: { userId: "studio-user-1", email: "owner@example.com" }, actor: { kind: "user", id: "owner@example.com" } }, action);
     expect(f.decide).not.toHaveBeenCalled();
     expect((await decision.POST(request("/workspace-1/actions/approval-1", "POST", { approve: "yes" }), context)).status).toBe(400);
     f.decide.mockResolvedValue({ id: "approval-1", status: "rejected" });
     await decision.POST(request("/workspace-1/actions/approval-1", "POST", { approve: false }), context);
-    expect(f.decide).toHaveBeenCalledWith("workspace-1", { userId: "studio-user-1", email: "owner@example.com" }, "approval-1", false);
+    expect(f.decide).toHaveBeenCalledWith("workspace-1", { user: { userId: "studio-user-1", email: "owner@example.com" }, actor: { kind: "user", id: "owner@example.com" } }, "approval-1", false);
   });
 });

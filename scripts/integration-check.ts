@@ -925,7 +925,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     pass("chat run log append/replay/tail + cascade delete");
 
     // ---------- usage (atomic ADD, twice) ----------
-    const usageDelta = {
+    const usageDelta = { userId: executionUser.userId, actor: "user:it@example.com",
       agentName,
       date: today,
       model: "openai/gpt-5-mini",
@@ -956,8 +956,8 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     pass("usage atomic ADD accumulation + range query");
 
     // ---------- usage attribution (per-caller rows) ----------
-    cleanup(() => deleteItem(dbKeys.usageMember("it@example.com", today, agentName)));
-    cleanup(() => deleteItem(dbKeys.usageMember("it@example.com", new Date().toISOString().slice(0, 10), agentName)));
+    cleanup(() => deleteItem(dbKeys.usageMember(executionUser.userId, today, agentName)));
+    cleanup(() => deleteItem(dbKeys.usageMember(executionUser.userId, new Date().toISOString().slice(0, 10), agentName)));
     await usageRepository.record({ ...usageDelta, actor: "user:it@example.com" });
     await usageRepository.record({ ...usageDelta, actor: "agent-token:it@example.com" });
     const actorRows = await usageRepository.listActorsByAgent(agentName, today, today, 100);
@@ -976,21 +976,21 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     );
     pass("usage attribution: per-caller rows, agent totals unaffected");
 
-    // ---------- member day rows (one history per email, across actor kinds) ----------
+    // ---------- member day rows (one history per user ID, across actor kinds) ----------
     // A per-run address isolates atomic ADD counts from interrupted checks.
     const memberEmail = `it-member-${suffix}@example.com`;
-    cleanup(() => deleteItem(dbKeys.usageMember(memberEmail, today, agentName)));
-    await usageRepository.record({ ...usageDelta, actor: `user:${memberEmail}` });
-    await usageRepository.record({ ...usageDelta, actor: `agent-token:${memberEmail}` });
+    cleanup(() => deleteItem(dbKeys.usageMember(integrationMemberId, today, agentName)));
+    await usageRepository.record({ ...usageDelta, userId: integrationMemberId, actor: `user:${memberEmail}` });
+    await usageRepository.record({ ...usageDelta, userId: integrationMemberId, actor: `agent-token:${memberEmail}` });
     // The agent follows the date in the sort key, so this range only returns
     // anything if the upper bound reaches past an agent name — a plain
     // `BETWEEN DATE#from AND DATE#to` finds nothing at all.
-    const memberDays = await usageRepository.listMemberDays(memberEmail, today, today);
+    const memberDays = await usageRepository.listMemberDays(integrationMemberId, today, today);
     assert.equal(memberDays.length, 1, "one row per member per agent per day");
     assert.equal(
       memberDays[0]?.calls["openai/gpt-5-mini"],
-      1,
-      "token spend stays out of the member's own history",
+      2,
+      "personal token and interactive calls share the member history",
     );
     assert.equal(memberDays[0]?.agentName, agentName, "the row names where it was spent");
     assert.deepEqual(
@@ -1000,12 +1000,12 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     );
     // The window the tier cap reads: month start through today.
     const capWindow = await usageRepository.listMemberDays(
-      memberEmail,
+      integrationMemberId,
       `${today.slice(0, 7)}-01`,
       today,
     );
     assert.equal(capWindow.length, 1, "the month-to-date window finds the day");
-    pass("member day rows: per-agent split, per-actor filtering, range query");
+    pass("member day rows: per-agent split, cross-source accounting, range query");
 
     // ---------- monthly threshold claim (conditional, its own row) ----------
     const month = today.slice(0, 7);
@@ -1633,9 +1633,10 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
 
     // ---------- durable usage receipts ----------
     {
-      const event = { idempotencyKey: `asr-${suffix}`, agentName, date: today, model: "asr-integration",
+      const event = { userId: "fixture-user", idempotencyKey: `asr-${suffix}`, agentName, date: today, model: "asr-integration",
         calls: 1, inputTokens: 10, outputTokens: 2, costUsd: 0.01, actor: "user:audio-integration@example.com" };
-      cleanup(() => deleteItem(dbKeys.usageMember("audio-integration@example.com", today, agentName)));
+      cleanup(() => deleteItem(dbKeys.usageMember(event.userId, today, agentName)));
+      cleanup(() => deleteItem(dbKeys.usageReceipt(event.userId, agentName, event.idempotencyKey)));
       await Promise.all(Array.from({ length: 8 }, () => usageRepository.record(event)));
       assert.equal((await usageRepository.getDay(agentName, today))?.calls["asr-integration"], 1);
       // PostgreSQL JSONB reorders object keys; replay compares values, not serialized order.

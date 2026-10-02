@@ -1,4 +1,5 @@
 import { executionIdentity } from "./runIdentity";
+import { resolveSubagents } from "@/application/execution/bindings";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { describe, expect, it, vi } from "vitest";
 import { buildAgentDeps, prepareSubagent, MAX_SUBAGENT_DEPTH } from "@/application/execution/agentBindings";
@@ -18,7 +19,7 @@ function fixture(agentOverrides: Partial<Agent> = {}, configurationOverrides: Pa
   agent.configuration = configuration;
   if ("configuration" in agentOverrides) agent.configuration = agentOverrides.configuration;
   const agents = { get: vi.fn(async () => agent) };
-  const deps = { authorizeRun: async () => {},
+  const deps = { resolveUserLimits: async () => ({}), authorizeRun: async () => {},
     createToolSchemaValidator,
     channel: new FakeChannel([]), agents,
     skills: { get: async () => null, describe: async () => [], list: async () => [] },
@@ -30,6 +31,14 @@ function fixture(agentOverrides: Partial<Agent> = {}, configurationOverrides: Pa
 }
 
 describe("Studio prepares native SDK agent bindings", () => {
+  it("omits private child descriptions and tools when this caller cannot access them", async () => {
+    const f = fixture({ description: "Private incident response instructions" });
+    f.deps.authorizeRun = vi.fn(async () => { throw new Error("Access revoked"); });
+    const result = await resolveSubagents(f.deps, f.parent.subagentList, f.origin);
+    expect(result.subagents).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain("Private incident");
+    expect(f.deps.authorizeRun).toHaveBeenCalledWith("child", f.origin);
+  });
   it("rechecks the same caller's access to the child before resolving its bindings", async () => {
     const f = fixture();
     const authorizeRun = vi.fn(async () => { throw new Error("Child access revoked"); });

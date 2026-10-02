@@ -54,7 +54,6 @@ import { version as APP_VERSION } from "../../../package.json";
 export type { McpTool };
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { fetchSameOrigin, withResponseUrl } from "@/infrastructure/net/redirectPolicy";
-import { cutCodePoints } from "@/shared/utf8Text";
 import { withTimeout } from "@/shared/withTimeout";
 
 /**
@@ -535,25 +534,7 @@ export class McpHttpError extends Error {
   }
 }
 
-/**
- * How much of a server's failure text a failure may carry.
- *
- * The SDK puts the **entire response body** in the message of a non-OK POST, so
- * a proxy answering with an HTML error page hands over the whole page. That
- * message is not just logged: it becomes the run's warning — text the model and
- * the reader see — and it is cached with the failure and replayed for the next
- * runs. Enough of it to recognise the page, and no more.
- */
-const MAX_FAILURE_TEXT_CHARS = 400;
-
-/**
- * The SDK's error vocabulary, in this codebase's.
- *
- * Only the status is translated, and only because one status means something
- * the rest do not (see {@link isUnauthorized}). The message is kept but bounded:
- * it is more specific than anything restating it here would be, and it is also
- * unbounded at the source.
- */
+/** Transport diagnostics never include response bodies or provider-supplied credential text. */
 function asMcpError(error: unknown, method: string): unknown {
   if (error instanceof InsufficientScopeError) {
     const challenge: McpChallenge = {
@@ -561,22 +542,25 @@ function asMcpError(error: unknown, method: string): unknown {
       error: "insufficient_scope",
       ...(error.requiredScope ? { scope: error.requiredScope } : {}),
     };
-    return new McpHttpError(403, method, boundedFailure(method, 403, error.message), challenge);
+    return new McpHttpError(403, method, `${method} failed: HTTP 403`, challenge);
   }
   if (error instanceof UnauthorizedError) {
-    return new McpHttpError(401, method, boundedFailure(method, 401, error.message));
+    return new McpHttpError(401, method, `${method} failed: HTTP 401`);
   }
   if (error instanceof SdkHttpError) {
-    return new McpHttpError(error.status, method, boundedFailure(method, error.status, error.message));
+    return new McpHttpError(error.status, method, `${method} failed: HTTP ${error.status}`);
   }
-  return error;
+  if (error instanceof UnsupportedProtocolVersionError) {
+    return new UnsupportedProtocolVersionError({ supported: supportedVersions(error), requested: PROTOCOL_VERSION }, "Unsupported MCP protocol revision");
+  }
+  if (error instanceof SdkError) return new SdkError(error.code, `${method} failed: MCP client error ${error.code}`);
+  if (error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name)) {
+    return new DOMException("The operation was aborted due to timeout", error.name);
+  }
+  return new Error(`${method} failed: MCP response or transport could not be processed`);
 }
 
-/** `method failed: HTTP status — <as much of what the server said as fits>`. */
-function boundedFailure(method: string, status: number, message: string): string {
-  const said = cutCodePoints(message.replace(/\s+/g, " ").trim(), MAX_FAILURE_TEXT_CHARS);
-  return said ? `${method} failed: HTTP ${status} — ${said}` : `${method} failed: HTTP ${status}`;
-}
+
 
 /**
  * Did this failure come from a deadline rather than from the server?
@@ -668,5 +652,5 @@ function supportedVersions(error: UnsupportedProtocolVersionError): string[] {
   if (!Array.isArray(supported)) {
     return [];
   }
-  return supported.filter((version): version is string => typeof version === "string");
+  return supported.filter((version): version is string => typeof version === "string" && /^\d{4}-\d{2}-\d{2}$/.test(version)).slice(0, 8);
 }

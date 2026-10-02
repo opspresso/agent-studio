@@ -28,6 +28,8 @@ const GROUP_OPTIONS: GroupBy[] = ["model", "provider"];
 
 /** One line per caller: the rows arrive per day, and a reader wants the person. */
 interface CallerTotal {
+  key: string;
+  userId: string;
   actor: string;
   name: string;
   avatarUrl?: string;
@@ -38,8 +40,11 @@ interface CallerTotal {
 function totalsByCaller(rows: ActorUsageView[]): CallerTotal[] {
   const byActor = new Map<string, CallerTotal>();
   for (const row of rows) {
-    const existing = byActor.get(row.actor);
-    byActor.set(row.actor, {
+    const key = JSON.stringify([row.userId, row.actor]);
+    const existing = byActor.get(key);
+    byActor.set(key, {
+      key,
+      userId: row.userId,
       actor: row.actor,
       // The raw key is the honest fallback: an unresolved Slack id is still
       // more useful than a blank, and it is what the endpoint returned before.
@@ -273,7 +278,7 @@ function UsageDetail({ name }: { name: string }) {
               </Table.Thead>
               <Table.Tbody>
                 {callers.map((caller) => (
-                  <Table.Tr key={caller.actor}>
+                  <Table.Tr key={caller.key}>
                     <Table.Td>
                       <Group gap="xs" wrap="nowrap">
                         <Avatar src={caller.avatarUrl ?? null} size={24} radius="xl">
@@ -281,6 +286,7 @@ function UsageDetail({ name }: { name: string }) {
                         </Avatar>
                         <Text fz="sm" ff={caller.avatarUrl ? undefined : "monospace"}>
                           {caller.name}
+                          <Text component="span" display="block" size="xs" c="dimmed">{caller.userId}</Text>
                         </Text>
                       </Group>
                     </Table.Td>

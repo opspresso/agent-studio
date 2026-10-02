@@ -161,13 +161,13 @@ describe("telling a dead grant from a bad moment", () => {
   it("leaves every other provider error as a plain failure", async () => {
     // `temporarily_unavailable` is the provider having a bad minute. Marking a
     // connection dead over it would make an outage into a support ticket.
-    stub(400, { error: "temporarily_unavailable", error_description: "later" });
+    stub(400, { error: "temporarily_unavailable", error_description: "echo refresh-token client-secret access-token" });
 
     const failure = await oauthClient.refresh(target, "rt").catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(Error);
     expect(failure).not.toBeInstanceOf(OAuthGrantError);
-    expect((failure as Error).message).toContain("later");
+    expect((failure as Error).message).toBe("Token request failed: HTTP 400 (temporarily_unavailable)");
     vi.unstubAllGlobals();
   });
 

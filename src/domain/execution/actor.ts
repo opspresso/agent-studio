@@ -297,19 +297,9 @@ export function actorKey(actor: RunActor): string {
   return `${actor.kind}:${actor.id}`;
 }
 
-/**
- * The inverse of {@link actorKey}, for the one question the member-shaped
- * limits ask: which member's personal budget does this key spend? Only `user`
- * names one. A `agent-token` carries the owner's email too, but on purpose
- * it does **not** bill to them: a token is a service credential, bounded by
- * its agent's own limits, and person-shaped limits stop applying the moment
- * nobody is at the other end. What keeps that from being a bypass is the
- * token *authentication* gate — a tier that may not use API tokens cannot
- * mint or present one (`tierMayUseApiTokens`), enforced where the bearer
- * token is verified.
- */
-export function memberEmailFromActorKey(key: string): string | null {
-  return key.startsWith("user:") ? key.slice("user:".length) || null : null;
+/** One concurrency scope for the same Studio account across every invocation source. */
+export function runUserKey(user: RunUser): string {
+  return "studio-user:" + user.userId;
 }
 
 /** A run one hop deeper on the transfer chain, caused by the same actor. */

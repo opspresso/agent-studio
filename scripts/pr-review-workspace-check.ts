@@ -122,7 +122,7 @@ async function main() {
   const worker: WorkspaceWorkerDeps = { authorize: (agent, email, actor, grant, user) => authorizeWorkspaceExecution({ ...grantDeps, members, backendReady: () => true, enabled: async () => true }, agent, email, actor, grant, user), repository, chats, agents, provider, checkpoints, coding: () => coding, now: () => new Date(), newId: randomUUID,
     idleTtlSeconds: 60, runTimeoutMs: 30000, policy: () => ({ agentName, runtimes: ["command"], repositories: ["fixture/repo"], checks: [], deploymentWorkflows: [] }),
     checkRepository: (_agentName, repository, branch, revision) => github.forge.checkRepository(repository, branch, revision), runtime: createWorkspaceRuntimeAdapter,
-    execute: (workspace, work, actor, user) => executeWorkspaceTask({ usage }, agents, workspace, work, actor, user), sleep: ms => delay(ms) };
+    execute: (workspace, work, identity) => executeWorkspaceTask({ usage, resolveUserLimits: async () => ({}) }, agents, workspace, work, identity), sleep: ms => delay(ms) };
   const api = createWorkspaceUseCases(worker);
   const pump = async () => { if (workspaceId) await processWorkspace(worker, workspaceId); };
   const channel = new FakeChannel([
@@ -130,7 +130,7 @@ async function main() {
     [toolCallChunk(0, "wait", "Workspace", JSON.stringify({ request: { operation: "wait" } }))],
     [contentChunk("[P1] index.js:1 — twice(1)이 2 대신 3을 반환합니다. Workspace 재현 검사가 실패했습니다.")],
   ]);
-  const execution = { authorizeRun: (agent: string, identity: import("@/domain/execution/actor").RunIdentity) => authorizeRunIdentity(grantDeps, agent, identity), agents, usage, cipher, channel, createToolSchemaValidator, skills: { get: async () => null, describe: async () => [] }, mcps: { get: async () => null } } as unknown as ExecutionDeps;
+  const execution = { resolveUserLimits: async () => ({}), authorizeRun: (agent: string, identity: import("@/domain/execution/actor").RunIdentity) => authorizeRunIdentity(grantDeps, agent, identity), agents, usage, cipher, channel, createToolSchemaValidator, skills: { get: async () => null, describe: async () => [] }, mcps: { get: async () => null } } as unknown as ExecutionDeps;
   const actor = { kind: "webhook" as const, id: `${agentName}:webhook` };
   const deps: TriggerRunnerDeps = { members, agents, triggers, webhookCredentials, reviewForge: () => github.reviews,
     run: input => streamAgentRun(execution, { ...input, messages: [{ role: "user", content: input.message ?? "" }], ownerEmail: input.userEmail }),

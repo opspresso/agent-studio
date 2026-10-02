@@ -252,8 +252,8 @@ import {
   startPublishedModelRefresh,
 } from "./runtime-settings";
 import { getMemberTier, isEffectiveConfiguredAdminByEmail } from "./memberAccess";
-import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
-import { DEFAULT_MEMBER_TIER, tierMayEdit, type TierLimits } from "@/domain/member/tiers";
+import { actorKey, type RunActor } from "@/domain/execution/actor";
+import { tierMayEdit, type TierLimits } from "@/domain/member/tiers";
 import { offeredModels } from "@/domain/llm/models";
 import { composeCreateAgent } from "@/application/agent/createAgentFlow";
 import { composeCloneAgent } from "@/application/agent/cloneAgentFlow";
@@ -928,21 +928,11 @@ export const readinessReport = () =>
     if (model) await llmReachable(() => resolveTarget(model));
   } });
 
-/**
- * The effective limits behind an actor, for the shared run bracket. Only
- * a `user` actor resolves personal limits — machine callers *and agent tokens* answer
- * `undefined` and keep the deployment-wide limits: a token is a service
- * credential bounded by its agent, and whether a tier may hold one at all
- * is decided where the bearer token authenticates. A missing row still
- * answers the default tier rather than none: a `user` email exists by signing
- * in, so "no row" is the degenerate case, not the machine one.
- */
-const actorLimitsResolver = async (actor: RunActor): Promise<TierLimits | undefined> => {
-  const email = memberEmailFromActorKey(actorKey(actor));
-  if (!email) {
-    return undefined;
-  }
-  return getMemberTierLimits((await getMemberTier(email)) ?? DEFAULT_MEMBER_TIER);
+/** All execution sources spend the current Studio account's personal limits. */
+const userLimitsResolver = async (user: RunIdentity["user"]): Promise<TierLimits> => {
+  const member = await getExecutionMemberById(user.userId);
+  if (!member || member.id !== user.userId || member.email !== user.email) throw new ForbiddenError("The execution account is no longer active");
+  return getMemberTierLimits(member.tier);
 };
 
 /**
@@ -1110,7 +1100,7 @@ export const executionDeps: ExecutionDeps = {
   runSlots: runSlotRepository,
   limits: async () => ({ perActor: await getMaxConcurrentRunsPerActor() }),
   unknownModelPolicy: getUnknownModelPolicy,
-  resolveActorLimits: actorLimitsResolver,
+  resolveUserLimits: userLimitsResolver,
   ...(artifactStorage ? { artifacts: artifactStorage } : {}),
 };
 
@@ -1188,7 +1178,7 @@ export function getAudioRuntime() {
     const agent = await authorize(job.agentName, job.userEmail);
     if (audioSourceAgent(job) !== job.agentName) await authorize(audioSourceAgent(job), job.userEmail);
     if (job.sourceRefresh?.agentName && job.sourceRefresh.agentName !== job.agentName) {
-      await authorize(job.sourceRefresh.agentName, job.userEmail);
+      await authorizeAgentRun(job.sourceRefresh.agentName, job);
     }
     return agent;
   };
@@ -1254,7 +1244,7 @@ export function getAudioRuntime() {
     },
     beforeTranscribe: async (job) => {
       const agent = await authorizeJob(job);
-      const bracket = await openModelCall(executionDeps, agent, { model: job.model }, job.actor);
+      const bracket = await openModelCall(executionDeps, agent, { model: job.model }, job);
       return (failed) => bracket.close({ failed });
     },
     recordUsage: async (job, _receiptId, result) => {
@@ -1263,7 +1253,7 @@ export function getAudioRuntime() {
       await usageRepository.record({ agentName: job.agentName, date: accounting.date, model: result.model,
         calls: 1, inputTokens: result.usage?.inputTokens ?? 0, outputTokens: result.usage?.outputTokens ?? 0,
         costUsd: accounting.costUsd, idempotencyKey: accounting.eventId,
-        actor: actorKey(job.actor) });
+        actor: actorKey(job.actor), userId: job.user.userId });
     },
   });
   const postprocess = createAudioPostprocessStep({ files, run: async (job, text, mode, maxOutputChars, signal) => {
@@ -1445,7 +1435,7 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps & { coding: NonNullable<W
         serverToken: () => agentGitHubCredentials.token(agentName) });
     },
     runTimeoutMs: MAX_RUN_DURATION_MS,
-    execute: (workspace, work, actor, user) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work, actor, user),
+    execute: (workspace, work, identity) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work, identity),
     sleep: async (ms, signal) => { await workspaceSleep(ms, undefined, { signal }); },
   };
 }

@@ -214,7 +214,6 @@ export function createRunModel(
       };
       const consume = async function* (model: string): AsyncIterable<ResponseStreamEvent> {
         turn.model = model;
-        await deps.authorizeExecution?.();
         const source = await deps.channel.getModel(model);
         const prepared = prepare(request, model);
         for await (const event of source.getStreamedResponse(prepared)) {
@@ -259,6 +258,7 @@ export function createRunModel(
         }
       };
       try {
+        await deps.authorizeExecution?.();
         try { yield* consume(primaryModel); }
         catch (error) {
           request.signal?.throwIfAborted();
@@ -267,6 +267,7 @@ export function createRunModel(
           routed = await routePrimaryModel(deps, input, turn, request, emit, fallback);
           const model = routed?.model ?? fallback;
           beginFallbackBudget(request, model);
+          await deps.authorizeExecution?.();
           yield* consume(model);
         }
       } finally { flush(); }

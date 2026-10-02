@@ -1,6 +1,6 @@
 import type { SandboxProvider, WorkspaceCheckpointStore, WorkspaceRuntimeAdapter } from "@/domain/workspace/ports";
 import type { Sandbox, Workspace, WorkspaceRun } from "@/domain/workspace/types";
-import type { RunActor, RunUser } from "@/domain/execution/actor";
+import type { RunIdentity } from "@/domain/execution/actor";
 import type { CodingWorktree } from "@/domain/coding/worktree";
 import { isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
@@ -21,7 +21,7 @@ export interface WorkspaceWorkerDeps extends WorkspaceDeps {
   coding?: (agentName: string) => CodingWorktree;
   runTimeoutMs: number;
   /** Composition binds the execution facade, which opens the shared run bracket. */
-  execute(workspace: Workspace, work: () => Promise<boolean>, actor: RunActor, user: RunUser): Promise<void>;
+  execute(workspace: Workspace, work: () => Promise<boolean>, identity: RunIdentity): Promise<void>;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
   /** Bounded provider resource maintenance, bound to repository ownership at composition. */
   maintainSandboxes?: () => Promise<void>;
@@ -224,6 +224,8 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
       const current = await state.read();
       if (current.run?.id !== run.id) throw new WorkspaceLeaseLost();
       if (current.run.cancelRequestedAt || current.workspace.status === "closing") continue;
+      await deps.authorize?.(current.workspace.agentName, current.workspace.ownerEmail,
+        current.run.actor, current.run.executionGrant, current.run.user);
       await state.effect(() => deps.provider.start(sandbox.externalId, operationId, command));
       operation = await state.effect(() => deps.provider.operation(sandbox.externalId, operationId));
     }
@@ -309,7 +311,7 @@ async function processClaimedWorkspace(deps: WorkspaceWorkerDeps, state: Workspa
         await executeRun(deps, state, signal);
         const finished = workspace.activeRunId ? await deps.repository.run(workspace.id, workspace.activeRunId) : null;
         return finished?.status === "failed" || finished?.status === "interrupted";
-      }, run.actor, run.user);
+      }, run);
     }
   } catch (error) {
     if (error instanceof WorkspaceLeaseLost) return true;

@@ -84,7 +84,7 @@ function executionDepsFixture(channel: FakeChannel) {
       throw new Error("not used in this test");
     },
   } as unknown as ImageChannel;
-  return { authorizeRun: async () => {},
+  return { resolveUserLimits: async () => ({}), authorizeRun: async () => {},
     agents: { get: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: reject },

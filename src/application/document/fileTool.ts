@@ -47,15 +47,8 @@ export function buildFileTool(
     if (id.length > 128) throw new DocumentProcessingError("File unavailable");
     const artifact = await storage!.rows.get(id);
     const actor = origin.actor;
-    const own = artifact && actor && (
-      actor.kind === "user"
-        ? artifactOwnerEmail(artifact.actor, artifact.ownerEmail) === actor.id
-        : artifact.agentName === (origin.ancestry[0] ?? agentName) && (
-          actor.kind === "agent-token"
-            ? artifactOwnerEmail(artifact.actor, artifact.ownerEmail) === actor.id
-            : artifact.actor?.kind === actor.kind && artifact.actor.id === actor.id
-        )
-    );
+    const own = artifact && artifactOwnerEmail(artifact.actor, artifact.ownerEmail) === origin.user.email &&
+      (actor.kind === "user" || artifact.agentName === (origin.ancestry[0] ?? agentName));
     if (!artifact || (!own && !issued.has(id))) throw new DocumentProcessingError("File unavailable");
     if (artifact.byteSize > MAX_DOCUMENT_BYTES) throw new DocumentProcessingError("This file exceeds the document input byte limit");
     if (artifact.privateFileId && (!allowPrivate || actor?.kind !== "user" || !deps.readPrivateArtifact)) {

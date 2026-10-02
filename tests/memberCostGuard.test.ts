@@ -5,18 +5,18 @@ import {
   MemberCostLimitExceededError,
 } from "@/application/usage/memberCostGuard";
 import { DEFAULT_MEMBER_TIERS, memberTierLimits } from "@/domain/member/tiers";
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunUser } from "@/domain/execution/actor";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { MemberUsageRow } from "@/domain/usage/types";
 
 const now = new Date("2026-08-13T12:00:00Z");
 afterEach(() => vi.restoreAllMocks());
-const user: RunActor = { kind: "user", id: "a@x.com" };
+const user: RunUser = { userId: "account-a", email: "a@x.com" };
 
 const guestCap = memberTierLimits("guest", DEFAULT_MEMBER_TIERS).monthlyCostCapUsd!;
 
 const day = (date: string, cost: number, agentName = "p"): MemberUsageRow => ({
-  email: "a@x.com",
+  userId: user.userId,
   agentName,
   date,
   calls: { m: 1 },
@@ -91,26 +91,20 @@ describe("assertWithinMemberCostLimit", () => {
     expect(read).not.toHaveBeenCalled();
   });
 
-  it("is a no-op for every kind that spends no personal budget", async () => {
-    const read = vi.fn();
-    const usage = usageWith([day("2026-08-13", guestCap * 10)], read);
-    for (const actor of [
-      { kind: "slack", id: "U1" },
-      { kind: "webhook", id: "p:t" },
-      { kind: "schedule", id: "p:t" },
-      // A token spends against its agent, not its owner; the tier gate on
-      // token authentication is what keeps this from being a bypass.
-      { kind: "agent-token", id: "a@x.com" },
-    ] as RunActor[]) {
-      await expect(assertWithinMemberCostLimit({ usage }, actor, memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now)).resolves.toBeUndefined();
-    }
-    expect(read).not.toHaveBeenCalled();
+  it("keeps the same personal budget when the account email changes", async () => {
+    const usage = usageWith([day("2026-08-13", guestCap * 10)]);
+    const read = vi.spyOn(usage, "listMemberDays");
+    await expect(assertWithinMemberCostLimit({ usage }, { ...user, email: "renamed@example.test" },
+      memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now)).rejects.toBeInstanceOf(MemberCostLimitExceededError);
+    expect(read).toHaveBeenCalledWith(user.userId, "2026-08-01", "2026-08-13");
   });
 
-  it("is a no-op without an actor or a tier", async () => {
+  it("refuses missing account identity or personal policy", async () => {
     const usage = usageWith([day("2026-08-13", guestCap * 10)]);
-    await expect(assertWithinMemberCostLimit({ usage }, undefined, memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now)).resolves.toBeUndefined();
-    await expect(assertWithinMemberCostLimit({ usage }, user, undefined, now)).resolves.toBeUndefined();
+    await expect(Reflect.apply(assertWithinMemberCostLimit, undefined, [{ usage }, undefined,
+      memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now])).rejects.toMatchObject({ status: 403 });
+    await expect(Reflect.apply(assertWithinMemberCostLimit, undefined, [{ usage }, user, undefined, now]))
+      .rejects.toMatchObject({ status: 403 });
   });
 
   it("refuses new work when the budget cannot be read", async () => {

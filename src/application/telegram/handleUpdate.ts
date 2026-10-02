@@ -222,21 +222,20 @@ export async function handleTelegramUpdate(
     { ...(deps.sleep ? { sleep: deps.sleep } : {}) },
   );
 
-  // A command is answered whether or not the agent has a runnable configuration:
-  // `/start` on a bot that is currently failing should still say what it is.
-  if (disposition.kind === "command") {
-    const agent = await deps.agents.get(binding.agentName);
-    const intro = agent?.description?.trim() || `the ${binding.agentName} agent`;
-    await reply.say(
-      disposition.command === "start" ? `Hello — I am ${agent?.displayName ?? binding.agentName}, ${intro}.\n\n${HELP}` : HELP,
-    );
+  if (disposition.kind === "command" && disposition.command !== "start") {
+    await reply.say(HELP);
     return;
   }
-
   if (!message.from?.id) { await reply.say("A verified messaging sender is required"); return; }
   const authenticated = await authenticateMessagingSubject(deps.identities, { agentName: binding.agentName, platform: "telegram",
-    realm: "telegram", externalId: String(message.from.id) }, disposition.text, message.chat.type === "private", reply);
+    realm: "telegram", externalId: String(message.from.id) }, disposition.kind === "command" ? "/start" : disposition.text, message.chat.type === "private", reply);
   if (!authenticated) return;
+  if (disposition.kind === "command") {
+    const agent = await deps.agents.get(binding.agentName);
+    const intro = agent?.description?.trim() || "your connected Agent";
+    await reply.say(`Hello — I am ${agent?.displayName ?? binding.agentName}, ${intro}.\n\n${HELP}`);
+    return;
+  }
   const runnable = await resolveAgentSummary(deps, binding.agentName, reply);
   if (!runnable) {
     return;

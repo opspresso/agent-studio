@@ -439,6 +439,19 @@ describe("handleTelegramUpdate", () => {
     expect(sent[0]?.text).toContain("/help");
   });
 
+  it("does not disclose the Agent intro to an unlinked sender", async () => {
+    const { telegram, sent } = makeTelegramFake();
+    const { deps, runs } = makeDeps([], telegram);
+    deps.identities.resolve = async () => null;
+    const read = vi.spyOn(deps.agents, "get");
+    await handleTelegramUpdate(deps, dispositionOf({ update_id: 1,
+      message: message({ text: "/start", entities: [{ type: "bot_command", offset: 0, length: 6 }] }) }), BINDING);
+    expect(sent[0]?.text).toContain("Messaging connections");
+    expect(sent[0]?.text).not.toContain("Painter");
+    expect(read).not.toHaveBeenCalled();
+    expect(runs).toEqual([]);
+  });
+
   it("replies with guidance when the agent is not a runnable agent", async () => {
     const { telegram, sent } = makeTelegramFake();
     const { deps } = makeDeps([], telegram);

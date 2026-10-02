@@ -1,15 +1,18 @@
+import { AppError } from "@/application/errors";
 import type { SourceReferenceDeps } from "@/application/audio/sourceReferences";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import { buildMcpTools, closeMcp, type McpToolDeps } from "@/application/execution/mcpTools";
 import type { RegisterMcpSource } from "@/application/audio/mapMcpSource";
 import { AudioJobStepError } from "@/application/audio/processJob";
 
-export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps, "agents">): NonNullable<SourceReferenceDeps["refresh"]> {
+export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps, "agents" | "authorizeRun">): NonNullable<SourceReferenceDeps["refresh"]> {
   return async (job, recipe, signal) => {
     const check = async () => {
       const agent = await deps.agents.get(recipe.agentName ?? job.agentName);
-      if (recipe.agentName && recipe.agentName !== job.agentName) {
-        if (agent?.ownerEmail !== job.userEmail) throw new AudioJobStepError("source_agent_access_changed", false);
+      try { await deps.authorizeRun(recipe.agentName ?? job.agentName, job); }
+      catch (error) {
+        if (error instanceof AppError && [403, 404].includes(error.status)) throw new AudioJobStepError("source_agent_access_changed", false);
+        throw error;
       }
       const configuration = agent?.configuration;
       const server = await deps.mcps.get(recipe.serverName);
@@ -41,6 +44,7 @@ export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps,
       if (numericId && (!Number.isSafeInteger(itemId) || String(itemId) !== job.sourceIdentity.itemId)) {
         throw new AudioJobStepError("source_refresh_argument_invalid", false);
       }
+      await check();
       const result = await client.callMcpTool(alias, { [argument]: itemId });
       await check();
       if (result.text.startsWith("Error:")) throw new AudioJobStepError("source_refresh_failed", true);

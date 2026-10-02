@@ -29,17 +29,17 @@ export interface UsageReadDeps extends ListActorsDeps {
 /**
  * One member's own daily spend over a range — the profile read, and the same
  * rows in the same shape the agent usage page gets for an agent. Always the
- * caller's own email (the route passes the session user), which is why this
+ * caller's own user ID (the route passes the session user), which is why this
  * needs no gate: `memberCostGuard` owns enforcing the cap, this only reports
  * the rows it counts.
  */
 export function listMemberUsage(
   usage: UsageRepository,
-  email: string,
+  userId: string,
   from: string,
   to: string,
 ): Promise<MemberUsageRow[]> {
-  return usage.listMemberDays(email, from, to);
+  return usage.listMemberDays(userId, from, to);
 }
 
 /**
@@ -70,9 +70,9 @@ export interface UsageUseCases {
     from: string,
     to: string,
   ): Promise<AgentActorUsage>;
-  memberUsage(email: string, from: string, to: string): Promise<MemberUsageRow[]>;
+  memberUsage(userId: string, from: string, to: string): Promise<MemberUsageRow[]>;
   /** This member's spend since the first of the UTC month — what the cap bounds. */
-  memberMonthToDate(email: string, now?: Date): Promise<number>;
+  memberMonthToDate(userId: string, now?: Date): Promise<number>;
 }
 
 export function createUsageUseCases(deps: UsageReadDeps): UsageUseCases {
@@ -80,7 +80,7 @@ export function createUsageUseCases(deps: UsageReadDeps): UsageUseCases {
     summary: (from, to, agentName) => listUsageSummary(deps.usage, from, to, agentName),
     actors: (agentName, userEmail, from, to) =>
       listAgentActorsFor(deps, agentName, userEmail, from, to),
-    memberUsage: (email, from, to) => listMemberUsage(deps.usage, email, from, to),
-    memberMonthToDate: (email, now) => memberMonthToDate(deps, email, now),
+    memberUsage: (userId, from, to) => listMemberUsage(deps.usage, userId, from, to),
+    memberMonthToDate: (userId, now) => memberMonthToDate(deps, userId, now),
   };
 }

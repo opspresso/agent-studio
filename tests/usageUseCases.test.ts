@@ -4,7 +4,7 @@ import type { UsageRepository } from "@/domain/usage/repository";
 import type { MemberUsageRow } from "@/domain/usage/types";
 
 const row: MemberUsageRow = {
-  email: "u@x.com",
+  userId: "u@x.com",
   agentName: "p",
   date: "2026-02-10",
   calls: { m: 3 },

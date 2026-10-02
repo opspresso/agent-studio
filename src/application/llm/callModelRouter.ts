@@ -205,7 +205,7 @@ export function createCallModelRouter(
             }
           } catch (error) {
             signal?.throwIfAborted();
-            if (error instanceof AppError && error.status < 500) throw error;
+            if (error instanceof AppError) throw error;
             observe({ purpose: task.purpose, source: "jev", outcome: "failed", attempt: 0, reason: "decision-failed" });
           }
         }
@@ -273,7 +273,7 @@ export function createCallModelRouter(
           lastError = new Error("ModelTask output did not meet its quality criteria");
         } catch (error) {
           signal?.throwIfAborted();
-          if (error instanceof AppError && error.status < 500) throw error;
+          if (error instanceof AppError) throw error;
           lastError = error;
         }
         observe({ purpose: task.purpose, model: selected, ...(tier ? { tier } : {}), source, outcome: qualityFailed ? "quality-rejected" : "failed", attempt });

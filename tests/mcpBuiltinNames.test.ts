@@ -79,7 +79,7 @@ function depsFixture(channel: FakeChannel) {
     },
     editImage: reject,
   } as unknown as ImageChannel;
-  return { authorizeRun: async () => {},
+  return { resolveUserLimits: async () => ({}), authorizeRun: async () => {},
     agents: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => registryServer, list: reject, put: reject, delete: reject },

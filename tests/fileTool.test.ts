@@ -66,6 +66,18 @@ describe("private Artifact inputs", () => {
 });
 
 describe("native File tool", () => {
+  it.each(["webhook", "slack", "telegram", "teams", "schedule"] as const)("does not share files between Studio users of the same %s source", async kind => {
+    const f = setup();
+    const sharedActor = { kind, id: "agent:webhook" };
+    f.rows.set("private", { artifactId: "private", kind: "document", source: "generated", key: "private",
+      actor: sharedActor, ownerEmail: actor.id, agentName: "agent", mimeType: "image/png", byteSize: 8, createdAt: now.toISOString() });
+    const call = buildFileTool(f.deps, "agent", { ...executionIdentity(sharedActor, "stranger@example.test"), ancestry: ["agent"] })!;
+    for (const args of [{ operation: "read", file_id: "private" }, { operation: "edit", file_id: "private", edits: [] },
+      { operation: "create", format: "docx", content: "Report", assets: { image: "private" } }]) {
+      expect((await call(args)).text).toBe("Error: File unavailable");
+    }
+    expect(f.read).not.toHaveBeenCalled();
+  });
   it("forwards independent brand and layout choices and reports the effective design", async () => {
     const run = setup();
     const created = await run.call({ operation: "create", format: "docx", title: "운영 요약", content: "# 운영 요약\n\n본문",

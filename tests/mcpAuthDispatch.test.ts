@@ -539,7 +539,7 @@ function runDeps(
   mcpAuth: { headersFor: unknown; markUnauthorized: unknown },
 ): ExecutionDeps {
   const reject = () => Promise.reject(new Error("not used in this test"));
-  return { authorizeRun: async () => {},
+  return { sourceRefreshIdentity: async () => "test-authorization-epoch", resolveUserLimits: async () => ({}), authorizeRun: async () => {},
     agents: { get: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => OAUTH_SERVER },

@@ -3,7 +3,7 @@ import { chunkAuthorPath, runTermination, toolCallKey, isTopLevelChunk } from "@
 import type { EngineChunk, RunResult } from "@/domain/llm/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { Trace, TraceSpan } from "@/domain/trace/types";
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunActor, RunUser } from "@/domain/execution/actor";
 import { linkTrace } from "@/shared/runContext";
 
 const MAX_PREVIEW_CHARS = 1_000;
@@ -26,6 +26,7 @@ export interface TraceContext {
   ancestry?: string[];
   /** Who caused the run; a subagent inherits its parent's. */
   actor?: RunActor;
+  user?: RunUser;
   /** The conversation key (`conversationKey`) the run belongs to, when the surface has one. */
   conversation?: string;
 }
@@ -321,6 +322,7 @@ export class TraceRecorder {
         ? { ancestry: this.context.ancestry }
         : {}),
       ...(this.context.actor ? { actor: this.context.actor } : {}),
+      ...(this.context.user ? { user: this.context.user } : {}),
       ...(this.context.conversation ? { conversation: this.context.conversation } : {}),
       status: cancelled
         ? "cancelled"

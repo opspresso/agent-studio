@@ -19,7 +19,8 @@ export function createTraceRecorder(
     model: configuration.model,
     messageCount,
     ancestry: [...origin.ancestry],
-    ...(origin.actor ? { actor: origin.actor } : {}),
+    actor: origin.actor,
+    user: origin.user,
     ...(origin.conversation ? { conversation: conversationKey(origin.conversation) } : {}),
   });
 }

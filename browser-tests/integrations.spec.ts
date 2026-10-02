@@ -26,7 +26,7 @@ test.beforeAll(async () => {
       build.onResolve({ filter: /^next\/(navigation|link)$/ }, args => ({ path: args.path, namespace: "navigation-stub" }));
       build.onLoad({ filter: /.*/, namespace: "navigation-stub" }, args => ({
         contents: args.path === "next/navigation"
-          ? 'export const useParams = () => ({ name: "fixture-agent" });'
+          ? 'export const useParams = () => ({ name: "fixture-agent" }); export const usePathname = () => "/agents/fixture-agent/integrations"; export const useRouter = () => ({push(){}, refresh(){}});'
           : 'import React from "react"; export default function Link(props) { return React.createElement("a", { href: props.href }, props.children); }',
         loader: "js", resolveDir: process.cwd(),
       }));
@@ -196,9 +196,21 @@ test("schedules display their registering user without an owner delegation toggl
 
 test("a non-owner can manage personal tokens without shared Agent Webhook settings", async ({ page }) => {
   await page.goto(`${base}/?member`);
+  await expect(page.getByRole("link", { name: "Integrations", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "My Webhook token Not configured", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Webhook (enabled|disabled)$/ })).toHaveCount(0);
   await page.getByRole("button", { name: "My Webhook token Not configured", exact: true }).click();
   await page.getByRole("group", { name: "My Webhook token", exact: true }).getByRole("button", { name: "Generate", exact: true }).click();
   await expect(page.getByText(/\?credential=personal-selector/)).toBeVisible();
+});
+
+
+test("MCP settings accept a constructor server name without inherited header rows", async ({ page }) => {
+  const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+  await page.route("**/api/**", route => route.fulfill({ json: { name: "constructor", url: "https://mcp.example.test", headers: {}, tools: [], status: "needs_auth" } }));
+  await page.goto(`${base}/?binding`);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("dialog").getByText("Header overrides", { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
 });

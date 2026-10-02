@@ -583,7 +583,7 @@ export function McpBindingInput({
   }
 
   function rowsFor(binding: McpBinding): OverrideRow[] {
-    return rowsByName[binding.name] ?? overridesToRows(binding.headers);
+    return Object.hasOwn(rowsByName, binding.name) ? rowsByName[binding.name]! : overridesToRows(binding.headers);
   }
 
   function setRows(name: string, rows: OverrideRow[]) {

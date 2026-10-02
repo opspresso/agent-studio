@@ -1,4 +1,5 @@
-import type { RunUser } from "@/domain/execution/actor";
+import { assertRunIdentity } from "@/application/auth/authorizeRunIdentity";
+import type { RunIdentity } from "@/domain/execution/actor";
 import type { MemberRepository } from "@/domain/member/repository";
 import { resolveRunUser } from "@/application/auth/resolveRunUser";
 import { isDeepStrictEqual } from "node:util";
@@ -97,9 +98,12 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
   return {};
 }
 
-async function authorizeGitUser(deps: CodingDeps, id: string, user: RunUser) {
+async function authorizeGitUser(deps: CodingDeps, id: string, identity: RunIdentity) {
+  assertRunIdentity(identity);
+  const { user } = identity;
   const workspace = await ownedWorkspace(deps, id, user.email);
-  const current = await resolveRunUser(deps, workspace.agentName, user.userId, "user");
+  const current = await resolveRunUser(deps, workspace.agentName, user.userId, identity.actor.kind);
+  await deps.authorize?.(workspace.agentName, user.email, identity.actor, identity.executionGrant, user);
   if (current.email !== user.email) throw new ForbiddenError("The requesting account changed");
   return workspace;
 }
@@ -107,11 +111,11 @@ async function authorizeGitUser(deps: CodingDeps, id: string, user: RunUser) {
 /** All effects share ownership, tree review, action claims and uncertainty handling. */
 export function createCodingUseCases(deps: CodingDeps) {
   return {
-    async publish(id: string, user: RunUser, action: CodingAction, sourceChatId?: string): Promise<CodingApproval> {
+    async publish(id: string, identity: RunIdentity, action: CodingAction, sourceChatId?: string): Promise<CodingApproval> {
       if (codingActionRequiresConfirmation(action)) throw new ValidationError("This action requires explicit confirmation");
       // The action result stays inline; PRs can schedule a later CI-only update.
-      const approval = await this.request(id, user, action, action.kind === "pull-request" ? sourceChatId : undefined, "coding-request");
-      return this.decide(id, user, approval.id, true);
+      const approval = await this.request(id, identity, action, action.kind === "pull-request" ? sourceChatId : undefined, "coding-request");
+      return this.decide(id, identity, approval.id, true);
     },
     async pullRequest(id: string, ownerEmail: string): Promise<PullRequestInfo | undefined> {
       const workspace = await ownedWorkspace(deps, id, ownerEmail);
@@ -151,10 +155,11 @@ export function createCodingUseCases(deps: CodingDeps) {
         } catch (error) { await release(deps, state); throw error; }
       });
     },
-    async request(id: string, user: RunUser, action: CodingAction, sourceChatId?: string, authorization: CodingApproval["authorization"] = "confirmation"): Promise<CodingApproval> {
+    async request(id: string, identity: RunIdentity, action: CodingAction, sourceChatId?: string, authorization: CodingApproval["authorization"] = "confirmation"): Promise<CodingApproval> {
       if (authorization === "coding-request" && codingActionRequiresConfirmation(action)) throw new ValidationError("This action requires explicit confirmation");
+      const { user } = identity;
       const ownerEmail = user.email;
-      const workspace = await authorizeGitUser(deps, id, user);
+      const workspace = await authorizeGitUser(deps, id, identity);
       if (sourceChatId) {
         const chat = await deps.chats.get(sourceChatId);
         if (!chat || chat.ownerEmail !== ownerEmail || chat.workspaceId || !chat.agentName ||
@@ -183,13 +188,14 @@ export function createCodingUseCases(deps: CodingDeps) {
       });
     },
 
-    async decide(id: string, user: RunUser, approvalId: string, approve: boolean): Promise<CodingApproval> {
+    async decide(id: string, identity: RunIdentity, approvalId: string, approve: boolean): Promise<CodingApproval> {
+      const { user } = identity;
       const ownerEmail = user.email;
       await ownedWorkspace(deps, id, ownerEmail);
       const previous = await deps.repository.approval(id, approvalId);
       if (!user.userId || !previous || previous.requestedBy !== ownerEmail || previous.requestedByUserId !== user.userId) throw new NotFoundError("Coding approval not found");
       if (previous.status !== "pending") return previous;
-      if (approve) await authorizeGitUser(deps, id, user);
+      if (approve) await authorizeGitUser(deps, id, identity);
       const state = await reserve(deps, id, ownerEmail, approvalId, true, undefined, approve);
       return state.withHeartbeat(async () => {
         const decision = { ...previous, decidedBy: ownerEmail, decidedAt: deps.now().toISOString() };
@@ -207,41 +213,47 @@ export function createCodingUseCases(deps: CodingDeps) {
           const repo = repository(workspace);
           const review = await state.effect(() => deps.coding(workspace.agentName).review(sandbox.externalId));
           if (review.fingerprint !== previous.fingerprint) throw new ConflictError("Workspace changed since the action was reviewed");
-          const checked = await state.effect(() => validateAction(deps, workspace, previous.action, review));
+          const effect = async <T>(work: () => Promise<T>, mutation = true): Promise<T> => {
+            await authorizeGitUser(deps, id, identity);
+            return state.effect(() => {
+              if (mutation) executing = true;
+              return work();
+            });
+          };
+          const checked = await effect(() => validateAction(deps, workspace, previous.action, review), false);
           if (previous.action.kind === "push-main" && checked.main?.baseSha !== previous.review.mainHeadSha) throw new ConflictError("Main changed since review; prepare a new approval");
           if (checked.release && checked.release.headSha !== previous.review.targetSha) throw new ConflictError("Publication target changed since review; prepare a new approval");
           await state.save({}, undefined, [], { approval: { ...decision, status: "executing", operationId: approvalId } });
-          executing = true;
           let result: string;
           const patch: Partial<Workspace> = {};
           const action = previous.action;
           if (action.kind === "commit" || action.kind === "commit-and-push") {
-            const sha = await state.effect(() => deps.coding(workspace.agentName).commit(sandbox.externalId, { operationId: approvalId, fingerprint: previous.fingerprint,
+            const sha = await effect(() => deps.coding(workspace.agentName).commit(sandbox.externalId, { operationId: approvalId, fingerprint: previous.fingerprint,
               message: action.message, ownerEmail, createdAt: previous.requestedAt }));
             patch.coding = { ...repo, headSha: sha };
             await state.save(patch);
             await saveWorkspaceCheckpoint(deps, state, sandbox);
-            if (action.kind === "commit-and-push") await state.effect(() => deps.coding(workspace.agentName).push(sandbox.externalId, { ...repo, headSha: sha }));
+            if (action.kind === "commit-and-push") await effect(() => deps.coding(workspace.agentName).push(sandbox.externalId, { ...repo, headSha: sha }));
             result = sha;
           } else if (action.kind === "push") {
-            await state.effect(() => deps.coding(workspace.agentName).push(sandbox.externalId, { ...repo, headSha: review.headSha }));
+            await effect(() => deps.coding(workspace.agentName).push(sandbox.externalId, { ...repo, headSha: review.headSha }));
             result = review.headSha;
           } else if (action.kind === "pull-request") {
-            await state.effect(() => deps.coding(workspace.agentName).push(sandbox.externalId, { ...repo, headSha: review.headSha }));
-            const pullRequest = await state.effect(() => deps.forge(workspace.agentName).openPullRequest({ ...repo, headSha: review.headSha }, action));
+            await effect(() => deps.coding(workspace.agentName).push(sandbox.externalId, { ...repo, headSha: review.headSha }));
+            const pullRequest = await effect(() => deps.forge(workspace.agentName).openPullRequest({ ...repo, headSha: review.headSha }, action));
             patch.pullRequest = pullRequest;
             result = pullRequest.url;
           } else if (action.kind === "merge") {
-            result = await state.effect(() => deps.forge(workspace.agentName).merge(repo, action.pullRequestNumber, action.headSha));
+            result = await effect(() => deps.forge(workspace.agentName).merge(repo, action.pullRequestNumber, action.headSha));
             patch.pullRequest = { ...checked.pullRequest!, state: "merged" };
           } else if (action.kind === "push-main") {
-            result = await state.effect(() => deps.forge(workspace.agentName).pushMain(repo, review.headSha, previous.review.mainHeadSha!));
+            result = await effect(() => deps.forge(workspace.agentName).pushMain(repo, review.headSha, previous.review.mainHeadSha!));
           } else if (action.kind === "tag") {
-            result = await state.effect(() => deps.forge(workspace.agentName).createTag(repo, action.tag, previous.review.targetSha!));
+            result = await effect(() => deps.forge(workspace.agentName).createTag(repo, action.tag, previous.review.targetSha!));
           } else if (action.kind === "release") {
-            result = await state.effect(() => deps.forge(workspace.agentName).createRelease(repo, action, previous.review.targetSha!));
+            result = await effect(() => deps.forge(workspace.agentName).createRelease(repo, action, previous.review.targetSha!));
           } else {
-            const dispatched = await state.effect(() => deps.forge(workspace.agentName).dispatch(repo.repository, action.workflow, action.ref, action.inputs));
+            const dispatched = await effect(() => deps.forge(workspace.agentName).dispatch(repo.repository, action.workflow, action.ref, action.inputs));
             result = dispatched.url ?? (dispatched.runId ? `Workflow run ${dispatched.runId}` : "Workflow dispatch accepted");
           }
           const ciWatch = decision.authorization === "coding-request" && decision.sourceChatId ? codingCiWatch(patch.pullRequest, deps.now()) : undefined;

@@ -5,7 +5,7 @@ import type { WorkspaceAgentPolicy } from "@/domain/workspace/policy";
 import { isGitBranch, isRepositoryName, workspaceRepositories, workspaceAllowsRepository, workspaceAllowsRepositoryCreation, workspaceRepositoryMode } from "@/domain/workspace/policy";
 import type { createWorkspaceRepositoryCreationUseCases } from "./createRepository";
 import type { WorkspaceRuntime, WorkspaceInput } from "@/domain/workspace/types";
-import type { RunActor, RunUser, ExecutionGrant } from "@/domain/execution/actor";
+import type { RunIdentity } from "@/domain/execution/actor";
 import { WORKSPACE_RUNTIMES, isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import type { createWorkspaceUseCases, WorkspaceView } from "./workspaceUseCases";
@@ -20,14 +20,14 @@ interface WorkspaceToolDeps {
   policy(): WorkspaceAgentPolicy | undefined | Promise<WorkspaceAgentPolicy | undefined>;
   authorize(): Promise<void>;
   sleep(ms: number): Promise<void>;
-  requestGit(id: string, user: RunUser, action: CodingAction, sourceChatId?: string): Promise<CodingApproval>;
-  publishGit(id: string, user: RunUser, action: CodingAction, sourceChatId?: string): Promise<CodingApproval>;
+  requestGit(id: string, identity: RunIdentity, action: CodingAction, sourceChatId?: string): Promise<CodingApproval>;
+  publishGit(id: string, identity: RunIdentity, action: CodingAction, sourceChatId?: string): Promise<CodingApproval>;
   pullRequest(id: string, ownerEmail: string): Promise<PullRequestInfo | undefined>;
   attachRepository(id: string, ownerEmail: string, repository: string, baseBranch: string): Promise<WorkspaceView>;
   workdir: string;
   publicBaseUrl?: string;
 }
-interface WorkspaceToolContext { user: RunUser; agentName: string; ownerEmail: string; actor?: RunActor; executionGrant?: ExecutionGrant; occurrence: string; sourceChatId?: string; reviewTarget?: PullRequestReviewTarget }
+interface WorkspaceToolContext extends RunIdentity { agentName: string; ownerEmail: string; occurrence: string; sourceChatId?: string; reviewTarget?: PullRequestReviewTarget }
 const WAIT_STEPS = 8;
 const OUTPUT_BYTES = 12_000;
 
@@ -223,7 +223,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
         action = { kind: "deploy", workflow: value.workflow, ref: value.ref, inputs: Object.fromEntries(entries) };
       } else throw new ValidationError("Unsupported Git action. Use commit, commit-and-push, push, pull-request, merge, push-main, tag, release or deploy; do not use a native task or another Workspace");
       if (!codingActionRequiresConfirmation(action)) {
-        const publication = await deps.publishGit(id, context.user, action, context.sourceChatId);
+        const publication = await deps.publishGit(id, context, action, context.sourceChatId);
         const updated = await owned(id);
         return reply({ ...location(updated.workspace), action_id: publication.id, action: publication.action,
           status: publication.status, result: publication.result,
@@ -236,7 +236,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       const pending = detail.approvals.find(item => item.id === detail.workspace.activeActionId && item.status === "pending");
       const same = pending && isDeepStrictEqual(pending.action, action);
       const approval = same && pending && pending.sourceChatId === context.sourceChatId && pending.requestedByUserId === context.user.userId ? pending
-        : await deps.requestGit(id, context.user, action, context.sourceChatId);
+        : await deps.requestGit(id, context, action, context.sourceChatId);
       return reply({ ...location(detail.workspace),
         approval_path: `/chats/${detail.workspace.chatId}#actions`, approval_id: approval.id,
         approval_url: url(`/chats/${detail.workspace.chatId}#actions`),

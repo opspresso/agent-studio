@@ -1,3 +1,4 @@
+import { executionIdentity, withUserLimits } from "./runIdentity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   acquireRunSlot,
@@ -112,44 +113,44 @@ describe("acquireRunSlot", () => {
     const slots = memorySlots();
     let perActor = 1;
     const d = { runSlots: slots.repo, limits: async () => ({ perActor }) };
-    await acquireRunSlot(d, user);
-    await expect(acquireRunSlot(d, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    await acquireRunSlot(d, executionIdentity(user).user);
+    await expect(acquireRunSlot(d, executionIdentity(user).user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
     perActor = 2;
-    await expect(acquireRunSlot(d, user)).resolves.toBeDefined();
+    await expect(acquireRunSlot(d, executionIdentity(user).user)).resolves.toBeDefined();
   });
 
   it("admits runs up to the limit and refuses the next", async () => {
     const d = deps();
-    const first = await acquireRunSlot(d, user);
-    const second = await acquireRunSlot(d, user);
-    await expect(acquireRunSlot(d, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    const first = await acquireRunSlot(d, executionIdentity(user).user);
+    const second = await acquireRunSlot(d, executionIdentity(user).user);
+    await expect(acquireRunSlot(d, executionIdentity(user).user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
     expect(first).toBeDefined();
     expect(second).toBeDefined();
   });
 
   it("frees the slot on release", async () => {
     const d = deps();
-    const first = await acquireRunSlot(d, user);
-    await acquireRunSlot(d, user);
+    const first = await acquireRunSlot(d, executionIdentity(user).user);
+    await acquireRunSlot(d, executionIdentity(user).user);
     await first.release();
-    await expect(acquireRunSlot(d, user)).resolves.toBeDefined();
+    await expect(acquireRunSlot(d, executionIdentity(user).user)).resolves.toBeDefined();
   });
 
   it("counts callers separately", async () => {
     const d = deps();
-    await acquireRunSlot(d, user);
-    await acquireRunSlot(d, user);
+    await acquireRunSlot(d, executionIdentity(user).user);
+    await acquireRunSlot(d, executionIdentity(user).user);
     // A different person is not affected by this one's limit.
-    await expect(acquireRunSlot(d, { kind: "user", id: "b@example.com" })).resolves.toBeDefined();
+    await expect(acquireRunSlot(d, executionIdentity({ kind: "user", id: "b@example.com" }).user)).resolves.toBeDefined();
   });
 
-  it("keeps a token's slots apart from its owner's own runs", async () => {
+  it("shares a user's slots across interactive and personal token calls", async () => {
     const d = deps();
-    await acquireRunSlot(d, user);
-    await acquireRunSlot(d, user);
+    await acquireRunSlot(d, executionIdentity(user).user);
+    await acquireRunSlot(d, executionIdentity(user).user);
     await expect(
-      acquireRunSlot(d, { kind: "agent-token", id: "a@example.com" }),
-    ).resolves.toBeDefined();
+      acquireRunSlot(d, executionIdentity({ kind: "agent-token", id: "a@example.com" }).user),
+    ).rejects.toBeInstanceOf(ConcurrencyLimitError);
   });
 
   it("reclaims a slot whose lease has expired", async () => {
@@ -158,10 +159,10 @@ describe("acquireRunSlot", () => {
     let clock = Math.floor(Date.now() / 1000);
     const slots = memorySlots(() => clock);
     const d = { runSlots: slots.repo, limits: { perActor: 1 } };
-    await acquireRunSlot(d, user);
-    await expect(acquireRunSlot(d, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    await acquireRunSlot(d, executionIdentity(user).user);
+    await expect(acquireRunSlot(d, executionIdentity(user).user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
     clock += RUN_LEASE_SECONDS + 1;
-    await expect(acquireRunSlot(d, user)).resolves.toBeDefined();
+    await expect(acquireRunSlot(d, executionIdentity(user).user)).resolves.toBeDefined();
   });
 
   it("does not let an expired owner release a reused slot", async () => {
@@ -170,12 +171,12 @@ describe("acquireRunSlot", () => {
     const slots = memorySlots(() => clock);
     const d = { runSlots: slots.repo, limits: { perActor: 1 } };
     try {
-      const expired = await acquireRunSlot(d, user);
+      const expired = await acquireRunSlot(d, executionIdentity(user).user);
       clock += RUN_LEASE_SECONDS + 1;
-      await acquireRunSlot(d, user);
+      await acquireRunSlot(d, executionIdentity(user).user);
       await expired.release();
 
-      await expect(acquireRunSlot(d, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+      await expect(acquireRunSlot(d, executionIdentity(user).user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
     } finally {
       now.mockRestore();
     }
@@ -183,8 +184,8 @@ describe("acquireRunSlot", () => {
 
   it("carries a 429 and a Retry-After shorter than the lease", async () => {
     const d = { runSlots: memorySlots().repo, limits: { perActor: 1 } };
-    await acquireRunSlot(d, user);
-    const thrown = await acquireRunSlot(d, user).then(
+    await acquireRunSlot(d, executionIdentity(user).user);
+    const thrown = await acquireRunSlot(d, executionIdentity(user).user).then(
       () => null,
       (error: unknown) => error as ConcurrencyLimitError,
     );
@@ -201,21 +202,21 @@ describe("acquireRunSlot", () => {
     const shared = memorySlots().repo;
     const instanceA: ConcurrencyGuardDeps = { runSlots: shared, limits: LIMITS };
     const instanceB: ConcurrencyGuardDeps = { runSlots: shared, limits: LIMITS };
-    await acquireRunSlot(instanceA, user);
-    await acquireRunSlot(instanceB, user);
-    await expect(acquireRunSlot(instanceA, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
-    await expect(acquireRunSlot(instanceB, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    await acquireRunSlot(instanceA, executionIdentity(user).user);
+    await acquireRunSlot(instanceB, executionIdentity(user).user);
+    await expect(acquireRunSlot(instanceA, executionIdentity(user).user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    await expect(acquireRunSlot(instanceB, executionIdentity(user).user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
   });
 
   it("is disabled when no repository, no limits, or no actor is present", async () => {
-    await expect(acquireRunSlot({}, user)).resolves.toBeDefined();
-    await expect(acquireRunSlot({ limits: LIMITS }, user)).resolves.toBeDefined();
-    await expect(acquireRunSlot(deps(), undefined)).resolves.toBeDefined();
+    await expect(acquireRunSlot({}, executionIdentity(user).user)).resolves.toBeDefined();
+    await expect(acquireRunSlot({ limits: LIMITS }, executionIdentity(user).user)).resolves.toBeDefined();
+    await expect(acquireRunSlot(deps(), executionIdentity(undefined).user)).resolves.toBeDefined();
   });
 
   it("treats a zero limit as off rather than as a total block", async () => {
     const d = { runSlots: memorySlots().repo, limits: { perActor: 0 } };
-    await expect(acquireRunSlot(d, user)).resolves.toBeDefined();
+    await expect(acquireRunSlot(d, executionIdentity(user).user)).resolves.toBeDefined();
   });
 
   it("fails closed when the slot store is unavailable", async () => {
@@ -232,7 +233,7 @@ describe("acquireRunSlot", () => {
         release: async () => {},
       },
     };
-    await expect(acquireRunSlot(d, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    await expect(acquireRunSlot(d, executionIdentity(user).user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
     error.mockRestore();
   });
 
@@ -248,7 +249,7 @@ describe("acquireRunSlot", () => {
         },
       },
     };
-    const slot = await acquireRunSlot(d, user);
+    const slot = await acquireRunSlot(d, executionIdentity(user).user);
     await expect(slot.release()).resolves.toBeUndefined();
     warn.mockRestore();
   });
@@ -258,7 +259,7 @@ describe("acquireRunSlot with a member tier", () => {
   it("does not read the deployment limit when the tier has its own", async () => {
     const limits = vi.fn(async () => { throw new Error("deployment limit unavailable"); });
     const d = deps({ limits });
-    await expect(acquireRunSlot(d, user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS))).resolves.toBeDefined();
+    await expect(acquireRunSlot(d, executionIdentity(user).user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS))).resolves.toBeDefined();
     expect(limits).not.toHaveBeenCalled();
   });
   const roomy = () => ({ runSlots: memorySlots().repo, limits: { perActor: 10 } });
@@ -268,16 +269,16 @@ describe("acquireRunSlot with a member tier", () => {
   it("applies the tier's own ceiling under the deployment limit", async () => {
     const d = roomy();
     for (let i = 0; i < guestCeiling; i++) {
-      await acquireRunSlot(d, user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS));
+      await acquireRunSlot(d, executionIdentity(user).user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS));
     }
-    await expect(acquireRunSlot(d, user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS))).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    await expect(acquireRunSlot(d, executionIdentity(user).user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS))).rejects.toBeInstanceOf(ConcurrencyLimitError);
   });
 
   it("lets a tier without its own ceiling inherit the deployment limit", async () => {
     const d = roomy();
-    await acquireRunSlot(d, user, memberTierLimits("member", DEFAULT_MEMBER_TIERS));
-    await acquireRunSlot(d, user, memberTierLimits("member", DEFAULT_MEMBER_TIERS));
-    await expect(acquireRunSlot(d, user, memberTierLimits("member", DEFAULT_MEMBER_TIERS))).resolves.toBeDefined();
+    await acquireRunSlot(d, executionIdentity(user).user, memberTierLimits("member", DEFAULT_MEMBER_TIERS));
+    await acquireRunSlot(d, executionIdentity(user).user, memberTierLimits("member", DEFAULT_MEMBER_TIERS));
+    await expect(acquireRunSlot(d, executionIdentity(user).user, memberTierLimits("member", DEFAULT_MEMBER_TIERS))).resolves.toBeDefined();
   });
 });
 
@@ -287,25 +288,25 @@ describe("openRun with a tier resolver", () => {
     let spent = cap - 0.01;
     const d = {
       usage: { ...usage, listMemberDays: vi.fn(async () => [
-        { email: user.id, agentName: "chat-agent", date: "2026-07-29", calls: {}, inputTokens: {}, outputTokens: {}, costUsd: { m: spent / 2 } },
-        { email: user.id, agentName: "workspace-agent", date: "2026-07-29", calls: {}, inputTokens: {}, outputTokens: {}, costUsd: { m: spent / 2 } },
+        { userId: executionIdentity(user).user.userId, agentName: "chat-agent", date: "2026-07-29", calls: {}, inputTokens: {}, outputTokens: {}, costUsd: { m: spent / 2 } },
+        { userId: executionIdentity(user).user.userId, agentName: "workspace-agent", date: "2026-07-29", calls: {}, inputTokens: {}, outputTokens: {}, costUsd: { m: spent / 2 } },
       ]) },
       runSlots: memorySlots().repo,
-      resolveActorLimits: async () => memberTierLimits(tier, DEFAULT_MEMBER_TIERS),
+      resolveUserLimits: async () => memberTierLimits(tier, DEFAULT_MEMBER_TIERS),
     };
-    const chat = await openRun(d, agent, configuration, user);
+    const chat = await openRun(withUserLimits(d), agent, configuration, executionIdentity(user));
     await chat.close();
-    const task = await openTaskRun(d, agent, user);
+    const task = await openTaskRun(withUserLimits(d), agent, executionIdentity(user));
     await task.close();
     spent = cap;
-    await expect(openRun(d, agent, configuration, user)).rejects.toMatchObject({ status: 429, limitUsd: cap });
-    await expect(openTaskRun(d, agent, user)).rejects.toMatchObject({ status: 429, limitUsd: cap });
+    await expect(openRun(withUserLimits(d), agent, configuration, executionIdentity(user))).rejects.toMatchObject({ status: 429, limitUsd: cap });
+    await expect(openTaskRun(withUserLimits(d), agent, executionIdentity(user))).rejects.toMatchObject({ status: 429, limitUsd: cap });
     const work = vi.fn(async () => false);
     const workspace = { agentName: agent.name, ownerEmail: user.id } as Workspace;
     const agents = { get: async () => agent } as unknown as AgentRepository;
-    await expect(executeWorkspaceTask(d, agents, workspace, work, user, { userId: "studio-user-1", email: user.id })).rejects.toMatchObject({ status: 429 });
+    await expect(executeWorkspaceTask(withUserLimits(d), agents, workspace, work, executionIdentity(user))).rejects.toMatchObject({ status: 429 });
     expect(work).not.toHaveBeenCalled();
-    expect(d.usage.listMemberDays).toHaveBeenCalledWith(user.id, "2026-07-01", "2026-07-29");
+    expect(d.usage.listMemberDays).toHaveBeenCalledWith(executionIdentity(user).user.userId, "2026-07-01", "2026-07-29");
   });
 
   it("refuses both execution surfaces before acquiring a slot when spend cannot be read", async () => {
@@ -313,10 +314,10 @@ describe("openRun with a tier resolver", () => {
     const d = {
       usage: { ...usage, listMemberDays: async () => { throw new Error("usage unavailable"); } },
       runSlots: { ...memorySlots().repo, acquire },
-      resolveActorLimits: async () => memberTierLimits("guest", DEFAULT_MEMBER_TIERS),
+      resolveUserLimits: async () => memberTierLimits("guest", DEFAULT_MEMBER_TIERS),
     };
-    await expect(openRun(d, agent, configuration, user)).rejects.toThrow("usage unavailable");
-    await expect(openTaskRun(d, agent, user)).rejects.toThrow("usage unavailable");
+    await expect(openRun(withUserLimits(d), agent, configuration, executionIdentity(user))).rejects.toThrow("usage unavailable");
+    await expect(openTaskRun(withUserLimits(d), agent, executionIdentity(user))).rejects.toThrow("usage unavailable");
     expect(acquire).not.toHaveBeenCalled();
   });
 
@@ -325,13 +326,13 @@ describe("openRun with a tier resolver", () => {
       usage,
       runSlots: memorySlots().repo,
       limits: { perActor: 10 },
-      resolveActorLimits: async () => memberTierLimits("guest", DEFAULT_MEMBER_TIERS),
+      resolveUserLimits: async () => memberTierLimits("guest", DEFAULT_MEMBER_TIERS),
     };
     const admitted = [];
     for (let i = 0; i < memberTierLimits("guest", DEFAULT_MEMBER_TIERS).maxConcurrentRuns!; i++) {
-      admitted.push(await openRun(d, agent, configuration, user));
+      admitted.push(await openRun(withUserLimits(d), agent, configuration, executionIdentity(user)));
     }
-    await expect(openRun(d, agent, configuration, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    await expect(openRun(withUserLimits(d), agent, configuration, executionIdentity(user))).rejects.toBeInstanceOf(ConcurrencyLimitError);
     for (const bracket of admitted) {
       await bracket.close();
     }
@@ -342,30 +343,29 @@ describe("openRun with a tier resolver", () => {
       usage,
       runSlots: memorySlots().repo,
       limits: { perActor: 10 },
-      resolveActorLimits: async () => {
+      resolveUserLimits: async () => {
         throw new Error("member store down");
       },
     };
-    await expect(openRun(d, agent, configuration, user)).rejects.toThrow("member store down");
-    await expect(openTaskRun(d, agent, user)).rejects.toThrow("member store down");
+    await expect(openRun(withUserLimits(d), agent, configuration, executionIdentity(user))).rejects.toThrow("member store down");
+    await expect(openTaskRun(withUserLimits(d), agent, executionIdentity(user))).rejects.toThrow("member store down");
   });
 });
 
 describe("openRun with a concurrency limit", () => {
   it.each(["agent-token", "slack", "webhook"] as const)("attributes a Workspace task to its %s caller rather than its managing member", async kind => {
-    const actor = { kind, id: kind === "agent-token" ? agent.ownerEmail : "external-caller" };
+    const actor = { kind, id: kind === "agent-token" ? agent.ownerEmail : kind === "webhook" ? agent.name + ":webhook" : "external-caller" };
     const workspace: Workspace = { id: "ws", chatId: "chat", agentName: agent.name, ownerEmail: agent.ownerEmail,
       title: "Task", runtime: "command", sessionId: "session", status: "active", revision: 0,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), dueAt: new Date().toISOString(), idleTtlSeconds: 60 };
     const repository = { get: vi.fn(async () => agent) } as unknown as AgentRepository;
     const d = { usage, runSlots: memorySlots().repo, limits: { perActor: 1 } };
-    await executeWorkspaceTask(d, repository, workspace, async () => {
-      await expect(openTaskRun(d, agent, actor)).rejects.toBeInstanceOf(ConcurrencyLimitError);
-      const consoleRun = await openTaskRun(d, agent, { kind: "user", id: workspace.ownerEmail });
-      await consoleRun.close();
+    await executeWorkspaceTask(withUserLimits(d), repository, workspace, async () => {
+      await expect(openTaskRun(withUserLimits(d), agent, executionIdentity(actor, workspace.ownerEmail))).rejects.toBeInstanceOf(ConcurrencyLimitError);
+      await expect(openTaskRun(withUserLimits(d), agent, executionIdentity({ kind: "user", id: workspace.ownerEmail }))).rejects.toBeInstanceOf(ConcurrencyLimitError);
       return false;
-    }, actor, { userId: "studio-user-1", email: workspace.ownerEmail });
-    const released = await openTaskRun(d, agent, actor);
+    }, executionIdentity(actor, workspace.ownerEmail));
+    const released = await openTaskRun(withUserLimits(d), agent, executionIdentity(actor, workspace.ownerEmail));
     await released.close();
   });
 
@@ -374,19 +374,19 @@ describe("openRun with a concurrency limit", () => {
     vi.setSystemTime(new Date("2026-09-14T00:00:00Z"));
     try {
       const d = { usage, runSlots: memorySlots().repo, limits: { perActor: 1 } };
-      const task = await openTaskRun(d, agent, user);
-      await expect(openRun(d, agent, configuration, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+      const task = await openTaskRun(withUserLimits(d), agent, executionIdentity(user));
+      await expect(openRun(withUserLimits(d), agent, configuration, executionIdentity(user))).rejects.toBeInstanceOf(ConcurrencyLimitError);
       await task.close({ failed: true });
-      const modelRun = await openRun(d, agent, configuration, user);
+      const modelRun = await openRun(withUserLimits(d), agent, configuration, executionIdentity(user));
       await modelRun.close();
     } finally { vi.useRealTimers(); }
   });
   it("refuses past the limit without counting the run", async () => {
     resetRunMetrics();
     const d = { usage, ...deps() };
-    const first = await openRun(d, agent, configuration, user);
-    const second = await openRun(d, agent, configuration, user);
-    await expect(openRun(d, agent, configuration, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    const first = await openRun(withUserLimits(d), agent, configuration, executionIdentity(user));
+    const second = await openRun(withUserLimits(d), agent, configuration, executionIdentity(user));
+    await expect(openRun(withUserLimits(d), agent, configuration, executionIdentity(user))).rejects.toBeInstanceOf(ConcurrencyLimitError);
     expect(runMetricsSnapshot()).toMatchObject({ activeRuns: 2, runsStarted: 2 });
     await first.close();
     await second.close();
@@ -394,10 +394,10 @@ describe("openRun with a concurrency limit", () => {
 
   it("releases the slot when the run closes", async () => {
     const d = { usage, ...deps() };
-    const first = await openRun(d, agent, configuration, user);
-    const second = await openRun(d, agent, configuration, user);
+    const first = await openRun(withUserLimits(d), agent, configuration, executionIdentity(user));
+    const second = await openRun(withUserLimits(d), agent, configuration, executionIdentity(user));
     await first.close();
-    const third = await openRun(d, agent, configuration, user);
+    const third = await openRun(withUserLimits(d), agent, configuration, executionIdentity(user));
     await second.close();
     await third.close();
   });
@@ -405,12 +405,12 @@ describe("openRun with a concurrency limit", () => {
   it("releases a slot only once, however the generator unwinds", async () => {
     const slots = memorySlots();
     const d = { usage, runSlots: slots.repo, limits: LIMITS };
-    const bracket = await openRun(d, agent, configuration, user);
+    const bracket = await openRun(withUserLimits(d), agent, configuration, executionIdentity(user));
     await bracket.close();
     // A second close must not free a slot a later run has since taken.
-    const later = await openRun(d, agent, configuration, user);
+    const later = await openRun(withUserLimits(d), agent, configuration, executionIdentity(user));
     await bracket.close();
-    expect(slots.held.get("user:a@example.com")?.size).toBe(1);
+    expect(slots.held.get("studio-user:" + executionIdentity(user).user.userId)?.size).toBe(1);
     await later.close();
   });
 });

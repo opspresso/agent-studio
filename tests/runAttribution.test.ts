@@ -1,4 +1,4 @@
-import { executionIdentity } from "./runIdentity";
+import { executionIdentity, usageIdentity } from "./runIdentity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ids = vi.hoisted(() => ({ sequence: 0 }));
@@ -99,7 +99,7 @@ describe("descend", () => {
 describe("usage attribution", () => {
   it("records the actor alongside the agent total", async () => {
     const { repo, writes } = fakeUsage();
-    await recordUsage(repo, {
+    await recordUsage(repo, { userId: "fixture-user",
       agentName: "p",
       model: "m",
       inputTokens: 1,
@@ -110,21 +110,21 @@ describe("usage attribution", () => {
     expect(writes[0]).toMatchObject({ agentName: "p", actor: "user:a@example.com" });
   });
 
-  it("omits the actor entirely when the run has none", async () => {
+  it("records the stable account separately from its source actor", async () => {
     const { repo, writes } = fakeUsage();
-    await recordUsage(repo, {
+    await recordUsage(repo, { userId: "fixture-user", actor: "user:fixture@example.test",
       agentName: "p",
       model: "m",
       inputTokens: 1,
       outputTokens: 2,
       costUsd: 0.5,
     });
-    expect(writes[0]).not.toHaveProperty("actor");
+    expect(writes[0]).toMatchObject({ userId: "fixture-user", actor: "user:fixture@example.test" });
   });
 
   it("stamps the run's actor on every flushed total, across agents", async () => {
     const { repo, writes } = fakeUsage();
-    const aggregator = createUsageAggregator(repo, "user:a@example.com");
+    const aggregator = createUsageAggregator(repo, usageIdentity("user:a@example.com"));
     // A subagent transfer spends on another agent, but it is still this
     // person's run — the actor is the run's, not the turn's.
     await aggregator.record({

@@ -11,7 +11,7 @@ import { prepareMemoryForRun } from "@/application/execution/memoryRecall";
 describe("background audio recursion guard", () => {
   it("withholds submission tools from the postprocessor and all of its subagents", async () => {
     const audioTools = vi.fn(async () => vi.fn(async () => ({ text: "queued" })));
-    const deps = { authorizeRun: async () => {}, channel: new FakeChannel([]), audioTools } as unknown as ExecutionDeps;
+    const deps = { resolveUserLimits: async () => ({}), authorizeRun: async () => {}, channel: new FakeChannel([]), audioTools } as unknown as ExecutionDeps;
     const configuration: AgentConfiguration = { agentName: "writer",  model: "openai/gpt-5-mini",
       systemPrompt: "",  parameters: { piiFiltering: false, audioProcessing: true },
       skillList: [], mcpList: [], subagentList: [] };
@@ -32,7 +32,7 @@ describe("background audio recursion guard", () => {
 
   it("does not resolve bindings or discover capabilities for source postprocessing", async () => {
     const denied = vi.fn(async () => { throw new Error("Capability must not be resolved"); });
-    const deps = { authorizeRun: async () => {}, mcps: { get: denied }, agents: { get: denied },
+    const deps = { resolveUserLimits: async () => ({}), authorizeRun: async () => {}, mcps: { get: denied }, agents: { get: denied },
       catalog: { search: denied }, skills: { describe: vi.fn(async () => [{ name: "writer", description: "Writing guidance" }]) } } as unknown as ExecutionDeps;
     const configuration: AgentConfiguration = { agentName: "writer",  model: "openai/gpt-5-mini",
       systemPrompt: "",  parameters: { piiFiltering: false, dynamicCapabilities: true, memoryRecall: true },

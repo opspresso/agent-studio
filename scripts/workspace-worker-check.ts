@@ -54,6 +54,8 @@ async function main() {
   let workspaceId: string | undefined;
   const containers = new Set<string>();
   const actor: RunActor = { kind: "agent-token", id: ownerEmail };
+  const user = { userId: "studio-user-1", email: ownerEmail };
+  const executionGrant = { ...user, kind: "agent-token" as const, agentName, credentialId: "worker-fixture" };
   const executedActors: RunActor[] = [];
   const executedUsers: RunUser[] = [];
   const deps: WorkspaceWorkerDeps = {
@@ -62,7 +64,7 @@ async function main() {
     } }, checkpoints, now: () => new Date(Date.now() + offset), newId: randomUUID, idleTtlSeconds: 60, runTimeoutMs: 60_000,
     policy: () => ({ agentName, runtimes: ["command"], checks: [{ name: "test", command: "test -s executions.txt" }], deploymentWorkflows: [] }),
     runtime: kind => createWorkspaceRuntimeAdapter(kind),
-    execute: (workspace, work, caller, user) => { executedActors.push(caller); executedUsers.push(user); return executeWorkspaceTask({ usage }, agents, workspace, work, caller, user); },
+    execute: (workspace, work, identity) => { executedActors.push(identity.actor); executedUsers.push(identity.user); return executeWorkspaceTask({ usage, resolveUserLimits: async () => ({}) }, agents, workspace, work, identity); },
     sleep: async (ms, signal) => { await delay(ms, undefined, { signal }); },
   };
   const api = createWorkspaceUseCases(deps);
@@ -72,7 +74,7 @@ async function main() {
     await chats.create({ chatId, agentName, title: "Workspace worker check", ownerEmail, createdAt: at, updatedAt: at });
     const workspace = await api.create({ chatId, agentName, title: "General work", runtime: "command" }, ownerEmail);
     workspaceId = workspace.id;
-    const first = await api.enqueue(workspace.id, { userId: "studio-user-1", email: ownerEmail }, { kind: "command", script: "printf once >> executions.txt; sleep 1; printf complete" }, "worker-request-0001", actor);
+    const first = await api.enqueue(workspace.id, user, { kind: "command", script: "printf once >> executions.txt; sleep 1; printf complete" }, "worker-request-0001", actor, executionGrant);
     const stopping = new AbortController();
     const interrupted: WorkspaceWorkerDeps = { ...deps, provider: { ...deps.provider, start: async (...args) => {
       await provider.start(...args);
