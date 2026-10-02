@@ -2056,9 +2056,8 @@ describe("uploading what the run read", () => {
 });
 
 /**
- * A Slack actor groups usage by Slack identity. Separately resolving the
- * requester email files output in the personal Artifact gallery; failure leaves
- * it reachable through the Agent.
+ * Slack preserves platform provenance while the verified Studio account owns
+ * personal usage and Artifact custody. Unlinked senders cannot execute.
  */
 describe("verified Slack caller attribution", () => {
   it("uses the Studio identity rather than a platform-supplied email or owner permission", async () => {

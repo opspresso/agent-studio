@@ -127,7 +127,7 @@ credential, schema 검증, PII 치환, 예산과 로컬 Trace를 연결한다. �
 warning으로 전달한다. reasoning 표시 옵션은 원래 모델 턴의 provider 재생 이력을 삭제하지 않는다.
 자세한 소비 규칙은 [EngineChunk 계약](ARCHITECTURE.md#enginechunk-계약)에 있다.
 
-`actor`는 비용·동시성에 쓰는 안정적인 실행 주체다. user와 agent-token은 이메일,
+`user.userId`는 모든 호출 경로가 공유하는 비용·동시성의 실행 주체다. `actor`는 출처를 구분한다. user와 agent-token은 이메일,
 Slack과 Telegram은 사용자 ID, Teams는 발신자 Entra object ID를 사용한다. 메신저 workspace나
 bot ID와 혼동하지 않는다. `caller`는 Agent 설정이 허용한 표시 이름·시간대 등의 모델 문맥이며
 이메일 필드가 없다. `ownerEmail`은 파일의 개인 귀속, `conversation`은 대화의 연속성을 나타낸다.
@@ -171,7 +171,8 @@ Artifact metadata는 DB에, bytes는 S3 호환 저장소에 둔다. URL 발급�
 
 Workspace는 파일·Git·native CLI Session의 영속 공간이고 Sandbox는 작업을 실행하는 격리 자원이다.
 `parameters.workspaceTools`, Agent 정책, 사용자 권한과 배포 설정이 함께 충족되어야 Agent에
-도구가 제공된다. GitHub MCP의 로그인은 worker의 Git 자격 증명이나 저장소 허용 정책을 대신하지 않는다.
+도구가 제공된다. worker의 GitHub API와 Git 전송은 해당 Agent의 GitHub MCP 인증을 사용하며,
+저장소 정책도 별도로 검사한다. Settings → Plugins의 토큰은 Plugin 다운로드에만 사용한다.
 
 별도 Workspace worker가 실행·관찰·검사·체크포인트·만료 정리를 담당한다. 커밋·푸시·PR·main 반영은
 검토한 Git 상태에 대한 단계별 승인으로 실행한다. 결과와 CI 대기는 연결된 원래 Chat에 전달할 수 있다.

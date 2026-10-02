@@ -221,7 +221,7 @@ Settings → Models → 사용 설정의 **가격 정보가 없는 모델**에�
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
 | `MAX_RUN_DURATION_MS` | `600000` (10분) | — | 모든 진입점에 걸리는, 단일 런의 실제 경과 시간 상한. 멈춰 버린 provider 나 도구 호출이 무한정 돌거나 무한정 청구할 수 없다. 유효하지 않은 값은 경고와 함께 무시된다. Slack·Telegram·Teams 경로는 공용 메시징 파이프라인에서 추가로 고정된 3분 인터랙티브 데드라인(아래)을 적용하는데, 그것은 런을 짧게 만들 수만 있다. 런 슬롯 lease 는 이 값 + 60초, MCP OAuth 토큰 갱신 여유는 이 값 + 5분이다. 서명 URL 수명은 런 길이와 독립적으로 뷰 15분·지속되는 기록 7일이며 `src/shared/artifactUrlTtl.ts` 가 소유한다. |
-| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | **runtime** | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 자기 `maxConcurrentRuns` 를 가진 멤버 tier(*코드에 고정된 제한* 참고)는 그 멤버 자신의 런에 대해 이 값을 덮어쓴다. 기본 `guest` tier 가 그런 값을 하나 들고 있다. `admin`/`member`, Agent 토큰, 그리고 모든 기계 호출자는 이 값을 물려받는다. |
+| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | **runtime** | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 자기 `maxConcurrentRuns` 를 가진 멤버 tier(*코드에 고정된 제한* 참고)는 그 멤버 자신의 런에 대해 이 값을 덮어쓴다. 기본 `guest` tier 가 그런 값을 하나 들고 있다. tier가 별도 동시성 상한을 지정하지 않으면 이 값을 사용한다. 모든 호출 출처는 같은 Studio 사용자 ID의 슬롯을 공유한다. |
 | `SCHEDULE_SCAN_TOKEN` | 미설정 | — | 모든 ticker 가 제시하는 단 하나의 자격증명(`X-Scan-Token`)이며, CronJob 이 POST 하는 세 엔드포인트가 공유한다: `/api/triggers/scan`(schedule), `/api/plugins/sync/scan`(plugins 저장소), `/api/catalog/reindex`(capability 카탈로그). 설정하지 않으면 이 배포에 ticker 가 없다는 뜻이다: 셋 다 503 으로 답하고 schedule 트리거는 결코 발화하지 않는다. 열리는 대신 꺼진다. |
 
 유효하지 않은 값(정수가 아니거나 음수, 또는 위 동시성 상한 초과)은 `0` 이 아니라 경고와 함께 기본값으로 떨어진다.
@@ -344,6 +344,7 @@ Codex·Claude·OpenCode의 모델은 **Model 사용 설정 → 워크스페이�
 | `WORKSPACE_DOCKER_CONTEXT` | Docker 기본 context | 앱과 worker가 공유하는 전용 Docker daemon의 context |
 | `WORKSPACE_MEMORY_MB`, `WORKSPACE_DISK_MB`, `WORKSPACE_CPUS` | `2048`, `2048`, `2` | 메모리·각 데이터 볼륨(Docker tmpfs/Kubernetes emptyDir)·CPU 상한 |
 | `WORKSPACE_WORKER_CONCURRENCY` | `4` | worker process의 동시 실행 수, 1~32 |
+| `WORKSPACE_MODEL_GATEWAY_URL` | 미설정 | Sandbox가 접근할 Studio 주소. Native 모델 실행에 필수이며 command에는 필요 없다. Docker 내부 호스트 주소 또는 Kubernetes Service 주소를 명시한다 |
 
 Agent 저장소·소유자 목록은 각각 최대 100개다. `selected`는 등록한 저장소만,
 `owners`는 목록과 정확한 소유자 범위를, `all`은 해당 Agent의 GitHub MCP 계정으로 접근 가능한 전체를 허용한다.
@@ -359,10 +360,11 @@ Codex는 Responses 호환 채널, Claude는 Anthropic 채널, OpenCode는 지원
 CLI에 제공하지 않는다. 모델을 해제하면 새 native 작업은 거절하지만 이미 시작한 operation의 조회·복구는
 유지한다. 일반 명령에는 모델이 필요 없다. Git·클라우드·운영 환경변수는 Sandbox에 상속하지 않는다.
 Workspace 실행 시간은 `MAX_RUN_DURATION_MS`를 사용하며 재시작해도 최초 시작 시각에서 계산한다.
-PR 자동 리뷰의 Agent 실행과 Workspace 검사 작업은 같은 webhook actor에 별도 실행 슬롯을 사용한다.
-리뷰 중 검사를 실행하려면 해당 actor의 동시 실행 한도를 2 이상으로 설정한다(0은 한도 비활성).
-일반 명령은 앱 모델 설정 없이 공통 비용·동시성·메트릭 bracket을 사용한다. CLI 모델 사용량은
-앱의 SDK 모델 usage와 별개이며 CLI/provider의 사용량 기록을 따른다.
+PR 자동 리뷰의 Agent 실행과 Workspace 검사는 같은 토큰 발급 사용자에게 각각 실행 슬롯을 사용한다.
+검사를 함께 실행하려면 사용자의 유효 동시 실행 한도가 2 이상이어야 한다(0은 한도 비활성).
+일반 명령은 앱 모델 설정 없이 공통 비용·동시성·메트릭 bracket을 사용한다. Native CLI는 실행별
+단기 토큰으로 Studio 모델 Gateway에 접속한다. 공급자 키는 서버에만 남고, 보조 호출까지 요청별
+사용량을 같은 개인 한도에 합산한다. [Gateway 계약](design/workspaces.md#native-모델-gateway)을 따른다.
 
 Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐·TTL·승인 결과 전달과 CI 대기가
 진행되지 않는다. Workspace task와 채팅 후속 실행은 각각 workerConcurrency 상한을 적용하는 별도 큐다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.

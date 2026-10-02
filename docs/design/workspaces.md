@@ -20,12 +20,12 @@ Workspace 옵션 목록은 접근 가능한 Agent의 현재 도구 설정을 한
 - Workspace 도구는 호출 채널이 아니라 확인된 사용자와 Agent 정책으로 접근을 판단한다.
   API·Webhook 토큰은 발급 사용자, 메신저는 연결 사용자, Schedule은 등록자로 member·Agent 접근을 다시 검사한다. 확인된 사용자 문맥이 없으면 제공하지 않는다.
   guest도 본인 `user` actor로 Workspace를 실행할 수 있으며 Chat과 합산한 UTC 월 비용·동시 실행
-  한도를 적용한다. 개인 한도가 적용되지 않는 자동화 actor는 member 이상으로 제한한다.
+  한도를 적용한다. 자동화는 member 이상으로 제한하며 같은 사용자 ID의 개인 한도에 합산한다.
   개인 API·Webhook 호출은 검증한 사용자 ID와 credential ID를 큐에 함께 보관하고 실행 직전에 다시 검사한다.
   모든 작업은 접수한 Studio 사용자 ID·이메일과 actor를 필수로 저장하며 이후 쓰기로 변경할 수 없다.
   worker는 저장된 ID로 현재 계정을 다시 확인한다. ID가 없거나 계정이 삭제·교체되었으면 신규 작업을 시작하지 않는다.
   Workspace의 관리 사용자와 작업 호출자는 별개다. `WorkspaceRun.actor`는 원래 연동 호출자로
-  보관하고 실제 Sandbox 작업의 비용·실행 제한에도 같은 actor를 적용한다.
+  보관하고 실제 비용·동시성은 `WorkspaceRun.user.userId`에 합산한다.
 - `domain/workspace`는 공통 상태·포트와 한도를 소유한다. Git 정보와 승인 동작은
   `domain/coding`에 둔다. 일반 Workspace에는 저장소나 Git 브랜치가 필요하지 않다.
 - application은 주입된 provider/runtime을 사용한다. Docker 명령과 CLI 프로토콜은
@@ -58,6 +58,39 @@ Codex의 provider는 실행 인자의 `model_provider`·`model_providers.studio`
 설정 키는 [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)를 따른다.
 `pnpm test:workspace:codex`는 `network=none` Sandbox 안의 loopback fixture와 실제 CLI로
 처음 실행·이력 재개·대상 URL·모델 ID·인증 헤더 전달을 검증한다.
+
+## Native 모델 Gateway
+
+Codex·Claude·OpenCode는 `WORKSPACE_MODEL_GATEWAY_URL` 아래의 Studio Gateway로만 모델을 호출한다.
+주소는 Sandbox가 도달할 내부 Studio 주소이며 공개 URL·요청 Host에서 추론하지 않는다.
+Docker에서는 지정한 사용자 네트워크에서 호스트 주소를, Kubernetes에서는 Studio Service의 DNS·포트를
+허용한다. `command`는 Gateway와 모델 설정 없이 실행할 수 있다.
+
+서버는 `Workspace ID + Run ID + runtime + 등록 모델 ID + 만료`를 서명한 단기 토큰을 CLI에 전달한다.
+토큰은 worker lease와 독립적이지만 원래 Run 실행 기한을 넘지 않는다. 각 요청은 DB의 현재 Run,
+취소·종료 여부, 저장된 사용자·출처 인증, Agent 접근, 현재 모델 선택과 개인·Agent 비용 상한을 검사한다.
+공급자 API 키는 서버에만 보관한다. Native 호출은 이미 확보한 Run 슬롯 안에서 실행하며 중첩 슬롯을
+획득하지 않는다. 한 Run의 모델 요청은 하나씩 접수하고 진행 중이면 429를 반환한다.
+
+허용 경로는 선택한 runtime의 Responses, Anthropic Messages, Chat Completions와 Messages의
+`count_tokens`다. 요청 필드·모델·도구 종류를 제한하며 공유 공급자의 저장 대화·파일·벡터 저장소·prompt
+참조와 hosted 도구는 허용하지 않는다. Responses는 `store: false`를 강제하며 CLI의 자체 이력으로
+재개한다. Codex의 provider 웹 검색도 비활성화한다. 모델·도구 루프 자체는 각 CLI가 소유한다.
+
+Gateway는 원래 JSON/SSE를 전달하면서 요청별 공급자 사용량을 정규화한다. 캐시 입력은 총 입력의
+부분집합이며 Anthropic의 cache read/write 입력은 총 입력에 더한다. Native CLI가 출력하는 누적 비용을
+더하지 않으므로 재개 이력을 중복 청구하지 않는다. 비용은 공급자가 반환한 금액을 우선하고 없으면
+Studio 모델 가격으로 추정한다. 공급자의 별도 요금·할인까지 일치하는 청구서 검증은 아니다.
+
+미정산 요청은 inference 전에 영속화한다. 확인된 usage와 receipt를 보관한 뒤 같은 사용자 ID의 Usage에
+한 번 정산한다. 저장 실패에는 같은 정산만 재시도하며 모델 요청은 재전송하지 않는다. worker는
+미완료 정산을 복구하고, 사용량을 확정하지 못한 경우 경고와 실패 상태를 남긴다. 누락은 0원으로
+간주하지 않으며 같은 Run의 다음 모델 요청을 차단한다. 요청 본문은 공용 turn body 한도를 사용하고,
+JSON 응답·SSE frame은 8 MiB, 스트림 전체는 64 MiB로 제한한다.
+
+`pnpm test:workspace:models`는 외부 네트워크가 없는 Sandbox에서 실제 세 CLI의 시작·재개와 보조 호출,
+Gateway 인증·원래 사용자 귀속·요청별 정산을 검증한다. SQL claim과 정산 복구는 `pnpm test:integration`이
+별도의 `_test` 데이터베이스에서 검증한다.
 
 ## Docker 실행 계약
 
@@ -144,8 +177,10 @@ Worker와 Git 작업은 adapter를 기다리는 동안에도 3분 lease를 1분�
 adapter 호출은 결과를 기다리며, 불확실한 효과를 자동으로 재실행하지 않는다.
 
 실행은 `executeWorkspaceTask` facade와 공통 `openTaskRun` bracket을 지난다. 일반 명령에는
-앱 모델 설정이 없으므로 모델을 임의로 만들지 않는다. 기존 Agent의 비용·멤버 상한,
-동시성 슬롯과 메트릭은 유지한다. Native CLI의 토큰·비용은 SDK 모델 usage와 별개다.
+앱 모델 설정이 없으므로 모델을 임의로 만들지 않는다. 최초 접수와 실제 새 runtime 시작 전에
+비용·동시성을 검사한다. 슬롯은 Run에 저장하고 terminal 상태 저장 뒤 해제한다. 재시작한 worker는
+현재 예산·권한이 바뀌어도 기존 operation의 관측·취소·체크포인트·정산을 마친다.
+새 명령은 현재 권한과 정책을 다시 검사하고, Native 모델의 각 요청은 Gateway가 비용도 다시 검사한다.
 `executeWorkspaceTask`에는 큐의 user와 actor를 그대로 전달하며 Workspace 소유자에서 호출자를 다시 만들지 않는다.
 
 비활성 Workspace는 `suspending`으로 바꿔 새 접수를 막은 뒤 체크포인트 저장 → Sandbox 삭제 →
@@ -286,8 +321,8 @@ Agent의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외�
 
 | 창구 | Workspace 빌트인 | 원래 Chat으로 승인 결과 전달 |
 |---|---|---|
-| 로그인한 member/admin의 Agent Chat | Agent의 Workspace 도구가 활성화되면 제공 | 같은 Chat의 SDK Session으로 자동 재개 |
-| 로그인한 member/admin의 Playground·Agent 실행 API | Agent의 Workspace 도구가 활성화되면 제공 | source Chat이 없으므로 자동 재개 없음 |
+| 로그인한 사용자(guest 포함)의 Agent Chat | Agent의 Workspace 도구가 활성화되면 제공 | 같은 Chat의 SDK Session으로 자동 재개 |
+| 로그인한 사용자(guest 포함)의 Playground·Agent 실행 API | Agent의 Workspace 도구가 활성화되면 제공 | source Chat이 없으므로 자동 재개 없음 |
 | Agent API token | 발급 사용자가 member/admin이고 Agent 도구가 활성화되면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
 | Slack·Telegram·Teams | 연결한 Studio 사용자의 현재 member/admin 권한과 Agent 정책에 따라 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |
 | Webhook | 개인 토큰 발급자의 현재 member/admin 등급과 Agent 접근이 유효하면 제공 | 승인 링크로 Workspace 화면에서 결정 후 status 확인 |

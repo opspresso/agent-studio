@@ -68,7 +68,7 @@
 | 어떤 모델이 새 선택에 보이는가 | `src/domain/llm/models.ts`의 `offeredModels`. 관리자가 등록한 모델과 연결의 교집합이며 기본 모델을 우선한다 | 코드 |
 | 모델 즐겨찾기의 개인 범위와 상한 | `src/domain/llm/modelPreferences.ts` 의 `ModelPreferencesRepository` / `MAX_FAVORITE_MODELS`. user id 별 한 행이며 picker 그룹화는 `src/app/_components/modelOptions.tsx` 의 `modelSelectData` 가 소유한다 | 코드 |
 | 누가 agent 에 접근할 수 있는가 (공개 범위·초대 목록의 판정) | `src/domain/agent/access.ts` 의 `mayAccessAgent`. admin 오버라이드를 합친 형태는 `agentUseCases.ts` 의 `assertAgentAccessible`/`userMayAccessAgent` 뿐이고, 표면들은 그 둘을 지난다 ([SECURITY.md](SECURITY.md#인가-모델)) | 코드 |
-| 모델이 파일 ID로 읽거나 편집할 수 있는 범위 | `src/application/document/fileTool.ts`의 actor·시작 agent 검사. ID 자체는 접근 권한이 아니다 | 코드 |
+| 모델이 파일 ID로 읽거나 편집할 수 있는 범위 | `src/application/document/fileTool.ts`의 현재 사용자 파일 귀속·자동화의 시작 Agent 범위 검사. ID 자체는 접근 권한이 아니다 | 코드 |
 
 ## Chat·Workspace
 
@@ -83,13 +83,14 @@
 | 일반 작업과 코딩 작업의 Workspace·Sandbox·Runtime Session·Run 계약 | `src/domain/workspace/`; Git 저장소와 PR·승인 형태는 `src/domain/coding/types.ts` | 코드 |
 | Workspace Agent 설정·저장소 범위·기본값 | `src/domain/workspace/policy.ts`; 읽기·소유자/관리자 쓰기는 `application/workspace/repositoryPolicy.ts`, 도구 활성 여부는 `domain/agent/workspaceAccess.ts` | 코드 |
 | Workspace의 확인된 관리 사용자와 실행 호출자의 구분 | `application/workspace/workspaceCaller.ts`; `WorkspaceRun.user`와 `actor`를 접수부터 실행 bracket까지 유지한다. 현재 계정·Agent 접근·개인 토큰·메신저 연결·Schedule 등록자는 `application/workspace/workspaceAuthorization.ts`가 접수와 실행 직전에 검사한다 | 코드 |
-| 메신저의 명시적 소유자 실행 위임과 철회 | `application/auth/messagingGrant.ts`가 저장·현재 소유권·멤버 상태·연동 활성 여부를 판단한다. `ExecutionGrant`는 실행·하위 Agent·Workspace 큐로 전달하며 `application/runtime/tools.ts`는 도구 효과 직전에 위임을 다시 검사한다 | 코드 |
+| 메신저 계정 연결과 실행 권한 철회 | `application/auth/messagingIdentityUseCases.ts`의 일회용 인증과 `application/auth/messagingGrant.ts`의 현재 연결 검사. `ExecutionGrant`는 실행·하위 Agent·Workspace 큐로 전달하며 새 모델·도구 효과 전에 다시 검사한다 | 코드 |
 | PR 리뷰의 고정된 자료 조회와 전달 범위 | `domain/trigger/pullRequestReview.ts`의 읽기 계약; `infrastructure/github/codingForge.ts`가 검증한 PR·커밋만 조회한다. `application/trigger/reviewPullRequest.ts`가 완전한 자료 범위와 게시 조건을 소유한다 | 코드 |
 | 사용자에게 제시할 Workspace Agent 옵션과 정책 조회 상한 | `src/application/workspace/workspaceOptions.ts`; 접근 가능한 Agent 목록과 정책 repository는 조립 지점에서 주입한다 | 코드 |
 | Agent별 Workspace·PR 리뷰의 GitHub MCP 자격증명 선택 | `application/coding/githubCredentials.ts`; 현재 MCP binding·헤더 target·GitHub authority를 확인하며 OAuth 검증·갱신은 `application/mcp/mcpAuthProvider.ts`를 사용한다. Plugin token을 사용하지 않는다 | 구조 |
 | 신규 저장소 생성과 자동 등록의 증거·중복 방지 | `application/workspace/createRepository.ts`; GitHub 201 응답 검증은 `infrastructure/github/codingForge.ts`, 결과와 정책 transaction은 `workspaceRepositoryCreationStore.ts` | 코드 |
 | 도구 결과의 실패 표시와 trace 오류 판정 | `src/shared/toolResultStatus.ts`의 `isToolErrorText`. Runtime의 `Error:` 결과를 Chat·Playground에도 실패로 표시한다 | 코드 |
 | 코딩 요청에 포함되는 Git 게시와 별도 확인의 구분 | `domain/coding/types.ts`의 `codingActionRequiresConfirmation`; 실행은 `application/coding/codingUseCases.ts`의 공통 검토·claim 경로 | 코드 |
+| Native 모델 요청의 신원·정산·복구 | `application/workspace/modelGateway.ts`; 토큰은 `infrastructure/workspace/modelToken.ts`, HTTP/SSE와 요청별 usage는 `modelTransport.ts`·`nativeModelUsage.ts`, 미정산 행은 `workspaceModelCalls.ts`가 소유한다 | 구조 |
 | Native 코딩 턴에 전달하는 Workspace Git 승인 경계 지침 | `src/application/workspace/taskInput.ts` | 코드 |
 | Workspace admission과 중복 요청의 동일성 | `src/application/workspace/workspaceUseCases.ts`; revision·receipt·이벤트의 원자적 쓰기는 `src/infrastructure/db/repositories/workspaceRepository.ts` | 코드 |
 | 원래 Chat의 Agent별 Workspace 선택과 동시 생성 차단 | `Chat.linkedWorkspaces`; `workspaceUseCases.startForChat`과 `workspaceRepository`의 source Chat transaction | 코드 |

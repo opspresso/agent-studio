@@ -128,11 +128,11 @@ describe("buildApiReference — agent webhook", () => {
     expect(ids({ webhook: null })).not.toContain("webhook");
   });
 
-  it("addresses it by agent name alone and authenticates with the trigger secret", () => {
+  it("includes the personal credential selector for GitHub delivery authentication", () => {
     const endpoint = buildApiReference(ctx({ webhook: { enabled: true } })).find(
       (e) => e.id === "webhook",
     );
-    expect(endpoint?.path).toBe("/api/webhook/my-bot");
+    expect(endpoint?.path).toBe("/api/webhook/my-bot?credential=YOUR_CREDENTIAL_ID");
     expect(endpoint?.auth).toBe("trigger-secret");
     expect(codeOf(endpoint!, "bash")).toContain(`${ORIGIN}/api/webhook/my-bot`);
     expect(codeOf(endpoint!, "bash")).toContain("X-Trigger-Secret");

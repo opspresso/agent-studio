@@ -875,11 +875,11 @@ export const ko: Messages = {
   "guide.surfaces.chat": "Chats: 영속 이력과 승인 결과",
   "guide.surfaces.chatBody": "로그인한 Chat 소유자는 영속 SDK Session과 도구 승인 화면을 사용한다. 활성화된 Workspace의 승인 결과와 CI 갱신은 원래 Chat으로 돌아온다. Workspace Runtime의 Session과 파일은 별도이며 상위 Agent의 모든 Skill·계정 연결을 자동 상속하지 않는다.",
   "guide.surfaces.api": "Playground와 API: 저장된 설정과 호출자 이력",
-  "guide.surfaces.apiBody": "Playground는 저장한 설정을 실행한다. 로그인한 member와 현재 소유자가 member/admin인 Agent API 토큰은 Agent 정책에 따라 활성화된 Workspace 도구를 사용할 수 있다. HTTP 클라이언트는 자신의 이력을 전달한다. 토큰은 서비스 actor를 유지하고 소유자 이메일을 MCP에 전달하지만 브라우저 세션이나 영속 Chat 승인 화면을 만들지는 않는다. 원래 Chat이 없는 요청의 Git 승인은 소유자가 Workspace 링크에서 결정하며 요청을 자동 재개하지 않는다.",
+  "guide.surfaces.apiBody": "Playground는 로그인 사용자로 저장한 설정을 실행한다. 개인 Agent API 토큰은 발급한 Studio 사용자로 실행한다. Workspace 도구는 그 사용자의 현재 권한과 Agent 저장소 정책을 적용한다. HTTP 클라이언트는 자신의 이력을 전달한다. 별도 확인이 필요한 Git 작업은 호출자의 Workspace 화면에서 결정하며 원래 Chat이 없으면 요청을 자동 재개하지 않는다.",
   "guide.surfaces.bots": "메신저: 플랫폼 식별자와 응답",
-  "guide.surfaces.botsBody": "Slack·Telegram·Teams는 각 플랫폼의 actor 식별자를 유지하고 그곳에 답한다. 개인 MCP 문맥과 활성화된 Workspace 도구에는 확인된 호출자 이메일 또는 현재 Agent 소유자의 명시적 실행 위임을 사용한다. 현재 멤버 권한과 Agent 정책을 다시 확인한다. Git 승인은 소유자의 Workspace 화면에서 결정하며 봇 호출에는 브라우저 Chat 승인 화면이나 원래 Chat 자동 재개가 제공되지 않는다. 자격 증명 검사와 실제 이벤트 전달을 별도로 확인한다.",
+  "guide.surfaces.botsBody": "Slack·Telegram·Teams는 플랫폼 발신자를 actor로 유지한다. Studio에 로그인해 Profile → 메신저 연결에서 일회용 코드를 발급하고 봇과의 개인 대화에 auth <code>를 보낸다. 이후 연결한 Studio 사용자의 현재 계정·Agent 접근 권한으로 실행한다. 이메일을 메시지에 쓰는 것만으로 인증되지 않는다. Git 확인은 그 사용자의 Workspace 화면에서 한다.",
   "guide.surfaces.automation": "Webhook과 스케줄: 기계 호출자",
-  "guide.surfaces.automationBody": "유효한 Webhook 서명은 전달을 인증한다. 개인 도구와 활성화된 Workspace를 사용하려면 현재 Agent 소유자의 명시적 실행 위임, 현재 member/admin 권한과 Agent 정책도 필요하다. 스케줄에도 같은 소유자 실행 문맥을 승인해야 한다. webhook/schedule actor를 유지하고 결과는 Trigger 이력에 남는다. Git 승인은 소유자가 Workspace 링크에서 결정하며 원래 Chat으로 자동 재개하지 않는다. 오디오 후처리는 제한된 worker 절차를 유지한다.",
+  "guide.surfaces.automationBody": "Webhook은 개인 Webhook 토큰의 발급 사용자로 실행한다. GitHub에는 credential 식별자가 포함된 개인 URL과 전체 토큰을 Secret으로 등록한다. 스케줄은 등록한 사용자로 실행한다. 새 효과 전에 현재 계정·원래 인증 수단·Agent 접근을 다시 검사하고 결과는 Integrations 이력에 남긴다.",
 
   "guide.audio.title": "오디오 처리와 개인 기록",
   "guide.audio.body": "Agent 하나가 재사용 가능한 skill을 읽고 수집·전사·요약·요청한 기록을 수행할 수 있다. 긴 작업은 별도 worker가 이어가므로 Agent 응답이 끝나거나 화면을 닫아도 계속된다.",
@@ -890,7 +890,7 @@ export const ko: Messages = {
   "guide.audio.configuration": "처리 설정 선택하기",
   "guide.audio.configurationBody": "전사 모델·언어·보존 기간과 선택적인 후처리 Agent를 고른 뒤 저장한다. 각 작업은 접수 시점의 후처리·전달 대상 설정을 보관한다. 이후 변경은 새 작업에만 적용된다.",
   "guide.audio.run": "작업 시작과 정기 수집",
-  "guide.audio.runBody": "Agent 화면에서 오디오를 업로드하거나 Agent에 연결 도구로 녹음을 가져오도록 요청한다. 정기 수집은 schedule에 수집 범위와 신규 녹음 수 제한을 지정하고, 소유자가 내 개인 문맥으로 실행을 켠다. worker와 schedule ticker가 실행 중이어야 하며 오디오 도구를 켜는 것만으로 정기 작업이 생기지는 않는다.",
+  "guide.audio.runBody": "Agent 화면에서 오디오를 업로드하거나 연결 도구로 녹음을 가져오도록 요청한다. 정기 수집은 스케줄에 수집 범위와 신규 녹음 수 제한을 지정하며 등록한 사용자로 실행한다. Audio worker와 스케줄 ticker가 실행 중이어야 한다. 오디오 도구를 켜는 것만으로 스케줄이 생기지는 않는다.",
   "guide.audio.results": "비공개 Artifacts에서 결과 확인하기",
   "guide.audio.resultsBody": "선택한 단계가 끝나면 원본 오디오·전사 JSON·Markdown 요약·화자 대화·구조화 결과가 만들어진다. 작업 항목이나 Artifacts에서 연다. 접수 또는 중복 응답과 실제 작업 상태는 다르므로 완료 상태를 확인한다. 마지막 단계가 중간 파일 정리여도 상태가 완료이면 끝난 작업이다. 인명·수치·누락 구간·화자 미상 표시는 원문과 대조한다.",
   "guide.audio.records": "요청한 경우에만 Memory·Document에 기록하기",
@@ -904,8 +904,7 @@ export const ko: Messages = {
   "guide.api.body":
     "각 Agent의 API Reference는 해당 Agent 주소를 채워 보여 준다. 요청 필드·응답 형식·오류 코드·curl 또는 SDK 예제가 포함되어 있다. 아래 절차와 함께 사용하며 소스 checkout은 필요하지 않다.",
   "guide.api.token": "Agent와 인증 정보 준비",
-  "guide.api.tokenBody":
-    "검증한 Agent 설정을 저장하고 Integrations에서 Agent 토큰을 발급한다. 소유자 tier가 API 토큰을 허용해야 한다. Authorization: Bearer <token>으로 보내며 해당 Agent 실행으로 범위가 제한된다. 서비스 actor를 유지하고 MCP에는 소유자 이메일을 전달한다. 현재 member/admin 권한과 Agent의 Workspace 도구가 활성화돼 있으면 저장소 정책에 따라 소유자의 Workspace도 사용할 수 있다. Git 승인은 소유자가 Workspace 링크에서 결정한다. 토큰은 브라우저 세션이나 영속 Chat 승인 화면을 만들지 않는다.",
+  "guide.api.tokenBody": "검증한 Agent 설정을 저장하고 Integrations에서 본인의 개인 API 토큰을 발급한다. 현재 계정에 토큰 사용 권한과 Agent 접근 권한이 있어야 한다. Authorization: Bearer <token>으로 전달하며 실행·MCP 호출자 문맥·Workspace 접근·개인 사용량은 발급 사용자 ID에 귀속된다. 토큰은 브라우저 세션을 만들지 않으며 별도 확인이 필요한 Git 작업은 본인의 Workspace 화면에서 결정한다.",
   "guide.api.address": "Agent 주소 사용하기",
   "guide.api.addressBody":
     "실행 URL은 /api/agents/{name}/으로 시작하며 Agent의 현재 저장된 설정을 사용한다. 작업은 messages로 보낸다. 호출 시스템에서 접근 가능한 {serviceName} 주소를 사용한다.",
@@ -942,8 +941,7 @@ export const ko: Messages = {
   "guide.records.artifacts": "원본과 생성 파일 찾기",
   "guide.records.artifactsBody": "개인 Artifacts에는 본인 email에 귀속된 파일과 개인 문맥의 자동화 산출물이 표시된다. Agent Artifacts에는 개인 소유자가 없는 실행 결과도 포함된다. 비공개 오디오 원본·결과의 읽기와 삭제는 소유자만 할 수 있다. 일반 파일의 서명 링크만 만료됐다면 Artifacts에서 다시 열어 갱신한다. 이미 만료되거나 삭제된 파일은 복원되지 않는다. 보존 기간 이후에도 필요한 파일은 내려받는다. Chat을 삭제해도 Artifacts는 삭제되지 않는다.",
   "guide.records.usage": "사용량과 비용 귀속 이해",
-  "guide.records.usageBody":
-    "Agent Usage에서 기간별 내역과 모델·공급자별 집계를 보고, 소유자와 관리자는 호출자별 상세를 확인한다. 개인 사용량은 Profile에서 확인한다. Agent 토큰 호출은 소유자의 개인 예산이 아닌 Agent에 집계된다. 비용은 공급자 보고값이나 카탈로그 단가를 사용하므로 추정치가 0이라고 공급자 과금도 없다고 판단하지 않는다.",
+  "guide.records.usageBody": "Agent Usage에서 모델·provider별 합계를 보고 소유자·관리자는 호출자 내역도 확인한다. Profile은 Chat·개인 API·Webhook 토큰·메신저·스케줄·Workspace의 native 모델 요청을 같은 Studio 사용자 ID에 합산한다. 비용은 공급자 보고값 또는 모델 가격으로 계산한다. 사용량 누락은 미확정이며 0원 추정이 실제 무료를 뜻하지 않는다.",
   "guide.records.budgets": "알림·차단·동시 실행 한도",
   "guide.records.budgetsBody":
     "Agent Settings에서 일간·월간 알림 기준과 차단 기준을 따로 설정한다. 알림은 목적지가 설정되어야 전달되며, 차단은 알림 설정이 없어도 UTC 기준 날짜나 월이 바뀔 때까지 새 실행을 거절한다. 호출 방식에 따라 개인 등급 한도와 호출자 동시 실행 한도도 적용된다. 비용은 실행 완료 후 반영될 수 있어 기준값이 초과 지출을 완전히 막는 선불 잔액은 아니다.",
@@ -1029,8 +1027,7 @@ export const ko: Messages = {
   "guide.trouble.body":
     "실패한 화면·정확한 오류·실행 시작 여부부터 확인한다. 관련 설정을 하나씩 바꾸고 문제를 확인할 수 있는 가장 작은 요청으로 다시 시험한다.",
   "guide.trouble.access": "로그인 실패 또는 사용할 수 없는 버튼",
-  "guide.trouble.accessBody":
-    "관리자와 로그인 방식·허용 이메일 도메인·계정을 확인한다. 생성·편집 버튼이 없으면 등급이나 소유권 제한일 수 있다. API 401은 토큰과 Agent 이름을, 403은 현재 소유자 등급과 권한을 확인한다. private 또는 접근 불가 Agent는 404일 수 있으므로 URL만 잘못되었다고 단정하지 않는다.",
+  "guide.trouble.accessBody": "관리자와 로그인 방식·허용 이메일 도메인·계정을 확인한다. 컨트롤이 없으면 등급이나 소유권 제한일 수 있다. API 401은 본인 토큰과 Agent 이름을, 403은 발급 사용자의 현재 접근 권한을 확인한다. 봇은 Profile → 메신저 연결 인증을 완료해야 한다. 접근할 수 없는 private Agent는 404를 반환할 수 있다.",
   "guide.trouble.model": "모델이 없거나 호출 실패",
   "guide.trouble.modelBody": "Models에서 선택된 모델을 확인한다. Settings → Models에서 필터를 초기화하고 Provider 전체 목록을 조회하며, 등록 모델 관리에서 수정하거나 제공 상태를 확인한다. Provider URL·base 경로·키·정확한 모델 ID를 확인한 뒤 Agent 설정을 저장한다. 400은 요청과 이미지·도구 요구사항을 API Reference와 대조한다. 502 같은 상위 서비스 오류는 표시된 오류를 확인하며 잘못된 모델이나 URL은 반복 요청으로 해결되지 않는다.",
   "guide.trouble.limits": "429·시간 초과·부분 답변",

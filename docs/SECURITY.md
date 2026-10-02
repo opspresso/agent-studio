@@ -174,9 +174,8 @@ Chat·Workspace는 본인 소유권과 tier별 비용·동시 실행 제한 안�
 명시적으로 더 낮은 tier 를 골라야 한다. tier 는 Better Auth 의 user 행에 있고(`input: false`
 라 어떤 auth API 로도 사용자가 자기 것을 설정할 수 없다), 내부 어댑터 또는
 `memberRepository.setTier` 의 단일 속성 조건부 업데이트로만 쓰이며, 세션에 실려 라우트
-핸들러에 도달한다. 요청마다 새로 읽는다. 세션을 볼 일이 없는 이음매들(agent 쓰기
-오버라이드, 런 브래킷의 가드)은 email → tier 를 30초짜리 인스턴스별 캐시로 해석하고, 그 캐시는
-tier 변경을 처리한 인스턴스에서 무효화된다. 각 tier 가 동시에 몇 개를 진행할 수 있는지, UTC
+핸들러에 도달한다. 실행과 개인 한도는 사용자 ID로 현재 계정을 다시 조회한다. Agent 관리용
+email → tier 캐시는 30초이며 변경을 처리한 인스턴스에서 무효화된다. 각 tier 가 동시에 몇 개를 진행할 수 있는지, UTC
 월 기준으로 얼마를 쓸 수 있는지는 Settings → Access의 `memberTiers`와
 `src/domain/member/tiers.ts`의 `memberTierLimits`가 결정한다. admin·guest는 고정 등급이고
 나머지 등록 등급은 member 권한이다. admin의 월 한도는 항상 무제한이며 guest는 동시 실행 1개다.
@@ -188,8 +187,8 @@ tier 변경을 처리한 인스턴스에서 무효화된다. 각 tier 가 동시
 월 상한은 Chat·Workspace를 포함한 멤버 자신의 일별 행을 UTC 월 1일부터 합산한다.
 실행 전에 이미 한도에 도달하면 새 실행을 거절한다. 등급·사용량 조회 실패도 실행을 중단한다.
 완료된 사용량을 기준으로 검사하므로 진행 중인 실행이 잔액을 초과할 수 있다. 프로필 페이지가 읽는 것과 같은 창,
-같은 행이다. 집계가 하나뿐이므로 페이지가 가드와 어긋나는 합계를 보고할 수 없다. 사람 모양의
-한도는 `user` actor 에만 적용된다. 기계 호출자(Slack, webhook, schedule)에는 멤버가 없다.
+같은 행이다. 모든 호출 출처에는 확인된 Studio 사용자가 있고 같은 사용자 ID의 개인 한도를
+공유한다. 플랫폼 actor는 출처 기록을 위해 유지한다.
 개인 API token은 발급 사용자의 안정적인 ID에 묶이며 인증마다 현재 계정·등급·Agent 접근을
 검사한다. 계정 존재 여부와 현재 tier는 이메일 tier 캐시 대신 사용자 ID로 조회한다.
 확인된 사용자의 호출 권한 거절은 403, 잘못된 credential이나 삭제된 발급 계정은 401이다.
@@ -755,6 +754,15 @@ Webhook 호출자는 개인 토큰 발급자이며 공유 설정에서 다른 �
 승인·CI 결과의 Chat 재개는 원래 소유자·Agent 접근·Workspace 선택과 SDK Session을 다시 확인한다.
 그 결과 이벤트는 새 사용자 요청이나 다음 Git 동작에 대한 승인으로 취급하지 않는다.
 
+## Native CLI 모델 인증
+
+Native CLI에는 공급자 API 키 대신 하나의 Workspace Run에 한정된 서명 토큰을 전달한다.
+`AES_ENCRYPTION_KEY`에서 별도 HKDF 목적 키를 파생하며 오브젝트 URL 서명과 교환할 수 없다.
+Run 만료·취소·종료·원래 인증 수단 철회는 다음 모델 요청을 거절한다. 요청자의 Authorization,
+쿠키, 임의 헤더를 공급자에게 전달하지 않는다. 공유 Provider에 저장된 대화·prompt·파일·도구 리소스는
+참조할 수 없으며 Responses는 저장을 끈다. Gateway 주소는 배포자가 지정하고 Sandbox 네트워크에서
+Studio에 필요한 통신만 허용한다. [Workspace 계약](design/workspaces.md#native-모델-gateway)을 따른다.
+
 ## SDK Session과 승인 상태
 
 SDK Session 이력과 승인 대기 RunState는 `runtime_sessions`에 별도로 저장한다. 같은 배포의
@@ -876,8 +884,8 @@ reference, 알림을 만들지 않는 date token은 보존한다.
   사람을 식별하며, 어떤 답도 잘 쓰이기 위해 그것을 필요로 하지 않는다.
 
   이메일은 private Agent 접근 판정, MCP 위임 신원과 Artifact의 개인 귀속에 별도로 사용한다.
-  Slack actor는 발신자의 Slack 사용자 ID다. `ownerEmail`을 해석해도 actor를 email로 바꾸거나
-  개인 user tier 예산으로 다시 분류하지 않는다. `toUserDetail`은 이메일을 모델용 도구 결과에
+  Slack actor는 발신자의 Slack 사용자 ID로 유지한다. 개인 예산과 동시성은 일회용 코드로
+  연결한 Studio 사용자 ID에 합산한다. `toUserDetail`은 이메일을 모델용 도구 결과에
   복사하지 않는다. 이 조회는 모델 표시 문맥을 제어하는 `callerContext`와 독립적이다.
 
 *안으로* 실려 오는 것은 첨부된 문서와 똑같은 방식으로 신뢰되지 않는다. 채널의 메시지는 그 채널에
@@ -1028,9 +1036,9 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
 
 ## 운영 노트
 
-- **고쳐 쓰지 말고 회전시켜라.** 유출된 agent token과 trigger 시크릿은 콘솔에서
-  회전시킨다(`POST …/token`, `rotateSecret: true` 를 실은
-  `PUT …/triggers/{id}`). 이전 값의 무효화 시점은 아래의 캐시 전파 범위를 따른다.
+- **유출된 개인 토큰은 폐기·재발급한다.** 본인 API·Webhook 토큰은 Integrations 또는
+  `DELETE`·`POST /api/agents/{name}/token` 및 `…/webhook-token`으로 관리한다.
+  실행은 현재 계정·credential을 다시 검사한다.
 - **설정 전파는 즉시가 아니다.** 강등된 admin의 권한 변경는 그 쓰기를 처리하지 않은
   인스턴스에서 설정 캐시가 만료될 때까지 계속 동작한다(`SETTINGS_CACHE_TTL_MS`, 기본 5초).
   인스턴스 간 즉시 취소에는 공유 무효화 신호가 필요한데, 아직 없다. 쓰기를 처리한 인스턴스는

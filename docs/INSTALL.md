@@ -302,15 +302,24 @@ fine-grained 토큰·GitHub App의 Workflows 쓰기 권한도 필요하다. 저�
 `pnpm test:workspace:git`는 무통신 Docker 안에 일회용 Git HTTP 저장소를 만들어 clone·권한·Diff·
 승인 Commit·복원을 검증한다. GitHub App API와 승인 경합·webhook 중복은 단위 테스트로 검증한다.
 
+### Native 모델 연결
+
+Native CLI를 사용할 때 `WORKSPACE_MODEL_GATEWAY_URL`을 Sandbox에서 접근 가능한 Studio 주소로
+설정한다. 로컬 Docker의 예는 `http://host.docker.internal:3000`, Kubernetes에서는 설치의 Studio
+Service 주소다. 지정한 Sandbox 네트워크·NetworkPolicy에서 그 주소의 DNS·포트를 허용한다.
+모델 공급자의 endpoint와 API 키는 Studio 서버에서만 사용한다. 서버에 도달할 수 없는 `network=none`
+설정은 일반 command 실행과 오프라인 검사에 사용할 수 있다. Gateway 설정이 없으면 새 Native 실행을
+거절하며 기존 operation의 관측·정산은 계속한다. `pnpm test:workspace:models`로 고정 CLI를 검증한다.
+
 ## GitHub PR 자동 리뷰
 
 관리자가 Agent 연동의 Webhook을 켜고 PR 리뷰 동작을 선택한다. 해당 Agent의 GitHub MCP 인증을
 사용하며 command Sandbox와 Workspace worker가 필요하다. Agent의 Workspace 도구와 저장소
-접근 정책을 설정하고 소유자가 Webhook의 `내 권한으로 실행`을 명시적으로 켜야 한다.
+접근 정책을 설정한다. 호출할 사용자는 Integrations에서 본인의 Webhook 토큰을 발급받는다.
 해당 계정은 대상 저장소의 Contents 읽기와 Pull requests 읽기·쓰기 권한이 필요하다. GitHub MCP 바인딩과 유효한 인증이 있어야 리뷰를 게시할 수 있다.
 
-GitHub 저장소 Webhook에 `/api/webhook/{agent}` URL, `application/json`, 해당 Agent의
-Webhook Secret과 Pull requests 이벤트를 설정한다. Workspace 메타데이터 Webhook과 URL·Secret이
+GitHub 저장소 Webhook에 개인 토큰 화면에서 복사한 `/api/webhook/{agent}?credential={credentialId}`
+URL, `application/json`, 전체 `asw_…` 토큰을 Secret으로, Pull requests를 이벤트로 설정한다. Workspace 메타데이터 Webhook과 URL·Secret이
 다르다. 접근 가능한 모든 저장소 또는 정확한 저장소 목록 중 하나를 선택하며 기본은 일반 Webhook이다.
 새 PR과 새 커밋, 다시 열린 PR, draft 해제를 처리하고 완료 이력에서 실제 리뷰 링크를 확인한다.
 인터넷을 사용할 수 없는 설치에서는 접근 가능한 GitHub Enterprise API·웹 주소와 내부 호스트 허용

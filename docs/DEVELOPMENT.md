@@ -127,6 +127,7 @@ pnpm test:workspace   # Docker + PostgreSQL *_test 실행·복구 검사
 pnpm test:workspace:kubernetes # 일회용 loopback k3s에서 Kubernetes 실행·복구 검사
 pnpm test:workspace:git # 무통신 Git fixture와 승인·게시 검사
 pnpm test:workspace:codex # agents 이미지의 실제 Codex 시작·재개와 내부 Responses endpoint 전달 검사
+pnpm test:workspace:models # 실제 세 CLI의 Gateway 인증·보조 호출·시작/재개별 정산 검사
 pnpm worker:audio     # 환경변수가 주입된 별도 오디오 worker. 앱이 DB를 초기화한 뒤 실행
 pnpm db:migrate       # DATABASE_URL 의 데이터베이스를 현재 스키마로 (db:migrate:test 는 테스트 DB)
 ```

@@ -55,3 +55,16 @@ test("reports an owner lookup failure and loads caller usage after retry", async
   await expect.poll(() => actorReads).toBe(1);
   expect(agentReads).toBe(2);
 });
+
+test("distinguishes two Studio callers using the same Webhook source", async ({ page }) => {
+  await page.route("**/api/agents/agent", route => route.fulfill({ json: { ownerEmail: "owner@example.test" } }));
+  await page.route("**/api/usages/summary?**", route => route.fulfill({ json: { items: [{ agentName: "agent", date: "2026-09-24", calls: { model: 2 }, inputTokens: { model: 2 }, outputTokens: { model: 2 }, costUsd: { model: 0.02 } }] } }));
+  await page.route("**/api/agents/agent/usage/actors?**", route => route.fulfill({ json: { items: ["caller-one", "caller-two"].map(userId => ({
+    userId, agentName: "agent", actor: "webhook:agent:webhook", calls: { model: 1 }, inputTokens: { model: 1 },
+    outputTokens: { model: 1 }, cachedTokens: {}, costUsd: { model: 0.01 },
+  })), totalActors: 2, truncated: false } }));
+  await page.goto(base);
+  await expect(page.getByText("caller-one", { exact: true })).toBeVisible();
+  await expect(page.getByText("caller-two", { exact: true })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "webhook:agent:webhook" })).toHaveCount(2);
+});

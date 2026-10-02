@@ -417,7 +417,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
   // gated on saved Agent settings — the address is live either way, and what it
   // answers without one is the `no-configuration` status documented below.
   if (webhook && webhook.enabled) {
-    const webhookPath = agentWebhookPath(agentName);
+    const webhookPath = agentWebhookPath(agentName, "YOUR_CREDENTIAL_ID");
     const webhookBody = { event: "build.finished", status: "ok" };
     endpoints.push({
       id: "webhook",
@@ -425,8 +425,8 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: webhookPath,
       title: "Agent webhook",
       description:
-        "Starts a run of the current Agent configuration from outside. Generic senders use X-Trigger-Secret. GitHub uses the same secret in its Secret setting to sign X-Hub-Signature-256, with X-GitHub-Delivery and X-GitHub-Event headers; the JSON body (up to 1MB) becomes the run's input — serialised into the user message. " +
-        "It acknowledges admission with 202 and executes in the background. Read the result under Settings → Webhook; 202 does not mean execution completed. " +
+        "Starts a run of the current Agent configuration from outside. Issue your personal Webhook token in Integrations. Generic senders send the full token as X-Trigger-Secret. GitHub uses the personal URL with its credential selector and the full asw_ token as its Secret to sign X-Hub-Signature-256, with X-GitHub-Delivery and X-GitHub-Event headers; the JSON body (up to 1MB) becomes the run's input — serialised into the user message. " +
+        "It acknowledges admission with 202 and executes in the background. Runs use the token issuer’s current account and permissions. Read the result under Integrations → Webhook; 202 does not mean execution completed. " +
         "Generic senders use Idempotency-Key; GitHub redeliveries are deduplicated by X-GitHub-Delivery for 24 hours. Signed GitHub ping deliveries return status=ping without a run. When PR review is configured, generic authentication is refused; unsupported PR events return status=ignored with a reason. Missing PR review setup returns 409 review-not-ready before admission or an idempotency claim, so the same event can be redelivered after explicit setup.",
       auth: "trigger-secret",
       streaming: false,
@@ -468,7 +468,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: eventsPath,
       title: "Slack events webhook",
       description:
-        "Slack delivers app_mention, message.im and message.channels/message.groups events here. Requests are verified with this Agent's Slack signing secret (HMAC) — it is not called manually. Most channel messages are answered with ok and nothing else: only a mention, a DM, a follow-up in a thread the bot answered in, or an Agent keyword starts a run.",
+        "Slack delivers app_mention, message.im and message.channels/message.groups events here. Requests are verified with this Agent's Slack signing secret (HMAC) — it is not called manually. Most channel messages are answered with ok and nothing else: only a mention, a DM, a follow-up in a thread the bot answered in, or an Agent keyword starts a run. The sender must first link their Studio account using a one-time code from Profile → Messaging connections; current account and Agent access are checked on each request.",
       auth: "slack-signature",
       streaming: false,
       errorCodes: [400, 401, 404, 413],
@@ -492,7 +492,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: webhookPath,
       title: "Telegram webhook",
       description:
-        "Telegram delivers message updates here once the bot is enabled on the Integrations tab. Requests are verified with the secret token this platform registered the webhook with — it is not called manually. A private-chat message with a sender ID starts a run; in a group only a message from an identified sender that mentions the bot or replies to one of its messages does, and /start and /help are answered without one.",
+        "Telegram delivers message updates here once the bot is enabled on the Integrations tab. Requests are verified with the secret token this platform registered the webhook with — it is not called manually. The sender must first link their Studio account with a one-time code from Profile → Messaging connections. A permitted linked sender in a private chat starts a run; in a group only a message from an identified sender that mentions the bot or replies to one of its messages does, and /help gives public guidance while /start reveals the Agent introduction only after authentication.",
       auth: "telegram-secret",
       streaming: false,
       errorCodes: [400, 401, 404, 413],
@@ -519,7 +519,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: messagingPath,
       title: "Microsoft Teams messaging endpoint",
       description:
-        "The Bot Framework delivers Teams activities here — set this URL as the Azure Bot's messaging endpoint. Requests are verified with the token the Bot Framework signs for this bot's App ID and serviceUrl — it is not called manually. A personal-chat message with a sender ID starts a run; in a channel or group chat only a message from an identified sender that @mentions the bot does.",
+        "The Bot Framework delivers Teams activities here — set this URL as the Azure Bot's messaging endpoint. Requests are verified with the token the Bot Framework signs for this bot's App ID and serviceUrl — it is not called manually. The sender must first link their Studio account with a one-time code from Profile → Messaging connections. A permitted linked sender in a personal chat starts a run; in a channel or group chat only a message from an identified sender that @mentions the bot does.",
       auth: "teams-token",
       streaming: false,
       errorCodes: [400, 401, 404, 413],

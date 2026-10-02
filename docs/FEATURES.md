@@ -72,7 +72,7 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 | FetchUrl | Agent의 URL 읽기 opt-in. URL guard를 거쳐 웹·PDF·데이터·이미지를 읽는다 |
 | SaveFile / File | Artifact 저장소. 텍스트 파일 저장과 지원 문서 읽기·검사·생성·편집. 문서 엔진에 MCP 바인딩은 필요하지 않다 |
 | ImportFile / TranscribeAudio / AudioJob | Agent의 Audio 기능과 소유자의 member 이상 문맥. 파일은 비공개 저장소에 보관하고 worker가 작업을 처리한다. 전사는 등록된 전사 채널을 추가로 요구한다 |
-| Workspace | Agent의 Workspace 기능, 로그인한 사용자(guest 포함), Sandbox·worker·실행 정책. 개인 월 한도를 적용한다. 토큰·봇·예약 실행에는 자동 제공하지 않는다 |
+| Workspace | Agent의 Workspace 기능, 로그인한 사용자(guest 포함), Sandbox·worker·실행 정책. 개인 월 한도를 적용한다. 개인 토큰·연결된 메신저·Schedule 등록자의 현재 권한과 Agent 정책을 검사해 제공한다 |
 | Slack 읽기 | Agent의 Slack 읽기 기능과 활성 봇. History·Thread·User(s)·Channels·Reactions를 봇 권한으로 읽으며 이 도구들은 게시하지 않는다 |
 | ModelTask | Agent의 명시적 모델 라우팅 설정. 다른 도구나 두 번째 Agent 루프를 실행하지 않는 보조 모델 호출 |
 
@@ -130,7 +130,7 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 | 원격 MCP | 관리자 등록·검사·편집과 Agent 바인딩·도구 선택·헤더 override | 도구 이름·설명·Schema를 발견한다. private DNS는 배포 allowlist와 실제 도달성이 필요하다. URL이 이동하면 저장한 credential을 새 대상으로 보내지 않는다 |
 | MCP OAuth | 관리자 metadata 발견·authorization server 선택·공유 client 설정, Agent 소유자 연결·재인증·해제 | 연결은 Agent 설정 Save와 별도로 저장된다. token 갱신과 재인증 상태를 확인한다. discovery 성공만으로 자원 접근을 증명하지 않는다 |
 | Managed MCP | 선택적 Docker provisioner, 이미지·내부 포트·환경·argv·endpoint 설정 | 컨테이너 상태·접속·재시작·삭제를 확인한다. loopback에 게시하고 PORT를 전달한다. private registry 인증은 호스트가 준비한다. Kubernetes 관리형 adapter는 미구현이다 |
-| Agent API Token | 소유자의 허용 tier, Agent당 credential 하나. 발급·조회·회전·폐기와 API Reference 예제 | bearer는 해당 Agent 실행을 인증한다. 서비스 actor로 비용을 귀속하고 MCP에 소유자 email을 전달하지만 Workspace/Chat 승인 권한을 부여하지 않는다 |
+| 개인 API·Webhook 토큰 | 현재 Agent 접근과 토큰 사용 tier가 있는 사용자가 본인 토큰을 발급·조회·폐기한다 | 사용자 ID와 Agent·purpose에 묶인다. 호출마다 현재 권한을 확인하고 개인 비용·동시성에 합산한다. API와 Webhook 토큰은 서로 대신 사용할 수 없다 |
 | 실행 API | predict 완료형/raw stream, agent raw stream, OpenAI chat/completions. 메시지·인라인 이미지, 지원 경로의 문서 입력 | 응답·이미지·파일·사용량·경고·종료 이유를 확인한다. 호출자가 이력을 공급하며 X-Conversation-Id는 MCP 식별만 유지한다 |
 | Slack | dedicated bot manifest·token·signature·활성화와 실제 event URL. DM·mention·참여 thread·키워드, help/mute, 제안 프롬프트 | 입력·도구·답변·이미지·파일을 플랫폼에 전달한다. 읽기 capability와 게시 목적지는 별도다. private Agent 접근을 검사한다 |
 | Telegram | token·secret webhook, 활성화 시 자동 등록·해제와 재등록 | 식별된 발신자의 개인 Chat·그룹 mention/봇 답장에 응답하며 /start·/help, 분할 답변·forum topic·관찰한 목적지를 지원한다. 음성 메시지 자동 전사는 제공하지 않는다 |

@@ -161,8 +161,8 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 | Usage (Agent별 일간) | `USAGE#{agentName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{agentName}` |
 | Usage (호출자별 일간) | `USAGE#{agentName}` | `ACTOR#{yyyy-MM-dd}#{kind}:{id}` | — | — |
 | Usage 월간 임계값 claim | `USAGE#{agentName}` | `MONTHCLAIM#{yyyy-MM}` | — | — |
-| Usage (멤버별, 일별, Agent별) | `USAGEMEMBER#{email}` | `DATE#{yyyy-MM-dd}#{agentName}` | — | — |
-| 런 동시성 슬롯 | `RUNSLOT#{kind}:{id}` | `SLOT#{index zero-padded 3}` | — | — |
+| Usage (멤버별, 일별, Agent별) | `USAGEMEMBERID#{userId}` | `DATE#{yyyy-MM-dd}#{agentName}` | — | — |
+| 런 동시성 슬롯 | `RUNSLOT#studio-user:{userId}` | `SLOT#{index zero-padded 3}` | — | — |
 | Slack 이벤트 중복 제거 | `SLACKEVENT#{eventId}` | `META` | — | — |
 | Slack 스레드 참여 (봇이 답한, 또는 음소거된 스레드) | `SLACKTHREAD#{agentName}#{channel}#{threadTs}` | `META` | — | — |
 | Slack 스레드 실행 lease / 중단 시각 | `AGENT#{name}` | `SLACKRUN#{channel}#{threadTs}` / `SLACKSTOP#{channel}#{threadTs}` | — | — |
@@ -251,18 +251,19 @@ Chat의 SDK `runtime_sessions`와 수명을 공유하지 않는다.
 [`runBracket.ts`](../src/application/run/runBracket.ts)는 최상위 실행의 공통 정책을 소유한다.
 
 1. 로그 correlation ID를 만들고 모델 실행이면 primary·fallback의 미등록 모델 정책을 검사한다.
-2. Agent 일간·월간 비용과 해당 user actor의 멤버 월간 상한을 검사한다.
+2. Agent 일간·월간 비용과 모든 출처의 Studio 사용자 월간 상한을 검사한다.
 3. 호출자별 DB lease 슬롯을 획득하고 in-flight 메트릭을 연다.
 4. `openRun`은 여기에 Agent·실행 주체가 묶인 Artifact recorder를 추가한다.
 5. 실행 경로가 사용량을 저장한 뒤 `close`가 메트릭을 닫고 슬롯을 해제하며 비용 임계값을 정산한다.
 
 Agent 실행 파사드는 `executeAgent`를 통해 `openRun`을 사용한다.
 오디오 전사는 `openModelCall`, Workspace 작업은 모델 없는 `openTaskRun`을 사용한다.
-Workspace native CLI의 사용량은 앱 SDK 모델 Usage와 별개다.
+Workspace native CLI는 서버 모델 Gateway를 통해 요청별 사용량을 같은 Usage에 기록한다.
+worker 재시작은 이미 시작한 operation을 관측하고 정산하며, 신규 operation에만 admission을 적용한다.
 
 거절된 실행은 실행 메트릭·Usage·Trace를 만들지 않는다. 비용·모델 정책의 설정 조회 장애는
-fail-open, 동시성 저장소 장애는 fail-closed다. user tier는 개인 예산과 동시성에 적용하고
-서비스 credential인 agent-token에는 개인 예산을 청구하지 않는다.
+fail-open, 개인 등급·사용량 및 동시성 저장소 장애는 fail-closed다. 모든 호출 경로는
+확인된 Studio 사용자 ID의 개인 예산과 동시성 상한을 공유한다.
 
 슬롯은 획득 토큰과 만료가 있는 DB 행이다. 해제도 토큰을 검사해 만료된 실행이 새 실행의 슬롯을
 지우지 못한다. 하위 Agent는 부모 브래킷 안에서 실행하되 대상의 현재 설정·순환·깊이·모델·

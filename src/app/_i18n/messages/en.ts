@@ -903,11 +903,11 @@ export const en = {
   "guide.surfaces.chat": "Chats: persistent history and approval return",
   "guide.surfaces.chatBody": "The signed-in chat owner receives a persistent SDK Session and tool approval UI. Enabled Workspace actions and their CI updates return to the source chat. The Workspace runtime has its own session and files; it does not inherit all of the parent agent’s skills or account connections.",
   "guide.surfaces.api": "Playground and APIs: saved input, caller-owned history",
-  "guide.surfaces.apiBody": "Playground runs saved settings. Signed-in members and Agent API tokens whose current owner has member/admin access can use enabled Workspace tools under the Agent’s policies. HTTP clients supply their own history. Tokens use a service actor and pass the owner’s email to MCP; they do not create a browser session or persistent Chat approval UI. Without a source Chat, Git approval links open the owner’s Workspace view and do not automatically resume the request.",
+  "guide.surfaces.apiBody": "Playground runs saved settings as the signed-in user. Personal Agent API tokens run as their issuing Studio account. Enabled Workspace tools use that user’s current access and the Agent repository policy. HTTP clients supply their own history. Git actions requiring confirmation use the caller’s Workspace page; requests without a source Chat do not automatically resume.",
   "guide.surfaces.bots": "Messengers: platform identity and replies",
-  "guide.surfaces.botsBody": "Slack, Telegram and Teams reply on their own platforms and keep their platform actor identities. Personal MCP context and enabled Workspace tools use a verified caller email or an explicit execution grant from the current Agent owner. Current member access and Agent policies are rechecked. Git approvals are decided in the owner’s Workspace view; bot calls do not receive the browser Chat approval UI or automatic source-Chat continuation. Verify event delivery separately from the credential test.",
+  "guide.surfaces.botsBody": "Slack, Telegram and Teams preserve the platform sender as the actor. Sign in to Studio and issue a one-time code in Profile → Messaging connections, then send auth <code> privately to the bot. Runs use the linked Studio account and current Agent access. Plain email text does not authenticate a caller. Git confirmations use that user’s Workspace page.",
   "guide.surfaces.automation": "Webhooks and schedules: machine actors",
-  "guide.surfaces.automationBody": "A valid webhook signature authenticates delivery. Enabled Workspace and personal tools additionally require an explicit execution grant from the current Agent owner, current member/admin access and Agent policies. Schedules require the same owner-authorized execution context. These runs keep their webhook/schedule actors and store results in Trigger history. Git approvals are decided through the owner’s Workspace link without automatic source-Chat continuation. Audio postprocessing retains its restricted worker workflow.",
+  "guide.surfaces.automationBody": "Webhook calls run as the issuer of a personal Webhook token. GitHub signs the delivery with that token and uses its personal URL, including the credential selector. Schedules run as the user who registered them. Current account, source credential and Agent access are rechecked before new effects. Results appear in Integrations history.",
 
   "guide.audio.title": "Audio processing and personal records",
   "guide.audio.body": "One Agent can handle collection, transcription, summaries, and requested records with reusable skills. A separate worker continues long jobs after the Agent response or browser page ends.",
@@ -918,7 +918,7 @@ export const en = {
   "guide.audio.configuration": "Choose processing settings",
   "guide.audio.configurationBody": "Choose a transcription model, language, retention, and an optional postprocessing Agent, then save. Each submitted job keeps a snapshot of the current postprocessor and destination settings. Later edits apply only to new jobs.",
   "guide.audio.run": "Start a job or schedule collection",
-  "guide.audio.runBody": "Upload an audio file on the Agent page, or ask the Agent to collect a recording through its connected tool. For recurring collection, configure a schedule with a search range and maximum number of new recordings. Enable Run with my personal context as the owner. The worker and schedule ticker must be running; turning on audio tools alone does not schedule anything.",
+  "guide.audio.runBody": "Upload an audio file on the Agent page, or ask the Agent to collect a recording through its connected tool. For recurring collection, set a search range and a maximum number of new recordings in a schedule. It runs as its registering user. The Audio worker and schedule ticker must be running; enabling audio tools alone does not create a schedule.",
   "guide.audio.results": "Read private Artifacts",
   "guide.audio.resultsBody": "Original audio, transcript JSON, summary Markdown, speaker dialogue, and structured results appear as the selected stages finish. Open them from the job or Artifacts. A submitted or duplicate request may still refer to an unfinished job: check the job status. Completed remains completed even when its last stage says Cleaning intermediate files. Review names, numbers, missing passages, and unknown speakers.",
   "guide.audio.records": "Save to Memory or Documents only when requested",
@@ -932,8 +932,7 @@ export const en = {
   "guide.api.body":
     "API Reference is built into each Agent and fills in its address. It contains request fields, response shapes, error codes, and curl or SDK examples. Use it alongside the steps here; no source checkout is needed.",
   "guide.api.token": "Prepare the Agent and credential",
-  "guide.api.tokenBody":
-    "Save the tested Agent settings and issue an Agent token in Integrations; the owner’s tier must allow API tokens. Send it as Authorization: Bearer <token>. It is scoped to that Agent’s execution, keeps a service actor and passes the owner’s email to MCP. With current member/admin access and enabled Agent Workspace tools, it can also use the owner’s Workspaces under their repository policies. Git approval links require the owner to decide in the Workspace view. A token does not create a browser session or persistent Chat approval UI.",
+  "guide.api.tokenBody": "Save the tested Agent settings and issue your personal API token in Integrations. Your account must currently allow API tokens and have access to the Agent. Send Authorization: Bearer <token>. Execution, MCP caller context, Workspace access and personal usage belong to the issuing user ID. A token does not create a browser session; Git actions requiring confirmation use your Workspace page.",
   "guide.api.address": "Use the Agent address",
   "guide.api.addressBody":
     "Execution URLs start with /api/agents/{name}/ and use the Agent’s current saved settings. Send the task in messages. Use the {serviceName} host reachable from the calling system.",
@@ -971,8 +970,7 @@ export const en = {
   "guide.records.artifactsBody":
     "Personal Artifacts includes files attributed to your email, including personal-context automation. Agent Artifacts also includes outputs without a personal owner. Private audio originals and results can only be read or deleted by their owner. Reopen an ordinary artifact to refresh an expired signed link; this does not restore an expired or deleted file. Download files you need beyond retention. Deleting a chat does not delete its artifacts.",
   "guide.records.usage": "Understand usage and attribution",
-  "guide.records.usageBody":
-    "Use Agent Usage to inspect the selected period and model/provider breakdown; owners and administrators can inspect caller details. Profile shows personal usage. Agent-token calls are accounted to the Agent rather than the owner's personal budget. Prices come from provider-reported cost or catalog pricing; a zero estimate is not proof that the provider charged nothing.",
+  "guide.records.usageBody": "Agent Usage shows model/provider totals and caller details for owners and administrators. Profile combines Chat, personal API/Webhook tokens, messaging, schedules and native Workspace model requests under the same Studio user ID. Costs use provider-reported amounts or model pricing. Missing usage is uncertain; a zero estimate does not prove a free provider call.",
   "guide.records.budgets": "Alerts, blocks, and concurrent runs",
   "guide.records.budgetsBody":
     "Agent Settings separates daily/monthly alert and block thresholds. Alerts notify when a destination is configured; blocks refuse new runs until the UTC day or month resets, even without notifications. Personal tier limits and caller concurrency limits also apply where relevant. Costs can arrive after a run finishes, so thresholds are not a prepaid balance that guarantees no overspend.",
@@ -1059,8 +1057,7 @@ export const en = {
   "guide.trouble.body":
     "Start with the failing surface, the exact error, and whether the run began. Change one relevant setting at a time, then repeat the smallest request that demonstrates the problem.",
   "guide.trouble.access": "Sign-in fails or a control is unavailable",
-  "guide.trouble.accessBody":
-    "Check the configured sign-in method, allowed email domain, and account with the administrator. A missing create/edit control can be a tier or ownership restriction. For API 401, check the token and Agent name; for 403, check current owner tier and permissions. A private or inaccessible Agent can return 404, so do not assume the URL alone is wrong.",
+  "guide.trouble.accessBody": "Check your sign-in method, allowed email domain and account with the administrator. A missing control can be a tier or ownership restriction. For API 401 check your personal token and Agent name; for 403 check the issuing user’s current access. For bots complete Profile → Messaging connections authentication. An inaccessible private Agent can return 404.",
   "guide.trouble.model": "A model is missing or a call fails",
   "guide.trouble.modelBody": "Check the selected model in Models. In Settings → Models, reset filters, discover the provider’s complete list, and use Registered models to edit or check availability. Confirm the provider URL, base path, key and exact model ID before saving the Agent configuration. For 400, compare the request and image/tool requirements with API Reference. For upstream errors such as 502, inspect the reported error; repeating a wrong model or URL does not fix it.",
   "guide.trouble.limits": "429, timeout, or an incomplete answer",

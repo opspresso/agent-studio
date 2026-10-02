@@ -35,8 +35,8 @@ export async function authorizeWorkspaceExecution(
   }
   const tier = await deps.memberTier(email);
   if (!tier) throw new ValidationError("Workspace tools require an active account");
-  // Guest tasks must spend the authenticated user's budget. Automation grants
-  // retain the member gate because their actors do not spend a personal budget.
+  // Interactive guest tasks are allowed; automated sources require a member account.
+  // Every source still spends the authenticated Studio user's personal budget.
   if (!tierMayEdit(tier) && (grant || (actor && (actor.kind !== "user" || actor.id !== email)))) {
     throw new ValidationError("Workspace automation requires member access");
   }

@@ -372,8 +372,8 @@ agent 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 �
   레지스트리 기본값을 제거한다. HTTP 헤더 이름이 그렇듯 매칭은 대소문자를 가리지 않는다.
 - `X-Tenant-Id`, `X-User-Email`, `X-Conversation-Id` 는 **예약돼 있다**. 세 header 의 모든
   표기가 병합 후에 버려진다. 첫째 자리에는 호출하는 agent 의 이름이 찍힌다. 둘째 자리에는
-  actor 가 `user` 또는 `agent-token` 일 때 그 actor 의 email 이 찍힌다. Slack 처럼 actor id 와
-  별도로 사용자 email 을 해석한 표면은 그 주소를 찍고, 주소를 알 수 없으면 header 자체가 없다.
+  모든 실행은 확인된 Studio 사용자의 현재 이메일을 보낸다. 플랫폼의 actor ID나 요청 본문의
+  이메일을 인증 근거로 사용하지 않는다.
   셋째 자리에는 런이 대화를 가질 때 그 런의 대화 키가 찍힌다. 따라서
   레지스트리나 바인딩은 다른 agent, 사용자, 대화를 사칭할 수 없다.
   [SECURITY.md](SECURITY.md#mcp-서버가-호출자에-대해-듣는-것) 를 보라.
@@ -502,7 +502,7 @@ GET /api/me/profile
           monthToDateUsd, limits: { monthlyCostCapUsd?, maxConcurrentRuns? } }
 
 GET /api/me/usage?from=2026-08-01&to=2026-08-13
-  → 200 { items: [ { email, agentName, date, calls, inputTokens, outputTokens, cachedTokens, costUsd } ] }
+  → 200 { items: [ { userId, agentName, date, calls, inputTokens, outputTokens, cachedTokens, costUsd } ] }
 ```
 
 로그인한 사용자 자신의 행과 지출이다. 언제나 세션 사용자이므로 둘 다 이메일을 받지 않고 둘 다
@@ -513,8 +513,8 @@ GET /api/me/usage?from=2026-08-01&to=2026-08-13
 `/api/me/usage` 는 프로필의 차트와 표 뒤에 있는 범위 읽기다: UTC 일마다 *agent 별* 한 행,
 지표는 모델별 맵, 그리고 사용량 요약이 쓰는 것과 같은 범위 검증(`from`/`to` 필수, 최대 184일)이다.
 행에 agent 가 있으므로 프로필은 한 사람 자신의 지출을 agent·모델·프로바이더별로 묶을 수 있다.
-개요와 agent 의 사용량 탭이 갖는 것과 같은 컨트롤이다. 여기 세는 지출은 그 멤버 자신의 콘솔
-런(`user:` actor)이다. agent 토큰 런은 이 예산이 아니라 자기 agent 에 지출한다.
+개요와 Agent 사용량 탭이 갖는 것과 같은 컨트롤이다. 콘솔·개인 API·Webhook 토큰·메신저·Schedule·
+Workspace 모델 요청을 모두 인증된 Studio 사용자 ID에 합산한다.
 월 한도는 Settings → Access의 `memberTiers`에 저장한다. `memberTierLimits`가 실행과 Profile의
 `limits`를 같은 규칙으로 계산하며, admin의 `monthlyCostCapUsd`는 항상 생략한다.
 
@@ -1064,6 +1064,18 @@ POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400
 완료 여부는 상태 GET으로 확인한다. 주소는 앱 컨테이너의 namespace가 아니라 호스트 loopback의
 포트 매핑이다. [Managed 설계](design/mcp.md#managed-서버)를 따른다.
 
+## Workspace Native 모델 Gateway
+
+`POST /api/workspace-model/v1/responses`, `…/messages`, `…/chat/completions`는 Native CLI 전용이다.
+Messages의 `…/messages/count_tokens`도 지원한다. Studio 세션이나 개인 Agent 토큰으로는 접근하지 못하며
+worker가 발급한 실행별 단기 토큰을 Bearer 또는 `x-api-key`로 제시한다.
+
+토큰의 Workspace·Run·runtime·등록 모델·만료와 현재 사용자·원래 인증 수단·Agent 접근을 다시 검사한다.
+모델·경로·요청 필드·도구 종류가 범위를 벗어나거나 Run이 취소·종료되면 403이다. 진행 중인 모델
+요청은 Run당 하나이며 중복 접수는 429, 이전 사용량이 불확실하면 409다. 공급자 키는 전달하지 않는다.
+JSON/SSE 형식은 Native 프로토콜을 유지하며 개인 비용·사용량은 서버에서 기록한다.
+자세한 격리·재개·정산 계약은 [Workspace 설계](design/workspaces.md#native-모델-gateway)를 따른다.
+
 ## 개인 메신저 계정 연결
 
 `/api/me/messaging-identities`는 로그인한 사용자 자신의 연결만 관리한다.
@@ -1135,7 +1147,7 @@ POST   /api/agents/{name}/mcp-connections/{server}/tools
 ```
 
 - `status` 는 `needs_auth` | `connected` | `needs_reauth` 다. 연결을 `needs_reauth` 로 옮기는
-  것은 **거부된 grant** 뿐이다. 5xx 나 타임아웃은 그대로 둔다.
+  것은 거부된 grant, 또는 회전한 refresh token의 결과를 확정하지 못한 갱신이다. 불확실한 갱신은 자동 재전송하지 않고 다시 인증한다.
 - `clientSecret` 은 읽을 때 마스킹되고 **토큰은 절대 돌려주지 않는다**. agent API 토큰과 달리 reveal 경로가 없는데, 토큰은 표시될 이유가 없기 때문이다. 쓰기에서 생략되거나
   마스킹된 값은 같은 Client ID·issuer의 Secret만 유지한다. Client ID나 issuer가 달라졌으면
   이전 Secret은 제거한다. 빈 값도 Secret을 제거한다. 저장 시 resource가 달라졌으면 같은
@@ -1299,9 +1311,8 @@ credential만 검증하며 실패·잘못된 scheme을 세션 사용자로 대�
 
 셋 다 `MAX_RUN_DURATION_MS` 로 한계 지어지고 (거절이 아니라 런을 스트림 도중에 끊는 벽시계
 데드라인이다), 호출자별 동시성 가드와 그 agent 의 비용 가드를 거쳐 admit 된다. 둘 중 어느
-쪽이든 `Retry-After` 와 함께 `429` 로 답한다. 세션 런은 호출자의 tier 로도 한계 지어지고
-(동시성과 월간 비용 상한. 후자는 세 번째 `429` 다), 토큰 런은 그렇지 않다. 토큰의 지출은
-개인 예산이 아니라 언제나 agent 에 속한다.
+쪽이든 `Retry-After`와 함께 `429`로 답한다. 세션과 개인 토큰 모두 발급·로그인 사용자의
+현재 tier, 동시성 및 UTC 월간 비용 상한을 적용한다.
 
 그 데드라인에 걸린 런은 **`504`** 와 함께 무엇이 자기를 멈췄는지 말한다
 (`This run was stopped after 600 seconds, …`). 스트리밍 요청이면 같은 문장이 마지막
@@ -1446,26 +1457,24 @@ GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&agent=my-bot]
 
 ```
 GET /api/agents/{name}/usage/actors?from=2026-07-01&to=2026-07-31
-→ 200 { "items": [ { agentName, actor, calls, inputTokens, outputTokens, cachedTokens,
+→ 200 { "items": [ { agentName, userId, actor, calls, inputTokens, outputTokens, cachedTokens,
                      costUsd, display?: { name, avatarUrl? } }, … ],
         "totalActors": 123, "truncated": true }
 ```
 
-`actor` 는 `{kind}:{id}` 다. `user:a@example.com`, `agent-token:owner@example.com` (토큰은
-자기 소유자로서 인증하므로, 기계의 지출을 그 사람 자신의 런과 갈라 두는 것이 kind 다. 그리고
-개인 tier 예산에 계산되는 것은 `user:` 행뿐이다),
+`actor`는 호출 출처를 나타내는 `{kind}:{id}`다. `user:a@example.com`, `agent-token:issuer@example.com`,
 `slack:U123`, `telegram:123456`, `teams:{Entra object id}`, 그리고 trigger 발화에는
 `webhook:{agent}:{triggerId}` 또는 `schedule:{agent}:{triggerId}` 다. 지표 필드는 위 요약과
 정확히 같이 모델별 맵이다.
 
-일별 행은 서버에서 `actor` 별로 합친 뒤 비용이 큰 순서로 최대 100명을 돌려준다. `totalActors` 는
+일별 행은 서버에서 `(userId, actor)`별로 합친 뒤 비용이 큰 순서로 최대 100명을 돌려준다. `totalActors` 는
 그보다 뒤에 생략된 사람까지 포함한 전체 호출자 수이고, `truncated` 는 `items` 가 상위 일부인지
 알려 준다. Slack 프로필도 반환하는 호출자만 해석한다. 한 요청이 읽어야 할 일별 actor 행이
 10,000개를 넘으면 조용히 일부만 집계하지 않고 400으로 거절하므로 기간을 좁혀 다시 요청하라.
 
 `display` 는 `slack:` 행에 얼굴을 붙여 준다. 그 agent 자신의 봇 토큰으로 해석한다. 장식이며
 어떤 이유로든 없을 수 있다. Slack 봇 없음, 회수된 토큰, 비활성화된 사용자, Slack 장애. 그리고
-어느 경우에도 `actor` 는 그대로다. 두 호출자를 구별하는 키가 그것이기 때문이다. `telegram:` 행은
+어느 경우에도 `userId`와 `actor`는 그대로다. 두 값을 함께 사용해 호출자를 구별한다. `telegram:` 행은
 `display` 를 싣지 않는다: Bot API 는 사용자 id 로 프로필을 조회하는 방법을 제공하지 않으므로 있는
 것은 id 뿐이다.
 

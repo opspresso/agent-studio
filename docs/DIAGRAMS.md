@@ -224,7 +224,7 @@ flowchart LR
 flowchart LR
   subgraph agent["AGENT#{name} 파티션"]
     meta["META (Agent + 현재 configuration)"]
-    tok["APITOKEN"]
+    tok["AGENTCREDENTIAL#{purpose}#{userId}#{credentialId}"]
     trig["TRIGGER#{id} · TRIGGERRUN#…"]
     conn["MCPCONN#{server}"]
     jobs["AUDIOJOB#… · AUDIOSLOTS · AUDIOCONFIG"]
@@ -244,7 +244,7 @@ flowchart LR
     usage["USAGE#{agent} / DATE#… · ACTOR#…"]
     trace["TRACE#{id} (GSI1 TRACEAGENT#)"]
     artifact["ARTIFACT#{id} (GSI1 Agent · GSI2 소유자)"]
-    slot["RUNSLOT#{actor} / SLOT#nnn"]
+    slot["RUNSLOT#studio-user:{userId} / SLOT#nnn"]
   end
   subgraph inbound["인바운드 표면"]
     sev["SLACKEVENT#{eventId}"]
