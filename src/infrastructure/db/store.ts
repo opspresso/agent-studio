@@ -132,7 +132,10 @@ async function upsert(client: Runner, item: Item): Promise<void> {
     throw new Error("an item needs string PK and SK attributes");
   }
   await client.query(
-    "INSERT INTO items (pk, sk, data) VALUES ($1, $2, $3) " +
+    // Every writer participates in address locking, including a one-statement
+    // unconditional put. The lock also protects rows that do not exist yet.
+    "INSERT INTO items (pk, sk, data) " +
+      "SELECT $1, $2, $3 FROM pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text)) " +
       "ON CONFLICT (pk, sk) DO UPDATE SET data = EXCLUDED.data",
     [PK, SK, toStoredJson(item)],
   );
@@ -157,32 +160,13 @@ export async function getItem(key: Key, client?: PoolClient): Promise<Item | nul
  */
 export async function putItem(item: Item, condition?: Condition): Promise<void> {
   if (!condition && !writeFence.getStore()) {
-    // One statement on the pool: an upsert is atomic on its own, and the
-    // unconditional writes are the frequent ones — a run log flush, an audit
-    // row, an artifact — so they must not each hold a connection across a
-    // transaction.
+    // Lock and write in one statement; no extra transaction round trips.
     await upsert(getPool(), item);
     return;
   }
   await withTransaction(async (client) => {
-    const { PK, SK } = item as Key;
-    const locked = await lockOperations(client, [{ kind: "put", item, condition }], ConditionalWriteError);
-    const existing = locked.get(`${PK} ${SK}`) ?? null;
-    if (!condition || existing !== null) {
-      await upsert(client, item);
-      return;
-    }
-    // The advisory lock serialises the *conditional* writers; an unconditional
-    // upsert takes no lock and can commit the same key between the read above
-    // and the write below. Inserting-or-nothing makes that a refusal, as the
-    // condition promised, rather than an update that swallows the other write.
-    const inserted = await client.query(
-      "INSERT INTO items (pk, sk, data) VALUES ($1, $2, $3) ON CONFLICT (pk, sk) DO NOTHING",
-      [PK, SK, toStoredJson(item)],
-    );
-    if (inserted.rowCount !== 1) {
-      throw new ConditionalWriteError(`put ${PK}/${SK}`);
-    }
+    await lockOperations(client, [{ kind: "put", item, condition }], ConditionalWriteError);
+    await upsert(client, item);
   });
 }
 

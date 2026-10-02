@@ -1571,6 +1571,10 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     await checkPluginSyncLock(suffix);
     pass("plugin sync lease: owned renewal, stale primitive refusal and atomic row-lock fencing");
 
+    const { checkItemStoreConcurrency } = await import("./item-store-concurrency-check");
+    await checkItemStoreConcurrency(suffix);
+    pass("item store: unconditional writes respect absent-row transactions");
+
     // ---------- transact lock modes (a checked key does not serialise) ----------
     // A `check` op asserts something elsewhere is still live; the exclusive
     // lock it used to take made every usage row, trace and agent write in a
