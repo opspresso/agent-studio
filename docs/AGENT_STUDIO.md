@@ -7,7 +7,7 @@ tags: [agent-studio, control-plane, rag, knowledge-graph, mcp, workspace, offlin
 
 # Agent Studio
 
-Agent Studio는 기업 내부에 설치하는 AI Agent Control Plane이다. 사용자는 Agent를 만들고
+Agent Studio는 회사·그룹 등 한 단체 내부에 설치하는 AI Agent Control Plane이다. 사용자는 Agent를 만들고
 현재 Agent 설정에 모델·프롬프트·도구를 구성한 뒤 여러 실행 창구에서 호출한다. 앱은 접근 권한,
 자격 증명, 예산과 기록을 관리하고 OpenAI Agents SDK는 모델 턴과 도구 실행을 관리한다.
 
@@ -17,7 +17,7 @@ Agent Studio는 기업 내부에 설치하는 AI Agent Control Plane이다. 사�
 
 ## 제품 경계와 배포
 
-한 설치는 한 기업이다. 멀티테넌시는 없으며 설치 안의 접근은 멤버 등급, Agent 공개 범위와
+한 설치는 한 단체다. 멀티테넌시는 없으며 설치 안의 접근은 멤버 등급, Agent 공개 범위와
 소유권으로 나눈다. PostgreSQL + pgvector가 기본 영속 저장소다. 사내 로그인 수단과 OpenAI 호환
 모델 채널을 구성하면 필수 부팅·로그인·실행·콘솔 경로를 공개 인터넷 없이 운영할 수 있다.
 
@@ -31,6 +31,11 @@ Plugin sync, Slack·Telegram·Teams·GitHub는 배포가 선택하는 연결이�
 설치와 업그레이드는 [INSTALL](INSTALL.md), 실제 변수는 [CONFIGURATION](CONFIGURATION.md)을 따른다.
 
 ## Agents와 현재 설정
+
+구성원은 Agent를 만들어 조직 안에서 함께 사용한다. 설정 변경은 만든 사람에게만 허용한다.
+private Agent는 본인만 접근하고, public Agent는 member 이상이 호출한다. OAuth MCP는 각 사용자가
+본인 계정으로 연결하며 실행·위임·자동화에서도 호출자의 인증을 사용한다. 설치 관리 권한은 다른
+사람의 Agent 소유권을 대신하지 않는다. 세부 판정은 [인가 모델](SECURITY.md#인가-모델)을 따른다.
 
 콘솔에서는 Agent를 `/agents`에서 만들고 관리한다. 저장소와 `/api/agents`의 `Agent`는
 같은 Agent를 가리키는 내부 계약이다. 현재 설정에 모델·fallback·시스템 프롬프트·생성 설정,
@@ -62,7 +67,7 @@ Skill 본문은 시스템 프롬프트에 모두 넣지 않는다. 이름·설�
 sync는 사라진 항목을 보고하지만 삭제는 별도의 명시적 작업으로 남긴다.
 
 MCP registry는 서버 주소를 소유하고 Agent binding은 도구 목록과 헤더를 좁히거나 덮어쓴다.
-Agent별 OAuth 연결과 선택적인 Docker 관리형 서버도 지원한다. 등록·dispatch 경계에서
+사용자별 OAuth 연결과 선택적인 Docker 관리형 서버도 지원한다. 등록·dispatch 경계에서
 주소와 자격 증명을 검사한다. [MCP](design/mcp.md)와 [보안](SECURITY.md#mcp-oauth)을 보라.
 
 선택적 capability 검색은 전역 `catalog_vectors`에서 현재 요청에 맞는 Skill·MCP 서버·도구를 찾는다.

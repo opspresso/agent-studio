@@ -71,7 +71,7 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 | GenerateImage / EditImage | Agent의 이미지 기능과 등록 이미지 모델·프로바이더. 생성·편집 결과를 같은 Agent 실행에서 전달한다 |
 | FetchUrl | Agent의 URL 읽기 opt-in. URL guard를 거쳐 웹·PDF·데이터·이미지를 읽는다 |
 | SaveFile / File | Artifact 저장소. 텍스트 파일 저장과 지원 문서 읽기·검사·생성·편집. 문서 엔진에 MCP 바인딩은 필요하지 않다 |
-| ImportFile / TranscribeAudio / AudioJob | Agent의 Audio 기능과 소유자의 member 이상 문맥. 파일은 비공개 저장소에 보관하고 worker가 작업을 처리한다. 전사는 등록된 전사 채널을 추가로 요구한다 |
+| ImportFile / TranscribeAudio / AudioJob | Agent의 Audio 기능과 호출자의 member 이상 문맥. 파일은 비공개 저장소에 보관하고 worker가 작업을 처리한다. 전사는 등록된 전사 채널을 추가로 요구한다 |
 | Workspace | Agent의 Workspace 기능, member 이상인 로그인 사용자, Sandbox·worker·실행 정책. 개인 월 한도를 적용한다. 개인 토큰·연결된 메신저·Schedule 등록자의 현재 권한과 Agent 정책을 검사해 제공한다 |
 | Slack 읽기 | Agent의 Slack 읽기 기능과 활성 봇. History·Thread·User(s)·Channels·Reactions를 봇 권한으로 읽으며 이 도구들은 게시하지 않는다 |
 | ModelTask | Agent의 명시적 모델 라우팅 설정. 다른 도구나 두 번째 Agent 루프를 실행하지 않는 보조 모델 호출 |

@@ -149,9 +149,9 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 해당 Agent�
 | `/api/chats/{chatId}/runs/{runId}` | `GET` `DELETE` | 그 chat 의 소유자 |
 | `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | 그 chat 의 소유자 |
 | `/api/artifacts` | `GET` | session |
-| `/api/artifacts/{artifactId}` | `DELETE` | member 이상인 생성자 또는 Agent 소유자. 비공개 파일은 파일 소유자(member)의 현재 agent 소유 권한 필요 |
-| `/api/artifacts/{artifactId}/view` | `GET` | 생성자 또는 Agent 소유자. 비공개 파일은 파일 소유자(member)의 현재 agent 소유 권한 필요 |
-| `/api/artifacts/{artifactId}/download` | `GET` | 비공개 파일 소유자(member), 현재 agent 소유 권한 필요 |
+| `/api/artifacts/{artifactId}` | `DELETE` | member 이상인 생성자 또는 Agent 소유자. 비공개 파일은 파일 소유자(member)의 현재 Agent 접근 권한 필요 |
+| `/api/artifacts/{artifactId}/view` | `GET` | 생성자 또는 Agent 소유자. 비공개 파일은 파일 소유자(member)의 현재 Agent 접근 권한 필요 |
+| `/api/artifacts/{artifactId}/download` | `GET` | 비공개 파일 소유자(member), 현재 Agent 접근 권한 필요 |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
 | `/api/models/favorites` | `GET` `PUT` `PATCH` | session / member |
@@ -1056,7 +1056,7 @@ JSON/SSE 형식은 Native 프로토콜을 유지하며 개인 비용·사용량�
 ## MCP OAuth
 
 레지스트리 항목의 authorization-server 메타데이터와 공용 OAuth 앱은 운영자 설정(admin)이다.
-Agent 소유자는 Connection에서 자신의 계정으로 승인하며, access/refresh token은 Agent별로 저장한다.
+각 호출자는 연동 → 내 MCP 연결에서 자신의 계정으로 승인하며 access/refresh token은 Studio 사용자 ID와 MCP 서버별로 저장한다.
 
 ### Discovery (admin)
 
@@ -1814,7 +1814,7 @@ agent·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 범�
 
 ## 오디오 작업과 원본 파일
 
-아래 경로는 member session과 Agent 소유자 권한을 요구한다. 실행 사용자 email은 session에서
+아래 경로는 member session과 현재 Agent 접근 권한을 요구한다. 공유 처리 설정의 PUT은 Agent 소유자만 가능하다. 실행 사용자 email은 session에서
 결정하며 body로 전달할 수 없다. 기존 `S3_BUCKET_NAME`을 사용하며 전사가 포함된 작업에는 전사 채널 설정도 필요하다.
 
 | Method | 경로 | 계약 |
@@ -1824,7 +1824,7 @@ agent·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 범�
 | GET | `/api/agents/{name}/source-files/{file}` | 개인 파일 다운로드. 만료되면 거절하며 항상 attachment·no-store로 반환한다 |
 | GET | `/api/artifacts/{artifactId}/download` | 비공개 원본·결과 Artifact 다운로드. 소유자 session을 확인하며 공개 서명 URL로 전환하지 않는다 |
 | GET | `/api/agents/{name}/audio-options` | 설정된 전사 모델의 runtime facts·사용자 즐겨찾기 목록과 Agent 현재 설정에 바인딩된 MCP 이름 목록. 실제 저장 기능은 제출 시 검증한다 |
-| GET | `/api/agents/{name}/audio-config` | 현재 Agent 작업 설정 또는 null. 소유자만 읽는다 |
+| GET | `/api/agents/{name}/audio-config` | 현재 Agent의 공유 작업 설정 또는 null. 접근 가능한 member가 읽는다 |
 | PUT | `/api/agents/{name}/audio-config` | `{revision, enabled, model, language?, retention, postprocess?, destination?, maxActive, maxPerOccurrence}` → 다음 revision. 최초 revision은 0, 충돌은 409 |
 | POST | `/api/agents/{name}/audio-jobs` | 작업 제출 → 202 accepted/duplicate, 접수 한도 초과·경합은 409 busy |
 | GET | `/api/agents/{name}/audio-jobs?limit=20&after={id}` | `{jobs, nextCursor}`, limit 1–100. 다른 사용자 작업은 limit 전에 제외한다 |
@@ -1843,7 +1843,7 @@ file은 해당 Agent의 업로드·보관 파일이다. 원본 URL과 외부 녹
 - import는 보관만, transcribe는 전사까지 수행한다. transcribe와 process에는 등록된 Transcription model이 필요하다.
 - postprocess는 전사 Artifact와 `{agentName}` 후처리 대상을 받아 ASR 없이 처리한다.
   model·language·destination·configRevision을 함께 보낼 수 없다.
-  후처리 Agent는 같은 소유자의 설정된 Agent이며 등록 모델이 `structuredOutput`을 지원해야 한다.
+  후처리 Agent는 호출자가 접근 가능한 설정된 Agent이며 등록 모델이 `structuredOutput`을 지원해야 한다.
 
 retention은 `{unit:"days"|"months", value:양의 정수, timezone:IANA 시간대}`다.
 language는 전사에 사용하는 선택적 2–3자 언어 코드다. 같은 Agent·사용자·source identity·
@@ -1855,8 +1855,8 @@ configRevision을 지정하면
 서버가 해당 revision의 model·language·retention·postprocess·destination을 읽는다. source와
 명시적 processingRevision 외의 처리 override는 섞지 않으며 task는 생략하거나 process여야 한다.
 revision 충돌은 409다. enabled=false는 신규 제출·수동 재시도를 막으며 기존 작업 snapshot은 바꾸지 않는다.
-Agent의 admission 한도는 요청별 설정에도 적용한다. 설정 소유자가 바뀌면 현재 소유자가 다시
-저장하기 전까지 제출·재시도를 거절한다. 설정 행에는 credential이나 Agent 설정 본문을 저장하지 않는다.
+Agent의 admission 한도는 요청별 설정에도 적용한다. 공유 설정의 작성자는 실행 신원이 아니며
+동일 설정을 사용해도 각 작업은 호출자로 실행한다. 설정 행에는 credential이나 Agent 설정 본문을 저장하지 않는다.
 
 `destination: {serverName, documents, memories}`는 명시적으로 선택한 외부 복사 경로다.
 해당 MCP는 원래 Agent의 현재 설정에 연결되어 있고 멱등 수집 도구를 제공해야 한다.

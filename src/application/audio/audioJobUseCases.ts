@@ -102,7 +102,6 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       await deps.authorize(agent, email);
       const config = await deps.configs?.get(agent);
       if (!config) return null;
-      if (config.userEmail !== email) throw new ConflictError("Audio configuration requires owner confirmation");
       if (config.enabled) await deps.validateModel(config.model);
       const { userEmail: _email, agentName: _agent, ...view } = config;
       return view;
@@ -118,7 +117,7 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
         input = { ...input, source: { kind: "file", fileId: file.id, agentName: file.agentName } };
       }
       const config = await deps.configs?.get(agentName);
-      if (config && (!config.enabled || config.userEmail !== userEmail)) throw new ConflictError("Audio configuration is disabled or requires owner confirmation");
+      if (config && !config.enabled) throw new ConflictError("Audio configuration is disabled");
       if (input.configRevision !== undefined) {
         if (!config || config.revision !== input.configRevision) throw new ConflictError("Audio configuration changed");
         if ([input.model, input.language, input.retention, input.postprocess, input.destination].some((value) => value !== undefined) ||
@@ -212,7 +211,7 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       if (!user.userId || previous.user?.userId !== user.userId) throw new NotFoundError("Audio job not found");
       await deps.authorizeRun(agent, previous);
       const config = await deps.configs?.get(agent);
-      if (config && (!config.enabled || config.userEmail !== email)) throw new ConflictError("Audio configuration is disabled or requires owner confirmation");
+      if (config && !config.enabled) throw new ConflictError("Audio configuration is disabled");
       const limits = config ? { maxActive: config.maxActive } : await deps.limits(agent);
       const job = await deps.jobs.retry(agent, id, revision, deps.now().toISOString(), limits.maxActive);
       if (!job) throw new ConflictError("Audio job changed or cannot be retried");

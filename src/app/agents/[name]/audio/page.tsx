@@ -9,7 +9,7 @@ import { useLocale, useT } from "@/app/_i18n/provider";
 import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { ModelSelect } from "@/app/_components/modelOptions";
-import { useViewer } from "@/app/_lib/useViewer";
+import { canEditAgent, canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { listAgents, type SanitizedAgent } from "../../lib/api";
 import { formatDateTime } from "@/shared/date";
 import type { AudioOptionsResponse } from "@/app/api/agents/[name]/audio-options/route";
@@ -24,6 +24,8 @@ import { loadActiveAudioJobs, mergeAudioJobUpdates } from "./jobPolling";
 export default function AudioPage() {
   const { enabled, error } = useAgentAudio();
   const t = useT();
+  const mayRun = canRunAgents(useViewer());
+  if (!mayRun) return <Alert>{t("common.memberExecutionRequired")}</Alert>;
   if (error) return <Alert color="red">{error}</Alert>;
   if (enabled === undefined) return <LoadingText />;
   if (!enabled) return <Alert color="blue">{t("audio.toolsRequired")}</Alert>;
@@ -49,6 +51,7 @@ function AudioWorkspace({ name }: { name: string }) {
   const [loadingJobs, setLoadingJobs] = useState(true);
   const listRequest = useRef<AbortController | null>(null);
   const [agents, setAgents] = useState<SanitizedAgent[]>([]);
+  const canManage = canEditAgent(viewer, agents.find(agent => agent.name === name)?.ownerEmail ?? null);
   const [jobs, setJobs] = useState<AudioJobView[]>([]);
   const [next, setNext] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -119,7 +122,7 @@ function AudioWorkspace({ name }: { name: string }) {
     (!destination || ((documents || memories) && (!memories || Boolean(writer))));
 
   async function saveConfiguration() {
-    if (!validProcessing) return;
+    if (!canManage || !validProcessing) return;
     setBusy(true); setError(null);
     try {
       const result = await fetch(`${base}/audio-config`, { method: "PUT", headers: jsonHeaders,
@@ -193,7 +196,7 @@ function AudioWorkspace({ name }: { name: string }) {
       </SimpleGrid>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
         <Select label={t("audio.writer")} clearable searchable value={writer} onChange={setWriter} disabled={busy}
-          data={agents.filter(agent => agent.ownerEmail === viewer?.email && agent.configured)
+          data={agents.filter(agent => agent.configured)
             .map(agent => ({ value: agent.name, label: agent.displayName }))} />
       </SimpleGrid>
       <Select label={t("audio.destination")} description={t("audio.destinationHint")} clearable value={destination} onChange={setDestination} data={options.destinations} disabled={busy} />
@@ -202,7 +205,7 @@ function AudioWorkspace({ name }: { name: string }) {
       </>}
       <Group justify="space-between"><Text size="sm" c="dimmed">{t("audio.personalOnly")}</Text>
         <Button loading={busy} disabled={!file || !validProcessing || savedConfig?.enabled === false} onClick={submit}>{t("audio.submit")}</Button></Group>
-      <details><Text component="summary">{t("audio.agentConfig")}</Text><Stack mt="sm">
+      {canManage && <details><Text component="summary">{t("audio.agentConfig")}</Text><Stack mt="sm">
         <Checkbox label={t("audio.configEnabled")} checked={configEnabled} onChange={(e) => setConfigEnabled(e.currentTarget.checked)} disabled={busy} />
         <SimpleGrid cols={{ base: 1, sm: 2 }}>
           <NumberInput label={t("audio.maxActive")} value={maxActive} onChange={setMaxActive} min={1} max={MAX_ACTIVE_AUDIO_JOBS} allowDecimal={false} disabled={busy} />
@@ -210,7 +213,7 @@ function AudioWorkspace({ name }: { name: string }) {
         </SimpleGrid>
         <Text size="sm" c="dimmed">{t("audio.saveConfigHint")}</Text>
         <Button onClick={saveConfiguration} loading={busy} disabled={!validProcessing || !Number.isInteger(maxActive) || !Number.isInteger(maxPerOccurrence)}>{t("audio.saveConfig")}</Button>
-      </Stack></details>
+      </Stack></details>}
     </Stack></Paper>
     <SectionHeading title={t("audio.jobs")}><Button variant="default" loading={loadingJobs} onClick={() => refresh().catch((error) => setError(error.message))}>{t("audio.refresh")}</Button></SectionHeading>
     {jobs.some((job) => !isAudioJobTerminal(job.status)) && <Text size="xs" c="dimmed">{t("audio.pollingHint")}</Text>}

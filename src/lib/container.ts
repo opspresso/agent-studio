@@ -192,7 +192,8 @@ import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createReranker } from "@/infrastructure/llm/reranker";
 import { createPgVectorStore } from "@/infrastructure/vector/pgVectorStore";
 import { deleteExpired } from "@/infrastructure/db/store";
-import { createAgentUseCases } from "@/application/agent/agentUseCases";
+import { assertAudioAccessible } from "@/application/audio/access";
+import { createAgentUseCases, assertAgentOwner } from "@/application/agent/agentUseCases";
 import { createTraceUseCases } from "@/application/trace/traceUseCases";
 import { createUsageUseCases } from "@/application/usage/usageUseCases";
 import { createConfigurationUseCases } from "@/application/agent/configurationUseCases";
@@ -259,7 +260,7 @@ import {
 } from "./runtime-settings";
 import { getMemberTier } from "./memberAccess";
 import { actorKey, type RunActor } from "@/domain/execution/actor";
-import { tierMayEdit, type TierLimits } from "@/domain/member/tiers";
+import type { TierLimits } from "@/domain/member/tiers";
 import { offeredModels } from "@/domain/llm/models";
 import { composeCreateAgent } from "@/application/agent/createAgentFlow";
 import { composeCloneAgent } from "@/application/agent/cloneAgentFlow";
@@ -1171,14 +1172,8 @@ export function getAudioRuntime() {
       if (await getArtifactAccessMode() === "public") throw new ValidationError("Private Artifacts require authenticated or proxied storage access");
     },
     publish: (file) => registerSourceArtifact(artifactRepository, file) });
-  const authorize = async (agentName: string, email: string) => {
-    const agent = await agentRepository.get(agentName);
-    const tier = await getMemberTier(email);
-    if (!agent || agent.ownerEmail !== email || !tier || !tierMayEdit(tier)) {
-      throw new ForbiddenError("Audio processing requires the agent owner's member account");
-    }
-    return agent;
-  };
+  const authorize = (agentName: string, email: string) =>
+    assertAudioAccessible({ agents: agentRepository, memberTier: getMemberTier }, agentName, email);
   const authorizeJob = async (job: AudioJob) => {
     await authorizeAgentRun(job.agentName, job);
     if (job.user.email !== job.userEmail) throw new ForbiddenError("Audio job identity changed");
@@ -1212,6 +1207,7 @@ export function getAudioRuntime() {
     return result;
   };
   const configuration = createAudioConfigUseCases({ configs: audioJobConfigRepository,
+    authorizeWrite: async (agent, email) => { await assertAgentOwner(agentRepository, agent, email); },
     authorize: async (agent, email) => { await authorize(agent, email); },
     validate: async (input, agent, user) => { await getTranscriptionTarget(input.model); await validateOutputs(input, agent, user); },
     now: () => new Date(),

@@ -64,6 +64,13 @@ afterEach(() => {
 });
 
 describe("private artifact persistence", () => {
+  it("keeps private file metadata out of the Agent gallery before applying the page limit", async () => {
+    const shared = artifact({ artifactId: "shared-output" });
+    store.seed([row(shared), ...Array.from({ length: 8 }, (_, i) => row({ artifactId: `private-${i}`, privateFileId: `file-${i}`,
+      kind: "audio", mimeType: "audio/mpeg", filename: "Personal recording", createdAt: createdPlus(i + 1) }))]);
+    expect(await artifactRepository.listByAgent(shared.agentName, { limit: 1 })).toEqual([shared]);
+    expect(await artifactRepository.listByOwner("bruce@daangn.com", { limit: 1 })).toEqual([expect.objectContaining({ privateFileId: "file-7" })]);
+  });
   it("excludes legacy processing JSON before pagination while retaining user-facing JSON", async () => {
     const readable = artifact({ artifactId: "readable", kind: "document", mimeType: "text/markdown" });
     const userJson = artifact({ artifactId: "user-json", kind: "document", mimeType: "application/json" });

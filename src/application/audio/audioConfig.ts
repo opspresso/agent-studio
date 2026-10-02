@@ -8,6 +8,7 @@ export type AudioConfigInput = Pick<AudioJobConfig, "model" | "language" | "rete
 export function createAudioConfigUseCases(deps: {
   configs: AudioJobConfigRepository;
   authorize(agent: string, email: string): Promise<void>;
+  authorizeWrite(agent: string, email: string): Promise<void>;
   validate(input: AudioConfigInput, agent: string, user: RunUser): Promise<void>;
   now(): Date;
 }) {
@@ -18,7 +19,7 @@ export function createAudioConfigUseCases(deps: {
     },
     async save(agent: string, user: RunUser, input: AudioConfigInput, revision: number) {
       const email = user.email;
-      await deps.authorize(agent, email);
+      await deps.authorizeWrite(agent, email);
       if (!Number.isSafeInteger(revision) || revision < 0 || revision >= Number.MAX_SAFE_INTEGER || typeof input.enabled !== "boolean" ||
         !input.model?.trim() || (input.language !== undefined && !/^[a-z]{2,3}$/i.test(input.language)) ||
         ![input.maxActive, input.maxPerOccurrence].every((value) => Number.isSafeInteger(value) && value >= 1 && value <= MAX_ACTIVE_AUDIO_JOBS)) {

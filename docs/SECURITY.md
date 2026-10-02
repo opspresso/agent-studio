@@ -133,6 +133,7 @@ visibility 이전처럼 열려 있다: 이름과 지출 집계는 카탈로그 �
 | 멤버 디렉터리 | admin | admin (tier 변경, `member.set-tier` 로 감사) |
 | Chat | 소유자만 (소유자가 아니면 404) | 소유자만 |
 | Workspace | 소유자와 현재 Agent 접근 검사 | 소유자; 실행·Git 승인은 활성화·정책·승인 상태도 검사 |
+| Audio 공유 처리 설정 | 접근 가능한 member | Agent 소유자 |
 | 오디오 job·비공개 source 파일 | 작업/파일 소유자와 Agent 접근 검사 | 소유자 범위와 job/file 상태에 따른 조작 |
 | 일반 Artifact | 생성·첨부 소유자 또는 Agent 소유자 | member 이상이며 같은 소유권 범위에서 삭제. 비공개 source 파일은 위 전용 경계 |
 

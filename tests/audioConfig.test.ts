@@ -8,8 +8,9 @@ import { audioJobConfigRepository as configs } from "@/infrastructure/db/reposit
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const input: AudioConfigInput = { enabled: true, model: "openai/whisper-1", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" }, maxActive: 1, maxPerOccurrence: 1 };
 const authorize = vi.fn(async () => {});
-const api = createAudioConfigUseCases({ configs, authorize, validate: async () => {}, now: () => new Date("2026-09-09T00:00:00Z") });
-beforeEach(() => { vi.clearAllMocks(); fake.rows.clear(); fake.seed([{ ...keys.agent("audio"), entityType: "AGENT" }]); });
+const authorizeWrite = vi.fn(async () => {});
+const api = createAudioConfigUseCases({ configs, authorize, authorizeWrite, validate: async () => {}, now: () => new Date("2026-09-09T00:00:00Z") });
+beforeEach(() => { vi.clearAllMocks(); fake.rows.clear(); fake.seed([{ ...keys.agent("audio"), entityType: "AGENT", ownerEmail: "owner@example.test" }]); });
 describe("revisioned audio configuration", () => {
   const seedWriter = (overrides = {}) => fake.seed([
     { ...keys.agent("writer"), entityType: "AGENT", ownerEmail: "owner@example.test", configuration: { model: "text" }, ...overrides },
@@ -23,13 +24,22 @@ describe("revisioned audio configuration", () => {
     expect(await store.getItem(keys.agent("writer"))).toEqual(before);
     expect((await configs.get("audio"))?.postprocess).toEqual({ agentName: "writer" });
   });
-  it.each([{ configuration: undefined }, { deletingAt: "now" }, { ownerEmail: "other@example.test" }])(
+  it.each([{ configuration: undefined }, { deletingAt: "now" }, { ownerEmail: "other@example.test", visibility: "private" }])(
     "refuses a postprocessor that became unavailable: %j", async overrides => {
       seedWriter(overrides);
       await expect(api.save("audio", { userId: "studio-user-1", email: "owner@example.test" }, writerInput, 0)).rejects.toMatchObject({ status: 409 });
       expect(await configs.get("audio")).toBeNull();
     },
   );
+  it("accepts a public postprocessing Agent owned by another member", async () => {
+    seedWriter({ ownerEmail: "writer@example.test", visibility: "public" });
+    await expect(api.save("audio", { userId: "owner", email: "owner@example.test" }, writerInput, 0)).resolves.toMatchObject({ postprocess: { agentName: "writer" } });
+  });
+  it("atomically refuses a recipe write when the source Agent ownership changed", async () => {
+    fake.seed([{ ...keys.agent("audio"), entityType: "AGENT", ownerEmail: "new-owner@example.test" }]);
+    await expect(api.save("audio", { userId: "owner", email: "owner@example.test" }, input, 0)).rejects.toMatchObject({ status: 409 });
+    expect(await configs.get("audio")).toBeNull();
+  });
   it("refuses a missing postprocessor", async () => {
     await expect(api.save("audio", { userId: "studio-user-1", email: "owner@example.test" }, writerInput, 0)).rejects.toMatchObject({ status: 409 });
     expect(await configs.get("audio")).toBeNull();
@@ -61,7 +71,7 @@ describe("revisioned audio configuration", () => {
     expect(await configs.get("audio")).toBeNull();
   });
   it("authorizes reads and writes before accessing stored configuration", async () => {
-    authorize.mockRejectedValueOnce(new Error("denied"));
+    authorizeWrite.mockRejectedValueOnce(new Error("denied"));
     await expect(api.save("audio", { userId: "studio-user-1", email: "other@example.test" }, input, 0)).rejects.toThrow("denied");
     authorize.mockRejectedValueOnce(new Error("denied"));
     await expect(api.get("audio", "other@example.test")).rejects.toThrow("denied");

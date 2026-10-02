@@ -221,6 +221,20 @@ describe("audio job use cases", () => {
     expect((await jobs.get("audio", "job-1"))?.sourceRefresh).toEqual(refresh);
     expect("job" in result && result.job).not.toHaveProperty("sourceRefresh");
   });
+  it("lets another member use a shared recipe without adopting its author's identity", async () => {
+    const f = fixture();
+    const caller = interactiveIdentity("member@example.test");
+    f.deps.configs = { get: async () => ({ agentName: "audio", userEmail: "owner@example.test", revision: 1, enabled: true,
+      model: "openai/whisper-1", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" }, maxActive: 2, maxPerOccurrence: 1, updatedAt: "2026-09-09T00:00:00Z" }) };
+    expect(await f.api.configuration("audio", caller.user.email)).toMatchObject({ revision: 1 });
+    const submitted = await f.api.submit("audio", caller.user, { source: f.input.source, configRevision: 1 }, { actor: caller.actor, occurrence: "member-request" });
+    expect(submitted.status).toBe("accepted");
+    const stored = await jobs.get("audio", "job-1");
+    expect(stored).toMatchObject({ userEmail: caller.user.email, user: caller.user, actor: caller.actor, configRevision: 1 });
+    await expect(f.api.get("audio", "job-1", "owner@example.test")).rejects.toMatchObject({ status: 404 });
+    expect(await f.api.list("audio", "owner@example.test", 10)).toEqual([]);
+    await expect(f.api.cancel("audio", "job-1", "owner@example.test", 1)).rejects.toMatchObject({ status: 404 });
+  });
   it("pins a configuration revision without allowing overrides and keeps submitted work unchanged", async () => {
     const f = fixture();
     let config = { agentName: "audio", userEmail: "owner@example.test", revision: 1, enabled: true, updatedAt: "2026-09-09T00:00:00Z",
