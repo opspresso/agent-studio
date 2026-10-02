@@ -10,7 +10,7 @@ import { MAX_TOOLS_PER_REQUEST } from "@/domain/llm/toolLimits";
 import type { ChatMessageInput, McpToolResult, UsageInfo } from "@/domain/llm/types";
 import { SAVABLE_TYPES } from "@/domain/artifact/types";
 import { AUDIO_TOOL_DEFS } from "@/application/audio/toolDefinitions";
-import { WORKSPACE_TOOL_DEF } from "./workspaceToolDefinition";
+import { REVIEW_WORKSPACE_TOOL_DEF, WORKSPACE_TOOL_DEF } from "./workspaceToolDefinition";
 import { REVIEW_SOURCE_TOOL_DEF } from "./reviewSourceDefinition";
 import { REVIEW_SOURCE_TOOL_NAME } from "@/domain/llm/toolNames";
 import { WORKSPACE_TOOL_NAME } from "@/domain/llm/toolNames";
@@ -967,7 +967,7 @@ export function buildAgentTools(input: AgentToolsInput): {
     for (const name of AUDIO_TOOL_NAMES) builtinNames.add(name);
   }
   if (input.withWorkspaceTool) {
-    tools.push(WORKSPACE_TOOL_DEF);
+    tools.push(input.withReviewSource ? REVIEW_WORKSPACE_TOOL_DEF : WORKSPACE_TOOL_DEF);
     builtinNames.add(WORKSPACE_TOOL_NAME);
   }
   if (input.withReviewSource) {

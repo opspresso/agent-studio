@@ -286,13 +286,17 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     }
     const output = boundedWorkspaceText(raw, OUTPUT_BYTES);
     const diff = boundedWorkspaceText(run.diff ?? "", OUTPUT_BYTES);
+    const nextSeq = selected.at(-1)?.seq ?? Number(after);
+    const hasMore = events.length > selected.length || nextSeq < run.lastEventSeq;
+    const terminal = isTerminalWorkspaceRun(run.status);
     return reply({ ...location(detail.workspace), workspace_status: detail.workspace.status,
       run_id: run.id, status: run.status, error: run.error,
       ...git,
       checks: run.checks.map(({ output: _output, ...check }) => { void _output; return check; }),
       output: output.text, diff: diff.text, output_loss: !!run.outputLoss,
       truncated: !!run.outputLoss || output.truncated || diff.truncated || !!run.diffTruncated,
-      next_seq: selected.at(-1)?.seq ?? after, has_more: events.length > selected.length || (selected.at(-1)?.seq ?? Number(after)) < run.lastEventSeq,
-      next: isTerminalWorkspaceRun(run.status) ? "review results" : "wait" });
+      next_seq: nextSeq, has_more: hasMore,
+      next_request: hasMore || !terminal ? { operation: hasMore ? "status" : "wait", workspace_id: id, run_id: run.id, after_seq: nextSeq } : null,
+      next: hasMore ? "read remaining output" : terminal ? "review results" : "wait" });
   };
 }

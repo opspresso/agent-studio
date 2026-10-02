@@ -11,6 +11,7 @@ import type { WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { TriggerRunnerDeps } from "@/application/trigger/deps";
 import { FakeChannel, contentChunk, toolCallChunk } from "../tests/fakeChannel";
+import type { ChannelParams } from "../tests/channelFixtures";
 import { createAgentCredentialUseCases } from "@/application/auth/agentCredentialUseCases";
 import { assertExecutionGrant } from "@/application/auth/authorizeExecutionGrant";
 import { authorizeRunIdentity } from "@/application/auth/authorizeRunIdentity";
@@ -125,11 +126,26 @@ async function main() {
     execute: (workspace, work, identity) => executeWorkspaceTask({ usage, resolveUserLimits: async () => ({}) }, agents, workspace, work, identity), sleep: ms => delay(ms) };
   const api = createWorkspaceUseCases(worker);
   const pump = async () => { if (workspaceId) await processWorkspace(worker, workspaceId); };
-  const channel = new FakeChannel([
-    [toolCallChunk(0, "check", "Workspace", JSON.stringify({ request: { operation: "run", task: "test ! -e future.txt && node -e \"if(require('./index.js').twice(1)!==2) throw new Error('expected 2, got 3')\"" } }))],
-    [toolCallChunk(0, "wait", "Workspace", JSON.stringify({ request: { operation: "wait" } }))],
-    [contentChunk("[P1] index.js:1 — twice(1)이 2 대신 3을 반환합니다. Workspace 재현 검사가 실패했습니다.")],
-  ]);
+  const readPages: { has_more: boolean; next_seq: number; output: string }[] = [];
+  const channel = new class extends FakeChannel {
+    constructor() { super([]); }
+    override async *chatCompletionStream(params: ChannelParams) {
+      this.seenParams.push(params);
+      const step = this.calls++;
+      if (step === 0) {
+        yield toolCallChunk(0, "check", "Workspace", JSON.stringify({ request: { operation: "run",
+          task: "test ! -e future.txt && node -e \"process.stdout.write('source context\\n'.repeat(1800)); if(require('./index.js').twice(1)!==2) throw new Error('expected 2, got 3')\"" } }));
+        return;
+      }
+      const result = params.messages.findLast(message => message.role === "tool")?.content;
+      assert.equal(typeof result, "string");
+      const page = JSON.parse(result as string);
+      if (typeof page.output === "string") readPages.push(page);
+      const request = page.review_pending?.[0];
+      if (request) yield toolCallChunk(0, `read-${step}`, "Workspace", JSON.stringify({ request }));
+      else yield contentChunk("[P1] index.js:1 — twice(1)이 2 대신 3을 반환합니다. Workspace 재현 검사가 실패했습니다.");
+    }
+  }();
   const execution = { resolveUserLimits: async () => ({}), authorizeRun: (agent: string, identity: import("@/domain/execution/actor").RunIdentity) => authorizeRunIdentity(grantDeps, agent, identity), agents, usage, cipher, channel, createToolSchemaValidator, skills: { get: async () => null, describe: async () => [] }, mcps: { get: async () => null } } as unknown as ExecutionDeps;
   const actor = { kind: "webhook" as const, id: `${agentName}:webhook` };
   const deps: TriggerRunnerDeps = { members, agents, triggers, webhookCredentials, reviewForge: () => github.reviews,
@@ -169,6 +185,9 @@ async function main() {
     assert.equal(history.review?.status, "posted");
     assert.equal(receipts.length, 1); assert.equal(receipts[0]!.commit_id, headSha); assert.equal(receipts[0]!.event, "COMMENT");
     assert.match(String(receipts[0]!.body), /index.js:1/); assert.match(String(receipts[0]!.body), /Workspace/);
+    assert.ok(readPages.some(page => page.has_more), "The terminal check must expose multiple output pages");
+    assert.equal(readPages.at(-1)!.has_more, false);
+    assert.match(readPages.map(page => page.output).join(""), /expected 2, got 3/);
     const workspace = (await repository.get(workspaceId!))!;
     assert.equal(workspace.status, "closed"); assert.equal(workspace.sandboxId, undefined);
     for (const id of containers) assert.equal(await nativeProvider.inspect(id), "missing", "Review Sandbox must be removed before completion");

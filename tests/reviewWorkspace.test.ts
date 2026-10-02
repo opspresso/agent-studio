@@ -64,6 +64,23 @@ describe("review Workspace lifecycle", () => {
     await session.tool({ request: { operation: "wait" } }, "truncated");
     await expect(session.ensureIdle()).rejects.toThrow("results were not read");
   });
+  it("directs the model to the first unread page and refuses another command before it is read", async () => {
+    const f = fixture();
+    const session = await openReviewWorkspace(f.deps, target);
+    await session.tool({ request: { operation: "run", task: "read source" } }, "read-source");
+    f.tool.mockResolvedValueOnce({ text: JSON.stringify({ run_id: "check", status: "succeeded", next_seq: 20, has_more: true, truncated: false }) });
+    const page = JSON.parse((await session.tool({ request: { operation: "wait", run_id: "check" } }, "first-page")).text);
+    expect(page.review_pending).toEqual([{ operation: "status", workspace_id: "review", run_id: "check", after_seq: 20 }]);
+    const calls = f.tool.mock.calls.length;
+    await expect(session.tool({ request: { operation: "run", task: "next check" } }, "next-check")).rejects.toThrow('"after_seq":20');
+    expect(f.tool).toHaveBeenCalledTimes(calls);
+    await expect(session.ensureIdle()).rejects.toThrow('"run_id":"check"');
+    f.tool.mockResolvedValueOnce({ text: JSON.stringify({ run_id: "check", status: "succeeded", next_seq: 24, has_more: false, truncated: false }) });
+    const complete = JSON.parse((await session.tool({ request: page.review_pending[0] }, "rest")).text);
+    expect(complete.review_pending).toEqual([]);
+    await session.ensureIdle();
+    await session.tool({ request: { operation: "run", task: "next check" } }, "accepted-next");
+  });
   it.each([
     { name: "lost admission response", reply: async () => { throw new Error("Admission response lost after commit"); } },
     { name: "error tool result", reply: async () => ({ text: "Error: admission response lost" }) },

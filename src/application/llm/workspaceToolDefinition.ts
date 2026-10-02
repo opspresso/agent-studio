@@ -14,6 +14,20 @@ const task: Schema = { type: "string", minLength: 1, maxLength: WORKSPACE_LIMITS
 const runtime: Schema = { type: "string", enum: WORKSPACE_RUNTIMES,
   description: "Prefer codex, claude or opencode for code implementation. command is for exact scripts and simple file/data processing." };
 const repository: Schema = nullable({ ...text, description: "The user's requested repository. Select it with base_branch for clone or coding tasks. null deliberately creates a Git-free Workspace; it does not use the configured default repository." });
+const reads = ["status", "wait"].map(name => object({ operation: operation(name), workspace_id: nullable(text),
+  run_id: nullable(text), after_seq: nullable({ type: "integer", minimum: 0 }) }, ["operation"]));
+
+/** The prepared PR Workspace exposes only its reachable command and read operations. */
+export const REVIEW_WORKSPACE_TOOL_DEF: ChannelToolDef = { type: "function", function: {
+  name: WORKSPACE_TOOL_NAME,
+  description: "Read source and run isolated checks in the prepared PR Workspace at its verified commit. run.task is an exact shell script executed by /bin/sh, never a natural-language task for a coding agent. Use relative paths in workdir and /tmp for temporary scripts; keep tracked source unchanged. After run, follow next_request and every review_pending request until review_pending is empty. A terminal status can still have unread output pages; use status with next_seq as after_seq when has_more is true. Read all results before another run or the final review. Report failed checks and unavailable dependencies accurately. The platform owns publication and cleanup.",
+  parameters: object({ request: { anyOf: [
+    object({ operation: operation("options") }),
+    object({ operation: operation("run"), workspace_id: nullable(text), task: { ...task,
+      description: "An exact /bin/sh script for bounded source reads or isolated checks. Do not send prose, coding-agent instructions or Git writes. Use /tmp for temporary files." } }, ["operation", "task"]),
+    ...reads,
+  ] } }),
+} };
 
 export const WORKSPACE_TOOL_DEF: ChannelToolDef = { type: "function", function: {
   name: WORKSPACE_TOOL_NAME,
@@ -46,8 +60,7 @@ export const WORKSPACE_TOOL_DEF: ChannelToolDef = { type: "function", function: 
         inputs: { type: "array", items: object({ name: text, value: { type: "string" } }),
           description: "Workflow inputs as unique name/value pairs. Use [] when no inputs are needed. Never include credentials." } }),
     ] } }, ["operation", "action"]),
-    ...["status", "wait"].map(name => object({ operation: operation(name), workspace_id: nullable(text),
-      run_id: nullable(text), after_seq: nullable({ type: "integer", minimum: 0 }) }, ["operation"])),
+    ...reads,
     ...["cancel", "close"].map(name => object({ operation: operation(name), workspace_id: nullable(text) }, ["operation"])),
   ] } }),
 } };

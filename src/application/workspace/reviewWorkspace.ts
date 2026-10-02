@@ -40,6 +40,13 @@ export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: Pul
     const unfinished = new Set<string>();
     const outputLoss = new Set<string>();
     const readRanges = new Map<string, Array<[number, number]>>();
+    const statuses = new Map<string, WorkspaceRun["status"]>();
+    const pendingReads = () => [...unfinished].map(runId => {
+      const first = readRanges.get(runId)?.[0];
+      const status = statuses.get(runId);
+      return { operation: status && isTerminalWorkspaceRun(status) ? "status" : "wait",
+        workspace_id: id, run_id: runId, after_seq: first?.[0] === 0 ? first[1] : 0 };
+    });
     let unconfirmedAdmission = false;
     return {
       id, url: started.workspace_url, close,
@@ -50,6 +57,7 @@ export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: Pul
         // A lost response can follow a committed enqueue and outlive activeRunId.
         if (startsRun) {
           if (unconfirmedAdmission) throw new Error("Review Workspace check admission was not confirmed; no further commands can be queued");
+          if (unfinished.size) throw new Error(`Read the previous Review Workspace results before queuing another command: ${JSON.stringify(pendingReads())}`);
           unconfirmedAdmission = true;
         }
         const result = await deps.tool(args, callId);
@@ -57,6 +65,7 @@ export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: Pul
         if (startsRun && (typeof value.run_id !== "string" || !value.run_id)) throw new Error("Review Workspace check admission returned no run identity");
         if (typeof value.run_id === "string") {
           unfinished.add(value.run_id);
+          statuses.set(value.run_id, value.status as WorkspaceRun["status"]);
           if (startsRun) unconfirmedAdmission = false;
           if (value.output_loss === true) outputLoss.add(value.run_id);
           const after = request?.after_seq ?? 0;
@@ -77,7 +86,7 @@ export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: Pul
                 merged[0]?.[0] === 0 && merged[0][1] === next) unfinished.delete(value.run_id);
           }
         }
-        return result;
+        return { ...result, text: JSON.stringify({ ...value, review_pending: pendingReads() }) };
       },
       async ensureIdle() {
         if (unconfirmedAdmission) throw new Error("Review Workspace check admission was not confirmed; no review was published");
@@ -85,7 +94,7 @@ export async function openReviewWorkspace(deps: ReviewWorkspaceDeps, target: Pul
         if (!workspace || workspace.status !== "active" || workspace.coding?.sourceRevision !== target.headSha ||
           workspace.coding.repository !== target.repository || workspace.coding.headSha !== target.headSha) throw new Error("Review Workspace no longer matches its verified commit");
         if (outputLoss.size) throw new Error("Review Workspace output was permanently omitted; no review was published");
-        if (workspace.activeRunId || unfinished.size) throw new Error("Review Workspace checks are unfinished or their results were not read; no review was published");
+        if (workspace.activeRunId || unfinished.size) throw new Error(`Review Workspace checks are unfinished or their results were not read; no review was published. Pending reads: ${JSON.stringify(pendingReads())}`);
         const review = await deps.verify(id);
         if (review.headSha !== target.headSha || !/^[a-f0-9]{40,64}$/.test(review.treeSha) || review.treeSha !== review.headTreeSha) {
           throw new Error("Review Workspace source changed; checks must use the verified PR tree and temporary files outside the repository");
