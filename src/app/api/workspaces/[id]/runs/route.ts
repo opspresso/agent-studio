@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/session";
+import { withAuth, withMemberAuth } from "@/lib/session";
 import { workspaceUseCases } from "@/lib/container";
 import { editorBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -7,12 +7,12 @@ import { workspaceRunView, type WorkspaceRunView } from "@/application/workspace
 
 type Context = { params: Promise<{ id: string }> };
 export interface WorkspaceRunResponse { run: WorkspaceRunView }
-export const POST = withAuth(async (user, request: Request, context: Context) => {
+export const POST = withMemberAuth(async (user, request: Request, context: Context) => {
   const body = await editorBody(request);
   if (body instanceof Response) return body;
   const parsed = workspaceInputSchema.safeParse(body);
   if (!parsed.success) return invalidRequest(parsed.error);
-  try { return Response.json({ run: workspaceRunView(await workspaceUseCases.enqueue((await context.params).id, user.email, parsed.data, request.headers.get("idempotency-key") ?? "")) } satisfies WorkspaceRunResponse, { status: 202 }); }
+  try { return Response.json({ run: workspaceRunView(await workspaceUseCases.enqueue((await context.params).id, { userId: user.id, email: user.email }, parsed.data, request.headers.get("idempotency-key") ?? "")) } satisfies WorkspaceRunResponse, { status: 202 }); }
   catch (error) { return apiError(error); }
 });
 export const DELETE = withAuth(async (user, _request: Request, context: Context) => {

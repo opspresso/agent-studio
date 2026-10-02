@@ -1,14 +1,17 @@
 "use client";
 
+import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { useState } from "react";
-import { Box, Group, SegmentedControl, Stack, Text } from "@mantine/core";
+import { Alert, Box, Group, SegmentedControl, Stack, Text } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { NewChatPanel } from "./NewChatPanel";
 import { NewWorkspaceForm } from "@/app/workspaces/_components/NewWorkspaceForm";
 
 export function NewChatEntry({ workspacesEnabled }: { workspacesEnabled: boolean }) {
   const t = useT();
+  const canRun = canRunAgents(useViewer());
   const [mode, setMode] = useState("chat");
+  if (!canRun) return <Alert>{t("common.memberExecutionRequired")}</Alert>;
   if (!workspacesEnabled) return <NewChatPanel />;
   return <Stack h="100%" gap="sm">
     <Group justify="space-between" gap="sm" wrap="wrap">

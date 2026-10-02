@@ -19,6 +19,7 @@ vi.mock("@/lib/session", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/session")>();
   return {
     ...actual,
+    withMemberAuth: (handler: (user: { id: string; email: string }, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ id: "studio-user-1", email: "owner@example.com" }, ...args),
     withAuth:
       (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) =>
       (...args: unknown[]) =>

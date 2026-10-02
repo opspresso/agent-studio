@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { agentRecommendationUseCases } from "@/lib/container";
-import { withAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
 import { MAX_AGENT_RECOMMENDATION_REQUEST_LENGTH } from "@/application/llm/agentRecommendation";
@@ -14,7 +14,7 @@ export interface AgentRecommendationResponse {
   recommendation: { name: string; confidence: number } | null;
 }
 
-export const POST = withAuth(async (user, request: Request) => {
+export const POST = withMemberAuth(async (user, request: Request) => {
   const body = await editorBody(request);
   if (body instanceof Response) return body;
   const parsed = schema.safeParse(body);

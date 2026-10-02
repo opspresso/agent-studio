@@ -1,3 +1,4 @@
+import { executionIdentity, withUserLimits } from "./runIdentity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_MEMBER_TIERS, type MemberTierDefinition } from "@/domain/member/tiers";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
@@ -20,7 +21,7 @@ const configuration: AgentConfiguration = { agentName: agent.name, model: "opena
 const usage: UsageRepository = {
   record: async () => {}, getDay: async () => null, claimAlert: async () => false, claimMonthAlert: async () => false,
   listByAgent: async () => [], listByDateRange: async () => [], listActorsByAgent: async () => [],
-  listMemberDays: async () => [{ email: actor.id, date: "2026-10-01", agentName: agent.name, calls: {}, inputTokens: {}, outputTokens: {}, costUsd: { m: 3 } }],
+  listMemberDays: async () => [{ userId: executionIdentity(actor).user.userId, date: "2026-10-01", agentName: agent.name, calls: {}, inputTokens: {}, outputTokens: {}, costUsd: { m: 3 } }],
 };
 async function catalog(tiers: MemberTierDefinition[]) {
   await settingsRepository.update(() => ({ memberTiers: { revision: 1, tiers }, updatedAt: new Date().toISOString() }));
@@ -45,6 +46,8 @@ describe("runtime member tier settings", () => {
       { id: "member", monthlyCostCapUsd: 20 },
     ]);
     expect((await getMemberTierDefinitions()).map(tier => tier.id)).toEqual(["admin", "premium", "member", "guest"]);
+    expect(await getMemberTierLimits("guest")).toEqual({ monthlyCostCapUsd: 0 });
+    expect(await getMemberTierLimits("premium")).toEqual({ monthlyCostCapUsd: 10 });
   });
   it("uses custom tiers for sessions and member APIs and demotes unknown stored IDs to guest", async () => {
     expect((await getSessionUser())?.tier).toBe("premium");
@@ -56,14 +59,14 @@ describe("runtime member tier settings", () => {
     expect((await withMemberAuth(async () => Response.json({ ok: true }))()).status).toBe(403);
   });
   it("uses changed limits on the next Chat or Workspace run and never caps admin", async () => {
-    const deps = { usage, resolveActorLimits: async () => getMemberTierLimits((await getMemberTier(actor.id))!) };
-    const chat = await openRun(deps, agent, configuration, actor); await chat.close();
-    const task = await openTaskRun(deps, agent, actor); await task.close();
+    const deps = { usage, resolveUserLimits: async () => getMemberTierLimits((await getMemberTier(actor.id))!) };
+    const chat = await openRun(withUserLimits(deps), agent, configuration, executionIdentity(actor)); await chat.close();
+    const task = await openTaskRun(withUserLimits(deps), agent, executionIdentity(actor)); await task.close();
     await catalog([...DEFAULT_MEMBER_TIERS, { id: "premium", monthlyCostCapUsd: 3 }]);
-    await expect(openRun(deps, agent, configuration, actor)).rejects.toMatchObject({ status: 429, limitUsd: 3 });
-    await expect(openTaskRun(deps, agent, actor)).rejects.toMatchObject({ status: 429, limitUsd: 3 });
+    await expect(openRun(withUserLimits(deps), agent, configuration, executionIdentity(actor))).rejects.toMatchObject({ status: 429, limitUsd: 3 });
+    await expect(openTaskRun(withUserLimits(deps), agent, executionIdentity(actor))).rejects.toMatchObject({ status: 429, limitUsd: 3 });
     f.member.mockResolvedValue({ tier: "admin" }); invalidateMemberTierCache(actor.id);
-    const admin = await openTaskRun(deps, agent, actor); await admin.close();
+    const admin = await openTaskRun(withUserLimits(deps), agent, executionIdentity(actor)); await admin.close();
     expect(await getMemberTierLimits("admin")).toEqual({});
   });
 });

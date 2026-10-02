@@ -14,7 +14,7 @@ vi.mock("@/lib/container", () => ({
   pluginUseCases: { list: f.list }, modelRegistryUseCases: { list: f.list },
   modelPreferenceUseCases: { list: f.list, replace: f.write, setFavorite: f.write },
   agentUseCases: { update: f.write, remove: f.write }, configurationUseCases: { put: f.write },
-  artifactUseCases: { remove: f.write },
+  artifactUseCases: { remove: f.write }, agentRecommendationUseCases: { recommend: f.write }, chatDeps: {},
   workspaceUseCases: { start: f.start, enqueue: f.enqueue, cancel: f.cancel, close: f.close, get: f.get, events: f.events },
   workspaceOptions: f.options,
 }));
@@ -35,6 +35,10 @@ const runs = await import("@/app/api/workspaces/[id]/runs/route");
 const events = await import("@/app/api/workspaces/[id]/events/route");
 const options = await import("@/app/api/workspaces/options/route");
 const mcpCallback = await import("@/app/api/mcps/oauth/callback/route");
+const chats = await import("@/app/api/chats/route");
+const messages = await import("@/app/api/chats/[chatId]/messages/route");
+const approvals = await import("@/app/api/chats/[chatId]/approval/route");
+const recommendations = await import("@/app/api/agent-recommendations/route");
 const context = { params: Promise.resolve({ name: "demo", id: "workspace-1", artifactId: "file-1" }) };
 const request = (method = "GET", body?: unknown) => new Request("https://studio.test/api/test", {
   method, headers: { origin: "https://studio.test", "Content-Type": "application/json", "Idempotency-Key": "request-123" },
@@ -69,8 +73,19 @@ describe("guest console access", () => {
     f.write.mockResolvedValue({ agentName: "demo", serverName: "tools" });
     const response = await mcpCallback.GET(new Request("https://studio.test/api/mcps/oauth/callback?state=pending&code=fixture"));
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain("Connected tools to demo");
-    expect(f.write).toHaveBeenCalledWith({ state: "pending", code: "fixture", userEmail: "member@example.test", iss: undefined });
+    expect(await response.text()).toContain("Connected your account to tools");
+    expect(f.write).toHaveBeenCalledWith({ state: "pending", code: "fixture", user: { userId: "member-1", email: "member@example.test" }, iss: undefined });
+  });
+  it("refuses guest Chat, approval and recommendation work before reading request bodies", async () => {
+    const malformed = () => new Request("https://studio.test/api/test", {
+      method: "POST", headers: { origin: "https://studio.test", "Content-Type": "application/json" }, body: "[",
+    });
+    const chatContext = { params: Promise.resolve({ chatId: "chat-1" }) };
+    for (const invoke of [() => chats.POST(malformed()), () => messages.POST(malformed(), chatContext),
+      () => approvals.POST(malformed(), chatContext), () => recommendations.POST(malformed())]) {
+      expect((await invoke()).status).toBe(403);
+    }
+    expect(f.write).not.toHaveBeenCalled();
   });
   const reads = [
     ["skills", () => skills.GET()], ["skill detail", () => skill.GET(request(), context)],
@@ -103,14 +118,14 @@ describe("guest console access", () => {
     for (const mutate of mutations) expect((await mutate()).status).toBe(403);
     expect(f.write).not.toHaveBeenCalled();
   });
-  it("permits guest Workspace lifecycle requests using only the session owner", async () => {
+  it("refuses new guest Workspace work but preserves reading and stopping", async () => {
     expect((await options.GET()).status).toBe(200);
-    expect((await workspace.POST(request("POST", { agentName: "demo", runtime: "command", input: { kind: "command", script: "echo hello" } }))).status).toBe(202);
-    expect(f.start).toHaveBeenCalledWith(expect.any(Object), "guest@example.test", "request-123");
+    expect((await workspace.POST(request("POST", { agentName: "demo", runtime: "command", input: { kind: "command", script: "echo hello" } }))).status).toBe(403);
+    expect(f.start).not.toHaveBeenCalled();
     expect((await detail.GET(request(), context)).status).toBe(200);
     expect((await events.GET(request(), context)).status).toBe(200);
-    expect((await runs.POST(request("POST", { kind: "command", script: "echo next" }), context)).status).toBe(202);
-    expect(f.enqueue).toHaveBeenCalledWith("workspace-1", "guest@example.test", expect.any(Object), "request-123");
+    expect((await runs.POST(request("POST", { kind: "command", script: "echo next" }), context)).status).toBe(403);
+    expect(f.enqueue).not.toHaveBeenCalled();
     expect((await runs.DELETE(request("DELETE"), context)).status).toBe(204);
     expect((await detail.DELETE(request("DELETE"), context)).status).toBe(204);
     expect(f.cancel).toHaveBeenCalledWith("workspace-1", "guest@example.test");

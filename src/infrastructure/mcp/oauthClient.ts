@@ -83,11 +83,11 @@ function asString(value: unknown): string | undefined {
 function toTokenSet(status: number, body: Record<string, unknown>): TokenSet {
   const errorCode = asString(body.error);
   if (errorCode) {
-    const description = asString(body.error_description) ?? errorCode;
+    const safeCode = new Set(["invalid_request", "invalid_client", "invalid_grant", "unauthorized_client", "unsupported_grant_type", "invalid_scope", "access_denied", "server_error", "temporarily_unavailable"]).has(errorCode) ? errorCode : "oauth_error";
     if (GRANT_ERROR_CODES.has(errorCode)) {
-      throw new OAuthGrantError(errorCode, description);
+      throw new OAuthGrantError(errorCode, `Token request failed: HTTP ${status} (${safeCode})`);
     }
-    throw new Error(`Token request failed (${errorCode}): ${description}`);
+    throw new Error(`Token request failed: HTTP ${status} (${safeCode})`);
   }
   if (status < 200 || status >= 300) {
     throw new Error(`Token request failed: HTTP ${status}`);

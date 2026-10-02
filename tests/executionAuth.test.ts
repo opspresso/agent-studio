@@ -1,132 +1,56 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const { verify, getMemberTier, getSessionUser, assertAccessible, isSameOriginMutation } = vi.hoisted(
-  () => ({
-    verify: vi.fn(),
-    getMemberTier: vi.fn(),
-    getSessionUser: vi.fn(),
-    assertAccessible: vi.fn(),
-    isSameOriginMutation: vi.fn(async () => true),
-  }),
-);
-
-vi.mock("@/lib/container", () => ({
-  apiTokenUseCases: { verify },
-  agentUseCases: { assertAccessible },
-}));
-vi.mock("@/lib/memberAccess", () => ({ getMemberTier }));
-vi.mock("@/lib/session", () => ({
-  getSessionUser,
-  isSameOriginMutation,
-  crossOriginForbidden: () =>
-    Response.json({ error: "Cross-origin mutation refused" }, { status: 403 }),
-}));
-
+const { verify, getSessionUser, assertAccessible, isSameOriginMutation } = vi.hoisted(() => ({ verify: vi.fn(), getSessionUser: vi.fn(), assertAccessible: vi.fn(), isSameOriginMutation: vi.fn(async () => true) }));
+vi.mock("@/lib/container", () => ({ apiTokenUseCases: { verify }, agentUseCases: { assertAccessible } }));
+vi.mock("@/lib/session", () => ({ getSessionUser, isSameOriginMutation, crossOriginForbidden: () => Response.json({ error: "Cross-origin mutation refused" }, { status: 403 }) }));
 const { authenticateExecution } = await import("@/app/api/agents/_lib/executionAuth");
+const request = (authorization?: string) => new Request("https://studio.example.test/api/agents/agent/predict", { method: "POST", headers: authorization === undefined ? {} : { authorization } });
+beforeEach(() => { vi.clearAllMocks(); });
 
-const request = (bearer?: string) =>
-  new Request("http://test/api/agents/p/predict", {
-    method: "POST",
-    headers: bearer ? { authorization: `Bearer ${bearer}` } : {},
+describe("execution request identity", () => {
+  it("uses the personal token's verified user and never substitutes a cookie session", async () => {
+    verify.mockResolvedValue({ userId: "token-user", email: "token@example.test", credentialId: "token-id" });
+    getSessionUser.mockResolvedValue({ id: "cookie-user", email: "cookie@example.test" });
+    expect(await authenticateExecution(request("Bearer ast_fixture"), "agent")).toEqual({ userId: "token-user", email: "token@example.test", credentialId: "token-id", viaToken: true });
+    expect(verify).toHaveBeenCalledExactlyOnceWith("agent", "ast_fixture");
+    expect(getSessionUser).not.toHaveBeenCalled(); expect(isSameOriginMutation).not.toHaveBeenCalled();
   });
-
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
-describe("authenticateExecution with a bearer token", () => {
-  it("authenticates as the owner when their tier allows tokens", async () => {
-    verify.mockResolvedValue("owner@x.com");
-    getMemberTier.mockResolvedValue("member");
-    await expect(authenticateExecution(request("ast_ok"), "p")).resolves.toEqual({
-      email: "owner@x.com",
-      viaToken: true,
-    });
-    expect(isSameOriginMutation).not.toHaveBeenCalled();
-  });
-
-  it("403s a valid token whose owner's tier does not allow tokens", async () => {
-    verify.mockResolvedValue("owner@x.com");
-    getMemberTier.mockResolvedValue("guest");
-    const result = await authenticateExecution(request("ast_ok"), "p");
-    expect(result).toBeInstanceOf(Response);
-    expect((result as Response).status).toBe(403);
-  });
-
-  it("403s a valid token when its owner has no member row", async () => {
-    verify.mockResolvedValue("owner@x.com");
-    getMemberTier.mockResolvedValue(null);
-    const result = await authenticateExecution(request("ast_ok"), "p");
-    expect((result as Response).status).toBe(403);
-  });
-
-  it("503s a valid token when its owner's tier cannot be read", async () => {
-    verify.mockResolvedValue("owner@x.com");
-    getMemberTier.mockRejectedValue(new Error("storage down"));
-    const result = await authenticateExecution(request("ast_ok"), "p");
-    expect((result as Response).status).toBe(503);
-  });
-
-  it("401s an invalid token without reading any tier", async () => {
+  it("refuses a revoked, inaccessible or unowned token without session fallback", async () => {
     verify.mockResolvedValue(null);
-    const result = await authenticateExecution(request("ast_bad"), "p");
-    expect((result as Response).status).toBe(401);
-    expect(getMemberTier).not.toHaveBeenCalled();
+    getSessionUser.mockResolvedValue({ id: "cookie-user", email: "cookie@example.test" });
+    const response = await authenticateExecution(request("Bearer ast_invalid"), "agent");
+    expect(response).toBeInstanceOf(Response); expect((response as Response).status).toBe(401);
+    expect(getSessionUser).not.toHaveBeenCalled();
   });
-});
-
-describe("authenticateExecution with a session", () => {
-  it("authenticates the session user without any tier gate", async () => {
-    getSessionUser.mockResolvedValue({
-      id: "u1",
-      email: "u@x.com",
-      name: "U",
-      image: null,
-      tier: "guest",
-    });
-    assertAccessible.mockResolvedValue({ name: "p" });
-    const principal = await authenticateExecution(request(), "p");
-    expect(principal).toMatchObject({ email: "u@x.com", viaToken: false });
-    expect(isSameOriginMutation).toHaveBeenCalledOnce();
-    expect(getMemberTier).not.toHaveBeenCalled();
-    expect(assertAccessible).toHaveBeenCalledWith("p", "u@x.com");
-  });
-
-  it("403s a session user the agent's visibility keeps out", async () => {
-    getSessionUser.mockResolvedValue({
-      id: "u1",
-      email: "u@x.com",
-      name: "U",
-      image: null,
-      tier: "member",
-    });
+  it("reports current account or Agent permission denial without switching to another user", async () => {
     const { ForbiddenError } = await import("@/application/errors");
-    assertAccessible.mockRejectedValue(new ForbiddenError('Agent "p" is private'));
-    const result = await authenticateExecution(request(), "p");
-    expect(result).toBeInstanceOf(Response);
-    expect((result as Response).status).toBe(403);
+    verify.mockRejectedValueOnce(new ForbiddenError("User no longer has Agent access"));
+    expect((await authenticateExecution(request("Bearer ast_fixture"), "agent") as Response).status).toBe(403);
+    expect(getSessionUser).not.toHaveBeenCalled();
   });
-
-  it("401s without a session", async () => {
-    getSessionUser.mockResolvedValue(null);
-    const result = await authenticateExecution(request(), "p");
-    expect((result as Response).status).toBe(401);
+  it.each(["", "Basic credential", "Bearer"])("refuses an invalid Authorization header %j without switching identities", async authorization => {
+    getSessionUser.mockResolvedValue({ id: "cookie-user", email: "cookie@example.test" });
+    const response = await authenticateExecution(request(authorization), "agent");
+    expect((response as Response).status).toBe(401); expect(getSessionUser).not.toHaveBeenCalled(); expect(verify).not.toHaveBeenCalled();
   });
-
-  it("403s a cross-origin session before checking agent visibility", async () => {
-    getSessionUser.mockResolvedValue({
-      id: "u1",
-      email: "u@x.com",
-      name: "U",
-      image: null,
-      tier: "member",
-    });
-    isSameOriginMutation.mockResolvedValueOnce(false);
-
-    const result = await authenticateExecution(request(), "p");
-
-    expect(result).toBeInstanceOf(Response);
-    expect((result as Response).status).toBe(403);
+  it("uses the authenticated session user ID with current Agent access", async () => {
+    getSessionUser.mockResolvedValue({ id: "user-id", email: "user@example.test", name: "User", image: null, tier: "member" });
+    const principal = await authenticateExecution(request(), "agent");
+    expect(principal).toMatchObject({ userId: "user-id", email: "user@example.test", viaToken: false });
+    expect(assertAccessible).toHaveBeenCalledWith("agent", "user@example.test"); expect(isSameOriginMutation).toHaveBeenCalledOnce();
+  });
+  it("refuses guest execution before loading the Agent", async () => {
+    getSessionUser.mockResolvedValue({ id: "guest", email: "guest@example.test", tier: "guest" });
+    expect((await authenticateExecution(request(), "agent") as Response).status).toBe(403);
     expect(assertAccessible).not.toHaveBeenCalled();
+  });
+  it("refuses a session without Agent access", async () => {
+    getSessionUser.mockResolvedValue({ id: "user-id", email: "user@example.test" });
+    const { ForbiddenError } = await import("@/application/errors"); assertAccessible.mockRejectedValueOnce(new ForbiddenError("Agent is private"));
+    expect((await authenticateExecution(request(), "agent") as Response).status).toBe(403);
+  });
+  it("refuses unauthenticated and cross-origin session calls", async () => {
+    getSessionUser.mockResolvedValue(null); expect((await authenticateExecution(request(), "agent") as Response).status).toBe(401);
+    getSessionUser.mockResolvedValue({ id: "user-id", email: "user@example.test" }); isSameOriginMutation.mockResolvedValueOnce(false);
+    expect((await authenticateExecution(request(), "agent") as Response).status).toBe(403); expect(assertAccessible).not.toHaveBeenCalled();
   });
 });

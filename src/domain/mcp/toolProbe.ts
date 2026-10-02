@@ -15,7 +15,7 @@ export type ListToolsResult =
    * rejected the credential rather than being unreachable. Callers that hold a
    * per-agent connection use it to flag a reconnect, the way the run loop does.
    */
-  | { ok: false; error: string; unauthorized?: boolean };
+  | { ok: false; error: string; unauthorized?: boolean; scope?: string };
 
 export interface McpToolProbe {
   /** One-shot tool listing with the given headers, already decrypted. */

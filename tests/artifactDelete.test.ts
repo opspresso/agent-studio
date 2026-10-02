@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { setAuditSink } from "@/application/audit/recordAudit";
-import { setAdminCheck } from "@/application/agent/agentUseCases";
 import { NotFoundError } from "@/application/errors";
 import type { AuditEvent } from "@/domain/audit/types";
 import type { Artifact } from "@/domain/artifact/types";
@@ -52,11 +51,6 @@ const agents: AgentRepository = {
   async create() {},
   async update() {},
   async delete() {},
-  async getApiToken() {
-    return null;
-  },
-  async setApiToken() {},
-  async deleteApiToken() {},
 };
 
 function setup(stored: Artifact | null, over: { rowDeleteFails?: boolean } = {}) {
@@ -114,14 +108,12 @@ beforeEach(() => {
       return [];
     },
   });
-  setAdminCheck(async (email) => email === ADMIN);
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
 afterEach(() => {
   vi.useRealTimers();
   setAuditSink(undefined);
-  setAdminCheck(async () => false);
 });
 
 describe("deleting an artifact", () => {
@@ -165,10 +157,10 @@ describe("who may delete", () => {
     expect(present()).toBe(false);
   });
 
-  it("lets an admin reach into another agent", async () => {
+  it("refuses an administrator who owns neither the Artifact nor the Agent", async () => {
     const { useCases, present } = setup(artifact({ actor: { kind: "user", id: OTHER } }));
-    await useCases.remove("a1", ADMIN);
-    expect(present()).toBe(false);
+    await expect(useCases.remove("a1", ADMIN)).rejects.toMatchObject({ status: 403 });
+    expect(present()).toBe(true);
   });
 
   it("refuses a stranger", async () => {
@@ -181,9 +173,9 @@ describe("who may delete", () => {
 describe("what is recorded", () => {
   it("records reaching into someone else's output", async () => {
     const { useCases } = setup(artifact({ actor: { kind: "user", id: OTHER } }));
-    await useCases.remove("a1", ADMIN);
+    await useCases.remove("a1", OWNER);
     const deletion = audited.find((event) => event.action === "artifact.delete");
-    expect(deletion).toMatchObject({ actorEmail: ADMIN, target: "artifact:a1" });
+    expect(deletion).toMatchObject({ actorEmail: OWNER, target: "artifact:a1" });
     // Never the prompt or the bytes — a trail row is not a copy of the content.
     expect(deletion?.detail).toBe("image in agent poster-bot");
   });
@@ -195,10 +187,10 @@ describe("what is recorded", () => {
     expect(audited.filter((event) => event.action === "artifact.delete")).toHaveLength(0);
   });
 
-  it("records the admin override on the way through", async () => {
+  it("records no deletion when an unrelated admin is refused", async () => {
     const { useCases } = setup(artifact({ actor: { kind: "slack", id: "U1" } }));
-    await useCases.remove("a1", ADMIN);
-    expect(audited.map((event) => event.action)).toContain("agent.admin-override");
+    await expect(useCases.remove("a1", ADMIN)).rejects.toMatchObject({ status: 403 });
+    expect(audited).toEqual([]);
   });
 });
 

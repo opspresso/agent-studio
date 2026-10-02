@@ -36,38 +36,36 @@ reasoning 수치는 UsageInfo·Trace에 쓰고 일일 Usage의 독립 과금 축
 
 **누가 썼는지는 두 번째 행이지, 첫 행에 붙는 또 하나의 차원이 아니다.** Agent 는 공유
 카탈로그이고, 공개 agent 는 로그인한 누구나 실행하며 private agent 도 여러 멤버가 함께
-실행할 수 있다. 그래서 agent 이름은 지출한 주체를 식별하지 못한다. `RunActor { kind, id }`
-(`src/domain/execution/actor.ts`) 가 그 주체를 지목한다:
+실행할 수 있다. 그래서 agent 이름은 지출한 주체를 식별하지 못한다. `RunIdentity.user.userId`가 비용과 동시성의 주체이고 `RunActor { kind, id }`는 호출 출처다.
+모든 출처는 인증된 Studio 계정을 필수로 운반한다:
 
 | Kind | Id | 이유 |
 |---|---|---|
 | `user` | 이메일 | — |
-| `agent-token` | **소유자의** 이메일 | 토큰은 그 사람으로 인증한다. 기계의 지출을 그 사람 자신의 런과 떼어 놓는 것은 *kind* 이며 — `user` 행만 채우는 그 사람의 개인 tier 예산에서도 빼 놓는다 |
+| `agent-token` | 발급 사용자의 현재 이메일 | 개인 토큰의 사용자 ID로 인증하고 그 사용자의 개인 예산에 합산한다 |
 | `slack` | Slack user id | Slack 은 이메일을 넘겨주지 않고, 매핑을 추측하면 엉뚱한 사람에게 비용을 물린다 |
 | `telegram` | Telegram user id | 같은 이유다. Telegram 은 이름과 username 을 넘겨주는데 둘 다 주소가 아니다 |
 | `teams` | `from.aadObjectId`, 없으면 `from.id` | Entra object ID를 우선한다. fallback ID는 대화별로 달라질 수 있으며 이메일로 해석하지 않는다 |
 | `webhook` | `{agent}:{triggerId}` | — |
 | `schedule` | `{agent}:{triggerId}` | — |
 
-별도의 `ACTOR#{date}#{actor}` 행으로 나눈 것은 의도적이다. `UsageRow` 는 지표마다 model 로
+별도의 `ACTOR#{date}#{actor}#USER#{userId}` 행으로 나눈 것은 의도적이다. `UsageRow` 는 지표마다 model 로
 키가 매겨진 맵을 갖는다. 그것을 대신 `actor|model` 로 키를 매기면 서로 다른 호출자 수만큼
 행 하나가 커지고, 그 행은 모델 호출마다 행 잠금 아래에서 통째로 다시 쓰인다 — 그러면서
 언제나 agent 합계만 묻는 대시보드는 매 요청마다 모든 호출자를 읽는 비용을 치른다. 같은
 파티션의 별도 행은 두 읽기 모두를 각자의 질문만큼만 넓게 유지하고, agent cascade 는 이미
 파티션 전체를 삭제한다.
 
-일반 Usage 기록은 agent 합계를 먼저 쓰고 actor와 user별 행을 순서대로 더한다.
-각 쓰기는 원자적이지만 세 집계가 하나의 transaction인 것은 아니므로 중간 실패 시 일부 귀속이
-누락될 수 있다. Agent는 메모리 aggregator를 종료 시 best-effort로 flush하며 급사 전 미정산량은
-자동 복구하지 않는다. 비용 가드는 외부 청구서의 정확한 예약 장부가 아니다.
-
-오디오처럼 `idempotencyKey`가 있는 사용량은 별도 `recordOnce` 경로를 사용한다.
-receipt와 관련 집계를 transaction으로 저장해 같은 결과의 재정산을 막는다.
-이는 ASR 자체의 중복 호출·과금까지 exactly-once로 만드는 계약은 아니다.
+Usage 기록은 Agent·출처별·사용자별 집계를 한 transaction으로 저장한다. 사용자 집계와 receipt는
+`USAGEMEMBERID#{userId}`에 보관하며 Agent 삭제 중이나 삭제 뒤에도 이미 발생한 개인 비용은 남긴다.
+`idempotencyKey`가 있는 ASR·Native 모델 사용량은 동일 receipt와 집계를 함께 저장하고 같은 결과의
+재정산을 막는다. Gateway는 공급자 요청별 사용량을 먼저 영속화하고 worker가 미완료 정산을 복구한다.
+일반 Agent aggregator는 종료 시 best-effort로 flush하며 급사 전 미정산량을 자동 복구하지 않는다.
+사용량 누락은 무료로 해석하지 않는다. 비용 가드는 외부 청구서의 정확한 예약 장부가 아니다.
 
 **actor 는 런의 것이지 턴의 것이 아니다.** `createUsageAggregator` 는 그것과 한 번 묶이므로,
 subagent transfer 가 다른 agent 에서 하는 호출도 여전히 런을 시작한 사람에게 귀속된다.
-`RunOrigin { actor?, userEmail?, caller?, conversation?, ancestry }` 가 모든 transfer hop 을 따라
+`RunOrigin { user, actor, executionGrant?, userEmail?, caller?, conversation?, ancestry }` 가 모든 transfer hop 을 따라
 이들을 내려보낸다 — `caller` 는 caller context를 켠 Agent를 위해 actor 가 *말로* 누구인지를 담는
 값이다. subagent 는 부모와 같은 사람에게 답하고 같은 사람에게 비용을 물리므로, 값들은 여덟
 개의 시그니처를 나란히 꿰고 지나가는 파라미터가 아니라 언제나 하나로 함께 이동한다.
@@ -102,7 +100,7 @@ Agent 런은 항상 기록한다. 앱 Trace는 준비 단계,
 SDK native span과 최상위 종료 상태를 한정된 행으로 저장한다.
 
 ```ts
-Trace { traceId, agentName, actor?, ancestry?, conversation?,
+Trace { traceId, agentName, user?, actor?, ancestry?, conversation?,
         status: 'completed' | 'awaiting-approval' | 'turn-limit' | 'output-limit' | 'failed' | 'cancelled',
         spans, spansDropped?, warnings?, startedAt, endedAt, durationMs, error?, createdAt }
 TraceSpan { spanId, parentSpanId?, kind: 'model' | 'tool' | 'subagent' | 'guardrail' | 'prepare',

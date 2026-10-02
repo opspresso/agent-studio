@@ -43,12 +43,13 @@ function toTrigger(item: Record<string, unknown>): Trigger {
     allowConcurrent: Boolean(item.allowConcurrent),
     createdAt: String(item.createdAt ?? ""),
     updatedAt: String(item.updatedAt ?? ""),
-    ...(item.executionEmail ? { executionEmail: String(item.executionEmail) } : {}),
   };
   if (item.kind === "schedule") {
+    const createdBy = item.createdBy as ScheduleTrigger["createdBy"] | undefined;
     return {
       ...base,
       kind: "schedule",
+      createdBy: { userId: String(createdBy?.userId ?? ""), email: String(createdBy?.email ?? "") },
       cron: String(item.cron ?? ""),
       timezone: String(item.timezone ?? ""),
       ...(item.message ? { message: String(item.message) } : {}),
@@ -61,7 +62,6 @@ function toTrigger(item: Record<string, unknown>): Trigger {
   return {
     ...base,
     kind: "webhook",
-    secret: String(item.secret ?? ""),
     ...(item.githubReview ? { githubReview: item.githubReview as GitHubReviewConfig } : {}),
   };
 }
@@ -83,6 +83,7 @@ function toRun(item: Record<string, unknown>): TriggerRun {
     agentName: String(item.agentName ?? ""),
     triggerId: String(item.triggerId ?? ""),
     runId: String(item.runId ?? ""),
+    ...(item.userId ? { userId: String(item.userId) } : {}),
     status: item.status as TriggerRun["status"],
     ...(item.idempotencyKey ? { idempotencyKey: String(item.idempotencyKey) } : {}),
     ...(item.scheduledFor ? { scheduledFor: String(item.scheduledFor) } : {}),

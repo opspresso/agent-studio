@@ -37,6 +37,10 @@ export interface PluginSyncReportRepository {
 export interface PluginSyncLock {
   /** The release token when acquired; null when another sync holds the lease. */
   acquire(repo: string, leaseMs: number): Promise<string | null>;
+  /** Extend only an unexpired lease that still has this token. */
+  renew(repo: string, token: string, leaseMs: number): Promise<boolean>;
+  /** Fence every item write in `work` atomically against this lease's ownership. */
+  withOwnership<T>(repo: string, token: string, work: () => Promise<T>): Promise<T>;
   /** Releases only the lease `token` acquired — a stolen lease stays put. */
   release(repo: string, token: string): Promise<void>;
 }

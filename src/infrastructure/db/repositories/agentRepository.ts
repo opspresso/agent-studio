@@ -2,7 +2,6 @@ import { keys } from "@/infrastructure/db/keys";
 import {
   conditions,
   deleteIndexPartition,
-  deleteItem,
   deletePartition,
   getItem,
   putItem,
@@ -10,9 +9,9 @@ import {
   updateItem,
 } from "@/infrastructure/db/store";
 import type { AgentRepository } from "@/domain/agent/repository";
-import type { Agent, AgentApiToken } from "@/domain/agent/types";
+import type { Agent } from "@/domain/agent/types";
 import { boundedPageLimit } from "@/shared/pageLimit";
-import { agentIsLive, putAgentItem } from "@/infrastructure/db/agentLifecycle";
+import { agentIsLive } from "@/infrastructure/db/agentLifecycle";
 import { readAgentConfiguration } from "@/infrastructure/db/agentConfiguration";
 
 const ENTITY_TYPE = "AGENT";
@@ -45,16 +44,6 @@ function visibility(value: unknown): Agent["visibility"] {
   throw new Error("agent row has invalid agent visibility");
 }
 
-function memberEmails(value: unknown): string[] | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (Array.isArray(value) && value.every((email) => typeof email === "string")) {
-    return value;
-  }
-  throw new Error("agent row has invalid memberEmails");
-}
-
 function fromItem(item: Record<string, unknown>): Agent {
   return {
     name: requiredString(item, "name"),
@@ -62,7 +51,6 @@ function fromItem(item: Record<string, unknown>): Agent {
     description: typeof item.description === "string" ? item.description : "",
     ownerEmail: requiredString(item, "ownerEmail"),
     visibility: visibility(item.visibility),
-    memberEmails: memberEmails(item.memberEmails),
     departmentCode: item.departmentCode as string | undefined,
     ...(item.configuration === undefined ? {} : {
       configuration: readAgentConfiguration(item.configuration, requiredString(item, "name")),
@@ -167,34 +155,4 @@ export const agentRepository: AgentRepository = {
     );
   },
 
-  async getApiToken(name: string): Promise<AgentApiToken | null> {
-    const item = await getItem(keys.agentApiToken(name));
-    if (!item) {
-      return null;
-    }
-    // One of `token` (encrypted, revealable) or `tokenHash` (legacy) is set.
-    return {
-      ...(typeof item.token === "string" ? { token: item.token } : {}),
-      ...(typeof item.tokenHash === "string" ? { tokenHash: item.tokenHash } : {}),
-      masked: item.masked as string | undefined,
-      createdAt: item.createdAt as string,
-    };
-  },
-
-  async setApiToken(name: string, token: AgentApiToken): Promise<void> {
-    await putAgentItem(name, {
-      ...keys.agentApiToken(name),
-      entityType: "APITOKEN",
-      // Written as one whole item, so regenerating an encrypted token over a
-      // legacy hashed one leaves no stale `tokenHash` behind.
-      ...(token.token !== undefined ? { token: token.token } : {}),
-      ...(token.tokenHash !== undefined ? { tokenHash: token.tokenHash } : {}),
-      masked: token.masked,
-      createdAt: token.createdAt,
-    });
-  },
-
-  async deleteApiToken(name: string): Promise<void> {
-    await deleteItem(keys.agentApiToken(name));
-  },
 };

@@ -1,5 +1,5 @@
 /**
- * The Client ID Metadata Document this deployment publishes per agent.
+ * The Client ID Metadata Document this deployment publishes for the installation.
  *
  * What it has to get right is narrow and unforgiving: the `client_id` inside the
  * document must equal the URL it was fetched from, or every authorization
@@ -18,36 +18,31 @@ vi.mock("@/lib/runtime-settings", () => ({
   getServiceBranding: async () => ({ name: process.env.SERVICE_NAME || "Agent Studio" }),
 }));
 
-import { GET } from "@/app/api/mcps/oauth/client-metadata/[agent]/route";
+import { GET } from "@/app/api/mcps/oauth/client-metadata/route";
 import { clientMetadataUrl, MCP_OAUTH_CALLBACK_PATH } from "@/application/mcp/mcpAuthUseCases";
 
-function get(agent: string): Promise<Response> {
-  return GET(new Request("https://whatever.example/ignored"), {
-    params: Promise.resolve({ agent }),
-  });
-}
 
 beforeEach(() => {
   publicBaseUrl.value = "https://studio.example.com";
 });
 afterEach(() => vi.unstubAllEnvs());
 
-describe("an agent's client ID metadata document", () => {
+describe("the installation client ID metadata document", () => {
   it("states a client_id equal to the URL it is served at", async () => {
-    const response = await get("helper");
+    const response = await GET();
     const document = (await response.json()) as Record<string, unknown>;
 
     expect(response.status).toBe(200);
     // The rule the whole mechanism rests on. Built from the configured base by
     // the same function the authorization flow uses, so the two cannot drift.
-    expect(document.client_id).toBe("https://studio.example.com/api/mcps/oauth/client-metadata/helper");
-    expect(document.client_id).toBe(clientMetadataUrl("https://studio.example.com", "helper"));
+    expect(document.client_id).toBe("https://studio.example.com/api/mcps/oauth/client-metadata");
+    expect(document.client_id).toBe(clientMetadataUrl("https://studio.example.com"));
   });
 
   it("carries the three required fields, and this deployment's callback", async () => {
-    const document = (await (await get("helper")).json()) as Record<string, unknown>;
+    const document = (await (await GET()).json()) as Record<string, unknown>;
 
-    expect(document.client_name).toBe("Agent Studio — helper");
+    expect(document.client_name).toBe("Agent Studio");
     expect(document.redirect_uris).toEqual([
       `https://studio.example.com${MCP_OAUTH_CALLBACK_PATH}`,
     ]);
@@ -57,31 +52,17 @@ describe("an agent's client ID metadata document", () => {
 
   it("uses the configured service name without changing the client ID", async () => {
     vi.stubEnv("SERVICE_NAME", "AgentOps");
-    const document = (await (await get("helper")).json()) as Record<string, unknown>;
-    expect(document.client_name).toBe("AgentOps — helper");
-    expect(document.client_id).toBe(clientMetadataUrl("https://studio.example.com", "helper"));
-  });
-
-  it("names the agent, so a person approving the connection can tell which is asking", async () => {
-    const first = (await (await get("alpha")).json()) as Record<string, unknown>;
-    const second = (await (await get("beta")).json()) as Record<string, unknown>;
-
-    expect(first.client_id).not.toBe(second.client_id);
-    expect(first.client_name).toBe("Agent Studio — alpha");
-    expect(second.client_name).toBe("Agent Studio — beta");
+    const document = (await (await GET()).json()) as Record<string, unknown>;
+    expect(document.client_name).toBe("AgentOps");
+    expect(document.client_id).toBe(clientMetadataUrl("https://studio.example.com"));
   });
 
   it("answers without a session, because the reader is an authorization server", async () => {
     // Not an oversight to be tightened later: the fetch comes from wherever the
     // provider runs, with no cookie, and a 401 here fails every authorization
     // with nothing to say why.
-    const response = await get("helper");
+    const response = await GET();
     expect(response.status).toBe(200);
-  });
-
-  it("refuses a name that could not have been an agent", async () => {
-    expect((await get("../../etc/passwd")).status).toBe(404);
-    expect((await get("Not A Slug")).status).toBe(404);
   });
 
   it("refuses to guess an address when none is configured", async () => {
@@ -89,7 +70,7 @@ describe("an agent's client ID metadata document", () => {
     // redirect to whichever host asked for it.
     publicBaseUrl.value = undefined;
 
-    expect((await get("helper")).status).toBe(503);
+    expect((await GET()).status).toBe(503);
   });
 
   it("lets a server cache it, but briefly", async () => {
@@ -97,17 +78,17 @@ describe("an agent's client ID metadata document", () => {
     // authorization server holding a stale `redirect_uri` refuses every
     // authorization until its copy expires. Asserted because the cost of the
     // number growing is paid by whoever moves the deployment, long after.
-    const response = await get("helper");
+    const response = await GET();
 
     expect(response.headers.get("cache-control")).toBe("public, max-age=300");
   });
 
   it("tolerates a base URL with a trailing slash", async () => {
     publicBaseUrl.value = "https://studio.example.com/";
-    const document = (await (await get("helper")).json()) as Record<string, unknown>;
+    const document = (await (await GET()).json()) as Record<string, unknown>;
 
     expect(document.client_id).toBe(
-      "https://studio.example.com/api/mcps/oauth/client-metadata/helper",
+      "https://studio.example.com/api/mcps/oauth/client-metadata",
     );
   });
 });

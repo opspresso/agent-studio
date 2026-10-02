@@ -1,6 +1,7 @@
 import type { ChatDeps } from "./deps";
 import type { WorkspaceRepository } from "@/domain/workspace/repository";
 import type { WorkspaceContinuation } from "@/domain/workspace/continuation";
+import type { RunUser } from "@/domain/execution/actor";
 import { codingCiWatch } from "@/application/chat/workspaceCiWatch";
 import { isTerminalCodingApproval, type PullRequestInfo } from "@/domain/coding/types";
 import { chatConversation } from "@/domain/chat/conversation";
@@ -10,7 +11,7 @@ import { teeToRunLog } from "./runLog";
 import { watchChatCancel } from "./cancelRun";
 import { ChatConflictError } from "./errors";
 import { readRuntimeSession } from "@/application/runtime/session";
-import { userMayAccessAgent } from "@/application/agent/agentUseCases";
+import { mayAccessAgent } from "@/domain/agent/access";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { log } from "@/shared/logger";
@@ -19,8 +20,8 @@ import { ForbiddenError, ValidationError } from "@/application/errors";
 export interface WorkspaceContinuationDeps {
   chat: ChatDeps;
   workspaces: WorkspaceRepository;
-  authorize(ownerEmail: string, agentName: string): Promise<void>;
-  pullRequest(workspaceId: string, ownerEmail: string): Promise<PullRequestInfo | undefined>;
+  authorize(user: RunUser, agentName: string): Promise<void>;
+  pullRequest(workspaceId: string, user: RunUser): Promise<PullRequestInfo | undefined>;
   now(): Date;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
 }
@@ -50,16 +51,26 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
   if (!chat || chat.ownerEmail !== item.ownerEmail || chat.workspaceId || !chat.agentName ||
     !workspace || workspace.ownerEmail !== item.ownerEmail || workspace.deleteRequestedAt ||
     chat.linkedWorkspaces?.[item.agentName] !== workspace.id ||
-    !approval || approval.sourceChatId !== chat.chatId || approval.requestedBy !== item.ownerEmail || !isTerminalCodingApproval(approval.status)) {
+    !item.userId || !approval || approval.sourceChatId !== chat.chatId || approval.requestedBy !== item.ownerEmail ||
+    approval.requestedByUserId !== item.userId || !isTerminalCodingApproval(approval.status)) {
     await save({ status: "cancelled", error: "The source chat, Workspace or action is no longer available for continuation." });
     return;
   }
   const agent = await deps.chat.agents.get(chat.agentName);
-  if (!agent || !(await userMayAccessAgent(agent, item.ownerEmail))) {
+  if (!agent || !mayAccessAgent(agent, item.ownerEmail)) {
     await save({ status: "cancelled", error: "The source agent is no longer accessible." });
     return;
   }
-  try { await deps.authorize(item.ownerEmail, item.agentName); }
+  let saved = deps.chat.runtimeSessions ? await readRuntimeSession(deps.chat.runtimeSessions, chat.chatId, item.ownerEmail) : null;
+  if (saved && saved.document.userId !== item.userId) {
+    await save({ status: "cancelled", error: "The saved session does not belong to the requesting user. Start a new chat." });
+    return;
+  }
+  const user = { userId: item.userId, email: item.ownerEmail };
+  try {
+    await deps.authorize(user, item.agentName);
+    if (chat.agentName !== item.agentName) await deps.authorize(user, chat.agentName);
+  }
   catch (error) {
     if (!(error instanceof ForbiddenError || error instanceof ValidationError)) throw error;
     await save({ status: "cancelled", error: "The requesting account can no longer run this agent." }); return;
@@ -73,7 +84,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     if (workspace.activeRunId || workspace.activeActionId || latest?.id !== approval.id) {
       await save({ status: "cancelled", error: "A newer Workspace task or action superseded this CI wait." }); return;
     }
-    try { pullRequest = await deps.pullRequest(workspace.id, item.ownerEmail); }
+    try { pullRequest = await deps.pullRequest(workspace.id, { userId: item.userId, email: item.ownerEmail }); }
     catch {
       if (deps.now().getTime() < Date.parse(item.ciWatch!.deadline)) {
         await save({ dueAt: new Date(deps.now().getTime() + CI_POLL_MS).toISOString() }); return;
@@ -92,7 +103,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
   } else if (approval.status === "succeeded" && approval.action.kind === "pull-request") {
     // The first event still reports publication immediately. The subsequent
     // wait is a read-only event, independent of browser and model polling.
-    try { pullRequest = await deps.pullRequest(workspace.id, item.ownerEmail); }
+    try { pullRequest = await deps.pullRequest(workspace.id, { userId: item.userId, email: item.ownerEmail }); }
     catch { pullRequest = workspace.pullRequest; }
   }
   const configuration = agent.configuration;
@@ -107,7 +118,8 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
   let started = false;
   let stopCancel = () => {};
   try {
-    const saved = deps.chat.runtimeSessions ? await readRuntimeSession(deps.chat.runtimeSessions, chat.chatId, item.ownerEmail) : null;
+    // The chat may have completed another turn before this worker acquired its lease.
+    saved = deps.chat.runtimeSessions ? await readRuntimeSession(deps.chat.runtimeSessions, chat.chatId, item.ownerEmail, user.userId) : null;
     if (saved?.document.checkpoint) {
       await save({ dueAt: new Date(deps.now().getTime() + RETRY_MS).toISOString() });
       return;
@@ -117,8 +129,8 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     const running: WorkspaceContinuation = { ...item, revision: item.revision + 1, status: "running", runId,
       ...(ciWatch ? { ciWatch } : {}),
       dueAt: new Date(now.getTime() + RUN_LEASE_SECONDS * 1000).toISOString() };
-    const outcome = item.phase === "ci" ? (ciFailure || pullRequest?.ci === "failed" ? "failed" : "succeeded") : approval.status;
-    const result = item.phase === "ci" ? (ciFailure ?? `PR #${pullRequest!.number} checks: ${pullRequest!.ci}`) : approval.result;
+    const outcome = item.phase === "ci" ? (!pullRequest || ciFailure || pullRequest.ci === "failed" ? "failed" : "succeeded") : approval.status;
+    const result = item.phase === "ci" ? (ciFailure ?? (pullRequest ? `PR #${pullRequest.number} checks: ${pullRequest.ci}` : MISSING_SESSION)) : approval.result;
     const event = { event: item.phase === "ci" ? "workspace_ci_result" : "workspace_action_result", workspace_id: workspace.id, workspace_agent: workspace.agentName, approval_id: approval.id,
       action: approval.action.kind, status: outcome, result: result ?? null, ...(pullRequest ? { pull_request: pullRequest } : {}),
       ...(ciWatch && !item.phase ? { ci_watch: ciWatch } : {}) };
@@ -138,7 +150,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     const controller = new AbortController();
     const runSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     stopCancel = watchChatCancel(deps.chat.chats, chat.chatId, runId, controller);
-    const source = deps.chat.runAgent({ agent, configuration, actor: { kind: "user", id: item.ownerEmail },
+    const source = deps.chat.runAgent({ user, agent, configuration, actor: { kind: "user", id: user.email },
       conversation: chatConversation(chat.chatId), signal: runSignal,
       messages: [{ role: "system", content: CONTINUATION_INSTRUCTION }, { role: "user", content: JSON.stringify(event) }] });
     const tee = teeToRunLog(deps.chat, chat.chatId, runId, runAndPersist(deps.chat, chat, source, runSignal));

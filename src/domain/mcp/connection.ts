@@ -1,32 +1,19 @@
 import type { TokenEndpointAuthMethod } from "./types";
 import type { McpConnectedAccount } from "./account";
-/**
- * One agent's OAuth connection to a shared registry MCP server, and the
- * short-lived record of an authorization still in flight.
- *
- * The registry entry is shared and says *where* the authorization server is
- * (`McpServerAuth`), including an optional shared OAuth app. A connection is per
- * agent and holds the user's grant; a shared app's secret stays in the registry.
- *
- * Connections have their own rows and revisions because provider-driven token
- * rotation is independent of editing Agent settings. Refreshing a token must
- * not conflict with the Agent's optimistic configuration updates.
- */
+/** Personal OAuth grants are shared by this Studio user across Agents using the same MCP server. */
 
 /** Where a connection is in its lifecycle; drives what the console offers. */
 export type McpConnectionStatus = "needs_auth" | "connected" | "needs_reauth";
 
 export interface McpConnection {
-  agentName: string;
+  userId: string;
   serverName: string;
-  /** Not a secret; stored in the clear. Issued by RFC 7591 or entered by hand. */
+  /** Not a secret; stored in the clear. Selected from the shared app, metadata document or RFC 7591 registration. */
   clientId: string;
   /** Encrypted. Absent for a public client (`token_endpoint_auth_method: "none"`). */
   clientSecret?: string;
   /** Shared OAuth app; the current secret is read from the registry at exchange/refresh. */
   clientFromRegistry?: boolean;
-  /** True when RFC 7591 issued the credentials, so they can be re-registered. */
-  clientRegistered?: boolean;
   /**
    * How this client proves itself at the token endpoint, when the registration
    * recorded a method of its own. Absent means the entry's discovered method.
@@ -37,7 +24,7 @@ export interface McpConnection {
    * URL rather than something an authorization server issued.
    *
    * It changes what {@link issuer} means for this row. A registered or
-   * hand-entered `client_id` is meaningless away from the server that issued it,
+   * administrator-configured `client_id` is meaningless away from the server that issued it,
    * which is the whole of SEP-2352 and the reason the issuer is recorded. A
    * metadata-document `client_id` is the opposite: it is self-hosted and
    * resolved on demand by *whichever* server is asked, so it stays valid when
@@ -55,7 +42,7 @@ export interface McpConnection {
    * rows — would silently present one server's client to another.
    *
    * Required. A row written before it was recorded has none, compares equal to
-   * nothing, and is refused — the owner reconnects. Treating an absent value as
+   * nothing, and is refused — the user reconnects. Treating an absent value as
    * "belongs to whatever the entry points at now" is the assumption this field
    * exists to stop making.
    */
@@ -65,8 +52,8 @@ export interface McpConnection {
    * they are bound to, and therefore the only server they may be presented at.
    *
    * Recorded for the same reason as {@link issuer}, on the other axis. A
-   * registry entry is shared and admin-owned while these rows are per agent
-   * and owner-owned, joined only by the entry's *name*: moving an entry to
+   * registry entry is shared and admin-owned while these rows are personal
+   * user grants, joined only by the entry's *name*: moving an entry to
    * another address, or deleting and recreating it under the same name, changes
    * what that name means without touching anything here. Comparing this against
    * the entry's current `auth.resource` is what stops a token minted for one
@@ -84,7 +71,7 @@ export interface McpConnection {
   /** ISO. Absent means the access token does not expire. */
   expiresAt?: string;
   status: McpConnectionStatus;
-  /** Email of the owner who completed the authorization. */
+  /** Current email of the user who completed the authorization. */
   connectedBy?: string;
   /** The service account returned by the provider for this grant. */
   connectedAccount?: McpConnectedAccount;
@@ -119,6 +106,7 @@ export interface McpOAuthState {
   codeVerifier: string;
   /** The user who started the flow; the callback must be the same person. */
   userEmail: string;
+  userId: string;
   /** The exact callback used in the authorization request. */
   redirectUri?: string;
   /** Client and resource bound to this pending authorization. */
@@ -142,8 +130,8 @@ export interface McpOAuthState {
 }
 
 export interface McpConnectionRepository {
-  get(agentName: string, serverName: string): Promise<McpConnection | null>;
-  listByAgent(agentName: string, limit: number, after?: string): Promise<McpConnection[]>;
+  get(userId: string, serverName: string): Promise<McpConnection | null>;
+  listByUser(userId: string, limit: number, after?: string): Promise<McpConnection[]>;
   put(connection: McpConnection): Promise<void>;
   /** Replace only the snapshot read by a use case, or create only if still absent. */
   putIfCurrent(connection: McpConnection, current: McpConnection | null): Promise<boolean>;
@@ -166,7 +154,7 @@ export interface McpConnectionRepository {
    * assigns its first revision under the same atomic condition.
    */
   updateTokens(
-    agentName: string,
+    userId: string,
     serverName: string,
     expectedRevision: string | undefined,
     next: Pick<
@@ -176,7 +164,7 @@ export interface McpConnectionRepository {
       /** Set only by a scope challenge widening the grant; absent leaves the stored scopes. */
       Partial<Pick<McpConnection, "scopes">>,
   ): Promise<boolean>;
-  delete(agentName: string, serverName: string): Promise<void>;
+  delete(userId: string, serverName: string): Promise<void>;
   /** Disconnect only the grant the caller inspected, never a newer reconnect. */
   deleteIfCurrent(current: McpConnection): Promise<boolean>;
 }

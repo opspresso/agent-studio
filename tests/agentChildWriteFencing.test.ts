@@ -5,12 +5,7 @@ import { keys } from "@/infrastructure/db/keys";
 vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
 const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 
-const { agentRepository } = await import(
-  "@/infrastructure/db/repositories/agentRepository"
-);
-const { mcpConnectionRepository } = await import(
-  "@/infrastructure/db/repositories/mcpConnectionRepository"
-);
+import { agentCredentialRepository } from "@/infrastructure/db/repositories/agentCredentialRepository";
 const { triggerRepository } = await import(
   "@/infrastructure/db/repositories/triggerRepository"
 );
@@ -25,7 +20,7 @@ const NOW = "2026-01-01T00:00:00.000Z";
 const trigger = {
   agentName: "p",
   triggerId: "nightly",
-  kind: "schedule" as const,
+  kind: "schedule" as const, createdBy: { userId: "registrar-id", email: "registrar@example.test" },
   description: "",
   enabled: true,
   allowConcurrent: false,
@@ -67,28 +62,14 @@ describe("agent child write fencing", () => {
     ]);
 
     await expect(
-      agentRepository.setApiToken("p", { token: "enc:v1:token", createdAt: NOW }),
+      agentCredentialRepository.replace({ purpose: "api", id: "fixture-token", agentName: "p", userId: "fixture-user", token: "enc:v1:token", masked: "****", createdAt: NOW }, null),
     ).rejects.toMatchObject({ name: store.TRANSACTION_CANCELLED });
   });
 
   it.each([
     [
       "API token",
-      () => agentRepository.setApiToken("p", { token: "enc:v1:token", createdAt: NOW }),
-    ],
-    [
-      "MCP connection",
-      () =>
-        mcpConnectionRepository.put({
-          agentName: "p",
-          serverName: "server",
-          clientId: "client",
-          issuer: "https://issuer.example",
-          resource: "https://resource.example",
-          scopes: [],
-          status: "connected",
-          updatedAt: NOW,
-        }),
+      () => agentCredentialRepository.replace({ purpose: "api", id: "fixture-token", agentName: "p", userId: "fixture-user", token: "enc:v1:token", masked: "****", createdAt: NOW }, null),
     ],
     ["trigger create", () => triggerRepository.create(trigger)],
     ["trigger update", () => triggerRepository.put(trigger)],

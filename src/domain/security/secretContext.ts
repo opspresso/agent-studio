@@ -1,15 +1,12 @@
-/** AES-GCM context for one agent's bearer token. */
-export function agentApiTokenContext(agentName: string): string {
-  return JSON.stringify(["agent", agentName, "api-token"]);
+import type { AgentCredentialPurpose } from "@/domain/auth/agentCredential";
+
+/** AES-GCM binds a personal bearer credential to its Agent, user and public selector. */
+export function agentCredentialContext(agentName: string, purpose: AgentCredentialPurpose, userId: string, tokenId: string): string {
+  return JSON.stringify(["agent", agentName, "credential", purpose, userId, tokenId]);
 }
 
 export function sourceReferenceContext(agentName: string, id: string): string {
   return JSON.stringify(["agent", agentName, "source-reference", id, "url"]);
-}
-
-/** AES-GCM context for one agent's webhook trigger secret. */
-export function triggerSecretContext(agentName: string, triggerId: string): string {
-  return JSON.stringify(["agent", agentName, "trigger", triggerId, "secret"]);
 }
 
 export function slackSecretContext(
@@ -48,11 +45,11 @@ export function agentMcpHeadersContext(agentName: string, serverName: string): s
 }
 
 export function mcpConnectionSecretContext(
-  agentName: string,
+  userId: string,
   serverName: string,
   field: "client-secret" | "access-token" | "refresh-token",
 ): string {
-  return JSON.stringify(["agent", agentName, "mcp", serverName, field]);
+  return JSON.stringify(["mcp-user", userId, "mcp", serverName, field]);
 }
 
 export function mcpOAuthStateContext(state: string): string {

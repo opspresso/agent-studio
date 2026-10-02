@@ -53,7 +53,7 @@ function depsFor(): ExecutionDeps {
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
-  return {
+  return { resolveUserLimits: async () => ({}), authorizeRun: async () => {},
     mcps: { get: async () => server, list: reject, put: reject, delete: reject },
     cipher: secretCipher,
     urlPolicy: allow,

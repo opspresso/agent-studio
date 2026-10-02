@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-/**
- * `GET /api/me` reports both registry administration and the configured
- * administrator role. With no `ADMIN_EMAILS`, members may administer registries,
- * while ownership overrides remain unavailable. The console uses both flags
- * for the Agent settings gate.
- */
+/** Registry administration never confers ownership of someone else's Agent. */
 const { authMock } = vi.hoisted(() => ({ authMock: { getSession: vi.fn() } }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -26,7 +21,7 @@ function signedInAs(email: string, tier = "guest") {
 async function me(): Promise<{
   email: string;
   isAdmin: boolean;
-  isConfiguredAdmin: boolean;
+
   tier: string;
 }> {
   return (await GET()).json();
@@ -45,31 +40,31 @@ describe("GET /api/me", () => {
     expect((await GET()).status).toBe(401);
   });
 
-  it("reports the two admin flags apart when no admin list is configured", async () => {
+  it("reports bootstrap registry administration for members", async () => {
     signedInAs(USER, "member");
 
     // Bootstrap administration does not grant ownership overrides.
     expect(await me()).toEqual({
       email: USER,
       isAdmin: true,
-      isConfiguredAdmin: false,
+
       tier: "member",
     });
   });
 
   it("keeps guests read-only when no admin list is configured", async () => {
     signedInAs(USER);
-    expect(await me()).toEqual({ email: USER, tier: "guest", isAdmin: false, isConfiguredAdmin: false });
+    expect(await me()).toEqual({ email: USER, tier: "guest", isAdmin: false });
   });
 
-  it("gives a listed admin both, and an unlisted user neither", async () => {
+  it("grants administration only to a listed admin", async () => {
     vi.stubEnv("ADMIN_EMAILS", ADMIN);
 
     signedInAs(ADMIN);
     expect(await me()).toEqual({
       email: ADMIN,
       isAdmin: true,
-      isConfiguredAdmin: true,
+
       tier: "admin",
     });
 
@@ -77,7 +72,7 @@ describe("GET /api/me", () => {
     expect(await me()).toEqual({
       email: USER,
       isAdmin: false,
-      isConfiguredAdmin: false,
+
       tier: "guest",
     });
   });

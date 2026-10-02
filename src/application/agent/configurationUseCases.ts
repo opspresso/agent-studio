@@ -4,11 +4,11 @@ import type { SecretCipher } from "@/domain/security/secretCipher";
 import { agentMcpHeadersContext } from "@/domain/security/secretContext";
 import { ConflictError, ValidationError } from "@/application/errors";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
-import { assertAgentAccessible, assertAgentWritable } from "./agentUseCases";
+import { assertAgentAccessible, assertAgentOwner } from "./agentUseCases";
 import { persistAgentUpdate } from "./agentUpdate";
 import { resolveMcpBindings } from "./mcpBindingSettings";
 import {
-  assertModelSupports, assertAgentModelType, assertReferencesExist,
+  assertModelSupports, assertReferencesExist,
   assertSubavailableAgentsAccessible, assertUniqueReferences, assertValidImageModel,
   warnUnselectedModel, type AgentConfigurationInput, type ConfigurationRefRepos,
 } from "./configurationPolicy";
@@ -62,13 +62,13 @@ export function toAgentConfigurationView(cipher: SecretCipher, agent: Agent): Ag
 export async function putAgentConfiguration(
   deps: ConfigurationDeps, name: string, input: PutAgentConfigurationInput, userEmail: string,
 ): Promise<AgentConfigurationView> {
-  const agent = await assertAgentWritable(deps.agents, name, userEmail);
+  const agent = await assertAgentOwner(deps.agents, name, userEmail);
   if (input.expectedUpdatedAt !== agent.updatedAt) {
     throw new ConflictError(`Agent "${name}" was modified by another request`);
   }
   assertValidImageModel(input.parameters);
   assertModelSupports(input.model, input.parameters);
-  if (input.fallbackModel) assertAgentModelType(input.fallbackModel);
+  if (input.fallbackModel) assertModelSupports(input.fallbackModel, input.parameters);
   warnUnselectedModel(name, input.model);
   assertUniqueReferences(input);
   await assertReferencesExist(deps.refs, input, agent.configuration);

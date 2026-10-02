@@ -46,6 +46,7 @@ export interface CodingApproval {
   id: string;
   workspaceId: string;
   requestedBy: string;
+  requestedByUserId: string;
   requestedAt: string;
   /** Distinguishes the coding request from a separate confirmation in the UI. */
   authorization?: "coding-request" | "confirmation";

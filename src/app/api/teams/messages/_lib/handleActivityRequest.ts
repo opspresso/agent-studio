@@ -1,3 +1,4 @@
+import { messagingIdentityUseCases } from "@/lib/container";
 import { teamsClient } from "@/infrastructure/teams/client";
 import { teamsActivityRepository } from "@/infrastructure/db/repositories/teamsActivityRepository";
 import { transcriptRepository } from "@/infrastructure/db/repositories/transcriptRepository";
@@ -16,8 +17,8 @@ import { log } from "@/shared/logger";
 import { teamsActivitySchema } from "./activitySchema";
 
 const teamsEventDeps: TeamsEventDeps = {
+  identities: messagingIdentityUseCases,
   runAgent: (params) => executeAgent(executionDeps, params),
-  authorizeExecutionGrant: executionDeps.authorizeExecutionGrant,
   agents: agentRepository,
   teams: teamsClient,
   documents: executionDeps.documents,

@@ -210,6 +210,8 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   await checkRuntimeSessions();
   const { checkWorkspaces } = await import("./workspace-check");
   await checkWorkspaces();
+  const { checkMcpRefreshCoordination } = await import("./mcp-refresh-check");
+  await checkMcpRefreshCoordination();
   const { checkAuthSchema } = await import("./auth-schema-check");
   await checkAuthSchema();
   // Isolate the auth singleton and its environment in a child process.
@@ -228,7 +230,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   const { mcpConnectionRepository } = await import(
     "@/infrastructure/db/repositories/mcpConnectionRepository"
   );
-  const { listAgentMcpConnections } = await import("@/application/mcp/listConnections");
+  const { listUserMcpConnections } = await import("@/application/mcp/listConnections");
   const { mcpOAuthStateRepository } = await import(
     "@/infrastructure/db/repositories/mcpOAuthStateRepository"
   );
@@ -258,7 +260,10 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     mcpOAuthStateContext,
   } = await import("@/domain/security/secretContext");
 
+  const suffix = Date.now().toString(36);
   const now = new Date().toISOString();
+  const executionUser = { userId: "execution-" + suffix, email: "it@example.com" };
+  const executionIdentity = { user: executionUser, actor: { kind: "user" as const, id: executionUser.email } };
   const today = now.slice(0, 10);
   const results: string[] = [];
   const pass = (label: string) => {
@@ -266,7 +271,6 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     console.log(`PASS ${label}`);
   };
 
-  const suffix = Date.now().toString(36);
   const agentName = `it-proj-${suffix}`;
   const integrationMemberId = `it-member-${suffix}`;
   const integrationMemberEmail = `${integrationMemberId}@example.com`;
@@ -280,6 +284,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     const { checkManagedMcpTransport } = await import("./managed-mcp-check");
     await checkManagedMcpTransport();
     pass("managed MCP provision, registration and real loopback transport");
+    pass("OAuth rotating refresh: two independent processes share one PostgreSQL claim and provider effect");
 
     // ---------- agent + current settings ----------
     await agentRepository.create({
@@ -325,12 +330,12 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
         repositoryCreates++;
         return { repository: request.repository, repositoryId: 42, url: `https://github.example.test/${request.repository}`, baseBranch: "main", private: request.private };
       } }) });
-    const repositoryAttempts = await Promise.allSettled([createRepository.create(agentName, repositoryRequest, "it@example.com"), createRepository.create(agentName, repositoryRequest, "it@example.com")]);
+    const repositoryAttempts = await Promise.allSettled([createRepository.create(agentName, repositoryRequest, { userId: integrationMemberId, email: "it@example.com" }), createRepository.create(agentName, repositoryRequest, { userId: integrationMemberId, email: "it@example.com" })]);
     assert.ok(repositoryAttempts.some(result => result.status === "fulfilled"));
     assert.equal(repositoryCreates, 1, "one external create across concurrent requests");
     assert.deepEqual((await workspacePolicyRepository.get(agentName))?.rules?.repositories, [repositoryRequest.repository]);
     assert.equal((await workspaceRepositoryCreationStore.get(agentName, repositoryRequest.repository))?.status, "created");
-    assert.equal((await createRepository.create(agentName, repositoryRequest, "it@example.com")).reused, true);
+    assert.equal((await createRepository.create(agentName, repositoryRequest, { userId: integrationMemberId, email: "it@example.com" })).reused, true);
     assert.equal(repositoryCreates, 1, "completed receipt is not recreated");
     pass("Workspace repository creation: durable claim, atomic registration and replay");
 
@@ -443,6 +448,76 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.equal(tierChange?.previousTier, "guest");
     assert.equal(tierChange?.member.tier, "member");
     pass("member get/list/atomic tier update");
+    const { agentCredentialRepository } = await import("@/infrastructure/db/repositories/agentCredentialRepository");
+    const { createAgentCredentialUseCases } = await import("@/application/auth/agentCredentialUseCases");
+    const { secretCipher } = await import("@/infrastructure/crypto/secretCipher");
+    const { randomUUID } = await import("node:crypto");
+    const personalApi = createAgentCredentialUseCases({ purpose: "api", agents: agentRepository, tokens: agentCredentialRepository,
+      members: memberRepository, cipher: secretCipher, now: () => new Date(now), newId: randomUUID });
+    const issuedToken = await personalApi.generate(agentName, integrationMemberId);
+    assert.deepEqual(await personalApi.verify(agentName, issuedToken.token), { userId: integrationMemberId, email: integrationMemberEmail, credentialId: issuedToken.credentialId });
+    const concurrentTokens = await Promise.allSettled([personalApi.generate(agentName, integrationMemberId), personalApi.generate(agentName, integrationMemberId)]);
+    assert.equal(concurrentTokens.filter(result => result.status === "fulfilled").length, 1, "only one concurrent personal rotation succeeds");
+    assert.equal(await personalApi.verify(agentName, issuedToken.token), null, "previous credential is revoked atomically");
+    const tokenWinner = concurrentTokens.find(result => result.status === "fulfilled")! as PromiseFulfilledResult<Awaited<ReturnType<typeof personalApi.generate>>>;
+    assert.deepEqual(await personalApi.verify(agentName, tokenWinner.value.token), { userId: integrationMemberId, email: integrationMemberEmail, credentialId: tokenWinner.value.credentialId });
+    await personalApi.revoke(agentName, integrationMemberId);
+    assert.equal(await personalApi.verify(agentName, tokenWinner.value.token), null, "personal revocation removes the credential and reference together");
+    pass("personal API credentials: stable issuer, encrypted scope, PostgreSQL rotation CAS and atomic revocation");
+    const personalWebhook = createAgentCredentialUseCases({ purpose: "webhook", agents: agentRepository, tokens: agentCredentialRepository,
+      members: memberRepository, cipher: secretCipher, now: () => new Date(now), newId: randomUUID });
+    const [apiCredential, webhookCredential] = await Promise.all([
+      personalApi.generate(agentName, integrationMemberId), personalWebhook.generate(agentName, integrationMemberId),
+    ]);
+    assert.equal(await personalApi.verify(agentName, webhookCredential.token), null);
+    assert.equal(await personalWebhook.verify(agentName, apiCredential.token), null);
+    const signedBody = '{"event":"integration"}';
+    const { createHmac } = await import("node:crypto");
+    const signature = "sha256=" + createHmac("sha256", webhookCredential.token).update(signedBody).digest("hex");
+    assert.deepEqual(await personalWebhook.verifySignature(agentName, webhookCredential.credentialId, signedBody, signature),
+      { userId: integrationMemberId, email: integrationMemberEmail, credentialId: webhookCredential.credentialId });
+    await personalWebhook.revoke(agentName, integrationMemberId);
+    assert.equal(await personalWebhook.authorize(agentName, webhookCredential.credentialId, integrationMemberId), null);
+    assert.ok(await personalApi.authorize(agentName, apiCredential.credentialId, integrationMemberId));
+    await personalApi.revoke(agentName, integrationMemberId);
+    pass("personal credential purposes: concurrent isolated issuance, signed Webhook identity and independent revocation");
+    const { messagingIdentityRepository } = await import("@/infrastructure/db/repositories/messagingIdentityRepository");
+    const { createMessagingIdentityUseCases } = await import("@/application/auth/messagingIdentityUseCases");
+    const messaging = createMessagingIdentityUseCases({ identities: messagingIdentityRepository,
+      agents: agentRepository, members: memberRepository, now: () => new Date(now) });
+    const messagingCode = await messaging.issue(agentName, "slack", integrationMemberId);
+    const messagingSubject = { agentName, platform: "slack" as const, realm: "integration-workspace", externalId: "sender" };
+    const messagingClaims = await Promise.allSettled([
+      messaging.connect(messagingSubject, messagingCode.code),
+      messaging.connect({ ...messagingSubject, externalId: "other-sender" }, messagingCode.code),
+    ]);
+    assert.equal(messagingClaims.filter(result => result.status === "fulfilled").length, 1);
+    const linkedIdentities = await messaging.list(integrationMemberId);
+    assert.equal(linkedIdentities.length, 1);
+    assert.deepEqual(await messaging.resolve(linkedIdentities[0]!), { userId: integrationMemberId, email: integrationMemberEmail });
+    await memberRepository.setTier(integrationMemberId, "guest");
+    await assert.rejects(messaging.resolve(linkedIdentities[0]!), /member access/);
+    await messaging.unlink(linkedIdentities[0]!, integrationMemberId);
+    assert.equal(await messaging.resolve(linkedIdentities[0]!), null);
+    await memberRepository.setTier(integrationMemberId, "member");
+    pass("messaging identity: PostgreSQL one-time claim, stable issuer, current membership and personal unlink");
+    const scheduleAgentName = `it-schedule-${suffix}`;
+    cleanup(() => agentRepository.delete(scheduleAgentName));
+    await agentRepository.create({ name: scheduleAgentName, displayName: "Schedule identity check", description: "",
+      ownerEmail: integrationMemberEmail, createdAt: now, updatedAt: now });
+    const { createTriggerUseCases } = await import("@/application/trigger/triggerUseCases");
+    const schedules = createTriggerUseCases({ agents: agentRepository, triggers: triggerRepository, members: memberRepository });
+    const registeredSchedule = await schedules.create(scheduleAgentName, { triggerId: "daily", kind: "schedule", cron: "0 9 * * *", timezone: "UTC" }, integrationMemberId);
+    assert.deepEqual(registeredSchedule.createdBy, { userId: integrationMemberId, email: integrationMemberEmail });
+    await schedules.update(scheduleAgentName, "daily", { message: "Registered user's task" }, integrationMemberEmail);
+    const storedSchedule = await triggerRepository.get(scheduleAgentName, "daily");
+    assert.equal(storedSchedule?.kind, "schedule");
+    assert.deepEqual(storedSchedule?.kind === "schedule" && storedSchedule.createdBy, registeredSchedule.createdBy);
+    const { resolveRunUser } = await import("@/application/auth/resolveRunUser");
+    await memberRepository.setTier(integrationMemberId, "guest");
+    await assert.rejects(resolveRunUser({ agents: agentRepository, members: memberRepository }, scheduleAgentName, integrationMemberId), /member access/);
+    await memberRepository.setTier(integrationMemberId, "member");
+    pass("schedule registration: authenticated stable creator, PostgreSQL round-trip, immutable identity and current member access");
     const { checkMemberTiers } = await import("./member-tiers-check");
     await checkMemberTiers(integrationMemberId, integrationMemberEmail);
     pass("member tier catalog, assignment/deletion serialization and shared rollback");
@@ -497,9 +572,11 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.equal(await mcpRepository.get(`${serverName}-absent`), null);
     pass("MCP metadata patch: URL fence, header preservation, clear, missing row refusal");
 
-    // ---------- mcp oauth connection + in-flight state ----------
+    // ---------- personal MCP OAuth connection + in-flight state ----------
+    const { deletePartition } = await import("@/infrastructure/db/store");
+    cleanup(() => deletePartition(dbKeys.mcpUserPartition(agentName)));
     await mcpConnectionRepository.put({
-      agentName,
+      userId: agentName,
       serverName,
       clientId: "client-abc",
       clientSecret: encryptSecret(
@@ -526,6 +603,14 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     });
     const conn = await mcpConnectionRepository.get(agentName, serverName);
     assert.ok(conn, "mcp connection get");
+    cleanup(() => deletePartition(dbKeys.mcpUserPartition(integrationMemberId)));
+    await mcpConnectionRepository.put({ ...conn, userId: integrationMemberId, clientSecret: undefined, refreshToken: undefined,
+      accessToken: encryptSecret("second-user-access", mcpConnectionSecretContext(integrationMemberId, serverName, "access-token")) });
+    const otherUserConnection = (await mcpConnectionRepository.get(integrationMemberId, serverName))!;
+    assert.equal(decryptSecret(otherUserConnection.accessToken!, mcpConnectionSecretContext(integrationMemberId, serverName, "access-token")), "second-user-access");
+    assert.equal((await mcpConnectionRepository.get(agentName, serverName))?.accessToken, conn.accessToken, "another user's grant cannot replace this user's token");
+    assert.equal((await listUserMcpConnections(mcpConnectionRepository, integrationMemberId)).length, 1, "personal grant listing is user-scoped");
+
     assert.deepEqual(conn.connectedAccount, { provider: "github", label: "connected-account" }, "provider account round-trip");
     assert.equal(
       decryptSecret(
@@ -541,9 +626,9 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.equal(conn.issuer, "https://auth.example.com", "credential issuer round-trip");
     assert.equal(conn.resource, "https://mcp.example.com", "token resource round-trip");
     assert.equal(
-      (await listAgentMcpConnections(mcpConnectionRepository, agentName)).length,
+      (await listUserMcpConnections(mcpConnectionRepository, agentName)).length,
       1,
-      "connection listed under its agent partition",
+      "connection listed under its user partition",
     );
 
     // Compare-and-set on the grant revision: only the first writer can replace
@@ -625,6 +710,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     await mcpOAuthStateRepository.put(
       {
         state: oauthState,
+        userId: integrationMemberId,
         agentName,
         serverName,
         codeVerifier: encryptSecret("verifier", mcpOAuthStateContext(oauthState)),
@@ -850,7 +936,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     pass("chat run log append/replay/tail + cascade delete");
 
     // ---------- usage (atomic ADD, twice) ----------
-    const usageDelta = {
+    const usageDelta = { userId: executionUser.userId, actor: "user:it@example.com",
       agentName,
       date: today,
       model: "openai/gpt-5-mini",
@@ -881,8 +967,8 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     pass("usage atomic ADD accumulation + range query");
 
     // ---------- usage attribution (per-caller rows) ----------
-    cleanup(() => deleteItem(dbKeys.usageMember("it@example.com", today, agentName)));
-    cleanup(() => deleteItem(dbKeys.usageMember("it@example.com", new Date().toISOString().slice(0, 10), agentName)));
+    cleanup(() => deleteItem(dbKeys.usageMember(executionUser.userId, today, agentName)));
+    cleanup(() => deleteItem(dbKeys.usageMember(executionUser.userId, new Date().toISOString().slice(0, 10), agentName)));
     await usageRepository.record({ ...usageDelta, actor: "user:it@example.com" });
     await usageRepository.record({ ...usageDelta, actor: "agent-token:it@example.com" });
     const actorRows = await usageRepository.listActorsByAgent(agentName, today, today, 100);
@@ -901,21 +987,21 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     );
     pass("usage attribution: per-caller rows, agent totals unaffected");
 
-    // ---------- member day rows (one history per email, across actor kinds) ----------
+    // ---------- member day rows (one history per user ID, across actor kinds) ----------
     // A per-run address isolates atomic ADD counts from interrupted checks.
     const memberEmail = `it-member-${suffix}@example.com`;
-    cleanup(() => deleteItem(dbKeys.usageMember(memberEmail, today, agentName)));
-    await usageRepository.record({ ...usageDelta, actor: `user:${memberEmail}` });
-    await usageRepository.record({ ...usageDelta, actor: `agent-token:${memberEmail}` });
+    cleanup(() => deleteItem(dbKeys.usageMember(integrationMemberId, today, agentName)));
+    await usageRepository.record({ ...usageDelta, userId: integrationMemberId, actor: `user:${memberEmail}` });
+    await usageRepository.record({ ...usageDelta, userId: integrationMemberId, actor: `agent-token:${memberEmail}` });
     // The agent follows the date in the sort key, so this range only returns
     // anything if the upper bound reaches past an agent name — a plain
     // `BETWEEN DATE#from AND DATE#to` finds nothing at all.
-    const memberDays = await usageRepository.listMemberDays(memberEmail, today, today);
+    const memberDays = await usageRepository.listMemberDays(integrationMemberId, today, today);
     assert.equal(memberDays.length, 1, "one row per member per agent per day");
     assert.equal(
       memberDays[0]?.calls["openai/gpt-5-mini"],
-      1,
-      "token spend stays out of the member's own history",
+      2,
+      "personal token and interactive calls share the member history",
     );
     assert.equal(memberDays[0]?.agentName, agentName, "the row names where it was spent");
     assert.deepEqual(
@@ -925,12 +1011,12 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     );
     // The window the tier cap reads: month start through today.
     const capWindow = await usageRepository.listMemberDays(
-      memberEmail,
+      integrationMemberId,
       `${today.slice(0, 7)}-01`,
       today,
     );
     assert.equal(capWindow.length, 1, "the month-to-date window finds the day");
-    pass("member day rows: per-agent split, per-actor filtering, range query");
+    pass("member day rows: per-agent split, cross-source accounting, range query");
 
     // ---------- monthly threshold claim (conditional, its own row) ----------
     const month = today.slice(0, 7);
@@ -1159,8 +1245,8 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     pass("trigger execution owner: PostgreSQL renewal CAS, stale repair, live completion and expiry-before-limit");
 
     {
-      const reviewTrigger = { agentName, triggerId: "webhook", kind: "webhook" as const, secret: "integration-encrypted-secret",
-        description: "PR reviews", enabled: true, allowConcurrent: true, executionEmail: "reviewer@example.test", createdAt: now, updatedAt: now,
+      const reviewTrigger = { agentName, triggerId: "webhook", kind: "webhook" as const,
+        description: "PR reviews", enabled: true, allowConcurrent: true, createdAt: now, updatedAt: now,
         githubReview: { scope: "repositories" as const, repositories: ["example/agent"] } };
       await triggerRepository.create(reviewTrigger);
       assert.deepEqual((await triggerRepository.get(agentName, "webhook")), reviewTrigger);
@@ -1480,6 +1566,11 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       pass("artifacts: SHA-256 deduplication across concurrent writes, reserved-ID aliases and canonical deletion");
     }
 
+    // ---------- plugin sync lease fencing ----------
+    const { checkPluginSyncLock } = await import("./plugin-sync-lock-check");
+    await checkPluginSyncLock(suffix);
+    pass("plugin sync lease: owned renewal, stale primitive refusal and atomic row-lock fencing");
+
     // ---------- transact lock modes (a checked key does not serialise) ----------
     // A `check` op asserts something elsewhere is still live; the exclusive
     // lock it used to take made every usage row, trace and agent write in a
@@ -1558,9 +1649,10 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
 
     // ---------- durable usage receipts ----------
     {
-      const event = { idempotencyKey: `asr-${suffix}`, agentName, date: today, model: "asr-integration",
+      const event = { userId: "fixture-user", idempotencyKey: `asr-${suffix}`, agentName, date: today, model: "asr-integration",
         calls: 1, inputTokens: 10, outputTokens: 2, costUsd: 0.01, actor: "user:audio-integration@example.com" };
-      cleanup(() => deleteItem(dbKeys.usageMember("audio-integration@example.com", today, agentName)));
+      cleanup(() => deleteItem(dbKeys.usageMember(event.userId, today, agentName)));
+      cleanup(() => deleteItem(dbKeys.usageReceipt(event.userId, agentName, event.idempotencyKey)));
       await Promise.all(Array.from({ length: 8 }, () => usageRepository.record(event)));
       assert.equal((await usageRepository.getDay(agentName, today))?.calls["asr-integration"], 1);
       // PostgreSQL JSONB reorders object keys; replay compares values, not serialized order.
@@ -1568,6 +1660,28 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       await assert.rejects(usageRepository.record({ ...event, costUsd: 2 }));
       assert.equal((await usageRepository.getDay(agentName, today))?.costUsd["asr-integration"], 0.01);
       pass("usage receipts: concurrent replay bills once and rejects conflicting payloads");
+    }
+
+    // ---------- native model admission and recoverable accounting ----------
+    {
+      const { workspaceModelCalls: calls } = await import("@/infrastructure/db/repositories/workspaceModelCalls");
+      const { settleWorkspaceModelCall } = await import("@/application/workspace/modelGateway");
+      const call = { id: `native-${suffix}`, workspaceId: `native-ws-${suffix}`, runId: `native-run-${suffix}`, startedAt: now };
+      const event = { userId: executionUser.userId, idempotencyKey: call.id, agentName, date: today, model: "native-integration",
+        calls: 1, inputTokens: 10, outputTokens: 2, costUsd: 0.02, actor: "user:it@example.com" };
+      cleanup(() => deleteItem(dbKeys.workspaceModelCall(call.workspaceId, call.runId)));
+      cleanup(() => deleteItem(dbKeys.usageReceipt(event.userId, agentName, event.idempotencyKey)));
+      const admitted = await Promise.all(Array.from({ length: 8 }, () => calls.begin(call)));
+      assert.equal(admitted.filter(Boolean).length, 1, "one concurrent native request wins the run claim");
+      await assert.rejects(calls.capture({ ...call, id: "different-request", usage: event }));
+      await calls.capture({ ...call, usage: event });
+      await usageRepository.record(event);
+      // Resume after usage committed but the pending marker was not removed.
+      assert.equal(await settleWorkspaceModelCall({ calls, usage: usageRepository }, call.workspaceId, call.runId), undefined);
+      assert.equal(await calls.get(call.workspaceId, call.runId), null);
+      assert.equal((await usageRepository.getDay(agentName, today))?.calls["native-integration"], 1);
+      assert.equal(await settleWorkspaceModelCall({ calls, usage: usageRepository }, call.workspaceId, call.runId), undefined);
+      pass("native model gateway: concurrent claim and durable once-only accounting recovery");
     }
 
     // ---------- source inventory (completion recovery + deletion fencing) ----------
@@ -1629,7 +1743,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     {
       const { audioJobRepository: jobs } = await import("@/infrastructure/db/repositories/audioJobRepository");
       const input = {
-        agentName, userEmail: "integration@example.com", source: { kind: "file" as const, fileId: "audio-file" },
+        agentName, userEmail: "integration@example.com", user: { userId: "integration-user", email: "integration@example.com" }, actor: { kind: "user" as const, id: "integration@example.com" }, source: { kind: "file" as const, fileId: "audio-file" },
         sourceKey: "integration-source", model: "selfhosted/asr",
         retention: { unit: "months" as const, value: 3, timezone: "Asia/Seoul" },
       };
@@ -1736,8 +1850,12 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.ok(reclaimedSlot, "an expired lease is reclaimable");
     pass("concurrency slots: exact limit, owned renewal, release and lease reclaim");
 
+    cleanup(() => withTransaction(async db => { await db.query('DELETE FROM "user" WHERE "id" = $1', [executionUser.userId]); }));
+    await withTransaction(async db => { await db.query(
+      'INSERT INTO "user" ("id", "name", "email", "emailVerified", "tier", "createdAt", "updatedAt") VALUES ($1, $2, $3, true, $4, $5, $5)',
+      [executionUser.userId, "Execution Test", executionUser.email, "member", now]); });
     // ---------- Agent: collected completion ----------
-    const runResult = await collectAgentRun(executionDeps, {
+    const runResult = await collectAgentRun(executionDeps, { ...executionIdentity,
       agent,
       configuration,
       messages: [{ role: "user", content: "Hello world" }],
@@ -1749,7 +1867,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     // ---------- engine: agent loop with Skill tool ----------
     const chunks: Array<{ delta?: { content?: string }; toolResult?: unknown; error?: string }> =
       [];
-    for await (const chunk of executeAgent(executionDeps, {
+    for await (const chunk of executeAgent(executionDeps, { ...executionIdentity,
       agent,
       configuration,
       messages: [{ role: "user", content: "use your skill" }],
@@ -1785,7 +1903,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       const routed = [];
       const nextPolicy = { ...modelRouting, tiers: { fast: "integration/model",general:"integration/model" } };
       onNextRoutingRequest = async () => { await modelRegistryUseCases.saveRouting(nextPolicy, routingActor); };
-      for await (const chunk of executeAgent(executionDeps, {
+      for await (const chunk of executeAgent(executionDeps, { ...executionIdentity,
         agent, configuration: routedConfiguration, messages: [{ role: "user", content: "route model task" }],
         actor: { kind: "user", id: "it@example.com" },
       })) routed.push(chunk);
@@ -1813,14 +1931,14 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       assert.deepEqual(trace?.spans.filter(span => span.kind === "model").map(span => span.name), ["integration/jev", "integration/fast", "integration/jev", "integration/fast", "integration/fast"], "each actual inference has exactly one billed span");
       assert.ok(!JSON.stringify(trace).includes("ROUTING_PRIVATE_SOURCE"), "routing trace stores no source prompt");
       const nextBefore = llmCalls.length;
-      for await (const chunk of executeAgent(executionDeps, {
+      for await (const chunk of executeAgent(executionDeps, { ...executionIdentity,
         agent, configuration: routedConfiguration, messages: [{ role: "user", content: "route model task" }], actor: { kind: "user", id: "it@example.com" },
       })) assert.equal(chunk.error, undefined);
       assert.deepEqual(llmCalls.slice(nextBefore).map(call => call.model), ["model", "model", "model"], "next Run uses the new shared policy");
       assert.equal(decisionCalls.length, 2,"one physical candidate does not need a paid decision");
       pass("shared routing policy: in-flight snapshot stability and next-Run adoption");
       const disabledBefore = llmCalls.length;
-      for await (const chunk of executeAgent(executionDeps, {
+      for await (const chunk of executeAgent(executionDeps, { ...executionIdentity,
         agent, configuration: { ...routedConfiguration, parameters: { ...routedConfiguration.parameters, modelRouting: false } },
         messages: [{ role: "user", content: "route model task" }], actor: { kind: "user", id: "it@example.com" },
       })) assert.equal(chunk.error, undefined);
@@ -1831,15 +1949,15 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       const owner = "it@example.com";
       cleanup(() => executionDeps.runtimeSessions!.repository.delete(sessionId, owner));
       const approvalConfiguration = { ...routedConfiguration, parameters: { ...routedConfiguration.parameters, policy: { approvalTools: ["Skill"] } } };
-      const scope = { agent, configuration: approvalConfiguration, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
+      const scope = { agent, configuration: approvalConfiguration, user: executionUser, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
       {
-        for await (const chunk of executeAgent(executionDeps, { ...scope, messages: [{ role: "user", content: "use your skill" }] })) assert.equal(chunk.error, undefined);
+        for await (const chunk of executeAgent(executionDeps, { ...executionIdentity, ...scope, messages: [{ role: "user", content: "use your skill" }] })) assert.equal(chunk.error, undefined);
         const pending = await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner);
         assert.ok(pending?.approvals.length);
         await modelRegistryUseCases.saveRouting({ ...nextPolicy, maxCalls: 9 }, routingActor);
         const callsBeforeResume = llmCalls.length;
         await assert.rejects(async () => {
-          for await (const chunk of executeAgent(executionDeps, { ...scope, messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) assert.equal(chunk.error, undefined);
+          for await (const chunk of executeAgent(executionDeps, { ...executionIdentity, ...scope, messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) assert.equal(chunk.error, undefined);
         }, /routing policy changed/);
         assert.equal(llmCalls.length, callsBeforeResume, "changed policy cannot execute an approved call");
         assert.equal((await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner))?.revision, pending.revision, "policy refusal happens before claiming pending work");
@@ -1854,7 +1972,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     {
       const before=llmCalls.length;
       const chunks=[];
-      for await(const chunk of executeAgent(executionDeps,{agent,configuration:{...configuration,parameters:{...configuration.parameters,maxTokens:32}},
+      for await(const chunk of executeAgent(executionDeps,{ ...executionIdentity,agent,configuration:{...configuration,parameters:{...configuration.parameters,maxTokens:32}},
         messages:[{role:"user",content:"integration-empty-at-cap"}],actor:{kind:"user",id:"it@example.com"}})) chunks.push(chunk);
       assert.equal(llmCalls.length-before,1,"an exhausted reasoning response cannot launch another paid SDK turn");
       assert.ok(chunks.some(chunk=>chunk.finishReason==="output-limit"));
@@ -1875,20 +1993,27 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       const owner = "it@example.com";
       cleanup(() => executionDeps.runtimeSessions!.repository.delete(sessionId, owner));
       const approvalConfiguration = { ...configuration, parameters: { ...configuration.parameters, policy: { approvalTools: ["Skill"] } } };
-      const base = { agent, configuration: approvalConfiguration, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
+      const base = { agent, configuration: approvalConfiguration, user: executionUser, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
       const first = [];
-      for await (const chunk of executeAgent(executionDeps, { ...base, messages: [{ role: "user", content: "use your skill" }] })) first.push(chunk);
+      for await (const chunk of executeAgent(executionDeps, { ...executionIdentity, ...base, messages: [{ role: "user", content: "use your skill" }] })) first.push(chunk);
       assert.ok(first.some((chunk) => chunk.approval), "approval is persisted before notifying the client");
       assert.ok(!first.some((chunk) => chunk.toolResult), "a pending Skill call has not executed");
       const pending = await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner);
       assert.ok(pending && pending.approvals.length === 1);
+      const callsBeforeWrongUser = llmCalls.length;
+      await assert.rejects(async () => {
+        for await (const _chunk of executeAgent(executionDeps, { ...executionIdentity, ...base, user: { ...base.user, userId: "another-user" },
+          messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) { /* drain */ }
+      }, /no longer active/);
+      assert.equal(llmCalls.length, callsBeforeWrongUser, "another account cannot consume a pending approval");
+      assert.equal((await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner))?.status, "pending");
       const resumed = [];
-      for await (const chunk of executeAgent(executionDeps, { ...base, messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) resumed.push(chunk);
+      for await (const chunk of executeAgent(executionDeps, { ...executionIdentity, ...base, messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) resumed.push(chunk);
       assert.ok(!resumed.some((chunk) => chunk.error), "approved SDK execution resumes successfully");
       assert.ok(resumed.some((chunk) => chunk.toolResult?.name === "Skill: integration-skill"));
       assert.equal(await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner), null);
       const before = llmCalls.length;
-      for await (const chunk of executeAgent(executionDeps, { ...base, messages: [{ role: "user", content: "continue" }] })) assert.equal(chunk.error, undefined);
+      for await (const chunk of executeAgent(executionDeps, { ...executionIdentity, ...base, messages: [{ role: "user", content: "continue" }] })) assert.equal(chunk.error, undefined);
       assert.equal(llmCalls.length, before + 1, "the Session replay avoids executing the previous Skill call again");
       pass("SDK Session approval persistence, restart-style resume and exact continuation");
     }

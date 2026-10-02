@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { AWS_SIGNING_SERVICE, createSignedFetch } from "./awsSigner";
 import { createLlmClientCache, llmClientCacheKey } from "./clientCache";
 import type { ResolvedTarget } from "./providers";
+import { fetchProvider } from "./providerFetch";
 
 const clients = createLlmClientCache<OpenAI>();
 
@@ -16,7 +17,7 @@ export function getOpenAIClient(target: ResolvedTarget): OpenAI {
     client = new OpenAI({
       baseURL: target.baseUrl,
       apiKey: target.auth === "sigv4" ? "sigv4" : target.apiKey,
-      ...(target.auth === "sigv4" ? { fetch: createSignedFetch(AWS_SIGNING_SERVICE) } : {}),
+      fetch: target.auth === "sigv4" ? createSignedFetch(AWS_SIGNING_SERVICE) : fetchProvider,
       maxRetries: OPENAI_MAX_HTTP_RETRIES,
     });
     clients.set(key, client);

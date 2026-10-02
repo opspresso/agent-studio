@@ -1,3 +1,4 @@
+import { isAgentOwner, mayAccessAgent } from "@/domain/agent/access";
 import type { AudioJobConfig, AudioJobConfigRepository } from "@/domain/audio/config";
 import { keys } from "../keys";
 import { agentIsLive } from "../agentLifecycle";
@@ -12,11 +13,16 @@ export const audioJobConfigRepository: AudioJobConfigRepository = {
     const reference = config.enabled ? config.postprocess : undefined;
     const referenceChecks: TransactOp[] = reference ? [{
       kind: "check", key: keys.agent(reference.agentName),
-      condition: row => agentIsLive(row) && row?.ownerEmail === config.userEmail && !!row.configuration,
+      condition: row => {
+        if (!agentIsLive(row) || typeof row?.ownerEmail !== "string" ||
+          (row.visibility !== undefined && row.visibility !== "private" && row.visibility !== "public")) return false;
+        return !!row.configuration && mayAccessAgent({ ownerEmail: row.ownerEmail, visibility: row.visibility }, config.userEmail);
+      },
     }] : [];
     try {
       await transact([
-        { kind: "check", key: keys.agent(config.agentName), condition: agentIsLive },
+        { kind: "check", key: keys.agent(config.agentName), condition: row => agentIsLive(row) &&
+          typeof row?.ownerEmail === "string" && isAgentOwner({ ownerEmail: row.ownerEmail }, config.userEmail) },
         ...referenceChecks,
         { kind: "put", item: { ...keys.audioJobConfig(config.agentName), entityType: "AudioJobConfig", config },
           condition: (row) => expectedRevision === 0 ? row === null

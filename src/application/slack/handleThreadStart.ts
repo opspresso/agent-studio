@@ -4,7 +4,7 @@ import { MAX_SUGGESTED_PROMPTS } from "@/domain/slack/types";
 import { log } from "@/shared/logger";
 
 /** Only the agent catalog and the Slack client; no agent runs here. */
-export type ThreadStartDeps = Pick<SlackEventDeps, "agents" | "slack">;
+export type ThreadStartDeps = Pick<SlackEventDeps, "agents" | "slack" | "identities">;
 
 /**
  * Where a freshly opened agent surface is, and whether it is new.
@@ -73,8 +73,9 @@ export async function handleThreadStart(
   // the read the visibility gate protects. The person's first actual message
   // gets the spoken refusal.
   if (
-    !(await slackSenderMayAccess(deps, token, agent, {
+    !(await slackSenderMayAccess(deps, binding.agentName, {
       ...(surface.userId ? { user: surface.userId } : {}),
+      ...(body.team_id ? { teamId: body.team_id } : {}),
     }))
   ) {
     return;

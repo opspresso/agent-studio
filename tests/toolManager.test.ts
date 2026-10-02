@@ -519,7 +519,7 @@ describe("ToolManager discovery validation", () => {
     expect(manager.tools.map((tool) => tool.function.name)).toEqual(["weather"]);
     const warning = manager.warnings.find((w) => w.includes("'a'"));
     expect(warning).toContain("could not read");
-    expect(warning).toContain("inputSchema");
+    expect(warning).toContain("INVALID_RESULT");
     // It answered, so sending an operator to check whether it is up is wrong.
     expect(warning).not.toContain("unreachable");
   });
@@ -1412,11 +1412,11 @@ describe("ToolManager image results", () => {
     expect(result.text).toContain("here is the chart");
   });
 
-  it("refuses an image block that carries no bytes, and names the field", async () => {
+  it("refuses an image block that carries no bytes with a safe validation error", async () => {
     // An image block without `data` is not a picture this client could not
     // read — it is a malformed result, and the whole answer is refused rather
     // than half-read. What matters is that the refusal reaches the model as a
-    // tool error naming the field, instead of an empty success.
+    // tool error instead of an empty success.
     stubMcpFetch({
       "https://a.test/mcp": {
         listTools: [{ name: "broken" }],
@@ -1430,7 +1430,7 @@ describe("ToolManager image results", () => {
 
     expect(result.images).toBeUndefined();
     expect(result.text).toContain("Error: tool call failed.");
-    expect(result.text).toContain("data");
+    expect(result.text).toContain("INVALID_RESULT");
   });
 
   it("drops images from a call the server flagged as failed", async () => {
@@ -1531,7 +1531,7 @@ describe("listMcpTools (registry probe)", () => {
     const result = await listMcpTools("https://a.test/mcp", {});
 
     expect(result.ok).toBe(false);
-    expect(result).toMatchObject({ error: expect.stringContaining("boom") });
+    expect(result).toMatchObject({ error: expect.stringContaining("tools/list failed") });
     expect(calls.map((c) => c.method)).toEqual(["server/discover", "tools/list"]);
   });
 
@@ -1976,7 +1976,7 @@ describe("ToolManager result content blocks", () => {
 
     const text = (await manager.callTool("future", {})).text;
     expect(text).toContain("Error: tool call failed.");
-    expect(text).toContain("Invalid result for tools/call");
+    expect(text).toContain("tools/call failed: MCP client error INVALID_RESULT");
   });
 });
 
@@ -2042,7 +2042,7 @@ describe("ToolManager structured content", () => {
     // what the server's author needs; the alternative was reading half of it.
     const result = await manager.callTool("weather", {});
     expect(result.text).toContain("Error: tool call failed.");
-    expect(result.text).toContain("content");
+    expect(result.text).toContain("INVALID_RESULT");
   });
 
   it("prefers the content blocks when the server sent both", async () => {
@@ -2270,12 +2270,22 @@ describe("ToolManager call budget", () => {
 });
 
 describe("what a failure carries", () => {
-  it("bounds the server's own error text before it becomes a warning", async () => {
-    // The protocol client puts the entire response body in its error message, so
-    // a proxy answering with an HTML page hands over the whole page — and that
-    // text becomes the run's warning, reaches the model, and is cached and
-    // replayed. Recognisable, not verbatim.
-    const page = `<html><body>${"gateway error ".repeat(5_000)}</body></html>`;
+  it("does not echo malformed JSON or protocol validation payloads in warnings", async () => {
+    for (const malformed of [true, false]) {
+      clearMcpDiscoveryCache();
+      vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? "{}"));
+        return protocolPreamble(body.method, body.id, init?.method) ?? new Response(malformed ? "secret-echo" : JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { resultType: "complete", tools: "secret-echo" } }), { headers: { "content-type": "application/json" } });
+      }));
+      const manager = new ToolManager([server("invalid", "https://invalid.test/mcp")]);
+      await manager.init();
+      expect(manager.tools).toHaveLength(0);
+      expect(manager.warnings.join(" ")).not.toContain("secret-echo");
+      await manager.close();
+    }
+  });
+  it("omits provider response bodies from transport warnings", async () => {
+    const page = `<html><body>${"echoed-provider-token ".repeat(5_000)}</body></html>`;
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -2293,8 +2303,7 @@ describe("what a failure carries", () => {
 
     const warning = manager.warnings[0] ?? "";
     expect(warning).toContain("HTTP 502");
-    // Enough of the page to recognise it, and nowhere near all of it.
-    expect(warning).toContain("gateway error");
+    expect(warning).not.toContain("echoed-provider-token");
     expect(warning.length).toBeLessThan(1_000);
     expect(page.length).toBeGreaterThan(50_000);
   });

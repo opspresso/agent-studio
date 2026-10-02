@@ -14,10 +14,9 @@
  * shared invalidation signal, which is deliberately out of scope.
  */
 
-import { DEFAULT_MEMBER_TIERS, memberTierLimits, orderMemberTiers, type MemberTier } from "@/domain/member/tiers";
+import { DEFAULT_MEMBER_TIERS, memberTierLimits, effectiveMemberTiers, type MemberTier } from "@/domain/member/tiers";
 import type { WorkspaceRuntime } from "@/domain/workspace/types";
 import { workspaceModelChannel, workspaceRuntimeModelCompatible } from "@/domain/workspace/runtimeModels";
-import { withWorkspaceModelChannel } from "@/infrastructure/workspace/runtimeAdapters";
 import type { AppSettings, ArtifactAccessMode } from "@/domain/settings/types";
 import { DEFAULT_CALL_ROUTING_POLICY, type CallRoutingPolicy } from "@/domain/llm/callRouting";
 import {
@@ -141,16 +140,7 @@ export async function getAdminEmails(): Promise<string[]> {
   return stored !== undefined ? parseList(stored) : config.adminEmails;
 }
 
-/**
- * Whether an address is on an *explicitly configured* admin list.
- *
- * Deliberately not {@link isAdminEmail}, and the difference is the whole point:
- * an empty list is a safe "no restriction" for a shared registry, but it must
- * never read as "everyone is an admin" where admin is an override on someone
- * else's ownership — on a deployment that never set `ADMIN_EMAILS` that would
- * silently hand every signed-in user write access to every agent. With no
- * list configured there are no admins, and ownership stands on its own.
- */
+/** Explicit administrator enrollment: promotes and locks the account's admin tier. */
 export async function isConfiguredAdmin(email: string): Promise<boolean> {
   const admins = await getAdminEmails();
   return admins.length > 0 && admins.includes(email.toLowerCase());
@@ -371,28 +361,20 @@ export async function getUnknownModelPolicySelection(): Promise<{
 /** Docker compute infrastructure is deployment-owned; agent and model settings are stored separately. */
 export function getWorkspaceConfig() { return config.workspace; }
 export async function getWorkspaceRuntimeConfig(kind: WorkspaceRuntime) {
-  if (kind === "command") return {};
+  if (kind === "command") return undefined;
   const selected = (await loadSettings())?.workspaceModels?.[kind];
   const model = selected ? getModelConfig(selected) : undefined;
   const channels = await getLlmProviderConfigs();
   const channel = model ? workspaceModelChannel(model, channels) : undefined;
   if (!model || !channel || !workspaceRuntimeModelCompatible(kind, model)) return undefined;
   const target = resolveProviderTarget(model.id, channels);
-  return withWorkspaceModelChannel(kind, { model: target.model }, { ...target, name: target.providerName ?? channel.name });
-}
-
-export function getWorkspaceGitHubConfig() {
-  const settings = config.workspaceGitHub;
-  return settings?.auth === "token" ? { ...settings, getToken: async () => {
-    const token = await getGitHubToken();
-    if (!token) throw new Error("Workspace GitHub account token is not configured");
-    return token;
-  } } : settings;
+  return { model: model.id, wireModel: target.model, protocol: kind === "claude" ? "messages" as const
+    : kind === "codex" || target.providerName === "openai" ? "responses" as const : "chat/completions" as const };
 }
 
 /** The deployment-owned tier catalog; read failures never remove personal budgets. */
 export async function getMemberTierDefinitions() {
-  return orderMemberTiers((await loadSettings())?.memberTiers?.tiers ?? DEFAULT_MEMBER_TIERS);
+  return effectiveMemberTiers((await loadSettings())?.memberTiers?.tiers ?? DEFAULT_MEMBER_TIERS);
 }
 export async function getMemberTierLimits(tier: MemberTier) {
   return memberTierLimits(tier, await getMemberTierDefinitions());

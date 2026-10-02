@@ -37,6 +37,15 @@ Agent의 비용 정책은 [지출 가드](../OPERATIONS.md#지출-가드와-부�
 
 ## Native Agent Runtime
 
+모든 Agent 실행 진입점은 `RunIdentity`의 Studio 사용자 ID·이메일과 호출 출처 actor를 필수로 받는다.
+개인 토큰·메신저·Schedule·Webhook 실행은 해당 출처의 인증 근거도 보존한다.
+`authorizeRunIdentity`는 현재 계정의 member 이상 등급과 대상 Agent 접근, 원래 인증 근거를 검증한다.
+호출자가 없거나 검증기를 연결하지 않은 실행은 모델·도구·사용량 기록 전에 거절한다.
+하위 Agent도 같은 사용자의 접근을 별도로 확인하며 Agent 소유자 권한으로 바꾸지 않는다.
+
+권한 검사는 각 모델 요청과 도구 실행 직전에 반복한다. 스트리밍·일반 응답·fallback·ModelTask와
+라우팅 결정 모델도 같은 검사를 거친다. 앱의 권한·한도 거절은 다른 모델로 재시도하지 않는다.
+
 이 앱은 Agent 운영 Control Plane이며 OpenAI Agents SDK가 기본 Agent Runtime이다.
 앱은 현재 설정·바인딩·권한·자격 증명·한도·저장을 준비하고, SDK의 `Agent`와 `Runner`가
 모델 턴·도구 실행·Handoff·Agent-as-Tool·Guardrail·승인 중단과 재개를 수행한다.
@@ -97,6 +106,8 @@ OpenAI, OpenAI-compatible gateway와 사내 vLLM은 같은 경로를 사용한�
 credential을 다시 해석하며 bearer와 AWS SigV4를 지원한다. `store: false`를 사용하고 provider
 conversation state에 의존하지 않는다. 숨은 HTTP 재시도는 없으며, 첫 출력 전 429/5xx에만
 설정된 fallback 모델로 한 번 전환한다. 출력이 시작된 뒤에는 실패한 요청을 반복하지 않는다.
+fallback도 설정 저장 시 Agent의 필수 기능을 검사한다. 실행에서는 현재 모델 정보와 실제
+출력 형식을 다시 확인해 부적합한 fallback을 경고와 함께 제외하며 주 모델 실행은 유지한다.
 `/models` 진단도 같은 SDK 모델 어댑터를 사용한다.
 SigV4 fetch는 `Request`의 메서드·헤더·취소 신호와 명시적 init override를 보존한다.
 서명 본문은 문자열·바이트여야 하며 `Request`의 스트림 본문과 multipart는 전송 전에 거절한다.

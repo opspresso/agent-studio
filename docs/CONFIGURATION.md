@@ -103,7 +103,7 @@ Agent 소유권을 넘는 관리자 권한과는 구분한다. [인증과 접근
 | `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | — | — | `AUTH_PASSWORD=true` 일 때 부팅 시 준비되는 계정 (`ensureBootstrapAdmin`). 같은 이메일의 사용자에게 비밀번호 credential 이 이미 있으면 변경하지 않는다. 사용자는 있지만 credential 이 없으면 기존 사용자 행을 유지하고 비밀번호 credential 을 추가한다. 기존 비밀번호는 환경변수 변경으로 갱신되지 않는다. 이메일은 `ADMIN_EMAILS` 에도 넣어야 admin 이 된다. `ALLOWED_EMAIL_DOMAINS` 는 이 주소에 적용되지 않는다. 제공자나 도메인 목록이 모두를 잠갔을 때의 비상 계정이므로. `AUTH_PASSWORD` 없이 설정하면 경고만 남기고 만들지 않는다. |
 | `ALLOWED_EMAIL_DOMAINS` | 비어 있음 | **runtime** | 로그인이 허용되는 도메인의 쉼표 구분 목록. 모든 로그인 수단에 적용된다(사용자 생성과 세션 생성의 훅). 비어 있으면 아무 도메인이나 허용한다. |
 | `TRUSTED_PROXY_CIDRS` | 비어 있음 | — | 이 배포 앞에 있는 리버스 프록시들의 IP/CIDR 범위, 쉼표 구분 (예: Caddy 와 ingress controller 처럼 두 홉이 `X-Forwarded-For` 에 덧붙일 때). Better Auth 는 rate limiting 의 키로 삼는 클라이언트 IP 를 알아내기 위해 체인 오른쪽에서 이 홉들을 벗겨 낸다. 비어 있으면 값이 하나뿐인 헤더만 신뢰하므로, 프록시 두 개 뒤에서는 모든 요청이 하나의 공유 버킷에 떨어진다. |
-| `ADMIN_EMAILS` | 비어 있음 | **runtime** | 쉼표 구분. 레지스트리·설정 변경 권한과 남이 소유한 Agent에 대한 쓰기 권한을 준다. 목록에 있는 멤버는 저장된 `admin` tier 로 승격되고 거기 고정된다. 목록에서 빼도 자동 강등은 없다. 비어 있으면 레지스트리·설정 변경에는 *member 이상 허용*(guest는 읽기 전용), Agent 오버라이드에는 *아무도 아님* 을 뜻한다. 두 질문이 서로 다른 술어로 답해지는 것은 의도적이다 ([SECURITY.md](SECURITY.md#인가-모델)). |
+| `ADMIN_EMAILS` | 비어 있음 | **runtime** | 쉼표 구분. 공용 레지스트리·설정의 관리자 목록이다. 명시된 멤버는 admin tier로 승격·고정되며 목록에서 제거해도 자동 강등하지 않는다. 빈 목록은 member 이상에게 초기 공용 관리 권한을 허용한다. 다른 사람의 Agent 관리 권한은 부여하지 않는다. |
 
 ## 설정 화면
 
@@ -221,7 +221,7 @@ Settings → Models → 사용 설정의 **가격 정보가 없는 모델**에�
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
 | `MAX_RUN_DURATION_MS` | `600000` (10분) | — | 모든 진입점에 걸리는, 단일 런의 실제 경과 시간 상한. 멈춰 버린 provider 나 도구 호출이 무한정 돌거나 무한정 청구할 수 없다. 유효하지 않은 값은 경고와 함께 무시된다. Slack·Telegram·Teams 경로는 공용 메시징 파이프라인에서 추가로 고정된 3분 인터랙티브 데드라인(아래)을 적용하는데, 그것은 런을 짧게 만들 수만 있다. 런 슬롯 lease 는 이 값 + 60초, MCP OAuth 토큰 갱신 여유는 이 값 + 5분이다. 서명 URL 수명은 런 길이와 독립적으로 뷰 15분·지속되는 기록 7일이며 `src/shared/artifactUrlTtl.ts` 가 소유한다. |
-| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | **runtime** | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 자기 `maxConcurrentRuns` 를 가진 멤버 tier(*코드에 고정된 제한* 참고)는 그 멤버 자신의 런에 대해 이 값을 덮어쓴다. 기본 `guest` tier 가 그런 값을 하나 들고 있다. `admin`/`member`, Agent 토큰, 그리고 모든 기계 호출자는 이 값을 물려받는다. |
+| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | **runtime** | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 실행 가능한 모든 멤버 등급에 적용한다. 모든 호출 출처는 같은 Studio 사용자 ID의 슬롯을 공유한다. |
 | `SCHEDULE_SCAN_TOKEN` | 미설정 | — | 모든 ticker 가 제시하는 단 하나의 자격증명(`X-Scan-Token`)이며, CronJob 이 POST 하는 세 엔드포인트가 공유한다: `/api/triggers/scan`(schedule), `/api/plugins/sync/scan`(plugins 저장소), `/api/catalog/reindex`(capability 카탈로그). 설정하지 않으면 이 배포에 ticker 가 없다는 뜻이다: 셋 다 503 으로 답하고 schedule 트리거는 결코 발화하지 않는다. 열리는 대신 꺼진다. |
 
 유효하지 않은 값(정수가 아니거나 음수, 또는 위 동시성 상한 초과)은 `0` 이 아니라 경고와 함께 기본값으로 떨어진다.
@@ -321,7 +321,7 @@ endpoint 에 붙여 넣는다 ([design/teams.md](design/teams.md)).
 ## Workspace 실행
 
 Workspace 도구 사용 여부는 Agent 설정의 `parameters.workspaceTools`로 선택한다. 현재 설정에서
-켜면 Agent에 **워크스페이스 도구** 탭이 나타난다. Agent 소유자·관리자는 그 탭에서 저장소 목록,
+켜면 Agent에 **워크스페이스 도구** 탭이 나타난다. Agent 소유자는 그 탭에서 저장소 목록,
 접근 모드, 기본 Runtime, 유휴 시간, 검사 명령과 배포 workflow를 관리한다. 기본 저장소는 없다.
 기본 접근 모드는 `new`(등록 + 신규), 기본 Runtime은 모델 없이 실행하는 `command`다.
 Codex·Claude·OpenCode의 모델은 **Model 사용 설정 → 워크스페이스 런타임 모델**에서 관리자가 선택한다.
@@ -344,9 +344,10 @@ Codex·Claude·OpenCode의 모델은 **Model 사용 설정 → 워크스페이�
 | `WORKSPACE_DOCKER_CONTEXT` | Docker 기본 context | 앱과 worker가 공유하는 전용 Docker daemon의 context |
 | `WORKSPACE_MEMORY_MB`, `WORKSPACE_DISK_MB`, `WORKSPACE_CPUS` | `2048`, `2048`, `2` | 메모리·각 데이터 볼륨(Docker tmpfs/Kubernetes emptyDir)·CPU 상한 |
 | `WORKSPACE_WORKER_CONCURRENCY` | `4` | worker process의 동시 실행 수, 1~32 |
+| `WORKSPACE_MODEL_GATEWAY_URL` | 미설정 | Sandbox가 접근할 Studio 주소. Native 모델 실행에 필수이며 command에는 필요 없다. Docker 내부 호스트 주소 또는 Kubernetes Service 주소를 명시한다 |
 
 Agent 저장소·소유자 목록은 각각 최대 100개다. `selected`는 등록한 저장소만,
-`owners`는 목록과 정확한 소유자 범위를, `all`은 서버 GitHub 계정으로 접근 가능한 전체를 허용한다.
+`owners`는 목록과 정확한 소유자 범위를, `all`은 해당 Agent의 GitHub MCP 계정으로 접근 가능한 전체를 허용한다.
 `new`는 등록 목록을 유지하고 `Workspace.create_repository`의 실제 생성 성공을 자동 등록한다.
 [정책 계약](design/workspaces.md#저장소-정책-관리)을 따른다. 유휴 시간은 기본 1800초, 범위는 60초~7일이다.
 검사는 `test`, `lint`, `build`별 명령을 최대 하나씩 저장하며 각 Run 뒤 실행한다.
@@ -359,30 +360,32 @@ Codex는 Responses 호환 채널, Claude는 Anthropic 채널, OpenCode는 지원
 CLI에 제공하지 않는다. 모델을 해제하면 새 native 작업은 거절하지만 이미 시작한 operation의 조회·복구는
 유지한다. 일반 명령에는 모델이 필요 없다. Git·클라우드·운영 환경변수는 Sandbox에 상속하지 않는다.
 Workspace 실행 시간은 `MAX_RUN_DURATION_MS`를 사용하며 재시작해도 최초 시작 시각에서 계산한다.
-PR 자동 리뷰의 Agent 실행과 Workspace 검사 작업은 같은 webhook actor에 별도 실행 슬롯을 사용한다.
-리뷰 중 검사를 실행하려면 해당 actor의 동시 실행 한도를 2 이상으로 설정한다(0은 한도 비활성).
-일반 명령은 앱 모델 설정 없이 공통 비용·동시성·메트릭 bracket을 사용한다. CLI 모델 사용량은
-앱의 SDK 모델 usage와 별개이며 CLI/provider의 사용량 기록을 따른다.
+PR 자동 리뷰의 Agent 실행과 Workspace 검사는 같은 토큰 발급 사용자에게 각각 실행 슬롯을 사용한다.
+검사를 함께 실행하려면 사용자의 유효 동시 실행 한도가 2 이상이어야 한다(0은 한도 비활성).
+일반 명령은 앱 모델 설정 없이 공통 비용·동시성·메트릭 bracket을 사용한다. Native CLI는 실행별
+단기 토큰으로 Studio 모델 Gateway에 접속한다. 공급자 키는 서버에만 남고, 보조 호출까지 요청별
+사용량을 같은 개인 한도에 합산한다. [Gateway 계약](design/workspaces.md#native-모델-gateway)을 따른다.
 
 Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐·TTL·승인 결과 전달과 CI 대기가
 진행되지 않는다. Workspace task와 채팅 후속 실행은 각각 workerConcurrency 상한을 적용하는 별도 큐다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.
 
-코딩 작업은 GitHub App 또는 서버 계정 토큰을 사용한다. 기본 `WORKSPACE_GITHUB_AUTH=app`은
-`WORKSPACE_GITHUB_APP_ID`, `WORKSPACE_GITHUB_INSTALLATION_ID`, `WORKSPACE_GITHUB_PRIVATE_KEY`를
-모두 요구한다. `WORKSPACE_GITHUB_AUTH=token`은 설정 화면의 GitHub token을 사용하며, 저장된
-오버라이드가 없으면 `GITHUB_TOKEN`을 읽는다. 이 모드는 Git 인증을 서버에서만 수행하고
-자격증명이 없는 Git bundle을 Sandbox에 전달한다. 서버에 Git 실행 파일과 임시 디스크 공간이
-필요하며 bundle은 체크포인트와 같은 64 MiB 한도를 따른다. API·Git web 주소는 기존 `GITHUB_API_URL`과
-`GITHUB_WEB_URL`을 사용한다. `WORKSPACE_GITHUB_INTERNAL_HOSTS`는 폐쇄망 GitHub Enterprise의
+코딩 작업은 해당 Agent가 바인딩한 GitHub MCP에 대한 호출자 자신의 인증을 사용한다. OAuth 연결의
+사용자 ID·issuer·resource·공유 client를 검사하고 만료가 가까우면 그 사용자의 토큰을 갱신한다. 정적 인증은 MCP registry 헤더와 Agent의 현재 endpoint에 묶인 헤더 override를
+사용한다. OAuth가 설정됐으면 호출자의 유효한 개인 연결이 필수이며 연결 누락·해제·불일치에는
+정적 인증·다른 사용자·Agent 소유자·Plugin 토큰으로 우회하지 않는다.
+`Settings → Plugins → GitHub 인증`과 `GITHUB_TOKEN`은 Plugin 가져오기에만 사용한다.
+
+Git 인증은 서버에서만 수행하고 자격증명이 없는 Git bundle을 Sandbox에 전달한다. 서버에 Git
+실행 파일과 임시 디스크 공간이 필요하며 bundle은 체크포인트와 같은 64 MiB 한도를 따른다.
+API·Git web 주소는 `GITHUB_API_URL`과 `GITHUB_WEB_URL`을 사용하며 OAuth 제공자와 같은 GitHub
+authority여야 한다. `WORKSPACE_GITHUB_INTERNAL_HOSTS`는 폐쇄망 GitHub Enterprise의
 호스트 접미사를 선언하며, 다른 내부 URL 허용 목록과 공유하지 않는다.
 `WORKSPACE_GITHUB_WEBHOOK_SECRET`은 `/api/workspaces/github/webhook`의 PR 메타데이터 갱신용이다.
 `/api/webhook/{agent}`는 Agent Settings에서 발급한 별도 Trigger 시크릿을 사용한다.
-App에는 Contents, Pull requests, Actions 쓰기와 Checks, Commit statuses 읽기를 부여하되,
-각 요청의 installation token은 실제 작업에 필요한 권한과 저장소로 좁힌다.
-GitHub App·fine-grained 토큰의 저장소 생성에는 Administration 쓰기가 필요하다. classic 토큰은
-공개 저장소에 `public_repo` 또는 `repo`, 비공개 저장소에 `repo` scope가 필요하다. 계정 토큰은 자신의 개인
-저장소 또는 권한 있는 조직에 생성하며, App은 설치된 조직에만 생성한다. 생성용 App token은
-미래 저장소로 범위를 좁힐 수 없으므로 `administration: write`만 요청하고 서버에서만 사용한다.
+필요한 저장소의 Contents·Pull requests·Actions 쓰기와 Checks·Commit statuses 읽기를 GitHub MCP
+연결 계정에 부여한다. fine-grained 토큰의 저장소 생성에는 Administration 쓰기가 필요하다.
+classic 토큰은 공개 저장소에 `public_repo` 또는 `repo`, 비공개 저장소에 `repo` scope가 필요하다.
+개인 저장소는 인증된 계정의 소유로, 조직 저장소는 해당 계정에 생성 권한이 있는 조직에 생성한다.
 
 Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 실행 Agent별 선택을 최대 32개
 보관한다. 이는 Workspace 개수나 동시에 실행할 수 있는 작업 수가 아니다. 저장소 목록·조회는
@@ -424,13 +427,14 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 
 Settings → Access에서 등급 추가·삭제와 사용자별 UTC 월 USD 한도를 설정한다. 저장 위치는
 Settings의 `memberTiers`이며 환경변수는 없다. Chat과 Workspace 비용은 같은 개인 한도에 합산한다.
-처음에는 admin(무제한), member($20), guest($2)가 있다. admin·guest는 삭제할 수 없고
-admin의 무제한 정책은 수정할 수 없다. guest와 사용자 정의 등급은 0 이상의 금액을 지정하며,
+처음에는 admin(무제한), member($20), guest(조회 전용)가 있다. admin·guest는 삭제할 수 없고
+admin의 무제한 정책과 guest의 실행 불가 정책은 수정할 수 없다. guest의 유효 한도는 0이다.
+member와 사용자 정의 등급은 0 이상의 금액을 지정하며,
 0은 새 실행을 차단한다. 사용자 정의 등급은 member 권한이다. 사용자가 없는 등급만 삭제할 수 있다.
 admin은 맨 위, guest는 맨 아래에 고정하며 나머지 등급은 핸들을 끌어다 놓아 순서를 변경하고 저장한다. 키보드는 핸들에서 방향키를 사용한다.
 새 등급은 guest 바로 위에 추가된다. 저장한 순서는 Members의 선택 목록에도 적용되며 권한과는 무관하다.
-Members의 선택 목록과 Profile 한도도 같은 설정을 읽는다. guest 동시 실행 1개 제한은 고정이고,
-다른 등급은 `MAX_CONCURRENT_RUNS_PER_ACTOR`를 따른다. 월 한도는 완료 후 집계된 지출을 기준으로
+Members의 선택 목록과 Profile은 같은 유효 등급 설정을 읽는다. guest의 저장된 금액이 있더라도
+실행 예산으로 사용하지 않으며 다른 등급의 설정은 보존한다. 실행 동시성은 `MAX_CONCURRENT_RUNS_PER_ACTOR`를 따른다. 월 한도는 완료 후 집계된 지출을 기준으로
 다음 실행 전에 검사하므로 진행 중인 작업이 잔액을 초과할 수 있다.
 
 ## 코드에 고정된 제한
@@ -441,7 +445,7 @@ Members의 선택 목록과 Profile 한도도 같은 설정을 읽는다. guest 
 | 제한 | 값 | 소유자 |
 |---|---|---|
 | agent 런당 턴 수 (Agent 설정 `maxTurn` 기본값) | `50` | `src/application/runtime/execute.ts` |
-| 멤버 등급 목록 상한 / guest 동시 실행 수. 월 금액은 Settings 정책에서 변경한다 | `50` / `1` | `src/domain/member/tiers.ts` |
+| 멤버 등급 목록 상한. 실행 가능한 등급의 월 금액은 Settings 정책에서 변경한다 | `50` | `src/domain/member/tiers.ts` |
 | SDK function tool 동시 실행 수 | `5` | `src/application/runtime/runner.ts` |
 | ModelTask 작업당 최대 시도 / 승격 전 같은 모델의 실패 수 | `4` / `2` | `src/application/llm/callModelRouter.ts` |
 | 턴당 도구 결과 텍스트 | `200,000` 자 | `src/application/llm/toolResultBudget.ts` |
@@ -499,6 +503,7 @@ Members의 선택 목록과 Profile 한도도 같은 설정을 읽는다. guest 
 | Spreadsheet 처리 행 / 셀 / 검사 셀 | `100,000` / `1,000,000` / `10,000` | `src/infrastructure/documents/engine/limits.ts` |
 | 문서 검사 block / block preview 문자 | `500` / `120` | `src/infrastructure/documents/engine/limits.ts` |
 | 생성·편집 문서 출력 | `10,000,000` bytes | `src/infrastructure/documents/engine/limits.ts` |
+| Playground 한 실행의 inline 파일 다운로드 보관 합계 | `16 MiB`; 저장된 파일의 다운로드 URL에는 적용하지 않음 | `src/app/_lib/fileDownloads.ts` |
 | 문서 생성 이미지 asset 수 / 총 바이트 | `12` / `6 MiB` | `src/domain/document/processor.ts` |
 | File 읽기·검사 텍스트 / 한 번의 편집 수 | `90,000` 자 / `100` | `src/domain/document/processor.ts` |
 | XLSX 생성 시트 JSON 입력(UTF-8) | `10 MiB` | `src/infrastructure/documents/workerPool.ts` |

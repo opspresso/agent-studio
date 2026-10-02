@@ -10,8 +10,7 @@ import { base64Chars, MAX_IMAGE_BYTES } from "@/domain/llm/imageLimits";
  */
 
 /**
- * SDK clients capture fetch at construction and cache by credential fingerprint.
- * OpenAI generation and edit cases use separate endpoints to isolate their stubs.
+ * OpenAI generation and edit cases use separate endpoints to isolate SDK clients.
  */
 const runtime = { openaiBaseUrl: "https://openai.example/v1" };
 

@@ -1,3 +1,6 @@
+import { interactiveIdentity } from "./runIdentity";
+import { assertRunIdentity } from "@/application/auth/authorizeRunIdentity";
+import { ForbiddenError } from "@/application/errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeStore } from "./fakeStore";
 import { keys } from "@/infrastructure/db/keys";
@@ -13,6 +16,7 @@ function fixture() {
   let id = 0;
   const deps: AudioJobUseCaseDeps = {
     jobs, files: { get: async () => null }, sourceIdentity: vi.fn(async () => ({ namespace: "external-account", itemId: "recording-1" })),
+    authorizeRun: vi.fn(async (_agent, identity) => { assertRunIdentity(identity); }),
     authorize: vi.fn(async () => {}), validateModel: vi.fn(async () => {}), validateOutputs: vi.fn(async () => ({})),
     limits: async () => ({ maxActive: 2, maxPerOccurrence: 2 }), now: () => new Date("2026-09-09T00:00:00Z"), id: () => `job-${++id}`,
   };
@@ -21,6 +25,32 @@ function fixture() {
   return { deps, input, api: createAudioJobUseCases(deps) };
 }
 describe("audio job use cases", () => {
+  it("pins the requesting account and grant through manual retries", async () => {
+    const f = fixture();
+    const user = interactiveIdentity().user;
+    const actor = { kind: "schedule" as const, id: "audio:daily" };
+    const executionGrant = { ...user, kind: "schedule" as const, agentName: "audio", triggerId: "daily", revision: "revision-1" };
+    await f.api.submit("audio", user, f.input, { actor, executionGrant, occurrence: "scheduled" });
+    const job = (await jobs.get("audio", "job-1"))!;
+    expect(job).toMatchObject({ user, actor, executionGrant });
+    await jobs.cancel("audio", job.id, job.revision, f.deps.now().toISOString());
+    const cancelled = (await jobs.get("audio", job.id))!;
+    await expect(f.api.retry("audio", job.id, { ...user, userId: "replacement" }, cancelled.revision)).rejects.toMatchObject({ status: 404 });
+    vi.mocked(f.deps.authorizeRun).mockRejectedValueOnce(new ForbiddenError("Schedule disabled"));
+    await expect(f.api.retry("audio", job.id, user, cancelled.revision)).rejects.toThrow("Schedule disabled");
+    expect((await jobs.get("audio", job.id))?.status).toBe("cancelled");
+    expect(f.deps.authorizeRun).toHaveBeenLastCalledWith("audio", expect.objectContaining({ user, actor, executionGrant }));
+  });
+
+  it("never deduplicates one account's request into another account with the same email", async () => {
+    const f = fixture();
+    const identity = interactiveIdentity();
+    const first = await f.api.submit("audio", identity.user, f.input, { ...identity, occurrence: "one" });
+    const second = await f.api.submit("audio", { ...identity.user, userId: "replacement" }, f.input, { actor: identity.actor, occurrence: "two" });
+    expect(first.status).toBe("accepted");
+    expect(second.status).toBe("accepted");
+    expect((await jobs.get("audio", "job-2"))?.user.userId).toBe("replacement");
+  });
   it("resolves a readable transcript to its private JSON for resummarization and rejects a foreign input", async () => {
     const f = fixture();
     const email = "owner@example.test";
@@ -31,17 +61,17 @@ describe("audio job use cases", () => {
     f.deps.files.get = async (_agent, id) => id === readable.id ? readable : id === raw.id ? raw : null;
     const input: SubmitAudioJobInput = { task: "postprocess", source: { kind: "file", fileId: readable.id },
       postprocess: { agentName: "writer" }, retention: f.input.retention };
-    await f.api.submit("audio", email, input, { occurrence: "first" });
+    await f.api.submit("audio", interactiveIdentity(email).user, input, { actor: interactiveIdentity(email).actor, occurrence: "first" });
     expect((await jobs.get("audio", "job-1"))?.source).toEqual({ kind: "file", fileId: raw.id, agentName: "audio" });
     expect(input.source).toEqual({ kind: "file", fileId: readable.id });
     raw.userEmail = "other@example.test";
-    await expect(f.api.submit("audio", email, input, { occurrence: "second" })).rejects.toMatchObject({ status: 404 });
+    await expect(f.api.submit("audio", interactiveIdentity(email).user, input, { actor: interactiveIdentity(email).actor, occurrence: "second" })).rejects.toMatchObject({ status: 404 });
   });
   it("keeps completed history but withdraws deleted or expired output links, including duplicate submissions", async () => {
     const f = fixture();
     const email = "owner@example.test";
     const now = f.deps.now().toISOString();
-    await f.api.submit("audio", email, f.input, { occurrence: "first" });
+    await f.api.submit("audio", interactiveIdentity(email).user, f.input, { actor: interactiveIdentity(email).actor, occurrence: "first" });
     const claimed = await jobs.claim("audio", "job-1", now, "worker", "2026-09-09T00:02:00Z");
     await jobs.checkpoint(claimed!, { status: "completed", stage: "cleaning", dueAt: now,
       fileId: "original", transcriptRef: "internal-json", dialogueRef: "transcript", summaryRef: "summary" }, now);
@@ -67,7 +97,7 @@ describe("audio job use cases", () => {
     expect(unavailable.artifacts).toEqual({});
     expect(unavailable.artifactLinks).toEqual({});
     expect(await f.api.list("audio", email, 20)).toEqual([expect.objectContaining(expected)]);
-    expect(await f.api.submit("audio", email, f.input, { occurrence: "again" }))
+    expect(await f.api.submit("audio", interactiveIdentity(email).user, f.input, { actor: interactiveIdentity(email).actor, occurrence: "again" }))
       .toMatchObject({ status: "duplicate", job: expected });
     expect(await jobs.get("audio", "job-1")).toMatchObject({ status: "completed", transcriptRef: "internal-json", dialogueRef: "transcript" });
     f.deps.files.get = async () => { throw new Error("file store unavailable"); };
@@ -104,8 +134,8 @@ describe("audio job use cases", () => {
     f.deps.files.get = vi.fn(async (agent, id) =>
       agent === transcript.agentName && id === transcript.id ? transcript : agent === "audio" && id === "draft" ? draft
         : agent === "audio" && id === "readable" ? readable : null);
-    await f.api.submit("audio", email, { task: "postprocess", source: { kind: "file", agentName: "transcriber", fileId: "transcript" },
-      postprocess: { agentName: "writer" }, retention: f.input.retention }, { occurrence: "summary" });
+    await f.api.submit("audio", interactiveIdentity(email).user, { task: "postprocess", source: { kind: "file", agentName: "transcriber", fileId: "transcript" },
+      postprocess: { agentName: "writer" }, retention: f.input.retention }, { actor: interactiveIdentity(email).actor, occurrence: "summary" });
     const claimed = await jobs.claim("audio", "job-1", now, "worker", "2026-09-09T00:02:00Z");
     await jobs.checkpoint(claimed!, { status: "completed", stage: "cleaning", dueAt: now,
       fileId: "transcript", transcriptRef: "transcript", draftRef: "draft", summaryRef: "draft", dialogueRef: "readable" }, now);
@@ -117,7 +147,7 @@ describe("audio job use cases", () => {
   });
   it("allows only the owner to delete terminal history and keeps source files intact", async () => {
     const f = fixture();
-    await f.api.submit("audio", "owner@example.test", f.input, { occurrence: "deletion" });
+    await f.api.submit("audio", interactiveIdentity("owner@example.test").user, f.input, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "deletion" });
     await expect(f.api.delete("audio", "job-1", "other@example.test", 1)).rejects.toThrow("not found");
     await expect(f.api.delete("audio", "job-1", "owner@example.test", 1)).rejects.toThrow("still active");
     await f.api.cancel("audio", "job-1", "owner@example.test", 1);
@@ -125,11 +155,11 @@ describe("audio job use cases", () => {
     expect(await f.api.delete("audio", "job-1", "owner@example.test", 2)).toEqual({ deleted: true });
     expect(files).not.toHaveBeenCalled();
     await expect(f.api.get("audio", "job-1", "owner@example.test")).rejects.toThrow("not found");
-    expect((await f.api.submit("audio", "owner@example.test", f.input, { occurrence: "again" })).status).toBe("accepted");
+    expect((await f.api.submit("audio", interactiveIdentity("owner@example.test").user, f.input, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "again" })).status).toBe("accepted");
   });
   it("persists intermediate progress and exposes it through both status and list", async () => {
     const f = fixture();
-    await f.api.submit("audio", "owner@example.test", f.input, { occurrence: "progress" });
+    await f.api.submit("audio", interactiveIdentity("owner@example.test").user, f.input, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "progress" });
     const now = f.deps.now().toISOString();
     const claimed = await jobs.claim("audio", "job-1", now, "worker", "2026-09-09T00:02:00Z");
     const postprocessProgress = { phase: "extract" as const, round: 0, completed: 1, total: 4 };
@@ -144,14 +174,14 @@ describe("audio job use cases", () => {
     f.deps.resolveArtifact = async () => file; f.deps.files.get = async () => file;
     const input: SubmitAudioJobInput = { task: "postprocess", source: { kind: "artifact", artifactId: "transcript" }, retention: f.input.retention,
       postprocess: { agentName: "writer" } };
-    expect((await f.api.submit("audio", file.userEmail, input, { occurrence: "summary" })).status).toBe("accepted");
+    expect((await f.api.submit("audio", interactiveIdentity(file.userEmail).user, input, { actor: interactiveIdentity(file.userEmail).actor, occurrence: "summary" })).status).toBe("accepted");
     expect(f.deps.validateModel).not.toHaveBeenCalled();
-    await expect(f.api.submit("audio", file.userEmail, {
+    await expect(f.api.submit("audio", interactiveIdentity(file.userEmail).user, {
       ...f.input, source: { kind: "artifact", artifactId: "transcript" }, task: "transcribe",
-    }, { occurrence: "wrong-audio" })).rejects.toThrow("already a transcript");
-    await expect(f.api.submit("audio", file.userEmail, { ...input, destination: { serverName: "memory", documents: true, memories: false } }, { occurrence: "unexpected-write" })).rejects.toThrow("without ASR or delivery");
+    }, { actor: interactiveIdentity(file.userEmail).actor, occurrence: "wrong-audio" })).rejects.toThrow("already a transcript");
+    await expect(f.api.submit("audio", interactiveIdentity(file.userEmail).user, { ...input, destination: { serverName: "memory", documents: true, memories: false } }, { actor: interactiveIdentity(file.userEmail).actor, occurrence: "unexpected-write" })).rejects.toThrow("without ASR or delivery");
     file.derived = undefined;
-    await expect(f.api.submit("audio", file.userEmail, input, { occurrence: "not-transcript" })).rejects.toThrow("transcription Artifact");
+    await expect(f.api.submit("audio", interactiveIdentity(file.userEmail).user, input, { actor: interactiveIdentity(file.userEmail).actor, occurrence: "not-transcript" })).rejects.toThrow("transcription Artifact");
   });
   it("resolves another Agent's owned Artifact to its original private file without copying bytes", async () => {
     const f = fixture();
@@ -159,8 +189,8 @@ describe("audio job use cases", () => {
       retireAt: "2026-12-09T00:00:00Z" } as import("@/domain/artifact/sourceFile").SourceFile;
     f.deps.resolveArtifact = vi.fn(async () => file);
     f.deps.files.get = vi.fn(async () => file);
-    const result = await f.api.submit("audio", file.userEmail,
-      { ...f.input, task: "transcribe", source: { kind: "artifact", artifactId: "artifact-1" } }, { occurrence: "once", producedBy: "transcriber" });
+    const result = await f.api.submit("audio", interactiveIdentity(file.userEmail).user,
+      { ...f.input, task: "transcribe", source: { kind: "artifact", artifactId: "artifact-1" } }, { actor: interactiveIdentity(file.userEmail).actor, occurrence: "once", producedBy: "transcriber" });
     expect(result.status).toBe("accepted");
     expect(f.deps.resolveArtifact).toHaveBeenCalledWith("artifact-1", file.userEmail);
     expect(f.deps.authorize).toHaveBeenCalledWith("downloader", file.userEmail);
@@ -173,7 +203,7 @@ describe("audio job use cases", () => {
       retireAt: "2026-12-09T00:00:00Z" } as import("@/domain/artifact/sourceFile").SourceFile;
     f.deps.resolveArtifact = async () => file;
     f.deps.files.get = async () => file;
-    const submit = () => f.api.submit("audio", "owner@example.test", { ...f.input, source: { kind: "artifact", artifactId: "artifact" } }, { occurrence: "once" });
+    const submit = () => f.api.submit("audio", interactiveIdentity("owner@example.test").user, { ...f.input, source: { kind: "artifact", artifactId: "artifact" } }, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "once" });
     await expect(submit()).rejects.toThrow("Source file not found");
     file.userEmail = "owner@example.test"; file.retireAt = "2026-09-09T00:00:00.000Z";
     await expect(submit()).rejects.toThrow("expired");
@@ -187,9 +217,23 @@ describe("audio job use cases", () => {
       tool: "read_file", namespace: "account", urlPath: ["url"], idPath: ["id"], mimeType: "audio/mpeg", refreshArgument: "id",
     } };
     f.deps.sourceIdentity = async () => ({ namespace: "account", itemId: "item", refresh });
-    const result = await f.api.submit("audio", "owner@example.test", f.input, { occurrence: "one" });
+    const result = await f.api.submit("audio", interactiveIdentity("owner@example.test").user, f.input, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "one" });
     expect((await jobs.get("audio", "job-1"))?.sourceRefresh).toEqual(refresh);
     expect("job" in result && result.job).not.toHaveProperty("sourceRefresh");
+  });
+  it("lets another member use a shared recipe without adopting its author's identity", async () => {
+    const f = fixture();
+    const caller = interactiveIdentity("member@example.test");
+    f.deps.configs = { get: async () => ({ agentName: "audio", userEmail: "owner@example.test", revision: 1, enabled: true,
+      model: "openai/whisper-1", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" }, maxActive: 2, maxPerOccurrence: 1, updatedAt: "2026-09-09T00:00:00Z" }) };
+    expect(await f.api.configuration("audio", caller.user.email)).toMatchObject({ revision: 1 });
+    const submitted = await f.api.submit("audio", caller.user, { source: f.input.source, configRevision: 1 }, { actor: caller.actor, occurrence: "member-request" });
+    expect(submitted.status).toBe("accepted");
+    const stored = await jobs.get("audio", "job-1");
+    expect(stored).toMatchObject({ userEmail: caller.user.email, user: caller.user, actor: caller.actor, configRevision: 1 });
+    await expect(f.api.get("audio", "job-1", "owner@example.test")).rejects.toMatchObject({ status: 404 });
+    expect(await f.api.list("audio", "owner@example.test", 10)).toEqual([]);
+    await expect(f.api.cancel("audio", "job-1", "owner@example.test", 1)).rejects.toMatchObject({ status: 404 });
   });
   it("pins a configuration revision without allowing overrides and keeps submitted work unchanged", async () => {
     const f = fixture();
@@ -197,20 +241,20 @@ describe("audio job use cases", () => {
       model: "openai/whisper-1", retention: { unit: "months" as const, value: 3, timezone: "Asia/Seoul" }, maxActive: 1, maxPerOccurrence: 1 };
     f.deps.configs = { get: async () => config };
     const input = { source: f.input.source, configRevision: 1 };
-    await expect(f.api.submit("audio", "owner@example.test", { ...input, model: config.model }, { occurrence: "one" })).rejects.toMatchObject({ status: 400 });
-    const first = await f.api.submit("audio", "owner@example.test", input, { occurrence: "one" });
+    await expect(f.api.submit("audio", interactiveIdentity("owner@example.test").user, { ...input, model: config.model }, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "one" })).rejects.toMatchObject({ status: 400 });
+    const first = await f.api.submit("audio", interactiveIdentity("owner@example.test").user, input, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "one" });
     expect(first.status).toBe("accepted");
     config = { ...config, revision: 2, retention: { ...config.retention, value: 1 } };
-    await expect(f.api.submit("audio", "owner@example.test", input, { occurrence: "two" })).rejects.toMatchObject({ status: 409 });
+    await expect(f.api.submit("audio", interactiveIdentity("owner@example.test").user, input, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "two" })).rejects.toMatchObject({ status: 409 });
     expect(await jobs.get("audio", "job-1")).toMatchObject({ configRevision: 1, retention: { value: 3 } });
     config = { ...config, enabled: false };
-    await expect(f.api.submit("audio", "owner@example.test", f.input, { occurrence: "two" })).rejects.toMatchObject({ status: 409 });
+    await expect(f.api.submit("audio", interactiveIdentity("owner@example.test").user, f.input, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "two" })).rejects.toMatchObject({ status: 409 });
     expect(await f.api.configuration("audio", "owner@example.test")).not.toHaveProperty("userEmail");
   });
   it("deduplicates refreshed references by stable external identity and hides internal input", async () => {
     const { api, input } = fixture();
-    const first = await api.submit("audio", "owner@example.test", input, { occurrence: "hour-1" });
-    const second = await api.submit("audio", "owner@example.test", { ...input, source: { kind: "source", sourceRef: "refreshed" } }, { occurrence: "hour-2" });
+    const first = await api.submit("audio", interactiveIdentity("owner@example.test").user, input, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "hour-1" });
+    const second = await api.submit("audio", interactiveIdentity("owner@example.test").user, { ...input, source: { kind: "source", sourceRef: "refreshed" } }, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "hour-2" });
     expect(first.status).toBe("accepted"); expect(second.status).toBe("duplicate");
     expect("job" in first && first.job).toMatchObject({ task: "process", sourceIdentity: { namespace: "external-account", itemId: "recording-1" } });
     expect("job" in first && first.job).not.toHaveProperty("sourceKey");
@@ -219,13 +263,13 @@ describe("audio job use cases", () => {
   });
   it("does not require an ASR model for import-only tasks", async () => {
     const { api, deps, input } = fixture();
-    expect((await api.submit("audio", "owner@example.test", { ...input, model: undefined, task: "import" }, { occurrence: "one" })).status).toBe("accepted");
+    expect((await api.submit("audio", interactiveIdentity("owner@example.test").user, { ...input, model: undefined, task: "import" }, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "one" })).status).toBe("accepted");
     expect(deps.validateModel).not.toHaveBeenCalled();
   });
   it("filters other users before applying the list limit", async () => {
     const { api, input } = fixture();
-    await api.submit("audio", "other@example.test", input, { occurrence: "one" });
-    await api.submit("audio", "owner@example.test", input, { occurrence: "two" });
+    await api.submit("audio", interactiveIdentity("other@example.test").user, input, { actor: interactiveIdentity("other@example.test").actor, occurrence: "one" });
+    await api.submit("audio", interactiveIdentity("owner@example.test").user, input, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "two" });
     expect((await api.list("audio", "owner@example.test", 1)).map((job) => job.id)).toEqual(["job-2"]);
     await expect(api.get("audio", "job-1", "owner@example.test")).rejects.toMatchObject({ status: 404 });
     await expect(api.cancel("audio", "job-1", "owner@example.test", 1)).rejects.toMatchObject({ status: 404 });
@@ -235,7 +279,7 @@ describe("audio job use cases", () => {
     const email = "owner@example.test";
     const now = f.deps.now().toISOString();
     const records: AudioJob[] = Array.from({ length: 8 }, (_, index) => ({
-      agentName: "audio", userEmail: email, source: f.input.source as AudioJob["source"],
+      agentName: "audio", userEmail: email, ...interactiveIdentity(email), source: f.input.source as AudioJob["source"],
       sourceKey: `source-${index}`, model: f.input.model!, retention: f.input.retention!,
       id: `job-${index}`, revision: 1, status: "completed", stage: "cleaning",
       createdAt: now, updatedAt: now, dueAt: now, attempt: 1, failures: 0, receipts: {},
@@ -259,13 +303,13 @@ describe("audio job use cases", () => {
   });
   it("requires an explicit processing revision for a new run of the same source", async () => {
     const { api, input } = fixture();
-    await api.submit("audio", "owner@example.test", input, { occurrence: "one" });
-    expect((await api.submit("audio", "owner@example.test", { ...input, processingRevision: "2" }, { occurrence: "two" })).status).toBe("accepted");
+    await api.submit("audio", interactiveIdentity("owner@example.test").user, input, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "one" });
+    expect((await api.submit("audio", interactiveIdentity("owner@example.test").user, { ...input, processingRevision: "2" }, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "two" })).status).toBe("accepted");
   });
   it("rejects invalid output options before admission", async () => {
     const { api, input } = fixture();
-    await expect(api.submit("audio", "owner@example.test", { ...input, task: "transcribe",
-      destination: { serverName: "memory", documents: true, memories: true } }, { occurrence: "one" }))
+    await expect(api.submit("audio", interactiveIdentity("owner@example.test").user, { ...input, task: "transcribe",
+      destination: { serverName: "memory", documents: true, memories: true } }, { actor: interactiveIdentity("owner@example.test").actor, occurrence: "one" }))
       .rejects.toMatchObject({ status: 400 });
     expect(await jobs.list("audio", 10)).toEqual([]);
   });

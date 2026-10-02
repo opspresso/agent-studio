@@ -6,6 +6,7 @@
 
 import { tierMayEdit, toMemberTier, type MemberTier } from "@/domain/member/tiers";
 import { memberRepository } from "@/infrastructure/db/repositories/memberRepository";
+import type { Member } from "@/domain/member/types";
 import { log } from "@/shared/logger";
 import { getMemberTierDefinitions, isAdminEmail, isConfiguredAdmin } from "./runtime-settings";
 
@@ -18,23 +19,6 @@ export interface TieredUser {
 /** May mutate shared registries and app settings — `withAdminAuth`'s question. */
 export async function isEffectiveAdmin(user: TieredUser): Promise<boolean> {
   return user.tier === "admin" || (tierMayEdit(user.tier) && await isAdminEmail(user.email));
-}
-
-/** May write an agent owned by someone else — `assertAgentWritable`'s question. */
-export async function isEffectiveConfiguredAdmin(user: TieredUser): Promise<boolean> {
-  return user.tier === "admin" || isConfiguredAdmin(user.email);
-}
-
-/**
- * The email-only form, for the seams that never see a session — today the
- * admin check injected into the agent use cases. The list is asked first: it
- * is already cached for 5s, and a configured admin then costs no member read.
- */
-export async function isEffectiveConfiguredAdminByEmail(email: string): Promise<boolean> {
-  if (await isConfiguredAdmin(email)) {
-    return true;
-  }
-  return (await getMemberTier(email)) === "admin";
 }
 
 /**
@@ -98,4 +82,11 @@ export async function getMemberTier(email: string): Promise<MemberTier | null> {
   }
   tierCache.set(key, { tier, expiresAt: now + TIER_CACHE_TTL_MS });
   return resolved(tier);
+}
+
+/** Resolve a credential's stable user ID from the current account row, without the email tier cache. */
+export async function getExecutionMemberById(id: string): Promise<Member | null> {
+  const member = await memberRepository.getById(id);
+  if (!member) return null;
+  return { ...member, tier: await isConfiguredAdmin(member.email) ? "admin" : toMemberTier(member.tier, await getMemberTierDefinitions()) };
 }

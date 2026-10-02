@@ -1,3 +1,4 @@
+import { executionIdentity } from "./runIdentity";
 import { withConfigurations } from "./agentConfigurations";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 /**
@@ -337,7 +338,7 @@ function configurationFixture(memoryRecall: boolean): AgentConfiguration {
 function depsFixture(channel: FakeChannel): ExecutionDeps {
   const reject = () => Promise.reject(new Error("not used in this test"));
   const imageChannel = { generateImage: reject } as unknown as ImageChannel;
-  return {
+  return { resolveUserLimits: async () => ({}), authorizeRun: async () => {},
     agents: { get: reject, list: reject, put: reject, delete: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => registryServer, list: reject, put: reject, delete: reject },
@@ -399,7 +400,7 @@ describe("a configuration that opted in recalls before the first token", () => {
     const seen = stubMemoryServer();
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     const chunks: EngineChunk[] = [];
-    for await (const chunk of executeAgent(depsFixture(channel), {
+    for await (const chunk of executeAgent(depsFixture(channel), { ...executionIdentity(),
       agent: agentFixture(),
       configuration: configurationFixture(memoryRecall),
       messages: [
@@ -498,10 +499,10 @@ describe("a configuration that opted in recalls before the first token", () => {
     const actor = { kind: "user" as const, id: "reader@example.com" };
     const query = "유정열을 검색해서 정리해";
     const stream = surface === "root"
-      ? executeAgent(deps, { agent, configuration, actor, messages: [{ role: "user", content: query }] })
+      ? executeAgent(deps, { ...executionIdentity(actor), agent, configuration, actor, messages: [{ role: "user", content: query }] })
       : (async function* () {
           const prepared = await prepareSubagent(deps, { ...configuration, agentName: "parent", subagentList: [{ name: agent.name }] }, agent.name,
-            { message: query, images: [], maxTurns: 8 }, async () => {}, { actor, ancestry: ["parent"] });
+            { message: query, images: [], maxTurns: 8 }, async () => {}, { ...executionIdentity(actor), actor, ancestry: ["parent"] });
           try { yield* runAgent(prepared.deps, prepared.input); } finally { await prepared.close(); }
         })();
     const chunks: EngineChunk[] = [];
@@ -552,7 +553,7 @@ describe("a configuration that opted in recalls before the first token", () => {
       ...registryServer, name, url: "https://docs.test/mcp", headers: {},
     };
     const chunks: EngineChunk[] = [];
-    for await (const chunk of executeAgent(deps, {
+    for await (const chunk of executeAgent(deps, { ...executionIdentity(),
       agent: agentFixture(),
       configuration: { ...configurationFixture(true), mcpList: [{ name: "memory" }, { name: "docs" }] },
       messages: [{ role: "user", content: "how do we deploy?" }],
@@ -563,7 +564,7 @@ describe("a configuration that opted in recalls before the first token", () => {
 
   it("the preview says the block is missing rather than showing a prompt one block short", async () => {
     const seen = stubMemoryServer();
-    const preview = await previewPrompt(depsFixture(new FakeChannel([])), {
+    const preview = await previewPrompt(depsFixture(new FakeChannel([])), { ...executionIdentity(),
       agent: agentFixture(),
       configuration: configurationFixture(true),
     });
@@ -577,7 +578,7 @@ describe("a configuration that opted in recalls before the first token", () => {
 
   it("the preview recalls and renders the memory block when a request is supplied", async () => {
     const seen = stubMemoryServer();
-    const preview = await previewPrompt(depsFixture(new FakeChannel([])), {
+    const preview = await previewPrompt(depsFixture(new FakeChannel([])), { ...executionIdentity({ kind: "user", id: "reader@example.com" }),
       agent: agentFixture(),
       configuration: configurationFixture(true),
       message: "how do we deploy?",
@@ -596,7 +597,7 @@ describe("a configuration that opted in recalls before the first token", () => {
 
   it("the preview names a configuration with recall on and no server to recall from", async () => {
     stubMemoryServer();
-    const preview = await previewPrompt(depsFixture(new FakeChannel([])), {
+    const preview = await previewPrompt(depsFixture(new FakeChannel([])), { ...executionIdentity(),
       agent: agentFixture(),
       configuration: { ...configurationFixture(true), mcpList: [] },
     });

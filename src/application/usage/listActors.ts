@@ -79,8 +79,10 @@ export async function listAgentActors(
   }
   const byActor = new Map<string, ActorUsageView>();
   for (const row of rows) {
-    const existing = byActor.get(row.actor);
-    byActor.set(row.actor, {
+    const key = JSON.stringify([row.userId, row.actor]);
+    const existing = byActor.get(key);
+    byActor.set(key, {
+      userId: row.userId,
       agentName: row.agentName,
       actor: row.actor,
       calls: addCounters(existing?.calls, row.calls),

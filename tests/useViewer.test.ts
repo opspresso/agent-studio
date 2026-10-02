@@ -6,7 +6,7 @@ import { useViewer, ViewerProvider, type Viewer } from "@/app/_lib/useViewer";
 const VIEWER: Viewer = {
   email: "viewer@example.com",
   isAdmin: false,
-  isConfiguredAdmin: false,
+
   tier: "member",
 };
 

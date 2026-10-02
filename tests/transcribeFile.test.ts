@@ -1,3 +1,4 @@
+import { interactiveIdentity } from "./runIdentity";
 import { describe, expect, it, vi } from "vitest";
 import { createAudioTranscriptionStep, type AudioTranscriptionDeps } from "@/application/audio/transcribeFile";
 import type { AudioJob } from "@/domain/audio/job";
@@ -7,7 +8,7 @@ import type { AudioJobStepContext } from "@/application/audio/processJob";
 function fixture() {
   const saved = new Map<string, Uint8Array>();
   const job: AudioJob = {
-    id: "job-1", agentName: "audio", userEmail: "owner@example.test", source: { kind: "file", fileId: "input" },
+    id: "job-1", agentName: "audio", userEmail: "owner@example.test", ...interactiveIdentity("owner@example.test"), source: { kind: "file", fileId: "input" },
     sourceKey: "source", fileId: "input", model: "selfhosted/asr", language: "ko",
     retention: { unit: "months", value: 3, timezone: "Asia/Seoul" }, revision: 1, status: "running",
     stage: "transcribing", createdAt: "2026-09-08T00:00:00.000Z", updatedAt: "2026-09-08T00:00:00.000Z",

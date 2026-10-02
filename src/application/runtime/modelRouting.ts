@@ -20,6 +20,7 @@ export function createRuntimeRouter(
   return createCallModelRouter({ ...deps.callRouting, decision: {
     choose: request => withGenerationSpan(async generation => {
       generation.spanData.model = request.model;
+      await deps.authorizeExecution?.();
       const decision = await deps.callRouting!.decision.choose(request);
       if (decision.usage) generation.spanData.usage = {
         input_tokens: decision.usage.inputTokens, output_tokens: decision.usage.outputTokens, cost_usd: decision.usage.costUsd,

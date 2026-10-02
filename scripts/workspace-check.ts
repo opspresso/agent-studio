@@ -30,25 +30,28 @@ export async function checkWorkspaces(): Promise<void> {
     await chats.create({ chatId, agentName, title: "Workspace integration", ownerEmail: owner, createdAt: now, updatedAt: now });
     await chats.create({ chatId: sourceChatId, agentName, title: "Agent source", ownerEmail: owner, createdAt: now, updatedAt: now });
     const starts = await Promise.allSettled(Array.from({ length: 8 }, (_, index) => useCases.startForChat({ agentName, runtime: "command",
-      input: { kind: "command", script: `printf request-${index}` } }, owner, sourceChatId)));
+      input: { kind: "command", script: `printf request-${index}` } }, { userId: "studio-user-1", email: owner }, sourceChatId)));
     for (const result of starts) if (result.status === "fulfilled") sourceWorkspaces.set(result.value.workspace.id, result.value.workspace.chatId);
     assert.equal(starts.filter(result => result.status === "fulfilled").length, 8, "concurrent starts resolve the same source selection");
     assert.equal(sourceWorkspaces.size, 1, "one source chat cannot create duplicate Workspaces");
     const selectedId = [...sourceWorkspaces.keys()][0]!;
     assert.equal((await chats.get(sourceChatId))?.linkedWorkspaces?.[agentName], selectedId);
     assert.equal((await repository.runs(selectedId, 10)).length, 1, "only the winning start queues its first task");
-    const later = await useCases.startForChat({ agentName, runtime: "command", input: { kind: "command", script: "printf later" } }, owner, sourceChatId);
+    const later = await useCases.startForChat({ agentName, runtime: "command", input: { kind: "command", script: "printf later" } }, { userId: "studio-user-1", email: owner }, sourceChatId);
     assert.equal(later.reused, true);
     assert.equal(later.workspace.id, selectedId);
     assert.equal((await repository.runs(selectedId, 10)).length, 1, "another start does not replay or enqueue work");
     const sourceWorkspace = (await repository.get(selectedId))!;
-    const approval: CodingApproval = { id: "completed-approval", workspaceId: selectedId, requestedBy: owner,
+    const approval: CodingApproval = { id: "completed-approval", workspaceId: selectedId, requestedBy: owner, requestedByUserId: "workspace-check-user",
       requestedAt: now, sourceChatId, action: { kind: "push" }, fingerprint: "review", status: "succeeded", result: "a".repeat(40),
       review: { headSha: "a".repeat(40), treeSha: "b".repeat(40), diff: "", truncated: false } };
     await repository.write({ expectedRevision: sourceWorkspace.revision,
       workspace: { ...sourceWorkspace, revision: sourceWorkspace.revision + 1 }, approval });
     const notification = (await repository.continuation(selectedId, approval.id))!;
     assert.equal(notification.status, "pending", "terminal approval and continuation commit together");
+    assert.equal(notification.userId, approval.requestedByUserId, "the durable continuation retains the requesting account");
+    assert.equal(await repository.updateContinuation({ ...notification, userId: "another-user", revision: 1 }, 0), false,
+      "a continuation revision cannot reassign the caller");
     assert.ok((await repository.dueContinuations(new Date().toISOString(), 50)).some(row => row.approvalId === approval.id));
     const continuationRunId = "continuation-run";
     await chats.claimRun(sourceChatId, continuationRunId, Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000) + 60);
@@ -71,11 +74,11 @@ export async function checkWorkspaces(): Promise<void> {
       workspace: { ...sourceAfterDelivery, revision: sourceAfterDelivery.revision + 1 }, approval });
     assert.equal((await repository.continuation(selectedId, approval.id))?.status, "completed", "saving an outcome again cannot redeliver it");
 
-    const workspace = await useCases.create({ chatId, agentName, title: "General task", runtime: "command" }, owner);
+    const workspace = await useCases.create({ chatId, agentName, title: "General task", runtime: "command" }, { userId: "studio-user-1", email: owner });
     workspaceId = workspace.id;
     assert.equal(workspace.coding, undefined);
     const input = { kind: "command" as const, script: "printf integration" };
-    const runs = await Promise.all(Array.from({ length: 8 }, () => useCases.enqueue(workspace.id, owner, input, "request-0001")));
+    const runs = await Promise.all(Array.from({ length: 8 }, () => useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, input, "request-0001")));
     assert.equal(new Set(runs.map(run => run.id)).size, 1, "concurrent identical requests admit one run");
     assert.equal((await repository.runs(workspace.id, 10)).length, 1);
     const active = (await repository.get(workspace.id))!;
@@ -114,7 +117,7 @@ export async function checkWorkspaces(): Promise<void> {
     const closing = (await repository.get(workspace.id))!;
     assert.ok(closing.deleteRequestedAt, "chat deletion cannot remove the compute cleanup record");
     await assert.rejects(repository.write(claim), "late worker cannot overwrite cleanup intent");
-    await assert.rejects(useCases.enqueue(workspace.id, owner, input, "request-0002"));
+    await assert.rejects(useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, input, "request-0002"));
     await repository.write({ expectedRevision: closing.revision, workspace: { ...closing, revision: closing.revision + 1,
       status: "closed", activeRunId: undefined } });
     await assert.rejects(repository.write({ expectedRevision: closing.revision + 1,

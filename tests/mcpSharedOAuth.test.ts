@@ -1,3 +1,5 @@
+import { memberFixture } from "./memberFixture";
+import { isolatedMcpRefresh } from "./fakeMcpRefresh";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMcpAuthUseCases } from "@/application/mcp/mcpAuthUseCases";
 import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
@@ -30,7 +32,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: mocks.getSession } } }));
 vi.mock("@/lib/container", () => ({ mcpAuthUseCases: mocks }));
-import { GET, PUT } from "@/app/api/mcps/[name]/auth/route";
+import { GET, PUT, POST, DELETE } from "@/app/api/mcps/[name]/auth/route";
 import { getMcpOAuthClientSettings, saveMcpOAuthClient } from "@/app/tools/api";
 
 const store = await import("@/infrastructure/db/store") as unknown as FakeStore;
@@ -61,7 +63,7 @@ function harness() {
     }),
     refresh: vi.fn<OAuthClient["refresh"]>().mockResolvedValue({ accessToken: "renewed-access" }),
   };
-  const provider = createMcpAuthProvider({ connections: mcpConnectionRepository, oauth, cipher: secretCipher });
+  const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(), connections: mcpConnectionRepository, oauth, cipher: secretCipher });
   const metadata: OAuthMetadataClient = {
     fetchProtectedResource: async () => ({ resource: auth.resource, authorizationServers: [auth.issuer] }),
     fetchAuthorizationServer: async () => ({
@@ -70,6 +72,7 @@ function harness() {
     }),
   };
   const uc = createMcpAuthUseCases({
+    members: { getById: async id => memberFixture({ id, email: OWNER }) },
     serviceName: async () => "Agent Studio",
     mcps: mcpRepository, connections: mcpConnectionRepository, states: mcpOAuthStateRepository,
     agents: { get: async (name: string) => ({ name, ownerEmail: OWNER }) } as never,
@@ -80,8 +83,8 @@ function harness() {
   return {
     uc, oauth, provider, metadata,
     moveBase: (value: string) => { baseUrl = value; },
-    async begin(agent = "p") {
-      const result = await uc.beginAuthorization(agent, "github", OWNER);
+    async begin(agent = "p", userId = "p") {
+      const result = await uc.beginAuthorization(agent, "github", { userId, email: OWNER });
       return new URL(result.authorizeUrl).searchParams.get("state")!;
     },
     async save() {
@@ -111,7 +114,7 @@ describe("shared MCP OAuth app", () => {
   it("saves and clears a generic account contract without changing shared client credentials or the Agent's grant", async () => {
     const h = harness();
     await h.save();
-    await h.uc.completeAuthorization({ state: await h.begin(), code: "c", userEmail: OWNER });
+    await h.uc.completeAuthorization({ state: await h.begin(), code: "c", user: { userId: "p", email: OWNER } });
     const before = await mcpConnectionRepository.get("p", "github");
     const saved = await h.uc.saveOAuthClientCredentials("github", { accountLookup: { kind: "http", endpoint: "https://identity.example.test/me", labelPath: "/email" } });
     expect(saved.accountLookup).toEqual({ kind: "http", endpoint: "https://identity.example.test/me", labelPath: "/email" });
@@ -190,12 +193,12 @@ describe("shared MCP OAuth app", () => {
     const h = harness();
     await h.save();
     const first = await h.begin("p");
-    const second = await h.begin("q");
+    const second = await h.begin("q", "q");
     h.moveBase("https://new-studio.example.test");
     await h.uc.saveOAuthClientCredentials("github", { redirectUri: "" });
-    await h.uc.completeAuthorization({ state: first, code: "first", userEmail: OWNER });
+    await h.uc.completeAuthorization({ state: first, code: "first", user: { userId: "p", email: OWNER } });
     h.oauth.exchangeCode.mockResolvedValueOnce({ accessToken: "second-person-access" });
-    await h.uc.completeAuthorization({ state: second, code: "second", userEmail: OWNER });
+    await h.uc.completeAuthorization({ state: second, code: "second", user: { userId: "q", email: OWNER } });
     expect(h.oauth.exchangeCode.mock.calls[0]?.[1].redirectUri).toBe(CALLBACK);
     expect(h.oauth.exchangeCode.mock.calls[0]?.[0].clientSecret).toBe("shared-secret");
     const a = await mcpConnectionRepository.get("p", "github");
@@ -207,7 +210,7 @@ describe("shared MCP OAuth app", () => {
   it("refreshes with a rotated shared secret without storing a copy on the agent", async () => {
     const h = harness();
     await h.save();
-    await h.uc.completeAuthorization({ state: await h.begin(), code: "c", userEmail: OWNER });
+    await h.uc.completeAuthorization({ state: await h.begin(), code: "c", user: { userId: "p", email: OWNER } });
     await h.uc.saveOAuthClientCredentials("github", { clientSecret: "rotated-secret" });
     const result = await h.provider.headersFor("p", "github", await h.currentAuth());
     expect(result.headers.Authorization).toBe("Bearer renewed-access");
@@ -219,7 +222,7 @@ describe("shared MCP OAuth app", () => {
     const h = harness();
     await h.save();
     h.oauth.exchangeCode.mockResolvedValueOnce({ accessToken: "live" });
-    await h.uc.completeAuthorization({ state: await h.begin(), code: "c", userEmail: OWNER });
+    await h.uc.completeAuthorization({ state: await h.begin(), code: "c", user: { userId: "p", email: OWNER } });
     await h.uc.saveOAuthClientCredentials("github", { clientId });
     expect((await h.provider.headersFor("p", "github", await h.currentAuth())).unavailable).toMatch(/shared OAuth client/);
     expect(h.oauth.refresh).not.toHaveBeenCalled();
@@ -231,7 +234,7 @@ describe("shared MCP OAuth app", () => {
     await h.save();
     const state = await h.begin();
     await h.uc.saveOAuthClientCredentials("github", { clientId: "new-app" });
-    await expect(h.uc.completeAuthorization({ state, code: "old-code", userEmail: OWNER })).rejects.toThrow(/client or resource changed/);
+    await expect(h.uc.completeAuthorization({ state, code: "old-code", user: { userId: "p", email: OWNER } })).rejects.toThrow(/client or resource changed/);
     expect(h.oauth.exchangeCode).not.toHaveBeenCalled();
   });
 
@@ -295,5 +298,9 @@ describe("shared MCP OAuth app", () => {
     expect(empty.status).toBe(400);
     mocks.getSession.mockResolvedValue({ user: { id: "member", email: "member@example.test", tier: "member" } });
     expect((await GET(new Request(`${BASE}/api/mcps/github/auth`), { params: Promise.resolve({ name: "github" }) })).status).toBe(403);
+    for (const [method, handler] of [["PUT", PUT], ["POST", POST], ["DELETE", DELETE]] as const) {
+      expect((await handler(new Request(`${BASE}/api/mcps/github/auth`, { method, headers: { origin: BASE } }),
+        { params: Promise.resolve({ name: "github" }) })).status).toBe(403);
+    }
   });
 });

@@ -1,3 +1,4 @@
+import type { RunUser } from "@/domain/execution/actor";
 import type { DocumentRenderer, DocumentEditor } from "@/domain/document/processor";
 import type { RegisterMcpSource } from "@/application/audio/mapMcpSource";
 import type { FileToolDeps } from "@/application/document/fileTool";
@@ -26,7 +27,7 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { HttpResourceReader } from "@/domain/net/httpResource";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import type { RunActor, RunCaller, RunConversation, RunOrigin, ExecutionGrant } from "@/domain/execution/actor";
+import type { RunCaller, RunConversation, RunOrigin, RunIdentity } from "@/domain/execution/actor";
 import type { RunBracketDeps } from "@/application/run/runBracket";
 import type { SlackWorkspaceReader } from "@/domain/slack/reader";
 import type { RuntimeSessionServices } from "@/application/runtime/session";
@@ -42,7 +43,7 @@ import type { PullRequestReviewTarget, ReviewWorkspaceTool } from "@/domain/trig
 export interface ExecutionDeps extends RunBracketDeps {
   reviewWorkspace?: ReviewWorkspaceTool;
   reviewSource?: (args: Record<string, unknown>) => Promise<McpToolResult>;
-  authorizeExecutionGrant?: (grant: ExecutionGrant) => Promise<void>;
+  authorizeRun: (agentName: string, identity: RunIdentity) => Promise<void>;
   getCallRoutingPolicy?: () => Promise<import("@/domain/llm/callRouting").CallRoutingPolicy>;
   callRouting?: import("@/application/llm/callModelRouter").CallRoutingDeps;
   createToolSchemaValidator: () => ToolSchemaValidator;
@@ -77,7 +78,7 @@ export interface ExecutionDeps extends RunBracketDeps {
     ((args: Record<string, unknown>, callId: string) => Promise<McpToolResult>) | undefined
   >;
   registerMcpSource?: RegisterMcpSource;
-  sourceRefreshIdentity?(input: { configuration: AgentConfiguration; binding: McpBinding; server: McpServer }): Promise<string>;
+  sourceRefreshIdentity?(input: { configuration: AgentConfiguration; binding: McpBinding; server: McpServer; user?: RunUser }): Promise<string>;
   /**
    * A reader for the Slack workspace this agent's bot is installed in, or
    * null when it has no enabled bot.
@@ -92,17 +93,17 @@ export interface ExecutionDeps extends RunBracketDeps {
   slackWorkspace: (agent: Agent) => SlackWorkspaceReader | null;
   /** MCP tool sessions — wired by the composition root; tests inject a fake. */
   mcpSessions: McpSessionFactory;
-  /** Per-agent OAuth for registry servers that require it. */
+  /** Per-user OAuth for registry servers that require it. */
   mcpAuth: McpAuthProvider;
   /**
-   * Which registry servers this agent has an OAuth connection to.
+   * Which registry servers the caller has an OAuth connection to.
    *
    * Read-only, and separate from {@link mcpAuth} on purpose: resolving headers
    * refreshes tokens, while capability discovery only needs to know whether a
    * connection exists before it offers a server it never bound. Absent means
    * discovery cannot tell, and treats every OAuth server as unconnected.
    */
-  mcpConnections?: Pick<McpConnectionRepository, "listByAgent">;
+  mcpConnections?: Pick<McpConnectionRepository, "listByUser">;
   /**
    * The global capability catalog, when this deployment has one. Absent means
    * an Agent's `dynamicCapabilities` has nothing to search and the run offers
@@ -125,18 +126,16 @@ export interface ExecutionDeps extends RunBracketDeps {
   now?: () => Date;
 }
 
-export interface ExecuteAgentInput {
+export interface ExecuteAgentInput extends RunIdentity {
   reviewWorkspace?: ReviewWorkspaceTool;
   /** Prepared by the verified PR use case; never accepted from public execution bodies. */
   reviewSource?: ExecutionDeps["reviewSource"];
-  executionGrant?: ExecutionGrant;
   resumeApproval?: { revision: number; decisions: RuntimeApprovalDecision[] };
   backgroundTask?: boolean;
   agent: Agent;
   configuration: AgentConfiguration;
   /** OpenAI-shaped message history from the route/chat boundary. */
   messages: ChatMessageInput[];
-  actor?: RunActor;
   /** Display identity, included only when callerContext is enabled. */
   caller?: RunCaller;
   /** Surface-scoped conversation identity. */
@@ -156,15 +155,13 @@ export interface ExecuteAgentInput {
 
 // --- Agent-level dispatch --------------------------------------------------
 
-export interface AgentRunInput {
+export interface AgentRunInput extends RunIdentity {
   reviewWorkspace?: ReviewWorkspaceTool;
   reviewSource?: ExecutionDeps["reviewSource"];
-  executionGrant?: ExecutionGrant;
   backgroundTask?: boolean;
   agent: Agent;
   configuration: AgentConfiguration;
   messages: ChatMessageInput[];
-  actor?: RunActor;
   /** Server-resolved user identity for non-user entry points such as schedules. */
   ownerEmail?: string;
   /** See {@link ExecuteAgentInput.caller}. */
@@ -191,13 +188,14 @@ export function toRunInput(
   input: AgentRunInput,
 ): Pick<
   ExecuteAgentInput,
-  "agent" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "signal" | "ownerEmail" | "backgroundTask" | "executionGrant" | "reviewSource" | "reviewWorkspace"
+  "agent" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "signal" | "ownerEmail" | "backgroundTask" | "executionGrant" | "reviewSource" | "reviewWorkspace" | "user"
 > {
   return {
     agent: input.agent,
     configuration: input.configuration,
     messages: input.messages,
-    ...(input.actor ? { actor: input.actor } : {}),
+    user: input.user,
+    actor: input.actor,
     ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
     ...(input.reviewSource ? { reviewSource: input.reviewSource } : {}),
     ...(input.reviewWorkspace ? { reviewWorkspace: input.reviewWorkspace } : {}),

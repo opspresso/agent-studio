@@ -143,11 +143,6 @@ const emptyAgents: AgentRepository = {
   async create() {},
   async update() {},
   async delete() {},
-  async getApiToken() {
-    return null;
-  },
-  async setApiToken() {},
-  async deleteApiToken() {},
 };
 
 const emptyConfigurations = {
@@ -801,7 +796,7 @@ describe("ownership checks", () => {
   it("sendMessage answers a non-owner with 404 before touching the agent", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     await expect(
-      sendMessage(makeDeps(repo), { chatId: "c1", content: "hey", userEmail: "intruder@x.com" }),
+      sendMessage(makeDeps(repo), { chatId: "c1", content: "hey", user: { userId: "studio-user-1", email: "intruder@x.com" } }),
     ).rejects.toBeInstanceOf(ChatNotFoundError);
   });
 
@@ -821,7 +816,6 @@ describe("chat access to a private agent", () => {
         description: "",
         ownerEmail: "someone-else@x.com",
         visibility: "private",
-        memberEmails: ["invited@x.com"],
 
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
@@ -835,7 +829,7 @@ describe("chat access to a private agent", () => {
       createChat(makeDeps(repo, { agents: privateAgents }), {
         agentName: "p1",
         firstMessage: "hi",
-        userEmail: "owner@x.com",
+        user: { userId: "studio-user-1", email: "owner@x.com" },
       }),
     ).rejects.toBeInstanceOf(ChatForbiddenError);
   });
@@ -846,22 +840,22 @@ describe("chat access to a private agent", () => {
       sendMessage(makeDeps(repo, { agents: privateAgents }), {
         chatId: "c1",
         content: "hey",
-        userEmail: "owner@x.com",
+        user: { userId: "studio-user-1", email: "owner@x.com" },
       }),
     ).rejects.toBeInstanceOf(ChatForbiddenError);
     // Refused before the run lease was claimed, so nothing is left to free.
     expect(state.activeRunId).toBeUndefined();
   });
 
-  it("lets an invited member chat with a private agent", async () => {
-    const { repo } = makeChatRepo(chatFixture("invited@x.com"));
+  it("lets the owner chat with a private agent", async () => {
+    const { repo } = makeChatRepo(chatFixture("someone-else@x.com"));
     // Access passes; the missing configuration is the next check in line, which is
     // proof the visibility gate is what let the turn through.
     await expect(
       sendMessage(makeDeps(repo, { agents: privateAgents }), {
         chatId: "c1",
         content: "hey",
-        userEmail: "invited@x.com",
+        user: { userId: "studio-user-1", email: "someone-else@x.com" },
       }),
     ).rejects.toThrow("no Agent configuration");
   });
@@ -912,8 +906,8 @@ describe("chat image attachments", () => {
       artifacts: storage,
     });
     const result = action === "create"
-      ? await createChat(deps, { agentName: "p1", firstMessage: "look", images: [PNG], userEmail })
-      : await sendMessage(deps, { chatId: "c1", content: "look", images: [PNG], userEmail });
+      ? await createChat(deps, { agentName: "p1", firstMessage: "look", images: [PNG], user: { userId: "studio-user-1", email: userEmail } })
+      : await sendMessage(deps, { chatId: "c1", content: "look", images: [PNG], user: { userId: "studio-user-1", email: userEmail } });
     for await (const _chunk of result.stream) {
       // Finish the run and release its lease.
     }
@@ -938,7 +932,7 @@ describe("chat image attachments", () => {
       sendMessage(makeDeps(repo, { agents: withConfigurations(availableAgents, (savedConfigurations).get) }), {
         chatId: "c1",
         content: "hey",
-        userEmail: "owner@x.com",
+        user: { userId: "studio-user-1", email: "owner@x.com" },
       }),
     ).rejects.toThrow("item store unavailable");
 
@@ -955,7 +949,7 @@ describe("chat image attachments", () => {
       sendMessage(makeDeps(repo, { agents: withConfigurations(availableAgents, (savedConfigurations).get) }), {
         chatId: "c1",
         content: "hey",
-        userEmail: "owner@x.com",
+        user: { userId: "studio-user-1", email: "owner@x.com" },
       }),
     ).rejects.toThrow("item too large");
 
@@ -972,7 +966,7 @@ describe("chat image attachments", () => {
     const runAgent = vi.fn<AgentRunner>(() => emptyAgent());
     const { stream } = await sendMessage(makeDeps(repo, {
       agents: withConfigurations(availableAgents, (savedConfigurations).get),  artifacts: artifacts.storage, runAgent,
-    }), { chatId: "c1", content: "edit the previous image", userEmail: "owner@x.com" });
+    }), { chatId: "c1", content: "edit the previous image", user: { userId: "studio-user-1", email: "owner@x.com" } });
     for await (const _ of stream) { /* drain persistence */ }
 
     expect(runAgent.mock.calls[0]?.[0].messages).toEqual([{ role: "user", content: "edit the previous image" }]);
@@ -992,7 +986,7 @@ describe("chat image attachments", () => {
     const { stream } = await sendMessage(deps, {
       chatId: "c1",
       content: "and now?",
-      userEmail: "owner@x.com",
+      user: { userId: "studio-user-1", email: "owner@x.com" },
     });
     for await (const _ of stream) {
       // drain
@@ -1018,7 +1012,7 @@ describe("chat image attachments", () => {
       chatId: "c1",
       content: "what is this?",
       images: [PNG],
-      userEmail: "owner@x.com",
+      user: { userId: "studio-user-1", email: "owner@x.com" },
     });
     for await (const _ of stream) {
       // drain so the run completes and persistence happens
@@ -1058,7 +1052,7 @@ describe("chat image attachments", () => {
       chatId: "c1",
       content: "",
       images: [PNG],
-      userEmail: "owner@x.com",
+      user: { userId: "studio-user-1", email: "owner@x.com" },
     });
     for await (const _ of stream) {
       // drain
@@ -1420,7 +1414,7 @@ describe("attached documents", () => {
           name: "q3.txt",
         },
       ],
-      userEmail: "owner@x.com",
+      user: { userId: "studio-user-1", email: "owner@x.com" },
     });
     for await (const _ of stream) {
       // drain so the run completes and persistence happens
@@ -1456,7 +1450,7 @@ describe("attached documents", () => {
       chatId: "c1",
       content: "analyse this",
       documents: [{ b64: "AQID", mimeType: "application/octet-stream", name: "q3.xlsx" }],
-      userEmail: "owner@x.com",
+      user: { userId: "studio-user-1", email: "owner@x.com" },
     });
     for await (const _ of stream) {
       // drain
@@ -1481,7 +1475,7 @@ describe("attached documents", () => {
       agentName: "agent",
       firstMessage: "analyse this",
       documents: [{ b64: "AQID", mimeType: "application/octet-stream", name: "q3.xlsx" }],
-      userEmail: "owner@x.com",
+      user: { userId: "studio-user-1", email: "owner@x.com" },
     });
     for await (const _ of stream) {
       // drain
@@ -1507,7 +1501,7 @@ describe("attached documents", () => {
       chatId: "c1",
       content: "summarise this",
       documents: [{ b64: "AAAA", mimeType: "application/pdf", name: "locked.pdf" }],
-      userEmail: "owner@x.com",
+      user: { userId: "studio-user-1", email: "owner@x.com" },
     });
     for await (const chunk of stream) {
       chunks.push(chunk);

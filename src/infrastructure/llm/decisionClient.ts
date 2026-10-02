@@ -1,6 +1,7 @@
 import type { ChoiceDecision, DecisionModel } from "@/domain/llm/decision";
 import type { TargetResolver } from "./providers";
 import { calculateCost } from "@/domain/llm/models";
+import { fetchProvider } from "./providerFetch";
 
 function endpoint(baseUrl: string, provider: string | null): string {
   const url = new URL(baseUrl);
@@ -39,7 +40,7 @@ export function createDecisionClient(resolveTarget: TargetResolver): DecisionMod
       if (target.auth !== "bearer") throw new Error("Decision provider requires bearer authentication");
       let response: Response;
       try {
-        response = await fetch(endpoint(target.baseUrl, target.providerName), {
+        response = await fetchProvider(endpoint(target.baseUrl, target.providerName), {
           method: "POST",
           headers: { Authorization: `Bearer ${target.apiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({ model: target.model, state, questions: { selection: { type: "choice", instructions, criteria } } }),

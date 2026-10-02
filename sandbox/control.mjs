@@ -58,7 +58,7 @@ function safeCommand(spec) {
     XDG_CONFIG_HOME: `${home}/.config`, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "safe.directory", GIT_CONFIG_VALUE_0: work,
     DISABLE_AUTOUPDATER: "1", DISABLE_TELEMETRY: "1", OPENCODE_DISABLE_AUTOUPDATE: "true",
     OPENCODE_DISABLE_MODELS_FETCH: "true", OPENCODE_DISABLE_LSP_DOWNLOAD: "true", OPENCODE_DISABLE_DEFAULT_PLUGINS: "true" };
-  const allowed = new Set(["CODEX_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "OPENCODE_CONFIG_CONTENT"]);
+  const allowed = new Set(["CODEX_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "OPENCODE_CONFIG_CONTENT"]);
   for (const [key, value] of Object.entries(spec.environment || {})) {
     if (!allowed.has(key) || typeof value !== "string" || value.includes("\0")) throw new Error("Unsupported runtime environment");
     env[key] = value;

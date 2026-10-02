@@ -1,6 +1,7 @@
 import { getCurrentSpan, ModelBehaviorError, type AgentOutputItem, type Model, type ModelRequest, type ModelResponse, type ResponseStreamEvent } from "@openai/agents";
 import { routePrimaryModel, primaryRoutingInstructions, primaryReasoningEffort } from "./modelRouting";
 import { applyModelConstraints, describeImageInputReject } from "@/domain/llm/models";
+import { modelSupportProblem } from "@/application/agent/configurationPolicy";
 import { modelResponseUsage, modelResponseIsTruncated, modelResponseHasOutput, type ResponseUsage } from "./modelUsage";
 import { createRunContextBudget } from "@/application/llm/contextBudget";
 import { createToolResultBudget, MAX_TOOL_RESULT_CHARS_PER_TURN } from "@/application/llm/toolResultBudget";
@@ -161,9 +162,15 @@ export function createRunModel(
       return Array.isArray(content) ? content.some((part) => part.type === "input_image" || part.type === "image")
         : content !== null && typeof content === "object" && "type" in content && content.type === "image";
     });
-    const refusal = hasImages ? describeImageInputReject(fallback) : undefined;
+    // Recheck current facts without invalidating a healthy primary or replacing its failure.
+    const refusal = modelSupportProblem(fallback, { ...input.parameters, structuredOutput: request.outputType !== "text" })
+      ?? (hasImages ? describeImageInputReject(fallback) : undefined);
     if (refusal) {
-      if (!reportedIneligibleFallback) { log.warn("engine", `fallback skipped for an image request: ${refusal}`); reportedIneligibleFallback = true; }
+      if (!reportedIneligibleFallback) {
+        reportedIneligibleFallback = true;
+        log.warn("engine", `fallback skipped: ${refusal}`);
+        emit({ warning: `Fallback model was not available for this run: ${refusal}` });
+      }
       return undefined;
     }
     return fallback;
@@ -177,6 +184,7 @@ export function createRunModel(
       begin(request, model);
       let response: ModelResponse;
       let prepared = prepare(request, model);
+      await deps.authorizeExecution?.();
       try { response = await (await deps.channel.getModel(model)).getResponse(prepared); }
       catch (error) {
         request.signal?.throwIfAborted();
@@ -186,6 +194,7 @@ export function createRunModel(
         model = routed?.model ?? fallback;
         beginFallbackBudget(request, model);
         prepared = prepare(request, model);
+        await deps.authorizeExecution?.();
         response = await (await deps.channel.getModel(model)).getResponse(prepared);
       }
       turn.model = model;
@@ -256,6 +265,7 @@ export function createRunModel(
         }
       };
       try {
+        await deps.authorizeExecution?.();
         try { yield* consume(primaryModel); }
         catch (error) {
           request.signal?.throwIfAborted();
@@ -264,6 +274,7 @@ export function createRunModel(
           routed = await routePrimaryModel(deps, input, turn, request, emit, fallback);
           const model = routed?.model ?? fallback;
           beginFallbackBudget(request, model);
+          await deps.authorizeExecution?.();
           yield* consume(model);
         }
       } finally { flush(); }

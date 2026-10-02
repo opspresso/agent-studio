@@ -1,4 +1,4 @@
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunActor, RunUser } from "@/domain/execution/actor";
 
 /**
  * Limit endings are distinct from `completed`: the turn guard or provider's
@@ -38,6 +38,8 @@ export interface Trace {
    * Absent on traces written before attribution existed.
    */
   actor?: RunActor;
+  /** Authenticated Studio account captured for this execution. */
+  user?: RunUser;
   /**
    * Transfer chain that reached this run, outermost first — the last element is
    * this run's own agent. Present on nested runs so a trace can be read

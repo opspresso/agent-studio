@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { sessionCaller } from "@/app/api/_lib/caller";
 import { withTurnBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -10,7 +10,7 @@ import { sendMessageSchema } from "../../_lib/schemas";
 
 type RouteContext = { params: Promise<{ chatId: string }> };
 
-export const POST = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const POST = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { chatId } = await ctx.params;
 
   return withTurnBody(request, async (body, admission) => {
@@ -29,7 +29,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
         content: parsed.data.content,
         ...(parsed.data.images ? { images: parsed.data.images } : {}),
         ...(parsed.data.documents ? { documents: parsed.data.documents } : {}),
-        userEmail: user.email,
+        user: { userId: user.id, email: user.email },
         ...(caller ? { caller } : {}),
         signal: abortController.signal,
       });

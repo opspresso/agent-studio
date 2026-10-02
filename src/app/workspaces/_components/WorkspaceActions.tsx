@@ -1,5 +1,6 @@
 "use client";
 
+import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { useState } from "react";
 import { Alert, Anchor, Button, Checkbox, Code, Group, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
@@ -10,6 +11,7 @@ import type { CodingAction } from "@/domain/coding/types";
 
 export function WorkspaceActions({ detail, workflows, refresh }: { detail: WorkspaceDetailResponse; workflows: string[]; refresh(): Promise<void> }) {
   const t = useT();
+  const mayRun = canRunAgents(useViewer());
   const [kind, setKind] = useState("commit");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -22,7 +24,7 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
   const [error, setError] = useState<string | null>(null);
   const pending = detail.approvals.find(approval => approval.id === detail.workspace.activeActionId);
   const latest = detail.approvals[0];
-  const disabled = !!detail.workspace.activeRunId || ["closing", "suspending"].includes(detail.workspace.status);
+  const disabled = !mayRun || !!detail.workspace.activeRunId || ["closing", "suspending"].includes(detail.workspace.status);
   const needsMessage = kind === "commit" || kind === "commit-and-push";
   function actionLabel(action: CodingAction) {
     if (action.kind === "commit") return "Commit";
@@ -37,6 +39,7 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
   }
 
   async function perform(approval?: boolean) {
+    if (disabled || busy) return;
     setBusy(true); setError(null);
     try {
       let result: CodingApprovalResponse;

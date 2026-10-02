@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RateLimitedError } from "@/application/errors";
 
 const { useCases, auth } = vi.hoisted(() => ({
-  useCases: { recommend: vi.fn() }, auth: { signedIn: true, tier: "member" as "member" | "guest" },
+  useCases: { recommend: vi.fn() }, auth: { signedIn: true, tier: "member" as const },
 }));
 vi.mock("@/lib/container", () => ({ agentRecommendationUseCases: useCases }));
 vi.mock("@/lib/session", () => ({
-  withAuth: (handler: (user: { email: string; tier: "member" | "guest" }, request: Request) => unknown) => (request: Request) =>
+  withMemberAuth: (handler: (user: { email: string; tier: "member" | "guest" }, request: Request) => unknown) => (request: Request) =>
     auth.signedIn ? handler({ email: "member@example.test", tier: auth.tier }, request) : Response.json({ error: "Unauthorized" }, { status: 401 }),
 }));
 const { POST } = await import("@/app/api/agent-recommendations/route");
@@ -27,12 +27,6 @@ describe("POST /api/agent-recommendations", () => {
     auth.signedIn = false;
     expect((await post({ surface: "chat", request: "fix code" })).status).toBe(401);
     expect(useCases.recommend).not.toHaveBeenCalled();
-  });
-  it("allows guest recommendations for both Chat and Workspace", async () => {
-    auth.tier = "guest";
-    useCases.recommend.mockResolvedValue(null);
-    expect((await post({ surface: "workspace", request: "fix code" })).status).toBe(200);
-    expect((await post({ surface: "chat", request: "fix code" })).status).toBe(200);
   });
   it("returns a bounded retry interval when recommendation quota is exhausted", async () => {
     useCases.recommend.mockRejectedValue(new RateLimitedError("Too many Agent recommendation requests", 17));

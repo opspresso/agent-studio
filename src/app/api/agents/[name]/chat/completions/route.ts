@@ -5,7 +5,7 @@ import { resolveProducedFile, resolveProducedFiles } from "@/application/artifac
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { collectAgentRun, streamAgentExecution } from "@/application/execution/runAgent";
 import { chatCompletionsSchema } from "@/app/api/agents/_lib/schemas";
-import { authenticateExecution, principalActor } from "@/app/api/agents/_lib/executionAuth";
+import { authenticateExecution, principalRunContext } from "@/app/api/agents/_lib/executionAuth";
 import { requestConversation } from "@/app/api/agents/_lib/conversation";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { withTurnBody } from "@/app/api/_lib/body";
@@ -29,13 +29,13 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       const configuration = requireAgentConfiguration(agent);
       // The facade runs the Agent; this route wraps text, images and files
       // in the OpenAI-compatible response shape.
-      const conversation = requestConversation(request, principalActor(principal));
+      const context = principalRunContext(principal, agent.name);
+      const conversation = requestConversation(request, principal.userId);
       const params = {
         agent,
         configuration,
         messages: parsed.data.messages,
-        actor: principalActor(principal),
-        ...(principal.caller ? { caller: principal.caller } : {}),
+        ...context,
         ...(conversation ? { conversation } : {}),
       };
 

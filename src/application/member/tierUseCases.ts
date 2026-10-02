@@ -1,6 +1,6 @@
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { ConflictError, ValidationError } from "@/application/errors";
-import { DEFAULT_MEMBER_TIERS, isMemberTierDefinitions, orderMemberTiers, type MemberTierSettings } from "@/domain/member/tiers";
+import { DEFAULT_MEMBER_TIERS, isMemberTierDefinitions, effectiveMemberTiers, tierMayRunAgents, type MemberTierSettings } from "@/domain/member/tiers";
 import type { MemberTierAdministration } from "@/domain/member/tierAdministration";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { MemberRepository } from "@/domain/member/repository";
@@ -21,10 +21,13 @@ export function createMemberTierUseCases(deps: {
       const assignedMembers: Record<string, number> = Object.create(null);
       for (const member of members) assignedMembers[member.tier] = (assignedMembers[member.tier] ?? 0) + 1;
       const catalog = settings?.memberTiers ?? { revision: 0, tiers: DEFAULT_MEMBER_TIERS };
-      return { ...catalog, tiers: orderMemberTiers(catalog.tiers), assignedMembers };
+      return { ...catalog, tiers: effectiveMemberTiers(catalog.tiers), assignedMembers };
     },
     async update(input: MemberTierSettings, actorEmail: string): Promise<MemberTiersView> {
       if (!isMemberTierDefinitions(input.tiers)) throw new ValidationError("Tiers must have unique valid IDs, fixed admin/guest entries, unlimited admin and nonnegative monthly limits for all other tiers");
+      if (input.tiers.some(tier => !tierMayRunAgents(tier.id) && tier.monthlyCostCapUsd !== 0)) {
+        throw new ValidationError("Guest accounts are read-only and have no execution budget");
+      }
       if (!Number.isSafeInteger(input.revision) || input.revision < 0 || input.revision >= Number.MAX_SAFE_INTEGER) throw new ValidationError("Invalid tier revision");
       await deps.administration.withLock(async ({ members, settings }) => {
         const current = (await settings.get())?.memberTiers ?? { revision: 0, tiers: DEFAULT_MEMBER_TIERS };
@@ -34,7 +37,7 @@ export function createMemberTierUseCases(deps: {
           const assigned = (await listMembers(members)).find(member => removed.has(member.tier));
           if (assigned) throw new ConflictError(`Move members from tier "${assigned.tier}" before deleting it`);
         }
-        await settings.update(stored => ({ ...stored, memberTiers: { revision: current.revision + 1, tiers: orderMemberTiers(input.tiers) }, updatedAt: new Date().toISOString() }));
+        await settings.update(stored => ({ ...stored, memberTiers: { revision: current.revision + 1, tiers: effectiveMemberTiers(input.tiers) }, updatedAt: new Date().toISOString() }));
       });
       await recordAudit({ actorEmail, action: "settings.update", target: auditTarget("settings", "app"), detail: "memberTiers" });
       return this.getView();

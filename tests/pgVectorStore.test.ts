@@ -14,6 +14,43 @@ beforeEach(() => {
   db.withTransaction.mockReset();
 });
 
+describe("pgVectorStore upsert", () => {
+  it.each([1, 200])("refuses a dimension change at record %i before mutating the catalog", async (changedIndex) => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    db.withTransaction.mockImplementation(async (operation) => operation({ query }));
+    const records = Array.from({ length: changedIndex + 1 }, (_, index) => ({
+      key: `skill#${index}`,
+      vector: index === changedIndex ? [1, 2, 3] : [1, 2],
+      metadata: { name: `skill-${index}` },
+    }));
+
+    await expect(createPgVectorStore("catalog_vectors").upsert(records)).rejects.toThrow(
+      "Vector batch must have a consistent nonzero dimension",
+    );
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("refuses empty vectors before replacing existing catalog rows", async () => {
+    await expect(createPgVectorStore("catalog_vectors").upsert([
+      { key: "skill#empty", vector: [], metadata: {} },
+    ])).rejects.toThrow("Vector batch must have a consistent nonzero dimension");
+    expect(db.withTransaction).not.toHaveBeenCalled();
+  });
+
+  it("allows a uniform new dimension and retires the previous dimension", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    db.withTransaction.mockImplementation(async (operation) => operation({ query }));
+
+    await createPgVectorStore("catalog_vectors").upsert([
+      { key: "skill#one", vector: [1, 2, 3], metadata: {} },
+      { key: "skill#two", vector: [4, 5, 6], metadata: {} },
+    ]);
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenLastCalledWith("DELETE FROM catalog_vectors WHERE vector_dims(embedding) <> $1", [3]);
+  });
+});
+
 describe("pgVectorStore listKeys", () => {
   it("drains the catalog through bounded keyset pages", async () => {
     const held = Array.from({ length: 1_005 }, (_, index) => `skill#${String(index).padStart(4, "0")}`);

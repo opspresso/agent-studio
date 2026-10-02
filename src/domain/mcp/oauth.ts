@@ -125,7 +125,7 @@ export interface TokenSet {
 /**
  * A token request the provider refused on its own terms — `invalid_grant` and
  * friends. Distinguished from a transport failure because only this means the
- * grant is gone and the owner has to re-authorize; a 5xx or a dropped
+ * grant is gone and the user has to re-authorize; a 5xx or a dropped
  * connection must never cost someone their connection.
  */
 export class OAuthGrantError extends Error {
@@ -148,25 +148,10 @@ export interface TokenRequestTarget {
   resource: string;
 }
 
-/**
- * Resolves the outbound `Authorization` for one agent's connection to one
- * server, refreshing when the stored token is close enough to expiry that a run
- * could outlive it.
- *
- * A run asks this and nothing else about OAuth: whether a connection exists,
- * whether it needs refreshing and whether refreshing failed are all questions
- * with one answer shape — headers to send, or a reason there are none.
- */
-/**
- * The outbound headers this agent's OAuth connection contributes, or why it
- * contributes none.
- *
- * `unavailable` is deliberately not called a warning: OAuth is one way to
- * authenticate a registry entry, not the only one, and an entry that carries its
- * own headers still works without a connection. Only the caller knows what else
- * it holds, so only the caller can decide whether this is fatal.
- */
+/** A personal OAuth grant supplies headers, or explains why this server cannot be called. */
 export interface McpAuthResolution {
+  /** Opaque identity of the exact credential used by the request; never sent to the MCP server. */
+  credentialFingerprint?: string;
   headers: Record<string, string>;
   unavailable?: string;
 }
@@ -180,7 +165,7 @@ export interface McpAuthProvider {
    * already hold the entry, so the check costs no read on a run's critical path.
    */
   headersFor(
-    agentName: string,
+    userId: string,
     serverName: string,
     auth: McpServerAuth,
   ): Promise<McpAuthResolution>;
@@ -188,7 +173,7 @@ export interface McpAuthProvider {
    * Record that the server rejected this connection's token, so the console can
    * offer a reconnect instead of reporting the server as down.
    */
-  markUnauthorized(agentName: string, serverName: string, scope?: string): Promise<void>;
+  markUnauthorized(userId: string, serverName: string, credentialFingerprint: string, scope?: string): Promise<void>;
 }
 
 export interface OAuthClient {

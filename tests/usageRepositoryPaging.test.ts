@@ -41,7 +41,7 @@ describe("usage repository paging", () => {
       };
     });
     const actors = Array.from({ length: 205 }, (_, index) => ({
-      ...keys.usageActor("p", "2026-08-01", `user:${String(index).padStart(3, "0")}`),
+      ...keys.usageActor("p", "2026-08-01", `user:${String(index).padStart(3, "0")}`, "fixture-user"),
       entityType: "Usage",
       agentName: "p",
       date: "2026-08-01",

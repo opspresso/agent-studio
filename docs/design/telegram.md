@@ -61,6 +61,7 @@ BotFather privacy mode와 관계없이 앱의 다음 판정을 적용한다.
 | 그룹의 이 봇 mention·이 봇에 대한 reply·`/ask@이봇` 같은 미지원 명령 | 실행 |
 | 나머지 그룹 메시지 | 무시 |
 
+실행 후보는 [Studio 사용자 연결](messaging.md#호출자-인증)을 확인한 뒤 실행한다.
 이 봇의 mention만 제거하고 다른 내용은 보존한다. 그룹에는 Slack식 engagement나 mute가 없다.
 update claim은 Agent·현재 bot ID·`update_id`로 구분한다. ACK 뒤 유실을 자동 재실행하는
 worker는 없으며 외부 도구 효과의 exactly-once를 보장하지 않는다.
@@ -99,7 +100,8 @@ conversation은 `telegram:{chatId}`, 포럼 topic은 `telegram:{chatId}:{threadI
 
 `callerContext`를 켠 Agent만 화자 표시 이름을 모델에 전달하고 기록·복원한다.
 그룹의 사람이 둘 이상이면 현재 질문과 과거 사람 턴에 이름을 붙인다.
-actor는 Telegram 사용자 ID이며 이메일 기반 개인 권한으로 바꾸지 않는다.
+플랫폼 actor는 Telegram 사용자 ID를 보존한다. 실행 권한과 파일 귀속은
+[연결한 Studio 사용자](messaging.md#호출자-인증)의 현재 계정을 따른다.
 
 ## 첨부
 

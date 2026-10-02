@@ -21,6 +21,8 @@ export const POST = withMemberAuth(async (user, request: Request, context: Conte
   try {
     const { name, job } = await context.params;
     const jobs = getAudioRuntime().jobs;
-    return Response.json(await jobs[parsed.data.action](name, job, user.email, parsed.data.revision));
+    return Response.json(parsed.data.action === "retry"
+      ? await jobs.retry(name, job, { userId: user.id, email: user.email }, parsed.data.revision)
+      : await jobs[parsed.data.action](name, job, user.email, parsed.data.revision));
   } catch (error) { return apiError(error); }
 });

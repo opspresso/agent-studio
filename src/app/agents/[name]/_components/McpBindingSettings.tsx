@@ -10,6 +10,7 @@
 import { Button, Group, Modal, Stack, Text } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { McpConnectionCard } from "./McpConnectionCard";
+import { ConfigurationFields } from "./ConfigurationFields";
 
 /**
  * The page's own configuration save, handed down so the two configuration sections
@@ -36,6 +37,8 @@ export interface ConfigurationSave {
 
 export function McpBindingSettings({
   agentName,
+  canEdit,
+  mayConnect,
   serverName,
   onClose,
   save,
@@ -45,6 +48,8 @@ export function McpBindingSettings({
   onConnectionChanged,
 }: {
   agentName: string;
+  canEdit: boolean;
+  mayConnect: boolean;
   serverName: string;
   onClose: () => void;
   save: ConfigurationSave;
@@ -72,20 +77,23 @@ export function McpBindingSettings({
       closeOnClickOutside={false}
     >
       <Stack gap="lg">
-        <Section title={t("mcpSettings.tools")} note={t("mcpSettings.toolsNote")}>
-          {tools}
-        </Section>
-        <Section title={t("mcpSettings.overrides")} note={t("mcpSettings.overridesNote")}>
-          {headers}
-        </Section>
-        {sources && <Stack gap="xs"><Text fw={600}>{t("audio.mappingTitle")}</Text>{sources}</Stack>}
         <Section title={t("mcpSettings.connection")} note={t("mcpSettings.connectionNote")}>
-          <McpConnectionCard
+          {mayConnect ? <McpConnectionCard
             agentName={agentName}
             serverName={serverName}
             onConnectionChanged={onConnectionChanged}
-          />
+          /> : <Text fz="sm" c="dimmed">{t("common.memberExecutionRequired")}</Text>}
         </Section>
+        <Section title={t("mcpSettings.tools")} note={t("mcpSettings.toolsNote")}>
+          {tools}
+        </Section>
+        <ConfigurationFields disabled={!canEdit || save.saving} gap="lg">
+          <Section title={t("mcpSettings.overrides")} note={t("mcpSettings.overridesNote")}>
+            {headers}
+          </Section>
+          {sources && <Stack gap="xs"><Text fw={600}>{t("audio.mappingTitle")}</Text>{sources}</Stack>}
+        </ConfigurationFields>
+
 
         <Group
           justify="flex-end"
@@ -93,7 +101,9 @@ export function McpBindingSettings({
           pt="sm"
           style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}
         >
-          {save.error ? (
+          {!canEdit ? (
+            <Text fz="xs" c="dimmed" mr="auto">{t("playground.readOnly")}</Text>
+          ) : save.error ? (
             <Text fz="xs" c="red" mr="auto">
               {save.error}
             </Text>
@@ -109,9 +119,9 @@ export function McpBindingSettings({
           <Button variant="subtle" color="gray" onClick={onClose}>
             {t("mcpSettings.close")}
           </Button>
-          <Button onClick={save.run} loading={save.saving} disabled={save.disabled}>
+          {canEdit && <Button onClick={save.run} loading={save.saving} disabled={save.disabled}>
             {save.label}
-          </Button>
+          </Button>}
         </Group>
       </Stack>
     </Modal>

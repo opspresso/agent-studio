@@ -19,7 +19,7 @@ const owner = "owner@example.com";
 const policy: WorkspaceAgentPolicy = { agentName: "demo", runtimes: ["command", "codex", "claude", "opencode"],
   repositories: ["company/demo"], checks: [], deploymentWorkflows: [] };
 let nextId: number;
-const checkRepository = vi.fn(async (_repository: string, _baseBranch: string) => {});
+const checkRepository = vi.fn(async (_agentName: string, _user: import("@/domain/execution/actor").RunUser, _repository: string, _baseBranch: string) => {});
 const useCases = createWorkspaceUseCases({ repository, chats, agents, now: () => now,
   newId: () => `id-${++nextId}`, policy: () => policy, idleTtlSeconds: 3600, checkRepository });
 
@@ -38,58 +38,83 @@ afterEach(() => vi.useRealTimers());
 
 async function create(runtime: "command" | "codex" = "command", coding = false) {
   return useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime,
-    ...(coding ? { repository: "company/demo", baseBranch: "main" } : {}) }, owner);
+    ...(coding ? { repository: "company/demo", baseBranch: "main" } : {}) }, { userId: "studio-user-1", email: owner });
 }
 
 describe("workspace admission and persistence", () => {
+  it("stores an explicit console caller and refuses to reassign an admitted task", async () => {
+    const user = { userId: "original-user", email: owner };
+    const input = { agentName: "demo", runtime: "command" as const, input: { kind: "command" as const, script: "echo task" } };
+    const first = await useCases.start(input, user, "identity-0001");
+    const workspace = (await repository.get(first.workspace.id))!;
+    const run = (await repository.run(workspace.id, first.run.id))!;
+    expect(run).toMatchObject({ user, actor: { kind: "user", id: owner } });
+    await expect(useCases.start(input, { ...user, userId: "replacement-user" }, "identity-0001")).rejects.toMatchObject({ status: 409 });
+    await expect(useCases.enqueue(workspace.id, { ...user, userId: "replacement-user" }, input.input, "identity-0001")).rejects.toMatchObject({ status: 409 });
+    await expect(repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, revision: workspace.revision + 1 },
+      run: { ...run, user: { ...user, userId: "replacement-user" } } })).rejects.toThrow();
+    expect((await repository.run(workspace.id, run.id))?.user).toEqual(user);
+    expect((await repository.get(workspace.id))?.revision).toBe(workspace.revision);
+  });
+
+  it("refuses unidentified callers before creating a Workspace or enqueueing a task", async () => {
+    const user = { userId: "", email: owner };
+    const input = { agentName: "demo", runtime: "command" as const, input: { kind: "command" as const, script: "echo task" } };
+    await expect(useCases.start(input, user, "identity-0001")).rejects.toThrow("authenticated Studio user");
+    expect(await repository.list(owner, 10)).toEqual([]);
+    const workspace = await create();
+    await expect(useCases.enqueue(workspace.id, user, input.input, "identity-0002")).rejects.toThrow("authenticated Studio user");
+    expect(await repository.runs(workspace.id, 10)).toEqual([]);
+  });
+
   it("rejects an idempotent replay attributed to a different execution actor", async () => {
     const input = { agentName: "demo", runtime: "command" as const, actor: { kind: "slack" as const, id: "U1" },
       input: { kind: "command" as const, script: "echo task" } };
-    const first = await useCases.start(input, owner, "actor-start-01");
-    expect((await useCases.start(input, owner, "actor-start-01")).run.id).toBe(first.run.id);
-    await expect(useCases.start({ ...input, actor: { kind: "slack", id: "U2" } }, owner, "actor-start-01")).rejects.toMatchObject({ status: 409 });
-    await expect(useCases.enqueue(first.workspace.id, owner, input.input, "actor-start-01", { kind: "slack", id: "U2" })).rejects.toMatchObject({ status: 409 });
+    const first = await useCases.start(input, { userId: "studio-user-1", email: owner }, "actor-start-01");
+    expect((await useCases.start(input, { userId: "studio-user-1", email: owner }, "actor-start-01")).run.id).toBe(first.run.id);
+    await expect(useCases.start({ ...input, actor: { kind: "slack", id: "U2" } }, { userId: "studio-user-1", email: owner }, "actor-start-01")).rejects.toMatchObject({ status: 409 });
+    await expect(useCases.enqueue(first.workspace.id, { userId: "studio-user-1", email: owner }, input.input, "actor-start-01", { kind: "slack", id: "U2" })).rejects.toMatchObject({ status: 409 });
     expect(await repository.runs(first.workspace.id, 20)).toHaveLength(1);
   });
 
   it("stores a purpose title in the Workspace and Chat without changing the command", async () => {
     const input = { agentName: "demo", runtime: "command" as const, title: "  합계 검증  ", input: { kind: "command" as const, script: "printf '300\\n'\n" } };
-    const first = await useCases.start(input, owner, "named-start-01");
+    const first = await useCases.start(input, { userId: "studio-user-1", email: owner }, "named-start-01");
     expect(first.workspace.title).toBe("합계 검증");
     expect((await chats.get(first.workspace.chatId))?.title).toBe("합계 검증");
     expect(first.run.input).toEqual(input.input);
-    expect((await useCases.start({ ...input, title: "합계 검증" }, owner, "named-start-01")).run.id).toBe(first.run.id);
-    await expect(useCases.start({ ...input, title: "다른 작업" }, owner, "named-start-01")).rejects.toMatchObject({ status: 409 });
+    expect((await useCases.start({ ...input, title: "합계 검증" }, { userId: "studio-user-1", email: owner }, "named-start-01")).run.id).toBe(first.run.id);
+    await expect(useCases.start({ ...input, title: "다른 작업" }, { userId: "studio-user-1", email: owner }, "named-start-01")).rejects.toMatchObject({ status: 409 });
     expect(await repository.runs(first.workspace.id, 10)).toHaveLength(1);
   });
 
   it("keeps shell contents out of command titles when no purpose title was supplied", async () => {
-    const result = await useCases.start({ agentName: "demo", runtime: "command", input: { kind: "command", script: "cat > pricing.py <<'PY'\nprint(300)\nPY" } }, owner, "plain-start-01");
+    const result = await useCases.start({ agentName: "demo", runtime: "command", input: { kind: "command", script: "cat > pricing.py <<'PY'\nprint(300)\nPY" } }, { userId: "studio-user-1", email: owner }, "plain-start-01");
     expect(result.workspace.title).toBe("Command workspace");
     expect((await chats.get(result.workspace.chatId))?.title).toBe(result.workspace.title);
-    const task = await useCases.start({ agentName: "demo", runtime: "codex", input: { kind: "task", prompt: "Verify pricing" } }, owner, "task-start-01");
+    const task = await useCases.start({ agentName: "demo", runtime: "codex", input: { kind: "task", prompt: "Verify pricing" } }, { userId: "studio-user-1", email: owner }, "task-start-01");
     expect(task.workspace.title).toBe("Verify pricing");
   });
 
   it.each(["", "   ", "invalid\0title", "x".repeat(WORKSPACE_LIMITS.titleChars + 1)])("rejects an invalid start title before writing", async title => {
     const before = fake.rows.size;
-    await expect(useCases.start({ agentName: "demo", runtime: "command", title, input: { kind: "command", script: "pwd" } }, owner, "invalid-title-01")).rejects.toMatchObject({ status: 400 });
+    await expect(useCases.start({ agentName: "demo", runtime: "command", title, input: { kind: "command", script: "pwd" } }, { userId: "studio-user-1", email: owner }, "invalid-title-01")).rejects.toMatchObject({ status: 400 });
     expect(fake.rows.size).toBe(before);
   });
 
   it("does not create a Workspace or source binding for an unavailable repository", async () => {
     checkRepository.mockRejectedValueOnce(new CodingRepositoryNotReadyError("unavailable", "Repository is missing or inaccessible"));
     await expect(useCases.startForChat({ agentName: "demo", runtime: "codex", repository: "company/demo", baseBranch: "main",
-      input: { kind: "task", prompt: "Implement an agent" } }, owner, "chat-1")).rejects.toMatchObject({ status: 400, message: expect.stringContaining("missing") });
+      input: { kind: "task", prompt: "Implement an agent" } }, { userId: "studio-user-1", email: owner }, "chat-1")).rejects.toMatchObject({ status: 400, message: expect.stringContaining("missing") });
     expect(await repository.list(owner, 20)).toHaveLength(0);
     expect((await chats.get("chat-1"))?.linkedWorkspaces).toBeUndefined();
   });
   it("checks an uninitialized repository before accepting a recovery run", async () => {
     const workspace = await create("codex", true);
     checkRepository.mockRejectedValueOnce(new CodingRepositoryNotReadyError("empty", "Initialize the repository first"));
-    await expect(useCases.enqueue(workspace.id, owner, { kind: "task", prompt: "Retry work" }, "retry-0001")).rejects.toMatchObject({ status: 400 });
+    await expect(useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "Retry work" }, "retry-0001")).rejects.toMatchObject({ status: 400 });
     expect(await repository.runs(workspace.id, 20)).toHaveLength(0);
-    const run = await useCases.enqueue(workspace.id, owner, { kind: "task", prompt: "Retry work" }, "retry-0001");
+    const run = await useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "Retry work" }, "retry-0001");
     expect(run.status).toBe("queued");
     expect(await repository.list(owner, 20)).toHaveLength(1);
   });
@@ -98,13 +123,13 @@ describe("workspace admission and persistence", () => {
     await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, revision: workspace.revision + 1,
       coding: { ...workspace.coding!, baseSha: "a".repeat(40) } } });
     checkRepository.mockClear();
-    await useCases.enqueue(workspace.id, owner, { kind: "task", prompt: "Run local tests" }, "offline-0001");
+    await useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "Run local tests" }, "offline-0001");
     expect(checkRepository).not.toHaveBeenCalled();
   });
   it("creates one Workspace for a source chat under concurrent starts with different tasks", async () => {
     const input = { agentName: "demo", runtime: "command" as const, input: { kind: "command" as const, script: "echo first" } };
     const results = await Promise.all(Array.from({ length: 8 }, (_, index) => useCases.startForChat(
-      { ...input, input: { ...input.input, script: `echo task-${index}` } }, owner, "chat-1")));
+      { ...input, input: { ...input.input, script: `echo task-${index}` } }, { userId: "studio-user-1", email: owner }, "chat-1")));
     const ids = new Set(results.map(result => result.workspace.id));
     expect(ids.size).toBe(1);
     const id = results[0]!.workspace.id;
@@ -112,7 +137,7 @@ describe("workspace admission and persistence", () => {
     expect(await repository.list(owner, 20)).toHaveLength(1);
     expect(await repository.runs(id, 20)).toHaveLength(1);
     const again = await useCases.startForChat({ ...input, runtime: "codex", repository: "company/demo", baseBranch: "main",
-      input: { kind: "task", prompt: "different mode" } }, owner, "chat-1");
+      input: { kind: "task", prompt: "different mode" } }, { userId: "studio-user-1", email: owner }, "chat-1");
     expect(again).toMatchObject({ reused: true, workspace: { id, runtime: "command" } });
     expect(again.run).toBeUndefined();
     expect(await repository.runs(id, 20)).toHaveLength(1);
@@ -120,7 +145,7 @@ describe("workspace admission and persistence", () => {
 
   it("retains a source binding across chat updates and rejects cross-owner selection", async () => {
     const sourceBefore = (await chats.get("chat-1"))!;
-    const started = await useCases.startForChat({ agentName: "demo", runtime: "command", input: { kind: "command", script: "pwd" } }, owner, "chat-1");
+    const started = await useCases.startForChat({ agentName: "demo", runtime: "command", input: { kind: "command", script: "pwd" } }, { userId: "studio-user-1", email: owner }, "chat-1");
     await chats.update({ ...sourceBefore, title: "Updated after streaming" });
     expect((await useCases.forSourceChat("chat-1", "demo", owner))?.id).toBe(started.workspace.id);
     await expect(useCases.forSourceChat("chat-1", "demo", "foreign@example.test")).rejects.toMatchObject({ status: 404 });
@@ -129,9 +154,9 @@ describe("workspace admission and persistence", () => {
   });
 
   it("selects an existing Workspace without creating compute or another run", async () => {
-    const existing = await useCases.start({ agentName: "demo", runtime: "command", input: { kind: "command", script: "pwd" } }, owner, "existing-request");
+    const existing = await useCases.start({ agentName: "demo", runtime: "command", input: { kind: "command", script: "pwd" } }, { userId: "studio-user-1", email: owner }, "existing-request");
     await useCases.selectForChat("chat-1", existing.workspace.id, "demo", owner);
-    const selected = await useCases.startForChat({ agentName: "demo", runtime: "command", input: { kind: "command", script: "echo not queued" } }, owner, "chat-1");
+    const selected = await useCases.startForChat({ agentName: "demo", runtime: "command", input: { kind: "command", script: "echo not queued" } }, { userId: "studio-user-1", email: owner }, "chat-1");
     expect(selected).toMatchObject({ reused: true, workspace: { id: existing.workspace.id } });
     expect(await repository.list(owner, 20)).toHaveLength(1);
     expect(await repository.runs(existing.workspace.id, 20)).toHaveLength(1);
@@ -141,7 +166,7 @@ describe("workspace admission and persistence", () => {
     const key = keys.chat("chat-1");
     const row = (await store.getItem(key))!;
     fake.seed([{ ...row, linkedWorkspaces: Object.fromEntries(Array.from({ length: WORKSPACE_LIMITS.linkedAgents }, (_, index) => [`agent-${index}`, `workspace-${index}`])) }]);
-    await expect(useCases.startForChat({ agentName: "demo", runtime: "command", input: { kind: "command", script: "pwd" } }, owner, "chat-1")).rejects.toThrow("agent limit");
+    await expect(useCases.startForChat({ agentName: "demo", runtime: "command", input: { kind: "command", script: "pwd" } }, { userId: "studio-user-1", email: owner }, "chat-1")).rejects.toThrow("agent limit");
     expect(await repository.list(owner, 20)).toHaveLength(0);
   });
 
@@ -151,13 +176,13 @@ describe("workspace admission and persistence", () => {
       await chats.delete("chat-1");
       await original(...args);
     });
-    await expect(useCases.startForChat({ agentName: "demo", runtime: "command", input: { kind: "command", script: "pwd" } }, owner, "chat-1")).rejects.toThrow();
+    await expect(useCases.startForChat({ agentName: "demo", runtime: "command", input: { kind: "command", script: "pwd" } }, { userId: "studio-user-1", email: owner }, "chat-1")).rejects.toThrow();
     expect(await repository.list(owner, 20)).toHaveLength(0);
     expect(await chats.listByOwner(owner, { limit: 20 })).toHaveLength(0);
     vi.restoreAllMocks();
   });
   it("never chooses the first registered repository implicitly", async () => {
-    await expect(useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "codex", baseBranch: "main" }, owner)).rejects.toMatchObject({ status: 400 });
+    await expect(useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "codex", baseBranch: "main" }, { userId: "studio-user-1", email: owner })).rejects.toMatchObject({ status: 400 });
     expect(checkRepository).not.toHaveBeenCalled();
   });
   it("checks tool and model admission while preserving reads and close after revocation", async () => {
@@ -165,10 +190,10 @@ describe("workspace admission and persistence", () => {
     const authorize = vi.fn(async () => { if (!enabled) throw new Error("tools disabled"); });
     const assertRuntime = vi.fn(async () => {});
     const api = createWorkspaceUseCases({ repository, chats, agents, now: () => now, newId: () => `id-${++nextId}`, policy: () => ({ ...policy, idleTtlSeconds: 300 }), idleTtlSeconds: 1800, authorize, assertRuntime });
-    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "command" }, owner);
+    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "command" }, { userId: "studio-user-1", email: owner });
     expect(workspace.idleTtlSeconds).toBe(300);
     enabled = false;
-    await expect(api.enqueue(workspace.id, owner, { kind: "command", script: "true" }, "revoked-123")).rejects.toThrow("tools disabled");
+    await expect(api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "true" }, "revoked-123")).rejects.toThrow("tools disabled");
     expect((await api.get(workspace.id, owner)).workspace.id).toBe(workspace.id);
     await api.close(workspace.id, owner);
     expect(assertRuntime).toHaveBeenCalledTimes(1);
@@ -176,24 +201,24 @@ describe("workspace admission and persistence", () => {
   it("uses an explicitly selected allowed repository and fences later policy removal", async () => {
     const expanded = { ...policy, repositories: ["company/second"] };
     const api = createWorkspaceUseCases({ repository, chats, agents, now: () => now, newId: () => `id-${++nextId}`, policy: () => expanded, idleTtlSeconds: 60, checkRepository });
-    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Second repository", runtime: "codex", repository: "company/second", baseBranch: "main" }, owner);
+    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Second repository", runtime: "codex", repository: "company/second", baseBranch: "main" }, { userId: "studio-user-1", email: owner });
     expect(workspace.coding?.repository).toBe("company/second");
     expanded.repositories = [];
-    await expect(api.enqueue(workspace.id, owner, { kind: "task", prompt: "continue" }, "removed-policy")).rejects.toMatchObject({ status: 409 });
+    await expect(api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "continue" }, "removed-policy")).rejects.toMatchObject({ status: 409 });
   });
 
   it("refuses a requested repository outside the deployment allowlist", async () => {
-    await expect(useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "codex", repository: "other/private", baseBranch: "main" }, owner)).rejects.toMatchObject({ status: 400 });
+    await expect(useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "codex", repository: "other/private", baseBranch: "main" }, { userId: "studio-user-1", email: owner })).rejects.toMatchObject({ status: 400 });
     expect(await repository.forChat("chat-1")).toBeNull();
   });
   it("atomically starts a new chat and deduplicates concurrent creation retries", async () => {
     const input = { agentName: "demo", runtime: "command" as const, input: { kind: "command" as const, script: "echo hello" } };
-    const [first, second] = await Promise.all([useCases.start(input, owner, "start-request-01"), useCases.start(input, owner, "start-request-01")]);
+    const [first, second] = await Promise.all([useCases.start(input, { userId: "studio-user-1", email: owner }, "start-request-01"), useCases.start(input, { userId: "studio-user-1", email: owner }, "start-request-01")]);
     expect(first.workspace.id).toBe(second.workspace.id);
     expect(first.run.id).toBe(second.run.id);
     expect((await chats.get(first.workspace.chatId))?.workspaceId).toBe(first.workspace.id);
     expect(await repository.runs(first.workspace.id, 10)).toHaveLength(1);
-    await expect(useCases.start({ ...input, input: { ...input.input, script: "changed" } }, owner, "start-request-01")).rejects.toMatchObject({ status: 409 });
+    await expect(useCases.start({ ...input, input: { ...input.input, script: "changed" } }, { userId: "studio-user-1", email: owner }, "start-request-01")).rejects.toMatchObject({ status: 409 });
     expect(first.workspace).not.toHaveProperty("leaseToken");
     expect(first.workspace).not.toHaveProperty("creationFingerprint");
     expect(first.run).not.toHaveProperty("requestKey");
@@ -201,7 +226,7 @@ describe("workspace admission and persistence", () => {
 
   it("rejects mismatched start input without creating a chat or workspace", async () => {
     const before = fake.rows.size;
-    await expect(useCases.start({ agentName: "demo", runtime: "codex", input: { kind: "command", script: "echo x" } }, owner, "bad-start-request")).rejects.toMatchObject({ status: 400 });
+    await expect(useCases.start({ agentName: "demo", runtime: "codex", input: { kind: "command", script: "echo x" } }, { userId: "studio-user-1", email: owner }, "bad-start-request")).rejects.toMatchObject({ status: 400 });
     expect(fake.rows.size).toBe(before);
   });
   it("creates a general workspace without a repository and keeps its own session", async () => {
@@ -224,7 +249,7 @@ describe("workspace admission and persistence", () => {
   });
 
   it("rejects foreign owners, wrong agents, and duplicate workspace attachment", async () => {
-    await expect(useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "command" }, "other@example.com"))
+    await expect(useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "command" }, { userId: "studio-user-1", email: "other@example.com" }))
       .rejects.toMatchObject({ status: 404 });
     const workspace = await create();
     await expect(create()).rejects.toMatchObject({ status: 409 });
@@ -235,30 +260,30 @@ describe("workspace admission and persistence", () => {
     const workspace = await create();
     const input = { kind: "command" as const, script: "printf hello" };
     const [first, second] = await Promise.all([
-      useCases.enqueue(workspace.id, owner, input, "request-0001"),
-      useCases.enqueue(workspace.id, owner, input, "request-0001"),
+      useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, input, "request-0001"),
+      useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, input, "request-0001"),
     ]);
     expect(first.id).toBe(second.id);
     expect(await repository.runs(workspace.id, 10)).toHaveLength(1);
-    await expect(useCases.enqueue(workspace.id, owner, { ...input, script: "different" }, "request-0001"))
+    await expect(useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { ...input, script: "different" }, "request-0001"))
       .rejects.toMatchObject({ status: 409 });
-    await expect(useCases.enqueue(workspace.id, owner, input, "request-0002")).rejects.toMatchObject({ status: 409 });
+    await expect(useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, input, "request-0002")).rejects.toMatchObject({ status: 409 });
   });
 
   it("continues a later turn in the same workspace and session", async () => {
     const workspace = await create();
-    const first = await useCases.enqueue(workspace.id, owner, { kind: "command", script: "echo first" }, "request-0001");
+    const first = await useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "echo first" }, "request-0001");
     const active = (await repository.get(workspace.id))!;
     await repository.write({ expectedRevision: active.revision, workspace: { ...active, activeRunId: undefined,
       revision: active.revision + 1 }, run: { ...first, status: "succeeded" } });
-    const second = await useCases.enqueue(workspace.id, owner, { kind: "command", script: "echo second" }, "request-0002");
+    const second = await useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "echo second" }, "request-0002");
     expect(second.workspaceId).toBe(first.workspaceId);
     expect(second.sessionId).toBe(first.sessionId);
   });
 
   it("atomically fences stale writes and does not append their child events", async () => {
     const workspace = await create();
-    const run = await useCases.enqueue(workspace.id, owner, { kind: "command", script: "echo x" }, "request-0001");
+    const run = await useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "echo x" }, "request-0001");
     await expect(repository.write({ workspace: { ...workspace, revision: 1 }, expectedRevision: 0,
       run: { ...run, status: "running", lastEventSeq: 1 }, events: [{ workspaceId: workspace.id, runId: run.id,
         seq: 1, createdAt: now.toISOString(), data: { kind: "message", text: "stale" } }] }))
@@ -272,7 +297,7 @@ describe("workspace admission and persistence", () => {
     await useCases.close(workspace.id, owner, true);
     await chats.delete("chat-1");
     expect((await repository.due(now.toISOString(), 10))[0]?.deleteRequestedAt).toBe(now.toISOString());
-    await expect(useCases.enqueue(workspace.id, owner, { kind: "command", script: "echo x" }, "request-0001"))
+    await expect(useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "echo x" }, "request-0001"))
       .rejects.toMatchObject({ status: 404 });
     const closing = (await repository.get(workspace.id))!;
     await expect(repository.write({ workspace: { ...closing, deleteRequestedAt: undefined, revision: closing.revision + 1 },
@@ -290,7 +315,7 @@ describe("workspace admission and persistence", () => {
 
   it("rejects child scope mismatch and oversized events before writing", async () => {
     const workspace = await create();
-    const run = await useCases.enqueue(workspace.id, owner, { kind: "command", script: "true" }, "request-0001");
+    const run = await useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "true" }, "request-0001");
     const active = (await repository.get(workspace.id))!;
     await expect(repository.write({ workspace: { ...active, revision: active.revision + 1 }, expectedRevision: active.revision,
       run: { ...run, workspaceId: "other" } })).rejects.toThrow("scope mismatch");
@@ -301,7 +326,7 @@ describe("workspace admission and persistence", () => {
   });
   it("stores raw output loss with its event and cannot clear the durable run fact", async () => {
     const workspace = await create();
-    const run = await useCases.enqueue(workspace.id, owner, { kind: "command", script: "true" }, "request-0001");
+    const run = await useCases.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "true" }, "request-0001");
     const active = (await repository.get(workspace.id))!;
     const event = { workspaceId: workspace.id, runId: run.id, seq: 1, createdAt: now.toISOString(),
       data: { kind: "output" as const, stream: "stdout" as const, text: "retained prefix", outputLoss: true as const } };

@@ -15,6 +15,7 @@ const { handled, claim, settle, failNext } = vi.hoisted(() => ({
 
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 vi.mock("@/lib/container", () => ({
+  messagingIdentityUseCases: { connect: vi.fn(), resolve: vi.fn() },
   executionDeps: {},
   agentRepository: {},
   signArtifactUrl: undefined,

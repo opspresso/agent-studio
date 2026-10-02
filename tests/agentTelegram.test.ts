@@ -101,28 +101,12 @@ function fakeRepo(initial: Agent): { repo: AgentRepository; current: () => Agent
       stored = p;
     },
     async delete() {},
-    async getApiToken() {
-      return null;
-    },
-    async setApiToken() {},
-    async deleteApiToken() {},
   } as unknown as AgentRepository;
   return { repo, current: () => stored };
 }
 
 describe("updateAgentTelegram", () => {
-  it("captures, preserves and explicitly revokes owner execution permissions without changing credentials", async () => {
-    const { repo, current } = fakeRepo(makeAgent());
-    const { calls } = makeCalls();
-    const update = (value: Parameters<typeof updateAgentTelegram>[2]) => updateAgentTelegram(repo, "bot-proj", value, OWNER, secretCipher, calls, BASE_URL);
-    expect((await update({ runAsOwner: true })).view.runAsOwner).toBe(true);
-    expect(current().telegram?.executionEmail).toBe(OWNER);
-    await update({ enabled: false });
-    expect(current().telegram?.executionEmail).toBe(OWNER);
-    expect((await update({ runAsOwner: false })).view.runAsOwner).toBe(false);
-    expect(current().telegram?.executionEmail).toBeUndefined();
-    expect(getMe).not.toHaveBeenCalled();
-  });
+
   it("checks a new token with Telegram, encrypts it, mints the webhook secret and masks the response", async () => {
     const { repo, current } = fakeRepo(makeAgent());
     const { calls, registered } = makeCalls();

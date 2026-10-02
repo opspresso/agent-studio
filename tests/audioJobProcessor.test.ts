@@ -1,3 +1,4 @@
+import { interactiveIdentity } from "./runIdentity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeStore } from "./fakeStore";
 import { keys } from "@/infrastructure/db/keys";
@@ -11,7 +12,7 @@ import { audioJobRepository as jobs } from "@/infrastructure/db/repositories/aud
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const now = "2026-09-08T00:00:00.000Z";
 const input: AudioJobInput = {
-  agentName: "audio", userEmail: "owner@example.test", source: { kind: "file", fileId: "file-1" },
+  agentName: "audio", userEmail: "owner@example.test", ...interactiveIdentity("owner@example.test"), source: { kind: "file", fileId: "file-1" },
   sourceKey: "source-1", model: "selfhosted/asr", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
 };
 async function submit(overrides: Partial<AudioJobInput> = {}) {

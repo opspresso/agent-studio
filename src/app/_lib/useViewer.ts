@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, createElement, useContext } from "react";
-import { tierMayEdit } from "@/domain/member/tiers";
+import { isAgentOwner } from "@/domain/agent/access";
+import { tierMayEdit, tierMayRunAgents } from "@/domain/member/tiers";
 import type { Viewer } from "@/lib/viewer";
 
 /**
@@ -24,15 +25,7 @@ export function ViewerProvider({
   return createElement(ViewerContext.Provider, { value: viewer }, children);
 }
 
-/**
- * The signed-in user plus whether they are an admin.
- *
- * The root layout resolves this once before rendering and provides it to every
- * page. `useSession` already carries the email, but not the admin flag — and
- * the pages that gate on ownership need both, because an admin may mutate any
- * agent. One hook so the gates cannot drift apart on what "may edit this"
- * means. `null` means nobody is signed in; it is never a loading sentinel.
- */
+/** The root layout supplies one viewer for all console permission controls. */
 export function useViewer(): Viewer | null {
   const viewer = useContext(ViewerContext);
   if (viewer === undefined) {
@@ -41,20 +34,17 @@ export function useViewer(): Viewer | null {
   return viewer;
 }
 
-/**
- * Whether this viewer may mutate an agent owned by `ownerEmail`.
- *
- * `isConfiguredAdmin`, not `isAdmin`: this must mirror `assertAgentWritable`
- * exactly, and the two differ on a deployment that has no admin list — where
- * `isAdmin` is true for everyone and the server still allows only the owner.
- * Using the wrong one here does not open anything up, but it offers every user
- * an edit form for every agent that 403s on save.
- */
+/** Member access permits management only of the viewer's own Agents. */
 export function canEditAgent(viewer: Viewer | null, ownerEmail: string | null): boolean {
   return (
     viewer !== null &&
     tierMayEdit(viewer.tier) &&
     ownerEmail !== null &&
-    (viewer.isConfiguredAdmin || viewer.email === ownerEmail)
+    isAgentOwner({ ownerEmail }, viewer.email)
   );
+}
+
+/** Execution is available to members; visibility is enforced by each Agent's server gate. */
+export function canRunAgents(viewer: Viewer | null): boolean {
+  return viewer !== null && tierMayRunAgents(viewer.tier);
 }

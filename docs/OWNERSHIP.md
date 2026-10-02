@@ -12,6 +12,10 @@
 
 ## 실행·모델·검색
 
+실행 신원의 구조 검증과 현재 접근 검사는 `application/auth/authorizeRunIdentity.ts`가 소유한다.
+`domain/execution/actor.ts`의 `RunIdentity`는 사용자 ID와 호출 출처를 함께 운반한다.
+실행 facade가 필수 검증기를 바인딩하며 runtime은 모델 시도·도구 실행 직전에 이를 호출한다.
+
 | 결정 | 소유자 | 확인 |
 |---|---|---|
 | 호출 단위 모델 tier·작업 목적·전역 정책 형태와 기본값 | `src/domain/llm/callRouting.ts`; Agent는 boolean 사용 여부만 저장한다 | 구조 |
@@ -63,8 +67,8 @@
 | 모델 카드·다중 기능 배지·검색·정렬·원본 wire ID 기반 행 key | `src/app/models/ModelCollection.tsx`, `modelTable.ts`; 단가 표시는 `src/app/_components/modelOptions.tsx` | 코드 |
 | 어떤 모델이 새 선택에 보이는가 | `src/domain/llm/models.ts`의 `offeredModels`. 관리자가 등록한 모델과 연결의 교집합이며 기본 모델을 우선한다 | 코드 |
 | 모델 즐겨찾기의 개인 범위와 상한 | `src/domain/llm/modelPreferences.ts` 의 `ModelPreferencesRepository` / `MAX_FAVORITE_MODELS`. user id 별 한 행이며 picker 그룹화는 `src/app/_components/modelOptions.tsx` 의 `modelSelectData` 가 소유한다 | 코드 |
-| 누가 agent 에 접근할 수 있는가 (공개 범위·초대 목록의 판정) | `src/domain/agent/access.ts` 의 `mayAccessAgent`. admin 오버라이드를 합친 형태는 `agentUseCases.ts` 의 `assertAgentAccessible`/`userMayAccessAgent` 뿐이고, 표면들은 그 둘을 지난다 ([SECURITY.md](SECURITY.md#인가-모델)) | 코드 |
-| 모델이 파일 ID로 읽거나 편집할 수 있는 범위 | `src/application/document/fileTool.ts`의 actor·시작 agent 검사. ID 자체는 접근 권한이 아니다 | 코드 |
+| 누가 Agent에 접근할 수 있는가 (public 또는 소유자 전용 private) | `src/domain/agent/access.ts` 의 `mayAccessAgent`. 조회와 판정을 결합하는 `agentUseCases.ts`의 `assertAgentAccessible`도 같은 규칙을 따른다 ([SECURITY.md](SECURITY.md#인가-모델)) | 코드 |
+| 모델이 파일 ID로 읽거나 편집할 수 있는 범위 | `src/application/document/fileTool.ts`의 현재 사용자 파일 귀속·자동화의 시작 Agent 범위 검사. ID 자체는 접근 권한이 아니다 | 코드 |
 
 ## Chat·Workspace
 
@@ -77,14 +81,16 @@
 | 모든 chat-bot 표면이 구현하는 답변 port | `src/domain/messaging/reply.ts` 의 `ReplySink` / `ReplyChannel`. 파이프라인이 그것을 호출하고, 각 어댑터가 그것을 렌더하며, 어느 쪽도 다른 쪽을 import 하지 않는다 | 구조 |
 | 모든 chat 플랫폼이 공유하는 webhook 꼬리. claim, ack, 이벤트의 id 아래에서 작업, settle | `src/app/api/_lib/inboundEvent.ts` 의 `admitInboundEvent` | 구조 |
 | 일반 작업과 코딩 작업의 Workspace·Sandbox·Runtime Session·Run 계약 | `src/domain/workspace/`; Git 저장소와 PR·승인 형태는 `src/domain/coding/types.ts` | 코드 |
-| Workspace Agent 설정·저장소 범위·기본값 | `src/domain/workspace/policy.ts`; 읽기·소유자/관리자 쓰기는 `application/workspace/repositoryPolicy.ts`, 도구 활성 여부는 `domain/agent/workspaceAccess.ts` | 코드 |
-| Workspace의 확인된 관리 사용자와 실행 호출자의 구분 | `application/workspace/workspaceCaller.ts`; `WorkspaceRun.actor`를 작업 실행의 run bracket까지 유지한다. member·Agent·Trigger 위임의 현재 접근은 `application/workspace/workspaceAuthorization.ts`가 접수와 실행 직전에 검사한다 | 코드 |
-| 메신저의 명시적 소유자 실행 위임과 철회 | `application/messaging/executionGrant.ts`가 저장·현재 소유권·멤버 상태·연동 활성 여부를 판단한다. `ExecutionGrant`는 실행·하위 Agent·Workspace 큐로 전달하며 `application/runtime/tools.ts`는 도구 효과 직전에 위임을 다시 검사한다 | 코드 |
+| Workspace Agent 설정·저장소 범위·기본값 | `src/domain/workspace/policy.ts`; 읽기·소유자 쓰기는 `application/workspace/repositoryPolicy.ts`, 도구 활성 여부는 `domain/agent/workspaceAccess.ts` | 코드 |
+| Workspace의 확인된 관리 사용자와 실행 호출자의 구분 | `application/workspace/workspaceCaller.ts`; `WorkspaceRun.user`와 `actor`를 접수부터 실행 bracket까지 유지한다. 현재 계정·Agent 접근·개인 토큰·메신저 연결·Schedule 등록자는 `application/workspace/workspaceAuthorization.ts`가 접수와 실행 직전에 검사한다 | 코드 |
+| 메신저 계정 연결과 실행 권한 철회 | `application/auth/messagingIdentityUseCases.ts`의 일회용 인증과 `application/auth/messagingGrant.ts`의 현재 연결 검사. `ExecutionGrant`는 실행·하위 Agent·Workspace 큐로 전달하며 새 모델·도구 효과 전에 다시 검사한다 | 코드 |
 | PR 리뷰의 고정된 자료 조회와 전달 범위 | `domain/trigger/pullRequestReview.ts`의 읽기 계약; `infrastructure/github/codingForge.ts`가 검증한 PR·커밋만 조회한다. `application/trigger/reviewPullRequest.ts`가 완전한 자료 범위와 게시 조건을 소유한다 | 코드 |
 | 사용자에게 제시할 Workspace Agent 옵션과 정책 조회 상한 | `src/application/workspace/workspaceOptions.ts`; 접근 가능한 Agent 목록과 정책 repository는 조립 지점에서 주입한다 | 코드 |
+| Workspace·PR 리뷰 호출자의 GitHub MCP 자격증명 선택 | `application/coding/githubCredentials.ts`; 현재 호출자 계정·MCP binding·헤더 target·GitHub authority를 확인하며 OAuth 검증·갱신은 `application/mcp/mcpAuthProvider.ts`를 사용한다. Plugin token을 사용하지 않는다 | 구조 |
 | 신규 저장소 생성과 자동 등록의 증거·중복 방지 | `application/workspace/createRepository.ts`; GitHub 201 응답 검증은 `infrastructure/github/codingForge.ts`, 결과와 정책 transaction은 `workspaceRepositoryCreationStore.ts` | 코드 |
 | 도구 결과의 실패 표시와 trace 오류 판정 | `src/shared/toolResultStatus.ts`의 `isToolErrorText`. Runtime의 `Error:` 결과를 Chat·Playground에도 실패로 표시한다 | 코드 |
 | 코딩 요청에 포함되는 Git 게시와 별도 확인의 구분 | `domain/coding/types.ts`의 `codingActionRequiresConfirmation`; 실행은 `application/coding/codingUseCases.ts`의 공통 검토·claim 경로 | 코드 |
+| Native 모델 요청의 신원·정산·복구 | `application/workspace/modelGateway.ts`; 토큰은 `infrastructure/workspace/modelToken.ts`, HTTP/SSE와 요청별 usage는 `modelTransport.ts`·`nativeModelUsage.ts`, 미정산 행은 `workspaceModelCalls.ts`가 소유한다 | 구조 |
 | Native 코딩 턴에 전달하는 Workspace Git 승인 경계 지침 | `src/application/workspace/taskInput.ts` | 코드 |
 | Workspace admission과 중복 요청의 동일성 | `src/application/workspace/workspaceUseCases.ts`; revision·receipt·이벤트의 원자적 쓰기는 `src/infrastructure/db/repositories/workspaceRepository.ts` | 코드 |
 | 원래 Chat의 Agent별 Workspace 선택과 동시 생성 차단 | `Chat.linkedWorkspaces`; `workspaceUseCases.startForChat`과 `workspaceRepository`의 source Chat transaction | 코드 |
@@ -154,7 +160,9 @@
 | inline payload의 base64 문법과 decoded byte 길이 계산 | `src/domain/llm/base64.ts`. 이미지 data URL과 일반 첨부가 같은 판정을 읽는다 | 코드 |
 | `data:` 이미지 인코딩 | `src/domain/llm/imageLimits.ts`의 `imageDataUrl` / `parseImageDataUrl`; `types.ts`가 재노출한다 | 코드 |
 | 런이 만들어 낸 파일을 읽는 사람에게 내주기 | `src/application/artifact/producedFiles.ts`. 테스트가 강제하는 것은 *짝*(출력 축 하나를 읽는 모듈은 다른 축도 읽는다)이고, 이 파일은 이름으로 면제한다. 이 파일의 주제 자체가 그 축이기 때문이다 | 코드 |
+| Playground inline 파일 다운로드와 실행별 보관 바이트 한도 | `src/app/_lib/fileDownloads.ts`. 공통 base64 검증은 `src/domain/llm/base64.ts`를 사용한다 | 코드·회귀 테스트 |
 | AWS 로 나가는 요청에 서명하기 | `src/infrastructure/llm/awsSigner.ts`. 대신 `tests/awsSigner.test.ts` 가 못박는다. 이 파일이 만들어 내는 서명을 고정해 두는 테스트다 | 코드 |
+| LLM 제공자 요청의 redirect 거부 | `src/infrastructure/llm/providerFetch.ts`의 `fetchProvider`. SDK·직접 HTTP·SigV4·Workspace native·제공자 discovery와 probe가 같은 전송 규칙을 사용한다 | 코드·회귀 테스트 |
 | 서명된 오브젝트 URL 이 읽는 주체별로 얼마나 사는가 | `src/shared/artifactUrlTtl.ts` | 코드 |
 
 ## 메시징
@@ -168,6 +176,7 @@
 | Slack 메시지가 무엇을 *말하는가*. `text`·attachment·prose block 을 한 텍스트로 | `src/domain/slack/messageText.ts` 의 `slackMessageText`. 키워드 매칭, 런이 답하는 턴, 스레드 히스토리 셋이 이것을 읽는다. 경보 앱은 제목과 본문을 attachment 에 두므로 `text` 만 읽는 쪽은 헤드라인만 받는다 | 구조 |
 | 어떤 메시지가 질문이 아니라 고정된 명령인가 | `src/application/slack/engagement.ts` 의 `parseSlackCommand`. 의도적으로 엄격하다: 명령은 봇이 다시 말할지 여부를 바꾸고, 매칭이 느슨하면 아무도 침묵시켜 달라 하지 않은 스레드를 침묵시킨다 | 구조 |
 | 런이 사용하는 Slack Web API 표면 | `src/application/slack/types.ts` 의 `SlackClientPort`. 스트리밍 chunk와 세션 상태 요청 형태는 `src/domain/slack/types.ts`의 `SlackChunk`·`SlackSessionStatusInput`이며 어댑터도 이를 사용한다 | 구조 |
+| 메신저 발신자를 인증된 Studio 사용자로 연결하고 현재 권한을 확인하는 경계 | `application/auth/messagingIdentityUseCases.ts`. 플랫폼·realm·sender ID 계약은 `domain/messaging/identity.ts`, 인증 명령 분리는 `authenticateSubject.ts` | 구조 |
 | 편집으로 답을 전달하는 표면의 장부. 페이싱, 메시지가 넘칠 때 다음으로 잇기, 거부된 쓰기의 재시도 간격, 마감이 독자에게 빚진 것 | `src/application/messaging/editInPlaceReply.ts` 의 `createEditInPlaceReply`. Telegram 과 Teams 는 호출·상한·렌더링(`EditInPlaceTransport`)만 건넨다 | 구조 |
 | 답이 메시지 하나를 넘칠 때 *어디서* 끊는가. 문단 → 줄 → 문장 → 공백 → 서러게이트 쌍을 쪼개지 않는 하드 컷, 그리고 잘린 코드 펜스를 한쪽에서 닫고 다음 쪽에서 다시 여는 것 | `src/shared/messageCut.ts` 의 `cutPoint` / `splitMessages`. 세 표면이 상한만 다르게 건넨다. 끊긴 자리는 독자가 보는 것이고, 사본 둘은 "문장 중간에서 멈추는가" 에 대한 답 둘이다 | 구조 |
 | 플랫폼 히스토리가 없는 표면이 대화를 어떻게 읽고 적는가. 턴 수·문자 예산, 턴 하나의 상한, 텍스트 없는 턴과 답 없는 런의 기록, 화자 라벨의 옵트인 | `src/application/messaging/transcriptHistory.ts` | 구조 |
@@ -185,13 +194,18 @@
 
 ## MCP·Plugin·프로토콜
 
+OAuth grant·암호화 문맥·refresh claim은 Studio 사용자 ID와 MCP 서버에 귀속한다.
+Agent 설정은 binding을 소유하며 개인 연결은 Agent 수명과 독립적이다.
+
 | 결정 | 소유자 | 확인 |
 |---|---|---|
 | MCP tool 의 형태 | `src/domain/mcp/types.ts` | 구조 |
 | 어떤 호스트가 아웃바운드 URL 가드를 건너뛸 수 있는가. 선언된 suffix 에 이름을 맞추는 술어 하나 | `src/domain/security/internalHosts.ts` 의 `isDeclaredInternalHost`. MCP 목록과 `FetchUrl` 목록이 같은 술어를 지나고, provenance(managed 루프백)와 합친 형태는 `src/domain/mcp/types.ts` 의 `skipsUrlGuard` 다 | 구조 |
 | MCP OAuth 콜백 기본값과 수동 입력 검증 | `src/application/mcp/mcpAuthUseCases.ts`의 `redirectUri`. Tools와 인가 요청은 같은 서버 설정에서 주소를 얻고 token 교환은 pending state의 주소를 쓴다 | 구조 |
 | MCP 연결 화면의 조회 계약 선택·계정 label 검증·JSON Pointer·추가 identity scopes | `src/domain/mcp/account.ts`. 관리자 계약·OIDC UserInfo·제공자 기본값 순서로 선택하며 Studio 사용자 이메일을 연결 계정으로 추정하지 않는다. 타입 계약은 독립 leaf `accountLookup.ts` | 구조 |
+| OAuth 갱신의 프로세스 간 효과 claim·결과 대기·불명확한 갱신의 반복 금지 | `application/mcp/mcpAuthProvider.ts`; 포트는 `domain/mcp/refresh.ts`, atomic claim은 `mcpRefreshRepository.ts`. 토큰 교환 전에 claim하고 network 동안 DB lock을 유지하지 않는다 | 코드 |
 | 공용 MCP OAuth client 참조와 token endpoint 자격 증명 선택 | `src/application/mcp/mcpOAuthClient.ts`. code 교환과 refresh가 같은 선택을 사용한다 | 구조 |
+| MCP dispatch의 endpoint-bound Agent 헤더·예약 metadata 제거·OAuth 우선순위 | `application/mcp/credentials.ts`; 실행·Agent 도구 조회·Workspace GitHub 자격증명이 같은 판정을 사용한다. HTTP header 이름의 대소문자와 무관하게 OAuth 값 하나만 전송한다 | 코드 |
 | 원격·관리형 MCP의 헤더·환경·OAuth secret 응답 마스킹 | `src/application/mcp/mcpViews.ts` | 구조 |
 | `plugin.json`/`mcp.json` 의 해석, 그리고 Plugin 이 어떤 MCP transport 를 바인딩할 수 있는가 | `src/domain/plugin/types.ts` | 구조 |
 | Agent Plugins 이름 규칙 | `src/domain/plugin/types.ts` 의 `isPluginName` | 구조 |
@@ -214,14 +228,17 @@
 
 | 결정 | 소유자 | 확인 |
 |---|---|---|
+| 개인 credential의 용도·발급 사용자·Agent 범위와 현재 권한 | `application/auth/agentCredentialUseCases.ts`; 저장 포트는 `domain/auth/agentCredential.ts`, 회전·폐기 transaction은 `agentCredentialRepository.ts`. API·Webhook의 지속 검증은 `auth/credentialGrant.ts`를 공유한다. `getExecutionMemberById`를 주입하며 이메일 tier 캐시로 사용자 존재 여부를 대체하지 않는다 | 코드 |
+| 접수한 개인 Webhook 호출의 토큰 회수·현재 계정·설정 재검사 | `application/auth/webhookAuthorization.ts`. 실행·도구·PR 조회/게시·Workspace 큐가 같은 grant를 사용한다 | 구조 |
 | 아웃바운드 redirect의 출처·횟수·HTTP 메서드 규칙 | `src/infrastructure/net/redirectPolicy.ts` 의 `fetchSameOrigin`. 공개 URL의 DNS 검증·연결 고정은 `publicFetch.ts`가 각 요청에 적용한다 | 구조 |
 | 어떤 응답이 콘솔의 보안 헤더를 받는가. 여기 선언한 헤더는 라우트가 같은 키로 세운 것을 *대체한다* | `next.config.ts` 의 `SECURITY_HEADERS` 와 그 `source` | 구조 |
 | 상수 시간 시크릿 비교 | `src/shared/timingSafe.ts` | 구조 |
 | `AES_ENCRYPTION_KEY` 의 base64 해석과 32바이트 검증 | `src/shared/aesKey.ts` 의 `decodeAes256Key` | 구조 |
 | 쉼표로 구분된 설정 목록의 파싱 | `src/shared/parseList.ts` | 구조 |
 | 설정된 값이 비어 있는지 여부 | `src/shared/env.ts` | 구조 |
+| 실행 사용자의 고정 ID 해석과 현재 계정·member 이상 등급·Agent 접근 | `application/auth/resolveRunUser.ts`. Schedule은 생성 시 캡처한 `createdBy.userId`를 쓰고 플랫폼 actor와 구분한다 | 구조 |
 | Schedule 연동 화면이 동시에 읽을 최근 실행 목록 수 | `src/app/agents/[name]/integrations/scheduleRuns.ts` 의 `MAX_CONCURRENT_SCHEDULE_RUN_READS` | 구조 |
-| 각 member tier의 실행 한도 해석 | `src/domain/member/tiers.ts`의 `memberTierLimits`. 월 금액은 Settings `memberTiers`, admin은 무제한, guest 동시 실행은 1개 | 구조 |
+| 각 member tier의 실행 한도 해석 | `src/domain/member/tiers.ts`의 `memberTierLimits`. 유효 목록은 `effectiveMemberTiers`, 월 금액은 Settings `memberTiers`, admin은 무제한, guest는 실행 불가·유효 예산 0 | 구조 |
 | 등급 표시 순서와 고정 위치 | `src/domain/member/tiers.ts`의 `orderMemberTiers`·`moveMemberTier`. admin은 처음, guest는 마지막이며 사용자 정의 등급의 상대 순서를 보존한다 | 코드 |
 | 등급 추가·삭제·월 한도 검증과 배정 경합 | `application/member/tierUseCases.ts`·`memberUseCases.ts`, `memberTierAdministration`의 공통 DB transaction lock | 코드 |
 | `undici` 에 직접 닿기 | `src/infrastructure/net/publicFetch.ts`. dispatcher와 fetch는 같은 undici 구현을 사용한다 | 구조 |
@@ -249,7 +266,7 @@
 | 어떤 스토리지 에러가 조건부 쓰기의 실패를 뜻하는가 | `src/application/errors.ts` | 구조 |
 | audit 행을 어떻게 쓰는가 | `src/application/audit/recordAudit.ts` | 구조 |
 | 감사 기록의 날짜 범위·페이지 상한·cursor | `src/application/audit/auditUseCases.ts`; 날짜별 조회는 `src/infrastructure/db/repositories/auditRepository.ts` | 코드 |
-| Agent 관리 자료·산출물·Trace·호출자별 Usage를 읽을 수 있는 사람. 쓰기와 같은 규칙, 쓰기 감사 행은 남기지 않는다 | `src/application/agent/agentUseCases.ts` 의 `assertAgentOwnerOrAdminReadable` | 구조 |
+| Agent 설정 변경과 관리 자료·Trace·호출자별 Usage 조회의 소유권 검사 | `src/application/agent/agentUseCases.ts` 의 `assertAgentOwner` | 구조 |
 | Capability catalog reindex의 설치 전역 직렬화 lease | `src/domain/catalog/reindexLock.ts` 계약과 `src/infrastructure/db/repositories/catalogReindexLock.ts` 구현 | 구조 |
 | Bedrock SigV4의 AWS credential chain | `src/infrastructure/llm/awsCredentials.ts`; SDK의 lazy provider를 공유하고 갱신은 SDK가 소유한다 | 구조 |
 | 호출자가 요청한 페이지 크기를 읽는 법과, 한 페이지가 커질 수 있는 상한 | `src/shared/pageLimit.ts`의 `parsePageLimit` / `boundedPageLimit` / `MAX_PAGE_LIMIT`. 각 자원은 자기 상한을 전달한다. 전체 열거는 repository별 자연 키·시간·seq cursor로 페이지를 순회한다 | 구조 |
@@ -270,7 +287,7 @@
 | 모든 항목이 불리는 이름 | `src/domain/naming.ts` 의 `isSlug` | 구조 |
 | SDK span 부모 관계의 OTLP 변환 | `src/infrastructure/telemetry/otelTraceExport.ts`; 완료 순서와 무관하게 저장된 부모 관계를 사용한다 | 코드 |
 | 실행 전 도구 JSON Schema 검증 | `src/domain/llm/toolSchema.ts`의 포트, `src/infrastructure/llm/toolSchema.ts`의 검증기; 선언은 기존 도구 소유자가 유지한다 | 코드 |
-| 아이템 테이블에 쓰는 방법. 행 잠금 아래에서 평가되는 조건, 키 순서로 잠그는 트랜잭션, 접두사 쿼리의 상한(U+10FFFF), 만료 행의 sweep | `src/infrastructure/db/store.ts`. 리포지토리는 이 계약을 통해 조건부 쓰기·키 순서 잠금·접두사 범위·만료 삭제를 수행한다 | 코드 |
+| 아이템 테이블에 쓰는 방법. 행 잠금 아래에서 평가되는 조건, 키 순서로 잠그는 트랜잭션, 실행 소유권 write fence, 접두사 쿼리의 상한(U+10FFFF), 만료 행의 sweep | `src/infrastructure/db/store.ts`. `withItemWriteFence`의 소유권 조건은 실제 쓰기와 같은 트랜잭션에서 검사한다 | 코드 |
 | 떠나 버린 소비자로부터 스트림을 떼어내기 | `src/shared/detachOnReturn.ts` | 구조 |
 | 바이트 상한 아래에서 HTTP 본문 읽기 | `src/shared/httpBody.ts` | 코드 |
 | 백그라운드 타이머가 프로세스를 붙잡아 두지 않게 하기 | `src/shared/unrefTimer.ts` | 코드 |

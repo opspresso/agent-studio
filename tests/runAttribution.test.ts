@@ -1,3 +1,4 @@
+import { executionIdentity, usageIdentity } from "./runIdentity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ids = vi.hoisted(() => ({ sequence: 0 }));
@@ -6,7 +7,7 @@ vi.mock("node:crypto", async importOriginal => ({
   randomUUID: () => `00000000-0000-4000-8000-${String(++ids.sequence).padStart(12, "0")}`,
 }));
 import { actorKey, descend, type RunActor } from "@/domain/execution/actor";
-import { principalActor } from "@/app/api/agents/_lib/executionAuth";
+import { principalActor, principalRunContext } from "@/app/api/agents/_lib/executionAuth";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import { TraceRecorder } from "@/application/trace/recorder";
 import type { Trace } from "@/domain/trace/types";
@@ -54,31 +55,42 @@ describe("actorKey", () => {
 
 describe("principalActor", () => {
   it("maps a session principal to a user actor", () => {
-    expect(principalActor({ email: "a@example.com", viaToken: false })).toEqual({
+    expect(principalActor({ userId: "fixture-user", email: "a@example.com", viaToken: false })).toEqual({
       kind: "user",
       id: "a@example.com",
     });
   });
 
   it("maps a token principal to its own kind, carrying the owner's email", () => {
-    expect(principalActor({ email: "a@example.com", viaToken: true })).toEqual({
+    expect(principalActor({ userId: "fixture-user", email: "a@example.com", viaToken: true, credentialId: "fixture-token" })).toEqual({
       kind: "agent-token",
       id: "a@example.com",
     });
   });
 });
 
+describe("verified API execution context", () => {
+  it("keeps the stable user and original credential through a transfer", () => {
+    const context = principalRunContext({ userId: "stable-user", email: "current@example.test", viaToken: true, credentialId: "credential" }, "parent");
+    const origin = { ...context, ancestry: ["parent"] };
+    const child = descend(origin, "child");
+    expect(child.user).toEqual({ userId: "stable-user", email: "current@example.test" });
+    expect(child.executionGrant).toEqual({ kind: "agent-token", agentName: "parent", userId: "stable-user", email: "current@example.test", credentialId: "credential" });
+  });
+});
+
 describe("descend", () => {
   it("extends the chain and keeps the actor", () => {
-    const origin = { actor: { kind: "user", id: "a@example.com" } as RunActor, ancestry: ["top"] };
+    const origin = { ...executionIdentity({ kind: "user", id: "a@example.com" } as RunActor), actor: { kind: "user", id: "a@example.com" } as RunActor, ancestry: ["top"] };
     expect(descend(origin, "child")).toEqual({
+      user: origin.user,
       actor: { kind: "user", id: "a@example.com" },
       ancestry: ["top", "child"],
     });
   });
 
   it("does not mutate the parent's chain", () => {
-    const origin = { ancestry: ["top"] };
+    const origin = { ...executionIdentity(), ancestry: ["top"] };
     descend(origin, "child");
     expect(origin.ancestry).toEqual(["top"]);
   });
@@ -87,7 +99,7 @@ describe("descend", () => {
 describe("usage attribution", () => {
   it("records the actor alongside the agent total", async () => {
     const { repo, writes } = fakeUsage();
-    await recordUsage(repo, {
+    await recordUsage(repo, { userId: "fixture-user",
       agentName: "p",
       model: "m",
       inputTokens: 1,
@@ -98,21 +110,21 @@ describe("usage attribution", () => {
     expect(writes[0]).toMatchObject({ agentName: "p", actor: "user:a@example.com" });
   });
 
-  it("omits the actor entirely when the run has none", async () => {
+  it("records the stable account separately from its source actor", async () => {
     const { repo, writes } = fakeUsage();
-    await recordUsage(repo, {
+    await recordUsage(repo, { userId: "fixture-user", actor: "user:fixture@example.test",
       agentName: "p",
       model: "m",
       inputTokens: 1,
       outputTokens: 2,
       costUsd: 0.5,
     });
-    expect(writes[0]).not.toHaveProperty("actor");
+    expect(writes[0]).toMatchObject({ userId: "fixture-user", actor: "user:fixture@example.test" });
   });
 
   it("stamps the run's actor on every flushed total, across agents", async () => {
     const { repo, writes } = fakeUsage();
-    const aggregator = createUsageAggregator(repo, "user:a@example.com");
+    const aggregator = createUsageAggregator(repo, usageIdentity("user:a@example.com"));
     // A subagent transfer spends on another agent, but it is still this
     // person's run — the actor is the run's, not the turn's.
     await aggregator.record({

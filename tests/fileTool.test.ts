@@ -1,3 +1,4 @@
+import { executionIdentity } from "./runIdentity";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { buildFileSaver } from "@/application/execution/saveFileTool";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,7 +30,7 @@ function setup() {
     objects: { put: async (input) => { bytes.set(input.key, input.bytes); }, read, sign: async () => "https://files.test/download", delete: async () => {} },
   };
   const deps = { artifacts: storage, documents: documentExtractor, documentRenderer, documentEditor, now: () => now };
-  const call = buildFileTool(deps, "agent", { actor, ancestry: ["agent"] })!;
+  const call = buildFileTool(deps, "agent", { ...executionIdentity(actor), actor, ancestry: ["agent"] })!;
   const recorder = createArtifactRecorder(storage, { agentName: "agent", actor });
   async function capture(result: McpToolResult) {
     async function* output(): AsyncGenerator<EngineChunk> {
@@ -51,20 +52,32 @@ describe("private Artifact inputs", () => {
       key: "source-files/private-summary", mimeType: "text/markdown", filename: "summary.md", byteSize: 7,
       agentName: "other-agent", ownerEmail: actor.id, createdAt: now.toISOString() });
     const readPrivateArtifact = vi.fn(async () => ({ bytes: new TextEncoder().encode("Summary") }));
-    const call = buildFileTool({ ...f.deps, readPrivateArtifact }, "recorder", { actor, ancestry: ["recorder"] })!;
+    const call = buildFileTool({ ...f.deps, readPrivateArtifact }, "recorder", { ...executionIdentity(actor), actor, ancestry: ["recorder"] })!;
     expect((await call({ operation: "read", file_id: "summary" })).text).toContain("Summary");
     expect(readPrivateArtifact).toHaveBeenCalledWith("summary", actor.id, expect.any(Number));
     expect(f.read).not.toHaveBeenCalled();
     expect((await call({ operation: "edit", file_id: "summary", edits: [] })).text).toContain("authenticated read and inspect only");
     expect((await call({ operation: "create", format: "docx", content: "Document", assets: { source: "summary" } })).text).toContain("authenticated read and inspect only");
     expect(readPrivateArtifact).toHaveBeenCalledTimes(1);
-    const other = buildFileTool({ ...f.deps, readPrivateArtifact }, "recorder", { actor: { kind: "user", id: "other@example.test" }, ancestry: ["recorder"] })!;
+    const other = buildFileTool({ ...f.deps, readPrivateArtifact }, "recorder", { ...executionIdentity({ kind: "user", id: "other@example.test" }), actor: { kind: "user", id: "other@example.test" }, ancestry: ["recorder"] })!;
     expect((await other({ operation: "read", file_id: "summary" })).text).toContain("File unavailable");
     expect(readPrivateArtifact).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("native File tool", () => {
+  it.each(["webhook", "slack", "telegram", "teams", "schedule"] as const)("does not share files between Studio users of the same %s source", async kind => {
+    const f = setup();
+    const sharedActor = { kind, id: "agent:webhook" };
+    f.rows.set("private", { artifactId: "private", kind: "document", source: "generated", key: "private",
+      actor: sharedActor, ownerEmail: actor.id, agentName: "agent", mimeType: "image/png", byteSize: 8, createdAt: now.toISOString() });
+    const call = buildFileTool(f.deps, "agent", { ...executionIdentity(sharedActor, "stranger@example.test"), ancestry: ["agent"] })!;
+    for (const args of [{ operation: "read", file_id: "private" }, { operation: "edit", file_id: "private", edits: [] },
+      { operation: "create", format: "docx", content: "Report", assets: { image: "private" } }]) {
+      expect((await call(args)).text).toBe("Error: File unavailable");
+    }
+    expect(f.read).not.toHaveBeenCalled();
+  });
   it("forwards independent brand and layout choices and reports the effective design", async () => {
     const run = setup();
     const created = await run.call({ operation: "create", format: "docx", title: "운영 요약", content: "# 운영 요약\n\n본문",
@@ -139,12 +152,12 @@ describe("native File tool", () => {
     const created = await run.call({ operation: "create", format: "xlsx", sheets: [{ name: "Sheet", rows: [[42]] }] });
     await run.capture(created);
     const fileId = created.files![0]!.artifactId;
-    const stranger = buildFileTool(run.deps, "agent", { actor: { ...actor, id: "other@example.com" }, ancestry: ["agent"] })!;
+    const stranger = buildFileTool(run.deps, "agent", { ...executionIdentity({ ...actor, id: "other@example.com" }), actor: { ...actor, id: "other@example.com" }, ancestry: ["agent"] })!;
     expect((await stranger({ operation: "read", file_id: fileId })).text).toBe("Error: File unavailable");
-    const token = buildFileTool(run.deps, "elsewhere", { actor: { kind: "agent-token", id: actor.id }, ancestry: ["elsewhere"] })!;
+    const token = buildFileTool(run.deps, "elsewhere", { ...executionIdentity({ kind: "agent-token", id: actor.id }), actor: { kind: "agent-token", id: actor.id }, ancestry: ["elsewhere"] })!;
     expect((await token({ operation: "read", file_id: fileId })).text).toBe("Error: File unavailable");
     expect(run.read).not.toHaveBeenCalled();
-    const child = buildFileTool(run.deps, "child", { actor: { kind: "agent-token", id: actor.id }, ancestry: ["agent", "child"] })!;
+    const child = buildFileTool(run.deps, "child", { ...executionIdentity({ kind: "agent-token", id: actor.id }), actor: { kind: "agent-token", id: actor.id }, ancestry: ["agent", "child"] })!;
     expect((await child({ operation: "read", file_id: fileId })).text).toContain("42");
   });
 
@@ -169,7 +182,7 @@ describe("native File tool", () => {
 
   it("does not advertise unavailable storage and reports invalid operations", async () => {
     const run = setup();
-    expect(buildFileTool({ ...run.deps, artifacts: undefined }, "agent", { ancestry: ["agent"] })).toBeUndefined();
+    expect(buildFileTool({ ...run.deps, artifacts: undefined }, "agent", { ...executionIdentity(), ancestry: ["agent"] })).toBeUndefined();
     expect((await run.call({ operation: "create", format: "hwp" })).text).toContain("Error:");
     expect((await run.call({ operation: "edit", file_id: "missing", edits: [] })).text).toBe("Error: File unavailable");
   });

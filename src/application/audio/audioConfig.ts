@@ -1,3 +1,4 @@
+import type { RunUser } from "@/domain/execution/actor";
 import type { AudioJobConfig, AudioJobConfigRepository } from "@/domain/audio/config";
 import { MAX_ACTIVE_AUDIO_JOBS } from "@/domain/audio/job";
 import { ConflictError, ValidationError } from "@/application/errors";
@@ -7,7 +8,8 @@ export type AudioConfigInput = Pick<AudioJobConfig, "model" | "language" | "rete
 export function createAudioConfigUseCases(deps: {
   configs: AudioJobConfigRepository;
   authorize(agent: string, email: string): Promise<void>;
-  validate(input: AudioConfigInput, agent: string, email: string): Promise<void>;
+  authorizeWrite(agent: string, email: string): Promise<void>;
+  validate(input: AudioConfigInput, agent: string, user: RunUser): Promise<void>;
   now(): Date;
 }) {
   return {
@@ -15,8 +17,9 @@ export function createAudioConfigUseCases(deps: {
       await deps.authorize(agent, email);
       return deps.configs.get(agent);
     },
-    async save(agent: string, email: string, input: AudioConfigInput, revision: number) {
-      await deps.authorize(agent, email);
+    async save(agent: string, user: RunUser, input: AudioConfigInput, revision: number) {
+      const email = user.email;
+      await deps.authorizeWrite(agent, email);
       if (!Number.isSafeInteger(revision) || revision < 0 || revision >= Number.MAX_SAFE_INTEGER || typeof input.enabled !== "boolean" ||
         !input.model?.trim() || (input.language !== undefined && !/^[a-z]{2,3}$/i.test(input.language)) ||
         ![input.maxActive, input.maxPerOccurrence].every((value) => Number.isSafeInteger(value) && value >= 1 && value <= MAX_ACTIVE_AUDIO_JOBS)) {
@@ -24,7 +27,7 @@ export function createAudioConfigUseCases(deps: {
       }
       const now = deps.now().toISOString();
       try { fileExpiresAt(now, input.retention); } catch { throw new ValidationError("Invalid file retention"); }
-      if (input.enabled) await deps.validate(input, agent, email);
+      if (input.enabled) await deps.validate(input, agent, user);
       const config: AudioJobConfig = { enabled: input.enabled, model: input.model, language: input.language,
         retention: input.retention, maxActive: input.maxActive, maxPerOccurrence: input.maxPerOccurrence,
         ...(input.postprocess ? { postprocess: { agentName: input.postprocess.agentName } } : {}),

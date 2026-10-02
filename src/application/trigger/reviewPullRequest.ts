@@ -1,3 +1,6 @@
+import type { WebhookExecutionGrant } from "@/domain/execution/actor";
+import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
+import { assertWebhookExecutionGrant } from "@/application/auth/webhookAuthorization";
 import type { AgentConfiguration } from "@/domain/agent/types";
 import type { PullRequestReviewContext, PullRequestReviewDelivery, PullRequestReviewTarget, ReviewSourceRequest } from "@/domain/trigger/pullRequestReview";
 import type { McpToolResult } from "@/domain/llm/types";
@@ -49,8 +52,7 @@ export function reviewInput(context: PullRequestReviewContext) {
 
 export async function preparePullRequestReview(
   deps: TriggerRunnerDeps,
-  agentName: string,
-  triggerId: string,
+  grant: WebhookExecutionGrant,
   configuration: AgentConfiguration,
   target: PullRequestReviewTarget,
   checkOwnership?: () => Promise<void>,
@@ -59,24 +61,27 @@ export async function preparePullRequestReview(
   readSource(args: Record<string, unknown>): Promise<McpToolResult>;
   reviewWorkspace: import("@/domain/trigger/pullRequestReview").ReviewWorkspaceTool;
 }> {
+  const { agentName, triggerId } = grant;
   if (!deps.reviewForge) throw new Error("GitHub review integration is not configured");
   const executionTrigger = await deps.triggers.get(agentName, triggerId);
   const executionAgent = await deps.agents.get(agentName);
   if (!executionAgent) return { status: "skipped", reason: "Review Agent no longer exists." };
-  const issue = reviewSetupIssue(executionTrigger ?? {}, { ...executionAgent, configuration });
+  if (executionTrigger?.kind !== "webhook") return { status: "skipped", reason: "Review webhook no longer exists." };
+  const issue = reviewSetupIssue({ ...executionAgent, configuration });
   if (issue) throw new Error(issue);
-  const capturedEmail = executionTrigger?.executionEmail;
-  const executionEmail = capturedEmail!;
   async function currentAuthorization() {
     await checkOwnership?.();
-    const current = await deps.triggers.get(agentName, triggerId);
-    const agent = await deps.agents.get(agentName);
-    return current?.kind === "webhook" && current.enabled && current.executionEmail === executionEmail && agent?.ownerEmail === executionEmail &&
-      !reviewSetupIssue(current, agent) &&
-      !!deps.executionUserActive && await deps.executionUserActive(executionEmail) && reviewAllowsRepository(current.githubReview, target.repository);
+    try { await assertWebhookExecutionGrant(deps, grant); }
+    catch (error) {
+      if (error instanceof ForbiddenError || error instanceof NotFoundError || error instanceof ValidationError) return false;
+      throw error;
+    }
+    const [current, agent] = await Promise.all([deps.triggers.get(agentName, triggerId), deps.agents.get(agentName)]);
+    return current?.kind === "webhook" && current.enabled && agent !== null &&
+      !reviewSetupIssue(agent) && reviewAllowsRepository(current.githubReview, target.repository);
   }
-  if (!await currentAuthorization()) return { status: "skipped", reason: "Review automation or its owner execution grant is no longer authorized." };
-  const forge = deps.reviewForge();
+  if (!await currentAuthorization()) return { status: "skipped", reason: "Review automation or its personal Webhook caller is no longer authorized." };
+  const forge = deps.reviewForge(agentName, { userId: grant.userId, email: grant.email });
   const loaded = await forge.load(target);
   if (loaded.status === "skipped") return loaded;
   const input = reviewInput(loaded.context);
@@ -112,8 +117,8 @@ export async function preparePullRequestReview(
     return { text: JSON.stringify({ ...target, baseSha: loaded.context.baseSha, ...visible }) };
   };
   if (!deps.openReviewWorkspace) throw new Error("PR review requires a configured review Workspace");
-  if (!await currentAuthorization()) return { status: "skipped", reason: "Review automation or its owner execution grant is no longer authorized." };
-  const workspace = await deps.openReviewWorkspace(target, agentName, triggerId, executionEmail);
+  if (!await currentAuthorization()) return { status: "skipped", reason: "Review automation or its personal Webhook caller is no longer authorized." };
+  const workspace = await deps.openReviewWorkspace(target, grant);
   return {
     status: "ready", message: `${input.message}\n\nPrepared review Workspace: ${workspace.url}, verified HEAD ${target.headSha}. Use Workspace run/status/wait for local source reads and isolated tests.`, readSource,
     reviewWorkspace: async (args, callId) => {
@@ -122,7 +127,7 @@ export async function preparePullRequestReview(
     },
     configuration: { ...configuration, parameters: { ...configuration.parameters, structuredOutput: false } },
     publication: { target, close: workspace.close, async send(text, warnings) {
-      if (!await currentAuthorization()) return { status: "skipped", reason: "Review automation or its owner execution grant is no longer authorized." };
+      if (!await currentAuthorization()) return { status: "skipped", reason: "Review automation or its personal Webhook caller is no longer authorized." };
       await workspace.ensureIdle();
       if (warnings.length) throw new Error("The review run was incomplete; no review was published");
       const alternatives = [...known.values()].filter(file => !complete.has(file.path) &&
@@ -132,7 +137,7 @@ export async function preparePullRequestReview(
       const coverage = `전달 자료: 변경 파일 ${loaded.context.totalFiles}개, 완전한 diff ${complete.size}개, 원문·메타데이터 대조 ${alternatives.length}개. 실제 검토·실행 및 시각 확인 범위는 아래 본문을 따릅니다.`;
       const body = `검토 커밋: \`${target.headSha}\`\n${coverage}\n리뷰 Workspace: ${workspace.url}\n\n${text.trim()}`;
       if (!text.trim() || body.length > MAX_REVIEW_REPLY_CHARS) throw new Error("Review output is empty or exceeds the publication limit");
-      // An owner can revoke automation while the model is running.
+      // Credentials and shared review settings can be revoked while the model runs.
       if (!await currentAuthorization()) {
         return { status: "skipped", reason: "Review automation was disabled or its repository authorization changed." };
       }

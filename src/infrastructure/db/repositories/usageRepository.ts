@@ -23,7 +23,6 @@ import {
 } from "@/infrastructure/db/store";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
-import { memberEmailFromActorKey } from "@/domain/execution/actor";
 import { daysBetween } from "@/shared/date";
 import type { ActorUsageRow, MemberUsageRow, UsageDelta, UsageRow } from "@/domain/usage/types";
 import { agentIsLive } from "@/infrastructure/db/agentLifecycle";
@@ -91,6 +90,7 @@ function toActorUsageRow(item: Item): ActorUsageRow {
   return {
     ...toUsageRow(item),
     actor: String(item.actor ?? ""),
+    userId: String(item.userId ?? ""),
   };
 }
 
@@ -129,87 +129,59 @@ function added(row: Item | null, delta: UsageDelta, extra: Item): Item {
 
 export class PostgresUsageRepository implements UsageRepository {
   async record(delta: UsageDelta): Promise<void> {
-    if (delta.idempotencyKey !== undefined) { await this.recordOnce(delta); return; }
-    await this.addTo(keys.usage(delta.agentName, delta.date), delta, {
-      entityType: "Usage",
-      GSI1PK: keys.usageDatePartition(delta.date),
-      GSI1SK: delta.agentName,
-    });
-    if (delta.actor) {
-      // After the agent total, and separately: attribution is additive, so a
-      // failure to write who spent it must not lose the fact that it was spent.
-      // No GSI entry — this row is only ever read within its agent.
-      await this.addTo(keys.usageActor(delta.agentName, delta.date, delta.actor), delta, {
-        entityType: "Usage",
-        actor: delta.actor,
-      });
-      // Third and last, same additive reasoning: the member's own daily row,
-      // which the tier cap and the profile page both read. Only a `user` actor
-      // writes one — a machine caller has no personal budget, and an agent
-      // token deliberately spends against its agent's limits, not its
-      // owner's.
-      const email = memberEmailFromActorKey(delta.actor);
-      if (email) {
-        await updateItem(keys.usageMember(email, delta.date, delta.agentName), (row) =>
-          added(row, delta, { entityType: "UsageMember", email }),
-        );
+    if (!delta.userId || !delta.actor) throw new Error("Usage requires an authenticated Studio caller");
+    if (delta.idempotencyKey !== undefined && (!delta.idempotencyKey || delta.idempotencyKey.length > 256)) {
+      throw new Error("Invalid usage event identity");
+    }
+    const receipt = delta.idempotencyKey ? keys.usageReceipt(delta.userId, delta.agentName, delta.idempotencyKey) : undefined;
+    const replayed = async () => {
+      const item = receipt ? await getItem(receipt) : null;
+      if (!item) return false;
+      const stored = (item.delta ?? {}) as Record<string, unknown>;
+      const entries = Object.entries(delta).filter(([, value]) => value !== undefined);
+      if (Object.keys(stored).length !== entries.length || !entries.every(([key, value]) => stored[key] === value)) {
+        throw new Error("Usage event identity has a different payload");
+      }
+      return true;
+    };
+    if (await replayed()) return;
+    const agentKey = keys.agent(delta.agentName);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const live = agentIsLive(await getItem(agentKey));
+      const ops: TransactOp[] = [
+        { kind: "check", key: agentKey, condition: row => agentIsLive(row) === live },
+        ...(receipt ? [{ kind: "put" as const, item: { ...receipt, entityType: "UsageReceipt", delta,
+          expiresAt: expiresAtSeconds(delta.date + "T00:00:00Z", RETENTION.usageDays) },
+          condition: (item: Item | null) => item === null }] : []),
+        { kind: "update", key: keys.usageMember(delta.userId, delta.date, delta.agentName),
+          patch: item => added(item, delta, { entityType: "UsageMember", userId: delta.userId }) },
+        ...(live ? this.agentProjections(delta) : []),
+      ];
+      try { await transact(ops); return; }
+      catch (error) {
+        if (!(error instanceof Error) || error.name !== TRANSACTION_CANCELLED) throw error;
+        if (await replayed()) return;
+        // A definitive lifecycle transition rolled back the whole transaction.
+        // Settle the real bill once without recreating deleted Agent-owned rows.
+        if (attempt === 0 && live && !agentIsLive(await getItem(agentKey))) continue;
+        throw error;
       }
     }
   }
 
-  /** The receipt and all projections commit together; retries cannot partially charge twice. */
-  private async recordOnce(delta: UsageDelta): Promise<void> {
-    if (!delta.idempotencyKey || delta.idempotencyKey.length > 256) throw new Error("Invalid usage event identity");
-    const receipt = keys.usageReceipt(delta.agentName, delta.idempotencyKey);
-    const same = (item: Item) => {
-      const stored = (item.delta ?? {}) as Record<string, unknown>;
-      const entries = Object.entries(delta).filter(([, value]) => value !== undefined);
-      return Object.keys(stored).length === entries.length && entries.every(([key, value]) => stored[key] === value);
-    };
-    const existing = await getItem(receipt);
-    if (existing) {
-      if (!same(existing)) throw new Error("Usage event identity has a different payload");
-      return;
-    }
-    const ops: TransactOp[] = [
-      { kind: "check", key: keys.agent(delta.agentName), condition: agentIsLive },
-      { kind: "put", item: { ...receipt, entityType: "UsageReceipt", delta }, condition: (item) => item === null },
-      { kind: "update", key: keys.usage(delta.agentName, delta.date), patch: (item) => added(item, delta, {
+  private agentProjections(delta: UsageDelta): TransactOp[] {
+    return [
+      { kind: "update", key: keys.usage(delta.agentName, delta.date), patch: item => added(item, delta, {
         entityType: "Usage", GSI1PK: keys.usageDatePartition(delta.date), GSI1SK: delta.agentName,
       }) },
+      { kind: "update", key: keys.usageActor(delta.agentName, delta.date, delta.actor, delta.userId),
+        patch: item => added(item, delta, { entityType: "Usage", actor: delta.actor, userId: delta.userId }) },
     ];
-    if (delta.actor) {
-      ops.push({ kind: "update", key: keys.usageActor(delta.agentName, delta.date, delta.actor),
-        patch: (item) => added(item, delta, { entityType: "Usage", actor: delta.actor }) });
-      const email = memberEmailFromActorKey(delta.actor);
-      if (email) ops.push({ kind: "update", key: keys.usageMember(email, delta.date, delta.agentName),
-        patch: (item) => added(item, delta, { entityType: "UsageMember", email }) });
-    }
-    try { await transact(ops); }
-    catch (error) {
-      if (!(error instanceof Error) || error.name !== TRANSACTION_CANCELLED) throw error;
-      const winner = await getItem(receipt);
-      if (!winner) throw error;
-      if (!same(winner)) throw new Error("Usage event identity has a different payload");
-    }
   }
 
-  /**
-   * One row's increment, refused while the agent is being cascade deleted
-   * so a usage row cannot land in a partition the delete is sweeping. The
-   * member row above is a *person's* spend in their own partition, which no
-   * agent deletion touches, so it carries no such check.
-   */
-  private async addTo(key: { PK: string; SK: string }, delta: UsageDelta, extra: Item): Promise<void> {
-    await transact([
-      { kind: "check", key: keys.agent(delta.agentName), condition: agentIsLive },
-      { kind: "update", key, patch: (row) => added(row, delta, extra) },
-    ]);
-  }
-
-  async listMemberDays(email: string, from: string, to: string): Promise<MemberUsageRow[]> {
+  async listMemberDays(userId: string, from: string, to: string): Promise<MemberUsageRow[]> {
     const items = await listUsageItems({
-      pk: keys.usageMemberPartition(email),
+      pk: keys.usageMemberPartition(userId),
       // The agent follows the date in the sort key, so the upper bound has
       // to sort after every agent on `to` — bound by the prefix rather
       // than by any agent name guessed for it.
@@ -217,7 +189,7 @@ export class PostgresUsageRepository implements UsageRepository {
       notExpiredAt: Math.floor(Date.now() / 1000),
     });
     return items.map((item) => ({
-      email: String(item.email ?? email),
+      userId: String(item.userId ?? userId),
       agentName: String(item.agentName ?? ""),
       date: String(item.date ?? ""),
       calls: (item.calls as Record<string, number>) ?? {},
@@ -289,23 +261,17 @@ export class PostgresUsageRepository implements UsageRepository {
   ): Promise<boolean> {
     const marker = ALERT_MARKER[kind];
     try {
-      await updateItem(
-        keys.usageMonthClaim(agentName, month),
-        // Unlike the daily claim, this row does not exist by construction —
-        // the first claim of a month materialises it, retained as long as the
-        // usage rows whose window it closes.
-        (row) => ({
-          ...row,
-          [marker]: new Date().toISOString(),
-          entityType: row?.entityType ?? "UsageMonthClaim",
-          expiresAt:
-            row?.expiresAt ?? expiresAtSeconds(`${month}-01T00:00:00Z`, RETENTION.usageDays),
-        }),
-        (row) => row === null || row[marker] === undefined,
-      );
+      await transact([
+        { kind: "check", key: keys.agent(agentName), condition: agentIsLive },
+        { kind: "update", key: keys.usageMonthClaim(agentName, month),
+          patch: row => ({ ...row, [marker]: new Date().toISOString(),
+            entityType: row?.entityType ?? "UsageMonthClaim",
+            expiresAt: row?.expiresAt ?? expiresAtSeconds(`${month}-01T00:00:00Z`, RETENTION.usageDays) }),
+          condition: row => row === null || row[marker] === undefined },
+      ]);
       return true;
     } catch (error) {
-      if ((error as { name?: string }).name === CONDITIONAL_WRITE_FAILED) {
+      if ((error as { name?: string }).name === TRANSACTION_CANCELLED) {
         return false;
       }
       throw error;

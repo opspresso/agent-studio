@@ -4,12 +4,7 @@ import type { ActorUsageRow, MemberUsageRow, UsageDelta, UsageRow } from "./type
 export type CostAlertKind = "alert" | "block";
 
 export interface UsageRepository {
-  /**
-   * Atomic ADD of one call's usage into the daily row, and into the caller's
-   * own daily row when the delta names one. The agent total is written first
-   * and unconditionally: attribution must never be the reason spend goes
-   * unrecorded.
-   */
+  /** Atomically record Agent, source and personal totals; receipts make known usage replay idempotent. */
   record(delta: UsageDelta): Promise<void>;
   /** One agent's per-caller rows across a date range (who spent it). */
   listActorsByAgent(
@@ -29,7 +24,7 @@ export interface UsageRepository {
    * and the profile page's, read the same way. Bounded pages in that member's
    * own partition, like `listByAgent`.
    */
-  listMemberDays(email: string, from: string, to: string): Promise<MemberUsageRow[]>;
+  listMemberDays(userId: string, from: string, to: string): Promise<MemberUsageRow[]>;
   /**
    * Claim the once-per-day notification for `kind`. Returns true for exactly one
    * caller per (agent, date, kind) and false for every later one, including

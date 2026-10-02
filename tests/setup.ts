@@ -10,12 +10,8 @@ import { createFakeStore } from "./fakeStore";
  * `scripts/integration-check.ts` against a local PostgreSQL, outside vitest —
  * nothing under `tests/` is meant to open a connection.
  *
- * It is here rather than in each file because forgetting it does not fail
- * loudly. A use case that quietly grew a settings read — `assertAgentWritable`
- * consulting the admin list is the one that did — turns an unrelated test into
- * a hang on a connection attempt far from the cause, and six test files had
- * each pasted the same defensive mock in response. The boundary is the
- * store, so the default belongs on the store.
+ * Installing the mock once keeps every unit test behind the item-store boundary,
+ * including modules that read settings as an injected dependency.
  *
  * A file that needs to seed or inspect rows declares its own
  * `vi.mock("@/infrastructure/db/store", () => createFakeStore())` and keeps

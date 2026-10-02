@@ -1,3 +1,4 @@
+import { authenticateMessagingSubject } from "@/application/messaging/authenticateSubject";
 import { resolveAgentSummary, runRememberedTurn } from "@/application/messaging/rememberedTurn";
 import { createTeamsReplyChannel } from "@/application/teams/replyChannel";
 import { teamsSenderId, type TeamsActivityDisposition } from "@/application/teams/engagement";
@@ -127,6 +128,12 @@ export async function handleTeamsActivity(
     { ...(deps.sleep ? { sleep: deps.sleep } : {}) },
   );
 
+  const externalId = teamsSenderId(activity);
+  const realm = activity.channelData?.tenant?.id ?? activity.conversation?.tenantId;
+  if (!externalId || !realm) { await reply.say("A verified Teams sender and tenant are required"); return; }
+  const authenticated = await authenticateMessagingSubject(deps.identities, { agentName: binding.agentName, platform: "teams", realm, externalId },
+    disposition.text, activity.conversation?.conversationType === "personal", reply);
+  if (!authenticated) return;
   const runnable = await resolveAgentSummary(deps, binding.agentName, reply);
   if (!runnable) {
     return;
@@ -145,12 +152,11 @@ export async function handleTeamsActivity(
   await runRememberedTurn(deps, {
     agent,
     configuration,
+    executionGrant: authenticated,
     reply,
     conversation: teamsConversation(conversationId),
     text: disposition.text,
     attachments: attachmentsOf(deps, binding, activity),
-    // The Entra object id, not an email: Teams hands a bot no address.
-    actor: { kind: "teams", id: userId ?? `conversation:${conversationId}` },
     ...(userId ? { userId } : {}),
     callerOf: () => callerOf(activity),
     arrivedAt: Number.isNaN(arrivedAt.getTime()) ? new Date() : arrivedAt,

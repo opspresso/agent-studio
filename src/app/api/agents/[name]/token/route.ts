@@ -1,35 +1,6 @@
-import { withAuth, withMemberAuth } from "@/lib/session";
 import { apiTokenUseCases } from "@/lib/container";
-import { apiError } from "@/app/api/_lib/http";
-
-type RouteContext = { params: Promise<{ name: string }> };
-
-export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) => {
-  const { name } = await ctx.params;
-  try {
-    return Response.json(await apiTokenUseCases.status(name, user.email));
-  } catch (error) {
-    return apiError(error);
-  }
-});
-
-export const POST = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
-  const { name } = await ctx.params;
-  try {
-    // Returns the raw token. It is stored encrypted, not hashed, so the owner
-    // can read it back later through the sibling `reveal` route.
-    return Response.json(await apiTokenUseCases.generate(name, user.email));
-  } catch (error) {
-    return apiError(error);
-  }
-});
-
-export const DELETE = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
-  const { name } = await ctx.params;
-  try {
-    await apiTokenUseCases.revoke(name, user.email);
-    return new Response(null, { status: 204 });
-  } catch (error) {
-    return apiError(error);
-  }
-});
+import { createCredentialRoutes } from "@/app/api/agents/_lib/credentialRoutes";
+const routes = createCredentialRoutes(apiTokenUseCases);
+export const GET = routes.GET;
+export const POST = routes.POST;
+export const DELETE = routes.DELETE;

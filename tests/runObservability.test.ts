@@ -1,3 +1,4 @@
+import { executionIdentity, withUserLimits } from "./runIdentity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ids = vi.hoisted(() => ({ sequence: 0 }));
@@ -105,7 +106,7 @@ describe("run correlation", () => {
 
   it("gives an admitted run an id", async () => {
     resetRunMetrics();
-    const bracket = await openRun({ usage }, agent, configuration);
+    const bracket = await openRun(withUserLimits({ usage }), agent, configuration, executionIdentity());
     expect(bracket.runId).toMatch(/[0-9a-f-]{36}/);
     await bracket.close();
   });
@@ -115,14 +116,14 @@ describe("run correlation", () => {
    */
   it("is visible to the caller after openRun returns", async () => {
     resetRunMetrics();
-    const bracket = await openRun({ usage }, agent, configuration);
+    const bracket = await openRun(withUserLimits({ usage }), agent, configuration, executionIdentity());
     expect(currentRunContext()?.runId).toBe(bracket.runId);
     await bracket.close();
   });
 
   it("still carries the id at the end of the run, not just the start", async () => {
     resetRunMetrics();
-    const bracket = await openRun({ usage }, agent, configuration);
+    const bracket = await openRun(withUserLimits({ usage }), agent, configuration, executionIdentity());
     await Promise.resolve();
     linkTrace("trace-x");
     expect(currentRunContext()).toMatchObject({ runId: bracket.runId, traceId: "trace-x" });
@@ -135,7 +136,7 @@ describe("run correlation", () => {
     // would split one delivery's lines across two.
     resetRunMetrics();
     await withRunContext({ runId: "delivery-1" }, async () => {
-      const bracket = await openRun({ usage }, agent, configuration);
+      const bracket = await openRun(withUserLimits({ usage }), agent, configuration, executionIdentity());
       expect(bracket.runId).toBe("delivery-1");
       expect(currentRunContext()?.runId).toBe("delivery-1");
       await bracket.close();

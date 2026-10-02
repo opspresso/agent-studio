@@ -58,14 +58,15 @@ describe("runAgent tool loop", () => {
       [contentChunk("done")],
     ]);
     const callMcpTool = vi.fn(async () => { allowed = false; return { text: "first result" }; });
-    const authorizeTools = vi.fn(async () => { if (!allowed) throw new Error("permission revoked"); });
-    const chunks = await collect(runAgent({ createToolSchemaValidator, channel, callMcpTool, authorizeTools }, {
+    const authorizeExecution = vi.fn(async () => { if (!allowed) throw new Error("permission revoked"); });
+    const chunks = await collect(runAgent({ createToolSchemaValidator, channel, callMcpTool, authorizeExecution }, {
       agentName: "p", model: MODEL, messages: [{ role: "user", content: "go" }],
       mcpTools: [{ type: "function", function: { name: "getWeather", parameters: {} } }],
     }));
     expect(callMcpTool).toHaveBeenCalledTimes(1);
-    expect(authorizeTools).toHaveBeenCalledTimes(2);
-    expect(chunks.find(chunk => chunk.toolResult?.toolCallId === "second")?.toolResult?.content).toContain("permission revoked");
+    expect(authorizeExecution).toHaveBeenCalledTimes(3);
+    expect(channel.calls).toBe(1);
+    expect(chunks.some(chunk => chunk.error?.includes("permission revoked"))).toBe(true);
   });
   it("executes a tool call, feeds the result back, and returns the final answer", async () => {
     const channel = new FakeChannel([

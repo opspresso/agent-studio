@@ -38,7 +38,7 @@ describe("audio job HTTP contracts", () => {
     expect(mocks.saveConfig).not.toHaveBeenCalled();
     expect((await saveConfig(request(body), context)).status).toBe(200);
     const { revision, ...configuration } = body;
-    expect(mocks.saveConfig).toHaveBeenCalledWith("audio", "owner@example.test", configuration, revision);
+    expect(mocks.saveConfig).toHaveBeenCalledWith("audio", { userId: "owner-1", email: "owner@example.test" }, configuration, revision);
   });
   it("reads configured options with the authenticated identity", async () => {
     const data = { models: [{ id: "openai/whisper-1", displayName: "Whisper 1" }], destinations: ["memory"] };
@@ -59,7 +59,7 @@ describe("audio job HTTP contracts", () => {
   it("binds submitted work to the authenticated email and server occurrence", async () => {
     const response = await POST(request(input), context);
     expect(response.status).toBe(202);
-    expect(mocks.submit).toHaveBeenCalledWith("audio", "owner@example.test", input,
+    expect(mocks.submit).toHaveBeenCalledWith("audio", { userId: "owner-1", email: "owner@example.test" }, input,
       { occurrence: "occurrence-1", actor: { kind: "user", id: "owner@example.test" } });
   });
   it("rejects a caller-supplied identity and invalid retention", async () => {

@@ -11,6 +11,7 @@
  */
 
 import type { PoolClient } from "pg";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { getPool, sql, withTransaction } from "./client";
 import { toStoredJson } from "./storedJson";
 
@@ -19,6 +20,18 @@ export type Key = { PK: string; SK: string };
 
 /** A precondition on the stored row — `null` when there is none. */
 export type Condition = (existing: Item | null) => boolean;
+
+export interface ItemWriteFence { key: Key; condition: Condition }
+// Process-wired repositories can come from another Next server bundle. Both
+// module copies must read the scope that guards the initiating sync's writes.
+const WRITE_FENCE_SLOT = Symbol.for("opspresso.agent-studio.item-write-fence");
+const scope = globalThis as typeof globalThis & { [WRITE_FENCE_SLOT]?: AsyncLocalStorage<ItemWriteFence | undefined> };
+const writeFence = scope[WRITE_FENCE_SLOT] ??= new AsyncLocalStorage<ItemWriteFence | undefined>();
+
+/** Every write in this scope checks the fence under the same transaction's locks. */
+export function withItemWriteFence<T>(fence: ItemWriteFence | undefined, work: () => Promise<T>): Promise<T> {
+  return writeFence.run(fence, work);
+}
 
 export const CONDITIONAL_WRITE_FAILED = "ConditionalWriteFailed";
 export const TRANSACTION_CANCELLED = "TransactionCancelled";
@@ -143,7 +156,7 @@ export async function getItem(key: Key, client?: PoolClient): Promise<Item | nul
  * row's current state; without one it replaces whatever is there.
  */
 export async function putItem(item: Item, condition?: Condition): Promise<void> {
-  if (!condition) {
+  if (!condition && !writeFence.getStore()) {
     // One statement on the pool: an upsert is atomic on its own, and the
     // unconditional writes are the frequent ones — a run log flush, an audit
     // row, an artifact — so they must not each hold a connection across a
@@ -153,11 +166,9 @@ export async function putItem(item: Item, condition?: Condition): Promise<void> 
   }
   await withTransaction(async (client) => {
     const { PK, SK } = item as Key;
-    const existing = await lockRow(client, item as Key);
-    if (!condition(existing)) {
-      throw new ConditionalWriteError(`put ${PK}/${SK}`);
-    }
-    if (existing !== null) {
+    const locked = await lockOperations(client, [{ kind: "put", item, condition }], ConditionalWriteError);
+    const existing = locked.get(`${PK} ${SK}`) ?? null;
+    if (!condition || existing !== null) {
       await upsert(client, item);
       return;
     }
@@ -181,7 +192,7 @@ export async function putItem(item: Item, condition?: Condition): Promise<void> 
  * not an error, as it never was.
  */
 export async function deleteItem(key: Key, condition?: Condition): Promise<Item | null> {
-  if (!condition) {
+  if (!condition && !writeFence.getStore()) {
     // Atomic on its own, like the unconditional put: one statement, and the
     // row it removed comes back with it.
     const rows = await sql<{ data: Item }>(
@@ -191,10 +202,8 @@ export async function deleteItem(key: Key, condition?: Condition): Promise<Item 
     return rowData(rows);
   }
   return withTransaction(async (client) => {
-    const existing = await lockRow(client, key);
-    if (condition && !condition(existing)) {
-      throw new ConditionalWriteError(`delete ${key.PK}/${key.SK}`);
-    }
+    const locked = await lockOperations(client, [{ kind: "delete", key, condition }], ConditionalWriteError);
+    const existing = locked.get(`${key.PK} ${key.SK}`) ?? null;
     if (existing) {
       await client.query("DELETE FROM items WHERE pk = $1 AND sk = $2", [key.PK, key.SK]);
     }
@@ -217,10 +226,8 @@ export async function updateItem(
   transaction?: PoolClient,
 ): Promise<{ before: Item | null; after: Item }> {
   const update = async (client: PoolClient) => {
-    const before = await lockRow(client, key);
-    if (condition && !condition(before)) {
-      throw new ConditionalWriteError(`update ${key.PK}/${key.SK}`);
-    }
+    const locked = await lockOperations(client, [{ kind: "update", key, patch, condition }], ConditionalWriteError);
+    const before = locked.get(`${key.PK} ${key.SK}`) ?? null;
     const after = { ...patch(before), PK: key.PK, SK: key.SK };
     await upsert(client, after);
     return { before, after };
@@ -238,6 +245,43 @@ function opKey(op: TransactOp): Key {
   return op.kind === "put" ? (op.item as Key) : op.key;
 }
 
+/** Lock every written address and the read-only ownership fence in one order. */
+async function lockOperations(
+  client: Runner,
+  ops: TransactOp[],
+  Failure: typeof ConditionalWriteError | typeof TransactionCancelledError,
+): Promise<Map<string, Item | null>> {
+  const fence = writeFence.getStore();
+  const guarded: TransactOp[] = fence ? [...ops, { kind: "check", ...fence }] : ops;
+  const ordered = [...guarded].sort((a, b) => {
+    const ka = opKey(a), kb = opKey(b);
+    return ka.PK < kb.PK ? -1 : ka.PK > kb.PK ? 1 : ka.SK < kb.SK ? -1 : ka.SK > kb.SK ? 1 : 0;
+  });
+  const written = new Set(ordered.filter(op => op.kind !== "check").map(op => `${opKey(op).PK} ${opKey(op).SK}`));
+  const locked = new Map<string, Item | null>();
+  for (const op of ordered) {
+    const key = opKey(op), id = `${key.PK} ${key.SK}`;
+    if (!locked.has(id)) locked.set(id, await lockRow(client, key, written.has(id) ? "exclusive" : "shared"));
+  }
+  // Conditions run only after all locks are acquired, including waits on target rows.
+  for (const op of guarded) {
+    const key = opKey(op);
+    if (op.condition && !op.condition(locked.get(`${key.PK} ${key.SK}`) ?? null)) {
+      throw new Failure(`${op.kind} ${key.PK}/${key.SK}`);
+    }
+  }
+  return locked;
+}
+
+/** Bulk deletes share a transaction with their ownership fence when scoped. */
+async function writeSql<T extends Record<string, unknown>>(text: string, params: unknown[]): Promise<T[]> {
+  if (!writeFence.getStore()) return sql<T>(text, params);
+  return withTransaction(async client => {
+    await lockOperations(client, [], ConditionalWriteError);
+    return (await client.query<T>(text, params)).rows;
+  });
+}
+
 /**
  * Several writes that land together or not at all. Rows are locked in key
  * order before any condition is read, so two transactions over the same rows
@@ -246,32 +290,7 @@ function opKey(op: TransactOp): Key {
  */
 export async function transact(ops: TransactOp[]): Promise<void> {
   await withTransaction(async (client) => {
-    const ordered = [...ops].sort((a, b) => {
-      const ka = opKey(a);
-      const kb = opKey(b);
-      return ka.PK < kb.PK ? -1 : ka.PK > kb.PK ? 1 : ka.SK < kb.SK ? -1 : ka.SK > kb.SK ? 1 : 0;
-    });
-    // A key only ever checked takes the shared lock; one this transaction also
-    // writes takes the exclusive one, whichever op comes first.
-    const written = new Set(
-      ordered.filter((op) => op.kind !== "check").map((op) => `${opKey(op).PK} ${opKey(op).SK}`),
-    );
-    const locked = new Map<string, Item | null>();
-    for (const op of ordered) {
-      const key = opKey(op);
-      const id = `${key.PK} ${key.SK}`;
-      if (!locked.has(id)) {
-        locked.set(id, await lockRow(client, key, written.has(id) ? "exclusive" : "shared"));
-      }
-    }
-    for (const op of ops) {
-      const key = opKey(op);
-      const id = `${key.PK} ${key.SK}`;
-      const existing = locked.get(id) ?? null;
-      if (op.condition && !op.condition(existing)) {
-        throw new TransactionCancelledError(`${op.kind} ${key.PK}/${key.SK}`);
-      }
-    }
+    const locked = await lockOperations(client, ops, TransactionCancelledError);
     for (const op of ops) {
       const key = opKey(op);
       const id = `${key.PK} ${key.SK}`;
@@ -446,7 +465,7 @@ export async function deletePartition(
     params.push(options.prefix, prefixUpperBound(options.prefix));
     where.push(`sk >= $${params.length - 1}`, `sk < $${params.length}`);
   }
-  const rows = await sql<{ n: string }>(
+  const rows = await writeSql<{ n: string }>(
     `WITH gone AS (DELETE FROM items WHERE ${where.join(" AND ")} RETURNING 1) SELECT count(*)::text AS n FROM gone`,
     params,
   );
@@ -457,7 +476,7 @@ export async function deletePartition(
  * partitions of their own and are only found through the index. */
 export async function deleteIndexPartition(index: "GSI1" | "GSI2", pk: string): Promise<number> {
   const column = INDEX_COLUMNS[index].pk;
-  const rows = await sql<{ n: string }>(
+  const rows = await writeSql<{ n: string }>(
     `WITH gone AS (DELETE FROM items WHERE ${column} = $1 RETURNING 1) SELECT count(*)::text AS n FROM gone`,
     [pk],
   );
@@ -470,7 +489,7 @@ export async function deleteIndexPartition(index: "GSI1" | "GSI2", pk: string): 
  * long lock over a table that has a backlog — the next tick takes the rest.
  */
 export async function deleteExpired(nowSeconds: number, limit = 5_000): Promise<number> {
-  const rows = await sql<{ n: string }>(
+  const rows = await writeSql<{ n: string }>(
     "WITH gone AS (DELETE FROM items WHERE ctid = ANY(ARRAY(" +
       "SELECT ctid FROM items WHERE expires_at IS NOT NULL AND expires_at <= $1 LIMIT $2" +
       ")) RETURNING 1) SELECT count(*)::text AS n FROM gone",

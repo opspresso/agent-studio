@@ -1,3 +1,12 @@
+import { releaseRunSlot } from "@/application/run/concurrencyGuard";
+import { createWorkspaceModelGateway } from "@/application/workspace/modelGateway";
+import { workspaceModelCalls } from "@/infrastructure/db/repositories/workspaceModelCalls";
+import { createWorkspaceModelTokens } from "@/infrastructure/workspace/modelToken";
+import { createWorkspaceModelTransport } from "@/infrastructure/workspace/modelTransport";
+import { decodeAes256Key } from "@/shared/aesKey";
+import type { RunIdentity } from "@/domain/execution/actor";
+import { authorizeRunIdentity } from "@/application/auth/authorizeRunIdentity";
+import { triggerActor } from "@/application/trigger/runTrigger";
 import { createMemberTierUseCases } from "@/application/member/tierUseCases";
 import { memberTierAdministration } from "@/infrastructure/db/repositories/memberTierAdministration";
 import { createWorkspaceRuntimeModelUseCases } from "@/application/workspace/runtimeModels";
@@ -15,7 +24,7 @@ import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
 import { openReviewWorkspace } from "@/application/workspace/reviewWorkspace";
 import { workspaceCaller } from "@/application/workspace/workspaceCaller";
 import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
-import { assertMessagingExecutionGrant } from "@/application/messaging/executionGrant";
+import { resolveAgentCaller, resolveRunUser } from "@/application/auth/resolveRunUser";
 import { executeWorkspaceTask, executeAgent } from "@/application/execution/runAgent";
 import { runWorkspaceContinuations } from "@/application/chat/workspaceContinuation";
 import type { ChatDeps } from "@/application/chat/deps";
@@ -28,13 +37,15 @@ import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories
 import { createDockerSandboxBackend } from "@/infrastructure/workspace/dockerProvider";
 import { createKubernetesSandboxBackend } from "@/infrastructure/workspace/kubernetesProvider";
 import { routeSandboxBackend } from "@/infrastructure/workspace/backendRouting";
-import { createWorkspaceRuntimeAdapter, WORKSPACE_DIRECTORY } from "@/infrastructure/workspace/runtimeAdapters";
+import { createWorkspaceRuntimeAdapter, withWorkspaceModelChannel, WORKSPACE_DIRECTORY } from "@/infrastructure/workspace/runtimeAdapters";
 import { workspaceAllowsRepository } from "@/domain/workspace/policy";
 import { createCodingWorktree } from "@/infrastructure/workspace/gitWorktree";
 import { createCodingGitHub } from "@/infrastructure/github/codingForge";
+import { createAgentGitHubCredentials } from "@/application/coding/githubCredentials";
+import { verifyGitHubSignature } from "@/shared/githubWebhook";
 import { createCodingUseCases } from "@/application/coding/codingUseCases";
 import { handleCodingWebhook } from "@/application/coding/webhook";
-import { getWorkspaceConfig, getWorkspaceRuntimeConfig, getWorkspaceGitHubConfig } from "@/lib/runtime-settings";
+import { getWorkspaceConfig, getWorkspaceRuntimeConfig } from "@/lib/runtime-settings";
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 import { createAudioConfigUseCases } from "@/application/audio/audioConfig";
 import { resolveAudioPostprocessor } from "@/application/audio/postprocessConfiguration";
@@ -91,6 +102,7 @@ import { after } from "next/server";
 import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
 import { skillRepository } from "@/infrastructure/db/repositories/skillRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
+import { mcpRefreshRepository } from "@/infrastructure/db/repositories/mcpRefreshRepository";
 import { mcpConnectionRepository } from "@/infrastructure/db/repositories/mcpConnectionRepository";
 import { mcpOAuthStateRepository } from "@/infrastructure/db/repositories/mcpOAuthStateRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
@@ -146,7 +158,7 @@ import { createCapabilityVisibility } from "@/application/plugin/capabilityVisib
 import { syncPluginsFromSnapshot } from "@/application/plugin/syncPlugins";
 import { findRegistryBindings } from "@/application/plugin/bindingIndex";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
-import type { PluginsRepoSnapshot, PluginSyncSelection } from "@/domain/plugin/sync";
+import { isArchiveSync, type PluginsRepoSnapshot, type PluginSyncSelection } from "@/domain/plugin/sync";
 import { pluginRepository } from "@/infrastructure/db/repositories/pluginRepository";
 import {
   pluginSyncLock,
@@ -176,15 +188,21 @@ import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import { cacheQueryEmbeddings } from "@/application/catalog/queryCache";
 import { probeCapabilityReranker } from "@/application/catalog/probeReranker";
 import { log } from "@/shared/logger";
+import { startSequentialPoll } from "@/shared/sequentialPoll";
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createReranker } from "@/infrastructure/llm/reranker";
 import { createPgVectorStore } from "@/infrastructure/vector/pgVectorStore";
 import { deleteExpired } from "@/infrastructure/db/store";
-import { createAgentUseCases, setAdminCheck } from "@/application/agent/agentUseCases";
+import { assertAudioAccessible } from "@/application/audio/access";
+import { createAgentUseCases, assertAgentOwner } from "@/application/agent/agentUseCases";
 import { createTraceUseCases } from "@/application/trace/traceUseCases";
 import { createUsageUseCases } from "@/application/usage/usageUseCases";
 import { createConfigurationUseCases } from "@/application/agent/configurationUseCases";
-import { createApiTokenUseCases } from "@/application/agent/apiTokenUseCases";
+import { agentCredentialRepository } from "@/infrastructure/db/repositories/agentCredentialRepository";
+import { getExecutionMemberById } from "@/lib/memberAccess";
+import { messagingIdentityRepository } from "@/infrastructure/db/repositories/messagingIdentityRepository";
+import { createMessagingIdentityUseCases } from "@/application/auth/messagingIdentityUseCases";
+import { createAgentCredentialUseCases } from "@/application/auth/agentCredentialUseCases";
 import { createAgentSlackUseCases, resolveAgentSlackRuntime } from "@/application/slack/agentSlack";
 import {
   createAgentTelegramUseCases,
@@ -241,18 +259,14 @@ import {
   isConfiguredAdmin,
   startPublishedModelRefresh,
 } from "./runtime-settings";
-import { getMemberTier, isEffectiveConfiguredAdminByEmail } from "./memberAccess";
-import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
-import { DEFAULT_MEMBER_TIER, tierMayEdit, type TierLimits } from "@/domain/member/tiers";
+import { getMemberTier } from "./memberAccess";
+import { actorKey, type RunActor } from "@/domain/execution/actor";
+import type { TierLimits } from "@/domain/member/tiers";
 import { offeredModels } from "@/domain/llm/models";
 import { composeCreateAgent } from "@/application/agent/createAgentFlow";
 import { composeCloneAgent } from "@/application/agent/cloneAgentFlow";
 
-// The write override's admin list is pushed into the use case here rather than
-// imported by it — a static import would drag the settings store (and its
-// database client) into the application layer. The effective form, so a
-// tier-admin may override an agent write exactly as a listed admin does.
-setAdminCheck(isEffectiveConfiguredAdminByEmail);
+
 
 // Same shape, same reason: the audit store is pushed into the writer rather
 // than threaded through every act that records one, because a call site that
@@ -420,6 +434,12 @@ const capabilityAccess = createCapabilityVisibility({
   settings: settingsRepository, plugins: pluginRepository, skills: skillRepository, mcps: mcpRepository,
 });
 export const capabilityVisibilityUseCases = { getView: capabilityAccess.getView, update: capabilityAccess.update };
+const mcpAuthProvider = createMcpAuthProvider({
+  refreshClaims: mcpRefreshRepository, sleep: ms => workspaceSleep(ms),
+  connections: mcpConnectionRepository,
+  oauth: oauthClient,
+  cipher: secretCipher,
+});
 const syncMcpUseCases = createMcpUseCases(
   mcpRepository,
   secretCipher,
@@ -428,7 +448,7 @@ const syncMcpUseCases = createMcpUseCases(
   config.mcpInternalHostSuffixes,
 );
 export const mcpUseCases = createMcpUseCases(
-  capabilityAccess.mcps, secretCipher, urlPolicy, mcpToolProbe, config.mcpInternalHostSuffixes,
+  capabilityAccess.mcps, secretCipher, urlPolicy, mcpToolProbe, config.mcpInternalHostSuffixes, undefined, mcpAuthProvider,
 );
 
 /**
@@ -453,12 +473,22 @@ export const managedMcpUseCases =
         sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       })
     : undefined;
-const mcpAuthProvider = createMcpAuthProvider({
-  connections: mcpConnectionRepository,
-  oauth: oauthClient,
-  cipher: secretCipher,
+const agentGitHubCredentials = createAgentGitHubCredentials({
+  authorize: async (agentName, user) => {
+    const current = await resolveAgentCaller({ agents: agentRepository, members: { getById: getExecutionMemberById } }, agentName, user.userId);
+    if (current.user.email !== user.email) throw new ForbiddenError("The authenticated account changed");
+    return current.agent;
+  },
+  mcps: capabilityAccess.mcps, auth: mcpAuthProvider, cipher: secretCipher,
+  target: { apiUrl: config.githubApiUrl, webUrl: config.githubWebUrl ?? "" },
 });
+function agentCodingGitHub(agentName: string, user: import("@/domain/execution/actor").RunUser) {
+  const settings = config.workspaceGitHub;
+  if (!settings) throw new ValidationError("Workspace GitHub API and web endpoints are not configured");
+  return createCodingGitHub({ ...settings, getToken: () => agentGitHubCredentials.token(agentName, user) });
+}
 export const mcpAuthUseCases = createMcpAuthUseCases({
+  members: { getById: getExecutionMemberById },
   serviceName: async () => (await getServiceBranding()).name,
   mcps: capabilityAccess.mcps,
   agents: agentRepository,
@@ -563,18 +593,19 @@ export const agentUseCases = createAgentUseCases(agentRepository, {
       (await import("@/infrastructure/telegram/client")).telegramClient.deleteWebhook(botToken),
     ),
 });
-// `getMemberTier` is the issuance gate's tier source: a token may only exist
-// for an owner whose tier allows one, and the same resolver answers the
-// authentication-time check in `executionAuth.ts`.
-export const apiTokenUseCases = createApiTokenUseCases(agentRepository, secretCipher, getMemberTier);
+// Personal credentials and messaging links always resolve the current issuing user by ID.
+export const messagingIdentityUseCases = createMessagingIdentityUseCases({ identities: messagingIdentityRepository,
+  agents: agentRepository, members: { getById: getExecutionMemberById }, now: () => new Date() });
+export const apiTokenUseCases = createAgentCredentialUseCases({ purpose: "api", agents: agentRepository, tokens: agentCredentialRepository, members: { getById: getExecutionMemberById }, cipher: secretCipher, now: () => new Date(), newId: randomUUID });
+export const webhookTokenUseCases = createAgentCredentialUseCases({ purpose: "webhook", agents: agentRepository, tokens: agentCredentialRepository, members: { getById: getExecutionMemberById }, cipher: secretCipher, now: () => new Date(), newId: randomUUID });
 export const triggerUseCases = createTriggerUseCases({
+  members: { getById: getExecutionMemberById },
   triggers: triggerRepository,
   agents: agentRepository,
-  cipher: secretCipher,
-  authorizeReview: async (email) => {
-    if (!await isEffectiveConfiguredAdminByEmail(email)) throw new ForbiddenError("Only administrators can configure GitHub review publication");
-    if (!getWorkspaceGitHubConfig()) throw new ValidationError("GitHub review integration is not configured");
+  assertReviewReady: async (agentName) => {
     if (!getWorkspaceConfig()) throw new ValidationError("PR review requires a configured Workspace Sandbox backend");
+    const agent = await agentRepository.get(agentName);
+    if (!agent || !await agentGitHubCredentials.configured(agent)) throw new ValidationError("PR review requires this Agent to bind a GitHub MCP server");
   },
 });
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs, availableServiceLogos());
@@ -612,6 +643,7 @@ export const modelSelectionUseCases = createModelSelectionUseCases({
  */
 /** How long a crashed sync may hold the door shut. Syncs finish in seconds. */
 const PLUGIN_SYNC_LEASE_MS = 5 * 60_000;
+interface PluginSyncOptions { automatic?: boolean }
 
 /**
  * What both entry points share: the lease, the deps bag, the persisted report
@@ -623,6 +655,7 @@ const runPluginSync = async (
   loadSnapshot: () => Promise<PluginsRepoSnapshot>,
   actorEmail: string,
   selection?: PluginSyncSelection,
+  options: PluginSyncOptions = {},
 ) => {
   // One sync per repo at a time: a second one would double every GitHub read
   // and leave two contradicting reports.
@@ -630,37 +663,68 @@ const runPluginSync = async (
   if (!lease) {
     throw new ConflictError("A plugins sync is already running; wait for it to finish.");
   }
+  let ownershipFailure: unknown;
+  let renewal: Promise<void> = Promise.resolve();
+  const assertOwnership = async () => {
+    if (ownershipFailure !== undefined) throw ownershipFailure;
+    try {
+      if (!await pluginSyncLock.renew(repo, lease, PLUGIN_SYNC_LEASE_MS)) {
+        throw new ConflictError("Plugin sync lost its execution lease; its remaining changes were not applied.");
+      }
+    } catch (error) { ownershipFailure = error; throw error; }
+  };
+  const stopHeartbeat = startSequentialPoll({
+    intervalMs: PLUGIN_SYNC_LEASE_MS / 3,
+    poll: async () => { renewal = assertOwnership(); await renewal; },
+    onError: () => stopHeartbeat(),
+  });
   try {
-    const result = await syncPluginsFromSnapshot(
-      {
-        plugins: pluginRepository,
-        pluginRows: syncPluginUseCases,
-        skillRepo: skillRepository,
-        skills: syncSkillUseCases,
-        mcps: syncMcpUseCases,
-        ...(managedMcpUseCases ? { managedMcps: managedMcpUseCases } : {}),
-        findBindings: (skills, mcpServers) =>
-          findRegistryBindings(
-            { agents: agentRepository },
-            skills,
-            mcpServers,
-          ),
-      },
-      await loadSnapshot(),
-      actorEmail,
-      selection,
-    );
-    // The report outlives the browser that requested the sync — reloads and
-    // load-balancer timeouts must not lose the only copy of what happened.
-    await pluginSyncReportRepository.put({
-      repo,
-      report: result,
-      actorEmail,
-      finishedAt: new Date().toISOString(),
+    const result = await pluginSyncLock.withOwnership(repo, lease, async () => {
+      // The report may change while a tick reads GitHub or waits for its background callback.
+      if (options.automatic) {
+        const last = await pluginSyncReportRepository.get(repo);
+        if (last && isArchiveSync(last.report.commitSha)) {
+          throw new ConflictError("Automatic plugin sync is held by an uploaded archive; run a manual sync to replace it.");
+        }
+      }
+      const snapshot = await loadSnapshot();
+      await assertOwnership();
+      const report = await syncPluginsFromSnapshot(
+        {
+          assertOwnership,
+          plugins: pluginRepository,
+          pluginRows: syncPluginUseCases,
+          skillRepo: skillRepository,
+          skills: syncSkillUseCases,
+          mcps: syncMcpUseCases,
+          ...(managedMcpUseCases ? { managedMcps: managedMcpUseCases } : {}),
+          findBindings: (skills, mcpServers) =>
+            findRegistryBindings(
+              { agents: agentRepository },
+              skills,
+              mcpServers,
+            ),
+        },
+        snapshot,
+        actorEmail,
+        selection,
+      );
+      // Publication shares the lease check with its actual item write.
+      await assertOwnership();
+      await pluginSyncReportRepository.put({
+        repo,
+        report,
+        actorEmail,
+        finishedAt: new Date().toISOString(),
+      });
+      return report;
     });
+    // Deferred reindex work must not inherit a lease that is about to be released.
     reindexAfterSync();
     return result;
   } finally {
+    stopHeartbeat();
+    await renewal.catch(() => {});
     await pluginSyncLock.release(repo, lease);
   }
 };
@@ -669,6 +733,7 @@ export const syncPluginsFromRepo = async (
   repoConfig: Awaited<ReturnType<typeof getPluginsRepoConfig>>,
   actorEmail: string,
   selection?: PluginSyncSelection,
+  options?: PluginSyncOptions,
 ) =>
   runPluginSync(
     repoConfig.repo ?? "",
@@ -676,6 +741,7 @@ export const syncPluginsFromRepo = async (
       (await import("@/infrastructure/github/pluginsRepoClient")).fetchPluginsRepoSnapshot(repoConfig),
     actorEmail,
     selection,
+    options,
   );
 
 /**
@@ -906,21 +972,11 @@ export const readinessReport = () =>
     if (model) await llmReachable(() => resolveTarget(model));
   } });
 
-/**
- * The effective limits behind an actor, for the shared run bracket. Only
- * a `user` actor resolves personal limits — machine callers *and agent tokens* answer
- * `undefined` and keep the deployment-wide limits: a token is a service
- * credential bounded by its agent, and whether a tier may hold one at all
- * is decided where the bearer token authenticates. A missing row still
- * answers the default tier rather than none: a `user` email exists by signing
- * in, so "no row" is the degenerate case, not the machine one.
- */
-const actorLimitsResolver = async (actor: RunActor): Promise<TierLimits | undefined> => {
-  const email = memberEmailFromActorKey(actorKey(actor));
-  if (!email) {
-    return undefined;
-  }
-  return getMemberTierLimits((await getMemberTier(email)) ?? DEFAULT_MEMBER_TIER);
+/** All execution sources spend the current Studio account's personal limits. */
+const userLimitsResolver = async (user: RunIdentity["user"]): Promise<TierLimits> => {
+  const member = await getExecutionMemberById(user.userId);
+  if (!member || member.id !== user.userId || member.email !== user.email) throw new ForbiddenError("The execution account is no longer active");
+  return getMemberTierLimits(member.tier);
 };
 
 /**
@@ -985,11 +1041,17 @@ const deliverAgentMessage: PostCostAlert = async (agent, destination, text) => {
 };
 
 /** Repository and channel dependencies for the execution facade. */
+function authorizeAgentRun(agentName: string, identity: RunIdentity) {
+  return authorizeRunIdentity({ agents: agentRepository, members: { getById: getExecutionMemberById },
+    apiCredentials: apiTokenUseCases, webhookCredentials: webhookTokenUseCases,
+    messagingIdentities: messagingIdentityUseCases, triggers: triggerRepository }, agentName, identity);
+}
+
 export const executionDeps: ExecutionDeps = {
   // A verified PR prepares its own scoped reader; ordinary runs never receive one.
   reviewSource: undefined,
   reviewWorkspace: undefined,
-  authorizeExecutionGrant: grant => assertMessagingExecutionGrant({ agents: agentRepository, memberTier: getMemberTier }, grant),
+  authorizeRun: authorizeAgentRun,
   getCallRoutingPolicy: getCallRoutingPolicy,
   createToolSchemaValidator,
   runtimeSessions: runtimeSessions,
@@ -1029,12 +1091,14 @@ export const executionDeps: ExecutionDeps = {
     const caller = workspaceCaller(origin);
     if (!caller || !getWorkspaceConfig() || !await workspaceRepositoryPolicyUseCases.enabled(agentName)) return undefined;
     const email = caller.ownerEmail;
-    const authorize = () => authorizeWorkspaceTools(email, agentName, caller.actor, caller.executionGrant);
+    const authorize = () => authorizeWorkspaceTools(email, agentName, caller.actor, caller.executionGrant, caller.user);
     if (!await optionalToolAccessible(authorize)) return undefined;
+    const agent = await agentRepository.get(agentName);
+    const gitEnabled = !!agent && !!config.workspaceGitHub && await agentGitHubCredentials.configured(agent);
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
-      ...(getWorkspaceGitHubConfig() ? { createRepository: workspaceRepositoryCreationUseCases.create } : {}),
-      requestGit: (id, ownerEmail, action, sourceChatId) => getCodingUseCases().request(id, ownerEmail, action, sourceChatId),
-      publishGit: (id, ownerEmail, action, sourceChatId) => getCodingUseCases().publish(id, ownerEmail, action, sourceChatId),
+      ...(gitEnabled ? { createRepository: workspaceRepositoryCreationUseCases.create } : {}),
+      requestGit: (id, user, action, sourceChatId) => getCodingUseCases().request(id, user, action, sourceChatId),
+      publishGit: (id, user, action, sourceChatId) => getCodingUseCases().publish(id, user, action, sourceChatId),
       pullRequest: (id, ownerEmail) => getCodingUseCases().pullRequest(id, ownerEmail),
       attachRepository: (id, ownerEmail, repository, baseBranch) => getCodingUseCases().attachRepository(id, ownerEmail, repository, baseBranch),
       workdir: WORKSPACE_DIRECTORY,
@@ -1044,7 +1108,7 @@ export const executionDeps: ExecutionDeps = {
         return policy ? { ...policy, runtimes: (await workspaceRuntimeModelUseCases.getView()).available } : undefined;
       },
       sleep: async ms => { await workspaceSleep(ms); },
-    }, { agentName, ownerEmail: email, actor: caller.actor, executionGrant: caller.executionGrant, occurrence: currentRunContext()?.runId ?? randomUUID(),
+    }, { agentName, user: caller.user, ownerEmail: email, actor: caller.actor, executionGrant: caller.executionGrant, occurrence: currentRunContext()?.runId ?? randomUUID(),
       ...(reviewTarget ? { reviewTarget } : {}),
       sourceChatId: origin.conversation?.surface === "chat" ? origin.conversation.id : undefined });
   },
@@ -1052,14 +1116,14 @@ export const executionDeps: ExecutionDeps = {
   audioTools: async (agentName, origin) => {
     if (!config.objectBucketName) return undefined;
     const email = mcpUserEmail(origin.actor, origin.userEmail);
-    if (!email) return undefined;
+    if (!email || !origin.user || !origin.actor) return undefined;
     const agent = origin.ancestry[0] ?? agentName;
     const runtime = getAudioRuntime();
     if (!await optionalToolAccessible(() => runtime.authorize(agent, email))) return undefined;
     return createAudioTool({ jobs: runtime.jobs, files: { read: async (sourceAgent, id, user, maxBytes) => {
       await runtime.authorize(sourceAgent, user);
       return runtime.files.read(sourceAgent, id, user, maxBytes);
-    } } }, { agentName: agent, userEmail: email,
+    } } }, { agentName: agent, userEmail: email, user: origin.user, executionGrant: origin.executionGrant,
       occurrence: currentRunContext()?.runId ?? randomUUID(), actor: origin.actor, producedBy: agentName });
   },
   // Bound here because deciding *which* workspace an agent reads means
@@ -1080,7 +1144,7 @@ export const executionDeps: ExecutionDeps = {
   runSlots: runSlotRepository,
   limits: async () => ({ perActor: await getMaxConcurrentRunsPerActor() }),
   unknownModelPolicy: getUnknownModelPolicy,
-  resolveActorLimits: actorLimitsResolver,
+  resolveUserLimits: userLimitsResolver,
   ...(artifactStorage ? { artifacts: artifactStorage } : {}),
 };
 
@@ -1089,9 +1153,11 @@ export const executionDeps: ExecutionDeps = {
  * Agent execution and image output use that shared path.
  */
 export const triggerRunnerDeps: TriggerRunnerDeps = {
-  openReviewWorkspace: async (target, agentName, triggerId, ownerEmail) => {
-    if (!ownerEmail) throw new ValidationError("PR review Workspace requires an explicit trigger owner execution grant");
-    const tool = await executionDeps.workspaceTool?.(agentName, { ancestry: [agentName], actor: { kind: "webhook", id: `${agentName}:${triggerId}` }, userEmail: ownerEmail }, target);
+  members: { getById: getExecutionMemberById },
+  webhookCredentials: webhookTokenUseCases,
+  openReviewWorkspace: async (target, grant) => {
+    const { agentName, triggerId, email: ownerEmail } = grant;
+    const tool = await executionDeps.workspaceTool?.(agentName, { ancestry: [agentName], actor: triggerActor({ kind: "webhook", agentName, triggerId }), userEmail: ownerEmail, user: { userId: grant.userId, email: grant.email }, executionGrant: grant }, target);
     if (!tool) throw new ValidationError("PR review Workspace is unavailable; check the Agent's Workspace enablement, repository policy and Sandbox backend");
     return openReviewWorkspace({ tool, state: async id => {
       const workspace = await workspaceRepository.get(id);
@@ -1101,22 +1167,13 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       const sandbox = workspace?.sandboxId ? await workspaceRepository.sandbox(id, workspace.sandboxId) : null;
       const coding = getWorkspaceWorkerDeps().coding;
       if (!workspace || workspace.ownerEmail !== ownerEmail || workspace.activeRunId || !sandbox || !coding) throw new ValidationError("Review Workspace cannot be verified");
-      return coding.review(sandbox.externalId);
+      return coding(workspace.agentName, { userId: grant.userId, email: grant.email }).review(sandbox.externalId);
     } }, target);
   },
-  reviewForge: () => {
-    const settings = getWorkspaceGitHubConfig();
-    if (!settings) throw new ValidationError("GitHub review integration is not configured");
-    return createCodingGitHub(settings).reviews;
-  },
-  executionUserActive: async (email) => {
-    const tier = await getMemberTier(email);
-    return !!tier && tierMayEdit(tier);
-  },
+  reviewForge: (agentName, user) => agentCodingGitHub(agentName, user).reviews,
   triggers: triggerRepository,
   agents: agentRepository,
 
-  cipher: secretCipher,
   runSlots: runSlotRepository,
   deliverReport: deliverAgentMessage,
   run: async function* (input) {
@@ -1126,6 +1183,8 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       configuration: input.configuration,
       messages: input.message ? [{ role: "user", content: input.message }] : [],
       actor: input.actor,
+      user: input.user,
+      ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
       ...(input.backgroundTask ? { backgroundTask: true } : {}),
       ...(input.reviewSource ? { reviewSource: input.reviewSource } : {}),
@@ -1136,7 +1195,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
 };
 
 async function sourceRefreshIdentity(input: Parameters<NonNullable<ExecutionDeps["sourceRefreshIdentity"]>>[0]) {
-  const connection = await mcpConnectionRepository.get(input.configuration.agentName, input.server.name);
+  const connection = input.user ? await mcpConnectionRepository.get(input.user.userId, input.server.name) : null;
   return sourceRefreshFingerprint(input.server, input.binding, connection);
 }
 
@@ -1149,19 +1208,15 @@ export function getAudioRuntime() {
       if (await getArtifactAccessMode() === "public") throw new ValidationError("Private Artifacts require authenticated or proxied storage access");
     },
     publish: (file) => registerSourceArtifact(artifactRepository, file) });
-  const authorize = async (agentName: string, email: string) => {
-    const agent = await agentRepository.get(agentName);
-    const tier = await getMemberTier(email);
-    if (!agent || agent.ownerEmail !== email || !tier || !tierMayEdit(tier)) {
-      throw new ForbiddenError("Audio processing requires the agent owner's member account");
-    }
-    return agent;
-  };
+  const authorize = (agentName: string, email: string) =>
+    assertAudioAccessible({ agents: agentRepository, memberTier: getMemberTier }, agentName, email);
   const authorizeJob = async (job: AudioJob) => {
+    await authorizeAgentRun(job.agentName, job);
+    if (job.user.email !== job.userEmail) throw new ForbiddenError("Audio job identity changed");
     const agent = await authorize(job.agentName, job.userEmail);
     if (audioSourceAgent(job) !== job.agentName) await authorize(audioSourceAgent(job), job.userEmail);
     if (job.sourceRefresh?.agentName && job.sourceRefresh.agentName !== job.agentName) {
-      await authorize(job.sourceRefresh.agentName, job.userEmail);
+      await authorizeAgentRun(job.sourceRefresh.agentName, job);
     }
     return agent;
   };
@@ -1169,7 +1224,8 @@ export function getAudioRuntime() {
     urlPolicy, downloader: sourceDownloader, files, authorize: async (agent, email) => { await authorize(agent, email); },
     refresh: createMcpSourceRefresher(executionDeps),
     now: () => new Date(), id: randomUUID });
-  const validateOutputs = async (input: Pick<SubmitAudioJobInput, "postprocess" | "destination">, agentName: string, email: string) => {
+  const validateOutputs = async (input: Pick<SubmitAudioJobInput, "postprocess" | "destination">, agentName: string, user: import("@/domain/execution/actor").RunUser) => {
+    const email = user.email;
     const result: Pick<AudioJob, "postprocess" | "destination"> = {};
     if (input.postprocess) {
       result.postprocess = await resolveAudioPostprocessor(authorize, input.postprocess, email);
@@ -1181,17 +1237,18 @@ export function getAudioRuntime() {
       const binding = configuration?.mcpList.find((entry) => entry.name === input.destination!.serverName);
       if (!configuration || !binding) throw new ValidationError("The destination must be bound to the Agent's current settings");
       result.destination = { ...input.destination, configuration: { ...configuration, mcpList: [binding] } };
-      const destination = await openDestination({ agentName, userEmail: email, destination: result.destination });
+      const destination = await openDestination({ agentName, userEmail: email, user, destination: result.destination });
       await destination.close();
     }
     return result;
   };
   const configuration = createAudioConfigUseCases({ configs: audioJobConfigRepository,
+    authorizeWrite: async (agent, email) => { await assertAgentOwner(agentRepository, agent, email); },
     authorize: async (agent, email) => { await authorize(agent, email); },
-    validate: async (input, agent, email) => { await getTranscriptionTarget(input.model); await validateOutputs(input, agent, email); },
+    validate: async (input, agent, user) => { await getTranscriptionTarget(input.model); await validateOutputs(input, agent, user); },
     now: () => new Date(),
   });
-  const jobs = createAudioJobUseCases({ jobs: audioJobRepository, configs: audioJobConfigRepository, files: sourceFileRepository,
+  const jobs = createAudioJobUseCases({ authorizeRun: authorizeAgentRun, jobs: audioJobRepository, configs: audioJobConfigRepository, files: sourceFileRepository,
     resolveArtifact: async (id, email) => {
       const artifact = await artifactRepository.get(id);
       if (!artifact?.privateFileId || artifact.ownerEmail !== email) throw new NotFoundError("Private artifact not found");
@@ -1227,7 +1284,7 @@ export function getAudioRuntime() {
     },
     beforeTranscribe: async (job) => {
       const agent = await authorizeJob(job);
-      const bracket = await openModelCall(executionDeps, agent, { model: job.model }, job.actor ?? { kind: "user", id: job.userEmail });
+      const bracket = await openModelCall(executionDeps, agent, { model: job.model }, job);
       return (failed) => bracket.close({ failed });
     },
     recordUsage: async (job, _receiptId, result) => {
@@ -1236,12 +1293,13 @@ export function getAudioRuntime() {
       await usageRepository.record({ agentName: job.agentName, date: accounting.date, model: result.model,
         calls: 1, inputTokens: result.usage?.inputTokens ?? 0, outputTokens: result.usage?.outputTokens ?? 0,
         costUsd: accounting.costUsd, idempotencyKey: accounting.eventId,
-        actor: actorKey(job.actor ?? { kind: "user", id: job.userEmail }) });
+        actor: actorKey(job.actor), userId: job.user.userId });
     },
   });
   const postprocess = createAudioPostprocessStep({ files, run: async (job, text, mode, maxOutputChars, signal) => {
     const snapshot = job.postprocess?.configuration;
     if (!snapshot) throw new AudioJobStepError("postprocess_configuration_missing", false);
+    await authorizeAgentRun(snapshot.agentName, job);
     const agent = await authorize(snapshot.agentName, job.userEmail);
     const { streamAgentRun, collectRun } = await import("@/application/execution/runAgent");
     const extractMemories = Boolean(job.destination?.memories) && mode === "extract";
@@ -1266,15 +1324,15 @@ export function getAudioRuntime() {
           : "Summarize the source in Markdown, including its main points and supported next steps. Return the complete summary, not just a title. Do not invent implementation plans or treat suggestions as confirmed decisions.",
         mode, sourceType: mode === "extract" ? "transcript" : "summary notes", source: text,
       }) }], backgroundTask: true,
-      ownerEmail: job.userEmail, actor: job.actor ?? { kind: "user", id: job.userEmail }, signal }), configuration.model);
+      user: job.user, executionGrant: job.executionGrant, ownerEmail: job.userEmail, actor: job.actor, signal }), configuration.model);
     if (result.termination !== "completed" || result.warnings.length) throw new AudioJobStepError("postprocess_run_incomplete", false);
     return extractMemories ? result.content : JSON.stringify({ text: result.content, memories: [], warnings: [] });
   } });
-  async function openDestination(job: Pick<AudioJob, "agentName" | "userEmail" | "actor" | "destination">, signal?: AbortSignal) {
+  async function openDestination(job: Pick<AudioJob, "agentName" | "userEmail" | "destination" | "user"> & Partial<Pick<AudioJob, "actor" | "executionGrant">>, signal?: AbortSignal) {
     await authorize(job.agentName, job.userEmail);
     const configuration = job.destination?.configuration;
     if (!configuration || !job.destination) throw new AudioJobStepError("delivery_configuration_missing", false);
-    const mcp = await buildMcpTools(executionDeps, configuration, signal, { actor: job.actor, userEmail: job.userEmail });
+    const mcp = await buildMcpTools(executionDeps, configuration, signal, { actor: job.actor, user: job.user, userEmail: job.userEmail });
     const required = [...(job.destination.documents ? ["document_ingest", "document_ingest_status", "document_ingest_retry"] : []),
       ...(job.destination.memories ? ["remember"] : [])];
     if (required.some((name) => !mcp.aliasFor?.(job.destination!.serverName, name))) {
@@ -1293,6 +1351,9 @@ export function getAudioRuntime() {
     }
     return {
       async call(tool: string, args: Record<string, unknown>) {
+        if (!job.user || !job.actor) throw new ForbiddenError("Audio delivery requires an authenticated caller");
+        await authorizeAgentRun(job.agentName, { user: job.user, actor: job.actor, executionGrant: job.executionGrant });
+        await authorize(job.agentName, job.userEmail);
         const alias = mcp.aliasFor?.(job.destination!.serverName, tool);
         if (!alias || !mcp.callMcpTool) throw new AudioJobStepError("delivery_tool_missing", false);
         const result = await mcp.callMcpTool(alias, args);
@@ -1345,17 +1406,34 @@ export async function runAudioWorkerService(signal: AbortSignal): Promise<void> 
   }, signal);
 }
 
+let nativeModelGateway: ReturnType<typeof createWorkspaceModelGateway> | undefined;
+export function getWorkspaceModelGateway() {
+  return nativeModelGateway ??= createWorkspaceModelGateway({
+    workspaces: workspaceRepository, agents: agentRepository, calls: workspaceModelCalls,
+    tokens: createWorkspaceModelTokens(decodeAes256Key(config.aesEncryptionKey)),
+    transport: createWorkspaceModelTransport(resolveTarget),
+    selection: getWorkspaceRuntimeConfig,
+    authorize: async (agentName, identity) => {
+      await authorizeAgentRun(agentName, identity);
+      await authorizeWorkspaceTools(identity.user.email, agentName, identity.actor, identity.executionGrant, identity.user);
+    },
+    usage: usageRepository, limits: userLimitsResolver, pricingPolicy: getUnknownModelPolicy,
+    now: () => new Date(), newId: randomUUID, runTimeoutMs: MAX_RUN_DURATION_MS,
+  });
+}
+
 const workspaceDeps: WorkspaceDeps = {
   repository: workspaceRepository, chats: chatRepository, agents: agentRepository,
   policy: getWorkspaceAgentPolicy,
-  authorize: (agentName, email, actor, grant) => authorizeWorkspaceTools(email, agentName, actor, grant),
-  assertRuntime: async kind => { if (!await getWorkspaceRuntimeConfig(kind)) throw new ValidationError("Select a Workspace runtime model in Models before starting work"); },
-  now: () => new Date(), newId: randomUUID,
-  checkRepository: async (repository, baseBranch, sourceRevision) => {
-    const settings = getWorkspaceGitHubConfig();
-    if (!settings) throw new ValidationError("Workspace GitHub integration is not configured");
-    await createCodingGitHub(settings).forge.checkRepository(repository, baseBranch, sourceRevision);
+  authorize: (agentName, email, actor, grant, user) => authorizeWorkspaceTools(email, agentName, actor, grant, user),
+  assertRuntime: async kind => {
+    if (kind === "command") return;
+    if (!await getWorkspaceRuntimeConfig(kind)) throw new ValidationError("Select a Workspace runtime model in Models before starting work");
+    if (!config.workspace?.modelGatewayUrl) throw new ValidationError("WORKSPACE_MODEL_GATEWAY_URL is required for native model runtimes");
   },
+  now: () => new Date(), newId: randomUUID,
+  checkRepository: (agentName, user, repository, baseBranch, sourceRevision) =>
+    agentCodingGitHub(agentName, user).forge.checkRepository(repository, baseBranch, sourceRevision),
   idleTtlSeconds: 1800,
 };
 export const workspaceUseCases = createWorkspaceUseCases(workspaceDeps);
@@ -1366,29 +1444,24 @@ async function getWorkspaceAgentPolicy(name: string) { return workspaceRepositor
 export const workspaceRepositoryPolicyUseCases = createWorkspaceRepositoryPolicyUseCases({
   agents: agentRepository, repository: workspacePolicyRepository,
   backendReady: () => !!getWorkspaceConfig(), runtimes: async () => (await workspaceRuntimeModelUseCases.getView()).available,
-  isAdmin: isEffectiveConfiguredAdminByEmail, now: () => new Date(),
+  now: () => new Date(),
 });
 export const workspaceRepositoryCreationUseCases = createWorkspaceRepositoryCreationUseCases({
   policies: workspacePolicyRepository, creations: workspaceRepositoryCreationStore,
   authorize: (agentName, ownerEmail) => authorizeWorkspaceTools(ownerEmail, agentName), now: () => new Date(),
-  forge: () => {
-    const settings = getWorkspaceGitHubConfig();
-    if (!settings) throw new ValidationError("Workspace GitHub integration is not configured");
-    return createCodingGitHub(settings).forge;
-  },
+  forge: (agentName, user) => agentCodingGitHub(agentName, user).forge,
 });
 
-async function authorizeWorkspaceTools(email: string, agentName: string, actor?: RunActor, grant?: import("@/domain/execution/actor").ExecutionGrant): Promise<void> {
-  await authorizeWorkspaceExecution({ agents: agentRepository, triggers: triggerRepository, memberTier: getMemberTier,
+async function authorizeWorkspaceTools(email: string, agentName: string, actor?: RunActor, grant?: import("@/domain/execution/actor").ExecutionGrant, user?: import("@/domain/execution/actor").RunUser): Promise<void> {
+  await authorizeWorkspaceExecution({ apiCredentials: apiTokenUseCases, messagingIdentities: messagingIdentityUseCases, agents: agentRepository, triggers: triggerRepository, memberTier: getMemberTier, webhookCredentials: webhookTokenUseCases,
+    members: { getById: getExecutionMemberById },
     backendReady: () => !!getWorkspaceConfig(), enabled: name => workspaceRepositoryPolicyUseCases.enabled(name),
-  }, agentName, email, actor, grant);
+  }, agentName, email, actor, grant, user);
 }
 
-function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
+function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps & { coding: NonNullable<WorkspaceWorkerDeps["coding"]> } {
   const settings = getWorkspaceConfig();
   if (!settings) throw new ValidationError("Workspaces are not configured");
-  const githubConfig = getWorkspaceGitHubConfig();
-  const github = githubConfig ? createCodingGitHub(githubConfig) : undefined;
   const kubernetes = settings.provider === "kubernetes" ? createKubernetesSandboxBackend(settings) : undefined;
   const docker = settings.provider === "docker" || settings.legacyDocker ? createDockerSandboxBackend(settings) : undefined;
   const backend = routeSandboxBackend(kubernetes ?? docker!, kubernetes ? docker : undefined);
@@ -1406,20 +1479,32 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
       if (removed) log.info("workspace-worker", `Requested deletion of ${removed} orphan Sandbox Pods`);
     } } : {}),
     checkpoints: createWorkspaceCheckpointStore(secretCipher),
-    runtime: async kind => {
-      const runtime = await getWorkspaceRuntimeConfig(kind);
+    settleModelCalls: (workspaceId, runId) => getWorkspaceModelGateway().settle(workspaceId, runId),
+    releaseSlot: async run => { if (run.studioSlot) await releaseRunSlot(executionDeps, run.user, run.studioSlot); },
+    runtime: async (kind, context) => {
+      if (!context) return createWorkspaceRuntimeAdapter(kind);
+      const selected = await getWorkspaceRuntimeConfig(kind);
+      const gatewayUrl = config.workspace?.modelGatewayUrl;
+      const credential = kind !== "command" && selected && gatewayUrl && context
+        ? await getWorkspaceModelGateway().credential(context.workspace, context.run) : undefined;
+      const runtime = credential ? withWorkspaceModelChannel(kind, { model: credential.selected.wireModel }, {
+        name: credential.selected.protocol === "responses" ? "openai" : "studio",
+        baseUrl: gatewayUrl!.replace(/\/$/, "") + "/api/workspace-model/v1", apiKey: credential.token,
+      }) : undefined;
       const adapter = createWorkspaceRuntimeAdapter(kind, runtime);
-      // A disabled model must not prevent observing an operation already running in the Sandbox.
       return { ...adapter, command: (...args) => {
-        if (!runtime) throw new ValidationError("Workspace runtime model is not configured in Models");
+        if (kind !== "command" && !credential) throw new ValidationError("Workspace runtime model or WORKSPACE_MODEL_GATEWAY_URL is not configured");
         return adapter.command(...args);
       } };
     },
-    ...(github && githubConfig ? { coding: createCodingWorktree(backend.control, { webUrl: githubConfig.webUrl,
-      internalHosts: githubConfig.internalHosts,
-      ...("getToken" in githubConfig ? { serverToken: githubConfig.getToken } : { credential: github.credential }) }) } : {}),
+    coding: (agentName, user) => {
+      const github = config.workspaceGitHub;
+      if (!github) throw new ValidationError("Workspace GitHub API and web endpoints are not configured");
+      return createCodingWorktree(backend.control, { webUrl: github.webUrl, internalHosts: github.internalHosts,
+        serverToken: () => agentGitHubCredentials.token(agentName, user) });
+    },
     runTimeoutMs: MAX_RUN_DURATION_MS,
-    execute: (workspace, work, actor) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work, actor),
+    execute: (workspace, work, identity, slot) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work, identity, slot),
     sleep: async (ms, signal) => { await workspaceSleep(ms, undefined, { signal }); },
   };
 }
@@ -1437,7 +1522,11 @@ export async function runWorkspaceWorkerService(signal: AbortSignal, heartbeat?:
   const concurrency = getWorkspaceConfig()?.workerConcurrency ?? 1;
   await Promise.all([
     runWorkspaceWorker(getWorkspaceWorkerDeps(), signal, concurrency, heartbeat),
-    runWorkspaceContinuations({ chat: chatDeps, workspaces: workspaceRepository, authorize: authorizeWorkspaceTools,
+    runWorkspaceContinuations({ chat: chatDeps, workspaces: workspaceRepository, authorize: async (user, agentName) => {
+      const current = await resolveRunUser({ agents: agentRepository, members: { getById: getExecutionMemberById } }, agentName, user.userId);
+      if (current.email !== user.email) throw new ForbiddenError("The requesting account changed");
+      await authorizeWorkspaceTools(current.email, agentName);
+    },
       pullRequest: (id, owner) => getCodingUseCases().pullRequest(id, owner),
       now: () => new Date(), sleep: async (ms, abort) => { await workspaceSleep(ms, undefined, { signal: abort }); } }, signal, concurrency),
   ]);
@@ -1447,26 +1536,21 @@ export async function runWorkspaceWorkerService(signal: AbortSignal, heartbeat?:
 export const chatDeps: ChatDeps = {
   closeWorkspace: closeChatWorkspace, runtimeSessions, chats: chatRepository, runLog: chatRunLogRepository,
   agents: agentRepository,
-  runAgent: (params) => executeAgent(executionDeps, params), documents: executionDeps.documents,
+  runAgent: (params) => executeAgent(executionDeps, { ...params, ownerEmail: params.user.email }), documents: executionDeps.documents,
   ...(artifactStorage ? { artifacts: artifactStorage } : {}),
 };
 
 export function getCodingUseCases() {
   const deps = getWorkspaceWorkerDeps();
-  const config = getWorkspaceGitHubConfig();
-  if (!deps.coding || !config) throw new ValidationError("Workspace GitHub integration is not configured");
-  return createCodingUseCases({ ...deps, coding: deps.coding, forge: createCodingGitHub(config).forge });
+  return createCodingUseCases({ ...deps, members: { getById: getExecutionMemberById }, coding: deps.coding, forge: (agentName, user) => agentCodingGitHub(agentName, user).forge });
 }
 
 export function verifyWorkspaceGitHubWebhook(raw: string, signature: string | null): boolean {
-  const config = getWorkspaceGitHubConfig();
-  return !!config && createCodingGitHub(config).verifyWebhook(raw, signature);
+  return verifyGitHubSignature(config.workspaceGitHub?.webhookSecret, raw, signature);
 }
 
 export async function receiveWorkspaceGitHubWebhook(deliveryId: string, raw: string) {
-  const config = getWorkspaceGitHubConfig();
-  if (!config) throw new ValidationError("Workspace GitHub integration is not configured");
-  return handleCodingWebhook(workspaceRepository, createCodingGitHub(config).forge, deliveryId, raw);
+  return handleCodingWebhook(workspaceRepository, (agentName, user) => agentCodingGitHub(agentName, user).forge, deliveryId, raw);
 }
 
 export const workspaceOptions = createWorkspaceOptionsUseCase({
@@ -1474,7 +1558,7 @@ export const workspaceOptions = createWorkspaceOptionsUseCase({
   policies: workspacePolicyRepository,
   runtimes: async () => (await workspaceRuntimeModelUseCases.getView()).available,
   backendReady: () => !!getWorkspaceConfig(),
-  gitEnabled: () => !!getWorkspaceGitHubConfig(),
+  gitEnabled: async agent => !!config.workspaceGitHub && await agentGitHubCredentials.configured(agent),
 });
 
 export const agentRecommendationUseCases = createAgentRecommendationUseCases({
@@ -1488,12 +1572,11 @@ export const agentRecommendationUseCases = createAgentRecommendationUseCases({
       })),
 });
 
-export async function workspaceBranches(agentName: string, ownerEmail: string, requestedRepository?: string) {
-  await authorizeWorkspaceTools(ownerEmail, agentName);
+export async function workspaceBranches(agentName: string, user: import("@/domain/execution/actor").RunUser, requestedRepository?: string) {
+  await authorizeWorkspaceTools(user.email, agentName, { kind: "user", id: user.email }, undefined, user);
   const policy = await getWorkspaceAgentPolicy(agentName);
   const repo = requestedRepository;
-  const config = getWorkspaceGitHubConfig();
-  if (!repo || !policy || !config) throw new ValidationError("Workspace GitHub integration is not configured");
+  if (!repo || !policy) throw new ValidationError("Workspace GitHub integration is not configured");
   if (!workspaceAllowsRepository(policy, repo)) throw new ValidationError("Repository is not enabled for this agent");
-  return createCodingGitHub(config).forge.branches(repo);
+  return agentCodingGitHub(agentName, user).forge.branches(repo);
 }

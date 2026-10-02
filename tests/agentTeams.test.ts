@@ -67,11 +67,6 @@ function fakeRepo(initial: Agent): { repo: AgentRepository; current: () => Agent
       stored = p;
     },
     async delete() {},
-    async getApiToken() {
-      return null;
-    },
-    async setApiToken() {},
-    async deleteApiToken() {},
   } as unknown as AgentRepository;
   return { repo, current: () => stored };
 }
@@ -80,16 +75,7 @@ const update = (repo: AgentRepository, input: Parameters<typeof updateAgentTeams
   updateAgentTeams(repo, "bot-proj", input, email, secretCipher);
 
 describe("updateAgentTeams", () => {
-  it("captures, preserves and explicitly revokes owner execution permissions", async () => {
-    const { repo, current } = fakeRepo(makeAgent());
-    const update = (value: Parameters<typeof updateAgentTeams>[2]) => updateAgentTeams(repo, "bot-proj", value, OWNER, secretCipher);
-    expect((await update({ runAsOwner: true })).view.runAsOwner).toBe(true);
-    expect(current().teams?.executionEmail).toBe(OWNER);
-    await update({ enabled: false });
-    expect(current().teams?.executionEmail).toBe(OWNER);
-    expect((await update({ runAsOwner: false })).view.runAsOwner).toBe(false);
-    expect(current().teams?.executionEmail).toBeUndefined();
-  });
+
   it("stores the App ID in the clear, encrypts the secret and masks it back", async () => {
     const { repo, current } = fakeRepo(makeAgent());
     const { view } = await update(repo, { appId: APP, appPassword: "s3cret-value", enabled: true });

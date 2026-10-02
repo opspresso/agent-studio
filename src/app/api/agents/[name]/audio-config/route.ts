@@ -18,6 +18,6 @@ export const PUT = withMemberAuth(async (user, request: Request, context: Contex
   if (!parsed.success) return invalidRequest(parsed.error);
   try {
     const { revision, ...input } = parsed.data;
-    return Response.json(await getAudioRuntime().configuration.save((await context.params).name, user.email, input, revision));
+    return Response.json(await getAudioRuntime().configuration.save((await context.params).name, { userId: user.id, email: user.email }, input, revision));
   } catch (error) { return apiError(error); }
 });

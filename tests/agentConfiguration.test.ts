@@ -3,7 +3,7 @@ import type { FakeStore } from "./fakeStore";
 import type { Agent } from "@/domain/agent/types";
 import { agentMcpHeadersContext } from "@/domain/security/secretContext";
 import { createConfigurationUseCases, type AgentConfigurationInput } from "@/application/agent/configurationUseCases";
-import { setAdminCheck, updateAgent } from "@/application/agent/agentUseCases";
+import { updateAgent } from "@/application/agent/agentUseCases";
 import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { skillRepository } from "@/infrastructure/db/repositories/skillRepository";
@@ -11,6 +11,8 @@ import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { keys } from "@/infrastructure/db/keys";
 import { putAgentConfigurationSchema } from "@/app/api/agents/_lib/schemas";
 import { sanitizeAgent } from "@/app/api/agents/_lib/http";
+import { getModelConfig } from "@/domain/llm/models";
+import { addTestModels } from "./modelFixtures";
 
 vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
 vi.mock("node:crypto", async (original) => ({
@@ -51,12 +53,10 @@ beforeEach(async () => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
   vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 9).toString("base64"));
-  setAdminCheck(async email => email === ADMIN);
   store.rows.clear();
   await agentRepository.create(agent);
 });
 afterEach(() => {
-  setAdminCheck(async () => false);
   vi.useRealTimers();
   vi.unstubAllEnvs();
 });
@@ -96,10 +96,11 @@ describe("current Agent configuration", () => {
 
   it("keeps write ownership and private-agent reads at the existing boundaries", async () => {
     await expect(save({}, NOW, READER)).rejects.toMatchObject({ status: 403 });
-    const adminSave = await save({}, NOW, ADMIN);
+    await expect(save({}, NOW, ADMIN)).rejects.toMatchObject({ status: 403 });
+    await save({}, NOW, OWNER);
     const privateAgent = await updateAgent(agentRepository, agent.name, { visibility: "private" }, OWNER);
     await expect(useCases.getView(agent.name, READER)).rejects.toMatchObject({ status: 403 });
-    expect((await useCases.getView(agent.name, ADMIN)).configuration).toEqual(adminSave.configuration);
+    await expect(useCases.getView(agent.name, ADMIN)).rejects.toMatchObject({ status: 403 });
     expect(privateAgent.configuration).toBeDefined();
     await expect(useCases.getView("missing", OWNER)).rejects.toMatchObject({ status: 404 });
   });
@@ -119,7 +120,6 @@ describe("current Agent configuration", () => {
     expect(JSON.stringify(saved)).not.toContain(SECRET);
     expect(saved.configuration!.mcpList[0]).not.toHaveProperty("headerTarget");
     expect(sanitizeAgent(stored)).not.toHaveProperty("configuration");
-    expect(sanitizeAgent(stored, { withMemberEmails: true })).not.toHaveProperty("configuration");
   });
 
   it("preserves masked and omitted headers, permits explicit clearing, and never creates a secret from a mask", async () => {
@@ -152,6 +152,17 @@ describe("current Agent configuration", () => {
     await expect(save({ mcpList: [{ name: "tools" }, { name: "tools" }] })).rejects.toThrow("more than once");
     await agentRepository.create({ ...agent, name: "private-child", ownerEmail: READER, visibility: "private" });
     await expect(save({ subagentList: [{ name: "private-child" }] })).rejects.toThrow("private");
+    expect((await agentRepository.get(agent.name))!.configuration).toBeUndefined();
+  });
+
+  it.each([
+    ["structuredOutput", "structured output"],
+    ["reasoning", "reasoning to record"],
+  ] as const)("rejects a fallback without the required %s capability before saving", async (capability, message) => {
+    const model = getModelConfig("openai/gpt-5-mini")!;
+    addTestModels([{ ...model, id: "selfhosted/fallback", capabilities: { ...model.capabilities, [capability]: false } }]);
+    await expect(save({ fallbackModel: "selfhosted/fallback", parameters: capability === "structuredOutput"
+      ? { piiFiltering: false, structuredOutput: true } : { piiFiltering: false, reasoningTrace: true } })).rejects.toThrow(message);
     expect((await agentRepository.get(agent.name))!.configuration).toBeUndefined();
   });
 

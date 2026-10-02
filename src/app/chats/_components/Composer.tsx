@@ -1,5 +1,6 @@
 "use client";
 
+import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { useCallback, useMemo, useState } from "react";
 import { ActionIcon, Group, Stack, Text, Textarea } from "@mantine/core";
 import { IconPlayerStopFilled, IconSend } from "@tabler/icons-react";
@@ -25,8 +26,8 @@ import { isSubmitEnter } from "@/app/_lib/modEnter";
 export function Composer({
   onSend,
   onStop,
-  disabled,
-  busy = disabled,
+  disabled: externallyDisabled,
+  busy = externallyDisabled,
   placeholder,
   leading,
   status,
@@ -63,6 +64,8 @@ export function Composer({
   status?: React.ReactNode;
   onDraftChange?: (value: string) => void;
 }) {
+  const mayRun = canRunAgents(useViewer());
+  const disabled = externallyDisabled || !mayRun;
   const [value, setValue] = useState("");
   const t = useT();
   const {
@@ -110,6 +113,7 @@ export function Composer({
       {dragging && <DropHint />}
       <Stack gap="xs">
         {leading}
+        {!mayRun && <Text size="sm" c="dimmed">{t("common.memberExecutionRequired")}</Text>}
         {status}
         <AttachmentBar
           attachments={attachments}
@@ -122,6 +126,7 @@ export function Composer({
           <AttachButton onPick={attach} disabled={disabled} documents />
           <Textarea
             aria-label={t("chat.messageLabel")}
+            readOnly={!mayRun}
             value={value}
             onChange={(event) => { setValue(event.currentTarget.value); onDraftChange?.(event.currentTarget.value); }}
             onPaste={onPaste}

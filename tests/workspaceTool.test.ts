@@ -41,7 +41,7 @@ const publishGit = vi.fn<(...args: unknown[]) => Promise<CodingApproval>>();
 const requestGit = vi.fn<(...args: unknown[]) => Promise<CodingApproval>>();
 const attachRepository = vi.fn<(...args: unknown[]) => Promise<WorkspaceView>>();
 const pullRequest = vi.fn<(...args: unknown[]) => Promise<PullRequestInfo | undefined>>();
-const makeTool = (agentName = "demo", ownerEmail = owner, sourceChatId?: string, occurrence = "parent-run") => createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, publicBaseUrl: "https://studio.example.test", policy: () => policy }, { agentName, ownerEmail, sourceChatId, occurrence });
+const makeTool = (agentName = "demo", ownerEmail = owner, sourceChatId?: string, occurrence = "parent-run") => createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, publicBaseUrl: "https://studio.example.test", policy: () => policy }, { actor: { kind: "user", id: owner }, user: { userId: "studio-user-1", email: ownerEmail }, agentName, ownerEmail, sourceChatId, occurrence });
 const invoke = async (request: Record<string, unknown>, callId = "call-start") => JSON.parse((await makeTool()({ request }, callId)).text);
 const start = { operation: "start", runtime: "command", repository: null, base_branch: null, task: "printf report > report.txt" };
 beforeEach(() => {
@@ -55,14 +55,14 @@ describe("Workspace Agent capability", () => {
   it("requests cleanup if a newly created review Workspace cannot admit its first task", async () => {
     const enqueue = vi.spyOn(useCases, "enqueue").mockRejectedValueOnce(new Error("admission refused"));
     try {
-      await expect(useCases.start({ agentName: "demo", runtime: "command", repository: "org/repo", baseBranch: "review/head", sourceRevision: "a".repeat(40), input: { kind: "command", script: "true" } }, owner, "review-admission")).rejects.toThrow("admission refused");
+      await expect(useCases.start({ agentName: "demo", runtime: "command", repository: "org/repo", baseBranch: "review/head", sourceRevision: "a".repeat(40), input: { kind: "command", script: "true" } }, { userId: "studio-user-1", email: owner }, "review-admission")).rejects.toThrow("admission refused");
       expect((await repository.list(owner, 20))[0]?.status).toBe("closing");
     } finally { enqueue.mockRestore(); }
   });
   it("seals a review Workspace to its provider-verified commit and refuses other workspaces and Git effects", async () => {
     const target = { repository: "org/repo", number: 130, headSha: "a".repeat(40) };
     const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY,
-      publicBaseUrl: "https://studio.example.test", policy: () => policy }, { agentName: "demo", ownerEmail: owner, occurrence: "review", reviewTarget: target });
+      publicBaseUrl: "https://studio.example.test", policy: () => policy }, { actor: { kind: "user", id: owner }, user: { userId: "studio-user-1", email: owner }, agentName: "demo", ownerEmail: owner, occurrence: "review", reviewTarget: target });
     const result = JSON.parse((await tool({ request: start }, "bootstrap")).text);
     expect((await repository.get(result.workspace_id))?.coding).toMatchObject({ repository: target.repository, sourceRevision: target.headSha, baseBranch: `review/${target.headSha}` });
     for (const operation of ["prepare_git", "attach_repository", "create_repository", "use_workspace", "close"]) {
@@ -79,7 +79,7 @@ describe("Workspace Agent capability", () => {
     const run = (await repository.run(workspace.id, first.run_id))!;
     await repository.write({ expectedRevision: workspace.revision,
       workspace: { ...workspace, activeRunId: undefined, revision: workspace.revision + 1 }, run: { ...run, status: "succeeded" } });
-    const caller = workspaceCaller({ ancestry: ["demo"], actor: { kind: "slack", id: "U1" }, userEmail: owner })!;
+    const caller = workspaceCaller({ ancestry: ["demo"], user: { userId: "studio-user-1", email: owner }, actor: { kind: "slack", id: "U1" }, userEmail: owner })!;
     const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest,
       workdir: WORKSPACE_DIRECTORY, policy: () => policy }, { agentName: "demo", ...caller, occurrence: "later-external-run" });
     expect(JSON.parse((await tool({ request: { operation: "use_workspace", workspace_id: workspace.id } }, "select")).text))
@@ -95,7 +95,7 @@ describe("Workspace Agent capability", () => {
   });
 
   it.each(["agent-token", "slack", "telegram", "teams", "schedule", "webhook"] as const)("persists %s provenance while the verified member manages the Workspace", async kind => {
-    const caller = workspaceCaller({ ancestry: ["demo"], actor: { kind, id: kind === "agent-token" ? owner : "external-caller" }, userEmail: owner })!;
+    const caller = workspaceCaller({ ancestry: ["demo"], user: { userId: "studio-user-1", email: owner }, actor: { kind, id: kind === "agent-token" ? owner : "external-caller" }, userEmail: owner })!;
     const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest,
       workdir: WORKSPACE_DIRECTORY, policy: () => policy }, { agentName: "demo", ...caller, occurrence: "external-run" });
     const first = JSON.parse((await tool({ request: start }, "first")).text);
@@ -125,7 +125,7 @@ describe("Workspace Agent capability", () => {
       result: { repository: "org/new", repositoryId: 42, url: "https://github.example.test/org/new", baseBranch: "main", private: true } }));
     const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest, createRepository,
       workdir: WORKSPACE_DIRECTORY, publicBaseUrl: "https://studio.example.test", policy: () => ({ ...policy, mode: "new" }) },
-    { agentName: "demo", ownerEmail: owner, occurrence: "creation-test" });
+    { actor: { kind: "user", id: owner }, user: { userId: "studio-user-1", email: owner }, agentName: "demo", ownerEmail: owner, occurrence: "creation-test" });
     const access = JSON.parse((await tool({ request: { operation: "check_repository_access", repository: "org/new" } }, "check")).text);
     expect(access).toMatchObject({ allowed: false, creation_allowed: true, repository_mode: "new" });
     const request = { operation: "create_repository", repository: "org/new", description: "New agent", private: true };
@@ -134,7 +134,7 @@ describe("Workspace Agent capability", () => {
     expect(() => validate({ request: { ...request, created_at: "2026-09-15" } })).toThrow();
     expect(JSON.parse((await tool({ request }, "create")).text)).toMatchObject({ status: "created", allowed: true,
       repository_url: "https://github.example.test/org/new", base_branch: "main", workspace_created: false, task_queued: false });
-    expect(createRepository).toHaveBeenCalledWith("demo", { repository: "org/new", description: "New agent", private: true }, owner);
+    expect(createRepository).toHaveBeenCalledWith("demo", { repository: "org/new", description: "New agent", private: true }, { userId: "studio-user-1", email: owner });
   });
   it("checks policy before repository creation and returns a real management link without creating compute", async () => {
     const request = { operation: "check_repository_access", repository: "org/new-repo" };
@@ -193,7 +193,7 @@ describe("Workspace Agent capability", () => {
     authorize.mockRejectedValueOnce(new Error("Access revoked"));
     await expect(invoke(start)).rejects.toThrow("Access revoked");
     expect(await repository.list(owner, 10)).toHaveLength(0);
-    const disabled = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, policy: () => undefined }, { agentName: "demo", ownerEmail: owner, occurrence: "parent" });
+    const disabled = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, policy: () => undefined }, { actor: { kind: "user", id: owner }, user: { userId: "studio-user-1", email: owner }, agentName: "demo", ownerEmail: owner, occurrence: "parent" });
     await expect(disabled({ request: { operation: "options" } }, "read")).rejects.toThrow("not enabled");
   });
   it("queues a Git-free task once for a repeated SDK call and reports admission honestly", async () => {
@@ -276,8 +276,8 @@ describe("Workspace Agent capability", () => {
     { kind: "deploy", workflow: "deploy.yml", ref: "main", inputs: { environment: "preview" } },
   ])("prepares $kind through the actual tool schema and reuses its pending review without native tasks", async action => {
     const workspace = await useCases.create({ agentName: "demo", chatId: "review-chat", createChat: true,
-      title: "Review", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
-    const approval: CodingApproval = { id: "approval-1", workspaceId: workspace.id, action, requestedBy: owner,
+      title: "Review", runtime: "codex", repository: "org/repo", baseBranch: "main" }, { userId: "studio-user-1", email: owner });
+    const approval: CodingApproval = { id: "approval-1", workspaceId: workspace.id, action, requestedBy: owner, requestedByUserId: "studio-user-1",
       requestedAt: now.toISOString(), status: "pending", fingerprint: "reviewed-tree",
       review: { headSha: "a".repeat(40), treeSha: "b".repeat(40), diff: "+change", truncated: false } };
     requestGit.mockImplementationOnce(async () => {
@@ -295,7 +295,7 @@ describe("Workspace Agent capability", () => {
     const result = await invoke(request, "git-call");
     expect(result).toMatchObject({ status: "pending", approval_id: approval.id, approval_path: "/chats/review-chat#actions", approval_url: "https://studio.example.test/chats/review-chat#actions" });
     expect(await invoke(request, "git-call")).toEqual(result);
-    expect(requestGit).toHaveBeenCalledExactlyOnceWith(workspace.id, owner, action, undefined);
+    expect(requestGit).toHaveBeenCalledExactlyOnceWith(workspace.id, expect.objectContaining({ user: { userId: "studio-user-1", email: owner }, actor: { kind: "user", id: owner } }), action, undefined);
     expect(await repository.runs(workspace.id, 10)).toHaveLength(0);
     await expect(makeTool("foreign")({ request }, "git-call")).rejects.toMatchObject({ status: 404 });
     await expect(makeTool("demo", "foreign@example.com")({ request }, "git-call")).rejects.toMatchObject({ status: 404 });
@@ -306,8 +306,8 @@ describe("Workspace Agent capability", () => {
     { kind: "push" }, { kind: "pull-request", title: "Change", body: "Verified", draft: false },
   ])("executes $kind inline and returns no approval link", async action => {
     const workspace = await useCases.create({ agentName: "demo", chatId: "publish-chat", createChat: true,
-      title: "Publish", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
-    publishGit.mockResolvedValueOnce({ id: "publication", workspaceId: workspace.id, action, requestedBy: owner,
+      title: "Publish", runtime: "codex", repository: "org/repo", baseBranch: "main" }, { userId: "studio-user-1", email: owner });
+    publishGit.mockResolvedValueOnce({ id: "publication", workspaceId: workspace.id, action, requestedBy: owner, requestedByUserId: "studio-user-1",
       requestedAt: now.toISOString(), status: "succeeded", authorization: "coding-request", result: "Published",
       fingerprint: "tree", review: { headSha: "a".repeat(40), treeSha: "b".repeat(40), diff: "", truncated: false } });
     const request = { operation: "prepare_git", workspace_id: workspace.id, action };
@@ -315,7 +315,7 @@ describe("Workspace Agent capability", () => {
     const result = await invoke(request, "publish");
     expect(result).toMatchObject({ status: "succeeded", result: "Published", action_id: "publication" });
     expect(result.approval_url).toBeUndefined();
-    expect(publishGit).toHaveBeenCalledExactlyOnceWith(workspace.id, owner, action, undefined);
+    expect(publishGit).toHaveBeenCalledExactlyOnceWith(workspace.id, expect.objectContaining({ user: { userId: "studio-user-1", email: owner }, actor: { kind: "user", id: owner } }), action, undefined);
     expect(requestGit).not.toHaveBeenCalled();
     await expect(makeTool("demo", "foreign@example.com")({ request }, "foreign")).rejects.toMatchObject({ status: 404 });
     expect(publishGit).toHaveBeenCalledTimes(1);
@@ -323,14 +323,14 @@ describe("Workspace Agent capability", () => {
   it("exposes current deployment choices without creating a workspace", async () => {
     const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest,
       workdir: WORKSPACE_DIRECTORY, policy: () => ({ ...policy, deploymentWorkflows: ["deploy.yml"] }) },
-    { agentName: "demo", ownerEmail: owner, occurrence: "options" });
+    { actor: { kind: "user", id: owner }, user: { userId: "studio-user-1", email: owner }, agentName: "demo", ownerEmail: owner, occurrence: "options" });
     expect(JSON.parse((await tool({ request: { operation: "options" } }, "options")).text).deployment_workflows).toEqual(["deploy.yml"]);
     expect(await repository.list(owner, 20)).toHaveLength(0);
     expect(requestGit).not.toHaveBeenCalled();
   });
   it("rejects ambiguous deployment inputs and preserves approval-policy failures", async () => {
     const workspace = await useCases.create({ agentName: "demo", chatId: "deploy-chat", createChat: true,
-      title: "Deploy", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
+      title: "Deploy", runtime: "codex", repository: "org/repo", baseBranch: "main" }, { userId: "studio-user-1", email: owner });
     const action = { kind: "deploy", workflow: "deploy.yml", ref: "main", inputs: [] };
     const request = { operation: "prepare_git", workspace_id: workspace.id, action };
     const validate = createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!);
@@ -342,19 +342,19 @@ describe("Workspace Agent capability", () => {
     expect(requestGit).not.toHaveBeenCalled();
     requestGit.mockRejectedValueOnce(new Error("Deployment must use an allowed workflow on main"));
     await expect(invoke(request)).rejects.toThrow("allowed workflow");
-    expect(requestGit).toHaveBeenCalledExactlyOnceWith(workspace.id, owner,
+    expect(requestGit).toHaveBeenCalledExactlyOnceWith(workspace.id, expect.objectContaining({ user: { userId: "studio-user-1", email: owner }, actor: { kind: "user", id: owner } }),
       { kind: "deploy", workflow: "deploy.yml", ref: "main", inputs: {} }, undefined);
     expect(await repository.runs(workspace.id, 10)).toHaveLength(0);
   });
   it("reports PR publication and refreshes its current head/CI even without a native run", async () => {
     const workspace = await useCases.create({ agentName: "demo", chatId: "pr-chat", createChat: true,
-      title: "PR", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
+      title: "PR", runtime: "codex", repository: "org/repo", baseBranch: "main" }, { userId: "studio-user-1", email: owner });
     const pr: PullRequestInfo = { number: 7, url: "https://example.test/org/repo/pull/7", headSha: "a".repeat(40), baseBranch: "main", draft: false, state: "open", ci: "pending" };
     await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, pullRequest: pr, revision: workspace.revision + 1 } });
     pullRequest.mockResolvedValueOnce({ ...pr, ci: "none" });
     const result = await invoke({ operation: "status", workspace_id: workspace.id });
     expect(result.pull_request).toMatchObject({ number: 7, headSha: pr.headSha, ci: "none" });
-    expect(pullRequest).toHaveBeenCalledExactlyOnceWith(workspace.id, owner);
+    expect(pullRequest).toHaveBeenCalledExactlyOnceWith(workspace.id, { userId: "studio-user-1", email: owner });
     expect(await repository.runs(workspace.id, 10)).toHaveLength(0);
   });
   it("executes through the SDK tool dispatcher with the SDK call identity", async () => {

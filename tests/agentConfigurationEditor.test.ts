@@ -27,7 +27,7 @@ describe("structured output model changes", () => {
       children: createElement(ViewerProvider, {
         viewer: null,
         children: createElement(AgentConfigurationEditor, {
-          agentName: "agent", models: [model], imageModels: [], value, onChange: () => {},
+          agentName: "agent", canEdit: true, models: [model], imageModels: [], value, onChange: () => {},
           schemaText: "{}", onSchemaChange: () => {}, schemaError: null,
           save: { run: () => {}, saving: false, disabled: false, error: null, saved: false, label: "Save" },
         }),

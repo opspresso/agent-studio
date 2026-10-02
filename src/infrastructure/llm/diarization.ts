@@ -3,6 +3,7 @@ import { TranscriptionError } from "@/domain/llm/transcription";
 import { readBodyText } from "@/shared/httpBody";
 import { MAX_DIARIZATION_INPUT_BYTES, MAX_DIARIZATION_STARTUP_SECONDS, MAX_DIARIZATION_INFERENCE_SECONDS } from "@/domain/audio/limits";
 import { normalizeAudioMimeType } from "@/domain/audio/formats";
+import { fetchProvider } from "./providerFetch";
 
 export interface DiarizationConfig { baseUrl: string; token: string; revision: string }
 // Allow the server's startup/inference deadlines to produce an HTTP failure first.
@@ -27,7 +28,7 @@ export function createDiarizer(config: DiarizationConfig): DiarizationPort {
     const operationSignal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
     let response: Response;
     try {
-      response = await fetch(endpoint, { method: "POST", redirect: "error", signal: operationSignal,
+      response = await fetchProvider(endpoint, { method: "POST", signal: operationSignal,
         headers: { "content-type": mimeType, authorization: `Bearer ${config.token}` },
         body: new Uint8Array(input.bytes) });
     } catch {

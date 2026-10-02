@@ -7,12 +7,13 @@ afterEach(() => {
 
 describe("createReranker", () => {
   it("returns scores in document order and sends the configured model", async () => {
-    let request: { url?: string; body?: unknown; authorization?: string | null } = {};
+    let request: { url?: string; body?: unknown; authorization?: string | null; redirect?: RequestRedirect } = {};
     vi.stubGlobal("fetch", async (url: string | URL | Request, init?: RequestInit) => {
       request = {
         url: String(url),
         body: JSON.parse(String(init?.body ?? "{}")),
         authorization: new Headers(init?.headers).get("authorization"),
+        redirect: init?.redirect,
       };
       return new Response(
         JSON.stringify({
@@ -45,6 +46,7 @@ describe("createReranker", () => {
     expect(request).toEqual({
       url: "http://spark.test:8002/v1/rerank",
       authorization: "Bearer reranker-key",
+      redirect: "error",
       body: {
         model: "Qwen/Qwen3-Reranker-0.6B",
         query: "query",

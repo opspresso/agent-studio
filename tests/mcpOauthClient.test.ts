@@ -3,9 +3,9 @@
  *
  * The use-case tests replace `OAuthClient` wholesale, which is right for them
  * and leaves this file's actual decisions unexercised. Two of them matter well
- * beyond their size: whether a token failure is the provider's verdict or a
- * transport hiccup — the first costs an agent its connection, the second must
- * not — and which credentials go where on the wire, since a client that sends
+ * beyond their size: whether a token failure is a definitive provider verdict
+ * or an uncertain transport outcome, and which credentials go where on the wire.
+ * The refresh coordinator owns replay safety. A client that sends
  * its secret the way a server does not expect simply never authenticates.
  */
 
@@ -159,15 +159,15 @@ describe("telling a dead grant from a bad moment", () => {
   });
 
   it("leaves every other provider error as a plain failure", async () => {
-    // `temporarily_unavailable` is the provider having a bad minute. Marking a
-    // connection dead over it would make an outage into a support ticket.
-    stub(400, { error: "temporarily_unavailable", error_description: "later" });
+    // Preserve the typed provider verdict without exposing arbitrary provider text.
+    // The refresh coordinator handles uncertain outcomes without replaying rotation.
+    stub(400, { error: "temporarily_unavailable", error_description: "echo refresh-token client-secret access-token" });
 
     const failure = await oauthClient.refresh(target, "rt").catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(Error);
     expect(failure).not.toBeInstanceOf(OAuthGrantError);
-    expect((failure as Error).message).toContain("later");
+    expect((failure as Error).message).toBe("Token request failed: HTTP 400 (temporarily_unavailable)");
     vi.unstubAllGlobals();
   });
 

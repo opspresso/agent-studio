@@ -17,8 +17,8 @@ vi.mock("@/lib/container", async () => ({
   // override would otherwise fail on an undefined binding rather than say what
   // is missing.
   apiTokenUseCases: (
-    await import("@/application/agent/apiTokenUseCases")
-  ).createApiTokenUseCases({ getApiToken: async () => null } as never, {} as never),
+    await import("@/application/auth/agentCredentialUseCases")
+  ).createAgentCredentialUseCases({ purpose: "api" } as never),
   agentUseCases: (
     await import("@/application/agent/agentUseCases")
   ).createAgentUseCases(agentRepo as never),
@@ -27,7 +27,7 @@ vi.mock("@/lib/container", async () => ({
 
 vi.mock("@/app/api/agents/_lib/executionAuth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/api/agents/_lib/executionAuth")>()),
-  authenticateExecution: async () => ({ email: "owner@example.com", viaToken: false }),
+  authenticateExecution: async () => ({ userId: "fixture-user", email: "owner@example.com", viaToken: false }),
 }));
 
 vi.mock("@/application/execution/runAgent", () => ({

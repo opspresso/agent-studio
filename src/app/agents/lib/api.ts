@@ -1,3 +1,4 @@
+import type { AgentCredentialPurpose } from "@/domain/auth/agentCredential";
 import { notifyConfigurationChange } from "./configurationEvents";
 import type {
   CostLimits,
@@ -29,7 +30,7 @@ import type { SlackChannelsResponse } from "@/app/api/agents/[name]/slack/channe
 import type { AgentTelegramResponse } from "@/app/api/agents/[name]/telegram/route";
 import type { AgentTeamsResponse } from "@/app/api/agents/[name]/teams/route";
 import type { PromptPreview } from "@/application/execution/deps";
-import type { ApiTokenStatus } from "@/application/agent/apiTokenUseCases";
+import type { AgentCredentialStatus, IssuedAgentCredential } from "@/application/auth/agentCredentialUseCases";
 import type {
   AgentConfigurationView,
   AgentConfigurationInput,
@@ -37,7 +38,6 @@ import type {
 } from "@/application/agent/configurationUseCases";
 import type { TelegramDestination } from "@/domain/telegram/destination";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
-import { testMcpConnection } from "@/app/tools/api";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
 
 export type { CostLimits, McpBinding, Agent, AgentVisibility, SubagentRef, AgentConfiguration, AgentParameters };
@@ -60,8 +60,6 @@ export interface UpdateAgentInput {
   /** Sent whole; `null` removes the guards. Omitted leaves them untouched. */
   costLimits?: CostLimits | null;
   visibility?: AgentVisibility;
-  /** Sent whole; replaces the invite list. Omitted leaves it untouched. */
-  memberEmails?: string[];
 }
 
 // Agent responses are the sanitized shape the routes actually build —
@@ -346,50 +344,37 @@ export async function testAgentTeams(
   return readJson(await fetch(`/api/agents/${name}/teams/test`, { method: "POST" }));
 }
 
-export type { ApiTokenStatus };
+export type { AgentCredentialStatus };
 
-export async function getAgentToken(name: string): Promise<ApiTokenStatus> {
-  return readJson<ApiTokenStatus>(await fetch(`/api/agents/${name}/token`));
+function credentialPath(name: string, purpose: AgentCredentialPurpose): string {
+  return `/api/agents/${encodeURIComponent(name)}/${purpose === "api" ? "token" : "webhook-token"}`;
 }
 
-/** Generate (or regenerate) the agent API token. Returns the raw token once. */
-export async function generateAgentToken(
-  name: string,
-): Promise<{ token: string; masked: string; createdAt: string }> {
-  const data = await readJson<{
-    token?: string;
-    masked?: string;
-    createdAt?: string;
-  }>(await fetch(`/api/agents/${name}/token`, { method: "POST" }));
-  if (!data.token) {
-    throw new Error("Agent API token response did not include a token");
-  }
-  return { token: data.token, masked: data.masked ?? "", createdAt: data.createdAt ?? "" };
+export async function getAgentToken(name: string, purpose: AgentCredentialPurpose): Promise<AgentCredentialStatus> {
+  return readJson<AgentCredentialStatus>(await fetch(credentialPath(name, purpose)));
 }
 
-/**
- * Read the stored token back in plaintext (owner or admin). A POST, not a GET: the
- * response body is a live credential and must stay out of caches and history.
- */
-export async function revealAgentToken(name: string): Promise<string> {
-  const data = await readJson<{ token?: string }>(
-    await fetch(`/api/agents/${name}/token/reveal`, { method: "POST" }),
-  );
-  if (!data.token) {
-    throw new Error("Agent API token response did not include a token");
-  }
+export async function generateAgentToken(name: string, purpose: AgentCredentialPurpose): Promise<IssuedAgentCredential> {
+  const data = await readJson<IssuedAgentCredential>(await fetch(credentialPath(name, purpose), { method: "POST" }));
+  if (!data.token || !data.credentialId) throw new Error("Personal credential response did not include a token and selector");
+  return data;
+}
+
+/** A POST keeps a user's revealed credential out of browser prefetches and history. */
+export async function revealAgentToken(name: string, purpose: AgentCredentialPurpose): Promise<string> {
+  const data = await readJson<{ token: string }>(await fetch(`${credentialPath(name, purpose)}/reveal`, { method: "POST" }));
+  if (!data.token) throw new Error("Personal credential response did not include a token");
   return data.token;
 }
 
-export async function revokeAgentToken(name: string): Promise<void> {
-  await assertOk(await fetch(`/api/agents/${name}/token`, { method: "DELETE" }));
+export async function revokeAgentToken(name: string, purpose: AgentCredentialPurpose): Promise<void> {
+  await assertOk(await fetch(credentialPath(name, purpose), { method: "DELETE" }));
 }
-
 
 // --- MCP OAuth connections -------------------------------------------------
 
 /**
- * An agent's connection to an OAuth-required registry server. Carries no
+ * The current user's connection to an OAuth-required registry server. Carries no
  * secret and no token — there is no reveal path for either, so this is the whole
  * of what the console can know.
  */
@@ -399,18 +384,6 @@ export function listMcpConnections(name: string): Promise<McpConnectionView[]> {
   return fetch(`/api/agents/${name}/mcp-connections`)
     .then((r) => readJson<{ connections: McpConnectionView[] }>(r))
     .then((data) => data.connections);
-}
-
-export function saveMcpClientCredentials(
-  name: string,
-  server: string,
-  input: { clientId: string; clientSecret?: string; scopes?: string[] },
-): Promise<McpConnectionView> {
-  return fetch(`/api/agents/${name}/mcp-connections/${server}`, {
-    method: "PUT",
-    headers: jsonHeaders,
-    body: JSON.stringify(input),
-  }).then((r) => readJson<McpConnectionView>(r));
 }
 
 /** Returns the provider URL to open; the callback finishes the flow. */
@@ -426,15 +399,7 @@ export async function disconnectMcp(name: string, server: string): Promise<void>
   );
 }
 
-/**
- * A server's tools as this agent sees them — the registry entry's headers, the
- * binding's overrides, and the agent's OAuth token. The registry-level probe
- * cannot answer for an OAuth server, since the credential belongs here.
- *
- * Only the owner may spend that credential, and agents are a shared catalog
- * anyone may read, so a non-owner falls back to the registry probe: no agent
- * credential and no overrides, but a tool list rather than a permission error.
- */
+/** Probe current Agent tools with the signed-in caller's own OAuth grant. */
 export async function listAgentMcpTools(
   name: string,
   server: string,
@@ -445,9 +410,6 @@ export async function listAgentMcpTools(
     headers: jsonHeaders,
     body: JSON.stringify({ headerOverrides }),
   });
-  if (response.status === 403) {
-    return testMcpConnection(server);
-  }
   return (await readJson<{ tools: McpTool[] }>(response)).tools;
 }
 
@@ -498,13 +460,6 @@ export function updateTrigger(
 
 export function deleteTrigger(name: string, triggerId: string): Promise<void> {
   return fetch(`/api/agents/${name}/triggers/${triggerId}`, { method: "DELETE" }).then(assertOk);
-}
-
-/** Read a trigger's secret back. POST, not GET — the body is a live credential. */
-export function revealTriggerSecret(name: string, triggerId: string): Promise<string> {
-  return fetch(`/api/agents/${name}/triggers/${triggerId}/reveal`, { method: "POST" })
-    .then((r) => readJson<{ secret: string }>(r))
-    .then((d) => d.secret);
 }
 
 export function listTriggerRuns(

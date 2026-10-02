@@ -135,9 +135,9 @@ MCP 등록은 필요하지 않으며 문서 엔진과 artifact 저장소가 구�
 호출 순서대로 공유하며 실패한 쓰기 시도도 계산한다. 파일 ID는 저장 전 예약하며 결과와 실제 artifact 행이 같은
 ID를 사용한다. 수정본 행의 `derivedFrom`은 원본 ID를 기록한다.
 
-사용자는 자신에게 귀속된 파일을 읽을 수 있다. Agent 토큰은 시작 Agent 안에서
-자신의 소유자에게 귀속된 파일만 읽고, 메시징·trigger actor는 시작 Agent 안의
-동일 actor 파일만 읽는다. 서브에이전트에서도 시작 Agent 범위는 유지한다. 파일 ID나
+모든 호출자는 인증된 Studio 사용자에게 귀속된 파일만 읽을 수 있다. 개인 토큰·메신저·
+Webhook·Schedule은 여기에 시작 Agent 범위도 적용한다. 같은 플랫폼 actor나 Trigger를
+쓰더라도 다른 사용자의 파일은 읽거나 편집·이미지 자산으로 사용할 수 없다. 서브에이전트에서도 시작 Agent 범위는 유지한다. 파일 ID나
 저장소 키를 안다는 이유만으로 접근을 허용하지 않는다.
 
 `create`는 Markdown 또는 XLSX 시트 배열을 받는다. 이미지 `assets`는 이름에서
@@ -193,6 +193,10 @@ Agent 실행 API, Slack·Telegram·Teams도 같은 첨부 보관 유스케이스
 그 실행의 첨부 사본으로 보관한다. `File` 도구는 사용자에게 보인 문서의 ID를 받아 작업한다.
 
 생성 파일의 HTTP·OpenAI 응답은 다운로드 URL과 `fileId`를 함께 제공한다.
+Playground는 저장된 파일의 형식과 ID를 유지해 지원하는 파일의 격리 미리보기를 제공한다.
+객체 저장소가 없으면 raw 스트림의 inline bytes를 다운로드로 제공하며, 한 실행에서 보관하는
+inline 파일은 합계 16 MiB로 제한한다. 유효하지 않은 bytes나 한도를 넘는 파일은 경고하고
+다운로드 목록에서 제외한다. inline 파일에는 영속 ID와 미리보기가 없다.
 URL이 만료돼도 원본이
 보관 중이고 호출자의 권한이 맞으면 `File` 도구로 다시 읽을 수 있다.
 비공개 파일 Artifact도 같은 ID로 `read`·`inspect`할 수 있다. 원본 Agent의 현재 권한과

@@ -30,6 +30,28 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); });
 
 describe("durable native SDK Session", () => {
+  it("refuses missing caller IDs and never adopts native history by email", async () => {
+    const f = fixture();
+    await expect(openRuntimeSession(f.services, { ...f.scope, userId: "" })).rejects.toThrow("authenticated Studio user");
+    expect(f.rows.size).toBe(0);
+    await f.run(new FakeChannel([[contentChunk("saved")]]), "hello");
+    const before = structuredClone(f.rows.get(f.scope.sessionId));
+    await expect(openRuntimeSession(f.services, { ...f.scope, userId: "replacement-account" })).rejects.toThrow("authenticated user");
+    expect(f.rows.get(f.scope.sessionId)).toEqual(before);
+  });
+
+  it("keeps pending approval unclaimed when another account reuses the email", async () => {
+    const f = fixture({ approvalTools: ["lookup"] });
+    const effect = vi.fn(async () => ({ text: "done" }));
+    await f.run(new FakeChannel([[toolCallChunk(0, "call", "lookup", "{}")]]), "lookup", undefined,
+      { callMcpTool: effect }, { mcpTools: [{ type: "function", function: { name: "lookup", parameters: {} } }] });
+    const pending = (await pendingRuntimeApproval(f.services, f.scope.sessionId, f.scope.ownerEmail))!;
+    await expect(openRuntimeSession(f.services, { ...f.scope, userId: "replacement-account" },
+      { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] })).rejects.toThrow("authenticated user");
+    expect(await pendingRuntimeApproval(f.services, f.scope.sessionId, f.scope.ownerEmail)).toEqual(pending);
+    expect(effect).not.toHaveBeenCalled();
+  });
+
   const imageResult = (text: string) => ({ b64: Buffer.from(text).toString("base64"), mimeType: "image/png", model: "openai/gpt-image-2", usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } });
 
   it("keeps retained image IDs after eviction and allocates distinct IDs to new attachments and edits", async () => {

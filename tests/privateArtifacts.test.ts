@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerSourceArtifact } from "@/application/artifact/storeArtifact";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { toArtifactViews } from "@/app/api/artifacts/_lib/query";
-import { setAdminCheck } from "@/application/agent/agentUseCases";
 import type { SourceFile } from "@/domain/artifact/sourceFile";
 import type { Artifact } from "@/domain/artifact/types";
 import type { AgentRepository } from "@/domain/agent/repository";
@@ -25,7 +24,6 @@ function fixture() {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime("2026-09-10T00:00:00.000Z");
-  setAdminCheck(async () => false);
 });
 afterEach(() => vi.useRealTimers());
 describe("private files in the Artifact inventory", () => {

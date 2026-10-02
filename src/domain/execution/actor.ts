@@ -13,6 +13,12 @@ export const RUN_ACTOR_KINDS = [
 ] as const;
 export type RunActorKind = (typeof RUN_ACTOR_KINDS)[number];
 
+/** Studio account identity. Email is current display/context data; userId is the authority. */
+export interface RunUser {
+  userId: string;
+  email: string;
+}
+
 export function isRunActorKind(value: string): value is RunActorKind {
   return RUN_ACTOR_KINDS.some((kind) => kind === value);
 }
@@ -28,11 +34,42 @@ export interface RunActor {
   id: string;
 }
 
-/** A server-captured delegation by the owner of a registered messaging integration. */
-export interface ExecutionGrant {
+/** A verified platform sender linked to the Studio caller; Agent ownership is unrelated. */
+export interface MessagingExecutionGrant extends RunUser {
   agentName: string;
   kind: "slack" | "telegram" | "teams";
-  email: string;
+  realm: string;
+  externalId: string;
+}
+
+/** Proof selected by personal Webhook authentication and rechecked before later effects. */
+export interface WebhookExecutionGrant extends RunUser {
+  kind: "webhook";
+  agentName: string;
+  triggerId: string;
+  credentialId: string;
+}
+
+export interface ApiExecutionGrant extends RunUser {
+  kind: "agent-token";
+  agentName: string;
+  credentialId: string;
+}
+
+export interface ScheduleExecutionGrant extends RunUser {
+  kind: "schedule";
+  agentName: string;
+  triggerId: string;
+  revision: string;
+}
+
+export type ExecutionGrant = MessagingExecutionGrant | WebhookExecutionGrant | ApiExecutionGrant | ScheduleExecutionGrant;
+
+/** Authenticated account and invocation source captured at the ingress boundary. */
+export interface RunIdentity {
+  user: RunUser;
+  actor: RunActor;
+  executionGrant?: ExecutionGrant;
 }
 
 /**
@@ -127,11 +164,9 @@ function sanitizeCallerName(value: string | undefined): string | undefined {
  * same person as its parent — so they are one value rather than separate parameters
  * threaded side by side through eight signatures.
  */
-export interface RunOrigin {
-  executionGrant?: ExecutionGrant;
+export interface RunOrigin extends RunIdentity {
   /** Source processing may read bound skills; its calling use case owns all external effects. */
   backgroundTask?: boolean;
-  actor?: RunActor;
   /**
    * A user email resolved by a surface whose actor id is not an email, such as
    * Slack.
@@ -262,19 +297,9 @@ export function actorKey(actor: RunActor): string {
   return `${actor.kind}:${actor.id}`;
 }
 
-/**
- * The inverse of {@link actorKey}, for the one question the member-shaped
- * limits ask: which member's personal budget does this key spend? Only `user`
- * names one. A `agent-token` carries the owner's email too, but on purpose
- * it does **not** bill to them: a token is a service credential, bounded by
- * its agent's own limits, and person-shaped limits stop applying the moment
- * nobody is at the other end. What keeps that from being a bypass is the
- * token *authentication* gate — a tier that may not use API tokens cannot
- * mint or present one (`tierMayUseApiTokens`), enforced where the bearer
- * token is verified.
- */
-export function memberEmailFromActorKey(key: string): string | null {
-  return key.startsWith("user:") ? key.slice("user:".length) || null : null;
+/** One concurrency scope for the same Studio account across every invocation source. */
+export function runUserKey(user: RunUser): string {
+  return "studio-user:" + user.userId;
 }
 
 /** A run one hop deeper on the transfer chain, caused by the same actor. */

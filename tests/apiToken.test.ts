@@ -1,359 +1,202 @@
+import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentRepository } from "@/domain/agent/repository";
-import type { Agent, AgentApiToken } from "@/domain/agent/types";
-import {
-  generateApiToken as generateApiTokenImpl,
-  getApiTokenStatus,
-  revealApiToken as revealApiTokenImpl,
-  revokeApiToken,
-  verifyAgentApiToken as verifyAgentApiTokenImpl,
-} from "@/application/agent/apiTokenUseCases";
+import { createAgentCredentialUseCases } from "@/application/auth/agentCredentialUseCases";
+import { agentCredentialRepository } from "@/infrastructure/db/repositories/agentCredentialRepository";
+import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
-import { setAdminCheck } from "@/application/agent/agentUseCases";
+import { agentCredentialContext } from "@/domain/security/secretContext";
+import { keys } from "@/infrastructure/db/keys";
+import { generateSecretValue, secretPrefix } from "@/shared/generatedSecret";
+import type { Member } from "@/domain/member/types";
+import type { FakeStore } from "./fakeStore";
 
-// Exercise the production cipher through the injected boundary.
-type Gen = Parameters<typeof generateApiTokenImpl>;
-type Rev = Parameters<typeof revealApiTokenImpl>;
-type Ver = Parameters<typeof verifyAgentApiTokenImpl>;
-const generateApiToken = (repo: Gen[0], name: Gen[1], email: Gen[2]) =>
-  generateApiTokenImpl(repo, name, email, secretCipher);
-const revealApiToken = (repo: Rev[0], name: Rev[1], email: Rev[2]) =>
-  revealApiTokenImpl(repo, name, email, secretCipher);
-const verifyAgentApiToken = (repo: Ver[0], name: Ver[1], token: Ver[2]) =>
-  verifyAgentApiTokenImpl(repo, name, token, secretCipher);
-import {
-  generateSecretValue,
-  hashSecret,
-  secretHashEquals,
-  secretPrefix,
-} from "@/shared/generatedSecret";
-import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
-import {
-  decryptSecret,
-  encryptSecret,
-  isEncrypted,
-} from "@/infrastructure/crypto/secretEncryption";
-import { agentApiTokenContext } from "@/domain/security/secretContext";
-
-// Distinct fixture bytes exercise rotation without sampling real randomness.
 const entropy = vi.hoisted(() => ({ sequence: 0 }));
-vi.mock("node:crypto", async importOriginal => ({
-  ...await importOriginal<typeof import("node:crypto")>(),
-  randomBytes: (size: number) => {
-    const bytes = Buffer.alloc(size);
-    bytes.writeUInt32BE(++entropy.sequence);
-    return bytes;
-  },
-}));
+vi.mock("node:crypto", async original => ({ ...await original<typeof import("node:crypto")>(), randomBytes: (size: number) => {
+  const bytes = Buffer.alloc(size); bytes.writeUInt32BE(++entropy.sequence); return bytes;
+} }));
+const store = await import("@/infrastructure/db/store") as unknown as FakeStore;
+const now = new Date("2026-10-01T08:00:00Z");
+let sequence: number;
+const members = new Map<string, Member>();
+const api = createAgentCredentialUseCases({ purpose: "api", agents: agentRepository, tokens: agentCredentialRepository, members: { getById: async id => members.get(id) ?? null },
+  cipher: secretCipher, now: () => now, newId: () => `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}` });
+const member = (id: string, email: string): Member => ({ id, email, name: id, image: null, tier: "member", joinedAt: now.toISOString(), lastLoginAt: now.toISOString() });
 
-beforeEach(() => {
-  entropy.sequence = 0;
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime("2026-01-02T00:00:00.000Z");
+beforeEach(async () => {
+  vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(now); sequence = 0; entropy.sequence = 0; store.rows.clear(); members.clear();
   vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
+  members.set("first", member("first", "first@example.test")); members.set("second", member("second", "second@example.test"));
+  members.set("admin", { ...member("admin", "admin@example.test"), tier: "admin" });
+  for (const name of ["bot", "other"]) await agentRepository.create({ name, displayName: name, description: "", ownerEmail: "first@example.test", createdAt: now.toISOString(), updatedAt: now.toISOString() });
 });
-afterEach(() => {
-  vi.useRealTimers();
-  vi.unstubAllEnvs();
-});
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
-const OWNER = "owner@example.com";
-
-function agent(): Agent {
-  return {
-    name: "my-bot",
-    displayName: "My Bot",
-    description: "",
-    ownerEmail: OWNER,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  };
+async function privateAgent() {
+  const agent = (await agentRepository.get("bot"))!;
+  await agentRepository.update({ ...agent, visibility: "private" }, agent.updatedAt);
 }
 
-function makeRepo(p: Agent | null): {
-  repo: AgentRepository;
-  stored: () => AgentApiToken | null;
-} {
-  let token: AgentApiToken | null = null;
-  const repo: AgentRepository = {
-    async get(name) {
-      return p && p.name === name ? p : null;
-    },
-    async list() {
-      return p ? [p] : [];
-    },
-    async create() {},
-    async update() {},
-    async delete() {},
-    async getApiToken() {
-      return token;
-    },
-    async setApiToken(_name, t) {
-      token = t;
-    },
-    async deleteApiToken() {
-      token = null;
-    },
-  };
-  return { repo, stored: () => token };
-}
-
-describe("generated secret helpers", () => {
-  it("generates prefixed, unique token values", () => {
-    const a = generateSecretValue("agentApiToken");
-    const b = generateSecretValue("agentApiToken");
-    expect(a.startsWith(secretPrefix("agentApiToken"))).toBe(true);
-    expect(a).not.toEqual(b);
-  });
-
-  it("gives each kind a two-char vendor prefix plus one kind character", () => {
-    expect(secretPrefix("agentApiToken")).toBe("ast_");
-    // The kinds must stay distinguishable from the string alone.
-    expect(secretPrefix("triggerSecret")).not.toBe(secretPrefix("agentApiToken"));
-  });
-
-  it("encodes all 32 source bytes after the prefix", () => {
-    const value = generateSecretValue("agentApiToken");
-    // 32 random bytes as base64url = 43 chars, regardless of the prefix.
-    expect(value.slice("ast_".length)).toHaveLength(43);
-    expect(Buffer.from(value.slice("ast_".length), "base64url")).toHaveLength(32);
-    expect(value).toMatch(/^ast_[A-Za-z0-9_-]{43}$/);
-  });
-
-  it("hashes deterministically and compares in constant time", () => {
-    const token = "ast_abc";
-    expect(hashSecret(token)).toEqual(hashSecret(token));
-    expect(secretHashEquals(hashSecret(token), hashSecret(token))).toBe(true);
-    expect(secretHashEquals(hashSecret("a"), hashSecret("b"))).toBe(false);
+describe("generated secret values", () => {
+  it("keeps purpose prefixes distinct without reducing the 32-byte random secret", () => {
+    const first = generateSecretValue("agentApiToken"); const second = generateSecretValue("agentApiToken");
+    expect(first.startsWith(secretPrefix("agentApiToken"))).toBe(true);
+    expect(first).not.toBe(second);
+    expect(secretPrefix("agentWebhookToken")).not.toBe(secretPrefix("agentApiToken"));
+    expect(Buffer.from(first.slice(4), "base64url")).toHaveLength(32);
   });
 });
 
-describe("generateApiToken", () => {
-  it("returns the raw token and stores it encrypted, never in plaintext", async () => {
-    const { repo, stored } = makeRepo(agent());
-    const { token, masked, createdAt } = await generateApiToken(repo, "my-bot", OWNER);
-
-    expect(token.startsWith(secretPrefix("agentApiToken"))).toBe(true);
-    expect(createdAt).toBe("2026-01-02T00:00:00.000Z");
-    // Stored encrypted so the owner can read it back — never as plaintext, and
-    // with no hash left over from the form that could not be read back.
-    expect(isEncrypted(stored()?.token ?? "")).toBe(true);
-    expect(stored()?.token).not.toBe(token);
-    expect(stored()?.token?.startsWith("enc:v2:")).toBe(true);
-    expect(decryptSecret(stored()?.token ?? "", agentApiTokenContext("my-bot"))).toBe(token);
-    expect(stored()?.tokenHash).toBeUndefined();
-
-    // The stored mask is what lets the console show which token is set without
-    // decrypting; it must never be enough to reconstruct one.
-    expect(stored()?.masked).toBe(masked);
-    expect(masked).toHaveLength(token.length);
-    expect(masked).toContain("•");
-    expect(masked).not.toContain(token.slice(8, -4));
+describe("personal API tokens", () => {
+  it("stores a context-bound encrypted token for its issuing user, without an Agent-owner credential", async () => {
+    const issued = await api.generate("bot", "second");
+    expect(issued.token).toMatch(/^ast_[a-f0-9-]{36}\.[A-Za-z0-9_-]{43}$/);
+    const record = (await agentCredentialRepository.forUser("bot", "api", "second"))!;
+    const stored = (await agentCredentialRepository.get("bot", "api", record.id))!;
+    expect(stored.userId).toBe("second"); expect(stored.token).not.toBe(issued.token);
+    expect(secretCipher.decrypt(stored.token, agentCredentialContext("bot", "api", "second", stored.id))).toBe(issued.token);
+    expect(await api.verify("bot", issued.token)).toEqual({ userId: "second", email: "second@example.test", credentialId: issued.credentialId });
+    expect(await api.status("bot", "first")).toEqual({ configured: false, canIssue: true });
   });
 
-  it("leaves the prefix legible in the mask so the kind is still identifiable", async () => {
-    // A 47-char token falls in the top reveal tier (first 4 + last 4), and the
-    // prefix is exactly those first 4 — fixed and public, so showing it costs
-    // nothing and keeps a masked value traceable to what it opens.
-    const { repo } = makeRepo(agent());
-    const { token, masked } = await generateApiToken(repo, "my-bot", OWNER);
-
-    expect(masked.startsWith(secretPrefix("agentApiToken"))).toBe(true);
-    expect(masked.endsWith(token.slice(-4))).toBe(true);
-    // Everything between the edges is hidden.
-    expect(masked.slice(4, -4)).toMatch(/^•+$/);
+  it("rotates and revokes one user's token without changing another user's credential", async () => {
+    const first = await api.generate("bot", "first"); const second = await api.generate("bot", "second");
+    const rotated = await api.generate("bot", "first");
+    expect(await api.verify("bot", first.token)).toBeNull();
+    expect(await api.verify("bot", rotated.token)).toMatchObject({ userId: "first" });
+    expect(await api.verify("bot", second.token)).toMatchObject({ userId: "second" });
+    await api.revoke("bot", "first");
+    expect(await api.verify("bot", rotated.token)).toBeNull();
+    expect(await api.verify("bot", second.token)).toMatchObject({ userId: "second" });
   });
 
-  it("regeneration overwrites the previous token", async () => {
-    const { repo } = makeRepo(agent());
-    const first = await generateApiToken(repo, "my-bot", OWNER);
-    const second = await generateApiToken(repo, "my-bot", OWNER);
-    expect(first.token).not.toEqual(second.token);
-    // The old token no longer verifies; the new one does.
-    expect(await verifyAgentApiToken(repo, "my-bot", first.token)).toBeNull();
-    expect(await verifyAgentApiToken(repo, "my-bot", second.token)).toBe(OWNER);
+  it("does not let an administrator reveal or revoke another user's token", async () => {
+    const issued = await api.generate("bot", "first");
+    expect(await api.status("bot", "admin")).toEqual({ configured: false, canIssue: true });
+    await expect(api.reveal("bot", "admin")).rejects.toMatchObject({ status: 404 });
+    await api.revoke("bot", "admin");
+    expect((await api.reveal("bot", "first")).token).toBe(issued.token);
   });
 
-  it("rejects a non-owner", async () => {
-    const { repo, stored } = makeRepo(agent());
-    await expect(generateApiToken(repo, "my-bot", "other@example.com")).rejects.toBeInstanceOf(
-      ForbiddenError,
-    );
-    expect(stored()).toBeNull();
+  it("keeps the issuer unchanged after Agent ownership changes", async () => {
+    const issued = await api.generate("bot", "first"); const agent = (await agentRepository.get("bot"))!;
+    await agentRepository.update({ ...agent, ownerEmail: "second@example.test" }, agent.updatedAt);
+    expect(await api.verify("bot", issued.token)).toEqual({ userId: "first", email: "first@example.test", credentialId: issued.credentialId });
   });
 
-  describe("with a tier lookup injected", () => {
-    it("refuses an owner whose tier may not use API tokens", async () => {
-      const { repo, stored } = makeRepo(agent());
-      await expect(
-        generateApiTokenImpl(repo, "my-bot", OWNER, secretCipher, async () => "guest"),
-      ).rejects.toBeInstanceOf(ForbiddenError);
-      expect(stored()).toBeNull();
-    });
-
-    it("gates on the owner's tier even when an admin asks", async () => {
-      // The token would authenticate as the owner; a caller-scoped check
-      // would let an admin mint a credential the execution gate refuses.
-      const { repo, stored } = makeRepo(agent());
-      const asked: string[] = [];
-      const admin = "admin@example.com";
-      setAdminCheck(async (email) => email === admin);
-      try {
-        await expect(
-          generateApiTokenImpl(repo, "my-bot", admin, secretCipher, async (email) => {
-            asked.push(email);
-            return email === admin ? "admin" : "guest";
-          }),
-        ).rejects.toBeInstanceOf(ForbiddenError);
-      } finally {
-        setAdminCheck(async () => false);
-      }
-      expect(asked).toEqual([OWNER]);
-      expect(stored()).toBeNull();
-    });
-
-    it("allows a member owner and treats a missing row as the default guest tier", async () => {
-      const { repo } = makeRepo(agent());
-      await expect(
-        generateApiTokenImpl(repo, "my-bot", OWNER, secretCipher, async () => "member"),
-      ).resolves.toBeTruthy();
-      await expect(
-        generateApiTokenImpl(repo, "my-bot", OWNER, secretCipher, async () => null),
-      ).rejects.toBeInstanceOf(ForbiddenError);
-    });
-  });
-});
-
-describe("verifyAgentApiToken", () => {
-  it("returns the owner email for a valid token", async () => {
-    const { repo } = makeRepo(agent());
-    const { token } = await generateApiToken(repo, "my-bot", OWNER);
-    expect(await verifyAgentApiToken(repo, "my-bot", token)).toBe(OWNER);
+  it("checks current private Agent access for issuance and every token invocation", async () => {
+    const issued = await api.generate("bot", "second"); await privateAgent();
+    await expect(api.verify("bot", issued.token)).rejects.toMatchObject({ status: 403 });
+    await expect(api.generate("bot", "second")).rejects.toMatchObject({ status: 403 });
+    expect(await api.verify("bot", (await api.generate("bot", "first")).token)).toMatchObject({ userId: "first" });
   });
 
-  it("returns null for a wrong token", async () => {
-    const { repo } = makeRepo(agent());
-    await generateApiToken(repo, "my-bot", OWNER);
-    expect(await verifyAgentApiToken(repo, "my-bot", "ast_wrong")).toBeNull();
+  it("checks current account tier, and still lets a downgraded user revoke their own token", async () => {
+    const issued = await api.generate("bot", "second"); members.get("second")!.tier = "guest";
+    await expect(api.verify("bot", issued.token)).rejects.toMatchObject({ status: 403 });
+    await expect(api.generate("bot", "second")).rejects.toMatchObject({ status: 403 });
+    expect(await api.status("bot", "second")).toMatchObject({ configured: true, canIssue: false });
+    await api.revoke("bot", "second");
+    expect(await api.status("bot", "second")).toEqual({ configured: false, canIssue: false });
   });
 
-  it("keeps a legacy v1 encrypted token usable during migration", async () => {
-    const { repo } = makeRepo(agent());
-    const token = "ast_legacy-encrypted-token";
-    await repo.setApiToken("my-bot", {
-      token: encryptSecret(token),
-      createdAt: "2026-01-01T00:00:00.000Z",
-    });
-
-    expect(await verifyAgentApiToken(repo, "my-bot", token)).toBe(OWNER);
-    expect(await revealApiToken(repo, "my-bot", OWNER)).toMatchObject({ token });
+  it("does not transfer a deleted user's credential to a new account with the same email", async () => {
+    const issued = await api.generate("bot", "second"); members.delete("second");
+    members.set("replacement", member("replacement", "second@example.test"));
+    expect(await api.verify("bot", issued.token)).toBeNull();
+    expect(await api.status("bot", "replacement")).toEqual({ configured: false, canIssue: true });
   });
 
-  it("does not authenticate ciphertext moved from another agent row", async () => {
-    const source = makeRepo(agent());
-    const { token } = await generateApiToken(source.repo, "my-bot", OWNER);
-    const target = makeRepo({ ...agent(), name: "other-bot" });
-    await target.repo.setApiToken("other-bot", source.stored()!);
-
-    expect(await verifyAgentApiToken(target.repo, "other-bot", token)).toBeNull();
-    await expect(revealApiToken(target.repo, "other-bot", OWNER)).rejects.toThrow();
+  it("uses the current email of the same stable user ID", async () => {
+    const issued = await api.generate("bot", "second"); members.get("second")!.email = "renamed@example.test";
+    expect(await api.verify("bot", issued.token)).toEqual({ userId: "second", email: "renamed@example.test", credentialId: issued.credentialId });
   });
 
-  it("returns null when no token is configured", async () => {
-    const { repo } = makeRepo(agent());
-    expect(await verifyAgentApiToken(repo, "my-bot", "ast_anything")).toBeNull();
+  it("rejects legacy shared tokens, wrong secrets and another Agent's token without identity fallback", async () => {
+    const issued = await api.generate("bot", "first");
+    expect(await api.verify("bot", "ast_legacy-owner-token")).toBeNull();
+    expect(await api.verify("bot", issued.token.slice(0, -1) + "Z")).toBeNull();
+    expect(await api.verify("other", issued.token)).toBeNull();
+  });
+
+  it("does not authenticate a ciphertext moved to another user or Agent record", async () => {
+    const first = await api.generate("bot", "first"); const second = await api.generate("bot", "second");
+    const firstMeta = (await agentCredentialRepository.forUser("bot", "api", "first"))!;
+    const secondMeta = (await agentCredentialRepository.forUser("bot", "api", "second"))!;
+    const firstRow = store.rows.get(`${keys.agentCredential("bot", "api", firstMeta.id).PK}\0${keys.agentCredential("bot", "api", firstMeta.id).SK}`)!;
+    const secondKey = keys.agentCredential("bot", "api", secondMeta.id);
+    const secondRow = store.rows.get(`${secondKey.PK}\0${secondKey.SK}`)!;
+    secondRow.token = firstRow.token;
+    await expect(api.verify("bot", second.token)).rejects.toThrow();
+    expect(await api.verify("bot", first.token)).toMatchObject({ userId: "first" });
+  });
+
+  it("rejects a concurrent rotation instead of publishing two live credentials for one user", async () => {
+    const results = await Promise.allSettled([api.generate("bot", "first"), api.generate("bot", "first")]);
+    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.find(result => result.status === "rejected")).toMatchObject({ reason: { status: 409 } });
+    const fulfilled = results.find(result => result.status === "fulfilled") as PromiseFulfilledResult<Awaited<ReturnType<typeof api.generate>>>;
+    expect(await api.verify("bot", fulfilled.value.token)).toMatchObject({ userId: "first" });
+  });
+
+  it("fences creation against Agent retirement and deletes personal tokens with their Agent", async () => {
+    const issued = await api.generate("bot", "first"); await agentRepository.delete("bot");
+    expect(await api.verify("bot", issued.token)).toBeNull();
+    await expect(api.generate("bot", "first")).rejects.toMatchObject({ status: 404 });
   });
 });
 
-describe("getApiTokenStatus / revokeApiToken", () => {
-  it("reports configured state and revokes", async () => {
-    const { repo } = makeRepo(agent());
-    expect(await getApiTokenStatus(repo, "my-bot", OWNER)).toEqual({ configured: false });
 
-    const { token, masked } = await generateApiToken(repo, "my-bot", OWNER);
-    const status = await getApiTokenStatus(repo, "my-bot", OWNER);
-    expect(status.configured).toBe(true);
-    expect(status.createdAt).toBeTruthy();
-    expect(status.masked).toBe(masked);
-    expect(status.revealable).toBe(true);
+describe("purpose-scoped personal credentials", () => {
+  const webhooks = createAgentCredentialUseCases({ purpose: "webhook", agents: agentRepository, tokens: agentCredentialRepository,
+    members: { getById: async id => members.get(id) ?? null }, cipher: secretCipher, now: () => now,
+    newId: () => `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}` });
 
-    await revokeApiToken(repo, "my-bot", OWNER);
-    expect(await getApiTokenStatus(repo, "my-bot", OWNER)).toEqual({ configured: false });
-    expect(await verifyAgentApiToken(repo, "my-bot", token)).toBeNull();
+  it("isolates one user's API and Webhook credentials, including rotation and revocation", async () => {
+    const apiToken = await api.generate("bot", "first");
+    const webhookToken = await webhooks.generate("bot", "first");
+    expect(webhookToken.token).toMatch(/^asw_[a-f0-9-]{36}\.[A-Za-z0-9_-]{43}$/);
+    expect(await api.verify("bot", webhookToken.token)).toBeNull();
+    expect(await webhooks.verify("bot", apiToken.token)).toBeNull();
+    expect(await api.verify("bot", webhookToken.token.replace(/^asw_/, "ast_"))).toBeNull();
+    const rotated = await webhooks.generate("bot", "first");
+    expect(await webhooks.authorize("bot", webhookToken.credentialId, "first")).toBeNull();
+    expect(await api.verify("bot", apiToken.token)).toMatchObject({ userId: "first", credentialId: apiToken.credentialId });
+    await webhooks.revoke("bot", "first");
+    expect(await webhooks.verify("bot", rotated.token)).toBeNull();
+    expect(await api.verify("bot", apiToken.token)).toMatchObject({ userId: "first" });
   });
 
-  it("rejects a non-owner status/revoke", async () => {
-    const { repo } = makeRepo(agent());
-    await expect(getApiTokenStatus(repo, "my-bot", "x@example.com")).rejects.toBeInstanceOf(
-      ForbiddenError,
-    );
-    await expect(revokeApiToken(repo, "my-bot", "x@example.com")).rejects.toBeInstanceOf(
-      ForbiddenError,
-    );
-  });
-});
-
-describe("getApiTokenStatus for tokens issued before masks existed", () => {
-  it("reports configured without a mask instead of inventing one", async () => {
-    const { repo } = makeRepo(agent());
-    // A row written by an older release: hash and timestamp only.
-    await repo.setApiToken("my-bot", {
-      tokenHash: hashSecret("sk_proj_legacy"),
-      createdAt: "2026-01-01T00:00:00.000Z",
-    });
-
-    const status = await getApiTokenStatus(repo, "my-bot", OWNER);
-
-    expect(status.configured).toBe(true);
-    expect(status.masked).toBeUndefined();
-    // The old token still verifies — the prefix was never part of verification.
-    expect(await verifyAgentApiToken(repo, "my-bot", "sk_proj_legacy")).toBe(OWNER);
-  });
-});
-
-describe("revealApiToken", () => {
-  it("returns the token the owner generated", async () => {
-    const { repo } = makeRepo(agent());
-    const { token, createdAt } = await generateApiToken(repo, "my-bot", OWNER);
-
-    expect(await revealApiToken(repo, "my-bot", OWNER)).toEqual({ token, createdAt });
+  it("authenticates a signed body with the selected user's Webhook secret", async () => {
+    const issued = await webhooks.generate("bot", "second");
+    const body = '{"action":"opened"}';
+    const signature = "sha256=" + createHmac("sha256", issued.token).update(body).digest("hex");
+    expect(await webhooks.verifySignature("bot", issued.credentialId, body, signature)).toEqual({ userId: "second", email: "second@example.test", credentialId: issued.credentialId });
+    expect(await webhooks.verifySignature("bot", issued.credentialId, body + " ", signature)).toBeNull();
+    expect(await webhooks.verifySignature("other", issued.credentialId, body, signature)).toBeNull();
+    expect(await webhooks.verifySignature("bot", "invalid", body, signature)).toBeNull();
+    expect(await api.verifySignature("bot", issued.credentialId, body, signature)).toBeNull();
+    expect(await webhooks.authorize("bot", issued.credentialId, "first")).toBeNull();
+    members.get("second")!.tier = "guest";
+    await expect(webhooks.verifySignature("bot", issued.credentialId, body, signature)).rejects.toMatchObject({ status: 403 });
   });
 
-  it("refuses a token that predates encrypted storage instead of failing obscurely", async () => {
-    // Hash-only rows have nothing to decrypt; the owner is told to regenerate.
-    const { repo } = makeRepo(agent());
-    await repo.setApiToken("my-bot", {
-      tokenHash: hashSecret("ast_legacy"),
-      createdAt: "2026-01-01T00:00:00.000Z",
-    });
-
-    await expect(revealApiToken(repo, "my-bot", OWNER)).rejects.toBeInstanceOf(ValidationError);
-    // Regenerating replaces it with a readable one.
-    const { token } = await generateApiToken(repo, "my-bot", OWNER);
-    expect((await revealApiToken(repo, "my-bot", OWNER)).token).toBe(token);
-    // …and the legacy token stops working, because the hash is gone.
-    expect(await verifyAgentApiToken(repo, "my-bot", "ast_legacy")).toBeNull();
+  it("requires a current credential and the same issuing user before later effects", async () => {
+    const issued = await webhooks.generate("bot", "second");
+    expect(await webhooks.authorize("bot", issued.credentialId, "second")).toMatchObject({ userId: "second" });
+    await privateAgent();
+    await expect(webhooks.authorize("bot", issued.credentialId, "second")).rejects.toMatchObject({ status: 403 });
+    await webhooks.revoke("bot", "second");
+    expect(await webhooks.authorize("bot", issued.credentialId, "second")).toBeNull();
   });
 
-  it("rejects a non-owner and an agent with no token", async () => {
-    const { repo } = makeRepo(agent());
-    await generateApiToken(repo, "my-bot", OWNER);
-    await expect(revealApiToken(repo, "my-bot", "other@example.com")).rejects.toBeInstanceOf(
-      ForbiddenError,
-    );
-
-    await revokeApiToken(repo, "my-bot", OWNER);
-    await expect(revealApiToken(repo, "my-bot", OWNER)).rejects.toBeInstanceOf(NotFoundError);
-  });
-
-  it("authenticates nobody when the stored token cannot be decrypted", async () => {
-    // A rotated or wrong AES key must fail closed, not fall through to a match.
-    const { repo } = makeRepo(agent());
-    await repo.setApiToken("my-bot", {
-      token: "enc:v1:not-real-ciphertext",
-      createdAt: "2026-01-01T00:00:00.000Z",
-    });
-
-    expect(await verifyAgentApiToken(repo, "my-bot", "ast_anything")).toBeNull();
+  it("rejects ciphertext copied between purposes even when both records belong to the same user", async () => {
+    const issued = await api.generate("bot", "first");
+    const webhook = await webhooks.generate("bot", "first");
+    const storedApi = (await agentCredentialRepository.get("bot", "api", issued.credentialId))!;
+    const key = keys.agentCredential("bot", "webhook", webhook.credentialId);
+    const row = store.rows.get(`${key.PK}\0${key.SK}`)!;
+    row.token = storedApi.token;
+    await expect(webhooks.reveal("bot", "first")).rejects.toThrow();
+    await expect(webhooks.verify("bot", webhook.token)).rejects.toThrow();
   });
 });

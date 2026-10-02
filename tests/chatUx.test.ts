@@ -4,6 +4,7 @@ import { MantineProvider } from "@mantine/core";
 import { describe, expect, it, vi } from "vitest";
 import { NewChatPanel } from "@/app/chats/_components/NewChatPanel";
 import { NewChatEntry } from "@/app/chats/_components/NewChatEntry";
+import { ViewerProvider } from "@/app/_lib/useViewer";
 import { Composer } from "@/app/chats/_components/Composer";
 import { translator } from "@/app/_i18n/translate";
 import { useT } from "@/app/_i18n/provider";
@@ -19,8 +20,10 @@ vi.mock("@/app/chats/_components/parts", () => ({
   RunningAgents: () => null,
 }));
 
-function render(children: React.ReactNode) {
-  return renderToStaticMarkup(createElement(MantineProvider, { children }));
+function render(children: React.ReactNode, tier = "member") {
+  return renderToStaticMarkup(createElement(MantineProvider, {
+    children: createElement(ViewerProvider, { viewer: { email: "user@example.test", tier, isAdmin: false }, children }),
+  }));
 }
 
 describe("chat startup and composer accessibility", () => {
@@ -39,6 +42,24 @@ describe("chat startup and composer accessibility", () => {
     expect(html).toContain(t("common.loading"));
     expect(html).not.toContain("<textarea");
     expect(html).not.toContain(t("chat.noAgentSummarys"));
+    expect(html).not.toContain(`aria-label="${t("chat.send")}"`);
+  });
+
+  it("keeps guest Chat and Workspace creation read-only", () => {
+    const t = translator("ko");
+    vi.mocked(useT).mockReturnValue(t);
+    const html = render(createElement(NewChatEntry, { workspacesEnabled: true }), "guest");
+    expect(html).toContain(t("common.memberExecutionRequired"));
+    expect(html).not.toContain("<textarea");
+    expect(html).not.toContain('role="radiogroup"');
+  });
+
+  it("keeps a downgraded caller's composer read-only while allowing stop", () => {
+    const t = translator("en");
+    vi.mocked(useT).mockReturnValue(t);
+    const html = render(createElement(Composer, { onSend: vi.fn(), onStop: vi.fn(), disabled: true }), "guest");
+    expect(html).toMatch(/<textarea[^>]*readOnly=""/i);
+    expect(html).toContain(`aria-label="${t("chat.stop")}"`);
     expect(html).not.toContain(`aria-label="${t("chat.send")}"`);
   });
 

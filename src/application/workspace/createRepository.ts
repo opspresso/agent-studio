@@ -1,3 +1,4 @@
+import type { RunUser } from "@/domain/execution/actor";
 import { createHash } from "node:crypto";
 import type { CodingForge } from "@/domain/coding/forge";
 import { CodingMutationRejectedError } from "@/domain/coding/types";
@@ -12,7 +13,7 @@ interface RepositoryCreationDeps {
   policies: WorkspacePolicyRepository;
   creations: WorkspaceRepositoryCreationStore;
   authorize(agentName: string, ownerEmail: string): Promise<void>;
-  forge(): Pick<CodingForge, "createRepository">;
+  forge(agentName: string, user: RunUser): Pick<CodingForge, "createRepository">;
   now(): Date;
 }
 
@@ -38,12 +39,13 @@ export function createWorkspaceRepositoryCreationUseCases(deps: RepositoryCreati
       ...(receipt.error ? { error: receipt.error } : receipt.status === "created" && !allowed ? { error: "Repository was created, but the current policy does not allow it. Register it in the agent Workspace tools tab; do not create it again." } : {}) };
   }
   return {
-    async create(agentName: string, input: CreateWorkspaceRepositoryInput, ownerEmail: string): Promise<WorkspaceRepositoryCreationResult> {
+    async create(agentName: string, input: CreateWorkspaceRepositoryInput, user: RunUser): Promise<WorkspaceRepositoryCreationResult> {
+      const ownerEmail = user.email;
       await deps.authorize(agentName, ownerEmail);
       if (!isRepositoryName(input.repository) || typeof input.private !== "boolean" || typeof input.description !== "string" ||
         input.description.length > WORKSPACE_LIMITS.repositoryDescriptionChars || input.description.includes("\0")) throw new ValidationError("Invalid repository creation request");
       const request = { ...input, repository: input.repository.toLowerCase(), description: input.description.trim() };
-      const fingerprint = createHash("sha256").update(JSON.stringify([ownerEmail, request.repository, request.description, request.private])).digest("hex");
+      const fingerprint = createHash("sha256").update(JSON.stringify([user.userId, request.repository, request.description, request.private])).digest("hex");
       const existing = await deps.creations.get(agentName, request.repository);
       if (existing) {
         if (existing.requestedBy !== ownerEmail || (existing.status !== "failed" && existing.fingerprint !== fingerprint)) throw new ConflictError("A different repository creation request already owns this name");
@@ -54,7 +56,7 @@ export function createWorkspaceRepositoryCreationUseCases(deps: RepositoryCreati
       if (!workspaceAllowsRepositoryCreation(current.effective, request.repository)) throw new ValidationError("Repository creation is not allowed by Workspace policy");
       if (workspaceRepositoryMode(current.effective) === "new" && !workspaceAllowsRepository(current.effective, request.repository) &&
         (current.effective.repositories?.length ?? 0) >= WORKSPACE_LIMITS.policyRepositories) throw new ValidationError("The repository access list is full; update the policy before creating another repository");
-      const forge = deps.forge();
+      const forge = deps.forge(agentName, user);
       if (!forge.createRepository) throw new ValidationError("Workspace repository creation is not configured");
       const at = deps.now().toISOString();
       const started: WorkspaceRepositoryCreation = { agentName, repository: request.repository, requestedBy: ownerEmail, fingerprint,

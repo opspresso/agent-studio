@@ -1,35 +1,23 @@
+import { memberFixture } from "./memberFixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const entropy = vi.hoisted(() => ({ sequence: 0 }));
-vi.mock("node:crypto", async importOriginal => ({
-  ...await importOriginal<typeof import("node:crypto")>(),
-  randomBytes: (size: number) => {
-    const bytes = Buffer.alloc(size);
-    bytes.writeUInt32BE(++entropy.sequence);
-    return bytes;
-  },
-}));
 import {
   TRIGGER_LIST_PAGE_SIZE,
   createTriggerUseCases,
 } from "@/application/trigger/triggerUseCases";
 import { createTriggerSchema, updateTriggerSchema } from "@/app/api/agents/_lib/schemas";
-import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { toSlug } from "@/domain/naming";
-import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
-import { setAdminCheck } from "@/application/agent/agentUseCases";
+import { ValidationError } from "@/application/errors";
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { Agent } from "@/domain/agent/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import { AGENT_WEBHOOK_ID, type Trigger, type WebhookTrigger } from "@/domain/trigger/types";
 
 beforeEach(() => {
-  entropy.sequence = 0;
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime("2026-01-01T00:00:00.000Z");
-  vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
 });
-afterEach(() => { setAdminCheck(async () => false); vi.useRealTimers(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 const agent: Agent = {
   name: "p",
@@ -42,7 +30,7 @@ const agent: Agent = {
     parameters: { piiFiltering: false, workspaceTools: true } },
 };
 
-function fixture(authorizeReview?: (email: string) => Promise<void>, currentAgent: Agent = agent) {
+function fixture(assertReviewReady?: (agentName: string) => Promise<void>, currentAgent: Agent = agent) {
   const stored = new Map<string, Trigger>();
   const triggers: TriggerRepository = {
     get: async (_p, id) => stored.get(id) ?? null,
@@ -75,18 +63,18 @@ function fixture(authorizeReview?: (email: string) => Promise<void>, currentAgen
     stored,
     triggers,
     storedWebhook,
-    useCases: createTriggerUseCases({ triggers, agents, cipher: secretCipher, authorizeReview }),
+    useCases: createTriggerUseCases({ members: { getById: async id => memberFixture({ id, email: id === "registrar-id" ? agent.ownerEmail : id }) }, triggers, agents, assertReviewReady }),
   };
 }
 
 describe("GitHub review trigger configuration", () => {
-  it("requires administrator authorization, preserves selection, and allows disabling reviews", async () => {
+  it("requires review infrastructure, preserves selection, and lets the owner disable reviews", async () => {
     const authorize = vi.fn(async () => {});
     const f = fixture(authorize);
-    const input = { triggerId: "webhook", githubReview: { scope: "accessible" as const }, runAsOwner: true };
-    await expect(fixture().useCases.create("p", input, agent.ownerEmail)).rejects.toThrow("administrator");
+    const input = { triggerId: "webhook", githubReview: { scope: "accessible" as const } };
+    await expect(fixture().useCases.create("p", input, agent.ownerEmail)).rejects.toThrow("not configured");
     const created = await f.useCases.create("p", input, agent.ownerEmail);
-    expect(authorize).toHaveBeenCalledExactlyOnceWith(agent.ownerEmail);
+    expect(authorize).toHaveBeenCalledExactlyOnceWith("p");
     expect(created.githubReview).toEqual({ scope: "accessible" });
     const next = await f.useCases.update("p", "webhook", { githubReview: {
       scope: "repositories", repositories: ["Example/Agent", "example/agent"],
@@ -104,71 +92,51 @@ describe("GitHub review trigger configuration", () => {
     expect(createTriggerSchema.safeParse({ triggerId: "webhook", githubReview: { scope: "accessible", repositories: ["org/repo"] } }).success).toBe(false);
     expect(updateTriggerSchema.safeParse({ githubReview: { scope: "repositories", repositories: [] } }).success).toBe(false);
   });
-  it("refuses enabling PR reviews without the owner's explicit execution grant", async () => {
+  it("configures review policy without granting an Agent owner's identity", async () => {
     const f = fixture(async () => {});
-    await expect(f.useCases.create("p", { triggerId: "webhook", githubReview: { scope: "accessible" } }, agent.ownerEmail))
-      .rejects.toThrow("Run with my permissions");
-    expect(f.stored.size).toBe(0);
-    await f.useCases.create("p", { triggerId: "webhook" }, agent.ownerEmail);
-    await expect(f.useCases.update("p", "webhook", { githubReview: { scope: "accessible" } }, agent.ownerEmail))
-      .rejects.toThrow("Run with my permissions");
-    expect(f.storedWebhook("webhook").githubReview).toBeUndefined();
+    const created = await f.useCases.create("p", { triggerId: "webhook", githubReview: { scope: "accessible" } }, agent.ownerEmail);
+    expect(created.githubReview).toEqual({ scope: "accessible" });
+    expect(created).not.toHaveProperty("executionEmail");
+    expect(created).not.toHaveProperty("secret");
   });
   it.each(["disabled", "blockedTools", "approvalTools"] as const)("refuses PR review setup with %s Workspace tools", async issue => {
     const configured: Agent = { ...agent, configuration: { ...agent.configuration!, parameters: {
       piiFiltering: false, workspaceTools: issue !== "disabled", ...(issue !== "disabled" ? { policy: { [issue]: ["Workspace"] } } : {}),
     } } };
     const f = fixture(async () => {}, configured);
-    await expect(f.useCases.create("p", { triggerId: "webhook", githubReview: { scope: "accessible" }, runAsOwner: true }, agent.ownerEmail))
+    await expect(f.useCases.create("p", { triggerId: "webhook", githubReview: { scope: "accessible" } }, agent.ownerEmail))
       .rejects.toThrow("Workspace");
     expect(f.stored.size).toBe(0);
   });
-  it("reports incomplete stored setup and permits revocation without silently granting permissions", async () => {
-    const f = fixture(async () => {});
-    await f.useCases.create("p", { triggerId: "webhook", githubReview: { scope: "accessible" }, runAsOwner: true }, agent.ownerEmail);
-    const revoked = await f.useCases.update("p", "webhook", { runAsOwner: false }, agent.ownerEmail);
-    expect(revoked.executionEmail).toBeUndefined();
-    expect(revoked.reviewIssue).toContain("Run with my permissions");
-    expect((await f.useCases.list("p", agent.ownerEmail))[0]?.reviewIssue).toBe(revoked.reviewIssue);
-    await expect(f.useCases.update("p", "webhook", { enabled: true }, agent.ownerEmail)).rejects.toThrow("Run with my permissions");
-    expect((await f.useCases.update("p", "webhook", { enabled: false }, agent.ownerEmail)).enabled).toBe(false);
+  it("reports missing Workspace setup and lets the owner disable reviews", async () => {
+    const f = fixture(async () => {}, { ...agent, configuration: { ...agent.configuration!, parameters: { piiFiltering: false } } });
+    await f.useCases.create("p", { triggerId: "webhook", enabled: false, githubReview: { scope: "accessible" } }, agent.ownerEmail);
+    expect((await f.useCases.list("p", agent.ownerEmail))[0]?.reviewIssue).toContain("Workspace");
+    await expect(f.useCases.update("p", "webhook", { enabled: true }, agent.ownerEmail)).rejects.toThrow("Workspace");
     expect((await f.useCases.update("p", "webhook", { githubReview: null }, agent.ownerEmail)).reviewIssue).toBeUndefined();
   });
 });
 
 describe("trigger execution permissions", () => {
-  it("captures the authenticated owner's email and can explicitly clear it", async () => {
+  it("captures the registering user ID and preserves it across edits", async () => {
     const f = fixture();
     const created = await f.useCases.create("p", { triggerId: "hourly", kind: "schedule", cron: "0 * * * *",
-      timezone: "Asia/Seoul", runAsOwner: true }, agent.ownerEmail);
-    expect(created.executionEmail).toBe(agent.ownerEmail);
-    expect((await f.useCases.update("p", "hourly", { message: "updated" }, agent.ownerEmail)).executionEmail).toBe(agent.ownerEmail);
-    expect((await f.useCases.update("p", "hourly", { runAsOwner: false }, agent.ownerEmail)).executionEmail).toBeUndefined();
+      timezone: "Asia/Seoul" }, "registrar-id");
+    expect(created.createdBy).toEqual({ userId: "registrar-id", email: agent.ownerEmail });
+    expect(created).not.toHaveProperty("executionEmail");
+    const edited = await f.useCases.update("p", "hourly", { message: "updated" }, agent.ownerEmail);
+    expect(edited.createdBy).toEqual(created.createdBy);
+    expect(edited.updatedAt).not.toBe(created.updatedAt);
+    expect(updateTriggerSchema.safeParse({ runAsOwner: false }).success).toBe(false);
+    expect(createTriggerSchema.safeParse({ triggerId: "x", kind: "schedule", createdBy: { userId: "other" } }).success).toBe(false);
+    expect(updateTriggerSchema.safeParse({ createdBy: { userId: "other" } }).success).toBe(false);
   });
-  it("requires an explicit owner grant for webhooks and preserves or clears it on update", async () => {
-    const f = fixture();
-    const ordinary = await f.useCases.create("p", { triggerId: "webhook" }, agent.ownerEmail);
-    expect(ordinary.executionEmail).toBeUndefined();
-    expect((await f.useCases.update("p", "webhook", { runAsOwner: true }, agent.ownerEmail)).executionEmail).toBe(agent.ownerEmail);
-    expect((await f.useCases.update("p", "webhook", { description: "updated" }, agent.ownerEmail)).executionEmail).toBe(agent.ownerEmail);
-    expect((await f.useCases.update("p", "webhook", { runAsOwner: false }, agent.ownerEmail)).executionEmail).toBeUndefined();
-    const granted = await fixture().useCases.create("p", { triggerId: "webhook", runAsOwner: true }, agent.ownerEmail);
-    expect(granted.executionEmail).toBe(agent.ownerEmail);
-  });
-  it("does not let requests choose an execution email or another member grant the owner's identity", async () => {
-    expect(createTriggerSchema.safeParse({ triggerId: "webhook", executionEmail: "other@example.com" }).success).toBe(false);
-    expect(updateTriggerSchema.safeParse({ executionEmail: "other@example.com" }).success).toBe(false);
-    const f = fixture();
-    await f.useCases.create("p", { triggerId: "webhook" }, agent.ownerEmail);
-    await expect(f.useCases.update("p", "webhook", { runAsOwner: true }, "other@example.com")).rejects.toBeInstanceOf(ForbiddenError);
-    expect(f.storedWebhook("webhook").executionEmail).toBeUndefined();
-  });
-  it("allows an administrator to revoke a grant but never enable it on another owner's behalf", async () => {
-    const f = fixture();
-    await f.useCases.create("p", { triggerId: "webhook", runAsOwner: true }, agent.ownerEmail);
-    setAdminCheck(async email => email === "admin@example.com");
-    await expect(f.useCases.update("p", "webhook", { runAsOwner: true }, "admin@example.com")).rejects.toThrow("Only the owner");
-    expect((await f.useCases.update("p", "webhook", { runAsOwner: false }, "admin@example.com")).executionEmail).toBeUndefined();
+
+  it("rejects owner delegation and shared secret controls at the HTTP contract", () => {
+    for (const input of [{ runAsOwner: true }, { executionEmail: "other@example.test" }, { rotateSecret: true }]) {
+      expect(createTriggerSchema.safeParse({ triggerId: "webhook", ...input }).success).toBe(false);
+      expect(updateTriggerSchema.safeParse(input).success).toBe(false);
+    }
   });
 });
 
@@ -202,106 +170,20 @@ describe("an agent has exactly one webhook", () => {
       "owner@example.com",
     );
     expect(created.kind).toBe("webhook");
-    expect(created.secret).toBeTruthy();
+    expect(created).not.toHaveProperty("secret");
   });
 });
 
-describe("trigger secret", () => {
-  it("comes back in the clear once on create, and masked afterwards", async () => {
+describe("shared Webhook configuration", () => {
+  it("returns settings without personal credentials on creation, updates and reads", async () => {
     const { useCases } = fixture();
-    const created = await useCases.create(
-      "p",
-      { triggerId: AGENT_WEBHOOK_ID },
-      "owner@example.com",
-    );
-    expect(created.secret).toMatch(/^asw_/);
-    const [listed] = await useCases.list("p", "owner@example.com");
-    expect(listed?.secret).toBeUndefined();
-    expect(listed?.secretMasked).toMatch(/^asw_•+/);
-  });
-
-  it("is stored encrypted, never in plaintext", async () => {
-    const { storedWebhook, useCases } = fixture();
-    const created = await useCases.create(
-      "p",
-      { triggerId: AGENT_WEBHOOK_ID },
-      "owner@example.com",
-    );
-    expect(storedWebhook(AGENT_WEBHOOK_ID).secret).not.toBe(created.secret);
-    expect(storedWebhook(AGENT_WEBHOOK_ID).secret.startsWith("enc:v2:")).toBe(true);
-  });
-
-  it("can be read back, like an agent API token", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { useCases } = fixture();
-    const created = await useCases.create(
-      "p",
-      { triggerId: AGENT_WEBHOOK_ID },
-      "owner@example.com",
-    );
-    const revealed = await useCases.reveal("p", AGENT_WEBHOOK_ID, "owner@example.com");
-    expect(revealed.secret).toBe(created.secret);
-    // Secret access leaves a trail even when it is authorized.
-    expect(warn.mock.calls.some(([line]) => String(line).includes("revealed by"))).toBe(true);
-    warn.mockRestore();
-  });
-
-  it("refuses a reveal to anyone but the owner or an admin", async () => {
-    const { useCases } = fixture();
-    await useCases.create("p", { triggerId: AGENT_WEBHOOK_ID }, "owner@example.com");
-    await expect(
-      useCases.reveal("p", AGENT_WEBHOOK_ID, "someone@example.com"),
-    ).rejects.toBeInstanceOf(ForbiddenError);
-  });
-
-  it("404s a reveal for a trigger that does not exist", async () => {
-    const { useCases } = fixture();
-    await expect(useCases.reveal("p", "nope", "owner@example.com")).rejects.toBeInstanceOf(
-      NotFoundError,
-    );
-  });
-
-  it("regenerating returns the new secret once and invalidates the old", async () => {
-    const { useCases } = fixture();
-    const created = await useCases.create(
-      "p",
-      { triggerId: AGENT_WEBHOOK_ID },
-      "owner@example.com",
-    );
-    const rotated = await useCases.update(
-      "p",
-      AGENT_WEBHOOK_ID,
-      { rotateSecret: true },
-      "owner@example.com",
-    );
-    expect(rotated.secret).toMatch(/^asw_/);
-    expect(rotated.secret).not.toBe(created.secret);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect((await useCases.reveal("p", AGENT_WEBHOOK_ID, "owner@example.com")).secret).toBe(
-      rotated.secret,
-    );
-    warn.mockRestore();
-  });
-
-  it("an ordinary update leaves the secret alone", async () => {
-    const { useCases } = fixture();
-    const created = await useCases.create(
-      "p",
-      { triggerId: AGENT_WEBHOOK_ID },
-      "owner@example.com",
-    );
-    const updated = await useCases.update(
-      "p",
-      AGENT_WEBHOOK_ID,
-      { enabled: false },
-      "owner@example.com",
-    );
-    expect(updated.secret).toBeUndefined();
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect((await useCases.reveal("p", AGENT_WEBHOOK_ID, "owner@example.com")).secret).toBe(
-      created.secret,
-    );
-    warn.mockRestore();
+    const created = await useCases.create("p", { triggerId: AGENT_WEBHOOK_ID }, "owner@example.com");
+    const updated = await useCases.update("p", AGENT_WEBHOOK_ID, { enabled: false }, "owner@example.com");
+    const listed = await useCases.list("p", "owner@example.com");
+    expect(created.enabled).toBe(true); expect(updated.enabled).toBe(false);
+    for (const view of [created, updated, ...listed]) {
+      expect(view).not.toHaveProperty("secret"); expect(view).not.toHaveProperty("secretMasked"); expect(view).not.toHaveProperty("executionEmail");
+    }
   });
 });
 
@@ -322,6 +204,7 @@ describe("schedule triggers", () => {
         agentName: "p",
         triggerId,
         kind: "schedule",
+        createdBy: { userId: "registrar-id", email: "registrar@example.test" },
         description: "",
         enabled: true,
         cron: "0 9 * * *",
@@ -349,8 +232,8 @@ describe("schedule triggers", () => {
     expect(created.kind).toBe("schedule");
     expect(created.cron).toBe("0 9 * * *");
     expect(created.timezone).toBe("Asia/Seoul");
-    expect(created.secret).toBeUndefined();
-    expect(created.secretMasked).toBeUndefined();
+    expect(created).not.toHaveProperty("secret");
+    expect(created).not.toHaveProperty("secretMasked");
   });
 
   it("stores one report destination for each messaging platform", async () => {
@@ -433,16 +316,6 @@ describe("schedule triggers", () => {
     expect(stored.get("nightly")).not.toHaveProperty("message");
   });
 
-  it("refuses the webhook-only operations", async () => {
-    const { useCases } = fixture();
-    await useCases.create("p", schedule, "owner@example.com");
-    await expect(
-      useCases.update("p", "nightly", { rotateSecret: true }, "owner@example.com"),
-    ).rejects.toBeInstanceOf(ValidationError);
-    await expect(useCases.reveal("p", "nightly", "owner@example.com")).rejects.toBeInstanceOf(
-      ValidationError,
-    );
-  });
 
   it("may not take the id the agent's own webhook is addressed by", async () => {
     // `/api/webhook/{agent}` resolves that id and expects a webhook. A schedule

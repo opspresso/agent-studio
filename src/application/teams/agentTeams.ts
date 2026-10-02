@@ -1,7 +1,6 @@
 import { ValidationError } from "@/application/errors";
-import { messagingExecutionEmail } from "@/application/messaging/executionGrant";
 import { persistAgentUpdate } from "@/application/agent/agentUpdate";
-import { assertAgentOwnerOrAdminReadable, assertAgentWritable } from "@/application/agent/agentUseCases";
+import { assertAgentOwner } from "@/application/agent/agentUseCases";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Agent, TeamsIntegration } from "@/domain/agent/types";
@@ -23,7 +22,6 @@ import { teamsSecretContext } from "@/domain/security/secretContext";
  */
 
 export interface AgentTeamsView {
-  runAsOwner: boolean;
   enabled: boolean;
   configured: boolean;
   /** Not a secret: the App ID is in every token's audience claim. */
@@ -35,7 +33,6 @@ export interface AgentTeamsView {
 }
 
 export interface AgentTeamsUpdate {
-  runAsOwner?: boolean;
   appId?: string;
   appPassword?: string;
   tenantId?: string;
@@ -49,7 +46,6 @@ export function messagingPathFor(agentName: string): string {
 function maskedView(cipher: SecretCipher, agent: Agent): AgentTeamsView {
   const teams = agent.teams;
   return {
-    runAsOwner: teams?.executionEmail === agent.ownerEmail,
     enabled: teams?.enabled ?? false,
     configured: Boolean(teams?.appId && teams.appPassword),
     appId: teams?.appId ?? "",
@@ -77,7 +73,7 @@ export async function getAgentTeams(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<AgentTeamsResult> {
-  const agent = await assertAgentOwnerOrAdminReadable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   return { agent, view: maskedView(cipher, agent) };
 }
 
@@ -98,8 +94,7 @@ export async function updateAgentTeams(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<AgentTeamsResult> {
-  const agent = await assertAgentWritable(repo, name, userEmail);
-  const executionEmail = messagingExecutionEmail(agent, "teams", update.runAsOwner, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const stored = agent.teams;
   // Lower-cased, because the Bot Framework writes the same GUID lower-case
   // into every token's audience and a pasted upper-case one must still match.
@@ -117,7 +112,6 @@ export async function updateAgentTeams(
       ? (stored?.appPassword ?? "")
       : cipher.encrypt(incoming.trim(), teamsSecretContext(name));
   const teams: TeamsIntegration = {
-    ...(executionEmail ? { executionEmail } : {}),
     appId,
     appPassword,
     enabled: update.enabled ?? stored?.enabled ?? false,
@@ -138,7 +132,7 @@ export async function disconnectAgentTeams(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<AgentTeamsResult> {
-  const agent = await assertAgentWritable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const updated: Agent = { ...agent, teams: undefined, updatedAt: nextUpdatedAt(agent.updatedAt) };
   await persistAgentUpdate(repo, updated, agent.updatedAt);
   return { agent: updated, view: maskedView(cipher, updated) };
@@ -171,7 +165,7 @@ export async function testAgentTeams(
   cipher: SecretCipher,
   authenticate: (credentials: TeamsCredentials) => Promise<{ expiresInSeconds: number }>,
 ): Promise<{ ok: true; appId: string; expiresInSeconds: number } | { ok: false }> {
-  const agent = await assertAgentOwnerOrAdminReadable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const runtime = resolveAgentTeamsRuntime(cipher, agent);
   if (!runtime) {
     return { ok: false };

@@ -1,5 +1,6 @@
 "use client";
 
+import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EngineChunk } from "../../lib/api";
 import { readSse, streamAgent } from "../../lib/api";
@@ -20,6 +21,7 @@ import {
   type ActiveAuthor,
 } from "@/app/_lib/authorPaths";
 import { toRequestImages } from "@/app/_lib/imageAttachments";
+import { createFileDownloads } from "@/app/_lib/fileDownloads";
 import { onModEnter } from "@/app/_lib/modEnter";
 import {
   AttachButton,
@@ -78,6 +80,7 @@ export function RunPanel({
   /** From the model registry; `undefined` when the model is not in the catalog. */
   modelAcceptsImages?: boolean;
 }) {
+  const mayRun = canRunAgents(useViewer());
   const [message, setMessage] = useState("");
 
   const [running, setRunning] = useState(false);
@@ -96,10 +99,9 @@ export function RunPanel({
   const [warnings, setWarnings] = useState<string[]>([]);
   const [cost, setCost] = useState<number | null>(null);
   const [agentImages, setAgentImages] = useState<Array<{ src: string; prompt?: string }>>([]);
-  // Documents a tool rendered. They arrive addressed — `/agent` signs the
-  // reference on its way out — so what this holds is already a download.
+  // Stored files arrive addressed; without storage the stream delivers inline bytes.
   const [agentFiles, setAgentFiles] = useState<
-    Array<{ name: string; byteSize?: number; url?: string }>
+    Array<{ name: string; mimeType: string; byteSize?: number; url?: string; artifactId?: string }>
   >([]);
   const activeRequest = useRef<AbortController | null>(null);
   const {
@@ -116,7 +118,7 @@ export function RunPanel({
 
   // An image-only turn is a legitimate run: "what is in this picture?" needs no words.
   const canRun =
-    configured &&
+    mayRun && configured &&
     !running &&
     !reading &&
     (message.trim() !== "" || attachments.length > 0 || documents.length > 0);
@@ -131,6 +133,7 @@ export function RunPanel({
   );
 
   async function run() {
+    if (!canRun) return;
     if (!configured || activeRequest.current !== null) {
       return;
     }
@@ -164,6 +167,7 @@ export function RunPanel({
     setCost(null);
     setAgentImages([]);
     setAgentFiles([]);
+    const fileDownload = createFileDownloads();
     let totalCost = 0;
 
     try {
@@ -239,12 +243,19 @@ export function RunPanel({
         }
         if (chunk.file) {
           const produced = chunk.file;
-          setAgentFiles((prev) => [
+          const download = fileDownload(produced);
+          if (download.warning) {
+            const warning = download.warning;
+            setWarnings((prev) => prev.includes(warning) ? prev : [...prev, warning]);
+          }
+          if (!download.warning && (download.url || produced.fileId)) setAgentFiles((prev) => [
             ...prev,
             {
               name: produced.name,
+              mimeType: produced.mimeType,
               ...(produced.byteSize !== undefined ? { byteSize: produced.byteSize } : {}),
-              ...(produced.url ? { url: produced.url } : {}),
+              ...(download.url ? { url: download.url } : {}),
+              ...(produced.fileId ? { artifactId: produced.fileId } : {}),
             },
           ]);
         }
@@ -276,8 +287,8 @@ export function RunPanel({
 
   // Pasted and dropped images become inputs for image understanding or EditImage.
   const attach = useCallback((files: File[]) => void addFiles(files), [addFiles]);
-  const { dragging, handlers } = useFileDrop(attach, running);
-  const onPaste = useMemo(() => onFilePaste(attach, running), [attach, running]);
+  const { dragging, handlers } = useFileDrop(attach, running || !mayRun);
+  const onPaste = useMemo(() => onFilePaste(attach, running || !mayRun), [attach, running, mayRun]);
 
   return (
     <Stack
@@ -295,6 +306,7 @@ export function RunPanel({
 
       <Textarea
         label={t("run.messageLabel")}
+        readOnly={!mayRun}
         value={message}
         onChange={(e) => setMessage(e.currentTarget.value)}
         onPaste={onPaste}
@@ -321,7 +333,7 @@ export function RunPanel({
           <Group>
             <AttachButton
               onPick={attach}
-              disabled={running}
+              disabled={running || !mayRun}
               documents
             />
           </Group>
@@ -334,6 +346,7 @@ export function RunPanel({
       </Input.Wrapper>
 
       <Group>
+        {!mayRun && <Text size="sm" c="dimmed">{t("common.memberExecutionRequired")}</Text>}
         <Button onClick={run} loading={running || reading} disabled={!canRun}>
           {t("playground.run")}
         </Button>
@@ -437,7 +450,7 @@ export function RunPanel({
       {/* The same row the chat draws. A rendered document is part of the answer,
           not an invisible side effect beside the image gallery. */}
       {agentFiles.map((file, i) => (
-        <ProducedFile key={`file-${i}`} name={file.name} byteSize={file.byteSize} url={file.url} />
+        <ProducedFile key={`file-${i}`} {...file} />
       ))}
 
       {/* Share Chat's paired tool rows: one row per call, with its result. */}

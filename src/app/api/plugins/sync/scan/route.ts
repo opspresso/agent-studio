@@ -42,11 +42,12 @@ export async function POST(request: Request): Promise<Response> {
   // Decided on the stored report alone, and *before* the head read: an archive
   // is uploaded precisely where GitHub cannot be reached, and a head read that
   // throws must not carry the hold away with it.
-  let last: Awaited<ReturnType<typeof lastPluginSync>> = null;
+  let last: Awaited<ReturnType<typeof lastPluginSync>>;
   try {
     last = await lastPluginSync(repoConfig.repo);
   } catch (error) {
-    log.warn("plugins", "sync tick could not read the last report; running the full sync", error);
+    log.warn("plugins", "sync tick refused: the last report could not be read", error);
+    return Response.json({ error: "Plugin sync status could not be read" }, { status: 503 });
   }
   if (last && isArchiveSync(last.report.commitSha)) {
     return Response.json({ started: false, held: "archive" });
@@ -68,7 +69,7 @@ export async function POST(request: Request): Promise<Response> {
 
   after(async () => {
     try {
-      const result = await syncPluginsFromRepo(repoConfig, "scheduler");
+      const result = await syncPluginsFromRepo(repoConfig, "scheduler", undefined, { automatic: true });
       const totals = result.plugins.reduce(
         (sum, section) => {
           for (const kind of [section.skills, section.mcpServers]) {

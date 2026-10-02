@@ -1,9 +1,9 @@
-import type { RunCaller } from "@/domain/execution/actor";
+import type { RunCaller, RunUser } from "@/domain/execution/actor";
 import type { ChatMessage } from "@/domain/chat/types";
 import { chatConversation } from "@/domain/chat/conversation";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError, ChatConflictError } from "./errors";
-import { userMayAccessAgent } from "@/application/agent/agentUseCases";
+import { mayAccessAgent } from "@/domain/agent/access";
 import {
   runAndPersist,
   readMessageDocuments,
@@ -21,7 +21,7 @@ export interface SendMessageInput {
   /** Images the user attached to this turn. */
   images?: AttachedImage[];
   documents?: AttachedDocumentInput[];
-  userEmail: string;
+  user: RunUser;
   /** The owner in words, for an Agent that opted into `callerContext`. */
   caller?: RunCaller;
   signal?: AbortSignal;
@@ -62,7 +62,7 @@ export async function sendMessage(
   if (!chat) {
     throw new ChatNotFoundError();
   }
-  if (chat.ownerEmail !== input.userEmail) {
+  if (chat.ownerEmail !== input.user.email) {
     // 404, as the reads answer: a 403 here would tell a non-owner the chatId
     // exists, and a chat is private to its owner (docs/API.md).
     throw new ChatNotFoundError();
@@ -77,7 +77,7 @@ export async function sendMessage(
   }
   // Re-checked every turn, not only at creation: an agent made private after
   // this chat began stops answering people who lost access with it.
-  if (!(await userMayAccessAgent(agent, input.userEmail))) {
+  if (!mayAccessAgent(agent, input.user.email)) {
     throw new ChatForbiddenError(`agent "${agent.name}" is private`);
   }
   const configuration = agent.configuration;
@@ -85,7 +85,7 @@ export async function sendMessage(
     throw new ChatValidationError("agent has no Agent configuration");
   }
 
-  const savedRuntime = deps.runtimeSessions ? await readRuntimeSession(deps.runtimeSessions, input.chatId, input.userEmail) : undefined;
+  const savedRuntime = deps.runtimeSessions ? await readRuntimeSession(deps.runtimeSessions, input.chatId, input.user.email, input.user.userId) : undefined;
   if (savedRuntime?.document.checkpoint) throw new ChatConflictError("Resolve the pending approval before sending another message");
   const sessionWarnings = savedRuntime === null ? ["Earlier chat records are visible, but this chat has no saved SDK Session. This run starts a new model context."] : [];
   const runId = await claimChatRun(deps.chats, input.chatId);
@@ -96,13 +96,13 @@ export async function sendMessage(
     const attachments = input.images ?? [];
     const uploaded = await storeAttachedImages(
       deps,
-      { agentName: agent.name, actor: { kind: "user", id: input.userEmail } },
+      { agentName: agent.name, actor: { kind: "user", id: input.user.email } },
       attachments,
     );
     const documentInput = input.documents ?? [];
     const read = await readMessageDocuments(deps, {
       agentName: agent.name,
-      actor: { kind: "user", id: input.userEmail },
+      actor: { kind: "user", id: input.user.email },
     }, documentInput);
     const userMessage: ChatMessage = {
       chatId: input.chatId,
@@ -116,13 +116,14 @@ export async function sendMessage(
     await deps.chats.appendMessage(userMessage);
 
     const source = deps.runAgent({
+      user: input.user,
       agent,
       configuration,
       // The SDK Session supplies prior turns; this input contains only the new turn.
       messages: [
         { role: "user", content: userTurnContent(input.content, attachments, read.stored) },
       ],
-      actor: { kind: "user", id: input.userEmail },
+      actor: { kind: "user", id: input.user.email },
       ...(input.caller ? { caller: input.caller } : {}),
       // The chat is the conversation. Its id is this platform's own, so it needs
       // no normalising — but it goes through the one builder all the same.

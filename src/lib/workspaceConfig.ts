@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const resources = z.object({
+  modelGatewayUrl: z.string().url().refine(value => { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash; }).optional(),
   image: z.string().trim().min(1).max(300),
   network: z.string().trim().min(1).max(100).default("none"),
   context: z.string().trim().min(1).max(100).optional(),
@@ -26,7 +27,7 @@ export type WorkspaceConfig = z.infer<typeof backendSchema>;
 export function parseWorkspaceConfig(env: Record<string, string | undefined>): WorkspaceConfig | undefined {
   if (!env.WORKSPACE_IMAGE?.trim()) return undefined;
   try { return backendSchema.parse({ provider: env.WORKSPACE_PROVIDER ?? "docker", image: env.WORKSPACE_IMAGE, network: env.WORKSPACE_NETWORK,
-    context: env.WORKSPACE_DOCKER_CONTEXT, memoryMb: env.WORKSPACE_MEMORY_MB, diskMb: env.WORKSPACE_DISK_MB,
+    modelGatewayUrl: env.WORKSPACE_MODEL_GATEWAY_URL, context: env.WORKSPACE_DOCKER_CONTEXT, memoryMb: env.WORKSPACE_MEMORY_MB, diskMb: env.WORKSPACE_DISK_MB,
     cpus: env.WORKSPACE_CPUS, workerConcurrency: env.WORKSPACE_WORKER_CONCURRENCY,
     namespace: env.WORKSPACE_NAMESPACE, instance: env.WORKSPACE_INSTANCE, kubeContext: env.WORKSPACE_KUBERNETES_CONTEXT,
     nodePool: env.WORKSPACE_NODE_POOL, imagePullSecret: env.WORKSPACE_IMAGE_PULL_SECRET, legacyDocker: env.WORKSPACE_LEGACY_DOCKER }); }

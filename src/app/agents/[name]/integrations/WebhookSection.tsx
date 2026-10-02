@@ -3,34 +3,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Badge, Button, Group, Select, Stack, Switch, Text, Textarea } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
-import { CopyableUrl } from "@/app/_components/CopyableUrl";
-import { SecretControl } from "@/app/_components/SecretControl";
 import { stateColor } from "@/app/_components/badgeColors";
-import { AGENT_WEBHOOK_ID, agentWebhookPath } from "@/domain/trigger/types";
+import { AGENT_WEBHOOK_ID } from "@/domain/trigger/types";
 import { useT } from "@/app/_i18n/provider";
 import {
   createTrigger,
   listTriggers,
-  revealTriggerSecret,
   updateTrigger,
   type TriggerView,
 } from "../../lib/api";
 import { reportError } from "@/app/_lib/reportError";
 
-/**
- * The agent's webhook: one address, turned on and off.
- *
- * Nobody names it — `/api/webhook/{agent}` is the whole address — so the
- * panel is a switch, and the row it stands for is created the first time the
- * switch goes on. Everything below the switch is what a sender needs to use it:
- * the URL, the secret, and how the payload reaches the run. Recent delivery
- * history lives beside the integration list. SecretControl owns reveal, copy, hide and rotation; plaintext
- * is held only in component state until hidden or the page is left.
- */
+/** Shared Agent Webhook settings. Each user manages their own invocation token separately. */
 export function WebhookSection({ agentName, onSelect, selected }: { agentName: string; onSelect?: () => void; selected?: boolean }) {
   const t = useT();
   const [webhook, setWebhook] = useState<TriggerView | null>(null);
-  const [revealed, setRevealed] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,26 +77,12 @@ export function WebhookSection({ agentName, onSelect, selected }: { agentName: s
   function setEnabled(enabled: boolean) {
     void act(async () => {
       if (!webhook) {
-        const created = await createTrigger(agentName, { triggerId: AGENT_WEBHOOK_ID });
-        if (created.secret) {
-          setRevealed(created.secret);
-        }
+        await createTrigger(agentName, { triggerId: AGENT_WEBHOOK_ID });
         return;
       }
       await updateTrigger(agentName, AGENT_WEBHOOK_ID, { enabled });
     });
   }
-
-  async function secretAction(action: () => Promise<string>): Promise<string> {
-    setBusy(true); setError(null);
-    try { return await action(); }
-    finally { setBusy(false); }
-  }
-
-  const url =
-    typeof window === "undefined"
-      ? agentWebhookPath(agentName)
-      : `${window.location.origin}${agentWebhookPath(agentName)}`;
 
   return (
     <CollapsibleSection
@@ -146,16 +119,9 @@ export function WebhookSection({ agentName, onSelect, selected }: { agentName: s
 
         {webhook && (
           <>
-            <CopyableUrl url={url} />
-            <Text fz="sm" c="dimmed">{t("webhook.githubHint")}</Text>
             {webhook.reviewIssue && <Alert color="yellow" title={t("webhook.reviewSetupRequired")}>
               {webhook.reviewIssue}
             </Alert>}
-            <Switch label={t("trigger.runAsOwner")} description={t("webhook.runAsOwnerHint")}
-              checked={Boolean(webhook.executionEmail)} disabled={busy}
-              onChange={event => { const runAsOwner = event.currentTarget.checked; void act(async () => {
-                await updateTrigger(agentName, AGENT_WEBHOOK_ID, { runAsOwner });
-              }); }} />
             <Select label={t("webhook.reviewMode")} value={reviewScope} allowDeselect={false} disabled={busy}
               onChange={(value) => setReviewScope(value ?? "off")}
               data={[{ value: "off", label: t("webhook.generic") },
@@ -163,25 +129,15 @@ export function WebhookSection({ agentName, onSelect, selected }: { agentName: s
                 { value: "repositories", label: t("webhook.reviewSelected") }]} />
             {reviewScope !== "off" && <>
               <Text size="sm" c="dimmed">{t("webhook.reviewHint")}</Text>
-              {!webhook.executionEmail && <Alert color="yellow">{t("webhook.reviewOwnerRequired")}</Alert>}
             </>}
             {reviewScope === "repositories" && <Textarea label={t("webhook.reviewRepositories")} value={repositories}
               placeholder="owner/repository" minRows={2} disabled={busy} onChange={event => setRepositories(event.currentTarget.value)} />}
-            <Button variant="light" disabled={busy || (reviewScope !== "off" && !webhook.executionEmail)} onClick={() => act(async () => {
+            <Button variant="light" disabled={busy} onClick={() => act(async () => {
               await updateTrigger(agentName, AGENT_WEBHOOK_ID, {
                 githubReview: reviewScope === "off" ? null : reviewScope === "accessible" ? { scope: "accessible" }
                   : { scope: "repositories", repositories: repositories.split(/[\n,]/).map(value => value.trim()).filter(Boolean) },
               });
             })}>{t("webhook.reviewSave")}</Button>
-            <SecretControl key={agentName} label={t("webhook.section")} configured masked={webhook.secretMasked} initialValue={revealed ?? undefined}
-              description={t("webhook.secretHint")} disabled={busy}
-              onReveal={() => secretAction(() => revealTriggerSecret(agentName, AGENT_WEBHOOK_ID))}
-              onGenerate={() => secretAction(async () => {
-                const next = await updateTrigger(agentName, AGENT_WEBHOOK_ID, { rotateSecret: true });
-                if (!next.secret) throw new Error("No webhook secret was returned");
-                await reload(); return next.secret;
-              })} />
-
             <Group gap="md" align="flex-end">
               <Switch
                 label={t("trigger.allowOverlap")}

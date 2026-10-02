@@ -7,7 +7,7 @@ vi.mock("@/application/trigger/runTrigger", () => ({ admitDelivery: f.admit, exe
 const { POST } = await import("@/app/api/webhook/[agent]/route");
 const context = { params: Promise.resolve({ agent: "code-agent" }) };
 const request = (headers: Record<string, string>, body = '{ "action": "opened", "title": "박쥐" }\n') =>
-  new Request("https://studio.example.test/api/webhook/code-agent", { method: "POST", headers, body });
+  new Request("https://studio.example.test/api/webhook/code-agent?credential=personal-selector", { method: "POST", headers, body });
 
 beforeEach(() => { vi.clearAllMocks(); f.admit.mockResolvedValue({ status: "accepted", runId: "run-1" }); });
 
@@ -16,7 +16,7 @@ describe("agent GitHub webhook delivery route", () => {
     const body = '{ "action": "opened", "title": "박쥐" }\n';
     const res = await POST(request({ "X-Hub-Signature-256": "sha256=" + "a".repeat(64), "X-GitHub-Delivery": "delivery-1", "X-GitHub-Event": "issues" }, body), context);
     expect(res.status).toBe(202);
-    expect(f.admit).toHaveBeenCalledWith(f.deps, "code-agent", { kind: "github", body,
+    expect(f.admit).toHaveBeenCalledWith(f.deps, "code-agent", { kind: "github", credentialId: "personal-selector", body,
       signature: "sha256=" + "a".repeat(64), deliveryId: "delivery-1", event: "issues" }, null);
     expect(f.after).toHaveBeenCalledOnce();
     await f.after.mock.calls[0]![0]();
@@ -50,10 +50,10 @@ describe("agent GitHub webhook delivery route", () => {
     expect(f.after).not.toHaveBeenCalled();
   });
   it("returns an actionable setup conflict without starting background work", async () => {
-    f.admit.mockResolvedValueOnce({ status: "review-not-ready", reason: "Enable the owner's execution grant" });
+    f.admit.mockResolvedValueOnce({ status: "review-not-ready", reason: "Enable Workspace tools" });
     const res = await POST(request({}), context);
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: "Enable the owner's execution grant", status: "review-not-ready" });
+    expect(await res.json()).toEqual({ error: "Enable Workspace tools", status: "review-not-ready" });
     expect(f.after).not.toHaveBeenCalled();
     expect(f.execute).not.toHaveBeenCalled();
   });

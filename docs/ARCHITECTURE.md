@@ -130,14 +130,15 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 |---|---|---|---|---|
 | Agent | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
 | 삭제된 Agent 이름 tombstone | `AGENT#{name}` | `META` | — | — |
-| Agent API 토큰 | `AGENT#{name}` | `APITOKEN` | — | — |
+| 개인 Agent credential | `AGENT#{name}` | `CREDENTIAL#{purpose}#{credentialId}` / `CREDENTIALUSER#{purpose}#{userId}` | — | — |
 | Workspace 정책 / 저장소 생성 receipt | `AGENT#{name}` | `WORKSPACEPOLICY` / `REPOSITORYCREATE#{repository lowercased}` | — | — |
 | Workspace | `WORKSPACE#{id}` | `META` | `WORKSPACEOWNER#{email}` | `{createdAt}#{id}` |
 | Workspace Chat 역참조 | `WORKSPACECHAT#{chatId}` | `META` | — | — |
 | Workspace Session·Sandbox·Run·승인·요청·전달·후속 실행 | `WORKSPACE#{id}` | `{SESSION\|SANDBOX\|RUN\|APPROVAL\|REQUEST\|DELIVERY\|CONTINUATION}#{childId}` | — | — |
 | Workspace 이벤트 | `WORKSPACE#{id}` | `EVENT#{runId}#{seq zero-padded 8}` | — | — |
 | Workspace checkpoint manifest / chunk | `WORKSPACESTATE#{id}` | `{checkpointId}#META` / `{checkpointId}#{index zero-padded 6}` | — | — |
-| Agent 의 MCP OAuth 연결 | `AGENT#{name}` | `MCPCONN#{server}` | — | — |
+| 개인 MCP OAuth 연결 | `MCPUSER#{userId}` | `MCPCONN#{server}` | — | — |
+| MCP OAuth 갱신 claim | `MCPUSER#{userId}` | `MCPREFRESH#{server}#{revision}` | — | — |
 | 진행 중인 MCP OAuth 인가 | `MCPOAUTH#{state}` | `META` | — | — |
 | Trigger (webhook / schedule) | `AGENT#{name}` | `TRIGGER#{triggerId}` | schedule 만: `TYPE#SCHEDULE` | schedule 만: `{name}#{triggerId}` |
 | Trigger 런 (delivery / firing) | `AGENT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt 또는 queuedAt}#{runId}` | queued만: `TRIGGERQUEUE#{name}#{triggerId}` | queued만: `{queueLeaseUntil}#{runId}` |
@@ -160,8 +161,8 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 | Usage (Agent별 일간) | `USAGE#{agentName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{agentName}` |
 | Usage (호출자별 일간) | `USAGE#{agentName}` | `ACTOR#{yyyy-MM-dd}#{kind}:{id}` | — | — |
 | Usage 월간 임계값 claim | `USAGE#{agentName}` | `MONTHCLAIM#{yyyy-MM}` | — | — |
-| Usage (멤버별, 일별, Agent별) | `USAGEMEMBER#{email}` | `DATE#{yyyy-MM-dd}#{agentName}` | — | — |
-| 런 동시성 슬롯 | `RUNSLOT#{kind}:{id}` | `SLOT#{index zero-padded 3}` | — | — |
+| Usage (멤버별, 일별, Agent별) | `USAGEMEMBERID#{userId}` | `DATE#{yyyy-MM-dd}#{agentName}` | — | — |
+| 런 동시성 슬롯 | `RUNSLOT#studio-user:{userId}` | `SLOT#{index zero-padded 3}` | — | — |
 | Slack 이벤트 중복 제거 | `SLACKEVENT#{eventId}` | `META` | — | — |
 | Slack 스레드 참여 (봇이 답한, 또는 음소거된 스레드) | `SLACKTHREAD#{agentName}#{channel}#{threadTs}` | `META` | — | — |
 | Slack 스레드 실행 lease / 중단 시각 | `AGENT#{name}` | `SLACKRUN#{channel}#{threadTs}` / `SLACKSTOP#{channel}#{threadTs}` | — | — |
@@ -198,13 +199,15 @@ Chat의 SDK `runtime_sessions`와 수명을 공유하지 않는다.
 
 - 아이템 리포지토리는 [`store.ts`](../src/infrastructure/db/store.ts)를 사용한다. 조건부 쓰기는
   행 잠금 아래 평가하고 여러 키는 일정한 순서로 잠근다. 접두사 범위·트랜잭션·만료 삭제도 이 계층이 소유한다.
+  실행 소유권에 묶인 쓰기는 `withItemWriteFence`로 소유권 키를 함께 잠그고 같은 트랜잭션에서
+  검사한다. 소유권 상실 후 재개한 작업은 현재 소유자의 데이터를 덮지 못한다.
   전용 인증·벡터·SDK Session 테이블과 `skillRepository.describe`의 projection은 별도 SQL 경로다.
 - 무한히 늘어나는 목록에는 `limit`을 주고, 만료·조건 필터는 `LIMIT` 전에 적용한다.
   `queryItems`에 넘기는 `notExpiredAt`·`filter`가 그 경계다.
 - 이름 기반 registry의 공통 CRUD는 `createKeyedRepository`를 사용한다. Agent 현재 설정은
   `META.configuration`, Chat 메시지 번호는 `META.nextSeq`가 소유한다.
 - Agent 삭제는 먼저 `deletingAt`으로 자식 쓰기를 차단하고 관련 행을 정리한 뒤
-  소유권을 제거한 tombstone을 남긴다. 중단된 cascade는 같은 owner/admin이 다시 DELETE하여
+  소유권을 제거한 tombstone을 남긴다. 중단된 cascade는 같은 소유자가 다시 DELETE하여
   이어간다. Chat·Artifact처럼 더 오래 남는 참조가 있어 Agent 이름을 재사용하지 않는다.
 - Usage는 행 잠금 아래 모델별 델타를 더한다. 임계값 알림 claim은 Usage 행에 둬
   Agent 편집 revision과 분리한다. 귀속·집계는 [관측성 설계](design/observability.md)를 따른다.
@@ -250,18 +253,19 @@ Chat의 SDK `runtime_sessions`와 수명을 공유하지 않는다.
 [`runBracket.ts`](../src/application/run/runBracket.ts)는 최상위 실행의 공통 정책을 소유한다.
 
 1. 로그 correlation ID를 만들고 모델 실행이면 primary·fallback의 미등록 모델 정책을 검사한다.
-2. Agent 일간·월간 비용과 해당 user actor의 멤버 월간 상한을 검사한다.
+2. Agent 일간·월간 비용과 모든 출처의 Studio 사용자 월간 상한을 검사한다.
 3. 호출자별 DB lease 슬롯을 획득하고 in-flight 메트릭을 연다.
 4. `openRun`은 여기에 Agent·실행 주체가 묶인 Artifact recorder를 추가한다.
 5. 실행 경로가 사용량을 저장한 뒤 `close`가 메트릭을 닫고 슬롯을 해제하며 비용 임계값을 정산한다.
 
 Agent 실행 파사드는 `executeAgent`를 통해 `openRun`을 사용한다.
 오디오 전사는 `openModelCall`, Workspace 작업은 모델 없는 `openTaskRun`을 사용한다.
-Workspace native CLI의 사용량은 앱 SDK 모델 Usage와 별개다.
+Workspace native CLI는 서버 모델 Gateway를 통해 요청별 사용량을 같은 Usage에 기록한다.
+worker 재시작은 이미 시작한 operation을 관측하고 정산하며, 신규 operation에만 admission을 적용한다.
 
 거절된 실행은 실행 메트릭·Usage·Trace를 만들지 않는다. 비용·모델 정책의 설정 조회 장애는
-fail-open, 동시성 저장소 장애는 fail-closed다. user tier는 개인 예산과 동시성에 적용하고
-서비스 credential인 agent-token에는 개인 예산을 청구하지 않는다.
+fail-open, 개인 등급·사용량 및 동시성 저장소 장애는 fail-closed다. 모든 호출 경로는
+확인된 Studio 사용자 ID의 개인 예산과 동시성 상한을 공유한다.
 
 슬롯은 획득 토큰과 만료가 있는 DB 행이다. 해제도 토큰을 검사해 만료된 실행이 새 실행의 슬롯을
 지우지 못한다. 하위 Agent는 부모 브래킷 안에서 실행하되 대상의 현재 설정·순환·깊이·모델·
@@ -380,7 +384,7 @@ Agents·Plugins·Skills·Tools·Models·Artifacts 카탈로그는 행/그리드 
 너비에 맞춘 최대 4열 배치를 소유한다. 행의 반응형 배치도 본문 컨테이너 너비를 따른다.
 Agent 상세의 Playground·Integrations·Settings는 `AgentPageColumns.module.css`의 동일한
 7:5 가로 비율을 쓴다. Settings처럼 한 영역만 있는 페이지는 왼쪽 영역을 사용하고, 작은 화면에서는 전체 폭으로 쌓인다.
-Agent의 API 토큰·봇·Webhook·Schedules는 Integrations에서 관리하고, 공개 범위·비용 한도·기본 정보는 Settings에서 관리한다.
+본인의 Agent API 토큰과 Agent 소유자용 봇·Webhook·Schedules는 Integrations에서 관리하고, 공개 범위·비용 한도·기본 정보는 Settings에서 관리한다.
 외부에서 발급받는 키는 `SecretInput`으로 입력한다. 저장된 마스킹 값과 교체 초안을 분리하고,
 저장된 키는 앞뒤 4자를 드러낸 서버 마스크로 표시한다(8자 이하는 전부 숨긴다).
 교체를 눌러 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다.

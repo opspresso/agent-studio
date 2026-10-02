@@ -91,9 +91,6 @@ export const updateAgentSchema = z.object({
   departmentCode: z.string().max(64).optional(),
   costLimits: costLimitsSchema.nullable().optional(),
   visibility: z.enum(["public", "private"]).optional(),
-  // Replaces the stored invite list; normalization (trim, lowercase, dedupe,
-  // owner dropped) happens in the use case beside the rule that reads it.
-  memberEmails: z.array(z.string().trim().email()).max(200).optional(),
 });
 
 // Cron/timezone validity and which kind may carry which field are enforced in
@@ -105,7 +102,6 @@ const githubReviewSchema = z.discriminatedUnion("scope", [
 
 export const createTriggerSchema = z.object({
   githubReview: githubReviewSchema,
-  runAsOwner: z.boolean().optional(),
   triggerId: z
     .string()
     .refine(isSlug, `triggerId ${SLUG_RULE}`),
@@ -121,11 +117,9 @@ export const createTriggerSchema = z.object({
 
 export const updateTriggerSchema = z.object({
   githubReview: githubReviewSchema,
-  runAsOwner: z.boolean().optional(),
   description: z.string().optional(),
   enabled: z.boolean().optional(),
   allowConcurrent: z.boolean().optional(),
-  rotateSecret: z.boolean().optional(),
   cron: z.string().optional(),
   timezone: z.string().optional(),
   message: z.string().optional(),

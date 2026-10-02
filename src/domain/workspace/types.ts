@@ -1,5 +1,6 @@
+import type { RunSlot } from "../execution/runSlot";
 import type { CodingRepository, PullRequestInfo } from "@/domain/coding/types";
-import type { RunActor, ExecutionGrant } from "@/domain/execution/actor";
+import type { RunIdentity } from "@/domain/execution/actor";
 
 export const WORKSPACE_RUNTIMES = ["command", "codex", "claude", "opencode"] as const;
 export type WorkspaceRuntime = (typeof WORKSPACE_RUNTIMES)[number];
@@ -34,6 +35,8 @@ export interface Workspace {
   checkpointSession?: { nativeSessionId?: string };
   coding?: CodingRepository;
   pullRequest?: PullRequestInfo;
+  /** Caller whose GitHub grant created this PR and authorizes signed status refreshes. */
+  pullRequestUser?: RunIdentity["user"];
   /** Tombstone intent is durable before chat deletion and rejects new work. */
   deleteRequestedAt?: string;
   error?: string;
@@ -64,15 +67,14 @@ export type WorkspaceInput =
 
 export type WorkspaceRunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted";
 
-export interface WorkspaceRun {
+export interface WorkspaceRun extends RunIdentity {
+  /** Studio concurrency lease retained until the durable run reaches a terminal state. */
+  studioSlot?: RunSlot;
   id: string;
   workspaceId: string;
   sessionId: string;
   requestKey: string;
   input: WorkspaceInput;
-  /** The authenticated caller remains distinct from the Workspace's managing member. */
-  actor?: RunActor;
-  executionGrant?: ExecutionGrant;
   status: WorkspaceRunStatus;
   createdAt: string;
   startedAt?: string;

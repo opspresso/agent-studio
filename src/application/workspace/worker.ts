@@ -1,11 +1,12 @@
+import type { RunUser } from "@/domain/execution/actor";
 import type { SandboxProvider, WorkspaceCheckpointStore, WorkspaceRuntimeAdapter } from "@/domain/workspace/ports";
 import type { Sandbox, Workspace, WorkspaceRun } from "@/domain/workspace/types";
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunSlotPersistence } from "@/application/run/runBracket";
 import type { CodingWorktree } from "@/domain/coding/worktree";
 import { isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { assertAgentAccessible } from "@/application/agent/agentUseCases";
-import { RateLimitedError } from "@/application/errors";
+import { RateLimitedError, ValidationError } from "@/application/errors";
 import type { WorkspaceDeps } from "./workspaceUseCases";
 import { workspacePolicy } from "./workspaceUseCases";
 import { workspaceAllowsRepository } from "@/domain/workspace/policy";
@@ -17,12 +18,14 @@ import { WORKSPACE_SHELL } from "@/shared/workspaceShell";
 export interface WorkspaceWorkerDeps extends WorkspaceDeps {
   provider: SandboxProvider;
   checkpoints: WorkspaceCheckpointStore;
-  runtime(kind: Workspace["runtime"]): WorkspaceRuntimeAdapter | Promise<WorkspaceRuntimeAdapter>;
-  coding?: CodingWorktree;
+  runtime(kind: Workspace["runtime"], context?: { workspace: Workspace; run: WorkspaceRun }): WorkspaceRuntimeAdapter | Promise<WorkspaceRuntimeAdapter>;
+  coding?: (agentName: string, user: RunUser) => CodingWorktree;
   runTimeoutMs: number;
   /** Composition binds the execution facade, which opens the shared run bracket. */
-  execute(workspace: Workspace, work: () => Promise<boolean>, actor?: RunActor): Promise<void>;
+  execute(workspace: Workspace, work: (admit: () => Promise<void>) => Promise<boolean>, identity: WorkspaceRun, slot: RunSlotPersistence): Promise<void>;
+  releaseSlot?(run: WorkspaceRun): Promise<void>;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
+  settleModelCalls?(workspaceId: string, runId: string): Promise<string | undefined>;
   /** Bounded provider resource maintenance, bound to repository ownership at composition. */
   maintainSandboxes?: () => Promise<void>;
 }
@@ -35,7 +38,7 @@ async function sandboxFor(deps: WorkspaceWorkerDeps, workspace: Workspace): Prom
   return workspace.sandboxId ? deps.repository.sandbox(workspace.id, workspace.sandboxId) : null;
 }
 
-export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState): Promise<Sandbox> {
+export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, caller?: RunUser): Promise<Sandbox> {
   const { workspace, run } = await state.read();
   const previous = await sandboxFor(deps, workspace);
   const status = previous ? await state.effect(() => deps.provider.inspect(previous.externalId)) : "missing";
@@ -91,7 +94,9 @@ export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: W
   }
   let coding = workspace.coding;
   if (coding) {
-    const worktree = deps.coding;
+    const user = caller ?? run?.user;
+    if (!user) throw new ValidationError("Git preparation requires its authenticated caller");
+    const worktree = deps.coding?.(workspace.agentName, user);
     if (!worktree) throw new Error("Coding worktree adapter is not configured");
     const repository = coding;
     const prepared = await state.effect(() => worktree.prepare(sandbox.externalId, repository));
@@ -137,6 +142,8 @@ async function cleanupWorkspace(deps: WorkspaceWorkerDeps, state: WorkspaceWorke
     await state.effect(() => deps.provider.destroy(sandbox.externalId));
   }
   ({ workspace, run } = await state.read());
+  const accountingWarning = run ? await deps.settleModelCalls?.(workspace.id, run.id) : undefined;
+  if (accountingWarning && run) await state.save({}, { error: accountingWarning }, [{ kind: "warning", text: accountingWarning }]);
   if (workspace.deleteRequestedAt) await state.effect(() => deps.checkpoints.delete(workspace.id));
   const session = await deps.repository.session(workspace.id, workspace.sessionId);
   const status = workspace.status === "closing" ? "closed" : "suspended";
@@ -146,20 +153,29 @@ async function cleanupWorkspace(deps: WorkspaceWorkerDeps, state: WorkspaceWorke
   run && !isTerminalWorkspaceRun(run.status) ? [{ kind: "status", status: "cancelled", text: "Workspace closed" }] : [],
   { ...(sandbox ? { sandbox: { ...sandbox, status: "deleted", updatedAt: deps.now().toISOString() } } : {}),
     ...(session && !workspace.deleteRequestedAt ? { session: { ...session, updatedAt: deps.now().toISOString() } } : {}) });
+  if (run) await deps.releaseSlot?.(run);
 }
 
-async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, signal?: AbortSignal): Promise<void> {
+async function assertWorkspaceRuntimePolicy(deps: WorkspaceWorkerDeps, workspace: Workspace) {
+  const policy = await workspacePolicy(deps, workspace.agentName);
+  if (!policy.runtimes.includes(workspace.runtime) || (workspace.coding && !workspaceAllowsRepository(policy, workspace.coding.repository))) {
+    throw new Error("Workspace runtime or repository configuration changed");
+  }
+  return policy;
+}
+
+async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, admit: () => Promise<void>, signal?: AbortSignal): Promise<void> {
   let { workspace, run } = await state.read();
   if (!run) throw new Error("Workspace active run is missing");
   if (run.cancelRequestedAt && !run.phase) {
     await finishRun(deps, state, "cancelled", "Stopped by user");
     return;
   }
-  await assertAgentAccessible(deps.agents, workspace.agentName, workspace.ownerEmail);
-  await deps.authorize?.(workspace.agentName, workspace.ownerEmail, run.actor, run.executionGrant);
-  const policy = await workspacePolicy(deps, workspace.agentName);
-  if (!policy.runtimes.includes(workspace.runtime) || (workspace.coding && !workspaceAllowsRepository(policy, workspace.coding.repository))) {
-    throw new Error("Workspace runtime or repository configuration changed");
+  if (!run.phase) {
+    await assertAgentAccessible(deps.agents, workspace.agentName, workspace.ownerEmail);
+    await deps.authorize?.(workspace.agentName, workspace.ownerEmail, run.actor, run.executionGrant, run.user);
+    await assertWorkspaceRuntimePolicy(deps, workspace);
+    await admit();
   }
   if (!run.startedAt) {
     const session = await deps.repository.session(workspace.id, workspace.sessionId);
@@ -192,13 +208,14 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     const session = await deps.repository.session(workspace.id, workspace.sessionId);
     if (!session) throw new Error("Workspace native session metadata is missing");
     if (!run.phase) {
+      const policy = await workspacePolicy(deps, workspace.agentName);
       const checks = policy.checks.map(check => ({ ...check, status: "pending" as const, output: "" }));
       await state.save({}, { phase: "runtime", operationId: run.id, outputOffset: 0, protocolBuffer: "", checks });
       continue;
     }
     if (run.phase === "checkpoint") {
       if (workspace.coding && deps.coding) {
-        const review = await state.effect(() => deps.coding!.review(sandbox.externalId));
+        const review = await state.effect(() => deps.coding!(workspace.agentName, run!.user).review(sandbox.externalId));
         const diff = boundedWorkspaceText(review.diff, WORKSPACE_LIMITS.diffBytes);
         await state.save({}, { diff: diff.text, diffTruncated: review.truncated || diff.truncated },
           boundWorkspaceEvent({ kind: "diff", text: diff.text, truncated: review.truncated || diff.truncated }));
@@ -219,11 +236,18 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     const operationId = run.operationId!;
     let operation = await state.effect(() => deps.provider.operation(sandbox.externalId, operationId));
     if (operation.status === "not-started") {
-      const command = check ? { argv: [...WORKSPACE_SHELL], stdin: check.command, timeoutMs: Math.max(1, Math.floor(remaining)) }
-        : runtime.command(workspace, session, workspaceTaskInput(workspace, run.input), Math.max(1, Math.floor(remaining)));
       const current = await state.read();
       if (current.run?.id !== run.id) throw new WorkspaceLeaseLost();
       if (current.run.cancelRequestedAt || current.workspace.status === "closing") continue;
+      await deps.authorize?.(current.workspace.agentName, current.workspace.ownerEmail,
+        current.run.actor, current.run.executionGrant, current.run.user);
+      await assertWorkspaceRuntimePolicy(deps, workspace);
+      if (!check) await admit();
+      const prepared = check ? undefined : await deps.runtime(workspace.runtime, { workspace: current.workspace, run: current.run });
+      const command = check ? { argv: [...WORKSPACE_SHELL], stdin: check.command, timeoutMs: Math.max(1, Math.floor(remaining)) }
+        : prepared!.command(workspace, session, workspaceTaskInput(workspace, run.input), Math.max(1, Math.floor(remaining)));
+      await deps.authorize?.(current.workspace.agentName, current.workspace.ownerEmail,
+        current.run.actor, current.run.executionGrant, current.run.user);
       await state.effect(() => deps.provider.start(sandbox.externalId, operationId, command));
       operation = await state.effect(() => deps.provider.operation(sandbox.externalId, operationId));
     }
@@ -244,7 +268,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
       ? { session: { ...session, nativeSessionId: folded.nativeSessionId, updatedAt: deps.now().toISOString() } } : {};
     let patch = folded.patch;
     if (workspace.coding && deps.coding && deps.now().getTime() >= nextReview) {
-      const review = await state.effect(() => deps.coding!.review(sandbox.externalId));
+      const review = await state.effect(() => deps.coding!(workspace.agentName, run!.user).review(sandbox.externalId));
       const diff = boundedWorkspaceText(review.diff, WORKSPACE_LIMITS.diffBytes);
       patch = { ...patch, diff: diff.text, diffTruncated: review.truncated || diff.truncated };
       events.push(...boundWorkspaceEvent({ kind: "diff", text: diff.text, truncated: review.truncated || diff.truncated }));
@@ -268,12 +292,16 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
 }
 
 async function finishRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, status: WorkspaceRun["status"], error?: string): Promise<void> {
-  const { workspace } = await state.read();
+  const { workspace, run } = await state.read();
+  const warning = run ? await deps.settleModelCalls?.(workspace.id, run.id) : undefined;
+  if (warning && status === "succeeded") status = "failed";
+  if (warning) error = error ? error + "; " + warning : warning;
   const session = await deps.repository.session(workspace.id, workspace.sessionId);
   await state.save({ activeRunId: undefined, leaseToken: undefined, leaseUntil: undefined, error,
     dueAt: new Date(deps.now().getTime() + workspace.idleTtlSeconds * 1000).toISOString() },
   { status, finishedAt: deps.now().toISOString(), error, protocolBuffer: "" }, [{ kind: "status", status, ...(error ? { text: error } : {}) }],
   session ? { session: { ...session, updatedAt: deps.now().toISOString() } } : {});
+  if (run) await deps.releaseSlot?.(run);
 }
 
 /** A lost worker adopts the persisted native handle; it never starts an uncertain operation again. */
@@ -303,11 +331,14 @@ async function processClaimedWorkspace(deps: WorkspaceWorkerDeps, state: Workspa
       ({ workspace } = await state.read());
     }
     if (workspace.status === "closing" || workspace.status === "suspending") await cleanupWorkspace(deps, state);
-    else await deps.execute(workspace, async () => {
-      await executeRun(deps, state, signal);
-      const finished = workspace.activeRunId ? await deps.repository.run(workspace.id, workspace.activeRunId) : null;
-      return finished?.status === "failed" || finished?.status === "interrupted";
-    }, run?.actor);
+    else {
+      if (!run?.user?.userId || run.user.email !== workspace.ownerEmail || !run.actor?.id) throw new ValidationError("Workspace task has no authenticated caller");
+      await deps.execute(workspace, async admit => {
+        await executeRun(deps, state, admit, signal);
+        const finished = workspace.activeRunId ? await deps.repository.run(workspace.id, workspace.activeRunId) : null;
+        return finished?.status === "failed" || finished?.status === "interrupted";
+      }, run, { slot: run.studioSlot, acquired: async slot => { await state.save({}, { studioSlot: slot }); } });
+    }
   } catch (error) {
     if (error instanceof WorkspaceLeaseLost) return true;
     const { workspace, run } = await state.read();
@@ -316,8 +347,9 @@ async function processClaimedWorkspace(deps: WorkspaceWorkerDeps, state: Workspa
       return true;
     }
     if (error instanceof RateLimitedError) {
+      const retryAt = deps.now().getTime() + error.retryAfterSeconds * 1000;
       await state.save({ leaseToken: undefined, leaseUntil: undefined,
-        dueAt: new Date(deps.now().getTime() + error.retryAfterSeconds * 1000).toISOString() });
+        dueAt: new Date(run?.startedAt ? Math.min(retryAt, Date.parse(run.startedAt) + deps.runTimeoutMs) : retryAt).toISOString() });
       return true;
     }
     const message = boundedWorkspaceText(error instanceof Error ? error.message : "Workspace operation failed", WORKSPACE_LIMITS.errorBytes).text;

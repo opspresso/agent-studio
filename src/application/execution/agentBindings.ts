@@ -16,7 +16,7 @@ import { buildFileSaver } from "./saveFileTool";
 import { buildSlackReader } from "./slackTool";
 import { closeMcp } from "./mcpTools";
 import { callerFor, runClock, toEngineParameters, type ExecutionDeps } from "./deps";
-import { executionGrantCheck } from "./executionGrant";
+import { executionAuthorization } from "./executionAuthorization";
 
 export const MAX_SUBAGENT_DEPTH = 5;
 
@@ -32,7 +32,7 @@ export async function buildAgentDeps(
   if (modelRoutingPolicy) runtime?.checkBinding(MODEL_ROUTING_POLICY_BINDING, modelRoutingPolicyFingerprint(modelRoutingPolicy, await deps.callRouting?.selectedDecisionModel()));
   const common = { channel: deps.channel, callRouting: routingConfigured ? deps.callRouting : undefined,
     ...(deps.reviewSource ? { reviewSource: deps.reviewSource } : {}),
-    authorizeTools: executionGrantCheck(deps, origin.executionGrant),
+    authorizeExecution: executionAuthorization(deps, agentName, origin),
     modelRoutingPolicy,
     createToolSchemaValidator: deps.createToolSchemaValidator, recordUsage, loadSkillContent: buildSkillLoader(createSkillReader(deps)) };
   if (origin.backgroundTask) return { ...common, workspaceTool: configuration.parameters.workspaceTools ? deps.reviewWorkspace : undefined };
@@ -60,7 +60,7 @@ export async function prepareSubagent(
   runtime?: RuntimeTurnPersistence,
 ): Promise<PreparedAgent> {
   task.signal?.throwIfAborted();
-  await executionGrantCheck(deps, parentOrigin.executionGrant)?.();
+  await executionAuthorization(deps, name, parentOrigin)();
   const ref = parent.subagentList?.find((entry) => entry.name === name);
   if (!ref) throw new ValidationError(`Agent '${name}' is not connected to the current Agent settings`);
   if (parentOrigin.ancestry.includes(name)) throw new ValidationError(`Delegating to '${name}' would create a cycle`);

@@ -13,7 +13,7 @@ const guest = query.get("role") === "guest";
 const Page = query.get("page") === "profile" ? Profile : query.get("page") === "members" ? Members : Audits;
 createRoot(document.getElementById("root")!).render(
   <MantineProvider theme={theme}><I18nProvider locale="en">
-    <ViewerProvider viewer={{ email: "viewer@example.test", isAdmin: !guest, isConfiguredAdmin: !guest, tier: guest ? "guest" : "admin" }}>
+    <ViewerProvider viewer={{ email: "viewer@example.test", isAdmin: !guest, tier: guest ? "guest" : "admin" }}>
       <main style={{ padding: 16 }}><Page /></main>
     </ViewerProvider>
   </I18nProvider></MantineProvider>,

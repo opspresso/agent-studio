@@ -1,10 +1,10 @@
-import type { RunCaller } from "@/domain/execution/actor";
+import type { RunCaller, RunUser } from "@/domain/execution/actor";
 import { randomUUID } from "node:crypto";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
 import { chatConversation } from "@/domain/chat/conversation";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatValidationError } from "./errors";
-import { userMayAccessAgent } from "@/application/agent/agentUseCases";
+import { mayAccessAgent } from "@/domain/agent/access";
 import {
   runAndPersist,
   readMessageDocuments,
@@ -22,7 +22,7 @@ export interface CreateChatInput {
   /** Images the user attached to the first message. */
   images?: AttachedImage[];
   documents?: AttachedDocumentInput[];
-  userEmail: string;
+  user: RunUser;
   /** The owner in words, for an Agent that opted into `callerContext`. */
   caller?: RunCaller;
   signal?: AbortSignal;
@@ -65,7 +65,7 @@ export async function createChat(
   if (!agent) {
     throw new ChatValidationError(`agent not found: ${input.agentName}`);
   }
-  if (!(await userMayAccessAgent(agent, input.userEmail))) {
+  if (!mayAccessAgent(agent, input.user.email)) {
     throw new ChatForbiddenError(`agent "${agent.name}" is private`);
   }
 
@@ -79,7 +79,7 @@ export async function createChat(
   const chat: Chat = {
     chatId: randomUUID(),
     title: titleFromMessage(input.firstMessage),
-    ownerEmail: input.userEmail,
+    ownerEmail: input.user.email,
     agentName: agent.name,
     createdAt: now,
     updatedAt: now,
@@ -91,13 +91,13 @@ export async function createChat(
     const attachments = input.images ?? [];
     const uploaded = await storeAttachedImages(
       deps,
-      { agentName: agent.name, actor: { kind: "user", id: input.userEmail } },
+      { agentName: agent.name, actor: { kind: "user", id: input.user.email } },
       attachments,
     );
     const documentInput = input.documents ?? [];
     const read = await readMessageDocuments(deps, {
       agentName: agent.name,
-      actor: { kind: "user", id: input.userEmail },
+      actor: { kind: "user", id: input.user.email },
     }, documentInput);
     const userSeq = await deps.chats.reserveMessageSeq(chat.chatId);
     const userMessage: ChatMessage = {
@@ -112,13 +112,14 @@ export async function createChat(
     await deps.chats.appendMessage(userMessage);
 
     const source = deps.runAgent({
+      user: input.user,
       agent,
       configuration,
       // Inline bytes enter the SDK Session; stored keys serve the display record.
       messages: [
         { role: "user", content: userTurnContent(input.firstMessage, attachments, read.stored) },
       ],
-      actor: { kind: "user", id: input.userEmail },
+      actor: { kind: "user", id: input.user.email },
       ...(input.caller ? { caller: input.caller } : {}),
       // The chat is the conversation. Its id is this platform's own, so it needs
       // no normalising — but it goes through the one builder all the same.

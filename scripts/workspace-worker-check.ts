@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { assertLocalDatabase } from "./local-database";
 import type { WorkspaceWorkerDeps } from "@/application/workspace/worker";
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunActor, RunUser } from "@/domain/execution/actor";
 import { CoreV1Api, KubeConfig } from "@kubernetes/client-node";
 import { createKubernetesSandboxBackend } from "@/infrastructure/workspace/kubernetesProvider";
 
@@ -54,14 +54,17 @@ async function main() {
   let workspaceId: string | undefined;
   const containers = new Set<string>();
   const actor: RunActor = { kind: "agent-token", id: ownerEmail };
-  const executedActors: Array<RunActor | undefined> = [];
+  const user = { userId: "studio-user-1", email: ownerEmail };
+  const executionGrant = { ...user, kind: "agent-token" as const, agentName, credentialId: "worker-fixture" };
+  const executedActors: RunActor[] = [];
+  const executedUsers: RunUser[] = [];
   const deps: WorkspaceWorkerDeps = {
     repository, chats, agents, provider: { ...provider, ensure: async id => {
       const result = await provider.ensure(id); containers.add(result.externalId); return result;
     } }, checkpoints, now: () => new Date(Date.now() + offset), newId: randomUUID, idleTtlSeconds: 60, runTimeoutMs: 60_000,
     policy: () => ({ agentName, runtimes: ["command"], checks: [{ name: "test", command: "test -s executions.txt" }], deploymentWorkflows: [] }),
     runtime: kind => createWorkspaceRuntimeAdapter(kind),
-    execute: (workspace, work, caller) => { executedActors.push(caller); return executeWorkspaceTask({ usage }, agents, workspace, work, caller); },
+    execute: (workspace, work, identity) => { executedActors.push(identity.actor); executedUsers.push(identity.user); return executeWorkspaceTask({ usage, resolveUserLimits: async () => ({}) }, agents, workspace, work, identity); },
     sleep: async (ms, signal) => { await delay(ms, undefined, { signal }); },
   };
   const api = createWorkspaceUseCases(deps);
@@ -69,9 +72,9 @@ async function main() {
     await agents.create({ name: agentName, displayName: "Workspace worker check", description: "", ownerEmail,
       createdAt: at, updatedAt: at });
     await chats.create({ chatId, agentName, title: "Workspace worker check", ownerEmail, createdAt: at, updatedAt: at });
-    const workspace = await api.create({ chatId, agentName, title: "General work", runtime: "command" }, ownerEmail);
+    const workspace = await api.create({ chatId, agentName, title: "General work", runtime: "command" }, user);
     workspaceId = workspace.id;
-    const first = await api.enqueue(workspace.id, ownerEmail, { kind: "command", script: "printf once >> executions.txt; sleep 1; printf complete" }, "worker-request-0001", actor);
+    const first = await api.enqueue(workspace.id, user, { kind: "command", script: "printf once >> executions.txt; sleep 1; printf complete" }, "worker-request-0001", actor, executionGrant);
     const stopping = new AbortController();
     const interrupted: WorkspaceWorkerDeps = { ...deps, provider: { ...deps.provider, start: async (...args) => {
       await provider.start(...args);
@@ -84,6 +87,7 @@ async function main() {
     assert.equal(resumed?.status, "succeeded", resumed?.error ?? "Workspace task did not succeed");
     assert.deepEqual((await repository.run(workspace.id, first.id))?.actor, actor);
     assert.deepEqual(executedActors, [actor, actor], "worker restart keeps the original integration actor");
+    assert.deepEqual(executedUsers, [first.user, first.user], "worker restart keeps the authenticated Studio user");
     let current = (await repository.get(workspace.id))!;
     let sandbox = (await repository.sandbox(workspace.id, current.sandboxId!))!;
     const read = () => provider.execute(sandbox.externalId, { argv: ["cat", "executions.txt"], timeoutMs: 5000 });
@@ -91,17 +95,17 @@ async function main() {
     assert.ok(current.checkpointId);
     assert.equal((await repository.run(workspace.id, first.id))?.checks[0]?.status, "passed");
 
-    const second = await api.enqueue(workspace.id, ownerEmail, { kind: "command", script: "printf twice >> executions.txt" }, "worker-request-0002");
+    const second = await api.enqueue(workspace.id, { userId: "studio-user-1", email: ownerEmail }, { kind: "command", script: "printf twice >> executions.txt" }, "worker-request-0002");
     await processWorkspace(deps, workspace.id);
     assert.equal((await read()).stdout, "oncetwice");
     assert.equal((await repository.run(workspace.id, second.id))?.sessionId, first.sessionId);
-    assert.equal(executedActors.at(-1), undefined, "a console follow-up does not inherit the previous integration actor");
+    assert.deepEqual(executedActors.at(-1), { kind: "user", id: ownerEmail }, "a console follow-up retains its own explicit actor");
     const oldContainer = sandbox.externalId;
     offset += 61_000;
     await processWorkspace(deps, workspace.id);
     assert.equal(await provider.inspect(oldContainer), "missing");
     assert.equal((await repository.get(workspace.id))?.status, "suspended");
-    const third = await api.enqueue(workspace.id, ownerEmail, { kind: "command", script: "printf restored >> executions.txt" }, "worker-request-0003");
+    const third = await api.enqueue(workspace.id, { userId: "studio-user-1", email: ownerEmail }, { kind: "command", script: "printf restored >> executions.txt" }, "worker-request-0003");
     await processWorkspace(deps, workspace.id);
     current = (await repository.get(workspace.id))!;
     sandbox = (await repository.sandbox(workspace.id, current.sandboxId!))!;

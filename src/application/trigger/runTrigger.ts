@@ -14,23 +14,26 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
+import { resolveRunUser } from "@/application/auth/resolveRunUser";
+import { assertWebhookExecutionGrant } from "@/application/auth/webhookAuthorization";
 import { cutCodePoints } from "@/shared/utf8Text";
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunActor, WebhookExecutionGrant } from "@/domain/execution/actor";
 import { collectedWarning, isTopLevelChunk, runTermination, type RunTerminationReason } from "@/domain/llm/types";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import {
   AGENT_WEBHOOK_ID,
   type ScheduleDeliveryResult,
+  type ScheduleTrigger,
   type Trigger,
   type TriggerRun,
   type WebhookTrigger,
 } from "@/domain/trigger/types";
-import { triggerSecretContext } from "@/domain/security/secretContext";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
 import { repairTriggerRuns } from "./repairLostRuns";
 import type { FiringDeps, TriggerRunnerDeps } from "./deps";
-import { verifyGitHubSignature, isGitHubDeliveryId } from "@/shared/githubWebhook";
+import { isGitHubDeliveryId } from "@/shared/githubWebhook";
 import { holdQueuedFiring, queueLeaseUntil } from "./queuedFiring";
 import { selectPullRequestReview, type PullRequestReviewTarget } from "@/domain/trigger/pullRequestReview";
 import { preparePullRequestReview, type ReviewPublication } from "./reviewPullRequest";
@@ -49,18 +52,21 @@ export interface AdmittedFiring<T extends Trigger = Trigger> extends RunningFiri
   trigger: T;
   agent: Agent;
   configuration: AgentConfiguration;
+  executionGrant?: WebhookExecutionGrant;
   /** Queued schedules fence their owner and record the real start before any effects. */
   start?: () => Promise<boolean>;
 }
 
 /** The webhook case, which is what `executeDelivery` takes. */
 export type AdmittedDelivery = AdmittedFiring<WebhookTrigger> & {
+  executionGrant: WebhookExecutionGrant;
   github?: { event: string; deliveryId: string };
   reviewTarget?: PullRequestReviewTarget;
 };
 
 export interface GitHubDeliveryCredential {
   kind: "github";
+  credentialId: string | null;
   signature: string | null;
   body: string;
   deliveryId: string | null;
@@ -81,32 +87,6 @@ export type AdmitResult =
   | { status: "busy" }
   | { status: "no-configuration" };
 
-function triggerSecretMatches(
-  deps: TriggerRunnerDeps,
-  trigger: WebhookTrigger,
-  candidate: string | GitHubDeliveryCredential,
-  agentName: string,
-  triggerId: string,
-): boolean {
-  try {
-    if (typeof candidate !== "string") return verifyGitHubSignature(
-      deps.cipher.decrypt(trigger.secret, triggerSecretContext(agentName, triggerId)), candidate.body, candidate.signature,
-    );
-    return deps.cipher.decryptEquals(
-      trigger.secret,
-      candidate,
-      triggerSecretContext(agentName, triggerId),
-    );
-  } catch (error) {
-    log.error(
-      "trigger",
-      `secret of trigger '${agentName}/${triggerId}' cannot be decrypted:`,
-      error instanceof Error ? error.message : String(error),
-    );
-    return false;
-  }
-}
-
 /** The actor a firing is attributed to; the trigger kind is the actor kind. */
 export function triggerActor(
   trigger: Pick<Trigger, "kind" | "agentName" | "triggerId">,
@@ -116,10 +96,28 @@ export function triggerActor(
 
 const EXECUTION_USER_UNAUTHORIZED = "The trigger execution user is no longer authorized.";
 
-async function executionUserAllowed(deps: FiringDeps, trigger: Trigger, agent: Agent): Promise<boolean> {
-  if (!trigger.executionEmail) return true;
-  return trigger.executionEmail === agent.ownerEmail && !!deps.executionUserActive &&
-    await deps.executionUserActive(trigger.executionEmail);
+async function executionUserAllowed(deps: FiringDeps, trigger: Trigger, grant?: WebhookExecutionGrant): Promise<boolean> {
+  try {
+    if (trigger.kind === "schedule") {
+      await resolveRunUser(deps, trigger.agentName, trigger.createdBy.userId);
+    } else {
+      if (!grant || grant.agentName !== trigger.agentName || grant.triggerId !== trigger.triggerId) return false;
+      await assertWebhookExecutionGrant(deps, grant);
+    }
+    return true;
+  } catch (error) {
+    if (error instanceof ForbiddenError || error instanceof NotFoundError || error instanceof ValidationError) return false;
+    throw error;
+  }
+}
+
+async function resolveScheduleUser(deps: FiringDeps, schedule: ScheduleTrigger) {
+  const current = await deps.triggers.get(schedule.agentName, schedule.triggerId);
+  if (!current?.enabled || current.kind !== "schedule" ||
+    current.createdBy.userId !== schedule.createdBy.userId || current.updatedAt !== schedule.updatedAt) {
+    throw new ForbiddenError("The schedule changed before execution completed");
+  }
+  return resolveRunUser(deps, schedule.agentName, schedule.createdBy.userId);
 }
 
 /** The overlap lease's key. Distinct from the actor's own slot partition. */
@@ -129,6 +127,7 @@ function overlapKey(agentName: string, triggerId: string): string {
 
 /** What a firing row carries beyond its outcome: how it was deduplicated. */
 interface FiringExtra {
+  userId?: string;
   idempotencyKey?: string;
   scheduledFor?: string;
   review?: TriggerRun["review"];
@@ -174,15 +173,13 @@ export async function admitDelivery(
     // agent with no webhook is the only safe reading of one that is wrong.
     return { status: "not-configured" };
   }
-  // The secret is checked before anything else observable happens, and in
-  // constant time — a disabled trigger must not answer differently to a wrong
-  // secret than an enabled one would.
-  if (
-    !presentedSecret ||
-    !triggerSecretMatches(deps, trigger, presentedSecret, agentName, AGENT_WEBHOOK_ID)
-  ) {
-    return { status: "unauthorized" };
-  }
+  if (!presentedSecret) return { status: "unauthorized" };
+  const user = await (typeof presentedSecret === "string"
+    ? deps.webhookCredentials.verify(agentName, presentedSecret)
+    : deps.webhookCredentials.verifySignature(agentName, presentedSecret.credentialId ?? "", presentedSecret.body, presentedSecret.signature))
+    .catch(error => { if (error instanceof ForbiddenError) return null; throw error; });
+  if (!user) return { status: "unauthorized" };
+  const executionGrant: WebhookExecutionGrant = { ...user, kind: "webhook", agentName, triggerId: AGENT_WEBHOOK_ID };
   const github = typeof presentedSecret === "object" ? presentedSecret : undefined;
   if (trigger.githubReview && !github) return { status: "unauthorized" };
   if (github && (!isGitHubDeliveryId(github.deliveryId) || !github.event || !/^[a-z_]{1,80}$/.test(github.event))) {
@@ -208,12 +205,12 @@ export async function admitDelivery(
   let reviewAgent: Agent | null | undefined;
   if (reviewTarget) {
     reviewAgent = await deps.agents.get(agentName);
-    let reason = reviewAgent ? reviewSetupIssue(trigger, reviewAgent) : "Agent not found.";
+    let reason = reviewAgent ? reviewSetupIssue(reviewAgent) : "Agent not found.";
     if (!reason && (!deps.reviewForge || !deps.openReviewWorkspace)) reason = "PR review requires configured GitHub and Workspace integrations.";
-    if (!reason && reviewAgent && !await executionUserAllowed(deps, trigger, reviewAgent)) reason = EXECUTION_USER_UNAUTHORIZED;
+    if (!reason && reviewAgent && !await executionUserAllowed(deps, trigger, executionGrant)) reason = EXECUTION_USER_UNAUTHORIZED;
     if (reason) {
       log.warn("trigger", "PR review setup is incomplete", { agentName, triggerId: trigger.triggerId, ...reviewTarget, reason });
-      await recordSkip(deps, trigger, { review: { ...reviewTarget, status: "skipped", reason } }, reason);
+      await recordSkip(deps, trigger, { userId: user.userId, review: { ...reviewTarget, status: "skipped", reason } }, reason);
       return { status: "review-not-ready", reason };
     }
   }
@@ -221,15 +218,17 @@ export async function admitDelivery(
     const claimed = await deps.triggers.claimIdempotencyKey(
       agentName,
       AGENT_WEBHOOK_ID,
-      idempotencyKey,
+      github ? idempotencyKey : JSON.stringify([user.userId, idempotencyKey]),
     );
     if (!claimed) {
       return { status: "duplicate" };
     }
   }
-  const admitted = await admitRun(deps, trigger, idempotencyKey ? { idempotencyKey } : {}, { agent: reviewAgent });
-  return admitted.status === "accepted" && github
-    ? { ...admitted, github: { event: github.event!, deliveryId: github.deliveryId! }, ...(reviewTarget ? { reviewTarget } : {}) } : admitted;
+  const admitted = await admitRun(deps, trigger, { userId: user.userId, ...(idempotencyKey ? { idempotencyKey } : {}) }, { agent: reviewAgent, executionGrant });
+  return admitted.status === "accepted"
+    ? { ...admitted, executionGrant, ...(github ? { github: { event: github.event!, deliveryId: github.deliveryId! } } : {}), ...(reviewTarget ? { reviewTarget } : {}) }
+    : admitted;
+
 }
 
 /**
@@ -240,7 +239,7 @@ export async function admitRun<T extends Trigger>(
   deps: FiringDeps,
   trigger: T,
   extra: FiringExtra,
-  options: { queued?: boolean; agent?: Agent | null } = {},
+  options: { queued?: boolean; agent?: Agent | null; executionGrant?: WebhookExecutionGrant } = {},
 ): Promise<
   | AdmittedFiring<T>
   | { status: "not-configured" }
@@ -257,7 +256,7 @@ export async function admitRun<T extends Trigger>(
     return { status: "not-configured" };
   }
   // Recheck the configured execution user's access before using current settings.
-  if (!await executionUserAllowed(deps, trigger, agent)) {
+  if (!await executionUserAllowed(deps, trigger, options.executionGrant)) {
     await recordSkip(deps, trigger, extra, EXECUTION_USER_UNAUTHORIZED);
     return { status: "not-configured" };
   }
@@ -301,6 +300,7 @@ export async function admitRun<T extends Trigger>(
   const run: TriggerRun = {
     agentName: trigger.agentName,
     triggerId: trigger.triggerId,
+    ...(trigger.kind === "schedule" ? { userId: trigger.createdBy.userId } : options.executionGrant ? { userId: options.executionGrant.userId } : {}),
     runId: randomUUID(),
     status: queued ? "queued" : "running",
     ...(extra.idempotencyKey ? { idempotencyKey: extra.idempotencyKey } : {}),
@@ -315,7 +315,7 @@ export async function admitRun<T extends Trigger>(
     await release();
     throw error;
   }
-  const firing: AdmittedFiring<T> = { status: "accepted", runId: run.runId, trigger, agent, configuration, run, release };
+  const firing: AdmittedFiring<T> = { status: "accepted", runId: run.runId, trigger, agent, configuration, run, release, ...(options.executionGrant ? { executionGrant: options.executionGrant } : {}) };
   if (queued) holdQueuedFiring(deps, firing, renewSlot);
   else holdRunningFiring(deps, firing, renewSlot);
   return firing;
@@ -338,6 +338,7 @@ export async function recordSkip(
       ...(extra.idempotencyKey ? { idempotencyKey: extra.idempotencyKey } : {}),
       ...(extra.scheduledFor ? { scheduledFor: extra.scheduledFor } : {}),
       ...(extra.review ? { review: extra.review } : {}),
+      ...(extra.userId ? { userId: extra.userId } : {}),
       startedAt: now,
       endedAt: now,
       error: reason,
@@ -359,7 +360,7 @@ export async function executeDelivery(
     try {
       await admitted.check?.();
       if (admitted.reviewTarget) {
-        const prepared = await preparePullRequestReview(deps, admitted.agent.name, admitted.trigger.triggerId,
+        const prepared = await preparePullRequestReview(deps, admitted.executionGrant,
           admitted.configuration, admitted.reviewTarget, admitted.check);
         if (prepared.status === "skipped") {
           await settleFiring(admitted, { skipped: true, text: prepared.reason,
@@ -434,20 +435,17 @@ export async function executeFiring(
   let produced = 0;
   try {
     await admitted.check?.();
-    if (trigger.executionEmail) {
-      const current = await deps.agents.get(agent.name);
-      const currentTrigger = await deps.triggers.get(agent.name, trigger.triggerId);
-      if (!current || !currentTrigger?.enabled || currentTrigger.kind !== trigger.kind ||
-        currentTrigger.executionEmail !== trigger.executionEmail || !await executionUserAllowed(deps, currentTrigger, current)) {
-        throw new Error(EXECUTION_USER_UNAUTHORIZED);
-      }
-    }
+    const user = trigger.kind === "schedule" ? await resolveScheduleUser(deps, trigger) : admitted.executionGrant;
+    if (!user || (trigger.kind === "webhook" && !await executionUserAllowed(deps, trigger, admitted.executionGrant))) throw new Error(EXECUTION_USER_UNAUTHORIZED);
     for await (const chunk of deps.run({
       agent,
       configuration,
       ...input,
       actor: triggerActor(trigger),
-      ...(trigger.executionEmail ? { userEmail: trigger.executionEmail } : {}),
+      user: { userId: user.userId, email: user.email }, userEmail: user.email,
+      executionGrant: trigger.kind === "schedule"
+        ? { ...user, kind: "schedule", agentName: trigger.agentName, triggerId: trigger.triggerId, revision: trigger.updatedAt }
+        : admitted.executionGrant!,
       ...(admitted.signal ? { signal: admitted.signal } : {}),
     })) {
       admitted.signal?.throwIfAborted();
@@ -513,6 +511,7 @@ export async function executeFiring(
                 throw new Error("Schedule report delivery is unavailable");
               }
               await admitted.check?.();
+              await resolveScheduleUser(deps, trigger);
               await deps.deliverReport(agent, delivery, report);
               return { kind: delivery.kind, status: "sent" };
             } catch (caught) {

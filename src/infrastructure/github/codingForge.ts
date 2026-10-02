@@ -81,7 +81,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     if (!isRepositoryName(repository)) throw new Error("Invalid coding repository");
     if (config.getToken) {
       const value = await config.getToken();
-      if (!value || /[\r\n]/.test(value)) throw new Error("Workspace GitHub account token is not configured");
+      if (!value || /[\r\n]/.test(value)) throw new Error("Agent GitHub MCP credential is not configured");
       return { token: value, expiresAt: "" };
     }
     return appToken(permissions, [repository.split("/")[1]!]);
@@ -197,7 +197,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       try { branches = await request<{ name: string }[]>(`${path}/branches?per_page=1`, access.token); }
       catch (error) {
         if (error instanceof GitHubReadError && [401, 403, 404].includes(error.status)) {
-          throw new CodingRepositoryNotReadyError("unavailable", `Repository ${repository} is missing or inaccessible to the Workspace GitHub account (HTTP ${error.status}). The allowlist does not create repositories. Check repository access; if the user requested a new repository, create and initialize it before starting Workspace work.`);
+          throw new CodingRepositoryNotReadyError("unavailable", `Repository ${repository} is missing or inaccessible to this Agent's GitHub MCP account (HTTP ${error.status}). The allowlist does not create repositories. Check repository access; if the user requested a new repository, create and initialize it before starting Workspace work.`);
         }
         throw error;
       }

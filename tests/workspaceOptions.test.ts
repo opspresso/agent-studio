@@ -31,16 +31,16 @@ describe("Workspace options", () => {
     });
     const options = createWorkspaceOptionsUseCase({
       listAccessible, policies: { get: readPolicy }, runtimes: async () => ["command", "codex"],
-      backendReady: () => true, gitEnabled: () => true,
+      backendReady: () => true, gitEnabled: async agent => agent.name === "p0",
     });
 
     const result = await options("owner@example.test");
     expect(listAccessible).toHaveBeenCalledExactlyOnceWith("owner@example.test");
     expect(readPolicy).toHaveBeenCalledTimes(10);
     expect(result.agents.map((item) => item.agentName)).toEqual(agents.slice(0, 10).map((item) => item.name));
-    expect(result.agents[0]).toMatchObject({ defaultRuntime: "codex", mode: "selected", repositories: ["org/repo"] });
-    expect(result.agents[1]).toMatchObject({ defaultRuntime: "command", mode: "new", repositories: [] });
-    expect(result).toMatchObject({ enabled: true, gitEnabled: true });
+    expect(result.agents[0]).toMatchObject({ defaultRuntime: "codex", mode: "selected", repositories: ["org/repo"], gitEnabled: true });
+    expect(result.agents[1]).toMatchObject({ defaultRuntime: "command", mode: "new", repositories: [], gitEnabled: false });
+    expect(result).toMatchObject({ enabled: true });
     expect(peak).toBeGreaterThan(1);
     expect(peak).toBeLessThanOrEqual(8);
   });
@@ -50,9 +50,9 @@ describe("Workspace options", () => {
     const readPolicy = vi.fn(async () => null);
     const options = createWorkspaceOptionsUseCase({
       listAccessible, policies: { get: readPolicy }, runtimes: async () => ["command"],
-      backendReady: () => false, gitEnabled: () => false,
+      backendReady: () => false, gitEnabled: async () => false,
     });
-    expect(await options("owner@example.test")).toEqual({ enabled: false, gitEnabled: false, agents: [] });
+    expect(await options("owner@example.test")).toEqual({ enabled: false, agents: [] });
     expect(listAccessible).not.toHaveBeenCalled();
     expect(readPolicy).not.toHaveBeenCalled();
   });

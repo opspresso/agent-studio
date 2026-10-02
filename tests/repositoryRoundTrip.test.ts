@@ -152,16 +152,14 @@ describe("Agent atomic writes", () => {
     updatedAt: "2026-01-01T00:00:01.000Z",
   };
 
-  it("round-trips visibility and the invite list", async () => {
-    // Visibility and invitations must survive the reader's explicit field mapping.
+  it("round-trips visibility", async () => {
     seedAgent(agent.name);
     await agentRepository.update(
-      { ...agent, visibility: "private", memberEmails: ["invited@example.com"] },
+      { ...agent, visibility: "private" },
       NOW,
     );
     const read = await agentRepository.get(agent.name);
     expect(read?.visibility).toBe("private");
-    expect(read?.memberEmails).toEqual(["invited@example.com"]);
   });
 
   it("refuses an invalid stored visibility instead of treating it as public", async () => {
@@ -211,6 +209,16 @@ describe("Agent atomic writes", () => {
 });
 
 describe("runSlotRepository ownership", () => {
+  it("counts live slots outside a newly reduced limit", async () => {
+    const caller = "studio-user:reduced-limit";
+    const first = (await runSlotRepository.acquire(caller, 2, NOW_SECONDS + 60))!;
+    const second = (await runSlotRepository.acquire(caller, 2, NOW_SECONDS + 60))!;
+    expect([first.index, second.index]).toEqual([0, 1]);
+    await runSlotRepository.release(caller, first);
+    expect(await runSlotRepository.acquire(caller, 1, NOW_SECONDS + 60)).toBeNull();
+    await runSlotRepository.release(caller, second);
+    expect(await runSlotRepository.acquire(caller, 1, NOW_SECONDS + 60)).not.toBeNull();
+  });
   it("renews only a live matching holder and never revives or extends another acquisition", async () => {
     const actor = "trigger-overlap:renew:daily";
     const first = (await runSlotRepository.acquire(actor, 1, NOW_SECONDS + 60))!;
@@ -306,7 +314,7 @@ describe("triggerRepository messaging destination round-trip", () => {
     await triggerRepository.put({
       agentName: "destination-round-trip",
       triggerId: "daily",
-      kind: "schedule",
+      kind: "schedule", createdBy: { userId: "registrar-id", email: "registrar@example.test" },
       description: "",
       enabled: true,
       allowConcurrent: false,
@@ -676,7 +684,7 @@ describe("artifactRepository round-trip", () => {
 describe("usageRepository.record", () => {
   it("materialises the row then adds into per-model maps under the same key", async () => {
     seedAgent("p");
-    const delta = {
+    const delta = { userId: "fixture-user", actor: "user:fixture@example.test",
       agentName: "p",
       date: "2026-01-01",
       model: "openai/gpt-5-mini",
@@ -717,20 +725,21 @@ describe("usageRepository.record", () => {
     });
   });
 
-  it("refuses to land a row in an agent being cascade deleted", async () => {
+  it("settles personal spend without recreating an Agent being cascade deleted", async () => {
     seedAgent("going", { deletingAt: NOW });
     await expect(
-      usageRepository.record({
+      usageRepository.record({ userId: "fixture-user", actor: "user:fixture@example.test",
         agentName: "going",
         date: "2026-01-01",
         model: "openai/gpt-5-mini",
         calls: 1,
         inputTokens: 1,
         outputTokens: 1,
-        costUsd: 0,
+        costUsd: 25,
       }),
-    ).rejects.toThrow(expect.objectContaining({ name: store.TRANSACTION_CANCELLED }));
+    ).resolves.toBeUndefined();
     expect(await store.getItem(keys.usage("going", "2026-01-01"))).toBeNull();
+    expect((await usageRepository.listMemberDays("fixture-user", "2026-01-01", "2026-01-01"))[0]?.costUsd["openai/gpt-5-mini"]).toBe(25);
   });
 
   it("maps raw items through toUsageRow with empty-map defaults", async () => {
@@ -764,6 +773,7 @@ describe("traceRepository round-trip", () => {
     seedAgent("p");
     const trace = {
       traceId: "trace-1",
+      user: { userId: "trace-user", email: "trace@example.test" },
       agentName: "p",
       status: "completed" as const,
       spans: [],

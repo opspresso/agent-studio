@@ -6,9 +6,8 @@
  * cannot enforce this deployment-wide admission limit.
  */
 
-import { actorKey, type RunActor } from "@/domain/execution/actor";
+import { runUserKey, type RunUser } from "@/domain/execution/actor";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
-import type { TierLimits } from "@/domain/member/tiers";
 import { RateLimitedError } from "@/application/errors";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
@@ -44,6 +43,7 @@ export class ConcurrencyLimitError extends RateLimitedError {
 const RETRY_AFTER_SECONDS = 15;
 
 export interface AcquiredSlot {
+  slot?: RunSlot;
   release(): Promise<void>;
 }
 
@@ -58,29 +58,20 @@ const UNLIMITED: AcquiredSlot = { release: async () => {} };
  */
 export async function acquireRunSlot(
   deps: ConcurrencyGuardDeps,
-  actor: RunActor | undefined,
-  tierLimits?: TierLimits,
+  user: RunUser,
+  existing?: RunSlot,
 ): Promise<AcquiredSlot> {
-  // No repository, no limits, or a run with no identifiable caller: there is
-  // nothing to count against. An unattributed run is rare (every current entry
-  // point names its caller) and bounded by the cost guard instead.
-  if (!deps.runSlots || !deps.limits || !actor) {
-    return UNLIMITED;
-  }
-  // A tier's own ceiling wins over the deployment-wide number; a tier without
-  // one inherits it. Only a `user` actor ever arrives with a tier — the
-  // bracket's resolver answers `undefined` for machine callers and agent
-  // tokens alike, so a token stays a service credential bounded by the env number.
-  const tierLimit = tierLimits?.maxConcurrentRuns;
-  const limit = tierLimit ?? (typeof deps.limits === "function" ? await deps.limits() : deps.limits).perActor;
+  if (!deps.runSlots || !deps.limits) return UNLIMITED;
+  // Every execution source for one account shares the deployment ceiling.
+  const limit = (typeof deps.limits === "function" ? await deps.limits() : deps.limits).perActor;
   if (limit <= 0) {
     return UNLIMITED;
   }
-  const key = actorKey(actor);
+  const key = runUserKey(user);
   const leaseUntil = Math.floor(Date.now() / 1000) + RUN_LEASE_SECONDS;
   let slot: RunSlot | null;
   try {
-    slot = await deps.runSlots.acquire(key, limit, leaseUntil);
+    slot = existing && await deps.runSlots.renew(key, existing, leaseUntil) ? existing : await deps.runSlots.acquire(key, limit, leaseUntil);
   } catch (error) {
     log.error("concurrency", `slot store unavailable for ${key}; refusing the run`, error);
     throw new ConcurrencyLimitError(limit, RETRY_AFTER_SECONDS);
@@ -88,16 +79,10 @@ export async function acquireRunSlot(
   if (!slot) {
     throw new ConcurrencyLimitError(limit, RETRY_AFTER_SECONDS);
   }
-  const runSlots = deps.runSlots;
-  return {
-    async release() {
-      try {
-        await runSlots.release(key, slot);
-      } catch (error) {
-        // The lease expires on its own, so a failed release costs this caller
-        // one slot for the rest of it — never a permanently wedged limit.
-        log.warn("concurrency", `could not release slot ${slot.index} for ${key}`, error);
-      }
-    },
-  };
+  return { slot, release: () => releaseRunSlot(deps, user, slot!) };
+}
+
+export async function releaseRunSlot(deps: ConcurrencyGuardDeps, user: RunUser, slot: RunSlot): Promise<void> {
+  try { await deps.runSlots?.release(runUserKey(user), slot); }
+  catch (error) { log.warn("concurrency", "could not release the run slot; its lease will expire", error); }
 }

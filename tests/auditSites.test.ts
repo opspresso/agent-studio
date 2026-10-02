@@ -1,16 +1,12 @@
+import { memberFixture } from "./memberFixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import {
-  assertAgentWritable,
+  assertAgentOwner,
   deleteAgent,
-  setAdminCheck,
 } from "@/application/agent/agentUseCases";
-import {
-  generateApiToken,
-  getApiTokenStatus,
-  revealApiToken,
-  revokeApiToken,
-} from "@/application/agent/apiTokenUseCases";
+import { createAgentCredentialUseCases } from "@/application/auth/agentCredentialUseCases";
+import type { AgentCredential } from "@/domain/auth/agentCredential";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { listAgentTraces } from "@/application/trace/traceUseCases";
@@ -89,13 +85,6 @@ function agents(overrides: Partial<AgentRepository> = {}): AgentRepository {
     create: async () => {},
     update: async () => {},
     delete: async () => {},
-    getApiToken: async () => ({
-      token: "enc:v1:tok_secret",
-      masked: "****",
-      createdAt: "2026-01-01T00:00:00Z",
-    }),
-    setApiToken: async () => {},
-    deleteApiToken: async () => {},
     ...overrides,
   };
 }
@@ -108,49 +97,39 @@ beforeEach(() => {
   vi.setSystemTime("2026-01-02T00:00:00.000Z");
   rows = [];
   setAuditSink(sink());
-  setAdminCheck(async () => false);
 });
 
 afterEach(() => {
   vi.useRealTimers();
   setAuditSink(undefined);
-  setAdminCheck(async () => false);
 });
 
 describe("agent acts", () => {
   it("does not record a write override for owner-scoped reads", async () => {
     const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
-    setAdminCheck(async (email) => email === ADMIN);
     const repo = agents();
-    await listAgentTraces({ agents: repo, traces: { listByAgent: async () => [] } as never }, "p", ADMIN);
+    await listAgentTraces({ agents: repo, traces: { listByAgent: async () => [] } as never }, "p", OWNER);
     await listAgentActorsFor({ agents: repo, usage: { listActorsByAgent: async () => [] } as never,
-      profileReaderFor: () => null }, "p", ADMIN, "2026-01-01", "2026-01-31");
+      profileReaderFor: () => null }, "p", OWNER, "2026-01-01", "2026-01-31");
     await createArtifactUseCases({ listByAgent: async () => [] } as never, {} as never, repo)
-      .listByAgent("p", ADMIN);
-    await getApiTokenStatus(repo, "p", ADMIN);
-    await getAgentSlack(repo, "p", ADMIN, cipher);
-    await getAgentTelegram(repo, "p", ADMIN, cipher);
-    await getAgentTeams(repo, "p", ADMIN, cipher);
-    await createMcpAuthUseCases({ agents: repo, connections: { listByAgent: async () => [] },
-      lifecycleClaims: new Set() } as never).listConnections("p", ADMIN);
+      .listByAgent("p", OWNER);
+    await personalTokens(repo).status("p", "admin");
+    await getAgentSlack(repo, "p", OWNER, cipher);
+    await getAgentTelegram(repo, "p", OWNER, cipher);
+    await getAgentTeams(repo, "p", OWNER, cipher);
+    await createMcpAuthUseCases({ members: { getById: async (id: string) => memberFixture({ id, email: OWNER, tier: "admin" }) }, agents: repo, connections: { listByUser: async () => [] },
+      lifecycleClaims: new Set() } as never).listConnections("p", { userId: "p", email: OWNER });
     warned.mockRestore();
     expect(rows).toEqual([]);
   });
 
-  it("records an admin writing an agent owned by someone else", async () => {
-    setAdminCheck(async (email) => email === ADMIN);
-    await assertAgentWritable(agents(), "p", ADMIN);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      actorEmail: ADMIN,
-      action: "agent.admin-override",
-      target: "agent:p",
-      detail: `owned by ${OWNER}`,
-    });
+  it("refuses another user's Agent instead of granting an audited override", async () => {
+    await expect(assertAgentOwner(agents(), "p", ADMIN)).rejects.toMatchObject({ status: 403 });
+    expect(rows).toEqual([]);
   });
 
   it("records nothing when the owner writes their own agent", async () => {
-    await assertAgentWritable(agents(), "p", OWNER);
+    await assertAgentOwner(agents(), "p", OWNER);
     expect(rows).toHaveLength(0);
   });
 
@@ -178,28 +157,32 @@ describe("agent acts", () => {
   });
 });
 
-describe("agent API token", () => {
-  it("records issuing one", async () => {
-    await generateApiToken(agents(), "p", OWNER, cipher);
-    expect(actions()).toEqual(["secret.rotate"]);
+function personalTokens(repo = agents()) {
+  const records = new Map<string, AgentCredential>();
+  records.set("owner", { purpose: "api", id: "00000000-0000-4000-8000-000000000001", agentName: "p", userId: "owner", token: "enc:v1:own-token", masked: "****", createdAt: "2026-01-01" });
+  records.set("admin", { purpose: "api", id: "00000000-0000-4000-8000-000000000002", agentName: "p", userId: "admin", token: "enc:v1:admin-token", masked: "****", createdAt: "2026-01-01" });
+  return createAgentCredentialUseCases({ purpose: "api", agents: repo, cipher, now: () => new Date(), newId: () => "00000000-0000-4000-8000-000000000003",
+    members: { getById: async id => ({ id, email: id === "admin" ? ADMIN : OWNER, name: id, tier: "member", image: null, joinedAt: "2026-01-01", lastLoginAt: "2026-01-01" }) },
+    tokens: { get: async (_name, _purpose, id) => [...records.values()].find(row => row.id === id) ?? null, forUser: async (_name, _purpose, id) => records.get(id) ?? null,
+      replace: async token => { records.set(token.userId, token); }, revoke: async (_name, _purpose, id) => { records.delete(id); } } });
+}
+describe("personal API token audit", () => {
+  it("records personal issuance", async () => {
+    await personalTokens().generate("p", "owner");
+    expect(rows).toMatchObject([{ action: "secret.rotate", actorEmail: OWNER }]);
   });
-
-  it("records revealing one", async () => {
-    await revealApiToken(agents(), "p", OWNER, cipher);
-    expect(rows[0]).toMatchObject({ action: "secret.reveal", target: "agent:p" });
+  it("records revealing one's own token", async () => {
+    await personalTokens().reveal("p", "owner");
+    expect(rows[0]).toMatchObject({ action: "secret.reveal", target: "agent:p", actorEmail: OWNER });
   });
-
-  it("records revoking one", async () => {
-    await revokeApiToken(agents(), "p", OWNER);
-    expect(actions()).toEqual(["secret.revoke"]);
+  it("records personal revocation", async () => {
+    await personalTokens().revoke("p", "owner");
+    expect(rows[0]).toMatchObject({ action: "secret.revoke", actorEmail: OWNER });
   });
-
-  it("records the override *and* the reveal when an admin reads someone else's token", async () => {
-    // The token authenticates as the owner, so this is an admin taking a
-    // credential that acts in another person's name. One row would not say that.
-    setAdminCheck(async (email) => email === ADMIN);
-    await revealApiToken(agents(), "p", ADMIN, cipher);
-    expect(actions()).toEqual(["agent.admin-override", "secret.reveal"]);
+  it("records an administrator's own credential without impersonating the Agent owner", async () => {
+    await personalTokens().reveal("p", "admin");
+    expect(actions()).toEqual(["secret.reveal"]);
+    expect(rows[0]?.actorEmail).toBe(ADMIN);
   });
 });
 
@@ -265,14 +248,13 @@ describe("app settings", () => {
   });
 });
 
-describe("webhook trigger secrets", () => {
+describe("Webhook settings audit", () => {
   const webhook: WebhookTrigger = {
     agentName: "p",
     triggerId: "inbound",
     kind: "webhook",
     description: "",
     enabled: true,
-    secret: "enc:v1:whsec",
     allowConcurrent: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -293,59 +275,22 @@ describe("webhook trigger secrets", () => {
       updateRunningRun: async () => { throw new Error("CRUD does not dispatch running executions"); },
       listRuns: async () => [],
     };
-    return createTriggerUseCases({ triggers, agents: agents(), cipher });
+    return createTriggerUseCases({ members: { getById: async () => null }, triggers, agents: agents() });
   }
 
-  it("does not record a write override for an admin listing triggers or runs", async () => {
+  it("does not record a write override for the owner listing triggers or runs", async () => {
     const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
-    setAdminCheck(async (email) => email === ADMIN);
-    await useCases().list("p", ADMIN);
-    await useCases().runs("p", "inbound", 10, ADMIN);
+    await useCases().list("p", OWNER);
+    await useCases().runs("p", "inbound", 10, OWNER);
     warned.mockRestore();
     expect(rows).toEqual([]);
   });
 
-  it("records a reveal", async () => {
-    await useCases().reveal("p", "inbound", OWNER);
-    expect(rows[0]).toMatchObject({ action: "secret.reveal", target: "agent:p" });
-    expect(rows[0]?.detail).toContain("inbound");
-  });
-
-  it("records a rotation", async () => {
-    await useCases().update("p", "inbound", { rotateSecret: true }, OWNER);
-    expect(actions()).toEqual(["secret.rotate"]);
-  });
-
-  it("records nothing for an update that did not rotate", async () => {
-    await useCases().update("p", "inbound", { description: "renamed" }, OWNER);
-    expect(rows).toHaveLength(0);
-  });
-
-  it("records a deletion", async () => {
+  it("does not report shared settings deletion as personal credential revocation", async () => {
     await useCases().remove("p", "inbound", OWNER);
-    expect(actions()).toEqual(["secret.revoke"]);
+    expect(actions()).not.toContain("secret.revoke");
   });
 
-  it("records a schedule deletion as no revocation, because there was no secret", async () => {
-    // `secret.revoke` means "a credential was removed". A schedule has none —
-    // revealing one is refused for that exact reason — and filing its deletion
-    // under the action an auditor filters on to enumerate credential removals
-    // makes that filter untrustworthy.
-    const schedule: Trigger = {
-      agentName: "p",
-      triggerId: "nightly",
-      kind: "schedule",
-      description: "",
-      enabled: true,
-      cron: "0 9 * * *",
-      timezone: "Asia/Seoul",
-      allowConcurrent: false,
-      createdAt: "2026-01-01T00:00:00Z",
-      updatedAt: "2026-01-01T00:00:00Z",
-    };
-    await useCases(schedule).remove("p", "nightly", OWNER);
-    expect(rows).toHaveLength(0);
-  });
 });
 
 describe("shared registry entries", () => {

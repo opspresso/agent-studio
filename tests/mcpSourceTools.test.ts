@@ -77,7 +77,7 @@ describe("mapped MCP tools offered to an Agent", () => {
     const registered = f.register.mock.calls[0]![0];
     const refreshedUrl = "https://files.example.test/audio?signature=renewed-private";
     stubSourceResponse(wrapped(refreshedUrl));
-    const refresh = createMcpSourceRefresher({ ...f.deps,
+    const refresh = createMcpSourceRefresher({ ...f.deps, authorizeRun: async () => {},
       agents: { get: async () => ({ configuration: f.configuration }) },
     } as unknown as Parameters<typeof createMcpSourceRefresher>[0]);
     const job = { agentName: f.configuration.agentName, userEmail: "owner@example.test",

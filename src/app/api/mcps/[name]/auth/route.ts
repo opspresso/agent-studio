@@ -32,7 +32,7 @@ export const GET = withAdminAuth(async (_user, _request: Request, ctx: RouteCont
 /**
  * Discover and store what an OAuth flow against this server needs. Admin-only:
  * the registry entry is shared, so its endpoints and OAuth client are operator
- * configuration; agents only perform their own owner-gated authorization.
+ * configuration; each member authorizes their own personal account.
  */
 export const POST = withAdminAuth(async (_user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;

@@ -1,3 +1,4 @@
+import { executionIdentity, withUserLimits } from "./runIdentity";
 import { withConfigurations } from "./agentConfigurations";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -427,7 +428,7 @@ describe("every top-level entry point is guarded", () => {
   function blockedDeps() {
     const reject = () => Promise.reject(new Error("the guard should have refused first"));
     const f = fixture({ day: row({ m: 100 }) });
-    return {
+    return { resolveUserLimits: async () => ({}), authorizeRun: async () => {},
       ...f.deps,
       agents: withConfigurations({ get: reject, list: reject, put: reject, delete: reject }, ({ get: reject, list: reject, put: reject, delete: reject }).get),
 
@@ -453,22 +454,22 @@ describe("every top-level entry point is guarded", () => {
 
   it("collectAgentRun refuses", async () => {
     await expect(
-      collectAgentRun(blockedDeps(), { agent: blocked, configuration, messages: [] }),
+      collectAgentRun(blockedDeps(), { ...executionIdentity(), agent: blocked, configuration, messages: [] }),
     ).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
   it("streamAgentExecution refuses before the first chunk", async () => {
-    const stream = streamAgentExecution(blockedDeps(), { agent: blocked, configuration, messages: [] });
+    const stream = streamAgentExecution(blockedDeps(), { ...executionIdentity(), agent: blocked, configuration, messages: [] });
     await expect(stream.next()).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
   it("executeAgent refuses before the first chunk", async () => {
-    const stream = executeAgent(blockedDeps(), { agent: blocked, configuration, messages: [] });
+    const stream = executeAgent(blockedDeps(), { ...executionIdentity(), agent: blocked, configuration, messages: [] });
     await expect(stream.next()).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
   it("guards an Agent that enables image tools before any image call", async () => {
-    await expect(collectAgentRun(blockedDeps(), { agent: blocked,
+    await expect(collectAgentRun(blockedDeps(), { ...executionIdentity(), agent: blocked,
       configuration: { ...configuration, parameters: { piiFiltering: false, imageGeneration: true } },
       messages: [{ role: "user", content: "Draw a cat" }],
     })).rejects.toBeInstanceOf(CostLimitExceededError);
@@ -480,7 +481,7 @@ describe("every top-level entry point is guarded", () => {
     const traces: unknown[] = [];
     deps.traces = { put: async (t: unknown) => void traces.push(t) } as ExecutionDeps["traces"];
 
-    await expect(collectAgentRun(deps, { agent: blocked, configuration, messages: [] })).rejects.toBeInstanceOf(
+    await expect(collectAgentRun(deps, { ...executionIdentity(), agent: blocked, configuration, messages: [] })).rejects.toBeInstanceOf(
       CostLimitExceededError,
     );
     expect(traces).toHaveLength(0);
@@ -510,7 +511,7 @@ describe("a subagent transfer is guarded too", () => {
 
   function deps(spentUsd: number) {
     const f = fixture({ day: row({ m: spentUsd }) });
-    return {
+    return { resolveUserLimits: async () => ({}), authorizeRun: async () => {},
       ...f.deps,
       agents: withConfigurations({ get: async () => ({ ...child }) }, ({ get: async () => childConfiguration }).get),
 
@@ -523,7 +524,7 @@ describe("a subagent transfer is guarded too", () => {
   }
 
   function prepareChild(spentUsd: number) {
-    return prepareSubagent(deps(spentUsd), { ...childConfiguration, agentName: "parent", subagentList: [{ name: "proj" }] }, "proj", { message: "hi", images: [] }, async () => {}, { ancestry: ["parent"] });
+    return prepareSubagent(deps(spentUsd), { ...childConfiguration, agentName: "parent", subagentList: [{ name: "proj" }] }, "proj", { message: "hi", images: [] }, async () => {}, { ...executionIdentity(), ancestry: ["parent"] });
   }
   it("refuses a child over its own agent spending limit", async () => {
     await expect(prepareChild(100)).rejects.toThrow(/daily|limit|spend/i);
@@ -550,7 +551,7 @@ describe("openRun", () => {
   it("does not count a run the guard refused", async () => {
     resetRunMetrics();
     const f = fixture({ day: row({ m: 50 }) });
-    await expect(openRun(f.deps, agent({ blockThresholdUsd: 10 }), configuration)).rejects.toBeInstanceOf(
+    await expect(openRun(withUserLimits(f.deps), agent({ blockThresholdUsd: 10 }), configuration, executionIdentity())).rejects.toBeInstanceOf(
       CostLimitExceededError,
     );
     expect(runMetricsSnapshot()).toMatchObject({ activeRuns: 0, runsStarted: 0 });
@@ -559,7 +560,7 @@ describe("openRun", () => {
   it("counts an admitted run and releases it exactly once", async () => {
     resetRunMetrics();
     const f = fixture({ day: null });
-    const bracket = await openRun(f.deps, agent({ blockThresholdUsd: 10 }), configuration);
+    const bracket = await openRun(withUserLimits(f.deps), agent({ blockThresholdUsd: 10 }), configuration, executionIdentity());
     expect(runMetricsSnapshot().activeRuns).toBe(1);
     await bracket.close();
     // A generator reaches its `finally` through both a return and a consumer's

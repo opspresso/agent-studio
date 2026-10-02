@@ -1,3 +1,4 @@
+import type { MessagingIdentityUseCases } from "@/application/auth/messagingIdentityUseCases";
 import type { MessagingDeps } from "@/application/messaging/handleTurn";
 import type { SlackThreadRepository } from "@/domain/slack/repository";
 import type { SlackRunControlRepository } from "@/domain/slack/runControl";
@@ -114,6 +115,7 @@ export interface SlackClientPort extends SlackReaderPort {
  * carries. What is added here is what only Slack needs.
  */
 export interface SlackEventDeps extends MessagingDeps {
+  identities: Pick<MessagingIdentityUseCases, "connect" | "resolve">;
   slack: SlackClientPort;
   stops: SlackRunControlRepository;
   /**

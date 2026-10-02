@@ -87,6 +87,7 @@ async function list(
     limit: boundedPageLimit(limit),
     ...(before !== undefined ? { after: before } : {}),
     notExpiredAt: Math.floor(Date.now() / 1000),
+    ...(index === "GSI1" ? { attributePresence: { attribute: "privateFileId", exists: false } } : {}),
     exclude: { jsonContains: { source: "generated", mimeType: INTERNAL_SOURCE_MIME_TYPE }, attributePresent: "privateFileId" },
     ...(kind || source
       ? { filter: { ...(kind ? { kind } : {}), ...(source ? { source } : {}) } }
@@ -102,7 +103,7 @@ export class PostgresArtifactRepository implements ArtifactRepository {
       ...artifact,
       ...keys.artifact(artifact.artifactId),
       entityType: ARTIFACT_ENTITY,
-      ...(!artifact.canonicalArtifactId ? {
+      ...(!artifact.canonicalArtifactId && !artifact.privateFileId ? {
         GSI1PK: keys.artifactAgentPartition(artifact.agentName),
         GSI1SK: artifactCursor(artifact),
       } : {}),

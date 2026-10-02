@@ -1,3 +1,4 @@
+import { memberFixture } from "./memberFixture";
 /**
  * The authorization flow: begin, callback, and what each refuses.
  *
@@ -152,7 +153,7 @@ function harness(
   const server = overrides.server ?? SERVER;
   if (overrides.connection) {
     connections.set("p/slack", {
-      agentName: "p",
+      userId: "p",
       serverName: "slack",
       clientId: "client-1",
       clientSecret: "enc:shh",
@@ -166,6 +167,7 @@ function harness(
   }
 
   const deps: McpAuthUseCasesDeps = {
+    members: { getById: async id => memberFixture({ id, email: OWNER }) },
     serviceName: async () => "Agent Studio",
     mcps: { get: async (name: string) => (name === server.name ? server : null) } as never,
     agents: {
@@ -176,24 +178,24 @@ function harness(
     } as never,
     connections: {
       get: async (agent: string, srv: string) => connections.get(`${agent}/${srv}`) ?? null,
-      listByAgent: async (agentName: string, limit: number, after?: string) =>
+      listByUser: async (agentName: string, limit: number, after?: string) =>
         [...connections.values()]
-          .filter((connection) => connection.agentName === agentName)
+          .filter((connection) => connection.userId === agentName)
           .sort((a, b) => a.serverName.localeCompare(b.serverName))
           .filter((connection) => !after || connection.serverName > after)
           .slice(0, limit),
       put: async (connection: McpConnection) => {
-        connections.set(`${connection.agentName}/${connection.serverName}`, connection);
+        connections.set(`${connection.userId}/${connection.serverName}`, connection);
       },
       putIfCurrent: async (connection: McpConnection, current: McpConnection | null) => {
-        const key = `${connection.agentName}/${connection.serverName}`;
+        const key = `${connection.userId}/${connection.serverName}`;
         const stored = connections.get(key);
         if (current === null ? stored !== undefined : stored === undefined || stored.revision !== current.revision) return false;
         connections.set(key, { ...connection, revision: `revision-${++revision}` });
         return true;
       },
       updateAccount: async (current, account, lookupId) => {
-        const key = `${current.agentName}/${current.serverName}`;
+        const key = `${current.userId}/${current.serverName}`;
         const stored = connections.get(key);
         if (!stored || stored.revision !== current.revision) return false;
         connections.set(key, { ...stored, connectedAccount: account, accountLookupId: lookupId });
@@ -203,7 +205,7 @@ function harness(
         connections.delete(`${agent}/${srv}`);
       },
       deleteIfCurrent: async (current: McpConnection) => {
-        const key = `${current.agentName}/${current.serverName}`;
+        const key = `${current.userId}/${current.serverName}`;
         if (!connections.has(key) || connections.get(key)?.revision !== current.revision) return false;
         connections.delete(key);
         return true;
@@ -252,7 +254,7 @@ function harness(
       invalidateDiscovery: () => {},
     },
     authProvider: {
-      headersFor: async () => overrides.authHeaders ?? { headers: { Authorization: "Bearer at" } },
+      headersFor: async () => overrides.authHeaders ?? { headers: { Authorization: "Bearer at" }, credentialFingerprint: "request-credential" },
       markUnauthorized: async (_agent: string, serverName: string) => {
         unauthorized.push(serverName);
       },
@@ -267,7 +269,7 @@ describe("beginAuthorization", () => {
     const h = harness({ connection: {} });
     const uc = createMcpAuthUseCases(h.deps);
 
-    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
     const url = new URL(authorizeUrl);
 
     expect(url.origin + url.pathname).toBe("https://slack.com/oauth/v2_user/authorize");
@@ -302,14 +304,13 @@ describe("beginAuthorization", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    await uc.beginAuthorization("p", "slack", OWNER);
+    await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
 
     expect(h.registrations).toHaveLength(1);
-    expect(h.registrations[0]).toMatchObject({ redirectUri: CALLBACK, clientName: "Agent Studio — p" });
+    expect(h.registrations[0]).toMatchObject({ redirectUri: CALLBACK, clientName: "Agent Studio" });
     const connection = h.connections.get("p/slack");
     expect(connection?.clientId).toBe("dcr-client");
-    expect(connection?.clientRegistered).toBe(true);
-    // Whatever the server issued is stored encrypted, exactly like one typed in.
+    // Registration credentials stay encrypted on the personal connection.
     expect(connection?.clientSecret).toBe("enc:dcr-secret");
   });
 
@@ -318,7 +319,7 @@ describe("beginAuthorization", () => {
       server: { ...SERVER, auth: { ...SERVER.auth!, registrationEndpoint: "https://auth.example.com/register" } },
     });
     const winner: McpConnection = {
-      agentName: "p", serverName: "slack", clientId: "other-client", revision: "other",
+      userId: "p", serverName: "slack", clientId: "other-client", revision: "other",
       issuer: SERVER.auth!.issuer, resource: SERVER.auth!.resource,
       scopes: [], status: "needs_auth", updatedAt: SERVER.updatedAt,
     };
@@ -328,7 +329,7 @@ describe("beginAuthorization", () => {
     };
     const uc = createMcpAuthUseCases(h.deps);
 
-    await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toThrow(ConflictError);
+    await expect(uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER })).rejects.toThrow(ConflictError);
     expect(h.connections.get("p/slack")).toBe(winner);
     expect(h.states.size).toBe(0);
   });
@@ -348,7 +349,7 @@ describe("beginAuthorization", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
     const url = new URL(authorizeUrl);
 
     expect(url.searchParams.get("client_id")).toBe("github-app-id");
@@ -370,16 +371,15 @@ describe("beginAuthorization", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
 
     expect(h.registrations).toHaveLength(0);
-    const expected = `${BASE_URL}/api/mcps/oauth/client-metadata/p`;
+    const expected = `${BASE_URL}/api/mcps/oauth/client-metadata`;
     const connection = h.connections.get("p/slack");
     expect(connection?.clientId).toBe(expected);
     expect(connection?.clientFromMetadataDocument).toBe(true);
     // Public by construction: there is no secret to hold, so none is stored.
     expect(connection?.clientSecret).toBeUndefined();
-    expect(connection?.clientRegistered).toBeUndefined();
     expect(new URL(authorizeUrl).searchParams.get("client_id")).toBe(expected);
   });
 
@@ -399,7 +399,7 @@ describe("beginAuthorization", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    await uc.beginAuthorization("p", "slack", OWNER);
+    await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
 
     expect(h.registrations).toHaveLength(0);
     expect(h.connections.get("p/slack")?.clientFromMetadataDocument).toBe(true);
@@ -420,7 +420,7 @@ describe("beginAuthorization", () => {
         },
       },
       connection: {
-        clientId: `${BASE_URL}/api/mcps/oauth/client-metadata/p`,
+        clientId: `${BASE_URL}/api/mcps/oauth/client-metadata`,
         clientSecret: undefined,
         clientFromMetadataDocument: true,
         issuer: "https://old-auth.example.com",
@@ -428,11 +428,11 @@ describe("beginAuthorization", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    await expect(uc.beginAuthorization("p", "slack", OWNER)).resolves.toBeDefined();
+    await expect(uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER })).resolves.toBeDefined();
 
     expect(h.registrations).toHaveLength(0);
     expect(h.connections.get("p/slack")?.clientId).toBe(
-      `${BASE_URL}/api/mcps/oauth/client-metadata/p`,
+      `${BASE_URL}/api/mcps/oauth/client-metadata`,
     );
   });
 
@@ -451,7 +451,7 @@ describe("beginAuthorization", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    await uc.beginAuthorization("p", "slack", OWNER);
+    await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
 
     expect(h.registrations).toHaveLength(1);
     const connection = h.connections.get("p/slack");
@@ -474,7 +474,7 @@ describe("beginAuthorization", () => {
     h.deps.urlPolicy.assertAllowed = async () => { throw failure; };
     const uc = createMcpAuthUseCases(h.deps);
 
-    await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toBe(failure);
+    await expect(uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER })).rejects.toBe(failure);
     expect(h.registrations).toHaveLength(0);
     expect(h.connections.size).toBe(0);
     expect(h.states.size).toBe(0);
@@ -493,13 +493,13 @@ describe("beginAuthorization", () => {
         },
       },
       connection: {
-        clientId: "http://localhost:3000/api/mcps/oauth/client-metadata/p",
+        clientId: "http://localhost:3000/api/mcps/oauth/client-metadata",
         clientFromMetadataDocument: true,
       },
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    await uc.beginAuthorization("p", "slack", OWNER);
+    await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
 
     expect(h.connections.get("p/slack")?.clientId).toBe("dcr-client");
   });
@@ -513,16 +513,16 @@ describe("beginAuthorization", () => {
         auth: { ...SERVER.auth!, clientIdMetadataDocumentSupported: true },
       },
       connection: {
-        clientId: "https://old-studio.example.com/api/mcps/oauth/client-metadata/p",
+        clientId: "https://old-studio.example.com/api/mcps/oauth/client-metadata",
         clientFromMetadataDocument: true,
       },
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    await uc.beginAuthorization("p", "slack", OWNER);
+    await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
 
     expect(h.connections.get("p/slack")?.clientId).toBe(
-      `${BASE_URL}/api/mcps/oauth/client-metadata/p`,
+      `${BASE_URL}/api/mcps/oauth/client-metadata`,
     );
   });
 
@@ -538,21 +538,21 @@ describe("beginAuthorization", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toThrow(
+    await expect(uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER })).rejects.toThrow(
       /public base URL \(http:\/\/localhost:3000\) is not one an authorization server can fetch/,
     );
   });
 
   it("says what to do when the server offers neither way to get a client", async () => {
     const uc = createMcpAuthUseCases(harness().deps);
-    await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toThrow(
+    await expect(uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER })).rejects.toThrow(
       /supports neither client ID metadata documents nor dynamic client registration/,
     );
   });
 
   it("refuses a non-owner", async () => {
     const uc = createMcpAuthUseCases(harness({ connection: {} }).deps);
-    await expect(uc.beginAuthorization("p", "slack", "someone@example.com")).rejects.toThrow(
+    await expect(uc.beginAuthorization("p", "slack", { userId: "p", email: "someone@example.com" })).rejects.toThrow(
       ForbiddenError,
     );
   });
@@ -562,7 +562,7 @@ describe("beginAuthorization", () => {
     // only other source is the request.
     const h = harness({ connection: {} });
     const uc = createMcpAuthUseCases({ ...h.deps, publicBaseUrl: async () => undefined });
-    await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toThrow(ValidationError);
+    await expect(uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER })).rejects.toThrow(ValidationError);
   });
 });
 
@@ -570,7 +570,7 @@ describe("completeAuthorization", () => {
   async function started(overrides: Parameters<typeof harness>[0] = {}) {
     const h = harness({ connection: {}, ...overrides });
     const uc = createMcpAuthUseCases(h.deps);
-    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
     const state = new URL(authorizeUrl).searchParams.get("state") as string;
     return { h, uc, state };
   }
@@ -578,7 +578,7 @@ describe("completeAuthorization", () => {
   it("exchanges the code with resource and the stored verifier, then stores the tokens", async () => {
     const { h, uc, state } = await started();
 
-    const result = await uc.completeAuthorization({ state, code: "the-code", userEmail: OWNER });
+    const result = await uc.completeAuthorization({ state, code: "the-code", user: { userId: "p", email: OWNER } });
 
     expect(result).toEqual({ agentName: "p", serverName: "slack" });
     const exchange = h.exchanges[0];
@@ -601,10 +601,10 @@ describe("completeAuthorization", () => {
     const { h, uc, state } = await started({ server: { ...SERVER, auth: GITHUB_AUTH } });
     const read = vi.fn(async () => ({ status: "resolved" as const, account: { provider: "github" as const, label: "octocat" } }));
     h.deps.accounts.read = read;
-    await uc.completeAuthorization({ state, code: "code", userEmail: OWNER });
+    await uc.completeAuthorization({ state, code: "code", user: { userId: "p", email: OWNER } });
     expect(read).toHaveBeenCalledWith(GITHUB_AUTH, "at-1", { mcpUrl: SERVER.url, loopback: false });
     expect(h.connections.get("p/slack")?.connectedAccount?.label).toBe("octocat");
-    expect((await uc.listConnections("p", OWNER))[0]).toMatchObject({
+    expect((await uc.listConnections("p", { userId: "p", email: OWNER }))[0]).toMatchObject({
       connectedBy: OWNER, connectedAccount: { provider: "github", label: "octocat" },
     });
   });
@@ -612,7 +612,7 @@ describe("completeAuthorization", () => {
   it("clears the old service account when a reconnect cannot resolve the new identity", async () => {
     const { h, uc, state } = await started({ connection: { connectedAccount: { provider: "google", label: "old@example.test" } } });
     h.deps.accounts.read = async () => ({ status: "unavailable" });
-    await uc.completeAuthorization({ state, code: "code", userEmail: OWNER });
+    await uc.completeAuthorization({ state, code: "code", user: { userId: "p", email: OWNER } });
     expect(h.connections.get("p/slack")?.connectedAccount).toBeUndefined();
     expect(h.connections.get("p/slack")?.status).toBe("connected");
   });
@@ -623,7 +623,7 @@ describe("completeAuthorization", () => {
       vi.setSystemTime("2026-01-01T00:00:05.000Z");
       return { status: "unavailable" };
     };
-    await uc.completeAuthorization({ state, code: "code", userEmail: OWNER });
+    await uc.completeAuthorization({ state, code: "code", user: { userId: "p", email: OWNER } });
     expect(h.connections.get("p/slack")?.expiresAt).toBe("2026-01-01T00:01:00.000Z");
   });
 
@@ -646,7 +646,7 @@ describe("completeAuthorization", () => {
         tokens,
       });
 
-      await uc.completeAuthorization({ state, code: "new-code", userEmail: OWNER });
+      await uc.completeAuthorization({ state, code: "new-code", user: { userId: "p", email: OWNER } });
 
       const stored = h.connections.get("p/slack");
       expect(stored).toMatchObject({
@@ -675,7 +675,7 @@ describe("completeAuthorization", () => {
     const { h, uc, state } = await started({
       tokens: { accessToken: "at-1", scope: "chat:write users:read" },
     });
-    await uc.completeAuthorization({ state, code: "c", userEmail: OWNER });
+    await uc.completeAuthorization({ state, code: "c", user: { userId: "p", email: OWNER } });
     expect(h.connections.get("p/slack")?.scopes).toEqual(["chat:write", "users:read"]);
   });
 
@@ -684,7 +684,7 @@ describe("completeAuthorization", () => {
     const { h, uc, state } = await started({
       tokens: { accessToken: "at-1", scope: "channels:history,groups:history,chat:write" },
     });
-    await uc.completeAuthorization({ state, code: "c", userEmail: OWNER });
+    await uc.completeAuthorization({ state, code: "c", user: { userId: "p", email: OWNER } });
     expect(h.connections.get("p/slack")?.scopes).toEqual([
       "channels:history",
       "groups:history",
@@ -694,8 +694,8 @@ describe("completeAuthorization", () => {
 
   it("refuses a replayed state", async () => {
     const { uc, state } = await started();
-    await uc.completeAuthorization({ state, code: "c", userEmail: OWNER });
-    await expect(uc.completeAuthorization({ state, code: "c", userEmail: OWNER })).rejects.toThrow(
+    await uc.completeAuthorization({ state, code: "c", user: { userId: "p", email: OWNER } });
+    await expect(uc.completeAuthorization({ state, code: "c", user: { userId: "p", email: OWNER } })).rejects.toThrow(
       /expired or was already used/,
     );
   });
@@ -703,21 +703,22 @@ describe("completeAuthorization", () => {
   it("refuses a state finished by a different user", async () => {
     const { h, uc, state } = await started();
     await expect(
-      uc.completeAuthorization({ state, code: "c", userEmail: "other@example.com" }),
+      uc.completeAuthorization({ state, code: "c", user: { userId: "p", email: "other@example.com" } }),
     ).rejects.toThrow(ForbiddenError);
     // And the state is spent either way — a rejected attempt must not leave a
     // live authorization for the attacker to try again against.
     expect(h.states.size).toBe(0);
   });
 
-  it("refuses when ownership changed while the user was away at the provider", async () => {
+  it("refuses when the Agent became private while the user was away at the provider", async () => {
     const { h, uc, state } = await started();
     h.deps.agents.get = (async () => ({
       name: "p",
       ownerEmail: "new-owner@example.com",
+      visibility: "private",
     })) as never;
 
-    await expect(uc.completeAuthorization({ state, code: "c", userEmail: OWNER })).rejects.toThrow(
+    await expect(uc.completeAuthorization({ state, code: "c", user: { userId: "p", email: OWNER } })).rejects.toThrow(
       ForbiddenError,
     );
     expect(h.connections.get("p/slack")?.status).toBe("needs_auth");
@@ -731,7 +732,7 @@ describe("completeAuthorization", () => {
       return exchangeCode(target, params);
     };
 
-    await expect(uc.completeAuthorization({ state, code: "c", userEmail: OWNER }))
+    await expect(uc.completeAuthorization({ state, code: "c", user: { userId: "p", email: OWNER } }))
       .rejects.toThrow(ConflictError);
     expect(h.connections.has("p/slack")).toBe(false);
   });
@@ -745,7 +746,7 @@ describe("completeAuthorization", () => {
       return exchangeCode(target, params);
     };
 
-    await expect(uc.completeAuthorization({ state, code: "c", userEmail: OWNER }))
+    await expect(uc.completeAuthorization({ state, code: "c", user: { userId: "p", email: OWNER } }))
       .rejects.toThrow(ConflictError);
     expect(h.connections.get("p/slack")).toBe(replacement);
   });
@@ -754,7 +755,7 @@ describe("completeAuthorization", () => {
     const h = harness({ connection: {} });
     const uc = createMcpAuthUseCases(h.deps);
     await expect(
-      uc.completeAuthorization({ state: "made-up", code: "c", userEmail: OWNER }),
+      uc.completeAuthorization({ state: "made-up", code: "c", user: { userId: "p", email: OWNER } }),
     ).rejects.toThrow(ValidationError);
     expect(h.exchanges).toHaveLength(0);
   });
@@ -769,12 +770,12 @@ describe("provider accounts for existing Agent connections", () => {
       const read = vi.fn(async () => ({ status: "resolved" as const, account: { provider: "github" as const, label: "old-account" } }));
       h.deps.accounts.read = read;
       const uc = createMcpAuthUseCases(h.deps);
-      expect((await uc.listConnections("p", OWNER))[0]?.connectedAccount?.label).toBe("old-account");
+      expect((await uc.listConnections("p", { userId: "p", email: OWNER }))[0]?.connectedAccount?.label).toBe("old-account");
       h.connections.set("p/slack", { ...h.connections.get("p/slack")!, status: "needs_reauth" });
       server.auth = change === "disabled" ? { ...server.auth!, accountLookup: { kind: "none" } }
         : change === "different_client" ? { ...server.auth!, clientId: "app-two" }
         : { ...server.auth!, accountLookup: { kind: "http", endpoint: "https://identity.example.com/me", labelPath: "/username" } };
-      const view = (await uc.listConnections("p", OWNER))[0];
+      const view = (await uc.listConnections("p", { userId: "p", email: OWNER }))[0];
       expect(view?.connectedAccount).toBeUndefined();
       expect(view?.accountUnavailableReason).toBe(change === "disabled" ? "disabled" : "unavailable");
       expect(view?.status).toBe("needs_reauth");
@@ -788,9 +789,9 @@ describe("provider accounts for existing Agent connections", () => {
     const read = vi.fn(async () => ({ status: "resolved" as const, account: { provider: "github" as const, label: "old-account" } }));
     h.deps.accounts.read = read;
     const uc = createMcpAuthUseCases(h.deps);
-    expect((await uc.listConnections("p", OWNER))[0]?.connectedAccount?.label).toBe("old-account");
+    expect((await uc.listConnections("p", { userId: "p", email: OWNER }))[0]?.connectedAccount?.label).toBe("old-account");
     server.auth = { ...server.auth!, clientId: "app-two" };
-    const view = (await uc.listConnections("p", OWNER))[0];
+    const view = (await uc.listConnections("p", { userId: "p", email: OWNER }))[0];
     expect(view?.connectedAccount).toBeUndefined();
     expect(view?.accountUnavailableReason).toBe("unavailable");
     expect(read).toHaveBeenCalledOnce();
@@ -800,10 +801,10 @@ describe("provider accounts for existing Agent connections", () => {
     const h = harness({ server, connection: { status: "connected", accessToken: "enc:token" } });
     h.deps.accounts.read = async () => ({ status: "resolved", account: { provider: "github", label: "old-account" } });
     const uc = createMcpAuthUseCases(h.deps);
-    expect((await uc.listConnections("p", OWNER))[0]?.connectedAccount?.label).toBe("old-account");
+    expect((await uc.listConnections("p", { userId: "p", email: OWNER }))[0]?.connectedAccount?.label).toBe("old-account");
     server.auth = { ...GITHUB_AUTH, accountLookup: { kind: "http", endpoint: "https://identity.example.com/me", labelPath: "/username" } };
     h.deps.accounts.read = async () => ({ status: "unavailable" });
-    const view = (await uc.listConnections("p", OWNER))[0];
+    const view = (await uc.listConnections("p", { userId: "p", email: OWNER }))[0];
     expect(view?.connectedAccount).toBeUndefined();
     expect(view?.accountUnavailableReason).toBe("unavailable");
     expect(h.connections.get("p/slack")?.accessToken).toBe("enc:token");
@@ -813,7 +814,7 @@ describe("provider accounts for existing Agent connections", () => {
     const auth = { ...SERVER.auth!, registrationEndpoint: "https://identity.example.com/register", userInfoEndpoint: "https://identity.example.com/userinfo", userInfoScopes: ["openid", "email"] };
     const h = harness({ server: { ...SERVER, auth } });
     const uc = createMcpAuthUseCases(h.deps);
-    const url = new URL((await uc.beginAuthorization("p", "slack", OWNER)).authorizeUrl);
+    const url = new URL((await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER })).authorizeUrl);
     expect(h.registrations[0]?.scopes).toEqual(["chat:write", "users:read", "openid", "email"]);
     expect(url.searchParams.get("scope")).toBe("chat:write users:read openid email");
   });
@@ -823,13 +824,13 @@ describe("provider accounts for existing Agent connections", () => {
     const h = harness({ server, connection: { status: "connected", accessToken: "enc:token" } });
     h.deps.accounts.read = async () => ({ status: "resolved", account: { provider: "github", label: "old-account" } });
     const uc = createMcpAuthUseCases(h.deps);
-    await uc.listConnections("p", OWNER);
+    await uc.listConnections("p", { userId: "p", email: OWNER });
     server.auth = { ...GITHUB_AUTH, accountLookup: { kind: "http", endpoint: "https://identity.example.com/me", labelPath: "/username" } };
     h.deps.accounts.read = async () => {
       h.connections.set("p/slack", { ...h.connections.get("p/slack")!, revision: "refreshed", accessToken: "enc:renewed-token" });
       return { status: "resolved", account: { provider: "http", label: "new-account" } };
     };
-    const view = (await uc.listConnections("p", OWNER))[0];
+    const view = (await uc.listConnections("p", { userId: "p", email: OWNER }))[0];
     expect(view?.connectedAccount).toBeUndefined();
     expect(view?.accountUnavailableReason).toBe("unavailable");
     expect(h.connections.get("p/slack")?.accessToken).toBe("enc:renewed-token");
@@ -843,11 +844,11 @@ describe("provider accounts for existing Agent connections", () => {
     const read = vi.fn(async () => ({ status: "resolved" as const, account: { provider: "github" as const, label: "octocat" } }));
     h.deps.accounts.read = read;
     const uc = createMcpAuthUseCases(h.deps);
-    const view = await uc.listConnections("p", OWNER);
+    const view = await uc.listConnections("p", { userId: "p", email: OWNER });
     expect(view[0]?.connectedAccount?.label).toBe("octocat");
     expect(JSON.stringify(view)).not.toContain("existing-token");
     expect(h.connections.get("p/slack")?.connectedAccount?.label).toBe("octocat");
-    await uc.listConnections("p", OWNER);
+    await uc.listConnections("p", { userId: "p", email: OWNER });
     expect(read).toHaveBeenCalledOnce();
     expect(read).toHaveBeenCalledWith(GITHUB_AUTH, "existing-token", { mcpUrl: SERVER.url, loopback: false });
   });
@@ -856,14 +857,14 @@ describe("provider accounts for existing Agent connections", () => {
     const h = connected();
     h.deps.accounts.read = async () => ({ status: "resolved", account: { provider: "github", label: "old-account" } });
     const uc = createMcpAuthUseCases(h.deps);
-    await uc.listConnections("p", OWNER);
+    await uc.listConnections("p", { userId: "p", email: OWNER });
     h.connections.set("p/slack", { ...h.connections.get("p/slack")!, connectedAccount: undefined });
     h.deps.accounts.read = async () => {
       if (operation === "disconnect") h.connections.delete("p/slack");
       else h.connections.set("p/slack", { ...h.connections.get("p/slack")!, revision: "newer", connectedAccount: { provider: "github", label: "new-account" } });
       return { status: "resolved", account: { provider: "github", label: "old-account" } };
     };
-    const views = await uc.listConnections("p", OWNER);
+    const views = await uc.listConnections("p", { userId: "p", email: OWNER });
     expect(JSON.stringify(views)).not.toContain("old-account");
     if (operation === "disconnect") expect(views).toEqual([]);
     else expect(views[0]?.connectedAccount?.label).toBe("new-account");
@@ -877,7 +878,7 @@ describe("provider accounts for existing Agent connections", () => {
     h.connections.set("p/slack", { ...h.connections.get("p/slack")!, ...override });
     const read = vi.fn();
     h.deps.accounts.read = read;
-    await createMcpAuthUseCases(h.deps).listConnections("p", OWNER);
+    await createMcpAuthUseCases(h.deps).listConnections("p", { userId: "p", email: OWNER });
     expect(read).not.toHaveBeenCalled();
   });
 
@@ -885,14 +886,14 @@ describe("provider accounts for existing Agent connections", () => {
     const h = connected();
     const read = vi.fn();
     h.deps.accounts.read = read;
-    await expect(createMcpAuthUseCases(h.deps).listConnections("p", "other@example.test")).rejects.toThrow(ForbiddenError);
+    await expect(createMcpAuthUseCases(h.deps).listConnections("p", { userId: "p", email: "other@example.test" })).rejects.toThrow(ForbiddenError);
     expect(read).not.toHaveBeenCalled();
   });
 
   it("keeps a usable grant connected when the optional account lookup is unavailable", async () => {
     const h = connected();
     h.deps.accounts.read = async () => ({ status: "unavailable" });
-    const views = await createMcpAuthUseCases(h.deps).listConnections("p", OWNER);
+    const views = await createMcpAuthUseCases(h.deps).listConnections("p", { userId: "p", email: OWNER });
     expect(views[0]?.status).toBe("connected");
     expect(views[0]?.connectedAccount).toBeUndefined();
     expect(views[0]?.accountUnavailableReason).toBe("unavailable");
@@ -903,7 +904,7 @@ describe("provider accounts for existing Agent connections", () => {
     const h = harness({ connection: { status: "connected", accessToken: "enc:token" } });
     const read = vi.fn();
     h.deps.accounts.read = read;
-    const views = await createMcpAuthUseCases(h.deps).listConnections("p", OWNER);
+    const views = await createMcpAuthUseCases(h.deps).listConnections("p", { userId: "p", email: OWNER });
     expect(views[0]?.accountUnavailableReason).toBe("not_configured");
     expect(views[0]?.status).toBe("connected");
     expect(read).not.toHaveBeenCalled();
@@ -917,12 +918,12 @@ describe("provider accounts for existing Agent connections", () => {
     };
     const h = harness({ server: { ...SERVER, auth: googleAuth }, connection: { scopes: ["drive.file", "email"] } });
     const uc = createMcpAuthUseCases(h.deps);
-    const url = new URL((await uc.beginAuthorization("p", "slack", OWNER)).authorizeUrl);
+    const url = new URL((await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER })).authorizeUrl);
     expect(url.searchParams.get("scope")).toBe("drive.file email openid");
     expect(h.connections.get("p/slack")?.scopes).toEqual(["drive.file", "email"]);
     const state = url.searchParams.get("state")!;
     expect(h.states.get(state)?.scopes).toEqual(["drive.file", "email", "openid"]);
-    await uc.completeAuthorization({ state, code: "code", userEmail: OWNER });
+    await uc.completeAuthorization({ state, code: "code", user: { userId: "p", email: OWNER } });
     expect(h.connections.get("p/slack")?.scopes).toEqual(["drive.file", "email", "openid"]);
   });
 });
@@ -939,7 +940,7 @@ describe("disconnect", () => {
     };
     const uc = createMcpAuthUseCases(h.deps);
 
-    await expect(uc.disconnect("p", "slack", OWNER)).rejects.toThrow(ConflictError);
+    await expect(uc.disconnect("p", "slack", { userId: "p", email: OWNER })).rejects.toThrow(ConflictError);
     expect(h.connections.get("p/slack")).toBe(replacement);
   });
 });
@@ -955,7 +956,7 @@ describe("completeAuthorization: issuer validation", () => {
   async function started(server: McpServer) {
     const h = harness({ connection: {}, server });
     const uc = createMcpAuthUseCases(h.deps);
-    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
     return { h, uc, state: new URL(authorizeUrl).searchParams.get("state") as string };
   }
 
@@ -966,7 +967,7 @@ describe("completeAuthorization: issuer validation", () => {
       uc.completeAuthorization({
         state,
         code: "code-from-elsewhere",
-        userEmail: OWNER,
+        user: { userId: "p", email: OWNER },
         iss: "https://auth-b.example.com",
       }),
     ).rejects.toThrow(/different authorization server/);
@@ -983,7 +984,7 @@ describe("completeAuthorization: issuer validation", () => {
     await uc.completeAuthorization({
       state,
       code: "c",
-      userEmail: OWNER,
+      user: { userId: "p", email: OWNER },
       iss: "https://auth-a.example.com",
     });
 
@@ -1001,7 +1002,7 @@ describe("completeAuthorization: issuer validation", () => {
       uc.completeAuthorization({
         state,
         code: "c",
-        userEmail: OWNER,
+        user: { userId: "p", email: OWNER },
         iss: "https://auth-a.example.com/",
       }),
     ).rejects.toThrow(/different authorization server/);
@@ -1013,7 +1014,7 @@ describe("completeAuthorization: issuer validation", () => {
       auth: { ...ISSUING.auth, issParameterSupported: true },
     });
 
-    await expect(uc.completeAuthorization({ state, code: "c", userEmail: OWNER })).rejects.toThrow(
+    await expect(uc.completeAuthorization({ state, code: "c", user: { userId: "p", email: OWNER } })).rejects.toThrow(
       /missing the issuer identifier/,
     );
     expect(h.exchanges).toHaveLength(0);
@@ -1033,7 +1034,7 @@ describe("completeAuthorization: issuer validation", () => {
     await expect(uc.completeAuthorization({
       state,
       code: "c",
-      userEmail: OWNER,
+      user: { userId: "p", email: OWNER },
       iss: "https://accounts.google.com/",
     })).rejects.toThrow(/different authorization server/);
     expect(h.exchanges).toHaveLength(0);
@@ -1044,7 +1045,7 @@ describe("completeAuthorization: issuer validation", () => {
     // check a availability bug rather than a security one.
     const { h, uc, state } = await started(ISSUING);
 
-    await uc.completeAuthorization({ state, code: "c", userEmail: OWNER });
+    await uc.completeAuthorization({ state, code: "c", user: { userId: "p", email: OWNER } });
 
     expect(h.exchanges).toHaveLength(1);
   });
@@ -1062,7 +1063,7 @@ describe("completeAuthorization: issuer validation", () => {
       uc.completeAuthorization({
         state,
         code: "c",
-        userEmail: OWNER,
+        user: { userId: "p", email: OWNER },
         iss: "https://auth-a.example.com",
       }),
     ).rejects.toThrow(/changed while this authorization was in progress/);
@@ -1075,7 +1076,7 @@ describe("abandonAuthorization", () => {
   async function started() {
     const h = harness({ connection: {} });
     const uc = createMcpAuthUseCases(h.deps);
-    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
     return { h, uc, state: new URL(authorizeUrl).searchParams.get("state") as string };
   }
 
@@ -1085,7 +1086,7 @@ describe("abandonAuthorization", () => {
     expect(
       await uc.abandonAuthorization({
         state,
-        userEmail: OWNER,
+        user: { userId: "p", email: OWNER },
         error: "access_denied",
         errorDescription: "You cancelled the request.",
       }),
@@ -1100,13 +1101,13 @@ describe("abandonAuthorization", () => {
       server: { ...SERVER, auth: { ...SERVER.auth!, issuer: "https://auth-a.example.com" } },
     });
     const uc = createMcpAuthUseCases(h.deps);
-    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
     const state = new URL(authorizeUrl).searchParams.get("state") as string;
 
     await expect(
       uc.abandonAuthorization({
         state,
-        userEmail: OWNER,
+        user: { userId: "p", email: OWNER },
         error: "access_denied",
         errorDescription: "Session expired — sign in again at evil.example.com",
         iss: "https://attacker.example.com",
@@ -1117,9 +1118,9 @@ describe("abandonAuthorization", () => {
   it("spends the state, so the abandoned flow cannot also be completed", async () => {
     const { uc, state } = await started();
 
-    await uc.abandonAuthorization({ state, userEmail: OWNER, error: "access_denied" });
+    await uc.abandonAuthorization({ state, user: { userId: "p", email: OWNER }, error: "access_denied" });
 
-    await expect(uc.completeAuthorization({ state, code: "c", userEmail: OWNER })).rejects.toThrow(
+    await expect(uc.completeAuthorization({ state, code: "c", user: { userId: "p", email: OWNER } })).rejects.toThrow(
       /expired or was already used/,
     );
   });
@@ -1127,7 +1128,7 @@ describe("abandonAuthorization", () => {
   it("refuses a state belonging to a different user", async () => {
     const { uc, state } = await started();
     await expect(
-      uc.abandonAuthorization({ state, userEmail: "other@example.com", error: "access_denied" }),
+      uc.abandonAuthorization({ state, user: { userId: "p", email: "other@example.com" }, error: "access_denied" }),
     ).rejects.toThrow(ForbiddenError);
   });
 });
@@ -1156,7 +1157,6 @@ describe("client credentials bound to their issuer", () => {
       server: AT_B,
       connection: {
         clientId: "client-at-a",
-        clientRegistered: true,
         issuer: "https://auth-a.example.com",
         status: "connected",
         accessToken: "enc:at",
@@ -1165,7 +1165,7 @@ describe("client credentials bound to their issuer", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    await uc.beginAuthorization("p", "slack", OWNER);
+    await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
 
     expect(h.registrations).toHaveLength(1);
     const connection = h.connections.get("p/slack");
@@ -1179,23 +1179,17 @@ describe("client credentials bound to their issuer", () => {
     expect(connection?.refreshToken).toBeUndefined();
   });
 
-  it("refuses hand-entered credentials from another issuer rather than guessing", async () => {
-    // Nothing here can re-issue them, so the only honest move is to say which
-    // server the owner now has to register with.
+  it("uses the administrator's replacement app without carrying over an old client secret", async () => {
     const h = harness({
-      server: AT_B,
-      connection: {
-        clientId: "manual",
-        clientRegistered: false,
-        issuer: "https://auth-a.example.com",
-      },
+      server: { ...AT_B, auth: { ...AT_B.auth!, clientId: "admin-app" } },
+      connection: { clientId: "old-client", clientSecret: "enc:old-secret", issuer: "https://auth-a.example.com" },
     });
     const uc = createMcpAuthUseCases(h.deps);
-
-    await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toThrow(
-      /registered with a different authorization server/,
-    );
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
+    expect(new URL(authorizeUrl).searchParams.get("client_id")).toBe("admin-app");
     expect(h.registrations).toHaveLength(0);
+    expect(h.connections.get("p/slack")).toMatchObject({ clientId: "admin-app", clientFromRegistry: true });
+    expect(h.connections.get("p/slack")?.clientSecret).toBeUndefined();
   });
 
   it("leaves credentials alone while the issuer still matches", async () => {
@@ -1203,13 +1197,12 @@ describe("client credentials bound to their issuer", () => {
       server: AT_A,
       connection: {
         clientId: "client-at-a",
-        clientRegistered: true,
         issuer: "https://auth-a.example.com",
       },
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    await uc.beginAuthorization("p", "slack", OWNER);
+    await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
 
     expect(h.registrations).toHaveLength(0);
     expect(h.connections.get("p/slack")?.clientId).toBe("client-at-a");
@@ -1221,174 +1214,19 @@ describe("client credentials bound to their issuer", () => {
     // resource must not have these tokens follow it there.
     const h = harness({ server: AT_A, connection: { clientId: "c" } });
     const uc = createMcpAuthUseCases(h.deps);
-    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", { userId: "p", email: OWNER });
     const state = new URL(authorizeUrl).searchParams.get("state") as string;
 
-    await uc.completeAuthorization({ state, code: "c", userEmail: OWNER });
+    await uc.completeAuthorization({ state, code: "c", user: { userId: "p", email: OWNER } });
 
     // The same value the exchange sent as the RFC 8707 `resource`.
     expect(h.exchanges[0]?.target.resource).toBe("https://mcp.slack.com");
     expect(h.connections.get("p/slack")?.resource).toBe("https://mcp.slack.com");
   });
 
-  it("records the issuer against hand-entered credentials", async () => {
-    const h = harness({ server: AT_A });
-    const uc = createMcpAuthUseCases(h.deps);
-
-    await uc.saveClientCredentials("p", "slack", { clientId: "manual", clientSecret: "s" }, OWNER);
-
-    expect(h.connections.get("p/slack")?.issuer).toBe("https://auth-a.example.com");
-  });
 });
 
-describe("saveClientCredentials", () => {
-  it.each([
-    ["client-2", SERVER.auth!.issuer, undefined],
-    ["client-2", SERVER.auth!.issuer, maskSecret("enc:original")],
-    ["client-1", "https://previous-issuer.example.test", undefined],
-    ["client-1", "https://previous-issuer.example.test", maskSecret("enc:original")],
-  ])("does not carry a preserved secret into a different client or issuer (%s, %s, %s)", async (clientId, previousIssuer, submittedSecret) => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
-    try {
-      const h = harness({ connection: { clientSecret: "enc:original", issuer: previousIssuer, status: "connected", accessToken: "enc:old-token" } });
-      const uc = createMcpAuthUseCases(h.deps);
-
-      const view = await uc.saveClientCredentials("p", "slack", { clientId, clientSecret: submittedSecret }, OWNER);
-
-      expect(view.clientSecret).toBeUndefined();
-      expect(view.status).toBe("needs_auth");
-      expect(h.connections.get("p/slack")?.accessToken).toBeUndefined();
-      h.states.set("fresh-state", { state: "fresh-state", agentName: "p", serverName: "slack", userEmail: OWNER,
-        codeVerifier: "enc:verifier", issuer: SERVER.auth!.issuer, clientId, resource: SERVER.auth!.resource,
-        createdAt: "2026-01-01T00:00:00Z" });
-      await uc.completeAuthorization({ state: "fresh-state", code: "fresh-code", userEmail: OWNER });
-      expect(h.exchanges[0]?.target.clientSecret).toBeUndefined();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("keeps the same issuer's client secret but retires a grant for a different resource", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
-    try {
-      const h = harness({ connection: { resource: "https://previous-resource.example.test", clientSecret: "enc:original", status: "connected", accessToken: "enc:old-token" } });
-      const uc = createMcpAuthUseCases(h.deps);
-
-      const view = await uc.saveClientCredentials("p", "slack", { clientId: "client-1", clientSecret: maskSecret("enc:original") }, OWNER);
-
-      expect(view.status).toBe("needs_auth");
-      expect(h.connections.get("p/slack")).toMatchObject({ resource: SERVER.auth!.resource, clientSecret: "enc:original" });
-      expect(h.connections.get("p/slack")?.accessToken).toBeUndefined();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("keeps the stored secret when the submitted one is a mask", async () => {
-    const h = harness({ connection: { clientSecret: "enc:original" } });
-    const uc = createMcpAuthUseCases(h.deps);
-
-    // The console shows the stored secret masked and posts it back untouched;
-    // that echo must not overwrite the real value with its own mask. Masked with
-    // the shipped mask, since that is what the console actually sends back.
-    await uc.saveClientCredentials(
-      "p",
-      "slack",
-      { clientId: "client-1", clientSecret: maskSecret("enc:original") },
-      OWNER,
-    );
-
-    expect(h.connections.get("p/slack")?.clientSecret).toBe("enc:original");
-  });
-
-  it("leaves a live connection alone when nothing was edited", async () => {
-    // Both boxes arrive prefilled from the stored connection, so Save without an
-    // edit is the likeliest press there is — and it would reset the whole
-    // connection, costing the agent the tokens those credentials authorized.
-    const h = harness({
-      connection: {
-        status: "connected",
-        clientSecret: "enc:original",
-        accessToken: "enc:at",
-        refreshToken: "enc:rt",
-        connectedAt: "2026-01-01T00:00:00.000Z",
-      },
-    });
-    const uc = createMcpAuthUseCases(h.deps);
-
-    const view = await uc.saveClientCredentials(
-      "p",
-      "slack",
-      { clientId: "client-1", clientSecret: maskSecret("enc:original") },
-      OWNER,
-    );
-
-    expect(view.status).toBe("connected");
-    const stored = h.connections.get("p/slack");
-    expect(stored?.accessToken).toBe("enc:at");
-    expect(stored?.refreshToken).toBe("enc:rt");
-    expect(stored?.status).toBe("connected");
-  });
-
-  it("clears the stored secret when the box is emptied", async () => {
-    // The only way back from a confidential client to a public one. Distinct
-    // from an omitted field precisely because this box arrives prefilled.
-    const h = harness({
-      connection: { status: "connected", clientSecret: "enc:original", accessToken: "enc:at" },
-    });
-    const uc = createMcpAuthUseCases(h.deps);
-
-    const view = await uc.saveClientCredentials(
-      "p",
-      "slack",
-      { clientId: "client-1", clientSecret: "" },
-      OWNER,
-    );
-
-    expect(view.clientSecret).toBeUndefined();
-    const stored = h.connections.get("p/slack");
-    expect(stored?.clientSecret).toBeUndefined();
-    // Credentials really did change, so the tokens they authorized go with them.
-    expect(stored?.status).toBe("needs_auth");
-    expect(stored?.accessToken).toBeUndefined();
-  });
-
-  it("drops the tokens a previous client authorized", async () => {
-    // Otherwise the connection reports `connected` while holding tokens issued
-    // to a client it no longer uses.
-    const h = harness({
-      connection: { status: "connected", accessToken: "enc:at", refreshToken: "enc:rt" },
-    });
-    const uc = createMcpAuthUseCases(h.deps);
-
-    const view = await uc.saveClientCredentials(
-      "p",
-      "slack",
-      { clientId: "client-2", clientSecret: "new" },
-      OWNER,
-    );
-
-    expect(view.status).toBe("needs_auth");
-    expect(h.connections.get("p/slack")?.clientSecret).toBe("enc:new");
-  });
-
-  it("does not restore a connection removed while credentials were saved", async () => {
-    const h = harness({ connection: {} });
-    const get = h.deps.connections.get;
-    h.deps.connections.get = async (agent, server) => {
-      const current = await get(agent, server);
-      h.connections.delete(`${agent}/${server}`);
-      return current;
-    };
-    const uc = createMcpAuthUseCases(h.deps);
-
-    await expect(uc.saveClientCredentials("p", "slack", { clientId: "replacement" }, OWNER))
-      .rejects.toThrow(ConflictError);
-    expect(h.connections.has("p/slack")).toBe(false);
-  });
-
+describe("listConnections", () => {
   it("never exposes a secret or a token in the view", async () => {
     // There is no reveal path for either of these, unlike the
     // agent API token — so the view is the only thing that could leak them.
@@ -1402,11 +1240,11 @@ describe("saveClientCredentials", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    const serialized = JSON.stringify(await uc.listConnections("p", OWNER));
+    const serialized = JSON.stringify(await uc.listConnections("p", { userId: "p", email: OWNER }));
 
     const view = JSON.parse(serialized)[0] as { clientSecret?: string };
-    expect(view.clientSecret).toBe(maskSecret("enc:CLIENT-SECRET-VALUE"));
-    expect(isMasked(view.clientSecret ?? "")).toBe(true);
+    expect(view).not.toHaveProperty("clientSecret");
+    expect(view).not.toHaveProperty("clientRegistered");
     // Tokens are absent outright — there is no reveal path and no reason to
     // show them, so masking is not the question for those.
     for (const secret of ["CLIENT-SECRET-VALUE", "ACCESS-TOKEN-VALUE", "REFRESH-TOKEN-VALUE"]) {
@@ -1414,12 +1252,12 @@ describe("saveClientCredentials", () => {
     }
   });
 
-  it("lists every agent connection through bounded repository pages", async () => {
+  it("lists every personal connection through bounded repository pages", async () => {
     const h = harness({});
     for (let index = 0; index < MCP_CONNECTION_LIST_PAGE_SIZE + 2; index += 1) {
       const serverName = `server-${String(index).padStart(3, "0")}`;
       h.connections.set(`p/${serverName}`, {
-        agentName: "p",
+        userId: "p",
         serverName,
         clientId: "client",
         issuer: `https://${serverName}.example.com`,
@@ -1429,16 +1267,16 @@ describe("saveClientCredentials", () => {
         updatedAt: "2026-01-01T00:00:00.000Z",
       });
     }
-    const listByAgent = h.deps.connections.listByAgent.bind(h.deps.connections);
+    const listByUser = h.deps.connections.listByUser.bind(h.deps.connections);
     const pageSizes: number[] = [];
-    h.deps.connections.listByAgent = async (agentName, limit, after) => {
-      const page = await listByAgent(agentName, limit, after);
+    h.deps.connections.listByUser = async (agentName, limit, after) => {
+      const page = await listByUser(agentName, limit, after);
       pageSizes.push(page.length);
       return page;
     };
 
     const uc = createMcpAuthUseCases(h.deps);
-    await expect(uc.listConnections("p", OWNER)).resolves.toHaveLength(h.connections.size);
+    await expect(uc.listConnections("p", { userId: "p", email: OWNER })).resolves.toHaveLength(h.connections.size);
     expect(pageSizes).toEqual([MCP_CONNECTION_LIST_PAGE_SIZE, 2]);
   });
 });
@@ -1450,12 +1288,12 @@ describe("listing a server's tools as the agent", () => {
     const blocked = new BlockedUrlError("Private address");
     h.deps.urlPolicy.assertAllowed = async () => { throw blocked; };
 
-    await expect(uc.listTools("p", "slack", OWNER)).resolves.toEqual({ ok: false, error: blocked.message });
+    await expect(uc.listTools("p", "slack", { userId: "p", email: OWNER })).resolves.toEqual({ ok: false, error: blocked.message });
 
     const resolverFailure = new Error("DNS lookup failed");
     h.deps.urlPolicy.assertAllowed = async () => { throw resolverFailure; };
 
-    await expect(uc.listTools("p", "slack", OWNER)).rejects.toBe(resolverFailure);
+    await expect(uc.listTools("p", "slack", { userId: "p", email: OWNER })).rejects.toBe(resolverFailure);
     expect(h.probes).toHaveLength(0);
   });
 
@@ -1469,15 +1307,15 @@ describe("listing a server's tools as the agent", () => {
     const getAgent = h.deps.agents.get;
     h.deps.agents.get = async name => { const agent = await getAgent(name); return agent ? { ...agent, configuration } : null; };
     const uc = createMcpAuthUseCases({ ...h.deps, cipher: secretCipher });
-    await uc.listTools("p", "slack", OWNER, secretCipher.maskHeaderOverrides(headers, context));
+    await uc.listTools("p", "slack", { userId: "p", email: OWNER }, secretCipher.maskHeaderOverrides(headers, context));
     expect(h.probes[0]?.headers["X-MCP-Toolsets"]).toBe("context,repos,actions");
     expect(h.probes[0]?.headers.Authorization).toBe("Bearer at");
-    await uc.listTools("p", "slack", OWNER, {});
+    await uc.listTools("p", "slack", { userId: "p", email: OWNER }, {});
     expect(h.probes[1]?.headers["X-MCP-Toolsets"]).toBeUndefined();
     configuration.mcpList[0]!.headerTarget = mcpHeaderTarget("https://old.example.test/mcp");
-    await uc.listTools("p", "slack", OWNER, secretCipher.maskHeaderOverrides(headers, context));
+    await uc.listTools("p", "slack", { userId: "p", email: OWNER }, secretCipher.maskHeaderOverrides(headers, context));
     expect(h.probes[2]?.headers["X-MCP-Toolsets"]).toBeUndefined();
-    await expect(uc.listTools("p", "slack", "outsider@example.test")).rejects.toThrow(ForbiddenError);
+    await expect(uc.listTools("p", "slack", { userId: "p", email: "outsider@example.test" })).rejects.toThrow(ForbiddenError);
     expect(h.probes).toHaveLength(3);
   });
 
@@ -1487,7 +1325,7 @@ describe("listing a server's tools as the agent", () => {
     const h = harness({ connection: {} });
     const uc = createMcpAuthUseCases(h.deps);
 
-    const result = await uc.listTools("p", "slack", OWNER);
+    const result = await uc.listTools("p", "slack", { userId: "p", email: OWNER });
 
     expect(result).toEqual({ ok: true, tools: [{ name: "search" }] });
     expect(h.probes[0]?.url).toBe("https://mcp.slack.com/mcp");
@@ -1504,15 +1342,15 @@ describe("listing a server's tools as the agent", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    expect(await uc.listTools("p", "slack", OWNER)).toEqual({
+    expect(await uc.listTools("p", "slack", { userId: "p", email: OWNER })).toEqual({
       ok: false,
       error: "slack needs to be reconnected.",
     });
     expect(h.probes).toHaveLength(0);
   });
 
-  it("falls back to the entry's own headers when the agent has not connected", async () => {
-    // Registry credentials remain usable when OAuth is discovered but unconnected.
+  it("refuses shared credentials when the caller has not connected", async () => {
+    // OAuth services require the caller's grant even if registry credentials exist.
     const h = harness({
       connection: {},
       server: { ...SERVER, headers: { Authorization: "enc:Bearer registry-pat" } },
@@ -1520,8 +1358,8 @@ describe("listing a server's tools as the agent", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    expect(await uc.listTools("p", "slack", OWNER)).toEqual({ ok: true, tools: [{ name: "search" }] });
-    expect(h.probes[0]?.headers.Authorization).toBe("Bearer registry-pat");
+    expect(await uc.listTools("p", "slack", { userId: "p", email: OWNER })).toMatchObject({ ok: false });
+    expect(h.probes).toHaveLength(0);
   });
 
   it("layers the binding's header overrides the way a run does", async () => {
@@ -1535,7 +1373,7 @@ describe("listing a server's tools as the agent", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    await uc.listTools("p", "slack", OWNER, {
+    await uc.listTools("p", "slack", { userId: "p", email: OWNER }, {
       "X-Tenant": "override",
       "X-Drop": null,
       "X-Tenant-Id": "forged-agent",
@@ -1564,12 +1402,19 @@ describe("listing a server's tools as the agent", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    expect(await uc.listTools("p", "slack", OWNER)).toEqual({
+    expect(await uc.listTools("p", "slack", { userId: "p", email: OWNER })).toEqual({
       ok: false,
       error: "HTTP 401",
       unauthorized: true,
     });
     expect(h.unauthorized).toEqual(["slack"]);
+  });
+
+  it("passes the exact OAuth credential and requested scope when a probe asks for a wider grant", async () => {
+    const h = harness({ connection: { status: "connected" }, probeResult: { ok: false, error: "HTTP 403", unauthorized: true, scope: "files:write" } });
+    const flag = vi.spyOn(h.deps.authProvider, "markUnauthorized");
+    await createMcpAuthUseCases(h.deps).listTools("p", "slack", { userId: "p", email: OWNER });
+    expect(flag).toHaveBeenCalledExactlyOnceWith("p", "slack", "request-credential", "files:write");
   });
 
   it("does not flag a server that was merely unreachable", async () => {
@@ -1579,13 +1424,13 @@ describe("listing a server's tools as the agent", () => {
     });
     const uc = createMcpAuthUseCases(h.deps);
 
-    await uc.listTools("p", "slack", OWNER);
+    await uc.listTools("p", "slack", { userId: "p", email: OWNER });
 
     expect(h.unauthorized).toEqual([]);
   });
 
   it("refuses a non-owner", async () => {
     const uc = createMcpAuthUseCases(harness({ connection: {} }).deps);
-    await expect(uc.listTools("p", "slack", "someone@example.com")).rejects.toThrow(ForbiddenError);
+    await expect(uc.listTools("p", "slack", { userId: "p", email: "someone@example.com" })).rejects.toThrow(ForbiddenError);
   });
 });

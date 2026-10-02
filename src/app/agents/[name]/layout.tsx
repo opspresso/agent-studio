@@ -20,7 +20,7 @@ import { OwnerLine } from "@/app/_components/OwnerLine";
 import { getAgent, type SanitizedAgent } from "../lib/api";
 import { onConfigurationChange } from "../lib/configurationEvents";
 import { AgentAudioContext } from "./_components/AgentAudioContext";
-import { canEditAgent, useViewer } from "@/app/_lib/useViewer";
+import { canEditAgent, canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { tierMayCreateAgents } from "@/domain/member/tiers";
 import { CloneAgentButton } from "./_components/CloneAgentButton";
 import { PageHeader } from "@/app/_components/PageHeader";
@@ -76,7 +76,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
   const tabs = [
     { href: base, label: t("agent.tab.playground"), Icon: IconPlayerPlay },
     { href: `${base}/usage`, label: t("agent.tab.usage"), Icon: IconChartBar },
-    ...(ownerEmail && viewer?.email === ownerEmail && currentAgent?.audioToolsEnabled ? [{ href: `${base}/audio`, label: t("audio.title"), Icon: IconSparkles }] : []),
+    ...(canRunAgents(viewer) && currentAgent?.audioToolsEnabled ? [{ href: `${base}/audio`, label: t("audio.title"), Icon: IconSparkles }] : []),
     ...(canManage && currentAgent?.workspaceToolsEnabled ? [{ href: `${base}/workspace`, label: t("workspace.toolsTitle"), Icon: IconSparkles }] : []),
     // Gated like Traces: these hold other people's runtime output, and the
     // delete here is the only way a Slack or trigger run's artifact is removed.
@@ -87,11 +87,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
       ? [{ href: `${base}/traces`, label: t("agent.tab.traces"), Icon: IconRoute }]
       : []),
     { href: `${base}/api-reference`, label: t("agent.tab.apiReference"), Icon: IconApi },
-    // How other systems reach the agent — bots and the API token. Owner
-    // gated like Settings, which is where these lived until the bots outgrew it.
-    ...(canManage
-      ? [{ href: `${base}/integrations`, label: t("agent.tab.integrations"), Icon: IconPlugConnected }]
-      : []),
+    { href: `${base}/integrations`, label: t("agent.tab.integrations"), Icon: IconPlugConnected },
     ...(canManage
       ? [{ href: `${base}/settings`, label: t("agent.tab.settings"), Icon: IconAdjustments }]
       : []),

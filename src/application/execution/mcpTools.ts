@@ -1,3 +1,4 @@
+import { sourceRefreshFingerprint } from "@/application/audio/sourceRefreshIdentity";
 import { createHash } from "node:crypto";
 /** An Agent's MCP bindings resolved into offered tools, and session cleanup. */
 
@@ -14,17 +15,12 @@ import {
   applyMcpUserEmail,
   CONVERSATION_ID_HEADER,
   mcpUserEmail,
-  stripMcpMetadataHeaders,
   TENANT_ID_HEADER,
 } from "@/application/mcpMetadataHeaders";
-import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
+import { resolveMcpCredentials } from "@/application/mcp/credentials";
 import type { ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
 import { mapMcpSource, MCP_SOURCE_RESULT_DESCRIPTION } from "@/application/audio/mapMcpSource";
-import {
-  mcpHeadersContext,
-  agentMcpHeadersContext,
-} from "@/domain/security/secretContext";
 
 export type ResolvedMcp = Awaited<ReturnType<typeof buildMcpTools>>;
 
@@ -39,7 +35,7 @@ export async function buildMcpTools(
   configuration: AgentConfiguration,
   signal?: AbortSignal,
   /** Where the run came from; its email actor and conversation reach the server as headers. */
-  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation"> & Partial<Pick<RunOrigin, "ancestry">>,
+  origin?: Partial<Pick<RunOrigin, "actor" | "user" | "userEmail" | "conversation">> & Partial<Pick<RunOrigin, "ancestry">>,
 ): Promise<{
   signature: string;
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
@@ -62,6 +58,8 @@ export async function buildMcpTools(
     return { mcpTools: [], mcpServers: [], warnings: [], signature: runtimeFingerprint([]) };
   }
   const descriptionByName = new Map<string, string>();
+  const credentialByServer = new Map<string, string>();
+  const authorizationByServer = new Map<string, string>();
   // Per-request context, kept apart from the identity headers on purpose — see
   // `CONVERSATION_ID_HEADER` for why it must not reach the discovery cache key.
   const contextHeaders: Record<string, string> | undefined = origin?.conversation
@@ -95,67 +93,24 @@ export async function buildMcpTools(
               : `MCP server '${mcp.name}' could not be checked for a safe address; its tools were not offered.` };
           }
         }
-        let overrides = binding.headers;
-        let credentialWarning: string | undefined;
-        if (
-          hasMcpHeaderSecrets(overrides) &&
-          binding.headerTarget !== mcpHeaderTarget(mcp.url)
-        ) {
-          overrides = Object.fromEntries(
-            Object.entries(overrides ?? {}).filter(([, value]) => value === null),
-          );
-          credentialWarning =
-            `MCP server '${mcp.name}' moved since its Agent header credentials were saved; ` +
-            "those credentials were not sent. Re-enter them for the current endpoint.";
-          log.warn("mcp", credentialWarning);
-        }
+        const beforeAuthorization = await deps.sourceRefreshIdentity?.({ configuration, binding, server: mcp, user: origin?.user });
+        const credentials = await resolveMcpCredentials({ cipher: deps.cipher, auth: deps.mcpAuth }, configuration.agentName, mcp, binding, origin?.user);
+        if (credentials.credentialFingerprint) credentialByServer.set(mcp.name, credentials.credentialFingerprint);
+        const credentialWarning = credentials.warning;
+        if (credentialWarning) log.warn("mcp", credentialWarning);
+        if (credentials.unavailable) return { warning: [credentialWarning, `${credentials.unavailable} Its tools were not offered.`].filter(Boolean).join(" ") };
         const sourceOutputs = binding.sourceOutputs ?? mcp.sourceOutputs;
         const defaults = binding.sourceOutputs === undefined && Boolean(sourceOutputs?.length);
-        const refreshIdentity = defaults || sourceOutputs?.some((mapping) => mapping.refreshArgument)
-          ? await deps.sourceRefreshIdentity?.({ configuration, binding, server: mcp }) : undefined;
+        const refreshIdentity = deps.sourceRefreshIdentity
+          ? await deps.sourceRefreshIdentity({ configuration, binding, server: mcp, user: origin?.user })
+          : mcp.auth ? undefined : sourceRefreshFingerprint(mcp, binding, null);
+        if (beforeAuthorization !== undefined && beforeAuthorization !== refreshIdentity) return { warning: `MCP server '${mcp.name}' authentication changed during preparation; its tools were not offered.` };
+        if (mcp.auth && !refreshIdentity) return { warning: `MCP server '${mcp.name}' has no authorization identity; its tools were not offered.` };
+        authorizationByServer.set(mcp.name, refreshIdentity!);
         // Default namespaces belong to the authenticated connection, never to a shared plugin account.
         const mappings = sourceOutputs?.map((mapping) => defaults ? { ...mapping,
-          namespace: createHash("sha256").update(JSON.stringify([mapping.namespace, configuration.agentName, refreshIdentity])).digest("hex") } : mapping);
-        const headers = deps.cipher.mergeOutboundHeaders(
-          mcp.headers,
-          overrides,
-          mcpHeadersContext(mcp.name),
-          agentMcpHeadersContext(
-            configuration.agentName,
-            binding.name,
-          ),
-        );
-        // Before the availability check below: a stored spelling of a reserved
-        // metadata header must never count as "a way to authenticate" a server
-        // whose connection is unavailable, and must never impersonate another
-        // agent, user, or conversation.
-        stripMcpMetadataHeaders(headers);
-        if (mcp.auth) {
-          // A per-agent credential, resolved and refreshed by the auth
-          // provider. Applied last on purpose: an Agent must not be able to
-          // substitute its own Authorization for the agent's connection.
-          // The entry's own OAuth block goes with it, so the provider can tell
-          // whether the connection still belongs to what this name points at —
-          // it is already in hand here, which keeps that check off the read path.
-          const resolved = await deps.mcpAuth.headersFor(
-            configuration.agentName,
-            mcp.name,
-            mcp.auth,
-          );
-          if (!resolved.unavailable) {
-            Object.assign(headers, resolved.headers);
-          } else if (Object.keys(headers).length === 0) {
-            // Nothing else to authenticate with, so the server really is out of
-            // reach. With headers of its own it is not: discovering OAuth on an
-            // entry adds a way to authenticate it, and must not take away the
-            // one the operator already configured.
-            return {
-              warning: [credentialWarning, `${resolved.unavailable} Its tools were not offered.`]
-                .filter(Boolean)
-                .join(" "),
-            };
-          }
-        }
+          namespace: createHash("sha256").update(JSON.stringify([mapping.namespace, configuration.agentName, origin?.user?.userId, refreshIdentity])).digest("hex") } : mapping);
+        const headers = credentials.headers;
         // The platform's own values, applied last: the strip above already
         // removed every stored spelling, so nothing merged from the registry
         // or a binding survives to be folded with these.
@@ -210,8 +165,10 @@ export async function buildMcpTools(
         continue;
       }
       flagged.add(serverName);
+      const fingerprint = credentialByServer.get(serverName);
+      if (!fingerprint || !origin?.user) continue;
       await deps.mcpAuth
-        .markUnauthorized(configuration.agentName, serverName, toolManager.scopeChallenges?.get(serverName))
+        .markUnauthorized(origin.user.userId, serverName, fingerprint, toolManager.scopeChallenges?.get(serverName))
         .catch((error: unknown) => {
           log.warn("mcp", `could not flag '${serverName}' as needing reauthorization`, error);
         });
@@ -250,7 +207,7 @@ export async function buildMcpTools(
     }
   }
   return {
-    signature: runtimeFingerprint([servers.map(({ name, url }) => ({ name, url })), capped]),
+    signature: runtimeFingerprint([servers.map(({ name, url }) => ({ name, url, authorization: authorizationByServer.get(name) })), capped]),
     mcpTools: capped,
     mcpServers,
     warnings: [
@@ -272,8 +229,15 @@ export async function buildMcpTools(
       if (!offered.has(name)) return { text: `Error: '${name}' is not available on this run. At most ` +
         `${MAX_MCP_TOOLS_PER_RUN} MCP tools are offered and this one was past that. Use one of the tools listed for you.` };
       const server = serverByAlias.get(name);
-      if (!server || !await deps.mcps.get(server)) {
+      const current = server ? await deps.mcps.get(server) : null;
+      if (!server || !current) {
         return { text: "Error: this MCP server is no longer available." };
+      }
+      const binding = mcpList.find(binding => binding.name === server);
+      if (binding && deps.sourceRefreshIdentity && await deps.sourceRefreshIdentity({
+        configuration, binding, server: current, user: origin?.user,
+      }) !== authorizationByServer.get(server)) {
+        return { text: "Error: your MCP connection changed; start a new run to use the current authorization." };
       }
       return toolManager.callTool(name, args);
     },

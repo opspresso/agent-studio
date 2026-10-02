@@ -31,17 +31,15 @@ function ConfigurationFixture() {
     model: "", systemPrompt: "", parameters: { piiFiltering: false },
     mcpList: [], skillList: [], subagentList: [],
   });
-  return <ViewerProvider viewer={{ email: "reader@example.test", tier: "member", isAdmin: false, isConfiguredAdmin: false }}>
-    <div style={{ padding: 24, maxWidth: 800 }}>
-      <AgentConfigurationEditor agentName="agent" models={[]} imageModels={[]} value={value} onChange={setValue}
+  return <div style={{ padding: 24, maxWidth: 800 }}>
+      <AgentConfigurationEditor agentName="agent" canEdit models={[]} imageModels={[]} value={value} onChange={setValue}
         schemaText="" onSchemaChange={() => {}} schemaError={null}
         save={{ run: () => {}, saving: false, disabled: false, error: null, saved: false, label: "Save" }} />
-    </div>
-  </ViewerProvider>;
+    </div>;
 }
 
-createRoot(document.getElementById("root")!).render(<MantineProvider theme={theme}><I18nProvider locale="en">
+createRoot(document.getElementById("root")!).render(<MantineProvider theme={theme}><I18nProvider locale="en"><ViewerProvider viewer={{ email: "reader@example.test", tier: "member", isAdmin: false }}>
   {location.pathname === "/chat"
     ? <div style={{ height: "100vh", padding: 16 }}><NewChatPanel /></div>
     : location.pathname === "/usage" ? <ModelUsagePage /> : location.pathname === "/configuration" ? <ConfigurationFixture /> : <Fixture />}
-</I18nProvider></MantineProvider>);
+</ViewerProvider></I18nProvider></MantineProvider>);

@@ -41,9 +41,9 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 describe("server-owned repository creation and automatic access registration", () => {
   it("registers only a successful creation and reuses the receipt without creating twice", async () => {
     expect(workspaceAllowsRepository(deployment, input.repository)).toBe(false);
-    expect(await api.create("demo", input, owner)).toMatchObject({ status: "created", allowed: true, reused: false, result: { repositoryId: 42, baseBranch: "main" } });
+    expect(await api.create("demo", input, { userId: "studio-user-1", email: owner })).toMatchObject({ status: "created", allowed: true, reused: false, result: { repositoryId: 42, baseBranch: "main" } });
     expect((await policies.get("demo"))?.rules).toMatchObject({ mode: "new", repositories: ["company/existing", input.repository] });
-    expect(await api.create("demo", input, owner)).toMatchObject({ status: "created", allowed: true, reused: true });
+    expect(await api.create("demo", input, { userId: "studio-user-1", email: owner })).toMatchObject({ status: "created", allowed: true, reused: true });
     expect(createRepository).toHaveBeenCalledTimes(1);
     expect((await creations.get("demo", input.repository))?.status).toBe("created");
   });
@@ -51,16 +51,16 @@ describe("server-owned repository creation and automatic access registration", (
   it("refuses unlisted creation in fixed mode before touching GitHub", async () => {
     deployment.mode = "selected";
     await saveSettings();
-    await expect(api.create("demo", input, owner)).rejects.toMatchObject({ status: 400 });
+    await expect(api.create("demo", input, { userId: "studio-user-1", email: owner })).rejects.toMatchObject({ status: 400 });
     expect(createRepository).not.toHaveBeenCalled();
     expect(await creations.get("demo", input.repository)).toBeNull();
   });
 
   it("does not re-add a created repository that an administrator removed while keeping new mode", async () => {
-    await api.create("demo", input, owner);
+    await api.create("demo", input, { userId: "studio-user-1", email: owner });
     const current = (await policies.get("demo"))!;
     await policies.put({ ...current, revision: current.revision + 1, rules: { mode: "new", repositories: [] } }, current.revision);
-    expect(await api.create("demo", input, owner)).toMatchObject({ status: "created", reused: true, allowed: false });
+    expect(await api.create("demo", input, { userId: "studio-user-1", email: owner })).toMatchObject({ status: "created", reused: true, allowed: false });
     expect((await policies.get("demo"))?.rules?.repositories).toEqual([]);
     expect(createRepository).toHaveBeenCalledTimes(1);
   });
@@ -68,29 +68,29 @@ describe("server-owned repository creation and automatic access registration", (
   it("permits all-mode creation without making the list an access restriction", async () => {
     deployment.mode = "all"; deployment.repositories = [];
     await saveSettings();
-    expect(await api.create("demo", input, owner)).toMatchObject({ status: "created", allowed: true });
+    expect(await api.create("demo", input, { userId: "studio-user-1", email: owner })).toMatchObject({ status: "created", allowed: true });
     expect(workspaceAllowsRepository(withWorkspaceRepositoryRules(deployment, (await policies.get("demo"))?.rules), "different/existing")).toBe(true);
   });
 
   it("does not register a repository when GitHub says it already exists", async () => {
     createRepository.mockRejectedValueOnce(new CodingMutationRejectedError("GitHub rejected creation: repository exists"));
-    expect(await api.create("demo", input, owner)).toMatchObject({ status: "failed", allowed: false });
+    expect(await api.create("demo", input, { userId: "studio-user-1", email: owner })).toMatchObject({ status: "failed", allowed: false });
     expect((await policies.get("demo"))?.rules?.repositories).toEqual(["company/existing"]);
     expect(workspaceAllowsRepository(deployment, input.repository)).toBe(false);
-    expect(await api.create("demo", input, owner)).toMatchObject({ status: "created", allowed: true });
+    expect(await api.create("demo", input, { userId: "studio-user-1", email: owner })).toMatchObject({ status: "created", allowed: true });
     expect(createRepository).toHaveBeenCalledTimes(2);
   });
 
   it("never retries an uncertain remote creation or accepts a different request as its result", async () => {
     createRepository.mockRejectedValueOnce(new Error("connection lost"));
-    expect(await api.create("demo", input, owner)).toMatchObject({ status: "uncertain", allowed: false });
-    await expect(api.create("demo", input, owner)).rejects.toMatchObject({ status: 409 });
-    await expect(api.create("demo", { ...input, private: false }, owner)).rejects.toMatchObject({ status: 409 });
+    expect(await api.create("demo", input, { userId: "studio-user-1", email: owner })).toMatchObject({ status: "uncertain", allowed: false });
+    await expect(api.create("demo", input, { userId: "studio-user-1", email: owner })).rejects.toMatchObject({ status: 409 });
+    await expect(api.create("demo", { ...input, private: false }, { userId: "studio-user-1", email: owner })).rejects.toMatchObject({ status: 409 });
     expect(createRepository).toHaveBeenCalledTimes(1);
   });
 
   it("lets only one concurrent request issue the external create", async () => {
-    const results = await Promise.allSettled([api.create("demo", input, owner), api.create("demo", input, owner)]);
+    const results = await Promise.allSettled([api.create("demo", input, { userId: "studio-user-1", email: owner }), api.create("demo", input, { userId: "studio-user-1", email: owner })]);
     expect(results.some(result => result.status === "fulfilled")).toBe(true);
     expect(createRepository).toHaveBeenCalledTimes(1);
   });
@@ -101,7 +101,7 @@ describe("server-owned repository creation and automatic access registration", (
     let started = 0;
     createRepository.mockImplementation(async request => { if (++started === 2) release(); await barrier; return created(request); });
     const other = { ...input, repository: "company/second-game" };
-    const results = await Promise.all([api.create("demo", input, owner), api.create("demo", other, owner)]);
+    const results = await Promise.all([api.create("demo", input, { userId: "studio-user-1", email: owner }), api.create("demo", other, { userId: "studio-user-1", email: owner })]);
     expect(results.every(result => result.allowed)).toBe(true);
     expect((await policies.get("demo"))?.rules?.repositories).toEqual(expect.arrayContaining(["company/existing", input.repository, other.repository]));
   });
@@ -111,38 +111,38 @@ describe("server-owned repository creation and automatic access registration", (
       await policies.put({ agentName: "demo", revision: 2, updatedAt: now.toISOString(), rules: { mode: "selected", repositories: [] } }, 1);
       return created(request);
     });
-    expect(await api.create("demo", input, owner)).toMatchObject({ status: "created", allowed: false, error: expect.stringContaining("current policy") });
+    expect(await api.create("demo", input, { userId: "studio-user-1", email: owner })).toMatchObject({ status: "created", allowed: false, error: expect.stringContaining("current policy") });
     expect((await policies.get("demo"))?.rules).toEqual({ mode: "selected", repositories: [] });
-    expect(await api.create("demo", input, owner)).toMatchObject({ reused: true, allowed: false });
+    expect(await api.create("demo", input, { userId: "studio-user-1", email: owner })).toMatchObject({ reused: true, allowed: false });
     expect(createRepository).toHaveBeenCalledTimes(1);
   });
 
   it("checks capacity and ownership before creating an external repository", async () => {
     deployment.repositories = Array.from({ length: 100 }, (_, index) => `company/repo-${index}`);
     await saveSettings();
-    await expect(api.create("demo", input, owner)).rejects.toMatchObject({ status: 400 });
-    await expect(api.create("demo", input, "other@example.test")).rejects.toMatchObject({ status: 403 });
+    await expect(api.create("demo", input, { userId: "studio-user-1", email: owner })).rejects.toMatchObject({ status: 400 });
+    await expect(api.create("demo", input, { userId: "studio-user-1", email: "other@example.test" })).rejects.toMatchObject({ status: 403 });
     expect(createRepository).not.toHaveBeenCalled();
   });
 
   it("counts normalized deployment entries rather than duplicate spellings against capacity", async () => {
     deployment.repositories = Array(100).fill("Company/Existing");
     await saveSettings();
-    expect(await api.create("demo", input, owner)).toMatchObject({ status: "created", allowed: true });
+    expect(await api.create("demo", input, { userId: "studio-user-1", email: owner })).toMatchObject({ status: "created", allowed: true });
     expect((await policies.get("demo"))?.rules?.repositories).toEqual(["company/existing", input.repository]);
   });
 
   it("retains the pre-call receipt when outcome persistence fails, preventing a replay", async () => {
     vi.spyOn(creations, "finish").mockRejectedValueOnce(new Error("database unavailable"));
-    await expect(api.create("demo", input, owner)).rejects.toMatchObject({ status: 502 });
-    await expect(api.create("demo", input, owner)).rejects.toMatchObject({ status: 409 });
+    await expect(api.create("demo", input, { userId: "studio-user-1", email: owner })).rejects.toMatchObject({ status: 502 });
+    await expect(api.create("demo", input, { userId: "studio-user-1", email: owner })).rejects.toMatchObject({ status: 409 });
     expect(createRepository).toHaveBeenCalledTimes(1);
     expect((await creations.get("demo", input.repository))?.status).toBe("creating");
   });
 
   it("does not recreate policy or receipts after agent deletion during a remote create", async () => {
     createRepository.mockImplementation(async request => { await agentRepository.delete("demo"); return created(request); });
-    await expect(api.create("demo", input, owner)).rejects.toMatchObject({ status: 502 });
+    await expect(api.create("demo", input, { userId: "studio-user-1", email: owner })).rejects.toMatchObject({ status: 502 });
     expect(await policies.get("demo")).toBeNull();
     expect(await creations.get("demo", input.repository)).toBeNull();
   });

@@ -20,7 +20,7 @@ export interface MemberTierSettings {
 export const DEFAULT_MEMBER_TIERS: MemberTierDefinition[] = [
   { id: "admin", monthlyCostCapUsd: null },
   { id: "member", monthlyCostCapUsd: 20 },
-  { id: "guest", monthlyCostCapUsd: 2 },
+  { id: "guest", monthlyCostCapUsd: 0 },
 ];
 
 /** Pin fixed roles while preserving the chosen order of configurable tiers. */
@@ -30,6 +30,11 @@ export function orderMemberTiers<T extends { id: MemberTier }>(tiers: readonly T
     ...tiers.filter(tier => tier.id !== "admin" && tier.id !== "guest"),
     ...tiers.filter(tier => tier.id === "guest"),
   ];
+}
+
+/** Read-only roles cannot receive an execution budget, regardless of stored configuration. */
+export function effectiveMemberTiers(tiers: readonly MemberTierDefinition[]): MemberTierDefinition[] {
+  return orderMemberTiers(tiers).map(tier => tierMayRunAgents(tier.id) ? tier : { ...tier, monthlyCostCapUsd: 0 });
 }
 
 /** Move within the configurable tiers without crossing either fixed role. */
@@ -73,8 +78,6 @@ export function toMemberTier(value: unknown, tiers: readonly MemberTierDefinitio
 }
 
 export interface TierLimits {
-  /** Absent inherits the deployment concurrency limit. */
-  maxConcurrentRuns?: number;
   /** Absent is unlimited. */
   monthlyCostCapUsd?: number;
 }
@@ -83,14 +86,16 @@ export interface TierLimits {
 export function memberTierLimits(tier: MemberTier, tiers: readonly MemberTierDefinition[]): TierLimits {
   const effective = toMemberTier(tier, tiers);
   if (effective === "admin") return {};
+  if (!tierMayRunAgents(effective)) return { monthlyCostCapUsd: 0 };
   const definition = tiers.find(entry => entry.id === effective);
   if (!definition || definition.monthlyCostCapUsd === null) throw new Error("Member tier limits are invalid");
-  return { monthlyCostCapUsd: definition.monthlyCostCapUsd, ...(effective === "guest" ? { maxConcurrentRuns: 1 } : {}) };
+  return { monthlyCostCapUsd: definition.monthlyCostCapUsd };
 }
 
 /** Callers pass catalog-resolved tiers; every configurable tier has member permissions. */
 export function tierMayEdit(tier: MemberTier): boolean {
   return tier !== "guest";
 }
+export const tierMayRunAgents = tierMayEdit;
 export const tierMayCreateAgents = tierMayEdit;
 export const tierMayUseApiTokens = tierMayEdit;

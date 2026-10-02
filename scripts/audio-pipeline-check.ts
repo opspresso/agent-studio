@@ -154,7 +154,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   const { resolveProviderTarget } = await import("@/infrastructure/llm/providers");
   assert.equal(resolveProviderTarget("openai/gpt-5-mini", await getLlmProviderConfigs()).baseUrl,
     baseUrl, "pipeline checks must use the local mock channel");
-  const { deleteItem } = await import("@/infrastructure/db/store");
+  const { deleteItem, deletePartition } = await import("@/infrastructure/db/store");
   const { keys } = await import("@/infrastructure/db/keys");
   const { usageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
   const client = getS3Client();
@@ -219,8 +219,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       dynamicCapabilities: true, memoryRecall: true, urlFetch: true, imageGeneration: true, slackWorkspace: true },
     skillList: [], mcpList: [{ name: "must-not-resolve" }], subagentList: [{ name: "must-not-run" }] } });
   cleanup(() => agentRepository.delete(agentName));
-  cleanup(() => deleteItem(keys.usageMember(email, now.slice(0, 10), agentName)));
-  cleanup(() => deleteItem(keys.usageMember(email, new Date().toISOString().slice(0, 10), agentName)));
+  cleanup(() => deletePartition(keys.usageMemberPartition(id)));
   if (memoryUrl) {
     await mcpUseCases.create({ name: memoryName, url: memoryUrl.href, headers: { Authorization: `Bearer ${memoryToken}` } });
     memoryRegistered = true;
@@ -241,17 +240,17 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   const input = { task: "process" as const, source: { kind: "file" as const, fileId: file.id }, model: `openai/${asrWireId}`, retention,
     postprocess: { agentName },
     ...(memoryUrl ? { destination: { serverName: memoryName, documents: true, memories: true } } : {}) };
-  let configuration = await runtime.configuration.save(agentName, email, { enabled: true, model: input.model, retention,
+  let configuration = await runtime.configuration.save(agentName, { userId: id, email }, { enabled: true, model: input.model, retention,
     postprocess: input.postprocess, destination: input.destination, maxActive: 1, maxPerOccurrence: 1 }, 0);
   const edits = await Promise.allSettled([
-    runtime.configuration.save(agentName, email, configuration, configuration.revision),
-    runtime.configuration.save(agentName, email, configuration, configuration.revision),
+    runtime.configuration.save(agentName, { userId: id, email }, configuration, configuration.revision),
+    runtime.configuration.save(agentName, { userId: id, email }, configuration, configuration.revision),
   ]);
   const winners = edits.filter((edit) => edit.status === "fulfilled");
   assert.equal(winners.length, 1, "only one concurrent configuration edit may win");
   configuration = winners[0]!.value;
   const submitInput = { source: input.source, configRevision: configuration.revision };
-  const submitted = await runtime.jobs.submit(agentName, email, submitInput, { occurrence: "test" });
+  const submitted = await runtime.jobs.submit(agentName, { userId: id, email }, submitInput, { actor: { kind: "user", id: email }, occurrence: "test" });
   assert.ok("job" in submitted); assert.equal(submitted.status, "accepted");
   let completed = await runtime.process(agentName, submitted.job.id);
   assertMockSucceeded();
@@ -306,7 +305,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   assert.equal(calls, expectedAsrCalls);
   assert.equal(diarizationCalls, diarized ? 1 : 0);
   assert.equal(postprocessCalls, 1);
-  assert.equal((await runtime.jobs.submit(agentName, email, submitInput, { occurrence: "test-again" })).status, "duplicate");
+  assert.equal((await runtime.jobs.submit(agentName, { userId: id, email }, submitInput, { actor: { kind: "user", id: email }, occurrence: "test-again" })).status, "duplicate");
   assert.equal(await runtime.process(agentName, completed.id), null);
   assert.equal(calls, expectedAsrCalls);
   const usage = await usageRepository.getDay(agentName, new Date().toISOString().slice(0, 10));

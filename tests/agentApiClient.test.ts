@@ -92,8 +92,8 @@ describe("agent API client failures", () => {
       vi.fn(async () => Response.json({ masked: "ast_...", createdAt: "2026-09-04" })),
     );
 
-    await expect(generateAgentToken("demo")).rejects.toThrow(
-      "Agent API token response did not include a token",
+    await expect(generateAgentToken("demo", "api")).rejects.toThrow(
+      "Personal credential response did not include a token and selector",
     );
   });
 });

@@ -28,7 +28,7 @@ export function runtimeSessionFixture(policy: AgentConfiguration["parameters"]["
   } as unknown as SecretCipher;
   const services: RuntimeSessionServices = { repository, cipher, retentionDays: 30 };
   const configuration: AgentConfiguration = { agentName: "agent",  model: "google/gemini-2.5-flash", systemPrompt: "Instructions",  parameters: { piiFiltering: true, policy }, skillList: [], mcpList: [], subagentList: [], maxTurn: 5 };
-  const scope = { sessionId: "chat-1", ownerEmail: "owner@example.com", agentName: "agent", configuration };
+  const scope = { sessionId: "chat-1", userId: "studio-user-1", ownerEmail: "owner@example.com", agentName: "agent", configuration };
   async function run(channel: FakeChannel, message: string, resume?: Parameters<typeof openRuntimeSession>[2], overrides: Partial<AgentDeps> = {}, input: Partial<RunAgentInput> = {}) {
     const runtime = await openRuntimeSession(services, scope, resume);
     runtime.checkBinding("root", "unchanged");

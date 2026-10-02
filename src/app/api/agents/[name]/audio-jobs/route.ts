@@ -27,7 +27,7 @@ export const POST = withMemberAuth(async (user, request: Request, context: Conte
   if (!parsed.success) return invalidRequest(parsed.error);
   try {
     const { name } = await context.params;
-    const result = await getAudioRuntime().jobs.submit(name, user.email, parsed.data,
+    const result = await getAudioRuntime().jobs.submit(name, { userId: user.id, email: user.email }, parsed.data,
       { occurrence: randomUUID(), actor: { kind: "user", id: user.email } });
     return Response.json(result, { status: result.status === "busy" ? 409 : 202 });
   } catch (error) { return apiError(error); }

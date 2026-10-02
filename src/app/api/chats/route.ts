@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/session";
+import { withAuth, withMemberAuth } from "@/lib/session";
 import { z } from "zod";
 import type { Chat } from "@/domain/chat/types";
 import { CHAT_LIST_KINDS, CHAT_PAGE, MAX_CHAT_PAGE } from "@/domain/chat/repository";
@@ -52,7 +52,7 @@ export const GET = withAuth(async (user, request: Request) => {
   return Response.json(body);
 });
 
-export const POST = withAuth(async (user, request: Request) =>
+export const POST = withMemberAuth(async (user, request: Request) =>
   withTurnBody(request, async (body, admission) => {
     const parsed = createChatSchema.safeParse(body);
     if (!parsed.success) {
@@ -71,7 +71,7 @@ export const POST = withAuth(async (user, request: Request) =>
           firstMessage: parsed.data.firstMessage,
           ...(parsed.data.images ? { images: parsed.data.images } : {}),
           ...(parsed.data.documents ? { documents: parsed.data.documents } : {}),
-          userEmail: user.email,
+          user: { userId: user.id, email: user.email },
           ...(caller ? { caller } : {}),
           signal: abortController.signal,
         },

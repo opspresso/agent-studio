@@ -7,7 +7,7 @@ import { I18nProvider } from "@/app/_i18n/provider";
 import type { McpConnectionView } from "@/app/agents/lib/api";
 
 const connection: McpConnectionView = {
-  serverName: "github", clientId: "app", clientRegistered: false, status: "connected",
+  serverName: "github", clientId: "app", status: "connected",
   scopes: ["repo"], connectedBy: "studio-user@example.test", connectedAt: "2026-09-30T03:00:00.000Z",
 };
 

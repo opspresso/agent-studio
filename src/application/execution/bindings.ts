@@ -4,10 +4,10 @@ import { runtimeFingerprint } from "@/application/runtime/session";
 import type { McpBinding, SubagentRef, AgentConfiguration } from "@/domain/agent/types";
 import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput } from "@/domain/llm/types";
-import type { RunOrigin } from "@/domain/execution/actor";
+import type { RunOrigin, RunIdentity } from "@/domain/execution/actor";
 import type { Skill } from "@/domain/skill/types";
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
-import { listAgentMcpConnections } from "@/application/mcp/listConnections";
+import { listUserMcpConnections } from "@/application/mcp/listConnections";
 import {
   searchCapabilitiesByKind,
   type CatalogRerankReport,
@@ -84,8 +84,9 @@ export async function resolveSkills(
 
 /** Same for subagents: an unresolvable target is not offered as a transfer. */
 export async function resolveSubagents(
-  deps: Pick<ExecutionDeps, "agents">,
+  deps: Pick<ExecutionDeps, "agents" | "authorizeRun">,
   subagentList: SubagentRef[] | undefined,
+  identity?: RunIdentity,
 ): Promise<{ subagents: engine.SubagentInfo[]; warnings: string[] }> {
   const resolved = await Promise.all(
     (subagentList ?? []).map(
@@ -99,6 +100,12 @@ export async function resolveSubagents(
           return {
             warning: `Agent '${ref.name}' no longer exists; a transfer to it was not offered.`,
           };
+        }
+        try {
+          if (!identity) throw new Error("Missing authenticated caller");
+          await deps.authorizeRun(ref.name, identity);
+        } catch {
+          return { warning: `Agent '${ref.name}' is unavailable to this caller; a transfer was not offered.` };
         }
         return {
           subagent: { name: ref.name, description: target.description ?? "",
@@ -248,6 +255,7 @@ async function discoverCapabilities(
   },
   configuration: AgentConfiguration,
   queries: readonly string[],
+  userId: string | undefined,
   signal?: AbortSignal,
   recordUsage?: engine.RecordUsageFn,
 ): Promise<{
@@ -304,8 +312,8 @@ async function discoverCapabilities(
   // One read for the whole run, not one per candidate. `needs_auth` and
   // `needs_reauth` are connections in name only — the console shows both as
   // something a person still has to finish — so only `connected` counts.
-  const connections = deps.mcpConnections
-    ? await listAgentMcpConnections(deps.mcpConnections, configuration.agentName)
+  const connections = deps.mcpConnections && userId
+    ? await listUserMcpConnections(deps.mcpConnections, userId)
     : [];
   const connected = new Set<string>(
     connections
@@ -454,7 +462,7 @@ export function toolsPrepared(resolved: {
  * checks) from needing to know the difference.
  */
 export async function resolveRunTools(
-  deps: Pick<ExecutionDeps, "agents" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
+  deps: Pick<ExecutionDeps, "agents" | "skills" | "catalog" | "mcpConnections" | "authorizeRun"> & McpToolDeps,
   configuration: AgentConfiguration,
   signal?: AbortSignal,
   queries?: readonly string[],
@@ -462,7 +470,7 @@ export async function resolveRunTools(
    * Where the run came from. MCP resolution names an email actor and the
    * conversation to every server as request headers.
    */
-  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation" | "backgroundTask"> & Partial<Pick<RunOrigin, "ancestry">>,
+  origin?: Partial<Pick<RunOrigin, "actor" | "user" | "executionGrant" | "userEmail" | "conversation" | "backgroundTask">> & Partial<Pick<RunOrigin, "ancestry">>,
   /** Records billable Rerank calls for a real run; previews leave it absent. */
   recordRerankUsage?: engine.RecordUsageFn,
 ): Promise<{
@@ -513,6 +521,7 @@ export async function resolveRunTools(
           },
           configuration,
           queries,
+          origin?.user?.userId,
           signal,
           recordRerankUsage,
         );
@@ -558,7 +567,7 @@ export async function resolveRunTools(
   try {
     const [skills, subagents, settled] = await Promise.all([
       resolveSkills(deps, configuration.skillList),
-      resolveSubagents(deps, configuration.subagentList),
+      resolveSubagents(deps, configuration.subagentList, origin?.user && origin.actor ? { user: origin.user, actor: origin.actor, executionGrant: origin.executionGrant } : undefined),
       mcpSettled,
     ]);
     if ("error" in settled) {

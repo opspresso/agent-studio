@@ -5,6 +5,7 @@ import {
   memberTierLimits,
   moveMemberTier,
   orderMemberTiers,
+  effectiveMemberTiers,
   tierMayEdit,
   isMemberTierDefinitions,
   storedMemberTier,
@@ -12,7 +13,7 @@ import {
   tierMayUseApiTokens,
   toMemberTier,
 } from "@/domain/member/tiers";
-import { memberEmailFromActorKey } from "@/domain/execution/actor";
+import { runUserKey } from "@/domain/execution/actor";
 
 describe("toMemberTier", () => {
   it("returns a recognized tier unchanged", () => {
@@ -57,6 +58,12 @@ describe("member tier order", () => {
 
 describe("member tier catalog", () => {
   const tiers = [...DEFAULT_MEMBER_TIERS, { id: "premium", monthlyCostCapUsd: 75 }];
+  it("projects guest as read-only without mutating stored custom budgets", () => {
+    const stored = [{ id: "guest", monthlyCostCapUsd: 99 }, { id: "premium", monthlyCostCapUsd: 75 }, { id: "admin", monthlyCostCapUsd: null }];
+    expect(effectiveMemberTiers(stored)).toEqual([{ id: "admin", monthlyCostCapUsd: null }, { id: "premium", monthlyCostCapUsd: 75 }, { id: "guest", monthlyCostCapUsd: 0 }]);
+    expect(stored[0]?.monthlyCostCapUsd).toBe(99);
+    expect(memberTierLimits("guest", stored)).toEqual({ monthlyCostCapUsd: 0 });
+  });
   it("resolves custom tiers and their configured caps, retaining member permissions", () => {
     expect(storedMemberTier("premium")).toBe("premium");
     expect(toMemberTier("premium", tiers)).toBe("premium");
@@ -79,21 +86,10 @@ describe("member tier catalog", () => {
   });
 });
 
-describe("memberEmailFromActorKey", () => {
-  it("extracts the email from a user actor only", () => {
-    expect(memberEmailFromActorKey("user:a@example.com")).toBe("a@example.com");
-  });
-
-  it("does not bill an agent token to its owner", () => {
-    // A token is a service credential bounded by its agent's limits; the
-    // bypass this would otherwise open is closed by the token-auth tier gate.
-    expect(memberEmailFromActorKey("agent-token:a@example.com")).toBeNull();
-  });
-
-  it("returns null for machine kinds and empty ids", () => {
-    expect(memberEmailFromActorKey("slack:U123")).toBeNull();
-    expect(memberEmailFromActorKey("webhook:p:t")).toBeNull();
-    expect(memberEmailFromActorKey("user:")).toBeNull();
+describe("runUserKey", () => {
+  it("keeps the account scope across email changes and separates reused emails", () => {
+    expect(runUserKey({ userId: "a", email: "old@example.test" })).toBe(runUserKey({ userId: "a", email: "new@example.test" }));
+    expect(runUserKey({ userId: "a", email: "shared@example.test" })).not.toBe(runUserKey({ userId: "b", email: "shared@example.test" }));
   });
 });
 

@@ -6,7 +6,7 @@ messaging endpoint를 `/api/teams/messages/[agent]`로 지정한다.
 설정·응답은 [API](../API.md#레지스트리연동-오퍼레이션), 요청 인증은
 [SECURITY](../SECURITY.md#머신-호출자의-요청-인증), 공통 실행은 [메시징 파이프라인](messaging.md)을 따른다.
 
-## 인증 — 토큰이 전부다
+## 전달 인증
 
 `agentTeams.ts`는 App ID·tenant ID를 GUID로 검증해 소문자로 저장한다.
 masked·빈 client secret은 기존 값을 유지한다. 저장은 Microsoft를 호출하지 않으며
@@ -69,7 +69,8 @@ ACK 후 유실을 자동 재실행하지 않으며 외부 효과의 exactly-once
 읽기 실패·문맥 생략은 warning, 기록 실패는 로그로 확인한다.
 
 conversation은 `teams:{conversation.id}`다. actor와 화자 식별은 aadObjectId를 우선하고
-없으면 from.id를 사용한다. 이메일 기반 개인 권한으로 바꾸지 않는다.
+없으면 from.id를 사용한다. tenant ID도 필수이며
+[연결한 Studio 사용자](messaging.md#호출자-인증)의 현재 계정·Agent 접근 권한을 확인한다.
 `callerContext`를 켠 Agent만 activity의 표시 이름을 모델·transcript에 제공한다.
 여러 화자가 있으면 현재 질문과 과거 사람 턴에 라벨을 붙인다.
 

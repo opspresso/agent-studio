@@ -39,7 +39,7 @@ describe("GET /api/me/profile", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ member, monthToDateUsd: 1.25, limits: memberTierLimits("guest", DEFAULT_MEMBER_TIERS) });
     expect(me).toHaveBeenCalledWith("u@x.com");
-    expect(memberMonthToDate).toHaveBeenCalledWith("u@x.com");
+    expect(memberMonthToDate).toHaveBeenCalledWith("u1");
   });
 
   it("404s when the member row is gone", async () => {
@@ -51,7 +51,7 @@ describe("GET /api/me/profile", () => {
 
 describe("GET /api/me/usage", () => {
   it("returns the caller's own rows for the range", async () => {
-    const items = [{ email: "u@x.com", date: "2026-08-13", calls: {}, inputTokens: {}, outputTokens: {}, costUsd: {} }];
+    const items = [{ userId: "u1", date: "2026-08-13", calls: {}, inputTokens: {}, outputTokens: {}, costUsd: {} }];
     memberUsage.mockResolvedValue(items);
 
     const response = await usage(usageRequest("?from=2026-08-01&to=2026-08-13"));
@@ -59,7 +59,7 @@ describe("GET /api/me/usage", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ items });
     // Never an email from the query: the session user is the only subject.
-    expect(memberUsage).toHaveBeenCalledWith("u@x.com", "2026-08-01", "2026-08-13");
+    expect(memberUsage).toHaveBeenCalledWith("u1", "2026-08-01", "2026-08-13");
   });
 
   it("400s a range the summary schema refuses, without reading anything", async () => {

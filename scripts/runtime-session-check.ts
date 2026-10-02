@@ -15,12 +15,13 @@ export async function checkRuntimeSessions(): Promise<void> {
   const services = { repository, cipher: secretCipher, retentionDays: 1 };
   await withCheckLifecycle(async cleanup => {
     cleanup(() => repository.delete(id, owner));
-    await openRuntimeSession(services, { sessionId: id, ownerEmail: owner, agentName: configuration.agentName, configuration });
+    await openRuntimeSession(services, { sessionId: id, userId: "runtime-check-user", ownerEmail: owner, agentName: configuration.agentName, configuration });
     const row = await repository.get(id, owner);
     assert.ok(row);
     assert.ok(row.payload.startsWith("enc:v2:"));
     assert.equal(await repository.get(id, "someone-else@example.test"), null);
     assert.deepEqual((await readRuntimeSession(services, id, owner))?.document.items, []);
+    await assert.rejects(readRuntimeSession(services, id, owner, "another-user"), /authenticated user/);
 
     const update = { sessionId: id, ownerEmail: owner, agentName: row.agentName, payload: row.payload, expiresAt: row.expiresAt };
     const raced = await Promise.all([repository.save(update, row.revision), repository.save(update, row.revision)]);

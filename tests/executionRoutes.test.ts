@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentRunInput } from "@/application/execution/deps";
+import type { ExecutionPrincipal } from "@/app/api/agents/_lib/executionAuth";
 import type { EngineChunk } from "@/domain/llm/types";
 
-const { agentGet, calls } = vi.hoisted(() => ({
+const { agentGet, calls, inputs, state } = vi.hoisted(() => ({
   agentGet: vi.fn(),
   calls: [] as string[],
+  inputs: [] as AgentRunInput[],
+  state: { principal: { userId: "caller-id", email: "caller@example.test", viaToken: false } as ExecutionPrincipal },
 }));
+
+vi.mock("@/lib/session", () => ({ getSessionUser: vi.fn(), isSameOriginMutation: vi.fn(), crossOriginForbidden: vi.fn() }));
 
 vi.mock("@/lib/container", () => ({
   executionDeps: {},
@@ -14,15 +20,12 @@ vi.mock("@/lib/container", () => ({
 
 vi.mock("@/app/api/agents/_lib/executionAuth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/api/agents/_lib/executionAuth")>()),
-  authenticateExecution: async () => ({
-    email: "owner@example.com",
-    viaToken: false,
-    caller: { displayName: "Owner" },
-  }),
+  authenticateExecution: async () => state.principal,
 }));
 
 vi.mock("@/application/execution/runAgent", () => ({
-  collectAgentRun: async () => {
+  collectAgentRun: async (_deps: unknown, input: AgentRunInput) => {
+    inputs.push(input);
     calls.push("collectAgentRun");
     return {
       content: "collected answer",
@@ -34,14 +37,16 @@ vi.mock("@/application/execution/runAgent", () => ({
       termination: "completed",
     };
   },
-  streamAgentExecution: () => {
+  streamAgentExecution: (_deps: unknown, input: AgentRunInput) => {
+    inputs.push(input);
     calls.push("streamAgentExecution");
     return (async function* (): AsyncGenerator<EngineChunk> {
       yield { delta: { content: "streamed answer" } };
       yield { done: true };
     })();
   },
-  executeAgent: () => {
+  executeAgent: (_deps: unknown, input: AgentRunInput) => {
+    inputs.push(input);
     calls.push("executeAgent");
     return (async function* (): AsyncGenerator<EngineChunk> {
       yield { delta: { content: "agent answer" } };
@@ -53,6 +58,7 @@ vi.mock("@/application/execution/runAgent", () => ({
 const { POST: chatCompletions } = await import(
   "@/app/api/agents/[name]/chat/completions/route"
 );
+const { POST: predict } = await import("@/app/api/agents/[name]/predict/route");
 const { POST: agent } = await import(
   "@/app/api/agents/[name]/agent/route"
 );
@@ -66,7 +72,8 @@ const request = (path: string, body: unknown) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
-  calls.length = 0;
+  calls.length = 0; inputs.length = 0;
+  state.principal = { userId: "caller-id", email: "caller@example.test", viaToken: false, caller: { displayName: "Caller" } };
   agentGet.mockResolvedValue({
     name: "proj",
     ownerEmail: "owner@example.com",
@@ -151,5 +158,27 @@ describe("POST /agent", () => {
 
     expect(response.status).toBe(400);
     expect(calls).toEqual([]);
+  });
+});
+
+
+describe.each([["predict", predict], ["agent", agent], ["chat/completions", chatCompletions]] as const)("%s verified caller forwarding", (path, post) => {
+  it("forwards the token's stable user and exact credential independently of payload fields", async () => {
+    state.principal = { userId: "token-user", email: "token@example.test", viaToken: true, credentialId: "verified-token-id" };
+    let response = await post(request(`/api/agents/proj/${path}`, {
+      messages: [{ role: "user", content: "hello" }], user: { userId: "owner-id", email: "owner@example.com" },
+      executionGrant: { credentialId: "untrusted" }, ownerEmail: "owner@example.com",
+    }), context);
+    if (path === "predict") {
+      expect(response.status).toBe(400);
+      expect(inputs).toEqual([]);
+      response = await post(request(`/api/agents/proj/${path}`, { messages: [{ role: "user", content: "hello" }] }), context);
+    }
+    expect(response.status).toBe(200); await response.text();
+    expect(inputs[0]).toMatchObject({
+      user: { userId: "token-user", email: "token@example.test" }, ownerEmail: "token@example.test",
+      actor: { kind: "agent-token", id: "token@example.test" },
+      executionGrant: { kind: "agent-token", agentName: "proj", userId: "token-user", email: "token@example.test", credentialId: "verified-token-id" },
+    });
   });
 });

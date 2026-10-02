@@ -12,7 +12,7 @@ type CallbackOutcome = { ok: true; agent: string; server: string } | { ok: false
  */
 function resultPage(outcome: CallbackOutcome): Response {
   const message = outcome.ok
-    ? `Connected ${outcome.server} to ${outcome.agent}. You can close this window.`
+    ? `Connected your account to ${outcome.server}. You can close this window.`
     : `Connection failed: ${outcome.error}`;
   const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>MCP authorization</title></head>
 <body style="font:14px system-ui;padding:2rem;color:#333">
@@ -93,7 +93,7 @@ export const GET = withMemberAuth(async (user, request: Request) => {
     try {
       const { error } = await mcpAuthUseCases.abandonAuthorization({
         state,
-        userEmail: user.email,
+        user: { userId: user.id, email: user.email },
         error: providerError,
         errorDescription: url.searchParams.get("error_description") ?? undefined,
         iss,
@@ -114,7 +114,7 @@ export const GET = withMemberAuth(async (user, request: Request) => {
     const { agentName, serverName } = await mcpAuthUseCases.completeAuthorization({
       state,
       code,
-      userEmail: user.email,
+      user: { userId: user.id, email: user.email },
       iss,
     });
     return resultPage({ ok: true, agent: agentName, server: serverName });

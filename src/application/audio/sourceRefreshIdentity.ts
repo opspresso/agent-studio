@@ -5,10 +5,10 @@ import type { McpBinding } from "@/domain/agent/types";
 
 /** Reauthorization changes identity; ordinary token rotation does not. */
 export function sourceRefreshFingerprint(server: McpServer, binding: McpBinding,
-  connection: Pick<McpConnection, "connectedAt" | "connectedBy" | "clientId" | "issuer" | "resource" | "status" | "authorizationEpoch"> | null) {
+  connection: Pick<McpConnection, "userId" | "connectedAt" | "connectedBy" | "clientId" | "issuer" | "resource" | "status" | "authorizationEpoch"> | null) {
   return createHash("sha256").update(JSON.stringify({ url: server.url, auth: server.auth, headers: server.headers, binding,
     defaultSourceOutputs: binding.sourceOutputs === undefined ? server.sourceOutputs : undefined,
-    connection: server.auth ? { authorizationEpoch: connection?.authorizationEpoch, connectedAt: connection?.connectedAt, connectedBy: connection?.connectedBy,
+    connection: server.auth ? { userId: connection?.userId, authorizationEpoch: connection?.authorizationEpoch, connectedAt: connection?.connectedAt, connectedBy: connection?.connectedBy,
       clientId: connection?.clientId, issuer: connection?.issuer, resource: connection?.resource, status: connection?.status } : undefined,
   })).digest("hex");
 }

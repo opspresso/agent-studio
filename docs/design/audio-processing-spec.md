@@ -68,7 +68,7 @@ schedule 메시지에 둔다. 시스템 프롬프트에는 skill 선택과 사�
 
 MCP OAuth는 해당 서버를 호출하는 운영 Agent에 연결한다. 위임을 선택한 구성에서도 원본 참조·작업·
 산출물은 메인 Agent에 보관하며, URL 갱신에 사용할 호출 Agent와 연결 세대는 별도로 유지한다.
-schedule은 검증된 owner email 문맥을 사용하고, cron 기본 요청에는 외부 저장을 포함하지 않는다.
+Schedule은 등록한 Studio 사용자의 ID와 현재 이메일을 전달하며, cron 기본 요청에는 외부 저장을 포함하지 않는다.
 
 ## 책임과 재사용 경계
 
@@ -151,15 +151,14 @@ Slack 조회·이미지·파일 생성 능력은 실행 경계에서 차단하�
 `ingestion_identity` 같은 전용 인증 도구는 개발하지 않는다. 여기서 email은 기존 MCP 인증 위에서
 개인 사용자를 결정하는 값이며, 기존 Bearer 검증을 없애는 변경은 아니다.
 
-- 대화 실행은 기존 인증 사용자 email을 사용한다.
-- 무인 실행은 owner가 로그인 상태에서 해당 자동화에 본인 실행 문맥을 설정한다. 서버가 인증된
-  owner email을 저장하고 클라이언트가 임의 email을 지정하는 입력은 받지 않는다.
-- schedule actor는 그대로 유지하고, 이 설정이 있는 실행에만 검증된 email을 `RunOrigin.userEmail`로
-  전달한다. 공용 MCP metadata 조립 함수가 `X-User-Email`을 생성한다. registry·Agent의 수동
-  예약 header override는 계속 제거한다. 설정이 없는 기존 schedule 동작은 유지한다.
-- job은 email과 원래 agent·자동화 설정 revision을 보존한다. worker·후처리·저장 요청에도 같은
-  문맥을 전달한다. 소유자 변경·멤버 비활성·연결 변경 시 현재 권한을 재검증하고 다른 사람으로
-  조용히 전환하지 않는다. 현재 owner와 저장한 주체가 다르면 재설정 전 `blocked`로 처리한다.
+- 대화 실행은 로그인 사용자 ID와 이메일을 사용한다. 자동화는 개인 토큰 발급자, 인증된 메신저
+  연결 사용자 또는 Schedule 등록자를 사용한다. 클라이언트나 모델이 실행 사용자를 지정할 수 없다.
+- job은 사용자 ID·이메일과 원래 actor·인증 근거를 보존한다. Schedule은 등록자와 설정 revision도
+  함께 보관한다. 공용 MCP metadata 조립 함수가 검증된 이메일에서 `X-User-Email`을 생성하며,
+  registry·Agent의 수동 예약 header override는 제거한다.
+- worker는 전사·후처리·외부 저장 전에 현재 계정, Agent 접근 권한, 개인 토큰·메신저 연결·Schedule의
+  유효성을 재검사한다. ID가 없는 작업이나 같은 이메일의 다른 계정으로 바뀐 작업은 실행하지 않는다.
+  수동 retry도 원래 사용자 ID와 인증 근거를 유지하며, 다른 사용자의 권한으로 대체하지 않는다.
 - Memory는 email을 정규화해 설치 조직의 active 사용자로 해석하고 기존 ACL을 적용한다.
   개인 저장은 `scope.kind=user`로 요청하며 사용자 ID는 위임 사용자에서 결정한다.
   email 없음·잘못된 email·비활성 사용자일 때 조직 scope로 fallback하지 않는다.
@@ -174,10 +173,12 @@ Slack 조회·이미지·파일 생성 능력은 실행 경계에서 차단하�
 Agent별 `AudioJobConfig`에 `enabled`, `model`, `language`, `postprocess?`,
 `destination?`, `retention`, `maxActive`, `maxPerOccurrence`, `revision`을 둔다.
 `postprocess`는 후처리 Agent를, `destination`은 저장할 결과와 MCP binding을 참조한다.
-현재 후처리 대상은 같은 소유자의 설정된 Agent이며 등록 모델의 `structuredOutput` 지원이 필요하다.
-source 연결·사용자 문맥은 기존 Agent 연결과 자동화 설정을 사용한다. 작업 접수 시 후처리
+후처리 대상은 호출자가 접근 가능한 설정된 Agent이며 등록 모델의 `structuredOutput` 지원이 필요하다.
+source 연결은 호출자의 개인 MCP 인증을 사용하며 자동화도 캡처한 호출자 신원을 유지한다. 작업 접수 시 후처리
 Agent와 전달 대상의 현재 설정을 snapshot으로 고정해 이후 설정 변경은 새 작업에만 적용한다.
-설정 저장은 대상 Agent가 존재하고 같은 소유자의 설정된 Agent인지 transaction에서 확인한다.
+공유 처리 설정은 Agent 소유자만 변경한다. 설정 저장 transaction은 작성자의 소유권과
+후처리 대상의 현재 접근·설정 유무를 확인한다. 설정 작성자는 작업의 실행 신원이 아니며
+공개 Agent의 다른 member도 동일한 설정으로 본인 작업을 접수한다.
 접수 때 사라졌거나 미설정인 대상은 명시적인 오류로 거절하며 다른 Agent로 대체하지 않는다.
 기간이나 cron에 고정값을 넣지 않는다. 임의 코드·템플릿으로 서버 실행 로직을 주입하지 않는다.
 AudioJob의 LLM 인수는 request 안의 operation별 union으로 분리한다. configured submit에는 source·
@@ -205,7 +206,7 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 다운로드·전사는 같은 영속 실행기를 사용하며 configured submit은 선택적 후처리·저장을 함께 고정한다.
 
 `artifact_id`는 현재 사용자가 소유한 비공개 Artifact를 가리킨다. 다른 Agent에서 만든
-파일도 입력으로 사용할 수 있다. 접수 시 실제 파일 위치로 고정하고 양쪽 Agent의 소유 권한을
+파일도 입력으로 사용할 수 있다. 접수 시 실제 파일 위치로 고정하고 양쪽 Agent 접근 권한을
 확인한다. worker와 각 전사 요청에서도 원본 Agent 권한을 재확인하며 바이트는 복사하지 않는다.
 파생 Artifact는 입력의 만료를 상속하고 `derivedFrom`·`model`로 원본과 생성 모델을 기록한다.
 전사·후처리의 구조화 JSON은 재요약·근거 검증·Memory 저장용 내부 파일로 보관한다.
@@ -219,7 +220,7 @@ ASR이 제공한 구간·화자 라벨·시간만 표시하고,
 `source_ref`는 서버가 발급한 불투명 참조다. 등록된 MCP tool의 파일 URL을
 메인 Agent에 보관한다. 하위 Agent가 조회한 경우에도 작업과 참조의 보관 범위는
 같으며, 재조회 recipe는 호출한 하위 Agent·현재 binding·OAuth 연결을 별도로 고정한다.
-재조회 전후에 해당 Agent의 소유 권한과 연결 세대를 확인한다.
+재조회 전후에 해당 Agent 접근 권한과 연결 세대를 확인한다.
 
 plugin.json의 `extensions.org.opspresso.agent-studio.mcpSourceOutputs`는 서버별 기본 파일 응답 매핑이다.
 동기화는 검증된 매핑을 MCP 레지스트리에 저장한다. Agent의 sourceOutputs가 생략되면 기본값을 사용하고,
@@ -436,11 +437,13 @@ transaction으로 함께 삭제하며, 같은 입력을 다음 발생에서 다�
 전사는 전체 오디오 대비 완료 시간과 구간 수를, 후처리는 추출·통합 회차·결과 파일 저장의 완료 건수를
 checkpoint에 기록해 표시한다. 진행 막대는 각 단계 기준이며 전체 작업의 예상 진행률이 아니다.
 재시도에서 검증된 checkpoint를 다시 읽을 때 저장된 진행량을 낮추지 않는다.
-오디오 처리 탭은 오디오 도구를 켠 Agent의 소유자에게만 노출한다. 현재 저장된 설정을 기준으로 한다. 직접 페이지 주소를 열어도 동일한 기능 설정을 확인한다.
+오디오 처리 탭은 접근 가능한 Agent의 오디오 도구가 켜져 있으면 member 이상에게 노출한다.
+개인 업로드·작업 목록과 공유 설정 편집을 구분하며 설정 저장 컨트롤은 Agent 소유자에게만 보인다. 현재 저장된 설정을 기준으로 한다. 직접 페이지 주소를 열어도 동일한 기능 설정을 확인한다.
 화면에 펼친 모든 페이지의 진행 중인 작업을 5초마다 갱신하며, 완료된 행과 페이지 cursor를 유지한다.
 탭이 숨겨지면 조회를 건너뛰고 동시에 최대 4건만 읽는다.
-개인 파일·본문·후처리 run output·trace는 실행 사용자와 원래 agent 범위로 제한하며 공개 agent 갤러리에 노출하지 않는다.
-owner 변경·삭제 시 worker를 중단하고 object 정리를 완료/예약한다. 외부 sink 자료는 자동 삭제하지 않는다.
+개인 파일과 작업은 실행 사용자와 원래 Agent 접근 범위로 제한한다. 비공개 파일의 이름·메타데이터도
+Agent 전체 Artifact 목록에 포함하지 않으며 개인 Artifacts와 본인 Audio 작업에서만 보여 준다.
+접근 권한 철회·Agent 삭제 시 worker를 중단하고 object 정리를 완료/예약한다. 외부 sink 자료는 자동 삭제하지 않는다.
 목록은 cursor·limit으로 제한한다. 일반 로그에는 job·stage·safe error·model·크기·시간·attempt만
 기록하며 파일 URL·token·본문은 제외한다. 외부 source 장애가 앱의 필수 offline 경로를 막지 않는다.
 
@@ -449,7 +452,7 @@ owner 변경·삭제 시 worker를 중단하고 object 정리를 완료/예약�
 이 절은 운영 시 구성할 사례이며 공통 코드의 필수 조건이 아니다.
 
 - 설치별 앱 주소에 Agent를 구성하고 로컬에서 검증한 뒤 같은 설정을 운영 설치에 적용한다.
-- 출처는 기존 Plaud MCP와 Agent OAuth를 연결한다. 목록 탐색·조회 방법은 plugin이 소유한다.
+- 출처는 기존 Plaud MCP에 호출자의 개인 OAuth를 연결한다. 목록 탐색·조회 방법은 plugin이 소유한다.
   `list_files`·`get_file`과 실제 schema를 사용하고 임시 오디오 URL을 범용 source ref로 변환한다.
   출처별 pagination 제약은 해당 skill과 실제 도구 schema를 따른다.
   [Plaud 공식 계약](https://docs.plaud.ai/plaud-mcp-cli/mcp)을 참조한다.

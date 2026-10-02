@@ -104,6 +104,8 @@ function emptyReport(): PluginKindReport {
 }
 
 export interface SyncPluginsDeps {
+  /** Loss of the sync's lease aborts the whole operation rather than becoming an entry skip. */
+  assertOwnership?: () => Promise<void>;
   plugins: PluginRepository;
   /** Deletion of a plugin row goes through the use case for its audit trace. */
   pluginRows: Pick<PluginUseCases, "remove">;
@@ -162,7 +164,7 @@ export interface SyncPluginsDeps {
  *
  * **One failure costs one entry.** Every write is fenced: a refused URL, a
  * mid-sync race, a storage error each become a skip on that name and the
- * sync continues. The next sync converges on whatever this one missed.
+ * sync continues. Losing execution ownership aborts the whole sync.
  *
  * **A person owns deletion.** What the repository no longer carries is only
  * reported, per plugin and with the Agents that bind it, and deleted when
@@ -327,10 +329,12 @@ export async function syncPluginsFromSnapshot(
     name: string,
     op: () => Promise<unknown>,
   ): Promise<boolean> => {
+    await deps.assertOwnership?.();
     try {
       await op();
       return true;
     } catch (error) {
+      await deps.assertOwnership?.();
       const reported = classify(name, error);
       if (!reported) {
         log.error("plugins", `sync write for '${name}' failed`, error);
@@ -708,7 +712,7 @@ export async function syncPluginsFromSnapshot(
 /**
  * Turn a write failure into the vocabulary the report already speaks, or
  * `null` for a fault with no name yet — the fence files those as
- * `write-failed` with the message, so nothing aborts the sync.
+ * `write-failed` with the message after execution ownership is confirmed.
  */
 function classify(name: string, error: unknown): SyncSkip | null {
   if (error instanceof ConflictError) {

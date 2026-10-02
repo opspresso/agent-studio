@@ -2,6 +2,7 @@ import type { AudioJobInput } from "./job";
 
 export interface AudioJobConfig extends Pick<AudioJobInput, "model" | "language" | "retention" | "postprocess" | "destination"> {
   agentName: string;
+  /** Author of the shared settings, never the identity of a submitted job. */
   userEmail: string;
   revision: number;
   enabled: boolean;

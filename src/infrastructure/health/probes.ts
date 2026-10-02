@@ -1,4 +1,5 @@
 import { readinessSql } from "@/infrastructure/db/client";
+import { fetchProvider } from "@/infrastructure/llm/providerFetch";
 
 const LLM_TIMEOUT_MS = 2000;
 
@@ -19,7 +20,7 @@ export async function llmReachable(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
   try {
-    const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/models`, {
+    const res = await fetchProvider(`${baseUrl.replace(/\/+$/, "")}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: controller.signal,
     });

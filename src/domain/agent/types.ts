@@ -4,45 +4,11 @@ import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
 import type { RuntimePolicy } from "@/domain/execution/runtimeSession";
 
 
-/**
- * Who may see and run an agent. `public` is the shared catalog: any signed-in
- * user may read, run and clone it. A missing stored field has the same meaning.
- * `private` narrows that to the owner and the emails on
- * `memberEmails`. Writing was never part of this axis — it stays owner-or-admin
- * either way (`assertAgentWritable`).
- */
+/** Public Agents are shared with the organization; private Agents are owner-only. */
 export type AgentVisibility = "public" | "private";
-
-/**
- * Per-agent API token. The token is stored AES-256-GCM encrypted so the owner
- * can read it back in the console — a deliberate trade: unlike a hash, stored
- * ciphertext is usable by anyone who obtains both the table and the encryption
- * key. Exactly one of the two forms below is present.
- */
-export interface AgentApiToken {
-  /** Context-bound AES-256-GCM ciphertext, decryptable by the owner-gated read path. */
-  token?: string;
-  /**
-   * SHA-256 hash — the only form tokens issued before revealing existed have.
-   * Verification still accepts them; they can never be shown again, so the
-   * console offers regeneration instead.
-   */
-  tokenHash?: string;
-  /**
-   * The display mask computed at generation time, e.g. `ast_••••••••wXyZ`.
-   * Stored rather than derived so a hash-only token can still be identified,
-   * and so listing one costs no decryption. It holds nothing beyond the prefix
-   * and the few edge characters a mask reveals. Absent on tokens issued before
-   * masks were displayed.
-   */
-  masked?: string;
-  createdAt: string;
-}
 
 /** Per-agent Slack bot credentials. Secrets are AES-encrypted at rest. */
 export interface SlackIntegration {
-  /** Captured from the authenticated owner; never accepted as a client-supplied email. */
-  executionEmail?: string;
   botToken: string;
   signingSecret: string;
   enabled: boolean;
@@ -113,7 +79,6 @@ export function costAlertDestinations(limits: CostLimits): MessageDestination[] 
  * platform's to keep — the token is Telegram's, the secret is minted here.
  */
 export interface TelegramIntegration {
-  executionEmail?: string;
   botToken: string;
   webhookSecret: string;
   enabled: boolean;
@@ -137,7 +102,6 @@ export interface TelegramIntegration {
  * platform — Azure offers no call for it.
  */
 export interface TeamsIntegration {
-  executionEmail?: string;
   appId: string;
   appPassword: string;
   /** A single-tenant registration's tenant id; absent for a multi-tenant app. */
@@ -150,14 +114,8 @@ export interface Agent {
   displayName: string;
   description: string;
   ownerEmail: string;
-  /** Absent means `public` — the shape every agent had before visibility. */
+  /** Absent means `public`. */
   visibility?: AgentVisibility;
-  /**
-   * Who besides the owner may access a private agent. Stored lowercased;
-   * meaningless (and ignored) while the agent is public. The owner is never
-   * listed — ownership itself is the access.
-   */
-  memberEmails?: string[];
   departmentCode?: string;
   /** Current Agent settings, read as one snapshot with the agent. */
   configuration?: AgentConfiguration;

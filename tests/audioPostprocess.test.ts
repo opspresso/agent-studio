@@ -1,10 +1,11 @@
+import { interactiveIdentity } from "./runIdentity";
 import { describe, expect, it, vi } from "vitest";
 import { createAudioPostprocessStep, type AudioPostprocessDeps } from "@/application/audio/postprocess";
 import type { AudioJob } from "@/domain/audio/job";
 import type { SourceFile } from "@/domain/artifact/sourceFile";
 
 function fixture(text = "Fact one.") {
-  const job: AudioJob = { id: "job", agentName: "audio", userEmail: "owner@example.test", model: "asr",
+  const job: AudioJob = { id: "job", agentName: "audio", userEmail: "owner@example.test", ...interactiveIdentity("owner@example.test"), model: "asr",
     source: { kind: "file", fileId: "source" }, sourceKey: "source", transcriptRef: "transcript",
     retention: { unit: "months", value: 3, timezone: "Asia/Seoul" }, status: "running", stage: "postprocessing",
     revision: 1, createdAt: "2026-09-09T00:00:00Z", updatedAt: "2026-09-09T00:00:00Z", dueAt: "2026-09-09T00:02:00Z",

@@ -145,29 +145,20 @@ describe("cloneAgent", () => {
     expect(agent.configuration).toBeUndefined();
   });
 
-  it("clones a private source as a private agent with an empty invite list", async () => {
+  it("keeps the owner's private clone private", async () => {
     const repos = makeRepos(
-      [sourceAgent({ visibility: "private", memberEmails: [CLONER, "other@x.com"] })],
+      [sourceAgent({ visibility: "private", ownerEmail: CLONER })],
       [sourceConfiguration()],
     );
     const { agent } = await makeClone(repos)(INPUT);
 
     expect(agent.visibility).toBe("private");
-    expect(agent.memberEmails).toBeUndefined();
   });
 
   it("refuses a private source the caller cannot access", async () => {
     const repos = makeRepos([sourceAgent({ visibility: "private" })], [sourceConfiguration()]);
     await expect(makeClone(repos)(INPUT)).rejects.toBeInstanceOf(ForbiddenError);
     expect(repos.agentsByName.has("copy")).toBe(false);
-  });
-
-  it("clones a private source for an invited member", async () => {
-    const repos = makeRepos(
-      [sourceAgent({ visibility: "private", memberEmails: [CLONER] })],
-      [sourceConfiguration()],
-    );
-    await expect(makeClone(repos)(INPUT)).resolves.toMatchObject({ agent: { name: "copy" } });
   });
 
   it("refuses a target name that already exists", async () => {

@@ -2,6 +2,7 @@ import {
   isAudioJobTerminal, MAX_ACTIVE_AUDIO_JOBS,
   type AudioJob, type AudioJobRepository,
 } from "@/domain/audio/job";
+import { isDeepStrictEqual } from "node:util";
 import { keys } from "../keys";
 import { agentIsLive } from "../agentLifecycle";
 import {
@@ -25,6 +26,8 @@ function row(job: AudioJob): Item {
 
 function owned(current: AudioJob | null, expected: AudioJob, now: string): boolean {
   return current !== null && current.status === "running" && current.revision === expected.revision &&
+    isDeepStrictEqual(current.user, expected.user) && isDeepStrictEqual(current.actor, expected.actor) &&
+    isDeepStrictEqual(current.executionGrant, expected.executionGrant) &&
     !!expected.lease && current.lease?.token === expected.lease.token && current.lease.until > now;
 }
 
@@ -161,6 +164,7 @@ export const audioJobRepository: AudioJobRepository = {
   },
 
   async checkpoint(job, patch, now) {
+    if (["user", "actor", "executionGrant", "userEmail"].some(key => key in patch)) return null;
     const terminal = isAudioJobTerminal(patch.status);
     let next: AudioJob | null = null;
     try {

@@ -240,7 +240,7 @@ domain의 제한된 경고와 브라우저 오류 경계 등 예외는 구조 �
 
 Agent 런은 **항상** 트레이싱되며 이미지 도구도 같은 실행 Trace에 포함된다.
 
-트레이스는 Agent 소유자와 관리자(`assertAgentOwnerOrAdminReadable` 기준)에게 보인다. SDK span은 이름·종류·상태·시간,
+트레이스는 Agent 소유자(`assertAgentOwner` 기준)에게 보인다. SDK span은 이름·종류·상태·시간,
 native ID와 부모 ID, 모델 토큰·비용을 저장한다. `prepare`에는 skill·Agent·MCP·도구의 수와
 발견한 capability 이름 최대 20개를 기록한다. 원본 프롬프트와 도구 결과는 span에 저장하지 않는다.
 다만 Trace의 `error`와 `warnings`는 원문 오류를 최대 1,000자로 보관하므로 민감 정보가 포함될
@@ -318,8 +318,8 @@ Agent·Session·Usage·Audit와 원본 파일은 파생 캐시가 아니다.
 
 둘 다 런 브래킷(`src/application/run/runBracket.ts`)에 매달려 있고 **의도적으로 서로 반대
 방향으로 실패한다**. 그 사이에 세 번째 가드가 있다: **member tier 의 월간 상한**
-(Settings → Access에서 설정하며 초기값은 `member` $20, `guest` $2, admin 무제한)은 `user`
-actor 에 대해 Agent의 비용 가드 다음, 슬롯 이전에 검사된다. 그래서 예산을 넘긴 사람은 어차피
+(Settings → Access에서 설정하며 초기값은 `member` $20, `guest` 조회 전용, admin 무제한)은 모든 출처의
+Studio 사용자 ID에 대해 Agent 비용 가드 다음, 슬롯 이전에 검사된다. 그래서 예산을 넘긴 사람은 어차피
 거부될 런의 슬롯을 기다리는 대신 그 사실을 바로 듣게 된다. 이 가드도 나머지 둘처럼 `429` 를
 답한다. 개인 등급·사용량 조회 실패는 새 실행을 차단한다. tier 모델과 함께
 [SECURITY.md](SECURITY.md#인가-모델) 에 문서화돼 있다.
@@ -438,9 +438,14 @@ discovery와 문서 embedding을 반복한다.
 - 결과는 저장된 리포트(`GET /api/plugins/sync`)와 로그 라인에 남는다.
 - **아카이브가 마지막 sync 면 틱은 보류된다.** 사람이 올린 snapshot 을 다음 분의 자동 sync 가
   덮지 않도록 `{ started: false, held: "archive" }` 로 답한다. GitHub 가 다시 소유하게 하려면
-  admin 이 `POST /api/plugins/sync` 를 명시적으로 실행한다.
-- 503 은 `SCHEDULE_SCAN_TOKEN` 이 설정되지 않았거나, `PLUGINS_REPO`/`GITHUB_TOKEN` 이 설정되지
-  않았다는 뜻이다.
+  admin 이 `POST /api/plugins/sync` 를 명시적으로 실행한다. 예약된 자동 실행도 리스를 얻은
+  직후 리포트를 다시 확인하므로 접수 이후 완료된 업로드를 덮지 않는다. 이 조회가 실패하면
+  원격 스냅샷 조회·변경 없이 실행을 중단하고 리스를 해제한다.
+  실행 중에는 100초마다 5분 리스를 갱신하고, 각 레지스트리·리포트 쓰기도 같은 DB 트랜잭션에서
+  현재 소유권을 확인한다. 만료되거나 다른 작업에 넘어간 리스는 되살리지 않으며 남은 변경을 중단한다.
+  재색인 예약은 이 소유권 범위 밖에서 수행한다.
+- 503 은 `SCHEDULE_SCAN_TOKEN` 또는 `PLUGINS_REPO`/`GITHUB_TOKEN`이 설정되지 않았거나,
+  마지막 sync 리포트를 읽을 수 없다는 뜻이다. 보류 상태를 확인할 수 없으면 자동 sync를 시작하지 않는다.
 - **GitHub 에 닿지 않는 배포에는 이 틱이 없다.** 그런 배포는 admin 이 `/plugins` 에서
   체크아웃의 `.tar.gz` 를 올리는 것이 sync 이고(`POST /api/plugins/sync/upload`), 같은 리포트와
   같은 리스를 쓴다. GitHub 쪽 sync 와 동시에 돌 수 없다. 저장된 마지막 리포트는 설정된

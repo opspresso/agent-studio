@@ -1,6 +1,6 @@
 import { audioToolInputFields } from "./toolDefinitions";
 import { AUDIO_JOB_TOOL_NAME, AUDIO_TOOL_NAMES, IMPORT_FILE_TOOL_NAME, TRANSCRIBE_AUDIO_TOOL_NAME } from "@/domain/llm/toolNames";
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunIdentity } from "@/domain/execution/actor";
 import type { McpToolResult } from "@/domain/llm/types";
 import type { FileRetention } from "@/domain/artifact/retention";
 import type { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
@@ -38,8 +38,8 @@ function object(args: Record<string, unknown>, field: string): Record<string, un
 }
 
 /** One bound user and occurrence, shared by all audio calls in an Agent run. */
-export function createAudioTool(deps: AudioToolDeps, context: {
-  agentName: string; userEmail: string; occurrence: string; actor?: RunActor; producedBy?: string;
+export function createAudioTool(deps: AudioToolDeps, context: RunIdentity & {
+  agentName: string; userEmail: string; occurrence: string; producedBy?: string;
 }) {
   return async (tool: string, args: Record<string, unknown>): Promise<McpToolResult> => {
     try {
@@ -114,7 +114,7 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         throw new ValidationError("Invalid config_revision");
       }
       if ([fileId, sourceRef, artifactId].filter(Boolean).length !== 1) throw new ValidationError("Provide source with kind and a non-empty id; postprocess requires artifact_id");
-      const result = await deps.jobs.submit(context.agentName, context.userEmail, {
+      const result = await deps.jobs.submit(context.agentName, context.user, {
         source: artifactId ? { kind: "artifact", artifactId } : fileId ? { kind: "file", fileId } : { kind: "source", sourceRef: sourceRef! },
         task: tool === IMPORT_FILE_TOOL_NAME ? "import" : tool === TRANSCRIBE_AUDIO_TOOL_NAME ? "transcribe" :
           task === "postprocess" ? "postprocess" : "process",
@@ -123,7 +123,7 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         processingRevision: text(args, "processing_revision"),
         ...(post ? { postprocess: { agentName: agentName! } } : {}),
         ...(destination ? { destination: { serverName: serverName!, documents: destination.documents as boolean, memories: destination.memories as boolean } } : {}),
-      }, { occurrence: context.occurrence, actor: context.actor,
+      }, { occurrence: context.occurrence, actor: context.actor, executionGrant: context.executionGrant,
         ...(context.producedBy ? { producedBy: context.producedBy } : {}) });
       if (result.status === "busy") {
         const reasons = {

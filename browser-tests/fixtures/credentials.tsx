@@ -41,7 +41,7 @@ function Fixture() {
         onSave={async () => { await action("save"); setConfigured(true); }}
         onReset={async () => { await action("reset"); setConfigured(false); }} />
       </Card>
-      <Card><TokenSection agentName="fixture-agent" selected={historySelected}
+      <Card><TokenSection purpose="api" agentName="fixture-agent" selected={historySelected}
         onSelect={() => setHistorySelected(true)} />
         <output aria-label="History selected">{String(historySelected)}</output>
       </Card>

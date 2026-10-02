@@ -8,7 +8,7 @@ import UsagePage from "../../src/app/agents/[name]/usage/page";
 
 createRoot(document.getElementById("root")!).render(
   <MantineProvider theme={theme}><I18nProvider locale="en">
-    <ViewerProvider viewer={{ email: "owner@example.test", tier: "member", isAdmin: false, isConfiguredAdmin: false }}>
+    <ViewerProvider viewer={{ email: "owner@example.test", tier: "member", isAdmin: false }}>
       <UsagePage />
     </ViewerProvider>
   </I18nProvider></MantineProvider>,

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * OAuth connections belong to the Agent and save independently of Agent settings.
+ * OAuth connections belong to the current Studio user and save independently of Agent settings.
  * Token rotation does not edit the current model, tools or prompt configuration.
  */
 
@@ -90,8 +90,8 @@ export function McpConnectionCard({
   agentName: string;
   serverName: string;
   /**
-   * Called whenever the agent's credentials for this server change — an
-   * authorization finishing, credentials saved, a disconnect. What the server
+   * Called whenever the caller's credentials for this server change — an
+   * authorization finishing or a disconnect. What the server
    * offers depends on them, so anything showing that has to be told; the card
    * cannot know who is listening, which is why this is a signal rather than a
    * refresh of something it owns.
@@ -113,10 +113,7 @@ export function McpConnectionCard({
 
   const refresh = useCallback(async () => {
     const isCurrent = latestOnly();
-    // Settled independently on purpose. Only the registry entry can say whether
-    // this server needs authorization at all, so a failure to read the agent's
-    // *connections* — which is what a non-owner gets — must never be able to
-    // leave the card claiming the server needs none.
+    // Registry metadata and personal authorization have independent failures.
     const [entry, connections] = await Promise.allSettled([
       getMcp(serverName),
       listMcpConnections(agentName),
@@ -220,7 +217,7 @@ export function McpConnectionCard({
   const automaticClient = Boolean(
     server.auth.registrationEndpoint || server.auth.clientIdMetadataDocumentSupported,
   );
-  const missingClient = !server.auth.clientId && !automaticClient;
+  const missingClient = !connection?.clientId && !server.auth.clientId && !automaticClient;
   return (
     <Stack gap="sm">
       <Group justify="space-between" gap="xs" wrap="nowrap">

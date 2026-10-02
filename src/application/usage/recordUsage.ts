@@ -1,3 +1,5 @@
+import type { RunIdentity } from "@/domain/execution/actor";
+import { actorKey } from "@/domain/execution/actor";
 /**
  * Usage recording use case. Turns one LLM call into an atomic per-model
  * increment on the daily usage row. Each call records `calls: 1`; multi-turn
@@ -27,7 +29,8 @@ export interface RecordUsageInput {
    * than threaded through the engine: the engine reports what a model call
    * cost, and has no business knowing who asked for it.
    */
-  actor?: string;
+  actor: string;
+  userId: string;
 }
 
 export function todayUtc(): string {
@@ -47,13 +50,16 @@ export async function recordUsage(
     outputTokens: input.outputTokens,
     cachedTokens: input.cachedTokens ?? 0,
     costUsd: input.costUsd,
-    ...(input.actor ? { actor: input.actor } : {}),
+    actor: input.actor,
+    userId: input.userId,
   });
 }
 
+export type UsageCall = Omit<RecordUsageInput, "userId" | "actor">;
+
 export interface UsageAggregator {
   /** Buffer one call's usage. Never performs I/O, never rejects. */
-  record: (input: RecordUsageInput) => Promise<void>;
+  record: (input: UsageCall) => Promise<void>;
   /**
    * Write one atomic increment per (agent, date, model). Best-effort.
    *
@@ -75,11 +81,11 @@ export interface UsageAggregator {
 export function createUsageAggregator(
   repo: UsageRepository,
   /** Attributed to this caller; one run has exactly one, for all of its turns. */
-  actor?: string,
+  identity: RunIdentity,
 ): UsageAggregator {
   const totals = new Map<
     string,
-    RecordUsageInput & { date: string; calls: number; cachedTokens: number }
+    UsageCall & { date: string; calls: number; cachedTokens: number }
   >();
   return {
     async record(input) {
@@ -120,7 +126,8 @@ export function createUsageAggregator(
             costUsd: total.costUsd,
             // The run's actor, not the buffered record's: a subagent transfer
             // spends on a different agent but is still the same person's run.
-            ...(actor ? { actor } : {}),
+            actor: actorKey(identity.actor),
+            userId: identity.user.userId,
           });
         } catch (error) {
           log.error("usage", "flush failed", { model: total.model, error });

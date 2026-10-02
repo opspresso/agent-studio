@@ -4,6 +4,7 @@ import { triggerRunnerDeps } from "@/lib/container";
 import { readEventBody } from "@/app/api/_lib/inboundEvent";
 import { unauthorized } from "@/shared/unauthorized";
 import { withRunContext } from "@/shared/runContext";
+import { WEBHOOK_CREDENTIAL_QUERY } from "@/domain/trigger/types";
 
 type RouteContext = { params: Promise<{ agent: string }> };
 
@@ -15,8 +16,8 @@ type RouteContext = { params: Promise<{ agent: string }> };
  * only way a delivery reaches the platform; `admitDelivery` resolves the row it
  * belongs to, so there is no id here to get wrong.
  *
- * Authentication IS the webhook's secret — no session is involved, exactly like
- * the Slack endpoint's signature.
+ * Authentication selects a personal Webhook credential and its issuing Studio user.
+ * GitHub callbacks include its public selector in the credential query parameter.
  *
  * It answers 202 and runs in the background. A run here can last ten minutes
  * and no webhook sender waits that long; the delivery's outcome goes on its
@@ -49,7 +50,7 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
     // signature. Presence of GitHub headers selects that scheme without a
     // fallback to a generic secret when a signature is invalid or missing.
     ["x-hub-signature-256", "x-hub-signature", "x-github-delivery", "x-github-event"].some(name => request.headers.has(name))
-      ? { kind: "github", signature: request.headers.get("x-hub-signature-256"), body,
+      ? { kind: "github", credentialId: new URL(request.url).searchParams.get(WEBHOOK_CREDENTIAL_QUERY), signature: request.headers.get("x-hub-signature-256"), body,
         deliveryId: request.headers.get("x-github-delivery"), event: request.headers.get("x-github-event") }
       : request.headers.get("x-trigger-secret"),
     request.headers.get("idempotency-key"),

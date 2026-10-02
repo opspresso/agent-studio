@@ -1,5 +1,6 @@
 import type { RerankerPort } from "@/domain/vector/types";
 import { calculateRerankCost } from "@/domain/llm/models";
+import { fetchProvider } from "./providerFetch";
 
 interface RerankerConfig {
   baseUrl: string;
@@ -65,7 +66,7 @@ export function createReranker(resolve: () => Promise<RerankerConfig> | Reranker
       if (config.apiKey) {
         headers.set("authorization", `Bearer ${config.apiKey}`);
       }
-      const response = await fetch(`${config.baseUrl.replace(/\/+$/, "")}/rerank`, {
+      const response = await fetchProvider(`${config.baseUrl.replace(/\/+$/, "")}/rerank`, {
         method: "POST",
         headers,
         signal: operationSignal,

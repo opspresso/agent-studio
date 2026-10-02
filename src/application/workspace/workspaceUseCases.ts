@@ -9,7 +9,7 @@ import { isGitBranch, isRepositoryName, workspaceAllowsRepository } from "@/doma
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import type { CodingApproval } from "@/domain/coding/types";
 import type { WorkspaceContinuation } from "@/domain/workspace/continuation";
-import type { RunActor, ExecutionGrant } from "@/domain/execution/actor";
+import type { RunActor, RunUser, ExecutionGrant } from "@/domain/execution/actor";
 import { CodingRepositoryNotReadyError } from "@/domain/coding/types";
 import { titleFromMessage } from "@/application/chat/title";
 import { assertAgentAccessible } from "@/application/agent/agentUseCases";
@@ -23,21 +23,21 @@ export interface WorkspaceDeps {
   now(): Date;
   newId(): string;
   idleTtlSeconds: number;
-  authorize?(agentName: string, email: string, actor?: RunActor, grant?: ExecutionGrant): Promise<void>;
+  authorize?(agentName: string, email: string, actor?: RunActor, grant?: ExecutionGrant, user?: RunUser): Promise<void>;
   assertRuntime?(runtime: WorkspaceRuntime): Promise<void>;
-  checkRepository?(repository: string, baseBranch: string, sourceRevision?: string): Promise<void>;
+  checkRepository?(agentName: string, user: RunUser, repository: string, baseBranch: string, sourceRevision?: string): Promise<void>;
 }
 
-export async function checkWorkspaceRepository(deps: WorkspaceDeps, repository: string, baseBranch: string, sourceRevision?: string): Promise<void> {
+export async function checkWorkspaceRepository(deps: WorkspaceDeps, agentName: string, user: RunUser, repository: string, baseBranch: string, sourceRevision?: string): Promise<void> {
   if (!deps.checkRepository) throw new ValidationError("Workspace repository validation is not configured");
   try {
-    if (sourceRevision === undefined) await deps.checkRepository(repository, baseBranch);
-    else await deps.checkRepository(repository, baseBranch, sourceRevision);
+    if (sourceRevision === undefined) await deps.checkRepository(agentName, user, repository, baseBranch);
+    else await deps.checkRepository(agentName, user, repository, baseBranch, sourceRevision);
   }
   catch (error) {
     if (error instanceof CodingRepositoryNotReadyError) throw new ValidationError(error.message);
     if (error instanceof ValidationError) throw error;
-    throw new UpstreamError("Workspace repository readiness could not be checked. Verify the GitHub endpoint and server connection before retrying.");
+    throw new UpstreamError("Workspace repository readiness could not be checked. Verify the GitHub endpoint and this Agent's GitHub MCP connection before retrying.");
   }
 }
 
@@ -68,16 +68,16 @@ export interface StartWorkspaceInput {
   executionGrant?: ExecutionGrant;
 }
 
-export type WorkspaceView = Omit<Workspace, "ownerEmail" | "leaseToken" | "leaseUntil" | "checkpointId" | "creationFingerprint">;
-export type WorkspaceRunView = Omit<WorkspaceRun, "leaseToken" | "leaseUntil" | "requestKey" | "operationId" | "outputOffset" | "protocolBuffer" | "executionGrant">;
+export type WorkspaceView = Omit<Workspace, "ownerEmail" | "leaseToken" | "leaseUntil" | "checkpointId" | "creationFingerprint" | "pullRequestUser">;
+export type WorkspaceRunView = Omit<WorkspaceRun, "leaseToken" | "leaseUntil" | "requestKey" | "operationId" | "outputOffset" | "protocolBuffer" | "executionGrant" | "studioSlot">;
 
 export function workspaceView(workspace: Workspace): WorkspaceView {
-  const { ownerEmail: _owner, leaseToken: _token, leaseUntil: _lease, checkpointId: _checkpoint, creationFingerprint: _creation, ...view } = workspace;
-  void [_owner, _token, _lease, _checkpoint, _creation];
+  const { ownerEmail: _owner, leaseToken: _token, leaseUntil: _lease, checkpointId: _checkpoint, creationFingerprint: _creation, pullRequestUser: _pullRequestUser, ...view } = workspace;
+  void [_owner, _token, _lease, _checkpoint, _creation, _pullRequestUser];
   return view;
 }
 export function workspaceRunView(run: WorkspaceRun): WorkspaceRunView {
-  const { leaseToken: _token, leaseUntil: _lease, requestKey: _request, operationId: _operation, outputOffset: _offset, protocolBuffer: _buffer, executionGrant: _grant, ...view } = run;
+  const { leaseToken: _token, leaseUntil: _lease, requestKey: _request, operationId: _operation, outputOffset: _offset, protocolBuffer: _buffer, executionGrant: _grant, studioSlot: _slot, ...view } = run;
   void [_token, _lease, _request, _operation, _offset, _buffer, _grant];
   return view;
 }
@@ -133,13 +133,15 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
     return chat;
   }
   return {
-    async checkRepository(agentName: string, ownerEmail: string, repository: string, baseBranch: string) {
+    async checkRepository(agentName: string, user: RunUser, repository: string, baseBranch: string) {
+      const ownerEmail = user.email;
       await assertAgentAccessible(deps.agents, agentName, ownerEmail);
       await deps.authorize?.(agentName, ownerEmail);
       if (!isRepositoryName(repository) || !isGitBranch(baseBranch) || !workspaceAllowsRepository(await workspacePolicy(deps, agentName), repository)) throw new ValidationError("Repository or base branch is not configured for this agent");
-      await checkWorkspaceRepository(deps, repository, baseBranch);
+      await checkWorkspaceRepository(deps, agentName, user, repository, baseBranch);
     },
-    async create(input: CreateWorkspaceInput, ownerEmail: string): Promise<Workspace> {
+    async create(input: CreateWorkspaceInput, user: RunUser): Promise<Workspace> {
+      const ownerEmail = user.email;
       await assertAgentAccessible(deps.agents, input.agentName, ownerEmail);
       await deps.authorize?.(input.agentName, ownerEmail);
       await deps.assertRuntime?.(input.runtime);
@@ -167,7 +169,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
         throw new ValidationError("Invalid workspace idle TTL");
       }
       if (input.sourceRevision && (!input.baseBranch || input.runtime !== "command" || !/^[a-f0-9]{40,64}$/.test(input.sourceRevision))) throw new ValidationError("Invalid review checkout");
-      if (input.baseBranch) await checkWorkspaceRepository(deps, repository!, input.baseBranch, input.sourceRevision);
+      if (input.baseBranch) await checkWorkspaceRepository(deps, input.agentName, user, repository!, input.baseBranch, input.sourceRevision);
       const now = deps.now().toISOString();
       const id = deps.newId();
       const session: RuntimeSession = { id: deps.newId(), workspaceId: id, runtime: input.runtime, createdAt: now, updatedAt: now };
@@ -200,18 +202,21 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
         } : null } : {}) };
     },
 
-    async start(input: StartWorkspaceInput, ownerEmail: string, requestKey: string, sourceChatId?: string): Promise<StartWorkspaceResult> {
+    async start(input: StartWorkspaceInput, user: RunUser, requestKey: string, sourceChatId?: string): Promise<StartWorkspaceResult> {
+      const ownerEmail = user.email;
+      if (!user.userId) throw new ValidationError("Workspace requires an authenticated Studio user");
+      await deps.authorize?.(input.agentName, ownerEmail, input.actor ?? { kind: "user", id: ownerEmail }, input.executionGrant, user);
       if (!/^[\w-]{8,128}$/.test(requestKey)) throw new ValidationError("Invalid Idempotency-Key");
       validateInput({ runtime: input.runtime }, input.input);
       const title = normalizedTitle(input.title ?? (input.input.kind === "task" ? titleFromMessage(input.input.prompt) : "Command workspace"));
-      const creationFingerprint = createHash("sha256").update(JSON.stringify([input.agentName, input.runtime, input.repository ?? null, input.baseBranch ?? null, input.input,
+      const creationFingerprint = createHash("sha256").update(JSON.stringify([user.userId, input.agentName, input.runtime, input.repository ?? null, input.baseBranch ?? null, input.input,
         ...(input.title === undefined ? [] : [title]), ...(input.actor ? [input.actor] : []), ...(input.executionGrant ? [input.executionGrant] : []), ...(input.sourceRevision ? [input.sourceRevision] : [])])).digest("hex");
       const chatId = workspaceChatId(ownerEmail, requestKey);
       let workspace = await deps.repository.forChat(chatId);
       let created = false;
       if (!workspace) {
         try { workspace = await this.create({ chatId, agentName: input.agentName, runtime: input.runtime, baseBranch: input.baseBranch, repository: input.repository,
-          title, createChat: true, creationFingerprint, sourceChatId, sourceRevision: input.sourceRevision }, ownerEmail); created = true; }
+          title, createChat: true, creationFingerprint, sourceChatId, sourceRevision: input.sourceRevision }, user); created = true; }
         catch (error) {
           if (!(error instanceof ConflictError)) throw error;
           workspace = await deps.repository.forChat(chatId);
@@ -220,7 +225,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       }
       if (workspace.ownerEmail !== ownerEmail || workspace.creationFingerprint !== creationFingerprint) throw new ConflictError("Idempotency-Key was used for a different workspace request");
       let run: WorkspaceRun;
-      try { run = await this.enqueue(workspace.id, ownerEmail, input.input, requestKey, input.actor, input.executionGrant); }
+      try { run = await this.enqueue(workspace.id, user, input.input, requestKey, input.actor, input.executionGrant); }
       catch (error) {
         if (created && input.sourceRevision) {
           try { await this.close(workspace.id, ownerEmail); }
@@ -262,11 +267,14 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       return workspaceView(workspace);
     },
 
-    async startForChat(input: StartWorkspaceInput, ownerEmail: string, sourceChatId: string): Promise<{ workspace: WorkspaceView; run?: WorkspaceRunView; reused: boolean }> {
+    async startForChat(input: StartWorkspaceInput, user: RunUser, sourceChatId: string): Promise<{ workspace: WorkspaceView; run?: WorkspaceRunView; reused: boolean }> {
+      const ownerEmail = user.email;
+      if (!user.userId) throw new ValidationError("Workspace requires an authenticated Studio user");
+      await deps.authorize?.(input.agentName, ownerEmail, input.actor ?? { kind: "user", id: ownerEmail }, input.executionGrant, user);
       const current = await this.forSourceChat(sourceChatId, input.agentName, ownerEmail);
       if (current) return { workspace: current, reused: true };
       const key = createHash("sha256").update(JSON.stringify(["source-chat", ownerEmail, sourceChatId, input.agentName])).digest("hex");
-      try { return { ...await this.start(input, ownerEmail, key, sourceChatId), reused: false }; }
+      try { return { ...await this.start(input, user, key, sourceChatId), reused: false }; }
       catch (error) {
         if (!(error instanceof ConflictError)) throw error;
         const winner = await this.forSourceChat(sourceChatId, input.agentName, ownerEmail);
@@ -287,16 +295,18 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       return deps.repository.events(id, runId, afterSeq, WORKSPACE_LIMITS.maxPage);
     },
 
-    async enqueue(id: string, ownerEmail: string, input: WorkspaceInput, requestKey: string, actor?: RunActor, executionGrant?: ExecutionGrant): Promise<WorkspaceRun> {
+    async enqueue(id: string, user: RunUser, input: WorkspaceInput, requestKey: string, actor: RunActor = { kind: "user", id: user.email }, executionGrant?: ExecutionGrant): Promise<WorkspaceRun> {
+      const ownerEmail = user.email;
+      if (!user.userId || !actor.id) throw new ValidationError("Workspace requires an authenticated Studio user");
       const workspace = await ownedWorkspace(deps, id, ownerEmail);
-      await deps.authorize?.(workspace.agentName, ownerEmail, actor, executionGrant);
+      await deps.authorize?.(workspace.agentName, ownerEmail, actor, executionGrant, user);
       await deps.assertRuntime?.(workspace.runtime);
       const policy = await workspacePolicy(deps, workspace.agentName);
       if (!policy.runtimes.includes(workspace.runtime)) throw new ValidationError("Workspace runtime is not enabled");
       if (workspace.coding && !workspaceAllowsRepository(policy, workspace.coding.repository)) throw new ConflictError("Workspace repository configuration changed");
       validateInput(workspace, input);
       if (!/^[\w-]{8,128}$/.test(requestKey)) throw new ValidationError("Invalid Idempotency-Key");
-      const fingerprint = createHash("sha256").update(JSON.stringify(executionGrant ? [input, actor, executionGrant] : actor ? [input, actor] : input)).digest("hex");
+      const fingerprint = createHash("sha256").update(JSON.stringify([user.userId, input, actor, executionGrant])).digest("hex");
       const existing = await deps.repository.request(id, requestKey);
       if (existing) {
         if (existing.fingerprint !== fingerprint) throw new ConflictError("Idempotency-Key was used for different input");
@@ -309,11 +319,11 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       if (workspace.leaseToken && Date.parse(workspace.leaseUntil ?? "") > deps.now().getTime()) throw new ConflictError("Workspace is busy");
       const pending = workspace.activeActionId ? await deps.repository.approval(id, workspace.activeActionId) : null;
       if (workspace.activeActionId && pending?.status !== "pending") throw new ConflictError("Workspace has an executing or uncertain action");
-      if (workspace.coding && !workspace.coding.baseSha) await checkWorkspaceRepository(deps, workspace.coding.repository, workspace.coding.baseBranch, workspace.coding.sourceRevision);
+      if (workspace.coding && !workspace.coding.baseSha) await checkWorkspaceRepository(deps, workspace.agentName, user, workspace.coding.repository, workspace.coding.baseBranch, workspace.coding.sourceRevision);
       const now = deps.now().toISOString();
       const run: WorkspaceRun = {
         id: `${deps.now().getTime()}-${deps.newId()}`, workspaceId: id, sessionId: workspace.sessionId,
-        requestKey, input, ...(actor ? { actor } : {}), ...(executionGrant ? { executionGrant } : {}), status: "queued", createdAt: now, lastEventSeq: 0, checks: [],
+        requestKey, input, user, actor, ...(executionGrant ? { executionGrant } : {}), status: "queued", createdAt: now, lastEventSeq: 0, checks: [],
       };
       try {
         await deps.repository.write({ workspace: { ...workspace, status: "active", revision: workspace.revision + 1,

@@ -125,7 +125,7 @@ describe("trace TTL", () => {
 describe("usage TTL", () => {
   it("sets expiresAt from the usage date when materialising a row", async () => {
     seedAgent("p");
-    const delta = {
+    const delta = { userId: "fixture-user", actor: "user:fixture@example.test",
       agentName: "p",
       date: "2026-05-01",
       model: "openai/gpt-5",

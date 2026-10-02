@@ -13,7 +13,7 @@ export interface CloneAgentInput {
 }
 export interface CloneAgentResult { agent: Agent; warning?: string }
 
-/** Copy current settings while keeping credentials and membership with their owner. */
+/** Copy current settings while keeping credentials with their owner. */
 export function composeCloneAgent(deps: CloneAgentFlowDeps): (input: CloneAgentInput) => Promise<CloneAgentResult> {
   return async (input) => {
     const source = await assertAgentAccessible(deps.agents, input.sourceName, input.userEmail);

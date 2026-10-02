@@ -7,7 +7,7 @@ tags: [agent-studio, control-plane, rag, knowledge-graph, mcp, workspace, offlin
 
 # Agent Studio
 
-Agent Studio는 기업 내부에 설치하는 AI Agent Control Plane이다. 사용자는 Agent를 만들고
+Agent Studio는 회사·그룹 등 한 단체 내부에 설치하는 AI Agent Control Plane이다. 사용자는 Agent를 만들고
 현재 Agent 설정에 모델·프롬프트·도구를 구성한 뒤 여러 실행 창구에서 호출한다. 앱은 접근 권한,
 자격 증명, 예산과 기록을 관리하고 OpenAI Agents SDK는 모델 턴과 도구 실행을 관리한다.
 
@@ -17,7 +17,7 @@ Agent Studio는 기업 내부에 설치하는 AI Agent Control Plane이다. 사�
 
 ## 제품 경계와 배포
 
-한 설치는 한 기업이다. 멀티테넌시는 없으며 설치 안의 접근은 멤버 등급, Agent 공개 범위와
+한 설치는 한 단체다. 멀티테넌시는 없으며 설치 안의 접근은 멤버 등급, Agent 공개 범위와
 소유권으로 나눈다. PostgreSQL + pgvector가 기본 영속 저장소다. 사내 로그인 수단과 OpenAI 호환
 모델 채널을 구성하면 필수 부팅·로그인·실행·콘솔 경로를 공개 인터넷 없이 운영할 수 있다.
 
@@ -31,6 +31,11 @@ Plugin sync, Slack·Telegram·Teams·GitHub는 배포가 선택하는 연결이�
 설치와 업그레이드는 [INSTALL](INSTALL.md), 실제 변수는 [CONFIGURATION](CONFIGURATION.md)을 따른다.
 
 ## Agents와 현재 설정
+
+구성원은 Agent를 만들어 조직 안에서 함께 사용한다. 설정 변경은 만든 사람에게만 허용한다.
+private Agent는 본인만 접근하고, public Agent는 member 이상이 호출한다. OAuth MCP는 각 사용자가
+본인 계정으로 연결하며 실행·위임·자동화에서도 호출자의 인증을 사용한다. 설치 관리 권한은 다른
+사람의 Agent 소유권을 대신하지 않는다. 세부 판정은 [인가 모델](SECURITY.md#인가-모델)을 따른다.
 
 콘솔에서는 Agent를 `/agents`에서 만들고 관리한다. 저장소와 `/api/agents`의 `Agent`는
 같은 Agent를 가리키는 내부 계약이다. 현재 설정에 모델·fallback·시스템 프롬프트·생성 설정,
@@ -62,7 +67,7 @@ Skill 본문은 시스템 프롬프트에 모두 넣지 않는다. 이름·설�
 sync는 사라진 항목을 보고하지만 삭제는 별도의 명시적 작업으로 남긴다.
 
 MCP registry는 서버 주소를 소유하고 Agent binding은 도구 목록과 헤더를 좁히거나 덮어쓴다.
-Agent별 OAuth 연결과 선택적인 Docker 관리형 서버도 지원한다. 등록·dispatch 경계에서
+사용자별 OAuth 연결과 선택적인 Docker 관리형 서버도 지원한다. 등록·dispatch 경계에서
 주소와 자격 증명을 검사한다. [MCP](design/mcp.md)와 [보안](SECURITY.md#mcp-oauth)을 보라.
 
 선택적 capability 검색은 전역 `catalog_vectors`에서 현재 요청에 맞는 Skill·MCP 서버·도구를 찾는다.
@@ -127,7 +132,7 @@ credential, schema 검증, PII 치환, 예산과 로컬 Trace를 연결한다. �
 warning으로 전달한다. reasoning 표시 옵션은 원래 모델 턴의 provider 재생 이력을 삭제하지 않는다.
 자세한 소비 규칙은 [EngineChunk 계약](ARCHITECTURE.md#enginechunk-계약)에 있다.
 
-`actor`는 비용·동시성에 쓰는 안정적인 실행 주체다. user와 agent-token은 이메일,
+`user.userId`는 모든 호출 경로가 공유하는 비용·동시성의 실행 주체다. `actor`는 출처를 구분한다. user와 agent-token은 이메일,
 Slack과 Telegram은 사용자 ID, Teams는 발신자 Entra object ID를 사용한다. 메신저 workspace나
 bot ID와 혼동하지 않는다. `caller`는 Agent 설정이 허용한 표시 이름·시간대 등의 모델 문맥이며
 이메일 필드가 없다. `ownerEmail`은 파일의 개인 귀속, `conversation`은 대화의 연속성을 나타낸다.
@@ -171,7 +176,8 @@ Artifact metadata는 DB에, bytes는 S3 호환 저장소에 둔다. URL 발급�
 
 Workspace는 파일·Git·native CLI Session의 영속 공간이고 Sandbox는 작업을 실행하는 격리 자원이다.
 `parameters.workspaceTools`, Agent 정책, 사용자 권한과 배포 설정이 함께 충족되어야 Agent에
-도구가 제공된다. GitHub MCP의 로그인은 worker의 Git 자격 증명이나 저장소 허용 정책을 대신하지 않는다.
+도구가 제공된다. worker의 GitHub API와 Git 전송은 해당 Agent의 GitHub MCP 인증을 사용하며,
+저장소 정책도 별도로 검사한다. Settings → Plugins의 토큰은 Plugin 다운로드에만 사용한다.
 
 별도 Workspace worker가 실행·관찰·검사·체크포인트·만료 정리를 담당한다. 커밋·푸시·PR·main 반영은
 검토한 Git 상태에 대한 단계별 승인으로 실행한다. 결과와 CI 대기는 연결된 원래 Chat에 전달할 수 있다.

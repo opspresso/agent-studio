@@ -11,7 +11,7 @@
 
 | 단위 | 역할·접근 범위 |
 |---|---|
-| Agent | 모델·프롬프트·역량·한도를 저장하는 실행 단위. public은 조직의 로그인 사용자에게 공개하며, private은 소유자·초대 이메일·관리자로 제한한다 |
+| Agent | 모델·프롬프트·역량·한도를 저장하는 실행 단위. public은 조직의 로그인 사용자에게 공개하며, private은 소유자만 접근한다 |
 | Skill | 모델이 이름·설명으로 선택한 뒤 본문과 참고 파일을 읽는 지침 |
 | Tools | MCP 서버 레지스트리. 서버 설명은 모델용이고 운영 메모는 콘솔용이다 |
 | Plugin | Skill·MCP 정의의 원본 묶음. GitHub 저장소 또는 checkout archive에서 동기화한다 |
@@ -19,9 +19,9 @@
 | Workspace / Sandbox | Workspace는 파일·native Session을 유지하고, Sandbox는 작업을 실행하는 일시적 컨테이너다 |
 | Artifact | 첨부 원본·생성·수정 결과 파일. 개인 귀속과 Agent 접근 범위에 따라 조회한다. 비공개 Audio 파일은 소유자만 읽고 삭제한다 |
 
-Agent 조회·실행·복제 권한과 편집 권한은 다르다. 초대는 편집 권한을 주지 않으며,
-복제에는 Agent 생성 권한도 필요하다. 공유 레지스트리는 guest도 조회하며 관리자가 변경한다. guest는 member와 같은 메뉴를 읽기 전용으로 본다.
-Agent 소유자·관리자는 설정·연동·Trace를 관리한다. 봇·토큰·자동화의 인증은 사용자 세션을 대신하지 않는다.
+Agent 조회와 실행·편집 권한은 다르다. 실행·복제는 member 이상이어야 하며,
+private Agent는 소유자만 사용한다. 공유 레지스트리는 guest도 조회하며 관리자가 변경한다. guest는 member와 같은 메뉴를 읽기 전용으로 본다.
+Agent 소유자는 설정·연동·Trace를 관리한다. 봇·토큰·자동화의 인증은 사용자 세션을 대신하지 않는다.
 
 근거: [Agent 접근](../src/application/agent/agentUseCases.ts),
 [등급 정책](../src/domain/member/tiers.ts), [인증·인가](SECURITY.md).
@@ -44,7 +44,7 @@ Agent 소유자·관리자는 설정·연동·Trace를 관리한다. 봇·토큰
 
 | 기능 | 조건·사용 위치 | 확인할 결과 |
 |---|---|---|
-| Agent 관리 | 생성 가능한 tier. 목록에서 이름·표시 이름·설명 검색, 생성·복제·메타데이터·부서·공개 범위·초대 관리 | 식별자는 변경하지 않는다. 삭제된 이름은 재사용하지 않으며 Chat·Artifact는 각 보존 규칙을 따른다 |
+| Agent 관리 | 생성 가능한 tier. 목록에서 이름·표시 이름·설명 검색, 생성·복제·메타데이터·부서·공개 범위 관리 | 식별자는 변경하지 않는다. 삭제된 이름은 재사용하지 않으며 Chat·Artifact는 각 보존 규칙을 따른다 |
 | 현재 설정 | Playground에서 하나의 현재 설정을 저장한다. 독립 실험은 복제본을 사용한다 | 초안·미저장 상태를 표시하고 동시 설정 저장 충돌을 거절한다. Run은 저장된 설정을 사용한다 |
 | 모델·출력 설정 | 등록된 도구 호출 가능 텍스트 모델, 선택적 fallback·이미지 도구 모델. Temperature·출력 토큰·Presence penalty·Reasoning effort·JSON Schema | 모델 capability를 검사한다. fallback은 첫 출력 전 재시도 가능한 전송 오류에 한 번 적용한다. 턴·출력 제한은 부분 답변으로 구분한다 |
 | 실행 정책 | 최대 입력·턴 수, 차단·승인 도구 이름, 호출자 문맥·PII filtering | 스키마·위임 깊이·순환·턴 예산을 검사한다. PII filtering은 제한된 패턴 치환이며 완전한 익명화를 보장하지 않는다 |
@@ -71,8 +71,8 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 | GenerateImage / EditImage | Agent의 이미지 기능과 등록 이미지 모델·프로바이더. 생성·편집 결과를 같은 Agent 실행에서 전달한다 |
 | FetchUrl | Agent의 URL 읽기 opt-in. URL guard를 거쳐 웹·PDF·데이터·이미지를 읽는다 |
 | SaveFile / File | Artifact 저장소. 텍스트 파일 저장과 지원 문서 읽기·검사·생성·편집. 문서 엔진에 MCP 바인딩은 필요하지 않다 |
-| ImportFile / TranscribeAudio / AudioJob | Agent의 Audio 기능과 소유자의 member 이상 문맥. 파일은 비공개 저장소에 보관하고 worker가 작업을 처리한다. 전사는 등록된 전사 채널을 추가로 요구한다 |
-| Workspace | Agent의 Workspace 기능, 로그인한 사용자(guest 포함), Sandbox·worker·실행 정책. 개인 월 한도를 적용한다. 토큰·봇·예약 실행에는 자동 제공하지 않는다 |
+| ImportFile / TranscribeAudio / AudioJob | Agent의 Audio 기능과 호출자의 member 이상 문맥. 파일은 비공개 저장소에 보관하고 worker가 작업을 처리한다. 전사는 등록된 전사 채널을 추가로 요구한다 |
+| Workspace | Agent의 Workspace 기능, member 이상인 로그인 사용자, Sandbox·worker·실행 정책. 개인 월 한도를 적용한다. 개인 토큰·연결된 메신저·Schedule 등록자의 현재 권한과 Agent 정책을 검사해 제공한다 |
 | Slack 읽기 | Agent의 Slack 읽기 기능과 활성 봇. History·Thread·User(s)·Channels·Reactions를 봇 권한으로 읽으며 이 도구들은 게시하지 않는다 |
 | ModelTask | Agent의 명시적 모델 라우팅 설정. 다른 도구나 두 번째 Agent 루프를 실행하지 않는 보조 모델 호출 |
 
@@ -128,9 +128,9 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 | Skills | 관리자 수동 생성·본문 편집·삭제, Plugin 출처와 참고 파일 조회 | 이름·설명이 검색과 모델 선택을 안내하며 본문은 로드 후 전달한다. Plugin 소유 본문·참고 파일은 원본에서 수정한다 |
 | Plugins | 관리자 GitHub 동기화 또는 .tar/.tar.gz/.tgz 업로드, 변경·skipped·실패·출처 인수·고아 항목 보고 | 헤더 credential은 가져오지 않는다. 고아 항목·Plugin은 바인딩 영향과 현재 원본을 확인해 명시적으로 삭제한다. archive hold 중 자동 GitHub 동기화는 진행하지 않는다 |
 | 원격 MCP | 관리자 등록·검사·편집과 Agent 바인딩·도구 선택·헤더 override | 도구 이름·설명·Schema를 발견한다. private DNS는 배포 allowlist와 실제 도달성이 필요하다. URL이 이동하면 저장한 credential을 새 대상으로 보내지 않는다 |
-| MCP OAuth | 관리자 metadata 발견·authorization server 선택·공유 client 설정, Agent 소유자 연결·재인증·해제 | 연결은 Agent 설정 Save와 별도로 저장된다. token 갱신과 재인증 상태를 확인한다. discovery 성공만으로 자원 접근을 증명하지 않는다 |
+| MCP OAuth | 관리자 metadata 발견·authorization server 선택·공유 client 설정, 사용자별 연결·재인증·해제 | member 이상인 각 호출자가 본인 계정을 연결한다. 사용자 ID·MCP 서버별 연결을 Agent 간 재사용하며 Agent 설정 Save와 별도로 저장한다. token 갱신과 재인증 상태를 확인한다. discovery 성공만으로 자원 접근을 증명하지 않는다 |
 | Managed MCP | 선택적 Docker provisioner, 이미지·내부 포트·환경·argv·endpoint 설정 | 컨테이너 상태·접속·재시작·삭제를 확인한다. loopback에 게시하고 PORT를 전달한다. private registry 인증은 호스트가 준비한다. Kubernetes 관리형 adapter는 미구현이다 |
-| Agent API Token | 소유자의 허용 tier, Agent당 credential 하나. 발급·조회·회전·폐기와 API Reference 예제 | bearer는 해당 Agent 실행을 인증한다. 서비스 actor로 비용을 귀속하고 MCP에 소유자 email을 전달하지만 Workspace/Chat 승인 권한을 부여하지 않는다 |
+| 개인 API·Webhook 토큰 | 현재 Agent 접근과 토큰 사용 tier가 있는 사용자가 본인 토큰을 발급·조회·폐기한다 | 사용자 ID와 Agent·purpose에 묶인다. 호출마다 현재 권한을 확인하고 개인 비용·동시성에 합산한다. API와 Webhook 토큰은 서로 대신 사용할 수 없다 |
 | 실행 API | predict 완료형/raw stream, agent raw stream, OpenAI chat/completions. 메시지·인라인 이미지, 지원 경로의 문서 입력 | 응답·이미지·파일·사용량·경고·종료 이유를 확인한다. 호출자가 이력을 공급하며 X-Conversation-Id는 MCP 식별만 유지한다 |
 | Slack | dedicated bot manifest·token·signature·활성화와 실제 event URL. DM·mention·참여 thread·키워드, help/mute, 제안 프롬프트 | 입력·도구·답변·이미지·파일을 플랫폼에 전달한다. 읽기 capability와 게시 목적지는 별도다. private Agent 접근을 검사한다 |
 | Telegram | token·secret webhook, 활성화 시 자동 등록·해제와 재등록 | 식별된 발신자의 개인 Chat·그룹 mention/봇 답장에 응답하며 /start·/help, 분할 답변·forum topic·관찰한 목적지를 지원한다. 음성 메시지 자동 전사는 제공하지 않는다 |
@@ -147,9 +147,9 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 
 | 기능 | 조건·사용 위치 | 확인할 결과 |
 |---|---|---|
-| Usage | Overview는 Agent·모델·provider·부서, Agent Usage는 모델·provider, Profile은 Agent·모델·provider별 집계 | UTC 기간·일별 비용·호출·캐시 비율을 확인한다. 호출자 상세는 소유자·관리자 전용이며 가격 추정 0은 실제 무료의 증거가 아니다 |
+| Usage | Overview는 Agent·모델·provider·부서, Agent Usage는 모델·provider, Profile은 Agent·모델·provider별 집계 | UTC 기간·일별 비용·호출·캐시 비율을 확인한다. 호출자 상세는 소유자 전용이며 가격 추정 0은 실제 무료의 증거가 아니다 |
 | 비용·등급 한도 | Agent의 일·월 alert/block, 알림 목적지와 사용자 tier의 월 비용·동시성·생성·토큰 정책 | 기록된 사용량으로 새 실행을 제어한다. 기준값은 선불 잔액이 아니며 알림 실패와 차단은 별개다 |
-| Traces | Agent 소유자·관리자. 실행·준비·모델·도구·위임·Guardrail·라우팅 span과 대화 식별 | 완료·실패·취소·승인 대기·턴/출력 제한, 시간·입출력·캐시·Reasoning·오류·손실·span 생략을 확인한다. 봇 전달 성공은 별도로 확인한다 |
+| Traces | Agent 소유자. 실행·준비·모델·도구·위임·Guardrail·라우팅 span과 대화 식별 | 완료·실패·취소·승인 대기·턴/출력 제한, 시간·입출력·캐시·Reasoning·오류·손실·span 생략을 확인한다. 봇 전달 성공은 별도로 확인한다 |
 | Audit | 관리자 전용 기간 조회. secret 조회·회전·폐기, 설정·모델·레지스트리·tier·관리자 작업 기록 | 행위자·대상·상세·UTC 날짜 페이지를 조회한다. 실행 진단은 Trace를 사용한다 |
 | Settings | Service: branding·주소·Artifact 전달·동시성·Slack 표시, Access: admin/domain, Plugins: repo/branch/token, Models: 연결·등록·사용 | 변경한 탭 필드만 저장하고 override/env/default/unset 출처를 표시한다. 일반 override reset과 배포 전용 설정을 구분한다 |
 | 운영 기반 | 부팅 설정 검사·DB schema, 암호화·mask·SSRF guard·실행 상한, health/ready·Prometheus·선택 OTLP·draining | 실제 Agent 실행과 파일 재열기로 경로를 검증한다. 일정·Plugin sync·catalog reindex는 각각 외부 호출이 필요하다. Audio·Workspace는 별도 worker다 |

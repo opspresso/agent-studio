@@ -1,15 +1,15 @@
 import { mcpAuthUseCases } from "@/lib/container";
-import { withAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { apiError, parseName } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
-/** Owner or admin: a connection is the agent's own credential, not shared config. */
-export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) => {
+/** The caller sees only their personal MCP grants. */
+export const GET = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
     return Response.json({
-      connections: await mcpAuthUseCases.listConnections(parseName(name), user.email),
+      connections: await mcpAuthUseCases.listConnections(parseName(name), { userId: user.id, email: user.email }),
     });
   } catch (error) {
     return apiError(error);

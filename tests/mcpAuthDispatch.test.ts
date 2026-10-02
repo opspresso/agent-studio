@@ -1,3 +1,5 @@
+import { executionIdentity } from "./runIdentity";
+import { isolatedMcpRefresh } from "./fakeMcpRefresh";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -63,7 +65,7 @@ const cipher = {
 
 function connectionFixture(overrides: Partial<McpConnection> = {}): McpConnection {
   return {
-    agentName: "p",
+    userId: "p",
     serverName: "slack",
     clientId: "client-1",
     clientSecret: "enc:shh",
@@ -90,10 +92,10 @@ function providerHarness(opts: {
   let stored = opts.connection === undefined ? connectionFixture() : opts.connection;
   const refreshCalls: string[] = [];
   const updates: Array<Record<string, unknown>> = [];
-  const provider = createMcpAuthProvider({
+  const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
     connections: {
       get: async () => stored,
-      listByAgent: async () => (stored ? [stored] : []),
+      listByUser: async () => (stored ? [stored] : []),
       put: async () => {},
       putIfCurrent: async () => true,
       delete: async () => {},
@@ -162,6 +164,50 @@ describe("resolving the Authorization for an agent's connection", () => {
     expect(h.refreshCalls).toEqual(["refresh-1"]);
     expect(result.headers).toEqual({ Authorization: "Bearer refreshed-token" });
     expect(h.updates[0]).toMatchObject({ accessToken: "enc:refreshed-token", status: "connected" });
+  });
+
+  it("shares a rotating OAuth refresh across concurrent requests for the same Agent grant", async () => {
+    let finish!: (tokens: TokenSet) => void;
+    const waiting = new Promise<TokenSet>(resolve => { finish = resolve; });
+    const h = providerHarness({ connection: connectionFixture({ revision: "same-grant", expiresAt: new Date(Date.now() + 1000).toISOString() }), refresh: () => waiting });
+    const pending = Promise.all([h.headersFor(), h.headersFor(), h.headersFor()]);
+    await Promise.resolve(); await Promise.resolve();
+    const refreshCount = h.refreshCalls.length;
+    finish({ accessToken: "rotated-once", refreshToken: "next-refresh", expiresInSeconds: 3600 });
+    const results = await pending;
+    expect(refreshCount).toBe(1);
+    expect(results.map(result => result.headers.Authorization)).toEqual(Array(3).fill("Bearer rotated-once"));
+    expect(h.updates).toHaveLength(1);
+  });
+
+  it("does not repeat a refresh whose provider outcome is uncertain", async () => {
+    let calls = 0;
+    const h = providerHarness({ connection: connectionFixture({ revision: "same-grant", expiresAt: new Date(Date.now() + 1000).toISOString() }), refresh: async () => {
+      if (++calls === 1) throw new Error("Provider temporarily unavailable");
+      return { accessToken: "later-token", expiresInSeconds: 3600 };
+    } });
+    expect((await h.headersFor()).unavailable).toContain("temporarily unavailable");
+    expect((await h.headersFor()).unavailable).toContain("reconnected");
+    expect(h.refreshCalls).toHaveLength(1);
+  });
+
+  it.each([{ userId: "another-user" }, { serverName: "another-server" }])("refuses credential rows from another user or server before decryption %j", async patch => {
+    const h = providerHarness({ connection: connectionFixture(patch) });
+    const result = await h.headersFor();
+    expect(result.headers).toEqual({});
+    expect(result.unavailable).toContain("does not match");
+    expect(h.refreshCalls).toEqual([]);
+  });
+
+  it.each(["token refresh", "same-value reconnect"])("does not invalidate the current credential after a late 401 from before %s", async kind => {
+    const h = providerHarness({ connection: connectionFixture({ revision: "old-grant" }) });
+    const snapshot = await h.headersFor();
+    h.current()!.revision = "new-grant";
+    if (kind === "token refresh") h.current()!.accessToken = "enc:fresh-token";
+    await h.provider.markUnauthorized("p", "slack", snapshot.credentialFingerprint!, "files:write");
+    expect(h.updates).toEqual([]);
+    expect(h.current()!.status).toBe("connected");
+    expect(h.current()!.scopes).not.toContain("files:write");
   });
 
   it("will not spend this agent's credentials at an authorization server that did not issue them", async () => {
@@ -241,10 +287,10 @@ describe("resolving the Authorization for an agent's connection", () => {
     let stored = connectionFixture({
       expiresAt: new Date(Date.now() + 1_000).toISOString(),
     });
-    const provider = createMcpAuthProvider({
+    const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
       connections: {
         get: async () => stored,
-        listByAgent: async () => [stored],
+        listByUser: async () => [stored],
         put: async () => {},
         putIfCurrent: async () => true,
         delete: async () => {},
@@ -282,7 +328,7 @@ describe("resolving the Authorization for an agent's connection", () => {
     expect(refused.updates[0]).toMatchObject({ status: "needs_reauth" });
   });
 
-  it("leaves the connection alone when the token endpoint merely failed", async () => {
+  it("preserves credential data but requires reauthentication after an uncertain token endpoint failure", async () => {
     // A 5xx or a timeout must never cost someone their connection.
     const transient = providerHarness({
       connection: connectionFixture({ expiresAt: new Date(Date.now() + 1_000).toISOString() }),
@@ -292,8 +338,8 @@ describe("resolving the Authorization for an agent's connection", () => {
     });
     const result = await transient.headersFor();
     expect(result.unavailable).toMatch(/503/);
-    expect(transient.updates).toHaveLength(0);
-    expect(transient.current()?.status).toBe("connected");
+    expect(transient.updates).toHaveLength(1);
+    expect(transient.current()).toMatchObject({ status: "needs_reauth", accessToken: "enc:live-token", refreshToken: "enc:refresh-1" });
   });
 
   it("explains an unconnected agent instead of sending nothing", async () => {
@@ -325,7 +371,7 @@ describe("a refresh racing a reconnect", () => {
       .mockResolvedValueOnce({ accessToken: "first", expiresInSeconds: 1 })
       .mockResolvedValueOnce({ accessToken: "second", refreshToken: "rotated", expiresInSeconds: 1 })
       .mockResolvedValueOnce({ accessToken: "third", expiresInSeconds: 43_200 });
-    const provider = createMcpAuthProvider({
+    const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
       connections: mcpConnectionRepository,
       oauth: { refresh } as never,
       cipher,
@@ -353,7 +399,7 @@ describe("a refresh racing a reconnect", () => {
     await mcpConnectionRepository.put(connectionFixture({
       expiresAt: new Date(Date.now() + 1000).toISOString(),
     }));
-    const provider = createMcpAuthProvider({
+    const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
       connections: mcpConnectionRepository,
       oauth: { refresh } as never,
       cipher,
@@ -434,7 +480,7 @@ describe("a refresh racing a reconnect", () => {
     await mcpConnectionRepository.put(connectionFixture({ refreshToken: undefined }));
     const read = Promise.withResolvers<void>();
     const resume = Promise.withResolvers<void>();
-    const provider = createMcpAuthProvider({
+    const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
       connections: {
         ...mcpConnectionRepository,
         async get(agentName, serverName) {
@@ -447,7 +493,8 @@ describe("a refresh racing a reconnect", () => {
       oauth: {} as never,
       cipher,
     });
-    const pending = provider.markUnauthorized("p", "slack", "files:write");
+    const observed = await createMcpAuthProvider({ ...isolatedMcpRefresh(), connections: mcpConnectionRepository, oauth: {} as never, cipher }).headersFor("p", "slack", OAUTH_SERVER.auth!);
+    const pending = provider.markUnauthorized("p", "slack", observed.credentialFingerprint!, "files:write");
     await read.promise;
     const reconnected = connectionFixture({ accessToken: "enc:reconnected", refreshToken: undefined });
     await mcpConnectionRepository.put(reconnected);
@@ -492,7 +539,7 @@ function runDeps(
   mcpAuth: { headersFor: unknown; markUnauthorized: unknown },
 ): ExecutionDeps {
   const reject = () => Promise.reject(new Error("not used in this test"));
-  return {
+  return { sourceRefreshIdentity: async () => "test-authorization-epoch", resolveUserLimits: async () => ({}), authorizeRun: async () => {},
     agents: { get: reject },
     skills: fakeSkillRepository(reject),
     mcps: { get: async () => OAUTH_SERVER },
@@ -536,7 +583,7 @@ function stubMcpServer(opts: { rejectUnauthorized?: boolean } = {}) {
 
 async function runOnce(deps: ExecutionDeps): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
-  for await (const chunk of executeAgent(deps, {
+  for await (const chunk of executeAgent(deps, { ...executionIdentity(),
     agent: agentFixture(),
     configuration: configurationFixture(),
     messages: [{ role: "user", content: "hi" }],
@@ -611,7 +658,7 @@ describe("a run against an OAuth-required server", () => {
     try {
       const chunks = await runOnce(
         runDeps(new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]), {
-          headersFor: async () => ({ headers: { Authorization: "Bearer stale" } }),
+          headersFor: async () => ({ headers: { Authorization: "Bearer stale" }, credentialFingerprint: "request-credential" }),
           markUnauthorized: async (_p: string, server: string) => {
             marked.push(server);
           },
@@ -635,10 +682,10 @@ describe("markUnauthorized with a scope challenge", () => {
     const puts: unknown[] = [];
     const updates: Array<{ expected: unknown; next: Record<string, unknown> }> = [];
     let stored = connectionFixture({ scopes: ["files:read"], status: "connected", revision: "grant-1" });
-    const provider = createMcpAuthProvider({
+    const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
       connections: {
         get: async () => stored,
-        listByAgent: async () => [stored],
+        listByUser: async () => [stored],
         put: async (next: typeof stored) => {
           puts.push(next);
         },
@@ -660,7 +707,8 @@ describe("markUnauthorized with a scope challenge", () => {
       cipher,
     });
 
-    await provider.markUnauthorized("p", "slack", "files:write files:read");
+    const observed = await provider.headersFor("p", "slack", OAUTH_SERVER.auth!);
+    await provider.markUnauthorized("p", "slack", observed.credentialFingerprint!, "files:write files:read");
 
     // Never an unconditional put: a reconnect landing between the read and
     // this write would be overwritten with the stale row.

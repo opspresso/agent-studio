@@ -1,3 +1,4 @@
+import type { AgentCredentialPurpose } from "@/domain/auth/agentCredential";
 /**
  * Item-store key builders: the partition/sort address of every row. Never hand-write key strings outside this module.
  * See docs/ARCHITECTURE.md for the full key map.
@@ -8,6 +9,12 @@ export const CHAT_MESSAGE_MAX_SEQ = 999999;
 export const TELEGRAM_DESTINATION_INDEX_PREFIX = "TELEGRAMDESTINATION#";
 
 export const keys = {
+  workspaceModelCall: (workspaceId: string, runId: string) => ({ PK: `WORKSPACEMODELCALL#${workspaceId}`, SK: `RUN#${runId}` }),
+  messagingIdentity: (subject: { agentName: string; platform: string; realm: string; externalId: string }) => ({
+    PK: `AGENT#${subject.agentName}`, SK: `MESSAGINGIDENTITY#${JSON.stringify([subject.platform, subject.realm, subject.externalId])}`,
+  }),
+  messagingIdentityUser: (userId: string) => `MESSAGINGIDENTITYUSER#${userId}`,
+  messagingLinkCode: (agentName: string, hash: string) => ({ PK: `AGENT#${agentName}`, SK: `MESSAGINGLINKCODE#${hash}` }),
   workspace: (id: string) => ({ PK: `WORKSPACE#${id}`, SK: "META" }),
   workspacePartition: (id: string) => `WORKSPACE#${id}`,
   workspaceChat: (chatId: string) => ({ PK: `WORKSPACECHAT#${chatId}`, SK: "META" }),
@@ -33,14 +40,17 @@ export const keys = {
   }),
   agent: (name: string) => ({ PK: `AGENT#${name}`, SK: "META" }),
   agentPartition: (name: string) => `AGENT#${name}`,
-  agentApiToken: (name: string) => ({ PK: `AGENT#${name}`, SK: "APITOKEN" }),
+  agentCredential: (name: string, purpose: AgentCredentialPurpose, tokenId: string) => ({ PK: `AGENT#${name}`, SK: `CREDENTIAL#${purpose}#${tokenId}` }),
+  agentCredentialUser: (name: string, purpose: AgentCredentialPurpose, userId: string) => ({ PK: `AGENT#${name}`, SK: `CREDENTIALUSER#${purpose}#${userId}` }),
   workspacePolicy: (name: string) => ({ PK: `AGENT#${name}`, SK: "WORKSPACEPOLICY" }),
   workspaceRepositoryCreation: (agent: string, repository: string) => ({ PK: `AGENT#${agent}`, SK: `REPOSITORYCREATE#${repository.toLowerCase()}` }),
 
   audioJob: (agentName: string, id: string) => ({ PK: `AGENT#${agentName}`, SK: `AUDIOJOB#${id}` }),
   audioJobConfig: (agentName: string) => ({ PK: `AGENT#${agentName}`, SK: "AUDIOCONFIG" }),
   audioJobPrefix: () => "AUDIOJOB#",
-  usageReceipt: (agentName: string, id: string) => ({ PK: `AGENT#${agentName}`, SK: `USAGERECEIPT#${id}` }),
+  usageReceipt: (userId: string, agentName: string, id: string) => ({
+    PK: `USAGEMEMBERID#${userId}`, SK: `RECEIPT#${agentName}#${id}`,
+  }),
   sourceFile: (id: string) => ({ PK: `SOURCEFILE#${id}`, SK: "META" }),
   sourceFileJobIndex: (agent: string, job: string, kind: string, id: string) => ({
     GSI2PK: `SOURCEJOB#${agent}#${job}`, GSI2SK: `${kind}#${id}`,
@@ -171,12 +181,16 @@ export const keys = {
     SK: "META",
   }),
 
-  /** An agent's OAuth connection to one registry MCP server. */
-  mcpConnection: (agentName: string, serverName: string) => ({
-    PK: `AGENT#${agentName}`,
+  /** Personal MCP grants and refresh claims are independent of Agent lifetime. */
+  mcpUserPartition: (userId: string) => `MCPUSER#${userId}`,
+  mcpConnection: (userId: string, serverName: string) => ({
+    PK: `MCPUSER#${userId}`,
     SK: `MCPCONN#${serverName}`,
   }),
   mcpConnectionPrefix: () => "MCPCONN#",
+  mcpRefresh: (userId: string, serverName: string, revision: string | undefined) => ({
+    PK: `MCPUSER#${userId}`, SK: `MCPREFRESH#${serverName}#${revision ?? "unversioned"}`,
+  }),
   /** An authorization in flight, keyed by the opaque `state` it was started with. */
   mcpOAuthState: (state: string) => ({ PK: `MCPOAUTH#${state}`, SK: "META" }),
 
@@ -194,30 +208,12 @@ export const keys = {
     SK: `MONTHCLAIM#${month}`,
   }),
   usageDatePartition: (date: string) => `USAGEDATE#${date}`,
-  /**
-   * One member's cross-agent spend for one UTC day — their own console runs
-   * (`user:` actors), which is what the tier cost cap bounds. An agent
-   * token's spend deliberately stays out (it is bounded by the agent's own
-   * limits; see `memberEmailFromActorKey`). Its own partition because no
-   * agent's cascade delete may take a person's history with it.
-   *
-   * Daily rather than monthly, and for the same reason the agent rows are:
-   * one shape answers both readers. The cap sums the month from `MONTH-01` to
-   * today, exactly as the agent guard does over `USAGE#{agent}`, and the
-   * profile page reads whatever window its date picker names — a month
-   * aggregate could only have answered the first, and keeping both would be
-   * two running totals of the same spend.
-   *
-   * The agent is part of the sort key rather than collapsed into the row,
-   * so a person can be shown *where* their spend went as well as on which
-   * model. Date leads it so a window is still one `BETWEEN`; the cap sums every
-   * row the window returns.
-   */
-  usageMember: (email: string, date: string, agentName: string) => ({
-    PK: `USAGEMEMBER#${email}`,
+  /** Cross-Agent spend keyed by immutable Studio user ID, across every invocation source. */
+  usageMember: (userId: string, date: string, agentName: string) => ({
+    PK: `USAGEMEMBERID#${userId}`,
     SK: `DATE#${date}#${agentName}`,
   }),
-  usageMemberPartition: (email: string) => `USAGEMEMBER#${email}`,
+  usageMemberPartition: (userId: string) => `USAGEMEMBERID#${userId}`,
   usageMemberPrefix: (date: string) => `DATE#${date}`,
   /**
    * Per-caller daily usage, in the agent's usage partition. Date leads the
@@ -225,9 +221,9 @@ export const keys = {
    * one day sit together; `DATE#` and `ACTOR#` are distinct prefixes, so the
    * agent totals above are never swept up by an actor query or vice versa.
    */
-  usageActor: (agentName: string, date: string, actor: string) => ({
+  usageActor: (agentName: string, date: string, actor: string, userId: string) => ({
     PK: `USAGE#${agentName}`,
-    SK: `ACTOR#${date}#${actor}`,
+    SK: `ACTOR#${date}#${encodeURIComponent(actor)}#USER#${encodeURIComponent(userId)}`,
   }),
   usageActorPrefix: (date: string) => `ACTOR#${date}`,
 

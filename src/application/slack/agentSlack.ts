@@ -1,8 +1,7 @@
 import { ValidationError } from "@/application/errors";
-import { messagingExecutionEmail } from "@/application/messaging/executionGrant";
 import { MCP_OAUTH_CALLBACK_PATH } from "@/application/mcp/mcpAuthUseCases";
 import { persistAgentUpdate } from "@/application/agent/agentUpdate";
-import { assertAgentOwnerOrAdminReadable, assertAgentWritable } from "@/application/agent/agentUseCases";
+import { assertAgentOwner } from "@/application/agent/agentUseCases";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Agent, SlackIntegration } from "@/domain/agent/types";
 import type { AgentRepository } from "@/domain/agent/repository";
@@ -23,7 +22,6 @@ import { DEFAULT_SERVICE_NAME } from "@/shared/branding";
 import { slackSecretContext } from "@/domain/security/secretContext";
 
 export interface AgentSlackView {
-  runAsOwner: boolean;
   enabled: boolean;
   configured: boolean;
   botToken: string;
@@ -36,7 +34,6 @@ export interface AgentSlackView {
 }
 
 export interface AgentSlackUpdate {
-  runAsOwner?: boolean;
   botToken?: string;
   signingSecret?: string;
   enabled?: boolean;
@@ -54,7 +51,6 @@ export function eventsPathFor(agentName: string): string {
 function maskedView(cipher: SecretCipher, agent: Agent): AgentSlackView {
   const slack = agent.slack;
   return {
-    runAsOwner: slack?.executionEmail === agent.ownerEmail,
     enabled: slack?.enabled ?? false,
     configured: Boolean(slack?.botToken && slack.signingSecret),
     botToken: slack?.botToken
@@ -155,7 +151,7 @@ export async function getAgentSlack(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<AgentSlackResult> {
-  const agent = await assertAgentOwnerOrAdminReadable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   return { agent, view: maskedView(cipher, agent) };
 }
 
@@ -179,8 +175,7 @@ export async function updateAgentSlack(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<AgentSlackResult> {
-  const agent = await assertAgentWritable(repo, name, userEmail);
-  const executionEmail = messagingExecutionEmail(agent, "slack", update.runAsOwner, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const prompts =
     update.suggestedPrompts !== undefined
       ? cleanPrompts(update.suggestedPrompts)
@@ -190,7 +185,6 @@ export async function updateAgentSlack(
       ? cleanKeywords(update.channelKeywords)
       : (agent.slack?.channelKeywords ?? []);
   const slack: SlackIntegration = {
-    ...(executionEmail ? { executionEmail } : {}),
     botToken: mergeSecret(
       cipher,
       agent.slack?.botToken,
@@ -221,7 +215,7 @@ export async function disconnectAgentSlack(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<AgentSlackResult> {
-  const agent = await assertAgentWritable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const updated: Agent = {
     ...agent,
     slack: undefined,
@@ -353,7 +347,7 @@ export async function testAgentSlack(
   cipher: SecretCipher,
   authTest: (botToken: string) => Promise<{ team?: string; user?: string }>,
 ): Promise<{ ok: true; team?: string; botUser?: string } | { ok: false }> {
-  const agent = await assertAgentOwnerOrAdminReadable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const runtime = resolveAgentSlackRuntime(cipher, agent);
   if (!runtime) {
     return { ok: false };
@@ -433,7 +427,7 @@ export function createAgentSlackUseCases(deps: {
     test: (name, userEmail) =>
       testAgentSlack(deps.agents, name, userEmail, deps.cipher, deps.authTest),
     channels: async (name, userEmail) => {
-      const agent = await assertAgentOwnerOrAdminReadable(deps.agents, name, userEmail);
+      const agent = await assertAgentOwner(deps.agents, name, userEmail);
       const runtime = resolveAgentSlackRuntime(deps.cipher, agent);
       if (!runtime) {
         throw new ValidationError("Slack is not configured or not enabled for this agent");

@@ -6,8 +6,8 @@ const server: McpServer = { name: "files", url: "https://files.example.test/mcp"
   auth: { type: "oauth2", resource: "https://files.example.test/mcp", issuer: "https://auth.example.test", authorizationServer: "https://auth.example.test",
     authorizationEndpoint: "https://auth.example.test/authorize", tokenEndpoint: "https://auth.example.test/token", tokenEndpointAuthMethod: "none", discoveredAt: "before" } };
 const binding = { name: "files" };
-const connection = { agentName: "audio", serverName: "files", clientId: "client", issuer: "https://auth.example.test",
-  resource: "https://files.example.test/mcp", status: "connected", connectedAt: "2026-09-09T00:00:00Z", connectedBy: "owner@example.test", updatedAt: "before" } as McpConnection;
+const connection: McpConnection = { userId: "audio", scopes: [], serverName: "files", clientId: "client", issuer: "https://auth.example.test",
+  resource: "https://files.example.test/mcp", status: "connected", connectedAt: "2026-09-09T00:00:00Z", connectedBy: "owner@example.test", updatedAt: "before" };
 describe("source refresh identity", () => {
   it("fences changed defaults but ignores defaults under an explicit Agent binding override", () => {
     const defaults = [{ tool: "read", namespace: "files", idPath: ["id"], urlPath: ["url"], mimeType: "audio/mpeg" }];
