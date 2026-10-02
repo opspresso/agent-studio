@@ -1,6 +1,6 @@
 import { ValidationError } from "@/application/errors";
 import { persistAgentUpdate } from "@/application/agent/agentUpdate";
-import { assertAgentOwnerOrAdminReadable, assertAgentWritable } from "@/application/agent/agentUseCases";
+import { assertAgentOwner } from "@/application/agent/agentUseCases";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Agent, TeamsIntegration } from "@/domain/agent/types";
@@ -73,7 +73,7 @@ export async function getAgentTeams(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<AgentTeamsResult> {
-  const agent = await assertAgentOwnerOrAdminReadable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   return { agent, view: maskedView(cipher, agent) };
 }
 
@@ -94,7 +94,7 @@ export async function updateAgentTeams(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<AgentTeamsResult> {
-  const agent = await assertAgentWritable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const stored = agent.teams;
   // Lower-cased, because the Bot Framework writes the same GUID lower-case
   // into every token's audience and a pasted upper-case one must still match.
@@ -132,7 +132,7 @@ export async function disconnectAgentTeams(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<AgentTeamsResult> {
-  const agent = await assertAgentWritable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const updated: Agent = { ...agent, teams: undefined, updatedAt: nextUpdatedAt(agent.updatedAt) };
   await persistAgentUpdate(repo, updated, agent.updatedAt);
   return { agent: updated, view: maskedView(cipher, updated) };
@@ -165,7 +165,7 @@ export async function testAgentTeams(
   cipher: SecretCipher,
   authenticate: (credentials: TeamsCredentials) => Promise<{ expiresInSeconds: number }>,
 ): Promise<{ ok: true; appId: string; expiresInSeconds: number } | { ok: false }> {
-  const agent = await assertAgentOwnerOrAdminReadable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const runtime = resolveAgentTeamsRuntime(cipher, agent);
   if (!runtime) {
     return { ok: false };

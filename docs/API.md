@@ -38,11 +38,11 @@
   로그인한 사용자가 조회하고 member 이상이 실행한다. `private`은 소유자만 접근한다
   ([SECURITY.md](SECURITY.md#인가-모델), 그 외에는 `403 { "error": "Agent \"…\" is private" }`).
   변경(수정/삭제, Agent 설정 저장, Slack·Telegram 설정)은 공개 범위와 무관하게
-  `member` 이상인 소유자와 effective admin(저장된 `admin` tier 또는 설정된 admin) 만 할 수 있고, 그 외에는
-  `403 { "error": "You do not have permission to modify agent \"…\"" }` 이다.
+  `member` 이상인 소유자만 할 수 있고, 그 외에는
+  `403 { "error": "Only the owner can manage agent \"…\"" }` 이다.
   다른 사용자의 런타임 데이터나 마스킹된 secret 을 드러내는 agent 하위 리소스. 트레이스,
   Slack·Telegram 설정, API 토큰, trigger, 호출자별 사용량, MCP 연결. 은
-  *읽기*도 소유자와 admin 으로 제한된다. Chat 은 소유자에게만 비공개다 (소유자가 아닌 읽기·변경은
+  *읽기*도 소유자로 제한된다. Chat 은 소유자에게만 비공개다 (소유자가 아닌 읽기·변경은
   모두 404 를 돌려준다 — 403 은 chatId 의 존재를 알려 주는 답이다). MCP/skill/plugin 레지스트리와 모델 카탈로그(`/api/models/catalog`)는
   **guest를 포함한 모든 로그인 사용자**에게 읽기가 공유된다 (`withAuth`).
   guest는 member와 같은 메뉴를 보지만 Agent·레지스트리·즐겨찾기 변경과 Artifact 삭제는 할 수 없다.
@@ -53,7 +53,7 @@
   agent 생성도 마찬가지로 tier 능력이다: 그 능력이 없는 tier 는
   `403 { "error": "Your tier does not allow creating agents" }` 을 받는다.
 - **Errors**: `{ "error": string }` 이고, 스키마 검증 실패에는 `issues` 배열이 추가로 붙는다.
-  상태 코드: `400` (잘못된 입력), `401` (세션 없음), `403` (소유자/admin 아님),
+  상태 코드: `400` (잘못된 입력), `401` (세션 없음), `403` (권한 없음),
   `404` (없음), `409` (이름 충돌), `413` (페이로드 과대), `429` (지금은 거절.
   아래 참조), `500` (처리되지 않음), `502` (이 앱이 호출한 상류가 실패), `503` (이 배포가
   설정하지 않은 기능 또는 일시적인 권한 저장소 장애), `504` (실행 deadline).
@@ -80,8 +80,7 @@
 
 `session` = Better Auth 세션 쿠키. `member` = 세션 + admin 또는 등록된 사용자 정의 tier (기본값 `member`)
 (`withMemberAuth`. `guest` 는 403 을 받는다). `admin` = 세션 + 저장된 `admin` tier 이거나 유효
-admin 목록에 속함(목록이 비면 member 이상). `owner` = 그 agent 의 소유자, 저장된
-`admin` tier, 또는 설정된 admin.
+admin 목록에 속함(목록이 비면 member 이상). `owner` = 해당 Agent를 만든 소유자. 관리자 등급은 Agent 소유권을 대신하지 않는다.
 
 ### Agents (`/api/agents`)
 
@@ -150,8 +149,8 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 그 agent 의 
 | `/api/chats/{chatId}/runs/{runId}` | `GET` `DELETE` | 그 chat 의 소유자 |
 | `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | 그 chat 의 소유자 |
 | `/api/artifacts` | `GET` | session |
-| `/api/artifacts/{artifactId}` | `DELETE` | member 이상인 생성자, agent 소유자, 또는 admin. 비공개 파일은 파일 소유자(member)의 현재 agent 소유 권한 필요 |
-| `/api/artifacts/{artifactId}/view` | `GET` | 생성자, agent 소유자, 또는 admin. 비공개 파일은 파일 소유자(member)의 현재 agent 소유 권한 필요 |
+| `/api/artifacts/{artifactId}` | `DELETE` | member 이상인 생성자 또는 Agent 소유자. 비공개 파일은 파일 소유자(member)의 현재 agent 소유 권한 필요 |
+| `/api/artifacts/{artifactId}/view` | `GET` | 생성자 또는 Agent 소유자. 비공개 파일은 파일 소유자(member)의 현재 agent 소유 권한 필요 |
 | `/api/artifacts/{artifactId}/download` | `GET` | 비공개 파일 소유자(member), 현재 agent 소유 권한 필요 |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
@@ -299,7 +298,7 @@ PUT /api/agents/{name}/configuration
   → { configuration: AgentConfiguration, updatedAt }
 ```
 
-읽기는 Agent 접근 권한을, 쓰기는 소유자 또는 effective configured admin 권한을 요구한다.
+읽기는 Agent 접근 권한을, 쓰기는 소유자 권한을 요구한다.
 PUT은 현재 설정 전체를 대체한다. GET의 `updatedAt`을 `expectedUpdatedAt`으로 보내야 하며,
 Agent 메타데이터나 설정의 동시 수정이 먼저 저장되면 409를 반환한다. 저장 결과의 `updatedAt`을
 다음 수정에 사용한다. 저장한 설정은 다음 실행부터 적용한다.
@@ -382,7 +381,7 @@ agent 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 �
 - 문자열 오버라이드는 저장 당시 registry URL 의 내부 fingerprint 에 묶인다. 같은 이름의 서버가
   다른 URL 로 옮겨지면 옛 값은 전송하지 않고 warning 을 내며, 현재 endpoint 용 값을 다시
   입력해야 한다. fingerprint 는 API 응답과 입력에 노출하지 않는다.
-- 오버라이드 편집은 다른 모든 Agent 설정 쓰기와 마찬가지로 소유자와 admin 으로 제한된다.
+- 오버라이드 편집은 다른 모든 Agent 설정 쓰기와 마찬가지로 소유자로 제한된다.
 
 도구 준비·최종 선언 상한은 [CONFIGURATION](CONFIGURATION.md#코드에-고정된-제한)을 따른다.
 제외한 도구는 warning으로 알린다. 파일 응답용 `sourceOutputs`는 [오디오 계약](#오디오-작업과-원본-파일)에 있다.
@@ -476,40 +475,12 @@ GET /api/audits?from=2026-08-01&to=2026-08-03&limit=50&cursor=<opaque>
 ## 뷰어
 
 ```
-GET /api/me → 200 { email, isAdmin, isConfiguredAdmin, tier }
+GET /api/me → 200 { email, isAdmin, tier }
 ```
 
-`tier` 는 그 멤버의 tier 이고, 그래서 콘솔은 tier 범위의 행동(agent 생성)을 라우트가 강제하는
-것과 같은 `tierMay*` 술어로 게이트한다. 두 플래그를 다 보내는 이유는 서로 다른 질문에 답하고
-콘솔이 둘 다 필요로 하기 때문이다:
-`isAdmin` (공유 레지스트리와 앱 설정을 변경해도 되는가, 저장된 `admin` tier 이거나 빈
-`ADMIN_EMAILS` 는 허용) 과 `isConfiguredAdmin` (남이 소유한 agent 를 써도 되는가, 저장된
-`admin` tier 이거나 목록에 있으면 허용. 빈 목록만으로는 아무도 추가하지 않음) 이다. 둘 다 브라우저에서
-유도할 수 없고, 하나를 다른 하나에서 추론한 것이 한때 로그인한 모든
-사용자에게 저장 시 403 이 나는 편집 폼을 내주었던 원인이다.
-[SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin) 를 보라.
-
-```
-GET /api/me/profile
-  → 200 { member: { id, name, email, image, tier, joinedAt, lastLoginAt },
-          monthToDateUsd, limits: { monthlyCostCapUsd?, maxConcurrentRuns? } }
-
-GET /api/me/usage?from=2026-08-01&to=2026-08-13
-  → 200 { items: [ { userId, agentName, date, calls, inputTokens, outputTokens, cachedTokens, costUsd } ] }
-```
-
-로그인한 사용자 자신의 행과 지출이다. 언제나 세션 사용자이므로 둘 다 이메일을 받지 않고 둘 다
-추가 게이트가 필요 없다. `monthToDateUsd` 는 tier 상한이 한계 짓는 값(UTC 월 1일 이후의 지출)이며,
-서버 측에서 계산된다. 그래서 페이지의 선택기가 어떤 범위로 맞춰져 있든 가드가 동의하지 않을 총액을
-보고할 수 없다.
-
-`/api/me/usage` 는 프로필의 차트와 표 뒤에 있는 범위 읽기다: UTC 일마다 *agent 별* 한 행,
-지표는 모델별 맵, 그리고 사용량 요약이 쓰는 것과 같은 범위 검증(`from`/`to` 필수, 최대 184일)이다.
-행에 agent 가 있으므로 프로필은 한 사람 자신의 지출을 agent·모델·프로바이더별로 묶을 수 있다.
-개요와 Agent 사용량 탭이 갖는 것과 같은 컨트롤이다. 콘솔·개인 API·Webhook 토큰·메신저·Schedule·
-Workspace 모델 요청을 모두 인증된 Studio 사용자 ID에 합산한다.
-월 한도는 Settings → Access의 `memberTiers`에 저장한다. `memberTierLimits`가 실행과 Profile의
-`limits`를 같은 규칙으로 계산하며, admin의 `monthlyCostCapUsd`는 항상 생략한다.
+`tier`는 `tierMay*`가 판단하는 생성·실행 권한이다. `isAdmin`은 공용 레지스트리와 설치 설정의
+관리 권한이며 Agent 편집 권한과 별개다. Agent 관리에는 member 이상과 해당 Agent 소유권이
+모두 필요하다. [인가 모델](SECURITY.md#인가-모델)을 따른다.
 
 ## 멤버
 
@@ -706,7 +677,7 @@ guest는 대화형·자동화 Workspace 작업을 시작하거나 재개할 수 
 | `/api/workspaces/{id}/events?run={runId}&after={seq}` | GET | 최대 200개의 `{events, nextSeq, hasMore}`. `after=0`도 유효한 cursor |
 | `/api/workspaces/{id}/actions` | POST | Git·배포 요청의 현재 tree/HEAD를 검토하고 `{approval}` 반환. 효과는 아직 실행하지 않음 |
 | `/api/workspaces/{id}/actions/{actionId}` | POST | `{approve: boolean}`으로 명시적 승인·거절. 같은 승인은 한 번만 소비 |
-| `/api/agents/{name}/workspace-policy` | GET / PUT | GET은 접근 가능한 member의 설정 조회, PUT은 Agent 소유자·관리자 변경. 아래 계약을 따른다 |
+| `/api/agents/{name}/workspace-policy` | GET / PUT | GET은 접근 가능한 member의 설정 조회, PUT은 Agent 소유자 변경. 아래 계약을 따른다 |
 
 Workspace 설정 GET은 `{agentName, enabled, backendReady, canManage, revision, rules, runtimes, updatedAt?}`를
 반환한다. PUT은 `{revision, rules}`이며 `rules`는 `{mode, repositories, repositoryOwners, defaultRuntime,
@@ -931,7 +902,7 @@ GET    /api/agents/{name}/slack/channels
 Slack 읽기는 마스킹된 인증 정보 상태와 함께 `configured`, `eventsPath`, `eventsUrl`,
 `suggestedPrompts`, `channelKeywords`, 그리고 생성된 앱 manifest를 돌려준다.
 설정 경로의 GET·PUT·DELETE가 이 뷰로 답하며 test·channels는 아래의 별도 응답을 사용한다.
-다섯 엔드포인트 모두 소유자와 effective admin 으로 제한된다 (그 외에는 403). 마스킹된 뷰도 봇
+다섯 엔드포인트 모두 소유자로 제한된다 (그 외에는 403). 마스킹된 뷰도 봇
 토큰 / signing secret 의 양끝은 드러내기 때문이다. 마스킹되거나 생략된 secret은 업데이트에서
 보존하며 Agent가 없으면 404다. 저장되거나 전달된 봇 토큰과 signing secret 없이
 `enabled: true`로 활성화하면 400이다.
@@ -955,7 +926,7 @@ POST   /api/agents/{name}/telegram/webhook
 
 설정 경로의 GET·PUT·DELETE는 같은 뷰로 답한다: `enabled`, `configured`, 마스킹된 `botToken`, 봇의
 `botUsername` (토큰을 저장할 때 알아낸 것. secret 이 아니다), `webhookPath`, `webhookUrl`.
-여섯 endpoint 모두 소유자와 effective admin 으로 제한된다. `PUT` 의 *새* 토큰은 저장하기 전에
+여섯 endpoint 모두 소유자로 제한된다. `PUT` 의 *새* 토큰은 저장하기 전에
 Telegram(`getMe`)으로 확인하고, Telegram 이 거부하면 400 이다. 마스킹되거나 빈 토큰은 저장된
 것을 유지한다. webhook secret 은 첫 토큰과 함께 이 플랫폼이 발행하며 절대 돌려주지 않는다.
 그것이 필요한 쪽은 Telegram 뿐이다. **webhook 은 `PUT` 이 스위치를 따라 관리한다**: `enabled`
@@ -989,7 +960,7 @@ POST   /api/agents/{name}/teams/test
 
 설정 경로의 GET·PUT·DELETE가 같은 뷰로 답한다: `enabled`, `configured`, `appId`(secret 이 아니다, 모든 토큰의
 audience 다), 마스킹된 `appPassword`, `tenantId`, `messagingPath`, `messagingUrl`. Azure Bot 의
-messaging endpoint 로 붙여 넣을 주소다. 넷 모두 소유자와 effective admin 으로 제한된다. `PUT` 은
+messaging endpoint 로 붙여 넣을 주소다. 넷 모두 소유자로 제한된다. `PUT` 은
 App ID 와 테넌트 id 가 GUID 인지만 확인하고 Microsoft 에는 아무것도 묻지 않는다. 한 쌍이
 동작한다는 증거는 `test` 가 저장된 자격 증명으로 토큰을 받아 보는 것이고(`{ ok: true, appId,
 expiresInSeconds }`, 설정되지 않았거나 꺼져 있으면 `400`, Microsoft 가 거절하면 `502`), 저장이
@@ -1278,7 +1249,7 @@ DELETE /api/agents/{name}/webhook-token        → 204
 일반 발신자는 전체 토큰을 `X-Trigger-Secret`에 넣는다. GitHub는
 `/api/webhook/{agent}?credential={credentialId}`를 Payload URL로 쓰고 전체 토큰을 Secret에 넣는다.
 URL의 공개 식별자만으로 인증되지 않는다. 요청 서명·발급 사용자·현재 계정·Agent 접근을 검사한다.
-공유 Webhook 활성화와 리뷰 정책은 소유자/admin이 관리하며 토큰 보유만으로 공유 설정을 수정할 수 없다.
+공유 Webhook 활성화와 리뷰 정책은 소유자이 관리하며 토큰 보유만으로 공유 설정을 수정할 수 없다.
 
 ## 실행
 
@@ -1476,7 +1447,7 @@ GET /api/agents/{name}/usage/actors?from=2026-07-01&to=2026-07-31
 `display` 를 싣지 않는다: Bot API 는 사용자 id 로 프로필을 조회하는 방법을 제공하지 않으므로 있는
 것은 id 뿐이다.
 
-트레이스와 같은 이유로 소유자/admin 전용이다: agent *총계*는 카탈로그가 공유되므로 로그인한
+트레이스와 같은 이유로 소유자 전용이다: agent *총계*는 카탈로그가 공유되므로 로그인한
 사용자 누구에게나 열려 있지만, 호출자별 분해는 개인의 이름을 담는다. 범위 검증은
 `/api/usages/summary` 와 같다 (두 날짜 모두 필수, `from ≤ to`, 184일 이하). 다만 여기의 거절은
 `/api/usages/summary` 가 싣는 `issues` 배열이 아니라 벌거벗은 `{ error }` 다. subagent transfer 는
@@ -1491,7 +1462,7 @@ Webhook은 다른 ID를 가질 수 없고 Schedule은 예약 ID를 사용할 수
 개인 토큰의 공개 식별자는 호출자를 선택하며 Trigger를 선택하지 않는다.
 Agent 연동 화면의 Webhook 스위치를 처음 켜면 공유 설정 행을 생성한다.
 
-설정 (owner/admin):
+설정 (owner):
 
 ```
 GET    /api/agents/{name}/triggers                     → 200 { triggers: [ … ] }
@@ -1709,7 +1680,7 @@ Webhook 결과는 토큰 발급자의 현재 계정에 귀속된다.
 Schedule 결과는 등록자의 현재 계정에 귀속된다. `from`/`to` 는 실재하는 날짜로 검증되는 UTC 일이고, `before` 는 이전 페이지의
 `nextBefore` 다.
 
-삭제는 생성자, 그 agent 의 소유자, 그리고 effective admin 에게 허용된다. 남의 출력을 지우면
+삭제는 생성자 또는 해당 Agent 소유자에게 허용된다. 남의 출력을 지우면
 `artifact.delete` 감사 행이 기록되고, 자기 것을 지우면 그렇지 않다. chat 메시지는 object key 의
 사본을 자기가 갖고 있으므로, 여기서 지운 이미지는 그것을 보여 주던 전사에서 사용 불가로 렌더링된다
 확인 절차가 그렇게 되기 전에 그 사실을 말해 준다.
@@ -1729,7 +1700,7 @@ GET /api/agents/{name}/traces/{traceId}
 해당 실행 주체로 저장된 Trace만 `limit` 전에 거른다. 전달 성공 여부는 Trace 상태와 별개다.
 다른 agent 에 속한 `traceId` 는 남의 트레이스가 아니라 `404` 다.
 
-두 엔드포인트 모두 소유자와 effective admin으로 제한된다(그 외에는 403). agent 런은 항상
+두 엔드포인트 모두 소유자로 제한된다(그 외에는 403). agent 런은 항상
 기록한다. SDK 실행은 Agent·모델·도구·
 Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`, 종류·이름·상태·시간과
 모델 사용량을 보존하고 text 자식은 같은 앱 Trace의 native 계층에 들어간다.

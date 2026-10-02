@@ -9,8 +9,7 @@
 import { NotFoundError, ValidationError } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import {
-  assertAgentOwnerOrAdminReadable,
-  assertAgentWritable,
+  assertAgentOwner,
 } from "@/application/agent/agentUseCases";
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
@@ -57,24 +56,12 @@ export function createArtifactUseCases(
     return artifactOwnerEmail(artifact.actor, artifact.ownerEmail) === email;
   }
 
-  /**
-   * Who may remove this. Falls through to the agent's own write rule, which
-   * admits the owner and an admin — and records the override when it is an
-   * admin reaching in.
-   */
-  async function assertMayManage(artifact: Artifact, actorEmail: string): Promise<void> {
+  /** A creator may manage their own output; Agent owners may manage Agent-wide output. */
+  async function assertMayAccess(artifact: Artifact, actorEmail: string): Promise<void> {
     if (isOwnRow(artifact, actorEmail)) {
       return;
     }
-    await assertAgentWritable(agents, artifact.agentName, actorEmail);
-  }
-
-  /** Ordinary Artifact reads admit the creator or Agent manager without a write-override audit. */
-  async function assertMayRead(artifact: Artifact, viewerEmail: string): Promise<void> {
-    if (isOwnRow(artifact, viewerEmail)) {
-      return;
-    }
-    await assertAgentOwnerOrAdminReadable(agents, artifact.agentName, viewerEmail);
+    await assertAgentOwner(agents, artifact.agentName, actorEmail);
   }
 
   return {
@@ -91,7 +78,7 @@ export function createArtifactUseCases(
       if (!artifact) {
         throw new NotFoundError(`Artifact not found: ${artifactId}`);
       }
-      await assertMayRead(artifact, viewerEmail);
+      await assertMayAccess(artifact, viewerEmail);
       // The type is checked before the bytes are fetched, not after: a ten-megabyte
       // deck read into memory to then be refused is the same refusal at a cost.
       const view = inlineViewOf(artifact.mimeType);
@@ -119,7 +106,7 @@ export function createArtifactUseCases(
     },
 
     async listByAgent(agentName, viewerEmail, options = {}) {
-      await assertAgentOwnerOrAdminReadable(agents, agentName, viewerEmail);
+      await assertAgentOwner(agents, agentName, viewerEmail);
       return repo.listByAgent(agentName, bounded(options));
     },
 
@@ -128,7 +115,7 @@ export function createArtifactUseCases(
       if (!artifact) {
         throw new NotFoundError(`Artifact not found: ${artifactId}`);
       }
-      await assertMayManage(artifact, actorEmail);
+      await assertMayAccess(artifact, actorEmail);
       // Object first: this order can only leave a row whose preview is broken,
       // which pressing delete again resolves, while the reverse leaves bytes no
       // inventory names — and nothing can find those to remove them later.

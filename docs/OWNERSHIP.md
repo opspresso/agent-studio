@@ -81,7 +81,7 @@
 | 모든 chat-bot 표면이 구현하는 답변 port | `src/domain/messaging/reply.ts` 의 `ReplySink` / `ReplyChannel`. 파이프라인이 그것을 호출하고, 각 어댑터가 그것을 렌더하며, 어느 쪽도 다른 쪽을 import 하지 않는다 | 구조 |
 | 모든 chat 플랫폼이 공유하는 webhook 꼬리. claim, ack, 이벤트의 id 아래에서 작업, settle | `src/app/api/_lib/inboundEvent.ts` 의 `admitInboundEvent` | 구조 |
 | 일반 작업과 코딩 작업의 Workspace·Sandbox·Runtime Session·Run 계약 | `src/domain/workspace/`; Git 저장소와 PR·승인 형태는 `src/domain/coding/types.ts` | 코드 |
-| Workspace Agent 설정·저장소 범위·기본값 | `src/domain/workspace/policy.ts`; 읽기·소유자/관리자 쓰기는 `application/workspace/repositoryPolicy.ts`, 도구 활성 여부는 `domain/agent/workspaceAccess.ts` | 코드 |
+| Workspace Agent 설정·저장소 범위·기본값 | `src/domain/workspace/policy.ts`; 읽기·소유자 쓰기는 `application/workspace/repositoryPolicy.ts`, 도구 활성 여부는 `domain/agent/workspaceAccess.ts` | 코드 |
 | Workspace의 확인된 관리 사용자와 실행 호출자의 구분 | `application/workspace/workspaceCaller.ts`; `WorkspaceRun.user`와 `actor`를 접수부터 실행 bracket까지 유지한다. 현재 계정·Agent 접근·개인 토큰·메신저 연결·Schedule 등록자는 `application/workspace/workspaceAuthorization.ts`가 접수와 실행 직전에 검사한다 | 코드 |
 | 메신저 계정 연결과 실행 권한 철회 | `application/auth/messagingIdentityUseCases.ts`의 일회용 인증과 `application/auth/messagingGrant.ts`의 현재 연결 검사. `ExecutionGrant`는 실행·하위 Agent·Workspace 큐로 전달하며 새 모델·도구 효과 전에 다시 검사한다 | 코드 |
 | PR 리뷰의 고정된 자료 조회와 전달 범위 | `domain/trigger/pullRequestReview.ts`의 읽기 계약; `infrastructure/github/codingForge.ts`가 검증한 PR·커밋만 조회한다. `application/trigger/reviewPullRequest.ts`가 완전한 자료 범위와 게시 조건을 소유한다 | 코드 |
@@ -264,7 +264,7 @@ Agent 설정은 binding을 소유하며 개인 연결은 Agent 수명과 독립�
 | 어떤 스토리지 에러가 조건부 쓰기의 실패를 뜻하는가 | `src/application/errors.ts` | 구조 |
 | audit 행을 어떻게 쓰는가 | `src/application/audit/recordAudit.ts` | 구조 |
 | 감사 기록의 날짜 범위·페이지 상한·cursor | `src/application/audit/auditUseCases.ts`; 날짜별 조회는 `src/infrastructure/db/repositories/auditRepository.ts` | 코드 |
-| Agent 관리 자료·산출물·Trace·호출자별 Usage를 읽을 수 있는 사람. 쓰기와 같은 규칙, 쓰기 감사 행은 남기지 않는다 | `src/application/agent/agentUseCases.ts` 의 `assertAgentOwnerOrAdminReadable` | 구조 |
+| Agent 설정 변경과 관리 자료·Trace·호출자별 Usage 조회의 소유권 검사 | `src/application/agent/agentUseCases.ts` 의 `assertAgentOwner` | 구조 |
 | Capability catalog reindex의 설치 전역 직렬화 lease | `src/domain/catalog/reindexLock.ts` 계약과 `src/infrastructure/db/repositories/catalogReindexLock.ts` 구현 | 구조 |
 | Bedrock SigV4의 AWS credential chain | `src/infrastructure/llm/awsCredentials.ts`; SDK의 lazy provider를 공유하고 갱신은 SDK가 소유한다 | 구조 |
 | 호출자가 요청한 페이지 크기를 읽는 법과, 한 페이지가 커질 수 있는 상한 | `src/shared/pageLimit.ts`의 `parsePageLimit` / `boundedPageLimit` / `MAX_PAGE_LIMIT`. 각 자원은 자기 상한을 전달한다. 전체 열거는 repository별 자연 키·시간·seq cursor로 페이지를 순회한다 | 구조 |

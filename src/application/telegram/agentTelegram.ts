@@ -1,6 +1,6 @@
 import { ValidationError } from "@/application/errors";
 import { persistAgentUpdate } from "@/application/agent/agentUpdate";
-import { assertAgentOwnerOrAdminReadable, assertAgentWritable } from "@/application/agent/agentUseCases";
+import { assertAgentOwner } from "@/application/agent/agentUseCases";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import { botIdFromToken } from "@/application/telegram/engagement";
 import type { SecretCipher } from "@/domain/security/secretCipher";
@@ -88,7 +88,7 @@ export async function getAgentTelegram(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<AgentTelegramResult> {
-  const agent = await assertAgentOwnerOrAdminReadable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   return { agent, view: maskedView(cipher, agent) };
 }
 
@@ -100,7 +100,7 @@ export async function listAgentTelegramDestinations(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<TelegramDestination[]> {
-  const agent = await assertAgentOwnerOrAdminReadable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const runtime = resolveAgentTelegramCredentials(cipher, agent);
   const botId = runtime ? botIdFromToken(runtime.botToken) : undefined;
   return botId === undefined
@@ -150,7 +150,7 @@ export async function updateAgentTelegram(
   /** Where this deployment is reached; the webhook is registered under it. */
   baseUrl: string,
 ): Promise<AgentTelegramResult> {
-  const agent = await assertAgentWritable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const stored = agent.telegram;
   const previous = resolveAgentTelegramCredentials(cipher, agent);
   let botToken = stored?.botToken ?? "";
@@ -238,7 +238,7 @@ export async function disconnectAgentTelegram(
   cipher: SecretCipher,
   deleteWebhook: (botToken: string) => Promise<void>,
 ): Promise<AgentTelegramResult> {
-  const agent = await assertAgentWritable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const runtime = resolveAgentTelegramCredentials(cipher, agent);
   const updated: Agent = {
     ...agent,
@@ -298,7 +298,7 @@ export async function testAgentTelegram(
   cipher: SecretCipher,
   getMe: (botToken: string) => Promise<TelegramBotIdentity>,
 ): Promise<{ ok: true; botId: number; botUsername?: string } | { ok: false }> {
-  const agent = await assertAgentOwnerOrAdminReadable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const runtime = resolveAgentTelegramRuntime(cipher, agent);
   if (!runtime) {
     return { ok: false };
@@ -323,7 +323,7 @@ export async function registerAgentTelegramWebhook(
     args: { url: string; secretToken: string; allowedUpdates: readonly string[] },
   ) => Promise<void>,
 ): Promise<{ ok: true; url: string } | { ok: false }> {
-  const agent = await assertAgentWritable(repo, name, userEmail);
+  const agent = await assertAgentOwner(repo, name, userEmail);
   const runtime = resolveAgentTelegramRuntime(cipher, agent);
   if (!runtime) {
     return { ok: false };

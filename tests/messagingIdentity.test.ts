@@ -3,7 +3,6 @@ import { createMessagingIdentityUseCases } from "@/application/auth/messagingIde
 import { messagingIdentityRepository } from "@/infrastructure/db/repositories/messagingIdentityRepository";
 import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
 import { authenticateMessagingSubject } from "@/application/messaging/authenticateSubject";
-import { setAdminCheck } from "@/application/agent/agentUseCases";
 import type { Member } from "@/domain/member/types";
 import type { MessagingSubject } from "@/domain/messaging/identity";
 import type { FakeStore } from "./fakeStore";
@@ -15,11 +14,11 @@ const members = new Map<string, Member>();
 const api = createMessagingIdentityUseCases({ identities: messagingIdentityRepository, agents: agentRepository, members: { getById: async id => members.get(id) ?? null }, now: () => now });
 const subject: MessagingSubject = { agentName: "agent", platform: "slack", realm: "workspace", externalId: "user" };
 beforeEach(async () => {
-  now = new Date("2026-10-01T08:00:00Z"); vi.useFakeTimers(); vi.setSystemTime(now); store.rows.clear(); members.clear(); entropy.value = 0; setAdminCheck(async () => false);
+  now = new Date("2026-10-01T08:00:00Z"); vi.useFakeTimers(); vi.setSystemTime(now); store.rows.clear(); members.clear(); entropy.value = 0;
   for (const id of ["first", "second"]) members.set(id, { id, email: `${id}@example.test`, name: id, tier: "member", image: null, joinedAt: now.toISOString(), lastLoginAt: now.toISOString() });
   for (const name of ["agent", "other"]) await agentRepository.create({ name, displayName: name, description: "", ownerEmail: "first@example.test", createdAt: now.toISOString(), updatedAt: now.toISOString() });
 });
-afterEach(() => { vi.useRealTimers(); setAdminCheck(async () => false); });
+afterEach(() => { vi.useRealTimers(); });
 
 describe("verified Studio-to-messaging identity", () => {
   it("uses a one-time hashed code and resolves the issuing user rather than the Agent owner", async () => {

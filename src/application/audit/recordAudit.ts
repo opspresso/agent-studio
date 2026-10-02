@@ -7,7 +7,7 @@
  * returns nothing for deletions. `tests/architecture.test.ts` pins it.
  *
  * The sink is **pushed in** rather than threaded through every site that
- * records one, for the same reason `setAdminCheck` is: a caller that forgot it would
+ * records one: a caller that forgot it would
  * leave exactly one act unrecorded, and an unrecorded act looks identical to one
  * that never happened.
  *

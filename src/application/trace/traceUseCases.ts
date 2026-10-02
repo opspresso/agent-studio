@@ -2,7 +2,7 @@ import type { AgentRepository } from "@/domain/agent/repository";
 import type { ListTracesOptions, TraceRepository } from "@/domain/trace/repository";
 import type { Trace } from "@/domain/trace/types";
 import { NotFoundError } from "@/application/errors";
-import { assertAgentOwnerOrAdminReadable } from "@/application/agent/agentUseCases";
+import { assertAgentOwner } from "@/application/agent/agentUseCases";
 
 export interface TraceReadDeps {
   traces: TraceRepository;
@@ -20,7 +20,7 @@ export async function listAgentTraces(
   userEmail: string,
   options?: ListTracesOptions,
 ): Promise<Trace[]> {
-  await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
+  await assertAgentOwner(deps.agents, agentName, userEmail);
   return deps.traces.listByAgent(agentName, options);
 }
 
@@ -36,7 +36,7 @@ export async function getAgentTrace(
   traceId: string,
   userEmail: string,
 ): Promise<Trace> {
-  await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
+  await assertAgentOwner(deps.agents, agentName, userEmail);
   const trace = await deps.traces.get(traceId);
   if (!trace || trace.agentName !== agentName) {
     throw new NotFoundError("Trace not found");

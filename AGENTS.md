@@ -235,8 +235,10 @@ key, cap, formatter, error identity, or collapse rule, search
 
 ### Integrations, contracts, and secrets
 
-- Routes use `withAuth`, `withMemberAuth`, or `withAdminAuth` as documented; `isAdminEmail` and
-  `isConfiguredAdmin` are not interchangeable. Dispatch reads operator overrides through
+- Agent management belongs to its creator. `isAgentOwner` owns the rule; `assertAgentOwner` checks it
+  after loading an Agent. Installation administrators do not override Agent ownership.
+- Routes use `withAuth`, `withMemberAuth`, or `withAdminAuth` as documented; configured admin enrollment
+  and effective shared-resource administration are different questions. Dispatch reads operator overrides through
   `src/lib/runtime-settings.ts`, never directly from environment variables.
 - Operator URLs are checked at registration and dispatch through `fetchPublicUrl`. Logging goes
   through `src/shared/logger.ts` except the documented domain warning and browser error boundaries.

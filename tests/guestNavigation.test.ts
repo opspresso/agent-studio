@@ -11,7 +11,7 @@ import type { Viewer } from "@/lib/viewer";
 vi.mock("next/navigation", () => ({ usePathname: () => "/skills", useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/components/UserMenu", () => ({ UserMenu: () => null }));
 
-const viewer = (tier: Viewer["tier"]): Viewer => ({ email: "user@example.test", tier, isAdmin: tier === "admin", isConfiguredAdmin: tier === "admin" });
+const viewer = (tier: Viewer["tier"]): Viewer => ({ email: "user@example.test", tier, isAdmin: tier === "admin" });
 function navigation(tier: Viewer["tier"]) {
   const html = renderToStaticMarkup(createElement(MantineProvider, {
     children: createElement(I18nProvider, { locale: "en", children: createElement(AppLayout, {
@@ -30,10 +30,10 @@ describe("guest navigation and editing", () => {
     expect(guest).not.toContain("/settings");
     expect(navigation("admin")).toEqual(expect.arrayContaining(["/settings", "/members", "/audits"]));
   });
-  it("keeps a downgraded owner read-only without changing member ownership or admin access", () => {
+  it("keeps a downgraded owner read-only without granting admin ownership overrides", () => {
     expect(canEditAgent(viewer("guest"), "user@example.test")).toBe(false);
     expect(canEditAgent(viewer("member"), "user@example.test")).toBe(true);
     expect(canEditAgent(viewer("member"), "other@example.test")).toBe(false);
-    expect(canEditAgent(viewer("admin"), "other@example.test")).toBe(true);
+    expect(canEditAgent(viewer("admin"), "other@example.test")).toBe(false);
   });
 });

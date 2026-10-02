@@ -240,8 +240,8 @@ export const ko: Messages = {
   "workspace.policy.modeHint.all": "Agent의 GitHub MCP 계정이 접근할 수 있는 모든 저장소를 허용합니다. 등록 목록은 빠른 선택용이며 접근을 제한하지 않습니다.",
   "workspace.policy.modeHint.new": "등록된 저장소를 유지하고 이 Agent의 Workspace create_repository 도구로 만든 신규 저장소를 자동 등록합니다. 이미 존재하는 미등록 저장소는 차단합니다. 새 저장소는 파일 작업 전에 Agent에게 생성을 요청하세요.",
   "workspace.policy.title": "Workspace 저장소 접근",
-  "workspace.policy.description": "Agent 소유자 또는 관리자가 Workspace 설정을 관리합니다. 저장한 설정은 재배포 없이 새 작업과 Git 승인에 적용됩니다.",
-  "workspace.policy.adminOnly": "Agent 소유자 또는 관리자만 설정을 변경할 수 있습니다.",
+  "workspace.policy.description": "Agent 소유자가 Workspace 설정을 관리합니다. 저장한 설정은 재배포 없이 새 작업과 Git 승인에 적용됩니다.",
+  "workspace.policy.adminOnly": "Agent 소유자만 설정을 변경할 수 있습니다.",
   "workspace.policy.repositories": "등록한 저장소",
   "workspace.policy.repositoriesHint": "owner/repository를 입력하고 Enter로 저장소를 추가하세요.",
   "workspace.policy.owners": "허용할 저장소 소유자",
@@ -598,7 +598,7 @@ export const ko: Messages = {
   "common.testConnection": "연결 테스트",
   "common.disconnect": "연결 해제",
   "pset.delete": "Agent 삭제",
-  "pset.ownerOnly": "편집 권한이 있는 Agent 소유자({owner}) 또는 관리자만 이 설정을 변경할 수 있습니다.",
+  "pset.ownerOnly": "편집 권한이 있는 Agent 소유자({owner})만 이 설정을 변경할 수 있습니다.",
   "pset.saveCostLimits": "비용 한도 저장",
   "pset.costLimitsHint": "이 Agent가 사용하는 모든 모델의 비용을 UTC 일·월 기준으로 합산합니다. 빈 항목은 한도가 없습니다. 한도에 도달하면 다음 UTC 일 또는 월이 시작될 때까지 모든 실행 창구의 요청을 차단합니다.",
   "pset.perDay": "/일",
@@ -864,7 +864,7 @@ export const ko: Messages = {
   "guide.workspaces.runtime": "4. 코딩 Runtime과 명령 실행 구분",
   "guide.workspaces.runtimeBody": "설정된 Codex·Claude·OpenCode에는 자연어 작업과 검증 방법을 전달한다. Command는 정확한 비대화형 셸 스크립트를 실행하므로 설명 문장이나 번호 목록을 명령으로 보내지 않는다. Run으로 현재 Runtime을 바꿀 수는 없다. 보고서·파일 처리·실험 등 Git 없는 작업도 가능하다.",
   "guide.workspaces.repository": "5. clone 전에 저장소 준비",
-  "guide.workspaces.repositoryBody": "기존 저장소는 Agent의 Workspace 도구 탭에 등록한다. 기본 저장소는 없다. 기본 모드는 등록 + 신규이며 Workspace의 create_repository 도구가 실제로 만든 저장소를 자동 등록한다. 소유자·관리자는 저장소 고정·소유자 지정·모든 저장소 모드도 선택할 수 있다. 반환된 기준 브랜치를 검사하고 Git 작업에는 저장소와 브랜치를 함께 지정한다.",
+  "guide.workspaces.repositoryBody": "기존 저장소는 Agent의 Workspace 도구 탭에 등록한다. 기본 저장소는 없다. 기본 모드는 등록 + 신규이며 Workspace의 create_repository 도구가 실제로 만든 저장소를 자동 등록한다. 소유자는 저장소 고정·소유자 지정·모든 저장소 모드도 선택할 수 있다. 반환된 기준 브랜치를 검사하고 Git 작업에는 저장소와 브랜치를 함께 지정한다.",
   "guide.workspaces.approvals": "6. 게시 단계를 각각 검토",
   "guide.workspaces.approvalsBody": "코딩 요청은 커밋·작업 브랜치 푸시·PR 생성까지 추가 승인 없이 진행한다. main 병합·main 직접 푸시·태그·릴리즈·배포는 별도 요청과 정확한 변경에 대한 확인이 필요하다. 확인한 동작의 결과는 원래 Chat으로 돌아온다. main 직접 푸시는 fast-forward만 가능하며 브랜치 보호 규칙을 따른다.",
   "guide.workspaces.results": "7. 실행·검사·산출물 구분",
@@ -924,7 +924,7 @@ export const ko: Messages = {
 
   "guide.integrations.title": "봇·자동화 연동",
   "guide.integrations.body":
-    "Agent 소유자와 관리자가 연동을 설정한다. 먼저 Agent 설정을 저장하고 설정 후 실제 호출 한 번으로 검증한다. 외부 플랫폼은 별도 자격 증명과 네트워크 연결이 필요하며 폐쇄망 설치의 필수 기능은 아니다.",
+    "Agent 소유자가 공용 연동을 설정하고 사용자는 본인 MCP 연결을 관리한다. 먼저 Agent 설정을 저장하고 설정 후 실제 호출 한 번으로 검증한다. 외부 플랫폼은 별도 자격 증명과 네트워크 연결이 필요하며 폐쇄망 설치의 필수 기능은 아니다.",
   "guide.integrations.slack": "Slack",
   "guide.integrations.slackBody":
     "Agent의 Integrations에서 app manifest를 복사해 전용 Slack 앱을 생성·설치하고 bot token과 signing secret을 저장한다. 이벤트를 활성화하고 표시된 events URL을 확인한 뒤 Test connection을 실행한다. 대상 채널에 봇을 초대하고 멘션으로 시험한다. 자격 증명 검사가 성공해도 Slack에서 앱으로 이벤트가 전달되는지 별도 확인해야 한다.",
@@ -942,20 +942,20 @@ export const ko: Messages = {
   "guide.records.artifacts": "원본과 생성 파일 찾기",
   "guide.records.artifactsBody": "개인 Artifacts에는 본인 email에 귀속된 파일과 개인 문맥의 자동화 산출물이 표시된다. Agent Artifacts에는 개인 소유자가 없는 실행 결과도 포함된다. 비공개 오디오 원본·결과의 읽기와 삭제는 소유자만 할 수 있다. 일반 파일의 서명 링크만 만료됐다면 Artifacts에서 다시 열어 갱신한다. 이미 만료되거나 삭제된 파일은 복원되지 않는다. 보존 기간 이후에도 필요한 파일은 내려받는다. Chat을 삭제해도 Artifacts는 삭제되지 않는다.",
   "guide.records.usage": "사용량과 비용 귀속 이해",
-  "guide.records.usageBody": "Agent Usage에서 모델·provider별 합계를 보고 소유자·관리자는 호출자 내역도 확인한다. Profile은 Chat·개인 API·Webhook 토큰·메신저·스케줄·Workspace의 native 모델 요청을 같은 Studio 사용자 ID에 합산한다. 비용은 공급자 보고값 또는 모델 가격으로 계산한다. 사용량 누락은 미확정이며 0원 추정이 실제 무료를 뜻하지 않는다.",
+  "guide.records.usageBody": "Agent Usage에서 모델·provider별 합계를 보고 소유자는 호출자 내역도 확인한다. Profile은 Chat·개인 API·Webhook 토큰·메신저·스케줄·Workspace의 native 모델 요청을 같은 Studio 사용자 ID에 합산한다. 비용은 공급자 보고값 또는 모델 가격으로 계산한다. 사용량 누락은 미확정이며 0원 추정이 실제 무료를 뜻하지 않는다.",
   "guide.records.budgets": "알림·차단·동시 실행 한도",
   "guide.records.budgetsBody":
     "Agent Settings에서 일간·월간 알림 기준과 차단 기준을 따로 설정한다. 알림은 목적지가 설정되어야 전달되며, 차단은 알림 설정이 없어도 UTC 기준 날짜나 월이 바뀔 때까지 새 실행을 거절한다. 호출 방식에 따라 개인 등급 한도와 호출자 동시 실행 한도도 적용된다. 비용은 실행 완료 후 반영될 수 있어 기준값이 초과 지출을 완전히 막는 선불 잔액은 아니다.",
   "guide.records.traces": "Traces로 실행 조사하기",
   "guide.records.tracesBody":
-    "소유자와 관리자는 Agent Traces에서 준비 단계·모델 호출·도구·위임·소요 시간·사용량·경고를 확인한다. 모든 Agent 실행을 추적하지만 프롬프트와 도구 결과 원문 전체를 저장하지는 않는다. Trace가 없으면 실행 전 거절이나 기록 저장 실패 여부를 확인한다.",
+    "소유자는 Agent Traces에서 준비 단계·모델 호출·도구·위임·소요 시간·사용량·경고를 확인한다. 모든 Agent 실행을 추적하지만 프롬프트와 도구 결과 원문 전체를 저장하지는 않는다. Trace가 없으면 실행 전 거절이나 기록 저장 실패 여부를 확인한다.",
 
   "guide.security.title": "접근 권한과 민감정보",
   "guide.security.body":
     "Agent를 공유하거나 데이터 소스를 연결하기 전에 접근 범위를 정한다. 콘솔·모델 공급자·도구·파일 저장소는 각각 정보가 처리될 수 있는 위치다.",
   "guide.security.visibility": "공개 범위와 편집 권한",
   "guide.security.visibilityBody":
-    "public Agent는 이 설치에 로그인한 사용자가 접근할 수 있다는 뜻이며 모든 API를 익명 공개하는 의미는 아니다. private Agent는 소유자만 접근할 수 있다. 소유자와 관리자가 Agent 설정·연동·Trace·Agent 전체 Artifact를 관리한다. 기계 호출의 자격 증명에는 별도 접근 규칙이 적용된다.",
+    "public Agent는 이 설치에 로그인한 사용자가 접근할 수 있다는 뜻이며 모든 API를 익명 공개하는 의미는 아니다. private Agent는 소유자만 접근할 수 있다. 소유자가 Agent 설정·연동·Trace·Agent 전체 Artifact를 관리한다. 기계 호출의 자격 증명에는 별도 접근 규칙이 적용된다.",
   "guide.security.credentials": "비밀값과 공유 링크",
   "guide.security.credentialsBody": "저장된 키는 앞뒤 4자를 표시하고 8자 이하는 전부 숨긴다. 교체를 누르면 별도 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다. 환경변수로 복원은 설정 재정의를 명시적으로 제거한다. 이 서비스에서 발급한 Agent·Webhook 키는 보기·숨기기·복사와 지원되는 생성·폐기 동작을 공통으로 사용한다. 원문을 표시한 동안에만 복사하며 교체·폐기는 확인을 거친다. 브라우저 조회 조건에는 자격 증명을 저장하지 않는다. 서명된 Artifact URL도 자격 증명으로 취급한다.",
   "guide.security.pii": "PII 필터의 적용 범위",
@@ -1492,7 +1492,7 @@ export const ko: Messages = {
   // Agent의 연동 탭: 다른 시스템이 이 Agent에 닿는 방법.
   "pint.lede":
     "API 토큰, 채팅 봇, Webhook과 Schedules로 이 Agent를 연결합니다. 연동을 선택해 최근 활동을 확인하세요.",
-  "pint.ownerOnly": "편집 권한이 있는 Agent 소유자({owner}) 또는 관리자만 이 연동을 변경할 수 있습니다.",
+  "pint.ownerOnly": "편집 권한이 있는 Agent 소유자({owner})만 이 연동을 변경할 수 있습니다.",
   "pint.historyTitle": "전송 이력",
   "pint.historyChoose": "연동을 선택하면 최근 활동을 볼 수 있습니다.",
   "pint.historyRefresh": "새로고침",
@@ -1690,7 +1690,7 @@ export const ko: Messages = {
   "agentUsage.empty": "이 기간에는 기록된 사용량이 없습니다.",
   "agentUsage.callers": "호출자",
   "agentUsage.whoSpent": "호출자별 사용량",
-  "agentUsage.ownerAdminOnly": "소유자와 관리자만 확인 가능",
+  "agentUsage.ownerAdminOnly": "소유자만 확인 가능",
   "agentUsage.distinctIdentities": "고유 호출자",
   "agentUsage.unavailable": "호출자 상세를 불러오지 못함",
   "agentUsage.perCallerRange": "선택한 기간의 호출자별 합계",

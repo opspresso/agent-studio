@@ -192,7 +192,7 @@ import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createReranker } from "@/infrastructure/llm/reranker";
 import { createPgVectorStore } from "@/infrastructure/vector/pgVectorStore";
 import { deleteExpired } from "@/infrastructure/db/store";
-import { createAgentUseCases, setAdminCheck } from "@/application/agent/agentUseCases";
+import { createAgentUseCases } from "@/application/agent/agentUseCases";
 import { createTraceUseCases } from "@/application/trace/traceUseCases";
 import { createUsageUseCases } from "@/application/usage/usageUseCases";
 import { createConfigurationUseCases } from "@/application/agent/configurationUseCases";
@@ -257,18 +257,14 @@ import {
   isConfiguredAdmin,
   startPublishedModelRefresh,
 } from "./runtime-settings";
-import { getMemberTier, isEffectiveConfiguredAdminByEmail } from "./memberAccess";
+import { getMemberTier } from "./memberAccess";
 import { actorKey, type RunActor } from "@/domain/execution/actor";
 import { tierMayEdit, type TierLimits } from "@/domain/member/tiers";
 import { offeredModels } from "@/domain/llm/models";
 import { composeCreateAgent } from "@/application/agent/createAgentFlow";
 import { composeCloneAgent } from "@/application/agent/cloneAgentFlow";
 
-// The write override's admin list is pushed into the use case here rather than
-// imported by it — a static import would drag the settings store (and its
-// database client) into the application layer. The effective form, so a
-// tier-admin may override an agent write exactly as a listed admin does.
-setAdminCheck(isEffectiveConfiguredAdminByEmail);
+
 
 // Same shape, same reason: the audit store is pushed into the writer rather
 // than threaded through every act that records one, because a call site that
@@ -604,8 +600,7 @@ export const triggerUseCases = createTriggerUseCases({
   members: { getById: getExecutionMemberById },
   triggers: triggerRepository,
   agents: agentRepository,
-  authorizeReview: async (email, agentName) => {
-    if (!await isEffectiveConfiguredAdminByEmail(email)) throw new ForbiddenError("Only administrators can configure GitHub review publication");
+  assertReviewReady: async (agentName) => {
     if (!getWorkspaceConfig()) throw new ValidationError("PR review requires a configured Workspace Sandbox backend");
     const agent = await agentRepository.get(agentName);
     if (!agent || !await agentGitHubCredentials.configured(agent)) throw new ValidationError("PR review requires this Agent to bind a GitHub MCP server");
@@ -1417,7 +1412,7 @@ async function getWorkspaceAgentPolicy(name: string) { return workspaceRepositor
 export const workspaceRepositoryPolicyUseCases = createWorkspaceRepositoryPolicyUseCases({
   agents: agentRepository, repository: workspacePolicyRepository,
   backendReady: () => !!getWorkspaceConfig(), runtimes: async () => (await workspaceRuntimeModelUseCases.getView()).available,
-  isAdmin: isEffectiveConfiguredAdminByEmail, now: () => new Date(),
+  now: () => new Date(),
 });
 export const workspaceRepositoryCreationUseCases = createWorkspaceRepositoryCreationUseCases({
   policies: workspacePolicyRepository, creations: workspaceRepositoryCreationStore,

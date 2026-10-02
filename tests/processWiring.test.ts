@@ -2,12 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 afterEach(async () => {
   vi.resetModules();
-  const [{ setAuditSink }, { setAdminCheck }] = await Promise.all([
-    import("@/application/audit/recordAudit"),
-    import("@/application/agent/agentUseCases"),
-  ]);
+  const { setAuditSink } = await import("@/application/audit/recordAudit");
   setAuditSink(undefined);
-  setAdminCheck(async () => false);
 });
 
 describe("process-wide application wiring", () => {
@@ -21,25 +17,6 @@ describe("process-wide application wiring", () => {
 
     expect(second.auditSink()).toBe(sink);
     expect(() => second.assertAuditSinkWired()).not.toThrow();
-  });
-
-  it("keeps the configured admin check across duplicate module evaluations", async () => {
-    const first = await import("@/application/agent/agentUseCases");
-    first.setAdminCheck(async (email) => email === "admin@example.com");
-
-    vi.resetModules();
-    const second = await import("@/application/agent/agentUseCases");
-    const agent = {
-      name: "private-agent",
-      displayName: "Private agent",
-      description: "",
-      visibility: "private" as const,
-      ownerEmail: "owner@example.com",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    };
-
-    await expect(second.assertAgentWritable({ get: async () => agent } as unknown as Parameters<typeof second.assertAgentWritable>[0], agent.name, "admin@example.com")).resolves.toEqual(agent);
   });
 
   it("keeps managed MCP lifecycle claims across duplicate module evaluations", async () => {

@@ -9,7 +9,7 @@ import { resolveMcpBindings } from "@/application/agent/mcpBindingSettings";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { isEncrypted, isMasked, mergeOutboundHeaders } from "@/infrastructure/crypto/secretEncryption";
 import { agentMcpHeadersContext } from "@/domain/security/secretContext";
-import { createAgent, deleteAgent, setAdminCheck, updateAgent } from "@/application/agent/agentUseCases";
+import { createAgent, deleteAgent, updateAgent } from "@/application/agent/agentUseCases";
 import { chatMessageSchema, costLimitsSchema, putAgentConfigurationSchema, agentParametersSchema } from "@/app/api/agents/_lib/schemas";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
@@ -41,10 +41,6 @@ afterEach(() => {
 
 const OWNER = "owner@x.com";
 const OTHER = "intruder@x.com";
-const admins = { emails: [] as string[] };
-const adminListCheck = async (email: string) => admins.emails.includes(email.toLowerCase());
-setAdminCheck(adminListCheck);
-beforeEach(() => { admins.emails = []; });
 
 function agentFixture(name: string, overrides: Partial<Agent> = {}): Agent {
   return { name, displayName: name, description: "", ownerEmail: OWNER,
@@ -592,47 +588,11 @@ describe("deleteAgent", () => {
   });
 });
 
-/**
- * `assertAgentWritable` widened every agent mutation at once, so each path
- * that leads to it needs to say which way it went. Without these, a later change
- * that re-narrows one path — or over-widens one that should have stayed with the
- * owner — breaks nothing in CI.
- */
-describe("the admin override, per mutation path", () => {
-  beforeEach(() => {
-    admins.emails = [OTHER];
-    // Every case here trips the override's audit line by design.
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-  });
-
-  it("lets an admin delete an agent they do not own", async () => {
+describe("Agent owner-only deletion", () => {
+  it("refuses a non-owner without removing the Agent", async () => {
     const repo = makeAgentRepo([agentFixture("p")]);
-    await expect(deleteAgent(repo, "p", OTHER)).resolves.toBeUndefined();
-    expect(await repo.get("p")).toBeNull();
-  });
-
-
-
-
-
-  it("denies the override when the admin list cannot be read, rather than failing the request", async () => {
-    /*
-     * The non-owner path now depends on a settings read. If losing that store
-     * threw, an unauthorized caller would get a 500 where they have always got a
-     * 403 — the authorization answer would become a function of the store's
-     * availability. It has to fail closed and stay a ForbiddenError.
-     */
-    setAdminCheck(async () => {
-      throw new Error("repository unavailable");
-    });
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      await expect(
-        updateAgent(makeAgentRepo([agentFixture("p")]), "p", { displayName: "X" }, OTHER),
-      ).rejects.toBeInstanceOf(ForbiddenError);
-    } finally {
-      setAdminCheck(adminListCheck);
-    }
+    await expect(deleteAgent(repo, "p", OTHER)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await repo.get("p")).not.toBeNull();
   });
 });
 
@@ -653,19 +613,15 @@ describe("updateAgent ownership", () => {
     ).rejects.toBeInstanceOf(ForbiddenError);
   });
 
-  it("lets a configured admin update an agent they do not own", async () => {
-    admins.emails = [OTHER];
-    const updated = await updateAgent(
-      makeAgentRepo([agentFixture("p")]),
-      "p",
-      { displayName: "Renamed by admin" },
-      OTHER,
-    );
-    expect(updated.displayName).toBe("Renamed by admin");
+  it("refuses a configured admin who is not the owner", async () => {
+    vi.stubEnv("ADMIN_EMAILS", OTHER);
+    const repo = makeAgentRepo([agentFixture("p")]);
+    await expect(updateAgent(repo, "p", { displayName: "Changed" }, OTHER)).rejects.toBeInstanceOf(ForbiddenError);
+    expect((await repo.get("p"))?.displayName).toBe("p");
   });
 
   it("still rejects a non-owner while an unrelated admin is configured", async () => {
-    admins.emails = ["someone-else@example.com"];
+
     await expect(
       updateAgent(makeAgentRepo([agentFixture("p")]), "p", { displayName: "X" }, OTHER),
     ).rejects.toBeInstanceOf(ForbiddenError);

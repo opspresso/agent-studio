@@ -28,7 +28,7 @@ import {
   ValidationError,
   isConditionalWriteFailure,
 } from "@/application/errors";
-import { assertAgentOwnerOrAdminReadable, assertAgentWritable } from "@/application/agent/agentUseCases";
+import { assertAgentOwner } from "@/application/agent/agentUseCases";
 import { reviewRepositories, type GitHubReviewConfig } from "@/domain/trigger/pullRequestReview";
 import { reviewSetupIssue } from "./reviewRequirements";
 
@@ -36,8 +36,8 @@ export interface TriggerDeps {
   triggers: TriggerRepository;
   agents: AgentRepository;
   members: Pick<MemberRepository, "getById">;
-  /** Automatic GitHub review publication may be configured only by an installation administrator. */
-  authorizeReview?: (email: string, agentName: string) => Promise<void>;
+  /** The owning Agent must have working GitHub and Workspace infrastructure before enabling reviews. */
+  assertReviewReady?: (agentName: string) => Promise<void>;
 }
 
 export interface CreateTriggerInput {
@@ -166,10 +166,10 @@ export async function listAgentTriggers(
 }
 
 export function createTriggerUseCases(deps: TriggerDeps) {
-  async function reviewConfig(value: GitHubReviewConfig | null | undefined, email: string, agentName: string): Promise<GitHubReviewConfig | undefined> {
+  async function reviewConfig(value: GitHubReviewConfig | null | undefined, agentName: string): Promise<GitHubReviewConfig | undefined> {
     if (!value) return undefined;
-    if (!deps.authorizeReview) throw new ForbiddenError("GitHub review configuration requires an administrator");
-    await deps.authorizeReview(email, agentName);
+    if (!deps.assertReviewReady) throw new ValidationError("GitHub review integration is not configured");
+    await deps.assertReviewReady(agentName);
     if (value.scope === "accessible") return { scope: "accessible" };
     const repositories = value.scope === "repositories" && reviewRepositories(value.repositories);
     if (!repositories) throw new ValidationError("Select accessible repositories or a non-empty list of exact owner/repo names");
@@ -185,7 +185,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
 
   return {
     async list(agentName: string, userEmail: string): Promise<TriggerView[]> {
-      const agent = await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
+      const agent = await assertAgentOwner(deps.agents, agentName, userEmail);
       const triggers = await listAgentTriggers(deps.triggers, agentName);
       return triggers.map((trigger) => toView(trigger, agent));
     },
@@ -198,9 +198,9 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       const member = userId ? await deps.members.getById(userId) : null;
       if (!member || member.id !== userId || !tierMayEdit(member.tier)) throw new ForbiddenError("Trigger registration requires an active member account");
       const userEmail = member.email;
-      const agent = await assertAgentWritable(deps.agents, agentName, userEmail);
+      const agent = await assertAgentOwner(deps.agents, agentName, userEmail);
       if (input.githubReview !== undefined && input.kind === "schedule") throw new ValidationError("GitHub reviews are only available for webhooks");
-      const githubReview = await reviewConfig(input.githubReview, userEmail, agentName);
+      const githubReview = await reviewConfig(input.githubReview, agentName);
       // An agent has exactly one webhook and it answers at `/api/webhook/{agent}`,
       // which resolves this id and nothing else. Both halves of that are enforced
       // here, at the only place a row is minted: a webhook under any other name
@@ -283,7 +283,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       input: UpdateTriggerInput,
       userEmail: string,
     ): Promise<TriggerView> {
-      const agent = await assertAgentWritable(deps.agents, agentName, userEmail);
+      const agent = await assertAgentOwner(deps.agents, agentName, userEmail);
       const existing = await load(agentName, triggerId);
       if (input.githubReview !== undefined && existing.kind !== "webhook") throw new ValidationError("GitHub reviews are only available for webhooks");
       const shared = {
@@ -321,7 +321,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         throw new ValidationError("Only a schedule trigger has cron, timezone, message or deliveries");
       }
       const { githubReview: previousReview, ...storedWebhook } = existing;
-      const githubReview = input.githubReview === undefined ? previousReview : await reviewConfig(input.githubReview, userEmail, agentName);
+      const githubReview = input.githubReview === undefined ? previousReview : await reviewConfig(input.githubReview, agentName);
       const updated: WebhookTrigger = {
         ...storedWebhook,
         ...shared,
@@ -337,7 +337,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
     },
 
     async remove(agentName: string, triggerId: string, userEmail: string): Promise<void> {
-      await assertAgentWritable(deps.agents, agentName, userEmail);
+      await assertAgentOwner(deps.agents, agentName, userEmail);
       await load(agentName, triggerId);
       await deps.triggers.delete(agentName, triggerId);
     },
@@ -348,8 +348,8 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       limit: number,
       userEmail: string,
     ): Promise<TriggerRunView[]> {
-      // Owner/admin like traces: a delivery's result preview is runtime output.
-      await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
+      // Owner-only like traces: a delivery's result preview is runtime output.
+      await assertAgentOwner(deps.agents, agentName, userEmail);
       return (await deps.triggers.listRuns(agentName, triggerId, limit)).map(({ runningLeaseToken: _token, runningLeaseUntil: _lease, ...run }) => {
         void _token; void _lease;
         return run;

@@ -24,6 +24,7 @@ import type {
   McpConnectionRepository,
   McpOAuthStateRepository,
 } from "@/domain/mcp/connection";
+import { isAgentOwner } from "@/domain/agent/access";
 import type { AgentRepository } from "@/domain/agent/repository";
 import { resolveMcpAccountLookup, readMcpAccountLookup, isMcpAccountEndpoint, mcpAccountScopes, type McpAccountClient, type McpAccountResult, type McpAccountLookup } from "@/domain/mcp/account";
 import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCipher";
@@ -1115,7 +1116,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
 
     async listTools(agentName, serverName, user, headerOverrides) {
       const agent = await authorizeConnection(agentName, user);
-      if (headerOverrides !== undefined && agent.ownerEmail !== user.email) {
+      if (headerOverrides !== undefined && !isAgentOwner(agent, user.email)) {
         throw new ForbiddenError("Only the Agent owner may probe draft binding headers");
       }
       const server = await requireServer(serverName);

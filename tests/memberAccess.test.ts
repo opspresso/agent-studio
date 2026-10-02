@@ -13,8 +13,6 @@ const {
   getMemberTier,
   invalidateMemberTierCache,
   isEffectiveAdmin,
-  isEffectiveConfiguredAdmin,
-  isEffectiveConfiguredAdminByEmail,
 } = await import("@/lib/memberAccess");
 
 const member = (tier: string) => ({
@@ -59,49 +57,6 @@ describe("isEffectiveAdmin", () => {
   it("refuses a non-admin tier not on a configured list", async () => {
     setAdminEmails(["someone@x.com"]);
     expect(await isEffectiveAdmin({ email: "u@x.com", tier: "member" })).toBe(false);
-  });
-});
-
-describe("isEffectiveConfiguredAdmin", () => {
-  it("grants a tier admin on an empty list", async () => {
-    expect(await isEffectiveConfiguredAdmin({ email: "u@x.com", tier: "admin" })).toBe(true);
-  });
-
-  it("keeps the empty-list fail-closed for other tiers", async () => {
-    expect(await isEffectiveConfiguredAdmin({ email: "u@x.com", tier: "guest" })).toBe(false);
-  });
-
-  it("still grants a listed email whatever the tier", async () => {
-    setAdminEmails(["u@x.com"]);
-    expect(await isEffectiveConfiguredAdmin({ email: "u@x.com", tier: "guest" })).toBe(true);
-  });
-});
-
-describe("isEffectiveConfiguredAdminByEmail", () => {
-  it("answers from the list without reading the member row", async () => {
-    setAdminEmails(["u@x.com"]);
-    expect(await isEffectiveConfiguredAdminByEmail("u@x.com")).toBe(true);
-    expect(getByEmail).not.toHaveBeenCalled();
-  });
-
-  it("grants an unlisted email whose stored tier is admin", async () => {
-    setAdminEmails(["someone@x.com"]);
-    getByEmail.mockResolvedValue(member("admin"));
-    expect(await isEffectiveConfiguredAdminByEmail("u@x.com")).toBe(true);
-  });
-
-  it("refuses an unlisted email whose stored tier is not admin", async () => {
-    setAdminEmails(["someone@x.com"]);
-    getByEmail.mockResolvedValue(member("member"));
-    expect(await isEffectiveConfiguredAdminByEmail("u@x.com")).toBe(false);
-  });
-
-  it("fails closed when the member read fails", async () => {
-    setAdminEmails(["someone@x.com"]);
-    getByEmail.mockRejectedValue(new Error("storage down"));
-    await expect(isEffectiveConfiguredAdminByEmail("u@x.com")).rejects.toThrow(
-      "Member tier is temporarily unavailable",
-    );
   });
 });
 

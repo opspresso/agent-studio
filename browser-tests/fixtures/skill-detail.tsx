@@ -22,7 +22,7 @@ function Fixture() {
 
 createRoot(document.getElementById("root")!).render(
   <MantineProvider theme={theme}><I18nProvider locale="en"><ViewerProvider viewer={{
-    email: "admin@example.test", tier: "admin", isAdmin: true, isConfiguredAdmin: true,
+    email: "admin@example.test", tier: "admin", isAdmin: true,
   }}><style>{":root { --font-sans: system-ui; --font-mono: monospace; }"}</style>
     <Fixture /></ViewerProvider></I18nProvider></MantineProvider>,
 );

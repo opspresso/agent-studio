@@ -458,14 +458,9 @@ export function createSettingsUseCases(
          * override falls back to the env var, a present-but-empty one falls back to
          * nothing.
          *
-         * What it would fall back *to* is fail-open and silent. An empty admin list
-         * makes `isAdminEmail` true for everyone — every signed-in user could then
-         * mutate the shared registries and re-edit this very page — while making
-         * `isConfiguredAdmin` false for everyone, revoking the agent override at
-         * the same moment; `assertAccessControlConfig` cannot catch it, because it
-         * reads the env var and never runs again. An empty allowed-domains list lets
-         * any Google account sign in, which a deployment chooses by leaving the env
-         * var unset, not by saving a value that reads as a list and is not one.
+         * An empty stored admin list would enable bootstrap administration for
+         * all members; an empty domain list would admit any sign-in domain.
+         * Resetting the override is the explicit way to inherit deployment policy.
          */
         for (const key of ["adminEmails", "allowedEmailDomains"] as const) {
           const stored = next[key];

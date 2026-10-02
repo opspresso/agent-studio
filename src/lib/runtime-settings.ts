@@ -140,16 +140,7 @@ export async function getAdminEmails(): Promise<string[]> {
   return stored !== undefined ? parseList(stored) : config.adminEmails;
 }
 
-/**
- * Whether an address is on an *explicitly configured* admin list.
- *
- * Deliberately not {@link isAdminEmail}, and the difference is the whole point:
- * an empty list is a safe "no restriction" for a shared registry, but it must
- * never read as "everyone is an admin" where admin is an override on someone
- * else's ownership — on a deployment that never set `ADMIN_EMAILS` that would
- * silently hand every signed-in user write access to every agent. With no
- * list configured there are no admins, and ownership stands on its own.
- */
+/** Explicit administrator enrollment: promotes and locks the account's admin tier. */
 export async function isConfiguredAdmin(email: string): Promise<boolean> {
   const admins = await getAdminEmails();
   return admins.length > 0 && admins.includes(email.toLowerCase());

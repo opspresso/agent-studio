@@ -1,7 +1,7 @@
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { MemberUsageRow, UsageRow } from "@/domain/usage/types";
-import { assertAgentOwnerOrAdminReadable } from "@/application/agent/agentUseCases";
+import { assertAgentOwner } from "@/application/agent/agentUseCases";
 import { memberMonthToDate } from "./memberCostGuard";
 import { listAgentActors, type ListActorsDeps, type AgentActorUsage } from "./listActors";
 
@@ -43,7 +43,7 @@ export function listMemberUsage(
 }
 
 /**
- * Who spent an agent's budget, owner/admin only: a breakdown by caller names
+ * Who spent an agent's budget, owner-only: a breakdown by caller names
  * individuals and what they ran, so it is gated like traces rather than like
  * the shared totals.
  */
@@ -54,7 +54,7 @@ export async function listAgentActorsFor(
   from: string,
   to: string,
 ): Promise<AgentActorUsage> {
-  const agent = await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
+  const agent = await assertAgentOwner(deps.agents, agentName, userEmail);
   return listAgentActors(deps, agent, from, to);
 }
 

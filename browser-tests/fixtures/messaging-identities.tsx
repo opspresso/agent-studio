@@ -9,7 +9,7 @@ import { theme } from "../../src/app/theme";
 const guest = new URLSearchParams(window.location.search).has("guest");
 createRoot(document.getElementById("root")!).render(
   <MantineProvider theme={theme}><I18nProvider locale="en">
-    <ViewerProvider viewer={{ email: "member@example.test", tier: guest ? "guest" : "member", isAdmin: false, isConfiguredAdmin: false }}>
+    <ViewerProvider viewer={{ email: "member@example.test", tier: guest ? "guest" : "member", isAdmin: false }}>
       <MessagingConnections />
     </ViewerProvider>
   </I18nProvider></MantineProvider>,

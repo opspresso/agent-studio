@@ -2,9 +2,8 @@ import { memberFixture } from "./memberFixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import {
-  assertAgentWritable,
+  assertAgentOwner,
   deleteAgent,
-  setAdminCheck,
 } from "@/application/agent/agentUseCases";
 import { createAgentCredentialUseCases } from "@/application/auth/agentCredentialUseCases";
 import type { AgentCredential } from "@/domain/auth/agentCredential";
@@ -98,49 +97,39 @@ beforeEach(() => {
   vi.setSystemTime("2026-01-02T00:00:00.000Z");
   rows = [];
   setAuditSink(sink());
-  setAdminCheck(async () => false);
 });
 
 afterEach(() => {
   vi.useRealTimers();
   setAuditSink(undefined);
-  setAdminCheck(async () => false);
 });
 
 describe("agent acts", () => {
   it("does not record a write override for owner-scoped reads", async () => {
     const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
-    setAdminCheck(async (email) => email === ADMIN);
     const repo = agents();
-    await listAgentTraces({ agents: repo, traces: { listByAgent: async () => [] } as never }, "p", ADMIN);
+    await listAgentTraces({ agents: repo, traces: { listByAgent: async () => [] } as never }, "p", OWNER);
     await listAgentActorsFor({ agents: repo, usage: { listActorsByAgent: async () => [] } as never,
-      profileReaderFor: () => null }, "p", ADMIN, "2026-01-01", "2026-01-31");
+      profileReaderFor: () => null }, "p", OWNER, "2026-01-01", "2026-01-31");
     await createArtifactUseCases({ listByAgent: async () => [] } as never, {} as never, repo)
-      .listByAgent("p", ADMIN);
+      .listByAgent("p", OWNER);
     await personalTokens(repo).status("p", "admin");
-    await getAgentSlack(repo, "p", ADMIN, cipher);
-    await getAgentTelegram(repo, "p", ADMIN, cipher);
-    await getAgentTeams(repo, "p", ADMIN, cipher);
-    await createMcpAuthUseCases({ members: { getById: async (id: string) => memberFixture({ id, email: ADMIN, tier: "admin" }) }, agents: repo, connections: { listByUser: async () => [] },
-      lifecycleClaims: new Set() } as never).listConnections("p", { userId: "p", email: ADMIN });
+    await getAgentSlack(repo, "p", OWNER, cipher);
+    await getAgentTelegram(repo, "p", OWNER, cipher);
+    await getAgentTeams(repo, "p", OWNER, cipher);
+    await createMcpAuthUseCases({ members: { getById: async (id: string) => memberFixture({ id, email: OWNER, tier: "admin" }) }, agents: repo, connections: { listByUser: async () => [] },
+      lifecycleClaims: new Set() } as never).listConnections("p", { userId: "p", email: OWNER });
     warned.mockRestore();
     expect(rows).toEqual([]);
   });
 
-  it("records an admin writing an agent owned by someone else", async () => {
-    setAdminCheck(async (email) => email === ADMIN);
-    await assertAgentWritable(agents(), "p", ADMIN);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      actorEmail: ADMIN,
-      action: "agent.admin-override",
-      target: "agent:p",
-      detail: `owned by ${OWNER}`,
-    });
+  it("refuses another user's Agent instead of granting an audited override", async () => {
+    await expect(assertAgentOwner(agents(), "p", ADMIN)).rejects.toMatchObject({ status: 403 });
+    expect(rows).toEqual([]);
   });
 
   it("records nothing when the owner writes their own agent", async () => {
-    await assertAgentWritable(agents(), "p", OWNER);
+    await assertAgentOwner(agents(), "p", OWNER);
     expect(rows).toHaveLength(0);
   });
 
@@ -191,7 +180,6 @@ describe("personal API token audit", () => {
     expect(rows[0]).toMatchObject({ action: "secret.revoke", actorEmail: OWNER });
   });
   it("records an administrator's own credential without impersonating the Agent owner", async () => {
-    setAdminCheck(async email => email === ADMIN);
     await personalTokens().reveal("p", "admin");
     expect(actions()).toEqual(["secret.reveal"]);
     expect(rows[0]?.actorEmail).toBe(ADMIN);
@@ -290,11 +278,10 @@ describe("Webhook settings audit", () => {
     return createTriggerUseCases({ members: { getById: async () => null }, triggers, agents: agents() });
   }
 
-  it("does not record a write override for an admin listing triggers or runs", async () => {
+  it("does not record a write override for the owner listing triggers or runs", async () => {
     const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
-    setAdminCheck(async (email) => email === ADMIN);
-    await useCases().list("p", ADMIN);
-    await useCases().runs("p", "inbound", 10, ADMIN);
+    await useCases().list("p", OWNER);
+    await useCases().runs("p", "inbound", 10, OWNER);
     warned.mockRestore();
     expect(rows).toEqual([]);
   });

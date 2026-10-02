@@ -22,6 +22,6 @@ function Fixture() {
 
 createRoot(document.getElementById("root")!).render(
   <MantineProvider theme={theme}><I18nProvider locale="en"><ViewerProvider viewer={{
-    email: "reader@example.test", tier: "member", isAdmin: false, isConfiguredAdmin: false,
+    email: "reader@example.test", tier: "member", isAdmin: false,
   }}><Fixture /></ViewerProvider></I18nProvider></MantineProvider>,
 );

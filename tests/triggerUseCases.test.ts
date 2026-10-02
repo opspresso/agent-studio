@@ -8,7 +8,6 @@ import {
 import { createTriggerSchema, updateTriggerSchema } from "@/app/api/agents/_lib/schemas";
 import { toSlug } from "@/domain/naming";
 import { ValidationError } from "@/application/errors";
-import { setAdminCheck } from "@/application/agent/agentUseCases";
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { Agent } from "@/domain/agent/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
@@ -18,7 +17,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime("2026-01-01T00:00:00.000Z");
 });
-afterEach(() => { setAdminCheck(async () => false); vi.useRealTimers(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 const agent: Agent = {
   name: "p",
@@ -31,7 +30,7 @@ const agent: Agent = {
     parameters: { piiFiltering: false, workspaceTools: true } },
 };
 
-function fixture(authorizeReview?: (email: string) => Promise<void>, currentAgent: Agent = agent) {
+function fixture(assertReviewReady?: (agentName: string) => Promise<void>, currentAgent: Agent = agent) {
   const stored = new Map<string, Trigger>();
   const triggers: TriggerRepository = {
     get: async (_p, id) => stored.get(id) ?? null,
@@ -64,18 +63,18 @@ function fixture(authorizeReview?: (email: string) => Promise<void>, currentAgen
     stored,
     triggers,
     storedWebhook,
-    useCases: createTriggerUseCases({ members: { getById: async id => memberFixture({ id, email: id === "registrar-id" ? agent.ownerEmail : id }) }, triggers, agents, authorizeReview }),
+    useCases: createTriggerUseCases({ members: { getById: async id => memberFixture({ id, email: id === "registrar-id" ? agent.ownerEmail : id }) }, triggers, agents, assertReviewReady }),
   };
 }
 
 describe("GitHub review trigger configuration", () => {
-  it("requires administrator authorization, preserves selection, and allows disabling reviews", async () => {
+  it("requires review infrastructure, preserves selection, and lets the owner disable reviews", async () => {
     const authorize = vi.fn(async () => {});
     const f = fixture(authorize);
     const input = { triggerId: "webhook", githubReview: { scope: "accessible" as const } };
-    await expect(fixture().useCases.create("p", input, agent.ownerEmail)).rejects.toThrow("administrator");
+    await expect(fixture().useCases.create("p", input, agent.ownerEmail)).rejects.toThrow("not configured");
     const created = await f.useCases.create("p", input, agent.ownerEmail);
-    expect(authorize).toHaveBeenCalledExactlyOnceWith(agent.ownerEmail, "p");
+    expect(authorize).toHaveBeenCalledExactlyOnceWith("p");
     expect(created.githubReview).toEqual({ scope: "accessible" });
     const next = await f.useCases.update("p", "webhook", { githubReview: {
       scope: "repositories", repositories: ["Example/Agent", "example/agent"],

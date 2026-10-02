@@ -1,6 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { resolveRunUser } from "@/application/auth/resolveRunUser";
-import { setAdminCheck } from "@/application/agent/agentUseCases";
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { Agent } from "@/domain/agent/types";
 import type { Member } from "@/domain/member/types";
@@ -11,11 +10,9 @@ let agent: Agent;
 const deps = { members: { getById: async (id: string) => users.get(id) ?? null },
   agents: { get: async () => agent } as unknown as AgentRepository };
 beforeEach(() => {
-  setAdminCheck(async () => false);
   users.clear(); users.set("registrar", memberFixture({ id: "registrar", email: "person@example.test" }));
   agent = { name: "agent", displayName: "Agent", description: "", ownerEmail: "owner@example.test", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
 });
-afterEach(() => setAdminCheck(async () => false));
 
 describe("current execution user", () => {
   it("resolves the captured ID to the current email rather than the Agent owner", async () => {

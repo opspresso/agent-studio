@@ -103,7 +103,7 @@ Agent 소유권을 넘는 관리자 권한과는 구분한다. [인증과 접근
 | `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | — | — | `AUTH_PASSWORD=true` 일 때 부팅 시 준비되는 계정 (`ensureBootstrapAdmin`). 같은 이메일의 사용자에게 비밀번호 credential 이 이미 있으면 변경하지 않는다. 사용자는 있지만 credential 이 없으면 기존 사용자 행을 유지하고 비밀번호 credential 을 추가한다. 기존 비밀번호는 환경변수 변경으로 갱신되지 않는다. 이메일은 `ADMIN_EMAILS` 에도 넣어야 admin 이 된다. `ALLOWED_EMAIL_DOMAINS` 는 이 주소에 적용되지 않는다. 제공자나 도메인 목록이 모두를 잠갔을 때의 비상 계정이므로. `AUTH_PASSWORD` 없이 설정하면 경고만 남기고 만들지 않는다. |
 | `ALLOWED_EMAIL_DOMAINS` | 비어 있음 | **runtime** | 로그인이 허용되는 도메인의 쉼표 구분 목록. 모든 로그인 수단에 적용된다(사용자 생성과 세션 생성의 훅). 비어 있으면 아무 도메인이나 허용한다. |
 | `TRUSTED_PROXY_CIDRS` | 비어 있음 | — | 이 배포 앞에 있는 리버스 프록시들의 IP/CIDR 범위, 쉼표 구분 (예: Caddy 와 ingress controller 처럼 두 홉이 `X-Forwarded-For` 에 덧붙일 때). Better Auth 는 rate limiting 의 키로 삼는 클라이언트 IP 를 알아내기 위해 체인 오른쪽에서 이 홉들을 벗겨 낸다. 비어 있으면 값이 하나뿐인 헤더만 신뢰하므로, 프록시 두 개 뒤에서는 모든 요청이 하나의 공유 버킷에 떨어진다. |
-| `ADMIN_EMAILS` | 비어 있음 | **runtime** | 쉼표 구분. 레지스트리·설정 변경 권한과 남이 소유한 Agent에 대한 쓰기 권한을 준다. 목록에 있는 멤버는 저장된 `admin` tier 로 승격되고 거기 고정된다. 목록에서 빼도 자동 강등은 없다. 비어 있으면 레지스트리·설정 변경에는 *member 이상 허용*(guest는 읽기 전용), Agent 오버라이드에는 *아무도 아님* 을 뜻한다. 두 질문이 서로 다른 술어로 답해지는 것은 의도적이다 ([SECURITY.md](SECURITY.md#인가-모델)). |
+| `ADMIN_EMAILS` | 비어 있음 | **runtime** | 쉼표 구분. 공용 레지스트리·설정의 관리자 목록이다. 명시된 멤버는 admin tier로 승격·고정되며 목록에서 제거해도 자동 강등하지 않는다. 빈 목록은 member 이상에게 초기 공용 관리 권한을 허용한다. 다른 사람의 Agent 관리 권한은 부여하지 않는다. |
 
 ## 설정 화면
 
@@ -321,7 +321,7 @@ endpoint 에 붙여 넣는다 ([design/teams.md](design/teams.md)).
 ## Workspace 실행
 
 Workspace 도구 사용 여부는 Agent 설정의 `parameters.workspaceTools`로 선택한다. 현재 설정에서
-켜면 Agent에 **워크스페이스 도구** 탭이 나타난다. Agent 소유자·관리자는 그 탭에서 저장소 목록,
+켜면 Agent에 **워크스페이스 도구** 탭이 나타난다. Agent 소유자는 그 탭에서 저장소 목록,
 접근 모드, 기본 Runtime, 유휴 시간, 검사 명령과 배포 workflow를 관리한다. 기본 저장소는 없다.
 기본 접근 모드는 `new`(등록 + 신규), 기본 Runtime은 모델 없이 실행하는 `command`다.
 Codex·Claude·OpenCode의 모델은 **Model 사용 설정 → 워크스페이스 런타임 모델**에서 관리자가 선택한다.

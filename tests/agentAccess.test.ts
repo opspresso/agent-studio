@@ -1,6 +1,6 @@
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
 import type { AgentRepository } from "@/domain/agent/repository";
@@ -12,7 +12,6 @@ import {
   assertAgentAccessible,
   listAgents,
   listAccessibleAgents,
-  setAdminCheck,
   updateAgent,
 } from "@/application/agent/agentUseCases";
 import { putAgentConfiguration } from "@/application/agent/configurationUseCases";
@@ -24,14 +23,6 @@ const OWNER = "owner@x.com";
 const MEMBER = "member@x.com";
 const STRANGER = "stranger@x.com";
 const ADMIN = "admin@x.com";
-
-// Wired exactly as the composition root does; default empty, like a deployment
-// that never set ADMIN_EMAILS.
-const admins = { emails: [] as string[] };
-setAdminCheck(async (email: string) => admins.emails.includes(email.toLowerCase()));
-beforeEach(() => {
-  admins.emails = [];
-});
 
 function agent(overrides: Partial<Agent> = {}): Agent {
   return {
@@ -117,7 +108,7 @@ describe("assertAgentAccessible", () => {
   });
 
   it("refuses a configured admin access to another user's private agent", async () => {
-    admins.emails = [ADMIN];
+
     await expect(assertAgentAccessible(repos(), "secret", ADMIN)).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
@@ -136,7 +127,7 @@ describe("listAccessibleAgents", () => {
   });
 
   it("does not show other owners' private agents to a configured admin", async () => {
-    admins.emails = [ADMIN];
+
     const names = (await listAccessibleAgents(repos(), ADMIN)).map((p) => p.name).sort();
     expect(names).toEqual(["proj"]);
   });

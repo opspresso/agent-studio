@@ -1,10 +1,11 @@
+import { isAgentOwner } from "@/domain/agent/access";
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { WorkspacePolicyRepository } from "@/domain/workspace/policyRepository";
 import type { WorkspaceAgentSettings } from "@/domain/workspace/policy";
 import { normalizeWorkspaceAgentSettings, workspaceAgentPolicy, workspaceRepositories, workspaceRepositoryMode } from "@/domain/workspace/policy";
 import { agentHasWorkspaceTools } from "@/domain/agent/workspaceAccess";
 import type { WorkspaceRuntime } from "@/domain/workspace/types";
-import { assertAgentAccessible, assertAgentWritable } from "@/application/agent/agentUseCases";
+import { assertAgentAccessible, assertAgentOwner } from "@/application/agent/agentUseCases";
 import { ConflictError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 
@@ -13,7 +14,6 @@ interface RepositoryPolicyDeps {
   repository: WorkspacePolicyRepository;
   backendReady(): boolean;
   runtimes(): Promise<WorkspaceRuntime[]>;
-  isAdmin(email: string): Promise<boolean>;
   now(): Date;
 }
 
@@ -38,7 +38,7 @@ export function createWorkspaceRepositoryPolicyUseCases(deps: RepositoryPolicyDe
     const agent = await assertAgentAccessible(deps.agents, agentName, email);
     const stored = await deps.repository.get(agentName);
     return { agentName, enabled: await enabled(agentName), backendReady: deps.backendReady(),
-      canManage: agent.ownerEmail === email || await deps.isAdmin(email), revision: stored?.revision ?? null,
+      canManage: isAgentOwner(agent, email), revision: stored?.revision ?? null,
       rules: normalizeWorkspaceAgentSettings(stored?.rules ?? {}), runtimes: await deps.runtimes(), ...(stored ? { updatedAt: stored.updatedAt } : {}) };
   }
   return {
@@ -50,7 +50,7 @@ export function createWorkspaceRepositoryPolicyUseCases(deps: RepositoryPolicyDe
       return agent ? workspaceAgentPolicy(agentName, (await deps.repository.get(agentName))?.rules) : undefined;
     },
     async update(agentName: string, input: { rules: WorkspaceAgentSettings; revision: number | null }, email: string): Promise<WorkspaceRepositoryPolicyView> {
-      await assertAgentWritable(deps.agents, agentName, email);
+      await assertAgentOwner(deps.agents, agentName, email);
       if (!await enabled(agentName)) throw new ValidationError("Enable Workspace tools in the current Agent settings first");
       if (input.revision !== null && (!Number.isSafeInteger(input.revision) || input.revision < 1)) throw new ValidationError("Invalid Workspace policy revision");
       let rules: WorkspaceAgentSettings;

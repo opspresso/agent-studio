@@ -3,7 +3,7 @@ import type { FakeStore } from "./fakeStore";
 import type { Agent } from "@/domain/agent/types";
 import { agentMcpHeadersContext } from "@/domain/security/secretContext";
 import { createConfigurationUseCases, type AgentConfigurationInput } from "@/application/agent/configurationUseCases";
-import { setAdminCheck, updateAgent } from "@/application/agent/agentUseCases";
+import { updateAgent } from "@/application/agent/agentUseCases";
 import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { skillRepository } from "@/infrastructure/db/repositories/skillRepository";
@@ -51,12 +51,10 @@ beforeEach(async () => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
   vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 9).toString("base64"));
-  setAdminCheck(async email => email === ADMIN);
   store.rows.clear();
   await agentRepository.create(agent);
 });
 afterEach(() => {
-  setAdminCheck(async () => false);
   vi.useRealTimers();
   vi.unstubAllEnvs();
 });
@@ -96,7 +94,8 @@ describe("current Agent configuration", () => {
 
   it("keeps write ownership and private-agent reads at the existing boundaries", async () => {
     await expect(save({}, NOW, READER)).rejects.toMatchObject({ status: 403 });
-    await save({}, NOW, ADMIN);
+    await expect(save({}, NOW, ADMIN)).rejects.toMatchObject({ status: 403 });
+    await save({}, NOW, OWNER);
     const privateAgent = await updateAgent(agentRepository, agent.name, { visibility: "private" }, OWNER);
     await expect(useCases.getView(agent.name, READER)).rejects.toMatchObject({ status: 403 });
     await expect(useCases.getView(agent.name, ADMIN)).rejects.toMatchObject({ status: 403 });

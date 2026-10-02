@@ -5,7 +5,7 @@
  *
  * Keys are flat `area.thing` names. Product nouns and propagated error messages
  * remain English. API Reference content and some operator-maintenance captions
- * also remain English; shared integration settings are owner/admin surfaces. Personal MCP grants belong to each caller.
+ * also remain English; shared integration settings are owner surfaces. Personal MCP grants belong to each caller.
  */
 export const en = {
   "common.memberExecutionRequired": "Agent execution requires member access. Ask an administrator to update your tier.",
@@ -243,8 +243,8 @@ export const en = {
   "workspace.policy.modeHint.all": "Allow any repository the Agent's GitHub MCP account can access. Listed names are convenient selections, not a restriction.",
   "workspace.policy.modeHint.new": "Keep listed repositories and automatically register new ones created through this Agent’s Workspace create_repository tool. Existing unlisted repositories remain blocked; ask the agent to create new repositories before starting file work.",
   "workspace.policy.title": "Workspace repository access",
-  "workspace.policy.description": "The Agent owner or an administrator manages Workspace settings here. New work and Git approvals read the saved settings without redeployment.",
-  "workspace.policy.adminOnly": "Only the Agent owner or an administrator can change these settings.",
+  "workspace.policy.description": "The Agent owner manages Workspace settings here. New work and Git approvals read the saved settings without redeployment.",
+  "workspace.policy.adminOnly": "Only the Agent owner can change these settings.",
   "workspace.policy.repositories": "Registered repositories",
   "workspace.policy.repositoriesHint": "Enter owner/repository and press Enter for each repository.",
   "workspace.policy.owners": "Allowed repository owners",
@@ -609,7 +609,7 @@ export const en = {
   "common.testConnection": "Test connection",
   "common.disconnect": "Disconnect",
   "pset.delete": "Delete agent",
-  "pset.ownerOnly": "Only the Agent owner ({owner}) with editing permission or an admin can change these settings.",
+  "pset.ownerOnly": "Only the Agent owner ({owner}) with editing permission can change these settings.",
   "pset.saveCostLimits": "Save cost limits",
   "pset.costLimitsHint": "Spend is measured per UTC day and month across all models this Agent runs. Leave a field empty for no limit. A blocked Agent refuses runs from every surface until the next UTC day or month.",
   "pset.perDay": "/day",
@@ -892,7 +892,7 @@ export const en = {
   "guide.workspaces.runtime": "4. Choose a coding runtime or an exact script",
   "guide.workspaces.runtimeBody": "Codex, Claude and OpenCode accept complete natural-language tasks and validation instructions when configured. Command executes an exact non-interactive shell script; prose and numbered instructions are not commands. The selected runtime cannot change during Run. A task can be Git-free, including reports, file processing and experiments.",
   "guide.workspaces.repository": "5. Prepare the repository before cloning",
-  "guide.workspaces.repositoryBody": "Register existing repositories in the Agent’s Workspace tools tab. There is no default repository. The default mode permits registered repositories plus new repositories created through Workspace create_repository; successful creation registers them automatically. The owner or an administrator can choose fixed repositories, selected owners or all accessible repositories. Check the returned base branch and select both repository and branch for Git work.",
+  "guide.workspaces.repositoryBody": "Register existing repositories in the Agent’s Workspace tools tab. There is no default repository. The default mode permits registered repositories plus new repositories created through Workspace create_repository; successful creation registers them automatically. The owner can choose fixed repositories, selected owners or all accessible repositories. Check the returned base branch and select both repository and branch for Git work.",
   "guide.workspaces.approvals": "6. Review publication one action at a time",
   "guide.workspaces.approvalsBody": "Coding requests include commit, work-branch push and PR creation without another approval. Main merge, direct main push, tags, releases and deployment require a separate request and confirmation of the exact changes. Confirmed action results return to the originating chat. Direct main push is fast-forward only and follows branch protections.",
   "guide.workspaces.results": "7. Distinguish execution, checks and artifacts",
@@ -952,7 +952,7 @@ export const en = {
 
   "guide.integrations.title": "Bots and automation",
   "guide.integrations.body":
-    "Agent owners and administrators configure integrations. Save the Agent settings first and verify one real call after setup. External platforms need their own credentials and network connectivity; they are optional in an offline installation.",
+    "Agent owners configure integrations. Save the Agent settings first and verify one real call after setup. External platforms need their own credentials and network connectivity; they are optional in an offline installation.",
   "guide.integrations.slack": "Slack",
   "guide.integrations.slackBody":
     "For an Agent, copy the app manifest from Integrations, create and install the dedicated Slack app, and save its bot token and signing secret. Enable events, check the displayed events URL, and run Test connection. Invite the bot to the target channel and mention it. A successful credential test does not prove Slack can deliver events to the application.",
@@ -971,20 +971,20 @@ export const en = {
   "guide.records.artifactsBody":
     "Personal Artifacts includes files attributed to your email, including personal-context automation. Agent Artifacts also includes outputs without a personal owner. Private audio originals and results can only be read or deleted by their owner. Reopen an ordinary artifact to refresh an expired signed link; this does not restore an expired or deleted file. Download files you need beyond retention. Deleting a chat does not delete its artifacts.",
   "guide.records.usage": "Understand usage and attribution",
-  "guide.records.usageBody": "Agent Usage shows model/provider totals and caller details for owners and administrators. Profile combines Chat, personal API/Webhook tokens, messaging, schedules and native Workspace model requests under the same Studio user ID. Costs use provider-reported amounts or model pricing. Missing usage is uncertain; a zero estimate does not prove a free provider call.",
+  "guide.records.usageBody": "Agent Usage shows model/provider totals and caller details for owners. Profile combines Chat, personal API/Webhook tokens, messaging, schedules and native Workspace model requests under the same Studio user ID. Costs use provider-reported amounts or model pricing. Missing usage is uncertain; a zero estimate does not prove a free provider call.",
   "guide.records.budgets": "Alerts, blocks, and concurrent runs",
   "guide.records.budgetsBody":
     "Agent Settings separates daily/monthly alert and block thresholds. Alerts notify when a destination is configured; blocks refuse new runs until the UTC day or month resets, even without notifications. Personal tier limits and caller concurrency limits also apply where relevant. Costs can arrive after a run finishes, so thresholds are not a prepaid balance that guarantees no overspend.",
   "guide.records.traces": "Investigate a run in Traces",
   "guide.records.tracesBody":
-    "Owners and administrators can inspect preparation, model calls, tools, delegates, durations, usage, and warnings in Agent Traces. Every Agent run is traced; prompts and tool output are not stored in full. A missing trace can mean the request was refused before execution started or the trace could not be stored.",
+    "Owners can inspect preparation, model calls, tools, delegates, durations, usage, and warnings in Agent Traces. Every Agent run is traced; prompts and tool output are not stored in full. A missing trace can mean the request was refused before execution started or the trace could not be stored.",
 
   "guide.security.title": "Access and sensitive data",
   "guide.security.body":
     "Choose access rules before sharing an Agent or connecting data sources. The console, model provider, tools, and file store are separate places where information may be processed.",
   "guide.security.visibility": "Public, private, and editing rights",
   "guide.security.visibilityBody":
-    "A public Agent is accessible to signed-in users of this installation; it is not anonymous access to every API. Private Agents are accessible only to their owner. Owners and administrators manage Agent settings, integrations, traces, and Agent-wide artifacts. Machine credentials have their own access rules.",
+    "A public Agent is accessible to signed-in users of this installation; it is not anonymous access to every API. Private Agents are accessible only to their owner. Owners manage Agent settings, integrations, traces, and Agent-wide artifacts. Machine credentials have their own access rules.",
   "guide.security.credentials": "Secrets and shared links",
   "guide.security.credentialsBody": "Saved keys display four characters at each end; values of eight characters or fewer remain hidden. Replace opens a separate draft, and clearing or cancelling the draft keeps the saved key. Agent and Webhook credentials issued by this service share Show, Hide, Copy and supported generation or revocation controls. Copy appears only while plaintext is shown; replacement and revocation require confirmation. Browser preferences do not store credentials. Treat signed artifact URLs as credentials too.",
   "guide.security.pii": "PII filtering is a limited protection",
@@ -1560,7 +1560,7 @@ export const en = {
   // The agent's Integrations tab: how other systems reach it.
   "pint.lede":
     "Connect this Agent through its API token, chat bots, webhook and schedules. Choose an integration to inspect its recent activity.",
-  "pint.ownerOnly": "Only the Agent owner ({owner}) with editing permission or an admin can change these integrations.",
+  "pint.ownerOnly": "Only the Agent owner ({owner}) with editing permission can change these integrations.",
   "pint.historyTitle": "Delivery history",
   "pint.historyChoose": "Select an integration to see its recent activity.",
   "pint.historyRefresh": "Refresh",
@@ -1636,7 +1636,7 @@ export const en = {
   "webhook.reviewAccessible": "Review PRs in accessible GitHub repositories",
   "webhook.reviewSelected": "Review PRs in selected GitHub repositories",
   "webhook.reviewRepositories": "Repositories (one owner/repo per line)",
-  "webhook.reviewHint": "An administrator enables review comments for authorized GitHub repositories. The Agent reads bound skills and pinned PR source through ReviewSource, including missing patches and CI state. Unavailable material prevents a complete review publication. Comments stay on the verified PR and commit; observed CI is separate from tests the Agent ran.",
+  "webhook.reviewHint": "The Agent owner enables review comments for authorized GitHub repositories. The Agent reads bound skills and pinned PR source through ReviewSource, including missing patches and CI state. Unavailable material prevents a complete review publication. Comments stay on the verified PR and commit; observed CI is separate from tests the Agent ran.",
   "webhook.reviewSave": "Save review settings",
   "webhook.reviewSetupRequired": "PR review setup is incomplete",
   "trigger.registeredBy": "Registered by: {email}",

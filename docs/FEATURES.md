@@ -21,7 +21,7 @@
 
 Agent 조회와 실행·편집 권한은 다르다. 실행·복제는 member 이상이어야 하며,
 private Agent는 소유자만 사용한다. 공유 레지스트리는 guest도 조회하며 관리자가 변경한다. guest는 member와 같은 메뉴를 읽기 전용으로 본다.
-Agent 소유자·관리자는 설정·연동·Trace를 관리한다. 봇·토큰·자동화의 인증은 사용자 세션을 대신하지 않는다.
+Agent 소유자는 설정·연동·Trace를 관리한다. 봇·토큰·자동화의 인증은 사용자 세션을 대신하지 않는다.
 
 근거: [Agent 접근](../src/application/agent/agentUseCases.ts),
 [등급 정책](../src/domain/member/tiers.ts), [인증·인가](SECURITY.md).
@@ -147,9 +147,9 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 
 | 기능 | 조건·사용 위치 | 확인할 결과 |
 |---|---|---|
-| Usage | Overview는 Agent·모델·provider·부서, Agent Usage는 모델·provider, Profile은 Agent·모델·provider별 집계 | UTC 기간·일별 비용·호출·캐시 비율을 확인한다. 호출자 상세는 소유자·관리자 전용이며 가격 추정 0은 실제 무료의 증거가 아니다 |
+| Usage | Overview는 Agent·모델·provider·부서, Agent Usage는 모델·provider, Profile은 Agent·모델·provider별 집계 | UTC 기간·일별 비용·호출·캐시 비율을 확인한다. 호출자 상세는 소유자 전용이며 가격 추정 0은 실제 무료의 증거가 아니다 |
 | 비용·등급 한도 | Agent의 일·월 alert/block, 알림 목적지와 사용자 tier의 월 비용·동시성·생성·토큰 정책 | 기록된 사용량으로 새 실행을 제어한다. 기준값은 선불 잔액이 아니며 알림 실패와 차단은 별개다 |
-| Traces | Agent 소유자·관리자. 실행·준비·모델·도구·위임·Guardrail·라우팅 span과 대화 식별 | 완료·실패·취소·승인 대기·턴/출력 제한, 시간·입출력·캐시·Reasoning·오류·손실·span 생략을 확인한다. 봇 전달 성공은 별도로 확인한다 |
+| Traces | Agent 소유자. 실행·준비·모델·도구·위임·Guardrail·라우팅 span과 대화 식별 | 완료·실패·취소·승인 대기·턴/출력 제한, 시간·입출력·캐시·Reasoning·오류·손실·span 생략을 확인한다. 봇 전달 성공은 별도로 확인한다 |
 | Audit | 관리자 전용 기간 조회. secret 조회·회전·폐기, 설정·모델·레지스트리·tier·관리자 작업 기록 | 행위자·대상·상세·UTC 날짜 페이지를 조회한다. 실행 진단은 Trace를 사용한다 |
 | Settings | Service: branding·주소·Artifact 전달·동시성·Slack 표시, Access: admin/domain, Plugins: repo/branch/token, Models: 연결·등록·사용 | 변경한 탭 필드만 저장하고 override/env/default/unset 출처를 표시한다. 일반 override reset과 배포 전용 설정을 구분한다 |
 | 운영 기반 | 부팅 설정 검사·DB schema, 암호화·mask·SSRF guard·실행 상한, health/ready·Prometheus·선택 OTLP·draining | 실제 Agent 실행과 파일 재열기로 경로를 검증한다. 일정·Plugin sync·catalog reindex는 각각 외부 호출이 필요하다. Audio·Workspace는 별도 worker다 |

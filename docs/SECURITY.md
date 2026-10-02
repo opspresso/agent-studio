@@ -80,7 +80,7 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 
 페이지 게이트는 세션 쿠키의 유효성이 아니라 *존재* 를 확인한다. 유효성까지 확인하려면 모든
 내비게이션마다 세션을 읽어야 하고, 그러고도 그것은 인가 결정이 아니다. 인가는 실제로
-데이터를 만지는 요청을 보는 `withAuth` 와 `assertAgentWritable` 에서 서버 측에 남는다.
+데이터를 만지는 요청을 보는 `withAuth` 와 `assertAgentOwner` 에서 서버 측에 남는다.
 따라서 존재하지만 유효하지 않은 쿠키는 페이지에 도달하고 그 뒤의 API 에서 401 을 받는다.
 브라우저의 공통 응답 경계는 같은 origin의 `/api/*` 401을 받으면 현재 path·query·fragment를
 `next`로 보존해 `/login`으로 full navigation한다. Root layout이 이미 세션을 유효하지 않다고
@@ -119,13 +119,13 @@ visibility 이전처럼 열려 있다: 이름과 지출 집계는 카탈로그 �
 
 | 리소스 | 읽기 | 쓰기 |
 |---|---|---|
-| Agent, Agent 설정 | 접근 가능한 사용자 (`assertAgentAccessible`, public 은 전원, private 은 소유자) | 소유자 또는 설정된 admin (`assertAgentWritable`) |
-| Agent trace | 소유자 또는 설정된 admin | — |
-| Agent Slack 설정 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
+| Agent, Agent 설정 | 접근 가능한 사용자 (`assertAgentAccessible`, public 은 전원, private 은 소유자) | 소유자 (`assertAgentOwner`) |
+| Agent trace | 소유자 | — |
+| Agent Slack 설정 | 소유자 | 소유자 |
 | 개인 Agent API token | 발급 사용자 본인과 현재 Agent 접근 | 발급 사용자 본인; 생성·reveal은 현재 token 사용 tier도 검사 |
-| trigger | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
+| trigger | 소유자 | 소유자 |
 | 개인 MCP 연결 | member 이상인 본인과 현재 Agent 접근 | 동일 사용자만 연결·해제; binding 초안 헤더 검사는 Agent 소유자 |
-| 호출자별 usage (`usage/actors`) | 소유자 또는 설정된 admin | — |
+| 호출자별 usage (`usage/actors`) | 소유자 | — |
 | Agent usage 합계 | 로그인한 모든 사용자 | — |
 | Skill / MCP 서버 / plugin | guest를 포함한 로그인 사용자 (`withAuth`) | admin (`withAdminAuth`) |
 | 앱 설정 | admin | admin |
@@ -134,7 +134,7 @@ visibility 이전처럼 열려 있다: 이름과 지출 집계는 카탈로그 �
 | Chat | 소유자만 (소유자가 아니면 404) | 소유자만 |
 | Workspace | 소유자와 현재 Agent 접근 검사 | 소유자; 실행·Git 승인은 활성화·정책·승인 상태도 검사 |
 | 오디오 job·비공개 source 파일 | 작업/파일 소유자와 Agent 접근 검사 | 소유자 범위와 job/file 상태에 따른 조작 |
-| 일반 Artifact | 생성·첨부 소유자 또는 Agent 소유자/admin | member 이상이며 같은 소유권 범위에서 삭제. 비공개 source 파일은 위 전용 경계 |
+| 일반 Artifact | 생성·첨부 소유자 또는 Agent 소유자 | member 이상이며 같은 소유권 범위에서 삭제. 비공개 source 파일은 위 전용 경계 |
 
 trace 와 Slack 설정은 *읽기* 도 게이트되는데, 다른 사용자의 런타임 입출력과 마스킹된 자격
 증명의 가장자리를 노출하기 때문이다. agent *합계* 는 카탈로그가 공유되므로 열어 둔다.
@@ -148,38 +148,24 @@ Agent 실행·Chat 전송·승인 재개·Workspace 새 작업은 member 이상�
 
 ### `isAdminEmail` vs `isConfiguredAdmin`
 
-둘 다 `src/lib/runtime-settings.ts` 안에 있는 서로 다른 admin 질문이고, 뒤바꿔 쓰면 안 된다:
+설치 공용 자원의 관리자 권한과 Agent 소유권은 별개다.
+`isAdminEmail`은 공용 레지스트리·설정의 관리자 목록을 확인하며, 목록이 비면 member 이상에게
+초기 관리 권한을 허용한다. `isEffectiveAdmin`은 이 규칙과 저장된 admin tier를 합친다.
+`isConfiguredAdmin`은 `ADMIN_EMAILS`에 명시된 계정을 찾아 admin 승격과 tier 잠금에 사용한다.
+어느 관리자 판정도 다른 사람의 Agent 관리 권한을 부여하지 않는다.
 
-| 술어 | 질문 | `ADMIN_EMAILS` 가 비었다는 것의 뜻 |
-|---|---|---|
-| `isAdminEmail` | 공유 레지스트리와 앱 설정을 변경해도 되는가? | **제한 없음**. 로그인한 모든 사용자 |
-| `isConfiguredAdmin` | 남이 소유한 agent 를 써도 되는가? | **아무도 안 된다** |
+`GET /api/me`는 `email`, `tier`, 공용 자원 관리용 `isAdmin`을 반환한다. Agent 편집 여부는
+`isAgentOwner`와 `tierMayEdit`로 판단한다. 서버의 `assertAgentOwner`가 같은 소유권을 검사한다.
 
-첫 번째를 agent 소유권에 쓰면 `ADMIN_EMAILS` 를 한 번도 설정하지 않은 배포에서 로그인한 모든
-사용자에게 모든 agent 의 쓰기 권한을 넘기게 된다. 두 플래그는 `GET /api/me` 가 브라우저로
-함께 보낸다. `isAdmin` 과 `isConfiguredAdmin` 으로. "이 agent 를 편집해도 되는가"에 대한
-콘솔의 게이트가 `assertAgentWritable` 을 정확히 반영해야 하기 때문이다. 거기서 `isAdmin` 을
-읽었더니 모든 사용자에게 모든 agent 의 편집 폼이 열렸고, 저장은 전부 403 이 났다.
+`ADMIN_EMAILS`에 지정된 주소는 로그인 또는 멤버/프로필 조회 때 admin tier로 승격되고,
+목록에 있는 동안 tier가 잠긴다. 목록에서 제거해도 자동 강등하지 않으며 관리자가 등급을 변경한다.
+tier는 Better Auth user 행의 서버 전용 필드다. 실행은 사용자 ID로 현재 계정·등급·Agent 접근을
+확인한다. 이메일 기반 tier 조회의 캐시는 30초이며 변경을 처리한 인스턴스에서 무효화된다.
 
-**멤버 tier와 admin 목록은 `memberAccess.ts`에서 합성한다.** 저장된 `tier` 가
-`admin` 인 멤버는 *두* 술어가 부여하는 것을 모두 얻는다. 그 합성은 오직
-`src/lib/memberAccess.ts` 의 것이고(`isEffectiveAdmin` / `isEffectiveConfiguredAdmin`), 위 두
-목록 술어 자체의 빈 목록 의미는 유지하지만 `isEffectiveAdmin`은 member 이상에게만
-빈 목록의 관리 권한을 부여한다. guest는 빈 목록에서도 읽기 전용이다. `ADMIN_EMAILS` 에 설정된
-주소는 로그인 시 또는 다음 멤버/프로필 읽기 때 저장된 `admin` tier 로 승격되고, 그 주소가
-설정에 남아 있는 동안 tier 는 잠긴다. 목록에서 빼도 결코 강등되지 않는다. 다른 운영자가
-명시적으로 더 낮은 tier 를 골라야 한다. tier 는 Better Auth 의 user 행에 있고(`input: false`
-라 어떤 auth API 로도 사용자가 자기 것을 설정할 수 없다), 내부 어댑터 또는
-`memberRepository.setTier` 의 단일 속성 조건부 업데이트로만 쓰이며, 세션에 실려 라우트
-핸들러에 도달한다. 실행과 개인 한도는 사용자 ID로 현재 계정을 다시 조회한다. Agent 관리용
-email → tier 캐시는 30초이며 변경을 처리한 인스턴스에서 무효화된다. 각 tier 가 동시에 몇 개를 진행할 수 있는지, UTC
-월 기준으로 얼마를 쓸 수 있는지는 Settings → Access의 `memberTiers`와
-`src/domain/member/tiers.ts`의 `memberTierLimits`가 결정한다. admin·guest는 고정 등급이고
-나머지 등록 등급은 member 권한이다. admin의 월 한도는 항상 무제한이다. guest는 비용 한도와 무관하게 실행할 수 없다.
-등급별 월 금액은 관리자 설정이며 0이면 새 실행을 거절한다. 미등록 저장 등급은 guest로 해석한다. 게이트는 tier 이름 비교가 아니라 그 파일의
-`tierMay*` 술어를 거친다. agent 생성도 별도의 effective-admin 우회 없이 그 tier capability 를
-따른다. 등급 삭제와 사용자 배정은 공통 transaction lock을 사용하며, 사용자가 남은 등급은
-삭제할 수 없다. 월 한도 변경은 설정 캐시 TTL(기본 5초)에 따라 다른 인스턴스로 전파된다.
+월 비용 한도는 Settings → Access의 `memberTiers`와 `memberTierLimits`가 정한다.
+admin은 무제한이며 guest는 한도와 무관하게 실행하지 못한다. 나머지 등록 등급은 member 권한을
+갖는다. 미등록 등급은 guest로 해석한다. 등급 삭제와 사용자 배정은 공동 transaction lock을
+사용하며 사용자가 남은 등급은 삭제할 수 없다. 월 한도는 설정 캐시 TTL에 따라 전파된다.
 
 월 상한은 Chat·Workspace를 포함한 멤버 자신의 일별 행을 UTC 월 1일부터 합산한다.
 실행 전에 이미 한도에 도달하면 새 실행을 거절한다. 등급·사용량 조회 실패도 실행을 중단한다.
@@ -191,22 +177,10 @@ email → tier 캐시는 30초이며 변경을 처리한 인스턴스에서 무�
 확인된 사용자의 호출 권한 거절은 403, 잘못된 credential이나 삭제된 발급 계정은 401이다.
 권한 저장소 장애는 인증을 허용하지 않는다.
 
-admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘기는 대신 `assertAgentWritable`
-*안에서* 확인된다. 규칙은 "소유자 또는 admin"이고, 한 호출자가 넘기는 것을 잊은 플래그는 그
-경로에서만 조용히 소유자 전용으로 규칙을 좁힐 것이다. 함수 이름은 소유자가 아니라 그 규칙을
-따라 붙었다. 진짜로 **소유권** 이 필요한 것(attribution, 누구의 자격 증명으로 디스패치할지,
-누구에게 알릴지)은 `agent.ownerEmail` 을 읽는다.
-
-오버라이드의 두 가지 귀결은 없는 셈 치지 않고 처리한다:
-
-- **기록된다**. `agent.admin-override` 감사 행과
-  `[authz] admin … is acting on agent …` 라인. Agent 삭제는 수행자를 알려 줬을 행을
-  파괴할 수 있고, 개인 API token의 reveal은 발급 사용자 본인만 가능하고 `secret.reveal` 행을 남긴다.
-- 그것이 필요로 하는 설정 읽기는 **fail-closed** 다. 설정 저장소 장애는 소유자가 아닌 사람의
-  결정적인 403 을 500 으로 바꾸는 대신 오버라이드를 거부한다.
-
-Trace·호출자별 Usage·Agent Artifact 목록과 마스킹된 연동 설정·실행 이력은 같은
-소유자/admin 판정으로 읽지만, 읽기만으로 `agent.admin-override` 쓰기 감사 행을 남기지 않는다.
+Agent 설정·연동·Workspace 정책의 변경과 Agent 관리 자료·Trace·호출자별 Usage 조회는
+`assertAgentOwner`로 소유자를 확인한다. public은 공유 실행 범위이며 편집 권한을 부여하지 않는다.
+일반 Artifact는 생성자 또는 해당 Agent 소유자가 관리하며, 비공개 source 파일은 파일 소유자만
+접근한다. 조회는 변경 감사 행을 생성하지 않는다.
 
 ## 저장된 시크릿
 
@@ -694,7 +668,7 @@ Agent 소유자·다른 사용자·registry의 정적 인증으로 대신 호출
 ## Workspace와 코딩 작업
 
 Workspace는 chat 소유자에게만 공개되며 실행·승인은 현재 Agent 접근도 다시 확인한다.
-Workspace 설정 쓰기는 Agent 소유자·관리자에게 한정하고 revision 조건과 Agent 수명 경계로 보호한다.
+Workspace 설정 쓰기는 Agent 소유자에게 한정하고 revision 조건과 Agent 수명 경계로 보호한다.
 Agent의 도구 활성화는 해당 Agent에 명시적으로 연결한 GitHub MCP 계정을 정책 범위 내 사용하는 것을 허용한다.
 Runtime 모델 선택은 관리자에게 한정하며 도구를 끄면 새 실행·Git 승인을 거절한다.
 등록 저장소·정확한 소유자 허용은 DB에서 현재 값을 읽으며 일반 Agent가 수정하지 않는다.
@@ -918,7 +892,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   (email, 전화번호, 한국 등록번호, 카드 번호, 이름은 아니다).
 - **Chat은 원본과 추출문을 분리해 보관한다.** 턴당 최대 40,000자의 추출문과 파일 참조는
   소유자 전용 chat 행에 남고, 원본은 `source: attachment`인 artifact로 저장한다. 원본은
-  기존 artifact와 같은 소유자·agent owner·admin 읽기 정책, artifact 보존 기간과 오브젝트
+  기존 artifact와 같은 생성자·Agent 소유자 읽기 정책, artifact 보존 기간과 오브젝트
   접근 모드를 따른다. 원본은 chat 삭제만으로 삭제되지 않으며 artifact 삭제·보존 정책이 소유한다.
 
 ## 데이터 노출과 보존
@@ -1023,7 +997,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   - 행은 갤러리를 읽을 수 있게 하려고 **프롬프트의 500자 발췌** 를 보관한다. 그것은
     `ARTIFACT_RETENTION_DAYS` 동안 사는 사용자 텍스트이며, 그것을 실어 온 chat 메시지보다 오래
     남는다. PII 필터링은 *모델* 이 보는 것을 한정할 뿐, 저장되는 것을 한정하지 않는다.
-  - agent 의 artifact 탭은 그 agent 의 소유자와 admin 이 읽을 수 있다. trace 가 쓰는 것과
+  - agent 의 artifact 탭은 그 Agent의 소유자가 읽을 수 있다. trace 가 쓰는 것과
     같은 규칙이고, 이유도 같다(다른 사람의 런타임 출력을 담고 있다). 실제로는 trace 보다 더 넓은
     노출이다. Agent trace는 항상 기록하고 기본 30일을 보관하지만, artifact 는 모든 오브젝트이고 180일을
     보관한다.

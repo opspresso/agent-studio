@@ -1,40 +1,11 @@
 import type { AgentRepository } from "@/domain/agent/repository";
 import type { AgentConfiguration, CostLimits, Agent, AgentVisibility } from "@/domain/agent/types";
-import { mayAccessAgent } from "@/domain/agent/access";
+import { isAgentOwner, mayAccessAgent } from "@/domain/agent/access";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import { persistAgentUpdate } from "./agentUpdate";
 import { log } from "@/shared/logger";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
-
-/** The admin-list reader the write override consults. See {@link setAdminCheck}. */
-type AdminCheck = (userEmail: string) => Promise<boolean>;
-
-/**
- * Deny until wired: a composition that forgot the check keeps plain owner-only
- * writes — the same posture as a deployment with no admin list — rather than
- * opening every agent or crashing.
- */
-const ADMIN_CHECK = Symbol.for("opspresso.agent-studio.agent-admin-check");
-const denyAdmin: AdminCheck = async () => false;
-type AgentProcessGlobal = typeof globalThis & { [ADMIN_CHECK]?: AdminCheck };
-
-function adminCheck(): AdminCheck {
-  return (globalThis as AgentProcessGlobal)[ADMIN_CHECK] ?? denyAdmin;
-}
-
-/**
- * Wire the admin-list reader the override consults. Called once by the
- * composition root. Pushed in rather than imported, because the reader lives in
- * `lib/runtime-settings` on top of the settings store — a static import here
- * would pull the database client into the application layer through the side
- * door. And pushed once rather than threaded through call sites, because a
- * caller that forgot the argument would silently narrow the rule back to
- * owner-only for its path alone.
- */
-export function setAdminCheck(check: AdminCheck): void {
-  (globalThis as AgentProcessGlobal)[ADMIN_CHECK] = check;
-}
 
 export interface CreateAgentInput {
   name: string;
@@ -92,95 +63,17 @@ export async function getAgent(repo: AgentRepository, name: string): Promise<Age
   return agent;
 }
 
-/**
- * Load an agent and assert `userEmail` may write it. Agents are a shared
- * catalog — anyone the visibility admits may read and run them
- * ({@link assertAgentAccessible}); writing is for the owner and for admins,
- * on either visibility.
- *
- * Named for what it checks, not for the owner alone: it is bound at twenty-odd
- * call sites, and while it asserted ownership the name was the documentation.
- * Anything that ever needs *ownership* specifically — attributing a quota,
- * choosing whose credentials to dispatch with, deciding whom to notify — must
- * read `agent.ownerEmail` and not reach for this.
- *
- * The admin case is checked here rather than threaded through those call sites
- * as a flag: the rule is "owner or admin", and a flag any one caller forgot to
- * pass would silently narrow it back to owner-only for that path alone.
- * The wired check ({@link setAdminCheck}) reads the effective admin list, so
- * demoting an admin on the settings page takes effect without a redeploy — and
- * it is the *configured* check, so a deployment with no admin list keeps plain
- * owner-only writes rather than opening every agent to everyone.
- */
-export async function assertAgentWritable(
-  repo: AgentRepository,
-  name: string,
-  userEmail: string,
-): Promise<Agent> {
-  const { agent, override } = await ownerOrAdminAccess(repo, name, userEmail);
-  if (override) {
-    await recordAdminOverride(agent, userEmail);
-  }
-  return agent;
-}
-
-/** The owner cannot see an override from the agent data, so preserve it outside that row. */
-async function recordAdminOverride(agent: Agent, userEmail: string): Promise<void> {
-  await recordAudit({
-    actorEmail: userEmail,
-    action: "agent.admin-override",
-    target: auditTarget("agent", agent.name),
-    detail: `owned by ${agent.ownerEmail}`,
-  });
-}
-
-/**
- * The same rule as {@link assertAgentWritable}, asked by a **read**.
- *
- * Not a second rule and not a wider one — owner or admin, exactly as above. The
- * only difference is that nothing is recorded, and that is the point: reaching
- * into someone else's agent to *change* it is an act worth an audit row,
- * while opening masked integration settings or runtime output is not. An admin
- * clicking through a gallery would otherwise write a row per click, each
- * claiming a write override that never happened, burying the trail the table
- * exists for. It is the position {@link assertAgentAccessible} already takes
- * for its own reads: logged, never audited.
- *
- * `assertAgentAccessible` is *not* the substitute — it admits everyone a
- * public agent admits, and owner-scoped settings and outputs are not public
- * because the agent is. Which is why this exists at all.
- */
-export async function assertAgentOwnerOrAdminReadable(
-  repo: AgentRepository,
-  name: string,
-  userEmail: string,
-): Promise<Agent> {
-  return (await ownerOrAdminAccess(repo, name, userEmail, undefined, "read")).agent;
-}
-
-/** Owner or admin, or the refusal. Says which, so only one caller records it. */
-async function ownerOrAdminAccess(
-  repo: AgentRepository,
+/** Shared Agent use does not grant management access, including to administrators. */
+export async function assertAgentOwner(
+  repo: Pick<AgentRepository, "get">,
   name: string,
   userEmail: string,
   options?: { includeDeleting?: boolean },
-  operation: "read" | "write" = "write",
-): Promise<{ agent: Agent; override: boolean }> {
+): Promise<Agent> {
   const agent = await repo.get(name, options);
-  if (!agent) {
-    throw new NotFoundError(`Agent "${name}" not found`);
-  }
-  if (agent.ownerEmail === userEmail) {
-    return { agent, override: false };
-  }
-  if (await isAdminOverride(userEmail)) {
-    log.warn(
-      "authz",
-      `admin ${userEmail} is ${operation === "read" ? "reading" : "acting on"} agent "${name}" owned by ${agent.ownerEmail}`,
-    );
-    return { agent, override: true };
-  }
-  throw new ForbiddenError(`You do not have permission to modify agent "${name}"`);
+  if (!agent) throw new NotFoundError(`Agent "${name}" not found`);
+  if (!isAgentOwner(agent, userEmail)) throw new ForbiddenError(`Only the owner can manage agent "${name}"`);
+  return agent;
 }
 
 /** Visibility applies to every caller, including administrators and automation. */
@@ -194,25 +87,6 @@ export async function assertAgentAccessible(
     return agent;
   }
   throw new ForbiddenError(`Agent "${name}" is private`);
-}
-
-/**
- * The admin override, resolved so that losing the settings store denies rather
- * than throws.
- *
- * Only a non-owner reaches this, and for a non-owner on a deployment with no
- * admin list the answer is "no" without any I/O at all. Letting a settings read
- * failure escape would turn the deterministic 403 that path has always returned
- * into a 500, so an outage would change *which* error an unauthorized caller
- * sees. Failing closed keeps the denial.
- */
-async function isAdminOverride(userEmail: string): Promise<boolean> {
-  try {
-    return await adminCheck()(userEmail);
-  } catch (error) {
-    log.error("authz", "admin list unavailable; denying the override", error);
-    return false;
-  }
 }
 
 export async function createAgent(
@@ -254,7 +128,7 @@ export async function updateAgent(
   input: UpdateAgentInput,
   userEmail: string,
 ): Promise<Agent> {
-  const existing = await assertAgentWritable(repo, name, userEmail);
+  const existing = await assertAgentOwner(repo, name, userEmail);
   const updated: Agent = {
     ...existing,
     displayName: input.displayName ?? existing.displayName,
@@ -289,12 +163,7 @@ export async function deleteAgent(
   userEmail: string,
   beforeDelete?: BeforeAgentDelete,
 ): Promise<void> {
-  const { agent, override } = await ownerOrAdminAccess(repo, name, userEmail, {
-    includeDeleting: true,
-  });
-  if (override) {
-    await recordAdminOverride(agent, userEmail);
-  }
+  const agent = await assertAgentOwner(repo, name, userEmail, { includeDeleting: true });
   // Before the row goes, while what it holds can still be acted on — and best
   // effort by contract: nothing the hook does may make an agent undeletable.
   // The hook already catches its own network failure; this catches the rest
@@ -335,10 +204,8 @@ export interface AgentUseCases {
   /** See {@link listAccessibleAgents} — what this person's console may show. */
   listAccessible(userEmail: string): Promise<Agent[]>;
   get(name: string): Promise<Agent>;
-  /** See {@link assertAgentAccessible} — visibility, membership, admin override. */
+  /** See {@link assertAgentAccessible} — public visibility or private ownership. */
   assertAccessible(name: string, userEmail: string): Promise<Agent>;
-  /** See {@link assertAgentWritable} — owner or admin, and the override is recorded. */
-  assertWritable(name: string, userEmail: string): Promise<Agent>;
   create(input: CreateAgentInput): Promise<Agent>;
   update(name: string, input: UpdateAgentInput, userEmail: string): Promise<Agent>;
   remove(name: string, userEmail: string): Promise<void>;
@@ -353,7 +220,6 @@ export function createAgentUseCases(
     listAccessible: (userEmail) => listAccessibleAgents(agents, userEmail),
     get: (name) => getAgent(agents, name),
     assertAccessible: (name, userEmail) => assertAgentAccessible(agents, name, userEmail),
-    assertWritable: (name, userEmail) => assertAgentWritable(agents, name, userEmail),
     create: (input) => createAgent(agents, input),
     update: (name, input, userEmail) => updateAgent(agents, name, input, userEmail),
     remove: (name, userEmail) => deleteAgent(agents, name, userEmail, hooks.beforeDelete),

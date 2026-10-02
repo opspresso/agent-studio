@@ -10,7 +10,7 @@ import PluginSyncSettingsPage from "../../src/app/settings/plugins/sync/page";
 
 createRoot(document.getElementById("root")!).render(<MantineProvider theme={theme}>
   <I18nProvider locale={location.pathname === "/ko" ? "ko" : "en"}>
-    <ViewerProvider viewer={{ email: "admin@example.test", isAdmin: true, isConfiguredAdmin: true, tier: "admin" }}>
+    <ViewerProvider viewer={{ email: "admin@example.test", isAdmin: true, tier: "admin" }}>
       <div style={{ padding: 24 }}>{location.pathname.startsWith("/settings/")
         ? <SettingsShell>{location.pathname.endsWith("/sync") ? <PluginSyncSettingsPage /> : <CapabilityVisibilitySettings />}</SettingsShell> : <CapabilityVisibilitySettings />}</div>
     </ViewerProvider>

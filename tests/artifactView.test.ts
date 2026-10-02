@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { setAuditSink } from "@/application/audit/recordAudit";
-import { setAdminCheck } from "@/application/agent/agentUseCases";
 import {
   baseMimeType,
   inlineViewOf,
@@ -92,14 +91,12 @@ beforeEach(() => {
   ids.sequence = 0;
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime("2026-08-22T12:00:00.000Z");
-  setAdminCheck(async (email) => email === ADMIN);
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
 afterEach(() => {
   vi.useRealTimers();
   setAuditSink(undefined);
-  setAdminCheck(async () => false);
 });
 
 describe("what may be viewed rather than downloaded", () => {
@@ -155,29 +152,20 @@ describe("reading an artifact for a view", () => {
     await expect(setup(viaSlack).useCases.remove("a1", OWNER)).resolves.toBeUndefined();
   });
 
-  it("does not record an admin override for a read", async () => {
-    // `assertAgentWritable` writes a `agent.admin-override` row every time
-    // it admits an admin — the right record for a delete, and the wrong one for
-    // a GET behind a link. Ten clicks through a gallery would be ten rows
-    // claiming a write that never happened.
+  it("records only deletion when the Agent owner manages another caller's output", async () => {
     const recorded: string[] = [];
-    setAuditSink({
-      append: async (row) => {
-        recorded.push(row.action);
-      },
-      listByDay: async () => [],
-    });
-    await setup(artifact()).useCases.readForView("a1", ADMIN);
+    setAuditSink({ append: async row => { recorded.push(row.action); }, listByDay: async () => [] });
+    const output = artifact({ actor: { kind: "user", id: OTHER } });
+    await setup(output).useCases.readForView("a1", OWNER);
     expect(recorded).toEqual([]);
-
-    await setup(artifact()).useCases.remove("a1", ADMIN);
-    expect(recorded).toContain("agent.admin-override");
+    await setup(output).useCases.remove("a1", OWNER);
+    expect(recorded).toEqual(["artifact.delete"]);
   });
 
-  it("admits an admin reaching into the agent, and refuses everyone else", async () => {
+  it("refuses non-owners including administrators", async () => {
     // The same predicate as a delete, deliberately: a gallery that lists a row
     // whose open button answers 403 is the shape two rules produce.
-    await expect(setup(artifact()).useCases.readForView("a1", ADMIN)).resolves.toBeTruthy();
+    await expect(setup(artifact()).useCases.readForView("a1", ADMIN)).rejects.toThrow();
     await expect(setup(artifact()).useCases.readForView("a1", OTHER)).rejects.toThrow();
   });
 

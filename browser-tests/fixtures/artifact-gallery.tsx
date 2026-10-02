@@ -16,7 +16,7 @@ const guest = new URLSearchParams(location.search).get("role") === "guest";
 createRoot(document.getElementById("root")!).render(
   <MantineProvider theme={theme}>
     <I18nProvider locale="en">
-      <ViewerProvider viewer={{ email: "viewer@example.test", tier: guest ? "guest" : "admin", isAdmin: !guest, isConfiguredAdmin: !guest }}>
+      <ViewerProvider viewer={{ email: "viewer@example.test", tier: guest ? "guest" : "admin", isAdmin: !guest }}>
         <ImageViewerProvider>
           <div style={{ padding: 24 }}>
             {location.pathname === "/agent"

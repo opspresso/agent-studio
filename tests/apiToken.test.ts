@@ -1,7 +1,6 @@
 import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentCredentialUseCases } from "@/application/auth/agentCredentialUseCases";
-import { setAdminCheck } from "@/application/agent/agentUseCases";
 import { agentCredentialRepository } from "@/infrastructure/db/repositories/agentCredentialRepository";
 import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
@@ -26,12 +25,11 @@ const member = (id: string, email: string): Member => ({ id, email, name: id, im
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(now); sequence = 0; entropy.sequence = 0; store.rows.clear(); members.clear();
   vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
-  setAdminCheck(async email => email === "admin@example.test");
   members.set("first", member("first", "first@example.test")); members.set("second", member("second", "second@example.test"));
   members.set("admin", { ...member("admin", "admin@example.test"), tier: "admin" });
   for (const name of ["bot", "other"]) await agentRepository.create({ name, displayName: name, description: "", ownerEmail: "first@example.test", createdAt: now.toISOString(), updatedAt: now.toISOString() });
 });
-afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); setAdminCheck(async () => false); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 async function privateAgent() {
   const agent = (await agentRepository.get("bot"))!;

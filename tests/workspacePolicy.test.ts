@@ -14,7 +14,7 @@ const now = new Date("2026-09-15T00:00:00Z");
 const owner = "owner@example.test";
 const configuration: AgentConfiguration = { agentName: "demo", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false, workspaceTools: true }, mcpList: [], skillList: [], subagentList: [] };
 const api = createWorkspaceRepositoryPolicyUseCases({ agents, repository,
-  backendReady: () => true, runtimes: async () => ["command", "codex"], isAdmin: async () => false, now: () => now });
+  backendReady: () => true, runtimes: async () => ["command", "codex"], now: () => now });
 const getWorkspaceAgentPolicy = api.getPolicy;
 
 beforeEach(() => {

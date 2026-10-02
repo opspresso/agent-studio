@@ -22,7 +22,7 @@ vi.mock("@/app/chats/_components/parts", () => ({
 
 function render(children: React.ReactNode, tier = "member") {
   return renderToStaticMarkup(createElement(MantineProvider, {
-    children: createElement(ViewerProvider, { viewer: { email: "user@example.test", tier, isAdmin: false, isConfiguredAdmin: false }, children }),
+    children: createElement(ViewerProvider, { viewer: { email: "user@example.test", tier, isAdmin: false }, children }),
   }));
 }
 

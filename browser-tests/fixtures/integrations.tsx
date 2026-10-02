@@ -20,7 +20,7 @@ function BindingFixture() {
 
 createRoot(document.getElementById("root")!).render(
   <MantineProvider theme={theme}><I18nProvider locale="en"><ViewerProvider viewer={{
-    email: member ? "member@example.test" : "admin@example.test", tier: member ? "member" : "admin", isAdmin: !member, isConfiguredAdmin: !member,
+    email: member ? "member@example.test" : "admin@example.test", tier: member ? "member" : "admin", isAdmin: !member,
   }}><style>{":root { --font-sans: system-ui; --font-mono: monospace; }"}</style>
   <div style={{ padding: 24 }}>{new URLSearchParams(window.location.search).has("binding") ? <BindingFixture /> : <AgentLayout><IntegrationsPage /></AgentLayout>}</div></ViewerProvider></I18nProvider></MantineProvider>,
 );
