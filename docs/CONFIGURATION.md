@@ -221,7 +221,7 @@ Settings → Models → 사용 설정의 **가격 정보가 없는 모델**에�
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
 | `MAX_RUN_DURATION_MS` | `600000` (10분) | — | 모든 진입점에 걸리는, 단일 런의 실제 경과 시간 상한. 멈춰 버린 provider 나 도구 호출이 무한정 돌거나 무한정 청구할 수 없다. 유효하지 않은 값은 경고와 함께 무시된다. Slack·Telegram·Teams 경로는 공용 메시징 파이프라인에서 추가로 고정된 3분 인터랙티브 데드라인(아래)을 적용하는데, 그것은 런을 짧게 만들 수만 있다. 런 슬롯 lease 는 이 값 + 60초, MCP OAuth 토큰 갱신 여유는 이 값 + 5분이다. 서명 URL 수명은 런 길이와 독립적으로 뷰 15분·지속되는 기록 7일이며 `src/shared/artifactUrlTtl.ts` 가 소유한다. |
-| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | **runtime** | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 자기 `maxConcurrentRuns` 를 가진 멤버 tier(*코드에 고정된 제한* 참고)는 그 멤버 자신의 런에 대해 이 값을 덮어쓴다. 기본 `guest` tier 가 그런 값을 하나 들고 있다. tier가 별도 동시성 상한을 지정하지 않으면 이 값을 사용한다. 모든 호출 출처는 같은 Studio 사용자 ID의 슬롯을 공유한다. |
+| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | **runtime** | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 실행 가능한 모든 멤버 등급에 적용한다. 모든 호출 출처는 같은 Studio 사용자 ID의 슬롯을 공유한다. |
 | `SCHEDULE_SCAN_TOKEN` | 미설정 | — | 모든 ticker 가 제시하는 단 하나의 자격증명(`X-Scan-Token`)이며, CronJob 이 POST 하는 세 엔드포인트가 공유한다: `/api/triggers/scan`(schedule), `/api/plugins/sync/scan`(plugins 저장소), `/api/catalog/reindex`(capability 카탈로그). 설정하지 않으면 이 배포에 ticker 가 없다는 뜻이다: 셋 다 503 으로 답하고 schedule 트리거는 결코 발화하지 않는다. 열리는 대신 꺼진다. |
 
 유효하지 않은 값(정수가 아니거나 음수, 또는 위 동시성 상한 초과)은 `0` 이 아니라 경고와 함께 기본값으로 떨어진다.
@@ -427,13 +427,14 @@ scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep
 
 Settings → Access에서 등급 추가·삭제와 사용자별 UTC 월 USD 한도를 설정한다. 저장 위치는
 Settings의 `memberTiers`이며 환경변수는 없다. Chat과 Workspace 비용은 같은 개인 한도에 합산한다.
-처음에는 admin(무제한), member($20), guest($2)가 있다. admin·guest는 삭제할 수 없고
-admin의 무제한 정책은 수정할 수 없다. guest와 사용자 정의 등급은 0 이상의 금액을 지정하며,
+처음에는 admin(무제한), member($20), guest(조회 전용)가 있다. admin·guest는 삭제할 수 없고
+admin의 무제한 정책과 guest의 실행 불가 정책은 수정할 수 없다. guest의 유효 한도는 0이다.
+member와 사용자 정의 등급은 0 이상의 금액을 지정하며,
 0은 새 실행을 차단한다. 사용자 정의 등급은 member 권한이다. 사용자가 없는 등급만 삭제할 수 있다.
 admin은 맨 위, guest는 맨 아래에 고정하며 나머지 등급은 핸들을 끌어다 놓아 순서를 변경하고 저장한다. 키보드는 핸들에서 방향키를 사용한다.
 새 등급은 guest 바로 위에 추가된다. 저장한 순서는 Members의 선택 목록에도 적용되며 권한과는 무관하다.
-Members의 선택 목록과 Profile 한도도 같은 설정을 읽는다. guest 동시 실행 1개 제한은 고정이고,
-다른 등급은 `MAX_CONCURRENT_RUNS_PER_ACTOR`를 따른다. 월 한도는 완료 후 집계된 지출을 기준으로
+Members의 선택 목록과 Profile은 같은 유효 등급 설정을 읽는다. guest의 저장된 금액이 있더라도
+실행 예산으로 사용하지 않으며 다른 등급의 설정은 보존한다. 실행 동시성은 `MAX_CONCURRENT_RUNS_PER_ACTOR`를 따른다. 월 한도는 완료 후 집계된 지출을 기준으로
 다음 실행 전에 검사하므로 진행 중인 작업이 잔액을 초과할 수 있다.
 
 ## 코드에 고정된 제한
@@ -444,7 +445,7 @@ Members의 선택 목록과 Profile 한도도 같은 설정을 읽는다. guest 
 | 제한 | 값 | 소유자 |
 |---|---|---|
 | agent 런당 턴 수 (Agent 설정 `maxTurn` 기본값) | `50` | `src/application/runtime/execute.ts` |
-| 멤버 등급 목록 상한 / guest 동시 실행 수. 월 금액은 Settings 정책에서 변경한다 | `50` / `1` | `src/domain/member/tiers.ts` |
+| 멤버 등급 목록 상한. 실행 가능한 등급의 월 금액은 Settings 정책에서 변경한다 | `50` | `src/domain/member/tiers.ts` |
 | SDK function tool 동시 실행 수 | `5` | `src/application/runtime/runner.ts` |
 | ModelTask 작업당 최대 시도 / 승격 전 같은 모델의 실패 수 | `4` / `2` | `src/application/llm/callModelRouter.ts` |
 | 턴당 도구 결과 텍스트 | `200,000` 자 | `src/application/llm/toolResultBudget.ts` |

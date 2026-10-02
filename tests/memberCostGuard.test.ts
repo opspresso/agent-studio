@@ -13,7 +13,7 @@ const now = new Date("2026-08-13T12:00:00Z");
 afterEach(() => vi.restoreAllMocks());
 const user: RunUser = { userId: "account-a", email: "a@x.com" };
 
-const guestCap = memberTierLimits("guest", DEFAULT_MEMBER_TIERS).monthlyCostCapUsd!;
+const memberCap = memberTierLimits("member", DEFAULT_MEMBER_TIERS).monthlyCostCapUsd!;
 
 const day = (date: string, cost: number, agentName = "p"): MemberUsageRow => ({
   userId: user.userId,
@@ -63,8 +63,8 @@ describe("memberMonthToDate", () => {
 
 describe("assertWithinMemberCostLimit", () => {
   it("refuses a member at their tier's cap, with the month's Retry-After", async () => {
-    const usage = usageWith([day("2026-08-02", guestCap - 1), day("2026-08-13", 1)]);
-    const thrown = await assertWithinMemberCostLimit({ usage }, user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now).then(
+    const usage = usageWith([day("2026-08-02", memberCap - 1), day("2026-08-13", 1)]);
+    const thrown = await assertWithinMemberCostLimit({ usage }, user, memberTierLimits("member", DEFAULT_MEMBER_TIERS), now).then(
       () => null,
       (error: unknown) => error as MemberCostLimitExceededError,
     );
@@ -75,14 +75,19 @@ describe("assertWithinMemberCostLimit", () => {
   });
 
   it("allows a member under their cap", async () => {
-    const usage = usageWith([day("2026-08-13", guestCap - 0.01)]);
-    await expect(assertWithinMemberCostLimit({ usage }, user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now)).resolves.toBeUndefined();
+    const usage = usageWith([day("2026-08-13", memberCap - 0.01)]);
+    await expect(assertWithinMemberCostLimit({ usage }, user, memberTierLimits("member", DEFAULT_MEMBER_TIERS), now)).resolves.toBeUndefined();
   });
 
   it("treats no rows as nothing spent", async () => {
     await expect(
-      assertWithinMemberCostLimit({ usage: usageWith([]) }, user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now),
+      assertWithinMemberCostLimit({ usage: usageWith([]) }, user, memberTierLimits("member", DEFAULT_MEMBER_TIERS), now),
     ).resolves.toBeUndefined();
+  });
+
+  it("keeps guest execution budget at zero even with no recorded spend", async () => {
+    await expect(assertWithinMemberCostLimit({ usage: usageWith([]) }, user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now))
+      .rejects.toMatchObject({ status: 429, limitUsd: 0 });
   });
 
   it("never reads for an uncapped tier", async () => {
@@ -92,17 +97,17 @@ describe("assertWithinMemberCostLimit", () => {
   });
 
   it("keeps the same personal budget when the account email changes", async () => {
-    const usage = usageWith([day("2026-08-13", guestCap * 10)]);
+    const usage = usageWith([day("2026-08-13", memberCap * 10)]);
     const read = vi.spyOn(usage, "listMemberDays");
     await expect(assertWithinMemberCostLimit({ usage }, { ...user, email: "renamed@example.test" },
-      memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now)).rejects.toBeInstanceOf(MemberCostLimitExceededError);
+      memberTierLimits("member", DEFAULT_MEMBER_TIERS), now)).rejects.toBeInstanceOf(MemberCostLimitExceededError);
     expect(read).toHaveBeenCalledWith(user.userId, "2026-08-01", "2026-08-13");
   });
 
   it("refuses missing account identity or personal policy", async () => {
-    const usage = usageWith([day("2026-08-13", guestCap * 10)]);
+    const usage = usageWith([day("2026-08-13", memberCap * 10)]);
     await expect(Reflect.apply(assertWithinMemberCostLimit, undefined, [{ usage }, undefined,
-      memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now])).rejects.toMatchObject({ status: 403 });
+      memberTierLimits("member", DEFAULT_MEMBER_TIERS), now])).rejects.toMatchObject({ status: 403 });
     await expect(Reflect.apply(assertWithinMemberCostLimit, undefined, [{ usage }, user, undefined, now]))
       .rejects.toMatchObject({ status: 403 });
   });
@@ -113,6 +118,6 @@ describe("assertWithinMemberCostLimit", () => {
     usage.listMemberDays = async () => {
       throw failure;
     };
-    await expect(assertWithinMemberCostLimit({ usage }, user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS), now)).rejects.toBe(failure);
+    await expect(assertWithinMemberCostLimit({ usage }, user, memberTierLimits("member", DEFAULT_MEMBER_TIERS), now)).rejects.toBe(failure);
   });
 });

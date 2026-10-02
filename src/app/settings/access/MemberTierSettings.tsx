@@ -102,7 +102,7 @@ export function MemberTierSettings() {
                     if (target) change(moveMemberTier(tiers, tier.id, target.id));
                   }}><IconGripVertical size={16} /></ActionIcon>}</Table.Td>
                 <Table.Td><Group gap="xs"><Text size="sm">{tier.id}</Text>{fixed && <Badge color="gray" size="xs">{t("settings.tiers.fixed")}</Badge>}</Group></Table.Td>
-                <Table.Td>{tier.id === "admin" ? <Text size="sm">{t("profile.uncapped")}</Text> :
+                <Table.Td>{tier.id === "admin" ? <Text size="sm">{t("profile.uncapped")}</Text> : tier.id === "guest" ? <Text size="sm">{t("settings.tiers.readOnly")}</Text> :
                   <NumberInput min={0} value={tier.monthlyCostCapUsd ?? ""} aria-label={t("settings.tiers.capFor", { tier: tier.id })}
                     onChange={value => change(tiers.map(entry => entry.id === tier.id ? { ...entry, monthlyCostCapUsd: value } : entry))} />}</Table.Td>
                 <Table.Td>{assigned}</Table.Td>

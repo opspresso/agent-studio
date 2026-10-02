@@ -46,6 +46,8 @@ describe("runtime member tier settings", () => {
       { id: "member", monthlyCostCapUsd: 20 },
     ]);
     expect((await getMemberTierDefinitions()).map(tier => tier.id)).toEqual(["admin", "premium", "member", "guest"]);
+    expect(await getMemberTierLimits("guest")).toEqual({ monthlyCostCapUsd: 0 });
+    expect(await getMemberTierLimits("premium")).toEqual({ monthlyCostCapUsd: 10 });
   });
   it("uses custom tiers for sessions and member APIs and demotes unknown stored IDs to guest", async () => {
     expect((await getSessionUser())?.tier).toBe("premium");

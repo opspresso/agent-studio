@@ -32,7 +32,7 @@ const gateway = createWorkspaceModelGateway({
     baseUrl: "http://127.0.0.1:19091/v1", model: wireModels[model.split("/")[1] as WorkspaceModelRuntime] })),
   selection: async (runtime: WorkspaceModelRuntime) => ({ model: `fixture/${runtime}`, wireModel: wireModels[runtime], protocol: protocols[runtime] }),
   authorize: async (_agent: string, identity: RunIdentity) => { if (identity.user.userId !== "fixture-user") throw new Error("Wrong caller"); },
-  limits: async () => ({ maxConcurrentRuns: 1 }), pricingPolicy: async () => "refuse",
+  limits: async () => ({}), pricingPolicy: async () => "refuse",
   usage: { record: async (delta: UsageDelta) => {
     const previous = usage.get(delta.idempotencyKey!);
     if (previous && JSON.stringify(previous) !== JSON.stringify(delta)) throw new Error("Changed accounting receipt");

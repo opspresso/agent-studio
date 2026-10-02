@@ -5,6 +5,7 @@ import {
   memberTierLimits,
   moveMemberTier,
   orderMemberTiers,
+  effectiveMemberTiers,
   tierMayEdit,
   isMemberTierDefinitions,
   storedMemberTier,
@@ -57,6 +58,12 @@ describe("member tier order", () => {
 
 describe("member tier catalog", () => {
   const tiers = [...DEFAULT_MEMBER_TIERS, { id: "premium", monthlyCostCapUsd: 75 }];
+  it("projects guest as read-only without mutating stored custom budgets", () => {
+    const stored = [{ id: "guest", monthlyCostCapUsd: 99 }, { id: "premium", monthlyCostCapUsd: 75 }, { id: "admin", monthlyCostCapUsd: null }];
+    expect(effectiveMemberTiers(stored)).toEqual([{ id: "admin", monthlyCostCapUsd: null }, { id: "premium", monthlyCostCapUsd: 75 }, { id: "guest", monthlyCostCapUsd: 0 }]);
+    expect(stored[0]?.monthlyCostCapUsd).toBe(99);
+    expect(memberTierLimits("guest", stored)).toEqual({ monthlyCostCapUsd: 0 });
+  });
   it("resolves custom tiers and their configured caps, retaining member permissions", () => {
     expect(storedMemberTier("premium")).toBe("premium");
     expect(toMemberTier("premium", tiers)).toBe("premium");

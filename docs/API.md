@@ -514,8 +514,9 @@ tier `admin` 이 `ADMIN_EMAILS` 와 어떻게
 `GET /api/settings/member-tiers`는 `{revision, tiers: [{id, monthlyCostCapUsd}], assignedMembers}`를
 반환한다. `PUT`은 `{revision, tiers}`로 전체 목록을 저장한다. `revision`이 현재 값과 다르면 409다.
 `admin`·`guest`는 반드시 있어야 하며 이름 변경·삭제를 할 수 없다. admin의 한도는 `null`로 고정하고,
-그 외 등급은 0 이상의 유한한 USD 금액을 지정한다. 0은 새 실행 차단이며 guest의 금액도 수정할 수 있다.
-초기 목록은 admin(무제한), member($20), guest($2)다. 사용자 정의 등급은 member와 같은 권한이며,
+guest는 조회 전용이며 유효 한도는 0이다. guest의 양수 한도 변경은 400으로 거절한다.
+나머지 등급은 0 이상의 유한한 USD 금액을 지정하며 0은 새 실행을 차단한다.
+초기 목록은 admin(무제한), member($20), guest(조회 전용)다. 사용자 정의 등급은 member와 같은 권한이며,
 사용자가 없는 등급만 삭제할 수 있다. 기본 `member`도 같은 조건으로 삭제 가능하다.
 등급은 최대 50개다. ID는 영문 소문자로 시작하는 1–40자의 소문자·숫자·하이픈·밑줄이다.
 배열은 표시 순서이며 admin은 첫 번째, guest는 마지막으로 고정한다. 조회·저장 시 두 등급의 위치를

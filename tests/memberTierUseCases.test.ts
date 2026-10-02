@@ -42,9 +42,10 @@ describe("deployment member tiers", () => {
     const initial = await f.tiers.getView();
     expect(initial.revision).toBe(3);
     expect(initial.tiers.map(tier => tier.id)).toEqual(["admin", "premium", "member", "guest"]);
-    const submitted = [unordered[3]!, unordered[0]!, unordered[1]!, unordered[2]!];
+    expect(initial.tiers.find(tier => tier.id === "guest")?.monthlyCostCapUsd).toBe(0);
+    const submitted = [initial.tiers[2]!, initial.tiers[3]!, initial.tiers[1]!, initial.tiers[0]!];
     const saved = await f.tiers.update({ revision: 3, tiers: submitted }, "admin@example.test");
-    expect(saved.tiers).toEqual([unordered[2], unordered[3], unordered[1], unordered[0]]);
+    expect(saved.tiers).toEqual([unordered[2], unordered[3], unordered[1], { id: "guest", monthlyCostCapUsd: 0 }]);
     expect((await settingsRepository.get())?.memberTiers).toEqual({ revision: 4, tiers: saved.tiers });
     expect((await f.tiers.getView()).tiers).toEqual(saved.tiers);
   });
@@ -63,7 +64,7 @@ describe("deployment member tiers", () => {
   });
   it("rejects stale edits without losing another administrator's changes", async () => {
     const f = await fixture();
-    const tiers = DEFAULT_MEMBER_TIERS.map(tier => tier.id === "guest" ? { ...tier, monthlyCostCapUsd: 9 } : tier);
+    const tiers = DEFAULT_MEMBER_TIERS.map(tier => tier.id === "member" ? { ...tier, monthlyCostCapUsd: 9 } : tier);
     await f.tiers.update({ revision: 0, tiers }, "admin@example.test");
     await expect(f.tiers.update({ revision: 0, tiers: DEFAULT_MEMBER_TIERS }, "admin@example.test")).rejects.toMatchObject({ status: 409 });
     expect((await f.tiers.getView()).tiers).toEqual(tiers);
@@ -75,6 +76,13 @@ describe("deployment member tiers", () => {
     }
     await expect(f.tiers.update({ revision: 0, tiers: DEFAULT_MEMBER_TIERS.map(tier => tier.id === "admin" ? { ...tier, monthlyCostCapUsd: 10 } : tier) }, "admin@example.test")).rejects.toMatchObject({ status: 400 });
     expect((await f.tiers.getView()).revision).toBe(0);
+  });
+  it("rejects an execution budget for a read-only guest without changing custom tiers", async () => {
+    const f = await fixture();
+    const before = await f.tiers.getView();
+    await expect(f.tiers.update({ revision: before.revision, tiers: before.tiers.map(tier => tier.id === "guest" ? { ...tier, monthlyCostCapUsd: 10 } : tier) }, "admin@example.test"))
+      .rejects.toThrow("read-only");
+    expect(await f.tiers.getView()).toEqual(before);
   });
   it("counts custom IDs safely and falls back to guest for unregistered stored IDs", async () => {
     const f = await fixture();

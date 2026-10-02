@@ -14,7 +14,7 @@
  * shared invalidation signal, which is deliberately out of scope.
  */
 
-import { DEFAULT_MEMBER_TIERS, memberTierLimits, orderMemberTiers, type MemberTier } from "@/domain/member/tiers";
+import { DEFAULT_MEMBER_TIERS, memberTierLimits, effectiveMemberTiers, type MemberTier } from "@/domain/member/tiers";
 import type { WorkspaceRuntime } from "@/domain/workspace/types";
 import { workspaceModelChannel, workspaceRuntimeModelCompatible } from "@/domain/workspace/runtimeModels";
 import type { AppSettings, ArtifactAccessMode } from "@/domain/settings/types";
@@ -374,7 +374,7 @@ export async function getWorkspaceRuntimeConfig(kind: WorkspaceRuntime) {
 
 /** The deployment-owned tier catalog; read failures never remove personal budgets. */
 export async function getMemberTierDefinitions() {
-  return orderMemberTiers((await loadSettings())?.memberTiers?.tiers ?? DEFAULT_MEMBER_TIERS);
+  return effectiveMemberTiers((await loadSettings())?.memberTiers?.tiers ?? DEFAULT_MEMBER_TIERS);
 }
 export async function getMemberTierLimits(tier: MemberTier) {
   return memberTierLimits(tier, await getMemberTierDefinitions());

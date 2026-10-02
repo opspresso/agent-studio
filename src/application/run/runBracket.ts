@@ -127,7 +127,7 @@ async function openExecutionBracket(
   // over budget should be told so rather than queue for a slot the run would
   // be refused on anyway.
   await assertWithinMemberCostLimit(deps, identity.user, tierLimits);
-  const slot = await acquireRunSlot(deps, identity.user, tierLimits, persistentSlot?.slot);
+  const slot = await acquireRunSlot(deps, identity.user, persistentSlot?.slot);
   if (slot.slot && persistentSlot) {
     // A failed write may have committed before acknowledgement was lost.
     // Retain the lease for adoption or expiry instead of freeing a possibly live run.

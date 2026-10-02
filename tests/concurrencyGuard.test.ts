@@ -255,36 +255,17 @@ describe("acquireRunSlot", () => {
   });
 });
 
-describe("acquireRunSlot with a member tier", () => {
-  it("does not read the deployment limit when the tier has its own", async () => {
-    const limits = vi.fn(async () => { throw new Error("deployment limit unavailable"); });
-    const d = deps({ limits });
-    await expect(acquireRunSlot(d, executionIdentity(user).user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS))).resolves.toBeDefined();
-    expect(limits).not.toHaveBeenCalled();
-  });
-  const roomy = () => ({ runSlots: memorySlots().repo, limits: { perActor: 10 } });
-  // Derived, not restated: the ceiling comes from the shared tier policy.
-  const guestCeiling = memberTierLimits("guest", DEFAULT_MEMBER_TIERS).maxConcurrentRuns!;
-
-  it("applies the tier's own ceiling under the deployment limit", async () => {
-    const d = roomy();
-    for (let i = 0; i < guestCeiling; i++) {
-      await acquireRunSlot(d, executionIdentity(user).user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS));
-    }
-    await expect(acquireRunSlot(d, executionIdentity(user).user, memberTierLimits("guest", DEFAULT_MEMBER_TIERS))).rejects.toBeInstanceOf(ConcurrencyLimitError);
-  });
-
-  it("lets a tier without its own ceiling inherit the deployment limit", async () => {
-    const d = roomy();
-    await acquireRunSlot(d, executionIdentity(user).user, memberTierLimits("member", DEFAULT_MEMBER_TIERS));
-    await acquireRunSlot(d, executionIdentity(user).user, memberTierLimits("member", DEFAULT_MEMBER_TIERS));
-    await expect(acquireRunSlot(d, executionIdentity(user).user, memberTierLimits("member", DEFAULT_MEMBER_TIERS))).resolves.toBeDefined();
-  });
-});
-
 describe("openRun with a tier resolver", () => {
-  it.each(["guest", "member"] as const)("shares the %s monthly cap between Chat and Workspace", async tier => {
-    const cap = memberTierLimits(tier, DEFAULT_MEMBER_TIERS).monthlyCostCapUsd!;
+  it.each(["member", "admin"] as const)("applies deployment concurrency to %s accounts", async tier => {
+    const d = { usage, runSlots: memorySlots().repo, limits: { perActor: 1 },
+      resolveUserLimits: async () => memberTierLimits(tier, DEFAULT_MEMBER_TIERS) };
+    const active = await openRun(withUserLimits(d), agent, configuration, executionIdentity(user));
+    await expect(openRun(withUserLimits(d), agent, configuration, executionIdentity(user))).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    await active.close();
+  });
+  const executableTiers = [...DEFAULT_MEMBER_TIERS, { id: "limited", monthlyCostCapUsd: 2 }];
+  it.each(["limited", "member"] as const)("shares the %s monthly cap between Chat and Workspace", async tier => {
+    const cap = memberTierLimits(tier, executableTiers).monthlyCostCapUsd!;
     let spent = cap - 0.01;
     const d = {
       usage: { ...usage, listMemberDays: vi.fn(async () => [
@@ -292,7 +273,7 @@ describe("openRun with a tier resolver", () => {
         { userId: executionIdentity(user).user.userId, agentName: "workspace-agent", date: "2026-07-29", calls: {}, inputTokens: {}, outputTokens: {}, costUsd: { m: spent / 2 } },
       ]) },
       runSlots: memorySlots().repo,
-      resolveUserLimits: async () => memberTierLimits(tier, DEFAULT_MEMBER_TIERS),
+      resolveUserLimits: async () => memberTierLimits(tier, executableTiers),
     };
     const chat = await openRun(withUserLimits(d), agent, configuration, executionIdentity(user));
     await chat.close();
@@ -321,21 +302,13 @@ describe("openRun with a tier resolver", () => {
     expect(acquire).not.toHaveBeenCalled();
   });
 
-  it("refuses a guest's run past the tier ceiling", async () => {
-    const d = {
-      usage,
-      runSlots: memorySlots().repo,
-      limits: { perActor: 10 },
-      resolveUserLimits: async () => memberTierLimits("guest", DEFAULT_MEMBER_TIERS),
-    };
-    const admitted = [];
-    for (let i = 0; i < memberTierLimits("guest", DEFAULT_MEMBER_TIERS).maxConcurrentRuns!; i++) {
-      admitted.push(await openRun(withUserLimits(d), agent, configuration, executionIdentity(user)));
-    }
-    await expect(openRun(withUserLimits(d), agent, configuration, executionIdentity(user))).rejects.toBeInstanceOf(ConcurrencyLimitError);
-    for (const bracket of admitted) {
-      await bracket.close();
-    }
+  it("refuses guest work before either surface acquires a slot", async () => {
+    const acquire = vi.fn();
+    const d = { usage, runSlots: { ...memorySlots().repo, acquire }, limits: { perActor: 10 },
+      resolveUserLimits: async () => memberTierLimits("guest", DEFAULT_MEMBER_TIERS) };
+    await expect(openRun(withUserLimits(d), agent, configuration, executionIdentity(user))).rejects.toMatchObject({ status: 429, limitUsd: 0 });
+    await expect(openTaskRun(withUserLimits(d), agent, executionIdentity(user))).rejects.toMatchObject({ status: 429, limitUsd: 0 });
+    expect(acquire).not.toHaveBeenCalled();
   });
 
   it("refuses Chat and Workspace execution when the tier lookup fails", async () => {

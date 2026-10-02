@@ -318,7 +318,7 @@ Agent·Session·Usage·Audit와 원본 파일은 파생 캐시가 아니다.
 
 둘 다 런 브래킷(`src/application/run/runBracket.ts`)에 매달려 있고 **의도적으로 서로 반대
 방향으로 실패한다**. 그 사이에 세 번째 가드가 있다: **member tier 의 월간 상한**
-(Settings → Access에서 설정하며 초기값은 `member` $20, `guest` $2, admin 무제한)은 모든 출처의
+(Settings → Access에서 설정하며 초기값은 `member` $20, `guest` 조회 전용, admin 무제한)은 모든 출처의
 Studio 사용자 ID에 대해 Agent 비용 가드 다음, 슬롯 이전에 검사된다. 그래서 예산을 넘긴 사람은 어차피
 거부될 런의 슬롯을 기다리는 대신 그 사실을 바로 듣게 된다. 이 가드도 나머지 둘처럼 `429` 를
 답한다. 개인 등급·사용량 조회 실패는 새 실행을 차단한다. tier 모델과 함께

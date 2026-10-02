@@ -35,7 +35,7 @@ async function fixture() {
   let sequence = 0;
   const deps = { workspaces: { get: async () => workspace, run: async () => run }, agents: { get: async () => agent },
     calls: workspaceModelCalls, tokens, transport, selection: async () => ({ model: "selfhosted/native", wireModel: "native", protocol: "responses" as const }),
-    authorize: vi.fn(async () => {}), limits: async () => ({ monthlyCostCapUsd: 1, maxConcurrentRuns: 1 }), pricingPolicy: async () => "refuse" as const,
+    authorize: vi.fn(async () => {}), limits: async () => ({ monthlyCostCapUsd: 1 }), pricingPolicy: async () => "refuse" as const,
     usage: usageRepository, now: () => now, newId: () => "request-" + ++sequence, runTimeoutMs: 60_000,
   } as unknown as Parameters<typeof createWorkspaceModelGateway>[0];
   const gateway = createWorkspaceModelGateway(deps);

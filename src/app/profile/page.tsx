@@ -16,6 +16,7 @@ import {
 import { IconActivity, IconCoins, IconUser } from "@tabler/icons-react";
 import type { ProfileResponse } from "@/app/api/me/profile/route";
 import type { MemberUsageRow } from "@/domain/usage/types";
+import { tierMayRunAgents } from "@/domain/member/tiers";
 import { memberTierColor } from "@/app/_components/badgeColors";
 import { CardHeading } from "@/app/_components/CardHeading";
 import { CostBarChart } from "@/app/_components/CostBarChart";
@@ -107,10 +108,12 @@ export default function ProfilePage() {
 
   const { member, monthToDateUsd, limits } = account;
   const cap = limits.monthlyCostCapUsd;
+  const mayRun = tierMayRunAgents(member.tier);
 
   return (
     <Stack gap="lg">
       {header}
+      {!mayRun && <Alert>{t("common.memberExecutionRequired")}</Alert>}
       <Anchor href="/profile/messaging">{t("messaging.identity.title")}</Anchor>
 
       <Card>
@@ -136,18 +139,11 @@ export default function ProfilePage() {
               <div>
                 <Text fz="xs" c="dimmed">{t("profile.tierLimits")}</Text>
                 <Text fz="sm">
-                  {limits.maxConcurrentRuns !== undefined
-                    ? t(
-                        limits.maxConcurrentRuns === 1
-                          ? "profile.concurrentRun"
-                          : "profile.concurrentRuns",
-                        { count: limits.maxConcurrentRuns },
-                      )
-                    : t("profile.workspaceConcurrency")}
+                  {!mayRun ? t("settings.tiers.readOnly") : <>{t("profile.workspaceConcurrency")}
                   {" · "}
                   {cap !== undefined
                     ? t("profile.perMonth", { amount: formatUsd(cap) })
-                    : t("profile.uncapped")}
+                    : t("profile.uncapped")}</>}
                 </Text>
               </div>
             </Group>

@@ -8,7 +8,6 @@
 
 import { runUserKey, type RunUser } from "@/domain/execution/actor";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
-import type { TierLimits } from "@/domain/member/tiers";
 import { RateLimitedError } from "@/application/errors";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
@@ -60,13 +59,11 @@ const UNLIMITED: AcquiredSlot = { release: async () => {} };
 export async function acquireRunSlot(
   deps: ConcurrencyGuardDeps,
   user: RunUser,
-  tierLimits?: TierLimits,
   existing?: RunSlot,
 ): Promise<AcquiredSlot> {
   if (!deps.runSlots || !deps.limits) return UNLIMITED;
-  // One account shares its tier ceiling across Chat, tokens, messaging and schedules.
-  const tierLimit = tierLimits?.maxConcurrentRuns;
-  const limit = tierLimit ?? (typeof deps.limits === "function" ? await deps.limits() : deps.limits).perActor;
+  // Every execution source for one account shares the deployment ceiling.
+  const limit = (typeof deps.limits === "function" ? await deps.limits() : deps.limits).perActor;
   if (limit <= 0) {
     return UNLIMITED;
   }
