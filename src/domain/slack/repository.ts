@@ -26,11 +26,9 @@ export interface SlackThreadRepository {
   /**
    * Stop, or resume, following a thread without a mention.
    *
-   * Muting is per thread by design: a busy thread is the noise, and silencing a
-   * whole channel is a different decision with a different control. It survives
-   * only as long as engagement does — and {@link markEngaged} clears it, which
-   * is how a direct mention brings the bot back without anyone having to
-   * remember the opposite command.
+   * Muting lasts for the engagement window. Direct mentions still receive a
+   * reply, but {@link markEngaged} preserves the mute when refreshing that
+   * window. Only an explicit unmute enables mention-free follow-ups again.
    */
   setMuted(
     agentName: string,
