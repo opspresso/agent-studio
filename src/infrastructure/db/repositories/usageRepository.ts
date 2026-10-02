@@ -261,23 +261,17 @@ export class PostgresUsageRepository implements UsageRepository {
   ): Promise<boolean> {
     const marker = ALERT_MARKER[kind];
     try {
-      await updateItem(
-        keys.usageMonthClaim(agentName, month),
-        // Unlike the daily claim, this row does not exist by construction —
-        // the first claim of a month materialises it, retained as long as the
-        // usage rows whose window it closes.
-        (row) => ({
-          ...row,
-          [marker]: new Date().toISOString(),
-          entityType: row?.entityType ?? "UsageMonthClaim",
-          expiresAt:
-            row?.expiresAt ?? expiresAtSeconds(`${month}-01T00:00:00Z`, RETENTION.usageDays),
-        }),
-        (row) => row === null || row[marker] === undefined,
-      );
+      await transact([
+        { kind: "check", key: keys.agent(agentName), condition: agentIsLive },
+        { kind: "update", key: keys.usageMonthClaim(agentName, month),
+          patch: row => ({ ...row, [marker]: new Date().toISOString(),
+            entityType: row?.entityType ?? "UsageMonthClaim",
+            expiresAt: row?.expiresAt ?? expiresAtSeconds(`${month}-01T00:00:00Z`, RETENTION.usageDays) }),
+          condition: row => row === null || row[marker] === undefined },
+      ]);
       return true;
     } catch (error) {
-      if ((error as { name?: string }).name === CONDITIONAL_WRITE_FAILED) {
+      if ((error as { name?: string }).name === TRANSACTION_CANCELLED) {
         return false;
       }
       throw error;
