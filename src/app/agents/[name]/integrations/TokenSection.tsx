@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Badge, Stack, Text } from "@mantine/core";
+import { Alert, Badge, Group, Stack, Text } from "@mantine/core";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { agentWebhookPath } from "@/domain/trigger/types";
 import type { AgentCredentialPurpose } from "@/domain/auth/agentCredential";
@@ -12,7 +12,7 @@ import { generateAgentToken, getAgentToken, revealAgentToken, revokeAgentToken, 
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDate } from "@/shared/date";
 
-export function TokenSection({ agentName, purpose, onSelect, selected }: { agentName: string; purpose: AgentCredentialPurpose; onSelect?: () => void; selected?: boolean }) {
+export function TokenSection({ agentName, purpose, onSelect, selected, embedded = false }: { agentName: string; purpose: AgentCredentialPurpose; onSelect?: () => void; selected?: boolean; embedded?: boolean }) {
   const t = useT();
   const locale = useLocale();
   const label = t(purpose === "api" ? "pset.apiToken" : "webhook.personalToken");
@@ -25,12 +25,11 @@ export function TokenSection({ agentName, purpose, onSelect, selected }: { agent
       .catch(error => { if (current) setError(error instanceof Error ? error.message : "Could not load agent token"); });
     return () => { current = false; };
   }, [agentName, purpose]);
-  return <CollapsibleSection title={label} onSelect={onSelect} selected={selected}
-    selectLabel={onSelect ? t("pint.historyView") : undefined} badge={status &&
+  const badge = status &&
     <Badge color={status.configured ? "teal" : "gray"} radius="xl">
       {t(status.configured ? "secrets.configured" : "secrets.notConfigured")}
-    </Badge>}>
-    {error ? <Alert color="red">{error}</Alert> : !status ? <LoadingText /> : <Stack><SecretControl key={`${agentName}:${purpose}`}
+    </Badge>;
+  const content = error ? <Alert color="red">{error}</Alert> : !status ? <LoadingText /> : <Stack><SecretControl key={`${agentName}:${purpose}`}
       label={label} showHeading={false} configured={status.configured} masked={status.masked}
       description={t(purpose === "api" ? "secrets.agentTokenHint" : "webhook.personalTokenHint")}
       details={status.createdAt ? t("secrets.createdAt", { date: formatDate(status.createdAt, locale) }) : undefined}
@@ -46,6 +45,8 @@ export function TokenSection({ agentName, purpose, onSelect, selected }: { agent
         <CopyableUrl url={`${window.location.origin}${agentWebhookPath(agentName, status.credentialId)}`} />
         <Text size="sm" c="dimmed">{t("webhook.githubHint")}</Text>
       </>}
-    </Stack>}
-  </CollapsibleSection>;
+    </Stack>;
+  if (embedded) return <Stack gap="sm"><Group justify="space-between"><Text size="sm" fw={600}>{label}</Text>{badge}</Group>{content}</Stack>;
+  return <CollapsibleSection title={label} onSelect={onSelect} selected={selected}
+    selectLabel={onSelect ? t("pint.historyView") : undefined} badge={badge}>{content}</CollapsibleSection>;
 }

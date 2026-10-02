@@ -11,6 +11,7 @@ import { AgentConfigurationEditor } from "../../src/app/agents/[name]/_component
 import { ViewerProvider } from "../../src/app/_lib/useViewer";
 import type { AgentConfigurationInput } from "../../src/app/agents/lib/api";
 import { NewChatPanel } from "../../src/app/chats/_components/NewChatPanel";
+import { ChatRouteProvider } from "../../src/app/chats/_components/ChatRouteSelection";
 
 function Fixture() {
   const [request, setRequest] = useState("");
@@ -40,6 +41,6 @@ function ConfigurationFixture() {
 
 createRoot(document.getElementById("root")!).render(<MantineProvider theme={theme}><I18nProvider locale="en"><ViewerProvider viewer={{ email: "reader@example.test", tier: "member", isAdmin: false }}>
   {location.pathname === "/chat"
-    ? <div style={{ height: "100vh", padding: 16 }}><NewChatPanel /></div>
+    ? <ChatRouteProvider><div style={{ height: "100vh", padding: 16 }}><NewChatPanel /></div></ChatRouteProvider>
     : location.pathname === "/usage" ? <ModelUsagePage /> : location.pathname === "/configuration" ? <ConfigurationFixture /> : <Fixture />}
 </ViewerProvider></I18nProvider></MantineProvider>);

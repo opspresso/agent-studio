@@ -8,6 +8,9 @@ vi.mock("@/app/chats/_components/ChatThread", () => ({ ChatThread: () => null })
 vi.mock("@/app/workspaces/_components/WorkspacePanel", () => ({ WorkspacePanel: () => null }));
 
 import ChatPage from "@/app/chats/[chatId]/page";
+import { ChatThread } from "@/app/chats/_components/ChatThread";
+import { WorkspacePanel } from "@/app/workspaces/_components/WorkspacePanel";
+import { ChatRouteSelection } from "@/app/chats/_components/ChatRouteSelection";
 
 describe("Chat page routing", () => {
   beforeEach(() => forChat.mockReset());
@@ -21,6 +24,20 @@ describe("Chat page routing", () => {
   it("keeps the thread's not-found view for a missing Chat", async () => {
     forChat.mockRejectedValueOnce(new NotFoundError("Chat not found"));
     const page = await ChatPage({ params: Promise.resolve({ chatId: "chat-1" }) });
-    expect(page.props.chatId).toBe("chat-1");
+    const [selection, thread] = page.props.children;
+    expect(selection.type).toBe(ChatRouteSelection);
+    expect(selection.props).toEqual({ chatId: "chat-1", tab: "chats" });
+    expect(thread.type).toBe(ChatThread);
+    expect(thread.props.chatId).toBe("chat-1");
+  });
+
+  it("selects Workspaces from the verified lookup independently of the Chat ID format", async () => {
+    forChat.mockResolvedValueOnce("workspace-1");
+    const page = await ChatPage({ params: Promise.resolve({ chatId: "any-chat-id" }) });
+    const [selection, panel] = page.props.children;
+    expect(selection.type).toBe(ChatRouteSelection);
+    expect(selection.props).toEqual({ chatId: "any-chat-id", tab: "workspaces" });
+    expect(panel.type).toBe(WorkspacePanel);
+    expect(panel.props.id).toBe("workspace-1");
   });
 });

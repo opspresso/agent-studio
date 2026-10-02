@@ -14,7 +14,7 @@ import {
 } from "../../lib/api";
 import type { AgentSlackResponse, SlackSuggestedPrompt } from "../../lib/api";
 import type { IntegrationSummary } from "@/app/api/agents/_lib/http";
-import { Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
+import { Alert, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { MAX_SUGGESTED_PROMPTS } from "@/domain/slack/types";
 import { parseList } from "@/shared/parseList";
 import { useT } from "@/app/_i18n/provider";
@@ -250,6 +250,9 @@ export function SlackSection({
           <Text fz="xs" c="dimmed" lh={1.6}>
             {t("pset.channelKeywordsHint")}
           </Text>
+          <Text fz="xs" c="dimmed" lh={1.6}>{t("pset.channelKeywordsAutomationHint")}</Text>
+          {view.channelKeywords.length > 0 && !view.keywordExecutionConfigured &&
+            <Alert color="yellow">{t("pset.channelKeywordsRegistrationRequired")}</Alert>}
           <TextInput
             aria-label={t("pset.channelKeywords")}
             placeholder="deploy, incident, 배포"

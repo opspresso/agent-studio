@@ -81,7 +81,7 @@ export default function IntegrationsPage() {
         <Stack className={columns.primary}>
           <McpConnectionsSection key={`mcp:${name}`} agentName={name} />
           <TokenSection key={`api:${name}`} purpose="api" agentName={name} />
-          <TokenSection key={`webhook:${name}`} purpose="webhook" agentName={name} />
+          <WebhookSection key={`webhook:${name}`} agentName={name} canManage={false} />
           <Alert variant="light" color="gray">{t("pint.ownerOnly", { owner: agent.ownerEmail })}</Alert>
         </Stack>
       </div>
@@ -94,14 +94,13 @@ export default function IntegrationsPage() {
         <SectionHeading title={t("agent.tab.integrations")} description={t("pint.lede")} />
         <McpConnectionsSection key={`mcp:${name}`} agentName={name} />
         <TokenSection key={`api:${name}`} purpose="api" agentName={name} selected={selected === "token"} onSelect={() => selectHistory("token")} />
-        <TokenSection key={`webhook:${name}`} purpose="webhook" agentName={name} />
         <SlackSection agentName={name} selected={selected === "slack"} onSelect={() => selectHistory("slack")}
           onConnectionChange={summary => updateConnection("slack", summary)} />
         <TelegramSection agentName={name} selected={selected === "telegram"} onSelect={() => selectHistory("telegram")}
           onConnectionChange={summary => updateConnection("telegram", summary)} />
         <TeamsSection agentName={name} selected={selected === "teams"} onSelect={() => selectHistory("teams")}
           onConnectionChange={summary => updateConnection("teams", summary)} />
-        <WebhookSection agentName={name} selected={selected === "webhook"} onSelect={() => selectHistory("webhook")} />
+        <WebhookSection key={`webhook:${name}`} agentName={name} selected={selected === "webhook"} onSelect={() => selectHistory("webhook")} />
         <SchedulesSection key={`schedules:${name}`} agentName={name} agent={agent}
           selected={selected === "schedule"} onSelect={() => selectHistory("schedule")} />
       </Stack>

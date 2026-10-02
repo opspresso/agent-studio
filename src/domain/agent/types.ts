@@ -26,6 +26,8 @@ export interface SlackIntegration {
    * answers only mentions and follow-ups in threads it is already part of.
    */
   channelKeywords?: string[];
+  /** Studio account that explicitly registered channel-keyword automation. */
+  keywordExecution?: { userId: string; revision: string };
 }
 
 /**

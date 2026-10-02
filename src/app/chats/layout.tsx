@@ -1,11 +1,12 @@
 import { Box, Flex } from "@mantine/core";
 import { ChatSidebar } from "./_components/ChatSidebar";
+import { ChatRouteProvider } from "./_components/ChatRouteSelection";
 
 export const metadata = { title: "Chats" };
 
 export default function ChatsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <Flex
+    <ChatRouteProvider><Flex
       direction={{ base: "column", md: "row" }}
       gap="md"
       h={{ base: "calc(100dvh - 10rem)", md: "calc(100dvh - 8rem)" }}
@@ -14,6 +15,6 @@ export default function ChatsLayout({ children }: { children: React.ReactNode })
       <Box component="section" p="sm" style={{ flex: 1, minWidth: 0, minHeight: 0, background: "var(--studio-surface)", border: "1px solid var(--studio-border)", borderRadius: "var(--mantine-radius-lg)" }}>
         {children}
       </Box>
-    </Flex>
+    </Flex></ChatRouteProvider>
   );
 }

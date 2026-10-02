@@ -404,6 +404,8 @@ export function createReplySink(
    * final close ever logged.
    */
   const payload: "text" | "chunks" = target.assistantThread ? "text" : "chunks";
+  // Channel streams require a human recipient; app alerts use message editing.
+  const canStream = target.assistantThread || Boolean(target.recipient);
 
   /** The answer, shaped for whichever mode this stream is in. */
   function answerPayload(text: string): { markdown_text: string } | { chunks: SlackChunk[] } {
@@ -413,34 +415,36 @@ export function createReplySink(
   }
 
   async function open(text: string): Promise<void> {
-    try {
-      const started = await slack.startStream(token, {
-        channel: target.channel,
-        thread_ts: target.threadTs,
-        ...(target.recipient
-          ? {
-              recipient_user_id: target.recipient.userId,
-              recipient_team_id: target.recipient.teamId,
-            }
-          : {}),
-        // Only where tasks are the status mechanism. An agent thread has the
-        // native line instead and sends none, and declaring a layout for
-        // tasks that never arrive describes the message wrongly.
-        ...(target.assistantThread ? {} : { task_display_mode: "timeline" as const }),
-      });
-      mode = "stream";
-      messageTs = started.ts;
-      messageChannel = started.channel || target.channel;
-      return;
-    } catch (error) {
-      // Not every workspace or plan can stream. This is the expected path there,
-      // so it is a warning about a downgrade, not a failed reply.
-      log.warn(
-        "slack",
-        `streaming unavailable, editing in place instead: ${
-          error instanceof Error ? error.message : "unknown"
-        }`,
-      );
+    if (canStream) {
+      try {
+        const started = await slack.startStream(token, {
+          channel: target.channel,
+          thread_ts: target.threadTs,
+          ...(target.recipient
+            ? {
+                recipient_user_id: target.recipient.userId,
+                recipient_team_id: target.recipient.teamId,
+              }
+            : {}),
+          // Only where tasks are the status mechanism. An agent thread has the
+          // native line instead and sends none, and declaring a layout for
+          // tasks that never arrive describes the message wrongly.
+          ...(target.assistantThread ? {} : { task_display_mode: "timeline" as const }),
+        });
+        mode = "stream";
+        messageTs = started.ts;
+        messageChannel = started.channel || target.channel;
+        return;
+      } catch (error) {
+        // Not every workspace or plan can stream. This is the expected path there,
+        // so it is a warning about a downgrade, not a failed reply.
+        log.warn(
+          "slack",
+          `streaming unavailable, editing in place instead: ${
+            error instanceof Error ? error.message : "unknown"
+          }`,
+        );
+      }
     }
     // Only what one message takes. This write is unpaced, so it carries
     // everything the run has produced so far, and a post Slack refuses for
@@ -511,7 +515,7 @@ export function createReplySink(
     // A message already open as an edit stays an edit: a startStream that
     // succeeds now would point `messageTs` at a brand-new message and orphan
     // the one the reader is already watching, spinner and all.
-    if (mode === "edit") {
+    if (mode === "edit" || !canStream) {
       await showProgress(prose);
       return;
     }

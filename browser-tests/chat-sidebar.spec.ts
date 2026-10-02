@@ -155,3 +155,50 @@ test("marks the open Chat or Workspace in the sidebar", async ({ page }) => {
   await expect(sidebar.getByRole("tab", { name: "Workspaces" })).toHaveAttribute("data-current", "true");
   await expect(sidebar.getByRole("tab", { name: "Workspaces" })).toHaveAttribute("title", "Open: Coding workspace");
 });
+
+for (const { chatId, saved, selected } of [
+  { chatId: "ws-outside-page", saved: "chats", selected: "Workspaces" },
+  { chatId: "chat-outside-page", saved: "workspaces", selected: "Chats" },
+]) {
+  test(`selects ${selected} from a direct URL even when its conversation is outside the list page`, async ({ page }) => {
+    await page.addInitScript(value => localStorage.setItem("agent-studio-chat-sidebar-tab", JSON.stringify(value)), saved);
+    await page.route("**/api/chats?**", route => route.fulfill({ json: { chats: [], hasMore: true } satisfies ChatListResponse }));
+    await page.goto(`${base}/chats/${chatId}#actions`);
+    const sidebar = page.locator("aside");
+    await expect(sidebar.getByRole("tab", { name: selected, exact: true })).toHaveAttribute("aria-selected", "true");
+    await expect(sidebar.getByRole("tab", { name: selected, exact: true })).toHaveAttribute("data-current", "true");
+    await sidebar.getByRole("tab", { name: saved === "chats" ? "Chats" : "Workspaces", exact: true }).click();
+    await expect(sidebar.getByRole("tab", { name: selected, exact: true })).toHaveAttribute("aria-selected", "false");
+    await page.evaluate(() => { location.hash = "details"; });
+    await expect(sidebar.getByRole("tab", { name: selected, exact: true })).toHaveAttribute("aria-selected", "true");
+  });
+}
+
+test("selects Chats when opening a new Chat from the Workspaces tab", async ({ page }) => {
+  await page.route("**/api/agents", route => route.fulfill({ json: [] }));
+  await page.route("**/api/chats?**", route => route.fulfill({ json: { chats: [], hasMore: false } satisfies ChatListResponse }));
+  await page.goto(base);
+  const sidebar = page.locator("aside");
+  await sidebar.getByRole("tab", { name: "Workspaces" }).click();
+  await sidebar.getByRole("link", { name: "New Chat", exact: true }).click();
+  await expect(sidebar.getByRole("tab", { name: "Chats", exact: true })).toHaveAttribute("aria-selected", "true");
+});
+
+test("selects Chats when the first message replaces the URL without a route change", async ({ page }) => {
+  page.on("pageerror", error => { throw error; });
+  const chat = { chatId: "created-chat", title: "Created conversation", agentName: "fixture", ownerEmail: "reader@example.test", createdAt: "", updatedAt: "" };
+  await page.route("**/api/chats?**", route => route.fulfill({ json: { chats: [], hasMore: false } satisfies ChatListResponse }));
+  await page.route("**/api/agents", route => route.fulfill({ json: [{ name: "fixture", displayName: "Fixture", description: "" }] }));
+  await page.route("**/api/agents/fixture", route => route.fulfill({ json: { name: "fixture", displayName: "Fixture" } }));
+  await page.route("**/api/agent-recommendations", route => route.fulfill({ json: { recommendation: null } }));
+  await page.route("**/api/chats/created-chat**", route => route.fulfill({ json: { chat, messages: [] } }));
+  await page.route("**/api/chats", route => route.fulfill({ contentType: "text/event-stream", body:
+    `data: ${JSON.stringify({ chat })}\n\ndata: ${JSON.stringify({ delta: { content: "Hello" } })}\n\ndata: ${JSON.stringify({ ended: true })}\n\ndata: [DONE]\n\n` }));
+  await page.goto(`${base}/chats`);
+  const sidebar = page.locator("aside");
+  await sidebar.getByRole("tab", { name: "Workspaces" }).click();
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Start a Chat");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page).toHaveURL(`${base}/chats/created-chat`);
+  await expect(sidebar.getByRole("tab", { name: "Chats", exact: true })).toHaveAttribute("aria-selected", "true");
+});

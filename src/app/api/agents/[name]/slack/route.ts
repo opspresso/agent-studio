@@ -80,7 +80,7 @@ export const PUT = withMemberAuth(async (user, request: Request, ctx: RouteConte
     return invalidRequest(parsed.error);
   }
   try {
-    const result = await agentSlackUseCases.update(name, parsed.data, user.email);
+    const result = await agentSlackUseCases.update(name, parsed.data, user.email, user.id);
     return await slackResponse(result, await resolveBaseUrl(request));
   } catch (error) {
     return apiError(error);

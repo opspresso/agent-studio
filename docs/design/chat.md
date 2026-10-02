@@ -116,6 +116,10 @@ Chat과 Playground의 실행 중 Agent 배지는 `app/_lib/authorPaths.ts`가 �
 버튼은 `isNearBottom`을 사용하고 스레드 자식이 양 축을 모두 스크롤해 wheel 이벤트를 가로채지 않게 한다.
 Enter 전송은 IME 조합을 보존하는 공통 `isSubmitEnter`를 사용한다.
 
+저장된 답변과 스트리밍 답변은 공통 `MarkdownContent`로 표시한다. 외부 웹 링크는
+`noopener noreferrer`를 붙여 새 창으로 열고, 같은 서비스의 완전한 URL은 상대 경로로 바꿔
+현재 창에서 이동한다. Workspace 링크의 `#actions` 등 query·fragment는 유지한다.
+
 ## 사이드바와 스레드가 읽는 범위
 
 Chat 화면은 현재 제목을 표시하고, 사이드바는 열린 항목을 다른 항목과 구분해 강조한다.

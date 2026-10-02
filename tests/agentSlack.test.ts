@@ -14,7 +14,7 @@ const resolveAgentSlackRuntime = (
   agent: Parameters<typeof resolveAgentSlackRuntimeImpl>[1],
 ) => resolveAgentSlackRuntimeImpl(secretCipher, agent);
 const updateAgentSlack = (repo: Upd[0], name: Upd[1], update: Upd[2], email: Upd[3]) =>
-  updateAgentSlackImpl(repo, name, update, email, secretCipher);
+  updateAgentSlackImpl(repo, name, update, email, secretCipher, "owner-user-id");
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 import { slackSecretContext } from "@/domain/security/secretContext";
 import { ConflictError, ForbiddenError } from "@/application/errors";
@@ -427,6 +427,7 @@ describe("channel keywords", () => {
     // storing `Deploy` and `deploy` separately would display a distinction the
     // matcher does not make.
     expect(stored(current())).toEqual(["deploy", "배포"]);
+    expect(current().slack?.keywordExecution).toEqual({ userId: "owner-user-id", revision: current().updatedAt });
   });
 
   it("refuses a keyword too short to be anything but noise", async () => {
@@ -449,10 +450,12 @@ describe("channel keywords", () => {
   it("keeps what is stored when the update does not mention them", async () => {
     const { repo, current } = fakeRepo(makeAgent());
     await updateAgentSlack(repo, "bot-proj", { channelKeywords: ["deploy"] }, OWNER);
+    const registration = current().slack?.keywordExecution;
 
     await updateAgentSlack(repo, "bot-proj", { enabled: false }, OWNER);
 
     expect(stored(current())).toEqual(["deploy"]);
+    expect(current().slack?.keywordExecution).toEqual(registration);
   });
 
   it("clears them when the update sends an empty list", async () => {
@@ -462,5 +465,22 @@ describe("channel keywords", () => {
     await updateAgentSlack(repo, "bot-proj", { channelKeywords: [] }, OWNER);
 
     expect(stored(current())).toBeUndefined();
+    expect(current().slack?.keywordExecution).toBeUndefined();
+  });
+
+  it("preserves unchanged registration and fences captured grants when keywords change", async () => {
+    const { repo, current } = fakeRepo(makeAgent());
+    await updateAgentSlack(repo, "bot-proj", { channelKeywords: ["[firing:"] }, OWNER);
+    const registration = current().slack?.keywordExecution;
+    await updateAgentSlack(repo, "bot-proj", { channelKeywords: [" [FIRING: "] }, OWNER);
+    expect(current().slack?.keywordExecution).toEqual(registration);
+    await updateAgentSlack(repo, "bot-proj", { channelKeywords: ["incident"] }, OWNER);
+    expect(current().slack?.keywordExecution?.revision).not.toBe(registration?.revision);
+  });
+
+  it("requires the authenticated user's ID instead of inferring it from Agent ownership", async () => {
+    const { repo } = fakeRepo(makeAgent());
+    await expect(updateAgentSlackImpl(repo, "bot-proj", { channelKeywords: ["[firing:"] }, OWNER, secretCipher, ""))
+      .rejects.toThrow("authenticated Studio user");
   });
 });

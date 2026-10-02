@@ -32,7 +32,46 @@ test.beforeEach(async ({ page }) => {
     }
     return route.abort();
   });
+  await page.route("**/api/agents/fixture-agent/webhook-token", route => {
+    if (route.request().method() === "GET") return route.fulfill({ json: {
+      configured: true, masked: "asw_••••abcd", credentialId: "personal-webhook-selector", canIssue: true,
+    } });
+    if (route.request().method() === "DELETE") return route.fulfill({ status: 204 });
+    if (route.request().method() === "POST") return route.fulfill({ json: {
+      token: "synthetic-webhook-token", masked: "asw_••••wxyz", credentialId: "replacement-webhook-selector", createdAt: "2026-10-02T00:00:00Z",
+    } });
+    return route.abort();
+  });
+  await page.route("**/api/agents/fixture-agent/triggers", route => route.fulfill({ json: { triggers: [{
+    triggerId: "webhook", kind: "webhook", enabled: true, allowConcurrent: false,
+  }] } }));
   await page.goto(base);
+});
+
+test("manages the personal token and URL inside Webhook while keeping shared controls owner-only", async ({ page }) => {
+  await page.getByRole("button", { name: "Webhook enabled", exact: true }).click();
+  const token = page.getByRole("group", { name: "My Webhook token", exact: true });
+  await expect(token.getByRole("textbox", { name: "My Webhook token" })).toBeVisible();
+  const url = page.locator("code[title*='/api/webhook/fixture-agent?credential=']");
+  await expect(url).toContainText("credential=personal-webhook-selector");
+  await expect(page.getByRole("switch", { name: "Enabled", exact: true })).toBeVisible();
+  await token.getByRole("button", { name: "Revoke", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Revoke", exact: true }).click();
+  await expect(url).toHaveCount(0);
+  await token.getByRole("button", { name: "Generate", exact: true }).click();
+  await expect(token.getByRole("textbox")).toHaveValue("synthetic-webhook-token");
+  await expect(url).toContainText("credential=replacement-webhook-selector");
+
+  let triggerReads = 0;
+  page.on("request", request => { if (request.url().endsWith("/triggers")) triggerReads++; });
+  await page.getByRole("switch", { name: "Manage shared Webhook settings" }).uncheck();
+  await page.getByRole("button", { name: "Webhook", exact: true }).click();
+  await expect(token.getByRole("textbox")).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Enabled", exact: true })).toHaveCount(0);
+  await expect(url).toContainText("credential=personal-webhook-selector");
+  expect(triggerReads).toBe(0);
+  await page.evaluate(async () => { await Promise.all(document.getAnimations().map(animation => animation.finished)); });
+  await page.screenshot({ path: "/tmp/agent-studio-webhook-settings.png", fullPage: true });
 });
 
 test("shows the Agent API token name once and keeps its status in the section title", async ({ page }) => {

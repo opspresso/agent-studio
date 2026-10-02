@@ -42,6 +42,16 @@ export interface MessagingExecutionGrant extends RunUser {
   externalId: string;
 }
 
+/** A signed Slack app alert running under the account that registered its keywords. */
+export interface SlackKeywordExecutionGrant extends RunUser {
+  kind: "slack";
+  source: "channel-keyword";
+  agentName: string;
+  realm: string;
+  externalId: string;
+  revision: string;
+}
+
 /** Proof selected by personal Webhook authentication and rechecked before later effects. */
 export interface WebhookExecutionGrant extends RunUser {
   kind: "webhook";
@@ -63,7 +73,7 @@ export interface ScheduleExecutionGrant extends RunUser {
   revision: string;
 }
 
-export type ExecutionGrant = MessagingExecutionGrant | WebhookExecutionGrant | ApiExecutionGrant | ScheduleExecutionGrant;
+export type ExecutionGrant = MessagingExecutionGrant | SlackKeywordExecutionGrant | WebhookExecutionGrant | ApiExecutionGrant | ScheduleExecutionGrant;
 
 /** Authenticated account and invocation source captured at the ingress boundary. */
 export interface RunIdentity {

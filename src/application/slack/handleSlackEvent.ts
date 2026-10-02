@@ -1,5 +1,6 @@
 import { authenticateMessagingSubject, isMessagingAuthenticationCommand } from "@/application/messaging/authenticateSubject";
 import { ForbiddenError } from "@/application/errors";
+import { authorizeSlackKeywordEvent } from "./keywordExecution";
 import type { SlackMessage } from "@/domain/slack/types";
 import { slackConversation } from "@/domain/slack/conversation";
 import { slackInputText } from "@/domain/slack/messageText";
@@ -393,17 +394,26 @@ export async function handleSlackEvent(
     channel: event.channel,
     threadTs,
     assistantThread: isAssistantThread,
-    ...(!isAssistantThread && event.user && body.team_id
+    ...(!isAssistantThread && !event.bot_id && event.user && body.team_id
       ? { recipient: { userId: event.user, teamId: body.team_id } }
       : {}),
   };
   const reply = await slackReplyChannel(deps, token, target);
 
-  if (!event.user || !body.team_id || event.bot_id) {
+  if (!body.team_id || (!event.user && !event.bot_id)) {
     await reply.say("A verified Slack user and workspace are required"); return;
   }
-  const authenticated = await authenticateMessagingSubject(deps.identities, { agentName, platform: "slack", realm: body.team_id, externalId: event.user },
-    message, isAssistantThread, reply);
+  let authenticated;
+  if (event.bot_id) {
+    try { authenticated = await authorizeSlackKeywordEvent(deps, agentName, body); }
+    catch (error) {
+      if (!(error instanceof ForbiddenError)) throw error;
+      await reply.say(error.message); return;
+    }
+  } else {
+    authenticated = await authenticateMessagingSubject(deps.identities, { agentName, platform: "slack", realm: body.team_id, externalId: event.user! },
+      message, isAssistantThread, reply);
+  }
   if (!authenticated) return;
   if (!agent || !configuration) {
     await reply.say(
@@ -432,7 +442,7 @@ export async function handleSlackEvent(
     await deps.slack.setSessionStatus(token, {
       channel_id: event.channel, thread_ts: threadTs, status: "processing",
       ...(!event.thread_ts && message ? { title: message.slice(0, MAX_THREAD_TITLE_LENGTH) } : {}),
-      ...(event.user ? { initiator_user_id: event.user } : {}),
+      ...(!event.bot_id && event.user ? { initiator_user_id: event.user } : {}),
     }).catch((error) => log.error("slack", "session start failed", error));
 
     const warnings: string[] = [];
@@ -486,7 +496,7 @@ export async function handleSlackEvent(
     // did not ask to know who is asking should not be sending anyone's id to
     // Slack's profile API either.
     const named = configuration.parameters.callerContext
-      ? await resolveSpeakers(deps, token, rawTurns, event.user)
+      ? await resolveSpeakers(deps, token, rawTurns, event.bot_id ? undefined : event.user)
       : { caller: undefined, nameByUser: undefined };
     const turns = withSpeakerLabels(rawTurns, named.nameByUser);
 
@@ -496,11 +506,7 @@ export async function handleSlackEvent(
     // An app that woke the bot — a keyword in an alert, a workflow's mention — is
     // named the way its thread turns are, so the model knows an alerting app
     // said this and not a person.
-    const currentSpeaker = event.user
-      ? named.nameByUser?.get(event.user)
-      : event.bot_id
-        ? appNameOf(event)
-        : undefined;
+    const currentSpeaker = event.bot_id ? appNameOf(event) : event.user ? named.nameByUser?.get(event.user) : undefined;
     const askText = currentSpeaker && message ? `${currentSpeaker}: ${message}` : message;
 
     // From here the turn is the same as any other chat bot's: attachments,

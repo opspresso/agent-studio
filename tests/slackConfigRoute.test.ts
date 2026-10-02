@@ -116,6 +116,16 @@ describe("every verb answers with the same shape", () => {
     expect(body.eventsUrl).toBe("https://studio.example.com/api/slack/events/proj");
   });
 
+  it("captures the authenticated Studio ID when saving keywords and reports automation registration", async () => {
+    agentRepo.get.mockResolvedValue(agent);
+    const response = await PUT(mutate({ channelKeywords: ["[FIRING:"] }), ctx());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ channelKeywords: ["[firing:"], keywordExecutionConfigured: true });
+    expect(agentRepo.update).toHaveBeenCalledWith(expect.objectContaining({ slack: expect.objectContaining({
+      keywordExecution: { userId: "u1", revision: expect.any(String) },
+    }) }), expect.anything());
+  });
+
   it("returns the manifest after a disconnect", async () => {
     agentRepo.get.mockResolvedValue(agent);
     const res = await DELETE(
