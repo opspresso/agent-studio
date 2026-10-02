@@ -480,7 +480,7 @@ describe("channel keywords", () => {
 
   it("requires the authenticated user's ID instead of inferring it from Agent ownership", async () => {
     const { repo } = fakeRepo(makeAgent());
-    await expect(updateAgentSlackImpl(repo, "bot-proj", { channelKeywords: ["[firing:"] }, OWNER, secretCipher))
+    await expect(updateAgentSlackImpl(repo, "bot-proj", { channelKeywords: ["[firing:"] }, OWNER, secretCipher, ""))
       .rejects.toThrow("authenticated Studio user");
   });
 });

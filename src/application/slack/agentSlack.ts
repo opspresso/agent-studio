@@ -176,7 +176,7 @@ export async function updateAgentSlack(
   update: AgentSlackUpdate,
   userEmail: string,
   cipher: SecretCipher,
-  userId?: string,
+  userId: string,
 ): Promise<AgentSlackResult> {
   const agent = await assertAgentOwner(repo, name, userEmail);
   const prompts =
