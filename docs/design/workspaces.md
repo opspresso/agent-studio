@@ -203,15 +203,15 @@ Agent 소유자·관리자가 저장소, 접근 모드, 기본 Runtime, 유휴 �
 기본 저장소는 없으며 Git 작업은 저장소와 기준 브랜치를 명시한다. 모델이 필요한 Runtime은 설정 → Models → 사용 설정의
 전역 Runtime별 선택을 사용한다. Agent 설정과 모델 설정은 환경변수로 관리하지 않는다.
 `repositoryOwners`는 정확한 계정·조직 이름을 대소문자 없이 비교하며 현재·향후 저장소를 허용한다.
-Workspace의 GitHub 작업은 해당 Agent가 명시적으로 바인딩한 GitHub MCP 인증을 사용한다.
-정책 허용이 그 계정의 권한을 늘리지는 않으며 Plugin 가져오기 토큰과 다른 Agent의 연결을 사용하지 않는다.
+Workspace의 GitHub 작업은 해당 Agent가 바인딩한 GitHub MCP에 대한 호출자의 개인 인증을 사용한다.
+정책 허용이 그 계정의 권한을 늘리지는 않으며 Plugin 가져오기 토큰이나 다른 사용자의 연결을 사용하지 않는다.
 GitHub MCP 바인딩이 여러 개면 계정을 임의 선택하지 않고 설정 오류를 반환한다.
 
 | 모드 | 기존 저장소 접근 | 새 저장소 생성 |
 |---|---|---|
 | `selected` — 저장소 고정 | 등록 목록 | 등록된 이름만 생성 가능 |
 | `owners` — 소유자 지정 | 등록 목록 및 정확한 소유자 범위 | 해당 범위의 이름 |
-| `all` — 모든 저장소 | Agent의 GitHub MCP 계정으로 접근 가능한 모든 이름 | GitHub 계정이 생성할 수 있는 계정·조직 |
+| `all` — 모든 저장소 | 호출자의 GitHub MCP 계정으로 접근 가능한 모든 이름 | GitHub 계정이 생성할 수 있는 계정·조직 |
 | `new` — 등록 목록 + 신규 자동 허용 | 등록 목록만 | 이 Agent의 `Workspace.create_repository`가 성공하면 자동 등록 |
 
 기본 `mode`는 `new`다. `all`은 GitHub 권한을 우회하지 않으며, `new`는 생성 시각이나 모델이
@@ -237,7 +237,7 @@ Agent 설정을 읽는다. 조회 실패를 기본값으로 대체하지 않으�
 ### 신규 저장소 생성과 등록
 
 서버가 저장소 생성 전 `AGENT#{name}/REPOSITORYCREATE#{owner/repo}`에 요청자·인자 fingerprint·
-revision을 기록한다. 개인 저장소는 해당 Agent의 GitHub MCP 계정의 `/user/repos`, 조직 저장소는 `/orgs/{owner}/repos`를
+revision을 기록한다. 개인 저장소는 해당 호출자의 GitHub MCP 계정의 `/user/repos`, 조직 저장소는 `/orgs/{owner}/repos`를
 사용하며 README 초기화를 항상 요청한다. 개인 저장소는 인증된 본인 계정에, 조직 저장소는
 그 계정에 생성 권한이 있는 조직에 만든다. 필요한 GitHub 권한은 [Repository API](https://docs.github.com/en/rest/repos/repos)를 따른다.
 
@@ -254,7 +254,7 @@ Agent 삭제는 정책과 생성 receipt를 함께 제거하고 늦은 쓰기를
 
 ### Git 작업
 
-Git Workspace 생성과 아직 clone되지 않은 공간의 실행 접수는 Agent의 GitHub MCP 계정으로 저장소·기준 브랜치를
+Git Workspace 생성과 아직 clone되지 않은 공간의 실행 접수는 호출자의 GitHub MCP 계정으로 저장소·기준 브랜치를
 미리 확인한다. 허용 목록은 존재 여부가 아니며 저장소를 만들지 않는다. 접근 불가·초기 commit 없음·
 기준 브랜치 없음은 구체적인 오류로 반환하고, 전송 실패와 구별한다. 이미 준비된 파일 작업에는 이
 원격 사전 검사를 반복하지 않는다. clone 중 경합으로 실패하면 Git 진단을 제한해서 분류하며 원문·자격증명은 노출하지 않는다.
@@ -300,7 +300,8 @@ CI 증거가 없음을 표시하며 GitHub 브랜치 규칙을 따른다. `none`
 Annotated tag는 최대 8단계까지 commit을 해석하고 순환·비커밋 참조를 거절한다. GitHub의 HTTP 거절은
 실패, 응답 소실·불완전한 생성 영수증·생성 중 태그 변경은 결과 불명으로 기록한다. 릴리즈 게시 자체는 배포 완료가 아니다.
 
-GitHub API 요청과 clone·push는 현재 Agent의 MCP 인증을 dispatch마다 다시 읽는다.
+GitHub API 요청과 clone·push는 원래 호출자의 사용자 ID로 개인 MCP 인증을 dispatch마다 다시 읽는다.
+PR 게시자는 Workspace의 `pullRequestUser`에 기록하며 서명된 GitHub 상태 갱신도 그 사용자로 조회한다.
 OAuth 검증·갱신은 기존 MCP 인증 제공자가 소유한다. 인증된 clone과 push는 서버의 임시 bare
 저장소에서 수행하며, Sandbox에는 자격증명이 없는 Git bundle만 전달한다. 서버는 저장소
 파일을 checkout하거나 hook·build script를 실행하지 않고 호스트의 Git 설정·credential helper를

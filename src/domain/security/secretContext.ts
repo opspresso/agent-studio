@@ -45,11 +45,11 @@ export function agentMcpHeadersContext(agentName: string, serverName: string): s
 }
 
 export function mcpConnectionSecretContext(
-  agentName: string,
+  userId: string,
   serverName: string,
   field: "client-secret" | "access-token" | "refresh-token",
 ): string {
-  return JSON.stringify(["agent", agentName, "mcp", serverName, field]);
+  return JSON.stringify(["mcp-user", userId, "mcp", serverName, field]);
 }
 
 export function mcpOAuthStateContext(state: string): string {

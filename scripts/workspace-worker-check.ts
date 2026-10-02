@@ -72,7 +72,7 @@ async function main() {
     await agents.create({ name: agentName, displayName: "Workspace worker check", description: "", ownerEmail,
       createdAt: at, updatedAt: at });
     await chats.create({ chatId, agentName, title: "Workspace worker check", ownerEmail, createdAt: at, updatedAt: at });
-    const workspace = await api.create({ chatId, agentName, title: "General work", runtime: "command" }, ownerEmail);
+    const workspace = await api.create({ chatId, agentName, title: "General work", runtime: "command" }, user);
     workspaceId = workspace.id;
     const first = await api.enqueue(workspace.id, user, { kind: "command", script: "printf once >> executions.txt; sleep 1; printf complete" }, "worker-request-0001", actor, executionGrant);
     const stopping = new AbortController();

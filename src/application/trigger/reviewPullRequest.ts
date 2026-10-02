@@ -81,7 +81,7 @@ export async function preparePullRequestReview(
       !reviewSetupIssue(agent) && reviewAllowsRepository(current.githubReview, target.repository);
   }
   if (!await currentAuthorization()) return { status: "skipped", reason: "Review automation or its personal Webhook caller is no longer authorized." };
-  const forge = deps.reviewForge(agentName);
+  const forge = deps.reviewForge(agentName, { userId: grant.userId, email: grant.email });
   const loaded = await forge.load(target);
   if (loaded.status === "skipped") return loaded;
   const input = reviewInput(loaded.context);

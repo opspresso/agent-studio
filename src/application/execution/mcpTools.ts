@@ -35,7 +35,7 @@ export async function buildMcpTools(
   configuration: AgentConfiguration,
   signal?: AbortSignal,
   /** Where the run came from; its email actor and conversation reach the server as headers. */
-  origin?: Partial<Pick<RunOrigin, "actor" | "userEmail" | "conversation">> & Partial<Pick<RunOrigin, "ancestry">>,
+  origin?: Partial<Pick<RunOrigin, "actor" | "user" | "userEmail" | "conversation">> & Partial<Pick<RunOrigin, "ancestry">>,
 ): Promise<{
   signature: string;
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
@@ -93,8 +93,8 @@ export async function buildMcpTools(
               : `MCP server '${mcp.name}' could not be checked for a safe address; its tools were not offered.` };
           }
         }
-        const beforeAuthorization = await deps.sourceRefreshIdentity?.({ configuration, binding, server: mcp });
-        const credentials = await resolveMcpCredentials({ cipher: deps.cipher, auth: deps.mcpAuth }, configuration.agentName, mcp, binding);
+        const beforeAuthorization = await deps.sourceRefreshIdentity?.({ configuration, binding, server: mcp, user: origin?.user });
+        const credentials = await resolveMcpCredentials({ cipher: deps.cipher, auth: deps.mcpAuth }, configuration.agentName, mcp, binding, origin?.user);
         if (credentials.credentialFingerprint) credentialByServer.set(mcp.name, credentials.credentialFingerprint);
         const credentialWarning = credentials.warning;
         if (credentialWarning) log.warn("mcp", credentialWarning);
@@ -102,14 +102,14 @@ export async function buildMcpTools(
         const sourceOutputs = binding.sourceOutputs ?? mcp.sourceOutputs;
         const defaults = binding.sourceOutputs === undefined && Boolean(sourceOutputs?.length);
         const refreshIdentity = deps.sourceRefreshIdentity
-          ? await deps.sourceRefreshIdentity({ configuration, binding, server: mcp })
+          ? await deps.sourceRefreshIdentity({ configuration, binding, server: mcp, user: origin?.user })
           : mcp.auth ? undefined : sourceRefreshFingerprint(mcp, binding, null);
         if (beforeAuthorization !== undefined && beforeAuthorization !== refreshIdentity) return { warning: `MCP server '${mcp.name}' authentication changed during preparation; its tools were not offered.` };
         if (mcp.auth && !refreshIdentity) return { warning: `MCP server '${mcp.name}' has no authorization identity; its tools were not offered.` };
         authorizationByServer.set(mcp.name, refreshIdentity!);
         // Default namespaces belong to the authenticated connection, never to a shared plugin account.
         const mappings = sourceOutputs?.map((mapping) => defaults ? { ...mapping,
-          namespace: createHash("sha256").update(JSON.stringify([mapping.namespace, configuration.agentName, refreshIdentity])).digest("hex") } : mapping);
+          namespace: createHash("sha256").update(JSON.stringify([mapping.namespace, configuration.agentName, origin?.user?.userId, refreshIdentity])).digest("hex") } : mapping);
         const headers = credentials.headers;
         // The platform's own values, applied last: the strip above already
         // removed every stored spelling, so nothing merged from the registry
@@ -166,9 +166,9 @@ export async function buildMcpTools(
       }
       flagged.add(serverName);
       const fingerprint = credentialByServer.get(serverName);
-      if (!fingerprint) continue;
+      if (!fingerprint || !origin?.user) continue;
       await deps.mcpAuth
-        .markUnauthorized(configuration.agentName, serverName, fingerprint, toolManager.scopeChallenges?.get(serverName))
+        .markUnauthorized(origin.user.userId, serverName, fingerprint, toolManager.scopeChallenges?.get(serverName))
         .catch((error: unknown) => {
           log.warn("mcp", `could not flag '${serverName}' as needing reauthorization`, error);
         });
@@ -229,8 +229,15 @@ export async function buildMcpTools(
       if (!offered.has(name)) return { text: `Error: '${name}' is not available on this run. At most ` +
         `${MAX_MCP_TOOLS_PER_RUN} MCP tools are offered and this one was past that. Use one of the tools listed for you.` };
       const server = serverByAlias.get(name);
-      if (!server || !await deps.mcps.get(server)) {
+      const current = server ? await deps.mcps.get(server) : null;
+      if (!server || !current) {
         return { text: "Error: this MCP server is no longer available." };
+      }
+      const binding = mcpList.find(binding => binding.name === server);
+      if (binding && deps.sourceRefreshIdentity && await deps.sourceRefreshIdentity({
+        configuration, binding, server: current, user: origin?.user,
+      }) !== authorizationByServer.get(server)) {
+        return { text: "Error: your MCP connection changed; start a new run to use the current authorization." };
       }
       return toolManager.callTool(name, args);
     },

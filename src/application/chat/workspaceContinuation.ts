@@ -21,7 +21,7 @@ export interface WorkspaceContinuationDeps {
   chat: ChatDeps;
   workspaces: WorkspaceRepository;
   authorize(user: RunUser, agentName: string): Promise<void>;
-  pullRequest(workspaceId: string, ownerEmail: string): Promise<PullRequestInfo | undefined>;
+  pullRequest(workspaceId: string, user: RunUser): Promise<PullRequestInfo | undefined>;
   now(): Date;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
 }
@@ -84,7 +84,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
     if (workspace.activeRunId || workspace.activeActionId || latest?.id !== approval.id) {
       await save({ status: "cancelled", error: "A newer Workspace task or action superseded this CI wait." }); return;
     }
-    try { pullRequest = await deps.pullRequest(workspace.id, item.ownerEmail); }
+    try { pullRequest = await deps.pullRequest(workspace.id, { userId: item.userId, email: item.ownerEmail }); }
     catch {
       if (deps.now().getTime() < Date.parse(item.ciWatch!.deadline)) {
         await save({ dueAt: new Date(deps.now().getTime() + CI_POLL_MS).toISOString() }); return;
@@ -103,7 +103,7 @@ export async function processWorkspaceContinuation(deps: WorkspaceContinuationDe
   } else if (approval.status === "succeeded" && approval.action.kind === "pull-request") {
     // The first event still reports publication immediately. The subsequent
     // wait is a read-only event, independent of browser and model polling.
-    try { pullRequest = await deps.pullRequest(workspace.id, item.ownerEmail); }
+    try { pullRequest = await deps.pullRequest(workspace.id, { userId: item.userId, email: item.ownerEmail }); }
     catch { pullRequest = workspace.pullRequest; }
   }
   const configuration = agent.configuration;

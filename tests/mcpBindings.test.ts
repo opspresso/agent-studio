@@ -363,26 +363,16 @@ describe("per-agent MCP header overrides at dispatch", () => {
     expect(headers["x-tenant-id"]).toBe("painter");
   });
 
-  it("still sends the registry headers when the entry has OAuth the agent has not connected", async () => {
-    // An unconnected OAuth grant does not disable stored registry credentials.
-    const oauthServer = {
-      ...registryServer,
-      auth: { type: "oauth2", resource: "https://shared-mcp.test" },
-    } as unknown as typeof registryServer;
-
-    const headers = await dispatchHeaders("no-connection", [{ name: "shared-mcp" }], {
-      server: oauthServer,
-      mcpAuth: {
-        headersFor: async () => ({
-          headers: {},
-          unavailable: "MCP server 'shared-mcp' requires authorization and this agent has not connected it.",
-        }),
-        markUnauthorized: async () => {},
-      },
-    });
-
-    expect(headers.authorization).toBe("Bearer registry-default");
-    expect(headers["x-shared"]).toBe("shared-value");
+  it("does not dispatch registry credentials for an unconnected OAuth caller", async () => {
+    const seen = stubMcpServer();
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    const deps = depsFixture(channel, { server: { ...registryServer, auth: { type: "oauth2", resource: "https://shared-mcp.test" } } as typeof registryServer,
+      mcpAuth: { headersFor: async () => ({ headers: {}, unavailable: "Personal authorization required" }), markUnauthorized: async () => {} } });
+    const chunks: EngineChunk[] = [];
+    for await (const chunk of executeAgent(deps, { ...executionIdentity(), agent: agentFixture("no-connection"),
+      configuration: configurationFixture("no-connection", [{ name: "shared-mcp" }]), messages: [{ role: "user", content: "hi" }] })) chunks.push(chunk);
+    expect(seen).toEqual([]);
+    expect(JSON.stringify(chunks)).toContain("Personal authorization required");
   });
 
   it("drops an unavailable-auth server whose only stored headers are reserved metadata", async () => {

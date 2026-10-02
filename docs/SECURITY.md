@@ -123,7 +123,8 @@ visibility 이전처럼 열려 있다: 이름과 지출 집계는 카탈로그 �
 | Agent trace | 소유자 또는 설정된 admin | — |
 | Agent Slack 설정 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
 | 개인 Agent API token | 발급 사용자 본인과 현재 Agent 접근 | 발급 사용자 본인; 생성·reveal은 현재 token 사용 tier도 검사 |
-| trigger, MCP 연결 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
+| trigger | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
+| 개인 MCP 연결 | member 이상인 본인과 현재 Agent 접근 | 동일 사용자만 연결·해제; binding 초안 헤더 검사는 Agent 소유자 |
 | 호출자별 usage (`usage/actors`) | 소유자 또는 설정된 admin | — |
 | Agent usage 합계 | 로그인한 모든 사용자 | — |
 | Skill / MCP 서버 / plugin | guest를 포함한 로그인 사용자 (`withAuth`) | admin (`withAdminAuth`) |
@@ -591,7 +592,7 @@ registry의 등록 시 검증을 거치지 않으므로 호출 자체의 URL·DN
 ## MCP OAuth
 
 관리자는 registry에 OAuth 메타데이터와 선택적 공유 client를 등록하고,
-Agent별 connection은 사용자 grant를 보관한다.
+connection은 Studio 사용자 ID·MCP 서버별로 본인의 grant를 보관하며 Agent 간에 재사용한다.
 실행 경로는 well-known 문서를 다시 읽지 않고 저장된 계약으로 token을 해석한다.
 발견·연결·callback의 HTTP 형태는 [API](API.md#mcp-oauth), refresh 수명은
 [MCP 설계](design/mcp.md#oauth)를 따른다.
@@ -626,12 +627,12 @@ registry URL 변경은 이전 `auth`를 폐기한다. 새 주소의 Discover가 
 |---|---|
 | client 선택 | 기존 credential → 사용할 수 있는 Client ID Metadata Document → dynamic registration → 설정 오류 |
 | PKCE | S256 필수. 광고하지 않는 서버는 기본 거절하며 배포의 `MCP_OAUTH_ALLOW_UNADVERTISED_PKCE`만 예외를 허용 |
-| state | 일회용·10분 만료. verifier, client, issuer, resource와 redirect URI를 함께 보관 |
+| state | 일회용·10분 만료. 사용자 ID·email, verifier, client, issuer, resource와 redirect URI를 함께 보관 |
 | redirect URI | 서버 공개 base의 고정 callback. Tools의 수동 값도 같은 주소여야 함 |
 | resource | authorization과 token 요청에 대상 resource를 포함 |
 | callback issuer | code 교환 전에 pending state의 issuer와 문자 그대로 비교. provider가 지원을 광고했는데 `iss`가 없으면 거절 |
 | 오류 callback | issuer를 검증할 수 없는 응답의 `error_description`을 그대로 전달하지 않음 |
-| callback 권한 | 현재 Agent 쓰기 권한과 client·resource를 다시 확인 |
+| callback 권한 | 시작한 사용자 ID·email, 현재 계정·member 등급·Agent 접근과 client·resource를 다시 확인 |
 | token endpoint 인증 | 등록한 인증 방식을 연결에 저장·사용. basic은 client ID와 secret을 form encoding 후 Base64. secret 없는 client는 `none` |
 | 동적 등록 | `application_type: "web"`을 명시하고 token 요청과 같은 인증 방식으로 등록 |
 
@@ -641,7 +642,7 @@ registry URL 변경은 이전 `auth`를 폐기한다. 새 주소의 Discover가 
 
 공유 앱은 `clientFromRegistry`와 Client ID를 기록하고 code 교환·refresh 때 현재 Secret을 읽는다.
 Secret 회전은 기존 grant에 반영하지만 Client ID의 교체·제거는 기존 grant를 차단한다.
-개별 동적 등록 Secret은 해당 Agent connection에 보관한다.
+개별 동적 등록 Secret은 해당 사용자의 connection에 보관한다.
 연결 화면의 서비스 계정은 인증·접근 판정에 사용하지 않는다. 공식 OAuth endpoint 조합의
 GitHub·Google 기본 조회는 해당 제공자의 고정 계정 API를 사용한다. 일반 OIDC는 검증한 discovery의
 UserInfo endpoint를 사용하며, 관리자 지정 HTTP 계약도 HTTPS·URL 정책으로 저장과 dispatch 때 검증한다.
@@ -659,13 +660,13 @@ lookup 설정은 관리자 전용이며 자동 선택으로 임의의 도구나 
 
 ### 공개 Client ID 문서
 
-`/api/mcps/oauth/client-metadata/{agent}`는 authorization server가 쿠키 없이 가져가는 문서다.
+`/api/mcps/oauth/client-metadata`는 authorization server가 쿠키 없이 가져가는 문서다.
 secret은 없고 client 이름·client ID URL·고정 redirect URI를 제공한다.
 요청 Host 대신 설정된 공개 base로 주소를 만든다. 이 URL을 실제 client ID로 선택하는
 인가 준비 단계에서 HTTPS·공개 도달 가능 조건을 확인한다.
 
-agent 존재 여부는 조회하지 않는다. 모르는 이름에도 문서를 제공하는 것이 인가를 만들지는 않으며,
-실제 callback은 저장된 state·연결·Agent 권한을 요구한다.
+문서는 Agent 이름이나 사용자 정보를 포함하지 않는다.
+실제 callback은 시작한 사용자의 ID·state·연결·현재 Agent 접근 권한을 요구한다.
 공개 base가 없거나 provider가 가져갈 수 없는 주소면 metadata 방식 대신 지원되는 등록 경로를
 사용하거나 설정 오류를 반환한다.
 
@@ -686,8 +687,8 @@ refresh token을 생략한 응답은 이전 값을 유지하고 새 값이 있�
 병렬 도구 호출의 결과를 세션 전체의 마지막 challenge로 해석하지 않는다.
 
 token은 registry·Agent header보다 우선하는 마지막 credential이다.
-grant를 사용할 수 없어도 별도의 정적 credential이 있으면 서버를 호출할 수 있고,
-인증할 방법이 없으면 warning과 함께 제외한다.
+OAuth 서버는 호출자의 유효한 개인 grant가 없으면 warning과 함께 제외한다.
+Agent 소유자·다른 사용자·registry의 정적 인증으로 대신 호출하지 않는다.
 예약 신원 header는 credential로 계산하지 않는다.
 
 ## Workspace와 코딩 작업

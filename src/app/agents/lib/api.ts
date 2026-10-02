@@ -38,7 +38,6 @@ import type {
 } from "@/application/agent/configurationUseCases";
 import type { TelegramDestination } from "@/domain/telegram/destination";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
-import { testMcpConnection } from "@/app/tools/api";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
 
 export type { CostLimits, McpBinding, Agent, AgentVisibility, SubagentRef, AgentConfiguration, AgentParameters };
@@ -375,7 +374,7 @@ export async function revokeAgentToken(name: string, purpose: AgentCredentialPur
 // --- MCP OAuth connections -------------------------------------------------
 
 /**
- * An agent's connection to an OAuth-required registry server. Carries no
+ * The current user's connection to an OAuth-required registry server. Carries no
  * secret and no token — there is no reveal path for either, so this is the whole
  * of what the console can know.
  */
@@ -412,15 +411,7 @@ export async function disconnectMcp(name: string, server: string): Promise<void>
   );
 }
 
-/**
- * A server's tools as this agent sees them — the registry entry's headers, the
- * binding's overrides, and the agent's OAuth token. The registry-level probe
- * cannot answer for an OAuth server, since the credential belongs here.
- *
- * Only the owner may spend that credential, and agents are a shared catalog
- * anyone may read, so a non-owner falls back to the registry probe: no agent
- * credential and no overrides, but a tool list rather than a permission error.
- */
+/** Probe current Agent tools with the signed-in caller's own OAuth grant. */
 export async function listAgentMcpTools(
   name: string,
   server: string,
@@ -431,9 +422,6 @@ export async function listAgentMcpTools(
     headers: jsonHeaders,
     body: JSON.stringify({ headerOverrides }),
   });
-  if (response.status === 403) {
-    return testMcpConnection(server);
-  }
   return (await readJson<{ tools: McpTool[] }>(response)).tools;
 }
 

@@ -3,7 +3,7 @@
  *
  * Discovery runs once, when an admin registers or repairs a server, and stores
  * everything a run needs on the registry entry. Operator OAuth client settings
- * live there too; agent connections hold the resulting user grant. The run path
+ * live there too; personal connections hold the resulting user grant. The run path
  * never reads a well-known document: that would add two round trips and a third party's
  * availability to every time-to-first-token.
  */
@@ -36,10 +36,12 @@ import {
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { resolveMcpBindings } from "@/application/agent/mcpBindingSettings";
-import { assertAgentOwnerOrAdminReadable, assertAgentWritable } from "@/application/agent/agentUseCases";
+import type { RunUser } from "@/domain/execution/actor";
+import type { MemberRepository } from "@/domain/member/repository";
+import { resolveAgentCaller } from "@/application/auth/resolveRunUser";
 import { applyMcpUserEmail } from "@/application/mcpMetadataHeaders";
 import { resolveMcpCredentials } from "./credentials";
-import { listAgentMcpConnections } from "./listConnections";
+import { listUserMcpConnections } from "./listConnections";
 import { processManagedMcpLifecycleClaims } from "./managedMcpUseCases";
 import { assertAllowedUrl } from "@/application/registry/registryUseCases";
 import { skipsUrlGuard } from "@/domain/mcp/types";
@@ -54,7 +56,7 @@ import { mcpConnectionAuthMismatch } from "./mcpAuthProvider";
 /**
  * Discovery either finishes, or stops to ask which authorization server to use.
  * RFC 9728 lets a resource advertise several and puts the choice on the client;
- * silently taking the first would bind every agent's tokens to whichever the
+ * silently taking the first would bind every user's tokens to whichever the
  * provider happened to list first.
  */
 export type DiscoverAuthResult =
@@ -172,14 +174,7 @@ export const OAUTH_STATE_TTL_SECONDS = 600;
 /** Where the authorization server sends the browser back. */
 export const MCP_OAUTH_CALLBACK_PATH = "/api/mcps/oauth/callback";
 
-/**
- * Where this deployment publishes an agent's Client ID Metadata Document.
- *
- * One document per agent rather than one for the deployment, because the
- * document is what an authorization server shows the person approving the
- * connection. Its client name includes this deployment's display name and the
- * Agent name so the reader can identify both.
- */
+/** Shared installation metadata contains neither Agent names nor personal identities. */
 export const MCP_CLIENT_METADATA_PATH = "/api/mcps/oauth/client-metadata";
 
 /** The base URL with any trailing slashes removed, so paths append cleanly. */
@@ -188,7 +183,7 @@ function trimBase(baseUrl: string): string {
 }
 
 /**
- * The `client_id` an agent presents: the address of its metadata document.
+ * The shared OAuth `client_id`: the address of this installation's metadata document.
  *
  * The spec requires the `client_id` **inside** the document to equal the URL the
  * document was fetched from, exactly — an authorization server that finds them
@@ -197,8 +192,8 @@ function trimBase(baseUrl: string): string {
  * configured public base rather than from a request: two places deriving the
  * same URL is precisely the drift the rule is checking for.
  */
-export function clientMetadataUrl(baseUrl: string, agentName: string): string {
-  return `${trimBase(baseUrl)}${MCP_CLIENT_METADATA_PATH}/${agentName}`;
+export function clientMetadataUrl(baseUrl: string): string {
+  return `${trimBase(baseUrl)}${MCP_CLIENT_METADATA_PATH}`;
 }
 
 /**
@@ -215,13 +210,12 @@ export function clientMetadataUrl(baseUrl: string, agentName: string): string {
  */
 export function clientMetadataDocument(
   baseUrl: string,
-  agentName: string,
   serviceName = DEFAULT_SERVICE_NAME,
 ): Record<string, unknown> {
   const base = trimBase(baseUrl);
   return {
-    client_id: clientMetadataUrl(base, agentName),
-    client_name: `${serviceName} — ${agentName}`,
+    client_id: clientMetadataUrl(base),
+    client_name: serviceName,
     client_uri: base,
     redirect_uris: [`${base}${MCP_OAUTH_CALLBACK_PATH}`],
     grant_types: ["authorization_code", "refresh_token"],
@@ -268,7 +262,7 @@ function toConnectionView(
           clientSecret: cipher.mask(
             connection.clientSecret,
             mcpConnectionSecretContext(
-              connection.agentName,
+              connection.userId,
               connection.serverName,
               "client-secret",
             ),
@@ -343,6 +337,7 @@ export interface McpAuthUseCasesDeps {
   lifecycleClaims?: Set<string>;
   mcps: McpRepository;
   agents: AgentRepository;
+  members: Pick<MemberRepository, "getById">;
   connections: McpConnectionRepository;
   states: McpOAuthStateRepository;
   metadata: OAuthMetadataClient;
@@ -352,7 +347,7 @@ export interface McpAuthUseCasesDeps {
   urlPolicy: UrlPolicy;
   /** One-shot tool listing, shared with the registry's own probe. */
   probe: McpToolProbe;
-  /** Resolves (and refreshes) this agent's outbound Authorization. */
+  /** Resolves (and refreshes) the caller's outbound Authorization. */
   authProvider: McpAuthProvider;
   /** Absolute base of this deployment; the redirect URI is built from it. */
   publicBaseUrl: () => Promise<string | undefined>;
@@ -379,23 +374,23 @@ export interface McpAuthUseCases {
     input: SaveOAuthClientCredentialsInput,
   ): Promise<McpServerAuth>;
 
-  listConnections(agentName: string, userEmail: string): Promise<McpConnectionView[]>;
+  listConnections(agentName: string, user: RunUser): Promise<McpConnectionView[]>;
   saveClientCredentials(
     agentName: string,
     serverName: string,
     input: SaveClientCredentialsInput,
-    userEmail: string,
+    user: RunUser,
   ): Promise<McpConnectionView>;
   /** Returns the URL to send the browser to. */
   beginAuthorization(
     agentName: string,
     serverName: string,
-    userEmail: string,
+    user: RunUser,
   ): Promise<{ authorizeUrl: string }>;
   completeAuthorization(params: {
     state: string;
     code: string;
-    userEmail: string;
+    user: RunUser;
     /** RFC 9207, as the provider sent it. Validated before the code is redeemed. */
     iss?: string;
   }): Promise<{ agentName: string; serverName: string }>;
@@ -412,31 +407,28 @@ export interface McpAuthUseCases {
    */
   abandonAuthorization(params: {
     state: string;
-    userEmail: string;
+    user: RunUser;
     error: string;
     errorDescription?: string;
     iss?: string;
   }): Promise<{ error: string }>;
-  disconnect(agentName: string, serverName: string, userEmail: string): Promise<void>;
-  /**
-   * What this server offers *this agent*. The registry's own probe carries
-   * only the entry's static headers, so against an OAuth server it can do
-   * nothing but 401 — the credential that would answer belongs to the agent.
-   *
-   * `headerOverrides` is the binding's own layer, passed so the answer matches
-   * what a run would offer. Owner-gated like the rest of this use case: it
-   * spends the agent's connection and sends the caller's headers with it.
-   */
+  disconnect(agentName: string, serverName: string, user: RunUser): Promise<void>;
+  /** Probe with the caller's grant; only the Agent owner may supply draft binding headers. */
   listTools(
     agentName: string,
     serverName: string,
-    userEmail: string,
+    user: RunUser,
     headerOverrides?: HeaderOverrides,
   ): Promise<ListToolsResult>;
 }
 
 export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCases {
   const lifecycleClaims = deps.lifecycleClaims ?? processManagedMcpLifecycleClaims();
+  async function authorizeConnection(agentName: string, user: RunUser) {
+    const current = await resolveAgentCaller(deps, agentName, user.userId);
+    if (current.user.email !== user.email) throw new ForbiddenError("The authenticated account changed");
+    return current.agent;
+  }
   async function requireServer(name: string) {
     const server = await deps.mcps.get(name);
     if (!server) {
@@ -515,8 +507,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
    * policy lookup is not a verdict about that address and must not create a
    * different client through registration.
    */
-  async function servableMetadataUrl(agentName: string): Promise<string | undefined> {
-    const url = clientMetadataUrl(await publicBase(), agentName);
+  async function servableMetadataUrl(): Promise<string | undefined> {
+    const url = clientMetadataUrl(await publicBase());
     try {
       await assertAuthEndpoint(deps.urlPolicy, url, "Client ID metadata document");
       return url;
@@ -527,13 +519,13 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
   }
 
   async function requireConnection(
-    agentName: string,
+    userId: string,
     serverName: string,
   ): Promise<McpConnection> {
-    const connection = await deps.connections.get(agentName, serverName);
+    const connection = await deps.connections.get(userId, serverName);
     if (!connection) {
       throw new NotFoundError(
-        `Agent "${agentName}" has no connection to MCP server "${serverName}".`,
+        `Your account has no connection to MCP server "${serverName}".`,
       );
     }
     return connection;
@@ -718,9 +710,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       return maskedMcpAuth(deps.cipher, name, nextAuth);
     },
 
-    async listConnections(agentName, userEmail) {
-      await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
-      const connections = await listAgentMcpConnections(deps.connections, agentName);
+    async listConnections(agentName, user) {
+      await authorizeConnection(agentName, user);
+      const connections = await listUserMcpConnections(deps.connections, user.userId);
       // Existing grants can supply their provider identity without reconnecting. Limit
       // optional network reads; resolved identities survive subsequent token refreshes.
       async function viewConnection(connection: McpConnection, lookupAllowed: boolean): Promise<McpConnectionView | undefined> {
@@ -739,13 +731,13 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         // Display reads never rotate a grant or spend an expired token.
         if (connection.expiresAt && !(Date.parse(connection.expiresAt) > Date.now())) return toConnectionView(deps.cipher, withoutAccount, "unavailable");
         const accessToken = deps.cipher.decrypt(connection.accessToken,
-          mcpConnectionSecretContext(agentName, connection.serverName, "access-token"));
+          mcpConnectionSecretContext(user.userId, connection.serverName, "access-token"));
         const identity = await deps.accounts.read(server.auth, accessToken, { mcpUrl: server.url, loopback: skipsUrlGuard(server, deps.internalHostSuffixes) });
         if (identity.status !== "resolved") return toConnectionView(deps.cipher, withoutAccount, identity.status);
         const identified = { ...connection, connectedAccount: identity.account, accountLookupId: lookupId };
         if (await deps.connections.updateAccount(connection, identity.account, lookupId)) return toConnectionView(deps.cipher, identified);
         // Do not display the old account over a newer grant or resurrect a disconnect.
-        const latest = await deps.connections.get(agentName, connection.serverName);
+        const latest = await deps.connections.get(user.userId, connection.serverName);
         // Revalidate the winning snapshot against current registry settings, without
         // retrying a lookup that already lost its grant revision.
         return latest ? viewConnection(latest, false) : undefined;
@@ -754,10 +746,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       return views.filter((view): view is McpConnectionView => view !== undefined);
     },
 
-    async saveClientCredentials(agentName, serverName, input, userEmail) {
-      await assertAgentWritable(deps.agents, agentName, userEmail);
+    async saveClientCredentials(agentName, serverName, input, user) {
+      await authorizeConnection(agentName, user);
       const server = await requireOAuthServer(serverName);
-      const existing = await deps.connections.get(agentName, serverName);
+      const existing = await deps.connections.get(user.userId, serverName);
       const issuer = server.auth.issuer;
       const sameClient = existing?.clientId === input.clientId && existing.issuer === issuer;
       // A mask cannot transfer another client's or issuer's credential.
@@ -769,7 +761,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
             ? undefined
             : deps.cipher.encrypt(
                 submitted,
-                mcpConnectionSecretContext(agentName, serverName, "client-secret"),
+                mcpConnectionSecretContext(user.userId, serverName, "client-secret"),
               );
       const scopes = input.scopes ?? existing?.scopes ?? server.auth.scopesSupported ?? [];
 
@@ -789,11 +781,11 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       }
 
       const next: McpConnection = {
-        agentName,
+        userId: user.userId,
         serverName,
         clientId: input.clientId,
         ...(clientSecret ? { clientSecret } : {}),
-        // Whatever the owner just typed was registered with the server this
+        // Whatever the user just typed was registered with the server this
         // entry points at now; that is what makes it re-checkable later. The
         // audience goes with it, on the other axis.
         issuer,
@@ -811,12 +803,12 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       return toConnectionView(deps.cipher, next);
     },
 
-    async beginAuthorization(agentName, serverName, userEmail) {
-      await assertAgentWritable(deps.agents, agentName, userEmail);
+    async beginAuthorization(agentName, serverName, user) {
+      await authorizeConnection(agentName, user);
       const server = await requireOAuthServer(serverName);
       const callback = await redirectUri(server.auth.redirectUri);
       const issuer = server.auth.issuer;
-      let connection = await deps.connections.get(agentName, serverName);
+      let connection = await deps.connections.get(user.userId, serverName);
 
       /**
        * SEP-2352: a `client_id` means nothing away from the server that issued
@@ -838,7 +830,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         connection.issuer !== issuer;
       if (staleCredentials && connection?.clientRegistered !== true &&
           !server.auth.clientId && connection?.clientFromRegistry !== true) {
-        // Hand-entered credentials cannot be re-issued on the owner's behalf.
+        // Hand-entered credentials cannot be re-issued on the user's behalf.
         throw new ValidationError(
           `The client credentials stored for "${serverName}" were registered with a different authorization server (${connection?.issuer}). Register an app with ${issuer} and save its client ID and secret before connecting.`,
         );
@@ -848,7 +840,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       // reach is not a route, and taking it anyway dead-ends at the provider
       // with a message about a client rather than about a URL.
       const metadataUrl = !server.auth.clientId && server.auth.clientIdMetadataDocumentSupported
-        ? await servableMetadataUrl(agentName)
+        ? await servableMetadataUrl()
         : undefined;
 
       /**
@@ -870,7 +862,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       // or a document address this deployment no longer serves. The order is the
       // spec's: credentials already held (hand-entered ones reach here as
       // `connection.clientId`), then a metadata document, then registration, then
-      // nothing this app can do on the owner's behalf.
+      // nothing this app can do on the user's behalf.
       //
       // Registration is last because the revision deprecates it — but it is
       // still here, because a server on a 2025-era release offers no metadata
@@ -885,7 +877,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         // client authorized was granted by a different server, and must not
         // survive into this one.
         const base = {
-          agentName,
+          userId: user.userId,
           serverName,
           issuer,
           resource: server.auth.resource,
@@ -908,7 +900,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         } else if (server.auth.registrationEndpoint) {
           const registered = await deps.oauth.register({
             registrationEndpoint: server.auth.registrationEndpoint,
-            clientName: `${await deps.serviceName()} — ${agentName}`,
+            clientName: await deps.serviceName(),
             redirectUri: callback,
             scopes,
             // The method the token requests will prove themselves with: a
@@ -924,7 +916,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
               ? {
                   clientSecret: deps.cipher.encrypt(
                     registered.clientSecret,
-                    mcpConnectionSecretContext(agentName, serverName, "client-secret"),
+                    mcpConnectionSecretContext(user.userId, serverName, "client-secret"),
                   ),
                 }
               : {}),
@@ -936,7 +928,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           };
         } else if (server.auth.clientIdMetadataDocumentSupported) {
           // The provider's side is fine and ours is not, so saying it "supports
-          // neither" would send the owner to the provider over a setting of
+          // neither" would send the user to the provider over a setting of
           // ours. Named here because the alternative is finding out from the
           // provider, after approving, as *Unknown OAuth client*.
           throw new ValidationError(
@@ -962,7 +954,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           agentName,
           serverName,
           codeVerifier: deps.cipher.encrypt(pkce.verifier, mcpOAuthStateContext(state)),
-          userEmail,
+          userEmail: user.email,
+          userId: user.userId,
           redirectUri: callback,
           clientId: connection.clientId,
           ...(connection.clientFromRegistry ? { clientFromRegistry: true } : {}),
@@ -996,7 +989,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       return { authorizeUrl: url.toString() };
     },
 
-    async completeAuthorization({ state, code, userEmail, iss }) {
+    async completeAuthorization({ state, code, user, iss }) {
       // Consumed first and unconditionally: a replayed state must not be able to
       // bind a second token, whatever else about the request turns out to be
       // wrong.
@@ -1004,16 +997,16 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       if (!pending) {
         throw new ValidationError("This authorization link has expired or was already used.");
       }
-      if (pending.userEmail !== userEmail) {
+      if (pending.userId !== user.userId || pending.userEmail !== user.email) {
         throw new ForbiddenError("This authorization was started by a different user.");
       }
       // Before the code goes anywhere. RFC 9207 §2.4 places this ahead of the
       // token request because the whole point is to not hand the code to a
       // token endpoint that did not issue it.
       assertIssuerMatches(pending, iss);
-      // Re-checked here, not only at authorize time: ownership can change while
+      // Re-checked here, not only at authorize time: account access can change while
       // the user is away at the provider.
-      await assertAgentWritable(deps.agents, pending.agentName, userEmail);
+      await authorizeConnection(pending.agentName, user);
 
       const server = await requireOAuthServer(pending.serverName);
       // The entry may have been repointed while the user was at the provider.
@@ -1024,7 +1017,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           `The authorization server configured for "${pending.serverName}" changed while this authorization was in progress. Please connect it again.`,
         );
       }
-      const connection = await requireConnection(pending.agentName, pending.serverName);
+      const connection = await requireConnection(user.userId, pending.serverName);
       if (
         registryClientMismatch(connection, server.auth) ||
         (pending.clientId !== undefined && (
@@ -1063,7 +1056,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         accessToken: deps.cipher.encrypt(
           tokens.accessToken,
           mcpConnectionSecretContext(
-            pending.agentName,
+            pending.userId,
             pending.serverName,
             "access-token",
           ),
@@ -1073,7 +1066,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
               refreshToken: deps.cipher.encrypt(
                 tokens.refreshToken,
                 mcpConnectionSecretContext(
-                  pending.agentName,
+                  pending.userId,
                   pending.serverName,
                   "refresh-token",
                 ),
@@ -1086,7 +1079,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         // What the server actually granted, which may be narrower than asked.
         scopes: tokens.scope ? parseGrantedScopes(tokens.scope) : pending.scopes ?? connection.scopes,
         status: "connected",
-        connectedBy: userEmail,
+        connectedBy: user.email,
         ...(identity.status === "resolved" ? { connectedAccount: identity.account, accountLookupId: accountLookupId(server.auth, server.url) } : {}),
         connectedAt: now.toISOString(),
         authorizationEpoch: createHash("sha256").update(pending.state).digest("hex"),
@@ -1098,12 +1091,12 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       return { agentName: pending.agentName, serverName: pending.serverName };
     },
 
-    async abandonAuthorization({ state, userEmail, error, errorDescription, iss }) {
+    async abandonAuthorization({ state, user, error, errorDescription, iss }) {
       const pending = await deps.states.consume(state);
       if (!pending) {
         throw new ValidationError("This authorization link has expired or was already used.");
       }
-      if (pending.userEmail !== userEmail) {
+      if (pending.userId !== user.userId || pending.userEmail !== user.email) {
         throw new ForbiddenError("This authorization was started by a different user.");
       }
       // Throws on mismatch, which is what stops provider-controlled text from
@@ -1112,16 +1105,19 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       return { error: errorDescription ?? error };
     },
 
-    async disconnect(agentName, serverName, userEmail) {
-      await assertAgentWritable(deps.agents, agentName, userEmail);
-      const connection = await requireConnection(agentName, serverName);
+    async disconnect(agentName, serverName, user) {
+      await authorizeConnection(agentName, user);
+      const connection = await requireConnection(user.userId, serverName);
       if (!await deps.connections.deleteIfCurrent(connection)) {
         throw new ConflictError(`The connection to "${serverName}" changed while it was being disconnected. Reload and retry.`);
       }
     },
 
-    async listTools(agentName, serverName, userEmail, headerOverrides) {
-      const agent = await assertAgentOwnerOrAdminReadable(deps.agents, agentName, userEmail);
+    async listTools(agentName, serverName, user, headerOverrides) {
+      const agent = await authorizeConnection(agentName, user);
+      if (headerOverrides !== undefined && agent.ownerEmail !== user.email) {
+        throw new ForbiddenError("Only the Agent owner may probe draft binding headers");
+      }
       const server = await requireServer(serverName);
       const loopback = skipsUrlGuard(server, deps.internalHostSuffixes);
       if (!loopback) {
@@ -1137,15 +1133,15 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const [binding] = await resolveMcpBindings(deps.cipher, { get: async () => server },
         [{ name: serverName, ...(headerOverrides === undefined ? {} : { headers: headerOverrides }) }],
         agent.configuration?.mcpList ?? [], name => agentMcpHeadersContext(agentName, name));
-      const credentials = await resolveMcpCredentials({ cipher: deps.cipher, auth: deps.authProvider }, agentName, server, binding);
+      const credentials = await resolveMcpCredentials({ cipher: deps.cipher, auth: deps.authProvider }, agentName, server, binding, user);
       if (credentials.unavailable) return { ok: false, error: credentials.unavailable };
       const headers = credentials.headers;
-      applyMcpUserEmail(headers, userEmail);
+      applyMcpUserEmail(headers, user.email);
       const result = await deps.probe.listTools(server.url, headers, loopback);
       if (!result.ok && result.unauthorized && credentials.credentialFingerprint) {
         // What a run does with the same 401: record it, so the console offers a
-        // reconnect instead of leaving the owner to re-diagnose the message.
-        await deps.authProvider.markUnauthorized(agentName, serverName, credentials.credentialFingerprint, result.scope).catch((error: unknown) => {
+        // reconnect instead of leaving the user to re-diagnose the message.
+        await deps.authProvider.markUnauthorized(user.userId, serverName, credentials.credentialFingerprint, result.scope).catch((error: unknown) => {
           log.warn("mcp", `could not flag '${serverName}' as needing reauthorization`, error);
         });
       }

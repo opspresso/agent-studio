@@ -7,7 +7,7 @@ import type { ChatMessageInput } from "@/domain/llm/types";
 import type { RunOrigin, RunIdentity } from "@/domain/execution/actor";
 import type { Skill } from "@/domain/skill/types";
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
-import { listAgentMcpConnections } from "@/application/mcp/listConnections";
+import { listUserMcpConnections } from "@/application/mcp/listConnections";
 import {
   searchCapabilitiesByKind,
   type CatalogRerankReport,
@@ -255,6 +255,7 @@ async function discoverCapabilities(
   },
   configuration: AgentConfiguration,
   queries: readonly string[],
+  userId: string | undefined,
   signal?: AbortSignal,
   recordUsage?: engine.RecordUsageFn,
 ): Promise<{
@@ -311,8 +312,8 @@ async function discoverCapabilities(
   // One read for the whole run, not one per candidate. `needs_auth` and
   // `needs_reauth` are connections in name only — the console shows both as
   // something a person still has to finish — so only `connected` counts.
-  const connections = deps.mcpConnections
-    ? await listAgentMcpConnections(deps.mcpConnections, configuration.agentName)
+  const connections = deps.mcpConnections && userId
+    ? await listUserMcpConnections(deps.mcpConnections, userId)
     : [];
   const connected = new Set<string>(
     connections
@@ -520,6 +521,7 @@ export async function resolveRunTools(
           },
           configuration,
           queries,
+          origin?.user?.userId,
           signal,
           recordRerankUsage,
         );

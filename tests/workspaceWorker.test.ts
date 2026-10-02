@@ -86,7 +86,7 @@ afterEach(() => {
 
 async function start(runtime: "command" | "codex" = "command") {
   const api = createWorkspaceUseCases(deps);
-  const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime }, owner);
+  const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime }, { userId: "studio-user-1", email: owner });
   const run = await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, runtime === "command" ? { kind: "command", script: "echo task" } : { kind: "task", prompt: "do task" }, "request-0001");
   return { api, workspace, run };
 }
@@ -371,7 +371,7 @@ describe("durable workspace worker", () => {
     policy.repositoryOwners = ["company"];
     deps.policy = async () => policy;
     const api = createWorkspaceUseCases(deps);
-    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "New repository", runtime: "codex", repository: "company/new", baseBranch: "main" }, owner);
+    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "New repository", runtime: "codex", repository: "company/new", baseBranch: "main" }, { userId: "studio-user-1", email: owner });
     const run = await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "Implement feature" }, "request-0001");
     policy = { ...policy, mode: "owners", repositoryOwners: [] };
     await processWorkspace(deps, workspace.id);
@@ -387,14 +387,14 @@ describe("durable workspace worker", () => {
       commit: vi.fn(async () => "unexpected"), push: vi.fn(async () => {}) };
     deps.coding = vi.fn(() => coding);
     const api = createWorkspaceUseCases(deps);
-    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Git work", runtime: "codex", repository: "company/repo", baseBranch: "main" }, owner);
+    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Git work", runtime: "codex", repository: "company/repo", baseBranch: "main" }, { userId: "studio-user-1", email: owner });
     await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "Commit and push the changes" }, "request-0001");
     await processWorkspace(deps, workspace.id);
     const command = vi.mocked(provider.start).mock.calls[0]![2];
     expect(command.stdin).toContain("/control/git is intentionally protected");
     expect(command.stdin).toContain("Workspace prepare_git");
     expect(command.stdin).toContain("Commit and push the changes");
-    expect(deps.coding).toHaveBeenCalledWith("demo");
+    expect(deps.coding).toHaveBeenCalledWith("demo", { userId: "studio-user-1", email: "owner@example.test" });
     expect(coding.commit).not.toHaveBeenCalled();
     expect(coding.push).not.toHaveBeenCalled();
   });

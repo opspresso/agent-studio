@@ -69,7 +69,7 @@ async function fixture() {
   };
   const useCases = createWorkspaceUseCases(coding);
   const workspace = await useCases.create({ chatId: "workspace-chat", agentName: "agent", title: "Work", runtime: "codex",
-    repository: "company/repo", baseBranch: "main", createChat: true, sourceChatId: f.scope.sessionId }, owner);
+    repository: "company/repo", baseBranch: "main", createChat: true, sourceChatId: f.scope.sessionId }, { userId: "studio-user-1", email: owner });
   const git = createCodingUseCases(coding);
   const workspaceTool = createWorkspaceTool({ useCases, authorize: async () => {}, policy: () => coding.policy("agent"),
     workdir: "/workspace/repo", publicBaseUrl: "https://studio.example.test", sleep: async () => {},
@@ -132,8 +132,8 @@ describe("Workspace decisions returning to their source chat", () => {
     expect(JSON.parse(f.runAgent.mock.calls[0]![0].messages[1]!.content as string)).toMatchObject({ event: "workspace_ci_result", status: "succeeded" });
     const messages = await chats.listMessages(f.scope.sessionId);
     expect(messages.filter(row => row.role === "assistant" && row.workspaceAction?.approvalId === pr.id)).toHaveLength(1);
-    expect(f.coding.forge("agent").openPullRequest).toHaveBeenCalledTimes(1);
-    expect(f.coding.forge("agent").merge).not.toHaveBeenCalled();
+    expect(f.coding.forge("agent", f.user).openPullRequest).toHaveBeenCalledTimes(1);
+    expect(f.coding.forge("agent", f.user).merge).not.toHaveBeenCalled();
     await f.drain();
     expect(f.runAgent).toHaveBeenCalledTimes(1);
   });
@@ -175,7 +175,7 @@ describe("Workspace decisions returning to their source chat", () => {
     expect(f.runAgent).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(channel.seenParams[0]?.messages)).toContain("workspace_ci_result");
     expect((await repository.approvals(f.workspace.id, 10))[0]).toMatchObject({ action: { kind: "merge" }, status: "pending" });
-    expect(f.coding.forge("agent").merge).not.toHaveBeenCalled();
+    expect(f.coding.forge("agent", f.user).merge).not.toHaveBeenCalled();
     const notices = (await chats.listMessages(f.scope.sessionId)).filter(row => row.role === "assistant" && row.workspaceAction?.approvalId === f.pr.id);
     expect(notices).toHaveLength(2);
     expect(notices[1]).toMatchObject({ workspaceAction: { event: "ci", status: "succeeded" } });
@@ -192,7 +192,7 @@ describe("Workspace decisions returning to their source chat", () => {
     await f.drain();
     const event = JSON.parse(f.runAgent.mock.calls[0]![0].messages[1]!.content as string);
     expect(event).toMatchObject({ event: "workspace_ci_result", status: "failed" });
-    expect(f.coding.forge("agent").merge).not.toHaveBeenCalled();
+    expect(f.coding.forge("agent", f.user).merge).not.toHaveBeenCalled();
     expect((await repository.continuation(f.workspace.id, f.pr.id))?.status).toBe("completed");
   });
 
@@ -206,7 +206,7 @@ describe("Workspace decisions returning to their source chat", () => {
     vi.setSystemTime(Date.now() + 31 * 60_000);
     await f.drain();
     expect(JSON.parse(f.runAgent.mock.calls[0]![0].messages[1]!.content as string)).toMatchObject({ status: "failed" });
-    expect(f.coding.forge("agent").openPullRequest).toHaveBeenCalledTimes(1);
+    expect(f.coding.forge("agent", f.user).openPullRequest).toHaveBeenCalledTimes(1);
   });
 
   it("cancels a CI watch when a newer action owns the workflow", async () => {
@@ -232,16 +232,16 @@ describe("Workspace decisions returning to their source chat", () => {
     const prApproval = (await repository.approvals(f.workspace.id, 10)).find(row => row.action.kind === "pull-request")!;
     expect(prApproval).toMatchObject({ status: "succeeded", authorization: "coding-request" });
     expect(prApproval.sourceChatId).toBe(f.scope.sessionId);
-    expect(f.coding.forge("agent").openPullRequest).toHaveBeenCalledTimes(1);
+    expect(f.coding.forge("agent", f.user).openPullRequest).toHaveBeenCalledTimes(1);
     const mergeApproval = (await repository.approvals(f.workspace.id, 10)).find(row => row.action.kind === "merge")!;
     expect(mergeApproval.status).toBe("pending");
-    expect(f.coding.forge("agent").merge).not.toHaveBeenCalled();
+    expect(f.coding.forge("agent", f.user).merge).not.toHaveBeenCalled();
     f.setChannel(new FakeChannel([[contentChunk("Merged to main")]]));
     await f.git.decide(f.workspace.id, { user: f.user, actor: { kind: "user", id: f.user.email } }, mergeApproval.id, true);
     await f.drain();
-    expect(f.coding.coding("agent").commit).toHaveBeenCalledTimes(1);
-    expect(f.coding.forge("agent").openPullRequest).toHaveBeenCalledTimes(1);
-    expect(f.coding.forge("agent").merge).toHaveBeenCalledTimes(1);
+    expect(f.coding.coding("agent", f.user).commit).toHaveBeenCalledTimes(1);
+    expect(f.coding.forge("agent", f.user).openPullRequest).toHaveBeenCalledTimes(1);
+    expect(f.coding.forge("agent", f.user).merge).toHaveBeenCalledTimes(1);
     expect(await repository.list(f.owner, 20)).toHaveLength(1);
     const messages = await chats.listMessages(f.scope.sessionId);
     expect(messages.filter(row => row.role === "assistant" && row.workspaceAction)).toHaveLength(2);
@@ -257,7 +257,7 @@ describe("Workspace decisions returning to their source chat", () => {
     await Promise.all([processWorkspaceContinuation(f.deps, queued), processWorkspaceContinuation(f.deps, queued)]);
     vi.setSystemTime(Date.now() + 3000);
     await f.drain();
-    expect(f.coding.coding("agent").commit).toHaveBeenCalledTimes(1);
+    expect(f.coding.coding("agent", f.user).commit).toHaveBeenCalledTimes(1);
     expect(f.runAgent).toHaveBeenCalledTimes(1);
     expect(f.deps.authorize).toHaveBeenCalledWith({ userId: f.scope.userId, email: f.owner }, "agent");
     expect(f.runAgent).toHaveBeenCalledWith(expect.objectContaining({ actor: { kind: "user", id: f.user.email }, user: { userId: f.scope.userId, email: f.owner } }));
@@ -280,14 +280,14 @@ describe("Workspace decisions returning to their source chat", () => {
 
   it.each(["rejected", "failed", "uncertain"] as const)("delivers %s outcomes without replaying Git", async status => {
     const f = await fixture();
-    if (status === "failed") f.coding.coding("agent").review = async () => { throw new Error("Review failed"); };
-    if (status === "uncertain") vi.mocked(f.coding.coding("agent").push).mockRejectedValueOnce(new Error("Connection lost"));
+    if (status === "failed") f.coding.coding("agent", f.user).review = async () => { throw new Error("Review failed"); };
+    if (status === "uncertain") vi.mocked(f.coding.coding("agent", f.user).push).mockRejectedValueOnce(new Error("Connection lost"));
     await f.git.decide(f.workspace.id, { user: f.user, actor: { kind: "user", id: f.user.email } }, f.approval.id, status !== "rejected");
     await f.drain();
     const input = f.runAgent.mock.calls[0]![0];
     expect(JSON.parse(input.messages[1]!.content as string).status).toBe(status);
     expect(await repository.dueContinuations(new Date().toISOString(), 20)).toEqual([]);
-    expect(f.coding.forge("agent").openPullRequest).not.toHaveBeenCalled();
+    expect(f.coding.forge("agent", f.user).openPullRequest).not.toHaveBeenCalled();
   });
 
   it.each(["deleted", "revoked"])("cancels delivery when the source is %s", async mode => {
@@ -335,7 +335,7 @@ describe("Workspace decisions returning to their source chat", () => {
     const f = await fixture();
     await f.git.decide(f.workspace.id, { user: f.user, actor: { kind: "user", id: f.user.email } }, f.approval.id, true);
     const api = createWorkspaceUseCases(f.coding);
-    const other = await api.create({ chatId: "other-workspace-chat", createChat: true, agentName: "agent", runtime: "codex", title: "Other" }, f.owner);
+    const other = await api.create({ chatId: "other-workspace-chat", createChat: true, agentName: "agent", runtime: "codex", title: "Other" }, { userId: "studio-user-1", email: f.owner });
     await api.selectForChat(f.scope.sessionId, other.id, "agent", f.owner);
     await f.drain();
     expect(f.runAgent).not.toHaveBeenCalled();

@@ -1,7 +1,7 @@
 # MCP
 
 전역 registry의 서버를 Agent 설정에 연결하고 SDK Runtime에 도구로 제공한다.
-서버 주소·설명은 registry, 도구 선택·헤더 override는 Agent 설정, OAuth grant는 Agent가 소유한다.
+서버 주소·설명은 registry, 도구 선택·헤더 override는 Agent 설정, OAuth grant는 Studio 사용자가 소유한다.
 HTTP 형태는 [API](../API.md#mcp-oauth), 설정은 [CONFIGURATION](../CONFIGURATION.md#mcp),
 인가·SSRF·OAuth 검사는 [SECURITY](../SECURITY.md#mcp-oauth)를 따른다.
 
@@ -123,8 +123,10 @@ running과 reachable을 별도로 확인한다. [운영](../OPERATIONS.md#재배
 ## OAuth
 
 관리자는 서버에서 discovery한 `auth`와 공유 OAuth 앱을 관리하고,
-Agent 소유자는 그 앱으로 자기 계정의 grant를 연결한다.
-access/refresh token과 연결 revision은 Agent별 연결 행에 보관하며 Agent 실행 설정과 분리한다.
+member 이상인 사용자는 접근 가능한 Agent의 연동 → 내 MCP 연결에서 본인 계정을 연결한다.
+access/refresh token·revision·갱신 claim은 Studio 사용자 ID와 MCP 서버별로 보관한다.
+같은 서버를 사용하는 모든 Agent가 호출자의 연결을 재사용하고, Agent 삭제는 개인 연결을 지우지 않는다.
+Agent 소유자·관리자의 연결을 호출자에게 대신 제공하지 않는다.
 
 Agent의 MCP 연결 화면은 Studio에서 인가를 완료한 사용자 대신 실제 서비스 계정을 표시한다.
 계정 조회는 제공자 이름 목록에 제한되지 않는다. OIDC discovery가 UserInfo를 제공하면 임의의
@@ -143,7 +145,7 @@ Google 인가 요청에는 `openid`·`email`을 추가하고 실제 요청 scope
 state에 보관한다. callback에서 받은 새 계정은 기존 표시를 대체하고 token refresh는 계정 표시를 유지한다.
 일반 OIDC는 discovery에서 지원을 확인한 identity scopes를, 수동 HTTP 계약은 관리자가 지정한 scopes를
 client registration과 authorization 모두에 적용한다. 추가 scope는 다음 사용자 인가에서 동의를 받는다.
-기존 연결은 소유자용 목록 조회에서 아직 계정 정보가 없을 때만 확인하며 동시 조회는 4개로 제한한다.
+기존 연결은 본인 연결 목록 조회에서 아직 계정 정보가 없을 때만 확인하며 동시 조회는 4개로 제한한다.
 만료됐거나 issuer·resource·client가 달라진 grant는 이 표시 조회에 사용하지 않는다.
 조회 실패와 클라이언트의 조회 미지원은 구분해 표시하고 연결 상태와 token은 유지한다.
 계정 조회 계약 없음과 명시적 비활성화도 구분한다. cache는 issuer·resource·조회 계약·MCP URL의
@@ -158,12 +160,12 @@ Client ID가 달라지면 기존 grant를 거절한다. 개별 등록 client sec
 다른 client나 issuer에 옮기지 않으며, 저장 시 resource가 달라졌으면 기존 token도 제거한다.
 
 credential 선택은 기존 client, 사용할 수 있는 Client ID Metadata Document,
-dynamic registration 순서다. Agent별 공개 metadata URL은 설정한 공개 base로만 만든다.
+dynamic registration 순서다. 설치 공용 metadata URL은 설정한 공개 base로만 만든다.
 제공자가 가져올 수 없는 주소이면 다른 지원 경로를 사용하거나 구체적인 설정 오류로 거절한다.
 
 refresh는 남은 실행 시간을 고려한 여유 구간에서 수행한다. 같은 프로세스의 동시 요청은
-Agent·서버·연결 revision·현재 token target이 같은 갱신만 공유하며 완료 후 기록을 제거한다.
-provider 요청 전에 Agent·서버·connection revision에 묶인 durable claim을 transaction으로 확보한다.
+사용자 ID·서버·연결 revision·현재 token target이 같은 갱신만 공유하며 완료 후 기록을 제거한다.
+provider 요청 전에 사용자 ID·서버·connection revision에 묶인 durable claim을 transaction으로 확보한다.
 다른 프로세스는 250ms 간격으로 최대 30초 동안 결과를 확인하며 같은 refresh token을 다시 보내지 않는다.
 provider 네트워크 요청 동안 DB connection이나 transaction을 잡아 두지 않는다. 결과 저장은 connection
 revision CAS를 사용하고 reconnect·삭제가 먼저 완료됐으면 원래 grant로 덮어쓰지 않는다.
@@ -179,6 +181,10 @@ credential과 fingerprint가 같은 경우에만 재인가 상태나 추가 scop
 
 OAuth는 credential을 공급한다. 유효한 token이 있으면 정적·binding Authorization보다 우선하고,
 `application/mcp/credentials.ts`가 기존 header 이름의 모든 대소문자 표기를 제거한 뒤 한 값을 적용한다.
-연결이 없더라도 별도 정적 credential이 있으면 사용할 수 있다.
+OAuth가 설정된 서버는 호출자의 유효한 grant를 요구하며 정적 credential로 우회하지 않는다.
+연결이 없거나 재인증이 필요하면 도구를 제외하고 이유를 표시한다. registry 도구 검사도 같은 규칙을
+적용하며 개인 사용자가 없는 catalog 색인은 OAuth 서버를 호출하지 않는다.
+Memory recall·하위 Agent·오디오 전달·Workspace Git도 원래 호출자의 사용자 ID를 전달한다.
+각 도구 실행은 연결의 인가 epoch를 재검사하므로 연결 해제·재인증 후에는 새 실행이 필요하다.
 PKCE·resource·issuer·state·콜백 소유권, Google·Slack metadata의 제한된 예외와 내부 URL 경계는
 [SECURITY의 OAuth 계약](../SECURITY.md#mcp-oauth)을 따른다.

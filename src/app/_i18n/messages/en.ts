@@ -5,7 +5,7 @@
  *
  * Keys are flat `area.thing` names. Product nouns and propagated error messages
  * remain English. API Reference content and some operator-maintenance captions
- * also remain English; integration settings are owner/admin surfaces.
+ * also remain English; shared integration settings are owner/admin surfaces. Personal MCP grants belong to each caller.
  */
 export const en = {
   "common.memberExecutionRequired": "Agent execution requires member access. Ask an administrator to update your tier.",
@@ -630,7 +630,7 @@ export const en = {
   "tools.rediscover": "Rediscover",
   "tools.clearAuth": "Clear",
   "tools.chooseIssuer": "This resource advertises more than one authorization server. Choose one:",
-  "tools.authNotConfigured": "Not configured. Discovery reads the server’s published metadata; Agents then authorize with the OAuth client configured here.",
+  "tools.authNotConfigured": "Not configured. Discovery reads the server’s published metadata; Users then authorize their own accounts with the OAuth client configured here.",
   "tools.restartOnChange": "Changing the image, port, environment, arguments, or endpoint automatically restarts the container.",
   "tools.maskedHint": "Masked values keep the stored secret. Type a new value to replace it.",
   "tools.deleteTitle": "Delete MCP server",
@@ -844,7 +844,7 @@ export const en = {
   "guide.capabilities.toolsBody":
     "Have an administrator register the server on Tools and check that discovery lists the expected tools. Bind the server to the Agent, select the tools to expose, and save the settings. If calls fail, inspect the server status, required headers, and run warnings. A reachable server can still return no usable tools or require authorization.",
   "guide.capabilities.oauth": "MCP connection settings have different scopes",
-  "guide.capabilities.oauthBody": "Tool selections, header overrides and file-response mappings require Save with Agent settings. Refresh tools after changing headers. Masked values preserve saved secrets; an empty map removes overrides. OAuth connect/disconnect actions save immediately. Administrators configure any required OAuth app in Tools; owners authorize the Agent account.",
+  "guide.capabilities.oauthBody": "Tool selections, header overrides and file-response mappings require Save with Agent settings. Refresh tools after changing headers. Masked values preserve saved secrets; an empty map removes overrides. OAuth connect/disconnect actions save immediately. Administrators configure any required OAuth app in Tools; each caller authorizes their own account in Integrations → My MCP connections.",
   "guide.capabilities.agents": "Delegate to another agent",
   "guide.capabilities.agentsBody":
     "Bind another configured Agent when the task benefits from a specialist. Give each delegate a precise description. Delegated activity is labelled by author, with usage attributed to the originating run.",
@@ -1283,7 +1283,7 @@ export const en = {
   "configuration.pickerLoadFailed": "Could not load {items}. Available choices may be incomplete.",
   "configuration.searchSkills": "Search registered skills",
   "configuration.dynamicCapabilities": "Find capabilities for each request",
-  "configuration.dynamicCapabilitiesHint": "Match recent user requests to Skills and MCP servers/tools; request-free previews use the system prompt. The first 500 description characters are indexed. Discovery preserves explicit bindings; unavailable or capped tools produce warnings. OAuth servers are added only after this Agent connects them.",
+  "configuration.dynamicCapabilitiesHint": "Match recent user requests to Skills and MCP servers/tools; request-free previews use the system prompt. The first 500 description characters are indexed. Discovery preserves explicit bindings; unavailable or capped tools produce warnings. OAuth servers are added only after the caller connects them.",
 
   "configuration.memoryRecall": "Recall memory before each run",
   "configuration.memoryRecallHint": "Before the first token, call recall once per eligible bound MCP server and add its text to the system prompt. Blocked tools and tools requiring approval are skipped automatically. Missing targets, failed calls and timeouts produce warnings. Recall remains available for the Agent to call under its tool policy.",
@@ -1299,7 +1299,7 @@ export const en = {
     "Layered over the registry entry’s headers, for this Agent only. Saved with the Agent settings.",
   "mcpSettings.connection": "Connection",
   "mcpSettings.connectionNote":
-    "Authorize this Agent’s user account with the OAuth client configured by the operator. Saved immediately, not with the Agent settings.",
+    "Authorize your own account with the configured OAuth client. The personal connection is saved immediately and reused across Agents.",
   "mcpSettings.title": "{server} settings",
   "mcpSettings.savesConfiguration": "Saves all current Agent settings.",
   "mcpSettings.close": "Close",
@@ -1347,7 +1347,11 @@ export const en = {
   "preview.toolsOffered": "Tools offered ({count})",
   "preview.blurb": "Assembles the draft system prompt with recalled context, Skills, MCP tools and local delegation, contacting configured services on demand.",
 
-  // An agent's OAuth authorization for one MCP server.
+  // Personal OAuth authorization for one MCP server.
+  "mcpConn.personalTitle": "My MCP connections",
+  "mcpConn.personalDescription": "Connect your own account to the services this Agent uses. Your connection is shared across Agents using the same MCP server. Disconnecting applies to all of them.",
+  "mcpConn.noBoundServers": "This Agent has no OAuth MCP servers to connect.",
+  "mcpConn.server": "MCP server",
   "mcpConn.connected": "Connected",
   "mcpConn.needsAuth": "Not authorized",
   "mcpConn.needsReauth": "Reconnect required",
@@ -1359,10 +1363,10 @@ export const en = {
   "mcpConn.noAuthNeeded":
     "This server does not require authorization. Whatever credentials it needs come from the registry entry’s own headers, plus any override above.",
   "mcpConn.noClientDocument":
-    "This provider requires a manually registered OAuth app. An administrator must save its client ID and secret in the MCP server’s Tools OAuth settings before an Agent can connect.",
+    "This provider requires a manually registered OAuth app. An administrator must save its client ID and secret in the MCP server’s Tools OAuth settings before users can connect their accounts.",
   "mcpConn.connectedAccount": "Connected as {account}",
   "mcpAccount.title": "Connected account lookup",
-  "mcpAccount.hint": "Configure how this server identifies the authorized account. Each Agent uses its own OAuth connection.",
+  "mcpAccount.hint": "Configure how this server identifies the authorized account. Each user uses their own OAuth connection.",
   "mcpAccount.method": "Account lookup method",
   "mcpAccount.auto": "Automatic (OIDC UserInfo or service preset)",
   "mcpAccount.http": "HTTP account API (GET)",
@@ -1375,7 +1379,7 @@ export const en = {
   "mcpAccount.tool": "Current-user tool name",
   "mcpAccount.readOnly": "The configured tool must advertise readOnlyHint: true. Account lookups never call write tools.",
   "mcpAccount.arguments": "Current-user tool arguments (JSON)",
-  "mcpAccount.argumentsHint": "Public self-query parameters only. Credentials come from the Agent's encrypted OAuth connection.",
+  "mcpAccount.argumentsHint": "Public self-query parameters only. Credentials come from the caller's encrypted OAuth connection.",
   "mcpAccount.path": "Account field (JSON Pointer)",
   "mcpAccount.pathHint": "The field containing the connected account's email, username or ID, for example /data/email.",
   "mcpAccount.save": "Save account lookup",
@@ -1386,9 +1390,9 @@ export const en = {
   "mcpConn.connectedAt": "Connected on {when}",
   "mcpConn.saveCredentials": "Save credentials",
   "mcpConn.disconnect": "Disconnect",
-  "mcpOAuth.automatic": "Agents can connect without a manually registered OAuth app. A reachable client metadata document is used first, then dynamic registration when available.",
+  "mcpOAuth.automatic": "Users can connect their accounts without a manually registered OAuth app. A reachable client metadata document is used first, then dynamic registration when available.",
   "mcpOAuth.manual": "Manual OAuth app settings",
-  "mcpOAuth.sharedHint": "Shared by Agents using this MCP. Clear Client ID to remove the manual app; automatic registration is used only when the provider supports it.",
+  "mcpOAuth.sharedHint": "Shared by users of this MCP. Clear Client ID to remove the manual app; automatic registration is used only when the provider supports it.",
   "mcpOAuth.secretHint": "Leave blank to keep the stored secret. Changing Client ID requires a new secret if the provider uses one.",
   "mcpOAuth.redirectHint": "Filled from the deployment’s public URL. Register this exact callback with the OAuth provider.",
   "mcpOAuth.save": "Save OAuth client",

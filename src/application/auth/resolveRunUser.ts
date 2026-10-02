@@ -11,17 +11,21 @@ export interface RunUserDeps {
 }
 
 /** Resolve only an authenticated or persistently captured ID; never adopt an account by email. */
-export async function resolveRunUser(
+export async function resolveAgentCaller(
   deps: RunUserDeps,
   agentName: string,
   userId: string,
-): Promise<RunUser> {
+) {
   if (!userId) throw new ForbiddenError("An authenticated Studio user is required");
   const member = await deps.members.getById(userId);
   if (!member || member.id !== userId) throw new ForbiddenError("The execution user is no longer active");
   if (!tierMayRunAgents(member.tier)) {
     throw new ForbiddenError("Agent execution requires member access");
   }
-  await assertAgentAccessible(deps.agents, agentName, member.email);
-  return { userId: member.id, email: member.email };
+  const agent = await assertAgentAccessible(deps.agents, agentName, member.email);
+  return { user: { userId: member.id, email: member.email }, agent };
+}
+
+export async function resolveRunUser(deps: RunUserDeps, agentName: string, userId: string): Promise<RunUser> {
+  return (await resolveAgentCaller(deps, agentName, userId)).user;
 }

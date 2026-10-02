@@ -126,7 +126,7 @@ export async function prepareMemoryForRun(
     configuration: AgentConfiguration;
     query: string;
     signal?: AbortSignal;
-    origin?: Partial<Pick<RunOrigin, "actor" | "userEmail" | "conversation" | "backgroundTask">>;
+    origin?: Partial<Pick<RunOrigin, "actor" | "user" | "userEmail" | "conversation" | "backgroundTask">>;
   },
 ): Promise<Awaited<ReturnType<typeof recallForRun>>> {
   if (input.origin?.backgroundTask || !input.configuration.parameters.memoryRecall) {

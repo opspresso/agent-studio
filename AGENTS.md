@@ -242,7 +242,9 @@ key, cap, formatter, error identity, or collapse rule, search
   through `src/shared/logger.ts` except the documented domain warning and browser error boundaries.
 - Personal Agent API tokens are bound to the issuing Studio user ID and Agent. Authentication
   checks the current account and Agent access; Agent ownership never determines a token caller.
-- Workspace GitHub API and Git transport use the current Agent's bound GitHub MCP authentication.
+- MCP OAuth connections belong to the caller's Studio user ID and MCP server, shared across Agents.
+  Never substitute an owner grant or static credentials when a required personal OAuth grant is missing.
+- Workspace GitHub API and Git transport use the caller's grant for the current Agent's bound GitHub MCP.
   Settings → Plugins credentials and `GITHUB_TOKEN` are only for fetching Plugins; never fall back
   to them or another Agent's grant. OAuth tokens stay on the server; Sandbox receives credential-free bundles.
 - A masked or empty secret update preserves stored data; a mask with no stored counterpart is

@@ -19,7 +19,7 @@ const owner = "owner@example.com";
 const policy: WorkspaceAgentPolicy = { agentName: "demo", runtimes: ["command", "codex", "claude", "opencode"],
   repositories: ["company/demo"], checks: [], deploymentWorkflows: [] };
 let nextId: number;
-const checkRepository = vi.fn(async (_agentName: string, _repository: string, _baseBranch: string) => {});
+const checkRepository = vi.fn(async (_agentName: string, _user: import("@/domain/execution/actor").RunUser, _repository: string, _baseBranch: string) => {});
 const useCases = createWorkspaceUseCases({ repository, chats, agents, now: () => now,
   newId: () => `id-${++nextId}`, policy: () => policy, idleTtlSeconds: 3600, checkRepository });
 
@@ -38,7 +38,7 @@ afterEach(() => vi.useRealTimers());
 
 async function create(runtime: "command" | "codex" = "command", coding = false) {
   return useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime,
-    ...(coding ? { repository: "company/demo", baseBranch: "main" } : {}) }, owner);
+    ...(coding ? { repository: "company/demo", baseBranch: "main" } : {}) }, { userId: "studio-user-1", email: owner });
 }
 
 describe("workspace admission and persistence", () => {
@@ -182,7 +182,7 @@ describe("workspace admission and persistence", () => {
     vi.restoreAllMocks();
   });
   it("never chooses the first registered repository implicitly", async () => {
-    await expect(useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "codex", baseBranch: "main" }, owner)).rejects.toMatchObject({ status: 400 });
+    await expect(useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "codex", baseBranch: "main" }, { userId: "studio-user-1", email: owner })).rejects.toMatchObject({ status: 400 });
     expect(checkRepository).not.toHaveBeenCalled();
   });
   it("checks tool and model admission while preserving reads and close after revocation", async () => {
@@ -190,7 +190,7 @@ describe("workspace admission and persistence", () => {
     const authorize = vi.fn(async () => { if (!enabled) throw new Error("tools disabled"); });
     const assertRuntime = vi.fn(async () => {});
     const api = createWorkspaceUseCases({ repository, chats, agents, now: () => now, newId: () => `id-${++nextId}`, policy: () => ({ ...policy, idleTtlSeconds: 300 }), idleTtlSeconds: 1800, authorize, assertRuntime });
-    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "command" }, owner);
+    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "command" }, { userId: "studio-user-1", email: owner });
     expect(workspace.idleTtlSeconds).toBe(300);
     enabled = false;
     await expect(api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "command", script: "true" }, "revoked-123")).rejects.toThrow("tools disabled");
@@ -201,14 +201,14 @@ describe("workspace admission and persistence", () => {
   it("uses an explicitly selected allowed repository and fences later policy removal", async () => {
     const expanded = { ...policy, repositories: ["company/second"] };
     const api = createWorkspaceUseCases({ repository, chats, agents, now: () => now, newId: () => `id-${++nextId}`, policy: () => expanded, idleTtlSeconds: 60, checkRepository });
-    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Second repository", runtime: "codex", repository: "company/second", baseBranch: "main" }, owner);
+    const workspace = await api.create({ chatId: "chat-1", agentName: "demo", title: "Second repository", runtime: "codex", repository: "company/second", baseBranch: "main" }, { userId: "studio-user-1", email: owner });
     expect(workspace.coding?.repository).toBe("company/second");
     expanded.repositories = [];
     await expect(api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, { kind: "task", prompt: "continue" }, "removed-policy")).rejects.toMatchObject({ status: 409 });
   });
 
   it("refuses a requested repository outside the deployment allowlist", async () => {
-    await expect(useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "codex", repository: "other/private", baseBranch: "main" }, owner)).rejects.toMatchObject({ status: 400 });
+    await expect(useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "codex", repository: "other/private", baseBranch: "main" }, { userId: "studio-user-1", email: owner })).rejects.toMatchObject({ status: 400 });
     expect(await repository.forChat("chat-1")).toBeNull();
   });
   it("atomically starts a new chat and deduplicates concurrent creation retries", async () => {
@@ -249,7 +249,7 @@ describe("workspace admission and persistence", () => {
   });
 
   it("rejects foreign owners, wrong agents, and duplicate workspace attachment", async () => {
-    await expect(useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "command" }, "other@example.com"))
+    await expect(useCases.create({ chatId: "chat-1", agentName: "demo", title: "Task", runtime: "command" }, { userId: "studio-user-1", email: "other@example.com" }))
       .rejects.toMatchObject({ status: 404 });
     const workspace = await create();
     await expect(create()).rejects.toMatchObject({ status: 409 });

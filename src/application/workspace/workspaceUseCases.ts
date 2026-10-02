@@ -25,14 +25,14 @@ export interface WorkspaceDeps {
   idleTtlSeconds: number;
   authorize?(agentName: string, email: string, actor?: RunActor, grant?: ExecutionGrant, user?: RunUser): Promise<void>;
   assertRuntime?(runtime: WorkspaceRuntime): Promise<void>;
-  checkRepository?(agentName: string, repository: string, baseBranch: string, sourceRevision?: string): Promise<void>;
+  checkRepository?(agentName: string, user: RunUser, repository: string, baseBranch: string, sourceRevision?: string): Promise<void>;
 }
 
-export async function checkWorkspaceRepository(deps: WorkspaceDeps, agentName: string, repository: string, baseBranch: string, sourceRevision?: string): Promise<void> {
+export async function checkWorkspaceRepository(deps: WorkspaceDeps, agentName: string, user: RunUser, repository: string, baseBranch: string, sourceRevision?: string): Promise<void> {
   if (!deps.checkRepository) throw new ValidationError("Workspace repository validation is not configured");
   try {
-    if (sourceRevision === undefined) await deps.checkRepository(agentName, repository, baseBranch);
-    else await deps.checkRepository(agentName, repository, baseBranch, sourceRevision);
+    if (sourceRevision === undefined) await deps.checkRepository(agentName, user, repository, baseBranch);
+    else await deps.checkRepository(agentName, user, repository, baseBranch, sourceRevision);
   }
   catch (error) {
     if (error instanceof CodingRepositoryNotReadyError) throw new ValidationError(error.message);
@@ -68,12 +68,12 @@ export interface StartWorkspaceInput {
   executionGrant?: ExecutionGrant;
 }
 
-export type WorkspaceView = Omit<Workspace, "ownerEmail" | "leaseToken" | "leaseUntil" | "checkpointId" | "creationFingerprint">;
+export type WorkspaceView = Omit<Workspace, "ownerEmail" | "leaseToken" | "leaseUntil" | "checkpointId" | "creationFingerprint" | "pullRequestUser">;
 export type WorkspaceRunView = Omit<WorkspaceRun, "leaseToken" | "leaseUntil" | "requestKey" | "operationId" | "outputOffset" | "protocolBuffer" | "executionGrant" | "studioSlot">;
 
 export function workspaceView(workspace: Workspace): WorkspaceView {
-  const { ownerEmail: _owner, leaseToken: _token, leaseUntil: _lease, checkpointId: _checkpoint, creationFingerprint: _creation, ...view } = workspace;
-  void [_owner, _token, _lease, _checkpoint, _creation];
+  const { ownerEmail: _owner, leaseToken: _token, leaseUntil: _lease, checkpointId: _checkpoint, creationFingerprint: _creation, pullRequestUser: _pullRequestUser, ...view } = workspace;
+  void [_owner, _token, _lease, _checkpoint, _creation, _pullRequestUser];
   return view;
 }
 export function workspaceRunView(run: WorkspaceRun): WorkspaceRunView {
@@ -133,13 +133,15 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
     return chat;
   }
   return {
-    async checkRepository(agentName: string, ownerEmail: string, repository: string, baseBranch: string) {
+    async checkRepository(agentName: string, user: RunUser, repository: string, baseBranch: string) {
+      const ownerEmail = user.email;
       await assertAgentAccessible(deps.agents, agentName, ownerEmail);
       await deps.authorize?.(agentName, ownerEmail);
       if (!isRepositoryName(repository) || !isGitBranch(baseBranch) || !workspaceAllowsRepository(await workspacePolicy(deps, agentName), repository)) throw new ValidationError("Repository or base branch is not configured for this agent");
-      await checkWorkspaceRepository(deps, agentName, repository, baseBranch);
+      await checkWorkspaceRepository(deps, agentName, user, repository, baseBranch);
     },
-    async create(input: CreateWorkspaceInput, ownerEmail: string): Promise<Workspace> {
+    async create(input: CreateWorkspaceInput, user: RunUser): Promise<Workspace> {
+      const ownerEmail = user.email;
       await assertAgentAccessible(deps.agents, input.agentName, ownerEmail);
       await deps.authorize?.(input.agentName, ownerEmail);
       await deps.assertRuntime?.(input.runtime);
@@ -167,7 +169,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
         throw new ValidationError("Invalid workspace idle TTL");
       }
       if (input.sourceRevision && (!input.baseBranch || input.runtime !== "command" || !/^[a-f0-9]{40,64}$/.test(input.sourceRevision))) throw new ValidationError("Invalid review checkout");
-      if (input.baseBranch) await checkWorkspaceRepository(deps, input.agentName, repository!, input.baseBranch, input.sourceRevision);
+      if (input.baseBranch) await checkWorkspaceRepository(deps, input.agentName, user, repository!, input.baseBranch, input.sourceRevision);
       const now = deps.now().toISOString();
       const id = deps.newId();
       const session: RuntimeSession = { id: deps.newId(), workspaceId: id, runtime: input.runtime, createdAt: now, updatedAt: now };
@@ -214,7 +216,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       let created = false;
       if (!workspace) {
         try { workspace = await this.create({ chatId, agentName: input.agentName, runtime: input.runtime, baseBranch: input.baseBranch, repository: input.repository,
-          title, createChat: true, creationFingerprint, sourceChatId, sourceRevision: input.sourceRevision }, ownerEmail); created = true; }
+          title, createChat: true, creationFingerprint, sourceChatId, sourceRevision: input.sourceRevision }, user); created = true; }
         catch (error) {
           if (!(error instanceof ConflictError)) throw error;
           workspace = await deps.repository.forChat(chatId);
@@ -317,7 +319,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       if (workspace.leaseToken && Date.parse(workspace.leaseUntil ?? "") > deps.now().getTime()) throw new ConflictError("Workspace is busy");
       const pending = workspace.activeActionId ? await deps.repository.approval(id, workspace.activeActionId) : null;
       if (workspace.activeActionId && pending?.status !== "pending") throw new ConflictError("Workspace has an executing or uncertain action");
-      if (workspace.coding && !workspace.coding.baseSha) await checkWorkspaceRepository(deps, workspace.agentName, workspace.coding.repository, workspace.coding.baseBranch, workspace.coding.sourceRevision);
+      if (workspace.coding && !workspace.coding.baseSha) await checkWorkspaceRepository(deps, workspace.agentName, user, workspace.coding.repository, workspace.coding.baseBranch, workspace.coding.sourceRevision);
       const now = deps.now().toISOString();
       const run: WorkspaceRun = {
         id: `${deps.now().getTime()}-${deps.newId()}`, workspaceId: id, sessionId: workspace.sessionId,

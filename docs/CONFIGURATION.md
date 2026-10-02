@@ -369,10 +369,10 @@ PR 자동 리뷰의 Agent 실행과 Workspace 검사는 같은 토큰 발급 사
 Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐·TTL·승인 결과 전달과 CI 대기가
 진행되지 않는다. Workspace task와 채팅 후속 실행은 각각 workerConcurrency 상한을 적용하는 별도 큐다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.
 
-코딩 작업은 해당 Agent 설정에 명시적으로 연결한 GitHub MCP의 인증을 사용한다. OAuth 연결의
-issuer·resource·공유 client를 기존 MCP 인증 제공자가 검사하고, 만료가 가까우면 같은 Agent의
-토큰을 갱신한다. 정적 인증은 MCP registry 헤더와 Agent의 현재 endpoint에 묶인 헤더 override를
-사용하며 유효한 OAuth 연결이 우선한다. 연결 누락·해제·불일치에는 다른 Agent나 Plugin 토큰을 사용하지 않는다.
+코딩 작업은 해당 Agent가 바인딩한 GitHub MCP에 대한 호출자 자신의 인증을 사용한다. OAuth 연결의
+사용자 ID·issuer·resource·공유 client를 검사하고 만료가 가까우면 그 사용자의 토큰을 갱신한다. 정적 인증은 MCP registry 헤더와 Agent의 현재 endpoint에 묶인 헤더 override를
+사용한다. OAuth가 설정됐으면 호출자의 유효한 개인 연결이 필수이며 연결 누락·해제·불일치에는
+정적 인증·다른 사용자·Agent 소유자·Plugin 토큰으로 우회하지 않는다.
 `Settings → Plugins → GitHub 인증`과 `GITHUB_TOKEN`은 Plugin 가져오기에만 사용한다.
 
 Git 인증은 서버에서만 수행하고 자격증명이 없는 Git bundle을 Sandbox에 전달한다. 서버에 Git

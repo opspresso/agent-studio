@@ -400,7 +400,7 @@ describe("MCP registry secret contract", () => {
     ]);
     const useCases = createMcpUseCases(repo);
 
-    await useCases.testConnection("m", "Owner@Example.com");
+    await useCases.testConnection("m", { userId: "owner", email: "Owner@Example.com" });
 
     expect(listMcpToolsMock).toHaveBeenCalledWith(
       "https://mcp.example/mcp",

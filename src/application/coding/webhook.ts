@@ -1,3 +1,4 @@
+import type { RunUser } from "@/domain/execution/actor";
 import { createHash } from "node:crypto";
 import type { WorkspaceRepository } from "@/domain/workspace/repository";
 import type { CodingForge } from "@/domain/coding/forge";
@@ -14,7 +15,7 @@ function field(value: unknown, ...path: string[]): unknown {
 }
 
 /** Signed deliveries refresh authoritative PR state only; webhook content never starts a task or approves an effect. */
-export async function handleCodingWebhook(repository: WorkspaceRepository, forge: (agentName: string) => CodingForge, deliveryId: string, raw: string): Promise<{ processed: boolean }> {
+export async function handleCodingWebhook(repository: WorkspaceRepository, forge: (agentName: string, user: RunUser) => CodingForge, deliveryId: string, raw: string): Promise<{ processed: boolean }> {
   if (!isGitHubDeliveryId(deliveryId)) throw new ValidationError("Invalid GitHub delivery id");
   let payload: unknown;
   try { payload = JSON.parse(raw); } catch { throw new ValidationError("Invalid GitHub webhook JSON"); }
@@ -26,7 +27,7 @@ export async function handleCodingWebhook(repository: WorkspaceRepository, forge
   for (let attempt = 0; attempt < 4; attempt++) {
     const workspace = await repository.get(id);
     const deliveredRepo = field(payload, "repository", "full_name");
-    if (!workspace?.coding || workspace.status === "closed" || workspace.deleteRequestedAt ||
+    if (!workspace?.coding || !workspace.pullRequestUser || workspace.status === "closed" || workspace.deleteRequestedAt ||
       typeof deliveredRepo !== "string" || deliveredRepo.toLowerCase() !== workspace.coding.repository.toLowerCase()) return { processed: false };
     const previous = await repository.delivery(id, deliveryId);
     if (previous) {
@@ -35,7 +36,7 @@ export async function handleCodingWebhook(repository: WorkspaceRepository, forge
     }
     const number = workspace.pullRequest?.number ?? field(payload, "pull_request", "number");
     if (typeof number !== "number" || !Number.isSafeInteger(number) || number < 1) return { processed: false };
-    const pullRequest = await forge(workspace.agentName).pullRequest(workspace.coding, number);
+    const pullRequest = await forge(workspace.agentName, workspace.pullRequestUser).pullRequest(workspace.coding, number);
     try {
       await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, revision: workspace.revision + 1, pullRequest },
         delivery: { id: deliveryId, fingerprint } });

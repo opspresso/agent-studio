@@ -73,8 +73,8 @@ describe("guest console access", () => {
     f.write.mockResolvedValue({ agentName: "demo", serverName: "tools" });
     const response = await mcpCallback.GET(new Request("https://studio.test/api/mcps/oauth/callback?state=pending&code=fixture"));
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain("Connected tools to demo");
-    expect(f.write).toHaveBeenCalledWith({ state: "pending", code: "fixture", userEmail: "member@example.test", iss: undefined });
+    expect(await response.text()).toContain("Connected your account to tools");
+    expect(f.write).toHaveBeenCalledWith({ state: "pending", code: "fixture", user: { userId: "member-1", email: "member@example.test" }, iss: undefined });
   });
   it("refuses guest Chat, approval and recommendation work before reading request bodies", async () => {
     const malformed = () => new Request("https://studio.test/api/test", {

@@ -115,10 +115,10 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 그 agent 의 
 | `/api/agents/{name}/telegram/webhook` | `POST` | member + owner |
 | `/api/agents/{name}/teams` | `GET` `PUT` `DELETE` | owner / member + owner |
 | `/api/agents/{name}/teams/test` | `POST` | member + owner |
-| `/api/agents/{name}/mcp-connections` | `GET` | owner |
-| `/api/agents/{name}/mcp-connections/{server}` | `PUT` `DELETE` | member + owner |
-| `/api/agents/{name}/mcp-connections/{server}/authorize` | `POST` | member + owner |
-| `/api/agents/{name}/mcp-connections/{server}/tools` | `POST` | member + owner |
+| `/api/agents/{name}/mcp-connections` | `GET` | member + 본인 연결 |
+| `/api/agents/{name}/mcp-connections/{server}` | `PUT` `DELETE` | member + 본인 연결 |
+| `/api/agents/{name}/mcp-connections/{server}/authorize` | `POST` | member + 본인 연결 |
+| `/api/agents/{name}/mcp-connections/{server}/tools` | `POST` | member + 본인 연결 |
 
 ### 레지스트리
 
@@ -137,7 +137,7 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 그 agent 의 
 | `/api/mcps/managed/{name}` | `GET` `PUT` `DELETE` | admin |
 | `/api/mcps/managed/{name}/restart` | `POST` | admin |
 | `/api/mcps/oauth/callback` | `GET` | member. 자격 증명 저장 전에 현재 등급 재검사 |
-| `/api/mcps/oauth/client-metadata/{agent}` | `GET` | **공개** |
+| `/api/mcps/oauth/client-metadata` | `GET` | **공개** |
 
 ### Chat·사용량·플랫폼
 
@@ -1120,7 +1120,12 @@ RFC 9728 protected-resource 메타데이터 → RFC 8414 authorization-server �
 항목의 **URL** 을 수정하면 `auth` 블록은 그대로 버려진다. 그것은 옛 주소의 well-known 문서에서
 읽어 온 것이었다.
 
-### 연결 (owner)
+### 개인 연결 (member 이상)
+
+호출자는 세션의 사용자 ID로 결정하고 본문에서 받지 않는다. 현재 계정·등급·Agent 접근을
+검사하며 소유자가 아닌 member도 public Agent에서 본인 MCP를 연결할 수 있다.
+저장은 사용자 ID·서버별이며 다른 Agent에서도 같은 개인 연결을 재사용한다.
+연결 목록·Client Secret 마스크·해제는 본인에게만 적용한다.
 
 ```
 GET    /api/agents/{name}/mcp-connections
@@ -1164,18 +1169,16 @@ POST   /api/agents/{name}/mcp-connections/{server}/tools
 - `auth` 블록이 없는 레지스트리 항목은 연결할 대상이 없으므로 `PUT` 과 `/authorize` 는 `400` 으로
   답한다. `/authorize` 는 공개 base URL 이 설정되지 않았을 때, 서버가 동적 등록을 제공하지 않고
   손으로 입력한 클라이언트도 없을 때, 그리고 저장된 인증 정보가 지금 그 항목이 지목하는 것과 다른
-  issuer 에서 발급됐을 때도 `400` 이다. `DELETE` 는 그 agent 가 그 서버에 연결을 갖고 있지
-  않으면 `404` 로 답한다. `/tools` 는 실행에 연결이 필요 없고, 그 `404` 는 레지스트리 항목 자체가
-  사라졌다는 뜻이다.
-- `/tools` 는 **이 agent 가 보는 대로** 그 서버의 도구를 나열한다. agent 자신의 연결과 그
-  바인딩의 헤더 오버레이를 얹어서. 레지스트리 자신의 `POST /api/mcps/{name}/tools` 프로브와는
-  구별된다. 그쪽은 항목의 정적 헤더와 요청 사용자 email 만 싣기 때문에 OAuth 서버에 대해서는
-  401 밖에 낼 수 없다.
+  issuer 에서 발급됐을 때도 `400` 이다. `DELETE`는 본인이 그 서버에 연결을 갖고 있지 않으면 `404`로 답한다. `/tools`는 OAuth 서버에 대한 본인 연결이 필요하다. `404`는 레지스트리 항목이 없다는 뜻이다.
+- `/tools`는 현재 Agent binding과 호출자 자신의 OAuth grant로 도구를 조회한다.
+  `headerOverrides`로 미저장 초안을 검사하는 기능은 Agent 소유자에게만 허용한다.
+  registry의 `POST /api/mcps/{name}/tools`도 본인의 grant를 쓰지만 Agent binding을 적용하지 않는다.
+  OAuth 연결이 없으면 두 경로 모두 정적 credential로 우회하지 않는다.
   두 probe 모두 요청한 사용자의 email을 보호된 `X-User-Email`로 추가한다.
   마스킹된 override는 현재 Agent 설정의 같은 서버 바인딩에서 해석한다. 두 probe는 tenant header를
   보내지 않으므로 tenant별 도구 목록은 실제 런과 다를 수 있다.
-  소유자 게이트인 이유도 같다: 그 agent 의 연결을 소비한다. 그 `502` 는 서버에 아예 닿지 않는
-  두 거절도 포함한다. 아웃바운드 가드가 막는 URL, 그리고 인증 정보를 해석할 수 없는 연결이다.
+  `502`는 아웃바운드 가드가 막는 URL과 사용할 수 없는 개인 연결처럼 서버에 닿기 전에
+  거절한 경우도 포함한다.
 
 ### 범용 계정 조회 설정 (admin)
 
@@ -1216,22 +1219,23 @@ authorization server 가 **브라우저**를 여기로 리다이렉트하므로,
 `Cache-Control: no-store` 다.
 
 콜백은 code 를 교환하기 전에 RFC 9207 `iss` 를 검증하고, 사용자가 프로바이더에 가 있는 동안
-바뀔 수 있는 agent 소유권과 OAuth client·resource를 다시 확인한다. 토큰 교환에는 pending
+바뀔 수 있는 현재 계정·member 등급·Agent 접근과 OAuth client·resource를 다시 확인한다.
+state를 시작한 사용자 ID와 이메일이 모두 일치해야 한다. 토큰 교환에는 pending
 state에 저장한 원래 Redirect URI를 사용한다. 검사 전체는
 [SECURITY.md](SECURITY.md#mcp-oauth) 를 보라.
 
 ### Client ID 메타데이터 문서
 
 ```
-GET /api/mcps/oauth/client-metadata/{agent}          (public)
+GET /api/mcps/oauth/client-metadata          (public)
 ```
 
-그 agent 의 OAuth Client ID Metadata Document 다. authorization server 가 URL 인
+설치 공용 OAuth Client ID Metadata Document다. authorization server 가 URL 인
 `client_id` 를 해석하려고 가져간다 (프로토콜 `2026-07-28`. 이 개정은 동적 등록을 deprecate 하지만,
 문서를 받아들이지 않는 서버에는 여전히 그것이 폴백이다).
 **일부러 비인증이다**. 읽는 쪽이 세션 없이 도착하는 그 서버다. 그리고 secret 을 싣지 않는다:
-배포의 이름과, 받아들이는 단 하나의 redirect URI 뿐이다. slug 가 아닌 이름은 `404`, 공개 base
-URL 이 설정되지 않았으면 `503`, 그리고 `Cache-Control: public, max-age=300` 이다.
+배포의 이름과 받아들이는 단 하나의 redirect URI뿐이다. Agent 이름과 사용자 정보는 포함하지 않는다.
+공개 base URL이 설정되지 않았으면 `503`, 그리고 `Cache-Control: public, max-age=300` 이다.
 
 ## Agent API 토큰
 

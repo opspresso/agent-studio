@@ -230,7 +230,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   const { mcpConnectionRepository } = await import(
     "@/infrastructure/db/repositories/mcpConnectionRepository"
   );
-  const { listAgentMcpConnections } = await import("@/application/mcp/listConnections");
+  const { listUserMcpConnections } = await import("@/application/mcp/listConnections");
   const { mcpOAuthStateRepository } = await import(
     "@/infrastructure/db/repositories/mcpOAuthStateRepository"
   );
@@ -330,12 +330,12 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
         repositoryCreates++;
         return { repository: request.repository, repositoryId: 42, url: `https://github.example.test/${request.repository}`, baseBranch: "main", private: request.private };
       } }) });
-    const repositoryAttempts = await Promise.allSettled([createRepository.create(agentName, repositoryRequest, "it@example.com"), createRepository.create(agentName, repositoryRequest, "it@example.com")]);
+    const repositoryAttempts = await Promise.allSettled([createRepository.create(agentName, repositoryRequest, { userId: integrationMemberId, email: "it@example.com" }), createRepository.create(agentName, repositoryRequest, { userId: integrationMemberId, email: "it@example.com" })]);
     assert.ok(repositoryAttempts.some(result => result.status === "fulfilled"));
     assert.equal(repositoryCreates, 1, "one external create across concurrent requests");
     assert.deepEqual((await workspacePolicyRepository.get(agentName))?.rules?.repositories, [repositoryRequest.repository]);
     assert.equal((await workspaceRepositoryCreationStore.get(agentName, repositoryRequest.repository))?.status, "created");
-    assert.equal((await createRepository.create(agentName, repositoryRequest, "it@example.com")).reused, true);
+    assert.equal((await createRepository.create(agentName, repositoryRequest, { userId: integrationMemberId, email: "it@example.com" })).reused, true);
     assert.equal(repositoryCreates, 1, "completed receipt is not recreated");
     pass("Workspace repository creation: durable claim, atomic registration and replay");
 
@@ -572,9 +572,11 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.equal(await mcpRepository.get(`${serverName}-absent`), null);
     pass("MCP metadata patch: URL fence, header preservation, clear, missing row refusal");
 
-    // ---------- mcp oauth connection + in-flight state ----------
+    // ---------- personal MCP OAuth connection + in-flight state ----------
+    const { deletePartition } = await import("@/infrastructure/db/store");
+    cleanup(() => deletePartition(dbKeys.mcpUserPartition(agentName)));
     await mcpConnectionRepository.put({
-      agentName,
+      userId: agentName,
       serverName,
       clientId: "client-abc",
       clientSecret: encryptSecret(
@@ -601,6 +603,14 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     });
     const conn = await mcpConnectionRepository.get(agentName, serverName);
     assert.ok(conn, "mcp connection get");
+    cleanup(() => deletePartition(dbKeys.mcpUserPartition(integrationMemberId)));
+    await mcpConnectionRepository.put({ ...conn, userId: integrationMemberId, clientSecret: undefined, refreshToken: undefined,
+      accessToken: encryptSecret("second-user-access", mcpConnectionSecretContext(integrationMemberId, serverName, "access-token")) });
+    const otherUserConnection = (await mcpConnectionRepository.get(integrationMemberId, serverName))!;
+    assert.equal(decryptSecret(otherUserConnection.accessToken!, mcpConnectionSecretContext(integrationMemberId, serverName, "access-token")), "second-user-access");
+    assert.equal((await mcpConnectionRepository.get(agentName, serverName))?.accessToken, conn.accessToken, "another user's grant cannot replace this user's token");
+    assert.equal((await listUserMcpConnections(mcpConnectionRepository, integrationMemberId)).length, 1, "personal grant listing is user-scoped");
+
     assert.deepEqual(conn.connectedAccount, { provider: "github", label: "connected-account" }, "provider account round-trip");
     assert.equal(
       decryptSecret(
@@ -616,9 +626,9 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.equal(conn.issuer, "https://auth.example.com", "credential issuer round-trip");
     assert.equal(conn.resource, "https://mcp.example.com", "token resource round-trip");
     assert.equal(
-      (await listAgentMcpConnections(mcpConnectionRepository, agentName)).length,
+      (await listUserMcpConnections(mcpConnectionRepository, agentName)).length,
       1,
-      "connection listed under its agent partition",
+      "connection listed under its user partition",
     );
 
     // Compare-and-set on the grant revision: only the first writer can replace
@@ -700,6 +710,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     await mcpOAuthStateRepository.put(
       {
         state: oauthState,
+        userId: integrationMemberId,
         agentName,
         serverName,
         codeVerifier: encryptSecret("verifier", mcpOAuthStateContext(oauthState)),

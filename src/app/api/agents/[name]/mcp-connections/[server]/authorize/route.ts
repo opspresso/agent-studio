@@ -13,7 +13,7 @@ export const POST = withMemberAuth(async (user, _request: Request, ctx: RouteCon
   const { name, server } = await ctx.params;
   try {
     return Response.json(
-      await mcpAuthUseCases.beginAuthorization(parseName(name), parseName(server), user.email),
+      await mcpAuthUseCases.beginAuthorization(parseName(name), parseName(server), { userId: user.id, email: user.email }),
     );
   } catch (error) {
     return apiError(error);

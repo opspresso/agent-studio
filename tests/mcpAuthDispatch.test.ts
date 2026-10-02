@@ -65,7 +65,7 @@ const cipher = {
 
 function connectionFixture(overrides: Partial<McpConnection> = {}): McpConnection {
   return {
-    agentName: "p",
+    userId: "p",
     serverName: "slack",
     clientId: "client-1",
     clientSecret: "enc:shh",
@@ -95,7 +95,7 @@ function providerHarness(opts: {
   const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
     connections: {
       get: async () => stored,
-      listByAgent: async () => (stored ? [stored] : []),
+      listByUser: async () => (stored ? [stored] : []),
       put: async () => {},
       putIfCurrent: async () => true,
       delete: async () => {},
@@ -191,7 +191,7 @@ describe("resolving the Authorization for an agent's connection", () => {
     expect(h.refreshCalls).toHaveLength(1);
   });
 
-  it.each([{ agentName: "another-agent" }, { serverName: "another-server" }])("refuses credential rows from another Agent or server before decryption %j", async patch => {
+  it.each([{ userId: "another-user" }, { serverName: "another-server" }])("refuses credential rows from another user or server before decryption %j", async patch => {
     const h = providerHarness({ connection: connectionFixture(patch) });
     const result = await h.headersFor();
     expect(result.headers).toEqual({});
@@ -290,7 +290,7 @@ describe("resolving the Authorization for an agent's connection", () => {
     const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
       connections: {
         get: async () => stored,
-        listByAgent: async () => [stored],
+        listByUser: async () => [stored],
         put: async () => {},
         putIfCurrent: async () => true,
         delete: async () => {},
@@ -685,7 +685,7 @@ describe("markUnauthorized with a scope challenge", () => {
     const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
       connections: {
         get: async () => stored,
-        listByAgent: async () => [stored],
+        listByUser: async () => [stored],
         put: async (next: typeof stored) => {
           puts.push(next);
         },

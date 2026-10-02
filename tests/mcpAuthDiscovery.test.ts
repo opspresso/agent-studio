@@ -1,3 +1,4 @@
+import { memberFixture } from "./memberFixture";
 /**
  * Discovering what an OAuth flow against a registry MCP server needs.
  *
@@ -55,6 +56,7 @@ function useCases(
   let server = opts.server ?? SERVER;
   const stored: McpServer[] = [];
   const deps = {
+    members: { getById: async (id: string) => memberFixture({ id, email: "owner@example.com" }) },
     serviceName: async () => "Agent Studio",
     lifecycleClaims: opts.lifecycleClaims ?? new Set<string>(),
     mcps: opts.repository ?? {

@@ -24,7 +24,7 @@ import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
 import { openReviewWorkspace } from "@/application/workspace/reviewWorkspace";
 import { workspaceCaller } from "@/application/workspace/workspaceCaller";
 import { authorizeWorkspaceExecution } from "@/application/workspace/workspaceAuthorization";
-import { resolveRunUser } from "@/application/auth/resolveRunUser";
+import { resolveAgentCaller, resolveRunUser } from "@/application/auth/resolveRunUser";
 import { executeWorkspaceTask, executeAgent } from "@/application/execution/runAgent";
 import { runWorkspaceContinuations } from "@/application/chat/workspaceContinuation";
 import type { ChatDeps } from "@/application/chat/deps";
@@ -436,6 +436,12 @@ const capabilityAccess = createCapabilityVisibility({
   settings: settingsRepository, plugins: pluginRepository, skills: skillRepository, mcps: mcpRepository,
 });
 export const capabilityVisibilityUseCases = { getView: capabilityAccess.getView, update: capabilityAccess.update };
+const mcpAuthProvider = createMcpAuthProvider({
+  refreshClaims: mcpRefreshRepository, sleep: ms => workspaceSleep(ms),
+  connections: mcpConnectionRepository,
+  oauth: oauthClient,
+  cipher: secretCipher,
+});
 const syncMcpUseCases = createMcpUseCases(
   mcpRepository,
   secretCipher,
@@ -444,7 +450,7 @@ const syncMcpUseCases = createMcpUseCases(
   config.mcpInternalHostSuffixes,
 );
 export const mcpUseCases = createMcpUseCases(
-  capabilityAccess.mcps, secretCipher, urlPolicy, mcpToolProbe, config.mcpInternalHostSuffixes,
+  capabilityAccess.mcps, secretCipher, urlPolicy, mcpToolProbe, config.mcpInternalHostSuffixes, undefined, mcpAuthProvider,
 );
 
 /**
@@ -469,22 +475,22 @@ export const managedMcpUseCases =
         sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       })
     : undefined;
-const mcpAuthProvider = createMcpAuthProvider({
-  refreshClaims: mcpRefreshRepository, sleep: ms => workspaceSleep(ms),
-  connections: mcpConnectionRepository,
-  oauth: oauthClient,
-  cipher: secretCipher,
-});
 const agentGitHubCredentials = createAgentGitHubCredentials({
-  agents: agentRepository, mcps: capabilityAccess.mcps, auth: mcpAuthProvider, cipher: secretCipher,
+  authorize: async (agentName, user) => {
+    const current = await resolveAgentCaller({ agents: agentRepository, members: { getById: getExecutionMemberById } }, agentName, user.userId);
+    if (current.user.email !== user.email) throw new ForbiddenError("The authenticated account changed");
+    return current.agent;
+  },
+  mcps: capabilityAccess.mcps, auth: mcpAuthProvider, cipher: secretCipher,
   target: { apiUrl: config.githubApiUrl, webUrl: config.githubWebUrl ?? "" },
 });
-function agentCodingGitHub(agentName: string) {
+function agentCodingGitHub(agentName: string, user: import("@/domain/execution/actor").RunUser) {
   const settings = config.workspaceGitHub;
   if (!settings) throw new ValidationError("Workspace GitHub API and web endpoints are not configured");
-  return createCodingGitHub({ ...settings, getToken: () => agentGitHubCredentials.token(agentName) });
+  return createCodingGitHub({ ...settings, getToken: () => agentGitHubCredentials.token(agentName, user) });
 }
 export const mcpAuthUseCases = createMcpAuthUseCases({
+  members: { getById: getExecutionMemberById },
   serviceName: async () => (await getServiceBranding()).name,
   mcps: capabilityAccess.mcps,
   agents: agentRepository,
@@ -1129,10 +1135,10 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       const sandbox = workspace?.sandboxId ? await workspaceRepository.sandbox(id, workspace.sandboxId) : null;
       const coding = getWorkspaceWorkerDeps().coding;
       if (!workspace || workspace.ownerEmail !== ownerEmail || workspace.activeRunId || !sandbox || !coding) throw new ValidationError("Review Workspace cannot be verified");
-      return coding(workspace.agentName).review(sandbox.externalId);
+      return coding(workspace.agentName, { userId: grant.userId, email: grant.email }).review(sandbox.externalId);
     } }, target);
   },
-  reviewForge: agentName => agentCodingGitHub(agentName).reviews,
+  reviewForge: (agentName, user) => agentCodingGitHub(agentName, user).reviews,
   triggers: triggerRepository,
   agents: agentRepository,
 
@@ -1157,7 +1163,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
 };
 
 async function sourceRefreshIdentity(input: Parameters<NonNullable<ExecutionDeps["sourceRefreshIdentity"]>>[0]) {
-  const connection = await mcpConnectionRepository.get(input.configuration.agentName, input.server.name);
+  const connection = input.user ? await mcpConnectionRepository.get(input.user.userId, input.server.name) : null;
   return sourceRefreshFingerprint(input.server, input.binding, connection);
 }
 
@@ -1192,7 +1198,8 @@ export function getAudioRuntime() {
     urlPolicy, downloader: sourceDownloader, files, authorize: async (agent, email) => { await authorize(agent, email); },
     refresh: createMcpSourceRefresher(executionDeps),
     now: () => new Date(), id: randomUUID });
-  const validateOutputs = async (input: Pick<SubmitAudioJobInput, "postprocess" | "destination">, agentName: string, email: string) => {
+  const validateOutputs = async (input: Pick<SubmitAudioJobInput, "postprocess" | "destination">, agentName: string, user: import("@/domain/execution/actor").RunUser) => {
+    const email = user.email;
     const result: Pick<AudioJob, "postprocess" | "destination"> = {};
     if (input.postprocess) {
       result.postprocess = await resolveAudioPostprocessor(authorize, input.postprocess, email);
@@ -1204,14 +1211,14 @@ export function getAudioRuntime() {
       const binding = configuration?.mcpList.find((entry) => entry.name === input.destination!.serverName);
       if (!configuration || !binding) throw new ValidationError("The destination must be bound to the Agent's current settings");
       result.destination = { ...input.destination, configuration: { ...configuration, mcpList: [binding] } };
-      const destination = await openDestination({ agentName, userEmail: email, destination: result.destination });
+      const destination = await openDestination({ agentName, userEmail: email, user, destination: result.destination });
       await destination.close();
     }
     return result;
   };
   const configuration = createAudioConfigUseCases({ configs: audioJobConfigRepository,
     authorize: async (agent, email) => { await authorize(agent, email); },
-    validate: async (input, agent, email) => { await getTranscriptionTarget(input.model); await validateOutputs(input, agent, email); },
+    validate: async (input, agent, user) => { await getTranscriptionTarget(input.model); await validateOutputs(input, agent, user); },
     now: () => new Date(),
   });
   const jobs = createAudioJobUseCases({ authorizeRun: authorizeAgentRun, jobs: audioJobRepository, configs: audioJobConfigRepository, files: sourceFileRepository,
@@ -1294,11 +1301,11 @@ export function getAudioRuntime() {
     if (result.termination !== "completed" || result.warnings.length) throw new AudioJobStepError("postprocess_run_incomplete", false);
     return extractMemories ? result.content : JSON.stringify({ text: result.content, memories: [], warnings: [] });
   } });
-  async function openDestination(job: Pick<AudioJob, "agentName" | "userEmail" | "destination"> & Partial<Pick<AudioJob, "user" | "actor" | "executionGrant">>, signal?: AbortSignal) {
+  async function openDestination(job: Pick<AudioJob, "agentName" | "userEmail" | "destination" | "user"> & Partial<Pick<AudioJob, "actor" | "executionGrant">>, signal?: AbortSignal) {
     await authorize(job.agentName, job.userEmail);
     const configuration = job.destination?.configuration;
     if (!configuration || !job.destination) throw new AudioJobStepError("delivery_configuration_missing", false);
-    const mcp = await buildMcpTools(executionDeps, configuration, signal, { actor: job.actor, userEmail: job.userEmail });
+    const mcp = await buildMcpTools(executionDeps, configuration, signal, { actor: job.actor, user: job.user, userEmail: job.userEmail });
     const required = [...(job.destination.documents ? ["document_ingest", "document_ingest_status", "document_ingest_retry"] : []),
       ...(job.destination.memories ? ["remember"] : [])];
     if (required.some((name) => !mcp.aliasFor?.(job.destination!.serverName, name))) {
@@ -1398,8 +1405,8 @@ const workspaceDeps: WorkspaceDeps = {
     if (!config.workspace?.modelGatewayUrl) throw new ValidationError("WORKSPACE_MODEL_GATEWAY_URL is required for native model runtimes");
   },
   now: () => new Date(), newId: randomUUID,
-  checkRepository: (agentName, repository, baseBranch, sourceRevision) =>
-    agentCodingGitHub(agentName).forge.checkRepository(repository, baseBranch, sourceRevision),
+  checkRepository: (agentName, user, repository, baseBranch, sourceRevision) =>
+    agentCodingGitHub(agentName, user).forge.checkRepository(repository, baseBranch, sourceRevision),
   idleTtlSeconds: 1800,
 };
 export const workspaceUseCases = createWorkspaceUseCases(workspaceDeps);
@@ -1415,7 +1422,7 @@ export const workspaceRepositoryPolicyUseCases = createWorkspaceRepositoryPolicy
 export const workspaceRepositoryCreationUseCases = createWorkspaceRepositoryCreationUseCases({
   policies: workspacePolicyRepository, creations: workspaceRepositoryCreationStore,
   authorize: (agentName, ownerEmail) => authorizeWorkspaceTools(ownerEmail, agentName), now: () => new Date(),
-  forge: agentName => agentCodingGitHub(agentName).forge,
+  forge: (agentName, user) => agentCodingGitHub(agentName, user).forge,
 });
 
 async function authorizeWorkspaceTools(email: string, agentName: string, actor?: RunActor, grant?: import("@/domain/execution/actor").ExecutionGrant, user?: import("@/domain/execution/actor").RunUser): Promise<void> {
@@ -1463,11 +1470,11 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps & { coding: NonNullable<W
         return adapter.command(...args);
       } };
     },
-    coding: agentName => {
+    coding: (agentName, user) => {
       const github = config.workspaceGitHub;
       if (!github) throw new ValidationError("Workspace GitHub API and web endpoints are not configured");
       return createCodingWorktree(backend.control, { webUrl: github.webUrl, internalHosts: github.internalHosts,
-        serverToken: () => agentGitHubCredentials.token(agentName) });
+        serverToken: () => agentGitHubCredentials.token(agentName, user) });
     },
     runTimeoutMs: MAX_RUN_DURATION_MS,
     execute: (workspace, work, identity, slot) => executeWorkspaceTask(executionDeps, agentRepository, workspace, work, identity, slot),
@@ -1508,7 +1515,7 @@ export const chatDeps: ChatDeps = {
 
 export function getCodingUseCases() {
   const deps = getWorkspaceWorkerDeps();
-  return createCodingUseCases({ ...deps, members: { getById: getExecutionMemberById }, coding: deps.coding, forge: agentName => agentCodingGitHub(agentName).forge });
+  return createCodingUseCases({ ...deps, members: { getById: getExecutionMemberById }, coding: deps.coding, forge: (agentName, user) => agentCodingGitHub(agentName, user).forge });
 }
 
 export function verifyWorkspaceGitHubWebhook(raw: string, signature: string | null): boolean {
@@ -1516,7 +1523,7 @@ export function verifyWorkspaceGitHubWebhook(raw: string, signature: string | nu
 }
 
 export async function receiveWorkspaceGitHubWebhook(deliveryId: string, raw: string) {
-  return handleCodingWebhook(workspaceRepository, agentName => agentCodingGitHub(agentName).forge, deliveryId, raw);
+  return handleCodingWebhook(workspaceRepository, (agentName, user) => agentCodingGitHub(agentName, user).forge, deliveryId, raw);
 }
 
 export const workspaceOptions = createWorkspaceOptionsUseCase({
@@ -1538,11 +1545,11 @@ export const agentRecommendationUseCases = createAgentRecommendationUseCases({
       })),
 });
 
-export async function workspaceBranches(agentName: string, ownerEmail: string, requestedRepository?: string) {
-  await authorizeWorkspaceTools(ownerEmail, agentName);
+export async function workspaceBranches(agentName: string, user: import("@/domain/execution/actor").RunUser, requestedRepository?: string) {
+  await authorizeWorkspaceTools(user.email, agentName, { kind: "user", id: user.email }, undefined, user);
   const policy = await getWorkspaceAgentPolicy(agentName);
   const repo = requestedRepository;
   if (!repo || !policy) throw new ValidationError("Workspace GitHub integration is not configured");
   if (!workspaceAllowsRepository(policy, repo)) throw new ValidationError("Repository is not enabled for this agent");
-  return agentCodingGitHub(agentName).forge.branches(repo);
+  return agentCodingGitHub(agentName, user).forge.branches(repo);
 }

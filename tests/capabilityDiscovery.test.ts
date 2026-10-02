@@ -117,7 +117,7 @@ function harness(
       },
       agents: { get: async () => null },
       mcps: { get: async (name: string) => registry.get(name) ?? null },
-      mcpConnections: { listByAgent: async () => options.connections ?? [] },
+      mcpConnections: { listByUser: async () => options.connections ?? [] },
       ...(options.catalog ? { catalog: options.catalog } : {}),
       cipher: { mergeOutboundHeaders: () => ({}) },
       urlPolicy: { assertAllowed: async () => {} },
@@ -285,7 +285,7 @@ describe("capability discovery", () => {
     expect(resolved.warnings.some((line) => line.includes("has not connected it"))).toBe(true);
   });
 
-  it("offers an OAuth server this agent *has* connected", async () => {
+  it("offers an OAuth server the caller has connected", async () => {
     // Authorizing a server in the console says this agent may use it, and
     // discovery has no business being the one caller that ignores that. The
     // connection rows answer by being read — resolving the credential would
@@ -295,7 +295,7 @@ describe("capability discovery", () => {
       servers: [server("slack", OAUTH)],
       connections: [{ serverName: "slack", status: "connected" }],
     });
-    const resolved = await resolveRunTools(deps, configuration(), undefined, QUERIES);
+    const resolved = await resolveRunTools(deps, configuration(), undefined, QUERIES, { user: { userId: "p", email: "caller@example.test" } });
     expect(opened[0]).toEqual([expect.objectContaining({ name: "slack", tools: ["post"] })]);
     expect(resolved.warnings.some((line) => line.includes("has not connected it"))).toBe(false);
   });

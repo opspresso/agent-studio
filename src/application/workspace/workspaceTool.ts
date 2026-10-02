@@ -5,7 +5,7 @@ import type { WorkspaceAgentPolicy } from "@/domain/workspace/policy";
 import { isGitBranch, isRepositoryName, workspaceRepositories, workspaceAllowsRepository, workspaceAllowsRepositoryCreation, workspaceRepositoryMode } from "@/domain/workspace/policy";
 import type { createWorkspaceRepositoryCreationUseCases } from "./createRepository";
 import type { WorkspaceRuntime, WorkspaceInput } from "@/domain/workspace/types";
-import type { RunIdentity } from "@/domain/execution/actor";
+import type { RunIdentity, RunUser } from "@/domain/execution/actor";
 import { WORKSPACE_RUNTIMES, isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import type { createWorkspaceUseCases, WorkspaceView } from "./workspaceUseCases";
@@ -22,8 +22,8 @@ interface WorkspaceToolDeps {
   sleep(ms: number): Promise<void>;
   requestGit(id: string, identity: RunIdentity, action: CodingAction, sourceChatId?: string): Promise<CodingApproval>;
   publishGit(id: string, identity: RunIdentity, action: CodingAction, sourceChatId?: string): Promise<CodingApproval>;
-  pullRequest(id: string, ownerEmail: string): Promise<PullRequestInfo | undefined>;
-  attachRepository(id: string, ownerEmail: string, repository: string, baseBranch: string): Promise<WorkspaceView>;
+  pullRequest(id: string, user: RunUser): Promise<PullRequestInfo | undefined>;
+  attachRepository(id: string, user: RunUser, repository: string, baseBranch: string): Promise<WorkspaceView>;
   workdir: string;
   publicBaseUrl?: string;
 }
@@ -110,7 +110,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     if (operation === "create_repository") {
       if (!deps.createRepository) throw new ValidationError("Workspace repository creation is not configured");
       if (typeof request.repository !== "string" || typeof request.description !== "string" || typeof request.private !== "boolean") throw new ValidationError("Repository, description and private are required");
-      const outcome = await deps.createRepository(context.agentName, { repository: request.repository, description: request.description, private: request.private }, context.ownerEmail);
+      const outcome = await deps.createRepository(context.agentName, { repository: request.repository, description: request.description, private: request.private }, context.user);
       return reply({ ...outcome, ...(outcome.result ? { repository_url: outcome.result.url, base_branch: outcome.result.baseBranch } : {}),
         repository_policy_url: repositoryPolicyUrl, workspace_created: false, task_queued: false,
         next: outcome.status === "created" && outcome.allowed ? "check_repository with base_branch, then start the requested work" : "inspect the reported outcome and policy; never repeat an uncertain creation" }, outcome.status !== "created" || !outcome.allowed);
@@ -126,7 +126,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     if (operation === "check_repository") {
       if (typeof request.repository !== "string" || typeof request.base_branch !== "string") throw new ValidationError("Repository and base_branch are required");
       if (!workspaceAllowsRepository(policy, request.repository)) throw new ValidationError(`Repository is not allowed by Workspace policy. The agent owner can update ${repositoryPolicyUrl}`);
-      await deps.useCases.checkRepository(context.agentName, context.ownerEmail, request.repository, request.base_branch);
+      await deps.useCases.checkRepository(context.agentName, context.user, request.repository, request.base_branch);
       return reply({ repository: request.repository, base_branch: request.base_branch, ready: true,
         message: "This Agent's GitHub MCP account can read the base branch. No Workspace, repository or task was created." });
     }
@@ -185,7 +185,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     if (operation === "attach_repository") {
       if (typeof request.repository !== "string" || typeof request.base_branch !== "string") throw new ValidationError("Repository and base_branch are required");
       if (!workspaceAllowsRepository(policy, request.repository)) throw new ValidationError(`Repository is not allowed by Workspace policy. The agent owner can update ${repositoryPolicyUrl}`);
-      const workspace = await deps.attachRepository(id, context.ownerEmail, request.repository, request.base_branch);
+      const workspace = await deps.attachRepository(id, context.user, request.repository, request.base_branch);
       return reply({ ...location(workspace), task_queued: false, next: "run" });
     }
     if (operation === "prepare_git") {
@@ -254,7 +254,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     const git = { git_action: detail.approvals[0] ? { id: detail.approvals[0].id, action: detail.approvals[0].action,
       status: detail.approvals[0].status, result: detail.approvals[0].result } : null,
       pull_request: operation === "status" && detail.workspace.pullRequest
-        ? await deps.pullRequest(id, context.ownerEmail) : detail.workspace.pullRequest ?? null };
+        ? await deps.pullRequest(id, context.user) : detail.workspace.pullRequest ?? null };
     const after = request.after_seq ?? 0;
     if (!Number.isSafeInteger(after) || Number(after) < 0) throw new ValidationError("Invalid Workspace cursor");
     const runId = request.run_id == null ? detail.runs[0]?.id : String(request.run_id);

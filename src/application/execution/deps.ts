@@ -1,3 +1,4 @@
+import type { RunUser } from "@/domain/execution/actor";
 import type { DocumentRenderer, DocumentEditor } from "@/domain/document/processor";
 import type { RegisterMcpSource } from "@/application/audio/mapMcpSource";
 import type { FileToolDeps } from "@/application/document/fileTool";
@@ -77,7 +78,7 @@ export interface ExecutionDeps extends RunBracketDeps {
     ((args: Record<string, unknown>, callId: string) => Promise<McpToolResult>) | undefined
   >;
   registerMcpSource?: RegisterMcpSource;
-  sourceRefreshIdentity?(input: { configuration: AgentConfiguration; binding: McpBinding; server: McpServer }): Promise<string>;
+  sourceRefreshIdentity?(input: { configuration: AgentConfiguration; binding: McpBinding; server: McpServer; user?: RunUser }): Promise<string>;
   /**
    * A reader for the Slack workspace this agent's bot is installed in, or
    * null when it has no enabled bot.
@@ -92,17 +93,17 @@ export interface ExecutionDeps extends RunBracketDeps {
   slackWorkspace: (agent: Agent) => SlackWorkspaceReader | null;
   /** MCP tool sessions — wired by the composition root; tests inject a fake. */
   mcpSessions: McpSessionFactory;
-  /** Per-agent OAuth for registry servers that require it. */
+  /** Per-user OAuth for registry servers that require it. */
   mcpAuth: McpAuthProvider;
   /**
-   * Which registry servers this agent has an OAuth connection to.
+   * Which registry servers the caller has an OAuth connection to.
    *
    * Read-only, and separate from {@link mcpAuth} on purpose: resolving headers
    * refreshes tokens, while capability discovery only needs to know whether a
    * connection exists before it offers a server it never bound. Absent means
    * discovery cannot tell, and treats every OAuth server as unconnected.
    */
-  mcpConnections?: Pick<McpConnectionRepository, "listByAgent">;
+  mcpConnections?: Pick<McpConnectionRepository, "listByUser">;
   /**
    * The global capability catalog, when this deployment has one. Absent means
    * an Agent's `dynamicCapabilities` has nothing to search and the run offers

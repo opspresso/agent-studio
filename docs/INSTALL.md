@@ -54,7 +54,7 @@ Artifact·Slack·MCP 등의 외부 URL에 사용하는 대표 주소는 `PUBLIC_
 
 ## Agent MCP OAuth 계정
 
-MCP OAuth는 Agent의 MCP 서버 설정에서 연결한다. 연결 화면의 서비스 계정 표시에는
+MCP OAuth는 각 사용자가 Agent의 연동 → 내 MCP 연결에서 본인 계정으로 연결한다. 연결 화면의 서비스 계정 표시에는
 공식 GitHub OAuth의 `https://api.github.com/user`, 공식 Google OAuth의
 `https://openidconnect.googleapis.com/v1/userinfo`를 선택적으로 조회한다.
 공식 Notion·Plaud 연결은 해당 MCP의 현재 사용자 조회 도구로 계정을 표시한다.

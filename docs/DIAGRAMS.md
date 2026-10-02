@@ -226,9 +226,11 @@ flowchart LR
     meta["META (Agent + 현재 configuration)"]
     tok["AGENTCREDENTIAL#{purpose}#{userId}#{credentialId}"]
     trig["TRIGGER#{id} · TRIGGERRUN#…"]
-    conn["MCPCONN#{server}"]
     jobs["AUDIOJOB#… · AUDIOSLOTS · AUDIOCONFIG"]
     policy["WORKSPACEPOLICY · REPOSITORYCREATE#…"]
+  end
+  subgraph personal["MCPUSER#{userId} 파티션"]
+    conn["MCPCONN#{server} · MCPREFRESH#{server}#{revision}"]
   end
   subgraph chat["CHAT#{chatId} 파티션"]
     cmeta["META (nextSeq, activeRunId)"]

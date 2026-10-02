@@ -9,7 +9,8 @@ import { assertLocalDatabase } from "./local-database";
 import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
 import { mcpConnectionRepository } from "@/infrastructure/db/repositories/mcpConnectionRepository";
 import { mcpRefreshRepository } from "@/infrastructure/db/repositories/mcpRefreshRepository";
-import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
+import { deletePartition } from "@/infrastructure/db/store";
+import { keys } from "@/infrastructure/db/keys";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { mcpConnectionSecretContext } from "@/domain/security/secretContext";
 import { closePool } from "@/infrastructure/db/client";
@@ -48,8 +49,7 @@ export async function checkMcpRefreshCoordination() {
     response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ accessToken: "fixture-renewed", refreshToken: "fixture-rotated", expiresInSeconds: 3600 }));
   });
   try {
-    await agentRepository.create({ name, displayName: "Refresh integration", description: "", ownerEmail: "refresh-fixture@example.test", createdAt: at, updatedAt: at });
-    await mcpConnectionRepository.put({ agentName: name, serverName: "fixture", clientId: "fixture", issuer: auth().issuer, resource: auth().resource, scopes: [],
+    await mcpConnectionRepository.put({ userId: name, serverName: "fixture", clientId: "fixture", issuer: auth().issuer, resource: auth().resource, scopes: [],
       accessToken: secretCipher.encrypt("fixture-old", mcpConnectionSecretContext(name, "fixture", "access-token")),
       refreshToken: secretCipher.encrypt("fixture-refresh", mcpConnectionSecretContext(name, "fixture", "refresh-token")),
       status: "connected", expiresAt: new Date(Date.now() + 1000).toISOString(), updatedAt: at });
@@ -62,7 +62,7 @@ export async function checkMcpRefreshCoordination() {
     const current = (await mcpConnectionRepository.get(name, "fixture"))!;
     assert.equal(secretCipher.decrypt(current.refreshToken!, mcpConnectionSecretContext(name, "fixture", "refresh-token")), "fixture-rotated");
   } finally {
-    if (await agentRepository.get(name)) await agentRepository.delete(name);
+    await deletePartition(keys.mcpUserPartition(name));
     if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
   }
 }

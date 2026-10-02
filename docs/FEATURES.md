@@ -128,7 +128,7 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 | Skills | 관리자 수동 생성·본문 편집·삭제, Plugin 출처와 참고 파일 조회 | 이름·설명이 검색과 모델 선택을 안내하며 본문은 로드 후 전달한다. Plugin 소유 본문·참고 파일은 원본에서 수정한다 |
 | Plugins | 관리자 GitHub 동기화 또는 .tar/.tar.gz/.tgz 업로드, 변경·skipped·실패·출처 인수·고아 항목 보고 | 헤더 credential은 가져오지 않는다. 고아 항목·Plugin은 바인딩 영향과 현재 원본을 확인해 명시적으로 삭제한다. archive hold 중 자동 GitHub 동기화는 진행하지 않는다 |
 | 원격 MCP | 관리자 등록·검사·편집과 Agent 바인딩·도구 선택·헤더 override | 도구 이름·설명·Schema를 발견한다. private DNS는 배포 allowlist와 실제 도달성이 필요하다. URL이 이동하면 저장한 credential을 새 대상으로 보내지 않는다 |
-| MCP OAuth | 관리자 metadata 발견·authorization server 선택·공유 client 설정, Agent 소유자 연결·재인증·해제 | 연결은 Agent 설정 Save와 별도로 저장된다. token 갱신과 재인증 상태를 확인한다. discovery 성공만으로 자원 접근을 증명하지 않는다 |
+| MCP OAuth | 관리자 metadata 발견·authorization server 선택·공유 client 설정, 사용자별 연결·재인증·해제 | member 이상인 각 호출자가 본인 계정을 연결한다. 사용자 ID·MCP 서버별 연결을 Agent 간 재사용하며 Agent 설정 Save와 별도로 저장한다. token 갱신과 재인증 상태를 확인한다. discovery 성공만으로 자원 접근을 증명하지 않는다 |
 | Managed MCP | 선택적 Docker provisioner, 이미지·내부 포트·환경·argv·endpoint 설정 | 컨테이너 상태·접속·재시작·삭제를 확인한다. loopback에 게시하고 PORT를 전달한다. private registry 인증은 호스트가 준비한다. Kubernetes 관리형 adapter는 미구현이다 |
 | 개인 API·Webhook 토큰 | 현재 Agent 접근과 토큰 사용 tier가 있는 사용자가 본인 토큰을 발급·조회·폐기한다 | 사용자 ID와 Agent·purpose에 묶인다. 호출마다 현재 권한을 확인하고 개인 비용·동시성에 합산한다. API와 Webhook 토큰은 서로 대신 사용할 수 없다 |
 | 실행 API | predict 완료형/raw stream, agent raw stream, OpenAI chat/completions. 메시지·인라인 이미지, 지원 경로의 문서 입력 | 응답·이미지·파일·사용량·경고·종료 이유를 확인한다. 호출자가 이력을 공급하며 X-Conversation-Id는 MCP 식별만 유지한다 |

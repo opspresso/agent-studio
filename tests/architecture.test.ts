@@ -495,9 +495,10 @@ describe("the client bundle", () => {
   // The exact count detects missing entry points. Update it deliberately when
   // adding or removing a client component.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(129);
+    expect(entries.length).toBe(130);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/profile/messaging/page.tsx",
+      "src/app/agents/[name]/integrations/McpConnectionsSection.tsx",
       "src/app/_components/landing/LandingPage.tsx",
       "src/app/settings/access/MemberTierSettings.tsx",
       "src/app/_components/landing/ParticleField.tsx",
@@ -967,8 +968,8 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // route, the connection that presents it, and whatever renders it next — so
     // the source comment already argues the rule; without this it was argued and
     // not fixed, which is the failure the convention names.
-    what: "the address an agent's client ID metadata document is served at",
-    pattern: /MCP_CLIENT_METADATA_PATH\}\/\$\{agentName\}/,
+    what: "the address the installation's client ID metadata document is served at",
+    pattern: /\$\{MCP_CLIENT_METADATA_PATH\}/,
     owner: "src/application/mcp/mcpAuthUseCases.ts",
   },
   {

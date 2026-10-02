@@ -1,3 +1,4 @@
+import { memberFixture } from "./memberFixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import {
@@ -120,8 +121,8 @@ describe("agent acts", () => {
     await getAgentSlack(repo, "p", ADMIN, cipher);
     await getAgentTelegram(repo, "p", ADMIN, cipher);
     await getAgentTeams(repo, "p", ADMIN, cipher);
-    await createMcpAuthUseCases({ agents: repo, connections: { listByAgent: async () => [] },
-      lifecycleClaims: new Set() } as never).listConnections("p", ADMIN);
+    await createMcpAuthUseCases({ members: { getById: async (id: string) => memberFixture({ id, email: ADMIN, tier: "admin" }) }, agents: repo, connections: { listByUser: async () => [] },
+      lifecycleClaims: new Set() } as never).listConnections("p", { userId: "p", email: ADMIN });
     warned.mockRestore();
     expect(rows).toEqual([]);
   });

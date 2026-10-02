@@ -86,7 +86,7 @@
 | 메신저 계정 연결과 실행 권한 철회 | `application/auth/messagingIdentityUseCases.ts`의 일회용 인증과 `application/auth/messagingGrant.ts`의 현재 연결 검사. `ExecutionGrant`는 실행·하위 Agent·Workspace 큐로 전달하며 새 모델·도구 효과 전에 다시 검사한다 | 코드 |
 | PR 리뷰의 고정된 자료 조회와 전달 범위 | `domain/trigger/pullRequestReview.ts`의 읽기 계약; `infrastructure/github/codingForge.ts`가 검증한 PR·커밋만 조회한다. `application/trigger/reviewPullRequest.ts`가 완전한 자료 범위와 게시 조건을 소유한다 | 코드 |
 | 사용자에게 제시할 Workspace Agent 옵션과 정책 조회 상한 | `src/application/workspace/workspaceOptions.ts`; 접근 가능한 Agent 목록과 정책 repository는 조립 지점에서 주입한다 | 코드 |
-| Agent별 Workspace·PR 리뷰의 GitHub MCP 자격증명 선택 | `application/coding/githubCredentials.ts`; 현재 MCP binding·헤더 target·GitHub authority를 확인하며 OAuth 검증·갱신은 `application/mcp/mcpAuthProvider.ts`를 사용한다. Plugin token을 사용하지 않는다 | 구조 |
+| Workspace·PR 리뷰 호출자의 GitHub MCP 자격증명 선택 | `application/coding/githubCredentials.ts`; 현재 호출자 계정·MCP binding·헤더 target·GitHub authority를 확인하며 OAuth 검증·갱신은 `application/mcp/mcpAuthProvider.ts`를 사용한다. Plugin token을 사용하지 않는다 | 구조 |
 | 신규 저장소 생성과 자동 등록의 증거·중복 방지 | `application/workspace/createRepository.ts`; GitHub 201 응답 검증은 `infrastructure/github/codingForge.ts`, 결과와 정책 transaction은 `workspaceRepositoryCreationStore.ts` | 코드 |
 | 도구 결과의 실패 표시와 trace 오류 판정 | `src/shared/toolResultStatus.ts`의 `isToolErrorText`. Runtime의 `Error:` 결과를 Chat·Playground에도 실패로 표시한다 | 코드 |
 | 코딩 요청에 포함되는 Git 게시와 별도 확인의 구분 | `domain/coding/types.ts`의 `codingActionRequiresConfirmation`; 실행은 `application/coding/codingUseCases.ts`의 공통 검토·claim 경로 | 코드 |
@@ -191,6 +191,9 @@
 | 답변의 Markdown 을 Telegram HTML 로 렌더하기 | `src/application/telegram/markdown.ts` 의 `markdownToTelegramHtml` | 구조 |
 
 ## MCP·Plugin·프로토콜
+
+OAuth grant·암호화 문맥·refresh claim은 Studio 사용자 ID와 MCP 서버에 귀속한다.
+Agent 설정은 binding을 소유하며 개인 연결은 Agent 수명과 독립적이다.
 
 | 결정 | 소유자 | 확인 |
 |---|---|---|

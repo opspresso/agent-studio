@@ -1,7 +1,7 @@
 import type { McpConnection } from "./connection";
 
 export interface McpRefreshClaim {
-  agentName: string;
+  userId: string;
   serverName: string;
   revision: string | undefined;
   owner: string;

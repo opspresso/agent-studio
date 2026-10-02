@@ -3,7 +3,7 @@ import type { McpRepository } from "@/domain/mcp/repository";
 import { skipsUrlGuard, type McpServer } from "@/domain/mcp/types";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { processManagedMcpLifecycleClaims } from "@/application/mcp/managedMcpUseCases";
-import { applyMcpUserEmail, stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
+import { applyMcpUserEmail } from "@/application/mcpMetadataHeaders";
 import {
   assertAllowedUrl,
   assertCredentialFreeRegistryUrl,
@@ -18,6 +18,9 @@ import { log } from "@/shared/logger";
 import { urlOriginForLog } from "@/shared/url";
 import { maskedMcpServer } from "./mcpViews";
 import { mcpHeadersContext } from "@/domain/security/secretContext";
+import type { McpAuthProvider } from "@/domain/mcp/oauth";
+import type { RunUser } from "@/domain/execution/actor";
+import { resolveMcpCredentials } from "./credentials";
 
 export interface CreateMcpInput {
   sourceOutputs?: McpServer["sourceOutputs"];
@@ -46,7 +49,7 @@ export interface UpdateMcpInput {
 
 export interface McpUseCases extends RegistryUseCases<McpServer, CreateMcpInput, UpdateMcpInput> {
   /** Connects with decrypted headers and an optional requesting user identity. */
-  testConnection(name: string, userEmail?: string): Promise<ListToolsResult>;
+  testConnection(name: string, user?: RunUser): Promise<ListToolsResult>;
 }
 
 export function createMcpUseCases(
@@ -61,6 +64,7 @@ export function createMcpUseCases(
    */
   internalHostSuffixes: readonly string[] = [],
   lifecycleClaims: Set<string> = processManagedMcpLifecycleClaims(),
+  auth?: McpAuthProvider,
 ): McpUseCases {
   const registry = createRegistryUseCases<McpServer, CreateMcpInput, UpdateMcpInput>({
     label: "MCP server",
@@ -202,7 +206,7 @@ export function createMcpUseCases(
       }
     },
 
-    async testConnection(name, userEmail) {
+    async testConnection(name, user) {
       const existing = await repo.get(name);
       if (!existing) {
         throw new NotFoundError(`MCP server not found: ${name}`);
@@ -219,14 +223,10 @@ export function createMcpUseCases(
           return { ok: false, error: error.message };
         }
       }
-      const headers = cipher.decryptHeadersForOutbound(
-        existing.headers,
-        mcpHeadersContext(existing.name),
-      );
-      // A registry entry's stored spelling of a reserved metadata header does
-      // not ride this probe impersonating an agent, user, or conversation.
-      stripMcpMetadataHeaders(headers);
-      applyMcpUserEmail(headers, userEmail);
+      const credentials = await resolveMcpCredentials({ cipher, auth }, undefined, existing, undefined, user);
+      if (credentials.unavailable) return { ok: false, error: credentials.unavailable };
+      const headers = credentials.headers;
+      applyMcpUserEmail(headers, user?.email);
       return probe.listTools(existing.url, headers, loopback);
     },
   };

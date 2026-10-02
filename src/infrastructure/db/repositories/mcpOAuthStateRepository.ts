@@ -28,11 +28,7 @@ export const mcpOAuthStateRepository: McpOAuthStateRepository = {
     if (!item || isExpired(item.expiresAt, Date.now())) {
       return null;
     }
-    if (typeof item.issuer !== "string") {
-      // A state written before issuer validation existed. There is nothing to
-      // compare a callback's `iss` against, and accepting one unchecked is the
-      // mix-up the field exists to prevent — so the flow is refused and the
-      // owner starts again, which costs them one click.
+    if (typeof item.issuer !== "string" || typeof item.userId !== "string" || !item.userId) {
       return null;
     }
     return {
@@ -41,6 +37,7 @@ export const mcpOAuthStateRepository: McpOAuthStateRepository = {
       serverName: item.serverName as string,
       codeVerifier: item.codeVerifier as string,
       userEmail: item.userEmail as string,
+      userId: item.userId,
       ...(typeof item.redirectUri === "string" ? { redirectUri: item.redirectUri } : {}),
       ...(typeof item.clientId === "string" ? { clientId: item.clientId } : {}),
       ...(item.clientFromRegistry === true ? { clientFromRegistry: true } : {}),

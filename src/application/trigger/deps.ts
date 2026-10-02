@@ -44,5 +44,5 @@ export interface FiringDeps {
 export interface TriggerRunnerDeps extends FiringDeps {
   openReviewWorkspace?: (target: PullRequestReviewTarget, grant: WebhookExecutionGrant) => Promise<ReviewWorkspaceSession>;
   webhookCredentials: Pick<AgentCredentialUseCases, "verify" | "verifySignature" | "authorize">;
-  reviewForge?: (agentName: string) => PullRequestReviewForge;
+  reviewForge?: (agentName: string, user: import("@/domain/execution/actor").RunUser) => PullRequestReviewForge;
 }

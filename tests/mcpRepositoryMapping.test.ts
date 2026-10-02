@@ -82,7 +82,7 @@ describe("mcp repository mapping", () => {
 describe("mcp connection mapping", () => {
   it("prevents stale writes and disconnects from replacing a newer grant", async () => {
     const connection: McpConnection = {
-      agentName: "p", serverName: "slack", clientId: "first",
+      userId: "p", serverName: "slack", clientId: "first",
       issuer: "https://auth.example.com", resource: "https://mcp.example.com",
       scopes: [], status: "needs_auth", updatedAt: "2026-01-01T00:00:00.000Z",
     };
@@ -106,7 +106,7 @@ describe("mcp connection mapping", () => {
     "changes the revision on every put and token update with refresh token %s",
     async (refreshToken) => {
       const connection: McpConnection = {
-        agentName: "p",
+        userId: "p",
         serverName: "slack",
         clientId: "client",
         issuer: "https://auth.example.com",
@@ -151,7 +151,7 @@ describe("mcp connection mapping", () => {
   it("assigns an unversioned row's first revision under the atomic CAS", async () => {
     store.seed([{
       ...keys.mcpConnection("p", "slack"),
-      agentName: "p",
+      userId: "p",
       serverName: "slack",
       clientId: "client",
       issuer: "https://auth.example.com",
@@ -176,7 +176,7 @@ describe("mcp connection mapping", () => {
     // The reader must retain CIMD provenance so beginAuthorization can rebuild
     // its public client independently of issuer-bound registered credentials.
     const connection: McpConnection = {
-      agentName: "p",
+      userId: "p",
       serverName: "slack",
       clientId: "https://studio.example.com/api/mcps/oauth/client-metadata/p",
       clientFromMetadataDocument: true,
@@ -201,7 +201,7 @@ describe("mcp connection mapping", () => {
     // moves, so the owner is told to go and register an app by hand for
     // credentials this app issued itself.
     await mcpConnectionRepository.put({
-      agentName: "p",
+      userId: "p",
       serverName: "slack",
       clientId: "dcr-1",
       clientSecret: "enc:s",
@@ -222,7 +222,7 @@ describe("mcp connection mapping", () => {
     // method and the server that enforces its recorded one answered
     // invalid_client on each.
     await mcpConnectionRepository.put({
-      agentName: "p",
+      userId: "p",
       serverName: "slack",
       clientId: "dcr-1",
       clientSecret: "enc:s",
@@ -240,7 +240,7 @@ describe("mcp connection mapping", () => {
 
   it("leaves both flags absent for a client the owner entered", async () => {
     await mcpConnectionRepository.put({
-      agentName: "p",
+      userId: "p",
       serverName: "slack",
       clientId: "typed-by-hand",
       issuer: "https://auth.example.com",
@@ -259,13 +259,13 @@ describe("mcp connection mapping", () => {
 describe("connections missing required identity bindings", () => {
   it("lets the owner replace an unreadable legacy grant", async () => {
     store.seed([{
-      ...keys.mcpConnection("p", "slack"), agentName: "p", serverName: "slack",
+      ...keys.mcpConnection("p", "slack"), userId: "p", serverName: "slack",
       clientId: "old", status: "connected", updatedAt: "2026-01-01T00:00:00.000Z",
     }]);
     expect(await mcpConnectionRepository.get("p", "slack")).toBeNull();
 
     const replacement: McpConnection = {
-      agentName: "p", serverName: "slack", clientId: "new",
+      userId: "p", serverName: "slack", clientId: "new",
       issuer: "https://auth.example.com", resource: "https://mcp.example.com",
       scopes: [], status: "needs_auth", updatedAt: "2026-01-01T00:00:00.000Z",
     };
@@ -275,7 +275,7 @@ describe("connections missing required identity bindings", () => {
 
   it("fills a bounded page past unusable legacy rows", async () => {
     const valid = (serverName: string): McpConnection => ({
-      agentName: "p",
+      userId: "p",
       serverName,
       clientId: "client",
       issuer: `https://${serverName}.example.com`,
@@ -288,7 +288,7 @@ describe("connections missing required identity bindings", () => {
     store.seed([
       {
         ...keys.mcpConnection("p", "b"),
-        agentName: "p",
+        userId: "p",
         serverName: "b",
         clientId: "old",
         status: "connected",
@@ -297,7 +297,7 @@ describe("connections missing required identity bindings", () => {
     ]);
     await mcpConnectionRepository.put(valid("c"));
 
-    const listed = await mcpConnectionRepository.listByAgent("p", 2);
+    const listed = await mcpConnectionRepository.listByUser("p", 2);
 
     expect(listed.map((connection) => connection.serverName)).toEqual(["a", "c"]);
   });
@@ -307,7 +307,7 @@ describe("connections missing required identity bindings", () => {
     store.seed([
       {
         ...keys.mcpConnection("p", "slack"),
-        agentName: "p",
+        userId: "p",
         serverName: "slack",
         clientId: "old",
         resource: "https://mcp.slack.com",
@@ -325,7 +325,7 @@ describe("connections missing required identity bindings", () => {
     store.seed([
       {
         ...keys.mcpConnection("p", "slack"),
-        agentName: "p",
+        userId: "p",
         serverName: "slack",
         clientId: "old",
         issuer: "https://auth.example.com",

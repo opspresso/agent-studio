@@ -134,7 +134,7 @@ describe("Workspace Agent capability", () => {
     expect(() => validate({ request: { ...request, created_at: "2026-09-15" } })).toThrow();
     expect(JSON.parse((await tool({ request }, "create")).text)).toMatchObject({ status: "created", allowed: true,
       repository_url: "https://github.example.test/org/new", base_branch: "main", workspace_created: false, task_queued: false });
-    expect(createRepository).toHaveBeenCalledWith("demo", { repository: "org/new", description: "New agent", private: true }, owner);
+    expect(createRepository).toHaveBeenCalledWith("demo", { repository: "org/new", description: "New agent", private: true }, { userId: "studio-user-1", email: owner });
   });
   it("checks policy before repository creation and returns a real management link without creating compute", async () => {
     const request = { operation: "check_repository_access", repository: "org/new-repo" };
@@ -276,7 +276,7 @@ describe("Workspace Agent capability", () => {
     { kind: "deploy", workflow: "deploy.yml", ref: "main", inputs: { environment: "preview" } },
   ])("prepares $kind through the actual tool schema and reuses its pending review without native tasks", async action => {
     const workspace = await useCases.create({ agentName: "demo", chatId: "review-chat", createChat: true,
-      title: "Review", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
+      title: "Review", runtime: "codex", repository: "org/repo", baseBranch: "main" }, { userId: "studio-user-1", email: owner });
     const approval: CodingApproval = { id: "approval-1", workspaceId: workspace.id, action, requestedBy: owner, requestedByUserId: "studio-user-1",
       requestedAt: now.toISOString(), status: "pending", fingerprint: "reviewed-tree",
       review: { headSha: "a".repeat(40), treeSha: "b".repeat(40), diff: "+change", truncated: false } };
@@ -306,7 +306,7 @@ describe("Workspace Agent capability", () => {
     { kind: "push" }, { kind: "pull-request", title: "Change", body: "Verified", draft: false },
   ])("executes $kind inline and returns no approval link", async action => {
     const workspace = await useCases.create({ agentName: "demo", chatId: "publish-chat", createChat: true,
-      title: "Publish", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
+      title: "Publish", runtime: "codex", repository: "org/repo", baseBranch: "main" }, { userId: "studio-user-1", email: owner });
     publishGit.mockResolvedValueOnce({ id: "publication", workspaceId: workspace.id, action, requestedBy: owner, requestedByUserId: "studio-user-1",
       requestedAt: now.toISOString(), status: "succeeded", authorization: "coding-request", result: "Published",
       fingerprint: "tree", review: { headSha: "a".repeat(40), treeSha: "b".repeat(40), diff: "", truncated: false } });
@@ -330,7 +330,7 @@ describe("Workspace Agent capability", () => {
   });
   it("rejects ambiguous deployment inputs and preserves approval-policy failures", async () => {
     const workspace = await useCases.create({ agentName: "demo", chatId: "deploy-chat", createChat: true,
-      title: "Deploy", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
+      title: "Deploy", runtime: "codex", repository: "org/repo", baseBranch: "main" }, { userId: "studio-user-1", email: owner });
     const action = { kind: "deploy", workflow: "deploy.yml", ref: "main", inputs: [] };
     const request = { operation: "prepare_git", workspace_id: workspace.id, action };
     const validate = createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!);
@@ -348,13 +348,13 @@ describe("Workspace Agent capability", () => {
   });
   it("reports PR publication and refreshes its current head/CI even without a native run", async () => {
     const workspace = await useCases.create({ agentName: "demo", chatId: "pr-chat", createChat: true,
-      title: "PR", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
+      title: "PR", runtime: "codex", repository: "org/repo", baseBranch: "main" }, { userId: "studio-user-1", email: owner });
     const pr: PullRequestInfo = { number: 7, url: "https://example.test/org/repo/pull/7", headSha: "a".repeat(40), baseBranch: "main", draft: false, state: "open", ci: "pending" };
     await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, pullRequest: pr, revision: workspace.revision + 1 } });
     pullRequest.mockResolvedValueOnce({ ...pr, ci: "none" });
     const result = await invoke({ operation: "status", workspace_id: workspace.id });
     expect(result.pull_request).toMatchObject({ number: 7, headSha: pr.headSha, ci: "none" });
-    expect(pullRequest).toHaveBeenCalledExactlyOnceWith(workspace.id, owner);
+    expect(pullRequest).toHaveBeenCalledExactlyOnceWith(workspace.id, { userId: "studio-user-1", email: owner });
     expect(await repository.runs(workspace.id, 10)).toHaveLength(0);
   });
   it("executes through the SDK tool dispatcher with the SDK call identity", async () => {

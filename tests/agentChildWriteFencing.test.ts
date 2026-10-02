@@ -6,9 +6,6 @@ vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).c
 const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 
 import { agentCredentialRepository } from "@/infrastructure/db/repositories/agentCredentialRepository";
-const { mcpConnectionRepository } = await import(
-  "@/infrastructure/db/repositories/mcpConnectionRepository"
-);
 const { triggerRepository } = await import(
   "@/infrastructure/db/repositories/triggerRepository"
 );
@@ -73,20 +70,6 @@ describe("agent child write fencing", () => {
     [
       "API token",
       () => agentCredentialRepository.replace({ purpose: "api", id: "fixture-token", agentName: "p", userId: "fixture-user", token: "enc:v1:token", masked: "****", createdAt: NOW }, null),
-    ],
-    [
-      "MCP connection",
-      () =>
-        mcpConnectionRepository.put({
-          agentName: "p",
-          serverName: "server",
-          clientId: "client",
-          issuer: "https://issuer.example",
-          resource: "https://resource.example",
-          scopes: [],
-          status: "connected",
-          updatedAt: NOW,
-        }),
     ],
     ["trigger create", () => triggerRepository.create(trigger)],
     ["trigger update", () => triggerRepository.put(trigger)],

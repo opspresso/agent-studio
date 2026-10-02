@@ -240,11 +240,11 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   const input = { task: "process" as const, source: { kind: "file" as const, fileId: file.id }, model: `openai/${asrWireId}`, retention,
     postprocess: { agentName },
     ...(memoryUrl ? { destination: { serverName: memoryName, documents: true, memories: true } } : {}) };
-  let configuration = await runtime.configuration.save(agentName, email, { enabled: true, model: input.model, retention,
+  let configuration = await runtime.configuration.save(agentName, { userId: id, email }, { enabled: true, model: input.model, retention,
     postprocess: input.postprocess, destination: input.destination, maxActive: 1, maxPerOccurrence: 1 }, 0);
   const edits = await Promise.allSettled([
-    runtime.configuration.save(agentName, email, configuration, configuration.revision),
-    runtime.configuration.save(agentName, email, configuration, configuration.revision),
+    runtime.configuration.save(agentName, { userId: id, email }, configuration, configuration.revision),
+    runtime.configuration.save(agentName, { userId: id, email }, configuration, configuration.revision),
   ]);
   const winners = edits.filter((edit) => edit.status === "fulfilled");
   assert.equal(winners.length, 1, "only one concurrent configuration edit may win");

@@ -18,7 +18,7 @@ export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps,
       const server = await deps.mcps.get(recipe.serverName);
       const binding = configuration?.mcpList.find((entry) => entry.name === recipe.serverName);
       if (!configuration || !server || !binding || !recipe.mapping.refreshArgument ||
-        await deps.sourceRefreshIdentity?.({ configuration, server, binding }) !== recipe.identity) {
+        await deps.sourceRefreshIdentity?.({ configuration, server, binding, user: job.user }) !== recipe.identity) {
         throw new AudioJobStepError("source_connection_changed", false);
       }
       return { configuration, binding };
@@ -32,7 +32,7 @@ export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps,
       return { sourceRef: "refresh", filename: source.filename, mimeType: source.mimeType };
     } }, { ...configuration,
       mcpList: [{ ...binding, tools: [recipe.mapping.tool], sourceOutputs: [{ ...recipe.mapping, refreshArgument: undefined }] }] }, signal,
-    { actor: job.actor, userEmail: job.userEmail });
+    { actor: job.actor, user: job.user, userEmail: job.userEmail });
     try {
       const alias = client.aliasFor?.(recipe.serverName, recipe.mapping.tool);
       if (!alias || !client.callMcpTool || !job.sourceIdentity) throw new AudioJobStepError("source_refresh_unavailable", false);

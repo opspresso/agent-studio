@@ -38,7 +38,7 @@ describe("audio job HTTP contracts", () => {
     expect(mocks.saveConfig).not.toHaveBeenCalled();
     expect((await saveConfig(request(body), context)).status).toBe(200);
     const { revision, ...configuration } = body;
-    expect(mocks.saveConfig).toHaveBeenCalledWith("audio", "owner@example.test", configuration, revision);
+    expect(mocks.saveConfig).toHaveBeenCalledWith("audio", { userId: "owner-1", email: "owner@example.test" }, configuration, revision);
   });
   it("reads configured options with the authenticated identity", async () => {
     const data = { models: [{ id: "openai/whisper-1", displayName: "Whisper 1" }], destinations: ["memory"] };

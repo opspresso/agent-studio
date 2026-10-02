@@ -1,3 +1,4 @@
+import type { RunUser } from "@/domain/execution/actor";
 import type { McpBinding } from "@/domain/agent/types";
 import type { McpServer } from "@/domain/mcp/types";
 import type { McpAuthProvider } from "@/domain/mcp/oauth";
@@ -13,13 +14,15 @@ export interface McpCredentials {
   unavailable?: string;
 }
 
-/** One credential policy for Agent execution, owner probes and native GitHub operations. */
+/** One credential policy for Agent execution, personal probes and native GitHub operations. */
 export async function resolveMcpCredentials(
-  deps: { cipher: SecretCipher; auth: McpAuthProvider },
-  agentName: string,
+  deps: { cipher: SecretCipher; auth?: McpAuthProvider },
+  agentName: string | undefined,
   server: McpServer,
   binding?: Pick<McpBinding, "headers" | "headerTarget">,
+  user?: RunUser,
 ): Promise<McpCredentials> {
+  if (binding && !agentName) throw new Error("Agent binding credentials require an Agent scope");
   let overrides = binding?.headers;
   let warning: string | undefined;
   let credentialFingerprint: string | undefined;
@@ -28,13 +31,16 @@ export async function resolveMcpCredentials(
     warning = `MCP server '${server.name}' moved since its Agent header credentials were saved; ` +
       "those credentials were not sent. Re-enter them for the current endpoint.";
   }
-  const headers = deps.cipher.mergeOutboundHeaders(server.headers, overrides,
-    mcpHeadersContext(server.name), agentMcpHeadersContext(agentName, server.name));
+  const headers = binding
+    ? deps.cipher.mergeOutboundHeaders(server.headers, overrides, mcpHeadersContext(server.name), agentMcpHeadersContext(agentName!, server.name))
+    : deps.cipher.decryptHeadersForOutbound(server.headers, mcpHeadersContext(server.name));
   stripMcpMetadataHeaders(headers);
   if (server.auth) {
-    const resolved = await deps.auth.headersFor(agentName, server.name, server.auth);
+    if (!user?.userId) return { headers: {}, warning, unavailable: `MCP server '${server.name}' requires the caller's personal authorization.` };
+    if (!deps.auth) return { headers: {}, warning, unavailable: "MCP OAuth authentication is not configured" };
+    const resolved = await deps.auth.headersFor(user.userId, server.name, server.auth);
     if (resolved.unavailable) {
-      if (Object.keys(headers).length === 0) return { headers, warning, unavailable: resolved.unavailable };
+      return { headers: {}, warning, unavailable: resolved.unavailable };
     } else {
       credentialFingerprint = resolved.credentialFingerprint;
       // Fetch folds duplicate case variants into a comma-joined credential. Replace every spelling.

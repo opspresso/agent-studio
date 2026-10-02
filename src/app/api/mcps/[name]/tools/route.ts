@@ -7,7 +7,7 @@ type RouteContext = { params: Promise<{ name: string }> };
 export const POST = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
   try {
     const { name } = await ctx.params;
-    const result = await mcpUseCases.testConnection(parseName(name), user.email);
+    const result = await mcpUseCases.testConnection(parseName(name), { userId: user.id, email: user.email });
     if (!result.ok) {
       return Response.json({ error: result.error }, { status: 502 });
     }

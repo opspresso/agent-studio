@@ -35,6 +35,8 @@ export interface Workspace {
   checkpointSession?: { nativeSessionId?: string };
   coding?: CodingRepository;
   pullRequest?: PullRequestInfo;
+  /** Caller whose GitHub grant created this PR and authorizes signed status refreshes. */
+  pullRequestUser?: RunIdentity["user"];
   /** Tombstone intent is durable before chat deletion and rejects new work. */
   deleteRequestedAt?: string;
   error?: string;

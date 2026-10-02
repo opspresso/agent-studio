@@ -1,3 +1,4 @@
+import type { RunUser } from "@/domain/execution/actor";
 import type { SandboxProvider, WorkspaceCheckpointStore, WorkspaceRuntimeAdapter } from "@/domain/workspace/ports";
 import type { Sandbox, Workspace, WorkspaceRun } from "@/domain/workspace/types";
 import type { RunSlotPersistence } from "@/application/run/runBracket";
@@ -18,7 +19,7 @@ export interface WorkspaceWorkerDeps extends WorkspaceDeps {
   provider: SandboxProvider;
   checkpoints: WorkspaceCheckpointStore;
   runtime(kind: Workspace["runtime"], context?: { workspace: Workspace; run: WorkspaceRun }): WorkspaceRuntimeAdapter | Promise<WorkspaceRuntimeAdapter>;
-  coding?: (agentName: string) => CodingWorktree;
+  coding?: (agentName: string, user: RunUser) => CodingWorktree;
   runTimeoutMs: number;
   /** Composition binds the execution facade, which opens the shared run bracket. */
   execute(workspace: Workspace, work: (admit: () => Promise<void>) => Promise<boolean>, identity: WorkspaceRun, slot: RunSlotPersistence): Promise<void>;
@@ -37,7 +38,7 @@ async function sandboxFor(deps: WorkspaceWorkerDeps, workspace: Workspace): Prom
   return workspace.sandboxId ? deps.repository.sandbox(workspace.id, workspace.sandboxId) : null;
 }
 
-export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState): Promise<Sandbox> {
+export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, caller?: RunUser): Promise<Sandbox> {
   const { workspace, run } = await state.read();
   const previous = await sandboxFor(deps, workspace);
   const status = previous ? await state.effect(() => deps.provider.inspect(previous.externalId)) : "missing";
@@ -93,7 +94,9 @@ export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: W
   }
   let coding = workspace.coding;
   if (coding) {
-    const worktree = deps.coding?.(workspace.agentName);
+    const user = caller ?? run?.user;
+    if (!user) throw new ValidationError("Git preparation requires its authenticated caller");
+    const worktree = deps.coding?.(workspace.agentName, user);
     if (!worktree) throw new Error("Coding worktree adapter is not configured");
     const repository = coding;
     const prepared = await state.effect(() => worktree.prepare(sandbox.externalId, repository));
@@ -212,7 +215,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     }
     if (run.phase === "checkpoint") {
       if (workspace.coding && deps.coding) {
-        const review = await state.effect(() => deps.coding!(workspace.agentName).review(sandbox.externalId));
+        const review = await state.effect(() => deps.coding!(workspace.agentName, run!.user).review(sandbox.externalId));
         const diff = boundedWorkspaceText(review.diff, WORKSPACE_LIMITS.diffBytes);
         await state.save({}, { diff: diff.text, diffTruncated: review.truncated || diff.truncated },
           boundWorkspaceEvent({ kind: "diff", text: diff.text, truncated: review.truncated || diff.truncated }));
@@ -265,7 +268,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
       ? { session: { ...session, nativeSessionId: folded.nativeSessionId, updatedAt: deps.now().toISOString() } } : {};
     let patch = folded.patch;
     if (workspace.coding && deps.coding && deps.now().getTime() >= nextReview) {
-      const review = await state.effect(() => deps.coding!(workspace.agentName).review(sandbox.externalId));
+      const review = await state.effect(() => deps.coding!(workspace.agentName, run!.user).review(sandbox.externalId));
       const diff = boundedWorkspaceText(review.diff, WORKSPACE_LIMITS.diffBytes);
       patch = { ...patch, diff: diff.text, diffTruncated: review.truncated || diff.truncated };
       events.push(...boundWorkspaceEvent({ kind: "diff", text: diff.text, truncated: review.truncated || diff.truncated }));

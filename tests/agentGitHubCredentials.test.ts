@@ -31,8 +31,8 @@ const now = new Date("2026-10-01T08:00:00Z");
 const target = { apiUrl: "https://api.github.com", webUrl: "https://github.com" };
 const oauth: OAuthClient = { register: vi.fn(), exchangeCode: vi.fn(), refresh: vi.fn() };
 const auth = createMcpAuthProvider({ ...isolatedMcpRefresh(), connections: mcpConnectionRepository, oauth, cipher: secretCipher });
-const credentials = createAgentGitHubCredentials({ agents: agentRepository, mcps: mcpRepository, auth, cipher: secretCipher, target });
-const github = (agentName: string) => createCodingGitHub({ ...target, internalHosts: [], getToken: () => credentials.token(agentName) }, () => now).forge;
+const credentials = createAgentGitHubCredentials({ authorize: async (name) => { const row = await agentRepository.get(name); if (!row) throw new Error("Agent not found"); return row; }, mcps: mcpRepository, auth, cipher: secretCipher, target });
+const github = (agentName: string) => createCodingGitHub({ ...target, internalHosts: [], getToken: () => credentials.token(agentName, { userId: agentName, email: "owner@example.test" }) }, () => now).forge;
 const creations = createWorkspaceRepositoryCreationUseCases({ policies: workspacePolicyRepository, creations: workspaceRepositoryCreationStore,
   authorize: async () => {}, forge: github, now: () => now });
 let requests: { path: string; token: string | null; method: string }[];
@@ -43,7 +43,7 @@ const server: McpServer = { name: "github", url: "https://api.githubcopilot.com/
 function agent(name: string): Agent { return { name, displayName: name, description: "", ownerEmail: "owner@example.test", createdAt: now.toISOString(), updatedAt: now.toISOString(),
   configuration: { agentName: name, systemPrompt: "", model: "test", parameters: { piiFiltering: false, workspaceTools: true }, mcpList: [{ name: "github" }], skillList: [], subagentList: [] } }; }
 async function connect(name: string, patch: Partial<McpConnection> = {}) {
-  await mcpConnectionRepository.put({ agentName: name, serverName: "github", clientId: "github-client", issuer: server.auth!.issuer, resource: server.auth!.resource,
+  await mcpConnectionRepository.put({ userId: name, serverName: "github", clientId: "github-client", issuer: server.auth!.issuer, resource: server.auth!.resource,
     scopes: ["repo"], accessToken: secretCipher.encrypt(`${name}-token`, mcpConnectionSecretContext(name, "github", "access-token")),
     status: "connected", updatedAt: now.toISOString(), ...patch });
 }
@@ -77,7 +77,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers();
 describe("Agent GitHub MCP credentials for Workspace", () => {
   it("creates and registers personal repositories using each Agent's OAuth account instead of the Plugin token", async () => {
     for (const [name, owner] of [["first", "bot-first"], ["second", "bot-second"]] as const) {
-      expect(await creations.create(name, { repository: `${owner}/page`, description: "Page", private: true }, "owner@example.test"))
+      expect(await creations.create(name, { repository: `${owner}/page`, description: "Page", private: true }, { userId: "studio-user-1", email: "owner@example.test" }))
         .toMatchObject({ status: "created", allowed: true, result: { repository: `${owner}/page` } });
       expect((await workspacePolicyRepository.get(name))?.rules?.repositories).toEqual([`${owner}/page`]);
     }
@@ -102,22 +102,22 @@ describe("Agent GitHub MCP credentials for Workspace", () => {
     await github("first").checkRepository("bot-first/page", "main");
     expect(oauth.refresh).toHaveBeenCalledWith(expect.objectContaining({ tokenEndpoint: server.auth!.tokenEndpoint, resource: server.auth!.resource }), "first-refresh");
     expect(requests[0]?.token).toBe("Bearer first-renewed");
-    expect(await credentials.token("second")).toBe("second-token");
+    expect(await credentials.token("second", { userId: "second", email: "owner@example.test" })).toBe("second-token");
   });
 
   it.each([{ issuer: "https://other.test" }, { resource: "https://other.test/mcp" }, { status: "needs_reauth" as const }, { clientFromRegistry: true, clientId: "removed-client" }])
     ("refuses an unusable Agent grant without falling back to the Plugin or another Agent %j", async patch => {
       await connect("first", patch);
-      await expect(credentials.token("first")).rejects.toThrow();
+      await expect(credentials.token("first", { userId: "first", email: "owner@example.test" })).rejects.toThrow();
       expect(requests).toEqual([]);
-      expect(await credentials.token("second")).toBe("second-token");
+      expect(await credentials.token("second", { userId: "second", email: "owner@example.test" })).toBe("second-token");
     });
 
   it("requires a current explicit GitHub MCP binding", async () => {
     const unbound = agent("first"); unbound.configuration!.mcpList = [];
     store.seed([{ ...keys.agent("first"), entityType: "AGENT", ...unbound }]);
     expect(await credentials.configured(unbound)).toBe(false);
-    await expect(credentials.token("first")).rejects.toThrow("Connect a GitHub MCP");
+    await expect(credentials.token("first", { userId: "first", email: "owner@example.test" })).rejects.toThrow("Connect a GitHub MCP");
     expect(requests).toEqual([]);
   });
 
@@ -127,7 +127,7 @@ describe("Agent GitHub MCP credentials for Workspace", () => {
     current.configuration!.mcpList = [{ name: "github", headerTarget: mcpHeaderTarget(server.url),
       headers: secretCipher.encryptHeaders({ Authorization: "Bearer override-token" }, agentMcpHeadersContext("first", "github")) }];
     store.seed([{ ...keys.agent("first"), entityType: "AGENT", ...current }]);
-    expect(await credentials.token("first")).toBe("first-token");
+    expect(await credentials.token("first", { userId: "first", email: "owner@example.test" })).toBe("first-token");
   });
 
   it("uses a bound static GitHub credential and refuses an override moved to a different endpoint", async () => {
@@ -136,15 +136,15 @@ describe("Agent GitHub MCP credentials for Workspace", () => {
     current.configuration!.mcpList = [{ name: "github", headerTarget: mcpHeaderTarget(server.url),
       headers: secretCipher.encryptHeaders({ authorization: "Bearer static-token" }, agentMcpHeadersContext("first", "github")) }];
     store.seed([{ ...keys.agent("first"), entityType: "AGENT", ...current }]);
-    expect(await credentials.token("first")).toBe("static-token");
+    expect(await credentials.token("first", { userId: "first", email: "owner@example.test" })).toBe("static-token");
     await mcpRepository.put({ ...server, auth: undefined, url: "https://different.test/mcp" });
-    await expect(credentials.token("first")).rejects.toThrow("valid GitHub Authorization");
+    await expect(credentials.token("first", { userId: "first", email: "owner@example.test" })).rejects.toThrow("valid GitHub Authorization");
   });
 
   it("never sends a public GitHub OAuth token to another configured API authority", async () => {
-    const other = createAgentGitHubCredentials({ agents: agentRepository, mcps: mcpRepository, auth, cipher: secretCipher,
+    const other = createAgentGitHubCredentials({ authorize: async (name) => { const row = await agentRepository.get(name); if (!row) throw new Error("Agent not found"); return row; }, mcps: mcpRepository, auth, cipher: secretCipher,
       target: { apiUrl: "https://enterprise.test/api/v3", webUrl: "https://enterprise.test" } });
-    await expect(other.token("first")).rejects.toThrow("does not match");
+    await expect(other.token("first", { userId: "first", email: "owner@example.test" })).rejects.toThrow("does not match");
     expect(requests).toEqual([]);
   });
 
@@ -157,12 +157,12 @@ describe("Agent GitHub MCP credentials for Workspace", () => {
     await mcpRepository.put({ ...server, name, url: authConfig.resource, auth: authConfig });
     const current = agent("first"); current.configuration!.mcpList = [{ name }];
     store.seed([{ ...keys.agent("first"), entityType: "AGENT", ...current }]);
-    await mcpConnectionRepository.put({ agentName: "first", serverName: name, clientId: "enterprise-client", issuer: authConfig.issuer,
+    await mcpConnectionRepository.put({ userId: "first", serverName: name, clientId: "enterprise-client", issuer: authConfig.issuer,
       resource: authConfig.resource, scopes: ["repo"], status: "connected", updatedAt: now.toISOString(),
       accessToken: secretCipher.encrypt("enterprise-token", mcpConnectionSecretContext("first", name, "access-token")) });
-    const internal = createAgentGitHubCredentials({ agents: agentRepository, mcps: mcpRepository, auth, cipher: secretCipher, target: enterprise });
-    expect(await internal.token("first")).toBe("enterprise-token");
-    await expect(credentials.token("first")).rejects.toThrow("Connect a GitHub MCP");
+    const internal = createAgentGitHubCredentials({ authorize: async (name) => { const row = await agentRepository.get(name); if (!row) throw new Error("Agent not found"); return row; }, mcps: mcpRepository, auth, cipher: secretCipher, target: enterprise });
+    expect(await internal.token("first", { userId: "first", email: "owner@example.test" })).toBe("enterprise-token");
+    await expect(credentials.token("first", { userId: "first", email: "owner@example.test" })).rejects.toThrow("Connect a GitHub MCP");
     expect(requests).toEqual([]);
   });
 
@@ -170,7 +170,7 @@ describe("Agent GitHub MCP credentials for Workspace", () => {
     await mcpRepository.put({ ...server, name: "github-other" });
     const current = agent("first"); current.configuration!.mcpList!.push({ name: "github-other" });
     store.seed([{ ...keys.agent("first"), entityType: "AGENT", ...current }]);
-    await expect(credentials.token("first")).rejects.toThrow("exactly one");
+    await expect(credentials.token("first", { userId: "first", email: "owner@example.test" })).rejects.toThrow("exactly one");
     expect(requests).toEqual([]);
   });
 });

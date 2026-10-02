@@ -5,7 +5,7 @@ export function isolatedMcpRefresh(): { refreshClaims: McpRefreshRepository; sle
   let owner = 0;
   return {
     refreshClaims: {
-      begin: async (connection, _now, deadlineAt) => ({ kind: "claimed", claim: { agentName: connection.agentName,
+      begin: async (connection, _now, deadlineAt) => ({ kind: "claimed", claim: { userId: connection.userId,
         serverName: connection.serverName, revision: connection.revision, owner: String(++owner), deadlineAt } }),
       finish: async () => {},
     },

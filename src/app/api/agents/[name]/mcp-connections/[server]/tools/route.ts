@@ -12,15 +12,7 @@ const bodySchema = z.object({
   headerOverrides: headerRecordSchema(z.string().nullable()).optional(),
 });
 
-/**
- * List a server's tools as this agent sees them.
- *
- * Distinct from the registry's own probe, which carries only the entry's static
- * headers: against an OAuth server that can do nothing but 401, because the
- * credential that would answer belongs to the agent. Owner-gated for the same
- * reason — it spends the agent's connection, and sends the caller's header
- * overrides alongside it. A non-owner falls back to the registry probe.
- */
+/** List tools with the caller's personal OAuth grant and the current Agent binding. */
 export const POST = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name, server } = await ctx.params;
   // An empty body is a valid request: a binding with no overrides sends none.
@@ -36,7 +28,7 @@ export const POST = withMemberAuth(async (user, request: Request, ctx: RouteCont
     const result = await mcpAuthUseCases.listTools(
       parseName(name),
       parseName(server),
-      user.email,
+      { userId: user.id, email: user.email },
       parsed.data.headerOverrides,
       );
     if (!result.ok) {

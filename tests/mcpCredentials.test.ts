@@ -4,6 +4,7 @@ import { mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import type { McpServer } from "@/domain/mcp/types";
 
+const user = { userId: "caller-id", email: "caller@example.test" };
 const server: McpServer = { name: "fixture", url: "https://mcp.example.test/mcp", headers: {}, createdAt: "2026-10-01", updatedAt: "2026-10-01",
   auth: { type: "oauth2", issuer: "https://auth.example.test", authorizationServer: "https://auth.example.test", resource: "https://mcp.example.test/mcp",
     authorizationEndpoint: "https://auth.example.test/authorize", tokenEndpoint: "https://auth.example.test/token", tokenEndpointAuthMethod: "none", discoveredAt: "2026-10-01" } };
@@ -14,26 +15,26 @@ describe("shared MCP credential dispatch", () => {
   it("sends one OAuth Authorization value after replacing registry and Agent spellings case-insensitively", async () => {
     const deps = fixture({ Authorization: "Bearer oauth-account" });
     const resolved = await resolveMcpCredentials(deps, "agent", { ...server, headers: { authorization: "Bearer registry-account" } },
-      { headers: { AUTHORIZATION: "Bearer static-account", "X-API-Key": "static-key" }, headerTarget: mcpHeaderTarget(server.url) });
+      { headers: { AUTHORIZATION: "Bearer static-account", "X-API-Key": "static-key" }, headerTarget: mcpHeaderTarget(server.url) }, user);
     const outbound = new Headers(resolved.headers);
     expect(outbound.get("authorization")).toBe("Bearer oauth-account");
     expect(outbound.get("x-api-key")).toBe("static-key");
-    expect(deps.auth.headersFor).toHaveBeenCalledExactlyOnceWith("agent", server.name, server.auth);
+    expect(deps.auth.headersFor).toHaveBeenCalledExactlyOnceWith(user.userId, server.name, server.auth);
   });
 
   it("never treats configured user, tenant or conversation metadata as authentication", async () => {
     const deps = fixture({}, "The Agent has not connected this server");
     const resolved = await resolveMcpCredentials(deps, "agent", { ...server,
-      headers: { "x-user-email": "other@example.test", "X-Tenant-Id": "other-agent", "X-CONVERSATION-ID": "other-conversation" } });
+      headers: { "x-user-email": "other@example.test", "X-Tenant-Id": "other-agent", "X-CONVERSATION-ID": "other-conversation" } }, undefined, user);
     expect(resolved.headers).toEqual({});
     expect(resolved.unavailable).toBe("The Agent has not connected this server");
   });
 
-  it("keeps independently configured static authentication when no OAuth grant is available", async () => {
+  it("refuses shared authentication when the caller has no OAuth grant", async () => {
     const deps = fixture({}, "OAuth is not connected");
-    const resolved = await resolveMcpCredentials(deps, "agent", { ...server, headers: { "X-API-Key": "operator-key" } });
-    expect(new Headers(resolved.headers).get("x-api-key")).toBe("operator-key");
-    expect(resolved.unavailable).toBeUndefined();
+    const resolved = await resolveMcpCredentials(deps, "agent", { ...server, headers: { "X-API-Key": "operator-key" } }, undefined, user);
+    expect(resolved.headers).toEqual({});
+    expect(resolved.unavailable).toBe("OAuth is not connected");
   });
 
   it("drops stale Agent secrets but preserves explicit default removals and reports the loss", async () => {

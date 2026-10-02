@@ -57,7 +57,7 @@ beforeEach(async () => {
   const at = now.toISOString();
   fake.seed([{ ...keys.agent("demo"), entityType: "AGENT", name: "demo", displayName: "Demo", ownerEmail: owner, createdAt: at, updatedAt: at }]);
   await chats.create({ chatId: "chat-1", agentName: "demo", title: "Task", ownerEmail: owner, createdAt: at, updatedAt: at });
-  workspace = await createWorkspaceUseCases(deps).create({ chatId: "chat-1", agentName: "demo", title: "Coding", runtime: "codex", repository: "company/repo", baseBranch: "main" }, owner);
+  workspace = await createWorkspaceUseCases(deps).create({ chatId: "chat-1", agentName: "demo", title: "Coding", runtime: "codex", repository: "company/repo", baseBranch: "main" }, { userId: "studio-user-1", email: owner });
 });
 afterEach(() => {
   try { expect(vi.getTimerCount()).toBe(0); }
@@ -125,8 +125,8 @@ describe("explicit coding action approvals", () => {
     const pr = await api.publish(workspace.id, { user: user, actor: { kind: "user", id: owner } }, { kind: "pull-request", title: "Implement request", body: "Verified", draft: false });
     expect(pr).toMatchObject({ status: "succeeded", result: pull.url, authorization: "coding-request" });
     expect((await repository.get(workspace.id))?.pullRequest).toEqual(pull);
-    expect(deps.coding).toHaveBeenCalledWith("demo");
-    expect(deps.forge).toHaveBeenCalledWith("demo");
+    expect(deps.coding).toHaveBeenCalledWith("demo", user);
+    expect(deps.forge).toHaveBeenCalledWith("demo", user);
     expect((await repository.get(workspace.id))?.activeActionId).toBeUndefined();
     expect(await repository.dueContinuations(now.toISOString(), 20)).toEqual([]);
   });
@@ -260,13 +260,13 @@ describe("explicit coding action approvals", () => {
     const before = (await repository.get(workspace.id))!;
     pull.state = "merged";
     const api = createCodingUseCases(deps);
-    expect(await api.pullRequest(workspace.id, owner)).toEqual(pull);
+    expect(await api.pullRequest(workspace.id, { userId: "studio-user-1", email: owner })).toEqual(pull);
     const after = (await repository.get(workspace.id))!;
     expect(after.pullRequest).toEqual(pull);
     expect(after.updatedAt).toBe(before.updatedAt);
     expect(after.dueAt).toBe(before.dueAt);
     expect(after.revision).toBe(before.revision + 1);
-    await api.pullRequest(workspace.id, owner);
+    await api.pullRequest(workspace.id, { userId: "studio-user-1", email: owner });
     expect((await repository.get(workspace.id))?.revision).toBe(after.revision);
   });
   it("does not overwrite a close that races with PR status refresh", async () => {
@@ -275,7 +275,7 @@ describe("explicit coding action approvals", () => {
       await createWorkspaceUseCases(deps).close(workspace.id, owner);
       return { ...pull, state: "merged" };
     });
-    expect((await createCodingUseCases(deps).pullRequest(workspace.id, owner))?.state).toBe("merged");
+    expect((await createCodingUseCases(deps).pullRequest(workspace.id, { userId: "studio-user-1", email: owner }))?.state).toBe("merged");
     expect((await repository.get(workspace.id))?.status).toBe("closing");
     expect(deps.provider.start).not.toHaveBeenCalled();
   });
@@ -423,18 +423,18 @@ describe("explicit coding action approvals", () => {
     expect(await repository.runs(workspace.id, 20)).toHaveLength(0);
   });
   it("connects an empty Git-free Workspace without changing its identity or session", async () => {
-    const free = await createWorkspaceUseCases(deps).create({ chatId: "free-chat", createChat: true, agentName: "demo", title: "Files", runtime: "codex" }, owner);
-    const attached = await createCodingUseCases(deps).attachRepository(free.id, owner, "company/repo", "main");
+    const free = await createWorkspaceUseCases(deps).create({ chatId: "free-chat", createChat: true, agentName: "demo", title: "Files", runtime: "codex" }, { userId: "studio-user-1", email: owner });
+    const attached = await createCodingUseCases(deps).attachRepository(free.id, { userId: "studio-user-1", email: owner }, "company/repo", "main");
     expect(attached).toMatchObject({ id: free.id, sessionId: free.sessionId, coding: { repository: "company/repo", baseBranch: "main" } });
     expect(await repository.runs(free.id, 20)).toHaveLength(0);
     expect(deps.checkpoints.put).toHaveBeenCalledTimes(1);
     expect(coding.commit).not.toHaveBeenCalled();
-    await expect(createCodingUseCases(deps).attachRepository(free.id, owner, "other/repo", "main")).rejects.toThrow("different repository");
+    await expect(createCodingUseCases(deps).attachRepository(free.id, { userId: "studio-user-1", email: owner }, "other/repo", "main")).rejects.toThrow("different repository");
   });
   it("keeps the existing Workspace when repository attachment is refused", async () => {
-    const free = await createWorkspaceUseCases(deps).create({ chatId: "free-chat", createChat: true, agentName: "demo", title: "Files", runtime: "codex" }, owner);
+    const free = await createWorkspaceUseCases(deps).create({ chatId: "free-chat", createChat: true, agentName: "demo", title: "Files", runtime: "codex" }, { userId: "studio-user-1", email: owner });
     coding.prepare = async () => { throw new Error("workdir is not empty; existing files were kept"); };
-    await expect(createCodingUseCases(deps).attachRepository(free.id, owner, "company/repo", "main")).rejects.toThrow("existing files were kept");
+    await expect(createCodingUseCases(deps).attachRepository(free.id, { userId: "studio-user-1", email: owner }, "company/repo", "main")).rejects.toThrow("existing files were kept");
     expect((await repository.get(free.id))?.coding).toBeUndefined();
     expect((await repository.get(free.id))?.leaseToken).toBeUndefined();
     expect(deps.checkpoints.put).not.toHaveBeenCalled();
@@ -533,6 +533,7 @@ describe("explicit coding action approvals", () => {
     expect((await repository.get(workspace.id))?.dueAt).toBe(now.toISOString());
   });
   it("records a GitHub delivery once without starting work or approving actions", async () => {
+    await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, revision: workspace.revision + 1, pullRequestUser: user } });
     const raw = JSON.stringify({ repository: { full_name: "Company/Repo" }, pull_request: { number: 7, head: { ref: workspace.coding!.branch } } });
     const results = await Promise.all([handleCodingWebhook(repository, deps.forge, "delivery-0001", raw), handleCodingWebhook(repository, deps.forge, "delivery-0001", raw)]);
     expect(results.filter(result => result.processed)).toHaveLength(1);

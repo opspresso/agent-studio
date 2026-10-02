@@ -33,7 +33,7 @@ export interface AudioJobUseCaseDeps {
   authorize(agent: string, email: string): Promise<void>;
   authorizeRun(agent: string, identity: RunIdentity): Promise<void>;
   validateModel(model: string): Promise<void>;
-  validateOutputs(input: SubmitAudioJobInput, agent: string, email: string): Promise<Pick<AudioJob, "postprocess" | "destination">>;
+  validateOutputs(input: SubmitAudioJobInput, agent: string, user: RunUser): Promise<Pick<AudioJob, "postprocess" | "destination">>;
   limits(agent: string): Promise<{ maxActive: number; maxPerOccurrence: number }>;
   now(): Date;
   id(): string;
@@ -144,7 +144,7 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
         await deps.validateModel(input.model);
       }
       if (task !== "process" && task !== "postprocess" && (input.postprocess || input.destination)) throw new ValidationError("Only process or postprocess tasks accept output options");
-      const outputs = await deps.validateOutputs(input, agentName, userEmail);
+      const outputs = await deps.validateOutputs(input, agentName, user);
       let source: AudioJob["source"];
       let identity: { namespace: string; itemId: string; refresh?: AudioJob["sourceRefresh"] };
       if (input.source.kind === "file") {

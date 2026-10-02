@@ -74,7 +74,7 @@ export async function checkWorkspaces(): Promise<void> {
       workspace: { ...sourceAfterDelivery, revision: sourceAfterDelivery.revision + 1 }, approval });
     assert.equal((await repository.continuation(selectedId, approval.id))?.status, "completed", "saving an outcome again cannot redeliver it");
 
-    const workspace = await useCases.create({ chatId, agentName, title: "General task", runtime: "command" }, owner);
+    const workspace = await useCases.create({ chatId, agentName, title: "General task", runtime: "command" }, { userId: "studio-user-1", email: owner });
     workspaceId = workspace.id;
     assert.equal(workspace.coding, undefined);
     const input = { kind: "command" as const, script: "printf integration" };

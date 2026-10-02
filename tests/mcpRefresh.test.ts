@@ -18,7 +18,7 @@ let connection: McpConnection;
 beforeEach(async () => {
   vi.useFakeTimers(); vi.setSystemTime(now); store.rows.clear(); ids.sequence = 0;
   store.seed([{ ...keys.agent("agent"), entityType: "AGENT", name: "agent" }]);
-  await mcpConnectionRepository.put({ agentName: "agent", serverName: "server", clientId: "client", issuer: auth.issuer, resource: auth.resource,
+  await mcpConnectionRepository.put({ userId: "agent", serverName: "server", clientId: "client", issuer: auth.issuer, resource: auth.resource,
     scopes: [], accessToken: "enc:old", refreshToken: "enc:refresh", expiresAt: new Date(now.getTime() + 1000).toISOString(), status: "connected", updatedAt: now.toISOString() });
   connection = (await mcpConnectionRepository.get("agent", "server"))!;
 });
@@ -63,8 +63,8 @@ describe("durable OAuth refresh ownership", () => {
     expect(resolution.headers.Authorization).toBe("Bearer reconnected"); expect(refresh).not.toHaveBeenCalled();
   });
 
-  it("fences refresh admission against Agent deletion and a changed grant", async () => {
-    store.seed([{ ...keys.agent("agent"), entityType: "AGENT_TOMBSTONE", name: "agent" }]);
+  it("fences refresh admission against a disconnected grant", async () => {
+    await mcpConnectionRepository.delete("agent", "server");
     expect((await mcpRefreshRepository.begin(connection, now.toISOString(), new Date(now.getTime() + 1000).toISOString())).kind).toBe("changed");
     expect(await store.getItem(keys.mcpRefresh("agent", "server", connection.revision))).toBeNull();
   });

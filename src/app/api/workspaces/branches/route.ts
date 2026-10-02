@@ -6,7 +6,7 @@ export type WorkspaceBranchesResponse = Awaited<ReturnType<typeof workspaceBranc
 export const GET = withAuth(async (user, request: Request) => {
   try {
     const query = new URL(request.url).searchParams;
-    return Response.json(await workspaceBranches(parseName(query.get("agent") ?? ""), user.email, query.get("repository") ?? undefined) satisfies WorkspaceBranchesResponse);
+    return Response.json(await workspaceBranches(parseName(query.get("agent") ?? ""), { userId: user.id, email: user.email }, query.get("repository") ?? undefined) satisfies WorkspaceBranchesResponse);
   }
   catch (error) { return apiError(error); }
 });

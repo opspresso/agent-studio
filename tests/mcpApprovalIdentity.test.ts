@@ -17,7 +17,7 @@ function fixture() {
       toolNamesByServer: new Map([["github", ["write"]]]), warnings: [], unauthorizedServers: [],
       callTool: async () => ({ text: "done" }), aliasFor: () => "write", close: async () => {} }) },
   } as unknown as McpToolDeps;
-  return { server, connection, deps, configuration, signature: async () => (await buildMcpTools(deps, configuration)).signature };
+  return { server, connection, deps, configuration, signature: async () => (await buildMcpTools(deps, configuration, undefined, { user: { userId: "p", email: "owner@example.test" } })).signature };
 }
 describe("MCP approval binding identity", () => {
   it("preserves approvals across token refresh and invalidates them after reauthorization", async () => {
@@ -38,7 +38,7 @@ describe("MCP approval binding identity", () => {
       f.connection.authorizationEpoch = "new-account";
       return { headers: { Authorization: "old-account-token" } };
     };
-    const result = await buildMcpTools(f.deps, f.configuration);
+    const result = await buildMcpTools(f.deps, f.configuration, undefined, { user: { userId: "p", email: "owner@example.test" } });
     expect(result.warnings.join(" ")).toContain("authentication changed");
   });
 });

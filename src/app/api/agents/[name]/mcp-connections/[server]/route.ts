@@ -29,7 +29,7 @@ export const PUT = withMemberAuth(async (user, request: Request, ctx: RouteConte
         parseName(name),
         parseName(server),
         parsed.data,
-        user.email,
+        { userId: user.id, email: user.email },
       ),
     );
   } catch (error) {
@@ -40,7 +40,7 @@ export const PUT = withMemberAuth(async (user, request: Request, ctx: RouteConte
 export const DELETE = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name, server } = await ctx.params;
   try {
-    await mcpAuthUseCases.disconnect(parseName(name), parseName(server), user.email);
+    await mcpAuthUseCases.disconnect(parseName(name), parseName(server), { userId: user.id, email: user.email });
     return new Response(null, { status: 204 });
   } catch (error) {
     return apiError(error);
